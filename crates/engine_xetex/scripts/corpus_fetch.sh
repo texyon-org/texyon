@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# corpus_fetch.sh — (re)populate the out-of-repo parity corpus cache.
+# corpus_fetch.sh: (re)populate the out-of-repo parity corpus cache.
 #
 # The committed corpus consists of:
 #   * Authored Tier 1 docs in crates/engine_xetex/tests/corpus/tier1/  (in repo)
@@ -13,22 +13,21 @@
 # Usage:
 #   TECTONIC_CORPUS_DIR=~/.cache/tectonic-corpus ./corpus_fetch.sh [tl|arxiv|all]
 #
-# Bulk arXiv (thousands of papers) is NOT done here — see
-# plan/08-parity-corpus.md §"bulk arXiv" for the requester-pays S3 path.
+# Bulk arXiv (thousands of papers) is NOT done here.
 set -euo pipefail
 
 CORPUS_DIR="${TECTONIC_CORPUS_DIR:-$HOME/.cache/tectonic-corpus}"
 RAW="$CORPUS_DIR/raw"
 TL="${TEXLIVE_DOC:-/usr/local/texlive/2025/texmf-dist/doc}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MANIFEST="$HERE/../../tests/corpus/manifest.tsv"
+MANIFEST="$HERE/../tests/corpus/manifest.tsv"
 mode="${1:-all}"
 
 mkdir -p "$RAW"
 
 fetch_tl() {
   echo ">> harvesting redistributable sources from TeX Live ($TL)"
-  # lshort — book-length real-world LaTeX
+  # lshort: book-length real-world LaTeX
   if [ -f "$TL/latex/lshort-english"/lshort-*.src.tar.gz ]; then
     mkdir -p "$RAW/lshort"
     tar xzf "$TL"/latex/lshort-english/lshort-*.src.tar.gz \
@@ -46,7 +45,7 @@ fetch_tl() {
 # TeX Live package/engine manuals. PENDING: 0/7 compiled under the pinned
 # 2022 bundle (manual-only assets, fonts not in bundle, dvipdfm driver,
 # newer-kernel commands). Kept staged so they can be re-surveyed when the
-# bundle is upgraded — several should start compiling. They are in the
+# bundle is upgraded, several should start compiling. They are in the
 # manifest as `tier2-pending` and are NOT part of the active parity set
 # until a survey under the new bundle promotes them to `tier2`.
 fetch_manuals() {
@@ -70,7 +69,7 @@ LIST
 }
 
 fetch_lvt() {
-  # LaTeX kernel regression test suite (.lvt) — engine edge-case coverage.
+  # LaTeX kernel regression test suite (.lvt): engine edge-case coverage.
   # These \input{regression-test} and \showbox/\showlists engine internals
   # into the .log; the PARITY SIGNAL IS THE .log, not the xdv. Run them with
   # -Z continue-on-errors -Z search-path="$RAW/latex-tests/support" (NOT

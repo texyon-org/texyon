@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# corpus.sh — byte-parity gate for the engine_xetex Rustification.
+# corpus.sh: byte-parity gate for engine_xetex.
 #
-#   bless : run the ORACLE (pre-Rust C engine) over the corpus and store
-#           output hashes as goldens.  Requires ORACLE_BIN.
+#   bless : run ORACLE_BIN over the corpus and store output hashes as goldens.
 #   check : run the CANDIDATE (current engine) and compare to the goldens.
+#
+# For an A/B against a baseline build, bless the baseline into a scratch
+# CORPUS_GOLDENS dir, then check the candidate against it.
 #
 # Two artifact kinds:
 #   * documents (manifest tier1/tier1-real/tier2)  -> parity on the .xdv bytes
@@ -11,9 +13,9 @@
 #     (normalized: banner + abs paths stripped; these rarely ship a page)
 #
 # Usage:
-#   ORACLE_BIN=../tectonic-oracle/target/release/tectonic \
-#     plan/scripts/corpus.sh bless [scope]
-#   plan/scripts/corpus.sh check [scope]
+#   ORACLE_BIN=<baseline>/tectonic [CORPUS_GOLDENS=dir] \
+#     crates/engine_xetex/scripts/corpus.sh bless [scope]
+#   [CANDIDATE_BIN=...] [CORPUS_GOLDENS=dir] crates/engine_xetex/scripts/corpus.sh check [scope]
 #   scope = all (default) | docs | lvt | tier1 | tier1-real | tier2
 #
 # Determinism (both engines): SOURCE_DATE_EPOCH=0, LC_ALL=C, TZ=UTC,
@@ -26,7 +28,7 @@ ROOT="$(git rev-parse --show-toplevel)"
 CORPUS="$ROOT/crates/engine_xetex/tests/corpus"
 CACHE="${TECTONIC_CORPUS_DIR:-$HOME/.cache/tectonic-corpus}/raw"
 SUP="$CACHE/latex-tests/support"
-GOLD="$CORPUS/goldens"; mkdir -p "$GOLD"
+GOLD="${CORPUS_GOLDENS:-$CORPUS/goldens}"; mkdir -p "$GOLD"
 MANIFEST="$CORPUS/manifest.tsv"
 LVTLIST="$CORPUS/lvt-viable.txt"
 DOCS_SHA="$GOLD/docs.sha"
@@ -35,7 +37,7 @@ WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 FAILDIR="/tmp/corpus_fail"; rm -rf "$FAILDIR"; mkdir -p "$FAILDIR"
 
 if [ "$MODE" = bless ]; then
-  BIN="${ORACLE_BIN:?bless requires ORACLE_BIN (the pre-Rust oracle binary)}"
+  BIN="${ORACLE_BIN:?bless requires ORACLE_BIN (the reference binary)}"
   echo "BLESS using oracle: $BIN"
 else
   BIN="${CANDIDATE_BIN:-$ROOT/target/release/tectonic}"

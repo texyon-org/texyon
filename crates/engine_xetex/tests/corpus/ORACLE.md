@@ -1,7 +1,7 @@
 # Corpus oracle & determinism pins
 
 This file is the provenance record for the parity corpus (see
-`plan/08-parity-corpus.md`). Everything here must be reproducible.
+`../../ARCHITECTURE.md`). Everything here must be reproducible.
 
 ## Oracle (pre-Rust reference engine)
 

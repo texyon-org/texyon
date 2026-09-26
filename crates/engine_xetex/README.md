@@ -10,6 +10,7 @@ project](https://tectonic-typesetting.github.io/en-US/). It provides the
 
 - [API documentation](https://docs.rs/tectonic_engine_xetex/).
 - [Main Git repository](https://github.com/tectonic-typesetting/tectonic/).
+- [Architecture and validation](ARCHITECTURE.md).
 
 
 ## Cargo features

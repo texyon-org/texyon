@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-BIN=/home/yendric/Code/tectonic/target/release/tectonic
-CACHE=/home/yendric/.cache/tectonic-corpus/raw/latex-tests
+# lvt_survey.sh: find the LaTeX .lvt tests that run to END-TEST-LOG, to
+# refresh tests/corpus/lvt-viable.txt. Results land in $RES.
+ROOT="$(git rev-parse --show-toplevel)"
+BIN="${BIN:-$ROOT/target/release/tectonic}"
+CACHE="${TECTONIC_CORPUS_DIR:-$HOME/.cache/tectonic-corpus}/raw/latex-tests"
 SUP="$CACHE/support"
-OUT=/tmp/lvt_survey; rm -rf "$OUT"; mkdir -p "$OUT"
-RES=/tmp/lvt_results.tsv; > "$RES"
+OUT="${OUT:-/tmp/lvt_survey}"; rm -rf "$OUT"; mkdir -p "$OUT"
+RES="${RES:-/tmp/lvt_results.tsv}"; > "$RES"
 for dir in testfiles testfiles-TU; do
   for f in "$CACHE/base/$dir"/*.lvt; do
     [ -e "$f" ] || continue
