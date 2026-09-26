@@ -1,0 +1,515 @@
+//! Building math lists: the math-mode commands and `fin_mlist`.
+
+use crate::cmd::{ACCENT, DELIM_NUM, LETTER, OTHER_CHAR, RELAX, SPACER, SUP_MARK};
+use crate::codes::{MathAccentCode, RadicalCode};
+use crate::consts::{EMPTY, MATH_CHAR, NORMAL, NUMBER_MATH_FAMILIES, SUB_MLIST};
+use crate::errors::Abort;
+use crate::input::TokenType;
+use crate::mem::{GARBAGE, TEX_NULL};
+use crate::mem_types::ListStateRecord;
+use crate::node::{ChoiceNode, DelimiterField, MathField, Noad, NodePtr};
+use crate::params::{IntPar, TokPar};
+use crate::state::{EngineState, EqtbState, GroupCode, MemState, SaveStackState};
+use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
+
+use super::{
+    ABOVE_CODE, ATOP_CODE, BOTTOM_ACC, DEFAULT_CODE, DELIMITED_CODE, MIDDLE_NOAD, OVER_CODE,
+};
+
+const FIXED_ACC: u16 = 1;
+
+/// Scans a delimiter into `p`, after `\radical` or `\Uradical` when `radical` is given.
+fn scan_delimiter(
+    st: &mut EngineState,
+    p: NodePtr<DelimiterField>,
+    radical: Option<RadicalCode>,
+) -> Result<(), Abort> {
+    if let Some(radical) = radical {
+        if radical == RadicalCode::Uradical {
+            st.scanner.cur_val1 = 0x4000_0000;
+            crate::scan::scan_math_fam_int(st)?;
+            st.scanner.cur_val1 += st.scanner.cur_val * 0x20_0000;
+            crate::scan::scan_usv_num(st)?;
+            st.scanner.cur_val = st.scanner.cur_val + st.scanner.cur_val1;
+        } else {
+            crate::scan::scan_delimiter_int(st)?;
+        }
+    } else {
+        loop {
+            crate::scan::get_x_token(st)?;
+            if st.scanner.cur_cmd != SPACER && st.scanner.cur_cmd != RELAX {
+                break;
+            }
+        }
+
+        match st.scanner.cur_cmd {
+            LETTER | OTHER_CHAR => st.scanner.cur_val = st.eqtb.del_code(st.scanner.cur_chr),
+            DELIM_NUM => {
+                if st.scanner.cur_chr == 1 {
+                    st.scanner.cur_val1 = 0x4000_0000;
+                    crate::scan::scan_math_class_int(st)?;
+                    crate::scan::scan_math_fam_int(st)?;
+                    st.scanner.cur_val1 += st.scanner.cur_val * 0x20_0000;
+                    crate::scan::scan_usv_num(st)?;
+                    st.scanner.cur_val = st.scanner.cur_val + st.scanner.cur_val1;
+                } else {
+                    crate::scan::scan_delimiter_int(st)?;
+                }
+            }
+            _ => st.scanner.cur_val = -1,
+        }
+    }
+
+    if st.scanner.cur_val < 0 {
+        crate::output::print_error_prefix(st);
+        crate::output::print(st, "Missing delimiter (. inserted)");
+        st.errors.help(&[
+            r"I was expecting to see something like `(' or `\{' or",
+            r"`\}' here. If you typed, e.g., `{' instead of `\{', you",
+            "should probably delete the `{' by typing `1' now, so that",
+            "braces don't get unbalanced. Otherwise just proceed.",
+            r"Acceptable delimiters are characters whose \delcode is",
+            r"nonnegative, or you can use `\delimiter <delimiter code>'.",
+        ]);
+        crate::input::back_error(st)?;
+        st.scanner.cur_val = 0;
+    }
+
+    let v = st.scanner.cur_val;
+    if v >= 0x4000_0000 {
+        let plane_and_fam = ((v % 0x20_0000) / 0x1_0000) * 0x100 + (v / 0x20_0000) % 0x100;
+        p.set_small(&mut st.mem, plane_and_fam as u16, (v % 0x1_0000) as u16);
+        p.set_large(&mut st.mem, 0, 0);
+    } else {
+        p.set_small(
+            &mut st.mem,
+            ((v / 0x10_0000) % 16) as u16,
+            ((v / 0x1000) % 0x100) as u16,
+        );
+        p.set_large(&mut st.mem, ((v / 0x100) % 16) as u16, (v % 0x100) as u16);
+    }
+    Ok(())
+}
+
+pub(super) fn define_word(st: &mut EngineState, loc: i32, val: i32) -> Result<(), Abort> {
+    Ok(st.eqtb.eq_word_define(&mut st.save_stack, loc, val)?)
+}
+
+pub(crate) fn start_eq_no(st: &mut EngineState) -> Result<(), Abort> {
+    st.save_stack.set_saved(0, st.scanner.cur_chr);
+    st.save_stack.save_ptr += 1;
+
+    crate::main_control::push_math(st, GroupCode::MathShift)?;
+    define_word(st, IntPar::CurFam.loc(), -1)?;
+    if st.shipout.insert_src_special_every_math {
+        crate::ext::insert_src_special(st)?;
+    }
+    let every_math = st.eqtb.tok_par(TokPar::EveryMath);
+    if !every_math.is_null() {
+        crate::input::begin_token_list(st, every_math, TokenType::EveryMath)?;
+    }
+    Ok(())
+}
+
+impl ListStateRecord {
+    fn apply_math_limit_switch(&mut self, mem: &mut MemState, limit: u16) -> bool {
+        let tail = self.tail.0;
+        if self.head.0 == tail {
+            return false;
+        }
+        match mem.classify_noad(MemIdx::new(tail)) {
+            Ok(Some(noad)) if noad.noad_type(mem) == NodeType::OpNoad => {
+                noad.set_subtype(mem, limit);
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+pub(crate) fn math_limit_switch(st: &mut EngineState) -> Result<(), Abort> {
+    if st
+        .input
+        .cur_list
+        .apply_math_limit_switch(&mut st.mem, st.scanner.cur_chr as u16)
+    {
+        return Ok(());
+    }
+    crate::output::print_err(st, "Limit controls must follow a math operator");
+    st.errors
+        .help(&[r"I'm ignoring this misplaced \limits or \nolimits command."]);
+    crate::errors::error(st)
+}
+
+impl ListStateRecord {
+    fn append_radical_noad(&mut self, mem: &mut MemState) -> Result<NodePtr<Noad>, Abort> {
+        let node = NodePtr::<Noad>::alloc_radical(mem)?;
+        self.tail_append(mem, node.ptr());
+        node.clear_fields(mem);
+        Ok(node)
+    }
+}
+
+pub(crate) fn math_radical(st: &mut EngineState) -> Result<(), Abort> {
+    let tail = st.input.cur_list.append_radical_noad(&mut st.mem)?;
+    let code = RadicalCode::from_raw(st.scanner.cur_chr).ok_or(Abort::Confusion("radical"))?;
+    scan_delimiter(st, tail.left_delimiter(), Some(code))?;
+    crate::scan::scan_math(st, tail.nucleus())
+}
+
+impl ListStateRecord {
+    fn append_choices(
+        &mut self,
+        mem: &mut MemState,
+        save_stack: &mut SaveStackState,
+    ) -> Result<(), Abort> {
+        let choice = mem.new_choice()?;
+        self.tail_append(mem, choice.ptr());
+        save_stack.save_ptr += 1;
+        save_stack.set_saved(-1, 0);
+        Ok(())
+    }
+}
+
+pub(crate) fn append_choices(st: &mut EngineState) -> Result<(), Abort> {
+    st.input
+        .cur_list
+        .append_choices(&mut st.mem, &mut st.save_stack)?;
+    crate::main_control::push_math(st, GroupCode::MathChoice)?;
+    crate::scan::scan_left_brace(st)?;
+    Ok(())
+}
+
+impl ListStateRecord {
+    fn fin_mlist(&mut self, mem: &mut MemState, p: MemPtr) -> Result<MemPtr, Abort> {
+        let q;
+        let aux = self.aux_s1();
+        if aux != TEX_NULL {
+            let aux_noad = NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(aux));
+            aux_noad.subscr().set_math_type(mem, SUB_MLIST);
+            aux_noad.subscr().set_info(mem, self.head.link(mem));
+            if p.is_null() {
+                q = MemPtr(aux);
+            } else {
+                q = aux_noad.supscr().info(mem);
+                let q_noad = NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q));
+                let etex_aux = self.e_tex_aux.0;
+                if q_noad.noad_type(mem) != NodeType::LeftNoad || etex_aux == TEX_NULL {
+                    return Err(Abort::Confusion("right"));
+                }
+                // SAFETY: a math-left group keeps its last noad in `eTeX_aux`.
+                let etex_aux_noad = NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(etex_aux));
+                let etex_link = etex_aux_noad.link(mem);
+                aux_noad.supscr().set_info(mem, etex_link);
+                etex_aux_noad.set_link(mem, MemPtr::from_raw(aux));
+                aux_noad.set_link(mem, p);
+            }
+        } else {
+            self.tail.set_link(mem, p);
+            q = self.head.link(mem);
+        }
+        Ok(q)
+    }
+}
+
+pub(crate) fn fin_mlist(st: &mut crate::state::EngineState, p: MemPtr) -> Result<MemPtr, Abort> {
+    let q = st.input.cur_list.fin_mlist(&mut st.mem, p)?;
+    st.mem.pop_nest(&mut st.input);
+    Ok(q)
+}
+
+impl ListStateRecord {
+    fn build_choices_finish(
+        &mut self,
+        mem: &mut MemState,
+        save_stack: &mut SaveStackState,
+        p: impl crate::units::MemAddr,
+    ) -> bool {
+        let p = p.addr();
+        let tail = NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(self.tail.0));
+        let p_ptr = MemPtr::from_raw(p);
+        match save_stack.saved(-1) {
+            0 => tail.set_display_mlist(mem, p_ptr),
+            1 => tail.set_text_mlist(mem, p_ptr),
+            2 => tail.set_script_mlist(mem, p_ptr),
+            3 => {
+                tail.set_script_script_mlist(mem, p_ptr);
+                save_stack.save_ptr -= 1;
+                return true;
+            }
+            _ => {}
+        }
+        let choice_state = save_stack.saved(-1);
+        save_stack.set_saved(-1, choice_state + 1);
+        false
+    }
+}
+
+pub(crate) fn build_choices(st: &mut crate::state::EngineState) -> Result<(), Abort> {
+    crate::save::unsave(st)?;
+    let p = st.input.cur_list.fin_mlist(&mut st.mem, MemPtr::NULL)?;
+    st.mem.pop_nest(&mut st.input);
+    let complete = st
+        .input
+        .cur_list
+        .build_choices_finish(&mut st.mem, &mut st.save_stack, p);
+    if complete {
+        return Ok(());
+    }
+    crate::main_control::push_math(st, GroupCode::MathChoice)?;
+    crate::scan::scan_left_brace(st)?;
+    Ok(())
+}
+
+enum ScriptDuplication {
+    Superscript,
+    Subscript,
+}
+
+impl ListStateRecord {
+    fn prepare_sub_sup(
+        &mut self,
+        mem: &mut MemState,
+        cmd: u8,
+    ) -> Result<(NodePtr<MathField>, Option<ScriptDuplication>), Abort> {
+        let script = |n: NodePtr<Noad>| {
+            if cmd == SUP_MARK {
+                n.supscr()
+            } else {
+                n.subscr()
+            }
+        };
+        let mut t = EMPTY;
+        let mut p = None;
+
+        if self.tail != self.head {
+            if let Ok(Some(n)) = mem.classify_noad(MemIdx::new(self.tail)) {
+                if n.noad_type(mem).as_raw() < NodeType::LeftNoad.as_raw() {
+                    let field = script(n);
+                    t = field.math_type(mem);
+                    p = Some(field);
+                }
+            }
+        }
+
+        let mut duplicate = None;
+        let p = match p {
+            Some(field) if t == EMPTY => field,
+            _ => {
+                let noad = mem.new_noad()?;
+                self.tail_append(mem, noad.ptr());
+                if t != EMPTY {
+                    duplicate = Some(if cmd == SUP_MARK {
+                        ScriptDuplication::Superscript
+                    } else {
+                        ScriptDuplication::Subscript
+                    });
+                }
+                script(noad)
+            }
+        };
+        Ok((p, duplicate))
+    }
+}
+
+pub(crate) fn sub_sup(st: &mut EngineState) -> Result<(), Abort> {
+    let cmd = st.scanner.cur_cmd;
+    let (p, duplicate) = st.input.cur_list.prepare_sub_sup(&mut st.mem, cmd)?;
+    if let Some(duplicate) = duplicate {
+        match duplicate {
+            ScriptDuplication::Superscript => {
+                crate::output::error_here_with_diagnostic(st, "Double superscript");
+                st.errors
+                    .help(&["I treat `x^1^2' essentially like `x^1{}^2'."]);
+            }
+            ScriptDuplication::Subscript => {
+                crate::output::error_here_with_diagnostic(st, "Double subscript");
+                st.errors
+                    .help(&["I treat `x_1_2' essentially like `x_1{}_2'."]);
+            }
+        }
+        crate::output::capture_to_diagnostic(st, None);
+        crate::errors::error(st)?;
+    }
+    crate::scan::scan_math(st, p)
+}
+
+impl ListStateRecord {
+    fn start_fraction_noad(&mut self, mem: &mut MemState) -> Result<NodePtr<Noad>, Abort> {
+        let fraction = NodePtr::<Noad>::alloc_fraction(mem)?;
+        self.set_aux_s1(fraction.idx().0);
+        fraction.set_subtype(mem, NORMAL);
+        fraction.supscr().set_math_type(mem, SUB_MLIST);
+        fraction.supscr().set_info(mem, self.head.link(mem));
+        fraction.subscr().clear(mem);
+        fraction.left_delimiter().clear(mem);
+        fraction.right_delimiter().clear(mem);
+
+        self.head.set_link(mem, MemPtr::NULL);
+        self.tail = self.head;
+        Ok(fraction)
+    }
+}
+
+pub(crate) fn math_fraction(st: &mut EngineState) -> Result<(), Abort> {
+    let c = st.scanner.cur_chr;
+
+    if st.input.cur_list.aux_s1() != TEX_NULL {
+        if c >= DELIMITED_CODE {
+            scan_delimiter(st, NodePtr::at(GARBAGE), None)?;
+            scan_delimiter(st, NodePtr::at(GARBAGE), None)?;
+        }
+
+        if c % DELIMITED_CODE == ABOVE_CODE {
+            crate::scan::scan_dimen(st, false, false, false)?;
+        }
+
+        crate::output::print_error_prefix(st);
+        crate::output::print(st, "Ambiguous; you need another { and }");
+        st.errors.help(&[
+            "I'm ignoring this fraction specification, since I don't",
+            r"know whether a construction like `x \over y \over z'",
+            r"means `{x \over y} \over z' or `x \over {y \over z}'.",
+        ]);
+        crate::errors::error(st)?;
+    } else {
+        let aux = st.input.cur_list.start_fraction_noad(&mut st.mem)?;
+
+        if c >= DELIMITED_CODE {
+            scan_delimiter(st, aux.left_delimiter(), None)?;
+            scan_delimiter(st, aux.right_delimiter(), None)?;
+        }
+
+        match c % DELIMITED_CODE {
+            ABOVE_CODE => {
+                crate::scan::scan_dimen(st, false, false, false)?;
+                aux.set_thickness(&mut st.mem, st.scanner.cur_dimen());
+            }
+            OVER_CODE => aux.set_thickness(&mut st.mem, DEFAULT_CODE),
+            ATOP_CODE => aux.set_thickness(&mut st.mem, Scaled::ZERO),
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+impl ListStateRecord {
+    fn append_accent_noad(&mut self, mem: &mut MemState) -> Result<NodePtr<Noad>, Abort> {
+        let accent = NodePtr::<Noad>::alloc_accent(mem)?;
+        self.tail_append(mem, accent.ptr());
+        accent.clear_fields(mem);
+        accent.accent_chr().set_math_type(mem, MATH_CHAR);
+        Ok(accent)
+    }
+}
+
+impl MemState {
+    fn finish_accent_math_field(&mut self, eqtb: &EqtbState, tail: NodePtr<Noad>, value: i32) {
+        tail.accent_chr()
+            .set_character(self, (value % 65536) as u16);
+        let intpar_cur_fam = eqtb.int_par(IntPar::CurFam);
+        if crate::scan::math_class(value) == 7
+            && (0..NUMBER_MATH_FAMILIES).contains(&intpar_cur_fam)
+        {
+            tail.accent_chr()
+                .set_plane_and_fam(self, intpar_cur_fam as u16);
+        } else {
+            tail.accent_chr()
+                .set_plane_and_fam(self, crate::scan::math_fam(value) as u16);
+        }
+        let current_fam = tail.accent_chr().plane_and_fam(self);
+        tail.accent_chr().set_plane_and_fam(
+            self,
+            current_fam + (crate::scan::math_char(value) / 65536) as u16 * 256,
+        );
+    }
+}
+
+pub(crate) fn math_left_right(st: &mut EngineState) -> Result<(), Abort> {
+    let t = st.scanner.cur_chr as u16;
+    if t != NodeType::LeftNoad.as_raw() && st.save_stack.cur_group != GroupCode::MathLeft {
+        if st.save_stack.cur_group == GroupCode::MathShift {
+            scan_delimiter(st, NodePtr::at(GARBAGE), None)?;
+            crate::output::error_here_with_diagnostic(st, "Extra ");
+            if t == MIDDLE_NOAD {
+                crate::output::print_esc(st, "middle");
+                st.errors
+                    .help(&[r"I'm ignoring a \middle that had no matching \left."]);
+            } else {
+                crate::output::print_esc(st, "right");
+                st.errors
+                    .help(&[r"I'm ignoring a \right that had no matching \left."]);
+            }
+            crate::output::capture_to_diagnostic(st, None);
+            crate::errors::error(st)?;
+        } else {
+            crate::main_control::off_save(st)?;
+        }
+    } else {
+        let p = st.mem.new_noad()?;
+        p.set_type_code(&mut st.mem, t);
+        scan_delimiter(st, p.delimiter(), None)?;
+        if t == MIDDLE_NOAD {
+            p.set_noad_type(&mut st.mem, NodeType::RightNoad);
+            p.set_subtype(&mut st.mem, MIDDLE_NOAD);
+        }
+        let q = if t == NodeType::LeftNoad.as_raw() {
+            p.ptr()
+        } else {
+            let q = fin_mlist(st, p.ptr())?;
+            crate::save::unsave(st)?;
+            q
+        };
+        if t != NodeType::RightNoad.as_raw() {
+            crate::main_control::push_math(st, GroupCode::MathLeft)?;
+            let cl = &mut st.input.cur_list;
+            cl.head.set_link(&mut st.mem, q);
+            cl.tail = p.ptr();
+            cl.e_tex_aux = p.ptr();
+        } else {
+            let inner = st.mem.new_noad()?;
+            let cl = &mut st.input.cur_list;
+            cl.tail_append(&mut st.mem, inner.ptr());
+            inner.set_noad_type(&mut st.mem, NodeType::InnerNoad);
+            inner.nucleus().set_math_type(&mut st.mem, SUB_MLIST);
+            inner.nucleus().set_info(&mut st.mem, q);
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn math_ac(st: &mut EngineState) -> Result<(), Abort> {
+    if st.scanner.cur_cmd == ACCENT {
+        crate::output::error_here_with_diagnostic(st, "Please use ");
+        crate::output::print_esc(st, "mathaccent");
+        crate::output::print(st, " for accents in math mode");
+        crate::output::capture_to_diagnostic(st, None);
+        st.errors.help(&[
+            r"I'm changing \accent to \mathaccent here; wish me luck.",
+            "(Accents are not the same in formulas as they are in text.)",
+        ]);
+        crate::errors::error(st)?;
+    }
+
+    let tail = st.input.cur_list.append_accent_noad(&mut st.mem)?;
+
+    if MathAccentCode::from_raw(st.scanner.cur_chr) == Some(MathAccentCode::UmathAccent) {
+        if crate::scan::scan_keyword(st, "fixed")? {
+            tail.set_subtype(&mut st.mem, FIXED_ACC);
+        } else if crate::scan::scan_keyword(st, "bottom")? {
+            if crate::scan::scan_keyword(st, "fixed")? {
+                tail.set_subtype(&mut st.mem, BOTTOM_ACC + 1);
+            } else {
+                tail.set_subtype(&mut st.mem, BOTTOM_ACC);
+            }
+        }
+        st.scanner.cur_val = crate::scan::scan_umath_code(st)?;
+    } else {
+        crate::scan::scan_fifteen_bit_int(st)?;
+        st.scanner.cur_val = crate::scan::math_code_from_tex(st.scanner.cur_val);
+    }
+
+    let value = st.scanner.cur_val;
+    st.mem.finish_accent_math_field(&st.eqtb, tail, value);
+    crate::scan::scan_math(st, tail.nucleus())
+}
