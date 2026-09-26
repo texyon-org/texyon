@@ -1,15 +1,17 @@
 //! The page builder: `build_page` and `fire_up`.
 
 use crate::consts::{
-    AWFUL_BAD, BOX_BASE, BOX_NODE_SIZE, COUNT_BASE, DIMEN_BASE, EJECT_PENALTY, GLUE_BASE,
-    IGNORE_DEPTH, INT_BASE, LOCAL_BASE, MAX_HALFWORD, MEM_TOP, OUTPUT_TEXT, SCALED_BASE, SKIP_BASE,
-    TEX_NULL, VMODE,
+    AWFUL_BAD, BOX_BASE, BOX_NODE_SIZE, COUNT_BASE, DIMEN_BASE, DIMEN_PAR_MAX_DEPTH,
+    DIMEN_PAR_VFUZZ, DIMEN_PAR_VSIZE, EJECT_PENALTY, GLUE_BASE, GLUE_PAR_SPLIT_TOP_SKIP,
+    GLUE_PAR_TOP_SKIP, IGNORE_DEPTH, INT_BASE, INT_PAR_HOLDING_INSERTS, INT_PAR_MAX_DEAD_CYCLES,
+    INT_PAR_OUTPUT_PENALTY, INT_PAR_SAVING_VDISCARDS, INT_PAR_VBADNESS, LOCAL_BASE,
+    LOCAL_OUTPUT_ROUTINE, MAX_HALFWORD, MEM_TOP, OUTPUT_TEXT, SCALED_BASE, SKIP_BASE, TEX_NULL,
+    VMODE,
 };
 use crate::errors::ErrorOutcome;
 use crate::helpers::badness;
 use crate::main_control::{
-    add_token_ref, fetch_box, help, ADDITIONAL, COPY_CODE, GLUE_PAR_SPLIT_TOP_SKIP, LAST_BOX_CODE,
-    LOCAL_OUTPUT_ROUTINE, NORMAL,
+    add_token_ref, fetch_box, help, ADDITIONAL, COPY_CODE, LAST_BOX_CODE, NORMAL,
 };
 use crate::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
 use crate::node::{
@@ -41,16 +43,6 @@ const DEPLORABLE: i32 = 100_000;
 const TOP_MARK_CODE: usize = 0;
 const FIRST_MARK_CODE: usize = 1;
 const BOT_MARK_CODE: usize = 2;
-
-const INT_PAR_VBADNESS: i32 = 27;
-const INT_PAR_OUTPUT_PENALTY: i32 = 39;
-const INT_PAR_MAX_DEAD_CYCLES: i32 = 40;
-const INT_PAR_HOLDING_INSERTS: i32 = 53;
-const INT_PAR_SAVING_VDISCARDS: i32 = 63;
-const DIMEN_PAR_VSIZE: i32 = 4;
-const DIMEN_PAR_MAX_DEPTH: i32 = 5;
-const DIMEN_PAR_VFUZZ: i32 = 9;
-const GLUE_PAR_TOP_SKIP: i16 = 9;
 
 pub(crate) enum PageBuildAbort {
     Input(crate::input::InputAbort),
@@ -247,7 +239,7 @@ fn place_insertion_in(
         }
         s.set_link(&mut st.mem, MemPtr::NULL);
         st.eqtb.set_b32s1(
-            GLUE_BASE + GLUE_PAR_SPLIT_TOP_SKIP,
+            GLUE_BASE + GLUE_PAR_SPLIT_TOP_SKIP as i32,
             ins.split_top_ptr(&st.mem).0,
         );
         let pruned = crate::packaging::prune_page_top(
@@ -327,7 +319,7 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
     }
 
     st.shipout.insert_penalties = 0;
-    let save_split_top_skip = st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPLIT_TOP_SKIP);
+    let save_split_top_skip = st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPLIT_TOP_SKIP as i32);
     let process_inserts = st.eqtb.b32s1(INT_BASE + INT_PAR_HOLDING_INSERTS) <= 0
         && !st.config.semantic_pagination_enabled;
     if process_inserts {
@@ -382,8 +374,10 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
         }
         p = prev_p.link(&st.mem);
     }
-    st.eqtb
-        .set_b32s1(GLUE_BASE + GLUE_PAR_SPLIT_TOP_SKIP, save_split_top_skip);
+    st.eqtb.set_b32s1(
+        GLUE_BASE + GLUE_PAR_SPLIT_TOP_SKIP as i32,
+        save_split_top_skip,
+    );
 
     if !p.is_null() {
         if st.mem.link_ptr(CONTRIB_HEAD).is_null() {

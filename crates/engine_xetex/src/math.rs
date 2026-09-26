@@ -1,12 +1,19 @@
 //! Math mode: noad construction and `mlist_to_hlist`, from `xetex/xetex-math.c`.
 use crate::consts::{
     ACCENT_NOAD_SIZE, A_LEADERS, BEFORE, BIGGEST_LANG, BOX_NODE_SIZE, CUR_FONT_LOC, DEL_CODE_BASE,
-    DIMEN_BASE, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DLIST, EXPLICIT, FONT_BASE,
-    FRACTION_NOAD_SIZE, GLUE_BASE, HMODE, INT_BASE, INT_PAR_HANG_AFTER, INT_PAR_LANGUAGE,
-    INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_TEXXET, LEFT_TO_RIGHT, LIG_TAG,
-    LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_FONT_BASE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MMODE, MU_GLUE,
-    NOAD_SIZE, NUMBER_MATH_FAMILIES, RADICAL_NOAD_SIZE, RIGHT_TO_LEFT, SCRIPT_SIZE, SPACE_CODE,
-    STYLE_NODE_SIZE, SUB_BOX, TEXT_SIZE,
+    DIMEN_BASE, DIMEN_PAR_DELIMITER_SHORTFALL, DIMEN_PAR_DISPLAY_INDENT, DIMEN_PAR_DISPLAY_WIDTH,
+    DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DIMEN_PAR_MATH_SURROUND,
+    DIMEN_PAR_NULL_DELIMITER_SPACE, DIMEN_PAR_PRE_DISPLAY_SIZE, DIMEN_PAR_SCRIPT_SPACE, DLIST,
+    EXPLICIT, FONT_BASE, FRACTION_NOAD_SIZE, GLUE_BASE, GLUE_PAR_ABOVE_DISPLAY_SHORT_SKIP,
+    GLUE_PAR_ABOVE_DISPLAY_SKIP, GLUE_PAR_BELOW_DISPLAY_SHORT_SKIP, GLUE_PAR_BELOW_DISPLAY_SKIP,
+    GLUE_PAR_LEFT_SKIP, GLUE_PAR_MED_MU_SKIP, GLUE_PAR_RIGHT_SKIP, GLUE_PAR_THICK_MU_SKIP,
+    GLUE_PAR_THIN_MU_SKIP, HMODE, INT_BASE, INT_PAR_BIN_OP_PENALTY, INT_PAR_CUR_FAM,
+    INT_PAR_DELIMITER_FACTOR, INT_PAR_HANG_AFTER, INT_PAR_LANGUAGE, INT_PAR_LEFT_HYPHEN_MIN,
+    INT_PAR_POST_DISPLAY_PENALTY, INT_PAR_PRE_DISPLAY_DIRECTION, INT_PAR_PRE_DISPLAY_PENALTY,
+    INT_PAR_REL_PENALTY, INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_TEXXET, LEFT_TO_RIGHT, LIG_TAG,
+    LOCAL_BASE, LOCAL_EVERY_DISPLAY, LOCAL_EVERY_MATH, LOCAL_PAR_SHAPE, MATH_FONT_BASE,
+    MAX_HALFWORD, MEDIUM_NODE_SIZE, MMODE, MU_GLUE, NOAD_SIZE, NUMBER_MATH_FAMILIES,
+    RADICAL_NOAD_SIZE, RIGHT_TO_LEFT, SCRIPT_SIZE, SPACE_CODE, STYLE_NODE_SIZE, SUB_BOX, TEXT_SIZE,
 };
 use crate::ext::real_get_native_glyph;
 use crate::fonts::{char_depth, char_height, char_italic, char_width, CharInfo};
@@ -23,9 +30,6 @@ use crate::state::{
     EngineState, EqtbState, FontState, GroupCode, MemState, SaveStackState, ScannerState,
 };
 use crate::units::{GlueSign, MemIdx, MemPtr, NodeType, Scaled};
-
-const INT_PAR_CUR_FAM: i32 = 44;
-const LOCAL_EVERY_MATH: i32 = 3;
 
 const EVERY_MATH_TEXT: u16 = 9;
 
@@ -46,30 +50,18 @@ const NORMAL: u16 = 0;
 const LIMITS: u16 = 1;
 const LIST_TAG: u16 = 2;
 const EXT_TAG: u16 = 3;
-const DIMEN_PAR_NULL_DELIMITER_SPACE: i32 = 11;
 const GLYPH_NODE_SIZE: i32 = 5;
 const DISPLAYOPERATORMINHEIGHT: i32 = 3;
 const MATH_TEXT_CHAR: i32 = 4;
-const INT_PAR_DELIMITER_FACTOR: i32 = 18;
-const DIMEN_PAR_DELIMITER_SHORTFALL: i32 = 10;
 const ACCENTBASEHEIGHT: i32 = 6;
 const X_HEIGHT_CODE: i32 = 5;
 
-const GLUE_PAR_RIGHT_SKIP: i32 = 8;
-const GLUE_PAR_LEFT_SKIP: i32 = 7;
-const DIMEN_PAR_PRE_DISPLAY_SIZE: i32 = 13;
-const DIMEN_PAR_DISPLAY_WIDTH: i32 = 14;
-const DIMEN_PAR_DISPLAY_INDENT: i32 = 15;
-const INT_PAR_PRE_DISPLAY_DIRECTION: i32 = 61;
-const INT_PAR_BIN_OP_PENALTY: i32 = 9;
-const INT_PAR_REL_PENALTY: i32 = 10;
 const QUAD_CODE: i32 = 6;
 const L_CODE: i32 = 4;
 const R_CODE: i32 = 8;
 const BEGIN_L_CODE: i16 = 6;
 const END_L_CODE: i16 = 7;
 const EVERY_DISPLAY_TEXT: u16 = 10;
-const LOCAL_EVERY_DISPLAY: i32 = 4;
 
 const SCRIPT_SCRIPT_SIZE: i32 = 512;
 const TOTAL_MATHSY_PARAMS: i32 = 22;
@@ -99,17 +91,6 @@ const FIL: usize = 1;
 const FILL: usize = 2;
 const FILLL: usize = 3;
 const INF_PENALTY: i32 = 10000;
-const DIMEN_PAR_MATH_SURROUND: i32 = 1;
-const DIMEN_PAR_SCRIPT_SPACE: i32 = 12;
-const INT_PAR_PRE_DISPLAY_PENALTY: i32 = 11;
-const INT_PAR_POST_DISPLAY_PENALTY: i32 = 12;
-const GLUE_PAR_ABOVE_DISPLAY_SKIP: i16 = 3;
-const GLUE_PAR_BELOW_DISPLAY_SKIP: i16 = 4;
-const GLUE_PAR_ABOVE_DISPLAY_SHORT_SKIP: i16 = 5;
-const GLUE_PAR_BELOW_DISPLAY_SHORT_SKIP: i16 = 6;
-const GLUE_PAR_THIN_MU_SKIP: i32 = 16;
-const GLUE_PAR_MED_MU_SKIP: i32 = 17;
-const GLUE_PAR_THICK_MU_SKIP: i32 = 18;
 const ADDITIONAL: i16 = 1;
 const EXACTLY: i16 = 0;
 const AFTER: i16 = 1;
@@ -2278,7 +2259,7 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                     _ => return Err(NodeRecycleAbort::Confusion(c"mlist4").into()),
                 };
                 if x != 0 {
-                    let g = MemPtr::from_raw(st.eqtb.b32s1(GLUE_BASE + x));
+                    let g = MemPtr::from_raw(st.eqtb.b32s1(GLUE_BASE + x as i32));
                     let mu = st.scanner.cur_mu;
                     let y = math_glue_in(st, g, mu)?;
                     let z = crate::mem::alloc_glue(&mut st.mem, y.ptr())
@@ -3319,7 +3300,7 @@ fn app_display_in(
         .ok_or(NodeRecycleAbort::Overflow)?
         .ptr();
     if let Ok(AnyNode::Glue(tg)) = st.mem.classify(MemIdx::new(t.0)) {
-        let skip = crate::mem::alloc_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR_RIGHT_SKIP as i16)
+        let skip = crate::mem::alloc_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR_RIGHT_SKIP)
             .ok_or(NodeRecycleAbort::Overflow)?;
         q.set_link(&mut st.mem, skip.ptr());
         skip.set_link(&mut st.mem, u);
@@ -3335,7 +3316,7 @@ fn app_display_in(
         .ok_or(NodeRecycleAbort::Overflow)?
         .ptr();
     if let Ok(AnyNode::Glue(rg)) = st.mem.classify(MemIdx::new(r.0)) {
-        let skip = crate::mem::alloc_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR_LEFT_SKIP as i16)
+        let skip = crate::mem::alloc_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR_LEFT_SKIP)
             .ok_or(NodeRecycleAbort::Overflow)?;
         u.set_link(&mut st.mem, skip.ptr());
         skip.set_link(&mut st.mem, MemPtr::from_raw(p));
@@ -3672,11 +3653,11 @@ fn pre_display_direction(st: &EngineState) -> i32 {
 }
 
 /// A kern, or the parameter glue when that skip is nonzero.
-fn side_skip_in(st: &mut EngineState, param: i32) -> Result<MemPtr, NodeRecycleAbort> {
-    let p = if st.eqtb.b32s1(GLUE_BASE + param) == 0 {
+fn side_skip_in(st: &mut EngineState, param: i16) -> Result<MemPtr, NodeRecycleAbort> {
+    let p = if st.eqtb.b32s1(GLUE_BASE + param as i32) == 0 {
         alloc_kern(&mut st.mem, 0).map(|k| k.ptr())
     } else {
-        crate::mem::alloc_param_glue(&mut st.mem, &st.eqtb, param as i16).map(|g| g.ptr())
+        crate::mem::alloc_param_glue(&mut st.mem, &st.eqtb, param).map(|g| g.ptr())
     };
     p.ok_or(NodeRecycleAbort::Overflow)
 }

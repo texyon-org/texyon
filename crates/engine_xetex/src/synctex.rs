@@ -7,14 +7,13 @@ use crate::bridge::{
     issue_error_cstr, issue_warning_cstr, ttstub_output_close, ttstub_output_open,
     ttstub_output_write,
 };
-use crate::consts::{INT_BASE, INVALID_HANDLE};
+use crate::consts::{INT_BASE, INT_PAR_SYNCTEX, INVALID_HANDLE};
 use crate::node::{AnyBox, AnyNode, HListNode, KernNode, MathNode, NodePtr, VListNode};
 use crate::shipout::ONE_INCH;
 use crate::state::{EngineState, EqtbState, ShipoutState, SynctexCtxt};
 use crate::units::{MemIdx, MemPtr};
 use libc::c_char;
 
-const INT_PAR_SYNCTEX: i32 = 81;
 const SYNCTEX_VERSION: i32 = 1;
 /// The pseudo file of a resident compile, which only feeds the preview index.
 const PREVIEW_HANDLE: usize = usize::MAX;

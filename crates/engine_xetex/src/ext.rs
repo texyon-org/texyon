@@ -10,9 +10,10 @@ use libc::{c_char, c_double, c_float, c_int, c_long, c_uint, c_void};
 use crate::bridge::{diag_append_str, ttstub_input_get_size, ttstub_input_open, ttstub_input_read};
 use crate::cmd::EXTENSION;
 use crate::consts::{
-    CS_TOKEN_FLAG, CUR_FONT_LOC, FROZEN_CONTROL_SEQUENCE, HMODE, INSERTED, INT_BASE,
-    INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_XETEX_TRACING_FONTS, LEFT_SIDE,
-    MMODE, RIGHT_SIDE, SMALL_NODE_SIZE, VMODE,
+    CS_TOKEN_FLAG, CUR_FONT_LOC, FROZEN_SPECIAL, HMODE, INSERTED, INT_BASE,
+    INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_XETEX_DEFAULT_INPUT_ENCODING,
+    INT_PAR_XETEX_DEFAULT_INPUT_MODE, INT_PAR_XETEX_LINEBREAK_LOCALE, INT_PAR_XETEX_TRACING_FONTS,
+    INT_PAR_XETEX_USE_GLYPH_METRICS, LEFT_SIDE, MMODE, RIGHT_SIDE, SMALL_NODE_SIZE, VMODE,
 };
 use crate::expand::{XETEX_FEATURE_NAME_CODE, XETEX_SELECTOR_NAME_CODE};
 use crate::glyph_arena::{FixedPoint, GlyphBlob};
@@ -1962,16 +1963,10 @@ pub(crate) unsafe fn print_glyph_name_in(
 
 const LEFT_BRACE_TOKEN: i32 = 0x20_0000;
 const RIGHT_BRACE_TOKEN: i32 = 0x40_0000;
-const FROZEN_SPECIAL: i32 = FROZEN_CONTROL_SEQUENCE + 10;
 
 const OPEN_NODE_SIZE: i16 = 3;
 const WRITE_NODE_SIZE: i16 = 2;
 const GLYPH_NODE_SIZE: i16 = 5;
-
-const INT_PAR_XETEX_LINEBREAK_LOCALE: i32 = 66;
-const INT_PAR_XETEX_USE_GLYPH_METRICS: i32 = 72;
-const INT_PAR_XETEX_DEFAULT_INPUT_MODE: i32 = 75;
-const INT_PAR_XETEX_DEFAULT_INPUT_ENCODING: i32 = 76;
 
 // `\openout` .. `\special` and `\pdfsavepos` carry their whatsit subtype as the
 // command modifier.

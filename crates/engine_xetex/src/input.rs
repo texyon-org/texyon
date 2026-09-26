@@ -2,8 +2,8 @@
 
 use crate::cmd::ASSIGN_TOKS;
 use crate::consts::{
-    BACKED_UP, CS_TOKEN_FLAG, FROZEN_CONTROL_SEQUENCE, INSERTED, INT_BASE, LOCAL_BASE, OUTPUT_TEXT,
-    TEX_NULL, TOKEN_LIST, WRITE_TEXT,
+    BACKED_UP, CS_TOKEN_FLAG, FROZEN_RELAX, INSERTED, INT_BASE, INT_PAR_TRACING_MACROS, LOCAL_BASE,
+    LOCAL_OUTPUT_ROUTINE, OUTPUT_TEXT, TEX_NULL, TOKEN_LIST, WRITE_TEXT,
 };
 use crate::errors::{EngineAbort, ErrorOutcome};
 use crate::io::u_close;
@@ -24,11 +24,6 @@ pub(crate) const SKIP_BLANKS: u16 = 17;
 
 pub(crate) const LEFT_BRACE_LIMIT: i32 = 0x40_0000;
 pub(crate) const RIGHT_BRACE_LIMIT: i32 = 0x60_0000;
-
-pub(crate) const FROZEN_RELAX: i32 = FROZEN_CONTROL_SEQUENCE + 7;
-
-pub(crate) const INT_PAR_TRACING_MACROS: i32 = 30;
-const LOCAL_OUTPUT_ROUTINE: i32 = 1;
 
 pub(crate) enum InputAbort {
     Overflow {

@@ -4,15 +4,25 @@
 use crate::consts::{
     A_LEADERS, BACKED_UP, BIGGEST_CHAR, BIGGEST_LANG, BOX_BASE, BOX_NODE_SIZE, CAT_CODE_BASE,
     CHAR_CLASS_LIMIT, COUNT_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE,
-    DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DLIST, ETEX_PEN_BASE, EXPLICIT, FONT_BASE, GLUE_BASE,
-    GLUE_NODE, HMODE, IGNORE_DEPTH, INSERTED, INT_BASE, INT_PAR_HANG_AFTER, INT_PAR_LANGUAGE,
-    INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_LOOSENESS, INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_TEXXET,
-    KERN_NODE, LEFT_SIDE, LIG_TAG, LOCAL_BASE, LOCAL_PAR_SHAPE, MARGIN_KERN_NODE_SIZE,
-    MATH_CODE_BASE, MAX_HALFWORD, MMODE, MU_GLUE, MU_SKIP_BASE, NOAD_SIZE, NON_ADDRESS,
-    NORMAL_SCANNER, NULL_CS, NULL_FLAG, OUTPUT_TEXT, PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE,
-    SELECTOR_NEW_STRING, SELECTOR_NO_PRINT, SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE,
-    SKIP_BASE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, SPACE_CODE, SUB_BOX, TEX_NULL, TOKEN_LIST,
-    TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, VMODE,
+    DIMEN_PAR_BOX_MAX_DEPTH, DIMEN_PAR_DISPLAY_INDENT, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE,
+    DIMEN_PAR_OVERFULL_RULE, DIMEN_PAR_PAR_INDENT, DIMEN_PAR_SPLIT_MAX_DEPTH, DLIST, ETEX_PEN_BASE,
+    EXPLICIT, FONT_BASE, FONT_ID_BASE, FROZEN_CR, FROZEN_END_GROUP, FROZEN_END_TEMPLATE,
+    FROZEN_RIGHT, GLUE_BASE, GLUE_NODE, GLUE_PAR_ABOVE_DISPLAY_SKIP, GLUE_PAR_BELOW_DISPLAY_SKIP,
+    GLUE_PAR_PAR_SKIP, GLUE_PAR_SPACE_SKIP, GLUE_PAR_SPLIT_TOP_SKIP, GLUE_PAR_TAB_SKIP,
+    GLUE_PAR_XSPACE_SKIP, HASH_BASE, HMODE, IGNORE_DEPTH, INSERTED, INT_BASE,
+    INT_PAR_FLOATING_PENALTY, INT_PAR_GLOBAL_DEFS, INT_PAR_HANG_AFTER, INT_PAR_LANGUAGE,
+    INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_LOOSENESS, INT_PAR_POST_DISPLAY_PENALTY,
+    INT_PAR_PRE_DISPLAY_PENALTY, INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_TEXXET,
+    INT_PAR_TRACING_COMMANDS, INT_PAR_TRACING_LOST_CHARS, INT_PAR_XETEX_DASH_BREAK,
+    INT_PAR_XETEX_INTERWORD_SPACE_SHAPING, INT_PAR_XETEX_INTER_CHAR_TOKENS, INT_PAR_XETEX_UPWARDS,
+    INT_PAR_XETEX_USE_GLYPH_METRICS, KERN_NODE, LEFT_SIDE, LIG_TAG, LOCAL_BASE, LOCAL_EVERY_CR,
+    LOCAL_EVERY_HBOX, LOCAL_EVERY_JOB, LOCAL_EVERY_PAR, LOCAL_EVERY_VBOX, LOCAL_OUTPUT_ROUTINE,
+    LOCAL_PAR_SHAPE, LOCAL_XETEX_INTER_CHAR_TOKS, MARGIN_KERN_NODE_SIZE, MATH_CODE_BASE,
+    MAX_HALFWORD, MMODE, MU_GLUE, MU_SKIP_BASE, NOAD_SIZE, NON_ADDRESS, NORMAL_SCANNER, NULL_CS,
+    NULL_FLAG, OUTPUT_TEXT, PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE, SELECTOR_NEW_STRING,
+    SELECTOR_NO_PRINT, SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SMALL_NODE_SIZE,
+    SPACE_ADJUSTMENT, SPACE_CODE, SUB_BOX, TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR,
+    UNDEFINED_PRIMITIVE, VMODE,
 };
 use crate::ext::{append_src_special_in, apply_mapping, do_extension_in};
 use crate::fonts::read_font_info_in;
@@ -99,47 +109,7 @@ const TAB_TOKEN: i32 = 0x80_0000;
 const OTHER_TOKEN: i32 = 0x180_0000;
 const PROTECTED_TOKEN: i32 = 0x1C0_0000 + 1;
 
-const HASH_BASE: i32 = 2_228_226;
-const FROZEN_CR: i32 = 2_243_226 + 1;
-const FROZEN_END_GROUP: i32 = 2_243_226 + 2;
-const FROZEN_RIGHT: i32 = 2_243_226 + 3;
-const FROZEN_END_TEMPLATE: i32 = 2_243_226 + 5;
-const FONT_ID_BASE: i32 = 2_245_338;
-
-pub(crate) const LOCAL_OUTPUT_ROUTINE: i32 = 1;
-const LOCAL_EVERY_PAR: i32 = 2;
-const LOCAL_EVERY_HBOX: i32 = 5;
-const LOCAL_EVERY_VBOX: i32 = 6;
-const LOCAL_EVERY_JOB: i32 = 7;
-const LOCAL_EVERY_CR: i32 = 8;
-const LOCAL_XETEX_INTER_CHAR_TOKS: i32 = 11;
-
-const GLUE_PAR_PAR_SKIP: i16 = 2;
-const GLUE_PAR_ABOVE_DISPLAY: i16 = 3;
-const GLUE_PAR_BELOW_DISPLAY: i16 = 4;
-pub(crate) const GLUE_PAR_SPLIT_TOP_SKIP: i32 = 10;
-const GLUE_PAR_TAB_SKIP: i16 = 11;
-const GLUE_PAR_SPACE_SKIP: i16 = 12;
-const GLUE_PAR_XSPACE_SKIP: i16 = 13;
 const GLUE_BASE_TAB_SKIP: i32 = GLUE_BASE + GLUE_PAR_TAB_SKIP as i32;
-
-const INT_PAR_PRE_DISPLAY_PENALTY: i32 = 11;
-const INT_PAR_POST_DISPLAY_PENALTY: i32 = 12;
-const INT_PAR_TRACING_LOST_CHARS: i32 = 35;
-const INT_PAR_TRACING_COMMANDS: i32 = 36;
-const INT_PAR_FLOATING_PENALTY: i32 = 42;
-const INT_PAR_GLOBAL_DEFS: i32 = 43;
-const INT_PAR_XETEX_DASH_BREAK: i32 = 70;
-const INT_PAR_XETEX_UPWARDS: i32 = 71;
-const INT_PAR_XETEX_USE_GLYPH_METRICS: i32 = 72;
-const INT_PAR_XETEX_INTER_CHAR_TOKENS: i32 = 73;
-const INT_PAR_XETEX_INTERWORD_SPACE_SHAPING: i32 = 78;
-
-const DIMEN_PAR_PAR_INDENT: i32 = 0;
-const DIMEN_PAR_SPLIT_MAX_DEPTH: i32 = 6;
-const DIMEN_PAR_BOX_MAX_DEPTH: i32 = 7;
-const DIMEN_PAR_DISPLAY_INDENT: i32 = 15;
-const DIMEN_PAR_OVERFULL_RULE: i32 = 16;
 
 // `cur_chr` modifiers.
 pub(crate) const BOX_CODE: i32 = 0;
@@ -558,7 +528,7 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
         let pre_penalty = st.eqtb.b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_PENALTY);
         let pen = alloc_penalty(&mut st.mem, pre_penalty).ok_or(NodeRecycleAbort::Overflow)?;
         tail_append(st, pen.ptr());
-        let above = alloc_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_ABOVE_DISPLAY)
+        let above = alloc_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_ABOVE_DISPLAY_SKIP)
             .ok_or(NodeRecycleAbort::Overflow)?;
         tail_append(st, above.ptr());
         st.input.cur_list.tail.set_link(&mut st.mem, rows);
@@ -568,7 +538,7 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
         let post_penalty = st.eqtb.b32s1(INT_BASE + INT_PAR_POST_DISPLAY_PENALTY);
         let pen = alloc_penalty(&mut st.mem, post_penalty).ok_or(NodeRecycleAbort::Overflow)?;
         tail_append(st, pen.ptr());
-        let below = alloc_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_BELOW_DISPLAY)
+        let below = alloc_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_BELOW_DISPLAY_SKIP)
             .ok_or(NodeRecycleAbort::Overflow)?;
         tail_append(st, below.ptr());
         st.input.cur_list.set_aux_s1(aux_save_s1);
@@ -2079,7 +2049,7 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
         }
         GroupCode::Insert => {
             end_graf_in(st)?;
-            let split_top_skip = st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPLIT_TOP_SKIP);
+            let split_top_skip = st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPLIT_TOP_SKIP as i32);
             crate::mem::add_glue_ref(&mut st.mem, split_top_skip);
             let d = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_SPLIT_MAX_DEPTH);
             let f = st.eqtb.b32s1(INT_BASE + INT_PAR_FLOATING_PENALTY);

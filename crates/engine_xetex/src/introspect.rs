@@ -4,8 +4,7 @@
 use std::collections::HashMap;
 
 use crate::cmd::{CALL, UNDEFINED_CS};
-use crate::consts::{EQTB_SIZE, FROZEN_CONTROL_SEQUENCE, TOO_BIG_CHAR};
-use crate::hash::HASH_BASE;
+use crate::consts::{EQTB_SIZE, FROZEN_CONTROL_SEQUENCE, HASH_BASE, TOO_BIG_CHAR};
 use crate::scan::{END_MATCH_TOKEN, MATCH_TOKEN, PROTECTED_TOKEN};
 use crate::state::EngineState;
 

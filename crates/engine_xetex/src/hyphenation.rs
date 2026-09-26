@@ -5,7 +5,8 @@ use std::ffi::CStr;
 use crate::cmd::{CHAR_GIVEN, CHAR_NUM, LETTER, OTHER_CHAR, RIGHT_BRACE, SPACER};
 pub(crate) use crate::consts::BIGGEST_LANG;
 use crate::consts::{
-    BIGGEST_CHAR, INT_BASE, INT_PAR_LANGUAGE, LC_CODE_BASE, MIN_TRIE_OP, TOO_BIG_CHAR,
+    BIGGEST_CHAR, INT_BASE, INT_PAR_LANGUAGE, INT_PAR_SAVING_HYPH_CODES, LC_CODE_BASE, MIN_TRIE_OP,
+    TOO_BIG_CHAR,
 };
 use crate::main_control::{mc_propagate_error, MainControlAbort};
 use crate::state::{EngineState, EqtbState, HyphState};
@@ -16,7 +17,6 @@ const NEG_TRIE_OP_SIZE: i32 = -TRIE_OP_SIZE;
 pub(crate) const MAX_TRIE_OP: u16 = 65_535;
 pub(crate) const HYPH_PRIME: i32 = 607;
 
-const INT_PAR_SAVING_HYPH_CODES: i32 = 64;
 const APPENDIX_H: &CStr = c"(See Appendix H.)";
 
 #[inline]

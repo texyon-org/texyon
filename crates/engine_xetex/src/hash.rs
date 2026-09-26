@@ -1,16 +1,15 @@
 //! Control-sequence hash table lookups.
 
 use crate::consts::{
-    BIGGEST_CHAR, EQTB_SIZE, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE, UNDEFINED_PRIMITIVE,
+    BIGGEST_CHAR, EQTB_SIZE, HASH_BASE, PRIM_SIZE, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
+    UNDEFINED_PRIMITIVE,
 };
 use crate::state::{EqtbState, StringsState};
 use crate::string_pool::{length, make_string, str_eq_buf, str_eq_str};
 
 pub(crate) const HASH_OFFSET: i32 = 514;
-pub(crate) const HASH_BASE: i32 = 2_228_226;
 pub(crate) const HASH_SIZE: i32 = 15000;
 pub(crate) const HASH_PRIME: i32 = 8501;
-pub(crate) const PRIM_SIZE: i32 = 2100;
 const PRIM_PRIME: i32 = 1777;
 const PRIM_BASE: i32 = 1;
 

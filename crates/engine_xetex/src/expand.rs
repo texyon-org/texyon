@@ -6,15 +6,17 @@ use crate::cmd::{
     RELAX, THE, TOP_BOT_MARK, UNDEFINED_CS,
 };
 use crate::consts::{
-    ACTIVE_BASE, CS_TOKEN_FLAG, ELSE_CODE, FI_CODE, FROZEN_CONTROL_SEQUENCE, FROZEN_ENDV,
-    FROZEN_PRIMITIVE, HMODE, INSERTED, INT_BASE, INT_PAR_TRACING_IFS, MMODE, NORMAL_SCANNER,
-    NULL_CS, OR_CODE, PRIM_EQTB_BASE, SELECTOR_NEW_STRING, SINGLE_BASE, TEX_NULL, TOKEN_LIST,
-    TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
+    ACTIVE_BASE, CS_TOKEN_FLAG, ELSE_CODE, FI_CODE, FROZEN_DONT_EXPAND, FROZEN_ENDV,
+    FROZEN_PRIMITIVE, GLUE_PAR_LEFT_SKIP, GLUE_PAR_RIGHT_SKIP, HMODE, INSERTED, INT_BASE,
+    INT_PAR_TRACING_COMMANDS, INT_PAR_TRACING_IFS, INT_PAR_TRACING_MACROS,
+    INT_PAR_TRACING_STACK_LEVELS, MMODE, NORMAL_SCANNER, NULL_CS, OR_CODE, PRIM_EQTB_BASE,
+    SELECTOR_NEW_STRING, SINGLE_BASE, TEX_NULL, TOKEN_LIST, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE,
+    UNLESS_CODE, VMODE,
 };
 use crate::errors::error_in;
 use crate::input::{
-    back_error_in, back_input_in, begin_token_list_in, InputAbort, INT_PAR_TRACING_MACROS,
-    LEFT_BRACE_LIMIT, MACRO, MARK_TEXT, RIGHT_BRACE_LIMIT, V_TEMPLATE,
+    back_error_in, back_input_in, begin_token_list_in, InputAbort, LEFT_BRACE_LIMIT, MACRO,
+    MARK_TEXT, RIGHT_BRACE_LIMIT, V_TEMPLATE,
 };
 use crate::mem::{BACKUP_HEAD, GARBAGE, TEMP_HEAD};
 use crate::node::{AnyBox, AnyNode, NodePtr, SaNode};
@@ -90,11 +92,6 @@ pub(crate) const JOB_NAME_CODE: i32 = 40;
 
 pub(crate) const MARKS_CODE: i32 = 5;
 const TOO_BIG_USV: i32 = BIGGEST_USV + 1;
-const FROZEN_DONT_EXPAND: i32 = FROZEN_CONTROL_SEQUENCE + 9;
-const GLUE_PAR_LEFT_SKIP: u16 = 7;
-const GLUE_PAR_RIGHT_SKIP: u16 = 8;
-const INT_PAR_TRACING_COMMANDS: i32 = 36;
-const INT_PAR_TRACING_STACK_LEVELS: i32 = 55;
 
 pub(crate) fn ins_the_toks_in(st: &mut EngineState) -> Result<(), SccAbort> {
     let tail = crate::scan::the_toks_in(st)?;
@@ -568,7 +565,7 @@ fn scan_nonnegative_int_in(
 }
 
 /// Whether a node may be skipped when looking for a margin kern at the edge of a line.
-fn is_margin_kern_filler(mem: &crate::state::MemState, node: AnyNode, par_skip: u16) -> bool {
+fn is_margin_kern_filler(mem: &crate::state::MemState, node: AnyNode, par_skip: i16) -> bool {
     match node {
         AnyNode::Ins(_) | AnyNode::Mark(_) | AnyNode::Adjust(_) | AnyNode::Penalty(_) => true,
         AnyNode::Disc(d) => {
@@ -576,7 +573,7 @@ fn is_margin_kern_filler(mem: &crate::state::MemState, node: AnyNode, par_skip: 
         }
         AnyNode::Math(m) => m.width(mem).0 == 0,
         AnyNode::Kern(k) => k.width(mem).0 == 0 || k.subtype(mem) == 0,
-        AnyNode::Glue(g) => g.glue_ptr(mem).0 == 0 || g.subtype(mem) == par_skip + 1,
+        AnyNode::Glue(g) => g.glue_ptr(mem).0 == 0 || g.subtype(mem) == (par_skip + 1) as u16,
         AnyNode::HList(h) => {
             h.width(mem).0 == 0
                 && h.height(mem).0 == 0
@@ -593,7 +590,7 @@ fn print_margin_kern_in(
     st: &mut EngineState,
     mut p: i32,
     side: u16,
-    par_skip: u16,
+    par_skip: i16,
     next: impl Fn(&crate::state::MemState, i32) -> i32,
 ) {
     let width = loop {
