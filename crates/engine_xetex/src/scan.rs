@@ -40,7 +40,9 @@ use crate::input::{
 };
 use crate::main_control::{LP_CODE_BASE, RP_CODE_BASE};
 use crate::mem::{BACKUP_HEAD, OMIT_TEMPLATE, TEMP_HEAD};
-use crate::node::{AnyBox, AnyNode, GlueSpecNode, NodePtr, RuleDimen, RuleNode, SaNode};
+use crate::node::{
+    AlignRecord, AnyBox, AnyNode, GlueSpecNode, NodePtr, RuleDimen, RuleNode, SaNode,
+};
 use crate::output::{
     capture_to_diagnostic_in, error_here_with_diagnostic_in, print_cmd_chr_in, print_cstr_in,
     print_err_in, print_esc_cstr_in, print_int_in, print_nl_cstr_in,
@@ -1454,13 +1456,13 @@ pub(crate) fn get_next_in(st: &mut EngineState) -> GetNextOutcome {
                     c"(interwoven alignment preambles are not allowed)".as_ptr(),
                 ));
             }
-            let saved_cmd = st.mem.b32s0(st.scanner.cur_align + 5);
-            st.mem
-                .set_b32s0(st.scanner.cur_align + 5, st.scanner.cur_chr);
+            let column = NodePtr::<AlignRecord>::at(st.scanner.cur_align);
+            let saved_cmd = column.extra_info(&st.mem);
+            column.set_extra_info(&mut st.mem, st.scanner.cur_chr);
             let template = if saved_cmd as u8 == OMIT {
                 OMIT_TEMPLATE.0
             } else {
-                st.mem.b32s1(st.scanner.cur_align + 2)
+                column.v_part(&st.mem).0
             };
             try_in!(begin_token_list_in(st, template, V_TEMPLATE));
             st.scanner.cur_cmd = saved_cmd as u8;

@@ -516,8 +516,8 @@ fn initialize_more_initex_variables_in(st: &mut EngineState, format_ident: i32) 
     }
 
     mem.set_b32s0(OMIT_TEMPLATE, CS_TOKEN_FLAG + FROZEN_END_TEMPLATE);
-    mem.set_b32s1(END_SPAN, u16::MAX as i32 + 1);
-    mem.set_b32s0(END_SPAN, TEX_NULL);
+    END_SPAN.set_span_count(mem, u16::MAX as i32 + 1);
+    mem.set_b32s0(END_SPAN.idx(), TEX_NULL);
     mem.set_b16s1(ACTIVE_LIST, HYPHENATED as u16);
     mem.set_b32s0(ACTIVE_LIST + 1, MAX_HALFWORD);
     mem.set_b16s0(ACTIVE_LIST, 0);

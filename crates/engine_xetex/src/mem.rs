@@ -9,7 +9,7 @@ use crate::mem_types::ListStateRecord;
 use crate::node::{
     CharNode, ChoiceNode, DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, LigItem,
     LigatureNode, MarginKernNode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode,
-    StyleNode, WhatsitNode, WhatsitSubtype,
+    SpanNode, StyleNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::state::{EqtbState, MemState};
 use crate::units::{FontId, GlueSign, MemAddr, MemIdx, MemPtr, Scaled};
@@ -34,7 +34,9 @@ pub(crate) const HOLD_HEAD: MemPtr = MemPtr(MEM_TOP - 4);
 pub(crate) const ADJUST_HEAD: MemPtr = MemPtr(MEM_TOP - 5);
 pub(crate) const ACTIVE_LIST: MemPtr = MemPtr(MEM_TOP - 7);
 pub(crate) const ALIGN_HEAD: MemPtr = MemPtr(MEM_TOP - 8);
-pub(crate) const END_SPAN: MemPtr = MemPtr(MEM_TOP - 9);
+// SAFETY: the static word at `MEM_TOP - 9` ends every span list.
+pub(crate) const END_SPAN: NodePtr<SpanNode> =
+    unsafe { NodePtr::from_idx_unchecked(MemIdx(MEM_TOP - 9)) };
 pub(crate) const OMIT_TEMPLATE: MemPtr = MemPtr(MEM_TOP - 10);
 pub(crate) const NULL_LIST: MemPtr = MemPtr(MEM_TOP - 11);
 pub(crate) const LIG_TRICK: MemPtr = MemPtr(MEM_TOP - 12);

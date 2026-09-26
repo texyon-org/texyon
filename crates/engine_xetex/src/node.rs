@@ -297,6 +297,14 @@ node_kinds! {
     CondNode;
     /// A one-word character node. A ligature's +1 word has the same layout.
     CharNode;
+    /// An alignment preamble column: a null box holding the column's
+    /// templates, natural width and span list.
+    AlignRecord;
+    /// An entry of a column's span list, ended by `END_SPAN`. The list head is
+    /// the align record itself, which shares the `info` and `width` words.
+    SpanNode;
+    /// A saved outer alignment on the `align_ptr` stack.
+    AlignStackNode;
 }
 
 impl FixedNode for GlueSpecNode {
@@ -321,6 +329,14 @@ impl FixedNode for CondNode {
 }
 impl FixedNode for MovementNode {
     const SIZE: i32 = MOVEMENT_NODE_SIZE;
+    const TYPE: Option<NodeType> = None;
+}
+impl FixedNode for SpanNode {
+    const SIZE: i32 = 2;
+    const TYPE: Option<NodeType> = None;
+}
+impl FixedNode for AlignStackNode {
+    const SIZE: i32 = 6;
     const TYPE: Option<NodeType> = None;
 }
 
@@ -352,9 +368,10 @@ macro_rules! impl_traits {
 impl_traits!(HasNodeHeader: HListNode, VListNode, RuleNode, InsNode, MarkNode, AdjustNode,
     LigatureNode, DiscNode, WhatsitNode, MathNode, GlueNode, KernNode, PenaltyNode, UnsetNode,
     StyleNode, ChoiceNode, EdgeNode, Noad, MarginKernNode, SaNode, PageInsNode);
-impl_traits!(HasLink: MovementNode, ActiveNode, DeltaNode, PassiveNode, CondNode, CharNode);
+impl_traits!(HasLink: MovementNode, ActiveNode, DeltaNode, PassiveNode, CondNode, CharNode,
+    AlignRecord, AlignStackNode);
 impl_traits!(HasWidth: HListNode, VListNode, UnsetNode, WhatsitNode, MathNode, KernNode,
-    EdgeNode, MarginKernNode, GlueSpecNode);
+    EdgeNode, MarginKernNode, GlueSpecNode, AlignRecord, SpanNode);
 impl_traits!(HasHeightDepth: HListNode, VListNode, UnsetNode, WhatsitNode, InsNode);
 impl_traits!(HasListPtr: HListNode, VListNode, UnsetNode);
 impl_traits!(IsBox: HListNode, VListNode);
@@ -364,7 +381,7 @@ impl_traits!(HasSyncFields: HListNode, VListNode, RuleNode, GlueNode, KernNode, 
 pub trait ListRecord: NodeKind {}
 
 impl_traits!(ListRecord: SaNode, PageInsNode, MovementNode, ActiveNode, DeltaNode, PassiveNode,
-    LigItem, CondNode, CharNode);
+    LigItem, CondNode, CharNode, AlignRecord, SpanNode, AlignStackNode);
 
 impl<K: ListRecord> NodePtr<K> {
     /// The record at `p`, a non-null link of a list of `K` records.
@@ -1087,6 +1104,101 @@ impl NodePtr<UnsetNode> {
     }
 }
 
+// --- alignments ---
+
+/// A column of an alignment preamble or row. Columns alternate with tabskip glue.
+pub trait AlignColumn: HasLink {}
+
+impl_traits!(AlignColumn: AlignRecord, UnsetNode);
+
+impl<K: AlignColumn> NodePtr<K> {
+    /// The column after tabskip glue `g`, `None` at the end of the list.
+    #[inline]
+    pub fn after_tab_skip(mem: &MemState, g: MemPtr) -> Option<Self> {
+        // SAFETY: tabskip glue is followed by a column or ends the list.
+        g.link(mem)
+            .as_idx()
+            .map(|idx| unsafe { NodePtr::from_idx_unchecked(idx) })
+    }
+
+    #[inline]
+    pub fn tab_skip(self, mem: &MemState) -> NodePtr<GlueNode> {
+        NodePtr::tab_skip_after(mem, self.ptr())
+    }
+
+    #[inline]
+    pub fn next_column(self, mem: &MemState) -> Option<Self> {
+        Self::after_tab_skip(mem, self.link(mem))
+    }
+}
+
+impl NodePtr<GlueNode> {
+    /// The tabskip glue linked from `ALIGN_HEAD` or an alignment column `p`.
+    #[inline]
+    pub fn tab_skip_after(mem: &MemState, p: MemPtr) -> Self {
+        // SAFETY: every column, and the preamble head, is followed by tabskip glue.
+        unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p.link(mem))) }
+    }
+}
+
+impl NodePtr<AlignRecord> {
+    fields! {
+        v_part / set_v_part: MemPtr = b32s1 @ 2;
+        u_part / set_u_part: MemPtr = b32s1 @ 3;
+        /// The command that ended the current entry of this column.
+        extra_info / set_extra_info: i32 = b32s0 @ 5;
+    }
+
+    /// The column viewed as the head of its span list.
+    #[inline]
+    pub fn span_head(self) -> NodePtr<SpanNode> {
+        NodePtr::at(self.idx)
+    }
+
+    /// Turns the record into an empty unset box of its final width.
+    pub fn into_unset(self, mem: &mut MemState) -> NodePtr<UnsetNode> {
+        let u: NodePtr<UnsetNode> = retype(self, mem, NodeType::Unset);
+        u.set_subtype(mem, 0);
+        u.set_height(mem, Scaled(0));
+        u.set_depth(mem, Scaled(0));
+        u.set_glue_order(mem, NORMAL);
+        u.set_glue_sign(mem, NORMAL);
+        u.set_glue_stretch(mem, Scaled(0));
+        u.set_glue_shrink(mem, Scaled(0));
+        u
+    }
+}
+
+impl NodePtr<SpanNode> {
+    fields! {
+        /// Columns spanned beyond the first. `END_SPAN` holds a larger sentinel.
+        span_count / set_span_count: i32 = b32s1 @ 0;
+    }
+
+    #[inline]
+    pub fn next(self, mem: &MemState) -> NodePtr<SpanNode> {
+        NodePtr::at(mem.b32s0(self.idx.0))
+    }
+    #[inline]
+    pub fn set_next(self, mem: &mut MemState, v: NodePtr<SpanNode>) {
+        mem.set_b32s0(self.idx.0, v.idx.0);
+    }
+}
+
+impl NodePtr<AlignStackNode> {
+    fields! {
+        cur_align / set_cur_align: MemPtr = b32s0 @ 0;
+        preamble / set_preamble: MemPtr = b32s0 @ 1;
+        cur_span / set_cur_span: MemPtr = b32s1 @ 1;
+        cur_loop / set_cur_loop: MemPtr = b32s1 @ 2;
+        align_state / set_align_state: i32 = b32s1 @ 3;
+        cur_head / set_cur_head: MemPtr = b32s0 @ 4;
+        cur_tail / set_cur_tail: MemPtr = b32s1 @ 4;
+        cur_pre_head / set_cur_pre_head: MemPtr = b32s0 @ 5;
+        cur_pre_tail / set_cur_pre_tail: MemPtr = b32s1 @ 5;
+    }
+}
+
 // --- whatsits ---
 
 /// The subtype of a whatsit node. Only `NativeWord`..`Pdf` carry dimensions.
@@ -1679,6 +1791,39 @@ mod tests {
         assert_eq!(mem.b32s1(101), 22);
         assert_eq!(mem.b32s0(102), 33);
         assert_eq!(mem.b32s1(102), 44);
+    }
+
+    #[test]
+    fn alignment_records_walk_the_preamble_and_become_unset() {
+        let mut mem = fresh_mem(200);
+        let (head, g1, col, g2) = (MemPtr(10), MemPtr(20), MemPtr(100), MemPtr(30));
+        head.set_link(&mut mem, g1);
+        g1.set_link(&mut mem, col);
+        col.set_link(&mut mem, g2);
+        g2.set_link(&mut mem, MemPtr::NULL);
+        let rec = NodePtr::<AlignRecord>::after_tab_skip(&mem, g1).unwrap();
+        assert_eq!(rec.ptr(), col);
+        assert_eq!(rec.tab_skip(&mem).ptr(), g2);
+        assert_eq!(NodePtr::<GlueNode>::tab_skip_after(&mem, head).ptr(), g1);
+        assert!(rec.next_column(&mem).is_none());
+
+        rec.set_v_part(&mut mem, MemPtr(0x22));
+        rec.set_u_part(&mut mem, MemPtr(0x33));
+        rec.set_extra_info(&mut mem, 0x55);
+        rec.span_head().set_next(&mut mem, NodePtr::at(40));
+        assert_eq!((mem.b32s1(102), mem.b32s1(103)), (0x22, 0x33));
+        assert_eq!((mem.b32s0(105), mem.b32s0(100)), (0x55, 40));
+
+        let u = rec.into_unset(&mut mem);
+        assert_eq!(mem.b16s1(100), NodeType::Unset.as_raw());
+        assert_eq!((u.height(&mem), u.depth(&mem)), (Scaled(0), Scaled(0)));
+        assert_eq!((mem.b16s0(100), mem.b32s1(104), mem.b32s1(106)), (0, 0, 0));
+        assert_eq!(u.link(&mem), g2);
+
+        let span: NodePtr<SpanNode> = NodePtr::at(40);
+        span.set_span_count(&mut mem, 3);
+        span.set_width(&mut mem, Scaled(0x66));
+        assert_eq!((mem.b32s1(40), mem.b32s1(41)), (3, 0x66));
     }
 
     #[test]
