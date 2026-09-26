@@ -281,6 +281,13 @@ fn negative_roman_numeral() {
 }
 
 #[test]
+fn native_merge_disc_pun() {
+    TestCase::new("native_merge_disc_pun")
+        .expect(Ok(TexOutcome::Warnings))
+        .go()
+}
+
+#[test]
 fn otf_basic() {
     TestCase::new("otf_basic")
         .expect(Ok(TexOutcome::Warnings))

@@ -1389,6 +1389,15 @@ fn clear_box_glue<K: IsBox>(mem: &mut MemState, r: NodePtr<K>) {
     r.set_glue_set(mem, 0.0);
 }
 
+/// `replace_count(q)` if `type(q)=disc_node`, read like TeX does even when
+/// `q` is a char node (whose font sits in the type field).
+fn disc_replace_count(mem: &MemState, q: MemPtr) -> Option<i32> {
+    match mem.as_char(q) {
+        Some(ch) => (ch.font(mem).0 == NodeType::Disc as i32).then(|| ch.character(mem) as i32),
+        None => as_disc(mem, q).map(|disc| disc.subtype(mem) as i32),
+    }
+}
+
 /// Merge the run of native words in `w`'s font that follows `w` (possibly
 /// across empty discretionaries) into one node. `q` trails `w`; returns the
 /// new `q` and the node now in `w`'s place.
@@ -1408,15 +1417,15 @@ fn merge_native_words(
     };
 
     let mut k = if q != r_node.ptr() + LIST_OFFSET {
-        as_disc(mem, q).map_or(0, |disc| disc.subtype(mem) as i32)
+        disc_replace_count(mem, q).unwrap_or(0)
     } else {
         0
     };
     while q.link(mem) != p {
         k -= 1;
         q = q.link(mem);
-        if let Some(disc) = as_disc(mem, q) {
-            k = disc.subtype(mem) as i32;
+        if let Some(count) = disc_replace_count(mem, q) {
+            k = count;
         }
     }
 
