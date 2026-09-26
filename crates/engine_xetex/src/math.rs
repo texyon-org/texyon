@@ -254,10 +254,9 @@ fn mu_mult(errors: &mut crate::state::ErrorState, (n, f): (i32, i32), v: i32) ->
 
 fn math_glue_in(
     st: &mut EngineState,
-    g: MemPtr,
+    spec: NodePtr<GlueSpecNode>,
     m: i32,
 ) -> Result<NodePtr<GlueSpecNode>, NodeRecycleAbort> {
-    let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(g).expect("non-null math glue spec");
     let mu = mu_parts(&mut st.errors, m);
     let stretch_order = spec.stretch_order(&st.mem);
     let shrink_order = spec.shrink_order(&st.mem);
@@ -2097,7 +2096,7 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                     if subtype == MU_GLUE {
                         let y = math_glue_in(st, x, mu)?;
                         crate::mem::delete_glue_ref(&mut st.mem, x);
-                        glue.set_glue_ptr(&mut st.mem, y.ptr());
+                        glue.set_glue_ptr(&mut st.mem, y);
                         glue.set_subtype(&mut st.mem, NORMAL);
                     } else if subtype == COND_MATH_GLUE {
                         let cur_size = st.scanner.cur_size;
@@ -2233,11 +2232,11 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                     _ => return Err(NodeRecycleAbort::Confusion(c"mlist4").into()),
                 };
                 if x != 0 {
-                    let g = st.eqtb.glue_par(x).ptr();
+                    let g = st.eqtb.glue_par(x);
                     let mu = st.scanner.cur_mu;
                     let y = math_glue_in(st, g, mu)?;
-                    let z = crate::mem::new_glue(&mut st.mem, y.ptr())
-                        .ok_or(NodeRecycleAbort::Overflow)?;
+                    let z =
+                        crate::mem::new_glue(&mut st.mem, y).ok_or(NodeRecycleAbort::Overflow)?;
                     y.set_ref_count(&mut st.mem, TEX_NULL);
                     p.set_link(&mut st.mem, z.ptr());
                     z.set_subtype(&mut st.mem, (x + 1) as u16);
@@ -2476,10 +2475,10 @@ fn stack_glue_into_box(
     min: i32,
     max: i32,
 ) -> Result<(), NodeRecycleAbort> {
-    let spec = new_spec(mem, 0).ok_or(NodeRecycleAbort::Overflow)?;
+    let spec = new_spec(mem, ZERO_GLUE).ok_or(NodeRecycleAbort::Overflow)?;
     spec.set_width(mem, Scaled(min));
     spec.set_stretch(mem, Scaled(max - min));
-    let p = new_glue(mem, spec.ptr()).ok_or(NodeRecycleAbort::Overflow)?;
+    let p = new_glue(mem, spec).ok_or(NodeRecycleAbort::Overflow)?;
     if matches!(b, AnyBox::HList(_)) {
         let mut q = b.list_ptr(mem);
         if q.is_null() {
@@ -3143,8 +3142,8 @@ fn ext_font_ok(fonts: &FontState, eqtb: &EqtbState, size: i32) -> bool {
 
 /// Fills the fresh spec of `skip` with `w` minus the glue of `g`, negating its stretch and shrink.
 fn set_display_skip(mem: &mut MemState, skip: NodePtr<GlueNode>, g: NodePtr<GlueNode>, w: i32) {
-    let src = g.glue_spec(mem).expect("glue spec");
-    let dst = skip.glue_spec(mem).expect("glue spec");
+    let src = g.glue_ptr(mem);
+    let dst = skip.glue_ptr(mem);
     dst.set_stretch_order(mem, src.stretch_order(mem));
     dst.set_shrink_order(mem, src.shrink_order(mem));
     dst.set_width(mem, Scaled(w - src.width(mem).0));
@@ -3570,7 +3569,7 @@ fn pre_display_direction(st: &EngineState) -> i32 {
 
 /// A kern, or the parameter glue when that skip is nonzero.
 fn side_skip_in(st: &mut EngineState, param: i16) -> Result<MemPtr, NodeRecycleAbort> {
-    let p = if st.eqtb.glue_par(param).ptr() == ZERO_GLUE {
+    let p = if st.eqtb.glue_par(param) == ZERO_GLUE {
         new_kern(&mut st.mem, 0).map(|k| k.ptr())
     } else {
         crate::mem::new_param_glue(&mut st.mem, &st.eqtb, param).map(|g| g.ptr())
@@ -3711,7 +3710,7 @@ pub(crate) fn init_math_in(
                             (st.mem.b32s1(p + 1), false)
                         }
                         Ok(AnyNode::Glue(g)) => {
-                            let spec = g.glue_spec(&st.mem).expect("glue spec");
+                            let spec = g.glue_ptr(&st.mem);
                             let order = jb.glue_order(&st.mem);
                             match jb.glue_sign(&st.mem) {
                                 GlueSign::Stretching
@@ -3931,7 +3930,7 @@ fn build_opentype_assembly_in(
                 }
             }
             Ok(AnyNode::Glue(gn)) => {
-                let gs = gn.glue_spec(&st.mem).expect("glue spec");
+                let gs = gn.glue_ptr(&st.mem);
                 nat += gs.width(&st.mem).0;
                 str += gs.stretch(&st.mem).0;
             }

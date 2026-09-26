@@ -481,8 +481,9 @@ impl EqtbState {
     /// The spec of glue parameter `n`, never null.
     #[inline]
     pub fn glue_par(&self, n: i16) -> crate::node::NodePtr<crate::node::GlueSpecNode> {
-        let spec = crate::units::MemPtr(self.b32s1(crate::consts::GLUE_BASE + n as i32));
-        crate::node::NodePtr::from_glue_ptr(spec).expect("glue parameters are never null")
+        crate::node::NodePtr::from_glue_ptr(crate::units::MemPtr(
+            self.b32s1(crate::consts::GLUE_BASE + n as i32),
+        ))
     }
 
     /// Read `XEQ_LEVEL(p)` = `xeq_level[p - INT_BASE]`.
@@ -1960,6 +1961,12 @@ impl InputClusterState {
 }
 
 impl ScannerState {
+    /// `cur_val` as the glue spec that `scan_glue` left there.
+    #[inline]
+    pub(crate) fn cur_glue(&self) -> crate::node::NodePtr<crate::node::GlueSpecNode> {
+        crate::node::NodePtr::from_glue_ptr(crate::units::MemPtr(self.cur_val))
+    }
+
     #[inline]
     pub(crate) fn native_len(&self) -> i32 {
         self.native_len

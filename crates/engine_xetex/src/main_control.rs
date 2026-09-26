@@ -228,7 +228,7 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
             let s = st.mem.b32s0(r + 1);
             if s != 0 {
                 crate::mem::add_glue_ref(&mut st.mem, ZERO_GLUE);
-                delete_glue_ref(&mut st.mem, s);
+                delete_glue_ref(&mut st.mem, crate::node::NodePtr::from_glue_ptr(MemPtr(s)));
                 st.mem.set_b32s0(r + 1, 0);
             }
         }
@@ -341,9 +341,9 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
                         for _ in 0..n {
                             ss = st.mem.b32s1(ss);
                             let v = st.mem.b32s0(ss + 1);
-                            let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(v))
-                                .expect("non-null glue spec");
-                            let g = new_glue(&mut st.mem, v).ok_or(NodeRecycleAbort::Overflow)?;
+                            let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr(v));
+                            let g =
+                                new_glue(&mut st.mem, spec).ok_or(NodeRecycleAbort::Overflow)?;
                             u.set_link(&mut st.mem, g.ptr());
                             u = g.ptr();
                             g.set_subtype(&mut st.mem, TAB_SKIP_SUBTYPE);
@@ -628,7 +628,7 @@ pub(crate) fn init_row_in(st: &mut EngineState) -> Result<(), MainControlAbort> 
         st.input.cur_list.set_aux_s1(0);
     }
     let tab_skip = st.mem.link_ptr(ALIGN_HEAD);
-    let spec = st.mem.b32s0(tab_skip + 1);
+    let spec = crate::node::NodePtr::from_glue_ptr(MemPtr(st.mem.b32s0(tab_skip + 1)));
     let glue =
         crate::mem::new_glue(&mut st.mem, spec).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
     st.input.cur_list.tail_append(&mut st.mem, glue.ptr());
@@ -740,7 +740,8 @@ pub(crate) fn fin_col_in(st: &mut EngineState) -> Result<bool, MainControlAbort>
             let v_part = copy_token_list(&mut st.mem, v_template)?;
             st.mem.set_b32s1(p + 2, v_part);
             st.scanner.cur_loop = st.scanner.cur_loop.link(&st.mem);
-            let spec = st.mem.b32s0(st.scanner.cur_loop + 1);
+            let spec =
+                crate::node::NodePtr::from_glue_ptr(MemPtr(st.mem.b32s0(st.scanner.cur_loop + 1)));
             let g = crate::mem::new_glue(&mut st.mem, spec).ok_or(NodeRecycleAbort::Overflow)?;
             nb.set_link(&mut st.mem, g.ptr());
             g.set_subtype(&mut st.mem, TAB_SKIP_SUBTYPE);
@@ -818,7 +819,9 @@ pub(crate) fn fin_col_in(st: &mut EngineState) -> Result<bool, MainControlAbort>
         u.set_glue_shrink(&mut st.mem, Scaled(st.scanner.total_shrink[o as usize]));
         crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
         st.input.cur_list.tail_append(&mut st.mem, u.ptr());
-        let spec = st.mem.b32s0(st.mem.b32s1(st.scanner.cur_align) + 1);
+        let spec = crate::node::NodePtr::from_glue_ptr(MemPtr(
+            st.mem.b32s0(st.mem.b32s1(st.scanner.cur_align) + 1),
+        ));
         let g = crate::mem::new_glue(&mut st.mem, spec).ok_or(NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail_append(&mut st.mem, g.ptr());
         g.set_subtype(&mut st.mem, TAB_SKIP_SUBTYPE);
@@ -1315,19 +1318,19 @@ pub(crate) fn app_space(
     let space_factor = st.input.cur_list.aux_s0();
     let q;
     let mut side_effects = None;
-    if space_factor >= 2000 && st.eqtb.glue_par(GLUE_PAR_XSPACE_SKIP).ptr() != ZERO_GLUE {
+    if space_factor >= 2000 && st.eqtb.glue_par(GLUE_PAR_XSPACE_SKIP) != ZERO_GLUE {
         q = crate::mem::new_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_XSPACE_SKIP)
             .ok_or(NodeRecycleAbort::Overflow)?
             .ptr();
     } else {
-        let space_skip = st.eqtb.glue_par(GLUE_PAR_SPACE_SKIP).ptr();
-        st.mainloop.main_p.0 = if space_skip != ZERO_GLUE {
-            space_skip.0
+        let space_skip = st.eqtb.glue_par(GLUE_PAR_SPACE_SKIP);
+        let base = if space_skip != ZERO_GLUE {
+            space_skip
         } else {
             font_space_glue(st)?
         };
-        let spec = crate::mem::new_spec(&mut st.mem, st.mainloop.main_p.0)
-            .ok_or(NodeRecycleAbort::Overflow)?;
+        st.mainloop.main_p = base.ptr();
+        let spec = crate::mem::new_spec(&mut st.mem, base).ok_or(NodeRecycleAbort::Overflow)?;
         st.mainloop.main_p = spec.ptr();
         if space_factor >= 2000 {
             let cf = st.eqtb.b32s1(CUR_FONT_LOC);
@@ -1344,7 +1347,7 @@ pub(crate) fn app_space(
             crate::scaled_math::xn_over_d_parts(spec.shrink(&st.mem).0, 1000, space_factor);
         spec.set_shrink(&mut st.mem, Scaled(shrink));
         side_effects = Some((remainder, stretch_overflow || shrink_overflow));
-        q = crate::mem::new_glue(&mut st.mem, spec.idx())
+        q = crate::mem::new_glue(&mut st.mem, spec)
             .ok_or(NodeRecycleAbort::Overflow)?
             .ptr();
         spec.set_ref_count(&mut st.mem, TEX_NULL);
@@ -1354,21 +1357,23 @@ pub(crate) fn app_space(
 }
 
 /// The current font's interword glue spec, built from its parameters on first use.
-fn font_space_glue(st: &mut EngineState) -> Result<i32, crate::scan::NodeRecycleAbort> {
+fn font_space_glue(
+    st: &mut EngineState,
+) -> Result<NodePtr<GlueSpecNode>, crate::scan::NodeRecycleAbort> {
     let cf = st.eqtb.b32s1(CUR_FONT_LOC);
     let glue = st.fonts.font_glue(cf);
     if glue != TEX_NULL {
-        return Ok(glue);
+        return Ok(crate::node::NodePtr::from_glue_ptr(MemPtr(glue)));
     }
-    let spec =
-        crate::mem::new_spec(&mut st.mem, 0).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+    let spec = crate::mem::new_spec(&mut st.mem, ZERO_GLUE)
+        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
     st.mainloop.main_k = st.fonts.param_base(cf) + SPACE_CODE;
     let k = st.mainloop.main_k;
     spec.set_width(&mut st.mem, Scaled(st.fonts.font_info_b32s1(k)));
     spec.set_stretch(&mut st.mem, Scaled(st.fonts.font_info_b32s1(k + 1)));
     spec.set_shrink(&mut st.mem, Scaled(st.fonts.font_info_b32s1(k + 2)));
     st.fonts.set_font_glue(cf, spec.idx().0);
-    Ok(spec.idx().0)
+    Ok(spec)
 }
 
 pub(crate) fn app_space_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
@@ -1932,7 +1937,7 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
         }
         GroupCode::Insert => {
             end_graf_in(st)?;
-            let split_top_skip = st.eqtb.glue_par(GLUE_PAR_SPLIT_TOP_SKIP).ptr();
+            let split_top_skip = st.eqtb.glue_par(GLUE_PAR_SPLIT_TOP_SKIP);
             crate::mem::add_glue_ref(&mut st.mem, split_top_skip);
             let d = st.eqtb.dimen_par(DIMEN_PAR_SPLIT_MAX_DEPTH);
             let f = st.eqtb.int_par(INT_PAR_FLOATING_PENALTY);
@@ -2113,19 +2118,19 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
 pub(crate) fn append_glue_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     let s = st.scanner.cur_chr;
     match s {
-        FIL_CODE => st.scanner.cur_val = FIL_GLUE.0,
-        FILL_CODE => st.scanner.cur_val = FILL_GLUE.0,
-        SS_CODE => st.scanner.cur_val = SS_GLUE.0,
-        FIL_NEG_CODE => st.scanner.cur_val = FIL_NEG_GLUE.0,
+        FIL_CODE => st.scanner.cur_val = FIL_GLUE.idx().0,
+        FILL_CODE => st.scanner.cur_val = FILL_GLUE.idx().0,
+        SS_CODE => st.scanner.cur_val = SS_GLUE.idx().0,
+        FIL_NEG_CODE => st.scanner.cur_val = FIL_NEG_GLUE.idx().0,
         SKIP_CODE => crate::scan::scan_glue_in(st, GLUE_VAL)?,
         MSKIP_CODE => crate::scan::scan_glue_in(st, MU_VAL)?,
         _ => {}
     }
-    let g = crate::mem::new_glue(&mut st.mem, st.scanner.cur_val)
+    let g = crate::mem::new_glue(&mut st.mem, st.scanner.cur_glue())
         .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
     st.input.cur_list.tail_append(&mut st.mem, g.ptr());
     if s >= SKIP_CODE {
-        let spec = g.glue_spec(&st.mem).expect("non-null glue spec");
+        let spec = g.glue_ptr(&st.mem);
         let refs = spec.ref_count(&st.mem);
         spec.set_ref_count(&mut st.mem, refs - 1);
         if s > SKIP_CODE {
@@ -2271,11 +2276,12 @@ pub(crate) fn alter_box_dimen_in(st: &mut EngineState) -> Result<(), MainControl
 
 /// Replaces an all-zero scanned glue spec in `cur_val` by the shared `zero_glue`.
 pub(crate) fn trap_zero_glue(st: &mut EngineState) {
-    let spec = st.scanner.cur_val;
-    if st.mem.b32s1(spec + 1) == 0 && st.mem.b32s1(spec + 2) == 0 && st.mem.b32s1(spec + 3) == 0 {
-        crate::mem::add_glue_ref(&mut st.mem, ZERO_GLUE);
-        crate::mem::delete_glue_ref(&mut st.mem, spec);
-        st.scanner.cur_val = ZERO_GLUE.0;
+    let spec = st.scanner.cur_glue();
+    let mem = &mut st.mem;
+    if spec.width(mem).0 == 0 && spec.stretch(mem).0 == 0 && spec.shrink(mem).0 == 0 {
+        crate::mem::add_glue_ref(mem, ZERO_GLUE);
+        crate::mem::delete_glue_ref(mem, spec);
+        st.scanner.cur_val = ZERO_GLUE.idx().0;
     }
 }
 
@@ -2873,11 +2879,10 @@ pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(),
         } else {
             crate::scan::scan_glue_in(st, p)?;
             if q == ADVANCE {
-                let sum = crate::mem::new_spec(&mut st.mem, st.scanner.cur_val)
+                let sum = crate::mem::new_spec(&mut st.mem, st.scanner.cur_glue())
                     .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-                crate::mem::delete_glue_ref(&mut st.mem, st.scanner.cur_val);
-                let old = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(s))
-                    .expect("non-null glue spec");
+                crate::mem::delete_glue_ref(&mut st.mem, st.scanner.cur_glue());
+                let old = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr(s));
                 let width = sum.width(&st.mem).0 + old.width(&st.mem).0;
                 sum.set_width(&mut st.mem, Scaled(width));
                 if sum.stretch(&st.mem).0 == 0 {
@@ -2927,10 +2932,9 @@ pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(),
             };
             st.scanner.cur_val = scale(&mut st.errors, w, max_answer);
         } else {
-            let r = crate::mem::new_spec(&mut st.mem, s)
+            let old = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr(s));
+            let r = crate::mem::new_spec(&mut st.mem, old)
                 .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-            let old = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(s))
-                .expect("non-null glue spec");
             let (width, stretch, shrink) = (
                 old.width(&st.mem).0,
                 old.stretch(&st.mem).0,
@@ -2954,7 +2958,7 @@ pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(),
             "since the result is out of range.",
         ]);
         if p >= GLUE_VAL {
-            crate::mem::delete_glue_ref(&mut st.mem, st.scanner.cur_val);
+            crate::mem::delete_glue_ref(&mut st.mem, st.scanner.cur_glue());
         }
         return mc_propagate_error(crate::errors::error_in(st));
     }
@@ -2999,9 +3003,10 @@ pub(crate) fn main_control_append_normal_space_in(
     if insert_boundary_inter_char_toks(st)? {
         return Ok(());
     }
-    let glue = if st.eqtb.glue_par(GLUE_PAR_SPACE_SKIP).ptr() == ZERO_GLUE {
-        st.mainloop.main_p.0 = font_space_glue(st)?;
-        crate::mem::new_glue(&mut st.mem, st.mainloop.main_p.0).ok_or(NodeRecycleAbort::Overflow)?
+    let glue = if st.eqtb.glue_par(GLUE_PAR_SPACE_SKIP) == ZERO_GLUE {
+        let spec = font_space_glue(st)?;
+        st.mainloop.main_p = spec.ptr();
+        crate::mem::new_glue(&mut st.mem, spec).ok_or(NodeRecycleAbort::Overflow)?
     } else {
         crate::mem::new_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_SPACE_SKIP)
             .ok_or(NodeRecycleAbort::Overflow)?

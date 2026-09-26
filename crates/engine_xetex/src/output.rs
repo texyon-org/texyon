@@ -73,7 +73,7 @@ use crate::main_control::{
 use crate::math::{
     ABOVE_CODE, ATOP_CODE, DEFAULT_CODE, DELIMITED_CODE, LIMITS, MIDDLE_NOAD, NO_LIMITS, OVER_CODE,
 };
-use crate::mem::{CONTRIB_HEAD, GARBAGE, PAGE_HEAD, PAGE_INS_HEAD, TEMP_HEAD};
+use crate::mem::{CONTRIB_HEAD, GARBAGE, PAGE_HEAD, PAGE_INS_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::node::{
     AnyBox, AnyNode, GlueSpecNode, NodePtr, PageInsNode, SaNode, WhatsitNode, WhatsitSubtype,
 };
@@ -835,8 +835,7 @@ pub(crate) fn print_spec_in(
     let p = p.addr();
     let spec = (0..st.mem.lo_mem_max)
         .contains(&p)
-        .then(|| NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr(p)))
-        .flatten();
+        .then(|| NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr(p)));
     let Some(gs) = spec else {
         print_char_in(st, b'*' as i32);
         return;
@@ -2848,7 +2847,7 @@ pub(crate) fn short_display_in(st: &mut EngineState, p: impl crate::units::MemAd
                 Ok(AnyNode::Rule(_)) => print_char_in(st, b'|' as i32),
                 Ok(AnyNode::Glue(g)) => {
                     // Glue pointing at the shared zero spec prints nothing.
-                    if g.glue_ptr(&st.mem).0 != 0 {
+                    if g.glue_ptr(&st.mem) != ZERO_GLUE {
                         print_char_in(st, b' ' as i32);
                     }
                 }
@@ -3107,7 +3106,7 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, p: impl crate::units::MemA
                     print_cstr_in(st, c", natural size ".as_ptr());
                     print_scaled_in(st, node.height(&st.mem).0);
                     print_cstr_in(st, c"; split(".as_ptr());
-                    print_spec_in(st, node.split_top_ptr(&st.mem), std::ptr::null());
+                    print_spec_in(st, node.split_top_ptr(&st.mem).ptr(), std::ptr::null());
                     print_char_in(st, b',' as i32);
                     print_scaled_in(st, node.depth(&st.mem).0);
                     print_cstr_in(st, c"); float cost ".as_ptr());
@@ -3342,7 +3341,7 @@ fn show_glue_in(st: &mut EngineState, node: NodePtr<crate::node::GlueNode>) {
             print_char_in(st, b'x' as i32);
         }
         print_cstr_in(st, c"leaders ".as_ptr());
-        print_spec_in(st, node.glue_ptr(&st.mem), std::ptr::null());
+        print_spec_in(st, node.glue_ptr(&st.mem).ptr(), std::ptr::null());
         node_list_display_in(st, b'.', node.leader_ptr(&st.mem));
         return;
     }
@@ -3365,7 +3364,7 @@ fn show_glue_in(st: &mut EngineState, node: NodePtr<crate::node::GlueNode>) {
         } else {
             c"mu".as_ptr()
         };
-        print_spec_in(st, node.glue_ptr(&st.mem), unit);
+        print_spec_in(st, node.glue_ptr(&st.mem).ptr(), unit);
     }
 }
 

@@ -1631,7 +1631,7 @@ pub(crate) fn new_spec_scc(
     st: &mut EngineState,
     p: impl crate::units::MemAddr,
 ) -> Result<NodePtr<GlueSpecNode>, SccAbort> {
-    crate::mem::new_spec(&mut st.mem, p).ok_or_else(main_mem_overflow_scc)
+    crate::mem::new_spec(&mut st.mem, glue_spec(p.addr())).ok_or_else(main_mem_overflow_scc)
 }
 
 pub(crate) fn str_toks_scc(st: &mut EngineState, b: i32, cat: i16) -> Result<MemPtr, SccAbort> {
@@ -1739,11 +1739,11 @@ pub(crate) fn the_toks_in(st: &mut EngineState) -> Result<MemPtr, SccAbort> {
             }
             2 => {
                 crate::output::print_spec_in(st, st.scanner.cur_val, c"pt".as_ptr());
-                crate::mem::delete_glue_ref(&mut st.mem, st.scanner.cur_val);
+                crate::mem::delete_glue_ref(&mut st.mem, st.scanner.cur_glue());
             }
             3 => {
                 crate::output::print_spec_in(st, st.scanner.cur_val, c"mu".as_ptr());
-                crate::mem::delete_glue_ref(&mut st.mem, st.scanner.cur_val);
+                crate::mem::delete_glue_ref(&mut st.mem, st.scanner.cur_glue());
             }
             _ => {}
         }
@@ -2172,14 +2172,14 @@ pub(crate) fn scan_dimen_in(
 }
 /// A glue spec pointer held in a raw word.
 fn glue_spec(p: i32) -> NodePtr<GlueSpecNode> {
-    NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(p)).expect("non-null glue spec")
+    NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(p))
 }
 
 /// Replaces the glue in `cur_val` by its width, releasing the glue.
 fn glue_to_width_in(st: &mut EngineState) {
     let spec = st.scanner.cur_val;
     st.scanner.cur_val = glue_spec(spec).width(&st.mem).0;
-    crate::mem::delete_glue_ref(&mut st.mem, spec);
+    crate::mem::delete_glue_ref(&mut st.mem, glue_spec(spec));
 }
 
 /// Scales `cur_val` and the fraction `f` by `num / denom`.
@@ -2552,7 +2552,7 @@ fn add_glue_in(
         e.set_shrink(mem, t_shrink);
         e.set_shrink_order(mem, t_order);
     }
-    crate::mem::delete_glue_ref(mem, t.ptr());
+    crate::mem::delete_glue_ref(mem, t);
     normalize_glue_orders(st, e);
 }
 
@@ -2659,7 +2659,7 @@ pub(crate) fn scan_expr_in(st: &mut EngineState) -> Result<(), SccAbort> {
                     || spec.shrink(&st.mem).0.abs() > MAX_HALFWORD
                 {
                     st.errors.arith_error = true;
-                    crate::mem::delete_glue_ref(&mut st.mem, f);
+                    crate::mem::delete_glue_ref(&mut st.mem, glue_spec(f));
                     f = new_spec_scc(st, 0)?.ptr().0;
                 }
             }
@@ -2669,7 +2669,7 @@ pub(crate) fn scan_expr_in(st: &mut EngineState) -> Result<(), SccAbort> {
                     if l >= GLUE_VAL && o != EXPR_NONE {
                         let term = new_spec_scc(st, f)?;
                         t = term.ptr().0;
-                        crate::mem::delete_glue_ref(&mut st.mem, f);
+                        crate::mem::delete_glue_ref(&mut st.mem, glue_spec(f));
                         normalize_glue_orders(st, term);
                     } else {
                         t = f;
@@ -2757,7 +2757,7 @@ pub(crate) fn scan_expr_in(st: &mut EngineState) -> Result<(), SccAbort> {
         ]);
         scc_err(error_in(st))?;
         if l >= GLUE_VAL {
-            crate::mem::delete_glue_ref(&mut st.mem, e);
+            crate::mem::delete_glue_ref(&mut st.mem, glue_spec(e));
             e = 0;
             let zero_glue = glue_spec(e);
             let refs = zero_glue.ref_count(&st.mem);
@@ -3300,7 +3300,7 @@ fn fetch_last_item_int_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> 
             } else {
                 spec.shrink_order(&st.mem) as i32
             };
-            crate::mem::delete_glue_ref(&mut st.mem, q);
+            crate::mem::delete_glue_ref(&mut st.mem, glue_spec(q));
         }
         _ => {}
     }
@@ -3400,7 +3400,7 @@ fn fetch_last_item_dimen_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort
             } else {
                 spec.shrink(&st.mem).0
             };
-            crate::mem::delete_glue_ref(&mut st.mem, q);
+            crate::mem::delete_glue_ref(&mut st.mem, glue_spec(q));
         }
         _ => {}
     }
@@ -3451,7 +3451,7 @@ fn fetch_last_node_item_in(st: &mut EngineState, m: i32) {
             (INT_VAL, Ok(AnyNode::Penalty(p))) => st.scanner.cur_val = p.penalty(&st.mem),
             (DIMEN_VAL, Ok(AnyNode::Kern(k))) => st.scanner.cur_val = k.width(&st.mem).0,
             (GLUE_VAL, Ok(AnyNode::Glue(g))) => {
-                st.scanner.cur_val = g.glue_ptr(&st.mem).0;
+                st.scanner.cur_val = g.glue_ptr(&st.mem).ptr().0;
                 if g.subtype(&st.mem) == MU_GLUE {
                     st.scanner.cur_val_level = MU_VAL;
                 }
@@ -3651,7 +3651,7 @@ pub(crate) fn scan_something_internal_in(
                     if negative {
                         if st.scanner.cur_val_level >= GLUE_VAL {
                             let old = negate_glue_in(st)?;
-                            crate::mem::delete_glue_ref(&mut st.mem, old);
+                            crate::mem::delete_glue_ref(&mut st.mem, glue_spec(old));
                         } else {
                             st.scanner.cur_val = -st.scanner.cur_val;
                         }
@@ -3682,7 +3682,7 @@ pub(crate) fn scan_something_internal_in(
 
     while st.scanner.cur_val_level > level {
         if st.scanner.cur_val_level == GLUE_VAL {
-            st.scanner.cur_val = glue_spec(st.scanner.cur_val).width(&st.mem).0;
+            st.scanner.cur_val = st.scanner.cur_glue().width(&st.mem).0;
         } else if st.scanner.cur_val_level == MU_VAL {
             scc_err(mu_error_in(st))?;
         }
@@ -3696,7 +3696,7 @@ pub(crate) fn scan_something_internal_in(
             st.scanner.cur_val = -st.scanner.cur_val;
         }
     } else if (GLUE_VAL..=MU_VAL).contains(&(st.scanner.cur_val_level)) {
-        let spec = glue_spec(st.scanner.cur_val);
+        let spec = st.scanner.cur_glue();
         let refs = spec.ref_count(&st.mem);
         spec.set_ref_count(&mut st.mem, refs + 1);
     }
@@ -3742,7 +3742,7 @@ pub(crate) fn find_font_dimen_in(st: &mut EngineState, writing: bool) -> Result<
             && (SPACE_CODE..=SPACE_SHRINK_CODE).contains(&n)
             && st.fonts.font_glue[fu] != TEX_NULL
         {
-            crate::mem::delete_glue_ref(&mut st.mem, st.fonts.font_glue[fu]);
+            crate::mem::delete_glue_ref(&mut st.mem, glue_spec(st.fonts.font_glue[fu]));
             st.fonts.font_glue[fu] = TEX_NULL;
         }
 

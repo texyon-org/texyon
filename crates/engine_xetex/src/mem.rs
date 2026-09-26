@@ -12,13 +12,19 @@ use crate::node::{
     WhatsitNode, WhatsitSubtype,
 };
 use crate::state::{EqtbState, MemState};
-use crate::units::{FontId, GlueSign, MemAddr, MemPtr, Scaled};
+use crate::units::{FontId, GlueSign, MemAddr, MemIdx, MemPtr, Scaled};
 
-pub(crate) const ZERO_GLUE: MemPtr = MemPtr(0);
-pub(crate) const FIL_GLUE: MemPtr = MemPtr(ZERO_GLUE.0 + GLUE_SPEC_SIZE);
-pub(crate) const FILL_GLUE: MemPtr = MemPtr(FIL_GLUE.0 + GLUE_SPEC_SIZE);
-pub(crate) const SS_GLUE: MemPtr = MemPtr(FILL_GLUE.0 + GLUE_SPEC_SIZE);
-pub(crate) const FIL_NEG_GLUE: MemPtr = MemPtr(SS_GLUE.0 + GLUE_SPEC_SIZE);
+pub(crate) const ZERO_GLUE: NodePtr<GlueSpecNode> = static_spec(0);
+pub(crate) const FIL_GLUE: NodePtr<GlueSpecNode> = static_spec(1);
+pub(crate) const FILL_GLUE: NodePtr<GlueSpecNode> = static_spec(2);
+pub(crate) const SS_GLUE: NodePtr<GlueSpecNode> = static_spec(3);
+pub(crate) const FIL_NEG_GLUE: NodePtr<GlueSpecNode> = static_spec(4);
+
+/// The `k`th of the glue specs that INITEX builds at the bottom of `mem`.
+const fn static_spec(k: i32) -> NodePtr<GlueSpecNode> {
+    // SAFETY: those words hold glue specs for the whole run.
+    unsafe { NodePtr::from_idx_unchecked(MemIdx(k * GLUE_SPEC_SIZE)) }
+}
 
 pub(crate) const PAGE_INS_HEAD: MemPtr = MemPtr(MEM_TOP);
 pub(crate) const CONTRIB_HEAD: MemPtr = MemPtr(MEM_TOP - 1);
@@ -345,9 +351,8 @@ pub fn new_math(mem: &mut MemState, w: i32, s: u16) -> Option<NodePtr<MathNode>>
     Some(p)
 }
 
-/// An unshared copy of the glue spec `p`.
-pub fn new_spec(mem: &mut MemState, p: impl MemAddr) -> Option<NodePtr<GlueSpecNode>> {
-    let src = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr(p.addr())).expect("non-null glue spec");
+/// An unshared copy of the glue spec `src`.
+pub fn new_spec(mem: &mut MemState, src: NodePtr<GlueSpecNode>) -> Option<NodePtr<GlueSpecNode>> {
     let q = NodePtr::<GlueSpecNode>::alloc(mem)?;
     mem.set_word(q.idx().0, mem.word(src.idx().0));
     q.set_ref_count(mem, TEX_NULL);
@@ -363,14 +368,13 @@ pub fn new_param_glue(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> Option<No
     p.set_subtype(mem, n as u16 + 1);
     p.set_leader_ptr(mem, MemPtr::NULL);
     let spec = eqtb.glue_par(n);
-    p.set_glue_ptr(mem, spec.ptr());
-    spec.set_ref_count(mem, spec.ref_count(mem) + 1);
+    p.set_glue_ptr(mem, spec);
+    add_glue_ref(mem, spec);
     Some(p)
 }
 
 /// Glue sharing the spec `q`.
-pub fn new_glue(mem: &mut MemState, q: impl MemAddr) -> Option<NodePtr<GlueNode>> {
-    let q = MemPtr(q.addr());
+pub fn new_glue(mem: &mut MemState, q: NodePtr<GlueSpecNode>) -> Option<NodePtr<GlueNode>> {
     let p = NodePtr::<GlueNode>::alloc(mem)?;
     p.set_subtype(mem, NORMAL);
     p.set_leader_ptr(mem, MemPtr::NULL);
@@ -381,9 +385,9 @@ pub fn new_glue(mem: &mut MemState, q: impl MemAddr) -> Option<NodePtr<GlueNode>
 
 /// Glue for parameter `n` with a private copy of its spec, left in `temp_ptr`.
 pub fn new_skip_param(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> Option<NodePtr<GlueNode>> {
-    let s = new_spec(mem, eqtb.glue_par(n).ptr())?;
+    let s = new_spec(mem, eqtb.glue_par(n))?;
     mem.temp_ptr = s.ptr();
-    let p = new_glue(mem, s.ptr())?;
+    let p = new_glue(mem, s)?;
     s.set_ref_count(mem, TEX_NULL);
     p.set_subtype(mem, n as u16 + 1);
     Some(p)
@@ -448,19 +452,16 @@ pub fn new_whatsit(
 // --- glue spec references ---
 
 #[inline]
-pub fn add_glue_ref(mem: &mut MemState, p: impl MemAddr) {
-    let p = p.addr();
-    mem.set_b32s1(p, mem.b32s1(p) + 1);
+pub fn add_glue_ref(mem: &mut MemState, spec: NodePtr<GlueSpecNode>) {
+    spec.set_ref_count(mem, spec.ref_count(mem) + 1);
 }
 
-/// Drops a reference to glue spec `p`, freeing it with the last one.
-pub fn delete_glue_ref(mem: &mut MemState, p: impl MemAddr) {
-    if let Some(spec) = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr(p.addr())) {
-        if spec.ref_count(mem) == TEX_NULL {
-            free_node(mem, spec.ptr(), GLUE_SPEC_SIZE);
-        } else {
-            spec.set_ref_count(mem, spec.ref_count(mem) - 1);
-        }
+/// Drops a reference to `spec`, freeing it with the last one.
+pub fn delete_glue_ref(mem: &mut MemState, spec: NodePtr<GlueSpecNode>) {
+    if spec.ref_count(mem) == TEX_NULL {
+        free_node(mem, spec.ptr(), GLUE_SPEC_SIZE);
+    } else {
+        spec.set_ref_count(mem, spec.ref_count(mem) - 1);
     }
 }
 

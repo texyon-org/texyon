@@ -13,7 +13,7 @@ use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_LANG, BOX_BASE, CAT_CODE_BASE, CLOSED, CS_TOKEN_FLAG,
     CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, EMPTY, EMPTY_STRING, END_WRITE, EQTB_SIZE,
     ETEX_PEN_BASE, FIL, FILL, FONT_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_DONT_EXPAND, FROZEN_ENDV,
-    FROZEN_END_TEMPLATE, FROZEN_PRIMITIVE, FROZEN_PROTECTION, GLUE_BASE, GLUE_SPEC_SIZE, HASH_BASE,
+    FROZEN_END_TEMPLATE, FROZEN_PRIMITIVE, FROZEN_PROTECTION, GLUE_BASE, HASH_BASE,
     HISTORY_FATAL_ERROR, HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, IGNORE_DEPTH, INT_BASE,
     INT_PAR_DAY, INT_PAR_END_LINE_CHAR, INT_PAR_ESCAPE_CHAR, INT_PAR_HANG_AFTER, INT_PAR_MAG,
     INT_PAR_MAX_DEAD_CYCLES, INT_PAR_MONTH, INT_PAR_NEW_LINE_CHAR, INT_PAR_TIME, INT_PAR_TOLERANCE,
@@ -35,14 +35,14 @@ use crate::io::init_io;
 use crate::linebreak::HYPHENATED;
 use crate::main_control::{LAST_BOX_CODE, VSPLIT_CODE};
 use crate::mem::{
-    xmalloc, ACTIVE_LIST, CONTRIB_HEAD, END_SPAN, HI_MEM_STAT_MIN, HI_MEM_STAT_USAGE, NULL_LIST,
-    OMIT_TEMPLATE, PAGE_HEAD, PAGE_INS_HEAD,
+    xmalloc, ACTIVE_LIST, CONTRIB_HEAD, END_SPAN, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE,
+    HI_MEM_STAT_MIN, HI_MEM_STAT_USAGE, NULL_LIST, OMIT_TEMPLATE, PAGE_HEAD, PAGE_INS_HEAD,
+    SS_GLUE, ZERO_GLUE,
 };
 use crate::mem_types::{zeroed_vec, B16x4, B32x2, MemoryWord};
-use crate::node::{GlueSpecNode, NodePtr};
 use crate::scan::{INTER_CHAR_VAL, INT_VAL, MARK_VAL, NORMAL_SCANNER};
 use crate::state::{EngineState, EqtbState, FontState, GroupCode, InteractionMode, MemState};
-use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{MemPtr, NodeType, Scaled};
 
 /// A `get_node` request this large merges every free block into the rover list.
 const GET_NODE_HEAD_SENTINEL: i32 = 0x4000_0000;
@@ -323,7 +323,10 @@ pub(crate) unsafe fn final_cleanup_in(st: &mut EngineState) -> Result<(), Engine
     }
 
     if st.shipout.last_glue.0 != MAX_HALFWORD {
-        crate::mem::delete_glue_ref(&mut st.mem, st.shipout.last_glue.0);
+        crate::mem::delete_glue_ref(
+            &mut st.mem,
+            crate::node::NodePtr::from_glue_ptr(st.shipout.last_glue),
+        );
     }
 
     crate::format_io::store_fmt_file_in(st)
@@ -472,18 +475,12 @@ fn initialize_more_variables_in(st: &mut EngineState) {
     st.scanner.stop_at_space = true;
 }
 
-fn static_glue_spec(p: i32) -> NodePtr<GlueSpecNode> {
-    // SAFETY: mem[0..20] holds the five static glue specs of INITEX.
-    unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) }
-}
-
 fn initialize_more_initex_variables_in(st: &mut EngineState, format_ident: i32) {
     let set_family = |x: i32| (x & 0xFF) << 24;
     let set_class = |x: i32| (x & 0x07) << 21;
 
     let mem = &mut st.mem;
-    for p in (0..=16).step_by(GLUE_SPEC_SIZE as usize) {
-        let spec = static_glue_spec(p);
+    for spec in [ZERO_GLUE, FIL_GLUE, FILL_GLUE, SS_GLUE, FIL_NEG_GLUE] {
         spec.set_width(mem, Scaled(0));
         spec.set_stretch(mem, Scaled(0));
         spec.set_shrink(mem, Scaled(0));
@@ -492,20 +489,16 @@ fn initialize_more_initex_variables_in(st: &mut EngineState, format_ident: i32) 
         spec.set_shrink_order(mem, NORMAL);
     }
 
-    let fil_glue = static_glue_spec(4);
-    fil_glue.set_stretch(mem, Scaled(65536));
-    fil_glue.set_stretch_order(mem, FIL);
-    let fill_glue = static_glue_spec(8);
-    fill_glue.set_stretch(mem, Scaled(65536));
-    fill_glue.set_stretch_order(mem, FILL);
-    let ss_glue = static_glue_spec(12);
-    ss_glue.set_stretch(mem, Scaled(65536));
-    ss_glue.set_stretch_order(mem, FIL);
-    ss_glue.set_shrink(mem, Scaled(65536));
-    ss_glue.set_shrink_order(mem, FIL);
-    let fil_neg_glue = static_glue_spec(16);
-    fil_neg_glue.set_stretch(mem, Scaled(-65536));
-    fil_neg_glue.set_stretch_order(mem, FIL);
+    FIL_GLUE.set_stretch(mem, Scaled(65536));
+    FIL_GLUE.set_stretch_order(mem, FIL);
+    FILL_GLUE.set_stretch(mem, Scaled(65536));
+    FILL_GLUE.set_stretch_order(mem, FILL);
+    SS_GLUE.set_stretch(mem, Scaled(65536));
+    SS_GLUE.set_stretch_order(mem, FIL);
+    SS_GLUE.set_shrink(mem, Scaled(65536));
+    SS_GLUE.set_shrink_order(mem, FIL);
+    FIL_NEG_GLUE.set_stretch(mem, Scaled(-65536));
+    FIL_NEG_GLUE.set_stretch_order(mem, FIL);
 
     mem.rover = 20;
     mem.set_b32s1(mem.rover, MAX_HALFWORD);
@@ -553,9 +546,8 @@ fn initialize_more_initex_variables_in(st: &mut EngineState, format_ident: i32) 
     let glue_base_entry = eqtb.word(GLUE_BASE);
     eqtb.data[(GLUE_BASE + 1) as usize..LOCAL_BASE as usize].fill(glue_base_entry);
 
-    let zero_glue = static_glue_spec(0);
-    let zero_glue_refs = zero_glue.ref_count(&st.mem) + 531;
-    zero_glue.set_ref_count(&mut st.mem, zero_glue_refs);
+    let zero_glue_refs = ZERO_GLUE.ref_count(&st.mem) + 531;
+    ZERO_GLUE.set_ref_count(&mut st.mem, zero_glue_refs);
 
     set_eq(
         eqtb,

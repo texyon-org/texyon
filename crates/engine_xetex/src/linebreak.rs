@@ -62,11 +62,6 @@ fn odd(v: u8) -> bool {
 }
 
 #[inline]
-fn glue_spec(spec: MemPtr) -> NodePtr<GlueSpecNode> {
-    NodePtr::<GlueSpecNode>::from_glue_ptr(spec).expect("non-null glue spec")
-}
-
-#[inline]
 fn has_infinite_shrink(mem: &MemState, spec: NodePtr<GlueSpecNode>) -> bool {
     spec.shrink_order(mem) != NORMAL && spec.shrink(mem).0 != 0
 }
@@ -587,9 +582,9 @@ pub(crate) fn finite_shrink(
     mem: &mut MemState,
     spec: NodePtr<GlueSpecNode>,
 ) -> Result<NodePtr<GlueSpecNode>, NodeRecycleAbort> {
-    let q = crate::mem::new_spec(mem, spec.ptr()).ok_or(NodeRecycleAbort::Overflow)?;
+    let q = crate::mem::new_spec(mem, spec).ok_or(NodeRecycleAbort::Overflow)?;
     q.set_shrink_order(mem, NORMAL);
-    crate::mem::delete_glue_ref(mem, spec.ptr());
+    crate::mem::delete_glue_ref(mem, spec);
     Ok(q)
 }
 
@@ -1016,7 +1011,7 @@ fn finish_last_line_fit(
         Scaled(spec.width(mem).0 + best.shortfall(mem).0 - best.glue(mem).0),
     );
     spec.set_stretch(mem, Scaled(0));
-    last_line_fill.set_glue_ptr(mem, spec.ptr());
+    last_line_fill.set_glue_ptr(mem, spec);
     Ok(())
 }
 
@@ -1259,7 +1254,7 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
     st.linebreak.do_last_line_fit = false;
     st.linebreak.active_node_size = ACTIVE_NODE_SIZE_NORMAL;
     if st.eqtb.int_par(INT_PAR_LAST_LINE_FIT) > 0 {
-        let spec = glue_spec(last_line_fill.glue_ptr(&st.mem));
+        let spec = last_line_fill.glue_ptr(&st.mem);
         let lb = &mut st.linebreak;
         if spec.stretch(&st.mem).0 > 0
             && spec.stretch_order(&st.mem) > NORMAL
@@ -1384,10 +1379,10 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
                         line_break_try_break(st, 0, UNHYPHENATED, None)?;
                     }
 
-                    let mut spec = glue_spec(cur_glue.glue_ptr(&st.mem));
+                    let mut spec = cur_glue.glue_ptr(&st.mem);
                     if has_infinite_shrink(&st.mem, spec) {
                         spec = finite_shrink_emit(st, spec)?;
-                        cur_glue.set_glue_ptr(&mut st.mem, spec.ptr());
+                        cur_glue.set_glue_ptr(&mut st.mem, spec);
                     }
                     let aw = &mut st.scanner.active_width;
                     aw[1] += spec.width(&st.mem).0;
@@ -1887,9 +1882,9 @@ fn post_line_break_prefix(
                 let old_spec = g.glue_ptr(mem);
                 crate::mem::delete_glue_ref(mem, old_spec);
                 let right_skip = eqtb.glue_par(GLUE_PAR_RIGHT_SKIP);
-                g.set_glue_ptr(mem, right_skip.ptr());
+                g.set_glue_ptr(mem, right_skip);
                 g.set_subtype(mem, GLUE_PAR_RIGHT_SKIP as u16 + 1);
-                right_skip.set_ref_count(mem, right_skip.ref_count(mem) + 1);
+                crate::mem::add_glue_ref(mem, right_skip);
                 glue_break = true;
             }
             Ok(AnyNode::Disc(d)) => {
@@ -1980,7 +1975,7 @@ fn post_line_break_prefix(
         q = insert_left_margin_kern(errors, mem, fonts, linebreak, q)?;
     }
 
-    if eqtb.glue_par(GLUE_PAR_LEFT_SKIP).ptr() != ZERO_GLUE {
+    if eqtb.glue_par(GLUE_PAR_LEFT_SKIP) != ZERO_GLUE {
         let r = crate::mem::new_param_glue(mem, eqtb, GLUE_PAR_LEFT_SKIP)
             .ok_or(NodeRecycleAbort::Overflow)?;
         r.set_link(mem, q);
@@ -2329,7 +2324,7 @@ fn compute_break_width(
     while !s.is_null() && !is_char_node(mem, s) {
         match mem.classify(MemIdx::new(s)) {
             Ok(AnyNode::Glue(g)) => {
-                let spec = glue_spec(g.glue_ptr(mem));
+                let spec = g.glue_ptr(mem);
                 linebreak.break_width[1] -= spec.width(mem).0;
                 linebreak.break_width[2 + spec.stretch_order(mem) as usize] -= spec.stretch(mem).0;
                 linebreak.break_width[6] -= spec.shrink(mem).0;
@@ -3173,7 +3168,7 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
         return append_native_word(st, main_f, native_text.add(s as usize), len);
     }
 
-    let use_skip = st.eqtb.glue_par(GLUE_PAR_XETEX_LINEBREAK_SKIP).ptr() != ZERO_GLUE;
+    let use_skip = st.eqtb.glue_par(GLUE_PAR_XETEX_LINEBREAK_SKIP) != ZERO_GLUE;
     let penalty = st.eqtb.int_par(INT_PAR_XETEX_LINEBREAK_PENALTY);
     let use_penalty = penalty != 0 || !use_skip;
     linebreak_start_in(st, main_f, locale, native_text.add(s as usize), len)?;

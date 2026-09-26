@@ -202,7 +202,7 @@ pub(crate) fn eq_destroy(
     };
     match eq_type {
         CALL..=LONG_OUTER_CALL => delete_token_ref(mem, MemPtr(equiv)),
-        GLUE_REF => delete_glue_ref(mem, equiv),
+        GLUE_REF => delete_glue_ref(mem, crate::node::NodePtr::from_glue_ptr(MemPtr(equiv))),
         SHAPE_REF => {
             if equiv != TEX_NULL {
                 let size = 2 * mem.b32s0(equiv) + 1;
@@ -279,7 +279,7 @@ pub fn delete_sa_ref(mem: &mut MemState, scanner: &mut ScannerState, q: impl Mem
         WORD_NODE_SIZE
     } else {
         if q.sa_index(mem) < MU_VAL_LIMIT {
-            if q.sa_ptr(mem) != ZERO_GLUE {
+            if q.sa_ptr(mem) != ZERO_GLUE.ptr() {
                 return;
             }
             delete_glue_ref(mem, ZERO_GLUE);
@@ -361,7 +361,7 @@ pub(crate) fn sa_destroy(mem: &mut MemState, p: impl MemAddr) -> Option<i32> {
     let p = sa(p);
     let value = p.sa_ptr(mem);
     if p.sa_index(mem) < MU_VAL_LIMIT {
-        delete_glue_ref(mem, value);
+        delete_glue_ref(mem, crate::node::NodePtr::from_glue_ptr(value));
     } else if !value.is_null() {
         if p.sa_index(mem) < BOX_VAL_LIMIT {
             return Some(value.0);
@@ -663,7 +663,7 @@ fn sa_alloc_chain(
         p = sa(get_node(mem, POINTER_NODE_SIZE)?);
         scanner.cur_ptr = p.ptr();
         if t <= MU_VAL {
-            p.set_sa_ptr(mem, ZERO_GLUE);
+            p.set_sa_ptr(mem, ZERO_GLUE.ptr());
             crate::mem::add_glue_ref(mem, ZERO_GLUE);
         } else {
             p.set_sa_ptr(mem, MemPtr::NULL);

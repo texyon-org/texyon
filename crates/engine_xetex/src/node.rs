@@ -53,7 +53,7 @@ impl<K: NodeKind> NodePtr<K> {
     /// `idx` must reference a `K` node. A wrong kind is not memory-unsafe (all
     /// fields index in bounds) but reads fields the real node does not have.
     #[inline]
-    pub unsafe fn from_idx_unchecked(idx: MemIdx) -> Self {
+    pub const unsafe fn from_idx_unchecked(idx: MemIdx) -> Self {
         NodePtr {
             idx,
             _kind: PhantomData,
@@ -117,6 +117,18 @@ impl Slot for MemPtr {
     #[inline(always)]
     fn encode(self) -> i32 {
         self.0
+    }
+}
+
+impl Slot for NodePtr<GlueSpecNode> {
+    type Raw = i32;
+    #[inline(always)]
+    fn decode(raw: i32) -> Self {
+        NodePtr::from_glue_ptr(MemPtr(raw))
+    }
+    #[inline(always)]
+    fn encode(self) -> i32 {
+        self.idx.0
     }
 }
 
@@ -865,13 +877,8 @@ impl NodePtr<Noad> {
 
 impl NodePtr<GlueNode> {
     fields! {
-        glue_ptr / set_glue_ptr: MemPtr = b32s0 @ 1;
+        glue_ptr / set_glue_ptr: NodePtr<GlueSpecNode> = b32s0 @ 1;
         leader_ptr / set_leader_ptr: MemPtr = b32s1 @ 1;
-    }
-
-    #[inline]
-    pub fn glue_spec(self, mem: &MemState) -> Option<NodePtr<GlueSpecNode>> {
-        NodePtr::<GlueSpecNode>::from_glue_ptr(self.glue_ptr(mem))
     }
 
     #[inline]
@@ -889,12 +896,12 @@ impl NodePtr<GlueNode> {
 }
 
 impl NodePtr<GlueSpecNode> {
-    /// The spec a glue pointer references, `None` if it is null.
+    /// The spec a glue pointer references. Glue pointers are never null.
     #[inline]
-    pub fn from_glue_ptr(p: MemPtr) -> Option<NodePtr<GlueSpecNode>> {
+    pub fn from_glue_ptr(p: MemPtr) -> NodePtr<GlueSpecNode> {
+        let idx = p.as_idx().expect("null glue spec");
         // SAFETY: glue pointers are only ever set to glue specs.
-        p.as_idx()
-            .map(|idx| unsafe { NodePtr::from_idx_unchecked(idx) })
+        unsafe { NodePtr::from_idx_unchecked(idx) }
     }
 
     fields! {
@@ -933,7 +940,7 @@ impl NodePtr<InsNode> {
         float_cost / set_float_cost: i32 = b32s1 @ 1;
         ins_ptr / set_ins_ptr: MemPtr = b32s0 @ 4;
         /// The `\splittopskip` glue spec.
-        split_top_ptr / set_split_top_ptr: MemPtr = b32s1 @ 4;
+        split_top_ptr / set_split_top_ptr: NodePtr<GlueSpecNode> = b32s1 @ 4;
     }
 }
 
@@ -1552,7 +1559,7 @@ mod tests {
 
         let ins: NodePtr<InsNode> = at(&mut mem, 100, Some(NodeType::Ins));
         ins.set_ins_ptr(&mut mem, MemPtr(55));
-        ins.set_split_top_ptr(&mut mem, MemPtr(66));
+        ins.set_split_top_ptr(&mut mem, NodePtr::from_glue_ptr(MemPtr(66)));
         assert_eq!(mem.b32s0(104), 55);
         assert_eq!(mem.b32s1(104), 66);
     }
@@ -1629,14 +1636,12 @@ mod tests {
         let mut mem = fresh_mem(200);
         let g: NodePtr<GlueNode> = at(&mut mem, 100, Some(NodeType::Glue));
         g.set_subtype(&mut mem, 7);
-        g.set_glue_ptr(&mut mem, MemPtr(150));
+        g.set_glue_ptr(&mut mem, NodePtr::from_glue_ptr(MemPtr(150)));
         g.set_leader_ptr(&mut mem, MemPtr(160));
         assert_eq!(mem.b16s0(100), 7);
         assert_eq!(mem.b32s0(101), 150);
         assert_eq!(mem.b32s1(101), 160);
-        assert_eq!(g.glue_spec(&mem).map(|s| s.idx()), Some(MemIdx(150)));
-        g.set_glue_ptr(&mut mem, MemPtr::NULL);
-        assert!(g.glue_spec(&mem).is_none());
+        assert_eq!(g.glue_ptr(&mem).idx(), MemIdx(150));
 
         let s: NodePtr<GlueSpecNode> = at(&mut mem, 150, None);
         s.set_ref_count(&mut mem, 42);

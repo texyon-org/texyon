@@ -18,7 +18,7 @@ use crate::input::{
     back_error_in, back_input_in, begin_token_list_in, InputAbort, INSERTED, LEFT_BRACE_LIMIT,
     MACRO, MARK_TEXT, RIGHT_BRACE_LIMIT, TOKEN_LIST, V_TEMPLATE,
 };
-use crate::mem::{BACKUP_HEAD, GARBAGE, TEMP_HEAD};
+use crate::mem::{BACKUP_HEAD, GARBAGE, TEMP_HEAD, ZERO_GLUE};
 use crate::node::{AnyBox, AnyNode, NodePtr, SaNode};
 use crate::output::{
     begin_diagnostic_in, capture_to_diagnostic_in, diagnostic_begin_capture_warning_here_in,
@@ -571,7 +571,7 @@ fn is_margin_kern_filler(mem: &crate::state::MemState, node: AnyNode, par_skip: 
         }
         AnyNode::Math(m) => m.width(mem).0 == 0,
         AnyNode::Kern(k) => k.width(mem).0 == 0 || k.subtype(mem) == 0,
-        AnyNode::Glue(g) => g.glue_ptr(mem).0 == 0 || g.subtype(mem) == (par_skip + 1) as u16,
+        AnyNode::Glue(g) => g.glue_ptr(mem) == ZERO_GLUE || g.subtype(mem) == (par_skip + 1) as u16,
         AnyNode::HList(h) => {
             h.width(mem).0 == 0
                 && h.height(mem).0 == 0

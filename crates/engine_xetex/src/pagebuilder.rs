@@ -228,7 +228,7 @@ fn place_insertion_in(
         s.set_link(&mut st.mem, MemPtr::NULL);
         st.eqtb.set_b32s1(
             GLUE_BASE + GLUE_PAR_SPLIT_TOP_SKIP as i32,
-            ins.split_top_ptr(&st.mem).0,
+            ins.split_top_ptr(&st.mem).ptr().0,
         );
         let pruned = crate::packaging::prune_page_top(
             &mut st.mem,
@@ -391,7 +391,10 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
         .set_b32s1(INT_BASE + INT_PAR_VBADNESS, save_vbadness);
     st.eqtb.set_dimen_par(DIMEN_PAR_VFUZZ, save_vfuzz);
     if st.shipout.last_glue.0 != MAX_HALFWORD {
-        crate::mem::delete_glue_ref(&mut st.mem, st.shipout.last_glue);
+        crate::mem::delete_glue_ref(
+            &mut st.mem,
+            crate::node::NodePtr::from_glue_ptr(st.shipout.last_glue),
+        );
     }
 
     st.shipout.page_contents = PageContents::Empty;
@@ -483,7 +486,7 @@ fn update_last_node_info(st: &mut EngineState, node: AnyNode, node_type: i32) {
     st.shipout.last_glue.0 = MAX_HALFWORD;
     match node {
         AnyNode::Glue(glue) => {
-            let spec = glue.glue_spec(&st.mem).expect("non-null glue spec");
+            let spec = glue.glue_ptr(&st.mem);
             st.shipout.last_glue = spec.ptr();
             let refs = spec.ref_count(&st.mem);
             spec.set_ref_count(&mut st.mem, refs + 1);
@@ -566,8 +569,7 @@ fn append_insertion_in(
         rec.set_height(&mut st.mem, Scaled(height));
         rec.set_best_ins_ptr(&mut st.mem, MemPtr::NULL);
         let skip =
-            NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr(st.eqtb.b32s1(SKIP_BASE + n as i32)))
-                .expect("non-null insertion skip spec");
+            NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr(st.eqtb.b32s1(SKIP_BASE + n as i32)));
         let count = st.eqtb.b32s1(COUNT_BASE + n as i32);
         let h = scale_by_count(st, height, count);
         st.shipout.page_so_far[PAGE_GOAL] -= h + skip.width(&st.mem).0;
@@ -664,7 +666,10 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
         let node_type = st.mem.b16s1(p) as i32;
         let node = st.mem.classify(idx).expect("valid page node");
         if st.shipout.last_glue.0 != MAX_HALFWORD {
-            crate::mem::delete_glue_ref(&mut st.mem, st.shipout.last_glue);
+            crate::mem::delete_glue_ref(
+                &mut st.mem,
+                crate::node::NodePtr::from_glue_ptr(st.shipout.last_glue),
+            );
         }
         update_last_node_info(st, node, node_type);
 
@@ -685,7 +690,7 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                     }
                     let q = crate::mem::new_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR_TOP_SKIP)
                         .ok_or(PageBuildAbort::MainMemoryOverflow)?;
-                    let spec = q.glue_spec(&st.mem).expect("fresh top skip spec");
+                    let spec = q.glue_ptr(&st.mem);
                     let width = spec.width(&st.mem).0;
                     let width = if width > height { width - height } else { 0 };
                     spec.set_width(&mut st.mem, Scaled(width));
@@ -825,7 +830,7 @@ fn page_glue_width_in(
     st: &mut EngineState,
     glue: NodePtr<crate::node::GlueNode>,
 ) -> Result<i32, PageBuildAbort> {
-    let spec = glue.glue_spec(&st.mem).expect("non-null page glue spec");
+    let spec = glue.glue_ptr(&st.mem);
     let order = spec.stretch_order(&st.mem) as usize;
     st.shipout.page_so_far[2 + order] += spec.stretch(&st.mem).0;
     st.shipout.page_so_far[PAGE_SHRINK] += spec.shrink(&st.mem).0;
@@ -845,10 +850,10 @@ fn page_glue_width_in(
     ]);
     page_error(crate::errors::error_in(st))?;
     let finite =
-        crate::mem::new_spec(&mut st.mem, spec.idx()).ok_or(PageBuildAbort::MainMemoryOverflow)?;
+        crate::mem::new_spec(&mut st.mem, spec).ok_or(PageBuildAbort::MainMemoryOverflow)?;
     finite.set_shrink_order(&mut st.mem, NORMAL);
-    crate::mem::delete_glue_ref(&mut st.mem, spec.idx());
-    glue.set_glue_ptr(&mut st.mem, finite.ptr());
+    crate::mem::delete_glue_ref(&mut st.mem, spec);
+    glue.set_glue_ptr(&mut st.mem, finite);
     Ok(finite.width(&st.mem).0)
 }
 

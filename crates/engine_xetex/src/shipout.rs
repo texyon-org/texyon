@@ -2,7 +2,7 @@
 use crate::consts::{
     A_LEADERS, BEFORE, COUNT_BASE, CS_TOKEN_FLAG, C_LEADERS, DIMEN_PAR_H_OFFSET,
     DIMEN_PAR_PDF_PAGE_HEIGHT, DIMEN_PAR_PDF_PAGE_WIDTH, DIMEN_PAR_V_OFFSET, DLIST, END_WRITE,
-    FILLL, FONT_BASE, GLUE_SPEC_SIZE, INT_PAR_MAG, INT_PAR_TRACING_ONLINE, INT_PAR_TRACING_OUTPUT,
+    FILLL, FONT_BASE, INT_PAR_MAG, INT_PAR_TRACING_ONLINE, INT_PAR_TRACING_OUTPUT,
     INT_PAR_XETEX_INTERWORD_SPACE_SHAPING, INVALID_HANDLE, LEFT_TO_RIGHT, L_CODE, MAX_HALFWORD,
     MEDIUM_NODE_SIZE, MEM_TOP, MIN_HALFWORD, NATIVE_GLYPH_INFO_SIZE, NORMAL, NULL_FLAG,
     RIGHT_TO_LEFT, R_CODE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_AND_LOG,
@@ -667,7 +667,7 @@ fn merge_justifiable_native_words(
                 q = skip_ignorable_interword_nodes(mem, q);
                 match classify_non_char(mem, q) {
                     Some(AnyNode::Glue(glue)) if glue.subtype(mem) == NORMAL => {
-                        if glue.glue_ptr(mem).0 == fonts.font_glue(font.0) {
+                        if glue.glue_ptr(mem).ptr().0 == fonts.font_glue(font.0) {
                             q = skip_ignorable_interword_nodes(mem, glue.link(mem));
                             if let Some(w) = same_font_word(mem, q) {
                                 last = w;
@@ -750,7 +750,7 @@ fn merge_native_word_run(
             Ok(AnyNode::Glue(glue)) => {
                 strings.str_pool[strings.pool_ptr as usize] = b' ' as u16;
                 strings.pool_ptr += 1;
-                let spec = glue.glue_spec(mem).expect("glue node has a spec");
+                let spec = glue.glue_ptr(mem);
                 width += spec.width(mem).0;
                 match g_sign {
                     GlueSign::Stretching if spec.stretch_order(mem) == g_order => {
@@ -857,10 +857,6 @@ impl GlueRounding {
     }
 }
 
-fn glue_spec(mem: &MemState, glue: NodePtr<GlueNode>) -> NodePtr<GlueSpecNode> {
-    glue.glue_spec(mem).expect("glue node has a glue spec")
-}
-
 /// Replace glue that the box stretched or shrank by a rigid equivalent of
 /// width `w`, so reflected or repeated output sees the width already rounded.
 fn freeze_set_glue(
@@ -869,11 +865,7 @@ fn freeze_set_glue(
     spec: NodePtr<GlueSpecNode>,
     w: i32,
 ) -> Result<(), ShipoutAbort> {
-    if spec.ref_count(mem) == TEX_NULL {
-        crate::mem::free_node(mem, spec.ptr(), GLUE_SPEC_SIZE);
-    } else {
-        spec.set_ref_count(mem, spec.ref_count(mem) - 1);
-    }
+    crate::mem::delete_glue_ref(mem, spec);
     if glue.subtype(mem) < A_LEADERS {
         glue.into_kern(mem, Scaled(w));
     } else {
@@ -883,7 +875,7 @@ fn freeze_set_glue(
         rigid.set_width(mem, Scaled(w));
         rigid.set_stretch(mem, Scaled(0));
         rigid.set_shrink(mem, Scaled(0));
-        glue.set_glue_ptr(mem, rigid.ptr());
+        glue.set_glue_ptr(mem, rigid);
     }
     Ok(())
 }
@@ -1027,7 +1019,7 @@ fn hlist_glue_out(
     glue: NodePtr<GlueNode>,
     rounding: &mut GlueRounding,
 ) -> Result<(), ShipoutAbort> {
-    let spec = glue_spec(&st.mem, glue);
+    let spec = glue.glue_ptr(&st.mem);
     st.shipout.rule_wd = rounding.width(&st.mem, spec);
     if rounding.is_set(&st.mem, spec) {
         freeze_set_glue(&mut st.mem, glue, spec, st.shipout.rule_wd)?;
@@ -1484,7 +1476,7 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
                 _ => out_what(st, whatsit)?,
             },
             AnyNode::Glue(glue) => {
-                let spec = glue_spec(&st.mem, glue);
+                let spec = glue.glue_ptr(&st.mem);
                 st.shipout.rule_ht = rounding.width(&st.mem, spec);
                 let subtype = glue.subtype(&st.mem);
                 if subtype < A_LEADERS {
@@ -1829,7 +1821,7 @@ fn reverse(
                     }
                 }
                 Ok(AnyNode::Glue(glue)) => {
-                    let spec = glue_spec(mem, glue);
+                    let spec = glue.glue_ptr(mem);
                     shipout.rule_wd = rounding.width(mem, spec);
                     if rounding.is_set(mem, spec) {
                         freeze_set_glue(mem, glue, spec, shipout.rule_wd)?;

@@ -534,9 +534,7 @@ pub fn append_to_vlist(
         } else {
             let p = crate::mem::new_skip_param(mem, eqtb, GLUE_PAR_BASELINE_SKIP)
                 .ok_or(NodeRecycleAbort::Overflow)?;
-            p.glue_spec(mem)
-                .expect("skip parameter glue has a spec")
-                .set_width(mem, Scaled(d));
+            p.glue_ptr(mem).set_width(mem, Scaled(d));
             p
         };
         cl.tail_append(mem, p.ptr());
@@ -725,7 +723,7 @@ fn vert_break_resume(
 ) -> Result<VertBreakStep, NodeRecycleAbort> {
     loop {
         if let Some(glue) = cursor.finish_glue_after_shrinkage.take() {
-            let spec = glue.glue_spec(mem).expect("glue node has glue_spec");
+            let spec = glue.glue_ptr(mem);
             finish_vert_break_updated_height(mem, scanner, cursor, spec.width(mem).0, d);
             continue;
         }
@@ -776,7 +774,7 @@ fn vert_break_resume(
                 finish_vert_break_updated_height(mem, scanner, cursor, kern.width(mem).0, d);
             }
             Some(VertBreakUpdateSource::Glue(glue)) => {
-                let spec = glue.glue_spec(mem).expect("glue node has glue_spec");
+                let spec = glue.glue_ptr(mem);
                 scanner.active_width[2 + spec.stretch_order(mem) as usize] += spec.stretch(mem).0;
                 scanner.active_width[6] += spec.shrink(mem).0;
                 if spec.shrink_order(mem) != NORMAL && spec.shrink(mem).0 != 0 {
@@ -811,7 +809,7 @@ fn repair_vert_break_infinite_shrinkage(
     spec: NodePtr<GlueSpecNode>,
 ) -> Result<(), NodeRecycleAbort> {
     let spec = crate::linebreak::finite_shrink(mem, spec)?;
-    glue.set_glue_ptr(mem, spec.ptr());
+    glue.set_glue_ptr(mem, spec);
     Ok(())
 }
 
@@ -1196,7 +1194,7 @@ fn insert_split_top_skip_before(
         .ok_or(NodeRecycleAbort::Overflow)?;
     prev_p.set_link(mem, q.ptr());
     q.set_link(mem, p);
-    let spec = q.glue_spec(mem).expect("skip parameter glue has a spec");
+    let spec = q.glue_ptr(mem);
     let avail_ht = spec.width(mem).0;
     if avail_ht > height {
         spec.set_width(mem, Scaled(avail_ht - height));
@@ -1607,7 +1605,7 @@ fn hpack_in(
                 _ => {}
             },
             Ok(AnyNode::Glue(glue)) => {
-                let spec = glue.glue_spec(mem).expect("glue node has glue_spec");
+                let spec = glue.glue_ptr(mem);
                 x += spec.width(mem).0;
                 scanner.total_stretch[spec.stretch_order(mem) as usize] += spec.stretch(mem).0;
                 scanner.total_shrink[spec.shrink_order(mem) as usize] += spec.shrink(mem).0;
@@ -1928,7 +1926,7 @@ fn vpackage_in(
             Ok(AnyNode::Glue(glue)) => {
                 x += d;
                 d = 0;
-                let spec = glue.glue_spec(mem).expect("glue node has glue_spec");
+                let spec = glue.glue_ptr(mem);
                 x += spec.width(mem).0;
                 scanner.total_stretch[spec.stretch_order(mem) as usize] += spec.stretch(mem).0;
                 scanner.total_shrink[spec.shrink_order(mem) as usize] += spec.shrink(mem).0;
