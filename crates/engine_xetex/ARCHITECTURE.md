@@ -26,6 +26,13 @@ State and memory:
   (`q.nucleus()`, `q.left_delimiter()`, ...). Token lists are `MemPtr` chains
   read with `p.token(mem)` and `p.link(mem)`, their heads carrying
   `token_ref_count`.
+- `token.rs`: `Token`, a transparent `i32` in TeX's layout (`cmd * max_char_val
+  + chr` for a character, `cs_token_flag + p` for a control sequence).
+  Built with `Token::new(cmd, chr)`, `Token::from_cs(p)` and helpers like
+  `Token::other(b'=')`, read with `is_cs()`, `cs()`, `cmd()`, `chr()`. It is
+  ordered like the raw value, so brace and parameter tests stay range checks
+  (`is_left_brace()`, `is_brace()`, `is_match()`). `cur_tok`, `par_token`,
+  `after_token` and token list nodes hold it. `Token::ZERO` is TeX's 0.
 - `units.rs`: `MemIdx`/`MemPtr` (null is `TEX_NULL`, not zero), `Scaled`,
   `FontId`, `StrNumber`, `NodeType`, `GlueSign`. `mem_types.rs` holds
   `MemoryWord`.
@@ -45,13 +52,28 @@ State and memory:
     `StrNumber::NONE` is TeX's 0 for "no string".
   - `cur_val` stays a raw `i32` because it holds whatever was scanned.
     `cur_dimen()` and `set_cur_dimen()` read and write it as a length.
-- `consts.rs`: WEB `@d` constants and the `eqtb` layout (region bases and
-  parameter indices, read through `EqtbState::int_par`, `dimen_par`, ...).
+- `consts.rs`: WEB `@d` constants and the `eqtb` layout (region bases).
+- `params.rs`: `IntPar`, `DimenPar` and `GluePar`, the `eqtb` parameters
+  read through `EqtbState::int_par`, `dimen_par` and `glue_par`. Each knows
+  its `eqtb` location (`loc()`) and primitive name, a `GluePar` also the
+  subtype of glue made from it.
   Entries are read as `eq_type`/`eq_level`/`equiv` (or `int_at` in the
   integer regions) and through named views (`cur_font`, `box_reg`, `toks`,
   `cat_code`, `par_shape`, ...). The save stack has `saved(k)` and
   `save_type`/`save_level`/`save_index`.
-- `cmd.rs`: command codes, in `xetex.web` order.
+- `cmd.rs`: command codes, in `xetex.web` order. They stay `u8` because
+  TeX compares ranges of them (`cur_cmd >= CALL`).
+- `codes.rs`: enums for the `chr_code` modifiers of the commands that
+  dispatch on them (`LastItemCode`, `ConvertCode`, `IfCode`, `FiOrElseCode`,
+  `ExtensionCode`, `BoxCode`, `SkipCode`, `ShorthandDefCode`,
+  `BoxDimenCode`, `ShowCode`) and other small code sets (`ValueLevel` for
+  `cur_val_level` and sparse-array types, `ScannerStatus`). `code_enum!`
+  gives each `from_raw` (a jump table) and `raw`, and `name()` where the
+  variants are primitives, which `primitives.rs` and `print_cmd_chr` share.
+  Dispatch decodes `cur_chr` once and matches on variants. A `chr_code` that
+  can also be a pointer (`\count` registers, `\toks`) stays raw. The
+  `selector` is `Selector` in `state.rs`, whose `File(n)` is a `\write`
+  stream and whose `with_log`/`without_terminal` steps are TeX's arithmetic.
 - `primitives.rs`: the primitive catalog. Its order fixes the hash layout and
   therefore the format.
 - `errors.rs`: `ErrorState`. Set help with `st.errors.help(&[...])`, then call
