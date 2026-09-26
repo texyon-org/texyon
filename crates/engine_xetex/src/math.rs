@@ -2616,7 +2616,7 @@ pub(crate) fn start_eq_no_in(
         crate::ext::insert_src_special_in(st)?;
     }
     let every_math = st.eqtb.local(LOCAL_EVERY_MATH);
-    if every_math != TEX_NULL {
+    if !every_math.is_null() {
         crate::input::begin_token_list_in(st, every_math, EVERY_MATH_TEXT)?;
     }
     Ok(())
@@ -3741,8 +3741,11 @@ pub(crate) fn init_math_in(
 
         let l;
         let s;
-        let par_shape = st.eqtb.par_shape_ptr();
-        if par_shape == TEX_NULL {
+        if let Some(shape) = st.eqtb.par_shape() {
+            let line = (st.input.cur_list.prev_graf + 2).min(shape.lines(&st.mem));
+            s = shape.indent(&st.mem, line);
+            l = shape.line_width(&st.mem, line);
+        } else {
             let hang = st.eqtb.dimen_par(DIMEN_PAR_HANG_INDENT);
             let hang_after = st.eqtb.int_par(INT_PAR_HANG_AFTER);
             let prev_graf = st.input.cur_list.prev_graf;
@@ -3755,15 +3758,6 @@ pub(crate) fn init_math_in(
                 l = st.eqtb.dimen_par(DIMEN_PAR_HSIZE);
                 s = 0;
             }
-        } else {
-            let n = st.mem.b32s0(par_shape);
-            let p = if st.input.cur_list.prev_graf + 2 >= n {
-                par_shape + 2 * n
-            } else {
-                par_shape + 2 * (st.input.cur_list.prev_graf + 2)
-            };
-            s = st.mem.b32s1(p - 1);
-            l = st.mem.b32s1(p);
         }
 
         crate::main_control::push_math_in(st, GroupCode::MathShift)?;
@@ -3780,7 +3774,7 @@ pub(crate) fn init_math_in(
         }
 
         let every_display = st.eqtb.local(LOCAL_EVERY_DISPLAY);
-        if every_display != TEX_NULL {
+        if !every_display.is_null() {
             crate::input::begin_token_list_in(st, every_display, EVERY_DISPLAY_TEXT)?;
         }
         if st.input.nest_ptr == 1 {
@@ -3797,7 +3791,7 @@ pub(crate) fn init_math_in(
             unsafe { crate::ext::tt_insert_special_in(st, c"tdux:cs math".as_ptr()) }?;
         }
         let every_math = st.eqtb.local(LOCAL_EVERY_MATH);
-        if every_math != TEX_NULL {
+        if !every_math.is_null() {
             crate::input::begin_token_list_in(st, every_math, EVERY_MATH_TEXT)?;
         }
     }

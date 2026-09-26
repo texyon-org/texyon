@@ -414,7 +414,7 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
     }
 
     let output_routine = st.eqtb.local(LOCAL_OUTPUT_ROUTINE);
-    if output_routine != TEX_NULL {
+    if !output_routine.is_null() {
         if st.shipout.dead_cycles < st.eqtb.int_par(INT_PAR_MAX_DEAD_CYCLES) {
             st.shipout.output_active = true;
             st.shipout.dead_cycles += 1;

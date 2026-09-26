@@ -37,8 +37,8 @@ use crate::mem::{
 };
 use crate::node::{
     AdjustNode, AlignColumn, AlignRecord, AlignStackNode, AnyBox, AnyNode, BoxOrRule, CharNode,
-    GlueNode, GlueSpecNode, InsNode, MarkNode, NodePtr, RuleDimen, SaNode, SpanNode, UnsetNode,
-    WhatsitNode, WhatsitSubtype,
+    GlueNode, GlueSpecNode, InsNode, MarkNode, NodePtr, ParShapeNode, PenaltiesNode, RuleDimen,
+    SaNode, SpanNode, UnsetNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::scan::{
     change_box, fetch_box, set_class_fn, set_family_fn, ALIGNING, BOX_VAL, DIMEN_VAL, GLUE_VAL,
@@ -628,7 +628,7 @@ pub(crate) fn init_col_in(st: &mut EngineState) -> Result<(), MainControlAbort> 
         st.scanner.align_state = 0;
     } else {
         crate::input::back_input_in(st)?;
-        crate::input::begin_token_list_in(st, column.u_part(&st.mem).0, U_TEMPLATE)?;
+        crate::input::begin_token_list_in(st, column.u_part(&st.mem), U_TEMPLATE)?;
     }
     Ok(())
 }
@@ -671,18 +671,6 @@ pub(crate) fn pop_alignment_in(st: &mut EngineState) {
     p.free(mem);
 }
 
-/// TeX's `store_new_token`: appends `tok` after `p` and returns the new tail.
-fn store_new_token(
-    mem: &mut MemState,
-    p: MemPtr,
-    tok: i32,
-) -> Result<MemPtr, crate::scan::NodeRecycleAbort> {
-    let q = crate::mem::get_avail(mem).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-    p.set_link(mem, q);
-    q.set_info(mem, tok);
-    Ok(q)
-}
-
 /// Copies token list `r` through `HOLD_HEAD` and returns the copy.
 fn copy_token_list(
     mem: &mut MemState,
@@ -690,7 +678,8 @@ fn copy_token_list(
 ) -> Result<MemPtr, crate::scan::NodeRecycleAbort> {
     let mut q = HOLD_HEAD;
     while !r.is_null() {
-        q = store_new_token(mem, q, r.info(mem))?;
+        crate::mem::store_new_token(mem, &mut q, r.token(mem))
+            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
         r = r.link(mem);
     }
     q.set_link(mem, MemPtr::NULL);
@@ -841,7 +830,7 @@ fn append_list(st: &mut EngineState, head: MemPtr, tail: MemPtr) {
 
 fn begin_every(st: &mut EngineState, local: i32, kind: u16) -> Result<(), MainControlAbort> {
     let list = st.eqtb.local(local);
-    if list != TEX_NULL {
+    if !list.is_null() {
         crate::input::begin_token_list_in(st, list, kind)?;
     }
     Ok(())
@@ -911,7 +900,7 @@ pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort
     }
 
     crate::scan::scan_spec_in(st, GroupCode::Align, false)?;
-    st.mem.set_b32s1(ALIGN_HEAD, TEX_NULL);
+    ALIGN_HEAD.set_link(&mut st.mem, MemPtr::NULL);
     st.scanner.cur_align = ALIGN_HEAD;
     st.scanner.cur_loop = MemPtr::NULL;
     st.scanner.scanner_status = ALIGNING;
@@ -929,7 +918,7 @@ pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort
         }
 
         let mut p = HOLD_HEAD;
-        st.mem.set_b32s1(p, TEX_NULL);
+        p.set_link(&mut st.mem, MemPtr::NULL);
         loop {
             get_preamble_token_in(st)?;
             if st.scanner.cur_cmd == MAC_PARAM {
@@ -952,7 +941,8 @@ pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort
                     break;
                 }
             } else if st.scanner.cur_cmd != SPACER || p != HOLD_HEAD {
-                p = store_new_token(&mut st.mem, p, st.scanner.cur_tok)?;
+                crate::mem::store_new_token(&mut st.mem, &mut p, st.scanner.cur_tok)
+                    .ok_or(NodeRecycleAbort::Overflow)?;
             }
         }
 
@@ -963,7 +953,7 @@ pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort
         column.set_u_part(&mut st.mem, u_part);
 
         p = HOLD_HEAD;
-        st.mem.set_b32s1(p, TEX_NULL);
+        p.set_link(&mut st.mem, MemPtr::NULL);
         loop {
             get_preamble_token_in(st)?;
             if (TAB_MARK..=CAR_RET).contains(&st.scanner.cur_cmd)
@@ -981,9 +971,11 @@ pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort
                 mc_propagate_error(crate::errors::error_in(st))?;
                 continue;
             }
-            p = store_new_token(&mut st.mem, p, st.scanner.cur_tok)?;
+            crate::mem::store_new_token(&mut st.mem, &mut p, st.scanner.cur_tok)
+                .ok_or(NodeRecycleAbort::Overflow)?;
         }
-        store_new_token(&mut st.mem, p, CS_TOKEN_FLAG + FROZEN_END_TEMPLATE)?;
+        crate::mem::store_new_token(&mut st.mem, &mut p, CS_TOKEN_FLAG + FROZEN_END_TEMPLATE)
+            .ok_or(NodeRecycleAbort::Overflow)?;
         let v_part = HOLD_HEAD.link(&st.mem);
         column.set_v_part(&mut st.mem, v_part);
     }
@@ -2296,7 +2288,7 @@ pub(crate) fn off_save_in(st: &mut EngineState) -> Result<(), MainControlAbort> 
         }
     }
     crate::output::print_cstr_in(st, c" inserted".as_ptr());
-    crate::input::begin_token_list_in(st, st.mem.b32s1(TEMP_HEAD), INSERTED)?;
+    crate::input::begin_token_list_in(st, TEMP_HEAD.link(&st.mem), INSERTED)?;
     crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
     st.errors.help(&[
         "I've inserted something that you may have forgotten.",
@@ -2350,7 +2342,7 @@ pub(crate) fn shift_case_in(st: &mut EngineState) -> Result<(), MainControlAbort
         p = st.mem.b32s1(p);
     }
     let def_ref = st.scanner.def_ref;
-    crate::input::begin_token_list_in(st, st.mem.b32s1(def_ref), BACKED_UP)?;
+    crate::input::begin_token_list_in(st, def_ref.link(&st.mem), BACKED_UP)?;
     crate::mem::free_avail(&mut st.mem, def_ref);
     Ok(())
 }
@@ -3101,10 +3093,10 @@ fn inter_char_tokens_enabled(st: &EngineState) -> bool {
 
 /// The `\XeTeXinterchartoks` list for class pair `n`, if set. Leaves the
 /// pair's trie record, possibly null, in `cur_ptr`.
-fn inter_char_toks(st: &mut EngineState, n: i32) -> Option<i32> {
+fn inter_char_toks(st: &mut EngineState, n: i32) -> Option<MemPtr> {
     let list =
         crate::save::find_sa_element(&st.mem, &mut st.scanner, INTER_CHAR_VAL, n)?.sa_ptr(&st.mem);
-    (!list.is_null()).then_some(list.0)
+    (!list.is_null()).then_some(list)
 }
 
 /// Inserts the inter-character tokens between the last character's class and
@@ -4223,10 +4215,6 @@ fn add_sa_ref(mem: &mut MemState, p: MemPtr) {
 }
 
 /// The `sa_ptr` of a sparse-array record, or null without one.
-fn sa_value(st: &EngineState, sa: Option<NodePtr<SaNode>>) -> i32 {
-    sa.map_or(TEX_NULL, |sa| sa.sa_ptr(&st.mem).0)
-}
-
 /// Scans a pair of character classes into its `\XeTeXinterchartoks` index.
 fn scan_inter_char_pair(st: &mut EngineState) -> Result<i32, MainControlAbort> {
     crate::scan::scan_char_class_not_ignored_in(st)?;
@@ -4242,13 +4230,13 @@ fn define_toks(
     e: bool,
     global: bool,
     p: i32,
-    list: i32,
+    list: MemPtr,
 ) -> Result<(), MainControlAbort> {
     if e {
-        return sa_define(st, global, p, list);
+        return sa_define(st, global, p, list.0);
     }
-    let t = if list == TEX_NULL { UNDEFINED_CS } else { CALL };
-    define(st, global, p, t, list)?;
+    let t = if list.is_null() { UNDEFINED_CS } else { CALL };
+    define(st, global, p, t, list.0)?;
     Ok(())
 }
 
@@ -4613,20 +4601,20 @@ fn assign_toks_in(st: &mut EngineState, global: bool) -> Result<(), MainControlA
                 } else {
                     let reg = st.scanner.cur_val;
                     let sa = crate::save::find_sa_element(&st.mem, &mut st.scanner, TOK_VAL, reg);
-                    sa_value(st, sa)
+                    crate::scan::sa_token_list(st, sa)
                 }
             } else {
-                st.mem.b32s1(st.scanner.cur_chr + 1)
+                NodePtr::<SaNode>::at(st.scanner.cur_chr).sa_ptr(&st.mem)
             }
         } else if st.scanner.cur_chr == LOCAL_BASE + LOCAL_XETEX_INTER_CHAR_TOKS {
             let n = scan_inter_char_pair(st)?;
             let sa = crate::save::find_sa_element(&st.mem, &mut st.scanner, INTER_CHAR_VAL, n);
-            sa_value(st, sa)
+            crate::scan::sa_token_list(st, sa)
         } else {
-            st.eqtb.equiv(st.scanner.cur_chr)
+            MemPtr(st.eqtb.equiv(st.scanner.cur_chr))
         };
-        if list != TEX_NULL {
-            crate::mem::add_token_ref(&mut st.mem, MemPtr(list));
+        if !list.is_null() {
+            crate::mem::add_token_ref(&mut st.mem, list);
         }
         return define_toks(st, e, global, p, list);
     }
@@ -4636,12 +4624,14 @@ fn assign_toks_in(st: &mut EngineState, global: bool) -> Result<(), MainControlA
     let tail = crate::scan::scan_toks_in(st, false, false)?;
     let def_ref = st.scanner.def_ref;
     if def_ref.link(&st.mem).is_null() {
-        define_toks(st, e, global, p, TEX_NULL)?;
+        define_toks(st, e, global, p, MemPtr::NULL)?;
         crate::mem::free_avail(&mut st.mem, def_ref);
         return Ok(());
     }
     if p == LOCAL_BASE + LOCAL_OUTPUT_ROUTINE && !e {
-        store_new_token(&mut st.mem, MemPtr(tail), RIGHT_BRACE_TOKEN + '}' as i32)?;
+        let mut tail = tail;
+        crate::mem::store_new_token(&mut st.mem, &mut tail, RIGHT_BRACE_TOKEN + '}' as i32)
+            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
         let q =
             crate::mem::get_avail(&mut st.mem).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
         q.set_info(&mut st.mem, LEFT_BRACE_TOKEN + '{' as i32);
@@ -4649,7 +4639,7 @@ fn assign_toks_in(st: &mut EngineState, global: bool) -> Result<(), MainControlA
         q.set_link(&mut st.mem, body);
         def_ref.set_link(&mut st.mem, q);
     }
-    define_toks(st, e, global, p, def_ref.0)
+    define_toks(st, e, global, p, def_ref)
 }
 
 fn xetex_def_code_in(st: &mut EngineState, global: bool) -> Result<(), MainControlAbort> {
@@ -4754,35 +4744,34 @@ fn set_shape_in(st: &mut EngineState, global: bool) -> Result<(), MainControlAbo
     crate::scan::scan_int_in(st)?;
     let n = st.scanner.cur_val;
     let p = if n <= 0 {
-        TEX_NULL
+        MemPtr::NULL
     } else if q > LOCAL_BASE + LOCAL_PAR_SHAPE {
         let words = n / 2 + 1;
-        let p = crate::mem::get_node(&mut st.mem, 2 * words + 1)
-            .ok_or(NodeRecycleAbort::Overflow)?
-            .0;
-        st.mem.set_b32s0(p, words);
-        st.mem.set_b32s1(p + 1, n);
-        for j in p + 2..=p + n + 1 {
+        let p =
+            crate::mem::get_node(&mut st.mem, 2 * words + 1).ok_or(NodeRecycleAbort::Overflow)?;
+        let penalties = NodePtr::<PenaltiesNode>::at(p);
+        penalties.set_words(&mut st.mem, words);
+        penalties.set_count(&mut st.mem, n);
+        for k in 1..=n {
             crate::scan::scan_int_in(st)?;
-            st.mem.set_b32s1(j, st.scanner.cur_val);
+            penalties.set_penalty(&mut st.mem, k, st.scanner.cur_val);
         }
         if n & 1 == 0 {
-            st.mem.set_b32s1(p + n + 2, 0);
+            penalties.set_penalty(&mut st.mem, n + 1, 0);
         }
         p
     } else {
-        let p = crate::mem::get_node(&mut st.mem, 2 * n + 1)
-            .ok_or(NodeRecycleAbort::Overflow)?
-            .0;
-        st.mem.set_b32s0(p, n);
-        for j in 1..=n {
+        let p = crate::mem::get_node(&mut st.mem, 2 * n + 1).ok_or(NodeRecycleAbort::Overflow)?;
+        let shape = NodePtr::<ParShapeNode>::at(p);
+        shape.set_lines(&mut st.mem, n);
+        for line in 1..=n {
             crate::scan::scan_dimen_in(st, false, false, false)?;
-            st.mem.set_b32s1(p + 2 * j - 1, st.scanner.cur_val);
+            shape.set_indent(&mut st.mem, line, st.scanner.cur_val);
             crate::scan::scan_dimen_in(st, false, false, false)?;
-            st.mem.set_b32s1(p + 2 * j, st.scanner.cur_val);
+            shape.set_line_width(&mut st.mem, line, st.scanner.cur_val);
         }
         p
     };
-    define(st, global, q, SHAPE_REF, p)?;
+    define(st, global, q, SHAPE_REF, p.0)?;
     Ok(())
 }

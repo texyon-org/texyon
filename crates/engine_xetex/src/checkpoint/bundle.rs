@@ -411,7 +411,7 @@ impl SaveBundle {
 struct InputBundle {
     buffer: Vec<i32>,
     input_stack: Vec<InputState>,
-    param_stack: Vec<i32>,
+    param_stack: Vec<crate::units::MemPtr>,
     nest: Vec<ListStateRecord>,
     line_stack: Vec<i32>,
     grp_stack: Vec<i32>,
@@ -912,7 +912,7 @@ mod tests {
         st.strings.str_start = vec![0; 8];
         st.input.buffer = vec![0; 8];
         st.input.input_stack = vec![crate::state::InputState::default(); 4];
-        st.input.param_stack = vec![0; 4];
+        st.input.param_stack = vec![crate::units::MemPtr::default(); 4];
         st.input.nest = vec![crate::mem_types::ListStateRecord::default(); 4];
         st.save_stack.data = crate::mem_types::zeroed_vec(4);
         st

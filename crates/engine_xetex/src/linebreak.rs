@@ -1148,16 +1148,6 @@ fn disc_node_width(mem: &MemState, fonts: &mut FontState, p: MemPtr) -> Result<i
     }
 }
 
-#[inline]
-fn par_shape_width(mem: &MemState, shape: i32, l: i32) -> i32 {
-    mem.b32s1(shape + 2 * l)
-}
-
-#[inline]
-fn par_shape_indent(mem: &MemState, shape: i32, l: i32) -> i32 {
-    mem.b32s1(shape + 2 * l - 1)
-}
-
 pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
     match line_break(st, d) {
         Ok(()) => LineBreakOutcome::Done,
@@ -1247,9 +1237,13 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
     st.linebreak.minimum_demerits = AWFUL_BAD;
     st.linebreak.minimal_demerits = [AWFUL_BAD; 4];
 
-    let par_shape = st.eqtb.par_shape_ptr();
+    let par_shape = st.eqtb.par_shape();
     let lb = &mut st.linebreak;
-    if par_shape == TEX_NULL {
+    if let Some(shape) = par_shape {
+        lb.last_special_line = shape.lines(&st.mem) - 1;
+        lb.second_width = shape.line_width(&st.mem, lb.last_special_line + 1);
+        lb.second_indent = shape.indent(&st.mem, lb.last_special_line + 1);
+    } else {
         let hang_indent = st.eqtb.dimen_par(DIMEN_PAR_HANG_INDENT);
         let hsize = st.eqtb.dimen_par(DIMEN_PAR_HSIZE);
         if hang_indent == 0 {
@@ -1271,10 +1265,6 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
                 lb.second_indent = hang_indent.max(0);
             }
         }
-    } else {
-        lb.last_special_line = st.mem.b32s0(par_shape) - 1;
-        lb.second_width = par_shape_width(&st.mem, par_shape, lb.last_special_line + 1);
-        lb.second_indent = par_shape_indent(&st.mem, par_shape, lb.last_special_line + 1);
     }
 
     lb.easy_line = if st.eqtb.int_par(INT_PAR_LOOSENESS) == 0 {
@@ -1960,16 +1950,12 @@ fn post_line_break_prefix(
         q = r.ptr();
     }
 
-    let par_shape = eqtb.par_shape_ptr();
     let (cur_width, cur_indent) = if cur_line > linebreak.last_special_line {
         (linebreak.second_width, linebreak.second_indent)
-    } else if par_shape == TEX_NULL {
-        (linebreak.first_width, linebreak.first_indent)
+    } else if let Some(shape) = eqtb.par_shape() {
+        (shape.line_width(mem, cur_line), shape.indent(mem, cur_line))
     } else {
-        (
-            par_shape_width(mem, par_shape, cur_line),
-            par_shape_indent(mem, par_shape, cur_line),
-        )
+        (linebreak.first_width, linebreak.first_indent)
     };
 
     scanner.adjust_tail = ADJUST_HEAD;
@@ -1987,11 +1973,8 @@ fn post_line_break_prefix(
 
 /// Entry `n` (clamped to the last) of the eTeX penalty array `k`, if it is set.
 fn etex_penalty(mem: &MemState, eqtb: &EqtbState, k: i32, n: i32) -> Option<i32> {
-    let q = eqtb.equiv(ETEX_PEN_BASE + k);
-    if q == TEX_NULL {
-        return None;
-    }
-    Some(mem.b32s1(q + n.min(mem.b32s1(q + 1)) + 1))
+    let penalties = eqtb.penalties(ETEX_PEN_BASE + k)?;
+    Some(penalties.penalty(mem, n.min(penalties.count(mem))))
 }
 
 /// Append the packed line and the interline penalty, then prune discardable
@@ -2469,13 +2452,12 @@ fn try_break(
                 old_l = MAX_HALFWORD - 1;
             } else {
                 old_l = l;
-                let par_shape = eqtb.par_shape_ptr();
                 line_width = if l > linebreak.last_special_line {
                     linebreak.second_width
-                } else if par_shape == TEX_NULL {
-                    linebreak.first_width
+                } else if let Some(shape) = eqtb.par_shape() {
+                    shape.line_width(mem, l)
                 } else {
-                    par_shape_width(mem, par_shape, l)
+                    linebreak.first_width
                 };
             }
         }

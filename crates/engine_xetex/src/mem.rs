@@ -116,17 +116,28 @@ pub fn flush_list(mem: &mut MemState, p: MemPtr) {
     mem.avail = p.0;
 }
 
+/// TeX's `store_new_token`: appends `tok` after `tail` and makes it the tail,
+/// `None` when main memory is exhausted.
+#[inline(always)]
+pub(crate) fn store_new_token(mem: &mut MemState, tail: &mut MemPtr, tok: i32) -> Option<()> {
+    let q = get_avail(mem)?;
+    tail.set_link(mem, q);
+    q.set_token(mem, tok);
+    *tail = q;
+    Some(())
+}
+
 #[inline]
 pub(crate) fn add_token_ref(mem: &mut MemState, p: MemPtr) {
-    p.set_info(mem, p.info(mem) + 1);
+    p.set_token_ref_count(mem, p.token_ref_count(mem) + 1);
 }
 
 /// Drops a reference to token list `p`, freeing it with the last one.
 pub fn delete_token_ref(mem: &mut MemState, p: MemPtr) {
-    if p.info(mem) == TEX_NULL {
+    if p.token_ref_count(mem) == TEX_NULL {
         flush_list(mem, p);
     } else {
-        p.set_info(mem, p.info(mem) - 1);
+        p.set_token_ref_count(mem, p.token_ref_count(mem) - 1);
     }
 }
 

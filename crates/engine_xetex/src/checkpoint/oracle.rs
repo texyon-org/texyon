@@ -291,7 +291,8 @@ fn digest_input(st: &EngineState) -> u64 {
         input
             .param_stack
             .iter()
-            .take(input.param_ptr.max(0) as usize),
+            .take(input.param_ptr.max(0) as usize)
+            .map(|p| &p.0),
     );
     h.i32s(&input.line_stack);
     h.i32s(&input.grp_stack);

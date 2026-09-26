@@ -7,6 +7,7 @@ use crate::consts::{
 use crate::errors::{EngineAbort, ErrorOutcome};
 use crate::io::u_close;
 use crate::mem::{flush_list, free_node, get_avail};
+use crate::node::{NodePtr, PseudoLineNode};
 use crate::state::{EngineState, InputClusterState, MemState};
 use crate::units::MemPtr;
 
@@ -99,8 +100,10 @@ pub(crate) fn end_token_list_in(st: &mut EngineState) -> Result<(), InputAbort> 
             if ci.index == MACRO {
                 while st.input.param_ptr > ci.limit {
                     st.input.param_ptr -= 1;
-                    let p = st.input.param_stack[st.input.param_ptr as usize];
-                    flush_list(&mut st.mem, MemPtr::from_raw(p));
+                    flush_list(
+                        &mut st.mem,
+                        st.input.param_stack[st.input.param_ptr as usize],
+                    );
                 }
             }
         }
@@ -155,14 +158,12 @@ pub(crate) fn ins_error_in(st: &mut EngineState) -> Result<ErrorOutcome, InputAb
 pub(crate) fn pseudo_close(mem: &mut MemState, input: &mut InputClusterState) {
     let file = input.pseudo_files;
     let next_file = file.link(mem);
-    let mut line = file.info(mem);
+    let mut line = MemPtr(file.info(mem));
     crate::mem::free_avail(mem, file);
     input.pseudo_files = next_file;
-    while line != TEX_NULL {
-        let next = mem.b32s1(line);
-        let size = mem.b32s0(line);
-        free_node(mem, MemPtr::from_raw(line), size);
-        line = next;
+    while let Some(l) = NodePtr::<PseudoLineNode>::from_ptr(line) {
+        line = l.link(mem);
+        free_node(mem, l.ptr(), l.size(mem));
     }
 }
 
@@ -217,33 +218,15 @@ pub(crate) fn end_file_reading_in(st: &mut EngineState) -> Result<(), InputAbort
     Ok(())
 }
 
-/// Stores four characters of a pseudo-file line in the word at `w`.
-pub(crate) fn set_packed_chars(mem: &mut MemState, w: i32, chars: [u16; 4]) {
-    mem.set_b16s3(w, chars[0]);
-    mem.set_b16s2(w, chars[1]);
-    mem.set_b16s1(w, chars[2]);
-    mem.set_b16s0(w, chars[3]);
-}
-
-fn packed_chars(mem: &MemState, w: i32) -> [i32; 4] {
-    [
-        mem.b16s3(w) as i32,
-        mem.b16s2(w) as i32,
-        mem.b16s1(w) as i32,
-        mem.b16s0(w) as i32,
-    ]
-}
-
 pub(crate) fn pseudo_input_in(st: &mut EngineState) -> Result<bool, InputAbort> {
     st.input.last = st.input.first;
     let files = st.input.pseudo_files;
-    let line = files.info(&st.mem);
-    if line == TEX_NULL {
+    let Some(line) = NodePtr::<PseudoLineNode>::from_ptr(MemPtr(files.info(&st.mem))) else {
         return Ok(false);
-    }
-    let rest = st.mem.b32s1(line);
-    files.set_info(&mut st.mem, rest);
-    let size = st.mem.b32s0(line);
+    };
+    let rest = line.link(&st.mem);
+    files.set_info(&mut st.mem, rest.0);
+    let size = line.size(&st.mem);
     if 4 * size - 3 >= st.input.buf_size - st.input.last {
         st.input.cur_input.loc = st.input.first;
         st.input.cur_input.limit = st.input.last - 1;
@@ -253,9 +236,10 @@ pub(crate) fn pseudo_input_in(st: &mut EngineState) -> Result<bool, InputAbort> 
         });
     }
     st.input.last = st.input.first;
-    for w in line + 1..line + size {
+    for k in 1..size {
         let last = st.input.last as usize;
-        st.input.buffer[last..last + 4].copy_from_slice(&packed_chars(&st.mem, w));
+        let chars = line.chars(&st.mem, k).map(i32::from);
+        st.input.buffer[last..last + 4].copy_from_slice(&chars);
         st.input.last += 4;
     }
     if st.input.last >= st.input.max_buf_stack {
@@ -266,7 +250,7 @@ pub(crate) fn pseudo_input_in(st: &mut EngineState) -> Result<bool, InputAbort> 
     {
         st.input.last -= 1;
     }
-    free_node(&mut st.mem, MemPtr::from_raw(line), size);
+    free_node(&mut st.mem, line.ptr(), size);
     Ok(true)
 }
 
@@ -279,18 +263,20 @@ pub(crate) fn insert_relax_in(st: &mut EngineState) -> Result<(), InputAbort> {
     Ok(())
 }
 
-pub(crate) fn begin_token_list_in(st: &mut EngineState, p: i32, t: u16) -> Result<(), InputAbort> {
+pub(crate) fn begin_token_list_in(
+    st: &mut EngineState,
+    list: MemPtr,
+    t: u16,
+) -> Result<(), InputAbort> {
     push_input(st)?;
     st.input.cur_input.state = TOKEN_LIST;
-    st.input.cur_input.start = p;
+    st.input.cur_input.start = list.0;
     st.input.cur_input.index = t;
     if t < MACRO {
-        st.input.cur_input.loc = p;
+        st.input.cur_input.loc = list.0;
         return Ok(());
     }
-    let list = MemPtr::from_raw(p);
-    let ref_count = list.info(&st.mem);
-    list.set_info(&mut st.mem, ref_count + 1);
+    crate::mem::add_token_ref(&mut st.mem, list);
     if t == MACRO {
         st.input.cur_input.limit = st.input.param_ptr;
         return Ok(());
@@ -315,7 +301,7 @@ pub(crate) fn begin_token_list_in(st: &mut EngineState, p: i32, t: u16) -> Resul
             ),
         }
         print_cstr_in(st, c"->".as_ptr());
-        token_show_in(st, p);
+        token_show_in(st, list);
         capture_to_diagnostic_in(st, std::ptr::null_mut());
         end_diagnostic_in(st, false);
     }

@@ -88,9 +88,9 @@ use crate::scan::{
     GLUE_TO_MU_CODE, GLUE_VAL, HEIGHT_OFFSET, INPUT_LINE_NO_CODE, INT_VAL, LAST_NODE_TYPE_CODE,
     MAX_CHAR_VAL, MU_TO_GLUE_CODE, MU_VAL, PAR_SHAPE_DIMEN_CODE, PAR_SHAPE_INDENT_CODE,
     PAR_SHAPE_LENGTH_CODE, PDF_LAST_X_POS_CODE, PDF_LAST_Y_POS_CODE, PDF_SHELL_ESCAPE_CODE,
-    PROTECTED_TOKEN, RANDOM_SEED_CODE, WIDTH_OFFSET, XETEX_COUNT_FEATURES_CODE,
-    XETEX_COUNT_GLYPHS_CODE, XETEX_COUNT_SELECTORS_CODE, XETEX_COUNT_VARIATIONS_CODE,
-    XETEX_FEATURE_CODE_CODE, XETEX_FIND_FEATURE_BY_NAME_CODE, XETEX_FIND_SELECTOR_BY_NAME_CODE,
+    RANDOM_SEED_CODE, WIDTH_OFFSET, XETEX_COUNT_FEATURES_CODE, XETEX_COUNT_GLYPHS_CODE,
+    XETEX_COUNT_SELECTORS_CODE, XETEX_COUNT_VARIATIONS_CODE, XETEX_FEATURE_CODE_CODE,
+    XETEX_FIND_FEATURE_BY_NAME_CODE, XETEX_FIND_SELECTOR_BY_NAME_CODE,
     XETEX_FIND_VARIATION_BY_NAME_CODE, XETEX_FIRST_CHAR_CODE, XETEX_FONT_TYPE_CODE,
     XETEX_GLYPH_BOUNDS_CODE, XETEX_GLYPH_INDEX_CODE, XETEX_IS_DEFAULT_SELECTOR_CODE,
     XETEX_IS_EXCLUSIVE_FEATURE_CODE, XETEX_LAST_CHAR_CODE, XETEX_MAP_CHAR_TO_GLYPH_CODE,
@@ -1831,7 +1831,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
         CALL | LONG_CALL | OUTER_CALL | LONG_OUTER_CALL => {
             // Bit 0 is long, bit 1 outer, bit 2 protected.
             let mut n = (cmd - CALL) as i32;
-            if st.mem.b32s0(st.mem.b32s1(chr_code)) == PROTECTED_TOKEN {
+            if crate::scan::is_protected_macro(&st.mem, MemPtr(chr_code)) {
                 n += 4;
             }
             if n / 4 % 2 != 0 {
@@ -2306,7 +2306,7 @@ impl IssueMessageAbort {
 pub(crate) fn issue_message_in(st: &mut EngineState) -> Result<(), IssueMessageAbort> {
     let c = st.scanner.cur_chr as u8;
     let toks = crate::scan::scan_toks_in(st, false, true).map_err(IssueMessageAbort::Scanner)?;
-    st.mem.set_b32s1(GARBAGE, toks);
+    GARBAGE.set_link(&mut st.mem, toks);
     let old_setting = st.shipout.selector;
     st.shipout.selector = SELECTOR_NEW_STRING;
     token_show_in(st, st.scanner.def_ref);
@@ -2330,7 +2330,7 @@ pub(crate) fn issue_message_in(st: &mut EngineState) -> Result<(), IssueMessageA
         error_here_with_diagnostic_in(st, c"".as_ptr());
         print_in(st, s);
         capture_to_diagnostic_in(st, std::ptr::null_mut());
-        if st.eqtb.local(crate::consts::LOCAL_ERR_HELP) != TEX_NULL {
+        if !st.eqtb.local(crate::consts::LOCAL_ERR_HELP).is_null() {
             st.errors.use_err_help = true;
         } else if st.errors.long_help_seen {
             st.errors.help(&[r"(That was another \errmessage.)"]);
@@ -3540,7 +3540,8 @@ pub(crate) fn show_context_in(st: &mut EngineState) {
                     if ci.index < MACRO {
                         show_token_list_in(st, ci.start, ci.loc, 100_000);
                     } else {
-                        show_token_list_in(st, st.mem.b32s1(ci.start), ci.loc, 100_000);
+                        let list = MemPtr(ci.start).link(&st.mem);
+                        show_token_list_in(st, list, ci.loc, 100_000);
                     }
                 }
                 st.shipout.selector = old_setting;

@@ -2003,11 +2003,11 @@ fn write_out(
     let r = get_avail_ship(&mut st.mem)?;
     q.set_link(&mut st.mem, r);
     r.set_info(&mut st.mem, CS_TOKEN_FLAG + END_WRITE);
-    crate::input::begin_token_list_in(st, q.0, INSERTED)?;
-    crate::input::begin_token_list_in(st, write.write_tokens(&st.mem).0, WRITE_TEXT)?;
+    crate::input::begin_token_list_in(st, q, INSERTED)?;
+    crate::input::begin_token_list_in(st, write.write_tokens(&st.mem), WRITE_TEXT)?;
     let q = get_avail_ship(&mut st.mem)?;
     q.set_info(&mut st.mem, LEFT_BRACE_TOKEN + b'{' as i32);
-    crate::input::begin_token_list_in(st, q.0, INSERTED)?;
+    crate::input::begin_token_list_in(st, q, INSERTED)?;
 
     let old_mode = st.input.cur_list.mode;
     st.input.cur_list.mode = 0;

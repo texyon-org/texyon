@@ -855,7 +855,7 @@ pub(crate) unsafe fn initialize_engine(
     st.input.source_filename_stack = vec![0; in_open_words];
     st.input.full_source_filename_stack = vec![0; in_open_words];
     st.input.eof_seen = vec![false; in_open_words];
-    st.input.param_stack = vec![0; st.input.param_size as usize + 1];
+    st.input.param_stack = vec![MemPtr::default(); st.input.param_size as usize + 1];
     st.hyph.hyph_word = vec![0; hyph_words];
     st.hyph.hyph_list = vec![0; hyph_words];
     st.hyph.hyph_link = vec![0; hyph_words];

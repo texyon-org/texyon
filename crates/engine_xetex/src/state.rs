@@ -145,7 +145,7 @@ pub(crate) enum InputSlot {
 
 #[derive(Default)]
 pub(crate) struct InputClusterState {
-    pub param_stack: Vec<i32>,
+    pub param_stack: Vec<crate::units::MemPtr>,
     pub line_stack: Vec<i32>,
     pub grp_stack: Vec<i32>,
     pub if_stack: Vec<crate::units::MemPtr>,
@@ -363,14 +363,22 @@ impl EqtbState {
     pub(crate) fn cur_font(&self) -> i32 {
         self.equiv(crate::consts::CUR_FONT_LOC)
     }
-    /// Token list or shape parameter `n` (`LOCAL_*`).
+    /// Token list parameter `n` (`LOCAL_*`).
     #[inline]
-    pub(crate) fn local(&self, n: i32) -> i32 {
-        self.equiv(crate::consts::LOCAL_BASE + n)
+    pub(crate) fn local(&self, n: i32) -> crate::units::MemPtr {
+        crate::units::MemPtr(self.equiv(crate::consts::LOCAL_BASE + n))
     }
     #[inline]
-    pub(crate) fn par_shape_ptr(&self) -> i32 {
-        self.local(crate::consts::LOCAL_PAR_SHAPE)
+    pub(crate) fn par_shape(&self) -> Option<crate::node::NodePtr<crate::node::ParShapeNode>> {
+        crate::node::NodePtr::from_ptr(self.local(crate::consts::LOCAL_PAR_SHAPE))
+    }
+    /// The e-TeX penalty array held in `eqtb[loc]`.
+    #[inline]
+    pub(crate) fn penalties(
+        &self,
+        loc: i32,
+    ) -> Option<crate::node::NodePtr<crate::node::PenaltiesNode>> {
+        crate::node::NodePtr::from_ptr(crate::units::MemPtr(self.equiv(loc)))
     }
     #[inline]
     pub(crate) fn box_reg(&self, n: i32) -> crate::units::MemPtr {
@@ -391,8 +399,8 @@ impl EqtbState {
         self.int_at(crate::consts::SCALED_BASE + n)
     }
     #[inline]
-    pub(crate) fn toks(&self, n: i32) -> i32 {
-        self.equiv(crate::consts::TOKS_BASE + n)
+    pub(crate) fn toks(&self, n: i32) -> crate::units::MemPtr {
+        crate::units::MemPtr(self.equiv(crate::consts::TOKS_BASE + n))
     }
     #[inline]
     pub(crate) fn count(&self, n: i32) -> i32 {

@@ -2048,7 +2048,7 @@ pub(crate) fn insert_src_special_in(st: &mut EngineState) -> Result<(), InsertSr
     let close = crate::mem::get_avail(&mut st.mem).ok_or(InsertSrcAbort::MainMemory)?;
     text_tail.set_link(&mut st.mem, close);
     close.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
-    crate::input::begin_token_list_in(st, toklist.0, INSERTED)?;
+    crate::input::begin_token_list_in(st, toklist, INSERTED)?;
     crate::texmfmp::remember_source_info_in(st, fname, st.mem.line);
     Ok(())
 }
@@ -2083,7 +2083,7 @@ pub(crate) unsafe fn tt_insert_special_in(
     let close = crate::mem::get_avail(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
     close.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
     text_tail.set_link(&mut st.mem, close);
-    crate::input::begin_token_list_in(st, toklist.0, INSERTED)?;
+    crate::input::begin_token_list_in(st, toklist, INSERTED)?;
     Ok(())
 }
 

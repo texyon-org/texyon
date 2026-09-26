@@ -305,6 +305,14 @@ node_kinds! {
     SpanNode;
     /// A saved outer alignment on the `align_ptr` stack.
     AlignStackNode;
+    /// A `\parshape` array: the line count, then an indent and width per line.
+    ParShapeNode;
+    /// An e-TeX penalty array: the entry count at +1, then the entries.
+    PenaltiesNode;
+    /// A suspended level of `\numexpr`-style expression scanning.
+    ExprNode;
+    /// A line of a `\scantokens` pseudo file: its size, then four characters per word.
+    PseudoLineNode;
 }
 
 impl FixedNode for GlueSpecNode {
@@ -339,6 +347,10 @@ impl FixedNode for AlignStackNode {
     const SIZE: i32 = 6;
     const TYPE: Option<NodeType> = None;
 }
+impl FixedNode for ExprNode {
+    const SIZE: i32 = 4;
+    const TYPE: Option<NodeType> = None;
+}
 
 const MOVEMENT_NODE_SIZE: i32 = 3;
 
@@ -369,7 +381,7 @@ impl_traits!(HasNodeHeader: HListNode, VListNode, RuleNode, InsNode, MarkNode, A
     LigatureNode, DiscNode, WhatsitNode, MathNode, GlueNode, KernNode, PenaltyNode, UnsetNode,
     StyleNode, ChoiceNode, EdgeNode, Noad, MarginKernNode, SaNode, PageInsNode);
 impl_traits!(HasLink: MovementNode, ActiveNode, DeltaNode, PassiveNode, CondNode, CharNode,
-    AlignRecord, AlignStackNode);
+    AlignRecord, AlignStackNode, ExprNode, PseudoLineNode);
 impl_traits!(HasWidth: HListNode, VListNode, UnsetNode, WhatsitNode, MathNode, KernNode,
     EdgeNode, MarginKernNode, GlueSpecNode, AlignRecord, SpanNode);
 impl_traits!(HasHeightDepth: HListNode, VListNode, UnsetNode, WhatsitNode, InsNode);
@@ -381,7 +393,8 @@ impl_traits!(HasSyncFields: HListNode, VListNode, RuleNode, GlueNode, KernNode, 
 pub trait ListRecord: NodeKind {}
 
 impl_traits!(ListRecord: SaNode, PageInsNode, MovementNode, ActiveNode, DeltaNode, PassiveNode,
-    LigItem, CondNode, CharNode, AlignRecord, SpanNode, AlignStackNode);
+    LigItem, CondNode, CharNode, AlignRecord, SpanNode, AlignStackNode, ParShapeNode, PenaltiesNode,
+    ExprNode, PseudoLineNode);
 
 impl<K: ListRecord> NodePtr<K> {
     /// The record at `p`, a non-null link of a list of `K` records.
@@ -477,6 +490,26 @@ impl MemPtr {
     }
     #[inline]
     pub fn set_info(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s0(self.0, v);
+    }
+
+    /// The token held by a token-list node.
+    #[inline]
+    pub fn token(self, mem: &MemState) -> i32 {
+        mem.b32s0(self.0)
+    }
+    #[inline]
+    pub fn set_token(self, mem: &mut MemState, t: i32) {
+        mem.set_b32s0(self.0, t);
+    }
+    /// The reference count in a token list's head node, one less than the
+    /// number of references.
+    #[inline]
+    pub fn token_ref_count(self, mem: &MemState) -> i32 {
+        mem.b32s0(self.0)
+    }
+    #[inline]
+    pub fn set_token_ref_count(self, mem: &mut MemState, v: i32) {
         mem.set_b32s0(self.0, v);
     }
 }
@@ -1196,6 +1229,84 @@ impl NodePtr<AlignStackNode> {
         cur_tail / set_cur_tail: MemPtr = b32s1 @ 4;
         cur_pre_head / set_cur_pre_head: MemPtr = b32s0 @ 5;
         cur_pre_tail / set_cur_pre_tail: MemPtr = b32s1 @ 5;
+    }
+}
+
+impl NodePtr<ParShapeNode> {
+    fields! {
+        lines / set_lines: i32 = b32s0 @ 0;
+    }
+
+    #[inline]
+    pub fn indent(self, mem: &MemState, line: i32) -> i32 {
+        mem.b32s1(self.idx.0 + 2 * line - 1)
+    }
+    #[inline]
+    pub fn set_indent(self, mem: &mut MemState, line: i32, v: i32) {
+        mem.set_b32s1(self.idx.0 + 2 * line - 1, v);
+    }
+    #[inline]
+    pub fn line_width(self, mem: &MemState, line: i32) -> i32 {
+        mem.b32s1(self.idx.0 + 2 * line)
+    }
+    #[inline]
+    pub fn set_line_width(self, mem: &mut MemState, line: i32, v: i32) {
+        mem.set_b32s1(self.idx.0 + 2 * line, v);
+    }
+}
+
+impl NodePtr<PenaltiesNode> {
+    fields! {
+        count / set_count: i32 = b32s1 @ 1;
+    }
+
+    /// Stores half the node size, as a `\parshape` array does.
+    #[inline]
+    pub fn set_words(self, mem: &mut MemState, words: i32) {
+        mem.set_b32s0(self.idx.0, words);
+    }
+
+    /// Entry `k`, counting from 1.
+    #[inline]
+    pub fn penalty(self, mem: &MemState, k: i32) -> i32 {
+        mem.b32s1(self.idx.0 + 1 + k)
+    }
+    #[inline]
+    pub fn set_penalty(self, mem: &mut MemState, k: i32, v: i32) {
+        mem.set_b32s1(self.idx.0 + 1 + k, v);
+    }
+}
+
+impl NodePtr<PseudoLineNode> {
+    fields! {
+        size / set_size: i32 = b32s0 @ 0;
+    }
+
+    /// The four characters in word `k`, counting from 1.
+    #[inline]
+    pub fn chars(self, mem: &MemState, k: i32) -> [u16; 4] {
+        let w = self.idx.0 + k;
+        [mem.b16s3(w), mem.b16s2(w), mem.b16s1(w), mem.b16s0(w)]
+    }
+    #[inline]
+    pub fn set_chars(self, mem: &mut MemState, k: i32, chars: [u16; 4]) {
+        let w = self.idx.0 + k;
+        mem.set_b16s3(w, chars[0]);
+        mem.set_b16s2(w, chars[1]);
+        mem.set_b16s1(w, chars[2]);
+        mem.set_b16s0(w, chars[3]);
+    }
+}
+
+impl NodePtr<ExprNode> {
+    fields! {
+        /// The value level of the suspended expression.
+        level / set_level: u16 = b16s1 @ 0;
+        /// The pending operators, as `4 * s + r`.
+        state / set_state: u16 = b16s0 @ 0;
+        e / set_e: i32 = b32s1 @ 1;
+        t / set_t: i32 = b32s1 @ 2;
+        n / set_n: i32 = b32s1 @ 3;
     }
 }
 
