@@ -2,13 +2,12 @@
 //! log and input-file lifecycle.
 
 use crate::consts::{
-    BIGGEST_CHAR, CLOSED, EMPTY_STRING, INT_PAR_END_LINE_CHAR, INT_PAR_NEW_LINE_CHAR,
-    INT_PAR_TRACING_STACK_LEVELS, INT_PAR_XETEX_DEFAULT_INPUT_ENCODING,
-    INT_PAR_XETEX_DEFAULT_INPUT_MODE, INT_PAR_XETEX_INPUT_NORMALIZATION, INVALID_HANDLE, JUST_OPEN,
-    SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_ONLY, TOO_BIG_CHAR,
+    BIGGEST_CHAR, CLOSED, EMPTY_STRING, INVALID_HANDLE, JUST_OPEN, SELECTOR_LOG_ONLY,
+    SELECTOR_NEW_STRING, SELECTOR_TERM_ONLY, TOO_BIG_CHAR,
 };
 use crate::input::NEW_LINE;
 use crate::layout::FontMappingHandle;
+use crate::params::IntPar;
 use crate::state::EngineState;
 use crate::units::StrNumber;
 use crate::utf8::next_utf8_char;
@@ -397,7 +396,7 @@ fn input_line_with(
     let norm = if st.eqtb.data.is_empty() {
         0
     } else {
-        st.eqtb.int_par(INT_PAR_XETEX_INPUT_NORMALIZATION)
+        st.eqtb.int_par(IntPar::XetexInputNormalization)
     };
 
     if f.handle == INVALID_HANDLE {
@@ -687,8 +686,8 @@ pub(crate) fn open_or_close(st: &mut EngineState) -> Result<(), Abort> {
     crate::scan::scan_optional_equals(st)?;
     scan_and_pack_name(st)?;
 
-    let mode = st.eqtb.int_par(INT_PAR_XETEX_DEFAULT_INPUT_MODE);
-    let encoding = st.eqtb.int_par(INT_PAR_XETEX_DEFAULT_INPUT_ENCODING);
+    let mode = st.eqtb.int_par(IntPar::XetexDefaultInputMode);
+    let encoding = st.eqtb.int_par(IntPar::XetexDefaultInputEncoding);
     if let Some(file) = u_open_in(st, TTBC_FILE_FORMAT_TEX, mode, encoding)? {
         st.input.read_file[n] = crate::state::InputSlot::Open(file);
         rescan_opened_name(st)?;
@@ -858,7 +857,7 @@ pub(crate) fn open_log_file(st: &mut EngineState) -> Result<(), Abort> {
 
     crate::output::print_nl(st, "**");
     let mut l = st.input.input_stack[0].limit;
-    if st.input.buffer[l as usize] == st.eqtb.int_par(INT_PAR_END_LINE_CHAR) {
+    if st.input.buffer[l as usize] == st.eqtb.int_par(IntPar::EndLineChar) {
         l -= 1;
     }
     for k in 1..=l {
@@ -919,7 +918,7 @@ pub(crate) fn close_files_and_terminate(st: &mut EngineState) -> Result<(), Abor
     }
 
     // Routed through the journaling setter so a rewind restores `\newlinechar`.
-    st.eqtb.set_int_par(INT_PAR_NEW_LINE_CHAR, -1);
+    st.eqtb.set_int_par(IntPar::NewLineChar, -1);
 
     crate::shipout::finalize_dvi_file(st)?;
     crate::synctex::synctex_terminate(st);
@@ -1088,8 +1087,8 @@ pub(crate) fn start_input(
     crate::input::begin_file_reading(st)?;
 
     let idx = i32::from(st.input.cur_input.index);
-    let mode = st.eqtb.int_par(INT_PAR_XETEX_DEFAULT_INPUT_MODE);
-    let encoding = st.eqtb.int_par(INT_PAR_XETEX_DEFAULT_INPUT_ENCODING);
+    let mode = st.eqtb.int_par(IntPar::XetexDefaultInputMode);
+    let encoding = st.eqtb.int_par(IntPar::XetexDefaultInputEncoding);
     let Some(file) = u_open_in(st, format, mode, encoding)? else {
         return Err(Abort::CannotOpenInput);
     };
@@ -1129,7 +1128,7 @@ pub(crate) fn start_input(
     crate::output::print(st, full_name);
     output_flush(st.shipout.rust_stdout);
 
-    let tracing_stack_levels = st.eqtb.int_par(INT_PAR_TRACING_STACK_LEVELS);
+    let tracing_stack_levels = st.eqtb.int_par(IntPar::TracingStackLevels);
     if tracing_stack_levels > 0 {
         crate::output::begin_diagnostic(st);
         crate::output::diagnostic_begin_capture_warning_here(st);

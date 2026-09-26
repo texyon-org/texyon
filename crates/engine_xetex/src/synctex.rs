@@ -1,9 +1,10 @@
 /* Copyright (c) 2008-2017 jerome DOT laurens AT u-bourgogne DOT fr, MIT License. */
 
+use crate::params::IntPar;
 use std::fmt::Write as _;
 
 use crate::bridge::{issue_error, issue_warning, output_close, output_open, output_write};
-use crate::consts::{INT_PAR_SYNCTEX, INVALID_HANDLE};
+use crate::consts::INVALID_HANDLE;
 use crate::node::{AnyBox, AnyNode, HListNode, KernNode, MathNode, NodePtr, VListNode};
 use crate::shipout::ONE_INCH;
 use crate::state::{EngineState, EqtbState, ShipoutState, SynctexCtxt};
@@ -25,7 +26,7 @@ impl ShipoutState {
 
 impl EqtbState {
     fn synctex_enabled(&self) -> bool {
-        self.int_par(INT_PAR_SYNCTEX) != 0
+        self.int_par(IntPar::Synctex) != 0
     }
 }
 
@@ -261,7 +262,7 @@ pub fn synctex_init_command(st: &mut EngineState) {
 
     let synctex_enabled = st.config.synctex_enabled != 0;
     st.eqtb
-        .set_int_par(INT_PAR_SYNCTEX, i32::from(synctex_enabled));
+        .set_int_par(IntPar::Synctex, i32::from(synctex_enabled));
 }
 
 pub fn synctex_terminate(st: &mut EngineState) {

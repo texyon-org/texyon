@@ -23,10 +23,7 @@ use crate::consts::{
     ACC_KERN, ACTIVE_BASE, AFTER, A_LEADERS, BEGIN_L_CODE, BEGIN_R_CODE, BIGGEST_CHAR, BIGGEST_USV,
     COND_MATH_GLUE, COUNT_BASE, CS_TOKEN_FLAG, C_LEADERS, DEL_CODE_BASE, DIMEN_BASE, DLIST, EMPTY,
     END_L_CODE, EQTB_SIZE, ETEX_PEN_BASE, FILLL, FROZEN_NULL_FONT, GLUE_BASE, HASH_BASE,
-    HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, HMODE, IGNORE_DEPTH, INT_BASE, INT_PAR_END_LINE_CHAR,
-    INT_PAR_ERROR_CONTEXT_LINES, INT_PAR_ESCAPE_CHAR, INT_PAR_NEW_LINE_CHAR,
-    INT_PAR_SHOW_BOX_BREADTH, INT_PAR_SHOW_BOX_DEPTH, INT_PAR_TRACING_IFS,
-    INT_PAR_TRACING_LOST_CHARS, INT_PAR_TRACING_NESTING, INT_PAR_TRACING_ONLINE, LC_CODE_BASE,
+    HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, HMODE, IGNORE_DEPTH, INT_BASE, LC_CODE_BASE,
     LOCAL_BASE, LOCAL_PAR_SHAPE, L_CODE, MATH_CHAR, MATH_CODE_BASE, MATH_FONT_BASE, MMODE, MU_GLUE,
     MU_SKIP_BASE, NORMAL, NULL_CS, PRIM_EQTB_BASE, R_CODE, SCALED_BASE, SCRIPT_SIZE,
     SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_NO_PRINT, SELECTOR_TERM_AND_LOG,
@@ -77,6 +74,7 @@ use crate::node::{
     PageInsNode, RuleDimen, SaNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::packaging::EXACTLY;
+use crate::params::{DimenPar, GluePar, IntPar};
 use crate::save::DIMEN_VAL_LIMIT;
 use crate::scan::{
     CURRENT_GROUP_LEVEL_CODE, CURRENT_GROUP_TYPE_CODE, CURRENT_IF_BRANCH_CODE,
@@ -228,7 +226,7 @@ pub(crate) fn print_nl(st: &mut EngineState, s: impl TexStr) {
 }
 
 fn print_escape_char(st: &mut EngineState) {
-    let c = st.eqtb.int_par(INT_PAR_ESCAPE_CHAR);
+    let c = st.eqtb.int_par(IntPar::EscapeChar);
     if (0..=BIGGEST_USV).contains(&c) {
         print_char(st, c);
     }
@@ -387,7 +385,7 @@ pub(crate) fn print_char(st: &mut EngineState, s: impl Into<i32>) {
         return;
     }
 
-    if s == st.eqtb.int_par(INT_PAR_NEW_LINE_CHAR) && st.shipout.selector < SELECTOR_PSEUDO {
+    if s == st.eqtb.int_par(IntPar::NewLineChar) && st.shipout.selector < SELECTOR_PSEUDO {
         print_ln(st);
         return;
     }
@@ -454,14 +452,14 @@ fn print_pool_str(st: &mut EngineState, s: i32) {
             print_char(st, s);
             return;
         }
-        if s == st.eqtb.int_par(INT_PAR_NEW_LINE_CHAR) && st.shipout.selector < SELECTOR_PSEUDO {
+        if s == st.eqtb.int_par(IntPar::NewLineChar) && st.shipout.selector < SELECTOR_PSEUDO {
             print_ln(st);
             return;
         }
-        let nl = st.eqtb.int_par(INT_PAR_NEW_LINE_CHAR);
-        st.eqtb.set_int_par(INT_PAR_NEW_LINE_CHAR, -1);
+        let nl = st.eqtb.int_par(IntPar::NewLineChar);
+        st.eqtb.set_int_par(IntPar::NewLineChar, -1);
         print_char(st, s);
-        st.eqtb.set_int_par(INT_PAR_NEW_LINE_CHAR, nl);
+        st.eqtb.set_int_par(IntPar::NewLineChar, nl);
         return;
     }
 
@@ -745,8 +743,7 @@ fn print_sa_num(st: &mut EngineState, q: NodePtr<SaNode>) {
 
 pub(crate) fn begin_diagnostic(st: &mut EngineState) {
     st.shipout.old_setting = st.shipout.selector as u8;
-    if st.eqtb.int_par(INT_PAR_TRACING_ONLINE) <= 0 && st.shipout.selector == SELECTOR_TERM_AND_LOG
-    {
+    if st.eqtb.int_par(IntPar::TracingOnline) <= 0 && st.shipout.selector == SELECTOR_TERM_AND_LOG {
         st.shipout.selector -= 1;
         note_warning_issued(st);
     }
@@ -866,146 +863,24 @@ pub(crate) fn print_spec(st: &mut EngineState, p: impl crate::units::MemAddr, s:
 }
 
 pub(crate) fn print_skip_param(st: &mut EngineState, n: i32) {
-    let name = match n {
-        0 => "lineskip",
-        1 => "baselineskip",
-        2 => "parskip",
-        3 => "abovedisplayskip",
-        4 => "belowdisplayskip",
-        5 => "abovedisplayshortskip",
-        6 => "belowdisplayshortskip",
-        7 => "leftskip",
-        8 => "rightskip",
-        9 => "topskip",
-        10 => "splittopskip",
-        11 => "tabskip",
-        12 => "spaceskip",
-        13 => "xspaceskip",
-        14 => "parfillskip",
-        15 => "XeTeXlinebreakskip",
-        16 => "thinmuskip",
-        17 => "medmuskip",
-        18 => "thickmuskip",
-        _ => return print(st, "[unknown glue parameter!]"),
-    };
-    print_esc(st, name);
+    match GluePar::from_raw(n) {
+        Some(g) => print_esc(st, g.name()),
+        None => print(st, "[unknown glue parameter!]"),
+    }
 }
 
 pub(crate) fn print_param(st: &mut EngineState, n: i32) {
-    let name = match n {
-        0 => "pretolerance",
-        1 => "tolerance",
-        2 => "linepenalty",
-        3 => "hyphenpenalty",
-        4 => "exhyphenpenalty",
-        5 => "clubpenalty",
-        6 => "widowpenalty",
-        7 => "displaywidowpenalty",
-        8 => "brokenpenalty",
-        9 => "binoppenalty",
-        10 => "relpenalty",
-        11 => "predisplaypenalty",
-        12 => "postdisplaypenalty",
-        13 => "interlinepenalty",
-        14 => "doublehyphendemerits",
-        15 => "finalhyphendemerits",
-        16 => "adjdemerits",
-        17 => "mag",
-        18 => "delimiterfactor",
-        19 => "looseness",
-        20 => "time",
-        21 => "day",
-        22 => "month",
-        23 => "year",
-        24 => "showboxbreadth",
-        25 => "showboxdepth",
-        26 => "hbadness",
-        27 => "vbadness",
-        28 => "pausing",
-        29 => "tracingonline",
-        30 => "tracingmacros",
-        31 => "tracingstats",
-        32 => "tracingparagraphs",
-        33 => "tracingpages",
-        34 => "tracingoutput",
-        35 => "tracinglostchars",
-        36 => "tracingcommands",
-        37 => "tracingrestores",
-        38 => "uchyph",
-        39 => "outputpenalty",
-        40 => "maxdeadcycles",
-        41 => "hangafter",
-        42 => "floatingpenalty",
-        43 => "globaldefs",
-        44 => "fam",
-        45 => "escapechar",
-        46 => "defaulthyphenchar",
-        47 => "defaultskewchar",
-        48 => "endlinechar",
-        49 => "newlinechar",
-        50 => "language",
-        51 => "lefthyphenmin",
-        52 => "righthyphenmin",
-        53 => "holdinginserts",
-        54 => "errorcontextlines",
-        55 => "tracingstacklevels",
-        56 => "tracingassigns",
-        57 => "tracinggroups",
-        58 => "tracingifs",
-        59 => "tracingscantokens",
-        60 => "tracingnesting",
-        61 => "predisplaydirection",
-        62 => "lastlinefit",
-        63 => "savingvdiscards",
-        64 => "savinghyphcodes",
-        65 => "suppressfontnotfounderror",
-        67 => "XeTeXlinebreakpenalty",
-        68 => "XeTeXprotrudechars",
-        69 => "TeXXeTstate",
-        70 => "XeTeXdashbreakstate",
-        71 => "XeTeXupwardsmode",
-        72 => "XeTeXuseglyphmetrics",
-        73 => "XeTeXinterchartokenstate",
-        74 => "XeTeXinputnormalization",
-        77 => "XeTeXtracingfonts",
-        78 => "XeTeXinterwordspaceshaping",
-        79 => "XeTeXgenerateactualtext",
-        80 => "XeTeXhyphenatablelength",
-        81 => "synctex",
-        82 => "pdfoutput",
-        _ => return print(st, "[unknown integer parameter!]"),
-    };
-    print_esc(st, name);
+    match IntPar::from_raw(n).and_then(IntPar::name) {
+        Some(name) => print_esc(st, name),
+        None => print(st, "[unknown integer parameter!]"),
+    }
 }
 
 pub(crate) fn print_length_param(st: &mut EngineState, n: i32) {
-    let name = match n {
-        0 => "parindent",
-        1 => "mathsurround",
-        2 => "lineskiplimit",
-        3 => "hsize",
-        4 => "vsize",
-        5 => "maxdepth",
-        6 => "splitmaxdepth",
-        7 => "boxmaxdepth",
-        8 => "hfuzz",
-        9 => "vfuzz",
-        10 => "delimitershortfall",
-        11 => "nulldelimiterspace",
-        12 => "scriptspace",
-        13 => "predisplaysize",
-        14 => "displaywidth",
-        15 => "displayindent",
-        16 => "overfullrule",
-        17 => "hangindent",
-        18 => "hoffset",
-        19 => "voffset",
-        20 => "emergencystretch",
-        21 => "pdfpagewidth",
-        22 => "pdfpageheight",
-        _ => return print(st, "[unknown dimen parameter!]"),
-    };
-    print_esc(st, name);
+    match DimenPar::from_raw(n) {
+        Some(d) => print_esc(st, d.name()),
+        None => print(st, "[unknown dimen parameter!]"),
+    }
 }
 
 pub(crate) fn print_style(st: &mut EngineState, c: i32) {
@@ -1902,7 +1777,7 @@ pub(crate) fn group_warning(st: &mut EngineState) {
     let mut i = st.input.in_open;
     let mut w = false;
     while st.input.grp_stack[i as usize] == st.save_stack.cur_boundary && i > 0 {
-        if st.eqtb.int_par(INT_PAR_TRACING_NESTING) > 0 && level_is_file(st, i) {
+        if st.eqtb.int_par(IntPar::TracingNesting) > 0 && level_is_file(st, i) {
             w = true;
         }
         st.input.grp_stack[i as usize] = st.save_stack.save_index(st.save_stack.save_ptr);
@@ -1915,7 +1790,7 @@ pub(crate) fn group_warning(st: &mut EngineState) {
         print_group(st, true);
         print(st, " of a different file");
         print_ln(st);
-        if st.eqtb.int_par(INT_PAR_TRACING_NESTING) > 1 {
+        if st.eqtb.int_par(IntPar::TracingNesting) > 1 {
             show_context(st);
         }
         note_warning_issued(st);
@@ -1929,7 +1804,7 @@ pub(crate) fn if_warning(st: &mut EngineState) {
     let mut i = st.input.in_open;
     let mut w = false;
     while st.input.if_stack[i as usize] == st.scanner.cond_ptr {
-        if st.eqtb.int_par(INT_PAR_TRACING_NESTING) > 0 && level_is_file(st, i) {
+        if st.eqtb.int_par(IntPar::TracingNesting) > 0 && level_is_file(st, i) {
             w = true;
         }
         st.input.if_stack[i as usize] = st.scanner.cond_ptr.link(&st.mem);
@@ -1943,7 +1818,7 @@ pub(crate) fn if_warning(st: &mut EngineState) {
         print_if_line(st, st.scanner.if_line);
         print(st, " of a different file");
         print_ln(st);
-        if st.eqtb.int_par(INT_PAR_TRACING_NESTING) > 1 {
+        if st.eqtb.int_par(IntPar::TracingNesting) > 1 {
             show_context(st);
         }
         capture_to_diagnostic(st, None);
@@ -2008,7 +1883,7 @@ pub(crate) fn file_warning(st: &mut EngineState) {
     st.scanner.if_line = saved_line;
 
     print_ln(st);
-    if st.eqtb.int_par(INT_PAR_TRACING_NESTING) > 1 {
+    if st.eqtb.int_par(IntPar::TracingNesting) > 1 {
         diagnostic_begin_capture_warning_here(st);
         show_context(st);
         capture_to_diagnostic(st, None);
@@ -2026,7 +1901,7 @@ pub(crate) fn show_cur_cmd_chr(st: &mut EngineState) {
         st.scanner.shown_mode = st.input.cur_list.mode;
     }
     print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
-    if st.eqtb.int_par(INT_PAR_TRACING_IFS) > 0
+    if st.eqtb.int_par(IntPar::TracingIfs) > 0
         && (IF_TEST as u8..=FI_OR_ELSE).contains(&st.scanner.cur_cmd)
     {
         print(st, ": ");
@@ -2570,7 +2445,7 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
         print_error_prefix(st);
         print(st, "OK");
         if st.shipout.selector == SELECTOR_TERM_AND_LOG
-            && st.eqtb.int_par(INT_PAR_TRACING_ONLINE) <= 0
+            && st.eqtb.int_par(IntPar::TracingOnline) <= 0
         {
             st.shipout.selector = SELECTOR_TERM_ONLY;
             print(st, " (see the transcript file)");
@@ -2582,7 +2457,7 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
     if st.errors.interaction < InteractionMode::ErrorStop {
         st.errors.help(&[]);
         st.errors.error_count -= 1;
-    } else if st.eqtb.int_par(INT_PAR_TRACING_ONLINE) > 0 {
+    } else if st.eqtb.int_par(IntPar::TracingOnline) > 0 {
         st.errors.help(&[
             r"This isn't an error message; I'm just \showing something.",
             r"Type `I\show...' to show more (e.g., \show\cs,",
@@ -2601,11 +2476,11 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 pub(crate) fn char_warning(st: &mut EngineState, f: FontId, c: i32) -> Result<(), Abort> {
-    let tracing_lost = st.eqtb.int_par(INT_PAR_TRACING_LOST_CHARS);
+    let tracing_lost = st.eqtb.int_par(IntPar::TracingLostChars);
     if tracing_lost > 0 {
-        let old_setting = st.eqtb.int_par(INT_PAR_TRACING_ONLINE);
+        let old_setting = st.eqtb.int_par(IntPar::TracingOnline);
         if tracing_lost > 1 {
-            st.eqtb.set_int_par(INT_PAR_TRACING_ONLINE, 1);
+            st.eqtb.set_int_par(IntPar::TracingOnline, 1);
         }
         if tracing_lost > 2 {
             print_error_prefix(st);
@@ -2629,7 +2504,7 @@ pub(crate) fn char_warning(st: &mut EngineState, f: FontId, c: i32) -> Result<()
         if tracing_lost < 3 {
             print_char(st, b'!');
         }
-        st.eqtb.set_int_par(INT_PAR_TRACING_ONLINE, old_setting);
+        st.eqtb.set_int_par(IntPar::TracingOnline, old_setting);
         if tracing_lost > 2 {
             st.errors.help(&[]);
             error(st)?;
@@ -2664,8 +2539,8 @@ pub(crate) fn char_warning(st: &mut EngineState, f: FontId, c: i32) -> Result<()
 }
 
 pub(crate) fn show_box(st: &mut EngineState, p: impl crate::units::MemAddr) {
-    st.errors.depth_threshold = st.eqtb.int_par(INT_PAR_SHOW_BOX_DEPTH);
-    st.errors.breadth_max = st.eqtb.int_par(INT_PAR_SHOW_BOX_BREADTH);
+    st.errors.depth_threshold = st.eqtb.int_par(IntPar::ShowBoxDepth);
+    st.errors.breadth_max = st.eqtb.int_par(IntPar::ShowBoxBreadth);
     if st.errors.breadth_max <= 0 {
         st.errors.breadth_max = 5;
     }
@@ -3353,7 +3228,7 @@ pub(crate) fn show_context(st: &mut EngineState) {
         if ci.state != TOKEN_LIST && (ci.name > 19 || st.input.base_ptr == 0) {
             bottom_line = true;
         }
-        let error_context_lines = st.eqtb.int_par(INT_PAR_ERROR_CONTEXT_LINES);
+        let error_context_lines = st.eqtb.int_par(IntPar::ErrorContextLines);
         if st.input.base_ptr == st.input.input_ptr || bottom_line || nn < error_context_lines {
             if st.input.base_ptr == st.input.input_ptr
                 || ci.state != TOKEN_LIST
@@ -3390,7 +3265,7 @@ pub(crate) fn show_context(st: &mut EngineState) {
                     }
                     print_char(st, b' ');
                     l = begin_pseudoprint(st);
-                    let end_line_char = st.eqtb.int_par(INT_PAR_END_LINE_CHAR);
+                    let end_line_char = st.eqtb.int_par(IntPar::EndLineChar);
                     let j = if st.input.buffer[ci.limit as usize] == end_line_char {
                         ci.limit
                     } else {

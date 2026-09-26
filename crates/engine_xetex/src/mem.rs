@@ -12,6 +12,7 @@ use crate::node::{
     LigItem, LigatureNode, MarginKernNode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen,
     RuleNode, SpanNode, StyleNode, WhatsitNode, WhatsitSubtype,
 };
+use crate::params::GluePar;
 use crate::state::{EqtbState, MemState};
 use crate::units::{FontId, GlueSign, MemAddr, MemIdx, MemPtr, Scaled};
 
@@ -390,9 +391,13 @@ impl MemState {
     }
 
     /// Glue for parameter `n`, sharing its spec.
-    pub fn new_param_glue(&mut self, eqtb: &EqtbState, n: i16) -> Result<NodePtr<GlueNode>, Abort> {
+    pub fn new_param_glue(
+        &mut self,
+        eqtb: &EqtbState,
+        n: GluePar,
+    ) -> Result<NodePtr<GlueNode>, Abort> {
         let p = NodePtr::<GlueNode>::alloc(self)?;
-        p.set_subtype(self, n as u16 + 1);
+        p.set_subtype(self, n.subtype());
         p.set_leader_ptr(self, MemPtr::NULL);
         let spec = eqtb.glue_par(n);
         p.set_glue_ptr(self, spec);
@@ -411,12 +416,16 @@ impl MemState {
     }
 
     /// Glue for parameter `n` with a private copy of its spec, left in `temp_ptr`.
-    pub fn new_skip_param(&mut self, eqtb: &EqtbState, n: i16) -> Result<NodePtr<GlueNode>, Abort> {
+    pub fn new_skip_param(
+        &mut self,
+        eqtb: &EqtbState,
+        n: GluePar,
+    ) -> Result<NodePtr<GlueNode>, Abort> {
         let s = self.new_spec(eqtb.glue_par(n))?;
         self.temp_ptr = s.ptr();
         let p = self.new_glue(s)?;
         s.set_ref_count(self, TEX_NULL);
-        p.set_subtype(self, n as u16 + 1);
+        p.set_subtype(self, n.subtype());
         Ok(p)
     }
 

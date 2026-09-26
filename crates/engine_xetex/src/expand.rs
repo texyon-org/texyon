@@ -7,10 +7,8 @@ use crate::cmd::{
 };
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_USV, CS_TOKEN_FLAG, FROZEN_DONT_EXPAND, FROZEN_ENDV, FROZEN_PRIMITIVE,
-    GLUE_PAR_LEFT_SKIP, GLUE_PAR_RIGHT_SKIP, HMODE, INT_PAR_TRACING_COMMANDS, INT_PAR_TRACING_IFS,
-    INT_PAR_TRACING_MACROS, INT_PAR_TRACING_STACK_LEVELS, MMODE, NULL_CS, NULL_FONT,
-    PRIM_EQTB_BASE, SELECTOR_NEW_STRING, SINGLE_BASE, TEX_NULL, TOO_BIG_USV, UNDEFINED_PRIMITIVE,
-    UNLESS_CODE, VMODE,
+    HMODE, MMODE, NULL_CS, NULL_FONT, PRIM_EQTB_BASE, SELECTOR_NEW_STRING, SINGLE_BASE, TEX_NULL,
+    TOO_BIG_USV, UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
 };
 use crate::errors::error;
 use crate::errors::Abort;
@@ -26,6 +24,7 @@ use crate::output::{
     error_here_with_diagnostic, print, print_char, print_cmd_chr, print_err, print_esc, print_int,
     print_scaled, show_cur_cmd_chr, sprint_cs,
 };
+use crate::params::{GluePar, IntPar};
 use crate::scan::{
     fetch_box, get_next, get_token, get_x_non_blank, get_x_token, scan_int, store_new_token,
     END_MATCH_TOKEN, MARK_VAL, MATCHING, MATCH_TOKEN, MAX_CHAR_VAL, NORMAL_SCANNER, NO_EXPAND_FLAG,
@@ -207,7 +206,7 @@ fn trace_diagnostic(st: &mut EngineState, text: &str) {
 }
 
 pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
-    if st.eqtb.int_par(INT_PAR_TRACING_IFS) > 0 && st.eqtb.int_par(INT_PAR_TRACING_COMMANDS) <= 1 {
+    if st.eqtb.int_par(IntPar::TracingIfs) > 0 && st.eqtb.int_par(IntPar::TracingCommands) <= 1 {
         show_cur_cmd_chr(st);
     }
 
@@ -367,7 +366,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
         IF_CASE_CODE => {
             scan_int(st)?;
             let mut n = st.scanner.cur_val;
-            if st.eqtb.int_par(INT_PAR_TRACING_COMMANDS) > 1 {
+            if st.eqtb.int_par(IntPar::TracingCommands) > 1 {
                 begin_diagnostic(st);
                 diagnostic_begin_capture_warning_here(st);
                 print(st, "{case ");
@@ -409,7 +408,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
         b = !b;
     }
 
-    if st.eqtb.int_par(INT_PAR_TRACING_COMMANDS) > 1 {
+    if st.eqtb.int_par(IntPar::TracingCommands) > 1 {
         trace_diagnostic(st, if b { "{true}" } else { "{false}" });
     }
 
@@ -535,7 +534,7 @@ fn scan_nonnegative_int(
 
 impl MemState {
     /// Whether a node may be skipped when looking for a margin kern at the edge of a line.
-    fn is_margin_kern_filler(&self, node: AnyNode, par_skip: i16) -> bool {
+    fn is_margin_kern_filler(&self, node: AnyNode, par_skip: GluePar) -> bool {
         match node {
             AnyNode::Ins(_) | AnyNode::Mark(_) | AnyNode::Adjust(_) | AnyNode::Penalty(_) => true,
             AnyNode::Disc(d) => {
@@ -544,7 +543,7 @@ impl MemState {
             AnyNode::Math(m) => m.width(self) == Scaled::ZERO,
             AnyNode::Kern(k) => k.width(self) == Scaled::ZERO || k.subtype(self) == 0,
             AnyNode::Glue(g) => {
-                g.glue_ptr(self) == ZERO_GLUE || g.subtype(self) == (par_skip + 1) as u16
+                g.glue_ptr(self) == ZERO_GLUE || g.subtype(self) == par_skip.subtype()
             }
             AnyNode::HList(h) => {
                 h.width(self) == Scaled::ZERO
@@ -563,7 +562,7 @@ fn print_margin_kern(
     st: &mut EngineState,
     mut p: MemPtr,
     side: u16,
-    par_skip: i16,
+    par_skip: GluePar,
     next: impl Fn(&crate::state::MemState, MemPtr) -> MemPtr,
 ) {
     let width = loop {
@@ -760,12 +759,10 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
         LEFT_MARGIN_KERN_CODE | RIGHT_MARGIN_KERN_CODE => {
             let list = margin_list;
             if c == LEFT_MARGIN_KERN_CODE {
-                print_margin_kern(st, MemPtr(list), 0, GLUE_PAR_LEFT_SKIP, |mem, p| {
-                    p.link(mem)
-                });
+                print_margin_kern(st, MemPtr(list), 0, GluePar::LeftSkip, |mem, p| p.link(mem));
             } else {
                 let last = st.mem.prev_rightmost(MemPtr(list), MemPtr::NULL);
-                print_margin_kern(st, last, 1, GLUE_PAR_RIGHT_SKIP, move |mem, p| {
+                print_margin_kern(st, last, 1, GluePar::RightSkip, move |mem, p| {
                     mem.prev_rightmost(MemPtr(list), p)
                 });
             }
@@ -854,7 +851,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
             }
             break;
         }
-        if st.eqtb.int_par(INT_PAR_TRACING_COMMANDS) > 1 {
+        if st.eqtb.int_par(IntPar::TracingCommands) > 1 {
             show_cur_cmd_chr(st);
         }
         match st.scanner.cur_cmd {
@@ -973,8 +970,8 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
             THE => ins_the_toks(st)?,
             IF_TEST => conditional(st)?,
             FI_OR_ELSE => {
-                if st.eqtb.int_par(INT_PAR_TRACING_IFS) > 0
-                    && st.eqtb.int_par(INT_PAR_TRACING_COMMANDS) <= 1
+                if st.eqtb.int_par(IntPar::TracingIfs) > 0
+                    && st.eqtb.int_par(IntPar::TracingCommands) <= 1
                 {
                     show_cur_cmd_chr(st);
                 }
@@ -1085,7 +1082,7 @@ fn extra_right_brace_in_argument(st: &mut EngineState) -> Result<(), Abort> {
 fn trace_macro_call(st: &mut EngineState, ref_count: MemPtr) {
     begin_diagnostic(st);
     diagnostic_begin_capture_warning_here(st);
-    let stack_levels = st.eqtb.int_par(INT_PAR_TRACING_STACK_LEVELS);
+    let stack_levels = st.eqtb.int_par(IntPar::TracingStackLevels);
     if stack_levels > 0 {
         if st.input.input_ptr < stack_levels {
             crate::output::print_ln(st);
@@ -1111,7 +1108,7 @@ fn trace_macro_call(st: &mut EngineState, ref_count: MemPtr) {
 
 #[cold]
 fn trace_macro_param(st: &mut EngineState, match_chr: i32, n: i32, list: MemPtr) {
-    let stack_levels = st.eqtb.int_par(INT_PAR_TRACING_STACK_LEVELS);
+    let stack_levels = st.eqtb.int_par(IntPar::TracingStackLevels);
     if stack_levels == 0 || st.input.input_ptr < stack_levels {
         begin_diagnostic(st);
         diagnostic_begin_capture_warning_here(st);
@@ -1132,7 +1129,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
     let mut r = ref_count.link(&st.mem);
     let mut n: i32 = 0;
 
-    if st.eqtb.int_par(INT_PAR_TRACING_MACROS) > 0 {
+    if st.eqtb.int_par(IntPar::TracingMacros) > 0 {
         trace_macro_call(st, ref_count);
     }
 
@@ -1292,7 +1289,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                         pstack[n as usize] = TEMP_HEAD.link(&st.mem);
                     }
                     n += 1;
-                    if st.eqtb.int_par(INT_PAR_TRACING_MACROS) > 0 {
+                    if st.eqtb.int_par(IntPar::TracingMacros) > 0 {
                         trace_macro_param(st, match_chr, n, pstack[(n - 1) as usize]);
                     }
                 }

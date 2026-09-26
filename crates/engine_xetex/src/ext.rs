@@ -2,17 +2,15 @@
 //! TECkit mappings, shaping and measuring native word and glyph nodes, and the
 //! extension (`\openout`, `\write`, `\special`, ...) commands.
 
+use crate::params::IntPar;
 use std::ffi::c_int;
 use std::sync::Arc;
 
 use crate::bridge::{input_get_size, input_open, input_read, TTBC_FILE_FORMAT_MISC_FONTS};
 use crate::cmd::EXTENSION;
 use crate::consts::{
-    CS_TOKEN_FLAG, DESIGN_SIZE, FROZEN_SPECIAL, GLYPH_NODE_SIZE, HMODE, INT_PAR_LEFT_HYPHEN_MIN,
-    INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_XETEX_DEFAULT_INPUT_ENCODING,
-    INT_PAR_XETEX_DEFAULT_INPUT_MODE, INT_PAR_XETEX_LINEBREAK_LOCALE, INT_PAR_XETEX_TRACING_FONTS,
-    INT_PAR_XETEX_USE_GLYPH_METRICS, LEFT_SIDE, MMODE, OPEN_NODE_SIZE, RIGHT_SIDE, SMALL_NODE_SIZE,
-    VMODE, WRITE_NODE_SIZE,
+    CS_TOKEN_FLAG, DESIGN_SIZE, FROZEN_SPECIAL, GLYPH_NODE_SIZE, HMODE, LEFT_SIDE, MMODE,
+    OPEN_NODE_SIZE, RIGHT_SIDE, SMALL_NODE_SIZE, VMODE, WRITE_NODE_SIZE,
 };
 use crate::errors::Abort;
 use crate::expand::{XETEX_FEATURE_NAME_CODE, XETEX_SELECTOR_NAME_CODE};
@@ -294,7 +292,7 @@ fn load_mapping_file(
 
     match &cnv {
         None => crate::output::font_mapping_warning(st, name, 2),
-        Some(_) if st.eqtb.int_par(INT_PAR_XETEX_TRACING_FONTS) > 1 => {
+        Some(_) if st.eqtb.int_par(IntPar::XetexTracingFonts) > 1 => {
             crate::output::font_mapping_warning(st, name, 0)
         }
         Some(_) => {}
@@ -629,7 +627,7 @@ pub(crate) fn find_native_font(
             }
 
             rval = load_ot_font(st, font, scaled_size, feat_string.as_deref())?;
-            if rval.is_some() && st.eqtb.int_par(INT_PAR_XETEX_TRACING_FONTS) > 0 {
+            if rval.is_some() && st.eqtb.int_par(IntPar::XetexTracingFonts) > 0 {
                 crate::output::begin_diagnostic(st);
                 crate::output::print_nl(st, b' ');
                 crate::output::print_raw_bytes(st, b"-> ");
@@ -641,7 +639,7 @@ pub(crate) fn find_native_font(
         if let Some(font_ref) =
             PlatformFont::find(name_string, var_string.as_mut(), fix2d(scaled_size))
         {
-            if st.eqtb.int_par(INT_PAR_XETEX_TRACING_FONTS) > 0 {
+            if st.eqtb.int_par(IntPar::XetexTracingFonts) > 0 {
                 crate::output::begin_diagnostic(st);
                 crate::output::print_nl(st, b' ');
                 crate::output::print_raw_bytes(st, b"-> ");
@@ -1590,9 +1588,9 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
                 };
                 st.input.cur_list.set_aux_s1(lang);
                 w.set_what_lang(&mut st.mem, lang);
-                let lhm = crate::helpers::norm_min(st.eqtb.int_par(INT_PAR_LEFT_HYPHEN_MIN));
+                let lhm = crate::helpers::norm_min(st.eqtb.int_par(IntPar::LeftHyphenMin));
                 w.set_what_lhm(&mut st.mem, lhm as u16);
-                let rhm = crate::helpers::norm_min(st.eqtb.int_par(INT_PAR_RIGHT_HYPHEN_MIN));
+                let rhm = crate::helpers::norm_min(st.eqtb.int_par(IntPar::RightHyphenMin));
                 w.set_what_rhm(&mut st.mem, rhm as u16);
             }
         }
@@ -1659,7 +1657,7 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
                 }
                 w.set_native_font(&mut st.mem, cur_font);
                 w.set_native_glyph(&mut st.mem, st.scanner.cur_val as u16);
-                let use_glyph_metrics = st.eqtb.int_par(INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
+                let use_glyph_metrics = st.eqtb.int_par(IntPar::XetexUseGlyphMetrics) > 0;
                 st.fonts
                     .measure_native_glyph(&mut st.mem, w, use_glyph_metrics)?;
             }
@@ -1694,10 +1692,8 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
             crate::io::scan_and_pack_name(st)?;
             let name = st.input.name_of_file_bytes().to_vec();
             let (enc_mode, info) = get_encoding_mode_and_info(st, &name)?;
-            st.eqtb
-                .set_int_par(INT_PAR_XETEX_DEFAULT_INPUT_MODE, enc_mode);
-            st.eqtb
-                .set_int_par(INT_PAR_XETEX_DEFAULT_INPUT_ENCODING, info);
+            st.eqtb.set_int_par(IntPar::XetexDefaultInputMode, enc_mode);
+            st.eqtb.set_int_par(IntPar::XetexDefaultInputEncoding, info);
         }
 
         XETEX_LINEBREAK_LOCALE_EXTENSION_CODE => {
@@ -1707,8 +1703,7 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
             } else {
                 st.scanner.cur_name
             };
-            st.eqtb
-                .set_int_par(INT_PAR_XETEX_LINEBREAK_LOCALE, locale.0);
+            st.eqtb.set_int_par(IntPar::XetexLinebreakLocale, locale.0);
         }
 
         _ => return Err(Abort::Confusion("ext1")),

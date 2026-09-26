@@ -1,20 +1,12 @@
 //! Math mode: noad construction and `mlist_to_hlist`.
 use crate::consts::{
     ACCENT_NOAD_SIZE, AFTER, A_LEADERS, BEFORE, BEGIN_L_CODE, BEGIN_M_CODE, BOX_NODE_SIZE,
-    COND_MATH_GLUE, DIMEN_BASE, DIMEN_PAR_DELIMITER_SHORTFALL, DIMEN_PAR_DISPLAY_INDENT,
-    DIMEN_PAR_DISPLAY_WIDTH, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DIMEN_PAR_MATH_SURROUND,
-    DIMEN_PAR_NULL_DELIMITER_SPACE, DIMEN_PAR_PRE_DISPLAY_SIZE, DIMEN_PAR_SCRIPT_SPACE, DLIST,
-    EMPTY, END_L_CODE, END_M_CODE, EXPLICIT, FIL, FILL, FILLL, FRACTION_NOAD_SIZE,
-    GLUE_PAR_ABOVE_DISPLAY_SHORT_SKIP, GLUE_PAR_ABOVE_DISPLAY_SKIP,
-    GLUE_PAR_BELOW_DISPLAY_SHORT_SKIP, GLUE_PAR_BELOW_DISPLAY_SKIP, GLUE_PAR_LEFT_SKIP,
-    GLUE_PAR_MED_MU_SKIP, GLUE_PAR_RIGHT_SKIP, GLUE_PAR_THICK_MU_SKIP, GLUE_PAR_THIN_MU_SKIP,
-    GLYPH_NODE_SIZE, HMODE, INFINITE_DIMEN, INF_PENALTY, INT_BASE, INT_PAR_BIN_OP_PENALTY,
-    INT_PAR_CUR_FAM, INT_PAR_DELIMITER_FACTOR, INT_PAR_HANG_AFTER, INT_PAR_POST_DISPLAY_PENALTY,
-    INT_PAR_PRE_DISPLAY_DIRECTION, INT_PAR_PRE_DISPLAY_PENALTY, INT_PAR_REL_PENALTY,
-    INT_PAR_TEXXET, LEFT_TO_RIGHT, LOCAL_EVERY_DISPLAY, LOCAL_EVERY_MATH, L_CODE, MATH_CHAR,
-    MATH_TEXT_CHAR, MAX_DIMEN, MEDIUM_NODE_SIZE, MMODE, MU_GLUE, NOAD_SIZE, NORMAL, NULL_FONT,
-    NUMBER_MATH_FAMILIES, RADICAL_NOAD_SIZE, RIGHT_TO_LEFT, R_CODE, SCRIPT_SIZE, STYLE_NODE_SIZE,
-    SUB_BOX, SUB_MLIST, TEXT_SIZE,
+    COND_MATH_GLUE, DLIST, EMPTY, END_L_CODE, END_M_CODE, EXPLICIT, FIL, FILL, FILLL,
+    FRACTION_NOAD_SIZE, GLYPH_NODE_SIZE, HMODE, INFINITE_DIMEN, INF_PENALTY, LEFT_TO_RIGHT,
+    LOCAL_EVERY_DISPLAY, LOCAL_EVERY_MATH, L_CODE, MATH_CHAR, MATH_TEXT_CHAR, MAX_DIMEN,
+    MEDIUM_NODE_SIZE, MMODE, MU_GLUE, NOAD_SIZE, NORMAL, NULL_FONT, NUMBER_MATH_FAMILIES,
+    RADICAL_NOAD_SIZE, RIGHT_TO_LEFT, R_CODE, SCRIPT_SIZE, STYLE_NODE_SIZE, SUB_BOX, SUB_MLIST,
+    TEXT_SIZE,
 };
 use crate::fonts::{
     CharInfo, AAT_FONT_FLAG, EXT_TAG, LIG_TAG, LIST_TAG, OTGR_FONT_FLAG, QUAD_CODE, SPACE_CODE,
@@ -25,6 +17,7 @@ use crate::node::{
     AnyBox, AnyNode, ChoiceNode, DelimiterField, GlueNode, GlueSpecNode, KernNode, MathField, Noad,
     NodePtr, RuleDimen, RuleNode, WhatsitNode, WhatsitSubtype,
 };
+use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{
     EngineState, EqtbState, ErrorState, FontState, GroupCode, MemState, SaveStackState,
     ScannerState,
@@ -1300,7 +1293,7 @@ fn clean_script_box(
         }
     };
     st.scanner.cur_f = saved_font;
-    let w = node.width(&st.mem) + st.eqtb.dimen_par(DIMEN_PAR_SCRIPT_SPACE);
+    let w = node.width(&st.mem) + st.eqtb.dimen_par(DimenPar::ScriptSpace);
     node.set_width(&mut st.mem, w);
     Ok(ScriptBoxPrep {
         box_node: node,
@@ -1680,8 +1673,8 @@ fn make_left_right(
     set_cur_size_and_mu(st);
     let size = st.scanner.cur_size;
     let axis_height = st.fonts.axis_height(&st.eqtb, size);
-    let delimiter_factor = st.eqtb.int_par(INT_PAR_DELIMITER_FACTOR);
-    let delimiter_shortfall = st.eqtb.dimen_par(DIMEN_PAR_DELIMITER_SHORTFALL);
+    let delimiter_factor = st.eqtb.int_par(IntPar::DelimiterFactor);
+    let delimiter_shortfall = st.eqtb.dimen_par(DimenPar::DelimiterShortfall);
     let delta2 = max_d + axis_height;
     let delta1 = (max_h + max_d - delta2).max(delta2);
     let delta = ((delta1 / 500) * delimiter_factor).max(delta1 + delta1 - delimiter_shortfall);
@@ -2070,11 +2063,11 @@ fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                     }
                     NodeType::BinNoad => {
                         t = NodeType::BinNoad.as_raw();
-                        pen = st.eqtb.int_par(INT_PAR_BIN_OP_PENALTY);
+                        pen = st.eqtb.int_par(IntPar::BinOpPenalty);
                     }
                     NodeType::RelNoad => {
                         t = NodeType::RelNoad.as_raw();
-                        pen = st.eqtb.int_par(INT_PAR_REL_PENALTY);
+                        pen = st.eqtb.int_par(IntPar::RelPenalty);
                     }
                     NodeType::OrdNoad
                     | NodeType::VcenterNoad
@@ -2126,22 +2119,22 @@ fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                 let ord = NodeType::OrdNoad.as_raw();
                 let spacing = MATH_SPACING[(r_type - ord) as usize][(t - ord) as usize];
                 let x = match spacing {
-                    b'0' => 0,
-                    b'2' => GLUE_PAR_THIN_MU_SKIP,
-                    b'1' | b'3' | b'4' if st.scanner.cur_style >= SCRIPT_STYLE => 0,
-                    b'1' => GLUE_PAR_THIN_MU_SKIP,
-                    b'3' => GLUE_PAR_MED_MU_SKIP,
-                    b'4' => GLUE_PAR_THICK_MU_SKIP,
+                    b'0' => None,
+                    b'2' => Some(GluePar::ThinMuSkip),
+                    b'1' | b'3' | b'4' if st.scanner.cur_style >= SCRIPT_STYLE => None,
+                    b'1' => Some(GluePar::ThinMuSkip),
+                    b'3' => Some(GluePar::MedMuSkip),
+                    b'4' => Some(GluePar::ThickMuSkip),
                     _ => return Err(Abort::Confusion("mlist4")),
                 };
-                if x != 0 {
+                if let Some(x) = x {
                     let g = st.eqtb.glue_par(x);
                     let mu = st.scanner.cur_mu;
                     let y = math_glue(st, g, mu)?;
                     let z = st.mem.new_glue(y)?;
                     y.set_ref_count(&mut st.mem, TEX_NULL);
                     p.set_link(&mut st.mem, z.ptr());
-                    z.set_subtype(&mut st.mem, (x + 1) as u16);
+                    z.set_subtype(&mut st.mem, x.subtype());
                     p = z.ptr();
                 }
             }
@@ -2429,7 +2422,7 @@ pub(crate) fn start_eq_no(st: &mut EngineState) -> Result<(), Abort> {
     st.save_stack.save_ptr += 1;
 
     crate::main_control::push_math(st, GroupCode::MathShift)?;
-    define_word(st, INT_BASE + INT_PAR_CUR_FAM, -1)?;
+    define_word(st, IntPar::CurFam.loc(), -1)?;
     if st.shipout.insert_src_special_every_math {
         crate::ext::insert_src_special(st)?;
     }
@@ -2735,7 +2728,7 @@ impl MemState {
     fn finish_accent_math_field(&mut self, eqtb: &EqtbState, tail: NodePtr<Noad>, value: i32) {
         tail.accent_chr()
             .set_character(self, (value % 65536) as u16);
-        let intpar_cur_fam = eqtb.int_par(INT_PAR_CUR_FAM);
+        let intpar_cur_fam = eqtb.int_par(IntPar::CurFam);
         if crate::scan::math_class(value) == 7
             && (0..NUMBER_MATH_FAMILIES).contains(&intpar_cur_fam)
         {
@@ -2898,8 +2891,8 @@ fn app_display(
     orig: AnyBox,
     d: Scaled,
 ) -> Result<(), Abort> {
-    let s = st.eqtb.dimen_par(DIMEN_PAR_DISPLAY_INDENT);
-    let x = st.eqtb.int_par(INT_PAR_PRE_DISPLAY_DIRECTION);
+    let s = st.eqtb.dimen_par(DimenPar::DisplayIndent);
+    let x = st.eqtb.int_par(IntPar::PreDisplayDirection);
     if x == 0 {
         orig.set_shift_amount(&mut st.mem, s + d);
         crate::packaging::append_to_vlist(st, orig)?;
@@ -2907,7 +2900,7 @@ fn app_display(
     }
 
     let mut d = d;
-    let z = st.eqtb.dimen_par(DIMEN_PAR_DISPLAY_WIDTH);
+    let z = st.eqtb.dimen_par(DimenPar::DisplayWidth);
     let mut e;
     if x > 0 {
         e = z - d - orig.width(&st.mem);
@@ -2967,7 +2960,7 @@ fn app_display(
     };
     let u = st.mem.new_math(Scaled::ZERO, END_M_CODE)?.ptr();
     if let Ok(AnyNode::Glue(tg)) = st.mem.classify(MemIdx::new(t.0)) {
-        let skip = st.mem.new_skip_param(&st.eqtb, GLUE_PAR_RIGHT_SKIP)?;
+        let skip = st.mem.new_skip_param(&st.eqtb, GluePar::RightSkip)?;
         q.set_link(&mut st.mem, skip.ptr());
         skip.set_link(&mut st.mem, u);
         st.mem.set_display_skip(skip, tg, e);
@@ -2980,7 +2973,7 @@ fn app_display(
 
     let u = st.mem.new_math(Scaled::ZERO, BEGIN_M_CODE)?.ptr();
     if let Ok(AnyNode::Glue(rg)) = st.mem.classify(MemIdx::new(r.0)) {
-        let skip = st.mem.new_skip_param(&st.eqtb, GLUE_PAR_LEFT_SKIP)?;
+        let skip = st.mem.new_skip_param(&st.eqtb, GluePar::LeftSkip)?;
         u.set_link(&mut st.mem, skip.ptr());
         skip.set_link(&mut st.mem, p);
         st.mem.set_display_skip(skip, rg, d);
@@ -3087,7 +3080,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     if m < 0 {
-        let math_surround = st.eqtb.dimen_par(DIMEN_PAR_MATH_SURROUND);
+        let math_surround = st.eqtb.dimen_par(DimenPar::MathSurround);
         let node = st.mem.new_math(math_surround, BEFORE)?;
         st.input.cur_list.tail_append(&mut st.mem, node.ptr());
         st.scanner.cur_mlist = p;
@@ -3129,9 +3122,9 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     let pre_t = st.scanner.pre_adjust_tail.0;
     st.scanner.pre_adjust_tail.0 = TEX_NULL;
     let mut w = b.width(&st.mem);
-    let z = st.eqtb.dimen_par(DIMEN_PAR_DISPLAY_WIDTH);
-    let mut s = st.eqtb.dimen_par(DIMEN_PAR_DISPLAY_INDENT);
-    if st.eqtb.int_par(INT_PAR_PRE_DISPLAY_DIRECTION) < 0 {
+    let z = st.eqtb.dimen_par(DimenPar::DisplayWidth);
+    let mut s = st.eqtb.dimen_par(DimenPar::DisplayIndent);
+    if st.eqtb.int_par(IntPar::PreDisplayDirection) < 0 {
         s = -s - z;
     }
     let (mut e, q);
@@ -3176,16 +3169,16 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
 
     let pen = st
         .mem
-        .new_penalty(st.eqtb.int_par(INT_PAR_PRE_DISPLAY_PENALTY))?;
+        .new_penalty(st.eqtb.int_par(IntPar::PreDisplayPenalty))?;
     st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
 
-    let pre_display_size = st.eqtb.dimen_par(DIMEN_PAR_PRE_DISPLAY_SIZE);
+    let pre_display_size = st.eqtb.dimen_par(DimenPar::PreDisplaySize);
     let (g1, mut g2) = if d + s <= pre_display_size || l {
-        (GLUE_PAR_ABOVE_DISPLAY_SKIP, GLUE_PAR_BELOW_DISPLAY_SKIP)
+        (GluePar::AboveDisplaySkip, Some(GluePar::BelowDisplaySkip))
     } else {
         (
-            GLUE_PAR_ABOVE_DISPLAY_SHORT_SKIP,
-            GLUE_PAR_BELOW_DISPLAY_SHORT_SKIP,
+            GluePar::AboveDisplayShortSkip,
+            Some(GluePar::BelowDisplayShortSkip),
         )
     };
 
@@ -3219,7 +3212,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
         st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
         let a_width = eqno.width(&st.mem);
         app_display(st, j, eqno, z - a_width)?;
-        g2 = 0;
+        g2 = None;
     }
 
     let cl = &mut st.input.cur_list;
@@ -3236,10 +3229,10 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
 
     let pen = st
         .mem
-        .new_penalty(st.eqtb.int_par(INT_PAR_POST_DISPLAY_PENALTY))?;
+        .new_penalty(st.eqtb.int_par(IntPar::PostDisplayPenalty))?;
     st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
 
-    if g2 > 0 {
+    if let Some(g2) = g2 {
         let glue = st.mem.new_param_glue(&st.eqtb, g2)?;
         st.input.cur_list.tail_append(&mut st.mem, glue.ptr());
     }
@@ -3268,7 +3261,7 @@ fn pre_display_direction(st: &EngineState) -> i32 {
 }
 
 /// A kern, or the parameter glue when that skip is nonzero.
-fn side_skip(st: &mut EngineState, param: i16) -> Result<MemPtr, Abort> {
+fn side_skip(st: &mut EngineState, param: GluePar) -> Result<MemPtr, Abort> {
     let p = if st.eqtb.glue_par(param) == ZERO_GLUE {
         st.mem.new_kern(Scaled::ZERO).map(|k| k.ptr())
     } else {
@@ -3291,8 +3284,8 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
         } else {
             crate::linebreak::line_break(st, true)?;
 
-            let right = side_skip(st, GLUE_PAR_RIGHT_SKIP)?;
-            let left = side_skip(st, GLUE_PAR_LEFT_SKIP)?;
+            let right = side_skip(st, GluePar::RightSkip)?;
+            let left = side_skip(st, GluePar::LeftSkip)?;
             left.set_link(&mut st.mem, right);
 
             let jbox = st.mem.new_null_box()?;
@@ -3327,7 +3320,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
             let cur_font = st.eqtb.cur_font();
             v += st.fonts.param(cur_font, QUAD_CODE) * 2;
 
-            let texxet = st.eqtb.int_par(INT_PAR_TEXXET) > 0;
+            let texxet = st.eqtb.int_par(IntPar::Texxet) > 0;
             if texxet {
                 st.mem.push_lr(&mut st.scanner.lr_ptr, BEFORE.into())?;
             }
@@ -3457,32 +3450,32 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
             s = shape.indent(&st.mem, line);
             l = shape.line_width(&st.mem, line);
         } else {
-            let hang = st.eqtb.dimen_par(DIMEN_PAR_HANG_INDENT);
-            let hang_after = st.eqtb.int_par(INT_PAR_HANG_AFTER);
+            let hang = st.eqtb.dimen_par(DimenPar::HangIndent);
+            let hang_after = st.eqtb.int_par(IntPar::HangAfter);
             let prev_graf = st.input.cur_list.prev_graf;
             if hang != Scaled::ZERO
                 && ((hang_after >= 0 && prev_graf + 2 > hang_after) || prev_graf + 1 < -hang_after)
             {
-                l = st.eqtb.dimen_par(DIMEN_PAR_HSIZE) - hang.abs();
+                l = st.eqtb.dimen_par(DimenPar::Hsize) - hang.abs();
                 s = if hang > Scaled::ZERO {
                     hang
                 } else {
                     Scaled::ZERO
                 };
             } else {
-                l = st.eqtb.dimen_par(DIMEN_PAR_HSIZE);
+                l = st.eqtb.dimen_par(DimenPar::Hsize);
                 s = Scaled::ZERO;
             }
         }
 
         crate::main_control::push_math(st, GroupCode::MathShift)?;
         st.input.cur_list.mode = MMODE;
-        define_word(st, INT_BASE + INT_PAR_CUR_FAM, -1)?;
-        define_word(st, DIMEN_BASE + DIMEN_PAR_PRE_DISPLAY_SIZE, w.0)?;
+        define_word(st, IntPar::CurFam.loc(), -1)?;
+        define_word(st, DimenPar::PreDisplaySize.loc(), w.0)?;
         st.input.cur_list.e_tex_aux = MemPtr::from_raw(j);
-        define_word(st, INT_BASE + INT_PAR_PRE_DISPLAY_DIRECTION, x)?;
-        define_word(st, DIMEN_BASE + DIMEN_PAR_DISPLAY_WIDTH, l.0)?;
-        define_word(st, DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT, s.0)?;
+        define_word(st, IntPar::PreDisplayDirection.loc(), x)?;
+        define_word(st, DimenPar::DisplayWidth.loc(), l.0)?;
+        define_word(st, DimenPar::DisplayIndent.loc(), s.0)?;
 
         if st.config.semantic_pagination_enabled {
             crate::ext::insert_special(st, "tdux:cs dmath")?;
@@ -3498,7 +3491,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
     } else {
         crate::input::back_input(st)?;
         crate::main_control::push_math(st, GroupCode::MathShift)?;
-        define_word(st, INT_BASE + INT_PAR_CUR_FAM, -1)?;
+        define_word(st, IntPar::CurFam.loc(), -1)?;
         if st.shipout.insert_src_special_every_math {
             crate::ext::insert_src_special(st)?;
         }
@@ -3791,7 +3784,7 @@ fn var_delimiter(
     }
     let b = if f == NULL_FONT {
         let b = st.mem.new_null_box()?;
-        let width = st.eqtb.dimen_par(DIMEN_PAR_NULL_DELIMITER_SPACE);
+        let width = st.eqtb.dimen_par(DimenPar::NullDelimiterSpace);
         b.set_width(&mut st.mem, width);
         AnyBox::HList(b)
     } else if !st.fonts.font_uses_opentype(f) {

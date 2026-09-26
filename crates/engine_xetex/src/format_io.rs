@@ -9,10 +9,9 @@ use crate::bridge::{
 use crate::cmd::UNDEFINED_CS;
 use crate::consts::{
     ACTIVE_BASE, CS_TOKEN_FLAG, EMPTY_STRING, EQTB_SIZE, FONT_BASE, FROZEN_CONTROL_SEQUENCE,
-    HASH_BASE, HISTORY_FATAL_ERROR, INT_BASE, INT_PAR_DAY, INT_PAR_MONTH, INT_PAR_TRACING_STATS,
-    INT_PAR_YEAR, INVALID_HANDLE, MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP, MIN_HALFWORD, PRIM_SIZE,
-    SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_AND_LOG, TEX_NULL, TOO_BIG_CHAR,
-    UNDEFINED_CONTROL_SEQUENCE,
+    HASH_BASE, HISTORY_FATAL_ERROR, INT_BASE, INVALID_HANDLE, MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP,
+    MIN_HALFWORD, PRIM_SIZE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_AND_LOG,
+    TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::engine::{POOL_FREE, STRINGS_FREE};
 use crate::errors::Abort;
@@ -20,6 +19,7 @@ use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::hash::{HASH_OFFSET, HASH_PRIME};
 use crate::hyphenation::{BIGGEST_LANG, HYPH_PRIME, MAX_TRIE_OP, TRIE_OP_SIZE};
 use crate::mem::{CONTRIB_HEAD, HI_MEM_STAT_MIN, HI_MEM_STAT_USAGE, PAGE_HEAD};
+use crate::params::IntPar;
 use crate::scan::{INTER_CHAR_VAL, INT_VAL};
 use crate::state::{EngineState, EqtbState, InteractionMode};
 use crate::units::{FontId, MemPtr, StrNumber};
@@ -240,11 +240,11 @@ pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     crate::output::print(st, " (preloaded format=");
     crate::output::print(st, st.strings.job_name);
     crate::output::print_char(st, b' ');
-    crate::output::print_int(st, st.eqtb.int_par(INT_PAR_YEAR));
+    crate::output::print_int(st, st.eqtb.int_par(IntPar::Year));
     crate::output::print_char(st, b'.');
-    crate::output::print_int(st, st.eqtb.int_par(INT_PAR_MONTH));
+    crate::output::print_int(st, st.eqtb.int_par(IntPar::Month));
     crate::output::print_char(st, b'.');
-    crate::output::print_int(st, st.eqtb.int_par(INT_PAR_DAY));
+    crate::output::print_int(st, st.eqtb.int_par(IntPar::Day));
     crate::output::print_char(st, b')');
 
     st.shipout.selector = if st.errors.interaction == InteractionMode::Batch {
@@ -560,7 +560,7 @@ pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     dump_int(fmt_out, FORMAT_FOOTER_MAGIC)?;
-    st.eqtb.set_int_par(INT_PAR_TRACING_STATS, 0);
+    st.eqtb.set_int_par(IntPar::TracingStats, 0);
     output_close(fmt_out);
     Ok(())
 }

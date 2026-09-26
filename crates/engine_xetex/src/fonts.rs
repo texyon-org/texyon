@@ -2,10 +2,7 @@
 //! character nodes and the TFM `char_info` accessors.
 
 use crate::consts::{
-    DESIGN_SIZE, EMPTY_STRING, INT_PAR_DEFAULT_HYPHEN_CHAR, INT_PAR_DEFAULT_SKEW_CHAR,
-    INT_PAR_SUPPRESS_FONTNOTFOUND_ERROR, INT_PAR_TRACING_LOST_CHARS,
-    INT_PAR_XETEX_GENERATE_ACTUAL_TEXT, INT_PAR_XETEX_TRACING_FONTS,
-    INT_PAR_XETEX_USE_GLYPH_METRICS, INVALID_HANDLE, NATIVE_NODE_SIZE, NON_ADDRESS, NULL_FONT,
+    DESIGN_SIZE, EMPTY_STRING, INVALID_HANDLE, NATIVE_NODE_SIZE, NON_ADDRESS, NULL_FONT,
     TOO_BIG_CHAR,
 };
 use crate::ext::{
@@ -20,6 +17,7 @@ use crate::output::{
     end_diagnostic, error_here_with_diagnostic, print, print_char, print_file_name, print_int,
     print_nl, print_scaled, sprint_cs,
 };
+use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, FontState, MemState};
 use crate::units::{FontId, MemPtr, Scaled, StrNumber};
 
@@ -134,7 +132,7 @@ impl MemState {
         f: FontId,
         n: i32,
     ) -> Result<NodePtr<WhatsitNode>, Abort> {
-        let subtype = if eqtb.int_par(INT_PAR_XETEX_GENERATE_ACTUAL_TEXT) > 0 {
+        let subtype = if eqtb.int_par(IntPar::XetexGenerateActualText) > 0 {
             WhatsitSubtype::NativeWordAt
         } else {
             WhatsitSubtype::NativeWord
@@ -205,14 +203,14 @@ pub(crate) fn new_native_character(
         }
         NativeCharSrc::Mapped(len)
     } else {
-        if st.eqtb.int_par(INT_PAR_TRACING_LOST_CHARS) > 0 {
+        if st.eqtb.int_par(IntPar::TracingLostChars) > 0 {
             check_native_char(st, f, c as i32)?;
         }
         NativeCharSrc::Single(c)
     };
 
     let w = st.mem.build_native_character(&st.eqtb, &st.fonts, f, src)?;
-    let use_glyph_metrics = st.eqtb.int_par(INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
+    let use_glyph_metrics = st.eqtb.int_par(IntPar::XetexUseGlyphMetrics) > 0;
     st.fonts
         .measure_native_node(&mut st.mem, w, use_glyph_metrics)?;
     Ok(w)
@@ -297,7 +295,7 @@ pub(crate) fn read_font_info(
 
     pack_file_name(st, nom, aire, st.scanner.cur_ext);
 
-    if st.eqtb.int_par(INT_PAR_XETEX_TRACING_FONTS) > 0 {
+    if st.eqtb.int_par(IntPar::XetexTracingFonts) > 0 {
         begin_diagnostic(st);
         diagnostic_begin_capture_warning_here(st);
         print_nl(st, "Requested font \"");
@@ -375,7 +373,7 @@ pub(crate) fn read_font_info(
         }
     }
 
-    if bad_tfm && st.eqtb.int_par(INT_PAR_SUPPRESS_FONTNOTFOUND_ERROR) == 0 {
+    if bad_tfm && st.eqtb.int_par(IntPar::SuppressFontnotfoundError) == 0 {
         font_error_start(st, u, nom, aire, s);
         let reason = if file_opened {
             " not loadable: Bad metric (TFM) file"
@@ -404,7 +402,7 @@ pub(crate) fn read_font_info(
         ));
     }
 
-    if st.eqtb.int_par(INT_PAR_XETEX_TRACING_FONTS) > 0 && (g == NULL_FONT || file_opened) {
+    if st.eqtb.int_par(IntPar::XetexTracingFonts) > 0 && (g == NULL_FONT || file_opened) {
         begin_diagnostic(st);
         diagnostic_begin_capture_warning_here(st);
         print_nl(st, " -> ");
@@ -672,8 +670,8 @@ impl FontState {
         }
 
         self.font_params[f] = np.max(7);
-        self.hyphen_char[f] = eqtb.int_par(INT_PAR_DEFAULT_HYPHEN_CHAR);
-        self.skew_char[f] = eqtb.int_par(INT_PAR_DEFAULT_SKEW_CHAR);
+        self.hyphen_char[f] = eqtb.int_par(IntPar::DefaultHyphenChar);
+        self.skew_char[f] = eqtb.int_par(IntPar::DefaultSkewChar);
         if bch_label < nl {
             self.bchar_label[f] = bch_label + self.lig_kern_base[f];
         } else {
@@ -727,8 +725,8 @@ impl FontState {
         self.font_bc[font_ptr] = 0;
         self.font_ec[font_ptr] = 65_535;
         self.font_used[font_ptr] = false;
-        self.hyphen_char[font_ptr] = eqtb.int_par(INT_PAR_DEFAULT_HYPHEN_CHAR);
-        self.skew_char[font_ptr] = eqtb.int_par(INT_PAR_DEFAULT_SKEW_CHAR);
+        self.hyphen_char[font_ptr] = eqtb.int_par(IntPar::DefaultHyphenChar);
+        self.skew_char[font_ptr] = eqtb.int_par(IntPar::DefaultSkewChar);
         self.param_base[font_ptr] = self.fmem_ptr - 1;
         self.font_layout_engine[font_ptr] = Some(std::sync::Arc::new(font_engine));
         self.font_mapping[font_ptr] = None;

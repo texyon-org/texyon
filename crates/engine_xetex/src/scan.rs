@@ -14,14 +14,11 @@ use crate::consts::{
     ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, CLOSED, COUNT_BASE,
     CS_TOKEN_FLAG, DEL_CODE_BASE, END_M_CODE, EQTB_SIZE, FIL, FILLL, FROZEN_CONTROL_SEQUENCE,
     FROZEN_CR, FROZEN_ENDV, FROZEN_FI, FROZEN_PRIMITIVE, FROZEN_PROTECTION, FROZEN_RELAX,
-    INT_PAR_CUR_FAM, INT_PAR_END_LINE_CHAR, INT_PAR_MAG, INT_PAR_NEW_LINE_CHAR,
-    INT_PAR_TRACING_IFS, INT_PAR_TRACING_NESTING, INT_PAR_TRACING_SCAN_TOKENS,
-    INT_PAR_XETEX_HYPHENATABLE_LENGTH, JUST_OPEN, LEFT_SIDE, LOCAL_BASE, LOCAL_EVERY_EOF,
-    LOCAL_PAR_SHAPE, LOCAL_TECTONIC_CODA, LOCAL_XETEX_INTER_CHAR_TOKS, MATH_CHAR, MATH_CODE_BASE,
-    MAX_DIMEN, MAX_HALFWORD, MU_GLUE, MU_SKIP_BASE, NORMAL, NULL_CS, NULL_FONT,
-    NUMBER_MATH_FAMILIES, PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE, SELECTOR_LOG_ONLY,
-    SELECTOR_NEW_STRING, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, TEX_INFINITY, TEX_NULL,
-    UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
+    JUST_OPEN, LEFT_SIDE, LOCAL_BASE, LOCAL_EVERY_EOF, LOCAL_PAR_SHAPE, LOCAL_TECTONIC_CODA,
+    LOCAL_XETEX_INTER_CHAR_TOKS, MATH_CHAR, MATH_CODE_BASE, MAX_DIMEN, MAX_HALFWORD, MU_GLUE,
+    MU_SKIP_BASE, NORMAL, NULL_CS, NULL_FONT, NUMBER_MATH_FAMILIES, PRIM_EQTB_BASE, RIGHT_SIDE,
+    SCALED_BASE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE,
+    TEX_INFINITY, TEX_NULL, UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
 };
 use crate::errors::Abort;
 use crate::errors::{error, int_error, mu_error};
@@ -48,6 +45,7 @@ use crate::output::{
     print_int, print_nl,
 };
 use crate::packaging::{ADDITIONAL, EXACTLY};
+use crate::params::IntPar;
 use crate::state::{
     EngineState, EqtbState, ErrorState, GroupCode, InputClusterState, MemState, ScannerState,
 };
@@ -357,7 +355,7 @@ pub(crate) fn scan_xetex_math_char_int(st: &mut EngineState) -> Result<(), Abort
 impl EqtbState {
     /// `\XeTeXhyphenatablelength`, capped at the supported maximum.
     pub fn max_hyphenatable_length(&self) -> i32 {
-        self.int_par(INT_PAR_XETEX_HYPHENATABLE_LENGTH)
+        self.int_par(IntPar::XetexHyphenatableLength)
             .min(HYPHENATABLE_LENGTH_LIMIT)
     }
 }
@@ -529,7 +527,7 @@ impl MemState {
 /// Appends `\endlinechar` to the line just read and starts reading it.
 #[inline]
 pub(crate) fn finish_line(st: &mut EngineState) {
-    let end_char = st.eqtb.int_par(INT_PAR_END_LINE_CHAR);
+    let end_char = st.eqtb.int_par(IntPar::EndLineChar);
     if (0..=255).contains(&end_char) {
         st.input.buffer[st.input.cur_input.limit as usize] = end_char;
     } else {
@@ -785,7 +783,7 @@ pub(crate) fn scan_math(st: &mut EngineState, p: NodePtr<MathField>) -> Result<(
     }
     p.set_math_type(&mut st.mem, MATH_CHAR);
     p.set_character(&mut st.mem, (c % 65536) as u16);
-    let cur_fam = st.eqtb.int_par(INT_PAR_CUR_FAM);
+    let cur_fam = st.eqtb.int_par(IntPar::CurFam);
     let fam = if math_class(c) == 7 && (0..NUMBER_MATH_FAMILIES).contains(&cur_fam) {
         cur_fam as u16
     } else {
@@ -809,7 +807,7 @@ pub(crate) fn set_math_char(st: &mut EngineState, c: i32) -> Result<(), Abort> {
         nd.nucleus()
             .set_plane_and_fam(&mut st.mem, math_fam(c) as u16);
         if math_class(c) == 7 {
-            let cf = st.eqtb.int_par(INT_PAR_CUR_FAM);
+            let cf = st.eqtb.int_par(IntPar::CurFam);
             if (0..NUMBER_MATH_FAMILIES).contains(&cf) {
                 nd.nucleus().set_plane_and_fam(&mut st.mem, cf as u16);
             }
@@ -1255,7 +1253,7 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
 
                     if st.input.force_eof {
                         let in_open = st.input.in_open as usize;
-                        if st.eqtb.int_par(INT_PAR_TRACING_NESTING) > 0
+                        if st.eqtb.int_par(IntPar::TracingNesting) > 0
                             && (st.input.grp_stack[in_open] != st.save_stack.cur_boundary
                                 || st.input.if_stack[in_open] != st.scanner.cond_ptr)
                         {
@@ -1693,7 +1691,7 @@ pub(crate) fn pass_text(st: &mut EngineState) -> Result<(), Abort> {
         }
     }
     st.scanner.scanner_status = save_scanner_status;
-    if st.eqtb.int_par(INT_PAR_TRACING_IFS) > 0 {
+    if st.eqtb.int_par(IntPar::TracingIfs) > 0 {
         crate::output::show_cur_cmd_chr(st);
     }
     Ok(())
@@ -1713,7 +1711,7 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
     let s = st.strings.make_string()?;
     st.strings.str_pool[st.strings.pool_ptr as usize] = u16::from(b' ');
     let mut l = st.strings.str_start[s.slot()];
-    let nl = st.eqtb.int_par(INT_PAR_NEW_LINE_CHAR) as u16;
+    let nl = st.eqtb.int_par(IntPar::NewLineChar) as u16;
     let file = st.mem.get_avail()?;
     let mut last_line = file;
 
@@ -1761,7 +1759,7 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
     st.input.cur_input.limit = start;
     st.input.cur_input.loc = start + 1;
 
-    if st.eqtb.int_par(INT_PAR_TRACING_SCAN_TOKENS) > 0 {
+    if st.eqtb.int_par(IntPar::TracingScanTokens) > 0 {
         if st.shipout.term_offset > st.config.max_print_line - 3 {
             crate::output::print_ln(st);
         } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
@@ -2115,7 +2113,7 @@ pub(crate) fn xetex_scan_dimen(
 
                 if scan_keyword(st, "true")? {
                     crate::save::prepare_mag(st)?;
-                    let mag = st.eqtb.int_par(INT_PAR_MAG);
+                    let mag = st.eqtb.int_par(IntPar::Mag);
                     if mag != 1000 {
                         scale_dimen(st, &mut f, 1000, mag);
                     }

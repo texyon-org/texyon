@@ -2,21 +2,14 @@
 //! character protrusion.
 
 use crate::consts::{
-    AWFUL_BAD, DIMEN_PAR_EMERGENCY_STRETCH, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, EJECT_PENALTY,
-    ETEX_PENALTIES_PAR_CLUB_PENALTIES, ETEX_PENALTIES_PAR_DISPLAY_WIDOW_PENALTIES,
-    ETEX_PENALTIES_PAR_INTER_LINE_PENALTIES, ETEX_PENALTIES_PAR_WIDOW_PENALTIES, ETEX_PEN_BASE,
-    EXPLICIT, GLUE_PAR_LEFT_SKIP, GLUE_PAR_PAR_FILL_SKIP, GLUE_PAR_RIGHT_SKIP,
-    GLUE_PAR_XETEX_LINEBREAK_SKIP, INF_BAD, INF_PENALTY, INT_PAR_ADJ_DEMERITS,
-    INT_PAR_BROKEN_PENALTY, INT_PAR_CLUB_PENALTY, INT_PAR_DISPLAY_WIDOW_PENALTY,
-    INT_PAR_DOUBLE_HYPHEN_DEMERITS, INT_PAR_EX_HYPHEN_PENALTY, INT_PAR_FINAL_HYPHEN_DEMERITS,
-    INT_PAR_HANG_AFTER, INT_PAR_HYPHEN_PENALTY, INT_PAR_INTER_LINE_PENALTY, INT_PAR_LAST_LINE_FIT,
-    INT_PAR_LINE_PENALTY, INT_PAR_LOOSENESS, INT_PAR_PRETOLERANCE, INT_PAR_TEXXET,
-    INT_PAR_TOLERANCE, INT_PAR_UC_HYPH, INT_PAR_WIDOW_PENALTY, INT_PAR_XETEX_LINEBREAK_LOCALE,
-    INT_PAR_XETEX_LINEBREAK_PENALTY, INT_PAR_XETEX_PROTRUDE_CHARS, INT_PAR_XETEX_USE_GLYPH_METRICS,
-    L_CODE, MAX_DIMEN, MAX_HALFWORD, MIN_TRIE_OP, NON_ADDRESS, NORMAL, NULL_FONT, SMALL_NODE_SIZE,
+    AWFUL_BAD, EJECT_PENALTY, ETEX_PENALTIES_PAR_CLUB_PENALTIES,
+    ETEX_PENALTIES_PAR_DISPLAY_WIDOW_PENALTIES, ETEX_PENALTIES_PAR_INTER_LINE_PENALTIES,
+    ETEX_PENALTIES_PAR_WIDOW_PENALTIES, ETEX_PEN_BASE, EXPLICIT, INF_BAD, INF_PENALTY, L_CODE,
+    MAX_DIMEN, MAX_HALFWORD, MIN_TRIE_OP, NON_ADDRESS, NORMAL, NULL_FONT, SMALL_NODE_SIZE,
     SPACE_ADJUSTMENT, TEX_NULL, TOO_BIG_CHAR,
 };
 use crate::errors::Abort;
+use crate::params::{DimenPar, GluePar, IntPar};
 
 use crate::fonts::{LIG_TAG, QUAD_CODE};
 use crate::hyphenation::HYPH_PRIME;
@@ -187,7 +180,7 @@ impl MemState {
         fonts: &FontState,
         w: NodePtr<WhatsitNode>,
     ) -> Result<(), Abort> {
-        let use_glyph_metrics = eqtb.int_par(INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
+        let use_glyph_metrics = eqtb.int_par(IntPar::XetexUseGlyphMetrics) > 0;
         fonts.measure_native_node(self, w, use_glyph_metrics)
     }
 
@@ -919,7 +912,7 @@ impl MemState {
         }
         linebreak.best_line = linebreak.best_bet.expect(BEST_BET_SET).line_number(self);
 
-        let looseness = eqtb.int_par(INT_PAR_LOOSENESS);
+        let looseness = eqtb.int_par(IntPar::Looseness);
         if looseness == 0 {
             return true;
         }
@@ -1093,7 +1086,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
         }
     }
 
-    let last_line_fill = st.mem.new_param_glue(&st.eqtb, GLUE_PAR_PAR_FILL_SKIP)?;
+    let last_line_fill = st.mem.new_param_glue(&st.eqtb, GluePar::ParFillSkip)?;
     st.input
         .cur_list
         .tail
@@ -1105,7 +1098,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
     st.mem.pop_nest(&mut st.input);
     st.errors.no_shrink_error_yet = true;
 
-    for n in [GLUE_PAR_LEFT_SKIP, GLUE_PAR_RIGHT_SKIP] {
+    for n in [GluePar::LeftSkip, GluePar::RightSkip] {
         let spec = st.eqtb.glue_par(n);
         if st.mem.has_infinite_shrink(spec) {
             let spec = finite_shrink(st, spec)?;
@@ -1113,8 +1106,8 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
         }
     }
 
-    let left_skip = st.eqtb.glue_par(GLUE_PAR_LEFT_SKIP);
-    let right_skip = st.eqtb.glue_par(GLUE_PAR_RIGHT_SKIP);
+    let left_skip = st.eqtb.glue_par(GluePar::LeftSkip);
+    let right_skip = st.eqtb.glue_par(GluePar::RightSkip);
     let mem = &st.mem;
     let background = &mut st.linebreak.background;
     background[1] = left_skip.width(mem) + right_skip.width(mem);
@@ -1125,7 +1118,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
 
     st.linebreak.do_last_line_fit = false;
     st.linebreak.active_node_size = ACTIVE_NODE_SIZE_NORMAL;
-    if st.eqtb.int_par(INT_PAR_LAST_LINE_FIT) > 0 {
+    if st.eqtb.int_par(IntPar::LastLineFit) > 0 {
         let spec = last_line_fill.glue_ptr(&st.mem);
         let lb = &mut st.linebreak;
         if spec.stretch(&st.mem) > Scaled::ZERO
@@ -1149,14 +1142,14 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
         lb.second_width = shape.line_width(&st.mem, lb.last_special_line + 1);
         lb.second_indent = shape.indent(&st.mem, lb.last_special_line + 1);
     } else {
-        let hang_indent = st.eqtb.dimen_par(DIMEN_PAR_HANG_INDENT);
-        let hsize = st.eqtb.dimen_par(DIMEN_PAR_HSIZE);
+        let hang_indent = st.eqtb.dimen_par(DimenPar::HangIndent);
+        let hsize = st.eqtb.dimen_par(DimenPar::Hsize);
         if hang_indent == Scaled::ZERO {
             lb.last_special_line = 0;
             lb.second_width = hsize;
             lb.second_indent = Scaled::ZERO;
         } else {
-            let hang_after = st.eqtb.int_par(INT_PAR_HANG_AFTER);
+            let hang_after = st.eqtb.int_par(IntPar::HangAfter);
             lb.last_special_line = hang_after.abs();
             if hang_after < 0 {
                 lb.first_width = hsize - hang_indent.abs();
@@ -1172,21 +1165,21 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
         }
     }
 
-    lb.easy_line = if st.eqtb.int_par(INT_PAR_LOOSENESS) == 0 {
+    lb.easy_line = if st.eqtb.int_par(IntPar::Looseness) == 0 {
         lb.last_special_line
     } else {
         MAX_HALFWORD
     };
 
-    lb.threshold = st.eqtb.int_par(INT_PAR_PRETOLERANCE);
+    lb.threshold = st.eqtb.int_par(IntPar::Pretolerance);
     let mut second_pass;
     if lb.threshold >= 0 {
         second_pass = false;
         lb.final_pass = false;
     } else {
-        lb.threshold = st.eqtb.int_par(INT_PAR_TOLERANCE);
+        lb.threshold = st.eqtb.int_par(IntPar::Tolerance);
         second_pass = true;
-        lb.final_pass = st.eqtb.dimen_par(DIMEN_PAR_EMERGENCY_STRETCH) <= Scaled::ZERO;
+        lb.final_pass = st.eqtb.dimen_par(DimenPar::EmergencyStretch) <= Scaled::ZERO;
     }
 
     loop {
@@ -1281,7 +1274,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
                     let pre_break = d.pre_break(&st.mem);
                     st.linebreak.disc_width = Scaled::ZERO;
                     if pre_break.is_null() {
-                        let pi = st.eqtb.int_par(INT_PAR_EX_HYPHEN_PENALTY);
+                        let pi = st.eqtb.int_par(IntPar::ExHyphenPenalty);
                         line_break_try_break(st, pi, HYPHENATED, Some(d))?;
                     } else {
                         let mut s = pre_break;
@@ -1293,7 +1286,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
                             s = s.link(&st.mem);
                         }
                         st.scanner.active_width[1] += st.linebreak.disc_width;
-                        let pi = st.eqtb.int_par(INT_PAR_HYPHEN_PENALTY);
+                        let pi = st.eqtb.int_par(IntPar::HyphenPenalty);
                         line_break_try_break(st, pi, HYPHENATED, Some(d))?;
                         st.scanner.active_width[1] -= st.linebreak.disc_width;
                     }
@@ -1342,12 +1335,11 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
         st.mem.free_break_lists(&st.linebreak);
 
         if !second_pass {
-            st.linebreak.threshold = st.eqtb.int_par(INT_PAR_TOLERANCE);
+            st.linebreak.threshold = st.eqtb.int_par(IntPar::Tolerance);
             second_pass = true;
-            st.linebreak.final_pass =
-                st.eqtb.dimen_par(DIMEN_PAR_EMERGENCY_STRETCH) <= Scaled::ZERO;
+            st.linebreak.final_pass = st.eqtb.dimen_par(DimenPar::EmergencyStretch) <= Scaled::ZERO;
         } else {
-            st.linebreak.background[2] += st.eqtb.dimen_par(DIMEN_PAR_EMERGENCY_STRETCH);
+            st.linebreak.background[2] += st.eqtb.dimen_par(DimenPar::EmergencyStretch);
             st.linebreak.final_pass = true;
         }
     }
@@ -1406,7 +1398,7 @@ impl MemState {
 /// Try to hyphenate the word following the glue node `cur`.
 fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), Abort> {
     let max_len = st.eqtb.max_hyphenatable_length();
-    let uc_hyph = st.eqtb.int_par(INT_PAR_UC_HYPH) > 0;
+    let uc_hyph = st.eqtb.int_par(IntPar::UcHyph) > 0;
     let mut prev_s = cur;
     let mut s = prev_s.link(&st.mem);
     if s.is_null() {
@@ -1657,8 +1649,8 @@ impl LinebreakState {
         lr_ptr: &mut MemPtr,
         cur_line: i32,
     ) -> Result<PostLineHpack, Abort> {
-        let texxet = eqtb.int_par(INT_PAR_TEXXET) > 0;
-        let protrude = eqtb.int_par(INT_PAR_XETEX_PROTRUDE_CHARS) > 0;
+        let texxet = eqtb.int_par(IntPar::Texxet) > 0;
+        let protrude = eqtb.int_par(IntPar::XetexProtrudeChars) > 0;
         let cur_break = passive_node(self.cur_p).cur_break(mem);
 
         if texxet {
@@ -1701,9 +1693,9 @@ impl LinebreakState {
                 Ok(AnyNode::Glue(g)) => {
                     let old_spec = g.glue_ptr(mem);
                     mem.delete_glue_ref(old_spec);
-                    let right_skip = eqtb.glue_par(GLUE_PAR_RIGHT_SKIP);
+                    let right_skip = eqtb.glue_par(GluePar::RightSkip);
                     g.set_glue_ptr(mem, right_skip);
-                    g.set_subtype(mem, GLUE_PAR_RIGHT_SKIP as u16 + 1);
+                    g.set_subtype(mem, GluePar::RightSkip.subtype());
                     mem.add_glue_ref(right_skip);
                     glue_break = true;
                 }
@@ -1759,7 +1751,7 @@ impl LinebreakState {
         }
 
         if !glue_break {
-            let r = mem.new_param_glue(eqtb, GLUE_PAR_RIGHT_SKIP)?;
+            let r = mem.new_param_glue(eqtb, GluePar::RightSkip)?;
             r.set_link(mem, q.link(mem));
             q.set_link(mem, r.ptr());
             q = r.ptr();
@@ -1792,8 +1784,8 @@ impl LinebreakState {
             q = self.insert_left_margin_kern(errors, mem, fonts, q)?;
         }
 
-        if eqtb.glue_par(GLUE_PAR_LEFT_SKIP) != ZERO_GLUE {
-            let r = mem.new_param_glue(eqtb, GLUE_PAR_LEFT_SKIP)?;
+        if eqtb.glue_par(GluePar::LeftSkip) != ZERO_GLUE {
+            let r = mem.new_param_glue(eqtb, GluePar::LeftSkip)?;
             r.set_link(mem, q);
             q = r.ptr();
         }
@@ -1892,7 +1884,7 @@ impl ListStateRecord {
         if *cur_line + 1 != linebreak.best_line {
             let mut pen = mem
                 .etex_penalty(eqtb, ETEX_PENALTIES_PAR_INTER_LINE_PENALTIES, *cur_line)
-                .unwrap_or_else(|| eqtb.int_par(INT_PAR_INTER_LINE_PENALTY));
+                .unwrap_or_else(|| eqtb.int_par(IntPar::InterLinePenalty));
 
             match mem.etex_penalty(
                 eqtb,
@@ -1900,19 +1892,17 @@ impl ListStateRecord {
                 *cur_line - self.prev_graf,
             ) {
                 Some(p) => pen += p,
-                None if *cur_line == self.prev_graf + 1 => {
-                    pen += eqtb.int_par(INT_PAR_CLUB_PENALTY)
-                }
+                None if *cur_line == self.prev_graf + 1 => pen += eqtb.int_par(IntPar::ClubPenalty),
                 None => {}
             }
 
             let (widow_array, widow_penalty) = if d {
                 (
                     ETEX_PENALTIES_PAR_DISPLAY_WIDOW_PENALTIES,
-                    INT_PAR_DISPLAY_WIDOW_PENALTY,
+                    IntPar::DisplayWidowPenalty,
                 )
             } else {
-                (ETEX_PENALTIES_PAR_WIDOW_PENALTIES, INT_PAR_WIDOW_PENALTY)
+                (ETEX_PENALTIES_PAR_WIDOW_PENALTIES, IntPar::WidowPenalty)
             };
             match mem.etex_penalty(eqtb, widow_array, linebreak.best_line - *cur_line - 1) {
                 Some(p) => pen += p,
@@ -1921,7 +1911,7 @@ impl ListStateRecord {
             }
 
             if hpack.disc_break {
-                pen += eqtb.int_par(INT_PAR_BROKEN_PENALTY);
+                pen += eqtb.int_par(IntPar::BrokenPenalty);
             }
 
             if pen != 0 {
@@ -1934,7 +1924,7 @@ impl ListStateRecord {
         linebreak.cur_p = passive_node(linebreak.cur_p).next_break(mem);
 
         if !linebreak.cur_p.is_null() && !hpack.post_disc_break {
-            let texxet = eqtb.int_par(INT_PAR_TEXXET) > 0;
+            let texxet = eqtb.int_par(IntPar::Texxet) > 0;
             let cur_break = passive_node(linebreak.cur_p).cur_break(mem);
             let mut r = TEMP_HEAD;
             let mut q;
@@ -2148,7 +2138,7 @@ impl MemState {
             *prev_r = q.ptr();
         }
 
-        let adj = eqtb.int_par(INT_PAR_ADJ_DEMERITS).abs();
+        let adj = eqtb.int_par(IntPar::AdjDemerits).abs();
         if adj >= MAX_HALFWORD - linebreak.minimum_demerits {
             linebreak.minimum_demerits = AWFUL_BAD - 1;
         } else {
@@ -2288,7 +2278,7 @@ impl MemState {
             } else {
                 artificial_demerits = false;
                 shortfall = line_width - caw[1];
-                if eqtb.int_par(INT_PAR_XETEX_PROTRUDE_CHARS) > 1 {
+                if eqtb.int_par(IntPar::XetexProtrudeChars) > 1 {
                     shortfall += linebreak
                         .total_pw(errors, self, fonts, r_active, disc)
                         .ok_or(Abort::PdfError(&["total_pw", "hlist stack failure"]))?;
@@ -2322,7 +2312,7 @@ impl MemState {
                                 r_active.glue(self).0,
                                 MAX_DIMEN,
                             );
-                            let last_line_fit = eqtb.int_par(INT_PAR_LAST_LINE_FIT);
+                            let last_line_fit = eqtb.int_par(IntPar::LastLineFit);
                             if last_line_fit < 1000 {
                                 g = errors.fract(g, last_line_fit, 1000, MAX_DIMEN);
                             }
@@ -2399,7 +2389,7 @@ impl MemState {
             let mut d = if artificial_demerits {
                 0
             } else {
-                let mut d = eqtb.int_par(INT_PAR_LINE_PENALTY) + b;
+                let mut d = eqtb.int_par(IntPar::LinePenalty) + b;
                 if d.abs() >= 10_000 {
                     d = 100_000_000;
                 } else {
@@ -2414,14 +2404,14 @@ impl MemState {
 
                 if break_type == HYPHENATED && r_active.break_type(self) as i16 == HYPHENATED {
                     d += if linebreak.cur_p.is_null() {
-                        eqtb.int_par(INT_PAR_FINAL_HYPHEN_DEMERITS)
+                        eqtb.int_par(IntPar::FinalHyphenDemerits)
                     } else {
-                        eqtb.int_par(INT_PAR_DOUBLE_HYPHEN_DEMERITS)
+                        eqtb.int_par(IntPar::DoubleHyphenDemerits)
                     };
                 }
 
                 if (fit_class as i32 - i32::from(r_active.fitness(self))).abs() > 1 {
-                    d += eqtb.int_par(INT_PAR_ADJ_DEMERITS);
+                    d += eqtb.int_par(IntPar::AdjDemerits);
                 }
 
                 d
@@ -2913,13 +2903,13 @@ pub(crate) fn do_locale_linebreaks(st: &mut EngineState, s: i32, len: i32) -> Re
     let main_f = st.mainloop.main_f;
     let text = st.scanner.native_text[s as usize..(s + len) as usize].to_vec();
 
-    let locale = StrNumber(st.eqtb.int_par(INT_PAR_XETEX_LINEBREAK_LOCALE));
+    let locale = StrNumber(st.eqtb.int_par(IntPar::XetexLinebreakLocale));
     if locale == StrNumber::NONE || len == 1 {
         return append_native_word(st, main_f, &text);
     }
 
-    let use_skip = st.eqtb.glue_par(GLUE_PAR_XETEX_LINEBREAK_SKIP) != ZERO_GLUE;
-    let penalty = st.eqtb.int_par(INT_PAR_XETEX_LINEBREAK_PENALTY);
+    let use_skip = st.eqtb.glue_par(GluePar::XetexLinebreakSkip) != ZERO_GLUE;
+    let penalty = st.eqtb.int_par(IntPar::XetexLinebreakPenalty);
     let use_penalty = penalty != 0 || !use_skip;
     let locale_name = st.strings.texstring_bytes(locale);
 
@@ -2958,7 +2948,7 @@ pub(crate) fn do_locale_linebreaks(st: &mut EngineState, s: i32, len: i32) -> Re
                     if use_skip {
                         let node = st
                             .mem
-                            .new_param_glue(&st.eqtb, GLUE_PAR_XETEX_LINEBREAK_SKIP)?;
+                            .new_param_glue(&st.eqtb, GluePar::XetexLinebreakSkip)?;
                         st.input.cur_list.tail_append(&mut st.mem, node.ptr());
                     }
                 }

@@ -1,14 +1,13 @@
 //! Shipping boxes out to the XDV file.
 use crate::consts::{
-    A_LEADERS, BEFORE, CS_TOKEN_FLAG, C_LEADERS, DIMEN_PAR_H_OFFSET, DIMEN_PAR_PDF_PAGE_HEIGHT,
-    DIMEN_PAR_PDF_PAGE_WIDTH, DIMEN_PAR_V_OFFSET, DLIST, END_WRITE, FILLL, INT_PAR_MAG,
-    INT_PAR_TRACING_ONLINE, INT_PAR_TRACING_OUTPUT, INT_PAR_XETEX_INTERWORD_SPACE_SHAPING,
-    INVALID_HANDLE, LEFT_TO_RIGHT, L_CODE, MAX_DIMEN, MEDIUM_NODE_SIZE, MIN_HALFWORD,
-    NATIVE_GLYPH_INFO_SIZE, NORMAL, NULL_FONT, RIGHT_TO_LEFT, R_CODE, SELECTOR_LOG_ONLY,
-    SELECTOR_NEW_STRING, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SMALL_NODE_SIZE,
-    SPACE_ADJUSTMENT, TEX_INFINITY, TEX_NULL,
+    A_LEADERS, BEFORE, CS_TOKEN_FLAG, C_LEADERS, DLIST, END_WRITE, FILLL, INVALID_HANDLE,
+    LEFT_TO_RIGHT, L_CODE, MAX_DIMEN, MEDIUM_NODE_SIZE, MIN_HALFWORD, NATIVE_GLYPH_INFO_SIZE,
+    NORMAL, NULL_FONT, RIGHT_TO_LEFT, R_CODE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING,
+    SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, TEX_INFINITY,
+    TEX_NULL,
 };
 use crate::ext::apply_tfm_font_mapping;
+use crate::params::{DimenPar, IntPar};
 
 use crate::bridge::{output_close, output_flush, output_open, output_write, shell_escape};
 use crate::errors::Abort;
@@ -248,14 +247,14 @@ fn dvi_special_from_cur_string(st: &mut crate::state::EngineState) -> Result<(),
 
 pub(crate) fn ship_out(st: &mut crate::state::EngineState, page: AnyBox) -> Result<(), Abort> {
     let p = page.ptr();
-    let mag = st.eqtb.int_par(INT_PAR_MAG);
+    let mag = st.eqtb.int_par(IntPar::Mag);
     let job_name = st.strings.texstring_bytes(st.strings.job_name);
     crate::synctex::synctex_sheet(st, mag, &job_name);
 
     if st.strings.job_name == StrNumber::NONE {
         crate::io::open_log_file(st)?;
     }
-    let tracing_output = st.eqtb.int_par(INT_PAR_TRACING_OUTPUT) > 0;
+    let tracing_output = st.eqtb.int_par(IntPar::TracingOutput) > 0;
     if tracing_output {
         crate::output::print_nl(st, "");
         crate::output::print_ln(st);
@@ -292,8 +291,8 @@ pub(crate) fn ship_out(st: &mut crate::state::EngineState, page: AnyBox) -> Resu
         page.depth(&st.mem),
         page.width(&st.mem),
     );
-    let h_offset = st.eqtb.dimen_par(DIMEN_PAR_H_OFFSET);
-    let v_offset = st.eqtb.dimen_par(DIMEN_PAR_V_OFFSET);
+    let h_offset = st.eqtb.dimen_par(DimenPar::HOffset);
+    let v_offset = st.eqtb.dimen_par(DimenPar::VOffset);
     if height > MAX_DIMEN
         || depth > MAX_DIMEN
         || height + depth + v_offset > MAX_DIMEN
@@ -307,7 +306,7 @@ pub(crate) fn ship_out(st: &mut crate::state::EngineState, page: AnyBox) -> Resu
         ]);
         crate::errors::error(st)?;
 
-        if st.eqtb.int_par(INT_PAR_TRACING_OUTPUT) <= 0 {
+        if st.eqtb.int_par(IntPar::TracingOutput) <= 0 {
             crate::output::begin_diagnostic(st);
             crate::output::print_nl(st, "The following box has been deleted:");
             crate::output::show_box(st, p);
@@ -332,7 +331,7 @@ pub(crate) fn ship_out(st: &mut crate::state::EngineState, page: AnyBox) -> Resu
     if !st.scanner.lr_ptr.is_null() || st.scanner.cur_dir != LEFT_TO_RIGHT {
         return Err(Abort::Confusion("LR3"));
     }
-    if st.eqtb.int_par(INT_PAR_TRACING_OUTPUT) <= 0 {
+    if st.eqtb.int_par(IntPar::TracingOutput) <= 0 {
         crate::output::print_char(st, b']');
     }
     st.shipout.dead_cycles = 0;
@@ -348,10 +347,10 @@ fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<(), Abo
         page.depth(&st.mem),
         page.width(&st.mem),
     );
-    let h_offset = st.eqtb.dimen_par(DIMEN_PAR_H_OFFSET);
-    let v_offset = st.eqtb.dimen_par(DIMEN_PAR_V_OFFSET);
-    let pdf_page_width = st.eqtb.dimen_par(DIMEN_PAR_PDF_PAGE_WIDTH);
-    let pdf_page_height = st.eqtb.dimen_par(DIMEN_PAR_PDF_PAGE_HEIGHT);
+    let h_offset = st.eqtb.dimen_par(DimenPar::HOffset);
+    let v_offset = st.eqtb.dimen_par(DimenPar::VOffset);
+    let pdf_page_width = st.eqtb.dimen_par(DimenPar::PdfPageWidth);
+    let pdf_page_height = st.eqtb.dimen_par(DimenPar::PdfPageHeight);
 
     st.shipout.max_v = st.shipout.max_v.max(height + depth + v_offset);
     st.shipout.max_h = st.shipout.max_h.max(width + h_offset);
@@ -391,7 +390,7 @@ fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<(), Abo
         st.shipout.dvi_four(25_400_000)?;
         st.shipout.dvi_four(473_628_672)?;
         crate::save::prepare_mag(st)?;
-        st.shipout.dvi_four(st.eqtb.int_par(INT_PAR_MAG))?;
+        st.shipout.dvi_four(st.eqtb.int_par(IntPar::Mag))?;
         let comment = b"tectonic";
         st.shipout.dvi_out(comment.len() as u8)?;
         st.shipout.dvi_bytes(comment)?;
@@ -1039,7 +1038,7 @@ fn chars_out(
 fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(), Abort> {
     st.mem.temp_ptr = this_box.ptr();
     let mut rounding = GlueRounding::new(&st.mem, this_box);
-    if st.eqtb.int_par(INT_PAR_XETEX_INTERWORD_SPACE_SHAPING) > 1 {
+    if st.eqtb.int_par(IntPar::XetexInterwordSpaceShaping) > 1 {
         st.mem
             .merge_justifiable_native_words(&mut st.strings, &st.fonts, &st.eqtb, this_box)?;
     }
@@ -1497,7 +1496,7 @@ pub(crate) fn finalize_dvi_file(st: &mut crate::state::EngineState) -> Result<()
     st.shipout.dvi_four(25_400_000)?;
     st.shipout.dvi_four(473_628_672)?;
     crate::save::prepare_mag(st)?;
-    st.shipout.dvi_four(st.eqtb.int_par(INT_PAR_MAG))?;
+    st.shipout.dvi_four(st.eqtb.int_par(IntPar::Mag))?;
     let (max_v, max_h, max_push, total_pages) = (
         st.shipout.max_v,
         st.shipout.max_h,
@@ -1845,7 +1844,7 @@ fn special_out(
 impl EqtbState {
     /// Log only, or terminal and log when `\tracingonline` is positive.
     fn log_selector(&self) -> i32 {
-        if self.int_par(INT_PAR_TRACING_ONLINE) <= 0 {
+        if self.int_par(IntPar::TracingOnline) <= 0 {
             SELECTOR_LOG_ONLY
         } else {
             SELECTOR_TERM_AND_LOG

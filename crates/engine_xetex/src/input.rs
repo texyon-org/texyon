@@ -1,12 +1,11 @@
 //! Input stack: token-list and file levels.
 
 use crate::cmd::ASSIGN_TOKS;
-use crate::consts::{
-    CS_TOKEN_FLAG, FROZEN_RELAX, INT_PAR_TRACING_MACROS, LOCAL_BASE, LOCAL_OUTPUT_ROUTINE, TEX_NULL,
-};
+use crate::consts::{CS_TOKEN_FLAG, FROZEN_RELAX, LOCAL_BASE, LOCAL_OUTPUT_ROUTINE, TEX_NULL};
 use crate::errors::Abort;
 use crate::io::u_close;
 use crate::node::{NodePtr, PseudoLineNode};
+use crate::params::IntPar;
 use crate::state::{EngineState, InputClusterState, MemState};
 use crate::units::{MemPtr, StrNumber};
 
@@ -250,7 +249,7 @@ pub(crate) fn begin_token_list(st: &mut EngineState, list: MemPtr, t: u16) -> Re
         return Ok(());
     }
     st.input.cur_input.loc = list.link(&st.mem).0;
-    if st.eqtb.int_par(INT_PAR_TRACING_MACROS) > 1 {
+    if st.eqtb.int_par(IntPar::TracingMacros) > 1 {
         use crate::output::{
             begin_diagnostic, capture_to_diagnostic, diagnostic_begin_capture_warning_here,
             end_diagnostic, print, print_cmd_chr, print_esc, print_nl, token_show,

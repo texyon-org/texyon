@@ -20,19 +20,10 @@ use crate::cmd::{
 use crate::consts::{
     ACC_KERN, ACTIVE_MATH_CHAR, A_LEADERS, BEGIN_M_CODE, BIGGEST_CHAR, BIGGEST_USV, BOX_BASE,
     BOX_NODE_SIZE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, COND_MATH_GLUE, COUNT_BASE, CS_TOKEN_FLAG,
-    CUR_FONT_LOC, DEL_CODE_BASE, DESIGN_SIZE, DIMEN_BASE, DIMEN_PAR_BOX_MAX_DEPTH,
-    DIMEN_PAR_DISPLAY_INDENT, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DIMEN_PAR_OVERFULL_RULE,
-    DIMEN_PAR_PAR_INDENT, DIMEN_PAR_SPLIT_MAX_DEPTH, DLIST, EMPTY, END_M_CODE, ETEX_PEN_BASE,
-    EXPLICIT, FONT_BASE, FROZEN_CR, FROZEN_END_GROUP, FROZEN_END_TEMPLATE, FROZEN_RIGHT, GLUE_BASE,
-    GLUE_PAR_ABOVE_DISPLAY_SKIP, GLUE_PAR_BELOW_DISPLAY_SKIP, GLUE_PAR_PAR_SKIP,
-    GLUE_PAR_SPACE_SKIP, GLUE_PAR_SPLIT_TOP_SKIP, GLUE_PAR_TAB_SKIP, GLUE_PAR_XSPACE_SKIP,
-    HASH_BASE, HMODE, IGNORE_DEPTH, INT_BASE, INT_PAR_FLOATING_PENALTY, INT_PAR_GLOBAL_DEFS,
-    INT_PAR_HANG_AFTER, INT_PAR_LANGUAGE, INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_LOOSENESS,
-    INT_PAR_POST_DISPLAY_PENALTY, INT_PAR_PRE_DISPLAY_PENALTY, INT_PAR_RIGHT_HYPHEN_MIN,
-    INT_PAR_TEXXET, INT_PAR_TRACING_COMMANDS, INT_PAR_TRACING_LOST_CHARS, INT_PAR_XETEX_DASH_BREAK,
-    INT_PAR_XETEX_INTERWORD_SPACE_SHAPING, INT_PAR_XETEX_INTER_CHAR_TOKENS, INT_PAR_XETEX_UPWARDS,
-    INT_PAR_XETEX_USE_GLYPH_METRICS, LEFT_SIDE, LOCAL_BASE, LOCAL_EVERY_CR, LOCAL_EVERY_HBOX,
-    LOCAL_EVERY_JOB, LOCAL_EVERY_PAR, LOCAL_EVERY_VBOX, LOCAL_OUTPUT_ROUTINE, LOCAL_PAR_SHAPE,
+    CUR_FONT_LOC, DEL_CODE_BASE, DESIGN_SIZE, DLIST, EMPTY, END_M_CODE, ETEX_PEN_BASE, EXPLICIT,
+    FONT_BASE, FROZEN_CR, FROZEN_END_GROUP, FROZEN_END_TEMPLATE, FROZEN_RIGHT, HASH_BASE, HMODE,
+    IGNORE_DEPTH, LEFT_SIDE, LOCAL_BASE, LOCAL_EVERY_CR, LOCAL_EVERY_HBOX, LOCAL_EVERY_JOB,
+    LOCAL_EVERY_PAR, LOCAL_EVERY_VBOX, LOCAL_OUTPUT_ROUTINE, LOCAL_PAR_SHAPE,
     LOCAL_XETEX_INTER_CHAR_TOKS, MARGIN_KERN_NODE_SIZE, MATH_CODE_BASE, MAX_DIMEN, MAX_HALFWORD,
     MMODE, MU_GLUE, MU_SKIP_BASE, NATIVE_NODE_SIZE, NOAD_SIZE, NON_ADDRESS, NORMAL, NULL_CS,
     NULL_FLAG, PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE, SELECTOR_NEW_STRING, SELECTOR_NO_PRINT,
@@ -62,6 +53,7 @@ use crate::node::{
     PenaltiesNode, RuleDimen, SaNode, SpanNode, UnsetNode, WhatsitNode, WhatsitSubtype, RUNNING,
 };
 use crate::packaging::ADDITIONAL;
+use crate::params::{DimenPar, GluePar, IntPar};
 use crate::scan::{
     fetch_box, ALIGNING, BOX_VAL, DIMEN_VAL, GLUE_VAL, INTER_CHAR_VAL, INT_VAL, LEFT_BRACE_TOKEN,
     MATH_SHIFT_TOKEN, MAX_CHAR_VAL, MU_VAL, NORMAL_SCANNER, OTHER_TOKEN, PROTECTED_TOKEN,
@@ -74,10 +66,6 @@ use crate::layout::set_cp_code;
 
 const INNER_VMODE: i16 = -VMODE;
 const INNER_HMODE: i16 = -HMODE;
-
-const TAB_SKIP_SUBTYPE: u16 = GLUE_PAR_TAB_SKIP as u16 + 1;
-
-const GLUE_BASE_TAB_SKIP: i32 = GLUE_BASE + GLUE_PAR_TAB_SKIP as i32;
 
 // `cur_chr` modifiers.
 pub(crate) const BOX_CODE: i32 = 0;
@@ -188,7 +176,7 @@ pub(crate) fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
 
     let in_display = st.input.nest[(st.input.nest_ptr - 1) as usize].mode == MMODE;
     let o = if in_display {
-        st.eqtb.dimen_par(DIMEN_PAR_DISPLAY_INDENT)
+        st.eqtb.dimen_par(DimenPar::DisplayIndent)
     } else {
         Scaled::ZERO
     };
@@ -224,10 +212,10 @@ pub(crate) fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
     let spec_mode = st.save_stack.saved(0) as i16;
     let head = ALIGN_HEAD.link(&st.mem);
     let p = if st.input.cur_list.mode == INNER_VMODE {
-        let rule_save = st.eqtb.dimen_par(DIMEN_PAR_OVERFULL_RULE);
-        st.eqtb.set_dimen_par(DIMEN_PAR_OVERFULL_RULE, Scaled::ZERO);
+        let rule_save = st.eqtb.dimen_par(DimenPar::OverfullRule);
+        st.eqtb.set_dimen_par(DimenPar::OverfullRule, Scaled::ZERO);
         let packed = crate::packaging::hpack(st, head, spec_size, spec_mode)?;
-        st.eqtb.set_dimen_par(DIMEN_PAR_OVERFULL_RULE, rule_save);
+        st.eqtb.set_dimen_par(DimenPar::OverfullRule, rule_save);
         packed
     } else {
         st.mem.for_each_preamble_column(|mem, q| {
@@ -291,7 +279,7 @@ pub(crate) fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                         let g = st.mem.new_glue(spec)?;
                         u.set_link(&mut st.mem, g.ptr());
                         u = g.ptr();
-                        g.set_subtype(&mut st.mem, TAB_SKIP_SUBTYPE);
+                        g.set_subtype(&mut st.mem, GluePar::TabSkip.subtype());
                         t += spec.width(&st.mem);
                         match p.glue_sign(&st.mem) {
                             GlueSign::Stretching
@@ -410,23 +398,19 @@ pub(crate) fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
         let etex_aux = st.input.cur_list.e_tex_aux.0;
         st.mem.flush_node_list(etex_aux)?;
         st.mem.pop_nest(&mut st.input);
-        let pre_penalty = st.eqtb.int_par(INT_PAR_PRE_DISPLAY_PENALTY);
+        let pre_penalty = st.eqtb.int_par(IntPar::PreDisplayPenalty);
         let pen = st.mem.new_penalty(pre_penalty)?;
         st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
-        let above = st
-            .mem
-            .new_param_glue(&st.eqtb, GLUE_PAR_ABOVE_DISPLAY_SKIP)?;
+        let above = st.mem.new_param_glue(&st.eqtb, GluePar::AboveDisplaySkip)?;
         st.input.cur_list.tail_append(&mut st.mem, above.ptr());
         st.input.cur_list.tail.set_link(&mut st.mem, rows);
         if !rows.is_null() {
             st.input.cur_list.tail = rows_tail;
         }
-        let post_penalty = st.eqtb.int_par(INT_PAR_POST_DISPLAY_PENALTY);
+        let post_penalty = st.eqtb.int_par(IntPar::PostDisplayPenalty);
         let pen = st.mem.new_penalty(post_penalty)?;
         st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
-        let below = st
-            .mem
-            .new_param_glue(&st.eqtb, GLUE_PAR_BELOW_DISPLAY_SKIP)?;
+        let below = st.mem.new_param_glue(&st.eqtb, GluePar::BelowDisplaySkip)?;
         st.input.cur_list.tail_append(&mut st.mem, below.ptr());
         st.input.cur_list.set_aux_s1(aux_save_s1);
         crate::math::resume_after_display(st)?;
@@ -570,13 +554,19 @@ pub(crate) fn get_preamble_token(st: &mut EngineState) -> Result<(), Abort> {
                 "(interwoven alignment preambles are not allowed)",
             ));
         }
-        if st.scanner.cur_cmd != ASSIGN_GLUE || st.scanner.cur_chr != GLUE_BASE_TAB_SKIP {
+        if st.scanner.cur_cmd != ASSIGN_GLUE || st.scanner.cur_chr != GluePar::TabSkip.loc() {
             return Ok(());
         }
         crate::scan::scan_optional_equals(st)?;
         crate::scan::scan_glue(st, GLUE_VAL)?;
-        let global = st.eqtb.int_par(INT_PAR_GLOBAL_DEFS) > 0;
-        define(st, global, GLUE_BASE_TAB_SKIP, GLUE_REF, st.scanner.cur_val)?;
+        let global = st.eqtb.int_par(IntPar::GlobalDefs) > 0;
+        define(
+            st,
+            global,
+            GluePar::TabSkip.loc(),
+            GLUE_REF,
+            st.scanner.cur_val,
+        )?;
     }
 }
 
@@ -604,7 +594,7 @@ pub(crate) fn init_row(st: &mut EngineState) -> Result<(), Abort> {
     let spec = tab_skip.glue_ptr(&st.mem);
     let glue = st.mem.new_glue(spec)?;
     st.input.cur_list.tail_append(&mut st.mem, glue.ptr());
-    glue.set_subtype(&mut st.mem, TAB_SKIP_SUBTYPE);
+    glue.set_subtype(&mut st.mem, GluePar::TabSkip.subtype());
     st.scanner.cur_align = tab_skip.link(&st.mem);
     st.scanner.cur_tail = st.scanner.cur_head;
     st.scanner.cur_pre_tail = st.scanner.cur_pre_head;
@@ -714,7 +704,7 @@ pub(crate) fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
             let spec = tab_skip.glue_ptr(&st.mem);
             let g = st.mem.new_glue(spec)?;
             column.set_link(&mut st.mem, g.ptr());
-            g.set_subtype(&mut st.mem, TAB_SKIP_SUBTYPE);
+            g.set_subtype(&mut st.mem, GluePar::TabSkip.subtype());
         } else {
             crate::output::error_here_with_diagnostic(
                 st,
@@ -792,7 +782,7 @@ pub(crate) fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
         let spec = cur_align.tab_skip(&st.mem).glue_ptr(&st.mem);
         let g = st.mem.new_glue(spec)?;
         st.input.cur_list.tail_append(&mut st.mem, g.ptr());
-        g.set_subtype(&mut st.mem, TAB_SKIP_SUBTYPE);
+        g.set_subtype(&mut st.mem, GluePar::TabSkip.subtype());
         if cur_align.extra_info(&st.mem) >= CR_CODE {
             return Ok(true);
         }
@@ -887,7 +877,7 @@ pub(crate) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.align_state = -1_000_000;
 
     loop {
-        let g = st.mem.new_param_glue(&st.eqtb, GLUE_PAR_TAB_SKIP)?.ptr();
+        let g = st.mem.new_param_glue(&st.eqtb, GluePar::TabSkip)?.ptr();
         st.scanner.cur_align.set_link(&mut st.mem, g);
         st.scanner.cur_align = g;
         if st.scanner.cur_cmd == CAR_RET {
@@ -1001,9 +991,9 @@ pub(crate) fn append_penalty(st: &mut EngineState) -> Result<(), Abort> {
 
 pub(crate) fn normal_paragraph(st: &mut EngineState) -> Result<(), Abort> {
     for (loc, value) in [
-        (INT_BASE + INT_PAR_LOOSENESS, 0),
-        (DIMEN_BASE + DIMEN_PAR_HANG_INDENT, 0),
-        (INT_BASE + INT_PAR_HANG_AFTER, 1),
+        (IntPar::Looseness.loc(), 0),
+        (DimenPar::HangIndent.loc(), 0),
+        (IntPar::HangAfter.loc(), 1),
     ] {
         if st.eqtb.int_at(loc) != value {
             word_define(st, false, loc, value)?;
@@ -1030,7 +1020,7 @@ pub(crate) fn its_all_over(st: &mut EngineState) -> Result<bool, Abort> {
     crate::input::back_input(st)?;
     let b = st.mem.new_null_box()?;
     st.input.cur_list.tail_append(&mut st.mem, b.ptr());
-    b.set_width(&mut st.mem, st.eqtb.dimen_par(DIMEN_PAR_HSIZE));
+    b.set_width(&mut st.mem, st.eqtb.dimen_par(DimenPar::Hsize));
     let g = st.mem.new_glue(FILL_GLUE)?;
     st.input.cur_list.tail_append(&mut st.mem, g.ptr());
     let p = st.mem.new_penalty(NULL_FLAG)?;
@@ -1044,7 +1034,7 @@ pub(crate) fn indent_in_hmode(st: &mut EngineState) -> Result<(), Abort> {
         return Ok(());
     }
     let b = st.mem.new_null_box()?;
-    b.set_width(&mut st.mem, st.eqtb.dimen_par(DIMEN_PAR_PAR_INDENT));
+    b.set_width(&mut st.mem, st.eqtb.dimen_par(DimenPar::ParIndent));
     let p = if st.input.cur_list.mode.abs() == HMODE {
         st.input.cur_list.set_aux_s0(1000);
         b.ptr()
@@ -1235,10 +1225,10 @@ pub(crate) fn app_space(st: &mut EngineState) -> Result<(), Abort> {
     let space_factor = st.input.cur_list.aux_s0();
     let q;
     let mut side_effects = None;
-    if space_factor >= 2000 && st.eqtb.glue_par(GLUE_PAR_XSPACE_SKIP) != ZERO_GLUE {
-        q = st.mem.new_param_glue(&st.eqtb, GLUE_PAR_XSPACE_SKIP)?.ptr();
+    if space_factor >= 2000 && st.eqtb.glue_par(GluePar::XspaceSkip) != ZERO_GLUE {
+        q = st.mem.new_param_glue(&st.eqtb, GluePar::XspaceSkip)?.ptr();
     } else {
-        let space_skip = st.eqtb.glue_par(GLUE_PAR_SPACE_SKIP);
+        let space_skip = st.eqtb.glue_par(GluePar::SpaceSkip);
         let base = if space_skip != ZERO_GLUE {
             space_skip
         } else {
@@ -1311,12 +1301,12 @@ pub(crate) fn scan_box(st: &mut EngineState, box_context: i32) -> Result<(), Abo
 }
 
 pub(crate) fn package(st: &mut EngineState, c: i32) -> Result<(), Abort> {
-    let d = st.eqtb.dimen_par(DIMEN_PAR_BOX_MAX_DEPTH);
-    let u = st.eqtb.int_par(INT_PAR_XETEX_UPWARDS);
+    let d = st.eqtb.dimen_par(DimenPar::BoxMaxDepth);
+    let u = st.eqtb.int_par(IntPar::XetexUpwards);
     crate::save::unsave(st)?;
     st.save_stack.save_ptr -= 3;
-    let v = st.eqtb.int_par(INT_PAR_XETEX_UPWARDS);
-    st.eqtb.set_int_par(INT_PAR_XETEX_UPWARDS, u);
+    let v = st.eqtb.int_par(IntPar::XetexUpwards);
+    st.eqtb.set_int_par(IntPar::XetexUpwards, u);
     let list = st.input.cur_list.head.link(&st.mem);
     let size = Scaled(st.save_stack.saved(2));
     let spec_mode = st.save_stack.saved(1) as i16;
@@ -1338,7 +1328,7 @@ pub(crate) fn package(st: &mut EngineState, c: i32) -> Result<(), Abort> {
             b.set_height(&mut st.mem, h);
         }
     }
-    st.eqtb.set_int_par(INT_PAR_XETEX_UPWARDS, v);
+    st.eqtb.set_int_par(IntPar::XetexUpwards, v);
     st.mem.pop_nest(&mut st.input);
     let box_context = st.save_stack.saved(0);
     box_end(st, box_context)
@@ -1346,14 +1336,14 @@ pub(crate) fn package(st: &mut EngineState, c: i32) -> Result<(), Abort> {
 
 /// Sets `cur_lang` and the list's language and hyphen minima for a new paragraph.
 pub(crate) fn start_paragraph_language(st: &mut EngineState) {
-    let l = crate::helpers::norm_lang(st.eqtb.int_par(INT_PAR_LANGUAGE));
+    let l = crate::helpers::norm_lang(st.eqtb.int_par(IntPar::Language));
     st.hyph.cur_lang = l;
     st.input.cur_list.set_aux_s1(i32::from(l));
     let lhm = i32::from(crate::helpers::norm_min(
-        st.eqtb.int_par(INT_PAR_LEFT_HYPHEN_MIN),
+        st.eqtb.int_par(IntPar::LeftHyphenMin),
     ));
     let rhm = i32::from(crate::helpers::norm_min(
-        st.eqtb.int_par(INT_PAR_RIGHT_HYPHEN_MIN),
+        st.eqtb.int_par(IntPar::RightHyphenMin),
     ));
     st.input.cur_list.prev_graf = (lhm * 64 + rhm) * 65536 + i32::from(l);
 }
@@ -1361,7 +1351,7 @@ pub(crate) fn start_paragraph_language(st: &mut EngineState) {
 pub(crate) fn new_graf(st: &mut EngineState, indented: bool) -> Result<(), Abort> {
     st.input.cur_list.prev_graf = 0;
     if st.input.cur_list.mode == VMODE || st.input.cur_list.head != st.input.cur_list.tail {
-        let g = st.mem.new_param_glue(&st.eqtb, GLUE_PAR_PAR_SKIP)?;
+        let g = st.mem.new_param_glue(&st.eqtb, GluePar::ParSkip)?;
         st.input.cur_list.tail_append(&mut st.mem, g.ptr());
     }
     crate::mem::push_nest(st)?;
@@ -1374,7 +1364,7 @@ pub(crate) fn new_graf(st: &mut EngineState, indented: bool) -> Result<(), Abort
         let b = st.mem.new_null_box()?;
         st.input.cur_list.tail = b.ptr();
         st.input.cur_list.head.set_link(&mut st.mem, b.ptr());
-        b.set_width(&mut st.mem, st.eqtb.dimen_par(DIMEN_PAR_PAR_INDENT));
+        b.set_width(&mut st.mem, st.eqtb.dimen_par(DimenPar::ParIndent));
         if st.shipout.insert_src_special_every_par {
             crate::ext::insert_src_special(st)?;
         }
@@ -1696,10 +1686,10 @@ pub(crate) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
         }
         GroupCode::Insert => {
             end_graf(st)?;
-            let split_top_skip = st.eqtb.glue_par(GLUE_PAR_SPLIT_TOP_SKIP);
+            let split_top_skip = st.eqtb.glue_par(GluePar::SplitTopSkip);
             st.mem.add_glue_ref(split_top_skip);
-            let d = st.eqtb.dimen_par(DIMEN_PAR_SPLIT_MAX_DEPTH);
-            let f = st.eqtb.int_par(INT_PAR_FLOATING_PENALTY);
+            let d = st.eqtb.dimen_par(DimenPar::SplitMaxDepth);
+            let f = st.eqtb.int_par(IntPar::FloatingPenalty);
             crate::save::unsave(st)?;
             st.save_stack.save_ptr -= 2;
             let head = st.input.cur_list.head.link(&st.mem);
@@ -2046,16 +2036,16 @@ impl ListStateRecord {
         mem: &mut MemState,
         eqtb: &crate::state::EqtbState,
     ) -> Result<(), Abort> {
-        let l = i32::from(crate::helpers::norm_lang(eqtb.int_par(INT_PAR_LANGUAGE)));
+        let l = i32::from(crate::helpers::norm_lang(eqtb.int_par(IntPar::Language)));
         if l == self.aux_s1() {
             return Ok(());
         }
         let w = self.new_whatsit(mem, WhatsitSubtype::Language, SMALL_NODE_SIZE)?;
         w.set_what_lang(mem, l);
         self.set_aux_s1(l);
-        let lhm = crate::helpers::norm_min(eqtb.int_par(INT_PAR_LEFT_HYPHEN_MIN)) as u16;
+        let lhm = crate::helpers::norm_min(eqtb.int_par(IntPar::LeftHyphenMin)) as u16;
         w.set_what_lhm(mem, lhm);
-        let rhm = crate::helpers::norm_min(eqtb.int_par(INT_PAR_RIGHT_HYPHEN_MIN)) as u16;
+        let rhm = crate::helpers::norm_min(eqtb.int_par(IntPar::RightHyphenMin)) as u16;
         w.set_what_rhm(mem, rhm);
         Ok(())
     }
@@ -2675,12 +2665,12 @@ pub(crate) fn main_control_append_normal_space(st: &mut EngineState) -> Result<(
     if insert_boundary_inter_char_toks(st)? {
         return Ok(());
     }
-    let glue = if st.eqtb.glue_par(GLUE_PAR_SPACE_SKIP) == ZERO_GLUE {
+    let glue = if st.eqtb.glue_par(GluePar::SpaceSkip) == ZERO_GLUE {
         let spec = font_space_glue(st)?;
         st.mainloop.main_p = spec.ptr();
         st.mem.new_glue(spec)?
     } else {
-        st.mem.new_param_glue(&st.eqtb, GLUE_PAR_SPACE_SKIP)?
+        st.mem.new_param_glue(&st.eqtb, GluePar::SpaceSkip)?
     };
     st.mem.temp_ptr = glue.ptr();
     st.input.cur_list.tail_append(&mut st.mem, glue.ptr());
@@ -2705,7 +2695,7 @@ fn valign_or_lr(st: &mut EngineState) -> Result<(), Abort> {
     }
     let enabled = crate::scan::eTeX_enabled(
         st,
-        st.eqtb.int_par(INT_PAR_TEXXET) > 0,
+        st.eqtb.int_par(IntPar::Texxet) > 0,
         st.scanner.cur_cmd,
         st.scanner.cur_chr,
     )?;
@@ -2807,7 +2797,7 @@ pub(crate) fn main_control_ignore_spaces(st: &mut EngineState) -> Result<(), Abo
 }
 
 fn inter_char_tokens_enabled(st: &EngineState) -> bool {
-    st.eqtb.int_par(INT_PAR_XETEX_INTER_CHAR_TOKENS) > 0
+    st.eqtb.int_par(IntPar::XetexInterCharTokens) > 0
 }
 
 /// The `\XeTeXinterchartoks` list for class pair `n`, if set. Leaves the
@@ -2908,7 +2898,7 @@ fn is_char_cmd(cmd: u8) -> bool {
 #[inline]
 
 fn is_hyphen_unit(st: &EngineState, c: i32, hyphen: i32) -> bool {
-    c == hyphen || (st.eqtb.int_par(INT_PAR_XETEX_DASH_BREAK) > 0 && (c == 8212 || c == 8211))
+    c == hyphen || (st.eqtb.int_par(IntPar::XetexDashBreak) > 0 && (c == 8212 || c == 8211))
 }
 
 /// Advances `main_h` just past the next hyphen in `len` units of native text at `start`.
@@ -2983,13 +2973,13 @@ impl MemState {
 }
 
 fn use_glyph_metrics(st: &EngineState) -> bool {
-    st.eqtb.int_par(INT_PAR_XETEX_USE_GLYPH_METRICS) > 0
+    st.eqtb.int_par(IntPar::XetexUseGlyphMetrics) > 0
 }
 
 /// The main loop for an AAT or OpenType font: collects a run of characters
 /// into native word nodes. Returns whether to go to `big_switch`.
 fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
-    if st.input.cur_list.mode > 0 && st.eqtb.int_par(INT_PAR_LANGUAGE) != st.input.cur_list.aux_s1()
+    if st.input.cur_list.mode > 0 && st.eqtb.int_par(IntPar::Language) != st.input.cur_list.aux_s1()
     {
         st.input.cur_list.fix_language(&mut st.mem, &st.eqtb)?;
     }
@@ -3059,7 +3049,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
         }
     }
 
-    if st.eqtb.int_par(INT_PAR_TRACING_LOST_CHARS) > 0 {
+    if st.eqtb.int_par(IntPar::TracingLostChars) > 0 {
         let mut i = 0;
         while i < st.scanner.native_len {
             let mut c = i32::from(st.scanner.native_text[i as usize]);
@@ -3159,7 +3149,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
         }
     }
 
-    if st.eqtb.int_par(INT_PAR_XETEX_INTERWORD_SPACE_SHAPING) > 0 {
+    if st.eqtb.int_par(IntPar::XetexInterwordSpaceShaping) > 0 {
         shape_interword_space(st, mf)?;
     }
     Ok(!st.scanner.cur_ptr.is_null())
@@ -3321,7 +3311,7 @@ pub(crate) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
     st.mainloop.main_f = mf;
     st.mainloop.bchar = st.fonts.font_bchar[mf];
     st.mainloop.false_bchar = st.fonts.font_false_bchar[mf];
-    if st.input.cur_list.mode > 0 && st.eqtb.int_par(INT_PAR_LANGUAGE) != st.input.cur_list.aux_s1()
+    if st.input.cur_list.mode > 0 && st.eqtb.int_par(IntPar::Language) != st.input.cur_list.aux_s1()
     {
         st.input.cur_list.fix_language(&mut st.mem, &st.eqtb)?;
     }
@@ -3572,7 +3562,7 @@ enum Next {
 /// Acts on the current command in the current mode, TeX's `abs(mode)+cur_cmd` case.
 #[inline]
 fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
-    if st.eqtb.int_par(INT_PAR_TRACING_COMMANDS) > 0 {
+    if st.eqtb.int_par(IntPar::TracingCommands) > 0 {
         crate::output::show_cur_cmd_chr(st);
     }
     let mode = st.input.cur_list.mode.abs();
@@ -3924,7 +3914,7 @@ pub(crate) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 .help(&[r"I'll pretend you didn't say \long or \outer or \global or \protected."]);
             return crate::input::back_error(st);
         }
-        if st.eqtb.int_par(INT_PAR_TRACING_COMMANDS) > 2 {
+        if st.eqtb.int_par(IntPar::TracingCommands) > 2 {
             crate::output::show_cur_cmd_chr(st);
         }
     }
@@ -3950,7 +3940,7 @@ pub(crate) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             .help(&[r"I'll pretend you didn't say \long or \outer or \protected here."]);
         crate::errors::error(st)?;
     }
-    let global_defs = st.eqtb.int_par(INT_PAR_GLOBAL_DEFS);
+    let global_defs = st.eqtb.int_par(IntPar::GlobalDefs);
     if global_defs < 0 && a >= 4 {
         a -= 4;
     } else if global_defs > 0 && a < 4 {
@@ -3960,7 +3950,7 @@ pub(crate) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
     match st.scanner.cur_cmd {
         SET_FONT => define(st, a >= 4, CUR_FONT_LOC, DATA, st.scanner.cur_chr)?,
         DEF => {
-            if st.scanner.cur_chr & 1 != 0 && a < 4 && st.eqtb.int_par(INT_PAR_GLOBAL_DEFS) >= 0 {
+            if st.scanner.cur_chr & 1 != 0 && a < 4 && st.eqtb.int_par(IntPar::GlobalDefs) >= 0 {
                 a += 4;
             }
             let expand = st.scanner.cur_chr >= 2;

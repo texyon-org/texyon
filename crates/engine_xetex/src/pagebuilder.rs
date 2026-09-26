@@ -1,11 +1,9 @@
 //! The page builder: `build_page` and `fire_up`.
 
 use crate::consts::{
-    AWFUL_BAD, BOT_MARK_CODE, BOX_NODE_SIZE, DIMEN_PAR_MAX_DEPTH, DIMEN_PAR_VFUZZ, DIMEN_PAR_VSIZE,
-    EJECT_PENALTY, FIRST_MARK_CODE, GLUE_PAR_SPLIT_TOP_SKIP, GLUE_PAR_TOP_SKIP, IGNORE_DEPTH,
-    INF_BAD, INF_PENALTY, INS_NODE_SIZE, INT_BASE, INT_PAR_HOLDING_INSERTS,
-    INT_PAR_MAX_DEAD_CYCLES, INT_PAR_OUTPUT_PENALTY, INT_PAR_SAVING_VDISCARDS, INT_PAR_VBADNESS,
-    LOCAL_OUTPUT_ROUTINE, MAX_DIMEN, MAX_HALFWORD, NORMAL, TOP_MARK_CODE, VMODE,
+    AWFUL_BAD, BOT_MARK_CODE, BOX_NODE_SIZE, EJECT_PENALTY, FIRST_MARK_CODE, IGNORE_DEPTH, INF_BAD,
+    INF_PENALTY, INS_NODE_SIZE, LOCAL_OUTPUT_ROUTINE, MAX_DIMEN, MAX_HALFWORD, NORMAL,
+    TOP_MARK_CODE, VMODE,
 };
 use crate::errors::Abort;
 use crate::helpers::badness;
@@ -14,6 +12,7 @@ use crate::main_control::{COPY_CODE, LAST_BOX_CODE};
 use crate::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
 use crate::node::{AnyBox, AnyNode, InsNode, NodePtr, PageInsNode, WhatsitSubtype};
 use crate::packaging::{ADDITIONAL, EXACTLY};
+use crate::params::{DimenPar, GluePar, IntPar};
 use crate::scan::fetch_box;
 use crate::scan::MARK_VAL;
 use crate::state::{EngineState, GroupCode, PageContents, ShipoutState};
@@ -51,8 +50,8 @@ fn set_contrib_tail(st: &mut EngineState, tail: MemPtr) {
 fn freeze_page_specs(st: &mut EngineState, contents: PageContents) {
     let shipout = &mut st.shipout;
     shipout.page_contents = contents;
-    shipout.page_so_far[PAGE_GOAL] = st.eqtb.dimen_par(DIMEN_PAR_VSIZE);
-    shipout.page_max_depth = st.eqtb.dimen_par(DIMEN_PAR_MAX_DEPTH);
+    shipout.page_so_far[PAGE_GOAL] = st.eqtb.dimen_par(DimenPar::Vsize);
+    shipout.page_max_depth = st.eqtb.dimen_par(DimenPar::MaxDepth);
     shipout.page_so_far[PAGE_TOTAL..=PAGE_DEPTH].fill(Scaled::ZERO);
     shipout.least_page_cost = MAX_HALFWORD;
 }
@@ -129,7 +128,7 @@ fn place_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Re
         }
         s.set_link(&mut st.mem, MemPtr::NULL);
         st.eqtb
-            .set_glue_par(GLUE_PAR_SPLIT_TOP_SKIP, ins.split_top_ptr(&st.mem));
+            .set_glue_par(GluePar::SplitTopSkip, ins.split_top_ptr(&st.mem));
         let pruned = st
             .mem
             .prune_page_top(&mut st.scanner, &st.eqtb, broken_ptr, false)?;
@@ -164,7 +163,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
         _ => INF_PENALTY,
     };
     st.eqtb
-        .geq_word_define(INT_BASE + INT_PAR_OUTPUT_PENALTY, output_penalty);
+        .geq_word_define(IntPar::OutputPenalty.loc(), output_penalty);
 
     if let Some(root) = st.scanner.sa_root[MARK_VAL as usize].as_idx() {
         if st.mem.do_marks(&mut st.scanner, FIRE_UP_INIT, 0, root) {
@@ -198,9 +197,9 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     }
 
     st.shipout.insert_penalties = 0;
-    let save_split_top_skip = st.eqtb.glue_par(GLUE_PAR_SPLIT_TOP_SKIP);
+    let save_split_top_skip = st.eqtb.glue_par(GluePar::SplitTopSkip);
     let process_inserts =
-        st.eqtb.int_par(INT_PAR_HOLDING_INSERTS) <= 0 && !st.config.semantic_pagination_enabled;
+        st.eqtb.int_par(IntPar::HoldingInserts) <= 0 && !st.config.semantic_pagination_enabled;
     if process_inserts {
         let mut r = PAGE_INS_HEAD.link(&st.mem);
         while r != PAGE_INS_HEAD {
@@ -253,7 +252,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
         p = prev_p.link(&st.mem);
     }
     st.eqtb
-        .set_glue_par(GLUE_PAR_SPLIT_TOP_SKIP, save_split_top_skip);
+        .set_glue_par(GluePar::SplitTopSkip, save_split_top_skip);
 
     if !p.is_null() {
         if CONTRIB_HEAD.link(&st.mem).is_null() {
@@ -265,10 +264,10 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
         prev_p.set_link(&mut st.mem, MemPtr::NULL);
     }
 
-    let save_vbadness = st.eqtb.int_par(INT_PAR_VBADNESS);
-    st.eqtb.set_int_par(INT_PAR_VBADNESS, INF_BAD);
-    let save_vfuzz = st.eqtb.dimen_par(DIMEN_PAR_VFUZZ);
-    st.eqtb.set_dimen_par(DIMEN_PAR_VFUZZ, MAX_DIMEN);
+    let save_vbadness = st.eqtb.int_par(IntPar::Vbadness);
+    st.eqtb.set_int_par(IntPar::Vbadness, INF_BAD);
+    let save_vfuzz = st.eqtb.dimen_par(DimenPar::Vfuzz);
+    st.eqtb.set_dimen_par(DimenPar::Vfuzz, MAX_DIMEN);
     let page = crate::packaging::vpackage(
         st,
         PAGE_HEAD.link(&st.mem),
@@ -277,8 +276,8 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
         st.shipout.page_max_depth,
     )?;
     st.eqtb.set_box_reg(255, page.ptr());
-    st.eqtb.set_int_par(INT_PAR_VBADNESS, save_vbadness);
-    st.eqtb.set_dimen_par(DIMEN_PAR_VFUZZ, save_vfuzz);
+    st.eqtb.set_int_par(IntPar::Vbadness, save_vbadness);
+    st.eqtb.set_dimen_par(DimenPar::Vfuzz, save_vfuzz);
     if let Some(spec) = st.shipout.last_glue {
         st.mem.delete_glue_ref(spec);
     }
@@ -319,7 +318,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
 
     let output_routine = st.eqtb.local(LOCAL_OUTPUT_ROUTINE);
     if !output_routine.is_null() {
-        if st.shipout.dead_cycles < st.eqtb.int_par(INT_PAR_MAX_DEAD_CYCLES) {
+        if st.shipout.dead_cycles < st.eqtb.int_par(IntPar::MaxDeadCycles) {
             st.shipout.output_active = true;
             st.shipout.dead_cycles += 1;
             crate::mem::push_nest(st)?;
@@ -550,7 +549,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
                     } else {
                         st.shipout.page_contents = PageContents::BoxThere;
                     }
-                    let q = st.mem.new_skip_param(&st.eqtb, GLUE_PAR_TOP_SKIP)?;
+                    let q = st.mem.new_skip_param(&st.eqtb, GluePar::TopSkip)?;
                     let spec = q.glue_ptr(&st.mem);
                     let width = spec.width(&st.mem);
                     let width = if width > height {
@@ -670,7 +669,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
                 let next = p.link(&st.mem);
                 CONTRIB_HEAD.set_link(&mut st.mem, next);
                 p.set_link(&mut st.mem, MemPtr::NULL);
-                if st.eqtb.int_par(INT_PAR_SAVING_VDISCARDS) <= 0 {
+                if st.eqtb.int_par(IntPar::SavingVdiscards) <= 0 {
                     st.mem.flush_node_list(p)?;
                 } else {
                     let discards = &mut st.scanner.disc_ptr;

@@ -1,14 +1,15 @@
 //! The save stack, `eqtb` definitions, and the sparse-array register trie.
 use crate::cmd::{BOX_REF, CALL, GLUE_REF, LONG_OUTER_CALL, REGISTER, SHAPE_REF, TOKS_REGISTER};
 use crate::consts::{
-    EQTB_SIZE, INDEX_NODE_SIZE, INT_BASE, INT_PAR_MAG, LEVEL_ONE, LEVEL_ZERO, MARK_CLASS_NODE_SIZE,
-    TEX_NULL, UNDEFINED_CONTROL_SEQUENCE,
+    EQTB_SIZE, INDEX_NODE_SIZE, INT_BASE, LEVEL_ONE, LEVEL_ZERO, MARK_CLASS_NODE_SIZE, TEX_NULL,
+    UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::errors::Abort;
 use crate::input::{LEFT_BRACE_LIMIT, RIGHT_BRACE_LIMIT};
 use crate::mem::ZERO_GLUE;
 use crate::mem_types::MemoryWord;
 use crate::node::{NodePtr, SaNode};
+use crate::params::IntPar;
 use crate::scan::{DIMEN_VAL, MARK_VAL, MU_VAL};
 use crate::state::{EngineState, EqtbState, GroupCode, MemState, SaveStackState, ScannerState};
 use crate::units::{MemAddr, MemPtr};
@@ -116,7 +117,7 @@ impl SaveStackState {
 pub(crate) fn prepare_mag(st: &mut EngineState) -> Result<(), Abort> {
     use crate::output::{capture_to_diagnostic, error_here_with_diagnostic};
 
-    let mag = st.eqtb.int_par(INT_PAR_MAG);
+    let mag = st.eqtb.int_par(IntPar::Mag);
     if st.scanner.mag_set > 0 && mag != st.scanner.mag_set {
         let mag_set = st.scanner.mag_set;
         error_here_with_diagnostic(st, "Incompatible magnification (");
@@ -130,9 +131,9 @@ pub(crate) fn prepare_mag(st: &mut EngineState) -> Result<(), Abort> {
             "reverted to the magnification you used earlier on this run.",
         ]);
         crate::errors::int_error(st, mag_set)?;
-        st.eqtb.geq_word_define(INT_BASE + INT_PAR_MAG, mag_set);
+        st.eqtb.geq_word_define(IntPar::Mag.loc(), mag_set);
     }
-    let mag = st.eqtb.int_par(INT_PAR_MAG);
+    let mag = st.eqtb.int_par(IntPar::Mag);
     if mag <= 0 || mag > 32768 {
         error_here_with_diagnostic(st, "Illegal magnification has been changed to 1000");
         crate::output::append_to_diagnostic(st, &format!(" ({})", mag));
@@ -140,9 +141,9 @@ pub(crate) fn prepare_mag(st: &mut EngineState) -> Result<(), Abort> {
         st.errors
             .help(&["The magnification ratio must be between 1 and 32768."]);
         crate::errors::int_error(st, mag)?;
-        st.eqtb.geq_word_define(INT_BASE + INT_PAR_MAG, 1000);
+        st.eqtb.geq_word_define(IntPar::Mag.loc(), 1000);
     }
-    st.scanner.mag_set = st.eqtb.int_par(INT_PAR_MAG);
+    st.scanner.mag_set = st.eqtb.int_par(IntPar::Mag);
     Ok(())
 }
 

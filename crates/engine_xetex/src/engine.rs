@@ -13,9 +13,6 @@ use crate::consts::{
     ETEX_PEN_BASE, FIL, FILL, FONT_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_DONT_EXPAND, FROZEN_ENDV,
     FROZEN_END_TEMPLATE, FROZEN_PRIMITIVE, FROZEN_PROTECTION, GLUE_BASE, HASH_BASE,
     HISTORY_FATAL_ERROR, HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, IGNORE_DEPTH, INT_BASE,
-    INT_PAR_DAY, INT_PAR_END_LINE_CHAR, INT_PAR_ESCAPE_CHAR, INT_PAR_HANG_AFTER, INT_PAR_MAG,
-    INT_PAR_MAX_DEAD_CYCLES, INT_PAR_MONTH, INT_PAR_NEW_LINE_CHAR, INT_PAR_TIME, INT_PAR_TOLERANCE,
-    INT_PAR_XETEX_GENERATE_ACTUAL_TEXT, INT_PAR_XETEX_HYPHENATABLE_LENGTH, INT_PAR_YEAR,
     LC_CODE_BASE, LEFT_TO_RIGHT, LEVEL_ONE, LEVEL_ZERO, LOCAL_BASE, LOCAL_OUTPUT_ROUTINE,
     LOCAL_PAR_SHAPE, MATH_CODE_BASE, MATH_FONT_BASE, MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP,
     MIN_TRIE_OP, NON_ADDRESS, NORMAL, NULL_FONT, NUMBER_MATH_FAMILIES, NUMBER_USVS, PRIM_EQTB_BASE,
@@ -38,6 +35,7 @@ use crate::mem::{
 };
 use crate::mem_types::{zeroed_vec, B16x4, B32x2, MemoryWord};
 use crate::node::{ActiveNode, CondNode, FreeBlock, NodePtr, PageInsNode};
+use crate::params::IntPar;
 use crate::scan::{set_class, set_family, INTER_CHAR_VAL, INT_VAL, MARK_VAL, NORMAL_SCANNER};
 use crate::state::{
     ConfigState, EngineState, EqtbState, FontState, GroupCode, InteractionMode, MemState, PerFont,
@@ -188,7 +186,7 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
     let c = st.scanner.cur_chr;
 
     if c != 1 {
-        st.eqtb.set_int_par(INT_PAR_NEW_LINE_CHAR, -1);
+        st.eqtb.set_int_par(IntPar::NewLineChar, -1);
     }
 
     if st.strings.job_name == StrNumber::NONE {
@@ -558,12 +556,12 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
         eqtb.set_int_at(k, 0);
     }
 
-    eqtb.set_int_par(INT_PAR_MAG, 1000);
-    eqtb.set_int_par(INT_PAR_TOLERANCE, 10000);
-    eqtb.set_int_par(INT_PAR_HANG_AFTER, 1);
-    eqtb.set_int_par(INT_PAR_MAX_DEAD_CYCLES, 25);
-    eqtb.set_int_par(INT_PAR_ESCAPE_CHAR, i32::from(b'\\'));
-    eqtb.set_int_par(INT_PAR_END_LINE_CHAR, i32::from(b'\r'));
+    eqtb.set_int_par(IntPar::Mag, 1000);
+    eqtb.set_int_par(IntPar::Tolerance, 10000);
+    eqtb.set_int_par(IntPar::HangAfter, 1);
+    eqtb.set_int_par(IntPar::MaxDeadCycles, 25);
+    eqtb.set_int_par(IntPar::EscapeChar, i32::from(b'\\'));
+    eqtb.set_int_par(IntPar::EndLineChar, i32::from(b'\r'));
 
     for k in 0..NUMBER_USVS {
         eqtb.set_int_at(DEL_CODE_BASE + k, -1);
@@ -591,7 +589,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     st.scanner.max_reg_num = 32767;
     st.scanner.sa_root[INT_VAL as usize..=INTER_CHAR_VAL as usize].fill(MemPtr::NULL);
 
-    st.eqtb.set_int_par(INT_PAR_XETEX_HYPHENATABLE_LENGTH, 63);
+    st.eqtb.set_int_par(IntPar::XetexHyphenatableLength, 63);
 }
 
 fn set_frozen_text(st: &mut EngineState, p: i32, text: &str) -> Result<(), Abort> {
@@ -918,7 +916,7 @@ pub(crate) fn initialize_engine(
         }
     }
 
-    let end_line_char = st.eqtb.int_par(INT_PAR_END_LINE_CHAR);
+    let end_line_char = st.eqtb.int_par(IntPar::EndLineChar);
     if (0..=BIGGEST_CHAR).contains(&end_line_char) {
         st.input.buffer[st.input.cur_input.limit as usize] = end_line_char;
     } else {
@@ -930,10 +928,10 @@ pub(crate) fn initialize_engine(
     } else {
         crate::texmfmp::get_date_and_time(build_date, st.config.deterministic_mode)
     };
-    st.eqtb.set_int_par(INT_PAR_TIME, time);
-    st.eqtb.set_int_par(INT_PAR_DAY, day);
-    st.eqtb.set_int_par(INT_PAR_MONTH, month);
-    st.eqtb.set_int_par(INT_PAR_YEAR, year);
+    st.eqtb.set_int_par(IntPar::Time, time);
+    st.eqtb.set_int_par(IntPar::Day, day);
+    st.eqtb.set_int_par(IntPar::Month, month);
+    st.eqtb.set_int_par(IntPar::Year, year);
 
     if st.hyph.trie_not_ready {
         let hyph = &mut st.hyph;
@@ -995,7 +993,7 @@ pub(crate) fn initialize_engine(
     };
 
     if st.config.semantic_pagination_enabled {
-        st.eqtb.set_int_par(INT_PAR_XETEX_GENERATE_ACTUAL_TEXT, 1);
+        st.eqtb.set_int_par(IntPar::XetexGenerateActualText, 1);
     }
 
     pdf_files_init();

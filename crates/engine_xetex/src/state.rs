@@ -1,6 +1,7 @@
 //! Rust-owned engine state.
 
 use crate::hash::HASH_OFFSET;
+use crate::params::{DimenPar, GluePar, IntPar};
 use crate::units::{FontId, Scaled, StrNumber};
 
 #[derive(Default)]
@@ -446,32 +447,34 @@ impl EqtbState {
     }
 
     #[inline]
-    pub fn int_par(&self, n: i32) -> i32 {
-        self.b32s1(crate::consts::INT_BASE + n)
+    pub fn int_par(&self, n: IntPar) -> i32 {
+        self.b32s1(n.loc())
     }
     #[inline]
-    pub fn set_int_par(&mut self, n: i32, v: i32) {
-        self.set_b32s1(crate::consts::INT_BASE + n, v);
+    pub fn set_int_par(&mut self, n: IntPar, v: i32) {
+        self.set_b32s1(n.loc(), v);
     }
     #[inline]
-    pub fn dimen_par(&self, n: i32) -> Scaled {
-        Scaled(self.b32s1(crate::consts::DIMEN_BASE + n))
+    pub fn dimen_par(&self, n: DimenPar) -> Scaled {
+        Scaled(self.b32s1(n.loc()))
     }
     #[inline]
-    pub fn set_dimen_par(&mut self, n: i32, v: Scaled) {
-        self.set_b32s1(crate::consts::DIMEN_BASE + n, v.0);
+    pub fn set_dimen_par(&mut self, n: DimenPar, v: Scaled) {
+        self.set_b32s1(n.loc(), v.0);
     }
     /// The spec of glue parameter `n`, never null.
     #[inline]
-    pub fn glue_par(&self, n: i16) -> crate::node::NodePtr<crate::node::GlueSpecNode> {
-        crate::node::NodePtr::from_glue_ptr(crate::units::MemPtr(
-            self.b32s1(crate::consts::GLUE_BASE + i32::from(n)),
-        ))
+    pub fn glue_par(&self, n: GluePar) -> crate::node::NodePtr<crate::node::GlueSpecNode> {
+        crate::node::NodePtr::from_glue_ptr(crate::units::MemPtr(self.b32s1(n.loc())))
     }
 
     #[inline]
-    pub fn set_glue_par(&mut self, n: i16, spec: crate::node::NodePtr<crate::node::GlueSpecNode>) {
-        self.set_b32s1(crate::consts::GLUE_BASE + i32::from(n), spec.ptr().0);
+    pub fn set_glue_par(
+        &mut self,
+        n: GluePar,
+        spec: crate::node::NodePtr<crate::node::GlueSpecNode>,
+    ) {
+        self.set_b32s1(n.loc(), spec.ptr().0);
     }
 
     #[inline]
