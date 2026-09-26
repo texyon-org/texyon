@@ -75,8 +75,8 @@ use crate::math::{
 };
 use crate::mem::{CONTRIB_HEAD, GARBAGE, PAGE_HEAD, PAGE_INS_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::node::{
-    AnyBox, AnyNode, CharNode, CondNode, GlueSpecNode, NodePtr, PageInsNode, SaNode, WhatsitNode,
-    WhatsitSubtype,
+    AnyBox, AnyNode, CharNode, CondNode, DelimiterField, GlueSpecNode, MathField, NodePtr,
+    PageInsNode, SaNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::packaging::EXACTLY;
 use crate::save::DIMEN_VAL_LIMIT;
@@ -1024,34 +1024,16 @@ fn print_code_in(st: &mut EngineState, c: i32) {
     }
 }
 
-/// Prints the math family and character packed in the noad field at `p`.
-fn print_fam_and_char_in(st: &mut EngineState, p: i32) {
-    let fam_word = st.mem.b16s1(p) as i32;
+fn print_fam_and_char_in(st: &mut EngineState, p: NodePtr<MathField>) {
     esc(st, c"fam");
-    print_int_in(st, fam_word % 256);
+    print_int_in(st, p.fam(&st.mem));
     print_char_in(st, b' ' as i32);
-    print_code_in(st, st.mem.b16s0(p) as i32 + (fam_word / 256) * 65536);
+    print_code_in(st, p.full_char(&st.mem));
 }
 
-/// The small and large character of the delimiter field at `p`, each with its family.
-fn delimiter_parts(st: &EngineState, p: i32) -> [(i32, i32); 2] {
-    let part = |fam_word: u16, char_word: u16| {
-        let fam_word = fam_word as i32;
-        (fam_word % 256, char_word as i32 + (fam_word / 256) * 65536)
-    };
-    let mem = &st.mem;
-    [
-        part(mem.b16s3(p), mem.b16s2(p)),
-        part(mem.b16s1(p), mem.b16s0(p)),
-    ]
-}
-
-fn delimiter_is_null(st: &EngineState, p: i32) -> bool {
-    delimiter_parts(st, p) == [(0, 0); 2]
-}
-
-fn print_delimiter_in(st: &mut EngineState, p: i32) {
-    let [(small_fam, small_char), (large_fam, large_char)] = delimiter_parts(st, p);
+fn print_delimiter_in(st: &mut EngineState, p: NodePtr<DelimiterField>) {
+    let (small_fam, small_char) = p.small(&st.mem);
+    let (large_fam, large_char) = p.large(&st.mem);
     let a = ((small_fam as i64 * 256 + small_char as i64) * 4096
         + large_fam as i64 * 256
         + large_char as i64) as i32;
@@ -2275,7 +2257,7 @@ fn print_totals_in(st: &mut EngineState) {
 }
 
 fn show_info_in(st: &mut EngineState) {
-    let p = st.mem.b32s0(st.mem.temp_ptr);
+    let p = st.mem.temp_ptr.info(&st.mem);
     show_node_list_in(st, p);
 }
 
@@ -2996,17 +2978,17 @@ fn node_list_display_in(st: &mut EngineState, c: u8, list: MemPtr) {
 }
 
 /// Shows the noad field at `p`, marked with `c` in the indentation string.
-fn print_subsidiary_data_in(st: &mut EngineState, p: i32, c: u8) {
+fn print_subsidiary_data_in(st: &mut EngineState, p: NodePtr<MathField>, c: u8) {
     if crate::hash::cur_length(&st.strings) >= st.errors.depth_threshold {
-        if st.mem.b32s1(p) != EMPTY {
+        if p.math_type(&st.mem) != EMPTY {
             print_cstr_in(st, c" []".as_ptr());
         }
         return;
     }
     st.strings.str_pool[st.strings.pool_ptr as usize] = c as u16;
     st.strings.pool_ptr += 1;
-    st.mem.temp_ptr = MemPtr(p);
-    match st.mem.b32s1(p) {
+    st.mem.temp_ptr = p.ptr();
+    match p.math_type(&st.mem) {
         MATH_CHAR => {
             print_ln_in(st);
             print_current_string_in(st);
@@ -3014,7 +2996,7 @@ fn print_subsidiary_data_in(st: &mut EngineState, p: i32, c: u8) {
         }
         SUB_BOX => show_info_in(st),
         SUB_MLIST => {
-            if st.mem.b32s0(p) == TEX_NULL {
+            if p.info(&st.mem).is_null() {
                 print_ln_in(st);
                 print_current_string_in(st);
                 print_cstr_in(st, c"{}".as_ptr());
@@ -3366,18 +3348,18 @@ fn show_noad_in(st: &mut EngineState, node: NodePtr<crate::node::Noad>) {
         } else {
             print_scaled_in(st, thickness);
         }
-        let left = node.fraction_left_delimiter_addr();
-        if !delimiter_is_null(st, left) {
+        let left = node.left_delimiter();
+        if !left.is_null(&st.mem) {
             print_cstr_in(st, c", left-delimiter ".as_ptr());
             print_delimiter_in(st, left);
         }
-        let right = node.fraction_right_delimiter_addr();
-        if !delimiter_is_null(st, right) {
+        let right = node.right_delimiter();
+        if !right.is_null(&st.mem) {
             print_cstr_in(st, c", right-delimiter ".as_ptr());
             print_delimiter_in(st, right);
         }
-        print_subsidiary_data_in(st, node.numerator_addr(), b'\\');
-        print_subsidiary_data_in(st, node.denominator_addr(), b'/');
+        print_subsidiary_data_in(st, node.numerator(), b'\\');
+        print_subsidiary_data_in(st, node.denominator(), b'/');
         return;
     }
 
@@ -3404,11 +3386,9 @@ fn show_noad_in(st: &mut EngineState, node: NodePtr<crate::node::Noad>) {
         esc(st, name);
     }
     match nt {
-        NodeType::RadicalNoad => print_delimiter_in(st, node.delimiter_addr()),
-        NodeType::AccentNoad => print_fam_and_char_in(st, node.accent_char_addr()),
-        NodeType::LeftNoad | NodeType::RightNoad => {
-            print_delimiter_in(st, node.left_right_delimiter_addr())
-        }
+        NodeType::RadicalNoad => print_delimiter_in(st, node.left_delimiter()),
+        NodeType::AccentNoad => print_fam_and_char_in(st, node.accent_chr()),
+        NodeType::LeftNoad | NodeType::RightNoad => print_delimiter_in(st, node.delimiter()),
         _ => {}
     }
     if !matches!(nt, NodeType::LeftNoad | NodeType::RightNoad) {
@@ -3423,10 +3403,10 @@ fn show_noad_in(st: &mut EngineState, node: NodePtr<crate::node::Noad>) {
                 },
             );
         }
-        print_subsidiary_data_in(st, node.nucleus_addr(), b'.');
+        print_subsidiary_data_in(st, node.nucleus(), b'.');
     }
-    print_subsidiary_data_in(st, node.supscr_addr(), b'^');
-    print_subsidiary_data_in(st, node.subscr_addr(), b'_');
+    print_subsidiary_data_in(st, node.supscr(), b'^');
+    print_subsidiary_data_in(st, node.subscr(), b'_');
 }
 
 /// The label shown for a token list of type `index` in the error context.

@@ -37,8 +37,8 @@ use crate::mem::{
 };
 use crate::node::{
     AdjustNode, AlignColumn, AlignRecord, AlignStackNode, AnyBox, AnyNode, BoxOrRule, CharNode,
-    GlueNode, GlueSpecNode, InsNode, MarkNode, NodePtr, ParShapeNode, PenaltiesNode, RuleDimen,
-    SaNode, SpanNode, UnsetNode, WhatsitNode, WhatsitSubtype,
+    GlueNode, GlueSpecNode, InsNode, MarkNode, MathField, NodePtr, ParShapeNode, PenaltiesNode,
+    RuleDimen, SaNode, SpanNode, UnsetNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::scan::{
     change_box, fetch_box, set_class_fn, set_family_fn, ALIGNING, BOX_VAL, DIMEN_VAL, GLUE_VAL,
@@ -1082,8 +1082,8 @@ pub(crate) fn indent_in_hmode(st: &mut EngineState) -> Result<(), crate::scan::N
         b.ptr()
     } else {
         let q = crate::mem::new_noad(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
-        q.set_nucleus_type(&mut st.mem, SUB_BOX);
-        q.set_nucleus_field(&mut st.mem, b.idx().0);
+        q.nucleus().set_math_type(&mut st.mem, SUB_BOX);
+        q.nucleus().set_info(&mut st.mem, b.ptr());
         q.ptr()
     };
     st.input.cur_list.tail_append(&mut st.mem, p);
@@ -1641,8 +1641,8 @@ pub(crate) fn box_end_in(st: &mut EngineState, box_context: i32) -> Result<(), M
             } else {
                 let noad = crate::mem::new_noad(&mut st.mem)
                     .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-                noad.set_nucleus_type(&mut st.mem, SUB_BOX);
-                noad.set_nucleus_field(&mut st.mem, b.idx().0);
+                noad.nucleus().set_math_type(&mut st.mem, SUB_BOX);
+                noad.nucleus().set_info(&mut st.mem, b.ptr());
                 noad.ptr()
             };
             st.input.cur_list.tail_append(&mut st.mem, node);
@@ -2017,32 +2017,33 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
             let noad = new_noad(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
             st.input.cur_list.tail_append(&mut st.mem, noad.ptr());
             noad.set_noad_type(&mut st.mem, NodeType::VcenterNoad);
-            noad.set_nucleus_type(&mut st.mem, SUB_BOX);
-            noad.set_nucleus_field(&mut st.mem, p.idx().0);
+            noad.nucleus().set_math_type(&mut st.mem, SUB_BOX);
+            noad.nucleus().set_info(&mut st.mem, p.ptr());
         }
         GroupCode::MathChoice => crate::math::build_choices_in(st)?,
         GroupCode::Math => {
             crate::save::unsave_in(st)?;
             st.save_stack.save_ptr -= 1;
-            let save_loc = st.save_stack.saved(0);
-            st.mem.set_b32s1(save_loc, SUB_MLIST);
-            let p = crate::math::fin_mlist_in(st, TEX_NULL)?;
-            st.mem.set_b32s0(save_loc, p);
-            if p == TEX_NULL || st.mem.b32s1(p) != TEX_NULL {
+            let save_loc = NodePtr::<MathField>::at(st.save_stack.saved(0));
+            save_loc.set_math_type(&mut st.mem, SUB_MLIST);
+            let p = MemPtr(crate::math::fin_mlist_in(st, TEX_NULL)?);
+            save_loc.set_info(&mut st.mem, p);
+            if p.is_null() || !p.link(&st.mem).is_null() {
                 return Ok(());
             }
-            let Ok(AnyNode::Noad(noad)) = st.mem.classify(MemIdx(p)) else {
+            let Ok(AnyNode::Noad(noad)) = st.mem.classify(MemIdx::new(p)) else {
                 return Ok(());
             };
             match noad.noad_type(&st.mem) {
                 NodeType::OrdNoad
-                    if noad.subscr_type(&st.mem) == EMPTY && noad.supscr_type(&st.mem) == EMPTY =>
+                    if noad.subscr().math_type(&st.mem) == EMPTY
+                        && noad.supscr().math_type(&st.mem) == EMPTY =>
                 {
-                    st.mem.set_word(save_loc, st.mem.word(noad.nucleus_addr()));
+                    save_loc.copy_from(&mut st.mem, noad.nucleus());
                     free_node(&mut st.mem, noad.ptr(), NOAD_SIZE);
                 }
                 NodeType::AccentNoad
-                    if save_loc == st.input.cur_list.tail.0 + 1
+                    if save_loc.idx().0 == st.input.cur_list.tail.0 + 1
                         && matches!(
                             st.mem.classify(MemIdx(st.input.cur_list.tail.0)),
                             Ok(AnyNode::Noad(t)) if t.noad_type(&st.mem) == NodeType::OrdNoad
@@ -3043,7 +3044,7 @@ fn append_noad_in(st: &mut EngineState, backup: bool) -> Result<(), MainControlA
     } else {
         st.mem.set_b16s1(n.idx(), st.scanner.cur_chr as u16);
     }
-    crate::scan::scan_math_in(st, n.nucleus_addr())?;
+    crate::scan::scan_math_in(st, n.nucleus())?;
     Ok(())
 }
 

@@ -367,19 +367,19 @@ pub fn flush_node_list(
             AnyNode::Noad(noad) => match noad.noad_type(mem) {
                 NodeType::LeftNoad | NodeType::RightNoad => NOAD_SIZE,
                 NodeType::FractionNoad => {
-                    flush_node_list(mem, noad.supscr_field(mem))?;
-                    flush_node_list(mem, noad.subscr_field(mem))?;
+                    flush_node_list(mem, noad.supscr().info(mem))?;
+                    flush_node_list(mem, noad.subscr().info(mem))?;
                     FRACTION_NOAD_SIZE
                 }
                 noad_type => {
-                    if noad.nucleus_type(mem) >= SUB_BOX {
-                        flush_node_list(mem, noad.nucleus_field(mem))?;
+                    if noad.nucleus().math_type(mem) >= SUB_BOX {
+                        flush_node_list(mem, noad.nucleus().info(mem))?;
                     }
-                    if noad.supscr_type(mem) >= SUB_BOX {
-                        flush_node_list(mem, noad.supscr_field(mem))?;
+                    if noad.supscr().math_type(mem) >= SUB_BOX {
+                        flush_node_list(mem, noad.supscr().info(mem))?;
                     }
-                    if noad.subscr_type(mem) >= SUB_BOX {
-                        flush_node_list(mem, noad.subscr_field(mem))?;
+                    if noad.subscr().math_type(mem) >= SUB_BOX {
+                        flush_node_list(mem, noad.subscr().info(mem))?;
                     }
                     match noad_type {
                         NodeType::RadicalNoad => RADICAL_NOAD_SIZE,

@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 use crate::consts::{
     ACCENT_NOAD_SIZE, BOX_NODE_SIZE, EMPTY, FRACTION_NOAD_SIZE, GLUE_SPEC_SIZE, INS_NODE_SIZE,
     MARGIN_KERN_NODE_SIZE, MEDIUM_NODE_SIZE, NATIVE_NODE_SIZE, NOAD_SIZE, NORMAL, NULL_FLAG,
-    PIC_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE, TEX_NULL,
+    PIC_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE,
 };
 use crate::mem::{free_node, get_node};
 use crate::state::MemState;
@@ -305,6 +305,11 @@ node_kinds! {
     SpanNode;
     /// A saved outer alignment on the `align_ptr` stack.
     AlignStackNode;
+    /// A noad's nucleus, script or accent character word: its math type,
+    /// then a character and family or a sub-list.
+    MathField;
+    /// A noad's delimiter word, holding a small and a large variant.
+    DelimiterField;
     /// A `\parshape` array: the line count, then an indent and width per line.
     ParShapeNode;
     /// An e-TeX penalty array: the entry count at +1, then the entries.
@@ -394,7 +399,7 @@ pub trait ListRecord: NodeKind {}
 
 impl_traits!(ListRecord: SaNode, PageInsNode, MovementNode, ActiveNode, DeltaNode, PassiveNode,
     LigItem, CondNode, CharNode, AlignRecord, SpanNode, AlignStackNode, ParShapeNode, PenaltiesNode,
-    ExprNode, PseudoLineNode);
+    ExprNode, PseudoLineNode, MathField, DelimiterField);
 
 impl<K: ListRecord> NodePtr<K> {
     /// The record at `p`, a non-null link of a list of `K` records.
@@ -946,85 +951,132 @@ impl NodePtr<Noad> {
     }
 
     fields! {
-        nucleus_type / set_nucleus_type: i32 = b32s1 @ 1;
-        nucleus_field / set_nucleus_field: i32 = b32s0 @ 1;
-        nucleus_char / set_nucleus_char: u16 = b16s0 @ 1;
-        nucleus_fam / set_nucleus_fam: u16 = b16s1 @ 1;
         /// The translated hlist, which reuses the nucleus type word once
         /// `mlist_to_hlist` has converted the nucleus.
-        new_hlist / set_new_hlist: i32 = b32s1 @ 1;
+        new_hlist / set_new_hlist: MemPtr = b32s1 @ 1;
         /// A fraction's rule thickness, in the nucleus type word.
         thickness / set_thickness: i32 = b32s1 @ 1;
-        supscr_type / set_supscr_type: i32 = b32s1 @ 2;
-        supscr_field / set_supscr_field: i32 = b32s0 @ 2;
-        subscr_type / set_subscr_type: i32 = b32s1 @ 3;
-        subscr_field / set_subscr_field: i32 = b32s0 @ 3;
-        accent_char_fam / set_accent_char_fam: u16 = b16s1 @ 4;
     }
 
     /// The empty fields and normal subtype of a fresh noad.
     #[inline]
     pub fn clear_fields(self, mem: &mut MemState) {
         self.set_subtype(mem, NORMAL);
-        self.set_nucleus_type(mem, EMPTY);
-        self.set_nucleus_field(mem, TEX_NULL);
-        self.set_supscr_type(mem, EMPTY);
-        self.set_supscr_field(mem, TEX_NULL);
-        self.set_subscr_type(mem, EMPTY);
-        self.set_subscr_field(mem, TEX_NULL);
+        for field in [self.nucleus(), self.supscr(), self.subscr()] {
+            field.clear(mem);
+        }
     }
 
     #[inline]
-    pub fn set_accent_char_type(self, mem: &mut MemState, t: i32) {
-        mem.set_b32s1(self.idx.0 + 4, t);
+    pub fn nucleus(self) -> NodePtr<MathField> {
+        NodePtr::at(self.idx.0 + 1)
     }
     #[inline]
-    pub fn set_accent_char_val(self, mem: &mut MemState, c: u16) {
-        mem.set_b16s0(self.idx.0 + 4, c);
-    }
-
-    #[inline]
-    pub fn nucleus_addr(self) -> i32 {
-        self.idx.0 + 1
+    pub fn supscr(self) -> NodePtr<MathField> {
+        NodePtr::at(self.idx.0 + 2)
     }
     #[inline]
-    pub fn supscr_addr(self) -> i32 {
-        self.idx.0 + 2
-    }
-    #[inline]
-    pub fn subscr_addr(self) -> i32 {
-        self.idx.0 + 3
+    pub fn subscr(self) -> NodePtr<MathField> {
+        NodePtr::at(self.idx.0 + 3)
     }
     /// A fraction's numerator, which shares the superscript word.
     #[inline]
-    pub fn numerator_addr(self) -> i32 {
-        self.idx.0 + 2
+    pub fn numerator(self) -> NodePtr<MathField> {
+        self.supscr()
     }
     /// A fraction's denominator, which shares the subscript word.
     #[inline]
-    pub fn denominator_addr(self) -> i32 {
-        self.idx.0 + 3
+    pub fn denominator(self) -> NodePtr<MathField> {
+        self.subscr()
     }
     #[inline]
-    pub fn accent_char_addr(self) -> i32 {
-        self.idx.0 + 4
+    pub fn accent_chr(self) -> NodePtr<MathField> {
+        NodePtr::at(self.idx.0 + 4)
     }
-    /// A radical's delimiter.
+    /// A left or right noad's delimiter, in the nucleus word.
     #[inline]
-    pub fn delimiter_addr(self) -> i32 {
-        self.idx.0 + 4
+    pub fn delimiter(self) -> NodePtr<DelimiterField> {
+        NodePtr::at(self.idx.0 + 1)
     }
+    /// A radical's delimiter, or a fraction's left one.
     #[inline]
-    pub fn left_right_delimiter_addr(self) -> i32 {
-        self.idx.0 + 1
-    }
-    #[inline]
-    pub fn fraction_left_delimiter_addr(self) -> i32 {
-        self.idx.0 + 4
+    pub fn left_delimiter(self) -> NodePtr<DelimiterField> {
+        NodePtr::at(self.idx.0 + 4)
     }
     #[inline]
-    pub fn fraction_right_delimiter_addr(self) -> i32 {
-        self.idx.0 + 5
+    pub fn right_delimiter(self) -> NodePtr<DelimiterField> {
+        NodePtr::at(self.idx.0 + 5)
+    }
+}
+
+impl NodePtr<MathField> {
+    fields! {
+        math_type / set_math_type: i32 = b32s1 @ 0;
+        /// The list of a `SUB_BOX` or `SUB_MLIST` field.
+        info / set_info: MemPtr = b32s0 @ 0;
+        character / set_character: u16 = b16s0 @ 0;
+        /// The family in the low byte and the character's plane above it.
+        plane_and_fam / set_plane_and_fam: u16 = b16s1 @ 0;
+    }
+
+    #[inline]
+    pub fn fam(self, mem: &MemState) -> i32 {
+        self.plane_and_fam(mem) as i32 % 256
+    }
+    /// The character code with its plane.
+    #[inline]
+    pub fn full_char(self, mem: &MemState) -> i32 {
+        self.character(mem) as i32 + (self.plane_and_fam(mem) as i32 / 256) * 65_536
+    }
+    #[inline]
+    pub fn clear(self, mem: &mut MemState) {
+        self.set_math_type(mem, EMPTY);
+        self.set_info(mem, MemPtr::NULL);
+    }
+    #[inline]
+    pub fn copy_from(self, mem: &mut MemState, src: NodePtr<MathField>) {
+        mem.set_word(self.idx.0, mem.word(src.idx.0));
+    }
+}
+
+/// A delimiter's small and large variants, each a family and a character.
+impl NodePtr<DelimiterField> {
+    #[inline]
+    fn variant(plane_and_fam: u16, char: u16) -> (i32, i32) {
+        let plane_and_fam = plane_and_fam as i32;
+        (
+            plane_and_fam % 256,
+            char as i32 + (plane_and_fam / 256) * 65_536,
+        )
+    }
+    /// The small variant's `(family, character)`.
+    #[inline]
+    pub fn small(self, mem: &MemState) -> (i32, i32) {
+        Self::variant(mem.b16s3(self.idx.0), mem.b16s2(self.idx.0))
+    }
+    /// The large variant's `(family, character)`.
+    #[inline]
+    pub fn large(self, mem: &MemState) -> (i32, i32) {
+        Self::variant(mem.b16s1(self.idx.0), mem.b16s0(self.idx.0))
+    }
+    #[inline]
+    pub fn set_small(self, mem: &mut MemState, plane_and_fam: u16, char: u16) {
+        mem.set_b16s3(self.idx.0, plane_and_fam);
+        mem.set_b16s2(self.idx.0, char);
+    }
+    #[inline]
+    pub fn set_large(self, mem: &mut MemState, plane_and_fam: u16, char: u16) {
+        mem.set_b16s1(self.idx.0, plane_and_fam);
+        mem.set_b16s0(self.idx.0, char);
+    }
+    #[inline]
+    pub fn clear(self, mem: &mut MemState) {
+        self.set_small(mem, 0, 0);
+        self.set_large(mem, 0, 0);
+    }
+    #[inline]
+    pub fn is_null(self, mem: &MemState) -> bool {
+        self.small(mem) == (0, 0) && self.large(mem) == (0, 0)
     }
 }
 
@@ -2021,18 +2073,24 @@ mod tests {
     fn noad_fields_land_in_their_words() {
         let mut mem = fresh_mem(200);
         let n: NodePtr<Noad> = at(&mut mem, 100, Some(NodeType::OrdNoad));
-        n.set_nucleus_type(&mut mem, 1);
-        n.set_nucleus_field(&mut mem, 123);
+        n.nucleus().set_math_type(&mut mem, 1);
+        n.nucleus().set_info(&mut mem, MemPtr(123));
         assert_eq!(mem.b32s1(101), 1);
         assert_eq!(mem.b32s0(101), 123);
-        n.set_nucleus_char(&mut mem, 45);
-        n.set_nucleus_fam(&mut mem, 2);
-        assert_eq!(n.nucleus_char(&mem), 45);
-        assert_eq!(n.nucleus_fam(&mem), 2);
-        n.set_accent_char_val(&mut mem, 48);
-        n.set_accent_char_fam(&mut mem, 5);
-        assert_eq!(mem.b16s0(n.accent_char_addr()), 48);
+        n.nucleus().set_character(&mut mem, 45);
+        n.nucleus().set_plane_and_fam(&mut mem, 2 + 3 * 256);
+        assert_eq!(n.nucleus().fam(&mem), 2);
+        assert_eq!(n.nucleus().full_char(&mem), 45 + 3 * 65_536);
+        n.accent_chr().set_character(&mut mem, 48);
+        n.accent_chr().set_plane_and_fam(&mut mem, 5);
+        assert_eq!(mem.b16s0(104), 48);
         assert_eq!(mem.b16s1(104), 5);
+        n.right_delimiter().set_small(&mut mem, 1 + 256, 7);
+        n.right_delimiter().set_large(&mut mem, 2, 9);
+        assert_eq!(n.right_delimiter().small(&mem), (1, 7 + 65_536));
+        assert_eq!(n.right_delimiter().large(&mem), (2, 9));
+        assert_eq!(mem.b16s3(105), 1 + 256);
+        assert_eq!(mem.b16s0(105), 9);
     }
 
     #[test]
