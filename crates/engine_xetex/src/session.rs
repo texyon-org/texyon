@@ -155,6 +155,7 @@ fn capture_fence(
         else {
             return false;
         };
+        // SAFETY: as for `snapshot` above.
         let ladder = unsafe { controller.ladder.as_mut() };
         let admission = ladder.admit_engine_fence(
             state,
@@ -876,15 +877,13 @@ fn run_locked<R>(
     operation: impl FnOnce(&mut EngineState) -> R,
 ) -> R {
     let api = api as *mut CoreBridgeState<'_> as *mut libc::c_void;
-    unsafe {
-        crate::bridge::enter_global_engine(api);
-        let _engine = OnDrop(|| crate::bridge::exit_global_engine());
-        crate::bridge::set_bridge_state(api);
-        let _bridge = OnDrop(|| crate::bridge::set_bridge_state(std::ptr::null_mut()));
-        crate::state::set_engine_state_ptr(state as *mut EngineState);
-        let _state = OnDrop(|| crate::state::set_engine_state_ptr(std::ptr::null_mut()));
-        operation(state)
-    }
+    // SAFETY: `api` comes from an exclusive borrow held for the whole operation.
+    unsafe { crate::bridge::enter_global_engine(api) };
+    let _engine = OnDrop(crate::bridge::exit_global_engine);
+    // SAFETY: as above, and the guard clears the pointer before the borrow ends.
+    unsafe { crate::bridge::set_bridge_state(api) };
+    let _bridge = OnDrop(crate::bridge::clear_bridge_state);
+    operation(state)
 }
 
 #[cfg(test)]

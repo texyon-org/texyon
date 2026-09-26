@@ -36,6 +36,12 @@ pub(crate) unsafe fn set_bridge_state(ptr: *mut libc::c_void) {
     BRIDGE_PTR = ptr;
 }
 
+/// Clears the bridge state installed by [`set_bridge_state`].
+pub(crate) fn clear_bridge_state() {
+    // SAFETY: null is always a valid bridge state.
+    unsafe { set_bridge_state(std::ptr::null_mut()) };
+}
+
 extern "C" {
     fn _ttbc_set_error_message(message: *const libc::c_char);
     fn ttbc_global_engine_enter(api: *mut libc::c_void) -> *mut libc::c_void;

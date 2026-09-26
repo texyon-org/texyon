@@ -465,8 +465,7 @@ impl<K: IsBox> NodePtr<K> {
 
     #[inline]
     pub fn glue_set(self, mem: &MemState) -> f64 {
-        // SAFETY: the packers always write this word as `.gr`.
-        unsafe { mem.word(self.idx.0 + 6).gr }
+        mem.word(self.idx.0 + 6).gr()
     }
     #[inline]
     pub fn set_glue_set(self, mem: &mut MemState, v: f64) {

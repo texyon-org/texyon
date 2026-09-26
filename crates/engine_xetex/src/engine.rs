@@ -690,8 +690,7 @@ pub(crate) fn tt_run_engine(
     // SAFETY: `api` is exclusively borrowed for this call, and the guard clears
     // it again before the borrow ends.
     unsafe { crate::bridge::set_bridge_state(api) };
-    // SAFETY: clearing the pointer is always sound.
-    let _bridge_guard = OnDrop(|| unsafe { crate::bridge::set_bridge_state(std::ptr::null_mut()) });
+    let _bridge_guard = OnDrop(crate::bridge::clear_bridge_state);
 
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         tt_run_engine_inner(config, dump_name, input_file_name, build_date)
@@ -722,8 +721,6 @@ fn tt_run_engine_inner(
 
     let mut st = Box::new(EngineState::default());
     st.config = config;
-    crate::state::set_engine_state_ptr(&mut *st as *mut EngineState);
-    let _ptr_guard = OnDrop(|| crate::state::set_engine_state_ptr(std::ptr::null_mut()));
 
     match initialize_engine(&mut st, dump_name, build_date) {
         InitOutcome::Ready => run_document_to_end(&mut st, input_file_name),

@@ -55,8 +55,7 @@ impl Fnv {
 }
 
 fn memory_word(word: MemoryWord) -> u64 {
-    // SAFETY: every bit pattern is a valid B32x2.
-    let B32x2 { s0, s1 } = unsafe { word.b32 };
+    let B32x2 { s0, s1 } = word.b32();
     u64::from(s0 as u32) | u64::from(s1 as u32) << 32
 }
 

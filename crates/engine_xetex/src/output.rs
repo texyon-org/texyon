@@ -2053,36 +2053,6 @@ pub(crate) fn change_if_limit(
     Err(Abort::Confusion("if"))
 }
 
-/// C++ font-layer callback, reaching the run's state through the locator pointer.
-/// # Safety
-///
-/// Each name must be valid for its length, or have a length of at most 0.
-#[export_name = "font_feature_warning"]
-pub unsafe extern "C" fn font_feature_warning_callback(
-    feature_name_p: *const libc::c_void,
-    feat_len: i32,
-    setting_name_p: *const libc::c_void,
-    set_len: i32,
-) {
-    let name = |p: *const libc::c_void, len: i32| {
-        if len > 0 {
-            // SAFETY: the caller passes `len` readable bytes at `p`.
-            unsafe { std::slice::from_raw_parts(p.cast::<u8>(), len as usize) }
-        } else {
-            &[]
-        }
-    };
-    let p = crate::state::current_engine_state();
-    if !p.is_null() {
-        let (feature, setting) = (
-            name(feature_name_p, feat_len),
-            name(setting_name_p, set_len),
-        );
-        // SAFETY: the locator points at the running engine, which is inside the font layer.
-        font_feature_warning(unsafe { &mut *p }, feature, setting);
-    }
-}
-
 pub(crate) fn font_feature_warning(st: &mut EngineState, feature: &[u8], setting: &[u8]) {
     begin_diagnostic(st);
     diagnostic_begin_capture_warning_here(st);

@@ -361,9 +361,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
                 && st.fonts.font_ec[f as usize] as i32 >= c
             {
                 let ec = st.fonts.effective_char(f, c as u16);
-                let info = unsafe {
-                    st.fonts.font_info[(st.fonts.char_base[f as usize] + ec) as usize].b16
-                };
+                let info = st.fonts.font_info_b16(st.fonts.char_base[f as usize] + ec);
                 info.s3 > 0
             } else {
                 false

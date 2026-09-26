@@ -2955,7 +2955,6 @@ pub(crate) fn do_locale_linebreaks(st: &mut EngineState, s: i32, len: i32) -> Re
             }
         }
     })();
-    drop(breaks);
     if iter.is_some() {
         st.fonts.brk_iter = iter;
     }

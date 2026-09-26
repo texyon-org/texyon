@@ -238,8 +238,7 @@ impl EqtbState {
 
     #[inline]
     fn b32s1(&self, p: i32) -> i32 {
-        // SAFETY: `MemoryWord` union projection. Caller ensures p is a valid eqtb index.
-        unsafe { self.data[p as usize].b32.s1 }
+        self.data[p as usize].b32().s1
     }
 
     #[inline]
@@ -319,8 +318,7 @@ impl EqtbState {
 
     #[inline]
     fn b16s1(&self, p: i32) -> u16 {
-        // SAFETY: `MemoryWord` union projection. Caller ensures p is a valid eqtb index.
-        unsafe { self.data[p as usize].b16.s1 }
+        self.data[p as usize].b16().s1
     }
 
     /// The command code of control-sequence entry `p`.
@@ -440,8 +438,7 @@ impl EqtbState {
 
     #[inline]
     fn b16s0(&self, p: i32) -> u16 {
-        // SAFETY: `MemoryWord` union projection. Caller ensures p is a valid eqtb index.
-        unsafe { self.data[p as usize].b16.s0 }
+        self.data[p as usize].b16().s0
     }
 
     #[inline]
@@ -526,38 +523,32 @@ impl MemState {
 
     #[inline]
     pub(crate) fn b32s0(&self, p: impl crate::units::MemAddr) -> i32 {
-        // SAFETY: union projection. The `Vec` index is bounds-checked.
-        unsafe { self.data[p.addr() as usize].b32.s0 }
+        self.data[p.addr() as usize].b32().s0
     }
 
     #[inline]
     pub(crate) fn b32s1(&self, p: impl crate::units::MemAddr) -> i32 {
-        // SAFETY: union projection. The `Vec` index is bounds-checked.
-        unsafe { self.data[p.addr() as usize].b32.s1 }
+        self.data[p.addr() as usize].b32().s1
     }
 
     #[inline]
     pub(crate) fn b16s0(&self, p: impl crate::units::MemAddr) -> u16 {
-        // SAFETY: union projection. The `Vec` index is bounds-checked.
-        unsafe { self.data[p.addr() as usize].b16.s0 }
+        self.data[p.addr() as usize].b16().s0
     }
 
     #[inline]
     pub(crate) fn b16s1(&self, p: impl crate::units::MemAddr) -> u16 {
-        // SAFETY: union projection. The `Vec` index is bounds-checked.
-        unsafe { self.data[p.addr() as usize].b16.s1 }
+        self.data[p.addr() as usize].b16().s1
     }
 
     #[inline]
     pub(crate) fn b16s2(&self, p: impl crate::units::MemAddr) -> u16 {
-        // SAFETY: union projection. The `Vec` index is bounds-checked.
-        unsafe { self.data[p.addr() as usize].b16.s2 }
+        self.data[p.addr() as usize].b16().s2
     }
 
     #[inline]
     pub(crate) fn b16s3(&self, p: impl crate::units::MemAddr) -> u16 {
-        // SAFETY: union projection. The `Vec` index is bounds-checked.
-        unsafe { self.data[p.addr() as usize].b16.s3 }
+        self.data[p.addr() as usize].b16().s3
     }
 
     #[inline]
@@ -744,8 +735,7 @@ pub(crate) struct SaveStackState {
 impl SaveStackState {
     #[inline]
     fn b32s1(&self, k: i32) -> i32 {
-        // SAFETY: union projection. The entry was last written via the b32 view.
-        unsafe { self.data[k as usize].b32.s1 }
+        self.data[k as usize].b32().s1
     }
 
     #[inline]
@@ -770,14 +760,12 @@ impl SaveStackState {
 
     #[inline]
     fn b16s1(&self, k: i32) -> u16 {
-        // SAFETY: union projection. The entry was last written via the b16 view.
-        unsafe { self.data[k as usize].b16.s1 }
+        self.data[k as usize].b16().s1
     }
 
     #[inline]
     fn b16s0(&self, k: i32) -> u16 {
-        // SAFETY: union projection. The entry was last written via the b16 view.
-        unsafe { self.data[k as usize].b16.s0 }
+        self.data[k as usize].b16().s0
     }
 
     /// WEB's `saved(k)`, the word `k` entries above `save_ptr`.
@@ -1075,15 +1063,13 @@ impl FontState {
 
     #[inline]
     pub(crate) fn font_info_b16(&self, k: i32) -> crate::mem_types::B16x4 {
-        // SAFETY: union projection. Callers preserve the original font-info indexing contract.
-        unsafe { self.font_info[k as usize].b16 }
+        self.font_info[k as usize].b16()
     }
 
     /// `font_info[k].sc`.
     #[inline]
     pub(crate) fn font_info_sc(&self, k: i32) -> i32 {
-        // SAFETY: union projection. Callers preserve the original font-info indexing contract.
-        unsafe { self.font_info[k as usize].b32.s1 }
+        self.font_info[k as usize].b32().s1
     }
 
     /// Font parameter `n` of font `f`.
@@ -1588,29 +1574,6 @@ impl Default for LinebreakState {
             best_pl_glue: [0; 4],
         }
     }
-}
-
-// The macOS `font_feature_warning` callback fires inside Core Text with no Rust
-// frame to carry a borrow, so it finds the running engine through this pointer.
-thread_local! {
-    static ENGINE_STATE_PTR: std::cell::Cell<*mut EngineState> =
-        const { std::cell::Cell::new(std::ptr::null_mut()) };
-}
-
-/// Installs, or clears with null, the running engine for this thread.
-///
-/// While non-null, `p` must outlive every `current_engine_state()` read until
-/// it is cleared.
-pub(crate) fn set_engine_state_ptr(p: *mut EngineState) {
-    ENGINE_STATE_PTR.with(|c| c.set(p));
-}
-
-/// The running engine, null outside a run.
-///
-/// # Safety
-/// The caller must not alias another live borrow of the engine.
-pub(crate) fn current_engine_state() -> *mut EngineState {
-    ENGINE_STATE_PTR.with(|c| c.get())
 }
 
 pub(crate) struct HyphState {

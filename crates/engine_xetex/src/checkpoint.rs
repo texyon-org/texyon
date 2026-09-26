@@ -629,8 +629,7 @@ mod tests {
     }
 
     fn value(word: MemoryWord) -> i32 {
-        // SAFETY: every bit pattern is a valid B32x2.
-        unsafe { word.b32.s1 }
+        word.b32().s1
     }
 
     fn state() -> EngineState {

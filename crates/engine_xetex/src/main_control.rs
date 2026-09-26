@@ -2796,7 +2796,7 @@ pub(crate) fn main_control_ignore_spaces(st: &mut EngineState) -> Result<(), Abo
         st.scanner.scanner_status = NORMAL_SCANNER;
         let outcome = crate::scan::get_next(st);
         st.scanner.scanner_status = saved;
-        Result::<(), Abort>::from(outcome)?;
+        outcome?;
 
         st.scanner.cur_cs = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)?;
 

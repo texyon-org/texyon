@@ -206,8 +206,7 @@ impl MemState {
         scanner: &mut ScannerState,
         w: MemoryWord,
     ) -> Result<(), Abort> {
-        // SAFETY: `MemoryWord` union projections of an `eqtb` entry.
-        let (eq_type, equiv) = unsafe { (w.b16.s1, w.b32.s1) };
+        let (eq_type, equiv) = (w.b16().s1, w.b32().s1);
         let Ok(eq_type) = u8::try_from(eq_type) else {
             return Ok(());
         };

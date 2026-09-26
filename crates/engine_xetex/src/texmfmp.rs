@@ -148,8 +148,7 @@ impl StringsState {
         if let Some(nul) = bytes.iter().position(|&b| b == 0) {
             bytes.truncate(nul);
         }
-        // SAFETY: the bytes were cut at the first NUL.
-        unsafe { CString::from_vec_unchecked(bytes) }
+        CString::new(bytes).expect("cut at the first NUL")
     }
 
     /// Appends code point `c` to the pool as one or two UTF-16 units.

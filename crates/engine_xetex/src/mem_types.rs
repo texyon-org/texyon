@@ -29,6 +29,26 @@ pub union MemoryWord {
     pub gr: f64,
 }
 
+impl MemoryWord {
+    #[inline]
+    pub fn b32(self) -> B32x2 {
+        // SAFETY: every field is 8 bytes of plain data, so any bits read as any field.
+        unsafe { self.b32 }
+    }
+
+    #[inline]
+    pub fn b16(self) -> B16x4 {
+        // SAFETY: as in `b32`.
+        unsafe { self.b16 }
+    }
+
+    #[inline]
+    pub fn gr(self) -> f64 {
+        // SAFETY: as in `b32`.
+        unsafe { self.gr }
+    }
+}
+
 impl Default for MemoryWord {
     #[inline]
     fn default() -> Self {
@@ -51,6 +71,7 @@ const _: () = {
 pub(crate) unsafe trait ZeroWord: Copy {}
 // SAFETY: i32, u16 and f64 are all valid at zero bits.
 unsafe impl ZeroWord for MemoryWord {}
+// SAFETY: both fields are i32.
 unsafe impl ZeroWord for B32x2 {}
 
 /// A `Vec` of `len` zeroed words that leaves untouched pages unmapped.
@@ -91,13 +112,11 @@ const _: () = assert!(size_of::<ListStateRecord>() == 32);
 impl ListStateRecord {
     #[inline]
     pub fn aux_s0(&self) -> i32 {
-        // SAFETY: `aux` is only ever written through its b32 view.
-        unsafe { self.aux.b32.s0 }
+        self.aux.b32().s0
     }
     #[inline]
     pub fn aux_s1(&self) -> i32 {
-        // SAFETY: `aux` is only ever written through its b32 view.
-        unsafe { self.aux.b32.s1 }
+        self.aux.b32().s1
     }
     #[inline]
     pub fn set_aux_s0(&mut self, v: i32) {
