@@ -12,13 +12,13 @@ use crate::cmd::{
 };
 use crate::consts::{
     ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, CLOSED, COUNT_BASE,
-    CS_TOKEN_FLAG, DEL_CODE_BASE, END_M_CODE, EQTB_SIZE, FIL, FILLL, FONT_BASE, FONT_ID_BASE,
-    FROZEN_CONTROL_SEQUENCE, FROZEN_CR, FROZEN_ENDV, FROZEN_FI, FROZEN_PRIMITIVE,
-    FROZEN_PROTECTION, FROZEN_RELAX, INT_PAR_CUR_FAM, INT_PAR_END_LINE_CHAR, INT_PAR_MAG,
-    INT_PAR_NEW_LINE_CHAR, INT_PAR_TRACING_IFS, INT_PAR_TRACING_NESTING,
-    INT_PAR_TRACING_SCAN_TOKENS, INT_PAR_XETEX_HYPHENATABLE_LENGTH, JUST_OPEN, LEFT_SIDE,
-    LOCAL_BASE, LOCAL_EVERY_EOF, LOCAL_PAR_SHAPE, LOCAL_TECTONIC_CODA, LOCAL_XETEX_INTER_CHAR_TOKS,
-    MATH_CHAR, MATH_CODE_BASE, MAX_HALFWORD, MU_GLUE, MU_SKIP_BASE, NORMAL, NULL_CS,
+    CS_TOKEN_FLAG, DEL_CODE_BASE, END_M_CODE, EQTB_SIZE, FIL, FILLL, FROZEN_CONTROL_SEQUENCE,
+    FROZEN_CR, FROZEN_ENDV, FROZEN_FI, FROZEN_PRIMITIVE, FROZEN_PROTECTION, FROZEN_RELAX,
+    INT_PAR_CUR_FAM, INT_PAR_END_LINE_CHAR, INT_PAR_MAG, INT_PAR_NEW_LINE_CHAR,
+    INT_PAR_TRACING_IFS, INT_PAR_TRACING_NESTING, INT_PAR_TRACING_SCAN_TOKENS,
+    INT_PAR_XETEX_HYPHENATABLE_LENGTH, JUST_OPEN, LEFT_SIDE, LOCAL_BASE, LOCAL_EVERY_EOF,
+    LOCAL_PAR_SHAPE, LOCAL_TECTONIC_CODA, LOCAL_XETEX_INTER_CHAR_TOKS, MATH_CHAR, MATH_CODE_BASE,
+    MAX_DIMEN, MAX_HALFWORD, MU_GLUE, MU_SKIP_BASE, NORMAL, NULL_CS, NULL_FONT,
     NUMBER_MATH_FAMILIES, PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE, SELECTOR_LOG_ONLY,
     SELECTOR_NEW_STRING, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, TEX_INFINITY, TEX_NULL,
     TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
@@ -51,7 +51,7 @@ use crate::packaging::{ADDITIONAL, EXACTLY};
 use crate::state::{
     EngineState, EqtbState, ErrorState, GroupCode, InputClusterState, MemState, ScannerState,
 };
-use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{FontId, MemIdx, MemPtr, NodeType, Scaled};
 
 use std::sync::Arc;
 
@@ -1508,7 +1508,7 @@ pub(crate) fn the_toks(st: &mut EngineState) -> Result<MemPtr, Abort> {
         match st.scanner.cur_val_level {
             0 => print_int(st, st.scanner.cur_val),
             1 => {
-                crate::output::print_scaled(st, st.scanner.cur_val);
+                crate::output::print_scaled(st, st.scanner.cur_dimen());
                 print(st, "pt");
             }
             2 => {
@@ -1935,9 +1935,9 @@ fn glue_spec(p: i32) -> NodePtr<GlueSpecNode> {
 
 /// Replaces the glue in `cur_val` by its width, releasing the glue.
 fn glue_to_width(st: &mut EngineState) {
-    let spec = st.scanner.cur_val;
-    st.scanner.cur_val = glue_spec(spec).width(&st.mem).0;
-    st.mem.delete_glue_ref(glue_spec(spec));
+    let spec = glue_spec(st.scanner.cur_val);
+    st.scanner.set_cur_dimen(spec.width(&st.mem));
+    st.mem.delete_glue_ref(spec);
 }
 
 /// Scales `cur_val` and the fraction `f` by `num / denom`.
@@ -1949,11 +1949,10 @@ fn scale_dimen(st: &mut EngineState, f: &mut i32, num: i32, denom: i32) {
 }
 
 /// Sets `cur_val` to `integer.fraction` times the unit `v`.
-fn attach_unit(st: &mut EngineState, integer: i32, fraction: i32, v: i32) {
+fn attach_unit(st: &mut EngineState, integer: i32, fraction: i32, v: Scaled) {
     let fraction_part = st.errors.xn_over_d(v, fraction, 65536);
-    st.scanner.cur_val = st
-        .errors
-        .mult_and_add(integer, v, fraction_part, MAX_HALFWORD);
+    let d = st.errors.mult_and_add(integer, v, fraction_part, MAX_DIMEN);
+    st.scanner.set_cur_dimen(d);
 }
 
 pub(crate) fn xetex_scan_dimen(
@@ -2074,7 +2073,7 @@ pub(crate) fn xetex_scan_dimen(
                     } else {
                         scan_something_internal(st, DIMEN_VAL, false)?;
                     }
-                    attach_unit(st, save_cur_val, f, st.scanner.cur_val);
+                    attach_unit(st, save_cur_val, f, st.scanner.cur_dimen());
                     break 'attach_sign;
                 }
 
@@ -2242,21 +2241,21 @@ pub(crate) fn scan_mu_glue(st: &mut EngineState) -> Result<(), Abort> {
 fn map_glue(
     st: &mut EngineState,
     spec: NodePtr<GlueSpecNode>,
-    mut op: impl FnMut(&mut crate::state::ErrorState, i32) -> i32,
+    mut op: impl FnMut(&mut crate::state::ErrorState, Scaled) -> Scaled,
 ) {
-    let width = op(&mut st.errors, spec.width(&st.mem).0);
-    spec.set_width(&mut st.mem, Scaled(width));
-    let stretch = op(&mut st.errors, spec.stretch(&st.mem).0);
-    spec.set_stretch(&mut st.mem, Scaled(stretch));
-    let shrink = op(&mut st.errors, spec.shrink(&st.mem).0);
-    spec.set_shrink(&mut st.mem, Scaled(shrink));
+    let width = op(&mut st.errors, spec.width(&st.mem));
+    spec.set_width(&mut st.mem, width);
+    let stretch = op(&mut st.errors, spec.stretch(&st.mem));
+    spec.set_stretch(&mut st.mem, stretch);
+    let shrink = op(&mut st.errors, spec.shrink(&st.mem));
+    spec.set_shrink(&mut st.mem, shrink);
 }
 
 fn normalize_glue_orders(st: &mut EngineState, spec: NodePtr<GlueSpecNode>) {
-    if spec.stretch(&st.mem).0 == 0 {
+    if spec.stretch(&st.mem) == Scaled::ZERO {
         spec.set_stretch_order(&mut st.mem, NORMAL_EXPR);
     }
-    if spec.shrink(&st.mem).0 == 0 {
+    if spec.shrink(&st.mem) == Scaled::ZERO {
         spec.set_shrink_order(&mut st.mem, NORMAL_EXPR);
     }
 }
@@ -2265,22 +2264,22 @@ fn normalize_glue_orders(st: &mut EngineState, spec: NodePtr<GlueSpecNode>) {
 fn add_glue(st: &mut EngineState, e: NodePtr<GlueSpecNode>, t: NodePtr<GlueSpecNode>, sub: bool) {
     let mem = &mut st.mem;
     let errors = &mut st.errors;
-    let width = errors.add_or_sub(e.width(mem).0, t.width(mem).0, MAX_HALFWORD, sub);
-    e.set_width(mem, Scaled(width));
+    let width = errors.add_or_sub(e.width(mem), t.width(mem), MAX_DIMEN, sub);
+    e.set_width(mem, width);
     let (e_order, t_order, t_stretch) =
         (e.stretch_order(mem), t.stretch_order(mem), t.stretch(mem));
     if e_order == t_order {
-        let stretch = errors.add_or_sub(e.stretch(mem).0, t_stretch.0, MAX_HALFWORD, sub);
-        e.set_stretch(mem, Scaled(stretch));
-    } else if e_order < t_order && t_stretch.0 != 0 {
+        let stretch = errors.add_or_sub(e.stretch(mem), t_stretch, MAX_DIMEN, sub);
+        e.set_stretch(mem, stretch);
+    } else if e_order < t_order && t_stretch != Scaled::ZERO {
         e.set_stretch(mem, t_stretch);
         e.set_stretch_order(mem, t_order);
     }
     let (e_order, t_order, t_shrink) = (e.shrink_order(mem), t.shrink_order(mem), t.shrink(mem));
     if e_order == t_order {
-        let shrink = errors.add_or_sub(e.shrink(mem).0, t_shrink.0, MAX_HALFWORD, sub);
-        e.set_shrink(mem, Scaled(shrink));
-    } else if e_order < t_order && t_shrink.0 != 0 {
+        let shrink = errors.add_or_sub(e.shrink(mem), t_shrink, MAX_DIMEN, sub);
+        e.set_shrink(mem, shrink);
+    } else if e_order < t_order && t_shrink != Scaled::ZERO {
         e.set_shrink(mem, t_shrink);
         e.set_shrink_order(mem, t_order);
     }
@@ -2380,9 +2379,9 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
                 }
             } else {
                 let spec = glue_spec(f);
-                if spec.width(&st.mem).0.abs() > MAX_HALFWORD
-                    || spec.stretch(&st.mem).0.abs() > MAX_HALFWORD
-                    || spec.shrink(&st.mem).0.abs() > MAX_HALFWORD
+                if spec.width(&st.mem).abs() > MAX_DIMEN
+                    || spec.stretch(&st.mem).abs() > MAX_DIMEN
+                    || spec.shrink(&st.mem).abs() > MAX_DIMEN
                 {
                     st.errors.arith_error = true;
                     st.mem.delete_glue_ref(glue_spec(f));
@@ -2410,8 +2409,9 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
                     } else if l == DIMEN_VAL {
                         t = st.errors.mult_and_add(t, f, 0, MAX_HALFWORD);
                     } else {
+                        // TeX's `nx_plus_y` here takes the component as its integer factor.
                         map_glue(st, glue_spec(t), |errors, x| {
-                            errors.mult_and_add(x, f, 0, MAX_HALFWORD)
+                            Scaled(errors.mult_and_add(x.0, f, 0, MAX_HALFWORD))
                         });
                     }
                 }
@@ -2419,7 +2419,9 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
                     if l < GLUE_VAL {
                         t = st.errors.quotient(t, f);
                     } else {
-                        map_glue(st, glue_spec(t), |errors, x| errors.quotient(x, f));
+                        map_glue(st, glue_spec(t), |errors, x| {
+                            Scaled(errors.quotient(x.0, f))
+                        });
                     }
                 }
                 EXPR_SCALE => {
@@ -2429,7 +2431,7 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
                         t = st.errors.fract(t, n, f, MAX_HALFWORD);
                     } else {
                         map_glue(st, glue_spec(t), |errors, x| {
-                            errors.fract(x, n, f, MAX_HALFWORD)
+                            errors.fract(x, n, f, MAX_DIMEN)
                         });
                     }
                 }
@@ -2583,14 +2585,9 @@ fn negate_glue(st: &mut EngineState) -> Result<i32, Abort> {
 /// engine and its area flag.
 fn scan_font_engine(
     st: &mut EngineState,
-) -> Result<(i32, Option<Arc<FontEngineHandle>>, i32), Abort> {
-    scan_font_ident(st)?;
-    let f = st.scanner.cur_val;
-    Ok((
-        f,
-        st.fonts.layout_engine_arc(f),
-        st.fonts.font_area[f as usize],
-    ))
+) -> Result<(FontId, Option<Arc<FontEngineHandle>>, i32), Abort> {
+    let f = scan_font_ident(st)?;
+    Ok((f, st.fonts.layout_engine_arc(f), st.fonts.font_area[f]))
 }
 
 fn graphite_engine(engine: &Option<Arc<FontEngineHandle>>) -> Option<&FontEngineHandle> {
@@ -2605,7 +2602,7 @@ fn opentype_engine(engine: &Option<Arc<FontEngineHandle>>) -> Option<&FontEngine
 fn font_query_error(
     st: &mut EngineState,
     m: i32,
-    f: i32,
+    f: FontId,
     msg: &str,
     fallback: i32,
 ) -> Result<(), Abort> {
@@ -2723,8 +2720,8 @@ fn fetch_token_list(st: &mut EngineState, m: i32, level: u8) -> Result<(), Abort
         st.scanner.cur_val_level = TOK_VAL;
     } else {
         back_input(st)?;
-        scan_font_ident(st)?;
-        set_cur_val(st, FONT_ID_BASE + st.scanner.cur_val, IDENT_VAL);
+        let f = scan_font_ident(st)?;
+        set_cur_val(st, f.id_loc(), IDENT_VAL);
     }
     Ok(())
 }
@@ -2946,15 +2943,14 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
             };
         }
         XETEX_FIRST_CHAR_CODE | XETEX_LAST_CHAR_CODE => {
-            scan_font_ident(st)?;
-            let f = st.scanner.cur_val;
+            let f = scan_font_ident(st)?;
             let first = m == XETEX_FIRST_CHAR_CODE;
             st.scanner.cur_val = if st.fonts.is_native_font(f) {
                 st.fonts.get_font_char_range(f, first as i32)?
             } else if first {
-                st.fonts.font_bc[f as usize] as i32
+                st.fonts.font_bc[f] as i32
             } else {
-                st.fonts.font_ec[f as usize] as i32
+                st.fonts.font_ec[f] as i32
             };
         }
         PDF_LAST_X_POS_CODE => st.scanner.cur_val = st.shipout.pdf_last_x_pos,
@@ -3027,18 +3023,18 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                     st.scanner.cur_val = 0;
                 } else {
                     scan_int(st)?;
-                    st.scanner.cur_val = st.fonts.get_glyph_bounds(f, edge, st.scanner.cur_val)?;
+                    let bound = st.fonts.get_glyph_bounds(f, edge, st.scanner.cur_val)?;
+                    st.scanner.set_cur_dimen(bound);
                 }
             } else {
                 font_query_error(st, m, f, "; not a native platform font", 0)?;
             }
         }
         FONT_CHAR_WD_CODE | FONT_CHAR_HT_CODE | FONT_CHAR_DP_CODE | FONT_CHAR_IC_CODE => {
-            scan_font_ident(st)?;
-            let f = st.scanner.cur_val;
+            let f = scan_font_ident(st)?;
             scan_usv_num(st)?;
             let c = st.scanner.cur_val;
-            st.scanner.cur_val = if st.fonts.is_native_font(f) {
+            let d = if st.fonts.is_native_font(f) {
                 let fonts = &st.fonts;
                 match m {
                     FONT_CHAR_WD_CODE => fonts.native_char_width(f, c),
@@ -3046,12 +3042,9 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                     FONT_CHAR_DP_CODE => fonts.native_char_depth(f, c),
                     _ => fonts.native_char_italic_correction(f, c),
                 }?
-            } else if st.fonts.font_bc[f as usize] as i32 <= c
-                && st.fonts.font_ec[f as usize] as i32 >= c
-            {
-                let fu = f as usize;
+            } else if st.fonts.font_bc[f] as i32 <= c && st.fonts.font_ec[f] as i32 >= c {
                 let ec = st.fonts.effective_char(f, c as u16);
-                let info = st.fonts.font_info_b16(st.fonts.char_base[fu] + ec);
+                let info = st.fonts.char_info(f, ec);
                 let fonts = &st.fonts;
                 match m {
                     FONT_CHAR_WD_CODE => fonts.char_width(f, info),
@@ -3060,8 +3053,9 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                     _ => fonts.char_italic(f, info),
                 }
             } else {
-                0
+                Scaled::ZERO
             };
+            st.scanner.set_cur_dimen(d);
         }
         PAR_SHAPE_LENGTH_CODE | PAR_SHAPE_INDENT_CODE | PAR_SHAPE_DIMEN_CODE => {
             let mut q = m - PAR_SHAPE_LENGTH_CODE;
@@ -3073,25 +3067,26 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                         st.scanner.cur_val = (st.scanner.cur_val + q) / 2;
                     }
                     let line = st.scanner.cur_val.min(shape.lines(&st.mem));
-                    st.scanner.cur_val = if q == 0 {
+                    let d = if q == 0 {
                         shape.line_width(&st.mem, line)
                     } else {
                         shape.indent(&st.mem, line)
                     };
+                    st.scanner.set_cur_dimen(d);
                 }
                 _ => st.scanner.cur_val = 0,
             }
         }
         GLUE_STRETCH_CODE | GLUE_SHRINK_CODE => {
             scan_normal_glue(st)?;
-            let q = st.scanner.cur_val;
-            let spec = glue_spec(q);
-            st.scanner.cur_val = if m == GLUE_STRETCH_CODE {
-                spec.stretch(&st.mem).0
+            let spec = glue_spec(st.scanner.cur_val);
+            let d = if m == GLUE_STRETCH_CODE {
+                spec.stretch(&st.mem)
             } else {
-                spec.shrink(&st.mem).0
+                spec.shrink(&st.mem)
             };
-            st.mem.delete_glue_ref(glue_spec(q));
+            st.scanner.set_cur_dimen(d);
+            st.mem.delete_glue_ref(spec);
         }
         _ => {}
     }
@@ -3132,7 +3127,7 @@ fn fetch_last_node_item(st: &mut EngineState, m: i32) {
         }
         Some(node) if st.input.cur_list.mode != 0 => match (level, node) {
             (INT_VAL, Ok(AnyNode::Penalty(p))) => st.scanner.cur_val = p.penalty(&st.mem),
-            (DIMEN_VAL, Ok(AnyNode::Kern(k))) => st.scanner.cur_val = k.width(&st.mem).0,
+            (DIMEN_VAL, Ok(AnyNode::Kern(k))) => st.scanner.set_cur_dimen(k.width(&st.mem)),
             (GLUE_VAL, Ok(AnyNode::Glue(g))) => {
                 st.scanner.cur_val = g.glue_ptr(&st.mem).ptr().0;
                 if g.subtype(&st.mem) == MU_GLUE {
@@ -3149,7 +3144,7 @@ fn fetch_last_node_item(st: &mut EngineState, m: i32) {
                 }
                 match level {
                     INT_VAL => st.scanner.cur_val = st.shipout.last_penalty,
-                    DIMEN_VAL => st.scanner.cur_val = st.shipout.last_kern,
+                    DIMEN_VAL => st.scanner.set_cur_dimen(st.shipout.last_kern),
                     GLUE_VAL => {
                         if let Some(spec) = st.shipout.last_glue {
                             st.scanner.cur_val = spec.ptr().0;
@@ -3225,14 +3220,14 @@ pub(crate) fn scan_something_internal(
                     && !st.shipout.output_active
                 {
                     if m == 0 {
-                        MAX_HALFWORD
+                        MAX_DIMEN
                     } else {
-                        0
+                        Scaled::ZERO
                     }
                 } else {
                     st.shipout.page_so_far[m as usize]
                 };
-                set_cur_val(st, v, DIMEN_VAL);
+                set_cur_val(st, v.0, DIMEN_VAL);
             }
             SET_SHAPE => {
                 if m > LOCAL_BASE + LOCAL_PAR_SHAPE {
@@ -3252,7 +3247,7 @@ pub(crate) fn scan_something_internal(
             SET_BOX_DIMEN => {
                 scan_register_num(st)?;
                 let v = match fetch_box(st, st.scanner.cur_val) {
-                    None => Scaled(0),
+                    None => Scaled::ZERO,
                     Some(b) if m == WIDTH_OFFSET => b.width(&st.mem),
                     Some(b) if m == DEPTH_OFFSET => b.depth(&st.mem),
                     Some(b) => b.height(&st.mem),
@@ -3262,15 +3257,14 @@ pub(crate) fn scan_something_internal(
             CHAR_GIVEN | MATH_GIVEN | XETEX_MATH_GIVEN => set_cur_val(st, m, INT_VAL),
             ASSIGN_FONT_DIMEN => {
                 find_font_dimen(st, false)?;
-                st.fonts.set_font_info_sc(st.fonts.fmem_ptr, 0);
-                set_cur_val(st, st.fonts.font_info_sc(st.scanner.cur_val), DIMEN_VAL);
+                st.fonts.set_font_info_sc(st.fonts.fmem_ptr, Scaled::ZERO);
+                set_cur_val(st, st.fonts.font_info_sc(st.scanner.cur_val).0, DIMEN_VAL);
             }
             ASSIGN_FONT_INT => {
-                scan_font_ident(st)?;
-                let f = st.scanner.cur_val;
+                let f = scan_font_ident(st)?;
                 match m {
-                    0 => set_cur_val(st, st.fonts.hyphen_char[f as usize], INT_VAL),
-                    1 => set_cur_val(st, st.fonts.skew_char[f as usize], INT_VAL),
+                    0 => set_cur_val(st, st.fonts.hyphen_char[f], INT_VAL),
+                    1 => set_cur_val(st, st.fonts.skew_char[f], INT_VAL),
                     _ => {
                         if st.fonts.is_native_font(f) {
                             scan_glyph_number(st, f)?;
@@ -3280,10 +3274,10 @@ pub(crate) fn scan_something_internal(
                         let code = st.scanner.cur_val as u32;
                         match m {
                             LP_CODE_BASE => {
-                                set_cur_val(st, get_cp_code(f, code, LEFT_SIDE), INT_VAL)
+                                set_cur_val(st, get_cp_code(f.0, code, LEFT_SIDE), INT_VAL)
                             }
                             RP_CODE_BASE => {
-                                set_cur_val(st, get_cp_code(f, code, RIGHT_SIDE), INT_VAL)
+                                set_cur_val(st, get_cp_code(f.0, code, RIGHT_SIDE), INT_VAL)
                             }
                             _ => {}
                         }
@@ -3355,7 +3349,8 @@ pub(crate) fn scan_something_internal(
 
     while st.scanner.cur_val_level > level {
         if st.scanner.cur_val_level == GLUE_VAL {
-            st.scanner.cur_val = st.scanner.cur_glue().width(&st.mem).0;
+            let width = st.scanner.cur_glue().width(&st.mem);
+            st.scanner.set_cur_dimen(width);
         } else if st.scanner.cur_val_level == MU_VAL {
             mu_error(st)?;
         }
@@ -3376,15 +3371,16 @@ pub(crate) fn scan_something_internal(
     Ok(())
 }
 
-pub(crate) fn scan_font_ident(st: &mut EngineState) -> Result<(), Abort> {
+/// Scans a font identifier into `cur_val` and returns it.
+pub(crate) fn scan_font_ident(st: &mut EngineState) -> Result<FontId, Abort> {
     get_x_non_blank(st)?;
     let f = match st.scanner.cur_cmd {
         DEF_FONT => st.eqtb.cur_font(),
-        SET_FONT => st.scanner.cur_chr,
+        SET_FONT => FontId(st.scanner.cur_chr),
         DEF_FAMILY => {
             let m = st.scanner.cur_chr;
             scan_math_fam_int(st)?;
-            st.eqtb.equiv(m + st.scanner.cur_val)
+            FontId(st.eqtb.equiv(m + st.scanner.cur_val))
         }
         _ => {
             print_err(st, "Missing font identifier");
@@ -3393,33 +3389,31 @@ pub(crate) fn scan_font_ident(st: &mut EngineState) -> Result<(), Abort> {
                 r"current meaning has been defined by \font.",
             ]);
             back_error(st)?;
-            FONT_BASE
+            NULL_FONT
         }
     };
-    st.scanner.cur_val = f;
-    Ok(())
+    st.scanner.cur_val = f.0;
+    Ok(f)
 }
 
 pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<(), Abort> {
     scan_int(st)?;
     let n = st.scanner.cur_val;
-    scan_font_ident(st)?;
-    let f = st.scanner.cur_val;
-    let fu = f as usize;
+    let f = scan_font_ident(st)?;
 
     if n <= 0 {
         st.scanner.cur_val = st.fonts.fmem_ptr;
     } else {
         if writing
             && (SPACE_CODE..=SPACE_SHRINK_CODE).contains(&n)
-            && st.fonts.font_glue[fu] != TEX_NULL
+            && st.fonts.font_glue[f] != TEX_NULL
         {
-            st.mem.delete_glue_ref(glue_spec(st.fonts.font_glue[fu]));
-            st.fonts.font_glue[fu] = TEX_NULL;
+            st.mem.delete_glue_ref(glue_spec(st.fonts.font_glue[f]));
+            st.fonts.font_glue[f] = TEX_NULL;
         }
 
-        if n <= st.fonts.font_params[fu] {
-            st.scanner.cur_val = n + st.fonts.param_base[fu];
+        if n <= st.fonts.font_params[f] {
+            st.scanner.cur_val = n + st.fonts.param_base[f];
         } else if f < st.fonts.font_ptr {
             st.scanner.cur_val = st.fonts.fmem_ptr;
         } else {
@@ -3431,10 +3425,10 @@ pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<(),
                         n: st.fonts.font_mem_size,
                     });
                 }
-                st.fonts.set_font_info_sc(st.fonts.fmem_ptr, 0);
+                st.fonts.set_font_info_sc(st.fonts.fmem_ptr, Scaled::ZERO);
                 st.fonts.fmem_ptr += 1;
-                st.fonts.font_params[fu] += 1;
-                if n == st.fonts.font_params[fu] {
+                st.fonts.font_params[f] += 1;
+                if n == st.fonts.font_params[f] {
                     break;
                 }
             }
@@ -3444,9 +3438,9 @@ pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<(),
 
     if st.scanner.cur_val == st.fonts.fmem_ptr {
         error_here_with_diagnostic(st, "Font ");
-        crate::output::print_esc(st, st.eqtb.hash_s1(FONT_ID_BASE + f));
+        crate::output::print_esc(st, st.eqtb.font_id_text(f));
         print(st, " has only ");
-        print_int(st, st.fonts.font_params[fu]);
+        print_int(st, st.fonts.font_params[f]);
         print(st, " fontdimen parameters");
         capture_to_diagnostic(st, None);
         st.errors.help(&[
@@ -3458,7 +3452,7 @@ pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<(),
     Ok(())
 }
 
-pub(crate) fn scan_glyph_number(st: &mut EngineState, f: i32) -> Result<(), Abort> {
+pub(crate) fn scan_glyph_number(st: &mut EngineState, f: FontId) -> Result<(), Abort> {
     if scan_keyword(st, "/")? {
         crate::io::scan_and_pack_name(st)?;
         let name = st.input.name_of_file_bytes();

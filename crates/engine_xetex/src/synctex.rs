@@ -15,11 +15,11 @@ const PREVIEW_HANDLE: usize = usize::MAX;
 
 impl ShipoutState {
     fn synctex_curh(&self) -> i32 {
-        self.cur_h + ONE_INCH
+        (self.cur_h + ONE_INCH).0
     }
 
     fn synctex_curv(&self) -> i32 {
-        self.cur_v + ONE_INCH
+        (self.cur_v + ONE_INCH).0
     }
 }
 
@@ -475,7 +475,7 @@ pub fn synctex_horizontal_rule_or_glue(st: &mut EngineState, p: MemPtr) {
             'r',
             tag,
             line,
-            &[shipout.rule_wd, shipout.rule_ht, shipout.rule_dp],
+            &[shipout.rule_wd.0, shipout.rule_ht.0, shipout.rule_dp.0],
         ),
         Ok(AnyNode::Glue(_)) => synctex.record_node('g', tag, line, &[]),
         Ok(AnyNode::Kern(k)) => synctex.record_kern(&st.mem, k),

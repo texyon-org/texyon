@@ -13,17 +13,24 @@ pub const CHAR_CLASS_LIMIT: i32 = 4096;
 pub const CS_TOKEN_FLAG: i32 = 0x1FFF_FFF;
 
 pub const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
+/// `max_dimen`, the largest legal dimension.
+pub const MAX_DIMEN: crate::units::Scaled = crate::units::Scaled(0x3FFF_FFFF);
 pub const MIN_HALFWORD: i32 = -0x0FFF_FFFF;
 pub const TEX_NULL: i32 = MIN_HALFWORD;
 pub const NULL_FLAG: i32 = -0x4000_0000;
-pub const IGNORE_DEPTH: i32 = -65_536_000;
+pub const IGNORE_DEPTH: crate::units::Scaled = crate::units::Scaled(-65_536_000);
 pub const TEX_INFINITY: i32 = 0x7FFF_FFFF;
+/// `TeX_infinity` as a length, for positions that are not set.
+pub const INFINITE_DIMEN: crate::units::Scaled = crate::units::Scaled(TEX_INFINITY);
 pub const INF_BAD: i32 = 10_000;
 pub const INF_PENALTY: i32 = INF_BAD;
 pub const EJECT_PENALTY: i32 = -INF_PENALTY;
 pub const AWFUL_BAD: i32 = MAX_HALFWORD;
 pub const MEM_TOP: i32 = 4_999_999;
 pub const FONT_BASE: i32 = 0;
+pub const NULL_FONT: crate::units::FontId = crate::units::FontId(FONT_BASE);
+/// The `\font` size that means the design size, `scaled 1000`.
+pub const DESIGN_SIZE: crate::units::Scaled = crate::units::Scaled(-1000);
 pub const MAX_FONT_MAX: i32 = 9_000;
 pub const NON_ADDRESS: i32 = 0;
 pub const MIN_TRIE_OP: i32 = 0;

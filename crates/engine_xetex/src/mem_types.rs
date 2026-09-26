@@ -110,6 +110,15 @@ pub struct ListStateRecord {
 const _: () = assert!(size_of::<ListStateRecord>() == 32);
 
 impl ListStateRecord {
+    /// `prev_depth`, the aux word of vertical modes.
+    #[inline]
+    pub fn prev_depth(&self) -> crate::units::Scaled {
+        crate::units::Scaled(self.aux_s1())
+    }
+    #[inline]
+    pub fn set_prev_depth(&mut self, d: crate::units::Scaled) {
+        self.set_aux_s1(d.0);
+    }
     #[inline]
     pub fn aux_s0(&self) -> i32 {
         self.aux.b32().s0

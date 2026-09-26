@@ -560,7 +560,16 @@ impl RuleDimen {
             RuleDimen::Set(v) => v.0,
         }
     }
+
+    /// The stored word as a length, `RUNNING` for a running dimension.
+    #[inline]
+    pub fn to_scaled(self) -> Scaled {
+        Scaled(self.raw())
+    }
 }
+
+/// A running rule dimension seen as a length, as TeX's arithmetic sees it.
+pub(crate) const RUNNING: Scaled = Scaled(NULL_FLAG);
 
 impl NodePtr<RuleNode> {
     fields! {
@@ -733,15 +742,15 @@ impl AnyNode {
 
     /// The +1 width word of the kinds that add their width to a line, else 0.
     #[inline]
-    pub fn hlist_width(self, mem: &MemState) -> i32 {
+    pub fn hlist_width(self, mem: &MemState) -> Scaled {
         match self {
-            AnyNode::HList(p) => p.width(mem).0,
-            AnyNode::VList(p) => p.width(mem).0,
-            AnyNode::Rule(p) => p.width(mem).raw(),
-            AnyNode::Kern(p) => p.width(mem).0,
-            AnyNode::Math(p) => p.width(mem).0,
-            AnyNode::Whatsit(p) => p.width(mem).0,
-            _ => 0,
+            AnyNode::HList(p) => p.width(mem),
+            AnyNode::VList(p) => p.width(mem),
+            AnyNode::Rule(p) => p.width(mem).to_scaled(),
+            AnyNode::Kern(p) => p.width(mem),
+            AnyNode::Math(p) => p.width(mem),
+            AnyNode::Whatsit(p) => p.width(mem),
+            _ => Scaled::ZERO,
         }
     }
 }
@@ -965,7 +974,7 @@ impl NodePtr<Noad> {
         /// `mlist_to_hlist` has converted the nucleus.
         new_hlist / set_new_hlist: MemPtr = b32s1 @ 1;
         /// A fraction's rule thickness, in the nucleus type word.
-        thickness / set_thickness: i32 = b32s1 @ 1;
+        thickness / set_thickness: Scaled = b32s1 @ 1;
     }
 
     /// The empty fields and normal subtype of a fresh noad.
@@ -1298,20 +1307,20 @@ impl NodePtr<ParShapeNode> {
     }
 
     #[inline]
-    pub fn indent(self, mem: &MemState, line: i32) -> i32 {
-        mem.b32s1(self.idx.0 + 2 * line - 1)
+    pub fn indent(self, mem: &MemState, line: i32) -> Scaled {
+        Scaled(mem.b32s1(self.idx.0 + 2 * line - 1))
     }
     #[inline]
-    pub fn set_indent(self, mem: &mut MemState, line: i32, v: i32) {
-        mem.set_b32s1(self.idx.0 + 2 * line - 1, v);
+    pub fn set_indent(self, mem: &mut MemState, line: i32, v: Scaled) {
+        mem.set_b32s1(self.idx.0 + 2 * line - 1, v.0);
     }
     #[inline]
-    pub fn line_width(self, mem: &MemState, line: i32) -> i32 {
-        mem.b32s1(self.idx.0 + 2 * line)
+    pub fn line_width(self, mem: &MemState, line: i32) -> Scaled {
+        Scaled(mem.b32s1(self.idx.0 + 2 * line))
     }
     #[inline]
-    pub fn set_line_width(self, mem: &mut MemState, line: i32, v: i32) {
-        mem.set_b32s1(self.idx.0 + 2 * line, v);
+    pub fn set_line_width(self, mem: &mut MemState, line: i32, v: Scaled) {
+        mem.set_b32s1(self.idx.0 + 2 * line, v.0);
     }
 }
 
@@ -1510,24 +1519,24 @@ impl NodePtr<WhatsitNode> {
 
     /// The picture transform `[a, b, c, d, x, y]`.
     #[inline]
-    pub fn pic_transform(self, mem: &MemState) -> [i32; 6] {
+    pub fn pic_transform(self, mem: &MemState) -> [Scaled; 6] {
         std::array::from_fn(|k| {
             let q = self.idx.0 + 5 + k as i32 / 2;
-            if k % 2 == 0 {
+            Scaled(if k % 2 == 0 {
                 mem.b32s0(q)
             } else {
                 mem.b32s1(q)
-            }
+            })
         })
     }
     #[inline]
-    pub fn set_pic_transform(self, mem: &mut MemState, t: [i32; 6]) {
+    pub fn set_pic_transform(self, mem: &mut MemState, t: [Scaled; 6]) {
         for (k, v) in (0..).zip(t) {
             let q = self.idx.0 + 5 + k / 2;
             if k % 2 == 0 {
-                mem.set_b32s0(q, v);
+                mem.set_b32s0(q, v.0);
             } else {
-                mem.set_b32s1(q, v);
+                mem.set_b32s1(q, v.0);
             }
         }
     }

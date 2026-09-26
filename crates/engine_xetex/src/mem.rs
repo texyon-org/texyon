@@ -371,10 +371,10 @@ impl MemState {
         Ok(p)
     }
 
-    pub fn new_math(&mut self, w: i32, s: u16) -> Result<NodePtr<MathNode>, Abort> {
+    pub fn new_math(&mut self, w: Scaled, s: u16) -> Result<NodePtr<MathNode>, Abort> {
         let p = NodePtr::<MathNode>::alloc(self)?;
         p.set_subtype(self, s);
-        p.set_width(self, Scaled(w));
+        p.set_width(self, w);
         Ok(p)
     }
 
@@ -420,10 +420,10 @@ impl MemState {
         Ok(p)
     }
 
-    pub fn new_kern(&mut self, w: i32) -> Result<NodePtr<KernNode>, Abort> {
+    pub fn new_kern(&mut self, w: Scaled) -> Result<NodePtr<KernNode>, Abort> {
         let p = NodePtr::<KernNode>::alloc(self)?;
         p.set_subtype(self, NORMAL);
-        p.set_width(self, Scaled(w));
+        p.set_width(self, w);
         Ok(p)
     }
 
@@ -457,10 +457,14 @@ impl MemState {
         Ok(p)
     }
 
-    pub fn new_margin_kern(&mut self, w: i32, side: i16) -> Result<NodePtr<MarginKernNode>, Abort> {
+    pub fn new_margin_kern(
+        &mut self,
+        w: Scaled,
+        side: i16,
+    ) -> Result<NodePtr<MarginKernNode>, Abort> {
         let k = NodePtr::<MarginKernNode>::alloc(self)?;
         k.set_subtype(self, side as u16);
-        k.set_width(self, Scaled(w));
+        k.set_width(self, w);
         Ok(k)
     }
 

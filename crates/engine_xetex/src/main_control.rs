@@ -20,10 +20,10 @@ use crate::cmd::{
 use crate::consts::{
     ACC_KERN, ACTIVE_MATH_CHAR, A_LEADERS, BEGIN_M_CODE, BIGGEST_CHAR, BIGGEST_USV, BOX_BASE,
     BOX_NODE_SIZE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, COND_MATH_GLUE, COUNT_BASE, CS_TOKEN_FLAG,
-    CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, DIMEN_PAR_BOX_MAX_DEPTH, DIMEN_PAR_DISPLAY_INDENT,
-    DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DIMEN_PAR_OVERFULL_RULE, DIMEN_PAR_PAR_INDENT,
-    DIMEN_PAR_SPLIT_MAX_DEPTH, DLIST, EMPTY, END_M_CODE, ETEX_PEN_BASE, EXPLICIT, FONT_BASE,
-    FONT_ID_BASE, FROZEN_CR, FROZEN_END_GROUP, FROZEN_END_TEMPLATE, FROZEN_RIGHT, GLUE_BASE,
+    CUR_FONT_LOC, DEL_CODE_BASE, DESIGN_SIZE, DIMEN_BASE, DIMEN_PAR_BOX_MAX_DEPTH,
+    DIMEN_PAR_DISPLAY_INDENT, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DIMEN_PAR_OVERFULL_RULE,
+    DIMEN_PAR_PAR_INDENT, DIMEN_PAR_SPLIT_MAX_DEPTH, DLIST, EMPTY, END_M_CODE, ETEX_PEN_BASE,
+    EXPLICIT, FONT_BASE, FROZEN_CR, FROZEN_END_GROUP, FROZEN_END_TEMPLATE, FROZEN_RIGHT, GLUE_BASE,
     GLUE_PAR_ABOVE_DISPLAY_SKIP, GLUE_PAR_BELOW_DISPLAY_SKIP, GLUE_PAR_PAR_SKIP,
     GLUE_PAR_SPACE_SKIP, GLUE_PAR_SPLIT_TOP_SKIP, GLUE_PAR_TAB_SKIP, GLUE_PAR_XSPACE_SKIP,
     HASH_BASE, HMODE, IGNORE_DEPTH, INT_BASE, INT_PAR_FLOATING_PENALTY, INT_PAR_GLOBAL_DEFS,
@@ -33,9 +33,9 @@ use crate::consts::{
     INT_PAR_XETEX_INTERWORD_SPACE_SHAPING, INT_PAR_XETEX_INTER_CHAR_TOKENS, INT_PAR_XETEX_UPWARDS,
     INT_PAR_XETEX_USE_GLYPH_METRICS, LEFT_SIDE, LOCAL_BASE, LOCAL_EVERY_CR, LOCAL_EVERY_HBOX,
     LOCAL_EVERY_JOB, LOCAL_EVERY_PAR, LOCAL_EVERY_VBOX, LOCAL_OUTPUT_ROUTINE, LOCAL_PAR_SHAPE,
-    LOCAL_XETEX_INTER_CHAR_TOKS, MARGIN_KERN_NODE_SIZE, MATH_CODE_BASE, MAX_HALFWORD, MMODE,
-    MU_GLUE, MU_SKIP_BASE, NATIVE_NODE_SIZE, NOAD_SIZE, NON_ADDRESS, NORMAL, NULL_CS, NULL_FLAG,
-    PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE, SELECTOR_NEW_STRING, SELECTOR_NO_PRINT,
+    LOCAL_XETEX_INTER_CHAR_TOKS, MARGIN_KERN_NODE_SIZE, MATH_CODE_BASE, MAX_DIMEN, MAX_HALFWORD,
+    MMODE, MU_GLUE, MU_SKIP_BASE, NATIVE_NODE_SIZE, NOAD_SIZE, NON_ADDRESS, NORMAL, NULL_CS,
+    NULL_FLAG, PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE, SELECTOR_NEW_STRING, SELECTOR_NO_PRINT,
     SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT,
     SUB_BOX, SUB_MLIST, TEX_INFINITY, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, TOO_BIG_USV,
     UNDEFINED_PRIMITIVE, VMODE,
@@ -59,7 +59,7 @@ use crate::mem_types::ListStateRecord;
 use crate::node::{
     AdjustNode, AlignColumn, AlignRecord, AlignStackNode, AnyBox, AnyNode, BoxOrRule, CharNode,
     DiscNode, GlueNode, GlueSpecNode, InsNode, LigItem, MarkNode, MathField, NodePtr, ParShapeNode,
-    PenaltiesNode, RuleDimen, SaNode, SpanNode, UnsetNode, WhatsitNode, WhatsitSubtype,
+    PenaltiesNode, RuleDimen, SaNode, SpanNode, UnsetNode, WhatsitNode, WhatsitSubtype, RUNNING,
 };
 use crate::packaging::ADDITIONAL;
 use crate::scan::{
@@ -190,7 +190,7 @@ pub(crate) fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
     let o = if in_display {
         st.eqtb.dimen_par(DIMEN_PAR_DISPLAY_INDENT)
     } else {
-        0
+        Scaled::ZERO
     };
 
     let mut column = st.mem.first_column::<AlignRecord>();
@@ -199,8 +199,8 @@ pub(crate) fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
         st.mem.flush_list(u_part);
         st.mem.flush_list(v_part);
         let next = q.next_column(&st.mem);
-        if q.width(&st.mem) == Scaled(NULL_FLAG) {
-            q.set_width(&mut st.mem, Scaled(0));
+        if q.width(&st.mem) == RUNNING {
+            q.set_width(&mut st.mem, Scaled::ZERO);
             let glue = q.tab_skip(&st.mem);
             let spec = glue.glue_ptr(&st.mem);
             if spec != ZERO_GLUE {
@@ -220,24 +220,24 @@ pub(crate) fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
 
     st.save_stack.save_ptr -= 2;
     st.scanner.pack_begin_line = -st.input.cur_list.mode_line;
-    let spec_size = st.save_stack.saved(1);
+    let spec_size = Scaled(st.save_stack.saved(1));
     let spec_mode = st.save_stack.saved(0) as i16;
     let head = ALIGN_HEAD.link(&st.mem);
     let p = if st.input.cur_list.mode == INNER_VMODE {
         let rule_save = st.eqtb.dimen_par(DIMEN_PAR_OVERFULL_RULE);
-        st.eqtb.set_dimen_par(DIMEN_PAR_OVERFULL_RULE, 0);
+        st.eqtb.set_dimen_par(DIMEN_PAR_OVERFULL_RULE, Scaled::ZERO);
         let packed = crate::packaging::hpack(st, head, spec_size, spec_mode)?;
         st.eqtb.set_dimen_par(DIMEN_PAR_OVERFULL_RULE, rule_save);
         packed
     } else {
         st.mem.for_each_preamble_column(|mem, q| {
             q.set_height(mem, q.width(mem));
-            q.set_width(mem, Scaled(0));
+            q.set_width(mem, Scaled::ZERO);
         });
-        let packed = crate::packaging::vpackage(st, head, spec_size, spec_mode, MAX_HALFWORD)?;
+        let packed = crate::packaging::vpackage(st, head, spec_size, spec_mode, MAX_DIMEN)?;
         st.mem.for_each_preamble_column(|mem, q| {
             q.set_width(mem, q.height(mem));
-            q.set_height(mem, Scaled(0));
+            q.set_height(mem, Scaled::ZERO);
         });
         packed
     };
@@ -270,7 +270,7 @@ pub(crate) fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                 row.set_glue_order(&mut st.mem, order);
                 row.set_glue_sign(&mut st.mem, sign);
                 row.set_glue_set(&mut st.mem, set);
-                row.set_shift_amount(&mut st.mem, Scaled(o));
+                row.set_shift_amount(&mut st.mem, o);
 
                 let mut r = row.list_ptr(&st.mem).link(&st.mem);
                 let mut proto_column =
@@ -283,7 +283,7 @@ pub(crate) fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                     };
                     let n = col.subtype(&st.mem);
                     let w = proto.width(&st.mem);
-                    let mut t = w.0;
+                    let mut t = w;
                     let mut u = HOLD_HEAD;
                     col.set_subtype(&mut st.mem, 0);
                     for _ in 0..n {
@@ -292,21 +292,21 @@ pub(crate) fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                         u.set_link(&mut st.mem, g.ptr());
                         u = g.ptr();
                         g.set_subtype(&mut st.mem, TAB_SKIP_SUBTYPE);
-                        t += spec.width(&st.mem).0;
+                        t += spec.width(&st.mem);
                         match p.glue_sign(&st.mem) {
                             GlueSign::Stretching
                                 if spec.stretch_order(&st.mem) == p.glue_order(&st.mem) =>
                             {
-                                t += crate::scaled_math::tex_round(
-                                    p.glue_set(&st.mem) * spec.stretch(&st.mem).0 as f64,
-                                );
+                                t += Scaled(crate::scaled_math::tex_round(
+                                    p.glue_set(&st.mem) * f64::from(spec.stretch(&st.mem)),
+                                ));
                             }
                             GlueSign::Shrinking
                                 if spec.shrink_order(&st.mem) == p.glue_order(&st.mem) =>
                             {
-                                t -= crate::scaled_math::tex_round(
-                                    p.glue_set(&st.mem) * spec.shrink(&st.mem).0 as f64,
-                                );
+                                t -= Scaled(crate::scaled_math::tex_round(
+                                    p.glue_set(&st.mem) * f64::from(spec.shrink(&st.mem)),
+                                ));
                             }
                             _ => {}
                         }
@@ -318,7 +318,7 @@ pub(crate) fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                         u.set_link(&mut st.mem, nb.ptr());
                         u = nb.ptr();
                         let span_w = proto.width(&st.mem);
-                        t += span_w.0;
+                        t += span_w;
                         if st.input.cur_list.mode == INNER_VMODE {
                             nb.set_width(&mut st.mem, span_w);
                         } else {
@@ -329,14 +329,14 @@ pub(crate) fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                         let (h, d) = (row.height(&st.mem), row.depth(&st.mem));
                         col.set_height(&mut st.mem, h);
                         col.set_depth(&mut st.mem, d);
-                        let glue = st.mem.unset_glue(col, t, col.width(&st.mem).0);
+                        let glue = st.mem.unset_glue(col, t, col.width(&st.mem));
                         let b = col.into_hlist(&mut st.mem);
                         b.set_width(&mut st.mem, w);
                         (AnyBox::HList(b), glue)
                     } else {
                         let width = row.width(&st.mem);
                         col.set_width(&mut st.mem, width);
-                        let glue = st.mem.unset_glue(col, t, col.height(&st.mem).0);
+                        let glue = st.mem.unset_glue(col, t, col.height(&st.mem));
                         let b = col.into_vlist(&mut st.mem);
                         b.set_height(&mut st.mem, w);
                         (AnyBox::VList(b), glue)
@@ -345,7 +345,7 @@ pub(crate) fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                     b.set_glue_sign(&mut st.mem, sign);
                     b.set_glue_order(&mut st.mem, order);
                     b.set_glue_set(&mut st.mem, set);
-                    b.set_shift_amount(&mut st.mem, Scaled(0));
+                    b.set_shift_amount(&mut st.mem, Scaled::ZERO);
                     if u != HOLD_HEAD {
                         let (rest, spanned) = (r.link(&st.mem), HOLD_HEAD.link(&st.mem));
                         u.set_link(&mut st.mem, rest);
@@ -370,11 +370,11 @@ pub(crate) fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                 if rule.depth(&st.mem) == RuleDimen::Running {
                     rule.set_depth(&mut st.mem, RuleDimen::Set(d));
                 }
-                if o != 0 {
+                if o != Scaled::ZERO {
                     let next = rule.link(&st.mem);
                     rule.set_link(&mut st.mem, MemPtr::NULL);
-                    let boxed = crate::packaging::hpack(st, rule.ptr(), 0, ADDITIONAL)?;
-                    boxed.set_shift_amount(&mut st.mem, Scaled(o));
+                    let boxed = crate::packaging::hpack(st, rule.ptr(), Scaled::ZERO, ADDITIONAL)?;
+                    boxed.set_shift_amount(&mut st.mem, o);
                     boxed.set_link(&mut st.mem, next);
                     s.set_link(&mut st.mem, boxed.ptr());
                     q = boxed.ptr();
@@ -459,13 +459,13 @@ impl MemState {
 
     /// Folds column `q`'s span widths, less its own width and tabskip, into `next`'s.
     fn merge_spans(&mut self, q: NodePtr<AlignRecord>, next: NodePtr<AlignRecord>) {
-        let t = q.width(self).0 + q.tab_skip(self).glue_ptr(self).width(self).0;
+        let t = q.width(self) + q.tab_skip(self).glue_ptr(self).width(self);
         let mut r = q.span_head().next(self);
         let mut s = END_SPAN;
         s.set_next(self, next.span_head());
         let mut n = 1;
         loop {
-            r.set_width(self, Scaled(r.width(self).0 - t));
+            r.set_width(self, r.width(self) - t);
             let u = r.next(self);
             while r.span_count(self) > n {
                 s = s.next(self);
@@ -491,27 +491,32 @@ impl MemState {
     }
 
     /// The glue setting of unset node `col`, of natural size `natural`, when set to size `t`.
-    fn unset_glue(&self, col: NodePtr<UnsetNode>, t: i32, natural: i32) -> (GlueSign, u16, f64) {
+    fn unset_glue(
+        &self,
+        col: NodePtr<UnsetNode>,
+        t: Scaled,
+        natural: Scaled,
+    ) -> (GlueSign, u16, f64) {
         if t == natural {
             return (GlueSign::Normal, NORMAL, 0.0);
         }
         if t > natural {
-            let stretch = col.glue_stretch(self).0;
-            let ratio = if stretch == 0 {
+            let stretch = col.glue_stretch(self);
+            let ratio = if stretch == Scaled::ZERO {
                 0.0
             } else {
-                (t - natural) as f64 / stretch as f64
+                f64::from(t - natural) / f64::from(stretch)
             };
             return (GlueSign::Stretching, col.glue_order(self), ratio);
         }
         let order = col.glue_sign(self);
-        let shrink = col.glue_shrink(self).0;
-        let ratio = if shrink == 0 {
+        let shrink = col.glue_shrink(self);
+        let ratio = if shrink == Scaled::ZERO {
             0.0
         } else if order == NORMAL && natural - t > shrink {
             1.0
         } else {
-            (natural - t) as f64 / shrink as f64
+            f64::from(natural - t) / f64::from(shrink)
         };
         (GlueSign::Shrinking, order, ratio)
     }
@@ -580,7 +585,7 @@ pub(crate) fn init_span(st: &mut EngineState, p: MemPtr) -> Result<(), Abort> {
     if st.input.cur_list.mode == INNER_HMODE {
         st.input.cur_list.set_aux_s0(1000);
     } else {
-        st.input.cur_list.set_aux_s1(IGNORE_DEPTH);
+        st.input.cur_list.set_prev_depth(IGNORE_DEPTH);
         normal_paragraph(st)?;
     }
     st.scanner.cur_span = p;
@@ -734,14 +739,14 @@ pub(crate) fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
         let (u, w) = if st.input.cur_list.mode == INNER_HMODE {
             st.scanner.adjust_tail = st.scanner.cur_tail;
             st.scanner.pre_adjust_tail = st.scanner.cur_pre_tail;
-            let u = crate::packaging::hpack(st, head, 0, ADDITIONAL)?;
+            let u = crate::packaging::hpack(st, head, Scaled::ZERO, ADDITIONAL)?;
             st.scanner.cur_tail = st.scanner.adjust_tail;
             st.scanner.adjust_tail = MemPtr::NULL;
             st.scanner.cur_pre_tail = st.scanner.pre_adjust_tail;
             st.scanner.pre_adjust_tail = MemPtr::NULL;
             (u, u.width(&st.mem))
         } else {
-            let u = crate::packaging::vpackage(st, head, 0, ADDITIONAL, 0)?;
+            let u = crate::packaging::vpackage(st, head, Scaled::ZERO, ADDITIONAL, Scaled::ZERO)?;
             (u, u.height(&st.mem))
         };
         let mut n: i32 = 0;
@@ -778,10 +783,10 @@ pub(crate) fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
         u.set_subtype(&mut st.mem, n as u16);
         let o = crate::packaging::glue_order(&st.scanner.total_stretch);
         u.set_glue_order(&mut st.mem, o);
-        u.set_glue_stretch(&mut st.mem, Scaled(st.scanner.total_stretch[o as usize]));
+        u.set_glue_stretch(&mut st.mem, st.scanner.total_stretch[o as usize]);
         let o = crate::packaging::glue_order(&st.scanner.total_shrink);
         u.set_glue_sign(&mut st.mem, o);
-        u.set_glue_shrink(&mut st.mem, Scaled(st.scanner.total_shrink[o as usize]));
+        u.set_glue_shrink(&mut st.mem, st.scanner.total_shrink[o as usize]);
         st.mem.pop_nest(&mut st.input);
         st.input.cur_list.tail_append(&mut st.mem, u.ptr());
         let spec = cur_align.tab_skip(&st.mem).glue_ptr(&st.mem);
@@ -817,7 +822,7 @@ fn begin_every(st: &mut EngineState, local: i32, kind: u16) -> Result<(), Abort>
 pub(crate) fn fin_row(st: &mut EngineState) -> Result<(), Abort> {
     let head = st.input.cur_list.head.link(&st.mem);
     let p = if st.input.cur_list.mode == INNER_HMODE {
-        let row = crate::packaging::hpack(st, head, 0, ADDITIONAL)?;
+        let row = crate::packaging::hpack(st, head, Scaled::ZERO, ADDITIONAL)?;
         st.mem.pop_nest(&mut st.input);
         if st.scanner.cur_pre_head != st.scanner.cur_pre_tail {
             append_list(st, st.scanner.cur_pre_head, st.scanner.cur_pre_tail);
@@ -830,7 +835,7 @@ pub(crate) fn fin_row(st: &mut EngineState) -> Result<(), Abort> {
         }
         row
     } else {
-        let row = crate::packaging::vpackage(st, head, 0, ADDITIONAL, MAX_HALFWORD)?;
+        let row = crate::packaging::vpackage(st, head, Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
         st.mem.pop_nest(&mut st.input);
         st.input.cur_list.tail_append(&mut st.mem, row.ptr());
         st.input.cur_list.set_aux_s0(1000);
@@ -867,8 +872,8 @@ pub(crate) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
     crate::mem::push_nest(st)?;
     if st.input.cur_list.mode == MMODE {
         st.input.cur_list.mode = INNER_VMODE;
-        let prev_depth = st.input.nest[(st.input.nest_ptr - 2) as usize].aux_s1();
-        st.input.cur_list.set_aux_s1(prev_depth);
+        let prev_depth = st.input.nest[(st.input.nest_ptr - 2) as usize].prev_depth();
+        st.input.cur_list.set_prev_depth(prev_depth);
     } else if st.input.cur_list.mode > 0 {
         st.input.cur_list.mode = -st.input.cur_list.mode;
     }
@@ -1025,7 +1030,7 @@ pub(crate) fn its_all_over(st: &mut EngineState) -> Result<bool, Abort> {
     crate::input::back_input(st)?;
     let b = st.mem.new_null_box()?;
     st.input.cur_list.tail_append(&mut st.mem, b.ptr());
-    b.set_width(&mut st.mem, Scaled(st.eqtb.dimen_par(DIMEN_PAR_HSIZE)));
+    b.set_width(&mut st.mem, st.eqtb.dimen_par(DIMEN_PAR_HSIZE));
     let g = st.mem.new_glue(FILL_GLUE)?;
     st.input.cur_list.tail_append(&mut st.mem, g.ptr());
     let p = st.mem.new_penalty(NULL_FLAG)?;
@@ -1039,7 +1044,7 @@ pub(crate) fn indent_in_hmode(st: &mut EngineState) -> Result<(), Abort> {
         return Ok(());
     }
     let b = st.mem.new_null_box()?;
-    b.set_width(&mut st.mem, Scaled(st.eqtb.dimen_par(DIMEN_PAR_PAR_INDENT)));
+    b.set_width(&mut st.mem, st.eqtb.dimen_par(DIMEN_PAR_PAR_INDENT));
     let p = if st.input.cur_list.mode.abs() == HMODE {
         st.input.cur_list.set_aux_s0(1000);
         b.ptr()
@@ -1101,7 +1106,7 @@ pub(crate) fn begin_insert_or_adjust(st: &mut EngineState) -> Result<(), Abort> 
     normal_paragraph(st)?;
     crate::mem::push_nest(st)?;
     st.input.cur_list.mode = INNER_VMODE;
-    st.input.cur_list.set_aux_s1(IGNORE_DEPTH);
+    st.input.cur_list.set_prev_depth(IGNORE_DEPTH);
     Ok(())
 }
 
@@ -1245,15 +1250,15 @@ pub(crate) fn app_space(st: &mut EngineState) -> Result<(), Abort> {
         if space_factor >= 2000 {
             let cf = st.eqtb.cur_font();
             let extra = st.fonts.param(cf, EXTRA_SPACE_CODE);
-            let width = spec.width(&st.mem).0 + extra;
-            spec.set_width(&mut st.mem, Scaled(width));
+            let width = spec.width(&st.mem) + extra;
+            spec.set_width(&mut st.mem, width);
         }
         let (stretch, _, stretch_overflow) =
-            crate::scaled_math::xn_over_d_parts(spec.stretch(&st.mem).0, space_factor, 1000);
-        spec.set_stretch(&mut st.mem, Scaled(stretch));
+            crate::scaled_math::xn_over_d_parts(spec.stretch(&st.mem), space_factor, 1000);
+        spec.set_stretch(&mut st.mem, stretch);
         let (shrink, remainder, shrink_overflow) =
-            crate::scaled_math::xn_over_d_parts(spec.shrink(&st.mem).0, 1000, space_factor);
-        spec.set_shrink(&mut st.mem, Scaled(shrink));
+            crate::scaled_math::xn_over_d_parts(spec.shrink(&st.mem), 1000, space_factor);
+        spec.set_shrink(&mut st.mem, shrink);
         side_effects = Some((remainder, stretch_overflow || shrink_overflow));
         q = st.mem.new_glue(spec)?.ptr();
         spec.set_ref_count(&mut st.mem, TEX_NULL);
@@ -1271,17 +1276,17 @@ pub(crate) fn app_space(st: &mut EngineState) -> Result<(), Abort> {
 /// The current font's interword glue spec, built from its parameters on first use.
 fn font_space_glue(st: &mut EngineState) -> Result<NodePtr<GlueSpecNode>, Abort> {
     let cf = st.eqtb.cur_font();
-    let glue = st.fonts.font_glue(cf);
+    let glue = st.fonts.font_glue[cf];
     if glue != TEX_NULL {
         return Ok(crate::node::NodePtr::from_glue_ptr(MemPtr(glue)));
     }
     let spec = st.mem.new_spec(ZERO_GLUE)?;
-    st.mainloop.main_k = st.fonts.param_base(cf) + SPACE_CODE;
+    st.mainloop.main_k = st.fonts.param_base[cf] + SPACE_CODE;
     let k = st.mainloop.main_k;
-    spec.set_width(&mut st.mem, Scaled(st.fonts.font_info_sc(k)));
-    spec.set_stretch(&mut st.mem, Scaled(st.fonts.font_info_sc(k + 1)));
-    spec.set_shrink(&mut st.mem, Scaled(st.fonts.font_info_sc(k + 2)));
-    st.fonts.set_font_glue(cf, spec.idx().0);
+    spec.set_width(&mut st.mem, st.fonts.font_info_sc(k));
+    spec.set_stretch(&mut st.mem, st.fonts.font_info_sc(k + 1));
+    spec.set_shrink(&mut st.mem, st.fonts.font_info_sc(k + 2));
+    st.fonts.font_glue[cf] = spec.idx().0;
     Ok(spec)
 }
 
@@ -1313,7 +1318,7 @@ pub(crate) fn package(st: &mut EngineState, c: i32) -> Result<(), Abort> {
     let v = st.eqtb.int_par(INT_PAR_XETEX_UPWARDS);
     st.eqtb.set_int_par(INT_PAR_XETEX_UPWARDS, u);
     let list = st.input.cur_list.head.link(&st.mem);
-    let size = st.save_stack.saved(2);
+    let size = Scaled(st.save_stack.saved(2));
     let spec_mode = st.save_stack.saved(1) as i16;
     if st.input.cur_list.mode == INNER_HMODE {
         let b = crate::packaging::hpack(st, list, size, spec_mode)?;
@@ -1323,14 +1328,14 @@ pub(crate) fn package(st: &mut EngineState, c: i32) -> Result<(), Abort> {
         st.scanner.cur_box = Some(BoxOrRule::Box(b));
         if c == VTOP_CODE {
             let h = match b.list_ptr(&st.mem).as_idx().map(|p| st.mem.classify(p)) {
-                Some(Ok(AnyNode::HList(first))) => first.height(&st.mem).0,
-                Some(Ok(AnyNode::VList(first))) => first.height(&st.mem).0,
-                Some(Ok(AnyNode::Rule(first))) => first.height(&st.mem).raw(),
-                _ => 0,
+                Some(Ok(AnyNode::HList(first))) => first.height(&st.mem),
+                Some(Ok(AnyNode::VList(first))) => first.height(&st.mem),
+                Some(Ok(AnyNode::Rule(first))) => first.height(&st.mem).to_scaled(),
+                _ => Scaled::ZERO,
             };
-            let depth = b.depth(&st.mem).0 - h + b.height(&st.mem).0;
-            b.set_depth(&mut st.mem, Scaled(depth));
-            b.set_height(&mut st.mem, Scaled(h));
+            let depth = b.depth(&st.mem) - h + b.height(&st.mem);
+            b.set_depth(&mut st.mem, depth);
+            b.set_height(&mut st.mem, h);
         }
     }
     st.eqtb.set_int_par(INT_PAR_XETEX_UPWARDS, v);
@@ -1365,7 +1370,7 @@ pub(crate) fn new_graf(st: &mut EngineState, indented: bool) -> Result<(), Abort
         let b = st.mem.new_null_box()?;
         st.input.cur_list.tail = b.ptr();
         st.input.cur_list.head.set_link(&mut st.mem, b.ptr());
-        b.set_width(&mut st.mem, Scaled(st.eqtb.dimen_par(DIMEN_PAR_PAR_INDENT)));
+        b.set_width(&mut st.mem, st.eqtb.dimen_par(DIMEN_PAR_PAR_INDENT));
         if st.shipout.insert_src_special_every_par {
             crate::ext::insert_src_special(st)?;
         }
@@ -1396,7 +1401,7 @@ impl NewChar {
 /// TeX's `new_character`, `None` for a character the font lacks.
 pub(crate) fn new_character(
     st: &mut EngineState,
-    f: i32,
+    f: FontId,
     c: u16,
 ) -> Result<Option<NewChar>, Abort> {
     if st.fonts.is_native_font(f) {
@@ -1404,12 +1409,10 @@ pub(crate) fn new_character(
             .map(|w| Some(NewChar::Native(w)));
     }
     let ec = st.fonts.effective_char(f, c) as u16;
-    if st.fonts.font_bc_entry(f) <= ec && st.fonts.font_ec_entry(f) >= ec {
-        let info = st
-            .fonts
-            .font_info_b16(st.fonts.char_base_entry(f) + ec as i32);
+    if st.fonts.font_bc[f] <= ec && st.fonts.font_ec[f] >= ec {
+        let info = st.fonts.font_info_b16(st.fonts.char_base[f] + ec as i32);
         if info.s3 > 0 {
-            let p = st.mem.new_char(FontId(f), c)?;
+            let p = st.mem.new_char(f, c)?;
             return Ok(Some(NewChar::Char(p)));
         }
     }
@@ -1619,7 +1622,7 @@ pub(crate) fn begin_box(st: &mut EngineState, box_context: i32) -> Result<(), Ab
             }
             crate::scan::scan_dimen(st, false, false, false)?;
             st.scanner.cur_box =
-                crate::packaging::vsplit(st, n, st.scanner.cur_val)?.map(BoxOrRule::Box);
+                crate::packaging::vsplit(st, n, st.scanner.cur_dimen())?.map(BoxOrRule::Box);
         }
         _ => {
             let k = st.scanner.cur_chr - VTOP_CODE as i32;
@@ -1645,7 +1648,7 @@ pub(crate) fn begin_box(st: &mut EngineState, box_context: i32) -> Result<(), Ab
             crate::mem::push_nest(st)?;
             st.input.cur_list.mode = -mode;
             if mode == VMODE {
-                st.input.cur_list.set_aux_s1(IGNORE_DEPTH);
+                st.input.cur_list.set_prev_depth(IGNORE_DEPTH);
                 begin_every(st, LOCAL_EVERY_VBOX, EVERY_VBOX_TEXT)?;
             } else {
                 st.input.cur_list.set_aux_s0(1000);
@@ -1694,19 +1697,19 @@ pub(crate) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             crate::save::unsave(st)?;
             st.save_stack.save_ptr -= 2;
             let head = st.input.cur_list.head.link(&st.mem);
-            let p = crate::packaging::vpackage(st, head, 0, ADDITIONAL, MAX_HALFWORD)?;
+            let p = crate::packaging::vpackage(st, head, Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
             st.mem.pop_nest(&mut st.input);
             let n = st.save_stack.saved(0);
             if n < 255 {
                 let ins = NodePtr::<InsNode>::alloc(&mut st.mem)?;
                 st.input.cur_list.tail_append(&mut st.mem, ins.ptr());
                 ins.set_subtype(&mut st.mem, n as u16);
-                let height = p.height(&st.mem).0 + p.depth(&st.mem).0;
-                ins.set_height(&mut st.mem, Scaled(height));
+                let height = p.height(&st.mem) + p.depth(&st.mem);
+                ins.set_height(&mut st.mem, height);
                 let list = p.list_ptr(&st.mem);
                 ins.set_ins_ptr(&mut st.mem, list);
                 ins.set_split_top_ptr(&mut st.mem, split_top_skip);
-                ins.set_depth(&mut st.mem, Scaled(d));
+                ins.set_depth(&mut st.mem, d);
                 ins.set_float_cost(&mut st.mem, f);
             } else {
                 let adj = NodePtr::<AdjustNode>::alloc(&mut st.mem)?;
@@ -1804,9 +1807,9 @@ pub(crate) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             crate::save::unsave(st)?;
             st.save_stack.save_ptr -= 2;
             let head = st.input.cur_list.head.link(&st.mem);
-            let size = st.save_stack.saved(1);
+            let size = Scaled(st.save_stack.saved(1));
             let spec_mode = st.save_stack.saved(0) as i16;
-            let p = crate::packaging::vpackage(st, head, size, spec_mode, MAX_HALFWORD)?;
+            let p = crate::packaging::vpackage(st, head, size, spec_mode, MAX_DIMEN)?;
             st.mem.pop_nest(&mut st.input);
             let noad = st.mem.new_noad()?;
             st.input.cur_list.tail_append(&mut st.mem, noad.ptr());
@@ -1885,7 +1888,7 @@ pub(crate) fn append_glue(st: &mut EngineState) -> Result<NodePtr<GlueNode>, Abo
 pub(crate) fn append_kern(st: &mut EngineState) -> Result<(), Abort> {
     let s = st.scanner.cur_chr as u16;
     crate::scan::scan_dimen(st, s == MU_GLUE, false, false)?;
-    let p = st.mem.new_kern(st.scanner.cur_val)?;
+    let p = st.mem.new_kern(st.scanner.cur_dimen())?;
     p.set_subtype(&mut st.mem, s);
     st.input.cur_list.tail_append(&mut st.mem, p.ptr());
     Ok(())
@@ -1971,7 +1974,7 @@ pub(crate) fn alter_page_so_far(st: &mut EngineState) -> Result<(), Abort> {
     let c = st.scanner.cur_chr as usize;
     crate::scan::scan_optional_equals(st)?;
     crate::scan::scan_dimen(st, false, false, false)?;
-    st.shipout.page_so_far[c] = st.scanner.cur_val;
+    st.shipout.page_so_far[c] = st.scanner.cur_dimen();
     Ok(())
 }
 
@@ -2021,7 +2024,10 @@ pub(crate) fn alter_box_dimen(st: &mut EngineState) -> Result<(), Abort> {
 pub(crate) fn trap_zero_glue(st: &mut EngineState) {
     let spec = st.scanner.cur_glue();
     let mem = &mut st.mem;
-    if spec.width(mem).0 == 0 && spec.stretch(mem).0 == 0 && spec.shrink(mem).0 == 0 {
+    if spec.width(mem) == Scaled::ZERO
+        && spec.stretch(mem) == Scaled::ZERO
+        && spec.shrink(mem) == Scaled::ZERO
+    {
         mem.add_glue_ref(ZERO_GLUE);
         mem.delete_glue_ref(spec);
         st.scanner.cur_val = ZERO_GLUE.idx().0;
@@ -2110,7 +2116,7 @@ pub(crate) fn append_discretionary(st: &mut EngineState) -> Result<(), Abort> {
     st.input.cur_list.tail_append(&mut st.mem, d.ptr());
     if st.scanner.cur_chr == 1 {
         let f = st.eqtb.cur_font();
-        let c = st.fonts.hyphen_char[f as usize];
+        let c = st.fonts.hyphen_char[f];
         if (0..=BIGGEST_CHAR).contains(&c) {
             let ch = new_character(st, f, c as u16)?;
             d.set_pre_break(&mut st.mem, ch.map_or(MemPtr::NULL, NewChar::ptr));
@@ -2234,8 +2240,8 @@ pub(crate) fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 /// The italic correction of character `ch`.
-fn char_italic(st: &mut EngineState, ch: NodePtr<CharNode>) -> i32 {
-    let f = ch.font(&st.mem).0;
+fn char_italic(st: &mut EngineState, ch: NodePtr<CharNode>) -> Scaled {
+    let f = ch.font(&st.mem);
     let c = st.fonts.effective_char(f, ch.character(&st.mem));
     let info = st.fonts.char_info(f, c);
     st.fonts.char_italic(f, info)
@@ -2274,13 +2280,13 @@ pub(crate) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
         return Ok(());
     };
     let x = st.fonts.param(f, X_HEIGHT_CODE);
-    let s = st.fonts.param(f, SLANT_CODE) as f64 / 65536.0;
-    let mut lsb: i32 = 0;
-    let mut rsb: i32 = 0;
+    let s = f64::from(st.fonts.param(f, SLANT_CODE)) / 65536.0;
+    let mut lsb = Scaled::ZERO;
+    let mut rsb = Scaled::ZERO;
     let a = match p {
         NewChar::Native(w) => {
-            let a = w.width(&st.mem).0;
-            if a == 0 {
+            let a = w.width(&st.mem);
+            if a == Scaled::ZERO {
                 (lsb, rsb) = st
                     .fonts
                     .get_native_char_sidebearings(f, st.scanner.cur_val)?;
@@ -2317,10 +2323,10 @@ pub(crate) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
         return Ok(());
     };
 
-    let t = st.fonts.param(f, SLANT_CODE) as f64 / 65536.0;
+    let t = f64::from(st.fonts.param(f, SLANT_CODE)) / 65536.0;
     let (w, h) = match q {
         NewChar::Native(w) => {
-            let w = w.width(&st.mem).0;
+            let w = w.width(&st.mem);
             let (h, _) = st
                 .fonts
                 .get_native_char_height_depth(f, st.scanner.cur_val)?;
@@ -2337,15 +2343,18 @@ pub(crate) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
     let accent = if h == x {
         p.ptr()
     } else {
-        let b = crate::packaging::hpack(st, p.ptr(), 0, ADDITIONAL)?;
-        b.set_shift_amount(&mut st.mem, Scaled(x - h));
+        let b = crate::packaging::hpack(st, p.ptr(), Scaled::ZERO, ADDITIONAL)?;
+        b.set_shift_amount(&mut st.mem, x - h);
         b.ptr()
     };
-    let delta = if st.fonts.is_native_font(f) && a == 0 {
-        crate::scaled_math::tex_round((w - lsb + rsb) as f64 / 2.0 + h as f64 * t - x as f64 * s)
+    let delta = if st.fonts.is_native_font(f) && a == Scaled::ZERO {
+        f64::from(w - lsb + rsb) / 2.0
     } else {
-        crate::scaled_math::tex_round((w - a) as f64 / 2.0 + h as f64 * t - x as f64 * s)
+        f64::from(w - a) / 2.0
     };
+    let delta = Scaled(crate::scaled_math::tex_round(
+        delta + f64::from(h) * t - f64::from(x) * s,
+    ));
     let r = st.mem.new_kern(delta)?;
     r.set_subtype(&mut st.mem, ACC_KERN);
     st.input.cur_list.tail.set_link(&mut st.mem, r.ptr());
@@ -2397,8 +2406,8 @@ pub(crate) fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     st.scanner.name_in_progress = true;
     let s = if crate::scan::scan_keyword(st, "at")? {
         crate::scan::scan_dimen(st, false, false, false)?;
-        let size = st.scanner.cur_val;
-        if size <= 0 || size >= 0x800_0000 {
+        let size = st.scanner.cur_dimen();
+        if size <= Scaled::ZERO || size >= Scaled(0x800_0000) {
             crate::output::error_here_with_diagnostic(st, "Improper `at' size (");
             crate::output::print_scaled(st, size);
             crate::output::print(st, "pt), replaced by 10pt");
@@ -2408,7 +2417,7 @@ pub(crate) fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
                 "less than 2048pt, so I've changed what you said to 10pt.",
             ]);
             crate::errors::error(st)?;
-            10 * 65536
+            Scaled(10 * 65536)
         } else {
             size
         }
@@ -2425,35 +2434,34 @@ pub(crate) fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             st.errors
                 .help(&["The magnification ratio must be between 1 and 32768."]);
             crate::errors::int_error(st, mag)?;
-            -1000
+            DESIGN_SIZE
         } else {
-            -mag
+            Scaled(-mag)
         }
     } else {
-        -1000
+        DESIGN_SIZE
     };
     st.scanner.name_in_progress = false;
 
-    let size_matches = |st: &mut EngineState, f: usize| -> bool {
-        if s > 0 {
+    let size_matches = |st: &mut EngineState, f: FontId| -> bool {
+        if s > Scaled::ZERO {
             s == st.fonts.font_size[f]
         } else {
-            st.fonts.font_size[f] == st.errors.xn_over_d(st.fonts.font_dsize[f], -s, 1000)
+            st.fonts.font_size[f] == st.errors.xn_over_d(st.fonts.font_dsize[f], -s.0, 1000)
         }
     };
     let f = 'search: {
-        for f in FONT_BASE + 1..=st.fonts.font_ptr {
-            let fi = f as usize;
+        for f in st.fonts.font_ptr.loaded() {
             let area_matches = (st.strings.length(st.scanner.cur_area) == 0
                 && st.fonts.is_native_font(f))
                 || st
                     .strings
-                    .str_eq_str(st.fonts.font_area[fi], st.scanner.cur_area);
+                    .str_eq_str(st.fonts.font_area[f], st.scanner.cur_area);
             if st
                 .strings
-                .str_eq_str(st.fonts.font_name[fi], st.scanner.cur_name)
+                .str_eq_str(st.fonts.font_name[f], st.scanner.cur_name)
                 && area_matches
-                && size_matches(st, fi)
+                && size_matches(st, f)
             {
                 break 'search f;
             }
@@ -2461,19 +2469,19 @@ pub(crate) fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
                 st.strings.append_str(part)?;
             }
             let full_name = st.strings.make_string()?;
-            let same_name = st.strings.str_eq_str(st.fonts.font_name[fi], full_name);
+            let same_name = st.strings.str_eq_str(st.fonts.font_name[f], full_name);
             flush_last_string(st);
-            if same_name && st.fonts.is_native_font(f) && size_matches(st, fi) {
+            if same_name && st.fonts.is_native_font(f) && size_matches(st, f) {
                 break 'search f;
             }
         }
         read_font_info(st, u, st.scanner.cur_name, st.scanner.cur_area, s)?
     };
 
-    define(st, global, u, SET_FONT, f)?;
+    define(st, global, u, SET_FONT, f.0)?;
     let word = st.eqtb.word(u);
-    st.eqtb.set_word(FONT_ID_BASE + f, word);
-    st.eqtb.set_hash_s1(FONT_ID_BASE + f, t);
+    st.eqtb.set_word(f.id_loc(), word);
+    st.eqtb.set_hash_s1(f.id_loc(), t);
     Ok(())
 }
 
@@ -2547,29 +2555,29 @@ pub(crate) fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Ab
                 let sum = st.mem.new_spec(st.scanner.cur_glue())?;
                 st.mem.delete_glue_ref(st.scanner.cur_glue());
                 let old = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr(s));
-                let width = sum.width(&st.mem).0 + old.width(&st.mem).0;
-                sum.set_width(&mut st.mem, Scaled(width));
-                if sum.stretch(&st.mem).0 == 0 {
+                let width = sum.width(&st.mem) + old.width(&st.mem);
+                sum.set_width(&mut st.mem, width);
+                if sum.stretch(&st.mem) == Scaled::ZERO {
                     sum.set_stretch_order(&mut st.mem, NORMAL);
                 }
                 if sum.stretch_order(&st.mem) == old.stretch_order(&st.mem) {
-                    let v = sum.stretch(&st.mem).0 + old.stretch(&st.mem).0;
-                    sum.set_stretch(&mut st.mem, Scaled(v));
+                    let v = sum.stretch(&st.mem) + old.stretch(&st.mem);
+                    sum.set_stretch(&mut st.mem, v);
                 } else if sum.stretch_order(&st.mem) < old.stretch_order(&st.mem)
-                    && old.stretch(&st.mem).0 != 0
+                    && old.stretch(&st.mem) != Scaled::ZERO
                 {
                     let (v, order) = (old.stretch(&st.mem), old.stretch_order(&st.mem));
                     sum.set_stretch(&mut st.mem, v);
                     sum.set_stretch_order(&mut st.mem, order);
                 }
-                if sum.shrink(&st.mem).0 == 0 {
+                if sum.shrink(&st.mem) == Scaled::ZERO {
                     sum.set_shrink_order(&mut st.mem, NORMAL);
                 }
                 if sum.shrink_order(&st.mem) == old.shrink_order(&st.mem) {
-                    let v = sum.shrink(&st.mem).0 + old.shrink(&st.mem).0;
-                    sum.set_shrink(&mut st.mem, Scaled(v));
+                    let v = sum.shrink(&st.mem) + old.shrink(&st.mem);
+                    sum.set_shrink(&mut st.mem, v);
                 } else if sum.shrink_order(&st.mem) < old.shrink_order(&st.mem)
-                    && old.shrink(&st.mem).0 != 0
+                    && old.shrink(&st.mem) != Scaled::ZERO
                 {
                     let (v, order) = (old.shrink(&st.mem), old.shrink_order(&st.mem));
                     sum.set_shrink(&mut st.mem, v);
@@ -2599,15 +2607,15 @@ pub(crate) fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Ab
             let old = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr(s));
             let r = st.mem.new_spec(old)?;
             let (width, stretch, shrink) = (
-                old.width(&st.mem).0,
-                old.stretch(&st.mem).0,
-                old.shrink(&st.mem).0,
+                old.width(&st.mem),
+                old.stretch(&st.mem),
+                old.shrink(&st.mem),
             );
-            let v = scale(&mut st.errors, width, MAX_HALFWORD);
+            let v = scale(&mut st.errors, width.0, MAX_HALFWORD);
             r.set_width(&mut st.mem, Scaled(v));
-            let v = scale(&mut st.errors, stretch, MAX_HALFWORD);
+            let v = scale(&mut st.errors, stretch.0, MAX_HALFWORD);
             r.set_stretch(&mut st.mem, Scaled(v));
-            let v = scale(&mut st.errors, shrink, MAX_HALFWORD);
+            let v = scale(&mut st.errors, shrink.0, MAX_HALFWORD);
             r.set_shrink(&mut st.mem, Scaled(v));
             st.scanner.cur_val = r.ptr().0;
         }
@@ -2678,7 +2686,7 @@ fn append_rule(st: &mut EngineState) -> Result<(), Abort> {
     let rule = crate::scan::scan_rule_spec(st)?;
     st.input.cur_list.tail_append(&mut st.mem, rule.ptr());
     if mode == VMODE {
-        st.input.cur_list.set_aux_s1(IGNORE_DEPTH);
+        st.input.cur_list.set_prev_depth(IGNORE_DEPTH);
     } else if mode == HMODE {
         st.input.cur_list.set_aux_s0(1000);
     }
@@ -2696,7 +2704,7 @@ fn valign_or_lr(st: &mut EngineState) -> Result<(), Abort> {
         st.scanner.cur_chr,
     )?;
     if enabled {
-        let m = st.mem.new_math(0, st.scanner.cur_chr as u16)?;
+        let m = st.mem.new_math(Scaled::ZERO, st.scanner.cur_chr as u16)?;
         st.input.cur_list.tail_append(&mut st.mem, m.ptr());
     }
     Ok(())
@@ -2774,7 +2782,7 @@ fn math_vcenter(st: &mut EngineState) -> Result<(), Abort> {
     normal_paragraph(st)?;
     crate::mem::push_nest(st)?;
     st.input.cur_list.mode = INNER_VMODE;
-    st.input.cur_list.set_aux_s1(IGNORE_DEPTH);
+    st.input.cur_list.set_prev_depth(IGNORE_DEPTH);
     if st.shipout.insert_src_special_every_vbox {
         crate::ext::insert_src_special(st)?;
     }
@@ -2914,7 +2922,7 @@ fn is_hyphen_unit(st: &EngineState, c: i32, hyphen: i32) -> bool {
 
 /// Advances `main_h` just past the next hyphen in `len` units of native text at `start`.
 fn advance_past_hyphen(st: &mut EngineState, start: i32, len: i32) {
-    let hyphen = st.fonts.hyphen_char_entry(st.mainloop.main_f);
+    let hyphen = st.fonts.hyphen_char[st.mainloop.main_f];
     while st.mainloop.main_h < len
         && !is_hyphen_unit(
             st,
@@ -2949,13 +2957,13 @@ fn find_main_ppp(st: &mut EngineState) {
 }
 
 /// The native word `main_pp` if new text in font `f` can extend it.
-fn extendable_native_word(st: &EngineState, f: i32) -> Option<NodePtr<WhatsitNode>> {
+fn extendable_native_word(st: &EngineState, f: FontId) -> Option<NodePtr<WhatsitNode>> {
     let (pp, ppp) = (st.mainloop.main_pp, st.mainloop.main_ppp);
     if pp.is_null() {
         return None;
     }
     let word = st.mem.as_native_word(pp)?;
-    let extendable = word.native_font(&st.mem).0 == f
+    let extendable = word.native_font(&st.mem) == f
         && ppp != pp
         && !st.mem.is_char_node(ppp)
         && !matches!(st.mem.classify(MemIdx(ppp.0)), Ok(AnyNode::Disc(_)));
@@ -2989,7 +2997,7 @@ fn use_glyph_metrics(st: &EngineState) -> bool {
 
 /// The main loop for an AAT or OpenType font: collects a run of characters
 /// into native word nodes. Returns whether to go to `big_switch`.
-fn main_loop_native(st: &mut EngineState, mf: i32) -> Result<bool, Abort> {
+fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
     if st.input.cur_list.mode > 0 && st.eqtb.int_par(INT_PAR_LANGUAGE) != st.input.cur_list.aux_s1()
     {
         st.input.cur_list.fix_language(&mut st.mem, &st.eqtb)?;
@@ -3021,7 +3029,7 @@ fn main_loop_native(st: &mut EngineState, mf: i32) -> Result<bool, Abort> {
             st.scanner.reserve_native_text(1)?;
             st.scanner.push_native_text(ch as u16);
         }
-        let is_hyph = is_hyphen_unit(st, ch, st.fonts.hyphen_char_entry(mf));
+        let is_hyph = is_hyphen_unit(st, ch, st.fonts.hyphen_char[mf]);
         st.hyph.is_hyph = is_hyph;
         if st.mainloop.main_h == 0 && is_hyph {
             st.mainloop.main_h = st.scanner.native_len;
@@ -3044,13 +3052,13 @@ fn main_loop_native(st: &mut EngineState, mf: i32) -> Result<bool, Abort> {
         break;
     }
 
-    if let Some(mapping) = st.fonts.font_mapping[mf as usize].clone() {
+    if let Some(mapping) = st.fonts.font_mapping[mf].clone() {
         let text = &st.scanner.native_text[..st.scanner.native_len as usize];
         let mapped_len = st.fonts.apply_mapping(&mapping, text);
         st.scanner.native_len = 0;
         st.scanner.reserve_native_text(mapped_len)?;
         st.mainloop.main_h = 0;
-        let hyphen = st.fonts.hyphen_char_entry(mf);
+        let hyphen = st.fonts.hyphen_char[mf];
         for i in 0..mapped_len {
             let c = st.fonts.mapped_text[i as usize];
             st.scanner.push_native_text(c);
@@ -3168,7 +3176,7 @@ fn main_loop_native(st: &mut EngineState, mf: i32) -> Result<bool, Abort> {
 
 /// Kerns the interword glue before the current word by what the font's shaping
 /// of `word space word` implies.
-fn shape_interword_space(st: &mut EngineState, mf: i32) -> Result<(), Abort> {
+fn shape_interword_space(st: &mut EngineState, mf: FontId) -> Result<(), Abort> {
     let tail = st.input.cur_list.tail;
     let mut p = st.input.cur_list.head;
     let mut prev_word = None;
@@ -3178,7 +3186,7 @@ fn shape_interword_space(st: &mut EngineState, mf: i32) -> Result<(), Abort> {
         }
         p = p.link(&st.mem);
     }
-    let Some(prev_word) = prev_word.filter(|w| w.native_font(&st.mem).0 == mf) else {
+    let Some(prev_word) = prev_word.filter(|w| w.native_font(&st.mem) == mf) else {
         return Ok(());
     };
     let glue = st.mem.skip_interword_fillers(prev_word.link(&st.mem));
@@ -3206,7 +3214,7 @@ fn shape_interword_space(st: &mut EngineState, mf: i32) -> Result<(), Abort> {
         .copy_native_text_into(joined, prev_len + 1, tail_word);
     let metrics = use_glyph_metrics(st);
     st.fonts.measure_native_node(&mut st.mem, joined, metrics)?;
-    let t = joined.width(&st.mem).0 - prev_word.width(&st.mem).0 - tail_word.width(&st.mem).0;
+    let t = joined.width(&st.mem) - prev_word.width(&st.mem) - tail_word.width(&st.mem);
     joined.free_native(&mut st.mem);
     // TeX reads `width(font_glue[f])`, which stays null while `\spaceskip` supplies the glue.
     let space = st.fonts.param(mf, SPACE_CODE);
@@ -3258,7 +3266,7 @@ fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), Abort> {
     let main_f = st.mainloop.main_f;
     if !st.mainloop.cur_q.link(&st.mem).is_null()
         && NodePtr::<CharNode>::at(st.input.cur_list.tail).character(&st.mem) as i32
-            == st.fonts.hyphen_char_entry(main_f)
+            == st.fonts.hyphen_char[main_f]
     {
         st.mainloop.ins_disc = true;
     }
@@ -3266,7 +3274,7 @@ fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), Abort> {
         let lig_list = st.mainloop.cur_q.link(&st.mem);
         let lig = st
             .mem
-            .new_ligature(FontId(main_f), st.mainloop.cur_l as u16, lig_list)?;
+            .new_ligature(main_f, st.mainloop.cur_l as u16, lig_list)?;
         if st.mainloop.lft_hit {
             lig.set_subtype(&mut st.mem, 2);
             st.mainloop.lft_hit = false;
@@ -3319,14 +3327,14 @@ pub(crate) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
     note_char_class(st, sc);
 
     st.mainloop.main_f = mf;
-    st.mainloop.bchar = st.fonts.font_bchar_entry(mf);
-    st.mainloop.false_bchar = st.fonts.font_false_bchar_entry(mf);
+    st.mainloop.bchar = st.fonts.font_bchar[mf];
+    st.mainloop.false_bchar = st.fonts.font_false_bchar[mf];
     if st.input.cur_list.mode > 0 && st.eqtb.int_par(INT_PAR_LANGUAGE) != st.input.cur_list.aux_s1()
     {
         st.input.cur_list.fix_language(&mut st.mem, &st.eqtb)?;
     }
     st.mainloop.cur_l = st.scanner.cur_chr;
-    let ls = st.mem.new_char(FontId(mf), st.mainloop.cur_l as u16)?;
+    let ls = st.mem.new_char(mf, st.mainloop.cur_l as u16)?;
     st.mainloop.lig_stack = ls.ptr();
     st.mainloop.cur_q = st.input.cur_list.tail;
 
@@ -3334,7 +3342,7 @@ pub(crate) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
         st.mainloop.cancel_boundary = false;
         NON_ADDRESS
     } else {
-        st.fonts.bchar_label_entry(mf)
+        st.fonts.bchar_label[mf]
     };
     let mut resume = if bchar_label != NON_ADDRESS {
         st.mainloop.cur_r = st.mainloop.cur_l;
@@ -3353,7 +3361,7 @@ pub(crate) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
                 Some(LigExit::Wrapup)
             }
             Resume::LigLoop => {
-                let base = st.fonts.lig_kern_base_entry(st.mainloop.main_f);
+                let base = st.fonts.lig_kern_base[st.mainloop.main_f];
                 let first = st.fonts.font_info_b16(base + main_i.s0 as i32);
                 let k = if first.s3 > 128 {
                     base + 256 * first.s1 as i32 + first.s0 as i32 + 32768 - 256 * 128
@@ -3405,9 +3413,8 @@ pub(crate) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
         let main_f = st.mainloop.main_f;
         let cur_chr = st.scanner.cur_chr as u16;
         // Each call resets `xtx_ligature_present`, so the two bounds may see different codes.
-        let exists = if st.fonts.effective_char(main_f, cur_chr)
-            > st.fonts.font_ec_entry(main_f) as i32
-            || st.fonts.effective_char(main_f, cur_chr) < st.fonts.font_bc_entry(main_f) as i32
+        let exists = if st.fonts.effective_char(main_f, cur_chr) > st.fonts.font_ec[main_f] as i32
+            || st.fonts.effective_char(main_f, cur_chr) < st.fonts.font_bc[main_f] as i32
         {
             false
         } else {
@@ -3513,7 +3520,7 @@ fn lig_kern_program(
         if st.mainloop.cur_l < TOO_BIG_CHAR {
             return Ok(LigExit::Restart);
         }
-        k = st.fonts.bchar_label_entry(st.mainloop.main_f);
+        k = st.fonts.bchar_label[st.mainloop.main_f];
     }
 }
 
@@ -3550,7 +3557,7 @@ fn lookahead(st: &mut EngineState) -> Result<bool, Abort> {
     note_char_class(st, sc);
 
     let c = st.scanner.cur_chr;
-    let ls = st.mem.new_char(FontId(st.mainloop.main_f), c as u16)?;
+    let ls = st.mem.new_char(st.mainloop.main_f, c as u16)?;
     st.mainloop.lig_stack = ls.ptr();
     st.mainloop.cur_r = c;
     if c == st.mainloop.false_bchar {
@@ -3708,7 +3715,7 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
         (VMODE, UN_VBOX) | (HMODE | MMODE, UN_HBOX) => unpackage(st)?,
         (HMODE, ITAL_CORR) => append_italic_correction(st)?,
         (MMODE, ITAL_CORR) => {
-            let k = st.mem.new_kern(0)?;
+            let k = st.mem.new_kern(Scaled::ZERO)?;
             st.input.cur_list.tail_append(&mut st.mem, k.ptr());
         }
         (HMODE | MMODE, DISCRETIONARY) => append_discretionary(st)?,
@@ -4122,19 +4129,18 @@ pub(crate) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             let k = st.scanner.cur_val;
             crate::scan::scan_optional_equals(st)?;
             crate::scan::scan_dimen(st, false, false, false)?;
-            st.fonts.set_font_info_sc(k, st.scanner.cur_val);
+            st.fonts.set_font_info_sc(k, st.scanner.cur_dimen());
         }
         ASSIGN_FONT_INT => {
             let n = st.scanner.cur_chr;
-            crate::scan::scan_font_ident(st)?;
-            let f = st.scanner.cur_val;
+            let f = crate::scan::scan_font_ident(st)?;
             if n < 2 {
                 crate::scan::scan_optional_equals(st)?;
                 crate::scan::scan_int(st)?;
                 if n == 0 {
-                    st.fonts.set_hyphen_char_entry(f, st.scanner.cur_val);
+                    st.fonts.hyphen_char[f] = st.scanner.cur_val;
                 } else {
-                    st.fonts.set_skew_char_entry(f, st.scanner.cur_val);
+                    st.fonts.skew_char[f] = st.scanner.cur_val;
                 }
             } else {
                 if st.fonts.is_native_font(f) {
@@ -4146,8 +4152,8 @@ pub(crate) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 crate::scan::scan_optional_equals(st)?;
                 crate::scan::scan_int(st)?;
                 match n {
-                    LP_CODE_BASE => set_cp_code(f, p as u32, LEFT_SIDE, st.scanner.cur_val),
-                    RP_CODE_BASE => set_cp_code(f, p as u32, RIGHT_SIDE, st.scanner.cur_val),
+                    LP_CODE_BASE => set_cp_code(f.0, p as u32, LEFT_SIDE, st.scanner.cur_val),
+                    RP_CODE_BASE => set_cp_code(f.0, p as u32, RIGHT_SIDE, st.scanner.cur_val),
                     _ => {}
                 }
             }
@@ -4420,9 +4426,9 @@ fn set_shape(st: &mut EngineState, global: bool) -> Result<(), Abort> {
         shape.set_lines(&mut st.mem, n);
         for line in 1..=n {
             crate::scan::scan_dimen(st, false, false, false)?;
-            shape.set_indent(&mut st.mem, line, st.scanner.cur_val);
+            shape.set_indent(&mut st.mem, line, st.scanner.cur_dimen());
             crate::scan::scan_dimen(st, false, false, false)?;
-            shape.set_line_width(&mut st.mem, line, st.scanner.cur_val);
+            shape.set_line_width(&mut st.mem, line, st.scanner.cur_dimen());
         }
         p
     };

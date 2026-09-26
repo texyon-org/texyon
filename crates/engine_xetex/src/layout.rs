@@ -2,6 +2,7 @@
 //! engines and fonts, HarfBuzz tags, TECkit converters and ICU line breaking
 //! and bidi. Every raw pointer stays inside this module.
 
+use crate::units::Scaled;
 use std::ffi::{c_char, c_int, c_long, c_uint, c_void, CStr, CString};
 use std::marker::PhantomData;
 use std::ptr::{self, NonNull};
@@ -50,8 +51,9 @@ impl HbFeature {
 unsafe extern "C" {
     pub(crate) safe fn get_cp_code(font_num: i32, code: u32, side: i32) -> i32;
     pub(crate) safe fn set_cp_code(font_num: i32, code: u32, side: i32, value: i32);
-    pub(crate) safe fn get_loaded_font_design_size() -> i32;
-    pub(crate) safe fn set_loaded_font_design_size(val: i32);
+    safe fn get_loaded_font_design_size() -> i32;
+    #[link_name = "set_loaded_font_design_size"]
+    safe fn set_loaded_font_design_size_raw(val: i32);
     #[link_name = "getReqEngine"]
     safe fn raw_req_engine() -> c_char;
     #[link_name = "setReqEngine"]
@@ -249,6 +251,15 @@ pub(crate) fn req_engine() -> u8 {
     raw_req_engine() as u8
 }
 
+/// The design size of the font most recently loaded by the layout library.
+pub(crate) fn loaded_font_design_size() -> Scaled {
+    Scaled(get_loaded_font_design_size())
+}
+
+pub(crate) fn set_loaded_font_design_size(size: Scaled) {
+    set_loaded_font_design_size_raw(size.0);
+}
+
 pub(crate) fn set_req_engine(engine: u8) {
     raw_set_req_engine(engine as c_char);
 }
@@ -306,10 +317,10 @@ impl Drop for OwnedFont {
 
 impl OwnedFont {
     /// The font in file `path` at face `index`, or `None`.
-    pub(crate) fn from_file(path: &[u8], index: c_int, point_size: i32) -> Option<OwnedFont> {
+    pub(crate) fn from_file(path: &[u8], index: c_int, point_size: Scaled) -> Option<OwnedFont> {
         let path = CString::new(path).unwrap_or_default();
         // SAFETY: `path` is NUL-terminated.
-        let raw = unsafe { createFontFromFile(path.as_ptr(), index, point_size) };
+        let raw = unsafe { createFontFromFile(path.as_ptr(), index, point_size.0) };
         NonNull::new(raw).map(|raw| OwnedFont { raw })
     }
 
@@ -332,9 +343,9 @@ pub(crate) struct FontRef<'a> {
 }
 
 impl FontRef<'_> {
-    pub(crate) fn slant(self) -> i32 {
+    pub(crate) fn slant(self) -> Scaled {
         // SAFETY: the engine keeps `raw` alive for `'a`.
-        unsafe { getSlant(self.raw) }
+        Scaled(unsafe { getSlant(self.raw) })
     }
 
     pub(crate) fn glyph_width(self, gid: u32) -> f32 {
@@ -445,9 +456,9 @@ impl PlatformFont {
             .to_vec()
     }
 
-    pub(crate) fn create_font(&self, point_size: i32) -> Option<OwnedFont> {
+    pub(crate) fn create_font(&self, point_size: Scaled) -> Option<OwnedFont> {
         // SAFETY: `raw` is a live platform font.
-        let raw = unsafe { createFont(self.raw.as_ptr(), point_size) };
+        let raw = unsafe { createFont(self.raw.as_ptr(), point_size.0) };
         NonNull::new(raw).map(|raw| OwnedFont { raw })
     }
 }

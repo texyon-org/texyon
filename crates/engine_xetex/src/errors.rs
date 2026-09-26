@@ -12,6 +12,7 @@ use crate::output::{
 };
 use crate::scan::{ABSORBING, ALIGNING, DEFINING, MATCHING};
 use crate::state::{EngineState, ErrorState, GroupCode, InteractionMode};
+use crate::units::FontId;
 
 impl ErrorState {
     /// Sets the help text shown after the next error, in display order.
@@ -259,13 +260,13 @@ pub(crate) fn not_font_error_common(
     st: &mut EngineState,
     cmd: u8,
     c: i32,
-    f: i32,
+    f: FontId,
     suffix: &str,
 ) -> Result<(), Abort> {
     error_here_with_diagnostic(st, "Cannot use ");
     print_cmd_chr(st, cmd, c);
     print(st, " with ");
-    print(st, st.fonts.font_name[f as usize]);
+    print(st, st.fonts.font_name[f]);
     print(st, suffix);
     capture_to_diagnostic(st, None);
     error(st)

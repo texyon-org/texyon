@@ -8,7 +8,7 @@ use std::sync::Arc;
 use crate::bridge::{input_get_size, input_open, input_read, TTBC_FILE_FORMAT_MISC_FONTS};
 use crate::cmd::EXTENSION;
 use crate::consts::{
-    CS_TOKEN_FLAG, FROZEN_SPECIAL, GLYPH_NODE_SIZE, HMODE, INT_PAR_LEFT_HYPHEN_MIN,
+    CS_TOKEN_FLAG, DESIGN_SIZE, FROZEN_SPECIAL, GLYPH_NODE_SIZE, HMODE, INT_PAR_LEFT_HYPHEN_MIN,
     INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_XETEX_DEFAULT_INPUT_ENCODING,
     INT_PAR_XETEX_DEFAULT_INPUT_MODE, INT_PAR_XETEX_LINEBREAK_LOCALE, INT_PAR_XETEX_TRACING_FONTS,
     INT_PAR_XETEX_USE_GLYPH_METRICS, LEFT_SIDE, MMODE, OPEN_NODE_SIZE, RIGHT_SIDE, SMALL_NODE_SIZE,
@@ -63,11 +63,11 @@ const XDV_FLAG_EMBOLDEN: u16 = 0x4000;
 /// Font-wide metrics of a native font, in scaled points.
 #[derive(Default)]
 pub(crate) struct NativeFontMetrics {
-    pub ascent: i32,
-    pub descent: i32,
-    pub x_height: i32,
-    pub cap_height: i32,
-    pub slant: i32,
+    pub ascent: Scaled,
+    pub descent: Scaled,
+    pub x_height: Scaled,
+    pub cap_height: Scaled,
+    pub slant: Scaled,
 }
 
 /// The byte at `i`, or 0 past the end, as a C string reads.
@@ -87,12 +87,12 @@ fn option_value(s: &[u8], key: &[u8]) -> Option<Result<usize, ()>> {
     }
 }
 
-pub(crate) fn d2fix(d: f64) -> i32 {
-    (d * 65536.0 + 0.5) as i32
+pub(crate) fn d2fix(d: f64) -> Scaled {
+    Scaled((d * 65536.0 + 0.5) as i32)
 }
 
-pub(crate) fn fix2d(f: i32) -> f64 {
-    f as f64 / 65536.0
+pub(crate) fn fix2d(f: Scaled) -> f64 {
+    f.0 as f64 / 65536.0
 }
 
 /// Parses a decimal like `-12.5` from the front of `s`, advancing it.
@@ -411,7 +411,7 @@ fn read_common_feature(
 fn load_ot_font(
     st: &mut EngineState,
     font: OwnedFont,
-    scaled_size: i32,
+    scaled_size: Scaled,
     feat: Option<&[u8]>,
 ) -> Result<Option<FontEngineHandle>, Abort> {
     let mut script = HB_TAG_NONE;
@@ -542,7 +542,7 @@ fn load_ot_font(
     }
     if opts.letterspace != 0.0 {
         st.fonts.loaded_font_letter_space =
-            (opts.letterspace as f64 / 100.0 * scaled_size as f64) as i32;
+            Scaled((opts.letterspace as f64 / 100.0 * scaled_size.0 as f64) as i32);
     }
     if st.fonts.loaded_font_flags & FONT_FLAGS_COLORED == 0 {
         opts.rgb_value = 0x000000FF;
@@ -572,15 +572,15 @@ fn load_ot_font(
 
 impl ErrorState {
     /// Resolve a negative (`scaled`) font size against `font`'s design size.
-    fn scale_by_design_size(&mut self, font: Option<OwnedFont>, scaled_size: i32) -> i32 {
+    fn scale_by_design_size(&mut self, font: Option<OwnedFont>, scaled_size: Scaled) -> Scaled {
         let Some(font) = font else {
             return scaled_size;
         };
         let dsize = d2fix(font.design_size());
-        if scaled_size == -1000 {
+        if scaled_size == DESIGN_SIZE {
             dsize
         } else {
-            self.xn_over_d(dsize, -scaled_size, 1000)
+            self.xn_over_d(dsize, -scaled_size.0, 1000)
         }
     }
 }
@@ -595,13 +595,13 @@ fn until_nul(buf: &[u8]) -> &[u8] {
 pub(crate) fn find_native_font(
     st: &mut EngineState,
     name: &[u8],
-    mut scaled_size: i32,
+    mut scaled_size: Scaled,
 ) -> Result<Option<FontEngineHandle>, Abort> {
     let mut rval = None;
 
     st.fonts.loaded_font_mapping = None;
     st.fonts.loaded_font_flags = 0;
-    st.fonts.loaded_font_letter_space = 0;
+    st.fonts.loaded_font_letter_space = Scaled::ZERO;
 
     let split = split_font_name(name);
     let name_string = &name[..split.var];
@@ -610,8 +610,8 @@ pub(crate) fn find_native_font(
 
     if at(name_string, 0) == b'[' {
         let path = &name_string[1..];
-        if scaled_size < 0 {
-            let font = OwnedFont::from_file(path, split.index, 655360);
+        if scaled_size < Scaled::ZERO {
+            let font = OwnedFont::from_file(path, split.index, Scaled(655360));
             scaled_size = st.errors.scale_by_design_size(font, scaled_size);
         }
         if let Some(font) = OwnedFont::from_file(path, split.index, scaled_size) {
@@ -652,7 +652,7 @@ pub(crate) fn find_native_font(
             let mut full_name = font_ref.full_name();
             st.input.name_of_file.clone_from(&full_name);
 
-            if scaled_size < 0 {
+            if scaled_size < Scaled::ZERO {
                 let font = font_ref.create_font(scaled_size);
                 scaled_size = st.errors.scale_by_design_size(font, scaled_size);
             }
@@ -755,15 +755,15 @@ pub(crate) fn ot_get_font_metrics(engine: &FontEngineHandle) -> NativeFontMetric
     let mut x_height = d2fix(x as f64);
 
     // Fall back to the height of `x` and `X`, else to fractions of the ascent.
-    if x_height == 0 {
+    if x_height == Scaled::ZERO {
         let glyph_id = engine.map_char_to_glyph(b'x' as u32);
         x_height = if glyph_id != 0 {
             d2fix(engine.glyph_height_depth(glyph_id).0 as f64)
         } else {
-            ascent / 2
+            Scaled(ascent.0 / 2)
         };
     }
-    if cap_height == 0 {
+    if cap_height == Scaled::ZERO {
         let glyph_id = engine.map_char_to_glyph(b'X' as u32);
         cap_height = if glyph_id != 0 {
             d2fix(engine.glyph_height_depth(glyph_id).0 as f64)
@@ -877,7 +877,7 @@ pub(crate) fn gr_font_get_named_1(
 struct ShapedGlyphs {
     locations: Vec<FixedPoint>,
     gids: Vec<u16>,
-    advances: Vec<i32>,
+    advances: Vec<Scaled>,
 }
 
 impl ShapedGlyphs {
@@ -910,10 +910,10 @@ fn layout_visual_run(bidi: &Bidi, engine: &FontEngineHandle, text: &[u16], run_i
     engine.layout_chars(text, logical_start, length, dir == UBIDI_RTL)
 }
 
-fn cached_or_measured_bbox(engine: &FontEngineHandle, f: i32, gid: u16) -> GlyphBBox {
-    cached_glyph_bbox(f as u16, gid).unwrap_or_else(|| {
+fn cached_or_measured_bbox(engine: &FontEngineHandle, f: FontId, gid: u16) -> GlyphBBox {
+    cached_glyph_bbox(f.0 as u16, gid).unwrap_or_else(|| {
         let bbox = engine.glyph_bounds(gid as u32);
-        cache_glyph_bbox(f as u16, gid, &bbox);
+        cache_glyph_bbox(f.0 as u16, gid, &bbox);
         bbox
     })
 }
@@ -930,7 +930,7 @@ impl MemState {
     /// The protrusion code of the first or last glyph of native word `w`.
     pub fn get_native_word_cp(&self, w: NodePtr<WhatsitNode>, side: c_int) -> i32 {
         let glyph_count = w.native_glyph_count(self) as usize;
-        let f = w.native_font(self).0;
+        let f = w.native_font(self);
         if glyph_count == 0 {
             return 0;
         }
@@ -940,11 +940,11 @@ impl MemState {
             RIGHT_SIDE => gids[glyph_count - 1],
             _ => unreachable!(),
         };
-        get_cp_code(f, actual_glyph as u32, side)
+        get_cp_code(f.0, actual_glyph as u32, side)
     }
 }
 
-fn snap_zone(value: &mut i32, snap_value: i32, fuzz: i32) {
+fn snap_zone(value: &mut Scaled, snap_value: Scaled, fuzz: Scaled) {
     let difference = *value - snap_value;
     if difference <= fuzz && difference >= -fuzz {
         *value = snap_value;
@@ -953,18 +953,18 @@ fn snap_zone(value: &mut i32, snap_value: i32, fuzz: i32) {
 
 impl FontState {
     /// The layout engine of OpenType/Graphite font `f`.
-    pub(crate) fn layout_engine(&self, f: i32) -> Option<&FontEngineHandle> {
-        if self.font_area_entry(f) == OTGR_FONT_FLAG {
-            self.font_layout_engine[f as usize].as_deref()
+    pub(crate) fn layout_engine(&self, f: FontId) -> Option<&FontEngineHandle> {
+        if self.font_area[f] == OTGR_FONT_FLAG {
+            self.font_layout_engine[f].as_deref()
         } else {
             None
         }
     }
 
     /// `layout_engine`, shared, for callers that need the state meanwhile.
-    pub(crate) fn layout_engine_arc(&self, f: i32) -> Option<Arc<FontEngineHandle>> {
-        if self.font_area_entry(f) == OTGR_FONT_FLAG {
-            self.font_layout_engine[f as usize].clone()
+    pub(crate) fn layout_engine_arc(&self, f: FontId) -> Option<Arc<FontEngineHandle>> {
+        if self.font_area[f] == OTGR_FONT_FLAG {
+            self.font_layout_engine[f].clone()
         } else {
             None
         }
@@ -972,7 +972,7 @@ impl FontState {
 
     /// The layout engine of OpenType/Graphite font `f`, or `Internal(msg)` for
     /// any other font.
-    fn require_ot_engine(&self, f: i32, msg: &'static str) -> Result<&FontEngineHandle, Abort> {
+    fn require_ot_engine(&self, f: FontId, msg: &'static str) -> Result<&FontEngineHandle, Abort> {
         self.layout_engine(f).ok_or(Abort::Internal(msg))
     }
 
@@ -985,7 +985,7 @@ impl FontState {
     ) -> Result<(), Abort> {
         let text = w.native_text(mem).to_vec();
         let text_len = text.len() as i32;
-        let f = w.native_font(mem).0;
+        let f = w.native_font(mem);
         let engine = self.require_ot_engine(f, "bad native font flag in `measure_native_node`")?;
 
         let bidi = Bidi::new(&text, engine.default_direction() as u8);
@@ -1016,30 +1016,30 @@ impl FontState {
                 0.0
             }
         };
-        w.set_width(mem, Scaled(d2fix(width)));
+        w.set_width(mem, d2fix(width));
         w.set_native_glyph_count(mem, shaped.gids.len() as u16);
         drop(bidi);
 
-        let letter_space = self.font_letter_space_entry(f);
-        if letter_space != 0 {
-            let mut ls_delta = 0i32;
+        let letter_space = self.font_letter_space[f];
+        if letter_space != Scaled::ZERO {
+            let mut ls_delta = Scaled::ZERO;
             for (loc, &advance) in shaped.locations.iter_mut().zip(&shaped.advances) {
-                if advance == 0 && ls_delta != 0 {
+                if advance == Scaled::ZERO && ls_delta != Scaled::ZERO {
                     ls_delta -= letter_space;
                 }
                 loc.x += ls_delta;
                 ls_delta += letter_space;
             }
-            if ls_delta != 0 {
+            if ls_delta != Scaled::ZERO {
                 ls_delta -= letter_space;
-                w.set_width(mem, Scaled(w.width(mem).0 + ls_delta));
+                w.set_width(mem, w.width(mem) + ls_delta);
             }
         }
 
         let glyph_count = w.native_glyph_count(mem) as usize;
         if !use_glyph_metrics || glyph_count == 0 {
-            w.set_height(mem, Scaled(self.height_base_entry(f)));
-            w.set_depth(mem, Scaled(self.depth_base_entry(f)));
+            w.set_height(mem, self.native_height(f));
+            w.set_depth(mem, self.native_depth(f));
         } else {
             let mut y_min = 65536.0f32;
             let mut y_max = -65536.0f32;
@@ -1055,8 +1055,8 @@ impl FontState {
                     y_min = y - dp;
                 }
             }
-            w.set_height(mem, Scaled(d2fix(y_max as f64)));
-            w.set_depth(mem, Scaled(-d2fix(y_min as f64)));
+            w.set_height(mem, d2fix(y_max as f64));
+            w.set_depth(mem, -d2fix(y_min as f64));
         }
 
         let old_handle = w.native_glyph_info_handle(mem);
@@ -1077,29 +1077,28 @@ impl FontState {
         Ok(())
     }
 
-    pub fn get_native_italic_correction(&self, mem: &MemState, w: NodePtr<WhatsitNode>) -> i32 {
-        let f = w.native_font(mem).0;
+    pub fn get_native_italic_correction(&self, mem: &MemState, w: NodePtr<WhatsitNode>) -> Scaled {
+        let f = w.native_font(mem);
         let n = w.native_glyph_count(mem) as usize;
         if n > 0 {
             let last_glyph = mem.glyph_blobs.get(w.native_glyph_info_handle(mem)).gids[n - 1];
             if let Some(engine) = self.layout_engine(f) {
                 return d2fix(engine.glyph_ital_corr(last_glyph as u32) as f64)
-                    + self.font_letter_space_entry(f);
+                    + self.font_letter_space[f];
             }
         }
-        0
+        Scaled::ZERO
     }
 
     pub fn get_native_glyph_italic_correction(
         &self,
         mem: &MemState,
         w: NodePtr<WhatsitNode>,
-    ) -> i32 {
+    ) -> Scaled {
         let gid = w.native_glyph(mem);
-        let f = w.native_font(mem).0;
-        match self.layout_engine(f) {
+        match self.layout_engine(w.native_font(mem)) {
             Some(engine) => d2fix(engine.glyph_ital_corr(gid as u32) as f64),
-            None => 0,
+            None => Scaled::ZERO,
         }
     }
 
@@ -1110,22 +1109,26 @@ impl FontState {
         use_glyph_metrics: bool,
     ) -> Result<(), Abort> {
         let gid = w.native_glyph(mem) as u32;
-        let f = w.native_font(mem).0;
+        let f = w.native_font(mem);
         let engine = self.require_ot_engine(f, "bad native font flag in `measure_native_glyph`")?;
-        w.set_width(mem, Scaled(d2fix(engine.font().glyph_width(gid) as f64)));
+        w.set_width(mem, d2fix(engine.font().glyph_width(gid) as f64));
         if use_glyph_metrics {
             let (ht, dp) = engine.glyph_height_depth(gid);
-            w.set_height(mem, Scaled(d2fix(ht as f64)));
-            w.set_depth(mem, Scaled(d2fix(dp as f64)));
+            w.set_height(mem, d2fix(ht as f64));
+            w.set_depth(mem, d2fix(dp as f64));
         } else {
-            w.set_height(mem, Scaled(self.height_base_entry(f)));
-            w.set_depth(mem, Scaled(self.depth_base_entry(f)));
+            w.set_height(mem, self.native_height(f));
+            w.set_depth(mem, self.native_depth(f));
         }
         Ok(())
     }
 
     /// Height and depth of character `ch` of native font `font`.
-    pub fn get_native_char_height_depth(&self, font: i32, ch: i32) -> Result<(i32, i32), Abort> {
+    pub fn get_native_char_height_depth(
+        &self,
+        font: FontId,
+        ch: i32,
+    ) -> Result<(Scaled, Scaled), Abort> {
         let engine = self.require_ot_engine(
             font,
             "bad native font flag in `get_native_char_height_depth`",
@@ -1138,24 +1141,28 @@ impl FontState {
         // Snap to the baseline, x-height (param 5) and cap height (param 8) when
         // within 4% of the quad (param 6).
         let param = |k: i32| self.param(font, k);
-        let fuzz = param(6) / 25;
-        snap_zone(&mut depth, 0, fuzz);
-        snap_zone(&mut height, 0, fuzz);
+        let fuzz = Scaled(param(6).0 / 25);
+        snap_zone(&mut depth, Scaled::ZERO, fuzz);
+        snap_zone(&mut height, Scaled::ZERO, fuzz);
         snap_zone(&mut height, param(5), fuzz);
         snap_zone(&mut height, param(8), fuzz);
         Ok((height, depth))
     }
 
-    pub fn native_char_height(&self, f: i32, c: i32) -> Result<i32, Abort> {
+    pub fn native_char_height(&self, f: FontId, c: i32) -> Result<Scaled, Abort> {
         Ok(self.get_native_char_height_depth(f, c)?.0)
     }
 
-    pub fn native_char_depth(&self, f: i32, c: i32) -> Result<i32, Abort> {
+    pub fn native_char_depth(&self, f: FontId, c: i32) -> Result<Scaled, Abort> {
         Ok(self.get_native_char_height_depth(f, c)?.1)
     }
 
     /// Left and right side bearings of character `ch` of native font `font`.
-    pub fn get_native_char_sidebearings(&self, font: i32, ch: i32) -> Result<(i32, i32), Abort> {
+    pub fn get_native_char_sidebearings(
+        &self,
+        font: FontId,
+        ch: i32,
+    ) -> Result<(Scaled, Scaled), Abort> {
         let engine = self.require_ot_engine(
             font,
             "bad native font flag in `get_native_char_side_bearings`",
@@ -1166,7 +1173,7 @@ impl FontState {
     }
 
     /// Glyph bound `edge` of glyph `gid`: 1 left, 2 top, 3 right, 4 bottom.
-    pub fn get_glyph_bounds(&self, font: i32, edge: i32, gid: i32) -> Result<i32, Abort> {
+    pub fn get_glyph_bounds(&self, font: FontId, edge: i32, gid: i32) -> Result<Scaled, Abort> {
         let engine = self.require_ot_engine(font, "bad native font flag in `get_glyph_bounds`")?;
         let (a, b) = if edge & 1 != 0 {
             engine.glyph_sidebearings(gid as u32)
@@ -1176,23 +1183,23 @@ impl FontState {
         Ok(d2fix(if edge <= 2 { a } else { b } as f64))
     }
 
-    pub fn native_char_italic_correction(&self, f: i32, c: i32) -> Result<i32, Abort> {
+    pub fn native_char_italic_correction(&self, f: FontId, c: i32) -> Result<Scaled, Abort> {
         let (_, rsb) = self.get_native_char_sidebearings(f, c)?;
-        let letter_space = self.font_letter_space_entry(f);
-        Ok(if rsb < 0 {
+        let letter_space = self.font_letter_space[f];
+        Ok(if rsb < Scaled::ZERO {
             letter_space - rsb
         } else {
             letter_space
         })
     }
 
-    pub fn native_char_width(&self, f: i32, c: i32) -> Result<i32, Abort> {
+    pub fn native_char_width(&self, f: FontId, c: i32) -> Result<Scaled, Abort> {
         let engine = self.require_ot_engine(f, "bad native font flag in `get_native_char_wd`")?;
         let gid = engine.map_char_to_glyph(c as u32);
         Ok(d2fix(engine.glyph_width(gid) as f64))
     }
 
-    pub fn map_char_to_glyph(&self, font: i32, ch: i32) -> Result<i32, Abort> {
+    pub fn map_char_to_glyph(&self, font: FontId, ch: i32) -> Result<i32, Abort> {
         if ch > 0x10ffff || (0xd800..=0xdfff).contains(&ch) {
             return Ok(0);
         }
@@ -1200,13 +1207,13 @@ impl FontState {
         Ok(engine.map_char_to_glyph(ch as u32) as i32)
     }
 
-    pub fn map_glyph_to_index(&self, font: i32, name: &[u8]) -> Result<i32, Abort> {
+    pub fn map_glyph_to_index(&self, font: FontId, name: &[u8]) -> Result<i32, Abort> {
         let engine =
             self.require_ot_engine(font, "bad native font flag in `map_glyph_to_index`")?;
         Ok(engine.map_glyph_to_index(name))
     }
 
-    pub fn get_font_char_range(&self, font: i32, first: i32) -> Result<i32, Abort> {
+    pub fn get_font_char_range(&self, font: FontId, first: i32) -> Result<i32, Abort> {
         let engine =
             self.require_ot_engine(font, "bad native font flag in `get_font_char_range'`")?;
         Ok(engine.font_char_range(first))
@@ -1220,12 +1227,12 @@ impl FontState {
 
     /// Write the XDV native font definition of `f` into `fonts.xdv_buffer` and
     /// return its length.
-    pub fn make_font_def(&mut self, f: i32) -> Result<c_int, Abort> {
+    pub fn make_font_def(&mut self, f: FontId) -> Result<c_int, Abort> {
         let engine = self.require_ot_engine(f, "bad native font flag in `make_font_def`")?;
         let (name, index) = engine.font_filename();
 
         let rgba = engine.rgb_value();
-        let font_flags = self.font_flags_entry(f) as i8;
+        let font_flags = self.font_flags[f];
         let mut flags: u16 = 0;
         if font_flags & FONT_FLAGS_VERTICAL != 0 {
             flags |= XDV_FLAG_VERTICAL;
@@ -1251,7 +1258,7 @@ impl FontState {
 
         let name_len = name.len() as u8;
         let mut def = Vec::with_capacity(4 + 2 + 1 + name_len as usize + 4 + 16);
-        def.extend_from_slice(&(size as u32).to_be_bytes());
+        def.extend_from_slice(&(size.0 as u32).to_be_bytes());
         def.extend_from_slice(&flags.to_be_bytes());
         def.push(name_len);
         def.extend_from_slice(&name[..name_len as usize]);
@@ -1265,7 +1272,7 @@ impl FontState {
             (XDV_FLAG_EMBOLDEN, embolden),
         ] {
             if flags & flag != 0 {
-                def.extend_from_slice(&(d2fix(v as f64) as u32).to_be_bytes());
+                def.extend_from_slice(&(d2fix(v as f64).0 as u32).to_be_bytes());
             }
         }
 
@@ -1306,11 +1313,11 @@ impl FontState {
         mem: &mut MemState,
         w: NodePtr<WhatsitNode>,
     ) -> Result<(), Abort> {
-        let f = w.native_font(mem).0;
-        let saved_width = w.width(mem).0;
+        let f = w.native_font(mem);
+        let saved_width = w.width(mem);
         self.measure_native_node(mem, w, false)?;
 
-        let width = w.width(mem).0;
+        let width = w.width(mem);
         if width == saved_width {
             return Ok(());
         }
@@ -1345,7 +1352,7 @@ impl FontState {
             }
         }
 
-        w.set_width(mem, Scaled(saved_width));
+        w.set_width(mem, saved_width);
         Ok(())
     }
 }
@@ -1374,7 +1381,7 @@ pub fn aat_font_get_named_1(_what: c_int, _param: c_int) -> c_int {
     -1
 }
 
-pub(crate) fn print_glyph_name(st: &mut EngineState, font: i32, gid: i32) -> Result<(), Abort> {
+pub(crate) fn print_glyph_name(st: &mut EngineState, font: FontId, gid: i32) -> Result<(), Abort> {
     let engine = st
         .fonts
         .require_ot_engine(font, "bad native font flag in `print_glyph_name`")?;
@@ -1626,7 +1633,7 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
                 crate::errors::report_illegal_case(st)?;
             } else {
                 let cur_font = st.eqtb.cur_font();
-                let area = st.fonts.font_area_entry(cur_font);
+                let area = st.fonts.font_area[cur_font];
                 if area != AAT_FONT_FLAG && area != OTGR_FONT_FLAG {
                     return crate::errors::not_font_error_common(
                         st,
@@ -1649,7 +1656,7 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
                     crate::errors::int_error(st, st.scanner.cur_val)?;
                     st.scanner.cur_val = 0;
                 }
-                w.set_native_font(&mut st.mem, FontId(cur_font));
+                w.set_native_font(&mut st.mem, cur_font);
                 w.set_native_glyph(&mut st.mem, st.scanner.cur_val as u16);
                 let use_glyph_metrics = st.eqtb.int_par(INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
                 st.fonts

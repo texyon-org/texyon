@@ -4,17 +4,17 @@ use crate::consts::{
     COND_MATH_GLUE, DIMEN_BASE, DIMEN_PAR_DELIMITER_SHORTFALL, DIMEN_PAR_DISPLAY_INDENT,
     DIMEN_PAR_DISPLAY_WIDTH, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DIMEN_PAR_MATH_SURROUND,
     DIMEN_PAR_NULL_DELIMITER_SPACE, DIMEN_PAR_PRE_DISPLAY_SIZE, DIMEN_PAR_SCRIPT_SPACE, DLIST,
-    EMPTY, END_L_CODE, END_M_CODE, EXPLICIT, FIL, FILL, FILLL, FONT_BASE, FRACTION_NOAD_SIZE,
+    EMPTY, END_L_CODE, END_M_CODE, EXPLICIT, FIL, FILL, FILLL, FRACTION_NOAD_SIZE,
     GLUE_PAR_ABOVE_DISPLAY_SHORT_SKIP, GLUE_PAR_ABOVE_DISPLAY_SKIP,
     GLUE_PAR_BELOW_DISPLAY_SHORT_SKIP, GLUE_PAR_BELOW_DISPLAY_SKIP, GLUE_PAR_LEFT_SKIP,
     GLUE_PAR_MED_MU_SKIP, GLUE_PAR_RIGHT_SKIP, GLUE_PAR_THICK_MU_SKIP, GLUE_PAR_THIN_MU_SKIP,
-    GLYPH_NODE_SIZE, HMODE, INF_PENALTY, INT_BASE, INT_PAR_BIN_OP_PENALTY, INT_PAR_CUR_FAM,
-    INT_PAR_DELIMITER_FACTOR, INT_PAR_HANG_AFTER, INT_PAR_POST_DISPLAY_PENALTY,
+    GLYPH_NODE_SIZE, HMODE, INFINITE_DIMEN, INF_PENALTY, INT_BASE, INT_PAR_BIN_OP_PENALTY,
+    INT_PAR_CUR_FAM, INT_PAR_DELIMITER_FACTOR, INT_PAR_HANG_AFTER, INT_PAR_POST_DISPLAY_PENALTY,
     INT_PAR_PRE_DISPLAY_DIRECTION, INT_PAR_PRE_DISPLAY_PENALTY, INT_PAR_REL_PENALTY,
     INT_PAR_TEXXET, LEFT_TO_RIGHT, LOCAL_EVERY_DISPLAY, LOCAL_EVERY_MATH, L_CODE, MATH_CHAR,
-    MATH_TEXT_CHAR, MAX_HALFWORD, MEDIUM_NODE_SIZE, MMODE, MU_GLUE, NOAD_SIZE, NORMAL,
+    MATH_TEXT_CHAR, MAX_DIMEN, MEDIUM_NODE_SIZE, MMODE, MU_GLUE, NOAD_SIZE, NORMAL, NULL_FONT,
     NUMBER_MATH_FAMILIES, RADICAL_NOAD_SIZE, RIGHT_TO_LEFT, R_CODE, SCRIPT_SIZE, STYLE_NODE_SIZE,
-    SUB_BOX, SUB_MLIST, TEXT_SIZE, TEX_INFINITY,
+    SUB_BOX, SUB_MLIST, TEXT_SIZE,
 };
 use crate::fonts::{
     CharInfo, AAT_FONT_FLAG, EXT_TAG, LIG_TAG, LIST_TAG, OTGR_FONT_FLAG, QUAD_CODE, SPACE_CODE,
@@ -35,7 +35,7 @@ pub(crate) const DELIMITED_CODE: i32 = 3;
 pub(crate) const ABOVE_CODE: i32 = 0;
 pub(crate) const OVER_CODE: i32 = 1;
 pub(crate) const ATOP_CODE: i32 = 2;
-pub(crate) const DEFAULT_CODE: i32 = 0x4000_0000;
+pub(crate) const DEFAULT_CODE: Scaled = Scaled(0x4000_0000);
 
 const FIXED_ACC: u16 = 1;
 const BOTTOM_ACC: u16 = 2;
@@ -75,18 +75,18 @@ use crate::packaging::{ADDITIONAL, EXACTLY};
 
 impl FontState {
     #[inline]
-    fn font_uses_opentype(&self, f: i32) -> bool {
+    fn font_uses_opentype(&self, f: FontId) -> bool {
         self.layout_engine(f).is_some_and(|e| e.using_opentype())
     }
 
     #[inline]
-    fn font_is_ot_math(&self, f: i32) -> bool {
+    fn font_is_ot_math(&self, f: FontId) -> bool {
         self.layout_engine(f)
             .is_some_and(|e| e.is_opentype_math_font())
     }
 
     #[inline]
-    fn math_sy_param(&self, eqtb: &EqtbState, size_code: i32, param: i32) -> i32 {
+    fn math_sy_param(&self, eqtb: &EqtbState, size_code: i32, param: i32) -> Scaled {
         let f = eqtb.math_font(2 + size_code);
         if self.font_is_ot_math(f) {
             self.get_native_mathsy_param(f, param)
@@ -96,7 +96,7 @@ impl FontState {
     }
 
     #[inline]
-    fn math_ext_param(&self, eqtb: &EqtbState, cur_size: i32, param: i32) -> i32 {
+    fn math_ext_param(&self, eqtb: &EqtbState, cur_size: i32, param: i32) -> Scaled {
         let f = eqtb.math_font(3 + cur_size);
         if self.font_is_ot_math(f) {
             self.get_native_mathex_param(f, param)
@@ -105,110 +105,110 @@ impl FontState {
         }
     }
 
-    pub fn math_x_height(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+    pub fn math_x_height(&self, eqtb: &EqtbState, size_code: i32) -> Scaled {
         self.math_sy_param(eqtb, size_code, 5)
     }
 
-    pub fn math_quad(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+    pub fn math_quad(&self, eqtb: &EqtbState, size_code: i32) -> Scaled {
         self.math_sy_param(eqtb, size_code, 6)
     }
 
-    pub fn num1(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+    pub fn num1(&self, eqtb: &EqtbState, size_code: i32) -> Scaled {
         self.math_sy_param(eqtb, size_code, 8)
     }
 
-    pub fn num2(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+    pub fn num2(&self, eqtb: &EqtbState, size_code: i32) -> Scaled {
         self.math_sy_param(eqtb, size_code, 9)
     }
 
-    pub fn num3(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+    pub fn num3(&self, eqtb: &EqtbState, size_code: i32) -> Scaled {
         self.math_sy_param(eqtb, size_code, 10)
     }
 
-    pub fn denom1(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+    pub fn denom1(&self, eqtb: &EqtbState, size_code: i32) -> Scaled {
         self.math_sy_param(eqtb, size_code, 11)
     }
 
-    pub fn denom2(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+    pub fn denom2(&self, eqtb: &EqtbState, size_code: i32) -> Scaled {
         self.math_sy_param(eqtb, size_code, 12)
     }
 
-    pub fn sup1(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+    pub fn sup1(&self, eqtb: &EqtbState, size_code: i32) -> Scaled {
         self.math_sy_param(eqtb, size_code, 13)
     }
 
-    pub fn sup2(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+    pub fn sup2(&self, eqtb: &EqtbState, size_code: i32) -> Scaled {
         self.math_sy_param(eqtb, size_code, 14)
     }
 
-    pub fn sup3(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+    pub fn sup3(&self, eqtb: &EqtbState, size_code: i32) -> Scaled {
         self.math_sy_param(eqtb, size_code, 15)
     }
 
-    pub fn sub1(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+    pub fn sub1(&self, eqtb: &EqtbState, size_code: i32) -> Scaled {
         self.math_sy_param(eqtb, size_code, 16)
     }
 
-    pub fn sub2(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+    pub fn sub2(&self, eqtb: &EqtbState, size_code: i32) -> Scaled {
         self.math_sy_param(eqtb, size_code, 17)
     }
 
-    pub fn sup_drop(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+    pub fn sup_drop(&self, eqtb: &EqtbState, size_code: i32) -> Scaled {
         self.math_sy_param(eqtb, size_code, 18)
     }
 
-    pub fn sub_drop(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+    pub fn sub_drop(&self, eqtb: &EqtbState, size_code: i32) -> Scaled {
         self.math_sy_param(eqtb, size_code, 19)
     }
 
-    pub fn delim1(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+    pub fn delim1(&self, eqtb: &EqtbState, size_code: i32) -> Scaled {
         self.math_sy_param(eqtb, size_code, 20)
     }
 
-    pub fn delim2(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+    pub fn delim2(&self, eqtb: &EqtbState, size_code: i32) -> Scaled {
         self.math_sy_param(eqtb, size_code, 21)
     }
 
-    pub fn axis_height(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+    pub fn axis_height(&self, eqtb: &EqtbState, size_code: i32) -> Scaled {
         self.math_sy_param(eqtb, size_code, 22)
     }
 
-    pub fn default_rule_thickness(&self, eqtb: &EqtbState, cur_size: i32) -> i32 {
+    pub fn default_rule_thickness(&self, eqtb: &EqtbState, cur_size: i32) -> Scaled {
         self.math_ext_param(eqtb, cur_size, 8)
     }
 
-    pub fn big_op_spacing1(&self, eqtb: &EqtbState, cur_size: i32) -> i32 {
+    pub fn big_op_spacing1(&self, eqtb: &EqtbState, cur_size: i32) -> Scaled {
         self.math_ext_param(eqtb, cur_size, 9)
     }
 
-    pub fn big_op_spacing2(&self, eqtb: &EqtbState, cur_size: i32) -> i32 {
+    pub fn big_op_spacing2(&self, eqtb: &EqtbState, cur_size: i32) -> Scaled {
         self.math_ext_param(eqtb, cur_size, 10)
     }
 
-    pub fn big_op_spacing3(&self, eqtb: &EqtbState, cur_size: i32) -> i32 {
+    pub fn big_op_spacing3(&self, eqtb: &EqtbState, cur_size: i32) -> Scaled {
         self.math_ext_param(eqtb, cur_size, 11)
     }
 
-    pub fn big_op_spacing4(&self, eqtb: &EqtbState, cur_size: i32) -> i32 {
+    pub fn big_op_spacing4(&self, eqtb: &EqtbState, cur_size: i32) -> Scaled {
         self.math_ext_param(eqtb, cur_size, 12)
     }
 
-    pub fn big_op_spacing5(&self, eqtb: &EqtbState, cur_size: i32) -> i32 {
+    pub fn big_op_spacing5(&self, eqtb: &EqtbState, cur_size: i32) -> Scaled {
         self.math_ext_param(eqtb, cur_size, 13)
     }
 }
 
 impl MemState {
-    pub fn fraction_rule(&mut self, t: i32) -> Result<NodePtr<RuleNode>, Abort> {
+    pub fn fraction_rule(&mut self, t: Scaled) -> Result<NodePtr<RuleNode>, Abort> {
         let p = NodePtr::<RuleNode>::alloc(self)?;
         p.set_subtype(self, 0);
         p.set_width(self, RuleDimen::Running);
-        p.set_height(self, RuleDimen::Set(Scaled(t)));
-        p.set_depth(self, RuleDimen::Set(Scaled(0)));
+        p.set_height(self, RuleDimen::Set(t));
+        p.set_depth(self, RuleDimen::Set(Scaled::ZERO));
         Ok(p)
     }
 
-    pub fn overbar(&mut self, b: AnyBox, k: i32, t: i32) -> Result<MemPtr, Abort> {
+    pub fn overbar(&mut self, b: AnyBox, k: Scaled, t: Scaled) -> Result<MemPtr, Abort> {
         let p = self.new_kern(k)?;
         p.set_link(self, b.ptr());
         let q = self.fraction_rule(t)?;
@@ -221,8 +221,8 @@ impl MemState {
 
 impl ErrorState {
     /// The integer and fractional parts of the mu factor `m`, as `math_glue` splits it.
-    fn mu_parts(&mut self, m: i32) -> (i32, i32) {
-        let mut n = self.x_over_n(m, 65_536);
+    fn mu_parts(&mut self, m: Scaled) -> (i32, i32) {
+        let mut n = self.x_over_n(m.0, 65_536);
         let mut f = self.tex_remainder;
         if f < 0 {
             n -= 1;
@@ -231,44 +231,44 @@ impl ErrorState {
         (n, f)
     }
 
-    fn mu_mult(&mut self, (n, f): (i32, i32), v: i32) -> i32 {
+    fn mu_mult(&mut self, (n, f): (i32, i32), v: Scaled) -> Scaled {
         let xnd = self.xn_over_d(v, f, 65_536);
-        self.mult_and_add(n, v, xnd, MAX_HALFWORD)
+        self.mult_and_add(n, v, xnd, MAX_DIMEN)
     }
 }
 
 fn math_glue(
     st: &mut EngineState,
     spec: NodePtr<GlueSpecNode>,
-    m: i32,
+    m: Scaled,
 ) -> Result<NodePtr<GlueSpecNode>, Abort> {
     let mu = st.errors.mu_parts(m);
     let stretch_order = spec.stretch_order(&st.mem);
     let shrink_order = spec.shrink_order(&st.mem);
-    let width = st.errors.mu_mult(mu, spec.width(&st.mem).0);
-    let mut stretch = spec.stretch(&st.mem).0;
+    let width = st.errors.mu_mult(mu, spec.width(&st.mem));
+    let mut stretch = spec.stretch(&st.mem);
     if stretch_order == NORMAL {
         stretch = st.errors.mu_mult(mu, stretch);
     }
-    let mut shrink = spec.shrink(&st.mem).0;
+    let mut shrink = spec.shrink(&st.mem);
     if shrink_order == NORMAL {
         shrink = st.errors.mu_mult(mu, shrink);
     }
 
     let p = NodePtr::<GlueSpecNode>::alloc(&mut st.mem)?;
-    p.set_width(&mut st.mem, Scaled(width));
+    p.set_width(&mut st.mem, width);
     p.set_stretch_order(&mut st.mem, stretch_order);
-    p.set_stretch(&mut st.mem, Scaled(stretch));
+    p.set_stretch(&mut st.mem, stretch);
     p.set_shrink_order(&mut st.mem, shrink_order);
-    p.set_shrink(&mut st.mem, Scaled(shrink));
+    p.set_shrink(&mut st.mem, shrink);
     Ok(p)
 }
 
-fn math_kern(st: &mut EngineState, p: NodePtr<KernNode>, m: i32) {
+fn math_kern(st: &mut EngineState, p: NodePtr<KernNode>, m: Scaled) {
     if p.subtype(&st.mem) == MU_GLUE {
         let mu = st.errors.mu_parts(m);
-        let width = st.errors.mu_mult(mu, p.width(&st.mem).0);
-        p.set_width(&mut st.mem, Scaled(width));
+        let width = st.errors.mu_mult(mu, p.width(&st.mem));
+        p.set_width(&mut st.mem, width);
         p.set_subtype(&mut st.mem, EXPLICIT);
     }
 }
@@ -299,7 +299,7 @@ fn clean_box(st: &mut EngineState, p: NodePtr<MathField>, s: i16) -> Result<AnyB
     let lone_box = match q.as_idx() {
         Some(idx) if !st.mem.is_char_node(q) && q.link(&st.mem).is_null() => {
             match st.mem.classify_box(idx) {
-                Ok(Some(b)) if b.shift_amount(&st.mem).0 == 0 => Some(b),
+                Ok(Some(b)) if b.shift_amount(&st.mem) == Scaled::ZERO => Some(b),
                 _ => None,
             }
         }
@@ -307,7 +307,7 @@ fn clean_box(st: &mut EngineState, p: NodePtr<MathField>, s: i16) -> Result<AnyB
     };
     let x_box = match lone_box {
         Some(b) => b,
-        None => crate::packaging::hpack(st, q, 0, ADDITIONAL)?,
+        None => crate::packaging::hpack(st, q, Scaled::ZERO, ADDITIONAL)?,
     };
 
     let head = x_box.list_ptr(&st.mem);
@@ -354,7 +354,7 @@ fn set_cur_size_and_mu(st: &mut EngineState) {
 enum FetchOutcome {
     Ok,
     UndefinedFont { size: i32, fam: i32, c: i32 },
-    CharMissing { f: i32, c: i32 },
+    CharMissing { f: FontId, c: i32 },
 }
 
 impl MemState {
@@ -370,19 +370,19 @@ impl MemState {
         scanner.cur_f = eqtb.math_font(fam + size);
         scanner.cur_c = a.full_char(self);
 
-        if scanner.cur_f == FONT_BASE {
+        if scanner.cur_f == NULL_FONT {
             let c = scanner.cur_c;
             scanner.cur_i = fonts.null_character;
             a.set_math_type(self, EMPTY);
             return FetchOutcome::UndefinedFont { size, fam, c };
         }
 
-        let area = fonts.font_area_entry(scanner.cur_f);
+        let area = fonts.font_area[scanner.cur_f];
         if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
             scanner.cur_i = fonts.null_character;
         } else {
-            if scanner.cur_c >= fonts.font_bc_entry(scanner.cur_f) as i32
-                && scanner.cur_c <= fonts.font_ec_entry(scanner.cur_f) as i32
+            if scanner.cur_c >= fonts.font_bc[scanner.cur_f] as i32
+                && scanner.cur_c <= fonts.font_ec[scanner.cur_f] as i32
             {
                 scanner.cur_i = fonts.char_info(scanner.cur_f, scanner.cur_c);
             } else {
@@ -436,8 +436,8 @@ fn make_over(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
     let rule_thickness = st
         .fonts
         .default_rule_thickness(&st.eqtb, st.scanner.cur_size);
-    let p = st.mem.overbar(x, 3 * rule_thickness, rule_thickness)?;
-    let x = crate::packaging::vpackage(st, p, 0, ADDITIONAL, MAX_HALFWORD)?;
+    let p = st.mem.overbar(x, rule_thickness * 3, rule_thickness)?;
+    let x = crate::packaging::vpackage(st, p, Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
     st.mem.set_nucleus_box(q, x);
     Ok(())
 }
@@ -447,16 +447,16 @@ fn make_under(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
     let rule_thickness = st
         .fonts
         .default_rule_thickness(&st.eqtb, st.scanner.cur_size);
-    let kern = st.mem.new_kern(3 * rule_thickness)?;
+    let kern = st.mem.new_kern(rule_thickness * 3)?;
     x.set_link(&mut st.mem, kern.ptr());
     let rule = st.mem.fraction_rule(rule_thickness)?;
     kern.set_link(&mut st.mem, rule.ptr());
 
-    let y = crate::packaging::vpackage(st, x.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
+    let y = crate::packaging::vpackage(st, x.ptr(), Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
     let mem = &mut st.mem;
-    let delta = y.height(mem).0 + y.depth(mem).0 + rule_thickness;
+    let delta = y.height(mem) + y.depth(mem) + rule_thickness;
     y.set_height(mem, x.height(mem));
-    y.set_depth(mem, Scaled(delta - y.height(mem).0));
+    y.set_depth(mem, delta - y.height(mem));
     mem.set_nucleus_box(q, y);
     Ok(())
 }
@@ -468,9 +468,9 @@ fn make_vcenter(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
     else {
         return Err(Abort::Confusion("vcenter"));
     };
-    let delta = v.height(mem).0 + v.depth(mem).0;
-    v.set_height(mem, Scaled(axis_height + crate::scaled_math::half(delta)));
-    v.set_depth(mem, Scaled(delta - v.height(mem).0));
+    let delta = v.height(mem) + v.depth(mem);
+    v.set_height(mem, axis_height + delta.half());
+    v.set_depth(mem, delta - v.height(mem));
     Ok(())
 }
 
@@ -503,25 +503,22 @@ fn make_radical(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
         rule_thickness + rule_thickness.abs() / 4
     };
 
-    let delimiter_height = x.height(&st.mem).0 + x.depth(&st.mem).0 + clr + rule_thickness;
+    let delimiter_height = x.height(&st.mem) + x.depth(&st.mem) + clr + rule_thickness;
     let y = var_delimiter(st, q.left_delimiter(), cur_size, delimiter_height)?;
     let mem = &mut st.mem;
     if is_ot_math {
-        y.set_depth(
-            mem,
-            Scaled(y.depth(mem).0 + y.height(mem).0 - rule_thickness),
-        );
-        y.set_height(mem, Scaled(rule_thickness));
+        y.set_depth(mem, y.depth(mem) + y.height(mem) - rule_thickness);
+        y.set_height(mem, rule_thickness);
     }
-    let delta = y.depth(mem).0 - (x.height(mem).0 + x.depth(mem).0 + clr);
-    if delta > 0 {
-        clr += crate::scaled_math::half(delta);
+    let delta = y.depth(mem) - (x.height(mem) + x.depth(mem) + clr);
+    if delta > Scaled::ZERO {
+        clr += delta.half();
     }
-    y.set_shift_amount(mem, Scaled(-(x.height(mem).0 + clr)));
-    let p = mem.overbar(x, clr, y.height(mem).0)?;
-    let overbar_box = crate::packaging::vpackage(st, p, 0, ADDITIONAL, MAX_HALFWORD)?;
+    y.set_shift_amount(mem, -(x.height(mem) + clr));
+    let p = mem.overbar(x, clr, y.height(mem))?;
+    let overbar_box = crate::packaging::vpackage(st, p, Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
     y.set_link(&mut st.mem, overbar_box.ptr());
-    let hbox = crate::packaging::hpack(st, y.ptr(), 0, ADDITIONAL)?;
+    let hbox = crate::packaging::hpack(st, y.ptr(), Scaled::ZERO, ADDITIONAL)?;
     st.mem.set_nucleus_box(q, hbox);
     Ok(())
 }
@@ -529,11 +526,11 @@ fn make_radical(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
 struct FractionAssembly {
     x: AnyBox,
     z: AnyBox,
-    rule_thickness: i32,
-    shift_up: i32,
-    shift_down: i32,
-    delta: i32,
-    axis_height: i32,
+    rule_thickness: Scaled,
+    shift_up: Scaled,
+    shift_down: Scaled,
+    delta: Scaled,
+    axis_height: Scaled,
 }
 
 impl MemState {
@@ -541,25 +538,23 @@ impl MemState {
         let vb = AnyBox::VList(self.new_null_box()?.into_vlist(self));
         let xb = assembly.x;
         let zb = assembly.z;
-        vb.set_height(self, Scaled(assembly.shift_up + xb.height(self).0));
-        vb.set_depth(self, Scaled(zb.depth(self).0 + assembly.shift_down));
+        vb.set_height(self, assembly.shift_up + xb.height(self));
+        vb.set_depth(self, zb.depth(self) + assembly.shift_down);
         vb.set_width(self, xb.width(self));
 
         let p: NodePtr<KernNode>;
-        if assembly.rule_thickness == 0 {
-            let kw =
-                (assembly.shift_up - xb.depth(self).0) - (zb.height(self).0 - assembly.shift_down);
+        if assembly.rule_thickness == Scaled::ZERO {
+            let kw = (assembly.shift_up - xb.depth(self)) - (zb.height(self) - assembly.shift_down);
             p = self.new_kern(kw)?;
             p.set_link(self, assembly.z.ptr());
         } else {
             let y = self.fraction_rule(assembly.rule_thickness)?;
             let p1w =
-                (assembly.axis_height - assembly.delta) - (zb.height(self).0 - assembly.shift_down);
+                (assembly.axis_height - assembly.delta) - (zb.height(self) - assembly.shift_down);
             let p1 = self.new_kern(p1w)?;
             y.set_link(self, p1.ptr());
             p1.set_link(self, assembly.z.ptr());
-            let pw =
-                (assembly.shift_up - xb.depth(self).0) - (assembly.axis_height + assembly.delta);
+            let pw = (assembly.shift_up - xb.depth(self)) - (assembly.axis_height + assembly.delta);
             p = self.new_kern(pw)?;
             p.set_link(self, y.ptr());
         }
@@ -592,11 +587,11 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
     let cs = st.scanner.cur_style;
     let mut z = clean_box(st, q.denominator(), 2 * (cs / 2) + 3 - 2 * (cs / 6))?;
 
-    if x.width(&st.mem).0 < z.width(&st.mem).0 {
-        let w = z.width(&st.mem).0;
+    if x.width(&st.mem) < z.width(&st.mem) {
+        let w = z.width(&st.mem);
         x = rebox(st, x, w)?;
     } else {
-        let w = x.width(&st.mem).0;
+        let w = x.width(&st.mem);
         z = rebox(st, z, w)?;
     }
 
@@ -610,7 +605,7 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
         )
     } else {
         (
-            if q.thickness(&st.mem) != 0 {
+            if q.thickness(&st.mem) != Scaled::ZERO {
                 st.fonts.num2(&st.eqtb, cur_size)
             } else {
                 st.fonts.num3(&st.eqtb, cur_size)
@@ -620,7 +615,7 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
     };
 
     let delta;
-    if q.thickness(&st.mem) == 0 {
+    if q.thickness(&st.mem) == Scaled::ZERO {
         let clr = if st.fonts.font_is_ot_math(cur_f) {
             if cur_style < TEXT_STYLE {
                 st.fonts
@@ -629,22 +624,20 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
                 st.fonts.get_ot_math_constant(cur_f, STACKGAPMIN)
             }
         } else if cur_style < TEXT_STYLE {
-            7 * st.fonts.default_rule_thickness(&st.eqtb, cur_size)
+            st.fonts.default_rule_thickness(&st.eqtb, cur_size) * 7
         } else {
-            3 * st.fonts.default_rule_thickness(&st.eqtb, cur_size)
+            st.fonts.default_rule_thickness(&st.eqtb, cur_size) * 3
         };
 
-        delta = crate::scaled_math::half(
-            clr - ((shift_up - x.depth(&st.mem).0) - (z.height(&st.mem).0 - shift_down)),
-        );
-        if delta > 0 {
+        delta = (clr - ((shift_up - x.depth(&st.mem)) - (z.height(&st.mem) - shift_down))).half();
+        if delta > Scaled::ZERO {
             shift_up += delta;
             shift_down += delta;
         }
     } else {
         let axis_height = st.fonts.axis_height(&st.eqtb, cur_size);
         let (delta1, delta2) = if st.fonts.font_is_ot_math(cur_f) {
-            delta = crate::scaled_math::half(q.thickness(&st.mem));
+            delta = q.thickness(&st.mem).half();
             let clr_num = if cur_style < TEXT_STYLE {
                 st.fonts
                     .get_ot_math_constant(cur_f, FRACTIONNUMDISPLAYSTYLEGAPMIN)
@@ -652,7 +645,7 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
                 st.fonts
                     .get_ot_math_constant(cur_f, FRACTIONNUMERATORGAPMIN)
             };
-            let delta1 = clr_num - ((shift_up - x.depth(&st.mem).0) - (axis_height + delta));
+            let delta1 = clr_num - ((shift_up - x.depth(&st.mem)) - (axis_height + delta));
 
             let clr_den = if cur_style < TEXT_STYLE {
                 st.fonts
@@ -661,25 +654,25 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
                 st.fonts
                     .get_ot_math_constant(cur_f, FRACTIONDENOMINATORGAPMIN)
             };
-            let delta2 = clr_den - ((axis_height - delta) - (z.height(&st.mem).0 - shift_down));
+            let delta2 = clr_den - ((axis_height - delta) - (z.height(&st.mem) - shift_down));
             (delta1, delta2)
         } else {
             let clr = if cur_style < TEXT_STYLE {
-                3 * q.thickness(&st.mem)
+                q.thickness(&st.mem) * 3
             } else {
                 q.thickness(&st.mem)
             };
-            delta = crate::scaled_math::half(q.thickness(&st.mem));
+            delta = q.thickness(&st.mem).half();
             (
-                clr - ((shift_up - x.depth(&st.mem).0) - (axis_height + delta)),
-                clr - ((axis_height - delta) - (z.height(&st.mem).0 - shift_down)),
+                clr - ((shift_up - x.depth(&st.mem)) - (axis_height + delta)),
+                clr - ((axis_height - delta) - (z.height(&st.mem) - shift_down)),
             )
         };
 
-        if delta1 > 0 {
+        if delta1 > Scaled::ZERO {
             shift_up += delta1;
         }
-        if delta2 > 0 {
+        if delta2 > Scaled::ZERO {
             shift_down += delta2;
         }
     }
@@ -706,14 +699,14 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
     let right_delim = var_delimiter(st, q.right_delimiter(), cur_size, delimiter_size)?;
     left_delim.set_link(&mut st.mem, v.ptr());
     v.set_link(&mut st.mem, right_delim.ptr());
-    let hbox = crate::packaging::hpack(st, left_delim.ptr(), 0, ADDITIONAL)?;
+    let hbox = crate::packaging::hpack(st, left_delim.ptr(), Scaled::ZERO, ADDITIONAL)?;
     q.set_new_hlist(&mut st.mem, hbox.ptr());
     Ok(())
 }
 
 /// Returns the italic correction `delta`.
-fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Abort> {
-    let mut delta: i32 = 0;
+fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
+    let mut delta = Scaled::ZERO;
 
     if q.subtype(&st.mem) == NORMAL && st.scanner.cur_style < TEXT_STYLE {
         q.set_subtype(&mut st.mem, LIMITS);
@@ -726,9 +719,7 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Abort> {
         if !st.fonts.font_uses_opentype(f) {
             if st.scanner.cur_style < TEXT_STYLE && st.scanner.cur_i.s1 % 4 == LIST_TAG {
                 let c = st.scanner.cur_i.s0;
-                let i_info = st
-                    .fonts
-                    .font_info_b16(st.fonts.char_base_entry(f) + c as i32);
+                let i_info = st.fonts.font_info_b16(st.fonts.char_base[f] + c as i32);
                 if i_info.s3 > 0 {
                     st.scanner.cur_c = c as i32;
                     st.scanner.cur_i = i_info;
@@ -749,33 +740,33 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Abort> {
                             .fonts
                             .get_ot_math_constant(cur_f, DISPLAYOPERATORMINHEIGHT);
                         let size_h =
-                            (glyph.height(&st.mem).0 + glyph.depth(&st.mem).0) as f64 * 5.0 / 4.0;
-                        if (h1 as f64) < size_h {
-                            h1 = size_h as i32;
+                            f64::from(glyph.height(&st.mem) + glyph.depth(&st.mem)) * 5.0 / 4.0;
+                        if f64::from(h1) < size_h {
+                            h1 = Scaled(size_h as i32);
                         }
                         let c_glyph = glyph.native_glyph(&st.mem) as i32;
                         let mut n: i32 = 0;
-                        let mut h2: i32 = 0;
+                        let mut h2 = Scaled::ZERO;
                         loop {
                             let g = st
                                 .fonts
                                 .get_ot_math_variant(cur_f, c_glyph, n, &mut h2, false);
-                            if h2 > 0 {
+                            if h2 > Scaled::ZERO {
                                 glyph.set_native_glyph(&mut st.mem, g as u16);
                                 st.fonts.measure_glyph(&mut st.mem, glyph)?;
                             }
                             n += 1;
-                            if h2 < 0 || h2 >= h1 {
+                            if h2 < Scaled::ZERO || h2 >= h1 {
                                 break;
                             }
                         }
-                        if h2 < 0 {
+                        if h2 < Scaled::ZERO {
                             if let Some(assembly) = st.fonts.get_ot_assembly(cur_f, c_glyph, false)
                             {
                                 st.mem.free_node(glyph.ptr(), GLYPH_NODE_SIZE);
                                 let b = build_opentype_assembly(st, cur_f, &assembly, h1, false)?;
                                 x.set_list_ptr(&mut st.mem, b.ptr());
-                                delta = 0;
+                                delta = Scaled::ZERO;
                                 break 'found (
                                     b.width(&st.mem),
                                     b.height(&st.mem),
@@ -804,10 +795,10 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Abort> {
         let axis_height = st.fonts.axis_height(&st.eqtb, st.scanner.cur_size);
         let mem = &mut st.mem;
         if q.subscr().math_type(mem) != EMPTY && q.subtype(mem) != LIMITS {
-            x.set_width(mem, Scaled(x.width(mem).0 - delta));
+            x.set_width(mem, x.width(mem) - delta);
         }
-        let shift = crate::scaled_math::half(x.height(mem).0 - x.depth(mem).0) - axis_height;
-        x.set_shift_amount(mem, Scaled(shift));
+        let shift = (x.height(mem) - x.depth(mem)).half() - axis_height;
+        x.set_shift_amount(mem, shift);
         mem.set_nucleus_box(q, x);
     }
 
@@ -819,12 +810,8 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Abort> {
         let z = clean_box(st, q.subscr(), (2 * (cs / 4) + 5) as i16)?;
 
         let v = AnyBox::VList(st.mem.new_null_box()?.into_vlist(&mut st.mem));
-        let w = y
-            .width(&st.mem)
-            .0
-            .max(x.width(&st.mem).0)
-            .max(z.width(&st.mem).0);
-        v.set_width(&mut st.mem, Scaled(w));
+        let w = y.width(&st.mem).max(x.width(&st.mem)).max(z.width(&st.mem));
+        v.set_width(&mut st.mem, w);
 
         let x = rebox(st, x, w)?;
         let y = rebox(st, y, w)?;
@@ -838,9 +825,9 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Abort> {
         let bos5 = st.fonts.big_op_spacing5(&st.eqtb, size);
 
         let mem = &mut st.mem;
-        let half_delta = crate::scaled_math::half(delta);
-        x.set_shift_amount(mem, Scaled(half_delta));
-        z.set_shift_amount(mem, Scaled(-half_delta));
+        let half_delta = delta.half();
+        x.set_shift_amount(mem, half_delta);
+        z.set_shift_amount(mem, -half_delta);
         v.set_height(mem, y.height(mem));
         v.set_depth(mem, y.depth(mem));
         st.scanner.cur_f = save_f;
@@ -849,28 +836,28 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Abort> {
             mem.free_node(x.ptr(), BOX_NODE_SIZE);
             v.set_list_ptr(mem, y.ptr());
         } else {
-            let shift_up = (bos3 - x.depth(mem).0).max(bos1);
+            let shift_up = (bos3 - x.depth(mem)).max(bos1);
             let p = mem.new_kern(shift_up)?;
             p.set_link(mem, y.ptr());
             x.set_link(mem, p.ptr());
             let p = mem.new_kern(bos5)?;
             p.set_link(mem, x.ptr());
             v.set_list_ptr(mem, p.ptr());
-            let height = v.height(mem).0 + bos5 + x.height(mem).0 + x.depth(mem).0 + shift_up;
-            v.set_height(mem, Scaled(height));
+            let height = v.height(mem) + bos5 + x.height(mem) + x.depth(mem) + shift_up;
+            v.set_height(mem, height);
         }
 
         if q.subscr().math_type(mem) == EMPTY {
             mem.free_node(z.ptr(), BOX_NODE_SIZE);
         } else {
-            let shift_down = (bos4 - z.height(mem).0).max(bos2);
+            let shift_down = (bos4 - z.height(mem)).max(bos2);
             let p = mem.new_kern(shift_down)?;
             y.set_link(mem, p.ptr());
             p.set_link(mem, z.ptr());
             let p = mem.new_kern(bos5)?;
             z.set_link(mem, p.ptr());
-            let depth = v.depth(mem).0 + bos5 + z.height(mem).0 + z.depth(mem).0 + shift_down;
-            v.set_depth(mem, Scaled(depth));
+            let depth = v.depth(mem) + bos5 + z.height(mem) + z.depth(mem) + shift_down;
+            v.set_depth(mem, depth);
         }
 
         q.set_new_hlist(mem, v.ptr());
@@ -883,10 +870,10 @@ impl FontState {
     /// Points `cur_i` at the first instruction of the lig/kern program for `cur_i`
     /// in `cur_f` and returns its index.
     fn lig_kern_start(&self, scanner: &mut ScannerState) -> i32 {
-        let mut a = self.lig_kern_base_entry(scanner.cur_f) + scanner.cur_i.s0 as i32;
+        let mut a = self.lig_kern_base[scanner.cur_f] + scanner.cur_i.s0 as i32;
         scanner.cur_i = self.font_info_b16(a);
         if scanner.cur_i.s3 > 128 {
-            a = self.lig_kern_base_entry(scanner.cur_f)
+            a = self.lig_kern_base[scanner.cur_f]
                 + 256 * scanner.cur_i.s1 as i32
                 + scanner.cur_i.s0 as i32
                 + 32768
@@ -1019,12 +1006,12 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
     fetch(st, q.accent_chr())?;
     let f = st.scanner.cur_f;
     let mut c = st.scanner.cur_c;
-    let area = st.fonts.font_area_entry(f);
+    let area = st.fonts.font_area[f];
     let kind = q.subtype(&st.mem);
     let bottom_accent = kind == BOTTOM_ACC || kind == BOTTOM_ACC + 1;
     let is_native = area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG;
 
-    let mut s: i32 = 0;
+    let mut s = Scaled::ZERO;
     let mut x: AnyBox;
     if is_native {
         if !bottom_accent {
@@ -1037,17 +1024,17 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
             fetch(st, q.nucleus())?;
             if st.scanner.cur_i.s1 % 4 == LIG_TAG {
                 let mut a = st.fonts.lig_kern_start(&mut st.scanner);
-                let skew_char = st.fonts.skew_char_entry(st.scanner.cur_f) as u16;
+                let skew_char = st.fonts.skew_char[st.scanner.cur_f] as u16;
                 s = loop {
                     let i = st.scanner.cur_i;
                     if i.s2 == skew_char {
                         if i.s1 >= 128 && i.s3 <= 128 {
                             break st.fonts.char_kern(st.scanner.cur_f, i);
                         }
-                        break 0;
+                        break Scaled::ZERO;
                     }
                     if i.s3 >= 128 {
-                        break 0;
+                        break Scaled::ZERO;
                     }
                     a += i.s3 as i32 + 1;
                     st.scanner.cur_i = st.fonts.font_info_b16(a);
@@ -1055,7 +1042,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
             }
         }
         x = clean_box(st, q.nucleus(), 2 * (st.scanner.cur_style / 2) + 1)?;
-        let w = x.width(&st.mem).0;
+        let w = x.width(&st.mem);
         while acc_i.s1 % 4 == LIST_TAG {
             let larger = acc_i.s0 as i32;
             acc_i = st.fonts.char_info(f, larger);
@@ -1067,13 +1054,13 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
     } else {
         return Ok(());
     }
-    let w = x.width(&st.mem).0;
-    let mut h = x.height(&st.mem).0;
+    let w = x.width(&st.mem);
+    let mut h = x.height(&st.mem);
 
     let is_ot_math = st.fonts.font_is_ot_math(f);
     let mut delta = if is_ot_math {
         if bottom_accent {
-            0
+            Scaled::ZERO
         } else {
             h.min(st.fonts.get_ot_math_constant(f, ACCENTBASEHEIGHT))
         }
@@ -1097,8 +1084,8 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
         q.nucleus().set_math_type(mem, SUB_MLIST);
         q.nucleus().set_info(mem, base.ptr());
         x = clean_box(st, q.nucleus(), st.scanner.cur_style)?;
-        delta += x.height(&st.mem).0 - h;
-        h = x.height(&st.mem).0;
+        delta += x.height(&st.mem) - h;
+        h = x.height(&st.mem);
     }
 
     let y;
@@ -1107,7 +1094,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
         y = st.mem.native_char_box(old)?;
         let glyph =
             NodePtr::<WhatsitNode>::alloc(&mut st.mem, GLYPH_NODE_SIZE, WhatsitSubtype::Glyph)?;
-        glyph.set_native_font(&mut st.mem, FontId(f));
+        glyph.set_native_font(&mut st.mem, f);
         let glyph_id = st.mem.get_native_glyph(old, 0);
         glyph.set_native_glyph(&mut st.mem, glyph_id);
         st.fonts.measure_glyph(&mut st.mem, glyph)?;
@@ -1120,19 +1107,19 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
         } else {
             let c_glyph = glyph.native_glyph(&st.mem) as i32;
             let mut n: i32 = 0;
-            let mut w2: i32 = 0;
+            let mut w2 = Scaled::ZERO;
             loop {
                 let g = st.fonts.get_ot_math_variant(f, c_glyph, n, &mut w2, true);
-                if w2 > 0 && w2 <= w {
+                if w2 > Scaled::ZERO && w2 <= w {
                     glyph.set_native_glyph(&mut st.mem, g as u16);
                     st.fonts.measure_glyph(&mut st.mem, glyph)?;
                     n += 1;
                 }
-                if w2 < 0 || w2 >= w {
+                if w2 < Scaled::ZERO || w2 >= w {
                     break;
                 }
             }
-            if w2 < 0 {
+            if w2 < Scaled::ZERO {
                 if let Some(assembly) = st.fonts.get_ot_assembly(f, c_glyph, true) {
                     st.mem.free_node(glyph.ptr(), GLYPH_NODE_SIZE);
                     let b = build_opentype_assembly(st, f, &assembly, w, true)?;
@@ -1153,52 +1140,52 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
         y.set_height(mem, gh);
         y.set_depth(mem, gd);
         if bottom_accent {
-            if y.height(mem).0 < 0 {
-                y.set_height(mem, Scaled(0));
+            if y.height(mem) < Scaled::ZERO {
+                y.set_height(mem, Scaled::ZERO);
             }
-        } else if y.depth(mem).0 < 0 {
-            y.set_depth(mem, Scaled(0));
+        } else if y.depth(mem) < Scaled::ZERO {
+            y.set_depth(mem, Scaled::ZERO);
         }
 
         let attach = match assembly_box {
             None => st
                 .fonts
                 .get_ot_math_accent_pos(f, glyph.native_glyph(mem) as i32),
-            Some(_) => TEX_INFINITY,
+            Some(_) => INFINITE_DIMEN,
         };
-        let sa = if attach == TEX_INFINITY {
-            crate::scaled_math::half(y.width(mem).0)
+        let sa = if attach == INFINITE_DIMEN {
+            y.width(mem).half()
         } else {
             attach
         };
-        if bottom_accent || s == TEX_INFINITY {
-            s = crate::scaled_math::half(w);
+        if bottom_accent || s == INFINITE_DIMEN {
+            s = w.half();
         }
-        y.set_shift_amount(mem, Scaled(s - sa));
+        y.set_shift_amount(mem, s - sa);
     } else {
         y = st.mem.char_box_tfm(&mut st.fonts, f, c as u16)?;
-        let shift = s + crate::scaled_math::half(w - y.width(&st.mem).0);
-        y.set_shift_amount(&mut st.mem, Scaled(shift));
+        let shift = s + (w - y.width(&st.mem)).half();
+        y.set_shift_amount(&mut st.mem, shift);
     }
 
-    y.set_width(&mut st.mem, Scaled(0));
+    y.set_width(&mut st.mem, Scaled::ZERO);
     let v = if bottom_accent {
         x.set_link(&mut st.mem, y.ptr());
-        let v = crate::packaging::vpackage(st, x.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
-        let v_height = v.height(&st.mem).0;
-        v.set_shift_amount(&mut st.mem, Scaled(-(h - v_height)));
+        let v = crate::packaging::vpackage(st, x.ptr(), Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
+        let v_height = v.height(&st.mem);
+        v.set_shift_amount(&mut st.mem, -(h - v_height));
         v
     } else {
         let kern = st.mem.new_kern(-delta)?;
         kern.set_link(&mut st.mem, x.ptr());
         y.set_link(&mut st.mem, kern.ptr());
-        let v = crate::packaging::vpackage(st, y.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
+        let v = crate::packaging::vpackage(st, y.ptr(), Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
         let mem = &mut st.mem;
-        if v.height(mem).0 < h {
-            let kern = mem.new_kern(h - v.height(mem).0)?;
+        if v.height(mem) < h {
+            let kern = mem.new_kern(h - v.height(mem))?;
             kern.set_link(mem, v.list_ptr(mem));
             v.set_list_ptr(mem, kern.ptr());
-            v.set_height(mem, Scaled(h));
+            v.set_height(mem, h);
         }
         v
     };
@@ -1225,7 +1212,7 @@ impl MemState {
 
 struct ScriptKernAttachment {
     p: MemPtr,
-    kern: i32,
+    kern: Scaled,
     is_ot_math: bool,
 }
 
@@ -1233,10 +1220,10 @@ fn maybe_attach_script_kern(
     st: &mut EngineState,
     q: NodePtr<Noad>,
     p: MemPtr,
-    script_f: i32,
+    script_f: FontId,
     script_g: u16,
     kind: ScriptKind,
-    shift: i32,
+    shift: Scaled,
 ) -> Result<ScriptKernAttachment, Abort> {
     let cur_f = st.scanner.cur_f;
     let nucleus = st.mem.glyph_whatsit(p);
@@ -1244,7 +1231,7 @@ fn maybe_attach_script_kern(
     if !st.fonts.font_is_ot_math(cur_f) {
         return Ok(ScriptKernAttachment {
             p,
-            kern: 0,
+            kern: Scaled::ZERO,
             is_ot_math: false,
         });
     }
@@ -1252,20 +1239,20 @@ fn maybe_attach_script_kern(
     let Some(nucleus) = nucleus else {
         return Ok(ScriptKernAttachment {
             p,
-            kern: 0,
+            kern: Scaled::ZERO,
             is_ot_math: true,
         });
     };
 
     let kern = st.fonts.get_ot_math_kern(
-        nucleus.native_font(&st.mem).0,
+        nucleus.native_font(&st.mem),
         nucleus.native_glyph(&st.mem) as i32,
         script_f,
         script_g as i32,
         kind,
         shift,
     );
-    let p = if kern == 0 {
+    let p = if kern == Scaled::ZERO {
         p
     } else {
         let k = st.mem.new_kern(kern)?;
@@ -1288,14 +1275,14 @@ enum ScriptBoxAdjustment {
 
 struct ScriptBoxPrep {
     box_node: AnyBox,
-    shift: i32,
+    shift: Scaled,
 }
 
 fn clean_script_box(
     st: &mut EngineState,
     script_field: NodePtr<MathField>,
     clean_style: i16,
-    saved_font: i32,
+    saved_font: FontId,
     adjustment: ScriptBoxAdjustment,
 ) -> Result<ScriptBoxPrep, Abort> {
     let node = clean_box(st, script_field, clean_style)?;
@@ -1313,8 +1300,8 @@ fn clean_script_box(
         }
     };
     st.scanner.cur_f = saved_font;
-    let w = node.width(&st.mem).0 + st.eqtb.dimen_par(DIMEN_PAR_SCRIPT_SPACE);
-    node.set_width(&mut st.mem, Scaled(w));
+    let w = node.width(&st.mem) + st.eqtb.dimen_par(DIMEN_PAR_SCRIPT_SPACE);
+    node.set_width(&mut st.mem, w);
     Ok(ScriptBoxPrep {
         box_node: node,
         shift,
@@ -1322,23 +1309,26 @@ fn clean_script_box(
 }
 
 struct ScriptShifts {
-    up: i32,
-    down: i32,
+    up: Scaled,
+    down: Scaled,
 }
 
 fn initial_script_shifts(st: &mut EngineState, p: MemPtr) -> Result<ScriptShifts, Abort> {
     if st.mem.is_char_node(p) || st.mem.glyph_whatsit(p).is_some() {
-        Ok(ScriptShifts { up: 0, down: 0 })
+        Ok(ScriptShifts {
+            up: Scaled::ZERO,
+            down: Scaled::ZERO,
+        })
     } else {
-        let zb = crate::packaging::hpack(st, p, 0, ADDITIONAL)?;
+        let zb = crate::packaging::hpack(st, p, Scaled::ZERO, ADDITIONAL)?;
         let t = if st.scanner.cur_style < SCRIPT_STYLE {
             SCRIPT_SIZE
         } else {
             SCRIPT_SCRIPT_SIZE
         };
         let shifts = ScriptShifts {
-            up: zb.height(&st.mem).0 - st.fonts.sup_drop(&st.eqtb, t),
-            down: zb.depth(&st.mem).0 + st.fonts.sub_drop(&st.eqtb, t),
+            up: zb.height(&st.mem) - st.fonts.sup_drop(&st.eqtb, t),
+            down: zb.depth(&st.mem) + st.fonts.sub_drop(&st.eqtb, t),
         };
         st.mem.free_node(zb.ptr(), BOX_NODE_SIZE);
         Ok(shifts)
@@ -1350,19 +1340,19 @@ struct SubSupStackInput {
     p: MemPtr,
     x: AnyBox,
     y: AnyBox,
-    sub_f: i32,
+    sub_f: FontId,
     sub_g: u16,
-    sup_f: i32,
+    sup_f: FontId,
     sup_g: u16,
-    shift_down: i32,
-    shift_up: i32,
-    delta: i32,
+    shift_down: Scaled,
+    shift_up: Scaled,
+    delta: Scaled,
 }
 
 fn finish_subsup_stack(st: &mut EngineState, input: SubSupStackInput) -> Result<(), Abort> {
     let mut p = input.p;
     let mut sub_kern;
-    let mut sup_kern = 0;
+    let mut sup_kern = Scaled::ZERO;
     let attachment = maybe_attach_script_kern(
         st,
         input.q,
@@ -1389,21 +1379,22 @@ fn finish_subsup_stack(st: &mut EngineState, input: SubSupStackInput) -> Result<
             sup_kern = attachment.kern;
         }
     } else {
-        sup_kern = 0;
-        sub_kern = 0;
+        sup_kern = Scaled::ZERO;
+        sub_kern = Scaled::ZERO;
     }
 
-    let kern_width = (input.shift_up - input.x.depth(&st.mem).0)
-        - (input.y.height(&st.mem).0 - input.shift_down);
+    let kern_width =
+        (input.shift_up - input.x.depth(&st.mem)) - (input.y.height(&st.mem) - input.shift_down);
     input
         .x
-        .set_shift_amount(&mut st.mem, Scaled(sup_kern + input.delta - sub_kern));
+        .set_shift_amount(&mut st.mem, sup_kern + input.delta - sub_kern);
     let kern = st.mem.new_kern(kern_width)?;
     input.x.set_link(&mut st.mem, kern.ptr());
     kern.set_link(&mut st.mem, input.y.ptr());
 
-    let packaged = crate::packaging::vpackage(st, input.x.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
-    packaged.set_shift_amount(&mut st.mem, Scaled(input.shift_down));
+    let packaged =
+        crate::packaging::vpackage(st, input.x.ptr(), Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
+    packaged.set_shift_amount(&mut st.mem, input.shift_down);
     st.mem.append_to_new_hlist(input.q, packaged.ptr());
     Ok(())
 }
@@ -1411,15 +1402,15 @@ fn finish_subsup_stack(st: &mut EngineState, input: SubSupStackInput) -> Result<
 struct PreparedScript {
     box_node: AnyBox,
     glyph: u16,
-    font: i32,
-    shift: i32,
+    font: FontId,
+    shift: Scaled,
 }
 
 fn prepare_subscript(
     st: &mut EngineState,
     q: NodePtr<Noad>,
     adjustment: ScriptBoxAdjustment,
-    shift_down: i32,
+    shift_down: Scaled,
 ) -> Result<PreparedScript, Abort> {
     let script_field = q.subscr();
     let (glyph, font) = first_script_glyph(st, script_field)?;
@@ -1438,7 +1429,7 @@ fn finish_subscript_only(
     st: &mut EngineState,
     q: NodePtr<Noad>,
     p: MemPtr,
-    shift_down: i32,
+    shift_down: Scaled,
 ) -> Result<(), Abort> {
     let PreparedScript {
         box_node: x,
@@ -1448,7 +1439,7 @@ fn finish_subscript_only(
     } = prepare_subscript(st, q, ScriptBoxAdjustment::Sub1, shift_down)?;
 
     let cur_f = st.scanner.cur_f;
-    let box_depth = x.height(&st.mem).0;
+    let box_depth = x.height(&st.mem);
     let x_height = st.fonts.math_x_height(&st.eqtb, st.scanner.cur_size);
     let clr = if st.fonts.font_is_ot_math(cur_f) {
         box_depth - st.fonts.get_ot_math_constant(cur_f, SUBSCRIPTTOPMAX)
@@ -1457,7 +1448,7 @@ fn finish_subscript_only(
     };
 
     let shift_down = shift_down.max(clr);
-    x.set_shift_amount(&mut st.mem, Scaled(shift_down));
+    x.set_shift_amount(&mut st.mem, shift_down);
 
     let _ = maybe_attach_script_kern(st, q, p, sub_f, sub_g, ScriptKind::Sub, shift_down)?;
     st.mem.append_to_new_hlist(q, x.ptr());
@@ -1467,7 +1458,7 @@ fn finish_subscript_only(
 fn prepare_superscript(
     st: &mut EngineState,
     q: NodePtr<Noad>,
-    mut shift_up: i32,
+    mut shift_up: Scaled,
 ) -> Result<PreparedScript, Abort> {
     let (glyph, font) = first_script_glyph(st, q.supscr())?;
     let save_f = st.scanner.cur_f;
@@ -1482,7 +1473,7 @@ fn prepare_superscript(
     shift_up = shift_up.max(prepared.shift);
 
     let cur_f = st.scanner.cur_f;
-    let box_height = prepared.box_node.depth(&st.mem).0;
+    let box_height = prepared.box_node.depth(&st.mem);
     let x_height = st.fonts.math_x_height(&st.eqtb, st.scanner.cur_size);
     let clr = if st.fonts.font_is_ot_math(cur_f) {
         box_height + st.fonts.get_ot_math_constant(cur_f, SUPERSCRIPTBOTTOMMIN)
@@ -1503,8 +1494,8 @@ fn finish_superscript_branch(
     q: NodePtr<Noad>,
     p: MemPtr,
     superscript: PreparedScript,
-    mut shift_down: i32,
-    delta: i32,
+    mut shift_down: Scaled,
+    delta: Scaled,
 ) -> Result<(), Abort> {
     let x = superscript.box_node;
     let shift_up = superscript.shift;
@@ -1519,7 +1510,7 @@ fn finish_superscript_branch(
             ScriptKind::Sup,
             shift_up,
         )?;
-        x.set_shift_amount(&mut st.mem, Scaled(-shift_up));
+        x.set_shift_amount(&mut st.mem, -shift_up);
         st.mem.append_to_new_hlist(q, x.ptr());
         return Ok(());
     }
@@ -1533,8 +1524,8 @@ fn finish_superscript_branch(
     shift_down = shift;
 
     let cur_f = st.scanner.cur_f;
-    let x_height_node = x.depth(&st.mem).0;
-    let y_depth = y.height(&st.mem).0;
+    let x_height_node = x.depth(&st.mem);
+    let y_depth = y.height(&st.mem);
     let default_rule_thickness = st
         .fonts
         .default_rule_thickness(&st.eqtb, st.scanner.cur_size);
@@ -1542,14 +1533,14 @@ fn finish_superscript_branch(
         st.fonts.get_ot_math_constant(cur_f, SUBSUPERSCRIPTGAPMIN)
             - ((shift_up - x_height_node) - (y_depth - shift_down))
     } else {
-        4 * default_rule_thickness - ((shift_up - x_height_node) - (y_depth - shift_down))
+        default_rule_thickness * 4 - ((shift_up - x_height_node) - (y_depth - shift_down))
     };
 
     let mut shift_up = shift_up;
-    if clr > 0 {
+    if clr > Scaled::ZERO {
         shift_down += clr;
         let cur_f = st.scanner.cur_f;
-        let x_height_node = x.depth(&st.mem).0;
+        let x_height_node = x.depth(&st.mem);
         let x_height = st.fonts.math_x_height(&st.eqtb, st.scanner.cur_size);
         clr = if st.fonts.font_is_ot_math(cur_f) {
             st.fonts
@@ -1558,7 +1549,7 @@ fn finish_superscript_branch(
         } else {
             (x_height * 4).abs() / 5 - (shift_up - x_height_node)
         };
-        if clr > 0 {
+        if clr > Scaled::ZERO {
             shift_up += clr;
             shift_down -= clr;
         }
@@ -1628,9 +1619,9 @@ impl MemState {
 fn first_script_glyph(
     st: &mut EngineState,
     script_head: NodePtr<MathField>,
-) -> Result<(u16, i32), Abort> {
+) -> Result<(u16, FontId), Abort> {
     let mut script_g: u16 = 0;
-    let mut script_f: i32 = 0;
+    let mut script_f = NULL_FONT;
 
     let initial_math_style = 2 * (st.scanner.cur_style / 4) + 5;
     let (script_head, this_math_style) = st
@@ -1665,7 +1656,7 @@ fn first_script_glyph(
     Ok((script_g, script_f))
 }
 
-fn make_scripts(st: &mut EngineState, q: NodePtr<Noad>, delta: i32) -> Result<(), Abort> {
+fn make_scripts(st: &mut EngineState, q: NodePtr<Noad>, delta: Scaled) -> Result<(), Abort> {
     let p = q.new_hlist(&st.mem);
     let shifts = initial_script_shifts(st, p)?;
 
@@ -1682,8 +1673,8 @@ fn make_left_right(
     st: &mut EngineState,
     q: NodePtr<Noad>,
     style: i16,
-    max_d: i32,
-    max_h: i32,
+    max_d: Scaled,
+    max_h: Scaled,
 ) -> Result<NodeType, Abort> {
     st.scanner.cur_style = style;
     set_cur_size_and_mu(st);
@@ -1749,14 +1740,14 @@ impl MemState {
         Ok(())
     }
 
-    fn mlist_track_rule(&self, rule: NodePtr<RuleNode>, max_h: &mut i32, max_d: &mut i32) {
-        *max_h = (*max_h).max(rule.height(self).raw());
-        *max_d = (*max_d).max(rule.depth(self).raw());
+    fn mlist_track_rule(&self, rule: NodePtr<RuleNode>, max_h: &mut Scaled, max_d: &mut Scaled) {
+        *max_h = (*max_h).max(rule.height(self).to_scaled());
+        *max_d = (*max_d).max(rule.depth(self).to_scaled());
     }
 
-    fn mlist_track_box(&mut self, z: AnyBox, max_h: &mut i32, max_d: &mut i32) {
-        *max_h = (*max_h).max(z.height(self).0);
-        *max_d = (*max_d).max(z.depth(self).0);
+    fn mlist_track_box(&mut self, z: AnyBox, max_h: &mut Scaled, max_d: &mut Scaled) {
+        *max_h = (*max_h).max(z.height(self));
+        *max_d = (*max_d).max(z.depth(self));
         self.free_node(z.ptr(), BOX_NODE_SIZE);
     }
 
@@ -1806,12 +1797,12 @@ fn mlist_advance(st: &mut EngineState, qn: NodePtr<Noad>, style: i16) -> (u16, M
 }
 
 /// Translates the nucleus of `qn` into its `new_hlist` and attaches its scripts.
-fn mlist_nucleus(st: &mut EngineState, qn: NodePtr<Noad>, mut delta: i32) -> Result<(), Abort> {
+fn mlist_nucleus(st: &mut EngineState, qn: NodePtr<Noad>, mut delta: Scaled) -> Result<(), Abort> {
     let p = match qn.nucleus().math_type(&st.mem) {
         MATH_CHAR | MATH_TEXT_CHAR => {
             fetch(st, qn.nucleus())?;
             let cur_f = st.scanner.cur_f;
-            let area = st.fonts.font_area_entry(cur_f);
+            let area = st.fonts.font_area[cur_f];
             let p = if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
                 let z = crate::fonts::new_native_character(st, cur_f, st.scanner.cur_c as u32)?;
                 let glyph = NodePtr::<WhatsitNode>::alloc(
@@ -1819,7 +1810,7 @@ fn mlist_nucleus(st: &mut EngineState, qn: NodePtr<Noad>, mut delta: i32) -> Res
                     GLYPH_NODE_SIZE,
                     WhatsitSubtype::Glyph,
                 )?;
-                glyph.set_native_font(&mut st.mem, FontId(cur_f));
+                glyph.set_native_font(&mut st.mem, cur_f);
                 let z_glyph = st.mem.get_native_glyph(z, 0);
                 glyph.set_native_glyph(&mut st.mem, z_glyph);
                 st.fonts.measure_glyph(&mut st.mem, glyph)?;
@@ -1830,7 +1821,7 @@ fn mlist_nucleus(st: &mut EngineState, qn: NodePtr<Noad>, mut delta: i32) -> Res
                 if qn.nucleus().math_type(&st.mem) == MATH_TEXT_CHAR
                     && !st.fonts.font_is_ot_math(cur_f)
                 {
-                    delta = 0;
+                    delta = Scaled::ZERO;
                 }
                 glyph.ptr()
             } else if st.scanner.cur_i.s3 > 0 {
@@ -1839,18 +1830,18 @@ fn mlist_nucleus(st: &mut EngineState, qn: NodePtr<Noad>, mut delta: i32) -> Res
                 let p = crate::main_control::new_character(st, cur_f, cc)?;
                 let p = p.map_or(MemPtr::NULL, crate::main_control::NewChar::ptr);
                 if qn.nucleus().math_type(&st.mem) == MATH_TEXT_CHAR
-                    && st.fonts.param(cur_f, SPACE_CODE) != 0
+                    && st.fonts.param(cur_f, SPACE_CODE) != Scaled::ZERO
                 {
-                    delta = 0;
+                    delta = Scaled::ZERO;
                 }
                 p
             } else {
                 MemPtr::NULL
             };
-            if !p.is_null() && qn.subscr().math_type(&st.mem) == EMPTY && delta != 0 {
+            if !p.is_null() && qn.subscr().math_type(&st.mem) == EMPTY && delta != Scaled::ZERO {
                 let k = st.mem.new_kern(delta)?;
                 p.set_link(&mut st.mem, k.ptr());
-                delta = 0;
+                delta = Scaled::ZERO;
             }
             p
         }
@@ -1860,7 +1851,7 @@ fn mlist_nucleus(st: &mut EngineState, qn: NodePtr<Noad>, mut delta: i32) -> Res
             let mlist = qn.nucleus().info(&st.mem);
             let style = st.scanner.cur_style;
             let list = sublist_to_hlist(st, mlist, style)?;
-            crate::packaging::hpack(st, list, 0, ADDITIONAL)?.ptr()
+            crate::packaging::hpack(st, list, Scaled::ZERO, ADDITIONAL)?.ptr()
         }
         _ => return Err(Abort::Confusion("mlist2")),
     };
@@ -1893,8 +1884,8 @@ fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
     let mut q = mlist;
     let mut r: Option<NodePtr<Noad>> = None;
     let mut r_type = NodeType::OpNoad.as_raw();
-    let mut max_h = 0;
-    let mut max_d = 0;
+    let mut max_h = Scaled::ZERO;
+    let mut max_d = Scaled::ZERO;
 
     set_cur_size_and_mu(st);
 
@@ -1908,7 +1899,7 @@ fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
     while !q.is_null() {
         let mut delta;
         let action = 'reswitch: loop {
-            delta = 0;
+            delta = Scaled::ZERO;
             match st.mem.classify(MemIdx::new(q)) {
                 Ok(AnyNode::Noad(qn)) => match qn.noad_type(&st.mem) {
                     NodeType::BinNoad => {
@@ -2037,7 +2028,7 @@ fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                     mlist_nucleus(st, qn, delta)?;
                 }
                 let list = qn.new_hlist(&st.mem);
-                let z_box = crate::packaging::hpack(st, list, 0, ADDITIONAL)?;
+                let z_box = crate::packaging::hpack(st, list, Scaled::ZERO, ADDITIONAL)?;
                 st.mem.mlist_track_box(z_box, &mut max_h, &mut max_d);
                 qn
             }
@@ -2202,14 +2193,14 @@ impl MemState {
         let b = self.new_null_box()?;
         b.set_height(self, p.height(self));
         b.set_width(self, p.width(self));
-        b.set_depth(self, Scaled(p.depth(self).0.max(0)));
+        b.set_depth(self, p.depth(self).max(Scaled::ZERO));
         b.set_list_ptr(self, p.ptr());
         Ok(AnyBox::HList(b))
     }
 }
 
-fn char_box(st: &mut EngineState, f: i32, c: i32) -> Result<AnyBox, Abort> {
-    let area = st.fonts.font_area_entry(f);
+fn char_box(st: &mut EngineState, f: FontId, c: i32) -> Result<AnyBox, Abort> {
+    let area = st.fonts.font_area[f];
     if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
         let p = crate::fonts::new_native_character(st, f, c as u32)?;
         Ok(st.mem.native_char_box(p)?)
@@ -2219,7 +2210,7 @@ fn char_box(st: &mut EngineState, f: i32, c: i32) -> Result<AnyBox, Abort> {
 }
 
 impl MemState {
-    fn char_box_tfm(&mut self, fonts: &mut FontState, f: i32, c: u16) -> Result<AnyBox, Abort> {
+    fn char_box_tfm(&mut self, fonts: &mut FontState, f: FontId, c: u16) -> Result<AnyBox, Abort> {
         let c_eff = fonts.effective_char(f, c);
         let q = fonts.char_info(f, c_eff);
         let width = fonts.char_width(f, q) + fonts.char_italic(f, q);
@@ -2227,10 +2218,10 @@ impl MemState {
         let depth = fonts.char_depth(f, q);
 
         let b = self.new_null_box()?;
-        b.set_width(self, Scaled(width));
-        b.set_height(self, Scaled(height));
-        b.set_depth(self, Scaled(depth));
-        let p = self.new_char(FontId(f), c)?;
+        b.set_width(self, width);
+        b.set_height(self, height);
+        b.set_depth(self, depth);
+        let p = self.new_char(f, c)?;
         b.set_list_ptr(self, p.ptr());
         Ok(AnyBox::HList(b))
     }
@@ -2239,13 +2230,13 @@ impl MemState {
         let link = b_box.list_ptr(self);
         p.set_link(self, link);
         b_box.set_list_ptr(self, p.ptr());
-        let h = p.height(self).0;
-        b_box.set_height(self, Scaled(h));
+        let h = p.height(self);
+        b_box.set_height(self, h);
     }
 }
 
 impl FontState {
-    fn height_plus_depth(&mut self, f: i32, c: u16) -> i32 {
+    fn height_plus_depth(&mut self, f: FontId, c: u16) -> Scaled {
         let c = self.effective_char(f, c);
         let q = self.char_info(f, c);
         self.char_height(f, q) + self.char_depth(f, q)
@@ -2253,15 +2244,19 @@ impl FontState {
 }
 
 /// A measured glyph whatsit for glyph `g` of font `f`.
-fn new_measured_glyph(st: &mut EngineState, f: i32, g: i32) -> Result<NodePtr<WhatsitNode>, Abort> {
+fn new_measured_glyph(
+    st: &mut EngineState,
+    f: FontId,
+    g: i32,
+) -> Result<NodePtr<WhatsitNode>, Abort> {
     let p = NodePtr::<WhatsitNode>::alloc(&mut st.mem, GLYPH_NODE_SIZE, WhatsitSubtype::Glyph)?;
-    p.set_native_font(&mut st.mem, FontId(f));
+    p.set_native_font(&mut st.mem, f);
     p.set_native_glyph(&mut st.mem, g as u16);
     st.fonts.measure_glyph(&mut st.mem, p)?;
     Ok(p)
 }
 
-fn stack_glyph_into_box(st: &mut EngineState, b: AnyBox, f: i32, g: i32) -> Result<(), Abort> {
+fn stack_glyph_into_box(st: &mut EngineState, b: AnyBox, f: FontId, g: i32) -> Result<(), Abort> {
     let p = new_measured_glyph(st, f, g)?;
     let mem = &mut st.mem;
     if matches!(b, AnyBox::HList(_)) {
@@ -2291,7 +2286,7 @@ fn stack_glyph_into_box(st: &mut EngineState, b: AnyBox, f: i32, g: i32) -> Resu
     Ok(())
 }
 
-fn native_glyph_vbox(st: &mut EngineState, f: i32, g: u16) -> Result<AnyBox, Abort> {
+fn native_glyph_vbox(st: &mut EngineState, f: FontId, g: u16) -> Result<AnyBox, Abort> {
     let b = AnyBox::VList(st.mem.new_null_box()?.into_vlist(&mut st.mem));
     let p = new_measured_glyph(st, f, g as i32)?;
     let mem = &mut st.mem;
@@ -2303,10 +2298,10 @@ fn native_glyph_vbox(st: &mut EngineState, f: i32, g: u16) -> Result<AnyBox, Abo
 }
 
 impl MemState {
-    fn stack_glue_into_box(&mut self, b: AnyBox, min: i32, max: i32) -> Result<(), Abort> {
+    fn stack_glue_into_box(&mut self, b: AnyBox, min: Scaled, max: Scaled) -> Result<(), Abort> {
         let spec = self.new_spec(ZERO_GLUE)?;
-        spec.set_width(self, Scaled(min));
-        spec.set_stretch(self, Scaled(max - min));
+        spec.set_width(self, min);
+        spec.set_stretch(self, max - min);
         let p = self.new_glue(spec)?;
         if matches!(b, AnyBox::HList(_)) {
             let mut q = b.list_ptr(self);
@@ -2330,7 +2325,7 @@ impl MemState {
     }
 }
 
-fn compute_ot_math_accent_pos(st: &mut EngineState, mut p: NodePtr<Noad>) -> Result<i32, Abort> {
+fn compute_ot_math_accent_pos(st: &mut EngineState, mut p: NodePtr<Noad>) -> Result<Scaled, Abort> {
     loop {
         match p.nucleus().math_type(&st.mem) {
             MATH_CHAR => {
@@ -2345,10 +2340,10 @@ fn compute_ot_math_accent_pos(st: &mut EngineState, mut p: NodePtr<Noad>) -> Res
                 let r = p.nucleus().info(&st.mem);
                 match r.as_idx().map(|ri| st.mem.classify_noad(ri)) {
                     Some(Ok(Some(rn))) if rn.noad_type(&st.mem) == NodeType::AccentNoad => p = rn,
-                    _ => return Ok(TEX_INFINITY),
+                    _ => return Ok(INFINITE_DIMEN),
                 }
             }
-            _ => return Ok(TEX_INFINITY),
+            _ => return Ok(INFINITE_DIMEN),
         }
     }
 }
@@ -2722,10 +2717,10 @@ pub(crate) fn math_fraction(st: &mut EngineState) -> Result<(), Abort> {
         match c % DELIMITED_CODE {
             ABOVE_CODE => {
                 crate::scan::scan_dimen(st, false, false, false)?;
-                aux.set_thickness(&mut st.mem, st.scanner.cur_val);
+                aux.set_thickness(&mut st.mem, st.scanner.cur_dimen());
             }
             OVER_CODE => aux.set_thickness(&mut st.mem, DEFAULT_CODE),
-            ATOP_CODE => aux.set_thickness(&mut st.mem, 0),
+            ATOP_CODE => aux.set_thickness(&mut st.mem, Scaled::ZERO),
             _ => {}
         }
     }
@@ -2906,34 +2901,39 @@ impl FontState {
     #[inline]
     fn sym_font_ok(&self, eqtb: &EqtbState, size: i32) -> bool {
         let f = eqtb.math_font(2 + size);
-        self.font_params(f) >= TOTAL_MATHSY_PARAMS || self.font_is_ot_math(f)
+        self.font_params[f] >= TOTAL_MATHSY_PARAMS || self.font_is_ot_math(f)
     }
 
     #[inline]
     fn ext_font_ok(&self, eqtb: &EqtbState, size: i32) -> bool {
         let f = eqtb.math_font(3 + size);
-        self.font_params(f) >= TOTAL_MATHEX_PARAMS || self.font_is_ot_math(f)
+        self.font_params[f] >= TOTAL_MATHEX_PARAMS || self.font_is_ot_math(f)
     }
 }
 
 impl MemState {
     /// Fills the fresh spec of `skip` with `w` minus the glue of `g`, negating its stretch and shrink.
-    fn set_display_skip(&mut self, skip: NodePtr<GlueNode>, g: NodePtr<GlueNode>, w: i32) {
+    fn set_display_skip(&mut self, skip: NodePtr<GlueNode>, g: NodePtr<GlueNode>, w: Scaled) {
         let src = g.glue_ptr(self);
         let dst = skip.glue_ptr(self);
         dst.set_stretch_order(self, src.stretch_order(self));
         dst.set_shrink_order(self, src.shrink_order(self));
-        dst.set_width(self, Scaled(w - src.width(self).0));
-        dst.set_stretch(self, Scaled(-src.stretch(self).0));
-        dst.set_shrink(self, Scaled(-src.shrink(self).0));
+        dst.set_width(self, w - src.width(self));
+        dst.set_stretch(self, -src.stretch(self));
+        dst.set_shrink(self, -src.shrink(self));
     }
 }
 
-fn app_display(st: &mut EngineState, j: Option<AnyBox>, orig: AnyBox, d: i32) -> Result<(), Abort> {
+fn app_display(
+    st: &mut EngineState,
+    j: Option<AnyBox>,
+    orig: AnyBox,
+    d: Scaled,
+) -> Result<(), Abort> {
     let s = st.eqtb.dimen_par(DIMEN_PAR_DISPLAY_INDENT);
     let x = st.eqtb.int_par(INT_PAR_PRE_DISPLAY_DIRECTION);
     if x == 0 {
-        orig.set_shift_amount(&mut st.mem, Scaled(s + d));
+        orig.set_shift_amount(&mut st.mem, s + d);
         crate::packaging::append_to_vlist(st, orig)?;
         return Ok(());
     }
@@ -2942,19 +2942,19 @@ fn app_display(st: &mut EngineState, j: Option<AnyBox>, orig: AnyBox, d: i32) ->
     let z = st.eqtb.dimen_par(DIMEN_PAR_DISPLAY_WIDTH);
     let mut e;
     if x > 0 {
-        e = z - d - orig.width(&st.mem).0;
+        e = z - d - orig.width(&st.mem);
     } else {
         e = d;
-        d = z - e - orig.width(&st.mem).0;
+        d = z - e - orig.width(&st.mem);
     }
     let copy = if let Some(j) = j {
         let bc = st.mem.copy_box(j)?;
         let (h, dp) = (orig.height(&st.mem), orig.depth(&st.mem));
         bc.set_height(&mut st.mem, h);
         bc.set_depth(&mut st.mem, dp);
-        let s2 = s - bc.shift_amount(&st.mem).0;
+        let s2 = s - bc.shift_amount(&st.mem);
         d += s2;
-        e = e + bc.width(&st.mem).0 - z - s2;
+        e = e + bc.width(&st.mem) - z - s2;
         Some(bc)
     } else {
         None
@@ -2988,13 +2988,16 @@ fn app_display(st: &mut EngineState, j: Option<AnyBox>, orig: AnyBox, d: i32) ->
     }
 
     let (r, t) = match copy {
-        None => (st.mem.new_kern(0)?.ptr(), st.mem.new_kern(0)?.ptr()),
+        None => (
+            st.mem.new_kern(Scaled::ZERO)?.ptr(),
+            st.mem.new_kern(Scaled::ZERO)?.ptr(),
+        ),
         Some(bc) => {
             let r = bc.list_ptr(&st.mem);
             (r, r.link(&st.mem))
         }
     };
-    let u = st.mem.new_math(0, END_M_CODE)?.ptr();
+    let u = st.mem.new_math(Scaled::ZERO, END_M_CODE)?.ptr();
     if let Ok(AnyNode::Glue(tg)) = st.mem.classify(MemIdx::new(t.0)) {
         let skip = st.mem.new_skip_param(&st.eqtb, GLUE_PAR_RIGHT_SKIP)?;
         q.set_link(&mut st.mem, skip.ptr());
@@ -3002,12 +3005,12 @@ fn app_display(st: &mut EngineState, j: Option<AnyBox>, orig: AnyBox, d: i32) ->
         st.mem.set_display_skip(skip, tg, e);
         u.set_link(&mut st.mem, t);
     } else {
-        st.mem.set_b32s1(t + 1, e);
+        st.mem.set_b32s1(t + 1, e.0);
         t.set_link(&mut st.mem, u);
         q.set_link(&mut st.mem, t);
     }
 
-    let u = st.mem.new_math(0, BEGIN_M_CODE)?.ptr();
+    let u = st.mem.new_math(Scaled::ZERO, BEGIN_M_CODE)?.ptr();
     if let Ok(AnyNode::Glue(rg)) = st.mem.classify(MemIdx::new(r.0)) {
         let skip = st.mem.new_skip_param(&st.eqtb, GLUE_PAR_LEFT_SKIP)?;
         u.set_link(&mut st.mem, skip.ptr());
@@ -3015,13 +3018,13 @@ fn app_display(st: &mut EngineState, j: Option<AnyBox>, orig: AnyBox, d: i32) ->
         st.mem.set_display_skip(skip, rg, d);
         r.set_link(&mut st.mem, u);
     } else {
-        st.mem.set_b32s1(r + 1, d);
+        st.mem.set_b32s1(r + 1, d.0);
         r.set_link(&mut st.mem, p);
         u.set_link(&mut st.mem, r);
         match copy {
             None => {
-                b = crate::packaging::hpack(st, u, 0, ADDITIONAL)?;
-                b.set_shift_amount(&mut st.mem, Scaled(s));
+                b = crate::packaging::hpack(st, u, Scaled::ZERO, ADDITIONAL)?;
+                b.set_shift_amount(&mut st.mem, s);
             }
             Some(bc) => bc.set_list_ptr(&mut st.mem, u),
         }
@@ -3098,7 +3101,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
         st.scanner.cur_style = TEXT_STYLE;
         st.scanner.mlist_penalties = false;
         mlist_to_hlist(st)?;
-        let eqno = crate::packaging::hpack(st, TEMP_HEAD.link(&st.mem), 0, ADDITIONAL)?;
+        let eqno = crate::packaging::hpack(st, TEMP_HEAD.link(&st.mem), Scaled::ZERO, ADDITIONAL)?;
         eqno.set_subtype(&mut st.mem, DLIST);
         a = Some(eqno);
         crate::save::unsave(st)?;
@@ -3151,13 +3154,13 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     let mut p = TEMP_HEAD.link(&st.mem);
     st.scanner.adjust_tail = ADJUST_HEAD;
     st.scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
-    let mut b = crate::packaging::hpack(st, p, 0, ADDITIONAL)?;
+    let mut b = crate::packaging::hpack(st, p, Scaled::ZERO, ADDITIONAL)?;
     p = b.list_ptr(&st.mem);
     let t = st.scanner.adjust_tail.0;
     st.scanner.adjust_tail.0 = TEX_NULL;
     let pre_t = st.scanner.pre_adjust_tail.0;
     st.scanner.pre_adjust_tail.0 = TEX_NULL;
-    let mut w = b.width(&st.mem).0;
+    let mut w = b.width(&st.mem);
     let z = st.eqtb.dimen_par(DIMEN_PAR_DISPLAY_WIDTH);
     let mut s = st.eqtb.dimen_par(DIMEN_PAR_DISPLAY_INDENT);
     if st.eqtb.int_par(INT_PAR_PRE_DISPLAY_DIRECTION) < 0 {
@@ -3166,39 +3169,39 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     let (mut e, q);
     match a {
         Some(eqno) if !danger => {
-            e = eqno.width(&st.mem).0;
+            e = eqno.width(&st.mem);
             q = e + st.fonts.math_quad(&st.eqtb, TEXT_SIZE);
         }
         _ => {
-            e = 0;
-            q = 0;
+            e = Scaled::ZERO;
+            q = Scaled::ZERO;
         }
     }
     if w + q > z {
-        if e != 0
+        if e != Scaled::ZERO
             && (w - st.scanner.total_shrink[0] + q <= z
-                || st.scanner.total_shrink[FIL as usize] != 0
-                || st.scanner.total_shrink[FILL as usize] != 0
-                || st.scanner.total_shrink[FILLL as usize] != 0)
+                || st.scanner.total_shrink[FIL as usize] != Scaled::ZERO
+                || st.scanner.total_shrink[FILL as usize] != Scaled::ZERO
+                || st.scanner.total_shrink[FILLL as usize] != Scaled::ZERO)
         {
             st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
             b = crate::packaging::hpack(st, p, z - q, EXACTLY)?;
         } else {
-            e = 0;
+            e = Scaled::ZERO;
             if w > z {
                 st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
                 b = crate::packaging::hpack(st, p, z, EXACTLY)?;
             }
         }
-        w = b.width(&st.mem).0;
+        w = b.width(&st.mem);
     }
     b.set_subtype(&mut st.mem, DLIST);
-    let mut d = crate::scaled_math::half(z - w);
-    if e > 0 && d < 2 * e {
-        d = crate::scaled_math::half(z - w - e);
+    let mut d = (z - w).half();
+    if e > Scaled::ZERO && d < e * 2 {
+        d = (z - w - e).half();
         if let Some(first) = p.as_idx() {
             if !st.mem.is_char_node(p) && st.mem.node_type(first) == Ok(NodeType::Glue) {
-                d = 0;
+                d = Scaled::ZERO;
             }
         }
     }
@@ -3218,8 +3221,8 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
         )
     };
 
-    if let Some(eqno) = a.filter(|_| l && e == 0) {
-        app_display(st, j, eqno, 0)?;
+    if let Some(eqno) = a.filter(|_| l && e == Scaled::ZERO) {
+        app_display(st, j, eqno, Scaled::ZERO)?;
         let pen = st.mem.new_penalty(INF_PENALTY)?;
         st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
     } else {
@@ -3227,26 +3230,26 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
         st.input.cur_list.tail_append(&mut st.mem, glue.ptr());
     }
 
-    if let Some(eqno) = a.filter(|_| e != 0) {
+    if let Some(eqno) = a.filter(|_| e != Scaled::ZERO) {
         let r = st.mem.new_kern(z - w - e - d)?;
         if l {
             eqno.set_link(&mut st.mem, r.ptr());
             r.set_link(&mut st.mem, b.ptr());
             b = eqno;
-            d = 0;
+            d = Scaled::ZERO;
         } else {
             b.set_link(&mut st.mem, r.ptr());
             r.set_link(&mut st.mem, eqno.ptr());
         }
-        b = crate::packaging::hpack(st, b.ptr(), 0, ADDITIONAL)?;
+        b = crate::packaging::hpack(st, b.ptr(), Scaled::ZERO, ADDITIONAL)?;
     }
 
     app_display(st, j, b, d)?;
 
-    if let Some(eqno) = a.filter(|_| e == 0 && !l) {
+    if let Some(eqno) = a.filter(|_| e == Scaled::ZERO && !l) {
         let pen = st.mem.new_penalty(INF_PENALTY)?;
         st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
-        let a_width = eqno.width(&st.mem).0;
+        let a_width = eqno.width(&st.mem);
         app_display(st, j, eqno, z - a_width)?;
         g2 = 0;
     }
@@ -3299,7 +3302,7 @@ fn pre_display_direction(st: &EngineState) -> i32 {
 /// A kern, or the parameter glue when that skip is nonzero.
 fn side_skip(st: &mut EngineState, param: i16) -> Result<MemPtr, Abort> {
     let p = if st.eqtb.glue_par(param) == ZERO_GLUE {
-        st.mem.new_kern(0).map(|k| k.ptr())
+        st.mem.new_kern(Scaled::ZERO).map(|k| k.ptr())
     } else {
         st.mem.new_param_glue(&st.eqtb, param).map(|g| g.ptr())
     };
@@ -3311,7 +3314,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
 
     if st.scanner.cur_cmd == MATH_SHIFT && st.input.cur_list.mode > 0 {
         let mut j = TEX_NULL;
-        let mut w = -MAX_HALFWORD;
+        let mut w = -MAX_DIMEN;
         let x;
 
         if st.input.cur_list.head == st.input.cur_list.tail {
@@ -3335,7 +3338,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
             jbox.set_glue_sign(mem, jb.glue_sign(mem));
             jbox.set_glue_set(mem, jb.glue_set(mem));
 
-            let mut v = jb.shift_amount(&st.mem).0;
+            let mut v = jb.shift_amount(&st.mem);
             x = pre_display_direction(st);
 
             let mut p;
@@ -3343,10 +3346,10 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                 p = jb.list_ptr(&st.mem);
                 TEMP_HEAD.set_link(&mut st.mem, MemPtr::NULL);
             } else {
-                v = -v - jb.width(&st.mem).0;
-                let begin = st.mem.new_math(0, BEGIN_L_CODE)?.ptr();
+                v = -v - jb.width(&st.mem);
+                let begin = st.mem.new_math(Scaled::ZERO, BEGIN_L_CODE)?.ptr();
                 TEMP_HEAD.set_link(&mut st.mem, begin);
-                let end = st.mem.new_math(0, END_L_CODE)?.ptr();
+                let end = st.mem.new_math(Scaled::ZERO, END_L_CODE)?.ptr();
                 let list = jb.list_ptr(&st.mem);
                 st.mem.just_copy(list, begin, end)?;
                 st.scanner.cur_dir = RIGHT_TO_LEFT;
@@ -3354,7 +3357,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
             }
 
             let cur_font = st.eqtb.cur_font();
-            v += 2 * st.fonts.param(cur_font, QUAD_CODE);
+            v += st.fonts.param(cur_font, QUAD_CODE) * 2;
 
             let texxet = st.eqtb.int_par(INT_PAR_TEXXET) > 0;
             if texxet {
@@ -3364,7 +3367,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
             'outer: while !p.is_null() {
                 let (d, found) = 'reswitch: loop {
                     if let Some(ch) = st.mem.as_char(p) {
-                        let f = ch.font(&st.mem).0;
+                        let f = ch.font(&st.mem);
                         let c = st.fonts.effective_char(f, ch.character(&st.mem));
                         let d = st.fonts.char_width(f, st.fonts.char_info(f, c));
                         break (d, true);
@@ -3381,10 +3384,10 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                             st.fonts.xtx_ligature_present = true;
                             continue 'reswitch;
                         }
-                        Ok(AnyNode::Kern(k)) => (k.width(&st.mem).0, false),
-                        Ok(AnyNode::MarginKern(k)) => (k.width(&st.mem).0, false),
+                        Ok(AnyNode::Kern(k)) => (k.width(&st.mem), false),
+                        Ok(AnyNode::MarginKern(k)) => (k.width(&st.mem), false),
                         Ok(AnyNode::Math(m)) => {
-                            let d = m.width(&st.mem).0;
+                            let d = m.width(&st.mem);
                             let subtype = m.subtype(&st.mem);
                             if texxet {
                                 if subtype & 1 != 0 {
@@ -3393,7 +3396,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                                     {
                                         st.mem.pop_lr(&mut st.scanner.lr_ptr);
                                     } else if subtype > L_CODE {
-                                        w = MAX_HALFWORD;
+                                        w = MAX_DIMEN;
                                         break 'outer;
                                     }
                                 } else {
@@ -3407,7 +3410,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                                     }
                                 }
                             } else if subtype >= L_CODE {
-                                w = MAX_HALFWORD;
+                                w = MAX_DIMEN;
                                 break 'outer;
                             }
                             (d, false)
@@ -3415,7 +3418,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                         // An EDGE_NODE, which shares type 14 with STYLE_NODE.
                         Ok(AnyNode::Style(edge)) => {
                             st.scanner.cur_dir = edge.subtype(&st.mem) as i16;
-                            (edge.as_edge().width(&st.mem).0, false)
+                            (edge.as_edge().width(&st.mem), false)
                         }
                         Ok(AnyNode::Glue(g)) => {
                             let spec = g.glue_ptr(&st.mem);
@@ -3423,40 +3426,40 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                             match jb.glue_sign(&st.mem) {
                                 GlueSign::Stretching
                                     if order == spec.stretch_order(&st.mem)
-                                        && spec.stretch(&st.mem).0 != 0 =>
+                                        && spec.stretch(&st.mem) != Scaled::ZERO =>
                                 {
-                                    v = MAX_HALFWORD;
+                                    v = MAX_DIMEN;
                                 }
                                 GlueSign::Shrinking
                                     if order == spec.shrink_order(&st.mem)
-                                        && spec.shrink(&st.mem).0 != 0 =>
+                                        && spec.shrink(&st.mem) != Scaled::ZERO =>
                                 {
-                                    v = MAX_HALFWORD;
+                                    v = MAX_DIMEN;
                                 }
                                 _ => {}
                             }
-                            (spec.width(&st.mem).0, g.subtype(&st.mem) >= A_LEADERS)
+                            (spec.width(&st.mem), g.subtype(&st.mem) >= A_LEADERS)
                         }
                         Ok(AnyNode::Whatsit(wn))
                             if wn
                                 .whatsit_subtype(&st.mem)
                                 .is_some_and(|s| s.has_dimensions()) =>
                         {
-                            (wn.width(&st.mem).0, true)
+                            (wn.width(&st.mem), true)
                         }
-                        _ => (0, false),
+                        _ => (Scaled::ZERO, false),
                     };
                 };
 
                 if found {
-                    if v < MAX_HALFWORD {
+                    if v < MAX_DIMEN {
                         v += d;
                         w = v;
                     } else {
-                        w = MAX_HALFWORD;
+                        w = MAX_DIMEN;
                         break 'outer;
                     }
-                } else if v < MAX_HALFWORD {
+                } else if v < MAX_DIMEN {
                     v += d;
                 }
 
@@ -3468,7 +3471,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                     st.mem.pop_lr(&mut st.scanner.lr_ptr);
                 }
                 if st.scanner.lr_problems != 0 {
-                    w = MAX_HALFWORD;
+                    w = MAX_DIMEN;
                     st.scanner.lr_problems = 0;
                 }
             }
@@ -3488,25 +3491,29 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
             let hang = st.eqtb.dimen_par(DIMEN_PAR_HANG_INDENT);
             let hang_after = st.eqtb.int_par(INT_PAR_HANG_AFTER);
             let prev_graf = st.input.cur_list.prev_graf;
-            if hang != 0
+            if hang != Scaled::ZERO
                 && ((hang_after >= 0 && prev_graf + 2 > hang_after) || prev_graf + 1 < -hang_after)
             {
                 l = st.eqtb.dimen_par(DIMEN_PAR_HSIZE) - hang.abs();
-                s = if hang > 0 { hang } else { 0 };
+                s = if hang > Scaled::ZERO {
+                    hang
+                } else {
+                    Scaled::ZERO
+                };
             } else {
                 l = st.eqtb.dimen_par(DIMEN_PAR_HSIZE);
-                s = 0;
+                s = Scaled::ZERO;
             }
         }
 
         crate::main_control::push_math(st, GroupCode::MathShift)?;
         st.input.cur_list.mode = MMODE;
         define_word(st, INT_BASE + INT_PAR_CUR_FAM, -1)?;
-        define_word(st, DIMEN_BASE + DIMEN_PAR_PRE_DISPLAY_SIZE, w)?;
+        define_word(st, DIMEN_BASE + DIMEN_PAR_PRE_DISPLAY_SIZE, w.0)?;
         st.input.cur_list.e_tex_aux = MemPtr::from_raw(j);
         define_word(st, INT_BASE + INT_PAR_PRE_DISPLAY_DIRECTION, x)?;
-        define_word(st, DIMEN_BASE + DIMEN_PAR_DISPLAY_WIDTH, l)?;
-        define_word(st, DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT, s)?;
+        define_word(st, DIMEN_BASE + DIMEN_PAR_DISPLAY_WIDTH, l.0)?;
+        define_word(st, DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT, s.0)?;
 
         if st.config.semantic_pagination_enabled {
             crate::ext::insert_special(st, "tdux:cs dmath")?;
@@ -3537,23 +3544,23 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-fn rebox(st: &mut EngineState, b: AnyBox, w: i32) -> Result<AnyBox, Abort> {
+fn rebox(st: &mut EngineState, b: AnyBox, w: Scaled) -> Result<AnyBox, Abort> {
     let mut b = b;
-    if b.width(&st.mem).0 != w && !b.list_ptr(&st.mem).is_null() && matches!(b, AnyBox::VList(_)) {
-        b = crate::packaging::hpack(st, b.ptr(), 0, ADDITIONAL)?;
+    if b.width(&st.mem) != w && !b.list_ptr(&st.mem).is_null() && matches!(b, AnyBox::VList(_)) {
+        b = crate::packaging::hpack(st, b.ptr(), Scaled::ZERO, ADDITIONAL)?;
     }
-    if b.width(&st.mem).0 == w || b.list_ptr(&st.mem).is_null() {
-        b.set_width(&mut st.mem, Scaled(w));
+    if b.width(&st.mem) == w || b.list_ptr(&st.mem).is_null() {
+        b.set_width(&mut st.mem, w);
         return Ok(b);
     }
 
     let mut p = b.list_ptr(&st.mem);
     if let Some(ch) = st.mem.as_char(p).filter(|_| p.link(&st.mem).is_null()) {
-        let f = ch.font(&st.mem).0;
+        let f = ch.font(&st.mem);
         let c = st.fonts.effective_char(f, ch.character(&st.mem));
         let q = st.fonts.char_info(f, c);
         let v = st.fonts.char_width(f, q);
-        let bw = b.width(&st.mem).0;
+        let bw = b.width(&st.mem);
         if v != bw {
             let k = st.mem.new_kern(bw - v)?;
             p.set_link(&mut st.mem, k.ptr());
@@ -3573,9 +3580,9 @@ fn rebox(st: &mut EngineState, b: AnyBox, w: i32) -> Result<AnyBox, Abort> {
 
 fn build_opentype_assembly(
     st: &mut EngineState,
-    f: i32,
+    f: FontId,
     a: &GlyphAssembly,
-    s: i32,
+    s: Scaled,
     horiz: bool,
 ) -> Result<AnyBox, Abort> {
     let b = if horiz {
@@ -3590,8 +3597,8 @@ fn build_opentype_assembly(
     let mut n: i32 = -1;
     loop {
         n += 1;
-        let mut s_max: i32 = 0;
-        let mut prev_o: i32 = 0;
+        let mut s_max = Scaled::ZERO;
+        let mut prev_o = Scaled::ZERO;
         for i in 0..a.count() {
             for _ in 0..repeats(i, n) {
                 let o = a.start_connector(&st.fonts, f, i).min(min_o).min(prev_o);
@@ -3603,11 +3610,11 @@ fn build_opentype_assembly(
             break;
         }
     }
-    let mut prev_o: i32 = 0;
+    let mut prev_o = Scaled::ZERO;
     for i in 0..a.count() {
         for _ in 0..repeats(i, n) {
             let oo = a.start_connector(&st.fonts, f, i).min(prev_o);
-            if oo > 0 {
+            if oo > Scaled::ZERO {
                 st.mem.stack_glue_into_box(b, -oo, -oo.min(min_o))?;
             }
             stack_glyph_into_box(st, b, f, a.glyph(i))?;
@@ -3615,42 +3622,42 @@ fn build_opentype_assembly(
         }
     }
     let mut p = b.list_ptr(&st.mem);
-    let mut nat: i32 = 0;
-    let mut str: i32 = 0;
+    let mut nat = Scaled::ZERO;
+    let mut str = Scaled::ZERO;
     while !p.is_null() {
         match st.mem.classify(MemIdx::new(p)) {
             Ok(AnyNode::Whatsit(pw)) => {
                 if horiz {
-                    nat += pw.width(&st.mem).0;
+                    nat += pw.width(&st.mem);
                 } else {
-                    nat += pw.height(&st.mem).0 + pw.depth(&st.mem).0;
+                    nat += pw.height(&st.mem) + pw.depth(&st.mem);
                 }
             }
             Ok(AnyNode::Glue(gn)) => {
                 let gs = gn.glue_ptr(&st.mem);
-                nat += gs.width(&st.mem).0;
-                str += gs.stretch(&st.mem).0;
+                nat += gs.width(&st.mem);
+                str += gs.stretch(&st.mem);
             }
             _ => {}
         }
         p = p.link(&st.mem);
     }
-    if s > nat && str > 0 {
+    if s > nat && str > Scaled::ZERO {
         let o = (s - nat).min(str);
         b.set_glue_order(&mut st.mem, NORMAL);
         b.set_glue_sign(&mut st.mem, GlueSign::Stretching);
-        let ratio = o as f64 / str as f64;
+        let ratio = f64::from(o) / f64::from(str);
         b.set_glue_set(&mut st.mem, ratio);
-        let set_dim = Scaled(nat + crate::scaled_math::tex_round(str as f64 * ratio));
+        let set_dim = nat + Scaled(crate::scaled_math::tex_round(f64::from(str) * ratio));
         if horiz {
             b.set_width(&mut st.mem, set_dim);
         } else {
             b.set_height(&mut st.mem, set_dim);
         }
     } else if horiz {
-        b.set_width(&mut st.mem, Scaled(nat));
+        b.set_width(&mut st.mem, nat);
     } else {
-        b.set_height(&mut st.mem, Scaled(nat));
+        b.set_height(&mut st.mem, nat);
     }
     Ok(b)
 }
@@ -3659,18 +3666,18 @@ impl MemState {
     fn build_ext_delimiter_box(
         &mut self,
         fonts: &mut FontState,
-        f: i32,
+        f: FontId,
         q: CharInfo,
-        v: i32,
+        v: Scaled,
     ) -> Result<AnyBox, Abort> {
         let vb = AnyBox::VList(self.new_null_box()?.into_vlist(self));
-        let r = fonts.font_info_b16(fonts.exten_base_entry(f) + q.s0 as i32);
+        let r = fonts.font_info_b16(fonts.exten_base[f] + q.s0 as i32);
         let u = fonts.height_plus_depth(f, r.s0);
         let effective_c = fonts.effective_char(f, r.s0);
         let qq = fonts.char_info(f, effective_c);
         let box_width = fonts.char_width(f, qq) + fonts.char_italic(f, qq);
-        vb.set_width(self, Scaled(box_width));
-        let mut w = 0;
+        vb.set_width(self, box_width);
+        let mut w = Scaled::ZERO;
         if r.s1 != 0 {
             w += fonts.height_plus_depth(f, r.s1);
         }
@@ -3682,7 +3689,7 @@ impl MemState {
         }
 
         let mut n: i32 = 0;
-        if u > 0 {
+        if u > Scaled::ZERO {
             while w < v {
                 w += u;
                 n += 1;
@@ -3711,8 +3718,8 @@ impl MemState {
             let p = self.char_box_tfm(fonts, f, r.s3)?;
             self.stack_into_box(vb, p);
         }
-        let height = vb.height(self).0;
-        vb.set_depth(self, Scaled(w - height));
+        let height = vb.height(self);
+        vb.set_depth(self, w - height);
         Ok(vb)
     }
 }
@@ -3721,12 +3728,12 @@ fn var_delimiter(
     st: &mut EngineState,
     d: NodePtr<DelimiterField>,
     s: i32,
-    v: i32,
+    v: Scaled,
 ) -> Result<AnyBox, Abort> {
-    let mut f: i32 = FONT_BASE;
+    let mut f = NULL_FONT;
     let mut ot_assembly: Option<GlyphAssembly> = None;
     let mut c: u16 = 0;
-    let mut w: i32 = 0;
+    let mut w = Scaled::ZERO;
     let mut q = CharInfo {
         s3: 0,
         s2: 0,
@@ -3742,16 +3749,15 @@ fn var_delimiter(
                 loop {
                     z -= 256;
                     let g = st.eqtb.math_font(z);
-                    if g != FONT_BASE {
-                        if st.fonts.font_area_entry(g) == AAT_FONT_FLAG
-                            || st.fonts.font_uses_opentype(g)
+                    if g != NULL_FONT {
+                        if st.fonts.font_area[g] == AAT_FONT_FLAG || st.fonts.font_uses_opentype(g)
                         {
                             x = st.fonts.map_char_to_glyph(g, x)?;
                             f = g;
                             c = x as u16;
-                            w = 0;
+                            w = Scaled::ZERO;
                             let mut n: i32 = 0;
-                            let mut u: i32 = 0;
+                            let mut u = Scaled::ZERO;
                             loop {
                                 let yv =
                                     st.fonts.get_ot_math_variant(g, x, n, &mut u, false) as u16;
@@ -3763,7 +3769,7 @@ fn var_delimiter(
                                     }
                                 }
                                 n += 1;
-                                if u < 0 {
+                                if u < Scaled::ZERO {
                                     break;
                                 }
                             }
@@ -3774,7 +3780,7 @@ fn var_delimiter(
                         } else {
                             let fonts = &st.fonts;
                             let mut y = x as u16;
-                            if y >= fonts.font_bc_entry(g) && y <= fonts.font_ec_entry(g) {
+                            if y >= fonts.font_bc[g] && y <= fonts.font_ec[g] {
                                 loop {
                                     q = fonts.char_info(g, y as i32);
                                     if q.s3 == 0 {
@@ -3814,10 +3820,10 @@ fn var_delimiter(
             (z, x) = d.large(&st.mem);
         }
     }
-    let b = if f == FONT_BASE {
+    let b = if f == NULL_FONT {
         let b = st.mem.new_null_box()?;
         let width = st.eqtb.dimen_par(DIMEN_PAR_NULL_DELIMITER_SPACE);
-        b.set_width(&mut st.mem, Scaled(width));
+        b.set_width(&mut st.mem, width);
         AnyBox::HList(b)
     } else if !st.fonts.font_uses_opentype(f) {
         if q.s1 % 4 == EXT_TAG {
@@ -3831,7 +3837,7 @@ fn var_delimiter(
         native_glyph_vbox(st, f, c)?
     };
     let axis = st.fonts.axis_height(&st.eqtb, s);
-    let shift = crate::scaled_math::half(b.height(&st.mem).0 - b.depth(&st.mem).0) - axis;
-    b.set_shift_amount(&mut st.mem, Scaled(shift));
+    let shift = (b.height(&st.mem) - b.depth(&st.mem)).half() - axis;
+    b.set_shift_amount(&mut st.mem, shift);
     Ok(b)
 }

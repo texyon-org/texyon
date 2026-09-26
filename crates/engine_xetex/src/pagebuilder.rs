@@ -5,7 +5,7 @@ use crate::consts::{
     EJECT_PENALTY, FIRST_MARK_CODE, GLUE_PAR_SPLIT_TOP_SKIP, GLUE_PAR_TOP_SKIP, IGNORE_DEPTH,
     INF_BAD, INF_PENALTY, INS_NODE_SIZE, INT_BASE, INT_PAR_HOLDING_INSERTS,
     INT_PAR_MAX_DEAD_CYCLES, INT_PAR_OUTPUT_PENALTY, INT_PAR_SAVING_VDISCARDS, INT_PAR_VBADNESS,
-    LOCAL_OUTPUT_ROUTINE, MAX_HALFWORD, NORMAL, TEX_NULL, TOP_MARK_CODE, VMODE,
+    LOCAL_OUTPUT_ROUTINE, MAX_DIMEN, MAX_HALFWORD, NORMAL, TOP_MARK_CODE, VMODE,
 };
 use crate::errors::Abort;
 use crate::helpers::badness;
@@ -31,7 +31,7 @@ const PAGE_INS_NODE_SIZE: i32 = 4;
 const DEPLORABLE: i32 = 100_000;
 
 pub fn initialize_pagebuilder_variables(st: &mut EngineState) {
-    st.shipout.page_max_depth = 0;
+    st.shipout.page_max_depth = Scaled::ZERO;
 }
 
 /// A record on the `page_ins_head` ring.
@@ -53,7 +53,7 @@ fn freeze_page_specs(st: &mut EngineState, contents: PageContents) {
     shipout.page_contents = contents;
     shipout.page_so_far[PAGE_GOAL] = st.eqtb.dimen_par(DIMEN_PAR_VSIZE);
     shipout.page_max_depth = st.eqtb.dimen_par(DIMEN_PAR_MAX_DEPTH);
-    shipout.page_so_far[PAGE_TOTAL..=PAGE_DEPTH].fill(0);
+    shipout.page_so_far[PAGE_TOTAL..=PAGE_DEPTH].fill(Scaled::ZERO);
     shipout.least_page_cost = MAX_HALFWORD;
 }
 
@@ -132,12 +132,12 @@ fn place_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Re
             .set_glue_par(GLUE_PAR_SPLIT_TOP_SKIP, ins.split_top_ptr(&st.mem));
         let pruned = st
             .mem
-            .prune_page_top(&mut st.scanner, &st.eqtb, broken_ptr.0, false)?;
+            .prune_page_top(&mut st.scanner, &st.eqtb, broken_ptr, false)?;
         ins.set_ins_ptr(&mut st.mem, pruned);
         if !pruned.is_null() {
-            let tmp = crate::packaging::vpackage(st, pruned, 0, ADDITIONAL, MAX_HALFWORD)?;
-            let size = tmp.height(&st.mem).0 + tmp.depth(&st.mem).0;
-            ins.set_height(&mut st.mem, Scaled(size));
+            let tmp = crate::packaging::vpackage(st, pruned, Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
+            let size = tmp.height(&st.mem) + tmp.depth(&st.mem);
+            ins.set_height(&mut st.mem, size);
             st.mem.free_node(tmp.ptr(), BOX_NODE_SIZE);
             wait = true;
         }
@@ -147,7 +147,7 @@ fn place_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Re
     let b = fetch_box(st, n as i32).expect("insertion box made in fire_up");
     let list = b.list_ptr(&st.mem);
     st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
-    let packed = crate::packaging::vpackage(st, list, 0, ADDITIONAL, MAX_HALFWORD)?;
+    let packed = crate::packaging::vpackage(st, list, Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
     st.eqtb.set_box_reg(n as i32, packed.ptr());
     Ok(wait)
 }
@@ -268,7 +268,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     let save_vbadness = st.eqtb.int_par(INT_PAR_VBADNESS);
     st.eqtb.set_int_par(INT_PAR_VBADNESS, INF_BAD);
     let save_vfuzz = st.eqtb.dimen_par(DIMEN_PAR_VFUZZ);
-    st.eqtb.set_dimen_par(DIMEN_PAR_VFUZZ, MAX_HALFWORD);
+    st.eqtb.set_dimen_par(DIMEN_PAR_VFUZZ, MAX_DIMEN);
     let page = crate::packaging::vpackage(
         st,
         PAGE_HEAD.link(&st.mem),
@@ -288,10 +288,10 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     PAGE_HEAD.set_link(&mut st.mem, MemPtr::NULL);
     st.shipout.last_glue = None;
     st.shipout.last_penalty = 0;
-    st.shipout.last_kern = 0;
+    st.shipout.last_kern = Scaled::ZERO;
     st.shipout.last_node_type = -1;
-    st.shipout.page_so_far[PAGE_DEPTH] = 0;
-    st.shipout.page_max_depth = 0;
+    st.shipout.page_so_far[PAGE_DEPTH] = Scaled::ZERO;
+    st.shipout.page_max_depth = Scaled::ZERO;
     if hold_tail != HOLD_HEAD {
         let held = HOLD_HEAD.link(&st.mem);
         PAGE_HEAD.set_link(&mut st.mem, held);
@@ -324,7 +324,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
             st.shipout.dead_cycles += 1;
             crate::mem::push_nest(st)?;
             st.input.cur_list.mode = -VMODE;
-            st.input.cur_list.set_aux_s1(IGNORE_DEPTH);
+            st.input.cur_list.set_prev_depth(IGNORE_DEPTH);
             st.input.cur_list.mode_line = -st.mem.line;
             crate::input::begin_token_list(st, output_routine, OUTPUT_TEXT)?;
             st.save_stack
@@ -367,7 +367,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
 
 fn update_last_node_info(st: &mut EngineState, node: AnyNode, node_type: i32) {
     st.shipout.last_penalty = 0;
-    st.shipout.last_kern = 0;
+    st.shipout.last_kern = Scaled::ZERO;
     st.shipout.last_node_type = node_type + 1;
     st.shipout.last_glue = None;
     match node {
@@ -378,7 +378,7 @@ fn update_last_node_info(st: &mut EngineState, node: AnyNode, node_type: i32) {
             spec.set_ref_count(&mut st.mem, refs + 1);
         }
         AnyNode::Penalty(penalty) => st.shipout.last_penalty = penalty.penalty(&st.mem),
-        AnyNode::Kern(kern) => st.shipout.last_kern = kern.width(&st.mem).0,
+        AnyNode::Kern(kern) => st.shipout.last_kern = kern.width(&st.mem),
         _ => {}
     }
 }
@@ -387,7 +387,7 @@ impl ShipoutState {
     fn page_badness(&self) -> i32 {
         let so_far = &self.page_so_far;
         if so_far[PAGE_TOTAL] < so_far[PAGE_GOAL] {
-            if so_far[3] != 0 || so_far[4] != 0 || so_far[5] != 0 {
+            if so_far[3] != Scaled::ZERO || so_far[4] != Scaled::ZERO || so_far[5] != Scaled::ZERO {
                 0
             } else {
                 badness(so_far[PAGE_GOAL] - so_far[PAGE_TOTAL], so_far[2])
@@ -401,7 +401,7 @@ impl ShipoutState {
 }
 
 /// Scales `x` by the insertion magnification `count`, in thousandths.
-fn scale_by_count(st: &mut EngineState, x: i32, count: i32) -> i32 {
+fn scale_by_count(st: &mut EngineState, x: Scaled, count: i32) -> Scaled {
     if count == 1000 {
         x
     } else {
@@ -430,19 +430,19 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         rec.set_split_up(&mut st.mem, false);
         ensure_vbox(st, n)?;
         let height = match fetch_box(st, n as i32) {
-            Some(b) => b.height(&st.mem).0 + b.depth(&st.mem).0,
-            None => 0,
+            Some(b) => b.height(&st.mem) + b.depth(&st.mem),
+            None => Scaled::ZERO,
         };
-        rec.set_height(&mut st.mem, Scaled(height));
+        rec.set_height(&mut st.mem, height);
         rec.set_best_ins_ptr(&mut st.mem, MemPtr::NULL);
         let skip = st.eqtb.skip(n as i32);
         let count = st.eqtb.count(n as i32);
         let h = scale_by_count(st, height, count);
-        st.shipout.page_so_far[PAGE_GOAL] -= h + skip.width(&st.mem).0;
+        st.shipout.page_so_far[PAGE_GOAL] -= h + skip.width(&st.mem);
         let order = skip.stretch_order(&st.mem) as usize;
-        st.shipout.page_so_far[2 + order] += skip.stretch(&st.mem).0;
-        st.shipout.page_so_far[PAGE_SHRINK] += skip.shrink(&st.mem).0;
-        if skip.shrink_order(&st.mem) != NORMAL && skip.shrink(&st.mem).0 != 0 {
+        st.shipout.page_so_far[2 + order] += skip.stretch(&st.mem);
+        st.shipout.page_so_far[PAGE_SHRINK] += skip.shrink(&st.mem);
+        if skip.shrink_order(&st.mem) != NORMAL && skip.shrink(&st.mem) != Scaled::ZERO {
             crate::output::error_here_with_diagnostic(st, "Infinite glue shrinkage inserted from ");
             crate::output::print_esc(st, "skip");
             crate::output::print_int(st, n as i32);
@@ -465,18 +465,18 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
     let so_far = st.shipout.page_so_far;
     let delta = so_far[PAGE_GOAL] - so_far[PAGE_TOTAL] - so_far[PAGE_DEPTH] + so_far[PAGE_SHRINK];
     let count = st.eqtb.count(n as i32);
-    let ins_height = ins.height(&st.mem).0;
+    let ins_height = ins.height(&st.mem);
     let h = scale_by_count(st, ins_height, count);
     let max_height = st.eqtb.dimen(n as i32);
-    if (h <= 0 || h <= delta) && ins_height + rec.height(&st.mem).0 <= max_height {
+    if (h <= Scaled::ZERO || h <= delta) && ins_height + rec.height(&st.mem) <= max_height {
         st.shipout.page_so_far[PAGE_GOAL] -= h;
-        let height = rec.height(&st.mem).0 + ins_height;
-        rec.set_height(&mut st.mem, Scaled(height));
+        let height = rec.height(&st.mem) + ins_height;
+        rec.set_height(&mut st.mem, height);
         return Ok(());
     }
 
     let mut w = if count <= 0 {
-        MAX_HALFWORD
+        MAX_DIMEN
     } else {
         let w = so_far[PAGE_GOAL] - so_far[PAGE_TOTAL] - so_far[PAGE_DEPTH];
         if count == 1000 {
@@ -485,22 +485,22 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
             st.errors.x_over_n(w, count) * 1000
         }
     };
-    let room = max_height - rec.height(&st.mem).0;
+    let room = max_height - rec.height(&st.mem);
     if w > room {
         w = room;
     }
-    let q = crate::packaging::vert_break(st, ins.ins_ptr(&st.mem).0, w, ins.depth(&st.mem).0)?;
-    let height = rec.height(&st.mem).0 + st.scanner.best_height_plus_depth;
-    rec.set_height(&mut st.mem, Scaled(height));
+    let q = crate::packaging::vert_break(st, ins.ins_ptr(&st.mem), w, ins.depth(&st.mem))?;
+    let height = rec.height(&st.mem) + st.scanner.best_height_plus_depth;
+    rec.set_height(&mut st.mem, height);
     if count != 1000 {
         st.scanner.best_height_plus_depth =
             scale_by_count(st, st.scanner.best_height_plus_depth, count);
     }
     st.shipout.page_so_far[PAGE_GOAL] -= st.scanner.best_height_plus_depth;
     rec.set_split_up(&mut st.mem, true);
-    rec.set_broken_ptr(&mut st.mem, MemPtr(q));
+    rec.set_broken_ptr(&mut st.mem, q);
     rec.set_broken_ins(&mut st.mem, p);
-    if q == TEX_NULL {
+    if q.is_null() {
         st.shipout.insert_penalties += EJECT_PENALTY;
     } else if let Ok(AnyNode::Penalty(pen)) = st.mem.classify(MemIdx::new(q)) {
         st.shipout.insert_penalties += pen.penalty(&st.mem);
@@ -537,9 +537,11 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
         let step = match node {
             AnyNode::HList(_) | AnyNode::VList(_) | AnyNode::Rule(_) => {
                 let (height, depth) = match node {
-                    AnyNode::HList(b) => (b.height(&st.mem).0, b.depth(&st.mem).0),
-                    AnyNode::VList(b) => (b.height(&st.mem).0, b.depth(&st.mem).0),
-                    AnyNode::Rule(r) => (r.height(&st.mem).raw(), r.depth(&st.mem).raw()),
+                    AnyNode::HList(b) => (b.height(&st.mem), b.depth(&st.mem)),
+                    AnyNode::VList(b) => (b.height(&st.mem), b.depth(&st.mem)),
+                    AnyNode::Rule(r) => {
+                        (r.height(&st.mem).to_scaled(), r.depth(&st.mem).to_scaled())
+                    }
                     _ => unreachable!(),
                 };
                 if below_box {
@@ -550,9 +552,13 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
                     }
                     let q = st.mem.new_skip_param(&st.eqtb, GLUE_PAR_TOP_SKIP)?;
                     let spec = q.glue_ptr(&st.mem);
-                    let width = spec.width(&st.mem).0;
-                    let width = if width > height { width - height } else { 0 };
-                    spec.set_width(&mut st.mem, Scaled(width));
+                    let width = spec.width(&st.mem);
+                    let width = if width > height {
+                        width - height
+                    } else {
+                        Scaled::ZERO
+                    };
+                    spec.set_width(&mut st.mem, width);
                     q.set_link(&mut st.mem, p);
                     CONTRIB_HEAD.set_link(&mut st.mem, q.ptr());
                     continue;
@@ -567,8 +573,8 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
                     Some(WhatsitSubtype::Pic | WhatsitSubtype::Pdf)
                 ) {
                     st.shipout.page_so_far[PAGE_TOTAL] +=
-                        st.shipout.page_so_far[PAGE_DEPTH] + w.height(&st.mem).0;
-                    st.shipout.page_so_far[PAGE_DEPTH] = w.depth(&st.mem).0;
+                        st.shipout.page_so_far[PAGE_DEPTH] + w.height(&st.mem);
+                    st.shipout.page_so_far[PAGE_DEPTH] = w.depth(&st.mem);
                 }
                 PageStep::Contribute
             }
@@ -651,12 +657,12 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
         match step {
             PageStep::UpdateHeights => {
                 let width = match node {
-                    AnyNode::Kern(kern) => kern.width(&st.mem).0,
+                    AnyNode::Kern(kern) => kern.width(&st.mem),
                     AnyNode::Glue(glue) => page_glue_width(st, glue)?,
                     _ => unreachable!("only glue and kern update the page heights"),
                 };
                 st.shipout.page_so_far[PAGE_TOTAL] += st.shipout.page_so_far[PAGE_DEPTH] + width;
-                st.shipout.page_so_far[PAGE_DEPTH] = 0;
+                st.shipout.page_so_far[PAGE_DEPTH] = Scaled::ZERO;
                 contribute(st, p);
             }
             PageStep::Contribute => contribute(st, p),
@@ -688,13 +694,13 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
 fn page_glue_width(
     st: &mut EngineState,
     glue: NodePtr<crate::node::GlueNode>,
-) -> Result<i32, Abort> {
+) -> Result<Scaled, Abort> {
     let spec = glue.glue_ptr(&st.mem);
     let order = spec.stretch_order(&st.mem) as usize;
-    st.shipout.page_so_far[2 + order] += spec.stretch(&st.mem).0;
-    st.shipout.page_so_far[PAGE_SHRINK] += spec.shrink(&st.mem).0;
-    if spec.shrink_order(&st.mem) == NORMAL || spec.shrink(&st.mem).0 == 0 {
-        return Ok(spec.width(&st.mem).0);
+    st.shipout.page_so_far[2 + order] += spec.stretch(&st.mem);
+    st.shipout.page_so_far[PAGE_SHRINK] += spec.shrink(&st.mem);
+    if spec.shrink_order(&st.mem) == NORMAL || spec.shrink(&st.mem) == Scaled::ZERO {
+        return Ok(spec.width(&st.mem));
     }
     crate::output::print_err(st, "Infinite glue shrinkage found on current page");
     st.errors.help(&[
@@ -708,7 +714,7 @@ fn page_glue_width(
     finite.set_shrink_order(&mut st.mem, NORMAL);
     st.mem.delete_glue_ref(spec);
     glue.set_glue_ptr(&mut st.mem, finite);
-    Ok(finite.width(&st.mem).0)
+    Ok(finite.width(&st.mem))
 }
 
 /// Moves `p` from the contribution list to the current page.

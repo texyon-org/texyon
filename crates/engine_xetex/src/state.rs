@@ -1,6 +1,7 @@
 //! Rust-owned engine state.
 
 use crate::hash::HASH_OFFSET;
+use crate::units::{FontId, Scaled};
 
 #[derive(Default)]
 pub(crate) struct EngineState {
@@ -27,7 +28,7 @@ pub(crate) struct EngineState {
 pub(crate) struct MainLoopState {
     pub main_p: crate::units::MemPtr,
     pub main_k: i32,
-    pub main_f: i32,
+    pub main_f: FontId,
     pub main_h: i32,
     pub main_pp: crate::units::MemPtr,
     pub main_ppp: crate::units::MemPtr,
@@ -346,9 +347,15 @@ impl EqtbState {
         self.set_b32s1(p, v);
     }
 
+    /// The control sequence text that identifies font `f`.
     #[inline]
-    pub(crate) fn cur_font(&self) -> i32 {
-        self.equiv(crate::consts::CUR_FONT_LOC)
+    pub(crate) fn font_id_text(&self, f: FontId) -> i32 {
+        self.hash_s1(f.id_loc())
+    }
+
+    #[inline]
+    pub(crate) fn cur_font(&self) -> FontId {
+        FontId(self.equiv(crate::consts::CUR_FONT_LOC))
     }
     /// Token list parameter `n` (`LOCAL_*`).
     #[inline]
@@ -382,8 +389,8 @@ impl EqtbState {
         ))
     }
     #[inline]
-    pub(crate) fn dimen(&self, n: i32) -> i32 {
-        self.int_at(crate::consts::SCALED_BASE + n)
+    pub(crate) fn dimen(&self, n: i32) -> Scaled {
+        Scaled(self.int_at(crate::consts::SCALED_BASE + n))
     }
     #[inline]
     pub(crate) fn toks(&self, n: i32) -> crate::units::MemPtr {
@@ -394,8 +401,8 @@ impl EqtbState {
         self.equiv(crate::consts::COUNT_BASE + n)
     }
     #[inline]
-    pub(crate) fn math_font(&self, n: i32) -> i32 {
-        self.equiv(crate::consts::MATH_FONT_BASE + n)
+    pub(crate) fn math_font(&self, n: i32) -> FontId {
+        FontId(self.equiv(crate::consts::MATH_FONT_BASE + n))
     }
     #[inline]
     pub(crate) fn cat_code(&self, c: i32) -> i32 {
@@ -446,12 +453,12 @@ impl EqtbState {
         self.set_b32s1(crate::consts::INT_BASE + n, v);
     }
     #[inline]
-    pub fn dimen_par(&self, n: i32) -> i32 {
-        self.b32s1(crate::consts::DIMEN_BASE + n)
+    pub fn dimen_par(&self, n: i32) -> Scaled {
+        Scaled(self.b32s1(crate::consts::DIMEN_BASE + n))
     }
     #[inline]
-    pub fn set_dimen_par(&mut self, n: i32, v: i32) {
-        self.set_b32s1(crate::consts::DIMEN_BASE + n, v);
+    pub fn set_dimen_par(&mut self, n: i32, v: Scaled) {
+        self.set_b32s1(crate::consts::DIMEN_BASE + n, v.0);
     }
     /// The spec of glue parameter `n`, never null.
     #[inline]
@@ -855,23 +862,23 @@ pub(crate) struct ScannerState {
     pub cur_mlist: crate::units::MemPtr,
     pub cur_style: i16,
     pub cur_size: i32,
-    pub cur_mu: i32,
+    pub cur_mu: Scaled,
     pub mlist_penalties: bool,
     pub cur_box: Option<crate::node::BoxOrRule>,
     pub after_token: i32,
     pub cur_order: u16,
     pub adjust_tail: crate::units::MemPtr,
     pub pre_adjust_tail: crate::units::MemPtr,
-    pub total_stretch: [i32; 4],
-    pub total_shrink: [i32; 4],
+    pub total_stretch: [Scaled; 4],
+    pub total_shrink: [Scaled; 4],
     pub just_box: Option<crate::node::AnyBox>,
-    pub cur_f: i32,
+    pub cur_f: FontId,
     pub cur_c: i32,
     pub cur_i: crate::mem_types::B16x4,
     pub pack_begin_line: i32,
     pub set_box_allowed: bool,
-    pub active_width: [i32; 7],
-    pub best_height_plus_depth: i32,
+    pub active_width: [Scaled; 7],
+    pub best_height_plus_depth: Scaled,
     pub lr_ptr: crate::units::MemPtr,
     pub lr_problems: i32,
     pub cur_dir: i16,
@@ -920,43 +927,43 @@ pub(crate) struct FontState {
     /// Per-engine ICU line-break cache and its string-pool locale key.
     pub brk_iter: Option<LinebreakHandle>,
     pub brk_locale_str_num: i32,
-    pub font_layout_engine: Vec<Option<std::sync::Arc<FontEngineHandle>>>,
-    pub font_mapping: Vec<Option<std::sync::Arc<FontMappingHandle>>>,
-    pub loaded_font_letter_space: i32,
+    pub font_layout_engine: PerFont<Option<std::sync::Arc<FontEngineHandle>>>,
+    pub font_mapping: PerFont<Option<std::sync::Arc<FontMappingHandle>>>,
+    pub loaded_font_letter_space: Scaled,
     pub xtx_ligature_present: bool,
     pub gave_char_warning_help: bool,
     pub native_font_type_flag: i32,
     pub font_mem_size: i32,
-    pub font_max: i32,
+    pub font_max: FontId,
     pub fmem_ptr: i32,
-    pub font_ptr: i32,
-    pub font_flags: Vec<i8>,
-    pub font_letter_space: Vec<i32>,
+    pub font_ptr: FontId,
+    pub font_flags: PerFont<i8>,
+    pub font_letter_space: PerFont<Scaled>,
     pub null_character: crate::mem_types::B16x4,
-    pub font_check: Vec<crate::mem_types::B16x4>,
-    pub font_size: Vec<i32>,
-    pub font_dsize: Vec<i32>,
-    pub font_params: Vec<i32>,
-    pub font_name: Vec<i32>,
-    pub font_area: Vec<i32>,
-    pub font_bc: Vec<u16>,
-    pub font_ec: Vec<u16>,
-    pub bchar_label: Vec<i32>,
-    pub font_bchar: Vec<i32>,
-    pub font_false_bchar: Vec<i32>,
-    pub font_glue: Vec<i32>,
-    pub font_used: Vec<bool>,
-    pub char_base: Vec<i32>,
-    pub width_base: Vec<i32>,
-    pub height_base: Vec<i32>,
-    pub depth_base: Vec<i32>,
-    pub italic_base: Vec<i32>,
-    pub lig_kern_base: Vec<i32>,
-    pub kern_base: Vec<i32>,
-    pub exten_base: Vec<i32>,
-    pub param_base: Vec<i32>,
-    pub hyphen_char: Vec<i32>,
-    pub skew_char: Vec<i32>,
+    pub font_check: PerFont<crate::mem_types::B16x4>,
+    pub font_size: PerFont<Scaled>,
+    pub font_dsize: PerFont<Scaled>,
+    pub font_params: PerFont<i32>,
+    pub font_name: PerFont<i32>,
+    pub font_area: PerFont<i32>,
+    pub font_bc: PerFont<u16>,
+    pub font_ec: PerFont<u16>,
+    pub bchar_label: PerFont<i32>,
+    pub font_bchar: PerFont<i32>,
+    pub font_false_bchar: PerFont<i32>,
+    pub font_glue: PerFont<i32>,
+    pub font_used: PerFont<bool>,
+    pub char_base: PerFont<i32>,
+    pub width_base: PerFont<i32>,
+    pub height_base: PerFont<i32>,
+    pub depth_base: PerFont<i32>,
+    pub italic_base: PerFont<i32>,
+    pub lig_kern_base: PerFont<i32>,
+    pub kern_base: PerFont<i32>,
+    pub exten_base: PerFont<i32>,
+    pub param_base: PerFont<i32>,
+    pub hyphen_char: PerFont<i32>,
+    pub skew_char: PerFont<i32>,
     pub font_info: Vec<crate::mem_types::MemoryWord>,
     pub font_info_journal: crate::journal::PlainTrail<crate::mem_types::MemoryWord>,
     /// Font-memory high-water mark at the start of the open journal epoch.
@@ -973,48 +980,48 @@ impl Default for FontState {
             saved_mapping_name: None,
             brk_iter: None,
             brk_locale_str_num: 0,
-            font_layout_engine: Vec::new(),
-            font_mapping: Vec::new(),
-            loaded_font_letter_space: 0,
+            font_layout_engine: PerFont::default(),
+            font_mapping: PerFont::default(),
+            loaded_font_letter_space: Scaled::ZERO,
             xtx_ligature_present: false,
             gave_char_warning_help: false,
             native_font_type_flag: 0,
             font_mem_size: 0,
-            font_max: 0,
+            font_max: crate::consts::NULL_FONT,
             fmem_ptr: 0,
-            font_ptr: 0,
-            font_flags: Vec::new(),
-            font_letter_space: Vec::new(),
+            font_ptr: crate::consts::NULL_FONT,
+            font_flags: PerFont::default(),
+            font_letter_space: PerFont::default(),
             null_character: crate::mem_types::B16x4 {
                 s0: 0,
                 s1: 0,
                 s2: 0,
                 s3: 0,
             },
-            font_check: Vec::new(),
-            font_size: Vec::new(),
-            font_dsize: Vec::new(),
-            font_params: Vec::new(),
-            font_name: Vec::new(),
-            font_area: Vec::new(),
-            font_bc: Vec::new(),
-            font_ec: Vec::new(),
-            bchar_label: Vec::new(),
-            font_bchar: Vec::new(),
-            font_false_bchar: Vec::new(),
-            font_glue: Vec::new(),
-            font_used: Vec::new(),
-            char_base: Vec::new(),
-            width_base: Vec::new(),
-            height_base: Vec::new(),
-            depth_base: Vec::new(),
-            italic_base: Vec::new(),
-            lig_kern_base: Vec::new(),
-            kern_base: Vec::new(),
-            exten_base: Vec::new(),
-            param_base: Vec::new(),
-            hyphen_char: Vec::new(),
-            skew_char: Vec::new(),
+            font_check: PerFont::default(),
+            font_size: PerFont::default(),
+            font_dsize: PerFont::default(),
+            font_params: PerFont::default(),
+            font_name: PerFont::default(),
+            font_area: PerFont::default(),
+            font_bc: PerFont::default(),
+            font_ec: PerFont::default(),
+            bchar_label: PerFont::default(),
+            font_bchar: PerFont::default(),
+            font_false_bchar: PerFont::default(),
+            font_glue: PerFont::default(),
+            font_used: PerFont::default(),
+            char_base: PerFont::default(),
+            width_base: PerFont::default(),
+            height_base: PerFont::default(),
+            depth_base: PerFont::default(),
+            italic_base: PerFont::default(),
+            lig_kern_base: PerFont::default(),
+            kern_base: PerFont::default(),
+            exten_base: PerFont::default(),
+            param_base: PerFont::default(),
+            hyphen_char: PerFont::default(),
+            skew_char: PerFont::default(),
             font_info: Vec::new(),
             font_info_journal: crate::journal::PlainTrail::default(),
             fmem_epoch_base: 0,
@@ -1026,160 +1033,22 @@ impl Default for FontState {
 
 impl FontState {
     #[inline]
-    pub(crate) fn font_area_entry(&self, f: i32) -> i32 {
-        self.font_area[f as usize]
-    }
-
-    #[inline]
-    pub(crate) fn font_letter_space_entry(&self, f: i32) -> i32 {
-        self.font_letter_space[f as usize]
-    }
-
-    #[inline]
-    pub(crate) fn font_flags_entry(&self, f: i32) -> i32 {
-        self.font_flags[f as usize] as i32
-    }
-
-    #[inline]
-    pub(crate) fn font_bc_entry(&self, f: i32) -> u16 {
-        self.font_bc[f as usize]
-    }
-
-    #[inline]
-    pub(crate) fn font_ec_entry(&self, f: i32) -> u16 {
-        self.font_ec[f as usize]
-    }
-
-    #[inline]
     pub(crate) fn font_info_b16(&self, k: i32) -> crate::mem_types::B16x4 {
         self.font_info[k as usize].b16()
     }
 
     /// `font_info[k].sc`.
     #[inline]
-    pub(crate) fn font_info_sc(&self, k: i32) -> i32 {
-        self.font_info[k as usize].b32().s1
+    pub(crate) fn font_info_sc(&self, k: i32) -> Scaled {
+        Scaled(self.font_info[k as usize].b32().s1)
     }
 
     /// Font parameter `n` of font `f`.
     #[inline]
-    pub(crate) fn param(&self, f: i32, n: i32) -> i32 {
-        self.font_info_sc(n + self.param_base(f))
+    pub(crate) fn param(&self, f: FontId, n: i32) -> Scaled {
+        self.font_info_sc(n + self.param_base[f])
     }
 
-    #[inline]
-    pub(crate) fn font_params(&self, f: i32) -> i32 {
-        self.font_params[f as usize]
-    }
-
-    #[inline]
-    pub(crate) fn param_base(&self, f: i32) -> i32 {
-        self.param_base[f as usize]
-    }
-
-    #[inline]
-    pub(crate) fn bchar_label_entry(&self, f: i32) -> i32 {
-        self.bchar_label[f as usize]
-    }
-
-    #[inline]
-    pub(crate) fn font_bchar_entry(&self, f: i32) -> i32 {
-        self.font_bchar[f as usize]
-    }
-
-    #[inline]
-    pub(crate) fn char_base_entry(&self, f: i32) -> i32 {
-        self.char_base[f as usize]
-    }
-
-    #[inline]
-    pub(crate) fn width_base_entry(&self, f: i32) -> i32 {
-        self.width_base[f as usize]
-    }
-
-    #[inline]
-    pub(crate) fn italic_base_entry(&self, f: i32) -> i32 {
-        self.italic_base[f as usize]
-    }
-
-    #[inline]
-    pub(crate) fn height_base_entry(&self, f: i32) -> i32 {
-        self.height_base[f as usize]
-    }
-
-    #[inline]
-    pub(crate) fn depth_base_entry(&self, f: i32) -> i32 {
-        self.depth_base[f as usize]
-    }
-
-    #[inline]
-    pub(crate) fn exten_base_entry(&self, f: i32) -> i32 {
-        self.exten_base[f as usize]
-    }
-
-    #[inline]
-    pub(crate) fn lig_kern_base_entry(&self, f: i32) -> i32 {
-        self.lig_kern_base[f as usize]
-    }
-
-    #[inline]
-    pub(crate) fn kern_base_entry(&self, f: i32) -> i32 {
-        self.kern_base[f as usize]
-    }
-
-    #[inline]
-    pub(crate) fn skew_char_entry(&self, f: i32) -> i32 {
-        self.skew_char[f as usize]
-    }
-
-    #[inline]
-    pub(crate) fn set_char_base_entry(&mut self, f: i32, v: i32) {
-        self.char_base[f as usize] = v;
-    }
-    #[inline]
-    pub(crate) fn set_width_base_entry(&mut self, f: i32, v: i32) {
-        self.width_base[f as usize] = v;
-    }
-    #[inline]
-    pub(crate) fn set_height_base_entry(&mut self, f: i32, v: i32) {
-        self.height_base[f as usize] = v;
-    }
-    #[inline]
-    pub(crate) fn set_depth_base_entry(&mut self, f: i32, v: i32) {
-        self.depth_base[f as usize] = v;
-    }
-    #[inline]
-    pub(crate) fn set_italic_base_entry(&mut self, f: i32, v: i32) {
-        self.italic_base[f as usize] = v;
-    }
-    #[inline]
-    pub(crate) fn set_lig_kern_base_entry(&mut self, f: i32, v: i32) {
-        self.lig_kern_base[f as usize] = v;
-    }
-    #[inline]
-    pub(crate) fn set_kern_base_entry(&mut self, f: i32, v: i32) {
-        self.kern_base[f as usize] = v;
-    }
-    #[inline]
-    pub(crate) fn set_exten_base_entry(&mut self, f: i32, v: i32) {
-        self.exten_base[f as usize] = v;
-    }
-    #[inline]
-    pub(crate) fn set_param_base(&mut self, f: i32, v: i32) {
-        self.param_base[f as usize] = v;
-    }
-    #[inline]
-    pub(crate) fn set_font_check(&mut self, f: i32, v: crate::mem_types::B16x4) {
-        self.font_check[f as usize] = v;
-    }
-    #[inline]
-    pub(crate) fn set_font_dsize_entry(&mut self, f: i32, v: i32) {
-        self.font_dsize[f as usize] = v;
-    }
-    #[inline]
-    pub(crate) fn set_font_size_entry(&mut self, f: i32, v: i32) {
-        self.font_size[f as usize] = v;
-    }
     #[inline]
     pub(crate) fn set_font_info_b16(&mut self, k: i32, v: crate::mem_types::B16x4) {
         let index = k as usize;
@@ -1188,93 +1057,51 @@ impl FontState {
         }
         self.font_info[index].b16 = v;
     }
+
     #[inline]
-    pub(crate) fn set_font_info_sc(&mut self, k: i32, v: i32) {
+    pub(crate) fn set_font_info_sc(&mut self, k: i32, v: Scaled) {
         let index = k as usize;
         if self.font_info_journal.armed() && k < self.fmem_epoch_base {
             self.font_info_journal.note(index, self.font_info[index]);
         }
-        self.font_info[index].b32.s1 = v;
+        self.font_info[index].b32.s1 = v.0;
     }
-    #[inline]
-    pub(crate) fn set_font_params(&mut self, f: i32, v: i32) {
-        self.font_params[f as usize] = v;
+}
+
+/// A table with one entry per internal font.
+#[derive(Clone, Default)]
+pub(crate) struct PerFont<T>(Vec<T>);
+
+impl<T: Clone> PerFont<T> {
+    pub(crate) fn filled(len: usize, value: T) -> Self {
+        PerFont(vec![value; len])
     }
+}
+
+impl<T> PerFont<T> {
     #[inline]
-    pub(crate) fn set_hyphen_char_entry(&mut self, f: i32, v: i32) {
-        self.hyphen_char[f as usize] = v;
+    pub(crate) fn as_slice(&self) -> &[T] {
+        &self.0
     }
+
     #[inline]
-    pub(crate) fn set_skew_char_entry(&mut self, f: i32, v: i32) {
-        self.skew_char[f as usize] = v;
+    pub(crate) fn as_mut_slice(&mut self) -> &mut [T] {
+        &mut self.0
     }
-    #[inline]
-    pub(crate) fn set_bchar_label_entry(&mut self, f: i32, v: i32) {
-        self.bchar_label[f as usize] = v;
+}
+
+impl<T> std::ops::Index<FontId> for PerFont<T> {
+    type Output = T;
+    #[inline(always)]
+    fn index(&self, f: FontId) -> &T {
+        &self.0[f.index()]
     }
-    #[inline]
-    pub(crate) fn set_font_bchar_entry(&mut self, f: i32, v: i32) {
-        self.font_bchar[f as usize] = v;
-    }
-    #[inline]
-    pub(crate) fn set_font_false_bchar_entry(&mut self, f: i32, v: i32) {
-        self.font_false_bchar[f as usize] = v;
-    }
-    #[inline]
-    pub(crate) fn set_font_name_entry(&mut self, f: i32, v: i32) {
-        self.font_name[f as usize] = v;
-    }
-    #[inline]
-    pub(crate) fn set_font_area_entry(&mut self, f: i32, v: i32) {
-        self.font_area[f as usize] = v;
-    }
-    #[inline]
-    pub(crate) fn set_font_bc_entry(&mut self, f: i32, v: u16) {
-        self.font_bc[f as usize] = v;
-    }
-    #[inline]
-    pub(crate) fn set_font_ec_entry(&mut self, f: i32, v: u16) {
-        self.font_ec[f as usize] = v;
-    }
-    #[inline]
-    pub(crate) fn font_glue(&self, f: i32) -> i32 {
-        self.font_glue[f as usize]
-    }
-    #[inline]
-    pub(crate) fn hyphen_char_entry(&self, f: i32) -> i32 {
-        self.hyphen_char[f as usize]
-    }
-    #[inline]
-    pub(crate) fn font_false_bchar_entry(&self, f: i32) -> i32 {
-        self.font_false_bchar[f as usize]
-    }
-    #[inline]
-    pub(crate) fn set_font_glue(&mut self, f: i32, v: i32) {
-        self.font_glue[f as usize] = v;
-    }
-    #[inline]
-    pub(crate) fn set_font_used_entry(&mut self, f: i32, v: bool) {
-        self.font_used[f as usize] = v;
-    }
-    #[inline]
-    pub(crate) fn set_font_layout_engine(
-        &mut self,
-        f: i32,
-        v: Option<std::sync::Arc<FontEngineHandle>>,
-    ) {
-        self.font_layout_engine[f as usize] = v;
-    }
-    #[inline]
-    pub(crate) fn set_font_mapping(
-        &mut self,
-        f: i32,
-        v: Option<std::sync::Arc<FontMappingHandle>>,
-    ) {
-        self.font_mapping[f as usize] = v;
-    }
-    #[inline]
-    pub(crate) fn set_font_letter_space_entry(&mut self, f: i32, v: i32) {
-        self.font_letter_space[f as usize] = v;
+}
+
+impl<T> std::ops::IndexMut<FontId> for PerFont<T> {
+    #[inline(always)]
+    fn index_mut(&mut self, f: FontId) -> &mut T {
+        &mut self.0[f.index()]
     }
 }
 
@@ -1306,10 +1133,10 @@ pub(crate) struct ShipoutState {
     pub page_tail: crate::units::MemPtr,
     pub last_badness: i32,
     pub page_contents: PageContents,
-    pub page_so_far: [i32; 8],
+    pub page_so_far: [Scaled; 8],
     pub last_glue: Option<crate::node::NodePtr<crate::node::GlueSpecNode>>,
     pub last_penalty: i32,
-    pub last_kern: i32,
+    pub last_kern: Scaled,
     pub last_node_type: i32,
     pub insert_penalties: i32,
     pub output_active: bool,
@@ -1325,24 +1152,24 @@ pub(crate) struct ShipoutState {
     pub log_file: usize,
     pub current_diagnostic: Option<Box<crate::bridge::Diagnostic>>,
     pub best_page_break: crate::units::MemPtr,
-    pub best_size: i32,
+    pub best_size: Scaled,
     pub least_page_cost: i32,
-    pub page_max_depth: i32,
+    pub page_max_depth: Scaled,
     pub total_pages: i32,
-    pub max_v: i32,
-    pub max_h: i32,
+    pub max_v: Scaled,
+    pub max_h: Scaled,
     pub max_push: i32,
     pub last_bop: i32,
     pub doing_leaders: bool,
-    pub rule_ht: i32,
-    pub rule_dp: i32,
-    pub rule_wd: i32,
-    pub cur_h: i32,
-    pub cur_v: i32,
-    pub cur_page_width: i32,
-    pub cur_page_height: i32,
-    pub cur_h_offset: i32,
-    pub cur_v_offset: i32,
+    pub rule_ht: Scaled,
+    pub rule_dp: Scaled,
+    pub rule_wd: Scaled,
+    pub cur_h: Scaled,
+    pub cur_v: Scaled,
+    pub cur_page_width: Scaled,
+    pub cur_page_height: Scaled,
+    pub cur_h_offset: Scaled,
+    pub cur_v_offset: Scaled,
     pub write_loc: i32,
     pub dvi_file: usize,
     pub output_file_name: i32,
@@ -1354,9 +1181,9 @@ pub(crate) struct ShipoutState {
     pub down_ptr: crate::units::MemPtr,
     pub right_ptr: crate::units::MemPtr,
     pub cur_s: i32,
-    pub dvi_h: i32,
-    pub dvi_v: i32,
-    pub dvi_f: i32,
+    pub dvi_h: Scaled,
+    pub dvi_v: Scaled,
+    pub dvi_f: FontId,
 }
 
 /// TeX's `interaction` level, ordered like its numeric codes.
@@ -1408,7 +1235,7 @@ pub(crate) struct ErrorState {
     pub deletions_allowed: bool,
     pub random_seed: i32,
     pub no_shrink_error_yet: bool,
-    pub font_in_short_display: i32,
+    pub font_in_short_display: FontId,
     pub depth_threshold: i32,
     pub breadth_max: i32,
 }
@@ -1440,7 +1267,7 @@ impl Default for ErrorState {
             deletions_allowed: false,
             random_seed: 0,
             no_shrink_error_yet: false,
-            font_in_short_display: 0,
+            font_in_short_display: crate::consts::NULL_FONT,
             depth_threshold: 0,
             breadth_max: 0,
         }
@@ -1495,10 +1322,10 @@ pub(crate) struct LinebreakState {
     pub global_prev_p: crate::units::MemPtr,
     pub cur_p: crate::units::MemPtr,
     pub last_special_line: i32,
-    pub first_width: i32,
-    pub second_width: i32,
-    pub first_indent: i32,
-    pub second_indent: i32,
+    pub first_width: Scaled,
+    pub second_width: Scaled,
+    pub first_indent: Scaled,
+    pub second_indent: Scaled,
     /// The active node of the chosen breakpoint, once there is one.
     pub best_bet: Option<crate::node::NodePtr<crate::node::ActiveNode>>,
     pub best_line: i32,
@@ -1506,12 +1333,12 @@ pub(crate) struct LinebreakState {
     pub ha: crate::units::MemPtr,
     pub hb: crate::units::MemPtr,
     pub passive: crate::units::MemPtr,
-    pub cur_active_width: [i32; 7],
-    pub background: [i32; 7],
-    pub break_width: [i32; 7],
+    pub cur_active_width: [Scaled; 7],
+    pub background: [Scaled; 7],
+    pub break_width: [Scaled; 7],
     pub best_place: [crate::units::MemPtr; 4],
     pub best_pl_line: [i32; 4],
-    pub disc_width: i32,
+    pub disc_width: Scaled,
     pub final_pass: bool,
     pub threshold: i32,
     pub minimal_demerits: [i32; 4],
@@ -1519,9 +1346,9 @@ pub(crate) struct LinebreakState {
     pub easy_line: i32,
     pub do_last_line_fit: bool,
     pub active_node_size: i16,
-    pub fill_width: [i32; 3],
-    pub best_pl_short: [i32; 4],
-    pub best_pl_glue: [i32; 4],
+    pub fill_width: [Scaled; 3],
+    pub best_pl_short: [Scaled; 4],
+    pub best_pl_glue: [Scaled; 4],
 }
 
 impl Default for LinebreakState {
@@ -1535,22 +1362,22 @@ impl Default for LinebreakState {
             global_prev_p: crate::units::MemPtr::from_raw(0),
             cur_p: crate::units::MemPtr::from_raw(0),
             last_special_line: 0,
-            first_width: 0,
-            second_width: 0,
-            first_indent: 0,
-            second_indent: 0,
+            first_width: Scaled::ZERO,
+            second_width: Scaled::ZERO,
+            first_indent: Scaled::ZERO,
+            second_indent: Scaled::ZERO,
             best_bet: None,
             best_line: 0,
             hn: 0,
             ha: crate::units::MemPtr::from_raw(0),
             hb: crate::units::MemPtr::from_raw(0),
             passive: crate::units::MemPtr::from_raw(0),
-            cur_active_width: [0; 7],
-            background: [0; 7],
-            break_width: [0; 7],
+            cur_active_width: [Scaled::ZERO; 7],
+            background: [Scaled::ZERO; 7],
+            break_width: [Scaled::ZERO; 7],
             best_place: [crate::units::MemPtr::from_raw(0); 4],
             best_pl_line: [0; 4],
-            disc_width: 0,
+            disc_width: Scaled::ZERO,
             final_pass: false,
             threshold: 0,
             minimal_demerits: [0; 4],
@@ -1558,9 +1385,9 @@ impl Default for LinebreakState {
             easy_line: 0,
             do_last_line_fit: false,
             active_node_size: 0,
-            fill_width: [0; 3],
-            best_pl_short: [0; 4],
-            best_pl_glue: [0; 4],
+            fill_width: [Scaled::ZERO; 3],
+            best_pl_short: [Scaled::ZERO; 4],
+            best_pl_glue: [Scaled::ZERO; 4],
         }
     }
 }
@@ -1569,7 +1396,7 @@ pub(crate) struct HyphState {
     /// Generation of the rarely-mutated trie and exception tables.
     pub tables_gen: u64,
     pub is_hyph: bool,
-    pub hf: i32,
+    pub hf: FontId,
     pub max_hyph_char: i32,
     pub init_list: crate::units::MemPtr,
     pub init_lig: bool,
@@ -1624,7 +1451,7 @@ impl Default for HyphState {
         Self {
             tables_gen: 0,
             is_hyph: false,
-            hf: 0,
+            hf: crate::consts::NULL_FONT,
             max_hyph_char: 0,
             init_list: crate::units::MemPtr::from_raw(0),
             init_lig: false,
@@ -1705,6 +1532,17 @@ impl InputClusterState {
 pub(crate) const NATIVE_TEXT_MAX: i32 = 1 << 20;
 
 impl ScannerState {
+    /// `cur_val` as the dimension that `scan_dimen` left there.
+    #[inline]
+    pub(crate) fn cur_dimen(&self) -> Scaled {
+        Scaled(self.cur_val)
+    }
+
+    #[inline]
+    pub(crate) fn set_cur_dimen(&mut self, d: Scaled) {
+        self.cur_val = d.0;
+    }
+
     /// `cur_val` as the glue spec that `scan_glue` left there.
     #[inline]
     pub(crate) fn cur_glue(&self) -> crate::node::NodePtr<crate::node::GlueSpecNode> {

@@ -1,10 +1,10 @@
 //! Shipping boxes out to the XDV file.
 use crate::consts::{
     A_LEADERS, BEFORE, CS_TOKEN_FLAG, C_LEADERS, DIMEN_PAR_H_OFFSET, DIMEN_PAR_PDF_PAGE_HEIGHT,
-    DIMEN_PAR_PDF_PAGE_WIDTH, DIMEN_PAR_V_OFFSET, DLIST, END_WRITE, FILLL, FONT_BASE, INT_PAR_MAG,
+    DIMEN_PAR_PDF_PAGE_WIDTH, DIMEN_PAR_V_OFFSET, DLIST, END_WRITE, FILLL, INT_PAR_MAG,
     INT_PAR_TRACING_ONLINE, INT_PAR_TRACING_OUTPUT, INT_PAR_XETEX_INTERWORD_SPACE_SHAPING,
-    INVALID_HANDLE, LEFT_TO_RIGHT, L_CODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD,
-    NATIVE_GLYPH_INFO_SIZE, NORMAL, NULL_FLAG, RIGHT_TO_LEFT, R_CODE, SELECTOR_LOG_ONLY,
+    INVALID_HANDLE, LEFT_TO_RIGHT, L_CODE, MAX_DIMEN, MEDIUM_NODE_SIZE, MIN_HALFWORD,
+    NATIVE_GLYPH_INFO_SIZE, NORMAL, NULL_FONT, RIGHT_TO_LEFT, R_CODE, SELECTOR_LOG_ONLY,
     SELECTOR_NEW_STRING, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SMALL_NODE_SIZE,
     SPACE_ADJUSTMENT, TEX_INFINITY, TEX_NULL,
 };
@@ -17,11 +17,11 @@ use crate::input::{INSERTED, WRITE_TEXT};
 use crate::mem::{end_lr_type, LIG_TRICK};
 use crate::node::{
     AnyBox, AnyNode, EdgeNode, GlueNode, GlueSpecNode, MathNode, MovementNode, NodePtr, RuleNode,
-    WhatsitNode, WhatsitSubtype,
+    WhatsitNode, WhatsitSubtype, RUNNING,
 };
 use crate::scan::{LEFT_BRACE_TOKEN, RIGHT_BRACE_TOKEN};
 use crate::state::{EqtbState, FontState, MemState, ScannerState, ShipoutState, StringsState};
-use crate::units::{GlueSign, MemIdx, MemPtr, Scaled};
+use crate::units::{FontId, GlueSign, MemIdx, MemPtr, Scaled};
 
 const DVI_BUF_SIZE: i32 = 16384;
 const HALF_BUF: i32 = 8192;
@@ -61,15 +61,23 @@ const MOV_Z_SEEN: i32 = 12;
 
 const REVERSED: u16 = 1;
 
-pub(crate) const ONE_INCH: i32 = 4_736_287;
-const ONE_INCH_LESS_ONE: i32 = ONE_INCH - 1;
+/// Slack TeX adds to leader glue against floating-point rounding.
+const LEADER_SLOP: Scaled = Scaled(10);
+
+/// How many leader boxes of size `size` fit in `total`, and the leftover space.
+fn leader_count_and_rest(total: Scaled, size: Scaled) -> (i32, Scaled) {
+    (total.0 / size.0, Scaled(total.0 % size.0))
+}
+
+pub(crate) const ONE_INCH: Scaled = Scaled(4_736_287);
+const ONE_INCH_LESS_ONE: Scaled = Scaled(ONE_INCH.0 - 1);
 
 impl MemState {
-    pub fn new_edge(&mut self, s: i16, w: i32) -> Result<NodePtr<EdgeNode>, Abort> {
+    pub fn new_edge(&mut self, s: i16, w: Scaled) -> Result<NodePtr<EdgeNode>, Abort> {
         let p = NodePtr::<EdgeNode>::alloc(self)?;
         p.set_subtype(self, s as u16);
-        p.set_width(self, Scaled(w));
-        p.set_edge_dist(self, Scaled(0));
+        p.set_width(self, w);
+        p.set_edge_dist(self, Scaled::ZERO);
         Ok(p)
     }
 }
@@ -155,38 +163,38 @@ fn synch_v(st: &mut crate::state::EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-fn dvi_native_font_def(st: &mut crate::state::EngineState, f: i32) -> Result<(), Abort> {
+fn dvi_native_font_def(st: &mut crate::state::EngineState, f: FontId) -> Result<(), Abort> {
     let font_def_length = st.fonts.make_font_def(f)?;
     st.shipout.dvi_out(DEFINE_NATIVE_FONT)?;
-    st.shipout.dvi_four(f - 1)?;
+    st.shipout.dvi_four(f.dvi_number())?;
     st.shipout
         .dvi_bytes(&st.fonts.xdv_buffer[..font_def_length as usize])
 }
 
-fn dvi_font_def(st: &mut crate::state::EngineState, f: i32) -> Result<(), Abort> {
-    let font_area = st.fonts.font_area_entry(f);
+fn dvi_font_def(st: &mut crate::state::EngineState, f: FontId) -> Result<(), Abort> {
+    let font_area = st.fonts.font_area[f];
     if font_area == AAT_FONT_FLAG || font_area == OTGR_FONT_FLAG {
         return dvi_native_font_def(st, f);
     }
-    let fu = f as usize;
-    if f <= 256 {
-        st.shipout.dvi_bytes(&[FNT_DEF1, (f - 1) as u8])?;
+    let k = f.dvi_number();
+    if k < 256 {
+        st.shipout.dvi_bytes(&[FNT_DEF1, k as u8])?;
     } else {
         st.shipout
-            .dvi_bytes(&[FNT_DEF1 + 1, ((f - 1) / 256) as u8, ((f - 1) % 256) as u8])?;
+            .dvi_bytes(&[FNT_DEF1 + 1, (k / 256) as u8, (k % 256) as u8])?;
     }
-    let check = st.fonts.font_check[fu];
+    let check = st.fonts.font_check[f];
     st.shipout.dvi_bytes(&[
         check.s3 as u8,
         check.s2 as u8,
         check.s1 as u8,
         check.s0 as u8,
     ])?;
-    st.shipout.dvi_four(st.fonts.font_size[fu])?;
-    st.shipout.dvi_four(st.fonts.font_dsize[fu])?;
+    st.shipout.dvi_four(st.fonts.font_size[f].0)?;
+    st.shipout.dvi_four(st.fonts.font_dsize[f].0)?;
     st.shipout.dvi_out(st.strings.length(font_area) as u8)?;
 
-    let font_name = st.fonts.font_name[fu];
+    let font_name = st.fonts.font_name[f];
     let name = st.strings.str_range(font_name);
     // Only the part before a `:features` suffix is written (a leading colon does not count).
     let colon = st.strings.str_pool[name.clone()]
@@ -280,16 +288,16 @@ pub(crate) fn ship_out(st: &mut crate::state::EngineState, page: AnyBox) -> Resu
     }
 
     let (height, depth, width) = (
-        page.height(&st.mem).0,
-        page.depth(&st.mem).0,
-        page.width(&st.mem).0,
+        page.height(&st.mem),
+        page.depth(&st.mem),
+        page.width(&st.mem),
     );
     let h_offset = st.eqtb.dimen_par(DIMEN_PAR_H_OFFSET);
     let v_offset = st.eqtb.dimen_par(DIMEN_PAR_V_OFFSET);
-    if height > MAX_HALFWORD
-        || depth > MAX_HALFWORD
-        || height + depth + v_offset > MAX_HALFWORD
-        || width + h_offset > MAX_HALFWORD
+    if height > MAX_DIMEN
+        || depth > MAX_DIMEN
+        || height + depth + v_offset > MAX_DIMEN
+        || width + h_offset > MAX_DIMEN
     {
         crate::output::error_here_with_diagnostic(st, "Huge page cannot be shipped out");
         crate::output::capture_to_diagnostic(st, None);
@@ -336,9 +344,9 @@ pub(crate) fn ship_out(st: &mut crate::state::EngineState, page: AnyBox) -> Resu
 
 fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<(), Abort> {
     let (height, depth, width) = (
-        page.height(&st.mem).0,
-        page.depth(&st.mem).0,
-        page.width(&st.mem).0,
+        page.height(&st.mem),
+        page.depth(&st.mem),
+        page.width(&st.mem),
     );
     let h_offset = st.eqtb.dimen_par(DIMEN_PAR_H_OFFSET);
     let v_offset = st.eqtb.dimen_par(DIMEN_PAR_V_OFFSET);
@@ -347,21 +355,21 @@ fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<(), Abo
 
     st.shipout.max_v = st.shipout.max_v.max(height + depth + v_offset);
     st.shipout.max_h = st.shipout.max_h.max(width + h_offset);
-    st.shipout.dvi_h = 0;
-    st.shipout.dvi_v = 0;
+    st.shipout.dvi_h = Scaled::ZERO;
+    st.shipout.dvi_v = Scaled::ZERO;
     st.shipout.cur_h = h_offset;
-    st.shipout.dvi_f = FONT_BASE;
+    st.shipout.dvi_f = NULL_FONT;
     st.shipout.cur_h_offset = h_offset + ONE_INCH_LESS_ONE;
     st.shipout.cur_v_offset = v_offset + ONE_INCH_LESS_ONE;
-    st.shipout.cur_page_width = if pdf_page_width != 0 {
+    st.shipout.cur_page_width = if pdf_page_width != Scaled::ZERO {
         pdf_page_width
     } else {
-        width + 2 * st.shipout.cur_h_offset
+        width + st.shipout.cur_h_offset * 2
     };
-    st.shipout.cur_page_height = if pdf_page_height != 0 {
+    st.shipout.cur_page_height = if pdf_page_height != Scaled::ZERO {
         pdf_page_height
     } else {
-        height + depth + 2 * st.shipout.cur_v_offset
+        height + depth + st.shipout.cur_v_offset * 2
     };
 
     if st.shipout.output_file_name == 0 {
@@ -402,7 +410,7 @@ fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<(), Abo
     let old_setting = st.shipout.selector;
     st.shipout.selector = SELECTOR_NEW_STRING;
     crate::output::print(st, "pdf:pagesize ");
-    if pdf_page_width <= 0 || pdf_page_height <= 0 {
+    if pdf_page_width <= Scaled::ZERO || pdf_page_height <= Scaled::ZERO {
         crate::output::print(st, "default");
     } else {
         crate::output::print(st, "width");
@@ -460,21 +468,22 @@ impl ShipoutState {
     }
 }
 
-fn dvi_font_select(st: &mut crate::state::EngineState, f: i32) -> Result<(), Abort> {
+fn dvi_font_select(st: &mut crate::state::EngineState, f: FontId) -> Result<(), Abort> {
     if f == st.shipout.dvi_f {
         return Ok(());
     }
-    if !st.fonts.font_used[f as usize] {
+    if !st.fonts.font_used[f] {
         dvi_font_def(st, f)?;
-        st.fonts.font_used[f as usize] = true;
+        st.fonts.font_used[f] = true;
     }
-    if f <= 64 {
-        st.shipout.dvi_out(f as u8 + FNT_NUM_0 - 1)?;
-    } else if f <= 256 {
-        st.shipout.dvi_bytes(&[FNT1, (f - 1) as u8])?;
+    let k = f.dvi_number();
+    if k < 64 {
+        st.shipout.dvi_out(k as u8 + FNT_NUM_0)?;
+    } else if k < 256 {
+        st.shipout.dvi_bytes(&[FNT1, k as u8])?;
     } else {
         st.shipout
-            .dvi_bytes(&[FNT1 + 1, ((f - 1) / 256) as u8, ((f - 1) % 256) as u8])?;
+            .dvi_bytes(&[FNT1 + 1, (k / 256) as u8, (k % 256) as u8])?;
     }
     st.shipout.dvi_f = f;
     Ok(())
@@ -486,7 +495,7 @@ struct GlueRounding {
     order: u16,
     sign: GlueSign,
     set: f64,
-    cur_g: i32,
+    cur_g: Scaled,
     cur_glue: f64,
 }
 
@@ -496,7 +505,7 @@ impl GlueRounding {
             order: this_box.glue_order(mem),
             sign: this_box.glue_sign(mem),
             set: this_box.glue_set(mem),
-            cur_g: 0,
+            cur_g: Scaled::ZERO,
             cur_glue: 0.0,
         }
     }
@@ -511,8 +520,8 @@ impl GlueRounding {
     }
 
     /// The rounded width of `spec` as set in this box.
-    fn width(&mut self, mem: &MemState, spec: NodePtr<GlueSpecNode>) -> i32 {
-        let width = spec.width(mem).0 - self.cur_g;
+    fn width(&mut self, mem: &MemState, spec: NodePtr<GlueSpecNode>) -> Scaled {
+        let width = spec.width(mem) - self.cur_g;
         if self.is_set(mem, spec) {
             if self.sign == GlueSign::Stretching {
                 self.cur_glue += spec.stretch(mem).0 as f64;
@@ -520,7 +529,7 @@ impl GlueRounding {
                 self.cur_glue -= spec.shrink(mem).0 as f64;
             }
             let glue_temp = (self.set * self.cur_glue).clamp(-1_000_000_000.0, 1_000_000_000.0);
-            self.cur_g = crate::scaled_math::tex_round(glue_temp);
+            self.cur_g = Scaled(crate::scaled_math::tex_round(glue_temp));
         }
         width + self.cur_g
     }
@@ -532,7 +541,7 @@ enum Leader {
 }
 
 impl FontState {
-    fn font_character_width(&self, f: i32, c: i32) -> i32 {
+    fn font_character_width(&self, f: FontId, c: i32) -> Scaled {
         let info = self.char_info(f, c);
         self.char_width(f, info)
     }
@@ -568,7 +577,8 @@ impl MemState {
 
         while !p.is_null() {
             let first = self.as_native_word(p).filter(|r| {
-                fonts.font_letter_space_entry(r.native_font(self).0) == 0 && !p.link(self).is_null()
+                fonts.font_letter_space[r.native_font(self)] == Scaled::ZERO
+                    && !p.link(self).is_null()
             });
             if let Some(r) = first {
                 let font = r.native_font(self);
@@ -582,7 +592,7 @@ impl MemState {
                     q = self.skip_interword_fillers(q);
                     match self.classify_non_char(q) {
                         Some(AnyNode::Glue(glue)) if glue.subtype(self) == NORMAL => {
-                            if glue.glue_ptr(self).ptr().0 == fonts.font_glue(font.0) {
+                            if glue.glue_ptr(self).ptr().0 == fonts.font_glue[font] {
                                 q = self.skip_interword_fillers(glue.link(self));
                                 if let Some(w) = same_font_word(self, q) {
                                     last = w;
@@ -646,7 +656,7 @@ impl MemState {
 
         let g_order = this_box.glue_order(self);
         let g_sign = this_box.glue_sign(self);
-        let mut width = 0;
+        let mut width = Scaled::ZERO;
         let mut q = first.ptr();
         loop {
             match self.classify(MemIdx::new(q.0)) {
@@ -656,29 +666,29 @@ impl MemState {
                             strings.str_pool[strings.pool_ptr as usize] = unit;
                             strings.pool_ptr += 1;
                         }
-                        width += w.width(self).0;
+                        width += w.width(self);
                     }
                 }
                 Ok(AnyNode::Glue(glue)) => {
                     strings.str_pool[strings.pool_ptr as usize] = b' ' as u16;
                     strings.pool_ptr += 1;
                     let spec = glue.glue_ptr(self);
-                    width += spec.width(self).0;
+                    width += spec.width(self);
                     match g_sign {
                         GlueSign::Stretching if spec.stretch_order(self) == g_order => {
-                            width += crate::scaled_math::tex_round(
+                            width += Scaled(crate::scaled_math::tex_round(
                                 this_box.glue_set(self) * spec.stretch(self).0 as f64,
-                            );
+                            ));
                         }
                         GlueSign::Shrinking if spec.shrink_order(self) == g_order => {
-                            width -= crate::scaled_math::tex_round(
+                            width -= Scaled(crate::scaled_math::tex_round(
                                 this_box.glue_set(self) * spec.shrink(self).0 as f64,
-                            );
+                            ));
                         }
                         _ => {}
                     }
                 }
-                Ok(AnyNode::Kern(kern)) => width += kern.width(self).0,
+                Ok(AnyNode::Kern(kern)) => width += kern.width(self),
                 _ => {}
             }
             if q == last.ptr() {
@@ -688,12 +698,12 @@ impl MemState {
         }
 
         let nlen = strings.cur_length();
-        let word = self.new_native_word_node(eqtb, first.native_font(self).0, nlen)?;
+        let word = self.new_native_word_node(eqtb, first.native_font(self), nlen)?;
         word.set_subtype(self, first.subtype(self));
         let base = strings.cur_string_start() as usize;
         word.native_text_mut(self)
             .copy_from_slice(&strings.str_pool[base..base + nlen as usize]);
-        word.set_width(self, Scaled(width));
+        word.set_width(self, width);
         fonts.store_justified_native_glyphs(self, word)?;
 
         prev_p.set_link(self, word.ptr());
@@ -728,18 +738,18 @@ impl MemState {
         &mut self,
         glue: NodePtr<GlueNode>,
         spec: NodePtr<GlueSpecNode>,
-        w: i32,
+        w: Scaled,
     ) -> Result<(), Abort> {
         self.delete_glue_ref(spec);
         if glue.subtype(self) < A_LEADERS {
-            glue.into_kern(self, Scaled(w));
+            glue.into_kern(self, w);
         } else {
             let rigid = NodePtr::<GlueSpecNode>::alloc(self)?;
             rigid.set_stretch_order(self, FILLL + 1);
             rigid.set_shrink_order(self, FILLL + 1);
-            rigid.set_width(self, Scaled(w));
-            rigid.set_stretch(self, Scaled(0));
-            rigid.set_shrink(self, Scaled(0));
+            rigid.set_width(self, w);
+            rigid.set_stretch(self, Scaled::ZERO);
+            rigid.set_shrink(self, Scaled::ZERO);
             glue.set_glue_ptr(self, rigid);
         }
         Ok(())
@@ -792,17 +802,17 @@ fn ship_leader_box(st: &mut crate::state::EngineState, leader: AnyBox) -> Result
 fn hlist_rule_out(
     st: &mut crate::state::EngineState,
     this_box: AnyBox,
-    base_line: i32,
+    base_line: Scaled,
     p: MemPtr,
 ) -> Result<(), Abort> {
-    if st.shipout.rule_ht == NULL_FLAG {
-        st.shipout.rule_ht = this_box.height(&st.mem).0;
+    if st.shipout.rule_ht == RUNNING {
+        st.shipout.rule_ht = this_box.height(&st.mem);
     }
-    if st.shipout.rule_dp == NULL_FLAG {
-        st.shipout.rule_dp = this_box.depth(&st.mem).0;
+    if st.shipout.rule_dp == RUNNING {
+        st.shipout.rule_dp = this_box.depth(&st.mem);
     }
     st.shipout.rule_ht += st.shipout.rule_dp;
-    if st.shipout.rule_ht > 0 && st.shipout.rule_wd > 0 {
+    if st.shipout.rule_ht > Scaled::ZERO && st.shipout.rule_wd > Scaled::ZERO {
         synch_h(st)?;
         st.shipout.cur_v = base_line + st.shipout.rule_dp;
         synch_v(st)?;
@@ -818,15 +828,15 @@ fn hlist_rule_out(
 fn vlist_rule_out(
     st: &mut crate::state::EngineState,
     this_box: AnyBox,
-    left_edge: i32,
+    left_edge: Scaled,
     upwards: bool,
 ) -> Result<(), Abort> {
-    if st.shipout.rule_wd == NULL_FLAG {
-        st.shipout.rule_wd = this_box.width(&st.mem).0;
+    if st.shipout.rule_wd == RUNNING {
+        st.shipout.rule_wd = this_box.width(&st.mem);
     }
     st.shipout.rule_ht += st.shipout.rule_dp;
     st.shipout.move_past_vlist_rule(upwards);
-    if st.shipout.rule_ht > 0 && st.shipout.rule_wd > 0 {
+    if st.shipout.rule_ht > Scaled::ZERO && st.shipout.rule_wd > Scaled::ZERO {
         if st.scanner.cur_dir == RIGHT_TO_LEFT {
             st.shipout.cur_h -= st.shipout.rule_wd;
         }
@@ -842,8 +852,8 @@ impl ShipoutState {
     fn dvi_rule(&mut self, opcode: u8) -> Result<(), Abort> {
         let (ht, wd) = (self.rule_ht, self.rule_wd);
         self.dvi_out(opcode)?;
-        self.dvi_four(ht)?;
-        self.dvi_four(wd)
+        self.dvi_four(ht.0)?;
+        self.dvi_four(wd.0)
     }
 
     fn move_past_vlist_rule(&mut self, upwards: bool) {
@@ -859,8 +869,8 @@ impl ShipoutState {
 fn hlist_glue_out(
     st: &mut crate::state::EngineState,
     this_box: AnyBox,
-    base_line: i32,
-    left_edge: i32,
+    base_line: Scaled,
+    left_edge: Scaled,
     glue: NodePtr<GlueNode>,
     rounding: &mut GlueRounding,
 ) -> Result<(), Abort> {
@@ -874,40 +884,39 @@ fn hlist_glue_out(
     if subtype >= A_LEADERS {
         let leader = match st.mem.leader_of(glue) {
             Leader::Rule(rule) => {
-                st.shipout.rule_ht = rule.height(&st.mem).raw();
-                st.shipout.rule_dp = rule.depth(&st.mem).raw();
+                st.shipout.rule_ht = rule.height(&st.mem).to_scaled();
+                st.shipout.rule_dp = rule.depth(&st.mem).to_scaled();
                 return hlist_rule_out(st, this_box, base_line, glue.ptr());
             }
             Leader::Box(leader) => leader,
         };
-        let leader_wd = leader.width(&st.mem).0;
-        if leader_wd > 0 && st.shipout.rule_wd > 0 {
-            st.shipout.rule_wd += 10;
+        let leader_wd = leader.width(&st.mem);
+        if leader_wd > Scaled::ZERO && st.shipout.rule_wd > Scaled::ZERO {
+            st.shipout.rule_wd += LEADER_SLOP;
             if st.scanner.cur_dir == RIGHT_TO_LEFT {
-                st.shipout.cur_h -= 10;
+                st.shipout.cur_h -= LEADER_SLOP;
             }
             let edge = st.shipout.cur_h + st.shipout.rule_wd;
-            let mut lx = 0;
+            let mut lx = Scaled::ZERO;
             if subtype == A_LEADERS {
                 let save_h = st.shipout.cur_h;
                 st.shipout.cur_h =
-                    left_edge + leader_wd * ((st.shipout.cur_h - left_edge) / leader_wd);
+                    left_edge + leader_wd * ((st.shipout.cur_h - left_edge).0 / leader_wd.0);
                 if st.shipout.cur_h < save_h {
                     st.shipout.cur_h += leader_wd;
                 }
             } else {
-                let lq = st.shipout.rule_wd / leader_wd;
-                let lr = st.shipout.rule_wd % leader_wd;
+                let (lq, lr) = leader_count_and_rest(st.shipout.rule_wd, leader_wd);
                 if subtype == C_LEADERS {
                     st.shipout.cur_h += lr / 2;
                 } else {
                     lx = lr / (lq + 1);
-                    st.shipout.cur_h += (lr - (lq - 1) * lx) / 2;
+                    st.shipout.cur_h += (lr - lx * (lq - 1)) / 2;
                 }
             }
 
             while st.shipout.cur_h + leader_wd <= edge {
-                st.shipout.cur_v = base_line + leader.shift_amount(&st.mem).0;
+                st.shipout.cur_v = base_line + leader.shift_amount(&st.mem);
                 synch_v(st)?;
                 let save_v = st.shipout.dvi_v;
                 synch_h(st)?;
@@ -925,7 +934,7 @@ fn hlist_glue_out(
             st.shipout.cur_h = if st.scanner.cur_dir == RIGHT_TO_LEFT {
                 edge
             } else {
-                edge - 10
+                edge - LEADER_SLOP
             };
             return Ok(());
         }
@@ -947,7 +956,7 @@ fn native_word_out(
 ) -> Result<(), Abort> {
     synch_h(st)?;
     synch_v(st)?;
-    dvi_font_select(st, word.native_font(&st.mem).0)?;
+    dvi_font_select(st, word.native_font(&st.mem))?;
     match subtype {
         WhatsitSubtype::Glyph => {
             st.shipout.dvi_out(SET_GLYPHS)?;
@@ -977,15 +986,15 @@ fn native_word_out(
             }
         }
     }
-    st.shipout.cur_h += word.width(&st.mem).0;
+    st.shipout.cur_h += word.width(&st.mem);
     st.shipout.dvi_h = st.shipout.cur_h;
     Ok(())
 }
 
 impl ShipoutState {
     fn pdf_save_pos(&mut self) {
-        self.pdf_last_x_pos = self.cur_h + ONE_INCH_LESS_ONE;
-        self.pdf_last_y_pos = self.cur_page_height - self.cur_v - ONE_INCH_LESS_ONE;
+        self.pdf_last_x_pos = (self.cur_h + ONE_INCH_LESS_ONE).0;
+        self.pdf_last_y_pos = (self.cur_page_height - self.cur_v - ONE_INCH_LESS_ONE).0;
     }
 }
 
@@ -999,21 +1008,17 @@ fn chars_out(
     synch_h(st)?;
     synch_v(st)?;
     while let Some(ch) = st.mem.as_char(p) {
-        let f = ch.font(&st.mem).0;
+        let f = ch.font(&st.mem);
         let mut c = ch.character(&st.mem);
         if p != LIG_TRICK {
-            if let Some(mapping) = st.fonts.font_mapping[f as usize].as_deref() {
+            if let Some(mapping) = st.fonts.font_mapping[f].as_deref() {
                 c = apply_tfm_font_mapping(mapping, c as libc::c_int) as u16;
             }
         }
         dvi_font_select(st, f)?;
-        if st.fonts.font_ec_entry(f) >= c
-            && st.fonts.font_bc_entry(f) <= c
-            && st
-                .fonts
-                .font_info_b16(st.fonts.char_base_entry(f) + c as i32)
-                .s3
-                > 0
+        if st.fonts.font_ec[f] >= c
+            && st.fonts.font_bc[f] <= c
+            && st.fonts.font_info_b16(st.fonts.char_base[f] + c as i32).s3 > 0
         {
             if c >= 128 {
                 st.shipout.dvi_out(SET1)?;
@@ -1047,7 +1052,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
     if this_box.subtype(&st.mem) == DLIST {
         if st.scanner.cur_dir == RIGHT_TO_LEFT {
             st.scanner.cur_dir = LEFT_TO_RIGHT;
-            st.shipout.cur_h -= this_box.width(&st.mem).0;
+            st.shipout.cur_h -= this_box.width(&st.mem);
         } else {
             this_box.set_subtype(&mut st.mem, 0);
         }
@@ -1056,10 +1061,10 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
     if st.scanner.cur_dir == RIGHT_TO_LEFT && this_box.subtype(&st.mem) != REVERSED {
         let save_h = st.shipout.cur_h;
         st.mem.temp_ptr = p;
-        let kern = st.mem.new_kern(0)?;
+        let kern = st.mem.new_kern(Scaled::ZERO)?;
         kern.set_sync_tag(&mut st.mem, 0);
         prev_p.set_link(&mut st.mem, kern.ptr());
-        st.shipout.cur_h = 0;
+        st.shipout.cur_h = Scaled::ZERO;
         let reversed = st.mem.reverse(
             &mut st.shipout,
             &mut st.scanner,
@@ -1068,7 +1073,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
             &mut rounding,
         )?;
         kern.set_link(&mut st.mem, reversed);
-        kern.set_width(&mut st.mem, Scaled(-st.shipout.cur_h));
+        kern.set_width(&mut st.mem, -st.shipout.cur_h);
         st.shipout.cur_h = save_h;
         this_box.set_subtype(&mut st.mem, REVERSED);
         p = kern.ptr();
@@ -1090,9 +1095,9 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
             AnyNode::HList(h) => hlist_box_out(st, AnyBox::HList(h), base_line)?,
             AnyNode::VList(v) => hlist_box_out(st, AnyBox::VList(v), base_line)?,
             AnyNode::Rule(rule) => {
-                st.shipout.rule_ht = rule.height(&st.mem).raw();
-                st.shipout.rule_dp = rule.depth(&st.mem).raw();
-                st.shipout.rule_wd = rule.width(&st.mem).raw();
+                st.shipout.rule_ht = rule.height(&st.mem).to_scaled();
+                st.shipout.rule_dp = rule.depth(&st.mem).to_scaled();
+                st.shipout.rule_wd = rule.width(&st.mem).to_scaled();
                 hlist_rule_out(st, this_box, base_line, rule.ptr())?;
             }
             AnyNode::Whatsit(whatsit) => match whatsit.whatsit_subtype(&st.mem) {
@@ -1105,7 +1110,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
                     let save_h = st.shipout.dvi_h;
                     let save_v = st.shipout.dvi_v;
                     st.shipout.cur_v = base_line;
-                    let edge = st.shipout.cur_h + whatsit.width(&st.mem).0;
+                    let edge = st.shipout.cur_h + whatsit.width(&st.mem);
                     pic_out(st, whatsit)?;
                     st.shipout.dvi_h = save_h;
                     st.shipout.dvi_v = save_v;
@@ -1118,14 +1123,14 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
             AnyNode::Glue(glue) => {
                 hlist_glue_out(st, this_box, base_line, left_edge, glue, &mut rounding)?
             }
-            AnyNode::MarginKern(kern) => st.shipout.cur_h += kern.width(&st.mem).0,
+            AnyNode::MarginKern(kern) => st.shipout.cur_h += kern.width(&st.mem),
             AnyNode::Kern(kern) => {
                 crate::synctex::synctex_kern(st, kern, this_box);
-                st.shipout.cur_h += kern.width(&st.mem).0;
+                st.shipout.cur_h += kern.width(&st.mem);
             }
             AnyNode::Math(math) => {
                 crate::synctex::synctex_math(st, math);
-                let math_width = math.width(&st.mem).0;
+                let math_width = math.width(&st.mem);
                 if !math.subtype(&st.mem).is_multiple_of(2) {
                     if st.mem.lr_matches(&st.scanner, math) {
                         st.mem.pop_lr(&mut st.scanner.lr_ptr);
@@ -1162,8 +1167,8 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
             }
             AnyNode::Style(style) => {
                 let edge = style.as_edge();
-                st.shipout.cur_h += edge.width(&st.mem).0;
-                left_edge = st.shipout.cur_h + edge.edge_dist(&st.mem).0;
+                st.shipout.cur_h += edge.width(&st.mem);
+                left_edge = st.shipout.cur_h + edge.edge_dist(&st.mem);
                 st.scanner.cur_dir = edge.subtype(&st.mem) as i16;
             }
             _ => {}
@@ -1190,20 +1195,20 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
 fn hlist_box_out(
     st: &mut crate::state::EngineState,
     b: AnyBox,
-    base_line: i32,
+    base_line: Scaled,
 ) -> Result<(), Abort> {
     if b.list_ptr(&st.mem).is_null() {
         match b {
             AnyBox::VList(v) => crate::synctex::synctex_void_vlist(st, v),
             AnyBox::HList(h) => crate::synctex::synctex_void_hlist(st, h),
         }
-        st.shipout.cur_h += b.width(&st.mem).0;
+        st.shipout.cur_h += b.width(&st.mem);
         return Ok(());
     }
     let save_h = st.shipout.dvi_h;
     let save_v = st.shipout.dvi_v;
-    st.shipout.cur_v = base_line + b.shift_amount(&st.mem).0;
-    let edge = st.shipout.cur_h + b.width(&st.mem).0;
+    st.shipout.cur_v = base_line + b.shift_amount(&st.mem);
+    let edge = st.shipout.cur_h + b.width(&st.mem);
     if st.scanner.cur_dir == RIGHT_TO_LEFT {
         st.shipout.cur_h = edge;
     }
@@ -1221,8 +1226,8 @@ fn reverse_segment(
     st: &mut crate::state::EngineState,
     math: NodePtr<MathNode>,
     prev_p: MemPtr,
-    left_edge: i32,
-    math_width: i32,
+    left_edge: Scaled,
+    math_width: Scaled,
     rounding: &mut GlueRounding,
 ) -> Result<NodePtr<EdgeNode>, Abort> {
     let save_h = st.shipout.cur_h;
@@ -1233,7 +1238,7 @@ fn reverse_segment(
     let edge = st.mem.new_edge(st.scanner.cur_dir, st.shipout.rule_wd)?;
     prev_p.set_link(&mut st.mem, edge.ptr());
     st.shipout.cur_h = st.shipout.cur_h - left_edge + st.shipout.rule_wd;
-    let end = st.mem.new_edge(1 - st.scanner.cur_dir, 0)?;
+    let end = st.mem.new_edge(1 - st.scanner.cur_dir, Scaled::ZERO)?;
     let reversed = st.mem.reverse(
         &mut st.shipout,
         &mut st.scanner,
@@ -1242,7 +1247,7 @@ fn reverse_segment(
         rounding,
     )?;
     edge.set_link(&mut st.mem, reversed);
-    edge.set_edge_dist(&mut st.mem, Scaled(st.shipout.cur_h));
+    edge.set_edge_dist(&mut st.mem, st.shipout.cur_h);
     st.scanner.cur_dir = 1 - st.scanner.cur_dir;
     st.shipout.cur_h = save_h;
     Ok(edge)
@@ -1257,9 +1262,9 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
     let left_edge = st.shipout.cur_h;
     crate::synctex::synctex_vlist(st, this_box);
     if upwards {
-        st.shipout.cur_v += this_box.depth(&st.mem).0;
+        st.shipout.cur_v += this_box.depth(&st.mem);
     } else {
-        st.shipout.cur_v -= this_box.height(&st.mem).0;
+        st.shipout.cur_v -= this_box.height(&st.mem);
     }
     let top_edge = st.shipout.cur_v;
 
@@ -1275,35 +1280,35 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
             AnyNode::HList(h) => vlist_box_out(st, AnyBox::HList(h), left_edge, upwards)?,
             AnyNode::VList(v) => vlist_box_out(st, AnyBox::VList(v), left_edge, upwards)?,
             AnyNode::Rule(rule) => {
-                st.shipout.rule_ht = rule.height(&st.mem).raw();
-                st.shipout.rule_dp = rule.depth(&st.mem).raw();
-                st.shipout.rule_wd = rule.width(&st.mem).raw();
+                st.shipout.rule_ht = rule.height(&st.mem).to_scaled();
+                st.shipout.rule_dp = rule.depth(&st.mem).to_scaled();
+                st.shipout.rule_wd = rule.width(&st.mem).to_scaled();
                 vlist_rule_out(st, this_box, left_edge, upwards)?;
             }
             AnyNode::Whatsit(whatsit) => match whatsit.whatsit_subtype(&st.mem) {
                 Some(WhatsitSubtype::Glyph) => {
-                    st.shipout.cur_v += whatsit.height(&st.mem).0;
+                    st.shipout.cur_v += whatsit.height(&st.mem);
                     st.shipout.cur_h = left_edge;
                     synch_h(st)?;
                     synch_v(st)?;
-                    dvi_font_select(st, whatsit.native_font(&st.mem).0)?;
+                    dvi_font_select(st, whatsit.native_font(&st.mem))?;
                     st.shipout.dvi_out(SET_GLYPHS)?;
                     st.shipout.dvi_four(0)?;
                     st.shipout.dvi_two(1)?;
                     st.shipout.dvi_four(0)?;
                     st.shipout.dvi_four(0)?;
                     st.shipout.dvi_two(whatsit.native_glyph(&st.mem))?;
-                    st.shipout.cur_v += whatsit.depth(&st.mem).0;
+                    st.shipout.cur_v += whatsit.depth(&st.mem);
                     st.shipout.cur_h = left_edge;
                 }
                 Some(WhatsitSubtype::Pic | WhatsitSubtype::Pdf) => {
                     let save_h = st.shipout.dvi_h;
                     let save_v = st.shipout.dvi_v;
-                    st.shipout.cur_v += whatsit.height(&st.mem).0;
+                    st.shipout.cur_v += whatsit.height(&st.mem);
                     pic_out(st, whatsit)?;
                     st.shipout.dvi_h = save_h;
                     st.shipout.dvi_v = save_v;
-                    st.shipout.cur_v = save_v + whatsit.depth(&st.mem).0;
+                    st.shipout.cur_v = save_v + whatsit.depth(&st.mem);
                     st.shipout.cur_h = left_edge;
                 }
                 Some(WhatsitSubtype::PdfSavePos) => st.shipout.pdf_save_pos(),
@@ -1318,8 +1323,8 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
                 } else {
                     match st.mem.leader_of(glue) {
                         Leader::Rule(rule) => {
-                            st.shipout.rule_wd = rule.width(&st.mem).raw();
-                            st.shipout.rule_dp = 0;
+                            st.shipout.rule_wd = rule.width(&st.mem).to_scaled();
+                            st.shipout.rule_dp = Scaled::ZERO;
                             vlist_rule_out(st, this_box, left_edge, upwards)?;
                         }
                         Leader::Box(leader) => {
@@ -1330,9 +1335,9 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
             }
             AnyNode::Kern(kern) => {
                 if upwards {
-                    st.shipout.cur_v -= kern.width(&st.mem).0;
+                    st.shipout.cur_v -= kern.width(&st.mem);
                 } else {
-                    st.shipout.cur_v += kern.width(&st.mem).0;
+                    st.shipout.cur_v += kern.width(&st.mem);
                 }
             }
             _ => {}
@@ -1347,10 +1352,10 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
 fn vlist_box_out(
     st: &mut crate::state::EngineState,
     b: AnyBox,
-    left_edge: i32,
+    left_edge: Scaled,
     upwards: bool,
 ) -> Result<(), Abort> {
-    let (height, depth) = (b.height(&st.mem).0, b.depth(&st.mem).0);
+    let (height, depth) = (b.height(&st.mem), b.depth(&st.mem));
     if upwards {
         st.shipout.cur_v -= depth;
     } else {
@@ -1371,7 +1376,7 @@ fn vlist_box_out(
     synch_v(st)?;
     let save_h = st.shipout.dvi_h;
     let save_v = st.shipout.dvi_v;
-    let shift = b.shift_amount(&st.mem).0;
+    let shift = b.shift_amount(&st.mem);
     st.shipout.cur_h = if st.scanner.cur_dir == RIGHT_TO_LEFT {
         left_edge - shift
     } else {
@@ -1381,9 +1386,9 @@ fn vlist_box_out(
     st.shipout.dvi_h = save_h;
     st.shipout.dvi_v = save_v;
     st.shipout.cur_v = if upwards {
-        save_v - b.height(&st.mem).0
+        save_v - b.height(&st.mem)
     } else {
-        save_v + b.depth(&st.mem).0
+        save_v + b.depth(&st.mem)
     };
     st.shipout.cur_h = left_edge;
     Ok(())
@@ -1393,37 +1398,36 @@ fn vlist_leaders_out(
     st: &mut crate::state::EngineState,
     leader: AnyBox,
     subtype: u16,
-    left_edge: i32,
-    top_edge: i32,
+    left_edge: Scaled,
+    top_edge: Scaled,
     upwards: bool,
 ) -> Result<(), Abort> {
-    let leader_ht = leader.height(&st.mem).0 + leader.depth(&st.mem).0;
-    if leader_ht <= 0 || st.shipout.rule_ht <= 0 {
+    let leader_ht = leader.height(&st.mem) + leader.depth(&st.mem);
+    if leader_ht <= Scaled::ZERO || st.shipout.rule_ht <= Scaled::ZERO {
         st.shipout.move_past_vlist_rule(upwards);
         return Ok(());
     }
-    st.shipout.rule_ht += 10;
+    st.shipout.rule_ht += LEADER_SLOP;
     let edge = st.shipout.cur_v + st.shipout.rule_ht;
-    let mut lx = 0;
+    let mut lx = Scaled::ZERO;
     if subtype == A_LEADERS {
         let save_v = st.shipout.cur_v;
-        st.shipout.cur_v = top_edge + leader_ht * ((st.shipout.cur_v - top_edge) / leader_ht);
+        st.shipout.cur_v = top_edge + leader_ht * ((st.shipout.cur_v - top_edge).0 / leader_ht.0);
         if st.shipout.cur_v < save_v {
             st.shipout.cur_v += leader_ht;
         }
     } else {
-        let lq = st.shipout.rule_ht / leader_ht;
-        let lr = st.shipout.rule_ht % leader_ht;
+        let (lq, lr) = leader_count_and_rest(st.shipout.rule_ht, leader_ht);
         if subtype == C_LEADERS {
             st.shipout.cur_v += lr / 2;
         } else {
             lx = lr / (lq + 1);
-            st.shipout.cur_v += (lr - (lq - 1) * lx) / 2;
+            st.shipout.cur_v += (lr - lx * (lq - 1)) / 2;
         }
     }
 
     while st.shipout.cur_v + leader_ht <= edge {
-        let shift = leader.shift_amount(&st.mem).0;
+        let shift = leader.shift_amount(&st.mem);
         st.shipout.cur_h = if st.scanner.cur_dir == RIGHT_TO_LEFT {
             left_edge - shift
         } else {
@@ -1431,16 +1435,16 @@ fn vlist_leaders_out(
         };
         synch_h(st)?;
         let save_h = st.shipout.dvi_h;
-        st.shipout.cur_v += leader.height(&st.mem).0;
+        st.shipout.cur_v += leader.height(&st.mem);
         synch_v(st)?;
         let save_v = st.shipout.dvi_v;
         ship_leader_box(st, leader)?;
         st.shipout.dvi_v = save_v;
         st.shipout.dvi_h = save_h;
         st.shipout.cur_h = left_edge;
-        st.shipout.cur_v = save_v - leader.height(&st.mem).0 + leader_ht + lx;
+        st.shipout.cur_v = save_v - leader.height(&st.mem) + leader_ht + lx;
     }
-    st.shipout.cur_v = edge - 10;
+    st.shipout.cur_v = edge - LEADER_SLOP;
     Ok(())
 }
 
@@ -1498,8 +1502,8 @@ pub(crate) fn finalize_dvi_file(st: &mut crate::state::EngineState) -> Result<()
         st.shipout.max_push,
         st.shipout.total_pages,
     );
-    st.shipout.dvi_four(max_v)?;
-    st.shipout.dvi_four(max_h)?;
+    st.shipout.dvi_four(max_v.0)?;
+    st.shipout.dvi_four(max_h.0)?;
     st.shipout.dvi_bytes(&[
         (max_push / 256) as u8,
         (max_push % 256) as u8,
@@ -1507,14 +1511,12 @@ pub(crate) fn finalize_dvi_file(st: &mut crate::state::EngineState) -> Result<()
         (total_pages % 256) as u8,
     ])?;
 
-    let mut f = st.fonts.font_ptr;
-    while f > FONT_BASE {
-        if st.fonts.font_used[f as usize] {
+    for f in st.fonts.font_ptr.loaded().rev() {
+        if st.fonts.font_used[f] {
             dvi_font_def(st, f)?;
         }
-        f -= 1;
     }
-    st.fonts.font_ptr = f;
+    st.fonts.font_ptr = NULL_FONT;
 
     st.shipout.dvi_out(POST_POST)?;
     let last_bop = st.shipout.last_bop;
@@ -1589,8 +1591,8 @@ fn make_xdv_glyph_array_data(
     put(&width.to_be_bytes());
     put(&(glyph_count as u16).to_be_bytes());
     for loc in &glyphs.locations[..glyph_count] {
-        put(&loc.x.to_be_bytes());
-        put(&loc.y.to_be_bytes());
+        put(&loc.x.0.to_be_bytes());
+        put(&loc.y.0.to_be_bytes());
     }
     for gid in &glyphs.gids[..glyph_count] {
         put(&gid.to_be_bytes());
@@ -1618,7 +1620,7 @@ impl MemState {
             while !p.is_null() {
                 if self.is_char_node(p) {
                     while let Some(ch) = self.as_char(p) {
-                        let f = ch.font(self).0;
+                        let f = ch.font(self);
                         let c = fonts.effective_char(f, ch.character(self));
                         shipout.cur_h += fonts.font_character_width(f, c);
                         let q = p.link(self);
@@ -1637,12 +1639,12 @@ impl MemState {
                         shipout.rule_wd = node.hlist_width(self);
                     }
                     Ok(AnyNode::Kern(kern)) => {
-                        shipout.rule_wd = kern.width(self).0;
+                        shipout.rule_wd = kern.width(self);
                         now_kern = true;
                     }
                     Ok(AnyNode::Whatsit(w)) => {
                         if w.whatsit_subtype(self).is_some_and(|s| s.has_dimensions()) {
-                            shipout.rule_wd = w.width(self).0;
+                            shipout.rule_wd = w.width(self);
                         } else {
                             add_width = false;
                         }
@@ -1666,7 +1668,7 @@ impl MemState {
                         continue;
                     }
                     Ok(AnyNode::Math(math)) => {
-                        shipout.rule_wd = math.width(self).0;
+                        shipout.rule_wd = math.width(self);
                         if !math.subtype(self).is_multiple_of(2) {
                             if !self.lr_matches(scanner, math) {
                                 math.into_kern(self);
@@ -1686,11 +1688,8 @@ impl MemState {
                                         self.free_node(math.ptr(), MEDIUM_NODE_SIZE);
                                         let t = t.expect("a segment reversal ends at its edge");
                                         t.set_link(self, q);
-                                        t.set_width(self, Scaled(shipout.rule_wd));
-                                        t.set_edge_dist(
-                                            self,
-                                            Scaled(-shipout.cur_h - shipout.rule_wd),
-                                        );
+                                        t.set_width(self, shipout.rule_wd);
+                                        t.set_edge_dist(self, -shipout.cur_h - shipout.rule_wd);
                                         return Ok(l);
                                     }
                                 }
@@ -1716,7 +1715,7 @@ impl MemState {
                     shipout.cur_h += shipout.rule_wd;
                 }
                 p.set_link(self, l);
-                if now_kern && (shipout.rule_wd == 0 || l.is_null()) {
+                if now_kern && (shipout.rule_wd == Scaled::ZERO || l.is_null()) {
                     self.free_node(p, MEDIUM_NODE_SIZE);
                     p = l;
                 }
@@ -1728,14 +1727,14 @@ impl MemState {
                 return Ok(l);
             }
             let dir = scanner.lr_ptr.info(self) as u16;
-            p = self.new_math(0, dir)?.ptr();
+            p = self.new_math(Scaled::ZERO, dir)?.ptr();
             scanner.lr_problems += 10000;
         }
     }
 
-    fn movement(&mut self, shipout: &mut ShipoutState, w: i32, o: u8) -> Result<(), Abort> {
+    fn movement(&mut self, shipout: &mut ShipoutState, w: Scaled, o: u8) -> Result<(), Abort> {
         let mut q = NodePtr::<MovementNode>::alloc(self)?;
-        q.set_distance(self, Scaled(w));
+        q.set_distance(self, w);
         q.set_location(self, shipout.dvi_offset + shipout.dvi_ptr);
         let head = if o == DOWN1 {
             &mut shipout.down_ptr
@@ -1750,7 +1749,7 @@ impl MemState {
         let found = 'search: {
             while let Some(node) = p {
                 p = NodePtr::<MovementNode>::from_ptr(node.link(self));
-                if node.distance(self).0 != w {
+                if node.distance(self) != w {
                     match mstate + node.state(self) {
                         1 => mstate = MOV_Y_SEEN,
                         2 => mstate = MOV_Z_SEEN,
@@ -1786,6 +1785,7 @@ impl MemState {
 
         let Some(found) = found else {
             q.set_state(self, MOV_YZ_OK);
+            let w = w.0;
             let len = if w.abs() >= 0x800000 {
                 4
             } else if w.abs() >= 0x8000 {

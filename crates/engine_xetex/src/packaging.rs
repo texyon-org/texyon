@@ -7,8 +7,8 @@ use crate::consts::{
     FIL, FILL, FILLL, FRACTION_NOAD_SIZE, GLUE_PAR_BASELINE_SKIP, GLUE_PAR_LINE_SKIP,
     GLUE_PAR_SPLIT_TOP_SKIP, GLYPH_NODE_SIZE, IGNORE_DEPTH, INDEX_NODE_SIZE, INF_BAD, INF_PENALTY,
     INS_NODE_SIZE, INT_PAR_HBADNESS, INT_PAR_SAVING_VDISCARDS, INT_PAR_TEXXET, INT_PAR_VBADNESS,
-    INT_PAR_XETEX_UPWARDS, MARGIN_KERN_NODE_SIZE, MARK_CLASS_NODE_SIZE, MAX_HALFWORD,
-    MEDIUM_NODE_SIZE, MIN_HALFWORD, NOAD_SIZE, NORMAL, OPEN_NODE_SIZE, PIC_NODE_SIZE,
+    INT_PAR_XETEX_UPWARDS, MARGIN_KERN_NODE_SIZE, MARK_CLASS_NODE_SIZE, MAX_DIMEN, MAX_HALFWORD,
+    MEDIUM_NODE_SIZE, MIN_HALFWORD, NOAD_SIZE, NORMAL, NULL_FONT, OPEN_NODE_SIZE, PIC_NODE_SIZE,
     RADICAL_NOAD_SIZE, RULE_NODE_SIZE, R_CODE, SMALL_NODE_SIZE, SPLIT_BOT_MARK_CODE,
     SPLIT_FIRST_MARK_CODE, STYLE_NODE_SIZE, SUB_BOX, WRITE_NODE_SIZE,
 };
@@ -196,7 +196,7 @@ impl MemState {
             q
         };
 
-        let t = self.new_edge(scanner.cur_dir, 0)?;
+        let t = self.new_edge(scanner.cur_dir, Scaled::ZERO)?;
         let mut l = t.ptr();
         scanner.cur_dir = 1 - scanner.cur_dir;
 
@@ -495,31 +495,23 @@ impl ListStateRecord {
         b: AnyBox,
     ) -> Result<(), Abort> {
         let upwards = eqtb.int_par(INT_PAR_XETEX_UPWARDS) > 0;
-        let prev_depth = self.aux_s1();
+        let prev_depth = self.prev_depth();
         if prev_depth > IGNORE_DEPTH {
             let baseline_skip = eqtb.glue_par(GLUE_PAR_BASELINE_SKIP);
-            let d = baseline_skip.width(mem).0
+            let d = baseline_skip.width(mem)
                 - prev_depth
-                - if upwards {
-                    b.depth(mem).0
-                } else {
-                    b.height(mem).0
-                };
+                - if upwards { b.depth(mem) } else { b.height(mem) };
             let p = if d < eqtb.dimen_par(DIMEN_PAR_LINE_SKIP_LIMIT) {
                 mem.new_param_glue(eqtb, GLUE_PAR_LINE_SKIP)?
             } else {
                 let p = mem.new_skip_param(eqtb, GLUE_PAR_BASELINE_SKIP)?;
-                p.glue_ptr(mem).set_width(mem, Scaled(d));
+                p.glue_ptr(mem).set_width(mem, d);
                 p
             };
             self.tail_append(mem, p.ptr());
         }
         self.tail_append(mem, b.ptr());
-        self.set_aux_s1(if upwards {
-            b.height(mem).0
-        } else {
-            b.depth(mem).0
-        });
+        self.set_prev_depth(if upwards { b.height(mem) } else { b.depth(mem) });
         Ok(())
     }
 }
@@ -537,7 +529,7 @@ struct VertBreakCursor {
     prev_breakable: bool,
     least_cost: i32,
     best_place: MemPtr,
-    prev_dp: i32,
+    prev_dp: Scaled,
     finish_glue_after_shrinkage: Option<NodePtr<GlueNode>>,
 }
 
@@ -566,7 +558,7 @@ enum VertBreakUpdateSource {
 
 impl ScannerState {
     fn start_vert_break(&mut self, p: MemPtr) -> VertBreakCursor {
-        self.active_width[1..].fill(0);
+        self.active_width[1..].fill(Scaled::ZERO);
 
         VertBreakCursor {
             p,
@@ -575,14 +567,19 @@ impl ScannerState {
             prev_breakable: false,
             least_cost: MAX_HALFWORD,
             best_place: MemPtr::NULL,
-            prev_dp: 0,
+            prev_dp: Scaled::ZERO,
             finish_glue_after_shrinkage: None,
         }
     }
 }
 
 impl MemState {
-    fn advance_vert_break(&self, scanner: &mut ScannerState, cursor: &mut VertBreakCursor, d: i32) {
+    fn advance_vert_break(
+        &self,
+        scanner: &mut ScannerState,
+        cursor: &mut VertBreakCursor,
+        d: Scaled,
+    ) {
         if cursor.prev_dp > d {
             scanner.active_width[1] += cursor.prev_dp - d;
             cursor.prev_dp = d;
@@ -596,11 +593,11 @@ impl MemState {
         &self,
         scanner: &mut ScannerState,
         cursor: &mut VertBreakCursor,
-        width: i32,
-        d: i32,
+        width: Scaled,
+        d: Scaled,
     ) {
         scanner.active_width[1] += cursor.prev_dp + width;
-        cursor.prev_dp = 0;
+        cursor.prev_dp = Scaled::ZERO;
         self.advance_vert_break(scanner, cursor, d);
     }
 
@@ -622,18 +619,18 @@ impl MemState {
         cursor.breakable = node.precedes_break();
         match node {
             AnyNode::HList(b) => {
-                scanner.active_width[1] += cursor.prev_dp + b.height(self).0;
-                cursor.prev_dp = b.depth(self).0;
+                scanner.active_width[1] += cursor.prev_dp + b.height(self);
+                cursor.prev_dp = b.depth(self);
                 Ok(VertBreakNext::NotFound)
             }
             AnyNode::VList(b) => {
-                scanner.active_width[1] += cursor.prev_dp + b.height(self).0;
-                cursor.prev_dp = b.depth(self).0;
+                scanner.active_width[1] += cursor.prev_dp + b.height(self);
+                cursor.prev_dp = b.depth(self);
                 Ok(VertBreakNext::NotFound)
             }
             AnyNode::Rule(rule) => {
-                scanner.active_width[1] += cursor.prev_dp + rule.height(self).raw();
-                cursor.prev_dp = rule.depth(self).raw();
+                scanner.active_width[1] += cursor.prev_dp + rule.height(self).to_scaled();
+                cursor.prev_dp = rule.depth(self).to_scaled();
                 Ok(VertBreakNext::NotFound)
             }
             AnyNode::Whatsit(w) => {
@@ -641,8 +638,8 @@ impl MemState {
                     w.whatsit_subtype(self),
                     Some(WhatsitSubtype::Pic | WhatsitSubtype::Pdf)
                 ) {
-                    scanner.active_width[1] += cursor.prev_dp + w.height(self).0;
-                    cursor.prev_dp = w.depth(self).0;
+                    scanner.active_width[1] += cursor.prev_dp + w.height(self);
+                    cursor.prev_dp = w.depth(self);
                 }
                 Ok(VertBreakNext::NotFound)
             }
@@ -686,13 +683,13 @@ impl MemState {
         &mut self,
         scanner: &mut ScannerState,
         cursor: &mut VertBreakCursor,
-        h: i32,
-        d: i32,
+        h: Scaled,
+        d: Scaled,
     ) -> Result<VertBreakStep, Abort> {
         loop {
             if let Some(glue) = cursor.finish_glue_after_shrinkage.take() {
                 let spec = glue.glue_ptr(self);
-                self.finish_vert_break_updated_height(scanner, cursor, spec.width(self).0, d);
+                self.finish_vert_break_updated_height(scanner, cursor, spec.width(self), d);
                 continue;
             }
 
@@ -703,7 +700,10 @@ impl MemState {
                     if pi < INF_PENALTY {
                         let aw = &scanner.active_width;
                         let b = if aw[1] < h {
-                            if aw[3] != 0 || aw[4] != 0 || aw[5] != 0 {
+                            if aw[3] != Scaled::ZERO
+                                || aw[4] != Scaled::ZERO
+                                || aw[5] != Scaled::ZERO
+                            {
                                 0
                             } else {
                                 crate::helpers::badness(h - aw[1], aw[2])
@@ -740,18 +740,18 @@ impl MemState {
 
             match update_source {
                 Some(VertBreakUpdateSource::Kern(kern)) => {
-                    self.finish_vert_break_updated_height(scanner, cursor, kern.width(self).0, d);
+                    self.finish_vert_break_updated_height(scanner, cursor, kern.width(self), d);
                 }
                 Some(VertBreakUpdateSource::Glue(glue)) => {
                     let spec = glue.glue_ptr(self);
                     scanner.active_width[2 + spec.stretch_order(self) as usize] +=
-                        spec.stretch(self).0;
-                    scanner.active_width[6] += spec.shrink(self).0;
-                    if spec.shrink_order(self) != NORMAL && spec.shrink(self).0 != 0 {
+                        spec.stretch(self);
+                    scanner.active_width[6] += spec.shrink(self);
+                    if spec.shrink_order(self) != NORMAL && spec.shrink(self) != Scaled::ZERO {
                         cursor.finish_glue_after_shrinkage = Some(glue);
                         return Ok(VertBreakStep::InfiniteShrinkage { glue, spec });
                     }
-                    self.finish_vert_break_updated_height(scanner, cursor, spec.width(self).0, d);
+                    self.finish_vert_break_updated_height(scanner, cursor, spec.width(self), d);
                 }
                 None => self.advance_vert_break(scanner, cursor, d),
             }
@@ -783,14 +783,19 @@ impl MemState {
 }
 
 /// The best place to break the vlist `p` for a height `h` with maximum depth `d`.
-pub(crate) fn vert_break(st: &mut EngineState, p: i32, h: i32, d: i32) -> Result<i32, Abort> {
-    let mut cursor = st.scanner.start_vert_break(MemPtr(p));
+pub(crate) fn vert_break(
+    st: &mut EngineState,
+    p: MemPtr,
+    h: Scaled,
+    d: Scaled,
+) -> Result<MemPtr, Abort> {
+    let mut cursor = st.scanner.start_vert_break(p);
     loop {
         match st
             .mem
             .vert_break_resume(&mut st.scanner, &mut cursor, h, d)?
         {
-            VertBreakStep::Done(best_place) => return Ok(best_place.0),
+            VertBreakStep::Done(best_place) => return Ok(best_place),
             VertBreakStep::InfiniteShrinkage { glue, spec } => {
                 print_vert_break_infinite_shrinkage_error(st)?;
                 st.mem.repair_vert_break_infinite_shrinkage(glue, spec)?;
@@ -800,9 +805,9 @@ pub(crate) fn vert_break(st: &mut EngineState, p: i32, h: i32, d: i32) -> Result
 }
 
 struct VsplitState {
-    h: i32,
+    h: Scaled,
     v: NodePtr<VListNode>,
-    split_max_d: i32,
+    split_max_d: Scaled,
     vert_break: VertBreakCursor,
 }
 
@@ -849,7 +854,7 @@ impl MemState {
     }
 }
 
-fn start_vsplit(st: &mut EngineState, n: i32, h: i32) -> Result<VsplitStart, Abort> {
+fn start_vsplit(st: &mut EngineState, n: i32, h: Scaled) -> Result<VsplitStart, Abort> {
     st.scanner.cur_val = n;
     let v = crate::scan::fetch_box(st, n);
     st.mem.reset_vsplit_marks(&mut st.scanner)?;
@@ -944,11 +949,19 @@ impl MemState {
         let mut packages = [None, None];
         let p = self.split_vlist_at_break(scanner, state, q)?;
         let save_discards = eqtb.int_par(INT_PAR_SAVING_VDISCARDS) > 0;
-        let mut q = self.prune_page_top(scanner, eqtb, q.0, save_discards)?;
+        let mut q = self.prune_page_top(scanner, eqtb, q, save_discards)?;
 
         self.free_node(state.v.ptr(), BOX_NODE_SIZE);
         if !q.is_null() {
-            let packed = self.vpackage(eqtb, scanner, shipout, q, 0, ADDITIONAL, MAX_HALFWORD)?;
+            let packed = self.vpackage(
+                eqtb,
+                scanner,
+                shipout,
+                q,
+                Scaled::ZERO,
+                ADDITIONAL,
+                MAX_DIMEN,
+            )?;
             q = packed.r_box.ptr();
             push_slot(&mut packages, packed);
         }
@@ -1011,7 +1024,7 @@ fn print_vsplit_packages(st: &mut EngineState, outcome: VsplitOutcome) {
 }
 
 /// `\vsplit n to h`: the box split off the top of box register `n`.
-pub(crate) fn vsplit(st: &mut EngineState, n: i32, h: i32) -> Result<Option<AnyBox>, Abort> {
+pub(crate) fn vsplit(st: &mut EngineState, n: i32, h: Scaled) -> Result<Option<AnyBox>, Abort> {
     let mut state = match start_vsplit(st, n, h)? {
         VsplitStart::Done(outcome) => {
             print_vsplit_packages(st, outcome);
@@ -1044,11 +1057,11 @@ pub(crate) fn vsplit(st: &mut EngineState, n: i32, h: i32) -> Result<Option<AnyB
 #[derive(Copy, Clone)]
 pub(crate) enum PackDiag {
     HUnderfull { badness: i32, loose: bool },
-    HOverfull { excess: i32 },
+    HOverfull { excess: Scaled },
     HTight { badness: i32 },
     LrProblem { missing: i32, extra: i32 },
     VUnderfull { badness: i32, loose: bool },
-    VOverfull { excess: i32 },
+    VOverfull { excess: Scaled },
     VTight { badness: i32 },
 }
 
@@ -1060,12 +1073,12 @@ struct PackOutcome {
 
 /// The highest glue order with a nonzero total.
 #[inline]
-pub(crate) fn glue_order(totals: &[i32; 4]) -> u16 {
-    if totals[FILLL as usize] != 0 {
+pub(crate) fn glue_order(totals: &[Scaled; 4]) -> u16 {
+    if totals[FILLL as usize] != Scaled::ZERO {
         FILLL
-    } else if totals[FILL as usize] != 0 {
+    } else if totals[FILL as usize] != Scaled::ZERO {
         FILL
-    } else if totals[FIL as usize] != 0 {
+    } else if totals[FIL as usize] != Scaled::ZERO {
         FIL
     } else {
         NORMAL
@@ -1079,17 +1092,17 @@ impl MemState {
         eqtb: &EqtbState,
         prev_p: MemPtr,
         p: MemPtr,
-        height: i32,
+        height: Scaled,
     ) -> Result<(), Abort> {
         let q = self.new_skip_param(eqtb, GLUE_PAR_SPLIT_TOP_SKIP)?;
         prev_p.set_link(self, q.ptr());
         q.set_link(self, p);
         let spec = q.glue_ptr(self);
-        let avail_ht = spec.width(self).0;
+        let avail_ht = spec.width(self);
         if avail_ht > height {
-            spec.set_width(self, Scaled(avail_ht - height));
+            spec.set_width(self, avail_ht - height);
         } else {
-            spec.set_width(self, Scaled(0));
+            spec.set_width(self, Scaled::ZERO);
         }
         Ok(())
     }
@@ -1126,10 +1139,9 @@ impl MemState {
         &mut self,
         scanner: &mut ScannerState,
         eqtb: &EqtbState,
-        p: i32,
+        mut p: MemPtr,
         s: bool,
     ) -> Result<MemPtr, Abort> {
-        let mut p = MemPtr(p);
         let mut prev_p = TEMP_HEAD;
         let mut r = MemPtr::NULL;
         TEMP_HEAD.set_link(self, p);
@@ -1139,9 +1151,9 @@ impl MemState {
                 .classify(MemIdx::new(p))
                 .map_err(|_| Abort::Confusion("pruning"))?;
             let height = match node {
-                AnyNode::HList(b) => b.height(self).0,
-                AnyNode::VList(b) => b.height(self).0,
-                AnyNode::Rule(rule) => rule.height(self).raw(),
+                AnyNode::HList(b) => b.height(self),
+                AnyNode::VList(b) => b.height(self),
+                AnyNode::Rule(rule) => rule.height(self).to_scaled(),
                 AnyNode::Whatsit(_) | AnyNode::Mark(_) | AnyNode::Ins(_) => {
                     prev_p = p;
                     p = prev_p.link(self);
@@ -1243,13 +1255,13 @@ impl MemState {
         r: NodePtr<K>,
         sign: GlueSign,
         excess: f64,
-        totals: &[i32; 4],
+        totals: &[Scaled; 4],
     ) -> u16 {
         let o = glue_order(totals);
         r.set_glue_order(self, o);
         r.set_glue_sign(self, sign);
-        if totals[o as usize] != 0 {
-            r.set_glue_set(self, excess / totals[o as usize] as f64);
+        if totals[o as usize] != Scaled::ZERO {
+            r.set_glue_set(self, excess / totals[o as usize].0 as f64);
         } else {
             r.set_glue_sign(self, GlueSign::Normal);
             r.set_glue_set(self, 0.0);
@@ -1286,10 +1298,9 @@ impl MemState {
         w: NodePtr<WhatsitNode>,
     ) -> Result<(MemPtr, NodePtr<WhatsitNode>), Abort> {
         let p = w.ptr();
-        let font = w.native_font(self).0;
+        let font = w.native_font(self);
         let same_font = |mem: &MemState, p: MemPtr| {
-            mem.as_native_word(p)
-                .filter(|w| w.native_font(mem).0 == font)
+            mem.as_native_word(p).filter(|w| w.native_font(mem) == font)
         };
 
         let mut k = if q != r_node.ptr() + LIST_OFFSET {
@@ -1367,21 +1378,21 @@ impl MemState {
         scanner: &mut ScannerState,
         shipout: &mut ShipoutState,
         list: MemPtr,
-        w: i32,
+        w: Scaled,
         m: i16,
     ) -> Result<PackOutcome, Abort> {
         shipout.last_badness = 0;
         let r_node = NodePtr::<HListNode>::alloc(self)?;
         r_node.set_subtype(self, 0);
-        r_node.set_shift_amount(self, Scaled(0));
+        r_node.set_shift_amount(self, Scaled::ZERO);
         r_node.set_list_ptr(self, list);
         // `q` trails `p`, starting at the word whose link is the list pointer.
         let mut q = r_node.ptr() + LIST_OFFSET;
-        let mut h: i32 = 0;
-        let mut d: i32 = 0;
-        let mut x: i32 = 0;
-        scanner.total_stretch = [0; 4];
-        scanner.total_shrink = [0; 4];
+        let mut h = Scaled::ZERO;
+        let mut d = Scaled::ZERO;
+        let mut x = Scaled::ZERO;
+        scanner.total_stretch = [Scaled::ZERO; 4];
+        scanner.total_shrink = [Scaled::ZERO; 4];
         let mut diags = [None, None];
         let texxet = eqtb.int_par(INT_PAR_TEXXET) > 0;
 
@@ -1392,7 +1403,7 @@ impl MemState {
         let mut p = list;
         'outer: while !p.is_null() {
             while let Some(ch) = self.as_char(p) {
-                let f = ch.font(self).0;
+                let f = ch.font(self);
                 let c = fonts.effective_char(f, ch.character(self));
                 let info = fonts.char_info(f, c);
                 x += fonts.char_width(f, info);
@@ -1407,26 +1418,26 @@ impl MemState {
 
             match self.classify(MemIdx::new(p)) {
                 Ok(AnyNode::HList(b)) => {
-                    let s = b.shift_amount(self).0;
-                    x += b.width(self).0;
-                    h = h.max(b.height(self).0 - s);
-                    d = d.max(b.depth(self).0 + s);
+                    let s = b.shift_amount(self);
+                    x += b.width(self);
+                    h = h.max(b.height(self) - s);
+                    d = d.max(b.depth(self) + s);
                 }
                 Ok(AnyNode::VList(b)) => {
-                    let s = b.shift_amount(self).0;
-                    x += b.width(self).0;
-                    h = h.max(b.height(self).0 - s);
-                    d = d.max(b.depth(self).0 + s);
+                    let s = b.shift_amount(self);
+                    x += b.width(self);
+                    h = h.max(b.height(self) - s);
+                    d = d.max(b.depth(self) + s);
                 }
                 Ok(AnyNode::Rule(rule)) => {
-                    x += rule.width(self).raw();
-                    h = h.max(rule.height(self).raw());
-                    d = d.max(rule.depth(self).raw());
+                    x += rule.width(self).to_scaled();
+                    h = h.max(rule.height(self).to_scaled());
+                    d = d.max(rule.depth(self).to_scaled());
                 }
                 Ok(AnyNode::Unset(u)) => {
-                    x += u.width(self).0;
-                    h = h.max(u.height(self).0);
-                    d = d.max(u.depth(self).0);
+                    x += u.width(self);
+                    h = h.max(u.height(self));
+                    d = d.max(u.depth(self));
                 }
                 Ok(AnyNode::Adjust(adjust)) => {
                     if !scanner.adjust_tail.is_null() || !scanner.pre_adjust_tail.is_null() {
@@ -1463,45 +1474,47 @@ impl MemState {
                         let (new_q, native) = self.merge_native_words(eqtb, fonts, r_node, q, w)?;
                         q = new_q;
                         p = native.ptr();
-                        h = h.max(native.height(self).0);
-                        d = d.max(native.depth(self).0);
-                        x += native.width(self).0;
+                        h = h.max(native.height(self));
+                        d = d.max(native.depth(self));
+                        x += native.width(self);
                     }
                     Some(WhatsitSubtype::Glyph | WhatsitSubtype::Pic | WhatsitSubtype::Pdf) => {
-                        h = h.max(w.height(self).0);
-                        d = d.max(w.depth(self).0);
-                        x += w.width(self).0;
+                        h = h.max(w.height(self));
+                        d = d.max(w.depth(self));
+                        x += w.width(self);
                     }
                     _ => {}
                 },
                 Ok(AnyNode::Glue(glue)) => {
                     let spec = glue.glue_ptr(self);
-                    x += spec.width(self).0;
-                    scanner.total_stretch[spec.stretch_order(self) as usize] +=
-                        spec.stretch(self).0;
-                    scanner.total_shrink[spec.shrink_order(self) as usize] += spec.shrink(self).0;
+                    x += spec.width(self);
+                    scanner.total_stretch[spec.stretch_order(self) as usize] += spec.stretch(self);
+                    scanner.total_shrink[spec.shrink_order(self) as usize] += spec.shrink(self);
                     if glue.subtype(self) >= A_LEADERS {
                         let leader = glue.leader_ptr(self);
                         let (leader_h, leader_d) = match self.classify(MemIdx::new(leader)) {
-                            Ok(AnyNode::HList(b)) => (b.height(self).0, b.depth(self).0),
-                            Ok(AnyNode::VList(b)) => (b.height(self).0, b.depth(self).0),
+                            Ok(AnyNode::HList(b)) => (b.height(self), b.depth(self)),
+                            Ok(AnyNode::VList(b)) => (b.height(self), b.depth(self)),
                             Ok(AnyNode::Rule(rule)) => {
-                                (rule.height(self).raw(), rule.depth(self).raw())
+                                (rule.height(self).to_scaled(), rule.depth(self).to_scaled())
                             }
-                            _ => (self.b32s1(leader + 3), self.b32s1(leader + 2)),
+                            _ => (
+                                Scaled(self.b32s1(leader + 3)),
+                                Scaled(self.b32s1(leader + 2)),
+                            ),
                         };
                         h = h.max(leader_h);
                         d = d.max(leader_d);
                     }
                 }
                 Ok(AnyNode::Kern(kern)) => {
-                    x += kern.width(self).0;
+                    x += kern.width(self);
                 }
                 Ok(AnyNode::MarginKern(kern)) => {
-                    x += kern.width(self).0;
+                    x += kern.width(self);
                 }
                 Ok(AnyNode::Math(math)) => {
-                    x += math.width(self).0;
+                    x += math.width(self);
                     if texxet {
                         let subtype = math.subtype(self);
                         if subtype % 2 == 1 {
@@ -1537,21 +1550,21 @@ impl MemState {
         if !scanner.pre_adjust_tail.is_null() {
             scanner.pre_adjust_tail.set_link(self, MemPtr::NULL);
         }
-        r_node.set_height(self, Scaled(h));
-        r_node.set_depth(self, Scaled(d));
+        r_node.set_height(self, h);
+        r_node.set_depth(self, d);
 
         let w = if m == ADDITIONAL { x + w } else { w };
-        r_node.set_width(self, Scaled(w));
+        r_node.set_width(self, w);
         x = w - x;
 
         let has_list = !r_node.list_ptr(self).is_null();
-        if x == 0 {
+        if x == Scaled::ZERO {
             self.clear_box_glue(r_node);
-        } else if x > 0 {
+        } else if x > Scaled::ZERO {
             let o = self.set_box_glue(
                 r_node,
                 GlueSign::Stretching,
-                x as f64,
+                x.0 as f64,
                 &scanner.total_stretch,
             );
             if o == NORMAL && has_list {
@@ -1571,7 +1584,7 @@ impl MemState {
             let o = self.set_box_glue(
                 r_node,
                 GlueSign::Shrinking,
-                (-x) as f64,
+                (-x).0 as f64,
                 &scanner.total_shrink,
             );
             if scanner.total_shrink[o as usize] < (-x) && o == NORMAL && has_list {
@@ -1581,11 +1594,11 @@ impl MemState {
                 let hfuzz = eqtb.dimen_par(DIMEN_PAR_HFUZZ);
                 if excess > hfuzz || eqtb.int_par(INT_PAR_HBADNESS) < 100 {
                     let overfull_rule = eqtb.dimen_par(DIMEN_PAR_OVERFULL_RULE);
-                    if overfull_rule > 0 && excess > hfuzz {
+                    if overfull_rule > Scaled::ZERO && excess > hfuzz {
                         q = self.list_tail(q);
                         let rule = self.new_rule()?;
                         q.set_link(self, rule.ptr());
-                        rule.set_width(self, RuleDimen::Set(Scaled(overfull_rule)));
+                        rule.set_width(self, RuleDimen::Set(overfull_rule));
                     }
                     push_slot(&mut diags, PackDiag::HOverfull { excess });
                 }
@@ -1607,7 +1620,7 @@ impl MemState {
             if scanner.lr_ptr.info(self) != BEFORE.into() {
                 q = self.list_tail(q);
                 loop {
-                    let math = self.new_math(0, scanner.lr_ptr.info(self) as u16)?;
+                    let math = self.new_math(Scaled::ZERO, scanner.lr_ptr.info(self) as u16)?;
                     q.set_link(self, math.ptr());
                     q = math.ptr();
                     scanner.lr_problems += 10000;
@@ -1703,7 +1716,7 @@ fn print_hpack_common_ending(st: &mut EngineState, box_ptr: AnyBox) {
     }
     capture_to_diagnostic(st, None);
     print_ln(st);
-    st.errors.font_in_short_display = 0;
+    st.errors.font_in_short_display = NULL_FONT;
     let list = box_ptr.list_ptr(&st.mem).0;
     short_display(st, list);
     print_ln(st);
@@ -1713,7 +1726,12 @@ fn print_hpack_common_ending(st: &mut EngineState, box_ptr: AnyBox) {
 }
 
 /// `hpack`, printing its over/underfull diagnostics in order.
-pub(crate) fn hpack(st: &mut EngineState, list: MemPtr, w: i32, m: i16) -> Result<AnyBox, Abort> {
+pub(crate) fn hpack(
+    st: &mut EngineState,
+    list: MemPtr,
+    w: Scaled,
+    m: i16,
+) -> Result<AnyBox, Abort> {
     let outcome = st.mem.hpack(
         &st.eqtb,
         &mut st.fonts,
@@ -1737,22 +1755,22 @@ impl MemState {
         scanner: &mut ScannerState,
         shipout: &mut ShipoutState,
         list: MemPtr,
-        h: i32,
+        h: Scaled,
         m: i16,
-        l: i32,
+        l: Scaled,
     ) -> Result<PackOutcome, Abort> {
         shipout.last_badness = 0;
         let r_node = NodePtr::<VListNode>::alloc(self)?;
         let upwards = eqtb.int_par(INT_PAR_XETEX_UPWARDS) > 0;
         r_node.set_subtype(self, u16::from(upwards));
-        r_node.set_shift_amount(self, Scaled(0));
+        r_node.set_shift_amount(self, Scaled::ZERO);
         r_node.set_list_ptr(self, list);
 
-        let mut w: i32 = 0;
-        let mut d: i32 = 0;
-        let mut x: i32 = 0;
-        scanner.total_stretch = [0; 4];
-        scanner.total_shrink = [0; 4];
+        let mut w = Scaled::ZERO;
+        let mut d = Scaled::ZERO;
+        let mut x = Scaled::ZERO;
+        scanner.total_stretch = [Scaled::ZERO; 4];
+        scanner.total_shrink = [Scaled::ZERO; 4];
         let mut diags = [None, None];
 
         let mut p = list;
@@ -1762,83 +1780,82 @@ impl MemState {
             }
             match self.classify(MemIdx::new(p)) {
                 Ok(AnyNode::HList(b)) => {
-                    x += d + b.height(self).0;
-                    d = b.depth(self).0;
-                    w = w.max(b.width(self).0 + b.shift_amount(self).0);
+                    x += d + b.height(self);
+                    d = b.depth(self);
+                    w = w.max(b.width(self) + b.shift_amount(self));
                 }
                 Ok(AnyNode::VList(b)) => {
-                    x += d + b.height(self).0;
-                    d = b.depth(self).0;
-                    w = w.max(b.width(self).0 + b.shift_amount(self).0);
+                    x += d + b.height(self);
+                    d = b.depth(self);
+                    w = w.max(b.width(self) + b.shift_amount(self));
                 }
                 Ok(AnyNode::Rule(rule)) => {
-                    x += d + rule.height(self).raw();
-                    d = rule.depth(self).raw();
-                    w = w.max(rule.width(self).raw());
+                    x += d + rule.height(self).to_scaled();
+                    d = rule.depth(self).to_scaled();
+                    w = w.max(rule.width(self).to_scaled());
                 }
                 Ok(AnyNode::Unset(u)) => {
-                    x += d + u.height(self).0;
-                    d = u.depth(self).0;
-                    w = w.max(u.width(self).0);
+                    x += d + u.height(self);
+                    d = u.depth(self);
+                    w = w.max(u.width(self));
                 }
                 Ok(AnyNode::Whatsit(wn)) => {
                     if matches!(
                         wn.whatsit_subtype(self),
                         Some(WhatsitSubtype::Pic | WhatsitSubtype::Pdf)
                     ) {
-                        x += d + wn.height(self).0;
-                        d = wn.depth(self).0;
-                        w = w.max(wn.width(self).0);
+                        x += d + wn.height(self);
+                        d = wn.depth(self);
+                        w = w.max(wn.width(self));
                     }
                 }
                 Ok(AnyNode::Glue(glue)) => {
                     x += d;
-                    d = 0;
+                    d = Scaled::ZERO;
                     let spec = glue.glue_ptr(self);
-                    x += spec.width(self).0;
-                    scanner.total_stretch[spec.stretch_order(self) as usize] +=
-                        spec.stretch(self).0;
-                    scanner.total_shrink[spec.shrink_order(self) as usize] += spec.shrink(self).0;
+                    x += spec.width(self);
+                    scanner.total_stretch[spec.stretch_order(self) as usize] += spec.stretch(self);
+                    scanner.total_shrink[spec.shrink_order(self) as usize] += spec.shrink(self);
                     if glue.subtype(self) >= A_LEADERS {
                         let leader = glue.leader_ptr(self);
                         let leader_w = match self.classify(MemIdx::new(leader)) {
-                            Ok(AnyNode::HList(b)) => b.width(self).0,
-                            Ok(AnyNode::VList(b)) => b.width(self).0,
-                            Ok(AnyNode::Rule(rule)) => rule.width(self).raw(),
-                            _ => self.b32s1(leader + 1),
+                            Ok(AnyNode::HList(b)) => b.width(self),
+                            Ok(AnyNode::VList(b)) => b.width(self),
+                            Ok(AnyNode::Rule(rule)) => rule.width(self).to_scaled(),
+                            _ => Scaled(self.b32s1(leader + 1)),
                         };
                         w = w.max(leader_w);
                     }
                 }
                 Ok(AnyNode::Kern(kern)) => {
-                    x += d + kern.width(self).0;
-                    d = 0;
+                    x += d + kern.width(self);
+                    d = Scaled::ZERO;
                 }
                 _ => {}
             }
             p = p.link(self);
         }
 
-        r_node.set_width(self, Scaled(w));
+        r_node.set_width(self, w);
         if d > l {
             x += d - l;
-            r_node.set_depth(self, Scaled(l));
+            r_node.set_depth(self, l);
         } else {
-            r_node.set_depth(self, Scaled(d));
+            r_node.set_depth(self, d);
         }
 
         let h = if m == ADDITIONAL { x + h } else { h };
-        r_node.set_height(self, Scaled(h));
+        r_node.set_height(self, h);
         x = h - x;
 
         let has_list = !r_node.list_ptr(self).is_null();
-        if x == 0 {
+        if x == Scaled::ZERO {
             self.clear_box_glue(r_node);
-        } else if x > 0 {
+        } else if x > Scaled::ZERO {
             let o = self.set_box_glue(
                 r_node,
                 GlueSign::Stretching,
-                x as f64,
+                x.0 as f64,
                 &scanner.total_stretch,
             );
             if o == NORMAL && has_list {
@@ -1858,7 +1875,7 @@ impl MemState {
             let o = self.set_box_glue(
                 r_node,
                 GlueSign::Shrinking,
-                (-(x as i64)) as f64,
+                (-(x.0 as i64)) as f64,
                 &scanner.total_shrink,
             );
             if scanner.total_shrink[o as usize] < (-x) && o == NORMAL && has_list {
@@ -1954,9 +1971,9 @@ fn print_vpack_common_ending(st: &mut EngineState, box_ptr: AnyBox) {
 pub(crate) fn vpackage(
     st: &mut EngineState,
     list: MemPtr,
-    h: i32,
+    h: Scaled,
     m: i16,
-    l: i32,
+    l: Scaled,
 ) -> Result<AnyBox, Abort> {
     let outcome = st
         .mem

@@ -1,5 +1,6 @@
 //! OpenType MATH table queries.
 
+use crate::units::{FontId, Scaled};
 use tectonic_bridge_harfbuzz::sys as hb;
 
 use crate::ext::{d2fix, fix2d};
@@ -59,7 +60,7 @@ const TEX_EXT_TO_OT_MAP: [Option<i32>; 14] = [
     Some(26), // big_op_spacing5: stackGapMin
 ];
 
-fn units_to_fix(font: FontRef, units: i32) -> i32 {
+fn units_to_fix(font: FontRef, units: i32) -> Scaled {
     d2fix(font.units_to_points(units as f32) as f64)
 }
 
@@ -89,22 +90,22 @@ impl GlyphAssembly {
         self.parts[i as usize].flags & hb::HB_OT_MATH_GLYPH_PART_FLAG_EXTENDER != 0
     }
 
-    fn part_length(&self, fonts: &FontState, f: i32, units: i32) -> i32 {
+    fn part_length(&self, fonts: &FontState, f: FontId, units: i32) -> Scaled {
         match fonts.ot_engine(f) {
             Some(engine) => units_to_fix(engine.font(), units),
-            None => 0,
+            None => Scaled::ZERO,
         }
     }
 
-    pub(crate) fn start_connector(&self, fonts: &FontState, f: i32, i: i32) -> i32 {
+    pub(crate) fn start_connector(&self, fonts: &FontState, f: FontId, i: i32) -> Scaled {
         self.part_length(fonts, f, self.parts[i as usize].start_connector_length)
     }
 
-    pub(crate) fn end_connector(&self, fonts: &FontState, f: i32, i: i32) -> i32 {
+    pub(crate) fn end_connector(&self, fonts: &FontState, f: FontId, i: i32) -> Scaled {
         self.part_length(fonts, f, self.parts[i as usize].end_connector_length)
     }
 
-    pub(crate) fn full_advance(&self, fonts: &FontState, f: i32, i: i32) -> i32 {
+    pub(crate) fn full_advance(&self, fonts: &FontState, f: FontId, i: i32) -> Scaled {
         self.part_length(fonts, f, self.parts[i as usize].full_advance)
     }
 }
@@ -117,46 +118,47 @@ pub(crate) enum ScriptKind {
 
 impl FontState {
     /// The layout engine of `f` when it is an OpenType (HarfBuzz) font.
-    fn ot_engine(&self, f: i32) -> Option<&FontEngineHandle> {
+    fn ot_engine(&self, f: FontId) -> Option<&FontEngineHandle> {
         self.layout_engine(f)
     }
 
-    pub(crate) fn get_ot_math_constant(&self, f: i32, n: i32) -> i32 {
+    /// OpenType MATH constant `n`, scaled except for the percentages.
+    pub(crate) fn get_ot_math_constant(&self, f: FontId, n: i32) -> Scaled {
         let Some(engine) = self.ot_engine(f) else {
-            return 0;
+            return Scaled::ZERO;
         };
         // SAFETY: the engine keeps its HarfBuzz font alive.
         let rval = unsafe { hb::hb_ot_math_get_constant(engine.hb_font(), n) };
         match n {
             HB_OT_MATH_CONSTANT_SCRIPT_PERCENT_SCALE_DOWN
             | HB_OT_MATH_CONSTANT_SCRIPT_SCRIPT_PERCENT_SCALE_DOWN
-            | HB_OT_MATH_CONSTANT_RADICAL_DEGREE_BOTTOM_RAISE_PERCENT => rval,
+            | HB_OT_MATH_CONSTANT_RADICAL_DEGREE_BOTTOM_RAISE_PERCENT => Scaled(rval),
             _ => units_to_fix(engine.font(), rval),
         }
     }
 
-    fn mapped_constant(&self, f: i32, map: &[Option<i32>], n: i32) -> i32 {
+    fn mapped_constant(&self, f: FontId, map: &[Option<i32>], n: i32) -> Scaled {
         match usize::try_from(n).ok().and_then(|i| map.get(i)) {
             Some(Some(ot_index)) => self.get_ot_math_constant(f, *ot_index),
-            _ => 0,
+            _ => Scaled::ZERO,
         }
     }
 
-    pub(crate) fn get_native_mathsy_param(&self, f: i32, n: i32) -> i32 {
+    pub(crate) fn get_native_mathsy_param(&self, f: FontId, n: i32) -> Scaled {
         if n == MATH_QUAD {
-            self.font_size[f as usize]
+            self.font_size[f]
         } else if n == DELIM2 {
             // No OT parameter fits, so XeTeX uses 1.5em clamped to the delim1 height.
-            ((1.5 * self.font_size[f as usize] as f64) as i32)
+            Scaled((1.5 * self.font_size[f].0 as f64) as i32)
                 .min(self.get_native_mathsy_param(f, DELIM1))
         } else {
             self.mapped_constant(f, &TEX_SYM_TO_OT_MAP, n)
         }
     }
 
-    pub(crate) fn get_native_mathex_param(&self, f: i32, n: i32) -> i32 {
+    pub(crate) fn get_native_mathex_param(&self, f: FontId, n: i32) -> Scaled {
         if n == MATH_QUAD {
-            self.font_size[f as usize]
+            self.font_size[f]
         } else {
             self.mapped_constant(f, &TEX_EXT_TO_OT_MAP, n)
         }
@@ -164,13 +166,13 @@ impl FontState {
 
     pub(crate) fn get_ot_math_variant(
         &self,
-        f: i32,
+        f: FontId,
         g: i32,
         v: i32,
-        adv: &mut i32,
+        adv: &mut Scaled,
         horiz: bool,
     ) -> i32 {
-        *adv = -1;
+        *adv = Scaled(-1);
         let Some(engine) = self.ot_engine(f) else {
             return g;
         };
@@ -198,7 +200,7 @@ impl FontState {
         variant.glyph as i32
     }
 
-    pub(crate) fn get_ot_assembly(&self, f: i32, g: i32, horiz: bool) -> Option<GlyphAssembly> {
+    pub(crate) fn get_ot_assembly(&self, f: FontId, g: i32, horiz: bool) -> Option<GlyphAssembly> {
         let hb_font = self.ot_engine(f)?.hb_font();
         // SAFETY: the engine keeps its HarfBuzz font alive, and null outputs
         // only ask for the part count.
@@ -234,9 +236,9 @@ impl FontState {
         Some(GlyphAssembly { parts })
     }
 
-    pub(crate) fn get_ot_math_ital_corr(&self, f: i32, g: i32) -> i32 {
+    pub(crate) fn get_ot_math_ital_corr(&self, f: FontId, g: i32) -> Scaled {
         let Some(engine) = self.ot_engine(f) else {
-            return 0;
+            return Scaled::ZERO;
         };
         // SAFETY: the engine keeps its HarfBuzz font alive.
         let rval =
@@ -244,9 +246,9 @@ impl FontState {
         units_to_fix(engine.font(), rval)
     }
 
-    pub(crate) fn get_ot_math_accent_pos(&self, f: i32, g: i32) -> i32 {
+    pub(crate) fn get_ot_math_accent_pos(&self, f: FontId, g: i32) -> Scaled {
         let Some(engine) = self.ot_engine(f) else {
-            return i32::MAX;
+            return crate::consts::INFINITE_DIMEN;
         };
         // SAFETY: the engine keeps its HarfBuzz font alive.
         let rval =
@@ -254,9 +256,9 @@ impl FontState {
         units_to_fix(engine.font(), rval)
     }
 
-    pub(crate) fn ot_min_connector_overlap(&self, f: i32) -> i32 {
+    pub(crate) fn ot_min_connector_overlap(&self, f: FontId) -> Scaled {
         let Some(engine) = self.ot_engine(f) else {
-            return 0;
+            return Scaled::ZERO;
         };
         // SAFETY: the engine keeps its HarfBuzz font alive.
         let rval = unsafe {
@@ -265,7 +267,7 @@ impl FontState {
         units_to_fix(engine.font(), rval)
     }
 
-    fn math_kern_at(&self, f: i32, g: i32, height: i32, side: hb::hb_ot_math_kern_t) -> i32 {
+    fn math_kern_at(&self, f: FontId, g: i32, height: i32, side: hb::hb_ot_math_kern_t) -> i32 {
         let Some(engine) = self.ot_engine(f) else {
             return 0;
         };
@@ -273,22 +275,22 @@ impl FontState {
         unsafe { hb::hb_ot_math_get_glyph_kerning(engine.hb_font(), g as u32, side, height) }
     }
 
-    fn glyph_height_depth(&self, f: i32, g: i32) -> (f32, f32) {
+    fn glyph_height_depth(&self, f: FontId, g: i32) -> (f32, f32) {
         self.ot_engine(f)
             .map_or((0.0, 0.0), |engine| engine.glyph_height_depth(g as u32))
     }
 
     pub(crate) fn get_ot_math_kern(
         &self,
-        f: i32,
+        f: FontId,
         g: i32,
-        sf: i32,
+        sf: FontId,
         sg: i32,
         kind: ScriptKind,
-        shift_scaled: i32,
-    ) -> i32 {
+        shift_scaled: Scaled,
+    ) -> Scaled {
         let (Some(engine), Some(sengine)) = (self.ot_engine(f), self.ot_engine(sf)) else {
-            return 0;
+            return Scaled::ZERO;
         };
         // Kerns are computed in base-glyph units, with XeTeX's float/int conversions.
         {

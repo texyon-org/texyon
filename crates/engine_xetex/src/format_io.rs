@@ -8,11 +8,11 @@ use crate::bridge::{
 };
 use crate::cmd::UNDEFINED_CS;
 use crate::consts::{
-    ACTIVE_BASE, CS_TOKEN_FLAG, EMPTY_STRING, EQTB_SIZE, FONT_BASE, FONT_ID_BASE,
-    FROZEN_CONTROL_SEQUENCE, HASH_BASE, HISTORY_FATAL_ERROR, INT_BASE, INT_PAR_DAY, INT_PAR_MONTH,
-    INT_PAR_TRACING_STATS, INT_PAR_YEAR, INVALID_HANDLE, MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP,
-    MIN_HALFWORD, PRIM_SIZE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_AND_LOG,
-    TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
+    ACTIVE_BASE, CS_TOKEN_FLAG, EMPTY_STRING, EQTB_SIZE, FONT_BASE, FROZEN_CONTROL_SEQUENCE,
+    HASH_BASE, HISTORY_FATAL_ERROR, INT_BASE, INT_PAR_DAY, INT_PAR_MONTH, INT_PAR_TRACING_STATS,
+    INT_PAR_YEAR, INVALID_HANDLE, MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP, MIN_HALFWORD, PRIM_SIZE,
+    SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_AND_LOG, TEX_NULL, TOO_BIG_CHAR,
+    UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::engine::{POOL_FREE, STRINGS_FREE};
 use crate::errors::Abort;
@@ -22,6 +22,7 @@ use crate::hyphenation::{BIGGEST_LANG, HYPH_PRIME, MAX_TRIE_OP, TRIE_OP_SIZE};
 use crate::mem::{CONTRIB_HEAD, HI_MEM_STAT_MIN, HI_MEM_STAT_USAGE, PAGE_HEAD};
 use crate::scan::{INTER_CHAR_VAL, INT_VAL};
 use crate::state::{EngineState, EqtbState, InteractionMode};
+use crate::units::FontId;
 
 const FORMAT_HEADER_MAGIC: i32 = 0x5454_4E43;
 const FORMAT_FOOTER_MAGIC: i32 = 0x0000_029A;
@@ -50,6 +51,8 @@ unsafe impl FmtItem for u16 {}
 unsafe impl FmtItem for i16 {}
 // SAFETY: as above.
 unsafe impl FmtItem for i32 {}
+// SAFETY: `Scaled` is a transparent `i32`.
+unsafe impl FmtItem for crate::units::Scaled {}
 // SAFETY: as above.
 unsafe impl FmtItem for crate::mem_types::B16x4 {}
 // SAFETY: as above.
@@ -410,40 +413,40 @@ pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     crate::output::print(st, " multiletter control sequences");
 
     let fmp = st.fonts.fmem_ptr;
-    let font_ptr = st.fonts.font_ptr;
+    let font_ptr = st.fonts.font_ptr.0;
     let n = font_ptr + 1;
     let fonts = &st.fonts;
     dump_int(fmt_out, fmp)?;
     dump_slice(fmt_out, &fonts.font_info, 0, fmp)?;
     dump_int(fmt_out, font_ptr)?;
-    dump_slice(fmt_out, &fonts.font_check, FONT_BASE, n)?;
-    dump_slice(fmt_out, &fonts.font_size, FONT_BASE, n)?;
-    dump_slice(fmt_out, &fonts.font_dsize, FONT_BASE, n)?;
-    dump_slice(fmt_out, &fonts.font_params, FONT_BASE, n)?;
-    dump_slice(fmt_out, &fonts.hyphen_char, FONT_BASE, n)?;
-    dump_slice(fmt_out, &fonts.skew_char, FONT_BASE, n)?;
-    dump_slice(fmt_out, &fonts.font_name, FONT_BASE, n)?;
-    dump_slice(fmt_out, &fonts.font_area, FONT_BASE, n)?;
-    dump_slice(fmt_out, &fonts.font_bc, FONT_BASE, n)?;
-    dump_slice(fmt_out, &fonts.font_ec, FONT_BASE, n)?;
-    dump_slice(fmt_out, &fonts.char_base, FONT_BASE, n)?;
-    dump_slice(fmt_out, &fonts.width_base, FONT_BASE, n)?;
-    dump_slice(fmt_out, &fonts.height_base, FONT_BASE, n)?;
-    dump_slice(fmt_out, &fonts.depth_base, FONT_BASE, n)?;
-    dump_slice(fmt_out, &fonts.italic_base, FONT_BASE, n)?;
-    dump_slice(fmt_out, &fonts.lig_kern_base, FONT_BASE, n)?;
-    dump_slice(fmt_out, &fonts.kern_base, FONT_BASE, n)?;
-    dump_slice(fmt_out, &fonts.exten_base, FONT_BASE, n)?;
-    dump_slice(fmt_out, &fonts.param_base, FONT_BASE, n)?;
-    dump_slice(fmt_out, &fonts.font_glue, FONT_BASE, n)?;
-    dump_slice(fmt_out, &fonts.bchar_label, FONT_BASE, n)?;
-    dump_slice(fmt_out, &fonts.font_bchar, FONT_BASE, n)?;
-    dump_slice(fmt_out, &fonts.font_false_bchar, FONT_BASE, n)?;
+    dump_slice(fmt_out, fonts.font_check.as_slice(), FONT_BASE, n)?;
+    dump_slice(fmt_out, fonts.font_size.as_slice(), FONT_BASE, n)?;
+    dump_slice(fmt_out, fonts.font_dsize.as_slice(), FONT_BASE, n)?;
+    dump_slice(fmt_out, fonts.font_params.as_slice(), FONT_BASE, n)?;
+    dump_slice(fmt_out, fonts.hyphen_char.as_slice(), FONT_BASE, n)?;
+    dump_slice(fmt_out, fonts.skew_char.as_slice(), FONT_BASE, n)?;
+    dump_slice(fmt_out, fonts.font_name.as_slice(), FONT_BASE, n)?;
+    dump_slice(fmt_out, fonts.font_area.as_slice(), FONT_BASE, n)?;
+    dump_slice(fmt_out, fonts.font_bc.as_slice(), FONT_BASE, n)?;
+    dump_slice(fmt_out, fonts.font_ec.as_slice(), FONT_BASE, n)?;
+    dump_slice(fmt_out, fonts.char_base.as_slice(), FONT_BASE, n)?;
+    dump_slice(fmt_out, fonts.width_base.as_slice(), FONT_BASE, n)?;
+    dump_slice(fmt_out, fonts.height_base.as_slice(), FONT_BASE, n)?;
+    dump_slice(fmt_out, fonts.depth_base.as_slice(), FONT_BASE, n)?;
+    dump_slice(fmt_out, fonts.italic_base.as_slice(), FONT_BASE, n)?;
+    dump_slice(fmt_out, fonts.lig_kern_base.as_slice(), FONT_BASE, n)?;
+    dump_slice(fmt_out, fonts.kern_base.as_slice(), FONT_BASE, n)?;
+    dump_slice(fmt_out, fonts.exten_base.as_slice(), FONT_BASE, n)?;
+    dump_slice(fmt_out, fonts.param_base.as_slice(), FONT_BASE, n)?;
+    dump_slice(fmt_out, fonts.font_glue.as_slice(), FONT_BASE, n)?;
+    dump_slice(fmt_out, fonts.bchar_label.as_slice(), FONT_BASE, n)?;
+    dump_slice(fmt_out, fonts.font_bchar.as_slice(), FONT_BASE, n)?;
+    dump_slice(fmt_out, fonts.font_false_bchar.as_slice(), FONT_BASE, n)?;
 
     for k in FONT_BASE..=font_ptr {
-        let f = k as usize;
+        let f = FontId(k);
         crate::output::print_nl(st, "\\font");
-        crate::output::print_esc(st, st.eqtb.hash_s1(FONT_ID_BASE + k));
+        crate::output::print_esc(st, st.eqtb.font_id_text(f));
         crate::output::print_char(st, b'=' as i32);
 
         let font_name = st.fonts.font_name[f];
@@ -754,33 +757,33 @@ fn read_fmt_file(st: &mut EngineState, fmt_in: usize) -> Result<bool, Abort> {
     fonts.font_info = crate::mem_types::zeroed_vec(fonts.font_mem_size as usize + 1);
     undump_slice(fmt_in, &mut fonts.font_info, 0, fonts.fmem_ptr)?;
 
-    fonts.font_ptr = undump_size(
+    fonts.font_ptr = FontId(undump_size(
         fmt_in,
         FONT_BASE,
         FONT_BASE + MAX_FONT_MAX,
         "must increase font_max",
-    )?;
+    )?);
 
     fonts.alloc_font_arrays();
 
-    let n = fonts.font_ptr + 1;
+    let n = fonts.font_ptr.0 + 1;
     let max_str = st.strings.str_ptr;
-    undump_slice(fmt_in, &mut fonts.font_check, FONT_BASE, n)?;
-    undump_slice(fmt_in, &mut fonts.font_size, FONT_BASE, n)?;
-    undump_slice(fmt_in, &mut fonts.font_dsize, FONT_BASE, n)?;
+    undump_slice(fmt_in, fonts.font_check.as_mut_slice(), FONT_BASE, n)?;
+    undump_slice(fmt_in, fonts.font_size.as_mut_slice(), FONT_BASE, n)?;
+    undump_slice(fmt_in, fonts.font_dsize.as_mut_slice(), FONT_BASE, n)?;
     undump_checked(
         fmt_in,
-        &mut fonts.font_params,
+        fonts.font_params.as_mut_slice(),
         FONT_BASE,
         n,
         MIN_HALFWORD,
         MAX_HALFWORD,
     )?;
-    undump_slice(fmt_in, &mut fonts.hyphen_char, FONT_BASE, n)?;
-    undump_slice(fmt_in, &mut fonts.skew_char, FONT_BASE, n)?;
+    undump_slice(fmt_in, fonts.hyphen_char.as_mut_slice(), FONT_BASE, n)?;
+    undump_slice(fmt_in, fonts.skew_char.as_mut_slice(), FONT_BASE, n)?;
     undump_checked(
         fmt_in,
-        &mut fonts.font_name,
+        fonts.font_name.as_mut_slice(),
         FONT_BASE,
         n,
         i32::MIN,
@@ -788,26 +791,26 @@ fn read_fmt_file(st: &mut EngineState, fmt_in: usize) -> Result<bool, Abort> {
     )?;
     undump_checked(
         fmt_in,
-        &mut fonts.font_area,
+        fonts.font_area.as_mut_slice(),
         FONT_BASE,
         n,
         i32::MIN,
         max_str,
     )?;
-    undump_slice(fmt_in, &mut fonts.font_bc, FONT_BASE, n)?;
-    undump_slice(fmt_in, &mut fonts.font_ec, FONT_BASE, n)?;
-    undump_slice(fmt_in, &mut fonts.char_base, FONT_BASE, n)?;
-    undump_slice(fmt_in, &mut fonts.width_base, FONT_BASE, n)?;
-    undump_slice(fmt_in, &mut fonts.height_base, FONT_BASE, n)?;
-    undump_slice(fmt_in, &mut fonts.depth_base, FONT_BASE, n)?;
-    undump_slice(fmt_in, &mut fonts.italic_base, FONT_BASE, n)?;
-    undump_slice(fmt_in, &mut fonts.lig_kern_base, FONT_BASE, n)?;
-    undump_slice(fmt_in, &mut fonts.kern_base, FONT_BASE, n)?;
-    undump_slice(fmt_in, &mut fonts.exten_base, FONT_BASE, n)?;
-    undump_slice(fmt_in, &mut fonts.param_base, FONT_BASE, n)?;
+    undump_slice(fmt_in, fonts.font_bc.as_mut_slice(), FONT_BASE, n)?;
+    undump_slice(fmt_in, fonts.font_ec.as_mut_slice(), FONT_BASE, n)?;
+    undump_slice(fmt_in, fonts.char_base.as_mut_slice(), FONT_BASE, n)?;
+    undump_slice(fmt_in, fonts.width_base.as_mut_slice(), FONT_BASE, n)?;
+    undump_slice(fmt_in, fonts.height_base.as_mut_slice(), FONT_BASE, n)?;
+    undump_slice(fmt_in, fonts.depth_base.as_mut_slice(), FONT_BASE, n)?;
+    undump_slice(fmt_in, fonts.italic_base.as_mut_slice(), FONT_BASE, n)?;
+    undump_slice(fmt_in, fonts.lig_kern_base.as_mut_slice(), FONT_BASE, n)?;
+    undump_slice(fmt_in, fonts.kern_base.as_mut_slice(), FONT_BASE, n)?;
+    undump_slice(fmt_in, fonts.exten_base.as_mut_slice(), FONT_BASE, n)?;
+    undump_slice(fmt_in, fonts.param_base.as_mut_slice(), FONT_BASE, n)?;
     undump_checked(
         fmt_in,
-        &mut fonts.font_glue,
+        fonts.font_glue.as_mut_slice(),
         FONT_BASE,
         n,
         MIN_HALFWORD,
@@ -816,16 +819,23 @@ fn read_fmt_file(st: &mut EngineState, fmt_in: usize) -> Result<bool, Abort> {
     let max_font_index = fonts.fmem_ptr - 1;
     undump_checked(
         fmt_in,
-        &mut fonts.bchar_label,
+        fonts.bchar_label.as_mut_slice(),
         FONT_BASE,
         n,
         0,
         max_font_index,
     )?;
-    undump_checked(fmt_in, &mut fonts.font_bchar, FONT_BASE, n, 0, TOO_BIG_CHAR)?;
     undump_checked(
         fmt_in,
-        &mut fonts.font_false_bchar,
+        fonts.font_bchar.as_mut_slice(),
+        FONT_BASE,
+        n,
+        0,
+        TOO_BIG_CHAR,
+    )?;
+    undump_checked(
+        fmt_in,
+        fonts.font_false_bchar.as_mut_slice(),
         FONT_BASE,
         n,
         0,

@@ -91,10 +91,126 @@ impl MemPtr {
 #[repr(transparent)]
 pub struct Scaled(pub i32);
 
+impl Scaled {
+    pub const ZERO: Scaled = Scaled(0);
+
+    /// TeX's `half`, rounding odd values up.
+    #[inline]
+    pub fn half(self) -> Scaled {
+        Scaled(crate::scaled_math::half(self.0))
+    }
+
+    #[inline]
+    pub fn abs(self) -> Scaled {
+        Scaled(self.0.abs())
+    }
+
+    #[inline]
+    pub fn signum(self) -> i32 {
+        self.0.signum()
+    }
+}
+
+impl std::ops::Add for Scaled {
+    type Output = Scaled;
+    #[inline(always)]
+    fn add(self, rhs: Scaled) -> Scaled {
+        Scaled(self.0 + rhs.0)
+    }
+}
+
+impl std::ops::Sub for Scaled {
+    type Output = Scaled;
+    #[inline(always)]
+    fn sub(self, rhs: Scaled) -> Scaled {
+        Scaled(self.0 - rhs.0)
+    }
+}
+
+impl std::ops::Neg for Scaled {
+    type Output = Scaled;
+    #[inline(always)]
+    fn neg(self) -> Scaled {
+        Scaled(-self.0)
+    }
+}
+
+impl std::ops::Mul<i32> for Scaled {
+    type Output = Scaled;
+    #[inline(always)]
+    fn mul(self, rhs: i32) -> Scaled {
+        Scaled(self.0 * rhs)
+    }
+}
+
+impl std::ops::Div<i32> for Scaled {
+    type Output = Scaled;
+    #[inline(always)]
+    fn div(self, rhs: i32) -> Scaled {
+        Scaled(self.0 / rhs)
+    }
+}
+
+impl std::ops::AddAssign for Scaled {
+    #[inline(always)]
+    fn add_assign(&mut self, rhs: Scaled) {
+        self.0 += rhs.0;
+    }
+}
+
+impl std::ops::SubAssign for Scaled {
+    #[inline(always)]
+    fn sub_assign(&mut self, rhs: Scaled) {
+        self.0 -= rhs.0;
+    }
+}
+
+impl From<Scaled> for f64 {
+    #[inline(always)]
+    fn from(s: Scaled) -> f64 {
+        s.0 as f64
+    }
+}
+
+impl std::iter::Sum for Scaled {
+    fn sum<I: Iterator<Item = Scaled>>(iter: I) -> Scaled {
+        iter.fold(Scaled::ZERO, |a, b| a + b)
+    }
+}
+
 /// An internal font number.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 #[repr(transparent)]
 pub struct FontId(pub i32);
+
+impl FontId {
+    #[inline(always)]
+    pub fn index(self) -> usize {
+        self.0 as usize
+    }
+
+    /// The `eqtb` location of the font's identifier, `font_id_base + f`.
+    #[inline]
+    pub fn id_loc(self) -> i32 {
+        crate::consts::FONT_ID_BASE + self.0
+    }
+
+    /// The font's number in the DVI file, `f - font_base - 1`.
+    #[inline]
+    pub fn dvi_number(self) -> i32 {
+        self.0 - crate::consts::FONT_BASE - 1
+    }
+
+    #[inline]
+    pub fn next(self) -> FontId {
+        FontId(self.0 + 1)
+    }
+
+    /// The fonts after `null_font` up to `self`, the loaded ones when `self` is `font_ptr`.
+    pub fn loaded(self) -> impl DoubleEndedIterator<Item = FontId> {
+        (crate::consts::FONT_BASE + 1..=self.0).map(FontId)
+    }
+}
 
 /// A node's type code. Delta nodes reuse the rule code and edge nodes the
 /// style code, their list context tells them apart.

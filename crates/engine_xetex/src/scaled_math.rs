@@ -2,6 +2,35 @@
 //! conventions.
 
 use crate::state::{EngineState, ErrorState};
+use crate::units::Scaled;
+
+/// A 32-bit TeX value that the checked arithmetic accepts: an integer or a `Scaled`.
+pub(crate) trait TexWord: Copy {
+    fn raw(self) -> i32;
+    fn from_raw(raw: i32) -> Self;
+}
+
+impl TexWord for i32 {
+    #[inline(always)]
+    fn raw(self) -> i32 {
+        self
+    }
+    #[inline(always)]
+    fn from_raw(raw: i32) -> Self {
+        raw
+    }
+}
+
+impl TexWord for Scaled {
+    #[inline(always)]
+    fn raw(self) -> i32 {
+        self.0
+    }
+    #[inline(always)]
+    fn from_raw(raw: i32) -> Self {
+        Scaled(raw)
+    }
+}
 
 /// Round half away from zero, clipping to the `i32` range.
 pub fn tex_round(r: f64) -> i32 {
@@ -28,7 +57,12 @@ pub fn half(x: i32) -> i32 {
 }
 
 /// Side-effect-free core of `xn_over_d`: `(quotient, remainder, overflowed)`.
-pub(crate) fn xn_over_d_parts(mut x: i32, n: i32, d: i32) -> (i32, i32, bool) {
+pub(crate) fn xn_over_d_parts<T: TexWord>(x: T, n: i32, d: i32) -> (T, i32, bool) {
+    let (q, r, overflowed) = xn_over_d_parts_raw(x.raw(), n, d);
+    (T::from_raw(q), r, overflowed)
+}
+
+fn xn_over_d_parts_raw(mut x: i32, n: i32, d: i32) -> (i32, i32, bool) {
     let positive = x >= 0;
     if !positive {
         x = x.wrapping_neg();
@@ -108,7 +142,25 @@ fn ab_vs_cd(mut a: i32, mut b: i32, mut c: i32, mut d: i32) -> i32 {
 }
 
 impl ErrorState {
-    pub(crate) fn mult_and_add(&mut self, mut n: i32, mut x: i32, y: i32, max_answer: i32) -> i32 {
+    /// `n*x + y`, or 0 with `arith_error` beyond `max_answer`.
+    pub(crate) fn mult_and_add<T: TexWord>(&mut self, n: i32, x: T, y: T, max_answer: T) -> T {
+        T::from_raw(self.mult_and_add_raw(n, x.raw(), y.raw(), max_answer.raw()))
+    }
+
+    pub fn x_over_n<T: TexWord>(&mut self, x: T, n: i32) -> T {
+        T::from_raw(self.x_over_n_raw(x.raw(), n))
+    }
+
+    pub(crate) fn xn_over_d<T: TexWord>(&mut self, x: T, n: i32, d: i32) -> T {
+        T::from_raw(self.xn_over_d_raw(x.raw(), n, d))
+    }
+
+    /// `xn_over_d` rounded half away from zero. Leaves `tex_remainder` alone.
+    pub fn round_xn_over_d<T: TexWord>(&mut self, x: T, n: i32, d: i32) -> T {
+        T::from_raw(self.round_xn_over_d_raw(x.raw(), n, d))
+    }
+
+    fn mult_and_add_raw(&mut self, mut n: i32, mut x: i32, y: i32, max_answer: i32) -> i32 {
         if n < 0 {
             x = x.wrapping_neg();
             n = n.wrapping_neg();
@@ -127,7 +179,7 @@ impl ErrorState {
         }
     }
 
-    pub fn x_over_n(&mut self, mut x: i32, mut n: i32) -> i32 {
+    fn x_over_n_raw(&mut self, mut x: i32, mut n: i32) -> i32 {
         if n == 0 {
             self.arith_error = true;
             self.tex_remainder = x;
@@ -148,7 +200,7 @@ impl ErrorState {
         }
     }
 
-    pub(crate) fn xn_over_d(&mut self, x: i32, n: i32, d: i32) -> i32 {
+    fn xn_over_d_raw(&mut self, x: i32, n: i32, d: i32) -> i32 {
         let (quotient, remainder, overflowed) = xn_over_d_parts(x, n, d);
         if overflowed {
             self.arith_error = true;
@@ -157,8 +209,7 @@ impl ErrorState {
         quotient
     }
 
-    /// `xn_over_d` rounded half away from zero. Leaves `tex_remainder` alone.
-    pub fn round_xn_over_d(&mut self, x: i32, n: i32, d: i32) -> i32 {
+    fn round_xn_over_d_raw(&mut self, x: i32, n: i32, d: i32) -> i32 {
         let (quotient, remainder, overflowed) = xn_over_d_parts(x, n, d);
         if overflowed {
             self.arith_error = true;
@@ -348,7 +399,7 @@ impl ErrorState {
 fn m_log(st: &mut EngineState, mut x: i32) -> i32 {
     if x <= 0 {
         crate::output::error_here_with_diagnostic(st, "Logarithm of ");
-        crate::output::print_scaled(st, x);
+        crate::output::print_scaled(st, Scaled(x));
         crate::output::print(st, " has been replaced by 0");
         crate::output::capture_to_diagnostic(st, None);
         st.errors.help(&[
@@ -404,7 +455,21 @@ pub fn norm_rand(st: &mut EngineState) -> i32 {
 }
 
 impl ErrorState {
-    pub(crate) fn add_or_sub(&mut self, x: i32, y: i32, max_answer: i32, negative: bool) -> i32 {
+    pub(crate) fn add_or_sub<T: TexWord>(
+        &mut self,
+        x: T,
+        y: T,
+        max_answer: T,
+        negative: bool,
+    ) -> T {
+        T::from_raw(self.add_or_sub_raw(x.raw(), y.raw(), max_answer.raw(), negative))
+    }
+
+    pub(crate) fn fract<T: TexWord>(&mut self, x: T, n: i32, d: i32, max_answer: T) -> T {
+        T::from_raw(self.fract_raw(x.raw(), n, d, max_answer.raw()))
+    }
+
+    fn add_or_sub_raw(&mut self, x: i32, y: i32, max_answer: i32, negative: bool) -> i32 {
         let y = if negative { -y } else { y };
         if x >= 0 {
             if y <= max_answer - x {
@@ -447,7 +512,7 @@ impl ErrorState {
         }
     }
 
-    pub(crate) fn fract(&mut self, mut x: i32, mut n: i32, mut d: i32, max_answer: i32) -> i32 {
+    fn fract_raw(&mut self, mut x: i32, mut n: i32, mut d: i32, max_answer: i32) -> i32 {
         if d == 0 {
             self.arith_error = true;
             return 0;

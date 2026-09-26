@@ -18,10 +18,10 @@ use crate::consts::{
     INT_PAR_XETEX_GENERATE_ACTUAL_TEXT, INT_PAR_XETEX_HYPHENATABLE_LENGTH, INT_PAR_YEAR,
     LC_CODE_BASE, LEFT_TO_RIGHT, LEVEL_ONE, LEVEL_ZERO, LOCAL_BASE, LOCAL_OUTPUT_ROUTINE,
     LOCAL_PAR_SHAPE, MATH_CODE_BASE, MATH_FONT_BASE, MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP,
-    MIN_TRIE_OP, NON_ADDRESS, NORMAL, NUMBER_MATH_FAMILIES, NUMBER_USVS, PRIM_EQTB_BASE, PRIM_SIZE,
-    SELECTOR_NO_PRINT, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE,
-    SPLIT_BOT_MARK_CODE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, TOP_MARK_CODE, UC_CODE_BASE,
-    UNDEFINED_CONTROL_SEQUENCE, VMODE,
+    MIN_TRIE_OP, NON_ADDRESS, NORMAL, NULL_FONT, NUMBER_MATH_FAMILIES, NUMBER_USVS, PRIM_EQTB_BASE,
+    PRIM_SIZE, SELECTOR_NO_PRINT, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SF_CODE_BASE,
+    SINGLE_BASE, SPLIT_BOT_MARK_CODE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, TOP_MARK_CODE,
+    UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, VMODE,
 };
 use crate::errors::Abort;
 use crate::format_io::load_fmt_file;
@@ -40,9 +40,9 @@ use crate::mem_types::{zeroed_vec, B16x4, B32x2, MemoryWord};
 use crate::node::{ActiveNode, CondNode, FreeBlock, NodePtr, PageInsNode};
 use crate::scan::{INTER_CHAR_VAL, INT_VAL, MARK_VAL, NORMAL_SCANNER};
 use crate::state::{
-    ConfigState, EngineState, EqtbState, FontState, GroupCode, InteractionMode, MemState,
+    ConfigState, EngineState, EqtbState, FontState, GroupCode, InteractionMode, MemState, PerFont,
 };
-use crate::units::{MemPtr, NodeType, Scaled};
+use crate::units::{FontId, MemPtr, NodeType, Scaled};
 
 /// A `get_node` request this large merges every free block into the rover list.
 const GET_NODE_HEAD_SENTINEL: i32 = 0x4000_0000;
@@ -312,7 +312,7 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.input.cur_list.head = CONTRIB_HEAD;
     st.input.cur_list.tail = CONTRIB_HEAD;
     st.input.cur_list.e_tex_aux = MemPtr::NULL;
-    st.input.cur_list.set_aux_s1(IGNORE_DEPTH);
+    st.input.cur_list.set_prev_depth(IGNORE_DEPTH);
     st.input.cur_list.mode_line = 0;
     st.input.cur_list.prev_graf = 0;
     st.scanner.shown_mode = 0;
@@ -320,9 +320,9 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.shipout.page_tail = PAGE_HEAD;
     st.shipout.last_glue = None;
     st.shipout.last_penalty = 0;
-    st.shipout.last_kern = 0;
+    st.shipout.last_kern = Scaled::ZERO;
     st.shipout.last_node_type = -1;
-    st.shipout.page_so_far[7] = 0;
+    st.shipout.page_so_far[7] = Scaled::ZERO;
 
     for k in INT_BASE..=EQTB_SIZE {
         st.eqtb.set_xeq_level_at(k, LEVEL_ONE);
@@ -356,8 +356,8 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.scanner.if_line = 0;
     st.fonts.null_character = B16x4::default();
     st.shipout.total_pages = 0;
-    st.shipout.max_v = 0;
-    st.shipout.max_h = 0;
+    st.shipout.max_v = Scaled::ZERO;
+    st.shipout.max_h = Scaled::ZERO;
     st.shipout.max_push = 0;
     st.shipout.last_bop = -1;
     st.shipout.doing_leaders = false;
@@ -376,7 +376,7 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.scanner.cur_tail.0 = TEX_NULL;
     st.scanner.cur_pre_head.0 = TEX_NULL;
     st.scanner.cur_pre_tail.0 = TEX_NULL;
-    st.scanner.cur_f = 0;
+    st.scanner.cur_f = NULL_FONT;
     st.hyph.max_hyph_char = TOO_BIG_LANG;
 
     let hyph_len = st.hyph.hyph_size as usize + 1;
@@ -714,34 +714,34 @@ pub(crate) enum InitOutcome {
 
 impl FontState {
     pub(crate) fn alloc_font_arrays(&mut self) {
-        let len = self.font_max as usize + 1;
-        self.font_layout_engine = vec![None; len];
-        self.font_mapping = vec![None; len];
-        self.font_flags = vec![0; len];
-        self.font_letter_space = vec![0; len];
-        self.font_check = vec![B16x4::default(); len];
-        self.font_size = vec![0; len];
-        self.font_dsize = vec![0; len];
-        self.font_params = vec![0; len];
-        self.font_name = vec![0; len];
-        self.font_area = vec![0; len];
-        self.font_bc = vec![0; len];
-        self.font_ec = vec![0; len];
-        self.bchar_label = vec![0; len];
-        self.font_bchar = vec![0; len];
-        self.font_false_bchar = vec![0; len];
-        self.font_glue = vec![0; len];
-        self.hyphen_char = vec![0; len];
-        self.skew_char = vec![0; len];
-        self.char_base = vec![0; len];
-        self.width_base = vec![0; len];
-        self.height_base = vec![0; len];
-        self.depth_base = vec![0; len];
-        self.italic_base = vec![0; len];
-        self.lig_kern_base = vec![0; len];
-        self.kern_base = vec![0; len];
-        self.exten_base = vec![0; len];
-        self.param_base = vec![0; len];
+        let len = self.font_max.index() + 1;
+        self.font_layout_engine = PerFont::filled(len, None);
+        self.font_mapping = PerFont::filled(len, None);
+        self.font_flags = PerFont::filled(len, 0);
+        self.font_letter_space = PerFont::filled(len, Scaled::ZERO);
+        self.font_check = PerFont::filled(len, B16x4::default());
+        self.font_size = PerFont::filled(len, Scaled::ZERO);
+        self.font_dsize = PerFont::filled(len, Scaled::ZERO);
+        self.font_params = PerFont::filled(len, 0);
+        self.font_name = PerFont::filled(len, 0);
+        self.font_area = PerFont::filled(len, 0);
+        self.font_bc = PerFont::filled(len, 0);
+        self.font_ec = PerFont::filled(len, 0);
+        self.bchar_label = PerFont::filled(len, 0);
+        self.font_bchar = PerFont::filled(len, 0);
+        self.font_false_bchar = PerFont::filled(len, 0);
+        self.font_glue = PerFont::filled(len, 0);
+        self.hyphen_char = PerFont::filled(len, 0);
+        self.skew_char = PerFont::filled(len, 0);
+        self.char_base = PerFont::filled(len, 0);
+        self.width_base = PerFont::filled(len, 0);
+        self.height_base = PerFont::filled(len, 0);
+        self.depth_base = PerFont::filled(len, 0);
+        self.italic_base = PerFont::filled(len, 0);
+        self.lig_kern_base = PerFont::filled(len, 0);
+        self.kern_base = PerFont::filled(len, 0);
+        self.exten_base = PerFont::filled(len, 0);
+        self.param_base = PerFont::filled(len, 0);
     }
 }
 
@@ -764,7 +764,7 @@ pub(crate) fn initialize_engine(
     st.strings.string_vacancies = 90_000;
     st.strings.max_strings = 565_536;
     st.fonts.font_mem_size = 8_000_000;
-    st.fonts.font_max = 9_000;
+    st.fonts.font_max = FontId(9_000);
     st.hyph.trie_size = 1_000_000;
     st.hyph.hyph_size = HYPH_SIZE;
     st.input.buf_size = 200_000;
@@ -828,7 +828,7 @@ pub(crate) fn initialize_engine(
     if st.input.max_in_open >= 128 {
         bad = 6;
     }
-    if st.fonts.font_max > FONT_BASE + 9000 {
+    if st.fonts.font_max.0 > FONT_BASE + 9000 {
         bad = 16;
     }
     if st.save_stack.save_size > MAX_HALFWORD || st.strings.max_strings > MAX_HALFWORD {
@@ -960,8 +960,8 @@ pub(crate) fn initialize_engine(
             Err(e) => return InitOutcome::Terminate(e.into_history(st)),
         };
         let fonts = &mut st.fonts;
-        let f = FONT_BASE as usize;
-        fonts.font_ptr = FONT_BASE;
+        let f = NULL_FONT;
+        fonts.font_ptr = NULL_FONT;
         fonts.fmem_ptr = 7;
         fonts.font_name[f] = nullfont_name;
         fonts.font_area[f] = EMPTY_STRING;
@@ -980,7 +980,7 @@ pub(crate) fn initialize_engine(
         }
     }
 
-    st.fonts.font_used = vec![false; st.fonts.font_max as usize + 1];
+    st.fonts.font_used = PerFont::filled(st.fonts.font_max.index() + 1, false);
 
     st.errors.random_seed = initial_random_seed(
         st.config.deterministic_mode,
@@ -1108,8 +1108,8 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     destroy_font_manager();
     st.fonts.release_linebreak_state();
 
-    st.fonts.font_layout_engine.fill(None);
-    st.fonts.font_mapping.fill(None);
+    st.fonts.font_layout_engine.as_mut_slice().fill(None);
+    st.fonts.font_mapping.as_mut_slice().fill(None);
     st.fonts.loaded_font_mapping = None;
 
     for i in 1..=st.input.in_open as usize {
@@ -1153,35 +1153,35 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     st.strings.str_pool = Vec::new();
 
     let fonts = &mut st.fonts;
-    fonts.font_check = Vec::new();
-    fonts.font_size = Vec::new();
-    fonts.font_dsize = Vec::new();
-    fonts.font_params = Vec::new();
-    fonts.font_name = Vec::new();
-    fonts.font_area = Vec::new();
-    fonts.font_bc = Vec::new();
-    fonts.font_ec = Vec::new();
-    fonts.bchar_label = Vec::new();
-    fonts.font_bchar = Vec::new();
-    fonts.font_false_bchar = Vec::new();
-    fonts.font_glue = Vec::new();
-    fonts.font_used = Vec::new();
+    fonts.font_check = PerFont::default();
+    fonts.font_size = PerFont::default();
+    fonts.font_dsize = PerFont::default();
+    fonts.font_params = PerFont::default();
+    fonts.font_name = PerFont::default();
+    fonts.font_area = PerFont::default();
+    fonts.font_bc = PerFont::default();
+    fonts.font_ec = PerFont::default();
+    fonts.bchar_label = PerFont::default();
+    fonts.font_bchar = PerFont::default();
+    fonts.font_false_bchar = PerFont::default();
+    fonts.font_glue = PerFont::default();
+    fonts.font_used = PerFont::default();
     fonts.font_info = Vec::new();
-    fonts.font_layout_engine = Vec::new();
-    fonts.font_mapping = Vec::new();
-    fonts.font_flags = Vec::new();
-    fonts.font_letter_space = Vec::new();
-    fonts.hyphen_char = Vec::new();
-    fonts.skew_char = Vec::new();
-    fonts.char_base = Vec::new();
-    fonts.width_base = Vec::new();
-    fonts.height_base = Vec::new();
-    fonts.depth_base = Vec::new();
-    fonts.italic_base = Vec::new();
-    fonts.lig_kern_base = Vec::new();
-    fonts.kern_base = Vec::new();
-    fonts.exten_base = Vec::new();
-    fonts.param_base = Vec::new();
+    fonts.font_layout_engine = PerFont::default();
+    fonts.font_mapping = PerFont::default();
+    fonts.font_flags = PerFont::default();
+    fonts.font_letter_space = PerFont::default();
+    fonts.hyphen_char = PerFont::default();
+    fonts.skew_char = PerFont::default();
+    fonts.char_base = PerFont::default();
+    fonts.width_base = PerFont::default();
+    fonts.height_base = PerFont::default();
+    fonts.depth_base = PerFont::default();
+    fonts.italic_base = PerFont::default();
+    fonts.lig_kern_base = PerFont::default();
+    fonts.kern_base = PerFont::default();
+    fonts.exten_base = PerFont::default();
+    fonts.param_base = PerFont::default();
     fonts.xdv_buffer = Vec::new();
     fonts.mapped_text = Vec::new();
 

@@ -6,10 +6,12 @@
 
 use std::sync::Arc;
 
+use crate::units::Scaled;
+
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct FixedPoint {
-    pub x: i32,
-    pub y: i32,
+    pub x: Scaled,
+    pub y: Scaled,
 }
 
 #[derive(Clone, Default, PartialEq, Eq)]
@@ -108,7 +110,10 @@ mod tests {
 
     fn blob(x: i32, gid: u16) -> GlyphBlob {
         GlyphBlob {
-            locations: vec![FixedPoint { x, y: 0 }],
+            locations: vec![FixedPoint {
+                x: Scaled(x),
+                y: Scaled::ZERO,
+            }],
             gids: vec![gid],
         }
     }
@@ -129,10 +134,10 @@ mod tests {
         let mut arena = GlyphBlobArena::default();
         let first = arena.insert(blob(5, 9));
         let second = arena.clone_handle(first);
-        arena.get_mut(second).locations[0].x = 42;
+        arena.get_mut(second).locations[0].x = Scaled(42);
 
-        assert_eq!(arena.get(first).locations[0].x, 5);
-        assert_eq!(arena.get(second).locations[0].x, 42);
+        assert_eq!(arena.get(first).locations[0].x, Scaled(5));
+        assert_eq!(arena.get(second).locations[0].x, Scaled(42));
         arena.release(first);
         assert_eq!(arena.get(second).gids, [9]);
     }

@@ -10,7 +10,7 @@ use crate::state::{
     FontState, GroupCode, HyphState, InputClusterState, LinebreakState, MainLoopState, MemState,
     SaveStackState, ScannerState, ShipoutState, StringsState, SynctexCtxt, TexmfState,
 };
-use crate::units::MemPtr;
+use crate::units::{FontId, MemPtr, Scaled};
 
 fn vec_bytes<T>(values: &Vec<T>) -> usize {
     values.capacity() * size_of::<T>()
@@ -553,12 +553,12 @@ macro_rules! font_arrays {
         impl FontArrays {
             fn capture(src: &FontState, count: i32) -> Self {
                 Self {
-                    $($field: live_prefix(&src.$field, count),)*
+                    $($field: live_prefix(src.$field.as_slice(), count),)*
                 }
             }
 
             fn restore(&self, dst: &mut FontState) {
-                $(dst.$field[..self.$field.len()].copy_from_slice(&self.$field);)*
+                $(dst.$field.as_mut_slice()[..self.$field.len()].copy_from_slice(&self.$field);)*
             }
 
             fn allocated_bytes(&self) -> usize {
@@ -570,10 +570,10 @@ macro_rules! font_arrays {
 
 font_arrays! {
     font_flags: i8,
-    font_letter_space: i32,
+    font_letter_space: Scaled,
     font_check: B16x4,
-    font_size: i32,
-    font_dsize: i32,
+    font_size: Scaled,
+    font_dsize: Scaled,
     font_params: i32,
     font_name: i32,
     font_area: i32,
@@ -601,14 +601,14 @@ struct FontBundle {
     loaded_font_mapping: Option<Arc<FontMappingHandle>>,
     loaded_font_flags: i8,
     saved_mapping_name: Option<Vec<u8>>,
-    loaded_font_letter_space: i32,
+    loaded_font_letter_space: Scaled,
     xtx_ligature_present: bool,
     gave_char_warning_help: bool,
     native_font_type_flag: i32,
     font_mem_size: i32,
-    font_max: i32,
+    font_max: FontId,
     fmem_ptr: i32,
-    font_ptr: i32,
+    font_ptr: FontId,
     null_character: B16x4,
     arrays: FontArrays,
     engines: Vec<Option<Arc<FontEngineHandle>>>,
@@ -668,7 +668,7 @@ impl FontBundle {
             xdv_buffer,
             mapped_text,
         } = src;
-        let count = *font_ptr + 1;
+        let count = font_ptr.0 + 1;
         Self {
             loaded_font_mapping: loaded_font_mapping.clone(),
             loaded_font_flags: *loaded_font_flags,
@@ -683,31 +683,27 @@ impl FontBundle {
             font_ptr: *font_ptr,
             null_character: *null_character,
             arrays: FontArrays::capture(src, count),
-            engines: live_prefix(font_layout_engine, count),
-            mappings: live_prefix(font_mapping, count),
+            engines: live_prefix(font_layout_engine.as_slice(), count),
+            mappings: live_prefix(font_mapping.as_slice(), count),
             xdv_buffer: xdv_buffer.clone(),
             mapped_text: mapped_text.clone(),
         }
     }
 
     fn restore(&self, dst: &mut FontState) {
-        for f in (self.font_ptr + 1)..=dst.font_ptr {
-            dst.set_font_layout_engine(f, None);
-            dst.set_font_mapping(f, None);
+        for f in (self.font_ptr.0 + 1..=dst.font_ptr.0).map(FontId) {
+            dst.font_layout_engine[f] = None;
+            dst.font_mapping[f] = None;
         }
-        for (f, engine) in self.engines.iter().enumerate() {
-            dst.set_font_layout_engine(f as i32, engine.clone());
-        }
-        for (f, mapping) in self.mappings.iter().enumerate() {
-            dst.set_font_mapping(f as i32, mapping.clone());
-        }
+        dst.font_layout_engine.as_mut_slice()[..self.engines.len()].clone_from_slice(&self.engines);
+        dst.font_mapping.as_mut_slice()[..self.mappings.len()].clone_from_slice(&self.mappings);
         // The ICU iterator points into transient text and is rebuilt lazily.
         dst.release_linebreak_state();
         // Slots reused after the checkpoint may have emitted font definitions
         // in the abandoned timeline, so they must start unused.
-        let restored_font_count = (self.font_ptr + 1).max(0) as usize;
-        if restored_font_count < dst.font_used.len() {
-            dst.font_used[restored_font_count..].fill(false);
+        let restored_font_count = (self.font_ptr.0 + 1).max(0) as usize;
+        if let Some(abandoned) = dst.font_used.as_mut_slice().get_mut(restored_font_count..) {
+            abandoned.fill(false);
         }
         dst.loaded_font_mapping
             .clone_from(&self.loaded_font_mapping);
@@ -789,7 +785,7 @@ hyph_tables! {
 struct HyphBundle {
     tables_gen: u64,
     is_hyph: bool,
-    hf: i32,
+    hf: FontId,
     max_hyph_char: i32,
     init_list: MemPtr,
     init_lig: bool,
@@ -930,7 +926,10 @@ mod tests {
         st.input.last = 1;
         st.hyph.hc[0] = 14;
         let glyph = st.mem.glyph_blobs.insert(GlyphBlob {
-            locations: vec![FixedPoint { x: 15, y: 0 }],
+            locations: vec![FixedPoint {
+                x: Scaled(15),
+                y: Scaled::ZERO,
+            }],
             gids: vec![16],
         });
         let bundle = EngineBundle::capture(&st, base, None);
@@ -948,7 +947,7 @@ mod tests {
         st.save_stack.set_saved(-1, 120);
         st.input.buffer[0] = 130;
         st.hyph.hc[0] = 140;
-        st.mem.glyph_blobs.get_mut(glyph).locations[0].x = 150;
+        st.mem.glyph_blobs.get_mut(glyph).locations[0].x = Scaled(150);
         st.input.input_file.push(crate::state::InputSlot::Terminal);
 
         bundle.restore(&mut st);
@@ -965,7 +964,7 @@ mod tests {
         assert_eq!(st.save_stack.save_index(0), 12);
         assert_eq!(st.input.buffer[0], 13);
         assert_eq!(st.hyph.hc[0], 14);
-        assert_eq!(st.mem.glyph_blobs.get(glyph).locations[0].x, 15);
+        assert_eq!(st.mem.glyph_blobs.get(glyph).locations[0].x, Scaled(15));
         assert!(matches!(
             st.input.input_file.last(),
             Some(crate::state::InputSlot::Terminal)
@@ -975,21 +974,21 @@ mod tests {
     #[test]
     fn font_restore_clears_use_flags_beyond_the_checkpoint() {
         let mut fonts = FontState {
-            font_layout_engine: vec![None; 4],
-            font_mapping: vec![None; 4],
-            font_used: vec![false; 4],
-            font_ptr: 1,
+            font_layout_engine: crate::state::PerFont::filled(4, None),
+            font_mapping: crate::state::PerFont::filled(4, None),
+            font_used: crate::state::PerFont::filled(4, false),
+            font_ptr: FontId(1),
             ..Default::default()
         };
         let checkpoint = FontBundle::capture(&fonts);
 
-        fonts.font_ptr = 3;
-        fonts.font_used[2] = true;
-        fonts.font_used[3] = true;
+        fonts.font_ptr = FontId(3);
+        fonts.font_used[FontId(2)] = true;
+        fonts.font_used[FontId(3)] = true;
         checkpoint.restore(&mut fonts);
 
-        assert_eq!(fonts.font_ptr, 1);
-        assert_eq!(fonts.font_used, [false, false, false, false]);
+        assert_eq!(fonts.font_ptr, FontId(1));
+        assert_eq!(fonts.font_used.as_slice(), [false, false, false, false]);
     }
 
     #[test]

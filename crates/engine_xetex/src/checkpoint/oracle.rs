@@ -84,8 +84,8 @@ fn digest_mem(st: &EngineState) -> u64 {
                 h.word(1);
                 h.word(blob.locations.len() as u64);
                 for location in &blob.locations {
-                    h.i32(location.x);
-                    h.i32(location.y);
+                    h.i32(location.x.0);
+                    h.i32(location.y.0);
                 }
                 h.word(blob.gids.len() as u64);
                 for &gid in &blob.gids {
@@ -171,30 +171,30 @@ fn digest_fonts(st: &EngineState) -> u64 {
     let fonts = &st.fonts;
     h.i32s(&[
         fonts.loaded_font_flags as i32,
-        fonts.loaded_font_letter_space,
+        fonts.loaded_font_letter_space.0,
         fonts.native_font_type_flag,
         fonts.font_mem_size,
-        fonts.font_max,
+        fonts.font_max.0,
         fonts.fmem_ptr,
-        fonts.font_ptr,
+        fonts.font_ptr.0,
     ]);
     h.word(fonts.xtx_ligature_present as u64);
     h.word(fonts.gave_char_warning_help as u64);
     for &word in fonts.font_info.iter().take(fonts.fmem_ptr.max(0) as usize) {
         h.word(memory_word(word));
     }
-    let font_count = (fonts.font_ptr + 1).max(0) as usize;
+    let font_count = (fonts.font_ptr.0 + 1).max(0) as usize;
     macro_rules! hash_values {
-        ($field:ident) => {
-            for &value in fonts.$field.iter().take(font_count) {
-                h.word(value as u64);
+        ($field:ident $(.$raw:tt)?) => {
+            for &value in fonts.$field.as_slice().iter().take(font_count) {
+                h.word(value$(.$raw)? as u64);
             }
         };
     }
     hash_values!(font_flags);
-    hash_values!(font_letter_space);
-    hash_values!(font_size);
-    hash_values!(font_dsize);
+    hash_values!(font_letter_space.0);
+    hash_values!(font_size.0);
+    hash_values!(font_dsize.0);
     hash_values!(font_params);
     hash_values!(font_name);
     hash_values!(font_area);
@@ -216,16 +216,16 @@ fn digest_fonts(st: &EngineState) -> u64 {
     hash_values!(param_base);
     hash_values!(hyphen_char);
     hash_values!(skew_char);
-    for value in fonts.font_check.iter().take(font_count) {
+    for value in fonts.font_check.as_slice().iter().take(font_count) {
         h.word(value.s0 as u64);
         h.word(value.s1 as u64);
         h.word(value.s2 as u64);
         h.word(value.s3 as u64);
     }
-    for engine in fonts.font_layout_engine.iter().take(font_count) {
+    for engine in fonts.font_layout_engine.as_slice().iter().take(font_count) {
         h.word(engine.is_some() as u64);
     }
-    for mapping in fonts.font_mapping.iter().take(font_count) {
+    for mapping in fonts.font_mapping.as_slice().iter().take(font_count) {
         h.word(mapping.is_some() as u64);
     }
     h.finish()
@@ -343,7 +343,7 @@ fn digest_hyph(st: &EngineState) -> u64 {
     let hyph = &st.hyph;
     h.word(hyph.tables_gen);
     h.i32s(&[
-        hyph.hf,
+        hyph.hf.0,
         hyph.max_hyph_char,
         hyph.trie_max,
         hyph.trie_size,

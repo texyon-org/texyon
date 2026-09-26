@@ -8,8 +8,8 @@ use crate::cmd::{
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_USV, CS_TOKEN_FLAG, FROZEN_DONT_EXPAND, FROZEN_ENDV, FROZEN_PRIMITIVE,
     GLUE_PAR_LEFT_SKIP, GLUE_PAR_RIGHT_SKIP, HMODE, INT_PAR_TRACING_COMMANDS, INT_PAR_TRACING_IFS,
-    INT_PAR_TRACING_MACROS, INT_PAR_TRACING_STACK_LEVELS, MMODE, NULL_CS, PRIM_EQTB_BASE,
-    SELECTOR_NEW_STRING, SINGLE_BASE, TEX_NULL, TOO_BIG_CHAR, TOO_BIG_USV, UNDEFINED_PRIMITIVE,
+    INT_PAR_TRACING_MACROS, INT_PAR_TRACING_STACK_LEVELS, MMODE, NULL_CS, NULL_FONT,
+    PRIM_EQTB_BASE, SELECTOR_NEW_STRING, SINGLE_BASE, TEX_NULL, TOO_BIG_USV, UNDEFINED_PRIMITIVE,
     UNLESS_CODE, VMODE,
 };
 use crate::errors::error;
@@ -32,7 +32,7 @@ use crate::scan::{
     OTHER_TOKEN, SPACE_TOKEN,
 };
 use crate::state::{EngineState, MemState};
-use crate::units::{MemIdx, MemPtr};
+use crate::units::{FontId, MemIdx, MemPtr, Scaled};
 
 pub(crate) const IF_CHAR_CODE: i16 = 0;
 pub(crate) const IF_CAT_CODE: i16 = 1;
@@ -350,18 +350,15 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
         }
         IF_IN_CSNAME_CODE => st.scanner.is_in_csname,
         IF_FONT_CHAR_CODE => {
-            crate::scan::scan_font_ident(st)?;
-            let f = st.scanner.cur_val;
+            let f = crate::scan::scan_font_ident(st)?;
             crate::scan::scan_usv_num(st)?;
             let c = st.scanner.cur_val;
-            let fa = st.fonts.font_area[f as usize];
+            let fa = st.fonts.font_area[f];
             if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
                 st.fonts.map_char_to_glyph(f, c)? > 0
-            } else if st.fonts.font_bc[f as usize] as i32 <= c
-                && st.fonts.font_ec[f as usize] as i32 >= c
-            {
+            } else if st.fonts.font_bc[f] as i32 <= c && st.fonts.font_ec[f] as i32 >= c {
                 let ec = st.fonts.effective_char(f, c as u16);
-                let info = st.fonts.font_info_b16(st.fonts.char_base[f as usize] + ec);
+                let info = st.fonts.font_info_b16(st.fonts.char_base[f] + ec);
                 info.s3 > 0
             } else {
                 false
@@ -544,15 +541,15 @@ impl MemState {
             AnyNode::Disc(d) => {
                 d.pre_break(self).is_null() && d.post_break(self).is_null() && d.subtype(self) == 0
             }
-            AnyNode::Math(m) => m.width(self).0 == 0,
-            AnyNode::Kern(k) => k.width(self).0 == 0 || k.subtype(self) == 0,
+            AnyNode::Math(m) => m.width(self) == Scaled::ZERO,
+            AnyNode::Kern(k) => k.width(self) == Scaled::ZERO || k.subtype(self) == 0,
             AnyNode::Glue(g) => {
                 g.glue_ptr(self) == ZERO_GLUE || g.subtype(self) == (par_skip + 1) as u16
             }
             AnyNode::HList(h) => {
-                h.width(self).0 == 0
-                    && h.height(self).0 == 0
-                    && h.depth(self).0 == 0
+                h.width(self) == Scaled::ZERO
+                    && h.height(self) == Scaled::ZERO
+                    && h.depth(self) == Scaled::ZERO
                     && h.list_ptr(self).is_null()
             }
             _ => false,
@@ -576,7 +573,7 @@ fn print_margin_kern(
         match st.mem.classify(MemIdx::new(p)) {
             Ok(node) if st.mem.is_margin_kern_filler(node, par_skip) => p = next(&st.mem, p),
             Ok(AnyNode::MarginKern(mk)) if mk.subtype(&st.mem) == side => {
-                break Some(mk.width(&st.mem).0)
+                break Some(mk.width(&st.mem))
             }
             _ => break None,
         }
@@ -591,7 +588,7 @@ fn print_margin_kern(
 pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
     let c = st.scanner.cur_chr;
     let mut cat: i32 = 0;
-    let mut fnt: i32 = 0;
+    let mut fnt = NULL_FONT;
     let mut arg1: i32 = 0;
     let mut arg2: i32 = 0;
     let mut margin_list = TEX_NULL;
@@ -599,7 +596,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
     match c {
         NUMBER_CODE | ROMAN_NUMERAL_CODE | UNIFORM_DEVIATE_CODE => scan_int(st)?,
         STRING_CODE | MEANING_CODE => get_token_unexpanded(st)?,
-        FONT_NAME_CODE => crate::scan::scan_font_ident(st)?,
+        FONT_NAME_CODE => fnt = crate::scan::scan_font_ident(st)?,
         EXPANDED_CODE => {
             let saved = save_scan(st)?;
             crate::scan::scan_pdf_ext_toks(st)?;
@@ -701,9 +698,8 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             st.scanner.cur_val = saved_chr;
         }
         XETEX_VARIATION_NAME_CODE => {
-            crate::scan::scan_font_ident(st)?;
-            fnt = st.scanner.cur_val;
-            if st.fonts.font_area[fnt as usize] == AAT_FONT_FLAG {
+            fnt = crate::scan::scan_font_ident(st)?;
+            if st.fonts.font_area[fnt] == AAT_FONT_FLAG {
                 scan_int(st)?;
                 arg1 = st.scanner.cur_val;
                 arg2 = 0;
@@ -712,8 +708,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
         XETEX_FEATURE_NAME_CODE | XETEX_SELECTOR_NAME_CODE => {
-            crate::scan::scan_font_ident(st)?;
-            fnt = st.scanner.cur_val;
+            fnt = crate::scan::scan_font_ident(st)?;
             if is_aat_or_graphite(st, fnt) {
                 scan_int(st)?;
                 arg1 = st.scanner.cur_val;
@@ -728,9 +723,8 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
         XETEX_GLYPH_NAME_CODE => {
-            crate::scan::scan_font_ident(st)?;
-            fnt = st.scanner.cur_val;
-            let fa = st.fonts.font_area[fnt as usize];
+            fnt = crate::scan::scan_font_ident(st)?;
+            let fa = st.fonts.font_area[fnt];
             if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
                 scan_int(st)?;
                 arg1 = st.scanner.cur_val;
@@ -761,31 +755,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
         MEANING_CODE => crate::output::print_meaning(st),
-        FONT_NAME_CODE => {
-            let f = st.scanner.cur_val as usize;
-            let name = st.fonts.font_name[f];
-            let fa = st.fonts.font_area[f];
-            if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
-                let start = st.strings.str_start[(name - TOO_BIG_CHAR) as usize] as usize;
-                let len = st.strings.length(name).max(0) as usize;
-                let quote_char = if st.strings.str_pool[start..start + len].contains(&(b'"' as u16))
-                {
-                    '\'' as i32
-                } else {
-                    '"' as i32
-                };
-                print_char(st, quote_char);
-                crate::output::print(st, name);
-                print_char(st, quote_char);
-            } else {
-                crate::output::print(st, name);
-            }
-            if st.fonts.font_size[f] != st.fonts.font_dsize[f] {
-                print(st, " at ");
-                print_scaled(st, st.fonts.font_size[f]);
-                print(st, "pt");
-            }
-        }
+        FONT_NAME_CODE => crate::output::print_font_name_and_size(st, fnt),
         ETEX_REVISION_CODE => print(st, ".6"),
         LEFT_MARGIN_KERN_CODE | RIGHT_MARGIN_KERN_CODE => {
             let list = margin_list;
@@ -819,7 +789,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
         XETEX_GLYPH_NAME_CODE => {
-            let fa = st.fonts.font_area[fnt as usize];
+            let fa = st.fonts.font_area[fnt];
             if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
                 crate::ext::print_glyph_name(st, fnt, arg1)?;
             }
@@ -836,8 +806,8 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
     ins_temp_head_list(st, tail)
 }
 
-fn is_aat_or_graphite(st: &EngineState, f: i32) -> bool {
-    let fa = st.fonts.font_area[f as usize];
+fn is_aat_or_graphite(st: &EngineState, f: FontId) -> bool {
+    let fa = st.fonts.font_area[f];
     fa == AAT_FONT_FLAG
         || st
             .fonts
@@ -845,7 +815,7 @@ fn is_aat_or_graphite(st: &EngineState, f: i32) -> bool {
             .is_some_and(|e| e.using_graphite())
 }
 
-fn not_font_error(st: &mut EngineState, c: i32, f: i32, msg: &str) -> Result<(), Abort> {
+fn not_font_error(st: &mut EngineState, c: i32, f: FontId, msg: &str) -> Result<(), Abort> {
     crate::errors::not_font_error_common(st, CONVERT, c, f, msg)
 }
 

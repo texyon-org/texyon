@@ -22,13 +22,13 @@ use crate::cmd::{
 use crate::consts::{
     ACC_KERN, ACTIVE_BASE, AFTER, A_LEADERS, BEGIN_L_CODE, BEGIN_R_CODE, BIGGEST_CHAR, BIGGEST_USV,
     COND_MATH_GLUE, COUNT_BASE, CS_TOKEN_FLAG, C_LEADERS, DEL_CODE_BASE, DIMEN_BASE, DLIST, EMPTY,
-    END_L_CODE, EQTB_SIZE, ETEX_PEN_BASE, FILLL, FONT_ID_BASE, FROZEN_NULL_FONT, GLUE_BASE,
-    HASH_BASE, HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, HMODE, IGNORE_DEPTH, INT_BASE,
-    INT_PAR_END_LINE_CHAR, INT_PAR_ERROR_CONTEXT_LINES, INT_PAR_ESCAPE_CHAR, INT_PAR_NEW_LINE_CHAR,
+    END_L_CODE, EQTB_SIZE, ETEX_PEN_BASE, FILLL, FROZEN_NULL_FONT, GLUE_BASE, HASH_BASE,
+    HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, HMODE, IGNORE_DEPTH, INT_BASE, INT_PAR_END_LINE_CHAR,
+    INT_PAR_ERROR_CONTEXT_LINES, INT_PAR_ESCAPE_CHAR, INT_PAR_NEW_LINE_CHAR,
     INT_PAR_SHOW_BOX_BREADTH, INT_PAR_SHOW_BOX_DEPTH, INT_PAR_TRACING_IFS,
     INT_PAR_TRACING_LOST_CHARS, INT_PAR_TRACING_NESTING, INT_PAR_TRACING_ONLINE, LC_CODE_BASE,
     LOCAL_BASE, LOCAL_PAR_SHAPE, L_CODE, MATH_CHAR, MATH_CODE_BASE, MATH_FONT_BASE, MMODE, MU_GLUE,
-    MU_SKIP_BASE, NORMAL, NULL_CS, NULL_FLAG, PRIM_EQTB_BASE, R_CODE, SCALED_BASE, SCRIPT_SIZE,
+    MU_SKIP_BASE, NORMAL, NULL_CS, PRIM_EQTB_BASE, R_CODE, SCALED_BASE, SCRIPT_SIZE,
     SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_NO_PRINT, SELECTOR_TERM_AND_LOG,
     SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SPACE_ADJUSTMENT, SUB_BOX, SUB_MLIST,
     TEXT_SIZE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE,
@@ -74,7 +74,7 @@ use crate::math::{
 use crate::mem::{CONTRIB_HEAD, GARBAGE, PAGE_HEAD, PAGE_INS_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::node::{
     AnyBox, AnyNode, CharNode, CondNode, DelimiterField, GlueSpecNode, MathField, NodePtr,
-    PageInsNode, SaNode, WhatsitNode, WhatsitSubtype,
+    PageInsNode, RuleDimen, SaNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::packaging::EXACTLY;
 use crate::save::DIMEN_VAL_LIMIT;
@@ -98,7 +98,7 @@ use crate::scan::{
     XETEX_VARIATION_MAX_CODE, XETEX_VARIATION_MIN_CODE, XETEX_VERSION_CODE,
 };
 use crate::state::{EngineState, GroupCode, InteractionMode};
-use crate::units::{GlueSign, MemIdx, MemPtr, NodeType};
+use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled};
 
 const SELECTOR_PSEUDO: i32 = 20;
 
@@ -253,7 +253,8 @@ pub(crate) fn print_roman_int(st: &mut EngineState, mut n: i32) {
     }
 }
 
-pub(crate) fn print_scaled(st: &mut EngineState, mut s: i32) {
+pub(crate) fn print_scaled(st: &mut EngineState, s: Scaled) {
+    let mut s = s.0;
     if s < 0 {
         print_char(st, b'-' as i32);
         s = -s;
@@ -833,17 +834,17 @@ pub(crate) fn print_spec(st: &mut EngineState, p: impl crate::units::MemAddr, s:
         print_char(st, b'*' as i32);
         return;
     };
-    print_scaled(st, gs.width(&st.mem).0);
+    print_scaled(st, gs.width(&st.mem));
     if let Some(s) = s {
         print(st, s);
     }
-    if gs.stretch(&st.mem).0 != 0 {
+    if gs.stretch(&st.mem) != Scaled::ZERO {
         print(st, " plus ");
-        print_glue(st, gs.stretch(&st.mem).0, gs.stretch_order(&st.mem), s);
+        print_glue(st, gs.stretch(&st.mem), gs.stretch_order(&st.mem), s);
     }
-    if gs.shrink(&st.mem).0 != 0 {
+    if gs.shrink(&st.mem) != Scaled::ZERO {
         print(st, " minus ");
-        print_glue(st, gs.shrink(&st.mem).0, gs.shrink_order(&st.mem), s);
+        print_glue(st, gs.shrink(&st.mem), gs.shrink_order(&st.mem), s);
     }
 }
 
@@ -1030,16 +1031,15 @@ fn print_delimiter(st: &mut EngineState, p: NodePtr<DelimiterField>) {
     }
 }
 
-pub(crate) fn print_rule_dimen(st: &mut EngineState, d: i32) {
-    if d == NULL_FLAG {
-        print_char(st, b'*' as i32);
-    } else {
-        print_scaled(st, d);
+pub(crate) fn print_rule_dimen(st: &mut EngineState, d: RuleDimen) {
+    match d {
+        RuleDimen::Running => print_char(st, b'*' as i32),
+        RuleDimen::Set(d) => print_scaled(st, d),
     }
 }
 
 /// Prints `d` with its fil/fill/filll order, or the unit `s` for finite glue.
-pub(crate) fn print_glue(st: &mut EngineState, d: i32, order: u16, s: Option<&str>) {
+pub(crate) fn print_glue(st: &mut EngineState, d: Scaled, order: u16, s: Option<&str>) {
     print_scaled(st, d);
     if !(NORMAL..=FILLL).contains(&order) {
         print(st, "foul");
@@ -1053,11 +1053,11 @@ pub(crate) fn print_glue(st: &mut EngineState, d: i32, order: u16, s: Option<&st
     }
 }
 
-fn print_font_char(st: &mut EngineState, font: i32, c: u16) {
+fn print_font_char(st: &mut EngineState, font: FontId, c: u16) {
     if font > st.fonts.font_max {
         print_char(st, b'*' as i32);
     } else {
-        print_esc(st, st.eqtb.hash_s1(FONT_ID_BASE + font));
+        print_esc(st, st.eqtb.font_id_text(font));
     }
     print_char(st, b' ' as i32);
     print(st, c as i32);
@@ -1068,7 +1068,7 @@ fn print_font_and_char(st: &mut EngineState, p: MemPtr) {
         print_esc(st, "CLOBBERED.");
     } else {
         let ch = NodePtr::<CharNode>::at(p);
-        print_font_char(st, ch.font(&st.mem).0, ch.character(&st.mem));
+        print_font_char(st, ch.font(&st.mem), ch.character(&st.mem));
     }
 }
 
@@ -1739,7 +1739,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
             };
             print_esc(st, name);
         }
-        SET_FONT => print_font_select(st, chr_code as usize),
+        SET_FONT => print_font_select(st, FontId(chr_code)),
         SET_INTERACTION => {
             const BATCH: i32 = InteractionMode::Batch as i32;
             const NONSTOP: i32 = InteractionMode::Nonstop as i32;
@@ -1829,8 +1829,13 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
 }
 
 /// `select font <name>`, quoting native font names, plus ` at <size>pt` if scaled.
-fn print_font_select(st: &mut EngineState, f: usize) {
+fn print_font_select(st: &mut EngineState, f: FontId) {
     print(st, "select font ");
+    print_font_name_and_size(st, f);
+}
+
+/// The name of font `f`, quoted if native, then ` at <size>pt` unless at design size.
+pub(crate) fn print_font_name_and_size(st: &mut EngineState, f: FontId) {
     let name = st.fonts.font_name[f];
     let area = st.fonts.font_area[f];
     if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
@@ -2190,13 +2195,13 @@ pub(crate) fn show_token_list(st: &mut EngineState, p: impl crate::units::MemAdd
 fn print_totals(st: &mut EngineState) {
     print_scaled(st, st.shipout.page_so_far[1]);
     for (i, order) in [(2, ""), (3, "fil"), (4, "fill"), (5, "filll")] {
-        if st.shipout.page_so_far[i] != 0 {
+        if st.shipout.page_so_far[i] != Scaled::ZERO {
             print(st, " plus ");
             print_scaled(st, st.shipout.page_so_far[i]);
             print(st, order);
         }
     }
-    if st.shipout.page_so_far[6] != 0 {
+    if st.shipout.page_so_far[6] != Scaled::ZERO {
         print(st, " minus ");
         print_scaled(st, st.shipout.page_so_far[6]);
     }
@@ -2418,7 +2423,7 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                         VMOVE
                     };
                     print_cmd_chr(st, cmd, if i > 0 { 0 } else { 1 });
-                    print_scaled(st, i.abs());
+                    print_scaled(st, Scaled(i.abs()));
                     print(st, "pt");
                 } else if i < SHIP_OUT_FLAG {
                     let mut box_num = i;
@@ -2445,7 +2450,7 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                 } else {
                     print(st, "spread");
                 }
-                print_scaled(st, spec);
+                print_scaled(st, Scaled(spec));
                 print(st, "pt");
             }
         }
@@ -2579,7 +2584,7 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
     error(st)
 }
 
-pub(crate) fn char_warning(st: &mut EngineState, f: i32, c: i32) -> Result<(), Abort> {
+pub(crate) fn char_warning(st: &mut EngineState, f: FontId, c: i32) -> Result<(), Abort> {
     let tracing_lost = st.eqtb.int_par(INT_PAR_TRACING_LOST_CHARS);
     if tracing_lost > 0 {
         let old_setting = st.eqtb.int_par(INT_PAR_TRACING_ONLINE);
@@ -2596,7 +2601,7 @@ pub(crate) fn char_warning(st: &mut EngineState, f: i32, c: i32) -> Result<(), A
         }
         print_code(st, c);
         print(st, " (");
-        let area = st.fonts.font_area[f as usize];
+        let area = st.fonts.font_area[f];
         if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
             print_ucs_code(st, c);
         } else {
@@ -2604,7 +2609,7 @@ pub(crate) fn char_warning(st: &mut EngineState, f: i32, c: i32) -> Result<(), A
         }
         print_char(st, b')' as i32);
         print(st, " in font ");
-        print(st, st.fonts.font_name[f as usize]);
+        print(st, st.fonts.font_name[f]);
         if tracing_lost < 3 {
             print_char(st, b'!' as i32);
         }
@@ -2618,7 +2623,7 @@ pub(crate) fn char_warning(st: &mut EngineState, f: i32, c: i32) -> Result<(), A
         }
     }
 
-    let font_name = st.strings.texstring_bytes(st.fonts.font_name[f as usize]);
+    let font_name = st.strings.texstring_bytes(st.fonts.font_name[f]);
     let prev_sel = st.shipout.selector;
     st.shipout.selector = SELECTOR_NEW_STRING;
     print_code(st, c);
@@ -2662,12 +2667,12 @@ pub(crate) fn short_display(st: &mut EngineState, p: impl crate::units::MemAddr)
         if st.mem.is_char_node(p) {
             if p.0 <= st.mem.mem_end {
                 let ch = NodePtr::<CharNode>::at(p);
-                let font = ch.font(&st.mem).0;
+                let font = ch.font(&st.mem);
                 if font != st.errors.font_in_short_display {
                     if font > st.fonts.font_max {
                         print_char(st, b'*' as i32);
                     } else {
-                        print_esc(st, st.eqtb.hash_s1(FONT_ID_BASE + font));
+                        print_esc(st, st.eqtb.font_id_text(font));
                     }
                     print_char(st, b' ' as i32);
                     st.errors.font_in_short_display = font;
@@ -2688,9 +2693,9 @@ pub(crate) fn short_display(st: &mut EngineState, p: impl crate::units::MemAddr)
                     if w.whatsit_subtype(&st.mem)
                         .is_some_and(|s| s.is_native_word())
                     {
-                        let font = w.native_font(&st.mem).0;
+                        let font = w.native_font(&st.mem);
                         if font != st.errors.font_in_short_display {
-                            print_esc(st, st.eqtb.hash_s1(FONT_ID_BASE + font));
+                            print_esc(st, st.eqtb.font_id_text(font));
                             print_char(st, b' ' as i32);
                             st.errors.font_in_short_display = font;
                         }
@@ -2752,7 +2757,7 @@ fn show_page_so_far(st: &mut EngineState) {
                 print_int(st, box_num as i32);
                 print(st, " adds ");
                 let count = st.eqtb.count(box_num as i32);
-                let height = ins.height(&st.mem).0;
+                let height = ins.height(&st.mem);
                 let adds = if count == 1000 {
                     height
                 } else {
@@ -2819,10 +2824,11 @@ pub(crate) fn show_activities(st: &mut EngineState) {
         match m.abs() as i32 / (MAX_COMMAND as i32 + 1) {
             0 => {
                 print_nl(st, "prevdepth ");
-                if aux_s1 <= IGNORE_DEPTH {
+                let prev_depth = nest.prev_depth();
+                if prev_depth <= IGNORE_DEPTH {
                     print(st, "ignored");
                 } else {
-                    print_scaled(st, aux_s1);
+                    print_scaled(st, prev_depth);
                 }
                 if nest.prev_graf != 0 {
                     print(st, ", prevgraf ");
@@ -2923,46 +2929,46 @@ pub(crate) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr
                 Ok(AnyNode::Unset(node)) => {
                     print_esc(st, "unset");
                     print(st, "box(");
-                    print_scaled(st, node.height(&st.mem).0);
+                    print_scaled(st, node.height(&st.mem));
                     print_char(st, b'+' as i32);
-                    print_scaled(st, node.depth(&st.mem).0);
+                    print_scaled(st, node.depth(&st.mem));
                     print(st, ")x");
-                    print_scaled(st, node.width(&st.mem).0);
+                    print_scaled(st, node.width(&st.mem));
                     let span_count = node.subtype(&st.mem);
                     if span_count != 0 {
                         print(st, " (");
                         print_int(st, span_count as i32 + 1);
                         print(st, " columns)");
                     }
-                    if node.glue_stretch(&st.mem).0 != 0 {
+                    if node.glue_stretch(&st.mem) != Scaled::ZERO {
                         print(st, ", stretch ");
                         let order = node.glue_order(&st.mem);
-                        print_glue(st, node.glue_stretch(&st.mem).0, order, None);
+                        print_glue(st, node.glue_stretch(&st.mem), order, None);
                     }
-                    if node.glue_shrink(&st.mem).0 != 0 {
+                    if node.glue_shrink(&st.mem) != Scaled::ZERO {
                         print(st, ", shrink ");
                         let order = node.glue_sign(&st.mem);
-                        print_glue(st, node.glue_shrink(&st.mem).0, order, None);
+                        print_glue(st, node.glue_shrink(&st.mem), order, None);
                     }
                     node_list_display(st, b'.', node.list_ptr(&st.mem));
                 }
                 Ok(AnyNode::Rule(node)) => {
                     print_esc(st, "rule(");
-                    print_rule_dimen(st, node.height(&st.mem).raw());
+                    print_rule_dimen(st, node.height(&st.mem));
                     print_char(st, b'+' as i32);
-                    print_rule_dimen(st, node.depth(&st.mem).raw());
+                    print_rule_dimen(st, node.depth(&st.mem));
                     print(st, ")x");
-                    print_rule_dimen(st, node.width(&st.mem).raw());
+                    print_rule_dimen(st, node.width(&st.mem));
                 }
                 Ok(AnyNode::Ins(node)) => {
                     print_esc(st, "insert");
                     print_int(st, node.subtype(&st.mem) as i32);
                     print(st, ", natural size ");
-                    print_scaled(st, node.height(&st.mem).0);
+                    print_scaled(st, node.height(&st.mem));
                     print(st, "; split(");
                     print_spec(st, node.split_top_ptr(&st.mem).ptr(), None);
                     print_char(st, b',' as i32);
-                    print_scaled(st, node.depth(&st.mem).0);
+                    print_scaled(st, node.depth(&st.mem));
                     print(st, "); float cost ");
                     print_int(st, node.float_cost(&st.mem));
                     node_list_display(st, b'.', node.ins_ptr(&st.mem));
@@ -2976,7 +2982,7 @@ pub(crate) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr
                         if sub != 0 {
                             print_char(st, b' ' as i32);
                         }
-                        print_scaled(st, node.width(&st.mem).0);
+                        print_scaled(st, node.width(&st.mem));
                         if sub == ACC_KERN {
                             print(st, " (for accent)");
                         } else if sub == SPACE_ADJUSTMENT {
@@ -2984,13 +2990,13 @@ pub(crate) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr
                         }
                     } else {
                         print_esc(st, "mkern");
-                        print_scaled(st, node.width(&st.mem).0);
+                        print_scaled(st, node.width(&st.mem));
                         print(st, "mu");
                     }
                 }
                 Ok(AnyNode::MarginKern(node)) => {
                     print_esc(st, "kern");
-                    print_scaled(st, node.width(&st.mem).0);
+                    print_scaled(st, node.width(&st.mem));
                     if node.subtype(&st.mem) == 0 {
                         print(st, " (left margin)");
                     } else {
@@ -3016,14 +3022,14 @@ pub(crate) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr
                         } else {
                             print(st, "off");
                         }
-                        if node.width(&st.mem).0 != 0 {
+                        if node.width(&st.mem) != Scaled::ZERO {
                             print(st, ", surrounded ");
-                            print_scaled(st, node.width(&st.mem).0);
+                            print_scaled(st, node.width(&st.mem));
                         }
                     }
                 }
                 Ok(AnyNode::Ligature(node)) => {
-                    let font = node.font(&st.mem).0;
+                    let font = node.font(&st.mem);
                     print_font_char(st, font, node.character(&st.mem));
                     print(st, " (ligature ");
                     if node.subtype(&st.mem) > 1 {
@@ -3086,11 +3092,11 @@ fn show_box_node(st: &mut EngineState, b: AnyBox) {
     let is_hlist = matches!(b, AnyBox::HList(_));
     print_esc(st, if is_hlist { b'h' } else { b'v' } as i32);
     print(st, "box(");
-    print_scaled(st, b.height(&st.mem).0);
+    print_scaled(st, b.height(&st.mem));
     print_char(st, b'+' as i32);
-    print_scaled(st, b.depth(&st.mem).0);
+    print_scaled(st, b.depth(&st.mem));
     print(st, ")x");
-    print_scaled(st, b.width(&st.mem).0);
+    print_scaled(st, b.width(&st.mem));
     let g = b.glue_set(&st.mem);
     let glue_sign = b.glue_sign(&st.mem);
     if g != 0.0 && glue_sign != GlueSign::Normal {
@@ -3105,15 +3111,15 @@ fn show_box_node(st: &mut EngineState, b: AnyBox) {
             } else {
                 print(st, "< -");
             }
-            print_glue(st, 20000 * 65536, order, None);
+            print_glue(st, Scaled(20000 * 65536), order, None);
         } else {
-            let set = crate::scaled_math::tex_round(65536.0 * g);
+            let set = Scaled(crate::scaled_math::tex_round(65536.0 * g));
             print_glue(st, set, order, None);
         }
     }
-    if b.shift_amount(&st.mem).0 != 0 {
+    if b.shift_amount(&st.mem) != Scaled::ZERO {
         print(st, ", shifted ");
-        print_scaled(st, b.shift_amount(&st.mem).0);
+        print_scaled(st, b.shift_amount(&st.mem));
     }
     if is_hlist && b.subtype(&st.mem) == DLIST {
         print(st, ", display");
@@ -3123,10 +3129,7 @@ fn show_box_node(st: &mut EngineState, b: AnyBox) {
 
 fn show_whatsit(st: &mut EngineState, node: NodePtr<WhatsitNode>) {
     let print_font = |st: &mut EngineState| {
-        print_esc(
-            st,
-            st.eqtb.hash_s1(FONT_ID_BASE + node.native_font(&st.mem).0),
-        );
+        print_esc(st, st.eqtb.font_id_text(node.native_font(&st.mem)));
     };
     match node.whatsit_subtype(&st.mem) {
         Some(WhatsitSubtype::Open) => {
