@@ -628,7 +628,7 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
     }
     while let Some(idx) = st.mem.link_ptr(CONTRIB_HEAD).as_idx() {
         let p = MemPtr::from_idx(idx);
-        let node_type = st.mem.b16s1(p) as i32;
+        let node_type = st.mem.type_code(idx) as i32;
         let node = st.mem.classify(idx).expect("valid page node");
         if let Some(spec) = st.shipout.last_glue {
             crate::mem::delete_glue_ref(&mut st.mem, spec);

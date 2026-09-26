@@ -325,8 +325,9 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
         dump_slice(fmt_out, &mem.data, p, q + 2 - p)?;
         x += q + 2 - p;
         var_used += q - p;
-        p = q + mem.b32s0(q);
-        q = mem.b32s1(q + 1);
+        let block = crate::node::NodePtr::<crate::node::FreeBlock>::at(q);
+        p = q + block.node_size(mem);
+        q = block.rlink(mem);
         if q == rover {
             break;
         }
@@ -342,10 +343,10 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
     dump_slice(fmt_out, &mem.data, hi_mem_min, mem_end + 1 - hi_mem_min)?;
     x += mem_end + 1 - hi_mem_min;
 
-    p = avail;
-    while p != TEX_NULL {
+    let mut p = crate::units::MemPtr(avail);
+    while !p.is_null() {
         dyn_used -= 1;
-        p = mem.b32s1(p);
+        p = p.link(mem);
     }
 
     st.mem.var_used = var_used;
@@ -673,8 +674,9 @@ unsafe fn load_fmt_file_in(st: &mut EngineState, fmt_in: usize) -> Result<bool, 
     let mut q = mem.rover;
     loop {
         undump_slice(fmt_in, &mut mem.data, p, q + 2 - p)?;
-        p = q + mem.b32s0(q);
-        let next = mem.b32s1(q + 1);
+        let block = crate::node::NodePtr::<crate::node::FreeBlock>::at(q);
+        p = q + block.node_size(mem);
+        let next = block.rlink(mem);
         if p > mem.lo_mem_max || (q >= next && next != mem.rover) {
             return Err(bad_fmt());
         }

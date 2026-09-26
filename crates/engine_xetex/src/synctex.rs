@@ -484,7 +484,10 @@ pub fn synctex_horizontal_rule_or_glue(st: &mut EngineState, p: MemPtr) {
         Ok(AnyNode::Glue(g)) => (g.sync_tag(&st.mem), g.sync_line(&st.mem)),
         Ok(AnyNode::Kern(k)) => (k.sync_tag(&st.mem), k.sync_line(&st.mem)),
         _ => {
-            let s = format!("unknown node type {} in SyncTeX\0", st.mem.b16s1(p.0));
+            let s = format!(
+                "unknown node type {} in SyncTeX\0",
+                st.mem.type_code(MemIdx::new(p))
+            );
             // SAFETY: `s` is NUL-terminated and outlives the call.
             unsafe { issue_error_cstr(s.as_ptr() as *const c_char) };
             return;

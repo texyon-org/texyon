@@ -1090,7 +1090,7 @@ pub(crate) fn scan_file_name_braced_in(st: &mut EngineState) -> Result<(), SccAb
 
     st.shipout.old_setting = st.shipout.selector as u8;
     st.shipout.selector = SELECTOR_NEW_STRING;
-    let arg = st.mem.b32s1(st.scanner.def_ref);
+    let arg = st.scanner.def_ref.link(&st.mem);
     let l = st.strings.pool_size - st.strings.pool_ptr;
     crate::output::show_token_list_in(st, arg, crate::mem::TEX_NULL, l);
     st.shipout.selector = st.shipout.old_setting as i32;

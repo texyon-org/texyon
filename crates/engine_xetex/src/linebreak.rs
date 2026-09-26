@@ -98,7 +98,7 @@ enum ActiveOrDelta {
 #[inline]
 fn classify_active_or_delta(mem: &MemState, p: impl MemAddr) -> ActiveOrDelta {
     let p = p.addr();
-    if mem.b16s1(p) == DELTA_NODE {
+    if active(p).break_type(mem) == DELTA_NODE {
         ActiveOrDelta::Delta(delta_node(p))
     } else {
         ActiveOrDelta::Active(active(p))
@@ -148,7 +148,7 @@ fn new_delta_node(
 ) -> Result<NodePtr<DeltaNode>, NodeRecycleAbort> {
     let p = NodePtr::<DeltaNode>::alloc(mem).ok_or(NodeRecycleAbort::Overflow)?;
     p.set_link(mem, link);
-    mem.set_b16s0(p.idx().0, 0);
+    p.set_subtype(mem, 0);
     set_delta_widths(p, mem, w);
     Ok(p)
 }

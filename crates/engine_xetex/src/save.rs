@@ -198,7 +198,7 @@ pub(crate) fn eq_destroy(
         GLUE_REF => delete_glue_ref(mem, crate::node::NodePtr::from_glue_ptr(MemPtr(equiv))),
         SHAPE_REF => {
             if equiv != TEX_NULL {
-                let size = 2 * mem.b32s0(equiv) + 1;
+                let size = 2 * MemPtr(equiv).info(mem) + 1;
                 free_node(mem, MemPtr::from_raw(equiv), size);
             }
         }

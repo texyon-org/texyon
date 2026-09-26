@@ -1077,8 +1077,8 @@ fn print_font_char_in(st: &mut EngineState, font: i32, c: u16) {
     print_in(st, c as i32);
 }
 
-fn print_font_and_char_in(st: &mut EngineState, p: i32) {
-    if p > st.mem.mem_end {
+fn print_font_and_char_in(st: &mut EngineState, p: MemPtr) {
+    if p.0 > st.mem.mem_end {
         esc(st, c"CLOBBERED.");
     } else {
         let ch = NodePtr::<CharNode>::at(p);
@@ -2072,7 +2072,7 @@ pub(crate) fn change_if_limit_in(
     while !q.is_null() {
         let next = q.link(&st.mem);
         if next.0 == p {
-            st.mem.set_b16s1(q, l as u16);
+            NodePtr::<CondNode>::at(q).set_if_limit(&mut st.mem, l as u16);
             return ErrorOutcome::Continue;
         }
         q = next;
@@ -2773,10 +2773,10 @@ pub(crate) fn show_box_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
 }
 
 pub(crate) fn short_display_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
-    let mut p = p.addr();
-    while p > 0 {
-        if p >= st.mem.hi_mem_min {
-            if p <= st.mem.mem_end {
+    let mut p = MemPtr(p.addr());
+    while p.0 > 0 {
+        if crate::mem::is_char_node(&st.mem, p) {
+            if p.0 <= st.mem.mem_end {
                 let ch = NodePtr::<CharNode>::at(p);
                 let font = ch.font(&st.mem).0;
                 if font != st.errors.font_in_short_display {
@@ -2834,15 +2834,15 @@ pub(crate) fn short_display_in(st: &mut EngineState, p: impl crate::units::MemAd
                     short_display_in(st, d.pre_break(&st.mem));
                     short_display_in(st, d.post_break(&st.mem));
                     for _ in 0..d.subtype(&st.mem) {
-                        if st.mem.b32s1(p) != TEX_NULL {
-                            p = st.mem.b32s1(p);
+                        if !p.link(&st.mem).is_null() {
+                            p = p.link(&st.mem);
                         }
                     }
                 }
                 _ => {}
             }
         }
-        p = st.mem.b32s1(p);
+        p = p.link(&st.mem);
     }
 }
 
@@ -2853,7 +2853,7 @@ fn show_page_so_far_in(st: &mut EngineState) {
         if st.shipout.output_active {
             print_cstr_in(st, c" (held over for next output)".as_ptr());
         }
-        show_box_in(st, st.mem.b32s1(PAGE_HEAD));
+        show_box_in(st, PAGE_HEAD.link(&st.mem));
         if st.shipout.page_contents != crate::state::PageContents::Empty {
             print_nl_cstr_in(st, c"total height ".as_ptr());
             print_totals_in(st);
@@ -2898,7 +2898,7 @@ fn show_page_so_far_in(st: &mut EngineState) {
             }
         }
     }
-    if st.mem.b32s1(CONTRIB_HEAD) != TEX_NULL {
+    if !CONTRIB_HEAD.link(&st.mem).is_null() {
         print_nl_cstr_in(st, c"### recent contributions:".as_ptr());
     }
 }
@@ -2930,7 +2930,7 @@ pub(crate) fn show_activities_in(st: &mut EngineState) {
         if p == 0 {
             show_page_so_far_in(st);
         }
-        show_box_in(st, st.mem.b32s1(nest.head));
+        show_box_in(st, nest.head.link(&st.mem));
         let (aux_s0, aux_s1) = (nest.aux_s0(), nest.aux_s1());
         match m.abs() as i32 / (MAX_COMMAND as i32 + 1) {
             0 => {
@@ -3010,18 +3010,18 @@ fn print_subsidiary_data_in(st: &mut EngineState, p: NodePtr<MathField>, c: u8) 
 }
 
 pub(crate) fn show_node_list_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
-    let mut p = p.addr();
+    let mut p = MemPtr(p.addr());
     if crate::hash::cur_length(&st.strings) > st.errors.depth_threshold {
-        if p > TEX_NULL {
+        if p.0 > TEX_NULL {
             print_cstr_in(st, c" []".as_ptr());
         }
         return;
     }
     let mut n = 0;
-    while p > 0 {
+    while p.0 > 0 {
         print_ln_in(st);
         print_current_string_in(st);
-        if p > st.mem.mem_end {
+        if p.0 > st.mem.mem_end {
             print_cstr_in(st, c"Bad link, display aborted.".as_ptr());
             return;
         }
@@ -3030,7 +3030,7 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, p: impl crate::units::MemA
             print_cstr_in(st, c"etc.".as_ptr());
             return;
         }
-        if p >= st.mem.hi_mem_min {
+        if crate::mem::is_char_node(&st.mem, p) {
             print_font_and_char_in(st, p);
         } else {
             match st.mem.classify(MemIdx::new(p)) {
@@ -3194,7 +3194,7 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, p: impl crate::units::MemA
                 Err(_) => print_cstr_in(st, c"Unknown node type!".as_ptr()),
             }
         }
-        p = st.mem.b32s1(p);
+        p = p.link(&st.mem);
     }
 }
 

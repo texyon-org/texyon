@@ -40,7 +40,7 @@ use crate::mem::{
     SS_GLUE, ZERO_GLUE,
 };
 use crate::mem_types::{zeroed_vec, B16x4, B32x2, MemoryWord};
-use crate::node::{CondNode, NodePtr};
+use crate::node::{CondNode, FreeBlock, NodePtr};
 use crate::scan::{INTER_CHAR_VAL, INT_VAL, MARK_VAL, NORMAL_SCANNER};
 use crate::state::{EngineState, EqtbState, FontState, GroupCode, InteractionMode, MemState};
 use crate::units::{MemPtr, NodeType, Scaled};
@@ -110,38 +110,44 @@ pub(crate) unsafe fn get_strings_started_in(st: &mut EngineState) -> Result<(), 
     Ok(())
 }
 
+/// TeX's `sort_avail`: orders the variable-size free list by address.
 pub(crate) fn sort_avail_in(mem: &mut MemState) {
+    let block = |p: i32| NodePtr::<FreeBlock>::at(p);
     let _ = crate::mem::get_node(mem, GET_NODE_HEAD_SENTINEL);
-    let mut p = mem.b32s1(mem.rover + 1);
-    mem.set_b32s1(mem.rover + 1, MAX_HALFWORD);
     let old_rover = mem.rover;
+    let mut p = block(old_rover).rlink(mem);
+    block(old_rover).set_rlink(mem, MAX_HALFWORD);
 
     while p != old_rover {
-        if p < mem.rover {
+        let rover = mem.rover;
+        if p < rover {
             let q = p;
-            p = mem.b32s1(q + 1);
-            mem.set_b32s1(q + 1, mem.rover);
+            p = block(q).rlink(mem);
+            block(q).set_rlink(mem, rover);
             mem.rover = q;
         } else {
-            let mut q = mem.rover;
-            while mem.b32s1(q + 1) < p {
-                q = mem.b32s1(q + 1);
+            let mut q = rover;
+            while block(q).rlink(mem) < p {
+                q = block(q).rlink(mem);
             }
-            let r = mem.b32s1(p + 1);
-            mem.set_b32s1(p + 1, mem.b32s1(q + 1));
-            mem.set_b32s1(q + 1, p);
+            let r = block(p).rlink(mem);
+            let after_q = block(q).rlink(mem);
+            block(p).set_rlink(mem, after_q);
+            block(q).set_rlink(mem, p);
             p = r;
         }
     }
 
-    p = mem.rover;
-    while mem.b32s1(p + 1) != MAX_HALFWORD {
-        mem.set_b32s0(mem.b32s1(p + 1) + 1, p);
-        p = mem.b32s1(p + 1);
+    let rover = mem.rover;
+    p = rover;
+    while block(p).rlink(mem) != MAX_HALFWORD {
+        let next = block(p).rlink(mem);
+        block(next).set_llink(mem, p);
+        p = next;
     }
 
-    mem.set_b32s1(p + 1, mem.rover);
-    mem.set_b32s0(mem.rover + 1, p);
+    block(p).set_rlink(mem, rover);
+    block(rover).set_llink(mem, p);
 }
 
 enum PrimitiveInitAbort {
@@ -499,10 +505,11 @@ fn initialize_more_initex_variables_in(st: &mut EngineState, format_ident: i32) 
     FIL_NEG_GLUE.set_stretch_order(mem, FIL);
 
     mem.rover = 20;
-    mem.set_b32s1(mem.rover, MAX_HALFWORD);
-    mem.set_b32s0(mem.rover, 1000);
-    mem.set_b32s0(mem.rover + 1, mem.rover);
-    mem.set_b32s1(mem.rover + 1, mem.rover);
+    let rover = NodePtr::<FreeBlock>::at(mem.rover);
+    rover.mark_empty(mem);
+    rover.set_node_size(mem, 1000);
+    rover.set_llink(mem, mem.rover);
+    rover.set_rlink(mem, mem.rover);
     mem.lo_mem_max = mem.rover + 1000;
     mem.set_b32s1(mem.lo_mem_max, TEX_NULL);
     mem.set_b32s0(mem.lo_mem_max, TEX_NULL);

@@ -3379,21 +3379,15 @@ fn fetch_last_node_item_in(st: &mut EngineState, m: i32) {
     let want_type = m == LAST_NODE_TYPE_CODE;
     let level = m as u8;
     st.scanner.cur_val = 0;
-    let head = st.input.cur_list.head.0;
-    let mut tx = st.input.cur_list.tail.0;
-    let mut node = (tx < st.mem.hi_mem_min).then(|| st.mem.classify(MemIdx::new(tx)));
+    let head = st.input.cur_list.head;
+    let mut tx = st.input.cur_list.tail;
+    let mut node =
+        (!crate::mem::is_char_node(&st.mem, tx)).then(|| st.mem.classify(MemIdx::new(tx)));
     if let Some(Ok(AnyNode::Math(math))) = node {
         if math.subtype(&st.mem) == END_M_CODE {
-            let mut r = head;
-            loop {
-                let q = r;
-                r = st.mem.b32s1(q);
-                if r == tx {
-                    tx = q;
-                    break;
-                }
-            }
-            node = (tx < st.mem.hi_mem_min).then(|| st.mem.classify(MemIdx::new(tx)));
+            tx = crate::mem::predecessor(&st.mem, head, tx);
+            node =
+                (!crate::mem::is_char_node(&st.mem, tx)).then(|| st.mem.classify(MemIdx::new(tx)));
         }
     }
     if want_type {
@@ -3406,7 +3400,7 @@ fn fetch_last_node_item_in(st: &mut EngineState, m: i32) {
     }
     match node {
         Some(_) if st.input.cur_list.mode != 0 && want_type => {
-            let node_type = st.mem.b16s1(tx);
+            let node_type = st.mem.type_code(MemIdx::new(tx));
             st.scanner.cur_val = if node_type <= NodeType::Unset.as_raw() {
                 node_type as i32 + 1
             } else {

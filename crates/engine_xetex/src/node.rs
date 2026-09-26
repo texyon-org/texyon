@@ -318,6 +318,8 @@ node_kinds! {
     ExprNode;
     /// A line of a `\scantokens` pseudo file: its size, then four characters per word.
     PseudoLineNode;
+    /// A block on the variable-size free list, marked by an empty link word.
+    FreeBlock;
 }
 
 impl FixedNode for GlueSpecNode {
@@ -384,8 +386,8 @@ macro_rules! impl_traits {
 
 impl_traits!(HasNodeHeader: HListNode, VListNode, RuleNode, InsNode, MarkNode, AdjustNode,
     LigatureNode, DiscNode, WhatsitNode, MathNode, GlueNode, KernNode, PenaltyNode, UnsetNode,
-    StyleNode, ChoiceNode, EdgeNode, Noad, MarginKernNode, SaNode, PageInsNode);
-impl_traits!(HasLink: MovementNode, ActiveNode, DeltaNode, PassiveNode, CondNode, CharNode,
+    StyleNode, ChoiceNode, EdgeNode, Noad, MarginKernNode, SaNode, PageInsNode, DeltaNode);
+impl_traits!(HasLink: MovementNode, ActiveNode, PassiveNode, CondNode, CharNode,
     AlignRecord, AlignStackNode, ExprNode, PseudoLineNode, LigItem);
 impl_traits!(HasWidth: HListNode, VListNode, UnsetNode, WhatsitNode, MathNode, KernNode,
     EdgeNode, MarginKernNode, GlueSpecNode, AlignRecord, SpanNode);
@@ -399,7 +401,7 @@ pub trait ListRecord: NodeKind {}
 
 impl_traits!(ListRecord: SaNode, PageInsNode, MovementNode, ActiveNode, DeltaNode, PassiveNode,
     LigItem, CondNode, CharNode, AlignRecord, SpanNode, AlignStackNode, ParShapeNode, PenaltiesNode,
-    ExprNode, PseudoLineNode, MathField, DelimiterField);
+    ExprNode, PseudoLineNode, MathField, DelimiterField, FreeBlock);
 
 impl<K: ListRecord> NodePtr<K> {
     /// The record at `p`, a non-null link of a list of `K` records.
@@ -747,6 +749,12 @@ impl AnyNode {
 }
 
 impl MemState {
+    /// The raw type code, for `\lastnodetype` arithmetic and diagnostics.
+    #[inline]
+    pub fn type_code(&self, p: MemIdx) -> u16 {
+        self.b16s1(p.0)
+    }
+
     /// The checked `NODE_type` of the non-null lo-mem node `p`.
     #[inline]
     pub fn node_type(&self, p: MemIdx) -> Result<NodeType, InvalidNodeType> {
@@ -1352,6 +1360,23 @@ impl NodePtr<PseudoLineNode> {
         mem.set_b16s2(w, chars[1]);
         mem.set_b16s1(w, chars[2]);
         mem.set_b16s0(w, chars[3]);
+    }
+}
+
+impl NodePtr<FreeBlock> {
+    fields! {
+        node_size / set_node_size: i32 = b32s0 @ 0;
+        llink / set_llink: i32 = b32s0 @ 1;
+        rlink / set_rlink: i32 = b32s1 @ 1;
+    }
+
+    #[inline]
+    pub fn is_empty(self, mem: &MemState) -> bool {
+        mem.b32s1(self.idx.0) == crate::consts::MAX_HALFWORD
+    }
+    #[inline]
+    pub fn mark_empty(self, mem: &mut MemState) {
+        mem.set_b32s1(self.idx.0, crate::consts::MAX_HALFWORD);
     }
 }
 

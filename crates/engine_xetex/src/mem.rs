@@ -7,9 +7,9 @@ use crate::consts::{
 };
 use crate::mem_types::ListStateRecord;
 use crate::node::{
-    CharNode, ChoiceNode, DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, LigItem,
-    LigatureNode, MarginKernNode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode,
-    SpanNode, StyleNode, WhatsitNode, WhatsitSubtype,
+    CharNode, ChoiceNode, DiscNode, FreeBlock, GlueNode, GlueSpecNode, HListNode, KernNode,
+    LigItem, LigatureNode, MarginKernNode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen,
+    RuleNode, SpanNode, StyleNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::state::{EqtbState, MemState};
 use crate::units::{FontId, GlueSign, MemAddr, MemIdx, MemPtr, Scaled};
@@ -223,39 +223,40 @@ pub(crate) fn pop_lr(mem: &mut MemState, lr_ptr: &mut MemPtr) {
 /// TeX's `get_node`, `None` when main memory is exhausted. The request
 /// `0x4000_0000` is `sort_avail`'s probe and yields `MAX_HALFWORD`.
 pub fn get_node(mem: &mut MemState, s: i32) -> Option<MemPtr> {
+    let block = |p: i32| NodePtr::<FreeBlock>::at(p);
     let r = 'restart: loop {
         let mut p = mem.rover;
         loop {
             // Merge the free blocks that follow `p`.
-            let mut q = p + mem.b32s0(p);
-            while mem.b32s1(q) == MAX_HALFWORD {
-                let t = mem.b32s1(q + 1);
+            let mut q = p + block(p).node_size(mem);
+            while block(q).is_empty(mem) {
+                let t = block(q).rlink(mem);
                 if q == mem.rover {
                     mem.rover = t;
                 }
-                let q_left = mem.b32s0(q + 1);
-                mem.set_b32s0(t + 1, q_left);
-                mem.set_b32s1(q_left + 1, t);
-                q += mem.b32s0(q);
+                let q_left = block(q).llink(mem);
+                block(t).set_llink(mem, q_left);
+                block(q_left).set_rlink(mem, t);
+                q += block(q).node_size(mem);
             }
 
             let r = q - s;
             if r > p + 1 {
-                mem.set_b32s0(p, r - p);
+                block(p).set_node_size(mem, r - p);
                 mem.rover = p;
                 break 'restart r;
             }
-            if r == p && mem.b32s1(p + 1) != p {
-                let new_rover = mem.b32s1(p + 1);
-                let t = mem.b32s0(p + 1);
+            if r == p && block(p).rlink(mem) != p {
+                let new_rover = block(p).rlink(mem);
+                let t = block(p).llink(mem);
                 mem.rover = new_rover;
-                mem.set_b32s0(new_rover + 1, t);
-                mem.set_b32s1(t + 1, new_rover);
+                block(new_rover).set_llink(mem, t);
+                block(t).set_rlink(mem, new_rover);
                 break 'restart r;
             }
 
-            mem.set_b32s0(p, q - p);
-            p = mem.b32s1(p + 1);
+            block(p).set_node_size(mem, q - p);
+            p = block(p).rlink(mem);
             if p == mem.rover {
                 break;
             }
@@ -275,17 +276,18 @@ pub fn get_node(mem: &mut MemState, s: i32) -> Option<MemPtr> {
             let t = t.min(MAX_HALFWORD);
 
             let rover = mem.rover;
-            let left_neighbor = mem.b32s0(rover + 1);
+            let left_neighbor = block(rover).llink(mem);
             let q = mem.lo_mem_max;
-            mem.set_b32s1(left_neighbor + 1, q);
-            mem.set_b32s0(rover + 1, q);
-            mem.set_b32s1(q + 1, rover);
-            mem.set_b32s0(q + 1, left_neighbor);
-            mem.set_b32s1(q, MAX_HALFWORD);
-            mem.set_b32s0(q, t - mem.lo_mem_max);
+            block(left_neighbor).set_rlink(mem, q);
+            block(rover).set_llink(mem, q);
+            block(q).set_rlink(mem, rover);
+            block(q).set_llink(mem, left_neighbor);
+            block(q).mark_empty(mem);
+            block(q).set_node_size(mem, t - mem.lo_mem_max);
             mem.lo_mem_max = t;
-            mem.set_b32s1(mem.lo_mem_max, TEX_NULL);
-            mem.set_b32s0(mem.lo_mem_max, TEX_NULL);
+            let end = MemPtr(t);
+            end.set_link(mem, MemPtr::NULL);
+            end.set_info(mem, TEX_NULL);
             mem.rover = q;
             continue 'restart;
         }
@@ -293,7 +295,7 @@ pub fn get_node(mem: &mut MemState, s: i32) -> Option<MemPtr> {
         return None;
     };
 
-    mem.set_b32s1(r, TEX_NULL);
+    MemPtr(r).set_link(mem, MemPtr::NULL);
     if s >= MEDIUM_NODE_SIZE {
         mem.set_b32s0(r + s - 1, mem.cur_synctex_tag);
         mem.set_b32s1(r + s - 1, mem.line);
@@ -303,14 +305,16 @@ pub fn get_node(mem: &mut MemState, s: i32) -> Option<MemPtr> {
 
 /// Returns the `s`-word node `p` to the variable-size free list.
 pub fn free_node(mem: &mut MemState, p: MemPtr, s: i32) {
-    mem.set_b32s0(p, s);
-    mem.set_b32s1(p, MAX_HALFWORD);
+    let block = |p: i32| NodePtr::<FreeBlock>::at(p);
+    let freed = block(p.0);
+    freed.set_node_size(mem, s);
+    freed.mark_empty(mem);
     let rover = mem.rover;
-    let q = mem.b32s0(rover + 1);
-    mem.set_b32s0(p + 1, q);
-    mem.set_b32s1(p + 1, rover);
-    mem.set_b32s0(rover + 1, p.0);
-    mem.set_b32s1(q + 1, p.0);
+    let q = block(rover).llink(mem);
+    freed.set_llink(mem, q);
+    freed.set_rlink(mem, rover);
+    block(rover).set_llink(mem, p.0);
+    block(q).set_rlink(mem, p.0);
 }
 
 // --- node constructors ---
