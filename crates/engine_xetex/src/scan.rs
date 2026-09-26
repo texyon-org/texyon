@@ -3044,7 +3044,7 @@ fn fetch_last_item_int_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> 
             st.scanner.cur_val = if st.config.deterministic_mode {
                 0
             } else {
-                crate::texmfmp::get_microinterval(&st.shipout)
+                st.shipout.get_microinterval()
             };
         }
         RANDOM_SEED_CODE => st.scanner.cur_val = st.errors.random_seed,

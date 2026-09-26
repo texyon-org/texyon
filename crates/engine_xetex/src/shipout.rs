@@ -165,72 +165,74 @@ impl ShipoutAbort {
     }
 }
 
-fn write_to_dvi(shipout: &ShipoutState, a: i32, b: i32) -> Result<(), ShipoutAbort> {
-    let bytes = &shipout.dvi_buf[a as usize..=b as usize];
-    // SAFETY: FFI write of a live byte slice, no engine re-entry.
-    let written = unsafe {
-        ttstub_output_write(
-            shipout.dvi_file,
-            bytes.as_ptr() as *const libc::c_char,
-            bytes.len(),
-        )
-    };
-    if written != bytes.len() {
-        return Err(ShipoutAbort::DviWriteFailed);
-    }
-    Ok(())
-}
-
-fn dvi_swap(shipout: &mut ShipoutState) -> Result<(), ShipoutAbort> {
-    if shipout.dvi_ptr > TEX_INFINITY - shipout.dvi_offset {
-        shipout.cur_s = -2;
-        return Err(ShipoutAbort::DviLengthOverflow);
-    }
-    if shipout.dvi_limit == DVI_BUF_SIZE {
-        write_to_dvi(shipout, 0, HALF_BUF - 1)?;
-        shipout.dvi_limit = HALF_BUF;
-        shipout.dvi_offset += DVI_BUF_SIZE;
-        shipout.dvi_ptr = 0;
-    } else {
-        write_to_dvi(shipout, HALF_BUF, DVI_BUF_SIZE - 1)?;
-        shipout.dvi_limit = DVI_BUF_SIZE;
-    }
-    shipout.dvi_gone += HALF_BUF;
-    Ok(())
-}
-
-#[inline]
-fn dvi_out(shipout: &mut ShipoutState, c: u8) -> Result<(), ShipoutAbort> {
-    shipout.page_manifest.record_byte(c);
-    shipout.dvi_buf[shipout.dvi_ptr as usize] = c;
-    shipout.dvi_ptr += 1;
-    if shipout.dvi_ptr == shipout.dvi_limit {
-        dvi_swap(shipout)?;
-    }
-    Ok(())
-}
-
-fn dvi_bytes(shipout: &mut ShipoutState, mut bytes: &[u8]) -> Result<(), ShipoutAbort> {
-    while !bytes.is_empty() {
-        let ptr = shipout.dvi_ptr as usize;
-        let n = bytes.len().min(shipout.dvi_limit as usize - ptr);
-        shipout.dvi_buf[ptr..ptr + n].copy_from_slice(&bytes[..n]);
-        shipout.page_manifest.record_bytes(n);
-        shipout.dvi_ptr += n as i32;
-        bytes = &bytes[n..];
-        if shipout.dvi_ptr == shipout.dvi_limit {
-            dvi_swap(shipout)?;
+impl ShipoutState {
+    fn write_to_dvi(&self, a: i32, b: i32) -> Result<(), ShipoutAbort> {
+        let bytes = &self.dvi_buf[a as usize..=b as usize];
+        // SAFETY: FFI write of a live byte slice, no engine re-entry.
+        let written = unsafe {
+            ttstub_output_write(
+                self.dvi_file,
+                bytes.as_ptr() as *const libc::c_char,
+                bytes.len(),
+            )
+        };
+        if written != bytes.len() {
+            return Err(ShipoutAbort::DviWriteFailed);
         }
+        Ok(())
     }
-    Ok(())
-}
 
-fn dvi_four(shipout: &mut ShipoutState, x: i32) -> Result<(), ShipoutAbort> {
-    dvi_bytes(shipout, &x.to_be_bytes())
-}
+    fn dvi_swap(&mut self) -> Result<(), ShipoutAbort> {
+        if self.dvi_ptr > TEX_INFINITY - self.dvi_offset {
+            self.cur_s = -2;
+            return Err(ShipoutAbort::DviLengthOverflow);
+        }
+        if self.dvi_limit == DVI_BUF_SIZE {
+            self.write_to_dvi(0, HALF_BUF - 1)?;
+            self.dvi_limit = HALF_BUF;
+            self.dvi_offset += DVI_BUF_SIZE;
+            self.dvi_ptr = 0;
+        } else {
+            self.write_to_dvi(HALF_BUF, DVI_BUF_SIZE - 1)?;
+            self.dvi_limit = DVI_BUF_SIZE;
+        }
+        self.dvi_gone += HALF_BUF;
+        Ok(())
+    }
 
-fn dvi_two(shipout: &mut ShipoutState, s: u16) -> Result<(), ShipoutAbort> {
-    dvi_bytes(shipout, &s.to_be_bytes())
+    #[inline]
+    fn dvi_out(&mut self, c: u8) -> Result<(), ShipoutAbort> {
+        self.page_manifest.record_byte(c);
+        self.dvi_buf[self.dvi_ptr as usize] = c;
+        self.dvi_ptr += 1;
+        if self.dvi_ptr == self.dvi_limit {
+            self.dvi_swap()?;
+        }
+        Ok(())
+    }
+
+    fn dvi_bytes(&mut self, mut bytes: &[u8]) -> Result<(), ShipoutAbort> {
+        while !bytes.is_empty() {
+            let ptr = self.dvi_ptr as usize;
+            let n = bytes.len().min(self.dvi_limit as usize - ptr);
+            self.dvi_buf[ptr..ptr + n].copy_from_slice(&bytes[..n]);
+            self.page_manifest.record_bytes(n);
+            self.dvi_ptr += n as i32;
+            bytes = &bytes[n..];
+            if self.dvi_ptr == self.dvi_limit {
+                self.dvi_swap()?;
+            }
+        }
+        Ok(())
+    }
+
+    fn dvi_four(&mut self, x: i32) -> Result<(), ShipoutAbort> {
+        self.dvi_bytes(&x.to_be_bytes())
+    }
+
+    fn dvi_two(&mut self, s: u16) -> Result<(), ShipoutAbort> {
+        self.dvi_bytes(&s.to_be_bytes())
+    }
 }
 
 fn synch_h(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
@@ -254,12 +256,10 @@ fn synch_v(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
 fn dvi_native_font_def(st: &mut crate::state::EngineState, f: i32) -> Result<(), ShipoutAbort> {
     // SAFETY: FFI fill of `xdv_buffer`, returning the definition length.
     let font_def_length = unsafe { st.fonts.make_font_def(f) }?;
-    dvi_out(&mut st.shipout, DEFINE_NATIVE_FONT)?;
-    dvi_four(&mut st.shipout, f - 1)?;
-    dvi_bytes(
-        &mut st.shipout,
-        &st.fonts.xdv_buffer[..font_def_length as usize],
-    )
+    st.shipout.dvi_out(DEFINE_NATIVE_FONT)?;
+    st.shipout.dvi_four(f - 1)?;
+    st.shipout
+        .dvi_bytes(&st.fonts.xdv_buffer[..font_def_length as usize])
 }
 
 fn dvi_font_def(st: &mut crate::state::EngineState, f: i32) -> Result<(), ShipoutAbort> {
@@ -269,26 +269,21 @@ fn dvi_font_def(st: &mut crate::state::EngineState, f: i32) -> Result<(), Shipou
     }
     let fu = f as usize;
     if f <= 256 {
-        dvi_bytes(&mut st.shipout, &[FNT_DEF1, (f - 1) as u8])?;
+        st.shipout.dvi_bytes(&[FNT_DEF1, (f - 1) as u8])?;
     } else {
-        dvi_bytes(
-            &mut st.shipout,
-            &[FNT_DEF1 + 1, ((f - 1) / 256) as u8, ((f - 1) % 256) as u8],
-        )?;
+        st.shipout
+            .dvi_bytes(&[FNT_DEF1 + 1, ((f - 1) / 256) as u8, ((f - 1) % 256) as u8])?;
     }
     let check = st.fonts.font_check[fu];
-    dvi_bytes(
-        &mut st.shipout,
-        &[
-            check.s3 as u8,
-            check.s2 as u8,
-            check.s1 as u8,
-            check.s0 as u8,
-        ],
-    )?;
-    dvi_four(&mut st.shipout, st.fonts.font_size[fu])?;
-    dvi_four(&mut st.shipout, st.fonts.font_dsize[fu])?;
-    dvi_out(&mut st.shipout, st.strings.length(font_area) as u8)?;
+    st.shipout.dvi_bytes(&[
+        check.s3 as u8,
+        check.s2 as u8,
+        check.s1 as u8,
+        check.s0 as u8,
+    ])?;
+    st.shipout.dvi_four(st.fonts.font_size[fu])?;
+    st.shipout.dvi_four(st.fonts.font_dsize[fu])?;
+    st.shipout.dvi_out(st.strings.length(font_area) as u8)?;
 
     let font_name = st.fonts.font_name[fu];
     let name = st.strings.str_range(font_name);
@@ -299,15 +294,15 @@ fn dvi_font_def(st: &mut crate::state::EngineState, f: i32) -> Result<(), Shipou
         .position(|&c| c == b':' as u16)
         .map(|l| l + 1);
     let name_len = colon.map_or_else(|| st.strings.length(font_name), |l| l as i32);
-    dvi_out(&mut st.shipout, name_len as u8)?;
+    st.shipout.dvi_out(name_len as u8)?;
 
     let area = st.strings.str_range(font_area);
     for k in area {
-        dvi_out(&mut st.shipout, st.strings.str_pool[k] as u8)?;
+        st.shipout.dvi_out(st.strings.str_pool[k] as u8)?;
     }
     let name_start = name.start;
     for k in name_start..name_start + name_len as usize {
-        dvi_out(&mut st.shipout, st.strings.str_pool[k] as u8)?;
+        st.shipout.dvi_out(st.strings.str_pool[k] as u8)?;
     }
     Ok(())
 }
@@ -338,13 +333,13 @@ fn dvi_special_from_cur_string(st: &mut crate::state::EngineState) -> Result<(),
     let base = st.strings.cur_string_start();
     let cur_len = st.strings.pool_ptr - base;
     if cur_len < 256 {
-        dvi_bytes(&mut st.shipout, &[XXX1, cur_len as u8])?;
+        st.shipout.dvi_bytes(&[XXX1, cur_len as u8])?;
     } else {
-        dvi_out(&mut st.shipout, XXX4)?;
-        dvi_four(&mut st.shipout, cur_len)?;
+        st.shipout.dvi_out(XXX4)?;
+        st.shipout.dvi_four(cur_len)?;
     }
     for k in base..st.strings.pool_ptr {
-        dvi_out(&mut st.shipout, st.strings.str_pool[k as usize] as u8)?;
+        st.shipout.dvi_out(st.strings.str_pool[k as usize] as u8)?;
     }
     st.strings.pool_ptr = base;
     Ok(())
@@ -495,28 +490,26 @@ unsafe fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<
     }
 
     if st.shipout.total_pages == 0 {
-        dvi_out(&mut st.shipout, PRE)?;
-        dvi_out(
-            &mut st.shipout,
-            id_byte(st.config.semantic_pagination_enabled),
-        )?;
-        dvi_four(&mut st.shipout, 25_400_000)?;
-        dvi_four(&mut st.shipout, 473_628_672)?;
+        st.shipout.dvi_out(PRE)?;
+        st.shipout
+            .dvi_out(id_byte(st.config.semantic_pagination_enabled))?;
+        st.shipout.dvi_four(25_400_000)?;
+        st.shipout.dvi_four(473_628_672)?;
         ship_err(crate::save::prepare_mag_in(st))?;
-        dvi_four(&mut st.shipout, st.eqtb.int_par(INT_PAR_MAG))?;
+        st.shipout.dvi_four(st.eqtb.int_par(INT_PAR_MAG))?;
         let comment = b"tectonic";
-        dvi_out(&mut st.shipout, comment.len() as u8)?;
-        dvi_bytes(&mut st.shipout, comment)?;
+        st.shipout.dvi_out(comment.len() as u8)?;
+        st.shipout.dvi_bytes(comment)?;
     }
 
     let page_loc = st.shipout.dvi_offset + st.shipout.dvi_ptr;
     st.shipout.page_manifest.begin_page(page_loc as u64);
-    dvi_out(&mut st.shipout, BOP)?;
+    st.shipout.dvi_out(BOP)?;
     for k in 0..10 {
-        dvi_four(&mut st.shipout, st.eqtb.count(k))?;
+        st.shipout.dvi_four(st.eqtb.count(k))?;
     }
     let last_bop = st.shipout.last_bop;
-    dvi_four(&mut st.shipout, last_bop)?;
+    st.shipout.dvi_four(last_bop)?;
     st.shipout.last_bop = page_loc;
 
     let old_setting = st.shipout.selector;
@@ -537,11 +530,11 @@ unsafe fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<
     }
     st.shipout.selector = old_setting;
 
-    dvi_out(&mut st.shipout, XXX1)?;
-    dvi_out(&mut st.shipout, st.strings.cur_length() as u8)?;
+    st.shipout.dvi_out(XXX1)?;
+    st.shipout.dvi_out(st.strings.cur_length() as u8)?;
     let base = st.strings.cur_string_start();
     for k in base..st.strings.pool_ptr {
-        dvi_out(&mut st.shipout, st.strings.str_pool[k as usize] as u8)?;
+        st.shipout.dvi_out(st.strings.str_pool[k as usize] as u8)?;
     }
     st.strings.pool_ptr = base;
 
@@ -551,7 +544,7 @@ unsafe fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<
         AnyBox::HList(_) => hlist_out(st, page)?,
     }
 
-    dvi_out(&mut st.shipout, EOP)?;
+    st.shipout.dvi_out(EOP)?;
     st.shipout
         .page_manifest
         .finish_page(st.scanner.logical_clock);
@@ -568,13 +561,15 @@ fn id_byte(semantic_pagination: bool) -> u8 {
     }
 }
 
-fn dvi_pop(shipout: &mut ShipoutState, l: i32) -> Result<(), ShipoutAbort> {
-    if l == shipout.dvi_offset + shipout.dvi_ptr && shipout.dvi_ptr > 0 {
-        shipout.dvi_ptr -= 1;
-        shipout.page_manifest.pop_byte();
-        Ok(())
-    } else {
-        dvi_out(shipout, POP)
+impl ShipoutState {
+    fn dvi_pop(&mut self, l: i32) -> Result<(), ShipoutAbort> {
+        if l == self.dvi_offset + self.dvi_ptr && self.dvi_ptr > 0 {
+            self.dvi_ptr -= 1;
+            self.page_manifest.pop_byte();
+            Ok(())
+        } else {
+            self.dvi_out(POP)
+        }
     }
 }
 
@@ -587,14 +582,12 @@ fn dvi_font_select(st: &mut crate::state::EngineState, f: i32) -> Result<(), Shi
         st.fonts.font_used[f as usize] = true;
     }
     if f <= 64 {
-        dvi_out(&mut st.shipout, f as u8 + FNT_NUM_0 - 1)?;
+        st.shipout.dvi_out(f as u8 + FNT_NUM_0 - 1)?;
     } else if f <= 256 {
-        dvi_bytes(&mut st.shipout, &[FNT1, (f - 1) as u8])?;
+        st.shipout.dvi_bytes(&[FNT1, (f - 1) as u8])?;
     } else {
-        dvi_bytes(
-            &mut st.shipout,
-            &[FNT1 + 1, ((f - 1) / 256) as u8, ((f - 1) % 256) as u8],
-        )?;
+        st.shipout
+            .dvi_bytes(&[FNT1 + 1, ((f - 1) / 256) as u8, ((f - 1) % 256) as u8])?;
     }
     st.shipout.dvi_f = f;
     Ok(())
@@ -887,13 +880,15 @@ impl FontState {
     }
 }
 
-fn push_dvi_level(shipout: &mut ShipoutState) -> Result<i32, ShipoutAbort> {
-    shipout.cur_s += 1;
-    if shipout.cur_s > 0 {
-        dvi_out(shipout, PUSH)?;
+impl ShipoutState {
+    fn push_dvi_level(&mut self) -> Result<i32, ShipoutAbort> {
+        self.cur_s += 1;
+        if self.cur_s > 0 {
+            self.dvi_out(PUSH)?;
+        }
+        self.max_push = self.max_push.max(self.cur_s);
+        Ok(self.dvi_offset + self.dvi_ptr)
     }
-    shipout.max_push = shipout.max_push.max(shipout.cur_s);
-    Ok(shipout.dvi_offset + shipout.dvi_ptr)
 }
 
 impl MemState {
@@ -904,7 +899,7 @@ impl MemState {
     ) -> Result<(), ShipoutAbort> {
         self.prune_movements(shipout, save_loc);
         if shipout.cur_s > 0 {
-            dvi_pop(shipout, save_loc)?;
+            shipout.dvi_pop(save_loc)?;
         }
         shipout.cur_s -= 1;
         Ok(())
@@ -944,7 +939,7 @@ fn hlist_rule_out(
         synch_h(st)?;
         st.shipout.cur_v = base_line + st.shipout.rule_dp;
         synch_v(st)?;
-        dvi_rule(&mut st.shipout, SET_RULE)?;
+        st.shipout.dvi_rule(SET_RULE)?;
         st.shipout.cur_v = base_line;
         st.shipout.dvi_h += st.shipout.rule_wd;
     }
@@ -963,31 +958,33 @@ fn vlist_rule_out(
         st.shipout.rule_wd = this_box.width(&st.mem).0;
     }
     st.shipout.rule_ht += st.shipout.rule_dp;
-    move_past_vlist_rule(&mut st.shipout, upwards);
+    st.shipout.move_past_vlist_rule(upwards);
     if st.shipout.rule_ht > 0 && st.shipout.rule_wd > 0 {
         if st.scanner.cur_dir == RIGHT_TO_LEFT {
             st.shipout.cur_h -= st.shipout.rule_wd;
         }
         synch_h(st)?;
         synch_v(st)?;
-        dvi_rule(&mut st.shipout, PUT_RULE)?;
+        st.shipout.dvi_rule(PUT_RULE)?;
         st.shipout.cur_h = left_edge;
     }
     Ok(())
 }
 
-fn dvi_rule(shipout: &mut ShipoutState, opcode: u8) -> Result<(), ShipoutAbort> {
-    let (ht, wd) = (shipout.rule_ht, shipout.rule_wd);
-    dvi_out(shipout, opcode)?;
-    dvi_four(shipout, ht)?;
-    dvi_four(shipout, wd)
-}
+impl ShipoutState {
+    fn dvi_rule(&mut self, opcode: u8) -> Result<(), ShipoutAbort> {
+        let (ht, wd) = (self.rule_ht, self.rule_wd);
+        self.dvi_out(opcode)?;
+        self.dvi_four(ht)?;
+        self.dvi_four(wd)
+    }
 
-fn move_past_vlist_rule(shipout: &mut ShipoutState, upwards: bool) {
-    if upwards {
-        shipout.cur_v -= shipout.rule_ht;
-    } else {
-        shipout.cur_v += shipout.rule_ht;
+    fn move_past_vlist_rule(&mut self, upwards: bool) {
+        if upwards {
+            self.cur_v -= self.rule_ht;
+        } else {
+            self.cur_v += self.rule_ht;
+        }
     }
 }
 
@@ -1073,7 +1070,7 @@ fn hlist_glue_out(
 }
 
 fn dvi_xdv_buffer(st: &mut crate::state::EngineState, len: usize) -> Result<(), ShipoutAbort> {
-    dvi_bytes(&mut st.shipout, &st.fonts.xdv_buffer[..len])
+    st.shipout.dvi_bytes(&st.fonts.xdv_buffer[..len])
 }
 
 fn native_word_out(
@@ -1086,22 +1083,22 @@ fn native_word_out(
     dvi_font_select(st, word.native_font(&st.mem).0)?;
     match subtype {
         WhatsitSubtype::Glyph => {
-            dvi_out(&mut st.shipout, SET_GLYPHS)?;
-            dvi_four(&mut st.shipout, word.width(&st.mem).0)?;
-            dvi_two(&mut st.shipout, 1)?;
-            dvi_four(&mut st.shipout, 0)?;
-            dvi_four(&mut st.shipout, 0)?;
-            dvi_two(&mut st.shipout, word.native_glyph(&st.mem))?;
+            st.shipout.dvi_out(SET_GLYPHS)?;
+            st.shipout.dvi_four(word.width(&st.mem).0)?;
+            st.shipout.dvi_two(1)?;
+            st.shipout.dvi_four(0)?;
+            st.shipout.dvi_four(0)?;
+            st.shipout.dvi_two(word.native_glyph(&st.mem))?;
         }
         WhatsitSubtype::NativeWordAt => {
             let len = word.native_length(&st.mem);
             if len > 0 || word.native_glyph_info_handle(&st.mem) != 0 {
-                dvi_out(&mut st.shipout, SET_TEXT_AND_GLYPHS)?;
-                dvi_two(&mut st.shipout, len)?;
+                st.shipout.dvi_out(SET_TEXT_AND_GLYPHS)?;
+                st.shipout.dvi_two(len)?;
                 let text = word.native_text_ptr(&st.mem);
                 for k in 0..len as usize {
                     // SAFETY: the node holds `native_length` UTF-16 units inline.
-                    dvi_two(&mut st.shipout, unsafe { *text.add(k) })?;
+                    st.shipout.dvi_two(unsafe { *text.add(k) })?;
                 }
                 let len = make_xdv_glyph_array_data(st, word);
                 dvi_xdv_buffer(st, len)?;
@@ -1109,7 +1106,7 @@ fn native_word_out(
         }
         _ => {
             if word.native_glyph_info_handle(&st.mem) != 0 {
-                dvi_out(&mut st.shipout, SET_GLYPHS)?;
+                st.shipout.dvi_out(SET_GLYPHS)?;
                 let len = make_xdv_glyph_array_data(st, word);
                 dvi_xdv_buffer(st, len)?;
             }
@@ -1120,9 +1117,11 @@ fn native_word_out(
     Ok(())
 }
 
-fn pdf_save_pos(shipout: &mut ShipoutState) {
-    shipout.pdf_last_x_pos = shipout.cur_h + ONE_INCH_LESS_ONE;
-    shipout.pdf_last_y_pos = shipout.cur_page_height - shipout.cur_v - ONE_INCH_LESS_ONE;
+impl ShipoutState {
+    fn pdf_save_pos(&mut self) {
+        self.pdf_last_x_pos = self.cur_h + ONE_INCH_LESS_ONE;
+        self.pdf_last_y_pos = self.cur_page_height - self.cur_v - ONE_INCH_LESS_ONE;
+    }
 }
 
 /// Output the characters starting at `p`, returning the first non-character
@@ -1152,9 +1151,9 @@ fn chars_out(
                 > 0
         {
             if c >= 128 {
-                dvi_out(&mut st.shipout, SET1)?;
+                st.shipout.dvi_out(SET1)?;
             }
-            dvi_out(&mut st.shipout, c as u8)?;
+            st.shipout.dvi_out(c as u8)?;
             st.shipout.cur_h += st.fonts.font_character_width(f, c as i32);
         }
         prev_p = prev_p.link(&st.mem);
@@ -1175,7 +1174,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
 
     // A raw cursor: it can be LIG_TRICK, and nodes get retyped in place.
     let mut p = this_box.list_ptr(&st.mem);
-    let save_loc = push_dvi_level(&mut st.shipout)?;
+    let save_loc = st.shipout.push_dvi_level()?;
     let base_line = st.shipout.cur_v;
     let mut prev_p = this_box.list_head();
     st.mem
@@ -1250,7 +1249,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
                     st.shipout.cur_h = edge;
                     st.shipout.cur_v = base_line;
                 }
-                Some(WhatsitSubtype::PdfSavePos) => pdf_save_pos(&mut st.shipout),
+                Some(WhatsitSubtype::PdfSavePos) => st.shipout.pdf_save_pos(),
                 _ => out_what(st, whatsit)?,
             },
             AnyNode::Glue(glue) => {
@@ -1399,7 +1398,7 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
     let mut rounding = GlueRounding::new(&st.mem, this_box);
     let mut p = this_box.list_ptr(&st.mem);
     let upwards = this_box.subtype(&st.mem) == 1;
-    let save_loc = push_dvi_level(&mut st.shipout)?;
+    let save_loc = st.shipout.push_dvi_level()?;
     let left_edge = st.shipout.cur_h;
     crate::synctex::synctex_vlist(st, this_box);
     if upwards {
@@ -1433,12 +1432,12 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
                     synch_h(st)?;
                     synch_v(st)?;
                     dvi_font_select(st, whatsit.native_font(&st.mem).0)?;
-                    dvi_out(&mut st.shipout, SET_GLYPHS)?;
-                    dvi_four(&mut st.shipout, 0)?;
-                    dvi_two(&mut st.shipout, 1)?;
-                    dvi_four(&mut st.shipout, 0)?;
-                    dvi_four(&mut st.shipout, 0)?;
-                    dvi_two(&mut st.shipout, whatsit.native_glyph(&st.mem))?;
+                    st.shipout.dvi_out(SET_GLYPHS)?;
+                    st.shipout.dvi_four(0)?;
+                    st.shipout.dvi_two(1)?;
+                    st.shipout.dvi_four(0)?;
+                    st.shipout.dvi_four(0)?;
+                    st.shipout.dvi_two(whatsit.native_glyph(&st.mem))?;
                     st.shipout.cur_v += whatsit.depth(&st.mem).0;
                     st.shipout.cur_h = left_edge;
                 }
@@ -1452,7 +1451,7 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
                     st.shipout.cur_v = save_v + whatsit.depth(&st.mem).0;
                     st.shipout.cur_h = left_edge;
                 }
-                Some(WhatsitSubtype::PdfSavePos) => pdf_save_pos(&mut st.shipout),
+                Some(WhatsitSubtype::PdfSavePos) => st.shipout.pdf_save_pos(),
                 _ => out_what(st, whatsit)?,
             },
             AnyNode::Glue(glue) => {
@@ -1460,7 +1459,7 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
                 st.shipout.rule_ht = rounding.width(&st.mem, spec);
                 let subtype = glue.subtype(&st.mem);
                 if subtype < A_LEADERS {
-                    move_past_vlist_rule(&mut st.shipout, upwards);
+                    st.shipout.move_past_vlist_rule(upwards);
                 } else {
                     match st.mem.leader_of(glue) {
                         Leader::Rule(rule) => {
@@ -1545,7 +1544,7 @@ fn vlist_leaders_out(
 ) -> Result<(), ShipoutAbort> {
     let leader_ht = leader.height(&st.mem).0 + leader.depth(&st.mem).0;
     if leader_ht <= 0 || st.shipout.rule_ht <= 0 {
-        move_past_vlist_rule(&mut st.shipout, upwards);
+        st.shipout.move_past_vlist_rule(upwards);
         return Ok(());
     }
     st.shipout.rule_ht += 10;
@@ -1610,9 +1609,9 @@ impl MemState {
 pub(crate) fn finalize_dvi_file_in(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
     while st.shipout.cur_s > -1 {
         if st.shipout.cur_s > 0 {
-            dvi_out(&mut st.shipout, POP)?;
+            st.shipout.dvi_out(POP)?;
         } else {
-            dvi_out(&mut st.shipout, EOP)?;
+            st.shipout.dvi_out(EOP)?;
             st.shipout
                 .page_manifest
                 .finish_page(st.scanner.logical_clock);
@@ -1630,31 +1629,28 @@ pub(crate) fn finalize_dvi_file_in(st: &mut crate::state::EngineState) -> Result
         return Ok(());
     }
 
-    dvi_out(&mut st.shipout, POST)?;
+    st.shipout.dvi_out(POST)?;
     let last_bop = st.shipout.last_bop;
-    dvi_four(&mut st.shipout, last_bop)?;
+    st.shipout.dvi_four(last_bop)?;
     st.shipout.last_bop = st.shipout.dvi_offset + st.shipout.dvi_ptr - 5;
-    dvi_four(&mut st.shipout, 25_400_000)?;
-    dvi_four(&mut st.shipout, 473_628_672)?;
+    st.shipout.dvi_four(25_400_000)?;
+    st.shipout.dvi_four(473_628_672)?;
     ship_err(crate::save::prepare_mag_in(st))?;
-    dvi_four(&mut st.shipout, st.eqtb.int_par(INT_PAR_MAG))?;
+    st.shipout.dvi_four(st.eqtb.int_par(INT_PAR_MAG))?;
     let (max_v, max_h, max_push, total_pages) = (
         st.shipout.max_v,
         st.shipout.max_h,
         st.shipout.max_push,
         st.shipout.total_pages,
     );
-    dvi_four(&mut st.shipout, max_v)?;
-    dvi_four(&mut st.shipout, max_h)?;
-    dvi_bytes(
-        &mut st.shipout,
-        &[
-            (max_push / 256) as u8,
-            (max_push % 256) as u8,
-            ((total_pages / 256) % 256) as u8,
-            (total_pages % 256) as u8,
-        ],
-    )?;
+    st.shipout.dvi_four(max_v)?;
+    st.shipout.dvi_four(max_h)?;
+    st.shipout.dvi_bytes(&[
+        (max_push / 256) as u8,
+        (max_push % 256) as u8,
+        ((total_pages / 256) % 256) as u8,
+        (total_pages % 256) as u8,
+    ])?;
 
     let mut f = st.fonts.font_ptr;
     while f > FONT_BASE {
@@ -1665,27 +1661,25 @@ pub(crate) fn finalize_dvi_file_in(st: &mut crate::state::EngineState) -> Result
     }
     st.fonts.font_ptr = f;
 
-    dvi_out(&mut st.shipout, POST_POST)?;
+    st.shipout.dvi_out(POST_POST)?;
     let last_bop = st.shipout.last_bop;
-    dvi_four(&mut st.shipout, last_bop)?;
-    dvi_out(
-        &mut st.shipout,
-        id_byte(st.config.semantic_pagination_enabled),
-    )?;
+    st.shipout.dvi_four(last_bop)?;
+    st.shipout
+        .dvi_out(id_byte(st.config.semantic_pagination_enabled))?;
     let padding = 4 + (DVI_BUF_SIZE - st.shipout.dvi_ptr) % 4;
     for _ in 0..padding {
-        dvi_out(&mut st.shipout, 223)?;
+        st.shipout.dvi_out(223)?;
     }
 
     if st.shipout.dvi_limit == HALF_BUF {
-        write_to_dvi(&st.shipout, HALF_BUF, DVI_BUF_SIZE - 1)?;
+        st.shipout.write_to_dvi(HALF_BUF, DVI_BUF_SIZE - 1)?;
     }
     if st.shipout.dvi_ptr > TEX_INFINITY - st.shipout.dvi_offset {
         st.shipout.cur_s = -2;
         return Err(ShipoutAbort::DviLengthOverflow);
     }
     if st.shipout.dvi_ptr > 0 {
-        write_to_dvi(&st.shipout, 0, st.shipout.dvi_ptr - 1)?;
+        st.shipout.write_to_dvi(0, st.shipout.dvi_ptr - 1)?;
     }
 
     // SAFETY: FFI close of the output file.
@@ -1955,8 +1949,8 @@ impl MemState {
             } else {
                 1
             };
-            dvi_out(shipout, o + len as u8 - 1)?;
-            return dvi_bytes(shipout, &w.to_be_bytes()[4 - len..]);
+            shipout.dvi_out(o + len as u8 - 1)?;
+            return shipout.dvi_bytes(&w.to_be_bytes()[4 - len..]);
         };
 
         q.set_state(self, found.state(self));
@@ -1975,7 +1969,7 @@ impl MemState {
                 q.set_state(self, MOV_D_FIXED);
             }
         }
-        dvi_out(shipout, opcode)
+        shipout.dvi_out(opcode)
     }
 }
 

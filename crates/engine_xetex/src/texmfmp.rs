@@ -8,7 +8,7 @@ use crate::bridge::{
 };
 use crate::consts::{EMPTY_STRING, INVALID_HANDLE, TOO_BIG_CHAR};
 use crate::mem::xmalloc;
-use crate::state::{StringsState, TexmfState};
+use crate::state::{ShipoutState, StringsState, TexmfState};
 use crate::utf8::{BYTES_FROM_UTF8, FIRST_BYTE_MARK, OFFSETS_FROM_UTF8};
 
 const HEX_DIGITS: &[u8; 16] = b"0123456789ABCDEF";
@@ -31,19 +31,22 @@ pub fn get_date_and_time(source_date_epoch: libc::time_t, use_utc: bool) -> (i32
     )
 }
 
-/// Time since the recorded epoch in units of 1/65536 s, or -1 past 0x7FFF s.
-pub fn get_microinterval(shipout: &crate::state::ShipoutState) -> i32 {
-    let (s, m) = get_seconds_and_micros();
-    if (s - shipout.epochseconds) > 0x7FFF {
-        -1
-    } else if shipout.microseconds > m {
-        let t = (s - 1 - shipout.epochseconds) as f64 * 65536.0
-            + ((m as f64 + 1_000_000.0 - shipout.microseconds as f64) / 100.0) * 65536.0 / 10_000.0;
-        t as i32
-    } else {
-        let t = (s - shipout.epochseconds) as f64 * 65536.0
-            + ((m - shipout.microseconds) as f64 / 100.0) * 65536.0 / 10_000.0;
-        t as i32
+impl ShipoutState {
+    /// Time since the recorded epoch in units of 1/65536 s, or -1 past 0x7FFF s.
+    pub fn get_microinterval(&self) -> i32 {
+        let (s, m) = get_seconds_and_micros();
+        if (s - self.epochseconds) > 0x7FFF {
+            -1
+        } else if self.microseconds > m {
+            let t = (s - 1 - self.epochseconds) as f64 * 65536.0
+                + ((m as f64 + 1_000_000.0 - self.microseconds as f64) / 100.0) * 65536.0
+                    / 10_000.0;
+            t as i32
+        } else {
+            let t = (s - self.epochseconds) as f64 * 65536.0
+                + ((m - self.microseconds) as f64 / 100.0) * 65536.0 / 10_000.0;
+            t as i32
+        }
     }
 }
 

@@ -480,18 +480,20 @@ fn update_last_node_info(st: &mut EngineState, node: AnyNode, node_type: i32) {
     }
 }
 
-fn page_badness(shipout: &ShipoutState) -> i32 {
-    let so_far = &shipout.page_so_far;
-    if so_far[PAGE_TOTAL] < so_far[PAGE_GOAL] {
-        if so_far[3] != 0 || so_far[4] != 0 || so_far[5] != 0 {
-            0
+impl ShipoutState {
+    fn page_badness(&self) -> i32 {
+        let so_far = &self.page_so_far;
+        if so_far[PAGE_TOTAL] < so_far[PAGE_GOAL] {
+            if so_far[3] != 0 || so_far[4] != 0 || so_far[5] != 0 {
+                0
+            } else {
+                badness(so_far[PAGE_GOAL] - so_far[PAGE_TOTAL], so_far[2])
+            }
+        } else if so_far[PAGE_TOTAL] - so_far[PAGE_GOAL] > so_far[PAGE_SHRINK] {
+            AWFUL_BAD
         } else {
-            badness(so_far[PAGE_GOAL] - so_far[PAGE_TOTAL], so_far[2])
+            badness(so_far[PAGE_TOTAL] - so_far[PAGE_GOAL], so_far[PAGE_SHRINK])
         }
-    } else if so_far[PAGE_TOTAL] - so_far[PAGE_GOAL] > so_far[PAGE_SHRINK] {
-        AWFUL_BAD
-    } else {
-        badness(so_far[PAGE_TOTAL] - so_far[PAGE_GOAL], so_far[PAGE_SHRINK])
     }
 }
 
@@ -714,7 +716,7 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
         let step = match step {
             PageStep::Break(pi) => {
                 if pi < INF_PENALTY {
-                    let b = page_badness(&st.shipout);
+                    let b = st.shipout.page_badness();
                     let mut c = if b >= AWFUL_BAD {
                         b
                     } else if pi <= EJECT_PENALTY {
