@@ -1,0 +1,10 @@
+% Interword space shaping under \spaceskip, where font_glue stays null.
+\showboxdepth=100 \showboxbreadth=100 \tracingoutput=1
+\font\lm="[lmroman12-regular]"
+\lm
+\spaceskip=4pt plus 2pt
+\XeTeXinterwordspaceshaping=1
+Te Va AV To. We Yo at the end of a line.\par
+\XeTeXinterwordspaceshaping=2
+Te Va AV To. We Yo at the end of a line.\par
+\bye

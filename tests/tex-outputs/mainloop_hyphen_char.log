@@ -1,0 +1,110 @@
+**
+(mainloop_hyphen_char.tex
+
+Completed box being shipped out [1]
+\vbox(667.20255+0.0)x1.0
+.\vbox(0.0+0.0)x1.0, glue set 14.0fil
+..\glue -22.5
+..\hbox(8.5+0.0)x1.0, glue set 1.0fil
+...\vbox(8.5+0.0)x0.0
+...\glue 0.0 plus 1.0fil
+..\glue 0.0 plus 1.0fil minus 1.0fil
+.\vbox(643.20255+0.0)x1.0, glue set 471.26395fill
+..\glue(\topskip) 0.0
+..\hbox(13.5747+3.37259)x1.0
+...\hbox(0.0+0.0)x0.0
+...\lm well-known
+...\glue(\rightskip) 0.0
+..\penalty 150
+..\glue(\lineskip) 1.0
+..\hbox(13.5747+3.37259)x1.0
+...\lm a-b
+...\glue(\rightskip) 0.0
+..\glue(\baselineskip) 1.68297
+..\hbox(6.94444+0.0)x1.0
+...\cm w
+...\kern-0.27779
+...\cm e
+...\cm l
+...\cm l
+...\cm -
+...\cm k
+...\cm n
+...\cm o
+...\kern-0.27779
+...\cm w
+...\cm n
+...\glue(\rightskip) 0.0
+..\penalty 150
+..\glue(\baselineskip) 5.05556
+..\hbox(6.94444+0.0)x1.0
+...\cm a
+...\cm -
+...\cm b
+...\penalty 10000
+...\glue(\parfillskip) 0.0 plus 1.0fil
+...\glue(\rightskip) 0.0
+..\glue(\parskip) 0.0 plus 1.0
+..\glue(\lineskip) 1.0
+..\hbox(13.5747+3.37259)x1.0
+...\hbox(0.0+0.0)x0.0
+...\lm well-
+...\discretionary
+...\glue(\rightskip) 0.0
+..\penalty 250
+..\glue(\lineskip) 1.0
+..\hbox(13.5747+3.37259)x1.0
+...\lm known
+...\glue(\rightskip) 0.0
+..\glue(\lineskip) 1.0
+..\hbox(13.5747+3.37259)x1.0
+...\lm a-
+...\discretionary
+...\glue(\rightskip) 0.0
+..\penalty 100
+..\glue(\lineskip) 1.0
+..\hbox(13.5747+3.37259)x1.0
+...\lm b
+...\glue(\rightskip) 0.0
+..\glue(\baselineskip) 1.68297
+..\hbox(6.94444+0.0)x1.0
+...\cm w
+...\kern-0.27779
+...\cm e
+...\cm l
+...\cm l
+...\cm -
+...\discretionary
+...\glue(\rightskip) 0.0
+..\penalty 100
+..\glue(\baselineskip) 5.05556
+..\hbox(6.94444+0.0)x1.0
+...\cm k
+...\cm n
+...\cm o
+...\kern-0.27779
+...\cm w
+...\cm n
+...\glue(\rightskip) 0.0
+..\glue(\baselineskip) 7.69446
+..\hbox(4.30554+0.0)x1.0
+...\cm a
+...\cm -
+...\discretionary
+...\glue(\rightskip) 0.0
+..\penalty 250
+..\glue(\baselineskip) 5.05556
+..\hbox(6.94444+0.0)x1.0
+...\cm b
+...\penalty 10000
+...\glue(\parfillskip) 0.0 plus 1.0fil
+...\glue(\rightskip) 0.0
+..\glue 0.0 plus 1.0fill
+.\glue(\baselineskip) 17.55556
+.\hbox(6.44444+0.0)x1.0, glue set - 2.00002fil
+..\glue 0.0 plus 1.0fil minus 1.0fil
+..\cm 1
+..\glue 0.0 plus 1.0fil minus 1.0fil
+
+ )
+Output written on mainloop_hyphen_char.xdv (1 page, 656 bytes).

@@ -1,0 +1,13 @@
+% A \hyphenchar above 0xFFFF must not match a truncated character code.
+% A narrow \hsize makes every discretionary after a hyphen a line break.
+\showboxdepth=100 \showboxbreadth=100 \tracingoutput=1
+\hsize=1pt \parindent=0pt \lefthyphenmin=62 \hbadness=10000 \hfuzz=\maxdimen
+\font\lm="[lmroman12-regular]:mapping=idmap"
+\font\cm=cmr10
+\hyphenchar\lm=65581
+\hyphenchar\cm=65581
+\lm well-known a-b \cm well-known a-b\par
+\hyphenchar\lm=`-
+\hyphenchar\cm=`-
+\lm well-known a-b \cm well-known a-b\par
+\bye
