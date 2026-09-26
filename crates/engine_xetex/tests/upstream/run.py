@@ -7,7 +7,12 @@ normalized .log files and decoded XDV pages must match.
 
     crates/engine_xetex/tests/upstream/run.py [-v] [probe-substring ...]
 
-Custom test fonts live in fonts/*.pl and are compiled with pltotf.
+Custom test fonts live in fonts/*.pl and are compiled with pltotf. Probes
+listed in known.tsv differ for a documented reason. Random documents for a
+larger sweep come from fuzz/*.py:
+
+    python3 crates/engine_xetex/tests/upstream/fuzz/layout.py /tmp/rand 1000 0
+    crates/engine_xetex/tests/upstream/run.py --probes /tmp/rand
 
 Env: XETEX (upstream binary), TECTONIC (default target/release/tectonic),
 UPSTREAM_WORK (scratch dir, default target/upstream-diff).
@@ -71,6 +76,20 @@ def tl_env(bundle, fmtdir):
         TTFONTS=f"{bundle}:",
         TEXFORMATS=f"{fmtdir}:",
         openout_any="a",
+        # Tectonic's fixed capacities (engine.rs), so overflow messages agree.
+        stack_size="5000",
+        nest_size="500",
+        param_size="10000",
+        save_size="80000",
+        buf_size="200000",
+        max_in_open="15",
+        expand_depth="10000",
+        hash_extra="600000",
+        font_mem_size="8000000",
+        font_max="9000",
+        pool_size="6250000",
+        string_vacancies="90000",
+        max_strings="565536",
     )
 
 
@@ -150,7 +169,13 @@ def norm_log(path):
         out.append(l)
     while out and out[-1] == "":
         out.pop()
-    return out
+    # Without \end upstream asks the terminal, Tectonic has none.
+    text = "\n".join(out)
+    text = text.replace("*\n! Emergency stop.\n<*> \n    \nEnd of file on the terminal!\n\n", "<no legal \\end>\n")
+    text = text.replace("! Emergency stop\n*** (job aborted, no legal \\end found)\n", "<no legal \\end>\n")
+    # Tectonic's empty terminal line yields one \par before it gives up.
+    text = text.replace("{\\par}\n<no legal \\end>", "<no legal \\end>")
+    return text.split("\n")
 
 
 def xdv_pages(path):
@@ -307,6 +332,8 @@ def main():
         sys.exit(f"tectonic not found at {TECTONIC} (cargo build --release -p tectonic)")
 
     WORK.mkdir(parents=True, exist_ok=True)
+    for old in WORK.glob("*.diff"):
+        old.unlink()
     bundle = make_bundle()
     fmtdir = make_tl_format(bundle)
 
