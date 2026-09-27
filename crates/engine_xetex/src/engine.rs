@@ -906,7 +906,7 @@ pub(crate) fn initialize_engine(
 
     if !st.config.in_initex_mode {
         match load_fmt_file(st, dump_name) {
-            Ok(()) => {}
+            Ok(()) => crate::pgfmath::KnownCs::resolve(st),
             Err(a) => return InitOutcome::Terminate(a.into_history(st)),
         }
     }

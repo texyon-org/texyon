@@ -121,6 +121,7 @@ impl EqtbState {
 
                     let s_idx = strings.make_string()?;
                     self.set_text(p, s_idx);
+                    self.pgfmath.note(&buffer[j as usize..(j + l) as usize], p);
                     strings.pool_ptr += d;
                 }
                 return Ok(p);

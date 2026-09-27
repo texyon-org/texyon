@@ -1073,6 +1073,16 @@ fn trace_macro_param(st: &mut EngineState, match_chr: i32, n: i32, list: MemPtr)
 }
 
 pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
+    if st.config.pgfmath == crate::pgfmath::Mode::Check
+        || st.config.pgfmath == crate::pgfmath::Mode::Native
+            && st.eqtb.pgfmath.is_try(st.scanner.cur_cs)
+    {
+        if let Some(cs) = crate::pgfmath::intercept(st) {
+            st.scanner.cur_cs = cs;
+            st.scanner.cur_cmd = st.eqtb.eq_type(cs);
+            st.scanner.cur_chr = st.eqtb.equiv(cs);
+        }
+    }
     let save_scanner_status = st.scanner.scanner_status;
     let save_warning_index = st.scanner.warning_index;
     st.scanner.warning_index = st.scanner.cur_cs;
@@ -1246,6 +1256,17 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
 
                 if r.token(&st.mem) == Token::END_MATCH {
                     break;
+                }
+            }
+        }
+
+        if n > 0 && st.config.pgfmath == crate::pgfmath::Mode::Native {
+            if let Some(kind) = st.eqtb.pgfmath.native(st.scanner.warning_index) {
+                if crate::pgfmath::native_macro(st, kind, &pstack[..n as usize]) {
+                    for &p in &pstack[..n as usize] {
+                        st.mem.flush_list(p);
+                    }
+                    break 'exit;
                 }
             }
         }

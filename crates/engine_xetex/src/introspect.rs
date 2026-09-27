@@ -135,7 +135,7 @@ fn describe_macro(st: &EngineState, body: crate::units::MemPtr) -> (bool, u8) {
     (protected, arity)
 }
 
-fn read_string(st: &EngineState, s: StrNumber) -> Option<String> {
+pub(crate) fn read_string(st: &EngineState, s: StrNumber) -> Option<String> {
     let str_start = &st.strings.str_start;
     let start = *str_start.get(s.slot())? as usize;
     let end = *str_start.get(s.next().slot())? as usize;
