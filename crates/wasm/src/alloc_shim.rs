@@ -9,11 +9,6 @@
 //!
 //! C's `free` does not pass a size, so each block starts with a [`HEADER`]
 //! recording its total size, then its capacity if it is a direct block.
-//!
-//! dlmalloc on wasm never maps fresh pages for big requests, so its `calloc`
-//! always memsets. The TeX arenas are tens of megabytes each, so zeroed
-//! requests of [`DIRECT_MIN`] or more come straight from `memory.grow`, whose
-//! pages are already zero.
 
 use dlmalloc::Dlmalloc;
 use std::{arch::wasm32, cell::UnsafeCell, ffi::c_void, ptr};
@@ -21,12 +16,11 @@ use std::{arch::wasm32, cell::UnsafeCell, ffi::c_void, ptr};
 /// Bytes before each payload, and every block's alignment (`max_align_t`).
 const HEADER: usize = 16;
 
-/// Smallest zeroed request served by [`allocate_direct`].
+/// dlmalloc's calloc always memsets, fresh wasm pages are already zero.
 const DIRECT_MIN: usize = 1 << 20;
 
 const WASM_PAGE: usize = 65536;
 
-/// How many freed direct blocks are kept for reuse.
 const SPARE_SLOTS: usize = 32;
 
 // UnsafeCell rather than a Mutex keeps a lock off the hottest path in the engine.
@@ -37,8 +31,7 @@ unsafe impl Sync for Heap {}
 
 static HEAP: Heap = Heap(UnsafeCell::new(Dlmalloc::new()));
 
-/// Freed direct blocks as `(base, capacity)`, since wasm cannot return pages.
-/// An empty slot has a null base.
+/// Freed direct blocks, kept because wasm cannot return pages.
 struct Spare(UnsafeCell<[(*mut u8, usize); SPARE_SLOTS]>);
 
 // SAFETY: as for `Heap`.
@@ -57,8 +50,7 @@ fn with_spare<R>(operation: impl FnOnce(&mut [(*mut u8, usize); SPARE_SLOTS]) ->
     operation(unsafe { &mut *SPARE.0.get() })
 }
 
-/// Write a fresh block's header and return its payload. `capacity` is zero
-/// for dlmalloc blocks.
+/// `capacity` is zero for dlmalloc blocks.
 ///
 /// # Safety
 ///
@@ -75,8 +67,6 @@ unsafe fn finish_block(base: *mut u8, total: usize, capacity: usize) -> *mut c_v
     }
 }
 
-/// A zeroed block of `total` bytes outside dlmalloc: the smallest spare that
-/// fits, or fresh pages.
 fn allocate_direct(total: usize) -> *mut c_void {
     let reused = with_spare(|spare| {
         let slot = spare
@@ -129,8 +119,6 @@ fn allocate(size: usize, zeroed: bool) -> *mut c_void {
     unsafe { finish_block(base, total, 0) }
 }
 
-/// A block's base pointer, total size and direct capacity, from its header.
-///
 /// # Safety
 ///
 /// `ptr` must be a live, non-null payload from [`allocate`] or [`realloc`].
@@ -143,7 +131,7 @@ unsafe fn block(ptr: *mut c_void) -> (*mut u8, usize, usize) {
     }
 }
 
-/// Keep a direct block for reuse. Once every slot is taken it is leaked.
+/// Leaks the block once every slot is taken.
 fn free_direct(base: *mut u8, capacity: usize) {
     with_spare(|spare| {
         if let Some(slot) = spare.iter_mut().find(|(base, _)| base.is_null()) {
