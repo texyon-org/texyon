@@ -14,6 +14,13 @@ use crate::{
 };
 use ffi::{Shim, ShimFailed};
 
+const PLAIN: FontStyle = FontStyle {
+    extend: 1.0,
+    slant: 0.0,
+    embolden: 0.0,
+    vertical: false,
+};
+
 /// MuPDF 1.19 backend producing self-contained path SVG pages.
 pub struct MupdfBackend {
     shim: Shim,
@@ -213,7 +220,7 @@ impl Backend for MupdfBackend {
                 transform: character.transform,
             })
             .collect();
-        self.fill_glyphs(font, size_bp, &glyphs, color, FontStyle::PLAIN)
+        self.fill_glyphs(font, size_bp, &glyphs, color, PLAIN)
     }
 
     fn draw_image(
@@ -404,7 +411,7 @@ mod tests {
                     transform: positioned(10.0, 30.0),
                 }],
                 Color::BLACK,
-                FontStyle::PLAIN,
+                PLAIN,
             )
             .unwrap();
         let svg = backend.finish_page().unwrap();
@@ -430,10 +437,7 @@ mod tests {
                         transform: positioned(10.0, 30.0),
                     }],
                     Color::BLACK,
-                    FontStyle {
-                        embolden,
-                        ..FontStyle::PLAIN
-                    },
+                    FontStyle { embolden, ..PLAIN },
                 )
                 .unwrap();
             backend.finish_page().unwrap()

@@ -119,15 +119,6 @@ pub struct FontStyle {
     pub vertical: bool,
 }
 
-impl FontStyle {
-    pub(crate) const PLAIN: Self = Self {
-        extend: 1.0,
-        slant: 0.0,
-        embolden: 0.0,
-        vertical: false,
-    };
-}
-
 /// Drawing adapter used by the pure XDV core.
 pub trait Backend {
     /// Begin a new page.

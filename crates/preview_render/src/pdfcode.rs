@@ -1,31 +1,10 @@
 //! Persistent interpreter for `pdf:code` content-stream fragments.
 
+use crate::render::DrawOperation;
 use crate::units::sp_to_bp;
 use crate::{Color, Matrix, Path, PathCommand, StrokeStyle};
 
 const ONE_INCH_BP: f32 = 72.0;
-
-#[derive(Clone)]
-pub(crate) enum PdfOperation {
-    Fill {
-        path: Path,
-        even_odd: bool,
-        transform: Matrix,
-        color: Color,
-    },
-    Stroke {
-        path: Path,
-        style: StrokeStyle,
-        transform: Matrix,
-        color: Color,
-    },
-    Clip {
-        path: Path,
-        even_odd: bool,
-        transform: Matrix,
-    },
-    PopClip,
-}
 
 #[derive(Clone, Copy)]
 struct SavedState {
@@ -53,7 +32,7 @@ pub(crate) struct PdfGraphics {
 }
 
 pub(crate) struct PdfRun {
-    pub(crate) operations: Vec<PdfOperation>,
+    pub(crate) operations: Vec<DrawOperation>,
     pub(crate) supported: Vec<&'static str>,
     pub(crate) unsupported: Vec<String>,
 }
@@ -131,12 +110,12 @@ impl PdfGraphics {
         });
     }
 
-    fn restore(&mut self, operations: &mut Vec<PdfOperation>) -> bool {
+    fn restore(&mut self, operations: &mut Vec<DrawOperation>) -> bool {
         let Some(saved) = self.stack.pop() else {
             return false;
         };
         for _ in saved.clip_depth..self.clip_depth {
-            operations.push(PdfOperation::PopClip);
+            operations.push(DrawOperation::PopClip);
         }
         self.ctm = saved.ctm;
         self.gh = saved.gh;
@@ -148,7 +127,7 @@ impl PdfGraphics {
         true
     }
 
-    pub(crate) fn restore_state(&mut self) -> Option<Vec<PdfOperation>> {
+    pub(crate) fn restore_state(&mut self) -> Option<Vec<DrawOperation>> {
         let mut operations = Vec::new();
         self.restore(&mut operations).then_some(operations)
     }
@@ -340,7 +319,7 @@ impl PdfGraphics {
                 run.supported.push("pdf-code-path");
             }
             "f" | "F" | "f*" => {
-                run.operations.push(PdfOperation::Fill {
+                run.operations.push(DrawOperation::PathFill {
                     path: self.path.clone(),
                     even_odd: operator == "f*",
                     transform: self.current_transform(pen_x, pen_y),
@@ -353,7 +332,7 @@ impl PdfGraphics {
                 if operator == "s" {
                     self.path.commands.push(PathCommand::Close);
                 }
-                run.operations.push(PdfOperation::Stroke {
+                run.operations.push(DrawOperation::PathStroke {
                     path: self.path.clone(),
                     style: self.style,
                     transform: self.current_transform(pen_x, pen_y),
@@ -368,13 +347,13 @@ impl PdfGraphics {
                 }
                 let even_odd = operator.ends_with('*');
                 let transform = self.current_transform(pen_x, pen_y);
-                run.operations.push(PdfOperation::Fill {
+                run.operations.push(DrawOperation::PathFill {
                     path: self.path.clone(),
                     even_odd,
                     transform,
                     color: self.fill,
                 });
-                run.operations.push(PdfOperation::Stroke {
+                run.operations.push(DrawOperation::PathStroke {
                     path: self.path.clone(),
                     style: self.style,
                     transform,
@@ -384,7 +363,7 @@ impl PdfGraphics {
                 run.supported.push("pdf-code-fill-stroke");
             }
             "W" | "W*" => {
-                run.operations.push(PdfOperation::Clip {
+                run.operations.push(DrawOperation::ClipPath {
                     path: self.path.clone(),
                     even_odd: operator == "W*",
                     transform: self.current_transform(pen_x, pen_y),
@@ -505,7 +484,7 @@ mod tests {
         graphics.run(b"0 0 m", 0, 0);
         graphics.run(b"10 20 l", 0, 0);
         let run = graphics.run(b"S", 0, 0);
-        let PdfOperation::Stroke {
+        let DrawOperation::PathStroke {
             path, transform, ..
         } = &run.operations[0]
         else {
@@ -524,6 +503,9 @@ mod tests {
         graphics.run(b"q", 0, 0);
         graphics.run(b"0 0 10 10 re W n", 0, 0);
         let run = graphics.run(b"Q", 0, 0);
-        assert!(matches!(run.operations.as_slice(), [PdfOperation::PopClip]));
+        assert!(matches!(
+            run.operations.as_slice(),
+            [DrawOperation::PopClip]
+        ));
     }
 }

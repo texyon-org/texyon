@@ -12,7 +12,7 @@ use tectonic_xdv::FileType;
 use crate::color::Color;
 use crate::fontmap::FontMap;
 use crate::pagesize::PageSizeState;
-use crate::pdfcode::{PdfGraphics, PdfOperation};
+use crate::pdfcode::PdfGraphics;
 use crate::resource::{
     Resource, ResourceIdentity, ResourceKind, ResourceProvider, ResourceRequest,
 };
@@ -218,43 +218,9 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
         }
     }
 
-    fn append_pdf_operations(&mut self, operations: Vec<PdfOperation>) -> Result<(), RenderError> {
-        for operation in operations {
-            let operation = match operation {
-                PdfOperation::Fill {
-                    path,
-                    even_odd,
-                    transform,
-                    color,
-                } => DrawOperation::PathFill {
-                    path,
-                    even_odd,
-                    transform,
-                    color,
-                },
-                PdfOperation::Stroke {
-                    path,
-                    style,
-                    transform,
-                    color,
-                } => DrawOperation::PathStroke {
-                    path,
-                    style,
-                    transform,
-                    color,
-                },
-                PdfOperation::Clip {
-                    path,
-                    even_odd,
-                    transform,
-                } => DrawOperation::ClipPath {
-                    path,
-                    even_odd,
-                    transform,
-                },
-                PdfOperation::PopClip => DrawOperation::PopClip,
-            };
-            self.page_mut()?.operations.push(operation);
+    fn append_pdf_operations(&mut self, operations: Vec<DrawOperation>) -> Result<(), RenderError> {
+        if !operations.is_empty() {
+            self.page_mut()?.operations.extend(operations);
         }
         Ok(())
     }
