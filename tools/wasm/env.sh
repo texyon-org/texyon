@@ -46,9 +46,7 @@ export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }\
 -C link-arg=--max-memory=2147483648"
 
 # --allow-multiple-definition lets crates/wasm/src/alloc_shim.rs take over
-# malloc/calloc/realloc/free from wasi-libc, whose allocator never grows the
-# WebAssembly memory and so caps the engine at whatever --initial-memory gives
-# it. Rust objects are linked ahead of the sysroot, so ours is the definition
-# that wins; tools/wasm/smoke-test.mjs would fail on a 76 MB arena if it did not.
+# malloc and friends from wasi-libc. Rust objects are linked ahead of the
+# sysroot, so ours is the definition that wins.
 
 unset _tectonic_wasm_dir _tectonic_wasm_cflags

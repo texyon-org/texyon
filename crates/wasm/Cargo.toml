@@ -18,8 +18,7 @@ edition = "2021"
 # checkable on the host, where the C ABI below is inert.
 crate-type = ["cdylib", "rlib"]
 
-# The engine's C gets its own heap; see src/alloc_shim.rs for why it can be
-# neither wasi-libc's nor Rust's global allocator.
+# Replaces wasi-libc's malloc, see src/alloc_shim.rs.
 [target.'cfg(target_family = "wasm")'.dependencies]
 dlmalloc = "^0.2"
 
