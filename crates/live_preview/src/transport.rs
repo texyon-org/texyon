@@ -66,9 +66,11 @@ impl<W: Write> JsonlFrameSink<W> {
     /// Encode and write a non-frame server event.
     pub fn write_event(&mut self, event: &ServerEvent) -> Result<(), TransportError> {
         let encoded = encode_event(event, self.limits).map_err(TransportError::Protocol)?;
-        self.writer
-            .write_all(&encoded)
-            .map_err(TransportError::Io)?;
+        self.write_line(&encoded)
+    }
+
+    fn write_line(&mut self, encoded: &[u8]) -> Result<(), TransportError> {
+        self.writer.write_all(encoded).map_err(TransportError::Io)?;
         self.writer.flush().map_err(TransportError::Io)
     }
 
@@ -83,8 +85,6 @@ impl<W: Write> JsonlFrameSink<W> {
     }
 
     fn encode_frame(&self, frame: &FramePatch) -> Result<Vec<u8>, TransportError> {
-        // Build the event (and its SVG payload copies) exactly once; the
-        // convergence loop below only touches the embedded frame_bytes field.
         let mut event = ServerEvent::Update {
             frame_id: frame.frame_id,
             source_revision: frame.source_revision,
@@ -123,32 +123,24 @@ impl<W: Write> JsonlFrameSink<W> {
             metrics: self.metrics,
             tail_pending: self.tail_pending,
         };
+        // frame_bytes is part of the frame it measures. Solve the fixed point
+        // after the first measuring pass so the second encode converges.
         let mut previous_size = usize::MAX;
-        let mut first_pass = true;
-        for _ in 0..4 {
-            let current = match &event {
-                ServerEvent::Update { metrics, .. } => metrics.frame_bytes,
-                _ => unreachable!(),
-            };
+        let mut current = self.metrics.frame_bytes;
+        for pass in 0..4 {
             let encoded = encode_event(&event, self.limits).map_err(TransportError::Protocol)?;
             let frame_size = encoded.len() - 1;
             if frame_size == previous_size || current == frame_size {
                 return Ok(encoded);
             }
             previous_size = frame_size;
-            // frame_bytes is self-referential: replacing its digits changes the
-            // frame length. Solve the fixed point analytically after the first
-            // measuring pass so the loop converges on the second encode.
-            let next = if first_pass {
-                first_pass = false;
-                let base = frame_size - decimal_digits(current);
-                solve_self_referential_size(base)
+            current = if pass == 0 {
+                solve_self_referential_size(frame_size - decimal_digits(current))
             } else {
                 frame_size
             };
-            match &mut event {
-                ServerEvent::Update { metrics, .. } => metrics.frame_bytes = next,
-                _ => unreachable!(),
+            if let ServerEvent::Update { metrics, .. } = &mut event {
+                metrics.frame_bytes = current;
             }
         }
         Err(TransportError::Protocol(ProtocolError::FrameTooLarge {
@@ -167,8 +159,7 @@ fn decimal_digits(mut value: usize) -> usize {
     digits
 }
 
-/// Solve `n = base + decimal_digits(n)`: the encoded length of a frame whose
-/// embedded `frame_bytes` field must equal that same encoded length.
+/// Solve `n = base + decimal_digits(n)`.
 fn solve_self_referential_size(base: usize) -> usize {
     for digits in 1..=20 {
         let candidate = base + digits;
@@ -183,19 +174,16 @@ impl<W: Write> FrameSink for JsonlFrameSink<W> {
     type Error = TransportError;
 
     fn set_operation_metrics(&mut self, metrics: OperationMetrics) {
-        self.metrics = metrics;
+        self.set_metrics(metrics);
     }
 
     fn set_tail_pending(&mut self, tail_pending: bool) {
-        self.tail_pending = tail_pending;
+        JsonlFrameSink::set_tail_pending(self, tail_pending);
     }
 
     fn publish(&mut self, frame: &FramePatch) -> Result<(), Self::Error> {
         let encoded = self.encode_frame(frame)?;
-        self.writer
-            .write_all(&encoded)
-            .map_err(TransportError::Io)?;
-        self.writer.flush().map_err(TransportError::Io)
+        self.write_line(&encoded)
     }
 }
 

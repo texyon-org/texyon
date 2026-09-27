@@ -171,17 +171,17 @@ impl SourceSet {
     ) -> Result<Self, SourceError> {
         validate_file_size(&primary_text, limits)?;
         let primary = root.resolve(primary_path)?;
+        let mut total = primary_text.len();
         let mut files = BTreeMap::<PathBuf, Arc<str>>::new();
         files.insert(primary.clone(), Arc::from(primary_text));
-        let mut total = files[&primary].len();
 
         for child in children {
             validate_file_size(&child.text, limits)?;
             let path = root.resolve(&child.path)?;
+            total = total.saturating_add(child.text.len());
             if files.insert(path.clone(), Arc::from(child.text)).is_some() {
                 return Err(SourceError::DuplicatePath(path));
             }
-            total = total.saturating_add(files[&path].len());
         }
         validate_snapshot_size(total, limits)?;
         let engine_sources = EngineSourceSnapshot::new_with_revision(

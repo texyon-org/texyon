@@ -70,16 +70,13 @@ impl fmt::Debug for FrozenBundle {
     }
 }
 
-/// Disk identity of one document-root resource, used to reuse frozen bytes
-/// only while the file behind them is unchanged.
+/// Modification time and length of a document-root file.
 type DiskStamp = (SystemTime, u64);
 
 /// Memoized resolution of one candidate name.
 ///
-/// Support-bundle bytes are immutable for the session, so a bundle hit or miss
-/// is reusable forever. Document-root bytes are editable on disk, so they are
-/// reusable only while the file's modification time and length are unchanged,
-/// and a bundle answer is reusable only while no document-root file shadows it.
+/// Bundle answers hold while no document-root file shadows them. Document-root
+/// bytes hold while their [`DiskStamp`] is unchanged.
 #[derive(Debug)]
 enum CachedCandidate {
     Document {
@@ -91,9 +88,7 @@ enum CachedCandidate {
 
 /// Exact-byte renderer resource lookup over document root then support bundle.
 ///
-/// Resolution is memoized because analysis re-resolves every font of the whole
-/// document on every keystroke, and each miss otherwise costs a bundle read
-/// plus a SHA-256 over the complete resource bytes.
+/// Memoized because analysis re-resolves every font on every keystroke.
 #[derive(Clone, Debug)]
 pub struct BundleResourceProvider {
     bundle: FrozenBundle,
@@ -112,15 +107,13 @@ impl BundleResourceProvider {
         })
     }
 
-    /// Canonical path and disk stamp of a document-root candidate, if it is a
-    /// regular file confined to the root.
+    /// Canonical path and stamp of a regular document-root file confined to the root.
     fn document_stamp(&self, name: &str) -> Result<Option<(PathBuf, DiskStamp)>, RenderError> {
         let Some(root) = self.bundle.document_root() else {
             return Ok(None);
         };
         let candidate = root.join(name);
-        // Most candidate names never exist in the document root, so take the
-        // cheapest possible negative before paying for canonicalization.
+        // Most candidates are absent, so stat before paying for canonicalization.
         let metadata = match fs::metadata(&candidate) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -162,8 +155,7 @@ impl BundleResourceProvider {
 impl ResourceProvider for BundleResourceProvider {
     fn resolve(&self, request: &ResourceRequest) -> Result<Option<Resource>, RenderError> {
         for candidate in candidates(request) {
-            // Stat the document root first on every call: it decides both which
-            // source wins and whether a cached answer is still current.
+            // The stamp decides both which source wins and whether the cache is current.
             let stamp = self.document_stamp(&candidate)?;
             if let Some(cached) = self.cache.borrow().get(&candidate) {
                 match (cached, &stamp) {
@@ -211,23 +203,21 @@ impl ResourceProvider for BundleResourceProvider {
 }
 
 fn candidates(request: &ResourceRequest) -> Vec<String> {
-    let extension = match request.kind {
-        ResourceKind::Tfm => Some("tfm"),
-        ResourceKind::VirtualFont => Some("vf"),
-        ResourceKind::Encoding => Some("enc"),
-        ResourceKind::FontMap | ResourceKind::Image | ResourceKind::Pdf => None,
-        ResourceKind::FontProgram => None,
+    let extensions: &[&str] = match request.kind {
+        ResourceKind::Tfm => &["tfm"],
+        ResourceKind::VirtualFont => &["vf"],
+        ResourceKind::Encoding => &["enc"],
+        ResourceKind::FontProgram => &["pfb", "pfa", "otf", "ttf"],
+        ResourceKind::FontMap | ResourceKind::Image | ResourceKind::Pdf => &[],
     };
-    let mut candidates = vec![request.name.clone()];
-    if let Some(extension) = extension {
-        if Path::new(&request.name).extension().is_none() {
-            candidates.push(format!("{}.{}", request.name, extension));
-        }
-    }
-    if request.kind == ResourceKind::FontProgram && Path::new(&request.name).extension().is_none() {
-        for extension in ["pfb", "pfa", "otf", "ttf"] {
-            candidates.push(format!("{}.{}", request.name, extension));
-        }
+    let name = &request.name;
+    let mut candidates = vec![name.clone()];
+    if Path::new(name).extension().is_none() {
+        candidates.extend(
+            extensions
+                .iter()
+                .map(|extension| format!("{name}.{extension}")),
+        );
     }
     candidates
 }
