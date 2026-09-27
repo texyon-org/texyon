@@ -9,9 +9,8 @@
 export const SAMPLE: Record<string, string> = {
   "main.tex": String.raw`\documentclass[11pt]{article}
 \usepackage{amsmath}
+\usepackage{tikz}
 \usepackage{hyperref}
-
-\newcommand{\vect}[1]{\mathbf{#1}}
 
 \title{A Document}
 \author{You}
@@ -27,40 +26,31 @@ starting over.
 
 \input{chapters/method}
 
-\section{Closing}
-
-Back in \ref{sec:method} we set out the method. See also
-\url{https://tectonic-typesetting.github.io/}.
-
-\bibliographystyle{plain}
-\bibliography{refs}
-
 \end{document}
 `,
 
   "chapters/method.tex": String.raw`\section{Method}\label{sec:method}
-
-A vector, written with the command the preamble defines: $\vect{x}$.
 
 \begin{equation}\label{eq:gauss}
   \int_{-\infty}^{\infty} e^{-x^2}\,\mathrm{d}x = \sqrt{\pi}
 \end{equation}
 
 Equation \eqref{eq:gauss} is the one everybody knows.
-`,
 
-  "refs.bib": String.raw`@book{knuth1984,
-  author    = {Donald E. Knuth},
-  title     = {The {\TeX}book},
-  publisher = {Addison-Wesley},
-  year      = {1984},
-}
+\begin{figure}[h]
+  \centering
+  \begin{tikzpicture}[scale=1.2]
+    \draw[fill=blue!10] (0,0) -- (3,0) -- (3,2) -- cycle;
+    \draw (2.7,0) -- (2.7,0.3) -- (3,0.3);
+    \node[below] at (1.5,0) {$a$};
+    \node[right] at (3,1) {$b$};
+    \node[above left] at (1.5,1) {$c$};
+    \draw[->, thick] (-0.5,0) -- (4,0);
+    \draw[->, thick] (0,-0.5) -- (0,2.5);
+  \end{tikzpicture}
+  \caption{A right triangle, so $a^2 + b^2 = c^2$.}\label{fig:triangle}
+\end{figure}
 
-@book{lamport1994,
-  author    = {Leslie Lamport},
-  title     = {{\LaTeX}: A Document Preparation System},
-  publisher = {Addison-Wesley},
-  year      = {1994},
-}
+Figure \ref{fig:triangle} is drawn with TikZ.
 `,
 };
