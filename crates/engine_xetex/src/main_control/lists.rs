@@ -35,7 +35,7 @@ use super::{begin_every, INNER_HMODE, INNER_VMODE};
 pub(crate) fn push_math(st: &mut EngineState, c: GroupCode) -> Result<(), Abort> {
     crate::mem::push_nest(st)?;
     st.input.cur_list.mode = -MMODE;
-    st.input.cur_list.set_aux_s1(TEX_NULL);
+    st.input.cur_list.set_incompleat_noad(None);
     st.save_stack.new_save_level(c, st.mem.line)?;
     Ok(())
 }
@@ -116,7 +116,7 @@ pub(super) fn indent_in_hmode(st: &mut EngineState) -> Result<(), Abort> {
     let b = st.mem.new_null_box()?;
     b.set_width(&mut st.mem, st.eqtb.dimen_par(DimenPar::ParIndent));
     let p = if st.input.cur_list.mode.abs() == HMODE {
-        st.input.cur_list.set_aux_s0(1000);
+        st.input.cur_list.set_space_factor(1000);
         b.ptr()
     } else {
         let q = st.mem.new_noad()?;
@@ -182,7 +182,7 @@ pub(super) fn begin_insert_or_adjust(st: &mut EngineState) -> Result<(), Abort> 
 
 /// Appends interword glue for the current space factor.
 pub(super) fn app_space(st: &mut EngineState) -> Result<(), Abort> {
-    let space_factor = st.input.cur_list.aux_s0();
+    let space_factor = st.input.cur_list.space_factor();
     let q;
     let mut side_effects = None;
     if space_factor >= 2000 && st.eqtb.glue_par(GluePar::XspaceSkip) != ZERO_GLUE {
@@ -242,7 +242,7 @@ pub(super) fn font_space_glue(st: &mut EngineState) -> Result<NodePtr<GlueSpecNo
 pub(crate) fn start_paragraph_language(st: &mut EngineState) {
     let l = crate::helpers::norm_lang(st.eqtb.int_par(IntPar::Language));
     st.hyph.cur_lang = l;
-    st.input.cur_list.set_aux_s1(i32::from(l));
+    st.input.cur_list.set_clang(i32::from(l));
     let lhm = i32::from(crate::helpers::norm_min(
         st.eqtb.int_par(IntPar::LeftHyphenMin),
     ));
@@ -260,7 +260,7 @@ pub(crate) fn new_graf(st: &mut EngineState, indented: bool) -> Result<(), Abort
     }
     crate::mem::push_nest(st)?;
     st.input.cur_list.mode = HMODE;
-    st.input.cur_list.set_aux_s0(1000);
+    st.input.cur_list.set_space_factor(1000);
 
     start_paragraph_language(st);
 
@@ -483,7 +483,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             if p.is_null() || !p.link(&st.mem).is_null() {
                 return Ok(());
             }
-            let Ok(AnyNode::Noad(noad)) = st.mem.classify(MemIdx::new(p)) else {
+            let Ok(AnyNode::Noad(noad)) = st.mem.classify(p) else {
                 return Ok(());
             };
             match noad.noad_type(&st.mem) {
@@ -497,7 +497,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
                 NodeType::AccentNoad
                     if save_loc.idx().0 == st.input.cur_list.tail.0 + 1
                         && matches!(
-                            st.mem.classify(MemIdx(st.input.cur_list.tail.0)),
+                            st.mem.classify(st.input.cur_list.tail),
                             Ok(AnyNode::Noad(t)) if t.noad_type(&st.mem) == NodeType::OrdNoad
                         ) =>
                 {
@@ -571,12 +571,12 @@ impl ListStateRecord {
         eqtb: &crate::state::EqtbState,
     ) -> Result<(), Abort> {
         let l = i32::from(crate::helpers::norm_lang(eqtb.int_par(IntPar::Language)));
-        if l == self.aux_s1() {
+        if l == self.clang() {
             return Ok(());
         }
         let w = self.new_whatsit(mem, WhatsitSubtype::Language, SMALL_NODE_SIZE)?;
         w.set_what_lang(mem, l);
-        self.set_aux_s1(l);
+        self.set_clang(l);
         let lhm = crate::helpers::norm_min(eqtb.int_par(IntPar::LeftHyphenMin)) as u16;
         w.set_what_lhm(mem, lhm);
         let rhm = crate::helpers::norm_min(eqtb.int_par(IntPar::RightHyphenMin)) as u16;
@@ -637,7 +637,7 @@ fn begin_disc_group(st: &mut EngineState) -> Result<(), Abort> {
     crate::scan::scan_left_brace(st)?;
     crate::mem::push_nest(st)?;
     st.input.cur_list.mode = INNER_HMODE;
-    st.input.cur_list.set_aux_s0(1000);
+    st.input.cur_list.set_space_factor(1000);
     Ok(())
 }
 
@@ -666,7 +666,7 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
     let mut n: i32 = 0;
     while !p.is_null() {
         if !st.mem.is_char_node(p) {
-            let allowed = match st.mem.classify(MemIdx::new(p)) {
+            let allowed = match st.mem.classify(p) {
                 Ok(
                     AnyNode::HList(_)
                     | AnyNode::VList(_)
@@ -757,14 +757,14 @@ fn char_italic(st: &mut EngineState, ch: NodePtr<CharNode>) -> Scaled {
 }
 
 pub(super) fn append_italic_correction(st: &mut EngineState) -> Result<(), Abort> {
-    let tail = st.input.cur_list.tail.0;
-    if tail == st.input.cur_list.head.0 {
+    let tail = st.input.cur_list.tail;
+    if tail == st.input.cur_list.head {
         return Ok(());
     }
-    let italic = if let Some(ch) = st.mem.as_char(MemPtr(tail)) {
+    let italic = if let Some(ch) = st.mem.as_char(tail) {
         char_italic(st, ch)
     } else {
-        match st.mem.classify(MemIdx(tail)) {
+        match st.mem.classify(tail) {
             Ok(AnyNode::Ligature(lig)) => char_italic(st, lig.char_word()),
             Ok(AnyNode::Whatsit(w)) => match w.whatsit_subtype(&st.mem) {
                 Some(s) if s.is_native_word() => st.fonts.get_native_italic_correction(&st.mem, w),
@@ -828,7 +828,7 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
     };
     let Some(q) = q else {
         st.input.cur_list.tail_append(&mut st.mem, p.ptr());
-        st.input.cur_list.set_aux_s0(1000);
+        st.input.cur_list.set_space_factor(1000);
         return Ok(());
     };
 
@@ -873,6 +873,6 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
     back.set_subtype(&mut st.mem, ACC_KERN);
     accent.set_link(&mut st.mem, back.ptr());
     st.input.cur_list.tail_append(&mut st.mem, q.ptr());
-    st.input.cur_list.set_aux_s0(1000);
+    st.input.cur_list.set_space_factor(1000);
     Ok(())
 }

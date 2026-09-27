@@ -20,7 +20,7 @@ fn special_out(
     st.shipout.doing_special = true;
     let old_setting = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
-    let tokens = special.write_tokens(&st.mem).link(&st.mem).0;
+    let tokens = special.write_tokens(&st.mem).link(&st.mem);
     let avail = st.strings.pool_size - st.strings.pool_ptr;
     crate::output::show_token_list(st, tokens, TEX_NULL, avail);
     st.shipout.selector = old_setting;
@@ -92,7 +92,7 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WhatsitNode>) ->
         crate::output::print_nl(st, "");
     }
     let def_ref = st.scanner.def_ref;
-    crate::output::token_show(st, def_ref.0);
+    crate::output::token_show(st, def_ref);
     crate::output::print_ln(st);
     st.mem.flush_list(def_ref);
 

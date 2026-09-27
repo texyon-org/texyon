@@ -9,7 +9,7 @@ use crate::ot_math::GlyphAssembly;
 use crate::packaging::{ADDITIONAL, EXACTLY};
 use crate::params::DimenPar;
 use crate::state::{EngineState, FontState, MemState};
-use crate::units::{FontId, GlueSign, MemIdx, Scaled};
+use crate::units::{FontId, GlueSign, Scaled};
 
 impl FontState {
     pub(super) fn measure_glyph(
@@ -216,7 +216,7 @@ pub(super) fn build_opentype_assembly(
     let mut nat = Scaled::ZERO;
     let mut str = Scaled::ZERO;
     while !p.is_null() {
-        match st.mem.classify(MemIdx::new(p)) {
+        match st.mem.classify(p) {
             Ok(AnyNode::Whatsit(pw)) => {
                 if horiz {
                     nat += pw.width(&st.mem);

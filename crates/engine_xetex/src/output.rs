@@ -661,7 +661,7 @@ fn print_native_word(st: &mut EngineState, p: NodePtr<WhatsitNode>) {
 fn print_sa_num(st: &mut EngineState, q: NodePtr<SaNode>) {
     let mem = &st.mem;
     let n = if q.sa_index(mem) < DIMEN_VAL_LIMIT {
-        q.sa_ptr(mem).0
+        q.sa_num(mem)
     } else {
         let q1 = q.parent(mem);
         let q2 = q1.parent(mem);
@@ -762,8 +762,7 @@ pub(crate) fn print_group(st: &mut EngineState, e: bool) {
     }
 }
 
-pub(crate) fn token_show(st: &mut EngineState, p: impl crate::units::MemAddr) {
-    let p = MemPtr(p.addr());
+pub(crate) fn token_show(st: &mut EngineState, p: MemPtr) {
     if !p.is_null() {
         let head = p.link(&st.mem);
         show_token_list(st, head, TEX_NULL, 10_000_000);

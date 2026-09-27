@@ -5,7 +5,7 @@ use crate::codes::{MathAccentCode, RadicalCode};
 use crate::consts::{EMPTY, MATH_CHAR, NORMAL, NUMBER_MATH_FAMILIES, SUB_MLIST};
 use crate::errors::Abort;
 use crate::input::TokenType;
-use crate::mem::{GARBAGE, TEX_NULL};
+use crate::mem::GARBAGE;
 use crate::mem_types::ListStateRecord;
 use crate::node::{ChoiceNode, DelimiterField, MathField, Noad, NodePtr};
 use crate::params::{IntPar, TokPar};
@@ -117,7 +117,7 @@ impl ListStateRecord {
         if self.head.0 == tail {
             return false;
         }
-        match mem.classify_noad(MemIdx::new(tail)) {
+        match mem.classify_noad(tail) {
             Ok(Some(noad)) if noad.noad_type(mem) == NodeType::OpNoad => {
                 noad.set_subtype(mem, limit);
                 true
@@ -183,25 +183,20 @@ pub(crate) fn append_choices(st: &mut EngineState) -> Result<(), Abort> {
 impl ListStateRecord {
     fn fin_mlist(&mut self, mem: &mut MemState, p: MemPtr) -> Result<MemPtr, Abort> {
         let q;
-        let aux = self.aux_s1();
-        if aux != TEX_NULL {
-            let aux_noad = NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(aux));
+        if let Some(aux_noad) = self.incompleat_noad() {
             aux_noad.subscr().set_math_type(mem, SUB_MLIST);
             aux_noad.subscr().set_info(mem, self.head.link(mem));
             if p.is_null() {
-                q = MemPtr(aux);
+                q = aux_noad.ptr();
             } else {
                 q = aux_noad.supscr().info(mem);
-                let q_noad = NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q));
-                let etex_aux = self.e_tex_aux.0;
-                if q_noad.noad_type(mem) != NodeType::LeftNoad || etex_aux == TEX_NULL {
+                let etex_aux = self.e_tex_aux;
+                if mem.node_type(q) != Ok(NodeType::LeftNoad) || etex_aux.is_null() {
                     return Err(Abort::Confusion("right"));
                 }
-                // SAFETY: a math-left group keeps its last noad in `eTeX_aux`.
-                let etex_aux_noad = NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(etex_aux));
-                let etex_link = etex_aux_noad.link(mem);
+                let etex_link = etex_aux.link(mem);
                 aux_noad.supscr().set_info(mem, etex_link);
-                etex_aux_noad.set_link(mem, MemPtr::from_raw(aux));
+                etex_aux.set_link(mem, aux_noad.ptr());
                 aux_noad.set_link(mem, p);
             }
         } else {
@@ -223,17 +218,16 @@ impl ListStateRecord {
         &mut self,
         mem: &mut MemState,
         save_stack: &mut SaveStackState,
-        p: impl crate::units::MemAddr,
+        p: MemPtr,
     ) -> bool {
-        let p = p.addr();
-        let tail = NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(self.tail.0));
-        let p_ptr = MemPtr::from_raw(p);
+        // SAFETY: `append_choices` left the choice node as the enclosing list's tail.
+        let tail = NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(self.tail));
         match save_stack.saved(-1) {
-            0 => tail.set_display_mlist(mem, p_ptr),
-            1 => tail.set_text_mlist(mem, p_ptr),
-            2 => tail.set_script_mlist(mem, p_ptr),
+            0 => tail.set_display_mlist(mem, p),
+            1 => tail.set_text_mlist(mem, p),
+            2 => tail.set_script_mlist(mem, p),
             3 => {
-                tail.set_script_script_mlist(mem, p_ptr);
+                tail.set_script_script_mlist(mem, p);
                 save_stack.save_ptr -= 1;
                 return true;
             }
@@ -283,7 +277,7 @@ impl ListStateRecord {
         let mut p = None;
 
         if self.tail != self.head {
-            if let Ok(Some(n)) = mem.classify_noad(MemIdx::new(self.tail)) {
+            if let Ok(Some(n)) = mem.classify_noad(self.tail) {
                 if n.noad_type(mem).as_raw() < NodeType::LeftNoad.as_raw() {
                     let field = script(n);
                     t = field.math_type(mem);
@@ -337,7 +331,7 @@ pub(crate) fn sub_sup(st: &mut EngineState) -> Result<(), Abort> {
 impl ListStateRecord {
     fn start_fraction_noad(&mut self, mem: &mut MemState) -> Result<NodePtr<Noad>, Abort> {
         let fraction = NodePtr::<Noad>::alloc_fraction(mem)?;
-        self.set_aux_s1(fraction.idx().0);
+        self.set_incompleat_noad(Some(fraction));
         fraction.set_subtype(mem, NORMAL);
         fraction.supscr().set_math_type(mem, SUB_MLIST);
         fraction.supscr().set_info(mem, self.head.link(mem));
@@ -354,7 +348,7 @@ impl ListStateRecord {
 pub(crate) fn math_fraction(st: &mut EngineState) -> Result<(), Abort> {
     let c = st.scanner.cur_chr;
 
-    if st.input.cur_list.aux_s1() != TEX_NULL {
+    if st.input.cur_list.incompleat_noad().is_some() {
         if c >= DELIMITED_CODE {
             scan_delimiter(st, NodePtr::at(GARBAGE), None)?;
             scan_delimiter(st, NodePtr::at(GARBAGE), None)?;

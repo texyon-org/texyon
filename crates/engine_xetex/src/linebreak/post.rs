@@ -15,7 +15,7 @@ use crate::state::{
     ConfigState, EngineState, EqtbState, ErrorState, FontState, LinebreakState, MemState,
     ScannerState,
 };
-use crate::units::{MemIdx, MemPtr, Scaled};
+use crate::units::{MemPtr, Scaled};
 
 use super::{passive_node, BEST_BET_SET};
 
@@ -65,7 +65,7 @@ impl LinebreakState {
 
             while q != cur_break {
                 if !mem.is_char_node(q) {
-                    if let Ok(AnyNode::Math(m)) = mem.classify(MemIdx::new(q)) {
+                    if let Ok(AnyNode::Math(m)) = mem.classify(q) {
                         mem.update_lr_stack(m, lr_ptr)?;
                     }
                 }
@@ -82,7 +82,7 @@ impl LinebreakState {
         if q.is_null() {
             q = mem.list_tail(TEMP_HEAD);
         } else {
-            match mem.classify(MemIdx::new(q)) {
+            match mem.classify(q) {
                 Ok(AnyNode::Glue(g)) => {
                     let old_spec = g.glue_ptr(mem);
                     mem.delete_glue_ref(old_spec);
@@ -342,7 +342,7 @@ impl ListStateRecord {
                 if q == cur_break || mem.is_char_node(q) {
                     break;
                 }
-                let node = mem.classify(MemIdx::new(q));
+                let node = mem.classify(q);
                 match node {
                     Ok(node) if node.precedes_break() => break,
                     Ok(AnyNode::Kern(k))

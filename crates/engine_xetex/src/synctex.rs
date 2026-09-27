@@ -8,7 +8,7 @@ use crate::consts::INVALID_HANDLE;
 use crate::node::{AnyBox, AnyNode, HListNode, KernNode, MathNode, NodePtr, VListNode};
 use crate::shipout::ONE_INCH;
 use crate::state::{EngineState, EqtbState, ShipoutState, SynctexCtxt};
-use crate::units::{MemIdx, MemPtr};
+use crate::units::MemPtr;
 
 const SYNCTEX_VERSION: i32 = 1;
 /// The pseudo file of a resident compile, which only feeds the preview index.
@@ -451,7 +451,7 @@ pub fn synctex_math(st: &mut EngineState, p: NodePtr<MathNode>) {
 /// The one polymorphic entry: `hlist_out` may have retyped a glue node to a
 /// kern in place before this call, so the node is classified here.
 pub fn synctex_horizontal_rule_or_glue(st: &mut EngineState, p: MemPtr) {
-    let node = st.mem.classify(MemIdx::new(p.0));
+    let node = st.mem.classify(p);
     let (tag, line) = match node {
         Ok(AnyNode::Rule(r)) => (r.sync_tag(&st.mem), r.sync_line(&st.mem)),
         Ok(AnyNode::Glue(g)) => (g.sync_tag(&st.mem), g.sync_line(&st.mem)),
@@ -459,7 +459,7 @@ pub fn synctex_horizontal_rule_or_glue(st: &mut EngineState, p: MemPtr) {
         _ => {
             issue_error(&format!(
                 "unknown node type {} in SyncTeX",
-                st.mem.type_code(MemIdx::new(p))
+                st.mem.type_code(p)
             ));
             return;
         }

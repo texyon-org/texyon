@@ -96,15 +96,15 @@ fn adjust_space_factor(st: &mut EngineState) -> i32 {
     let sf_code = st.eqtb.sf_code(st.scanner.cur_chr);
     let s = sf_code % 65536;
     if s == 1000 {
-        st.input.cur_list.set_aux_s0(1000);
+        st.input.cur_list.set_space_factor(1000);
     } else if s < 1000 {
         if s > 0 {
-            st.input.cur_list.set_aux_s0(s);
+            st.input.cur_list.set_space_factor(s);
         }
-    } else if st.input.cur_list.aux_s0() < 1000 {
-        st.input.cur_list.set_aux_s0(1000);
+    } else if st.input.cur_list.space_factor() < 1000 {
+        st.input.cur_list.set_space_factor(1000);
     } else {
-        st.input.cur_list.set_aux_s0(s);
+        st.input.cur_list.set_space_factor(s);
     }
     st.scanner.cur_ptr = MemPtr::NULL;
     st.mainloop.space_class = sf_code / 65536;
@@ -143,7 +143,7 @@ fn find_main_ppp(st: &mut EngineState) {
     let mut ppp = st.input.cur_list.head;
     while ppp != pp && ppp.link(&st.mem) != pp {
         if !st.mem.is_char_node(ppp) {
-            if let Ok(AnyNode::Disc(disc)) = st.mem.classify(MemIdx(ppp.0)) {
+            if let Ok(AnyNode::Disc(disc)) = st.mem.classify(ppp) {
                 for _ in 0..disc.subtype(&st.mem) {
                     ppp = ppp.link(&st.mem);
                 }
@@ -166,7 +166,7 @@ fn extendable_native_word(st: &EngineState, f: FontId) -> Option<NodePtr<Whatsit
     let extendable = word.native_font(&st.mem) == f
         && ppp != pp
         && !st.mem.is_char_node(ppp)
-        && !matches!(st.mem.classify(MemIdx(ppp.0)), Ok(AnyNode::Disc(_)));
+        && !matches!(st.mem.classify(ppp), Ok(AnyNode::Disc(_)));
     extendable.then_some(word)
 }
 
@@ -198,7 +198,7 @@ fn use_glyph_metrics(st: &EngineState) -> bool {
 /// The main loop for an AAT or OpenType font: collects a run of characters
 /// into native word nodes. Returns whether to go to `big_switch`.
 fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
-    if st.input.cur_list.mode > 0 && st.eqtb.int_par(IntPar::Language) != st.input.cur_list.aux_s1()
+    if st.input.cur_list.mode > 0 && st.eqtb.int_par(IntPar::Language) != st.input.cur_list.clang()
     {
         st.input.cur_list.fix_language(&mut st.mem, &st.eqtb)?;
     }
@@ -315,7 +315,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
                 let next = word.link(&st.mem);
                 st.mainloop.main_ppp.set_link(&mut st.mem, next);
                 word.set_link(&mut st.mem, MemPtr::NULL);
-                st.mem.flush_node_list(word.idx())?;
+                st.mem.flush_node_list(word.ptr())?;
                 st.mainloop.main_pp = st.input.cur_list.tail;
                 while st.mainloop.main_ppp.link(&st.mem) != st.mainloop.main_pp {
                     st.mainloop.main_ppp = st.mainloop.main_ppp.link(&st.mem);
@@ -364,7 +364,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
             let next = word.link(&st.mem);
             prev.set_link(&mut st.mem, next);
             word.set_link(&mut st.mem, MemPtr::NULL);
-            st.mem.flush_node_list(word.idx())?;
+            st.mem.flush_node_list(word.ptr())?;
         }
     }
 
@@ -393,7 +393,7 @@ fn shape_interword_space(st: &mut EngineState, mf: FontId) -> Result<(), Abort> 
     if st.mem.is_char_node(glue) {
         return Ok(());
     }
-    let Ok(AnyNode::Glue(glue)) = st.mem.classify(MemIdx(glue.0)) else {
+    let Ok(AnyNode::Glue(glue)) = st.mem.classify(glue) else {
         return Ok(());
     };
     if st.mem.skip_interword_fillers(glue.link(&st.mem)) != tail {
@@ -530,7 +530,7 @@ pub(super) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
     st.mainloop.main_f = mf;
     st.mainloop.bchar = st.fonts.font_bchar[mf];
     st.mainloop.false_bchar = st.fonts.font_false_bchar[mf];
-    if st.input.cur_list.mode > 0 && st.eqtb.int_par(IntPar::Language) != st.input.cur_list.aux_s1()
+    if st.input.cur_list.mode > 0 && st.eqtb.int_par(IntPar::Language) != st.input.cur_list.clang()
     {
         st.input.cur_list.fix_language(&mut st.mem, &st.eqtb)?;
     }

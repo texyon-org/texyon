@@ -14,7 +14,7 @@ use crate::node::{AnyBox, AnyNode, GlueNode, NodePtr};
 use crate::packaging::{ADDITIONAL, EXACTLY};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::state::{EngineState, EqtbState, FontState, GroupCode, MemState};
-use crate::units::{GlueSign, MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{GlueSign, MemPtr, NodeType, Scaled};
 
 use super::build::{define_word, fin_mlist};
 use super::mlist::mlist_to_hlist;
@@ -33,7 +33,7 @@ pub(crate) fn resume_after_display(st: &mut EngineState) -> Result<(), Abort> {
     st.input.cur_list.prev_graf = st.input.cur_list.prev_graf.wrapping_add(3);
     crate::mem::push_nest(st)?;
     st.input.cur_list.mode = HMODE;
-    st.input.cur_list.set_aux_s0(1000);
+    st.input.cur_list.set_space_factor(1000);
 
     crate::main_control::start_paragraph_language(st);
 
@@ -148,7 +148,7 @@ fn app_display(
         }
     };
     let u = st.mem.new_math(Scaled::ZERO, END_M_CODE)?.ptr();
-    if let Ok(AnyNode::Glue(tg)) = st.mem.classify(MemIdx::new(t.0)) {
+    if let Ok(AnyNode::Glue(tg)) = st.mem.classify(t) {
         let skip = st.mem.new_skip_param(&st.eqtb, GluePar::RightSkip)?;
         q.set_link(&mut st.mem, skip.ptr());
         skip.set_link(&mut st.mem, u);
@@ -161,7 +161,7 @@ fn app_display(
     }
 
     let u = st.mem.new_math(Scaled::ZERO, BEGIN_M_CODE)?.ptr();
-    if let Ok(AnyNode::Glue(rg)) = st.mem.classify(MemIdx::new(r.0)) {
+    if let Ok(AnyNode::Glue(rg)) = st.mem.classify(r) {
         let skip = st.mem.new_skip_param(&st.eqtb, GluePar::LeftSkip)?;
         u.set_link(&mut st.mem, skip.ptr());
         skip.set_link(&mut st.mem, p);
@@ -284,7 +284,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
         }
         let node = st.mem.new_math(math_surround, AFTER)?;
         st.input.cur_list.tail_append(&mut st.mem, node.ptr());
-        st.input.cur_list.set_aux_s0(1000);
+        st.input.cur_list.set_space_factor(1000);
 
         if st.config.semantic_pagination_enabled {
             crate::ext::insert_special(st, "tdux:ce math")?;
@@ -462,7 +462,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
     crate::scan::get_token(st)?;
 
     if st.scanner.cur_cmd == MATH_SHIFT && st.input.cur_list.mode > 0 {
-        let mut j = TEX_NULL;
+        let mut j = MemPtr::NULL;
         let mut w = -MAX_DIMEN;
         let x;
 
@@ -477,7 +477,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
             left.set_link(&mut st.mem, right);
 
             let jbox = st.mem.new_null_box()?;
-            j = jbox.idx().0;
+            j = jbox.ptr();
             let jb = st.scanner.just_box.expect("line_break sets just_box");
             let mem = &mut st.mem;
             jbox.set_width(mem, jb.width(mem));
@@ -521,7 +521,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                         let d = st.fonts.char_width(f, st.fonts.char_info(f, c));
                         break (d, true);
                     }
-                    break match st.mem.classify(MemIdx::new(p)) {
+                    break match st.mem.classify(p) {
                         Ok(node @ (AnyNode::HList(_) | AnyNode::VList(_) | AnyNode::Rule(_))) => {
                             (node.hlist_width(&st.mem), true)
                         }
@@ -666,7 +666,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
         st.input.cur_list.mode = MMODE;
         define_word(st, IntPar::CurFam.loc(), -1)?;
         define_word(st, DimenPar::PreDisplaySize.loc(), w.0)?;
-        st.input.cur_list.e_tex_aux = MemPtr::from_raw(j);
+        st.input.cur_list.e_tex_aux = j;
         define_word(st, IntPar::PreDisplayDirection.loc(), x)?;
         define_word(st, DimenPar::DisplayWidth.loc(), l.0)?;
         define_word(st, DimenPar::DisplayIndent.loc(), s.0)?;

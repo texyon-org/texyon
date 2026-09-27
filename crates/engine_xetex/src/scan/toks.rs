@@ -191,7 +191,7 @@ pub(crate) fn read_toks(st: &mut EngineState, n: i32, r: i32, j: i32) -> Result<
     Ok(())
 }
 
-fn tokens_to_string(st: &mut EngineState, p: i32) -> Result<StrNumber, Abort> {
+fn tokens_to_string(st: &mut EngineState, p: MemPtr) -> Result<StrNumber, Abort> {
     if st.shipout.selector == Selector::NewString {
         return Err(Abort::PdfError(&[
             "tokens",
@@ -200,7 +200,7 @@ fn tokens_to_string(st: &mut EngineState, p: i32) -> Result<StrNumber, Abort> {
     }
     st.shipout.old_setting = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
-    let arg = MemPtr(p).link(&st.mem);
+    let arg = p.link(&st.mem);
     let l = st.strings.pool_size - st.strings.pool_ptr;
     crate::output::show_token_list(st, arg, TEX_NULL, l);
     st.shipout.selector = st.shipout.old_setting;
@@ -229,7 +229,7 @@ pub(crate) fn the_toks(st: &mut EngineState, code: TheCode) -> Result<MemPtr, Ab
     if code != TheCode::The {
         scan_general_text(st)?;
         if code == TheCode::Unexpanded {
-            return Ok(MemPtr::from_raw(st.scanner.cur_val));
+            return Ok(st.scanner.cur_val_ptr());
         }
         let old_setting = st.shipout.selector;
         st.shipout.selector = Selector::NewString;
@@ -250,7 +250,7 @@ pub(crate) fn the_toks(st: &mut EngineState, code: TheCode) -> Result<MemPtr, Ab
         if st.scanner.cur_val_level == ValueLevel::Ident {
             store_new_token(st, &mut p, Token::from_cs(st.scanner.cur_val))?;
         } else if st.scanner.cur_val != TEX_NULL {
-            let mut r = MemPtr::from_raw(st.scanner.cur_val).link(&st.mem);
+            let mut r = st.scanner.cur_val_ptr().link(&st.mem);
             while !r.is_null() {
                 store_new_token(st, &mut p, r.token(&st.mem))?;
                 r = r.link(&st.mem);
@@ -358,7 +358,7 @@ pub(crate) fn scan_toks(
                 loop {
                     get_next(st)?;
                     if st.scanner.cur_cmd >= CALL
-                        && st.mem.is_protected_macro(MemPtr(st.scanner.cur_chr))
+                        && st.mem.is_protected_macro(st.scanner.cur_chr_ptr())
                     {
                         st.scanner.cur_cmd = RELAX;
                         st.scanner.cur_chr = NO_EXPAND_FLAG;
@@ -550,8 +550,7 @@ pub(crate) fn scan_pdf_ext_toks(st: &mut EngineState) -> Result<(), Abort> {
 
 fn scan_toks_to_string(st: &mut EngineState) -> Result<StrNumber, Abort> {
     scan_toks(st, false, true)?;
-    let def_ref = st.scanner.def_ref.0;
-    let s = tokens_to_string(st, def_ref)?;
+    let s = tokens_to_string(st, st.scanner.def_ref)?;
     st.mem.delete_token_ref(st.scanner.def_ref);
     Ok(s)
 }

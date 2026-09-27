@@ -28,7 +28,7 @@ impl MemState {
         if self.is_char_node(p) {
             return None;
         }
-        self.classify_disc(MemIdx::new(p)).ok().flatten()
+        self.classify_disc(p).ok().flatten()
     }
 
     /// The size of whatsit `w`, `None` for an unknown subtype.
@@ -112,7 +112,7 @@ impl MemState {
                 let r = self.get_avail()?;
                 Some((r, 1))
             } else {
-                match self.classify(MemIdx::new(p)).ok() {
+                match self.classify(p).ok() {
                     Some(AnyNode::HList(b)) => Some((
                         self.copy_box_shell(AnyBox::HList(b), MemPtr::NULL)?.ptr(),
                         0,
@@ -191,7 +191,7 @@ impl MemState {
                 let p = q;
                 q = p.link(self);
 
-                if let Ok(AnyNode::Math(math)) = self.classify(MemIdx::new(p)) {
+                if let Ok(AnyNode::Math(math)) = self.classify(p) {
                     let subtype = math.subtype(self);
                     if subtype % 2 == 1 {
                         if scanner.lr_ptr.info(self) != end_lr_type(subtype) {
@@ -236,8 +236,7 @@ impl MemState {
     }
 
     /// Free every node of the list `p` and everything it owns.
-    pub fn flush_node_list(&mut self, p: impl crate::units::MemAddr) -> Result<(), Abort> {
-        let mut p = MemPtr(p.addr());
+    pub fn flush_node_list(&mut self, mut p: MemPtr) -> Result<(), Abort> {
         while !p.is_null() {
             let q = p.link(self);
             if self.is_char_node(p) {
@@ -246,10 +245,7 @@ impl MemState {
                 continue;
             }
 
-            let size = match self
-                .classify(MemIdx::new(p))
-                .map_err(|_| Abort::Confusion("flushing"))?
-            {
+            let size = match self.classify(p).map_err(|_| Abort::Confusion("flushing"))? {
                 AnyNode::HList(b) => {
                     self.flush_node_list(b.list_ptr(self))?;
                     BOX_NODE_SIZE
@@ -354,8 +350,8 @@ impl MemState {
         })
     }
 
-    pub fn copy_node_list(&mut self, p: i32) -> Result<i32, Abort> {
-        Ok(self.copy_list(MemPtr(p))?.0)
+    pub fn copy_node_list(&mut self, p: MemPtr) -> Result<MemPtr, Abort> {
+        self.copy_list(p)
     }
 
     fn copy_list(&mut self, mut p: MemPtr) -> Result<MemPtr, Abort> {
@@ -381,9 +377,7 @@ impl MemState {
     /// Allocate a copy of the non-char node `p`, returning it and how many of its
     /// leading words are still to be copied.
     fn copy_node(&mut self, p: MemPtr) -> Result<(MemPtr, i32), Abort> {
-        let node = self
-            .classify(MemIdx::new(p))
-            .map_err(|_| Abort::Confusion("copying"))?;
+        let node = self.classify(p).map_err(|_| Abort::Confusion("copying"))?;
         Ok(match node {
             AnyNode::HList(b) => {
                 let list = self.copy_list(b.list_ptr(self))?;

@@ -7,7 +7,7 @@ use crate::mem::HOLD_HEAD;
 use crate::node::{AnyNode, CharNode, DiscNode, LigItem, NodePtr, WhatsitNode};
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, FontState, MemState};
-use crate::units::{FontId, MemIdx, MemPtr, Scaled, StrNumber};
+use crate::units::{FontId, MemPtr, Scaled, StrNumber};
 
 use super::odd;
 
@@ -532,7 +532,7 @@ fn insert_hyphens(
             st.hyph.hu[0] = i32::from(ha_ch.character(&st.mem));
             (st.mem.predecessor(st.linebreak.cur_p, ha), 0)
         }
-    } else if let Ok(AnyNode::Ligature(ha_lig)) = st.mem.classify(MemIdx::new(ha)) {
+    } else if let Ok(AnyNode::Ligature(ha_lig)) = st.mem.classify(ha) {
         if ha_lig.font(&st.mem) != st.hyph.hf {
             found2(st)
         } else {
@@ -549,7 +549,7 @@ fn insert_hyphens(
         }
     } else if !st.mem.is_char_node(r)
         && matches!(
-            st.mem.classify(MemIdx::new(r)),
+            st.mem.classify(r),
             Ok(AnyNode::Ligature(lig)) if lig.subtype(&st.mem) > 1
         )
     {

@@ -19,7 +19,7 @@ use crate::params::{DimenPar, IntPar};
 use crate::state::{
     EqtbState, FontState, MemState, ScannerState, Selector, ShipoutState, StringsState,
 };
-use crate::units::{FontId, GlueSign, MemIdx, MemPtr, Scaled, StrNumber};
+use crate::units::{FontId, GlueSign, MemPtr, Scaled, StrNumber};
 
 mod whatsits;
 
@@ -495,7 +495,7 @@ impl MemState {
         let mut width = Scaled::ZERO;
         let mut q = first.ptr();
         loop {
-            match self.classify(MemIdx::new(q.0)) {
+            match self.classify(q) {
                 Ok(AnyNode::Whatsit(w)) => {
                     if w.whatsit_subtype(self).is_some_and(|s| s.is_native_word()) {
                         for &unit in w.native_text(self) {
@@ -590,7 +590,7 @@ impl MemState {
     }
 
     fn leader_of(&self, glue: NodePtr<GlueNode>) -> Leader {
-        match self.classify(MemIdx::new(glue.leader_ptr(self).0)) {
+        match self.classify(glue.leader_ptr(self).0) {
             Ok(AnyNode::Rule(rule)) => Leader::Rule(rule),
             Ok(AnyNode::HList(h)) => Leader::Box(AnyBox::HList(h)),
             Ok(AnyNode::VList(v)) => Leader::Box(AnyBox::VList(v)),
@@ -896,11 +896,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
             (p, prev_p) = chars_out(st, p, prev_p)?;
             continue;
         }
-        match st
-            .mem
-            .classify(MemIdx::new(p.0))
-            .expect("valid node type in hlist_out")
-        {
+        match st.mem.classify(p).expect("valid node type in hlist_out") {
             AnyNode::HList(h) => hlist_box_out(st, AnyBox::HList(h), base_line)?,
             AnyNode::VList(v) => hlist_box_out(st, AnyBox::VList(v), base_line)?,
             AnyNode::Rule(rule) => {
@@ -1073,11 +1069,7 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
         if st.mem.is_char_node(p) {
             return Err(Abort::Confusion("vlistout"));
         }
-        match st
-            .mem
-            .classify(MemIdx::new(p.0))
-            .expect("valid node type in vlist_out")
-        {
+        match st.mem.classify(p).expect("valid node type in vlist_out") {
             AnyNode::HList(h) => vlist_box_out(st, AnyBox::HList(h), left_edge, upwards)?,
             AnyNode::VList(v) => vlist_box_out(st, AnyBox::VList(v), left_edge, upwards)?,
             AnyNode::Rule(rule) => {
@@ -1369,7 +1361,7 @@ impl MemState {
                 let q = p.link(self);
                 let mut add_width = true;
                 let mut now_kern = false;
-                match self.classify(MemIdx::new(p.0)) {
+                match self.classify(p) {
                     Ok(node @ (AnyNode::HList(_) | AnyNode::VList(_) | AnyNode::Rule(_))) => {
                         shipout.rule_wd = node.hlist_width(self);
                     }

@@ -14,7 +14,7 @@ use crate::packaging::{MarksAction, ADDITIONAL, EXACTLY};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::scan::fetch_box;
 use crate::state::{EngineState, GroupCode, PageContents, ShipoutState};
-use crate::units::{MemIdx, MemPtr, Scaled};
+use crate::units::{MemPtr, Scaled};
 
 // Indices into `page_so_far`, whose entries 2 to 5 hold the stretch of each order.
 const PAGE_GOAL: usize = 0;
@@ -228,7 +228,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     let mut prev_p = PAGE_HEAD;
     let mut p = prev_p.link(&st.mem);
     while p != st.shipout.best_page_break {
-        match st.mem.classify(MemIdx::new(p)) {
+        match st.mem.classify(p) {
             Ok(AnyNode::Ins(ins)) if process_inserts => {
                 let wait = place_insertion(st, ins, p)?;
                 let next = ins.link(&st.mem);
@@ -508,7 +508,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
     rec.set_broken_ins(&mut st.mem, p);
     if q.is_null() {
         st.shipout.insert_penalties = st.shipout.insert_penalties.wrapping_add(EJECT_PENALTY);
-    } else if let Ok(AnyNode::Penalty(pen)) = st.mem.classify(MemIdx::new(q)) {
+    } else if let Ok(AnyNode::Penalty(pen)) = st.mem.classify(q) {
         st.shipout.insert_penalties = st
             .shipout
             .insert_penalties
@@ -589,7 +589,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
             }
             AnyNode::Glue(_) if below_box => PageStep::Discard,
             AnyNode::Glue(_) => {
-                let tail = st.mem.classify(MemIdx::new(st.shipout.page_tail));
+                let tail = st.mem.classify(st.shipout.page_tail);
                 if tail.is_ok_and(AnyNode::precedes_break) {
                     PageStep::Break(0)
                 } else {
@@ -602,7 +602,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
                 if next.is_null() {
                     return Ok(());
                 }
-                if matches!(st.mem.classify(MemIdx::new(next)), Ok(AnyNode::Glue(_))) {
+                if matches!(st.mem.classify(next), Ok(AnyNode::Glue(_))) {
                     PageStep::Break(0)
                 } else {
                     PageStep::UpdateHeights

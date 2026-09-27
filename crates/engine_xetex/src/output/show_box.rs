@@ -9,7 +9,7 @@ use crate::mem::ZERO_GLUE;
 use crate::node::{AnyBox, AnyNode, CharNode, MathField, NodePtr, WhatsitNode, WhatsitSubtype};
 use crate::params::IntPar;
 use crate::state::EngineState;
-use crate::units::{GlueSign, MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{GlueSign, MemPtr, NodeType, Scaled};
 
 use super::show::show_info;
 use super::{
@@ -19,7 +19,7 @@ use super::{
     print_skip_param, print_spec, print_style, print_write_whatsit,
 };
 
-pub(crate) fn show_box(st: &mut EngineState, p: impl crate::units::MemAddr) {
+pub(crate) fn show_box(st: &mut EngineState, p: MemPtr) {
     st.errors.depth_threshold = st.eqtb.int_par(IntPar::ShowBoxDepth);
     st.errors.breadth_max = st.eqtb.int_par(IntPar::ShowBoxBreadth);
     if st.errors.breadth_max <= 0 {
@@ -33,8 +33,7 @@ pub(crate) fn show_box(st: &mut EngineState, p: impl crate::units::MemAddr) {
     print_ln(st);
 }
 
-pub(crate) fn short_display(st: &mut EngineState, p: impl crate::units::MemAddr) {
-    let mut p = MemPtr(p.addr());
+pub(crate) fn short_display(st: &mut EngineState, mut p: MemPtr) {
     while p.0 > 0 {
         if st.mem.is_char_node(p) {
             if p.0 <= st.mem.mem_end {
@@ -52,7 +51,7 @@ pub(crate) fn short_display(st: &mut EngineState, p: impl crate::units::MemAddr)
                 print(st, i32::from(ch.character(&st.mem)));
             }
         } else {
-            match st.mem.classify(MemIdx::new(p)) {
+            match st.mem.classify(p) {
                 Ok(
                     AnyNode::HList(_)
                     | AnyNode::VList(_)
@@ -145,8 +144,7 @@ fn print_subsidiary_data(st: &mut EngineState, p: NodePtr<MathField>, c: u8) {
     st.strings.pool_ptr -= 1;
 }
 
-pub(super) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr) {
-    let mut p = MemPtr(p.addr());
+pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
     if st.strings.cur_length() > st.errors.depth_threshold {
         if p.0 > TEX_NULL {
             print(st, " []");
@@ -169,7 +167,7 @@ pub(super) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr
         if st.mem.is_char_node(p) {
             print_font_and_char(st, p);
         } else {
-            match st.mem.classify(MemIdx::new(p)) {
+            match st.mem.classify(p) {
                 Ok(AnyNode::HList(b)) => show_box_node(st, AnyBox::HList(b)),
                 Ok(AnyNode::VList(b)) => show_box_node(st, AnyBox::VList(b)),
                 Ok(AnyNode::Unset(node)) => {

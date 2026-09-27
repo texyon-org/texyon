@@ -30,7 +30,7 @@ use crate::scan::{
 };
 use crate::state::{EngineState, MemState, Selector};
 use crate::token::Token;
-use crate::units::{FontId, MemIdx, MemPtr, Scaled, StrNumber};
+use crate::units::{FontId, MemPtr, Scaled, StrNumber};
 
 /// The `\the` variant in `cur_chr`.
 pub(crate) fn the_code(st: &EngineState) -> Result<TheCode, Abort> {
@@ -267,8 +267,8 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             } else if st.scanner.cur_cmd < CALL {
                 st.scanner.cur_chr == q
             } else {
-                let mut p = MemPtr(st.scanner.cur_chr).link(&st.mem);
-                let mut q = MemPtr(st.eqtb.equiv(n)).link(&st.mem);
+                let mut p = st.scanner.cur_chr_ptr().link(&st.mem);
+                let mut q = st.eqtb.equiv_ptr(n).link(&st.mem);
                 if p == q {
                     true
                 } else {
@@ -531,7 +531,7 @@ fn print_margin_kern(
         if p.is_null() || st.mem.is_char_node(p) {
             break None;
         }
-        match st.mem.classify(MemIdx::new(p)) {
+        match st.mem.classify(p) {
             Ok(node) if st.mem.is_margin_kern_filler(node, par_skip) => p = next(&st.mem, p),
             Ok(AnyNode::MarginKern(mk)) if mk.subtype(&st.mem) == side => {
                 break Some(mk.width(&st.mem))
@@ -552,7 +552,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
     let mut fnt = NULL_FONT;
     let mut arg1: i32 = 0;
     let mut arg2: i32 = 0;
-    let mut margin_list = TEX_NULL;
+    let mut margin_list = MemPtr::NULL;
 
     match c {
         ConvertCode::Number | ConvertCode::RomanNumeral | ConvertCode::UniformDeviate => {
@@ -581,7 +581,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
                     "a non-empty hbox expected",
                 ]));
             };
-            margin_list = hbox.list_ptr(&st.mem).0;
+            margin_list = hbox.list_ptr(&st.mem);
         }
         ConvertCode::CreationDate => {
             let b = st.strings.pool_ptr;
@@ -721,11 +721,11 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
         ConvertCode::LeftMarginKern | ConvertCode::RightMarginKern => {
             let list = margin_list;
             if c == ConvertCode::LeftMarginKern {
-                print_margin_kern(st, MemPtr(list), 0, GluePar::LeftSkip, |mem, p| p.link(mem));
+                print_margin_kern(st, list, 0, GluePar::LeftSkip, |mem, p| p.link(mem));
             } else {
-                let last = st.mem.prev_rightmost(MemPtr(list), MemPtr::NULL);
+                let last = st.mem.prev_rightmost(list, MemPtr::NULL);
                 print_margin_kern(st, last, 1, GluePar::RightSkip, move |mem, p| {
-                    mem.prev_rightmost(MemPtr(list), p)
+                    mem.prev_rightmost(list, p)
                 });
             }
         }
@@ -782,9 +782,8 @@ fn not_font_error(st: &mut EngineState, c: ConvertCode, f: FontId, msg: &str) ->
 fn prepend_to_backed_up(st: &mut EngineState, token: Token) -> Result<(), Abort> {
     let p = st.mem.get_avail()?;
     p.set_token(&mut st.mem, token);
-    p.set_link(&mut st.mem, MemPtr::from_raw(st.input.cur_input.loc));
-    st.input.cur_input.start = p.0;
-    st.input.cur_input.loc = p.0;
+    p.set_link(&mut st.mem, st.input.cur_input.token_loc());
+    st.input.cur_input.set_token_list(p);
     Ok(())
 }
 
@@ -1077,7 +1076,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
     let save_scanner_status = st.scanner.scanner_status;
     let save_warning_index = st.scanner.warning_index;
     st.scanner.warning_index = st.scanner.cur_cs;
-    let ref_count = MemPtr(st.scanner.cur_chr);
+    let ref_count = st.scanner.cur_chr_ptr();
     let mut r = ref_count.link(&st.mem);
     let mut n: i32 = 0;
 
@@ -1260,7 +1259,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
 
         begin_token_list(st, ref_count, TokenType::Macro)?;
         st.input.cur_input.name = st.scanner.warning_index;
-        st.input.cur_input.loc = r.link(&st.mem).0;
+        st.input.cur_input.set_token_loc(r.link(&st.mem));
 
         if n > 0 {
             if st.input.param_ptr + n > st.input.max_param_stack {

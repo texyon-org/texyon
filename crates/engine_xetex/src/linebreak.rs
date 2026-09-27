@@ -16,7 +16,7 @@ use crate::state::{
     ConfigState, EngineState, EqtbState, ErrorState, FontState, LinebreakState, MemState,
     ScannerState,
 };
-use crate::units::{FontId, MemAddr, MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{FontId, MemAddr, MemPtr, NodeType, Scaled};
 
 mod hyphenate;
 mod locale;
@@ -337,7 +337,7 @@ fn line_break_try_break(
 fn kern_break(st: &mut EngineState, next: MemPtr, auto_breaking: bool) -> Result<(), Abort> {
     if !st.mem.is_char_node(next)
         && auto_breaking
-        && matches!(st.mem.classify(MemIdx::new(next)), Ok(AnyNode::Glue(_)))
+        && matches!(st.mem.classify(next), Ok(AnyNode::Glue(_)))
     {
         line_break_try_break(st, 0, UNHYPHENATED, None)?;
     }
@@ -353,7 +353,7 @@ impl MemState {
             return Ok(fonts.effective_char_width(ch.font(self), ch.character(self)));
         }
 
-        match self.classify(MemIdx::new(p)) {
+        match self.classify(p) {
             Ok(AnyNode::Ligature(lig)) => {
                 let f = lig.font(self);
                 fonts.xtx_ligature_present = true;
@@ -381,7 +381,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
     let tail = st.input.cur_list.tail;
     let tail_glue = if st.mem.is_char_node(tail) {
         None
-    } else if let Ok(AnyNode::Glue(g)) = st.mem.classify(MemIdx::new(tail)) {
+    } else if let Ok(AnyNode::Glue(g)) = st.mem.classify(tail) {
         Some(g)
     } else {
         None
@@ -541,7 +541,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
                 st.linebreak.cur_p = cur;
             }
 
-            let Ok(node) = st.mem.classify(MemIdx::new(cur)) else {
+            let Ok(node) = st.mem.classify(cur) else {
                 return Err(Abort::Confusion("paragraph"));
             };
             match node {
@@ -740,7 +740,7 @@ impl MemState {
         }
 
         while !s.is_null() && !self.is_char_node(s) {
-            match self.classify(MemIdx::new(s)) {
+            match self.classify(s) {
                 Ok(AnyNode::Glue(g)) => {
                     let spec = g.glue_ptr(self);
                     linebreak.break_width[1] -= spec.width(self);

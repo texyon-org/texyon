@@ -371,7 +371,7 @@ pub(super) fn glue_spec(p: i32) -> NodePtr<GlueSpecNode> {
 
 /// Replaces the glue in `cur_val` by its width, releasing the glue.
 pub(super) fn glue_to_width(st: &mut EngineState) {
-    let spec = glue_spec(st.scanner.cur_val);
+    let spec = st.scanner.cur_glue();
     st.scanner.set_cur_dimen(spec.width(&st.mem));
     st.mem.delete_glue_ref(spec);
 }
@@ -650,7 +650,7 @@ pub(crate) fn scan_glue(st: &mut EngineState, level: ValueLevel) -> Result<(), A
         }
     }
 
-    let gs = st.mem.new_spec(glue_spec(0))?;
+    let gs = st.mem.new_spec(crate::mem::ZERO_GLUE)?;
     gs.set_width(&mut st.mem, st.scanner.cur_dimen());
 
     if scan_keyword(st, "plus")? {
@@ -826,7 +826,7 @@ pub(super) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
                 {
                     st.errors.arith_error = true;
                     st.mem.delete_glue_ref(glue_spec(f));
-                    f = st.mem.new_spec(glue_spec(0))?.ptr().0;
+                    f = st.mem.new_spec(crate::mem::ZERO_GLUE)?.ptr().0;
                 }
             }
 

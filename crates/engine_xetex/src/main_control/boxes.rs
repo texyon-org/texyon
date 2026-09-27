@@ -4,7 +4,7 @@ use crate::cmd::{BOX_REF, HRULE, HSKIP, MAKE_BOX, VRULE, VSKIP};
 use crate::codes::{BoxCode, ValueLevel};
 use crate::consts::{
     A_LEADERS, BEGIN_M_CODE, BOX_BASE, BOX_NODE_SIZE, END_M_CODE, HMODE, IGNORE_DEPTH,
-    MARGIN_KERN_NODE_SIZE, MMODE, SUB_BOX, TEX_NULL, VMODE,
+    MARGIN_KERN_NODE_SIZE, MMODE, SUB_BOX, VMODE,
 };
 use crate::errors::Abort;
 use crate::input::TokenType;
@@ -13,7 +13,7 @@ use crate::node::{AnyBox, AnyNode, BoxOrRule};
 use crate::params::{DimenPar, IntPar, TokPar};
 use crate::scan::fetch_box;
 use crate::state::{EngineState, GroupCode, MemState};
-use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{MemPtr, NodeType, Scaled};
 
 use super::assign::{define, sa_define};
 use super::lists::{append_glue, normal_paragraph};
@@ -47,11 +47,8 @@ pub(super) fn unpackage(st: &mut EngineState) -> Result<(), Abort> {
         }
         let list = b.list_ptr(&st.mem);
         if c == BoxCode::Copy.raw() {
-            let copy = st.mem.copy_node_list(list.0)?;
-            st.input
-                .cur_list
-                .tail
-                .set_link(&mut st.mem, MemPtr::from_raw(copy));
+            let copy = st.mem.copy_node_list(list)?;
+            st.input.cur_list.tail.set_link(&mut st.mem, copy);
         } else {
             st.input.cur_list.tail.set_link(&mut st.mem, list);
             let n = st.scanner.cur_val;
@@ -66,9 +63,7 @@ pub(super) fn unpackage(st: &mut EngineState) -> Result<(), Abort> {
         if r.is_null() {
             return Ok(());
         }
-        if !st.mem.is_char_node(r)
-            && matches!(st.mem.classify(MemIdx(r.0)), Ok(AnyNode::MarginKern(_)))
-        {
+        if !st.mem.is_char_node(r) && matches!(st.mem.classify(r), Ok(AnyNode::MarginKern(_))) {
             let next = r.link(&st.mem);
             st.input.cur_list.tail.set_link(&mut st.mem, next);
             st.mem.free_node(r, MARGIN_KERN_NODE_SIZE);
@@ -101,7 +96,7 @@ pub(super) fn delete_last(st: &mut EngineState) -> Result<(), Abort> {
     if st.mem.is_char_node(tx)
         || st
             .mem
-            .node_type(MemIdx::new(tx))
+            .node_type(tx)
             .map_or(true, |t| i32::from(t.as_raw()) != st.scanner.cur_chr)
     {
         return Ok(());
@@ -195,7 +190,7 @@ fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
             }
         } else {
             let node = if st.input.cur_list.mode.abs() == HMODE {
-                st.input.cur_list.set_aux_s0(1000);
+                st.input.cur_list.set_space_factor(1000);
                 b.ptr()
             } else {
                 let noad = st.mem.new_noad()?;
@@ -212,9 +207,9 @@ fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
             (box_context - GLOBAL_BOX_FLAG, true)
         };
         st.scanner.cur_val = n;
-        let cb = st.scanner.cur_box.map_or(TEX_NULL, |b| b.ptr().0);
+        let cb = st.scanner.cur_box.map_or(MemPtr::NULL, |b| b.ptr());
         if n < 256 {
-            define(st, global, BOX_BASE + n, BOX_REF, cb)?;
+            define(st, global, BOX_BASE + n, BOX_REF, cb.0)?;
         } else {
             let sa = st
                 .mem
@@ -255,7 +250,7 @@ fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
 impl MemState {
     fn is_math_node(&self, p: MemPtr, subtype: u16) -> bool {
         !self.is_char_node(p)
-            && matches!(self.classify(MemIdx::new(p)), Ok(AnyNode::Math(m)) if m.subtype(self) == subtype)
+            && matches!(self.classify(p), Ok(AnyNode::Math(m)) if m.subtype(self) == subtype)
     }
 }
 
@@ -280,7 +275,7 @@ fn unlink_effective_tail(st: &mut EngineState, tx: MemPtr) -> Result<bool, Abort
         p = q;
         fm = false;
         if !st.mem.is_char_node(q) {
-            match st.mem.classify(MemIdx::new(q)) {
+            match st.mem.classify(q) {
                 Ok(AnyNode::Disc(disc)) => {
                     for _ in 0..disc.subtype(&st.mem) {
                         p = p.link(&st.mem);
@@ -349,7 +344,7 @@ pub(super) fn begin_box(st: &mut EngineState, box_context: i32) -> Result<(), Ab
             } else {
                 let tx = effective_tail(st);
                 if !st.mem.is_char_node(tx) {
-                    if let Ok(Some(b)) = st.mem.classify_box(MemIdx::new(tx)) {
+                    if let Ok(Some(b)) = st.mem.classify_box(tx) {
                         if unlink_effective_tail(st, tx)? {
                             st.scanner.cur_box = Some(BoxOrRule::Box(b));
                             b.set_shift_amount(&mut st.mem, Scaled::ZERO);
@@ -399,7 +394,7 @@ pub(super) fn begin_box(st: &mut EngineState, box_context: i32) -> Result<(), Ab
                 st.input.cur_list.set_prev_depth(IGNORE_DEPTH);
                 begin_every(st, TokPar::EveryVbox, TokenType::EveryVbox)?;
             } else {
-                st.input.cur_list.set_aux_s0(1000);
+                st.input.cur_list.set_space_factor(1000);
                 begin_every(st, TokPar::EveryHbox, TokenType::EveryHbox)?;
             }
             return Ok(());

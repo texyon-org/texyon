@@ -122,10 +122,10 @@ pub(crate) fn end_token_list(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
         TokenType::BackedUp | TokenType::BackedUpChar | TokenType::Inserted => {
-            st.mem.flush_list(MemPtr::from_raw(ci.start));
+            st.mem.flush_list(ci.token_start());
         }
         t => {
-            st.mem.delete_token_ref(MemPtr(ci.start));
+            st.mem.delete_token_ref(ci.token_start());
             if t == TokenType::Macro {
                 while st.input.param_ptr > ci.limit {
                     st.input.param_ptr -= 1;
@@ -157,9 +157,8 @@ pub(crate) fn back_input(st: &mut EngineState) -> Result<(), Abort> {
     }
     push_input(st)?;
     st.input.cur_input.state = TOKEN_LIST;
-    st.input.cur_input.start = p.0;
+    st.input.cur_input.set_token_list(p);
     st.input.cur_input.set_token_type(TokenType::BackedUp);
-    st.input.cur_input.loc = p.0;
     Ok(())
 }
 
@@ -178,7 +177,7 @@ impl MemState {
     pub(crate) fn pseudo_close(&mut self, input: &mut InputClusterState) {
         let file = input.pseudo_files;
         let next_file = file.link(self);
-        let mut line = MemPtr(file.info(self));
+        let mut line = file.info_ptr(self);
         self.free_avail(file);
         input.pseudo_files = next_file;
         while let Some(l) = NodePtr::<PseudoLineNode>::from_ptr(line) {
@@ -241,7 +240,7 @@ pub(crate) fn end_file_reading(st: &mut EngineState) -> Result<(), Abort> {
 pub(crate) fn pseudo_input(st: &mut EngineState) -> Result<bool, Abort> {
     st.input.last = st.input.first;
     let files = st.input.pseudo_files;
-    let Some(line) = NodePtr::<PseudoLineNode>::from_ptr(MemPtr(files.info(&st.mem))) else {
+    let Some(line) = NodePtr::<PseudoLineNode>::from_ptr(files.info_ptr(&st.mem)) else {
         return Ok(false);
     };
     let rest = line.link(&st.mem);
@@ -293,7 +292,7 @@ pub(crate) fn begin_token_list(
     st.input.cur_input.start = list.0;
     st.input.cur_input.set_token_type(t);
     if t < TokenType::Macro {
-        st.input.cur_input.loc = list.0;
+        st.input.cur_input.set_token_loc(list);
         return Ok(());
     }
     st.mem.add_token_ref(list);
@@ -301,7 +300,7 @@ pub(crate) fn begin_token_list(
         st.input.cur_input.limit = st.input.param_ptr;
         return Ok(());
     }
-    st.input.cur_input.loc = list.link(&st.mem).0;
+    st.input.cur_input.set_token_loc(list.link(&st.mem));
     if st.eqtb.int_par(IntPar::TracingMacros) > 1 {
         use crate::output::{
             begin_diagnostic, capture_to_diagnostic, diagnostic_begin_capture_warning_here,
