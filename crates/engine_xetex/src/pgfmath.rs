@@ -2,7 +2,6 @@
 //! defines `\pgfmathresult` and is redirected to `\pgfmath@parse@end`, which takes
 //! the same argument. Results may differ from pgf's macros in the last digits.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::cmd::{
@@ -22,39 +21,109 @@ pub(crate) mod eval;
 
 use eval::{Format, Func, Item};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Mode {
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
+pub(crate) enum Mode {
+    #[default]
     Off,
     Native,
     Check,
 }
 
-const KIND_UNKNOWN: u8 = 0;
-const KIND_NONE: u8 = 1;
-const KIND_TRY: u8 = 2;
-const KIND_NATIVE: u8 = 3;
-
-/// Cleared on rewind, since a rewound slot may later carry another name.
-#[derive(Default)]
-pub(crate) struct Kinds {
-    table: Vec<u8>,
+impl Mode {
+    /// `TECTONIC_PGFMATH=native|check|off` overrides `default`.
+    pub(crate) fn from_env(default: Mode) -> Mode {
+        match std::env::var("TECTONIC_PGFMATH").as_deref() {
+            Ok("native") => Mode::Native,
+            Ok("check") => Mode::Check,
+            Ok("off") => Mode::Off,
+            _ => default,
+        }
+    }
 }
 
-impl Kinds {
-    #[inline(always)]
-    pub(crate) fn wanted(&self, cs: i32) -> bool {
-        self.table.get(cs as usize) != Some(&KIND_NONE)
+const TRY: usize = 0;
+const NATIVE: usize = 23;
+
+const NAMES: [&str; NATIVE + NATIVES.len()] = [
+    "pgfmathparse@trynumber@loop",
+    "pgfmath@parse@end",
+    "pgfmathparse@expression@is@number",
+    "pgfmath@stack@push@operand",
+    "pgfmath@expression",
+    "pgfmathresult",
+    "ifpgfmathunitsdeclared",
+    "iftrue",
+    "iffalse",
+    "relax",
+    "let",
+    "edef",
+    "ifpgfmath@quickparse",
+    "pgfmathpostparse",
+    "pgfmath@trig@format@choice",
+    "f@encoding",
+    "f@family",
+    "f@series",
+    "f@shape",
+    "f@size",
+    "ifpgfmathfloatcomparison",
+    "pgfmathfloat@stack@push@operand",
+    "pgfmathfloat@parse@expression@is@number",
+    NATIVES[0].0,
+    NATIVES[1].0,
+    NATIVES[2].0,
+    NATIVES[3].0,
+    NATIVES[4].0,
+    NATIVES[5].0,
+    NATIVES[6].0,
+    NATIVES[7].0,
+    NATIVES[8].0,
+    NATIVES[9].0,
+    NATIVES[10].0,
+];
+
+/// The `eqtb` slots of [`NAMES`], zero while a name does not exist. Kept on
+/// `EqtbState` and checkpointed with it, so it always matches the hash.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Slots([i32; NAMES.len()]);
+
+impl Default for Slots {
+    fn default() -> Self {
+        Slots([0; NAMES.len()])
+    }
+}
+
+impl Slots {
+    /// Record `p` if `name`, as UTF-32 units, is one of [`NAMES`].
+    pub(crate) fn note(&mut self, name: &[i32], p: i32) {
+        for (i, candidate) in NAMES.iter().enumerate() {
+            if candidate.len() == name.len()
+                && candidate.bytes().zip(name).all(|(b, &u)| i32::from(b) == u)
+            {
+                self.0[i] = p;
+            }
+        }
+    }
+
+    /// Look up every name, for a hash that did not go through `note`.
+    pub(crate) fn resolve(st: &mut EngineState) {
+        for (i, name) in NAMES.iter().enumerate() {
+            st.eqtb.pgfmath.0[i] = lookup(st, name).unwrap_or(0);
+        }
     }
 
     #[inline(always)]
-    pub(crate) fn native(&self, cs: i32) -> bool {
-        self.table
-            .get(cs as usize)
-            .is_some_and(|&k| k >= KIND_NATIVE)
+    pub(crate) fn is_try(&self, cs: i32) -> bool {
+        cs != 0 && cs == self.0[TRY]
     }
 
-    pub(crate) fn clear(&mut self) {
-        self.table.clear();
+    #[inline(always)]
+    pub(crate) fn native(&self, cs: i32) -> Option<Native> {
+        let i = self.0[NATIVE..].iter().position(|&p| p == cs && p != 0)?;
+        Some(NATIVES[i].1)
+    }
+
+    fn get(&self, i: usize) -> Option<i32> {
+        (self.0[i] != 0).then_some(self.0[i])
     }
 }
 
@@ -69,6 +138,7 @@ const TRACING: &[IntPar] = &[
     IntPar::TracingOnline,
 ];
 
+#[derive(Clone, Copy)]
 struct Names {
     parse_end: i32,
     is_number: i32,
@@ -85,53 +155,34 @@ struct Names {
     postparse: i32,
     trig_format: i32,
     nfss: [i32; 5],
-    /// The FPU library loads later than pgfmath.
     comparison: Option<i32>,
     fpu_push_operand: Option<i32>,
     fpu_is_number: Option<i32>,
 }
 
-fn resolve(st: &mut EngineState) -> Option<Names> {
-    let mut nfss = [0; 5];
-    for (slot, name) in
-        nfss.iter_mut()
-            .zip(["f@encoding", "f@family", "f@series", "f@shape", "f@size"])
-    {
-        *slot = lookup(st, name)?;
-    }
-    Some(Names {
-        parse_end: lookup(st, "pgfmath@parse@end")?,
-        is_number: lookup(st, "pgfmathparse@expression@is@number")?,
-        push_operand: lookup(st, "pgfmath@stack@push@operand")?,
-        expression: lookup(st, "pgfmath@expression")?,
-        result: lookup(st, "pgfmathresult")?,
-        units_declared: lookup(st, "ifpgfmathunitsdeclared")?,
-        if_true: lookup(st, "iftrue")?,
-        if_false: lookup(st, "iffalse")?,
-        relax: lookup(st, "relax")?,
-        let_: lookup(st, "let")?,
-        edef: lookup(st, "edef")?,
-        quickparse: lookup(st, "ifpgfmath@quickparse")?,
-        postparse: lookup(st, "pgfmathpostparse")?,
-        trig_format: lookup(st, "pgfmath@trig@format@choice")?,
-        nfss,
-        comparison: None,
-        fpu_push_operand: None,
-        fpu_is_number: None,
-    })
-}
-
 impl Names {
-    fn find_fpu(&mut self, st: &mut EngineState) {
-        if self.comparison.is_none() {
-            self.comparison = lookup(st, "ifpgfmathfloatcomparison");
-        }
-        if self.fpu_push_operand.is_none() {
-            self.fpu_push_operand = lookup(st, "pgfmathfloat@stack@push@operand");
-        }
-        if self.fpu_is_number.is_none() {
-            self.fpu_is_number = lookup(st, "pgfmathfloat@parse@expression@is@number");
-        }
+    fn of(slots: &Slots) -> Option<Names> {
+        let s = |i| slots.get(i);
+        Some(Names {
+            parse_end: s(1)?,
+            is_number: s(2)?,
+            push_operand: s(3)?,
+            expression: s(4)?,
+            result: s(5)?,
+            units_declared: s(6)?,
+            if_true: s(7)?,
+            if_false: s(8)?,
+            relax: s(9)?,
+            let_: s(10)?,
+            edef: s(11)?,
+            quickparse: s(12)?,
+            postparse: s(13)?,
+            trig_format: s(14)?,
+            nfss: [s(15)?, s(16)?, s(17)?, s(18)?, s(19)?],
+            comparison: s(20),
+            fpu_push_operand: s(21),
+            fpu_is_number: s(22),
+        })
     }
 }
 
@@ -147,7 +198,9 @@ struct Stats {
     worst: f64,
 }
 
+/// What a native evaluation defines `\pgfmathresult` to.
 enum Answer {
+    /// `\let\pgfmathresult=\pgfmath@expression`, pgf's plain-number lane.
     Expression,
     Parsed(eval::Outcome),
 }
@@ -157,243 +210,122 @@ struct Pending {
     expression: String,
 }
 
-struct Pgfmath {
-    mode: Option<Mode>,
-    names: Option<Names>,
+/// Counters and check-mode state, for `TECTONIC_PGFMATH` runs.
+#[derive(Default)]
+pub(crate) struct Diagnostics {
     stats: Stats,
     pending: Option<Pending>,
-}
-
-thread_local! {
-    static STATE: RefCell<Pgfmath> = RefCell::new(Pgfmath {
-        mode: match std::env::var("TECTONIC_PGFMATH").as_deref() {
-            Ok("native") => Some(Mode::Native),
-            Ok("check") => Some(Mode::Check),
-            Ok("off") => Some(Mode::Off),
-            _ => None,
-        },
-        names: None,
-        stats: Stats::default(),
-        pending: None,
-    });
-}
-
-fn mode_for(state: &Pgfmath, st: &EngineState) -> Mode {
-    state.mode.unwrap_or(if st.config.native_pgfmath {
-        Mode::Native
-    } else {
-        Mode::Off
-    })
-}
-
-pub(crate) fn invalidate(st: &mut EngineState) {
-    st.pgfmath.clear();
-    STATE.with(|cell| {
-        if let Ok(mut state) = cell.try_borrow_mut() {
-            state.names = None;
-            state.pending = None;
-        }
-    });
-}
-
-fn named(st: &EngineState, cs: i32, name: &str) -> bool {
-    if cs < HASH_BASE {
-        return false;
-    }
-    let text = st.eqtb.text(cs);
-    if text.0 <= 0 || text.0 >= st.strings.str_ptr {
-        return false;
-    }
-    let start = st.strings.str_start[text.slot()] as usize;
-    let end = st.strings.str_start[text.next().slot()] as usize;
-    let units = &st.strings.str_pool[start..end];
-    units.len() == name.len()
-        && units
-            .iter()
-            .zip(name.bytes())
-            .all(|(&u, b)| u == u16::from(b))
-}
-
-fn classify(st: &EngineState, cs: i32) -> u8 {
-    if named(st, cs, "pgfmathparse@trynumber@loop") {
-        return KIND_TRY;
-    }
-    NATIVES
-        .iter()
-        .position(|&(name, _)| named(st, cs, name))
-        .map_or(KIND_NONE, |i| KIND_NATIVE + i as u8)
 }
 
 /// Returns the control sequence `macro_call` should expand instead.
 #[cold]
 #[inline(never)]
 pub(crate) fn intercept(st: &mut EngineState) -> Option<i32> {
-    let cs = st.scanner.cur_cs;
-    let mut kind = st
-        .pgfmath
-        .table
-        .get(cs as usize)
-        .copied()
-        .unwrap_or(KIND_UNKNOWN);
-    let mode = STATE.with(|cell| mode_for(&cell.borrow(), st));
-    if kind == KIND_UNKNOWN {
-        kind = classify(st, cs);
-        if let Ok(slot) = usize::try_from(cs) {
-            if slot >= st.pgfmath.table.len() {
-                st.pgfmath.table.resize(slot + 1, KIND_UNKNOWN);
+    let mode = st.config.pgfmath;
+    let names = Names::of(&st.eqtb.pgfmath)?;
+    let body = st.scanner.cur_chr;
+    if mode == Mode::Check {
+        if let Some(p) = st.pgfmath.pending.take() {
+            if body == st.eqtb.equiv(names.parse_end) || body == st.eqtb.equiv(names.is_number) {
+                let number = body == st.eqtb.equiv(names.is_number);
+                let mut stats = std::mem::take(&mut st.pgfmath.stats);
+                compare(st, &names, &mut stats, &p, number);
+                st.pgfmath.stats = stats;
+                return None;
             }
-            // Check mode watches every call for pgf's own exit.
-            if mode != Mode::Check || kind != KIND_NONE {
-                st.pgfmath.table[slot] = if mode == Mode::Off { KIND_NONE } else { kind };
-            }
+            st.pgfmath.pending = Some(p);
         }
     }
-    if mode == Mode::Off {
+    if !st.eqtb.pgfmath.is_try(st.scanner.cur_cs) {
         return None;
     }
-    STATE.with(|cell| {
-        let mut state = cell.borrow_mut();
-        let Pgfmath {
-            names,
-            stats,
-            pending,
-            ..
-        } = &mut *state;
-        if kind != KIND_TRY && pending.is_none() {
-            return None;
-        }
-        if names.is_none() {
-            *names = resolve(st);
-        }
-        let names = names.as_mut()?;
-
-        let body = st.scanner.cur_chr;
-        if mode == Mode::Check {
-            if let Some(p) = pending.take() {
-                if body == st.eqtb.equiv(names.parse_end) {
-                    compare(st, names, stats, &p, false);
-                    return None;
-                }
-                if body == st.eqtb.equiv(names.is_number) {
-                    compare(st, names, stats, &p, true);
-                    return None;
-                }
-                *pending = Some(p);
-            }
-        }
-        if kind != KIND_TRY {
-            return None;
-        }
-        let mut fail = |reason: &'static str| {
+    let outcome = evaluate_parse(st, &names);
+    let stats = &mut st.pgfmath.stats;
+    let answer = match outcome {
+        Ok(answer) => answer,
+        Err(reason) => {
             *stats.fallback.entry(reason).or_default() += 1;
-        };
-        if TRACING.iter().any(|&p| st.eqtb.int_par(p) > 0)
-            || st.eqtb.int_par(IntPar::GlobalDefs) != 0
-        {
-            fail("tracing or globaldefs");
             return None;
         }
-        if !same_meaning(st, names.quickparse, names.if_false) {
-            fail("quick parse");
-            return None;
+    };
+    if mode == Mode::Check {
+        let expression = expression_tokens(st, names.expression)
+            .map(|t| describe(st, &t))
+            .unwrap_or_default();
+        st.pgfmath.pending = Some(Pending { answer, expression });
+        return None;
+    }
+    match commit(st, &names, &answer) {
+        Ok(()) => {
+            match answer {
+                Answer::Expression => st.pgfmath.stats.numbers += 1,
+                Answer::Parsed(_) => st.pgfmath.stats.native += 1,
+            }
+            Some(names.parse_end)
         }
-        names.find_fpu(st);
-        let format = match names.fpu_push_operand {
-            Some(fpu) if same_meaning(st, names.push_operand, fpu) => Format::Float,
-            _ => Format::Fixed,
-        };
-        let float_numbers = names
-            .fpu_is_number
-            .is_some_and(|fpu| same_meaning(st, names.is_number, fpu));
+        Err(_) => {
+            *st.pgfmath
+                .stats
+                .fallback
+                .entry("commit failed")
+                .or_default() += 1;
+            None
+        }
+    }
+}
 
-        let tokens = match expression_tokens(st, names.expression) {
-            Ok(tokens) => tokens,
-            Err(reason) => {
-                fail(reason);
-                return None;
-            }
-        };
-        let answer = if is_number(&tokens) {
-            if !same_meaning(st, names.postparse, names.relax) {
-                fail("postparse on a plain number");
-                return None;
-            }
-            if !float_numbers {
-                Answer::Expression
-            } else {
-                let text: Option<Vec<u8>> =
-                    tokens.iter().map(|t| u8::try_from(t.chr()).ok()).collect();
-                match text.as_deref().and_then(eval::parse_number) {
-                    Some(v) if v.is_finite() => Answer::Parsed(eval::Outcome {
-                        result: eval::float(v),
-                        units: false,
-                    }),
-                    _ => {
-                        fail("malformed number");
-                        return None;
-                    }
-                }
-            }
-        } else {
-            let Some(font) = selected_font(st, names) else {
-                fail("selectfont would load a font");
-                return None;
-            };
-            let items = match expression_items(st, &tokens) {
-                Ok(items) => items,
-                Err(reason) => {
-                    trace(st, &tokens, reason);
-                    fail(reason);
-                    return None;
-                }
-            };
-            let mut constants = HashMap::new();
-            for name in identifiers(&items) {
-                if Func::from_name(&name).is_none() {
-                    if let Some(text) = pseudo_constant(st, names, &name) {
-                        constants.insert(name, text);
-                    }
-                }
-            }
-            let radians = macro_text(st, names.trig_format).as_deref() == Some(b"1");
-            let constant = |name: &[u8]| constants.get(name).cloned();
-            let env = eval::Env {
-                font,
-                radians,
-                format,
-                constant: &constant,
-            };
-            match eval::evaluate(&items, &env) {
-                Ok(outcome) => Answer::Parsed(outcome),
-                Err(reason) => {
-                    trace(st, &tokens, reason);
-                    fail(reason);
-                    return None;
-                }
-            }
-        };
-
-        if mode == Mode::Check {
-            *pending = Some(Pending {
-                answer,
-                expression: describe(st, &tokens),
-            });
-            return None;
+fn evaluate_parse(st: &mut EngineState, names: &Names) -> Result<Answer, &'static str> {
+    if TRACING.iter().any(|&p| st.eqtb.int_par(p) > 0) || st.eqtb.int_par(IntPar::GlobalDefs) != 0 {
+        return Err("tracing or globaldefs");
+    }
+    if !same_meaning(st, names.quickparse, names.if_false) {
+        return Err("quick parse");
+    }
+    let format = match names.fpu_push_operand {
+        Some(fpu) if same_meaning(st, names.push_operand, fpu) => Format::Float,
+        _ => Format::Fixed,
+    };
+    let float_numbers = names
+        .fpu_is_number
+        .is_some_and(|fpu| same_meaning(st, names.is_number, fpu));
+    let tokens = expression_tokens(st, names.expression)?;
+    if is_number(&tokens) {
+        if !same_meaning(st, names.postparse, names.relax) {
+            return Err("postparse on a plain number");
         }
-        match commit(st, names, &answer) {
-            Ok(()) => {
-                match answer {
-                    Answer::Expression => stats.numbers += 1,
-                    Answer::Parsed(_) => stats.native += 1,
-                }
-                Some(names.parse_end)
-            }
-            Err(_) => {
-                fail("commit failed");
-                None
+        if !float_numbers {
+            return Ok(Answer::Expression);
+        }
+        let text: Option<Vec<u8>> = tokens.iter().map(|t| u8::try_from(t.chr()).ok()).collect();
+        return match text.as_deref().and_then(eval::parse_number) {
+            Some(v) if v.is_finite() => Ok(Answer::Parsed(eval::Outcome {
+                result: eval::float(v),
+                units: false,
+            })),
+            _ => Err("malformed number"),
+        };
+    }
+    let font = selected_font(st, names).ok_or("selectfont would load a font")?;
+    let items = expression_items(st, &tokens).inspect_err(|reason| trace(st, &tokens, reason))?;
+    let mut constants = HashMap::new();
+    for name in identifiers(&items) {
+        if Func::from_name(&name).is_none() {
+            if let Some(text) = pseudo_constant(st, names, &name) {
+                constants.insert(name, text);
             }
         }
-    })
+    }
+    let radians = macro_text(st, names.trig_format).as_deref() == Some(b"1");
+    let constant = |name: &[u8]| constants.get(name).cloned();
+    let env = eval::Env {
+        font,
+        radians,
+        format,
+        constant: &constant,
+    };
+    eval::evaluate(&items, &env)
+        .map(Answer::Parsed)
+        .inspect_err(|reason| trace(st, &tokens, reason))
 }
 
 fn lookup(st: &mut EngineState, name: &str) -> Option<i32> {
@@ -730,7 +662,7 @@ fn trace(st: &EngineState, tokens: &[Token], reason: &str) {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Native {
+pub(crate) enum Native {
     ParseNumber,
     LessThan,
     Max,
@@ -970,86 +902,66 @@ fn run_native(
 /// True when answered, then `macro_call` frees the arguments and skips the body.
 #[cold]
 #[inline(never)]
-pub(crate) fn native_macro(st: &mut EngineState, args: &[MemPtr]) -> bool {
-    let cs = st.scanner.warning_index;
-    let Some(kind) = st
-        .pgfmath
-        .table
-        .get(cs as usize)
-        .and_then(|k| k.checked_sub(KIND_NATIVE))
-        .map(|i| NATIVES[usize::from(i)].1)
-    else {
+pub(crate) fn native_macro(st: &mut EngineState, kind: Native, args: &[MemPtr]) -> bool {
+    if TRACING.iter().any(|&p| st.eqtb.int_par(p) > 0) || st.eqtb.int_par(IntPar::GlobalDefs) != 0 {
+        return false;
+    }
+    let Some(names) = Names::of(&st.eqtb.pgfmath) else {
         return false;
     };
-    STATE.with(|cell| {
-        let mut state = cell.borrow_mut();
-        if mode_for(&state, st) != Mode::Native
-            || TRACING.iter().any(|&p| st.eqtb.int_par(p) > 0)
-            || st.eqtb.int_par(IntPar::GlobalDefs) != 0
-        {
-            return false;
-        }
-        if state.names.is_none() {
-            state.names = resolve(st);
-        }
-        let Pgfmath { names, stats, .. } = &mut *state;
-        let Some(names) = names.as_mut() else {
-            return false;
-        };
-        names.find_fpu(st);
-        let args: Vec<Vec<Token>> = args.iter().map(|&p| list_tokens(st, p)).collect();
-        let Some(effects) = run_native(st, names, kind, &args) else {
-            *stats.fallback.entry("native macro input").or_default() += 1;
-            return false;
-        };
-        let committed = (|| -> Result<(), Abort> {
-            for effect in effects {
-                match effect {
-                    Effect::Define { cs, text } => {
-                        let body = result_macro(st, &text)?;
-                        st.eqtb.eq_define(
-                            &mut st.save_stack,
-                            &mut st.mem,
-                            &mut st.scanner,
-                            cs,
-                            CALL,
-                            body.0,
-                        )?;
-                    }
-                    Effect::Comparison(value) => {
-                        let source = if value { names.if_true } else { names.if_false };
-                        let (t, e) = (st.eqtb.eq_type(source), st.eqtb.equiv(source));
-                        let flag = names.comparison.expect("comparison");
-                        st.eqtb
-                            .geq_define(&mut st.mem, &mut st.scanner, flag, t, e)?;
-                    }
+    let args: Vec<Vec<Token>> = args.iter().map(|&p| list_tokens(st, p)).collect();
+    let Some(effects) = run_native(st, &names, kind, &args) else {
+        *st.pgfmath
+            .stats
+            .fallback
+            .entry("native macro input")
+            .or_default() += 1;
+        return false;
+    };
+    let committed = (|| -> Result<(), Abort> {
+        for effect in effects {
+            match effect {
+                Effect::Define { cs, text } => {
+                    let body = result_macro(st, &text)?;
+                    st.eqtb.eq_define(
+                        &mut st.save_stack,
+                        &mut st.mem,
+                        &mut st.scanner,
+                        cs,
+                        CALL,
+                        body.0,
+                    )?;
+                }
+                Effect::Comparison(value) => {
+                    let source = if value { names.if_true } else { names.if_false };
+                    let (t, e) = (st.eqtb.eq_type(source), st.eqtb.equiv(source));
+                    let flag = names.comparison.expect("comparison");
+                    st.eqtb
+                        .geq_define(&mut st.mem, &mut st.scanner, flag, t, e)?;
                 }
             }
-            Ok(())
-        })();
-        if committed.is_ok() {
-            stats.natives += 1;
         }
-        committed.is_ok()
-    })
+        Ok(())
+    })();
+    if committed.is_ok() {
+        st.pgfmath.stats.natives += 1;
+    }
+    committed.is_ok()
 }
 
-pub(crate) fn report() {
-    STATE.with(|cell| {
-        let state = cell.borrow();
-        if state.mode.is_none_or(|m| m == Mode::Off) {
-            return;
-        }
-        let s = &state.stats;
-        let fallback: u64 = s.fallback.values().sum();
-        eprintln!(
-            "pgfmath: {} native, {} plain numbers, {} native macros, {} fallback; checked {}, {} beyond 1e-3, {} format, worst {:.2e}",
-            s.native, s.numbers, s.natives, fallback, s.checked, s.differed, s.format_differed, s.worst
-        );
-        let mut reasons: Vec<_> = s.fallback.iter().collect();
-        reasons.sort_by(|a, b| b.1.cmp(a.1));
-        for (reason, n) in reasons {
-            eprintln!("  {n:>8}  {reason}");
-        }
-    });
+pub(crate) fn report(st: &EngineState) {
+    if std::env::var_os("TECTONIC_PGFMATH").is_none() {
+        return;
+    }
+    let s = &st.pgfmath.stats;
+    let fallback: u64 = s.fallback.values().sum();
+    eprintln!(
+        "pgfmath: {} native, {} plain numbers, {} native macros, {} fallback; checked {}, {} beyond 1e-3, {} format, worst {:.2e}",
+        s.native, s.numbers, s.natives, fallback, s.checked, s.differed, s.format_differed, s.worst
+    );
+    let mut reasons: Vec<_> = s.fallback.iter().collect();
+    reasons.sort_by(|a, b| b.1.cmp(a.1));
+    for (reason, n) in reasons {
+        eprintln!("  {n:>8}  {reason}");
+    }
 }

@@ -906,7 +906,7 @@ pub(crate) fn pack_file_name(st: &mut EngineState, n: StrNumber, a: StrNumber, e
 }
 
 pub(crate) fn close_files_and_terminate(st: &mut EngineState) -> Result<(), Abort> {
-    crate::pgfmath::report();
+    crate::pgfmath::report(st);
     for k in 0usize..=15 {
         if st.shipout.write_open[k] {
             crate::shipout::ensure_write_stream_open(st, k)?;

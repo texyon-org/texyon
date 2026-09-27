@@ -1073,7 +1073,10 @@ fn trace_macro_param(st: &mut EngineState, match_chr: i32, n: i32, list: MemPtr)
 }
 
 pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
-    if st.pgfmath.wanted(st.scanner.cur_cs) {
+    if st.config.pgfmath == crate::pgfmath::Mode::Check
+        || st.config.pgfmath == crate::pgfmath::Mode::Native
+            && st.eqtb.pgfmath.is_try(st.scanner.cur_cs)
+    {
         if let Some(cs) = crate::pgfmath::intercept(st) {
             st.scanner.cur_cs = cs;
             st.scanner.cur_cmd = st.eqtb.eq_type(cs);
@@ -1257,14 +1260,15 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
 
-        if n > 0
-            && st.pgfmath.native(st.scanner.warning_index)
-            && crate::pgfmath::native_macro(st, &pstack[..n as usize])
-        {
-            for &p in &pstack[..n as usize] {
-                st.mem.flush_list(p);
+        if n > 0 && st.config.pgfmath == crate::pgfmath::Mode::Native {
+            if let Some(kind) = st.eqtb.pgfmath.native(st.scanner.warning_index) {
+                if crate::pgfmath::native_macro(st, kind, &pstack[..n as usize]) {
+                    for &p in &pstack[..n as usize] {
+                        st.mem.flush_list(p);
+                    }
+                    break 'exit;
+                }
             }
-            break 'exit;
         }
 
         while st.input.cur_input.state == TOKEN_LIST

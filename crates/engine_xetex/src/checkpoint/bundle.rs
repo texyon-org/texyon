@@ -235,6 +235,7 @@ struct EqtbBundle {
     hash_extra: i32,
     eqtb_top: i32,
     hash_top: i32,
+    pgfmath: crate::pgfmath::Slots,
 }
 
 impl EqtbBundle {
@@ -253,6 +254,7 @@ impl EqtbBundle {
             eqtb_top,
             hash_top,
             journal: _,
+            pgfmath,
         } = src;
         Self {
             hash_used: *hash_used,
@@ -263,6 +265,7 @@ impl EqtbBundle {
             hash_extra: *hash_extra,
             eqtb_top: *eqtb_top,
             hash_top: *hash_top,
+            pgfmath: *pgfmath,
         }
     }
 
@@ -275,6 +278,7 @@ impl EqtbBundle {
         dst.hash_extra = self.hash_extra;
         dst.eqtb_top = self.eqtb_top;
         dst.hash_top = self.hash_top;
+        dst.pgfmath = self.pgfmath;
     }
 }
 

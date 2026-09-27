@@ -356,7 +356,6 @@ impl CheckpointLadder<EngineBundle> {
     }
 
     pub(crate) fn rewind_engine(&mut self, st: &mut EngineState, target: usize) {
-        crate::pgfmath::invalidate(st);
         if let Err(mismatch) = self.rewind_engine_checked(st, target) {
             panic!(
                 "checkpoint rung {} component `{}` restored to {:016x}, expected {:016x}",

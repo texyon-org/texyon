@@ -24,7 +24,7 @@ pub(crate) struct EngineState {
     pub synctex: SynctexCtxt,
     pub mainloop: MainLoopState,
     /// Not checkpointed.
-    pub pgfmath: crate::pgfmath::Kinds,
+    pub pgfmath: crate::pgfmath::Diagnostics,
 }
 
 /// Scratch registers of `main_control`'s character and ligature loop.
@@ -219,6 +219,7 @@ pub(crate) struct EqtbState {
     pub eqtb_top: i32,
     pub hash_top: i32,
     pub journal: crate::journal::EqtbJournal,
+    pub pgfmath: crate::pgfmath::Slots,
 }
 
 impl Default for EqtbState {
@@ -239,6 +240,7 @@ impl Default for EqtbState {
             eqtb_top: 0,
             hash_top: 0,
             journal: crate::journal::EqtbJournal::default(),
+            pgfmath: crate::pgfmath::Slots::default(),
         }
     }
 }
@@ -995,7 +997,7 @@ pub(crate) struct ConfigState {
     /// such as guarded picture probes.
     pub execution_mode: EngineExecutionMode,
     pub max_print_line: i32,
-    pub native_pgfmath: bool,
+    pub pgfmath: crate::pgfmath::Mode,
 }
 
 pub(crate) use crate::layout::{FontMappingHandle, LinebreakHandle};
