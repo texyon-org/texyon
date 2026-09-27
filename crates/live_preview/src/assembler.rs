@@ -7,7 +7,11 @@ const BEGIN_PAGE: u8 = 139;
 const FILL: u8 = 223;
 const NO_PAGE: u32 = u32::MAX;
 const POSTAMBLE_FIXED_LEN: usize = 29;
+const POSTAMBLE_PAGE_COUNT: usize = 27;
+const POST_POSTAMBLE_LEN: usize = 6;
 const BEGIN_PAGE_FIXED_LEN: usize = 45;
+const BEGIN_PAGE_PREVIOUS: usize = 41;
+const MIN_FILL_BYTES: usize = 4;
 
 /// The concrete stream format identified by an assembled document.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -217,7 +221,7 @@ impl DocumentAssembler {
                 let capacity = prefix_len
                     .checked_add(bytes.len())
                     .ok_or(XdvAssemblyError::DocumentTooLarge(usize::MAX))?;
-                if capacity > u32::MAX as usize {
+                if u32::try_from(capacity).is_err() {
                     return Err(XdvAssemblyError::DocumentTooLarge(capacity));
                 }
                 let mut combined = Vec::with_capacity(capacity);
@@ -232,7 +236,7 @@ impl DocumentAssembler {
 }
 
 fn validate(bytes: Arc<[u8]>) -> Result<AssembledDocument, XdvAssemblyError> {
-    if bytes.len() > u32::MAX as usize {
+    if u32::try_from(bytes.len()).is_err() {
         return Err(XdvAssemblyError::DocumentTooLarge(bytes.len()));
     }
     expect_byte(&bytes, 0, PREAMBLE, "preamble opcode")?;
@@ -240,16 +244,17 @@ fn validate(bytes: Arc<[u8]>) -> Result<AssembledDocument, XdvAssemblyError> {
     let file_type = XdvFileType::from_id(preamble_id)?;
 
     let fill_count = bytes.iter().rev().take_while(|&&byte| byte == FILL).count();
-    if fill_count < 4 {
+    if fill_count < MIN_FILL_BYTES {
         return Err(XdvAssemblyError::MissingFillBytes);
     }
     let fill_offset = bytes.len() - fill_count;
-    let post_postamble = fill_offset
-        .checked_sub(6)
-        .ok_or(XdvAssemblyError::Truncated {
-            field: "post-postamble",
-            offset: fill_offset,
-        })?;
+    let post_postamble =
+        fill_offset
+            .checked_sub(POST_POSTAMBLE_LEN)
+            .ok_or(XdvAssemblyError::Truncated {
+                field: "post-postamble",
+                offset: fill_offset,
+            })?;
     expect_byte(
         &bytes,
         post_postamble,
@@ -278,8 +283,9 @@ fn validate(bytes: Arc<[u8]>) -> Result<AssembledDocument, XdvAssemblyError> {
     expect_byte(&bytes, postamble_usize, POSTAMBLE, "postamble opcode")?;
 
     let last_bop = read_u32(&bytes, postamble_usize + 1, "last BOP")?;
-    let declared_pages = read_u16(&bytes, postamble_usize + 27, "page count")?;
-    let mut reverse_pages = Vec::with_capacity(declared_pages as usize);
+    let declared_pages = read_u16(&bytes, postamble_usize + POSTAMBLE_PAGE_COUNT, "page count")?;
+    let declared_count = usize::from(declared_pages);
+    let mut reverse_pages = Vec::with_capacity(declared_count);
     let mut current = last_bop;
 
     while current != NO_PAGE {
@@ -296,13 +302,13 @@ fn validate(bytes: Arc<[u8]>) -> Result<AssembledDocument, XdvAssemblyError> {
         }
         expect_byte(&bytes, offset, BEGIN_PAGE, "BOP opcode")?;
         reverse_pages.push(current);
-        if reverse_pages.len() > declared_pages as usize {
+        if reverse_pages.len() > declared_count {
             return Err(XdvAssemblyError::PageCountMismatch {
                 declared: declared_pages,
                 discovered: reverse_pages.len(),
             });
         }
-        let previous = read_u32(&bytes, offset + 41, "previous BOP")?;
+        let previous = read_u32(&bytes, offset + BEGIN_PAGE_PREVIOUS, "previous BOP")?;
         if previous != NO_PAGE && previous >= current {
             return Err(XdvAssemblyError::InvalidPointer {
                 field: "previous BOP",
@@ -312,20 +318,22 @@ fn validate(bytes: Arc<[u8]>) -> Result<AssembledDocument, XdvAssemblyError> {
         current = previous;
     }
 
-    if reverse_pages.len() != declared_pages as usize {
+    if reverse_pages.len() != declared_count {
         return Err(XdvAssemblyError::PageCountMismatch {
             declared: declared_pages,
             discovered: reverse_pages.len(),
         });
     }
     reverse_pages.reverse();
+    let post_postamble_offset = u32::try_from(post_postamble)
+        .map_err(|_| XdvAssemblyError::DocumentTooLarge(bytes.len()))?;
 
     Ok(AssembledDocument {
         bytes,
         file_type,
         page_offsets: Arc::from(reverse_pages),
         postamble_offset: postamble,
-        post_postamble_offset: post_postamble as u32,
+        post_postamble_offset,
     })
 }
 

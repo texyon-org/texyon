@@ -444,9 +444,8 @@ fn sp_to_bp(value: i32) -> f64 {
 }
 
 fn bp_to_sp(value: f64) -> i32 {
-    (value * SP_PER_BP)
-        .round()
-        .clamp(i32::MIN as f64, i32::MAX as f64) as i32
+    // Float-to-int `as` saturates and maps NaN to zero.
+    (value * SP_PER_BP).round() as i32
 }
 
 #[cfg(test)]
