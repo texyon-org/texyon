@@ -1,10 +1,4 @@
-//! Support files, as the renderer wants them.
-//!
-//! The engine and the renderer ask for the same files by different names: TeX
-//! asks for `cmr10.tfm`, the renderer asks for a `Tfm` called `cmr10`. This maps
-//! one onto the other and shares a single byte cache with [`HostIo`], so a font
-//! the engine has already pulled over the network is not fetched again to draw
-//! it.
+//! Support files for the renderer, named the way it asks for them.
 
 use std::{cell::RefCell, collections::HashMap, path::Path};
 
@@ -14,22 +8,15 @@ use tectonic_preview_render::{
 
 use crate::io::HostIo;
 
-/// A [`ResourceProvider`] backed by the host's support files.
+/// A [`ResourceProvider`] sharing [`HostIo`]'s byte cache.
 pub struct HostResources {
     support: HostIo,
-    /// Resolved resources, by the name that resolved them.
-    ///
-    /// Not redundant with `HostIo`'s byte cache. A [`Resource`] carries the
-    /// SHA-256 of its bytes, which is how the renderer decides whether its
-    /// parsed artifacts are still valid — so building one means copying and
-    /// hashing the whole file. `pdftex.map` is 4.4 MB and is resolved on every
-    /// analysis; doing that work per keystroke cost more than everything else
-    /// in the pipeline combined.
+    // Building a Resource copies and hashes the file, too slow to repeat per
+    // keystroke for the 4.4 MB pdftex.map.
     resolved: RefCell<HashMap<String, Option<Resource>>>,
 }
 
 impl HostResources {
-    /// Draw resources from the same cache the engine reads through.
     pub fn new(support: HostIo) -> Self {
         Self {
             support,
@@ -44,23 +31,22 @@ impl ResourceProvider for HostResources {
             if let Some(hit) = self.resolved.borrow().get(&candidate) {
                 match hit {
                     Some(resource) => return Ok(Some(resource.clone())),
-                    // A name already known to be absent: try the next spelling.
                     None => continue,
                 }
             }
 
-            let resource = match self.support.read(&candidate) {
-                Ok(Some(bytes)) => Some(Resource::from_bytes(bytes.to_vec())),
-                Ok(None) => None,
-                Err(error) => return Err(RenderError::Resource(error)),
-            };
+            let resource = self
+                .support
+                .read(&candidate)
+                .map_err(RenderError::Resource)?
+                .map(|bytes| Resource::from_bytes(bytes.to_vec()));
 
             self.resolved
                 .borrow_mut()
                 .insert(candidate, resource.clone());
 
-            if let Some(resource) = resource {
-                return Ok(Some(resource));
+            if resource.is_some() {
+                return Ok(resource);
             }
         }
 
@@ -68,29 +54,25 @@ impl ResourceProvider for HostResources {
     }
 }
 
-/// The file names one resource request could mean, in preference order.
+/// File names a request could mean, in preference order.
 ///
-/// Mirrors the native provider in `src/live_preview/resources.rs`: the renderer
-/// names fonts the way a font map does, without an extension, and which
-/// extension applies depends on the kind.
+/// Mirrors the native provider in `src/live_preview/resources.rs`.
 fn candidates(request: &ResourceRequest) -> Vec<String> {
-    let mut candidates = vec![request.name.clone()];
+    let name = &request.name;
+    let mut candidates = vec![name.clone()];
 
-    if Path::new(&request.name).extension().is_some() {
+    if Path::new(name).extension().is_some() {
         return candidates;
     }
 
-    match request.kind {
-        ResourceKind::Tfm => candidates.push(format!("{}.tfm", request.name)),
-        ResourceKind::VirtualFont => candidates.push(format!("{}.vf", request.name)),
-        ResourceKind::Encoding => candidates.push(format!("{}.enc", request.name)),
-        ResourceKind::FontProgram => {
-            for extension in ["pfb", "pfa", "otf", "ttf"] {
-                candidates.push(format!("{}.{}", request.name, extension));
-            }
-        }
-        ResourceKind::FontMap | ResourceKind::Image | ResourceKind::Pdf => {}
-    }
+    let extensions: &[&str] = match request.kind {
+        ResourceKind::Tfm => &["tfm"],
+        ResourceKind::VirtualFont => &["vf"],
+        ResourceKind::Encoding => &["enc"],
+        ResourceKind::FontProgram => &["pfb", "pfa", "otf", "ttf"],
+        ResourceKind::FontMap | ResourceKind::Image | ResourceKind::Pdf => &[],
+    };
+    candidates.extend(extensions.iter().map(|ext| format!("{name}.{ext}")));
 
     candidates
 }
