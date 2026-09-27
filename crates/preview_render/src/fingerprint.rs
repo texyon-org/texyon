@@ -7,7 +7,6 @@ use crate::{Color, LinkAction, Matrix, Path, PathCommand};
 
 pub(crate) fn page_digest(page: &PagePlan) -> [u8; 32] {
     let mut digest = Sha256::new();
-    // Bumped from v4 when links and destinations joined a page's identity.
     digest.update(b"tectonic-page-visual\0v5");
     digest.update(page.width_bp.to_bits().to_be_bytes());
     digest.update(page.height_bp.to_bits().to_be_bytes());
@@ -161,12 +160,7 @@ fn hash_path(digest: &mut Sha256, path: &Path) {
     }
 }
 
-/// Fold a page's overlay into its identity.
-///
-/// Links and destinations are shipped with the pages a frame says changed, so a
-/// page whose drawing is identical but whose links now point elsewhere has to
-/// count as changed — otherwise the viewer keeps an overlay that silently goes
-/// to the wrong place.
+/// Links ship only with changed pages, so a retargeted link must change the digest.
 fn hash_overlay(digest: &mut Sha256, page: &PagePlan) {
     digest.update(b"links");
     digest.update((page.links.len() as u64).to_be_bytes());

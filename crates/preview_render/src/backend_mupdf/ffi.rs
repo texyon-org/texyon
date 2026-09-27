@@ -358,8 +358,7 @@ impl Shim {
         let gids: Vec<_> = glyphs.iter().map(|glyph| glyph.glyph_id).collect();
         let transforms: Vec<_> = glyphs.iter().map(|glyph| glyph.transform).collect();
         let rgba = rgba(color);
-        // SAFETY: a page is open, `gids` and `transforms` both hold `count` entries,
-        // and the shim bounds-checks `font`.
+        // SAFETY: a page is open and `gids` and `transforms` both hold `count` entries.
         check(unsafe {
             sys::pr_backend_glyphs(
                 raw,

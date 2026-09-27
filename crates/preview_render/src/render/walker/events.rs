@@ -56,8 +56,6 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
 
     fn handle_special(&mut self, x: i32, y: i32, contents: &[u8]) -> Result<(), Self::Error> {
         if is_page_size_special(contents) {
-            // Matches the previous dedicated size pass, which only tracked
-            // media-size specials appearing inside a page.
             if self.page.is_some() {
                 self.state.page_size.apply(contents);
             }
@@ -357,8 +355,6 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
 
     fn handle_rule(&mut self, x: i32, y: i32, height: i32, width: i32) -> Result<(), Self::Error> {
         if height > 0 && width > 0 {
-            // A rule states its own box, so no estimate is needed: it runs from
-            // the baseline up by its height.
             self.extend_link(x, x.wrapping_add(width), y, height, 0);
             let color = self.state.color;
             let transform = self.state.pdf_graphics.current_transform(x, y);

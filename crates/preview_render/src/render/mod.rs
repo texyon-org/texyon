@@ -122,8 +122,7 @@ impl Analysis {
     }
 }
 
-/// Result of the last completed walk, reusable while a document keeps its
-/// leading bytes.
+/// Last completed walk, reusable while a document keeps its leading bytes.
 struct WalkCache {
     xdv: Arc<[u8]>,
     filetype: FileType,
@@ -153,24 +152,15 @@ impl<P: ResourceProvider> HotRenderer<P> {
         }
     }
 
-    /// Analyze every page, resolving and freezing all resources used by the walk.
-    ///
-    /// Equivalent to [`analyze_from`](Self::analyze_from) with no page layout,
-    /// which always walks the complete document.
+    /// Analyze every page from byte zero, freezing all resources the walk uses.
     pub fn analyze(&mut self, xdv: Arc<[u8]>) -> Result<Analysis, RenderError> {
         self.analyze_from(xdv, &[])
     }
 
-    /// Analyze every page, reusing the leading pages of the previous analysis
-    /// whose exact bytes are unchanged.
+    /// Analyze every page, reusing leading pages whose bytes are unchanged.
     ///
-    /// `page_offsets` are the document's absolute begin-page offsets in page
-    /// order, as already established by structural validation. A page whose
-    /// bytes lie entirely inside the prefix shared with the previous analysis
-    /// has, by construction, the same plan and the same visual identity, so the
-    /// walk restarts from the last retained resume point inside that prefix
-    /// instead of from byte zero. Supplying no offsets, or offsets that do not
-    /// match a retained resume point, simply walks everything.
+    /// `page_offsets` are the absolute begin-page offsets in page order. Without
+    /// them, or without a matching resume point, the whole document is walked.
     pub fn analyze_from(
         &mut self,
         xdv: Arc<[u8]>,
@@ -245,8 +235,7 @@ impl<P: ResourceProvider> HotRenderer<P> {
         })
     }
 
-    /// Deepest retained resume point that the new document provably reaches
-    /// with unchanged bytes.
+    /// Deepest resume point the new document reaches with unchanged bytes.
     fn resumption(&self, xdv: &[u8], page_offsets: &[u32]) -> Option<Resumption> {
         let cache = self.cache.as_ref()?;
         // Only bytes the renderer compared itself count as unchanged.
@@ -265,7 +254,7 @@ impl<P: ResourceProvider> HotRenderer<P> {
             filetype: cache.filetype,
             plans: cache.plans.get(..page_index)?.to_vec(),
             pages: cache.pages.get(..page_index)?.to_vec(),
-            // Resume points inside the shared prefix stay valid for a later edit further up.
+            // Kept so a later edit further up can still resume.
             earlier: cache
                 .resumes
                 .iter()
@@ -275,8 +264,7 @@ impl<P: ResourceProvider> HotRenderer<P> {
         })
     }
 
-    /// Render exactly the selected pages and commit completed analysis facts only
-    /// after every selected page yields one SVG.
+    /// Render exactly the selected pages, committing analysis facts only once all succeed.
     pub fn render_pages<B: Backend>(
         &mut self,
         analysis: &Analysis,
@@ -452,7 +440,6 @@ fn draw<B: Backend>(
     }
 }
 
-/// Length of the longest common leading run of two documents.
 fn shared_prefix(left: &[u8], right: &[u8]) -> usize {
     const WORD: usize = std::mem::size_of::<usize>();
     let limit = left.len().min(right.len());

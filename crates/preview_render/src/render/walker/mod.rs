@@ -22,13 +22,7 @@ use crate::RenderError;
 use super::{CoverageLedger, DrawOperation, PagePlan};
 use annotation::OpenLink;
 
-/// Font artifacts derived from exact resource bytes, retained across analyses.
-///
-/// Every keystroke re-walks the whole document and therefore re-defines every
-/// font it uses. Parsing the font map, the TFM tables, and the Type1 builtin
-/// encodings each time dominated analysis, so the derived forms are memoized
-/// under the SHA-256 identity of the bytes they came from: an entry can only be
-/// reused when the resolved resource is byte-identical.
+/// Parsed font data memoized across analyses by the identity of its source bytes.
 #[derive(Default)]
 pub(super) struct FontArtifacts {
     font_map: Option<(
@@ -41,11 +35,7 @@ pub(super) struct FontArtifacts {
 
 const FONT_MAP_NAMES: [&str; 3] = ["pdftex.map", "kanjix.map", "ckx.map"];
 
-/// Page interval between retained walk-resume points.
-///
-/// Every retained point costs one clone of the walker's carried state, and a
-/// coarser stride only ever costs a few extra re-walked pages, so this stays
-/// small enough to be free and large enough to bound capture work.
+/// Pages between resume points, trading one state clone each against re-walked pages.
 const RESUME_STRIDE: usize = 8;
 
 /// Everything a walk carries across a page break.
@@ -62,10 +52,7 @@ pub(super) struct WalkState {
     pdf_graphics: PdfGraphics,
 }
 
-/// Walker state entering a page boundary.
-///
-/// Parsing from the matching begin-page opcode with this state restored yields
-/// exactly what a walk from byte zero would have produced.
+/// Walker state entering a page, enough to walk on from its begin-page opcode.
 #[derive(Clone)]
 pub(super) struct WalkResume {
     pub(super) page_index: usize,
@@ -127,7 +114,6 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
         Self::with_state(provider, artifacts, 0, FileType::Xdv, Vec::new(), state)
     }
 
-    /// Restore the carried state of a previous walk at a page boundary.
     pub(super) fn resume(
         provider: &'a P,
         artifacts: &'a mut FontArtifacts,
@@ -162,8 +148,6 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
         }
     }
 
-    /// Retain the state entering the page that is about to start, on the
-    /// stride that bounds how much a later walk must redo.
     fn capture_resume(&mut self) {
         let page_index = self.first_page_index + self.pages.len();
         if !page_index.is_multiple_of(RESUME_STRIDE) {
@@ -182,8 +166,6 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
         });
     }
 
-    /// Font map parsed from the exact current map bytes, reused across analyses
-    /// while every contributing resource keeps the same identity.
     fn font_map(&mut self) -> Result<Arc<FontMap>, RenderError> {
         let mut identities = [None; FONT_MAP_NAMES.len()];
         let mut resources = Vec::with_capacity(FONT_MAP_NAMES.len());
@@ -224,13 +206,10 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
     }
 
     pub(super) fn finish_page(&mut self) {
-        // An annotation cannot cross a page boundary, so one still open when
-        // the page ends is closed against what it has covered so far.
         self.close_link();
 
         if let Some(mut page) = self.page.take() {
-            // The media size is only final once the page's specials have all
-            // been seen, so commit it here rather than at the page's start.
+            // The media size is final only once all of the page's specials are seen.
             let size = self.state.page_size.current();
             page.width_bp = size[0];
             page.height_bp = size[1];

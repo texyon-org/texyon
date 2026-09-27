@@ -247,7 +247,7 @@ impl Backend for MupdfBackend {
 fn parse_encoding(bytes: &[u8]) -> Result<Vec<String>, RenderError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| RenderError::Backend("font encoding is not UTF-8/ASCII".into()))?;
-    // Comments may hold brackets and names: cm-super-t1.enc ends "/germandbls % or /germandbls.alt".
+    // Comments may hold names, as in cm-super-t1.enc's "/germandbls % or /germandbls.alt".
     let text = text
         .lines()
         .map(|line| line.split('%').next().unwrap_or(""))
