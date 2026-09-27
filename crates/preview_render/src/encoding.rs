@@ -17,8 +17,7 @@ pub(crate) fn type1_builtin(bytes: &[u8]) -> Option<Resource> {
     }
     let mut names = vec![".notdef".to_owned(); 256];
     let mut found = false;
-    // A `/` starts a PostScript name token even without whitespace before it:
-    // the hfbright fonts write `dup 0/Gamma put`.
+    // A `/` starts a name even when glued on, as in hfbright's `dup 0/Gamma put`.
     let body = body.replace('/', " /");
     let mut tokens = body.split_whitespace();
     while let Some(token) = tokens.next() {
@@ -46,8 +45,6 @@ mod tests {
 
     #[test]
     fn extracts_vector_with_glued_name_tokens() {
-        // hfbright (cmbright's Type1 math fonts) writes no space before the
-        // glyph name.
         let resource = type1_builtin(
             b"/Encoding 256 array\n 0 1 255 { 1 index exch /.notdef put} for\ndup 0/Gamma put\ndup 1/Delta put\nreadonly def",
         )

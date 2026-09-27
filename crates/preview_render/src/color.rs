@@ -1,5 +1,7 @@
 //! Canonical RGB colors passed to drawing backends.
 
+use crate::units::normalize_zero;
+
 /// RGB color in the backend's normalized component space.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Color {
@@ -49,10 +51,5 @@ impl Color {
 }
 
 fn canonical(value: f32) -> f32 {
-    let value = value.clamp(0.0, 1.0);
-    if value == 0.0 {
-        0.0
-    } else {
-        value
-    }
+    normalize_zero(value.clamp(0.0, 1.0))
 }

@@ -1,30 +1,10 @@
 //! Persistent interpreter for `pdf:code` content-stream fragments.
 
+use crate::render::DrawOperation;
+use crate::units::sp_to_bp;
 use crate::{Color, Matrix, Path, PathCommand, StrokeStyle};
 
 const ONE_INCH_BP: f32 = 72.0;
-
-#[derive(Clone)]
-pub(crate) enum PdfOperation {
-    Fill {
-        path: Path,
-        even_odd: bool,
-        transform: Matrix,
-        color: Color,
-    },
-    Stroke {
-        path: Path,
-        style: StrokeStyle,
-        transform: Matrix,
-        color: Color,
-    },
-    Clip {
-        path: Path,
-        even_odd: bool,
-        transform: Matrix,
-    },
-    PopClip,
-}
 
 #[derive(Clone, Copy)]
 struct SavedState {
@@ -52,7 +32,7 @@ pub(crate) struct PdfGraphics {
 }
 
 pub(crate) struct PdfRun {
-    pub(crate) operations: Vec<PdfOperation>,
+    pub(crate) operations: Vec<DrawOperation>,
     pub(crate) supported: Vec<&'static str>,
     pub(crate) unsupported: Vec<String>,
 }
@@ -61,12 +41,10 @@ impl Default for PdfGraphics {
     fn default() -> Self {
         Self {
             ctm: Matrix {
-                a: 1.0,
-                b: 0.0,
-                c: 0.0,
                 d: -1.0,
                 e: ONE_INCH_BP,
                 f: ONE_INCH_BP,
+                ..Matrix::IDENTITY
             },
             gh: 0,
             gv: 0,
@@ -102,19 +80,25 @@ impl PdfGraphics {
         (self.fill, self.line)
     }
 
-    pub(crate) fn current_transform(&self, pen_x: i32, pen_y: i32, scale: f32) -> Matrix {
+    /// Pen position relative to the last transform origin, in PDF user space.
+    fn user_offset(&self, pen_x: i32, pen_y: i32) -> (f32, f32) {
+        (
+            sp_to_bp(pen_x.wrapping_sub(self.gh)),
+            -sp_to_bp(pen_y.wrapping_sub(self.gv)),
+        )
+    }
+
+    pub(crate) fn current_transform(&self, pen_x: i32, pen_y: i32) -> Matrix {
+        let (e, f) = self.user_offset(pen_x, pen_y);
         Matrix {
-            a: 1.0,
-            b: 0.0,
-            c: 0.0,
-            d: 1.0,
-            e: (pen_x - self.gh) as f32 * scale,
-            f: -((pen_y - self.gv) as f32 * scale),
+            e,
+            f,
+            ..Matrix::IDENTITY
         }
         .concat(self.ctm)
     }
 
-    fn save(&mut self) {
+    pub(crate) fn save_state(&mut self) {
         self.stack.push(SavedState {
             ctm: self.ctm,
             gh: self.gh,
@@ -126,16 +110,12 @@ impl PdfGraphics {
         });
     }
 
-    pub(crate) fn save_state(&mut self) {
-        self.save();
-    }
-
-    fn restore(&mut self, operations: &mut Vec<PdfOperation>) -> bool {
+    fn restore(&mut self, operations: &mut Vec<DrawOperation>) -> bool {
         let Some(saved) = self.stack.pop() else {
             return false;
         };
         for _ in saved.clip_depth..self.clip_depth {
-            operations.push(PdfOperation::PopClip);
+            operations.push(DrawOperation::PopClip);
         }
         self.ctm = saved.ctm;
         self.gh = saved.gh;
@@ -147,52 +127,32 @@ impl PdfGraphics {
         true
     }
 
-    pub(crate) fn restore_state(&mut self) -> Option<Vec<PdfOperation>> {
+    pub(crate) fn restore_state(&mut self) -> Option<Vec<DrawOperation>> {
         let mut operations = Vec::new();
         self.restore(&mut operations).then_some(operations)
     }
 
-    pub(crate) fn begin_transform(
-        &mut self,
-        transform: Matrix,
-        pen_x: i32,
-        pen_y: i32,
-        scale: f32,
-    ) {
-        self.save();
-        self.ctm = self.current_transform(pen_x, pen_y, scale);
+    pub(crate) fn begin_transform(&mut self, transform: Matrix, pen_x: i32, pen_y: i32) {
+        self.save_state();
+        self.ctm = self.current_transform(pen_x, pen_y);
         self.gh = pen_x;
         self.gv = pen_y;
         self.ctm = transform.concat(self.ctm);
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn concatenate_about_pen(
-        &mut self,
-        a: f32,
-        b: f32,
-        c: f32,
-        d: f32,
-        e: f32,
-        f: f32,
-        pen_x: i32,
-        pen_y: i32,
-        scale: f32,
-    ) {
-        let user_x = (pen_x - self.gh) as f32 * scale;
-        let user_y = -((pen_y - self.gv) as f32 * scale);
+    /// Apply the linear part of `matrix` about the pen instead of the origin.
+    pub(crate) fn concatenate_about_pen(&mut self, matrix: Matrix, pen_x: i32, pen_y: i32) {
+        let Matrix { a, b, c, d, e, f } = matrix;
+        let (user_x, user_y) = self.user_offset(pen_x, pen_y);
         let transform = Matrix {
-            a,
-            b,
-            c,
-            d,
             e: (1.0 - a) * user_x - c * user_y + e,
             f: (1.0 - d) * user_y - b * user_x + f,
+            ..matrix
         };
         self.ctm = transform.concat(self.ctm);
     }
 
-    pub(crate) fn run(&mut self, payload: &[u8], pen_x: i32, pen_y: i32, scale: f32) -> PdfRun {
+    pub(crate) fn run(&mut self, payload: &[u8], pen_x: i32, pen_y: i32) -> PdfRun {
         let mut run = PdfRun {
             operations: Vec::new(),
             supported: Vec::new(),
@@ -212,7 +172,6 @@ impl PdfGraphics {
                         &mut pending_array,
                         pen_x,
                         pen_y,
-                        scale,
                         &mut run,
                     );
                     operands.clear();
@@ -223,7 +182,6 @@ impl PdfGraphics {
         run
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn execute(
         &mut self,
         operator: &str,
@@ -231,7 +189,6 @@ impl PdfGraphics {
         array: &mut Option<Vec<f32>>,
         pen_x: i32,
         pen_y: i32,
-        scale: f32,
         run: &mut PdfRun,
     ) {
         let arg = |count: usize, index: usize| {
@@ -252,13 +209,13 @@ impl PdfGraphics {
                     e: arg(6, 4),
                     f: arg(6, 5),
                 };
-                self.ctm = matrix.concat(self.current_transform(pen_x, pen_y, scale));
+                self.ctm = matrix.concat(self.current_transform(pen_x, pen_y));
                 self.gh = pen_x;
                 self.gv = pen_y;
                 run.supported.push("pdf-code-transform");
             }
             "q" => {
-                self.save();
+                self.save_state();
                 run.supported.push("pdf-code-save");
             }
             "Q" => {
@@ -362,10 +319,10 @@ impl PdfGraphics {
                 run.supported.push("pdf-code-path");
             }
             "f" | "F" | "f*" => {
-                run.operations.push(PdfOperation::Fill {
+                run.operations.push(DrawOperation::PathFill {
                     path: self.path.clone(),
                     even_odd: operator == "f*",
-                    transform: self.current_transform(pen_x, pen_y, scale),
+                    transform: self.current_transform(pen_x, pen_y),
                     color: self.fill,
                 });
                 self.path.commands.clear();
@@ -375,10 +332,10 @@ impl PdfGraphics {
                 if operator == "s" {
                     self.path.commands.push(PathCommand::Close);
                 }
-                run.operations.push(PdfOperation::Stroke {
+                run.operations.push(DrawOperation::PathStroke {
                     path: self.path.clone(),
                     style: self.style,
-                    transform: self.current_transform(pen_x, pen_y, scale),
+                    transform: self.current_transform(pen_x, pen_y),
                     color: self.line,
                 });
                 self.path.commands.clear();
@@ -389,14 +346,14 @@ impl PdfGraphics {
                     self.path.commands.push(PathCommand::Close);
                 }
                 let even_odd = operator.ends_with('*');
-                let transform = self.current_transform(pen_x, pen_y, scale);
-                run.operations.push(PdfOperation::Fill {
+                let transform = self.current_transform(pen_x, pen_y);
+                run.operations.push(DrawOperation::PathFill {
                     path: self.path.clone(),
                     even_odd,
                     transform,
                     color: self.fill,
                 });
-                run.operations.push(PdfOperation::Stroke {
+                run.operations.push(DrawOperation::PathStroke {
                     path: self.path.clone(),
                     style: self.style,
                     transform,
@@ -406,10 +363,10 @@ impl PdfGraphics {
                 run.supported.push("pdf-code-fill-stroke");
             }
             "W" | "W*" => {
-                run.operations.push(PdfOperation::Clip {
+                run.operations.push(DrawOperation::ClipPath {
                     path: self.path.clone(),
                     even_odd: operator == "W*",
-                    transform: self.current_transform(pen_x, pen_y, scale),
+                    transform: self.current_transform(pen_x, pen_y),
                 });
                 self.clip_depth += 1;
                 run.supported.push("pdf-code-clip");
@@ -523,11 +480,11 @@ mod tests {
     #[test]
     fn path_and_transform_persist_across_fragments() {
         let mut graphics = PdfGraphics::default();
-        graphics.run(b"2 0 0 2 0 0 cm", 0, 0, 1.0);
-        graphics.run(b"0 0 m", 0, 0, 1.0);
-        graphics.run(b"10 20 l", 0, 0, 1.0);
-        let run = graphics.run(b"S", 0, 0, 1.0);
-        let PdfOperation::Stroke {
+        graphics.run(b"2 0 0 2 0 0 cm", 0, 0);
+        graphics.run(b"0 0 m", 0, 0);
+        graphics.run(b"10 20 l", 0, 0);
+        let run = graphics.run(b"S", 0, 0);
+        let DrawOperation::PathStroke {
             path, transform, ..
         } = &run.operations[0]
         else {
@@ -543,9 +500,12 @@ mod tests {
     #[test]
     fn restore_balances_nested_clip() {
         let mut graphics = PdfGraphics::default();
-        graphics.run(b"q", 0, 0, 1.0);
-        graphics.run(b"0 0 10 10 re W n", 0, 0, 1.0);
-        let run = graphics.run(b"Q", 0, 0, 1.0);
-        assert!(matches!(run.operations.as_slice(), [PdfOperation::PopClip]));
+        graphics.run(b"q", 0, 0);
+        graphics.run(b"0 0 10 10 re W n", 0, 0);
+        let run = graphics.run(b"Q", 0, 0);
+        assert!(matches!(
+            run.operations.as_slice(),
+            [DrawOperation::PopClip]
+        ));
     }
 }

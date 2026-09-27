@@ -3,102 +3,27 @@
 //! Enabling this module links MuPDF and therefore subjects the resulting
 //! binary to MuPDF's AGPL-3.0-or-later licensing terms.
 
+mod ffi;
+
 use std::collections::BTreeMap;
-use std::ffi::{c_void, CString};
+use std::ffi::CString;
 
 use crate::{
-    Backend, Color, FontId, FontStyle, Matrix, Path, PathCommand, PositionedChar, PositionedGlyph,
-    RenderError, ResourceIdentity, StrokeStyle,
+    Backend, Color, FontId, FontStyle, Matrix, Path, PositionedChar, PositionedGlyph, RenderError,
+    ResourceIdentity, StrokeStyle,
 };
+use ffi::{Shim, ShimFailed};
 
-extern "C" {
-    fn pr_backend_new() -> *mut c_void;
-    fn pr_backend_drop(backend: *mut c_void);
-    fn pr_backend_begin(backend: *mut c_void, width: f32, height: f32) -> i32;
-    fn pr_backend_font(backend: *mut c_void, data: *const u8, length: usize, face: i32) -> i32;
-    fn pr_backend_gid_by_name(backend: *mut c_void, font: i32, name: *const i8) -> i32;
-    fn pr_backend_glyphs(
-        backend: *mut c_void,
-        font: i32,
-        size: f32,
-        gids: *const u16,
-        transforms: *const Matrix,
-        count: i32,
-        rgba: *const f32,
-        extend: f32,
-        slant: f32,
-        embolden: f32,
-        vertical: i32,
-    ) -> i32;
-    fn pr_backend_rule(
-        backend: *mut c_void,
-        width: f32,
-        height: f32,
-        transform: Matrix,
-        rgba: *const f32,
-    ) -> i32;
-    fn pr_backend_fill_path(
-        backend: *mut c_void,
-        kinds: *const u8,
-        coordinates: *const f32,
-        count: i32,
-        even_odd: i32,
-        transform: Matrix,
-        rgba: *const f32,
-    ) -> i32;
-    fn pr_backend_stroke_path(
-        backend: *mut c_void,
-        kinds: *const u8,
-        coordinates: *const f32,
-        count: i32,
-        style: StrokeStyle,
-        transform: Matrix,
-        rgba: *const f32,
-    ) -> i32;
-    fn pr_backend_clip_path(
-        backend: *mut c_void,
-        kinds: *const u8,
-        coordinates: *const f32,
-        count: i32,
-        even_odd: i32,
-        transform: Matrix,
-    ) -> i32;
-    fn pr_backend_pop_clip(backend: *mut c_void) -> i32;
-    fn pr_backend_image(
-        backend: *mut c_void,
-        data: *const u8,
-        length: usize,
-        transform: Matrix,
-        width: f32,
-        height: f32,
-    ) -> i32;
-    fn pr_backend_pdf(
-        backend: *mut c_void,
-        data: *const u8,
-        length: usize,
-        page: i32,
-        transform: Matrix,
-    ) -> i32;
-    fn pr_backend_finish(backend: *mut c_void, length: *mut usize) -> *mut u8;
-    #[cfg(test)]
-    fn pr_backend_raster(
-        backend: *mut c_void,
-        data: *const u8,
-        length: usize,
-        mime: *const i8,
-        page: i32,
-        dpi: f32,
-        width: *mut i32,
-        height: *mut i32,
-        components: *mut i32,
-        sample_length: *mut usize,
-    ) -> *mut u8;
-    fn pr_backend_free(data: *mut u8);
-}
+const PLAIN: FontStyle = FontStyle {
+    extend: 1.0,
+    slant: 0.0,
+    embolden: 0.0,
+    vertical: false,
+};
 
 /// MuPDF 1.19 backend producing self-contained path SVG pages.
 pub struct MupdfBackend {
-    raw: *mut c_void,
+    shim: Shim,
     fonts: BTreeMap<(ResourceIdentity, u32), FontId>,
     classic_fonts: BTreeMap<(ResourceIdentity, ResourceIdentity), FontId>,
     classic_encodings: BTreeMap<FontId, Vec<u16>>,
@@ -117,18 +42,17 @@ pub struct Pixmap {
     pub samples: Vec<u8>,
 }
 
+fn failed(message: &'static str) -> impl FnOnce(ShimFailed) -> RenderError {
+    move |_| RenderError::Backend(message.into())
+}
+
 impl MupdfBackend {
     /// Create a backend with its own MuPDF context.
     pub fn new() -> Result<Self, RenderError> {
-        // SAFETY: the shim returns a live owned context or null.
-        let raw = unsafe { pr_backend_new() };
-        if raw.is_null() {
-            return Err(RenderError::Backend(
-                "could not create MuPDF context".into(),
-            ));
-        }
+        let shim = Shim::new()
+            .ok_or_else(|| RenderError::Backend("could not create MuPDF context".into()))?;
         Ok(Self {
-            raw,
+            shim,
             fonts: BTreeMap::new(),
             classic_fonts: BTreeMap::new(),
             classic_encodings: BTreeMap::new(),
@@ -138,52 +62,17 @@ impl MupdfBackend {
     /// Rasterize one SVG document at `dpi` (fidelity-oracle tests only).
     #[cfg(test)]
     pub fn rasterize_svg(&self, svg: &[u8], dpi: f32) -> Result<Pixmap, RenderError> {
-        self.rasterize(svg, c"image/svg+xml", 0, dpi)
+        self.shim
+            .rasterize(svg, c"image/svg+xml", 0, dpi)
+            .map_err(failed("MuPDF rasterization failed"))
     }
 
     /// Rasterize one zero-based PDF page at `dpi` (fidelity-oracle tests only).
     #[cfg(test)]
     pub fn rasterize_pdf(&self, pdf: &[u8], page: u32, dpi: f32) -> Result<Pixmap, RenderError> {
-        self.rasterize(pdf, c"application/pdf", page, dpi)
-    }
-
-    #[cfg(test)]
-    fn rasterize(
-        &self,
-        bytes: &[u8],
-        mime: &std::ffi::CStr,
-        page: u32,
-        dpi: f32,
-    ) -> Result<Pixmap, RenderError> {
-        let (mut width, mut height, mut components, mut length) = (0, 0, 0, 0);
-        // SAFETY: all inputs remain live; returned allocation is copied and freed.
-        let data = unsafe {
-            pr_backend_raster(
-                self.raw,
-                bytes.as_ptr(),
-                bytes.len(),
-                mime.as_ptr(),
-                page as i32,
-                dpi,
-                &mut width,
-                &mut height,
-                &mut components,
-                &mut length,
-            )
-        };
-        if data.is_null() {
-            return Err(RenderError::Backend("MuPDF rasterization failed".into()));
-        }
-        // SAFETY: shim returned `length` initialized bytes.
-        let samples = unsafe { std::slice::from_raw_parts(data, length) }.to_vec();
-        // SAFETY: buffer is malloc-owned and freed exactly once.
-        unsafe { pr_backend_free(data) };
-        Ok(Pixmap {
-            width: width as usize,
-            height: height as usize,
-            components: components as usize,
-            samples,
-        })
+        self.shim
+            .rasterize(pdf, c"application/pdf", page, dpi)
+            .map_err(failed("MuPDF rasterization failed"))
     }
 
     fn register_uncached_font(
@@ -191,59 +80,17 @@ impl MupdfBackend {
         bytes: &[u8],
         face_index: u32,
     ) -> Result<FontId, RenderError> {
-        // SAFETY: byte slice remains live; the shim copies it and catches exceptions.
-        let raw =
-            unsafe { pr_backend_font(self.raw, bytes.as_ptr(), bytes.len(), face_index as i32) };
-        if raw < 0 {
-            return Err(RenderError::Backend("MuPDF rejected font bytes".into()));
-        }
-        Ok(FontId(raw as u32))
-    }
-}
-
-fn flatten_path(path: &Path) -> (Vec<u8>, Vec<f32>) {
-    let mut kinds = Vec::with_capacity(path.commands.len());
-    let mut coordinates = Vec::new();
-    for command in &path.commands {
-        match command {
-            PathCommand::MoveTo(x, y) => {
-                kinds.push(0);
-                coordinates.extend([x, y]);
-            }
-            PathCommand::LineTo(x, y) => {
-                kinds.push(1);
-                coordinates.extend([x, y]);
-            }
-            PathCommand::CurveTo(x1, y1, x2, y2, x3, y3) => {
-                kinds.push(2);
-                coordinates.extend([x1, y1, x2, y2, x3, y3]);
-            }
-            PathCommand::Rect(x0, y0, x1, y1) => {
-                kinds.push(3);
-                coordinates.extend([x0, y0, x1, y1]);
-            }
-            PathCommand::Close => kinds.push(4),
-        }
-    }
-    (kinds, coordinates)
-}
-
-impl Drop for MupdfBackend {
-    fn drop(&mut self) {
-        // SAFETY: `raw` is uniquely owned for the lifetime of this backend.
-        unsafe { pr_backend_drop(self.raw) };
+        self.shim
+            .register_font(bytes, face_index)
+            .map_err(failed("MuPDF rejected font bytes"))
     }
 }
 
 impl Backend for MupdfBackend {
     fn begin_page(&mut self, width_bp: f32, height_bp: f32) -> Result<(), RenderError> {
-        // SAFETY: shim call on a live context; exceptions are caught in C.
-        if unsafe { pr_backend_begin(self.raw, width_bp, height_bp) } == 0 {
-            return Err(RenderError::Backend(
-                "MuPDF could not start SVG page".into(),
-            ));
-        }
-        Ok(())
+        self.shim
+            .begin_page(width_bp, height_bp)
+            .map_err(failed("MuPDF could not start SVG page"))
     }
 
     fn register_font(
@@ -272,18 +119,14 @@ impl Backend for MupdfBackend {
         if let Some(font) = self.classic_fonts.get(&key) {
             return Ok(*font);
         }
-        // MuPDF stores a font's glyph mapping on its font object. The same
-        // Type1 program can therefore only carry one TeX encoding per MuPDF
-        // font instance.
+        // MuPDF keeps the glyph mapping on the font object, so each encoding needs its own.
         let font = self.register_uncached_font(bytes, 0)?;
         let names = parse_encoding(encoding_bytes)?;
         let mut glyphs = Vec::with_capacity(names.len());
         for name in names {
             let name = CString::new(name)
                 .map_err(|_| RenderError::Backend("NUL in font encoding".into()))?;
-            // SAFETY: CString remains live and the shim catches MuPDF exceptions.
-            let glyph = unsafe { pr_backend_gid_by_name(self.raw, font.0 as i32, name.as_ptr()) };
-            glyphs.push(glyph.max(0) as u16);
+            glyphs.push(self.shim.glyph_by_name(font, &name).unwrap_or(0));
         }
         self.classic_encodings.insert(font, glyphs);
         self.classic_fonts.insert(key, font);
@@ -297,13 +140,9 @@ impl Backend for MupdfBackend {
         transform: Matrix,
         color: Color,
     ) -> Result<(), RenderError> {
-        let rgba = [color.red, color.green, color.blue, color.alpha];
-        // SAFETY: fixed-size transform and color values remain live for the guarded C call.
-        if unsafe { pr_backend_rule(self.raw, width_bp, height_bp, transform, rgba.as_ptr()) } == 0
-        {
-            return Err(RenderError::Backend("MuPDF rule drawing failed".into()));
-        }
-        Ok(())
+        self.shim
+            .fill_rule(width_bp, height_bp, transform, color)
+            .map_err(failed("MuPDF rule drawing failed"))
     }
 
     fn fill_path(
@@ -313,24 +152,9 @@ impl Backend for MupdfBackend {
         transform: Matrix,
         color: Color,
     ) -> Result<(), RenderError> {
-        let (kinds, coordinates) = flatten_path(path);
-        let rgba = [color.red, color.green, color.blue, color.alpha];
-        // SAFETY: the flattened slices and color remain live during the guarded C call.
-        let ok = unsafe {
-            pr_backend_fill_path(
-                self.raw,
-                kinds.as_ptr(),
-                coordinates.as_ptr(),
-                kinds.len() as i32,
-                i32::from(even_odd),
-                transform,
-                rgba.as_ptr(),
-            )
-        };
-        if ok == 0 {
-            return Err(RenderError::Backend("MuPDF path fill failed".into()));
-        }
-        Ok(())
+        self.shim
+            .fill_path(path, even_odd, transform, color)
+            .map_err(failed("MuPDF path fill failed"))
     }
 
     fn stroke_path(
@@ -340,24 +164,9 @@ impl Backend for MupdfBackend {
         transform: Matrix,
         color: Color,
     ) -> Result<(), RenderError> {
-        let (kinds, coordinates) = flatten_path(path);
-        let rgba = [color.red, color.green, color.blue, color.alpha];
-        // SAFETY: the flattened slices and color remain live during the guarded C call.
-        let ok = unsafe {
-            pr_backend_stroke_path(
-                self.raw,
-                kinds.as_ptr(),
-                coordinates.as_ptr(),
-                kinds.len() as i32,
-                style,
-                transform,
-                rgba.as_ptr(),
-            )
-        };
-        if ok == 0 {
-            return Err(RenderError::Backend("MuPDF path stroke failed".into()));
-        }
-        Ok(())
+        self.shim
+            .stroke_path(path, style, transform, color)
+            .map_err(failed("MuPDF path stroke failed"))
     }
 
     fn clip_path(
@@ -366,30 +175,15 @@ impl Backend for MupdfBackend {
         even_odd: bool,
         transform: Matrix,
     ) -> Result<(), RenderError> {
-        let (kinds, coordinates) = flatten_path(path);
-        // SAFETY: the flattened slices remain live during the guarded C call.
-        let ok = unsafe {
-            pr_backend_clip_path(
-                self.raw,
-                kinds.as_ptr(),
-                coordinates.as_ptr(),
-                kinds.len() as i32,
-                i32::from(even_odd),
-                transform,
-            )
-        };
-        if ok == 0 {
-            return Err(RenderError::Backend("MuPDF path clipping failed".into()));
-        }
-        Ok(())
+        self.shim
+            .clip_path(path, even_odd, transform)
+            .map_err(failed("MuPDF path clipping failed"))
     }
 
     fn pop_clip(&mut self) -> Result<(), RenderError> {
-        // SAFETY: shim call on a live context; exceptions are caught in C.
-        if unsafe { pr_backend_pop_clip(self.raw) } == 0 {
-            return Err(RenderError::Backend("MuPDF clip pop failed".into()));
-        }
-        Ok(())
+        self.shim
+            .pop_clip()
+            .map_err(failed("MuPDF clip pop failed"))
     }
 
     fn fill_glyphs(
@@ -400,29 +194,9 @@ impl Backend for MupdfBackend {
         color: Color,
         style: FontStyle,
     ) -> Result<(), RenderError> {
-        let gids: Vec<_> = glyphs.iter().map(|glyph| glyph.glyph_id).collect();
-        let transforms: Vec<_> = glyphs.iter().map(|glyph| glyph.transform).collect();
-        let rgba = [color.red, color.green, color.blue, color.alpha];
-        // SAFETY: all slices remain live and the C shim catches MuPDF exceptions.
-        let ok = unsafe {
-            pr_backend_glyphs(
-                self.raw,
-                font.0 as i32,
-                size_bp,
-                gids.as_ptr(),
-                transforms.as_ptr(),
-                gids.len() as i32,
-                rgba.as_ptr(),
-                style.extend,
-                style.slant,
-                style.embolden,
-                i32::from(style.vertical),
-            )
-        };
-        if ok == 0 {
-            return Err(RenderError::Backend("MuPDF glyph drawing failed".into()));
-        }
-        Ok(())
+        self.shim
+            .fill_glyphs(font, size_bp, glyphs, color, style)
+            .map_err(failed("MuPDF glyph drawing failed"))
     }
 
     fn fill_chars(
@@ -446,18 +220,7 @@ impl Backend for MupdfBackend {
                 transform: character.transform,
             })
             .collect();
-        self.fill_glyphs(
-            font,
-            size_bp,
-            &glyphs,
-            color,
-            FontStyle {
-                extend: 1.0,
-                slant: 0.0,
-                embolden: 0.0,
-                vertical: false,
-            },
-        )
+        self.fill_glyphs(font, size_bp, &glyphs, color, PLAIN)
     }
 
     fn draw_image(
@@ -467,71 +230,36 @@ impl Backend for MupdfBackend {
         width_bp: Option<f32>,
         height_bp: Option<f32>,
     ) -> Result<(), RenderError> {
-        // SAFETY: bytes remain live and the C shim catches MuPDF exceptions.
-        let ok = unsafe {
-            pr_backend_image(
-                self.raw,
-                bytes.as_ptr(),
-                bytes.len(),
-                transform,
-                width_bp.unwrap_or(f32::NAN),
-                height_bp.unwrap_or(f32::NAN),
-            )
-        };
-        if ok == 0 {
-            return Err(RenderError::Backend("MuPDF image drawing failed".into()));
-        }
-        Ok(())
+        self.shim
+            .draw_image(bytes, transform, width_bp, height_bp)
+            .map_err(failed("MuPDF image drawing failed"))
     }
 
     fn draw_pdf(&mut self, bytes: &[u8], page: u32, transform: Matrix) -> Result<(), RenderError> {
-        // SAFETY: bytes remain live and the C shim catches MuPDF exceptions.
-        let ok = unsafe {
-            pr_backend_pdf(
-                self.raw,
-                bytes.as_ptr(),
-                bytes.len(),
-                page as i32,
-                transform,
-            )
-        };
-        if ok == 0 {
-            return Err(RenderError::Backend(
-                "MuPDF embedded PDF drawing failed".into(),
-            ));
-        }
-        Ok(())
+        self.shim
+            .draw_pdf(bytes, page, transform)
+            .map_err(failed("MuPDF embedded PDF drawing failed"))
     }
 
     fn finish_page(&mut self) -> Result<String, RenderError> {
-        let mut length = 0;
-        // SAFETY: shim returns a malloc-owned buffer copied before it is freed.
-        let data = unsafe { pr_backend_finish(self.raw, &mut length) };
-        if data.is_null() {
-            return Err(RenderError::Backend("MuPDF SVG finalization failed".into()));
-        }
-        // SAFETY: shim returned `length` initialized bytes.
-        let bytes = unsafe { std::slice::from_raw_parts(data, length) };
-        let svg = String::from_utf8(bytes.to_vec())
-            .map_err(|_| RenderError::Backend("MuPDF emitted non-UTF-8 SVG".into()));
-        // SAFETY: buffer is malloc-owned and freed exactly once.
-        unsafe { pr_backend_free(data) };
-        svg
+        let bytes = self
+            .shim
+            .finish_page()
+            .map_err(failed("MuPDF SVG finalization failed"))?;
+        String::from_utf8(bytes)
+            .map_err(|_| RenderError::Backend("MuPDF emitted non-UTF-8 SVG".into()))
     }
 }
 
 fn parse_encoding(bytes: &[u8]) -> Result<Vec<String>, RenderError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| RenderError::Backend("font encoding is not UTF-8/ASCII".into()))?;
-    // PostScript comments run to end of line and may contain anything,
-    // including brackets and slash-names: cm-super-t1.enc ends its vector
-    // with "/germandbls % or /germandbls.alt".
+    // Comments may hold names, as in cm-super-t1.enc's "/germandbls % or /germandbls.alt".
     let text = text
         .lines()
         .map(|line| line.split('%').next().unwrap_or(""))
         .collect::<Vec<_>>()
         .join("\n");
-    let text = text.as_str();
     let start = text
         .find('[')
         .ok_or_else(|| RenderError::Backend("font encoding has no vector".into()))?;
@@ -539,12 +267,11 @@ fn parse_encoding(bytes: &[u8]) -> Result<Vec<String>, RenderError> {
         .find(']')
         .map(|offset| start + 1 + offset)
         .ok_or_else(|| RenderError::Backend("font encoding vector is unterminated".into()))?;
-    let mut names = Vec::new();
-    for token in text[start + 1..end].split_whitespace() {
-        if let Some(name) = token.strip_prefix('/') {
-            names.push(name.to_owned());
-        }
-    }
+    let mut names: Vec<String> = text[start + 1..end]
+        .split_whitespace()
+        .filter_map(|token| token.strip_prefix('/'))
+        .map(str::to_owned)
+        .collect();
     if names.is_empty() || names.len() > 256 {
         return Err(RenderError::Backend(
             "font encoding vector has invalid length".into(),
@@ -557,6 +284,7 @@ fn parse_encoding(bytes: &[u8]) -> Result<Vec<String>, RenderError> {
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
+    use crate::PathCommand;
 
     fn positioned(x: f32, y: f32) -> Matrix {
         Matrix {
@@ -596,6 +324,18 @@ mod tests {
         let svg = backend.finish_page().unwrap();
         assert!(svg.contains("<svg"));
         assert!(svg.contains("path"));
+    }
+
+    #[test]
+    fn drawing_without_an_open_page_is_an_error() {
+        let mut backend = MupdfBackend::new().unwrap();
+        assert!(backend
+            .fill_rule(1.0, 1.0, positioned(0.0, 0.0), Color::BLACK)
+            .is_err());
+        assert!(backend.finish_page().is_err());
+        backend.begin_page(10.0, 10.0).unwrap();
+        backend.finish_page().unwrap();
+        assert!(backend.pop_clip().is_err());
     }
 
     #[test]
@@ -671,12 +411,7 @@ mod tests {
                     transform: positioned(10.0, 30.0),
                 }],
                 Color::BLACK,
-                FontStyle {
-                    extend: 1.0,
-                    slant: 0.0,
-                    embolden: 0.0,
-                    vertical: false,
-                },
+                PLAIN,
             )
             .unwrap();
         let svg = backend.finish_page().unwrap();
@@ -702,12 +437,7 @@ mod tests {
                         transform: positioned(10.0, 30.0),
                     }],
                     Color::BLACK,
-                    FontStyle {
-                        extend: 1.0,
-                        slant: 0.0,
-                        embolden,
-                        vertical: false,
-                    },
+                    FontStyle { embolden, ..PLAIN },
                 )
                 .unwrap();
             backend.finish_page().unwrap()

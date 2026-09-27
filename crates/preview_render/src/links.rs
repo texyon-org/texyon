@@ -1,21 +1,11 @@
-//! Where a page's links point, and where its cross-references land.
-//!
-//! These are not drawn. They arrive as `pdf:` specials that describe an
-//! *overlay* — a region of the page that is clickable, and a named spot another
-//! page can jump to — and a viewer that only paints what the renderer draws
-//! would leave `\ref`, `\cite` and `\url` inert.
-//!
-//! Only the fields that make a link work are recovered from the annotation
-//! dictionaries here. They are PDF objects and could say a great deal more, but
-//! nothing else survives the trip to an HTML overlay.
+//! Link and destination overlay recovered from `pdf:` annotation specials.
 
 /// Where following a link goes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LinkAction {
     /// Somewhere outside the document.
     Uri(String),
-    /// A named destination in this document, from `\ref`, `\cite` or a
-    /// table of contents.
+    /// A named destination in this document.
     Destination(String),
 }
 
@@ -32,11 +22,7 @@ pub struct RectBp {
     pub bottom: f32,
 }
 
-/// One clickable region of a page.
-///
-/// A link broken across a line break becomes several of these sharing one
-/// action, which is what an overlay wants: each line gets its own box rather
-/// than one box swallowing the paragraph between them.
+/// One clickable region of a page, one per line of a broken link.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Link {
     /// The region that responds to a click.
@@ -48,7 +34,7 @@ pub struct Link {
 /// A named spot a link can jump to.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Destination {
-    /// The name `\label` and its kin produced.
+    /// Destination name.
     pub name: String,
     /// Horizontal position in big points from the page's left edge.
     pub x_bp: f32,
@@ -56,32 +42,20 @@ pub struct Destination {
     pub y_bp: f32,
 }
 
-/// Read the destination name out of a `pdf:dest` special.
-///
-/// The special reads `pdf:dest (name) [ ... ]`, where the name is a PDF string
-/// and the array is the view to arrive at — which an HTML overlay cannot honour
-/// and does not need, since it scrolls to the position the special was at.
-pub fn parse_destination_name(args: &str) -> Option<String> {
+/// Name from `dest (name) [ ... ]`, ignoring the view array.
+pub(crate) fn parse_destination_name(args: &str) -> Option<String> {
     let rest = args.trim_start().strip_prefix("dest")?;
     let (name, _) = read_pdf_string(rest.trim_start())?;
     Some(name)
 }
 
-/// Read the action out of a `pdf:bann` annotation dictionary.
-///
-/// Returns `None` for an annotation that is not a link, or a link whose target
-/// this cannot make sense of — an unresolved `\ref` produces exactly that, and
-/// it is not worth an overlay that goes nowhere.
-pub fn parse_link_action(args: &str) -> Option<LinkAction> {
-    // `/S/URI/URI(https://example.com)`: the first `/URI` names the action
-    // type and the second introduces the string. Requiring the string to
-    // follow immediately is what tells them apart.
+/// Action of a `pdf:bann` dictionary, or `None` when it goes nowhere usable.
+pub(crate) fn parse_link_action(args: &str) -> Option<LinkAction> {
+    // In `/S/URI/URI(...)` only the second `/URI` is followed by a string.
     if let Some(uri) = value_after_key(args, "/URI") {
         return Some(LinkAction::Uri(uri));
     }
 
-    // `/S/GoTo/D(section.1)`, and `/Dest` for the spelling that omits the
-    // action dictionary.
     for key in ["/D", "/Dest"] {
         if let Some(name) = value_after_key(args, key) {
             return Some(LinkAction::Destination(name));
@@ -91,10 +65,7 @@ pub fn parse_link_action(args: &str) -> Option<LinkAction> {
     None
 }
 
-/// Find `key` where a PDF string follows it, and read that string.
-///
-/// A key whose value is a name rather than a string is skipped: this is looking
-/// for `/URI(...)`, not for the `/URI` in `/S/URI`.
+/// The PDF string following the first `key` that has one.
 fn value_after_key(args: &str, key: &str) -> Option<String> {
     let mut from = 0;
 
@@ -102,7 +73,7 @@ fn value_after_key(args: &str, key: &str) -> Option<String> {
         let after = from + at + key.len();
         from = after;
 
-        // A longer key that merely starts with this one is a different key.
+        // A longer key that merely starts with this one.
         if args[after..]
             .chars()
             .next()
@@ -119,11 +90,7 @@ fn value_after_key(args: &str, key: &str) -> Option<String> {
     None
 }
 
-/// Read a parenthesised PDF string, returning it and what follows.
-///
-/// Handles the escapes a URL or a label can contain: an escaped parenthesis, an
-/// escaped backslash, and the nested parentheses PDF allows unescaped as long
-/// as they balance.
+/// A parenthesized PDF string with balanced nesting, and what follows it.
 fn read_pdf_string(text: &str) -> Option<(String, &str)> {
     let rest = text.strip_prefix('(')?;
     let mut value = String::new();
@@ -132,9 +99,8 @@ fn read_pdf_string(text: &str) -> Option<(String, &str)> {
 
     while let Some((at, character)) = chars.next() {
         match character {
+            // Octal and control escapes do not occur in labels or URLs.
             '\\' => match chars.next() {
-                // The escapes that matter here are the structural ones; PDF's
-                // octal and control escapes do not appear in a label or a URL.
                 Some((_, escaped)) => value.push(escaped),
                 None => return None,
             },
@@ -153,7 +119,6 @@ fn read_pdf_string(text: &str) -> Option<(String, &str)> {
         }
     }
 
-    // An unterminated string is a malformed special, not an empty link.
     None
 }
 
@@ -163,8 +128,6 @@ mod tests {
 
     #[test]
     fn a_url_is_read_past_the_subtype_that_shares_its_name() {
-        // `/S/URI` names the action; `/URI(...)` carries the target. Taking the
-        // first match would find the former and read no string at all.
         let action = parse_link_action(
             "bann<</Type/Annot/Subtype/Link/Border[0 0 0]/A<</S/URI/URI(https://example.com/a)>>>>",
         );
@@ -191,7 +154,6 @@ mod tests {
 
     #[test]
     fn a_url_containing_parentheses_survives() {
-        // Wikipedia article titles do this constantly.
         let action = parse_link_action(
             r"bann<</A<</S/URI/URI(https://en.wikipedia.org/wiki/Bracket_\(disambiguation\))>>>>",
         );
@@ -226,7 +188,6 @@ mod tests {
 
     #[test]
     fn a_key_that_merely_starts_with_another_is_not_it() {
-        // `/Domain` begins with `/D` but is not it.
         assert_eq!(parse_link_action("bann<</Domain(0 1)>>"), None);
     }
 }

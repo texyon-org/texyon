@@ -25,15 +25,9 @@ fn main() {
     }
 }
 
-/// Link the MuPDF that `tools/wasm/fetch-deps.sh --with-mupdf` built.
+/// Link the MuPDF from `tools/wasm/fetch-deps.sh --with-mupdf`.
 ///
-/// Nothing is renamed here, unlike the other targets: `llvm-objcopy` does not
-/// implement `--redefine-syms` for wasm objects, so the separation MuPDF needs
-/// from Tectonic happens while MuPDF itself is compiled. `fetch-deps.sh` builds
-/// it against Tectonic's FreeType and zlib rather than its bundled copies, and
-/// force-includes a generated header that moves its whole `pdf_*` API out of the
-/// way of Tectonic's pdf_io. All this script has to do is compile the shim with
-/// that same header and name the archives.
+/// `llvm-objcopy` cannot rename wasm symbols, so that build already moves `pdf_*` aside.
 fn build_wasm() {
     println!("cargo:rerun-if-changed=src/backend_mupdf/shim.c");
 
@@ -54,9 +48,7 @@ fn build_wasm() {
         );
     }
 
-    // Without these, rebuilding MuPDF does not relink this crate: cargo would
-    // keep the previous link, MuPDF's own HarfBuzz and all. That failure is
-    // invisible at build time and shows up as a trap deep inside font setup.
+    // A stale link keeps MuPDF's own HarfBuzz and traps deep inside font setup.
     for path in [&build.join("libmupdf.a"), &build.join("libmupdf-third.a")] {
         println!("cargo:rerun-if-changed={}", path.display());
     }
@@ -65,8 +57,7 @@ fn build_wasm() {
     cc::Build::new()
         .file("src/backend_mupdf/shim.c")
         .include(mupdf.join("include"))
-        // The shim calls into MuPDF, so it has to see the same renaming its
-        // headers were compiled under.
+        // The shim must see the same renames MuPDF was compiled with.
         .flag(format!("-include{}", renames.display()))
         .warnings(false)
         .compile("preview_render_mupdf_shim");
@@ -103,9 +94,7 @@ fn build_linux() {
     println!("cargo:rustc-link-lib=static=mupdf_preview");
     println!("cargo:rustc-link-search=native=/usr/lib");
     println!("cargo:rustc-link-lib=static=mupdf-third");
-    // Tectonic also builds a private, feature-reduced `libharfbuzz.a`. Request
-    // the system shared object by its exact soname so that MuPDF's FreeType
-    // integration cannot accidentally bind to that private archive.
+    // By soname, so MuPDF's FreeType cannot bind Tectonic's private `libharfbuzz.a`.
     println!("cargo:rustc-link-lib=dylib:+verbatim=libharfbuzz.so.0");
     for library in [
         "freetype", "jbig2dec", "openjp2", "jpeg", "z", "m", "gumbo", "mujs",

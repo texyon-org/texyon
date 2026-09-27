@@ -6,11 +6,11 @@ use std::io::Cursor;
 #[cfg(test)]
 use tectonic_xdv::{XdvEvents, XdvParser};
 
+use crate::units::{normalize_zero, SP_TO_BP};
 use crate::RenderError;
 
 pub(crate) const DEFAULT_BP: [f32; 2] = [612.0, 792.0];
 
-/// Magnification declared by an XDV preamble.
 pub(crate) fn preamble_magnification(xdv: &[u8]) -> Result<f32, RenderError> {
     if xdv.len() < 14 || xdv[0] != 247 {
         return Err(RenderError::Xdv("missing XDV preamble".into()));
@@ -37,11 +37,6 @@ pub(crate) fn is_page_size_special(contents: &[u8]) -> bool {
 }
 
 /// Forward-only media-size state machine for one XDV walk.
-///
-/// A page's size is whatever the specials inside it leave in effect, so the
-/// value is only final at end of page. Keeping it as a state machine lets the
-/// analysis walk derive page sizes itself instead of paying for a second
-/// complete parse of the document.
 #[derive(Clone, Debug)]
 pub(crate) struct PageSizeState {
     mag: f32,
@@ -60,17 +55,14 @@ impl PageSizeState {
         }
     }
 
-    /// Media size in effect for the page being walked.
     pub(crate) fn current(&self) -> [f32; 2] {
         self.current_size
     }
 
-    /// Start a page from the persistent default.
     pub(crate) fn begin_page(&mut self) {
         self.current_size = self.default_size;
     }
 
-    /// Retire the page whose size was just read.
     pub(crate) fn finish_page(&mut self) {
         self.completed_pages += 1;
     }
@@ -263,54 +255,27 @@ fn parse_length(input: &[u8], mag: f32) -> Option<(f32, &[u8])> {
         b"pc" => 12.0 * 72.0 / 72.27,
         b"dd" => 1238.0 / 1157.0 * 72.0 / 72.27,
         b"cc" => 12.0 * 1238.0 / 1157.0 * 72.0 / 72.27,
-        b"sp" => 72.0 / 72.27 / 65_536.0,
+        b"sp" => SP_TO_BP,
         _ => return None,
     };
     Some((value * true_scale * scale, rest))
 }
 
-fn normalize_zero(value: f32) -> f32 {
-    if value == 0.0 {
-        0.0
-    } else {
-        value
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testxdv::XdvBuilder;
 
     fn xdv_with_specials(specials: &[&[&str]], mag: u32) -> Vec<u8> {
-        let mut bytes = vec![247, 7];
-        bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
-        bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
-        bytes.extend_from_slice(&mag.to_be_bytes());
-        bytes.push(0);
+        let mut xdv = XdvBuilder::new(mag);
         for page in specials {
-            bytes.push(139);
-            bytes.extend_from_slice(&[0; 40]);
-            bytes.extend_from_slice(&(-1i32).to_be_bytes());
+            xdv.begin_page();
             for special in *page {
-                bytes.push(239);
-                bytes.push(special.len() as u8);
-                bytes.extend_from_slice(special.as_bytes());
+                xdv.special(special);
             }
-            bytes.push(140);
+            xdv.end_page();
         }
-        bytes.push(248);
-        bytes.extend_from_slice(&0u32.to_be_bytes());
-        bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
-        bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
-        bytes.extend_from_slice(&mag.to_be_bytes());
-        bytes.extend_from_slice(&[0; 8]);
-        bytes.extend_from_slice(&2u16.to_be_bytes());
-        bytes.extend_from_slice(&(specials.len() as u16).to_be_bytes());
-        bytes.push(249);
-        bytes.extend_from_slice(&0u32.to_be_bytes());
-        bytes.push(7);
-        bytes.extend_from_slice(&[223; 4]);
-        bytes
+        xdv.finish()
     }
 
     fn close(actual: [f32; 2], expected: [f32; 2]) {
