@@ -896,7 +896,11 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
             (p, prev_p) = chars_out(st, p, prev_p)?;
             continue;
         }
-        match st.mem.classify(p).expect("valid node type in hlist_out") {
+        match st
+            .mem
+            .classify(p)
+            .map_err(|_| Abort::Confusion("hlistout"))?
+        {
             AnyNode::HList(h) => hlist_box_out(st, AnyBox::HList(h), base_line)?,
             AnyNode::VList(v) => hlist_box_out(st, AnyBox::VList(v), base_line)?,
             AnyNode::Rule(rule) => {
@@ -1069,7 +1073,11 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
         if st.mem.is_char_node(p) {
             return Err(Abort::Confusion("vlistout"));
         }
-        match st.mem.classify(p).expect("valid node type in vlist_out") {
+        match st
+            .mem
+            .classify(p)
+            .map_err(|_| Abort::Confusion("vlistout"))?
+        {
             AnyNode::HList(h) => vlist_box_out(st, AnyBox::HList(h), left_edge, upwards)?,
             AnyNode::VList(v) => vlist_box_out(st, AnyBox::VList(v), left_edge, upwards)?,
             AnyNode::Rule(rule) => {

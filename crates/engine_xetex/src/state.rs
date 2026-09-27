@@ -953,7 +953,6 @@ pub(crate) struct ScannerState {
     pub pre_adjust_tail: crate::units::MemPtr,
     pub total_stretch: [Scaled; 4],
     pub total_shrink: [Scaled; 4],
-    pub just_box: Option<crate::node::AnyBox>,
     pub cur_f: FontId,
     pub cur_c: i32,
     pub cur_i: crate::fonts::CharInfo,
@@ -1476,7 +1475,6 @@ pub(crate) struct LinebreakState {
     pub first_indent: Scaled,
     pub second_indent: Scaled,
     /// The active node of the chosen breakpoint, once there is one.
-    pub best_bet: Option<crate::node::NodePtr<crate::node::ActiveNode>>,
     pub best_line: i32,
     pub hn: u16,
     pub ha: crate::units::MemPtr,
@@ -1515,7 +1513,6 @@ impl Default for LinebreakState {
             second_width: Scaled::ZERO,
             first_indent: Scaled::ZERO,
             second_indent: Scaled::ZERO,
-            best_bet: None,
             best_line: 0,
             hn: 0,
             ha: crate::units::MemPtr::from_raw(0),

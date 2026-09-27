@@ -42,7 +42,7 @@ fn open_linebreak_iterator(
     st: &mut EngineState,
     locale: StrNumber,
     name: &[u8],
-) -> Result<(), Abort> {
+) -> Result<crate::layout::LinebreakHandle, Abort> {
     if locale != st.fonts.brk_locale_str_num {
         st.fonts.brk_iter = None;
     }
@@ -63,10 +63,10 @@ fn open_linebreak_iterator(
         st.fonts.brk_locale_str_num = locale;
         st.fonts.brk_iter = iter;
     }
-    if st.fonts.brk_iter.is_none() {
-        return Err(Abort::Internal("failed to create linebreak iterator"));
-    }
-    Ok(())
+    st.fonts
+        .brk_iter
+        .take()
+        .ok_or(Abort::Internal("failed to create linebreak iterator"))
 }
 
 /// Append `native_text[s..s + len]` as native words, split at the locale's
@@ -92,17 +92,13 @@ pub(crate) fn do_locale_linebreaks(st: &mut EngineState, s: i32, len: i32) -> Re
         .and_then(|engine| engine.graphite_breaks(&text));
     let mut iter = None;
     let mut breaks = match graphite {
-        Some(graphite) => match &st.fonts.brk_iter {
-            Some(_) => {
-                iter = st.fonts.brk_iter.take();
-                TextBreaks::Stale(iter.as_ref().unwrap())
-            }
+        Some(graphite) => match st.fonts.brk_iter.take() {
+            Some(stale) => TextBreaks::Stale(iter.insert(stale)),
             None => TextBreaks::Graphite(graphite),
         },
         None => {
-            open_linebreak_iterator(st, locale, &locale_name)?;
-            iter = st.fonts.brk_iter.take();
-            TextBreaks::Icu(iter.as_mut().unwrap().breaks(&text))
+            let fresh = open_linebreak_iterator(st, locale, &locale_name)?;
+            TextBreaks::Icu(iter.insert(fresh).breaks(&text))
         }
     };
 

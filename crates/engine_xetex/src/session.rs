@@ -383,10 +383,9 @@ impl IncrementalXeTeXSession {
                     new_ladder.enable_verification(state);
                 }
                 *strings_base = Some(base);
-                *ladder = Some(new_ladder);
                 run_document(
                     state,
-                    ladder.as_mut().unwrap(),
+                    ladder.insert(new_ladder),
                     DocumentRun {
                         input: &input,
                         snapshot: &fence_sources,

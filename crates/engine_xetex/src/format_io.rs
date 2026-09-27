@@ -56,7 +56,7 @@ macro_rules! int_item {
             }
             #[inline]
             fn get(bytes: &[u8]) -> Self {
-                <$t>::from_be_bytes(bytes.try_into().unwrap())
+                <$t>::from_be_bytes(bytes.try_into().expect("SIZE bytes"))
             }
         }
     )*};

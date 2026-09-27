@@ -470,7 +470,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
             st.mem.pop_nest(&mut st.input);
             x = pre_display_direction(st);
         } else {
-            crate::linebreak::line_break(st, true)?;
+            let jb = crate::linebreak::line_break(st, true)?;
 
             let right = side_skip(st, GluePar::RightSkip)?;
             let left = side_skip(st, GluePar::LeftSkip)?;
@@ -478,7 +478,6 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
 
             let jbox = st.mem.new_null_box()?;
             j = jbox.ptr();
-            let jb = st.scanner.just_box.expect("line_break sets just_box");
             let mem = &mut st.mem;
             jbox.set_width(mem, jb.width(mem));
             jbox.set_shift_amount(mem, jb.shift_amount(mem));
