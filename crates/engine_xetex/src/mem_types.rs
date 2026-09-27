@@ -119,6 +119,35 @@ impl ListStateRecord {
     pub fn set_prev_depth(&mut self, d: crate::units::Scaled) {
         self.set_aux_s1(d.0);
     }
+    /// `space_factor`, the aux word of horizontal modes.
+    #[inline]
+    pub fn space_factor(&self) -> i32 {
+        self.aux_s0()
+    }
+    #[inline]
+    pub fn set_space_factor(&mut self, f: i32) {
+        self.set_aux_s0(f);
+    }
+    /// `clang`, the current language of horizontal modes.
+    #[inline]
+    pub fn clang(&self) -> i32 {
+        self.aux_s1()
+    }
+    #[inline]
+    pub fn set_clang(&mut self, l: i32) {
+        self.set_aux_s1(l);
+    }
+    /// `incompleat_noad`, math mode's pending fraction.
+    #[inline]
+    pub fn incompleat_noad(&self) -> Option<crate::node::NodePtr<crate::node::Noad>> {
+        let p = crate::units::MemPtr(self.aux_s1()).as_idx()?;
+        // SAFETY: math mode only stores a fraction noad here.
+        Some(crate::node::NodePtr::from_idx_unchecked(p))
+    }
+    #[inline]
+    pub fn set_incompleat_noad(&mut self, n: Option<crate::node::NodePtr<crate::node::Noad>>) {
+        self.set_aux_s1(n.map_or(crate::consts::TEX_NULL, |n| n.idx().0));
+    }
     #[inline]
     pub fn aux_s0(&self) -> i32 {
         self.aux.b32().s0

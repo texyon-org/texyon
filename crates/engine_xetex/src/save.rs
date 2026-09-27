@@ -197,7 +197,7 @@ fn sa(p: impl MemAddr) -> NodePtr<SaNode> {
 /// Deferred flush work from an `sa_def`/`sa_w_def`-family mutation.
 #[derive(Default)]
 pub(crate) struct SaMutationResult {
-    flush_list: Option<i32>,
+    flush_list: Option<MemPtr>,
 }
 
 impl MemState {
@@ -211,16 +211,17 @@ impl MemState {
         let Ok(eq_type) = u8::try_from(eq_type) else {
             return Ok(());
         };
+        let ptr = MemPtr(equiv);
         match eq_type {
-            CALL..=LONG_OUTER_CALL => self.delete_token_ref(MemPtr(equiv)),
-            GLUE_REF => self.delete_glue_ref(crate::node::NodePtr::from_glue_ptr(MemPtr(equiv))),
+            CALL..=LONG_OUTER_CALL => self.delete_token_ref(ptr),
+            GLUE_REF => self.delete_glue_ref(crate::node::NodePtr::from_glue_ptr(ptr)),
             SHAPE_REF => {
-                if equiv != TEX_NULL {
-                    let size = 2 * MemPtr(equiv).info(self) + 1;
-                    self.free_node(MemPtr::from_raw(equiv), size);
+                if !ptr.is_null() {
+                    let size = 2 * ptr.info(self) + 1;
+                    self.free_node(ptr, size);
                 }
             }
-            BOX_REF => self.flush_node_list(equiv)?,
+            BOX_REF => self.flush_node_list(ptr)?,
             TOKS_REGISTER | REGISTER if !(0..=19).contains(&equiv) => {
                 self.delete_sa_ref(scanner, equiv);
             }
@@ -315,14 +316,14 @@ impl MemState {
     }
 
     /// Releases the value of `p`, returning a box list the caller must flush.
-    pub(crate) fn sa_destroy(&mut self, p: impl MemAddr) -> Option<i32> {
+    pub(crate) fn sa_destroy(&mut self, p: impl MemAddr) -> Option<MemPtr> {
         let p = sa(p);
         let value = p.sa_ptr(self);
         if p.sa_index(self) < MU_VAL_LIMIT {
             self.delete_glue_ref(crate::node::NodePtr::from_glue_ptr(value));
         } else if !value.is_null() {
             if p.sa_index(self) < BOX_VAL_LIMIT {
-                return Some(value.0);
+                return Some(value);
             }
             self.delete_token_ref(value);
         }
@@ -334,12 +335,12 @@ impl MemState {
         scanner: &mut ScannerState,
         save_stack: &mut SaveStackState,
         p: i32,
-        e: i32,
+        e: MemPtr,
     ) -> Result<SaMutationResult, Abort> {
         let node = sa(p);
         node.set_sa_ref(self, node.sa_ref(self) + 1);
         let mut result = SaMutationResult::default();
-        if node.sa_ptr(self).0 == e {
+        if node.sa_ptr(self) == e {
             result.flush_list = self.sa_destroy(p);
         } else {
             if node.sa_lev(self) == save_stack.cur_level {
@@ -348,7 +349,7 @@ impl MemState {
                 self.sa_save(scanner, save_stack, p)?;
             }
             node.set_sa_lev(self, save_stack.cur_level);
-            node.set_sa_ptr(self, MemPtr::from_raw(e));
+            node.set_sa_ptr(self, e);
         }
         Ok(result)
     }
@@ -372,12 +373,12 @@ impl MemState {
         Ok(SaMutationResult::default())
     }
 
-    pub(crate) fn gsa_def(&mut self, p: impl MemAddr, e: i32) -> SaMutationResult {
+    pub(crate) fn gsa_def(&mut self, p: impl MemAddr, e: MemPtr) -> SaMutationResult {
         let p = sa(p);
         p.set_sa_ref(self, p.sa_ref(self) + 1);
         let flush_list = self.sa_destroy(p.idx());
         p.set_sa_lev(self, LEVEL_ONE);
-        p.set_sa_ptr(self, MemPtr::from_raw(e));
+        p.set_sa_ptr(self, e);
         SaMutationResult { flush_list }
     }
 
@@ -464,9 +465,8 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
                 if a {
                     let pn = st.mem.get_avail()?;
                     pn.set_token(&mut st.mem, st.scanner.cur_tok);
-                    pn.set_link(&mut st.mem, MemPtr::from_raw(st.input.cur_input.loc));
-                    st.input.cur_input.loc = pn.0;
-                    st.input.cur_input.start = pn.0;
+                    pn.set_link(&mut st.mem, st.input.cur_input.token_loc());
+                    st.input.cur_input.set_token_list(pn);
                     if st.scanner.cur_tok.is_brace() {
                         if st.scanner.cur_tok.is_left_brace() {
                             st.scanner.align_state -= 1;
@@ -482,7 +482,7 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
             }
             RESTORE_SA => {
                 sa_restore(st)?;
-                st.scanner.sa_chain = MemPtr::from_raw(p);
+                st.scanner.sa_chain = st.save_stack.save_index_ptr(sp);
                 st.scanner.sa_level = st.save_stack.save_level(st.save_stack.save_ptr);
             }
             kind => {
@@ -572,8 +572,7 @@ impl MemState {
             p = sa(self.get_node(WORD_NODE_SIZE)?);
             scanner.cur_ptr = p.ptr();
             p.set_sa_int(self, 0);
-            // sa_num
-            p.set_sa_ptr(self, MemPtr::from_raw(n));
+            p.set_sa_num(self, n);
         } else {
             p = sa(self.get_node(POINTER_NODE_SIZE)?);
             scanner.cur_ptr = p.ptr();

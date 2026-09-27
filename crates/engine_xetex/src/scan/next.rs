@@ -43,7 +43,7 @@ pub(crate) fn get_x_or_protected(st: &mut EngineState) -> Result<(), Abort> {
         }
         if st.scanner.cur_cmd >= CALL
             && st.scanner.cur_cmd < END_TEMPLATE
-            && st.mem.is_protected_macro(MemPtr(st.scanner.cur_chr))
+            && st.mem.is_protected_macro(st.scanner.cur_chr_ptr())
         {
             return Ok(());
         }
@@ -505,18 +505,18 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
                     });
                 }
             }
-        } else if st.input.cur_input.loc != TEX_NULL {
-            let p = MemPtr(st.input.cur_input.loc);
+        } else if !st.input.cur_input.token_loc().is_null() {
+            let p = st.input.cur_input.token_loc();
             let t = p.token(&st.mem);
-            st.input.cur_input.loc = p.link(&st.mem).0;
+            st.input.cur_input.set_token_loc(p.link(&st.mem));
 
             if t.is_cs() {
                 st.scanner.cur_cs = t.cs();
                 fetch_cs_meaning(st);
                 if st.scanner.cur_cmd >= OUTER_CALL {
                     if st.scanner.cur_cmd == DONT_EXPAND {
-                        st.scanner.cur_cs = MemPtr(st.input.cur_input.loc).token(&st.mem).cs();
-                        st.input.cur_input.loc = TEX_NULL;
+                        st.scanner.cur_cs = st.input.cur_input.token_loc().token(&st.mem).cs();
+                        st.input.cur_input.set_token_loc(MemPtr::NULL);
                         fetch_cs_meaning(st);
                         if st.scanner.cur_cmd > MAX_COMMAND {
                             st.scanner.cur_cmd = RELAX;

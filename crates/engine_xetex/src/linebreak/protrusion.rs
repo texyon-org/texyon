@@ -6,7 +6,7 @@ use crate::fonts::QUAD_CODE;
 use crate::mem::{TEMP_HEAD, ZERO_GLUE};
 use crate::node::{ActiveNode, AnyBox, AnyNode, DiscNode, HListNode, NodePtr, WhatsitSubtype};
 use crate::state::{ErrorState, FontState, LinebreakState, MemState};
-use crate::units::{FontId, MemIdx, MemPtr, Scaled};
+use crate::units::{FontId, MemPtr, Scaled};
 use tectonic_xetex_layout::get_cp_code;
 
 use super::passive_node;
@@ -61,7 +61,7 @@ impl LinebreakState {
         let l_disc = if l.is_null() {
             None
         } else {
-            mem.classify_disc(MemIdx::new(l)).ok().flatten()
+            mem.classify_disc(l).ok().flatten()
         };
         l = match l_disc {
             Some(d) if !d.post_break(mem).is_null() => d.post_break(mem),
@@ -107,7 +107,7 @@ impl LinebreakState {
         let (char_ptr, f, c) = if let Some(ch) = mem.as_char(p) {
             (p, ch.font(mem), ch.character(mem))
         } else {
-            match mem.classify(MemIdx::new(p)) {
+            match mem.classify(p) {
                 Ok(AnyNode::Whatsit(w)) => match w.whatsit_subtype(mem) {
                     Some(s) if s.is_native_word() => {
                         if w.native_glyph_info_handle(mem) == 0 {
@@ -205,10 +205,7 @@ impl MemState {
     /// Whether `p` is a char node or a node that glue may break after.
     #[inline]
     fn is_non_discardable(&self, p: MemPtr) -> bool {
-        self.is_char_node(p)
-            || self
-                .classify(MemIdx::new(p))
-                .is_ok_and(|n| n.precedes_break())
+        self.is_char_node(p) || self.classify(p).is_ok_and(|n| n.precedes_break())
     }
 
     #[inline]
@@ -221,13 +218,13 @@ impl MemState {
 
     #[inline]
     fn is_empty_box(&self, p: MemPtr) -> bool {
-        matches!(self.classify_box(MemIdx::new(p)), Ok(Some(AnyBox::HList(b))) if self.is_empty_hlist(b))
+        matches!(self.classify_box(p), Ok(Some(AnyBox::HList(b))) if self.is_empty_hlist(b))
     }
 
     /// The list of `p` if `p` is an hlist with a nonempty list.
     #[inline]
     fn nonempty_hlist(&self, p: MemPtr) -> Option<MemPtr> {
-        match self.classify_box(MemIdx::new(p)) {
+        match self.classify_box(p) {
             Ok(Some(AnyBox::HList(b))) => Some(b.list_ptr(self)).filter(|list| !list.is_null()),
             _ => None,
         }
@@ -237,7 +234,7 @@ impl MemState {
         if self.is_char_node(p) {
             return false;
         }
-        match self.classify(MemIdx::new(p)) {
+        match self.classify(p) {
             Ok(AnyNode::Ins(_) | AnyNode::Mark(_) | AnyNode::Adjust(_) | AnyNode::Penalty(_)) => {
                 true
             }

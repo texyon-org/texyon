@@ -588,7 +588,7 @@ pub(crate) fn print_meaning(st: &mut EngineState) {
     if cmd >= CALL {
         print_char(st, b':');
         print_ln(st);
-        token_show(st, chr);
+        token_show(st, st.scanner.cur_chr_ptr());
     } else if cmd == TOP_BOT_MARK {
         if let Some(mark) = MarkCode::from_raw(chr) {
             print_char(st, b':');

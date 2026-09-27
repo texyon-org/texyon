@@ -8,15 +8,15 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::mem::{ACTIVE_LIST, TEMP_HEAD};
 use crate::node::{
-    ActiveNode, AnyNode, CharNode, DeltaNode, DiscNode, FixedNode, GlueNode, GlueSpecNode, NodePtr,
-    PassiveNode, WhatsitSubtype,
+    ActiveNode, AnyBox, AnyNode, CharNode, DeltaNode, DiscNode, FixedNode, GlueNode, GlueSpecNode,
+    NodePtr, PassiveNode, WhatsitSubtype,
 };
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{
     ConfigState, EngineState, EqtbState, ErrorState, FontState, LinebreakState, MemState,
     ScannerState,
 };
-use crate::units::{FontId, MemAddr, MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{FontId, MemAddr, MemPtr, NodeType, Scaled};
 
 mod hyphenate;
 mod locale;
@@ -33,7 +33,6 @@ const LAST_ACTIVE: MemPtr = ACTIVE_LIST;
 const DELTA_NODE: u16 = NodeType::Rule.as_raw();
 const ACTIVE_NODE_SIZE_NORMAL: i16 = 3;
 const ACTIVE_NODE_SIZE_EXTENDED: i16 = 5;
-const BEST_BET_SET: &str = "best_bet is set by choose_best_break before use";
 
 pub(crate) const UNHYPHENATED: i16 = 0;
 pub(crate) const HYPHENATED: i16 = 1;
@@ -207,19 +206,25 @@ impl MemState {
         }
     }
 
-    /// Pick `best_bet` and `best_line`, returning whether the result satisfies `\looseness`.
-    fn choose_best_break(&self, linebreak: &mut LinebreakState, eqtb: &EqtbState) -> bool {
+    /// Pick the best active node and set `best_line`. `None` when the result
+    /// misses `\looseness` and another pass is due.
+    fn choose_best_break(
+        &self,
+        linebreak: &mut LinebreakState,
+        eqtb: &EqtbState,
+    ) -> Option<NodePtr<ActiveNode>> {
         if ACTIVE_LIST.link(self) == LAST_ACTIVE {
-            return false;
+            return None;
         }
 
         let mut r = ACTIVE_LIST.link(self);
         let mut fewest_demerits = MAX_HALFWORD;
+        let mut best = None;
         loop {
             if let ActiveOrDelta::Active(a) = self.classify_active_or_delta(r) {
                 if a.total_demerits(self) < fewest_demerits {
                     fewest_demerits = a.total_demerits(self);
-                    linebreak.best_bet = Some(a);
+                    best = Some(a);
                 }
             }
             r = r.link(self);
@@ -227,11 +232,12 @@ impl MemState {
                 break;
             }
         }
-        linebreak.best_line = linebreak.best_bet.expect(BEST_BET_SET).line_number(self);
+        let mut best = best.expect("an active node has finite demerits");
+        linebreak.best_line = best.line_number(self);
 
         let looseness = eqtb.int_par(IntPar::Looseness);
         if looseness == 0 {
-            return true;
+            return Some(best);
         }
 
         let mut r = ACTIVE_LIST.link(self);
@@ -242,12 +248,12 @@ impl MemState {
                 if (line_diff < actual_looseness && looseness <= line_diff)
                     || (line_diff > actual_looseness && looseness >= line_diff)
                 {
-                    linebreak.best_bet = Some(a);
+                    best = a;
                     actual_looseness = line_diff;
                     fewest_demerits = a.total_demerits(self);
                 } else if line_diff == actual_looseness && a.total_demerits(self) < fewest_demerits
                 {
-                    linebreak.best_bet = Some(a);
+                    best = a;
                     fewest_demerits = a.total_demerits(self);
                 }
             }
@@ -257,21 +263,21 @@ impl MemState {
             }
         }
 
-        linebreak.best_line = linebreak.best_bet.expect(BEST_BET_SET).line_number(self);
-        actual_looseness == looseness || linebreak.final_pass
+        linebreak.best_line = best.line_number(self);
+        (actual_looseness == looseness || linebreak.final_pass).then_some(best)
     }
 
     /// Stretch the `\parfillskip` of the last line by the `\lastlinefit` adjustment.
     fn finish_last_line_fit(
         &mut self,
         linebreak: &mut LinebreakState,
+        best: NodePtr<ActiveNode>,
         last_line_fill: NodePtr<GlueNode>,
     ) -> Result<(), Abort> {
         if !linebreak.do_last_line_fit {
             return Ok(());
         }
 
-        let best = linebreak.best_bet.expect(BEST_BET_SET);
         if best.shortfall(self) == Scaled::ZERO {
             linebreak.do_last_line_fit = false;
             return Ok(());
@@ -337,7 +343,7 @@ fn line_break_try_break(
 fn kern_break(st: &mut EngineState, next: MemPtr, auto_breaking: bool) -> Result<(), Abort> {
     if !st.mem.is_char_node(next)
         && auto_breaking
-        && matches!(st.mem.classify(MemIdx::new(next)), Ok(AnyNode::Glue(_)))
+        && matches!(st.mem.classify(next), Ok(AnyNode::Glue(_)))
     {
         line_break_try_break(st, 0, UNHYPHENATED, None)?;
     }
@@ -353,7 +359,7 @@ impl MemState {
             return Ok(fonts.effective_char_width(ch.font(self), ch.character(self)));
         }
 
-        match self.classify(MemIdx::new(p)) {
+        match self.classify(p) {
             Ok(AnyNode::Ligature(lig)) => {
                 let f = lig.font(self);
                 fonts.xtx_ligature_present = true;
@@ -373,7 +379,8 @@ impl MemState {
     }
 }
 
-pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
+/// Break the current paragraph into lines, returning the last line's box.
+pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<AnyBox, Abort> {
     st.scanner.pack_begin_line = st.input.cur_list.mode_line;
     let first = st.input.cur_list.head.link(&st.mem);
     TEMP_HEAD.set_link(&mut st.mem, first);
@@ -381,7 +388,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
     let tail = st.input.cur_list.tail;
     let tail_glue = if st.mem.is_char_node(tail) {
         None
-    } else if let Ok(AnyNode::Glue(g)) = st.mem.classify(MemIdx::new(tail)) {
+    } else if let Ok(AnyNode::Glue(g)) = st.mem.classify(tail) {
         Some(g)
     } else {
         None
@@ -499,7 +506,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
         lb.final_pass = st.eqtb.dimen_par(DimenPar::EmergencyStretch) <= Scaled::ZERO;
     }
 
-    loop {
+    let best = loop {
         st.linebreak.threshold = st.linebreak.threshold.min(INF_BAD);
 
         if second_pass {
@@ -541,7 +548,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
                 st.linebreak.cur_p = cur;
             }
 
-            let Ok(node) = st.mem.classify(MemIdx::new(cur)) else {
+            let Ok(node) = st.mem.classify(cur) else {
                 return Err(Abort::Confusion("paragraph"));
             };
             match node {
@@ -644,8 +651,8 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
 
         if st.linebreak.cur_p.is_null() {
             line_break_try_break(st, EJECT_PENALTY, HYPHENATED, None)?;
-            if st.mem.choose_best_break(&mut st.linebreak, &st.eqtb) {
-                break;
+            if let Some(best) = st.mem.choose_best_break(&mut st.linebreak, &st.eqtb) {
+                break best;
             }
         }
 
@@ -659,17 +666,17 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
             st.linebreak.background[2] += st.eqtb.dimen_par(DimenPar::EmergencyStretch);
             st.linebreak.final_pass = true;
         }
-    }
+    };
 
     st.mem
-        .finish_last_line_fit(&mut st.linebreak, last_line_fill)?;
+        .finish_last_line_fit(&mut st.linebreak, best, last_line_fill)?;
 
-    post_line_break(st, d)?;
+    let last_line = post_line_break(st, best, d)?;
 
     st.mem.free_break_lists(&st.linebreak);
 
     st.scanner.pack_begin_line = 0;
-    Ok(())
+    Ok(last_line)
 }
 
 #[inline]
@@ -740,7 +747,7 @@ impl MemState {
         }
 
         while !s.is_null() && !self.is_char_node(s) {
-            match self.classify(MemIdx::new(s)) {
+            match self.classify(s) {
                 Ok(AnyNode::Glue(g)) => {
                     let spec = g.glue_ptr(self);
                     linebreak.break_width[1] -= spec.width(self);

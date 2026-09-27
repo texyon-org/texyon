@@ -126,6 +126,28 @@ pub(crate) struct InputState {
     pub synctex_tag: i32,
 }
 
+/// `start` and `loc` of a token-list level, which point into `mem`.
+impl InputState {
+    #[inline]
+    pub(crate) fn token_start(&self) -> crate::units::MemPtr {
+        crate::units::MemPtr(self.start)
+    }
+    #[inline]
+    pub(crate) fn token_loc(&self) -> crate::units::MemPtr {
+        crate::units::MemPtr(self.loc)
+    }
+    #[inline]
+    pub(crate) fn set_token_loc(&mut self, p: crate::units::MemPtr) {
+        self.loc = p.0;
+    }
+    /// Starts reading the token list `p` from its first node.
+    #[inline]
+    pub(crate) fn set_token_list(&mut self, p: crate::units::MemPtr) {
+        self.start = p.0;
+        self.loc = p.0;
+    }
+}
+
 /// An owned main-input or `\read` stream slot.
 #[derive(Default)]
 pub(crate) enum InputSlot {
@@ -334,6 +356,11 @@ impl EqtbState {
     pub(crate) fn equiv(&self, p: i32) -> i32 {
         self.b32s1(p)
     }
+    /// `equiv(p)` of an entry that holds a pointer.
+    #[inline]
+    pub(crate) fn equiv_ptr(&self, p: i32) -> crate::units::MemPtr {
+        crate::units::MemPtr(self.equiv(p))
+    }
     #[inline]
     pub(crate) fn set_equiv(&mut self, p: i32, v: i32) {
         self.set_b32s1(p, v);
@@ -361,13 +388,11 @@ impl EqtbState {
     }
     #[inline]
     pub(crate) fn tok_par(&self, n: TokPar) -> crate::units::MemPtr {
-        crate::units::MemPtr(self.equiv(n.loc()))
+        self.equiv_ptr(n.loc())
     }
     #[inline]
     pub(crate) fn par_shape(&self) -> Option<crate::node::NodePtr<crate::node::ParShapeNode>> {
-        crate::node::NodePtr::from_ptr(crate::units::MemPtr(
-            self.equiv(crate::consts::PAR_SHAPE_LOC),
-        ))
+        crate::node::NodePtr::from_ptr(self.equiv_ptr(crate::consts::PAR_SHAPE_LOC))
     }
     /// The e-TeX penalty array held in `eqtb[loc]`.
     #[inline]
@@ -375,11 +400,11 @@ impl EqtbState {
         &self,
         loc: i32,
     ) -> Option<crate::node::NodePtr<crate::node::PenaltiesNode>> {
-        crate::node::NodePtr::from_ptr(crate::units::MemPtr(self.equiv(loc)))
+        crate::node::NodePtr::from_ptr(self.equiv_ptr(loc))
     }
     #[inline]
     pub(crate) fn box_reg(&self, n: i32) -> crate::units::MemPtr {
-        crate::units::MemPtr(self.equiv(crate::consts::BOX_BASE + n))
+        self.equiv_ptr(crate::consts::BOX_BASE + n)
     }
     #[inline]
     pub(crate) fn set_box_reg(&mut self, n: i32, p: crate::units::MemPtr) {
@@ -387,9 +412,7 @@ impl EqtbState {
     }
     #[inline]
     pub(crate) fn skip(&self, n: i32) -> crate::node::NodePtr<crate::node::GlueSpecNode> {
-        crate::node::NodePtr::from_glue_ptr(crate::units::MemPtr(
-            self.equiv(crate::consts::SKIP_BASE + n),
-        ))
+        crate::node::NodePtr::from_glue_ptr(self.equiv_ptr(crate::consts::SKIP_BASE + n))
     }
     #[inline]
     pub(crate) fn dimen(&self, n: i32) -> Scaled {
@@ -397,7 +420,7 @@ impl EqtbState {
     }
     #[inline]
     pub(crate) fn toks(&self, n: i32) -> crate::units::MemPtr {
-        crate::units::MemPtr(self.equiv(crate::consts::TOKS_BASE + n))
+        self.equiv_ptr(crate::consts::TOKS_BASE + n)
     }
     #[inline]
     pub(crate) fn count(&self, n: i32) -> i32 {
@@ -466,7 +489,7 @@ impl EqtbState {
     /// The spec of glue parameter `n`, never null.
     #[inline]
     pub fn glue_par(&self, n: GluePar) -> crate::node::NodePtr<crate::node::GlueSpecNode> {
-        crate::node::NodePtr::from_glue_ptr(crate::units::MemPtr(self.b32s1(n.loc())))
+        crate::node::NodePtr::from_glue_ptr(self.equiv_ptr(n.loc()))
     }
 
     #[inline]
@@ -791,6 +814,11 @@ impl SaveStackState {
     pub(crate) fn save_index(&self, k: i32) -> i32 {
         self.b32s1(k)
     }
+    /// `save_index(k)` of an entry that saved a pointer.
+    #[inline]
+    pub(crate) fn save_index_ptr(&self, k: i32) -> crate::units::MemPtr {
+        crate::units::MemPtr(self.save_index(k))
+    }
     /// Writes a restore entry at `save_ptr`.
     #[inline]
     pub(crate) fn set_save_entry(&mut self, kind: u16, level: u16, index: i32) {
@@ -925,7 +953,6 @@ pub(crate) struct ScannerState {
     pub pre_adjust_tail: crate::units::MemPtr,
     pub total_stretch: [Scaled; 4],
     pub total_shrink: [Scaled; 4],
-    pub just_box: Option<crate::node::AnyBox>,
     pub cur_f: FontId,
     pub cur_c: i32,
     pub cur_i: crate::fonts::CharInfo,
@@ -1448,9 +1475,8 @@ pub(crate) struct LinebreakState {
     pub first_indent: Scaled,
     pub second_indent: Scaled,
     /// The active node of the chosen breakpoint, once there is one.
-    pub best_bet: Option<crate::node::NodePtr<crate::node::ActiveNode>>,
     pub best_line: i32,
-    pub hn: i16,
+    pub hn: u16,
     pub ha: crate::units::MemPtr,
     pub hb: crate::units::MemPtr,
     pub passive: crate::units::MemPtr,
@@ -1487,7 +1513,6 @@ impl Default for LinebreakState {
             second_width: Scaled::ZERO,
             first_indent: Scaled::ZERO,
             second_indent: Scaled::ZERO,
-            best_bet: None,
             best_line: 0,
             hn: 0,
             ha: crate::units::MemPtr::from_raw(0),
@@ -1522,7 +1547,7 @@ pub(crate) struct HyphState {
     pub init_list: crate::units::MemPtr,
     pub init_lig: bool,
     pub init_lft: bool,
-    pub hyphen_passed: i16,
+    pub hyphen_passed: usize,
     pub trie_max: i32,
     pub trie_size: i32,
     pub trie_ptr: i32,
@@ -1533,7 +1558,7 @@ pub(crate) struct HyphState {
     pub max_op_used: u16,
     pub trie_not_ready: bool,
     pub hyph_start: i32,
-    pub hyph_index: i32,
+    pub hyph_index: usize,
     pub cur_lang: u8,
     pub hyf_char: i32,
     pub l_hyf: i32,
@@ -1544,11 +1569,11 @@ pub(crate) struct HyphState {
     pub hc: Vec<i32>,
     pub hu: Vec<i32>,
     pub hyf: Vec<u8>,
-    pub trie_min: Vec<i32>,
-    pub hyf_distance: Vec<i16>,
-    pub hyf_num: Vec<i16>,
+    pub trie_min: Vec<u32>,
+    pub hyf_distance: Vec<u16>,
+    pub hyf_num: Vec<u16>,
     pub hyf_next: Vec<u16>,
-    pub op_start: Vec<i32>,
+    pub op_start: Vec<usize>,
     pub trie_used: Vec<u16>,
     pub trie_op_lang: Vec<u8>,
     pub trie_op_val: Vec<u16>,
@@ -1557,12 +1582,12 @@ pub(crate) struct HyphState {
     pub trie_trc: Vec<u16>,
     pub trie_c: Vec<u16>,
     pub trie_o: Vec<u16>,
-    pub trie_l: Vec<i32>,
-    pub trie_r: Vec<i32>,
-    pub trie_hash: Vec<i32>,
+    pub trie_l: Vec<u32>,
+    pub trie_r: Vec<u32>,
+    pub trie_hash: Vec<u32>,
     pub trie_taken: Vec<bool>,
     pub hyph_word: Vec<StrNumber>,
-    pub hyph_list: Vec<i32>,
+    pub hyph_list: Vec<crate::units::MemPtr>,
     pub hyph_link: Vec<u16>,
     pub trie_op_hash_array: Vec<i32>,
 }
@@ -1666,7 +1691,19 @@ impl ScannerState {
     /// `cur_val` as the glue spec that `scan_glue` left there.
     #[inline]
     pub(crate) fn cur_glue(&self) -> crate::node::NodePtr<crate::node::GlueSpecNode> {
-        crate::node::NodePtr::from_glue_ptr(crate::units::MemPtr(self.cur_val))
+        crate::node::NodePtr::from_glue_ptr(self.cur_val_ptr())
+    }
+
+    /// `cur_val` as a pointer, such as a token list.
+    #[inline]
+    pub(crate) fn cur_val_ptr(&self) -> crate::units::MemPtr {
+        crate::units::MemPtr(self.cur_val)
+    }
+
+    /// `cur_chr` as the pointer a macro or register command carries.
+    #[inline]
+    pub(crate) fn cur_chr_ptr(&self) -> crate::units::MemPtr {
+        crate::units::MemPtr(self.cur_chr)
     }
 
     /// Grows `native_text` until `extra` more units fit.

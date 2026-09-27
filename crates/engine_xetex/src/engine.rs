@@ -380,7 +380,7 @@ fn initialize_more_variables(st: &mut EngineState) {
 
     let hyph_len = st.hyph.hyph_size as usize + 1;
     st.hyph.hyph_word[..hyph_len].fill(StrNumber::NONE);
-    st.hyph.hyph_list[..hyph_len].fill(TEX_NULL);
+    st.hyph.hyph_list[..hyph_len].fill(MemPtr::NULL);
     st.hyph.hyph_link[..hyph_len].fill(0);
 
     st.hyph.hyph_count = 0;
@@ -579,8 +579,8 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
 
     let hyph = &mut st.hyph;
     hyph.trie_op_hash_array[..=(2 * TRIE_OP_SIZE) as usize].fill(0);
-    hyph.trie_used[..=BIGGEST_LANG as usize].fill(MIN_TRIE_OP as u16);
-    hyph.max_op_used = MIN_TRIE_OP as u16;
+    hyph.trie_used[..=BIGGEST_LANG as usize].fill(MIN_TRIE_OP);
+    hyph.max_op_used = MIN_TRIE_OP;
     hyph.trie_op_ptr = 0;
     hyph.trie_not_ready = true;
 
@@ -787,7 +787,7 @@ pub(crate) fn initialize_engine(
     st.input.eof_seen = vec![false; in_open_words];
     st.input.param_stack = vec![MemPtr::default(); st.input.param_size as usize + 1];
     st.hyph.hyph_word = vec![StrNumber::NONE; hyph_words];
-    st.hyph.hyph_list = vec![0; hyph_words];
+    st.hyph.hyph_list = vec![MemPtr::NULL; hyph_words];
     st.hyph.hyph_link = vec![0; hyph_words];
 
     if st.config.in_initex_mode {

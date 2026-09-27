@@ -9,7 +9,7 @@ use crate::ot_math::ScriptKind;
 use crate::packaging::ADDITIONAL;
 use crate::params::DimenPar;
 use crate::state::{EngineState, MemState};
-use crate::units::{FontId, MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{FontId, MemPtr, NodeType, Scaled};
 
 use super::mlist::{clean_box, fetch, set_cur_size_and_mu};
 use super::{SCRIPT_SCRIPT_SIZE, SCRIPT_STYLE, TEXT_STYLE};
@@ -413,7 +413,7 @@ impl MemState {
         let mut found = None;
         let mut style = initial_math_style;
         while script_ptr.0 >= 0 && script_ptr.0 <= self.mem_end {
-            let node = self.classify(MemIdx::new(script_ptr));
+            let node = self.classify(script_ptr);
             script_ptr = match node {
                 Ok(AnyNode::Kern(_) | AnyNode::Glue(_)) => script_ptr.link(self),
                 Ok(AnyNode::Style(sn)) => {

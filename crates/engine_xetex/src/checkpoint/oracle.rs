@@ -352,7 +352,7 @@ fn digest_hyph(st: &EngineState) -> u64 {
         hyph.hyph_next,
         hyph.trie_op_ptr,
         hyph.hyph_start,
-        hyph.hyph_index,
+        hyph.hyph_index as i32,
     ]);
     macro_rules! hash_values {
         ($field:ident $(.$raw:tt)?) => {
@@ -382,7 +382,7 @@ fn digest_hyph(st: &EngineState) -> u64 {
     hash_values!(trie_hash);
     hash_values!(trie_taken);
     hash_values!(hyph_word.0);
-    hash_values!(hyph_list);
+    hash_values!(hyph_list.0);
     hash_values!(hyph_link);
     hash_values!(trie_op_hash_array);
     h.finish()

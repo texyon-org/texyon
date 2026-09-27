@@ -70,6 +70,11 @@ State and memory:
   integer regions) and through named views (`cur_font`, `box_reg`, `toks`,
   `cat_code`, `par_shape`, ...). The save stack has `saved(k)` and
   `save_type`/`save_level`/`save_index`.
+  Integer fields that can hold a pointer have typed getters, so callers do
+  not convert: `equiv_ptr`, `save_index_ptr`, `cur_chr_ptr`/`cur_val_ptr`,
+  a token-list level's `token_start`/`token_loc`, a nest level's
+  `prev_depth`/`space_factor`/`clang`/`incompleat_noad` (its `aux` word by
+  mode) and `info_ptr` of a one-word node.
 - `cmd.rs`: command codes, in `xetex.web` order. They stay `u8` because
   TeX compares ranges of them (`cur_cmd >= CALL`).
 - `codes.rs`: enums for the `chr_code` modifiers of the commands that
@@ -117,7 +122,12 @@ see each other through `pub(super)`.
   `linebreak/post.rs` (`post_line_break`), `protrusion.rs` (margin kerns),
   `prehyph.rs` (finding words to hyphenate), `hyphenate.rs` (`hyphenate`,
   `reconstitute`, native-word hyphens) and `locale.rs` (ICU line breaks).
-  `hyphenation.rs` holds patterns and exceptions.
+  `hyphenation.rs` holds patterns and exceptions. The packed trie is read
+  with `trie_link`/`trie_char`/`trie_op` (`pattern_root(lang)` finds a
+  language's patterns) and its ops as `HyphOp` records (`hyph_op(v)`).
+  INITEX's linked trie has its own `trie_l`/`trie_r`/`trie_hash` accessors.
+  `exception_hash` hashes a word for the exception table. Word positions
+  (`hyphen_passed`, the `hc`/`hu`/`hyf` indices) are `usize`.
 - `packaging.rs` (`hpack`, `vpackage`, `append_to_vlist`) with
   `packaging/vert_break.rs` (`vert_break`, `vsplit`, `prune_page_top`,
   `do_marks`) and `packaging/copy.rs` (`copy_node_list`,

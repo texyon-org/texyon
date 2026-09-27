@@ -210,7 +210,7 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
                 } else {
                     st.scanner.cur_val
                 };
-                st.input.cur_list.set_aux_s1(lang);
+                st.input.cur_list.set_clang(lang);
                 w.set_what_lang(&mut st.mem, lang);
                 let lhm = crate::helpers::norm_min(st.eqtb.int_par(IntPar::LeftHyphenMin));
                 w.set_what_lhm(&mut st.mem, lhm as u16);

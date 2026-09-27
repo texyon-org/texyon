@@ -13,7 +13,7 @@ use crate::node::{
 };
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, FontState, MemState, ScannerState, ShipoutState};
-use crate::units::{GlueSign, MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{GlueSign, MemPtr, NodeType, Scaled};
 
 mod copy;
 mod vert_break;
@@ -261,7 +261,7 @@ impl MemState {
                 break;
             }
 
-            match self.classify(MemIdx::new(p)) {
+            match self.classify(p) {
                 Ok(AnyNode::HList(b)) => {
                     let s = b.shift_amount(self);
                     x += b.width(self);
@@ -337,7 +337,7 @@ impl MemState {
                     scanner.total_shrink[spec.shrink_order(self) as usize] += spec.shrink(self);
                     if glue.subtype(self) >= A_LEADERS {
                         let leader = glue.leader_ptr(self);
-                        let (leader_h, leader_d) = match self.classify(MemIdx::new(leader)) {
+                        let (leader_h, leader_d) = match self.classify(leader) {
                             Ok(AnyNode::HList(b)) => (b.height(self), b.depth(self)),
                             Ok(AnyNode::VList(b)) => (b.height(self), b.depth(self)),
                             Ok(AnyNode::Rule(rule)) => {
@@ -566,7 +566,7 @@ fn print_hpack_common_ending(st: &mut EngineState, box_ptr: AnyBox) {
     short_display(st, list);
     print_ln(st);
     begin_diagnostic(st);
-    show_box(st, box_ptr.idx());
+    show_box(st, box_ptr.ptr());
     end_diagnostic(st, true);
 }
 
@@ -623,7 +623,7 @@ impl MemState {
             if self.is_char_node(p) {
                 return Err(Abort::Confusion("vpack"));
             }
-            match self.classify(MemIdx::new(p)) {
+            match self.classify(p) {
                 Ok(AnyNode::HList(b)) => {
                     x += d + b.height(self);
                     d = b.depth(self);
@@ -663,7 +663,7 @@ impl MemState {
                     scanner.total_shrink[spec.shrink_order(self) as usize] += spec.shrink(self);
                     if glue.subtype(self) >= A_LEADERS {
                         let leader = glue.leader_ptr(self);
-                        let leader_w = match self.classify(MemIdx::new(leader)) {
+                        let leader_w = match self.classify(leader) {
                             Ok(AnyNode::HList(b)) => b.width(self),
                             Ok(AnyNode::VList(b)) => b.width(self),
                             Ok(AnyNode::Rule(rule)) => rule.width(self).to_scaled(),
@@ -808,7 +808,7 @@ fn print_vpack_common_ending(st: &mut EngineState, box_ptr: AnyBox) {
     }
     capture_to_diagnostic(st, None);
     begin_diagnostic(st);
-    show_box(st, box_ptr.idx());
+    show_box(st, box_ptr.ptr());
     end_diagnostic(st, true);
 }
 

@@ -33,7 +33,7 @@ pub const NULL_FONT: crate::units::FontId = crate::units::FontId(FONT_BASE);
 pub const DESIGN_SIZE: crate::units::Scaled = crate::units::Scaled(-1000);
 pub const MAX_FONT_MAX: i32 = 9_000;
 pub const NON_ADDRESS: i32 = 0;
-pub const MIN_TRIE_OP: i32 = 0;
+pub const MIN_TRIE_OP: u16 = 0;
 pub const INVALID_HANDLE: usize = 0;
 
 pub const HISTORY_SPOTLESS: i32 = 0;

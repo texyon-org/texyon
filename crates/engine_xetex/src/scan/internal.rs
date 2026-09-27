@@ -28,7 +28,7 @@ use crate::output::{
 };
 use crate::params::TokPar;
 use crate::state::{EngineState, FontEngineHandle};
-use crate::units::{FontId, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
+use crate::units::{FontId, MemPtr, NodeType, Scaled, StrNumber};
 use std::rc::Rc;
 use tectonic_xetex_layout::get_cp_code;
 
@@ -611,11 +611,11 @@ fn fetch_last_node_item(st: &mut EngineState, code: LastItemCode) {
     st.scanner.cur_val = 0;
     let head = st.input.cur_list.head;
     let mut tx = st.input.cur_list.tail;
-    let mut node = (!st.mem.is_char_node(tx)).then(|| st.mem.classify(MemIdx::new(tx)));
+    let mut node = (!st.mem.is_char_node(tx)).then(|| st.mem.classify(tx));
     if let Some(Ok(AnyNode::Math(math))) = node {
         if math.subtype(&st.mem) == END_M_CODE {
             tx = st.mem.predecessor(head, tx);
-            node = (!st.mem.is_char_node(tx)).then(|| st.mem.classify(MemIdx::new(tx)));
+            node = (!st.mem.is_char_node(tx)).then(|| st.mem.classify(tx));
         }
     }
     if want_type {
@@ -632,7 +632,7 @@ fn fetch_last_node_item(st: &mut EngineState, code: LastItemCode) {
     }
     match node {
         Some(_) if st.input.cur_list.mode != 0 && want_type => {
-            let node_type = st.mem.type_code(MemIdx::new(tx));
+            let node_type = st.mem.type_code(tx);
             st.scanner.cur_val = if node_type <= NodeType::Unset.as_raw() {
                 i32::from(node_type) + 1
             } else {
@@ -715,9 +715,9 @@ pub(super) fn scan_something_internal(
                         },
                     );
                 } else if m == i32::from(VMODE) {
-                    set_cur_val(st, st.input.cur_list.aux_s1(), ValueLevel::Dimen);
+                    set_cur_val(st, st.input.cur_list.prev_depth().0, ValueLevel::Dimen);
                 } else {
-                    set_cur_val(st, st.input.cur_list.aux_s0(), ValueLevel::Int);
+                    set_cur_val(st, st.input.cur_list.space_factor(), ValueLevel::Int);
                 }
             }
             SET_PREV_GRAF => {

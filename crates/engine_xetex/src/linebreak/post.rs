@@ -8,16 +8,16 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
-use crate::node::{AnyBox, AnyNode, MathNode, NodePtr};
+use crate::node::{ActiveNode, AnyBox, AnyNode, MathNode, NodePtr};
 use crate::packaging::{ADDITIONAL, EXACTLY};
 use crate::params::{GluePar, IntPar};
 use crate::state::{
     ConfigState, EngineState, EqtbState, ErrorState, FontState, LinebreakState, MemState,
     ScannerState,
 };
-use crate::units::{MemIdx, MemPtr, Scaled};
+use crate::units::{MemPtr, Scaled};
 
-use super::{passive_node, BEST_BET_SET};
+use super::passive_node;
 
 struct PostLineHpack {
     q: MemPtr,
@@ -65,7 +65,7 @@ impl LinebreakState {
 
             while q != cur_break {
                 if !mem.is_char_node(q) {
-                    if let Ok(AnyNode::Math(m)) = mem.classify(MemIdx::new(q)) {
+                    if let Ok(AnyNode::Math(m)) = mem.classify(q) {
                         mem.update_lr_stack(m, lr_ptr)?;
                     }
                 }
@@ -82,7 +82,7 @@ impl LinebreakState {
         if q.is_null() {
             q = mem.list_tail(TEMP_HEAD);
         } else {
-            match mem.classify(MemIdx::new(q)) {
+            match mem.classify(q) {
                 Ok(AnyNode::Glue(g)) => {
                     let old_spec = g.glue_ptr(mem);
                     mem.delete_glue_ref(old_spec);
@@ -211,8 +211,8 @@ impl LinebreakState {
 }
 
 impl MemState {
-    fn reverse_best_breaks(&mut self, linebreak: &mut LinebreakState) {
-        let mut q = linebreak.best_bet.expect(BEST_BET_SET).break_node(self);
+    fn reverse_best_breaks(&mut self, linebreak: &mut LinebreakState, best: NodePtr<ActiveNode>) {
+        let mut q = best.break_node(self);
         linebreak.cur_p = MemPtr::NULL;
         loop {
             let r = passive_node(q);
@@ -265,7 +265,6 @@ impl ListStateRecord {
         lr_ptr: &mut MemPtr,
         cur_line: &mut i32,
     ) -> Result<bool, Abort> {
-        scanner.just_box = Some(just_box);
         just_box.set_shift_amount(mem, hpack.cur_indent);
 
         if scanner.pre_adjust_tail != PRE_ADJUST_HEAD {
@@ -342,7 +341,7 @@ impl ListStateRecord {
                 if q == cur_break || mem.is_char_node(q) {
                     break;
                 }
-                let node = mem.classify(MemIdx::new(q));
+                let node = mem.classify(q);
                 match node {
                     Ok(node) if node.precedes_break() => break,
                     Ok(AnyNode::Kern(k))
@@ -372,14 +371,19 @@ impl ListStateRecord {
     }
 }
 
-/// Break the paragraph into lines along the chosen breakpoints and append them.
-pub(super) fn post_line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
+/// Break the paragraph into lines along the breakpoints ending at `best` and
+/// append them, returning the last line's box.
+pub(super) fn post_line_break(
+    st: &mut EngineState,
+    best: NodePtr<ActiveNode>,
+    d: bool,
+) -> Result<AnyBox, Abort> {
     let mut lr_ptr = st.input.cur_list.e_tex_aux;
 
-    st.mem.reverse_best_breaks(&mut st.linebreak);
+    st.mem.reverse_best_breaks(&mut st.linebreak, best);
 
     let mut cur_line = st.input.cur_list.prev_graf.wrapping_add(1);
-    loop {
+    let last_line = loop {
         let hpack = st.linebreak.post_line_break_prefix(
             &mut st.errors,
             &mut st.mem,
@@ -409,11 +413,11 @@ pub(super) fn post_line_break(st: &mut EngineState, d: bool) -> Result<(), Abort
             &mut lr_ptr,
             &mut cur_line,
         ) {
-            Ok(true) => break,
+            Ok(true) => break just_box,
             Ok(false) => {}
             Err(e) => return Err(e),
         }
-    }
+    };
 
     if cur_line != st.linebreak.best_line || !TEMP_HEAD.link(&st.mem).is_null() {
         return Err(Abort::Confusion("line breaking"));
@@ -421,5 +425,5 @@ pub(super) fn post_line_break(st: &mut EngineState, d: bool) -> Result<(), Abort
 
     st.input.cur_list.prev_graf = st.linebreak.best_line.wrapping_sub(1);
     st.input.cur_list.e_tex_aux = lr_ptr;
-    Ok(())
+    Ok(last_line)
 }

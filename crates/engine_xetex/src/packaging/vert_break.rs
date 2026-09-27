@@ -127,7 +127,7 @@ impl MemState {
         }
 
         let node = self
-            .classify(MemIdx::new(cursor.p))
+            .classify(cursor.p)
             .map_err(|_| Abort::Confusion("vertbreak"))?;
         cursor.breakable = node.precedes_break();
         match node {
@@ -170,9 +170,7 @@ impl MemState {
             }
             AnyNode::Kern(kern) => {
                 let next = kern.link(self);
-                if !next.is_null()
-                    && matches!(self.classify(MemIdx::new(next)), Ok(AnyNode::Glue(_)))
-                {
+                if !next.is_null() && matches!(self.classify(next), Ok(AnyNode::Glue(_))) {
                     Ok(VertBreakNext::CheckPi {
                         pi: 0,
                         update_after: Some(VertBreakUpdateSource::Kern(kern)),
@@ -433,9 +431,8 @@ impl MemState {
             state.v.set_list_ptr(self, MemPtr::NULL);
         } else {
             loop {
-                if let AnyNode::Mark(mark) = self
-                    .classify(MemIdx::new(p))
-                    .map_err(|_| Abort::Confusion("vsplit"))?
+                if let AnyNode::Mark(mark) =
+                    self.classify(p).map_err(|_| Abort::Confusion("vsplit"))?
                 {
                     self.collect_split_mark(scanner, mark)?;
                 }
@@ -628,9 +625,7 @@ impl MemState {
         TEMP_HEAD.set_link(self, p);
 
         while !p.is_null() {
-            let node = self
-                .classify(MemIdx::new(p))
-                .map_err(|_| Abort::Confusion("pruning"))?;
+            let node = self.classify(p).map_err(|_| Abort::Confusion("pruning"))?;
             let height = match node {
                 AnyNode::HList(b) => b.height(self),
                 AnyNode::VList(b) => b.height(self),

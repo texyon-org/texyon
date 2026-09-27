@@ -119,7 +119,7 @@ fn append_rule(st: &mut EngineState) -> Result<(), Abort> {
     if mode == VMODE {
         st.input.cur_list.set_prev_depth(IGNORE_DEPTH);
     } else if mode == HMODE {
-        st.input.cur_list.set_aux_s0(1000);
+        st.input.cur_list.set_space_factor(1000);
     }
     Ok(())
 }
@@ -254,7 +254,7 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
 
     match (mode, cmd) {
         (HMODE, SPACER) => {
-            if st.input.cur_list.aux_s0() == 1000 {
+            if st.input.cur_list.space_factor() == 1000 {
                 main_control_append_normal_space(st)?;
             } else {
                 app_space(st)?;

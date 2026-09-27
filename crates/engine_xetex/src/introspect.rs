@@ -91,7 +91,7 @@ fn collect(st: &EngineState, slot: i32, found: &mut Vec<DefinedCommand>) {
     };
 
     let (kind, arity) = if meaning >= CALL {
-        let (protected, arity) = describe_macro(st, st.eqtb.equiv(slot));
+        let (protected, arity) = describe_macro(st, st.eqtb.equiv_ptr(slot));
         let kind = if protected {
             CommandKind::ProtectedMacro
         } else {
@@ -111,10 +111,10 @@ fn collect(st: &EngineState, slot: i32, found: &mut Vec<DefinedCommand>) {
 }
 
 /// Returns whether the macro is `\protected` and how many `#n` its parameter text has.
-fn describe_macro(st: &EngineState, body: i32) -> (bool, u8) {
+fn describe_macro(st: &EngineState, body: crate::units::MemPtr) -> (bool, u8) {
     let mut protected = false;
     let mut arity = 0u8;
-    let mut at = crate::units::MemPtr(body).link(&st.mem);
+    let mut at = body.link(&st.mem);
 
     // Guards against following a corrupt list.
     for _ in 0..64 {

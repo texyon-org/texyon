@@ -16,7 +16,7 @@ use crate::node::{AnyNode, CondNode, NodePtr, PageInsNode};
 use crate::packaging::EXACTLY;
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, GroupCode, InteractionMode, Selector};
-use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{MemPtr, NodeType, Scaled};
 
 use super::cmd_chr::{print_cmd_chr, print_meaning};
 use super::show_box::{show_box, show_node_list};
@@ -71,8 +71,7 @@ fn set_trick_count(st: &mut EngineState) {
     st.errors.trick_count = tc.max(st.errors.error_line);
 }
 
-pub(crate) fn show_token_list(st: &mut EngineState, p: impl crate::units::MemAddr, q: i32, l: i32) {
-    let mut p = MemPtr(p.addr());
+pub(crate) fn show_token_list(st: &mut EngineState, mut p: MemPtr, q: i32, l: i32) {
     let mut match_chr = i32::from(b'#');
     let mut n = i32::from(b'0');
     st.errors.tally = 0;
@@ -146,7 +145,7 @@ fn print_totals(st: &mut EngineState) {
 }
 
 pub(super) fn show_info(st: &mut EngineState) {
-    let p = st.mem.temp_ptr.info(&st.mem);
+    let p = st.mem.temp_ptr.info_ptr(&st.mem);
     show_node_list(st, p);
 }
 
@@ -340,7 +339,7 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                 Entry::Found
             }
             GroupCode::MathLeft => {
-                let delim = MemIdx::new(st.input.nest[(p + 1) as usize].e_tex_aux);
+                let delim = st.input.nest[(p + 1) as usize].e_tex_aux;
                 if st.mem.node_type(delim) == Ok(NodeType::LeftNoad) {
                     print_esc(st, "left");
                 } else {
@@ -563,7 +562,7 @@ fn show_page_so_far(st: &mut EngineState) {
                     let mut t = 0;
                     loop {
                         q = q.link(&st.mem);
-                        if let Ok(AnyNode::Ins(node)) = st.mem.classify(MemIdx::new(q)) {
+                        if let Ok(AnyNode::Ins(node)) = st.mem.classify(q) {
                             if node.subtype(&st.mem) == box_num {
                                 t += 1;
                             }
@@ -613,7 +612,7 @@ fn show_activities(st: &mut EngineState) {
             show_page_so_far(st);
         }
         show_box(st, nest.head.link(&st.mem));
-        let (aux_s0, aux_s1) = (nest.aux_s0(), nest.aux_s1());
+
         match i32::from(m.abs()) / (i32::from(MAX_COMMAND) + 1) {
             0 => {
                 print_nl(st, "prevdepth ");
@@ -635,15 +634,17 @@ fn show_activities(st: &mut EngineState) {
             }
             1 => {
                 print_nl(st, "spacefactor ");
-                print_int(st, aux_s0);
-                if m > 0 && aux_s1 > 0 {
+                print_int(st, nest.space_factor());
+                if m > 0 && nest.clang() > 0 {
                     print(st, ", current language ");
-                    print_int(st, aux_s1);
+                    print_int(st, nest.clang());
                 }
             }
-            2 if aux_s1 != TEX_NULL => {
-                print(st, "this will begin denominator of:");
-                show_box(st, aux_s1);
+            2 => {
+                if let Some(n) = nest.incompleat_noad() {
+                    print(st, "this will begin denominator of:");
+                    show_box(st, n.ptr());
+                }
             }
             _ => {}
         }
@@ -731,9 +732,9 @@ pub(crate) fn show_context(st: &mut EngineState) {
                     }
                     l = begin_pseudoprint(st);
                     if ci.token_type() < TokenType::Macro {
-                        show_token_list(st, ci.start, ci.loc, 100_000);
+                        show_token_list(st, ci.token_start(), ci.loc, 100_000);
                     } else {
-                        let list = MemPtr(ci.start).link(&st.mem);
+                        let list = ci.token_start().link(&st.mem);
                         show_token_list(st, list, ci.loc, 100_000);
                     }
                 }

@@ -15,7 +15,7 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::state::MemState;
 use crate::units::{
-    FontId, GlueSign, InvalidNodeType, MemIdx, MemPtr, NodeType, Scaled, StrNumber,
+    FontId, GlueSign, InvalidNodeType, MemAddr, MemIdx, MemPtr, NodeType, Scaled, StrNumber,
 };
 
 /// Marker for node kinds, implemented by the uninhabited kind enums below.
@@ -538,6 +538,11 @@ impl MemPtr {
     pub fn info(self, mem: &MemState) -> i32 {
         mem.b32s0(self.0)
     }
+    /// `info` of a node whose payload is a pointer.
+    #[inline]
+    pub fn info_ptr(self, mem: &MemState) -> MemPtr {
+        MemPtr(self.info(mem))
+    }
     #[inline]
     pub fn set_info(self, mem: &mut MemState, v: i32) {
         mem.set_b32s0(self.0, v);
@@ -802,20 +807,21 @@ impl AnyNode {
 impl MemState {
     /// The raw type code, for `\lastnodetype` arithmetic and diagnostics.
     #[inline]
-    pub fn type_code(&self, p: MemIdx) -> u16 {
-        self.b16s1(p.0)
+    pub fn type_code(&self, p: impl MemAddr) -> u16 {
+        self.b16s1(MemIdx::new(p))
     }
 
     /// The checked `NODE_type` of the non-null lo-mem node `p`.
     #[inline]
-    pub fn node_type(&self, p: MemIdx) -> Result<NodeType, InvalidNodeType> {
-        NodeType::from_raw(self.b16s1(p.0))
+    pub fn node_type(&self, p: impl MemAddr) -> Result<NodeType, InvalidNodeType> {
+        NodeType::from_raw(self.b16s1(MemIdx::new(p)))
     }
 
     /// Classifies the non-null lo-mem node `p`. `Err` for an invalid type code.
     #[inline]
-    pub fn classify(&self, p: MemIdx) -> Result<AnyNode, InvalidNodeType> {
+    pub fn classify(&self, p: impl MemAddr) -> Result<AnyNode, InvalidNodeType> {
         use NodeType::*;
+        let p = MemIdx::new(p);
         // SAFETY (every arm): the type code just read from `p` proves its kind.
         Ok(match self.node_type(p)? {
             HList => AnyNode::HList(NodePtr::from_idx_unchecked(p)),
@@ -847,7 +853,7 @@ impl MemState {
         if p.is_null() || p.0 >= self.hi_mem_min {
             return None;
         }
-        self.classify(MemIdx(p.0)).ok()
+        self.classify(p).ok()
     }
 
     /// `p` as a native-word whatsit, if it is one.
@@ -863,7 +869,7 @@ impl MemState {
 
     /// `Ok(None)` for a valid non-box node.
     #[inline]
-    pub fn classify_box(&self, p: MemIdx) -> Result<Option<AnyBox>, InvalidNodeType> {
+    pub fn classify_box(&self, p: impl MemAddr) -> Result<Option<AnyBox>, InvalidNodeType> {
         Ok(match self.classify(p)? {
             AnyNode::HList(b) => Some(AnyBox::HList(b)),
             AnyNode::VList(b) => Some(AnyBox::VList(b)),
@@ -872,7 +878,10 @@ impl MemState {
     }
 
     #[inline]
-    pub fn classify_disc(&self, p: MemIdx) -> Result<Option<NodePtr<DiscNode>>, InvalidNodeType> {
+    pub fn classify_disc(
+        &self,
+        p: impl MemAddr,
+    ) -> Result<Option<NodePtr<DiscNode>>, InvalidNodeType> {
         Ok(match self.classify(p)? {
             AnyNode::Disc(d) => Some(d),
             _ => None,
@@ -880,7 +889,7 @@ impl MemState {
     }
 
     #[inline]
-    pub fn classify_noad(&self, p: MemIdx) -> Result<Option<NodePtr<Noad>>, InvalidNodeType> {
+    pub fn classify_noad(&self, p: impl MemAddr) -> Result<Option<NodePtr<Noad>>, InvalidNodeType> {
         Ok(match self.classify(p)? {
             AnyNode::Noad(n) => Some(n),
             _ => None,
@@ -1667,6 +1676,8 @@ impl NodePtr<SaNode> {
         sa_ref / set_sa_ref: i32 = b32s0 @ 1;
         /// A box or token-list value, in child slot 1.
         sa_ptr / set_sa_ptr: MemPtr = b32s1 @ 1;
+        /// A count or dimension register's number, in the same slot.
+        sa_num / set_sa_num: i32 = b32s1 @ 1;
         /// A count or dimension value.
         sa_int / set_sa_int: i32 = b32s1 @ 2;
     }
@@ -1950,7 +1961,7 @@ mod tests {
             mem.set_b16s1(p, ty.as_raw());
         }
         mem.set_b16s1(180, 35);
-        let c = |p| mem.classify(MemIdx::new(p));
+        let c = |p| mem.classify(p);
         use AnyNode::*;
         assert!(matches!(c(40), Ok(HList(_))));
         assert!(matches!(c(50), Ok(VList(_))));
@@ -1969,12 +1980,9 @@ mod tests {
         assert!(c(180).is_err());
         assert_eq!(c(40).unwrap().idx().0, 40);
 
-        assert!(matches!(
-            mem.classify_box(MemIdx(50)),
-            Ok(Some(AnyBox::VList(_)))
-        ));
-        assert!(matches!(mem.classify_box(MemIdx(70)), Ok(None)));
-        assert!(mem.classify_box(MemIdx(180)).is_err());
+        assert!(matches!(mem.classify_box(50), Ok(Some(AnyBox::VList(_)))));
+        assert!(matches!(mem.classify_box(70), Ok(None)));
+        assert!(mem.classify_box(180).is_err());
     }
 
     #[test]

@@ -19,7 +19,7 @@ use crate::packaging::ADDITIONAL;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::state::{EngineState, GroupCode, MemState};
 use crate::token::Token;
-use crate::units::{GlueSign, MemIdx, MemPtr, Scaled};
+use crate::units::{GlueSign, MemPtr, Scaled};
 
 use super::assign::{define, do_assignments};
 use super::lists::{end_graf, normal_paragraph, off_save};
@@ -190,7 +190,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                     NodePtr::<UnsetNode>::after_tab_skip(&st.mem, p.list_ptr(&st.mem));
                 loop {
                     let (Ok(AnyNode::Unset(col)), Some(mut proto)) =
-                        (st.mem.classify(MemIdx(r.0)), proto_column)
+                        (st.mem.classify(r), proto_column)
                     else {
                         return Err(Abort::Confusion("align"));
                     };
@@ -299,7 +299,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
         q = q.link(&st.mem);
     }
 
-    st.mem.flush_node_list(p.idx())?;
+    st.mem.flush_node_list(p.ptr())?;
     pop_alignment(st);
 
     let aux_save_s0 = st.input.cur_list.aux_s0();
@@ -320,8 +320,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
         } else {
             crate::math::check_display_end(st)?;
         }
-        let etex_aux = st.input.cur_list.e_tex_aux.0;
-        st.mem.flush_node_list(etex_aux)?;
+        st.mem.flush_node_list(st.input.cur_list.e_tex_aux)?;
         st.mem.pop_nest(&mut st.input);
         let pre_penalty = st.eqtb.int_par(IntPar::PreDisplayPenalty);
         let pen = st.mem.new_penalty(pre_penalty)?;
@@ -755,7 +754,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
 
     if st.input.cur_list.mode == MMODE
         && (st.input.cur_list.tail != st.input.cur_list.head
-            || st.input.cur_list.aux_s1() != TEX_NULL)
+            || st.input.cur_list.incompleat_noad().is_some())
     {
         crate::output::error_here_with_diagnostic(st, "Improper ");
         crate::output::print_esc(st, "halign");

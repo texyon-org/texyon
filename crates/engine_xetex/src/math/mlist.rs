@@ -17,7 +17,7 @@ use crate::node::{
 use crate::packaging::ADDITIONAL;
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, ErrorState, FontState, MemState, ScannerState};
-use crate::units::{FontId, MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{FontId, MemPtr, NodeType, Scaled};
 
 use super::delimiters::{build_opentype_assembly, rebox, var_delimiter};
 use super::scripts::make_scripts;
@@ -114,10 +114,12 @@ fn math_kern(st: &mut EngineState, p: NodePtr<KernNode>, m: Scaled) {
 impl ListStateRecord {
     pub fn flush_math(&mut self, mem: &mut MemState) -> Result<(), Abort> {
         mem.flush_node_list(self.head.link(mem))?;
-        mem.flush_node_list(self.aux_s1())?;
+        if let Some(n) = self.incompleat_noad() {
+            mem.flush_node_list(n.ptr())?;
+        }
         self.head.set_link(mem, MemPtr::NULL);
         self.tail = self.head;
-        self.set_aux_s1(TEX_NULL);
+        self.set_incompleat_noad(None);
         Ok(())
     }
 }
@@ -306,8 +308,7 @@ fn make_under(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
 fn make_vcenter(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
     let axis_height = st.fonts.axis_height(&st.eqtb, st.scanner.cur_size);
     let mem = &mut st.mem;
-    let Ok(Some(v @ AnyBox::VList(_))) = mem.classify_box(MemIdx::new(q.nucleus().info(mem)))
-    else {
+    let Ok(Some(v @ AnyBox::VList(_))) = mem.classify_box(q.nucleus().info(mem)) else {
         return Err(Abort::Confusion("vcenter"));
     };
     let delta = v.height(mem) + v.depth(mem);
@@ -895,7 +896,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
     if (q.supscr().math_type(&st.mem) != EMPTY || q.subscr().math_type(&st.mem) != EMPTY)
         && q.nucleus().math_type(&st.mem) == MATH_CHAR
     {
-        st.mem.flush_node_list(x.idx())?;
+        st.mem.flush_node_list(x.ptr())?;
         let base = st.mem.new_noad()?;
         let mem = &mut st.mem;
         base.nucleus().copy_from(mem, q.nucleus());
@@ -1250,7 +1251,7 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
         let mut delta;
         let action = 'reswitch: loop {
             delta = Scaled::ZERO;
-            match st.mem.classify(MemIdx::new(q)) {
+            match st.mem.classify(q) {
                 Ok(AnyNode::Noad(qn)) => match qn.noad_type(&st.mem) {
                     NodeType::BinNoad => {
                         match NodeType::from_raw(r_type) {
@@ -1408,7 +1409,7 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
         let mut t = NodeType::OrdNoad.as_raw();
         let mut s = NOAD_SIZE;
         let mut pen = INF_PENALTY;
-        let step = match st.mem.classify(MemIdx::new(q)) {
+        let step = match st.mem.classify(q) {
             Ok(AnyNode::Noad(qn)) => {
                 match qn.noad_type(&st.mem) {
                     NodeType::OpNoad
