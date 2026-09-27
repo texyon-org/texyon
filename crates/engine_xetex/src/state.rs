@@ -219,7 +219,7 @@ pub(crate) struct EqtbState {
     pub eqtb_top: i32,
     pub hash_top: i32,
     pub journal: crate::journal::EqtbJournal,
-    pub pgfmath: crate::pgfmath::Slots,
+    pub pgfmath: crate::pgfmath::KnownCs,
 }
 
 impl Default for EqtbState {
@@ -240,7 +240,7 @@ impl Default for EqtbState {
             eqtb_top: 0,
             hash_top: 0,
             journal: crate::journal::EqtbJournal::default(),
-            pgfmath: crate::pgfmath::Slots::default(),
+            pgfmath: crate::pgfmath::KnownCs::default(),
         }
     }
 }

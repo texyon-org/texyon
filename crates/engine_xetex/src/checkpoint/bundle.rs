@@ -235,7 +235,7 @@ struct EqtbBundle {
     hash_extra: i32,
     eqtb_top: i32,
     hash_top: i32,
-    pgfmath: crate::pgfmath::Slots,
+    pgfmath: crate::pgfmath::KnownCs,
 }
 
 impl EqtbBundle {

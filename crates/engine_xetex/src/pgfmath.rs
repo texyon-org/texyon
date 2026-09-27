@@ -41,89 +41,129 @@ impl Mode {
     }
 }
 
-const TRY: usize = 0;
-const NATIVE: usize = 23;
+macro_rules! known_cs {
+    (
+        required { $($req:ident = $req_name:literal,)* }
+        optional { $($opt:ident = $opt_name:literal,)* }
+    ) => {
+        #[allow(non_camel_case_types)]
+        #[derive(Clone, Copy)]
+        enum Known { $($req,)* $($opt,)* }
 
-const NAMES: [&str; NATIVE + NATIVES.len()] = [
-    "pgfmathparse@trynumber@loop",
-    "pgfmath@parse@end",
-    "pgfmathparse@expression@is@number",
-    "pgfmath@stack@push@operand",
-    "pgfmath@expression",
-    "pgfmathresult",
-    "ifpgfmathunitsdeclared",
-    "iftrue",
-    "iffalse",
-    "relax",
-    "let",
-    "edef",
-    "ifpgfmath@quickparse",
-    "pgfmathpostparse",
-    "pgfmath@trig@format@choice",
-    "f@encoding",
-    "f@family",
-    "f@series",
-    "f@shape",
-    "f@size",
-    "ifpgfmathfloatcomparison",
-    "pgfmathfloat@stack@push@operand",
-    "pgfmathfloat@parse@expression@is@number",
-    NATIVES[0].0,
-    NATIVES[1].0,
-    NATIVES[2].0,
-    NATIVES[3].0,
-    NATIVES[4].0,
-    NATIVES[5].0,
-    NATIVES[6].0,
-    NATIVES[7].0,
-    NATIVES[8].0,
-    NATIVES[9].0,
-    NATIVES[10].0,
-];
+        const KNOWN: &[&str] = &[$($req_name,)* $($opt_name,)*];
+        const REQUIRED: usize = [$(Known::$req),*].len();
 
-/// The `eqtb` slots of [`NAMES`], zero while a name does not exist. Kept on
-/// `EqtbState` and checkpointed with it, so it always matches the hash.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Slots([i32; NAMES.len()]);
+        impl KnownCs {
+            $(fn $req(&self) -> i32 {
+                self.cs[Known::$req as usize]
+            })*
+            $(fn $opt(&self) -> Option<i32> {
+                Some(self.cs[Known::$opt as usize]).filter(|&cs| cs != 0)
+            })*
+        }
+    };
+}
 
-impl Default for Slots {
-    fn default() -> Self {
-        Slots([0; NAMES.len()])
+known_cs! {
+    required {
+        try_hook = "pgfmathparse@trynumber@loop",
+        parse_end = "pgfmath@parse@end",
+        is_number = "pgfmathparse@expression@is@number",
+        push_operand = "pgfmath@stack@push@operand",
+        expression = "pgfmath@expression",
+        result = "pgfmathresult",
+        units_declared = "ifpgfmathunitsdeclared",
+        if_true = "iftrue",
+        if_false = "iffalse",
+        relax = "relax",
+        let_ = "let",
+        edef = "edef",
+        quickparse = "ifpgfmath@quickparse",
+        postparse = "pgfmathpostparse",
+        trig_format = "pgfmath@trig@format@choice",
+        f_encoding = "f@encoding",
+        f_family = "f@family",
+        f_series = "f@series",
+        f_shape = "f@shape",
+        f_size = "f@size",
+    }
+    optional {
+        comparison = "ifpgfmathfloatcomparison",
+        fpu_push_operand = "pgfmathfloat@stack@push@operand",
+        fpu_is_number = "pgfmathfloat@parse@expression@is@number",
     }
 }
 
-impl Slots {
-    /// Record `p` if `name`, as UTF-32 units, is one of [`NAMES`].
-    pub(crate) fn note(&mut self, name: &[i32], p: i32) {
-        for (i, candidate) in NAMES.iter().enumerate() {
-            if candidate.len() == name.len()
-                && candidate.bytes().zip(name).all(|(b, &u)| i32::from(b) == u)
-            {
-                self.0[i] = p;
+/// The control sequences of [`KNOWN`] and [`NATIVES`], zero while a name does
+/// not exist. On `EqtbState` and checkpointed with it, so it matches the hash.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct KnownCs {
+    cs: [i32; KNOWN.len()],
+    natives: [i32; NATIVES.len()],
+}
+
+impl Default for KnownCs {
+    fn default() -> Self {
+        KnownCs {
+            cs: [0; KNOWN.len()],
+            natives: [0; NATIVES.len()],
+        }
+    }
+}
+
+fn same_name(name: &str, units: &[i32]) -> bool {
+    name.len() == units.len() && name.bytes().zip(units).all(|(b, &u)| i32::from(b) == u)
+}
+
+impl KnownCs {
+    /// Record `cs` if `name`, as UTF-32 units, is a known name.
+    pub(crate) fn note(&mut self, name: &[i32], cs: i32) {
+        for (entry, known) in self.cs.iter_mut().zip(KNOWN) {
+            if same_name(known, name) {
+                *entry = cs;
+            }
+        }
+        for (entry, (known, _)) in self.natives.iter_mut().zip(NATIVES) {
+            if same_name(known, name) {
+                *entry = cs;
             }
         }
     }
 
     /// Look up every name, for a hash that did not go through `note`.
     pub(crate) fn resolve(st: &mut EngineState) {
-        for (i, name) in NAMES.iter().enumerate() {
-            st.eqtb.pgfmath.0[i] = lookup(st, name).unwrap_or(0);
+        for (i, name) in KNOWN.iter().enumerate() {
+            st.eqtb.pgfmath.cs[i] = lookup(st, name).unwrap_or(0);
+        }
+        for (i, (name, _)) in NATIVES.iter().enumerate() {
+            st.eqtb.pgfmath.natives[i] = lookup(st, name).unwrap_or(0);
         }
     }
 
     #[inline(always)]
     pub(crate) fn is_try(&self, cs: i32) -> bool {
-        cs != 0 && cs == self.0[TRY]
+        cs != 0 && cs == self.try_hook()
     }
 
     #[inline(always)]
     pub(crate) fn native(&self, cs: i32) -> Option<Native> {
-        let i = self.0[NATIVE..].iter().position(|&p| p == cs && p != 0)?;
+        let i = self.natives.iter().position(|&p| p == cs && p != 0)?;
         Some(NATIVES[i].1)
     }
 
-    fn get(&self, i: usize) -> Option<i32> {
-        (self.0[i] != 0).then_some(self.0[i])
+    /// Whether every required name exists. The FPU's names load later.
+    fn complete(&self) -> bool {
+        self.cs[..REQUIRED].iter().all(|&cs| cs != 0)
+    }
+
+    fn nfss(&self) -> [i32; 5] {
+        [
+            self.f_encoding(),
+            self.f_family(),
+            self.f_series(),
+            self.f_shape(),
+            self.f_size(),
+        ]
     }
 }
 
@@ -137,54 +177,6 @@ const TRACING: &[IntPar] = &[
     IntPar::TracingRestores,
     IntPar::TracingOnline,
 ];
-
-#[derive(Clone, Copy)]
-struct Names {
-    parse_end: i32,
-    is_number: i32,
-    push_operand: i32,
-    expression: i32,
-    result: i32,
-    units_declared: i32,
-    if_true: i32,
-    if_false: i32,
-    relax: i32,
-    let_: i32,
-    edef: i32,
-    quickparse: i32,
-    postparse: i32,
-    trig_format: i32,
-    nfss: [i32; 5],
-    comparison: Option<i32>,
-    fpu_push_operand: Option<i32>,
-    fpu_is_number: Option<i32>,
-}
-
-impl Names {
-    fn of(slots: &Slots) -> Option<Names> {
-        let s = |i| slots.get(i);
-        Some(Names {
-            parse_end: s(1)?,
-            is_number: s(2)?,
-            push_operand: s(3)?,
-            expression: s(4)?,
-            result: s(5)?,
-            units_declared: s(6)?,
-            if_true: s(7)?,
-            if_false: s(8)?,
-            relax: s(9)?,
-            let_: s(10)?,
-            edef: s(11)?,
-            quickparse: s(12)?,
-            postparse: s(13)?,
-            trig_format: s(14)?,
-            nfss: [s(15)?, s(16)?, s(17)?, s(18)?, s(19)?],
-            comparison: s(20),
-            fpu_push_operand: s(21),
-            fpu_is_number: s(22),
-        })
-    }
-}
 
 #[derive(Default)]
 struct Stats {
@@ -222,14 +214,18 @@ pub(crate) struct Diagnostics {
 #[inline(never)]
 pub(crate) fn intercept(st: &mut EngineState) -> Option<i32> {
     let mode = st.config.pgfmath;
-    let names = Names::of(&st.eqtb.pgfmath)?;
+    let known = st.eqtb.pgfmath;
+    if !known.complete() {
+        return None;
+    }
     let body = st.scanner.cur_chr;
     if mode == Mode::Check {
         if let Some(p) = st.pgfmath.pending.take() {
-            if body == st.eqtb.equiv(names.parse_end) || body == st.eqtb.equiv(names.is_number) {
-                let number = body == st.eqtb.equiv(names.is_number);
+            if body == st.eqtb.equiv(known.parse_end()) || body == st.eqtb.equiv(known.is_number())
+            {
+                let number = body == st.eqtb.equiv(known.is_number());
                 let mut stats = std::mem::take(&mut st.pgfmath.stats);
-                compare(st, &names, &mut stats, &p, number);
+                compare(st, &known, &mut stats, &p, number);
                 st.pgfmath.stats = stats;
                 return None;
             }
@@ -239,7 +235,7 @@ pub(crate) fn intercept(st: &mut EngineState) -> Option<i32> {
     if !st.eqtb.pgfmath.is_try(st.scanner.cur_cs) {
         return None;
     }
-    let outcome = evaluate_parse(st, &names);
+    let outcome = evaluate_parse(st, &known);
     let stats = &mut st.pgfmath.stats;
     let answer = match outcome {
         Ok(answer) => answer,
@@ -249,19 +245,19 @@ pub(crate) fn intercept(st: &mut EngineState) -> Option<i32> {
         }
     };
     if mode == Mode::Check {
-        let expression = expression_tokens(st, names.expression)
+        let expression = expression_tokens(st, known.expression())
             .map(|t| describe(st, &t))
             .unwrap_or_default();
         st.pgfmath.pending = Some(Pending { answer, expression });
         return None;
     }
-    match commit(st, &names, &answer) {
+    match commit(st, &known, &answer) {
         Ok(()) => {
             match answer {
                 Answer::Expression => st.pgfmath.stats.numbers += 1,
                 Answer::Parsed(_) => st.pgfmath.stats.native += 1,
             }
-            Some(names.parse_end)
+            Some(known.parse_end())
         }
         Err(_) => {
             *st.pgfmath
@@ -274,23 +270,23 @@ pub(crate) fn intercept(st: &mut EngineState) -> Option<i32> {
     }
 }
 
-fn evaluate_parse(st: &mut EngineState, names: &Names) -> Result<Answer, &'static str> {
+fn evaluate_parse(st: &mut EngineState, known: &KnownCs) -> Result<Answer, &'static str> {
     if TRACING.iter().any(|&p| st.eqtb.int_par(p) > 0) || st.eqtb.int_par(IntPar::GlobalDefs) != 0 {
         return Err("tracing or globaldefs");
     }
-    if !same_meaning(st, names.quickparse, names.if_false) {
+    if !same_meaning(st, known.quickparse(), known.if_false()) {
         return Err("quick parse");
     }
-    let format = match names.fpu_push_operand {
-        Some(fpu) if same_meaning(st, names.push_operand, fpu) => Format::Float,
+    let format = match known.fpu_push_operand() {
+        Some(fpu) if same_meaning(st, known.push_operand(), fpu) => Format::Float,
         _ => Format::Fixed,
     };
-    let float_numbers = names
-        .fpu_is_number
-        .is_some_and(|fpu| same_meaning(st, names.is_number, fpu));
-    let tokens = expression_tokens(st, names.expression)?;
+    let float_numbers = known
+        .fpu_is_number()
+        .is_some_and(|fpu| same_meaning(st, known.is_number(), fpu));
+    let tokens = expression_tokens(st, known.expression())?;
     if is_number(&tokens) {
-        if !same_meaning(st, names.postparse, names.relax) {
+        if !same_meaning(st, known.postparse(), known.relax()) {
             return Err("postparse on a plain number");
         }
         if !float_numbers {
@@ -305,17 +301,17 @@ fn evaluate_parse(st: &mut EngineState, names: &Names) -> Result<Answer, &'stati
             _ => Err("malformed number"),
         };
     }
-    let font = selected_font(st, names).ok_or("selectfont would load a font")?;
+    let font = selected_font(st, known).ok_or("selectfont would load a font")?;
     let items = expression_items(st, &tokens).inspect_err(|reason| trace(st, &tokens, reason))?;
     let mut constants = HashMap::new();
     for name in identifiers(&items) {
         if Func::from_name(&name).is_none() {
-            if let Some(text) = pseudo_constant(st, names, &name) {
+            if let Some(text) = pseudo_constant(st, known, &name) {
                 constants.insert(name, text);
             }
         }
     }
-    let radians = macro_text(st, names.trig_format).as_deref() == Some(b"1");
+    let radians = macro_text(st, known.trig_format()).as_deref() == Some(b"1");
     let constant = |name: &[u8]| constants.get(name).cloned();
     let env = eval::Env {
         font,
@@ -405,7 +401,7 @@ fn identifiers(items: &[(Item, bool)]) -> Vec<Vec<u8>> {
     out
 }
 
-fn pseudo_constant(st: &mut EngineState, names: &Names, name: &[u8]) -> Option<Vec<u8>> {
+fn pseudo_constant(st: &mut EngineState, known: &KnownCs, name: &[u8]) -> Option<Vec<u8>> {
     let name = std::str::from_utf8(name).ok()?;
     let arity = lookup(st, &format!("pgfmath@operation@{name}@arity"))?;
     if macro_text(st, arity).as_deref() != Some(b"0") {
@@ -414,13 +410,15 @@ fn pseudo_constant(st: &mut EngineState, names: &Names, name: &[u8]) -> Option<V
     let function = lookup(st, &format!("pgfmath{name}@"))?;
     let body = macro_tokens(st, function)?;
     let is = |t: &Token, cs: i32| t.is_cs() && same_meaning(st, t.cs(), cs);
-    let result = |t: &Token| t.is_cs() && t.cs() == names.result;
+    let result = |t: &Token| t.is_cs() && t.cs() == known.result();
     let char_is = |t: &Token, c: u8| !t.is_cs() && t.chr() == i32::from(c);
     let target = match body.as_slice() {
-        [l, r, eq, t] if is(l, names.let_) && result(r) && char_is(eq, b'=') && t.is_cs() => t.cs(),
-        [l, r, t] if is(l, names.let_) && result(r) && t.is_cs() => t.cs(),
+        [l, r, eq, t] if is(l, known.let_()) && result(r) && char_is(eq, b'=') && t.is_cs() => {
+            t.cs()
+        }
+        [l, r, t] if is(l, known.let_()) && result(r) && t.is_cs() => t.cs(),
         [d, r, open, t, close]
-            if is(d, names.edef)
+            if is(d, known.edef())
                 && result(r)
                 && char_is(open, b'{')
                 && t.is_cs()
@@ -529,9 +527,9 @@ fn register_item(st: &EngineState, cs: i32) -> Result<Item, &'static str> {
 }
 
 /// `None` when `\selectfont` would load the font, which only the macros can do.
-fn selected_font(st: &mut EngineState, names: &Names) -> Option<eval::Font> {
+fn selected_font(st: &mut EngineState, known: &KnownCs) -> Option<eval::Font> {
     let mut name = String::new();
-    for (i, &cs) in names.nfss.iter().enumerate() {
+    for (i, &cs) in known.nfss().iter().enumerate() {
         if i > 0 {
             name.push('/');
         }
@@ -565,18 +563,21 @@ fn result_macro(st: &mut EngineState, text: &[u8]) -> Result<MemPtr, Abort> {
     Ok(head)
 }
 
-fn commit(st: &mut EngineState, names: &Names, answer: &Answer) -> Result<(), Abort> {
+fn commit(st: &mut EngineState, known: &KnownCs, answer: &Answer) -> Result<(), Abort> {
     let body = match answer {
         Answer::Expression => {
-            let shared = MemPtr(st.eqtb.equiv(names.expression));
+            let shared = MemPtr(st.eqtb.equiv(known.expression()));
             st.mem.add_token_ref(shared);
             shared
         }
         Answer::Parsed(outcome) => {
             if outcome.units {
-                let (t, e) = (st.eqtb.eq_type(names.if_true), st.eqtb.equiv(names.if_true));
+                let (t, e) = (
+                    st.eqtb.eq_type(known.if_true()),
+                    st.eqtb.equiv(known.if_true()),
+                );
                 st.eqtb
-                    .geq_define(&mut st.mem, &mut st.scanner, names.units_declared, t, e)?;
+                    .geq_define(&mut st.mem, &mut st.scanner, known.units_declared(), t, e)?;
             }
             result_macro(st, &outcome.result)?
         }
@@ -585,13 +586,13 @@ fn commit(st: &mut EngineState, names: &Names, answer: &Answer) -> Result<(), Ab
         &mut st.save_stack,
         &mut st.mem,
         &mut st.scanner,
-        names.result,
+        known.result(),
         CALL,
         body.0,
     )
 }
 
-fn compare(st: &EngineState, names: &Names, stats: &mut Stats, pending: &Pending, number: bool) {
+fn compare(st: &EngineState, known: &KnownCs, stats: &mut Stats, pending: &Pending, number: bool) {
     stats.checked += 1;
     let (ours, units) = match &pending.answer {
         Answer::Expression => {
@@ -603,12 +604,12 @@ fn compare(st: &EngineState, names: &Names, stats: &mut Stats, pending: &Pending
         Answer::Parsed(_) if number => return,
         Answer::Parsed(outcome) => (&outcome.result, outcome.units),
     };
-    let Some(theirs) = macro_text(st, names.result) else {
+    let Some(theirs) = macro_text(st, known.result()) else {
         return;
     };
     let shape = |t: &[u8]| (t.contains(&b'Y'), t.contains(&b'.'));
     if shape(&theirs) != shape(ours)
-        || units != same_meaning(st, names.units_declared, names.if_true)
+        || units != same_meaning(st, known.units_declared(), known.if_true())
     {
         stats.format_differed += 1;
         if stats.format_differed <= 20 {
@@ -832,12 +833,12 @@ fn parse_float_input(text: &[u8]) -> Option<f64> {
 
 fn run_native(
     st: &EngineState,
-    names: &Names,
+    known: &KnownCs,
     kind: Native,
     args: &[Vec<Token>],
 ) -> Option<Vec<Effect>> {
     let result = |text: Vec<u8>| Effect::Define {
-        cs: names.result,
+        cs: known.result(),
         text,
     };
     let compare = |a: &[Token], b: &[Token]| -> Option<(bool, Vec<u8>, Vec<u8>)> {
@@ -854,7 +855,7 @@ fn run_native(
         }
         (Native::LessThan, [a, b]) => {
             let (less, _, _) = compare(a, b)?;
-            names.comparison?;
+            known.comparison()?;
             vec![
                 Effect::Comparison(less),
                 result(if less {
@@ -866,7 +867,7 @@ fn run_native(
         }
         (Native::Max | Native::Min, [a, b]) => {
             let (less, ta, tb) = compare(a, b)?;
-            names.comparison?;
+            known.comparison()?;
             let pick = if (kind == Native::Max) == less {
                 tb
             } else {
@@ -906,11 +907,12 @@ pub(crate) fn native_macro(st: &mut EngineState, kind: Native, args: &[MemPtr]) 
     if TRACING.iter().any(|&p| st.eqtb.int_par(p) > 0) || st.eqtb.int_par(IntPar::GlobalDefs) != 0 {
         return false;
     }
-    let Some(names) = Names::of(&st.eqtb.pgfmath) else {
+    let known = st.eqtb.pgfmath;
+    if !known.complete() {
         return false;
-    };
+    }
     let args: Vec<Vec<Token>> = args.iter().map(|&p| list_tokens(st, p)).collect();
-    let Some(effects) = run_native(st, &names, kind, &args) else {
+    let Some(effects) = run_native(st, &known, kind, &args) else {
         *st.pgfmath
             .stats
             .fallback
@@ -933,9 +935,13 @@ pub(crate) fn native_macro(st: &mut EngineState, kind: Native, args: &[MemPtr]) 
                     )?;
                 }
                 Effect::Comparison(value) => {
-                    let source = if value { names.if_true } else { names.if_false };
+                    let source = if value {
+                        known.if_true()
+                    } else {
+                        known.if_false()
+                    };
                     let (t, e) = (st.eqtb.eq_type(source), st.eqtb.equiv(source));
-                    let flag = names.comparison.expect("comparison");
+                    let flag = known.comparison().expect("comparison");
                     st.eqtb
                         .geq_define(&mut st.mem, &mut st.scanner, flag, t, e)?;
                 }
