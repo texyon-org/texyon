@@ -1,6 +1,6 @@
 use super::*;
 use crate::resource::{ResourceKind, ResourceRequest};
-use crate::{Color, LinkAction, Matrix};
+use crate::{Color, LinkAction, Matrix, Path, PositionedChar, PositionedGlyph, StrokeStyle};
 use sha2::{Digest, Sha256};
 use std::cell::RefCell;
 
@@ -912,4 +912,136 @@ fn real_classic_xdv_renders_to_path_svg_transactionally() {
         bounds(&canonical),
         bounds(&preview)
     );
+}
+
+/// Records native font registrations and draws nothing.
+#[derive(Default)]
+struct FaceRecorder(Vec<u32>);
+
+impl Backend for FaceRecorder {
+    fn begin_page(&mut self, _: f32, _: f32) -> Result<(), RenderError> {
+        Ok(())
+    }
+
+    fn register_font(
+        &mut self,
+        _: ResourceIdentity,
+        _: &[u8],
+        face_index: u32,
+    ) -> Result<FontId, RenderError> {
+        self.0.push(face_index);
+        Ok(FontId(face_index))
+    }
+
+    fn register_classic_font(
+        &mut self,
+        _: ResourceIdentity,
+        _: &[u8],
+        _: ResourceIdentity,
+        _: &[u8],
+    ) -> Result<FontId, RenderError> {
+        Ok(FontId(0))
+    }
+
+    fn fill_rule(&mut self, _: f32, _: f32, _: Matrix, _: Color) -> Result<(), RenderError> {
+        Ok(())
+    }
+
+    fn fill_path(&mut self, _: &Path, _: bool, _: Matrix, _: Color) -> Result<(), RenderError> {
+        Ok(())
+    }
+
+    fn stroke_path(
+        &mut self,
+        _: &Path,
+        _: StrokeStyle,
+        _: Matrix,
+        _: Color,
+    ) -> Result<(), RenderError> {
+        Ok(())
+    }
+
+    fn clip_path(&mut self, _: &Path, _: bool, _: Matrix) -> Result<(), RenderError> {
+        Ok(())
+    }
+
+    fn pop_clip(&mut self) -> Result<(), RenderError> {
+        Ok(())
+    }
+
+    fn fill_glyphs(
+        &mut self,
+        _: FontId,
+        _: f32,
+        _: &[PositionedGlyph],
+        _: Color,
+        _: FontStyle,
+    ) -> Result<(), RenderError> {
+        Ok(())
+    }
+
+    fn fill_chars(
+        &mut self,
+        _: FontId,
+        _: f32,
+        _: &[PositionedChar],
+        _: Color,
+    ) -> Result<(), RenderError> {
+        Ok(())
+    }
+
+    fn draw_image(
+        &mut self,
+        _: &[u8],
+        _: Matrix,
+        _: Option<f32>,
+        _: Option<f32>,
+    ) -> Result<(), RenderError> {
+        Ok(())
+    }
+
+    fn draw_pdf(&mut self, _: &[u8], _: u32, _: Matrix) -> Result<(), RenderError> {
+        Ok(())
+    }
+
+    fn finish_page(&mut self) -> Result<String, RenderError> {
+        Ok(String::new())
+    }
+}
+
+#[test]
+fn each_face_of_a_font_collection_gets_its_own_handle() {
+    let collection = Resource::from_bytes(b"font-collection".to_vec());
+    let glyphs = |face_index| DrawOperation::NativeGlyphs {
+        identity: collection.identity,
+        face_index,
+        size: 10 << 16,
+        glyphs: Vec::new(),
+        color: Color::BLACK,
+        extend: crate::units::FIXED_ONE,
+        slant: 0,
+        embolden: 0,
+        vertical: false,
+    };
+    let analysis = Analysis {
+        xdv: Arc::from(&[][..]),
+        plans: vec![Arc::new(PagePlan {
+            width_bp: 100.0,
+            height_bp: 100.0,
+            operations: vec![glyphs(0), glyphs(1), glyphs(0)],
+            links: Vec::new(),
+            destinations: Vec::new(),
+            unsupported: BTreeMap::new(),
+            complete: true,
+        })],
+        resources: BTreeMap::from([(collection.identity, collection.clone())]),
+        pages: Vec::new(),
+        ledger: CoverageLedger::default(),
+        reused_pages: 0,
+    };
+    let mut backend = FaceRecorder::default();
+    HotRenderer::new(())
+        .render_pages(&analysis, &[0], &mut backend)
+        .unwrap();
+    assert_eq!(backend.0, [0, 1]);
 }

@@ -336,7 +336,7 @@ struct Resumption {
 /// Backend font handles registered during one `render_pages` call.
 #[derive(Default)]
 struct FontHandles {
-    native: BTreeMap<ResourceIdentity, FontId>,
+    native: BTreeMap<(ResourceIdentity, u32), FontId>,
     classic: BTreeMap<(ResourceIdentity, ResourceIdentity), FontId>,
 }
 
@@ -377,7 +377,7 @@ fn draw<B: Backend>(
             embolden,
             vertical,
         } => {
-            let font = match fonts.native.entry(*identity) {
+            let font = match fonts.native.entry((*identity, *face_index)) {
                 Entry::Occupied(entry) => *entry.get(),
                 Entry::Vacant(entry) => {
                     let resource = analysis.resource(identity, "font bytes")?;
