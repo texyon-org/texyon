@@ -93,7 +93,7 @@ pub unsafe extern "C" fn tectonic_wasm_free(ptr: *mut u8, len: usize) {
 ///
 /// `ptr`/`len` must describe a buffer from [`tectonic_wasm_alloc`] whose
 /// ownership the host has released.
-unsafe fn adopt(ptr: *mut u8, len: usize) -> Vec<u8> {
+pub(crate) unsafe fn adopt(ptr: *mut u8, len: usize) -> Vec<u8> {
     if ptr.is_null() || len == 0 {
         return Vec::new();
     }

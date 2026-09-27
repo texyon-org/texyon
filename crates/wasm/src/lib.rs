@@ -118,7 +118,7 @@ fn dispatch(text: &str) -> Response {
             };
             // SAFETY: the host allocated this with tectonic_wasm_alloc and, by
             // sending the request, has given up ownership of it.
-            let bytes = unsafe { take_host_bytes(ptr, len) };
+            let bytes = unsafe { host::adopt(ptr as *mut u8, len as usize) };
             session.preload(&name, bytes);
             Response::Ok
         }),
@@ -219,21 +219,6 @@ fn dispatch(text: &str) -> Response {
             None => Response::Ok,
         }),
     }
-}
-
-/// Take ownership of bytes the host placed in linear memory.
-///
-/// # Safety
-///
-/// `ptr`/`len` must describe a buffer from
-/// [`tectonic_wasm_alloc`](host::tectonic_wasm_alloc) that the host has
-/// released.
-unsafe fn take_host_bytes(ptr: u32, len: u32) -> Vec<u8> {
-    if ptr == 0 || len == 0 {
-        return Vec::new();
-    }
-
-    std::slice::from_raw_parts(ptr as *const u8, len as usize).to_vec()
 }
 
 /// Package one compile for the host, moving the SVG into linear memory.
