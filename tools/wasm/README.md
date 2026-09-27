@@ -66,14 +66,14 @@ wasi sysroot does not ship. Without it `rust-lld` does not fail — it turns
 which no host can supply. The module links cleanly and then fails at
 `WebAssembly.instantiate`. `build.sh` checks the import table for exactly this.
 
-**wasi-libc's allocator cannot grow the memory.** Measured on wasi-sdk 33: in a
-module with 64 MB of initial memory, a 30 MB `malloc` succeeds, a 50 MB `malloc`
-returns null, and `memory.size` never moves. XeTeX allocates roughly 275 MB of
-arenas before it typesets anything. So the C entry points are defined in Rust
-instead, on a private `dlmalloc` that grows properly — see
-[`crates/wasm/src/alloc_shim.rs`](../../crates/wasm/src/alloc_shim.rs). That
-also means C and Rust share one heap, which matters because Tectonic's bridge
-passes buffer ownership across the boundary in both directions.
+**`malloc` is ours, not wasi-libc's.** XeTeX `calloc`s roughly 275 MB of
+arenas before it typesets anything, and wasi-libc memsets every byte of them.
+[`crates/wasm/src/alloc_shim.rs`](../../crates/wasm/src/alloc_shim.rs) defines
+the whole family on `dlmalloc` and serves large zeroed blocks from fresh pages,
+which cuts about 30% off a cold compile. Rust's default allocator calls the
+same functions, so C and Rust share one heap. The shim must define every
+allocation entry point: one left to wasi-libc (as `posix_memalign` once was)
+hands out blocks that our `free` would corrupt the heap releasing.
 
 **wasm validates indirect call signatures, and it found a real bug.** TECkit's
 status type is `long`: 64-bit on Linux, 32-bit on wasm32. The Rust declarations
