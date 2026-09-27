@@ -4,7 +4,7 @@ const UNITY: f64 = 65536.0;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Item {
-    Char(u8, bool),
+    Char { byte: u8, other: bool },
     Dimen(i32),
     Count(i32),
 }
@@ -332,14 +332,18 @@ const UNITS: [(&[u8; 2], f64); 9] = [
 
 impl Parser<'_> {
     fn at(&self, i: usize) -> Item {
-        self.items
-            .get(i)
-            .map_or(Item::Char(b'@', true), |&(item, _)| item)
+        self.items.get(i).map_or(
+            Item::Char {
+                byte: b'@',
+                other: true,
+            },
+            |&(item, _)| item,
+        )
     }
 
     fn char_at(&self, i: usize) -> Option<u8> {
         match self.at(i) {
-            Item::Char(c, _) => Some(c),
+            Item::Char { byte: c, .. } => Some(c),
             _ => None,
         }
     }
@@ -457,7 +461,7 @@ impl Parser<'_> {
                 let (a, b) = two()?;
                 let mut r = a % nonzero(b)?;
                 if func == Func::ModPositive && r < 0.0 {
-                    r += b.abs();
+                    r += b;
                 }
                 Value::of(r)
             }
@@ -618,7 +622,7 @@ impl Parser<'_> {
 
     fn function(&mut self, mut i: usize) -> R<(usize, bool)> {
         let mut name = Vec::new();
-        while let Item::Char(c, _) = self.at(i) {
+        while let Item::Char { byte: c, .. } = self.at(i) {
             if !(c == b'_' || c.is_ascii_alphanumeric())
                 || (!name.is_empty() && self.space_before(i))
             {
@@ -645,21 +649,30 @@ impl Parser<'_> {
     fn operand(&mut self, mut i: usize) -> R<usize> {
         loop {
             match self.at(i) {
-                Item::Char(b'+', true) => i += 1,
-                Item::Char(b'-', true) => {
+                Item::Char {
+                    byte: b'+',
+                    other: true,
+                } => i += 1,
+                Item::Char {
+                    byte: b'-',
+                    other: true,
+                } => {
                     self.operations.push(Op::Neg);
                     i += 1;
                 }
-                Item::Char(b'!', _) => {
+                Item::Char { byte: b'!', .. } => {
                     self.operations.push(Op::Not);
                     i += 1;
                 }
-                Item::Char(b'(', _) => {
+                Item::Char { byte: b'(', .. } => {
                     self.operations.push(Op::Open);
                     i += 1;
                 }
-                Item::Char(b'"' | b'[' | b'<', _) => return Err("unsupported prefix operator"),
-                Item::Char(c, _) if c == b'_' || c.is_ascii_alphabetic() => {
+                Item::Char {
+                    byte: b'"' | b'[' | b'<',
+                    ..
+                } => return Err("unsupported prefix operator"),
+                Item::Char { byte: c, .. } if c == b'_' || c.is_ascii_alphabetic() => {
                     let (next, operand) = self.function(i)?;
                     if operand {
                         i = next;
@@ -708,14 +721,14 @@ impl Parser<'_> {
                     self.push_result(Value::texted(f64::from(n), n.to_string().as_bytes()));
                     return Ok(i + 1);
                 }
-                Item::Char(c, other) if c == b'.' || c.is_ascii_digit() => {
+                Item::Char { byte: c, other } if c == b'.' || c.is_ascii_digit() => {
                     if !other {
                         return Err("digit with unusual catcode");
                     }
                     number.push(c);
                     i += 1;
                 }
-                Item::Char(c, _) => {
+                Item::Char { byte: c, .. } => {
                     if number.is_empty() {
                         return Err("missing operand");
                     }
@@ -886,7 +899,13 @@ mod tests {
                 space = true;
                 continue;
             }
-            out.push((Item::Char(c, !c.is_ascii_alphabetic()), space));
+            out.push((
+                Item::Char {
+                    byte: c,
+                    other: !c.is_ascii_alphabetic(),
+                },
+                space,
+            ));
             space = false;
         }
         out
@@ -929,6 +948,8 @@ mod tests {
         assert_eq!(eval("3!"), "6.0");
         assert_eq!(eval("x*2"), "4.0");
         assert_eq!(eval("1.5e2"), "150.0");
+        assert_eq!(eval("Mod(-1,-3)"), "-4.0");
+        assert_eq!(eval("Mod(-1,3)"), "2.0");
     }
 
     #[test]

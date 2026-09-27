@@ -180,9 +180,9 @@ const TRACING: &[IntPar] = &[
 
 #[derive(Default)]
 struct Stats {
-    native: u64,
+    parses: u64,
     numbers: u64,
-    natives: u64,
+    macros: u64,
     fallback: std::collections::BTreeMap<&'static str, u64>,
     checked: u64,
     differed: u64,
@@ -255,7 +255,7 @@ pub(crate) fn intercept(st: &mut EngineState) -> Option<i32> {
         Ok(()) => {
             match answer {
                 Answer::Expression => st.pgfmath.stats.numbers += 1,
-                Answer::Parsed(_) => st.pgfmath.stats.native += 1,
+                Answer::Parsed(_) => st.pgfmath.stats.parses += 1,
             }
             Some(known.parse_end())
         }
@@ -349,28 +349,28 @@ fn cs_name(st: &EngineState, cs: i32) -> Option<String> {
     crate::introspect::read_string(st, text)
 }
 
-fn macro_tokens(st: &EngineState, cs: i32) -> Option<Vec<Token>> {
-    if st.eqtb.eq_type(cs) != CALL {
-        return None;
-    }
-    let mut p = MemPtr(st.eqtb.equiv(cs)).link(&st.mem);
-    if p.is_null() || p.token(&st.mem) != Token::END_MATCH {
-        return None;
-    }
-    p = p.link(&st.mem);
+fn list_tokens(st: &EngineState, mut p: MemPtr) -> Vec<Token> {
     let mut out = Vec::new();
     while !p.is_null() {
         out.push(p.token(&st.mem));
         p = p.link(&st.mem);
     }
-    Some(out)
+    out
+}
+
+fn macro_tokens(st: &EngineState, cs: i32) -> Option<Vec<Token>> {
+    if !matches!(st.eqtb.eq_type(cs), CALL | crate::cmd::LONG_CALL) {
+        return None;
+    }
+    let first = MemPtr(st.eqtb.equiv(cs)).link(&st.mem);
+    if first.is_null() || first.token(&st.mem) != Token::END_MATCH {
+        return None;
+    }
+    Some(list_tokens(st, first.link(&st.mem)))
 }
 
 fn macro_text(st: &EngineState, cs: i32) -> Option<Vec<u8>> {
-    macro_tokens(st, cs)?
-        .into_iter()
-        .map(|t| (!t.is_cs() && t.chr() < 128).then_some(t.chr() as u8))
-        .collect()
+    chars(&macro_tokens(st, cs)?)
 }
 
 fn same_meaning(st: &EngineState, a: i32, b: i32) -> bool {
@@ -382,7 +382,7 @@ fn identifiers(items: &[(Item, bool)]) -> Vec<Vec<u8>> {
     let mut current: Vec<u8> = Vec::new();
     for &(item, space) in items {
         let c = match item {
-            Item::Char(c, _) => Some(c),
+            Item::Char { byte: c, .. } => Some(c),
             _ => None,
         };
         let continues = !current.is_empty()
@@ -497,7 +497,13 @@ fn expression_items(st: &EngineState, tokens: &[Token]) -> Result<Vec<(Item, boo
         match cmd {
             SPACER => space = true,
             LETTER | OTHER_CHAR | SUP_MARK | SUB_MARK | TAB_MARK | MATH_SHIFT if chr < 128 => {
-                items.push((Item::Char(chr as u8, cmd == OTHER_CHAR), space));
+                items.push((
+                    Item::Char {
+                        byte: chr as u8,
+                        other: cmd == OTHER_CHAR,
+                    },
+                    space,
+                ));
                 space = false;
             }
             _ => return Err("unsupported token"),
@@ -692,31 +698,6 @@ enum Effect {
     Comparison(bool),
 }
 
-fn list_tokens(st: &EngineState, mut p: MemPtr) -> Vec<Token> {
-    let mut out = Vec::new();
-    while !p.is_null() {
-        out.push(p.token(&st.mem));
-        p = p.link(&st.mem);
-    }
-    out
-}
-
-fn simple_body(st: &EngineState, cs: i32) -> Option<Vec<Token>> {
-    if cs < HASH_BASE
-        || !matches!(
-            st.eqtb.eq_type(cs),
-            crate::cmd::CALL | crate::cmd::LONG_CALL
-        )
-    {
-        return None;
-    }
-    let first = MemPtr(st.eqtb.equiv(cs)).link(&st.mem);
-    if first.is_null() || first.token(&st.mem) != Token::END_MATCH {
-        return None;
-    }
-    Some(list_tokens(st, first.link(&st.mem)))
-}
-
 fn chars(tokens: &[Token]) -> Option<Vec<u8>> {
     tokens
         .iter()
@@ -734,7 +715,7 @@ fn expand_full(st: &EngineState, tokens: &[Token], depth: u32) -> Option<Vec<u8>
     let mut out = Vec::new();
     for t in tokens {
         if t.is_cs() {
-            out.extend(expand_full(st, &simple_body(st, t.cs())?, depth + 1)?);
+            out.extend(expand_full(st, &macro_tokens(st, t.cs())?, depth + 1)?);
         } else {
             out.extend(chars(std::slice::from_ref(t))?);
         }
@@ -745,7 +726,7 @@ fn expand_full(st: &EngineState, tokens: &[Token], depth: u32) -> Option<Vec<u8>
 fn expand_once(st: &EngineState, tokens: &[Token]) -> Option<Vec<u8>> {
     match tokens.split_first() {
         Some((first, rest)) if first.is_cs() => {
-            let mut all = simple_body(st, first.cs())?;
+            let mut all = macro_tokens(st, first.cs())?;
             all.extend_from_slice(rest);
             chars(&all)
         }
@@ -841,7 +822,7 @@ fn run_native(
         cs: known.result(),
         text,
     };
-    let compare = |a: &[Token], b: &[Token]| -> Option<(bool, Vec<u8>, Vec<u8>)> {
+    let less_than = |a: &[Token], b: &[Token]| -> Option<(bool, Vec<u8>, Vec<u8>)> {
         let (ta, tb) = (expand_full(st, a, 0)?, expand_full(st, b, 0)?);
         split_float(&ta)?;
         split_float(&tb)?;
@@ -854,7 +835,7 @@ fn run_native(
             vec![result(eval::float(v))]
         }
         (Native::LessThan, [a, b]) => {
-            let (less, _, _) = compare(a, b)?;
+            let (less, _, _) = less_than(a, b)?;
             known.comparison()?;
             vec![
                 Effect::Comparison(less),
@@ -866,7 +847,7 @@ fn run_native(
             ]
         }
         (Native::Max | Native::Min, [a, b]) => {
-            let (less, ta, tb) = compare(a, b)?;
+            let (less, ta, tb) = less_than(a, b)?;
             known.comparison()?;
             let pick = if (kind == Native::Max) == less {
                 tb
@@ -950,7 +931,7 @@ pub(crate) fn native_macro(st: &mut EngineState, kind: Native, args: &[MemPtr]) 
         Ok(())
     })();
     if committed.is_ok() {
-        st.pgfmath.stats.natives += 1;
+        st.pgfmath.stats.macros += 1;
     }
     committed.is_ok()
 }
@@ -963,7 +944,7 @@ pub(crate) fn report(st: &EngineState) {
     let fallback: u64 = s.fallback.values().sum();
     eprintln!(
         "pgfmath: {} native, {} plain numbers, {} native macros, {} fallback; checked {}, {} beyond 1e-3, {} format, worst {:.2e}",
-        s.native, s.numbers, s.natives, fallback, s.checked, s.differed, s.format_differed, s.worst
+        s.parses, s.numbers, s.macros, fallback, s.checked, s.differed, s.format_differed, s.worst
     );
     let mut reasons: Vec<_> = s.fallback.iter().collect();
     reasons.sort_by(|a, b| b.1.cmp(a.1));
