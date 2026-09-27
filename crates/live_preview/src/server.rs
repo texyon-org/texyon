@@ -25,11 +25,8 @@ pub struct PreviewBootstrap {
     pub bundle_digest: String,
 }
 
-/// Cloneable writer whose each `write` call holds one shared stream lock.
-///
-/// The implementation turns a partial inner write into `write_all` while the
-/// lock is held, preventing worker frames and request-side events from
-/// interleaving on protocol stdout.
+/// Cloneable writer that completes each `write` under one shared lock, so
+/// worker frames and request-side events never interleave.
 pub struct SharedJsonlWriter<W>(Arc<Mutex<W>>);
 
 impl<W> Clone for SharedJsonlWriter<W> {
@@ -121,9 +118,8 @@ impl std::error::Error for PreviewServerError {}
 
 /// Run the versioned stdio protocol around a worker-thread processor factory.
 ///
-/// The factory runs on the engine worker and must return its frozen `ready`
-/// metadata with the processor. Stdout is represented solely by `writer`;
-/// callers must route all diagnostics elsewhere.
+/// The factory runs on the engine worker and returns the `ready` metadata with
+/// the processor. `writer` is protocol-only, so diagnostics must go elsewhere.
 pub fn serve_preview_jsonl<R, W, P, F, E>(
     mut reader: R,
     writer: W,
@@ -154,54 +150,7 @@ where
         },
     )?;
 
-    let initialization = match read_request(&mut reader, limits) {
-        Ok(request) => request,
-        Err(protocol) => {
-            let error = PreviewServerError::Protocol(protocol);
-            let _ = write_fatal(&shared, limits, &error.to_string());
-            let _ = worker.shutdown();
-            return Err(error);
-        }
-    };
-    let ClientRequest::Initialize {
-        primary_path,
-        primary_text,
-        children,
-        ..
-    } = initialization
-    else {
-        let error = PreviewServerError::Protocol(ProtocolError::InvalidRequest(
-            "first request after ready must be initialize".into(),
-        ));
-        let _ = write_fatal(&shared, limits, &error.to_string());
-        let _ = worker.shutdown();
-        return Err(error);
-    };
-    let sources = (|| {
-        let primary = absolute_primary(&primary_path)?;
-        let root_path = primary
-            .parent()
-            .ok_or_else(|| PreviewServerError::InvalidPrimaryPath(primary_path.clone()))?;
-        let root = DocumentRoot::new(root_path).map_err(PreviewServerError::Source)?;
-        SourceSet::initialize(
-            root,
-            primary.to_string_lossy().as_ref(),
-            primary_text,
-            children,
-            limits,
-        )
-        .map_err(PreviewServerError::Source)
-    })();
-    let sources = match sources {
-        Ok(sources) => sources,
-        Err(error) => {
-            let _ = write_fatal(&shared, limits, &error.to_string());
-            let _ = worker.shutdown();
-            return Err(error);
-        }
-    };
-    if let Err(worker_error) = worker.initialize(sources) {
-        let error = PreviewServerError::Worker(worker_error);
+    if let Err(error) = initialize(&mut reader, limits, &worker) {
         let _ = write_fatal(&shared, limits, &error.to_string());
         let _ = worker.shutdown();
         return Err(error);
@@ -219,160 +168,162 @@ where
         }
     });
 
-    let mut shutdown = false;
-    let mut fatal = None;
-    while !shutdown && fatal.is_none() {
+    let fatal = 'session: loop {
         while let Ok(request) = request_rx.try_recv() {
-            match request {
-                Ok(ClientRequest::Replace { path, text }) => {
-                    if let Err(error) = worker.replace(path, text) {
-                        fatal = Some(PreviewServerError::Worker(error));
-                        break;
-                    }
-                }
-                Ok(ClientRequest::Viewport { first, last }) => {
-                    if let Err(error) = worker.viewport(first, last) {
-                        fatal = Some(PreviewServerError::Worker(error));
-                        break;
-                    }
-                }
-                Ok(ClientRequest::ForwardSearch {
-                    query_id,
-                    path,
-                    line,
-                }) => {
-                    if let Err(error) = worker.forward_search(query_id, path, line) {
-                        fatal = Some(PreviewServerError::Worker(error));
-                        break;
-                    }
-                }
-                Ok(ClientRequest::BackwardSearch {
-                    query_id,
-                    page_index,
-                    h_bp,
-                    v_bp,
-                }) => {
-                    if let Err(error) = worker.backward_search(query_id, page_index, h_bp, v_bp) {
-                        fatal = Some(PreviewServerError::Worker(error));
-                        break;
-                    }
-                }
-                Ok(ClientRequest::Resync {}) => {
-                    if let Err(error) = worker.resync() {
-                        fatal = Some(PreviewServerError::Worker(error));
-                        break;
-                    }
-                }
-                Ok(ClientRequest::Cancel {}) => {
-                    if let Err(error) = worker.cancel() {
-                        fatal = Some(PreviewServerError::Worker(error));
-                        break;
-                    }
-                }
-                Ok(ClientRequest::Painted { .. }) => {}
-                Ok(ClientRequest::Shutdown {}) | Err(ProtocolError::EndOfStream) => {
-                    shutdown = true;
-                    break;
-                }
-                Ok(ClientRequest::Initialize { .. }) => {
-                    fatal = Some(PreviewServerError::Protocol(ProtocolError::InvalidRequest(
-                        "initialize may appear exactly once".into(),
-                    )));
-                    break;
-                }
-                Err(error) => {
-                    fatal = Some(PreviewServerError::Protocol(error));
-                    break;
-                }
+            match dispatch(&mut worker, request) {
+                Ok(Flow::Continue) => {}
+                Ok(Flow::Shutdown) => break 'session None,
+                Err(error) => break 'session Some(error),
             }
         }
-        if shutdown || fatal.is_some() {
-            break;
-        }
-
-        match worker.recv_timeout(Duration::from_millis(10)) {
-            Ok(WorkerEvent::Update { .. }) => {
-                // The processor's atomic sink already emitted this frame.
-            }
-            Ok(WorkerEvent::Cancelled {
-                applied_request_seq,
-                source_revision,
-            }) => write_event(
-                &shared,
-                limits,
-                &ServerEvent::Cancelled {
-                    applied_request_seq,
-                    source_revision,
-                },
-            )?,
-            Ok(WorkerEvent::Stopped {
-                applied_request_seq,
-                source_revision,
-            }) => write_event(
-                &shared,
-                limits,
-                &ServerEvent::Stopped {
-                    applied_request_seq,
-                    source_revision,
-                },
-            )?,
-            Ok(WorkerEvent::Rejected {
-                request_seq,
-                source_revision,
-                reason,
-            }) => write_event(
-                &shared,
-                limits,
-                &ServerEvent::Rejected {
-                    request_seq,
-                    source_revision,
-                    reason,
-                },
-            )?,
-            Ok(WorkerEvent::ForwardSearchResult { query_id, result }) => write_event(
-                &shared,
-                limits,
-                &ServerEvent::ForwardSearchResult { query_id, result },
-            )?,
-            Ok(WorkerEvent::BackwardSearchResult { query_id, result }) => write_event(
-                &shared,
-                limits,
-                &ServerEvent::BackwardSearchResult { query_id, result },
-            )?,
-            Ok(WorkerEvent::Aborted {
-                applied_request_seq,
-                source_revision,
-                reason,
-            }) => write_event(
-                &shared,
-                limits,
-                &ServerEvent::Aborted {
-                    applied_request_seq,
-                    source_revision,
-                    log_tail: reason,
-                },
-            )?,
-            Ok(WorkerEvent::Fatal(reason)) => {
-                fatal = Some(PreviewServerError::WorkerFatal(reason));
-            }
+        match worker.recv_timeout(EVENT_POLL_INTERVAL) {
+            Ok(event) => match server_event(event) {
+                Ok(Some(event)) => write_event(&shared, limits, &event)?,
+                Ok(None) => {}
+                Err(error) => break Some(error),
+            },
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => {
-                fatal = Some(PreviewServerError::Worker(WorkerFailure::Closed));
+                break Some(PreviewServerError::Worker(WorkerFailure::Closed));
             }
         }
-    }
+    };
 
     if let Some(error) = &fatal {
         let _ = write_fatal(&shared, limits, &error.to_string());
     }
     worker.shutdown().map_err(PreviewServerError::Worker)?;
-    if shutdown && reader_thread.join().is_err() {
-        return Err(PreviewServerError::ReaderPanicked);
-    }
     if let Some(error) = fatal {
         return Err(error);
     }
+    if reader_thread.join().is_err() {
+        return Err(PreviewServerError::ReaderPanicked);
+    }
     shared.into_inner()
+}
+
+const EVENT_POLL_INTERVAL: Duration = Duration::from_millis(10);
+
+fn initialize<R: BufRead, T: Send + 'static>(
+    reader: &mut R,
+    limits: ProtocolLimits,
+    worker: &LivePreviewWorker<T>,
+) -> Result<(), PreviewServerError> {
+    let ClientRequest::Initialize {
+        primary_path,
+        primary_text,
+        children,
+        ..
+    } = read_request(reader, limits).map_err(PreviewServerError::Protocol)?
+    else {
+        return Err(PreviewServerError::Protocol(ProtocolError::InvalidRequest(
+            "first request after ready must be initialize".into(),
+        )));
+    };
+    let primary = absolute_primary(&primary_path)?;
+    let root_path = primary
+        .parent()
+        .ok_or(PreviewServerError::InvalidPrimaryPath(primary_path))?;
+    let root = DocumentRoot::new(root_path).map_err(PreviewServerError::Source)?;
+    let sources = SourceSet::initialize(
+        root,
+        primary.to_string_lossy().as_ref(),
+        primary_text,
+        children,
+        limits,
+    )
+    .map_err(PreviewServerError::Source)?;
+    worker
+        .initialize(sources)
+        .map_err(PreviewServerError::Worker)
+}
+
+enum Flow {
+    Continue,
+    Shutdown,
+}
+
+fn dispatch<T: Send + 'static>(
+    worker: &mut LivePreviewWorker<T>,
+    request: Result<ClientRequest, ProtocolError>,
+) -> Result<Flow, PreviewServerError> {
+    let sent = match request {
+        Ok(ClientRequest::Replace { path, text }) => worker.replace(path, text).map(drop),
+        Ok(ClientRequest::Viewport { first, last }) => worker.viewport(first, last),
+        Ok(ClientRequest::ForwardSearch {
+            query_id,
+            path,
+            line,
+        }) => worker.forward_search(query_id, path, line),
+        Ok(ClientRequest::BackwardSearch {
+            query_id,
+            page_index,
+            h_bp,
+            v_bp,
+        }) => worker.backward_search(query_id, page_index, h_bp, v_bp),
+        Ok(ClientRequest::Resync {}) => worker.resync(),
+        Ok(ClientRequest::Cancel {}) => worker.cancel(),
+        Ok(ClientRequest::Painted { .. }) => Ok(()),
+        Ok(ClientRequest::Shutdown {}) | Err(ProtocolError::EndOfStream) => {
+            return Ok(Flow::Shutdown)
+        }
+        Ok(ClientRequest::Initialize { .. }) => {
+            return Err(PreviewServerError::Protocol(ProtocolError::InvalidRequest(
+                "initialize may appear exactly once".into(),
+            )))
+        }
+        Err(error) => return Err(PreviewServerError::Protocol(error)),
+    };
+    sent.map(|()| Flow::Continue)
+        .map_err(PreviewServerError::Worker)
+}
+
+/// Protocol event for a worker event. Updates were already written by the processor's sink.
+fn server_event(
+    event: WorkerEvent<PublishedFrame>,
+) -> Result<Option<ServerEvent>, PreviewServerError> {
+    Ok(Some(match event {
+        WorkerEvent::Update { .. } => return Ok(None),
+        WorkerEvent::Cancelled {
+            applied_request_seq,
+            source_revision,
+        } => ServerEvent::Cancelled {
+            applied_request_seq,
+            source_revision,
+        },
+        WorkerEvent::Stopped {
+            applied_request_seq,
+            source_revision,
+        } => ServerEvent::Stopped {
+            applied_request_seq,
+            source_revision,
+        },
+        WorkerEvent::Rejected {
+            request_seq,
+            source_revision,
+            reason,
+        } => ServerEvent::Rejected {
+            request_seq,
+            source_revision,
+            reason,
+        },
+        WorkerEvent::ForwardSearchResult { query_id, result } => {
+            ServerEvent::ForwardSearchResult { query_id, result }
+        }
+        WorkerEvent::BackwardSearchResult { query_id, result } => {
+            ServerEvent::BackwardSearchResult { query_id, result }
+        }
+        WorkerEvent::Aborted {
+            applied_request_seq,
+            source_revision,
+            reason,
+        } => ServerEvent::Aborted {
+            applied_request_seq,
+            source_revision,
+            log_tail: reason,
+        },
+        WorkerEvent::Fatal(reason) => return Err(PreviewServerError::WorkerFatal(reason)),
+    }))
 }
 
 fn absolute_primary(path: &str) -> Result<PathBuf, PreviewServerError> {
