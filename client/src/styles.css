@@ -708,7 +708,8 @@ input::placeholder { color: #5c6270; }
 
 /* ---- viewer ---- */
 
-.viewer { flex: 1; display: flex; flex-direction: column; min-height: 0; background: #1e2027; }
+/* Pages hold no text, so a drag or multi-click here would otherwise select across the editor. */
+.viewer { flex: 1; display: flex; flex-direction: column; min-height: 0; background: #1e2027; user-select: none; }
 
 .viewer-bar {
   display: flex;
