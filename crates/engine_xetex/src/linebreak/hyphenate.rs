@@ -3,7 +3,6 @@
 use crate::consts::{MIN_TRIE_OP, NON_ADDRESS, SMALL_NODE_SIZE, TEX_NULL, TOO_BIG_CHAR};
 use crate::errors::Abort;
 use crate::fonts::CharTag;
-use crate::hyphenation::HYPH_PRIME;
 use crate::mem::HOLD_HEAD;
 use crate::node::{AnyNode, CharNode, DiscNode, LigItem, NodePtr, WhatsitNode};
 use crate::params::IntPar;
@@ -14,8 +13,8 @@ use super::odd;
 
 impl MemState {
     /// The Unicode scalar at UTF-16 offset `i` of `w`'s text.
-    pub(super) fn get_native_usv(&self, w: NodePtr<WhatsitNode>, i: i32) -> i32 {
-        let at = w.native_text_start() + i as usize;
+    pub(super) fn get_native_usv(&self, w: NodePtr<WhatsitNode>, i: usize) -> i32 {
+        let at = w.native_text_start() + i;
         let c = self.units()[at];
 
         if (0xD800..0xDC00).contains(&c) {
@@ -31,16 +30,16 @@ impl MemState {
         &mut self,
         dst: NodePtr<WhatsitNode>,
         src: NodePtr<WhatsitNode>,
-        start: i32,
-        len: i32,
+        start: usize,
+        len: usize,
     ) {
-        if len <= 0 {
+        if len == 0 {
             return;
         }
         dst.mark_native_text(self);
-        let from = src.native_text_start() + start as usize;
+        let from = src.native_text_start() + start;
         self.units_mut()
-            .copy_within(from..from + len as usize, dst.native_text_start());
+            .copy_within(from..from + len, dst.native_text_start());
     }
 
     pub(crate) fn set_native_metrics(
@@ -60,10 +59,10 @@ impl MemState {
         fonts: &FontState,
         f: FontId,
         src: NodePtr<WhatsitNode>,
-        start: i32,
-        len: i32,
+        start: usize,
+        len: usize,
     ) -> Result<NodePtr<WhatsitNode>, Abort> {
-        let q = self.new_native_word_node(eqtb, f, len)?;
+        let q = self.new_native_word_node(eqtb, f, len as i32)?;
         q.set_subtype(self, src.subtype(self));
         self.copy_native_text(q, src, start, len);
         self.set_native_metrics(eqtb, fonts, q)?;
@@ -76,9 +75,9 @@ impl MemState {
 pub(super) fn split_native_word(
     st: &mut EngineState,
     ha: NodePtr<WhatsitNode>,
-    start: i32,
+    start: usize,
 ) -> Result<NodePtr<WhatsitNode>, Abort> {
-    let len = i32::from(ha.native_length(&st.mem));
+    let len = usize::from(ha.native_length(&st.mem));
     let tail =
         st.mem
             .native_word_fragment(&st.eqtb, &st.fonts, st.hyph.hf, ha, start, len - start)?;
@@ -106,13 +105,9 @@ impl MemState {
 }
 
 /// Load `cur_r` for position `j` and return the hyphen char still to be tried there.
-fn update_right(st: &mut EngineState, j: i16, n: i16, bchar: i32, hchar: i32) -> i32 {
-    st.mainloop.cur_r = if j < n {
-        st.hyph.hu[(j + 1) as usize]
-    } else {
-        bchar
-    };
-    if odd(st.hyph.hyf[j as usize]) {
+fn update_right(st: &mut EngineState, j: usize, n: usize, bchar: i32, hchar: i32) -> i32 {
+    st.mainloop.cur_r = if j < n { st.hyph.hu[j + 1] } else { bchar };
+    if odd(st.hyph.hyf[j]) {
         hchar
     } else {
         TOO_BIG_CHAR
@@ -124,8 +119,8 @@ fn update_right(st: &mut EngineState, j: i16, n: i16, bchar: i32, hchar: i32) ->
 fn pop_lig_stack(
     st: &mut EngineState,
     t: &mut MemPtr,
-    j: &mut i16,
-    n: i16,
+    j: &mut usize,
+    n: usize,
     bchar: i32,
     hchar: i32,
     cur_rh: &mut i32,
@@ -150,16 +145,16 @@ fn pop_lig_stack(
 /// the index of the last character consumed.
 fn reconstitute(
     st: &mut EngineState,
-    mut j: i16,
-    n: i16,
+    mut j: usize,
+    n: usize,
     mut bchar: i32,
     mut hchar: i32,
-) -> Result<i16, Abort> {
+) -> Result<usize, Abort> {
     st.hyph.hyphen_passed = 0;
     let mut t = HOLD_HEAD;
     let mut w = Scaled::ZERO;
     HOLD_HEAD.set_link(&mut st.mem, MemPtr::NULL);
-    st.mainloop.cur_l = st.hyph.hu[j as usize];
+    st.mainloop.cur_l = st.hyph.hu[j];
     st.mainloop.cur_q = t;
 
     if j == 0 {
@@ -215,7 +210,7 @@ fn reconstitute(
                         continue 'continue_;
                     }
 
-                    if hchar < TOO_BIG_CHAR && odd(st.hyph.hyf[j as usize]) {
+                    if hchar < TOO_BIG_CHAR && odd(st.hyph.hyf[j]) {
                         st.hyph.hyphen_passed = j;
                         hchar = TOO_BIG_CHAR;
                     }
@@ -244,10 +239,9 @@ fn reconstitute(
                                     if j == n {
                                         bchar = TOO_BIG_CHAR;
                                     } else {
-                                        let p = st.mem.new_char(
-                                            st.hyph.hf,
-                                            st.hyph.hu[(j + 1) as usize] as u16,
-                                        )?;
+                                        let p = st
+                                            .mem
+                                            .new_char(st.hyph.hf, st.hyph.hu[j + 1] as u16)?;
                                         item.set_component(&mut st.mem, p.ptr());
                                     }
                                 }
@@ -364,24 +358,19 @@ fn wrap_lig(st: &mut EngineState, rt: bool) -> Result<MemPtr, Abort> {
 fn hyphenate_native_word(
     st: &mut EngineState,
     ha: NodePtr<WhatsitNode>,
-    hn: i16,
+    hn: usize,
 ) -> Result<(), Abort> {
     let hf = st.hyph.hf;
     let hyf_char = st.hyph.hyf_char;
     let mut s = st.mem.predecessor(st.linebreak.cur_p, ha.ptr());
 
     st.hyph.hyphen_passed = 0;
-    for j in st.hyph.l_hyf as i16..=(hn - st.hyph.r_hyf as i16) {
-        if odd(st.hyph.hyf[j as usize]) {
+    for j in st.hyph.l_hyf as usize..=hn - st.hyph.r_hyf as usize {
+        if odd(st.hyph.hyf[j]) {
             let hp = st.hyph.hyphen_passed;
-            let q = st.mem.native_word_fragment(
-                &st.eqtb,
-                &st.fonts,
-                hf,
-                ha,
-                i32::from(hp),
-                i32::from(j - hp),
-            )?;
+            let q = st
+                .mem
+                .native_word_fragment(&st.eqtb, &st.fonts, hf, ha, hp, j - hp)?;
             s.set_link(&mut st.mem, q.ptr());
 
             let disc = st.mem.new_disc()?;
@@ -393,17 +382,12 @@ fn hyphenate_native_word(
         }
     }
 
-    let hn = ha.native_length(&st.mem) as i16;
+    let hn = ha.native_length(&st.mem);
     st.linebreak.hn = hn;
     let hp = st.hyph.hyphen_passed;
-    let q = st.mem.native_word_fragment(
-        &st.eqtb,
-        &st.fonts,
-        hf,
-        ha,
-        i32::from(hp),
-        i32::from(hn - hp),
-    )?;
+    let q = st
+        .mem
+        .native_word_fragment(&st.eqtb, &st.fonts, hf, ha, hp, usize::from(hn) - hp)?;
     s.set_link(&mut st.mem, q.ptr());
     let next = ha.link(&st.mem);
     q.set_link(&mut st.mem, next);
@@ -418,80 +402,63 @@ pub(super) fn hyphenate(
     st: &mut EngineState,
     native_ha: Option<NodePtr<WhatsitNode>>,
 ) -> Result<(), Abort> {
-    let mut hn = st.linebreak.hn;
-    st.hyph.hyf[..=hn as usize].fill(0);
+    let hn = usize::from(st.linebreak.hn);
+    st.hyph.hyf[..=hn].fill(0);
 
-    let mut h = st.hyph.hc[1];
-    hn += 1;
-    st.hyph.hc[hn as usize] = i32::from(st.hyph.cur_lang);
-    for j in 2..=hn as usize {
-        h = (h + h + st.hyph.hc[j]) % HYPH_PRIME;
-    }
-
+    st.hyph.hc[hn + 1] = i32::from(st.hyph.cur_lang);
+    let mut h = st.hyph.exception_hash(hn + 1);
     loop {
-        let k = st.hyph.hyph_word[h as usize];
+        let k = st.hyph.hyph_word[h];
         if k == StrNumber::NONE {
             break;
         }
 
-        if st.strings.length(k) == i32::from(hn) {
-            let start = st.strings.str_start[k.slot()] as usize;
-            let word = &st.strings.str_pool[start..start + hn as usize];
-            if word
+        if st.strings.length(k) == (hn + 1) as i32
+            && st.strings.str_pool[st.strings.str_range(k)]
                 .iter()
-                .zip(&st.hyph.hc[1..=hn as usize])
+                .zip(&st.hyph.hc[1..=hn + 1])
                 .all(|(&u, &c)| i32::from(u) == c)
-            {
-                let mut s = MemPtr(st.hyph.hyph_list[h as usize]);
-                while !s.is_null() {
-                    st.hyph.hyf[s.info(&st.mem) as usize] = 1;
-                    s = s.link(&st.mem);
-                }
-                hn -= 1;
-                st.linebreak.hn = hn;
-                return insert_hyphens(st, hn, native_ha);
+        {
+            let mut s = st.hyph.hyph_list[h];
+            while !s.is_null() {
+                st.hyph.hyf[s.info(&st.mem) as usize] = 1;
+                s = s.link(&st.mem);
             }
+            return insert_hyphens(st, hn, native_ha);
         }
 
-        let link = st.hyph.hyph_link[h as usize];
+        let link = st.hyph.hyph_link[h];
         if link == 0 {
             break;
         }
-        h = i32::from(link) - 1;
+        h = usize::from(link) - 1;
     }
 
-    hn -= 1;
-    st.linebreak.hn = hn;
-    let lang = st.hyph.cur_lang as usize;
-    if st.hyph.trie_trc[lang + 1] != u16::from(st.hyph.cur_lang) {
+    let Some(root) = st.hyph.pattern_root(st.hyph.cur_lang) else {
         return Ok(());
-    }
+    };
 
     let hyph = &mut st.hyph;
     hyph.hc[0] = 0;
-    hyph.hc[(hn + 1) as usize] = 0;
-    hyph.hc[(hn + 2) as usize] = hyph.max_hyph_char;
+    hyph.hc[hn + 1] = 0;
+    hyph.hc[hn + 2] = hyph.max_hyph_char;
+    let op_base = hyph.op_start[usize::from(hyph.cur_lang)];
 
-    for j in 0..=(hn - hyph.r_hyf as i16 + 1) {
-        let mut z = hyph.trie_trl[lang + 1] + hyph.hc[j as usize];
+    for j in 0..=hn + 1 - hyph.r_hyf as usize {
+        let mut z = root + hyph.hc[j] as usize;
         let mut l = j;
-        while hyph.hc[l as usize] == i32::from(hyph.trie_trc[z as usize]) {
-            if hyph.trie_tro[z as usize] != MIN_TRIE_OP {
-                let mut v = hyph.trie_tro[z as usize];
-                loop {
-                    v += hyph.op_start[lang];
-                    let i = l - hyph.hyf_distance[v as usize];
-                    if hyph.hyf_num[v as usize] as u8 > hyph.hyf[i as usize] {
-                        hyph.hyf[i as usize] = hyph.hyf_num[v as usize] as u8;
-                    }
-                    v = i32::from(hyph.hyf_next[v as usize]);
-                    if v == MIN_TRIE_OP {
-                        break;
-                    }
+        while hyph.hc[l] == i32::from(hyph.trie_char(z)) {
+            let mut v = hyph.trie_op(z);
+            while v != usize::from(MIN_TRIE_OP) {
+                let op = hyph.hyph_op(v + op_base);
+                let i = l - usize::from(op.distance);
+                if op.num > hyph.hyf[i] {
+                    hyph.hyf[i] = op.num;
                 }
+                v = usize::from(op.next);
             }
             l += 1;
-            z = hyph.trie_trl[z as usize] + hyph.hc[l as usize];
+            z = hyph.trie_link(z) + hyph.hc[l] as usize;
         }
     }
 
@@ -526,19 +493,15 @@ impl MemState {
 /// every odd `hyf` position.
 fn insert_hyphens(
     st: &mut EngineState,
-    hn: i16,
+    hn: usize,
     native_ha: Option<NodePtr<WhatsitNode>>,
 ) -> Result<(), Abort> {
-    let l_hyf = st.hyph.l_hyf as i16;
-    let r_hyf = st.hyph.r_hyf as i16;
-    for j in 0..l_hyf {
-        st.hyph.hyf[j as usize] = 0;
-    }
-    for j in 0..r_hyf {
-        st.hyph.hyf[(hn - j) as usize] = 0;
-    }
+    let l_hyf = st.hyph.l_hyf as usize;
+    let r_hyf = st.hyph.r_hyf as usize;
+    st.hyph.hyf[..l_hyf].fill(0);
+    st.hyph.hyf[hn + 1 - r_hyf..=hn].fill(0);
 
-    if !(l_hyf..=hn - r_hyf).any(|j| odd(st.hyph.hyf[j as usize])) {
+    if !st.hyph.hyf[l_hyf..=hn - r_hyf].iter().any(|&h| odd(h)) {
         return Ok(());
     }
 
@@ -605,7 +568,7 @@ fn insert_hyphens(
             let hold = HOLD_HEAD.link(&st.mem);
             s.set_link(&mut st.mem, hold);
             s = st.mem.list_tail(s);
-            if odd(st.hyph.hyf[(j - 1) as usize]) {
+            if odd(st.hyph.hyf[j - 1]) {
                 l = j;
                 st.hyph.hyphen_passed = j - 1;
                 HOLD_HEAD.set_link(&mut st.mem, MemPtr::NULL);
@@ -625,7 +588,7 @@ fn insert_hyphens(
                 }
 
                 let mut i = st.hyph.hyphen_passed;
-                st.hyph.hyf[i as usize] = 0;
+                st.hyph.hyf[i] = 0;
                 let mut minor_tail = MemPtr::NULL;
                 disc.set_pre_break(&mut st.mem, MemPtr::NULL);
                 let hyf_node =
@@ -633,8 +596,8 @@ fn insert_hyphens(
                 let mut saved_c = 0;
                 if let Some(node) = hyf_node {
                     i += 1;
-                    saved_c = st.hyph.hu[i as usize];
-                    st.hyph.hu[i as usize] = st.hyph.hyf_char;
+                    saved_c = st.hyph.hu[i];
+                    st.hyph.hu[i] = st.hyph.hyf_char;
                     st.mem.free_avail(node.ptr());
                 }
 
@@ -645,7 +608,7 @@ fn insert_hyphens(
                 }
 
                 if hyf_node.is_some() {
-                    st.hyph.hu[i as usize] = saved_c;
+                    st.hyph.hu[i] = saved_c;
                     l = i;
                 }
 
@@ -655,16 +618,16 @@ fn insert_hyphens(
                 let mut c = 0;
                 if st.fonts.bchar_label[st.hyph.hf] != NON_ADDRESS {
                     l -= 1;
-                    c = st.hyph.hu[l as usize];
+                    c = st.hyph.hu[l];
                     c_loc = l;
-                    st.hyph.hu[l as usize] = st.hyph.max_hyph_char;
+                    st.hyph.hu[l] = st.hyph.max_hyph_char;
                 }
 
                 while l < j {
                     loop {
                         l = reconstitute(st, l, hn, bchar, TOO_BIG_CHAR)? + 1;
                         if c_loc > 0 {
-                            st.hyph.hu[c_loc as usize] = c;
+                            st.hyph.hu[c_loc] = c;
                             c_loc = 0;
                         }
                         st.mem.append_to_disc_list(disc, true, &mut minor_tail);
@@ -697,7 +660,7 @@ fn insert_hyphens(
                 st.hyph.hyphen_passed = j - 1;
                 HOLD_HEAD.set_link(&mut st.mem, MemPtr::NULL);
 
-                if !odd(st.hyph.hyf[(j - 1) as usize]) {
+                if !odd(st.hyph.hyf[j - 1]) {
                     break;
                 }
             }

@@ -833,7 +833,7 @@ fn hyphenation_tables<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(
                 StrNumber(0),
                 StrNumber(st.strings.str_ptr),
             )?;
-            s.int_in(&mut hyph.hyph_list[h], MIN_HALFWORD, MAX_HALFWORD)?;
+            s.int_in(&mut hyph.hyph_list[h].0, MIN_HALFWORD, MAX_HALFWORD)?;
         }
 
         hyph.hyph_next = (j + 1).max(HYPH_PRIME);
@@ -848,7 +848,7 @@ fn hyphenation_tables<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(
             if hyph.hyph_word[h] != StrNumber::NONE {
                 s.int(&mut (k + 65_536 * i32::from(hyph.hyph_link[h])))?;
                 s.int(&mut hyph.hyph_word[h].0)?;
-                s.int(&mut hyph.hyph_list[h])?;
+                s.int(&mut hyph.hyph_list[h].0)?;
             }
         }
 
@@ -913,7 +913,7 @@ fn hyphenation_tables<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(
             s.int_in(&mut used, 1, j)?;
             hyph.trie_used[k as usize] = used as u16;
             j -= used;
-            hyph.op_start[k as usize] = j;
+            hyph.op_start[k as usize] = j as usize;
         }
         hyph.trie_not_ready = false;
     } else {

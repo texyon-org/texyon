@@ -91,7 +91,7 @@ pub(super) fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), Abo
                 Ok(AnyNode::Whatsit(w)) => {
                     let subtype = w.whatsit_subtype(&st.mem);
                     if subtype.is_some_and(|sub| sub.is_native_word()) {
-                        let len = i32::from(w.native_length(&st.mem));
+                        let len = usize::from(w.native_length(&st.mem));
                         let mut l = 0;
                         while l < len {
                             let c = st.mem.get_native_usv(w, l);
@@ -177,7 +177,7 @@ fn collect_native_word(
 ) -> Result<NodePtr<WhatsitNode>, Abort> {
     st.linebreak.hn = 0;
     'restart: loop {
-        let len = i32::from(ha.native_length(&st.mem));
+        let len = usize::from(ha.native_length(&st.mem));
         let mut l = 0;
         while l < len {
             let c = st.mem.get_native_usv(ha, l);
@@ -197,7 +197,7 @@ fn collect_native_word(
                 return Ok(ha);
             } else {
                 st.linebreak.hn += 1;
-                let hn = st.linebreak.hn as usize;
+                let hn = usize::from(st.linebreak.hn);
                 if c < 65_536 {
                     st.hyph.hu[hn] = c;
                     st.hyph.hc[hn] = hc0;
@@ -235,8 +235,9 @@ fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
             }
             st.linebreak.hb = s;
             st.linebreak.hn += 1;
-            st.hyph.hu[st.linebreak.hn as usize] = c;
-            st.hyph.hc[st.linebreak.hn as usize] = hc0;
+            let hn = usize::from(st.linebreak.hn);
+            st.hyph.hu[hn] = c;
+            st.hyph.hc[hn] = hc0;
             st.hyph.hyf_bchar = TOO_BIG_CHAR;
         } else {
             match st.mem.classify(MemIdx::new(s)) {
@@ -258,8 +259,8 @@ fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
                             return s;
                         }
                         j += 1;
-                        st.hyph.hu[j as usize] = c;
-                        st.hyph.hc[j as usize] = hc0;
+                        st.hyph.hu[usize::from(j)] = c;
+                        st.hyph.hc[usize::from(j)] = hc0;
                         q = q.link(&st.mem);
                     }
                     st.linebreak.hb = s;
