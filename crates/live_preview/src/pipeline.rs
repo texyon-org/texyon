@@ -325,6 +325,11 @@ mod tests {
             if path.extension().and_then(|extension| extension.to_str()) != Some("xdv") {
                 continue;
             }
+            // Metric-only test TFMs have no glyph outlines to draw.
+            let source = std::fs::read_to_string(path.with_extension("tex")).unwrap();
+            if source.contains("mcta") || source.contains("mctb") {
+                continue;
+            }
             let mut renderer = tectonic_preview_render::HotRenderer::new(provider.clone());
             let analysis = renderer
                 .analyze(std::sync::Arc::from(std::fs::read(&path).unwrap()))
