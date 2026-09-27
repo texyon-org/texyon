@@ -1,59 +1,39 @@
-//! pgfmath's expression grammar, evaluated in `f64`.
-//!
-//! The parser follows pgf's operator precedences and stack discipline so
-//! expressions mean what they mean to pgf, and results keep pgf's textual
-//! formats. The arithmetic itself is plain floating point, as in pgf's
-//! luamath library, so results can differ from pgf's fixed-point macros in the
-//! last digits. Unsupported input returns `Err` and the caller falls back.
-
 type R<T> = Result<T, &'static str>;
 
 const UNITY: f64 = 65536.0;
 
-/// One token of an expanded expression.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Item {
-    /// An ASCII character, and whether its catcode is 12 (other).
     Char(u8, bool),
     Dimen(i32),
     Count(i32),
 }
 
-/// Font dimensions for `em` and `ex`, in sp.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Font {
     pub quad: i32,
     pub x_height: i32,
 }
 
-/// How `\pgfmathresult` is written.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Format {
-    /// pgf's fixed point, like `2.5`.
     Fixed,
-    /// The FPU's `1Y2.5e0]`.
     Float,
 }
 
-/// What the evaluator needs from the engine beyond the expression.
 pub(crate) struct Env<'a> {
     pub font: Font,
     pub radians: bool,
     pub format: Format,
-    /// The value text of a pseudo-constant function such as pgfplots' `x`.
     pub constant: &'a dyn Fn(&[u8]) -> Option<Vec<u8>>,
 }
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct Outcome {
     pub result: Vec<u8>,
-    /// Whether pgf would set `\ifpgfmathunitsdeclared`.
     pub units: bool,
 }
 
-// ---- number formats ------------------------------------------------------
-
-/// TeX's `print_scaled`.
 pub(crate) fn print_scaled(mut s: i32) -> Vec<u8> {
     let mut out = Vec::with_capacity(12);
     if s < 0 {
@@ -78,7 +58,6 @@ pub(crate) fn print_scaled(mut s: i32) -> Vec<u8> {
     out
 }
 
-/// pgf's fixed-point text for `v`, as `\pgfmath@returnone` would print it.
 pub(crate) fn fixed(v: f64) -> R<Vec<u8>> {
     let sp = (v * UNITY).round();
     if !sp.is_finite() || sp.abs() >= 1_073_741_824.0 {
@@ -87,7 +66,6 @@ pub(crate) fn fixed(v: f64) -> R<Vec<u8>> {
     Ok(print_scaled(sp as i32))
 }
 
-/// The FPU's `<flags>Y<mantissa>e<exponent>]`, as luamath's `toTeXstring`.
 pub(crate) fn float(v: f64) -> Vec<u8> {
     if v.is_nan() {
         return b"3Y0.0e0]".to_vec();
@@ -113,8 +91,6 @@ pub(crate) fn float(v: f64) -> Vec<u8> {
     format!("{}Y{mantissa}e{exponent}]", if v > 0.0 { 1 } else { 2 }).into_bytes()
 }
 
-/// A number as it can appear in `\pgfmathresult`: fixed point, integer,
-/// scientific, or the FPU's float format.
 pub(crate) fn parse_number(text: &[u8]) -> Option<f64> {
     if text.len() > 2 && text[1] == b'Y' && text.last() == Some(&b']') {
         let body = std::str::from_utf8(&text[2..text.len() - 1]).ok()?;
@@ -151,17 +127,10 @@ pub(crate) fn parse_number(text: &[u8]) -> Option<f64> {
     Some(if negative { -v } else { v })
 }
 
-// ---- the parser ----------------------------------------------------------
-
-/// A value on pgf's operand stack. `text` is the exact text pgf would hold
-/// when it is not simply the fixed-point form of `v`.
+/// `text` is what pgf would hold when that is not the fixed-point form of `v`.
 #[derive(Clone, Debug)]
 enum Value {
-    Num {
-        v: f64,
-        text: Option<Vec<u8>>,
-    },
-    /// `{a}{b}` from `,` or `:`.
+    Num { v: f64, text: Option<Vec<u8>> },
     List(Vec<Value>),
 }
 
@@ -184,7 +153,6 @@ impl Value {
         }
     }
 
-    /// The numbers of a list of `n` items, or of any length for `n == 0`.
     fn list(&self, n: usize) -> R<Vec<f64>> {
         match self {
             Value::List(items) if n == 0 || items.len() == n => {
@@ -346,7 +314,6 @@ struct Parser<'a> {
     env: &'a Env<'a>,
     operands: Vec<Value>,
     operations: Vec<Op>,
-    /// The latest `\pgfmathresult`.
     last: Option<Value>,
     units: bool,
 }
@@ -364,7 +331,6 @@ const UNITS: [(&[u8; 2], f64); 9] = [
 ];
 
 impl Parser<'_> {
-    /// The item at `i`, with pgf's `@` end markers past the end.
     fn at(&self, i: usize) -> Item {
         self.items
             .get(i)
@@ -575,7 +541,6 @@ impl Parser<'_> {
         })
     }
 
-    /// Apply an operation popped from pgf's operation stack.
     fn apply(&mut self, op: Op) -> R<()> {
         let a = self.pop()?;
         let value = match op {
@@ -634,7 +599,6 @@ impl Parser<'_> {
         Ok(())
     }
 
-    /// `\pgfmath@operation@process`.
     fn process(&mut self, incoming: Incoming) -> R<()> {
         while let Some(&top) = self.operations.last() {
             if incoming.precedence() > top.precedence() {
@@ -652,8 +616,6 @@ impl Parser<'_> {
         Ok(())
     }
 
-    /// A function or constant name at `i`. Returns where parsing resumes and
-    /// whether an operand follows.
     fn function(&mut self, mut i: usize) -> R<(usize, bool)> {
         let mut name = Vec::new();
         while let Item::Char(c, _) = self.at(i) {
@@ -680,7 +642,6 @@ impl Parser<'_> {
         Ok((i, true))
     }
 
-    /// Parses an operand from `i` and returns where the operator starts.
     fn operand(&mut self, mut i: usize) -> R<usize> {
         loop {
             match self.at(i) {
@@ -711,7 +672,6 @@ impl Parser<'_> {
         }
     }
 
-    /// Digits of `radix` at `i`, with the index after them.
     fn digits(&self, mut i: usize, radix: u32) -> (Vec<u8>, usize) {
         let mut out = Vec::new();
         while let Some(c) = self.char_at(i) {
@@ -724,7 +684,6 @@ impl Parser<'_> {
         (out, i)
     }
 
-    /// `\pgfmath@parse@@number` from `i`. Returns where the operator starts.
     fn number(&mut self, mut i: usize) -> R<usize> {
         let mut number: Vec<u8> = Vec::new();
         loop {
@@ -805,7 +764,6 @@ impl Parser<'_> {
         }
     }
 
-    /// The exponent of `<mantissa>e<exponent>`, from just after the `e`.
     fn exponent(&mut self, mantissa: &[u8], mut i: usize) -> R<usize> {
         let mut negative = false;
         while let Some(s @ (b'+' | b'-')) = self.char_at(i) {
@@ -822,7 +780,6 @@ impl Parser<'_> {
         Ok(end)
     }
 
-    /// An FPU float literal `<flags>Y<mantissa>e<exponent>]` after its `Y`.
     fn float_literal(&mut self, flags: u8, mut i: usize) -> R<usize> {
         let mut text = vec![flags, b'Y'];
         loop {
@@ -905,8 +862,6 @@ impl Parser<'_> {
     }
 }
 
-/// Evaluate an expression the way `\pgfmathparse@@` would. Items carry
-/// whether a space preceded them, which only matters inside function names.
 pub(crate) fn evaluate(items: &[(Item, bool)], env: &Env<'_>) -> R<Outcome> {
     Parser {
         items,

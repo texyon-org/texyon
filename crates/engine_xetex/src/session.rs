@@ -221,8 +221,7 @@ pub struct EnginePreviewConfig {
     pub deterministic: bool,
     /// Enable expensive named rewind verification.
     pub verify_rewinds: bool,
-    /// Evaluate pgfmath natively in floating point. Output may differ from
-    /// pgf's fixed-point macros in the last digits, as with luamath.
+    /// Native f64 pgfmath, which may differ from pgf's macros in the last digits.
     pub native_pgfmath: bool,
     /// Soft and hard checkpoint memory limits.
     pub ladder_target_bytes: usize,

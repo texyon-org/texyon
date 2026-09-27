@@ -23,7 +23,7 @@ pub(crate) struct EngineState {
     pub texmf: TexmfState,
     pub synctex: SynctexCtxt,
     pub mainloop: MainLoopState,
-    /// Not engine state: which control sequences pgfmath hooks, see `pgfmath`.
+    /// Not checkpointed.
     pub pgfmath: crate::pgfmath::Kinds,
 }
 
@@ -995,7 +995,6 @@ pub(crate) struct ConfigState {
     /// such as guarded picture probes.
     pub execution_mode: EngineExecutionMode,
     pub max_print_line: i32,
-    /// Answer pgfmath natively in floating point (see `pgfmath`).
     pub native_pgfmath: bool,
 }
 

@@ -1,19 +1,6 @@
-//! Native evaluation of pgf's `\pgfmathparse`, in floating point.
-//!
-//! `\pgfmathparse` opens a group, expands its argument into
-//! `\pgfmath@expression` and hands it to `\pgfmathparse@trynumber@loop`. On
-//! that first call we evaluate the expression here, define `\pgfmathresult`
-//! and redirect the call to `\pgfmath@parse@end`, which takes the same
-//! argument and does pgf's own post-processing and group exit. With the FPU
-//! installed the same path runs with float-format results, and the FPU's
-//! most used entry points are answered once `macro_call` has read their
-//! arguments.
-//!
-//! Results are computed in `f64`, like pgf's luamath library, so they may
-//! differ from pgf's fixed-point macros in the last digits. Expressions using
-//! anything [`eval`] does not implement fall back to the macros.
-//!
-//! `TECTONIC_PGFMATH=native|check|off` overrides the engine config.
+//! Native `\pgfmathparse` in `f64`. The first call of `\pgfmathparse@trynumber@loop`
+//! defines `\pgfmathresult` and is redirected to `\pgfmath@parse@end`, which takes
+//! the same argument. Results may differ from pgf's macros in the last digits.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -45,25 +32,20 @@ enum Mode {
 const KIND_UNKNOWN: u8 = 0;
 const KIND_NONE: u8 = 1;
 const KIND_TRY: u8 = 2;
-/// Plus the index into [`NATIVES`].
 const KIND_NATIVE: u8 = 3;
 
-/// What each control sequence is to us, by `eqtb` slot, so the check in
-/// `macro_call` is one array read. Cleared on rewind, since a rewound slot
-/// may later carry another name.
+/// Cleared on rewind, since a rewound slot may later carry another name.
 #[derive(Default)]
 pub(crate) struct Kinds {
     table: Vec<u8>,
 }
 
 impl Kinds {
-    /// Whether a call of `cs` needs [`intercept`].
     #[inline(always)]
     pub(crate) fn wanted(&self, cs: i32) -> bool {
         self.table.get(cs as usize) != Some(&KIND_NONE)
     }
 
-    /// Whether a call of `cs` may be answered by [`native_macro`].
     #[inline(always)]
     pub(crate) fn native(&self, cs: i32) -> bool {
         self.table
@@ -76,7 +58,7 @@ impl Kinds {
     }
 }
 
-/// Tracing parameters whose output the macro path would produce.
+/// The macro path would print trace output for these.
 const TRACING: &[IntPar] = &[
     IntPar::TracingMacros,
     IntPar::TracingCommands,
@@ -87,7 +69,6 @@ const TRACING: &[IntPar] = &[
     IntPar::TracingOnline,
 ];
 
-/// Control sequences the evaluator reads or writes, by `eqtb` slot.
 struct Names {
     parse_end: i32,
     is_number: i32,
@@ -103,9 +84,8 @@ struct Names {
     quickparse: i32,
     postparse: i32,
     trig_format: i32,
-    /// `\f@encoding`, `\f@family`, `\f@series`, `\f@shape`, `\f@size`.
     nfss: [i32; 5],
-    /// Defined by the FPU library, which loads later than pgfmath.
+    /// The FPU library loads later than pgfmath.
     comparison: Option<i32>,
     fpu_push_operand: Option<i32>,
     fpu_is_number: Option<i32>,
@@ -142,7 +122,6 @@ fn resolve(st: &mut EngineState) -> Option<Names> {
 }
 
 impl Names {
-    /// Look up the FPU's names once it has defined them.
     fn find_fpu(&mut self, st: &mut EngineState) {
         if self.comparison.is_none() {
             self.comparison = lookup(st, "ifpgfmathfloatcomparison");
@@ -168,11 +147,8 @@ struct Stats {
     worst: f64,
 }
 
-/// What a native evaluation defines `\pgfmathresult` to.
 enum Answer {
-    /// `\let\pgfmathresult=\pgfmath@expression`, pgf's plain-number lane.
     Expression,
-    /// Fresh text: a computed result, or a float-format plain number.
     Parsed(eval::Outcome),
 }
 
@@ -182,12 +158,9 @@ struct Pending {
 }
 
 struct Pgfmath {
-    /// Forced by `TECTONIC_PGFMATH`, else taken from the engine config.
     mode: Option<Mode>,
-    /// Resolved names, dropped on rewind.
     names: Option<Names>,
     stats: Stats,
-    /// Check mode: the native answer waiting for the macro run to finish.
     pending: Option<Pending>,
 }
 
@@ -213,7 +186,6 @@ fn mode_for(state: &Pgfmath, st: &EngineState) -> Mode {
     })
 }
 
-/// Forget classifications and resolved names, e.g. after a rewind.
 pub(crate) fn invalidate(st: &mut EngineState) {
     st.pgfmath.clear();
     STATE.with(|cell| {
@@ -224,7 +196,6 @@ pub(crate) fn invalidate(st: &mut EngineState) {
     });
 }
 
-/// Whether `cs` is named `name`, without allocating.
 fn named(st: &EngineState, cs: i32, name: &str) -> bool {
     if cs < HASH_BASE {
         return false;
@@ -253,9 +224,7 @@ fn classify(st: &EngineState, cs: i32) -> u8 {
         .map_or(KIND_NONE, |i| KIND_NATIVE + i as u8)
 }
 
-/// Called at the top of `macro_call` when [`Kinds::wanted`] says so.
-/// Returns the control sequence to expand instead, when the call starts a
-/// `\pgfmathparse` we answered natively.
+/// Returns the control sequence `macro_call` should expand instead.
 #[cold]
 #[inline(never)]
 pub(crate) fn intercept(st: &mut EngineState) -> Option<i32> {
@@ -273,7 +242,7 @@ pub(crate) fn intercept(st: &mut EngineState) -> Option<i32> {
             if slot >= st.pgfmath.table.len() {
                 st.pgfmath.table.resize(slot + 1, KIND_UNKNOWN);
             }
-            // Check mode watches every call for pgf's own exit, so keeps asking.
+            // Check mode watches every call for pgf's own exit.
             if mode != Mode::Check || kind != KIND_NONE {
                 st.pgfmath.table[slot] = if mode == Mode::Off { KIND_NONE } else { kind };
             }
@@ -452,7 +421,6 @@ fn cs_name(st: &EngineState, cs: i32) -> Option<String> {
     crate::introspect::read_string(st, text)
 }
 
-/// The tokens of a parameterless macro's body.
 fn macro_tokens(st: &EngineState, cs: i32) -> Option<Vec<Token>> {
     if st.eqtb.eq_type(cs) != CALL {
         return None;
@@ -470,7 +438,6 @@ fn macro_tokens(st: &EngineState, cs: i32) -> Option<Vec<Token>> {
     Some(out)
 }
 
-/// A parameterless macro's body, if it is plain ASCII characters.
 fn macro_text(st: &EngineState, cs: i32) -> Option<Vec<u8>> {
     macro_tokens(st, cs)?
         .into_iter()
@@ -482,7 +449,6 @@ fn same_meaning(st: &EngineState, a: i32, b: i32) -> bool {
     st.eqtb.eq_type(a) == st.eqtb.eq_type(b) && st.eqtb.equiv(a) == st.eqtb.equiv(b)
 }
 
-/// Names that could be pgfmath functions or constants.
 fn identifiers(items: &[(Item, bool)]) -> Vec<Vec<u8>> {
     let mut out = Vec::new();
     let mut current: Vec<u8> = Vec::new();
@@ -507,9 +473,6 @@ fn identifiers(items: &[(Item, bool)]) -> Vec<Vec<u8>> {
     out
 }
 
-/// The value of a zero-argument function whose body is
-/// `\let\pgfmathresult=\macro` or `\edef\pgfmathresult{\macro}`, as pgfplots
-/// declares `x` and `y`.
 fn pseudo_constant(st: &mut EngineState, names: &Names, name: &[u8]) -> Option<Vec<u8>> {
     let name = std::str::from_utf8(name).ok()?;
     let arity = lookup(st, &format!("pgfmath@operation@{name}@arity"))?;
@@ -538,7 +501,6 @@ fn pseudo_constant(st: &mut EngineState, names: &Names, name: &[u8]) -> Option<V
     expanded_text(st, target)
 }
 
-/// A parameterless macro's text, following bodies that are a single macro.
 fn expanded_text(st: &EngineState, mut cs: i32) -> Option<Vec<u8>> {
     for _ in 0..8 {
         let tokens = macro_tokens(st, cs)?;
@@ -550,12 +512,10 @@ fn expanded_text(st: &EngineState, mut cs: i32) -> Option<Vec<u8>> {
     None
 }
 
-/// The body of `\pgfmath@expression`.
 fn expression_tokens(st: &EngineState, expression: i32) -> Result<Vec<Token>, &'static str> {
     macro_tokens(st, expression).ok_or("expression is not a plain macro")
 }
 
-/// Whether pgf's `\pgfmathparse@trynumber@loop` takes its fast lane.
 fn is_number(tokens: &[Token]) -> bool {
     tokens.iter().all(|t| {
         !t.is_cs()
@@ -565,10 +525,9 @@ fn is_number(tokens: &[Token]) -> bool {
     })
 }
 
-/// The expression as evaluator items, each with whether a space preceded it.
 fn expression_items(st: &EngineState, tokens: &[Token]) -> Result<Vec<(Item, bool)>, &'static str> {
     let mut body = tokens;
-    // \pgfmath@bgroup@strip: a lone outer group loses its braces.
+    // pgf strips a lone outer brace group.
     while body
         .first()
         .is_some_and(|t| !t.is_cs() && t.cmd() == LEFT_BRACE)
@@ -637,8 +596,7 @@ fn register_item(st: &EngineState, cs: i32) -> Result<Item, &'static str> {
     }
 }
 
-/// The font `\pgfmath@selectfont` (LaTeX's `\selectfont`) picks, if it is
-/// already loaded. If not, the macros would load it, so we fall back.
+/// `None` when `\selectfont` would load the font, which only the macros can do.
 fn selected_font(st: &mut EngineState, names: &Names) -> Option<eval::Font> {
     let mut name = String::new();
     for (i, &cs) in names.nfss.iter().enumerate() {
@@ -658,8 +616,7 @@ fn selected_font(st: &mut EngineState, names: &Names) -> Option<eval::Font> {
     })
 }
 
-/// A fresh parameterless macro body. Letters get catcode 11 like the `Y`
-/// and `e` of `\pgfmathfloatcreate`, everything else catcode 12.
+/// Letters get catcode 11 like the `Y` and `e` of `\pgfmathfloatcreate`.
 fn result_macro(st: &mut EngineState, text: &[u8]) -> Result<MemPtr, Abort> {
     let head = st.mem.get_avail()?;
     head.set_info(&mut st.mem, TEX_NULL);
@@ -676,7 +633,6 @@ fn result_macro(st: &mut EngineState, text: &[u8]) -> Result<MemPtr, Abort> {
     Ok(head)
 }
 
-/// Make the definitions the macro run would have left behind.
 fn commit(st: &mut EngineState, names: &Names, answer: &Answer) -> Result<(), Abort> {
     let body = match answer {
         Answer::Expression => {
@@ -703,7 +659,6 @@ fn commit(st: &mut EngineState, names: &Names, answer: &Answer) -> Result<(), Ab
     )
 }
 
-/// Check mode: compare the macro run's `\pgfmathresult` with ours.
 fn compare(st: &EngineState, names: &Names, stats: &mut Stats, pending: &Pending, number: bool) {
     stats.checked += 1;
     let (ours, units) = match &pending.answer {
@@ -774,9 +729,6 @@ fn trace(st: &EngineState, tokens: &[Token], reason: &str) {
     }
 }
 
-// ---- FPU and pgfplots macros ---------------------------------------------
-
-/// A macro answered natively once `macro_call` has read its arguments.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Native {
     ParseNumber,
@@ -802,15 +754,11 @@ const NATIVES: &[(&str, Native)] = &[
     ("pgfmathfloatgetflagstomacro", Native::Flags),
 ];
 
-/// What a native macro leaves behind.
 enum Effect {
-    /// A parameterless macro, `\def` or `\gdef`.
     Define { cs: i32, text: Vec<u8> },
-    /// `\global\pgfmathfloatcomparisontrue` or `false`.
     Comparison(bool),
 }
 
-/// The tokens of a macro argument list.
 fn list_tokens(st: &EngineState, mut p: MemPtr) -> Vec<Token> {
     let mut out = Vec::new();
     while !p.is_null() {
@@ -820,7 +768,6 @@ fn list_tokens(st: &EngineState, mut p: MemPtr) -> Vec<Token> {
     out
 }
 
-/// A parameterless, unprotected macro's body.
 fn simple_body(st: &EngineState, cs: i32) -> Option<Vec<Token>> {
     if cs < HASH_BASE
         || !matches!(
@@ -847,7 +794,6 @@ fn chars(tokens: &[Token]) -> Option<Vec<u8>> {
         .collect()
 }
 
-/// `\edef` of `tokens` when it only expands parameterless macros.
 fn expand_full(st: &EngineState, tokens: &[Token], depth: u32) -> Option<Vec<u8>> {
     if depth > 16 {
         return None;
@@ -863,7 +809,6 @@ fn expand_full(st: &EngineState, tokens: &[Token], depth: u32) -> Option<Vec<u8>
     Some(out)
 }
 
-/// `\expandafter` once over the first token, then plain characters.
 fn expand_once(st: &EngineState, tokens: &[Token]) -> Option<Vec<u8>> {
     match tokens.split_first() {
         Some((first, rest)) if first.is_cs() => {
@@ -875,7 +820,6 @@ fn expand_once(st: &EngineState, tokens: &[Token]) -> Option<Vec<u8>> {
     }
 }
 
-/// `<flags>Y<mantissa>e<exponent>]` split into its parts.
 fn split_float(text: &[u8]) -> Option<(u8, &[u8], i32)> {
     if text.len() < 5 || text[1] != b'Y' || *text.last()? != b']' || !text[0].is_ascii_digit() {
         return None;
@@ -886,7 +830,6 @@ fn split_float(text: &[u8]) -> Option<(u8, &[u8], i32)> {
     Some((text[0], &body[..e], exponent))
 }
 
-/// `\pgfmathfloattofixed`, which shifts the mantissa's digits as text.
 fn to_fixed(float: &[u8]) -> Option<Vec<u8>> {
     let (flags, mantissa, e) = split_float(float)?;
     let magnitude = |mantissa: &[u8]| -> Option<Vec<u8>> {
@@ -946,7 +889,6 @@ fn to_fixed(float: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
-/// A number as `\pgfmathfloatparsenumber` accepts it.
 fn parse_float_input(text: &[u8]) -> Option<f64> {
     match text.to_ascii_lowercase().as_slice() {
         b"nan" | b"-nan" => Some(f64::NAN),
@@ -1025,9 +967,7 @@ fn run_native(
     })
 }
 
-/// Called by `macro_call` once it has read the arguments of a macro that
-/// [`Kinds::native`] marks. Returns true when the call was answered natively,
-/// in which case the caller frees the arguments and skips the body.
+/// True when answered, then `macro_call` frees the arguments and skips the body.
 #[cold]
 #[inline(never)]
 pub(crate) fn native_macro(st: &mut EngineState, args: &[MemPtr]) -> bool {
@@ -1094,7 +1034,6 @@ pub(crate) fn native_macro(st: &mut EngineState, args: &[MemPtr]) -> bool {
     })
 }
 
-/// Print native/fallback counts to stderr when enabled.
 pub(crate) fn report() {
     STATE.with(|cell| {
         let state = cell.borrow();
