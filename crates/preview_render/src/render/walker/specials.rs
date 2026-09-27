@@ -321,6 +321,7 @@ fn parse_color_spec(spec: &str) -> Option<Color> {
         ("cmyk", &[cyan, magenta, yellow, black, ..]) => {
             Some(Color::cmyk(cyan, magenta, yellow, black))
         }
+        (_, []) => Color::dvips_named(model),
         _ => None,
     }
 }

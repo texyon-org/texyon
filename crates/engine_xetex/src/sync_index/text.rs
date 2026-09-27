@@ -8,6 +8,13 @@ pub(super) fn parse(text: &str) -> SyncIndex {
     let mut index = SyncIndex::default();
     let mut unit = 1i32;
     let mut page_index = None;
+    let mut open = Vec::new();
+    let flush = |index: &mut SyncIndex, open: &mut Vec<Record>| {
+        if let Some(record) = open.first() {
+            let page_index = record.page_index;
+            index.push_page(page_index, Arc::from(std::mem::take(open)));
+        }
+    };
     for line in text.lines() {
         if let Some(input) = line.strip_prefix("Input:") {
             if let Some((tag, name)) = input.split_once(':') {
@@ -28,23 +35,28 @@ pub(super) fn parse(text: &str) -> SyncIndex {
         let rest = chars.as_str();
         match prefix {
             '{' => {
+                flush(&mut index, &mut open);
                 page_index = rest
                     .parse::<usize>()
                     .ok()
                     .and_then(|page| page.checked_sub(1))
             }
-            '}' => page_index = None,
+            '}' => {
+                flush(&mut index, &mut open);
+                page_index = None;
+            }
             _ => {
                 let (Some(page_index), Some(kind)) = (page_index, RecordKind::from_prefix(prefix))
                 else {
                     continue;
                 };
                 if let Some(record) = parse_record(page_index, kind, rest, unit) {
-                    index.records.push(record);
+                    open.push(record);
                 }
             }
         }
     }
+    flush(&mut index, &mut open);
     index
 }
 

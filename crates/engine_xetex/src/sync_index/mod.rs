@@ -171,7 +171,8 @@ impl Record {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct SyncIndex {
     names: BTreeMap<i32, Arc<str>>,
-    records: Vec<Record>,
+    /// Records by page, shared with checkpoints and earlier snapshots.
+    pages: Vec<Arc<[Record]>>,
 }
 
 impl SyncIndex {
@@ -182,11 +183,7 @@ impl SyncIndex {
 
     /// Source names referenced by indexed records.
     pub fn sources(&self) -> impl Iterator<Item = &str> {
-        let mut tags = self
-            .records
-            .iter()
-            .map(|record| record.tag)
-            .collect::<Vec<_>>();
+        let mut tags = self.records().map(|record| record.tag).collect::<Vec<_>>();
         tags.sort_unstable();
         tags.dedup();
         tags.into_iter()
@@ -203,13 +200,9 @@ impl SyncIndex {
             .collect::<HashMap<_, _>>();
         let mut next_tag = self.names.keys().next_back().map_or(1, |tag| tag + 1);
         let mut renamed = HashMap::new();
-        for record in previous
-            .records
-            .iter()
-            .filter(|record| record.page_index >= first_stale_page)
-        {
-            let tag = *renamed.entry(record.tag).or_insert_with(|| {
-                let Some(name) = previous.names.get(&record.tag) else {
+        let mut rename = |tag: i32| {
+            *renamed.entry(tag).or_insert_with(|| {
+                let Some(name) = previous.names.get(&tag) else {
                     return 0;
                 };
                 *by_path.entry(Arc::clone(name)).or_insert_with(|| {
@@ -218,10 +211,52 @@ impl SyncIndex {
                     self.names.insert(tag, Arc::clone(name));
                     tag
                 })
-            });
-            self.records.push(Record { tag, ..*record });
+            })
+        };
+        let tail = previous
+            .pages
+            .iter()
+            .enumerate()
+            .skip(first_stale_page)
+            .filter(|(_, records)| !records.is_empty())
+            .map(|(page_index, records)| {
+                let records = if records
+                    .iter()
+                    .all(|record| rename(record.tag) == record.tag)
+                {
+                    Arc::clone(records)
+                } else {
+                    records
+                        .iter()
+                        .map(|record| Record {
+                            tag: rename(record.tag),
+                            ..*record
+                        })
+                        .collect()
+                };
+                (page_index, records)
+            })
+            .collect::<Vec<_>>();
+        for (page_index, records) in tail {
+            self.push_page(page_index, records);
         }
         self
+    }
+
+    fn push_page(&mut self, page_index: usize, records: Arc<[Record]>) {
+        if self.pages.len() <= page_index {
+            self.pages.resize_with(page_index + 1, || Arc::from([]));
+        }
+        let page = &mut self.pages[page_index];
+        *page = if page.is_empty() {
+            records
+        } else {
+            page.iter().chain(records.iter()).copied().collect()
+        };
+    }
+
+    fn records(&self) -> impl Iterator<Item = &Record> {
+        self.pages.iter().flat_map(|records| records.iter())
     }
 
     /// The boxes showing a source line, best first, like `synctex view`.
@@ -311,9 +346,10 @@ impl SyncIndex {
     }
 
     fn page_records(&self, page_index: usize) -> impl Iterator<Item = &Record> {
-        self.records
-            .iter()
-            .filter(move |record| record.page_index == page_index)
+        self.pages
+            .get(page_index)
+            .into_iter()
+            .flat_map(|records| records.iter())
     }
 
     fn page(&self, page_index: usize) -> Option<Page> {
@@ -355,24 +391,33 @@ fn same_tex_path(left: &str, right: &str) -> bool {
 
 #[derive(Clone, Default)]
 pub(crate) struct PreviewSyncIndex {
-    names: BTreeMap<i32, Arc<str>>,
+    index: SyncIndex,
     page_index: Option<usize>,
-    records: Vec<Record>,
+    open: Vec<Record>,
 }
 
 impl PreviewSyncIndex {
     pub(crate) fn register_name(&mut self, tag: i32, path: String) {
         if tag > 0 {
-            self.names.insert(tag, Arc::from(path));
+            self.index.names.insert(tag, Arc::from(path));
         }
     }
 
     pub(crate) fn begin_page(&mut self, page_index: usize) {
+        self.flush();
         self.page_index = Some(page_index);
     }
 
     pub(crate) fn end_page(&mut self) {
+        self.flush();
         self.page_index = None;
+    }
+
+    fn flush(&mut self) {
+        if let (Some(page_index), false) = (self.page_index, self.open.is_empty()) {
+            let records = Arc::from(std::mem::take(&mut self.open));
+            self.index.push_page(page_index, records);
+        }
     }
 
     /// Record a node as `[tag, line, h, v]` plus up to three dimensions.
@@ -382,7 +427,7 @@ impl PreviewSyncIndex {
         };
         let [tag, line, h, v] = position;
         let dim = |i: usize| dims.get(i).copied().unwrap_or(0);
-        self.records.push(Record {
+        self.open.push(Record {
             page_index,
             kind,
             tag,
@@ -397,15 +442,22 @@ impl PreviewSyncIndex {
 
     pub(crate) fn close(&mut self, kind: RecordKind) {
         if let Some(page_index) = self.page_index {
-            self.records.push(Record::empty(page_index, kind));
+            self.open.push(Record::empty(page_index, kind));
         }
     }
 
     pub(crate) fn snapshot(&self) -> SyncIndex {
-        SyncIndex {
-            names: self.names.clone(),
-            records: self.records.clone(),
+        let mut index = self.index.clone();
+        if let (Some(page_index), false) = (self.page_index, self.open.is_empty()) {
+            index.push_page(page_index, Arc::from(self.open.as_slice()));
         }
+        index
+    }
+
+    /// Bytes a clone owns alone, since finished pages are shared.
+    pub(crate) fn allocated_bytes(&self) -> usize {
+        self.index.pages.capacity() * std::mem::size_of::<Arc<[Record]>>()
+            + self.open.capacity() * std::mem::size_of::<Record>()
     }
 }
 

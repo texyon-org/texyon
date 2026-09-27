@@ -363,6 +363,19 @@ fn drawing_color_participates_in_a_stable_fingerprint() {
 }
 
 #[test]
+fn dvips_color_names_draw_like_their_cmyk_values() {
+    let mut renderer = HotRenderer::new(());
+    let named = renderer.analyze(rule_xdv("color push  Red")).unwrap();
+    let cmyk = renderer.analyze(rule_xdv("color cmyk 0 1 1 0")).unwrap();
+    assert!(named.pages()[0].unsupported.is_empty());
+    assert!(matches!(
+        named.pages()[0].fingerprint,
+        PageFingerprint::Stable(_)
+    ));
+    assert_eq!(named.pages()[0].fingerprint, cmyk.pages()[0].fingerprint);
+}
+
+#[test]
 fn pdf_code_fragments_form_a_stable_clipped_path_plan() {
     let mut renderer = HotRenderer::new(());
     let analysis = renderer
