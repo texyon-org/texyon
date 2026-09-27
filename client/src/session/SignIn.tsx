@@ -68,7 +68,7 @@ export function SignIn({ notice, onSignedIn, onSample, variant = "page" }: SignI
         ? useRecovery
           ? "Enter one of your recovery codes."
           : "Enter the code from your authenticator app."
-        : "Welcome back. Your projects are where you left them.";
+        : "Sign in to open your projects.";
 
   const form = (
     <form
@@ -139,6 +139,12 @@ export function SignIn({ notice, onSignedIn, onSample, variant = "page" }: SignI
         {mode === "register" ? "Create account" : mode === "challenge" ? "Verify" : "Sign in"}
       </button>
 
+      {onSample !== null && mode !== "challenge" && (
+        <button type="button" className="btn-secondary" onClick={onSample}>
+          Try the sample, no account needed
+        </button>
+      )}
+
       <div className="auth-links">
         {mode === "challenge" ? (
           <>
@@ -172,12 +178,6 @@ export function SignIn({ notice, onSignedIn, onSample, variant = "page" }: SignI
             {mode === "register" ? "I already have an account" : "I need an account"}
           </button>
         )}
-
-        {onSample !== null && mode !== "challenge" && (
-          <button type="button" className="btn-link quiet" onClick={onSample}>
-            Just try the sample, nothing is saved
-          </button>
-        )}
       </div>
     </form>
   );
@@ -191,37 +191,10 @@ export function SignIn({ notice, onSignedIn, onSample, variant = "page" }: SignI
       <aside className="auth-brand">
         <Wordmark size={24} />
 
-        {mode === "register" ? (
-          <div className="auth-hero">
-            <h1>Your projects, on every machine.</h1>
-            <p>
-              An account keeps every file saved as you type. Close the tab mid-sentence, the
-              sentence is on the server.
-            </p>
-          </div>
-        ) : (
-          <div className="auth-hero">
-            <h1>The preview keeps up with your keystrokes.</h1>
-            <p>
-              FlashTeX compiles as you type. TeX, page diff, and paint, in the time it takes to
-              blink, and only the pages that changed are redrawn.
-            </p>
-          </div>
-        )}
-
-        {mode === "register" ? (
-          <div className="auth-chips">
-            <span className="auth-chip ok">saved</span>
-            <span className="auth-chip">every keystroke synced</span>
-            <span className="auth-chip">nothing to install</span>
-          </div>
-        ) : (
-          <div className="auth-chips">
-            <span className="auth-chip hot">142 ms keystroke &rarr; pixels</span>
-            <span className="auth-chip">2/24 pages redrawn</span>
-            <span className="auth-chip">resumed at rung 3</span>
-          </div>
-        )}
+        <p className="auth-hero">
+          A live-preview experiment on a modified Tectonic engine. The sample runs in your
+          browser and saves nothing.
+        </p>
       </aside>
 
       <div className="auth-side">{form}</div>

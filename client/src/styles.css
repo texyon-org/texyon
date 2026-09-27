@@ -163,29 +163,7 @@ input::placeholder { color: #5c6270; }
   border-right: 1px solid var(--line);
 }
 
-.auth-hero { display: flex; flex-direction: column; gap: 18px; max-width: 540px; }
-.auth-hero h1 {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: clamp(30px, 3.4vw, 46px);
-  line-height: 1.12;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-.auth-hero p { margin: 0; color: var(--text-dim); font-size: 16px; max-width: 460px; }
-
-.auth-chips { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.auth-chip {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text-dim);
-  padding: 5px 10px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  white-space: nowrap;
-}
-.auth-chip.hot { color: var(--accent); border-color: rgba(215, 247, 79, 0.4); }
-.auth-chip.ok { color: var(--ok); border-color: #2f4a2c; }
+.auth-hero { margin: 0; max-width: 460px; color: var(--text-dim); font-size: 15px; }
 
 .auth-side {
   flex: 1;
