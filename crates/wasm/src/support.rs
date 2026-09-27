@@ -1,9 +1,4 @@
-//! The I/O environment the engine runs in when its host is a browser.
-//!
-//! Natively the preview pipeline stacks a support bundle and a format cache
-//! under each operation. Here there is neither: every support file arrives
-//! through a blocking call into JavaScript, and the only thing underneath the
-//! engine is [`HostIo`] and whatever the operation writes.
+//! The I/O stack under each engine operation: its output over [`HostIo`].
 
 use std::{cell::RefCell, rc::Rc};
 
@@ -15,17 +10,12 @@ use tectonic_live_preview::EngineSupport;
 
 use crate::io::{HostIo, HostStatus};
 
-/// A view of what the engine has written.
-///
-/// The pipeline keeps one output provider for the session and reads only the
-/// XDV from it, but a browser editor wants the whole `.log` as well. The
-/// provider's file map is reference-counted, so retaining it here costs a
-/// pointer rather than a copy of the transcript.
+/// A shared handle on the files the last operation wrote, so the session can
+/// read its `.log` without copying the map.
 #[derive(Clone, Default)]
 pub struct WrittenFiles(Rc<RefCell<Option<Rc<RefCell<MemoryFileCollection>>>>>);
 
 impl WrittenFiles {
-    /// Contents of a file the last operation wrote, if it wrote one.
     pub fn get(&self, name: &str) -> Option<Vec<u8>> {
         let outer = self.0.borrow();
         let files = outer.as_ref()?.borrow();
@@ -40,14 +30,11 @@ impl WrittenFiles {
 /// Stacks the host's support files under one engine operation.
 pub struct HostEngineSupport {
     support: HostIo,
-    /// Diagnostics the engine reported, shared with the session.
     messages: Rc<RefCell<Vec<String>>>,
-    /// Where each operation's output is published for the session to read.
     written: WrittenFiles,
 }
 
 impl HostEngineSupport {
-    /// Construct a support layer over the host's file cache.
     pub fn new(support: HostIo, messages: Rc<RefCell<Vec<String>>>, written: WrittenFiles) -> Self {
         Self {
             support,
@@ -63,9 +50,7 @@ impl EngineSupport for HostEngineSupport {
         output: &mut MemoryIo,
         operation: &mut dyn FnMut(&mut CoreBridgeLauncher<'_>) -> Result<Option<EngineFrame>>,
     ) -> Result<Option<EngineFrame>> {
-        // Published before the operation rather than after, so a run that
-        // aborts still leaves its transcript readable — which is exactly the
-        // run whose transcript someone wants.
+        // Observed up front so an aborted run still leaves its transcript readable.
         self.written.observe(&output.files);
 
         let mut status = HostStatus::new(Rc::clone(&self.messages));

@@ -1,65 +1,36 @@
-//! Tectonic's live-preview engine, compiled for the browser.
+//! Tectonic's live-preview engine as a WebAssembly module.
 //!
-//! This crate is the WebAssembly face of the resident XeTeX session: it holds
-//! one document, applies whole-buffer edits to it, and returns SVG for the
-//! pages whose appearance moved — or, on request, the whole thing as a PDF
-//! through xdvipdfmx, which is the same typesetting written out differently
-//! rather than a second compile.
-//!
-//! The point is latency. A cold LaTeX compile spends most of its time before
-//! your cursor
-//! — loading a 20 MB format dump, the document class, its packages — and
-//! [`IncrementalXeTeXSession`] makes that cost payable once, rewinding to a
-//! checkpoint just before the edit instead of starting over.
-//!
-//! [`IncrementalXeTeXSession`]: tectonic_engine_xetex::IncrementalXeTeXSession
-//!
-//! # The ABI
-//!
-//! Everything goes through one entry point, [`tectonic_request`]: a JSON
-//! request in, a JSON response out, with bulk payloads left in linear memory
-//! and reported as offset/length pairs. See [`protocol`] for the message types
-//! and `js/` for the TypeScript wrapper that is the intended way to use this.
-//!
-//! The host must supply two imports, described in [`host`]: one to read a
-//! support file by name — blocking, because TeX asks for files in the middle of
-//! typesetting — and one to receive diagnostics.
+//! Everything goes through [`tectonic_request`]: a JSON request in, a JSON
+//! response out, with bulk payloads left in linear memory. The host supplies
+//! the imports declared in `host`.
 
-// Defining the C allocation entry points is a link-time act: nothing calls into
-// this module from Rust, but every `malloc` in the engine's C resolves here.
+// Linked in for its C allocation symbols, never called from Rust.
 #[cfg(target_family = "wasm")]
 mod alloc_shim;
 
-pub mod host;
-pub mod io;
-pub mod protocol;
-pub mod resources;
-pub mod session;
-pub mod sink;
-pub mod support;
+mod host;
+mod io;
+mod protocol;
+mod resources;
+mod session;
+mod sink;
+mod support;
 
 use std::cell::RefCell;
 
+use host::HostBuffer;
 use protocol::{CompileReport, RenderedPage, Request, Response};
-use session::Session;
+use session::{CompileOutput, Session};
 
 thread_local! {
-    /// The one resident document.
-    ///
-    /// XeTeX keeps process-global state, so a module instance hosts a single
-    /// session; a second document means a second Worker.
+    // XeTeX keeps process-global state, so one module instance hosts one session.
     static SESSION: RefCell<Option<Session>> = const { RefCell::new(None) };
 }
 
-/// Handle one request from the host.
+/// Handle one JSON request from the host.
 ///
-/// `req_ptr`/`req_len` describe a UTF-8 JSON request in linear memory, which
-/// the host still owns. On return `out_ptr`/`out_len` describe a UTF-8 JSON
-/// response that the host must release with
-/// [`tectonic_wasm_free`](host::tectonic_wasm_free).
-///
-/// Returns 0 when a response was produced, and -1 when the response could not
-/// be built at all — the request was not valid UTF-8, or memory ran out.
+/// Returns 0 with the reply in `out_ptr`/`out_len`, which the host releases
+/// with `tectonic_wasm_free`, or -1 if no reply could be encoded.
 ///
 /// # Safety
 ///
@@ -72,7 +43,8 @@ pub unsafe extern "C" fn tectonic_request(
     out_ptr: *mut *mut u8,
     out_len: *mut usize,
 ) -> i32 {
-    let request = std::slice::from_raw_parts(req_ptr, req_len);
+    // SAFETY: the caller guarantees `req_ptr` points to `req_len` readable bytes.
+    let request = unsafe { std::slice::from_raw_parts(req_ptr, req_len) };
 
     let response = match std::str::from_utf8(request) {
         Ok(text) => dispatch(text),
@@ -83,15 +55,23 @@ pub unsafe extern "C" fn tectonic_request(
         return -1;
     };
 
-    // Hand the encoded reply to the host, which frees it with
-    // tectonic_wasm_free once it has copied the bytes out.
-    let len = encoded.len();
-    *out_ptr = Box::into_raw(encoded.into_boxed_slice()) as *mut u8;
-    *out_len = len;
+    let (ptr, len) = host::hand_over(encoded);
+    // SAFETY: the caller guarantees both out-parameters are writable.
+    unsafe {
+        *out_ptr = ptr;
+        *out_len = len;
+    }
     0
 }
 
-/// Route one decoded request, turning any failure into an error response.
+/// Run `operation` on the open session, or report that there is none.
+fn with_session(operation: impl FnOnce(&mut Session) -> Response) -> Response {
+    SESSION.with_borrow_mut(|slot| match slot.as_mut() {
+        Some(session) => operation(session),
+        None => Response::error("no session is open"),
+    })
+}
+
 fn dispatch(text: &str) -> Response {
     let request: Request = match serde_json::from_str(text) {
         Ok(request) => request,
@@ -112,103 +92,59 @@ fn dispatch(text: &str) -> Response {
             }
         }),
 
-        Request::Preload { name, ptr, len } => SESSION.with_borrow_mut(|slot| {
-            let Some(session) = slot.as_mut() else {
-                return Response::error("no session is open");
-            };
-            // SAFETY: the host allocated this with tectonic_wasm_alloc and, by
-            // sending the request, has given up ownership of it.
-            let bytes = unsafe { take_host_bytes(ptr, len) };
+        Request::Preload { name, ptr, len } => with_session(|session| {
+            // SAFETY: the host allocated this with tectonic_wasm_alloc and gave
+            // up ownership by sending the request.
+            let bytes = unsafe { HostBuffer { ptr, len }.adopt() };
             session.preload(&name, bytes);
             Response::Ok
         }),
 
-        Request::Compile { files, viewport } => SESSION.with_borrow_mut(|slot| {
-            let Some(session) = slot.as_mut() else {
-                return Response::error("no session is open");
-            };
-            match session.compile(files, viewport) {
+        Request::Compile { files, viewport } => {
+            with_session(|session| match session.compile(files, viewport) {
                 Ok(output) => Response::Compiled(Box::new(report(session, output))),
                 Err(error) => Response::error(error),
-            }
+            })
+        }
+
+        Request::ContinueTail => with_session(|session| match session.continue_tail() {
+            Ok(Some(output)) => Response::Compiled(Box::new(report(session, output))),
+            Ok(None) => Response::Idle,
+            Err(error) => Response::error(error),
         }),
 
-        Request::ContinueTail => SESSION.with_borrow_mut(|slot| {
-            let Some(session) = slot.as_mut() else {
-                return Response::error("no session is open");
-            };
-            match session.continue_tail() {
-                Ok(Some(output)) => Response::Compiled(Box::new(report(session, output))),
-                Ok(None) => Response::Idle,
-                Err(error) => Response::error(error),
-            }
+        Request::Export => with_session(|session| match session.export_pdf() {
+            Ok(pdf) => Response::Exported(HostBuffer::hand_over(pdf)),
+            Err(error) => Response::error(error),
         }),
 
-        Request::Export => SESSION.with_borrow_mut(|slot| {
-            let Some(session) = slot.as_mut() else {
-                return Response::error("no session is open");
-            };
-            match session.export_pdf() {
-                Ok(pdf) => {
-                    let len = pdf.len();
-                    // Hand the bytes to the host rather than serializing them.
-                    // Freed with tectonic_wasm_free once they have been copied
-                    // out, exactly like the response buffer itself.
-                    let ptr = Box::into_raw(pdf.into_boxed_slice()) as *mut u8;
-                    Response::Exported {
-                        ptr: ptr as u32,
-                        len: len as u32,
-                    }
-                }
-                Err(error) => Response::error(error),
-            }
-        }),
-
-        Request::ForwardSearch { path, line } => SESSION.with_borrow(|slot| {
-            let Some(session) = slot.as_ref() else {
-                return Response::error("no session is open");
-            };
-            Response::Located {
-                rect: session.forward_search(&path, line).map(Into::into),
-                source: None,
-            }
+        Request::ForwardSearch { path, line } => with_session(|session| Response::Located {
+            rect: session.forward_search(&path, line).map(Into::into),
+            source: None,
         }),
 
         Request::BackwardSearch {
             page_index,
             h_bp,
             v_bp,
-        } => SESSION.with_borrow(|slot| {
-            let Some(session) = slot.as_ref() else {
-                return Response::error("no session is open");
-            };
-            Response::Located {
-                rect: None,
-                source: session
-                    .backward_search(page_index, h_bp, v_bp)
-                    .map(Into::into),
-            }
+        } => with_session(|session| Response::Located {
+            rect: None,
+            source: session
+                .backward_search(page_index, h_bp, v_bp)
+                .map(Into::into),
         }),
 
-        Request::Commands => SESSION.with_borrow(|slot| {
-            let Some(session) = slot.as_ref() else {
-                return Response::error("no session is open");
-            };
-            Response::Commands {
-                commands: session
-                    .defined_commands()
-                    .into_iter()
-                    .map(Into::into)
-                    .collect(),
-            }
+        Request::Commands => with_session(|session| Response::Commands {
+            commands: session
+                .defined_commands()
+                .into_iter()
+                .map(Into::into)
+                .collect(),
         }),
 
-        Request::Cancel => SESSION.with_borrow(|slot| match slot.as_ref() {
-            Some(session) => {
-                session.cancel();
-                Response::Ok
-            }
-            None => Response::error("no session is open"),
+        Request::Cancel => with_session(|session| {
+            session.cancel();
+            Response::Ok
         }),
 
         Request::Shutdown => SESSION.with_borrow_mut(|slot| match slot.take() {
@@ -221,23 +157,8 @@ fn dispatch(text: &str) -> Response {
     }
 }
 
-/// Take ownership of bytes the host placed in linear memory.
-///
-/// # Safety
-///
-/// `ptr`/`len` must describe a buffer from
-/// [`tectonic_wasm_alloc`](host::tectonic_wasm_alloc) that the host has
-/// released.
-unsafe fn take_host_bytes(ptr: u32, len: u32) -> Vec<u8> {
-    if ptr == 0 || len == 0 {
-        return Vec::new();
-    }
-
-    std::slice::from_raw_parts(ptr as *const u8, len as usize).to_vec()
-}
-
 /// Package one compile for the host, moving the SVG into linear memory.
-fn report(session: &Session, output: session::CompileOutput) -> CompileReport {
+fn report(session: &Session, output: CompileOutput) -> CompileReport {
     let (support_files, support_bytes) = session.support_stats();
 
     CompileReport {
@@ -245,17 +166,9 @@ fn report(session: &Session, output: session::CompileOutput) -> CompileReport {
         pages: output
             .pages
             .into_iter()
-            .map(|page| {
-                // Handed over like the PDF: the host decodes the bytes out and
-                // frees them with tectonic_wasm_free.
-                let bytes = page.svg.into_bytes().into_boxed_slice();
-                let len = bytes.len();
-                let ptr = Box::into_raw(bytes) as *mut u8;
-                RenderedPage {
-                    index: page.index,
-                    ptr: ptr as u32,
-                    len: len as u32,
-                }
+            .map(|page| RenderedPage {
+                index: page.index,
+                svg: HostBuffer::hand_over(page.svg.into_bytes()),
             })
             .collect(),
         changed: output.changed,
