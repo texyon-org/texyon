@@ -453,8 +453,7 @@ struct Match {
 /// `synctex_iterator_new_display` with no page hint.
 pub(super) fn display(index: &SyncIndex, tag: i32, line: i32) -> Vec<DisplayHit> {
     let max_line = index
-        .records
-        .iter()
+        .records()
         .filter(|record| record.tag == tag && !record.kind.is_end())
         .map(|record| record.line)
         .max()
@@ -497,8 +496,7 @@ pub(super) fn display_ahead(index: &SyncIndex, tag: i32, line: i32) -> Vec<Displ
     // The window `display` searches on either side.
     const AHEAD: i32 = 50;
     let mut ahead = index
-        .records
-        .iter()
+        .records()
         .filter(|record| {
             record.tag == tag
                 && !record.kind.is_end()
@@ -530,8 +528,7 @@ fn display_line(sheets: &mut Sheets, tag: i32, line: i32) -> Vec<DisplayHit> {
     let pages = {
         let mut pages = sheets
             .index
-            .records
-            .iter()
+            .records()
             .filter(|record| record.tag == tag && record.line == line)
             .map(|record| record.page_index)
             .collect::<Vec<_>>();

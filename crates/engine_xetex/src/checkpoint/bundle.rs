@@ -10,6 +10,7 @@ use crate::state::{
     FontState, GroupCode, HyphState, InputClusterState, InputState, LinebreakState, MainLoopState,
     MemState, SaveStackState, ScannerState, ShipoutState, StringsState, SynctexCtxt, TexmfState,
 };
+use crate::sync_index::PreviewSyncIndex;
 use crate::units::{FontId, MemPtr, Scaled, StrNumber};
 
 fn vec_bytes<T>(values: &Vec<T>) -> usize {
@@ -145,6 +146,11 @@ impl EngineBundle {
                 .sum::<usize>()
             + vec_bytes(&self.native_text)
             + vec_bytes(&self.hlist_stack)
+            + self
+                .synctex
+                .preview_index
+                .as_ref()
+                .map_or(0, PreviewSyncIndex::allocated_bytes)
             + self.mem.allocated_bytes()
             + self.strings.allocated_bytes()
             + self.save.allocated_bytes()
