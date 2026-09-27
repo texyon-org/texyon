@@ -4,7 +4,7 @@ use crate::backend::Matrix;
 use crate::color::Color;
 use crate::links::{parse_destination_name, Destination};
 use crate::resource::ResourceProvider;
-use crate::units::{normalize_zero, SP_TO_BP};
+use crate::units::{normalize_zero, sp_to_bp};
 use crate::RenderError;
 
 use super::super::ImageKind;
@@ -170,8 +170,8 @@ impl<P: ResourceProvider> Walker<'_, P> {
             if let Some(name) = parse_destination_name(args) {
                 self.page_mut()?.destinations.push(Destination {
                     name,
-                    x_bp: x as f32 * SP_TO_BP,
-                    y_bp: y as f32 * SP_TO_BP,
+                    x_bp: sp_to_bp(x),
+                    y_bp: sp_to_bp(y),
                 });
                 self.state.ledger.record_supported("pdf-destination");
             } else {

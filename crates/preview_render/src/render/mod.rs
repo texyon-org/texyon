@@ -16,7 +16,7 @@ use crate::backend::{Backend, FontId, FontStyle};
 use crate::fingerprint::page_digest;
 use crate::pagesize::preamble_magnification;
 use crate::resource::{Resource, ResourceIdentity, ResourceProvider};
-use crate::units::{fixed_16_16, SP_TO_BP};
+use crate::units::{fixed_16_16, sp_to_bp, SP_TO_BP};
 use crate::{Destination, Link, RenderError};
 
 pub(crate) use plan::{DrawOperation, ImageKind, PagePlan};
@@ -348,12 +348,7 @@ fn draw<B: Backend>(
             width,
             transform,
             color,
-        } => backend.fill_rule(
-            *width as f32 * SP_TO_BP,
-            *height as f32 * SP_TO_BP,
-            *transform,
-            *color,
-        ),
+        } => backend.fill_rule(sp_to_bp(*width), sp_to_bp(*height), *transform, *color),
         DrawOperation::NativeGlyphs {
             identity,
             face_index,
@@ -378,7 +373,7 @@ fn draw<B: Backend>(
                 embolden: fixed_16_16(*embolden),
                 vertical: *vertical,
             };
-            backend.fill_glyphs(font, *size as f32 * SP_TO_BP, glyphs, *color, style)
+            backend.fill_glyphs(font, sp_to_bp(*size), glyphs, *color, style)
         }
         DrawOperation::Image {
             identity,

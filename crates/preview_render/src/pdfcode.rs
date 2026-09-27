@@ -1,6 +1,6 @@
 //! Persistent interpreter for `pdf:code` content-stream fragments.
 
-use crate::units::SP_TO_BP;
+use crate::units::sp_to_bp;
 use crate::{Color, Matrix, Path, PathCommand, StrokeStyle};
 
 const ONE_INCH_BP: f32 = 72.0;
@@ -104,8 +104,8 @@ impl PdfGraphics {
     /// Pen position relative to the last transform origin, in PDF user space.
     fn user_offset(&self, pen_x: i32, pen_y: i32) -> (f32, f32) {
         (
-            pen_x.wrapping_sub(self.gh) as f32 * SP_TO_BP,
-            -(pen_y.wrapping_sub(self.gv) as f32 * SP_TO_BP),
+            sp_to_bp(pen_x.wrapping_sub(self.gh)),
+            -sp_to_bp(pen_y.wrapping_sub(self.gv)),
         )
     }
 

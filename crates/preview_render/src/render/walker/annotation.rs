@@ -2,7 +2,7 @@
 
 use crate::links::{parse_link_action, Link, LinkAction, RectBp};
 use crate::resource::ResourceProvider;
-use crate::units::SP_TO_BP;
+use crate::units::sp_to_bp;
 
 use super::Walker;
 
@@ -119,10 +119,10 @@ impl<P: ResourceProvider> Walker<'_, P> {
             }
             page.links.push(Link {
                 rect: RectBp {
-                    left: rect.left as f32 * SP_TO_BP,
-                    top: rect.top as f32 * SP_TO_BP,
-                    right: rect.right as f32 * SP_TO_BP,
-                    bottom: rect.bottom as f32 * SP_TO_BP,
+                    left: sp_to_bp(rect.left),
+                    top: sp_to_bp(rect.top),
+                    right: sp_to_bp(rect.right),
+                    bottom: sp_to_bp(rect.bottom),
                 },
                 action: open.action.clone(),
             });

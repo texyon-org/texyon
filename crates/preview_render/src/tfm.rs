@@ -54,7 +54,7 @@ impl Tfm {
         let info = self.char_info[(character - self.first_char) as usize];
         let width_index = (info >> 24) as usize;
         let width = self.widths.get(width_index).copied().unwrap_or(0);
-        ((width as i64 * scale as i64) >> 20) as i32
+        ((i64::from(width) * i64::from(scale)) >> 20) as i32
     }
 }
 
