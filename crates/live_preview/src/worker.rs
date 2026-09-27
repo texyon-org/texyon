@@ -16,10 +16,12 @@ use super::{
 use tectonic_engine_xetex::EngineCancellation;
 use tectonic_preview_protocol::{QueryId, SourceLocation, SyncRectPayload};
 
+const WORKER_STACK_BYTES: usize = 32 * 1024 * 1024;
+const WATCHDOG_INTERVAL: Duration = Duration::from_millis(50);
+
 /// Worker scheduling tuning fixed for one worker lifetime.
 ///
-/// Engine-side knobs (checkpoint budget, rewind verification) are applied to
-/// the engine configuration directly by the CLI and do not pass through here.
+/// Engine-side knobs are applied to the engine configuration directly.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PreviewTuning {
     /// Delay before a newer request cancels instrumented stale work.
@@ -37,20 +39,17 @@ impl Default for PreviewTuning {
     }
 }
 
-/// Running estimate of what one tail continuation costs.
+/// Running estimate of one tail continuation's cost.
 ///
-/// Rises immediately to any larger observation so one expensive settle backs
-/// the tail off at once, and decays slowly so a single cancelled continuation
-/// does not make it eager again.
+/// Rises at once to a larger observation and decays slowly, so one cancelled
+/// continuation does not make the tail eager again.
 #[derive(Clone, Copy, Debug, Default)]
 struct TailCost {
     estimate: Duration,
 }
 
 impl TailCost {
-    /// Multiple of the measured tail cost to stay idle before settling again.
     const IDLE_FACTOR: u32 = 2;
-    /// Ceiling on the derived delay, so a very slow document still settles.
     const MAX_IDLE: Duration = Duration::from_secs(3);
 
     fn observe(&mut self, elapsed: Duration) {
@@ -61,10 +60,7 @@ impl TailCost {
         };
     }
 
-    /// Idle delay to use, never shorter than the configured floor.
-    ///
-    /// A zero floor is an explicit request to settle immediately and is never
-    /// stretched.
+    /// Idle delay to use, never below `configured`. A zero floor means settle immediately.
     fn idle(&self, configured: Duration) -> Duration {
         if configured.is_zero() {
             return configured;
@@ -72,10 +68,6 @@ impl TailCost {
         configured.max((self.estimate * Self::IDLE_FACTOR).min(Self::MAX_IDLE))
     }
 }
-
-// `WorkerRun` and `PreviewWorkerProcessor` describe what a processor does, not
-// how this file drives it, so they live in `processor.rs` where a caller with
-// no thread to spare can still use them.
 
 /// Observable worker state transition.
 #[derive(Debug)]
@@ -202,17 +194,23 @@ enum TimerCommand {
     Stop,
 }
 
-/// Request-side handle for one 32 MiB resident engine worker.
+/// Counters and flags read across the request, worker, and timer threads.
+#[derive(Default)]
+struct SharedState {
+    announced: AtomicU64,
+    applied: AtomicU64,
+    durable_stop: AtomicBool,
+    tail_running: AtomicBool,
+    worker_done: AtomicBool,
+}
+
+/// Request-side handle for one resident engine worker.
 pub struct LivePreviewWorker<T> {
     commands: Sender<Command>,
     events: Receiver<WorkerEvent<T>>,
     timer_commands: Sender<TimerCommand>,
     cancellation: EngineCancellation,
-    announced: Arc<AtomicU64>,
-    applied: Arc<AtomicU64>,
-    durable_stop: Arc<AtomicBool>,
-    tail_running: Arc<AtomicBool>,
-    worker_done: Arc<AtomicBool>,
+    shared: Arc<SharedState>,
     supersede_grace: Duration,
     next_request: RequestSeq,
     worker: Option<JoinHandle<()>>,
@@ -222,8 +220,7 @@ pub struct LivePreviewWorker<T> {
 impl<T: Send + 'static> LivePreviewWorker<T> {
     /// Spawn a worker and immediately compile the validated revision-zero snapshot.
     ///
-    /// `factory` runs on the worker thread, allowing it to construct processor
-    /// values that intentionally are not `Send`, such as resident XeTeX state.
+    /// `factory` runs on the worker thread, so the processor need not be `Send`.
     pub fn spawn<P, F>(
         sources: SourceSet,
         tuning: PreviewTuning,
@@ -241,9 +238,8 @@ impl<T: Send + 'static> LivePreviewWorker<T> {
 
     /// Bootstrap processor resources on the worker, then wait for initialization.
     ///
-    /// The returned bootstrap value is available before callers emit `ready`.
-    /// No compile begins until [`initialize`](Self::initialize) supplies the
-    /// complete validated revision-zero source snapshot.
+    /// The bootstrap value is returned before any compile. Compilation starts
+    /// once [`initialize`](Self::initialize) supplies the revision-zero snapshot.
     pub fn spawn_uninitialized<P, F, E, D>(
         tuning: PreviewTuning,
         factory: F,
@@ -273,47 +269,33 @@ impl<T: Send + 'static> LivePreviewWorker<T> {
         let (timer_tx, timer_rx) = mpsc::channel();
         let (bootstrap_tx, bootstrap_rx) = mpsc::sync_channel(1);
         let cancellation = EngineCancellation::new();
-        let announced = Arc::new(AtomicU64::new(0));
-        let applied = Arc::new(AtomicU64::new(0));
-        let durable_stop = Arc::new(AtomicBool::new(false));
-        let tail_running = Arc::new(AtomicBool::new(false));
-        let worker_done = Arc::new(AtomicBool::new(false));
+        let shared = Arc::new(SharedState::default());
 
         let worker_cancellation = cancellation.clone();
-        let worker_announced = Arc::clone(&announced);
-        let worker_applied = Arc::clone(&applied);
-        let worker_stop = Arc::clone(&durable_stop);
-        let worker_tail_running = Arc::clone(&tail_running);
-        let worker_finished = Arc::clone(&worker_done);
+        let worker_shared = Arc::clone(&shared);
         let worker = thread::Builder::new()
             .name("tectonic-preview-engine".into())
-            .stack_size(32 * 1024 * 1024)
+            .stack_size(WORKER_STACK_BYTES)
             .spawn(move || {
-                let (processor, bootstrap) = match factory() {
-                    Ok(value) => value,
+                match factory() {
+                    Ok((processor, bootstrap)) => {
+                        if bootstrap_tx.send(Ok(bootstrap)).is_ok() {
+                            run_worker(
+                                processor,
+                                sources,
+                                command_rx,
+                                event_tx,
+                                worker_cancellation,
+                                &worker_shared,
+                                Duration::from_millis(tuning.tail_idle_ms),
+                            );
+                        }
+                    }
                     Err(error) => {
                         let _ = bootstrap_tx.send(Err(error.to_string()));
-                        worker_finished.store(true, Ordering::Release);
-                        return;
                     }
-                };
-                if bootstrap_tx.send(Ok(bootstrap)).is_err() {
-                    worker_finished.store(true, Ordering::Release);
-                    return;
                 }
-                run_worker(
-                    processor,
-                    sources,
-                    command_rx,
-                    event_tx,
-                    worker_cancellation,
-                    worker_announced,
-                    worker_applied,
-                    worker_stop,
-                    worker_tail_running,
-                    Duration::from_millis(tuning.tail_idle_ms),
-                );
-                worker_finished.store(true, Ordering::Release);
+                worker_shared.worker_done.store(true, Ordering::Release);
             })
             .map_err(WorkerFailure::Spawn)?;
 
@@ -330,10 +312,10 @@ impl<T: Send + 'static> LivePreviewWorker<T> {
         };
 
         let timer_cancellation = cancellation.clone();
-        let timer_applied = Arc::clone(&applied);
+        let timer_shared = Arc::clone(&shared);
         let timer = thread::Builder::new()
             .name("tectonic-preview-cancel".into())
-            .spawn(move || run_timer(timer_rx, timer_cancellation, timer_applied))
+            .spawn(move || run_timer(timer_rx, timer_cancellation, &timer_shared))
             .map_err(WorkerFailure::Spawn)?;
 
         let worker = Self {
@@ -341,11 +323,7 @@ impl<T: Send + 'static> LivePreviewWorker<T> {
             events: event_rx,
             timer_commands: timer_tx,
             cancellation,
-            announced,
-            applied,
-            durable_stop,
-            tail_running,
-            worker_done,
+            shared,
             supersede_grace: Duration::from_millis(tuning.supersede_grace_ms),
             next_request: RequestSeq::ZERO,
             worker: Some(worker),
@@ -356,9 +334,7 @@ impl<T: Send + 'static> LivePreviewWorker<T> {
 
     /// Supply the one complete initialization snapshot.
     pub fn initialize(&self, sources: SourceSet) -> Result<(), WorkerFailure> {
-        self.commands
-            .send(Command::Initialize(sources))
-            .map_err(|_| WorkerFailure::Closed)
+        self.send(Command::Initialize(sources))
     }
 
     /// Receive the next worker event, waiting up to `timeout`.
@@ -377,17 +353,17 @@ impl<T: Send + 'static> LivePreviewWorker<T> {
             .checked_next()
             .map_err(|_| WorkerFailure::RequestSequenceExhausted)?;
         self.next_request = sequence;
-        self.announced.store(sequence.get(), Ordering::Release);
-        if self.tail_running.load(Ordering::Acquire) {
+        self.shared
+            .announced
+            .store(sequence.get(), Ordering::Release);
+        if self.shared.tail_running.load(Ordering::Acquire) {
             self.cancellation.request();
         }
-        self.commands
-            .send(Command::Replace {
-                sequence,
-                path,
-                text,
-            })
-            .map_err(|_| WorkerFailure::Closed)?;
+        self.send(Command::Replace {
+            sequence,
+            path,
+            text,
+        })?;
         self.timer_commands
             .send(TimerCommand::Arm {
                 sequence,
@@ -399,9 +375,7 @@ impl<T: Send + 'static> LivePreviewWorker<T> {
 
     /// Update the true visible range without entering request accounting.
     pub fn viewport(&self, first: usize, last: usize) -> Result<(), WorkerFailure> {
-        self.commands
-            .send(Command::Viewport(first, last))
-            .map_err(|_| WorkerFailure::Closed)
+        self.send(Command::Viewport(first, last))
     }
 
     /// Query preview geometry without changing request accounting or scheduling.
@@ -411,13 +385,11 @@ impl<T: Send + 'static> LivePreviewWorker<T> {
         path: String,
         line: usize,
     ) -> Result<(), WorkerFailure> {
-        self.commands
-            .send(Command::ForwardSearch {
-                query_id,
-                path,
-                line,
-            })
-            .map_err(|_| WorkerFailure::Closed)
+        self.send(Command::ForwardSearch {
+            query_id,
+            path,
+            line,
+        })
     }
 
     /// Query a source location without changing request accounting or scheduling.
@@ -428,42 +400,35 @@ impl<T: Send + 'static> LivePreviewWorker<T> {
         h_bp: f64,
         v_bp: f64,
     ) -> Result<(), WorkerFailure> {
-        self.commands
-            .send(Command::BackwardSearch {
-                query_id,
-                page_index,
-                h_bp,
-                v_bp,
-            })
-            .map_err(|_| WorkerFailure::Closed)
+        self.send(Command::BackwardSearch {
+            query_id,
+            page_index,
+            h_bp,
+            v_bp,
+        })
     }
 
     /// Request a full retained-state payload without recompiling.
     pub fn resync(&self) -> Result<(), WorkerFailure> {
-        self.commands
-            .send(Command::Resync)
-            .map_err(|_| WorkerFailure::Closed)
+        self.send(Command::Resync)
     }
 
     /// Durably cancel current and future compilation until an accepted edit.
     pub fn cancel(&self) -> Result<(), WorkerFailure> {
-        self.durable_stop.store(true, Ordering::Release);
+        self.shared.durable_stop.store(true, Ordering::Release);
         self.cancellation.request();
-        self.commands
-            .send(Command::Cancel)
-            .map_err(|_| WorkerFailure::Closed)
+        self.send(Command::Cancel)
     }
 
     /// Latest worker-applied request sequence.
     pub fn applied_request_seq(&self) -> RequestSeq {
-        RequestSeq::new(self.applied.load(Ordering::Acquire))
+        RequestSeq::new(self.shared.applied.load(Ordering::Acquire))
     }
 
     /// Shut down and join both worker-owned threads.
     ///
-    /// A watchdog repeats cooperative cancellation while instrumented engine
-    /// work joins. This cannot forcibly interrupt an uncooperative native or OS
-    /// blocking call; such a call may still delay shutdown until it returns.
+    /// Cancellation is repeated while the worker joins, but an uncooperative
+    /// blocking call can still delay shutdown until it returns.
     pub fn shutdown(mut self) -> Result<(), WorkerFailure> {
         self.cancellation.request();
         let _ = self.commands.send(Command::Shutdown);
@@ -492,20 +457,26 @@ impl<T> Drop for LivePreviewWorker<T> {
 }
 
 impl<T> LivePreviewWorker<T> {
+    fn send(&self, command: Command) -> Result<(), WorkerFailure> {
+        self.commands
+            .send(command)
+            .map_err(|_| WorkerFailure::Closed)
+    }
+
     fn join_worker_with_watchdog(&mut self) -> bool {
         let Some(worker) = self.worker.take() else {
             return false;
         };
         let cancellation = self.cancellation.clone();
-        let done = Arc::clone(&self.worker_done);
+        let shared = Arc::clone(&self.shared);
         let watchdog = thread::spawn(move || {
-            while !done.load(Ordering::Acquire) {
+            while !shared.worker_done.load(Ordering::Acquire) {
                 cancellation.request();
-                thread::sleep(Duration::from_millis(50));
+                thread::sleep(WATCHDOG_INTERVAL);
             }
         });
         let panicked = worker.join().is_err();
-        self.worker_done.store(true, Ordering::Release);
+        self.shared.worker_done.store(true, Ordering::Release);
         let _ = watchdog.join();
         panicked
     }
@@ -514,7 +485,7 @@ impl<T> LivePreviewWorker<T> {
 fn run_timer(
     commands: Receiver<TimerCommand>,
     cancellation: EngineCancellation,
-    applied: Arc<AtomicU64>,
+    shared: &SharedState,
 ) {
     let mut pending: Option<(RequestSeq, Instant)> = None;
     loop {
@@ -529,7 +500,7 @@ fn run_timer(
             Ok(TimerCommand::Stop) | Err(RecvTimeoutError::Disconnected) => break,
             Err(RecvTimeoutError::Timeout) => {
                 if let Some((sequence, _)) = pending.take() {
-                    if applied.load(Ordering::Acquire) < sequence.get() {
+                    if shared.applied.load(Ordering::Acquire) < sequence.get() {
                         cancellation.request();
                     }
                 }
@@ -538,35 +509,29 @@ fn run_timer(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn run_worker<P: PreviewWorkerProcessor>(
     mut processor: P,
     sources: Option<SourceSet>,
     commands: Receiver<Command>,
     events: Sender<WorkerEvent<P::Output>>,
     cancellation: EngineCancellation,
-    announced: Arc<AtomicU64>,
-    applied_atomic: Arc<AtomicU64>,
-    durable_stop: Arc<AtomicBool>,
-    tail_running: Arc<AtomicBool>,
+    shared: &SharedState,
     tail_idle: Duration,
 ) {
     let mut sources = match sources {
         Some(sources) => sources,
-        None => loop {
-            match commands.recv() {
-                Ok(Command::Initialize(sources)) => break sources,
-                Ok(Command::Shutdown) | Err(_) => {
-                    let _ = processor.shutdown();
-                    return;
-                }
-                Ok(_) => {
-                    let _ = events.send(WorkerEvent::Fatal(
-                        "preview request received before initialization".into(),
-                    ));
-                    let _ = processor.shutdown();
-                    return;
-                }
+        None => match commands.recv() {
+            Ok(Command::Initialize(sources)) => sources,
+            Ok(Command::Shutdown) | Err(_) => {
+                let _ = processor.shutdown();
+                return;
+            }
+            Ok(_) => {
+                let _ = events.send(WorkerEvent::Fatal(
+                    "preview request received before initialization".into(),
+                ));
+                let _ = processor.shutdown();
+                return;
             }
         },
     };
@@ -584,11 +549,8 @@ fn run_worker<P: PreviewWorkerProcessor>(
         let _ = processor.shutdown();
         return;
     }
-    // Settling the tail of a long document can cost far more than one edit, and
-    // every keystroke arriving during it is wasted work on both sides. Wait
-    // proportionally longer on documents where it is expensive, so the tail
-    // only runs once the author has genuinely stopped, while cheap documents
-    // keep settling at the configured delay.
+    // Settling the tail of a long document can cost far more than one edit,
+    // so wait longer where it is expensive and settle only once typing stops.
     let mut tail_cost = TailCost::default();
     let mut tail_deadline = processor
         .has_pending_tail()
@@ -596,7 +558,7 @@ fn run_worker<P: PreviewWorkerProcessor>(
 
     'worker: loop {
         let first = if processor.has_pending_tail()
-            && !durable_stop.load(Ordering::Acquire)
+            && !shared.durable_stop.load(Ordering::Acquire)
             && !clock.is_stopped()
         {
             let deadline =
@@ -606,20 +568,15 @@ fn run_worker<P: PreviewWorkerProcessor>(
                 Err(RecvTimeoutError::Timeout) => {
                     cancellation.rearm();
                     tail_deadline = None;
-                    tail_running.store(true, Ordering::Release);
-                    if announced.load(Ordering::Acquire) > clock.applied().get() {
+                    shared.tail_running.store(true, Ordering::Release);
+                    if shared.announced.load(Ordering::Acquire) > clock.applied().get() {
                         cancellation.request();
                     }
                     let started = Instant::now();
-                    let keep_running = emit_continue(
-                        &mut processor,
-                        &sources,
-                        &events,
-                        clock.applied(),
-                        &cancellation,
-                    );
+                    let run = processor.continue_tail(clock.applied(), &cancellation);
+                    let keep_running = emit_run(&events, run, clock.applied(), sources.revision());
                     tail_cost.observe(started.elapsed());
-                    tail_running.store(false, Ordering::Release);
+                    shared.tail_running.store(false, Ordering::Release);
                     if !keep_running {
                         break;
                     }
@@ -641,7 +598,7 @@ fn run_worker<P: PreviewWorkerProcessor>(
         loop {
             let command = match pending.take().or_else(|| commands.try_recv().ok()) {
                 Some(command) => command,
-                None if clock.applied().get() < announced.load(Ordering::Acquire) => {
+                None if clock.applied().get() < shared.announced.load(Ordering::Acquire) => {
                     match commands.recv() {
                         Ok(command) => command,
                         Err(_) => break 'worker,
@@ -661,43 +618,30 @@ fn run_worker<P: PreviewWorkerProcessor>(
                     path,
                     text,
                 } => {
-                    let announced_sequence = match clock.announce() {
-                        Ok(sequence) => sequence,
-                        Err(error) => {
-                            let _ = events.send(WorkerEvent::Fatal(error.to_string()));
-                            break 'worker;
-                        }
-                    };
-                    if announced_sequence != sequence {
-                        let _ = events.send(WorkerEvent::Fatal(format!(
-                            "request sequence mismatch: expected {announced_sequence}, received {sequence}"
-                        )));
-                        break 'worker;
-                    }
-                    match sources.replace(path.as_deref(), text) {
-                        Ok(_) => {
-                            if let Err(error) = clock.apply(sequence, ApplyDisposition::Accepted) {
-                                let _ = events.send(WorkerEvent::Fatal(error.to_string()));
-                                break 'worker;
-                            }
-                            durable_stop.store(false, Ordering::Release);
+                    match apply_replacement(
+                        &mut clock,
+                        &mut sources,
+                        sequence,
+                        path.as_deref(),
+                        text,
+                    ) {
+                        Ok(None) => {
+                            shared.durable_stop.store(false, Ordering::Release);
                             should_compile = true;
                         }
-                        Err(error) => {
-                            if let Err(clock_error) =
-                                clock.apply(sequence, ApplyDisposition::Rejected)
-                            {
-                                let _ = events.send(WorkerEvent::Fatal(clock_error.to_string()));
-                                break 'worker;
-                            }
+                        Ok(Some(reason)) => {
                             let _ = events.send(WorkerEvent::Rejected {
                                 request_seq: sequence,
                                 source_revision: sources.revision(),
-                                reason: error.to_string(),
+                                reason,
                             });
                         }
+                        Err(reason) => {
+                            let _ = events.send(WorkerEvent::Fatal(reason));
+                            break 'worker;
+                        }
                     }
-                    applied_atomic.store(sequence.get(), Ordering::Release);
+                    shared.applied.store(sequence.get(), Ordering::Release);
                 }
                 Command::Viewport(first, last) => viewport = Some((first, last)),
                 Command::ForwardSearch {
@@ -724,14 +668,14 @@ fn run_worker<P: PreviewWorkerProcessor>(
                 Command::Resync => resync = true,
                 Command::Cancel => {
                     clock.stop();
-                    durable_stop.store(true, Ordering::Release);
+                    shared.durable_stop.store(true, Ordering::Release);
                     tail_deadline = None;
                 }
                 Command::Shutdown => break 'worker,
             }
         }
 
-        if durable_stop.load(Ordering::Acquire) || clock.is_stopped() {
+        if shared.durable_stop.load(Ordering::Acquire) || clock.is_stopped() {
             if resync && !emit_resync(&mut processor, &sources, &events, clock.applied()) {
                 break 'worker;
             }
@@ -765,6 +709,33 @@ fn run_worker<P: PreviewWorkerProcessor>(
     if let Err(error) = processor.shutdown() {
         let _ = events.send(WorkerEvent::Fatal(error.to_string()));
     }
+}
+
+/// Account for one announced replacement.
+///
+/// Returns the rejection reason if validation failed, or `Err` with a fatal
+/// accounting failure.
+fn apply_replacement(
+    clock: &mut RequestClock,
+    sources: &mut SourceSet,
+    sequence: RequestSeq,
+    path: Option<&str>,
+    text: String,
+) -> Result<Option<String>, String> {
+    let announced = clock.announce().map_err(|error| error.to_string())?;
+    if announced != sequence {
+        return Err(format!(
+            "request sequence mismatch: expected {announced}, received {sequence}"
+        ));
+    }
+    let (disposition, rejection) = match sources.replace(path, text) {
+        Ok(_) => (ApplyDisposition::Accepted, None),
+        Err(error) => (ApplyDisposition::Rejected, Some(error.to_string())),
+    };
+    clock
+        .apply(sequence, disposition)
+        .map_err(|error| error.to_string())?;
+    Ok(rejection)
 }
 
 fn emit_resync<P: PreviewWorkerProcessor>(
@@ -805,78 +776,47 @@ fn emit_compile<P: PreviewWorkerProcessor>(
     viewport: Option<(usize, usize)>,
     cancellation: &EngineCancellation,
 ) -> bool {
-    let revision = sources.revision();
-    match processor.compile(
-        sources.snapshot(),
-        applied_request_seq,
-        viewport,
-        cancellation,
-    ) {
-        WorkerRun::Complete(output) => {
-            let _ = events.send(WorkerEvent::Update {
-                applied_request_seq,
-                source_revision: revision,
-                output,
-                resync: false,
-            });
-        }
-        WorkerRun::Cancelled => {
-            let _ = events.send(WorkerEvent::Cancelled {
-                applied_request_seq,
-                source_revision: revision,
-            });
-        }
-        WorkerRun::Aborted(error) => {
-            let _ = events.send(WorkerEvent::Aborted {
-                applied_request_seq,
-                source_revision: revision,
-                reason: error.to_string(),
-            });
-        }
-        WorkerRun::Fatal(error) => {
-            let _ = events.send(WorkerEvent::Fatal(error.to_string()));
-            return false;
-        }
-    }
-    true
+    let run = processor
+        .compile(
+            sources.snapshot(),
+            applied_request_seq,
+            viewport,
+            cancellation,
+        )
+        .map(Some);
+    emit_run(events, run, applied_request_seq, sources.revision())
 }
 
-fn emit_continue<P: PreviewWorkerProcessor>(
-    processor: &mut P,
-    sources: &SourceSet,
-    events: &Sender<WorkerEvent<P::Output>>,
+/// Report one compile or tail run. Returns `false` once the session must end.
+fn emit_run<T, E: fmt::Display>(
+    events: &Sender<WorkerEvent<T>>,
+    run: WorkerRun<Option<T>, E>,
     applied_request_seq: RequestSeq,
-    cancellation: &EngineCancellation,
+    source_revision: SourceRevision,
 ) -> bool {
-    let revision = sources.revision();
-    match processor.continue_tail(applied_request_seq, cancellation) {
-        WorkerRun::Complete(Some(output)) => {
-            let _ = events.send(WorkerEvent::Update {
-                applied_request_seq,
-                source_revision: revision,
-                output,
-                resync: false,
-            });
-        }
-        WorkerRun::Complete(None) => {}
-        WorkerRun::Cancelled => {
-            let _ = events.send(WorkerEvent::Cancelled {
-                applied_request_seq,
-                source_revision: revision,
-            });
-        }
-        WorkerRun::Aborted(error) => {
-            let _ = events.send(WorkerEvent::Aborted {
-                applied_request_seq,
-                source_revision: revision,
-                reason: error.to_string(),
-            });
-        }
+    let event = match run {
+        WorkerRun::Complete(None) => return true,
+        WorkerRun::Complete(Some(output)) => WorkerEvent::Update {
+            applied_request_seq,
+            source_revision,
+            output,
+            resync: false,
+        },
+        WorkerRun::Cancelled => WorkerEvent::Cancelled {
+            applied_request_seq,
+            source_revision,
+        },
+        WorkerRun::Aborted(error) => WorkerEvent::Aborted {
+            applied_request_seq,
+            source_revision,
+            reason: error.to_string(),
+        },
         WorkerRun::Fatal(error) => {
             let _ = events.send(WorkerEvent::Fatal(error.to_string()));
             return false;
         }
-    }
+    };
+    let _ = events.send(event);
     true
 }
 
@@ -1148,7 +1088,6 @@ mod tests {
             PreviewTuning {
                 supersede_grace_ms: 2_000,
                 tail_idle_ms: 0,
-                ..PreviewTuning::default()
             },
             || TailProcessor {
                 last: String::new(),
