@@ -1,13 +1,15 @@
 use std::{fmt, sync::Arc, time::Instant};
 
+use crate::processor::elapsed_ms;
+
 use tectonic_preview_protocol::{OperationMetrics, UpdateOutcome};
 use tectonic_preview_render::{Backend, HotRenderer, RenderError, ResourceProvider};
 
 use tectonic_engine_xetex::SyncIndex;
 
 use super::{
-    AssembledDocument, DocumentAssembler, DocumentFragment, FrameId, FramePhase, FrameSink,
-    PreviewPublisher, PublicationError, RequestSeq, SourceRevision, XdvAssemblyError,
+    AssembledDocument, DocumentAssembler, DocumentFragment, FrameHeader, FrameId, FramePhase,
+    FrameSink, PreviewPublisher, PublicationError, RequestSeq, SourceRevision, XdvAssemblyError,
 };
 
 /// Assembly, analysis/render, or atomic publication failure.
@@ -34,9 +36,6 @@ impl<E: fmt::Display> fmt::Display for PreviewPipelineError<E> {
 impl<E: fmt::Debug + fmt::Display> std::error::Error for PreviewPipelineError<E> {}
 
 /// Stateful full-document analysis, differential render, and publication path.
-///
-/// This is the Milestone 6 rung-zero path. Fence-local fragments can enter
-/// through the same assembler later without changing publication semantics.
 pub struct PreviewPipeline<P, B> {
     assembler: DocumentAssembler,
     renderer: HotRenderer<P>,
@@ -104,27 +103,26 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
         phase: FramePhase,
         outcome: UpdateOutcome,
     ) -> Result<FrameId, PreviewPipelineError<S::Error>> {
-        self.process_fragment_with_engine_ms(
+        self.publish_fragment(
             sink,
             fragment,
-            source_revision,
-            applied_request_seq,
-            phase,
-            outcome,
+            FrameHeader {
+                source_revision,
+                applied_request_seq,
+                phase,
+                outcome,
+            },
             OperationMetrics::default(),
             false,
             SyncIndex::default(),
         )
     }
 
-    pub(crate) fn process_fragment_with_engine_ms<S: FrameSink>(
+    pub(crate) fn publish_fragment<S: FrameSink>(
         &mut self,
         sink: &mut S,
         fragment: DocumentFragment<'_>,
-        source_revision: SourceRevision,
-        applied_request_seq: RequestSeq,
-        phase: FramePhase,
-        outcome: UpdateOutcome,
+        header: FrameHeader,
         mut metrics: OperationMetrics,
         preserve_tail_belief: bool,
         sync_index: SyncIndex,
@@ -138,62 +136,39 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
             .renderer
             .analyze_from(Arc::clone(document.bytes()), document.page_offsets())
             .map_err(PreviewPipelineError::Render)?;
-        let analysis_ms = analysis_started.elapsed().as_secs_f64() * 1000.0;
-        metrics.analysis_ms = analysis_ms;
+        metrics.analysis_ms = elapsed_ms(analysis_started);
         metrics.pages_fingerprinted = analysis.pages().len();
         metrics.unsupported_pages = analysis
             .pages()
             .iter()
             .filter(|page| !page.unsupported.is_empty())
             .count();
-        let covered_pages = analysis.pages().len();
         let sync_index = if preserve_tail_belief {
-            sync_index.with_preserved_tail(&self.sync_index, covered_pages)
+            sync_index.with_preserved_tail(&self.sync_index, analysis.pages().len())
         } else {
             sync_index
         };
         let mut visuals = analysis.pages().to_vec();
-        if preserve_tail_belief && self.publisher.belief().pages().len() > visuals.len() {
+        let believed = self.publisher.belief().pages();
+        if preserve_tail_belief && believed.len() > visuals.len() {
             visuals.extend(
-                self.publisher.belief().pages()[visuals.len()..]
+                believed[visuals.len()..]
                     .iter()
                     .map(|page| page.visual.clone()),
             );
         }
-        let selected = visuals
-            .iter()
-            .enumerate()
-            .filter_map(|(page_index, visual)| {
-                (self
-                    .publisher
-                    .belief()
-                    .pages()
-                    .get(page_index)
-                    .map(|page| &page.visual)
-                    != Some(visual))
-                .then_some(page_index)
-            })
-            .collect::<Vec<_>>();
+        let selected = self.publisher.belief().changed_pages(&visuals);
         let render_started = Instant::now();
         let rendered = self
             .renderer
             .render_pages(&analysis, &selected, &mut self.backend)
             .map_err(PreviewPipelineError::Render)?;
-        let render_ms = render_started.elapsed().as_secs_f64() * 1000.0;
-        metrics.render_ms = render_ms;
+        metrics.render_ms = elapsed_ms(render_started);
         metrics.pages_rendered = rendered.len();
         sink.set_operation_metrics(metrics);
         let frame_id = self
             .publisher
-            .publish(
-                sink,
-                source_revision,
-                applied_request_seq,
-                phase,
-                outcome,
-                &visuals,
-                rendered,
-            )
+            .publish(sink, header, &visuals, rendered)
             .map_err(PreviewPipelineError::Publication)?;
 
         self.last_document = Some(document);
@@ -201,13 +176,8 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
         Ok(frame_id)
     }
 
-    /// Absorb a completed-but-superseded operation's XDV without analysis,
-    /// rendering, or publication.
-    ///
-    /// The engine has already committed the operation, so the assembled
-    /// document chain must advance for the next fragment's splice to remain
-    /// coherent; the viewer belief and sync index stay untouched, matching the
-    /// protocol's promise that superseded work never replaces client state.
+    /// Advance the assembled document for an operation the engine committed
+    /// but that was superseded, leaving viewer belief and sync index untouched.
     pub(crate) fn absorb_fragment(
         &mut self,
         fragment: DocumentFragment<'_>,
@@ -250,7 +220,6 @@ mod tests {
             let bytes: &[u8] = match request.kind {
                 ResourceKind::Tfm => include_bytes!("../../../tests/assets/cmr10.tfm"),
                 ResourceKind::FontProgram => include_bytes!("../../../tests/assets/cmr10.pfb"),
-                ResourceKind::Encoding => return Ok(None),
                 _ => return Ok(None),
             };
             Ok(Some(Resource::from_bytes(bytes)))

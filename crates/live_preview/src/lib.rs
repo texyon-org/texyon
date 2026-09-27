@@ -36,7 +36,8 @@ pub use processor::{
     WorkerRun,
 };
 pub use publication::{
-    ClientBelief, FramePage, FramePatch, FrameSink, PageBelief, PreviewPublisher, PublicationError,
+    ClientBelief, FrameHeader, FramePage, FramePatch, FrameSink, PageBelief, PreviewPublisher,
+    PublicationError,
 };
 pub use source::{AcceptedSourceSnapshot, DocumentRoot, SourceError, SourceSet};
 pub use tectonic_preview_protocol::{

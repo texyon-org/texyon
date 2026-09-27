@@ -37,6 +37,19 @@ pub struct FramePatch {
     pub pages_svg: Vec<FramePage>,
 }
 
+/// Identity and outcome shared by every page of one frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FrameHeader {
+    /// Accepted source revision rendered by the frame.
+    pub source_revision: SourceRevision,
+    /// Latest request sequence applied before compilation.
+    pub applied_request_seq: RequestSeq,
+    /// Operation phase.
+    pub phase: FramePhase,
+    /// Engine operation result represented by the frame.
+    pub outcome: UpdateOutcome,
+}
+
 /// Transport boundary that must accept a whole frame atomically.
 pub trait FrameSink {
     /// Sink-specific publication failure.
@@ -78,6 +91,16 @@ impl ClientBelief {
     /// Source revision represented by the retained payloads.
     pub fn source_revision(&self) -> Option<SourceRevision> {
         self.source_revision
+    }
+
+    pub(crate) fn changed_pages(&self, visuals: &[PageVisual]) -> Vec<usize> {
+        visuals
+            .iter()
+            .enumerate()
+            .filter_map(|(index, visual)| {
+                (self.pages.get(index).map(|page| &page.visual) != Some(visual)).then_some(index)
+            })
+            .collect()
     }
 }
 
@@ -144,23 +167,19 @@ impl PreviewPublisher {
     pub fn publish<S: FrameSink>(
         &mut self,
         sink: &mut S,
-        source_revision: SourceRevision,
-        applied_request_seq: RequestSeq,
-        phase: FramePhase,
-        outcome: UpdateOutcome,
+        header: FrameHeader,
         visuals: &[PageVisual],
         rendered: Vec<PageSvg>,
     ) -> Result<FrameId, PublicationError<S::Error>> {
         validate_visuals::<S::Error>(visuals)?;
-        let changed = changed_pages(&self.belief, visuals);
+        let changed = self.belief.changed_pages(visuals);
         let removed = (visuals.len()..self.belief.pages.len()).collect::<Vec<_>>();
         let rendered = index_rendered::<S::Error>(rendered, visuals.len())?;
 
-        let expected = changed.iter().copied().collect::<Vec<_>>();
         let supplied = rendered.keys().copied().collect::<Vec<_>>();
-        if supplied != expected {
+        if supplied != changed {
             return Err(PublicationError::InvalidRenderSet(format!(
-                "expected pages {expected:?}, received {supplied:?}"
+                "expected pages {changed:?}, received {supplied:?}"
             )));
         }
 
@@ -186,10 +205,10 @@ impl PreviewPublisher {
             .map_err(PublicationError::Sequence)?;
         let patch = FramePatch {
             frame_id,
-            source_revision,
-            applied_request_seq,
-            phase,
-            outcome,
+            source_revision: header.source_revision,
+            applied_request_seq: header.applied_request_seq,
+            phase: header.phase,
+            outcome: header.outcome,
             pages: visuals.to_vec(),
             changed,
             removed,
@@ -198,8 +217,8 @@ impl PreviewPublisher {
         sink.publish(&patch).map_err(PublicationError::Sink)?;
 
         self.belief.pages = candidate;
-        self.belief.source_revision = Some(source_revision);
-        self.belief.outcome = Some(outcome);
+        self.belief.source_revision = Some(header.source_revision);
+        self.belief.outcome = Some(header.outcome);
         self.last_frame_id = frame_id;
         Ok(frame_id)
     }
@@ -268,16 +287,6 @@ fn validate_visuals<E>(visuals: &[PageVisual]) -> Result<(), PublicationError<E>
     Ok(())
 }
 
-fn changed_pages(belief: &ClientBelief, visuals: &[PageVisual]) -> Vec<usize> {
-    visuals
-        .iter()
-        .enumerate()
-        .filter_map(|(index, visual)| {
-            (belief.pages.get(index).map(|page| &page.visual) != Some(visual)).then_some(index)
-        })
-        .collect()
-}
-
 fn index_rendered<E>(
     rendered: Vec<PageSvg>,
     page_count: usize,
@@ -337,6 +346,15 @@ mod tests {
         }
     }
 
+    fn header(source_revision: SourceRevision, applied_request_seq: RequestSeq) -> FrameHeader {
+        FrameHeader {
+            source_revision,
+            applied_request_seq,
+            phase: FramePhase::Foreground,
+            outcome: UpdateOutcome::Complete,
+        }
+    }
+
     fn svg(page_index: usize, text: &str) -> PageSvg {
         PageSvg {
             page_index,
@@ -351,10 +369,7 @@ mod tests {
         publisher
             .publish(
                 &mut sink,
-                SourceRevision::ZERO,
-                RequestSeq::ZERO,
-                FramePhase::Foreground,
-                UpdateOutcome::Complete,
+                header(SourceRevision::ZERO, RequestSeq::ZERO),
                 &[visual(1), visual(2), visual(3)],
                 vec![svg(0, "a"), svg(1, "b"), svg(2, "c")],
             )
@@ -362,10 +377,7 @@ mod tests {
         publisher
             .publish(
                 &mut sink,
-                SourceRevision::new(1),
-                RequestSeq::new(1),
-                FramePhase::Foreground,
-                UpdateOutcome::Complete,
+                header(SourceRevision::new(1), RequestSeq::new(1)),
                 &[visual(1), visual(9)],
                 vec![svg(1, "changed")],
             )
@@ -386,10 +398,7 @@ mod tests {
         publisher
             .publish(
                 &mut sink,
-                SourceRevision::ZERO,
-                RequestSeq::ZERO,
-                FramePhase::Foreground,
-                UpdateOutcome::Complete,
+                header(SourceRevision::ZERO, RequestSeq::ZERO),
                 &[visual(1)],
                 vec![svg(0, "a")],
             )
@@ -397,10 +406,7 @@ mod tests {
         let frame_id = publisher
             .publish(
                 &mut sink,
-                SourceRevision::new(1),
-                RequestSeq::new(1),
-                FramePhase::Foreground,
-                UpdateOutcome::Complete,
+                header(SourceRevision::new(1), RequestSeq::new(1)),
                 &[visual(1)],
                 vec![],
             )
@@ -423,10 +429,7 @@ mod tests {
         assert!(matches!(
             publisher.publish(
                 &mut sink,
-                SourceRevision::ZERO,
-                RequestSeq::ZERO,
-                FramePhase::Foreground,
-                UpdateOutcome::Complete,
+                header(SourceRevision::ZERO, RequestSeq::ZERO),
                 &[visual(1)],
                 vec![svg(0, "a")],
             ),
@@ -450,10 +453,7 @@ mod tests {
             assert!(matches!(
                 publisher.publish(
                     &mut sink,
-                    SourceRevision::ZERO,
-                    RequestSeq::ZERO,
-                    FramePhase::Foreground,
-                    UpdateOutcome::Complete,
+                    header(SourceRevision::ZERO, RequestSeq::ZERO),
                     &[visual(1), visual(2)],
                     rendered,
                 ),
@@ -470,10 +470,7 @@ mod tests {
         publisher
             .publish(
                 &mut sink,
-                SourceRevision::new(4),
-                RequestSeq::ZERO,
-                FramePhase::Foreground,
-                UpdateOutcome::Complete,
+                header(SourceRevision::new(4), RequestSeq::ZERO),
                 &[visual(1), visual(2)],
                 vec![svg(0, "a"), svg(1, "b")],
             )

@@ -9,8 +9,9 @@ use tectonic_preview_render::{Backend, ResourceProvider};
 use tectonic_engine_xetex::{EngineCancellation, EngineFrame, SyncIndex, TexOutcome};
 
 use super::{
-    AcceptedSourceSnapshot, DocumentFragment, FrameSink, PreviewPipeline, PreviewPipelineError,
-    PublicationError, ResidentEngineError, ResidentEngineOutput, ResidentXeTeX, SourceRevision,
+    AcceptedSourceSnapshot, DocumentFragment, FrameHeader, FrameSink, PreviewPipeline,
+    PreviewPipelineError, PublicationError, ResidentEngineError, ResidentEngineOutput,
+    ResidentXeTeX, SourceRevision,
 };
 
 /// Result of one processor operation.
@@ -290,13 +291,16 @@ impl<P: ResourceProvider, B: Backend, S: FrameSink> ResidentPreviewProcessor<P, 
             };
         }
         self.sink.set_tail_pending(tail_pending);
-        match self.pipeline.process_fragment_with_engine_ms(
-            &mut self.sink,
-            fragment,
-            expected_revision,
+        let header = FrameHeader {
+            source_revision: expected_revision,
             applied_request_seq,
             phase,
             outcome,
+        };
+        match self.pipeline.publish_fragment(
+            &mut self.sink,
+            fragment,
+            header,
             metrics,
             tail_pending,
             sync_index,
@@ -439,7 +443,7 @@ where
     }
 }
 
-fn elapsed_ms(since: Instant) -> f64 {
+pub(crate) fn elapsed_ms(since: Instant) -> f64 {
     since.elapsed().as_secs_f64() * 1000.0
 }
 
