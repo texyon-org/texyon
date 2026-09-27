@@ -33,7 +33,7 @@ export interface EditorProps {
   /** The engine's latest diagnostics, for the whole project. */
   diagnostics: readonly Diagnostic[];
   /** Where to put the cursor, when a backward search asked for one. */
-  jumpToLine: number | null;
+  jumpToLine: { line: number } | null;
   onChange: (text: string) => void;
   /** The cursor moved to this line, for a forward search. */
   onCursorLine: (line: number) => void;
@@ -163,9 +163,9 @@ export function Editor({
   useEffect(() => {
     const current = view.current;
     if (current === null || jumpToLine === null) return;
-    if (jumpToLine < 1 || jumpToLine > current.state.doc.lines) return;
+    if (jumpToLine.line < 1 || jumpToLine.line > current.state.doc.lines) return;
 
-    const line = current.state.doc.line(jumpToLine);
+    const line = current.state.doc.line(jumpToLine.line);
     current.dispatch({
       selection: { anchor: line.from },
       effects: EditorView.scrollIntoView(line.from, { y: "center" }),

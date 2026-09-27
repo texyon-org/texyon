@@ -1,10 +1,13 @@
-import type { CompileResult, Link } from "@tectonic/wasm";
+import type { CompileResult, Link, SyncRect } from "@tectonic/wasm";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { measure } from "../perf";
 
 /** Zoom steps, in the order the buttons walk through them. */
 const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3] as const;
+
+/** How long a forward search highlight stays, including its fade. */
+const HIGHLIGHT_MS = 1500;
 
 export interface ViewerProps {
   /** The latest compile, or null before the first one. */
@@ -13,8 +16,8 @@ export interface ViewerProps {
   onPainted: () => void;
   /** Someone clicked a point on a page; find the source line that made it. */
   onBackwardSearch: (pageIndex: number, hBp: number, vBp: number) => void;
-  /** Where a forward search says the cursor's line landed. */
-  scrollTo: { pageIndex: number; vBp: number } | null;
+  /** The boxes a forward search found for the cursor's line, best first. */
+  highlight: { boxes: SyncRect[] } | null;
   /**
    * The visible page range moved, zero-based and inclusive.
    *
@@ -35,7 +38,7 @@ export interface ViewerProps {
  * reason the preview stays cheap, and it is why this component manipulates DOM
  * directly instead of rendering pages as React children.
  */
-export function Viewer({ result, onPainted, onBackwardSearch, scrollTo, onViewport }: ViewerProps) {
+export function Viewer({ result, onPainted, onBackwardSearch, highlight, onViewport }: ViewerProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const container = useRef<HTMLDivElement>(null);
   const slots = useRef<HTMLElement[]>([]);
@@ -217,18 +220,53 @@ export function Viewer({ result, onPainted, onBackwardSearch, scrollTo, onViewpo
     }
   }, [result, zoom, onPainted, pointOf, measureViewport]);
 
-  // A forward search: the cursor's line landed here.
+  // A forward search: bring the first box into view and flash every box, the
+  // way Overleaf does. Zoom is read through the ref so zooming does not replay it.
   useEffect(() => {
-    if (scrollTo === null) return;
-    const slot = slots.current[scrollTo.pageIndex];
+    const frame = lastPublished.current;
     const view = scroller.current;
-    if (slot === undefined || view == null) return;
+    if (highlight === null || frame === null || view === null) return;
 
-    view.scrollTo({ top: slot.offsetTop + scrollTo.vBp * zoom - view.clientHeight / 3, behavior: "smooth" });
-    slot.classList.add("located");
-    const timer = window.setTimeout(() => slot.classList.remove("located"), 900);
-    return () => window.clearTimeout(timer);
-  }, [scrollTo, zoom]);
+    const marks: HTMLElement[] = [];
+    const drawn = new Set<string>();
+    for (const box of highlight.boxes) {
+      const slot = slots.current[box.pageIndex];
+      const size = frame.pageSizes[box.pageIndex];
+      if (slot === undefined || size === undefined) continue;
+      // Nested boxes often report the same rectangle, and stacked tints go opaque.
+      const key = [box.pageIndex, box.hBp, box.vBp, box.widthBp, box.heightBp, box.depthBp].join();
+      if (drawn.has(key)) continue;
+      drawn.add(key);
+      const mark = markFor(box, size);
+      slot.appendChild(mark);
+      marks.push(mark);
+    }
+
+    const first = highlight.boxes[0];
+    const slot = first === undefined ? undefined : slots.current[first.pageIndex];
+    if (first !== undefined && slot !== undefined) {
+      const zoom = scale.current;
+      const top = slot.offsetTop + (first.vBp - first.heightBp) * zoom;
+      const bottom = slot.offsetTop + (first.vBp + first.depthBp) * zoom;
+      const left = slot.offsetLeft + first.hBp * zoom;
+      const margin = view.clientHeight / 6;
+      const shown = top >= view.scrollTop + margin && bottom <= view.scrollTop + view.clientHeight - margin;
+      const reachable = left >= view.scrollLeft && left <= view.scrollLeft + view.clientWidth;
+      if (!shown || !reachable) {
+        view.scrollTo({
+          top: shown ? view.scrollTop : top - view.clientHeight / 3,
+          left: reachable ? view.scrollLeft : left - 40,
+          behavior: "smooth",
+        });
+      }
+    }
+
+    const timer = window.setTimeout(() => marks.forEach((mark) => mark.remove()), HIGHLIGHT_MS);
+    return () => {
+      window.clearTimeout(timer);
+      marks.forEach((mark) => mark.remove());
+    };
+  }, [highlight]);
 
   const step = (direction: 1 | -1): void => {
     const at = ZOOM_STEPS.indexOf(zoom as (typeof ZOOM_STEPS)[number]);
@@ -266,6 +304,22 @@ export function Viewer({ result, onPainted, onBackwardSearch, scrollTo, onViewpo
       </div>
     </div>
   );
+}
+
+/**
+ * A fading highlight over one forward search box.
+ *
+ * Placed in percent of the page, so it follows the zoom without being redrawn.
+ */
+function markFor(box: SyncRect, [width, height]: [number, number]): HTMLElement {
+  const mark = document.createElement("div");
+  mark.className = "sync-highlight";
+  mark.style.left = `${(box.hBp / width) * 100}%`;
+  mark.style.top = `${((box.vBp - box.heightBp) / height) * 100}%`;
+  mark.style.width = `${(Math.max(box.widthBp, 1) / width) * 100}%`;
+  mark.style.height = `${(Math.max(box.heightBp + box.depthBp, 1) / height) * 100}%`;
+  mark.style.animationDuration = `${HIGHLIGHT_MS}ms`;
+  return mark;
 }
 
 /** One clickable region, positioned over the page it belongs to. */

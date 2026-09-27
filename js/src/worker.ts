@@ -93,7 +93,7 @@ interface RawCompileReport {
  */
 type RawResponse =
   | { status: "ok" }
-  | { status: "located"; rect: SyncRect | null; source: SourceSpot | null }
+  | { status: "located"; boxes?: SyncRect[]; source: SourceSpot | null }
   | { status: "commands"; commands: EngineCommand[] }
   | ({ status: "compiled" } & RawCompileReport)
   | { status: "exported"; ptr: number; len: number }
@@ -931,7 +931,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         if (reply.status === "error") {
           post({ id: request.id, kind: "error", message: reply.message });
         } else if (reply.status === "located") {
-          post({ id: request.id, kind: "located", rect: reply.rect, source: reply.source });
+          post({ id: request.id, kind: "located", boxes: reply.boxes ?? [], source: reply.source });
         } else {
           post({ id: request.id, kind: "error", message: "the engine did not answer the query" });
         }

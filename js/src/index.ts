@@ -142,10 +142,10 @@ export class TectonicEngine {
       } else if (message.kind === "located") {
         (
           pending.resolve as (value: {
-            rect: SyncRect | null;
+            boxes: SyncRect[];
             source: SourceSpot | null;
           }) => void
-        )({ rect: message.rect, source: message.source });
+        )({ boxes: message.boxes, source: message.source });
       } else if (message.kind === "idle") {
         (pending.resolve as (value: null) => void)(null);
       } else {
@@ -289,20 +289,21 @@ export class TectonicEngine {
   }
 
   /**
-   * Find where a source line landed on the page.
+   * Find the boxes a source line produced on the page, best first.
    *
-   * `path` is spelled the way you spell it in {@link compile}. Resolves to
-   * `null` when the line produced nothing on the page, which is normal — a
-   * comment, a blank line, or a line inside a preamble all do.
+   * `path` is spelled the way you spell it in {@link compile}. The answer is
+   * the one `synctex view` gives: a line that produced nothing, such as a
+   * comment or a blank line, falls back to the nearest line that did. Resolves
+   * to an empty list when nothing near it reached the page.
    */
-  async forwardSearch(path: string, line: number): Promise<SyncRect | null> {
-    const { rect } = await this.#send<{ rect: SyncRect | null }>({
+  async forwardSearch(path: string, line: number): Promise<SyncRect[]> {
+    const { boxes } = await this.#send<{ boxes: SyncRect[] }>({
       id: 0,
       kind: "forwardSearch",
       path,
       line,
     });
-    return rect;
+    return boxes;
   }
 
   /**

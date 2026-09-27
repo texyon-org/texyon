@@ -163,12 +163,14 @@ Finishes a viewport-bounded compile through the end of the document. Returns
 SyncTeX, both ways, answered from an in-memory index — no `.synctex.gz` is ever
 written or parsed.
 
-Forward takes a path spelled the way you spell it in `compile` and returns the
-rectangle that line produced, or `null` when it produced nothing on the page,
-which is normal for a comment or a preamble line. Backward takes a point in
+Both follow TeX Live's `synctex` tool, the one Overleaf runs. Forward takes a
+path spelled the way you spell it in `compile` and returns the boxes that line
+produced, best first, the way `synctex view` reports them. A line that produced
+nothing, like a comment, falls back to the nearest line that did, and the list
+is empty when nothing near it reached the page. Backward takes a point in
 PostScript big points from the page's top-left corner and returns the path and
-line that put something there. Paths round-trip: what you give is what you get
-back.
+line `synctex edit` reports for it. Paths round-trip: what you give is what you
+get back.
 
 ### `engine.exportPdf()`
 

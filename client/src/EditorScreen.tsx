@@ -1,3 +1,4 @@
+import type { SyncRect } from "@tectonic/wasm";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { CwlPackage } from "./project/cwl";
@@ -136,8 +137,8 @@ export function EditorScreen({
   useEffect(() => setOpenFile?.(openPath), [setOpenFile, openPath]);
   const [revision, setRevision] = useState(0);
   const [showLog, setShowLog] = useState(false);
-  const [jumpToLine, setJumpToLine] = useState<number | null>(null);
-  const [scrollTo, setScrollTo] = useState<{ pageIndex: number; vBp: number } | null>(null);
+  const [jumpToLine, setJumpToLine] = useState<{ line: number } | null>(null);
+  const [highlight, setHighlight] = useState<{ boxes: SyncRect[] } | null>(null);
   const [importReport, setImportReport] = useState<{
     imported: number;
     replaced: number;
@@ -288,8 +289,8 @@ export function EditorScreen({
 
   /** Forward search: show where the cursor's line landed on the page. */
   const locate = useCallback(async () => {
-    const found = await forwardSearch(openPath, cursorLine.current);
-    if (found !== null) setScrollTo({ pageIndex: found.pageIndex, vBp: found.vBp });
+    const boxes = await forwardSearch(openPath, cursorLine.current);
+    if (boxes.length > 0) setHighlight({ boxes });
   }, [forwardSearch, openPath]);
 
   /** Backward search: open the source that produced a point on the page. */
@@ -304,7 +305,7 @@ export function EditorScreen({
         if (workspace.has(found.path)) setOpenPath(found.path);
         // A new object each time, so jumping twice to the same line still moves
         // the cursor.
-        setJumpToLine(found.line);
+        setJumpToLine({ line: found.line });
       })();
     },
     [backwardSearch, workspace],
@@ -518,7 +519,7 @@ export function EditorScreen({
             result={result}
             onPainted={markPainted}
             onBackwardSearch={onBackwardSearch}
-            scrollTo={scrollTo}
+            highlight={highlight}
             onViewport={onViewport}
           />
         </section>
@@ -534,7 +535,7 @@ export function EditorScreen({
                 className="where"
                 onClick={() => {
                   if (problem.path !== null && workspace.has(problem.path)) setOpenPath(problem.path);
-                  if (problem.line !== null) setJumpToLine(problem.line);
+                  if (problem.line !== null) setJumpToLine({ line: problem.line });
                 }}
               >
                 {problem.path ?? "?"}

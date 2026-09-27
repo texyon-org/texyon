@@ -202,7 +202,7 @@ export interface CompileStats {
  */
 export type ProjectFiles = Record<string, string | Uint8Array>;
 
-/** Where a source line landed on the page. */
+/** A box on the page that a source line produced. */
 export interface SyncRect {
   /** Zero-based output page. */
   pageIndex: number;
@@ -373,7 +373,7 @@ export type WorkerResponse =
   | { id: number; kind: "ok" }
   | { id: number; kind: "compiled"; result: CompileResult }
   | { id: number; kind: "exported"; pdf: Uint8Array<ArrayBuffer>; elapsedMs: number }
-  | { id: number; kind: "located"; rect: SyncRect | null; source: SourceSpot | null }
+  | { id: number; kind: "located"; boxes: SyncRect[]; source: SourceSpot | null }
   | { id: number; kind: "commands"; commands: EngineCommand[] }
   | { id: number; kind: "idle" }
   | { id: number; kind: "error"; message: string }

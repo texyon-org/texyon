@@ -731,11 +731,22 @@ input::placeholder { color: #5c6270; }
   position: relative;
   background: white;
   box-shadow: 0 2px 16px rgba(0, 0, 0, 0.5);
-  transition: outline-color 300ms ease;
-  outline: 2px solid transparent;
 }
-/* Where a forward search landed, briefly. */
-.page.located { outline-color: var(--accent); }
+
+/* Where a forward search landed, briefly. Clicks pass through to the page. */
+.page .sync-highlight {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(215, 247, 79, 0.45);
+  mix-blend-mode: multiply;
+  outline: 1px solid rgba(150, 170, 40, 0.85);
+  border-radius: 2px;
+  animation: sync-fade ease-in forwards;
+}
+@keyframes sync-fade {
+  0%, 60% { opacity: 1; }
+  100% { opacity: 0; }
+}
 
 .page .links { position: absolute; inset: 0; }
 .page .links a {
