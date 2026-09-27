@@ -23,6 +23,8 @@ pub(crate) struct EngineState {
     pub texmf: TexmfState,
     pub synctex: SynctexCtxt,
     pub mainloop: MainLoopState,
+    /// Not engine state: which control sequences pgfmath hooks, see `pgfmath`.
+    pub pgfmath: crate::pgfmath::Kinds,
 }
 
 /// Scratch registers of `main_control`'s character and ligature loop.
@@ -993,6 +995,8 @@ pub(crate) struct ConfigState {
     /// such as guarded picture probes.
     pub execution_mode: EngineExecutionMode,
     pub max_print_line: i32,
+    /// Answer pgfmath natively in floating point (see `pgfmath`).
+    pub native_pgfmath: bool,
 }
 
 pub(crate) use crate::layout::{FontMappingHandle, LinebreakHandle};

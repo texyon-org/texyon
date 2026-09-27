@@ -56,6 +56,7 @@ mod packaging;
 mod page_manifest;
 mod pagebuilder;
 mod params;
+mod pgfmath;
 mod pic;
 mod primitives;
 mod replay;

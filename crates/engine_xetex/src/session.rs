@@ -221,6 +221,9 @@ pub struct EnginePreviewConfig {
     pub deterministic: bool,
     /// Enable expensive named rewind verification.
     pub verify_rewinds: bool,
+    /// Evaluate pgfmath natively in floating point. Output may differ from
+    /// pgf's fixed-point macros in the last digits, as with luamath.
+    pub native_pgfmath: bool,
     /// Soft and hard checkpoint memory limits.
     pub ladder_target_bytes: usize,
     /// Absolute checkpoint memory limit.
@@ -239,6 +242,7 @@ impl EnginePreviewConfig {
             build_date: SystemTime::UNIX_EPOCH,
             deterministic: true,
             verify_rewinds: false,
+            native_pgfmath: true,
             ladder_target_bytes: 64 * 1024 * 1024,
             ladder_hard_bytes: 96 * 1024 * 1024,
             min_recent_rungs: 8,
@@ -878,6 +882,7 @@ fn configure(state: &mut EngineState, config: &EnginePreviewConfig) {
     state.config.semantic_pagination_enabled = false;
     state.config.shell_escape_enabled = false;
     state.config.deterministic_mode = config.deterministic;
+    state.config.native_pgfmath = config.native_pgfmath;
     state.config.execution_mode = EngineExecutionMode::Resident;
     state.cancellation.install(config.cancellation.clone());
 }
