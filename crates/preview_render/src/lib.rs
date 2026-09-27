@@ -1,9 +1,7 @@
 //! Portable XDV analysis and rendering for realtime preview.
 //!
-//! This crate's default build contains no filesystem, native renderer, or
-//! platform integration. Callers provide immutable resource bytes and a drawing
-//! backend. A native MuPDF adapter can therefore remain an adapter rather than
-//! becoming part of page semantics.
+//! The default build has no filesystem or native renderer: callers supply
+//! resource bytes and a drawing backend.
 
 mod backend;
 mod color;
@@ -18,6 +16,8 @@ mod pagesize;
 mod pdfcode;
 mod render;
 mod resource;
+#[cfg(test)]
+mod testxdv;
 mod tfm;
 mod units;
 

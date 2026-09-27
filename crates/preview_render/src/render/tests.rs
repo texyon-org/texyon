@@ -1,5 +1,6 @@
 use super::*;
 use crate::resource::{ResourceKind, ResourceRequest};
+use crate::testxdv::XdvBuilder;
 use crate::{Color, LinkAction, Matrix, Path, PositionedChar, PositionedGlyph, StrokeStyle};
 use sha2::{Digest, Sha256};
 use std::cell::RefCell;
@@ -68,74 +69,26 @@ impl ResourceProvider for MappedClassicResources {
 }
 
 fn rule_xdv(color_special: &str) -> Arc<[u8]> {
-    let mut bytes = vec![247, 7];
-    bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
-    bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
-    bytes.extend_from_slice(&1000u32.to_be_bytes());
-    bytes.push(0);
-    bytes.push(139);
-    bytes.extend_from_slice(&[0; 40]);
-    bytes.extend_from_slice(&(-1i32).to_be_bytes());
-    bytes.push(239);
-    bytes.push(color_special.len() as u8);
-    bytes.extend_from_slice(color_special.as_bytes());
-    bytes.push(132);
-    bytes.extend_from_slice(&65_536i32.to_be_bytes());
-    bytes.extend_from_slice(&131_072i32.to_be_bytes());
-    bytes.push(140);
-    bytes.push(248);
-    bytes.extend_from_slice(&0u32.to_be_bytes());
-    bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
-    bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
-    bytes.extend_from_slice(&1000u32.to_be_bytes());
-    bytes.extend_from_slice(&[0; 8]);
-    bytes.extend_from_slice(&2u16.to_be_bytes());
-    bytes.extend_from_slice(&1u16.to_be_bytes());
-    bytes.push(249);
-    bytes.extend_from_slice(&0u32.to_be_bytes());
-    bytes.push(7);
-    bytes.extend_from_slice(&[223; 4]);
-    Arc::from(bytes)
+    let mut xdv = XdvBuilder::new(1000);
+    xdv.begin_page();
+    xdv.special(color_special)
+        .set_rule(65_536, 131_072)
+        .end_page();
+    Arc::from(xdv.finish())
 }
 
-/// Multi-page rule-only document plus its absolute begin-page offsets.
-///
-/// `widths` supplies one rule width per page, so two documents can be built
-/// that agree byte-for-byte up to a chosen page and differ after it.
+/// One rule per page, so documents can share bytes up to a chosen page.
 fn paged_xdv(widths: &[i32]) -> (Arc<[u8]>, Vec<u32>) {
-    let mut bytes = vec![247, 7];
-    bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
-    bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
-    bytes.extend_from_slice(&1000u32.to_be_bytes());
-    bytes.push(0);
-    let mut offsets = Vec::with_capacity(widths.len());
-    let mut previous = -1i32;
-    for width in widths {
-        let start = bytes.len() as u32;
-        offsets.push(start);
-        bytes.push(139);
-        bytes.extend_from_slice(&[0; 40]);
-        bytes.extend_from_slice(&previous.to_be_bytes());
-        bytes.push(132);
-        bytes.extend_from_slice(&65_536i32.to_be_bytes());
-        bytes.extend_from_slice(&width.to_be_bytes());
-        bytes.push(140);
-        previous = start as i32;
-    }
-    let postamble = bytes.len() as u32;
-    bytes.push(248);
-    bytes.extend_from_slice(&(previous.max(0) as u32).to_be_bytes());
-    bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
-    bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
-    bytes.extend_from_slice(&1000u32.to_be_bytes());
-    bytes.extend_from_slice(&[0; 8]);
-    bytes.extend_from_slice(&2u16.to_be_bytes());
-    bytes.extend_from_slice(&(widths.len() as u16).to_be_bytes());
-    bytes.push(249);
-    bytes.extend_from_slice(&postamble.to_be_bytes());
-    bytes.push(7);
-    bytes.extend_from_slice(&[223; 4]);
-    (Arc::from(bytes), offsets)
+    let mut xdv = XdvBuilder::new(1000);
+    let offsets = widths
+        .iter()
+        .map(|&width| {
+            let offset = xdv.begin_page();
+            xdv.set_rule(65_536, width).end_page();
+            offset
+        })
+        .collect();
+    (Arc::from(xdv.finish()), offsets)
 }
 
 #[test]
@@ -143,7 +96,6 @@ fn resumed_analysis_matches_a_complete_walk_of_the_same_document() {
     let pages = 40;
     let first: Vec<i32> = (0..pages).map(|index| 1_000 + index).collect();
     let mut second = first.clone();
-    // Change only the tail, exactly as an edit deep in a document does.
     for width in second.iter_mut().skip(33) {
         *width += 7;
     }
@@ -239,79 +191,19 @@ fn a_changed_leading_page_defeats_reuse() {
     assert_eq!(resumed.pages(), complete.pages());
 }
 
-/// A page holding one special, a rule, and a second special after it.
-///
-/// The rule both gives the page something to draw and moves the cursor, so
-/// the two specials sit at different horizontal positions — which is what
-/// gives an annotation between them any width at all.
+/// Two specials with a rule between them, so they sit at different positions.
 fn bracketed_link_xdv(open: &str, close: &str) -> Arc<[u8]> {
-    let mut bytes = vec![247, 7];
-    bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
-    bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
-    bytes.extend_from_slice(&1000u32.to_be_bytes());
-    bytes.push(0);
-    bytes.push(139);
-    bytes.extend_from_slice(&[0; 40]);
-    bytes.extend_from_slice(&(-1i32).to_be_bytes());
-
-    bytes.push(239);
-    bytes.push(open.len() as u8);
-    bytes.extend_from_slice(open.as_bytes());
-
-    // set_rule: ten points tall, twenty wide, advancing the cursor by its
-    // width so the closing special lands to the right of it.
-    bytes.push(132);
-    bytes.extend_from_slice(&655_360i32.to_be_bytes());
-    bytes.extend_from_slice(&1_310_720i32.to_be_bytes());
-
-    bytes.push(239);
-    bytes.push(close.len() as u8);
-    bytes.extend_from_slice(close.as_bytes());
-
-    bytes.push(140);
-    bytes.push(248);
-    bytes.extend_from_slice(&0u32.to_be_bytes());
-    bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
-    bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
-    bytes.extend_from_slice(&1000u32.to_be_bytes());
-    bytes.extend_from_slice(&[0; 8]);
-    bytes.extend_from_slice(&2u16.to_be_bytes());
-    bytes.extend_from_slice(&1u16.to_be_bytes());
-    bytes.push(249);
-    bytes.extend_from_slice(&0u32.to_be_bytes());
-    bytes.push(7);
-    bytes.extend_from_slice(&[223; 4]);
-    Arc::from(bytes)
+    let mut xdv = XdvBuilder::new(1000);
+    xdv.begin_page();
+    xdv.special(open)
+        .set_rule(655_360, 1_310_720)
+        .special(close)
+        .end_page();
+    Arc::from(xdv.finish())
 }
 
 fn special_xdv(specials: &[&str]) -> Arc<[u8]> {
-    let mut bytes = vec![247, 7];
-    bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
-    bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
-    bytes.extend_from_slice(&1000u32.to_be_bytes());
-    bytes.push(0);
-    bytes.push(139);
-    bytes.extend_from_slice(&[0; 40]);
-    bytes.extend_from_slice(&(-1i32).to_be_bytes());
-    for special in specials {
-        bytes.push(239);
-        bytes.push(special.len() as u8);
-        bytes.extend_from_slice(special.as_bytes());
-    }
-    bytes.push(140);
-    bytes.push(248);
-    bytes.extend_from_slice(&0u32.to_be_bytes());
-    bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
-    bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
-    bytes.extend_from_slice(&1000u32.to_be_bytes());
-    bytes.extend_from_slice(&[0; 8]);
-    bytes.extend_from_slice(&2u16.to_be_bytes());
-    bytes.extend_from_slice(&1u16.to_be_bytes());
-    bytes.push(249);
-    bytes.extend_from_slice(&0u32.to_be_bytes());
-    bytes.push(7);
-    bytes.extend_from_slice(&[223; 4]);
-    Arc::from(bytes)
+    Arc::from(XdvBuilder::specials_page(specials))
 }
 
 fn pdf_code_xdv(specials: &[&str]) -> Arc<[u8]> {
@@ -350,45 +242,28 @@ fn wrap_page_in_transform(xdv: &[u8], matrix: &str) -> Arc<[u8]> {
 }
 
 fn styled_native_xdv() -> Arc<[u8]> {
-    let mut bytes = vec![247, 7];
-    bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
-    bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
-    bytes.extend_from_slice(&1000u32.to_be_bytes());
-    bytes.push(0);
-    bytes.push(139);
-    bytes.extend_from_slice(&[0; 40]);
-    bytes.extend_from_slice(&(-1i32).to_be_bytes());
-    bytes.push(252);
-    bytes.extend_from_slice(&0i32.to_be_bytes());
-    bytes.extend_from_slice(&(10i32 << 16).to_be_bytes());
-    bytes.extend_from_slice(&0x7300u16.to_be_bytes());
-    bytes.push(4);
-    bytes.extend_from_slice(b"font");
-    bytes.extend_from_slice(&2u32.to_be_bytes());
-    bytes.extend_from_slice(&0xff000080u32.to_be_bytes());
-    bytes.extend_from_slice(&(2u32 << 16).to_be_bytes());
-    bytes.extend_from_slice(&(-16_384i32 as u32).to_be_bytes());
-    bytes.extend_from_slice(&6_554u32.to_be_bytes());
-    bytes.push(253);
-    bytes.extend_from_slice(&(12i32 << 16).to_be_bytes());
-    bytes.extend_from_slice(&1u16.to_be_bytes());
-    bytes.extend_from_slice(&0i32.to_be_bytes());
-    bytes.extend_from_slice(&0i32.to_be_bytes());
-    bytes.extend_from_slice(&34u16.to_be_bytes());
-    bytes.push(140);
-    bytes.push(248);
-    bytes.extend_from_slice(&0u32.to_be_bytes());
-    bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
-    bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
-    bytes.extend_from_slice(&1000u32.to_be_bytes());
-    bytes.extend_from_slice(&[0; 8]);
-    bytes.extend_from_slice(&2u16.to_be_bytes());
-    bytes.extend_from_slice(&1u16.to_be_bytes());
-    bytes.push(249);
-    bytes.extend_from_slice(&0u32.to_be_bytes());
-    bytes.push(7);
-    bytes.extend_from_slice(&[223; 4]);
-    Arc::from(bytes)
+    let mut define = vec![252];
+    define.extend(0i32.to_be_bytes());
+    define.extend((10i32 << 16).to_be_bytes());
+    define.extend(0x7300u16.to_be_bytes());
+    define.push(4);
+    define.extend(b"font");
+    define.extend(2u32.to_be_bytes());
+    define.extend(0xff000080u32.to_be_bytes());
+    define.extend((2u32 << 16).to_be_bytes());
+    define.extend((-16_384i32).to_be_bytes());
+    define.extend(6_554u32.to_be_bytes());
+    let mut glyphs = vec![253];
+    glyphs.extend((12i32 << 16).to_be_bytes());
+    glyphs.extend(1u16.to_be_bytes());
+    glyphs.extend(0i32.to_be_bytes());
+    glyphs.extend(0i32.to_be_bytes());
+    glyphs.extend(34u16.to_be_bytes());
+
+    let mut xdv = XdvBuilder::new(1000);
+    xdv.begin_page();
+    xdv.raw(&define).raw(&glyphs).end_page();
+    Arc::from(xdv.finish())
 }
 
 #[test]
@@ -592,7 +467,6 @@ fn nonvisual_pdf_specials_do_not_make_pages_uncertain() {
         analysis.pages()[0].fingerprint,
         PageFingerprint::Stable(_)
     ));
-    // An annotation that goes nowhere is still not a drawing operation.
     assert!(analysis.pages()[0].links.is_empty());
     assert_eq!(analysis.ledger().supported().get("pdf-nonvisual"), Some(&3));
 }
@@ -610,7 +484,6 @@ fn a_destination_is_recorded_where_its_special_sits() {
         panic!("expected exactly one destination");
     };
     assert_eq!(destination.name, "section.1");
-    // Nothing was drawn for it, so the page stays certain.
     assert!(analysis.plans[0].operations.is_empty());
     assert!(matches!(
         analysis.pages()[0].fingerprint,
@@ -620,8 +493,6 @@ fn a_destination_is_recorded_where_its_special_sits() {
 
 #[test]
 fn a_link_takes_its_width_from_the_specials_that_bracket_it() {
-    // The two specials sit at the left and right edges of what they
-    // enclose, which is the measurement nothing else supplies.
     let mut renderer = HotRenderer::new(());
     let analysis = renderer
         .analyze(bracketed_link_xdv(
@@ -651,8 +522,6 @@ fn a_link_takes_its_width_from_the_specials_that_bracket_it() {
 
 #[test]
 fn an_annotation_left_open_is_closed_by_the_page() {
-    // A `pdf:bann` whose `pdf:eann` never arrives would otherwise swallow
-    // the rest of the document.
     let mut renderer = HotRenderer::new(());
     let analysis = renderer
         .analyze(bracketed_link_xdv(
@@ -669,8 +538,6 @@ fn an_annotation_left_open_is_closed_by_the_page() {
 
 #[test]
 fn a_link_changes_a_page_that_looks_otherwise_identical() {
-    // Links are shipped with the pages that changed, so a page whose only
-    // difference is where it points has to count as changed.
     let mut renderer = HotRenderer::new(());
     let first = renderer
         .analyze(bracketed_link_xdv(
