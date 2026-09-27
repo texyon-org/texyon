@@ -192,6 +192,9 @@ export function useEngine(
       performance.mark("tex:frame-received");
       measure("tex:worker", "tex:compile-call", "tex:frame-received");
       compiledRevision.current = revision;
+      // Errors from before the bundle index landed are not the document's;
+      // the worker asks for a recompile once it can tell, so show that one.
+      if (compiled.provisional) return;
       paintingFrom.current = requestedAt;
       setResult(compiled);
       setStats(compiled.stats);

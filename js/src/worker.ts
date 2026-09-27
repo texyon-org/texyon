@@ -482,6 +482,13 @@ async function indexBundle(url: string): Promise<void> {
           "only files in the local pack will be available",
       },
     });
+    // A provisional run is still waiting to be replaced; the misses stand now,
+    // so a fresh run turns them into the document's real verdict.
+    if (missedAwaitingIndex) {
+      missedAwaitingIndex = false;
+      if (compiledSinceOpen) restartPending = true;
+      post({ id: 0, kind: "recompile" });
+    }
   }
 
   post({ id: 0, kind: "progress", progress: { phase: "ready" } });
@@ -774,6 +781,7 @@ function collect(report: RawCompileReport, elapsedMs: number): CompileResult {
     log: report.log,
     outcome: report.outcome,
     aborted: report.aborted,
+    provisional: missedAwaitingIndex,
     tailPending: report.tailPending,
     messages: report.messages,
     diagnostics: report.diagnostics,

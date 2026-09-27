@@ -140,6 +140,15 @@ export interface CompileResult {
   outcome: Outcome;
   /** A recoverable fatal-class abort, if the engine hit one. */
   aborted?: string;
+  /**
+   * Whether a file was ruled missing only because the bundle index had not
+   * arrived yet.
+   *
+   * Such a run is not the document's verdict: a recompile follows as soon as
+   * the index lands (or fails), so a viewer that would show its errors should
+   * wait for that one instead.
+   */
+  provisional: boolean;
   /** Whether a viewport-bounded compile left a tail to finish. */
   tailPending: boolean;
   /** Diagnostics gathered during the run. */
