@@ -12,8 +12,10 @@ use crate::resource::{ResourceKind, ResourceProvider, ResourceRequest};
 use crate::tfm::Tfm;
 use crate::RenderError;
 
-use super::super::plan::{ClassicPosition, GlyphPosition};
-use super::super::{DrawOperation, ImageKind, PagePlan, SP_TO_BP};
+use crate::backend::{PositionedChar, PositionedGlyph};
+use crate::units::FIXED_ONE;
+
+use super::super::{DrawOperation, PagePlan};
 use super::annotation::{ascent, descent};
 use super::specials::parse_image_special;
 use super::{ClassicFont, NativeFont, Walker};
@@ -38,7 +40,7 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
     ) -> Result<(), Self::Error> {
         self.finish_page();
         self.capture_resume();
-        self.page_size.begin_page();
+        self.state.page_size.begin_page();
         self.page = Some(PagePlan {
             width_bp: DEFAULT_BP[0],
             height_bp: DEFAULT_BP[1],
@@ -48,7 +50,7 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
             unsupported: BTreeMap::new(),
             complete: true,
         });
-        self.pdf_graphics.reset_page();
+        self.state.pdf_graphics.reset_page();
         Ok(())
     }
 
@@ -57,71 +59,62 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
             // Matches the previous dedicated size pass, which only tracked
             // media-size specials appearing inside a page.
             if self.page.is_some() {
-                self.page_size.apply(contents);
+                self.state.page_size.apply(contents);
             }
-            self.ledger.record_supported("page-size");
+            self.state.ledger.record_supported("page-size");
             return Ok(());
         }
-        if self.apply_color_special(contents)? {
-            return Ok(());
-        }
-        if self.apply_transform_special(x, y, contents)? {
-            return Ok(());
+        let text = std::str::from_utf8(contents).ok();
+        let trimmed = text.map(str::trim);
+        if let Some(text) = trimmed {
+            if self.apply_color_special(text)? || self.apply_transform_special(x, y, text)? {
+                return Ok(());
+            }
         }
         if contents == b"pdf:code" || contents.starts_with(b"pdf:code ") {
             let payload = &contents[b"pdf:code".len()..];
-            let run = self.pdf_graphics.run(
-                payload.strip_prefix(b" ").unwrap_or(payload),
-                x,
-                y,
-                SP_TO_BP,
-            );
-            self.color = self.pdf_graphics.fill;
+            let run =
+                self.state
+                    .pdf_graphics
+                    .run(payload.strip_prefix(b" ").unwrap_or(payload), x, y);
+            self.state.color = self.state.pdf_graphics.fill;
             self.append_pdf_operations(run.operations)?;
             for name in run.supported {
-                self.ledger.record_supported(name);
+                self.state.ledger.record_supported(name);
             }
             for name in run.unsupported {
                 self.unsupported(&name)?;
             }
             return Ok(());
         }
-        let image_origin = self.pdf_graphics.current_transform(x, y, SP_TO_BP);
-        if let Some(image) = parse_image_special(contents, image_origin) {
+        if let Some(image) = trimmed.and_then(parse_image_special) {
+            let transform = image.transform(self.state.pdf_graphics.current_transform(x, y));
             let request = ResourceRequest {
-                kind: match image.kind {
-                    ImageKind::Raster => ResourceKind::Image,
-                    ImageKind::Pdf => ResourceKind::Pdf,
-                },
+                kind: image.kind.resource_kind(),
                 name: image.path,
             };
             let Some(resource) = self.provider.resolve(&request)? else {
                 return self.unsupported("missing-image-resource");
             };
             let identity = resource.identity;
-            self.resources.insert(identity, resource);
+            self.state.resources.insert(identity, resource);
             self.page_mut()?.operations.push(DrawOperation::Image {
                 identity,
                 kind: image.kind,
-                transform: image.transform,
+                transform,
                 page: image.page,
                 width: image.width,
                 height: image.height,
             });
-            self.ledger.record_supported(match image.kind {
-                ImageKind::Raster => "raster-image",
-                ImageKind::Pdf => "embedded-pdf",
-            });
+            self.state.ledger.record_supported(image.kind.ledger_name());
             return Ok(());
         }
-        if self.apply_link_special(x, y, contents)? {
-            return Ok(());
+        if let Some(text) = trimmed {
+            if self.apply_link_special(x, y, text)? || self.apply_nonvisual_special(text) {
+                return Ok(());
+            }
         }
-        if self.apply_nonvisual_special(contents) {
-            return Ok(());
-        }
-        let name = std::str::from_utf8(contents)
-            .ok()
+        let name = text
             .and_then(|text| text.split([' ', ':', '=']).next())
             .filter(|name| !name.is_empty())
             .unwrap_or("non-utf8-special");
@@ -142,7 +135,7 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
         x: i32,
         y: i32,
     ) -> Result<i32, Self::Error> {
-        let Some(font) = self.classic_fonts.get(&font_num) else {
+        let Some(font) = self.state.classic_fonts.get(&font_num) else {
             self.unsupported("undefined-classic-font")?;
             return Ok(0);
         };
@@ -153,9 +146,9 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
         let mut pen = x;
         let mut positions = Vec::with_capacity(chars.len());
         for &character in chars {
-            positions.push(ClassicPosition {
-                character,
-                transform: self.pdf_graphics.current_transform(pen, y, SP_TO_BP),
+            positions.push(PositionedChar {
+                character: character as u32,
+                transform: self.state.pdf_graphics.current_transform(pen, y),
             });
             pen = pen.wrapping_add(tfm.advance(character, font.scale));
         }
@@ -171,7 +164,7 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
             self.unsupported("incomplete-classic-font-resources")?;
             return Ok(advance);
         };
-        let color = self.color;
+        let color = self.state.color;
         self.page_mut()?
             .operations
             .push(DrawOperation::ClassicChars {
@@ -182,7 +175,7 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
                 chars: positions,
                 color,
             });
-        self.ledger.record_supported("classic-char-run");
+        self.state.ledger.record_supported("classic-char-run");
         Ok(advance)
     }
 
@@ -197,19 +190,12 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
     ) -> Result<(), Self::Error> {
         let resource_name = format!("{area}{name}");
         let font_map = self.font_map()?;
-        let mapped = font_map
-            .get(&resource_name)
-            .or_else(|| font_map.get(name))
-            .cloned();
+        let mapped = font_map.get(&resource_name).or_else(|| font_map.get(name));
         let program_name = mapped
-            .as_ref()
-            .and_then(|entry| entry.program.as_ref())
-            .cloned()
+            .and_then(|entry| entry.program.clone())
             .unwrap_or_else(|| resource_name.clone());
         let encoding_name = mapped
-            .as_ref()
-            .and_then(|entry| entry.encoding.as_ref())
-            .cloned()
+            .and_then(|entry| entry.encoding.clone())
             .unwrap_or_else(|| resource_name.clone());
         let tfm_resource = self.provider.resolve(&ResourceRequest {
             kind: ResourceKind::Tfm,
@@ -243,14 +229,16 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
         let program_identity = program.as_ref().map(|resource| resource.identity);
         let encoding_identity = encoding.as_ref().map(|resource| resource.identity);
         for resource in [tfm_resource, program, encoding].into_iter().flatten() {
-            self.resources.insert(resource.identity, resource);
+            self.state.resources.insert(resource.identity, resource);
         }
         if tfm.is_some() && program_identity.is_some() && encoding_identity.is_some() {
-            self.ledger.record_supported("classic-font-resource");
+            self.state.ledger.record_supported("classic-font-resource");
         } else {
-            self.ledger.record_unsupported("classic-font-resource");
+            self.state
+                .ledger
+                .record_unsupported("classic-font-resource");
         }
-        self.classic_fonts.insert(
+        self.state.classic_fonts.insert(
             font_num,
             ClassicFont {
                 scale: scale_factor,
@@ -270,51 +258,44 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
         x: &[i32],
         y: &[i32],
     ) -> Result<(), Self::Error> {
-        let Some(font) = self.fonts.get(&font_num) else {
+        let Some(&font) = self.state.fonts.get(&font_num) else {
             return self.unsupported("undefined-native-font");
         };
         let Some(identity) = font.resource else {
             return self.unsupported("missing-native-font");
         };
-        let face_index = font.face_index;
-        let size = font.size;
-        let font_color = font.color;
-        let extend = font.extend;
-        let slant = font.slant;
-        let embolden = font.embolden;
-        let vertical = font.vertical;
         debug_assert_eq!(glyphs.len(), x.len());
         debug_assert_eq!(glyphs.len(), y.len());
         let positions = glyphs
             .iter()
             .zip(x)
             .zip(y)
-            .map(|((&glyph_id, &x), &y)| GlyphPosition {
+            .map(|((&glyph_id, &x), &y)| PositionedGlyph {
                 glyph_id,
-                transform: self.pdf_graphics.current_transform(x, y, SP_TO_BP),
+                transform: self.state.pdf_graphics.current_transform(x, y),
             })
             .collect();
         if self.open_link.is_some() {
             if let (Some(&first), Some(&last)) = (x.first(), x.last()) {
                 let baseline = y.first().copied().unwrap_or(0);
-                self.extend_link(first, last, baseline, ascent(size), descent(size));
+                self.extend_link(first, last, baseline, ascent(font.size), descent(font.size));
             }
         }
-        let color = font_color.unwrap_or(self.color);
+        let color = font.color.unwrap_or(self.state.color);
         self.page_mut()?
             .operations
             .push(DrawOperation::NativeGlyphs {
                 identity,
-                face_index,
-                size,
+                face_index: font.face_index,
+                size: font.size,
                 glyphs: positions,
                 color,
-                extend,
-                slant,
-                embolden,
-                vertical,
+                extend: font.extend,
+                slant: font.slant,
+                embolden: font.embolden,
+                vertical: font.vertical,
             });
-        self.ledger.record_supported("native-glyph-run");
+        self.state.ledger.record_supported("native-glyph-run");
         Ok(())
     }
 
@@ -343,12 +324,8 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
         embolden: Option<u32>,
     ) -> Result<(), Self::Error> {
         let color = color_rgba.map(|rgba| {
-            Color::rgba(
-                ((rgba >> 24) & 0xff) as f32 / 255.0,
-                ((rgba >> 16) & 0xff) as f32 / 255.0,
-                ((rgba >> 8) & 0xff) as f32 / 255.0,
-                (rgba & 0xff) as f32 / 255.0,
-            )
+            let [red, green, blue, alpha] = rgba.to_be_bytes().map(|byte| f32::from(byte) / 255.0);
+            Color::rgba(red, green, blue, alpha)
         });
         let request = ResourceRequest {
             kind: ResourceKind::FontProgram,
@@ -357,19 +334,19 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
         let resource = self.provider.resolve(&request)?;
         let identity = resource.as_ref().map(|resource| resource.identity);
         if let Some(resource) = resource {
-            self.resources.insert(resource.identity, resource);
-            self.ledger.record_supported("native-font-resource");
+            self.state.resources.insert(resource.identity, resource);
+            self.state.ledger.record_supported("native-font-resource");
         } else {
-            self.ledger.record_unsupported("native-font-resource");
+            self.state.ledger.record_unsupported("native-font-resource");
         }
-        self.fonts.insert(
+        self.state.fonts.insert(
             font_num,
             NativeFont {
                 resource: identity,
                 face_index,
                 size,
                 color,
-                extend: extend.unwrap_or(65_536),
+                extend: extend.unwrap_or(FIXED_ONE),
                 slant: slant.unwrap_or(0),
                 embolden: embolden.unwrap_or(0),
                 vertical,
@@ -382,16 +359,16 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
         if height > 0 && width > 0 {
             // A rule states its own box, so no estimate is needed: it runs from
             // the baseline up by its height.
-            self.extend_link(x, x + width, y, height, 0);
-            let color = self.color;
-            let transform = self.pdf_graphics.current_transform(x, y, SP_TO_BP);
+            self.extend_link(x, x.wrapping_add(width), y, height, 0);
+            let color = self.state.color;
+            let transform = self.state.pdf_graphics.current_transform(x, y);
             self.page_mut()?.operations.push(DrawOperation::Rule {
                 height,
                 width,
                 transform,
                 color,
             });
-            self.ledger.record_supported("rule");
+            self.state.ledger.record_supported("rule");
         }
         Ok(())
     }

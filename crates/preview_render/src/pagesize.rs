@@ -6,6 +6,7 @@ use std::io::Cursor;
 #[cfg(test)]
 use tectonic_xdv::{XdvEvents, XdvParser};
 
+use crate::units::{normalize_zero, SP_TO_BP};
 use crate::RenderError;
 
 pub(crate) const DEFAULT_BP: [f32; 2] = [612.0, 792.0];
@@ -263,18 +264,10 @@ fn parse_length(input: &[u8], mag: f32) -> Option<(f32, &[u8])> {
         b"pc" => 12.0 * 72.0 / 72.27,
         b"dd" => 1238.0 / 1157.0 * 72.0 / 72.27,
         b"cc" => 12.0 * 1238.0 / 1157.0 * 72.0 / 72.27,
-        b"sp" => 72.0 / 72.27 / 65_536.0,
+        b"sp" => SP_TO_BP,
         _ => return None,
     };
     Some((value * true_scale * scale, rest))
-}
-
-fn normalize_zero(value: f32) -> f32 {
-    if value == 0.0 {
-        0.0
-    } else {
-        value
-    }
 }
 
 #[cfg(test)]

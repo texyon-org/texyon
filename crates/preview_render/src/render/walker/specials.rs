@@ -4,44 +4,51 @@ use crate::backend::Matrix;
 use crate::color::Color;
 use crate::links::{parse_destination_name, Destination};
 use crate::resource::ResourceProvider;
+use crate::units::{normalize_zero, SP_TO_BP};
 use crate::RenderError;
 
-use super::super::{ImageKind, SP_TO_BP};
+use super::super::ImageKind;
 use super::Walker;
 
+/// Arguments after `keyword` when `text` is exactly it or it plus a space.
+fn keyword_args<'a>(text: &'a str, keyword: &str) -> Option<&'a str> {
+    let rest = text.strip_prefix(keyword)?;
+    (rest.is_empty() || rest.starts_with(' ')).then_some(rest)
+}
+
 impl<P: ResourceProvider> Walker<'_, P> {
+    fn set_colors(&mut self, fill: Color, line: Color) {
+        self.state.color = fill;
+        self.state.pdf_graphics.set_colors(fill, line);
+    }
+
+    /// Pop one saved graphics state, recording `underflow` when there is none.
+    fn restore_graphics(&mut self, underflow: &str) -> Result<bool, RenderError> {
+        let Some(operations) = self.state.pdf_graphics.restore_state() else {
+            self.unsupported(underflow)?;
+            return Ok(false);
+        };
+        self.state.color = self.state.pdf_graphics.fill;
+        self.append_pdf_operations(operations)?;
+        Ok(true)
+    }
+
     pub(super) fn apply_transform_special(
         &mut self,
         x: i32,
         y: i32,
-        contents: &[u8],
+        text: &str,
     ) -> Result<bool, RenderError> {
-        let Ok(text) = std::str::from_utf8(contents) else {
-            return Ok(false);
-        };
-        let text = text.trim();
-        if text == "pdf:btrans" || text.starts_with("pdf:btrans ") {
-            let args = &text["pdf:btrans".len()..];
-            let transform = parse_named_matrix(args).unwrap_or(Matrix {
-                a: 1.0,
-                b: 0.0,
-                c: 0.0,
-                d: 1.0,
-                e: 0.0,
-                f: 0.0,
-            });
-            self.pdf_graphics.begin_transform(transform, x, y, SP_TO_BP);
-            self.ledger.record_supported("pdf-begin-transform");
+        if let Some(args) = keyword_args(text, "pdf:btrans") {
+            let transform = parse_named_matrix(args).unwrap_or(Matrix::IDENTITY);
+            self.state.pdf_graphics.begin_transform(transform, x, y);
+            self.state.ledger.record_supported("pdf-begin-transform");
             return Ok(true);
         }
         if text == "pdf:etrans" {
-            let Some(operations) = self.pdf_graphics.restore_state() else {
-                self.unsupported("pdf-transform-stack-underflow")?;
-                return Ok(true);
-            };
-            self.color = self.pdf_graphics.fill;
-            self.append_pdf_operations(operations)?;
-            self.ledger.record_supported("pdf-end-transform");
+            if self.restore_graphics("pdf-transform-stack-underflow")? {
+                self.state.ledger.record_supported("pdf-end-transform");
+            }
             return Ok(true);
         }
         let Some(args) = text.strip_prefix("x:") else {
@@ -56,14 +63,17 @@ impl<P: ResourceProvider> Walker<'_, P> {
                 let values: Vec<_> = tokens
                     .filter_map(|value| value.parse::<f32>().ok())
                     .collect();
-                if values.len() < 2 {
+                let [sx, sy, ..] = values[..] else {
                     self.unsupported("malformed-x-scale")?;
-                } else {
-                    self.pdf_graphics.concatenate_about_pen(
-                        values[0], 0.0, 0.0, values[1], 0.0, 0.0, x, y, SP_TO_BP,
-                    );
-                    self.ledger.record_supported("x-scale");
-                }
+                    return Ok(true);
+                };
+                let scale = Matrix {
+                    a: sx,
+                    d: sy,
+                    ..Matrix::IDENTITY
+                };
+                self.state.pdf_graphics.concatenate_about_pen(scale, x, y);
+                self.state.ledger.record_supported("x-scale");
             }
             "rotate" => {
                 let Some(degrees) = tokens.next().and_then(|value| value.parse::<f32>().ok())
@@ -71,61 +81,52 @@ impl<P: ResourceProvider> Walker<'_, P> {
                     self.unsupported("malformed-x-rotate")?;
                     return Ok(true);
                 };
-                let radians = degrees.to_radians();
-                self.pdf_graphics.concatenate_about_pen(
-                    radians.cos(),
-                    radians.sin(),
-                    -radians.sin(),
-                    radians.cos(),
-                    0.0,
-                    0.0,
-                    x,
-                    y,
-                    SP_TO_BP,
-                );
-                self.ledger.record_supported("x-rotate");
+                let (sin, cos) = degrees.to_radians().sin_cos();
+                let rotation = Matrix {
+                    a: cos,
+                    b: sin,
+                    c: -sin,
+                    d: cos,
+                    e: 0.0,
+                    f: 0.0,
+                };
+                self.state
+                    .pdf_graphics
+                    .concatenate_about_pen(rotation, x, y);
+                self.state.ledger.record_supported("x-rotate");
             }
             "gsave" => {
-                self.pdf_graphics.save_state();
-                self.ledger.record_supported("x-save");
+                self.state.pdf_graphics.save_state();
+                self.state.ledger.record_supported("x-save");
             }
             "grestore" => {
-                let Some(operations) = self.pdf_graphics.restore_state() else {
-                    self.unsupported("x-transform-stack-underflow")?;
-                    return Ok(true);
-                };
-                self.color = self.pdf_graphics.fill;
-                self.append_pdf_operations(operations)?;
-                self.ledger.record_supported("x-restore");
+                if self.restore_graphics("x-transform-stack-underflow")? {
+                    self.state.ledger.record_supported("x-restore");
+                }
             }
             _ => return Ok(false),
         }
         Ok(true)
     }
 
-    pub(super) fn apply_nonvisual_special(&mut self, contents: &[u8]) -> bool {
-        let Ok(text) = std::str::from_utf8(contents) else {
-            return false;
-        };
-        let text = text.trim();
+    pub(super) fn apply_nonvisual_special(&mut self, text: &str) -> bool {
         if text == "landscape" {
-            self.ledger.record_supported("landscape");
+            self.state.ledger.record_supported("landscape");
             return true;
         }
-        if text == "dvipdfmx:config" || text.starts_with("dvipdfmx:config ") {
-            self.ledger.record_supported("dvipdfmx-config");
+        if keyword_args(text, "dvipdfmx:config").is_some() {
+            self.state.ledger.record_supported("dvipdfmx-config");
             return true;
         }
         let Some(args) = text.strip_prefix("pdf:") else {
             return false;
         };
-        let keyword = args
-            .trim_start()
-            .chars()
-            .take_while(|character| character.is_ascii_alphabetic())
-            .collect::<String>();
+        let args = args.trim_start();
+        let keyword = &args[..args
+            .find(|character: char| !character.is_ascii_alphabetic())
+            .unwrap_or(args.len())];
         if matches!(
-            keyword.as_str(),
+            keyword,
             "out"
                 | "outline"
                 | "ann"
@@ -147,27 +148,20 @@ impl<P: ResourceProvider> Walker<'_, P> {
                 | "eform"
                 | "fstream"
         ) {
-            self.ledger.record_supported("pdf-nonvisual");
+            self.state.ledger.record_supported("pdf-nonvisual");
             return true;
         }
         false
     }
 
-    /// Handle the specials that describe the page's overlay.
-    ///
-    /// These draw nothing. They say which region of the page is clickable and
-    /// where a cross-reference lands, and a viewer that ignored them would show
-    /// `\ref`, `\cite` and `\url` as ordinary text.
+    /// Links and destinations draw nothing but make up the page's click overlay.
     pub(super) fn apply_link_special(
         &mut self,
         x: i32,
         y: i32,
-        contents: &[u8],
+        text: &str,
     ) -> Result<bool, RenderError> {
-        let Ok(text) = std::str::from_utf8(contents) else {
-            return Ok(false);
-        };
-        let Some(args) = text.trim().strip_prefix("pdf:") else {
+        let Some(args) = text.strip_prefix("pdf:") else {
             return Ok(false);
         };
         let args = args.trim_start();
@@ -179,110 +173,102 @@ impl<P: ResourceProvider> Walker<'_, P> {
                     x_bp: x as f32 * SP_TO_BP,
                     y_bp: y as f32 * SP_TO_BP,
                 });
-                self.ledger.record_supported("pdf-destination");
+                self.state.ledger.record_supported("pdf-destination");
             } else {
-                // A destination whose name cannot be read is still not a
-                // drawing operation, so the page stays certain.
-                self.ledger.record_supported("pdf-nonvisual");
+                // Still draws nothing, so the page stays certain.
+                self.state.ledger.record_supported("pdf-nonvisual");
             }
             return Ok(true);
         }
 
         if args.starts_with("bann") {
             self.begin_link(args, x, y);
-            self.ledger.record_supported(if self.open_link.is_some() {
-                "pdf-link"
-            } else {
-                "pdf-nonvisual"
-            });
+            self.state
+                .ledger
+                .record_supported(if self.open_link.is_some() {
+                    "pdf-link"
+                } else {
+                    "pdf-nonvisual"
+                });
             return Ok(true);
         }
 
         if args.starts_with("eann") {
-            // The closing special sits at the right edge of what it ends, which
-            // is the one measurement glyph positions cannot supply.
+            // The closing special marks the right edge, which glyph positions cannot supply.
             self.extend_link(x, x, y, 0, 0);
             self.close_link();
-            self.ledger.record_supported("pdf-nonvisual");
+            self.state.ledger.record_supported("pdf-nonvisual");
             return Ok(true);
         }
 
         Ok(false)
     }
 
-    pub(super) fn apply_color_special(&mut self, contents: &[u8]) -> Result<bool, RenderError> {
-        let Ok(text) = std::str::from_utf8(contents) else {
-            return Ok(false);
-        };
-        let text = text.trim();
-        if text == "pdfcolorstackinit" || text.starts_with("pdfcolorstackinit ") {
-            let args = &text["pdfcolorstackinit".len()..];
-            let Some((fill, line)) = parse_pdf_colors(args, self.pdf_graphics.colors()) else {
+    pub(super) fn apply_color_special(&mut self, text: &str) -> Result<bool, RenderError> {
+        if let Some(args) = keyword_args(text, "pdfcolorstackinit") {
+            let Some((fill, line)) = parse_pdf_colors(args, self.state.pdf_graphics.colors())
+            else {
                 self.unsupported("malformed-pdfcolorstackinit")?;
                 return Ok(true);
             };
-            self.pdf_graphics.set_colors(fill, line);
-            self.color = fill;
-            self.ledger.record_supported("pdfcolorstackinit");
+            self.set_colors(fill, line);
+            self.state.ledger.record_supported("pdfcolorstackinit");
             return Ok(true);
         }
-        if text == "color" || text.starts_with("color ") {
-            let args = &text["color".len()..];
+        if let Some(args) = keyword_args(text, "color") {
             let args = args.trim();
             if let Some(spec) = args.strip_prefix("push") {
                 let Some(color) = parse_color_spec(spec.trim()) else {
                     self.unsupported("malformed-color")?;
                     return Ok(true);
                 };
-                self.color_stack.push(self.pdf_graphics.colors());
-                self.color = color;
-                self.pdf_graphics.set_colors(color, color);
+                self.state
+                    .color_stack
+                    .push(self.state.pdf_graphics.colors());
+                self.set_colors(color, color);
             } else if args == "pop" {
-                let Some((fill, line)) = self.color_stack.pop() else {
+                let Some((fill, line)) = self.state.color_stack.pop() else {
                     self.unsupported("color-stack-underflow")?;
                     return Ok(true);
                 };
-                self.color = fill;
-                self.pdf_graphics.set_colors(fill, line);
+                self.set_colors(fill, line);
             } else {
                 let Some(color) = parse_color_spec(args) else {
                     self.unsupported("malformed-color")?;
                     return Ok(true);
                 };
-                self.color = color;
-                self.pdf_graphics.set_colors(color, color);
+                self.set_colors(color, color);
             }
-            self.ledger.record_supported("color");
+            self.state.ledger.record_supported("color");
             return Ok(true);
         }
-        if text == "pdfcolorstack" || text.starts_with("pdfcolorstack ") {
-            let args = &text["pdfcolorstack".len()..];
+        if let Some(args) = keyword_args(text, "pdfcolorstack") {
             let mut tokens = args.split_whitespace();
-            let Some(stack_number) = tokens.next().and_then(|value| value.parse::<i32>().ok())
-            else {
-                self.unsupported("malformed-pdfcolorstack")?;
-                return Ok(true);
-            };
-            let Some(action) = tokens.next() else {
+            let stack_number = tokens.next().and_then(|value| value.parse::<i32>().ok());
+            let (Some(stack_number), Some(action)) = (stack_number, tokens.next()) else {
                 self.unsupported("malformed-pdfcolorstack")?;
                 return Ok(true);
             };
             match action {
-                "push" => {
-                    let Some((fill, line)) = parse_pdf_colors(args, self.pdf_graphics.colors())
+                "push" | "set" => {
+                    let Some((fill, line)) =
+                        parse_pdf_colors(args, self.state.pdf_graphics.colors())
                     else {
                         self.unsupported("malformed-pdfcolorstack")?;
                         return Ok(true);
                     };
-                    self.pdf_color_stacks
-                        .entry(stack_number)
-                        .or_default()
-                        .push(self.pdf_graphics.colors());
-                    self.color = fill;
-                    self.pdf_graphics.set_colors(fill, line);
+                    if action == "push" {
+                        self.state
+                            .pdf_color_stacks
+                            .entry(stack_number)
+                            .or_default()
+                            .push(self.state.pdf_graphics.colors());
+                    }
+                    self.set_colors(fill, line);
                 }
                 "pop" => {
                     let colors = self
+                        .state
                         .pdf_color_stacks
                         .get_mut(&stack_number)
                         .and_then(Vec::pop);
@@ -290,17 +276,7 @@ impl<P: ResourceProvider> Walker<'_, P> {
                         self.unsupported("pdfcolorstack-underflow")?;
                         return Ok(true);
                     };
-                    self.color = fill;
-                    self.pdf_graphics.set_colors(fill, line);
-                }
-                "set" => {
-                    let Some((fill, line)) = parse_pdf_colors(args, self.pdf_graphics.colors())
-                    else {
-                        self.unsupported("malformed-pdfcolorstack")?;
-                        return Ok(true);
-                    };
-                    self.color = fill;
-                    self.pdf_graphics.set_colors(fill, line);
+                    self.set_colors(fill, line);
                 }
                 "current" => {}
                 _ => {
@@ -308,42 +284,59 @@ impl<P: ResourceProvider> Walker<'_, P> {
                     return Ok(true);
                 }
             }
-            self.ledger.record_supported("pdfcolorstack");
+            self.state.ledger.record_supported("pdfcolorstack");
             return Ok(true);
         }
         Ok(false)
     }
 }
 
+/// `pdf:image` placement, before the pen transform is applied.
 pub(super) struct ImageSpecial {
     pub(super) path: String,
     pub(super) kind: ImageKind,
-    pub(super) transform: Matrix,
+    matrix: Matrix,
     pub(super) page: u32,
     pub(super) width: Option<f32>,
     pub(super) height: Option<f32>,
+}
+
+impl ImageSpecial {
+    /// Page transform for an image drawn at `origin`.
+    pub(super) fn transform(&self, mut origin: Matrix) -> Matrix {
+        if matches!(self.kind, ImageKind::Pdf) {
+            origin.b = -origin.b;
+            origin.d = -origin.d;
+        }
+        self.matrix.concat(origin)
+    }
 }
 
 fn parse_color_spec(spec: &str) -> Option<Color> {
     let mut tokens = spec.split_whitespace();
     let model = tokens.next()?;
     let values: Vec<f32> = tokens.filter_map(|value| value.parse().ok()).collect();
-    match model.to_ascii_lowercase().as_str() {
-        "gray" if !values.is_empty() => Some(Color::gray(values[0])),
-        "rgb" if values.len() >= 3 => Some(Color::rgb(values[0], values[1], values[2])),
-        "cmyk" if values.len() >= 4 => {
-            Some(Color::cmyk(values[0], values[1], values[2], values[3]))
+    match (model.to_ascii_lowercase().as_str(), values.as_slice()) {
+        ("gray", &[gray, ..]) => Some(Color::gray(gray)),
+        ("rgb", &[red, green, blue, ..]) => Some(Color::rgb(red, green, blue)),
+        ("cmyk", &[cyan, magenta, yellow, black, ..]) => {
+            Some(Color::cmyk(cyan, magenta, yellow, black))
         }
         _ => None,
     }
 }
 
-fn parse_pdf_colors(args: &str, current: (Color, Color)) -> Option<(Color, Color)> {
+/// Byte range inside the first parenthesis group, running to the end when unclosed.
+fn parenthesized(args: &str) -> Option<(usize, usize)> {
     let open = args.find('(')?;
     let close = args[open + 1..]
         .find(')')
-        .map(|index| open + 1 + index)
-        .unwrap_or(args.len());
+        .map_or(args.len(), |index| open + 1 + index);
+    Some((open, close))
+}
+
+fn parse_pdf_colors(args: &str, current: (Color, Color)) -> Option<(Color, Color)> {
+    let (open, close) = parenthesized(args)?;
     let (mut fill, mut line) = current;
     let mut values = Vec::new();
     let mut recognized = false;
@@ -380,43 +373,28 @@ fn parse_pdf_colors(args: &str, current: (Color, Color)) -> Option<(Color, Color
     recognized.then_some((fill, line))
 }
 
+/// Six matrix entries, or `None` unless every one parses.
+fn parse_matrix(tokens: &[&str]) -> Option<Matrix> {
+    let mut values = [0.0; 6];
+    for (value, token) in values.iter_mut().zip(tokens) {
+        *value = normalize_zero(token.parse().ok()?);
+    }
+    let [a, b, c, d, e, f] = values;
+    Some(Matrix { a, b, c, d, e, f })
+}
+
 fn parse_named_matrix(args: &str) -> Option<Matrix> {
     let tokens: Vec<_> = args.split_whitespace().collect();
     let index = tokens.iter().position(|token| *token == "matrix")?;
-    let values: Option<Vec<f32>> = tokens
-        .get(index + 1..index + 7)?
-        .iter()
-        .map(|value| value.parse().ok().map(normalize_float))
-        .collect();
-    let values = values?;
-    Some(Matrix {
-        a: values[0],
-        b: values[1],
-        c: values[2],
-        d: values[3],
-        e: values[4],
-        f: values[5],
-    })
+    parse_matrix(tokens.get(index + 1..index + 7)?)
 }
 
-pub(super) fn parse_image_special(contents: &[u8], mut origin: Matrix) -> Option<ImageSpecial> {
-    let text = std::str::from_utf8(contents).ok()?.trim();
+pub(super) fn parse_image_special(text: &str) -> Option<ImageSpecial> {
     let args = text.strip_prefix("pdf:image")?.trim();
-    let open = args.find('(')?;
-    let close = args[open + 1..]
-        .find(')')
-        .map(|index| open + 1 + index)
-        .unwrap_or(args.len());
+    let (open, close) = parenthesized(args)?;
     let path = args[open + 1..close].to_owned();
     let tokens: Vec<_> = args[..open].split_whitespace().collect();
-    let mut matrix = Matrix {
-        a: 1.0,
-        b: 0.0,
-        c: 0.0,
-        d: 1.0,
-        e: 0.0,
-        f: 0.0,
-    };
+    let mut matrix = Matrix::IDENTITY;
     let mut page = 0;
     let mut width = None;
     let mut height = None;
@@ -424,24 +402,12 @@ pub(super) fn parse_image_special(contents: &[u8], mut origin: Matrix) -> Option
     while index < tokens.len() {
         match tokens[index] {
             "matrix" if index + 6 < tokens.len() => {
-                let values: Option<Vec<f32>> = tokens[index + 1..index + 7]
-                    .iter()
-                    .map(|value| value.parse().ok().map(normalize_float))
-                    .collect();
-                let values = values?;
-                matrix = Matrix {
-                    a: values[0],
-                    b: values[1],
-                    c: values[2],
-                    d: values[3],
-                    e: values[4],
-                    f: values[5],
-                };
+                matrix = parse_matrix(&tokens[index + 1..index + 7])?;
                 index += 7;
             }
             "page" if index + 1 < tokens.len() => {
                 let raw: i32 = tokens[index + 1].parse().ok()?;
-                page = raw.saturating_sub(1).max(0) as u32;
+                page = u32::try_from(raw.saturating_sub(1)).unwrap_or(0);
                 index += 2;
             }
             "width" if index + 1 < tokens.len() => {
@@ -455,23 +421,18 @@ pub(super) fn parse_image_special(contents: &[u8], mut origin: Matrix) -> Option
             _ => index += 1,
         }
     }
-    let kind = if path
+    let is_pdf = path
         .rsplit('.')
         .next()
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
-    {
-        ImageKind::Pdf
-    } else {
-        ImageKind::Raster
-    };
-    if matches!(kind, ImageKind::Pdf) {
-        origin.b = -origin.b;
-        origin.d = -origin.d;
-    }
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"));
     Some(ImageSpecial {
         path,
-        kind,
-        transform: matrix.concat(origin),
+        kind: if is_pdf {
+            ImageKind::Pdf
+        } else {
+            ImageKind::Raster
+        },
+        matrix,
         page,
         width,
         height,
@@ -491,13 +452,5 @@ fn parse_image_dimension(value: &str) -> Option<f32> {
         "in" => 72.0,
         _ => return None,
     };
-    Some(normalize_float(number * scale))
-}
-
-fn normalize_float(value: f32) -> f32 {
-    if value == 0.0 {
-        0.0
-    } else {
-        value
-    }
+    Some(normalize_zero(number * scale))
 }

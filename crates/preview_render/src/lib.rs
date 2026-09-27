@@ -19,6 +19,7 @@ mod pdfcode;
 mod render;
 mod resource;
 mod tfm;
+mod units;
 
 #[cfg(all(
     feature = "backend-mupdf",

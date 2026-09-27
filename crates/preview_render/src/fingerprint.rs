@@ -24,9 +24,7 @@ pub(crate) fn page_digest(page: &PagePlan) -> [u8; 32] {
                     digest.update(value.to_be_bytes());
                 }
                 hash_matrix(&mut digest, *transform);
-                for value in [color.red, color.green, color.blue, color.alpha] {
-                    digest.update(value.to_bits().to_be_bytes());
-                }
+                hash_color(&mut digest, *color);
             }
             DrawOperation::NativeGlyphs {
                 identity,
@@ -48,9 +46,7 @@ pub(crate) fn page_digest(page: &PagePlan) -> [u8; 32] {
                     digest.update(glyph.glyph_id.to_be_bytes());
                     hash_matrix(&mut digest, glyph.transform);
                 }
-                for value in [color.red, color.green, color.blue, color.alpha] {
-                    digest.update(value.to_bits().to_be_bytes());
-                }
+                hash_color(&mut digest, *color);
                 digest.update(extend.to_be_bytes());
                 digest.update(slant.to_be_bytes());
                 digest.update(embolden.to_be_bytes());
@@ -67,16 +63,7 @@ pub(crate) fn page_digest(page: &PagePlan) -> [u8; 32] {
                 digest.update([2]);
                 digest.update(identity.0);
                 digest.update([*kind as u8]);
-                for value in [
-                    transform.a,
-                    transform.b,
-                    transform.c,
-                    transform.d,
-                    transform.e,
-                    transform.f,
-                ] {
-                    digest.update(value.to_bits().to_be_bytes());
-                }
+                hash_matrix(&mut digest, *transform);
                 digest.update(page.to_be_bytes());
                 digest.update(width.map(f32::to_bits).unwrap_or(u32::MAX).to_be_bytes());
                 digest.update(height.map(f32::to_bits).unwrap_or(u32::MAX).to_be_bytes());
@@ -98,9 +85,7 @@ pub(crate) fn page_digest(page: &PagePlan) -> [u8; 32] {
                     digest.update(character.character.to_be_bytes());
                     hash_matrix(&mut digest, character.transform);
                 }
-                for value in [color.red, color.green, color.blue, color.alpha] {
-                    digest.update(value.to_bits().to_be_bytes());
-                }
+                hash_color(&mut digest, *color);
             }
             DrawOperation::PathFill {
                 path,
@@ -195,27 +180,25 @@ fn hash_overlay(digest: &mut Sha256, page: &PagePlan) {
                 link.rect.bottom,
             ],
         );
-        match &link.action {
-            LinkAction::Uri(uri) => {
-                digest.update([0]);
-                digest.update((uri.len() as u64).to_be_bytes());
-                digest.update(uri.as_bytes());
-            }
-            LinkAction::Destination(name) => {
-                digest.update([1]);
-                digest.update((name.len() as u64).to_be_bytes());
-                digest.update(name.as_bytes());
-            }
-        }
+        let (tag, target) = match &link.action {
+            LinkAction::Uri(uri) => (0, uri),
+            LinkAction::Destination(name) => (1, name),
+        };
+        digest.update([tag]);
+        hash_str(digest, target);
     }
 
     digest.update(b"destinations");
     digest.update((page.destinations.len() as u64).to_be_bytes());
     for destination in &page.destinations {
-        digest.update((destination.name.len() as u64).to_be_bytes());
-        digest.update(destination.name.as_bytes());
+        hash_str(digest, &destination.name);
         hash_floats(digest, &[destination.x_bp, destination.y_bp]);
     }
+}
+
+fn hash_str(digest: &mut Sha256, text: &str) {
+    digest.update((text.len() as u64).to_be_bytes());
+    digest.update(text.as_bytes());
 }
 
 fn hash_matrix(digest: &mut Sha256, matrix: Matrix) {

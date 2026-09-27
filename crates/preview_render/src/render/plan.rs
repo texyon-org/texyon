@@ -1,13 +1,11 @@
 //! Frozen per-page drawing plans produced by analysis.
 
-use crate::backend::{Matrix, Path, StrokeStyle};
+use crate::backend::{Matrix, Path, PositionedChar, PositionedGlyph, StrokeStyle};
 use crate::color::Color;
 use crate::links::{Destination, Link};
-use crate::resource::ResourceIdentity;
+use crate::resource::{ResourceIdentity, ResourceKind};
 
 use super::UnsupportedSummary;
-
-pub(crate) const SP_TO_BP: f32 = 72.0 / 72.27 / 65_536.0;
 
 #[derive(Clone)]
 pub(crate) struct PagePlan {
@@ -32,7 +30,7 @@ pub(crate) enum DrawOperation {
         identity: ResourceIdentity,
         face_index: u32,
         size: i32,
-        glyphs: Vec<GlyphPosition>,
+        glyphs: Vec<PositionedGlyph>,
         color: Color,
         extend: u32,
         slant: u32,
@@ -52,7 +50,7 @@ pub(crate) enum DrawOperation {
         program_identity: ResourceIdentity,
         encoding_identity: ResourceIdentity,
         scale: u32,
-        chars: Vec<ClassicPosition>,
+        chars: Vec<PositionedChar>,
         color: Color,
     },
     PathFill {
@@ -81,18 +79,18 @@ pub(crate) enum ImageKind {
     Pdf,
 }
 
-#[derive(Clone)]
-pub(crate) struct GlyphPosition {
-    pub(crate) glyph_id: u16,
-    pub(crate) transform: Matrix,
-}
+impl ImageKind {
+    pub(crate) fn resource_kind(self) -> ResourceKind {
+        match self {
+            Self::Raster => ResourceKind::Image,
+            Self::Pdf => ResourceKind::Pdf,
+        }
+    }
 
-#[derive(Clone)]
-pub(crate) struct ClassicPosition {
-    pub(crate) character: i32,
-    pub(crate) transform: Matrix,
-}
-
-pub(crate) fn fixed_16_16(value: u32) -> f32 {
-    i32::from_be_bytes(value.to_be_bytes()) as f32 / 65_536.0
+    pub(crate) fn ledger_name(self) -> &'static str {
+        match self {
+            Self::Raster => "raster-image",
+            Self::Pdf => "embedded-pdf",
+        }
+    }
 }

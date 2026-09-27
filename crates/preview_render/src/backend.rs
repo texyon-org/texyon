@@ -63,6 +63,15 @@ pub struct StrokeStyle {
 }
 
 impl Matrix {
+    pub(crate) const IDENTITY: Self = Self {
+        a: 1.0,
+        b: 0.0,
+        c: 0.0,
+        d: 1.0,
+        e: 0.0,
+        f: 0.0,
+    };
+
     pub(crate) fn concat(self, other: Self) -> Self {
         Self {
             a: self.a * other.a + self.b * other.c,

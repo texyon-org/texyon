@@ -5,19 +5,21 @@ mod plan;
 mod tests;
 mod walker;
 
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 use std::sync::Arc;
 
 use tectonic_xdv::{FileType, XdvParser};
 
-use crate::backend::{Backend, FontStyle, PositionedChar, PositionedGlyph};
+use crate::backend::{Backend, FontId, FontStyle};
 use crate::fingerprint::page_digest;
 use crate::pagesize::preamble_magnification;
 use crate::resource::{Resource, ResourceIdentity, ResourceProvider};
+use crate::units::{fixed_16_16, SP_TO_BP};
 use crate::{Destination, Link, RenderError};
 
-pub(crate) use plan::{fixed_16_16, DrawOperation, ImageKind, PagePlan, SP_TO_BP};
+pub(crate) use plan::{DrawOperation, ImageKind, PagePlan};
 use walker::{FontArtifacts, WalkResume, Walker};
 
 /// Counts supported and unsupported constructs encountered during analysis.
@@ -177,48 +179,37 @@ impl<P: ResourceProvider> HotRenderer<P> {
         let analysis_id = self.next_analysis_id;
         self.next_analysis_id = self.next_analysis_id.wrapping_add(1).max(1);
         let magnification = preamble_magnification(&xdv)?;
-        let resumption = self.resumption(&xdv, page_offsets);
-        let (reused_plans, reused_pages, walker) = match resumption {
-            Some((resume, offset)) => {
-                let cache = self.cache.as_ref().expect("resumption without a cache");
-                let filetype = cache.filetype;
-                let plans = cache.plans[..resume.page_index].to_vec();
-                let pages = cache.pages[..resume.page_index].to_vec();
-                // Resume points above the shared prefix are gone, but the ones
-                // below it describe bytes this document still has, so keep them
-                // and stay resumable for a later edit further up the document.
-                let earlier = cache
-                    .resumes
-                    .iter()
-                    .filter(|earlier| earlier.page_index < resume.page_index)
-                    .cloned()
-                    .collect::<Vec<_>>();
-                let walker =
-                    Walker::resume(&self.provider, &mut self.fonts, resume, filetype, earlier);
-                let (mut walker, _) = XdvParser::process_from_page(
+        let (mut plans, mut pages, mut walker) = match self.resumption(&xdv, page_offsets) {
+            Some(resumption) => {
+                let offset = resumption.offset;
+                let filetype = resumption.filetype;
+                let walker = Walker::resume(
+                    &self.provider,
+                    &mut self.fonts,
+                    resumption.resume,
+                    filetype,
+                    resumption.earlier,
+                );
+                let (walker, _) = XdvParser::process_from_page(
                     Cursor::new(&xdv[offset..]),
                     walker,
                     filetype,
                     offset as u64,
                 )?;
-                walker.finish_page();
-                (plans, pages, walker)
+                (resumption.plans, resumption.pages, walker)
             }
             None => {
                 let walker = Walker::new(&self.provider, &mut self.fonts, magnification);
-                let (mut walker, _) = XdvParser::process(Cursor::new(&xdv), walker)?;
-                walker.finish_page();
+                let (walker, _) = XdvParser::process(Cursor::new(&xdv), walker)?;
                 (Vec::new(), Vec::new(), walker)
             }
         };
+        walker.finish_page();
 
-        let first_fresh = reused_plans.len();
-        let mut plans = reused_plans;
-        let mut pages = reused_pages;
+        let first_fresh = plans.len();
         plans.reserve(walker.pages.len());
         pages.reserve(walker.pages.len());
-        for (offset, plan) in walker.pages.into_iter().enumerate() {
-            let page_index = first_fresh + offset;
+        for (page_index, plan) in (first_fresh..).zip(walker.pages) {
             let fingerprint = if plan.complete {
                 PageFingerprint::Stable(page_digest(&plan))
             } else {
@@ -247,36 +238,41 @@ impl<P: ResourceProvider> HotRenderer<P> {
         Ok(Analysis {
             xdv,
             plans,
-            resources: walker.resources,
+            resources: walker.state.resources,
             pages,
-            ledger: walker.ledger,
+            ledger: walker.state.ledger,
             reused_pages: first_fresh,
         })
     }
 
     /// Deepest retained resume point that the new document provably reaches
-    /// with unchanged bytes, paired with its begin-page offset.
-    fn resumption(&self, xdv: &[u8], page_offsets: &[u32]) -> Option<(WalkResume, usize)> {
+    /// with unchanged bytes.
+    fn resumption(&self, xdv: &[u8], page_offsets: &[u32]) -> Option<Resumption> {
         let cache = self.cache.as_ref()?;
-        // The engine reports which prefix it retained, but the renderer proves
-        // it: only bytes it has actually compared may be treated as unchanged.
+        // Only bytes the renderer compared itself count as unchanged.
         let shared = shared_prefix(xdv, &cache.xdv);
-        let resume = cache
-            .resumes
-            .iter()
-            .rev()
-            .find(|resume| {
-                resume.page_index <= cache.plans.len()
-                    && page_offsets
-                        .get(resume.page_index)
-                        .is_some_and(|offset| *offset as usize <= shared)
-            })?
-            .clone();
-        if resume.page_index == 0 {
+        let (resume, offset) = cache.resumes.iter().rev().find_map(|resume| {
+            let offset = *page_offsets.get(resume.page_index)? as usize;
+            (resume.page_index <= cache.plans.len() && offset <= shared).then_some((resume, offset))
+        })?;
+        let page_index = resume.page_index;
+        if page_index == 0 {
             return None;
         }
-        let offset = page_offsets[resume.page_index] as usize;
-        Some((resume, offset))
+        Some(Resumption {
+            resume: resume.clone(),
+            offset,
+            filetype: cache.filetype,
+            plans: cache.plans.get(..page_index)?.to_vec(),
+            pages: cache.pages.get(..page_index)?.to_vec(),
+            // Resume points inside the shared prefix stay valid for a later edit further up.
+            earlier: cache
+                .resumes
+                .iter()
+                .filter(|earlier| earlier.page_index < page_index)
+                .cloned()
+                .collect(),
+        })
     }
 
     /// Render exactly the selected pages and commit completed analysis facts only
@@ -302,161 +298,13 @@ impl<P: ResourceProvider> HotRenderer<P> {
             }
         }
 
-        let mut native_handles = BTreeMap::new();
-        let mut classic_handles = BTreeMap::new();
+        let mut fonts = FontHandles::default();
         let mut rendered = Vec::with_capacity(page_indices.len());
         for &page_index in page_indices {
             let page = &analysis.plans[page_index];
             backend.begin_page(page.width_bp, page.height_bp)?;
             for operation in &page.operations {
-                match operation {
-                    DrawOperation::Rule {
-                        height,
-                        width,
-                        transform,
-                        color,
-                    } => backend.fill_rule(
-                        *width as f32 * SP_TO_BP,
-                        *height as f32 * SP_TO_BP,
-                        *transform,
-                        *color,
-                    )?,
-                    DrawOperation::NativeGlyphs {
-                        identity,
-                        face_index,
-                        size,
-                        glyphs,
-                        color,
-                        extend,
-                        slant,
-                        embolden,
-                        vertical,
-                    } => {
-                        let handle = match native_handles.get(identity) {
-                            Some(handle) => *handle,
-                            None => {
-                                let resource =
-                                    analysis.resources.get(identity).ok_or_else(|| {
-                                        RenderError::Resource(
-                                            "analyzed font bytes disappeared".into(),
-                                        )
-                                    })?;
-                                let handle = backend.register_font(
-                                    *identity,
-                                    &resource.bytes,
-                                    *face_index,
-                                )?;
-                                native_handles.insert(*identity, handle);
-                                handle
-                            }
-                        };
-                        let positioned: Vec<_> = glyphs
-                            .iter()
-                            .map(|glyph| PositionedGlyph {
-                                glyph_id: glyph.glyph_id,
-                                transform: glyph.transform,
-                            })
-                            .collect();
-                        backend.fill_glyphs(
-                            handle,
-                            *size as f32 * SP_TO_BP,
-                            &positioned,
-                            *color,
-                            FontStyle {
-                                extend: fixed_16_16(*extend),
-                                slant: fixed_16_16(*slant),
-                                embolden: fixed_16_16(*embolden),
-                                vertical: *vertical,
-                            },
-                        )?;
-                    }
-                    DrawOperation::Image {
-                        identity,
-                        kind,
-                        transform,
-                        page,
-                        width,
-                        height,
-                    } => {
-                        let resource = analysis.resources.get(identity).ok_or_else(|| {
-                            RenderError::Resource("analyzed image bytes disappeared".into())
-                        })?;
-                        match kind {
-                            ImageKind::Raster => {
-                                backend.draw_image(&resource.bytes, *transform, *width, *height)?
-                            }
-                            ImageKind::Pdf => {
-                                backend.draw_pdf(&resource.bytes, *page, *transform)?
-                            }
-                        }
-                    }
-                    DrawOperation::ClassicChars {
-                        program_identity,
-                        encoding_identity,
-                        scale,
-                        chars,
-                        color,
-                        ..
-                    } => {
-                        let key = (*program_identity, *encoding_identity);
-                        let handle = match classic_handles.get(&key) {
-                            Some(handle) => *handle,
-                            None => {
-                                let program =
-                                    analysis.resources.get(program_identity).ok_or_else(|| {
-                                        RenderError::Resource(
-                                            "analyzed classic font disappeared".into(),
-                                        )
-                                    })?;
-                                let encoding =
-                                    analysis.resources.get(encoding_identity).ok_or_else(|| {
-                                        RenderError::Resource(
-                                            "analyzed font encoding disappeared".into(),
-                                        )
-                                    })?;
-                                let handle = backend.register_classic_font(
-                                    *program_identity,
-                                    &program.bytes,
-                                    *encoding_identity,
-                                    &encoding.bytes,
-                                )?;
-                                classic_handles.insert(key, handle);
-                                handle
-                            }
-                        };
-                        let positioned: Vec<_> = chars
-                            .iter()
-                            .map(|character| PositionedChar {
-                                character: character.character as u32,
-                                transform: character.transform,
-                            })
-                            .collect();
-                        backend.fill_chars(
-                            handle,
-                            *scale as f32 * SP_TO_BP,
-                            &positioned,
-                            *color,
-                        )?;
-                    }
-                    DrawOperation::PathFill {
-                        path,
-                        even_odd,
-                        transform,
-                        color,
-                    } => backend.fill_path(path, *even_odd, *transform, *color)?,
-                    DrawOperation::PathStroke {
-                        path,
-                        style,
-                        transform,
-                        color,
-                    } => backend.stroke_path(path, *style, *transform, *color)?,
-                    DrawOperation::ClipPath {
-                        path,
-                        even_odd,
-                        transform,
-                    } => backend.clip_path(path, *even_odd, *transform)?,
-                    DrawOperation::PopClip => backend.pop_clip()?,
-                }
+                draw(analysis, &mut fonts, backend, operation)?;
             }
             rendered.push(PageSvg {
                 page_index,
@@ -472,6 +320,135 @@ impl<P: ResourceProvider> HotRenderer<P> {
         self.last_completed
             .as_ref()
             .map(|(pages, ledger)| (pages.as_slice(), ledger))
+    }
+}
+
+/// Cached walk data a new analysis can restart from.
+struct Resumption {
+    resume: WalkResume,
+    offset: usize,
+    filetype: FileType,
+    plans: Vec<Arc<PagePlan>>,
+    pages: Vec<PageVisual>,
+    earlier: Vec<WalkResume>,
+}
+
+/// Backend font handles registered during one `render_pages` call.
+#[derive(Default)]
+struct FontHandles {
+    native: BTreeMap<ResourceIdentity, FontId>,
+    classic: BTreeMap<(ResourceIdentity, ResourceIdentity), FontId>,
+}
+
+impl Analysis {
+    fn resource(&self, identity: &ResourceIdentity, what: &str) -> Result<&Resource, RenderError> {
+        self.resources
+            .get(identity)
+            .ok_or_else(|| RenderError::Resource(format!("analyzed {what} disappeared")))
+    }
+}
+
+fn draw<B: Backend>(
+    analysis: &Analysis,
+    fonts: &mut FontHandles,
+    backend: &mut B,
+    operation: &DrawOperation,
+) -> Result<(), RenderError> {
+    match operation {
+        DrawOperation::Rule {
+            height,
+            width,
+            transform,
+            color,
+        } => backend.fill_rule(
+            *width as f32 * SP_TO_BP,
+            *height as f32 * SP_TO_BP,
+            *transform,
+            *color,
+        ),
+        DrawOperation::NativeGlyphs {
+            identity,
+            face_index,
+            size,
+            glyphs,
+            color,
+            extend,
+            slant,
+            embolden,
+            vertical,
+        } => {
+            let font = match fonts.native.entry(*identity) {
+                Entry::Occupied(entry) => *entry.get(),
+                Entry::Vacant(entry) => {
+                    let resource = analysis.resource(identity, "font bytes")?;
+                    *entry.insert(backend.register_font(*identity, &resource.bytes, *face_index)?)
+                }
+            };
+            let style = FontStyle {
+                extend: fixed_16_16(*extend),
+                slant: fixed_16_16(*slant),
+                embolden: fixed_16_16(*embolden),
+                vertical: *vertical,
+            };
+            backend.fill_glyphs(font, *size as f32 * SP_TO_BP, glyphs, *color, style)
+        }
+        DrawOperation::Image {
+            identity,
+            kind,
+            transform,
+            page,
+            width,
+            height,
+        } => {
+            let resource = analysis.resource(identity, "image bytes")?;
+            match kind {
+                ImageKind::Raster => {
+                    backend.draw_image(&resource.bytes, *transform, *width, *height)
+                }
+                ImageKind::Pdf => backend.draw_pdf(&resource.bytes, *page, *transform),
+            }
+        }
+        DrawOperation::ClassicChars {
+            program_identity,
+            encoding_identity,
+            scale,
+            chars,
+            color,
+            ..
+        } => {
+            let font = match fonts.classic.entry((*program_identity, *encoding_identity)) {
+                Entry::Occupied(entry) => *entry.get(),
+                Entry::Vacant(entry) => {
+                    let program = analysis.resource(program_identity, "classic font")?;
+                    let encoding = analysis.resource(encoding_identity, "font encoding")?;
+                    *entry.insert(backend.register_classic_font(
+                        *program_identity,
+                        &program.bytes,
+                        *encoding_identity,
+                        &encoding.bytes,
+                    )?)
+                }
+            };
+            backend.fill_chars(font, *scale as f32 * SP_TO_BP, chars, *color)
+        }
+        DrawOperation::PathFill {
+            path,
+            even_odd,
+            transform,
+            color,
+        } => backend.fill_path(path, *even_odd, *transform, *color),
+        DrawOperation::PathStroke {
+            path,
+            style,
+            transform,
+            color,
+        } => backend.stroke_path(path, *style, *transform, *color),
+        DrawOperation::ClipPath {
+            path,
+            even_odd,
+            transform,
+        } => backend.clip_path(path, *even_odd, *transform),
+        DrawOperation::PopClip => backend.pop_clip(),
     }
 }
 

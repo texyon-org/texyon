@@ -48,26 +48,31 @@ const FONT_MAP_NAMES: [&str; 3] = ["pdftex.map", "kanjix.map", "ckx.map"];
 /// small enough to be free and large enough to bound capture work.
 const RESUME_STRIDE: usize = 8;
 
-/// Complete walker state entering a page boundary.
-///
-/// Everything an XDV walk carries across a page break lives here, so restoring
-/// one of these and parsing from the matching begin-page opcode produces
-/// exactly what a walk from byte zero would have produced.
+/// Everything a walk carries across a page break.
 #[derive(Clone)]
-pub(super) struct WalkResume {
-    pub(super) page_index: usize,
+pub(super) struct WalkState {
     page_size: PageSizeState,
     fonts: BTreeMap<i32, NativeFont>,
     classic_fonts: BTreeMap<i32, ClassicFont>,
-    resources: BTreeMap<ResourceIdentity, Resource>,
-    ledger: CoverageLedger,
+    pub(super) resources: BTreeMap<ResourceIdentity, Resource>,
+    pub(super) ledger: CoverageLedger,
     color: Color,
     color_stack: Vec<(Color, Color)>,
     pdf_color_stacks: BTreeMap<i32, Vec<(Color, Color)>>,
     pdf_graphics: PdfGraphics,
 }
 
+/// Walker state entering a page boundary.
+///
+/// Parsing from the matching begin-page opcode with this state restored yields
+/// exactly what a walk from byte zero would have produced.
 #[derive(Clone)]
+pub(super) struct WalkResume {
+    pub(super) page_index: usize,
+    state: WalkState,
+}
+
+#[derive(Clone, Copy)]
 struct NativeFont {
     resource: Option<ResourceIdentity>,
     face_index: u32,
@@ -95,19 +100,10 @@ pub(super) struct Walker<'a, P> {
     pub(super) pages: Vec<PagePlan>,
     /// Document page index of `pages[0]`, nonzero for a resumed walk.
     first_page_index: usize,
-    /// Stream type, from the preamble or carried across a resume.
     pub(super) filetype: FileType,
     pub(super) resumes: Vec<WalkResume>,
-    page_size: PageSizeState,
-    fonts: BTreeMap<i32, NativeFont>,
-    classic_fonts: BTreeMap<i32, ClassicFont>,
-    pub(super) resources: BTreeMap<ResourceIdentity, Resource>,
-    pub(super) ledger: CoverageLedger,
-    color: Color,
-    color_stack: Vec<(Color, Color)>,
-    pdf_color_stacks: BTreeMap<i32, Vec<(Color, Color)>>,
-    pdf_graphics: PdfGraphics,
-    /// The annotation between a `pdf:bann` and its `pdf:eann`, if inside one.
+    pub(super) state: WalkState,
+    /// Open between `pdf:bann` and `pdf:eann`, never across a page boundary.
     open_link: Option<OpenLink>,
 }
 
@@ -117,14 +113,7 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
         artifacts: &'a mut FontArtifacts,
         magnification: f32,
     ) -> Self {
-        Self {
-            provider,
-            artifacts,
-            page: None,
-            pages: Vec::new(),
-            first_page_index: 0,
-            filetype: FileType::Xdv,
-            resumes: Vec::new(),
+        let state = WalkState {
             page_size: PageSizeState::new(magnification),
             fonts: BTreeMap::new(),
             classic_fonts: BTreeMap::new(),
@@ -134,8 +123,8 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
             color_stack: Vec::new(),
             pdf_color_stacks: BTreeMap::new(),
             pdf_graphics: PdfGraphics::default(),
-            open_link: None,
-        }
+        };
+        Self::with_state(provider, artifacts, 0, FileType::Xdv, Vec::new(), state)
     }
 
     /// Restore the carried state of a previous walk at a page boundary.
@@ -146,26 +135,29 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
         filetype: FileType,
         mut earlier: Vec<WalkResume>,
     ) -> Self {
-        earlier.push(resume.clone());
+        let page_index = resume.page_index;
+        let state = resume.state.clone();
+        earlier.push(resume);
+        Self::with_state(provider, artifacts, page_index, filetype, earlier, state)
+    }
+
+    fn with_state(
+        provider: &'a P,
+        artifacts: &'a mut FontArtifacts,
+        first_page_index: usize,
+        filetype: FileType,
+        resumes: Vec<WalkResume>,
+        state: WalkState,
+    ) -> Self {
         Self {
             provider,
             artifacts,
             page: None,
             pages: Vec::new(),
-            first_page_index: resume.page_index,
+            first_page_index,
             filetype,
-            resumes: earlier,
-            page_size: resume.page_size,
-            fonts: resume.fonts,
-            classic_fonts: resume.classic_fonts,
-            resources: resume.resources,
-            ledger: resume.ledger,
-            color: resume.color,
-            color_stack: resume.color_stack,
-            pdf_color_stacks: resume.pdf_color_stacks,
-            pdf_graphics: resume.pdf_graphics,
-            // A resume begins at a page boundary, and an annotation cannot
-            // cross one, so there is never one to restore.
+            resumes,
+            state,
             open_link: None,
         }
     }
@@ -174,7 +166,7 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
     /// stride that bounds how much a later walk must redo.
     fn capture_resume(&mut self) {
         let page_index = self.first_page_index + self.pages.len();
-        if page_index % RESUME_STRIDE != 0 {
+        if !page_index.is_multiple_of(RESUME_STRIDE) {
             return;
         }
         if self
@@ -186,15 +178,7 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
         }
         self.resumes.push(WalkResume {
             page_index,
-            page_size: self.page_size.clone(),
-            fonts: self.fonts.clone(),
-            classic_fonts: self.classic_fonts.clone(),
-            resources: self.resources.clone(),
-            ledger: self.ledger.clone(),
-            color: self.color,
-            color_stack: self.color_stack.clone(),
-            pdf_color_stacks: self.pdf_color_stacks.clone(),
-            pdf_graphics: self.pdf_graphics.clone(),
+            state: self.state.clone(),
         });
     }
 
@@ -232,7 +216,7 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
     }
 
     fn unsupported(&mut self, name: &str) -> Result<(), RenderError> {
-        self.ledger.record_unsupported(name);
+        self.state.ledger.record_unsupported(name);
         let page = self.page_mut()?;
         page.complete = false;
         *page.unsupported.entry(name.into()).or_default() += 1;
@@ -247,11 +231,11 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
         if let Some(mut page) = self.page.take() {
             // The media size is only final once the page's specials have all
             // been seen, so commit it here rather than at the page's start.
-            let size = self.page_size.current();
+            let size = self.state.page_size.current();
             page.width_bp = size[0];
             page.height_bp = size[1];
             self.pages.push(page);
-            self.page_size.finish_page();
+            self.state.page_size.finish_page();
         }
     }
 
