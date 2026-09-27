@@ -6,6 +6,13 @@
 :80 {
 	root * /app/public
 
+	# Compiled documents are untrusted, so scripts may only come from here.
+	header {
+		Content-Security-Policy "script-src 'self' 'wasm-unsafe-eval'; object-src blob:; base-uri 'self'; frame-ancestors 'none'"
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+	}
+
 	# ---------------------------------------------------------------------
 	# The TeX Live bundle.
 	#
