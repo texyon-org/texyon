@@ -143,8 +143,8 @@ impl AcceptedSourceSnapshot {
     }
 
     /// Convert to the engine's immutable source adapter without changing revision identity.
-    pub fn engine_snapshot(&self) -> Result<EngineSourceSnapshot, EngineSourceError> {
-        Ok(self.engine_sources.clone())
+    pub fn engine_snapshot(&self) -> EngineSourceSnapshot {
+        self.engine_sources.clone()
     }
 }
 
@@ -489,7 +489,7 @@ mod tests {
         );
         let snapshot = sources.snapshot();
         assert_eq!(snapshot.revision(), SourceRevision::new(1));
-        assert_eq!(snapshot.engine_snapshot().unwrap().revision().get(), 1);
+        assert_eq!(snapshot.engine_snapshot().revision().get(), 1);
     }
 
     #[test]
@@ -618,14 +618,14 @@ mod tests {
             ProtocolLimits::default(),
         )
         .unwrap();
-        let before = sources.snapshot().engine_snapshot().unwrap();
+        let before = sources.snapshot().engine_snapshot();
         let untouched_before = before.bytes("chapters/511.tex").unwrap();
 
         sources
             .replace(Some("chapters/0.tex"), "edited chapter".into())
             .unwrap();
         let accepted = sources.snapshot();
-        let after = accepted.engine_snapshot().unwrap();
+        let after = accepted.engine_snapshot();
         assert!(Arc::ptr_eq(
             &untouched_before,
             &after.bytes("chapters/511.tex").unwrap()
@@ -634,7 +634,6 @@ mod tests {
             &after.bytes("chapters/511.tex").unwrap(),
             &accepted
                 .engine_snapshot()
-                .unwrap()
                 .bytes("chapters/511.tex")
                 .unwrap()
         ));

@@ -37,10 +37,6 @@ impl FrozenBundle {
             .map_err(|_| RenderError::Resource("support bundle is already borrowed".into()))
     }
 
-    pub(crate) fn borrow_mut_io(&self) -> RefMut<'_, Box<dyn Bundle>> {
-        self.bundle.borrow_mut()
-    }
-
     /// Bind the canonical document root once initialization establishes it.
     pub fn set_document_root(&self, root: &Path) -> Result<(), RenderError> {
         let canonical =

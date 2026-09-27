@@ -9,7 +9,7 @@ use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
 use tectonic_engine_xetex::{
     EngineCancellation, EngineFrame, EnginePreviewConfig, IncrementalXeTeXSession, PageRange,
 };
-use tectonic_errors::Result;
+use tectonic_errors::{anyhow::bail, Result};
 #[cfg(feature = "native")]
 use tectonic_io_base::format_cache::FormatCache;
 use tectonic_io_base::{
@@ -89,6 +89,15 @@ impl fmt::Debug for ResidentEngineSupport {
     }
 }
 
+fn launch(
+    io: IoStack<'_>,
+    operation: &mut dyn FnMut(&mut CoreBridgeLauncher<'_>) -> Result<Option<EngineFrame>>,
+) -> Result<Option<EngineFrame>> {
+    let mut hooks = MinimalDriver::new(io);
+    let mut status = NoopStatusBackend::default();
+    operation(&mut CoreBridgeLauncher::new(&mut hooks, &mut status))
+}
+
 impl EngineSupport for ResidentEngineSupport {
     fn with_launcher(
         &mut self,
@@ -102,15 +111,14 @@ impl EngineSupport for ResidentEngineSupport {
             } => {
                 let mut format = SingleInputFileIo::new(format_path);
                 let mut assets = FilesystemIo::new(assets_dir, false, false, HashSet::new());
-                let io = IoStack::new(vec![
-                    output as &mut dyn IoProvider,
-                    &mut format as &mut dyn IoProvider,
-                    &mut assets as &mut dyn IoProvider,
-                ]);
-                let mut hooks = MinimalDriver::new(io);
-                let mut status = NoopStatusBackend::default();
-                let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-                operation(&mut launcher)
+                launch(
+                    IoStack::new(vec![
+                        output as &mut dyn IoProvider,
+                        &mut format,
+                        &mut assets,
+                    ]),
+                    operation,
+                )
             }
             #[cfg(feature = "native")]
             Self::Bundle {
@@ -125,14 +133,10 @@ impl EngineSupport for ResidentEngineSupport {
                 if let Some(document) = &mut document {
                     providers.push(document);
                 }
-                let mut bundle = bundle.borrow_mut_io();
+                let mut bundle = bundle.try_borrow_mut()?;
                 providers.push(bundle.as_mut());
                 providers.push(format_cache);
-                let io = IoStack::new(providers);
-                let mut hooks = MinimalDriver::new(io);
-                let mut status = NoopStatusBackend::default();
-                let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-                operation(&mut launcher)
+                launch(IoStack::new(providers), operation)
             }
         }
     }
@@ -218,29 +222,29 @@ impl ResidentXeTeX {
         self.support
             .set_document_root(snapshot.root())
             .map_err(|error| ResidentEngineError::Source(error.to_string()))?;
-        let engine_snapshot = snapshot
-            .engine_snapshot()
-            .map_err(|error| ResidentEngineError::Source(error.to_string()))?;
+        let engine_snapshot = snapshot.engine_snapshot();
         let output_name = output_name(engine_snapshot.primary().as_str());
         self.output_name = Some(output_name.clone());
 
-        if self.session.is_none() {
-            self.config.cancellation = cancellation.clone();
-            self.session = Some(
+        let session = match self.session.take() {
+            Some(session) => session,
+            None => {
+                self.config.cancellation = cancellation.clone();
                 IncrementalXeTeXSession::new(self.config.clone())
-                    .map_err(|error| ResidentEngineError::Engine(error.to_string()))?,
-            );
-        }
-        let session = self.session.as_mut().expect("session was just initialized");
+                    .map_err(|error| ResidentEngineError::Engine(error.to_string()))?
+            }
+        };
+        let session = self.session.insert(session);
         let page_range = viewport.map(|(first, last)| PageRange { first, last });
         let was_open = self.opened;
-        // The snapshot is consumed by the operation, but a trait object can
-        // only take FnMut, so it is handed over on the single call that happens.
+        // The operation is FnMut but runs once, so the snapshot moves out on that call.
         let mut pending = Some(engine_snapshot);
         let frame = self
             .support
             .with_launcher(&mut self.output, &mut |launcher| {
-                let sources = pending.take().expect("the operation runs exactly once");
+                let Some(sources) = pending.take() else {
+                    bail!("engine operation was invoked more than once");
+                };
                 if was_open {
                     session.edit(launcher, sources, page_range).map(Some)
                 } else {
@@ -248,20 +252,12 @@ impl ResidentXeTeX {
                 }
             })
             .map_err(|error| ResidentEngineError::Engine(error.to_string()))?
-            .expect("opening and editing always produce a frame");
+            .ok_or_else(|| {
+                ResidentEngineError::Engine("engine operation produced no frame".into())
+            })?;
         self.opened = true;
 
-        let xdv = if frame.cancelled || frame.aborted.is_some() {
-            None
-        } else {
-            let files = self.output.files.borrow();
-            let data = files
-                .get(&output_name)
-                .ok_or_else(|| ResidentEngineError::MissingOutput(output_name.clone()))?
-                .data
-                .clone();
-            Some(Arc::from(data))
-        };
+        let xdv = self.captured_xdv(&frame, &output_name)?;
         Ok(ResidentEngineOutput { frame, xdv })
     }
 
@@ -290,18 +286,23 @@ impl ResidentXeTeX {
         let Some(frame) = frame else {
             return Ok(None);
         };
-        let xdv = if frame.cancelled || frame.aborted.is_some() {
-            None
-        } else {
-            let files = self.output.files.borrow();
-            let data = files
-                .get(&output_name)
-                .ok_or_else(|| ResidentEngineError::MissingOutput(output_name.clone()))?
-                .data
-                .clone();
-            Some(Arc::from(data))
-        };
+        let xdv = self.captured_xdv(&frame, &output_name)?;
         Ok(Some(ResidentEngineOutput { frame, xdv }))
+    }
+
+    fn captured_xdv(
+        &self,
+        frame: &EngineFrame,
+        output_name: &str,
+    ) -> Result<Option<Arc<[u8]>>, ResidentEngineError> {
+        if frame.cancelled || frame.aborted.is_some() {
+            return Ok(None);
+        }
+        let files = self.output.files.borrow();
+        let file = files
+            .get(output_name)
+            .ok_or_else(|| ResidentEngineError::MissingOutput(output_name.to_owned()))?;
+        Ok(Some(Arc::from(file.data.as_slice())))
     }
 
     /// Every control sequence the engine currently has defined.
