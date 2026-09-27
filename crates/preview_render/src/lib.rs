@@ -8,6 +8,7 @@
 mod backend;
 mod color;
 mod encoding;
+mod error;
 #[cfg(test)]
 mod fidelity;
 mod fingerprint;
@@ -34,12 +35,12 @@ pub use backend::{
     PositionedGlyph, StrokeStyle,
 };
 pub use color::Color;
+pub use error::RenderError;
 #[cfg(test)]
 pub use fidelity::{compare_rasters, RasterDiff};
 pub use links::{Destination, Link, LinkAction, RectBp};
 pub use render::{
-    Analysis, CoverageLedger, HotRenderer, PageFingerprint, PageSvg, PageVisual, RenderError,
-    UnsupportedSummary,
+    Analysis, CoverageLedger, HotRenderer, PageFingerprint, PageSvg, PageVisual, UnsupportedSummary,
 };
 pub use resource::{Resource, ResourceIdentity, ResourceKind, ResourceProvider, ResourceRequest};
 
