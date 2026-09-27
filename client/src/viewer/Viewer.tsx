@@ -1,4 +1,4 @@
-import type { CompileResult, Link, SyncRect } from "@tectonic/wasm";
+import type { CompileResult, Link, Located, SyncRect } from "@tectonic/wasm";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { measure } from "../perf";
@@ -16,8 +16,8 @@ export interface ViewerProps {
   onPainted: () => void;
   /** Someone clicked a point on a page; find the source line that made it. */
   onBackwardSearch: (pageIndex: number, hBp: number, vBp: number) => void;
-  /** The boxes a forward search found for the cursor's line, best first. */
-  highlight: { boxes: SyncRect[] } | null;
+  /** Where a forward search found the cursor's line, and what to flash. */
+  highlight: Located | null;
   /**
    * The visible page range moved, zero-based and inclusive.
    *
@@ -220,8 +220,9 @@ export function Viewer({ result, onPainted, onBackwardSearch, highlight, onViewp
     }
   }, [result, zoom, onPainted, pointOf, measureViewport]);
 
-  // A forward search: bring the first box into view and flash every box, the
-  // way Overleaf does. Zoom is read through the ref so zooming does not replay it.
+  // A forward search: bring the best box into view and flash the boxes, or the
+  // page when there are none. Zoom is read through the ref so zooming does not
+  // replay it.
   useEffect(() => {
     const frame = lastPublished.current;
     const view = scroller.current;
@@ -238,15 +239,16 @@ export function Viewer({ result, onPainted, onBackwardSearch, highlight, onViewp
       if (drawn.has(key)) continue;
       drawn.add(key);
       const mark = markFor(box, size);
+      if (mark === null) continue;
       slot.appendChild(mark);
       marks.push(mark);
     }
 
-    const first = highlight.boxes[0];
-    const slot = first === undefined ? undefined : slots.current[first.pageIndex];
-    if (first !== undefined && slot !== undefined) {
+    const first = highlight.rect;
+    const slot = slots.current[first.pageIndex];
+    if (slot !== undefined) {
       const zoom = scale.current;
-      const top = slot.offsetTop + (first.vBp - first.heightBp) * zoom;
+      const top = slot.offsetTop + Math.max(first.vBp - first.heightBp, 0) * zoom;
       const bottom = slot.offsetTop + (first.vBp + first.depthBp) * zoom;
       const left = slot.offsetLeft + first.hBp * zoom;
       const margin = view.clientHeight / 6;
@@ -261,10 +263,16 @@ export function Viewer({ result, onPainted, onBackwardSearch, highlight, onViewp
       }
     }
 
-    const timer = window.setTimeout(() => marks.forEach((mark) => mark.remove()), HIGHLIGHT_MS);
+    const page = marks.length === 0 ? slot : undefined;
+    page?.classList.add("located");
+    const clear = (): void => {
+      marks.forEach((mark) => mark.remove());
+      page?.classList.remove("located");
+    };
+    const timer = window.setTimeout(clear, HIGHLIGHT_MS);
     return () => {
       window.clearTimeout(timer);
-      marks.forEach((mark) => mark.remove());
+      clear();
     };
   }, [highlight]);
 
@@ -307,17 +315,28 @@ export function Viewer({ result, onPainted, onBackwardSearch, highlight, onViewp
 }
 
 /**
- * A fading highlight over one forward search box.
+ * A fading highlight over one forward search box, or null when none of it is on
+ * the page.
  *
- * Placed in percent of the page, so it follows the zoom without being redrawn.
+ * Clipped to the page, since a box can reach past it (a beamer headline, a
+ * negative offset). Placed in percent of the page, so it follows the zoom
+ * without being redrawn.
  */
-function markFor(box: SyncRect, [width, height]: [number, number]): HTMLElement {
+function markFor(box: SyncRect, [width, height]: [number, number]): HTMLElement | null {
+  const clamp = (value: number, max: number): number => Math.min(Math.max(value, 0), max);
+  const top = box.vBp - box.heightBp;
+  const left = clamp(box.hBp, width);
+  const right = clamp(box.hBp + Math.max(box.widthBp, 1), width);
+  const upper = clamp(top, height);
+  const lower = clamp(top + Math.max(box.heightBp + box.depthBp, 1), height);
+  if (right <= left || lower <= upper) return null;
+
   const mark = document.createElement("div");
   mark.className = "sync-highlight";
-  mark.style.left = `${(box.hBp / width) * 100}%`;
-  mark.style.top = `${((box.vBp - box.heightBp) / height) * 100}%`;
-  mark.style.width = `${(Math.max(box.widthBp, 1) / width) * 100}%`;
-  mark.style.height = `${(Math.max(box.heightBp + box.depthBp, 1) / height) * 100}%`;
+  mark.style.left = `${(left / width) * 100}%`;
+  mark.style.top = `${(upper / height) * 100}%`;
+  mark.style.width = `${((right - left) / width) * 100}%`;
+  mark.style.height = `${((lower - upper) / height) * 100}%`;
   mark.style.animationDuration = `${HIGHLIGHT_MS}ms`;
   return mark;
 }

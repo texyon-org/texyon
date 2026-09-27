@@ -731,7 +731,11 @@ input::placeholder { color: #5c6270; }
   position: relative;
   background: white;
   box-shadow: 0 2px 16px rgba(0, 0, 0, 0.5);
+  transition: outline-color 300ms ease;
+  outline: 2px solid transparent;
 }
+/* Where a forward search landed when only the page is known, briefly. */
+.page.located { outline-color: var(--accent); }
 
 /* Where a forward search landed, briefly. Clicks pass through to the page. */
 .page .sync-highlight {

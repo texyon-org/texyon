@@ -218,6 +218,19 @@ export interface SyncRect {
   depthBp: number;
 }
 
+/** Where a source line landed on the page. */
+export interface Located {
+  /** The best box, the one to scroll to. */
+  rect: SyncRect;
+  /**
+   * The boxes to flash, all on the page of `rect`, best first.
+   *
+   * Empty when the line produced nothing and the one it fell back to is spread
+   * over the page, like every line of a beamer frame.
+   */
+  boxes: SyncRect[];
+}
+
 /** Which source line produced a point on a page. */
 export interface SourceSpot {
   /** Source path, spelled the way you spelled it. */
@@ -373,7 +386,7 @@ export type WorkerResponse =
   | { id: number; kind: "ok" }
   | { id: number; kind: "compiled"; result: CompileResult }
   | { id: number; kind: "exported"; pdf: Uint8Array<ArrayBuffer>; elapsedMs: number }
-  | { id: number; kind: "located"; boxes: SyncRect[]; source: SourceSpot | null }
+  | { id: number; kind: "located"; located: Located | null; source: SourceSpot | null }
   | { id: number; kind: "commands"; commands: EngineCommand[] }
   | { id: number; kind: "idle" }
   | { id: number; kind: "error"; message: string }

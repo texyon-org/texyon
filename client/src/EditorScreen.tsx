@@ -1,4 +1,4 @@
-import type { SyncRect } from "@tectonic/wasm";
+import type { Located } from "@tectonic/wasm";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { CwlPackage } from "./project/cwl";
@@ -138,7 +138,7 @@ export function EditorScreen({
   const [revision, setRevision] = useState(0);
   const [showLog, setShowLog] = useState(false);
   const [jumpToLine, setJumpToLine] = useState<{ line: number } | null>(null);
-  const [highlight, setHighlight] = useState<{ boxes: SyncRect[] } | null>(null);
+  const [highlight, setHighlight] = useState<Located | null>(null);
   const [importReport, setImportReport] = useState<{
     imported: number;
     replaced: number;
@@ -289,8 +289,8 @@ export function EditorScreen({
 
   /** Forward search: show where the cursor's line landed on the page. */
   const locate = useCallback(async () => {
-    const boxes = await forwardSearch(openPath, cursorLine.current);
-    if (boxes.length > 0) setHighlight({ boxes });
+    const found = await forwardSearch(openPath, cursorLine.current);
+    if (found !== null) setHighlight(found);
   }, [forwardSearch, openPath]);
 
   /** Backward search: open the source that produced a point on the page. */

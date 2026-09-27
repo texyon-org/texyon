@@ -164,10 +164,13 @@ SyncTeX, both ways, answered from an in-memory index — no `.synctex.gz` is eve
 written or parsed.
 
 Both follow TeX Live's `synctex` tool, the one Overleaf runs. Forward takes a
-path spelled the way you spell it in `compile` and returns the boxes that line
-produced, best first, the way `synctex view` reports them. A line that produced
-nothing, like a comment, falls back to the nearest line that did, and the list
-is empty when nothing near it reached the page. Backward takes a point in
+path spelled the way you spell it in `compile` and returns `rect`, the best box
+`synctex view` reports, to scroll to, and `boxes` to flash: the innermost ones
+on the page of `rect`. A line that produced nothing, like a comment or a line
+inside a beamer frame, falls back to the nearest line that did, looking below it
+first. Its `boxes` are then empty unless that line is one block of text, since
+every box of a beamer frame belongs to its `\end{frame}` line. It returns
+`null` when nothing near the line reached the page. Backward takes a point in
 PostScript big points from the page's top-left corner and returns the path and
 line `synctex edit` reports for it. Paths round-trip: what you give is what you
 get back.

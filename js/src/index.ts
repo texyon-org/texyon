@@ -38,6 +38,7 @@ export type {
   LogLevel,
   LogLine,
   Link,
+  Located,
   Outcome,
   PageOverlay,
   ProjectFiles,
@@ -51,11 +52,11 @@ import type {
   EngineCommand,
   EngineOptions,
   ExportResult,
+  Located,
   LoadProgress,
   LogLine,
   ProjectFiles,
   SourceSpot,
-  SyncRect,
   WorkerRequest,
   WorkerResponse,
 } from "./protocol.js";
@@ -142,10 +143,10 @@ export class TectonicEngine {
       } else if (message.kind === "located") {
         (
           pending.resolve as (value: {
-            boxes: SyncRect[];
+            located: Located | null;
             source: SourceSpot | null;
           }) => void
-        )({ boxes: message.boxes, source: message.source });
+        )({ located: message.located, source: message.source });
       } else if (message.kind === "idle") {
         (pending.resolve as (value: null) => void)(null);
       } else {
@@ -289,21 +290,21 @@ export class TectonicEngine {
   }
 
   /**
-   * Find the boxes a source line produced on the page, best first.
+   * Find where a source line landed on the page, and the boxes to flash there.
    *
-   * `path` is spelled the way you spell it in {@link compile}. The answer is
-   * the one `synctex view` gives: a line that produced nothing, such as a
-   * comment or a blank line, falls back to the nearest line that did. Resolves
-   * to an empty list when nothing near it reached the page.
+   * `path` is spelled the way you spell it in {@link compile}. A line that
+   * produced nothing, such as a comment or a line inside a beamer frame, falls
+   * back to the nearest line that did, looking below it first. Resolves to
+   * `null` when nothing near it reached the page.
    */
-  async forwardSearch(path: string, line: number): Promise<SyncRect[]> {
-    const { boxes } = await this.#send<{ boxes: SyncRect[] }>({
+  async forwardSearch(path: string, line: number): Promise<Located | null> {
+    const { located } = await this.#send<{ located: Located | null }>({
       id: 0,
       kind: "forwardSearch",
       path,
       line,
     });
-    return boxes;
+    return located;
   }
 
   /**

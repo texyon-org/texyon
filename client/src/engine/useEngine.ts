@@ -3,9 +3,9 @@ import type {
   CompileStats,
   EngineCommand,
   LoadProgress,
+  Located,
   LogLine,
   SourceSpot,
-  SyncRect,
 } from "@tectonic/wasm";
 import { TectonicEngine } from "@tectonic/wasm";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -89,7 +89,7 @@ export function useEngine(
 ): EngineState & {
   markPainted: () => void;
   exportPdf: () => Promise<void>;
-  forwardSearch: (path: string, line: number) => Promise<SyncRect[]>;
+  forwardSearch: (path: string, line: number) => Promise<Located | null>;
   backwardSearch: (pageIndex: number, hBp: number, vBp: number) => Promise<SourceSpot | null>;
 } {
   const [engine, setEngine] = useState<TectonicEngine | null>(null);
@@ -344,7 +344,7 @@ export function useEngine(
   }, [engine, primary]);
 
   const forwardSearch = useCallback(
-    async (path: string, line: number) => (engine === null ? [] : engine.forwardSearch(path, line)),
+    async (path: string, line: number) => (engine === null ? null : engine.forwardSearch(path, line)),
     [engine],
   );
 
