@@ -15,6 +15,9 @@ export interface SignInProps {
 
 type Mode = "sign-in" | "register" | "challenge";
 
+// Mirrors Features::registration() in server/config/fortify.php.
+const REGISTRATION_OPEN = false;
+
 /**
  * The way in.
  *
@@ -59,11 +62,14 @@ export function SignIn({ notice, onSignedIn, onSample, variant = "page" }: SignI
     })();
   };
 
+  const closed = mode === "register" && !REGISTRATION_OPEN;
   const heading =
     mode === "register" ? "Create an account" : mode === "challenge" ? "Two-factor code" : "Sign in";
   const sub =
     mode === "register"
-      ? "Create an account to keep projects."
+      ? closed
+        ? "Registration is temporarily disabled."
+        : "Create an account to keep projects."
       : mode === "challenge"
         ? useRecovery
           ? "Enter one of your recovery codes."
@@ -84,7 +90,7 @@ export function SignIn({ notice, onSignedIn, onSample, variant = "page" }: SignI
       {notice !== null && <div className="notice">{notice}</div>}
       {error !== null && <div className="notice error">{error}</div>}
 
-      {mode === "register" && (
+      {mode === "register" && !closed && (
         <label className="field">
           Name
           <input
@@ -96,7 +102,7 @@ export function SignIn({ notice, onSignedIn, onSample, variant = "page" }: SignI
         </label>
       )}
 
-      {mode !== "challenge" && (
+      {mode !== "challenge" && !closed && (
         <>
           <label className="field">
             Email
@@ -135,9 +141,11 @@ export function SignIn({ notice, onSignedIn, onSample, variant = "page" }: SignI
         </label>
       )}
 
-      <button type="submit" className="btn-primary" disabled={busy}>
-        {mode === "register" ? "Create account" : mode === "challenge" ? "Verify" : "Sign in"}
-      </button>
+      {!closed && (
+        <button type="submit" className="btn-primary" disabled={busy}>
+          {mode === "register" ? "Create account" : mode === "challenge" ? "Verify" : "Sign in"}
+        </button>
+      )}
 
       {onSample !== null && mode !== "challenge" && (
         <button type="button" className="btn-secondary" onClick={onSample}>
