@@ -5,12 +5,15 @@
  * Deliberately more than one file: the point of the thing is that a project is
  * a set of files, and a sample with one would not exercise the file tree, the
  * cross-file completion, or a diagnostic attributed to a child.
+ *
+ * tools/wasm/build-assets.sh compiles this as a pack seed, so everything it
+ * loads is served from the pack and the first compile never waits on the
+ * bundle.
  */
 export const SAMPLE: Record<string, string> = {
   "main.tex": String.raw`\documentclass[11pt]{article}
 \usepackage{amsmath}
 \usepackage{tikz}
-\usepackage{hyperref}
 
 \title{A Document}
 \author{You}
@@ -18,7 +21,7 @@ export const SAMPLE: Record<string, string> = {
 \begin{document}
 \maketitle
 
-\section{Introduction}\label{sec:intro}
+\section{Introduction}
 
 Type on the left; the preview keeps up. The engine is resident, so an
 edit replays from a checkpoint just before your cursor rather than
@@ -29,13 +32,11 @@ starting over.
 \end{document}
 `,
 
-  "chapters/method.tex": String.raw`\section{Method}\label{sec:method}
+  "chapters/method.tex": String.raw`\section{Method}
 
-\begin{equation}\label{eq:gauss}
+\begin{equation}
   \int_{-\infty}^{\infty} e^{-x^2}\,\mathrm{d}x = \sqrt{\pi}
 \end{equation}
-
-Equation \eqref{eq:gauss} is the one everybody knows.
 
 \begin{figure}[h]
   \centering
@@ -48,9 +49,7 @@ Equation \eqref{eq:gauss} is the one everybody knows.
     \draw[->, thick] (-0.5,0) -- (4,0);
     \draw[->, thick] (0,-0.5) -- (0,2.5);
   \end{tikzpicture}
-  \caption{A right triangle, so $a^2 + b^2 = c^2$.}\label{fig:triangle}
+  \caption{A right triangle, so $a^2 + b^2 = c^2$.}
 \end{figure}
-
-Figure \ref{fig:triangle} is drawn with TikZ.
 `,
 };

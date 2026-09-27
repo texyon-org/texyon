@@ -134,11 +134,25 @@ cat > "$WORK/seeds/book.tex" <<'TEX'
 TEX
 
 # The editor's own starting document, so the pack is guaranteed to cover what
-# it shows on first load. Keeping it as a real .tex file means the client and
-# the pack cannot drift apart.
-if [ -f "$REPO/client/sample.tex" ]; then
-    cp "$REPO/client/sample.tex" "$WORK/seeds/client-sample.tex"
-fi
+# it shows on first load. It is read out of the client source itself, so the
+# two cannot drift apart. The sample spans several files, so it gets its own
+# directory and is compiled from there below.
+mkdir -p "$WORK/sample"
+node - "$REPO/client/src/sample.ts" "$WORK/sample" <<'JS'
+const fs = require("fs");
+const path = require("path");
+const [source, out] = process.argv.slice(2);
+const text = fs.readFileSync(source, "utf8");
+const entry = /"([^"]+)":\s*String\.raw`([\s\S]*?)`/g;
+let count = 0;
+for (const [, name, body] of text.matchAll(entry)) {
+  const target = path.join(out, name);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, body);
+  count++;
+}
+if (count === 0) throw new Error(`no sample files found in ${source}`);
+JS
 
 # The Computer Modern families are size-specific: an 11pt document loads cmex8
 # where a 10pt one loads cmex7. Sweep the class sizes so the pack holds all of
@@ -168,6 +182,8 @@ for seed in "$WORK"/seeds/*.tex; do
     # files they touched on the way.
     (cd "$WORK/seeds" && "$TECTONIC" -X compile "$seed" --bundle "$BUNDLE_URL" --outfmt pdf --print >/dev/null 2>&1) || true
 done
+echo "   client sample"
+(cd "$WORK/sample" && "$TECTONIC" -X compile main.tex --bundle "$BUNDLE_URL" --outfmt pdf --print >/dev/null 2>&1) || true
 
 FORMAT="$(find "$TECTONIC_CACHE_DIR/formats" -name '*.fmt' | head -1)"
 if [ -z "$FORMAT" ]; then
