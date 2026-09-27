@@ -223,7 +223,10 @@ Live preview:
   restorable rungs from reverse deltas (`journal.rs`) plus non-journaled state
   (`checkpoint/bundle.rs`). `checkpoint/oracle.rs` verifies restores when enabled.
 - `replay/` models immutable editor sources and resumable command fences.
-  `sync_index.rs` and `page_manifest.rs` record source and page geometry.
+  `sync_index/` and `page_manifest.rs` record source and page geometry. The
+  sync index keeps each page's SyncTeX records and answers queries with the
+  node selection of TeX Live's `synctex_parser.c`, checked against the
+  `synctex` tool by fixtures in `sync_index/fixtures/`.
 
 ## API shape
 

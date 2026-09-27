@@ -135,6 +135,7 @@ impl TectonicCommand for PreviewCommand {
                             "resync".into(),
                             "painted_telemetry".into(),
                             "synctex".into(),
+                            "synctex_boxes".into(),
                         ],
                         bundle_digest: digest_text,
                     },

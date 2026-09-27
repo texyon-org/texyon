@@ -239,7 +239,7 @@ impl Session {
         self.processor.defined_commands()
     }
 
-    pub fn forward_search(&self, path: &str, line: usize) -> Option<SyncRectPayload> {
+    pub fn forward_search(&self, path: &str, line: usize) -> Vec<SyncRectPayload> {
         self.processor.forward_search(path, line)
     }
 

@@ -43,15 +43,15 @@ impl PreviewWorkerProcessor for MockProcessor {
         Ok(self.last.clone())
     }
 
-    fn forward_search(&self, path: &str, line: usize) -> Option<SyncRectPayload> {
-        (path == "main.tex").then_some(SyncRectPayload {
+    fn forward_search(&self, path: &str, line: usize) -> Vec<SyncRectPayload> {
+        Vec::from_iter((path == "main.tex").then_some(SyncRectPayload {
             page_index: line.saturating_sub(1),
             h_bp: 1.0,
             v_bp: 2.0,
             width_bp: 3.0,
             height_bp: 4.0,
             depth_bp: 5.0,
-        })
+        }))
     }
 
     fn backward_search(&self, page_index: usize, _h_bp: f64, _v_bp: f64) -> Option<SourceLocation> {
@@ -506,8 +506,8 @@ fn navigation_queries_are_read_only_and_correlated() {
         worker.recv_timeout(Duration::from_secs(1)),
         Ok(WorkerEvent::ForwardSearchResult {
             query_id,
-            result: Some(SyncRectPayload { page_index: 2, .. }),
-        }) if query_id == QueryId::new(7)
+            boxes,
+        }) if query_id == QueryId::new(7) && boxes.len() == 1 && boxes[0].page_index == 2
     ));
 
     worker

@@ -214,7 +214,7 @@ pub(super) fn run_worker<P: PreviewWorkerProcessor>(
                 } => {
                     let _ = events.send(WorkerEvent::ForwardSearchResult {
                         query_id,
-                        result: processor.forward_search(&path, line),
+                        boxes: processor.forward_search(&path, line),
                     });
                 }
                 Command::BackwardSearch {

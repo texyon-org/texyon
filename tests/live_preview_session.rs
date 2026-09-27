@@ -5,8 +5,8 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use tectonic::engines::tex::{
-    EngineCancellation, EnginePreviewConfig, IncrementalXeTeXSession, SourceSnapshot, TexEngine,
-    TexOutcome,
+    EngineCancellation, EnginePreviewConfig, IncrementalXeTeXSession, SourceSnapshot, SyncIndex,
+    SyncRect, TexEngine, TexOutcome,
 };
 use tectonic::io::testing::SingleInputFileIo;
 use tectonic::io::{IoProvider, IoStack, MemoryIo};
@@ -713,11 +713,8 @@ fn disk_source_symlink_escape_is_not_read() {
     assert!(rejected
         .frame
         .sync_index
-        .records()
-        .iter()
-        .all(|record| !record
-            .path
-            .contains(outside.path().to_string_lossy().as_ref())));
+        .sources()
+        .all(|path| !path.contains(outside.path().to_string_lossy().as_ref())));
     runner.finish().unwrap();
 }
 
@@ -1236,6 +1233,8 @@ fn length_changing_child_horizon_resumes_exactly() {
         .frame
         .sync_index
         .forward("child", 1)
+        .into_iter()
+        .next()
         .expect("fenced child foreground lost source geometry");
     assert_eq!(foreground_hit.page_index, 0);
     let inverse = foreground
@@ -1269,6 +1268,7 @@ fn length_changing_child_horizon_resumes_exactly() {
         tail.frame
             .sync_index
             .forward("child.tex", 3)
+            .first()
             .expect("child continuation lost source geometry")
             .page_index,
         2
@@ -1446,10 +1446,14 @@ fn resident_processor_publishes_engine_output_as_svg_frame() {
     ));
     let fresh = processor
         .forward_search("main", 1)
+        .into_iter()
+        .next()
         .expect("foreground source geometry was not published");
     assert_eq!(fresh.page_index, 0);
     let preserved = processor
         .forward_search("main.tex", 4)
+        .into_iter()
+        .next()
         .expect("old tail source geometry was not preserved");
     assert_eq!(preserved.page_index, 3);
     assert_eq!(
@@ -1469,6 +1473,7 @@ fn resident_processor_publishes_engine_output_as_svg_frame() {
     assert_eq!(
         processor
             .forward_search("main.tex", 4)
+            .first()
             .expect("settled source geometry was not published")
             .page_index,
         3
@@ -1633,10 +1638,12 @@ fn resident_synctex_index_stays_in_memory_and_tracks_children() {
     let child_hit = frame
         .sync_index
         .forward("child", 1)
+        .into_iter()
+        .next()
         .expect("child source line was not indexed");
     assert_eq!(child_hit.page_index, 0);
     assert_eq!(child_hit.line, 1);
-    assert!(frame.sync_index.forward("session.tex", 2).is_some());
+    assert!(!frame.sync_index.forward("session.tex", 2).is_empty());
     let backward = frame
         .sync_index
         .backward(child_hit.page_index, child_hit.h, child_hit.v)
@@ -1651,6 +1658,116 @@ fn resident_synctex_index_stays_in_memory_and_tracks_children() {
             .all(|name| !name.ends_with(".synctex.gz")),
         "resident SyncTeX must not create a serialized sidecar"
     );
+}
+
+#[test]
+fn resident_synctex_index_matches_the_cold_synctex_file() {
+    let _serial = session_test_lock();
+    util::set_test_root();
+    let primary: &[u8] = b"Words on the first line of a paragraph\n\
+        that continues on a second source line and a third,\n\
+        long enough to break over several output lines $a+b=c$ with\n\
+        inline math\\footnote{*}{A footnote.} and a box \\hbox{boxed words}.\n\
+        \n\
+        $$\\int_0^1 x\\,dx = {1\\over 2}$$\n\
+        \\input child\n\
+        \\halign{#\\hfil&\\quad#\\cr one&two\\cr three&four\\cr}\n\
+        \\vbox{\\hsize=2in A vbox paragraph that wraps inside its own box.}\n\
+        \\vfill\\eject\n\
+        Second page text.\\par\n\
+        \\bye\n";
+    let child: &[u8] = b"Child words on one line,\nand on another.\\par\n";
+    let file_name = |name: &str| name.rsplit('/').next().unwrap_or(name).to_owned();
+
+    let mut format =
+        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
+    let mut primary_io = BufferedPrimaryIo::from_buffer(primary.to_vec());
+    let mut cold_output = MemoryIo::new(true);
+    cold_output.create_entry("child.tex", child.to_vec());
+    {
+        let io = IoStack::new(vec![
+            &mut cold_output as &mut dyn IoProvider,
+            &mut primary_io as &mut dyn IoProvider,
+            &mut format as &mut dyn IoProvider,
+        ]);
+        let mut hooks = MinimalDriver::new(io);
+        let mut status = NoopStatusBackend::default();
+        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
+        TexEngine::default()
+            .deterministic_mode(true)
+            .synctex(true)
+            .process(&mut launcher, "plain.fmt", "session.tex")
+            .unwrap();
+    }
+    let mut text = String::new();
+    std::io::Read::read_to_string(
+        &mut flate2::read::GzDecoder::new(&output_bytes(&cold_output, "session.synctex.gz")[..]),
+        &mut text,
+    )
+    .unwrap();
+    // A buffered primary is named `texput`, and memory inputs have no path.
+    let text = text
+        .replace("Input:1:texput\n", "Input:1:session.tex\n")
+        .replace("Input:2:\n", "Input:2:child.tex\n");
+    let cold = SyncIndex::from_synctex(&text);
+
+    let mut format =
+        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
+    let mut session = IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
+    let mut output = MemoryIo::new(true);
+    let frame = {
+        let io = IoStack::new(vec![
+            &mut output as &mut dyn IoProvider,
+            &mut format as &mut dyn IoProvider,
+        ]);
+        let mut hooks = MinimalDriver::new(io);
+        let mut status = NoopStatusBackend::default();
+        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
+        let frame = session
+            .open(&mut launcher, snapshot_with_child(primary, Some(child)))
+            .unwrap();
+        session.finish(&mut launcher).unwrap();
+        frame
+    };
+    let resident = &frame.sync_index;
+    assert_eq!(frame.pages.len(), 2);
+
+    let key = |rect: SyncRect| {
+        (
+            file_name(&rect.path),
+            rect.line,
+            rect.page_index,
+            rect.h,
+            rect.v,
+        )
+    };
+    let mut compared = 0;
+    for page in 0..2 {
+        for h in (0..40).map(|i| i * 400_000) {
+            for v in (0..160).map(|i| i * 330_000) {
+                let want = cold.backward(page, h, v).map(key);
+                assert_eq!(
+                    resident.backward(page, h, v).map(key),
+                    want,
+                    "{page}:{h},{v}"
+                );
+                compared += usize::from(want.is_some());
+            }
+        }
+    }
+    assert!(compared > 1000);
+    for (path, lines) in [("session.tex", 13), ("child.tex", 3)] {
+        for line in 1..=lines {
+            let boxes = |index: &SyncIndex| {
+                index
+                    .forward(path, line)
+                    .into_iter()
+                    .map(|rect| (rect.page_index, rect.line, rect.h, rect.v, rect.width))
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(boxes(resident), boxes(&cold), "{path}:{line}");
+        }
+    }
 }
 
 #[test]

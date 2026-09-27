@@ -85,9 +85,9 @@ pub trait PreviewWorkerProcessor {
         false
     }
 
-    /// Locate preview geometry in the last successfully published belief.
-    fn forward_search(&self, _path: &str, _line: usize) -> Option<SyncRectPayload> {
-        None
+    /// Locate preview boxes for a source line in the last published belief, best first.
+    fn forward_search(&self, _path: &str, _line: usize) -> Vec<SyncRectPayload> {
+        Vec::new()
     }
 
     /// Locate source text in the last successfully published belief.
@@ -408,10 +408,11 @@ where
         matches!(error, ResidentPreviewError::Pipeline(error) if pipeline_error_is_fatal(error))
     }
 
-    fn forward_search(&self, path: &str, line: usize) -> Option<SyncRectPayload> {
+    fn forward_search(&self, path: &str, line: usize) -> Vec<SyncRectPayload> {
         self.pipeline
             .sync_index()
             .forward(path, line)
+            .into_iter()
             .map(|rect| SyncRectPayload {
                 page_index: rect.page_index,
                 h_bp: sp_to_bp(rect.h),
@@ -420,6 +421,7 @@ where
                 height_bp: sp_to_bp(rect.height),
                 depth_bp: sp_to_bp(rect.depth),
             })
+            .collect()
     }
 
     fn backward_search(&self, page_index: usize, h_bp: f64, v_bp: f64) -> Option<SourceLocation> {

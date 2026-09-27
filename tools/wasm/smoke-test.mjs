@@ -353,15 +353,20 @@ if (forward.status !== "located") throw new Error(JSON.stringify(forward).slice(
 if (!forward.rect) {
   throw new Error("forward search found nothing for the child file's first line");
 }
+if (forward.boxes?.[0]?.hBp !== forward.rect.hBp) {
+  throw new Error("forward search did not list its best box first");
+}
 console.log(
   `forward: chapters/one.tex:1 -> page ${forward.rect.pageIndex} ` +
     `at (${forward.rect.hBp.toFixed(0)}, ${forward.rect.vBp.toFixed(0)}) bp`,
 );
 
+// Inside the line, where a reader clicks. Like `synctex edit`, the left edge
+// itself answers with the file that ended the paragraph.
 const backward = call({
   op: "backwardSearch",
   pageIndex: forward.rect.pageIndex,
-  hBp: forward.rect.hBp,
+  hBp: forward.rect.hBp + forward.rect.widthBp / 2,
   vBp: forward.rect.vBp,
 });
 if (backward.status !== "located") throw new Error(JSON.stringify(backward).slice(0, 200));

@@ -83,8 +83,8 @@ pub enum WorkerEvent<T> {
     ForwardSearchResult {
         /// Client-assigned query identity.
         query_id: QueryId,
-        /// Best geometry in the last successfully published belief.
-        result: Option<SyncRectPayload>,
+        /// Boxes showing the line in the last published belief, best first.
+        boxes: Vec<SyncRectPayload>,
     },
     /// Result of a preview-to-source query.
     BackwardSearchResult {

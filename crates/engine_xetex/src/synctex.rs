@@ -8,6 +8,7 @@ use crate::consts::INVALID_HANDLE;
 use crate::node::{AnyBox, AnyNode, HListNode, KernNode, MathNode, NodePtr, VListNode};
 use crate::shipout::ONE_INCH;
 use crate::state::{EngineState, EqtbState, ShipoutState, SynctexCtxt};
+use crate::sync_index::RecordKind;
 use crate::units::MemPtr;
 
 const SYNCTEX_VERSION: i32 = 1;
@@ -119,9 +120,9 @@ impl SynctexCtxt {
 
     /// Record a node as `<kind><tag>,<line>:<h>,<v>`, followed by its dimensions.
     fn record_node(&mut self, kind: char, tag: i32, line: i32, dims: &[i32]) {
-        if let Some(index) = &mut self.preview_index {
-            let dim = |i: usize| dims.get(i).copied().unwrap_or(0);
-            index.record(tag, line, self.curh, self.curv, dim(0), dim(1), dim(2));
+        if let (Some(index), Some(kind)) = (&mut self.preview_index, RecordKind::from_prefix(kind))
+        {
+            index.record(kind, [tag, line, self.curh, self.curv], dims);
         }
         if self.file == PREVIEW_HANDLE {
             self.lastv = self.curv;
@@ -377,6 +378,9 @@ pub fn synctex_tsilv(st: &mut EngineState, this_box: AnyBox) {
         return;
     }
     enter_box(st, this_box);
+    if let Some(index) = &mut st.synctex.preview_index {
+        index.close(RecordKind::VBoxEnd);
+    }
     st.synctex.record("]\n");
 }
 
@@ -402,6 +406,9 @@ pub fn synctex_tsilh(st: &mut EngineState, this_box: AnyBox) {
         return;
     }
     enter_box(st, this_box);
+    if let Some(index) = &mut st.synctex.preview_index {
+        index.close(RecordKind::HBoxEnd);
+    }
     if st.synctex.record(")\n") {
         st.synctex.count += 1;
     }
@@ -513,7 +520,11 @@ pub fn synctex_current(st: &mut EngineState) {
     let (curh, curv) = (st.shipout.synctex_curh(), st.shipout.synctex_curv());
     let synctex = &mut st.synctex;
     if let Some(index) = &mut synctex.preview_index {
-        index.record(synctex.tag, synctex.line, curh, curv, 0, 0, 0);
+        index.record(
+            RecordKind::Boundary,
+            [synctex.tag, synctex.line, curh, curv],
+            &[],
+        );
     }
     if synctex.file == PREVIEW_HANDLE {
         synctex.lastv = curv;

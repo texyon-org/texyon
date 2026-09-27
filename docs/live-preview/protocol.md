@@ -60,8 +60,14 @@ operations.
 viewer belief. Navigation replies echo their query ID and carry either a result
 or `null`; a missing source match is normal. `fatal` ends the session.
 
+Both directions follow TeX Live's `synctex` tool: backward search reports the
+line `synctex edit` would, and forward search reports the boxes `synctex view`
+would, best first. With the `synctex_boxes` capability a forward reply also
+carries all of them in `boxes` (omitted when empty) for highlighting, and
+`result` is the first.
+
 ```json
-{"type":"forward_search_result","query_id":"1","result":{"page_index":0,"h_bp":72.0,"v_bp":84.0,"width_bp":31.0,"height_bp":7.0,"depth_bp":2.0}}
+{"type":"forward_search_result","query_id":"1","result":{"page_index":0,"h_bp":72.0,"v_bp":84.0,"width_bp":31.0,"height_bp":7.0,"depth_bp":2.0},"boxes":[{"page_index":0,"h_bp":72.0,"v_bp":84.0,"width_bp":31.0,"height_bp":7.0,"depth_bp":2.0}]}
 {"type":"backward_search_result","query_id":"2","result":{"path":"main.tex","line":12}}
 ```
 

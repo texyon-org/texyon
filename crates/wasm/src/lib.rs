@@ -118,9 +118,13 @@ fn dispatch(text: &str) -> Response {
             Err(error) => Response::error(error),
         }),
 
-        Request::ForwardSearch { path, line } => with_session(|session| Response::Located {
-            rect: session.forward_search(&path, line).map(Into::into),
-            source: None,
+        Request::ForwardSearch { path, line } => with_session(|session| {
+            let boxes = session.forward_search(&path, line);
+            Response::Located {
+                rect: boxes.first().copied().map(Into::into),
+                boxes: boxes.into_iter().map(Into::into).collect(),
+                source: None,
+            }
         }),
 
         Request::BackwardSearch {
@@ -129,6 +133,7 @@ fn dispatch(text: &str) -> Response {
             v_bp,
         } => with_session(|session| Response::Located {
             rect: None,
+            boxes: Vec::new(),
             source: session
                 .backward_search(page_index, h_bp, v_bp)
                 .map(Into::into),

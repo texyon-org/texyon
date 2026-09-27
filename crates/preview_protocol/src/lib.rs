@@ -433,6 +433,9 @@ pub enum ServerEvent {
         query_id: QueryId,
         /// Best geometry in the last published belief, when available.
         result: Option<SyncRectPayload>,
+        /// Every box showing the line, best first, for highlighting.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        boxes: Vec<SyncRectPayload>,
     },
     /// Result of a backward preview-to-source query.
     BackwardSearchResult {
