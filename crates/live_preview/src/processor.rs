@@ -80,7 +80,7 @@ pub trait PreviewWorkerProcessor {
         Ok(())
     }
 
-    /// Classify an error returned by `resync`, whose signature predates `WorkerRun`.
+    /// Whether an error returned by `resync` ends the session.
     fn resync_error_is_fatal(&self, _error: &Self::Error) -> bool {
         false
     }
@@ -108,8 +108,7 @@ fn pipeline_error_is_fatal<E>(error: &PreviewPipelineError<E>) -> bool {
     )
 }
 
-/// Wire outcome, operation metrics, document fragment, and sync geometry of a
-/// completed engine frame, shared by the foreground and tail-settle paths.
+/// Wire outcome, metrics, document fragment, and sync geometry of a completed engine frame.
 fn frame_parts<'a>(
     frame: &mut EngineFrame,
     xdv: &'a [u8],
@@ -157,11 +156,7 @@ pub struct PublishedFrame {
     pub frame_id: FrameId,
     /// Engine outcome represented on the wire.
     pub outcome: UpdateOutcome,
-    /// How TeX itself graded the run.
-    ///
-    /// Finer than [`outcome`](Self::outcome), which only has to say whether a
-    /// frame is coherent: a run with warnings and a spotless one are both
-    /// `Complete` on the wire, and an editor wants to tell them apart.
+    /// How TeX graded the run, which tells warnings apart from a spotless run.
     pub tex_outcome: TexOutcome,
     /// Whether this foreground frame has deferred tail work.
     pub tail_pending: bool,
@@ -241,10 +236,7 @@ impl<P: ResourceProvider, B: Backend, S: FrameSink> ResidentPreviewProcessor<P, 
         self.engine.defined_commands()
     }
 
-    /// Reach the publication sink mutably.
-    ///
-    /// A sink that transports frames onward has nothing to offer here, but one
-    /// that retains them for a caller to collect needs to be emptied.
+    /// Reach the publication sink mutably, e.g. to drain retained frames.
     pub fn sink_mut(&mut self) -> &mut S {
         &mut self.sink
     }
@@ -403,8 +395,6 @@ where
         Ok(PublishedFrame {
             frame_id,
             outcome: UpdateOutcome::Complete,
-            // A resync republishes retained state without running the engine,
-            // so the grading is the one the last real compile earned.
             tex_outcome: self.tex_outcome,
             tail_pending,
         })

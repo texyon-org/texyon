@@ -1,7 +1,4 @@
-//! High-level orchestration primitives for realtime preview.
-//!
-//! The engine and renderer deliberately remain independent. This module owns
-//! the document-level state and publication rules that connect them.
+//! Document-level orchestration connecting the engine and renderer for realtime preview.
 
 mod assembler;
 mod diagnostics;

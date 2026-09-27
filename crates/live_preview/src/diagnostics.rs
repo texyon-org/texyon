@@ -243,9 +243,7 @@ fn trim_sentence(message: &str) -> &str {
 mod tests {
     use super::*;
 
-    /// Excerpted verbatim from a transcript this engine produced, wrapping and
-    /// all — the `Trying to load font information` line is exactly 79 columns
-    /// and continues with a lone `.`.
+    /// Verbatim engine transcript. The `Trying to load font information` line wraps at 79 columns.
     const REAL_LOG: &str = "**\n\
 (main.tex\n\
 LaTeX2e <2021-11-15> patch level 1\n\
@@ -286,11 +284,7 @@ LaTeX Warning: There were undefined references.\n\
  )\n\
 Output written on main.xdv (1 page, 2280 bytes).\n";
 
-    /// A LaTeX error, spelled the way LaTeX actually spells one.
-    ///
-    /// The `l.15` is six lines below the `!`, with the standard advice in
-    /// between. Anything looking only at the next line or two finds no line
-    /// number and reports the error against the whole file.
+    /// A LaTeX error whose `l.15` sits six lines below the `!`.
     const LATEX_ERROR: &str = "(main.tex\n\
 ! LaTeX Error: \\mathbf allowed only in math mode.\n\
 \n\
@@ -335,7 +329,6 @@ You're in trouble here.  Try typing  <return>  to proceed.\n";
             .expect("the transcript contains one error");
 
         assert_eq!(error.message, "Undefined control sequence");
-        // The file stack, not the message, is what knows this.
         assert_eq!(error.path.as_deref(), Some("chapters/one.tex"));
         assert_eq!(error.line, Some(3));
     }
@@ -368,9 +361,6 @@ You're in trouble here.  Try typing  <return>  to proceed.\n";
 
     #[test]
     fn helpful_prose_does_not_unbalance_the_file_stack() {
-        // "(e.g., `\hobx')" and its twin sit between the error and the `)` that
-        // closes the child. If either were taken for a file, everything after
-        // would be attributed one level too deep.
         let found = parse(REAL_LOG, None);
         let last = found.last().expect("the transcript ends with a warning");
         assert_eq!(last.message, "There were undefined references");
@@ -385,8 +375,6 @@ You're in trouble here.  Try typing  <return>  to proceed.\n";
             .find(|d| d.message.starts_with("Trying to load"))
             .expect("the wrapped font-info line survives unwrapping");
 
-        // The line number is on the far side of the wrap, so finding it at all
-        // is the assertion.
         assert_eq!(info.severity, Severity::Info);
         assert_eq!(info.line, Some(2));
     }
@@ -422,8 +410,6 @@ You're in trouble here.  Try typing  <return>  to proceed.\n";
 
     #[test]
     fn quoted_prose_is_not_mistaken_for_a_label() {
-        // The word appears mid-sentence rather than as a label, so this line is
-        // prose about a warning, not a warning.
         let found = parse(
             "(main.tex\nThis text mentions a Warning: but is not one.\n",
             None,
@@ -439,9 +425,7 @@ You're in trouble here.  Try typing  <return>  to proceed.\n";
 
     #[test]
     fn a_replay_starting_mid_file_still_names_the_file() {
-        // What an incremental replay actually hands over: it resumes from a
-        // checkpoint, so the `(main.tex` that opened the primary was printed
-        // before any of this and the stack is empty by the time it matters.
+        // A replay resumes mid-file, so the primary's `(main.tex` is never printed.
         let found = parse(
             "(l3backend-xetex.def\nFile: l3backend-xetex.def\n)\n\
              ! LaTeX Error: \\mathbf allowed only in math mode.\n\

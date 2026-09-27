@@ -1,11 +1,4 @@
 //! Fixtures shared by this crate's unit tests.
-//!
-//! The workspace keeps a small tree of real TeX assets — a `.tfm`, a `.pfb`, a
-//! handful of engine-produced `.xdv` files — that several crates test against.
-//! This resolves them relative to the manifest and wraps the asset directory as
-//! a [`Bundle`], which is all the resource-provider tests need. It deliberately
-//! does not reach for the main crate's global "test mode": nothing here
-//! consults Tectonic's configuration, so nothing here has to switch it.
 
 use std::path::{Path, PathBuf};
 

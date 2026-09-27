@@ -21,18 +21,10 @@ use super::AcceptedSourceSnapshot;
 #[cfg(feature = "native")]
 use super::FrozenBundle;
 
-/// The I/O environment that one resident engine operation runs in.
+/// Host-specific I/O environment for resident engine operations.
 ///
-/// The engine has to be handed a fresh [`CoreBridgeLauncher`] per operation,
-/// and what goes underneath it differs completely by host: a bundle and a
-/// format cache on a workstation, a flat fixture directory in the differential
-/// tests, a blocking call back into JavaScript in a browser. This is the seam
-/// between the pipeline and all of that.
-///
-/// Every operation is funnelled through one signature. The three the engine
-/// offers — open/edit, tail continuation, teardown — differ only in whether
-/// they yield a frame, so `Option<EngineFrame>` covers all three and spares
-/// implementors a generic method they could not put behind a trait object.
+/// Open/edit, tail continuation and teardown share one object-safe signature,
+/// yielding a frame where the operation produces one.
 pub trait EngineSupport {
     /// Run one engine operation against a freshly stacked I/O environment.
     ///
@@ -43,11 +35,7 @@ pub trait EngineSupport {
         operation: &mut dyn FnMut(&mut CoreBridgeLauncher<'_>) -> Result<Option<EngineFrame>>,
     ) -> Result<Option<EngineFrame>>;
 
-    /// Tell the support layer which directory the document lives in.
-    ///
-    /// Only meaningful where support resolution can reach the document's own
-    /// files — a graphic beside `main.tex`. A host that owns every source
-    /// itself has nothing to point at, so this does nothing by default.
+    /// Tell the support layer which directory the document lives in. Defaults to a no-op.
     fn set_document_root(&mut self, _root: &Path) -> Result<()> {
         Ok(())
     }
@@ -190,12 +178,8 @@ pub struct ResidentXeTeX {
     session: Option<IncrementalXeTeXSession>,
     opened: bool,
     output_name: Option<String>,
-    /// Session-lifetime working directory for engine-written files.
-    ///
-    /// A tail continuation or a fence replay re-reads files an earlier
-    /// operation wrote (beamer's `\jobname.vrb`, aux-style files), so written
-    /// files must outlive one operation. Reopening truncates an entry, so the
-    /// per-operation XDV suffix and log are unaffected.
+    // Session-lifetime, since tail continuations and fence replays re-read
+    // files an earlier operation wrote (beamer's `\jobname.vrb`).
     output: MemoryIo,
 }
 
@@ -305,9 +289,7 @@ impl ResidentXeTeX {
         Ok(Some(Arc::from(file.data.as_slice())))
     }
 
-    /// Every control sequence the engine currently has defined.
-    ///
-    /// Empty before the first compile, when there is no session to ask.
+    /// Every control sequence the engine currently has defined, empty before the first compile.
     pub fn defined_commands(&self) -> Vec<tectonic_engine_xetex::introspect::DefinedCommand> {
         self.session
             .as_ref()

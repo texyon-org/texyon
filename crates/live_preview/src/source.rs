@@ -13,21 +13,11 @@ use tectonic_engine_xetex::{
     SourceSnapshot as EngineSourceSnapshot,
 };
 
-/// What, if anything, stands behind a document root.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Backing {
-    /// A real directory.
-    ///
-    /// Paths are resolved *through* it, so a child that reaches outside the
-    /// root by way of a symlink is refused even though its lexical path stays
-    /// inside.
+    /// Paths resolve through a real directory, so symlink escapes are refused.
     Filesystem,
-    /// Nothing.
-    ///
-    /// Every source is held in memory and the root is only a name that paths
-    /// are confined under. This is what the browser uses, where there is no
-    /// filesystem to canonicalize against — and where there are correspondingly
-    /// no symlinks, so lexical normalization is the whole of the authority.
+    /// Sources live in memory and the root only names where they are confined.
     Detached,
 }
 
@@ -40,9 +30,6 @@ pub struct DocumentRoot {
 
 impl DocumentRoot {
     /// Canonicalize an existing document-root directory.
-    ///
-    /// Sources under this root may be read from disk, and paths resolve
-    /// through the real filesystem.
     pub fn new(path: impl AsRef<Path>) -> Result<Self, SourceError> {
         let canonical = fs::canonicalize(path.as_ref()).map_err(SourceError::Io)?;
         if !canonical.is_dir() {
@@ -56,13 +43,8 @@ impl DocumentRoot {
 
     /// Take an absolute path as a root with no filesystem behind it.
     ///
-    /// Nothing is canonicalized and nothing is required to exist: the path is
-    /// a name that every source is confined under, and every source has to be
-    /// supplied in full. Use this where there is no filesystem to consult —
-    /// which is the browser, and any host that owns the document itself.
-    ///
-    /// The path must already be absolute, since there is no working directory
-    /// to make it absolute against.
+    /// Nothing is canonicalized or required to exist, so every source must be
+    /// supplied in full.
     pub fn detached(path: impl AsRef<Path>) -> Result<Self, SourceError> {
         let path = path.as_ref();
         if !path.is_absolute() {
@@ -97,8 +79,7 @@ impl DocumentRoot {
         let normalized = normalize_absolute(&candidate)?;
         let resolved = match self.backing {
             Backing::Filesystem => resolve_existing_ancestor(&normalized)?,
-            // No filesystem means no symlink can redirect a path out of the
-            // root, so the lexical form already is the resolved form.
+            // Without a filesystem no symlink can redirect the lexical path.
             Backing::Detached => normalized,
         };
         if !resolved.starts_with(&self.canonical) {
@@ -431,8 +412,6 @@ mod tests {
 
     #[test]
     fn a_detached_root_needs_no_filesystem() {
-        // The path deliberately does not exist. A detached root is a name, so
-        // nothing here should ever reach the disk to find that out.
         let root = DocumentRoot::detached("/doc").unwrap();
         let sources = SourceSet::initialize(
             root,
@@ -459,8 +438,6 @@ mod tests {
         let mut sources =
             SourceSet::initialize(root, "main.tex", "text".into(), vec![], limits()).unwrap();
 
-        // Confinement is the whole point of the root, and it does not depend on
-        // there being a filesystem to check against.
         assert!(sources
             .replace(Some("../escape.tex"), "bad".into())
             .is_err());
@@ -472,7 +449,6 @@ mod tests {
 
     #[test]
     fn a_detached_root_must_be_absolute() {
-        // There is no working directory to resolve a relative root against.
         assert!(DocumentRoot::detached("doc").is_err());
     }
 

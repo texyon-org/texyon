@@ -35,9 +35,7 @@ pub enum DocumentFragment<'a> {
     Complete(&'a [u8]),
     /// A replacement tail whose offsets are already absolute document offsets.
     ///
-    /// The bytes before `prefix_len` are retained from the previous coherent
-    /// document. The combined stream is fully revalidated before it can be
-    /// observed by a caller.
+    /// The combined stream is fully revalidated before a caller can observe it.
     Tail {
         /// Number of bytes retained from the previous document.
         prefix_len: usize,

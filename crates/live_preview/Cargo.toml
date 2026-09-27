@@ -38,11 +38,8 @@ tectonic_status_base = "thiscommit:2026-07-25:live-preview-extraction"
 [features]
 default = ["native"]
 
-# Everything that assumes a host operating system: the support-bundle resource
-# provider, the worker thread that owns the non-Send engine, and the JSON Lines
-# server over stdio. Turning it off leaves the portable core — source authority,
-# assembly, publication, the request clock — which is what the WebAssembly build
-# links, since it has no threads, no filesystem and no sockets.
+# Host OS support: the bundle resource provider, the worker thread and the
+# stdio JSON Lines server. The WebAssembly build links the portable core only.
 native = ["dep:tectonic_bundles"]
 
 # The native SVG backend links MuPDF, whose distribution terms are AGPL. Keep

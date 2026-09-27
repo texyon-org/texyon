@@ -12,7 +12,7 @@ use super::{FramePatch, FrameSink};
 pub enum TransportError {
     /// Protocol encoding or frame-size validation failed.
     Protocol(ProtocolError),
-    /// Output stream failed; callers must terminate or resynchronize.
+    /// Output stream failed, so callers must terminate or resynchronize.
     Io(std::io::Error),
 }
 
