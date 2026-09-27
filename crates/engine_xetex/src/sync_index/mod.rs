@@ -36,6 +36,57 @@ pub struct SyncRect {
     pub depth: i32,
 }
 
+impl SyncRect {
+    /// Left, top, right and bottom edges.
+    fn extent(&self) -> [i64; 4] {
+        let (h, v) = (i64::from(self.h), i64::from(self.v));
+        [
+            h,
+            v - i64::from(self.height),
+            h + i64::from(self.width),
+            v + i64::from(self.depth),
+        ]
+    }
+
+    fn has_area(&self) -> bool {
+        self.width > 0 && self.height.saturating_add(self.depth) > 0
+    }
+
+    fn encloses(&self, other: &Self) -> bool {
+        let [left, top, right, bottom] = self.extent();
+        let [l, t, r, b] = other.extent();
+        left <= l && top <= t && right >= r && bottom >= b
+    }
+}
+
+/// What a viewer shows for a forward search.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Highlight {
+    /// The best `synctex view` box, where a viewer scrolls.
+    pub best: SyncRect,
+    /// The boxes to flash, all on the page of `best`, possibly none.
+    pub boxes: Vec<SyncRect>,
+}
+
+/// Whether boxes stack like the lines of a paragraph, each starting below the
+/// middle of the one above and at most a line below its bottom.
+fn is_one_block(boxes: &[SyncRect]) -> bool {
+    let mut spans = boxes
+        .iter()
+        .map(|rect| {
+            let [_, top, _, bottom] = rect.extent();
+            (top, bottom)
+        })
+        .collect::<Vec<_>>();
+    spans.sort_unstable();
+    !spans.is_empty()
+        && spans.windows(2).all(|pair| {
+            let ((top, bottom), (next_top, next_bottom)) = (pair[0], pair[1]);
+            let line = (bottom - top).max(next_bottom - next_top);
+            next_top >= bottom - (bottom - top) / 2 && next_top <= bottom + line
+        })
+}
+
 /// The SyncTeX record types, named by their `.synctex` prefix.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum RecordKind {
@@ -175,11 +226,58 @@ impl SyncIndex {
 
     /// The boxes showing a source line, best first, like `synctex view`.
     pub fn forward(&self, path: &str, line: usize) -> Vec<SyncRect> {
+        self.display(path, line, query::display)
+    }
+
+    /// Where a viewer should scroll for a source line, and what to flash.
+    ///
+    /// Unlike [`Self::forward`], a line without boxes looks below itself first,
+    /// as a beamer frame is typeset under the line of its `\end{frame}`. Only
+    /// the innermost boxes with an area on the page of the best box are
+    /// flashed, since the enclosing ones are frames, columns and page bodies.
+    /// A line that fell back to another flashes nothing unless those boxes are
+    /// one block of text, as a frame's are scattered from headline to footline.
+    pub fn highlight(&self, path: &str, line: usize) -> Option<Highlight> {
+        let found = self.display(path, line, query::display_ahead);
+        let best = found.first()?.clone();
+        let mut shown: Vec<SyncRect> = Vec::new();
+        for rect in found {
+            if rect.page_index == best.page_index
+                && rect.has_area()
+                && !shown.iter().any(|seen| seen.extent() == rect.extent())
+            {
+                shown.push(rect);
+            }
+        }
+        let encloses_another = |outer: &SyncRect| {
+            shown
+                .iter()
+                .any(|inner| inner.extent() != outer.extent() && outer.encloses(inner))
+        };
+        let innermost = shown
+            .iter()
+            .filter(|rect| !encloses_another(rect))
+            .cloned()
+            .collect::<Vec<_>>();
+        let boxes = if best.line == line || is_one_block(&innermost) {
+            innermost
+        } else {
+            Vec::new()
+        };
+        Some(Highlight { best, boxes })
+    }
+
+    fn display(
+        &self,
+        path: &str,
+        line: usize,
+        query: fn(&Self, i32, i32) -> Vec<query::DisplayHit>,
+    ) -> Vec<SyncRect> {
         let Some(tag) = self.tag_of(path) else {
             return Vec::new();
         };
         let line = i32::try_from(line).unwrap_or(i32::MAX);
-        query::display(self, tag, line)
+        query(self, tag, line)
             .into_iter()
             .filter_map(|hit| self.rect(hit.page_index, hit.tag, hit.line, hit.geometry))
             .collect()

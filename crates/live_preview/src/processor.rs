@@ -6,13 +6,22 @@ use tectonic_preview_protocol::{
 };
 use tectonic_preview_render::{Backend, ResourceProvider};
 
-use tectonic_engine_xetex::{EngineCancellation, EngineFrame, SyncIndex, TexOutcome};
+use tectonic_engine_xetex::{EngineCancellation, EngineFrame, SyncIndex, SyncRect, TexOutcome};
 
 use super::{
     AcceptedSourceSnapshot, DocumentFragment, FrameHeader, FrameSink, PreviewPipeline,
     PreviewPipelineError, PublicationError, ResidentEngineError, ResidentEngineOutput,
     ResidentXeTeX, SourceRevision,
 };
+
+/// A forward search answer in the last published belief.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ForwardSearch {
+    /// The best box, where a viewer scrolls.
+    pub result: Option<SyncRectPayload>,
+    /// The boxes to flash, all on the page of `result`, best first.
+    pub boxes: Vec<SyncRectPayload>,
+}
 
 /// Result of one processor operation.
 #[derive(Debug)]
@@ -85,9 +94,9 @@ pub trait PreviewWorkerProcessor {
         false
     }
 
-    /// Locate preview boxes for a source line in the last published belief, best first.
-    fn forward_search(&self, _path: &str, _line: usize) -> Vec<SyncRectPayload> {
-        Vec::new()
+    /// Locate a source line in the last published belief.
+    fn forward_search(&self, _path: &str, _line: usize) -> ForwardSearch {
+        ForwardSearch::default()
     }
 
     /// Locate source text in the last successfully published belief.
@@ -408,20 +417,22 @@ where
         matches!(error, ResidentPreviewError::Pipeline(error) if pipeline_error_is_fatal(error))
     }
 
-    fn forward_search(&self, path: &str, line: usize) -> Vec<SyncRectPayload> {
-        self.pipeline
-            .sync_index()
-            .forward(path, line)
-            .into_iter()
-            .map(|rect| SyncRectPayload {
-                page_index: rect.page_index,
-                h_bp: sp_to_bp(rect.h),
-                v_bp: sp_to_bp(rect.v),
-                width_bp: sp_to_bp(rect.width),
-                height_bp: sp_to_bp(rect.height),
-                depth_bp: sp_to_bp(rect.depth),
-            })
-            .collect()
+    fn forward_search(&self, path: &str, line: usize) -> ForwardSearch {
+        let Some(found) = self.pipeline.sync_index().highlight(path, line) else {
+            return ForwardSearch::default();
+        };
+        let payload = |rect: &SyncRect| SyncRectPayload {
+            page_index: rect.page_index,
+            h_bp: sp_to_bp(rect.h),
+            v_bp: sp_to_bp(rect.v),
+            width_bp: sp_to_bp(rect.width),
+            height_bp: sp_to_bp(rect.height),
+            depth_bp: sp_to_bp(rect.depth),
+        };
+        ForwardSearch {
+            result: Some(payload(&found.best)),
+            boxes: found.boxes.iter().map(payload).collect(),
+        }
     }
 
     fn backward_search(&self, page_index: usize, h_bp: f64, v_bp: f64) -> Option<SourceLocation> {

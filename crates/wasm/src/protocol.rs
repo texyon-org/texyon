@@ -285,7 +285,7 @@ pub enum Response {
     #[serde(rename_all = "camelCase")]
     Located {
         rect: Option<SyncRect>,
-        /// Every box showing the line, best first. `rect` is the first.
+        /// The boxes to flash, on the page of `rect`, best first.
         #[serde(skip_serializing_if = "Vec::is_empty")]
         boxes: Vec<SyncRect>,
         source: Option<SourceSpot>,

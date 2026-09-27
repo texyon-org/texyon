@@ -80,7 +80,7 @@ pub use replay::source::{
     SourceError, SourceIdentity, SourcePath, SourceRevision, SourceSnapshot, SourceUpdate,
 };
 pub use session::{EngineFrame, EnginePreviewConfig, IncrementalXeTeXSession, PageRange};
-pub use sync_index::{SyncIndex, SyncRect};
+pub use sync_index::{Highlight, SyncIndex, SyncRect};
 
 /// A serial number describing the detailed binary layout of the TeX "format
 /// files" used by this crate. This number will occasionally increment,

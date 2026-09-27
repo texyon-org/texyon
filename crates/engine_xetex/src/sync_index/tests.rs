@@ -63,6 +63,11 @@ const FIXTURES: &[(&str, &str, &str)] = &[
         include_str!("fixtures/inputs.synctex"),
         include_str!("fixtures/inputs.expected"),
     ),
+    (
+        "beamer",
+        include_str!("fixtures/beamer.synctex"),
+        include_str!("fixtures/beamer.expected"),
+    ),
 ];
 
 fn bp(sp: i32) -> f64 {
@@ -91,10 +96,16 @@ fn queries_match_the_synctex_command_line_tool() {
                         .split(';')
                         .filter(|found| *found != "-")
                         .map(|found| {
-                            found
+                            let mut found = found
                                 .split(',')
                                 .map(|value| value.parse::<f64>().unwrap())
-                                .collect::<Vec<_>>()
+                                .collect::<Vec<_>>();
+                            // The index reports a negative width from the left edge.
+                            if found[3] < 0.0 {
+                                found[1] += found[3];
+                                found[3] = -found[3];
+                            }
+                            found
                         })
                         .collect::<Vec<_>>();
                     assert_eq!(got.len(), want.len(), "{name}: {query}");
@@ -117,4 +128,69 @@ fn queries_match_the_synctex_command_line_tool() {
         }
         assert!(checked > 100, "{name}");
     }
+}
+
+/// A 16:9 beamer page in big points.
+const SLIDE: [f64; 2] = [453.54, 255.12];
+
+fn on_slide(rect: &SyncRect) -> bool {
+    let [width, height] = SLIDE;
+    bp(rect.h) >= -0.01
+        && bp(rect.v - rect.height) >= -0.01
+        && bp(rect.h + rect.width) <= width + 0.01
+        && bp(rect.v + rect.depth) <= height + 0.01
+}
+
+#[test]
+fn highlight_inside_a_beamer_frame_scrolls_to_its_first_overlay() {
+    let index = SyncIndex::from_synctex(include_str!("fixtures/beamer.synctex"));
+    // `synctex view` answers the nearer `\end{frame}`, the title page's.
+    assert_eq!(index.forward("main.tex", 14)[0].page_index, 0);
+    // Lines 11 to 22 are the body of the frame on pages 2 to 4.
+    for line in 11..=22 {
+        let found = index.highlight("main.tex", line).unwrap();
+        assert_eq!(found.best.page_index, 1, "{line}");
+        assert!(on_slide(&found.best), "{line}: {:?}", found.best);
+        assert_eq!(found.boxes, [], "{line}");
+    }
+}
+
+#[test]
+fn highlight_keeps_the_innermost_boxes_of_one_page() {
+    let index = SyncIndex::from_synctex(include_str!("fixtures/beamer.synctex"));
+    let all = index.forward("main.tex", 23);
+    assert!(all.iter().any(|rect| rect.page_index != 1));
+    let boxes = index.highlight("main.tex", 23).unwrap().boxes;
+    assert!(!boxes.is_empty() && boxes.len() * 4 < all.len());
+    for rect in &boxes {
+        assert_eq!(rect.page_index, 1);
+        assert!(rect.has_area() && on_slide(rect), "{rect:?}");
+        let mut others = boxes.iter().filter(|other| *other != rect);
+        assert!(!others.any(|other| rect.encloses(other)), "{rect:?}");
+    }
+}
+
+#[test]
+fn highlight_of_a_text_line_is_its_synctex_view_boxes() {
+    let index = SyncIndex::from_synctex(include_str!("fixtures/hardwrap.synctex"));
+    let mut fallbacks = 0;
+    for line in 1..=40 {
+        let all = index.forward("main.tex", line);
+        let found = index.highlight("main.tex", line).unwrap();
+        assert_eq!(found.best, all[0], "{line}");
+        let mut want: Vec<SyncRect> = Vec::new();
+        for rect in all {
+            if rect.has_area() && !want.contains(&rect) {
+                want.push(rect);
+            }
+        }
+        if want[0].line == line {
+            assert_eq!(found.boxes, want, "{line}");
+        } else {
+            // A line without boxes of its own flashes its neighbour.
+            assert!(!found.boxes.is_empty(), "{line}");
+            fallbacks += 1;
+        }
+    }
+    assert!(fallbacks > 0);
 }

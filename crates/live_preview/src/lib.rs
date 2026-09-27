@@ -29,8 +29,8 @@ pub use engine_driver::{
 };
 pub use pipeline::{PreviewPipeline, PreviewPipelineError};
 pub use processor::{
-    PreviewWorkerProcessor, PublishedFrame, ResidentPreviewError, ResidentPreviewProcessor,
-    WorkerRun,
+    ForwardSearch, PreviewWorkerProcessor, PublishedFrame, ResidentPreviewError,
+    ResidentPreviewProcessor, WorkerRun,
 };
 pub use publication::{
     ClientBelief, FrameHeader, FramePage, FramePatch, FrameSink, PageBelief, PreviewPublisher,

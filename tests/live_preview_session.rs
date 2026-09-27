@@ -1446,14 +1446,12 @@ fn resident_processor_publishes_engine_output_as_svg_frame() {
     ));
     let fresh = processor
         .forward_search("main", 1)
-        .into_iter()
-        .next()
+        .result
         .expect("foreground source geometry was not published");
     assert_eq!(fresh.page_index, 0);
     let preserved = processor
         .forward_search("main.tex", 4)
-        .into_iter()
-        .next()
+        .result
         .expect("old tail source geometry was not preserved");
     assert_eq!(preserved.page_index, 3);
     assert_eq!(
@@ -1473,7 +1471,7 @@ fn resident_processor_publishes_engine_output_as_svg_frame() {
     assert_eq!(
         processor
             .forward_search("main.tex", 4)
-            .first()
+            .result
             .expect("settled source geometry was not published")
             .page_index,
         3

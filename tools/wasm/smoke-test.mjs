@@ -353,8 +353,8 @@ if (forward.status !== "located") throw new Error(JSON.stringify(forward).slice(
 if (!forward.rect) {
   throw new Error("forward search found nothing for the child file's first line");
 }
-if (forward.boxes?.[0]?.hBp !== forward.rect.hBp) {
-  throw new Error("forward search did not list its best box first");
+if (!forward.boxes?.length || forward.boxes.some((box) => box.pageIndex !== forward.rect.pageIndex)) {
+  throw new Error("forward search did not flash boxes on the page of its best box");
 }
 console.log(
   `forward: chapters/one.tex:1 -> page ${forward.rect.pageIndex} ` +

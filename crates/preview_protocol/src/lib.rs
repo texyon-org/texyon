@@ -433,7 +433,7 @@ pub enum ServerEvent {
         query_id: QueryId,
         /// Best geometry in the last published belief, when available.
         result: Option<SyncRectPayload>,
-        /// Every box showing the line, best first, for highlighting.
+        /// The boxes to flash, on the page of `result`, best first.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         boxes: Vec<SyncRectPayload>,
     },

@@ -119,10 +119,10 @@ fn dispatch(text: &str) -> Response {
         }),
 
         Request::ForwardSearch { path, line } => with_session(|session| {
-            let boxes = session.forward_search(&path, line);
+            let found = session.forward_search(&path, line);
             Response::Located {
-                rect: boxes.first().copied().map(Into::into),
-                boxes: boxes.into_iter().map(Into::into).collect(),
+                rect: found.result.map(Into::into),
+                boxes: found.boxes.into_iter().map(Into::into).collect(),
                 source: None,
             }
         }),

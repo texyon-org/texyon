@@ -307,9 +307,13 @@ fn server_event(
             source_revision,
             reason,
         },
-        WorkerEvent::ForwardSearchResult { query_id, boxes } => ServerEvent::ForwardSearchResult {
+        WorkerEvent::ForwardSearchResult {
             query_id,
-            result: boxes.first().copied(),
+            result,
+            boxes,
+        } => ServerEvent::ForwardSearchResult {
+            query_id,
+            result,
             boxes,
         },
         WorkerEvent::BackwardSearchResult { query_id, result } => {

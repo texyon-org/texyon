@@ -83,7 +83,9 @@ pub enum WorkerEvent<T> {
     ForwardSearchResult {
         /// Client-assigned query identity.
         query_id: QueryId,
-        /// Boxes showing the line in the last published belief, best first.
+        /// The best box in the last published belief, where a viewer scrolls.
+        result: Option<SyncRectPayload>,
+        /// The boxes to flash, on the page of `result`, best first.
         boxes: Vec<SyncRectPayload>,
     },
     /// Result of a preview-to-source query.

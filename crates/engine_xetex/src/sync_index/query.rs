@@ -489,6 +489,38 @@ pub(super) fn display(index: &SyncIndex, tag: i32, line: i32) -> Vec<DisplayHit>
     Vec::new()
 }
 
+/// [`display`], except that a line without boxes tries the lines below it first.
+///
+/// Bodies read ahead as a macro argument, like beamer frames, are typeset
+/// under the line that ends them.
+pub(super) fn display_ahead(index: &SyncIndex, tag: i32, line: i32) -> Vec<DisplayHit> {
+    // The window `display` searches on either side.
+    const AHEAD: i32 = 50;
+    let mut ahead = index
+        .records
+        .iter()
+        .filter(|record| {
+            record.tag == tag
+                && !record.kind.is_end()
+                && (line..=line.saturating_add(AHEAD)).contains(&record.line)
+        })
+        .map(|record| record.line)
+        .collect::<Vec<_>>();
+    ahead.sort_unstable();
+    ahead.dedup();
+    let mut sheets = Sheets {
+        index,
+        built: BTreeMap::new(),
+    };
+    for next in ahead {
+        let hits = display_line(&mut sheets, tag, next);
+        if !hits.is_empty() {
+            return hits;
+        }
+    }
+    display(index, tag, line)
+}
+
 fn display_line(sheets: &mut Sheets, tag: i32, line: i32) -> Vec<DisplayHit> {
     let key = tag.wrapping_add(line);
     if key < 0 {

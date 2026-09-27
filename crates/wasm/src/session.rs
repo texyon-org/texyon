@@ -22,13 +22,11 @@ use tectonic_errors::{
 };
 use tectonic_io_base::{stack::IoStack, IoProvider, MemoryIo};
 use tectonic_live_preview::{
-    parse_diagnostics, AcceptedSourceSnapshot, Diagnostic, DocumentRoot, PreviewWorkerProcessor,
-    PublishedFrame, ResidentPreviewError, ResidentPreviewProcessor, ResidentXeTeX, SourceSet,
-    WorkerRun,
+    parse_diagnostics, AcceptedSourceSnapshot, Diagnostic, DocumentRoot, ForwardSearch,
+    PreviewWorkerProcessor, PublishedFrame, ResidentPreviewError, ResidentPreviewProcessor,
+    ResidentXeTeX, SourceSet, WorkerRun,
 };
-use tectonic_preview_protocol::{
-    ProtocolLimits, RequestSeq, SourceFile, SourceLocation, SyncRectPayload,
-};
+use tectonic_preview_protocol::{ProtocolLimits, RequestSeq, SourceFile, SourceLocation};
 use tectonic_preview_render::{Destination, Link, MupdfBackend, PageVisual};
 
 use crate::{
@@ -239,7 +237,7 @@ impl Session {
         self.processor.defined_commands()
     }
 
-    pub fn forward_search(&self, path: &str, line: usize) -> Vec<SyncRectPayload> {
+    pub fn forward_search(&self, path: &str, line: usize) -> ForwardSearch {
         self.processor.forward_search(path, line)
     }
 

@@ -226,7 +226,8 @@ Live preview:
   `sync_index/` and `page_manifest.rs` record source and page geometry. The
   sync index keeps each page's SyncTeX records and answers queries with the
   node selection of TeX Live's `synctex_parser.c`, checked against the
-  `synctex` tool by fixtures in `sync_index/fixtures/`.
+  `synctex` tool by fixtures in `sync_index/fixtures/`. `SyncIndex::highlight`
+  narrows a forward answer to the boxes a viewer flashes.
 
 ## API shape
 
