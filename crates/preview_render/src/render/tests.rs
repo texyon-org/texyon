@@ -521,6 +521,63 @@ fn a_link_takes_its_width_from_the_specials_that_bracket_it() {
 }
 
 #[test]
+fn a_link_sits_over_what_it_wraps() {
+    let mut renderer = HotRenderer::new(());
+    let analysis = renderer
+        .analyze(bracketed_link_xdv(
+            "pdf:bann<</A<</S/URI/URI(https://x.test)>>>>",
+            "pdf:eann",
+        ))
+        .unwrap();
+
+    let [DrawOperation::Rule { transform, .. }] = analysis.plans[0].operations.as_slice() else {
+        panic!("expected exactly one rule");
+    };
+    let [link] = analysis.pages()[0].links.as_slice() else {
+        panic!("expected exactly one link");
+    };
+    assert_eq!(link.rect.left, transform.e);
+    assert_eq!(link.rect.bottom, transform.f);
+}
+
+#[test]
+fn a_link_follows_the_transform_around_it() {
+    let link_xdv =
+        || bracketed_link_xdv("pdf:bann<</A<</S/URI/URI(https://x.test)>>>>", "pdf:eann");
+    let mut renderer = HotRenderer::new(());
+    let plain = renderer.analyze(link_xdv()).unwrap().pages()[0].links[0].rect;
+    let scaled = renderer
+        .analyze(wrap_page_in_transform(&link_xdv(), "2 0 0 2 0 0"))
+        .unwrap();
+
+    let [DrawOperation::Rule { transform, .. }] = scaled.plans[0].operations.as_slice() else {
+        panic!("expected exactly one rule");
+    };
+    let [link] = scaled.pages()[0].links.as_slice() else {
+        panic!("expected exactly one link");
+    };
+    assert_eq!(link.rect.left, transform.e);
+    assert_eq!(link.rect.bottom, transform.f);
+    let width = link.rect.right - link.rect.left;
+    assert!((width - 2.0 * (plain.right - plain.left)).abs() < 1e-3);
+}
+
+#[test]
+fn a_destination_shares_the_page_origin() {
+    let mut renderer = HotRenderer::new(());
+    let analysis = renderer
+        .analyze(special_xdv(&[
+            "pdf:dest (top) [@thispage /XYZ @xpos @ypos null]",
+        ]))
+        .unwrap();
+
+    let [destination] = analysis.pages()[0].destinations.as_slice() else {
+        panic!("expected exactly one destination");
+    };
+    assert_eq!((destination.x_bp, destination.y_bp), (72.0, 72.0));
+}
+
+#[test]
 fn an_annotation_left_open_is_closed_by_the_page() {
     let mut renderer = HotRenderer::new(());
     let analysis = renderer

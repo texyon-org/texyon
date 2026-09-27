@@ -4,7 +4,7 @@ use crate::backend::Matrix;
 use crate::color::Color;
 use crate::links::{parse_destination_name, Destination};
 use crate::resource::ResourceProvider;
-use crate::units::{normalize_zero, sp_to_bp};
+use crate::units::normalize_zero;
 use crate::RenderError;
 
 use super::super::ImageKind;
@@ -168,11 +168,10 @@ impl<P: ResourceProvider> Walker<'_, P> {
 
         if args.starts_with("dest") {
             if let Some(name) = parse_destination_name(args) {
-                self.page_mut()?.destinations.push(Destination {
-                    name,
-                    x_bp: sp_to_bp(x),
-                    y_bp: sp_to_bp(y),
-                });
+                let (x_bp, y_bp) = self.state.pdf_graphics.page_point(x, y);
+                self.page_mut()?
+                    .destinations
+                    .push(Destination { name, x_bp, y_bp });
                 self.state.ledger.record_supported("pdf-destination");
             } else {
                 // Still draws nothing, so the page stays certain.

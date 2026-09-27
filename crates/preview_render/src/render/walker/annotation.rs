@@ -2,7 +2,6 @@
 
 use crate::links::{parse_link_action, Link, LinkAction, RectBp};
 use crate::resource::ResourceProvider;
-use crate::units::sp_to_bp;
 
 use super::Walker;
 
@@ -24,29 +23,31 @@ pub(super) fn descent(size: i32) -> i32 {
 pub(super) struct OpenLink {
     action: LinkAction,
     /// One rectangle per line the link was broken across.
-    closed: Vec<RectSp>,
-    current: Option<RectSp>,
+    closed: Vec<RectBp>,
+    current: Option<LinkLine>,
 }
 
-/// A rectangle in DVI units.
-#[derive(Clone, Copy)]
-struct RectSp {
-    left: i32,
-    right: i32,
-    top: i32,
-    bottom: i32,
+/// The part of a link on one line, grouped by its DVI baseline.
+struct LinkLine {
     baseline: i32,
+    rect: RectBp,
 }
 
-impl RectSp {
-    fn around(left: i32, right: i32, baseline: i32, above: i32, below: i32) -> Self {
-        Self {
-            left: left.min(right),
-            right: left.max(right),
-            top: baseline.wrapping_sub(above),
-            bottom: baseline.wrapping_add(below),
-            baseline,
+impl RectBp {
+    fn around_points(points: impl IntoIterator<Item = (f32, f32)>) -> Self {
+        let mut rect = Self {
+            left: f32::INFINITY,
+            top: f32::INFINITY,
+            right: f32::NEG_INFINITY,
+            bottom: f32::NEG_INFINITY,
+        };
+        for (x, y) in points {
+            rect.left = rect.left.min(x);
+            rect.right = rect.right.max(x);
+            rect.top = rect.top.min(y);
+            rect.bottom = rect.bottom.max(y);
         }
+        rect
     }
 
     fn grow(&mut self, other: Self) {
@@ -70,19 +71,37 @@ impl<P: ResourceProvider> Walker<'_, P> {
         above: i32,
         below: i32,
     ) {
+        if self.open_link.is_none() {
+            return;
+        }
+        let rect = self.page_rect(left, right, baseline, above, below);
         let Some(open) = self.open_link.as_mut() else {
             return;
         };
-        let rect = RectSp::around(left, right, baseline, above, below);
         match open.current.as_mut() {
             Some(current)
                 if baseline.wrapping_sub(current.baseline).wrapping_abs() <= above.max(1) =>
             {
-                current.grow(rect);
+                current.rect.grow(rect);
             }
             // A new line starts a new box instead of swallowing the text between.
-            _ => open.closed.extend(open.current.replace(rect)),
+            _ => open.closed.extend(
+                open.current
+                    .replace(LinkLine { baseline, rect })
+                    .map(|line| line.rect),
+            ),
         }
+    }
+
+    /// Where a DVI box lands on the page, through any active transform.
+    fn page_rect(&self, left: i32, right: i32, baseline: i32, above: i32, below: i32) -> RectBp {
+        let top = baseline.wrapping_sub(above);
+        let bottom = baseline.wrapping_add(below);
+        let graphics = &self.state.pdf_graphics;
+        RectBp::around_points(
+            [(left, top), (right, top), (left, bottom), (right, bottom)]
+                .map(|(x, y)| graphics.page_point(x, y)),
+        )
     }
 
     /// Begin a link if this annotation dictionary goes somewhere.
@@ -98,7 +117,10 @@ impl<P: ResourceProvider> Walker<'_, P> {
             action,
             closed: Vec::new(),
             // The special sits exactly at the left edge of what it introduces.
-            current: Some(RectSp::around(x, x, y, 0, 0)),
+            current: Some(LinkLine {
+                baseline: y,
+                rect: self.page_rect(x, x, y, 0, 0),
+            }),
         });
     }
 
@@ -107,7 +129,8 @@ impl<P: ResourceProvider> Walker<'_, P> {
         let Some(mut open) = self.open_link.take() else {
             return;
         };
-        open.closed.extend(open.current.take());
+        open.closed
+            .extend(open.current.take().map(|line| line.rect));
 
         let Ok(page) = self.page_mut() else {
             return;
@@ -118,12 +141,7 @@ impl<P: ResourceProvider> Walker<'_, P> {
                 continue;
             }
             page.links.push(Link {
-                rect: RectBp {
-                    left: sp_to_bp(rect.left),
-                    top: sp_to_bp(rect.top),
-                    right: sp_to_bp(rect.right),
-                    bottom: sp_to_bp(rect.bottom),
-                },
+                rect,
                 action: open.action.clone(),
             });
         }

@@ -98,6 +98,12 @@ impl PdfGraphics {
         .concat(self.ctm)
     }
 
+    /// A DVI position in big points from the page's top-left corner.
+    pub(crate) fn page_point(&self, pen_x: i32, pen_y: i32) -> (f32, f32) {
+        let Matrix { e, f, .. } = self.current_transform(pen_x, pen_y);
+        (e, f)
+    }
+
     pub(crate) fn save_state(&mut self) {
         self.stack.push(SavedState {
             ctm: self.ctm,
