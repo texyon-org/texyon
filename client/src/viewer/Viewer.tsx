@@ -356,6 +356,7 @@ function anchorFor(
   anchor.style.height = `${(link.bottom - link.top) * zoom}px`;
 
   if (link.uri !== null) {
+    if (!isSafeUri(link.uri)) return anchor;
     anchor.href = link.uri;
     anchor.target = "_blank";
     // The document is untrusted input; an opened tab must not reach back.
@@ -375,6 +376,16 @@ function anchorFor(
   }
 
   return anchor;
+}
+
+const SAFE_SCHEMES = new Set(["http:", "https:", "mailto:"]);
+
+function isSafeUri(uri: string): boolean {
+  try {
+    return SAFE_SCHEMES.has(new URL(uri).protocol);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -419,14 +430,50 @@ function jumpTo(
  * because fill="#0000ff" must stay a colour.
  *
  * Parsed via innerHTML rather than DOMParser so the nodes are born in the main
- * document instead of being adopted out of a second one.
+ * document instead of being adopted out of a second one. That is only safe for
+ * markup with nothing but tags mupdf emits and no handlers, since mupdf prints
+ * some PDF strings (layer and font names) into attributes unescaped. Anything
+ * else goes through an inert template and is sanitized first.
  */
 function parse(markup: string, pageIndex: number): SVGElement | null {
   const prefix = `p${pageIndex}_`;
   const scoped = markup.replace(/\bid="|href="#|url\(#/g, (match) => match + prefix);
 
+  if (suspicious(scoped)) {
+    const template = document.createElement("template");
+    template.innerHTML = scoped;
+    sanitize(template.content);
+    const root = template.content.firstElementChild;
+    return root instanceof SVGElement ? document.adoptNode(root) : null;
+  }
+
   const host = document.createElement("div");
   host.innerHTML = scoped;
   const root = host.firstElementChild;
   return root instanceof SVGElement ? root : null;
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const SVG_TAGS = new Set([
+  "svg", "g", "defs", "clipPath", "mask", "pattern", "path", "rect", "image", "use", "text", "tspan",
+]);
+
+function suspicious(markup: string): boolean {
+  if (/on[a-z]+\s*=/i.test(markup)) return true;
+  for (const [, tag] of markup.matchAll(/<\/?([A-Za-z][\w:-]*)/g)) {
+    if (!SVG_TAGS.has(tag)) return true;
+  }
+  return false;
+}
+
+function sanitize(root: DocumentFragment): void {
+  for (const element of Array.from(root.querySelectorAll("*"))) {
+    if (element.namespaceURI !== SVG_NS || !SVG_TAGS.has(element.localName)) {
+      element.remove();
+      continue;
+    }
+    for (const { name } of Array.from(element.attributes)) {
+      if (/^on/i.test(name)) element.removeAttribute(name);
+    }
+  }
 }
