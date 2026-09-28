@@ -158,13 +158,16 @@ impl ReplayFenceInputs {
             if identity == input.identity {
                 return true;
             }
+            let Some(offset) = first_difference(&input.bytes, &bytes) else {
+                return true;
+            };
             if bytes.is_empty() != input.bytes.is_empty() {
                 return false;
             }
             if input.seen >= input.bytes.len() {
                 return false;
             }
-            first_difference(&input.bytes, &bytes).is_some_and(|offset| offset >= input.seen)
+            offset >= input.seen
         })
     }
 }
@@ -239,6 +242,16 @@ mod tests {
             inputs: vec![checkpoint("main.tex", original, original.len(), true)],
         };
         assert!(!fence.is_eligible(&snapshot(2, b"prefix\nlate text!\n", b"child")));
+    }
+
+    #[test]
+    fn identical_bytes_under_a_new_identity_keep_the_fence() {
+        let original = b"prefix\nlate text\n";
+        let fence = ReplayFenceInputs {
+            revision: SourceRevision::new(1),
+            inputs: vec![checkpoint("main.tex", original, original.len(), true)],
+        };
+        assert!(fence.is_eligible(&snapshot(2, original, b"child")));
     }
 
     #[test]
