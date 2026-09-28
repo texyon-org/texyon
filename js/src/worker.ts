@@ -35,6 +35,7 @@ import type {
 import { gunzipSync } from "fflate";
 
 import { AssetCache, digest } from "./cache.js";
+import { applyEdit } from "./splice.js";
 import { parseTtbHeader, TtbIndex, TTB_HEADER_BYTES } from "./ttb.js";
 import type { TtbLocation } from "./ttb.js";
 import { Wasi, WasiExit } from "./wasi.js";
@@ -111,7 +112,7 @@ const resident = new Map<string, Uint8Array>();
 /** Project binary files by path, consulted before the support pack. */
 const projectResources = new Map<string, Uint8Array>();
 /**
- * Project text files by path, with a revision that moves when the text does.
+ * Project text files by path, at the revision the page gave them.
  *
  * The compile request into the module carries only `{path: revision}`; the
  * session pulls the text of any revision it does not hold back out through
@@ -119,7 +120,6 @@ const projectResources = new Map<string, Uint8Array>();
  * pulls everything, which is why no resend bookkeeping exists anywhere.
  */
 const projectSources = new Map<string, { text: string; revision: number }>();
-let nextSourceRevision = 1;
 /** Engine caches and checkpoints assume immutable files, a binary change forces a reopen. */
 let restartPending = false;
 let compiledSinceOpen = false;
@@ -831,6 +831,22 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
       case "compile":
       case "continueTail": {
+        // Before anything that can fail, so the page and the Worker agree on
+        // what the sources say whenever a compile message was accepted.
+        if (request.kind === "compile") {
+          for (const [path, edit] of Object.entries(request.edits)) {
+            const held = projectSources.get(path);
+            if (held?.revision !== edit.base) {
+              throw new Error(`an edit to ${path} is against a revision the Worker does not hold`);
+            }
+            projectSources.set(path, { text: applyEdit(held.text, edit), revision: edit.revision });
+          }
+          for (const [path, source] of Object.entries(request.upserts)) {
+            projectSources.set(path, source);
+          }
+          for (const path of request.removed) projectSources.delete(path);
+        }
+
         if (restartPending && request.kind === "compile") {
           // caches and checkpoints predate the new bytes
           call({ op: "shutdown" });
@@ -840,24 +856,14 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
           compiledSinceOpen = false;
         }
 
-        if (request.kind === "compile") {
-          for (const [path, text] of Object.entries(request.upserts)) {
-            const held = projectSources.get(path);
-            // The revision moves only when the text does, so a re-sent
-            // identical file does not read as an edit.
-            if (held === undefined || held.text !== text) {
-              projectSources.set(path, { text, revision: nextSourceRevision++ });
-            }
-          }
-          for (const path of request.removed) projectSources.delete(path);
-        }
-
         engineStart = performance.now();
         let reply: RawResponse;
         if (request.kind === "compile") {
           const files: Record<string, number> = {};
           for (const [path, { revision }] of projectSources) files[path] = revision;
-          reply = call({ op: "compile", files, viewport: request.viewport });
+          // An edit also names the revision it applies to, so the engine can
+          // splice it into the text it holds or, not holding that, read it whole.
+          reply = call({ op: "compile", files, edits: request.edits, viewport: request.viewport });
         } else {
           reply = call({ op: "continueTail" });
         }

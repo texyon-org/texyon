@@ -8,6 +8,7 @@ use std::{
     cell::RefCell,
     collections::{BTreeMap, HashMap},
     rc::Rc,
+    sync::Arc,
     time::SystemTime,
 };
 
@@ -32,6 +33,7 @@ use tectonic_preview_render::{Destination, Link, MupdfBackend, PageVisual};
 use crate::{
     host,
     io::{HostIo, HostStatus},
+    protocol::SourceEdit,
     resources::HostResources,
     sink::CollectingSink,
     support::{HostEngineSupport, WrittenFiles},
@@ -107,7 +109,7 @@ pub struct Session {
     /// Established by the first compile.
     sources: Option<SourceSet>,
     /// Every file's text as last staged, by the caller's path spelling.
-    staged: BTreeMap<String, String>,
+    staged: BTreeMap<String, Staged>,
     /// The host revision each staged file was pulled at.
     revisions: BTreeMap<String, u64>,
     written: WrittenFiles,
@@ -180,6 +182,7 @@ impl Session {
     pub fn compile(
         &mut self,
         files: BTreeMap<String, u64>,
+        edits: BTreeMap<String, SourceEdit>,
         viewport: Option<(usize, usize)>,
     ) -> Result<CompileOutput> {
         if !files.contains_key(&self.primary_name) {
@@ -189,7 +192,7 @@ impl Session {
             );
         }
 
-        let assembled = self.assemble(&files)?;
+        let assembled = self.assemble(&files, edits)?;
         let snapshot = self.apply(assembled)?;
         self.revisions = files;
 
@@ -319,22 +322,35 @@ impl Session {
             .map_err(|error| anyhow!("{error}"))
     }
 
-    /// Resolve a revision manifest into file texts, pulling changed ones from
-    /// the host.
-    fn assemble(&self, files: &BTreeMap<String, u64>) -> Result<BTreeMap<String, String>> {
+    /// Resolve a revision manifest into file texts, splicing in the edits
+    /// made to ones held and pulling the rest from the host.
+    fn assemble(
+        &self,
+        files: &BTreeMap<String, u64>,
+        mut edits: BTreeMap<String, SourceEdit>,
+    ) -> Result<BTreeMap<String, Staged>> {
         let mut assembled = BTreeMap::new();
         for (path, revision) in files {
-            let text = if self.revisions.get(path) == Some(revision) {
-                self.staged
-                    .get(path)
-                    .cloned()
+            let held = self.staged.get(path);
+            let held_revision = self.revisions.get(path);
+            let spliced = edits.remove(path).and_then(|edit| {
+                held.filter(|_| held_revision == Some(&edit.base))?
+                    .splice(&edit)
+            });
+
+            let text = if held_revision == Some(revision) {
+                held.cloned()
                     .ok_or_else(|| anyhow!("revision held for {path} but no text staged"))?
+            } else if let Some(spliced) = spliced {
+                spliced
             } else {
                 let bytes = host::read_source(path)
                     .map_err(|error| anyhow!("{error}"))?
                     .ok_or_else(|| anyhow!("the host has no source for {path}"))?;
-                String::from_utf8(bytes)
-                    .map_err(|error| anyhow!("the source {path} is not UTF-8: {error}"))?
+                Staged::new(
+                    String::from_utf8(bytes)
+                        .map_err(|error| anyhow!("the source {path} is not UTF-8: {error}"))?,
+                )
             };
             assembled.insert(path.clone(), text);
         }
@@ -342,9 +358,9 @@ impl Session {
     }
 
     /// Stage this file set into the source authority, creating it on first use.
-    fn apply(&mut self, mut files: BTreeMap<String, String>) -> Result<AcceptedSourceSnapshot> {
+    fn apply(&mut self, files: BTreeMap<String, Staged>) -> Result<AcceptedSourceSnapshot> {
         let Some(sources) = self.sources.as_mut() else {
-            let primary_text = files.remove(&self.primary_name).ok_or_else(|| {
+            let primary_text = files.get(&self.primary_name).ok_or_else(|| {
                 anyhow!(
                     "the project does not contain its primary file {}",
                     self.primary_name
@@ -352,9 +368,10 @@ impl Session {
             })?;
             let children = files
                 .iter()
-                .map(|(path, text)| SourceFile {
+                .filter(|(path, _)| **path != self.primary_name)
+                .map(|(path, staged)| SourceFile {
                     path: path.clone(),
-                    text: text.clone(),
+                    text: staged.text.to_string(),
                 })
                 .collect();
 
@@ -363,25 +380,24 @@ impl Session {
             let set = SourceSet::initialize(
                 root,
                 &self.primary_name,
-                primary_text.clone(),
+                primary_text.text.to_string(),
                 children,
                 self.limits,
             )
             .map_err(|error| anyhow!("invalid sources: {error}"))?;
 
-            files.insert(self.primary_name.clone(), primary_text);
             self.staged = files;
             return Ok(self.sources.insert(set).snapshot());
         };
 
         // Unchanged files are skipped, since every accepted replacement
         // advances the revision even for identical bytes.
-        for (path, text) in &files {
-            if self.staged.get(path) == Some(text) {
+        for (path, staged) in &files {
+            if self.staged.get(path).map(|held| &held.text) == Some(&staged.text) {
                 continue;
             }
             sources
-                .replace(Some(path), text.clone())
+                .replace_shared(Some(path), Arc::clone(&staged.text))
                 .map_err(|error| anyhow!("invalid source {path}: {error}"))?;
         }
 
@@ -472,6 +488,63 @@ impl Session {
             unsupported_pages: metrics.unsupported_pages,
         })
     }
+}
+
+/// One file's text as the session holds it.
+#[derive(Clone)]
+struct Staged {
+    text: Arc<str>,
+    /// Lets UTF-16 offsets be used as byte offsets without a scan.
+    ascii: bool,
+}
+
+impl Staged {
+    fn new(text: String) -> Self {
+        let ascii = text.is_ascii();
+        Self {
+            text: Arc::from(text),
+            ascii,
+        }
+    }
+
+    /// The text with `edit` applied, or `None` when its range does not fit.
+    fn splice(&self, edit: &SourceEdit) -> Option<Self> {
+        if edit.from > edit.to {
+            return None;
+        }
+        let (from, to) = if self.ascii {
+            (edit.from, edit.to)
+        } else {
+            let from = byte_offset(&self.text, edit.from)?;
+            (
+                from,
+                from + byte_offset(&self.text[from..], edit.to - edit.from)?,
+            )
+        };
+        let before = self.text.get(..from)?;
+        let after = self.text.get(to..)?;
+
+        let mut text = String::with_capacity(before.len() + edit.insert.len() + after.len());
+        text.push_str(before);
+        text.push_str(&edit.insert);
+        text.push_str(after);
+        Some(Self {
+            text: Arc::from(text),
+            ascii: self.ascii && edit.insert.is_ascii(),
+        })
+    }
+}
+
+/// The byte offset `units` UTF-16 code units into `text`, if one falls there.
+fn byte_offset(text: &str, units: usize) -> Option<usize> {
+    let mut counted = 0;
+    for (offset, character) in text.char_indices() {
+        if counted >= units {
+            return (counted == units).then_some(offset);
+        }
+        counted += character.len_utf16();
+    }
+    (counted == units).then_some(text.len())
 }
 
 /// The host API's name for an engine outcome.

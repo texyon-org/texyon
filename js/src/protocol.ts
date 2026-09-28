@@ -5,6 +5,8 @@
  * agree on field names, which are camelCase on both sides.
  */
 
+import type { SourceEdit } from "./splice.js";
+
 /** How a compile ended, as TeX itself grades it. */
 export type Outcome = "spotless" | "warnings" | "errors";
 
@@ -349,14 +351,28 @@ export interface ExportResult {
   elapsedMs: number;
 }
 
+/** A source's complete text, at the revision the page gave it. */
+export interface SourceUpsert {
+  text: string;
+  revision: number;
+}
+
+/** A change to a source, from the revision `base` to `revision`. */
+export interface SourceSplice extends SourceEdit {
+  base: number;
+  revision: number;
+}
+
 /** A request sent to the Worker. */
 export type WorkerRequest =
   | { id: number; kind: "init"; options: SerializableEngineOptions }
   | {
       id: number;
       kind: "compile";
-      /** Sources whose text changed since the last compile message. */
-      upserts: Record<string, string>;
+      /** Sources sent whole: new ones, and all of them after a failure. */
+      upserts: Record<string, SourceUpsert>;
+      /** Sources sent as a splice into the revision the Worker holds. */
+      edits: Record<string, SourceSplice>;
       /** Sources the project no longer has. */
       removed: string[];
       viewport?: [number, number];

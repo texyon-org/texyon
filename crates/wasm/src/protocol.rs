@@ -172,6 +172,17 @@ impl From<SourceLocation> for SourceSpot {
     }
 }
 
+/// One splice into a file's text, in the host's UTF-16 code units.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceEdit {
+    /// The revision the offsets are into.
+    pub base: u64,
+    pub from: usize,
+    pub to: usize,
+    pub insert: String,
+}
+
 /// A message from the host.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "op", rename_all = "camelCase")]
@@ -196,10 +207,13 @@ pub enum Request {
     ///
     /// `files` maps each path to the host's revision counter. The session
     /// pulls the text of any revision it does not hold through
-    /// `tectonic_host_read_source`.
+    /// `tectonic_host_read_source`, unless `edits` says how to get there from
+    /// the one it does.
     #[serde(rename_all = "camelCase")]
     Compile {
         files: BTreeMap<String, u64>,
+        #[serde(default)]
+        edits: BTreeMap<String, SourceEdit>,
         /// Zero-based inclusive first and last visible page.
         viewport: Option<(usize, usize)>,
     },
