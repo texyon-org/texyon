@@ -66,6 +66,8 @@ const LABEL = /\\label\s*\{([^}]+)\}/g;
 const NEW_COMMAND = /\\(?:re)?newcommand\*?\s*\{?\\([A-Za-z@]+)\}?\s*(?:\[(\d+)\])?/g;
 const NEW_ENVIRONMENT = /\\(?:re)?newenvironment\*?\s*\{([^}]+)\}\s*(?:\[(\d+)\])?/g;
 const DECLARE_MATH = /\\DeclareMathOperator\*?\s*\{?\\([A-Za-z@]+)\}?/g;
+// Every declaration above needs one of these, so only lines holding one are scanned.
+const DECLARES = /\\label|newcommand|newenvironment|\\DeclareMathOperator/g;
 // A BibTeX entry's key is whatever follows the opening brace up to the comma.
 const BIB_ENTRY = /^\s*@(\w+)\s*\{\s*([^,\s}]+)\s*,/;
 
@@ -98,12 +100,26 @@ export function indexProject(files: Record<string, string | Uint8Array>): Symbol
 }
 
 function collectTex(path: string, text: string, index: SymbolIndex): void {
-  const lines = text.split("\n");
+  let at = 1;
+  let counted = 0;
+  let scannedTo = -1;
 
-  for (const [offset, raw] of lines.entries()) {
-    const line = withoutComment(raw);
+  for (const found of text.matchAll(DECLARES)) {
+    if (found.index <= scannedTo) continue;
+    const start = text.lastIndexOf("\n", found.index) + 1;
+    const newline = text.indexOf("\n", found.index);
+    const end = newline < 0 ? text.length : newline;
+    // Line numbers are counted only up to each hit, not for every line.
+    let next = text.indexOf("\n", counted);
+    while (next !== -1 && next < start) {
+      at++;
+      next = text.indexOf("\n", next + 1);
+    }
+    counted = start;
+    scannedTo = end;
+
+    const line = withoutComment(text.slice(start, end));
     if (line === "") continue;
-    const at = offset + 1;
 
     for (const match of line.matchAll(LABEL)) {
       const name = match[1];
