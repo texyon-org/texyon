@@ -85,6 +85,8 @@ export class TectonicEngine {
 
   /** In-flight compile, so a new one can supersede it. */
   #inFlight: Promise<unknown> = Promise.resolve();
+  /** Queued operations that have not settled yet. */
+  #queued = 0;
 
   /** Binaries as last sent to the Worker, diffed by identity. */
   #sentResources = new Map<string, Uint8Array>();
@@ -405,11 +407,14 @@ export class TectonicEngine {
 
   /** Run `operation` after whatever is already queued. */
   #queue<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.#inFlight.then(operation, operation);
+    // With nothing ahead, start now: a later microtask would post the request
+    // only after the render this same keystroke scheduled.
+    const result = this.#queued === 0 ? operation() : this.#inFlight.then(operation, operation);
+    this.#queued++;
     // Keep the chain alive even when a compile rejects.
     this.#inFlight = result.then(
-      () => undefined,
-      () => undefined,
+      () => void this.#queued--,
+      () => void this.#queued--,
     );
     return result;
   }
