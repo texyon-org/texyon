@@ -260,6 +260,15 @@ impl<B> CheckpointLadder<B> {
         true
     }
 
+    /// Let budget pressure evict `index` again. The base rung stays protected.
+    pub(crate) fn unprotect(&mut self, index: usize) {
+        if index > 0 {
+            if let Some(rung) = self.rungs.get_mut(index) {
+                rung.protected = false;
+            }
+        }
+    }
+
     pub(crate) fn rung_clock(&self, index: usize) -> Option<u64> {
         self.rungs.get(index).map(|rung| rung.clock)
     }

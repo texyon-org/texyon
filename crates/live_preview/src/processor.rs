@@ -276,7 +276,8 @@ impl<P: ResourceProvider, B: Backend, S: FrameSink> ResidentPreviewProcessor<P, 
         let Some(xdv) = engine.xdv.take() else {
             return WorkerRun::Aborted(ResidentPreviewError::MissingXdv);
         };
-        let tail_pending = phase == FramePhase::Foreground && engine.frame.tail_pending;
+        // A chunked settle leaves the rest of the tail pending too.
+        let tail_pending = engine.frame.tail_pending;
         let tex_outcome = engine.frame.outcome;
         self.tex_outcome = tex_outcome;
         let (outcome, metrics, fragment, sync_index) =
@@ -379,15 +380,21 @@ where
             Ok(None) => return WorkerRun::Complete(None),
             Err(error) => return WorkerRun::Aborted(ResidentPreviewError::Engine(error)),
         };
-        self.publish_engine_output(
+        let run = self.publish_engine_output(
             engine,
             elapsed_ms(engine_started),
             expected_revision,
             applied_request_seq,
             FramePhase::TailSettle,
             cancellation,
-        )
-        .map(Some)
+        );
+        if let WorkerRun::Complete(PublishedFrame {
+            tail_pending: true, ..
+        }) = run
+        {
+            self.tail_revision = Some(expected_revision);
+        }
+        run.map(Some)
     }
 
     fn resync(

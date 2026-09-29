@@ -9,7 +9,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     rc::Rc,
     sync::Arc,
-    time::SystemTime,
+    time::{Duration, SystemTime},
 };
 
 use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
@@ -45,6 +45,10 @@ const DOCUMENT_ROOT: &str = "/doc";
 // Browser tabs have far less memory than a desktop editor.
 const LADDER_TARGET_BYTES: usize = 48 * 1024 * 1024;
 const LADDER_HARD_BYTES: usize = 72 * 1024 * 1024;
+
+// The Worker cannot interrupt a call, so a keystroke waits out at most this
+// much of a tail settle.
+const TAIL_CHUNK: Duration = Duration::from_millis(150);
 
 /// What one pipeline operation returned. The sink cannot fail.
 type PipelineRun =
@@ -133,6 +137,7 @@ impl Session {
         config.cancellation = cancellation.clone();
         config.ladder_target_bytes = LADDER_TARGET_BYTES;
         config.ladder_hard_bytes = LADDER_HARD_BYTES;
+        config.tail_chunk = Some(TAIL_CHUNK);
 
         let stem = primary_name.strip_suffix(".tex").unwrap_or(primary_name);
         let support = HostIo::default();
