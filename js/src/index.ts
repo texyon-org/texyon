@@ -350,8 +350,10 @@ export class TectonicEngine {
   }
 
   /**
-   * Finish a viewport-bounded compile through the end of the document.
+   * Continue a viewport-bounded compile toward the end of the document.
    *
+   * Each call does a short chunk of the work and reports `tailPending` while
+   * more remains, so a caller can stop between calls when the text changes.
    * Returns `null` when there was nothing pending. Worth calling when the user
    * pauses: it settles the pages below the fold so scrolling does not have to
    * wait for them.

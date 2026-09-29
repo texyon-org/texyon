@@ -44,20 +44,12 @@ export interface EngineState {
 
 /**
  * How long the document must hold still before the pages below the fold are
- * finished, at the least. The same base idle the native preview server uses.
+ * finished. The same base idle the native preview server uses.
+ *
+ * The engine settles in short chunks and this stops between them once the
+ * text moves, so a keystroke never waits for the whole tail.
  */
 const TAIL_IDLE_MS = 200;
-
-/**
- * The idle grows with what settling actually costs, up to this.
- *
- * The engine runs synchronously in its Worker, so a settle cannot be
- * interrupted: a keystroke that arrives mid-settle waits for the whole thing.
- * On a document whose tail is expensive, settling after every 200 ms pause
- * would hand that wait to half the keystrokes. Waiting a couple of tail-costs
- * means the settle only starts once the author has genuinely stopped.
- */
-const TAIL_IDLE_MAX_MS = 2000;
 
 /**
  * Own a resident engine and keep it fed with the workspace.
@@ -116,8 +108,6 @@ export function useEngine(
   const recompile = useRef<() => void>(() => {});
   /** Pending idle timer for the document's unsettled tail. */
   const tailTimer = useRef<number | null>(null);
-  /** What the last settle cost, which is what the next idle is scaled by. */
-  const tailCostMs = useRef(0);
   /** Set below once run() exists; finishes the document below the fold. */
   const settle = useRef<() => void>(() => {});
 
@@ -199,11 +189,10 @@ export function useEngine(
       setResult(compiled);
       setStats(compiled.stats);
       if (compiled.tailPending) {
-        const idle = Math.min(TAIL_IDLE_MAX_MS, Math.max(TAIL_IDLE_MS, 2 * tailCostMs.current));
         tailTimer.current = window.setTimeout(() => {
           tailTimer.current = null;
           settle.current();
-        }, idle);
+        }, TAIL_IDLE_MS);
       }
 
       // After the frame, so the preview is never waiting on the command list,
@@ -244,10 +233,9 @@ export function useEngine(
       if (workspace.revision !== compiledRevision.current) return;
 
       running.current = true;
-      const startedAt = performance.now();
       try {
-        // A continuation can itself stop at a horizon, so settle until the
-        // engine says the document is finished.
+        // Each continuation stops after a short chunk, so settle until the
+        // engine says the document is finished or the text moves.
         for (;;) {
           const frame = await engine.continueTail();
           if (frame === null) break;
@@ -257,7 +245,6 @@ export function useEngine(
           setResult(frame);
           if (!frame.tailPending || workspace.revision !== compiledRevision.current) break;
         }
-        tailCostMs.current = performance.now() - startedAt;
       } catch (error) {
         setLog((prior) =>
           [
