@@ -387,7 +387,11 @@ impl IncrementalXeTeXSession {
             bail!("another resident XeTeX session is already open");
         }
         self.owns_global_lease = true;
-        let budget = self.budget();
+        // A whole document with no edit in it yet: no clock is likelier than another.
+        let budget = LadderBudget {
+            spread_evenly: true,
+            ..self.budget()
+        };
         let verify = self.config.verify_rewinds;
         let config = self.config.clone();
         let state = &mut *self.state;
@@ -563,7 +567,12 @@ impl IncrementalXeTeXSession {
         let revision = sources.revision();
         let input = sources.primary().as_str().to_owned();
         let config = self.config.clone();
-        let budget = self.budget();
+        // The engine is past every edit here, so rungs near its clock are no
+        // likelier to be replayed from than any others.
+        let budget = LadderBudget {
+            spread_evenly: true,
+            ..self.budget()
+        };
         let strings_base = self
             .strings_base
             .expect("opened session without string watermark");
@@ -594,9 +603,9 @@ impl IncrementalXeTeXSession {
                     ladder.rewind_engine(state, 0);
                     return OperationResult::Aborted;
                 }
-                // Pin the foreground ladder so the tail's own rungs cannot evict
-                // the fences the next edit needs.
-                assert!(ladder.protect_rungs_through(pinned));
+                // Pin the fences just before the edit, where the next keystroke
+                // most likely lands. Spreading evenly keeps the rest of the prefix.
+                assert!(ladder.protect_rungs_before(pinned, budget.min_recent_rungs));
                 // An earlier chunk's horizon is spent once resumed from.
                 if target > pinned {
                     ladder.unprotect(target);
@@ -690,6 +699,7 @@ impl IncrementalXeTeXSession {
             target_bytes: self.config.ladder_target_bytes,
             hard_bytes: self.config.ladder_hard_bytes,
             min_recent_rungs: self.config.min_recent_rungs,
+            spread_evenly: false,
         }
     }
 
