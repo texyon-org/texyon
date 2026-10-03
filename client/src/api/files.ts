@@ -2,6 +2,7 @@ import { decodeText } from "../files/import";
 import type { FileContent } from "../workspace/Workspace";
 import { collabBlobUrl, projectFileShow } from "./generated";
 import { ApiError, apiFetch } from "./http";
+import type { Project } from "./types";
 
 /** Fetched bare via the signed URL. UTF-8 becomes text, the rest stays bytes. */
 export async function readFile(projectId: number, path: string): Promise<FileContent> {
@@ -29,4 +30,18 @@ export async function readBlob(projectId: number, digest: string): Promise<Uint8
   const response = await fetch(url);
   if (!response.ok) throw new ApiError(response.status, `could not fetch blob ${digest}`);
   return new Uint8Array(await response.arrayBuffer());
+}
+
+export interface ImportedProject {
+  project: Project;
+  skipped: { path: string; reason: string }[];
+}
+
+/** A new project from one zip. Hand-written, raw bodies are not in the OpenAPI export. */
+export async function importProject(name: string, zip: Uint8Array): Promise<ImportedProject> {
+  return apiFetch(`/projects/import?name=${encodeURIComponent(name)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/zip" },
+    body: zip as BodyInit,
+  });
 }
