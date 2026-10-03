@@ -100,12 +100,14 @@ fn dispatch(text: &str) -> Response {
             Response::Ok
         }),
 
-        Request::Compile { files, viewport } => {
-            with_session(|session| match session.compile(files, viewport) {
-                Ok(output) => Response::Compiled(Box::new(report(session, output))),
-                Err(error) => Response::error(error),
-            })
-        }
+        Request::Compile {
+            files,
+            edits,
+            viewport,
+        } => with_session(|session| match session.compile(files, edits, viewport) {
+            Ok(output) => Response::Compiled(Box::new(report(session, output))),
+            Err(error) => Response::error(error),
+        }),
 
         Request::ContinueTail => with_session(|session| match session.continue_tail() {
             Ok(Some(output)) => Response::Compiled(Box::new(report(session, output))),

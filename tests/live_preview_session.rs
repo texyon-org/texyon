@@ -1019,6 +1019,77 @@ fn viewport_foreground_and_tail_reassemble_to_cold_xdv() {
     runner.finish().unwrap();
 }
 
+#[test]
+fn chunked_tail_interrupted_by_an_edit_reassembles_to_cold_xdv() {
+    let _serial = session_test_lock();
+    util::set_test_root();
+    let pages = |first: &str| {
+        format!("{first}\\vfill\\eject\nB\\vfill\\eject\nC\\vfill\\eject\nD\\vfill\\eject\nE\\vfill\\eject\nF\\bye\n")
+    };
+    let expected = cold_xdv(pages("Y").as_bytes());
+    let temp = tempfile::tempdir().unwrap();
+    let root = DocumentRoot::new(temp.path()).unwrap();
+    let mut sources = SourceSet::initialize(
+        root,
+        "main.tex",
+        pages("A"),
+        vec![],
+        ProtocolLimits::default(),
+    )
+    .unwrap();
+    let support = ResidentEngineSupport::Fixture {
+        format_path: util::ensure_plain_format().unwrap(),
+        assets_dir: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets"),
+    };
+    let cancellation = EngineCancellation::new();
+    let mut config = EnginePreviewConfig::new("plain.fmt");
+    // Every continuation stops at the first page boundary.
+    config.tail_chunk = Some(std::time::Duration::ZERO);
+    let mut runner = ResidentXeTeX::new(support, config);
+    let assembler = DocumentAssembler::new();
+
+    let initial = runner
+        .compile(sources.snapshot(), None, &cancellation)
+        .unwrap();
+    let mut document = assemble_resident_output(&assembler, None, initial);
+
+    sources.replace(None, pages("Z")).unwrap();
+    let foreground = runner
+        .compile(sources.snapshot(), Some((0, 0)), &cancellation)
+        .unwrap();
+    assert!(foreground.frame.tail_pending);
+    document = assemble_resident_output(&assembler, Some(&document), foreground);
+    let chunk = runner
+        .continue_tail(&cancellation)
+        .unwrap()
+        .expect("foreground advertised a pending tail");
+    assert!(
+        chunk.frame.tail_pending,
+        "a zero budget settled the whole tail"
+    );
+    document = assemble_resident_output(&assembler, Some(&document), chunk);
+
+    // The next edit arrives mid-settle.
+    sources.replace(None, pages("Y")).unwrap();
+    let foreground = runner
+        .compile(sources.snapshot(), Some((0, 0)), &cancellation)
+        .unwrap();
+    document = assemble_resident_output(&assembler, Some(&document), foreground);
+    let mut chunks = 0;
+    while let Some(chunk) = runner.continue_tail(&cancellation).unwrap() {
+        chunks += 1;
+        let pending = chunk.frame.tail_pending;
+        document = assemble_resident_output(&assembler, Some(&document), chunk);
+        if !pending {
+            break;
+        }
+    }
+    assert!(chunks > 1, "the tail settled in one continuation");
+    assert!(!runner.has_pending_tail());
+    assert_eq!(document.bytes().as_ref(), expected);
+    runner.finish().unwrap();
+}
+
 /// Beamer's fragile frames write the frame body to `\jobname.vrb` once and
 /// `\input` it again on every overlay slide. A viewport horizon can land
 /// between two of those reads, putting the write and the re-read in different

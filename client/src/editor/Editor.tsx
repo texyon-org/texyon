@@ -12,7 +12,7 @@ import {
   lineNumbers,
 } from "@codemirror/view";
 import type { Diagnostic } from "@tectonic/wasm";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import type { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
@@ -140,7 +140,9 @@ export function Editor({
   // The workspace changed this file from somewhere other than this editor —
   // another pane, a file being loaded. Replacing a document that already
   // matches would move the cursor to the start on every keystroke.
-  useEffect(() => {
+  // A layout effect, so no keystroke can land between the render that read
+  // `text` and this check and then be replaced by the older text.
+  useLayoutEffect(() => {
     const current = view.current;
     if (current === null || shared !== null) return;
     if (current.state.doc.toString() === text) return;

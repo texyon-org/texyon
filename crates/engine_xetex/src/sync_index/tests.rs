@@ -194,3 +194,61 @@ fn highlight_of_a_text_line_is_its_synctex_view_boxes() {
     }
     assert!(fallbacks > 0);
 }
+
+fn two_pages(names: &[(i32, &str)], page_two: &[(i32, i32)]) -> SyncIndex {
+    let mut text = String::new();
+    for (tag, name) in names {
+        text.push_str(&format!("Input:{tag}:{name}\n"));
+    }
+    text.push_str(
+        "{1\n[1,1:0,0:1000,1000,0\n(1,2:100,200:800,20,5\n)\n]\n}1\n{2\n[1,1:0,0:1000,1000,0\n",
+    );
+    for (tag, line) in page_two {
+        text.push_str(&format!("({tag},{line}:100,200:800,20,5\n)\n"));
+    }
+    text.push_str("]\n}2\n");
+    SyncIndex::from_synctex(&text)
+}
+
+#[test]
+fn a_preserved_tail_with_the_same_files_shares_its_pages() {
+    let previous = two_pages(&[(1, "main.tex"), (2, "chap.tex")], &[(2, 7)]);
+    let foreground = two_pages(&[(1, "main.tex"), (2, "chap.tex")], &[]);
+    let merged = SyncIndex {
+        names: foreground.names.clone(),
+        pages: foreground.pages[..1].to_vec(),
+        tag_pages: foreground.tag_pages.clone(),
+    }
+    .with_preserved_tail(&previous, 1);
+    assert!(Arc::ptr_eq(&merged.pages[1], &previous.pages[1]));
+    assert_eq!(merged.forward("chap.tex", 7)[0].page_index, 1);
+}
+
+#[test]
+fn a_preserved_tail_follows_renumbered_files() {
+    let previous = two_pages(&[(1, "main.tex"), (2, "chap.tex")], &[(1, 5), (2, 7)]);
+    let foreground = two_pages(&[(1, "chap.tex")], &[]);
+    let merged = SyncIndex {
+        names: foreground.names.clone(),
+        pages: foreground.pages[..1].to_vec(),
+        tag_pages: foreground.tag_pages.clone(),
+    }
+    .with_preserved_tail(&previous, 1);
+    assert_eq!(merged.forward("chap.tex", 7)[0].page_index, 1);
+    assert_eq!(merged.forward("main.tex", 5)[0].page_index, 1);
+}
+
+#[test]
+fn a_renamed_tag_without_tail_records_still_shares_the_tail() {
+    // The second input of main.tex typesets nothing below the stale page.
+    let previous = two_pages(&[(1, "main.tex"), (2, "main.tex")], &[(1, 7)]);
+    let foreground = two_pages(&[(1, "main.tex")], &[]);
+    let merged = SyncIndex {
+        names: foreground.names.clone(),
+        pages: foreground.pages[..1].to_vec(),
+        tag_pages: foreground.tag_pages.clone(),
+    }
+    .with_preserved_tail(&previous, 1);
+    assert!(Arc::ptr_eq(&merged.pages[1], &previous.pages[1]));
+    assert_eq!(merged.forward("main.tex", 7)[0].page_index, 1);
+}

@@ -137,6 +137,9 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
             .analyze_from(Arc::clone(document.bytes()), document.page_offsets())
             .map_err(PreviewPipelineError::Render)?;
         metrics.analysis_ms = elapsed_ms(analysis_started);
+        if !preserve_tail_belief {
+            self.renderer.release_stale_plans();
+        }
         metrics.pages_fingerprinted = analysis.pages().len();
         metrics.unsupported_pages = analysis
             .pages()

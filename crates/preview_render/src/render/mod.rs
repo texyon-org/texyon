@@ -129,6 +129,24 @@ struct WalkCache {
     plans: Vec<Arc<PagePlan>>,
     pages: Vec<PageVisual>,
     resumes: Vec<WalkResume>,
+    /// Plans of the pages past `plans` from an earlier, longer walk.
+    ///
+    /// A viewport-bounded edit cuts the document short, and freeing the
+    /// hundreds of plans below it at once cost that keystroke several
+    /// milliseconds. They go as fresh pages replace them instead.
+    stale: Vec<Arc<PagePlan>>,
+}
+
+impl WalkCache {
+    /// This walk's plans from page `len` on, which a walk of `len` pages leaves stale.
+    fn stale_after(mut self, len: usize) -> Vec<Arc<PagePlan>> {
+        self.plans.append(&mut self.stale);
+        if self.plans.len() > len {
+            self.plans.split_off(len)
+        } else {
+            Vec::new()
+        }
+    }
 }
 
 /// Stateful renderer that retains only immutable resources and completed facts.
@@ -218,12 +236,17 @@ impl<P: ResourceProvider> HotRenderer<P> {
             plans.push(Arc::new(plan));
         }
 
+        let stale = self
+            .cache
+            .take()
+            .map_or_else(Vec::new, |previous| previous.stale_after(plans.len()));
         self.cache = Some(WalkCache {
             xdv: Arc::clone(&xdv),
             filetype: walker.filetype,
             plans: plans.clone(),
             pages: pages.clone(),
             resumes: walker.resumes,
+            stale,
         });
         Ok(Analysis {
             xdv,
@@ -301,6 +324,15 @@ impl<P: ResourceProvider> HotRenderer<P> {
         }
         self.last_completed = Some((analysis.pages.clone(), analysis.ledger.clone()));
         Ok(rendered)
+    }
+
+    /// Free the plans an earlier, longer walk left past the last one.
+    ///
+    /// For a host that knows the last walk covered the whole document.
+    pub fn release_stale_plans(&mut self) {
+        if let Some(cache) = &mut self.cache {
+            cache.stale = Vec::new();
+        }
     }
 
     /// Visual and coverage facts from the last transactionally completed render.

@@ -123,6 +123,8 @@ pub(crate) struct LadderBudget {
     pub(crate) target_bytes: usize,
     pub(crate) hard_bytes: usize,
     pub(crate) min_recent_rungs: usize,
+    /// Thin by spacing alone rather than keeping rungs near the latest clock.
+    pub(crate) spread_evenly: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -246,18 +248,28 @@ impl<B> CheckpointLadder<B> {
         }
     }
 
-    /// Protect every rung through `index` against budget-driven eviction.
+    /// Protect the `count` rungs up to and including `index` against
+    /// budget-driven eviction.
     ///
     /// Continuation work advances the clock far past these rungs, which would
     /// make them the cheapest to drop although the next edit replays from one.
-    pub(crate) fn protect_rungs_through(&mut self, index: usize) -> bool {
+    pub(crate) fn protect_rungs_before(&mut self, index: usize, count: usize) -> bool {
         if index >= self.rungs.len() {
             return false;
         }
-        for rung in &mut self.rungs[..=index] {
+        for rung in &mut self.rungs[(index + 1).saturating_sub(count)..=index] {
             rung.protected = true;
         }
         true
+    }
+
+    /// Let budget pressure evict `index` again. The base rung stays protected.
+    pub(crate) fn unprotect(&mut self, index: usize) {
+        if index > 0 {
+            if let Some(rung) = self.rungs.get_mut(index) {
+                rung.protected = false;
+            }
+        }
     }
 
     pub(crate) fn rung_clock(&self, index: usize) -> Option<u64> {
@@ -483,7 +495,9 @@ impl CheckpointLadder<EngineBundle> {
 
         let mut dropped = 0;
         while planned_bytes(&plan) > budget.target_bytes {
-            let Some(index) = pick_rung_to_drop(&plan, budget.min_recent_rungs, false) else {
+            let Some(index) =
+                pick_rung_to_drop(&plan, budget.min_recent_rungs, false, budget.spread_evenly)
+            else {
                 break;
             };
             drop_planned_rung(&mut plan, index);
@@ -493,7 +507,7 @@ impl CheckpointLadder<EngineBundle> {
         // The soft target never overrides fresh protections or the recent
         // window. The hard cap does: progressively thin any interior rung.
         while planned_bytes(&plan) > budget.hard_bytes {
-            let Some(index) = pick_rung_to_drop(&plan, 0, true) else {
+            let Some(index) = pick_rung_to_drop(&plan, 0, true, budget.spread_evenly) else {
                 return RungAdmission::RungNotAdmitted {
                     minimum_bytes: planned_bytes(&plan),
                 };
@@ -570,7 +584,12 @@ fn ladder_bytes<'a>(
     total
 }
 
-fn pick_rung_to_drop(plan: &[PlannedRung], min_recent_rungs: usize, relax: bool) -> Option<usize> {
+fn pick_rung_to_drop(
+    plan: &[PlannedRung],
+    min_recent_rungs: usize,
+    relax: bool,
+    spread_evenly: bool,
+) -> Option<usize> {
     if plan.len() <= 2 {
         return None;
     }
@@ -582,7 +601,11 @@ fn pick_rung_to_drop(plan: &[PlannedRung], min_recent_rungs: usize, relax: bool)
             continue;
         }
         let gap = plan[index + 1].clock.saturating_sub(plan[index - 1].clock);
-        let age = top.saturating_sub(plan[index].clock).saturating_add(1);
+        let age = if spread_evenly {
+            1
+        } else {
+            top.saturating_sub(plan[index].clock).saturating_add(1)
+        };
         if best.is_none_or(|(best_gap, best_age, _)| {
             u128::from(gap) * u128::from(best_age) < u128::from(best_gap) * u128::from(age)
         }) {
@@ -693,6 +716,19 @@ mod tests {
     }
 
     #[test]
+    fn spreading_evenly_drops_the_closest_rung_however_recent() {
+        let plan = [0, 100, 200, 900, 950, 1000].map(|clock| PlannedRung {
+            source: None,
+            clock,
+            protected: false,
+            undo: None,
+        });
+        // By age the oldest close pair goes, evenly the tightest pair near the top.
+        assert_eq!(pick_rung_to_drop(&plan, 0, false, false), Some(1));
+        assert_eq!(pick_rung_to_drop(&plan, 0, false, true), Some(4));
+    }
+
+    #[test]
     fn protected_and_edge_rungs_cannot_be_decimated() {
         let mut st = state();
         let mut ladder = CheckpointLadder::new(bundle(&st), 0);
@@ -744,6 +780,7 @@ mod tests {
                 target_bytes: minimum - 1,
                 hard_bytes: minimum - 1,
                 min_recent_rungs: 2,
+                spread_evenly: false,
             },
         )
         .err()
@@ -772,6 +809,7 @@ mod tests {
                 target_bytes: minimum,
                 hard_bytes: minimum,
                 min_recent_rungs: 1,
+                spread_evenly: false,
             },
         );
         assert!(matches!(rejected, RungAdmission::RungNotAdmitted { .. }));
@@ -786,6 +824,7 @@ mod tests {
                 target_bytes: usize::MAX,
                 hard_bytes: usize::MAX,
                 min_recent_rungs: 1,
+                spread_evenly: false,
             },
         );
         assert!(matches!(admitted, RungAdmission::Admitted { .. }));
@@ -803,6 +842,7 @@ mod tests {
             target_bytes: usize::MAX,
             hard_bytes: usize::MAX,
             min_recent_rungs: 1,
+            spread_evenly: false,
         };
         st.scanner.logical_clock = 1;
         ladder.admit_engine_rung(&mut st, strings_base, true, true, unlimited);
@@ -816,6 +856,7 @@ mod tests {
             target_bytes: two_rungs + per_rung,
             hard_bytes: two_rungs + per_rung,
             min_recent_rungs: 3,
+            spread_evenly: false,
         };
         for clock in 2..10 {
             st.scanner.logical_clock = clock;
@@ -836,6 +877,7 @@ mod tests {
             target_bytes: usize::MAX,
             hard_bytes: usize::MAX,
             min_recent_rungs: 1,
+            spread_evenly: false,
         };
         for clock in 1..=4 {
             st.scanner.logical_clock = clock;
@@ -843,7 +885,7 @@ mod tests {
             ladder.admit_engine_rung(&mut st, strings_base, true, false, unlimited);
         }
         let horizon = ladder.len() - 1;
-        assert!(ladder.protect_rungs_through(horizon));
+        assert!(ladder.protect_rungs_before(horizon, horizon + 1));
         let clocks: Vec<u64> = (0..=horizon)
             .map(|index| ladder.rung_clock(index).unwrap())
             .collect();
@@ -854,6 +896,7 @@ mod tests {
             target_bytes: ladder.accounted_bytes(),
             hard_bytes: usize::MAX,
             min_recent_rungs: 1,
+            spread_evenly: false,
         };
         for clock in 100..120 {
             st.scanner.logical_clock = clock;

@@ -56,10 +56,13 @@ import type {
   LoadProgress,
   LogLine,
   ProjectFiles,
+  SourceSplice,
   SourceSpot,
+  SourceUpsert,
   WorkerRequest,
   WorkerResponse,
 } from "./protocol.js";
+import { spliceBetween } from "./splice.js";
 
 /** Thrown when the engine could not do what was asked. */
 export class TectonicError extends Error {
@@ -85,18 +88,22 @@ export class TectonicEngine {
 
   /** In-flight compile, so a new one can supersede it. */
   #inFlight: Promise<unknown> = Promise.resolve();
+  /** Queued operations that have not settled yet. */
+  #queued = 0;
 
   /** Binaries as last sent to the Worker, diffed by identity. */
   #sentResources = new Map<string, Uint8Array>();
 
   /**
-   * Text sources as last sent to the Worker, diffed by identity.
+   * Text sources as last sent to the Worker, with the revision they were
+   * sent at, diffed by identity.
    *
    * Sound, not just probable: strings are immutable, so changed content is
    * always a changed reference. A rebuilt-but-identical string only costs a
    * harmless resend, which the Worker recognizes and ignores.
    */
-  #sentSources = new Map<string, string>();
+  #sentSources = new Map<string, SourceUpsert>();
+  #nextSourceRevision = 1;
 
   private constructor(worker: Worker, options: EngineOptions) {
     this.#worker = worker;
@@ -240,32 +247,45 @@ export class TectonicEngine {
     // Only what moved crosses the boundary; the Worker holds the rest. Updated
     // here rather than after the send so a second compile computed before the
     // first is posted diffs against what will already be on the wire.
-    const sourceUpserts: Record<string, string> = {};
+    // A known file goes as a splice, so a keystroke in a long document does
+    // not copy all of it into the Worker and the engine.
+    const sourceUpserts: Record<string, SourceUpsert> = {};
+    const sourceEdits: Record<string, SourceSplice> = {};
     for (const [path, text] of Object.entries(sources)) {
-      if (this.#sentSources.get(path) !== text) {
-        sourceUpserts[path] = text;
-        this.#sentSources.set(path, text);
-      }
+      const sent = this.#sentSources.get(path);
+      if (sent?.text === text) continue;
+      const revision = this.#nextSourceRevision++;
+      if (sent === undefined) sourceUpserts[path] = { text, revision };
+      else sourceEdits[path] = { ...spliceBetween(sent.text, text), base: sent.revision, revision };
+      this.#sentSources.set(path, { text, revision });
     }
     const sourceRemoved = [...this.#sentSources.keys()].filter((path) => !(path in sources));
     for (const path of sourceRemoved) this.#sentSources.delete(path);
 
     return this.#queue(async () => {
-      if (Object.keys(upserts).length > 0 || removed.length > 0) {
-        await this.#send<void>({ id: 0, kind: "resources", upserts, removed });
-        for (const [path, bytes] of Object.entries(upserts)) {
-          this.#sentResources.set(path, bytes);
+      try {
+        if (Object.keys(upserts).length > 0 || removed.length > 0) {
+          await this.#send<void>({ id: 0, kind: "resources", upserts, removed });
+          for (const [path, bytes] of Object.entries(upserts)) {
+            this.#sentResources.set(path, bytes);
+          }
+          for (const path of removed) this.#sentResources.delete(path);
         }
-        for (const path of removed) this.#sentResources.delete(path);
-      }
 
-      return this.#send<CompileResult>({
-        id: 0,
-        kind: "compile",
-        upserts: sourceUpserts,
-        removed: sourceRemoved,
-        viewport,
-      });
+        return await this.#send<CompileResult>({
+          id: 0,
+          kind: "compile",
+          upserts: sourceUpserts,
+          edits: sourceEdits,
+          removed: sourceRemoved,
+          viewport,
+        });
+      } catch (error) {
+        // The Worker may not hold what was recorded as sent, and edits
+        // against it would be refused, so the next compile sends every source whole.
+        this.#sentSources.clear();
+        throw error;
+      }
     });
   }
 
@@ -330,8 +350,10 @@ export class TectonicEngine {
   }
 
   /**
-   * Finish a viewport-bounded compile through the end of the document.
+   * Continue a viewport-bounded compile toward the end of the document.
    *
+   * Each call does a short chunk of the work and reports `tailPending` while
+   * more remains, so a caller can stop between calls when the text changes.
    * Returns `null` when there was nothing pending. Worth calling when the user
    * pauses: it settles the pages below the fold so scrolling does not have to
    * wait for them.
@@ -405,11 +427,14 @@ export class TectonicEngine {
 
   /** Run `operation` after whatever is already queued. */
   #queue<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.#inFlight.then(operation, operation);
+    // With nothing ahead, start now: a later microtask would post the request
+    // only after the render this same keystroke scheduled.
+    const result = this.#queued === 0 ? operation() : this.#inFlight.then(operation, operation);
+    this.#queued++;
     // Keep the chain alive even when a compile rejects.
     this.#inFlight = result.then(
-      () => undefined,
-      () => undefined,
+      () => void this.#queued--,
+      () => void this.#queued--,
     );
     return result;
   }

@@ -170,7 +170,7 @@ impl SourceSet {
             primary.clone(),
             files
                 .iter()
-                .map(|(path, text)| (path.clone(), Arc::<[u8]>::from(text.as_bytes())))
+                .map(|(path, text)| (path.clone(), Arc::<[u8]>::from(Arc::clone(text))))
                 .collect(),
             EngineSourceRevision::new(SourceRevision::ZERO.get()),
         )
@@ -205,6 +205,15 @@ impl SourceSet {
         path: Option<&str>,
         text: String,
     ) -> Result<SourceRevision, SourceError> {
+        self.replace_shared(path, Arc::from(text))
+    }
+
+    /// [`replace`](Self::replace) with text the caller already shares.
+    pub fn replace_shared(
+        &mut self,
+        path: Option<&str>,
+        text: Arc<str>,
+    ) -> Result<SourceRevision, SourceError> {
         validate_file_size(&text, self.limits)?;
         let path = match path {
             Some(path) => self.root.resolve(path)?,
@@ -220,12 +229,11 @@ impl SourceSet {
             .revision
             .checked_next()
             .map_err(|_| SourceError::RevisionExhausted)?;
-        let text: Arc<str> = Arc::from(text);
         let engine_update = self
             .engine_sources
             .upsert_with_revision(
                 &path,
-                Arc::<[u8]>::from(text.as_bytes()),
+                Arc::<[u8]>::from(Arc::clone(&text)),
                 EngineSourceRevision::new(revision.get()),
             )
             .map_err(SourceError::Engine)?;

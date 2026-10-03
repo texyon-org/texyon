@@ -224,10 +224,15 @@ impl DocumentAssembler {
                 if u32::try_from(capacity).is_err() {
                     return Err(XdvAssemblyError::DocumentTooLarge(capacity));
                 }
-                let mut combined = Vec::with_capacity(capacity);
-                combined.extend_from_slice(&previous.bytes[..prefix_len]);
-                combined.extend_from_slice(bytes);
-                Arc::from(combined)
+                // Written straight into the shared allocation: a Vec first
+                // meant copying a long document twice per edit.
+                let mut combined = Arc::<[u8]>::new_uninit_slice(capacity);
+                let slots = Arc::get_mut(&mut combined).expect("a new Arc is unique");
+                let (head, tail) = slots.split_at_mut(prefix_len);
+                head.write_copy_of_slice(&previous.bytes[..prefix_len]);
+                tail.write_copy_of_slice(bytes);
+                // SAFETY: both halves were just written.
+                unsafe { combined.assume_init() }
             }
         };
 

@@ -6,9 +6,8 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use sha2::{Digest, Sha256};
-
 static NEXT_REVISION: AtomicU64 = AtomicU64::new(1);
+static NEXT_IDENTITY: AtomicU64 = AtomicU64::new(1);
 
 /// A globally monotonic accepted source-content revision.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -43,16 +42,13 @@ impl fmt::Display for SourcePath {
     }
 }
 
-/// Strong identity of the exact source bytes consumed by XeTeX.
+/// Identity of one accepted source buffer.
+///
+/// Equal identities mean equal bytes. Unequal ones do not mean unequal bytes,
+/// so a comparison that fails falls back to the bytes. Hashing the buffer
+/// instead cost a full pass over it on every edit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct SourceIdentity([u8; 32]);
-
-impl SourceIdentity {
-    /// Return the SHA-256 digest bytes.
-    pub fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
-    }
-}
+pub struct SourceIdentity(u64);
 
 /// A validated immutable set of editor-owned source buffers.
 #[derive(Clone, Debug)]
@@ -73,7 +69,7 @@ struct SourceEntry {
 impl SourceEntry {
     fn new(bytes: Arc<[u8]>) -> Self {
         Self {
-            identity: identity(&bytes),
+            identity: next_identity(),
             bytes,
         }
     }
@@ -193,7 +189,7 @@ impl SourceSnapshot {
             .map(|entry| Arc::clone(&entry.bytes))
     }
 
-    /// Resolve the strong identity of editor-owned source bytes.
+    /// Resolve the identity of editor-owned source bytes.
     pub fn identity(&self, path: impl AsRef<Path>) -> Option<SourceIdentity> {
         let path = normalize(&self.root, path.as_ref()).ok()?;
         self.entries.get(&path).map(|entry| entry.identity)
@@ -344,8 +340,8 @@ fn next_revision() -> SourceRevision {
     SourceRevision(NEXT_REVISION.fetch_add(1, Ordering::Relaxed))
 }
 
-fn identity(bytes: &[u8]) -> SourceIdentity {
-    SourceIdentity(Sha256::digest(bytes).into())
+fn next_identity() -> SourceIdentity {
+    SourceIdentity(NEXT_IDENTITY.fetch_add(1, Ordering::Relaxed))
 }
 
 pub(crate) fn first_difference(left: &[u8], right: &[u8]) -> Option<usize> {

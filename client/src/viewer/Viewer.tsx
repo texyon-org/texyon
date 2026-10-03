@@ -9,6 +9,12 @@ const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3] as const;
 /** How long a forward search highlight stays, including its fade. */
 const HIGHLIGHT_MS = 1500;
 
+/** Pages parsed ahead on either side of the visible ones. */
+const OVERSCAN = 2;
+
+/** Pages further than this from the visible ones give up their SVG. */
+const KEEP = 6;
+
 export interface ViewerProps {
   /** The latest compile, or null before the first one. */
   result: CompileResult | null;
@@ -37,11 +43,19 @@ export interface ViewerProps {
  * are never re-parsed, never re-laid-out and never repainted. That is the whole
  * reason the preview stays cheap, and it is why this component manipulates DOM
  * directly instead of rendering pages as React children.
+ *
+ * Only pages near the viewport are parsed into the DOM. The rest keep their
+ * markup as a string: a dense page is thousands of nodes, and a long book fully
+ * mounted is a million, which stalls every restyle and paint.
  */
 export function Viewer({ result, onPainted, onBackwardSearch, highlight, onViewport }: ViewerProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const container = useRef<HTMLDivElement>(null);
   const slots = useRef<HTMLElement[]>([]);
+  /** The latest markup of each page, mounted or not. */
+  const markup = useRef<(string | undefined)[]>([]);
+  /** The SVG each slot shows, and the markup it was parsed from. */
+  const mounted = useRef<({ markup: string; svg: SVGElement } | null)[]>([]);
   const [zoom, setZoom] = useState(1);
   const [pageCount, setPageCount] = useState(0);
 
@@ -68,8 +82,42 @@ export function Viewer({ result, onPainted, onBackwardSearch, highlight, onViewp
    */
   const lastPublished = useRef<CompileResult | null>(null);
 
-  /** Say which pages currently intersect the scroller. */
-  const measureViewport = useCallback(() => {
+  /** Parse the pages around the visible range, and unmount the far ones. */
+  const mountAround = useCallback((first: number, last: number, fresh: boolean) => {
+    slots.current.forEach((slot, index) => {
+      const shown = mounted.current[index] ?? null;
+      if (index < first - KEEP || index > last + KEEP) {
+        if (shown !== null) {
+          shown.svg.remove();
+          mounted.current[index] = null;
+        }
+        return;
+      }
+
+      const latest = markup.current[index];
+      if (index < first - OVERSCAN || index > last + OVERSCAN) return;
+      if (latest === undefined || shown?.markup === latest) return;
+
+      const parseFrom = performance.now();
+      const svg = parse(latest, index);
+      if (svg === null) return;
+      const parsedAt = performance.now();
+
+      svg.setAttribute("width", "100%");
+      svg.setAttribute("height", "100%");
+      shown?.svg.remove();
+      // First, so the link layer and highlights stay on top.
+      slot.prepend(svg);
+      mounted.current[index] = { markup: latest, svg };
+      if (fresh) {
+        performance.measure(`tex:parse-p${index}`, { start: parseFrom, end: parsedAt });
+        performance.measure(`tex:dom-p${index}`, { start: parsedAt, end: performance.now() });
+      }
+    });
+  }, []);
+
+  /** Say which pages currently intersect the scroller, and mount around them. */
+  const measureViewport = useCallback((fresh = false) => {
     const view = scroller.current;
     if (view === null || slots.current.length === 0) return;
 
@@ -85,8 +133,10 @@ export function Viewer({ result, onPainted, onBackwardSearch, highlight, onViewp
       first ??= index;
       last = index;
     }
-    if (first !== null && last !== null) reportViewport.current(first, last);
-  }, []);
+    if (first === null || last === null) return;
+    mountAround(first, last, fresh);
+    reportViewport.current(first, last);
+  }, [mountAround]);
 
   useEffect(() => {
     const view = scroller.current;
@@ -102,8 +152,12 @@ export function Viewer({ result, onPainted, onBackwardSearch, highlight, onViewp
       });
     };
     view.addEventListener("scroll", onScroll, { passive: true });
+    // A resized or unhidden panel shows other pages without scrolling.
+    const resized = new ResizeObserver(onScroll);
+    resized.observe(view);
     return () => {
       view.removeEventListener("scroll", onScroll);
+      resized.disconnect();
       if (frame !== 0) cancelAnimationFrame(frame);
     };
   }, [measureViewport]);
@@ -142,6 +196,8 @@ export function Viewer({ result, onPainted, onBackwardSearch, highlight, onViewp
     while (slots.current.length > frame.pageCount) {
       slots.current.pop()?.remove();
     }
+    markup.current.length = frame.pageCount;
+    mounted.current.length = frame.pageCount;
 
     // Size every slot, including ones we were not sent, so the scroll height is
     // right before their pages arrive.
@@ -153,22 +209,13 @@ export function Viewer({ result, onPainted, onBackwardSearch, highlight, onViewp
     });
 
     for (const page of frame.pages) {
-      const slot = slots.current[page.index];
-      if (slot === undefined) continue;
-
-      const parseFrom = performance.now();
-      const svg = parse(page.svg, page.index);
-      if (svg === null) continue;
-      const parsedAt = performance.now();
-
-      svg.setAttribute("width", "100%");
-      svg.setAttribute("height", "100%");
-      slot.replaceChildren(svg);
-      if (fresh) {
-        performance.measure(`tex:parse-p${page.index}`, { start: parseFrom, end: parsedAt });
-        performance.measure(`tex:dom-p${page.index}`, { start: parsedAt, end: performance.now() });
-      }
+      if (page.index < frame.pageCount) markup.current[page.index] = page.svg;
     }
+
+    // The document may have grown, shrunk or been rescaled under a still
+    // scrollbar, all of which change which pages are visible.
+    measureViewport(fresh);
+
     if (fresh) {
       performance.mark("tex:pages-applied");
       measure("tex:pages", "tex:apply-start", "tex:pages-applied");
@@ -199,10 +246,6 @@ export function Viewer({ result, onPainted, onBackwardSearch, highlight, onViewp
     }
 
     setPageCount(frame.pageCount);
-
-    // The document may have grown, shrunk or been rescaled under a still
-    // scrollbar, all of which change which pages are visible.
-    measureViewport();
 
     if (frame.pages.length > 0) {
       // The rAF callback runs just before the frame that shows the new page is

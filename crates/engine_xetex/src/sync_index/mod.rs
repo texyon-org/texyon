@@ -173,6 +173,8 @@ pub struct SyncIndex {
     names: BTreeMap<i32, Arc<str>>,
     /// Records by page, shared with checkpoints and earlier snapshots.
     pages: Vec<Arc<[Record]>>,
+    /// The last page each tag has records on.
+    tag_pages: BTreeMap<i32, usize>,
 }
 
 impl SyncIndex {
@@ -193,26 +195,54 @@ impl SyncIndex {
     /// Preserve records for pages beyond a partial foreground coverage.
     pub fn with_preserved_tail(mut self, previous: &Self, first_stale_page: usize) -> Self {
         // Tags are per compile, so previous records are renamed through their paths.
+        let unchanged_files = self
+            .names
+            .keys()
+            .all(|tag| previous.names.contains_key(tag));
         let mut by_path = self
             .names
             .iter()
             .map(|(tag, name)| (Arc::clone(name), *tag))
             .collect::<HashMap<_, _>>();
-        let mut next_tag = self.names.keys().next_back().map_or(1, |tag| tag + 1);
-        let mut renamed = HashMap::new();
-        let mut rename = |tag: i32| {
-            *renamed.entry(tag).or_insert_with(|| {
-                let Some(name) = previous.names.get(&tag) else {
-                    return 0;
-                };
-                *by_path.entry(Arc::clone(name)).or_insert_with(|| {
-                    let tag = next_tag;
-                    next_tag += 1;
-                    self.names.insert(tag, Arc::clone(name));
-                    tag
-                })
+        let mut next_tag = self
+            .names
+            .keys()
+            .chain(previous.names.keys())
+            .max()
+            .map_or(1, |tag| tag + 1);
+        let renames = previous
+            .names
+            .iter()
+            .map(|(&tag, name)| {
+                // Several inputs can share a name, so the number decides first.
+                if self.names.get(&tag) == Some(name) {
+                    return (tag, tag);
+                }
+                let renamed = *by_path.entry(Arc::clone(name)).or_insert_with(|| {
+                    // Keep the number when it is free, so pages can be shared as they are.
+                    let renamed = if self.names.contains_key(&tag) {
+                        next_tag += 1;
+                        next_tag - 1
+                    } else {
+                        tag
+                    };
+                    self.names.insert(renamed, Arc::clone(name));
+                    renamed
+                });
+                (tag, renamed)
             })
-        };
+            .collect::<BTreeMap<_, _>>();
+        // A renamed tag with no records in the tail changes none of its pages.
+        // Checking every record instead cost a long document ten milliseconds a keystroke.
+        let identity = unchanged_files
+            && renames.iter().all(|(tag, renamed)| {
+                tag == renamed
+                    || previous
+                        .tag_pages
+                        .get(tag)
+                        .is_none_or(|&last| last < first_stale_page)
+            });
+
         let tail = previous
             .pages
             .iter()
@@ -220,30 +250,52 @@ impl SyncIndex {
             .skip(first_stale_page)
             .filter(|(_, records)| !records.is_empty())
             .map(|(page_index, records)| {
-                let records = if records
-                    .iter()
-                    .all(|record| rename(record.tag) == record.tag)
-                {
+                let shared = identity
+                    || records
+                        .iter()
+                        .all(|record| renames.get(&record.tag) == Some(&record.tag));
+                let records = if shared {
                     Arc::clone(records)
                 } else {
                     records
                         .iter()
                         .map(|record| Record {
-                            tag: rename(record.tag),
+                            tag: renames.get(&record.tag).copied().unwrap_or(0),
                             ..*record
                         })
                         .collect()
                 };
-                (page_index, records)
+                (page_index, records, shared)
             })
             .collect::<Vec<_>>();
-        for (page_index, records) in tail {
-            self.push_page(page_index, records);
+        for (page_index, records, shared) in tail {
+            if shared && identity {
+                self.share_page(page_index, records);
+            } else {
+                self.push_page(page_index, records);
+            }
+        }
+        if identity {
+            for (&tag, &last) in &previous.tag_pages {
+                if last >= first_stale_page {
+                    let known = self.tag_pages.entry(tag).or_insert(last);
+                    *known = (*known).max(last);
+                }
+            }
         }
         self
     }
 
     fn push_page(&mut self, page_index: usize, records: Arc<[Record]>) {
+        for record in records.iter() {
+            let last = self.tag_pages.entry(record.tag).or_insert(page_index);
+            *last = (*last).max(page_index);
+        }
+        self.share_page(page_index, records);
+    }
+
+    /// [`push_page`](Self::push_page) for records whose tags the caller accounts for.
+    fn share_page(&mut self, page_index: usize, records: Arc<[Record]>) {
         if self.pages.len() <= page_index {
             self.pages.resize_with(page_index + 1, || Arc::from([]));
         }

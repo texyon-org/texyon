@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use std::ptr::NonNull;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
 use tectonic_bridge_core::{CoreBridgeLauncher, CoreBridgeState};
 use tectonic_errors::prelude::*;
@@ -44,6 +44,9 @@ struct FenceController {
     next_source_bytes: usize,
     pending_fences: Vec<(SourcePath, Vec<usize>)>,
     horizon_last: Option<usize>,
+    horizon_deadline: Option<Instant>,
+    /// Pages shipped when the deadline was last checked, from the first check on.
+    deadline_pages: Option<usize>,
     horizon_rung: NonNull<Option<usize>>,
     activity: NonNull<CheckpointActivity>,
 }
@@ -54,6 +57,8 @@ struct FencePlan {
     budget: LadderBudget,
     pending_fences: Vec<(SourcePath, Vec<usize>)>,
     horizon_last: Option<usize>,
+    /// Also stop at the first page boundary after this.
+    horizon_deadline: Option<Instant>,
 }
 
 thread_local! {
@@ -83,6 +88,7 @@ fn install_fence_controller(
         budget,
         pending_fences,
         horizon_last,
+        horizon_deadline,
     } = plan;
     FENCE_CONTROLLER.with(|controller| {
         let previous = controller.borrow_mut().replace(FenceController {
@@ -95,6 +101,8 @@ fn install_fence_controller(
                 .saturating_add(FIRST_PERIODIC_FENCE_SOURCE_BYTES),
             pending_fences,
             horizon_last,
+            horizon_deadline,
+            deadline_pages: None,
             horizon_rung: NonNull::from(horizon_rung),
             activity: NonNull::from(activity),
         });
@@ -126,10 +134,22 @@ fn capture_fence(
         let Some(controller) = controller.as_mut() else {
             return false;
         };
-        let horizon_due = allow_periodic_or_horizon
-            && controller
-                .horizon_last
-                .is_some_and(|last| state.shipout.total_pages.max(0) as usize > last);
+        let shipped = state.shipout.total_pages.max(0) as usize;
+        // Checked once per shipped page, since a clock read is not free in wasm.
+        if let Some(deadline) = controller.horizon_deadline {
+            // The first check only records where this operation started, so
+            // every chunk ships at least one page.
+            let baseline = *controller.deadline_pages.get_or_insert(shipped);
+            if shipped > baseline {
+                controller.deadline_pages = Some(shipped);
+                if Instant::now() >= deadline {
+                    controller.horizon_last = Some(shipped - 1);
+                    controller.horizon_deadline = None;
+                }
+            }
+        }
+        let horizon_due =
+            allow_periodic_or_horizon && controller.horizon_last.is_some_and(|last| shipped > last);
         let mut protected = false;
         for (path, fences) in &mut controller.pending_fences {
             let Some(position) = crate::replay::adapter::open_position(path) else {
@@ -201,6 +221,15 @@ pub(crate) fn resident_active() -> bool {
     RESIDENT_ACTIVE.load(Ordering::Acquire)
 }
 
+/// Where the document's unfinished tail resumes.
+struct TailContinuation {
+    /// The fence the next continuation starts from.
+    rung_clock: u64,
+    /// The foreground edit's horizon, which stays pinned while the tail settles.
+    pinned_clock: u64,
+    sources: SourceSnapshot,
+}
+
 /// Page interval requested by a preview client for foreground horizon work.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PageRange {
@@ -231,6 +260,9 @@ pub struct EnginePreviewConfig {
     pub min_recent_rungs: usize,
     /// Cooperative cancellation signal polled by instrumented engine loops.
     pub cancellation: EngineCancellation,
+    /// Engine time one tail continuation may spend before stopping at a page
+    /// boundary, for hosts that cannot interrupt a running call.
+    pub tail_chunk: Option<Duration>,
 }
 
 impl EnginePreviewConfig {
@@ -246,6 +278,7 @@ impl EnginePreviewConfig {
             ladder_hard_bytes: 96 * 1024 * 1024,
             min_recent_rungs: 8,
             cancellation: EngineCancellation::new(),
+            tail_chunk: None,
         }
     }
 }
@@ -296,7 +329,7 @@ pub struct IncrementalXeTeXSession {
     ladder: Option<CheckpointLadder<EngineBundle>>,
     strings_base: Option<StringWatermark>,
     last_sources: Option<SourceSnapshot>,
-    pending_continuation: Option<(u64, SourceSnapshot)>,
+    pending_continuation: Option<TailContinuation>,
     opened: bool,
     dead: bool,
     owns_global_lease: bool,
@@ -354,7 +387,11 @@ impl IncrementalXeTeXSession {
             bail!("another resident XeTeX session is already open");
         }
         self.owns_global_lease = true;
-        let budget = self.budget();
+        // A whole document with no edit in it yet: no clock is likelier than another.
+        let budget = LadderBudget {
+            spread_evenly: true,
+            ..self.budget()
+        };
         let verify = self.config.verify_rewinds;
         let config = self.config.clone();
         let state = &mut *self.state;
@@ -399,6 +436,7 @@ impl IncrementalXeTeXSession {
                             budget,
                             pending_fences: Vec::new(),
                             horizon_last: None,
+                            horizon_deadline: None,
                         },
                     },
                     &mut checkpoint_activity,
@@ -489,6 +527,7 @@ impl IncrementalXeTeXSession {
                             budget,
                             pending_fences,
                             horizon_last,
+                            horizon_deadline: None,
                         },
                     },
                     &mut checkpoint_activity,
@@ -496,7 +535,11 @@ impl IncrementalXeTeXSession {
             }))
         })?;
         if let OperationResult::Horizoned { rung_clock, .. } = &result {
-            self.pending_continuation = Some((*rung_clock, accepted_sources.clone()));
+            self.pending_continuation = Some(TailContinuation {
+                rung_clock: *rung_clock,
+                pinned_clock: *rung_clock,
+                sources: accepted_sources.clone(),
+            });
         }
         self.last_sources = Some(accepted_sources);
         self.finish_operation(
@@ -513,13 +556,23 @@ impl IncrementalXeTeXSession {
         &mut self,
         launcher: &mut CoreBridgeLauncher,
     ) -> Result<Option<EngineFrame>> {
-        let Some((rung_clock, sources)) = self.pending_continuation.take() else {
+        let Some(TailContinuation {
+            rung_clock,
+            pinned_clock,
+            sources,
+        }) = self.pending_continuation.take()
+        else {
             return Ok(None);
         };
         let revision = sources.revision();
         let input = sources.primary().as_str().to_owned();
         let config = self.config.clone();
-        let budget = self.budget();
+        // The engine is past every edit here, so rungs near its clock are no
+        // likelier to be replayed from than any others.
+        let budget = LadderBudget {
+            spread_evenly: true,
+            ..self.budget()
+        };
         let strings_base = self
             .strings_base
             .expect("opened session without string watermark");
@@ -531,11 +584,14 @@ impl IncrementalXeTeXSession {
         let fence = ladder
             .replay_fence(target)
             .ok_or_else(|| anyhow!("pending tail rung is not resumable"))?;
+        let pinned = ladder.rung_at_clock(pinned_clock).unwrap_or(target);
         let splice = Splice {
             at: fence.splice_at(),
             resume_pending_command: fence.resume_pending_command(),
         };
         let fence_sources = sources.clone();
+        let continuation_sources = sources.clone();
+        let horizon_deadline = self.config.tail_chunk.map(|budget| Instant::now() + budget);
         let replay_clock = ladder.rung_clock(target).unwrap_or(rung_clock);
         let mut checkpoint_activity = CheckpointActivity::default();
         let result = launcher.with_global_lock(|api| {
@@ -547,9 +603,13 @@ impl IncrementalXeTeXSession {
                     ladder.rewind_engine(state, 0);
                     return OperationResult::Aborted;
                 }
-                // Pin the foreground ladder so the tail's own rungs cannot evict
-                // the fences the next edit needs.
-                assert!(ladder.protect_rungs_through(target));
+                // Pin the fences just before the edit, where the next keystroke
+                // most likely lands. Spreading evenly keeps the rest of the prefix.
+                assert!(ladder.protect_rungs_before(pinned, budget.min_recent_rungs));
+                // An earlier chunk's horizon is spent once resumed from.
+                if target > pinned {
+                    ladder.unprotect(target);
+                }
                 configure(state, &config);
                 state.shipout.rust_stdout = crate::bridge::output_open_stdout();
                 run_document(
@@ -565,12 +625,21 @@ impl IncrementalXeTeXSession {
                             budget,
                             pending_fences: Vec::new(),
                             horizon_last: None,
+                            horizon_deadline,
                         },
                     },
                     &mut checkpoint_activity,
                 )
             }))
         })?;
+        // A chunked settle stopped at a page boundary and continues from there.
+        if let OperationResult::Horizoned { rung_clock, .. } = &result {
+            self.pending_continuation = Some(TailContinuation {
+                rung_clock: *rung_clock,
+                pinned_clock,
+                sources: continuation_sources,
+            });
+        }
         self.finish_operation(result, revision, target, replay_clock, checkpoint_activity)
             .map(Some)
     }
@@ -630,6 +699,7 @@ impl IncrementalXeTeXSession {
             target_bytes: self.config.ladder_target_bytes,
             hard_bytes: self.config.ladder_hard_bytes,
             min_recent_rungs: self.config.min_recent_rungs,
+            spread_evenly: false,
         }
     }
 
