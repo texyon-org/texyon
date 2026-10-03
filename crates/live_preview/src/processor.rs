@@ -235,6 +235,11 @@ impl<P: ResourceProvider, B: Backend, S: FrameSink> ResidentPreviewProcessor<P, 
         &self.pipeline
     }
 
+    /// Reach the pipeline mutably, e.g. to draw pages on demand.
+    pub fn pipeline_mut(&mut self) -> &mut PreviewPipeline<P, B> {
+        &mut self.pipeline
+    }
+
     /// Inspect the publication sink.
     pub fn sink(&self) -> &S {
         &self.sink

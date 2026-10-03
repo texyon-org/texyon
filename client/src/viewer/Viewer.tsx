@@ -1,4 +1,4 @@
-import type { CompileResult, Link, Located, SyncRect } from "@tectonic/wasm";
+import type { CompileResult, Link, Located, PageRaster, SyncRect } from "@tectonic/wasm";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { measure } from "../perf";
@@ -9,11 +9,11 @@ const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3] as const;
 /** How long a forward search highlight stays, including its fade. */
 const HIGHLIGHT_MS = 1500;
 
-/** Pages parsed ahead on either side of the visible ones. */
-const OVERSCAN = 2;
+/** Pages drawn on either side of the visible ones. The engine draws the same margin with each compile. */
+const OVERSCAN = 1;
 
-/** Pages further than this from the visible ones give up their SVG. */
-const KEEP = 6;
+/** Pages further than this from the visible ones give up their pixels. */
+const KEEP = 4;
 
 export interface ViewerProps {
   /** The latest compile, or null before the first one. */
@@ -25,50 +25,75 @@ export interface ViewerProps {
   /** Where a forward search found the cursor's line, and what to flash. */
   highlight: Located | null;
   /**
-   * The visible page range moved, zero-based and inclusive.
+   * The visible page range moved, zero-based and inclusive, or the pixels per
+   * big point a page needs to look sharp did.
    *
    * This is what lets a compile stop at the last page the user can see and
    * leave the rest for idle time, so it is reported on every scroll, zoom and
    * layout change.
    */
-  onViewport: (first: number, last: number) => void;
+  onViewport: (first: number, last: number, scale: number) => void;
+  /** Draw pages at `scale` pixels per big point. */
+  requestRaster: (pages: number[], scale: number) => Promise<PageRaster[]>;
+}
+
+/** One page's canvas, and what it was drawn from. */
+interface Drawn {
+  canvas: HTMLCanvasElement;
+  scale: number;
+  /** The page's version when drawn: older than the page means stale. */
+  version: number;
 }
 
 /**
  * The rendered document.
  *
- * The engine hands back a *patch* — only the pages whose appearance changed —
- * so this keeps a DOM slot per page and replaces the contents of just those. A
- * one-word edit in a twenty-page document touches one slot; the other nineteen
- * are never re-parsed, never re-laid-out and never repainted. That is the whole
- * reason the preview stays cheap, and it is why this component manipulates DOM
- * directly instead of rendering pages as React children.
+ * The engine hands back a *patch*: which pages changed, with the visible ones
+ * already drawn to pixels in its Worker. The page shows each as a bitmap on a
+ * canvas, so the main thread never parses or paints glyphs itself. A dense page
+ * as SVG cost the browser tens of milliseconds to show, more than typesetting it.
  *
- * Only pages near the viewport are parsed into the DOM. The rest keep their
- * markup as a string: a dense page is thousands of nodes, and a long book fully
- * mounted is a million, which stalls every restyle and paint.
+ * Only pages near the viewport hold pixels. The rest are sized slots, drawn on
+ * request when they scroll into view, and a page that changed out of view is
+ * drawn again only then.
  */
-export function Viewer({ result, onPainted, onBackwardSearch, highlight, onViewport }: ViewerProps) {
+export function Viewer({
+  result,
+  onPainted,
+  onBackwardSearch,
+  highlight,
+  onViewport,
+  requestRaster,
+}: ViewerProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const container = useRef<HTMLDivElement>(null);
   const slots = useRef<HTMLElement[]>([]);
-  /** The latest markup of each page, mounted or not. */
-  const markup = useRef<(string | undefined)[]>([]);
-  /** The SVG each slot shows, and the markup it was parsed from. */
-  const mounted = useRef<({ markup: string; svg: SVGElement } | null)[]>([]);
+  /** Bumped whenever a page changes, so late pixels of an older page are dropped. */
+  const versions = useRef<number[]>([]);
+  const drawn = useRef<(Drawn | null)[]>([]);
+  /** Pages with a request in flight, keyed to the scale and version it asked for. */
+  const requested = useRef(new Map<number, string>());
   const [zoom, setZoom] = useState(1);
   const [pageCount, setPageCount] = useState(0);
+  const [pixelRatio, setPixelRatio] = useState(() => window.devicePixelRatio || 1);
 
   // Read through a ref so the click handler installed on each page does not
   // have to be replaced every time the zoom changes.
   const scale = useRef(zoom);
   scale.current = zoom;
 
+  /** Pixels per big point: a bp is `zoom` CSS pixels. */
+  const pixelScale = useRef(zoom * pixelRatio);
+  pixelScale.current = zoom * pixelRatio;
+
   const backward = useRef(onBackwardSearch);
   backward.current = onBackwardSearch;
 
   const reportViewport = useRef(onViewport);
   reportViewport.current = onViewport;
+
+  const rasterize = useRef(requestRaster);
+  rasterize.current = requestRaster;
 
   /** The effect below also reruns on zoom; only a new frame is instrumented. */
   const lastApplied = useRef<CompileResult | null>(null);
@@ -82,42 +107,80 @@ export function Viewer({ result, onPainted, onBackwardSearch, highlight, onViewp
    */
   const lastPublished = useRef<CompileResult | null>(null);
 
-  /** Parse the pages around the visible range, and unmount the far ones. */
-  const mountAround = useCallback((first: number, last: number, fresh: boolean) => {
-    slots.current.forEach((slot, index) => {
-      const shown = mounted.current[index] ?? null;
+  // Zooming the browser or moving to another screen changes the pixel ratio.
+  useEffect(() => {
+    const query = matchMedia(`(resolution: ${pixelRatio}dppx)`);
+    const update = (): void => setPixelRatio(window.devicePixelRatio || 1);
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, [pixelRatio]);
+
+  /** Show a page's pixels, unless the page changed since they were asked for. */
+  const show = useCallback((raster: PageRaster, version: number) => {
+    const slot = slots.current[raster.index];
+    if (slot === undefined || versions.current[raster.index] !== version) {
+      raster.bitmap.close();
+      return;
+    }
+    let shown = drawn.current[raster.index] ?? null;
+    if (shown === null) {
+      const canvas = document.createElement("canvas");
+      // First, so the link layer and highlights stay on top.
+      slot.prepend(canvas);
+      shown = { canvas, scale: raster.scale, version };
+      drawn.current[raster.index] = shown;
+    }
+    shown.canvas.width = raster.bitmap.width;
+    shown.canvas.height = raster.bitmap.height;
+    shown.canvas.getContext("bitmaprenderer")?.transferFromImageBitmap(raster.bitmap);
+    shown.scale = raster.scale;
+    shown.version = version;
+  }, []);
+
+  /** Draw the pages around the visible range that lack current pixels, and free the far ones. */
+  const drawAround = useCallback((first: number, last: number) => {
+    const wanted: number[] = [];
+    const target = pixelScale.current;
+    slots.current.forEach((_, index) => {
+      const shown = drawn.current[index] ?? null;
       if (index < first - KEEP || index > last + KEEP) {
         if (shown !== null) {
-          shown.svg.remove();
-          mounted.current[index] = null;
+          shown.canvas.remove();
+          drawn.current[index] = null;
         }
         return;
       }
-
-      const latest = markup.current[index];
       if (index < first - OVERSCAN || index > last + OVERSCAN) return;
-      if (latest === undefined || shown?.markup === latest) return;
-
-      const parseFrom = performance.now();
-      const svg = parse(latest, index);
-      if (svg === null) return;
-      const parsedAt = performance.now();
-
-      svg.setAttribute("width", "100%");
-      svg.setAttribute("height", "100%");
-      shown?.svg.remove();
-      // First, so the link layer and highlights stay on top.
-      slot.prepend(svg);
-      mounted.current[index] = { markup: latest, svg };
-      if (fresh) {
-        performance.measure(`tex:parse-p${index}`, { start: parseFrom, end: parsedAt });
-        performance.measure(`tex:dom-p${index}`, { start: parsedAt, end: performance.now() });
-      }
+      const current =
+        shown !== null && shown.version === versions.current[index] && shown.scale === target;
+      const key = `${target}@${versions.current[index] ?? 0}`;
+      if (current || requested.current.get(index) === key) return;
+      wanted.push(index);
     });
-  }, []);
+    if (wanted.length === 0) return;
 
-  /** Say which pages currently intersect the scroller, and mount around them. */
-  const measureViewport = useCallback((fresh = false) => {
+    const asked = wanted.map((index) => versions.current[index] ?? 0);
+    const keys = asked.map((version) => `${target}@${version}`);
+    wanted.forEach((index, at) => requested.current.set(index, keys[at] ?? ""));
+    void rasterize
+      .current(wanted, target)
+      .then(
+        (rasters) => {
+          for (const raster of rasters) show(raster, asked[wanted.indexOf(raster.index)] ?? -1);
+        },
+        () => {
+          // The next scroll or frame asks again.
+        },
+      )
+      .finally(() => {
+        wanted.forEach((index, at) => {
+          if (requested.current.get(index) === keys[at]) requested.current.delete(index);
+        });
+      });
+  }, [show]);
+
+  /** Say which pages currently intersect the scroller, and draw around them. */
+  const measureViewport = useCallback(() => {
     const view = scroller.current;
     if (view === null || slots.current.length === 0) return;
 
@@ -134,9 +197,9 @@ export function Viewer({ result, onPainted, onBackwardSearch, highlight, onViewp
       last = index;
     }
     if (first === null || last === null) return;
-    mountAround(first, last, fresh);
-    reportViewport.current(first, last);
-  }, [mountAround]);
+    reportViewport.current(first, last, pixelScale.current);
+    drawAround(first, last);
+  }, [drawAround]);
 
   useEffect(() => {
     const view = scroller.current;
@@ -196,8 +259,8 @@ export function Viewer({ result, onPainted, onBackwardSearch, highlight, onViewp
     while (slots.current.length > frame.pageCount) {
       slots.current.pop()?.remove();
     }
-    markup.current.length = frame.pageCount;
-    mounted.current.length = frame.pageCount;
+    drawn.current.length = frame.pageCount;
+    versions.current.length = frame.pageCount;
 
     // Size every slot, including ones we were not sent, so the scroll height is
     // right before their pages arrive.
@@ -208,13 +271,19 @@ export function Viewer({ result, onPainted, onBackwardSearch, highlight, onViewp
       slot.style.height = `${height * zoom}px`;
     });
 
-    for (const page of frame.pages) {
-      if (page.index < frame.pageCount) markup.current[page.index] = page.svg;
+    if (fresh) {
+      // A changed page keeps showing its old pixels until new ones arrive.
+      for (const index of frame.changed) {
+        versions.current[index] = (versions.current[index] ?? 0) + 1;
+      }
+      for (const raster of frame.rasters) {
+        show(raster, versions.current[raster.index] ?? 0);
+      }
     }
 
     // The document may have grown, shrunk or been rescaled under a still
     // scrollbar, all of which change which pages are visible.
-    measureViewport(fresh);
+    measureViewport();
 
     if (fresh) {
       performance.mark("tex:pages-applied");
@@ -222,7 +291,7 @@ export function Viewer({ result, onPainted, onBackwardSearch, highlight, onViewp
     }
 
     // Links are not drawn — they arrive beside the page as regions — so they go
-    // on as a layer of anchors above the SVG. Every page's overlay is rebuilt,
+    // on as a layer of anchors above the page. Every page's overlay is rebuilt,
     // because a page whose text did not move can still have had its link
     // renumbered by an edit above it, and because the zoom may have changed.
     frame.pageOverlays.forEach((overlay, index) => {
@@ -247,21 +316,19 @@ export function Viewer({ result, onPainted, onBackwardSearch, highlight, onViewp
 
     setPageCount(frame.pageCount);
 
-    if (frame.pages.length > 0) {
+    if (fresh && frame.rasters.length > 0) {
       // The rAF callback runs just before the frame that shows the new page is
       // rendered, and a task queued from it runs just after that frame is
       // presented. A second rAF here would wait a whole extra frame.
       requestAnimationFrame(() =>
         setTimeout(() => {
-          if (fresh) {
-            performance.mark("tex:painted");
-            measure("tex:paint-wait", "tex:overlays-applied", "tex:painted");
-          }
+          performance.mark("tex:painted");
+          measure("tex:paint-wait", "tex:overlays-applied", "tex:painted");
           onPainted();
         }, 0),
       );
     }
-  }, [result, zoom, onPainted, pointOf, measureViewport]);
+  }, [result, zoom, pixelRatio, onPainted, pointOf, measureViewport, show]);
 
   // A forward search: bring the best box into view and flash the boxes, or the
   // page when there are none. Zoom is read through the ref so zooming does not
@@ -453,70 +520,5 @@ function jumpTo(
 
     scroller.scrollTo({ top: slot.offsetTop + target.yBp * zoom - 40, behavior: "smooth" });
     return;
-  }
-}
-
-/**
- * Parse one page's SVG into a node, with its internal ids made unique.
- *
- * Every page defines its glyph outlines as `<path id="font_1_82">` and draws
- * them with `<use xlink:href="#font_1_82">`. Those ids are numbered per page,
- * so two pages in one document collide and the browser resolves every reference
- * to whichever it saw first (glyphs from page one silently appearing on page
- * five). Prefixing each id with its page index keeps them apart.
- *
- * The prefixing happens on the markup, not the DOM: walking every element of a
- * dense page after parsing cost more than the parse itself. The markup is
- * machine generated by mupdf's SVG device and has no text content, so the
- * three patterns below cannot occur inside anything but the attributes they
- * belong to. Only `href="#` is rewritten, not every value starting with "#",
- * because fill="#0000ff" must stay a colour.
- *
- * Parsed via innerHTML rather than DOMParser so the nodes are born in the main
- * document instead of being adopted out of a second one. That is only safe for
- * markup with nothing but tags mupdf emits and no handlers, since mupdf prints
- * some PDF strings (layer and font names) into attributes unescaped. Anything
- * else goes through an inert template and is sanitized first.
- */
-function parse(markup: string, pageIndex: number): SVGElement | null {
-  const prefix = `p${pageIndex}_`;
-  const scoped = markup.replace(/\bid="|href="#|url\(#/g, (match) => match + prefix);
-
-  if (suspicious(scoped)) {
-    const template = document.createElement("template");
-    template.innerHTML = scoped;
-    sanitize(template.content);
-    const root = template.content.firstElementChild;
-    return root instanceof SVGElement ? document.adoptNode(root) : null;
-  }
-
-  const host = document.createElement("div");
-  host.innerHTML = scoped;
-  const root = host.firstElementChild;
-  return root instanceof SVGElement ? root : null;
-}
-
-const SVG_NS = "http://www.w3.org/2000/svg";
-const SVG_TAGS = new Set([
-  "svg", "g", "defs", "clipPath", "mask", "pattern", "path", "rect", "image", "use", "text", "tspan",
-]);
-
-function suspicious(markup: string): boolean {
-  if (/on[a-z]+\s*=/i.test(markup)) return true;
-  for (const [, tag] of markup.matchAll(/<\/?([A-Za-z][\w:-]*)/g)) {
-    if (!SVG_TAGS.has(tag)) return true;
-  }
-  return false;
-}
-
-function sanitize(root: DocumentFragment): void {
-  for (const element of Array.from(root.querySelectorAll("*"))) {
-    if (element.namespaceURI !== SVG_NS || !SVG_TAGS.has(element.localName)) {
-      element.remove();
-      continue;
-    }
-    for (const { name } of Array.from(element.attributes)) {
-      if (/^on/i.test(name)) element.removeAttribute(name);
-    }
   }
 }

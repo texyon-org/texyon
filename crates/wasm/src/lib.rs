@@ -19,8 +19,8 @@ mod support;
 use std::cell::RefCell;
 
 use host::HostBuffer;
-use protocol::{CompileReport, RenderedPage, Request, Response};
-use session::{CompileOutput, Session};
+use protocol::{CompileReport, RasterPage, RenderedPage, Request, Response};
+use session::{self as resident, CompileOutput, Session};
 
 thread_local! {
     // XeTeX keeps process-global state, so one module instance hosts one session.
@@ -79,11 +79,15 @@ fn dispatch(text: &str) -> Response {
     };
 
     match request {
-        Request::Open { format, primary } => SESSION.with_borrow_mut(|slot| {
+        Request::Open {
+            format,
+            primary,
+            raster,
+        } => SESSION.with_borrow_mut(|slot| {
             if slot.is_some() {
                 return Response::error("a session is already open");
             }
-            match Session::new(&format, &primary) {
+            match Session::new(&format, &primary, raster) {
                 Ok(session) => {
                     *slot = Some(session);
                     Response::Ok
@@ -104,10 +108,22 @@ fn dispatch(text: &str) -> Response {
             files,
             edits,
             viewport,
-        } => with_session(|session| match session.compile(files, edits, viewport) {
-            Ok(output) => Response::Compiled(Box::new(report(session, output))),
-            Err(error) => Response::error(error),
-        }),
+            scale,
+        } => with_session(
+            |session| match session.compile(files, edits, viewport, scale) {
+                Ok(output) => Response::Compiled(Box::new(report(session, output))),
+                Err(error) => Response::error(error),
+            },
+        ),
+
+        Request::Raster { pages, scale } => {
+            with_session(|session| match session.rasterize(&pages, scale) {
+                Ok(pages) => Response::Rastered {
+                    pages: pages.into_iter().map(hand_over_raster).collect(),
+                },
+                Err(error) => Response::error(error),
+            })
+        }
 
         Request::ContinueTail => with_session(|session| match session.continue_tail() {
             Ok(Some(output)) => Response::Compiled(Box::new(report(session, output))),
@@ -165,6 +181,13 @@ fn dispatch(text: &str) -> Response {
 }
 
 /// Package one compile for the host, moving the SVG into linear memory.
+fn hand_over_raster(page: resident::RasterPage) -> RasterPage {
+    RasterPage {
+        index: page.index,
+        pixels: HostBuffer::hand_over(page.pixels),
+    }
+}
+
 fn report(session: &Session, output: CompileOutput) -> CompileReport {
     let (support_files, support_bytes) = session.support_stats();
 
@@ -178,6 +201,7 @@ fn report(session: &Session, output: CompileOutput) -> CompileReport {
                 svg: HostBuffer::hand_over(page.svg.into_bytes()),
             })
             .collect(),
+        rasters: output.rasters.into_iter().map(hand_over_raster).collect(),
         changed: output.changed,
         removed: output.removed,
         page_sizes: output.page_sizes,

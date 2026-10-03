@@ -220,8 +220,10 @@ export function EditorScreen({
   // rather than state: scrolling must not re-render the editor, and the value
   // only matters at the moment a compile is issued.
   const viewport = useRef<[number, number]>([0, 0]);
-  const onViewport = useCallback((first: number, last: number) => {
+  const pixelScale = useRef(window.devicePixelRatio || 1);
+  const onViewport = useCallback((first: number, last: number, scale: number) => {
     viewport.current = [first, last];
+    pixelScale.current = scale;
   }, []);
 
   const {
@@ -237,7 +239,8 @@ export function EditorScreen({
     exportPdf,
     forwardSearch,
     backwardSearch,
-  } = useEngine(workspace, primary, packageKey, viewport);
+    raster,
+  } = useEngine(workspace, primary, packageKey, viewport, pixelScale);
 
   // What the corpus says about the packages this document loads. Fetched from
   // the source text rather than from the engine, because the engine does not
@@ -521,6 +524,7 @@ export function EditorScreen({
             onBackwardSearch={onBackwardSearch}
             highlight={highlight}
             onViewport={onViewport}
+            requestRaster={raster}
           />
         </section>
       </main>

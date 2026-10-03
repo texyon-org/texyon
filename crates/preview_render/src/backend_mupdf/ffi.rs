@@ -87,6 +87,14 @@ mod sys {
             page: c_int,
             transform: Matrix,
         ) -> c_int;
+        pub(super) fn pr_backend_begin_raster(
+            backend: *mut c_void,
+            width: c_int,
+            height: c_int,
+            scale: f32,
+            samples: *mut u8,
+        ) -> c_int;
+        pub(super) fn pr_backend_finish_raster(backend: *mut c_void) -> c_int;
         pub(super) fn pr_backend_finish(backend: *mut c_void, length: *mut usize) -> *mut u8;
         #[cfg(test)]
         pub(super) fn pr_backend_raster(
@@ -200,6 +208,8 @@ impl FlatPath {
 pub(super) struct Shim {
     raw: NonNull<c_void>,
     page_open: bool,
+    /// The open raster page: its header, then room MuPDF draws the pixels into, and its length.
+    raster: Option<(Vec<u8>, usize)>,
 }
 
 impl Shim {
@@ -209,6 +219,7 @@ impl Shim {
         Some(Self {
             raw,
             page_open: false,
+            raster: None,
         })
     }
 
@@ -224,6 +235,35 @@ impl Shim {
     pub(super) fn begin_page(&mut self, width: f32, height: f32) -> ShimResult<()> {
         // SAFETY: `raw` is live and the shim closes any previous page itself.
         let ok = unsafe { sys::pr_backend_begin(self.raw.as_ptr(), width, height) };
+        // Only now: closing a raster page still draws into its pixels.
+        self.raster = None;
+        self.page_open = ok != 0;
+        check(ok)
+    }
+
+    /// Open a `width` by `height` pixel page drawn at `scale` pixels per bp.
+    pub(super) fn begin_raster(&mut self, width: u32, height: u32, scale: f32) -> ShimResult<()> {
+        let pixels = (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|count| count.checked_mul(4))
+            .ok_or(ShimFailed)?;
+        let length = 8 + pixels;
+        let mut page = Vec::with_capacity(length);
+        page.extend_from_slice(&width.to_le_bytes());
+        page.extend_from_slice(&height.to_le_bytes());
+        // SAFETY: `raw` is live, and the samples pointer has `pixels` bytes of
+        // capacity that stay put until `finish_page` takes the vector.
+        let ok = unsafe {
+            sys::pr_backend_begin_raster(
+                self.raw.as_ptr(),
+                to_c_int(width)?,
+                to_c_int(height)?,
+                scale,
+                page.as_mut_ptr().add(8),
+            )
+        };
+        // Replaced only now: closing a previous raster page still draws into its pixels.
+        self.raster = (ok != 0).then_some((page, length));
         self.page_open = ok != 0;
         check(ok)
     }
@@ -231,6 +271,14 @@ impl Shim {
     pub(super) fn finish_page(&mut self) -> ShimResult<Vec<u8>> {
         let raw = self.page()?;
         self.page_open = false;
+        if let Some((mut page, length)) = self.raster.take() {
+            // SAFETY: a raster page is open on `raw`.
+            check(unsafe { sys::pr_backend_finish_raster(raw) })?;
+            // SAFETY: the header was written and MuPDF cleared every pixel when
+            // the page opened, so all `length` bytes of capacity are initialized.
+            unsafe { page.set_len(length) };
+            return Ok(page);
+        }
         let mut length = 0;
         // SAFETY: a page is open and `length` outlives the call.
         let data = unsafe { sys::pr_backend_finish(raw, &mut length) };

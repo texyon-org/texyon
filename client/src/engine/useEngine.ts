@@ -5,6 +5,7 @@ import type {
   LoadProgress,
   Located,
   LogLine,
+  PageRaster,
   SourceSpot,
 } from "@tectonic/wasm";
 import { TectonicEngine } from "@tectonic/wasm";
@@ -66,6 +67,9 @@ const TAIL_IDLE_MS = 200;
  * keystroke retypesets the whole document below the edit before the user sees
  * anything, which on a long document is most of what an edit costs.
  *
+ * `pixelScale` is how many device pixels a big point takes in the viewer. The
+ * engine draws the changed visible pages at it, in its Worker, with the compile.
+ *
  * `commandsKey` decides when the command list is worth re-reading: whenever it
  * differs from the key the current list was read at, the next compile is
  * followed by a fresh walk. The caller derives it from what actually changes
@@ -78,11 +82,13 @@ export function useEngine(
   primary: string,
   commandsKey: string,
   viewport: { readonly current: [number, number] },
+  pixelScale: { readonly current: number },
 ): EngineState & {
   markPainted: () => void;
   exportPdf: () => Promise<void>;
   forwardSearch: (path: string, line: number) => Promise<Located | null>;
   backwardSearch: (pageIndex: number, hBp: number, vBp: number) => Promise<SourceSpot | null>;
+  raster: (pages: number[], scale: number) => Promise<PageRaster[]>;
 } {
   const [engine, setEngine] = useState<TectonicEngine | null>(null);
   const [progress, setProgress] = useState<LoadProgress | null>(null);
@@ -123,6 +129,7 @@ export function useEngine(
           // on nested routes like /projects/$projectId.
           moduleUrl: "/tectonic/tectonic_wasm.wasm",
           supportUrl: "/tectonic/",
+          raster: true,
           // `||` rather than `??`: a build arg that was never given arrives as
           // an empty string, and an empty bundle URL means the default one.
           bundleUrl: import.meta.env.VITE_BUNDLE_URL || "/bundle/texlive2026.ttb",
@@ -178,7 +185,7 @@ export function useEngine(
     try {
       performance.mark("tex:compile-call");
       measure("tex:queue", "tex:edit", "tex:compile-call");
-      const compiled = await engine.compile(files, viewport.current);
+      const compiled = await engine.compile(files, viewport.current, pixelScale.current);
       performance.mark("tex:frame-received");
       measure("tex:worker", "tex:compile-call", "tex:frame-received");
       compiledRevision.current = revision;
@@ -344,6 +351,11 @@ export function useEngine(
     [engine],
   );
 
+  const raster = useCallback(
+    async (pages: number[], scale: number) => (engine === null ? [] : engine.raster(pages, scale)),
+    [engine],
+  );
+
   return {
     progress,
     startupError,
@@ -357,5 +369,6 @@ export function useEngine(
     exportPdf,
     forwardSearch,
     backwardSearch,
+    raster,
   };
 }

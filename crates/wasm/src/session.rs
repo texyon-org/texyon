@@ -9,7 +9,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     rc::Rc,
     sync::Arc,
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 
 use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
@@ -76,11 +76,30 @@ pub struct RenderedPage {
     pub svg: String,
 }
 
+/// One page drawn to pixels, in the backend's raster layout.
+pub struct RasterPage {
+    pub index: usize,
+    pub pixels: Vec<u8>,
+}
+
+/// Which pages the host shows, and at how many pixels per bp.
+#[derive(Clone, Copy)]
+pub struct RasterView {
+    pub first: usize,
+    pub last: usize,
+    pub scale: f32,
+}
+
+/// Pages either side of the visible ones that the host keeps drawn.
+const RASTER_OVERSCAN: usize = 1;
+
 /// What one compile produced. Mirrors [`crate::protocol::CompileReport`].
 pub struct CompileOutput {
     pub published: bool,
     /// Only the pages whose appearance changed.
     pub pages: Vec<RenderedPage>,
+    /// The changed pages in the raster view, for a session that draws pages to pixels.
+    pub rasters: Vec<RasterPage>,
     pub changed: Vec<usize>,
     pub removed: Vec<usize>,
     /// Every page, like `page_overlays`.
@@ -127,11 +146,15 @@ pub struct Session {
     xdv_name: String,
     pdf_name: String,
     limits: ProtocolLimits,
+    /// Frames carry no SVG and the host asks for pixels instead.
+    raster: bool,
+    /// Where the last compile asked for pixels, kept for its tail.
+    view: Option<RasterView>,
 }
 
 impl Session {
     /// Create a session. The format is read on the first compile.
-    pub fn new(format_name: &str, primary_name: &str) -> Result<Self> {
+    pub fn new(format_name: &str, primary_name: &str, raster: bool) -> Result<Self> {
         let cancellation = EngineCancellation::new();
         let mut config = EnginePreviewConfig::new(format_name);
         config.cancellation = cancellation.clone();
@@ -150,14 +173,18 @@ impl Session {
         );
         let backend = MupdfBackend::new()
             .map_err(|error| anyhow!("could not start the renderer: {error}"))?;
+        let mut processor = ResidentPreviewProcessor::new(
+            engine,
+            HostResources::new(support.clone()),
+            backend,
+            CollectingSink::default(),
+        );
+        if raster {
+            processor.pipeline_mut().draw_on_demand();
+        }
 
         Ok(Self {
-            processor: ResidentPreviewProcessor::new(
-                engine,
-                HostResources::new(support.clone()),
-                backend,
-                CollectingSink::default(),
-            ),
+            processor,
             sources: None,
             staged: BTreeMap::new(),
             revisions: BTreeMap::new(),
@@ -171,6 +198,8 @@ impl Session {
             xdv_name: format!("{stem}.xdv"),
             pdf_name: format!("{stem}.pdf"),
             limits: ProtocolLimits::default(),
+            raster,
+            view: None,
         })
     }
 
@@ -189,6 +218,7 @@ impl Session {
         files: BTreeMap<String, u64>,
         edits: BTreeMap<String, SourceEdit>,
         viewport: Option<(usize, usize)>,
+        scale: Option<f32>,
     ) -> Result<CompileOutput> {
         if !files.contains_key(&self.primary_name) {
             bail!(
@@ -205,7 +235,43 @@ impl Session {
         let run = self
             .processor
             .compile(snapshot, self.request_seq, viewport, &self.cancellation);
+        self.view = viewport
+            .zip(scale)
+            .map(|((first, last), scale)| RasterView { first, last, scale });
         self.collect(normalize(run))
+    }
+
+    /// Draw published pages to pixels at `scale` pixels per bp.
+    pub fn rasterize(&mut self, pages: &[usize], scale: f32) -> Result<Vec<RasterPage>> {
+        if !self.raster {
+            bail!("this session draws SVG");
+        }
+        let drawn = self
+            .processor
+            .pipeline_mut()
+            .rasterize(pages, scale)
+            .map_err(|error| anyhow!("could not draw the pages: {error}"))?;
+        Ok(drawn
+            .into_iter()
+            .map(|(index, pixels)| RasterPage { index, pixels })
+            .collect())
+    }
+
+    /// The changed pages the host is showing, drawn at its scale.
+    fn rasterize_changed(&mut self, changed: &[usize]) -> Result<(Vec<RasterPage>, f64)> {
+        let Some(view) = self.view.filter(|_| self.raster) else {
+            return Ok((Vec::new(), 0.0));
+        };
+        let first = view.first.saturating_sub(RASTER_OVERSCAN);
+        let last = view.last.saturating_add(RASTER_OVERSCAN);
+        let pages: Vec<usize> = changed
+            .iter()
+            .copied()
+            .filter(|index| (first..=last).contains(index))
+            .collect();
+        let started = Instant::now();
+        let rasters = self.rasterize(&pages, view.scale)?;
+        Ok((rasters, started.elapsed().as_secs_f64() * 1000.0))
     }
 
     /// Finish a viewport-bounded compile. `None` when nothing is pending.
@@ -432,11 +498,13 @@ impl Session {
         let frame = self.processor.sink_mut().take();
         let published = frame.is_some();
 
+        let raster = self.raster;
         let (pages, changed, removed, visuals) = match frame {
             Some(frame) => (
                 frame
                     .pages_svg
                     .iter()
+                    .filter(|_| !raster)
                     .map(|page| RenderedPage {
                         index: page.page_index,
                         svg: page.svg.to_string(),
@@ -447,6 +515,12 @@ impl Session {
                 frame.pages.clone(),
             ),
             None => Default::default(),
+        };
+
+        let (rasters, raster_ms) = if published {
+            self.rasterize_changed(&changed)?
+        } else {
+            (Vec::new(), 0.0)
         };
 
         let page_sizes: Vec<[f32; 2]> = visuals.iter().map(|page| page.size_bp).collect();
@@ -468,6 +542,8 @@ impl Session {
         Ok(CompileOutput {
             published,
             pages,
+            pages_rendered: metrics.pages_rendered + rasters.len(),
+            rasters,
             changed,
             removed,
             page_count: page_sizes.len(),
@@ -486,10 +562,9 @@ impl Session {
             replay_commands: metrics.replay_commands.get(),
             tex_ms: metrics.engine_ms,
             analyze_ms: metrics.analysis_ms,
-            render_ms: metrics.render_ms,
+            render_ms: metrics.render_ms + raster_ms,
             shipouts: metrics.shipouts,
             pages_fingerprinted: metrics.pages_fingerprinted,
-            pages_rendered: metrics.pages_rendered,
             unsupported_pages: metrics.unsupported_pages,
         })
     }

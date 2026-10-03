@@ -135,17 +135,31 @@ struct WalkCache {
     /// hundreds of plans below it at once cost that keystroke several
     /// milliseconds. They go as fresh pages replace them instead.
     stale: Vec<Arc<PagePlan>>,
+    resources: BTreeMap<ResourceIdentity, Resource>,
+    /// Resources the `stale` plans may draw that this walk did not touch.
+    stale_resources: BTreeMap<ResourceIdentity, Resource>,
 }
 
 impl WalkCache {
     /// This walk's plans from page `len` on, which a walk of `len` pages leaves stale.
-    fn stale_after(mut self, len: usize) -> Vec<Arc<PagePlan>> {
+    fn stale_after(
+        mut self,
+        len: usize,
+    ) -> (Vec<Arc<PagePlan>>, BTreeMap<ResourceIdentity, Resource>) {
         self.plans.append(&mut self.stale);
         if self.plans.len() > len {
-            self.plans.split_off(len)
+            let mut resources = self.stale_resources;
+            resources.extend(self.resources);
+            (self.plans.split_off(len), resources)
         } else {
-            Vec::new()
+            (Vec::new(), BTreeMap::new())
         }
+    }
+
+    fn plan(&self, page_index: usize) -> Option<&Arc<PagePlan>> {
+        self.plans
+            .get(page_index)
+            .or_else(|| self.stale.get(page_index.checked_sub(self.plans.len())?))
     }
 }
 
@@ -236,10 +250,10 @@ impl<P: ResourceProvider> HotRenderer<P> {
             plans.push(Arc::new(plan));
         }
 
-        let stale = self
-            .cache
-            .take()
-            .map_or_else(Vec::new, |previous| previous.stale_after(plans.len()));
+        let (stale, stale_resources) =
+            self.cache.take().map_or_else(Default::default, |previous| {
+                previous.stale_after(plans.len())
+            });
         self.cache = Some(WalkCache {
             xdv: Arc::clone(&xdv),
             filetype: walker.filetype,
@@ -247,6 +261,8 @@ impl<P: ResourceProvider> HotRenderer<P> {
             pages: pages.clone(),
             resumes: walker.resumes,
             stale,
+            resources: walker.state.resources.clone(),
+            stale_resources,
         });
         Ok(Analysis {
             xdv,
@@ -315,15 +331,19 @@ impl<P: ResourceProvider> HotRenderer<P> {
             let page = &analysis.plans[page_index];
             backend.begin_page(page.width_bp, page.height_bp)?;
             for operation in &page.operations {
-                draw(analysis, &mut fonts, backend, operation)?;
+                draw(&analysis.resources, &mut fonts, backend, operation)?;
             }
-            rendered.push(PageSvg {
-                page_index,
-                svg: backend.finish_page()?,
-            });
+            let svg = String::from_utf8(backend.finish_page()?)
+                .map_err(|_| RenderError::Backend("the backend emitted non-UTF-8 SVG".into()))?;
+            rendered.push(PageSvg { page_index, svg });
         }
-        self.last_completed = Some((analysis.pages.clone(), analysis.ledger.clone()));
+        self.commit(analysis);
         Ok(rendered)
+    }
+
+    /// Record an analysis as completed without drawing any of its pages.
+    pub fn commit(&mut self, analysis: &Analysis) {
+        self.last_completed = Some((analysis.pages.clone(), analysis.ledger.clone()));
     }
 
     /// Free the plans an earlier, longer walk left past the last one.
@@ -332,7 +352,36 @@ impl<P: ResourceProvider> HotRenderer<P> {
     pub fn release_stale_plans(&mut self) {
         if let Some(cache) = &mut self.cache {
             cache.stale = Vec::new();
+            cache.stale_resources = BTreeMap::new();
         }
+    }
+
+    /// Draw pages of the last walk again, its stale tail included, without analysis.
+    ///
+    /// For a host that draws pages on demand instead of with every frame.
+    pub fn render_retained<B: Backend>(
+        &self,
+        page_indices: &[usize],
+        backend: &mut B,
+    ) -> Result<Vec<(usize, Vec<u8>)>, RenderError> {
+        let cache = self
+            .cache
+            .as_ref()
+            .ok_or_else(|| RenderError::InvalidSelection("nothing has been analyzed".into()))?;
+        let resources = Retained(cache);
+        let mut fonts = FontHandles::default();
+        let mut rendered = Vec::with_capacity(page_indices.len());
+        for &page_index in page_indices {
+            let page = cache.plan(page_index).ok_or_else(|| {
+                RenderError::InvalidSelection(format!("page {page_index} is not retained"))
+            })?;
+            backend.begin_page(page.width_bp, page.height_bp)?;
+            for operation in &page.operations {
+                draw(&resources, &mut fonts, backend, operation)?;
+            }
+            rendered.push((page_index, backend.finish_page()?));
+        }
+        Ok(rendered)
     }
 
     /// Visual and coverage facts from the last transactionally completed render.
@@ -360,16 +409,40 @@ struct FontHandles {
     classic: BTreeMap<(ResourceIdentity, ResourceIdentity), FontId>,
 }
 
-impl Analysis {
-    fn resource(&self, identity: &ResourceIdentity, what: &str) -> Result<&Resource, RenderError> {
-        self.resources
-            .get(identity)
-            .ok_or_else(|| RenderError::Resource(format!("analyzed {what} disappeared")))
+trait Resources {
+    fn get(&self, identity: &ResourceIdentity) -> Option<&Resource>;
+}
+
+impl Resources for BTreeMap<ResourceIdentity, Resource> {
+    fn get(&self, identity: &ResourceIdentity) -> Option<&Resource> {
+        BTreeMap::get(self, identity)
     }
 }
 
+/// The last walk's resources, then those of the earlier walk its stale tail came from.
+struct Retained<'a>(&'a WalkCache);
+
+impl Resources for Retained<'_> {
+    fn get(&self, identity: &ResourceIdentity) -> Option<&Resource> {
+        self.0
+            .resources
+            .get(identity)
+            .or_else(|| self.0.stale_resources.get(identity))
+    }
+}
+
+fn resource<'a>(
+    resources: &'a impl Resources,
+    identity: &ResourceIdentity,
+    what: &str,
+) -> Result<&'a Resource, RenderError> {
+    resources
+        .get(identity)
+        .ok_or_else(|| RenderError::Resource(format!("analyzed {what} disappeared")))
+}
+
 fn draw<B: Backend>(
-    analysis: &Analysis,
+    resources: &impl Resources,
     fonts: &mut FontHandles,
     backend: &mut B,
     operation: &DrawOperation,
@@ -395,7 +468,7 @@ fn draw<B: Backend>(
             let font = match fonts.native.entry((*identity, *face_index)) {
                 Entry::Occupied(entry) => *entry.get(),
                 Entry::Vacant(entry) => {
-                    let resource = analysis.resource(identity, "font bytes")?;
+                    let resource = resource(resources, identity, "font bytes")?;
                     *entry.insert(backend.register_font(*identity, &resource.bytes, *face_index)?)
                 }
             };
@@ -415,7 +488,7 @@ fn draw<B: Backend>(
             width,
             height,
         } => {
-            let resource = analysis.resource(identity, "image bytes")?;
+            let resource = resource(resources, identity, "image bytes")?;
             match kind {
                 ImageKind::Raster => {
                     backend.draw_image(&resource.bytes, *transform, *width, *height)
@@ -434,8 +507,8 @@ fn draw<B: Backend>(
             let font = match fonts.classic.entry((*program_identity, *encoding_identity)) {
                 Entry::Occupied(entry) => *entry.get(),
                 Entry::Vacant(entry) => {
-                    let program = analysis.resource(program_identity, "classic font")?;
-                    let encoding = analysis.resource(encoding_identity, "font encoding")?;
+                    let program = resource(resources, program_identity, "classic font")?;
+                    let encoding = resource(resources, encoding_identity, "font encoding")?;
                     *entry.insert(backend.register_classic_font(
                         *program_identity,
                         &program.bytes,

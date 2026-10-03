@@ -96,6 +96,16 @@ export interface RenderedPage {
   svg: string;
 }
 
+/** One page drawn to pixels, for an engine created with {@link EngineOptions.raster}. */
+export interface PageRaster {
+  /** Zero-based page index. */
+  index: number;
+  /** Pixels per big point it was drawn at. */
+  scale: number;
+  /** The page, opaque. */
+  bitmap: ImageBitmap;
+}
+
 /**
  * What one compile produced.
  *
@@ -113,8 +123,19 @@ export interface CompileResult {
    * diagnostics and {@link aborted} are still meaningful.
    */
   published: boolean;
-  /** SVG for the changed pages. Its indices are exactly {@link changed}. */
+  /**
+   * SVG for the changed pages. Its indices are exactly {@link changed}.
+   *
+   * Empty for a raster engine, which sends {@link rasters} instead.
+   */
   pages: RenderedPage[];
+  /**
+   * The changed pages around the compile's viewport, drawn at its scale.
+   *
+   * Only for a raster engine given a viewport and a scale. Any other changed
+   * page is stale until {@link TectonicEngine.raster} draws it again.
+   */
+  rasters: PageRaster[];
   /** Indices of the pages that changed. */
   changed: number[];
   /** Indices the document no longer has, which the viewer should drop. */
@@ -320,6 +341,14 @@ export interface EngineOptions {
    * taken from inside the typesetting loop.
    */
   prefetch?: boolean;
+  /**
+   * Draw pages to pixels in the Worker instead of sending SVG.
+   *
+   * Showing an SVG page costs the main thread a parse and a paint of every
+   * glyph, which on a dense page outweighs typesetting it. A raster engine
+   * draws only the pages asked for, at the scale asked for.
+   */
+  raster?: boolean;
   /** Called as loading progresses. */
   onProgress?: (progress: LoadProgress) => void;
   /** Called for each diagnostic the engine emits, as it emits it. */
@@ -376,7 +405,10 @@ export type WorkerRequest =
       /** Sources the project no longer has. */
       removed: string[];
       viewport?: [number, number];
+      /** Pixels per big point for the changed pages around `viewport`. */
+      scale?: number;
     }
+  | { id: number; kind: "raster"; pages: number[]; scale: number }
   | {
       id: number;
       kind: "resources";
@@ -404,6 +436,7 @@ export interface SerializableEngineOptions {
   bundleUrl?: string;
   primary: string;
   prefetch: boolean;
+  raster: boolean;
 }
 
 /** A message sent back from the Worker. */
@@ -413,6 +446,7 @@ export type WorkerResponse =
   | { id: number; kind: "exported"; pdf: Uint8Array<ArrayBuffer>; elapsedMs: number }
   | { id: number; kind: "located"; located: Located | null; source: SourceSpot | null }
   | { id: number; kind: "commands"; commands: EngineCommand[] }
+  | { id: number; kind: "rastered"; rasters: PageRaster[] }
   | { id: number; kind: "idle" }
   | { id: number; kind: "error"; message: string }
   | { id: 0; kind: "progress"; progress: LoadProgress }

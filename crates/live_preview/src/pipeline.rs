@@ -3,7 +3,7 @@ use std::{fmt, sync::Arc, time::Instant};
 use crate::processor::elapsed_ms;
 
 use tectonic_preview_protocol::{OperationMetrics, UpdateOutcome};
-use tectonic_preview_render::{Backend, HotRenderer, RenderError, ResourceProvider};
+use tectonic_preview_render::{Backend, HotRenderer, PageSvg, RenderError, ResourceProvider};
 
 use tectonic_engine_xetex::SyncIndex;
 
@@ -43,6 +43,8 @@ pub struct PreviewPipeline<P, B> {
     publisher: PreviewPublisher,
     last_document: Option<AssembledDocument>,
     sync_index: SyncIndex,
+    /// Whether frames carry page SVG, or the host draws pages with [`Self::rasterize`].
+    payloads: bool,
 }
 
 impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
@@ -55,7 +57,33 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
             publisher: PreviewPublisher::new(),
             last_document: None,
             sync_index: SyncIndex::default(),
+            payloads: true,
         }
+    }
+
+    /// Publish frames without page payloads. The host asks for the pages it shows.
+    pub fn draw_on_demand(&mut self) {
+        self.payloads = false;
+    }
+
+    /// Draw published pages to RGBA at `scale` pixels per bp, in the backend's raster layout.
+    pub fn rasterize(
+        &mut self,
+        page_indices: &[usize],
+        scale: f32,
+    ) -> Result<Vec<(usize, Vec<u8>)>, RenderError> {
+        let published = self.publisher.belief().pages().len();
+        if let Some(page_index) = page_indices.iter().find(|&&index| index >= published) {
+            return Err(RenderError::InvalidSelection(format!(
+                "page {page_index} exceeds page count {published}"
+            )));
+        }
+        self.backend.set_raster(Some(scale))?;
+        let rendered = self
+            .renderer
+            .render_retained(page_indices, &mut self.backend);
+        self.backend.set_raster(None)?;
+        rendered
     }
 
     /// Last document whose complete differential frame reached the sink.
@@ -162,12 +190,22 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
         }
         let selected = self.publisher.belief().changed_pages(&visuals);
         let render_started = Instant::now();
-        let rendered = self
-            .renderer
-            .render_pages(&analysis, &selected, &mut self.backend)
-            .map_err(PreviewPipelineError::Render)?;
+        let rendered = if self.payloads {
+            self.renderer
+                .render_pages(&analysis, &selected, &mut self.backend)
+                .map_err(PreviewPipelineError::Render)?
+        } else {
+            self.renderer.commit(&analysis);
+            selected
+                .iter()
+                .map(|&page_index| PageSvg {
+                    page_index,
+                    svg: String::new(),
+                })
+                .collect()
+        };
         metrics.render_ms = elapsed_ms(render_started);
-        metrics.pages_rendered = rendered.len();
+        metrics.pages_rendered = if self.payloads { rendered.len() } else { 0 };
         sink.set_operation_metrics(metrics);
         let frame_id = self
             .publisher

@@ -192,6 +192,9 @@ pub enum Request {
     Open {
         format: String,
         primary: String,
+        /// Leave pages out of compile reports and draw them to pixels on request.
+        #[serde(default)]
+        raster: bool,
     },
 
     /// Install a support file from a `tectonic_wasm_alloc` buffer, taking
@@ -216,9 +219,19 @@ pub enum Request {
         edits: BTreeMap<String, SourceEdit>,
         /// Zero-based inclusive first and last visible page.
         viewport: Option<(usize, usize)>,
+        /// Pixels per bp for the changed pages around `viewport`, in a raster session.
+        #[serde(default)]
+        scale: Option<f32>,
     },
 
     ContinueTail,
+
+    /// Draw published pages to pixels, in a raster session.
+    #[serde(rename_all = "camelCase")]
+    Raster {
+        pages: Vec<usize>,
+        scale: f32,
+    },
 
     Export,
 
@@ -252,6 +265,15 @@ pub struct RenderedPage {
     pub svg: HostBuffer,
 }
 
+/// One page drawn to pixels: width and height as little-endian `u32`, then RGBA rows.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RasterPage {
+    pub index: usize,
+    #[serde(flatten)]
+    pub pixels: HostBuffer,
+}
+
 /// The result of one compile, as a patch: `pages` holds only changed pages.
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -260,6 +282,7 @@ pub struct CompileReport {
     /// what you have".
     pub published: bool,
     pub pages: Vec<RenderedPage>,
+    pub rasters: Vec<RasterPage>,
     pub changed: Vec<usize>,
     pub removed: Vec<usize>,
     pub page_sizes: Vec<[f32; 2]>,
@@ -307,6 +330,10 @@ pub enum Response {
     #[serde(rename_all = "camelCase")]
     Commands {
         commands: Vec<Command>,
+    },
+    #[serde(rename_all = "camelCase")]
+    Rastered {
+        pages: Vec<RasterPage>,
     },
     /// Nothing was pending.
     Idle,

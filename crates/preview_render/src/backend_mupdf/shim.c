@@ -9,6 +9,7 @@ struct pr_backend {
     fz_buffer *buffer;
     fz_output *output;
     fz_device *device;
+    fz_pixmap *pixmap;
     fz_font **fonts;
     int font_count;
     int font_capacity;
@@ -89,6 +90,10 @@ static void pr_close_page(struct pr_backend *backend)
         fz_close_device(backend->ctx, backend->device);
         fz_drop_device(backend->ctx, backend->device);
         backend->device = NULL;
+    }
+    if (backend->pixmap) {
+        fz_drop_pixmap(backend->ctx, backend->pixmap);
+        backend->pixmap = NULL;
     }
     if (backend->output) {
         fz_close_output(backend->ctx, backend->output);
@@ -423,8 +428,44 @@ int pr_backend_pdf(struct pr_backend *backend, const unsigned char *data,
     return ok;
 }
 
+/* Draws into the caller's `samples`, `width * height` tightly packed RGBA pixels. */
+int pr_backend_begin_raster(struct pr_backend *backend, int width, int height,
+                            float scale, unsigned char *samples)
+{
+    int ok = 0;
+    fz_try(backend->ctx) {
+        pr_close_page(backend);
+        backend->pixmap = fz_new_pixmap_with_data(backend->ctx, fz_device_rgb(backend->ctx),
+            width, height, NULL, 1, width * 4, samples);
+        fz_clear_pixmap_with_value(backend->ctx, backend->pixmap, 255);
+        backend->device = fz_new_draw_device(backend->ctx, fz_scale(scale, scale),
+            backend->pixmap);
+        ok = 1;
+    }
+    fz_catch(backend->ctx) {
+        pr_close_page(backend);
+        ok = 0;
+    }
+    return ok;
+}
+
+int pr_backend_finish_raster(struct pr_backend *backend)
+{
+    int ok = 0;
+    fz_try(backend->ctx) {
+        fz_close_device(backend->ctx, backend->device);
+        ok = 1;
+    }
+    fz_catch(backend->ctx) {
+        ok = 0;
+    }
+    pr_close_page(backend);
+    return ok;
+}
+
 unsigned char *pr_backend_finish(struct pr_backend *backend, size_t *length)
 {
+
     unsigned char *copy = NULL;
     unsigned char *data = NULL;
     size_t size = 0;

@@ -41,6 +41,7 @@ export type {
   Located,
   Outcome,
   PageOverlay,
+  PageRaster,
   ProjectFiles,
   Severity,
   SourceSpot,
@@ -55,6 +56,7 @@ import type {
   Located,
   LoadProgress,
   LogLine,
+  PageRaster,
   ProjectFiles,
   SourceSplice,
   SourceSpot,
@@ -143,6 +145,8 @@ export class TectonicEngine {
           pdf: message.pdf,
           elapsedMs: message.elapsedMs,
         });
+      } else if (message.kind === "rastered") {
+        (pending.resolve as (value: PageRaster[]) => void)(message.rasters);
       } else if (message.kind === "commands") {
         (pending.resolve as (value: { commands: EngineCommand[] }) => void)({
           commands: message.commands,
@@ -199,6 +203,7 @@ export class TectonicEngine {
         bundleUrl: options.bundleUrl ? absolute(options.bundleUrl) : undefined,
         primary: options.primary ?? "main.tex",
         prefetch: options.prefetch ?? true,
+        raster: options.raster ?? false,
       },
     });
 
@@ -221,12 +226,17 @@ export class TectonicEngine {
    * it bounds the foreground work to those pages and leaves the rest for
    * {@link continueTail}, which is what keeps latency flat on a long document.
    *
+   * `scale`, in pixels per big point, has a raster engine draw the changed pages
+   * around `viewport` into {@link CompileResult.rasters}. Its later
+   * {@link continueTail} frames draw at the same scale.
+   *
    * Calls are serialized: a compile issued while another is running waits for
    * it. To abandon the running one instead, call {@link cancel} first.
    */
   async compile(
     files: string | ProjectFiles,
     viewport?: [number, number],
+    scale?: number,
   ): Promise<CompileResult> {
     const project =
       typeof files === "string" ? { [this.#primary]: files } : files;
@@ -279,6 +289,7 @@ export class TectonicEngine {
           edits: sourceEdits,
           removed: sourceRemoved,
           viewport,
+          scale,
         });
       } catch (error) {
         // The Worker may not hold what was recorded as sent, and edits
@@ -347,6 +358,19 @@ export class TectonicEngine {
       vBp,
     });
     return source;
+  }
+
+  /**
+   * Draw published pages of a raster engine at `scale` pixels per big point.
+   *
+   * For pages that scrolled into view, or a new zoom. Pages a compile changed
+   * near its viewport arrive with the compile instead.
+   */
+  async raster(pages: number[], scale: number): Promise<PageRaster[]> {
+    if (pages.length === 0) return [];
+    return this.#queue(() =>
+      this.#send<PageRaster[]>({ id: 0, kind: "raster", pages, scale }),
+    );
   }
 
   /**
