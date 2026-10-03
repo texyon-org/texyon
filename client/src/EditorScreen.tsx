@@ -12,11 +12,11 @@ import type { UploadFile } from "./files/upload";
 import { mergeCommands, mergeEnvironments, mergeKeys, packagesUsed } from "./project/commands";
 import { corpusOf, providers } from "./project/corpus";
 import { indexProject } from "./project/symbols";
+import { collabBlob } from "./api/generated";
 import type { Account, Role } from "./api/types";
 import { ShareDialog } from "./session/ShareDialog";
 import { SKELETON } from "./session/load";
 import { SignIn } from "./session/SignIn";
-import { uploadBlob } from "./api/files";
 import { useCollab } from "./collab/useCollab";
 import type { CollabStatus } from "./collab/useCollab";
 import { TopBar } from "./ui/TopBar";
@@ -105,7 +105,7 @@ export function EditorScreen({
             rename: (from: string, to: string) => binding.rename(from, to),
             writeText: (path: string, text: string) => binding.writeText(path, text),
             writeBinary: async (path: string, bytes: Uint8Array) => {
-              const blob = await uploadBlob(projectId, bytes);
+              const blob = await collabBlob(projectId, new Blob([bytes as BlobPart]));
               binding.setBinary(path, blob, bytes);
             },
           }

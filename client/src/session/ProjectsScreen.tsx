@@ -4,12 +4,12 @@ import { useEffect } from "react";
 
 import {
   getProjectIndexQueryKey,
+  projectImportStore,
   useAccountShow,
   useProjectDestroy,
   useProjectIndex,
   useProjectStore,
 } from "../api/generated";
-import { importProject } from "../api/files";
 import { ApiError } from "../api/http";
 import { projectArchives } from "../files/overleaf";
 import { ProjectList } from "./ProjectList";
@@ -81,7 +81,7 @@ async function importAll(files: File[], progress: (status: string) => void): Pro
     for (const [at, archive] of archives.entries()) {
       progress(`Importing ${archive.name} (${at + 1} of ${archives.length})`);
       try {
-        const result = await importProject(archive.name, archive.bytes);
+        const result = await projectImportStore(new Blob([archive.bytes as BlobPart]), { name: archive.name });
         imported += 1;
         skipped += result.skipped.length;
       } catch (failure) {

@@ -9,9 +9,10 @@ use App\Domain\Blob\BlobStore;
 use App\Domain\Blob\Digest;
 use App\Domain\Collab\Documents;
 use App\Http\Authenticated;
+use App\Http\OpenApi\RawBody;
 use App\Http\ProjectGate;
 use App\Models\User;
-use Dedoc\Scramble\Attributes\ExcludeRouteFromDocs;
+use Dedoc\Scramble\Attributes\Response as ResponseShape;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Config;
@@ -59,11 +60,9 @@ final readonly class CollabController
         return new JsonResponse(['url' => $url]);
     }
 
-    /**
-     * Upload bytes the document can then name, as a binary file. Returns the digest and size.
-     * Not in the OpenAPI export, the client binding is hand written.
-     */
-    #[ExcludeRouteFromDocs]
+    /** Upload bytes the document can then name, as a binary file. */
+    #[RawBody]
+    #[ResponseShape(200, type: 'array{digest: string, size: int}')]
     public function blob(Request $request, int $project): JsonResponse
     {
         $access = $this->gate->write($request, $project);

@@ -10,8 +10,10 @@ use App\Domain\Project\ProjectArchive;
 use App\Domain\Project\Projects;
 use App\Domain\Project\Role;
 use App\Http\Authenticated;
+use App\Http\OpenApi\RawBody;
 use App\Http\Presenters\ProjectPresenter;
-use Dedoc\Scramble\Attributes\ExcludeRouteFromDocs;
+use Dedoc\Scramble\Attributes\QueryParameter;
+use Dedoc\Scramble\Attributes\Response as ResponseShape;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Config;
@@ -21,7 +23,7 @@ use RuntimeException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 
-/** A new project from one zip in the raw request body. Not in the OpenAPI export, the client binding is hand written. */
+/** A new project from one zip in the raw request body. */
 final readonly class ProjectImportController
 {
     public function __construct(
@@ -29,7 +31,9 @@ final readonly class ProjectImportController
         private BlobStore $blobs,
     ) {}
 
-    #[ExcludeRouteFromDocs]
+    #[RawBody('application/zip')]
+    #[QueryParameter('name', description: 'What to call the new project.', required: true, type: 'string')]
+    #[ResponseShape(201, type: 'array{project: '.ProjectPresenter::PROJECT.', skipped: list<array{path: string, reason: string}>}')]
     public function store(Request $request): JsonResponse
     {
         $name = trim($request->string('name')->value());
