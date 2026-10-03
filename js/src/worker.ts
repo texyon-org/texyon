@@ -20,6 +20,7 @@ import type {
   Diagnostic,
   EngineCommand,
   PageOverlay,
+  PageRaster,
   LogLevel,
   SerializableEngineOptions,
   SourceSpot,
@@ -54,11 +55,20 @@ interface Exports {
   tectonic_wasm_free(ptr: number, len: number): void;
 }
 
+/** A page drawn to pixels: width and height as little-endian u32, then RGBA rows. */
+interface RawRaster {
+  index: number;
+  ptr: number;
+  len: number;
+}
+
 /** What the Rust side reports for one compile. */
 interface RawCompileReport {
   published: boolean;
   /** The SVG itself stays in linear memory; see `collect`. */
   pages: { index: number; ptr: number; len: number }[];
+  /** Pixels in linear memory, see `takeRasters`. */
+  rasters: RawRaster[];
   changed: number[];
   removed: number[];
   pageSizes: [number, number][];
@@ -98,6 +108,7 @@ type RawResponse =
   | { status: "commands"; commands: EngineCommand[] }
   | ({ status: "compiled" } & RawCompileReport)
   | { status: "exported"; ptr: number; len: number }
+  | { status: "rastered"; pages: RawRaster[] }
   | { status: "idle" }
   | { status: "error"; message: string };
 
@@ -125,6 +136,8 @@ let restartPending = false;
 let compiledSinceOpen = false;
 /** Kept so a restart can reopen the session. */
 let formatName = "";
+/** The scale the last compile drew at, which its tail continuations keep. */
+let rasterScale: number | undefined;
 /** Names the pack claims to have, with their sizes. */
 let manifest = new Map<string, number>();
 /** Names known not to exist, so a miss is not re-fetched on every keystroke. */
@@ -740,7 +753,12 @@ async function init(opts: SerializableEngineOptions): Promise<void> {
   resident.set(parsed.format, formatBytes);
 
   formatName = parsed.format;
-  const opened = call({ op: "open", format: parsed.format, primary: opts.primary });
+  const opened = call({
+    op: "open",
+    format: parsed.format,
+    primary: opts.primary,
+    raster: opts.raster,
+  });
   if (opened.status === "error") throw new Error(opened.message);
 
   post({ id: 0, kind: "progress", progress: { phase: "ready" } });
@@ -758,8 +776,31 @@ async function init(opts: SerializableEngineOptions): Promise<void> {
   }
 }
 
+/** Move pixels out of linear memory into bitmaps the page can draw without decoding. */
+async function takeRasters(raw: RawRaster[], scale: number): Promise<PageRaster[]> {
+  const engine = exports!;
+  // createImageBitmap snapshots ImageData before it returns, so the pixels are
+  // read in place and freed at once, before anything else can touch the heap.
+  const pending = raw.map(({ index, ptr, len }) => {
+    const header = new DataView(engine.memory.buffer, ptr, 8);
+    const width = header.getUint32(0, true);
+    const height = header.getUint32(4, true);
+    const pixels = new Uint8ClampedArray(engine.memory.buffer, ptr + 8, len - 8);
+    const bitmap = createImageBitmap(new ImageData(pixels, width, height));
+    engine.tectonic_wasm_free(ptr, len);
+    return { index, bitmap };
+  });
+  return Promise.all(
+    pending.map(async ({ index, bitmap }) => ({ index, scale, bitmap: await bitmap })),
+  );
+}
+
 /** Turn the module's compile report into the public result. */
-function collect(report: RawCompileReport, elapsedMs: number): CompileResult {
+function collect(
+  report: RawCompileReport,
+  elapsedMs: number,
+  rasters: PageRaster[],
+): CompileResult {
   const engine = exports!;
 
   // The SVG travels as raw bytes in linear memory rather than inside the JSON,
@@ -773,6 +814,7 @@ function collect(report: RawCompileReport, elapsedMs: number): CompileResult {
   return {
     published: report.published,
     pages,
+    rasters,
     changed: report.changed,
     removed: report.removed,
     pageSizes: report.pageSizes,
@@ -850,7 +892,12 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         if (restartPending && request.kind === "compile") {
           // caches and checkpoints predate the new bytes
           call({ op: "shutdown" });
-          const reopened = call({ op: "open", format: formatName, primary: options!.primary });
+          const reopened = call({
+            op: "open",
+            format: formatName,
+            primary: options!.primary,
+            raster: options!.raster,
+          });
           if (reopened.status === "error") throw new Error(reopened.message);
           restartPending = false;
           compiledSinceOpen = false;
@@ -863,7 +910,14 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
           for (const [path, { revision }] of projectSources) files[path] = revision;
           // An edit also names the revision it applies to, so the engine can
           // splice it into the text it holds or, not holding that, read it whole.
-          reply = call({ op: "compile", files, edits: request.edits, viewport: request.viewport });
+          rasterScale = request.scale;
+          reply = call({
+            op: "compile",
+            files,
+            edits: request.edits,
+            viewport: request.viewport,
+            scale: request.scale,
+          });
         } else {
           reply = call({ op: "continueTail" });
         }
@@ -875,14 +929,34 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
           post({ id: request.id, kind: "idle" });
         } else if (reply.status === "compiled") {
           compiledSinceOpen = true;
-          const result = collect(reply, elapsed);
-          post({ id: request.id, kind: "compiled", result });
+          const rasters = await takeRasters(reply.rasters, rasterScale ?? 0);
+          const result = collect(reply, elapsed, rasters);
+          post(
+            { id: request.id, kind: "compiled", result },
+            rasters.map(({ bitmap }) => bitmap),
+          );
           // Deliberately not awaited: the frame is already on its way, and
           // persisting what this compile pulled from the bundle can happen
           // while the user reads it.
           void flushUnsaved();
         } else {
           post({ id: request.id, kind: "ok" });
+        }
+        break;
+      }
+
+      case "raster": {
+        const reply = call({ op: "raster", pages: request.pages, scale: request.scale });
+        if (reply.status === "error") {
+          post({ id: request.id, kind: "error", message: reply.message });
+        } else if (reply.status === "rastered") {
+          const rasters = await takeRasters(reply.pages, request.scale);
+          post(
+            { id: request.id, kind: "rastered", rasters },
+            rasters.map(({ bitmap }) => bitmap),
+          );
+        } else {
+          post({ id: request.id, kind: "error", message: "the engine did not draw the pages" });
         }
         break;
       }

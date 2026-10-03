@@ -941,8 +941,8 @@ impl Backend for FaceRecorder {
         Ok(())
     }
 
-    fn finish_page(&mut self) -> Result<String, RenderError> {
-        Ok(String::new())
+    fn finish_page(&mut self) -> Result<Vec<u8>, RenderError> {
+        Ok(Vec::new())
     }
 }
 
@@ -981,4 +981,44 @@ fn each_face_of_a_font_collection_gets_its_own_handle() {
         .render_pages(&analysis, &[0], &mut backend)
         .unwrap();
     assert_eq!(backend.0, [0, 1]);
+}
+
+#[cfg(all(feature = "backend-mupdf", target_os = "linux"))]
+#[test]
+fn retained_page_rasterizes_like_its_svg() {
+    let mut renderer = HotRenderer::new(BuiltinClassicResources);
+    let analysis = renderer.analyze(Arc::from(ONE_PAGE)).unwrap();
+    let mut backend = crate::MupdfBackend::new().unwrap();
+    let svg = renderer
+        .render_pages(&analysis, &[0], &mut backend)
+        .unwrap()
+        .pop()
+        .unwrap()
+        .svg;
+    let expected = backend.rasterize_svg(svg.as_bytes(), 144.0).unwrap();
+
+    backend.set_raster(Some(2.0)).unwrap();
+    let (index, raster) = renderer
+        .render_retained(&[0], &mut backend)
+        .unwrap()
+        .pop()
+        .unwrap();
+    backend.set_raster(None).unwrap();
+    assert_eq!(index, 0);
+    let width = u32::from_le_bytes(raster[..4].try_into().unwrap()) as usize;
+    let height = u32::from_le_bytes(raster[4..8].try_into().unwrap()) as usize;
+    assert_eq!((width, height), (expected.width, expected.height));
+    let pixels = &raster[8..];
+    assert_eq!(pixels.len(), width * height * 4);
+    assert!(pixels.chunks_exact(4).all(|pixel| pixel[3] == 255));
+    let rgb: Vec<u8> = pixels
+        .chunks_exact(4)
+        .flat_map(|pixel| pixel[..3].to_vec())
+        .collect();
+    // Glyphs come from MuPDF's glyph cache rather than filled outlines, so only edges differ.
+    let diff = crate::compare_rasters(&expected.samples, &rgb, width, height, 3, 128);
+    assert!(diff.agreement > 0.95, "agreement {}", diff.agreement);
+    assert!(rgb.iter().any(|&sample| sample < 128));
+
+    assert!(renderer.render_retained(&[1], &mut backend).is_err());
 }

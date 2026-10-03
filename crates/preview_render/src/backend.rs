@@ -210,8 +210,13 @@ pub trait Backend {
     /// Draw one zero-based page from an embedded PDF.
     fn draw_pdf(&mut self, bytes: &[u8], page: u32, transform: Matrix) -> Result<(), RenderError>;
 
-    /// Finish the page and return one self-contained SVG document.
-    fn finish_page(&mut self) -> Result<String, RenderError>;
+    /// Finish the page: SVG markup, or the raster layout of [`Backend::set_raster`].
+    fn finish_page(&mut self) -> Result<Vec<u8>, RenderError>;
+
+    /// Draw later pages to pixels at `scale` pixels per bp, or to SVG when `None`.
+    fn set_raster(&mut self, _scale: Option<f32>) -> Result<(), RenderError> {
+        Err(RenderError::Backend("this backend cannot rasterize".into()))
+    }
 }
 
 /// Minimal backend useful for analysis tests and unsupported-page telemetry.
@@ -325,7 +330,7 @@ impl Backend for NullBackend {
         Ok(())
     }
 
-    fn finish_page(&mut self) -> Result<String, RenderError> {
-        Ok("<svg xmlns=\"http://www.w3.org/2000/svg\"/>".into())
+    fn finish_page(&mut self) -> Result<Vec<u8>, RenderError> {
+        Ok(b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>".to_vec())
     }
 }

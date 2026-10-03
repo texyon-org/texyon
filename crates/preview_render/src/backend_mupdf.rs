@@ -21,9 +21,17 @@ const PLAIN: FontStyle = FontStyle {
     vertical: false,
 };
 
-/// MuPDF 1.19 backend producing self-contained path SVG pages.
+/// Pixels per bp, far beyond any zoom times pixel ratio.
+const MAX_RASTER_SCALE: f32 = 16.0;
+
+/// Pixels in one raster page, 64 MiB of RGBA.
+const MAX_RASTER_PIXELS: f32 = 16_777_216.0;
+
+/// MuPDF 1.19 backend producing self-contained path SVG pages, or RGBA rasters.
 pub struct MupdfBackend {
     shim: Shim,
+    /// Pixels per bp for raster pages, or `None` for SVG.
+    raster_scale: Option<f32>,
     fonts: BTreeMap<(ResourceIdentity, u32), FontId>,
     classic_fonts: BTreeMap<(ResourceIdentity, ResourceIdentity), FontId>,
     classic_encodings: BTreeMap<FontId, Vec<u16>>,
@@ -53,6 +61,7 @@ impl MupdfBackend {
             .ok_or_else(|| RenderError::Backend("could not create MuPDF context".into()))?;
         Ok(Self {
             shim,
+            raster_scale: None,
             fonts: BTreeMap::new(),
             classic_fonts: BTreeMap::new(),
             classic_encodings: BTreeMap::new(),
@@ -88,9 +97,24 @@ impl MupdfBackend {
 
 impl Backend for MupdfBackend {
     fn begin_page(&mut self, width_bp: f32, height_bp: f32) -> Result<(), RenderError> {
+        let Some(scale) = self.raster_scale else {
+            return self
+                .shim
+                .begin_page(width_bp, height_bp)
+                .map_err(failed("MuPDF could not start SVG page"));
+        };
+        // A huge page or zoom draws coarser rather than exhausting memory.
+        let requested = width_bp * height_bp * scale * scale;
+        let scale = if requested > MAX_RASTER_PIXELS {
+            scale * (MAX_RASTER_PIXELS / requested).sqrt()
+        } else {
+            scale
+        };
+        let width = (width_bp * scale).ceil().max(1.0) as u32;
+        let height = (height_bp * scale).ceil().max(1.0) as u32;
         self.shim
-            .begin_page(width_bp, height_bp)
-            .map_err(failed("MuPDF could not start SVG page"))
+            .begin_raster(width, height, scale)
+            .map_err(failed("MuPDF could not start raster page"))
     }
 
     fn register_font(
@@ -241,13 +265,23 @@ impl Backend for MupdfBackend {
             .map_err(failed("MuPDF embedded PDF drawing failed"))
     }
 
-    fn finish_page(&mut self) -> Result<String, RenderError> {
-        let bytes = self
-            .shim
+    /// Raster pages come back as width and height (little-endian `u32`), then RGBA rows.
+    fn finish_page(&mut self) -> Result<Vec<u8>, RenderError> {
+        self.shim
             .finish_page()
-            .map_err(failed("MuPDF SVG finalization failed"))?;
-        String::from_utf8(bytes)
-            .map_err(|_| RenderError::Backend("MuPDF emitted non-UTF-8 SVG".into()))
+            .map_err(failed("MuPDF page finalization failed"))
+    }
+
+    fn set_raster(&mut self, scale: Option<f32>) -> Result<(), RenderError> {
+        match scale {
+            Some(scale) if !(scale.is_finite() && scale > 0.0 && scale <= MAX_RASTER_SCALE) => Err(
+                RenderError::Backend(format!("raster scale {scale} is out of range")),
+            ),
+            _ => {
+                self.raster_scale = scale;
+                Ok(())
+            }
+        }
     }
 }
 
@@ -321,9 +355,52 @@ mod tests {
         backend
             .fill_rule(40.0, 20.0, positioned(10.0, 30.0), Color::BLACK)
             .unwrap();
-        let svg = backend.finish_page().unwrap();
+        let svg = String::from_utf8(backend.finish_page().unwrap()).unwrap();
         assert!(svg.contains("<svg"));
         assert!(svg.contains("path"));
+    }
+
+    #[test]
+    fn rasterizes_a_rule_to_opaque_rgba() {
+        let mut backend = MupdfBackend::new().unwrap();
+        backend.set_raster(Some(2.0)).unwrap();
+        backend.begin_page(10.0, 10.0).unwrap();
+        backend
+            .fill_rule(4.0, 2.0, positioned(1.0, 3.0), Color::BLACK)
+            .unwrap();
+        let raster = backend.finish_page().unwrap();
+        assert_eq!(&raster[..8], &[20, 0, 0, 0, 20, 0, 0, 0]);
+        let pixel = |x: usize, y: usize| &raster[8 + (y * 20 + x) * 4..][..4];
+        assert_eq!(pixel(4, 4), &[0, 0, 0, 255]);
+        assert_eq!(pixel(15, 15), &[255, 255, 255, 255]);
+
+        backend.set_raster(None).unwrap();
+        backend.begin_page(10.0, 10.0).unwrap();
+        assert!(String::from_utf8(backend.finish_page().unwrap())
+            .unwrap()
+            .contains("<svg"));
+        assert!(backend.set_raster(Some(0.0)).is_err());
+        assert!(backend.set_raster(Some(f32::NAN)).is_err());
+    }
+
+    #[test]
+    fn caps_raster_pixels_and_survives_an_unfinished_page() {
+        let mut backend = MupdfBackend::new().unwrap();
+        backend.set_raster(Some(16.0)).unwrap();
+        backend.begin_page(10.0, 10.0).unwrap();
+        backend
+            .fill_rule(4.0, 2.0, positioned(1.0, 3.0), Color::BLACK)
+            .unwrap();
+        backend.begin_page(2000.0, 2000.0).unwrap();
+        let raster = backend.finish_page().unwrap();
+        let width = u32::from_le_bytes(raster[..4].try_into().unwrap()) as f32;
+        let height = u32::from_le_bytes(raster[4..8].try_into().unwrap()) as f32;
+        assert!(width * height <= MAX_RASTER_PIXELS * 1.01);
+        assert_eq!(raster.len(), 8 + (width * height) as usize * 4);
+        backend.begin_page(10.0, 10.0).unwrap();
+        backend.set_raster(None).unwrap();
+        backend.begin_page(10.0, 10.0).unwrap();
+        assert!(backend.finish_page().unwrap().starts_with(b"<svg"));
     }
 
     #[test]
@@ -386,7 +463,7 @@ mod tests {
                 Color::BLACK,
             )
             .unwrap();
-        let svg = backend.finish_page().unwrap();
+        let svg = String::from_utf8(backend.finish_page().unwrap()).unwrap();
         assert!(svg.contains("<clipPath"));
         assert!(svg.contains("<g clip-path="));
         assert!(svg.contains("</g>"));
@@ -414,7 +491,7 @@ mod tests {
                 PLAIN,
             )
             .unwrap();
-        let svg = backend.finish_page().unwrap();
+        let svg = String::from_utf8(backend.finish_page().unwrap()).unwrap();
         assert!(svg.contains("path"));
     }
 
@@ -440,7 +517,7 @@ mod tests {
                     FontStyle { embolden, ..PLAIN },
                 )
                 .unwrap();
-            backend.finish_page().unwrap()
+            String::from_utf8(backend.finish_page().unwrap()).unwrap()
         };
         let regular_svg = render(&mut backend, 0.0);
         let bold_svg = render(&mut backend, 0.1);
@@ -478,7 +555,7 @@ mod tests {
             .draw_image(&png, identity, Some(40.0), Some(30.0))
             .unwrap();
         backend.draw_pdf(&pdf, 0, identity).unwrap();
-        let svg = backend.finish_page().unwrap();
+        let svg = String::from_utf8(backend.finish_page().unwrap()).unwrap();
         assert!(svg.contains("<svg"));
         assert!(svg.contains("image") || svg.contains("path"));
     }
@@ -511,7 +588,9 @@ mod tests {
                 Color::BLACK,
             )
             .unwrap();
-        assert!(backend.finish_page().unwrap().contains("path"));
+        assert!(String::from_utf8(backend.finish_page().unwrap())
+            .unwrap()
+            .contains("path"));
     }
 
     #[test]

@@ -713,6 +713,8 @@ input::placeholder { color: #5c6270; }
   transition: outline-color 300ms ease;
   outline: 2px solid transparent;
 }
+/* Stretched while a zoom waits for pixels at the new scale. */
+.page canvas { display: block; width: 100%; height: 100%; }
 /* Where a forward search landed when only the page is known, briefly. */
 .page.located { outline-color: var(--accent); }
 

@@ -104,13 +104,19 @@ Starts the engine. Resolves once the module is instantiated and the format dump
 is loaded — support files keep arriving in the background afterwards.
 
 Options: `moduleUrl`, `supportUrl`, `workerUrl`, `primary`, `prefetch`,
-`onProgress`, `onLog`.
+`raster`, `onProgress`, `onLog`.
+
+`raster` has the Worker draw pages to pixels instead of sending SVG. A dense
+page as SVG costs the browser tens of milliseconds to parse and paint, more
+than typesetting it, while a bitmap goes onto a canvas in well under one. A
+raster engine draws only the pages you ask for, at the scale you ask for: see
+`compile`'s `scale` and `engine.raster`.
 
 `prefetch` (on by default) pulls the whole support pack into memory once the
 engine is up. Keep it on. Without it the first compile blocks on a few hundred
 synchronous requests, taken from inside the typesetting loop.
 
-### `engine.compile(files, viewport?)`
+### `engine.compile(files, viewport?, scale?)`
 
 Typesets a project. `files` maps each path — relative to the project root — to
 that file's complete current text, and must contain the primary. A bare string
@@ -127,6 +133,11 @@ a file the map does not contain is a file the document does not have.
 `viewport` is an inclusive, zero-based `[first, last]` page range. Passing it
 bounds the foreground work to the visible pages and leaves the rest for
 `continueTail()` — which is what keeps latency flat as a document grows.
+
+`scale`, for a raster engine, is pixels per big point: the zoom times
+`devicePixelRatio`. The changed pages within one page of `viewport` come back
+drawn in `rasters`, each an `ImageBitmap` ready for a `bitmaprenderer` canvas.
+Any other changed page is stale until `engine.raster` draws it again.
 
 `pageOverlays` carries what is not drawn: each page's clickable regions and the
 named spots they can reach. A link is a rectangle in big points plus either a
@@ -145,13 +156,19 @@ It is the natural source for a lint gutter. `info` is chatty, since LaTeX
 narrates its font substitutions, so most callers filter to errors and warnings.
 
 Returns a `CompileResult`, which is a **patch**: `pages` holds SVG for the
-changed pages only, `changed` their indices, `removed` the indices the document
+changed pages only (none for a raster engine), `changed` their indices, `removed` the indices the document
 no longer has, and `pageSizes` every page's size so a viewer can lay out a slot
 before it has the page. Plus `pageCount`, the TeX `log`, an `outcome` of
 `spotless | warnings | errors`, and `stats`.
 
 An empty `pages` means nothing about the document's appearance changed — retype
 the same characters and that is exactly what you get.
+
+### `engine.raster(pages, scale)`
+
+Draws published pages of a raster engine at `scale` pixels per big point, for
+pages that scrolled into view or a new zoom. A page larger than 16M pixels at
+that scale is drawn coarser instead.
 
 ### `engine.continueTail()`
 

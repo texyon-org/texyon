@@ -499,5 +499,53 @@ console.log(
 );
 
 call({ op: "shutdown" });
+
+/** Read and free one raster page: width and height as little-endian u32, then RGBA rows. */
+function takeRaster({ ptr, len }) {
+  const header = new DataView(engine.memory.buffer, ptr, 8);
+  const width = header.getUint32(0, true);
+  const height = header.getUint32(4, true);
+  const pixels = new Uint8Array(engine.memory.buffer.slice(ptr + 8, ptr + len));
+  engine.tectonic_wasm_free(ptr, len);
+  return { width, height, pixels };
+}
+
+// A raster session sends no SVG and draws only the changed pages in view.
+reply = call({ op: "open", format: manifest.format, primary: "main.tex", raster: true });
+if (reply.status === "error") throw new Error(reply.message);
+sources.clear();
+reply = compile(PROJECT(""));
+if (reply.status !== "compiled") throw new Error(JSON.stringify(reply).slice(0, 400));
+if (reply.pages.length !== 0 || reply.rasters.length !== 0) {
+  throw new Error("a raster session drew pages nobody asked for");
+}
+const [pageWidth, pageHeight] = reply.pageSizes[0];
+for (const scale of [2, 1]) {
+  const drawn = call({ op: "raster", pages: [0], scale });
+  if (drawn.status !== "rastered" || drawn.pages.length !== 1) {
+    throw new Error(`raster at ${scale}: ${JSON.stringify(drawn).slice(0, 400)}`);
+  }
+  const { width, height, pixels } = takeRaster(drawn.pages[0]);
+  if (width !== Math.ceil(pageWidth * scale) || height !== Math.ceil(pageHeight * scale)) {
+    throw new Error(`raster at ${scale} is ${width}x${height} for a ${pageWidth}x${pageHeight} bp page`);
+  }
+  let ink = 0;
+  for (let i = 0; i < pixels.length; i += 4) {
+    if (pixels[i + 3] !== 255) throw new Error("a raster page is not opaque");
+    if (pixels[i] < 128) ink++;
+  }
+  if (ink === 0) throw new Error(`raster at ${scale} is blank`);
+}
+sources.set("chapters/one.tex", { text: CHILD(" Rastered."), revision: nextRevision++ });
+const revisions = Object.fromEntries([...sources].map(([path, { revision }]) => [path, revision]));
+reply = call({ op: "compile", files: revisions, viewport: [0, 0], scale: 2 });
+if (reply.status !== "compiled") throw new Error(JSON.stringify(reply).slice(0, 400));
+if (reply.rasters.length !== 1 || reply.rasters[0].index !== 0) {
+  throw new Error(`an edit in view drew ${JSON.stringify(reply.rasters)}`);
+}
+takeRaster(reply.rasters[0]);
+console.log(`raster: page 0 at 2x and 1x, and the edited page with its compile`);
+call({ op: "shutdown" });
+
 console.log(`\nspeedup: ${(cold / warm).toFixed(1)}x`);
 console.log("SVG written to target/smoke-cold.svg and target/smoke-warm.svg");
