@@ -9,6 +9,7 @@ use App\Http\Controllers\Internal\CollabDocumentController;
 use App\Http\Controllers\InviteController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectFileController;
+use App\Http\Controllers\ProjectImportController;
 use App\Http\Controllers\ProjectInviteController;
 use App\Http\Controllers\ProjectMemberController;
 use App\Http\Middleware\VerifyCollabSecret;
@@ -23,6 +24,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
     Route::get('/projects', [ProjectController::class, 'index']);
     Route::post('/projects', [ProjectController::class, 'store']);
+    Route::post('/projects/import', [ProjectImportController::class, 'store']);
     Route::get('/projects/{project}', [ProjectController::class, 'show']);
     Route::delete('/projects/{project}', [ProjectController::class, 'destroy']);
 

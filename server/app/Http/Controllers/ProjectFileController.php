@@ -10,9 +10,9 @@ use App\Domain\Project\Project;
 use App\Domain\Project\ProjectFile;
 use App\Domain\Project\ProjectPath;
 use App\Domain\Project\Projects;
+use App\Http\OpenApi\RawBody;
 use App\Http\ProjectGate;
 use App\Http\Requests\PutFileRequest;
-use Dedoc\Scramble\Attributes\ExcludeRouteFromDocs;
 use Dedoc\Scramble\Attributes\QueryParameter;
 use Dedoc\Scramble\Attributes\Response as ResponseShape;
 use Illuminate\Http\JsonResponse;
@@ -84,8 +84,10 @@ final readonly class ProjectFileController
         return new JsonResponse(['file' => self::present($file)]);
     }
 
-    /** Replace one file with the raw request body. Not in the OpenAPI export, the client binding is hand written. */
-    #[ExcludeRouteFromDocs]
+    /** Replace one file with the raw request body. */
+    #[RawBody]
+    #[QueryParameter('path', description: 'The file inside the project, e.g. `figures/plot.png`.', required: true, type: 'string')]
+    #[ResponseShape(200, type: 'array{file: array{path: string, digest: string, size: int, updatedAt: string}}')]
     public function putBytes(Request $request, int $project): JsonResponse
     {
         $target = $this->gate->write($request, $project)->project;

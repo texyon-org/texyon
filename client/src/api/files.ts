@@ -1,7 +1,7 @@
 import { decodeText } from "../files/import";
 import type { FileContent } from "../workspace/Workspace";
 import { collabBlobUrl, projectFileShow } from "./generated";
-import { ApiError, apiFetch } from "./http";
+import { ApiError } from "./http";
 
 /** Fetched bare via the signed URL. UTF-8 becomes text, the rest stays bytes. */
 export async function readFile(projectId: number, path: string): Promise<FileContent> {
@@ -12,15 +12,6 @@ export async function readFile(projectId: number, path: string): Promise<FileCon
 
   const bytes = new Uint8Array(await response.arrayBuffer());
   return decodeText(bytes) ?? bytes;
-}
-
-/** Upload bytes a project's document can then name. Hand-written, raw bodies are not in the OpenAPI export. */
-export async function uploadBlob(projectId: number, bytes: Uint8Array): Promise<{ digest: string; size: number }> {
-  return apiFetch(`/projects/${projectId}/blobs`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/octet-stream" },
-    body: bytes as BodyInit,
-  });
 }
 
 /** Bytes the project's document names, by their digest. */

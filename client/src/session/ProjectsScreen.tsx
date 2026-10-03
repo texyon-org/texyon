@@ -4,12 +4,14 @@ import { useEffect } from "react";
 
 import {
   getProjectIndexQueryKey,
+  projectImportStore,
   useAccountShow,
   useProjectDestroy,
   useProjectIndex,
   useProjectStore,
 } from "../api/generated";
 import { ApiError } from "../api/http";
+import { projectArchives } from "../files/overleaf";
 import { ProjectList } from "./ProjectList";
 import { useSignOut } from "./useSignOut";
 
@@ -43,6 +45,13 @@ export function ProjectsScreen() {
         await queryClient.invalidateQueries({ queryKey: getProjectIndexQueryKey() });
         void navigate({ to: "/projects/$projectId", params: { projectId: project.id } });
       }}
+      onImport={async (files, progress) => {
+        try {
+          return await importAll(files, progress);
+        } finally {
+          await queryClient.invalidateQueries({ queryKey: getProjectIndexQueryKey() });
+        }
+      }}
       onDelete={async (project) => {
         await destroy.mutateAsync({ project: project.id });
         await queryClient.invalidateQueries({ queryKey: getProjectIndexQueryKey() });
@@ -51,4 +60,40 @@ export function ProjectsScreen() {
       onSignOut={signOut}
     />
   );
+}
+
+/** One project per archive, one at a time so a bulk export never sits in memory unpacked whole. */
+async function importAll(files: File[], progress: (status: string) => void): Promise<string> {
+  let imported = 0;
+  let skipped = 0;
+  const failures: string[] = [];
+
+  for (const file of files) {
+    progress(`Reading ${file.name}`);
+    let archives;
+    try {
+      archives = projectArchives(file.name, new Uint8Array(await file.arrayBuffer()));
+    } catch {
+      failures.push(`${file.name} could not be read as a zip`);
+      continue;
+    }
+
+    for (const [at, archive] of archives.entries()) {
+      progress(`Importing ${archive.name} (${at + 1} of ${archives.length})`);
+      try {
+        const result = await projectImportStore(new Blob([archive.bytes as BlobPart]), { name: archive.name });
+        imported += 1;
+        skipped += result.skipped.length;
+      } catch (failure) {
+        failures.push(`${archive.name}: ${failure instanceof Error ? failure.message : String(failure)}`);
+      }
+    }
+  }
+
+  const summary =
+    `Imported ${imported} ${imported === 1 ? "project" : "projects"}` +
+    (skipped > 0 ? `, ${skipped} ${skipped === 1 ? "file" : "files"} skipped` : "") +
+    ".";
+  if (failures.length > 0) throw new Error(`${summary} Failed: ${failures.join("; ")}`);
+  return summary;
 }

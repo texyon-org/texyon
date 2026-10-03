@@ -43,4 +43,16 @@ return [
 
     'max_file_bytes' => (int) env('BLOB_MAX_FILE_BYTES', 32 * 1024 * 1024),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Largest import
+    |--------------------------------------------------------------------------
+    |
+    | A project zip, both as uploaded and once unpacked. PHP's post_max_size
+    | has to be at least this for the upload to reach the application.
+    |
+    */
+
+    'max_import_bytes' => (int) env('BLOB_MAX_IMPORT_BYTES', 256 * 1024 * 1024),
+
 ];

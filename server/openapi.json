@@ -117,6 +117,85 @@
                 }
             }
         },
+        "/projects/{project}/blobs": {
+            "put": {
+                "operationId": "collab.blob",
+                "summary": "Upload bytes the document can then name, as a binary file",
+                "tags": [
+                    "Collab"
+                ],
+                "parameters": [
+                    {
+                        "name": "project",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/octet-stream": {
+                            "schema": {
+                                "type": "string",
+                                "format": "binary"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "digest": {
+                                            "type": "string"
+                                        },
+                                        "size": {
+                                            "type": "integer"
+                                        }
+                                    },
+                                    "required": [
+                                        "digest",
+                                        "size"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "413": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/projects/{project}/blobs/{digest}": {
             "get": {
                 "operationId": "collab.blobUrl",
@@ -817,6 +896,241 @@
                 "responses": {
                     "204": {
                         "description": "The blob stays, other files may share the same bytes.\n\n\n\nNo content"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/projects/{project}/file/bytes": {
+            "put": {
+                "operationId": "projectFile.putBytes",
+                "summary": "Replace one file with the raw request body",
+                "tags": [
+                    "ProjectFile"
+                ],
+                "parameters": [
+                    {
+                        "name": "project",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "path",
+                        "in": "query",
+                        "required": true,
+                        "description": "The file inside the project, e.g. `figures/plot.png`.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/octet-stream": {
+                            "schema": {
+                                "type": "string",
+                                "format": "binary"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "file": {
+                                            "type": "object",
+                                            "properties": {
+                                                "path": {
+                                                    "type": "string"
+                                                },
+                                                "digest": {
+                                                    "type": "string"
+                                                },
+                                                "size": {
+                                                    "type": "integer"
+                                                },
+                                                "updatedAt": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "path",
+                                                "digest",
+                                                "size",
+                                                "updatedAt"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "file"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "413": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/projects/import": {
+            "post": {
+                "operationId": "projectImport.store",
+                "tags": [
+                    "ProjectImport"
+                ],
+                "parameters": [
+                    {
+                        "name": "name",
+                        "in": "query",
+                        "required": true,
+                        "description": "What to call the new project.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/zip": {
+                            "schema": {
+                                "type": "string",
+                                "format": "binary"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "project": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "integer"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "primary": {
+                                                    "type": "string"
+                                                },
+                                                "role": {
+                                                    "type": "string"
+                                                },
+                                                "owner": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "name": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "name"
+                                                    ]
+                                                },
+                                                "createdAt": {
+                                                    "type": "string"
+                                                },
+                                                "updatedAt": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "name",
+                                                "primary",
+                                                "role",
+                                                "owner",
+                                                "createdAt",
+                                                "updatedAt"
+                                            ]
+                                        },
+                                        "skipped": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "path": {
+                                                        "type": "string"
+                                                    },
+                                                    "reason": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "path",
+                                                    "reason"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "project",
+                                        "skipped"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable entity",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview."
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"

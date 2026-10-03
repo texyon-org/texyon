@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import type { Account, Project } from "../api/types";
 import { CrossIcon, FileIcon } from "../ui/icons";
@@ -13,6 +13,8 @@ export interface ProjectListProps {
   onOpen: (project: Project) => void;
   /** Create a project with this name, then open it. */
   onCreate: (name: string) => Promise<void>;
+  /** Make projects from zips, reporting progress, and say how it went. */
+  onImport: (files: File[], progress: (status: string) => void) => Promise<string>;
   onDelete: (project: Project) => Promise<void>;
   onAccount: () => void;
   onSignOut: () => void;
@@ -32,6 +34,7 @@ export function ProjectList({
   notice,
   onOpen,
   onCreate,
+  onImport,
   onDelete,
   onAccount,
   onSignOut,
@@ -39,6 +42,8 @@ export function ProjectList({
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const picker = useRef<HTMLInputElement>(null);
 
   const recentFirst = [...projects].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const owned = recentFirst.filter((project) => project.role === "owner");
@@ -48,6 +53,7 @@ export function ProjectList({
     void (async () => {
       setBusy(true);
       setError(null);
+      setStatus(null);
       try {
         await work();
       } catch (failure) {
@@ -91,11 +97,34 @@ export function ProjectList({
               <button type="submit" className="btn-primary" disabled={busy || draft.trim() === ""}>
                 Create
               </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                title="Project zips, or Overleaf's download of several projects at once"
+                disabled={busy}
+                onClick={() => picker.current?.click()}
+              >
+                Import
+              </button>
+              <input
+                ref={picker}
+                type="file"
+                accept=".zip,application/zip"
+                multiple
+                hidden
+                onChange={(event) => {
+                  const files = [...(event.target.files ?? [])];
+                  event.target.value = "";
+                  if (files.length === 0) return;
+                  act(async () => setStatus(await onImport(files, setStatus)));
+                }}
+              />
             </form>
           </div>
 
           {notice !== null && <div className="notice error">{notice}</div>}
           {error !== null && <div className="notice error">{error}</div>}
+          {status !== null && <div className={busy ? "notice" : "notice ok"}>{status}</div>}
 
           <ul className="project-rows">
             {owned.map((project) => (

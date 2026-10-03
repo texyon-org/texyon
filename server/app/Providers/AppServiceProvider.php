@@ -3,6 +3,9 @@
 namespace App\Providers;
 
 use App\Collab\CollabServer;
+use App\Http\OpenApi\RawBodyTransformer;
+use Dedoc\Scramble\Configuration\OperationTransformers;
+use Dedoc\Scramble\Scramble;
 use Illuminate\Auth\Events\Logout;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
@@ -22,6 +25,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Scramble::configure()->withOperationTransformers(
+            fn (OperationTransformers $transformers) => $transformers->append(RawBodyTransformer::class),
+        );
+
         // A connection outlives the session that opened it, so signing out closes it.
         Event::listen(function (Logout $event): void {
             $id = $event->user->getAuthIdentifier();

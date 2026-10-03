@@ -26,6 +26,8 @@ import type {
 import type {
   AccountShow200,
   AuthenticationExceptionResponse,
+  CollabBlob200,
+  CollabBlob413,
   CollabBlobUrl200,
   CollabToken200,
   InviteAccept200,
@@ -34,9 +36,15 @@ import type {
   ProjectFileDestroyParams,
   ProjectFileIndex200,
   ProjectFilePut200,
+  ProjectFilePutBytes200,
+  ProjectFilePutBytes413,
+  ProjectFilePutBytesParams,
   ProjectFilePutParams,
   ProjectFileShow200,
   ProjectFileShowParams,
+  ProjectImportStore201,
+  ProjectImportStore422,
+  ProjectImportStoreParams,
   ProjectIndex200,
   ProjectInviteStore201,
   ProjectMemberIndex200,
@@ -302,6 +310,78 @@ export const useCollabToken = <TError = AuthenticationExceptionResponse,
         TContext
       > => {
       return useMutation(getCollabTokenMutationOptions(options), queryClient);
+    }
+
+export const getCollabBlobUrl = (project: number,) => {
+
+
+
+
+  return `/projects/${project}/blobs`
+}
+
+/**
+ * @summary Upload bytes the document can then name, as a binary file
+ */
+export const collabBlob = async (project: number,
+    collabBlobBody: Blob, options?: Parameters<typeof apiFetch>[1]): Promise<CollabBlob200> => {
+
+  return apiFetch<CollabBlob200>(getCollabBlobUrl(project),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/octet-stream', ...options?.headers },
+    body: collabBlobBody
+  }
+);}
+
+
+
+
+
+export const getCollabBlobMutationOptions = <TError = AuthenticationExceptionResponse | CollabBlob413,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof collabBlob>>, TError,{project: number;data: Blob}, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof collabBlob>>, TError,{project: number;data: Blob}, TContext> => {
+
+const mutationKey = ['collabBlob'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof collabBlob>>, {project: number;data: Blob}> = (props) => {
+          const {project,data} = props ?? {};
+
+          return  collabBlob(project,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CollabBlobMutationResult = NonNullable<Awaited<ReturnType<typeof collabBlob>>>
+    export type CollabBlobMutationBody = Blob
+    export type CollabBlobMutationError = AuthenticationExceptionResponse | CollabBlob413
+
+    /**
+ * @summary Upload bytes the document can then name, as a binary file
+ */
+export const useCollabBlob = <TError = AuthenticationExceptionResponse | CollabBlob413,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof collabBlob>>, TError,{project: number;data: Blob}, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof collabBlob>>,
+        TError,
+        {project: number;data: Blob},
+        TContext
+      > => {
+      return useMutation(getCollabBlobMutationOptions(options), queryClient);
     }
 
 export const getCollabBlobUrlUrl = (project: number,
@@ -1269,6 +1349,160 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getProjectFileDestroyMutationOptions(options), queryClient);
+    }
+
+export const getProjectFilePutBytesUrl = (project: number,
+    params: ProjectFilePutBytesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/projects/${project}/file/bytes?${stringifiedParams}` : `/projects/${project}/file/bytes`
+}
+
+/**
+ * @summary Replace one file with the raw request body
+ */
+export const projectFilePutBytes = async (project: number,
+    projectFilePutBytesBody: Blob,
+    params: ProjectFilePutBytesParams, options?: Parameters<typeof apiFetch>[1]): Promise<ProjectFilePutBytes200> => {
+
+  return apiFetch<ProjectFilePutBytes200>(getProjectFilePutBytesUrl(project,params),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/octet-stream', ...options?.headers },
+    body: projectFilePutBytesBody
+  }
+);}
+
+
+
+
+
+export const getProjectFilePutBytesMutationOptions = <TError = AuthenticationExceptionResponse | ProjectFilePutBytes413,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof projectFilePutBytes>>, TError,{project: number;data: Blob;params: ProjectFilePutBytesParams}, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof projectFilePutBytes>>, TError,{project: number;data: Blob;params: ProjectFilePutBytesParams}, TContext> => {
+
+const mutationKey = ['projectFilePutBytes'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof projectFilePutBytes>>, {project: number;data: Blob;params: ProjectFilePutBytesParams}> = (props) => {
+          const {project,data,params} = props ?? {};
+
+          return  projectFilePutBytes(project,data,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ProjectFilePutBytesMutationResult = NonNullable<Awaited<ReturnType<typeof projectFilePutBytes>>>
+    export type ProjectFilePutBytesMutationBody = Blob
+    export type ProjectFilePutBytesMutationError = AuthenticationExceptionResponse | ProjectFilePutBytes413
+
+    /**
+ * @summary Replace one file with the raw request body
+ */
+export const useProjectFilePutBytes = <TError = AuthenticationExceptionResponse | ProjectFilePutBytes413,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof projectFilePutBytes>>, TError,{project: number;data: Blob;params: ProjectFilePutBytesParams}, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof projectFilePutBytes>>,
+        TError,
+        {project: number;data: Blob;params: ProjectFilePutBytesParams},
+        TContext
+      > => {
+      return useMutation(getProjectFilePutBytesMutationOptions(options), queryClient);
+    }
+
+export const getProjectImportStoreUrl = (params: ProjectImportStoreParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/projects/import?${stringifiedParams}` : `/projects/import`
+}
+
+export const projectImportStore = async (projectImportStoreBody: Blob,
+    params: ProjectImportStoreParams, options?: Parameters<typeof apiFetch>[1]): Promise<ProjectImportStore201> => {
+
+  return apiFetch<ProjectImportStore201>(getProjectImportStoreUrl(params),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/zip', ...options?.headers },
+    body: projectImportStoreBody
+  }
+);}
+
+
+
+
+
+export const getProjectImportStoreMutationOptions = <TError = AuthenticationExceptionResponse | ProjectImportStore422,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof projectImportStore>>, TError,{data: Blob;params: ProjectImportStoreParams}, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof projectImportStore>>, TError,{data: Blob;params: ProjectImportStoreParams}, TContext> => {
+
+const mutationKey = ['projectImportStore'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof projectImportStore>>, {data: Blob;params: ProjectImportStoreParams}> = (props) => {
+          const {data,params} = props ?? {};
+
+          return  projectImportStore(data,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ProjectImportStoreMutationResult = NonNullable<Awaited<ReturnType<typeof projectImportStore>>>
+    export type ProjectImportStoreMutationBody = Blob
+    export type ProjectImportStoreMutationError = AuthenticationExceptionResponse | ProjectImportStore422
+
+    export const useProjectImportStore = <TError = AuthenticationExceptionResponse | ProjectImportStore422,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof projectImportStore>>, TError,{data: Blob;params: ProjectImportStoreParams}, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof projectImportStore>>,
+        TError,
+        {data: Blob;params: ProjectImportStoreParams},
+        TContext
+      > => {
+      return useMutation(getProjectImportStoreMutationOptions(options), queryClient);
     }
 
 export const getProjectInviteStoreUrl = (project: number,) => {
