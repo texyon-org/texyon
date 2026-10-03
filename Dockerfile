@@ -75,6 +75,9 @@ RUN install-php-extensions \
         zip \
         opcache
 
+# Room for a project zip, see blobs.max_import_bytes.
+RUN printf 'post_max_size = 260M\nupload_max_filesize = 260M\n' > "$PHP_INI_DIR/conf.d/uploads.ini"
+
 WORKDIR /app
 
 # ---------------------------------------------------------------------------
