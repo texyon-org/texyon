@@ -1,0 +1,69 @@
+\documentclass{beamer}
+\usetheme{Berlin}
+\usecolortheme{beaver}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric}
+\usepackage{booktabs}
+\title{Training Talk}
+\subtitle{Overlays, themes and expl3}
+\author{PGO}
+\institute{Tectonic}
+\date{}
+\NewDocumentCommand\metric{O{s} m}{\textbf{#2}\,\mathrm{#1}}
+\ExplSyntaxOn
+\seq_new:N \l_train_items_seq
+\seq_set_from_clist:Nn \l_train_items_seq {alpha, beta, gamma, delta, epsilon}
+\NewDocumentCommand\trainitems{}{
+  \begin{itemize}
+    \seq_map_inline:Nn \l_train_items_seq { \item<+-> \tl_upper_case:n {##1}~item }
+  \end{itemize}
+}
+\NewDocumentCommand\repeatframes{m}{
+  \int_step_inline:nn {#1} { \trainframe{##1} }
+}
+\ExplSyntaxOff
+\newcommand\trainframe[1]{%
+  \section{Part #1}
+  \begin{frame}{Part #1: results}
+    \begin{columns}[T]
+      \column{0.55\textwidth}
+      \trainitems
+      \begin{block}{Claim #1}
+        For $n=#1$ we have $\sum_{k=1}^{n} k = \frac{n(n+1)}{2}$ and
+        $\metric[ms]{#1.5}$ per step.
+      \end{block}
+      \column{0.45\textwidth}
+      \begin{tikzpicture}[node distance=8mm, every node/.style={draw, rounded corners, fill=blue!10}]
+        \node (a) {input};
+        \node[right=of a] (b) {macro};
+        \node[below=of b, diamond, aspect=2] (c) {box};
+        \draw[-Stealth] (a) -- (b);
+        \draw[-Stealth] (b) -- (c);
+        \foreach \i in {1,...,6} { \fill[red!60] (\i*0.4,-2.4) circle (2pt); }
+        \node<2>[fill=yellow] at (1,-3) {only on two};
+      \end{tikzpicture}
+    \end{columns}
+  \end{frame}
+  \begin{frame}{Part #1: table}
+    \begin{table}
+      \begin{tabular}{lrr}\toprule
+        Variant & Time & Delta \\\midrule
+        base & 1.00 & \alert<2>{0\%} \\
+        tokens & 0.95 & -5\% \\
+        \uncover<3->{pgo} & \uncover<3->{0.90} & \uncover<3->{-10\%} \\\bottomrule
+      \end{tabular}
+    \end{table}
+    \begin{theorem}[Number #1]
+      Every overlay \pause is processed once per slide.
+    \end{theorem}
+    \begin{enumerate}
+      \item<1-> first
+      \item<2-> second \onslide<3>{with a note}
+    \end{enumerate}
+  \end{frame}
+}
+\begin{document}
+\frame{\titlepage}
+\begin{frame}{Outline}\tableofcontents\end{frame}
+\repeatframes{6}
+\end{document}

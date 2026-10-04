@@ -1,0 +1,17 @@
+# PGO training inputs, one per line. Keep these disjoint from benchmark docs.
+# Repo-relative paths, or corpus:<path> under $TEXYON_CORPUS_DIR/raw
+# (fetched by crates/engine_xetex/scripts/corpus_fetch.sh, skipped if absent).
+tools/pgo/train/beamer.tex
+tools/pgo/train/pgfplots.tex
+crates/engine_xetex/tests/corpus/tier1/unicode_text.tex
+crates/engine_xetex/tests/corpus/tier1/bidi_arabic.tex
+crates/engine_xetex/tests/corpus/tier1/cjk.tex
+crates/engine_xetex/tests/corpus/tier1/devanagari.tex
+crates/engine_xetex/tests/corpus/tier1/unicode_math.tex
+crates/engine_xetex/tests/corpus/tier1/fontspec_features.tex
+crates/engine_xetex/tests/corpus/tier1/math_classic.tex
+crates/engine_xetex/tests/corpus/tier1/tables_floats.tex
+crates/engine_xetex/tests/corpus/tier1/xref_hyperref.tex
+crates/engine_xetex/tests/corpus/tier1/tikz_basic.tex
+corpus:lshort/src/lshort.tex
+corpus:arxiv/1907.00087v2/main.tex
