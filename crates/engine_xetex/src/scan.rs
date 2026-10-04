@@ -31,8 +31,8 @@ pub(crate) use self::internal::{
 };
 use self::next::fetch_cs_meaning;
 pub(crate) use self::next::{
-    get_next, get_token, get_x_non_blank, get_x_non_blank_non_relax, get_x_or_protected,
-    get_x_token, pass_text, x_token,
+    copy_delimited_tokens, copy_group_tokens, get_next, get_token, get_x_non_blank,
+    get_x_non_blank_non_relax, get_x_or_protected, get_x_token, pass_text, x_token,
 };
 pub(crate) use self::numbers::{
     scan_char_class, scan_char_class_not_ignored, scan_char_num, scan_delimiter_int, scan_dimen,

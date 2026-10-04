@@ -25,8 +25,8 @@ use crate::output::{
 };
 use crate::params::{GluePar, IntPar};
 use crate::scan::{
-    fetch_box, get_next, get_token, get_x_non_blank, get_x_token, scan_int, store_new_token,
-    NO_EXPAND_FLAG,
+    copy_delimited_tokens, copy_group_tokens, fetch_box, get_next, get_token, get_x_non_blank,
+    get_x_token, scan_int, store_new_token, NO_EXPAND_FLAG,
 };
 use crate::state::{EngineState, MemState, Selector};
 use crate::token::Token;
@@ -1129,6 +1129,9 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                 }
 
                 'continue_: loop {
+                    if s == r && !s.is_null() && !r.token(&st.mem).is_match() {
+                        copy_delimited_tokens(st, &mut p, &mut m, r.token(&st.mem))?;
+                    }
                     get_token(st)?;
 
                     if st.scanner.cur_tok == r.token(&st.mem) {
@@ -1202,6 +1205,9 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                         unbalance = 1;
                         loop {
                             store_new_token(st, &mut p, st.scanner.cur_tok)?;
+                            if copy_group_tokens(st, &mut p, &mut unbalance, false)? {
+                                break;
+                            }
 
                             get_token(st)?;
 

@@ -3,7 +3,8 @@
 use crate::bridge::output_flush;
 use crate::cmd::{
     CALL, CAR_RET, DONT_EXPAND, ENDV, END_TEMPLATE, FI_OR_ELSE, IF_TEST, LEFT_BRACE, LETTER,
-    MAX_COMMAND, OMIT, OUTER_CALL, OUT_PARAM, RELAX, RIGHT_BRACE, SPACER, SUP_MARK, TAB_MARK,
+    LONG_CALL, MAC_PARAM, MAX_COMMAND, OMIT, OUTER_CALL, OUT_PARAM, RELAX, RIGHT_BRACE, SPACER,
+    SUP_MARK, TAB_MARK,
 };
 use crate::codes::{FiOrElseCode, ScannerStatus};
 use crate::consts::{
@@ -660,5 +661,102 @@ pub(crate) fn get_token(st: &mut EngineState) -> Result<(), Abort> {
     get_next(st)?;
     st.eqtb.no_new_control_sequence = true;
     pack_cur_tok(st);
+    Ok(())
+}
+
+/// Whether `get_next` would deliver token-list token `t` with no side effect
+/// beyond brace counting, and `t` is not a parameter character if `stop_at_mac_param`.
+#[inline(always)]
+fn plain_list_token(st: &EngineState, t: Token, stop_at_mac_param: bool) -> bool {
+    let cmd = if t.is_cs() {
+        let cmd = st.eqtb.eq_type(t.cs());
+        if cmd >= OUTER_CALL || t == st.input.par_token && st.scanner.long_state != LONG_CALL {
+            return false;
+        }
+        cmd
+    } else {
+        if t.cmd() == OUT_PARAM {
+            return false;
+        }
+        t.cmd()
+    };
+    !((cmd == TAB_MARK || cmd == CAR_RET) && st.scanner.align_state == 0
+        || stop_at_mac_param && cmd == MAC_PARAM)
+}
+
+/// Advances past the token at `q` as `get_next` would and returns the next node.
+#[inline(always)]
+fn consume_list_token(st: &mut EngineState, q: MemPtr) -> MemPtr {
+    st.scanner.logical_clock = st.scanner.logical_clock.wrapping_add(1);
+    let next = q.link(&st.mem);
+    st.input.cur_input.set_token_loc(next);
+    next
+}
+
+/// `get_token` and `store_new_token` for the rest of a group, straight from the
+/// current token list. Stops before a token that needs `get_next` (or a
+/// parameter character if `stop_at_mac_param`), or returns true once the group
+/// closes, with the closing brace consumed as `cur_tok`.
+#[inline(always)]
+pub(crate) fn copy_group_tokens(
+    st: &mut EngineState,
+    p: &mut MemPtr,
+    unbalance: &mut i32,
+    stop_at_mac_param: bool,
+) -> Result<bool, Abort> {
+    if st.input.cur_input.state != TOKEN_LIST {
+        return Ok(false);
+    }
+    let mut q = st.input.cur_input.token_loc();
+    while !q.is_null() {
+        let t = q.token(&st.mem);
+        if t.is_brace() {
+            if t.is_left_brace() {
+                st.scanner.align_state += 1;
+                *unbalance += 1;
+            } else {
+                st.scanner.align_state -= 1;
+                *unbalance -= 1;
+                if *unbalance == 0 {
+                    consume_list_token(st, q);
+                    st.scanner.cur_cs = 0;
+                    st.scanner.cur_cmd = t.cmd();
+                    st.scanner.cur_chr = t.chr();
+                    st.scanner.cur_tok = t;
+                    return Ok(true);
+                }
+            }
+        } else if !plain_list_token(st, t, stop_at_mac_param) {
+            break;
+        }
+        st.mem.store_new_token(p, t)?;
+        q = consume_list_token(st, q);
+    }
+    Ok(false)
+}
+
+/// `get_token` and `store_new_token` for delimited-argument tokens, straight
+/// from the current token list, up to a brace, `delim`, or a token that needs
+/// `get_next`. Counts the copied tokens in `m`.
+#[inline]
+pub(crate) fn copy_delimited_tokens(
+    st: &mut EngineState,
+    p: &mut MemPtr,
+    m: &mut i32,
+    delim: Token,
+) -> Result<(), Abort> {
+    if st.input.cur_input.state != TOKEN_LIST {
+        return Ok(());
+    }
+    let mut q = st.input.cur_input.token_loc();
+    while !q.is_null() {
+        let t = q.token(&st.mem);
+        if t == delim || t.is_brace() || !plain_list_token(st, t, false) {
+            break;
+        }
+        st.mem.store_new_token(p, t)?;
+        *m += 1;
+        q = consume_list_token(st, q);
+    }
     Ok(())
 }
