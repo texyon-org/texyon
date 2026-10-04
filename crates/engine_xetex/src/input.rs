@@ -129,8 +129,9 @@ pub(crate) fn end_token_list(st: &mut EngineState) -> Result<(), Abort> {
             if t == TokenType::Macro {
                 while st.input.param_ptr > ci.limit {
                     st.input.param_ptr -= 1;
+                    let k = st.input.param_ptr as usize;
                     st.mem
-                        .flush_list(st.input.param_stack[st.input.param_ptr as usize]);
+                        .flush_list_with_tail(st.input.param_stack[k], st.input.param_tail[k]);
                 }
             }
         }

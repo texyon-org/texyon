@@ -394,7 +394,7 @@ pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, 
         }
     }
     let matched = BACKUP_HEAD.link(&st.mem);
-    st.mem.flush_list(matched);
+    st.mem.flush_list_with_tail(matched, p);
     Ok(true)
 }
 

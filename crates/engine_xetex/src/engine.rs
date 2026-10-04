@@ -786,6 +786,7 @@ pub(crate) fn initialize_engine(
     st.input.full_source_filename_stack = vec![StrNumber::NONE; in_open_words];
     st.input.eof_seen = vec![false; in_open_words];
     st.input.param_stack = vec![MemPtr::default(); st.input.param_size as usize + 1];
+    st.input.param_tail = vec![MemPtr::default(); st.input.param_size as usize + 1];
     st.hyph.hyph_word = vec![StrNumber::NONE; hyph_words];
     st.hyph.hyph_list = vec![MemPtr::NULL; hyph_words];
     st.hyph.hyph_link = vec![0; hyph_words];
@@ -1095,6 +1096,7 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     input.read_file = Default::default();
     input.input_stack = Vec::new();
     input.param_stack = Vec::new();
+    input.param_tail = Vec::new();
     input.line_stack = Vec::new();
     input.grp_stack = Vec::new();
     input.if_stack = Vec::new();

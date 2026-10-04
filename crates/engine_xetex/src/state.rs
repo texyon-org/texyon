@@ -163,6 +163,8 @@ pub(crate) enum InputSlot {
 #[derive(Default)]
 pub(crate) struct InputClusterState {
     pub param_stack: Vec<crate::units::MemPtr>,
+    /// The last node of each `param_stack` list, so it can be freed without a walk.
+    pub param_tail: Vec<crate::units::MemPtr>,
     pub line_stack: Vec<i32>,
     pub grp_stack: Vec<i32>,
     pub if_stack: Vec<crate::units::MemPtr>,
