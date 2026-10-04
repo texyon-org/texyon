@@ -214,7 +214,45 @@ impl InputClusterState {
 }
 
 /// The central tokenizer.
+#[inline(always)]
 pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
+    if st.input.cur_input.state == TOKEN_LIST {
+        let p = st.input.cur_input.token_loc();
+        if !p.is_null() {
+            let t = p.token(&st.mem);
+            let plain = if t.is_cs() {
+                let cmd = st.eqtb.eq_type(t.cs());
+                cmd < OUTER_CALL && (cmd > CAR_RET || cmd < TAB_MARK || st.scanner.align_state != 0)
+            } else {
+                let cmd = t.cmd();
+                cmd != OUT_PARAM && (cmd != TAB_MARK || st.scanner.align_state != 0)
+            };
+            if plain {
+                st.scanner.logical_clock = st.scanner.logical_clock.wrapping_add(1);
+                st.input.cur_input.set_token_loc(p.link(&st.mem));
+                if t.is_cs() {
+                    st.scanner.cur_cs = t.cs();
+                    fetch_cs_meaning(st);
+                } else {
+                    st.scanner.cur_cs = 0;
+                    st.scanner.cur_cmd = t.cmd();
+                    st.scanner.cur_chr = t.chr();
+                    match st.scanner.cur_cmd {
+                        LEFT_BRACE => st.scanner.align_state += 1,
+                        RIGHT_BRACE => st.scanner.align_state -= 1,
+                        _ => {}
+                    }
+                }
+                return Ok(());
+            }
+        }
+    }
+    get_next_slow(st)
+}
+
+/// `get_next` for everything but a plain token from a token list.
+#[inline(never)]
+fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.logical_clock = st.scanner.logical_clock.wrapping_add(1);
 
     'restart: loop {
