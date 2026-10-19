@@ -37,7 +37,7 @@ pub use publication::{
     PublicationError,
 };
 pub use source::{AcceptedSourceSnapshot, DocumentRoot, SourceError, SourceSet};
-pub use tectonic_preview_protocol::{
+pub use texyon_preview_protocol::{
     FrameId, FramePhase, QueryId, RequestSeq, SequenceExhausted, SourceRevision,
 };
 pub use transport::{JsonlFrameSink, TransportError};

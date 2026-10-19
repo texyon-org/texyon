@@ -7,10 +7,10 @@
 //! mark that the semantics of the content wil be set up for HTML output.
 
 use std::path::{Path, PathBuf};
-use tectonic_bridge_core::DriverHooks;
-use tectonic_errors::prelude::*;
-use tectonic_status_base::StatusBackend;
-use tectonic_xdv::{FileType, XdvEvents, XdvParser};
+use texyon_bridge_core::DriverHooks;
+use texyon_errors::prelude::*;
+use texyon_status_base::StatusBackend;
+use texyon_xdv::{FileType, XdvEvents, XdvParser};
 
 mod assets;
 mod emission;

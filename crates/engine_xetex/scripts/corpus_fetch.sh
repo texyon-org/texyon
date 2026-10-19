@@ -4,19 +4,19 @@
 # The committed corpus consists of:
 #   * Authored Tier 1 docs in crates/engine_xetex/tests/corpus/tier1/  (in repo)
 #   * This script + manifest.tsv, which reproduce everything else into
-#     $TECTONIC_CORPUS_DIR (NOT in repo; large + third-party licensing).
+#     $TEXYON_CORPUS_DIR (NOT in repo; large + third-party licensing).
 #
 # Sources:
 #   * Local TeX Live doc tree (redistributable real-world LaTeX sources).
 #   * arXiv e-print tarballs (per-ID, via the public e-print endpoint).
 #
 # Usage:
-#   TECTONIC_CORPUS_DIR=~/.cache/tectonic-corpus ./corpus_fetch.sh [tl|arxiv|all]
+#   TEXYON_CORPUS_DIR=~/.cache/tectonic-corpus ./corpus_fetch.sh [tl|arxiv|all]
 #
 # Bulk arXiv (thousands of papers) is NOT done here.
 set -euo pipefail
 
-CORPUS_DIR="${TECTONIC_CORPUS_DIR:-$HOME/.cache/tectonic-corpus}"
+CORPUS_DIR="${TEXYON_CORPUS_DIR:-$HOME/.cache/tectonic-corpus}"
 RAW="$CORPUS_DIR/raw"
 TL="${TEXLIVE_DOC:-/usr/local/texlive/2025/texmf-dist/doc}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

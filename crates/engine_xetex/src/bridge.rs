@@ -10,9 +10,9 @@ use std::marker::PhantomData;
 use std::ptr;
 use std::sync::atomic::{AtomicPtr, Ordering};
 
-use tectonic_bridge_core::{CoreBridgeState, InputId, OutputId};
+use texyon_bridge_core::{CoreBridgeState, InputId, OutputId};
 
-pub(crate) use tectonic_bridge_core::{Diagnostic, FileFormat};
+pub(crate) use texyon_bridge_core::{Diagnostic, FileFormat};
 
 /// The bridge state of the current run. Every run holds the engine lock, so
 /// one slot serves all threads.
@@ -128,7 +128,7 @@ pub(crate) fn input_getc(handle: usize) -> libc::c_int {
     if let Some(value) = crate::replay::adapter::getc(handle) {
         return value;
     }
-    with_bridge(|es| es.input_getc(input_id(handle))).map_or(tectonic_bridge_core::EOF, i32::from)
+    with_bridge(|es| es.input_getc(input_id(handle))).map_or(texyon_bridge_core::EOF, i32::from)
 }
 
 pub(crate) fn input_ungetc(handle: usize, ch: libc::c_int) {
@@ -250,5 +250,5 @@ pub(crate) fn get_file_md5(path: &[u8]) -> Option<[u8; 16]> {
 
 /// Surfaces `message` as the run's abort message. A message with a NUL is dropped.
 pub(crate) fn set_error_message(message: impl AsRef<[u8]>) {
-    tectonic_bridge_core::set_abort_message(message.as_ref());
+    texyon_bridge_core::set_abort_message(message.as_ref());
 }

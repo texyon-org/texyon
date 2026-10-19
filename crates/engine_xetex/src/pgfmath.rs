@@ -30,9 +30,9 @@ pub(crate) enum Mode {
 }
 
 impl Mode {
-    /// `TECTONIC_PGFMATH=native|check|off` overrides `default`.
+    /// `TEXYON_PGFMATH=native|check|off` overrides `default`.
     pub(crate) fn from_env(default: Mode) -> Mode {
-        match std::env::var("TECTONIC_PGFMATH").as_deref() {
+        match std::env::var("TEXYON_PGFMATH").as_deref() {
             Ok("native") => Mode::Native,
             Ok("check") => Mode::Check,
             Ok("off") => Mode::Off,
@@ -202,7 +202,7 @@ struct Pending {
     expression: String,
 }
 
-/// Counters and check-mode state, for `TECTONIC_PGFMATH` runs.
+/// Counters and check-mode state, for `TEXYON_PGFMATH` runs.
 #[derive(Default)]
 pub(crate) struct Diagnostics {
     stats: Stats,
@@ -660,7 +660,7 @@ fn describe(st: &EngineState, tokens: &[Token]) -> String {
 }
 
 fn trace(st: &EngineState, tokens: &[Token], reason: &str) {
-    let Ok(filter) = std::env::var("TECTONIC_PGFMATH_TRACE") else {
+    let Ok(filter) = std::env::var("TEXYON_PGFMATH_TRACE") else {
         return;
     };
     if reason.contains(filter.as_str()) {
@@ -937,7 +937,7 @@ pub(crate) fn native_macro(st: &mut EngineState, kind: Native, args: &[MemPtr]) 
 }
 
 pub(crate) fn report(st: &EngineState) {
-    if std::env::var_os("TECTONIC_PGFMATH").is_none() {
+    if std::env::var_os("TEXYON_PGFMATH").is_none() {
         return;
     }
     let s = &st.pgfmath.stats;

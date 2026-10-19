@@ -19,8 +19,8 @@
 //! [`tectonic`]: https://docs.rs/tectonic/
 
 use std::{ffi::CString, time::SystemTime};
-use tectonic_bridge_core::{CoreBridgeLauncher, EngineAbortedError};
-use tectonic_errors::prelude::*;
+use texyon_bridge_core::{CoreBridgeLauncher, EngineAbortedError};
+use texyon_errors::prelude::*;
 
 /// A struct for invoking the `xdvipdfmx` engine.
 ///
@@ -149,7 +149,7 @@ impl XdvipdfmxEngine {
 pub mod c_api {
     // If you change the interfaces here, rerun cbindgen as described in the README!
 
-    use tectonic_bridge_core::CoreBridgeState;
+    use texyon_bridge_core::CoreBridgeState;
 
     #[derive(Debug)]
     #[repr(C)]
@@ -175,7 +175,7 @@ pub mod c_api {
 /// them.
 mod linkage {
     #[allow(unused_imports)]
-    use tectonic_pdf_io as clipyrenamehack;
+    use texyon_pdf_io as clipyrenamehack;
 }
 
 /// Does our resulting executable link correctly?

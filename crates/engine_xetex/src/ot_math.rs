@@ -1,14 +1,14 @@
 //! OpenType MATH table queries.
 
 use crate::units::{FontId, Scaled};
-use tectonic_bridge_harfbuzz::ot::{MathGlyphPart, MathKern};
-use tectonic_bridge_harfbuzz::sys::HB_OT_MATH_GLYPH_PART_FLAG_EXTENDER;
-use tectonic_bridge_harfbuzz::Direction;
+use texyon_bridge_harfbuzz::ot::{MathGlyphPart, MathKern};
+use texyon_bridge_harfbuzz::sys::HB_OT_MATH_GLYPH_PART_FLAG_EXTENDER;
+use texyon_bridge_harfbuzz::Direction;
 
 use crate::ext::{d2fix, fix2d};
 use crate::state::FontEngineHandle;
 use crate::state::FontState;
-use tectonic_xetex_layout::Font;
+use texyon_xetex_layout::Font;
 
 const HB_OT_MATH_CONSTANT_SCRIPT_PERCENT_SCALE_DOWN: i32 = 0;
 const HB_OT_MATH_CONSTANT_SCRIPT_SCRIPT_PERCENT_SCALE_DOWN: i32 = 1;

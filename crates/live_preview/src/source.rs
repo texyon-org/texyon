@@ -6,9 +6,9 @@ use std::{
     sync::Arc,
 };
 
-use tectonic_preview_protocol::{ProtocolLimits, SourceFile, SourceRevision};
+use texyon_preview_protocol::{ProtocolLimits, SourceFile, SourceRevision};
 
-use tectonic_engine_xetex::{
+use texyon_engine_xetex::{
     SourceError as EngineSourceError, SourceRevision as EngineSourceRevision,
     SourceSnapshot as EngineSourceSnapshot,
 };

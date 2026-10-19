@@ -16,7 +16,7 @@
 //! map numerical values to the abstract enums in the way that is appropriate
 //! for a given engine version.
 
-use tectonic_errors::prelude::*;
+use texyon_errors::prelude::*;
 
 use crate::{
     symbols::{DeclaresSymbols, SymbolTable},

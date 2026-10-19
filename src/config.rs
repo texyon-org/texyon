@@ -15,8 +15,8 @@ use std::{
     path::PathBuf,
     sync::atomic::{AtomicBool, Ordering},
 };
-use tectonic_bundles::{detect_bundle, Bundle};
-use tectonic_io_base::app_dirs;
+use texyon_bundles::{detect_bundle, Bundle};
+use texyon_io_base::app_dirs;
 
 use crate::errors::{ErrorKind, Result};
 
@@ -170,7 +170,7 @@ impl PersistentConfig {
 
 impl Default for PersistentConfig {
     fn default() -> Self {
-        let url = tectonic_bundles::get_fallback_bundle_url(tectonic_engine_xetex::FORMAT_SERIAL);
+        let url = texyon_bundles::get_fallback_bundle_url(texyon_engine_xetex::FORMAT_SERIAL);
 
         PersistentConfig {
             default_bundles: vec![BundleInfo { url }],

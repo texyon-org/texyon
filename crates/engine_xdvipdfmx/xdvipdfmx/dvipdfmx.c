@@ -24,7 +24,7 @@
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA.
 */
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 
 #include <assert.h>
 #include <ctype.h>
@@ -102,7 +102,7 @@ static int32_t permission    = 0x003C;
 
 /* Page device */
 /* Tectonic: landscape_mode, paper_width, paper_height used to be defined here,
- * but are now defined in the `tectonic_pdf_io` crate. */
+ * but are now defined in the `texyon_pdf_io` crate. */
 static double x_offset = 72.0;
 static double y_offset = 72.0;
 static int translate_origin = 0;
@@ -508,7 +508,7 @@ tt_engine_xdvipdfmx_main(
     return 99;
   }
 
-  /* See ttstub_input_get_mtime() in tectonic_bridge_core about bridging time_t
+  /* See ttstub_input_get_mtime() in texyon_bridge_core about bridging time_t
    * over FFI. */
 
   rv = dvipdfmx_main(

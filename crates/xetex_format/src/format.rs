@@ -11,7 +11,7 @@ use nom::{
     Err as NomErr, IResult, Parser,
 };
 use std::io::Write;
-use tectonic_errors::prelude::*;
+use texyon_errors::prelude::*;
 
 use crate::{
     base::{MAX_HALFWORD, MIN_HALFWORD, TEX_NULL},

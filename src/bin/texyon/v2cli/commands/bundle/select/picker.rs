@@ -344,7 +344,7 @@ impl FilePicker {
                     let diff_file = fs::read_to_string(&entry).unwrap();
                     let (target, _) = diff_file.split_once('\n').unwrap();
 
-                    trace!(tectonic_log_source = "select", "adding diff {entry:?}");
+                    trace!(texyon_log_source = "select", "adding diff {entry:?}");
 
                     for t in Self::expand_search_line(target)?
                         .into_iter()

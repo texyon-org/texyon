@@ -1,12 +1,12 @@
-# `@tectonic/wasm`
+# `@texyon/wasm`
 
-Tectonic's LaTeX engine, compiled to WebAssembly, with a TypeScript API built
+TeXyon, the LaTeX engine, compiled to WebAssembly, with a TypeScript API built
 for editors.
 
 ```ts
-import { TectonicEngine } from "@tectonic/wasm";
+import { TexyonEngine } from "@texyon/wasm";
 
-const engine = await TectonicEngine.create({
+const engine = await TexyonEngine.create({
   onProgress: (p) => console.log(p.phase),
 });
 
@@ -50,8 +50,8 @@ blocked waiting for a support file.
 
 Two build artifacts have to be reachable from the page:
 
-- `tectonic/tectonic_wasm.wasm` — the engine, from `tools/wasm/build.sh`
-- `tectonic/manifest.json` and `tectonic/files/` — the support pack, from
+- `texyon/texyon_wasm.wasm` — the engine, from `tools/wasm/build.sh`
+- `texyon/manifest.json` and `texyon/files/` — the support pack, from
   `tools/wasm/build-assets.sh`
 
 Optionally a third, and it is what makes arbitrary `\usepackage` work:
@@ -98,7 +98,7 @@ Two consequences worth knowing:
 
 ## API
 
-### `TectonicEngine.create(options?)`
+### `TexyonEngine.create(options?)`
 
 Starts the engine. Resolves once the module is instantiated and the format dump
 is loaded — support files keep arriving in the background afterwards.

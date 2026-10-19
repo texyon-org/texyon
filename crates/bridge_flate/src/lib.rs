@@ -49,7 +49,7 @@ impl From<Status> for FlateResult {
 ///
 /// This is a C API function, so it is unsafe.
 #[no_mangle]
-pub unsafe extern "C" fn tectonic_flate_compress(
+pub unsafe extern "C" fn texyon_flate_compress(
     output_ptr: *mut u8,
     output_len: *mut u64,
     input_ptr: *const u8,
@@ -80,7 +80,7 @@ pub unsafe extern "C" fn tectonic_flate_compress(
 ///
 /// This is a C API function, so it is unsafe.
 #[no_mangle]
-pub unsafe extern "C" fn tectonic_flate_decompress(
+pub unsafe extern "C" fn texyon_flate_decompress(
     output_ptr: *mut u8,
     output_len: *mut u64,
     input_ptr: *const u8,
@@ -141,7 +141,7 @@ impl Decompressor<'_> {
 ///
 /// This is a C API function, so it is unsafe.
 #[no_mangle]
-pub unsafe extern "C" fn tectonic_flate_new_decompressor(
+pub unsafe extern "C" fn texyon_flate_new_decompressor(
     input_ptr: *const u8,
     input_len: u64,
 ) -> *mut libc::c_void {
@@ -170,7 +170,7 @@ pub unsafe extern "C" fn tectonic_flate_new_decompressor(
 ///
 /// This is a C API function, so it is unsafe.
 #[no_mangle]
-pub unsafe extern "C" fn tectonic_flate_decompress_chunk(
+pub unsafe extern "C" fn texyon_flate_decompress_chunk(
     handle: *mut libc::c_void,
     output_ptr: *mut u8,
     output_len: *mut u64,
@@ -194,7 +194,7 @@ pub unsafe extern "C" fn tectonic_flate_decompress_chunk(
 ///
 /// This is a C API function, so it is unsafe.
 #[no_mangle]
-pub unsafe extern "C" fn tectonic_flate_free_decompressor(handle: *mut libc::c_void) {
+pub unsafe extern "C" fn texyon_flate_free_decompressor(handle: *mut libc::c_void) {
     let _dc = Box::from_raw(handle.cast::<Decompressor>());
     // The box will be freed as we exit.
 }

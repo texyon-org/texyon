@@ -4,24 +4,24 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use tectonic::engines::tex::{
+use texyon::engines::tex::{
     EngineCancellation, EnginePreviewConfig, IncrementalXeTeXSession, SourceSnapshot, SyncIndex,
     SyncRect, TexEngine, TexOutcome,
 };
-use tectonic::io::testing::SingleInputFileIo;
-use tectonic::io::{IoProvider, IoStack, MemoryIo};
-use tectonic::live_preview::{
+use texyon::io::testing::SingleInputFileIo;
+use texyon::io::{IoProvider, IoStack, MemoryIo};
+use texyon::live_preview::{
     AssembledDocument, DocumentAssembler, DocumentFragment, DocumentRoot, JsonlFrameSink,
     PreviewWorkerProcessor, ResidentEngineOutput, ResidentEngineSupport, ResidentPreviewProcessor,
     ResidentXeTeX, SourceSet, WorkerRun,
 };
-use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
-use tectonic_io_base::stdstreams::BufferedPrimaryIo;
-use tectonic_preview_protocol::{FramePhase, ProtocolLimits, RequestSeq, ServerEvent, SourceFile};
-use tectonic_preview_render::{
+use texyon_bridge_core::{CoreBridgeLauncher, MinimalDriver};
+use texyon_io_base::stdstreams::BufferedPrimaryIo;
+use texyon_preview_protocol::{FramePhase, ProtocolLimits, RequestSeq, ServerEvent, SourceFile};
+use texyon_preview_render::{
     NullBackend, RenderError, Resource, ResourceKind, ResourceProvider, ResourceRequest,
 };
-use tectonic_status_base::NoopStatusBackend;
+use texyon_status_base::NoopStatusBackend;
 
 #[path = "util/mod.rs"]
 mod util;

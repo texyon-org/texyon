@@ -8,8 +8,8 @@ use std::ffi::{CStr, CString};
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::ptr;
-use tectonic_bridge_graphite2 as gr;
-use tectonic_bridge_harfbuzz as hb;
+use texyon_bridge_graphite2 as gr;
+use texyon_bridge_harfbuzz as hb;
 
 /// A font that an engine owns or borrows.
 enum FontSlot<'a> {

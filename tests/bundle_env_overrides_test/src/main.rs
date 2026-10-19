@@ -1,6 +1,6 @@
 #![doc = include_str!("../README.md")]
 
-use tectonic_bundles::get_fallback_bundle_url;
+use texyon_bundles::get_fallback_bundle_url;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

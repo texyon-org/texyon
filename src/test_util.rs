@@ -30,14 +30,14 @@
 //! they are what you'd actually want in your own code, except we have a hidden
 //! one-liner when needed:
 //!
-//! # tectonic::test_util::activate_test_mode_augmented(env!("CARGO_MANIFEST_DIR"));
+//! # texyon::test_util::activate_test_mode_augmented(env!("CARGO_MANIFEST_DIR"));
 //!
 //! That call simultaneously tells this module where to find the test assets,
 //! and also activates the test mode.
 
 use std::{env, ffi::OsStr, path::PathBuf};
-use tectonic_bundles::{dir::DirBundle, Bundle};
-use tectonic_errors::Result;
+use texyon_bundles::{dir::DirBundle, Bundle};
+use texyon_errors::Result;
 
 use crate::{
     digest::DigestData,
@@ -47,7 +47,7 @@ use crate::{
 
 /// The name of the environment variable that the test code will consult to
 /// figure out where to find the testing resource files.
-pub const TEST_ROOT_ENV_VAR: &str = "TECTONIC_INTERNAL_TEST_ROOT";
+pub const TEST_ROOT_ENV_VAR: &str = "TEXYON_INTERNAL_TEST_ROOT";
 
 /// Set `TEST_ROOT_ENV_VAR` in the current process to the specified value,
 /// with a path element "tests" appended. If the variable was previously
@@ -82,7 +82,7 @@ pub fn maybe_activate_test_mode() {
 /// convenient doctests — you can secretly run them in the special test setup
 /// with a one-liner:
 ///
-/// # tectonic::test_util::activate_test_mode_augmented(env!("CARGO_MANIFEST_DIR"));
+/// # texyon::test_util::activate_test_mode_augmented(env!("CARGO_MANIFEST_DIR"));
 pub fn activate_test_mode_augmented<V: AsRef<OsStr>>(root: V) {
     set_test_root_augmented(root);
     maybe_activate_test_mode();

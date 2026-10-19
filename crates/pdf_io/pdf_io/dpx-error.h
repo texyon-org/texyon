@@ -23,7 +23,7 @@
 #ifndef _ERROR_H_
 #define _ERROR_H_
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 
 #include <assert.h>
 #include <stdio.h>

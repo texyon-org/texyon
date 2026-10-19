@@ -3,7 +3,7 @@
 
 //! Commands without primitives.
 
-use tectonic_errors::prelude::*;
+use texyon_errors::prelude::*;
 
 use super::{Command, CommandArgument, CommandBehavior, CommandPrimitive};
 use crate::{format::Format, symbols::SymbolTable, FormatVersion};

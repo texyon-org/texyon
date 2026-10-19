@@ -33,7 +33,7 @@
 #include <string.h>
 #include <sys/types.h>
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 #include "dpx-cff.h"
 #include "dpx-cff_dict.h"
 #include "dpx-cff_types.h"

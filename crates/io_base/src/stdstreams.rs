@@ -7,8 +7,8 @@ use std::{
     io::{stdin, stdout, Cursor, Read, Seek, SeekFrom},
     rc::Rc,
 };
-use tectonic_errors::Result;
-use tectonic_status_base::StatusBackend;
+use texyon_errors::Result;
+use texyon_status_base::StatusBackend;
 
 use super::{InputFeatures, InputHandle, InputOrigin, IoProvider, OpenResult, OutputHandle};
 

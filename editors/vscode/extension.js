@@ -28,11 +28,11 @@ class PreviewSession {
     this.nextMutation = 0n;
     this.mutationStarted = new Map();
 
-    const executable = configuration.get("executable", "tectonic");
+    const executable = configuration.get("executable", "texyon");
     const format = configuration.get("format", "latex");
     const args = ["-X", "preview", "--format", format];
     this.output.appendLine(`[preview] spawning ${executable} ${args.join(" ")}`);
-    this.setStatus("$(sync~spin) tectonic: starting…");
+    this.setStatus("$(sync~spin) texyon: starting…");
 
     this.panel = new PreviewPanel(
       context,
@@ -54,13 +54,13 @@ class PreviewSession {
       if (event.contentChanges.length === 0 || this.disposed || !this.initialized) return;
       if (event.document === this.document) {
         this.send({ type: "replace", text: event.document.getText() });
-        this.setStatus("$(sync~spin) tectonic: compiling…");
+        this.setStatus("$(sync~spin) texyon: compiling…");
         return;
       }
       const logical = this.childPath(event.document);
       if (logical !== null) {
         this.send({ type: "replace", path: logical, text: event.document.getText() });
-        this.setStatus("$(sync~spin) tectonic: compiling…");
+        this.setStatus("$(sync~spin) texyon: compiling…");
       }
     }));
   }
@@ -100,7 +100,7 @@ class PreviewSession {
       children
     });
     this.initialized = true;
-    this.setStatus("$(sync~spin) tectonic: compiling…");
+    this.setStatus("$(sync~spin) texyon: compiling…");
   }
 
   send(message) {
@@ -157,26 +157,26 @@ class PreviewSession {
           this.output.appendLine(`[preview] unsupported renderer operations: ${JSON.stringify(event.unsupported_pages)}`);
         }
         this.setStatus(event.outcome === "error"
-          ? "$(warning) tectonic: source error (kept coherent preview)"
+          ? "$(warning) texyon: source error (kept coherent preview)"
           : Array.isArray(event.unsupported_pages) && event.unsupported_pages.length > 0
-            ? "$(warning) tectonic: preview may omit unsupported content"
-          : `$(check) tectonic: ${event.page_count} page${event.page_count === 1 ? "" : "s"}`);
+            ? "$(warning) texyon: preview may omit unsupported content"
+          : `$(check) texyon: ${event.page_count} page${event.page_count === 1 ? "" : "s"}`);
         break;
       case "cancelled":
         this.mutationStarted.delete(event.applied_request_seq);
         break;
       case "stopped":
-        this.setStatus("$(debug-pause) tectonic: stopped; edit to resume");
+        this.setStatus("$(debug-pause) texyon: stopped; edit to resume");
         break;
       case "aborted":
         this.mutationStarted.delete(event.applied_request_seq);
         this.output.appendLine(`[preview] compile aborted:\n${event.log_tail || ""}`);
-        this.setStatus("$(warning) tectonic: source error (kept last preview)");
+        this.setStatus("$(warning) texyon: source error (kept last preview)");
         break;
       case "rejected":
         this.mutationStarted.delete(event.request_seq);
         this.output.appendLine(`[preview] request rejected: ${event.reason}`);
-        this.setStatus("$(warning) tectonic: edit rejected");
+        this.setStatus("$(warning) texyon: edit rejected");
         break;
       case "forward_search_result":
         this.panel.showForwardSearch(event.result || null);
@@ -269,8 +269,8 @@ class PreviewSession {
     if (this.disposed) return;
     this.output.appendLine(`[preview] ${message}`);
     this.panel.showError(message);
-    this.setStatus("$(error) tectonic: preview failed");
-    vscode.window.showErrorMessage(`Tectonic preview: ${message}`);
+    this.setStatus("$(error) texyon: preview failed");
+    vscode.window.showErrorMessage(`TeXyon preview: ${message}`);
     this.dispose(false, true);
   }
 
@@ -279,7 +279,7 @@ class PreviewSession {
     const detail = signal ? `signal ${signal}` : `exit ${code}`;
     this.output.appendLine(`[preview] server stopped (${detail})`);
     this.panel.showError(`Preview server stopped (${detail}). Start a new preview to recover.`);
-    this.setStatus(code === 0 ? "tectonic: stopped" : "$(error) tectonic: server died");
+    this.setStatus(code === 0 ? "texyon: stopped" : "$(error) texyon: server died");
     this.dispose(false, true);
   }
 
@@ -287,7 +287,7 @@ class PreviewSession {
     if (this.disposed) return;
     this.disposed = true;
     if (sendShutdown) this.sendRawShutdown();
-    if (sendShutdown) this.setStatus("tectonic: stopped");
+    if (sendShutdown) this.setStatus("texyon: stopped");
     if (this.lines) this.lines.close();
     for (const disposable of this.disposables.splice(0)) disposable.dispose();
     if (!retainPanel) this.panel.dispose();
@@ -308,30 +308,30 @@ class PreviewSession {
 }
 
 function activate(context) {
-  const output = vscode.window.createOutputChannel("Tectonic Live Preview");
+  const output = vscode.window.createOutputChannel("TeXyon Live Preview");
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 20);
-  status.command = "tectonicPreview.start";
+  status.command = "texyon.start";
   context.subscriptions.push(output, status);
 
-  context.subscriptions.push(vscode.commands.registerCommand("tectonicPreview.start", () => {
+  context.subscriptions.push(vscode.commands.registerCommand("texyon.start", () => {
     const document = vscode.window.activeTextEditor && vscode.window.activeTextEditor.document;
     if (!document || document.isUntitled || document.uri.scheme !== "file") {
       vscode.window.showErrorMessage("Open a saved TeX document before starting live preview.");
       return;
     }
     if (activeSession) activeSession.dispose(true);
-    const configuration = vscode.workspace.getConfiguration("tectonicPreview");
+    const configuration = vscode.workspace.getConfiguration("texyon");
     activeSession = new PreviewSession(context, document, configuration, output, status, (closed) => {
       if (activeSession === closed) activeSession = null;
     });
   }));
-  context.subscriptions.push(vscode.commands.registerCommand("tectonicPreview.stop", () => {
+  context.subscriptions.push(vscode.commands.registerCommand("texyon.stop", () => {
     if (activeSession) activeSession.dispose(true);
   }));
-  context.subscriptions.push(vscode.commands.registerCommand("tectonicPreview.cancel", () => {
+  context.subscriptions.push(vscode.commands.registerCommand("texyon.cancel", () => {
     if (activeSession) activeSession.cancel();
   }));
-  context.subscriptions.push(vscode.commands.registerCommand("tectonicPreview.forwardSearch", () => {
+  context.subscriptions.push(vscode.commands.registerCommand("texyon.forwardSearch", () => {
     const editor = vscode.window.activeTextEditor;
     if (!activeSession || !activeSession.forwardSearch(editor)) {
       vscode.window.showInformationMessage("Start a SyncTeX-capable preview and place the cursor in one of its TeX sources.");

@@ -1,13 +1,13 @@
 use clap::Parser;
 use std::env;
 use std::path::PathBuf;
-use tectonic::{
+use texyon::{
     config::PersistentConfig, ctry, docmodel::WorkspaceCreatorExt, errors::Result, tt_note,
 };
-use tectonic_docmodel::workspace::WorkspaceCreator;
-use tectonic_status_base::StatusBackend;
+use texyon_docmodel::workspace::WorkspaceCreator;
+use texyon_status_base::StatusBackend;
 
-use crate::v2cli::{CommandCustomizations, TectonicCommand};
+use crate::v2cli::{CommandCustomizations, TexyonCommand};
 
 /// `init`: Initialize a document project in the current directory.
 #[derive(Debug, Eq, PartialEq, Parser)]
@@ -17,7 +17,7 @@ pub struct InitCommand {
     bundle: Option<String>,
 }
 
-impl TectonicCommand for InitCommand {
+impl TexyonCommand for InitCommand {
     fn customize(&self, _cc: &mut CommandCustomizations) {}
 
     fn execute(self, config: PersistentConfig, status: &mut dyn StatusBackend) -> Result<i32> {
@@ -31,7 +31,7 @@ impl TectonicCommand for InitCommand {
         let wc = WorkspaceCreator::new(path);
         ctry!(
             wc.create_defaulted(&config, self.bundle);
-            "failed to create the new Tectonic workspace"
+            "failed to create the new TeXyon workspace"
         );
         Ok(0)
     }
@@ -49,7 +49,7 @@ pub struct NewCommand {
     bundle: Option<String>,
 }
 
-impl TectonicCommand for NewCommand {
+impl TexyonCommand for NewCommand {
     fn customize(&self, _cc: &mut CommandCustomizations) {}
 
     fn execute(self, config: PersistentConfig, status: &mut dyn StatusBackend) -> Result<i32> {
@@ -62,7 +62,7 @@ impl TectonicCommand for NewCommand {
         let wc = WorkspaceCreator::new(self.path);
         ctry!(
             wc.create_defaulted(&config, self.bundle);
-            "failed to create the new Tectonic workspace"
+            "failed to create the new TeXyon workspace"
         );
         Ok(0)
     }

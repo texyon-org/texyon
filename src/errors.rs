@@ -20,7 +20,7 @@ use std::{
     str,
     sync::{Arc, Mutex, Weak},
 };
-use tectonic_errors::Error as NewError;
+use texyon_errors::Error as NewError;
 use zip::result::ZipError;
 
 cfg_if::cfg_if! {
@@ -71,7 +71,7 @@ error_chain! {
         QuickXml(quick_xml::Error);
         Time(std::time::SystemTimeError);
         Utf8(str::Utf8Error);
-        Xdv(tectonic_xdv::XdvError);
+        Xdv(texyon_xdv::XdvError);
         Zip(ZipError);
     }
 

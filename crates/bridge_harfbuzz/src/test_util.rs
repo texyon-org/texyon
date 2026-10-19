@@ -5,7 +5,7 @@ use std::ffi::CString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
-use tectonic_bridge_freetype2 as ft;
+use texyon_bridge_freetype2 as ft;
 
 fn assets_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))

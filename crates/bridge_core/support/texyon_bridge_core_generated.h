@@ -1,5 +1,5 @@
-#ifndef TECTONIC_BRIDGE_CORE_GENERATED_H
-#define TECTONIC_BRIDGE_CORE_GENERATED_H
+#ifndef TEXYON_BRIDGE_CORE_GENERATED_H
+#define TEXYON_BRIDGE_CORE_GENERATED_H
 
 #include <stdarg.h>
 #include <stdbool.h>
@@ -87,7 +87,7 @@ typedef enum {
   /**
    * The Tectonic primary input file.
    */
-  TTBC_FILE_FORMAT_TECTONIC_PRIMARY = 59,
+  TTBC_FILE_FORMAT_TEXYON_PRIMARY = 59,
   /**
    * A TeX language file.
    */
@@ -355,4 +355,4 @@ int ttbc_shell_escape(ttbc_state_t *es, const uint16_t *cmd, size_t len);
 }  // extern "C"
 #endif  // __cplusplus
 
-#endif  /* TECTONIC_BRIDGE_CORE_GENERATED_H */
+#endif  /* TEXYON_BRIDGE_CORE_GENERATED_H */

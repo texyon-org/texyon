@@ -1,4 +1,4 @@
-//! The primitive-command catalog, in `tectonic_xetex_format`'s order. Order
+//! The primitive-command catalog, in `texyon_xetex_format`'s order. Order
 //! matters: it fixes the hash layout and the format.
 
 use crate::cmd::{

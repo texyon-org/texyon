@@ -10,12 +10,12 @@ use std::{
     io::{self, BufReader, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
-use tectonic_errors::Result;
-use tectonic_status_base::{tt_warning, StatusBackend};
+use texyon_errors::Result;
+use texyon_status_base::{tt_warning, StatusBackend};
 
 use super::{
     try_open_file, InputFeatures, InputHandle, InputOrigin, IoProvider, OpenResult, OutputHandle,
-    TectonicIoError,
+    TexyonIoError,
 };
 
 /// FilesystemPrimaryInputIo is an I/O provider that provides the TeX "primary input"
@@ -112,7 +112,7 @@ impl FilesystemIo {
         let path = Path::new(name);
 
         if path.is_absolute() && !self.absolute_allowed {
-            return Err(TectonicIoError::PathForbidden(path.to_owned()).into());
+            return Err(TexyonIoError::PathForbidden(path.to_owned()).into());
         }
 
         let mut combined = PathBuf::from(&self.root);

@@ -10,7 +10,7 @@ fn main() {
     if std::env::var_os("CARGO_FEATURE_BACKEND_MUPDF").is_none() {
         return;
     }
-    if tectonic_dep_support::target_is_wasm() {
+    if texyon_dep_support::target_is_wasm() {
         build_wasm();
         return;
     }
@@ -31,7 +31,7 @@ fn main() {
 fn build_wasm() {
     println!("cargo:rerun-if-changed=src/backend_mupdf/shim.c");
 
-    let mupdf = tectonic_dep_support::wasm_vendor_dir("mupdf");
+    let mupdf = texyon_dep_support::wasm_vendor_dir("mupdf");
     let build = mupdf.join("build/release");
     let renames = mupdf.join("tectonic-pdf-rename.h");
 
@@ -69,9 +69,9 @@ fn build_wasm() {
 
 fn build_linux() {
     println!("cargo:rerun-if-changed=src/backend_mupdf/shim.c");
-    println!("cargo:rerun-if-env-changed=TECTONIC_MUPDF_INCLUDE");
-    println!("cargo:rerun-if-env-changed=TECTONIC_MUPDF_LIB");
-    let include = std::env::var_os("TECTONIC_MUPDF_INCLUDE")
+    println!("cargo:rerun-if-env-changed=TEXYON_MUPDF_INCLUDE");
+    println!("cargo:rerun-if-env-changed=TEXYON_MUPDF_LIB");
+    let include = std::env::var_os("TEXYON_MUPDF_INCLUDE")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/usr/include"));
     cc::Build::new()
@@ -79,7 +79,7 @@ fn build_linux() {
         .include(include)
         .compile("preview_render_mupdf_shim");
 
-    let archive = std::env::var_os("TECTONIC_MUPDF_LIB")
+    let archive = std::env::var_os("TEXYON_MUPDF_LIB")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/usr/lib/libmupdf.a"));
     assert!(
@@ -105,8 +105,8 @@ fn build_linux() {
 
 fn build_windows_msvc() {
     println!("cargo:rerun-if-changed=src/backend_mupdf/shim.c");
-    println!("cargo:rerun-if-env-changed=TECTONIC_MUPDF_NM");
-    println!("cargo:rerun-if-env-changed=TECTONIC_MUPDF_OBJCOPY");
+    println!("cargo:rerun-if-env-changed=TEXYON_MUPDF_NM");
+    println!("cargo:rerun-if-env-changed=TEXYON_MUPDF_OBJCOPY");
 
     let library = vcpkg::Config::new()
         .cargo_metadata(false)
@@ -132,8 +132,8 @@ fn build_windows_msvc() {
         archive,
         &localized,
         &out,
-        llvm_tool("TECTONIC_MUPDF_NM", "llvm-nm"),
-        llvm_tool("TECTONIC_MUPDF_OBJCOPY", "llvm-objcopy"),
+        llvm_tool("TEXYON_MUPDF_NM", "llvm-nm"),
+        llvm_tool("TEXYON_MUPDF_OBJCOPY", "llvm-objcopy"),
     );
 
     println!("cargo:rustc-link-search=native={}", out.display());
@@ -198,7 +198,7 @@ fn localize_pdf_symbols(
     assert!(!symbols.is_empty(), "MuPDF archive has no pdf_* symbols");
     let map = symbols
         .into_iter()
-        .map(|symbol| format!("{symbol} tectonic_preview_{symbol}\n"))
+        .map(|symbol| format!("{symbol} texyon_preview_{symbol}\n"))
         .collect::<String>();
     let map_path = out.join("mupdf-symbols.txt");
     std::fs::write(&map_path, map).unwrap();

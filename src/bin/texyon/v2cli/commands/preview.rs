@@ -6,7 +6,7 @@ use std::{
 };
 
 use clap::Parser;
-use tectonic::{
+use texyon::{
     config::PersistentConfig,
     engines::tex::EnginePreviewConfig,
     errors::{ErrorKind, Result},
@@ -19,10 +19,10 @@ use tectonic::{
     status::{NoopStatusBackend, StatusBackend},
     FORMAT_SERIAL,
 };
-use tectonic_preview_protocol::ProtocolLimits;
-use tectonic_preview_render::MupdfBackend;
+use texyon_preview_protocol::ProtocolLimits;
+use texyon_preview_render::MupdfBackend;
 
-use crate::v2cli::{CommandCustomizations, TectonicCommand};
+use crate::v2cli::{CommandCustomizations, TexyonCommand};
 
 /// Serve one live-preview process over stdio.
 #[derive(Debug, Eq, PartialEq, Parser)]
@@ -52,7 +52,7 @@ pub struct PreviewCommand {
     verify_rewinds: bool,
 }
 
-impl TectonicCommand for PreviewCommand {
+impl TexyonCommand for PreviewCommand {
     fn customize(&self, customizations: &mut CommandCustomizations) {
         // Protocol stdout must contain JSON Lines and nothing else.
         customizations.always_stderr = true;

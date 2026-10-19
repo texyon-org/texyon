@@ -6,7 +6,7 @@
 
 use crate::errors::DefinitelySame;
 
-pub use tectonic_engine_xetex::{
+pub use texyon_engine_xetex::{
     EngineCancellation, EngineFrame, EnginePreviewConfig, IncrementalXeTeXSession, PageExecution,
     PageRange, SourceError, SourceIdentity, SourcePath, SourceRevision, SourceSnapshot,
     SourceUpdate, SyncIndex, SyncRect, TexEngine, TexOutcome,

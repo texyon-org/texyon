@@ -11,7 +11,7 @@
 //! implementation:
 //!
 //! ```rust
-//! let engine = tectonic_xetex_format::engine::Engine::default();
+//! let engine = texyon_xetex_format::engine::Engine::default();
 //! engine.emit_c_header(std::io::stdout()).unwrap();
 //! ```
 //!
@@ -21,8 +21,8 @@
 //!
 //! ```no_run
 //! use std::{io::Read, fs::File};
-//! use tectonic_errors::prelude::*;
-//! use tectonic_xetex_format::format::Format;
+//! use texyon_errors::prelude::*;
+//! use texyon_xetex_format::format::Format;
 //!
 //! # fn main() -> Result<()> {
 //! let mut file = File::open("path-to-format-file.fmt")?;

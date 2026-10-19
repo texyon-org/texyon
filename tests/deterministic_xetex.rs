@@ -3,11 +3,11 @@
 use std::collections::HashSet;
 use std::time::{Duration, SystemTime};
 
-use tectonic::io::testing::SingleInputFileIo;
-use tectonic::io::{FilesystemIo, FilesystemPrimaryInputIo, IoProvider, IoStack, MemoryIo};
-use tectonic::TexEngine;
-use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
-use tectonic_status_base::NoopStatusBackend;
+use texyon::io::testing::SingleInputFileIo;
+use texyon::io::{FilesystemIo, FilesystemPrimaryInputIo, IoProvider, IoStack, MemoryIo};
+use texyon::TexEngine;
+use texyon_bridge_core::{CoreBridgeLauncher, MinimalDriver};
+use texyon_status_base::NoopStatusBackend;
 
 #[path = "util/mod.rs"]
 mod util;

@@ -8,12 +8,12 @@ use std::{
     time::SystemTime,
 };
 
-use tectonic_bundles::Bundle;
-use tectonic_io_base::{IoProvider, OpenResult};
-use tectonic_preview_render::{
+use texyon_bundles::Bundle;
+use texyon_io_base::{IoProvider, OpenResult};
+use texyon_preview_render::{
     RenderError, Resource, ResourceKind, ResourceProvider, ResourceRequest,
 };
-use tectonic_status_base::NoopStatusBackend;
+use texyon_status_base::NoopStatusBackend;
 
 /// Worker-local shared ownership of one support bundle.
 #[derive(Clone)]

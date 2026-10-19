@@ -23,7 +23,7 @@
 #ifndef _SYSTEM_H_
 #define _SYSTEM_H_
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 
 #define FOPEN_R_MODE "r"
 #define FOPEN_RBIN_MODE "rb"
@@ -41,6 +41,6 @@
 #include <dirent.h>
 #endif
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 
 #endif /* _SYSTEM_H_ */

@@ -5,7 +5,7 @@
 //!
 //! These backends subsume the functionality of programs such as `bibtex`,
 //! `xetex`, and `xdvipdfmx`. This module is historical — the API for each of
-//! these is defined in crates with names like `tectonic_engine_xetex`.
+//! these is defined in crates with names like `texyon_engine_xetex`.
 
 // Public sub-modules and reexports.
 

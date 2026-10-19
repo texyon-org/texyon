@@ -23,7 +23,7 @@
 #ifndef _PDFDOC_H_
 #define _PDFDOC_H_
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 
 #include <stdbool.h>
 

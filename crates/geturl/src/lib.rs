@@ -22,7 +22,7 @@
 
 use cfg_if::cfg_if;
 use std::io::Read;
-use tectonic_errors::Result;
+use texyon_errors::Result;
 
 /// A trait for reading byte ranges from an HTTP resource.
 pub trait RangeReader {

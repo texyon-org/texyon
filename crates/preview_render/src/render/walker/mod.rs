@@ -7,7 +7,7 @@ mod specials;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
-use tectonic_xdv::FileType;
+use texyon_xdv::FileType;
 
 use crate::color::Color;
 use crate::fontmap::FontMap;

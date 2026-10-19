@@ -7,9 +7,9 @@
 
 use clap::Parser;
 use std::path::{Path, PathBuf};
-use tectonic_bridge_core::{SecuritySettings, SecurityStance};
+use texyon_bridge_core::{SecuritySettings, SecurityStance};
 
-use tectonic::{
+use texyon::{
     config::{maybe_return_test_bundle, PersistentConfig},
     driver::{OutputFormat, PassSetting, ProcessingSession, ProcessingSessionBuilder},
     errmsg,
@@ -19,7 +19,7 @@ use tectonic::{
     unstable_opts::{UnstableArg, UnstableOptions},
 };
 
-use tectonic_bundles::detect_bundle;
+use texyon_bundles::detect_bundle;
 
 #[derive(Debug, Parser)]
 pub struct CompileOptions {
@@ -90,7 +90,7 @@ pub struct CompileOptions {
 
 // TODO: deprecate v1 interface and move this to v2cli/commands
 
-//impl TectonicCommand for CompileOptions {
+//impl TexyonCommand for CompileOptions {
 impl CompileOptions {
     pub fn execute(self, config: PersistentConfig, status: &mut dyn StatusBackend) -> Result<i32> {
         let unstable = UnstableOptions::from_unstable_args(self.unstable.into_iter());
@@ -98,7 +98,7 @@ impl CompileOptions {
         // Default to allowing insecure since it would be super duper annoying
         // to have to pass `--trusted` every time to build a personal document
         // that uses shell-escape! This default can be overridden by setting the
-        // environment variable TECTONIC_UNTRUSTED_MODE to a nonempty value.
+        // environment variable TEXYON_UNTRUSTED_MODE to a nonempty value.
         let stance = if self.untrusted {
             SecurityStance::DisableInsecures
         } else {

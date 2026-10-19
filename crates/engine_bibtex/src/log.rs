@@ -13,7 +13,7 @@ use crate::{
     ASCIICode, Bibtex, BibtexError, CiteNumber, FieldLoc, HashPointer,
 };
 use std::{ffi::CStr, io::Write, slice};
-use tectonic_io_base::OutputHandle;
+use texyon_io_base::OutputHandle;
 
 pub trait AsBytes {
     fn as_bytes(&self) -> &[u8];

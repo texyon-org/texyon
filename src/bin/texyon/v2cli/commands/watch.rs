@@ -1,8 +1,8 @@
 use clap::Parser;
 use std::time::Duration;
 use std::{env, path::PathBuf, sync::Arc};
-use tectonic::{config::PersistentConfig, errors::Result, tt_error};
-use tectonic_status_base::StatusBackend;
+use texyon::{config::PersistentConfig, errors::Result, tt_error};
+use texyon_status_base::StatusBackend;
 use tokio::runtime;
 use watchexec::command::Program;
 use watchexec::{
@@ -14,7 +14,7 @@ use watchexec_signals::Signal;
 use watchexec_supervisor::job::{CommandState, Job, Ticket};
 use watchexec_supervisor::ProcessEnd;
 
-use crate::v2cli::{CommandCustomizations, TectonicCommand};
+use crate::v2cli::{CommandCustomizations, TexyonCommand};
 
 /// Obtain the executable name without a prefix if the executable is available in the PATH, e.g.
 /// most cases. Otherwise, use the full path e.g. in development.
@@ -199,7 +199,7 @@ impl WatchCommand {
     }
 }
 
-impl TectonicCommand for WatchCommand {
+impl TexyonCommand for WatchCommand {
     fn customize(&self, _cc: &mut CommandCustomizations) {}
 
     fn execute(self, _config: PersistentConfig, status: &mut dyn StatusBackend) -> Result<i32> {

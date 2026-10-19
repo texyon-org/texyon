@@ -21,7 +21,7 @@ jobs:
       - name: "cranko release-workflow apply-versions"
         run: cranko release-workflow apply-versions
       - name: "Mini-build to freshen Cargo.lock"
-        run: cargo build -p tectonic_cfg_support
+        run: cargo build -p texyon_cfg_support
       - name: Generate release commit
         run: |
           git add .

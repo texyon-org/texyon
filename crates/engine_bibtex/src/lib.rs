@@ -43,8 +43,8 @@ use std::{
     ffi::{CStr, CString},
     io::Write,
 };
-use tectonic_bridge_core::{CoreBridgeLauncher, CoreBridgeState, FileFormat, OutputId};
-use tectonic_errors::prelude::*;
+use texyon_bridge_core::{CoreBridgeLauncher, CoreBridgeState, FileFormat, OutputId};
+use texyon_errors::prelude::*;
 
 pub(crate) mod auxi;
 pub(crate) mod bibs;

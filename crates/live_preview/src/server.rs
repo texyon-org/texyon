@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use tectonic_preview_protocol::{
+use texyon_preview_protocol::{
     read_request, ClientRequest, ProtocolError, ProtocolLimits, ServerEvent, PROTOCOL_VERSION,
 };
 
@@ -372,13 +372,13 @@ mod tests {
     use std::convert::Infallible;
     use std::io;
 
-    use tectonic_preview_protocol::{
+    use texyon_preview_protocol::{
         encode_event, FrameId, FramePhase, OperationMetrics, PageSize, RequestSeq, UpdateOutcome,
     };
 
     use super::*;
     use crate::{AcceptedSourceSnapshot, WorkerRun};
-    use tectonic_engine_xetex::EngineCancellation;
+    use texyon_engine_xetex::EngineCancellation;
 
     struct WireProcessor<W> {
         writer: SharedJsonlWriter<W>,
@@ -427,7 +427,7 @@ mod tests {
             PublishedFrame {
                 frame_id: self.next_frame,
                 outcome: UpdateOutcome::Complete,
-                tex_outcome: tectonic_engine_xetex::TexOutcome::Spotless,
+                tex_outcome: texyon_engine_xetex::TexOutcome::Spotless,
                 tail_pending: false,
             }
         }

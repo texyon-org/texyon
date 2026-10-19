@@ -12,13 +12,13 @@
 //! build first:
 //!
 //! ```text
-//! cargo run -p tectonic -- tests/latex_docs/align_table.tex
+//! cargo run -p texyon -- tests/latex_docs/align_table.tex
 //! ```
 //!
 //! # Blessing (updating goldens)
 //!
 //! ```text
-//! TECTONIC_BLESS=1 cargo test -p tectonic --test latex_goldens
+//! TEXYON_BLESS=1 cargo test -p texyon --test latex_goldens
 //! ```
 
 use sha2::{Digest, Sha256};
@@ -46,15 +46,15 @@ fn hashes_dir() -> PathBuf {
 }
 
 fn bless_mode() -> bool {
-    env::var("TECTONIC_BLESS")
+    env::var("TEXYON_BLESS")
         .map(|v| v == "1")
         .unwrap_or(false)
 }
 
-/// Return the path to the `tectonic` binary built by Cargo.
-fn tectonic_bin() -> PathBuf {
+/// Return the path to the `texyon` binary built by Cargo.
+fn texyon_bin() -> PathBuf {
     util::cargo_dir()
-        .join("tectonic")
+        .join("texyon")
         .with_extension(env::consts::EXE_EXTENSION)
 }
 
@@ -62,11 +62,11 @@ fn tectonic_bin() -> PathBuf {
 /// `None` if the bundle is not cached (test should be skipped).
 fn compile_and_hash(tex_path: &Path) -> Option<String> {
     let tempdir = tempfile::Builder::new()
-        .prefix("tectonic_latex_golden")
+        .prefix("texyon_latex_golden")
         .tempdir()
         .expect("creating tempdir");
 
-    let bin = tectonic_bin();
+    let bin = texyon_bin();
     if !bin.exists() {
         // Binary not built yet — skip.
         return None;
@@ -136,13 +136,13 @@ fn run_case(stem: &str) {
                 if actual_hash != expected {
                     panic!(
                         "{stem}: XDV hash mismatch!\n  expected: {expected}\n  actual:   {actual_hash}\n  \
-                         Run with TECTONIC_BLESS=1 to update the golden."
+                         Run with TEXYON_BLESS=1 to update the golden."
                     );
                 }
             }
             Err(_) => {
                 eprintln!(
-                    "SKIP {stem}: no golden hash yet. Run with TECTONIC_BLESS=1 to generate."
+                    "SKIP {stem}: no golden hash yet. Run with TEXYON_BLESS=1 to generate."
                 );
             }
         }

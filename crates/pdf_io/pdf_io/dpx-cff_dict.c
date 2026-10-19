@@ -31,7 +31,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 #include "dpx-error.h"
 #include "dpx-mem.h"
 

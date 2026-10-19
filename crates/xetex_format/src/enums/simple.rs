@@ -4,7 +4,7 @@
 //! "Simple" enumerations have variants and values that do not depend on the
 //! engine version. They declare symbols for each of their variants.
 
-use tectonic_errors::prelude::*;
+use texyon_errors::prelude::*;
 
 use crate::symbols::{DeclaresSymbols, HasSymbol, SymbolCategory, SymbolTable};
 

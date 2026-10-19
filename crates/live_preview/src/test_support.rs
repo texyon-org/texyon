@@ -2,10 +2,10 @@
 
 use std::path::{Path, PathBuf};
 
-use tectonic_bundles::{dir::DirBundle, Bundle};
-use tectonic_errors::Result;
-use tectonic_io_base::{digest::DigestData, InputHandle, IoProvider, OpenResult};
-use tectonic_status_base::StatusBackend;
+use texyon_bundles::{dir::DirBundle, Bundle};
+use texyon_errors::Result;
+use texyon_io_base::{digest::DigestData, InputHandle, IoProvider, OpenResult};
+use texyon_status_base::StatusBackend;
 
 /// Path to a file in the workspace's shared `tests/` tree.
 pub fn asset_path(parts: &[&str]) -> PathBuf {

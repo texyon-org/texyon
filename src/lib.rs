@@ -31,13 +31,13 @@
 //! structured and better documented than this crate, which grew somewhat
 //! organically. The foundational crates are:
 //!
-//! - [`tectonic_errors`](https://docs.rs/tectonic_errors) for core error
+//! - [`texyon_errors`](https://docs.rs/texyon_errors) for core error
 //!   handing types.
-//! - [`tectonic_status_base`](https://docs.rs/tectonic_status_base) for a basic
+//! - [`texyon_status_base`](https://docs.rs/texyon_status_base) for a basic
 //!   user-facing status-reporting framework.
-//! - [`tectonic_io_base`](https://docs.rs/tectonic_io_base) for the I/O
+//! - [`texyon_io_base`](https://docs.rs/texyon_io_base) for the I/O
 //!   abstraction framework.
-//! - [`tectonic_bridge_core`](https://docs.rs/tectonic_bridge_core) for a
+//! - [`texyon_bridge_core`](https://docs.rs/texyon_bridge_core) for a
 //!   framework to launch unsafe (C/C++) "engines" through [FFI].
 //!
 //! [FFI]: https://doc.rust-lang.org/std/ffi/index.html
@@ -45,22 +45,22 @@
 //! Building on these and other support crates of less general interest are the
 //! following major pieces of Tectonic’s functionality:
 //!
-//! - [`tectonic_bundles`](https://docs.rs/tectonic_bundles) for the"bundles" of
+//! - [`texyon_bundles`](https://docs.rs/texyon_bundles) for the"bundles" of
 //!   TeX support files underlying Tectonic processing.
-//! - [`tectonic_docmodel`](https://docs.rs/tectonic_docmodel) for the Tectonic
-//!   "document model" expressed in `Tectonic.toml` files.
-//! - [`tectonic_engine_xetex`](https://docs.rs/tectonic_engine_xetex) for the
+//! - [`texyon_docmodel`](https://docs.rs/texyon_docmodel) for the Tectonic
+//!   "document model" expressed in `Texyon.toml` files.
+//! - [`texyon_engine_xetex`](https://docs.rs/texyon_engine_xetex) for the
 //!   XeTeX engine.
-//! - [`tectonic_engine_xdvipdfmx`](https://docs.rs/tectonic_engine_xdvipdfmx)
+//! - [`texyon_engine_xdvipdfmx`](https://docs.rs/texyon_engine_xdvipdfmx)
 //!   for the `xdvipdfmx` engine.
-//! - [`tectonic_engine_bibtex`](https://docs.rs/tectonic_engine_bibtex) for the
+//! - [`texyon_engine_bibtex`](https://docs.rs/texyon_engine_bibtex) for the
 //!   BibTeX engine.
 //!
 //! The main module of this crate provides an all-in-wonder function for
 //! compiling LaTeX code to a PDF:
 //!
 //! ```
-//! use tectonic;
+//! use texyon;
 //!
 //! let latex = r#"
 //! \documentclass{article}
@@ -69,8 +69,8 @@
 //! \end{document}
 //! "#;
 //!
-//! # tectonic::test_util::activate_test_mode_augmented(env!("CARGO_MANIFEST_DIR"));
-//! let pdf_data: Vec<u8> = tectonic::latex_to_pdf(latex).expect("processing failed");
+//! # texyon::test_util::activate_test_mode_augmented(env!("CARGO_MANIFEST_DIR"));
+//! let pdf_data: Vec<u8> = texyon::latex_to_pdf(latex).expect("processing failed");
 //! println!("Output PDF size is {} bytes", pdf_data.len());
 //! ```
 //!
@@ -100,14 +100,14 @@ pub use crate::engines::xdvipdfmx::XdvipdfmxEngine;
 pub use crate::errors::{Error, ErrorKind, Result};
 
 // Convenienece re-exports for migration into our multi-crate setup
-pub use tectonic_engine_xetex::FORMAT_SERIAL;
+pub use texyon_engine_xetex::FORMAT_SERIAL;
 /// Document-level orchestration for realtime preview.
 ///
 /// This lives in its own crate so that targets without this one's
 /// filesystem and process assumptions — the browser build, above all — can
 /// link the same preview pipeline the CLI serves.
-pub use tectonic_live_preview as live_preview;
-pub use tectonic_status_base::{tt_error, tt_note, tt_warning};
+pub use texyon_live_preview as live_preview;
+pub use texyon_status_base::{tt_error, tt_note, tt_warning};
 
 /// Compile LaTeX text to a PDF.
 ///
@@ -123,8 +123,8 @@ pub use tectonic_status_base::{tt_error, tt_note, tt_warning};
 /// \end{document}
 /// "#;
 ///
-/// # tectonic::test_util::activate_test_mode_augmented(env!("CARGO_MANIFEST_DIR"));
-/// let pdf_data: Vec<u8> = tectonic::latex_to_pdf(latex).expect("processing failed");
+/// # texyon::test_util::activate_test_mode_augmented(env!("CARGO_MANIFEST_DIR"));
+/// let pdf_data: Vec<u8> = texyon::latex_to_pdf(latex).expect("processing failed");
 /// println!("Output PDF size is {} bytes", pdf_data.len());
 /// ```
 ///

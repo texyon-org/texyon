@@ -2,7 +2,7 @@
 
 use std::{cell::RefCell, collections::HashMap, path::Path};
 
-use tectonic_preview_render::{
+use texyon_preview_render::{
     RenderError, Resource, ResourceKind, ResourceProvider, ResourceRequest,
 };
 

@@ -6,14 +6,14 @@
 
 use clap::{Parser, Subcommand};
 use std::{env, ffi::OsString, fs, path::Path, path::PathBuf, process};
-use tectonic::{
+use texyon::{
     config::PersistentConfig,
     errors::{Result, SyncError},
     status::{termcolor::TermcolorStatusBackend, ChatterLevel, StatusBackend},
     tt_note,
 };
-use tectonic_errors::prelude::anyhow;
-use tectonic_status_base::plain::PlainStatusBackend;
+use texyon_errors::prelude::anyhow;
+use texyon_status_base::plain::PlainStatusBackend;
 use tracing::level_filters::LevelFilter;
 
 #[cfg(all(
@@ -35,7 +35,7 @@ mod commands;
 /// The main options for the "V2" command-line interface.
 #[derive(Debug, Parser)]
 #[command(
-    name = "tectonic -X",
+    name = "texyon -X",
     about = "Process (La)TeX documents",
     no_binary_name(true)
 )]
@@ -67,7 +67,7 @@ struct CommandCustomizations {
 pub fn v2_main(effective_args: &[OsString]) {
     // See main() -- we have a test mode that might need activating.
 
-    tectonic::test_util::maybe_activate_test_mode();
+    texyon::test_util::maybe_activate_test_mode();
 
     // I like the idea of not having any global config at all, but as we migrate
     // to the V2 CLI we'll keep it for now.
@@ -134,7 +134,7 @@ pub fn v2_main(effective_args: &[OsString]) {
 
     tt_note!(
         status,
-        "\"version 2\" Tectonic command-line interface activated"
+        "\"version 2\" TeXyon command-line interface activated"
     );
 
     // Now that we've got colorized output, pass off to the inner function.
@@ -165,7 +165,7 @@ pub fn v2_main(effective_args: &[OsString]) {
     })
 }
 
-trait TectonicCommand {
+trait TexyonCommand {
     fn customize(&self, cc: &mut CommandCustomizations);
     fn execute(self, config: PersistentConfig, status: &mut dyn StatusBackend) -> Result<i32>;
 }
@@ -267,7 +267,7 @@ fn search_directories() -> Vec<PathBuf> {
 fn do_external(all_args: Vec<String>) -> Result<i32> {
     let (cmd, args) = all_args.split_first().unwrap();
 
-    let command_exe = format!("tectonic-{}{}", cmd, env::consts::EXE_SUFFIX);
+    let command_exe = format!("texyon-{}{}", cmd, env::consts::EXE_SUFFIX);
     let path = search_directories()
         .iter()
         .map(|dir| dir.join(&command_exe))
@@ -275,7 +275,7 @@ fn do_external(all_args: Vec<String>) -> Result<i32> {
 
     let command = path.ok_or_else(|| {
         anyhow!(
-            "no internal or external subcommand `{0}` is available (install `tectonic-{0}`?)",
+            "no internal or external subcommand `{0}` is available (install `texyon-{0}`?)",
             cmd
         )
     })?;

@@ -30,7 +30,7 @@ use crate::params::TokPar;
 use crate::state::{EngineState, FontEngineHandle};
 use crate::units::{FontId, MemPtr, NodeType, Scaled, StrNumber};
 use std::rc::Rc;
-use tectonic_xetex_layout::get_cp_code;
+use texyon_xetex_layout::get_cp_code;
 
 use super::next::get_x_non_blank;
 use super::numbers::{

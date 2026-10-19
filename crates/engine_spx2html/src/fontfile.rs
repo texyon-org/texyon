@@ -19,7 +19,7 @@ use pinot::{
     FontDataRef, TableProvider,
 };
 use std::{collections::HashMap, num::Wrapping, path::Path};
-use tectonic_errors::prelude::*;
+use texyon_errors::prelude::*;
 
 use crate::FixedPoint;
 

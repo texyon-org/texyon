@@ -11,7 +11,7 @@ use std::io;
 use std::path::PathBuf;
 use std::process;
 use std::str;
-use tectonic_xdv::{FileType, XdvError};
+use texyon_xdv::{FileType, XdvError};
 
 /// We'd like to use String as our error type, but we also would like to
 /// use the `XdvParser::process()` function, which when imposes the requirement
@@ -50,7 +50,7 @@ impl Stats {
     }
 }
 
-impl tectonic_xdv::XdvEvents for Stats {
+impl texyon_xdv::XdvEvents for Stats {
     type Error = Error;
 
     fn handle_header(&mut self, filetype: FileType, comment: &[u8]) -> Result<(), Self::Error> {
@@ -180,7 +180,7 @@ fn main() {
         .map(|x| x == ValueSource::CommandLine)
         .unwrap_or(false)
     {
-        match tectonic_xdv::XdvParser::process_with_seeks(file, Stats::new()) {
+        match texyon_xdv::XdvParser::process_with_seeks(file, Stats::new()) {
             Ok(x) => x,
             Err(e) => {
                 eprintln!(
@@ -194,7 +194,7 @@ fn main() {
 
         println!("Finished parsing the file.");
     } else {
-        let (_stats, n_bytes) = match tectonic_xdv::XdvParser::process(file, Stats::new()) {
+        let (_stats, n_bytes) = match texyon_xdv::XdvParser::process(file, Stats::new()) {
             Ok(x) => x,
             Err(e) => {
                 eprintln!(

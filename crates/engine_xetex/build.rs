@@ -6,19 +6,19 @@
 
 use std::{env, fs, io::BufRead, path::PathBuf};
 
-use tectonic_cfg_support::*;
+use texyon_cfg_support::*;
 
 fn main() {
     let target = env::var("TARGET").unwrap();
 
-    let core_include_dir = env::var("DEP_TECTONIC_BRIDGE_CORE_INCLUDE").unwrap();
-    let flate_include_dir = env::var("DEP_TECTONIC_BRIDGE_FLATE_INCLUDE").unwrap();
+    let core_include_dir = env::var("DEP_TEXYON_BRIDGE_CORE_INCLUDE").unwrap();
+    let flate_include_dir = env::var("DEP_TEXYON_BRIDGE_FLATE_INCLUDE").unwrap();
 
     // Detect ICU version suffix (e.g. "_74") so Rust FFI can use #[link_name] with versioned names.
     //
     // A system ICU renames every symbol with its major version. The wasm build
     // has no system ICU and gets these entry points from Rust instead
-    // (tectonic_bridge_icu::wasm_shim), whose symbols are unsuffixed; that
+    // (texyon_bridge_icu::wasm_shim), whose symbols are unsuffixed; that
     // bridge announces the suffix to use, so honour it when it is set.
     let icu_suffix = match env::var("DEP_ICUUC_VERSION_SUFFIX") {
         Ok(suffix) => suffix,
@@ -98,7 +98,7 @@ fn main() {
         cxx_cfg.file(file);
     }
 
-    cxx_cfg.compile("libtectonic_engine_xetex_cxx.a");
+    cxx_cfg.compile("libtexyon_engine_xetex_cxx.a");
 
     // Rebuild if C/C++ files have changed. We scan the whole directory to get
     // the headers too.

@@ -4,7 +4,7 @@
 use std::io::Cursor;
 
 #[cfg(test)]
-use tectonic_xdv::{XdvEvents, XdvParser};
+use texyon_xdv::{XdvEvents, XdvParser};
 
 use crate::units::{normalize_zero, SP_TO_BP};
 use crate::RenderError;

@@ -3,8 +3,8 @@
 
 //! Engine for invoking `bibtex`.
 
-use tectonic_bridge_core::CoreBridgeLauncher;
-use tectonic_engine_bibtex::{BibtexEngine as RealBibtexEngine, BibtexOutcome};
+use texyon_bridge_core::CoreBridgeLauncher;
+use texyon_engine_bibtex::{BibtexEngine as RealBibtexEngine, BibtexOutcome};
 
 use super::tex::TexOutcome;
 use crate::{errors::Result, unstable_opts::UnstableOptions};

@@ -12,7 +12,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use tectonic_status_base::StatusBackend;
+use texyon_status_base::StatusBackend;
 
 use crate::{InputHandle, InputOrigin, IoProvider, OpenResult, OutputHandle};
 

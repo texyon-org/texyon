@@ -8,7 +8,7 @@
 //! experience for the Tectonic CLI tool.
 
 use std::{cmp::Ordering, fmt::Arguments, result::Result as StdResult, str::FromStr};
-use tectonic_errors::Error;
+use texyon_errors::Error;
 
 pub mod plain;
 

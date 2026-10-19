@@ -1,4 +1,4 @@
-// src/bin/tectonic/main.rs -- Command-line driver for the Tectonic engine.
+// src/bin/texyon/main.rs -- Command-line driver for the Tectonic engine.
 // Copyright 2016-2023 the Tectonic Project
 // Licensed under the MIT License.
 
@@ -6,9 +6,9 @@
 
 use clap::{Parser, ValueEnum};
 use std::{env, io::IsTerminal, process};
-use tectonic_status_base::plain::PlainStatusBackend;
+use texyon_status_base::plain::PlainStatusBackend;
 
-use tectonic::{
+use texyon::{
     config::PersistentConfig,
     errors::SyncError,
     status::{
@@ -30,7 +30,7 @@ mod v2cli {
 
     pub fn v2_main(_effective_args: &[OsString]) {
         eprintln!(
-            "fatal error: the \"V2\" Tectonic CLI requires the code to have been built \
+            "fatal error: the \"V2\" TeXyon CLI requires the code to have been built \
             with the \"serialization\" Cargo feature active. This one wasn't."
         );
         process::exit(1);
@@ -38,9 +38,9 @@ mod v2cli {
 }
 
 #[derive(Debug, Parser)]
-#[command(name = "Tectonic", about = "Process a (La)TeX document")]
+#[command(name = "texyon", about = "Process a (La)TeX document")]
 struct CliOptions {
-    /// Use experimental V2 interface (see `tectonic -X --help`)
+    /// Use experimental V2 interface (see `texyon -X --help`)
     #[arg(short = 'X')]
     use_v2: bool,
 
@@ -90,7 +90,7 @@ struct PeekUnstableOptions {
 fn main() {
     let os_args: Vec<_> = env::args_os().collect();
 
-    // A hack so that you can just run `tectonic -Z help` without getting a
+    // A hack so that you can just run `texyon -Z help` without getting a
     // usage error about a missing input file specification. If
     // `from_unstable_args()` sees a `help` option, it will print the usage and
     // exit. Otherwise, this will all be a no-op, and we'll re-parse the args
@@ -146,7 +146,7 @@ fn main() {
     // big deal to include the code in the final executable artifacts we
     // distribute.
 
-    tectonic::test_util::maybe_activate_test_mode();
+    texyon::test_util::maybe_activate_test_mode();
 
     // I want the CLI program to take as little configuration as possible, but
     // we do need to at least provide a mechanism for storing the default

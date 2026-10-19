@@ -9,7 +9,7 @@
 //!
 //! This crate, on its own, does not provide document-processing capabilities.
 //! The main `tectonic` crate provides extension traits that set up document
-//! processing, in the `tectonic::docmodel` module.
+//! processing, in the `texyon::docmodel` module.
 
 use std::{
     collections::HashMap,
@@ -17,7 +17,7 @@ use std::{
     io::{Read, Write},
     path::{Component, Path, PathBuf},
 };
-use tectonic_errors::prelude::*;
+use texyon_errors::prelude::*;
 
 use crate::syntax;
 use crate::workspace::WorkspaceCreator;
@@ -43,13 +43,13 @@ pub const DEFAULT_POSTAMBLE_FILE: &str = "_postamble.tex";
 /// The default files used to build a document.
 ///
 /// This default can be overridden on an output-by-output basis in
-/// `Tectonic.toml`.
+/// `Texyon.toml`.
 pub const DEFAULT_INPUTS: &[&str] = &["_preamble.tex", "index.tex", "_postamble.tex"];
 
 /// A Tectonic document.
 #[derive(Debug)]
 pub struct Document {
-    /// The directory containing the `Tectonic.toml` file and document source.
+    /// The directory containing the `Texyon.toml` file and document source.
     src_dir: PathBuf,
 
     /// The directory where document build artifacts will be output. By default
@@ -126,7 +126,7 @@ impl Document {
         })
     }
 
-    /// Write out this document's state as a fresh `Tectonic.toml` file in the
+    /// Write out this document's state as a fresh `Texyon.toml` file in the
     /// document’s [`Self::src_dir`].
     ///
     /// This should only be used when creating a totally new document. Otherwise
@@ -158,7 +158,7 @@ impl Document {
         let toml_text = toml::to_string_pretty(&doc)?;
 
         let mut toml_path = self.src_dir.clone();
-        toml_path.push("Tectonic.toml");
+        toml_path.push("Texyon.toml");
 
         let mut toml_file = atry!(fs::OpenOptions::new()
             .create_new(true)
@@ -173,7 +173,7 @@ impl Document {
 
     /// Get this document's toplevel source directory.
     ///
-    /// Note that this directory is the one containing the file `Tectonic.toml`.
+    /// Note that this directory is the one containing the file `Texyon.toml`.
     /// The actual document source is contained in a subdirectory named `src`.
     pub fn src_dir(&self) -> &Path {
         &self.src_dir

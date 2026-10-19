@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use tectonic_engine_xetex::EngineCancellation;
+use texyon_engine_xetex::EngineCancellation;
 
 use super::{Command, SharedState, TimerCommand, WorkerEvent};
 use crate::{

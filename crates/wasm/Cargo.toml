@@ -1,15 +1,15 @@
 lints.workspace = true
 
 [package]
-name = "tectonic_wasm"
+name = "texyon_wasm"
 version = "0.0.0-dev.0"
 authors = ["the Tectonic Project"]
 description = """
 Tectonic's live-preview engine as a WebAssembly module, for running LaTeX in a
 browser.
 """
-homepage = "https://tectonic-typesetting.github.io/"
-repository = "https://github.com/tectonic-typesetting/tectonic/"
+homepage = "https://github.com/texyon-org/texyon"
+repository = "https://github.com/texyon-org/texyon"
 license = "MIT"
 edition = "2021"
 
@@ -26,28 +26,28 @@ dlmalloc = "^0.2"
 libc = "^0.2"
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = "^1.0"
-tectonic_bridge_core = { path = "../bridge_core", version = "0.0.0-dev.0" }
-tectonic_engine_xdvipdfmx = { path = "../engine_xdvipdfmx", version = "0.0.0-dev.0" }
-tectonic_engine_xetex = { path = "../engine_xetex", version = "0.0.0-dev.0" }
-tectonic_errors = { path = "../errors", version = "0.0.0-dev.0" }
-tectonic_io_base = { path = "../io_base", version = "0.0.0-dev.0" }
+texyon_bridge_core = { path = "../bridge_core", version = "0.0.0-dev.0" }
+texyon_engine_xdvipdfmx = { path = "../engine_xdvipdfmx", version = "0.0.0-dev.0" }
+texyon_engine_xetex = { path = "../engine_xetex", version = "0.0.0-dev.0" }
+texyon_errors = { path = "../errors", version = "0.0.0-dev.0" }
+texyon_io_base = { path = "../io_base", version = "0.0.0-dev.0" }
 # The preview pipeline, minus everything that assumes a host operating system.
-tectonic_live_preview = { path = "../live_preview", version = "0.0.0-dev.0", default-features = false }
-tectonic_preview_protocol = { path = "../preview_protocol", version = "0.0.0-dev.0" }
-tectonic_preview_render = { path = "../preview_render", version = "0.0.0-dev.0", features = [
+texyon_live_preview = { path = "../live_preview", version = "0.0.0-dev.0", default-features = false }
+texyon_preview_protocol = { path = "../preview_protocol", version = "0.0.0-dev.0" }
+texyon_preview_render = { path = "../preview_render", version = "0.0.0-dev.0", features = [
     "backend-mupdf",
 ] }
-tectonic_status_base = { path = "../status_base", version = "0.0.0-dev.0" }
-tectonic_xdv = { path = "../xdv", version = "0.0.0-dev.0" }
+texyon_status_base = { path = "../status_base", version = "0.0.0-dev.0" }
+texyon_xdv = { path = "../xdv", version = "0.0.0-dev.0" }
 
 [package.metadata.internal_dep_versions]
-tectonic_bridge_core = "thiscommit:2026-08-19:wasm-engine"
-tectonic_engine_xdvipdfmx = "thiscommit:2026-08-19:wasm-engine"
-tectonic_engine_xetex = "thiscommit:2026-08-19:wasm-engine"
-tectonic_errors = "thiscommit:2026-08-19:wasm-engine"
-tectonic_io_base = "thiscommit:2026-08-19:wasm-engine"
-tectonic_live_preview = "thiscommit:2026-08-19:wasm-engine"
-tectonic_preview_protocol = "thiscommit:2026-08-19:wasm-engine"
-tectonic_preview_render = "thiscommit:2026-08-19:wasm-engine"
-tectonic_status_base = "thiscommit:2026-08-19:wasm-engine"
-tectonic_xdv = "thiscommit:2026-08-19:wasm-engine"
+texyon_bridge_core = "thiscommit:2026-08-19:wasm-engine"
+texyon_engine_xdvipdfmx = "thiscommit:2026-08-19:wasm-engine"
+texyon_engine_xetex = "thiscommit:2026-08-19:wasm-engine"
+texyon_errors = "thiscommit:2026-08-19:wasm-engine"
+texyon_io_base = "thiscommit:2026-08-19:wasm-engine"
+texyon_live_preview = "thiscommit:2026-08-19:wasm-engine"
+texyon_preview_protocol = "thiscommit:2026-08-19:wasm-engine"
+texyon_preview_render = "thiscommit:2026-08-19:wasm-engine"
+texyon_status_base = "thiscommit:2026-08-19:wasm-engine"
+texyon_xdv = "thiscommit:2026-08-19:wasm-engine"

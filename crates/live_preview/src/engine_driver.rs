@@ -5,17 +5,17 @@ use std::{
     sync::Arc,
 };
 
-use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
-use tectonic_engine_xetex::{
+use texyon_bridge_core::{CoreBridgeLauncher, MinimalDriver};
+use texyon_engine_xetex::{
     EngineCancellation, EngineFrame, EnginePreviewConfig, IncrementalXeTeXSession, PageRange,
 };
-use tectonic_errors::{anyhow::bail, Result};
+use texyon_errors::{anyhow::bail, Result};
 #[cfg(feature = "native")]
-use tectonic_io_base::format_cache::FormatCache;
-use tectonic_io_base::{
+use texyon_io_base::format_cache::FormatCache;
+use texyon_io_base::{
     filesystem::FilesystemIo, stack::IoStack, testing::SingleInputFileIo, IoProvider, MemoryIo,
 };
-use tectonic_status_base::NoopStatusBackend;
+use texyon_status_base::NoopStatusBackend;
 
 use super::AcceptedSourceSnapshot;
 #[cfg(feature = "native")]
@@ -290,7 +290,7 @@ impl ResidentXeTeX {
     }
 
     /// Every control sequence the engine currently has defined, empty before the first compile.
-    pub fn defined_commands(&self) -> Vec<tectonic_engine_xetex::introspect::DefinedCommand> {
+    pub fn defined_commands(&self) -> Vec<texyon_engine_xetex::introspect::DefinedCommand> {
         self.session
             .as_ref()
             .map(IncrementalXeTeXSession::defined_commands)

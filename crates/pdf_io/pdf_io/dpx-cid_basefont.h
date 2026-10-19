@@ -21,7 +21,7 @@
 #ifndef _CID_BASEFONT_H_
 #define _CID_BASEFONT_H_
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 
 /* PLEASE SEND INFORMATION ON FONTS
  *

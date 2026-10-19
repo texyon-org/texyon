@@ -21,7 +21,7 @@
 #ifndef _CFF_LIMITS_H_
 #define _CFF_LIMITS_H_
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 
 #include <limits.h>
 

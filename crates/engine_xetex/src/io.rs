@@ -8,7 +8,7 @@ use crate::params::IntPar;
 use crate::state::{EngineState, Selector};
 use crate::units::StrNumber;
 use crate::utf8::next_utf8_char;
-use tectonic_bridge_core::EOF;
+use texyon_bridge_core::EOF;
 
 pub(crate) use crate::bridge::{input_close, input_seek};
 use crate::bridge::{
@@ -203,7 +203,7 @@ fn icu_to_utf32(cnv: *mut libc::c_void, target: &mut [u8], source: &[u8]) -> (i3
 }
 
 pub(crate) fn open_input_file(st: &mut EngineState, filefmt: FileFormat) -> usize {
-    let handle = if filefmt == FileFormat::TectonicPrimary {
+    let handle = if filefmt == FileFormat::TexyonPrimary {
         input_open_primary()
     } else if st.input.name_of_file.first() == Some(&b'|') {
         crate::output::print_nl(st, "Warning: ");
@@ -1044,7 +1044,7 @@ pub(crate) fn start_input(
     let format = if primary_input_name.is_none() {
         FileFormat::Tex
     } else {
-        FileFormat::TectonicPrimary
+        FileFormat::TexyonPrimary
     };
 
     if let Some(name) = primary_input_name {

@@ -41,7 +41,7 @@ class FakeProcess extends EventEmitter {
 }
 
 test("extension harness initializes dirty children, relays edits, resyncs, and retains last frame on death", async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tectonic-extension-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "texyon-extension-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const primaryPath = path.join(root, "main.tex");
   const childPath = path.join(root, "chapter.tex");
@@ -91,7 +91,7 @@ test("extension harness initializes dirty children, relays edits, resyncs, and r
     },
     workspace: {
       textDocuments: [primary, child],
-      getConfiguration: () => ({ get: (name, fallback) => name === "executable" ? "fake-tectonic" : fallback }),
+      getConfiguration: () => ({ get: (name, fallback) => name === "executable" ? "fake-texyon" : fallback }),
       openTextDocument: async (uri) => uri.fsPath === childPath ? child : primary,
       onDidChangeTextDocument(callback) {
         changeListener = callback;
@@ -176,7 +176,7 @@ test("extension harness initializes dirty children, relays edits, resyncs, and r
   const extension = require("../extension");
   const context = { extensionUri: "/extension", subscriptions: [] };
   extension.activate(context);
-  commands.get("tectonicPreview.start")();
+  commands.get("texyon.start")();
   assert.equal(panels.length, 1);
   const html = panels[0].webview.html;
   assert.match(html, /default-src 'none'/);
@@ -191,7 +191,7 @@ test("extension harness initializes dirty children, relays edits, resyncs, and r
   assert.equal(fakeProcess.requests[0].primary_text, "primary from editor");
   assert.deepEqual(fakeProcess.requests[0].children, [{ path: "chapter.tex", text: "child from editor" }]);
 
-  commands.get("tectonicPreview.forwardSearch")();
+  commands.get("texyon.forwardSearch")();
   assert.deepEqual(fakeProcess.requests.at(-1), {
     type: "forward_search",
     query_id: "1",

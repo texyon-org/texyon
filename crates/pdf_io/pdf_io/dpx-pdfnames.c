@@ -27,7 +27,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 /* Hash */
 #include "dpx-dpxutil.h"
 #include "dpx-error.h"

@@ -4,7 +4,7 @@ use crate::{
     ASCIICode, Bibtex, BibtexError, BufPointer,
 };
 use std::{ffi::CStr, io};
-use tectonic_bridge_core::{CoreBridgeState, FileFormat, InputId, EOF};
+use texyon_bridge_core::{CoreBridgeState, FileFormat, InputId, EOF};
 
 /* Sigh, I'm worried about ungetc() and EOF semantics in Bibtex's I/O, so
  * here's a tiny wrapper that lets us fake it. */

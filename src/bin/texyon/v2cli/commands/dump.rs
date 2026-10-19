@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use clap::Parser;
-use tectonic::{
+use texyon::{
     config::PersistentConfig,
     ctry,
     docmodel::{DocumentExt, DocumentSetupOptions},
@@ -9,11 +9,11 @@ use tectonic::{
     errors::Result,
     tt_error,
 };
-use tectonic_bridge_core::{SecuritySettings, SecurityStance};
-use tectonic_docmodel::workspace::Workspace;
-use tectonic_status_base::StatusBackend;
+use texyon_bridge_core::{SecuritySettings, SecurityStance};
+use texyon_docmodel::workspace::Workspace;
+use texyon_status_base::StatusBackend;
 
-use crate::v2cli::{CommandCustomizations, TectonicCommand};
+use crate::v2cli::{CommandCustomizations, TexyonCommand};
 
 /// `dump`: Run a partial build and dump an intermediate file
 #[derive(Debug, Eq, PartialEq, Parser)]
@@ -39,7 +39,7 @@ pub struct DumpCommand {
     filename: String,
 }
 
-impl TectonicCommand for DumpCommand {
+impl TexyonCommand for DumpCommand {
     fn customize(&self, cc: &mut CommandCustomizations) {
         cc.always_stderr = true;
         cc.minimal_chatter = true;
@@ -52,7 +52,7 @@ impl TectonicCommand for DumpCommand {
         // Default to allowing insecure since it would be super duper annoying
         // to have to pass `--trusted` every time to build a personal document
         // that uses shell-escape! This default can be overridden by setting the
-        // environment variable TECTONIC_UNTRUSTED_MODE to a nonempty value.
+        // environment variable TEXYON_UNTRUSTED_MODE to a nonempty value.
         let stance = if self.untrusted {
             SecurityStance::DisableInsecures
         } else {

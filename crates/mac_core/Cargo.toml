@@ -1,23 +1,23 @@
 lints.workspace = true
 
 [package]
-name = "tectonic_mac_core"
+name = "texyon_mac_core"
 license = "MIT"
 version = "0.0.0-dev.0"
 edition = "2021"
 description = """
 Exposing macOS framework APIs to the Tectonic Rust code.
 """
-homepage = "https://tectonic-typesetting.github.io/"
-documentation = "https://docs.rs/tectonic_mac_core"
-repository = "https://github.com/tectonic-typesetting/tectonic/"
+homepage = "https://github.com/texyon-org/texyon"
+documentation = "https://docs.rs/texyon_mac_core"
+repository = "https://github.com/texyon-org/texyon"
 readme = "README.md"
 
 [dependencies]
 libc = "0.2"
 
 [build-dependencies]
-tectonic_cfg_support = { path = "../cfg_support", version = "0.0.0-dev.0" }
+texyon_cfg_support = { path = "../cfg_support", version = "0.0.0-dev.0" }
 
 [package.metadata.internal_dep_versions]
-tectonic_cfg_support = "thiscommit:aeRoo7oa"
+texyon_cfg_support = "thiscommit:aeRoo7oa"

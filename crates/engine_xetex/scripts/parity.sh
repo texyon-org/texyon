@@ -15,7 +15,7 @@ trap 'rm -f "$out"' EXIT
 cd "$repo_root"
 
 # --no-fail-fast so one bad case doesn't hide the rest of the count.
-cargo test -p tectonic --test tex-outputs --no-fail-fast 2>&1 | tee "$out"
+cargo test -p texyon --test tex-outputs --no-fail-fast 2>&1 | tee "$out"
 
 # The final summary line looks like:
 #   test result: ok. N passed; M failed; ...

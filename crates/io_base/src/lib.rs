@@ -17,11 +17,11 @@ use std::{
     io::{self, Cursor, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
 };
-use tectonic_errors::{
+use texyon_errors::{
     anyhow::{bail, ensure},
     Error, Result,
 };
-use tectonic_status_base::StatusBackend;
+use texyon_status_base::StatusBackend;
 use thiserror::Error as ThisError;
 
 use crate::digest::DigestData;
@@ -41,7 +41,7 @@ pub use crate::memory::MemoryIo;
 /// Errors that are generic to Tectonic's framework, but not capturable as
 /// IoErrors.
 #[derive(ThisError, Debug)]
-pub enum TectonicIoError {
+pub enum TexyonIoError {
     /// The stream is not seekable.
     #[error("cannot seek within this stream")]
     NotSeekable,
@@ -58,11 +58,11 @@ pub enum TectonicIoError {
 /// An extension to the basic Read trait supporting additional features
 /// needed for Tectonic's I/O system.
 pub trait InputFeatures: Read {
-    /// Get the size of the stream. Return `TectonicIoError::NotSizeable`
+    /// Get the size of the stream. Return `TexyonIoError::NotSizeable`
     /// if the operation is not well-defined for this stream.
     fn get_size(&mut self) -> Result<usize>;
 
-    /// Try to seek within the stream. Return `TectonicIoError::NotSeekable`
+    /// Try to seek within the stream. Return `TexyonIoError::NotSeekable`
     /// if the operation is not possible for this stream.
     fn try_seek(&mut self, pos: SeekFrom) -> Result<u64>;
 

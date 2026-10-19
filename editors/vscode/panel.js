@@ -8,7 +8,7 @@ class PreviewPanel {
     this.onDispose = null;
     this.mediaRoot = vscode.Uri.joinPath(context.extensionUri, "media");
     this.panel = vscode.window.createWebviewPanel(
-      "tectonicPreview",
+      "texyon",
       title,
       { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
       {
@@ -66,7 +66,7 @@ class PreviewPanel {
   <meta http-equiv="Content-Security-Policy" content="${csp}">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="${styleUri}">
-  <title>Tectonic Preview</title>
+  <title>TeXyon Preview</title>
 </head>
 <body>
   <div id="toolbar" role="toolbar" aria-label="Preview zoom">

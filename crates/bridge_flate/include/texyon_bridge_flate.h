@@ -1,5 +1,5 @@
-#ifndef TECTONIC_BRIDGE_FLATE_H
-#define TECTONIC_BRIDGE_FLATE_H
+#ifndef TEXYON_BRIDGE_FLATE_H
+#define TEXYON_BRIDGE_FLATE_H
 
 #include <stdarg.h>
 #include <stdbool.h>
@@ -43,7 +43,7 @@ extern "C" {
  *
  * This is a C API function, so it is unsafe.
  */
-FlateResult tectonic_flate_compress(uint8_t *output_ptr,
+FlateResult texyon_flate_compress(uint8_t *output_ptr,
                                     uint64_t *output_len,
                                     const uint8_t *input_ptr,
                                     uint64_t input_len,
@@ -59,7 +59,7 @@ FlateResult tectonic_flate_compress(uint8_t *output_ptr,
  *
  * This is a C API function, so it is unsafe.
  */
-FlateResult tectonic_flate_decompress(uint8_t *output_ptr,
+FlateResult texyon_flate_decompress(uint8_t *output_ptr,
                                       uint64_t *output_len,
                                       const uint8_t *input_ptr,
                                       uint64_t input_len);
@@ -71,7 +71,7 @@ FlateResult tectonic_flate_decompress(uint8_t *output_ptr,
  *
  * This is a C API function, so it is unsafe.
  */
-void *tectonic_flate_new_decompressor(const uint8_t *input_ptr, uint64_t input_len);
+void *texyon_flate_new_decompressor(const uint8_t *input_ptr, uint64_t input_len);
 
 /**
  * Decompress some DEFLATEd data.
@@ -87,7 +87,7 @@ void *tectonic_flate_new_decompressor(const uint8_t *input_ptr, uint64_t input_l
  *
  * This is a C API function, so it is unsafe.
  */
-int tectonic_flate_decompress_chunk(void *handle, uint8_t *output_ptr, uint64_t *output_len);
+int texyon_flate_decompress_chunk(void *handle, uint8_t *output_ptr, uint64_t *output_len);
 
 /**
  * Deallocate a DEFLATE decompressor.
@@ -96,10 +96,10 @@ int tectonic_flate_decompress_chunk(void *handle, uint8_t *output_ptr, uint64_t 
  *
  * This is a C API function, so it is unsafe.
  */
-void tectonic_flate_free_decompressor(void *handle);
+void texyon_flate_free_decompressor(void *handle);
 
 #ifdef __cplusplus
 } // extern "C"
 #endif // __cplusplus
 
-#endif /* TECTONIC_BRIDGE_FLATE_H */
+#endif /* TEXYON_BRIDGE_FLATE_H */

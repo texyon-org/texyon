@@ -4,8 +4,8 @@
 //! Emit the C header file for the current engine version
 
 use std::{io, process};
-use tectonic_errors::prelude::*;
-use tectonic_xetex_format::engine::Engine;
+use texyon_errors::prelude::*;
+use texyon_xetex_format::engine::Engine;
 
 fn inner() -> Result<()> {
     let engine = Engine::default();

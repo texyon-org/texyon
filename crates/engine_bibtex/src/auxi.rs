@@ -19,7 +19,7 @@ use crate::{
     Bibtex, BibtexError, File, GlobalItems,
 };
 use std::ffi::CString;
-use tectonic_bridge_core::FileFormat;
+use texyon_bridge_core::FileFormat;
 
 const AUX_STACK_SIZE: usize = 20;
 

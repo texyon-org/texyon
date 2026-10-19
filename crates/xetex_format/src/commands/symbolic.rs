@@ -5,7 +5,7 @@
 //! enumerations.
 
 use std::collections::HashMap;
-use tectonic_errors::prelude::*;
+use texyon_errors::prelude::*;
 
 use super::{
     ArgKind, Command, CommandArgument, CommandBehavior, CommandPrimitive, PrimitiveExtraInit,

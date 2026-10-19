@@ -11,13 +11,13 @@ test("parses protocol events", () => {
   });
 });
 
-test("diagnoses a Tectonic binary built without live-preview support", () => {
+test("diagnoses a TeXyon binary built without live-preview support", () => {
   assert.deepEqual(
-    parseServerLine('note: "version 2" Tectonic command-line interface activated'),
+    parseServerLine('note: "version 2" TeXyon command-line interface activated'),
     {
       error:
-        "configured Tectonic executable does not support live preview; " +
-        "rebuild it with `cargo build --release -p tectonic --features preview-mupdf`"
+        "configured TeXyon executable does not support live preview; " +
+        "rebuild it with `cargo build --release -p texyon --features preview-mupdf`"
     }
   );
 });

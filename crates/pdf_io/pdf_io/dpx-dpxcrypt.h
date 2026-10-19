@@ -21,7 +21,7 @@
 #ifndef _DPXCRYPT_H_
 #define _DPXCRYPT_H_
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 
 #include <stdio.h>
 #include <stdint.h>

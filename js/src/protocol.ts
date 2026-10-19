@@ -23,7 +23,7 @@ export interface Diagnostic {
   /**
    * The file it belongs to, as the transcript named it.
    *
-   * Usually one of the paths you passed to {@link TectonicEngine.compile}, but
+   * Usually one of the paths you passed to {@link TexyonEngine.compile}, but
    * it can name a class or package file when the trouble is inside one. Null
    * when the engine spoke outside any file at all.
    */
@@ -133,7 +133,7 @@ export interface CompileResult {
    * The changed pages around the compile's viewport, drawn at its scale.
    *
    * Only for a raster engine given a viewport and a scale. Any other changed
-   * page is stale until {@link TectonicEngine.raster} draws it again.
+   * page is stale until {@link TexyonEngine.raster} draws it again.
    */
   rasters: PageRaster[];
   /** Indices of the pages that changed. */
@@ -287,12 +287,12 @@ export interface LoadProgress {
   total?: number;
 }
 
-/** Settings for {@link TectonicEngine.create}. */
+/** Settings for {@link TexyonEngine.create}. */
 export interface EngineOptions {
   /**
    * Where the compiled `.wasm` lives.
    *
-   * Defaults to `tectonic/tectonic_wasm.wasm`, relative to the page.
+   * Defaults to `tectonic/texyon_wasm.wasm`, relative to the page.
    */
   moduleUrl?: string;
   /**
@@ -370,7 +370,7 @@ export interface ExportResult {
    *
    * A viewport-bounded compile stops at the last visible page, and exporting
    * that would give you a PDF missing its tail — so {@link
-   * TectonicEngine.exportPdf} finishes the document first. These are the frames
+   * TexyonEngine.exportPdf} finishes the document first. These are the frames
    * that produced, in order, and a viewer that wants to stay in step with the
    * engine should apply them exactly as it applies a compile result. Empty when
    * the document was already settled, which is the usual case.

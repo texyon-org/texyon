@@ -5,7 +5,7 @@
 //! depend on other symbols.
 
 use std::collections::BTreeMap;
-use tectonic_errors::prelude::*;
+use texyon_errors::prelude::*;
 
 use super::HasPrimitive;
 use crate::{

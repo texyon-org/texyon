@@ -7,15 +7,15 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::time;
 
-use tectonic::engines::tex::TexOutcome;
-use tectonic::errors::DefinitelySame;
-use tectonic::io::testing::SingleInputFileIo;
-use tectonic::io::{FilesystemIo, FilesystemPrimaryInputIo, IoProvider, IoStack, MemoryIo};
-use tectonic::unstable_opts::UnstableOptions;
-use tectonic::{TexEngine, XdvipdfmxEngine};
-use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
-use tectonic_errors::{anyhow::anyhow, Result};
-use tectonic_status_base::NoopStatusBackend;
+use texyon::engines::tex::TexOutcome;
+use texyon::errors::DefinitelySame;
+use texyon::io::testing::SingleInputFileIo;
+use texyon::io::{FilesystemIo, FilesystemPrimaryInputIo, IoProvider, IoStack, MemoryIo};
+use texyon::unstable_opts::UnstableOptions;
+use texyon::{TexEngine, XdvipdfmxEngine};
+use texyon_bridge_core::{CoreBridgeLauncher, MinimalDriver};
+use texyon_errors::{anyhow::anyhow, Result};
+use texyon_status_base::NoopStatusBackend;
 
 #[path = "util/mod.rs"]
 mod util;
@@ -349,7 +349,7 @@ fn prim_filesize() {
 
 #[test]
 fn shell_escape() {
-    let unstables = tectonic::unstable_opts::UnstableOptions {
+    let unstables = texyon::unstable_opts::UnstableOptions {
         shell_escape: true,
         ..Default::default()
     };
@@ -361,7 +361,7 @@ fn shell_escape() {
 
 #[test]
 fn no_shell_escape() {
-    let unstables = tectonic::unstable_opts::UnstableOptions {
+    let unstables = texyon::unstable_opts::UnstableOptions {
         shell_escape: false,
         ..Default::default()
     };

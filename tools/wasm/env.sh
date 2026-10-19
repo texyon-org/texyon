@@ -1,14 +1,14 @@
 # Source this to build Tectonic for wasm32-wasip1.
 #
 #     source tools/wasm/env.sh
-#     cargo build --release --target wasm32-wasip1 -p tectonic_wasm
+#     cargo build --release --target wasm32-wasip1 -p texyon_wasm
 #
 # Prerequisites: tools/wasm/fetch-deps.sh has been run, and wasi-sdk is unpacked
 # next to this file (see tools/wasm/README.md).
 
-_tectonic_wasm_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+_texyon_wasm_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
-export WASI_SDK="${WASI_SDK:-$_tectonic_wasm_dir/wasi-sdk-33.0-x86_64-linux}"
+export WASI_SDK="${WASI_SDK:-$_texyon_wasm_dir/wasi-sdk-33.0-x86_64-linux}"
 export WASI_SYSROOT="$WASI_SDK/share/wasi-sysroot"
 
 if [ ! -d "$WASI_SYSROOT" ]; then
@@ -23,10 +23,10 @@ export AR_wasm32_wasip1="$WASI_SDK/bin/llvm-ar"
 # TeX reports fatal errors by longjmp'ing out of the engine. wasm can only do
 # that through the exception-handling proposal, which every current browser
 # implements but which clang still needs to be told to use.
-_tectonic_wasm_cflags="--sysroot=$WASI_SYSROOT --target=wasm32-wasip1 -mllvm -wasm-enable-sjlj"
+_texyon_wasm_cflags="--sysroot=$WASI_SYSROOT --target=wasm32-wasip1 -mllvm -wasm-enable-sjlj"
 
-export CFLAGS_wasm32_wasip1="$_tectonic_wasm_cflags"
-export CXXFLAGS_wasm32_wasip1="$_tectonic_wasm_cflags"
+export CFLAGS_wasm32_wasip1="$_texyon_wasm_cflags"
+export CXXFLAGS_wasm32_wasip1="$_texyon_wasm_cflags"
 
 # Harfbuzz and Graphite2 are C++, so the link needs wasi-sdk's libc++ — the
 # no-exceptions build, to match the -fno-exceptions that cc-rs compiles with.
@@ -49,4 +49,4 @@ export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }\
 # malloc and friends from wasi-libc. Rust objects are linked ahead of the
 # sysroot, so ours is the definition that wins.
 
-unset _tectonic_wasm_dir _tectonic_wasm_cflags
+unset _texyon_wasm_dir _texyon_wasm_cflags

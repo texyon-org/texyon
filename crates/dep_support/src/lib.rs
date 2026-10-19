@@ -34,22 +34,22 @@ pub struct Configuration {
 impl Default for Configuration {
     /// This default function will fetch settings from the environment. Is that a no-no?
     fn default() -> Self {
-        println!("cargo:rerun-if-env-changed=TECTONIC_DEP_BACKEND");
-        println!("cargo:rerun-if-env-changed=TECTONIC_PKGCONFIG_FORCE_SEMI_STATIC");
+        println!("cargo:rerun-if-env-changed=TEXYON_DEP_BACKEND");
+        println!("cargo:rerun-if-env-changed=TEXYON_PKGCONFIG_FORCE_SEMI_STATIC");
 
         // This should use FromStr or whatever, but meh.
-        let backend = if let Ok(dep_backend_str) = env::var("TECTONIC_DEP_BACKEND") {
+        let backend = if let Ok(dep_backend_str) = env::var("TEXYON_DEP_BACKEND") {
             match dep_backend_str.as_ref() {
                 "pkg-config" => Backend::PkgConfig,
                 "vcpkg" => Backend::Vcpkg,
                 "default" => Backend::default(),
-                other => panic!("unrecognized TECTONIC_DEP_BACKEND setting {other:?}"),
+                other => panic!("unrecognized TEXYON_DEP_BACKEND setting {other:?}"),
             }
         } else {
             Backend::default()
         };
 
-        let semi_static_mode = env::var("TECTONIC_PKGCONFIG_FORCE_SEMI_STATIC").is_ok();
+        let semi_static_mode = env::var("TEXYON_PKGCONFIG_FORCE_SEMI_STATIC").is_ok();
 
         Configuration {
             backend,
@@ -124,7 +124,7 @@ impl DepState {
                     if let vcpkg::Error::LibNotFound(_) = e {
                         // We should potentially be referencing the CARGO_CFG_TARGET_*
                         // variables to handle cross-compilation (cf. the
-                        // tectonic_cfg_support crate), but vcpkg-rs doesn't use them
+                        // texyon_cfg_support crate), but vcpkg-rs doesn't use them
                         // either.
                         let target = env::var("TARGET").unwrap_or_default();
 
@@ -265,12 +265,12 @@ pub fn target_is_wasm() -> bool {
 /// Locate the vendored sources of a third-party C library.
 ///
 /// Sources are placed by `tools/wasm/fetch-deps.sh`, which defaults to
-/// `tools/wasm/vendor/` in the repository. `$TECTONIC_WASM_VENDOR` overrides
+/// `tools/wasm/vendor/` in the repository. `$TEXYON_WASM_VENDOR` overrides
 /// that, so an out-of-tree build can point somewhere else.
 pub fn wasm_vendor_dir(name: &str) -> PathBuf {
-    println!("cargo:rerun-if-env-changed=TECTONIC_WASM_VENDOR");
+    println!("cargo:rerun-if-env-changed=TEXYON_WASM_VENDOR");
 
-    let root = match env::var_os("TECTONIC_WASM_VENDOR") {
+    let root = match env::var_os("TEXYON_WASM_VENDOR") {
         Some(p) => PathBuf::from(p),
         None => {
             let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());

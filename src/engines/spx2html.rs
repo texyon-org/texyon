@@ -3,4 +3,4 @@
 
 //! Engine to convert Tectonic’s SPX format to HTML.
 
-pub use tectonic_engine_spx2html::Spx2HtmlEngine;
+pub use texyon_engine_spx2html::Spx2HtmlEngine;

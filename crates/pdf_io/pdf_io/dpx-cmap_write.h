@@ -23,7 +23,7 @@
 #ifndef _CMAP_WRITE_H_
 #define _CMAP_WRITE_H_
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 
 #include "dpx-cmap.h"
 #include "dpx-pdfobj.h"

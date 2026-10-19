@@ -1,6 +1,6 @@
 //! Mac core library build script. Links to framework libraries when targeting MacOS.
 
-use tectonic_cfg_support::target_cfg;
+use texyon_cfg_support::target_cfg;
 
 fn main() {
     let is_mac_os = target_cfg!(target_os = "macos");

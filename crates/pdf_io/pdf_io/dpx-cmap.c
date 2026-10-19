@@ -42,7 +42,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 #include "dpx-cmap_p.h"
 #include "dpx-dpxconf.h"
 #include "dpx-dpxutil.h"

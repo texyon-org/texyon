@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use tectonic_xdv::{FileType, XdvEvents};
+use texyon_xdv::{FileType, XdvEvents};
 
 use crate::color::Color;
 use crate::encoding::type1_builtin;

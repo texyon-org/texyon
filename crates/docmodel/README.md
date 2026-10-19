@@ -1,14 +1,14 @@
-# The `tectonic_docmodel` crate
+# The `texyon_docmodel` crate
 
-[![](http://meritbadge.herokuapp.com/tectonic_docmodel)](https://crates.io/crates/tectonic_docmodel)
+[![](http://meritbadge.herokuapp.com/texyon_docmodel)](https://crates.io/crates/texyon_docmodel)
 
 This crate is part of [the Tectonic
 project](https://tectonic-typesetting.github.io/en-US/). It implements the
-Tectonic document model, including the [`Tectonic.toml`] file.
+Tectonic document model, including the [`Texyon.toml`] file.
 
-[`Tectonic.toml`]: https://tectonic-typesetting.github.io/book/latest/ref/tectonic-toml.html
+[`Texyon.toml`]: https://tectonic-typesetting.github.io/book/latest/ref/tectonic-toml.html
 
-- [API documentation](https://docs.rs/tectonic_docmodel/).
+- [API documentation](https://docs.rs/texyon_docmodel/).
 - [Main Git repository](https://github.com/tectonic-typesetting/tectonic/).
 
 

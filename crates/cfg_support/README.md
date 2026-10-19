@@ -1,4 +1,4 @@
-# The `tectonic_cfg_support` crate
+# The `texyon_cfg_support` crate
 
 This crate helps `build.rs` files deal with `CARGO_CFG_TARGET_*` variables. When
 cross-compiling, these variables must be used instead of constructs such as
@@ -6,7 +6,7 @@ cross-compiling, these variables must be used instead of constructs such as
 the build host environment, not the true target environment. This crate is part
 of [the Tectonic project](https://tectonic-typesetting.github.io/).
 
-[![](http://meritbadge.herokuapp.com/tectonic_cfg_support)](https://crates.io/crates/tectonic_cfg_support)
+[![](http://meritbadge.herokuapp.com/texyon_cfg_support)](https://crates.io/crates/texyon_cfg_support)
 
-- [API documentation](https://docs.rs/tectonic_cfg_support/).
+- [API documentation](https://docs.rs/texyon_cfg_support/).
 - [Main Git repository](https://github.com/tectonic-typesetting/tectonic/).

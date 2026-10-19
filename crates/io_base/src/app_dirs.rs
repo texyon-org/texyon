@@ -10,7 +10,7 @@
 use app_dirs2::AppDataType;
 use std::path::PathBuf;
 use std::{env, fs};
-use tectonic_errors::prelude::*;
+use texyon_errors::prelude::*;
 
 /// The instance of the `app_dirs2` crate that this crate links to.
 pub use app_dirs2;
@@ -18,8 +18,8 @@ pub use app_dirs2;
 /// Maybe we should just make this public? But we preserve some flexibility by
 /// not doing so just yet.
 const APP_INFO: app_dirs2::AppInfo = app_dirs2::AppInfo {
-    name: "Tectonic",
-    author: "TectonicProject",
+    name: "texyon",
+    author: "TexyonProject",
 };
 
 /// Get the directory for per-user Tectonic configuration files.
@@ -31,7 +31,7 @@ const APP_INFO: app_dirs2::AppInfo = app_dirs2::AppInfo {
 /// This function is currently implemented with [`app_dirs2::get_app_root`] using
 /// the `UserConfig` data type. Return values have the form:
 ///
-/// - Windows: `%APPDATA%\TectonicProject\Tectonic`, where `%APPDATA%` is
+/// - Windows: `%APPDATA%\TexyonProject\Tectonic`, where `%APPDATA%` is
 ///   something like `C:\Users\knuth\AppData\Roaming`.
 /// - macOS: `$HOME/Library/Application Support/Tectonic`
 /// - Others: `$XDG_CONFIG_HOME/Tectonic` if defined, otherwise
@@ -57,7 +57,7 @@ pub fn ensure_user_config() -> Result<PathBuf> {
 /// This function is currently implemented with [`app_dirs2::app_dir`] using the
 /// `UserCache` data type. Return values have the form:
 ///
-/// - Windows: `%LOCALAPPDATA%\TectonicProject\Tectonic`, where `%LOCALAPPDATA%`
+/// - Windows: `%LOCALAPPDATA%\TexyonProject\Tectonic`, where `%LOCALAPPDATA%`
 ///   is something like `C:\Users\knuth\AppData\Local`.
 /// - macOS: `$HOME/Library/Caches/Tectonic`
 /// - Others: `$XDG_CACHE_HOME/Tectonic` if defined, otherwise
@@ -66,13 +66,13 @@ pub fn ensure_user_config() -> Result<PathBuf> {
 ///
 /// The cache location defaults to the `AppDataType::UserCache`
 /// provided by `app_dirs2` but can be overwritten using the
-/// `TECTONIC_CACHE_DIR` environment variable.
+/// `TEXYON_CACHE_DIR` environment variable.
 ///
 /// This method may perform I/O to create the user cache directory, so it is
 /// fallible. (Due to its `app_dirs2` implementation, it would have to be
 /// fallible even if it didn't perform I/O.)
 pub fn get_user_cache_dir(subdir: &str) -> Result<PathBuf> {
-    let env_cache_path = env::var_os("TECTONIC_CACHE_DIR");
+    let env_cache_path = env::var_os("TEXYON_CACHE_DIR");
 
     let cache_path = match env_cache_path {
         Some(env_cache_path) => {

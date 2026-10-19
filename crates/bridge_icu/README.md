@@ -1,6 +1,6 @@
-# The `tectonic_bridge_icu` crate
+# The `texyon_bridge_icu` crate
 
-[![](http://meritbadge.herokuapp.com/tectonic_bridge_icu)](https://crates.io/crates/tectonic_bridge_icu)
+[![](http://meritbadge.herokuapp.com/texyon_bridge_icu)](https://crates.io/crates/texyon_bridge_icu)
 
 This crate is part of [the Tectonic
 project](https://tectonic-typesetting.github.io/en-US/). It exposes the *C* API
@@ -9,7 +9,7 @@ bindings**.
 
 [ICU4C]: https://unicode-org.github.io/icu/userguide/icu4c-readme.html
 
-- [API documentation](https://docs.rs/tectonic_bridge_icu/).
+- [API documentation](https://docs.rs/texyon_bridge_icu/).
 - [Main Git repository](https://github.com/tectonic-typesetting/tectonic/).
 
 There are a variety of other low-level ICU-related crates available, with
@@ -40,7 +40,7 @@ suffice:
 ```rust
 #[allow(unused_imports)]
 #[allow(clippy::single_component_path_imports)]
-use tectonic_bridge_icu;
+use texyon_bridge_icu;
 ```
 
 

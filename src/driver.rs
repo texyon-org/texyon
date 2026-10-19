@@ -6,11 +6,11 @@
 //! The main struct in this module is [`ProcessingSession`], which knows how to
 //! run (and re-run if necessary) the various engines in the right order. Such a
 //! session can be created with a [`ProcessingSessionBuilder`], which you might
-//! obtain from a [`tectonic_docmodel::document::Document`] using the
+//! obtain from a [`texyon_docmodel::document::Document`] using the
 //! [`crate::docmodel::DocumentExt::setup_session`] extension method, if you’re
 //! using the Tectonic document model. You can set one up manually if not.
 //!
-//! For an example of how to use this module, see `src/bin/tectonic/main.rs`,
+//! For an example of how to use this module, see `src/bin/texyon/main.rs`,
 //! which contains tectonic's main CLI program.
 
 use byte_unit::{Byte, UnitType};
@@ -26,10 +26,10 @@ use std::{
     str::FromStr,
     time::{Duration, SystemTime},
 };
-use tectonic_bridge_core::{CoreBridgeLauncher, DriverHooks, SecuritySettings, SystemRequestError};
-use tectonic_bundles::Bundle;
-use tectonic_engine_spx2html::AssetSpecification;
-use tectonic_io_base::{
+use texyon_bridge_core::{CoreBridgeLauncher, DriverHooks, SecuritySettings, SystemRequestError};
+use texyon_bundles::Bundle;
+use texyon_engine_spx2html::AssetSpecification;
+use texyon_io_base::{
     digest::DigestData,
     filesystem::{FilesystemIo, FilesystemPrimaryInputIo},
     stdstreams::{BufferedPrimaryIo, GenuineStdoutIo},
@@ -205,7 +205,7 @@ enum OutputDestination {
 /// The subset of the driver state that is captured when running a C/C++ engine.
 ///
 /// The main purpose of this type is to implement the [`DriverHooks`] trait,
-/// which is defined by the `tectonic_core_bridge` crate and defines that
+/// which is defined by the `texyon_core_bridge` crate and defines that
 /// interface that the C/C++ processing engines can use to access the outside
 /// world. While these engines are running, they hold a mutable reference to
 /// these data, so it is helpful to separate them out into a sub-structure of
@@ -2073,14 +2073,14 @@ impl ProcessingSession {
 
         let s = (
             crate::config::is_config_test_mode_activated(),
-            std::env::var("TECTONIC_TEST_FAKE_BIBER"),
+            std::env::var("TEXYON_TEST_FAKE_BIBER"),
         );
 
         let mut argv = match s {
             (true, Ok(text)) if !text.trim().is_empty() => {
                 text.split_whitespace().map(|x| x.to_owned()).collect()
             }
-            // when `TECTONIC_TEST_FAKE_BIBER` is empty, proceed to discover
+            // when `TEXYON_TEST_FAKE_BIBER` is empty, proceed to discover
             // the biber binary as follows.
             _ => vec!["biber".to_owned()],
         };
@@ -2088,7 +2088,7 @@ impl ProcessingSession {
         // Moreover, we allow an override of the biber executable, to cope with
         // possible version mismatch of the bundled biblatex package, as filed
         // in issue #893. Since PR #1103, the `tectonic-biber` override can
-        // also be invoked with `tectonic -X biber`.
+        // also be invoked with `texyon -X biber`.
         let find_by = |binary_name: &str| -> Option<String> {
             if let Ok(pathbuf) = which(binary_name) {
                 if let Some(biber_path) = pathbuf.to_str() {

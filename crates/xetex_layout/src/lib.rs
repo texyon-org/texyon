@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 #[cfg(not(target_os = "macos"))]
-use tectonic_bridge_fontconfig as fc;
+use texyon_bridge_fontconfig as fc;
 
 pub mod engine;
 pub mod font;
@@ -57,7 +57,7 @@ pub type GlyphID = u16;
 pub type PlatformFontRef = fc::Pattern;
 /// A font reference from the platform's font manager.
 #[cfg(target_os = "macos")]
-pub type PlatformFontRef = tectonic_mac_core::CTFontDescriptor;
+pub type PlatformFontRef = texyon_mac_core::CTFontDescriptor;
 
 /// Glyph bounding boxes in TeX points, keyed by `(font_id, glyph)`.
 static GLYPH_BOXES: Mutex<BTreeMap<(u16, u16), GlyphBBox>> = Mutex::new(BTreeMap::new());

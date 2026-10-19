@@ -21,9 +21,9 @@ mod sys;
 /// them.
 mod linkage {
     #[allow(unused_imports)]
-    use tectonic_bridge_flate as clippyrenamehack1;
+    use texyon_bridge_flate as clippyrenamehack1;
     #[allow(unused_imports)]
-    use tectonic_bridge_png as clippyrenamehack2;
+    use texyon_bridge_png as clippyrenamehack2;
 }
 
 pub use sys::FT_BBox as BBox;

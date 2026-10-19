@@ -2,11 +2,11 @@
 
 use std::{path::PathBuf, sync::Mutex};
 
-use tectonic::{
+use texyon::{
     engines::tex::{EngineCancellation, EnginePreviewConfig},
     live_preview::{DocumentRoot, ResidentEngineSupport, ResidentXeTeX, SourceSet},
 };
-use tectonic_preview_protocol::ProtocolLimits;
+use texyon_preview_protocol::ProtocolLimits;
 
 #[path = "util/mod.rs"]
 mod util;

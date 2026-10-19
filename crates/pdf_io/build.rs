@@ -4,16 +4,16 @@
 //! Build script for the PDF+XDV+graphics I/O subsystem.
 
 use std::{env, path::PathBuf};
-use tectonic_cfg_support::*;
+use texyon_cfg_support::*;
 
 fn main() {
     let manifest_dir: PathBuf = env::var("CARGO_MANIFEST_DIR").unwrap().into();
 
     // Include paths and settings exported by our internal dependencies.
 
-    let core_include_dir = env::var("DEP_TECTONIC_BRIDGE_CORE_INCLUDE").unwrap();
+    let core_include_dir = env::var("DEP_TEXYON_BRIDGE_CORE_INCLUDE").unwrap();
     let png_include_path = env::var("DEP_PNG_INCLUDE_PATH").unwrap();
-    let flate_include_dir = env::var("DEP_TECTONIC_BRIDGE_FLATE_INCLUDE").unwrap();
+    let flate_include_dir = env::var("DEP_TEXYON_BRIDGE_FLATE_INCLUDE").unwrap();
 
     // Define the C support library.
 
@@ -159,7 +159,7 @@ fn main() {
         compile(&mut ccfg, fname);
     }
 
-    ccfg.compile("libtectonic_pdf_io.a");
+    ccfg.compile("libtexyon_pdf_io.a");
 
     // Cargo exposes this as the environment variable DEP_XXX_INCLUDE_PATH,
     // where XXX is the "links" setting in Cargo.toml. This is the key element

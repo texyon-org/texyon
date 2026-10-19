@@ -11,7 +11,7 @@
 //! crate implements the API in Rust (`src/wasm_shim.rs`) and this script only
 //! clears the symbol-version suffix that the Rust `#[link_name]`s interpolate.
 
-use tectonic_dep_support::{target_is_wasm, Backend, Configuration, Dependency, Spec};
+use texyon_dep_support::{target_is_wasm, Backend, Configuration, Dependency, Spec};
 
 struct IcuSpec;
 

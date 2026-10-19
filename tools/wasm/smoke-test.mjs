@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "..", "..");
 const support = process.argv[2] ?? join(repo, "target", "wasm-assets");
-const modulePath = join(support, "tectonic_wasm.wasm");
+const modulePath = join(support, "texyon_wasm.wasm");
 
 for (const path of [modulePath, join(support, "manifest.json")]) {
   if (!existsSync(path)) {
@@ -42,7 +42,7 @@ function readFile(name) {
 }
 
 function intoModule(bytes) {
-  const ptr = engine.tectonic_wasm_alloc(bytes.length);
+  const ptr = engine.texyon_wasm_alloc(bytes.length);
   new Uint8Array(engine.memory.buffer, ptr, bytes.length).set(bytes);
   return { ptr, len: bytes.length };
 }
@@ -153,7 +153,7 @@ function wasiImports() {
 const imports = {
   wasi_snapshot_preview1: wasiImports(),
   env: {
-    tectonic_host_read_file(namePtr, nameLen, outPtr, outLen) {
+    texyon_host_read_file(namePtr, nameLen, outPtr, outLen) {
       const name = decoder.decode(new Uint8Array(engine.memory.buffer, namePtr, nameLen));
       const bytes = readFile(name);
       reads.push({ name, found: Boolean(bytes) });
@@ -164,7 +164,7 @@ const imports = {
       v.setUint32(outLen, buffer.len, true);
       return 0;
     },
-    tectonic_host_read_source(namePtr, nameLen, outPtr, outLen) {
+    texyon_host_read_source(namePtr, nameLen, outPtr, outLen) {
       const name = decoder.decode(new Uint8Array(engine.memory.buffer, namePtr, nameLen));
       const held = sources.get(name);
       if (!held) return 1;
@@ -174,7 +174,7 @@ const imports = {
       v.setUint32(outLen, buffer.len, true);
       return 0;
     },
-    tectonic_host_log(kind, msgPtr, msgLen) {
+    texyon_host_log(kind, msgPtr, msgLen) {
       const message = decoder.decode(new Uint8Array(engine.memory.buffer, msgPtr, msgLen));
       const label = kind === 2 ? "error" : kind === 1 ? "warning" : "note";
       console.log(`  [${label}] ${message.trim()}`);
@@ -184,34 +184,34 @@ const imports = {
 
 function call(request) {
   const input = intoModule(encoder.encode(JSON.stringify(request)));
-  const out = engine.tectonic_wasm_alloc(8);
+  const out = engine.texyon_wasm_alloc(8);
   try {
-    const rc = engine.tectonic_request(input.ptr, input.len, out, out + 4);
+    const rc = engine.texyon_request(input.ptr, input.len, out, out + 4);
     if (rc !== 0) throw new Error("the engine could not produce a response");
     const v = new DataView(engine.memory.buffer);
     const ptr = v.getUint32(out, true);
     const len = v.getUint32(out + 4, true);
     const text = decoder.decode(new Uint8Array(engine.memory.buffer, ptr, len).slice());
-    engine.tectonic_wasm_free(ptr, len);
+    engine.texyon_wasm_free(ptr, len);
     const parsed = JSON.parse(text);
     if (parsed.status === "compiled") {
       // The SVG is in linear memory, not in the JSON, like the exported PDF.
       parsed.pages = parsed.pages.map(({ index, ptr: svgPtr, len: svgLen }) => {
         const svg =
           svgLen > 0 ? decoder.decode(new Uint8Array(engine.memory.buffer, svgPtr, svgLen)) : "";
-        engine.tectonic_wasm_free(svgPtr, svgLen);
+        engine.texyon_wasm_free(svgPtr, svgLen);
         return { index, svg };
       });
     }
     return parsed;
   } finally {
-    engine.tectonic_wasm_free(out, 8);
-    engine.tectonic_wasm_free(input.ptr, input.len);
+    engine.texyon_wasm_free(out, 8);
+    engine.texyon_wasm_free(input.ptr, input.len);
   }
 }
 
 // The request carries only {path: revision}; the module pulls the text of any
-// revision it does not hold back out through tectonic_host_read_source, the
+// revision it does not hold back out through texyon_host_read_source, the
 // same way the Worker serves it.
 const sources = new Map();
 let nextRevision = 1;
@@ -322,7 +322,7 @@ if (reply.status !== "exported") throw new Error(JSON.stringify(reply).slice(0, 
 // The bytes are in linear memory, not in the JSON. Copy them out before the
 // next allocation can move the heap, then hand them back.
 const pdf = new Uint8Array(engine.memory.buffer, reply.ptr, reply.len).slice();
-engine.tectonic_wasm_free(reply.ptr, reply.len);
+engine.texyon_wasm_free(reply.ptr, reply.len);
 
 if (decoder.decode(pdf.subarray(0, 5)) !== "%PDF-") {
   throw new Error("the export does not start with a PDF header");
@@ -506,7 +506,7 @@ function takeRaster({ ptr, len }) {
   const width = header.getUint32(0, true);
   const height = header.getUint32(4, true);
   const pixels = new Uint8Array(engine.memory.buffer.slice(ptr + 8, ptr + len));
-  engine.tectonic_wasm_free(ptr, len);
+  engine.texyon_wasm_free(ptr, len);
   return { width, height, pixels };
 }
 

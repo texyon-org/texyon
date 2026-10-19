@@ -25,7 +25,7 @@
  *   Unsupported features: Transparency, etc.
  */
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 #include "dpx-bmpimage.h"
 
 #include <fcntl.h>

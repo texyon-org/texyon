@@ -11,8 +11,8 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
 };
-use tectonic_errors::{anyhow::Context, prelude::*};
-use tectonic_status_base::tt_warning;
+use texyon_errors::{anyhow::Context, prelude::*};
+use texyon_status_base::tt_warning;
 
 use crate::{fonts::FontEnsemble, specials::Special, Common};
 
@@ -451,7 +451,7 @@ impl<'a> Iterator for AssetOutputsIterator<'a> {
 pub(crate) mod syntax {
     use serde::{Deserialize, Serialize, Serializer};
     use std::collections::{BTreeMap, HashMap};
-    use tectonic_errors::prelude::*;
+    use texyon_errors::prelude::*;
 
     /// Annoyingly we need to wrap this hashmap in a struct because we need to
     /// customize the serializer to sort the keys for reproducible outputs.

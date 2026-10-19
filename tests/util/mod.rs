@@ -19,20 +19,20 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
 };
-use tectonic::errors::DefinitelySame;
-use tectonic::{errors::Result, io::memory::MemoryFileCollection};
-use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
-use tectonic_engine_xetex::TexOutcome;
+use texyon::errors::DefinitelySame;
+use texyon::{errors::Result, io::memory::MemoryFileCollection};
+use texyon_bridge_core::{CoreBridgeLauncher, MinimalDriver};
+use texyon_engine_xetex::TexOutcome;
 
-pub use tectonic::test_util::test_path;
-use tectonic_errors::prelude::StdResult;
+pub use texyon::test_util::test_path;
+use texyon_errors::prelude::StdResult;
 
 /// Set the magic environment variable that enables the testing infrastructure
 /// embedded in the main Tectonic crate. This function is separated out from
 /// the main crate because it embeds `CARGO_MANIFEST_DIR`, which is not
 /// something we want to leak into the binary artifacts we produce.
 pub fn set_test_root() {
-    ::tectonic::test_util::set_test_root_augmented(env!("CARGO_MANIFEST_DIR"));
+    ::texyon::test_util::set_test_root_augmented(env!("CARGO_MANIFEST_DIR"));
 }
 
 // Duplicated from Cargo's own testing code:
@@ -59,11 +59,11 @@ pub fn cargo_dir() -> PathBuf {
 /// the moment we just let everybody write and overwrite the file, but we
 /// could use a locking scheme to get smarter about this.
 pub fn ensure_plain_format() -> Result<PathBuf> {
-    use tectonic::{
+    use texyon::{
         io::{try_open_file, FilesystemIo, FilesystemPrimaryInputIo, IoStack, MemoryIo},
         TexEngine,
     };
-    use tectonic_status_base::NoopStatusBackend;
+    use texyon_status_base::NoopStatusBackend;
 
     let fmt_path = test_path(&["plain.fmt"]);
 

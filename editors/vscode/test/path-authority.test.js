@@ -9,7 +9,7 @@ const test = require("node:test");
 const { childLogicalPath, isWithin, resolveAuthority, sourceFilePath } = require("../path-authority");
 
 test("accepts normalized TeX children under the canonical primary root", (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tectonic-vscode-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "texyon-vscode-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const primary = path.join(root, "main.tex");
   const child = path.join(root, "chapters", "one.tex");
@@ -24,8 +24,8 @@ test("accepts normalized TeX children under the canonical primary root", (t) => 
 });
 
 test("resolver authority rejects a lexical child symlinked outside the root", (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tectonic-vscode-root-"));
-  const outside = fs.mkdtempSync(path.join(os.tmpdir(), "tectonic-vscode-outside-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "texyon-vscode-root-"));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), "texyon-vscode-outside-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
   const primary = path.join(root, "main.tex");
@@ -44,7 +44,7 @@ test("resolver authority rejects a lexical child symlinked outside the root", (t
 });
 
 test("nearest-existing-ancestor resolution confines unsaved descendants", (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tectonic-vscode-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "texyon-vscode-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const unresolved = path.join(root, "new", "chapter.tex");
   assert.equal(resolveAuthority(unresolved), unresolved);

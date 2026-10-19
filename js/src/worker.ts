@@ -6,7 +6,7 @@
  * Everything about this file follows from one constraint: TeX asks for files in
  * the middle of typesetting and cannot yield while it waits. That is why the
  * engine lives in a Worker at all — a Worker is the one place a browser still
- * lets you block, so `tectonic_host_read_file` can be answered with a
+ * lets you block, so `texyon_host_read_file` can be answered with a
  * synchronous `XMLHttpRequest` without freezing the page.
  *
  * Blocking is the fallback, not the plan. The support pack is pulled into
@@ -45,14 +45,14 @@ import { Wasi, WasiExit } from "./wasi.js";
 interface Exports {
   memory: WebAssembly.Memory;
   _initialize?: () => void;
-  tectonic_request(
+  texyon_request(
     reqPtr: number,
     reqLen: number,
     outPtr: number,
     outLen: number,
   ): number;
-  tectonic_wasm_alloc(len: number): number;
-  tectonic_wasm_free(ptr: number, len: number): void;
+  texyon_wasm_alloc(len: number): number;
+  texyon_wasm_free(ptr: number, len: number): void;
 }
 
 /** A page drawn to pixels: width and height as little-endian u32, then RGBA rows. */
@@ -127,7 +127,7 @@ const projectResources = new Map<string, Uint8Array>();
  *
  * The compile request into the module carries only `{path: revision}`; the
  * session pulls the text of any revision it does not hold back out through
- * `tectonic_host_read_source`. A reopened session holds nothing and simply
+ * `texyon_host_read_source`. A reopened session holds nothing and simply
  * pulls everything, which is why no resend bookkeeping exists anywhere.
  */
 const projectSources = new Map<string, { text: string; revision: number }>();
@@ -571,7 +571,7 @@ async function prefetch(): Promise<void> {
 
 /** Copy a JS byte array into the module and return its address. */
 function intoModule(bytes: Uint8Array): { ptr: number; len: number } {
-  const ptr = exports!.tectonic_wasm_alloc(bytes.length);
+  const ptr = exports!.texyon_wasm_alloc(bytes.length);
   if (ptr === 0 && bytes.length > 0) throw new Error("the engine is out of memory");
   new Uint8Array(exports!.memory.buffer, ptr, bytes.length).set(bytes);
   return { ptr, len: bytes.length };
@@ -584,10 +584,10 @@ function call(request: unknown): RawResponse {
   const input = intoModule(encoded);
 
   // Two words of scratch for the reply's (pointer, length).
-  const out = engine.tectonic_wasm_alloc(8);
+  const out = engine.texyon_wasm_alloc(8);
 
   try {
-    const rc = engine.tectonic_request(input.ptr, input.len, out, out + 4);
+    const rc = engine.texyon_request(input.ptr, input.len, out, out + 4);
     if (rc !== 0) throw new Error("the engine could not produce a response");
 
     const view = new DataView(engine.memory.buffer);
@@ -596,12 +596,12 @@ function call(request: unknown): RawResponse {
     const reply = decoder.decode(
       new Uint8Array(engine.memory.buffer, replyPtr, replyLen).slice(),
     );
-    engine.tectonic_wasm_free(replyPtr, replyLen);
+    engine.texyon_wasm_free(replyPtr, replyLen);
 
     return JSON.parse(reply) as RawResponse;
   } finally {
-    engine.tectonic_wasm_free(out, 8);
-    engine.tectonic_wasm_free(input.ptr, input.len);
+    engine.texyon_wasm_free(out, 8);
+    engine.texyon_wasm_free(input.ptr, input.len);
   }
 }
 
@@ -633,7 +633,7 @@ async function init(opts: SerializableEngineOptions): Promise<void> {
   const imports: WebAssembly.Imports = {
     wasi_snapshot_preview1: wasi.imports as unknown as WebAssembly.ModuleImports,
     env: {
-      tectonic_host_read_file(
+      texyon_host_read_file(
         namePtr: number,
         nameLen: number,
         outPtr: number,
@@ -654,7 +654,7 @@ async function init(opts: SerializableEngineOptions): Promise<void> {
         return 0;
       },
 
-      tectonic_host_read_source(
+      texyon_host_read_source(
         namePtr: number,
         nameLen: number,
         outPtr: number,
@@ -675,7 +675,7 @@ async function init(opts: SerializableEngineOptions): Promise<void> {
         return 0;
       },
 
-      tectonic_host_log(kind: number, msgPtr: number, msgLen: number): void {
+      texyon_host_log(kind: number, msgPtr: number, msgLen: number): void {
         const engine = exports!;
         const message = decoder.decode(
           new Uint8Array(engine.memory.buffer, msgPtr, msgLen),
@@ -787,7 +787,7 @@ async function takeRasters(raw: RawRaster[], scale: number): Promise<PageRaster[
     const height = header.getUint32(4, true);
     const pixels = new Uint8ClampedArray(engine.memory.buffer, ptr + 8, len - 8);
     const bitmap = createImageBitmap(new ImageData(pixels, width, height));
-    engine.tectonic_wasm_free(ptr, len);
+    engine.texyon_wasm_free(ptr, len);
     return { index, bitmap };
   });
   return Promise.all(
@@ -807,7 +807,7 @@ function collect(
   // like the PDF: decode each page out and give the module its bytes back.
   const pages = report.pages.map(({ index, ptr, len }) => {
     const svg = len > 0 ? decoder.decode(new Uint8Array(engine.memory.buffer, ptr, len)) : "";
-    engine.tectonic_wasm_free(ptr, len);
+    engine.texyon_wasm_free(ptr, len);
     return { index, svg };
   });
 
@@ -973,7 +973,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
           // before anything else can allocate — a growing heap detaches the
           // buffer this view is over — then give the module its bytes back.
           const pdf = new Uint8Array(engine.memory.buffer, reply.ptr, reply.len).slice();
-          engine.tectonic_wasm_free(reply.ptr, reply.len);
+          engine.texyon_wasm_free(reply.ptr, reply.len);
 
           // Transferred, not copied, so a fifty-page document does not cross
           // the Worker boundary twice.

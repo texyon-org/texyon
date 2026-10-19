@@ -12,7 +12,7 @@ use crate::state::{FontEngineHandle, FontState, MemState};
 use crate::units::{FontId, Scaled, StrNumber};
 use std::ffi::c_int;
 use std::rc::Rc;
-use tectonic_xetex_layout::{
+use texyon_xetex_layout::{
     cache_glyph_bbox, cached_glyph_bbox, get_cp_code, FloatPoint, GlyphBBox,
 };
 

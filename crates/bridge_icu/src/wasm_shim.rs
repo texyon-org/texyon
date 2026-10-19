@@ -4,10 +4,10 @@
 //! symbols (`ubidi_open_76` and friends). A browser has no system ICU, and
 //! shipping ICU4C's ~30 MB of locale data to one is not a serious option, so on
 //! wasm the engine gets these symbols from here instead — unsuffixed, because
-//! `tectonic_engine_xetex`'s build script leaves `ICU_VERSION_SUFFIX` empty for
+//! `texyon_engine_xetex`'s build script leaves `ICU_VERSION_SUFFIX` empty for
 //! wasm targets.
 //!
-//! Three families are needed, all consumed from `tectonic_engine_xetex`:
+//! Three families are needed, all consumed from `texyon_engine_xetex`:
 //!
 //! - `ubidi_*` — the Unicode bidirectional algorithm, run for every native-font
 //!   word node. Backed by [`unicode_bidi`], which implements the same UAX #9.

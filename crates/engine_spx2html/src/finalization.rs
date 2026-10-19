@@ -3,8 +3,8 @@
 
 //! The finalization phase of SPX to HTML processing.
 
-use tectonic_errors::prelude::*;
-use tectonic_status_base::tt_warning;
+use texyon_errors::prelude::*;
+use texyon_status_base::tt_warning;
 
 use crate::{
     assets::Assets, fonts::FontEnsemble, specials::Special, templating::Templating, Common,

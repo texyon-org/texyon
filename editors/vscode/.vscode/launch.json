@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Run Tectonic Live Preview",
+      "name": "Run TeXyon Live Preview",
       "type": "extensionHost",
       "request": "launch",
       "args": [
