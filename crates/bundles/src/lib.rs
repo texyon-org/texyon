@@ -276,8 +276,7 @@ pub fn detect_bundle(
 /// webservice.
 pub fn get_fallback_bundle_url(format_version: u32) -> String {
     let bundle_locked = option_env!("TEXYON_BUNDLE_LOCKED").unwrap_or("");
-    let bundle_prefix =
-        option_env!("TEXYON_BUNDLE_PREFIX").unwrap_or(TEXYON_BUNDLE_PREFIX_DEFAULT);
+    let bundle_prefix = option_env!("TEXYON_BUNDLE_PREFIX").unwrap_or(TEXYON_BUNDLE_PREFIX_DEFAULT);
 
     // Simply return the locked url when it is specified:
     if !bundle_locked.is_empty() {

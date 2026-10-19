@@ -74,10 +74,10 @@ fn prep_tectonic(cwd: &Path, args: &[&str]) -> Command {
         Command::new(tectonic)
     };
 
-    command.args(args).current_dir(cwd).env(
-        texyon::test_util::TEST_ROOT_ENV_VAR,
-        TEST_ROOT.as_os_str(),
-    );
+    command
+        .args(args)
+        .current_dir(cwd)
+        .env(texyon::test_util::TEST_ROOT_ENV_VAR, TEST_ROOT.as_os_str());
     command
 }
 

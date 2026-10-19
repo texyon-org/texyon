@@ -191,9 +191,7 @@ impl<W: Write> FrameSink for JsonlFrameSink<W> {
 mod tests {
     use std::{collections::BTreeMap, io};
 
-    use texyon_preview_protocol::{
-        FrameId, FramePhase, RequestSeq, SourceRevision, UpdateOutcome,
-    };
+    use texyon_preview_protocol::{FrameId, FramePhase, RequestSeq, SourceRevision, UpdateOutcome};
     use texyon_preview_render::{PageFingerprint, PageVisual};
 
     use super::*;
