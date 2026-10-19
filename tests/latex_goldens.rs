@@ -46,9 +46,7 @@ fn hashes_dir() -> PathBuf {
 }
 
 fn bless_mode() -> bool {
-    env::var("TEXYON_BLESS")
-        .map(|v| v == "1")
-        .unwrap_or(false)
+    env::var("TEXYON_BLESS").map(|v| v == "1").unwrap_or(false)
 }
 
 /// Return the path to the `texyon` binary built by Cargo.
@@ -141,9 +139,7 @@ fn run_case(stem: &str) {
                 }
             }
             Err(_) => {
-                eprintln!(
-                    "SKIP {stem}: no golden hash yet. Run with TEXYON_BLESS=1 to generate."
-                );
+                eprintln!("SKIP {stem}: no golden hash yet. Run with TEXYON_BLESS=1 to generate.");
             }
         }
     }

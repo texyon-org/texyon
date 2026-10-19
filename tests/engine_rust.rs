@@ -44,9 +44,7 @@ fn golden_dir() -> PathBuf {
 }
 
 fn bless_mode() -> bool {
-    env::var("TEXYON_BLESS")
-        .map(|v| v == "1")
-        .unwrap_or(false)
+    env::var("TEXYON_BLESS").map(|v| v == "1").unwrap_or(false)
 }
 
 /// Run the plain TeX engine on `<stem>.tex` found in `src_dir()`, then either
