@@ -41,7 +41,7 @@
 
 #include "dpx-pdfdev.h"
 
-#include "tectonic_bridge_flate.h"
+#include "texyon_bridge_flate.h"
 
 #define STREAM_ALLOC_SIZE      4096u
 #define ARRAY_ALLOC_SIZE       256
@@ -235,13 +235,13 @@ static pdf_out pout;
 /* Tectonic: during the XeTeX pass, if a PDF is loaded as an image,
  * the current_output can be accessed without init_pdf_out_struct having
  * been called. So we add a flag to ensure that it's always initialized. */
-static int tectonic_pout_initialized = 0;
+static int texyon_pout_initialized = 0;
 static void init_pdf_out_struct (pdf_out *p);
 
 static pdf_out *
 current_output (void)
 {
-  if (!tectonic_pout_initialized)
+  if (!texyon_pout_initialized)
     init_pdf_out_struct(&pout);
 
   return &pout;
@@ -284,7 +284,7 @@ init_pdf_out_struct (pdf_out *p)
 
   p->free_list = NEW((PDF_NUM_INDIRECT_MAX+1)/8, char);
   memset(p->free_list, 0, (PDF_NUM_INDIRECT_MAX+1)/8);
-  tectonic_pout_initialized = 1;
+  texyon_pout_initialized = 1;
 }
 
 static void
@@ -2087,7 +2087,7 @@ write_stream (pdf_out *p, pdf_stream *stream)
 
         buffer_length64 = (uint64_t) buffer_length;
 
-        if (tectonic_flate_compress(
+        if (texyon_flate_compress(
                 buffer,
                 &buffer_length64,
                 filtered,
@@ -2476,9 +2476,9 @@ filter_stream_decode_FlateDecode(const void *data, size_t len, struct decode_par
     uint8_t  wbuf[WBUF_SIZE];
     void    *flate_handle;
 
-    flate_handle = tectonic_flate_new_decompressor(data, (uint64_t) len);
+    flate_handle = texyon_flate_new_decompressor(data, (uint64_t) len);
     if (flate_handle == NULL) {
-        dpx_warning("tectonic_flate_new_decompressor() failed");
+        dpx_warning("texyon_flate_new_decompressor() failed");
         return NULL;
     }
 
@@ -2487,9 +2487,9 @@ filter_stream_decode_FlateDecode(const void *data, size_t len, struct decode_par
     for (;;) {
         uint64_t out_size = WBUF_SIZE;
 
-        if (tectonic_flate_decompress_chunk(flate_handle, wbuf, &out_size)) {
-            dpx_warning("tectonic_flate_decompress() failed");
-            tectonic_flate_free_decompressor(flate_handle);
+        if (texyon_flate_decompress_chunk(flate_handle, wbuf, &out_size)) {
+            dpx_warning("texyon_flate_decompress() failed");
+            texyon_flate_free_decompressor(flate_handle);
             pdf_release_obj(tmp);
             return NULL;
         }
@@ -2500,7 +2500,7 @@ filter_stream_decode_FlateDecode(const void *data, size_t len, struct decode_par
         pdf_add_stream(tmp, wbuf, out_size);
     }
 
-    tectonic_flate_free_decompressor(flate_handle);
+    texyon_flate_free_decompressor(flate_handle);
 
     if (parms) {
         dst = filter_stream_decode_Predictor(pdf_stream_dataptr(tmp), pdf_stream_length(tmp), parms);
@@ -4422,5 +4422,5 @@ pdf_obj_reset_global_state(void)
     p->output.line_position = 0;
     p->output.compression_saved = 0;
 
-    tectonic_pout_initialized = 0;
+    texyon_pout_initialized = 0;
 }

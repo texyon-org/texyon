@@ -4,7 +4,7 @@
 //! Commands that have have primitives with argument codes associated with
 //! "simple" enums, whose numerical values we know at compile-time.
 
-use tectonic_errors::prelude::*;
+use texyon_errors::prelude::*;
 
 use super::{
     ArgKind, Command, CommandArgument, CommandBehavior, CommandPrimitive, PrimitiveExtraInit,

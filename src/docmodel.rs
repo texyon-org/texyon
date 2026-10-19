@@ -4,17 +4,17 @@
 //! Connecting the Tectonic document model to the engines.
 //!
 //! This module extends the document model types provided by the
-//! `tectonic_docmodel` crate with the actual document-processing capabilities
+//! `texyon_docmodel` crate with the actual document-processing capabilities
 //! provided by the processing engines.
 
 use std::{fmt::Write as FmtWrite, fs, io, path::PathBuf};
-use tectonic_bridge_core::SecuritySettings;
-use tectonic_bundles::{detect_bundle, Bundle};
-use tectonic_docmodel::{
+use texyon_bridge_core::SecuritySettings;
+use texyon_bundles::{detect_bundle, Bundle};
+use texyon_docmodel::{
     document::{BuildTargetType, Document, InputFile},
     workspace::{Workspace, WorkspaceCreator},
 };
-use tectonic_geturl::{DefaultBackend, GetUrlBackend};
+use texyon_geturl::{DefaultBackend, GetUrlBackend};
 
 use crate::{
     config, ctry,

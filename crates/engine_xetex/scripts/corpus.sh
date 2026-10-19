@@ -26,7 +26,7 @@ MODE="${1:-check}"
 SCOPE="${2:-all}"
 ROOT="$(git rev-parse --show-toplevel)"
 CORPUS="$ROOT/crates/engine_xetex/tests/corpus"
-CACHE="${TECTONIC_CORPUS_DIR:-$HOME/.cache/tectonic-corpus}/raw"
+CACHE="${TEXYON_CORPUS_DIR:-$HOME/.cache/tectonic-corpus}/raw"
 SUP="$CACHE/latex-tests/support"
 GOLD="${CORPUS_GOLDENS:-$CORPUS/goldens}"; mkdir -p "$GOLD"
 MANIFEST="$CORPUS/manifest.tsv"
@@ -40,7 +40,7 @@ if [ "$MODE" = bless ]; then
   BIN="${ORACLE_BIN:?bless requires ORACLE_BIN (the reference binary)}"
   echo "BLESS using oracle: $BIN"
 else
-  BIN="${CANDIDATE_BIN:-$ROOT/target/release/tectonic}"
+  BIN="${CANDIDATE_BIN:-$ROOT/target/release/texyon}"
   echo "CHECK using candidate: $BIN"
 fi
 [ -x "$BIN" ] || { echo "engine binary not executable: $BIN"; exit 2; }

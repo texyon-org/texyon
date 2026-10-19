@@ -1003,7 +1003,7 @@ pub(crate) struct ConfigState {
 pub(crate) use crate::layout::{FontMappingHandle, LinebreakHandle};
 
 /// A native font's layout engine.
-pub(crate) type FontEngineHandle = tectonic_xetex_layout::LayoutEngine<'static>;
+pub(crate) type FontEngineHandle = texyon_xetex_layout::LayoutEngine<'static>;
 
 pub(crate) struct FontState {
     /// Converter staged by a `mapping=` font feature until it is transferred

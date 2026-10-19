@@ -5,7 +5,7 @@
 //!
 //! A Tectonic "bundle" is a collection of TeX support files. In code, bundles
 //! implement the [`Bundle`] trait defined here, although most of the action in
-//! a bundle will be in its implementation of [`tectonic_io_base::IoProvider`].
+//! a bundle will be in its implementation of [`texyon_io_base::IoProvider`].
 //!
 //! This crate provides the following bundle implementations:
 //!
@@ -16,9 +16,9 @@
 //! - [`zip::ZipBundle`] for a ZIP-format bundle.
 
 use std::{fmt::Debug, io::Read, path::PathBuf};
-use tectonic_errors::{prelude::bail, Result};
-use tectonic_io_base::{digest::DigestData, InputHandle, IoProvider, OpenResult};
-use tectonic_status_base::StatusBackend;
+use texyon_errors::{prelude::bail, Result};
+use texyon_io_base::{digest::DigestData, InputHandle, IoProvider, OpenResult};
+use texyon_status_base::StatusBackend;
 
 pub mod cache;
 pub mod dir;
@@ -36,7 +36,7 @@ use ttb_net::TTBNetBundle;
 use zip::ZipBundle;
 
 /// The current hardcoded default prefix for tectonic's bundle.
-const TECTONIC_BUNDLE_PREFIX_DEFAULT: &str = "https://relay.fullyjustified.net";
+const TEXYON_BUNDLE_PREFIX_DEFAULT: &str = "https://relay.fullyjustified.net";
 
 // How many times network bundles should retry
 // a download, and how long they should wait
@@ -263,9 +263,9 @@ pub fn detect_bundle(
 /// are fairly closely coupled.
 ///
 /// The hardcoded default can be overridden at compile time by setting either:
-/// - `${TECTONIC_BUNDLE_PREFIX}`, which would lead to a URL in the form of
-///   `${TECTONIC_BUNDLE_PREFIX}/default_bundle_v${FORMAT_VERSION}.tar`, or
-/// - `${TECTONIC_BUNDLE_LOCKED}`, which can be used to pin the default bundle
+/// - `${TEXYON_BUNDLE_PREFIX}`, which would lead to a URL in the form of
+///   `${TEXYON_BUNDLE_PREFIX}/default_bundle_v${FORMAT_VERSION}.tar`, or
+/// - `${TEXYON_BUNDLE_LOCKED}`, which can be used to pin the default bundle
 ///   to a specific "snapshot" if specified. This would be useful for
 ///   reproducible builds.
 ///
@@ -275,9 +275,9 @@ pub fn detect_bundle(
 /// low-level reliability problems and was blocked in China. We now use a custom
 /// webservice.
 pub fn get_fallback_bundle_url(format_version: u32) -> String {
-    let bundle_locked = option_env!("TECTONIC_BUNDLE_LOCKED").unwrap_or("");
+    let bundle_locked = option_env!("TEXYON_BUNDLE_LOCKED").unwrap_or("");
     let bundle_prefix =
-        option_env!("TECTONIC_BUNDLE_PREFIX").unwrap_or(TECTONIC_BUNDLE_PREFIX_DEFAULT);
+        option_env!("TEXYON_BUNDLE_PREFIX").unwrap_or(TEXYON_BUNDLE_PREFIX_DEFAULT);
 
     // Simply return the locked url when it is specified:
     if !bundle_locked.is_empty() {

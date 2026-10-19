@@ -1,6 +1,6 @@
-# The `tectonic_bridge_freetype2` crate
+# The `texyon_bridge_freetype2` crate
 
-[![](http://meritbadge.herokuapp.com/tectonic_bridge_freetype2)](https://crates.io/crates/tectonic_bridge_freetype2)
+[![](http://meritbadge.herokuapp.com/texyon_bridge_freetype2)](https://crates.io/crates/texyon_bridge_freetype2)
 
 This crate is part of [the Tectonic
 project](https://tectonic-typesetting.github.io/en-US/). It exposes the *C* API
@@ -9,7 +9,7 @@ of the [FreeType] font rendering engine within the Rust/Cargo build framework,
 
 [FreeType]: https://www.freetype.org/
 
-- [API documentation](https://docs.rs/tectonic_bridge_freetype2/).
+- [API documentation](https://docs.rs/texyon_bridge_freetype2/).
 - [Main Git repository](https://github.com/tectonic-typesetting/tectonic/).
 
 There are a variety of other low-level FreeType-related crates available, including:
@@ -41,7 +41,7 @@ suffice:
 ```rust
 #[allow(unused_imports)]
 #[allow(clippy::single_component_path_imports)]
-use tectonic_bridge_freetype2;
+use texyon_bridge_freetype2;
 ```
 
 

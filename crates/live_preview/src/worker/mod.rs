@@ -10,8 +10,8 @@ use std::{
 };
 
 use super::{PreviewWorkerProcessor, RequestSeq, SourceRevision, SourceSet};
-use tectonic_engine_xetex::EngineCancellation;
-use tectonic_preview_protocol::{QueryId, SourceLocation, SyncRectPayload};
+use texyon_engine_xetex::EngineCancellation;
+use texyon_preview_protocol::{QueryId, SourceLocation, SyncRectPayload};
 
 use run::{run_timer, run_worker};
 
@@ -249,7 +249,7 @@ impl<T: Send + 'static> LivePreviewWorker<T> {
         let worker_cancellation = cancellation.clone();
         let worker_shared = Arc::clone(&shared);
         let worker = thread::Builder::new()
-            .name("tectonic-preview-engine".into())
+            .name("texyon-preview-engine".into())
             .stack_size(WORKER_STACK_BYTES)
             .spawn(move || {
                 match factory() {
@@ -289,7 +289,7 @@ impl<T: Send + 'static> LivePreviewWorker<T> {
         let timer_cancellation = cancellation.clone();
         let timer_shared = Arc::clone(&shared);
         let timer = thread::Builder::new()
-            .name("tectonic-preview-cancel".into())
+            .name("texyon-preview-cancel".into())
             .spawn(move || run_timer(timer_rx, timer_cancellation, &timer_shared))
             .map_err(WorkerFailure::Spawn)?;
 

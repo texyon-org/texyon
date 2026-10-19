@@ -3,8 +3,8 @@
 # Licensed under the MIT license
 
 # Create an AppImage of Tectonic. If the environment variable
-# $TECTONIC_APPIMAGE_TAG is set, the created file will have a name like
-# `tectonic-${TECTONIC_APPIMAGE_TAG}-$ARCH.AppImage`; otherwise the tag will
+# $TEXYON_APPIMAGE_TAG is set, the created file will have a name like
+# `tectonic-${TEXYON_APPIMAGE_TAG}-$ARCH.AppImage`; otherwise the tag will
 # be the version of the Tectonic binary. You can also set $UPDATE_INFORMATION
 # to embed update info in the AppImage and cause the creation of a zsync file.
 # The format of the variable should be as described here:
@@ -27,8 +27,8 @@ set -ex
 cd "$top"
 cargo build --release
 
-if [ -z "$TECTONIC_APPIMAGE_TAG" ] ; then
-    TECTONIC_APPIMAGE_TAG="$(cranko show version tectonic)"
+if [ -z "$TEXYON_APPIMAGE_TAG" ] ; then
+    TEXYON_APPIMAGE_TAG="$(cranko show version tectonic)"
 fi
 
 # Everything else is done here:
@@ -49,12 +49,12 @@ fi
 tectonicapp=Tectonic-$arch.AppImage
 appdir="$(mktemp -d)"
 
-OUTPUT="tectonic-$TECTONIC_APPIMAGE_TAG-$arch.AppImage" \
+OUTPUT="tectonic-$TEXYON_APPIMAGE_TAG-$arch.AppImage" \
 ./$linuxdeployapp \
     --icon-file="$assets/tectonic.svg" \
     --desktop-file="$assets/tectonic.desktop" \
     --appdir="$appdir" \
-    --executable="$top/target/release/tectonic" \
+    --executable="$top/target/release/texyon" \
     --output=appimage
 
 rm -rf "$appdir"

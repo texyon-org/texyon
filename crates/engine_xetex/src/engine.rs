@@ -650,14 +650,14 @@ fn initialize_primitives(st: &mut EngineState) -> Result<(), Abort> {
 /// A Rust panic is caught and turned into a `HISTORY_FATAL_ERROR` return with
 /// a surfaced message instead of unwinding into the host.
 pub(crate) fn run_engine(
-    api: &mut tectonic_bridge_core::CoreBridgeState,
+    api: &mut texyon_bridge_core::CoreBridgeState,
     config: ConfigState,
     dump_name: &str,
     input_file_name: &str,
     build_date: libc::time_t,
 ) -> i32 {
-    tectonic_xetex_layout::reset_font_caches();
-    let _layout_cache_guard = OnDrop(tectonic_xetex_layout::reset_font_caches);
+    texyon_xetex_layout::reset_font_caches();
+    let _layout_cache_guard = OnDrop(texyon_xetex_layout::reset_font_caches);
 
     let _bridge = crate::bridge::enter(api);
 
@@ -1066,11 +1066,11 @@ fn initial_random_seed(
 
 pub(crate) fn cleanup(st: &mut EngineState) {
     crate::journal::disarm(st);
-    tectonic_xetex_layout::reset_font_caches();
+    texyon_xetex_layout::reset_font_caches();
     pdf_files_close();
     st.shipout.dvi.release_buffer();
 
-    tectonic_xetex_layout::FontManager::destroy();
+    texyon_xetex_layout::FontManager::destroy();
     st.fonts.release_linebreak_state();
 
     st.fonts.font_layout_engine.as_mut_slice().fill(None);

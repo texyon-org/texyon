@@ -1,9 +1,9 @@
 {
-  "name": "tectonic-live-preview",
-  "displayName": "Tectonic Live Preview",
-  "description": "SVG live preview backed by a resident Tectonic XeTeX process.",
+  "name": "texyon",
+  "displayName": "TeXyon Live Preview",
+  "description": "SVG live preview backed by a resident TeXyon engine process.",
   "version": "0.0.1",
-  "publisher": "tectonic-typesetting",
+  "publisher": "texyon",
   "license": "AGPL-3.0-or-later",
   "engines": {
     "vscode": "^1.85.0"
@@ -19,31 +19,31 @@
   "contributes": {
     "commands": [
       {
-        "command": "tectonicPreview.start",
-        "title": "Tectonic: Start Live Preview"
+        "command": "texyon.start",
+        "title": "TeXyon: Start Live Preview"
       },
       {
-        "command": "tectonicPreview.stop",
-        "title": "Tectonic: Stop Live Preview"
+        "command": "texyon.stop",
+        "title": "TeXyon: Stop Live Preview"
       },
       {
-        "command": "tectonicPreview.cancel",
-        "title": "Tectonic: Cancel In-Flight Preview"
+        "command": "texyon.cancel",
+        "title": "TeXyon: Cancel In-Flight Preview"
       },
       {
-        "command": "tectonicPreview.forwardSearch",
-        "title": "Tectonic: Show Cursor in Live Preview"
+        "command": "texyon.forwardSearch",
+        "title": "TeXyon: Show Cursor in Live Preview"
       }
     ],
     "configuration": {
-      "title": "Tectonic Live Preview",
+      "title": "TeXyon Live Preview",
       "properties": {
-        "tectonicPreview.executable": {
+        "texyon.executable": {
           "type": "string",
-          "default": "tectonic",
-          "description": "Path to a Tectonic executable built with the preview-mupdf feature."
+          "default": "texyon",
+          "description": "Path to a TeXyon executable built with the preview-mupdf feature."
         },
-        "tectonicPreview.format": {
+        "texyon.format": {
           "type": "string",
           "default": "latex",
           "description": "Cached XeTeX format to use for preview."

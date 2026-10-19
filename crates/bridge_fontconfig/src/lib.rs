@@ -96,5 +96,5 @@ impl Property {
 /// them.
 mod linkage {
     #[allow(unused_imports)]
-    use tectonic_bridge_png as clippyrenamehack1;
+    use texyon_bridge_png as clippyrenamehack1;
 }

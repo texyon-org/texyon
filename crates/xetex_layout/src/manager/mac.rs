@@ -5,8 +5,8 @@ use crate::manager::{
 use crate::PlatformFontRef;
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
-use tectonic_bridge_core::CoreBridgeState;
-use tectonic_mac_core::{
+use texyon_bridge_core::CoreBridgeState;
+use texyon_mac_core::{
     CFArray, CFDictionary, CFSet, CFString, CFUrl, CTFont, CTFontDescriptor, CoreType,
     FontAttribute, FontNameKey,
 };

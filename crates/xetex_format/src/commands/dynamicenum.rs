@@ -3,7 +3,7 @@
 
 //! Commands whose arguments map to the values of dynamic enums.
 
-use tectonic_errors::prelude::*;
+use texyon_errors::prelude::*;
 
 use super::{
     ArgKind, Command, CommandArgument, CommandBehavior, CommandPrimitive, PrimitiveExtraInit,

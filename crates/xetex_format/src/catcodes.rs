@@ -6,7 +6,7 @@
 //! Character category codes.
 
 use std::fmt;
-use tectonic_errors::prelude::*;
+use texyon_errors::prelude::*;
 
 /// A character category code.
 ///

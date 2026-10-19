@@ -1,7 +1,7 @@
 // Copyright 2020-2023 the Tectonic Project
 // Licensed under the MIT License.
 
-//! This file defines the syntax of Tectonic.toml,
+//! This file defines the syntax of Texyon.toml,
 //! which is parsed using serde.
 //!
 //! This module is only used by [`crate::document::Document`]

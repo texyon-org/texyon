@@ -23,7 +23,7 @@
 #ifndef _EPDF_H_
 #define _EPDF_H_
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 
 #include <stdio.h>
 

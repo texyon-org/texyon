@@ -4,4 +4,4 @@
 
 //! Engine for invoking `xdvipdfmx`.
 
-pub use tectonic_engine_xdvipdfmx::XdvipdfmxEngine;
+pub use texyon_engine_xdvipdfmx::XdvipdfmxEngine;

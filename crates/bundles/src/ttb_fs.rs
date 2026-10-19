@@ -16,9 +16,9 @@ use std::{
     io::{Cursor, Read, Seek, SeekFrom},
     path::Path,
 };
-use tectonic_errors::prelude::*;
-use tectonic_io_base::{digest::DigestData, InputHandle, InputOrigin, IoProvider, OpenResult};
-use tectonic_status_base::StatusBackend;
+use texyon_errors::prelude::*;
+use texyon_io_base::{digest::DigestData, InputHandle, InputOrigin, IoProvider, OpenResult};
+use texyon_status_base::StatusBackend;
 
 /// Read a [`TTBFileInfo`] from this bundle.
 /// We assume that `fileinfo` points to a valid file in this bundle.

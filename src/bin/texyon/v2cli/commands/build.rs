@@ -1,16 +1,16 @@
 use clap::Args;
-use tectonic::{
+use texyon::{
     config::is_config_test_mode_activated,
     config::PersistentConfig,
     docmodel::{DocumentExt, DocumentSetupOptions},
     errors::Result,
     tt_error, tt_note,
 };
-use tectonic_bridge_core::{SecuritySettings, SecurityStance};
-use tectonic_docmodel::workspace::Workspace;
-use tectonic_status_base::StatusBackend;
+use texyon_bridge_core::{SecuritySettings, SecurityStance};
+use texyon_docmodel::workspace::Workspace;
+use texyon_status_base::StatusBackend;
 
-use crate::v2cli::{CommandCustomizations, TectonicCommand};
+use crate::v2cli::{CommandCustomizations, TexyonCommand};
 
 /// `build`: Build a document
 #[derive(Debug, Eq, PartialEq, Args, Clone)]
@@ -48,7 +48,7 @@ pub struct BuildCommand {
     bundle: Option<String>,
 }
 
-impl TectonicCommand for BuildCommand {
+impl TexyonCommand for BuildCommand {
     fn customize(&self, _cc: &mut CommandCustomizations) {}
 
     fn execute(self, config: PersistentConfig, status: &mut dyn StatusBackend) -> Result<i32> {
@@ -64,7 +64,7 @@ impl TectonicCommand for BuildCommand {
         // Default to allowing insecure since it would be super duper annoying
         // to have to pass `--trusted` every time to build a personal document
         // that uses shell-escape! This default can be overridden by setting the
-        // environment variable TECTONIC_UNTRUSTED_MODE to a nonempty value.
+        // environment variable TEXYON_UNTRUSTED_MODE to a nonempty value.
         let stance = if self.untrusted {
             SecurityStance::DisableInsecures
         } else {

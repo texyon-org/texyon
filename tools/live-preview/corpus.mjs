@@ -58,7 +58,7 @@ function integer(value, name, minimum = 0) {
 
 function parseArgs(argv) {
   const options = {
-    bin: process.env.TECTONIC_PREVIEW_BIN || null,
+    bin: process.env.TEXYON_PREVIEW_BIN || null,
     manifest: null,
     format: "latex",
     output: path.join("/tmp", `tectonic-live-preview-corpus-${Date.now()}`),

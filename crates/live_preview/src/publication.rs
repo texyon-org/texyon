@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, fmt, sync::Arc};
 
-use tectonic_preview_protocol::{OperationMetrics, UpdateOutcome};
-use tectonic_preview_render::{PageSvg, PageVisual};
+use texyon_preview_protocol::{OperationMetrics, UpdateOutcome};
+use texyon_preview_render::{PageSvg, PageVisual};
 
 use super::{FrameId, FramePhase, RequestSeq, SequenceExhausted, SourceRevision};
 
@@ -313,7 +313,7 @@ fn index_rendered<E>(
 mod tests {
     use std::collections::BTreeMap;
 
-    use tectonic_preview_render::PageFingerprint;
+    use texyon_preview_render::PageFingerprint;
 
     use super::*;
 

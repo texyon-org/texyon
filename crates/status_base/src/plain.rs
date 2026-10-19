@@ -7,7 +7,7 @@ use std::{
     fmt::Arguments,
     io::{self, Write},
 };
-use tectonic_errors::Error;
+use texyon_errors::Error;
 
 use super::{ChatterLevel, MessageKind, StatusBackend};
 

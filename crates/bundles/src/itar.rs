@@ -24,10 +24,10 @@ use std::{
     thread,
     time::Duration,
 };
-use tectonic_errors::prelude::*;
-use tectonic_geturl::{DefaultBackend, DefaultRangeReader, GetUrlBackend, RangeReader};
-use tectonic_io_base::{digest, InputHandle, InputOrigin, IoProvider, OpenResult};
-use tectonic_status_base::{tt_note, tt_warning, NoopStatusBackend, StatusBackend};
+use texyon_errors::prelude::*;
+use texyon_geturl::{DefaultBackend, DefaultRangeReader, GetUrlBackend, RangeReader};
+use texyon_io_base::{digest, InputHandle, InputOrigin, IoProvider, OpenResult};
+use texyon_status_base::{tt_note, tt_warning, NoopStatusBackend, StatusBackend};
 
 /// The internal file-information struct used by the [`ItarBundle`].
 #[derive(Clone, Debug)]
@@ -170,7 +170,7 @@ impl Bundle for ItarBundle {
         self.index.iter().map(|x| x.path().to_owned()).collect()
     }
 
-    fn get_digest(&mut self) -> Result<tectonic_io_base::digest::DigestData> {
+    fn get_digest(&mut self) -> Result<texyon_io_base::digest::DigestData> {
         let digest_text = match self.input_open_name(digest::DIGEST_NAME, &mut NoopStatusBackend {})
         {
             OpenResult::Ok(h) => {

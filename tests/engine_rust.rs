@@ -8,11 +8,11 @@
 //!
 //! ## Generating / updating goldens
 //!
-//! Run with the environment variable `TECTONIC_BLESS=1` to write the actual
+//! Run with the environment variable `TEXYON_BLESS=1` to write the actual
 //! engine output as the new golden files instead of comparing:
 //!
 //! ```text
-//! TECTONIC_BLESS=1 cargo test -p tectonic --test engine_rust
+//! TEXYON_BLESS=1 cargo test -p texyon --test engine_rust
 //! ```
 //!
 //! After blessing, verify the diff looks reasonable, then commit.
@@ -22,12 +22,12 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
-use tectonic::engines::tex::TexOutcome;
-use tectonic::io::testing::SingleInputFileIo;
-use tectonic::io::{FilesystemIo, FilesystemPrimaryInputIo, IoProvider, IoStack, MemoryIo};
-use tectonic::TexEngine;
-use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
-use tectonic_status_base::NoopStatusBackend;
+use texyon::engines::tex::TexOutcome;
+use texyon::io::testing::SingleInputFileIo;
+use texyon::io::{FilesystemIo, FilesystemPrimaryInputIo, IoProvider, IoStack, MemoryIo};
+use texyon::TexEngine;
+use texyon_bridge_core::{CoreBridgeLauncher, MinimalDriver};
+use texyon_status_base::NoopStatusBackend;
 
 #[path = "util/mod.rs"]
 mod util;
@@ -44,7 +44,7 @@ fn golden_dir() -> PathBuf {
 }
 
 fn bless_mode() -> bool {
-    env::var("TECTONIC_BLESS")
+    env::var("TEXYON_BLESS")
         .map(|v| v == "1")
         .unwrap_or(false)
 }
@@ -110,7 +110,7 @@ fn run_case(stem: &str, expect: TexOutcome) {
             let golden = fs::read(&golden_path).unwrap_or_else(|e| {
                 panic!(
                     "{stem}: golden file {golden_path:?} not found ({e}). \
-                     Run with TECTONIC_BLESS=1 to generate it."
+                     Run with TEXYON_BLESS=1 to generate it."
                 )
             });
             if actual != golden {

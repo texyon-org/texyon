@@ -21,7 +21,7 @@
 #ifndef _SUBFONT_H_
 #define _SUBFONT_H_
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 
 void   release_sfd_record  (void);
 

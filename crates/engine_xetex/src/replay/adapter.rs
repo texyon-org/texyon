@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use super::source::{ResolvedSource, SourceIdentity, SourcePath, SourceSnapshot};
 use crate::bridge::FileFormat;
-use tectonic_bridge_core::EOF;
+use texyon_bridge_core::EOF;
 
 const MEM_TAG: usize = 1usize << (usize::BITS - 1);
 const INDEX_MASK: usize = !MEM_TAG;

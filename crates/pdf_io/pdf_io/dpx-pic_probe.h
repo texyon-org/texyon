@@ -1,7 +1,7 @@
 #ifndef _DPX_PIC_PROBE_H_
 #define _DPX_PIC_PROBE_H_
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 #include "dpx-pdfdev.h"
 
 #define PIC_PROBE_OK 0

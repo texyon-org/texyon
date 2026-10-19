@@ -1,7 +1,7 @@
 language = "C"
 cpp_compat = true
 style = "type"
-include_guard = "TECTONIC_BRIDGE_CORE_GENERATED_H"
+include_guard = "TEXYON_BRIDGE_CORE_GENERATED_H"
 after_includes = """
 typedef uintptr_t rust_input_handle_t;
 typedef uintptr_t rust_output_handle_t;

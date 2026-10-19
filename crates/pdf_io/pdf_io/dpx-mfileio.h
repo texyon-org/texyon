@@ -23,7 +23,7 @@
 #ifndef _MFILEIO_H_
 #define _MFILEIO_H_
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 
 #include <stdio.h>
 #include <sys/types.h>

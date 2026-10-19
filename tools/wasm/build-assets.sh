@@ -21,11 +21,11 @@ for dir in "$@"; do
     PROJECTS+=("$(cd "$dir" && pwd)")
 done
 
-TECTONIC="$REPO/target/release/tectonic"
-if [ ! -x "$TECTONIC" ]; then
-    TECTONIC="$REPO/target/debug/tectonic"
+TEXYON="$REPO/target/release/texyon"
+if [ ! -x "$TEXYON" ]; then
+    TEXYON="$REPO/target/debug/texyon"
 fi
-if [ ! -x "$TECTONIC" ]; then
+if [ ! -x "$TEXYON" ]; then
     echo "no tectonic binary; run: cargo build --release" >&2
     exit 1
 fi
@@ -37,7 +37,7 @@ BUNDLE_URL="${BUNDLE_URL:-https://s3.de-1.yendric.be/uploads/01a0117b-2294-7203-
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
-export TECTONIC_CACHE_DIR="$WORK/cache"
+export TEXYON_CACHE_DIR="$WORK/cache"
 
 # Seed documents. Between them these pull in the format dump plus the classes,
 # packages, fonts and metrics that a general-purpose editor can reach
@@ -165,20 +165,20 @@ for seed in "$WORK"/seeds/*.tex; do
     echo "   $(basename "$seed")"
     # Seeds are allowed to report TeX errors; what matters is which support
     # files they touched on the way.
-    (cd "$WORK/seeds" && "$TECTONIC" -X compile "$seed" --bundle "$BUNDLE_URL" --outfmt pdf --print >/dev/null 2>&1) || true
+    (cd "$WORK/seeds" && "$TEXYON" -X compile "$seed" --bundle "$BUNDLE_URL" --outfmt pdf --print >/dev/null 2>&1) || true
 done
 for project in "${PROJECTS[@]}"; do
     echo "   $project"
-    (cd "$project" && "$TECTONIC" -X compile main.tex --bundle "$BUNDLE_URL" --outfmt pdf --print >/dev/null 2>&1) || true
+    (cd "$project" && "$TEXYON" -X compile main.tex --bundle "$BUNDLE_URL" --outfmt pdf --print >/dev/null 2>&1) || true
 done
 
-FORMAT="$(find "$TECTONIC_CACHE_DIR/formats" -name '*.fmt' | head -1)"
+FORMAT="$(find "$TEXYON_CACHE_DIR/formats" -name '*.fmt' | head -1)"
 if [ -z "$FORMAT" ]; then
     echo "no format dump was produced" >&2
     exit 1
 fi
 
-DATA_DIR="$(find "$TECTONIC_CACHE_DIR/bundles/data" -mindepth 1 -maxdepth 1 -type d | head -1)"
+DATA_DIR="$(find "$TEXYON_CACHE_DIR/bundles/data" -mindepth 1 -maxdepth 1 -type d | head -1)"
 if [ -z "$DATA_DIR" ]; then
     echo "no bundle files were cached" >&2
     exit 1

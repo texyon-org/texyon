@@ -1,10 +1,10 @@
 use clap::{Parser, ValueEnum};
 use std::{fmt::Display, path::PathBuf};
-use tectonic::{config::PersistentConfig, Result};
-use tectonic_status_base::StatusBackend;
+use texyon::{config::PersistentConfig, Result};
+use texyon_status_base::StatusBackend;
 use tracing::error;
 
-use crate::v2cli::{CommandCustomizations, TectonicCommand};
+use crate::v2cli::{CommandCustomizations, TexyonCommand};
 
 //
 // MARK: Cli arguments
@@ -87,7 +87,7 @@ impl Display for BundleFormat {
     }
 }
 
-impl TectonicCommand for BundleCreateCommand {
+impl TexyonCommand for BundleCreateCommand {
     fn customize(&self, cc: &mut CommandCustomizations) {
         cc.always_stderr = true;
     }

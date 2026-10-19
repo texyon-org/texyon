@@ -7,13 +7,13 @@ use std::ffi::{CStr, CString};
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, OnceLock};
-use tectonic_bridge_core::{CoreBridgeState, FileFormat};
+use texyon_bridge_core::{CoreBridgeState, FileFormat};
 #[cfg(not(target_os = "macos"))]
-use tectonic_bridge_fontconfig as fc;
-use tectonic_bridge_freetype2 as ft;
-use tectonic_bridge_harfbuzz as hb;
+use texyon_bridge_fontconfig as fc;
+use texyon_bridge_freetype2 as ft;
+use texyon_bridge_harfbuzz as hb;
 #[cfg(target_os = "macos")]
-use tectonic_mac_core::{
+use texyon_mac_core::{
     CFArray, CFDictionary, CFType, CFUrl, CTFont, CTFontDescriptor, FontAttribute, FontNameKey,
 };
 

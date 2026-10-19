@@ -83,7 +83,7 @@ pub(crate) fn with_c_str<R>(bytes: &[u8], f: impl FnOnce(*const c_char) -> R) ->
 pub(crate) fn hb_tag(tag: &[u8]) -> u32 {
     // SAFETY: `tag` is valid for the length passed.
     unsafe {
-        tectonic_bridge_harfbuzz::sys::hb_tag_from_string(tag.as_ptr().cast(), tag.len() as c_int)
+        texyon_bridge_harfbuzz::sys::hb_tag_from_string(tag.as_ptr().cast(), tag.len() as c_int)
     }
 }
 

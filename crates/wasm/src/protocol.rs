@@ -7,9 +7,9 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use tectonic_engine_xetex::introspect::{CommandKind, DefinedCommand};
-use tectonic_preview_protocol::{SourceLocation, SyncRectPayload};
-use tectonic_preview_render::LinkAction;
+use texyon_engine_xetex::introspect::{CommandKind, DefinedCommand};
+use texyon_preview_protocol::{SourceLocation, SyncRectPayload};
+use texyon_preview_render::LinkAction;
 
 use crate::host::HostBuffer;
 
@@ -80,8 +80,8 @@ pub struct Link {
     pub destination: Option<String>,
 }
 
-impl From<tectonic_preview_render::Link> for Link {
-    fn from(link: tectonic_preview_render::Link) -> Self {
+impl From<texyon_preview_render::Link> for Link {
+    fn from(link: texyon_preview_render::Link) -> Self {
         let (uri, destination) = match link.action {
             LinkAction::Uri(uri) => (Some(uri), None),
             LinkAction::Destination(name) => (None, Some(name)),
@@ -106,8 +106,8 @@ pub struct Destination {
     pub y_bp: f32,
 }
 
-impl From<tectonic_preview_render::Destination> for Destination {
-    fn from(destination: tectonic_preview_render::Destination) -> Self {
+impl From<texyon_preview_render::Destination> for Destination {
+    fn from(destination: texyon_preview_render::Destination) -> Self {
         Self {
             name: destination.name,
             x_bp: destination.x_bp,
@@ -144,8 +144,8 @@ pub struct Diagnostic {
     pub message: String,
 }
 
-impl From<tectonic_live_preview::Diagnostic> for Diagnostic {
-    fn from(found: tectonic_live_preview::Diagnostic) -> Self {
+impl From<texyon_live_preview::Diagnostic> for Diagnostic {
+    fn from(found: texyon_live_preview::Diagnostic) -> Self {
         Self {
             severity: found.severity.to_string(),
             path: found.path,
@@ -197,7 +197,7 @@ pub enum Request {
         raster: bool,
     },
 
-    /// Install a support file from a `tectonic_wasm_alloc` buffer, taking
+    /// Install a support file from a `texyon_wasm_alloc` buffer, taking
     /// ownership of it.
     #[serde(rename_all = "camelCase")]
     Preload {
@@ -210,7 +210,7 @@ pub enum Request {
     ///
     /// `files` maps each path to the host's revision counter. The session
     /// pulls the text of any revision it does not hold through
-    /// `tectonic_host_read_source`, unless `edits` says how to get there from
+    /// `texyon_host_read_source`, unless `edits` says how to get there from
     /// the one it does.
     #[serde(rename_all = "camelCase")]
     Compile {

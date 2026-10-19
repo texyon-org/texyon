@@ -1,7 +1,7 @@
 {
-  "name": "@tectonic/wasm",
+  "name": "@texyon/wasm",
   "version": "0.1.0",
-  "description": "Tectonic's resident LaTeX engine, compiled for the browser",
+  "description": "TeXyon resident LaTeX engine, compiled for the browser",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",

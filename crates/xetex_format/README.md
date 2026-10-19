@@ -1,6 +1,6 @@
-# The `tectonic_xetex_format` crate
+# The `texyon_xetex_format` crate
 
-[![](http://meritbadge.herokuapp.com/tectonic_xetex_format)](https://crates.io/crates/tectonic_xetex_format)
+[![](http://meritbadge.herokuapp.com/texyon_xetex_format)](https://crates.io/crates/texyon_xetex_format)
 
 This crate is part of [the Tectonic
 project](https://tectonic-typesetting.github.io/en-US/). It provides
@@ -9,7 +9,7 @@ their serialization into "format files".
 
 [XeTeX]: http://xetex.sourceforge.net/
 
-- [API documentation](https://docs.rs/tectonic_xetex_format/).
+- [API documentation](https://docs.rs/texyon_xetex_format/).
 - [Main Git repository](https://github.com/tectonic-typesetting/tectonic/).
 
 This crate has two main uses: you can use it to decode an existing format file

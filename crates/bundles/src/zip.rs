@@ -10,9 +10,9 @@ use std::{
     path::Path,
     str::FromStr,
 };
-use tectonic_errors::prelude::*;
-use tectonic_io_base::{digest, InputHandle, InputOrigin, IoProvider, OpenResult};
-use tectonic_status_base::{NoopStatusBackend, StatusBackend};
+use texyon_errors::prelude::*;
+use texyon_io_base::{digest, InputHandle, InputOrigin, IoProvider, OpenResult};
+use texyon_status_base::{NoopStatusBackend, StatusBackend};
 use zip::{result::ZipError, ZipArchive};
 
 /// A bundle backed by a ZIP file.
@@ -80,7 +80,7 @@ impl<R: Read + Seek> Bundle for ZipBundle<R> {
         self.zip.file_names().map(|x| x.to_owned()).collect()
     }
 
-    fn get_digest(&mut self) -> Result<tectonic_io_base::digest::DigestData> {
+    fn get_digest(&mut self) -> Result<texyon_io_base::digest::DigestData> {
         let digest_text = match self.input_open_name(digest::DIGEST_NAME, &mut NoopStatusBackend {})
         {
             OpenResult::Ok(h) => {

@@ -26,11 +26,11 @@ if [ ! -d "$HERE/vendor/freetype" ]; then
     "$HERE/fetch-deps.sh"
 fi
 
-echo "== building tectonic_wasm ($PROFILE)"
+echo "== building texyon_wasm ($PROFILE)"
 cd "$REPO"
-cargo build --profile "$PROFILE" --target wasm32-wasip1 -p tectonic_wasm
+cargo build --profile "$PROFILE" --target wasm32-wasip1 -p texyon_wasm
 
-MODULE="${CARGO_TARGET_DIR:-$REPO/target}/wasm32-wasip1/$PROFILE_DIR/tectonic_wasm.wasm"
+MODULE="${CARGO_TARGET_DIR:-$REPO/target}/wasm32-wasip1/$PROFILE_DIR/texyon_wasm.wasm"
 
 # The linker turns an unresolved __wasm_setjmp / __c_longjmp into an *import*
 # rather than an error, and an imported tag is something no host can supply — so
@@ -92,7 +92,7 @@ while pos < len(data):
 
             if module not in ("wasi_snapshot_preview1", "env"):
                 bad.append(f"{module}::{name} (unexpected module)")
-            elif module == "env" and not name.startswith("tectonic_host_"):
+            elif module == "env" and not name.startswith("texyon_host_"):
                 bad.append(f"{module}::{name} (not a Tectonic host import)")
 
     pos = end
@@ -118,12 +118,12 @@ if command -v wasm-opt >/dev/null 2>&1 && [ "$PROFILE" = "release" ]; then
     # The engine relies on the exception-handling proposal for setjmp/longjmp,
     # and bulk memory for its arena clears, so both have to stay enabled.
     wasm-opt -O2 --enable-exception-handling --enable-bulk-memory \
-        "$MODULE" -o "$OUT/tectonic_wasm.wasm"
+        "$MODULE" -o "$OUT/texyon_wasm.wasm"
 else
-    cp "$MODULE" "$OUT/tectonic_wasm.wasm"
+    cp "$MODULE" "$OUT/texyon_wasm.wasm"
 fi
 
-echo "== done: $OUT/tectonic_wasm.wasm ($(du -h "$OUT/tectonic_wasm.wasm" | cut -f1))"
+echo "== done: $OUT/texyon_wasm.wasm ($(du -h "$OUT/texyon_wasm.wasm" | cut -f1))"
 
 if [ ! -f "$OUT/manifest.json" ]; then
     echo

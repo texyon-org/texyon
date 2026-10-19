@@ -9,7 +9,7 @@ use std::fmt::Arguments;
 use std::io::Write;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
-use tectonic_errors::Error;
+use texyon_errors::Error;
 
 use super::{ChatterLevel, MessageKind, StatusBackend};
 

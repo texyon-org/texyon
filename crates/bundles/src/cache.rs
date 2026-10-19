@@ -15,13 +15,13 @@ use std::{
     process,
     str::FromStr,
 };
-use tectonic_errors::{anyhow::Context, prelude::*};
-use tectonic_io_base::{
+use texyon_errors::{anyhow::Context, prelude::*};
+use texyon_io_base::{
     app_dirs,
     digest::{self, DigestData},
     InputHandle, InputOrigin, IoProvider, OpenResult,
 };
-use tectonic_status_base::StatusBackend;
+use texyon_status_base::StatusBackend;
 
 /// A convenience method to provide a better error message when writing to a created file.
 fn file_create_write<P, F, E>(path: P, write_fn: F) -> Result<()>

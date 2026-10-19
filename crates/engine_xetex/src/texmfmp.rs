@@ -173,7 +173,7 @@ impl StringsState {
         let digest = if file {
             get_file_md5(&xname)
         } else {
-            Some(tectonic_bridge_core::data_md5(&xname))
+            Some(texyon_bridge_core::data_md5(&xname))
         };
         let Some(digest) = digest else {
             return;

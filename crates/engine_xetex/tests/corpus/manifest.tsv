@@ -4,7 +4,7 @@
 #   main        main .tex relative to its source root (engine compiles this)
 #   source_url  origin; "authored" for in-repo docs, TL path or arXiv e-print URL otherwise
 # Authored Tier 1 docs live in tests/corpus/tier1/ (in repo). Everything
-# else is reproduced into $TECTONIC_CORPUS_DIR by crates/engine_xetex/scripts/corpus_fetch.sh.
+# else is reproduced into $TEXYON_CORPUS_DIR by crates/engine_xetex/scripts/corpus_fetch.sh.
 #
 # tier2-pending: harvested but does NOT compile under the pinned 2022 bundle
 #   (version skew / missing assets). Not part of the active parity set;

@@ -3,11 +3,11 @@
 
 //! Extensions to Tectonic’s pluggable I/O backend.
 
-// These used to live here. They moved down into `tectonic_io_base` when the
+// These used to live here. They moved down into `texyon_io_base` when the
 // live-preview engine became its own crate, because both it and this one need
 // them and nothing about them was specific to the driver.
 
-pub use tectonic_io_base::{
+pub use texyon_io_base::{
     digest::{self, DigestData},
     filesystem::{FilesystemIo, FilesystemPrimaryInputIo},
     format_cache, memory,

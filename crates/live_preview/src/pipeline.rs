@@ -2,10 +2,10 @@ use std::{fmt, sync::Arc, time::Instant};
 
 use crate::processor::elapsed_ms;
 
-use tectonic_preview_protocol::{OperationMetrics, UpdateOutcome};
-use tectonic_preview_render::{Backend, HotRenderer, PageSvg, RenderError, ResourceProvider};
+use texyon_preview_protocol::{OperationMetrics, UpdateOutcome};
+use texyon_preview_render::{Backend, HotRenderer, PageSvg, RenderError, ResourceProvider};
 
-use tectonic_engine_xetex::SyncIndex;
+use texyon_engine_xetex::SyncIndex;
 
 use super::{
     AssembledDocument, DocumentAssembler, DocumentFragment, FrameHeader, FrameId, FramePhase,
@@ -245,7 +245,7 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
 
 #[cfg(test)]
 mod tests {
-    use tectonic_preview_render::{
+    use texyon_preview_render::{
         NullBackend, Resource, ResourceKind, ResourceProvider, ResourceRequest,
     };
 
@@ -329,7 +329,7 @@ mod tests {
     fn full_document_publishes_real_path_svg() {
         let mut pipeline = PreviewPipeline::new(
             ClassicResources,
-            tectonic_preview_render::MupdfBackend::new().unwrap(),
+            texyon_preview_render::MupdfBackend::new().unwrap(),
         );
         let mut sink = Sink::default();
         pipeline
@@ -360,7 +360,7 @@ mod tests {
             crate::FrozenBundle::new(Box::new(crate::test_support::AssetBundle::default()));
         let provider = crate::BundleResourceProvider::new(bundle, None).unwrap();
         let root = crate::test_support::asset_path(&["tex-outputs"]);
-        let mut backend = tectonic_preview_render::MupdfBackend::new().unwrap();
+        let mut backend = texyon_preview_render::MupdfBackend::new().unwrap();
         for entry in std::fs::read_dir(root).unwrap() {
             let path = entry.unwrap().path();
             if path.extension().and_then(|extension| extension.to_str()) != Some("xdv") {
@@ -371,7 +371,7 @@ mod tests {
             if source.contains("mcta") || source.contains("mctb") {
                 continue;
             }
-            let mut renderer = tectonic_preview_render::HotRenderer::new(provider.clone());
+            let mut renderer = texyon_preview_render::HotRenderer::new(provider.clone());
             let analysis = renderer
                 .analyze(std::sync::Arc::from(std::fs::read(&path).unwrap()))
                 .unwrap();

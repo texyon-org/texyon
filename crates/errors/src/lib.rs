@@ -79,7 +79,7 @@ impl error::Error for AnnotatedMessage {}
 /// # Example
 ///
 /// ```
-/// # use tectonic_errors::{atry, Result};
+/// # use texyon_errors::{atry, Result};
 /// # fn my_fallible_operation(a: bool, b: bool) -> Result<()> { Ok(()) }
 /// # fn my_caller() -> Result<()> {
 /// # let arg = true;

@@ -73,7 +73,7 @@
 //! array is `eqtb_top + 1`.
 
 use nom::{multi::count, number::complete::be_u8, IResult, Parser};
-use tectonic_errors::prelude::*;
+use texyon_errors::prelude::*;
 
 use crate::{
     base::{self, SIZEOF_MEMORY_WORD, TEX_NULL},

@@ -1,6 +1,6 @@
 use std::convert::Infallible;
 
-use tectonic_preview_protocol::ProtocolLimits;
+use texyon_preview_protocol::ProtocolLimits;
 
 use super::{run::TailCost, *};
 use crate::{AcceptedSourceSnapshot, DocumentRoot, ForwardSearch, WorkerRun};
@@ -587,7 +587,7 @@ fn bootstrap_precedes_separate_revision_zero_initialization() {
     })
     .unwrap();
 
-    assert_eq!(thread_name, "tectonic-preview-engine");
+    assert_eq!(thread_name, "texyon-preview-engine");
     assert!(matches!(
         worker.recv_timeout(Duration::from_millis(10)),
         Err(RecvTimeoutError::Timeout)

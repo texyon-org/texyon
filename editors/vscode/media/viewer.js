@@ -1,7 +1,7 @@
 "use strict";
 
 const vscode = acquireVsCodeApi();
-const reducer = globalThis.TectonicViewerState;
+const reducer = globalThis.TexyonViewerState;
 const pagesElement = document.getElementById("pages");
 const tailElement = document.getElementById("tail");
 const errorElement = document.getElementById("error");

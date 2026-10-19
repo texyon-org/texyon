@@ -6,10 +6,10 @@ const readline = require("node:readline");
 const test = require("node:test");
 
 test("real server orders ready, initialize, update, and shutdown", {
-  skip: !process.env.TECTONIC_PREVIEW_BIN,
+  skip: !process.env.TEXYON_PREVIEW_BIN,
   timeout: 30_000
 }, async () => {
-  const child = cp.spawn(process.env.TECTONIC_PREVIEW_BIN, ["-X", "preview", "--format", "latex"], {
+  const child = cp.spawn(process.env.TEXYON_PREVIEW_BIN, ["-X", "preview", "--format", "latex"], {
     cwd: "/tmp",
     stdio: ["pipe", "pipe", "pipe"]
   });
@@ -30,7 +30,7 @@ test("real server orders ready, initialize, update, and shutdown", {
         child.stdin.write(`${JSON.stringify({
           type: "initialize",
           protocol_version: event.protocol_version,
-          primary_path: "/tmp/tectonic-vscode-smoke.tex",
+          primary_path: "/tmp/texyon-vscode-smoke.tex",
           primary_text: "\\documentclass{article}\\begin{document}Hello preview\\end{document}",
           children: []
         })}\n`);

@@ -14,12 +14,12 @@
 //! variable to "1", but that's an annoying solution. So, we use a global mutex
 //! to achieve the same effect. Classy.
 
-use tectonic::io::testing::SingleInputFileIo;
-use tectonic::io::{FilesystemPrimaryInputIo, IoProvider, IoStack, MemoryIo};
-use tectonic::TexEngine;
-use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
-use tectonic_engine_xetex::TexOutcome;
-use tectonic_status_base::NoopStatusBackend;
+use texyon::io::testing::SingleInputFileIo;
+use texyon::io::{FilesystemPrimaryInputIo, IoProvider, IoStack, MemoryIo};
+use texyon::TexEngine;
+use texyon_bridge_core::{CoreBridgeLauncher, MinimalDriver};
+use texyon_engine_xetex::TexOutcome;
+use texyon_status_base::NoopStatusBackend;
 
 #[path = "util/mod.rs"]
 mod util;

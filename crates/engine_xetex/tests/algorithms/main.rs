@@ -12,13 +12,13 @@ use std::collections::HashSet;
 use std::io::{Cursor, Read, SeekFrom};
 use std::path::Path;
 
-use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
-use tectonic_engine_xetex::TexEngine;
-use tectonic_errors::Result;
-use tectonic_io_base::filesystem::FilesystemIo;
-use tectonic_io_base::stack::IoStack;
-use tectonic_io_base::{InputFeatures, InputHandle, InputOrigin, IoProvider, MemoryIo, OpenResult};
-use tectonic_status_base::{NoopStatusBackend, StatusBackend};
+use texyon_bridge_core::{CoreBridgeLauncher, MinimalDriver};
+use texyon_engine_xetex::TexEngine;
+use texyon_errors::Result;
+use texyon_io_base::filesystem::FilesystemIo;
+use texyon_io_base::stack::IoStack;
+use texyon_io_base::{InputFeatures, InputHandle, InputOrigin, IoProvider, MemoryIo, OpenResult};
+use texyon_status_base::{NoopStatusBackend, StatusBackend};
 
 /// INITEX has no macros, so the category codes plain TeX sets come first.
 const PRELUDE: &str = r"\catcode`\{=1 \catcode`\}=2 \catcode`\$=3 \catcode`\&=4

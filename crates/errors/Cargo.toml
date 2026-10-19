@@ -4,15 +4,15 @@
 lints.workspace = true
 
 [package]
-name = "tectonic_errors"
+name = "texyon_errors"
 version = "0.0.0-dev.0"  # assigned with cranko (see README)
 authors = ["Peter Williams <peter@newton.cx>"]
 description = """
 A boxed error type for Tectonic, with supporting utilities.
 """
-homepage = "https://tectonic-typesetting.github.io/"
-documentation = "https://docs.rs/tectonic_errors"
-repository = "https://github.com/tectonic-typesetting/tectonic/"
+homepage = "https://github.com/texyon-org/texyon"
+documentation = "https://docs.rs/texyon_errors"
+repository = "https://github.com/texyon-org/texyon"
 readme = "README.md"
 license = "MIT"
 edition = "2021"

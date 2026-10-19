@@ -6,8 +6,8 @@
 use std::env;
 
 fn main() {
-    let bc_include_dir = env::var("DEP_TECTONIC_BRIDGE_CORE_INCLUDE").unwrap();
-    let pi_include_path = env::var("DEP_TECTONIC_PDF_IO_INCLUDE_PATH").unwrap();
+    let bc_include_dir = env::var("DEP_TEXYON_BRIDGE_CORE_INCLUDE").unwrap();
+    let pi_include_path = env::var("DEP_TEXYON_PDF_IO_INCLUDE_PATH").unwrap();
 
     let mut build = cc::Build::new();
     build
@@ -19,7 +19,7 @@ fn main() {
         build.include(item);
     }
 
-    build.compile("libtectonic_engine_xdvipdfmx.a");
+    build.compile("libtexyon_engine_xdvipdfmx.a");
 
     println!("cargo:rerun-if-changed=xdvipdfmx/dvipdfmx.c");
     println!("cargo:rerun-if-changed=xdvipdfmx/xdvipdfmx_bindings.h");

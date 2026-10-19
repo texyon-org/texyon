@@ -8,7 +8,7 @@ use std::{
     path::{Path, PathBuf},
     str::FromStr,
 };
-use tectonic_errors::{Error, Result};
+use texyon_errors::{Error, Result};
 use thiserror::Error as ThisError;
 
 pub use sha2::Digest;

@@ -1,8 +1,8 @@
 /**
- * Tectonic in the browser: a resident LaTeX engine you can type into.
+ * TeXyon in the browser: a resident LaTeX engine you can type into.
  *
  * ```ts
- * const engine = await TectonicEngine.create({
+ * const engine = await TexyonEngine.create({
  *   onProgress: (p) => console.log(p.phase),
  * });
  *
@@ -67,15 +67,15 @@ import type {
 import { spliceBetween } from "./splice.js";
 
 /** Thrown when the engine could not do what was asked. */
-export class TectonicError extends Error {
+export class TexyonError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "TectonicError";
+    this.name = "TexyonError";
   }
 }
 
 /** A resident LaTeX engine running in a Worker. */
-export class TectonicEngine {
+export class TexyonEngine {
   #worker: Worker;
   #pending = new Map<
     number,
@@ -137,7 +137,7 @@ export class TectonicEngine {
       this.#pending.delete(message.id);
 
       if (message.kind === "error") {
-        pending.reject(new TectonicError(message.message));
+        pending.reject(new TexyonError(message.message));
       } else if (message.kind === "compiled") {
         (pending.resolve as (value: CompileResult) => void)(message.result);
       } else if (message.kind === "exported") {
@@ -166,7 +166,7 @@ export class TectonicEngine {
     };
 
     worker.onerror = (event) => {
-      const error = new TectonicError(event.message || "the engine Worker failed");
+      const error = new TexyonError(event.message || "the engine Worker failed");
       for (const pending of this.#pending.values()) pending.reject(error);
       this.#pending.clear();
     };
@@ -179,13 +179,13 @@ export class TectonicEngine {
    * loaded. Support files keep arriving in the background afterwards; watch
    * {@link EngineOptions.onProgress} if you want to show that.
    */
-  static async create(options: EngineOptions = {}): Promise<TectonicEngine> {
+  static async create(options: EngineOptions = {}): Promise<TexyonEngine> {
     const worker = new Worker(options.workerUrl ?? new URL("./worker.js", import.meta.url), {
       type: "module",
-      name: "tectonic",
+      name: "texyon",
     });
 
-    const engine = new TectonicEngine(worker, options);
+    const engine = new TexyonEngine(worker, options);
 
     // Resolve the asset URLs here rather than in the Worker. A relative URL
     // inside a Worker resolves against the *worker script*, which a bundler is
@@ -198,8 +198,8 @@ export class TectonicEngine {
       id: 0, // replaced by #send
       kind: "init",
       options: {
-        moduleUrl: absolute(options.moduleUrl ?? "tectonic/tectonic_wasm.wasm"),
-        supportUrl: absolute(options.supportUrl ?? "tectonic/"),
+        moduleUrl: absolute(options.moduleUrl ?? "texyon/texyon_wasm.wasm"),
+        supportUrl: absolute(options.supportUrl ?? "texyon/"),
         bundleUrl: options.bundleUrl ? absolute(options.bundleUrl) : undefined,
         primary: options.primary ?? "main.tex",
         prefetch: options.prefetch ?? true,
@@ -465,7 +465,7 @@ export class TectonicEngine {
 
   #send<T>(request: WorkerRequest): Promise<T> {
     if (this.#closed) {
-      return Promise.reject(new TectonicError("the engine has been closed"));
+      return Promise.reject(new TexyonError("the engine has been closed"));
     }
 
     const id = this.#nextId++;

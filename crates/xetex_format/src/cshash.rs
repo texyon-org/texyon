@@ -10,7 +10,7 @@ use nom::{
     number::complete::{be_i32, be_u8},
     IResult, Parser,
 };
-use tectonic_errors::prelude::*;
+use texyon_errors::prelude::*;
 
 use crate::{
     base::{self, SIZEOF_MEMORY_WORD},

@@ -1,6 +1,6 @@
-# The `tectonic_bridge_harfbuzz` crate
+# The `texyon_bridge_harfbuzz` crate
 
-[![](http://meritbadge.herokuapp.com/tectonic_bridge_harfbuzz)](https://crates.io/crates/tectonic_bridge_harfbuzz)
+[![](http://meritbadge.herokuapp.com/texyon_bridge_harfbuzz)](https://crates.io/crates/texyon_bridge_harfbuzz)
 
 This crate is part of [the Tectonic
 project](https://tectonic-typesetting.github.io/en-US/). It exposes the *C* API
@@ -10,7 +10,7 @@ built.
 
 [Harfbuzz]: https://harfbuzz.github.io/
 
-- [API documentation](https://docs.rs/tectonic_bridge_harfbuzz/).
+- [API documentation](https://docs.rs/texyon_bridge_harfbuzz/).
 - [Main Git repository](https://github.com/tectonic-typesetting/tectonic/).
 
 While there are a variety of other Harfbuzz-related crates in the Rust
@@ -31,7 +31,7 @@ suffice:
 ```rust
 #[allow(unused_imports)]
 #[allow(clippy::single_component_path_imports)]
-use tectonic_bridge_harfbuzz;
+use texyon_bridge_harfbuzz;
 ```
 
 
@@ -43,7 +43,7 @@ This crate provides the following [Cargo features][features]:
 
 - **`external-harfbuzz`**: instead of building a local copy of Harfbuzz,
   discover it as an external dependency using pkg-config or vcpkg, as determined
-  by the `tectonic_dep_support` crate. This requires that all libraries upon
+  by the `texyon_dep_support` crate. This requires that all libraries upon
   which Harfbuzz depends also be found externally, since the external library can't
   then link against a local vendored version.
 

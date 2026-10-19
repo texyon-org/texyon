@@ -44,7 +44,7 @@ function integer(value, name) {
 
 function parseArgs(argv) {
   const options = {
-    bin: process.env.TECTONIC_PREVIEW_BIN || null,
+    bin: process.env.TEXYON_PREVIEW_BIN || null,
     format: "latex",
     output: path.join("/tmp", `tectonic-live-preview-benchmark-${Date.now()}`),
     warmups: 5,

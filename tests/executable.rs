@@ -54,11 +54,11 @@ fn get_plain_format_arg() -> String {
 /// assets, rather than an actual network bundle.
 fn prep_tectonic(cwd: &Path, args: &[&str]) -> Command {
     let tectonic = cargo_dir()
-        .join("tectonic")
+        .join("texyon")
         .with_extension(env::consts::EXE_EXTENSION);
 
     if fs::metadata(&tectonic).is_err() {
-        panic!("tectonic binary not found at {tectonic:?}. Do you need to run `cargo build`?")
+        panic!("texyon binary not found at {tectonic:?}. Do you need to run `cargo build`?")
     }
     println!("using tectonic binary at {tectonic:?}");
     println!("using cwd {cwd:?}");
@@ -75,7 +75,7 @@ fn prep_tectonic(cwd: &Path, args: &[&str]) -> Command {
     };
 
     command.args(args).current_dir(cwd).env(
-        tectonic::test_util::TEST_ROOT_ENV_VAR,
+        texyon::test_util::TEST_ROOT_ENV_VAR,
         TEST_ROOT.as_os_str(),
     );
     command
@@ -128,7 +128,7 @@ fn run_tectonic_with_stdin(cwd: &Path, args: &[&str], stdin: &str) -> Output {
 
 fn setup_and_copy_files(files: &[&str]) -> TempDir {
     let tempdir = tempfile::Builder::new()
-        .prefix("tectonic_executable_test")
+        .prefix("texyon_executable_test")
         .tempdir()
         .unwrap();
 
@@ -210,7 +210,7 @@ fn setup_v2() -> (tempfile::TempDir, PathBuf) {
 
     {
         let mut toml_path = temppath.clone();
-        toml_path.push("Tectonic.toml");
+        toml_path.push("Texyon.toml");
         let mut file = OpenOptions::new().append(true).open(toml_path).unwrap();
         writeln!(file, "tex_format = 'plain'").unwrap();
     }
@@ -286,7 +286,7 @@ fn run_with_biber_exe(executable: Option<&str>, args: &str, stdin: &str, files: 
         format!("{} {}", util::test_path(&["fake-biber.sh"]).display(), args)
     };
 
-    command.env("TECTONIC_TEST_FAKE_BIBER", &test_cmd);
+    command.env("TEXYON_TEST_FAKE_BIBER", &test_cmd);
 
     command
         .stdin(Stdio::piped())
@@ -394,7 +394,7 @@ fn biber_success() {
 
 /// Test `tectonic-biber` override: when no args passed, fall back to $PATH
 /// lookup for `tectonic-biber` first, and then `biber`. Currently defined in:
-/// [`tectonic::driver::ProcessingSession::check_biber_requirement`]
+/// [`texyon::driver::ProcessingSession::check_biber_requirement`]
 #[cfg(unix)]
 #[test]
 fn biber_tectonic_override() {
@@ -730,7 +730,7 @@ fn v2_build_multiple_outputs() {
 
     {
         let mut toml_path = temppath.clone();
-        toml_path.push("Tectonic.toml");
+        toml_path.push("Texyon.toml");
         let mut file = OpenOptions::new().append(true).open(toml_path).unwrap();
         writeln!(
             file,
@@ -944,7 +944,7 @@ fn shell_escape_env_override() {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .env("TECTONIC_UNTRUSTED_MODE", "0");
+        .env("TEXYON_UNTRUSTED_MODE", "0");
 
     println!("running {command:?}");
     let mut child = command.spawn().expect("tectonic failed to start");

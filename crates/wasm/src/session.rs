@@ -1,4 +1,4 @@
-//! One resident LaTeX project over [`tectonic_live_preview`], with the host
+//! One resident LaTeX project over [`texyon_live_preview`], with the host
 //! supplying files and collecting frames.
 //!
 //! Only one session may exist per module instance, since XeTeX keeps
@@ -12,23 +12,23 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
-use tectonic_engine_xdvipdfmx::XdvipdfmxEngine;
-use tectonic_engine_xetex::{
+use texyon_bridge_core::{CoreBridgeLauncher, MinimalDriver};
+use texyon_engine_xdvipdfmx::XdvipdfmxEngine;
+use texyon_engine_xetex::{
     introspect::DefinedCommand, EngineCancellation, EnginePreviewConfig, TexOutcome,
 };
-use tectonic_errors::{
+use texyon_errors::{
     anyhow::{anyhow, bail},
     Result,
 };
-use tectonic_io_base::{stack::IoStack, IoProvider, MemoryIo};
-use tectonic_live_preview::{
+use texyon_io_base::{stack::IoStack, IoProvider, MemoryIo};
+use texyon_live_preview::{
     parse_diagnostics, AcceptedSourceSnapshot, Diagnostic, DocumentRoot, ForwardSearch,
     PreviewWorkerProcessor, PublishedFrame, ResidentPreviewError, ResidentPreviewProcessor,
     ResidentXeTeX, SourceSet, WorkerRun,
 };
-use tectonic_preview_protocol::{ProtocolLimits, RequestSeq, SourceFile, SourceLocation};
-use tectonic_preview_render::{Destination, Link, MupdfBackend, PageVisual};
+use texyon_preview_protocol::{ProtocolLimits, RequestSeq, SourceFile, SourceLocation};
+use texyon_preview_render::{Destination, Link, MupdfBackend, PageVisual};
 
 use crate::{
     host,

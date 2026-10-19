@@ -1,12 +1,12 @@
-# The `tectonic_bundles` crate
+# The `texyon_bundles` crate
 
-[![](http://meritbadge.herokuapp.com/tectonic_bundles)](https://crates.io/crates/tectonic_bundles)
+[![](http://meritbadge.herokuapp.com/texyon_bundles)](https://crates.io/crates/texyon_bundles)
 
 This crate is part of [the Tectonic
 project](https://tectonic-typesetting.github.io/en-US/). It implements various
 Tectonic "bundles" that provide access to collections of TeX support files.
 
-- [API documentation](https://docs.rs/tectonic_bundles/).
+- [API documentation](https://docs.rs/texyon_bundles/).
 - [Main Git repository](https://github.com/tectonic-typesetting/tectonic/).
 
 

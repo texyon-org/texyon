@@ -1,12 +1,12 @@
-# The `tectonic_geturl` create
+# The `texyon_geturl` create
 
 This crate is part of [the Tectonic
 project](https://tectonic-typesetting.github.io/en-US/). It provides an
 interface for fetching URLs using one of several HTTP backends.
 
-[![](http://meritbadge.herokuapp.com/tectonic_geturl)](https://crates.io/crates/tectonic_geturl)
+[![](http://meritbadge.herokuapp.com/texyon_geturl)](https://crates.io/crates/texyon_geturl)
 
-- [API documentation](https://docs.rs/tectonic_geturl/).
+- [API documentation](https://docs.rs/texyon_geturl/).
 - [Main Git repository](https://github.com/tectonic-typesetting/tectonic/).
 
 

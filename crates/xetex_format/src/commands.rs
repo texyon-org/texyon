@@ -6,7 +6,7 @@
 //! The low-level primitive commands provided by the engine.
 
 use std::{collections::BTreeMap, io::Write};
-use tectonic_errors::prelude::*;
+use texyon_errors::prelude::*;
 
 use crate::{
     format::Format,

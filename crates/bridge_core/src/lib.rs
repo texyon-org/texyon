@@ -21,7 +21,7 @@
 //! then pass that reference across the FFI layer. On the other side of the FFI
 //! divide, your code *must* call the functions `ttbc_global_engine_enter()` and
 //! `ttbc_global_engine_exit()` according to the pattern described in
-//! `tectonic_bridge_core.h`. If an abort is detected, the callback function
+//! `texyon_bridge_core.h`. If an abort is detected, the callback function
 //! must return `Err(EngineAbortedError::new_abort_indicator().into())`.
 //! Unfortunately, this is the cleanest and most reliable API that we can
 //! provide because our abort handling uses `setjmp`/`longjmp` and those can't
@@ -46,12 +46,12 @@ use std::{
     slice,
     sync::Mutex,
 };
-use tectonic_errors::prelude::*;
-use tectonic_io_base::{
+use texyon_errors::prelude::*;
+use texyon_io_base::{
     digest::DigestData, normalize_tex_path, InputFeatures, InputHandle, IoProvider, OpenResult,
     OutputHandle,
 };
-use tectonic_status_base::{tt_error, tt_warning, MessageKind, StatusBackend};
+use texyon_status_base::{tt_error, tt_warning, MessageKind, StatusBackend};
 
 /// The C `EOF` sentinel.
 ///
@@ -361,7 +361,7 @@ impl<'a> CoreBridgeLauncher<'a> {
     ///
     /// The invoked code *must* call the functions `ttbc_global_engine_enter`
     /// and `ttbc_global_engine_exit` according to the pattern described in
-    /// `tectonic_bridge_core.h`. If an abort is detected, the callback function
+    /// `texyon_bridge_core.h`. If an abort is detected, the callback function
     /// should return `Err(EngineAbortedError::new_abort_indicator())`.
     pub fn with_global_lock<F, T>(&mut self, callback: F) -> Result<T>
     where
@@ -907,7 +907,7 @@ pub enum SecurityStance {
     /// Use this stance if you are processing trusted input *and* there is some
     /// user-level request to use such features. The request to allow insecure
     /// features might be overridden if the environment variable
-    /// `TECTONIC_UNTRUSTED_MODE` is set.
+    /// `TEXYON_UNTRUSTED_MODE` is set.
     MaybeAllowInsecures,
 }
 
@@ -919,12 +919,12 @@ impl SecuritySettings {
     /// the setting through a command-line argument or something comparable.
     /// Even if there is a request to enable known-insecure features, however,
     /// such a request might be overridden by other mechanisms. In particular,
-    /// if the environment variable `TECTONIC_UNTRUSTED_MODE` is set to any
+    /// if the environment variable `TEXYON_UNTRUSTED_MODE` is set to any
     /// value, insecure features will always be disabled regardless of the
     /// user-level setting. Other mechanisms for disable known-insecure features
     /// may be added in the future.
     pub fn new(stance: SecurityStance) -> Self {
-        let disable_insecures = if std::env::var_os("TECTONIC_UNTRUSTED_MODE").is_some() {
+        let disable_insecures = if std::env::var_os("TEXYON_UNTRUSTED_MODE").is_some() {
             true
         } else {
             match stance {
@@ -1469,7 +1469,7 @@ pub enum FileFormat {
     Sfd = 46,
 
     /// The Tectonic primary input file.
-    TectonicPrimary = 59,
+    TexyonPrimary = 59,
 
     /// A TeX language file.
     Tex = 26,
@@ -1509,7 +1509,7 @@ impl FileFormat {
             FileFormat::Pk => &["pk"],
             FileFormat::ProgramData => &[],
             FileFormat::Sfd => &["sfd"],
-            FileFormat::TectonicPrimary => &[],
+            FileFormat::TexyonPrimary => &[],
             FileFormat::Tex => &["tex", "sty", "cls", "fd", "aux", "bbl", "def", "clo", "ldf"],
             FileFormat::TexPsHeader => &["pro"],
             FileFormat::Tfm => &["tfm"],

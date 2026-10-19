@@ -4,7 +4,7 @@
 //! libraries, so there we compile the vendored sources instead.
 
 use std::{env, fs, path::PathBuf};
-use tectonic_dep_support::{target_is_wasm, wasm_vendor_dir, Configuration, Dependency, Spec};
+use texyon_dep_support::{target_is_wasm, wasm_vendor_dir, Configuration, Dependency, Spec};
 
 struct LibpngSpec;
 

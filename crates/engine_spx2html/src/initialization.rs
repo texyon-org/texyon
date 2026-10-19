@@ -4,9 +4,9 @@
 //! The initialization stage of SPX processing.
 
 use std::{collections::HashMap, io::Read, path::PathBuf};
-use tectonic_errors::prelude::*;
-use tectonic_io_base::OpenResult;
-use tectonic_status_base::tt_warning;
+use texyon_errors::prelude::*;
+use texyon_io_base::OpenResult;
+use texyon_status_base::tt_warning;
 
 use crate::{
     fonts::FontEnsemble, html::Element, specials::Special, templating::Templating, Common,
@@ -312,7 +312,7 @@ impl InitializationState {
         // later. So I guess we have to create an empty tempdir.
 
         let tempdir = atry!(
-            tempfile::Builder::new().prefix("tectonic_tera_workaround").tempdir();
+            tempfile::Builder::new().prefix("texyon_tera_workaround").tempdir();
             ["couldn't create empty temporary directory for Tera"]
         );
 

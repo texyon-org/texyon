@@ -23,7 +23,7 @@
 #ifndef _DPXFILE_H_
 #define _DPXFILE_H_
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 #include "dpx-mfileio.h"
 
 typedef enum {

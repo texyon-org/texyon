@@ -5,7 +5,7 @@
 //! a series of sub-providers in turn.
 
 use std::path::PathBuf;
-use tectonic_status_base::StatusBackend;
+use texyon_status_base::StatusBackend;
 
 use super::{InputHandle, IoProvider, OpenResult, OutputHandle};
 

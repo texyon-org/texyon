@@ -1,12 +1,12 @@
 # Bundle URL overrides Test
 
-This is a simple test program used by the integration tests to test the [`tectonic_bundles::get_fallback_bundle_url`] function with different compile-time environment variable overrides.
+This is a simple test program used by the integration tests to test the [`texyon_bundles::get_fallback_bundle_url`] function with different compile-time environment variable overrides.
 
 ## Purpose
 
 The `get_fallback_bundle_url` function reads compile-time environment variables
-- `$TECTONIC_BUNDLE_LOCKED`, and
-- `$TECTONIC_BUNDLE_PREFIX`
+- `$TEXYON_BUNDLE_LOCKED`, and
+- `$TEXYON_BUNDLE_PREFIX`
 
 via Rust's `option_env!` macro. Since these values are baked in at compile time, the only way to properly test different override scenarios is to compile separate instances of a test program with different environment variables set.
 
@@ -19,10 +19,10 @@ This test program is invoked by the integration tests with different environment
 cargo run -- 32
 
 # Test with locked bundle
-TECTONIC_BUNDLE_LOCKED="https://example.com/bundle.tar" cargo run -- 32
+TEXYON_BUNDLE_LOCKED="https://example.com/bundle.tar" cargo run -- 32
 
 # Test with custom prefix
-TECTONIC_BUNDLE_PREFIX="https://custom.mirror.com" cargo run -- 31
+TEXYON_BUNDLE_PREFIX="https://custom.mirror.com" cargo run -- 31
 ```
 
 ## Arguments
@@ -35,8 +35,8 @@ The program outputs the URL returned by `get_fallback_bundle_url()` to stdout.
 
 ## Environment Variables Tested
 
-- `TECTONIC_BUNDLE_LOCKED`: When set to a non-empty value, this URL is returned regardless of format version
-- `TECTONIC_BUNDLE_PREFIX`: hard codes a custom prefix for bundle URLs
+- `TEXYON_BUNDLE_LOCKED`: When set to a non-empty value, this URL is returned regardless of format version
+- `TEXYON_BUNDLE_PREFIX`: hard codes a custom prefix for bundle URLs
 
 ## Integration with Tests
 

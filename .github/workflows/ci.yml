@@ -49,7 +49,7 @@ jobs:
       - name: "Setup build variables"
         shell: bash
         run: |
-          echo "TECTONIC_DEP_BACKEND=pkg-config" >> "$GITHUB_ENV"
+          echo "TEXYON_DEP_BACKEND=pkg-config" >> "$GITHUB_ENV"
       - name: "Build and Test"
         uses: ./.github/actions/build-and-test
         with:
@@ -58,4 +58,4 @@ jobs:
         # Same profile and target as the build step, to reuse its build script outputs.
         run: |
           rustup component add clippy
-          cargo clippy -p tectonic_engine_xetex --all-targets --release --target x86_64-unknown-linux-gnu -- -D warnings
+          cargo clippy -p texyon_engine_xetex --all-targets --release --target x86_64-unknown-linux-gnu -- -D warnings

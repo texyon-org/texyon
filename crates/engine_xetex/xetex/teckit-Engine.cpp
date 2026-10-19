@@ -23,7 +23,7 @@ Description:
 	2004-03-12	jk	finished updating for version 2.1 with ...Opt APIs
 */
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 
 //#define TRACING	1
 #define VERSION "2.5.4"
@@ -54,7 +54,7 @@ Description:
 
 #include "teckit-cxx-Engine.h"
 
-#include "tectonic_bridge_flate.h"
+#include "texyon_bridge_flate.h"
 
 #ifdef TRACING
 #include <iostream>
@@ -1299,7 +1299,7 @@ Converter::Converter(const Byte* inTable, UInt32 inTableSize, bool inForward,
 				return;
 			}
 
-			if (tectonic_flate_decompress(
+			if (texyon_flate_decompress(
 						table, &uncompressedLen,
 						inTable + 2 * sizeof(UInt32), inTableSize - 2 * sizeof(UInt32)
 			) < 0) {
@@ -2108,7 +2108,7 @@ TECkit_GetMappingFlags(
 			// compressed mapping, so we need to decompress enough of it to read the flags
 			uint64_t uncompressedLen = sizeof(FileHeader);
 
-			if (tectonic_flate_decompress(
+			if (texyon_flate_decompress(
 						reinterpret_cast<Byte*>(&header), &uncompressedLen,
 						mapping + 2 * sizeof(UInt32), mappingSize - 2 * sizeof(UInt32)
 			) != FlateResult_BufError) {
@@ -2153,7 +2153,7 @@ TECkit_GetMappingName(
 			// and then decompress the complete header to get the names
 			uint64_t uncompressedLen = sizeof(FileHeader);
 
-			if (tectonic_flate_decompress(
+			if (texyon_flate_decompress(
 						reinterpret_cast<Byte*>(&header), &uncompressedLen,
 						mapping + 2 * sizeof(UInt32), mappingSize - 2 * sizeof(UInt32)
 			) != FlateResult_BufError) {
@@ -2166,7 +2166,7 @@ TECkit_GetMappingName(
 				if (buf == 0)
 					status = kStatus_OutOfMemory;
 				else {
-					if (tectonic_flate_decompress(
+					if (texyon_flate_decompress(
 								static_cast<Byte*>(buf), &uncompressedLen,
 								mapping + 2 * sizeof(UInt32), mappingSize - 2 * sizeof(UInt32)
 					) != FlateResult_BufError) {

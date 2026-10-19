@@ -4,7 +4,7 @@
 lints.workspace = true
 
 [package]
-name = "tectonic_cfg_support"
+name = "texyon_cfg_support"
 version = "0.0.0-dev.0"  # assigned with cranko (see README)
 authors = [
     "Matt Rice <ratmice@gmail.com>",
@@ -16,9 +16,9 @@ When cross-compiling, these variables must be used instead of constructs such
 as `cfg!(target_arch = ...)` because the build.rs script is compiled to
 target the build host environment, not the true target environment.
 """
-homepage = "https://tectonic-typesetting.github.io/"
-documentation = "https://docs.rs/tectonic"
-repository = "https://github.com/tectonic-typesetting/tectonic/"
+homepage = "https://github.com/texyon-org/texyon"
+documentation = "https://docs.rs/texyon"
+repository = "https://github.com/texyon-org/texyon"
 readme = "README.md"
 license = "MIT"
 edition = "2021"

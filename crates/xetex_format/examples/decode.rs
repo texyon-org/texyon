@@ -5,8 +5,8 @@
 
 use clap::Parser;
 use std::{fs::File, io::Read, path::PathBuf, process};
-use tectonic_errors::prelude::*;
-use tectonic_xetex_format::format::Format;
+use texyon_errors::prelude::*;
+use texyon_xetex_format::format::Format;
 
 #[derive(Debug, Parser)]
 #[clap(name = "decode", about = "Decode a Tectonic format file")]

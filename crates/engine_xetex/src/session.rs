@@ -7,8 +7,8 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
-use tectonic_bridge_core::{CoreBridgeLauncher, CoreBridgeState};
-use tectonic_errors::prelude::*;
+use texyon_bridge_core::{CoreBridgeLauncher, CoreBridgeState};
+use texyon_errors::prelude::*;
 
 use crate::checkpoint::{
     BudgetError, CheckpointLadder, EngineBundle, LadderBudget, RungAdmission, StringWatermark,
@@ -978,7 +978,7 @@ fn catch_operation(
         run_locked(api, state, operation)
     }))
     .unwrap_or_else(|_| {
-        tectonic_xetex_layout::reset_font_caches();
+        texyon_xetex_layout::reset_font_caches();
         OperationResult::Panicked
     })
 }

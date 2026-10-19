@@ -7,8 +7,8 @@
  * portability.
  */
 
-#ifndef TECTONIC_CORE_BRIDGE_H
-#define TECTONIC_CORE_BRIDGE_H
+#ifndef TEXYON_CORE_BRIDGE_H
+#define TEXYON_CORE_BRIDGE_H
 
 /* High-level defines */
 
@@ -143,7 +143,7 @@ typedef SSIZE_T ssize_t;
 
 /* Get the core definitions from the Rust bridge layer. These are generated
  * during the build process by cbindgen. */
-#include "tectonic_bridge_core_generated.h"
+#include "texyon_bridge_core_generated.h"
 
 /* Now, extra definitions implemented in C */
 
@@ -255,4 +255,4 @@ int ttstub_shell_escape(const unsigned short *cmd, size_t len);
 
 END_EXTERN_C
 
-#endif /* not TECTONIC_CORE_BRIDGE_H */
+#endif /* not TEXYON_CORE_BRIDGE_H */

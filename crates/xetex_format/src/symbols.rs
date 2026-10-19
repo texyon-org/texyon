@@ -16,7 +16,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     io::Write,
 };
-use tectonic_errors::prelude::*;
+use texyon_errors::prelude::*;
 
 #[derive(Clone, Debug, Default)]
 pub struct SymbolTable {

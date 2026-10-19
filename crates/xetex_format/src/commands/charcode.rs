@@ -3,7 +3,7 @@
 
 //! The first 16 special character-code commands
 
-use tectonic_errors::prelude::*;
+use texyon_errors::prelude::*;
 
 use super::{
     ArgKind, Command, CommandArgument, CommandBehavior, CommandPrimitive, PrimitiveExtraInit,

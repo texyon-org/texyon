@@ -6,11 +6,11 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use tectonic::io::{FilesystemIo, IoProvider, IoStack, MemoryIo};
-use tectonic::{errors::Result, BibtexEngine};
-use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
-use tectonic_engine_xetex::TexOutcome;
-use tectonic_status_base::NoopStatusBackend;
+use texyon::io::{FilesystemIo, IoProvider, IoStack, MemoryIo};
+use texyon::{errors::Result, BibtexEngine};
+use texyon_bridge_core::{CoreBridgeLauncher, MinimalDriver};
+use texyon_engine_xetex::TexOutcome;
+use texyon_status_base::NoopStatusBackend;
 
 #[path = "util/mod.rs"]
 mod util;

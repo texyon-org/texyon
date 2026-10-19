@@ -14,8 +14,8 @@ use crate::state::{EngineState, ErrorState, FontEngineHandle, FontState};
 use crate::units::{FontId, Scaled};
 use std::ffi::c_int;
 use std::sync::Arc;
-use tectonic_bridge_harfbuzz::Feature;
-use tectonic_xetex_layout::{
+use texyon_bridge_harfbuzz::Feature;
+use texyon_xetex_layout::{
     Engine, EngineOptions, Font, FontManager, LayoutEngine, PlatformFontRef,
 };
 

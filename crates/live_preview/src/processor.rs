@@ -1,12 +1,12 @@
 use std::{fmt, time::Instant};
 
-use tectonic_preview_protocol::{
+use texyon_preview_protocol::{
     CommandCount, FrameId, FramePhase, OperationMetrics, RequestSeq, SourceLocation,
     SyncRectPayload, UpdateOutcome,
 };
-use tectonic_preview_render::{Backend, ResourceProvider};
+use texyon_preview_render::{Backend, ResourceProvider};
 
-use tectonic_engine_xetex::{EngineCancellation, EngineFrame, SyncIndex, SyncRect, TexOutcome};
+use texyon_engine_xetex::{EngineCancellation, EngineFrame, SyncIndex, SyncRect, TexOutcome};
 
 use super::{
     AcceptedSourceSnapshot, DocumentFragment, FrameHeader, FrameSink, PreviewPipeline,
@@ -246,7 +246,7 @@ impl<P: ResourceProvider, B: Backend, S: FrameSink> ResidentPreviewProcessor<P, 
     }
 
     /// Every control sequence the engine currently has defined.
-    pub fn defined_commands(&self) -> Vec<tectonic_engine_xetex::introspect::DefinedCommand> {
+    pub fn defined_commands(&self) -> Vec<texyon_engine_xetex::introspect::DefinedCommand> {
         self.engine.defined_commands()
     }
 

@@ -1,9 +1,9 @@
 use clap::{CommandFactory, Parser};
-use tectonic::{config::PersistentConfig, errors::Result};
-use tectonic_io_base::app_dirs;
-use tectonic_status_base::StatusBackend;
+use texyon::{config::PersistentConfig, errors::Result};
+use texyon_io_base::app_dirs;
+use texyon_status_base::StatusBackend;
 
-use crate::v2cli::{CommandCustomizations, TectonicCommand, V2CliOptions};
+use crate::v2cli::{CommandCustomizations, TexyonCommand, V2CliOptions};
 
 /// `show`: Show various useful pieces of information.
 #[derive(Debug, Eq, PartialEq, Parser)]
@@ -23,7 +23,7 @@ enum ShowCommands {
     ShellCompletions(ShowShellCompletionsCommand),
 }
 
-impl TectonicCommand for ShowCommand {
+impl TexyonCommand for ShowCommand {
     fn customize(&self, cc: &mut CommandCustomizations) {
         match &self.command {
             ShowCommands::UserCacheDir(c) => c.customize(cc),

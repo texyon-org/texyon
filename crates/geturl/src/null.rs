@@ -9,7 +9,7 @@ use std::{
     io::Empty,
     result::Result as StdResult,
 };
-use tectonic_errors::Result;
+use texyon_errors::Result;
 
 use crate::{GetUrlBackend, RangeReader};
 

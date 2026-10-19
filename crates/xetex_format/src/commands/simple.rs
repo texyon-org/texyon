@@ -4,7 +4,7 @@
 //! Commands that have a simple set of associated primitives and arguments.
 
 use std::collections::BTreeMap;
-use tectonic_errors::prelude::*;
+use texyon_errors::prelude::*;
 
 use super::{
     ArgKind, Command, CommandArgument, CommandBehavior, CommandPrimitive, PrimitiveExtraInit,

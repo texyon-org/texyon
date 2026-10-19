@@ -1,7 +1,7 @@
 //! A frame sink for a host that is a function call away.
 
-use tectonic_live_preview::{FramePatch, FrameSink};
-use tectonic_preview_protocol::OperationMetrics;
+use texyon_live_preview::{FramePatch, FrameSink};
+use texyon_preview_protocol::OperationMetrics;
 
 /// A [`FrameSink`] that retains the last frame for the caller to take.
 #[derive(Default)]

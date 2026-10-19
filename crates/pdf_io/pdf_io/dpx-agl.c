@@ -36,7 +36,7 @@
 #include <string.h>
 #include <sys/types.h>
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 #include "dpx-dpxconf.h"
 #include "dpx-dpxfile.h"
 /* Hash */

@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use tectonic_xdv::XdvError;
+use texyon_xdv::XdvError;
 
 /// Failure from parsing, resource resolution, or a rendering backend.
 #[derive(Clone, Debug, PartialEq, Eq)]

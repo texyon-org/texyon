@@ -23,7 +23,7 @@
 #ifndef _PDF_RESOURCE_H_
 #define _PDF_RESOURCE_H_
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 
 #include "dpx-pdfobj.h"
 

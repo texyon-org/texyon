@@ -7,7 +7,7 @@ use crate::mem::{TEMP_HEAD, ZERO_GLUE};
 use crate::node::{ActiveNode, AnyBox, AnyNode, DiscNode, HListNode, NodePtr, WhatsitSubtype};
 use crate::state::{ErrorState, FontState, LinebreakState, MemState};
 use crate::units::{FontId, MemPtr, Scaled};
-use tectonic_xetex_layout::get_cp_code;
+use texyon_xetex_layout::get_cp_code;
 
 use super::passive_node;
 

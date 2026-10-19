@@ -8,8 +8,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::ffi::{CStr, CString};
-use tectonic_bridge_core::CoreBridgeState;
-use tectonic_bridge_freetype2 as ft;
+use texyon_bridge_core::CoreBridgeState;
+use texyon_bridge_freetype2 as ft;
 
 #[cfg(not(target_os = "macos"))]
 mod fc;

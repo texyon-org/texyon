@@ -2,7 +2,7 @@
  * Licensed under the MIT License.
 */
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 
 #include <setjmp.h>
 #include <stdio.h> /*vsnprintf*/
@@ -87,7 +87,7 @@ ttstub_diag_printf(ttbc_diagnostic_t *diag, const char *format, ...)
 
 /* The global state helpers */
 
-static ttbc_state_t *tectonic_global_bridge_core = NULL;
+static ttbc_state_t *texyon_global_bridge_core = NULL;
 static jmp_buf jump_buffer;
 
 
@@ -128,7 +128,7 @@ _ttbc_set_error_message(const char *message)
 jmp_buf *
 ttbc_global_engine_enter(ttbc_state_t *api)
 {
-    tectonic_global_bridge_core = api;
+    texyon_global_bridge_core = api;
     return &jump_buffer;
 }
 
@@ -146,7 +146,7 @@ ttbc_global_engine_get_jump_buffer(void)
 void
 ttbc_global_engine_exit(void)
 {
-    tectonic_global_bridge_core = NULL;
+    texyon_global_bridge_core = NULL;
 }
 
 
@@ -158,7 +158,7 @@ ttstub_issue_warning(const char *format, ...)
     va_start(ap, format);
     vsnprintf(format_buf, BUF_SIZE, format, ap);
     va_end(ap);
-    ttbc_issue_warning(tectonic_global_bridge_core, format_buf);
+    ttbc_issue_warning(texyon_global_bridge_core, format_buf);
 }
 
 
@@ -170,42 +170,42 @@ ttstub_issue_error(const char *format, ...)
     va_start(ap, format);
     vsnprintf(format_buf, BUF_SIZE, format, ap); /* Not ideal to (ab)use format_buf here */
     va_end(ap);
-    ttbc_issue_error(tectonic_global_bridge_core, format_buf);
+    ttbc_issue_error(texyon_global_bridge_core, format_buf);
 }
 
 
 void
 ttstub_diag_finish(ttbc_diagnostic_t *diag)
 {
-    ttbc_diag_finish(tectonic_global_bridge_core, diag);
+    ttbc_diag_finish(texyon_global_bridge_core, diag);
 }
 
 
 rust_output_handle_t
 ttstub_output_open(char const *path, int is_gz)
 {
-    return ttbc_output_open(tectonic_global_bridge_core, path, is_gz);
+    return ttbc_output_open(texyon_global_bridge_core, path, is_gz);
 }
 
 
 rust_output_handle_t
 ttstub_output_open_stdout(void)
 {
-    return ttbc_output_open_stdout(tectonic_global_bridge_core);
+    return ttbc_output_open_stdout(texyon_global_bridge_core);
 }
 
 
 int
 ttstub_output_putc(rust_output_handle_t handle, int c)
 {
-    return ttbc_output_putc(tectonic_global_bridge_core, handle, c);
+    return ttbc_output_putc(texyon_global_bridge_core, handle, c);
 }
 
 
 size_t
 ttstub_output_write(rust_output_handle_t handle, const char *data, size_t len)
 {
-    return ttbc_output_write(tectonic_global_bridge_core, handle, (const uint8_t*) data, len);
+    return ttbc_output_write(texyon_global_bridge_core, handle, (const uint8_t*) data, len);
 }
 
 
@@ -235,41 +235,41 @@ ttstub_fprintf(rust_output_handle_t handle, const char *format, ...)
 int
 ttstub_output_flush(rust_output_handle_t handle)
 {
-    return ttbc_output_flush(tectonic_global_bridge_core, handle);
+    return ttbc_output_flush(texyon_global_bridge_core, handle);
 }
 
 
 int
 ttstub_output_close(rust_output_handle_t handle)
 {
-    return ttbc_output_close(tectonic_global_bridge_core, handle);
+    return ttbc_output_close(texyon_global_bridge_core, handle);
 }
 
 
 rust_input_handle_t
 ttstub_input_open(char const *path, ttbc_file_format format, int is_gz)
 {
-    return ttbc_input_open(tectonic_global_bridge_core, path, format, is_gz);
+    return ttbc_input_open(texyon_global_bridge_core, path, format, is_gz);
 }
 
 
 rust_input_handle_t
 ttstub_input_open_primary(void)
 {
-    return ttbc_input_open_primary(tectonic_global_bridge_core);
+    return ttbc_input_open_primary(texyon_global_bridge_core);
 }
 
 
 ssize_t
 ttstub_get_last_input_abspath(char *buffer, size_t len)
 {
-    return ttbc_get_last_input_abspath(tectonic_global_bridge_core, (uint8_t *) buffer, len);
+    return ttbc_get_last_input_abspath(texyon_global_bridge_core, (uint8_t *) buffer, len);
 }
 
 size_t
 ttstub_input_get_size(rust_input_handle_t handle)
 {
-    return ttbc_input_get_size(tectonic_global_bridge_core, handle);
+    return ttbc_input_get_size(texyon_global_bridge_core, handle);
 }
 
 
@@ -280,7 +280,7 @@ ttstub_input_get_mtime(rust_input_handle_t handle)
      * between Rust and C code. And formally, ISO C provides nearly no
      * guarantees about what the type time_t actually is. So let's just cast and
      * hope for the best. */
-    int64_t ti = ttbc_input_get_mtime(tectonic_global_bridge_core, handle);
+    int64_t ti = ttbc_input_get_mtime(texyon_global_bridge_core, handle);
     return (time_t) ti;
 }
 
@@ -290,7 +290,7 @@ ttstub_input_seek(rust_input_handle_t handle, ssize_t offset, int whence)
 {
     int internal_error = 0;
 
-    size_t rv = ttbc_input_seek(tectonic_global_bridge_core, handle, offset, whence, &internal_error);
+    size_t rv = ttbc_input_seek(texyon_global_bridge_core, handle, offset, whence, &internal_error);
 
     if (internal_error) {
         // Nonzero indicates a serious internal error.
@@ -304,33 +304,33 @@ ttstub_input_seek(rust_input_handle_t handle, ssize_t offset, int whence)
 ssize_t
 ttstub_input_read(rust_input_handle_t handle, char *data, size_t len)
 {
-    return ttbc_input_read(tectonic_global_bridge_core, handle, (uint8_t *) data, len);
+    return ttbc_input_read(texyon_global_bridge_core, handle, (uint8_t *) data, len);
 }
 
 ssize_t
 ttstub_input_read_partial(rust_input_handle_t handle, char *data, size_t len)
 {
-    return ttbc_input_read_partial(tectonic_global_bridge_core, handle, (uint8_t *) data, len);
+    return ttbc_input_read_partial(texyon_global_bridge_core, handle, (uint8_t *) data, len);
 }
 
 int
 ttstub_input_getc(rust_input_handle_t handle)
 {
-    return ttbc_input_getc(tectonic_global_bridge_core, handle);
+    return ttbc_input_getc(texyon_global_bridge_core, handle);
 }
 
 
 int
 ttstub_input_ungetc(rust_input_handle_t handle, int ch)
 {
-    return ttbc_input_ungetc(tectonic_global_bridge_core, handle, ch);
+    return ttbc_input_ungetc(texyon_global_bridge_core, handle, ch);
 }
 
 
 int
 ttstub_input_close(rust_input_handle_t handle)
 {
-    if (ttbc_input_close(tectonic_global_bridge_core, handle)) {
+    if (ttbc_input_close(texyon_global_bridge_core, handle)) {
         // Nonzero return value indicates a serious internal error.
         longjmp(jump_buffer, 1);
     }
@@ -342,13 +342,13 @@ ttstub_input_close(rust_input_handle_t handle)
 int
 ttstub_get_file_md5(char const *path, char *digest)
 {
-    return ttbc_get_file_md5(tectonic_global_bridge_core, path, (uint8_t *) digest);
+    return ttbc_get_file_md5(texyon_global_bridge_core, path, (uint8_t *) digest);
 }
 
 int
 ttstub_shell_escape(const unsigned short *cmd, size_t len)
 {
-    return ttbc_shell_escape(tectonic_global_bridge_core, cmd, len);
+    return ttbc_shell_escape(texyon_global_bridge_core, cmd, len);
 }
 
 

@@ -7,9 +7,9 @@ use std::{
     io::{BufReader, Write},
     path::PathBuf,
 };
-use tectonic_errors::{anyhow::bail, Result};
+use texyon_errors::{anyhow::bail, Result};
 
-use tectonic_status_base::StatusBackend;
+use texyon_status_base::StatusBackend;
 
 use crate::{digest::DigestData, InputHandle, InputOrigin, IoProvider, OpenResult};
 
@@ -34,7 +34,7 @@ impl FormatCache {
     ///
     /// The `format_serial` distinguishes dumps that the same bundle produced
     /// under incompatible engine versions; it is
-    /// [`tectonic_engine_xetex::FORMAT_SERIAL`], passed in rather than read
+    /// [`texyon_engine_xetex::FORMAT_SERIAL`], passed in rather than read
     /// directly because the engine crate is built on top of this one.
     pub fn new(
         bundle_digest: DigestData,

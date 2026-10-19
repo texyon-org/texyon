@@ -1,18 +1,18 @@
-# The `tectonic_bridge_core` crate
+# The `texyon_bridge_core` crate
 
-[![](http://meritbadge.herokuapp.com/tectonic_bridge_core)](https://crates.io/crates/tectonic_bridge_core)
+[![](http://meritbadge.herokuapp.com/texyon_bridge_core)](https://crates.io/crates/texyon_bridge_core)
 
 This crate is part of [the Tectonic
 project](https://tectonic-typesetting.github.io/en-US/). It provides a C API to
 core I/O services provided by the Tectonic Rust code. This API is then consumed
 by the various C/C++ "engines" implementing the TeX software.
 
-- [API documentation](https://docs.rs/tectonic_bridge_core/).
+- [API documentation](https://docs.rs/texyon_bridge_core/).
 - [Main Git repository](https://github.com/tectonic-typesetting/tectonic/).
 
 If your project depends on this crate, Cargo will export for your build script
-an environment variable named `DEP_TECTONIC_BRIDGE_CORE_INCLUDE`, which will be
-the name of a directory containing the generated `tectonic_bridge_core.h` file
+an environment variable named `DEP_TEXYON_BRIDGE_CORE_INCLUDE`, which will be
+the name of a directory containing the generated `texyon_bridge_core.h` file
 that exposes this crate’s C API.
 
 You will need to ensure that your Rust code actually references this crate in
@@ -22,7 +22,7 @@ its Rust API, a `use` statement will suffice:
 ```rust
 #[allow(unused_imports)]
 #[allow(clippy::single_component_path_imports)]
-use tectonic_bridge_core;
+use texyon_bridge_core;
 ```
 
 
@@ -41,5 +41,5 @@ This crate exposes Rust functions to C/C++ code using a header file created by
 [cbindgen]: https://github.com/eqrion/cbindgen/
 
 ```sh
-cbindgen --output support/tectonic_bridge_core_generated.h
+cbindgen --output support/texyon_bridge_core_generated.h
 ```

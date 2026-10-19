@@ -14,7 +14,7 @@ larger sweep come from fuzz/*.py:
     python3 crates/engine_xetex/tests/upstream/fuzz/layout.py /tmp/rand 1000 0
     crates/engine_xetex/tests/upstream/run.py --probes /tmp/rand
 
-Env: XETEX (upstream binary), TECTONIC (default target/release/tectonic),
+Env: XETEX (upstream binary), TEXYON (default target/release/texyon),
 UPSTREAM_WORK (scratch dir, default target/upstream-diff).
 """
 
@@ -39,7 +39,7 @@ FONTS = HERE / "fonts"
 
 XETEX = os.environ.get("XETEX", "/usr/local/texlive/2025/bin/x86_64-linux/xetex")
 PLTOTF = os.environ.get("PLTOTF", str(Path(XETEX).with_name("pltotf")))
-TECTONIC = os.environ.get("TECTONIC", str(ROOT / "target" / "release" / "tectonic"))
+TEXYON = os.environ.get("TEXYON", str(ROOT / "target" / "release" / "texyon"))
 WORK = Path(os.environ.get("UPSTREAM_WORK", ROOT / "target" / "upstream-diff"))
 
 ENV = dict(os.environ, TZ="UTC", SOURCE_DATE_EPOCH="0", FORCE_SOURCE_DATE="1")
@@ -66,7 +66,7 @@ def make_bundle():
     for f in sorted(bundle.iterdir()):
         h.update(f.name.encode())
         h.update(f.read_bytes())
-    h.update(Path(TECTONIC).read_bytes())
+    h.update(Path(TEXYON).read_bytes())
     (bundle / "SHA256SUM").write_text(h.hexdigest() + "\n")
     return bundle
 
@@ -144,7 +144,7 @@ def run_tt(name, src, bundle):
     d.mkdir(parents=True)
     shutil.copy(src, d / "probe.tex")
     subprocess.run(
-        [TECTONIC, "-X", "compile", "--outfmt", "xdv", "--keep-logs", "--untrusted",
+        [TEXYON, "-X", "compile", "--outfmt", "xdv", "--keep-logs", "--untrusted",
          "-Z", "deterministic-mode", "-Z", "continue-on-errors", "--format", "plain",
          "--bundle", str(bundle), "probe.tex"],
         cwd=d, env=ENV, stdin=subprocess.DEVNULL,
@@ -343,8 +343,8 @@ def main():
 
     if not Path(XETEX).exists():
         sys.exit(f"upstream xetex not found at {XETEX} (set XETEX)")
-    if not Path(TECTONIC).exists():
-        sys.exit(f"tectonic not found at {TECTONIC} (cargo build --release -p tectonic)")
+    if not Path(TEXYON).exists():
+        sys.exit(f"texyon not found at {TEXYON} (cargo build --release -p texyon)")
 
     WORK.mkdir(parents=True, exist_ok=True)
     for old in WORK.glob("*.diff"):

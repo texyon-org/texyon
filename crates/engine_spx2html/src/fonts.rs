@@ -7,9 +7,9 @@
 //! related fonts. In typography you might call this a typeface.
 
 use std::{collections::HashMap, fmt::Write, io::Read, path::Path};
-use tectonic_errors::prelude::*;
-use tectonic_io_base::InputHandle;
-use tectonic_status_base::{tt_warning, StatusBackend};
+use texyon_errors::prelude::*;
+use texyon_io_base::InputHandle;
+use texyon_status_base::{tt_warning, StatusBackend};
 
 use crate::{
     assets::syntax,

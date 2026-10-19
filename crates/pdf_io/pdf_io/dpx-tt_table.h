@@ -21,7 +21,7 @@
 #ifndef _TT_TABLE_H_
 #define _TT_TABLE_H_
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 
 #include "dpx-sfnt.h"
 

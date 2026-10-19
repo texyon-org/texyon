@@ -4,7 +4,7 @@
  * The module is built for `wasm32-wasip1` because that is the only Rust target
  * with a libc, and the engine is ~140k lines of C that needs one. It is not,
  * however, a program that wants an operating system: every file it reads
- * arrives through the `tectonic_host_read_file` import instead, and everything
+ * arrives through the `texyon_host_read_file` import instead, and everything
  * it writes stays in linear memory.
  *
  * So the syscalls here fall into three groups. Clocks, randomness and the
@@ -152,7 +152,7 @@ export class Wasi {
 
       // No preopens means no path is reachable, and wasi-libc turns these into
       // the ENOENT/EPERM that the engine's I/O layer already handles — it never
-      // gets here anyway, because tectonic_host_read_file answers first.
+      // gets here anyway, because texyon_host_read_file answers first.
       path_open: notcapable,
       path_filestat_get: notcapable,
       path_remove_directory: notcapable,

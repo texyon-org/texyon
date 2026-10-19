@@ -1,16 +1,16 @@
 use clap::{Parser, Subcommand};
 use create::BundleCreateCommand;
-use tectonic::{
+use texyon::{
     config::PersistentConfig,
     docmodel::{DocumentExt, DocumentSetupOptions},
     errors::Result,
     tt_note,
 };
-use tectonic_bundles::Bundle;
-use tectonic_docmodel::workspace::Workspace;
-use tectonic_status_base::StatusBackend;
+use texyon_bundles::Bundle;
+use texyon_docmodel::workspace::Workspace;
+use texyon_status_base::StatusBackend;
 
-use crate::v2cli::{CommandCustomizations, TectonicCommand};
+use crate::v2cli::{CommandCustomizations, TexyonCommand};
 
 mod actions;
 mod create;
@@ -22,7 +22,7 @@ fn get_a_bundle(
     only_cached: bool,
     status: &mut dyn StatusBackend,
 ) -> Result<Box<dyn Bundle>> {
-    use tectonic_docmodel::workspace::NoWorkspaceFoundError;
+    use texyon_docmodel::workspace::NoWorkspaceFoundError;
 
     match Workspace::open_from_environment() {
         Ok(ws) => {
@@ -40,8 +40,8 @@ fn get_a_bundle(
                     status,
                     "not in a document workspace; using the built-in default bundle"
                 );
-                Ok(Box::new(tectonic_bundles::get_fallback_bundle(
-                    tectonic_engine_xetex::FORMAT_SERIAL,
+                Ok(Box::new(texyon_bundles::get_fallback_bundle(
+                    texyon_engine_xetex::FORMAT_SERIAL,
                     only_cached,
                 )?))
             }
@@ -71,7 +71,7 @@ enum BundleCommands {
     Create(BundleCreateCommand),
 }
 
-impl TectonicCommand for BundleCommand {
+impl TexyonCommand for BundleCommand {
     fn customize(&self, cc: &mut CommandCustomizations) {
         match &self.command {
             BundleCommands::Cat(c) => c.customize(cc),

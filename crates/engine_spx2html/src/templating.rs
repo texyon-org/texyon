@@ -7,8 +7,8 @@ use std::{
     fs::File,
     io::{Read, Write},
 };
-use tectonic_errors::prelude::*;
-use tectonic_status_base::tt_warning;
+use texyon_errors::prelude::*;
+use texyon_status_base::tt_warning;
 
 use crate::Common;
 

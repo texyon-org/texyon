@@ -8,8 +8,8 @@ use std::{
     fmt::{Arguments, Error as FmtError, Write as FmtWrite},
     result::Result as StdResult,
 };
-use tectonic_errors::prelude::*;
-use tectonic_status_base::tt_warning;
+use texyon_errors::prelude::*;
+use texyon_status_base::tt_warning;
 
 use crate::{
     assets::Assets,

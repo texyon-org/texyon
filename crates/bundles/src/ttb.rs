@@ -11,8 +11,8 @@ use std::{
     io::{BufRead, BufReader, Read},
     str::FromStr,
 };
-use tectonic_errors::prelude::*;
-use tectonic_io_base::digest::{self, DigestData};
+use texyon_errors::prelude::*;
+use texyon_io_base::digest::{self, DigestData};
 
 pub struct TTBv1Header {
     pub index_start: u64,

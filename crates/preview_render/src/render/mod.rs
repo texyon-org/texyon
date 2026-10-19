@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 use std::sync::Arc;
 
-use tectonic_xdv::{FileType, XdvParser};
+use texyon_xdv::{FileType, XdvParser};
 
 use crate::backend::{Backend, FontId, FontStyle};
 use crate::fingerprint::page_digest;

@@ -7,8 +7,8 @@ use std::{
     rc::Rc,
 };
 
-use tectonic_io_base::{InputFeatures, InputHandle, InputOrigin, IoProvider, OpenResult};
-use tectonic_status_base::{MessageKind, StatusBackend};
+use texyon_io_base::{InputFeatures, InputHandle, InputOrigin, IoProvider, OpenResult};
+use texyon_status_base::{MessageKind, StatusBackend};
 
 use crate::host::{self, LogKind};
 
@@ -33,11 +33,11 @@ impl Read for SharedFile {
 }
 
 impl InputFeatures for SharedFile {
-    fn get_size(&mut self) -> tectonic_errors::Result<usize> {
+    fn get_size(&mut self) -> texyon_errors::Result<usize> {
         Ok(self.bytes.len())
     }
 
-    fn try_seek(&mut self, pos: SeekFrom) -> tectonic_errors::Result<u64> {
+    fn try_seek(&mut self, pos: SeekFrom) -> texyon_errors::Result<u64> {
         let len = self.bytes.len();
         let target = match pos {
             SeekFrom::Start(offset) => Some(offset),
@@ -120,7 +120,7 @@ impl IoProvider for HostIo {
                 InputOrigin::Other,
             )),
             Ok(None) => OpenResult::NotAvailable,
-            Err(error) => OpenResult::Err(tectonic_errors::anyhow::anyhow!(error)),
+            Err(error) => OpenResult::Err(texyon_errors::anyhow::anyhow!(error)),
         }
     }
 }
@@ -142,7 +142,7 @@ impl StatusBackend for HostStatus {
         &mut self,
         kind: MessageKind,
         args: std::fmt::Arguments,
-        err: Option<&tectonic_errors::Error>,
+        err: Option<&texyon_errors::Error>,
     ) {
         let mut message = args.to_string();
 

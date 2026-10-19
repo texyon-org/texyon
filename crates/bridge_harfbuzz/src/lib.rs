@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 use std::ptr::NonNull;
 use std::{ptr, slice};
-use tectonic_bridge_graphite2 as gr;
+use texyon_bridge_graphite2 as gr;
 
 mod font_funcs;
 pub mod ot;
@@ -35,10 +35,10 @@ pub use sys::hb_segment_properties_t as SegmentProperties;
 /// link with them, to pull in the symbols defined in the C APIs.
 mod linkage {
     #[allow(unused_imports)]
-    use tectonic_bridge_freetype2 as clippyrenamehack1;
+    use texyon_bridge_freetype2 as clippyrenamehack1;
     #[allow(unused_imports)]
     #[cfg(target_os = "macos")]
-    use tectonic_mac_core as clippyrenamehack2;
+    use texyon_mac_core as clippyrenamehack2;
 }
 
 unsafe extern "C" fn dealloc<T: 'static>(user_data: *mut ()) {

@@ -9,16 +9,16 @@ use std::{
     path::{Path, PathBuf},
     str::FromStr,
 };
-use tectonic_errors::prelude::*;
-use tectonic_io_base::{digest, filesystem::FilesystemIo, InputHandle, IoProvider, OpenResult};
-use tectonic_status_base::{NoopStatusBackend, StatusBackend};
+use texyon_errors::prelude::*;
+use texyon_io_base::{digest, filesystem::FilesystemIo, InputHandle, IoProvider, OpenResult};
+use texyon_status_base::{NoopStatusBackend, StatusBackend};
 
 use super::Bundle;
 
 /// A "bundle" of a bunch of files in a directory.
 ///
 /// This implementation essentially just wraps
-/// [`tectonic_io_base::filesystem::FilesystemIo`], ensuring that it is
+/// [`texyon_io_base::filesystem::FilesystemIo`], ensuring that it is
 /// read-only, self-contained, and implements the [`Bundle`] trait. The
 /// directory should contain a file named `SHA256SUM` if the bundle fingerprint
 /// will be needed.
@@ -68,7 +68,7 @@ impl Bundle for DirBundle {
             .collect()
     }
 
-    fn get_digest(&mut self) -> Result<tectonic_io_base::digest::DigestData> {
+    fn get_digest(&mut self) -> Result<texyon_io_base::digest::DigestData> {
         let digest_text = match self.input_open_name(digest::DIGEST_NAME, &mut NoopStatusBackend {})
         {
             OpenResult::Ok(h) => {

@@ -1,7 +1,7 @@
 lints.workspace = true
 
 [package]
-name = "tectonic_live_preview"
+name = "texyon_live_preview"
 version = "0.0.0-dev.0"  # assigned with cranko (see README)
 authors = ["the Tectonic Project"]
 description = """
@@ -9,42 +9,42 @@ Document-level orchestration for Tectonic's realtime LaTeX preview: source
 authority, a resident engine driver, selective publication, and a JSON Lines
 server.
 """
-homepage = "https://tectonic-typesetting.github.io/"
-documentation = "https://docs.rs/tectonic_live_preview"
-repository = "https://github.com/tectonic-typesetting/tectonic/"
+homepage = "https://github.com/texyon-org/texyon"
+documentation = "https://docs.rs/texyon_live_preview"
+repository = "https://github.com/texyon-org/texyon"
 license = "MIT"
 edition = "2021"
 
 [dependencies]
-tectonic_bridge_core = { path = "../bridge_core", version = "0.0.0-dev.0" }
-tectonic_bundles = { path = "../bundles", version = "0.0.0-dev.0", optional = true }
-tectonic_engine_xetex = { path = "../engine_xetex", version = "0.0.0-dev.0" }
-tectonic_errors = { path = "../errors", version = "0.0.0-dev.0" }
-tectonic_io_base = { path = "../io_base", version = "0.0.0-dev.0" }
-tectonic_preview_protocol = { path = "../preview_protocol", version = "0.0.0-dev.0" }
-tectonic_preview_render = { path = "../preview_render", version = "0.0.0-dev.0" }
-tectonic_status_base = { path = "../status_base", version = "0.0.0-dev.0" }
+texyon_bridge_core = { path = "../bridge_core", version = "0.0.0-dev.0" }
+texyon_bundles = { path = "../bundles", version = "0.0.0-dev.0", optional = true }
+texyon_engine_xetex = { path = "../engine_xetex", version = "0.0.0-dev.0" }
+texyon_errors = { path = "../errors", version = "0.0.0-dev.0" }
+texyon_io_base = { path = "../io_base", version = "0.0.0-dev.0" }
+texyon_preview_protocol = { path = "../preview_protocol", version = "0.0.0-dev.0" }
+texyon_preview_render = { path = "../preview_render", version = "0.0.0-dev.0" }
+texyon_status_base = { path = "../status_base", version = "0.0.0-dev.0" }
 
 [package.metadata.internal_dep_versions]
-tectonic_bridge_core = "thiscommit:2026-07-25:live-preview-extraction"
-tectonic_bundles = "thiscommit:2026-07-25:live-preview-extraction"
-tectonic_engine_xetex = "thiscommit:2026-07-25:live-preview-extraction"
-tectonic_errors = "thiscommit:2026-07-25:live-preview-extraction"
-tectonic_io_base = "thiscommit:2026-07-25:live-preview-extraction"
-tectonic_preview_protocol = "thiscommit:2026-07-25:live-preview-extraction"
-tectonic_preview_render = "thiscommit:2026-07-25:live-preview-extraction"
-tectonic_status_base = "thiscommit:2026-07-25:live-preview-extraction"
+texyon_bridge_core = "thiscommit:2026-07-25:live-preview-extraction"
+texyon_bundles = "thiscommit:2026-07-25:live-preview-extraction"
+texyon_engine_xetex = "thiscommit:2026-07-25:live-preview-extraction"
+texyon_errors = "thiscommit:2026-07-25:live-preview-extraction"
+texyon_io_base = "thiscommit:2026-07-25:live-preview-extraction"
+texyon_preview_protocol = "thiscommit:2026-07-25:live-preview-extraction"
+texyon_preview_render = "thiscommit:2026-07-25:live-preview-extraction"
+texyon_status_base = "thiscommit:2026-07-25:live-preview-extraction"
 
 [features]
 default = ["native"]
 
 # Host OS support: the bundle resource provider, the worker thread and the
 # stdio JSON Lines server. The WebAssembly build links the portable core only.
-native = ["dep:tectonic_bundles"]
+native = ["dep:texyon_bundles"]
 
 # The native SVG backend links MuPDF, whose distribution terms are AGPL. Keep
 # it opt-in so the portable/MIT library build remains unchanged.
-preview-mupdf = ["tectonic_preview_render/backend-mupdf"]
+preview-mupdf = ["texyon_preview_render/backend-mupdf"]
 
 [dev-dependencies]
 serde_json = "1.0"

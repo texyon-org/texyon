@@ -9,7 +9,7 @@ use reqwest::{
     redirect::Policy,
     StatusCode, Url,
 };
-use tectonic_errors::{anyhow::bail, Result};
+use texyon_errors::{anyhow::bail, Result};
 
 use crate::{GetUrlBackend, RangeReader};
 

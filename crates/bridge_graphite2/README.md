@@ -1,6 +1,6 @@
-# The `tectonic_bridge_graphite2` crate
+# The `texyon_bridge_graphite2` crate
 
-[![](http://meritbadge.herokuapp.com/tectonic_bridge_graphite2)](https://crates.io/crates/tectonic_bridge_graphite2)
+[![](http://meritbadge.herokuapp.com/texyon_bridge_graphite2)](https://crates.io/crates/texyon_bridge_graphite2)
 
 This crate is part of [the Tectonic
 project](https://tectonic-typesetting.github.io/en-US/). It exposes the *C* API
@@ -9,7 +9,7 @@ of the [graphite2] "smart font" system within the Rust/Cargo build framework,
 
 [graphite2]: https://graphite.sil.org/
 
-- [API documentation](https://docs.rs/tectonic_bridge_graphite2/).
+- [API documentation](https://docs.rs/texyon_bridge_graphite2/).
 - [Main Git repository](https://github.com/tectonic-typesetting/tectonic/).
 
 The intention is that eventually this crate will provide the option of
@@ -31,7 +31,7 @@ suffice:
 ```rust
 #[allow(unused_imports)]
 #[allow(clippy::single_component_path_imports)]
-use tectonic_bridge_graphite2;
+use texyon_bridge_graphite2;
 ```
 
 

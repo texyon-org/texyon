@@ -20,18 +20,18 @@ use std::{
     str::FromStr,
 };
 
-use tectonic::{
+use texyon::{
     digest::DigestData,
     io::{IoStack, MemoryIo},
     TexEngine,
 };
-use tectonic_bridge_core::{CoreBridgeLauncher, DriverHooks};
-use tectonic_errors::Result;
-use tectonic_io_base::{
+use texyon_bridge_core::{CoreBridgeLauncher, DriverHooks};
+use texyon_errors::Result;
+use texyon_io_base::{
     filesystem::{FilesystemIo, FilesystemPrimaryInputIo},
     InputHandle, IoProvider, OpenResult, OutputHandle,
 };
-use tectonic_status_base::{NoopStatusBackend, StatusBackend};
+use texyon_status_base::{NoopStatusBackend, StatusBackend};
 
 mod util;
 use crate::util::test_path;
@@ -142,7 +142,7 @@ fn test_format_generation(texname: &str, fmtname: &str, sha256: &str) {
     let mem_stdout_allowed = !DEBUG;
     let mut mem = MemoryIo::new(mem_stdout_allowed);
 
-    use tectonic::io::GenuineStdoutIo;
+    use texyon::io::GenuineStdoutIo;
     let mut stdout = GenuineStdoutIo::new();
 
     // Run the engine!

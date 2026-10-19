@@ -18,8 +18,8 @@
 use crate::state::ConfigState;
 
 use std::time::SystemTime;
-use tectonic_bridge_core::{CoreBridgeLauncher, EngineAbortedError};
-use tectonic_errors::prelude::*;
+use texyon_bridge_core::{CoreBridgeLauncher, EngineAbortedError};
+use texyon_errors::prelude::*;
 
 mod bridge;
 mod cancellation;
@@ -294,8 +294,8 @@ impl TexEngine {
 /// them.
 mod linkage {
     // Anonymous imports deliberately make Cargo link these bridge crates.
-    use tectonic_bridge_icu as _;
-    use tectonic_pdf_io as _;
+    use texyon_bridge_icu as _;
+    use texyon_pdf_io as _;
 }
 
 /// Does our resulting executable link correctly?

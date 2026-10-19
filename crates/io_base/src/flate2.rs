@@ -8,13 +8,13 @@
 
 use flate2::read::GzDecoder;
 use std::io::{Read, SeekFrom};
-use tectonic_errors::Result;
+use texyon_errors::Result;
 
-use super::{InputFeatures, TectonicIoError};
+use super::{InputFeatures, TexyonIoError};
 
 impl<R: Read> InputFeatures for GzDecoder<R> {
     fn get_size(&mut self) -> Result<usize> {
-        Err(TectonicIoError::NotSizeable.into())
+        Err(TexyonIoError::NotSizeable.into())
     }
 
     fn get_unix_mtime(&mut self) -> Result<Option<i64>> {
@@ -25,6 +25,6 @@ impl<R: Read> InputFeatures for GzDecoder<R> {
     }
 
     fn try_seek(&mut self, _: SeekFrom) -> Result<u64> {
-        Err(TectonicIoError::NotSeekable.into())
+        Err(TexyonIoError::NotSeekable.into())
     }
 }

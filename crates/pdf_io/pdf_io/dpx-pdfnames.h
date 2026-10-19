@@ -23,7 +23,7 @@
 #ifndef _PDF_NAMES_H_
 #define _PDF_NAMES_H_
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 
 /* Hash */
 #include "dpx-dpxutil.h"

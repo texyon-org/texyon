@@ -27,7 +27,7 @@ use crate::state::{EngineState, MemState, Selector};
 use crate::token::Token;
 use crate::units::{FontId, MemPtr, Scaled, StrNumber};
 
-use tectonic_xetex_layout::set_cp_code;
+use texyon_xetex_layout::set_cp_code;
 
 use super::boxes::scan_box;
 use super::{BOX_FLAG, GLOBAL_BOX_FLAG, LP_CODE_BASE, RP_CODE_BASE};

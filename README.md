@@ -38,7 +38,7 @@ README](./CARGO_README.md).
 If you’re interested in Tectonic as a software tool, you might also want to check out:
 
 - One of the following [GitHub Actions](https://github.com/features/actions)
-    - [setup-tectonic](https://github.com/marketplace/actions/setup-tectonic), which lets you use tectonic directly in your workflows (supports caching + optionally biber)
+    - [setup-tectonic](https://github.com/marketplace/actions/setup-tectonic), which lets you use texyon directly in your workflows (supports caching + optionally biber)
     - [compile-latex](https://github.com/marketplace/actions/compile-latex) contributed by [Vinay
   Sharma](https://github.com/vinay0410), which is powered by Tectonic.
 - [tt.ente.ninja](https://tt.ente.ninja), which runs Tectonic against a subset

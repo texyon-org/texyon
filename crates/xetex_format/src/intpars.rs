@@ -4,7 +4,7 @@
 //! Integer parameters defined by the engine.
 
 use std::io::Write;
-use tectonic_errors::prelude::*;
+use texyon_errors::prelude::*;
 
 use crate::{
     symbols::{SymbolCategory, SymbolTable},

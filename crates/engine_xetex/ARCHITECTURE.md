@@ -170,7 +170,7 @@ see each other through `pub(super)`.
   set, and `param(f, n)` reads a font parameter. The TFM reader stores raw
   words, only these views interpret them.
 - `fonts.rs` (TFM and font parameters), `ext.rs` (loading OpenType and
-  Graphite fonts through `tectonic_xetex_layout`, feature parsing, TECkit
+  Graphite fonts through `texyon_xetex_layout`, feature parsing, TECkit
   mappings, font queries) with `ext/native.rs` (shaping and measuring native
   words and glyphs) and `ext/extension.rs` (`do_extension`, source
   specials), `ot_math.rs` (OpenType MATH), `pic.rs` (pictures).
@@ -196,7 +196,7 @@ Crate and C boundaries:
   and backs the one static pointer `with_bridge` reads. bridge-core's C global
   state (`ttbc_global_engine_enter`) is set only around calls into C that do
   their own I/O, which are the pdf_io picture probes (`bridge::with_c_io`).
-- Fonts and shaping go straight to `tectonic_xetex_layout`'s Rust API:
+- Fonts and shaping go straight to `texyon_xetex_layout`'s Rust API:
   `Font`, `LayoutEngine` (`state::FontEngineHandle`), `FontManager`, the
   glyph-box and protrusion caches. Loading a font file takes the run's
   `CoreBridgeState` (`with_bridge`). That crate has no C API. `ot_math.rs`
@@ -274,11 +274,11 @@ deliberate fix toward upstream.
 - Dashboard, after every change:
 
   ```sh
-  cargo test -p tectonic --test tex-outputs
-  cargo test -p tectonic --test trip
-  cargo test -p tectonic --test engine_rust
-  cargo test -p tectonic --test latex_goldens
-  cargo test -p tectonic_engine_xetex
+  cargo test -p texyon --test tex-outputs
+  cargo test -p texyon --test trip
+  cargo test -p texyon --test engine_rust
+  cargo test -p texyon --test latex_goldens
+  cargo test -p texyon_engine_xetex
   ```
 
   `cargo test` builds without optimization and with overflow checks, so the
@@ -286,17 +286,17 @@ deliberate fix toward upstream.
 
   Add `--test formats` for format changes, and `--test live_preview_session`
   plus `--test live_preview_replay_regressions` for checkpoint or journal work.
-- Clippy: `cargo clippy -p tectonic_engine_xetex --all-targets -- -D warnings`
+- Clippy: `cargo clippy -p texyon_engine_xetex --all-targets -- -D warnings`
   must stay clean. CI runs it on the latest stable, whose clippy can be newer
   than a local one.
 - Corpus A/B (`scripts/`): `corpus_fetch.sh` fills the corpus cache
-  (`$TECTONIC_CORPUS_DIR`), then bless a baseline release build into scratch
+  (`$TEXYON_CORPUS_DIR`), then bless a baseline release build into scratch
   goldens and check the candidate against them:
 
   ```sh
   ORACLE_BIN=<baseline>/tectonic CORPUS_GOLDENS=/tmp/gold \
     crates/engine_xetex/scripts/corpus.sh bless all
-  CANDIDATE_BIN=target/release/tectonic CORPUS_GOLDENS=/tmp/gold \
+  CANDIDATE_BIN=target/release/texyon CORPUS_GOLDENS=/tmp/gold \
     crates/engine_xetex/scripts/corpus.sh check all
   ```
 
@@ -316,5 +316,5 @@ deliberate fix toward upstream.
   `tests/assets`. INITEX has no `\tracingparagraphs` or `\tracingpages`
   output here (no `stat` code), so tests show boxes and values instead.
 - `FORMAT_SERIAL` (`lib.rs`) is also the bundle URL version
-  (`tectonic_bundles::get_fallback_bundle_url`). Never bump it for format
+  (`texyon_bundles::get_fallback_bundle_url`). Never bump it for format
   content fixes.

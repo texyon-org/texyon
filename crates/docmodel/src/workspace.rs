@@ -14,7 +14,7 @@ use std::{
     io::{self, Write},
     path::PathBuf,
 };
-use tectonic_errors::prelude::*;
+use texyon_errors::prelude::*;
 
 use crate::document::Document;
 
@@ -56,7 +56,7 @@ impl Workspace {
     /// Open up a workspace based on the current process environment.
     ///
     /// This function searches the current directory and its parents for a
-    /// `Tectonic.toml` file. Because workspaces can currently only contain a
+    /// `Texyon.toml` file. Because workspaces can currently only contain a
     /// single document, the search stops when the first such file is found. If
     /// no such file is found, an error downcastable into
     /// [`NoWorkspaceFoundError`] is returned.
@@ -67,12 +67,12 @@ impl Workspace {
         root_dir.push("tmp"); // simplifies loop logic
 
         while root_dir.pop() {
-            root_dir.push("Tectonic.toml");
+            root_dir.push("Texyon.toml");
 
             let mut doc_file = match fs::File::open(&root_dir) {
                 Ok(f) => f,
                 Err(ref e) if e.kind() == io::ErrorKind::NotFound => {
-                    root_dir.pop(); // remove "Tectonic.toml"
+                    root_dir.pop(); // remove "Texyon.toml"
                     continue; // this will pop up one directory and try again
                 }
                 Err(e) => return Err(e.into()),
@@ -101,7 +101,7 @@ impl fmt::Display for NoWorkspaceFoundError {
     fn fmt(&self, f: &mut fmt::Formatter) -> StdResult<(), fmt::Error> {
         write!(
             f,
-            "could not find `Tectonic.toml` in `{}` or any parent directory",
+            "could not find `Texyon.toml` in `{}` or any parent directory",
             self.initial_dir.display()
         )
     }

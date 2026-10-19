@@ -43,11 +43,11 @@ fn run_test_program(format_version: u32, env_vars: &[(&str, &str)]) -> String {
 fn test_bundle_locked() {
     let url_locked = run_test_program(
         PRE_FORMAT_VERSION,
-        &[("TECTONIC_BUNDLE_LOCKED", TEST_BUNDLE_LOCKED)],
+        &[("TEXYON_BUNDLE_LOCKED", TEST_BUNDLE_LOCKED)],
     );
     let url_locked_versioned = run_test_program(
         TEST_FORMAT_VERSION,
-        &[("TECTONIC_BUNDLE_LOCKED", TEST_BUNDLE_LOCKED)],
+        &[("TEXYON_BUNDLE_LOCKED", TEST_BUNDLE_LOCKED)],
     );
 
     assert_eq!(url_locked, TEST_BUNDLE_LOCKED);
@@ -59,16 +59,16 @@ fn test_bundle_prefix() {
     let url_prefixed = run_test_program(
         PRE_FORMAT_VERSION,
         &[
-            ("TECTONIC_BUNDLE_PREFIX", TEST_BUNDLE_PREFIX),
-            ("TECTONIC_BUNDLE_LOCKED", ""),
+            ("TEXYON_BUNDLE_PREFIX", TEST_BUNDLE_PREFIX),
+            ("TEXYON_BUNDLE_LOCKED", ""),
             // ^ locked url should be ignored if empty
         ],
     );
     let url_prefixed_versioned = run_test_program(
         TEST_FORMAT_VERSION,
         &[
-            ("TECTONIC_BUNDLE_PREFIX", TEST_BUNDLE_PREFIX),
-            ("TECTONIC_BUNDLE_LOCKED", ""),
+            ("TEXYON_BUNDLE_PREFIX", TEST_BUNDLE_PREFIX),
+            ("TEXYON_BUNDLE_LOCKED", ""),
         ],
     );
 
@@ -87,8 +87,8 @@ fn test_precedence_locked_over_prefix() {
     let url_both_env_set = run_test_program(
         TEST_FORMAT_VERSION,
         &[
-            ("TECTONIC_BUNDLE_LOCKED", TEST_BUNDLE_LOCKED),
-            ("TECTONIC_BUNDLE_PREFIX", TEST_BUNDLE_PREFIX),
+            ("TEXYON_BUNDLE_LOCKED", TEST_BUNDLE_LOCKED),
+            ("TEXYON_BUNDLE_PREFIX", TEST_BUNDLE_PREFIX),
         ],
     );
     assert_eq!(url_both_env_set, TEST_BUNDLE_LOCKED);

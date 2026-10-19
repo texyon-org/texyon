@@ -24,7 +24,7 @@
 
 #include <stdlib.h>
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 
 void *new (uint32_t size)
 {

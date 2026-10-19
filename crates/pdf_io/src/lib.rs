@@ -12,13 +12,13 @@
 /// them.
 mod linkage {
     #[allow(unused_imports)]
-    use tectonic_bridge_core as clippyrenamehack1;
+    use texyon_bridge_core as clippyrenamehack1;
 
     #[allow(unused_imports)]
-    use tectonic_bridge_flate as clippyrenamehack2;
+    use texyon_bridge_flate as clippyrenamehack2;
 
     #[allow(unused_imports)]
-    use tectonic_bridge_png as clippyrenamehack3;
+    use texyon_bridge_png as clippyrenamehack3;
 }
 
 /// Does our resulting executable link correctly?

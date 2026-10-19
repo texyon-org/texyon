@@ -13,27 +13,27 @@
 //! The embedder must supply one import in the `tectonic` module:
 //!
 //! ```text
-//! tectonic_http_get(
+//! texyon_http_get(
 //!     url_ptr: *const u8, url_len: usize,   // request URL, UTF-8
 //!     offset: u64, length: u64,             // byte range; length 0 means "whole resource"
-//!     out_ptr: *mut *mut u8,                // receives a buffer allocated with tectonic_wasm_alloc
+//!     out_ptr: *mut *mut u8,                // receives a buffer allocated with texyon_wasm_alloc
 //!     out_len: *mut usize,                  // receives that buffer's length
 //! ) -> i32                                  // 0 on success, nonzero on failure
 //! ```
 //!
 //! On success the host owns nothing: the buffer it reports is handed to Rust,
-//! which frees it. `tectonic_wasm_alloc` and `tectonic_wasm_free` are exported
+//! which frees it. `texyon_wasm_alloc` and `texyon_wasm_free` are exported
 //! from this crate for exactly that purpose.
 
 use crate::{GetUrlBackend, RangeReader};
 use std::io::Cursor;
-use tectonic_errors::{anyhow::bail, Result};
+use texyon_errors::{anyhow::bail, Result};
 
 extern "C" {
     /// Fetch a URL, or a byte range of one, blocking until it completes.
     ///
     /// See the module documentation for the contract.
-    fn tectonic_http_get(
+    fn texyon_http_get(
         url_ptr: *const u8,
         url_len: usize,
         offset: u64,
@@ -45,27 +45,27 @@ extern "C" {
 
 /// Allocate a buffer for the host to fill with response bytes.
 ///
-/// The host must pass the result back through `tectonic_http_get`'s
+/// The host must pass the result back through `texyon_http_get`'s
 /// out-parameters, after which Rust owns it. A host that allocates a buffer and
-/// then fails the request must release it with [`tectonic_wasm_free`].
+/// then fails the request must release it with [`texyon_wasm_free`].
 ///
 /// Returns null if the allocation fails.
 #[no_mangle]
-pub extern "C" fn tectonic_wasm_alloc(len: usize) -> *mut u8 {
+pub extern "C" fn texyon_wasm_alloc(len: usize) -> *mut u8 {
     let mut buf = Vec::<u8>::with_capacity(len);
     let ptr = buf.as_mut_ptr();
     std::mem::forget(buf);
     ptr
 }
 
-/// Release a buffer from [`tectonic_wasm_alloc`] that never reached Rust.
+/// Release a buffer from [`texyon_wasm_alloc`] that never reached Rust.
 ///
 /// # Safety
 ///
-/// `ptr` must have come from [`tectonic_wasm_alloc`] with the same `len`, and
-/// must not have been handed to Rust through `tectonic_http_get`.
+/// `ptr` must have come from [`texyon_wasm_alloc`] with the same `len`, and
+/// must not have been handed to Rust through `texyon_http_get`.
 #[no_mangle]
-pub unsafe extern "C" fn tectonic_wasm_free(ptr: *mut u8, len: usize) {
+pub unsafe extern "C" fn texyon_wasm_free(ptr: *mut u8, len: usize) {
     if !ptr.is_null() {
         drop(Vec::from_raw_parts(ptr, 0, len));
     }
@@ -78,9 +78,9 @@ fn http_get(url: &str, offset: u64, length: u64) -> Result<Vec<u8>> {
 
     // SAFETY: we pass a valid UTF-8 slice and two writable out-parameters. The
     // host contract is that a zero return means both were set to a buffer it
-    // allocated with tectonic_wasm_alloc and has given up.
+    // allocated with texyon_wasm_alloc and has given up.
     let rc = unsafe {
-        tectonic_http_get(
+        texyon_http_get(
             url.as_ptr(),
             url.len(),
             offset,
@@ -98,7 +98,7 @@ fn http_get(url: &str, offset: u64, length: u64) -> Result<Vec<u8>> {
         bail!("HTTP request for {url} reported success without a response body");
     }
 
-    // SAFETY: the host allocated this with tectonic_wasm_alloc, i.e. as a Vec
+    // SAFETY: the host allocated this with texyon_wasm_alloc, i.e. as a Vec
     // with this capacity, and has transferred ownership to us.
     Ok(unsafe { Vec::from_raw_parts(out_ptr, out_len, out_len) })
 }

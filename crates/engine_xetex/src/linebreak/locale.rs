@@ -22,7 +22,7 @@ fn append_native_word(st: &mut EngineState, f: FontId, text: &[u16]) -> Result<(
 /// Where a run of native text may break.
 enum TextBreaks<'t> {
     Icu(crate::layout::IcuBreaks<'t>),
-    Graphite(tectonic_xetex_layout::GraphiteBreaks<'t>),
+    Graphite(texyon_xetex_layout::GraphiteBreaks<'t>),
     /// An ICU iterator left over from earlier text, which it already ran through.
     Stale(&'t crate::layout::LinebreakHandle),
 }

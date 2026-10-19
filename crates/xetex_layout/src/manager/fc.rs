@@ -7,9 +7,9 @@ use enrede::encoding::{MacRoman, Utf16BE, Utf8};
 use enrede::Str;
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
-use tectonic_bridge_core::CoreBridgeState;
-use tectonic_bridge_fontconfig as fc;
-use tectonic_bridge_freetype2 as ft;
+use texyon_bridge_core::CoreBridgeState;
+use texyon_bridge_fontconfig as fc;
+use texyon_bridge_freetype2 as ft;
 
 pub const FONT_FAMILY_NAME: libc::c_ushort = 1;
 pub const FONT_STYLE_NAME: libc::c_ushort = 2;

@@ -23,7 +23,7 @@
 #ifndef _AGL_H_
 #define _AGL_H_
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 
 #include <stdbool.h>
 #include <stdint.h>

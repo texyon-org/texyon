@@ -21,7 +21,7 @@
 #ifndef _CS_TYPE2_H_
 #define _CS_TYPE2_H_
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 
 #include "dpx-cff_types.h"
 

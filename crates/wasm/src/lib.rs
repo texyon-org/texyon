@@ -1,6 +1,6 @@
 //! Tectonic's live-preview engine as a WebAssembly module.
 //!
-//! Everything goes through [`tectonic_request`]: a JSON request in, a JSON
+//! Everything goes through [`texyon_request`]: a JSON request in, a JSON
 //! response out, with bulk payloads left in linear memory. The host supplies
 //! the imports declared in `host`.
 
@@ -30,14 +30,14 @@ thread_local! {
 /// Handle one JSON request from the host.
 ///
 /// Returns 0 with the reply in `out_ptr`/`out_len`, which the host releases
-/// with `tectonic_wasm_free`, or -1 if no reply could be encoded.
+/// with `texyon_wasm_free`, or -1 if no reply could be encoded.
 ///
 /// # Safety
 ///
 /// `req_ptr` must point to `req_len` readable bytes, and both out-parameters
 /// must be writable.
 #[no_mangle]
-pub unsafe extern "C" fn tectonic_request(
+pub unsafe extern "C" fn texyon_request(
     req_ptr: *const u8,
     req_len: usize,
     out_ptr: *mut *mut u8,
@@ -97,7 +97,7 @@ fn dispatch(text: &str) -> Response {
         }),
 
         Request::Preload { name, ptr, len } => with_session(|session| {
-            // SAFETY: the host allocated this with tectonic_wasm_alloc and gave
+            // SAFETY: the host allocated this with texyon_wasm_alloc and gave
             // up ownership by sending the request.
             let bytes = unsafe { HostBuffer { ptr, len }.adopt() };
             session.preload(&name, bytes);

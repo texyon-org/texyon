@@ -2,8 +2,8 @@
 # lvt_survey.sh: find the LaTeX .lvt tests that run to END-TEST-LOG, to
 # refresh tests/corpus/lvt-viable.txt. Results land in $RES.
 ROOT="$(git rev-parse --show-toplevel)"
-BIN="${BIN:-$ROOT/target/release/tectonic}"
-CACHE="${TECTONIC_CORPUS_DIR:-$HOME/.cache/tectonic-corpus}/raw/latex-tests"
+BIN="${BIN:-$ROOT/target/release/texyon}"
+CACHE="${TEXYON_CORPUS_DIR:-$HOME/.cache/tectonic-corpus}/raw/latex-tests"
 SUP="$CACHE/support"
 OUT="${OUT:-/tmp/lvt_survey}"; rm -rf "$OUT"; mkdir -p "$OUT"
 RES="${RES:-/tmp/lvt_results.tsv}"; > "$RES"

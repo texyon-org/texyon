@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "tectonic_bridge_core.h"
+#include "texyon_bridge_core.h"
 
 #include "dpx-bmpimage.h"
 #include "dpx-jpegimage.h"

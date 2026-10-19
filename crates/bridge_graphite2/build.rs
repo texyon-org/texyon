@@ -5,7 +5,7 @@
 //! has no system libraries, so there we compile the vendored sources.
 
 use std::{env, fs, path::PathBuf};
-use tectonic_dep_support::{target_is_wasm, wasm_vendor_dir, Configuration, Dependency, Spec};
+use texyon_dep_support::{target_is_wasm, wasm_vendor_dir, Configuration, Dependency, Spec};
 
 struct Graphite2Spec;
 
