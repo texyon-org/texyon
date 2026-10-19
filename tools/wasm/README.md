@@ -2,7 +2,7 @@
 
 This directory builds the engine into a `wasm32-wasip1` module that runs LaTeX
 in a browser. The TypeScript wrapper is in [`js/`](../../js), and
-[`demo/`](../../demo) is a React editor built on it.
+the [ZapTeX editor](https://github.com/zaptex-org/editor) is built on it.
 
 ## Quick start
 
@@ -23,9 +23,6 @@ tools/wasm/build-assets.sh
 
 # Check it actually typesets, without involving a browser
 node tools/wasm/smoke-test.mjs
-
-# The demo
-cd demo && npm install && npm run dev
 ```
 
 ## What is in here

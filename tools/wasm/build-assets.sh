@@ -7,13 +7,19 @@
 # compile a set of seed documents natively, keep everything they touched, and
 # ship it as one pack that the Worker loads once at startup.
 #
-# Usage: tools/wasm/build-assets.sh [output-dir]
-#        defaults to client/public/tectonic
+# Usage: tools/wasm/build-assets.sh [output-dir] [project-dir...]
+#        output-dir defaults to target/wasm-assets
+#        each project-dir is an extra seed, compiled from its main.tex
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
-OUT="${1:-$REPO/client/public/tectonic}"
+OUT="${1:-$REPO/target/wasm-assets}"
+shift || true
+PROJECTS=()
+for dir in "$@"; do
+    PROJECTS+=("$(cd "$dir" && pwd)")
+done
 
 TECTONIC="$REPO/target/release/tectonic"
 if [ ! -x "$TECTONIC" ]; then
@@ -133,27 +139,6 @@ cat > "$WORK/seeds/book.tex" <<'TEX'
 \begin{document}\chapter{One}Text.\end{document}
 TEX
 
-# The editor's own starting document, so the pack is guaranteed to cover what
-# it shows on first load. It is read out of the client source itself, so the
-# two cannot drift apart. The sample spans several files, so it gets its own
-# directory and is compiled from there below.
-mkdir -p "$WORK/sample"
-node - "$REPO/client/src/sample.ts" "$WORK/sample" <<'JS'
-const fs = require("fs");
-const path = require("path");
-const [source, out] = process.argv.slice(2);
-const text = fs.readFileSync(source, "utf8");
-const entry = /"([^"]+)":\s*String\.raw`([\s\S]*?)`/g;
-let count = 0;
-for (const [, name, body] of text.matchAll(entry)) {
-  const target = path.join(out, name);
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, body);
-  count++;
-}
-if (count === 0) throw new Error(`no sample files found in ${source}`);
-JS
-
 # The Computer Modern families are size-specific: an 11pt document loads cmex8
 # where a 10pt one loads cmex7. Sweep the class sizes so the pack holds all of
 # them rather than whichever the other seeds happened to reach.
@@ -182,8 +167,10 @@ for seed in "$WORK"/seeds/*.tex; do
     # files they touched on the way.
     (cd "$WORK/seeds" && "$TECTONIC" -X compile "$seed" --bundle "$BUNDLE_URL" --outfmt pdf --print >/dev/null 2>&1) || true
 done
-echo "   client sample"
-(cd "$WORK/sample" && "$TECTONIC" -X compile main.tex --bundle "$BUNDLE_URL" --outfmt pdf --print >/dev/null 2>&1) || true
+for project in "${PROJECTS[@]}"; do
+    echo "   $project"
+    (cd "$project" && "$TECTONIC" -X compile main.tex --bundle "$BUNDLE_URL" --outfmt pdf --print >/dev/null 2>&1) || true
+done
 
 FORMAT="$(find "$TECTONIC_CACHE_DIR/formats" -name '*.fmt' | head -1)"
 if [ -z "$FORMAT" ]; then

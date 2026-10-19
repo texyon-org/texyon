@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "..", "..");
-const support = process.argv[2] ?? join(repo, "client", "public", "tectonic");
+const support = process.argv[2] ?? join(repo, "target", "wasm-assets");
 const modulePath = join(support, "tectonic_wasm.wasm");
 
 for (const path of [modulePath, join(support, "manifest.json")]) {
