@@ -5,6 +5,7 @@
   "version": "0.0.1",
   "publisher": "texyon",
   "license": "AGPL-3.0-or-later",
+  "icon": "media/icon.png",
   "engines": {
     "vscode": "^1.85.0"
   },
