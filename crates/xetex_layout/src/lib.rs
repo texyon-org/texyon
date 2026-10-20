@@ -42,11 +42,7 @@ pub struct GlyphBBox {
 }
 
 /// A 16.16 fixed-point number.
-#[cfg(not(target_os = "macos"))]
 pub type Fixed = i32;
-/// A 16.16 fixed-point number.
-#[cfg(target_os = "macos")]
-pub type Fixed = u32;
 /// An OpenType tag.
 pub type OTTag = u32;
 /// A glyph index.
