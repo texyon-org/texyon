@@ -28,16 +28,23 @@ jobs:
             target: aarch64-apple-darwin
             vsce-target: darwin-arm64
             features: preview-mupdf
+            vcpkg-triplet: arm64-osx-release
           - image: windows-latest
             target: x86_64-pc-windows-msvc
             vsce-target: win32-x64
             features: preview-mupdf,external-harfbuzz
+            vcpkg-triplet: x64-windows-static-release
     runs-on: ${{ matrix.image }}
     # A cold vcpkg cache rebuilds ICU and friends.
     timeout-minutes: 120
+    permissions:
+      contents: write
     env:
       MACOSX_DEPLOYMENT_TARGET: "11.0"
       VCPKG_OVERLAY_PORTS: ${{ github.workspace }}/dist/vcpkg-ports
+      # Host tools (ICU's among them) otherwise build as a second, debug+release copy.
+      VCPKG_DEFAULT_HOST_TRIPLET: ${{ matrix.vcpkg-triplet }}
+      VCPKGRS_TRIPLET: ${{ matrix.vcpkg-triplet }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -53,11 +60,41 @@ jobs:
       - name: "Install pkg-config dependencies"
         if: ${{ runner.os == 'Linux' }}
         uses: ./.github/actions/pkgconfig-deps
+      # Release assets do not expire like the Actions cache, so a cold vcpkg
+      # build only happens when the dependency set changes.
+      - name: "Restore prebuilt vcpkg packages"
+        id: vcpkg-binaries
+        if: ${{ runner.os != 'Linux' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          key="$({ sed -n '/^\[package.metadata.vcpkg\]/,/^\[package.metadata.internal/p' Cargo.toml
+                   cat dist/vcpkg-triplets/* dist/vcpkg-ports/*/*; } | sha256sum | cut -c1-16)"
+          name="vcpkg-${{ matrix.target }}-$key.tar"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          mkdir -p target/vcpkg-cache
+          if gh release download vcpkg-binaries -p "$name" -D "$RUNNER_TEMP"; then
+            tar -xf "$RUNNER_TEMP/$name" -C target/vcpkg-cache
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: "Install vcpkg dependencies"
         if: ${{ runner.os != 'Linux' }}
         uses: ./.github/actions/vcpkg-deps
         with:
           target: ${{ matrix.target }}
+      - name: "Save prebuilt vcpkg packages"
+        if: ${{ runner.os != 'Linux' && steps.vcpkg-binaries.outputs.hit != 'true' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NAME: ${{ steps.vcpkg-binaries.outputs.name }}
+        run: |
+          tar -cf "$RUNNER_TEMP/$NAME" -C target/vcpkg-cache .
+          gh release view vcpkg-binaries >/dev/null 2>&1 \
+            || gh release create vcpkg-binaries --title "Prebuilt vcpkg packages" \
+                 --notes "vcpkg binary caches for the VS Code extension builds, keyed by dependency set." --prerelease
+          gh release upload vcpkg-binaries "$RUNNER_TEMP/$NAME" --clobber
       - name: "Setup build variables (Linux)"
         if: ${{ runner.os == 'Linux' }}
         shell: bash
@@ -76,7 +113,6 @@ jobs:
         run: |
           rustup component add llvm-tools-preview
           echo "RUSTFLAGS=-Ctarget-feature=+crt-static" >> "$GITHUB_ENV"
-          echo "VCPKGRS_TRIPLET=x64-windows-static-release" >> "$GITHUB_ENV"
       - name: "Build MuPDF"
         if: ${{ runner.os != 'Windows' }}
         shell: bash
@@ -87,7 +123,7 @@ jobs:
           gh release download vendor-deps -p 'mupdf-*-source.tar.gz' -D "$RUNNER_TEMP"
           export MUPDF_TARBALL="$(echo "$RUNNER_TEMP"/mupdf-*-source.tar.gz)"
           if [[ $RUNNER_OS == macOS ]]; then
-            prefix="$VCPKG_ROOT/installed/arm64-osx/include"
+            prefix="$VCPKG_ROOT/installed/${{ matrix.vcpkg-triplet }}/include"
             export FREETYPE_CFLAGS="-I$prefix/freetype2 -I$prefix" ZLIB_CFLAGS="-I$prefix"
           fi
           tools/mupdf/build.sh
