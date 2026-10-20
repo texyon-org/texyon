@@ -69,8 +69,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # macOS has only shasum, Git Bash on Windows only sha256sum.
+          sha=sha256sum
+          command -v sha256sum >/dev/null || sha="shasum -a 256"
           key="$({ sed -n '/^\[package.metadata.vcpkg\]/,/^\[package.metadata.internal/p' Cargo.toml
-                   cat dist/vcpkg-triplets/* dist/vcpkg-ports/*/*; } | shasum -a 256 | cut -c1-16)"
+                   cat dist/vcpkg-triplets/* dist/vcpkg-ports/*/*; } | $sha | cut -c1-16)"
           name="vcpkg-${{ matrix.target }}-$key.tar"
           echo "name=$name" >> "$GITHUB_OUTPUT"
           mkdir -p target/vcpkg-cache
