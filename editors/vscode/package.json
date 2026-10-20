@@ -1,16 +1,37 @@
 {
   "name": "texyon",
   "displayName": "TeXyon Live Preview",
-  "description": "SVG live preview backed by a resident TeXyon engine process.",
-  "version": "0.0.1",
+  "description": "Live LaTeX preview that updates as you type, backed by a resident TeXyon engine.",
+  "version": "0.1.0",
   "publisher": "texyon",
   "license": "AGPL-3.0-or-later",
   "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/texyon-org/texyon",
+    "directory": "editors/vscode"
+  },
+  "homepage": "https://github.com/texyon-org/texyon/tree/master/editors/vscode#readme",
+  "bugs": {
+    "url": "https://github.com/texyon-org/texyon/issues"
+  },
+  "galleryBanner": {
+    "color": "#0D1530",
+    "theme": "dark"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
+    "Visualization",
     "Other"
+  ],
+  "keywords": [
+    "latex",
+    "tex",
+    "xetex",
+    "preview",
+    "synctex"
   ],
   "main": "./extension.js",
   "activationEvents": [],
@@ -41,8 +62,8 @@
       "properties": {
         "texyon.executable": {
           "type": "string",
-          "default": "texyon",
-          "description": "Path to a TeXyon executable built with the preview-mupdf feature."
+          "default": "",
+          "description": "Path to a TeXyon executable built with the preview-mupdf feature. Leave empty to use the one bundled with the extension."
         },
         "texyon.format": {
           "type": "string",

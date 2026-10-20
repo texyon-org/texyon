@@ -128,8 +128,13 @@ impl DepState {
                         // either.
                         let target = env::var("TARGET").unwrap_or_default();
 
-                        if target == "x86_64-pc-windows-msvc" {
-                            println!("cargo:warning=you may need to export VCPKGRS_TRIPLET=x64-windows-static-release ...");
+                        let triplet = match target.as_str() {
+                            "x86_64-pc-windows-msvc" => Some("x64-windows-static-release"),
+                            "aarch64-apple-darwin" => Some("arm64-osx-release"),
+                            _ => None,
+                        };
+                        if let Some(triplet) = triplet {
+                            println!("cargo:warning=you may need to export VCPKGRS_TRIPLET={triplet} ...");
                             println!("cargo:warning=... which is a custom triplet used by Tectonic's cargo-vcpkg integration");
                         }
                     }

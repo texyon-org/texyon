@@ -279,6 +279,11 @@ jobs:
         run: |
           echo "TEXYON_DEP_BACKEND=vcpkg" >> "$GITHUB_ENV"
           echo "VCPKG_ROOT=$GITHUB_WORKSPACE/target/vcpkg" >> "$GITHUB_ENV"
+      - name: "Setup build variables (Apple silicon)"
+        if: ${{ matrix.data.target == 'aarch64-apple-darwin' }}
+        shell: bash
+        run: |
+          echo "VCPKGRS_TRIPLET=arm64-osx-release" >> "$GITHUB_ENV"
       - name: "Setup build variables (Windows)"
         if: ${{ runner.os == 'Windows' }}
         shell: bash

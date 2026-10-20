@@ -188,7 +188,7 @@ overlay-triplets-path = "dist/vcpkg-triplets"
 # guidance if they might need to set $VCPKGRS_TRIPLET.
 [package.metadata.vcpkg.target]
 x86_64-apple-darwin = { triplet = "x64-osx", install = ["fontconfig", "freetype", "harfbuzz[graphite2]", "icu"] }
-aarch64-apple-darwin = { triplet = "arm64-osx", install = [
+aarch64-apple-darwin = { triplet = "arm64-osx-release", install = [
     "fontconfig",
     "freetype",
     "harfbuzz[graphite2]",

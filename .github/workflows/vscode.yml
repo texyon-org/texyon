@@ -1,0 +1,209 @@
+# Builds the VS Code extension with a bundled preview engine, one VSIX per
+# platform. A vscode-v* tag also publishes them; a manual run only builds.
+
+name: "VS Code Extension"
+
+on:
+  workflow_dispatch:
+  push:
+    tags: [ "vscode-v*" ]
+
+concurrency:
+  group: vscode-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 22.04 for an older glibc baseline.
+          - image: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            vsce-target: linux-x64
+            features: preview-mupdf,native-tls-vendored
+          - image: macos-14
+            target: aarch64-apple-darwin
+            vsce-target: darwin-arm64
+            features: preview-mupdf
+            vcpkg-triplet: arm64-osx-release
+          - image: windows-latest
+            target: x86_64-pc-windows-msvc
+            vsce-target: win32-x64
+            features: preview-mupdf,external-harfbuzz
+            vcpkg-triplet: x64-windows-static-release
+    runs-on: ${{ matrix.image }}
+    # A cold vcpkg cache rebuilds ICU and friends.
+    timeout-minutes: 120
+    permissions:
+      contents: write
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+      VCPKG_OVERLAY_PORTS: ${{ github.workspace }}/dist/vcpkg-ports
+      # Host tools (ICU's among them) otherwise build as a second, debug+release copy.
+      VCPKG_DEFAULT_HOST_TRIPLET: ${{ matrix.vcpkg-triplet }}
+      VCPKGRS_TRIPLET: ${{ matrix.vcpkg-triplet }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: "Set up Rust"
+        shell: bash
+        run: |
+          rustup set profile minimal
+          rustup update --no-self-update stable
+          rustup default stable
+          rustup target add ${{ matrix.target }}
+      - name: "Install pkg-config dependencies"
+        if: ${{ runner.os == 'Linux' }}
+        uses: ./.github/actions/pkgconfig-deps
+      # Release assets do not expire like the Actions cache, so a cold vcpkg
+      # build only happens when the dependency set changes.
+      - name: "Restore prebuilt vcpkg packages"
+        id: vcpkg-binaries
+        if: ${{ runner.os != 'Linux' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # macOS has only shasum, Git Bash on Windows only sha256sum.
+          sha=sha256sum
+          command -v sha256sum >/dev/null || sha="shasum -a 256"
+          key="$({ sed -n '/^\[package.metadata.vcpkg\]/,/^\[package.metadata.internal/p' Cargo.toml
+                   cat dist/vcpkg-triplets/* dist/vcpkg-ports/*/*; } | $sha | cut -c1-16)"
+          name="vcpkg-${{ matrix.target }}-$key.tar"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          mkdir -p target/vcpkg-cache
+          if gh release download vcpkg-binaries -p "$name" -D "$RUNNER_TEMP"; then
+            # GNU tar reads a drive letter in the archive path as a remote host.
+            (cd "$RUNNER_TEMP" && tar -xf "$name" -C "$GITHUB_WORKSPACE/target/vcpkg-cache")
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: "Install vcpkg dependencies"
+        if: ${{ runner.os != 'Linux' }}
+        uses: ./.github/actions/vcpkg-deps
+        with:
+          target: ${{ matrix.target }}
+      - name: "Save prebuilt vcpkg packages"
+        if: ${{ runner.os != 'Linux' && steps.vcpkg-binaries.outputs.hit != 'true' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NAME: ${{ steps.vcpkg-binaries.outputs.name }}
+        run: |
+          (cd "$RUNNER_TEMP" && tar -cf "$NAME" -C "$GITHUB_WORKSPACE/target/vcpkg-cache" .)
+          gh release view vcpkg-binaries >/dev/null 2>&1 \
+            || gh release create vcpkg-binaries --title "Prebuilt vcpkg packages" \
+                 --notes "vcpkg binary caches for the VS Code extension builds, keyed by dependency set." --prerelease
+          gh release upload vcpkg-binaries "$RUNNER_TEMP/$NAME" --clobber
+      - name: "Setup build variables (Linux)"
+        if: ${{ runner.os == 'Linux' }}
+        shell: bash
+        run: |
+          echo "TEXYON_DEP_BACKEND=pkg-config" >> "$GITHUB_ENV"
+          echo "TEXYON_PKGCONFIG_FORCE_SEMI_STATIC=true" >> "$GITHUB_ENV"
+      - name: "Setup build variables (vcpkg)"
+        if: ${{ runner.os != 'Linux' }}
+        shell: bash
+        run: |
+          echo "TEXYON_DEP_BACKEND=vcpkg" >> "$GITHUB_ENV"
+          echo "VCPKG_ROOT=$GITHUB_WORKSPACE/target/vcpkg" >> "$GITHUB_ENV"
+      - name: "Setup build variables (Windows)"
+        if: ${{ runner.os == 'Windows' }}
+        shell: bash
+        run: |
+          rustup component add llvm-tools-preview
+          echo "RUSTFLAGS=-Ctarget-feature=+crt-static" >> "$GITHUB_ENV"
+      - name: "Build MuPDF"
+        if: ${{ runner.os != 'Windows' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # mupdf.com refuses connections from the runners.
+          gh release download vendor-deps -p 'mupdf-*-source.tar.gz' -D "$RUNNER_TEMP"
+          export MUPDF_TARBALL="$(echo "$RUNNER_TEMP"/mupdf-*-source.tar.gz)"
+          if [[ $RUNNER_OS == macOS ]]; then
+            prefix="$VCPKG_ROOT/installed/${{ matrix.vcpkg-triplet }}/include"
+            export FREETYPE_CFLAGS="-I$prefix/freetype2 -I$prefix" ZLIB_CFLAGS="-I$prefix"
+          fi
+          tools/mupdf/build.sh
+          echo "TEXYON_MUPDF_DIR=$GITHUB_WORKSPACE/tools/mupdf/vendor/mupdf" >> "$GITHUB_ENV"
+      - name: "Build texyon"
+        shell: bash
+        run: |
+          cargo build --release --locked --target ${{ matrix.target }} -p texyon --features "${{ matrix.features }}"
+          mkdir -p editors/vscode/bin
+          if [[ $RUNNER_OS == Windows ]]; then
+            cp target/${{ matrix.target }}/release/texyon.exe editors/vscode/bin/
+          else
+            cp target/${{ matrix.target }}/release/texyon editors/vscode/bin/
+            strip editors/vscode/bin/texyon
+          fi
+      - name: "Show dynamic dependencies"
+        if: ${{ runner.os != 'Windows' }}
+        shell: bash
+        run: |
+          if [[ $RUNNER_OS == macOS ]]; then otool -L editors/vscode/bin/texyon; else ldd editors/vscode/bin/texyon; fi
+      - name: "Package"
+        shell: bash
+        working-directory: editors/vscode
+        run: npx -y @vscode/vsce@3.2.1 package --target ${{ matrix.vsce-target }} -o "texyon-${{ matrix.vsce-target }}.vsix"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix-${{ matrix.vsce-target }}
+          path: editors/vscode/*.vsix
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: ${{ startsWith(github.ref, 'refs/tags/vscode-v') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: "Check the tag matches the extension version"
+        run: |
+          version="$(node -p 'require("./editors/vscode/package.json").version')"
+          if [[ "vscode-v$version" != "$GITHUB_REF_NAME" ]]; then
+            echo "tag $GITHUB_REF_NAME does not match package.json version $version" >&2
+            exit 1
+          fi
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: vsix-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: "Publish to the VS Code Marketplace"
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [[ -z "$VSCE_PAT" ]]; then
+            echo "::warning::VSCE_PAT is not set, upload dist/*.vsix to the Marketplace by hand"
+            exit 0
+          fi
+          npx -y @vscode/vsce@3.2.1 publish --packagePath dist/*.vsix
+      - name: "Publish to Open VSX"
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [[ "$(curl -s -o /dev/null -w '%{http_code}' https://open-vsx.org/api/texyon)" == 404 ]]; then
+            npx -y ovsx@0.10.1 create-namespace texyon
+          fi
+          for vsix in dist/*.vsix; do
+            npx -y ovsx@0.10.1 publish "$vsix"
+          done
+      - name: "Create the GitHub release"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.vsix --title "VS Code extension ${GITHUB_REF_NAME#vscode-v}" --generate-notes

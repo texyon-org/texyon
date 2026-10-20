@@ -8,6 +8,7 @@ use std::{
 use clap::Parser;
 use texyon::{
     config::PersistentConfig,
+    driver::{OutputFormat, ProcessingSessionBuilder},
     engines::tex::EnginePreviewConfig,
     errors::{ErrorKind, Result},
     io::{format_cache::FormatCache, IoProvider, OpenResult},
@@ -59,7 +60,7 @@ impl TexyonCommand for PreviewCommand {
         customizations.minimal_chatter = true;
     }
 
-    fn execute(self, config: PersistentConfig, _status: &mut dyn StatusBackend) -> Result<i32> {
+    fn execute(self, config: PersistentConfig, status: &mut dyn StatusBackend) -> Result<i32> {
         let ladder_bytes = self
             .ladder_mib
             .checked_mul(1024 * 1024)
@@ -76,6 +77,7 @@ impl TexyonCommand for PreviewCommand {
         };
         let verify_rewinds = self.verify_rewinds;
         let only_cached = self.only_cached;
+        ensure_format(&config, &format_name, only_cached, status)?;
 
         let result = serve_preview_jsonl(
             BufReader::new(std::io::stdin()),
@@ -100,7 +102,7 @@ impl TexyonCommand for PreviewCommand {
                     OpenResult::Ok(_) => {}
                     OpenResult::NotAvailable => {
                         return Err(format!(
-                            "format `{format_name}` is not cached; run a normal compile before starting preview"
+                            "format `{format_name}` is still not cached after generating it"
                         ));
                     }
                     OpenResult::Err(error) => return Err(error.to_string()),
@@ -147,4 +149,33 @@ impl TexyonCommand for PreviewCommand {
             Err(error) => Err(ErrorKind::Msg(error.to_string()).into()),
         }
     }
+}
+
+/// Generate the format on first use, as a normal compile would.
+fn ensure_format(
+    config: &PersistentConfig,
+    format_name: &str,
+    only_cached: bool,
+    status: &mut dyn StatusBackend,
+) -> Result<()> {
+    let mut bundle = config.default_bundle(only_cached)?;
+    let mut format_cache = FormatCache::new(
+        bundle.get_digest()?,
+        config.format_cache_path()?,
+        FORMAT_SERIAL,
+    );
+    if let OpenResult::Ok(_) = format_cache.input_open_format(format_name, status) {
+        return Ok(());
+    }
+    let mut builder = ProcessingSessionBuilder::default();
+    builder
+        .bundle(bundle)
+        .format_name(format_name)
+        .format_cache_path(config.format_cache_path()?)
+        .primary_input_buffer(b"\\documentclass{article}\\begin{document}x\\end{document}")
+        .output_format(OutputFormat::Xdv)
+        .tex_input_name("texput.tex")
+        .output_dir(std::env::temp_dir())
+        .do_not_write_output_files();
+    builder.create(status)?.run(status)
 }

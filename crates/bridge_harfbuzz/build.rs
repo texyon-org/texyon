@@ -116,21 +116,18 @@ mod inner {
             cfg.define("HAVE_PTHREAD", "1");
         }
 
-        // On wasm this is the *only* HarfBuzz in the link: MuPDF is built
-        // against it rather than its own bundled copy, because two HarfBuzz
-        // implementations in one module silently cross-wire — Tectonic's
+        // A bundled MuPDF (wasm, and the native preview backend) is built
+        // against this HarfBuzz rather than its own copy, because two HarfBuzz
+        // implementations in one link silently cross-wire — Tectonic's
         // hb_font_create reaching MuPDF's hb_face_set_user_data, and from there
         // an allocator that expects a MuPDF context it does not have. MuPDF
         // calls hb_ft_font_create, so the FreeType integration has to be
         // compiled in, which it is not by default.
-        if target.contains("wasm") {
-            cfg.define("HAVE_FREETYPE", "1");
-
-            let freetype = env::var("DEP_FREETYPE2_INCLUDE_PATH")
-                .expect("bridge_freetype2 did not export its include path");
-            for item in freetype.split(';') {
-                cfg.include(item);
-            }
+        cfg.define("HAVE_FREETYPE", "1");
+        let freetype = env::var("DEP_FREETYPE2_INCLUDE_PATH")
+            .expect("bridge_freetype2 did not export its include path");
+        for item in freetype.split(';') {
+            cfg.include(item);
         }
 
         if target.contains("apple") {

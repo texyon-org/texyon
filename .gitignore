@@ -30,3 +30,7 @@ node_modules/
 /js/dist/
 
 *.tsbuildinfo
+/tools/mupdf/vendor/
+
+# Promo videos
+/promo/
