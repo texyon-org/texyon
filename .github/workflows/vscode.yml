@@ -79,7 +79,8 @@ jobs:
           mkdir -p target/vcpkg-cache
           if gh release download vcpkg-binaries -p "$name" -D "$RUNNER_TEMP"; then
             # GNU tar reads a drive letter in the archive path as a remote host.
-            (cd "$RUNNER_TEMP" && tar -xf "$name" -C "$GITHUB_WORKSPACE/target/vcpkg-cache")
+            ws="$PWD"
+            (cd "$RUNNER_TEMP" && tar -xf "$name" -C "$ws/target/vcpkg-cache")
             echo "hit=true" >> "$GITHUB_OUTPUT"
           fi
       - name: "Install vcpkg dependencies"
@@ -95,7 +96,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           NAME: ${{ steps.vcpkg-binaries.outputs.name }}
         run: |
-          (cd "$RUNNER_TEMP" && tar -cf "$NAME" -C "$GITHUB_WORKSPACE/target/vcpkg-cache" .)
+          ws="$PWD"
+          (cd "$RUNNER_TEMP" && tar -cf "$NAME" -C "$ws/target/vcpkg-cache" .)
           gh release view vcpkg-binaries >/dev/null 2>&1 \
             || gh release create vcpkg-binaries --title "Prebuilt vcpkg packages" \
                  --notes "vcpkg binary caches for the VS Code extension builds, keyed by dependency set." --prerelease
@@ -163,7 +165,7 @@ jobs:
     needs: build
     if: ${{ startsWith(github.ref, 'refs/tags/vscode-v') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 60
     permissions:
       contents: write
     steps:
@@ -192,7 +194,24 @@ jobs:
             echo "::warning::VSCE_PAT is not set, upload dist/*.vsix to the Marketplace by hand"
             exit 0
           fi
-          npx -y @vscode/vsce@3.2.1 publish --packagePath dist/*.vsix
+          version="${GITHUB_REF_NAME#vscode-v}"
+          query='{"filters":[{"criteria":[{"filterType":7,"value":"texyon.texyon"}]}],"flags":1}'
+          for vsix in dist/*.vsix; do
+            target="$(basename "$vsix" .vsix)"
+            target="${target#texyon-}"
+            npx -y @vscode/vsce@3.2.1 publish --packagePath "$vsix"
+            # The Marketplace drops a target uploaded while another one of the same version is still validating.
+            for _ in $(seq 60); do
+              curl -s -X POST https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery \
+                  -H 'Content-Type: application/json' -H 'Accept: application/json;api-version=7.2-preview.1' -d "$query" \
+                | jq -e --arg v "$version" --arg t "$target" \
+                    '[.results[].extensions[].versions[] | select(.version == $v and .targetPlatform == $t)] | length > 0' >/dev/null \
+                && continue 2
+              sleep 30
+            done
+            echo "::error::$target $version did not appear on the Marketplace within 30 minutes"
+            exit 1
+          done
       - name: "Publish to Open VSX"
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
