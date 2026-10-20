@@ -8,7 +8,7 @@ use std::{
 use clap::Parser;
 use texyon::{
     config::PersistentConfig,
-    driver::ProcessingSessionBuilder,
+    driver::{OutputFormat, ProcessingSessionBuilder},
     engines::tex::EnginePreviewConfig,
     errors::{ErrorKind, Result},
     io::{format_cache::FormatCache, IoProvider, OpenResult},
@@ -172,7 +172,8 @@ fn ensure_format(
         .bundle(bundle)
         .format_name(format_name)
         .format_cache_path(config.format_cache_path()?)
-        .primary_input_buffer(b"\\documentclass{article}\\begin{document}\\end{document}")
+        .primary_input_buffer(b"\\documentclass{article}\\begin{document}x\\end{document}")
+        .output_format(OutputFormat::Xdv)
         .tex_input_name("texput.tex")
         .output_dir(std::env::temp_dir())
         .do_not_write_output_files();
