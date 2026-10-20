@@ -154,7 +154,12 @@ jobs:
       - name: "Publish to the VS Code Marketplace"
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: npx -y @vscode/vsce@3.2.1 publish --packagePath dist/*.vsix
+        run: |
+          if [[ -z "$VSCE_PAT" ]]; then
+            echo "::warning::VSCE_PAT is not set, upload dist/*.vsix to the Marketplace by hand"
+            exit 0
+          fi
+          npx -y @vscode/vsce@3.2.1 publish --packagePath dist/*.vsix
       - name: "Publish to Open VSX"
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
