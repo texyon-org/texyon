@@ -65,6 +65,7 @@ jobs:
       - name: "Restore prebuilt vcpkg packages"
         id: vcpkg-binaries
         if: ${{ runner.os != 'Linux' }}
+        continue-on-error: true
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -78,7 +79,8 @@ jobs:
           echo "name=$name" >> "$GITHUB_OUTPUT"
           mkdir -p target/vcpkg-cache
           if gh release download vcpkg-binaries -p "$name" -D "$RUNNER_TEMP"; then
-            tar -xf "$RUNNER_TEMP/$name" -C target/vcpkg-cache
+            # GNU tar reads a drive letter in the archive path as a remote host.
+            (cd "$RUNNER_TEMP" && tar -xf "$name" -C "$GITHUB_WORKSPACE/target/vcpkg-cache")
             echo "hit=true" >> "$GITHUB_OUTPUT"
           fi
       - name: "Install vcpkg dependencies"
@@ -88,12 +90,13 @@ jobs:
           target: ${{ matrix.target }}
       - name: "Save prebuilt vcpkg packages"
         if: ${{ runner.os != 'Linux' && steps.vcpkg-binaries.outputs.hit != 'true' }}
+        continue-on-error: true
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           NAME: ${{ steps.vcpkg-binaries.outputs.name }}
         run: |
-          tar -cf "$RUNNER_TEMP/$NAME" -C target/vcpkg-cache .
+          (cd "$RUNNER_TEMP" && tar -cf "$NAME" -C "$GITHUB_WORKSPACE/target/vcpkg-cache" .)
           gh release view vcpkg-binaries >/dev/null 2>&1 \
             || gh release create vcpkg-binaries --title "Prebuilt vcpkg packages" \
                  --notes "vcpkg binary caches for the VS Code extension builds, keyed by dependency set." --prerelease
