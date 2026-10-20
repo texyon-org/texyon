@@ -11,27 +11,41 @@ fn main() {
         return;
     }
     if texyon_dep_support::target_is_wasm() {
-        build_wasm();
+        link_prebuilt(
+            &texyon_dep_support::wasm_vendor_dir("mupdf"),
+            "tools/wasm/fetch-deps.sh --with-mupdf",
+        );
         return;
     }
 
-    match (
-        std::env::var("CARGO_CFG_TARGET_OS").as_deref(),
-        std::env::var("CARGO_CFG_TARGET_ENV").as_deref(),
-    ) {
-        (Ok("linux"), _) => build_linux(),
+    println!("cargo:rerun-if-env-changed=TEXYON_MUPDF_DIR");
+    let os = std::env::var("CARGO_CFG_TARGET_OS");
+    let env = std::env::var("CARGO_CFG_TARGET_ENV");
+    match (os.as_deref(), env.as_deref()) {
         (Ok("windows"), Ok("msvc")) => build_windows_msvc(),
-        _ => {}
+        (Ok("linux" | "macos"), _) if std::env::var_os("TEXYON_MUPDF_DIR").is_some() => {
+            link_prebuilt(
+                &PathBuf::from(std::env::var_os("TEXYON_MUPDF_DIR").unwrap()),
+                "tools/mupdf/build.sh",
+            );
+            println!("cargo:rustc-link-lib=dylib=z");
+        }
+        (Ok("linux"), _) => build_linux(),
+        // Workspace builds unify the feature in from the wasm crate without linking it.
+        _ => println!(
+            "cargo:warning=backend-mupdf is not linked: run tools/mupdf/build.sh \
+             and set TEXYON_MUPDF_DIR to its tools/mupdf/vendor/mupdf"
+        ),
     }
 }
 
-/// Link the MuPDF from `tools/wasm/fetch-deps.sh --with-mupdf`.
+/// Link a MuPDF built by `tools/wasm/fetch-deps.sh` or `tools/mupdf/build.sh`.
 ///
-/// `llvm-objcopy` cannot rename wasm symbols, so that build already moves `pdf_*` aside.
-fn build_wasm() {
+/// Both already move `pdf_*` aside in the preprocessor (`llvm-objcopy` cannot rename wasm
+/// symbols and macOS has no objcopy).
+fn link_prebuilt(mupdf: &Path, script: &str) {
     println!("cargo:rerun-if-changed=src/backend_mupdf/shim.c");
 
-    let mupdf = texyon_dep_support::wasm_vendor_dir("mupdf");
     let build = mupdf.join("build/release");
     let renames = mupdf.join("tectonic-pdf-rename.h");
 
@@ -42,8 +56,7 @@ fn build_wasm() {
     ] {
         assert!(
             path.exists(),
-            "no MuPDF build at {}\n\
-             The wasm SVG backend needs it; run: tools/wasm/fetch-deps.sh --with-mupdf",
+            "no MuPDF build at {}\nThe SVG backend needs it; run: {script}",
             path.display()
         );
     }
