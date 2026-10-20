@@ -31,6 +31,9 @@ const ALLOWED: &[(&str, &str, usize)] = &[
     // _localtime64 aliases. The call sites live in texmfmp.rs, above.
     ("src/compat.rs", "gmtime", 3),
     ("src/compat.rs", "localtime", 3),
+    // Tail settle chunking, only with `tail_chunk` set. It moves where a chunk
+    // pauses, never what is typeset.
+    ("src/session.rs", "Instant::now", 2),
 ];
 
 fn collect_text_hits(
