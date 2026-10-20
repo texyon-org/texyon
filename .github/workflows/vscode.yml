@@ -7,6 +7,7 @@ on:
   workflow_dispatch:
   push:
     tags: [ "vscode-v*" ]
+    branches: [ ci/vscode-release ]
 
 concurrency:
   group: vscode-${{ github.ref }}
