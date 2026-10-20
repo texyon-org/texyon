@@ -164,6 +164,9 @@ jobs:
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: |
+          if [[ "$(curl -s -o /dev/null -w '%{http_code}' https://open-vsx.org/api/texyon)" == 404 ]]; then
+            npx -y ovsx@0.10.1 create-namespace texyon
+          fi
           for vsix in dist/*.vsix; do
             npx -y ovsx@0.10.1 publish "$vsix"
           done
