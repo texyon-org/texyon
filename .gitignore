@@ -31,3 +31,6 @@ node_modules/
 
 *.tsbuildinfo
 /tools/mupdf/vendor/
+
+# Promo videos
+/promo/
