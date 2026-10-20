@@ -1,6 +1,7 @@
 "use strict";
 
 const cp = require("child_process");
+const fs = require("fs");
 const path = require("path");
 const readline = require("readline");
 const vscode = require("vscode");
@@ -28,7 +29,7 @@ class PreviewSession {
     this.nextMutation = 0n;
     this.mutationStarted = new Map();
 
-    const executable = configuration.get("executable", "texyon");
+    const executable = resolveExecutable(context, configuration);
     const format = configuration.get("format", "latex");
     const args = ["-X", "preview", "--format", format];
     this.output.appendLine(`[preview] spawning ${executable} ${args.join(" ")}`);
@@ -305,6 +306,22 @@ class PreviewSession {
       this.process.stdin.end(`${JSON.stringify({ type: "shutdown" })}\n`);
     }
   }
+}
+
+function resolveExecutable(context, configuration) {
+  const configured = configuration.get("executable", "");
+  if (configured) return configured;
+  const bundled = context.asAbsolutePath(path.join("bin", process.platform === "win32" ? "texyon.exe" : "texyon"));
+  if (!fs.existsSync(bundled)) return "texyon";
+  // Some VSIX extractors drop the executable bit.
+  if (process.platform !== "win32") {
+    try {
+      fs.accessSync(bundled, fs.constants.X_OK);
+    } catch {
+      fs.chmodSync(bundled, 0o755);
+    }
+  }
+  return bundled;
 }
 
 function activate(context) {

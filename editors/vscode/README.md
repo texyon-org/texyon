@@ -1,15 +1,47 @@
 # TeXyon Live Preview
 
-This development extension opens an extension-owned, SVG-only preview backed by
-one resident `texyon -X preview` process. The executable must be built with
-the opt-in `preview-mupdf` feature. The selected format must already be cached;
-support files and renderer assets are fetched and cached on demand, as in a
-regular compile.
+A live preview for LaTeX documents that updates as you type, without saving
+and without a separate PDF viewer. A resident TeXyon engine recompiles only
+what your edit touched, so pages refresh in a fraction of a normal compile.
 
-From the repository root, build it with:
+## Getting started
+
+1. Open a saved `.tex` file.
+2. Run **TeXyon: Start Live Preview** from the command palette.
+
+The first start downloads the TeX support files it needs and builds the LaTeX
+format, which takes a minute or so. Later starts reuse that cache.
+
+The extension ships with its own TeXyon engine for Linux (x64), macOS (Apple
+silicon) and Windows (x64). No TeX distribution is required.
+
+## Features
+
+- **Live preview** of the active document and of included child files, using
+  their unsaved buffer contents.
+- **Forward search**: **TeXyon: Show Cursor in Live Preview** scrolls to and
+  highlights the box for the current source line.
+- **Inverse search**: Ctrl-click (Cmd-click on macOS) a spot in the preview
+  to jump to its source line.
+- **TeXyon: Cancel In-Flight Preview** abandons a long compile, and
+  **TeXyon: Stop Live Preview** shuts the engine down.
+
+## Settings
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `texyon.executable` | empty | A TeXyon binary to use instead of the bundled one. |
+| `texyon.format` | `latex` | The XeTeX format to preview with. |
+
+## Building from source
+
+To use your own engine build, compile it with the `preview-mupdf` feature
+and point `texyon.executable` at it. On Linux and macOS:
 
 ```sh
-cargo build -p texyon --features preview-mupdf
+tools/mupdf/build.sh
+TEXYON_MUPDF_DIR="$PWD/tools/mupdf/vendor/mupdf" \
+  cargo build --release -p texyon --features preview-mupdf
 ```
 
 On Windows MSVC, install the repository's vcpkg dependencies and Rust archive
@@ -25,25 +57,11 @@ $env:RUSTFLAGS = "-Ctarget-feature=+crt-static"
 cargo build --release -p texyon --features "preview-mupdf,external-harfbuzz"
 ```
 
-Configure `texyon.executable` if `texyon` is not on `PATH`, open a
-saved TeX document, and run **TeXyon: Start Live Preview**. The extension
-sends the primary buffer and every already-dirty eligible child buffer during
-initialization, then streams complete UTF-8 buffer replacements.
+Run the extension's tests with `npm test` (no install step is needed). Set
+`TEXYON_PREVIEW_BIN` to a built binary to include the real-server smoke test.
 
-Run **TeXyon: Show Cursor in Live Preview** to scroll to and highlight the
-box associated with the active source line. Ctrl-click on Linux/Windows or
-Cmd-click on macOS inside a preview page to reveal the nearest primary or child
-source line. Both directions query the last coherent frame and do not trigger a
-compile or create a `.synctex.gz` file.
+## License
 
-The preview webview accepts only sanitized SVG page payloads. It retains page
-slots and scroll position, renders only the visible page plus a one-page
-prefetch band, and asks the server for a full resynchronization after a webview
-reload.
-
-The native MuPDF preview backend and this extension are distributed under the
-GNU AGPL v3 or later. The portable TeXyon libraries do not enable that backend
-by default.
-
-Run the reducer and path-authority tests with `npm test` (no install step is
-needed).
+The extension and the bundled engine (which links MuPDF) are distributed under
+the GNU AGPL v3 or later. The portable TeXyon libraries are MIT licensed and
+do not enable the MuPDF backend by default.

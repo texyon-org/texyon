@@ -1,0 +1,168 @@
+# Builds the VS Code extension with a bundled preview engine, one VSIX per
+# platform. A vscode-v* tag also publishes them; a manual run only builds.
+
+name: "VS Code Extension"
+
+on:
+  workflow_dispatch:
+  push:
+    tags: [ "vscode-v*" ]
+
+concurrency:
+  group: vscode-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 22.04 for an older glibc baseline.
+          - image: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            vsce-target: linux-x64
+            features: preview-mupdf,native-tls-vendored
+          - image: macos-14
+            target: aarch64-apple-darwin
+            vsce-target: darwin-arm64
+            features: preview-mupdf
+          - image: windows-latest
+            target: x86_64-pc-windows-msvc
+            vsce-target: win32-x64
+            features: preview-mupdf,external-harfbuzz
+    runs-on: ${{ matrix.image }}
+    # A cold vcpkg cache rebuilds ICU and friends.
+    timeout-minutes: 120
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: "Set up Rust"
+        shell: bash
+        run: |
+          rustup set profile minimal
+          rustup update --no-self-update stable
+          rustup default stable
+          rustup target add ${{ matrix.target }}
+      - name: "Install pkg-config dependencies"
+        if: ${{ runner.os == 'Linux' }}
+        uses: ./.github/actions/pkgconfig-deps
+      - name: "Install vcpkg dependencies"
+        if: ${{ runner.os != 'Linux' }}
+        uses: ./.github/actions/vcpkg-deps
+        with:
+          target: ${{ matrix.target }}
+      - name: "Setup build variables (Linux)"
+        if: ${{ runner.os == 'Linux' }}
+        shell: bash
+        run: |
+          echo "TEXYON_DEP_BACKEND=pkg-config" >> "$GITHUB_ENV"
+          echo "TEXYON_PKGCONFIG_FORCE_SEMI_STATIC=true" >> "$GITHUB_ENV"
+      - name: "Setup build variables (vcpkg)"
+        if: ${{ runner.os != 'Linux' }}
+        shell: bash
+        run: |
+          echo "TEXYON_DEP_BACKEND=vcpkg" >> "$GITHUB_ENV"
+          echo "VCPKG_ROOT=$GITHUB_WORKSPACE/target/vcpkg" >> "$GITHUB_ENV"
+      - name: "Setup build variables (Windows)"
+        if: ${{ runner.os == 'Windows' }}
+        shell: bash
+        run: |
+          rustup component add llvm-tools-preview
+          echo "RUSTFLAGS=-Ctarget-feature=+crt-static" >> "$GITHUB_ENV"
+          echo "VCPKGRS_TRIPLET=x64-windows-static-release" >> "$GITHUB_ENV"
+      - name: "Build MuPDF"
+        if: ${{ runner.os != 'Windows' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # mupdf.com refuses connections from the runners.
+          gh release download vendor-deps -p 'mupdf-*-source.tar.gz' -D "$RUNNER_TEMP"
+          export MUPDF_TARBALL="$(echo "$RUNNER_TEMP"/mupdf-*-source.tar.gz)"
+          if [[ $RUNNER_OS == macOS ]]; then
+            prefix="$VCPKG_ROOT/installed/arm64-osx/include"
+            export FREETYPE_CFLAGS="-I$prefix/freetype2 -I$prefix" ZLIB_CFLAGS="-I$prefix"
+          fi
+          tools/mupdf/build.sh
+          echo "TEXYON_MUPDF_DIR=$GITHUB_WORKSPACE/tools/mupdf/vendor/mupdf" >> "$GITHUB_ENV"
+      - name: "Build texyon"
+        shell: bash
+        run: |
+          cargo build --release --locked --target ${{ matrix.target }} -p texyon --features "${{ matrix.features }}"
+          mkdir -p editors/vscode/bin
+          if [[ $RUNNER_OS == Windows ]]; then
+            cp target/${{ matrix.target }}/release/texyon.exe editors/vscode/bin/
+          else
+            cp target/${{ matrix.target }}/release/texyon editors/vscode/bin/
+            strip editors/vscode/bin/texyon
+          fi
+      - name: "Show dynamic dependencies"
+        if: ${{ runner.os != 'Windows' }}
+        shell: bash
+        run: |
+          if [[ $RUNNER_OS == macOS ]]; then otool -L editors/vscode/bin/texyon; else ldd editors/vscode/bin/texyon; fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: "Test the extension against the real server"
+        shell: bash
+        working-directory: editors/vscode
+        run: |
+          bin="$PWD/bin/texyon"
+          [[ $RUNNER_OS == Windows ]] && bin="$(cygpath -w "$bin").exe"
+          TEXYON_PREVIEW_BIN="$bin" npm test
+      - name: "Package"
+        shell: bash
+        working-directory: editors/vscode
+        run: npx -y @vscode/vsce@3.2.1 package --target ${{ matrix.vsce-target }} -o "texyon-${{ matrix.vsce-target }}.vsix"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix-${{ matrix.vsce-target }}
+          path: editors/vscode/*.vsix
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: ${{ startsWith(github.ref, 'refs/tags/vscode-v') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: "Check the tag matches the extension version"
+        run: |
+          version="$(node -p 'require("./editors/vscode/package.json").version')"
+          if [[ "vscode-v$version" != "$GITHUB_REF_NAME" ]]; then
+            echo "tag $GITHUB_REF_NAME does not match package.json version $version" >&2
+            exit 1
+          fi
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: vsix-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: "Publish to the VS Code Marketplace"
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx -y @vscode/vsce@3.2.1 publish --packagePath dist/*.vsix
+      - name: "Publish to Open VSX"
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          for vsix in dist/*.vsix; do
+            npx -y ovsx@0.10.1 publish "$vsix"
+          done
+      - name: "Create the GitHub release"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.vsix --title "VS Code extension ${GITHUB_REF_NAME#vscode-v}" --generate-notes

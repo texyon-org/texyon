@@ -2,15 +2,18 @@
 
 const assert = require("node:assert/strict");
 const cp = require("node:child_process");
+const os = require("node:os");
+const path = require("node:path");
 const readline = require("node:readline");
 const test = require("node:test");
 
 test("real server orders ready, initialize, update, and shutdown", {
   skip: !process.env.TEXYON_PREVIEW_BIN,
-  timeout: 30_000
+  // A cold cache downloads the bundle and builds the format first.
+  timeout: 300_000
 }, async () => {
   const child = cp.spawn(process.env.TEXYON_PREVIEW_BIN, ["-X", "preview", "--format", "latex"], {
-    cwd: "/tmp",
+    cwd: os.tmpdir(),
     stdio: ["pipe", "pipe", "pipe"]
   });
   let stderr = "";
@@ -30,7 +33,7 @@ test("real server orders ready, initialize, update, and shutdown", {
         child.stdin.write(`${JSON.stringify({
           type: "initialize",
           protocol_version: event.protocol_version,
-          primary_path: "/tmp/texyon-vscode-smoke.tex",
+          primary_path: path.join(os.tmpdir(), "texyon-vscode-smoke.tex"),
           primary_text: "\\documentclass{article}\\begin{document}Hello preview\\end{document}",
           children: []
         })}\n`);
