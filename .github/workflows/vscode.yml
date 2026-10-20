@@ -37,6 +37,7 @@ jobs:
     timeout-minutes: 120
     env:
       MACOSX_DEPLOYMENT_TARGET: "11.0"
+      VCPKG_OVERLAY_PORTS: ${{ github.workspace }}/dist/vcpkg-ports
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

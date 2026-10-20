@@ -48,6 +48,7 @@ On Windows MSVC, install the repository's vcpkg dependencies and Rust archive
 tools first:
 
 ```powershell
+$env:VCPKG_OVERLAY_PORTS = "$PWD\dist\vcpkg-ports"
 cargo vcpkg build
 rustup component add llvm-tools-preview
 $env:VCPKG_ROOT = "$PWD\target\vcpkg"
