@@ -379,6 +379,9 @@ pub(crate) fn scan_toks(
                 }
                 x_token(st)?;
             } else {
+                if super::next::copy_group_tokens(st, &mut p, &mut unbalance, macro_def)? {
+                    break 'found;
+                }
                 get_token(st)?;
             }
 

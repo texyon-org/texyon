@@ -420,6 +420,7 @@ struct InputBundle {
     buffer: Vec<i32>,
     input_stack: Vec<InputState>,
     param_stack: Vec<crate::units::MemPtr>,
+    param_tail: Vec<crate::units::MemPtr>,
     nest: Vec<ListStateRecord>,
     line_stack: Vec<i32>,
     grp_stack: Vec<i32>,
@@ -461,6 +462,7 @@ impl InputBundle {
             buffer: live_prefix(&src.buffer, src.buffer_in_use()),
             input_stack: live_prefix(&src.input_stack, src.input_ptr + 1),
             param_stack: live_prefix(&src.param_stack, src.param_ptr),
+            param_tail: live_prefix(&src.param_tail, src.param_ptr),
             nest: live_prefix(&src.nest, src.nest_ptr + 1),
             line_stack: src.line_stack.clone(),
             grp_stack: src.grp_stack.clone(),
@@ -497,6 +499,7 @@ impl InputBundle {
         dst.buffer[..self.buffer.len()].copy_from_slice(&self.buffer);
         dst.input_stack[..self.input_stack.len()].copy_from_slice(&self.input_stack);
         dst.param_stack[..self.param_stack.len()].copy_from_slice(&self.param_stack);
+        dst.param_tail[..self.param_tail.len()].copy_from_slice(&self.param_tail);
         dst.nest[..self.nest.len()].copy_from_slice(&self.nest);
         dst.line_stack.clone_from(&self.line_stack);
         dst.grp_stack.clone_from(&self.grp_stack);
@@ -535,6 +538,7 @@ impl InputBundle {
         vec_bytes(&self.buffer)
             + vec_bytes(&self.input_stack)
             + vec_bytes(&self.param_stack)
+            + vec_bytes(&self.param_tail)
             + vec_bytes(&self.nest)
             + vec_bytes(&self.line_stack)
             + vec_bytes(&self.grp_stack)
@@ -899,6 +903,7 @@ mod tests {
         st.input.buffer = vec![0; 8];
         st.input.input_stack = vec![crate::state::InputState::default(); 4];
         st.input.param_stack = vec![crate::units::MemPtr::default(); 4];
+        st.input.param_tail = vec![crate::units::MemPtr::default(); 4];
         st.input.nest = vec![crate::mem_types::ListStateRecord::default(); 4];
         st.save_stack.data = crate::mem_types::zeroed_vec(4);
         st

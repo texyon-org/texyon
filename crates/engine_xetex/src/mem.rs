@@ -114,6 +114,17 @@ impl MemState {
         self.avail = p.0;
     }
 
+    /// `flush_list` for a list whose last node `tail` the caller already knows.
+    #[inline]
+    pub fn flush_list_with_tail(&mut self, p: MemPtr, tail: MemPtr) {
+        if p.is_null() {
+            return;
+        }
+        debug_assert_eq!(self.list_tail(p), tail);
+        tail.set_link(self, MemPtr(self.avail));
+        self.avail = p.0;
+    }
+
     /// TeX's `store_new_token`: appends `tok` after `tail` and makes it the tail.
     #[inline(always)]
     pub(crate) fn store_new_token(

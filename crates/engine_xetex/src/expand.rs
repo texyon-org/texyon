@@ -25,8 +25,8 @@ use crate::output::{
 };
 use crate::params::{GluePar, IntPar};
 use crate::scan::{
-    fetch_box, get_next, get_token, get_x_non_blank, get_x_token, scan_int, store_new_token,
-    NO_EXPAND_FLAG,
+    copy_delimited_tokens, copy_group_tokens, fetch_box, get_next, get_token, get_x_non_blank,
+    get_x_token, scan_int, store_new_token, NO_EXPAND_FLAG,
 };
 use crate::state::{EngineState, MemState, Selector};
 use crate::token::Token;
@@ -119,7 +119,8 @@ fn token_chars_to_buffer(st: &mut EngineState, list: MemPtr) -> Result<i32, Abor
 }
 
 /// Scans the tokens of a `\csname`-like name up to the terminating control sequence.
-fn scan_cs_name_tokens(st: &mut EngineState) -> Result<MemPtr, Abort> {
+/// Returns the head node and the last node of the scanned list.
+fn scan_cs_name_tokens(st: &mut EngineState) -> Result<(MemPtr, MemPtr), Abort> {
     let head = st.mem.get_avail()?;
     let mut tail = head;
     let saved_in_csname = st.scanner.is_in_csname;
@@ -143,7 +144,7 @@ fn scan_cs_name_tokens(st: &mut EngineState) -> Result<MemPtr, Abort> {
         back_error(st)?;
     }
     st.scanner.is_in_csname = saved_in_csname;
-    Ok(head)
+    Ok((head, tail))
 }
 
 fn trace_diagnostic(st: &mut EngineState, text: &str) {
@@ -301,7 +302,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             st.scanner.cur_cmd != UNDEFINED_CS
         }
         IfCode::CsName => {
-            let head = scan_cs_name_tokens(st)?;
+            let (head, tail) = scan_cs_name_tokens(st)?;
             let first = st.input.first;
             let m = token_chars_to_buffer(st, head.link(&st.mem))?;
             st.scanner.cur_cs = if m == first {
@@ -312,7 +313,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
                 st.eqtb
                     .id_lookup(&mut st.strings, &st.input.buffer, first, m - first)?
             };
-            st.mem.flush_list(head);
+            st.mem.flush_list_with_tail(head, tail);
             st.eqtb.eq_type(st.scanner.cur_cs) != UNDEFINED_CS
         }
         IfCode::InCsName => st.scanner.is_in_csname,
@@ -892,7 +893,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                 }
             }
             CS_NAME => {
-                let head = scan_cs_name_tokens(st)?;
+                let (head, tail) = scan_cs_name_tokens(st)?;
                 let first = st.input.first;
                 let j = token_chars_to_buffer(st, head.link(&st.mem))?;
                 st.scanner.cur_cs = if j > first + 1 || st.input.buffer[first as usize] > 65535 {
@@ -907,7 +908,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                 } else {
                     SINGLE_BASE + st.input.buffer[first as usize]
                 };
-                st.mem.flush_list(head);
+                st.mem.flush_list_with_tail(head, tail);
                 let cs = st.scanner.cur_cs;
                 if st.eqtb.eq_type(cs) == UNDEFINED_CS {
                     let _ = st.eqtb.eq_define(
@@ -1099,6 +1100,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     let mut pstack = [MemPtr::NULL; 9];
+    let mut ptail = [MemPtr::NULL; 9];
     let mut match_chr: i32 = 0;
     let mut rbrace_ptr = MemPtr::NULL;
 
@@ -1127,6 +1129,9 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                 }
 
                 'continue_: loop {
+                    if s == r && !s.is_null() && !r.token(&st.mem).is_match() {
+                        copy_delimited_tokens(st, &mut p, &mut m, r.token(&st.mem))?;
+                    }
                     get_token(st)?;
 
                     if st.scanner.cur_tok == r.token(&st.mem) {
@@ -1200,6 +1205,9 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                         unbalance = 1;
                         loop {
                             store_new_token(st, &mut p, st.scanner.cur_tok)?;
+                            if copy_group_tokens(st, &mut p, &mut unbalance, false)? {
+                                break;
+                            }
 
                             get_token(st)?;
 
@@ -1244,9 +1252,11 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                         st.mem.free_avail(p);
                         p = TEMP_HEAD.link(&st.mem);
                         pstack[n as usize] = p.link(&st.mem);
+                        ptail[n as usize] = rbrace_ptr;
                         st.mem.free_avail(p);
                     } else {
                         pstack[n as usize] = TEMP_HEAD.link(&st.mem);
+                        ptail[n as usize] = p;
                     }
                     n += 1;
                     if st.eqtb.int_par(IntPar::TracingMacros) > 0 {
@@ -1263,8 +1273,8 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
         if n > 0 && st.config.pgfmath == crate::pgfmath::Mode::Native {
             if let Some(kind) = st.eqtb.pgfmath.native(st.scanner.warning_index) {
                 if crate::pgfmath::native_macro(st, kind, &pstack[..n as usize]) {
-                    for &p in &pstack[..n as usize] {
-                        st.mem.flush_list(p);
+                    for k in 0..n as usize {
+                        st.mem.flush_list_with_tail(pstack[k], ptail[k]);
                     }
                     break 'exit;
                 }
@@ -1294,6 +1304,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
             }
             let base = st.input.param_ptr as usize;
             st.input.param_stack[base..base + n as usize].copy_from_slice(&pstack[..n as usize]);
+            st.input.param_tail[base..base + n as usize].copy_from_slice(&ptail[..n as usize]);
             st.input.param_ptr += n;
         }
     }
