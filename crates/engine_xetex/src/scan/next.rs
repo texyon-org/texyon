@@ -222,7 +222,8 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
             let t = p.token(&st.mem);
             let plain = if t.is_cs() {
                 let cmd = st.eqtb.eq_type(t.cs());
-                cmd < OUTER_CALL && (cmd > CAR_RET || cmd < TAB_MARK || st.scanner.align_state != 0)
+                cmd < OUTER_CALL
+                    && (!(TAB_MARK..=CAR_RET).contains(&cmd) || st.scanner.align_state != 0)
             } else {
                 let cmd = t.cmd();
                 cmd != OUT_PARAM && (cmd != TAB_MARK || st.scanner.align_state != 0)
