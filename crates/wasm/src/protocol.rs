@@ -123,8 +123,8 @@ pub struct PageOverlay {
     pub destinations: Vec<Destination>,
 }
 
-impl From<crate::session::PageOverlay> for PageOverlay {
-    fn from(overlay: crate::session::PageOverlay) -> Self {
+impl From<texyon_live_preview::PageOverlay> for PageOverlay {
+    fn from(overlay: texyon_live_preview::PageOverlay) -> Self {
         Self {
             links: overlay.links.into_iter().map(Into::into).collect(),
             destinations: overlay.destinations.into_iter().map(Into::into).collect(),
@@ -181,6 +181,17 @@ pub struct SourceEdit {
     pub from: usize,
     pub to: usize,
     pub insert: String,
+}
+
+impl From<SourceEdit> for texyon_live_preview::SourceEdit {
+    fn from(edit: SourceEdit) -> Self {
+        Self {
+            base: edit.base,
+            from: edit.from,
+            to: edit.to,
+            insert: edit.insert,
+        }
+    }
 }
 
 /// A message from the host.

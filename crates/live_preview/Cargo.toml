@@ -18,6 +18,7 @@ edition = "2021"
 [dependencies]
 texyon_bridge_core = { path = "../bridge_core", version = "0.0.0-dev.0" }
 texyon_bundles = { path = "../bundles", version = "0.0.0-dev.0", optional = true }
+texyon_engine_xdvipdfmx = { path = "../engine_xdvipdfmx", version = "0.0.0-dev.0" }
 texyon_engine_xetex = { path = "../engine_xetex", version = "0.0.0-dev.0" }
 texyon_errors = { path = "../errors", version = "0.0.0-dev.0" }
 texyon_io_base = { path = "../io_base", version = "0.0.0-dev.0" }
@@ -28,6 +29,7 @@ texyon_status_base = { path = "../status_base", version = "0.0.0-dev.0" }
 [package.metadata.internal_dep_versions]
 texyon_bridge_core = "thiscommit:2026-07-25:live-preview-extraction"
 texyon_bundles = "thiscommit:2026-07-25:live-preview-extraction"
+texyon_engine_xdvipdfmx = "thiscommit:2026-11-05:portable-session"
 texyon_engine_xetex = "thiscommit:2026-07-25:live-preview-extraction"
 texyon_errors = "thiscommit:2026-07-25:live-preview-extraction"
 texyon_io_base = "thiscommit:2026-07-25:live-preview-extraction"
