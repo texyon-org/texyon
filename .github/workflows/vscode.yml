@@ -5,6 +5,12 @@ name: "VS Code Extension"
 
 on:
   workflow_dispatch:
+    inputs:
+      platform:
+        description: "Build only this platform"
+        type: choice
+        options: [ all, linux-x64, darwin-arm64, win32-x64 ]
+        default: all
   push:
     tags: [ "vscode-v*" ]
 
@@ -13,26 +19,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # A manual run can build one platform, so a trial does not pay for macOS.
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      include: ${{ steps.plan.outputs.include }}
+    steps:
+      - id: plan
+        env:
+          PLATFORM: ${{ inputs.platform || 'all' }}
+        run: |
+          # 22.04 for an older glibc baseline.
+          all='[
+            {"image": "ubuntu-22.04", "target": "x86_64-unknown-linux-gnu", "vsce-target": "linux-x64",
+             "features": "preview-mupdf,native-tls-vendored"},
+            {"image": "macos-14", "target": "aarch64-apple-darwin", "vsce-target": "darwin-arm64",
+             "features": "preview-mupdf", "vcpkg-triplet": "arm64-osx-release"},
+            {"image": "windows-latest", "target": "x86_64-pc-windows-msvc", "vsce-target": "win32-x64",
+             "features": "preview-mupdf", "vcpkg-triplet": "x64-windows-static-release"}
+          ]'
+          echo "include=$(jq -c --arg p "$PLATFORM" 'map(select($p == "all" or .["vsce-target"] == $p))' <<< "$all")" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: plan
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # 22.04 for an older glibc baseline.
-          - image: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            vsce-target: linux-x64
-            features: preview-mupdf,native-tls-vendored
-          - image: macos-14
-            target: aarch64-apple-darwin
-            vsce-target: darwin-arm64
-            features: preview-mupdf
-            vcpkg-triplet: arm64-osx-release
-          - image: windows-latest
-            target: x86_64-pc-windows-msvc
-            vsce-target: win32-x64
-            features: preview-mupdf,external-harfbuzz
-            vcpkg-triplet: x64-windows-static-release
+        include: ${{ fromJSON(needs.plan.outputs.include) }}
     runs-on: ${{ matrix.image }}
     # A cold vcpkg cache rebuilds ICU and friends.
     timeout-minutes: 120
@@ -69,34 +83,66 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # macOS has only shasum, Git Bash on Windows only sha256sum.
-          sha=sha256sum
-          command -v sha256sum >/dev/null || sha="shasum -a 256"
-          key="$({ sed -n '/^\[package.metadata.vcpkg\]/,/^\[package.metadata.internal/p' Cargo.toml
-                   cat dist/vcpkg-triplets/* dist/vcpkg-ports/*/*; } | $sha | cut -c1-16)"
-          name="vcpkg-${{ matrix.target }}-$key.tar"
+          # vcpkg keys every package by its own ABI hash, so one archive per
+          # target serves any change and only the affected packages rebuild.
+          name="vcpkg-${{ matrix.target }}.tar"
           echo "name=$name" >> "$GITHUB_OUTPUT"
           mkdir -p target/vcpkg-cache
           if gh release download vcpkg-binaries -p "$name" -D "$RUNNER_TEMP"; then
             # GNU tar reads a drive letter in the archive path as a remote host.
             ws="$PWD"
             (cd "$RUNNER_TEMP" && tar -xf "$name" -C "$ws/target/vcpkg-cache")
-            echo "hit=true" >> "$GITHUB_OUTPUT"
+          fi
+          (cd target/vcpkg-cache && find . -name '*.zip' | sort) > "$RUNNER_TEMP/restored.txt"
+      # vcpkg does not hash the bundled HarfBuzz headers MuPDF compiles against,
+      # so the port pins their version and a cached MuPDF must match it.
+      - name: "Check the MuPDF port's HarfBuzz pin"
+        if: ${{ runner.os == 'Windows' }}
+        shell: bash
+        run: |
+          pin="$(sed -n 's/^set(BUNDLED_HARFBUZZ_VERSION "\(.*\)")$/\1/p' dist/vcpkg-ports/libmupdf/portfile.cmake)"
+          if ! grep -qx "#define HB_VERSION_STRING \"$pin\"" crates/bridge_harfbuzz/harfbuzz/src/hb-version.h; then
+            echo "::error::dist/vcpkg-ports/libmupdf pins HarfBuzz '$pin' but the submodule is $(grep HB_VERSION_STRING crates/bridge_harfbuzz/harfbuzz/src/hb-version.h | tail -1)"
+            exit 1
           fi
       - name: "Install vcpkg dependencies"
         if: ${{ runner.os != 'Linux' }}
         uses: ./.github/actions/vcpkg-deps
         with:
           target: ${{ matrix.target }}
+      # vcpkg reuses a package only if its ABI, which includes the compiler, still
+      # matches. Keep what this build used and upload whenever that changed, so a
+      # runner image update costs one cold build instead of every build after it.
       - name: "Save prebuilt vcpkg packages"
-        if: ${{ runner.os != 'Linux' && steps.vcpkg-binaries.outputs.hit != 'true' }}
+        if: ${{ runner.os != 'Linux' }}
         continue-on-error: true
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           NAME: ${{ steps.vcpkg-binaries.outputs.name }}
         run: |
+          sha=sha256sum
+          command -v sha256sum >/dev/null || sha="shasum -a 256"
           ws="$PWD"
+          # A cached package is named by the SHA-256 of its vcpkg_abi_info.txt.
+          used="$(find target/vcpkg/installed -name vcpkg_abi_info.txt -exec $sha {} + | cut -c1-64 | sort -u)"
+          if [[ -z "$used" ]]; then
+            echo "::warning::found no installed vcpkg packages, leaving the cache as it is"
+            exit 0
+          fi
+          cd target/vcpkg-cache
+          stale="$(find . -name '*.zip' | while read -r zip; do
+            grep -qx "$(basename "$zip" .zip)" <<< "$used" || echo "$zip"
+          done)"
+          if [[ -n "$stale" ]] && [[ "$(wc -l <<< "$stale")" -lt "$(find . -name '*.zip' | wc -l)" ]]; then
+            xargs rm <<< "$stale"
+          elif [[ -n "$stale" ]]; then
+            echo "::warning::no cached package matched an installed ABI, keeping them all"
+          fi
+          if find . -name '*.zip' | sort | cmp -s - "$RUNNER_TEMP/restored.txt"; then
+            echo "The prebuilt packages are current."
+            exit 0
+          fi
           (cd "$RUNNER_TEMP" && tar -cf "$NAME" -C "$ws/target/vcpkg-cache" .)
           gh release view vcpkg-binaries >/dev/null 2>&1 \
             || gh release create vcpkg-binaries --title "Prebuilt vcpkg packages" \

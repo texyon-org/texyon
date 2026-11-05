@@ -60,7 +60,7 @@ $env:VCPKG_ROOT = "$PWD\target\vcpkg"
 $env:VCPKGRS_TRIPLET = "x64-windows-static-release"
 $env:TEXYON_DEP_BACKEND = "vcpkg"
 $env:RUSTFLAGS = "-Ctarget-feature=+crt-static"
-cargo build --release -p texyon --features "preview-mupdf,external-harfbuzz"
+cargo build --release -p texyon --features preview-mupdf
 ```
 
 Run the extension's tests with `npm install && npm test`. Set

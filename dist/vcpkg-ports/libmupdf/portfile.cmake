@@ -13,6 +13,16 @@ vcpkg_from_github(
 
 file(COPY "${CMAKE_CURRENT_LIST_DIR}/CMakeLists.txt" DESTINATION "${SOURCE_PATH}")
 
+# MuPDF links against the HarfBuzz TeXyoN bundles, so a binary holds one copy.
+# vcpkg's ABI hash covers this file but not those headers, so a submodule bump
+# must change the pin below to rebuild MuPDF.
+set(BUNDLED_HARFBUZZ_VERSION "8.3.0")
+set(BUNDLED_HARFBUZZ_INCLUDE "${CMAKE_CURRENT_LIST_DIR}/../../../crates/bridge_harfbuzz/harfbuzz/src")
+file(STRINGS "${BUNDLED_HARFBUZZ_INCLUDE}/hb-version.h" HB_VERSION_LINE REGEX "^#define HB_VERSION_STRING ")
+if(NOT HB_VERSION_LINE MATCHES "\"${BUNDLED_HARFBUZZ_VERSION}\"")
+    message(FATAL_ERROR "bundled HarfBuzz is not ${BUNDLED_HARFBUZZ_VERSION} (${HB_VERSION_LINE}), update the pin")
+endif()
+
 vcpkg_check_features(
     OUT_FEATURE_OPTIONS FEATURE_OPTIONS
     FEATURES
@@ -24,6 +34,7 @@ vcpkg_cmake_configure(
     DISABLE_PARALLEL_CONFIGURE
     OPTIONS
         -DBUILD_EXAMPLES=OFF
+        "-DHARFBUZZ_INCLUDE=${BUNDLED_HARFBUZZ_INCLUDE}"
         ${FEATURE_OPTIONS}
 )
 

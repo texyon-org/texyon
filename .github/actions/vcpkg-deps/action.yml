@@ -29,13 +29,6 @@ runs:
     - name: "Install cargo vcpkg"
       shell: bash
       run: cargo install --git https://github.com/mcgoo/cargo-vcpkg --branch master cargo-vcpkg
-    - name: "Load vcpkg cache"
-      uses: actions/cache@v4
-      with:
-        path: ${{ inputs.vcpkg_cache }}
-        key: ${{ runner.os }}-${{ inputs.target }}-${{ hashFiles('Cargo.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-${{ inputs.target }}-
     - name: "Ensure cache dir exists"
       shell: bash
       run: |
