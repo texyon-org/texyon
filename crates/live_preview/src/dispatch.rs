@@ -88,6 +88,7 @@ where
 fn raster<B: Payload>(page: session::RasterPage) -> RasterPage<B> {
     RasterPage {
         index: page.index,
+        region: page.region,
         pixels: B::hand_over(page.pixels),
     }
 }

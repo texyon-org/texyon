@@ -207,6 +207,10 @@ pub enum HostRequest<B> {
         /// Leave pages out of compile reports and draw them to pixels instead.
         #[serde(default)]
         raster: bool,
+        /// Let a compile send only the part of a page that changed since the
+        /// session last drew it at the same scale.
+        #[serde(default)]
+        patches: bool,
     },
 
     /// Install a support file the host already holds.
@@ -303,12 +307,29 @@ pub struct RenderedPage<B> {
     pub svg: B,
 }
 
+/// A rectangle of a page, in pixels from its top left.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PixelRect {
+    /// Left edge.
+    pub x: u32,
+    /// Top edge.
+    pub y: u32,
+    /// Width, zero when nothing changed.
+    pub width: u32,
+    /// Height, zero when nothing changed.
+    pub height: u32,
+}
+
 /// One page drawn to pixels: width and height as little-endian `u32`, then RGBA rows.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RasterPage<B> {
     /// Zero-based page index.
     pub index: usize,
+    /// Where `pixels` go on the page last drawn at this scale. Absent when they are the whole page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<PixelRect>,
     /// The pixels.
     #[serde(flatten)]
     pub pixels: B,

@@ -42,6 +42,8 @@ pub struct OpenRequest {
     pub root: String,
     /// Whether to draw pages to pixels.
     pub raster: bool,
+    /// Whether a compile may send only the changed part of a page.
+    pub patches: bool,
 }
 
 /// Sources the session does not hold, read from the project directory.
@@ -173,6 +175,7 @@ where
                 primary,
                 root,
                 raster,
+                patches,
             })) => match (&session, root) {
                 (Some(_), _) => (Response::error("a session is already open"), false),
                 (None, None) => (Response::error("a native session needs a root"), false),
@@ -181,6 +184,7 @@ where
                     primary,
                     root,
                     raster,
+                    patches,
                 }) {
                     Ok(opened) => {
                         *cancellation.lock().unwrap_or_else(PoisonError::into_inner) =
@@ -290,6 +294,7 @@ mod tests {
             primary: "main.tex".into(),
             root: Some("/doc".into()),
             raster: true,
+            patches: true,
         });
         let encoded = rmp_serde::to_vec_named(&open).unwrap();
         assert_eq!(

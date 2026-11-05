@@ -64,6 +64,7 @@ pub fn open(format_name: &str, primary_name: &str, raster: bool) -> Result<Sessi
             root,
             primary: primary_name.to_owned(),
             raster,
+            patches: false,
             limits: ProtocolLimits::default(),
         },
         HostEngineSupport::new(support.clone(), Rc::clone(&messages)),

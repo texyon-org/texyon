@@ -17,23 +17,52 @@ function frame(message) {
   return Buffer.concat([header, body]);
 }
 
-/** Split a byte stream into decoded frames. */
+/** Split a byte stream into decoded frames, copying each byte at most once. */
 class FrameReader {
   constructor(onMessage) {
     this.onMessage = onMessage;
-    this.pending = Buffer.alloc(0);
+    this.chunks = [];
+    this.buffered = 0;
+    this.needed = null;
   }
 
   push(chunk) {
-    this.pending = this.pending.length === 0 ? chunk : Buffer.concat([this.pending, chunk]);
-    while (this.pending.length >= 4) {
-      const length = this.pending.readUInt32LE(0);
-      if (length > MAX_FRAME_BYTES) throw new Error(`preview frame of ${length} bytes is too large`);
-      if (this.pending.length < 4 + length) return;
-      const body = this.pending.subarray(4, 4 + length);
-      this.pending = this.pending.subarray(4 + length);
+    this.chunks.push(chunk);
+    this.buffered += chunk.length;
+    for (;;) {
+      if (this.needed === null) {
+        if (this.buffered < 4) return;
+        this.needed = this.take(4).readUInt32LE(0);
+        if (this.needed > MAX_FRAME_BYTES) throw new Error(`preview frame of ${this.needed} bytes is too large`);
+      }
+      if (this.buffered < this.needed) return;
+      const body = this.take(this.needed);
+      this.needed = null;
       this.onMessage(decode(body));
     }
+  }
+
+  take(length) {
+    if (length === 0) return Buffer.alloc(0);
+    const first = this.chunks[0];
+    if (first.length >= length) {
+      if (first.length === length) this.chunks.shift();
+      else this.chunks[0] = first.subarray(length);
+      this.buffered -= length;
+      return first.subarray(0, length);
+    }
+    const out = Buffer.allocUnsafe(length);
+    let filled = 0;
+    while (filled < length) {
+      const chunk = this.chunks[0];
+      const count = Math.min(chunk.length, length - filled);
+      chunk.copy(out, filled, 0, count);
+      filled += count;
+      if (count === chunk.length) this.chunks.shift();
+      else this.chunks[0] = chunk.subarray(count);
+    }
+    this.buffered -= length;
+    return out;
   }
 }
 

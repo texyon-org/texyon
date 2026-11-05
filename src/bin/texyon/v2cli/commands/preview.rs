@@ -145,6 +145,7 @@ fn open(
             root: root.clone(),
             primary: request.primary,
             raster: request.raster,
+            patches: request.patches,
             limits: ProtocolLimits::default(),
         },
         support,
