@@ -42,23 +42,49 @@
     "commands": [
       {
         "command": "texyon.start",
-        "title": "TeXyoN: Start Live Preview"
+        "title": "Start Live Preview",
+        "category": "TeXyoN",
+        "icon": "$(open-preview)"
       },
       {
         "command": "texyon.stop",
-        "title": "TeXyoN: Stop Live Preview"
+        "title": "Stop Live Preview",
+        "category": "TeXyoN"
       },
       {
         "command": "texyon.cancel",
-        "title": "TeXyoN: Cancel In-Flight Preview"
+        "title": "Cancel In-Flight Preview",
+        "category": "TeXyoN"
       },
       {
         "command": "texyon.forwardSearch",
-        "title": "TeXyoN: Show Cursor in Live Preview"
+        "title": "Show Cursor in Live Preview",
+        "category": "TeXyoN",
+        "icon": "$(go-to-file)"
       },
       {
         "command": "texyon.exportPdf",
-        "title": "TeXyoN: Export PDF"
+        "title": "Export PDF",
+        "category": "TeXyoN",
+        "icon": "$(export)"
+      },
+      {
+        "command": "texyon.zoomIn",
+        "title": "Zoom In",
+        "category": "TeXyoN",
+        "icon": "$(zoom-in)"
+      },
+      {
+        "command": "texyon.zoomOut",
+        "title": "Zoom Out",
+        "category": "TeXyoN",
+        "icon": "$(zoom-out)"
+      },
+      {
+        "command": "texyon.zoomFit",
+        "title": "Fit Width",
+        "category": "TeXyoN",
+        "icon": "$(screen-normal)"
       }
     ],
     "configuration": {
@@ -75,7 +101,81 @@
           "description": "XeTeX format to preview with. It is built on first use."
         }
       }
-    }
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "texyon.start",
+          "when": "resourceExtname == .tex && !texyon.previewOpen",
+          "group": "navigation"
+        },
+        {
+          "command": "texyon.forwardSearch",
+          "when": "resourceExtname == .tex && texyon.previewOpen",
+          "group": "navigation"
+        },
+        {
+          "command": "texyon.zoomOut",
+          "when": "activeWebviewPanelId == 'texyon'",
+          "group": "navigation@1"
+        },
+        {
+          "command": "texyon.zoomFit",
+          "when": "activeWebviewPanelId == 'texyon'",
+          "group": "navigation@2"
+        },
+        {
+          "command": "texyon.zoomIn",
+          "when": "activeWebviewPanelId == 'texyon'",
+          "group": "navigation@3"
+        },
+        {
+          "command": "texyon.exportPdf",
+          "when": "activeWebviewPanelId == 'texyon'",
+          "group": "navigation@4"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "texyon.zoomIn",
+          "when": "activeWebviewPanelId == 'texyon'"
+        },
+        {
+          "command": "texyon.zoomOut",
+          "when": "activeWebviewPanelId == 'texyon'"
+        },
+        {
+          "command": "texyon.zoomFit",
+          "when": "activeWebviewPanelId == 'texyon'"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "texyon.zoomIn",
+        "key": "ctrl+=",
+        "mac": "cmd+=",
+        "when": "activeWebviewPanelId == 'texyon'"
+      },
+      {
+        "command": "texyon.zoomOut",
+        "key": "ctrl+-",
+        "mac": "cmd+-",
+        "when": "activeWebviewPanelId == 'texyon'"
+      },
+      {
+        "command": "texyon.zoomFit",
+        "key": "ctrl+0",
+        "mac": "cmd+0",
+        "when": "activeWebviewPanelId == 'texyon'"
+      },
+      {
+        "command": "texyon.forwardSearch",
+        "key": "ctrl+alt+j",
+        "mac": "cmd+alt+j",
+        "when": "editorTextFocus && texyon.previewOpen"
+      }
+    ]
   },
   "dependencies": {
     "@msgpack/msgpack": "3.1.3"

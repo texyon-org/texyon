@@ -55,14 +55,10 @@ class PreviewPanel {
   <title>TeXyoN Preview</title>
 </head>
 <body>
-  <div id="toolbar" role="toolbar" aria-label="Preview zoom">
-    <button id="zoom-out" title="Zoom out">−</button>
-    <button id="zoom-reset" title="Fit width">Fit</button>
-    <button id="zoom-in" title="Zoom in">+</button>
-    <span id="tail" hidden>Typesetting the rest…</span>
-    <span id="error" hidden></span>
-  </div>
-  <main id="pages"><p id="empty">Waiting for the first compile…</p></main>
+  <div id="progress" role="progressbar" aria-label="Compiling"></div>
+  <div id="banner" role="alert" hidden></div>
+  <main id="pages" tabindex="0" aria-label="Preview pages"><p id="empty">Starting TeXyoN…</p></main>
+  <div id="counter" aria-live="polite"></div>
   <script src="${media("viewer.js")}"></script>
 </body>
 </html>`;
