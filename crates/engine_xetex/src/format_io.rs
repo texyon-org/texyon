@@ -702,12 +702,14 @@ fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort>
     }
     s.items(span(&mut fonts.font_info, 0, fonts.fmem_ptr))?;
 
+    let mut font_ptr = fonts.font_ptr.raw();
     s.size(
-        &mut fonts.font_ptr.raw(),
+        &mut font_ptr,
         FONT_BASE,
         FONT_BASE + MAX_FONT_MAX,
         "must increase font_max",
     )?;
+    fonts.font_ptr = FontId::from_raw(font_ptr);
     if S::LOADING {
         fonts.alloc_font_arrays();
     }
@@ -851,7 +853,7 @@ fn hyphenation_tables<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(
                 StrNumber::from_raw(0),
                 StrNumber::from_raw(st.strings.str_ptr),
             )?;
-            s.int_in(&mut hyph.hyph_list[h].raw(), MIN_HALFWORD, MAX_HALFWORD)?;
+            s.ptr_in(&mut hyph.hyph_list[h], MIN_HALFWORD, MAX_HALFWORD)?;
         }
 
         hyph.hyph_next = (j + 1).max(HYPH_PRIME);
@@ -865,8 +867,8 @@ fn hyphenation_tables<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(
             let h = k as usize;
             if hyph.hyph_word[h] != StrNumber::NONE {
                 s.int(&mut (k + 65_536 * i32::from(hyph.hyph_link[h])))?;
-                s.int(&mut hyph.hyph_word[h].raw())?;
-                s.int(&mut hyph.hyph_list[h].raw())?;
+                s.items(std::slice::from_mut(&mut hyph.hyph_word[h]))?;
+                s.items(std::slice::from_mut(&mut hyph.hyph_list[h]))?;
             }
         }
 
@@ -960,4 +962,71 @@ fn hyphenation_tables<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::consts::FONT_ID_BASE;
+    use crate::hash::HASH_OFFSET;
+    use crate::mem_types::B32x2;
+    use crate::state::Selector;
+
+    #[derive(Default)]
+    struct VecDump(Vec<u8>);
+
+    impl FmtStream for VecDump {
+        const LOADING: bool = false;
+        fn items<T: FmtItem>(&mut self, v: &mut [T]) -> Result<(), Abort> {
+            for &x in v.iter() {
+                x.put(&mut self.0);
+            }
+            Ok(())
+        }
+    }
+
+    struct SliceUndump<'a>(&'a [u8]);
+
+    impl FmtStream for SliceUndump<'_> {
+        const LOADING: bool = true;
+        fn items<T: FmtItem>(&mut self, v: &mut [T]) -> Result<(), Abort> {
+            for x in v.iter_mut() {
+                let (head, rest) = self.0.split_at(T::SIZE);
+                *x = T::get(head);
+                self.0 = rest;
+            }
+            Ok(())
+        }
+    }
+
+    fn font_state() -> EngineState {
+        let mut st = EngineState::default();
+        st.shipout.selector = Selector::NoPrint;
+        st.eqtb.data = crate::mem_types::zeroed_vec(EQTB_SIZE as usize + 1);
+        st.strings.str_start = vec![0; 4];
+        st.eqtb.hash = vec![B32x2 { s0: 0, s1: 0 }; (FONT_ID_BASE + 2 - HASH_OFFSET) as usize];
+        st.fonts.font_max = FontId::from_raw(FONT_BASE + 1);
+        st.fonts.fmem_ptr = 7;
+        st.fonts.font_info = crate::mem_types::zeroed_vec(8);
+        st.fonts.alloc_font_arrays();
+        st
+    }
+
+    #[test]
+    fn font_info_load_restores_font_ptr() {
+        let mut src = font_state();
+        src.fonts.font_ptr = FontId::from_raw(FONT_BASE);
+        src.fonts.font_size[FontId::from_raw(FONT_BASE)] = Scaled::from_raw(12);
+        let mut dump = VecDump::default();
+        font_info(&mut dump, &mut src).expect("dump");
+
+        let mut dst = font_state();
+        dst.fonts.font_ptr = FontId::from_raw(FONT_BASE + 1);
+        font_info(&mut SliceUndump(&dump.0), &mut dst).expect("load");
+        assert_eq!(dst.fonts.font_ptr, FontId::from_raw(FONT_BASE));
+        assert_eq!(
+            dst.fonts.font_size[FontId::from_raw(FONT_BASE)],
+            Scaled::from_raw(12)
+        );
+    }
 }
