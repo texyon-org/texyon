@@ -1,217 +1,209 @@
 "use strict";
 
 const vscode = acquireVsCodeApi();
-const reducer = globalThis.TexyonViewerState;
 const pagesElement = document.getElementById("pages");
 const tailElement = document.getElementById("tail");
 const errorElement = document.getElementById("error");
-const slots = [];
-const prefetch = new Set();
-let state = reducer.initialState();
-let queue = Promise.resolve();
+
+/** Assumed until the first frame says otherwise: US Letter. */
+const DEFAULT_SIZE_BP = [612, 792];
+/** A page drawn this far off the wanted scale is drawn again. */
+const SCALE_TOLERANCE = 0.1;
+
+/** Per page: its slot, size, overlay, the scale it was drawn at, and whether it is stale. */
+const pages = [];
+const requested = new Set();
 let zoom = 1;
-let viewportTimer = null;
-let lastViewport = null;
+let viewTimer = null;
+let lastView = "";
 let highlightTimer = null;
 
 function post(message) {
   vscode.postMessage(message);
 }
 
-function targetWidth() {
+function slotWidth() {
   return Math.max(64, pagesElement.clientWidth - 24) * zoom;
 }
 
-function resizeSlots() {
-  const width = targetWidth();
-  for (let index = 0; index < slots.length; index += 1) {
-    const size = state.pageSizes[index];
-    slots[index].style.width = `${width}px`;
-    if (!slots[index].firstElementChild && size) {
-      slots[index].style.minHeight = `${width * size.height_bp / size.width_bp}px`;
-    }
+function scaleFor(page) {
+  const width = page ? page.size[0] : DEFAULT_SIZE_BP[0];
+  return (slotWidth() * window.devicePixelRatio) / width;
+}
+
+function layout() {
+  const width = slotWidth();
+  for (const page of pages) {
+    page.slot.style.width = `${width}px`;
+    page.slot.style.height = `${(width * page.size[1]) / page.size[0]}px`;
   }
 }
 
-function ensureSlots() {
+function setPages(sizes, overlays) {
   const empty = document.getElementById("empty");
-  if (empty && state.pages.length > 0) empty.remove();
-  while (slots.length < state.pages.length) {
-    const page = document.createElement("section");
-    page.className = "page";
-    page.dataset.pageIndex = String(slots.length);
-    pagesElement.appendChild(page);
-    slots.push(page);
-    observer.observe(page);
+  if (empty && sizes.length > 0) empty.remove();
+  while (pages.length < sizes.length) {
+    const slot = document.createElement("section");
+    slot.className = "page";
+    slot.dataset.pageIndex = String(pages.length);
+    const canvas = document.createElement("canvas");
+    slot.appendChild(canvas);
+    pagesElement.appendChild(slot);
+    pages.push({ slot, canvas, size: DEFAULT_SIZE_BP, overlay: null, scale: 0, stale: true });
   }
-  while (slots.length > state.pages.length) {
-    const page = slots.pop();
-    observer.unobserve(page);
-    prefetch.delete(Number(page.dataset.pageIndex));
-    page.remove();
-  }
-  resizeSlots();
-}
-
-function renderPage(index) {
-  const sanitized = state.pages[index] && state.pages[index].displayedSvg;
-  if (!sanitized) return;
-  // The sanitizer already produced this tree; import a copy so the stored one
-  // stays reusable if the page leaves and re-enters the prefetch band.
-  const node = document.importNode(sanitized, true);
-  slots[index].replaceChildren(node);
-  slots[index].style.minHeight = "";
-}
-
-function trueVisibleRange() {
-  if (slots.length === 0) return null;
-  const root = pagesElement.getBoundingClientRect();
-  let first = Infinity;
-  let last = -1;
-  for (let index = 0; index < slots.length; index += 1) {
-    const rect = slots[index].getBoundingClientRect();
-    if (rect.bottom >= root.top && rect.top <= root.bottom) {
-      first = Math.min(first, index);
-      last = Math.max(last, index);
-    }
-  }
-  return last < 0 ? null : { first, last };
-}
-
-function updateVisibility() {
-  const visible = trueVisibleRange();
-  if (!visible) return;
-  state = reducer.setVisible(state, visible.first, visible.last);
-  clearTimeout(viewportTimer);
-  viewportTimer = setTimeout(() => {
-    const key = `${visible.first}:${visible.last}`;
-    if (key !== lastViewport) {
-      lastViewport = key;
-      post({ type: "viewport", first: visible.first, last: visible.last });
-    }
-  }, 100);
-}
-
-const observer = new IntersectionObserver((entries) => {
-  for (const entry of entries) {
-    const index = Number(entry.target.dataset.pageIndex);
-    if (entry.isIntersecting) prefetch.add(index);
-    else prefetch.delete(index);
-  }
-  const reduced = reducer.setPrefetch(state, [...prefetch].sort((a, b) => a - b));
-  state = reduced.state;
-  for (const index of reduced.installed) renderPage(index);
-  updateVisibility();
-}, { root: pagesElement, rootMargin: "100% 0px 100% 0px" });
-
-function sanitize(svg, prefix) {
-  return reducer.sanitizeSvg(svg, prefix, DOMParser);
-}
-
-async function applyUpdate(event) {
-  const started = performance.now();
-  const previous = state;
-  const reduced = reducer.applyUpdate(state, event, sanitize);
-  state = reduced.state;
-  ensureSlots();
-  for (let index = 0; index < state.pages.length; index += 1) {
-    if (state.pages[index].displayedSvg !== (previous.pages[index] && previous.pages[index].displayedSvg)) {
-      renderPage(index);
-    }
-  }
-  tailElement.hidden = !state.tailPending;
-  errorElement.hidden = true;
-  updateVisibility();
-  // A single rAF callback fires *before* the frame containing our DOM
-  // mutations is painted; the second one runs after that frame presented.
-  await new Promise(requestAnimationFrame);
-  await new Promise(requestAnimationFrame);
-  post({
-    type: "painted",
-    frame_id: reduced.acknowledgement,
-    paint_ms: Math.max(0, performance.now() - started)
+  while (pages.length > sizes.length) pages.pop().slot.remove();
+  pages.forEach((page, index) => {
+    page.size = sizes[index];
+    page.overlay = overlays[index] || null;
   });
+  layout();
 }
 
-function showForwardSearch(result) {
+/** Show pixels laid out as width and height in little-endian `u32`, then RGBA rows. */
+function draw(index, pixels, scale) {
+  const page = pages[index];
+  if (!page) return;
+  const header = new DataView(pixels.buffer, pixels.byteOffset, 8);
+  const width = header.getUint32(0, true);
+  const height = header.getUint32(4, true);
+  const rgba = new Uint8ClampedArray(pixels.buffer, pixels.byteOffset + 8, width * height * 4);
+  page.canvas.width = width;
+  page.canvas.height = height;
+  page.canvas.getContext("2d").putImageData(new ImageData(rgba, width, height), 0, 0);
+  page.scale = scale;
+  page.stale = false;
+}
+
+function visibleRange() {
+  const root = pagesElement.getBoundingClientRect();
+  let first = -1;
+  let last = -1;
+  pages.forEach((page, index) => {
+    const rect = page.slot.getBoundingClientRect();
+    if (rect.bottom >= root.top && rect.top <= root.bottom) {
+      if (first < 0) first = index;
+      last = index;
+    }
+  });
+  return first < 0 ? [0, 0] : [first, last];
+}
+
+/** Report the viewport, and ask for the pages near it that are stale or blurry. */
+function viewChanged() {
+  clearTimeout(viewTimer);
+  viewTimer = setTimeout(() => {
+    const [first, last] = visibleRange();
+    const scale = scaleFor(pages[first]);
+    const key = `${first}:${last}:${scale.toFixed(3)}`;
+    if (key !== lastView) {
+      lastView = key;
+      post({ type: "view", viewport: [first, last], scale });
+    }
+    const wanted = [];
+    for (let index = Math.max(0, first - 1); index <= Math.min(pages.length - 1, last + 1); index += 1) {
+      const page = pages[index];
+      const blurry = Math.abs(page.scale - scale) > SCALE_TOLERANCE * scale;
+      if ((page.stale || blurry) && !requested.has(index)) wanted.push(index);
+    }
+    if (wanted.length > 0) {
+      wanted.forEach((index) => requested.add(index));
+      post({ type: "raster", pages: wanted, scale });
+    }
+  }, 60);
+}
+
+function compiled(report, scale) {
+  if (!report.published) return;
+  setPages(report.pageSizes, report.pageOverlays);
+  for (const index of report.changed) if (pages[index]) pages[index].stale = true;
+  for (const raster of report.rasters) draw(raster.index, raster.data, scale);
+  tailElement.hidden = !report.tailPending;
+  errorElement.hidden = true;
+  viewChanged();
+}
+
+function showForwardSearch(rect) {
   document.querySelectorAll(".sync-highlight").forEach((node) => node.remove());
   clearTimeout(highlightTimer);
-  if (!result || !Number.isSafeInteger(result.page_index) || result.page_index < 0 ||
-      result.page_index >= slots.length) return;
-  const values = [result.h_bp, result.v_bp, result.width_bp, result.height_bp, result.depth_bp];
-  if (!values.every(Number.isFinite)) return;
-  const index = result.page_index;
-  if (!state.pages[index].displayedSvg && state.pages[index].pendingSvg) {
-    const indices = [...new Set([...state.prefetch, index])].sort((a, b) => a - b);
-    const reduced = reducer.setPrefetch(state, indices);
-    state = reduced.state;
-    for (const installed of reduced.installed) renderPage(installed);
-  }
-  const size = state.pageSizes[index];
-  if (!size) return;
+  const page = rect && pages[rect.pageIndex];
+  if (!page) return;
+  const [width, height] = page.size;
   const marker = document.createElement("div");
   marker.className = "sync-highlight";
-  marker.style.left = `${100 * result.h_bp / size.width_bp}%`;
-  marker.style.top = `${100 * (result.v_bp - result.height_bp) / size.height_bp}%`;
-  marker.style.width = `${100 * Math.max(0, result.width_bp) / size.width_bp}%`;
-  marker.style.height = `${100 * Math.max(0, result.height_bp + result.depth_bp) / size.height_bp}%`;
-  slots[index].appendChild(marker);
-  slots[index].scrollIntoView({ behavior: "smooth", block: "center" });
+  marker.style.left = `${(100 * rect.hBp) / width}%`;
+  marker.style.top = `${(100 * (rect.vBp - rect.heightBp)) / height}%`;
+  marker.style.width = `${(100 * Math.max(0, rect.widthBp)) / width}%`;
+  marker.style.height = `${(100 * Math.max(0, rect.heightBp + rect.depthBp)) / height}%`;
+  page.slot.appendChild(marker);
+  page.slot.scrollIntoView({ behavior: "smooth", block: "center" });
   highlightTimer = setTimeout(() => marker.remove(), 1400);
+}
+
+function scrollToDestination(name) {
+  for (const page of pages) {
+    const found = page.overlay && page.overlay.destinations.find((destination) => destination.name === name);
+    if (!found) continue;
+    const top = (found.yBp / page.size[1]) * page.slot.clientHeight;
+    pagesElement.scrollTo({ top: page.slot.offsetTop + top - 24, behavior: "smooth" });
+    return;
+  }
 }
 
 window.addEventListener("message", (message) => {
   const payload = message.data;
-  if (payload && payload.type === "update") {
-    queue = queue.then(() => applyUpdate(payload.event)).catch((error) => {
-      errorElement.textContent = `Rejected preview frame: ${error.message}`;
-      errorElement.hidden = false;
-      post({ type: "viewer_error", message: error.message });
-    });
-  } else if (payload && payload.type === "session_error") {
+  if (!payload) return;
+  if (payload.type === "compiled") {
+    compiled(payload.report, payload.scale);
+  } else if (payload.type === "rastered") {
+    for (const raster of payload.pages) {
+      requested.delete(raster.index);
+      draw(raster.index, raster.data, payload.scale);
+    }
+  } else if (payload.type === "raster_failed") {
+    payload.pages.forEach((index) => requested.delete(index));
+  } else if (payload.type === "error") {
     errorElement.textContent = payload.message;
     errorElement.hidden = false;
-  } else if (payload && payload.type === "forward_search") {
-    showForwardSearch(payload.result);
+  } else if (payload.type === "located") {
+    showForwardSearch(payload.rect);
   }
 });
 
 pagesElement.addEventListener("click", (event) => {
-  if (!event.ctrlKey && !event.metaKey) return;
-  const page = event.target.closest && event.target.closest(".page");
-  if (!page) return;
-  const pageIndex = Number(page.dataset.pageIndex);
-  const size = state.pageSizes[pageIndex];
-  const bounds = page.getBoundingClientRect();
-  if (!size || bounds.width <= 0 || bounds.height <= 0) return;
-  event.preventDefault();
-  post({
-    type: "backward_search",
-    page_index: pageIndex,
-    h_bp: Math.max(0, (event.clientX - bounds.left) * size.width_bp / bounds.width),
-    v_bp: Math.max(0, (event.clientY - bounds.top) * size.height_bp / bounds.height)
-  });
+  const slot = event.target.closest && event.target.closest(".page");
+  if (!slot) return;
+  const index = Number(slot.dataset.pageIndex);
+  const page = pages[index];
+  const bounds = slot.getBoundingClientRect();
+  if (!page || bounds.width <= 0) return;
+  const x = ((event.clientX - bounds.left) * page.size[0]) / bounds.width;
+  const y = ((event.clientY - bounds.top) * page.size[1]) / bounds.height;
+  if (event.ctrlKey || event.metaKey) {
+    event.preventDefault();
+    post({ type: "backward_search", pageIndex: index, hBp: x, vBp: y });
+    return;
+  }
+  const link = page.overlay && page.overlay.links.find((candidate) =>
+    x >= candidate.left && x <= candidate.right && y >= candidate.top && y <= candidate.bottom);
+  if (!link) return;
+  if (link.destination) scrollToDestination(link.destination);
+  else if (link.uri) post({ type: "open_uri", uri: link.uri });
 });
 
-document.getElementById("zoom-in").addEventListener("click", () => {
-  zoom = Math.min(4, zoom * 1.2);
-  resizeSlots();
-  updateVisibility();
-});
-document.getElementById("zoom-out").addEventListener("click", () => {
-  zoom = Math.max(0.25, zoom / 1.2);
-  resizeSlots();
-  updateVisibility();
-});
-document.getElementById("zoom-reset").addEventListener("click", () => {
-  zoom = 1;
-  resizeSlots();
-  updateVisibility();
-});
+function setZoom(next) {
+  zoom = next;
+  layout();
+  viewChanged();
+}
+
+document.getElementById("zoom-in").addEventListener("click", () => setZoom(Math.min(4, zoom * 1.2)));
+document.getElementById("zoom-out").addEventListener("click", () => setZoom(Math.max(0.25, zoom / 1.2)));
+document.getElementById("zoom-reset").addEventListener("click", () => setZoom(1));
 new ResizeObserver(() => {
-  resizeSlots();
-  updateVisibility();
+  layout();
+  viewChanged();
 }).observe(pagesElement);
-pagesElement.addEventListener("scroll", updateVisibility, { passive: true });
+pagesElement.addEventListener("scroll", viewChanged, { passive: true });
 
 post({ type: "ready" });
+viewChanged();

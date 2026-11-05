@@ -5,47 +5,13 @@
 //! at [`WRAP_WIDTH`] without a marker and help prose contains parentheses too,
 //! so neither can be handled perfectly. See [`parse`].
 
-use std::fmt;
-
 /// Column at which the engine wraps transcript lines (`max_print_line`).
 pub const WRAP_WIDTH: usize = 79;
 
 /// Lines searched below an error for its `l.<n>` marker.
 const ERROR_LINE_LOOKAHEAD: usize = 20;
 
-/// How much a diagnostic matters.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub enum Severity {
-    /// TeX could not do what was asked and recovered as best it could.
-    Error,
-    /// Something is suspect but the output exists.
-    Warning,
-    /// Chatter worth surfacing only on request.
-    Info,
-}
-
-impl fmt::Display for Severity {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Error => "error",
-            Self::Warning => "warning",
-            Self::Info => "info",
-        })
-    }
-}
-
-/// One thing the engine said about one place in the source.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Diagnostic {
-    /// How much it matters.
-    pub severity: Severity,
-    /// The file it belongs to as the transcript named it, if any was open.
-    pub path: Option<String>,
-    /// One-based source line, when the engine named one.
-    pub line: Option<usize>,
-    /// What it said, with the transcript's wrapping undone.
-    pub message: String,
-}
+pub use texyon_preview_protocol::session::{Diagnostic, Severity};
 
 /// Recover the diagnostics from a TeX transcript.
 ///

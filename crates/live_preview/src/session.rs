@@ -24,6 +24,7 @@ use texyon_errors::{
 };
 use texyon_io_base::MemoryIo;
 use texyon_preview_protocol::{
+    session::{Outcome, SourceEdit},
     OperationMetrics, ProtocolLimits, RequestSeq, SourceFile, SourceLocation,
 };
 use texyon_preview_render::{Backend, Destination, Link, PageVisual, ResourceProvider};
@@ -64,19 +65,11 @@ pub trait SessionHost {
     fn take_messages(&mut self) -> Vec<String> {
         Vec::new()
     }
-}
 
-/// One splice into a file's text, in the host's UTF-16 code units.
-#[derive(Clone, Debug)]
-pub struct SourceEdit {
-    /// The revision the offsets are into.
-    pub base: u64,
-    /// Start of the replaced range.
-    pub from: usize,
-    /// End of the replaced range, exclusive.
-    pub to: usize,
-    /// The replacement text.
-    pub insert: String,
+    /// Support files the host has handed in, and their total bytes.
+    fn support_stats(&self) -> (usize, usize) {
+        (0, 0)
+    }
 }
 
 /// How a session is set up.
@@ -148,8 +141,8 @@ pub struct CompileOutput {
     pub page_count: usize,
     /// The TeX transcript.
     pub log: Vec<u8>,
-    /// `spotless`, `warnings` or `errors`.
-    pub outcome: &'static str,
+    /// How TeX graded the run.
+    pub outcome: Outcome,
     /// Why the run was abandoned, keeping the last frame.
     pub aborted: Option<String>,
     /// Whether pages past the viewport are left to typeset.
@@ -249,13 +242,16 @@ impl<P: ResourceProvider + 'static, B: Backend + 'static, H: SessionHost> Previe
 
     /// Typeset the project at its current state.
     ///
-    /// `files` is the complete set of paths with their host revisions, and
-    /// must include the primary. `viewport` bounds the foreground work,
-    /// leaving the rest for [`continue_tail`](Self::continue_tail).
+    /// `files` is the complete set of paths the host holds with their
+    /// revisions, and must include the primary. `texts` and `edits` carry new
+    /// revisions, and any other revision the session lacks is read through
+    /// the host. `viewport` bounds the foreground work, leaving the rest for
+    /// [`continue_tail`](Self::continue_tail).
     pub fn compile(
         &mut self,
         files: BTreeMap<String, u64>,
         edits: BTreeMap<String, SourceEdit>,
+        texts: BTreeMap<String, String>,
         viewport: Option<(usize, usize)>,
         scale: Option<f32>,
     ) -> Result<CompileOutput> {
@@ -266,7 +262,7 @@ impl<P: ResourceProvider + 'static, B: Backend + 'static, H: SessionHost> Previe
             );
         }
 
-        let assembled = self.assemble(&files, edits)?;
+        let assembled = self.assemble(&files, edits, texts)?;
         let snapshot = self.apply(assembled)?;
         self.revisions = files;
 
@@ -434,6 +430,7 @@ impl<P: ResourceProvider + 'static, B: Backend + 'static, H: SessionHost> Previe
         &mut self,
         files: &BTreeMap<String, u64>,
         mut edits: BTreeMap<String, SourceEdit>,
+        mut texts: BTreeMap<String, String>,
     ) -> Result<BTreeMap<String, Staged>> {
         let mut assembled = BTreeMap::new();
         for (path, revision) in files {
@@ -449,6 +446,8 @@ impl<P: ResourceProvider + 'static, B: Backend + 'static, H: SessionHost> Previe
                     .ok_or_else(|| anyhow!("revision held for {path} but no text staged"))?
             } else if let Some(spliced) = spliced {
                 spliced
+            } else if let Some(text) = texts.remove(path) {
+                Staged::new(text)
             } else {
                 let bytes = self
                     .host
@@ -524,9 +523,9 @@ impl<P: ResourceProvider + 'static, B: Backend + 'static, H: SessionHost> Previe
         );
 
         let (outcome, aborted) = match run {
-            WorkerRun::Complete(Some(published)) => (outcome_name(published.tex_outcome), None),
-            WorkerRun::Complete(None) | WorkerRun::Cancelled => ("warnings", None),
-            WorkerRun::Aborted(error) => ("warnings", Some(error.to_string())),
+            WorkerRun::Complete(Some(published)) => (outcome(published.tex_outcome), None),
+            WorkerRun::Complete(None) | WorkerRun::Cancelled => (Outcome::Warnings, None),
+            WorkerRun::Aborted(error) => (Outcome::Warnings, Some(error.to_string())),
             // A fatal error poisons the session, so the host must start a new one.
             WorkerRun::Fatal(error) => bail!("the preview session failed: {error}"),
         };
@@ -657,12 +656,11 @@ fn byte_offset(text: &str, units: usize) -> Option<usize> {
     (counted == units).then_some(text.len())
 }
 
-/// The host API's name for an engine outcome.
-fn outcome_name(outcome: TexOutcome) -> &'static str {
+fn outcome(outcome: TexOutcome) -> Outcome {
     match outcome {
-        TexOutcome::Spotless => "spotless",
-        TexOutcome::Warnings => "warnings",
-        TexOutcome::Errors => "errors",
+        TexOutcome::Spotless => Outcome::Spotless,
+        TexOutcome::Warnings => Outcome::Warnings,
+        TexOutcome::Errors => Outcome::Errors,
     }
 }
 
