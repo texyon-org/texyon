@@ -8,7 +8,7 @@
 use crate::bridge::{
     input_open, input_read, output_close, output_flush, output_open, output_write, FileFormat,
 };
-use crate::cmd::UNDEFINED_CS;
+use crate::cmd::Cmd;
 use crate::consts::{
     ACTIVE_BASE, EMPTY_STRING, EQTB_SIZE, FONT_BASE, FROZEN_CONTROL_SEQUENCE, HASH_BASE,
     HISTORY_FATAL_ERROR, INT_BASE, INVALID_HANDLE, MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP,
@@ -408,7 +408,7 @@ fn header<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
         eqtb.hash = crate::mem_types::zeroed_vec((1 + eqtb.hash_top - HASH_OFFSET) as usize);
 
         eqtb.data = crate::mem_types::zeroed_vec(eqtb.eqtb_top as usize + 1);
-        eqtb.set_eq(UNDEFINED_CONTROL_SEQUENCE, UNDEFINED_CS, TEX_NULL, 0);
+        eqtb.set_eq(UNDEFINED_CONTROL_SEQUENCE, Cmd::UndefinedCs, TEX_NULL, 0);
         let undefined_entry = eqtb.word(UNDEFINED_CONTROL_SEQUENCE);
         eqtb.data[(EQTB_SIZE + 1) as usize..].fill(undefined_entry);
 
@@ -614,6 +614,12 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
         })?;
     }
     s.items(span(&mut eqtb.data, EQTB_SIZE + 1, eqtb.hash_high))?;
+    if S::LOADING {
+        let mut entries = (ACTIVE_BASE..INT_BASE).chain(EQTB_SIZE + 1..=EQTB_SIZE + eqtb.hash_high);
+        if entries.any(|k| Cmd::from_raw(i32::from(eqtb.word(k).b16().s1)).is_none()) {
+            return Err(bad_fmt());
+        }
+    }
 
     s.int_in(&mut st.input.par_loc, HASH_BASE, eqtb.hash_top)?;
     if S::LOADING {

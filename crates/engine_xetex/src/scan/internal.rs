@@ -1,11 +1,6 @@
 //! Internal quantities: `scan_something_internal` and the font queries behind it.
 
-use crate::cmd::{
-    ASSIGN_DIMEN, ASSIGN_FONT_DIMEN, ASSIGN_FONT_INT, ASSIGN_GLUE, ASSIGN_INT, ASSIGN_MU_GLUE,
-    ASSIGN_TOKS, CHAR_GIVEN, DEF_CODE, DEF_FAMILY, DEF_FONT, IGNORE_SPACES, LAST_ITEM, MATH_GIVEN,
-    REGISTER, SET_AUX, SET_BOX_DIMEN, SET_FONT, SET_PAGE_DIMEN, SET_PAGE_INT, SET_PREV_GRAF,
-    SET_SHAPE, TOKS_REGISTER, XETEX_DEF_CODE, XETEX_MATH_GIVEN,
-};
+use crate::cmd::Cmd;
 use crate::codes::{BoxDimenCode, FiOrElseCode, IfCode, LastItemCode, PageIntCode, ValueLevel};
 use crate::consts::{
     ACTIVE_MATH_CHAR, CHAR_CLASS_LIMIT, COUNT_BASE, DEL_CODE_BASE, END_M_CODE, LEFT_SIDE,
@@ -103,7 +98,7 @@ fn font_query_error(
     msg: &str,
     fallback: i32,
 ) -> Result<(), Abort> {
-    crate::errors::not_font_error_common(st, LAST_ITEM, m.raw(), f, msg)?;
+    crate::errors::not_font_error_common(st, Cmd::LastItem, m.raw(), f, msg)?;
     st.scanner.cur_val = fallback;
     Ok(())
 }
@@ -188,7 +183,7 @@ fn fetch_token_list(st: &mut EngineState, m: i32, level: ValueLevel) -> Result<(
     if level != ValueLevel::Tok {
         missing_number_error(st)?;
         set_cur_val(st, 0, ValueLevel::Dimen);
-    } else if st.scanner.cur_cmd < ASSIGN_TOKS {
+    } else if st.scanner.cur_cmd < Cmd::AssignToks {
         if m == 0 {
             scan_register_num(st)?;
             let n = st.scanner.cur_val;
@@ -203,7 +198,7 @@ fn fetch_token_list(st: &mut EngineState, m: i32, level: ValueLevel) -> Result<(
             st.scanner.cur_val = NodePtr::<SaNode>::at(m).sa_ptr(&st.mem).0;
         }
         st.scanner.cur_val_level = ValueLevel::Tok;
-    } else if st.scanner.cur_cmd == ASSIGN_TOKS {
+    } else if st.scanner.cur_cmd == Cmd::AssignToks {
         if st.scanner.cur_chr == TokPar::XetexInterCharToks.loc() {
             scan_char_class_not_ignored(st)?;
             st.scanner.cur_ptr.0 = st.scanner.cur_val;
@@ -684,19 +679,19 @@ pub(super) fn scan_something_internal(
     loop {
         let m = st.scanner.cur_chr;
         match st.scanner.cur_cmd {
-            DEF_CODE => fetch_def_code(st, m)?,
-            XETEX_DEF_CODE => fetch_xetex_def_code(st, m)?,
-            TOKS_REGISTER | ASSIGN_TOKS | DEF_FAMILY | SET_FONT | DEF_FONT => {
+            Cmd::DefCode => fetch_def_code(st, m)?,
+            Cmd::XetexDefCode => fetch_xetex_def_code(st, m)?,
+            Cmd::ToksRegister | Cmd::AssignToks | Cmd::DefFamily | Cmd::SetFont | Cmd::DefFont => {
                 fetch_token_list(st, m, level)?
             }
-            ASSIGN_INT => set_cur_val(st, st.eqtb.int_at(m), ValueLevel::Int),
-            ASSIGN_DIMEN => set_cur_val(st, st.eqtb.int_at(m), ValueLevel::Dimen),
-            ASSIGN_GLUE => set_cur_val(st, st.eqtb.equiv(m), ValueLevel::Glue),
-            ASSIGN_MU_GLUE => set_cur_val(st, st.eqtb.equiv(m), ValueLevel::Mu),
-            SET_AUX => {
+            Cmd::AssignInt => set_cur_val(st, st.eqtb.int_at(m), ValueLevel::Int),
+            Cmd::AssignDimen => set_cur_val(st, st.eqtb.int_at(m), ValueLevel::Dimen),
+            Cmd::AssignGlue => set_cur_val(st, st.eqtb.equiv(m), ValueLevel::Glue),
+            Cmd::AssignMuGlue => set_cur_val(st, st.eqtb.equiv(m), ValueLevel::Mu),
+            Cmd::SetAux => {
                 if i32::from(st.input.cur_list.mode.abs()) != m {
                     error_here_with_diagnostic(st, "Improper ");
-                    print_cmd_chr(st, SET_AUX, m);
+                    print_cmd_chr(st, Cmd::SetAux, m);
                     capture_to_diagnostic(st, None);
                     st.errors.help(&[
                         r"You can refer to \spacefactor only in horizontal mode;",
@@ -720,7 +715,7 @@ pub(super) fn scan_something_internal(
                     set_cur_val(st, st.input.cur_list.space_factor(), ValueLevel::Int);
                 }
             }
-            SET_PREV_GRAF => {
+            Cmd::SetPrevGraf => {
                 if st.input.cur_list.mode == 0 {
                     set_cur_val(st, 0, ValueLevel::Int);
                 } else {
@@ -733,7 +728,7 @@ pub(super) fn scan_something_internal(
                     set_cur_val(st, st.input.nest[p].prev_graf, ValueLevel::Int);
                 }
             }
-            SET_PAGE_INT => {
+            Cmd::SetPageInt => {
                 let v = match PageIntCode::from_raw(m) {
                     Some(PageIntCode::DeadCycles) => st.shipout.dead_cycles,
                     Some(PageIntCode::InteractionMode) => st.errors.interaction as i32,
@@ -741,7 +736,7 @@ pub(super) fn scan_something_internal(
                 };
                 set_cur_val(st, v, ValueLevel::Int);
             }
-            SET_PAGE_DIMEN => {
+            Cmd::SetPageDimen => {
                 let v = if st.shipout.page_contents == crate::state::PageContents::Empty
                     && !st.shipout.output_active
                 {
@@ -755,7 +750,7 @@ pub(super) fn scan_something_internal(
                 };
                 set_cur_val(st, v.0, ValueLevel::Dimen);
             }
-            SET_SHAPE => {
+            Cmd::SetShape => {
                 if m > PAR_SHAPE_LOC {
                     scan_int(st)?;
                     st.scanner.cur_val = match st.eqtb.penalties(m) {
@@ -770,7 +765,7 @@ pub(super) fn scan_something_internal(
                 }
                 st.scanner.cur_val_level = ValueLevel::Int;
             }
-            SET_BOX_DIMEN => {
+            Cmd::SetBoxDimen => {
                 scan_register_num(st)?;
                 let v = match fetch_box(st, st.scanner.cur_val) {
                     None => Scaled::ZERO,
@@ -780,8 +775,10 @@ pub(super) fn scan_something_internal(
                 };
                 set_cur_val(st, v.0, ValueLevel::Dimen);
             }
-            CHAR_GIVEN | MATH_GIVEN | XETEX_MATH_GIVEN => set_cur_val(st, m, ValueLevel::Int),
-            ASSIGN_FONT_DIMEN => {
+            Cmd::CharGiven | Cmd::MathGiven | Cmd::XetexMathGiven => {
+                set_cur_val(st, m, ValueLevel::Int)
+            }
+            Cmd::AssignFontDimen => {
                 find_font_dimen(st, false)?;
                 st.fonts.set_font_info_sc(st.fonts.fmem_ptr, Scaled::ZERO);
                 set_cur_val(
@@ -790,7 +787,7 @@ pub(super) fn scan_something_internal(
                     ValueLevel::Dimen,
                 );
             }
-            ASSIGN_FONT_INT => {
+            Cmd::AssignFontInt => {
                 let f = scan_font_ident(st)?;
                 match m {
                     0 => set_cur_val(st, st.fonts.hyphen_char[f], ValueLevel::Int),
@@ -814,8 +811,8 @@ pub(super) fn scan_something_internal(
                     }
                 }
             }
-            REGISTER => fetch_register(st, m)?,
-            LAST_ITEM => {
+            Cmd::Register => fetch_register(st, m)?,
+            Cmd::LastItem => {
                 let code = LastItemCode::from_raw(m).ok_or(Abort::Confusion("last_item"))?;
                 if code < LastItemCode::InputLineNo {
                     fetch_last_node_item(st, code);
@@ -862,7 +859,7 @@ pub(super) fn scan_something_internal(
                     return Ok(());
                 }
             }
-            IGNORE_SPACES => {
+            Cmd::IgnoreSpaces => {
                 if m == 1 {
                     get_primitive_token(st)?;
                     continue;
@@ -919,9 +916,9 @@ pub(super) fn scan_something_internal(
 pub(crate) fn scan_font_ident(st: &mut EngineState) -> Result<FontId, Abort> {
     get_x_non_blank(st)?;
     let f = match st.scanner.cur_cmd {
-        DEF_FONT => st.eqtb.cur_font(),
-        SET_FONT => FontId(st.scanner.cur_chr),
-        DEF_FAMILY => {
+        Cmd::DefFont => st.eqtb.cur_font(),
+        Cmd::SetFont => FontId(st.scanner.cur_chr),
+        Cmd::DefFamily => {
             let m = st.scanner.cur_chr;
             scan_math_fam_int(st)?;
             FontId(st.eqtb.equiv(m + st.scanner.cur_val))

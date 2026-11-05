@@ -1,6 +1,6 @@
 //! Scanning numbers, dimensions and glue, and e-TeX expressions.
 
-use crate::cmd::{MAX_INTERNAL, MIN_INTERNAL, RELAX, RIGHT_BRACE, SPACER};
+use crate::cmd::Cmd;
 use crate::codes::ValueLevel;
 use crate::consts::{
     ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, FIL, FILLL,
@@ -235,7 +235,7 @@ fn scan_signs(st: &mut EngineState) -> Result<bool, Abort> {
 /// Consumes one optional space after a constant.
 fn scan_optional_space(st: &mut EngineState) -> Result<(), Abort> {
     get_x_token(st)?;
-    if st.scanner.cur_cmd != SPACER {
+    if st.scanner.cur_cmd != Cmd::Spacer {
         back_input(st)?;
     }
     Ok(())
@@ -251,7 +251,7 @@ pub(super) fn get_primitive_token(st: &mut EngineState) -> Result<(), Abort> {
         st.scanner.cur_cs = PRIM_EQTB_BASE + p;
         st.scanner.cur_tok = Token::from_cs(st.scanner.cur_cs);
     } else {
-        st.scanner.cur_cmd = RELAX;
+        st.scanner.cur_cmd = Cmd::Relax;
         st.scanner.cur_chr = 0;
         st.scanner.cur_tok = Token::from_cs(FROZEN_RELAX);
         st.scanner.cur_cs = FROZEN_RELAX;
@@ -269,9 +269,9 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<(), Abort> {
             get_token(st)?;
             if !st.scanner.cur_tok.is_cs() {
                 st.scanner.cur_val = st.scanner.cur_chr;
-                if st.scanner.cur_cmd == RIGHT_BRACE {
+                if st.scanner.cur_cmd == Cmd::RightBrace {
                     st.scanner.align_state += 1;
-                } else if st.scanner.cur_cmd < RIGHT_BRACE {
+                } else if st.scanner.cur_cmd < Cmd::RightBrace {
                     st.scanner.align_state -= 1;
                 }
             } else if st.scanner.cur_tok < Token::from_cs(SINGLE_BASE) {
@@ -293,7 +293,8 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<(), Abort> {
         } else if st.scanner.cur_tok == FROZEN_PRIM_TOKEN {
             get_primitive_token(st)?;
             continue;
-        } else if st.scanner.cur_cmd >= MIN_INTERNAL && st.scanner.cur_cmd <= MAX_INTERNAL {
+        } else if st.scanner.cur_cmd >= Cmd::MIN_INTERNAL && st.scanner.cur_cmd <= Cmd::MAX_INTERNAL
+        {
             scan_something_internal(st, ValueLevel::Int, false)?;
         } else {
             let (radix, m) = if st.scanner.cur_tok == OCTAL_TOKEN {
@@ -344,7 +345,7 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<(), Abort> {
                     "look up `weird error' in the index to The TeXbook.)",
                 ]);
                 back_error(st)?;
-            } else if st.scanner.cur_cmd != SPACER {
+            } else if st.scanner.cur_cmd != Cmd::Spacer {
                 back_input(st)?;
             }
         }
@@ -408,7 +409,7 @@ pub(crate) fn xetex_scan_dimen(
         if !shortcut {
             negative = scan_signs(st)?;
 
-            if st.scanner.cur_cmd >= MIN_INTERNAL && st.scanner.cur_cmd <= MAX_INTERNAL {
+            if st.scanner.cur_cmd >= Cmd::MIN_INTERNAL && st.scanner.cur_cmd <= Cmd::MAX_INTERNAL {
                 if mu {
                     scan_something_internal(st, ValueLevel::Mu, false)?;
                     if st.scanner.cur_val_level >= ValueLevel::Glue {
@@ -466,7 +467,7 @@ pub(crate) fn xetex_scan_dimen(
                         digits = next;
                     }
                     f = st.errors.round_decimals(k);
-                    if st.scanner.cur_cmd != SPACER {
+                    if st.scanner.cur_cmd != Cmd::Spacer {
                         back_input(st)?;
                     }
                 }
@@ -497,7 +498,9 @@ pub(crate) fn xetex_scan_dimen(
                 let save_cur_val = st.scanner.cur_val;
                 get_x_non_blank(st)?;
 
-                if st.scanner.cur_cmd >= MIN_INTERNAL && st.scanner.cur_cmd <= MAX_INTERNAL {
+                if st.scanner.cur_cmd >= Cmd::MIN_INTERNAL
+                    && st.scanner.cur_cmd <= Cmd::MAX_INTERNAL
+                {
                     if mu {
                         scan_something_internal(st, ValueLevel::Mu, false)?;
                         if st.scanner.cur_val_level >= ValueLevel::Glue {
@@ -629,7 +632,7 @@ pub(crate) fn scan_glue(st: &mut EngineState, level: ValueLevel) -> Result<(), A
     let mu = level == ValueLevel::Mu;
     let negative = scan_signs(st)?;
 
-    if st.scanner.cur_cmd >= MIN_INTERNAL && st.scanner.cur_cmd <= MAX_INTERNAL {
+    if st.scanner.cur_cmd >= Cmd::MIN_INTERNAL && st.scanner.cur_cmd <= Cmd::MAX_INTERNAL {
         scan_something_internal(st, level, negative)?;
         if st.scanner.cur_val_level >= ValueLevel::Glue {
             if st.scanner.cur_val_level != level {
@@ -796,7 +799,7 @@ pub(super) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
             };
             if o == EXPR_NONE {
                 if p.is_null() {
-                    if st.scanner.cur_cmd != RELAX {
+                    if st.scanner.cur_cmd != Cmd::Relax {
                         back_input(st)?;
                     }
                 } else if st.scanner.cur_tok != Token::other(b')') {

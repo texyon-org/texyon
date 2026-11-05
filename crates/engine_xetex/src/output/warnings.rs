@@ -1,7 +1,7 @@
 //! Diagnostic warnings: e-TeX group/if/file nesting, fonts, UTF-8 and missing characters.
 
 use crate::bridge::issue_warning;
-use crate::cmd::IF_TEST;
+use crate::cmd::Cmd;
 use crate::codes::FiOrElseCode;
 use crate::errors::{error, Abort};
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
@@ -72,7 +72,7 @@ pub(crate) fn if_warning(st: &mut EngineState) {
         print_nl(st, "Warning: ");
         diagnostic_begin_capture_warning_here(st);
         print(st, "end of ");
-        print_cmd_chr(st, IF_TEST, i32::from(st.scanner.cur_if));
+        print_cmd_chr(st, Cmd::IfTest, i32::from(st.scanner.cur_if));
         print_if_line(st, st.scanner.if_line);
         print(st, " of a different file");
         print_ln(st);
@@ -124,7 +124,7 @@ pub(crate) fn file_warning(st: &mut EngineState) {
         print_nl(st, "Warning: ");
         diagnostic_begin_capture_warning_here(st);
         print(st, "end of file when ");
-        print_cmd_chr(st, IF_TEST, i32::from(st.scanner.cur_if));
+        print_cmd_chr(st, Cmd::IfTest, i32::from(st.scanner.cur_if));
         if st.scanner.if_limit == FiOrElseCode::Fi {
             print_esc(st, "else");
         }

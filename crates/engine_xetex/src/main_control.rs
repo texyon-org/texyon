@@ -1,16 +1,6 @@
 //! The main control loop and its command dispatch.
 
-use crate::cmd::{
-    ABOVE, ACCENT, AFTER_ASSIGNMENT, AFTER_GROUP, BEGIN_GROUP, BREAK_PENALTY, CAR_RET, CASE_SHIFT,
-    CHAR_GIVEN, CHAR_NUM, DELIM_NUM, DISCRETIONARY, ENDV, END_CS_NAME, END_GROUP, EQ_NO, EXTENSION,
-    EX_SPACE, HALIGN, HMOVE, HRULE, HSKIP, IGNORE_SPACES, INSERT, IN_STREAM, ITAL_CORR, KERN,
-    LAST_ITEM, LEADER_SHIP, LEFT_BRACE, LEFT_RIGHT, LETTER, LIMIT_SWITCH, MAC_PARAM, MAKE_BOX,
-    MARK, MATH_ACCENT, MATH_CHAR_NUM, MATH_CHOICE, MATH_COMP, MATH_GIVEN, MATH_SHIFT, MATH_STYLE,
-    MESSAGE, MKERN, MSKIP, NON_SCRIPT, NO_ALIGN, NO_BOUNDARY, OMIT, OTHER_CHAR, PAR_END, RADICAL,
-    RELAX, REMOVE_ITEM, RIGHT_BRACE, SET_INTERACTION, SPACER, START_PAR, STOP, SUB_MARK, SUP_MARK,
-    TAB_MARK, TOKS_REGISTER, UN_HBOX, UN_VBOX, VADJUST, VALIGN, VCENTER, VMOVE, VRULE, VSKIP,
-    XETEX_MATH_GIVEN, XRAY,
-};
+use crate::cmd::Cmd;
 use crate::codes::ScannerStatus;
 use crate::consts::{
     A_LEADERS, COND_MATH_GLUE, HMODE, IGNORE_DEPTH, MMODE, PRIM_EQTB_BASE, SINGLE_BASE,
@@ -182,7 +172,7 @@ pub(crate) fn main_control_ignore_spaces(st: &mut EngineState) -> Result<(), Abo
     if st.scanner.cur_chr == 0 {
         loop {
             crate::scan::get_x_token(st)?;
-            if st.scanner.cur_cmd != SPACER {
+            if st.scanner.cur_cmd != Cmd::Spacer {
                 break;
             }
         }
@@ -224,8 +214,8 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
     let cmd = st.scanner.cur_cmd;
     if mode == HMODE {
         match cmd {
-            LETTER | OTHER_CHAR | CHAR_GIVEN | CHAR_NUM => {
-                if cmd == CHAR_NUM {
+            Cmd::Letter | Cmd::OtherChar | Cmd::CharGiven | Cmd::CharNum => {
+                if cmd == Cmd::CharNum {
                     crate::scan::scan_usv_num(st)?;
                     st.scanner.cur_chr = st.scanner.cur_val;
                 }
@@ -235,11 +225,11 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
                     Next::Reswitch
                 });
             }
-            NO_BOUNDARY => {
+            Cmd::NoBoundary => {
                 crate::scan::get_x_token(st)?;
                 if matches!(
                     st.scanner.cur_cmd,
-                    LETTER | OTHER_CHAR | CHAR_GIVEN | CHAR_NUM
+                    Cmd::Letter | Cmd::OtherChar | Cmd::CharGiven | Cmd::CharNum
                 ) {
                     st.mainloop.cancel_boundary = true;
                 }
@@ -253,53 +243,75 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
     }
 
     match (mode, cmd) {
-        (HMODE, SPACER) => {
+        (HMODE, Cmd::Spacer) => {
             if st.input.cur_list.space_factor() == 1000 {
                 main_control_append_normal_space(st)?;
             } else {
                 app_space(st)?;
             }
         }
-        (HMODE | MMODE, EX_SPACE) => main_control_append_normal_space(st)?,
-        (_, RELAX) | (VMODE | MMODE, SPACER) | (MMODE, NO_BOUNDARY) => {}
-        (_, IGNORE_SPACES) => {
+        (HMODE | MMODE, Cmd::ExSpace) => main_control_append_normal_space(st)?,
+        (_, Cmd::Relax) | (VMODE | MMODE, Cmd::Spacer) | (MMODE, Cmd::NoBoundary) => {}
+        (_, Cmd::IgnoreSpaces) => {
             main_control_ignore_spaces(st)?;
             return Ok(Next::Reswitch);
         }
-        (VMODE, STOP) => {
+        (VMODE, Cmd::Stop) => {
             if its_all_over(st)? {
                 return Ok(Next::Stop);
             }
         }
 
-        (VMODE, VMOVE)
-        | (HMODE | MMODE, HMOVE)
-        | (_, LAST_ITEM)
-        | (VMODE, VADJUST | ITAL_CORR)
-        | (VMODE | HMODE, EQ_NO)
-        | (_, MAC_PARAM) => crate::errors::report_illegal_case(st)?,
+        (VMODE, Cmd::Vmove)
+        | (HMODE | MMODE, Cmd::Hmove)
+        | (_, Cmd::LastItem)
+        | (VMODE, Cmd::Vadjust | Cmd::ItalCorr)
+        | (VMODE | HMODE, Cmd::EqNo)
+        | (_, Cmd::MacParam) => crate::errors::report_illegal_case(st)?,
         (
             VMODE | HMODE,
-            SUP_MARK | SUB_MARK | MATH_CHAR_NUM | MATH_GIVEN | XETEX_MATH_GIVEN | MATH_COMP
-            | DELIM_NUM | LEFT_RIGHT | ABOVE | RADICAL | MATH_STYLE | MATH_CHOICE | VCENTER
-            | NON_SCRIPT | MKERN | LIMIT_SWITCH | MSKIP | MATH_ACCENT,
+            Cmd::SupMark
+            | Cmd::SubMark
+            | Cmd::MathCharNum
+            | Cmd::MathGiven
+            | Cmd::XetexMathGiven
+            | Cmd::MathComp
+            | Cmd::DelimNum
+            | Cmd::LeftRight
+            | Cmd::Above
+            | Cmd::Radical
+            | Cmd::MathStyle
+            | Cmd::MathChoice
+            | Cmd::Vcenter
+            | Cmd::NonScript
+            | Cmd::Mkern
+            | Cmd::LimitSwitch
+            | Cmd::Mskip
+            | Cmd::MathAccent,
         )
-        | (MMODE, ENDV | PAR_END | STOP | VSKIP | UN_VBOX | VALIGN | HRULE) => {
-            crate::scan::insert_dollar_sign(st)?
-        }
+        | (
+            MMODE,
+            Cmd::Endv
+            | Cmd::ParEnd
+            | Cmd::Stop
+            | Cmd::Vskip
+            | Cmd::UnVbox
+            | Cmd::Valign
+            | Cmd::Hrule,
+        ) => crate::scan::insert_dollar_sign(st)?,
 
-        (VMODE, HRULE) | (HMODE | MMODE, VRULE) => append_rule(st)?,
-        (VMODE, VSKIP) | (HMODE | MMODE, HSKIP) | (MMODE, MSKIP) => {
+        (VMODE, Cmd::Hrule) | (HMODE | MMODE, Cmd::Vrule) => append_rule(st)?,
+        (VMODE, Cmd::Vskip) | (HMODE | MMODE, Cmd::Hskip) | (MMODE, Cmd::Mskip) => {
             append_glue(st)?;
         }
-        (_, KERN) | (MMODE, MKERN) => append_kern(st)?,
-        (VMODE | HMODE, LEFT_BRACE) => st
+        (_, Cmd::Kern) | (MMODE, Cmd::Mkern) => append_kern(st)?,
+        (VMODE | HMODE, Cmd::LeftBrace) => st
             .save_stack
             .new_save_level(GroupCode::Simple, st.mem.line)?,
-        (_, BEGIN_GROUP) => st
+        (_, Cmd::BeginGroup) => st
             .save_stack
             .new_save_level(GroupCode::SemiSimple, st.mem.line)?,
-        (_, END_GROUP) => {
+        (_, Cmd::EndGroup) => {
             if st.save_stack.cur_group == GroupCode::SemiSimple {
                 crate::save::unsave(st)?;
             } else {
@@ -307,8 +319,8 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
             }
         }
 
-        (_, RIGHT_BRACE) => handle_right_brace(st)?,
-        (VMODE, HMOVE) | (HMODE | MMODE, VMOVE) => {
+        (_, Cmd::RightBrace) => handle_right_brace(st)?,
+        (VMODE, Cmd::Hmove) | (HMODE | MMODE, Cmd::Vmove) => {
             let t = st.scanner.cur_chr;
             crate::scan::scan_dimen(st, false, false, false)?;
             let shift = if t == 0 {
@@ -318,25 +330,38 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
             };
             scan_box(st, shift)?;
         }
-        (_, LEADER_SHIP) => scan_box(st, LEADER_FLAG - i32::from(A_LEADERS) + st.scanner.cur_chr)?,
-        (_, MAKE_BOX) => begin_box(st, 0)?,
-        (VMODE, START_PAR) => new_graf(st, st.scanner.cur_chr > 0)?,
+        (_, Cmd::LeaderShip) => {
+            scan_box(st, LEADER_FLAG - i32::from(A_LEADERS) + st.scanner.cur_chr)?
+        }
+        (_, Cmd::MakeBox) => begin_box(st, 0)?,
+        (VMODE, Cmd::StartPar) => new_graf(st, st.scanner.cur_chr > 0)?,
         (
             VMODE,
-            LETTER | OTHER_CHAR | CHAR_NUM | CHAR_GIVEN | MATH_SHIFT | UN_HBOX | VRULE | ACCENT
-            | DISCRETIONARY | HSKIP | VALIGN | EX_SPACE | NO_BOUNDARY,
+            Cmd::Letter
+            | Cmd::OtherChar
+            | Cmd::CharNum
+            | Cmd::CharGiven
+            | Cmd::MathShift
+            | Cmd::UnHbox
+            | Cmd::Vrule
+            | Cmd::Accent
+            | Cmd::Discretionary
+            | Cmd::Hskip
+            | Cmd::Valign
+            | Cmd::ExSpace
+            | Cmd::NoBoundary,
         ) => {
             crate::input::back_input(st)?;
             new_graf(st, true)?;
         }
-        (HMODE | MMODE, START_PAR) => indent_in_hmode(st)?,
-        (VMODE, PAR_END) => {
+        (HMODE | MMODE, Cmd::StartPar) => indent_in_hmode(st)?,
+        (VMODE, Cmd::ParEnd) => {
             normal_paragraph(st)?;
             if st.input.cur_list.mode > 0 {
                 crate::pagebuilder::build_page(st)?;
             }
         }
-        (HMODE, PAR_END) => {
+        (HMODE, Cmd::ParEnd) => {
             if st.scanner.align_state < 0 {
                 off_save(st)?;
             }
@@ -345,93 +370,95 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
                 crate::pagebuilder::build_page(st)?;
             }
         }
-        (HMODE, STOP | VSKIP | HRULE | UN_VBOX | HALIGN) => head_for_vmode(st)?,
-        (_, INSERT) | (HMODE | MMODE, VADJUST) => begin_insert_or_adjust(st)?,
-        (_, MARK) => make_mark(st)?,
-        (_, BREAK_PENALTY) => append_penalty(st)?,
-        (_, REMOVE_ITEM) => delete_last(st)?,
-        (VMODE, UN_VBOX) | (HMODE | MMODE, UN_HBOX) => unpackage(st)?,
-        (HMODE, ITAL_CORR) => append_italic_correction(st)?,
-        (MMODE, ITAL_CORR) => {
+        (HMODE, Cmd::Stop | Cmd::Vskip | Cmd::Hrule | Cmd::UnVbox | Cmd::Halign) => {
+            head_for_vmode(st)?
+        }
+        (_, Cmd::Insert) | (HMODE | MMODE, Cmd::Vadjust) => begin_insert_or_adjust(st)?,
+        (_, Cmd::Mark) => make_mark(st)?,
+        (_, Cmd::BreakPenalty) => append_penalty(st)?,
+        (_, Cmd::RemoveItem) => delete_last(st)?,
+        (VMODE, Cmd::UnVbox) | (HMODE | MMODE, Cmd::UnHbox) => unpackage(st)?,
+        (HMODE, Cmd::ItalCorr) => append_italic_correction(st)?,
+        (MMODE, Cmd::ItalCorr) => {
             let k = st.mem.new_kern(Scaled::ZERO)?;
             st.input.cur_list.tail_append(&mut st.mem, k.ptr());
         }
-        (HMODE | MMODE, DISCRETIONARY) => append_discretionary(st)?,
-        (HMODE, ACCENT) => make_accent(st)?,
-        (_, CAR_RET | TAB_MARK) => align_error(st)?,
-        (_, NO_ALIGN) => no_align_error(st)?,
-        (_, OMIT) => omit_error(st)?,
-        (VMODE, HALIGN) => init_align(st)?,
-        (HMODE, VALIGN) => valign_or_lr(st)?,
-        (MMODE, HALIGN) => {
+        (HMODE | MMODE, Cmd::Discretionary) => append_discretionary(st)?,
+        (HMODE, Cmd::Accent) => make_accent(st)?,
+        (_, Cmd::CarRet | Cmd::TabMark) => align_error(st)?,
+        (_, Cmd::NoAlign) => no_align_error(st)?,
+        (_, Cmd::Omit) => omit_error(st)?,
+        (VMODE, Cmd::Halign) => init_align(st)?,
+        (HMODE, Cmd::Valign) => valign_or_lr(st)?,
+        (MMODE, Cmd::Halign) => {
             if crate::errors::privileged(st)? {
                 in_math_shift_group(st, init_align)?;
             }
         }
-        (VMODE | HMODE, ENDV) => do_endv(st)?,
-        (_, END_CS_NAME) => crate::errors::cs_error(st)?,
+        (VMODE | HMODE, Cmd::Endv) => do_endv(st)?,
+        (_, Cmd::EndCsName) => crate::errors::cs_error(st)?,
 
-        (HMODE, MATH_SHIFT) => init_math(st)?,
-        (MMODE, EQ_NO) => {
+        (HMODE, Cmd::MathShift) => init_math(st)?,
+        (MMODE, Cmd::EqNo) => {
             if crate::errors::privileged(st)? {
                 in_math_shift_group(st, crate::math::start_eq_no)?;
             }
         }
-        (MMODE, LEFT_BRACE) => append_noad(st, true)?,
-        (MMODE, LETTER | OTHER_CHAR | CHAR_GIVEN) => {
+        (MMODE, Cmd::LeftBrace) => append_noad(st, true)?,
+        (MMODE, Cmd::Letter | Cmd::OtherChar | Cmd::CharGiven) => {
             crate::scan::set_math_char(st, st.eqtb.math_code(st.scanner.cur_chr))?
         }
-        (MMODE, CHAR_NUM) => {
+        (MMODE, Cmd::CharNum) => {
             crate::scan::scan_char_num(st)?;
             st.scanner.cur_chr = st.scanner.cur_val;
             crate::scan::set_math_char(st, st.eqtb.math_code(st.scanner.cur_chr))?;
         }
-        (MMODE, MATH_CHAR_NUM) => {
+        (MMODE, Cmd::MathCharNum) => {
             let c = crate::scan::scan_math_char_num(st)?;
             crate::scan::set_math_char(st, c)?;
         }
-        (MMODE, MATH_GIVEN) => {
+        (MMODE, Cmd::MathGiven) => {
             crate::scan::set_math_char(st, crate::scan::math_code_from_tex(st.scanner.cur_chr))?
         }
-        (MMODE, XETEX_MATH_GIVEN) => crate::scan::set_math_char(st, st.scanner.cur_chr)?,
-        (MMODE, DELIM_NUM) => {
+        (MMODE, Cmd::XetexMathGiven) => crate::scan::set_math_char(st, st.scanner.cur_chr)?,
+        (MMODE, Cmd::DelimNum) => {
             let c = crate::scan::scan_delim_num(st)?;
             crate::scan::set_math_char(st, c)?;
         }
-        (MMODE, MATH_COMP) => append_noad(st, false)?,
-        (MMODE, LIMIT_SWITCH) => crate::math::math_limit_switch(st)?,
-        (MMODE, RADICAL) => crate::math::math_radical(st)?,
-        (MMODE, ACCENT | MATH_ACCENT) => crate::math::math_ac(st)?,
-        (MMODE, VCENTER) => math_vcenter(st)?,
-        (MMODE, MATH_STYLE) => {
+        (MMODE, Cmd::MathComp) => append_noad(st, false)?,
+        (MMODE, Cmd::LimitSwitch) => crate::math::math_limit_switch(st)?,
+        (MMODE, Cmd::Radical) => crate::math::math_radical(st)?,
+        (MMODE, Cmd::Accent | Cmd::MathAccent) => crate::math::math_ac(st)?,
+        (MMODE, Cmd::Vcenter) => math_vcenter(st)?,
+        (MMODE, Cmd::MathStyle) => {
             let s = st.mem.new_style(st.scanner.cur_chr as i16)?;
             st.input.cur_list.tail_append(&mut st.mem, s.ptr());
         }
-        (MMODE, NON_SCRIPT) => {
+        (MMODE, Cmd::NonScript) => {
             let g = st.mem.new_glue(ZERO_GLUE)?;
             st.input.cur_list.tail_append(&mut st.mem, g.ptr());
             g.set_subtype(&mut st.mem, COND_MATH_GLUE);
         }
-        (MMODE, MATH_CHOICE) => crate::math::append_choices(st)?,
-        (MMODE, SUB_MARK | SUP_MARK) => crate::math::sub_sup(st)?,
-        (MMODE, ABOVE) => crate::math::math_fraction(st)?,
-        (MMODE, LEFT_RIGHT) => crate::math::math_left_right(st)?,
-        (MMODE, MATH_SHIFT) => in_math_shift_group(st, after_math)?,
+        (MMODE, Cmd::MathChoice) => crate::math::append_choices(st)?,
+        (MMODE, Cmd::SubMark | Cmd::SupMark) => crate::math::sub_sup(st)?,
+        (MMODE, Cmd::Above) => crate::math::math_fraction(st)?,
+        (MMODE, Cmd::LeftRight) => crate::math::math_left_right(st)?,
+        (MMODE, Cmd::MathShift) => in_math_shift_group(st, after_math)?,
 
-        (_, TOKS_REGISTER..=SET_INTERACTION) => prefixed_command(st)?,
-        (_, AFTER_ASSIGNMENT) => {
+        (_, cmd) if cmd.is_prefixed() => prefixed_command(st)?,
+        (_, Cmd::AfterAssignment) => {
             crate::scan::get_token(st)?;
             st.scanner.after_token = st.scanner.cur_tok;
         }
-        (_, AFTER_GROUP) => {
+        (_, Cmd::AfterGroup) => {
             crate::scan::get_token(st)?;
             st.save_stack.save_for_after(st.scanner.cur_tok)?;
         }
-        (_, IN_STREAM) => crate::io::open_or_close(st)?,
-        (_, MESSAGE) => crate::output::issue_message(st)?,
-        (_, CASE_SHIFT) => shift_case(st)?,
-        (_, XRAY) => crate::output::show_whatever(st)?,
-        (_, EXTENSION) => do_extension(st)?,
+        (_, Cmd::InStream) => crate::io::open_or_close(st)?,
+        (_, Cmd::Message) => crate::output::issue_message(st)?,
+        (_, Cmd::CaseShift) => shift_case(st)?,
+        (_, Cmd::Xray) => crate::output::show_whatever(st)?,
+        (_, Cmd::Extension) => do_extension(st)?,
         _ => {}
     }
     Ok(Next::BigSwitch)

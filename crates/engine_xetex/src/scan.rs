@@ -1,9 +1,6 @@
 //! The tokenizer (`get_next`) and the scanning routines built on it.
 
-use crate::cmd::{
-    CHAR_GIVEN, CHAR_NUM, DELIM_NUM, LEFT_BRACE, LETTER, MATH_CHAR_NUM, MATH_GIVEN, OTHER_CHAR,
-    SPACER, VRULE, XETEX_MATH_GIVEN,
-};
+use crate::cmd::Cmd;
 use crate::codes::{DelimNumCode, MathCharNumCode, ValueLevel};
 use crate::consts::{
     ACTIVE_MATH_CHAR, BIGGEST_USV, EQTB_SIZE, FROZEN_CONTROL_SEQUENCE, FROZEN_PROTECTION,
@@ -122,7 +119,7 @@ impl ErrorState {
 
 pub(crate) fn scan_rule_spec(st: &mut EngineState) -> Result<NodePtr<RuleNode>, Abort> {
     let r = st.mem.new_rule()?;
-    if st.scanner.cur_cmd == VRULE {
+    if st.scanner.cur_cmd == Cmd::Vrule {
         r.set_width(&mut st.mem, RuleDimen::from_raw(DEFAULT_RULE));
     } else {
         r.set_height(&mut st.mem, RuleDimen::from_raw(DEFAULT_RULE));
@@ -146,7 +143,7 @@ pub(crate) fn scan_rule_spec(st: &mut EngineState) -> Result<NodePtr<RuleNode>, 
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn eTeX_enabled(st: &mut EngineState, b: bool, j: u8, k: i32) -> Result<bool, Abort> {
+pub(crate) fn eTeX_enabled(st: &mut EngineState, b: bool, j: Cmd, k: i32) -> Result<bool, Abort> {
     if !b {
         error_here_with_diagnostic(st, "Improper ");
         print_cmd_chr(st, j, k);
@@ -211,7 +208,7 @@ pub(crate) fn scan_math(st: &mut EngineState, p: NodePtr<MathField>) -> Result<(
         get_x_non_blank_non_relax(st)?;
         c = loop {
             break match st.scanner.cur_cmd {
-                LETTER | OTHER_CHAR | CHAR_GIVEN => {
+                Cmd::Letter | Cmd::OtherChar | Cmd::CharGiven => {
                     let mc = st.eqtb.math_code(st.scanner.cur_chr);
                     if mc & 0x1FFFFF == ACTIVE_MATH_CHAR {
                         st.scanner.cur_cs = st.scanner.cur_chr + 1;
@@ -222,16 +219,16 @@ pub(crate) fn scan_math(st: &mut EngineState, p: NodePtr<MathField>) -> Result<(
                     }
                     mc
                 }
-                CHAR_NUM => {
+                Cmd::CharNum => {
                     scan_char_num(st)?;
                     st.scanner.cur_chr = st.scanner.cur_val;
-                    st.scanner.cur_cmd = CHAR_GIVEN;
+                    st.scanner.cur_cmd = Cmd::CharGiven;
                     continue;
                 }
-                MATH_CHAR_NUM => scan_math_char_num(st)?,
-                MATH_GIVEN => math_code_from_tex(st.scanner.cur_chr),
-                XETEX_MATH_GIVEN => st.scanner.cur_chr,
-                DELIM_NUM => scan_delim_num(st)?,
+                Cmd::MathCharNum => scan_math_char_num(st)?,
+                Cmd::MathGiven => math_code_from_tex(st.scanner.cur_chr),
+                Cmd::XetexMathGiven => st.scanner.cur_chr,
+                Cmd::DelimNum => scan_delim_num(st)?,
                 _ => {
                     back_input(st)?;
                     scan_left_brace(st)?;
@@ -382,7 +379,7 @@ pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, 
         if st.scanner.cur_cs == 0 && (st.scanner.cur_chr == ch || st.scanner.cur_chr == ch - 32) {
             store_new_token(st, &mut p, st.scanner.cur_tok)?;
             i += 1;
-        } else if st.scanner.cur_cmd != SPACER || p != BACKUP_HEAD {
+        } else if st.scanner.cur_cmd != Cmd::Spacer || p != BACKUP_HEAD {
             back_input(st)?;
             if p != BACKUP_HEAD {
                 begin_token_list(st, BACKUP_HEAD.link(&st.mem), TokenType::BackedUp)?;
@@ -400,7 +397,7 @@ pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, 
 
 pub(crate) fn scan_left_brace(st: &mut EngineState) -> Result<(), Abort> {
     get_x_non_blank_non_relax(st)?;
-    if st.scanner.cur_cmd != LEFT_BRACE {
+    if st.scanner.cur_cmd != Cmd::LeftBrace {
         print_err(st, "Missing { inserted");
         st.errors.help(&[
             "A left brace was mandatory here, so I've put one in.",
@@ -410,7 +407,7 @@ pub(crate) fn scan_left_brace(st: &mut EngineState) -> Result<(), Abort> {
         ]);
         back_error(st)?;
         st.scanner.cur_tok = Token::left_brace(b'{');
-        st.scanner.cur_cmd = LEFT_BRACE;
+        st.scanner.cur_cmd = Cmd::LeftBrace;
         st.scanner.cur_chr = i32::from(b'{');
         st.scanner.align_state += 1;
     }

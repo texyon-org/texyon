@@ -1,14 +1,6 @@
 //! Mode-independent processing: `prefixed_command` and its assignments.
 
-use crate::cmd::{
-    ADVANCE, ASSIGN_DIMEN, ASSIGN_FONT_DIMEN, ASSIGN_FONT_INT, ASSIGN_GLUE, ASSIGN_INT,
-    ASSIGN_MU_GLUE, ASSIGN_TOKS, CALL, CHAR_GIVEN, DATA, DEF, DEF_CODE, DEF_FAMILY, DEF_FONT,
-    DIVIDE, GLUE_REF, HYPH_DATA, LEFT_BRACE, LET, MATH_GIVEN, MAX_CHAR_CODE,
-    MAX_NON_PREFIXED_COMMAND, MULTIPLY, PREFIX, READ_TO_CS, REGISTER, RELAX, RIGHT_BRACE, SET_AUX,
-    SET_BOX, SET_BOX_DIMEN, SET_FONT, SET_INTERACTION, SET_PAGE_DIMEN, SET_PAGE_INT, SET_PREV_GRAF,
-    SET_SHAPE, SHAPE_REF, SHORTHAND_DEF, SPACER, TOKS_REGISTER, UNDEFINED_CS, XETEX_DEF_CODE,
-    XETEX_MATH_GIVEN,
-};
+use crate::cmd::Cmd;
 use crate::codes::{BoxDimenCode, PageIntCode, ShorthandDefCode, ValueLevel};
 use crate::consts::{
     ACTIVE_MATH_CHAR, BIGGEST_USV, CAT_CODE_BASE, CHAR_CLASS_LIMIT, COUNT_BASE, CUR_FONT_LOC,
@@ -188,7 +180,7 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     };
 
     let global = a >= 4;
-    define(st, global, u, SET_FONT, FONT_BASE)?;
+    define(st, global, u, Cmd::SetFont, FONT_BASE)?;
     crate::scan::scan_optional_equals(st)?;
     crate::io::scan_file_name(st)?;
     st.scanner.name_in_progress = true;
@@ -266,7 +258,7 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         read_font_info(st, u, st.scanner.cur_name, st.scanner.cur_area, s)?
     };
 
-    define(st, global, u, SET_FONT, f.0)?;
+    define(st, global, u, Cmd::SetFont, f.0)?;
     let word = st.eqtb.word(u);
     st.eqtb.set_word(f.id_loc(), word);
     st.eqtb.set_text(f.id_loc(), t);
@@ -276,19 +268,19 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
 fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     let q = st.scanner.cur_cmd;
     let (l, p, e) = 'found: {
-        if q != REGISTER {
+        if q != Cmd::Register {
             crate::scan::get_x_token(st)?;
             let level = match st.scanner.cur_cmd {
-                ASSIGN_INT => Some(ValueLevel::Int),
-                ASSIGN_DIMEN => Some(ValueLevel::Dimen),
-                ASSIGN_GLUE => Some(ValueLevel::Glue),
-                ASSIGN_MU_GLUE => Some(ValueLevel::Mu),
+                Cmd::AssignInt => Some(ValueLevel::Int),
+                Cmd::AssignDimen => Some(ValueLevel::Dimen),
+                Cmd::AssignGlue => Some(ValueLevel::Glue),
+                Cmd::AssignMuGlue => Some(ValueLevel::Mu),
                 _ => None,
             };
             if let Some(level) = level {
                 break 'found (st.scanner.cur_chr, level, false);
             }
-            if st.scanner.cur_cmd != REGISTER {
+            if st.scanner.cur_cmd != Cmd::Register {
                 crate::output::error_here_with_diagnostic(st, "You can't use `");
                 crate::output::print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
                 crate::output::print(st, "' after ");
@@ -326,26 +318,26 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         (false, false) => (0, st.eqtb.equiv_ptr(l)),
     };
 
-    if q == REGISTER {
+    if q == Cmd::Register {
         crate::scan::scan_optional_equals(st)?;
     } else {
         crate::scan::scan_keyword(st, "by")?;
     }
     st.errors.arith_error = false;
 
-    if q < MULTIPLY {
+    if q < Cmd::Multiply {
         if p < ValueLevel::Glue {
             if p == ValueLevel::Int {
                 crate::scan::scan_int(st)?;
             } else {
                 crate::scan::scan_dimen(st, false, false, false)?;
             }
-            if q == ADVANCE {
+            if q == Cmd::Advance {
                 st.scanner.cur_val = st.scanner.cur_val.wrapping_add(w);
             }
         } else {
             crate::scan::scan_glue(st, p)?;
-            if q == ADVANCE {
+            if q == Cmd::Advance {
                 let sum = st.mem.new_spec(st.scanner.cur_glue())?;
                 st.mem.delete_glue_ref(st.scanner.cur_glue());
                 let old = NodePtr::<GlueSpecNode>::from_glue_ptr(s);
@@ -384,7 +376,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         crate::scan::scan_int(st)?;
         let n = st.scanner.cur_val;
         let scale = |errors: &mut crate::state::ErrorState, x: i32, max_answer: i32| {
-            if q == MULTIPLY {
+            if q == Cmd::Multiply {
                 errors.mult_and_add(x, n, 0, max_answer)
             } else {
                 errors.x_over_n(x, n)
@@ -441,7 +433,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         if e {
             sa_define(st, global, l, value)?;
         } else {
-            define(st, global, l, GLUE_REF, value.0)?;
+            define(st, global, l, Cmd::GlueRef, value.0)?;
         }
     }
     Ok(())
@@ -450,7 +442,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
 pub(super) fn do_assignments(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         crate::scan::get_x_non_blank_non_relax(st)?;
-        if st.scanner.cur_cmd <= MAX_NON_PREFIXED_COMMAND {
+        if st.scanner.cur_cmd <= Cmd::MAX_NON_PREFIXED_COMMAND {
             return Ok(());
         }
         st.scanner.set_box_allowed = false;
@@ -463,7 +455,7 @@ pub(super) fn define(
     st: &mut EngineState,
     global: bool,
     p: i32,
-    t: u8,
+    t: Cmd,
     e: i32,
 ) -> Result<(), Abort> {
     if global {
@@ -538,19 +530,23 @@ fn define_toks(
     if e {
         return sa_define(st, global, p, list);
     }
-    let t = if list.is_null() { UNDEFINED_CS } else { CALL };
+    let t = if list.is_null() {
+        Cmd::UndefinedCs
+    } else {
+        Cmd::Call
+    };
     define(st, global, p, t, list.0)?;
     Ok(())
 }
 
 pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
     let mut a: i32 = 0;
-    while st.scanner.cur_cmd == PREFIX {
+    while st.scanner.cur_cmd == Cmd::Prefix {
         if (a / st.scanner.cur_chr) & 1 == 0 {
             a += st.scanner.cur_chr;
         }
         crate::scan::get_x_non_blank_non_relax(st)?;
-        if st.scanner.cur_cmd <= MAX_NON_PREFIXED_COMMAND {
+        if st.scanner.cur_cmd <= Cmd::MAX_NON_PREFIXED_COMMAND {
             crate::output::error_here_with_diagnostic(st, "You can't use a prefix with `");
             crate::output::print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
             crate::output::print_char(st, i32::from(b'\''));
@@ -568,7 +564,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
     if protected {
         a -= 8;
     }
-    if st.scanner.cur_cmd != DEF && (a % 4 != 0 || protected) {
+    if st.scanner.cur_cmd != Cmd::Def && (a % 4 != 0 || protected) {
         crate::output::error_here_with_diagnostic(st, "You can't use `");
         crate::output::print_esc(st, "long");
         crate::output::print(st, "' or `");
@@ -591,8 +587,8 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     match st.scanner.cur_cmd {
-        SET_FONT => define(st, a >= 4, CUR_FONT_LOC, DATA, st.scanner.cur_chr)?,
-        DEF => {
+        Cmd::SetFont => define(st, a >= 4, CUR_FONT_LOC, Cmd::Data, st.scanner.cur_chr)?,
+        Cmd::Def => {
             if st.scanner.cur_chr & 1 != 0 && a < 4 && st.eqtb.int_par(IntPar::GlobalDefs) >= 0 {
                 a += 4;
             }
@@ -607,22 +603,28 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 q.set_link(&mut st.mem, body);
                 st.scanner.def_ref.set_link(&mut st.mem, q);
             }
-            define(st, a >= 4, p, CALL + (a % 4) as u8, st.scanner.def_ref.0)?;
+            define(
+                st,
+                a >= 4,
+                p,
+                Cmd::call(a % 2 == 1, a % 4 >= 2),
+                st.scanner.def_ref.0,
+            )?;
         }
-        LET => {
+        Cmd::Let => {
             let n = st.scanner.cur_chr;
             crate::scan::get_r_token(st)?;
             let p = st.scanner.cur_cs;
             if n == i32::from(NORMAL) {
                 loop {
                     crate::scan::get_token(st)?;
-                    if st.scanner.cur_cmd != SPACER {
+                    if st.scanner.cur_cmd != Cmd::Spacer {
                         break;
                     }
                 }
                 if st.scanner.cur_tok == Token::other(b'=') {
                     crate::scan::get_token(st)?;
-                    if st.scanner.cur_cmd == SPACER {
+                    if st.scanner.cur_cmd == Cmd::Spacer {
                         crate::scan::get_token(st)?;
                     }
                 }
@@ -634,16 +636,17 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 st.scanner.cur_tok = q;
                 crate::input::back_input(st)?;
             }
-            if st.scanner.cur_cmd >= CALL {
+            if st.scanner.cur_cmd >= Cmd::Call {
                 st.mem.add_token_ref(st.scanner.cur_chr_ptr());
-            } else if (st.scanner.cur_cmd == REGISTER || st.scanner.cur_cmd == TOKS_REGISTER)
+            } else if (st.scanner.cur_cmd == Cmd::Register
+                || st.scanner.cur_cmd == Cmd::ToksRegister)
                 && !(0..=19).contains(&st.scanner.cur_chr)
             {
                 st.mem.add_sa_ref(st.scanner.cur_chr_ptr());
             }
             define(st, a >= 4, p, st.scanner.cur_cmd, st.scanner.cur_chr)?;
         }
-        SHORTHAND_DEF => {
+        Cmd::ShorthandDef => {
             if st.scanner.cur_chr == ShorthandDefCode::CharSub.raw() {
                 crate::output::print_err(st, "vestigial MLTeX shorthand encountered??");
                 st.errors
@@ -653,7 +656,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 shorthand_def(st, a >= 4)?;
             }
         }
-        READ_TO_CS => {
+        Cmd::ReadToCs => {
             let j = st.scanner.cur_chr;
             crate::scan::scan_int(st)?;
             let n = st.scanner.cur_val;
@@ -668,24 +671,24 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             crate::scan::get_r_token(st)?;
             let p = st.scanner.cur_cs;
             crate::scan::read_toks(st, n, p, j)?;
-            define(st, a >= 4, p, CALL, st.scanner.cur_val)?;
+            define(st, a >= 4, p, Cmd::Call, st.scanner.cur_val)?;
         }
-        TOKS_REGISTER | ASSIGN_TOKS => assign_toks(st, a >= 4)?,
-        ASSIGN_INT => {
+        Cmd::ToksRegister | Cmd::AssignToks => assign_toks(st, a >= 4)?,
+        Cmd::AssignInt => {
             let p = st.scanner.cur_chr;
             crate::scan::scan_optional_equals(st)?;
             crate::scan::scan_int(st)?;
             word_define(st, a >= 4, p, st.scanner.cur_val)?;
         }
-        ASSIGN_DIMEN => {
+        Cmd::AssignDimen => {
             let p = st.scanner.cur_chr;
             crate::scan::scan_optional_equals(st)?;
             crate::scan::scan_dimen(st, false, false, false)?;
             word_define(st, a >= 4, p, st.scanner.cur_val)?;
         }
-        ASSIGN_GLUE | ASSIGN_MU_GLUE => {
+        Cmd::AssignGlue | Cmd::AssignMuGlue => {
             let p = st.scanner.cur_chr;
-            let level = if st.scanner.cur_cmd == ASSIGN_MU_GLUE {
+            let level = if st.scanner.cur_cmd == Cmd::AssignMuGlue {
                 ValueLevel::Mu
             } else {
                 ValueLevel::Glue
@@ -693,20 +696,22 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             crate::scan::scan_optional_equals(st)?;
             crate::scan::scan_glue(st, level)?;
             trap_zero_glue(st);
-            define(st, a >= 4, p, GLUE_REF, st.scanner.cur_val)?;
+            define(st, a >= 4, p, Cmd::GlueRef, st.scanner.cur_val)?;
         }
-        XETEX_DEF_CODE => xetex_def_code(st, a >= 4)?,
-        DEF_CODE => def_code(st, a >= 4)?,
-        DEF_FAMILY => {
+        Cmd::XetexDefCode => xetex_def_code(st, a >= 4)?,
+        Cmd::DefCode => def_code(st, a >= 4)?,
+        Cmd::DefFamily => {
             let base = st.scanner.cur_chr;
             crate::scan::scan_math_fam_int(st)?;
             let p = base + st.scanner.cur_val;
             crate::scan::scan_optional_equals(st)?;
             crate::scan::scan_font_ident(st)?;
-            define(st, a >= 4, p, DATA, st.scanner.cur_val)?;
+            define(st, a >= 4, p, Cmd::Data, st.scanner.cur_val)?;
         }
-        REGISTER | ADVANCE | MULTIPLY | DIVIDE => do_register_command(st, a as i16)?,
-        SET_BOX => {
+        Cmd::Register | Cmd::Advance | Cmd::Multiply | Cmd::Divide => {
+            do_register_command(st, a as i16)?
+        }
+        Cmd::SetBox => {
             crate::scan::scan_register_num(st)?;
             let n = if a >= 4 {
                 GLOBAL_BOX_FLAG + st.scanner.cur_val
@@ -727,13 +732,13 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 crate::errors::error(st)?;
             }
         }
-        SET_AUX => alter_aux(st)?,
-        SET_PREV_GRAF => alter_prev_graf(st)?,
-        SET_PAGE_DIMEN => alter_page_so_far(st)?,
-        SET_PAGE_INT => alter_integer(st)?,
-        SET_BOX_DIMEN => alter_box_dimen(st)?,
-        SET_SHAPE => set_shape(st, a >= 4)?,
-        HYPH_DATA => {
+        Cmd::SetAux => alter_aux(st)?,
+        Cmd::SetPrevGraf => alter_prev_graf(st)?,
+        Cmd::SetPageDimen => alter_page_so_far(st)?,
+        Cmd::SetPageInt => alter_integer(st)?,
+        Cmd::SetBoxDimen => alter_box_dimen(st)?,
+        Cmd::SetShape => set_shape(st, a >= 4)?,
+        Cmd::HyphData => {
             if st.scanner.cur_chr != 1 {
                 new_hyph_exceptions(st)?;
             } else if st.config.in_initex_mode {
@@ -744,20 +749,20 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 crate::errors::error(st)?;
                 loop {
                     crate::scan::get_token(st)?;
-                    if st.scanner.cur_cmd == RIGHT_BRACE {
+                    if st.scanner.cur_cmd == Cmd::RightBrace {
                         return Ok(());
                     }
                 }
             }
         }
-        ASSIGN_FONT_DIMEN => {
+        Cmd::AssignFontDimen => {
             crate::scan::find_font_dimen(st, true)?;
             let k = st.scanner.cur_val;
             crate::scan::scan_optional_equals(st)?;
             crate::scan::scan_dimen(st, false, false, false)?;
             st.fonts.set_font_info_sc(k, st.scanner.cur_dimen());
         }
-        ASSIGN_FONT_INT => {
+        Cmd::AssignFontInt => {
             let n = st.scanner.cur_chr;
             let f = crate::scan::scan_font_ident(st)?;
             if n < 2 {
@@ -784,8 +789,8 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 }
             }
         }
-        DEF_FONT => new_font(st, a as i16)?,
-        SET_INTERACTION => new_interaction(st),
+        Cmd::DefFont => new_font(st, a as i16)?,
+        Cmd::SetInteraction => new_interaction(st),
         _ => return Err(Abort::Confusion("prefix")),
     }
 
@@ -802,22 +807,22 @@ fn shorthand_def(st: &mut EngineState, global: bool) -> Result<(), Abort> {
         ShorthandDefCode::from_raw(st.scanner.cur_chr).ok_or(Abort::Confusion("shorthand_def"))?;
     crate::scan::get_r_token(st)?;
     let p = st.scanner.cur_cs;
-    define(st, global, p, RELAX, TOO_BIG_USV)?;
+    define(st, global, p, Cmd::Relax, TOO_BIG_USV)?;
     crate::scan::scan_optional_equals(st)?;
     let (t, e) = match n {
         ShorthandDefCode::Char => {
             crate::scan::scan_usv_num(st)?;
-            (CHAR_GIVEN, st.scanner.cur_val)
+            (Cmd::CharGiven, st.scanner.cur_val)
         }
         ShorthandDefCode::MathChar => {
             crate::scan::scan_fifteen_bit_int(st)?;
-            (MATH_GIVEN, st.scanner.cur_val)
+            (Cmd::MathGiven, st.scanner.cur_val)
         }
         ShorthandDefCode::XetexMathCharNum => {
             crate::scan::scan_xetex_math_char_int(st)?;
-            (XETEX_MATH_GIVEN, st.scanner.cur_val)
+            (Cmd::XetexMathGiven, st.scanner.cur_val)
         }
-        ShorthandDefCode::XetexMathChar => (XETEX_MATH_GIVEN, crate::scan::scan_umath_code(st)?),
+        ShorthandDefCode::XetexMathChar => (Cmd::XetexMathGiven, crate::scan::scan_umath_code(st)?),
         _ => {
             crate::scan::scan_register_num(st)?;
             if st.scanner.cur_val > 255 {
@@ -832,18 +837,18 @@ fn shorthand_def(st: &mut EngineState, global: bool) -> Result<(), Abort> {
                 let sa = st.mem.create_sa_element(&mut st.scanner, level, reg)?;
                 st.mem.add_sa_ref(sa.ptr());
                 let t = if level == ValueLevel::Tok {
-                    TOKS_REGISTER
+                    Cmd::ToksRegister
                 } else {
-                    REGISTER
+                    Cmd::Register
                 };
                 (t, st.scanner.cur_ptr.0)
             } else {
                 let (t, base) = match n {
-                    ShorthandDefCode::Count => (ASSIGN_INT, COUNT_BASE),
-                    ShorthandDefCode::Dimen => (ASSIGN_DIMEN, SCALED_BASE),
-                    ShorthandDefCode::Skip => (ASSIGN_GLUE, SKIP_BASE),
-                    ShorthandDefCode::MuSkip => (ASSIGN_MU_GLUE, MU_SKIP_BASE),
-                    ShorthandDefCode::Toks => (ASSIGN_TOKS, TOKS_BASE),
+                    ShorthandDefCode::Count => (Cmd::AssignInt, COUNT_BASE),
+                    ShorthandDefCode::Dimen => (Cmd::AssignDimen, SCALED_BASE),
+                    ShorthandDefCode::Skip => (Cmd::AssignGlue, SKIP_BASE),
+                    ShorthandDefCode::MuSkip => (Cmd::AssignMuGlue, MU_SKIP_BASE),
+                    ShorthandDefCode::Toks => (Cmd::AssignToks, TOKS_BASE),
                     _ => return Ok(()),
                 };
                 (t, base + st.scanner.cur_val)
@@ -857,7 +862,7 @@ fn shorthand_def(st: &mut EngineState, global: bool) -> Result<(), Abort> {
 fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
     let cs = st.scanner.cur_cs;
     let mut e = false;
-    if st.scanner.cur_cmd == TOKS_REGISTER {
+    if st.scanner.cur_cmd == Cmd::ToksRegister {
         if st.scanner.cur_chr == 0 {
             crate::scan::scan_register_num(st)?;
             if st.scanner.cur_val > 255 {
@@ -885,10 +890,10 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
     crate::scan::scan_optional_equals(st)?;
     crate::scan::get_x_non_blank_non_relax(st)?;
 
-    if st.scanner.cur_cmd != LEFT_BRACE
-        && (st.scanner.cur_cmd == TOKS_REGISTER || st.scanner.cur_cmd == ASSIGN_TOKS)
+    if st.scanner.cur_cmd != Cmd::LeftBrace
+        && (st.scanner.cur_cmd == Cmd::ToksRegister || st.scanner.cur_cmd == Cmd::AssignToks)
     {
-        let list = if st.scanner.cur_cmd == TOKS_REGISTER {
+        let list = if st.scanner.cur_cmd == Cmd::ToksRegister {
             if st.scanner.cur_chr == 0 {
                 crate::scan::scan_register_num(st)?;
                 if st.scanner.cur_val < 256 {
@@ -954,15 +959,15 @@ fn xetex_def_code(st: &mut EngineState, global: bool) -> Result<(), Abort> {
         crate::scan::scan_optional_equals(st)?;
         crate::scan::scan_char_class(st)?;
         let v = st.scanner.cur_val.wrapping_mul(65536).wrapping_add(sf);
-        define(st, global, p, DATA, v)?;
+        define(st, global, p, Cmd::Data, v)?;
     } else if chr == MATH_CODE_BASE {
         crate::scan::scan_optional_equals(st)?;
         crate::scan::scan_xetex_math_char_int(st)?;
-        define(st, global, p, DATA, st.scanner.cur_val)?;
+        define(st, global, p, Cmd::Data, st.scanner.cur_val)?;
     } else if chr == MATH_CODE_BASE + 1 {
         crate::scan::scan_optional_equals(st)?;
         let v = crate::scan::scan_umath_code(st)?;
-        define(st, global, p, DATA, v)?;
+        define(st, global, p, Cmd::Data, v)?;
     } else if chr == DEL_CODE_BASE {
         crate::scan::scan_optional_equals(st)?;
         crate::scan::scan_int(st)?;
@@ -983,7 +988,7 @@ fn xetex_def_code(st: &mut EngineState, global: bool) -> Result<(), Abort> {
 fn def_code(st: &mut EngineState, global: bool) -> Result<(), Abort> {
     let chr = st.scanner.cur_chr;
     let max = if chr == CAT_CODE_BASE {
-        MAX_CHAR_CODE.into()
+        Cmd::MAX_CHAR_CODE.into()
     } else if chr == MATH_CODE_BASE {
         0x8000
     } else if chr == SF_CODE_BASE {
@@ -1020,14 +1025,14 @@ fn def_code(st: &mut EngineState, global: bool) -> Result<(), Abort> {
         } else {
             st.scanner.cur_val
         };
-        define(st, global, p, DATA, v)?;
+        define(st, global, p, Cmd::Data, v)?;
     } else if p < DEL_CODE_BASE {
         st.scanner.cur_val = if st.scanner.cur_val == 32768 {
             ACTIVE_MATH_CHAR
         } else {
             crate::scan::math_code_from_tex(st.scanner.cur_val)
         };
-        define(st, global, p, DATA, st.scanner.cur_val)?;
+        define(st, global, p, Cmd::Data, st.scanner.cur_val)?;
     } else {
         word_define(st, global, p, st.scanner.cur_val)?;
     }
@@ -1067,6 +1072,6 @@ fn set_shape(st: &mut EngineState, global: bool) -> Result<(), Abort> {
         }
         p
     };
-    define(st, global, q, SHAPE_REF, p.0)?;
+    define(st, global, q, Cmd::ShapeRef, p.0)?;
     Ok(())
 }

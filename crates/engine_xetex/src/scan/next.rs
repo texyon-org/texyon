@@ -1,11 +1,7 @@
 //! Getting the next token: `get_next`, `get_token`, `get_x_token` and `pass_text`.
 
 use crate::bridge::output_flush;
-use crate::cmd::{
-    CALL, CAR_RET, DONT_EXPAND, ENDV, END_TEMPLATE, FI_OR_ELSE, IF_TEST, LEFT_BRACE, LETTER,
-    LONG_CALL, MAC_PARAM, MAX_COMMAND, OMIT, OUTER_CALL, OUT_PARAM, RELAX, RIGHT_BRACE, SPACER,
-    SUP_MARK, TAB_MARK,
-};
+use crate::cmd::Cmd;
 use crate::codes::{FiOrElseCode, ScannerStatus};
 use crate::consts::{
     BIGGEST_USV, FROZEN_CR, FROZEN_ENDV, FROZEN_FI, NULL_CS, SINGLE_BASE, TEX_NULL,
@@ -39,11 +35,11 @@ impl MemState {
 pub(crate) fn get_x_or_protected(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         get_token(st)?;
-        if st.scanner.cur_cmd <= MAX_COMMAND {
+        if st.scanner.cur_cmd <= Cmd::MAX_COMMAND {
             return Ok(());
         }
-        if st.scanner.cur_cmd >= CALL
-            && st.scanner.cur_cmd < END_TEMPLATE
+        if st.scanner.cur_cmd >= Cmd::Call
+            && st.scanner.cur_cmd < Cmd::EndTemplate
             && st.mem.is_protected_macro(st.scanner.cur_chr_ptr())
         {
             return Ok(());
@@ -56,7 +52,7 @@ pub(crate) fn get_x_or_protected(st: &mut EngineState) -> Result<(), Abort> {
 pub(crate) fn get_x_non_blank_non_relax(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         get_x_token(st)?;
-        if st.scanner.cur_cmd != SPACER && st.scanner.cur_cmd != RELAX {
+        if st.scanner.cur_cmd != Cmd::Spacer && st.scanner.cur_cmd != Cmd::Relax {
             return Ok(());
         }
     }
@@ -75,7 +71,7 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
             p.set_token(&mut st.mem, Token::from_cs(st.scanner.cur_cs));
             begin_token_list(st, p, TokenType::BackedUp)?;
         }
-        st.scanner.cur_cmd = SPACER;
+        st.scanner.cur_cmd = Cmd::Spacer;
         st.scanner.cur_chr = i32::from(b' ');
     }
 
@@ -98,7 +94,7 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
             ScannerStatus::Matching => {
                 print(st, " while scanning use");
                 p.set_token(&mut st.mem, st.input.par_token);
-                st.scanner.long_state = OUTER_CALL;
+                st.scanner.long_state = Cmd::OuterCall;
             }
             ScannerStatus::Aligning => {
                 print(st, " while scanning preamble");
@@ -130,7 +126,7 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
     } else {
         error_here_with_diagnostic(st, "Incomplete ");
         let cur_if = st.scanner.cur_if;
-        print_cmd_chr(st, IF_TEST, i32::from(cur_if));
+        print_cmd_chr(st, Cmd::IfTest, i32::from(cur_if));
         print(st, "; all text was ignored after line ");
         let skip_line = st.scanner.skip_line;
         print_int(st, skip_line);
@@ -222,11 +218,11 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
             let t = p.token(&st.mem);
             let plain = if t.is_cs() {
                 let cmd = st.eqtb.eq_type(t.cs());
-                cmd < OUTER_CALL
-                    && (!(TAB_MARK..=CAR_RET).contains(&cmd) || st.scanner.align_state != 0)
+                cmd < Cmd::OuterCall
+                    && (!(Cmd::TabMark..=Cmd::CarRet).contains(&cmd) || st.scanner.align_state != 0)
             } else {
                 let cmd = t.cmd();
-                cmd != OUT_PARAM && (cmd != TAB_MARK || st.scanner.align_state != 0)
+                cmd != Cmd::OUT_PARAM && (cmd != Cmd::TabMark || st.scanner.align_state != 0)
             };
             if plain {
                 st.scanner.logical_clock = st.scanner.logical_clock.wrapping_add(1);
@@ -239,8 +235,8 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
                     st.scanner.cur_cmd = t.cmd();
                     st.scanner.cur_chr = t.chr();
                     match st.scanner.cur_cmd {
-                        LEFT_BRACE => st.scanner.align_state += 1,
-                        RIGHT_BRACE => st.scanner.align_state -= 1,
+                        Cmd::LeftBrace => st.scanner.align_state += 1,
+                        Cmd::RightBrace => st.scanner.align_state -= 1,
                         _ => {}
                     }
                 }
@@ -276,7 +272,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                     }
 
                     'reswitch: loop {
-                        let cat = st.eqtb.cat_code(st.scanner.cur_chr) as u8;
+                        let cat = st.eqtb.cat_code(st.scanner.cur_chr);
                         st.scanner.cur_cmd = cat;
 
                         // Dispatch on state + category (states 1, 17, 33, categories 0..=15).
@@ -292,34 +288,38 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                                     'start_cs: loop {
                                         let start = st.input.cur_input.loc;
                                         let first_chr = st.input.buffer[start as usize];
-                                        let first_cat = st.eqtb.cat_code(first_chr) as u8;
+                                        let first_cat = st.eqtb.cat_code(first_chr);
                                         let mut k = start + 1;
-                                        st.input.cur_input.state =
-                                            if first_cat == LETTER || first_cat == SPACER {
-                                                SKIP_BLANKS
-                                            } else {
-                                                MID_LINE
-                                            };
+                                        st.input.cur_input.state = if first_cat == Cmd::Letter
+                                            || first_cat == Cmd::Spacer
+                                        {
+                                            SKIP_BLANKS
+                                        } else {
+                                            MID_LINE
+                                        };
 
-                                        if first_cat == LETTER && k <= st.input.cur_input.limit {
+                                        if first_cat == Cmd::Letter && k <= st.input.cur_input.limit
+                                        {
                                             let mut chr;
                                             let mut cat;
                                             loop {
                                                 chr = st.input.buffer[k as usize];
-                                                cat = st.eqtb.cat_code(chr) as u8;
+                                                cat = st.eqtb.cat_code(chr);
                                                 k += 1;
-                                                if cat != LETTER || k > st.input.cur_input.limit {
+                                                if cat != Cmd::Letter
+                                                    || k > st.input.cur_input.limit
+                                                {
                                                     break;
                                                 }
                                             }
-                                            if cat == SUP_MARK
+                                            if cat == Cmd::SupMark
                                                 && st.input.buffer[k as usize] == chr
                                                 && k < st.input.cur_input.limit
                                                 && st.input.reduce_cs_sup_mark(k, chr)
                                             {
                                                 continue 'start_cs;
                                             }
-                                            if cat != LETTER {
+                                            if cat != Cmd::Letter {
                                                 k -= 1;
                                             }
                                             if k > st.input.cur_input.loc + 1 {
@@ -333,7 +333,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                                                 st.input.cur_input.loc = k;
                                                 break 'start_cs;
                                             }
-                                        } else if first_cat == SUP_MARK
+                                        } else if first_cat == Cmd::SupMark
                                             && st.input.buffer[k as usize] == first_chr
                                             && k < st.input.cur_input.limit
                                             && st.input.reduce_cs_sup_mark(k, first_chr)
@@ -358,7 +358,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                                     }
                                 }
                                 fetch_cs_meaning(st);
-                                if st.scanner.cur_cmd >= OUTER_CALL {
+                                if st.scanner.cur_cmd >= Cmd::OuterCall {
                                     check_outer_validity(st)?;
                                 }
                             }
@@ -368,7 +368,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                                 st.scanner.cur_cs = st.scanner.cur_chr + 1;
                                 fetch_cs_meaning(st);
                                 st.input.cur_input.state = MID_LINE;
-                                if st.scanner.cur_cmd >= OUTER_CALL {
+                                if st.scanner.cur_cmd >= Cmd::OuterCall {
                                     check_outer_validity(st)?;
                                 }
                             }
@@ -432,7 +432,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                             // End of line in mid-line.
                             6 => {
                                 st.input.cur_input.loc = st.input.cur_input.limit + 1;
-                                st.scanner.cur_cmd = SPACER;
+                                st.scanner.cur_cmd = Cmd::Spacer;
                                 st.scanner.cur_chr = i32::from(b' ');
                             }
 
@@ -447,7 +447,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                                 st.input.cur_input.loc = st.input.cur_input.limit + 1;
                                 st.scanner.cur_cs = st.input.par_loc;
                                 fetch_cs_meaning(st);
-                                if st.scanner.cur_cmd >= OUTER_CALL {
+                                if st.scanner.cur_cmd >= Cmd::OuterCall {
                                     check_outer_validity(st)?;
                                 }
                             }
@@ -526,7 +526,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                     finish_line(st);
                 } else {
                     if st.input.cur_input.name != 0 {
-                        st.scanner.cur_cmd = 0;
+                        st.scanner.cur_cmd = Cmd::Relax;
                         st.scanner.cur_chr = 0;
                         return Ok(());
                     }
@@ -553,13 +553,13 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
             if t.is_cs() {
                 st.scanner.cur_cs = t.cs();
                 fetch_cs_meaning(st);
-                if st.scanner.cur_cmd >= OUTER_CALL {
-                    if st.scanner.cur_cmd == DONT_EXPAND {
+                if st.scanner.cur_cmd >= Cmd::OuterCall {
+                    if st.scanner.cur_cmd == Cmd::DontExpand {
                         st.scanner.cur_cs = st.input.cur_input.token_loc().token(&st.mem).cs();
                         st.input.cur_input.set_token_loc(MemPtr::NULL);
                         fetch_cs_meaning(st);
-                        if st.scanner.cur_cmd > MAX_COMMAND {
-                            st.scanner.cur_cmd = RELAX;
+                        if st.scanner.cur_cmd > Cmd::MAX_COMMAND {
+                            st.scanner.cur_cmd = Cmd::Relax;
                             st.scanner.cur_chr = NO_EXPAND_FLAG;
                         }
                     } else {
@@ -570,9 +570,9 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                 st.scanner.cur_cmd = t.cmd();
                 st.scanner.cur_chr = t.chr();
                 match st.scanner.cur_cmd {
-                    LEFT_BRACE => st.scanner.align_state += 1,
-                    RIGHT_BRACE => st.scanner.align_state -= 1,
-                    OUT_PARAM => {
+                    Cmd::LeftBrace => st.scanner.align_state += 1,
+                    Cmd::RightBrace => st.scanner.align_state -= 1,
+                    Cmd::OUT_PARAM => {
                         let param = st.input.param_stack
                             [(st.input.cur_input.limit + st.scanner.cur_chr - 1) as usize];
                         begin_token_list(st, param, TokenType::Parameter)?;
@@ -587,8 +587,8 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
         }
 
         // An alignment entry ends at `&` or `\cr` when braces are balanced.
-        if st.scanner.cur_cmd <= CAR_RET
-            && st.scanner.cur_cmd >= TAB_MARK
+        if st.scanner.cur_cmd <= Cmd::CarRet
+            && st.scanner.cur_cmd >= Cmd::TabMark
             && st.scanner.align_state == 0
         {
             if st.scanner.scanner_status == ScannerStatus::Aligning
@@ -601,13 +601,13 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
             let column = NodePtr::<AlignRecord>::at(st.scanner.cur_align);
             let saved_cmd = column.extra_info(&st.mem);
             column.set_extra_info(&mut st.mem, st.scanner.cur_chr);
-            let template = if saved_cmd as u8 == OMIT {
+            let template = if Cmd::from_stored(saved_cmd) == Cmd::Omit {
                 OMIT_TEMPLATE
             } else {
                 column.v_part(&st.mem)
             };
             begin_token_list(st, template, TokenType::VTemplate)?;
-            st.scanner.cur_cmd = saved_cmd as u8;
+            st.scanner.cur_cmd = Cmd::from_stored(saved_cmd);
             st.scanner.align_state = 1_000_000;
             continue 'restart;
         }
@@ -621,7 +621,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
 pub(crate) fn get_x_non_blank(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         get_x_token(st)?;
-        if st.scanner.cur_cmd != SPACER {
+        if st.scanner.cur_cmd != Cmd::Spacer {
             return Ok(());
         }
     }
@@ -637,7 +637,7 @@ fn pack_cur_tok(st: &mut EngineState) {
 }
 
 pub(crate) fn x_token(st: &mut EngineState) -> Result<(), Abort> {
-    while st.scanner.cur_cmd > MAX_COMMAND {
+    while st.scanner.cur_cmd > Cmd::MAX_COMMAND {
         expand(st)?;
         get_next(st)?;
     }
@@ -651,15 +651,15 @@ pub(crate) fn get_x_token(st: &mut EngineState) -> Result<(), Abort> {
             return Err(Abort::Cancelled);
         }
         get_next(st)?;
-        if st.scanner.cur_cmd <= MAX_COMMAND {
+        if st.scanner.cur_cmd <= Cmd::MAX_COMMAND {
             break;
         }
-        if st.scanner.cur_cmd >= CALL {
-            if st.scanner.cur_cmd < END_TEMPLATE {
+        if st.scanner.cur_cmd >= Cmd::Call {
+            if st.scanner.cur_cmd < Cmd::EndTemplate {
                 macro_call(st)?;
             } else {
                 st.scanner.cur_cs = FROZEN_ENDV;
-                st.scanner.cur_cmd = ENDV;
+                st.scanner.cur_cmd = Cmd::Endv;
                 break;
             }
         } else {
@@ -678,14 +678,14 @@ pub(crate) fn pass_text(st: &mut EngineState) -> Result<(), Abort> {
 
     loop {
         get_next(st)?;
-        if st.scanner.cur_cmd == FI_OR_ELSE {
+        if st.scanner.cur_cmd == Cmd::FiOrElse {
             if l == 0 {
                 break;
             }
             if st.scanner.cur_chr == FiOrElseCode::Fi.raw() {
                 l -= 1;
             }
-        } else if st.scanner.cur_cmd == IF_TEST {
+        } else if st.scanner.cur_cmd == Cmd::IfTest {
             l += 1;
         }
     }
@@ -709,18 +709,20 @@ pub(crate) fn get_token(st: &mut EngineState) -> Result<(), Abort> {
 fn plain_list_token(st: &EngineState, t: Token, stop_at_mac_param: bool) -> bool {
     let cmd = if t.is_cs() {
         let cmd = st.eqtb.eq_type(t.cs());
-        if cmd >= OUTER_CALL || t == st.input.par_token && st.scanner.long_state != LONG_CALL {
+        if cmd >= Cmd::OuterCall
+            || t == st.input.par_token && st.scanner.long_state != Cmd::LongCall
+        {
             return false;
         }
         cmd
     } else {
-        if t.cmd() == OUT_PARAM {
+        if t.cmd() == Cmd::OUT_PARAM {
             return false;
         }
         t.cmd()
     };
-    !((cmd == TAB_MARK || cmd == CAR_RET) && st.scanner.align_state == 0
-        || stop_at_mac_param && cmd == MAC_PARAM)
+    !((cmd == Cmd::TabMark || cmd == Cmd::CarRet) && st.scanner.align_state == 0
+        || stop_at_mac_param && cmd == Cmd::MacParam)
 }
 
 /// Advances past the token at `q` as `get_next` would and returns the next node.

@@ -15,7 +15,7 @@ use crate::bridge::{
     input_getc, input_open, input_open_primary, input_ungetc, last_input_abspath, output_close,
     output_flush, output_open, FileFormat,
 };
-use crate::cmd::{LEFT_BRACE, OTHER_CHAR, RELAX, SPACER};
+use crate::cmd::Cmd;
 use crate::errors::Abort;
 
 pub(crate) const AUTO: i32 = 0;
@@ -998,14 +998,14 @@ pub(crate) fn scan_file_name(st: &mut EngineState) -> Result<(), Abort> {
 
     loop {
         crate::scan::get_x_token(st)?;
-        if st.scanner.cur_cmd != SPACER && st.scanner.cur_cmd != RELAX {
+        if st.scanner.cur_cmd != Cmd::Spacer && st.scanner.cur_cmd != Cmd::Relax {
             break;
         }
     }
 
     crate::input::back_input(st)?;
 
-    if st.scanner.cur_cmd == LEFT_BRACE {
+    if st.scanner.cur_cmd == Cmd::LeftBrace {
         scan_file_name_braced(st)?;
     } else {
         st.scanner.name_in_progress = true;
@@ -1013,13 +1013,13 @@ pub(crate) fn scan_file_name(st: &mut EngineState) -> Result<(), Abort> {
 
         loop {
             crate::scan::get_x_token(st)?;
-            if st.scanner.cur_cmd != SPACER {
+            if st.scanner.cur_cmd != Cmd::Spacer {
                 break;
             }
         }
 
         loop {
-            if st.scanner.cur_cmd > OTHER_CHAR || st.scanner.cur_chr > BIGGEST_CHAR {
+            if st.scanner.cur_cmd > Cmd::OtherChar || st.scanner.cur_chr > BIGGEST_CHAR {
                 crate::input::back_input(st)?;
                 break;
             }

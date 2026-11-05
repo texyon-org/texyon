@@ -1,5 +1,6 @@
 //! Rust-owned engine state.
 
+use crate::cmd::Cmd;
 use crate::codes::{FiOrElseCode, ValueLevel};
 use crate::hash::HASH_OFFSET;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
@@ -343,11 +344,11 @@ impl EqtbState {
 
     /// The command code of control-sequence entry `p`.
     #[inline]
-    pub(crate) fn eq_type(&self, p: i32) -> u8 {
-        self.b16s1(p) as u8
+    pub(crate) fn eq_type(&self, p: i32) -> Cmd {
+        Cmd::from_stored(self.b16s1(p))
     }
     #[inline]
-    pub(crate) fn set_eq_type(&mut self, p: i32, t: u8) {
+    pub(crate) fn set_eq_type(&mut self, p: i32, t: Cmd) {
         self.set_b16s1(p, t.into());
     }
     #[inline]
@@ -437,8 +438,8 @@ impl EqtbState {
         FontId(self.equiv(crate::consts::MATH_FONT_BASE + n))
     }
     #[inline]
-    pub(crate) fn cat_code(&self, c: i32) -> i32 {
-        self.equiv(crate::consts::CAT_CODE_BASE + c)
+    pub(crate) fn cat_code(&self, c: i32) -> Cmd {
+        Cmd::from_catcode_bits(self.equiv(crate::consts::CAT_CODE_BASE + c))
     }
     #[inline]
     pub(crate) fn lc_code(&self, c: i32) -> i32 {
@@ -936,10 +937,10 @@ pub(crate) struct ScannerState {
     pub scanner_status: crate::codes::ScannerStatus,
     pub warning_index: i32,
     pub def_ref: crate::units::MemPtr,
-    pub long_state: u8,
+    pub long_state: Cmd,
     pub align_state: i32,
     pub expand_depth: i32,
-    pub cur_cmd: u8,
+    pub cur_cmd: Cmd,
     pub cur_chr: i32,
     pub cur_cs: i32,
     pub cur_tok: crate::token::Token,

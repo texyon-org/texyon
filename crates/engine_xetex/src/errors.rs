@@ -1,4 +1,5 @@
 use crate::bridge::{output_flush, set_error_message};
+use crate::cmd::Cmd;
 use crate::codes::ScannerStatus;
 use crate::consts::{HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, MEM_TOP, TEX_NULL};
 use crate::mem::{HOLD_HEAD, TEMP_HEAD};
@@ -256,7 +257,7 @@ pub(crate) fn int_error(st: &mut EngineState, n: i32) -> Result<(), Abort> {
 
 pub(crate) fn not_font_error_common(
     st: &mut EngineState,
-    cmd: u8,
+    cmd: Cmd,
     c: i32,
     f: FontId,
     suffix: &str,

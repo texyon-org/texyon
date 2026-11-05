@@ -1,11 +1,7 @@
 //! Showing internal state: `\show...`, `\message`, the semantic nest and the error context.
 
 use crate::bridge::output_flush;
-use crate::cmd::{
-    END_MATCH, EQ_NO, FI_OR_ELSE, HMOVE, IF_TEST, LEADER_SHIP, LEFT_BRACE, LETTER, MAC_PARAM,
-    MATCH, MATH_SHIFT, MAX_COMMAND, OTHER_CHAR, OUT_PARAM, RIGHT_BRACE, SPACER, SUB_MARK, SUP_MARK,
-    TAB_MARK, VMOVE,
-};
+use crate::cmd::Cmd;
 use crate::codes::{FiOrElseCode, ShowCode, TheCode};
 use crate::consts::{A_LEADERS, HMODE, IGNORE_DEPTH, MMODE, TEX_NULL, VMODE};
 use crate::errors::{error, Abort};
@@ -39,11 +35,11 @@ pub(crate) fn show_cur_cmd_chr(st: &mut EngineState) {
     }
     print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
     if st.eqtb.int_par(IntPar::TracingIfs) > 0
-        && (IF_TEST..=FI_OR_ELSE).contains(&st.scanner.cur_cmd)
+        && (Cmd::IfTest..=Cmd::FiOrElse).contains(&st.scanner.cur_cmd)
     {
         print(st, ": ");
-        let (mut n, l) = if st.scanner.cur_cmd == FI_OR_ELSE {
-            print_cmd_chr(st, IF_TEST, i32::from(st.scanner.cur_if));
+        let (mut n, l) = if st.scanner.cur_cmd == Cmd::FiOrElse {
+            print_cmd_chr(st, Cmd::IfTest, i32::from(st.scanner.cur_if));
             print_char(st, b' ');
             (0, st.scanner.if_line)
         } else {
@@ -91,13 +87,20 @@ pub(crate) fn show_token_list(st: &mut EngineState, mut p: MemPtr, q: i32, l: i3
         } else {
             let c = w.chr();
             match w.cmd() {
-                LEFT_BRACE | RIGHT_BRACE | MATH_SHIFT | TAB_MARK | SUP_MARK | SUB_MARK | SPACER
-                | LETTER | OTHER_CHAR => print_char(st, c),
-                MAC_PARAM => {
+                Cmd::LeftBrace
+                | Cmd::RightBrace
+                | Cmd::MathShift
+                | Cmd::TabMark
+                | Cmd::SupMark
+                | Cmd::SubMark
+                | Cmd::Spacer
+                | Cmd::Letter
+                | Cmd::OtherChar => print_char(st, c),
+                Cmd::MacParam => {
                     print_char(st, c);
                     print_char(st, c);
                 }
-                OUT_PARAM => {
+                Cmd::OUT_PARAM => {
                     print_char(st, match_chr);
                     if c > 9 {
                         print_char(st, b'!');
@@ -105,7 +108,7 @@ pub(crate) fn show_token_list(st: &mut EngineState, mut p: MemPtr, q: i32, l: i3
                     }
                     print_char(st, i32::from(b'0') + c);
                 }
-                MATCH => {
+                Cmd::MATCH => {
                     match_chr = c;
                     print_char(st, c);
                     n += 1;
@@ -114,7 +117,7 @@ pub(crate) fn show_token_list(st: &mut EngineState, mut p: MemPtr, q: i32, l: i3
                         return;
                     }
                 }
-                END_MATCH => {
+                Cmd::END_MATCH => {
                     if c == 0 {
                         print(st, "->");
                     }
@@ -329,7 +332,7 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                 if m == MMODE {
                     print_char(st, b'$');
                 } else if st.input.nest[p as usize].mode == MMODE {
-                    print_cmd_chr(st, EQ_NO, st.save_stack.saved(-2));
+                    print_cmd_chr(st, Cmd::EqNo, st.save_stack.saved(-2));
                     print_char(st, b')');
                     st.save_stack.cur_level -= 1;
                     leave_group_boundary(st);
@@ -355,9 +358,9 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
             if i != 0 {
                 if i < BOX_FLAG {
                     let cmd = if st.input.nest[p as usize].mode.abs() == VMODE {
-                        HMOVE
+                        Cmd::Hmove
                     } else {
-                        VMOVE
+                        Cmd::Vmove
                     };
                     print_cmd_chr(st, cmd, if i > 0 { 0 } else { 1 });
                     print_scaled(st, Scaled(i.abs()));
@@ -372,7 +375,11 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                     print_int(st, box_num - BOX_FLAG);
                     print_char(st, b'=');
                 } else {
-                    print_cmd_chr(st, LEADER_SHIP, i - (LEADER_FLAG - i32::from(A_LEADERS)));
+                    print_cmd_chr(
+                        st,
+                        Cmd::LeaderShip,
+                        i - (LEADER_FLAG - i32::from(A_LEADERS)),
+                    );
                 }
             }
         }
@@ -463,7 +470,7 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
                     print_nl(st, "### level ");
                     print_int(st, n);
                     print(st, ": ");
-                    print_cmd_chr(st, IF_TEST, i32::from(t));
+                    print_cmd_chr(st, Cmd::IfTest, i32::from(t));
                     if m == FiOrElseCode::Fi {
                         print_esc(st, "else");
                     }
@@ -613,7 +620,7 @@ fn show_activities(st: &mut EngineState) {
         }
         show_box(st, nest.head.link(&st.mem));
 
-        match i32::from(m.abs()) / (i32::from(MAX_COMMAND) + 1) {
+        match i32::from(m.abs()) / (i32::from(Cmd::MAX_COMMAND) + 1) {
             0 => {
                 print_nl(st, "prevdepth ");
                 let prev_depth = nest.prev_depth();

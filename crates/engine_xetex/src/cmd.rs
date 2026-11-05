@@ -1,138 +1,235 @@
 //! Command codes (`cur_cmd`, `eq_type`), ordered as in xetex.web.
 
-pub(crate) const RELAX: u8 = 0;
-pub(crate) const ESCAPE: u8 = RELAX;
-pub(crate) const LEFT_BRACE: u8 = 1;
-pub(crate) const RIGHT_BRACE: u8 = 2;
-pub(crate) const MATH_SHIFT: u8 = 3;
-pub(crate) const TAB_MARK: u8 = 4;
-pub(crate) const CAR_RET: u8 = 5;
-pub(crate) const OUT_PARAM: u8 = CAR_RET;
-pub(crate) const MAC_PARAM: u8 = 6;
-pub(crate) const SUP_MARK: u8 = 7;
-pub(crate) const SUB_MARK: u8 = 8;
-pub(crate) const ENDV: u8 = 9;
-pub(crate) const IGNORE: u8 = ENDV;
-pub(crate) const SPACER: u8 = 10;
-pub(crate) const LETTER: u8 = 11;
-pub(crate) const OTHER_CHAR: u8 = 12;
-pub(crate) const PAR_END: u8 = 13;
-pub(crate) const ACTIVE_CHAR: u8 = PAR_END;
-pub(crate) const MATCH: u8 = PAR_END;
-pub(crate) const STOP: u8 = 14;
-pub(crate) const COMMENT: u8 = STOP;
-pub(crate) const END_MATCH: u8 = STOP;
-pub(crate) const DELIM_NUM: u8 = 15;
-pub(crate) const INVALID_CHAR: u8 = DELIM_NUM;
-pub(crate) const MAX_CHAR_CODE: u8 = DELIM_NUM;
-pub(crate) const CHAR_NUM: u8 = 16;
-pub(crate) const MATH_CHAR_NUM: u8 = 17;
-pub(crate) const MARK: u8 = 18;
-pub(crate) const XRAY: u8 = 19;
-pub(crate) const MAKE_BOX: u8 = 20;
-pub(crate) const HMOVE: u8 = 21;
-pub(crate) const VMOVE: u8 = 22;
-pub(crate) const UN_HBOX: u8 = 23;
-pub(crate) const UN_VBOX: u8 = 24;
-pub(crate) const REMOVE_ITEM: u8 = 25;
-pub(crate) const HSKIP: u8 = 26;
-pub(crate) const VSKIP: u8 = 27;
-pub(crate) const MSKIP: u8 = 28;
-pub(crate) const KERN: u8 = 29;
-pub(crate) const MKERN: u8 = 30;
-pub(crate) const LEADER_SHIP: u8 = 31;
-pub(crate) const HALIGN: u8 = 32;
-pub(crate) const VALIGN: u8 = 33;
-pub(crate) const NO_ALIGN: u8 = 34;
-pub(crate) const VRULE: u8 = 35;
-pub(crate) const HRULE: u8 = 36;
-pub(crate) const INSERT: u8 = 37;
-pub(crate) const VADJUST: u8 = 38;
-pub(crate) const IGNORE_SPACES: u8 = 39;
-pub(crate) const AFTER_ASSIGNMENT: u8 = 40;
-pub(crate) const AFTER_GROUP: u8 = 41;
-pub(crate) const BREAK_PENALTY: u8 = 42;
-pub(crate) const START_PAR: u8 = 43;
-pub(crate) const ITAL_CORR: u8 = 44;
-pub(crate) const ACCENT: u8 = 45;
-pub(crate) const MATH_ACCENT: u8 = 46;
-pub(crate) const DISCRETIONARY: u8 = 47;
-pub(crate) const EQ_NO: u8 = 48;
-pub(crate) const LEFT_RIGHT: u8 = 49;
-pub(crate) const MATH_COMP: u8 = 50;
-pub(crate) const LIMIT_SWITCH: u8 = 51;
-pub(crate) const ABOVE: u8 = 52;
-pub(crate) const MATH_STYLE: u8 = 53;
-pub(crate) const MATH_CHOICE: u8 = 54;
-pub(crate) const NON_SCRIPT: u8 = 55;
-pub(crate) const VCENTER: u8 = 56;
-pub(crate) const CASE_SHIFT: u8 = 57;
-pub(crate) const MESSAGE: u8 = 58;
-pub(crate) const EXTENSION: u8 = 59;
-pub(crate) const IN_STREAM: u8 = 60;
-pub(crate) const BEGIN_GROUP: u8 = 61;
-pub(crate) const END_GROUP: u8 = 62;
-pub(crate) const OMIT: u8 = 63;
-pub(crate) const EX_SPACE: u8 = 64;
-pub(crate) const NO_BOUNDARY: u8 = 65;
-pub(crate) const RADICAL: u8 = 66;
-pub(crate) const END_CS_NAME: u8 = 67;
-pub(crate) const CHAR_GIVEN: u8 = 68;
-pub(crate) const MIN_INTERNAL: u8 = CHAR_GIVEN;
-pub(crate) const MATH_GIVEN: u8 = 69;
-pub(crate) const XETEX_MATH_GIVEN: u8 = 70;
-pub(crate) const LAST_ITEM: u8 = 71;
-pub(crate) const MAX_NON_PREFIXED_COMMAND: u8 = LAST_ITEM;
-pub(crate) const TOKS_REGISTER: u8 = 72;
-pub(crate) const ASSIGN_TOKS: u8 = 73;
-pub(crate) const ASSIGN_INT: u8 = 74;
-pub(crate) const ASSIGN_DIMEN: u8 = 75;
-pub(crate) const ASSIGN_GLUE: u8 = 76;
-pub(crate) const ASSIGN_MU_GLUE: u8 = 77;
-pub(crate) const ASSIGN_FONT_DIMEN: u8 = 78;
-pub(crate) const ASSIGN_FONT_INT: u8 = 79;
-pub(crate) const SET_AUX: u8 = 80;
-pub(crate) const SET_PREV_GRAF: u8 = 81;
-pub(crate) const SET_PAGE_DIMEN: u8 = 82;
-pub(crate) const SET_PAGE_INT: u8 = 83;
-pub(crate) const SET_BOX_DIMEN: u8 = 84;
-pub(crate) const SET_SHAPE: u8 = 85;
-pub(crate) const DEF_CODE: u8 = 86;
-pub(crate) const XETEX_DEF_CODE: u8 = 87;
-pub(crate) const DEF_FAMILY: u8 = 88;
-pub(crate) const SET_FONT: u8 = 89;
-pub(crate) const DEF_FONT: u8 = 90;
-pub(crate) const REGISTER: u8 = 91;
-pub(crate) const MAX_INTERNAL: u8 = REGISTER;
-pub(crate) const ADVANCE: u8 = 92;
-pub(crate) const MULTIPLY: u8 = 93;
-pub(crate) const DIVIDE: u8 = 94;
-pub(crate) const PREFIX: u8 = 95;
-pub(crate) const LET: u8 = 96;
-pub(crate) const SHORTHAND_DEF: u8 = 97;
-pub(crate) const READ_TO_CS: u8 = 98;
-pub(crate) const DEF: u8 = 99;
-pub(crate) const SET_BOX: u8 = 100;
-pub(crate) const HYPH_DATA: u8 = 101;
-pub(crate) const SET_INTERACTION: u8 = 102;
-pub(crate) const MAX_COMMAND: u8 = SET_INTERACTION;
-pub(crate) const UNDEFINED_CS: u8 = 103;
-pub(crate) const EXPAND_AFTER: u8 = 104;
-pub(crate) const NO_EXPAND: u8 = 105;
-pub(crate) const INPUT: u8 = 106;
-pub(crate) const IF_TEST: u8 = 107;
-pub(crate) const FI_OR_ELSE: u8 = 108;
-pub(crate) const CS_NAME: u8 = 109;
-pub(crate) const CONVERT: u8 = 110;
-pub(crate) const THE: u8 = 111;
-pub(crate) const TOP_BOT_MARK: u8 = 112;
-pub(crate) const CALL: u8 = 113;
-pub(crate) const LONG_CALL: u8 = 114;
-pub(crate) const OUTER_CALL: u8 = 115;
-pub(crate) const LONG_OUTER_CALL: u8 = 116;
-pub(crate) const END_TEMPLATE: u8 = 117;
-pub(crate) const DONT_EXPAND: u8 = 118;
-pub(crate) const GLUE_REF: u8 = 119;
-pub(crate) const SHAPE_REF: u8 = 120;
-pub(crate) const BOX_REF: u8 = 121;
-pub(crate) const DATA: u8 = 122;
+use crate::codes::code_enum;
+
+code_enum! {
+    /// A command code (`cur_cmd`, `eq_type`).
+    #[derive(PartialOrd, Ord, Default)]
+    pub(crate) enum Cmd: u8 {
+        #[default]
+        Relax = 0,
+        LeftBrace = 1,
+        RightBrace = 2,
+        MathShift = 3,
+        TabMark = 4,
+        CarRet = 5,
+        MacParam = 6,
+        SupMark = 7,
+        SubMark = 8,
+        Endv = 9,
+        Spacer = 10,
+        Letter = 11,
+        OtherChar = 12,
+        ParEnd = 13,
+        Stop = 14,
+        DelimNum = 15,
+        CharNum = 16,
+        MathCharNum = 17,
+        Mark = 18,
+        Xray = 19,
+        MakeBox = 20,
+        Hmove = 21,
+        Vmove = 22,
+        UnHbox = 23,
+        UnVbox = 24,
+        RemoveItem = 25,
+        Hskip = 26,
+        Vskip = 27,
+        Mskip = 28,
+        Kern = 29,
+        Mkern = 30,
+        LeaderShip = 31,
+        Halign = 32,
+        Valign = 33,
+        NoAlign = 34,
+        Vrule = 35,
+        Hrule = 36,
+        Insert = 37,
+        Vadjust = 38,
+        IgnoreSpaces = 39,
+        AfterAssignment = 40,
+        AfterGroup = 41,
+        BreakPenalty = 42,
+        StartPar = 43,
+        ItalCorr = 44,
+        Accent = 45,
+        MathAccent = 46,
+        Discretionary = 47,
+        EqNo = 48,
+        LeftRight = 49,
+        MathComp = 50,
+        LimitSwitch = 51,
+        Above = 52,
+        MathStyle = 53,
+        MathChoice = 54,
+        NonScript = 55,
+        Vcenter = 56,
+        CaseShift = 57,
+        Message = 58,
+        Extension = 59,
+        InStream = 60,
+        BeginGroup = 61,
+        EndGroup = 62,
+        Omit = 63,
+        ExSpace = 64,
+        NoBoundary = 65,
+        Radical = 66,
+        EndCsName = 67,
+        CharGiven = 68,
+        MathGiven = 69,
+        XetexMathGiven = 70,
+        LastItem = 71,
+        ToksRegister = 72,
+        AssignToks = 73,
+        AssignInt = 74,
+        AssignDimen = 75,
+        AssignGlue = 76,
+        AssignMuGlue = 77,
+        AssignFontDimen = 78,
+        AssignFontInt = 79,
+        SetAux = 80,
+        SetPrevGraf = 81,
+        SetPageDimen = 82,
+        SetPageInt = 83,
+        SetBoxDimen = 84,
+        SetShape = 85,
+        DefCode = 86,
+        XetexDefCode = 87,
+        DefFamily = 88,
+        SetFont = 89,
+        DefFont = 90,
+        Register = 91,
+        Advance = 92,
+        Multiply = 93,
+        Divide = 94,
+        Prefix = 95,
+        Let = 96,
+        ShorthandDef = 97,
+        ReadToCs = 98,
+        Def = 99,
+        SetBox = 100,
+        HyphData = 101,
+        SetInteraction = 102,
+        UndefinedCs = 103,
+        ExpandAfter = 104,
+        NoExpand = 105,
+        Input = 106,
+        IfTest = 107,
+        FiOrElse = 108,
+        CsName = 109,
+        Convert = 110,
+        The = 111,
+        TopBotMark = 112,
+        Call = 113,
+        LongCall = 114,
+        OuterCall = 115,
+        LongOuterCall = 116,
+        EndTemplate = 117,
+        DontExpand = 118,
+        GlueRef = 119,
+        ShapeRef = 120,
+        BoxRef = 121,
+        Data = 122,
+    }
+}
+
+impl Cmd {
+    pub(crate) const ESCAPE: Cmd = Cmd::Relax;
+    pub(crate) const OUT_PARAM: Cmd = Cmd::CarRet;
+    pub(crate) const IGNORE: Cmd = Cmd::Endv;
+    pub(crate) const ACTIVE_CHAR: Cmd = Cmd::ParEnd;
+    pub(crate) const MATCH: Cmd = Cmd::ParEnd;
+    pub(crate) const COMMENT: Cmd = Cmd::Stop;
+    pub(crate) const END_MATCH: Cmd = Cmd::Stop;
+    pub(crate) const INVALID_CHAR: Cmd = Cmd::DelimNum;
+    pub(crate) const MAX_CHAR_CODE: Cmd = Cmd::DelimNum;
+    pub(crate) const MIN_INTERNAL: Cmd = Cmd::CharGiven;
+    pub(crate) const MAX_NON_PREFIXED_COMMAND: Cmd = Cmd::LastItem;
+    pub(crate) const MAX_INTERNAL: Cmd = Cmd::Register;
+    pub(crate) const MAX_COMMAND: Cmd = Cmd::SetInteraction;
+}
+
+impl Cmd {
+    /// The category of a character token. A character token's quotient by
+    /// `max_char_val` is below 16, and every code below 16 is a category.
+    #[inline(always)]
+    pub(crate) const fn from_catcode_bits(v: i32) -> Cmd {
+        const CATEGORIES: [Cmd; 16] = [
+            Cmd::Relax,
+            Cmd::LeftBrace,
+            Cmd::RightBrace,
+            Cmd::MathShift,
+            Cmd::TabMark,
+            Cmd::CarRet,
+            Cmd::MacParam,
+            Cmd::SupMark,
+            Cmd::SubMark,
+            Cmd::Endv,
+            Cmd::Spacer,
+            Cmd::Letter,
+            Cmd::OtherChar,
+            Cmd::ParEnd,
+            Cmd::Stop,
+            Cmd::DelimNum,
+        ];
+        CATEGORIES[(v & 0xF) as usize]
+    }
+
+    /// A command read back from a memory word that holds one. Only the engine
+    /// writes those words, and the format loader checks every `eq_type`.
+    #[inline(always)]
+    pub(crate) fn from_stored(v: impl Into<i32>) -> Cmd {
+        let v = v.into();
+        let cmd = Cmd::from_raw(v);
+        debug_assert!(cmd.is_some(), "stored command {v} is not a command");
+        cmd.unwrap_or(Cmd::UndefinedCs)
+    }
+}
+
+impl From<Cmd> for u16 {
+    #[inline(always)]
+    fn from(cmd: Cmd) -> u16 {
+        cmd as u16
+    }
+}
+
+impl From<Cmd> for i32 {
+    #[inline(always)]
+    fn from(cmd: Cmd) -> i32 {
+        cmd.raw()
+    }
+}
+
+impl Cmd {
+    /// The macro call command for a `\long` and/or `\outer` definition.
+    pub(crate) const fn call(long: bool, outer: bool) -> Cmd {
+        match (long, outer) {
+            (false, false) => Cmd::Call,
+            (true, false) => Cmd::LongCall,
+            (false, true) => Cmd::OuterCall,
+            (true, true) => Cmd::LongOuterCall,
+        }
+    }
+
+    pub(crate) const fn is_long_call(self) -> bool {
+        matches!(self, Cmd::LongCall | Cmd::LongOuterCall)
+    }
+
+    pub(crate) const fn is_outer_call(self) -> bool {
+        matches!(self, Cmd::OuterCall | Cmd::LongOuterCall)
+    }
+
+    /// The same macro call without `\outer`.
+    pub(crate) const fn without_outer(self) -> Cmd {
+        match self {
+            Cmd::OuterCall => Cmd::Call,
+            Cmd::LongOuterCall => Cmd::LongCall,
+            other => other,
+        }
+    }
+
+    /// A command that may follow `\global`, `\long` or `\outer`.
+    pub(crate) fn is_prefixed(self) -> bool {
+        self > Cmd::MAX_NON_PREFIXED_COMMAND && self <= Cmd::MAX_COMMAND
+    }
+}

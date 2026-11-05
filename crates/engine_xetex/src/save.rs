@@ -1,5 +1,5 @@
 //! The save stack, `eqtb` definitions, and the sparse-array register trie.
-use crate::cmd::{BOX_REF, CALL, GLUE_REF, LONG_OUTER_CALL, REGISTER, SHAPE_REF, TOKS_REGISTER};
+use crate::cmd::Cmd;
 use crate::codes::ValueLevel;
 use crate::consts::{
     EQTB_SIZE, INDEX_NODE_SIZE, INT_BASE, LEVEL_ONE, LEVEL_ZERO, MARK_CLASS_NODE_SIZE, TEX_NULL,
@@ -154,7 +154,7 @@ impl EqtbState {
         mem: &mut MemState,
         scanner: &mut ScannerState,
         p: i32,
-        t: u8,
+        t: Cmd,
         e: i32,
     ) -> Result<(), Abort> {
         if self.eq_type(p) == t && self.equiv(p) == e {
@@ -176,7 +176,7 @@ impl EqtbState {
         mem: &mut MemState,
         scanner: &mut ScannerState,
         p: i32,
-        t: u8,
+        t: Cmd,
         e: i32,
     ) -> Result<(), Abort> {
         mem.eq_destroy(scanner, self.word(p))?;
@@ -208,21 +208,23 @@ impl MemState {
         w: MemoryWord,
     ) -> Result<(), Abort> {
         let (eq_type, equiv) = (w.b16().s1, w.b32().s1);
-        let Ok(eq_type) = u8::try_from(eq_type) else {
+        let Some(eq_type) = Cmd::from_raw(i32::from(eq_type)) else {
             return Ok(());
         };
         let ptr = MemPtr(equiv);
         match eq_type {
-            CALL..=LONG_OUTER_CALL => self.delete_token_ref(ptr),
-            GLUE_REF => self.delete_glue_ref(crate::node::NodePtr::from_glue_ptr(ptr)),
-            SHAPE_REF => {
+            Cmd::Call | Cmd::LongCall | Cmd::OuterCall | Cmd::LongOuterCall => {
+                self.delete_token_ref(ptr)
+            }
+            Cmd::GlueRef => self.delete_glue_ref(crate::node::NodePtr::from_glue_ptr(ptr)),
+            Cmd::ShapeRef => {
                 if !ptr.is_null() {
                     let size = 2 * ptr.info(self) + 1;
                     self.free_node(ptr, size);
                 }
             }
-            BOX_REF => self.flush_node_list(ptr)?,
-            TOKS_REGISTER | REGISTER if !(0..=19).contains(&equiv) => {
+            Cmd::BoxRef => self.flush_node_list(ptr)?,
+            Cmd::ToksRegister | Cmd::Register if !(0..=19).contains(&equiv) => {
                 self.delete_sa_ref(scanner, equiv);
             }
             _ => {}

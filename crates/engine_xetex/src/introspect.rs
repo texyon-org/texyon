@@ -5,7 +5,7 @@ use crate::token::Token;
 use crate::units::StrNumber;
 use std::collections::HashMap;
 
-use crate::cmd::{CALL, UNDEFINED_CS};
+use crate::cmd::Cmd;
 use crate::consts::{EQTB_SIZE, FROZEN_CONTROL_SEQUENCE, HASH_BASE};
 use crate::state::EngineState;
 
@@ -83,14 +83,14 @@ fn collect(st: &EngineState, slot: i32, found: &mut Vec<DefinedCommand>) {
         return;
     }
     let meaning = st.eqtb.eq_type(slot);
-    if meaning == UNDEFINED_CS {
+    if meaning == Cmd::UndefinedCs {
         return;
     }
     let Some(name) = read_string(st, text) else {
         return;
     };
 
-    let (kind, arity) = if meaning >= CALL {
+    let (kind, arity) = if meaning >= Cmd::Call {
         let (protected, arity) = describe_macro(st, st.eqtb.equiv_ptr(slot));
         let kind = if protected {
             CommandKind::ProtectedMacro

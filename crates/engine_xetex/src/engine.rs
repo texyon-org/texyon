@@ -2,11 +2,7 @@
 //! initialize_* primers, primitive registration and teardown.
 
 use crate::bridge::output_open_stdout;
-use crate::cmd::{
-    BOX_REF, CAR_RET, COMMENT, DATA, DONT_EXPAND, ENDV, END_TEMPLATE, ESCAPE, GLUE_REF, IF_TEST,
-    IGNORE, IGNORE_SPACES, INVALID_CHAR, LETTER, OTHER_CHAR, OUTER_CALL, SHAPE_REF, SPACER,
-    UNDEFINED_CS,
-};
+use crate::cmd::Cmd;
 use crate::codes::{BoxCode, FiOrElseCode, MarkCode, ScannerStatus, ValueLevel};
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_LANG, BOX_BASE, CAT_CODE_BASE, CLOSED, CS_TOKEN_FLAG,
@@ -139,14 +135,14 @@ impl MemState {
 }
 
 impl EqtbState {
-    pub(crate) fn set_eq(&mut self, p: i32, eq_type: u8, equiv: i32, level: u16) {
+    pub(crate) fn set_eq(&mut self, p: i32, eq_type: Cmd, equiv: i32, level: u16) {
         self.set_eq_type(p, eq_type);
         self.set_equiv(p, equiv);
         self.set_eq_level(p, level);
     }
 }
 
-fn primitive(st: &mut EngineState, ident: &str, c: u8, o: i32) -> Result<(), Abort> {
+fn primitive(st: &mut EngineState, ident: &str, c: Cmd, o: i32) -> Result<(), Abort> {
     let bytes = ident.as_bytes();
     let prim_val = if bytes.len() > 1 {
         let len = bytes.len() as i32;
@@ -219,7 +215,7 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
         crate::output::print_nl(st, b'(');
         crate::output::print_esc(st, "end occurred ");
         crate::output::print(st, "when ");
-        crate::output::print_cmd_chr(st, IF_TEST, i32::from(st.scanner.cur_if));
+        crate::output::print_cmd_chr(st, Cmd::IfTest, i32::from(st.scanner.cur_if));
         let if_line = st.scanner.if_line;
         if if_line != 0 {
             crate::output::print(st, " on line ");
@@ -481,21 +477,21 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     let eqtb = &mut st.eqtb;
     eqtb.set_eq(
         UNDEFINED_CONTROL_SEQUENCE,
-        UNDEFINED_CS,
+        Cmd::UndefinedCs,
         TEX_NULL,
         LEVEL_ZERO,
     );
     let undefined_entry = eqtb.word(UNDEFINED_CONTROL_SEQUENCE);
     eqtb.data[ACTIVE_BASE as usize..=eqtb.eqtb_top as usize].fill(undefined_entry);
 
-    eqtb.set_eq(GLUE_BASE, GLUE_REF, 0, LEVEL_ONE);
+    eqtb.set_eq(GLUE_BASE, Cmd::GlueRef, 0, LEVEL_ONE);
     let glue_base_entry = eqtb.word(GLUE_BASE);
     eqtb.data[(GLUE_BASE + 1) as usize..LOCAL_BASE as usize].fill(glue_base_entry);
 
     let zero_glue_refs = ZERO_GLUE.ref_count(&st.mem) + 531;
     ZERO_GLUE.set_ref_count(&mut st.mem, zero_glue_refs);
 
-    eqtb.set_eq(PAR_SHAPE_LOC, SHAPE_REF, TEX_NULL, LEVEL_ONE);
+    eqtb.set_eq(PAR_SHAPE_LOC, Cmd::ShapeRef, TEX_NULL, LEVEL_ONE);
     let par_shape_entry = eqtb.word(PAR_SHAPE_LOC);
     eqtb.data[ETEX_PEN_BASE as usize..(ETEX_PEN_BASE + NUM_ETEX_PENALTIES) as usize]
         .fill(par_shape_entry);
@@ -503,31 +499,31 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     let toks_end = TOKS_BASE + NUMBER_REGS;
     eqtb.data[TokPar::OutputRoutine.loc() as usize..toks_end as usize].fill(undefined_entry);
 
-    eqtb.set_eq(BOX_BASE, BOX_REF, TEX_NULL, LEVEL_ONE);
+    eqtb.set_eq(BOX_BASE, Cmd::BoxRef, TEX_NULL, LEVEL_ONE);
     let box_base_entry = eqtb.word(BOX_BASE);
     eqtb.data[(BOX_BASE + 1) as usize..(BOX_BASE + NUMBER_REGS) as usize].fill(box_base_entry);
 
-    eqtb.set_eq(CUR_FONT_LOC, DATA, FONT_BASE, LEVEL_ONE);
+    eqtb.set_eq(CUR_FONT_LOC, Cmd::Data, FONT_BASE, LEVEL_ONE);
     let cur_font_entry = eqtb.word(CUR_FONT_LOC);
     eqtb.data[MATH_FONT_BASE as usize..(MATH_FONT_BASE + NUMBER_MATH_FONTS) as usize]
         .fill(cur_font_entry);
 
-    eqtb.set_eq(CAT_CODE_BASE, DATA, 0, LEVEL_ONE);
+    eqtb.set_eq(CAT_CODE_BASE, Cmd::Data, 0, LEVEL_ONE);
     let cat_code_entry = eqtb.word(CAT_CODE_BASE);
     eqtb.data[(CAT_CODE_BASE + 1) as usize..INT_BASE as usize].fill(cat_code_entry);
 
     for k in 0..NUMBER_USVS {
-        eqtb.set_equiv(CAT_CODE_BASE + k, OTHER_CHAR.into());
+        eqtb.set_equiv(CAT_CODE_BASE + k, Cmd::OtherChar.into());
         eqtb.set_equiv(MATH_CODE_BASE + k, k);
         eqtb.set_equiv(SF_CODE_BASE + k, 1000);
     }
 
-    eqtb.set_equiv(CAT_CODE_BASE + 13, CAR_RET.into());
-    eqtb.set_equiv(CAT_CODE_BASE + 32, SPACER.into());
-    eqtb.set_equiv(CAT_CODE_BASE + 92, ESCAPE.into());
-    eqtb.set_equiv(CAT_CODE_BASE + 37, COMMENT.into());
-    eqtb.set_equiv(CAT_CODE_BASE + 127, INVALID_CHAR.into());
-    eqtb.set_equiv(CAT_CODE_BASE, IGNORE.into());
+    eqtb.set_equiv(CAT_CODE_BASE + 13, Cmd::CarRet.into());
+    eqtb.set_equiv(CAT_CODE_BASE + 32, Cmd::Spacer.into());
+    eqtb.set_equiv(CAT_CODE_BASE + 92, Cmd::ESCAPE.into());
+    eqtb.set_equiv(CAT_CODE_BASE + 37, Cmd::COMMENT.into());
+    eqtb.set_equiv(CAT_CODE_BASE + 127, Cmd::INVALID_CHAR.into());
+    eqtb.set_equiv(CAT_CODE_BASE, Cmd::IGNORE.into());
 
     for k in (i32::from(b'0'))..=(i32::from(b'9')) {
         eqtb.set_equiv(MATH_CODE_BASE + k, k + set_class(VAR_FAM_CLASS));
@@ -535,8 +531,8 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
 
     for k in (i32::from(b'A'))..=(i32::from(b'Z')) {
         let lower = k + 32;
-        eqtb.set_equiv(CAT_CODE_BASE + k, LETTER.into());
-        eqtb.set_equiv(CAT_CODE_BASE + lower, LETTER.into());
+        eqtb.set_equiv(CAT_CODE_BASE + k, Cmd::Letter.into());
+        eqtb.set_equiv(CAT_CODE_BASE + lower, Cmd::Letter.into());
         eqtb.set_equiv(
             MATH_CODE_BASE + k,
             k + set_family(1) + set_class(VAR_FAM_CLASS),
@@ -623,23 +619,29 @@ fn initialize_primitives(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     set_frozen_text(st, FROZEN_END_TEMPLATE, "endtemplate")?;
-    st.eqtb
-        .set_eq(FROZEN_END_TEMPLATE, END_TEMPLATE, NULL_LIST.0, LEVEL_ONE);
+    st.eqtb.set_eq(
+        FROZEN_END_TEMPLATE,
+        Cmd::EndTemplate,
+        NULL_LIST.0,
+        LEVEL_ONE,
+    );
 
     set_frozen_text(st, FROZEN_ENDV, "endtemplate")?;
-    st.eqtb.set_eq(FROZEN_ENDV, ENDV, NULL_LIST.0, LEVEL_ONE);
+    st.eqtb
+        .set_eq(FROZEN_ENDV, Cmd::Endv, NULL_LIST.0, LEVEL_ONE);
 
     set_frozen_text(st, FROZEN_DONT_EXPAND, "notexpanded:")?;
-    st.eqtb.set_eq_type(FROZEN_DONT_EXPAND, DONT_EXPAND);
+    st.eqtb.set_eq_type(FROZEN_DONT_EXPAND, Cmd::DontExpand);
 
     set_frozen_text(st, FROZEN_PRIMITIVE, "primitive")?;
     st.eqtb
-        .set_eq(FROZEN_PRIMITIVE, IGNORE_SPACES, 1, LEVEL_ONE);
+        .set_eq(FROZEN_PRIMITIVE, Cmd::IgnoreSpaces, 1, LEVEL_ONE);
 
     set_frozen_text(st, FROZEN_PROTECTION, "inaccessible")?;
 
     set_frozen_text(st, END_WRITE, "endwrite")?;
-    st.eqtb.set_eq(END_WRITE, OUTER_CALL, TEX_NULL, LEVEL_ONE);
+    st.eqtb
+        .set_eq(END_WRITE, Cmd::OuterCall, TEX_NULL, LEVEL_ONE);
 
     st.eqtb.no_new_control_sequence = true;
     Ok(())

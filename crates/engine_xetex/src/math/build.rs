@@ -1,6 +1,6 @@
 //! Building math lists: the math-mode commands and `fin_mlist`.
 
-use crate::cmd::{ACCENT, DELIM_NUM, LETTER, OTHER_CHAR, RELAX, SPACER, SUP_MARK};
+use crate::cmd::Cmd;
 use crate::codes::{MathAccentCode, RadicalCode};
 use crate::consts::{EMPTY, MATH_CHAR, NORMAL, NUMBER_MATH_FAMILIES, SUB_MLIST};
 use crate::errors::Abort;
@@ -37,14 +37,16 @@ fn scan_delimiter(
     } else {
         loop {
             crate::scan::get_x_token(st)?;
-            if st.scanner.cur_cmd != SPACER && st.scanner.cur_cmd != RELAX {
+            if st.scanner.cur_cmd != Cmd::Spacer && st.scanner.cur_cmd != Cmd::Relax {
                 break;
             }
         }
 
         match st.scanner.cur_cmd {
-            LETTER | OTHER_CHAR => st.scanner.cur_val = st.eqtb.del_code(st.scanner.cur_chr),
-            DELIM_NUM => {
+            Cmd::Letter | Cmd::OtherChar => {
+                st.scanner.cur_val = st.eqtb.del_code(st.scanner.cur_chr)
+            }
+            Cmd::DelimNum => {
                 if st.scanner.cur_chr == 1 {
                     st.scanner.cur_val1 = 0x4000_0000;
                     crate::scan::scan_math_class_int(st)?;
@@ -264,10 +266,10 @@ impl ListStateRecord {
     fn prepare_sub_sup(
         &mut self,
         mem: &mut MemState,
-        cmd: u8,
+        cmd: Cmd,
     ) -> Result<(NodePtr<MathField>, Option<ScriptDuplication>), Abort> {
         let script = |n: NodePtr<Noad>| {
-            if cmd == SUP_MARK {
+            if cmd == Cmd::SupMark {
                 n.supscr()
             } else {
                 n.subscr()
@@ -293,7 +295,7 @@ impl ListStateRecord {
                 let noad = mem.new_noad()?;
                 self.tail_append(mem, noad.ptr());
                 if t != EMPTY {
-                    duplicate = Some(if cmd == SUP_MARK {
+                    duplicate = Some(if cmd == Cmd::SupMark {
                         ScriptDuplication::Superscript
                     } else {
                         ScriptDuplication::Subscript
@@ -473,7 +475,7 @@ pub(crate) fn math_left_right(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 pub(crate) fn math_ac(st: &mut EngineState) -> Result<(), Abort> {
-    if st.scanner.cur_cmd == ACCENT {
+    if st.scanner.cur_cmd == Cmd::Accent {
         crate::output::error_here_with_diagnostic(st, "Please use ");
         crate::output::print_esc(st, "mathaccent");
         crate::output::print(st, " for accents in math mode");

@@ -1,6 +1,6 @@
 //! Entering and leaving math mode: `init_math`, `after_math` and displays.
 
-use crate::cmd::{MATH_SHIFT, SPACER};
+use crate::cmd::Cmd;
 use crate::consts::{
     AFTER, A_LEADERS, BEFORE, BEGIN_L_CODE, BEGIN_M_CODE, BOX_NODE_SIZE, DLIST, END_L_CODE,
     END_M_CODE, FIL, FILL, FILLL, HMODE, INF_PENALTY, LEFT_TO_RIGHT, L_CODE, MAX_DIMEN, MMODE,
@@ -38,7 +38,7 @@ pub(crate) fn resume_after_display(st: &mut EngineState) -> Result<(), Abort> {
     crate::main_control::start_paragraph_language(st);
 
     crate::scan::get_x_token(st)?;
-    if st.scanner.cur_cmd != SPACER {
+    if st.scanner.cur_cmd != Cmd::Spacer {
         crate::input::back_input(st)?;
     }
     if st.input.nest_ptr == 1 {
@@ -217,7 +217,7 @@ fn check_math_fonts(st: &mut EngineState) -> Result<bool, Abort> {
 
 pub(crate) fn check_display_end(st: &mut EngineState) -> Result<(), Abort> {
     crate::scan::get_x_token(st)?;
-    if st.scanner.cur_cmd != MATH_SHIFT {
+    if st.scanner.cur_cmd != Cmd::MathShift {
         crate::output::print_err(st, "Display math should end with $$");
         st.errors.help(&[
             "The `$' that I just saw supposedly matches a previous `$$'.",
@@ -461,7 +461,7 @@ fn side_skip(st: &mut EngineState, param: GluePar) -> Result<MemPtr, Abort> {
 pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
     crate::scan::get_token(st)?;
 
-    if st.scanner.cur_cmd == MATH_SHIFT && st.input.cur_list.mode > 0 {
+    if st.scanner.cur_cmd == Cmd::MathShift && st.input.cur_list.mode > 0 {
         let mut j = MemPtr::NULL;
         let mut w = -MAX_DIMEN;
         let x;

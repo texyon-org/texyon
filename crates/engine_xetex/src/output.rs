@@ -1,7 +1,7 @@
 //! Basic printing: numbers, strings, control sequences and the diagnostic sink.
 
 use crate::bridge::{diag_append, diag_append_byte, diag_finish, output_putc, Diagnostic};
-use crate::cmd::{LETTER, MAX_COMMAND};
+use crate::cmd::Cmd;
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_USV, EQTB_SIZE, FILLL, FROZEN_NULL_FONT, HASH_BASE,
     HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, NORMAL, NULL_CS, PRIM_EQTB_BASE, SCRIPT_SIZE,
@@ -610,7 +610,7 @@ pub(crate) fn print_cs(st: &mut EngineState, p: i32) {
                 print_char(st, b' ');
             } else {
                 print_esc(st, p - SINGLE_BASE);
-                if st.eqtb.cat_code(p - SINGLE_BASE) == LETTER.into() {
+                if st.eqtb.cat_code(p - SINGLE_BASE) == Cmd::Letter {
                     print_char(st, b' ');
                 }
             }
@@ -701,7 +701,7 @@ fn note_warning_issued(st: &mut EngineState) {
 }
 
 fn mode_name(m: i32) -> Option<&'static str> {
-    let group = i32::from(MAX_COMMAND) + 1;
+    let group = i32::from(Cmd::MAX_COMMAND) + 1;
     match m.signum() {
         0 => Some("no mode"),
         1 => ["vertical mode", "horizontal mode", "display math mode"]

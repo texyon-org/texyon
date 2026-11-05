@@ -1,6 +1,6 @@
 //! Hyphenation patterns and exceptions, and the packed-trie builder.
 
-use crate::cmd::{CHAR_GIVEN, CHAR_NUM, LETTER, OTHER_CHAR, RIGHT_BRACE, SPACER};
+use crate::cmd::Cmd;
 pub(crate) use crate::consts::BIGGEST_LANG;
 use crate::consts::{BIGGEST_CHAR, MIN_TRIE_OP};
 use crate::errors::Abort;
@@ -619,7 +619,7 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         crate::scan::get_x_token(st)?;
         match st.scanner.cur_cmd {
-            LETTER | OTHER_CHAR => {
+            Cmd::Letter | Cmd::OtherChar => {
                 let cur_chr = st.scanner.cur_chr;
                 let digit = u8::try_from(cur_chr).ok().filter(u8::is_ascii_digit);
                 if let Some(d) = digit.filter(|_| !digit_sensed) {
@@ -650,7 +650,7 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
                     }
                 }
             }
-            SPACER | RIGHT_BRACE => {
+            Cmd::Spacer | Cmd::RightBrace => {
                 if k > 0 {
                     let (q, op, duplicate) = st.hyph.insert_pattern_word(k)?;
                     if duplicate {
@@ -660,7 +660,7 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
                     st.hyph.trie_o[q] = op;
                 }
 
-                if st.scanner.cur_cmd == RIGHT_BRACE {
+                if st.scanner.cur_cmd == Cmd::RightBrace {
                     break;
                 }
 
@@ -701,10 +701,10 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         crate::scan::get_x_token(st)?;
 
-        // reswitch: \char re-dispatches as CHAR_GIVEN
+        // reswitch: \char re-dispatches as Cmd::CharGiven
         loop {
             match st.scanner.cur_cmd {
-                LETTER | OTHER_CHAR | CHAR_GIVEN => {
+                Cmd::Letter | Cmd::OtherChar | Cmd::CharGiven => {
                     if st.scanner.cur_chr == i32::from(b'-') {
                         if n < max_word_len(&st.eqtb) {
                             let q = st.mem.get_avail()?;
@@ -738,17 +738,17 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
                     }
                     break;
                 }
-                CHAR_NUM => {
+                Cmd::CharNum => {
                     crate::scan::scan_char_num(st)?;
                     st.scanner.cur_chr = st.scanner.cur_val;
-                    st.scanner.cur_cmd = CHAR_GIVEN;
+                    st.scanner.cur_cmd = Cmd::CharGiven;
                 }
-                SPACER | RIGHT_BRACE => {
+                Cmd::Spacer | Cmd::RightBrace => {
                     if n > 1 {
                         store_hyph_exception(st, n, p)?;
                     }
 
-                    if st.scanner.cur_cmd == RIGHT_BRACE {
+                    if st.scanner.cur_cmd == Cmd::RightBrace {
                         return Ok(());
                     }
 

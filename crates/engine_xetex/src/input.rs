@@ -1,6 +1,6 @@
 //! Input stack: token-list and file levels.
 
-use crate::cmd::ASSIGN_TOKS;
+use crate::cmd::Cmd;
 use crate::codes::code_enum;
 use crate::consts::{FROZEN_RELAX, TEX_NULL};
 use crate::errors::Abort;
@@ -315,7 +315,7 @@ pub(crate) fn begin_token_list(
             TokenType::Write => print_esc(st, "write"),
             _ => print_cmd_chr(
                 st,
-                ASSIGN_TOKS,
+                Cmd::AssignToks,
                 t.raw() - TokenType::Output.raw() + TokPar::OutputRoutine.loc(),
             ),
         }

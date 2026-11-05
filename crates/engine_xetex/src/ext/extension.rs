@@ -1,6 +1,6 @@
 //! Extensions: `\openout`, `\write`, `\closeout`, `\special`, pictures and source specials.
 
-use crate::cmd::EXTENSION;
+use crate::cmd::Cmd;
 use crate::codes::ExtensionCode;
 use crate::consts::{
     FROZEN_SPECIAL, GLYPH_NODE_SIZE, HMODE, MMODE, OPEN_NODE_SIZE, SMALL_NODE_SIZE, VMODE,
@@ -46,7 +46,7 @@ pub(crate) fn append_src_special(st: &mut EngineState) -> Result<(), Abort> {
     d.set_info(&mut st.mem, crate::mem::TEX_NULL);
     let b = crate::texmfmp::make_src_special(st, fname, st.mem.line)
         .map_err(|()| Abort::Internal("string pool overflow"))?;
-    st.mem.str_toks_cat(&mut st.strings, b, 0)?;
+    st.mem.str_toks_cat(&mut st.strings, b, None)?;
     let text = TEMP_HEAD.link(&st.mem);
     d.set_link(&mut st.mem, text);
     w.set_write_tokens(&mut st.mem, d);
@@ -66,7 +66,7 @@ pub(crate) fn insert_src_special(st: &mut EngineState) -> Result<(), Abort> {
     open.set_token(&mut st.mem, Token::left_brace(b'{'));
     let b = crate::texmfmp::make_src_special(st, fname, st.mem.line)
         .map_err(|()| Abort::Internal("string pool overflow"))?;
-    let text_tail = st.mem.str_toks_cat(&mut st.strings, b, 0)?;
+    let text_tail = st.mem.str_toks_cat(&mut st.strings, b, None)?;
     let text = TEMP_HEAD.link(&st.mem);
     open.set_link(&mut st.mem, text);
     let close = st.mem.get_avail()?;
@@ -96,7 +96,7 @@ pub(crate) fn insert_special(st: &mut EngineState, text: &str) -> Result<(), Abo
     let open = st.mem.get_avail()?;
     open.set_token(&mut st.mem, Token::left_brace(b'{'));
     toklist.set_link(&mut st.mem, open);
-    let text_tail = st.mem.str_toks_cat(&mut st.strings, start_pool, 0)?;
+    let text_tail = st.mem.str_toks_cat(&mut st.strings, start_pool, None)?;
     let text = TEMP_HEAD.link(&st.mem);
     open.set_link(&mut st.mem, text);
     let close = st.mem.get_avail()?;
@@ -184,7 +184,7 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
                 match ExtensionCode::from_raw(st.scanner.cur_chr) {
                     Some(
                         c @ (ExtensionCode::Open | ExtensionCode::Write | ExtensionCode::Close),
-                    ) if st.scanner.cur_cmd == EXTENSION => Some(c),
+                    ) if st.scanner.cur_cmd == Cmd::Extension => Some(c),
                     _ => None,
                 };
             if let Some(io_code) = io_code {
@@ -260,7 +260,7 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
                 if area != AAT_FONT_FLAG && area != OTGR_FONT_FLAG {
                     return crate::errors::not_font_error_common(
                         st,
-                        EXTENSION,
+                        Cmd::Extension,
                         ExtensionCode::Glyph.raw(),
                         cur_font,
                         "; not a native platform font",

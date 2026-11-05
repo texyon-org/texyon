@@ -1,9 +1,6 @@
 //! Alignment: `\halign`, `\valign`, `\noalign`, `\omit` and `\span`.
 
-use crate::cmd::{
-    ASSIGN_GLUE, CAR_RET, ENDV, GLUE_REF, MAC_PARAM, MATH_SHIFT, MAX_COMMAND, NO_ALIGN, OMIT,
-    RIGHT_BRACE, SPACER, TAB_MARK,
-};
+use crate::cmd::Cmd;
 use crate::codes::{ScannerStatus, ValueLevel};
 use crate::consts::{
     DLIST, FROZEN_END_TEMPLATE, HMODE, IGNORE_DEPTH, MAX_DIMEN, MMODE, NORMAL, TEX_NULL, VMODE,
@@ -310,7 +307,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
 
     if st.input.cur_list.mode == MMODE {
         do_assignments(st)?;
-        if st.scanner.cur_cmd != MATH_SHIFT {
+        if st.scanner.cur_cmd != Cmd::MathShift {
             crate::output::print_err(st, "Missing $$ inserted");
             st.errors.help(&[
                 r"Displays can use special alignments (like \eqalignno)",
@@ -435,7 +432,7 @@ pub(super) fn align_peek(st: &mut EngineState) -> Result<(), Abort> {
         st.scanner.align_state = 1_000_000;
         get_x_non_blank_or_protected(st)?;
         match st.scanner.cur_cmd {
-            NO_ALIGN => {
+            Cmd::NoAlign => {
                 crate::scan::scan_left_brace(st)?;
                 st.save_stack
                     .new_save_level(GroupCode::NoAlign, st.mem.line)?;
@@ -444,8 +441,8 @@ pub(super) fn align_peek(st: &mut EngineState) -> Result<(), Abort> {
                 }
                 return Ok(());
             }
-            RIGHT_BRACE => return fin_align(st),
-            CAR_RET if st.scanner.cur_chr == CR_CR_CODE => {}
+            Cmd::RightBrace => return fin_align(st),
+            Cmd::CarRet if st.scanner.cur_chr == CR_CR_CODE => {}
             _ => {
                 init_row(st)?;
                 return init_col(st);
@@ -457,7 +454,7 @@ pub(super) fn align_peek(st: &mut EngineState) -> Result<(), Abort> {
 fn get_x_non_blank_or_protected(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         crate::scan::get_x_or_protected(st)?;
-        if st.scanner.cur_cmd != SPACER {
+        if st.scanner.cur_cmd != Cmd::Spacer {
             return Ok(());
         }
     }
@@ -466,19 +463,19 @@ fn get_x_non_blank_or_protected(st: &mut EngineState) -> Result<(), Abort> {
 fn get_preamble_token(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         crate::scan::get_token(st)?;
-        while st.scanner.cur_chr == SPAN_CODE && st.scanner.cur_cmd == TAB_MARK {
+        while st.scanner.cur_chr == SPAN_CODE && st.scanner.cur_cmd == Cmd::TabMark {
             crate::scan::get_token(st)?;
-            if st.scanner.cur_cmd > MAX_COMMAND {
+            if st.scanner.cur_cmd > Cmd::MAX_COMMAND {
                 crate::expand::expand(st)?;
                 crate::scan::get_token(st)?;
             }
         }
-        if st.scanner.cur_cmd == ENDV {
+        if st.scanner.cur_cmd == Cmd::Endv {
             return Err(Abort::Fatal(
                 "(interwoven alignment preambles are not allowed)",
             ));
         }
-        if st.scanner.cur_cmd != ASSIGN_GLUE || st.scanner.cur_chr != GluePar::TabSkip.loc() {
+        if st.scanner.cur_cmd != Cmd::AssignGlue || st.scanner.cur_chr != GluePar::TabSkip.loc() {
             return Ok(());
         }
         crate::scan::scan_optional_equals(st)?;
@@ -488,7 +485,7 @@ fn get_preamble_token(st: &mut EngineState) -> Result<(), Abort> {
             st,
             global,
             GluePar::TabSkip.loc(),
-            GLUE_REF,
+            Cmd::GlueRef,
             st.scanner.cur_val,
         )?;
     }
@@ -528,7 +525,7 @@ fn init_row(st: &mut EngineState) -> Result<(), Abort> {
 fn init_col(st: &mut EngineState) -> Result<(), Abort> {
     let column = NodePtr::<AlignRecord>::at(st.scanner.cur_align);
     column.set_extra_info(&mut st.mem, i32::from(st.scanner.cur_cmd));
-    if st.scanner.cur_cmd == OMIT {
+    if st.scanner.cur_cmd == Cmd::Omit {
         st.scanner.align_state = 0;
     } else {
         crate::input::back_input(st)?;
@@ -790,7 +787,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
         let g = st.mem.new_param_glue(&st.eqtb, GluePar::TabSkip)?.ptr();
         st.scanner.cur_align.set_link(&mut st.mem, g);
         st.scanner.cur_align = g;
-        if st.scanner.cur_cmd == CAR_RET {
+        if st.scanner.cur_cmd == Cmd::CarRet {
             break;
         }
 
@@ -798,13 +795,15 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
         p.set_link(&mut st.mem, MemPtr::NULL);
         loop {
             get_preamble_token(st)?;
-            if st.scanner.cur_cmd == MAC_PARAM {
+            if st.scanner.cur_cmd == Cmd::MacParam {
                 break;
             }
-            if (TAB_MARK..=CAR_RET).contains(&st.scanner.cur_cmd)
+            if (Cmd::TabMark..=Cmd::CarRet).contains(&st.scanner.cur_cmd)
                 && st.scanner.align_state == -1_000_000
             {
-                if p == HOLD_HEAD && st.scanner.cur_loop.is_null() && st.scanner.cur_cmd == TAB_MARK
+                if p == HOLD_HEAD
+                    && st.scanner.cur_loop.is_null()
+                    && st.scanner.cur_cmd == Cmd::TabMark
                 {
                     st.scanner.cur_loop = st.scanner.cur_align;
                 } else {
@@ -817,7 +816,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
                     crate::input::back_error(st)?;
                     break;
                 }
-            } else if st.scanner.cur_cmd != SPACER || p != HOLD_HEAD {
+            } else if st.scanner.cur_cmd != Cmd::Spacer || p != HOLD_HEAD {
                 st.mem.store_new_token(&mut p, st.scanner.cur_tok)?;
             }
         }
@@ -832,12 +831,12 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
         p.set_link(&mut st.mem, MemPtr::NULL);
         loop {
             get_preamble_token(st)?;
-            if (TAB_MARK..=CAR_RET).contains(&st.scanner.cur_cmd)
+            if (Cmd::TabMark..=Cmd::CarRet).contains(&st.scanner.cur_cmd)
                 && st.scanner.align_state == -1_000_000
             {
                 break;
             }
-            if st.scanner.cur_cmd == MAC_PARAM {
+            if st.scanner.cur_cmd == Cmd::MacParam {
                 crate::output::print_err(st, "Only one # is allowed per tab");
                 st.errors.help(&[
                     "There should be exactly one # between &'s, when an",

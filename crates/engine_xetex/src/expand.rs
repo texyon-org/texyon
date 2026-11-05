@@ -1,10 +1,6 @@
 //! Expansion: `expand`, `macro_call`, conditionals and `conv_toks`.
 
-use crate::cmd::{
-    ACTIVE_CHAR, CALL, CONVERT, CS_NAME, END_CS_NAME, END_TEMPLATE, EXPAND_AFTER, FI_OR_ELSE,
-    IF_TEST, IGNORE, INPUT, LEFT_BRACE, LONG_CALL, MAX_COMMAND, NO_EXPAND, OUTER_CALL, OUT_PARAM,
-    RELAX, THE, TOP_BOT_MARK, UNDEFINED_CS,
-};
+use crate::cmd::Cmd;
 use crate::codes::{
     ConvertCode, FiOrElseCode, IfCode, InputCode, MarkCode, ScannerStatus, TheCode, ValueLevel,
 };
@@ -74,8 +70,8 @@ fn skipped_branch_end(st: &mut EngineState) {
 
 fn get_x_token_or_active_char(st: &mut EngineState) -> Result<(), Abort> {
     get_x_token(st)?;
-    if st.scanner.cur_cmd == RELAX && st.scanner.cur_chr == NO_EXPAND_FLAG {
-        st.scanner.cur_cmd = ACTIVE_CHAR;
+    if st.scanner.cur_cmd == Cmd::Relax && st.scanner.cur_chr == NO_EXPAND_FLAG {
+        st.scanner.cur_cmd = Cmd::ACTIVE_CHAR;
         st.scanner.cur_chr = st.scanner.cur_tok.cs() - ACTIVE_BASE;
     }
     Ok(())
@@ -132,7 +128,7 @@ fn scan_cs_name_tokens(st: &mut EngineState) -> Result<(MemPtr, MemPtr), Abort> 
         }
         store_new_token(st, &mut tail, st.scanner.cur_tok)?;
     }
-    if st.scanner.cur_cmd != END_CS_NAME {
+    if st.scanner.cur_cmd != Cmd::EndCsName {
         error_here_with_diagnostic(st, "Missing ");
         print_esc(st, "endcsname");
         print(st, " inserted");
@@ -198,14 +194,15 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
     let mut b = match this_if {
         IfCode::Char | IfCode::Cat => {
             get_x_token_or_active_char(st)?;
-            let (m, n) = if st.scanner.cur_cmd > ACTIVE_CHAR || st.scanner.cur_chr > BIGGEST_USV {
-                (RELAX, TOO_BIG_USV)
-            } else {
-                (st.scanner.cur_cmd, st.scanner.cur_chr)
-            };
+            let (m, n) =
+                if st.scanner.cur_cmd > Cmd::ACTIVE_CHAR || st.scanner.cur_chr > BIGGEST_USV {
+                    (Cmd::Relax, TOO_BIG_USV)
+                } else {
+                    (st.scanner.cur_cmd, st.scanner.cur_chr)
+                };
             get_x_token_or_active_char(st)?;
-            if st.scanner.cur_cmd > ACTIVE_CHAR || st.scanner.cur_chr > BIGGEST_USV {
-                st.scanner.cur_cmd = RELAX;
+            if st.scanner.cur_cmd > Cmd::ACTIVE_CHAR || st.scanner.cur_chr > BIGGEST_USV {
+                st.scanner.cur_cmd = Cmd::Relax;
                 st.scanner.cur_chr = TOO_BIG_USV;
             }
             if this_if == IfCode::Char {
@@ -223,7 +220,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
                     st.scanner.cur_tok.chr() as u8
                 } else {
                     error_here_with_diagnostic(st, "Missing = inserted for ");
-                    print_cmd_chr(st, IF_TEST, this_if.raw());
+                    print_cmd_chr(st, Cmd::IfTest, this_if.raw());
                     capture_to_diagnostic(st, None);
                     st.errors
                         .help(&["I was expecting to see `<', `=', or `>'. Didn't."]);
@@ -265,7 +262,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             get_next(st)?;
             let b = if st.scanner.cur_cmd != p {
                 false
-            } else if st.scanner.cur_cmd < CALL {
+            } else if st.scanner.cur_cmd < Cmd::Call {
                 st.scanner.cur_chr == q
             } else {
                 let mut p = st.scanner.cur_chr_ptr().link(&st.mem);
@@ -299,7 +296,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
         IfCode::False => false,
         IfCode::Defined => {
             get_next_unexpanded(st)?;
-            st.scanner.cur_cmd != UNDEFINED_CS
+            st.scanner.cur_cmd != Cmd::UndefinedCs
         }
         IfCode::CsName => {
             let (head, tail) = scan_cs_name_tokens(st)?;
@@ -314,7 +311,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
                     .id_lookup(&mut st.strings, &st.input.buffer, first, m - first)?
             };
             st.mem.flush_list_with_tail(head, tail);
-            st.eqtb.eq_type(st.scanner.cur_cs) != UNDEFINED_CS
+            st.eqtb.eq_type(st.scanner.cur_cs) != Cmd::UndefinedCs
         }
         IfCode::InCsName => st.scanner.is_in_csname,
         IfCode::FontChar => {
@@ -360,7 +357,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
         IfCode::Primitive => {
             get_next_unexpanded(st)?;
             let m = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)?;
-            st.scanner.cur_cmd != UNDEFINED_CS
+            st.scanner.cur_cmd != Cmd::UndefinedCs
                 && m != UNDEFINED_PRIMITIVE
                 && st.scanner.cur_cmd == st.eqtb.eq_type(PRIM_EQTB_BASE + m)
                 && st.scanner.cur_chr == st.eqtb.equiv(PRIM_EQTB_BASE + m)
@@ -469,7 +466,7 @@ fn ins_file_query_result(
     s: StrNumber,
     b: i32,
 ) -> Result<(), Abort> {
-    let tail = st.mem.str_toks_cat(&mut st.strings, b, 0)?;
+    let tail = st.mem.str_toks_cat(&mut st.strings, b, None)?;
     st.strings.flush_str(s);
     ins_temp_head_list(st, tail)?;
     unseal_pending_str(st, saved);
@@ -549,7 +546,7 @@ fn print_margin_kern(
 
 pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
     let c = ConvertCode::from_raw(st.scanner.cur_chr).ok_or(Abort::Confusion("convert"))?;
-    let mut cat: i32 = 0;
+    let mut cat: Option<Cmd> = None;
     let mut fnt = NULL_FONT;
     let mut arg1: i32 = 0;
     let mut arg2: i32 = 0;
@@ -587,7 +584,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
         ConvertCode::CreationDate => {
             let b = st.strings.pool_ptr;
             st.texmf.creation_date(&mut st.strings);
-            let tail = st.mem.str_toks_cat(&mut st.strings, b, 0)?;
+            let tail = st.mem.str_toks_cat(&mut st.strings, b, None)?;
             ins_temp_head_list(st, tail)?;
         }
         ConvertCode::FileModDate => {
@@ -643,11 +640,14 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             let saved_chr = st.scanner.cur_val;
             scan_int(st)?;
             let code = st.scanner.cur_val;
-            if code < i32::from(LEFT_BRACE)
-                || code > i32::from(ACTIVE_CHAR)
-                || code == i32::from(OUT_PARAM)
-                || code == i32::from(IGNORE)
-            {
+            let valid = Cmd::from_raw(code).filter(|c| {
+                (Cmd::LeftBrace..=Cmd::ACTIVE_CHAR).contains(c)
+                    && *c != Cmd::OUT_PARAM
+                    && *c != Cmd::IGNORE
+            });
+            if let Some(valid) = valid {
+                cat = Some(valid);
+            } else {
                 error_here_with_diagnostic(st, "Invalid code (");
                 print_int(st, code);
                 print(st, "), should be in the ranges 1..4, 6..8, 10..13");
@@ -655,9 +655,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
                 st.errors
                     .help(&["I'm going to use 12 instead of that illegal code value."]);
                 error(st)?;
-                cat = 12;
-            } else {
-                cat = code;
+                cat = Some(Cmd::OtherChar);
             }
             st.scanner.cur_val = saved_chr;
         }
@@ -762,7 +760,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     st.shipout.selector = old_selector;
-    let tail = st.mem.str_toks_cat(&mut st.strings, b, cat as i16)?;
+    let tail = st.mem.str_toks_cat(&mut st.strings, b, cat)?;
     ins_temp_head_list(st, tail)
 }
 
@@ -776,7 +774,7 @@ fn is_aat_or_graphite(st: &EngineState, f: FontId) -> bool {
 }
 
 fn not_font_error(st: &mut EngineState, c: ConvertCode, f: FontId, msg: &str) -> Result<(), Abort> {
-    crate::errors::not_font_error_common(st, CONVERT, c.raw(), f, msg)
+    crate::errors::not_font_error_common(st, Cmd::Convert, c.raw(), f, msg)
 }
 
 /// Puts `token` in front of the backed-up token list on top of the input stack.
@@ -804,8 +802,8 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
     let backup_backup = BACKUP_HEAD.link(&st.mem);
 
     'reswitch: loop {
-        if st.scanner.cur_cmd >= CALL {
-            if st.scanner.cur_cmd < END_TEMPLATE {
+        if st.scanner.cur_cmd >= Cmd::Call {
+            if st.scanner.cur_cmd < Cmd::EndTemplate {
                 macro_call(st)?;
             } else {
                 st.scanner.cur_tok = Token::from_cs(FROZEN_ENDV);
@@ -817,7 +815,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
             show_cur_cmd_chr(st);
         }
         match st.scanner.cur_cmd {
-            TOP_BOT_MARK => {
+            Cmd::TopBotMark => {
                 let mark = MarkCode::from_raw(st.scanner.cur_chr % MarkCode::MARKS)
                     .ok_or(Abort::Confusion("top_bot_mark"))?;
                 if st.scanner.cur_chr >= MarkCode::MARKS {
@@ -837,12 +835,12 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     begin_token_list(st, st.scanner.cur_ptr, TokenType::Mark)?;
                 }
             }
-            EXPAND_AFTER => {
+            Cmd::ExpandAfter => {
                 if st.scanner.cur_chr == 0 {
                     get_token(st)?;
                     let t = st.scanner.cur_tok;
                     get_token(st)?;
-                    if st.scanner.cur_cmd > MAX_COMMAND {
+                    if st.scanner.cur_cmd > Cmd::MAX_COMMAND {
                         expand(st)?;
                     } else {
                         back_input(st)?;
@@ -851,7 +849,8 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     back_input(st)?;
                 } else {
                     get_token(st)?;
-                    if st.scanner.cur_cmd == IF_TEST && st.scanner.cur_chr != IfCode::Case.raw() {
+                    if st.scanner.cur_cmd == Cmd::IfTest && st.scanner.cur_chr != IfCode::Case.raw()
+                    {
                         st.scanner.cur_chr += IfCode::UNLESS;
                         continue 'reswitch;
                     }
@@ -866,7 +865,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     back_error(st)?;
                 }
             }
-            NO_EXPAND => {
+            Cmd::NoExpand => {
                 if st.scanner.cur_chr == 0 {
                     get_token_unexpanded(st)?;
                     let t = st.scanner.cur_tok;
@@ -880,7 +879,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                         st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)?;
                     if st.scanner.cur_cs != UNDEFINED_PRIMITIVE {
                         let cmd = st.eqtb.eq_type(PRIM_EQTB_BASE + st.scanner.cur_cs);
-                        if cmd > MAX_COMMAND {
+                        if cmd > Cmd::MAX_COMMAND {
                             st.scanner.cur_cmd = cmd;
                             st.scanner.cur_chr = st.eqtb.equiv(PRIM_EQTB_BASE + st.scanner.cur_cs);
                             st.scanner.cur_tok = Token::new(st.scanner.cur_cmd, st.scanner.cur_chr);
@@ -892,7 +891,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     }
                 }
             }
-            CS_NAME => {
+            Cmd::CsName => {
                 let (head, tail) = scan_cs_name_tokens(st)?;
                 let first = st.input.first;
                 let j = token_chars_to_buffer(st, head.link(&st.mem))?;
@@ -910,23 +909,23 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                 };
                 st.mem.flush_list_with_tail(head, tail);
                 let cs = st.scanner.cur_cs;
-                if st.eqtb.eq_type(cs) == UNDEFINED_CS {
+                if st.eqtb.eq_type(cs) == Cmd::UndefinedCs {
                     let _ = st.eqtb.eq_define(
                         &mut st.save_stack,
                         &mut st.mem,
                         &mut st.scanner,
                         cs,
-                        RELAX,
+                        Cmd::Relax,
                         TOO_BIG_USV,
                     );
                 }
                 st.scanner.cur_tok = Token::from_cs(st.scanner.cur_cs);
                 back_input(st)?;
             }
-            CONVERT => conv_toks(st)?,
-            THE => ins_the_toks(st)?,
-            IF_TEST => conditional(st)?,
-            FI_OR_ELSE => {
+            Cmd::Convert => conv_toks(st)?,
+            Cmd::The => ins_the_toks(st)?,
+            Cmd::IfTest => conditional(st)?,
+            Cmd::FiOrElse => {
                 if st.eqtb.int_par(IntPar::TracingIfs) > 0
                     && st.eqtb.int_par(IntPar::TracingCommands) <= 1
                 {
@@ -937,7 +936,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                         crate::input::insert_relax(st)?;
                     } else {
                         error_here_with_diagnostic(st, "Extra ");
-                        print_cmd_chr(st, FI_OR_ELSE, st.scanner.cur_chr);
+                        print_cmd_chr(st, Cmd::FiOrElse, st.scanner.cur_chr);
                         capture_to_diagnostic(st, None);
                         st.errors
                             .help(&[r"I'm ignoring this; it doesn't match any \if."]);
@@ -950,7 +949,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     pop_fi(st);
                 }
             }
-            INPUT => match InputCode::from_raw(st.scanner.cur_chr) {
+            Cmd::Input => match InputCode::from_raw(st.scanner.cur_chr) {
                 Some(InputCode::EndInput) => st.input.force_eof = true,
                 Some(InputCode::ScanTokens) => crate::scan::pseudo_start(st)?,
                 _ if st.scanner.name_in_progress => crate::input::insert_relax(st)?,
@@ -988,7 +987,7 @@ fn runaway_par_in_argument(
     n: i32,
     unbalance: i32,
 ) -> Result<(), Abort> {
-    if st.scanner.long_state == CALL {
+    if st.scanner.long_state == Cmd::Call {
         crate::errors::runaway(st);
         error_here_with_diagnostic(st, "Paragraph ended before ");
         sprint_cs(st, st.scanner.warning_index);
@@ -1025,7 +1024,7 @@ fn extra_right_brace_in_argument(st: &mut EngineState) -> Result<(), Abort> {
         "your `}' was spurious, just type `2' and it will go away.",
     ]);
     st.scanner.align_state += 1;
-    st.scanner.long_state = CALL;
+    st.scanner.long_state = Cmd::Call;
     st.scanner.cur_tok = st.input.par_token;
     crate::input::ins_error(st)
 }
@@ -1109,9 +1108,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
             st.scanner.scanner_status = ScannerStatus::Matching;
             let mut unbalance: i32 = 0;
             st.scanner.long_state = st.eqtb.eq_type(st.scanner.cur_cs);
-            if st.scanner.long_state >= OUTER_CALL {
-                st.scanner.long_state -= 2;
-            }
+            st.scanner.long_state = st.scanner.long_state.without_outer();
 
             loop {
                 TEMP_HEAD.set_link(&mut st.mem, MemPtr::NULL);
@@ -1191,7 +1188,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                     }
 
                     if st.scanner.cur_tok == st.input.par_token
-                        && st.scanner.long_state != LONG_CALL
+                        && st.scanner.long_state != Cmd::LongCall
                     {
                         runaway_par_in_argument(st, &mut pstack, n, unbalance)?;
                         break 'exit;
@@ -1212,7 +1209,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                             get_token(st)?;
 
                             if st.scanner.cur_tok == st.input.par_token
-                                && st.scanner.long_state != LONG_CALL
+                                && st.scanner.long_state != Cmd::LongCall
                             {
                                 runaway_par_in_argument(st, &mut pstack, n, unbalance)?;
                                 break 'exit;

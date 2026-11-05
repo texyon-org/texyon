@@ -4,10 +4,7 @@
 
 use std::collections::HashMap;
 
-use crate::cmd::{
-    ASSIGN_DIMEN, ASSIGN_INT, CALL, LEFT_BRACE, LETTER, MATH_SHIFT, OTHER_CHAR, REGISTER,
-    RIGHT_BRACE, SET_FONT, SPACER, SUB_MARK, SUP_MARK, TAB_MARK,
-};
+use crate::cmd::Cmd;
 use crate::codes::ValueLevel;
 use crate::consts::{HASH_BASE, TEX_NULL};
 use crate::errors::Abort;
@@ -359,7 +356,7 @@ fn list_tokens(st: &EngineState, mut p: MemPtr) -> Vec<Token> {
 }
 
 fn macro_tokens(st: &EngineState, cs: i32) -> Option<Vec<Token>> {
-    if !matches!(st.eqtb.eq_type(cs), CALL | crate::cmd::LONG_CALL) {
+    if !matches!(st.eqtb.eq_type(cs), Cmd::Call | Cmd::LongCall) {
         return None;
     }
     let first = MemPtr(st.eqtb.equiv(cs)).link(&st.mem);
@@ -449,7 +446,7 @@ fn expression_tokens(st: &EngineState, expression: i32) -> Result<Vec<Token>, &'
 fn is_number(tokens: &[Token]) -> bool {
     tokens.iter().all(|t| {
         !t.is_cs()
-            && !matches!(t.cmd(), LEFT_BRACE | RIGHT_BRACE | SPACER)
+            && !matches!(t.cmd(), Cmd::LeftBrace | Cmd::RightBrace | Cmd::Spacer)
             && (t.chr() == i32::from(b'.')
                 || (i32::from(b'0')..=i32::from(b'9')).contains(&t.chr()))
     })
@@ -460,7 +457,7 @@ fn expression_items(st: &EngineState, tokens: &[Token]) -> Result<Vec<(Item, boo
     // pgf strips a lone outer brace group.
     while body
         .first()
-        .is_some_and(|t| !t.is_cs() && t.cmd() == LEFT_BRACE)
+        .is_some_and(|t| !t.is_cs() && t.cmd() == Cmd::LeftBrace)
     {
         let mut depth = 0;
         let mut close = None;
@@ -469,8 +466,8 @@ fn expression_items(st: &EngineState, tokens: &[Token]) -> Result<Vec<(Item, boo
                 continue;
             }
             match t.cmd() {
-                LEFT_BRACE => depth += 1,
-                RIGHT_BRACE => {
+                Cmd::LeftBrace => depth += 1,
+                Cmd::RightBrace => {
                     depth -= 1;
                     if depth == 0 {
                         close = Some(i);
@@ -495,12 +492,19 @@ fn expression_items(st: &EngineState, tokens: &[Token]) -> Result<Vec<(Item, boo
         }
         let (cmd, chr) = (tok.cmd(), tok.chr());
         match cmd {
-            SPACER => space = true,
-            LETTER | OTHER_CHAR | SUP_MARK | SUB_MARK | TAB_MARK | MATH_SHIFT if chr < 128 => {
+            Cmd::Spacer => space = true,
+            Cmd::Letter
+            | Cmd::OtherChar
+            | Cmd::SupMark
+            | Cmd::SubMark
+            | Cmd::TabMark
+            | Cmd::MathShift
+                if chr < 128 =>
+            {
                 items.push((
                     Item::Char {
                         byte: chr as u8,
-                        other: cmd == OTHER_CHAR,
+                        other: cmd == Cmd::OtherChar,
                     },
                     space,
                 ));
@@ -518,9 +522,9 @@ fn register_item(st: &EngineState, cs: i32) -> Result<Item, &'static str> {
     }
     let m = st.eqtb.equiv(cs);
     match st.eqtb.eq_type(cs) {
-        ASSIGN_DIMEN => Ok(Item::Dimen(st.eqtb.int_at(m))),
-        ASSIGN_INT => Ok(Item::Count(st.eqtb.int_at(m))),
-        REGISTER if ValueLevel::from_raw(m).is_none() => {
+        Cmd::AssignDimen => Ok(Item::Dimen(st.eqtb.int_at(m))),
+        Cmd::AssignInt => Ok(Item::Count(st.eqtb.int_at(m))),
+        Cmd::Register if ValueLevel::from_raw(m).is_none() => {
             let sa = NodePtr::<SaNode>::at(m);
             match sa.sa_type(&st.mem) {
                 ValueLevel::Int => Ok(Item::Count(sa.sa_int(&st.mem))),
@@ -542,7 +546,7 @@ fn selected_font(st: &mut EngineState, known: &KnownCs) -> Option<eval::Font> {
         name.push_str(std::str::from_utf8(&macro_text(st, cs)?).ok()?);
     }
     let id = lookup(st, &name)?;
-    if st.eqtb.eq_type(id) != SET_FONT {
+    if st.eqtb.eq_type(id) != Cmd::SetFont {
         return None;
     }
     let font = FontId(st.eqtb.equiv(id));
@@ -593,7 +597,7 @@ fn commit(st: &mut EngineState, known: &KnownCs, answer: &Answer) -> Result<(), 
         &mut st.mem,
         &mut st.scanner,
         known.result(),
-        CALL,
+        Cmd::Call,
         body.0,
     )
 }
@@ -702,7 +706,7 @@ fn chars(tokens: &[Token]) -> Option<Vec<u8>> {
     tokens
         .iter()
         .map(|t| {
-            (!t.is_cs() && t.chr() < 128 && !matches!(t.cmd(), LEFT_BRACE | RIGHT_BRACE))
+            (!t.is_cs() && t.chr() < 128 && !matches!(t.cmd(), Cmd::LeftBrace | Cmd::RightBrace))
                 .then_some(t.chr() as u8)
         })
         .collect()
@@ -911,7 +915,7 @@ pub(crate) fn native_macro(st: &mut EngineState, kind: Native, args: &[MemPtr]) 
                         &mut st.mem,
                         &mut st.scanner,
                         cs,
-                        CALL,
+                        Cmd::Call,
                         body.0,
                     )?;
                 }

@@ -312,7 +312,7 @@ fn digest_scanner(st: &EngineState) -> u64 {
         i64::from(scanner.align_state),
         i64::from(scanner.cond_ptr.0),
         i64::from(scanner.cur_cs),
-        i64::from(scanner.cur_cmd),
+        i64::from(i32::from(scanner.cur_cmd)),
         i64::from(scanner.cur_chr),
         i64::from(scanner.cur_tok.0),
         i64::from(scanner.cur_val),

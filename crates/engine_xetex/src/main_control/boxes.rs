@@ -1,6 +1,6 @@
 //! Boxes: `\hbox`, `\vbox`, `\box`, `\lastbox`, `\unhbox`, `\unskip` and friends.
 
-use crate::cmd::{BOX_REF, HRULE, HSKIP, MAKE_BOX, VRULE, VSKIP};
+use crate::cmd::Cmd;
 use crate::codes::{BoxCode, ValueLevel};
 use crate::consts::{
     A_LEADERS, BEGIN_M_CODE, BOX_BASE, BOX_NODE_SIZE, END_M_CODE, HMODE, IGNORE_DEPTH,
@@ -109,10 +109,10 @@ pub(super) fn delete_last(st: &mut EngineState) -> Result<(), Abort> {
 
 pub(super) fn scan_box(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
     crate::scan::get_x_non_blank_non_relax(st)?;
-    if st.scanner.cur_cmd == MAKE_BOX {
+    if st.scanner.cur_cmd == Cmd::MakeBox {
         begin_box(st, box_context)
     } else if box_context >= LEADER_FLAG
-        && (st.scanner.cur_cmd == HRULE || st.scanner.cur_cmd == VRULE)
+        && (st.scanner.cur_cmd == Cmd::Hrule || st.scanner.cur_cmd == Cmd::Vrule)
     {
         st.scanner.cur_box = Some(BoxOrRule::Rule(crate::scan::scan_rule_spec(st)?));
         box_end(st, box_context)
@@ -209,7 +209,7 @@ fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
         st.scanner.cur_val = n;
         let cb = st.scanner.cur_box.map_or(MemPtr::NULL, |b| b.ptr());
         if n < 256 {
-            define(st, global, BOX_BASE + n, BOX_REF, cb.0)?;
+            define(st, global, BOX_BASE + n, Cmd::BoxRef, cb.0)?;
         } else {
             let sa = st
                 .mem
@@ -226,7 +226,9 @@ fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
         }
         crate::scan::get_x_non_blank_non_relax(st)?;
         let vertical = st.input.cur_list.mode.abs() == VMODE;
-        if (st.scanner.cur_cmd == HSKIP && !vertical) || (st.scanner.cur_cmd == VSKIP && vertical) {
+        if (st.scanner.cur_cmd == Cmd::Hskip && !vertical)
+            || (st.scanner.cur_cmd == Cmd::Vskip && vertical)
+        {
             let g = append_glue(st)?;
             g.set_subtype(
                 &mut st.mem,

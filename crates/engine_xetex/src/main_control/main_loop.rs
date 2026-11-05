@@ -1,6 +1,6 @@
 //! The character main loop: ligatures, kerns, native words, interchar tokens.
 
-use crate::cmd::{CHAR_GIVEN, CHAR_NUM, LETTER, NO_BOUNDARY, OTHER_CHAR};
+use crate::cmd::Cmd;
 use crate::codes::ValueLevel;
 use crate::consts::{
     CHAR_CLASS_LIMIT, HMODE, NATIVE_NODE_SIZE, NON_ADDRESS, SPACE_ADJUSTMENT, TEX_NULL,
@@ -45,8 +45,8 @@ pub(super) fn insert_boundary_inter_char_toks(st: &mut EngineState) -> Result<bo
         return Ok(false);
     };
     if st.scanner.cur_cs == 0 {
-        if st.scanner.cur_cmd == CHAR_NUM {
-            st.scanner.cur_cmd = OTHER_CHAR;
+        if st.scanner.cur_cmd == Cmd::CharNum {
+            st.scanner.cur_cmd = Cmd::OtherChar;
         }
         st.scanner.cur_tok = Token::new(st.scanner.cur_cmd, st.scanner.cur_chr);
     } else {
@@ -73,8 +73,8 @@ fn insert_inter_char_toks_before(st: &mut EngineState, sc: i32) -> Result<bool, 
     let Some(list) = inter_char_toks(st, prev * CHAR_CLASS_LIMIT + sc) else {
         return Ok(false);
     };
-    if st.scanner.cur_cmd != LETTER {
-        st.scanner.cur_cmd = OTHER_CHAR;
+    if st.scanner.cur_cmd != Cmd::Letter {
+        st.scanner.cur_cmd = Cmd::OtherChar;
     }
     st.scanner.cur_tok = Token::new(st.scanner.cur_cmd, st.scanner.cur_chr);
     crate::input::back_input(st)?;
@@ -111,8 +111,8 @@ fn adjust_space_factor(st: &mut EngineState) -> i32 {
     st.mainloop.space_class
 }
 
-fn is_char_cmd(cmd: u8) -> bool {
-    matches!(cmd, LETTER | OTHER_CHAR | CHAR_GIVEN)
+fn is_char_cmd(cmd: Cmd) -> bool {
+    matches!(cmd, Cmd::Letter | Cmd::OtherChar | Cmd::CharGiven)
 }
 
 #[inline]
@@ -243,7 +243,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
         if is_char_cmd(st.scanner.cur_cmd) {
             continue;
         }
-        if st.scanner.cur_cmd == CHAR_NUM {
+        if st.scanner.cur_cmd == Cmd::CharNum {
             crate::scan::scan_usv_num(st)?;
             st.scanner.cur_chr = st.scanner.cur_val;
             continue;
@@ -736,8 +736,8 @@ fn lookahead(st: &mut EngineState) -> Result<bool, Abort> {
         crate::scan::x_token(st)?;
     }
     if !is_char_cmd(st.scanner.cur_cmd) {
-        if st.scanner.cur_cmd != CHAR_NUM {
-            if st.scanner.cur_cmd == NO_BOUNDARY {
+        if st.scanner.cur_cmd != Cmd::CharNum {
+            if st.scanner.cur_cmd == Cmd::NoBoundary {
                 st.mainloop.bchar = TOO_BIG_CHAR;
             }
             st.mainloop.cur_r = st.mainloop.bchar;

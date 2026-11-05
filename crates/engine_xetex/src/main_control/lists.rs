@@ -1,6 +1,6 @@
 //! Building lists: paragraphs, glue, kerns, inserts, marks, discretionaries, accents.
 
-use crate::cmd::{CHAR_GIVEN, CHAR_NUM, HRULE, LETTER, OTHER_CHAR, SHAPE_REF, VADJUST};
+use crate::cmd::Cmd;
 use crate::codes::{BoxCode, SkipCode, ValueLevel};
 use crate::consts::{
     ACC_KERN, BIGGEST_CHAR, BOX_NODE_SIZE, EMPTY, ETEX_PEN_BASE, EXPLICIT, FROZEN_CR,
@@ -81,7 +81,7 @@ pub(crate) fn normal_paragraph(st: &mut EngineState) -> Result<(), Abort> {
     }
     for loc in [PAR_SHAPE_LOC, ETEX_PEN_BASE] {
         if st.eqtb.equiv(loc) != TEX_NULL {
-            define(st, false, loc, SHAPE_REF, TEX_NULL)?;
+            define(st, false, loc, Cmd::ShapeRef, TEX_NULL)?;
         }
     }
     Ok(())
@@ -136,7 +136,7 @@ pub(super) fn head_for_vmode(st: &mut EngineState) -> Result<(), Abort> {
         st.input.cur_input.set_token_type(TokenType::Inserted);
         return Ok(());
     }
-    if st.scanner.cur_cmd != HRULE {
+    if st.scanner.cur_cmd != Cmd::Hrule {
         return off_save(st);
     }
     crate::output::error_here_with_diagnostic(st, "You can't use `");
@@ -151,7 +151,7 @@ pub(super) fn head_for_vmode(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 pub(super) fn begin_insert_or_adjust(st: &mut EngineState) -> Result<(), Abort> {
-    if st.scanner.cur_cmd == VADJUST {
+    if st.scanner.cur_cmd == Cmd::Vadjust {
         st.scanner.cur_val = 255;
     } else {
         crate::scan::scan_eight_bit_int(st)?;
@@ -167,7 +167,7 @@ pub(super) fn begin_insert_or_adjust(st: &mut EngineState) -> Result<(), Abort> 
         }
     }
     st.save_stack.set_saved(0, st.scanner.cur_val);
-    let pre = st.scanner.cur_cmd == VADJUST && crate::scan::scan_keyword(st, "pre")?;
+    let pre = st.scanner.cur_cmd == Cmd::Vadjust && crate::scan::scan_keyword(st, "pre")?;
     st.save_stack.set_saved(1, i32::from(pre));
     st.save_stack.save_ptr += 2;
     st.save_stack
@@ -812,12 +812,12 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
     do_assignments(st)?;
     let f = st.eqtb.cur_font();
     let q = match st.scanner.cur_cmd {
-        LETTER | OTHER_CHAR | CHAR_GIVEN => {
+        Cmd::Letter | Cmd::OtherChar | Cmd::CharGiven => {
             let q = new_character(st, f, st.scanner.cur_chr as u16)?;
             st.scanner.cur_val = st.scanner.cur_chr;
             q
         }
-        CHAR_NUM => {
+        Cmd::CharNum => {
             crate::scan::scan_char_num(st)?;
             new_character(st, f, st.scanner.cur_val as u16)?
         }

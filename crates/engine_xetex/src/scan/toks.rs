@@ -1,7 +1,7 @@
 //! Building token lists: `str_toks`, `the_toks`, `scan_toks`, `read_toks` and `\scantokens`.
 
 use crate::bridge::output_flush;
-use crate::cmd::{ACTIVE_CHAR, CALL, MAC_PARAM, MAX_COMMAND, OTHER_CHAR, RELAX, RIGHT_BRACE, THE};
+use crate::cmd::Cmd;
 use crate::codes::{ScannerStatus, TheCode, ValueLevel};
 use crate::consts::{ACTIVE_BASE, CLOSED, JUST_OPEN, NORMAL, TEX_NULL};
 use crate::errors::{error, Abort};
@@ -29,7 +29,7 @@ impl MemState {
         &mut self,
         strings: &mut crate::state::StringsState,
         b: i32,
-        cat: i16,
+        cat: Option<Cmd>,
     ) -> Result<MemPtr, Abort> {
         if strings.pool_ptr + 1 > strings.pool_size {
             return Err(Abort::PoolOverflow);
@@ -42,7 +42,7 @@ impl MemState {
         while k < strings.pool_ptr {
             let mut c = i32::from(strings.str_pool[k as usize]);
 
-            let t = if c == i32::from(b' ') && cat == 0 {
+            let t = if c == i32::from(b' ') && cat.is_none() {
                 Token::SPACE
             } else {
                 if (0xD800..0xDC00).contains(&c) && k + 1 < strings.pool_ptr {
@@ -55,12 +55,10 @@ impl MemState {
                     }
                 }
 
-                if cat == 0 {
-                    Token::new(OTHER_CHAR, c)
-                } else if cat == i16::from(ACTIVE_CHAR) {
-                    Token::from_cs(ACTIVE_BASE + c)
-                } else {
-                    Token::new(cat as u8, c)
+                match cat {
+                    None => Token::new(Cmd::OtherChar, c),
+                    Some(Cmd::ACTIVE_CHAR) => Token::from_cs(ACTIVE_BASE + c),
+                    Some(cat) => Token::new(cat, c),
                 }
             };
 
@@ -153,7 +151,7 @@ pub(crate) fn read_toks(st: &mut EngineState, n: i32, r: i32, j: i32) -> Result<
                 let tok = if c == i32::from(b' ') {
                     Token::SPACE
                 } else {
-                    Token::new(OTHER_CHAR, c)
+                    Token::new(Cmd::OtherChar, c)
                 };
                 st.scanner.cur_chr = c;
                 st.scanner.cur_tok = tok;
@@ -240,7 +238,7 @@ pub(crate) fn the_toks(st: &mut EngineState, code: TheCode) -> Result<MemPtr, Ab
         crate::output::token_show(st, p);
         st.mem.flush_list(p);
         st.shipout.selector = old_setting;
-        return st.mem.str_toks_cat(&mut st.strings, b, 0);
+        return st.mem.str_toks_cat(&mut st.strings, b, None);
     }
     get_x_token(st)?;
     scan_something_internal(st, ValueLevel::Tok, false)?;
@@ -278,7 +276,7 @@ pub(crate) fn the_toks(st: &mut EngineState, code: TheCode) -> Result<MemPtr, Ab
             _ => {}
         }
         st.shipout.selector = old_setting;
-        st.mem.str_toks_cat(&mut st.strings, b, 0)
+        st.mem.str_toks_cat(&mut st.strings, b, None)
     }
 }
 pub(crate) fn scan_toks(
@@ -304,7 +302,7 @@ pub(crate) fn scan_toks(
                 if st.scanner.cur_tok.is_brace() {
                     break false;
                 }
-                if st.scanner.cur_cmd == MAC_PARAM {
+                if st.scanner.cur_cmd == Cmd::MacParam {
                     let s = Token::match_(st.scanner.cur_chr);
                     get_token(st)?;
                     if st.scanner.cur_tok.is_left_brace() {
@@ -337,7 +335,7 @@ pub(crate) fn scan_toks(
             };
             if !ended_with_brace {
                 store_new_token(st, &mut p, Token::END_MATCH)?;
-                if st.scanner.cur_cmd == RIGHT_BRACE {
+                if st.scanner.cur_cmd == Cmd::RightBrace {
                     print_err(st, "Missing { inserted");
                     st.scanner.align_state += 1;
                     st.errors.help(&[
@@ -357,16 +355,16 @@ pub(crate) fn scan_toks(
             if xpand {
                 loop {
                     get_next(st)?;
-                    if st.scanner.cur_cmd >= CALL
+                    if st.scanner.cur_cmd >= Cmd::Call
                         && st.mem.is_protected_macro(st.scanner.cur_chr_ptr())
                     {
-                        st.scanner.cur_cmd = RELAX;
+                        st.scanner.cur_cmd = Cmd::Relax;
                         st.scanner.cur_chr = NO_EXPAND_FLAG;
                     }
-                    if st.scanner.cur_cmd <= MAX_COMMAND {
+                    if st.scanner.cur_cmd <= Cmd::MAX_COMMAND {
                         break;
                     }
-                    if st.scanner.cur_cmd != THE {
+                    if st.scanner.cur_cmd != Cmd::The {
                         expand(st)?;
                     } else {
                         let tail = the_toks(st, crate::expand::the_code(st)?)?;
@@ -386,7 +384,7 @@ pub(crate) fn scan_toks(
             }
 
             if st.scanner.cur_tok.is_brace() {
-                if st.scanner.cur_cmd < RIGHT_BRACE {
+                if st.scanner.cur_cmd < Cmd::RightBrace {
                     unbalance += 1;
                 } else {
                     unbalance -= 1;
@@ -394,14 +392,14 @@ pub(crate) fn scan_toks(
                         break 'found;
                     }
                 }
-            } else if st.scanner.cur_cmd == MAC_PARAM && macro_def {
+            } else if st.scanner.cur_cmd == Cmd::MacParam && macro_def {
                 let s = st.scanner.cur_tok;
                 if xpand {
                     get_x_token(st)?;
                 } else {
                     get_token(st)?;
                 }
-                if st.scanner.cur_cmd != MAC_PARAM {
+                if st.scanner.cur_cmd != Cmd::MacParam {
                     if st.scanner.cur_tok <= ZERO_TOKEN || st.scanner.cur_tok > t {
                         error_here_with_diagnostic(
                             st,
@@ -524,7 +522,7 @@ fn scan_general_text(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         get_token(st)?;
         if st.scanner.cur_tok.is_brace() {
-            if st.scanner.cur_cmd < RIGHT_BRACE {
+            if st.scanner.cur_cmd < Cmd::RightBrace {
                 unbalance += 1;
             } else {
                 unbalance -= 1;
