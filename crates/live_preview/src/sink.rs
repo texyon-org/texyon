@@ -1,7 +1,8 @@
 //! A frame sink for a host that is a function call away.
 
-use texyon_live_preview::{FramePatch, FrameSink};
 use texyon_preview_protocol::OperationMetrics;
+
+use crate::{FramePatch, FrameSink};
 
 /// A [`FrameSink`] that retains the last frame for the caller to take.
 #[derive(Default)]
@@ -20,10 +21,12 @@ impl CollectingSink {
         self.frame.take()
     }
 
+    /// Counters of the last operation.
     pub fn metrics(&self) -> OperationMetrics {
         self.metrics
     }
 
+    /// Whether the last operation left a tail to settle.
     pub fn tail_pending(&self) -> bool {
         self.tail_pending
     }

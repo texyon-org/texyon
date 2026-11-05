@@ -6,6 +6,8 @@ mod engine_driver;
 mod pipeline;
 mod processor;
 mod publication;
+mod session;
+mod sink;
 mod source;
 mod transport;
 mod worker_clock;
@@ -36,6 +38,11 @@ pub use publication::{
     ClientBelief, FrameHeader, FramePage, FramePatch, FrameSink, PageBelief, PreviewPublisher,
     PublicationError,
 };
+pub use session::{
+    CompileOutput, PageOverlay, PreviewSession, RasterPage, RenderedPage, SessionConfig,
+    SessionHost, SourceEdit,
+};
+pub use sink::CollectingSink;
 pub use source::{AcceptedSourceSnapshot, DocumentRoot, SourceError, SourceSet};
 pub use texyon_preview_protocol::{
     FrameId, FramePhase, QueryId, RequestSeq, SequenceExhausted, SourceRevision,

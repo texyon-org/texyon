@@ -240,6 +240,16 @@ impl<P: ResourceProvider, B: Backend, S: FrameSink> ResidentPreviewProcessor<P, 
         &mut self.pipeline
     }
 
+    /// Inspect the resident engine.
+    pub fn engine(&self) -> &ResidentXeTeX {
+        &self.engine
+    }
+
+    /// Reach the resident engine mutably, e.g. to run another engine on its I/O.
+    pub fn engine_mut(&mut self) -> &mut ResidentXeTeX {
+        &mut self.engine
+    }
+
     /// Inspect the publication sink.
     pub fn sink(&self) -> &S {
         &self.sink

@@ -13,7 +13,6 @@ mod io;
 mod protocol;
 mod resources;
 mod session;
-mod sink;
 mod support;
 
 use std::cell::RefCell;
@@ -87,7 +86,7 @@ fn dispatch(text: &str) -> Response {
             if slot.is_some() {
                 return Response::error("a session is already open");
             }
-            match Session::new(&format, &primary, raster) {
+            match resident::open(&format, &primary, raster) {
                 Ok(session) => {
                     *slot = Some(session);
                     Response::Ok
@@ -100,7 +99,7 @@ fn dispatch(text: &str) -> Response {
             // SAFETY: the host allocated this with texyon_wasm_alloc and gave
             // up ownership by sending the request.
             let bytes = unsafe { HostBuffer { ptr, len }.adopt() };
-            session.preload(&name, bytes);
+            resident::preload(session, &name, bytes);
             Response::Ok
         }),
 
@@ -109,12 +108,20 @@ fn dispatch(text: &str) -> Response {
             edits,
             viewport,
             scale,
-        } => with_session(
-            |session| match session.compile(files, edits, viewport, scale) {
+        } => with_session(|session| {
+            match session.compile(
+                files,
+                edits
+                    .into_iter()
+                    .map(|(path, edit)| (path, edit.into()))
+                    .collect(),
+                viewport,
+                scale,
+            ) {
                 Ok(output) => Response::Compiled(Box::new(report(session, output))),
                 Err(error) => Response::error(error),
-            },
-        ),
+            }
+        }),
 
         Request::Raster { pages, scale } => {
             with_session(|session| match session.rasterize(&pages, scale) {
@@ -189,7 +196,8 @@ fn hand_over_raster(page: resident::RasterPage) -> RasterPage {
 }
 
 fn report(session: &Session, output: CompileOutput) -> CompileReport {
-    let (support_files, support_bytes) = session.support_stats();
+    let (support_files, support_bytes) = resident::support_stats(session);
+    let metrics = output.metrics;
 
     CompileReport {
         published: output.published,
@@ -213,18 +221,18 @@ fn report(session: &Session, output: CompileOutput) -> CompileReport {
         tail_pending: output.tail_pending,
         messages: output.messages,
         diagnostics: output.diagnostics.into_iter().map(Into::into).collect(),
-        checkpoint_rungs: output.checkpoint_rungs,
-        checkpoint_bytes: output.checkpoint_bytes,
-        reused_prefix: output.reused_prefix,
-        replay_rung: output.replay_rung,
-        replay_commands: output.replay_commands,
-        tex_ms: output.tex_ms,
-        analyze_ms: output.analyze_ms,
-        render_ms: output.render_ms,
-        shipouts: output.shipouts,
-        pages_fingerprinted: output.pages_fingerprinted,
-        pages_rendered: output.pages_rendered,
-        unsupported_pages: output.unsupported_pages,
+        checkpoint_rungs: metrics.checkpoint_rungs,
+        checkpoint_bytes: metrics.checkpoint_bytes,
+        reused_prefix: metrics.reused_prefix,
+        replay_rung: metrics.replay_rung,
+        replay_commands: metrics.replay_commands.get(),
+        tex_ms: metrics.engine_ms,
+        analyze_ms: metrics.analysis_ms,
+        render_ms: metrics.render_ms,
+        shipouts: metrics.shipouts,
+        pages_fingerprinted: metrics.pages_fingerprinted,
+        pages_rendered: metrics.pages_rendered,
+        unsupported_pages: metrics.unsupported_pages,
         support_files,
         support_bytes,
     }

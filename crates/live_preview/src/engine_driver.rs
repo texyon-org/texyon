@@ -289,6 +289,26 @@ impl ResidentXeTeX {
         Ok(Some(Arc::from(file.data.as_slice())))
     }
 
+    /// A file an engine operation wrote this session, such as the transcript.
+    pub fn written_file(&self, name: &str) -> Option<Vec<u8>> {
+        self.output
+            .files
+            .borrow()
+            .get(name)
+            .map(|file| file.data.clone())
+    }
+
+    /// Run another engine over `files` stacked on this engine's support I/O.
+    pub fn with_support(
+        &mut self,
+        files: &mut MemoryIo,
+        operation: &mut dyn FnMut(&mut CoreBridgeLauncher<'_>) -> Result<()>,
+    ) -> Result<()> {
+        self.support
+            .with_launcher(files, &mut |launcher| operation(launcher).map(|()| None))
+            .map(|_| ())
+    }
+
     /// Every control sequence the engine currently has defined, empty before the first compile.
     pub fn defined_commands(&self) -> Vec<texyon_engine_xetex::introspect::DefinedCommand> {
         self.session
