@@ -8,7 +8,7 @@ use std::{
     ptr,
 };
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 mod status {
     pub const OK: i32 = 0;
@@ -102,7 +102,7 @@ pub unsafe fn adopt(ptr: *mut u8, len: usize) -> Vec<u8> {
 }
 
 /// A buffer in linear memory, as the JSON protocol spells it.
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct HostBuffer {
     pub ptr: u32,
     pub len: u32,

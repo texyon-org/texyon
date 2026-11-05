@@ -5,9 +5,9 @@ name = "texyon_live_preview"
 version = "0.0.0-dev.0"  # assigned with cranko (see README)
 authors = ["the Tectonic Project"]
 description = """
-Document-level orchestration for Tectonic's realtime LaTeX preview: source
-authority, a resident engine driver, selective publication, and a JSON Lines
-server.
+Document-level orchestration for TeXyoN's realtime LaTeX preview: source
+authority, a resident engine driver, selective publication, and one session
+interface for every host.
 """
 homepage = "https://github.com/texyon-org/texyon"
 documentation = "https://docs.rs/texyon_live_preview"
@@ -25,6 +25,7 @@ texyon_io_base = { path = "../io_base", version = "0.0.0-dev.0" }
 texyon_preview_protocol = { path = "../preview_protocol", version = "0.0.0-dev.0" }
 texyon_preview_render = { path = "../preview_render", version = "0.0.0-dev.0" }
 texyon_status_base = { path = "../status_base", version = "0.0.0-dev.0" }
+rmp-serde = { version = "1.3", optional = true }
 
 [package.metadata.internal_dep_versions]
 texyon_bridge_core = "thiscommit:2026-07-25:live-preview-extraction"
@@ -40,9 +41,9 @@ texyon_status_base = "thiscommit:2026-07-25:live-preview-extraction"
 [features]
 default = ["native"]
 
-# Host OS support: the bundle resource provider, the worker thread and the
-# stdio JSON Lines server. The WebAssembly build links the portable core only.
-native = ["dep:texyon_bundles"]
+# Host OS support: the bundle resource provider and the stream server.
+# The WebAssembly build links the portable core only.
+native = ["dep:texyon_bundles", "dep:rmp-serde"]
 
 # The native SVG backend links MuPDF, whose distribution terms are AGPL. Keep
 # it opt-in so the portable/MIT library build remains unchanged.

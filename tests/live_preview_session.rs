@@ -11,13 +11,15 @@ use texyon::engines::tex::{
 use texyon::io::testing::SingleInputFileIo;
 use texyon::io::{IoProvider, IoStack, MemoryIo};
 use texyon::live_preview::{
-    AssembledDocument, DocumentAssembler, DocumentFragment, DocumentRoot, JsonlFrameSink,
+    AssembledDocument, DocumentAssembler, DocumentFragment, DocumentRoot, FramePatch, FrameSink,
     PreviewWorkerProcessor, ResidentEngineOutput, ResidentEngineSupport, ResidentPreviewProcessor,
     ResidentXeTeX, SourceSet, WorkerRun,
 };
 use texyon_bridge_core::{CoreBridgeLauncher, MinimalDriver};
 use texyon_io_base::stdstreams::BufferedPrimaryIo;
-use texyon_preview_protocol::{FramePhase, ProtocolLimits, RequestSeq, ServerEvent, SourceFile};
+use texyon_preview_protocol::{
+    FramePhase, OperationMetrics, ProtocolLimits, RequestSeq, SourceFile,
+};
 use texyon_preview_render::{
     NullBackend, RenderError, Resource, ResourceKind, ResourceProvider, ResourceRequest,
 };
@@ -27,6 +29,32 @@ use texyon_status_base::NoopStatusBackend;
 mod util;
 
 static SESSION_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+/// Every frame published, with the metrics and tail state it went out with.
+#[derive(Default)]
+struct RecordingSink {
+    metrics: OperationMetrics,
+    tail_pending: bool,
+    frames: Vec<(FramePatch, OperationMetrics, bool)>,
+}
+
+impl FrameSink for RecordingSink {
+    type Error = std::convert::Infallible;
+
+    fn set_operation_metrics(&mut self, metrics: OperationMetrics) {
+        self.metrics = metrics;
+    }
+
+    fn set_tail_pending(&mut self, tail_pending: bool) {
+        self.tail_pending = tail_pending;
+    }
+
+    fn publish(&mut self, frame: &FramePatch) -> Result<(), Self::Error> {
+        self.frames
+            .push((frame.clone(), self.metrics, self.tail_pending));
+        Ok(())
+    }
+}
 
 fn session_test_lock() -> std::sync::MutexGuard<'static, ()> {
     SESSION_TEST_LOCK
@@ -1491,7 +1519,7 @@ fn resident_processor_publishes_engine_output_as_svg_frame() {
     };
     let cancellation = EngineCancellation::new();
     let engine = ResidentXeTeX::new(support, EnginePreviewConfig::new("plain.fmt"));
-    let sink = JsonlFrameSink::new(Vec::new(), ProtocolLimits::default());
+    let sink = RecordingSink::default();
     let mut processor = ResidentPreviewProcessor::new(engine, ClassicResources, NullBackend, sink);
 
     let first = processor.compile(sources.snapshot(), RequestSeq::ZERO, None, &cancellation);
@@ -1571,67 +1599,42 @@ fn resident_processor_publishes_engine_output_as_svg_frame() {
         .resync(sources.snapshot(), RequestSeq::new(2))
         .unwrap();
 
-    let wire = processor.sink().writer();
-    let events = wire
-        .split(|&byte| byte == b'\n')
-        .filter(|line| !line.is_empty())
-        .map(|line| serde_json::from_slice::<ServerEvent>(line).unwrap())
-        .collect::<Vec<_>>();
+    let events = &processor.sink().frames;
     assert_eq!(events.len(), 6);
-    assert!(matches!(
-        &events[1],
-        ServerEvent::Update {
-            phase: FramePhase::Foreground,
-            tail_pending: true,
-            page_count: 4,
-            changed,
-            removed,
-            metrics,
-            ..
-        } if changed == &[0]
-            && removed.is_empty()
-            && metrics.checkpoint_rungs > 0
-            && metrics.checkpoint_bytes > 0
-            && metrics.replay_commands.get() > 0
-            && metrics.checkpoint_rungs_admitted > 0
-            && metrics.shipouts == 1
-            && metrics.pages_fingerprinted == 1
-            && metrics.pages_rendered == 1
-    ));
-    assert!(matches!(
-        &events[2],
-        ServerEvent::Update {
-            phase: FramePhase::TailSettle,
-            tail_pending: false,
-            page_count: 4,
-            metrics,
-            ..
-        } if metrics.reused_prefix
-            && metrics.replay_rung > 0
-            && metrics.replay_commands.get() > 0
-            && metrics.shipouts == 3
-            && metrics.pages_fingerprinted == 4
-    ));
-    assert!(matches!(
-        &events[3],
-        ServerEvent::Update {
-            phase: FramePhase::Foreground,
-            tail_pending: true,
-            changed,
-            pages_svg,
-            ..
-        } if changed.is_empty() && pages_svg.is_empty()
-    ));
-    assert!(matches!(
-        &events[4],
-        ServerEvent::Update {
-            phase: FramePhase::TailSettle,
-            tail_pending: false,
-            changed,
-            pages_svg,
-            ..
-        } if changed.is_empty() && pages_svg.is_empty()
-    ));
+    let (frame, metrics, tail_pending) = &events[1];
+    assert_eq!(frame.phase, FramePhase::Foreground);
+    assert!(*tail_pending);
+    assert_eq!(frame.pages.len(), 4);
+    assert_eq!(frame.changed, [0]);
+    assert!(frame.removed.is_empty());
+    assert!(metrics.checkpoint_rungs > 0);
+    assert!(metrics.checkpoint_bytes > 0);
+    assert!(metrics.replay_commands.get() > 0);
+    assert!(metrics.checkpoint_rungs_admitted > 0);
+    assert_eq!(metrics.shipouts, 1);
+    assert_eq!(metrics.pages_fingerprinted, 1);
+    assert_eq!(metrics.pages_rendered, 1);
+
+    let (frame, metrics, tail_pending) = &events[2];
+    assert_eq!(frame.phase, FramePhase::TailSettle);
+    assert!(!*tail_pending);
+    assert_eq!(frame.pages.len(), 4);
+    assert!(metrics.reused_prefix);
+    assert!(metrics.replay_rung > 0);
+    assert!(metrics.replay_commands.get() > 0);
+    assert_eq!(metrics.shipouts, 3);
+    assert_eq!(metrics.pages_fingerprinted, 4);
+
+    for (index, phase, pending) in [
+        (3, FramePhase::Foreground, true),
+        (4, FramePhase::TailSettle, false),
+    ] {
+        let (frame, _, tail_pending) = &events[index];
+        assert_eq!(frame.phase, phase);
+        assert_eq!(*tail_pending, pending);
+        assert!(frame.changed.is_empty());
+        assert!(frame.pages_svg.is_empty());
+    }
     processor.shutdown().unwrap();
 }
 

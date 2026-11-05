@@ -151,6 +151,10 @@ jobs:
         shell: bash
         run: |
           if [[ $RUNNER_OS == macOS ]]; then otool -L editors/vscode/bin/texyon; else ldd editors/vscode/bin/texyon; fi
+      - name: "Install extension dependencies"
+        shell: bash
+        working-directory: editors/vscode
+        run: npm ci --omit=dev
       - name: "Package"
         shell: bash
         working-directory: editors/vscode

@@ -63,6 +63,19 @@ impl DocumentRoot {
         &self.canonical
     }
 
+    /// Read a source from the file system, inside the root. `None` when it
+    /// does not exist or the root has no file system behind it.
+    pub fn read(&self, logical: &str) -> Result<Option<Vec<u8>>, SourceError> {
+        if let Backing::Detached = self.backing {
+            return Ok(None);
+        }
+        match fs::read(self.resolve(logical)?) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(SourceError::Io(error)),
+        }
+    }
+
     fn resolve(&self, logical: &str) -> Result<PathBuf, SourceError> {
         if logical.is_empty() || logical.as_bytes().contains(&0) {
             return Err(SourceError::InvalidPath(logical.into()));
@@ -413,8 +426,6 @@ mod tests {
         ProtocolLimits {
             max_source_file_bytes: 32,
             max_source_snapshot_bytes: 48,
-            max_json_line_bytes: 1024,
-            max_frame_bytes: 1024,
         }
     }
 

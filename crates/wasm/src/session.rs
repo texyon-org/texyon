@@ -10,8 +10,6 @@ use texyon_preview_render::MupdfBackend;
 
 use crate::{host, io::HostIo, resources::HostResources, support::HostEngineSupport};
 
-pub use texyon_live_preview::{CompileOutput, RasterPage};
-
 /// The virtual absolute root every source path is anchored under.
 const DOCUMENT_ROOT: &str = "/doc";
 
@@ -37,6 +35,10 @@ impl SessionHost for WasmHost {
 
     fn take_messages(&mut self) -> Vec<String> {
         std::mem::take(&mut *self.messages.borrow_mut())
+    }
+
+    fn support_stats(&self) -> (usize, usize) {
+        (self.support.cached_count(), self.support.cached_bytes())
     }
 }
 
@@ -74,10 +76,4 @@ pub fn open(format_name: &str, primary_name: &str, raster: bool) -> Result<Sessi
 /// Seed the support cache with bytes the host already holds.
 pub fn preload(session: &Session, name: &str, bytes: Vec<u8>) {
     session.host().support.preload(name, bytes);
-}
-
-/// Resident support files and their total bytes.
-pub fn support_stats(session: &Session) -> (usize, usize) {
-    let support = &session.host().support;
-    (support.cached_count(), support.cached_bytes())
 }

@@ -1,80 +1,74 @@
-# Live-preview JSONL protocol
+# Live-preview session protocol
 
-Protocol version 1 uses one UTF-8 JSON object per physical line. Standard output
-is protocol-only; diagnostics use standard error. The server enforces encoded
-line, decoded source-file, combined snapshot, and encoded frame limits. Unknown
-request variants or fields are rejected.
+Every host speaks the same requests and responses, defined once in
+`crates/preview_protocol/src/session.rs` and answered by `live_preview`'s
+`handle`. Field names are camelCase. Page indices are zero-based, source lines
+are one-based, and positions and page sizes are PostScript big points (`bp`).
 
-All request, source, frame, and query counters are canonical decimal strings,
-not JSON numbers. Page indices are zero-based; source lines are one-based;
-preview coordinates and page sizes are PostScript big points (`bp`).
+Hosts differ only in transport and in where bulk bytes (SVG, pixels, PDF) live:
 
-## Session order
+- **Native** (`texyon -X preview --protocol 2`): each frame on stdin and stdout
+  is a little-endian `u32` length, then a MessagePack map. Bulk bytes are an
+  inline `data` binary field. Standard error carries logs. The server refuses
+  a `--protocol` it does not speak.
+- **Wasm** (`texyon_request`): one JSON request in, one JSON response out.
+  Bulk bytes stay in linear memory, as `ptr` and `len` fields.
 
-1. Server emits `ready` with `protocol_version`, stable `capabilities`, and the
-   frozen support-bundle digest.
-2. The first client request must be one `initialize` containing the complete
-   primary buffer and any dirty editor-owned children.
-3. The server emits increasing `update` frames and accepts the requests below.
-4. The client ends with `shutdown`; EOF has the same effect.
+## Requests
 
-```json
-{"type":"ready","protocol_version":1,"capabilities":["svg","synctex"],"bundle_digest":"…"}
-{"type":"initialize","protocol_version":1,"primary_path":"/work/main.tex","primary_text":"Hello\\bye\n","children":[]}
-```
+Each request is a map with an `op`. The server answers in order, one response
+per request, with one exception: `cancel` stops the running operation at once
+and gets no reply, so a client sends it only while it waits on the operation
+it means to stop.
 
-## Client requests
-
-- `replace`: complete UTF-8 `text`; optional normalized `path` selects a child.
-- `viewport`: inclusive visible `first` and `last` page.
-- `resync`: replay every retained page without compiling.
-- `cancel`: durable stop until the next accepted replacement.
-- `painted`: `frame_id` plus finite non-negative `paint_ms` telemetry.
-- `forward_search`: `query_id`, source `path`, and one-based `line`.
-- `backward_search`: `query_id`, `page_index`, `h_bp`, and `v_bp`.
-- `shutdown`: clean worker/process termination.
-
-```json
-{"type":"replace","text":"Edited\\bye\n"}
-{"type":"viewport","first":0,"last":0}
-{"type":"forward_search","query_id":"1","path":"main.tex","line":12}
-```
-
-## Server events
-
-An `update` contains `frame_id`, `source_revision`, `applied_request_seq`,
-`phase`, `outcome`, the complete post-patch `page_count` and `page_sizes`, exact
-sorted `changed`/`removed` sets, SVG payloads corresponding exactly to
-`changed`, complete per-page unsupported-operation telemetry, operation
-metrics, and `tail_pending`. `foreground`, `tail_settle`,
-and `resync` frames all receive distinct increasing frame IDs, even at the same
-source revision and even when no SVG changed.
-
-Metrics include engine/analysis/render durations and encoded frame bytes, plus
-the exact replay rung and decimal-string command count, checkpoint
-admission/drop/rejection activity, retained checkpoint rungs/bytes, fresh
-shipouts, prefix reuse, pages fingerprinted/rendered, and pages with unsupported
-operations.
-
-`cancelled`, `stopped`, `aborted`, and `rejected` do not replace the last-good
-viewer belief. Navigation replies echo their query ID and carry either a result
-or `null`; a missing source match is normal. `fatal` ends the session.
-
-Both directions follow TeX Live's `synctex` tool: backward search reports the
-line `synctex edit` would, and forward search reports as `result` the best box
-`synctex view` would, to scroll to. With the `synctex_boxes` capability a
-forward reply also carries the boxes to flash in `boxes` (omitted when empty):
-the innermost ones with an area on the page of `result`. A line that produced
-nothing falls back to the nearest line that did, looking below it first, since
-a beamer frame is typeset under its `\end{frame}` line. Its `boxes` are then
-empty unless that line's boxes are one block of text.
+- `open`: `format`, the `primary` source relative to `root`, the project
+  `root` (required natively), and `raster` to draw pages to pixels instead of
+  SVG.
+- `compile`: `files` maps every source path the client holds to its revision.
+  `edits` carries one UTF-16 splice per file from a revision the session holds
+  (`base`, `from`, `to`, `insert`), and `texts` carries whole texts. Any other
+  revision the session lacks is read from the host (the project directory,
+  natively). `viewport` bounds the foreground work and `scale` is the pixels
+  per bp to draw the changed pages around it at.
+- `continueTail`: typeset what a viewport-bounded compile left. `idle` when
+  nothing was pending.
+- `raster`: draw `pages` at `scale`.
+- `export`: the current document as PDF. Refused while a tail is pending.
+- `forwardSearch` (`path`, `line`), `backwardSearch` (`pageIndex`, `hBp`, `vBp`).
+- `commands`: the control sequences the engine has defined, for completion.
+- `cancel`, `shutdown`.
+- `preload` (wasm only): a support file the host already holds.
 
 ```json
-{"type":"forward_search_result","query_id":"1","result":{"page_index":0,"h_bp":72.0,"v_bp":84.0,"width_bp":31.0,"height_bp":7.0,"depth_bp":2.0},"boxes":[{"page_index":0,"h_bp":72.0,"v_bp":84.0,"width_bp":31.0,"height_bp":7.0,"depth_bp":2.0}]}
-{"type":"backward_search_result","query_id":"2","result":{"path":"main.tex","line":12}}
+{"op":"compile","files":{"main.tex":4},"edits":{"main.tex":{"base":3,"from":120,"to":120,"insert":"x"}},"texts":{},"viewport":[2,3],"scale":2.0}
 ```
 
-Version 1 is strict: incompatible versions and schema additions require an
-explicit capability/version design rather than silent interpretation. Clients
-must ignore no unknown server event; an unknown event indicates incompatibility
-and should terminate the session while retaining the last rendered frame.
+## Responses
+
+Each response has a `status`: `ok`, `compiled`, `rastered`, `exported`,
+`located`, `commands`, `idle` or `error` with a `message`.
+
+`compiled` is a patch. `published` is false for a cancelled or abandoned run,
+whose page fields mean "keep what you have". Otherwise `changed` and `removed`
+are exact, `rasters` (or `pages`, for SVG) hold the changed pages around the
+viewport, and `pageSizes` and `pageOverlays` (links and destinations) cover
+every page. A changed page outside that band is stale until a `raster` request
+draws it. `diagnostics` gives errors and warnings by source line, recovered from
+the transcript in `log`. `tailPending` says whether pages past the viewport are
+left to typeset. The remaining fields are engine and renderer counters.
+
+Pixels are width and height as little-endian `u32`, then RGBA rows.
+
+Both searches follow TeX Live's `synctex` tool: backward search reports the
+line `synctex edit` would, and forward search reports as `rect` the best box
+`synctex view` would, to scroll to. `boxes` (omitted when empty) are the boxes
+to flash, on the page of `rect`. A line that produced nothing falls back to the
+nearest line that did, looking below it first, since a beamer frame is typeset
+under its `\end{frame}` line.
+
+## Client policy
+
+The VS Code client and the web editor keep one compile in flight. Edits made
+meanwhile merge into the next compile, so fast typing still shows a frame per
+compile. Only tail work is cancelled by an edit, after a short pause before it
+starts, since nobody looks past the viewport while typing.

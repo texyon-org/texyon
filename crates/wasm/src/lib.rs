@@ -10,7 +10,6 @@ mod alloc_shim;
 
 mod host;
 mod io;
-mod protocol;
 mod resources;
 mod session;
 mod support;
@@ -18,12 +17,19 @@ mod support;
 use std::cell::RefCell;
 
 use host::HostBuffer;
-use protocol::{CompileReport, RasterPage, RenderedPage, Request, Response};
-use session::{self as resident, CompileOutput, Session};
+use session::Session;
+use texyon_live_preview::Payload;
+use texyon_preview_protocol::session::{HostRequest, Request, Response};
 
 thread_local! {
     // XeTeX keeps process-global state, so one module instance hosts one session.
     static SESSION: RefCell<Option<Session>> = const { RefCell::new(None) };
+}
+
+impl Payload for HostBuffer {
+    fn hand_over(bytes: Vec<u8>) -> Self {
+        HostBuffer::hand_over(bytes)
+    }
 }
 
 /// Handle one JSON request from the host.
@@ -63,177 +69,55 @@ pub unsafe extern "C" fn texyon_request(
     0
 }
 
-/// Run `operation` on the open session, or report that there is none.
-fn with_session(operation: impl FnOnce(&mut Session) -> Response) -> Response {
-    SESSION.with_borrow_mut(|slot| match slot.as_mut() {
-        Some(session) => operation(session),
-        None => Response::error("no session is open"),
-    })
-}
-
-fn dispatch(text: &str) -> Response {
-    let request: Request = match serde_json::from_str(text) {
+fn dispatch(text: &str) -> Response<HostBuffer> {
+    let request: Request<HostBuffer> = match serde_json::from_str(text) {
         Ok(request) => request,
         Err(error) => return Response::error(format!("malformed request: {error}")),
     };
 
-    match request {
-        Request::Open {
+    SESSION.with_borrow_mut(|slot| match request {
+        Request::Host(HostRequest::Open {
             format,
             primary,
             raster,
-        } => SESSION.with_borrow_mut(|slot| {
+            ..
+        }) => {
             if slot.is_some() {
                 return Response::error("a session is already open");
             }
-            match resident::open(&format, &primary, raster) {
+            match session::open(&format, &primary, raster) {
                 Ok(session) => {
                     *slot = Some(session);
                     Response::Ok
                 }
                 Err(error) => Response::error(error),
             }
-        }),
-
-        Request::Preload { name, ptr, len } => with_session(|session| {
-            // SAFETY: the host allocated this with texyon_wasm_alloc and gave
-            // up ownership by sending the request.
-            let bytes = unsafe { HostBuffer { ptr, len }.adopt() };
-            resident::preload(session, &name, bytes);
-            Response::Ok
-        }),
-
-        Request::Compile {
-            files,
-            edits,
-            viewport,
-            scale,
-        } => with_session(|session| {
-            match session.compile(
-                files,
-                edits
-                    .into_iter()
-                    .map(|(path, edit)| (path, edit.into()))
-                    .collect(),
-                viewport,
-                scale,
-            ) {
-                Ok(output) => Response::Compiled(Box::new(report(session, output))),
-                Err(error) => Response::error(error),
-            }
-        }),
-
-        Request::Raster { pages, scale } => {
-            with_session(|session| match session.rasterize(&pages, scale) {
-                Ok(pages) => Response::Rastered {
-                    pages: pages.into_iter().map(hand_over_raster).collect(),
-                },
-                Err(error) => Response::error(error),
-            })
         }
 
-        Request::ContinueTail => with_session(|session| match session.continue_tail() {
-            Ok(Some(output)) => Response::Compiled(Box::new(report(session, output))),
-            Ok(None) => Response::Idle,
-            Err(error) => Response::error(error),
-        }),
-
-        Request::Export => with_session(|session| match session.export_pdf() {
-            Ok(pdf) => Response::Exported(HostBuffer::hand_over(pdf)),
-            Err(error) => Response::error(error),
-        }),
-
-        Request::ForwardSearch { path, line } => with_session(|session| {
-            let found = session.forward_search(&path, line);
-            Response::Located {
-                rect: found.result.map(Into::into),
-                boxes: found.boxes.into_iter().map(Into::into).collect(),
-                source: None,
+        Request::Host(HostRequest::Preload { name, bytes }) => {
+            // SAFETY: the host allocated this with texyon_wasm_alloc and gave
+            // up ownership by sending the request.
+            let bytes = unsafe { bytes.adopt() };
+            match slot.as_ref() {
+                Some(session) => {
+                    session::preload(session, &name, bytes);
+                    Response::Ok
+                }
+                None => Response::error("no session is open"),
             }
-        }),
+        }
 
-        Request::BackwardSearch {
-            page_index,
-            h_bp,
-            v_bp,
-        } => with_session(|session| Response::Located {
-            rect: None,
-            boxes: Vec::new(),
-            source: session
-                .backward_search(page_index, h_bp, v_bp)
-                .map(Into::into),
-        }),
-
-        Request::Commands => with_session(|session| Response::Commands {
-            commands: session
-                .defined_commands()
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-        }),
-
-        Request::Cancel => with_session(|session| {
-            session.cancel();
-            Response::Ok
-        }),
-
-        Request::Shutdown => SESSION.with_borrow_mut(|slot| match slot.take() {
+        Request::Host(HostRequest::Shutdown) => match slot.take() {
             Some(mut session) => match session.finish() {
                 Ok(()) => Response::Ok,
                 Err(error) => Response::error(error),
             },
             None => Response::Ok,
-        }),
-    }
-}
+        },
 
-/// Package one compile for the host, moving the SVG into linear memory.
-fn hand_over_raster(page: resident::RasterPage) -> RasterPage {
-    RasterPage {
-        index: page.index,
-        pixels: HostBuffer::hand_over(page.pixels),
-    }
-}
-
-fn report(session: &Session, output: CompileOutput) -> CompileReport {
-    let (support_files, support_bytes) = resident::support_stats(session);
-    let metrics = output.metrics;
-
-    CompileReport {
-        published: output.published,
-        pages: output
-            .pages
-            .into_iter()
-            .map(|page| RenderedPage {
-                index: page.index,
-                svg: HostBuffer::hand_over(page.svg.into_bytes()),
-            })
-            .collect(),
-        rasters: output.rasters.into_iter().map(hand_over_raster).collect(),
-        changed: output.changed,
-        removed: output.removed,
-        page_sizes: output.page_sizes,
-        page_overlays: output.page_overlays.into_iter().map(Into::into).collect(),
-        page_count: output.page_count,
-        log: String::from_utf8_lossy(&output.log).into_owned(),
-        outcome: output.outcome.to_owned(),
-        aborted: output.aborted,
-        tail_pending: output.tail_pending,
-        messages: output.messages,
-        diagnostics: output.diagnostics.into_iter().map(Into::into).collect(),
-        checkpoint_rungs: metrics.checkpoint_rungs,
-        checkpoint_bytes: metrics.checkpoint_bytes,
-        reused_prefix: metrics.reused_prefix,
-        replay_rung: metrics.replay_rung,
-        replay_commands: metrics.replay_commands.get(),
-        tex_ms: metrics.engine_ms,
-        analyze_ms: metrics.analysis_ms,
-        render_ms: metrics.render_ms,
-        shipouts: metrics.shipouts,
-        pages_fingerprinted: metrics.pages_fingerprinted,
-        pages_rendered: metrics.pages_rendered,
-        unsupported_pages: metrics.unsupported_pages,
-        support_files,
-        support_bytes,
-    }
+        Request::Session(request) => match slot.as_mut() {
+            Some(session) => texyon_live_preview::handle(session, request),
+            None => Response::error("no session is open"),
+        },
+    })
 }

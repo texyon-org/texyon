@@ -1,59 +1,74 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const cp = require("node:child_process");
+const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const readline = require("node:readline");
 const test = require("node:test");
 
-test("real server orders ready, initialize, update, and shutdown", {
+const { NativeEngine } = require("../engine");
+
+test("the real server opens, draws pixels, finds sources, exports and shuts down", {
   skip: !process.env.TEXYON_PREVIEW_BIN,
   // A cold cache downloads the bundle and builds the format first.
   timeout: 300_000
-}, async () => {
-  const child = cp.spawn(process.env.TEXYON_PREVIEW_BIN, ["-X", "preview", "--format", "latex"], {
-    cwd: os.tmpdir(),
-    stdio: ["pipe", "pipe", "pipe"]
-  });
+}, async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "texyon-smoke-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, "chapter.tex"), "From disk.\n");
   let stderr = "";
-  child.stderr.on("data", (data) => { stderr += data.toString(); });
-  const lines = readline.createInterface({ input: child.stdout });
-  const events = [];
-  const completed = new Promise((resolve, reject) => {
-    child.on("error", reject);
-    child.on("exit", (code) => {
-      if (code === 0 && events.some((event) => event.type === "update")) resolve();
-      else reject(new Error(`preview exited ${code}: ${stderr}`));
-    });
-    lines.on("line", (line) => {
-      const event = JSON.parse(line);
-      events.push(event);
-      if (event.type === "ready") {
-        child.stdin.write(`${JSON.stringify({
-          type: "initialize",
-          protocol_version: event.protocol_version,
-          primary_path: path.join(os.tmpdir(), "texyon-vscode-smoke.tex"),
-          primary_text: "\\documentclass{article}\\begin{document}Hello preview\\end{document}",
-          children: []
-        })}\n`);
-      } else if (event.type === "update" && event.phase !== "resync") {
-        child.stdin.write(`${JSON.stringify({ type: "resync" })}\n`);
-      } else if (event.type === "update") {
-        child.stdin.end(`${JSON.stringify({ type: "shutdown" })}\n`);
-      } else if (event.type === "fatal") {
-        reject(new Error(event.reason));
-      }
-    });
+  const engine = new NativeEngine(process.env.TEXYON_PREVIEW_BIN, {
+    cwd: root,
+    onStderr: (text) => { stderr += text; },
+    onExit: () => {}
   });
-  await completed;
-  assert.equal(events[0].type, "ready");
-  const update = events.find((event) => event.type === "update");
-  assert.equal(update.frame_id, "1");
-  assert.equal(update.source_revision, "0");
-  assert.ok(update.pages_svg.length > 0);
-  assert.equal(update.pages_svg.length, update.changed.length);
-  const resync = events.find((event) => event.type === "update" && event.phase === "resync");
-  assert.equal(resync.source_revision, update.source_revision);
-  assert.equal(resync.changed.length, resync.page_count);
+  t.after(() => engine.process.kill());
+
+  const opened = await engine.request({ op: "open", format: "latex", primary: "main.tex", root, raster: true });
+  assert.equal(opened.status, "ok", stderr);
+
+  const text = "\\documentclass{article}\\begin{document}Hello preview.\n\\input{chapter}\n\\undefined\n\\end{document}\n";
+  const report = await engine.request({
+    op: "compile",
+    files: { "main.tex": 1 },
+    edits: {},
+    texts: { "main.tex": text },
+    viewport: [0, 0],
+    scale: 1
+  });
+  assert.equal(report.status, "compiled", report.message);
+  assert.equal(report.published, true);
+  assert.equal(report.pageCount, 1);
+  assert.equal(report.rasters.length, 1);
+  const pixels = report.rasters[0].data;
+  const header = new DataView(pixels.buffer, pixels.byteOffset, 8);
+  assert.equal(pixels.byteLength, 8 + header.getUint32(0, true) * header.getUint32(4, true) * 4);
+  const error = report.diagnostics.find((found) => found.severity === "error");
+  assert.ok(error, "the undefined control sequence is reported");
+  assert.equal(error.line, 3);
+
+  const edited = await engine.request({
+    op: "compile",
+    files: { "main.tex": 2 },
+    edits: { "main.tex": { base: 1, from: 0, to: 0, insert: "% note\n" } },
+    texts: {},
+    viewport: [0, 0],
+    scale: 1
+  });
+  assert.equal(edited.status, "compiled", edited.message);
+
+  const located = await engine.request({ op: "forwardSearch", path: "main.tex", line: 2 });
+  assert.equal(located.status, "located");
+  assert.equal(located.rect.pageIndex, 0);
+
+  // Export refuses while pages past the viewport are left to typeset.
+  for (;;) {
+    const settled = await engine.request({ op: "continueTail" });
+    if (settled.status === "idle" || !settled.tailPending) break;
+  }
+  const exported = await engine.request({ op: "export" });
+  assert.equal(exported.status, "exported", exported.message);
+  assert.equal(Buffer.from(exported.data.subarray(0, 5)).toString(), "%PDF-");
+
+  await engine.close();
 });

@@ -1,7 +1,7 @@
 {
   "name": "texyon",
-  "displayName": "TeXyon Live Preview",
-  "description": "Live LaTeX preview that updates as you type, backed by a resident TeXyon engine.",
+  "displayName": "TeXyoN Live Preview",
+  "description": "Live LaTeX preview that updates as you type, backed by a resident TeXyoN engine.",
   "version": "0.1.0",
   "publisher": "texyon",
   "license": "AGPL-3.0-or-later",
@@ -42,35 +42,42 @@
     "commands": [
       {
         "command": "texyon.start",
-        "title": "TeXyon: Start Live Preview"
+        "title": "TeXyoN: Start Live Preview"
       },
       {
         "command": "texyon.stop",
-        "title": "TeXyon: Stop Live Preview"
+        "title": "TeXyoN: Stop Live Preview"
       },
       {
         "command": "texyon.cancel",
-        "title": "TeXyon: Cancel In-Flight Preview"
+        "title": "TeXyoN: Cancel In-Flight Preview"
       },
       {
         "command": "texyon.forwardSearch",
-        "title": "TeXyon: Show Cursor in Live Preview"
+        "title": "TeXyoN: Show Cursor in Live Preview"
+      },
+      {
+        "command": "texyon.exportPdf",
+        "title": "TeXyoN: Export PDF"
       }
     ],
     "configuration": {
-      "title": "TeXyon Live Preview",
+      "title": "TeXyoN Live Preview",
       "properties": {
         "texyon.executable": {
           "type": "string",
           "default": "",
-          "description": "Path to a TeXyon executable built with the preview-mupdf feature. Leave empty to use the one bundled with the extension."
+          "description": "Path to a TeXyoN executable built with the preview-mupdf feature. Leave empty to use the one bundled with the extension."
         },
         "texyon.format": {
           "type": "string",
           "default": "latex",
-          "description": "Cached XeTeX format to use for preview."
+          "description": "XeTeX format to preview with. It is built on first use."
         }
       }
     }
+  },
+  "dependencies": {
+    "@msgpack/msgpack": "3.1.3"
   }
 }

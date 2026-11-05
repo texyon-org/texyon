@@ -1,69 +1,221 @@
 "use strict";
 
-const cp = require("child_process");
 const fs = require("fs");
 const path = require("path");
-const readline = require("readline");
 const vscode = require("vscode");
 
-const { childLogicalPath, sourceFilePath } = require("./path-authority");
+const { NativeEngine } = require("./engine");
+const { CompileLoop } = require("./loop");
 const { PreviewPanel } = require("./panel");
-const { parseServerLine } = require("./server-line");
+const { childLogicalPath, sourceFilePath } = require("./path-authority");
+const { SourceTracker } = require("./sources");
 
-const PROTOCOL_VERSION = 1;
+/** A server that dies sooner than this after starting is not restarted. */
+const RESTART_WINDOW_MS = 10_000;
+
 let activeSession = null;
 
 class PreviewSession {
-  constructor(context, document, configuration, output, status, onClose) {
+  constructor(context, document, output, status, diagnostics, onClose) {
+    this.context = context;
     this.document = document;
     this.output = output;
     this.status = status;
+    this.diagnostics = diagnostics;
     this.onClose = onClose;
-    this.disposables = [];
-    this.ready = false;
-    this.initialized = false;
-    this.hasFrame = false;
+    this.root = path.dirname(document.fileName);
+    this.primary = path.basename(document.fileName);
     this.disposed = false;
-    this.synctex = false;
-    this.nextQuery = 0n;
-    this.nextMutation = 0n;
-    this.mutationStarted = new Map();
+    this.disposables = [];
+    this.view = { viewport: [0, 0], scale: 2 };
+    this.sources = new SourceTracker();
 
-    const executable = resolveExecutable(context, configuration);
-    const format = configuration.get("format", "latex");
-    const args = ["-X", "preview", "--format", format];
-    this.output.appendLine(`[preview] spawning ${executable} ${args.join(" ")}`);
-    this.setStatus("$(sync~spin) texyon: starting…");
+    this.panel = new PreviewPanel(context, `Preview: ${this.primary}`, (message) => this.onViewerMessage(message));
+    this.panel.onDispose = () => this.dispose();
 
-    this.panel = new PreviewPanel(
-      context,
-      `Preview: ${path.basename(document.fileName)}`,
-      (message) => this.onViewerMessage(message)
+    this.track(document);
+    for (const open of vscode.workspace.textDocuments) this.track(open);
+
+    this.disposables.push(
+      vscode.workspace.onDidOpenTextDocument((opened) => {
+        if (this.track(opened)) this.loop.schedule();
+      }),
+      vscode.workspace.onDidChangeTextDocument((event) => {
+        const logical = this.logicalPath(event.document);
+        if (logical === null || event.contentChanges.length === 0) return;
+        this.sources.change(logical, event.contentChanges);
+        this.loop.schedule();
+      })
     );
-    this.panel.onDispose = () => this.dispose(true);
-    this.process = cp.spawn(executable, args, {
-      cwd: path.dirname(document.fileName),
-      stdio: ["pipe", "pipe", "pipe"]
-    });
-    this.process.on("error", (error) => this.fail(`failed to start: ${error.message}`));
-    this.process.on("exit", (code, signal) => this.onExit(code, signal));
-    this.process.stderr.on("data", (data) => this.output.append(data.toString()));
-    this.lines = readline.createInterface({ input: this.process.stdout });
-    this.lines.on("line", (line) => this.onServerLine(line));
+    this.start();
+  }
 
-    this.disposables.push(vscode.workspace.onDidChangeTextDocument((event) => {
-      if (event.contentChanges.length === 0 || this.disposed || !this.initialized) return;
-      if (event.document === this.document) {
-        this.send({ type: "replace", text: event.document.getText() });
-        this.setStatus("$(sync~spin) texyon: compiling…");
-        return;
+  start() {
+    const configuration = vscode.workspace.getConfiguration("texyon");
+    const executable = resolveExecutable(this.context, configuration);
+    this.startedAt = Date.now();
+    this.output.appendLine(`[preview] starting ${executable} for ${this.document.fileName}`);
+    this.setStatus("$(sync~spin) TeXyoN: starting…");
+    this.engine = new NativeEngine(executable, {
+      cwd: this.root,
+      onStderr: (text) => this.output.append(text),
+      onExit: (code, signal) => this.onExit(code, signal)
+    });
+    this.sources.reset();
+    this.loop = new CompileLoop(this.engine, this.sources, () => this.view, {
+      compiled: (report) => this.compiled(report),
+      failed: (message) => this.failed(message),
+      busy: (running) => {
+        if (running) this.setStatus("$(sync~spin) TeXyoN: compiling…");
       }
-      const logical = this.childPath(event.document);
-      if (logical !== null) {
-        this.send({ type: "replace", path: logical, text: event.document.getText() });
-        this.setStatus("$(sync~spin) texyon: compiling…");
+    });
+    const opened = this.engine.request({
+      op: "open",
+      format: configuration.get("format", "latex"),
+      primary: this.primary,
+      root: this.root,
+      raster: true
+    });
+    opened.then((response) => {
+      if (response.status !== "ok") this.fatal(response.message || "could not open the preview session");
+      else this.loop.schedule();
+    }, (error) => this.fatal(error.message));
+  }
+
+  /** Track a document as a project source. Returns whether it is one. */
+  track(document) {
+    const logical = this.logicalPath(document);
+    if (logical === null) return false;
+    this.sources.track(logical, () => document.getText());
+    return true;
+  }
+
+  logicalPath(document) {
+    if (document.isUntitled || document.uri.scheme !== "file") return null;
+    if (document.fileName === this.document.fileName) return this.primary;
+    try {
+      return childLogicalPath(this.document.fileName, document.fileName);
+    } catch (error) {
+      this.output.appendLine(`[preview] ignoring ${document.fileName}: ${error.message}`);
+      return null;
+    }
+  }
+
+  compiled(report) {
+    this.panel.post({ type: "compiled", report: withOwnedPixels(report), scale: this.view.scale });
+    if (report.published || report.aborted) this.showDiagnostics(report.diagnostics);
+    if (report.aborted) this.output.appendLine(`[preview] run abandoned: ${report.aborted}`);
+    for (const message of report.messages) this.output.appendLine(`[preview] ${message}`);
+    const errors = report.diagnostics.filter((diagnostic) => diagnostic.severity === "error").length;
+    this.setStatus(errors > 0
+      ? `$(error) TeXyoN: ${errors} error${errors === 1 ? "" : "s"}`
+      : `$(check) TeXyoN: ${report.pageCount} page${report.pageCount === 1 ? "" : "s"}`);
+    this.output.appendLine(
+      `[preview] ${report.published ? "frame" : "no frame"}: tex ${report.texMs.toFixed(1)} ms, ` +
+      `render ${report.renderMs.toFixed(1)} ms, ${report.pagesRendered} page(s) drawn`
+    );
+  }
+
+  failed(message) {
+    this.output.appendLine(`[preview] ${message}`);
+    this.panel.post({ type: "error", message });
+    this.setStatus("$(warning) TeXyoN: preview failed, edit to retry");
+  }
+
+  showDiagnostics(diagnostics) {
+    const byFile = new Map();
+    for (const found of diagnostics) {
+      if (found.severity === "info" || found.path === null) continue;
+      let file;
+      try {
+        file = sourceFilePath(this.document.fileName, found.path.replace(/^\.\//, ""));
+      } catch {
+        continue;
       }
-    }));
+      // Classes and packages come from the bundle, not from the project.
+      if (!fs.existsSync(file)) continue;
+      const line = Math.max(0, (found.line || 1) - 1);
+      const entry = new vscode.Diagnostic(
+        new vscode.Range(line, 0, line, Number.MAX_SAFE_INTEGER),
+        found.message,
+        found.severity === "error" ? vscode.DiagnosticSeverity.Error : vscode.DiagnosticSeverity.Warning
+      );
+      entry.source = "TeXyoN";
+      if (!byFile.has(file)) byFile.set(file, []);
+      byFile.get(file).push(entry);
+    }
+    this.diagnostics.clear();
+    for (const [file, entries] of byFile) this.diagnostics.set(vscode.Uri.file(file), entries);
+  }
+
+  onViewerMessage(message) {
+    if (!message || typeof message.type !== "string") return;
+    if (message.type === "view") {
+      const [first, last] = message.viewport;
+      if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last) || !(message.scale > 0)) return;
+      this.view = { viewport: [first, last], scale: message.scale };
+    } else if (message.type === "raster") {
+      void this.raster(message.pages, message.scale);
+    } else if (message.type === "backward_search") {
+      void this.backwardSearch(message);
+    } else if (message.type === "open_uri") {
+      openLink(message.uri);
+    }
+  }
+
+  async raster(pages, scale) {
+    if (!Array.isArray(pages) || !pages.every(Number.isSafeInteger) || !(scale > 0)) return;
+    try {
+      const response = await this.engine.request({ op: "raster", pages, scale });
+      if (response.status !== "rastered") throw new Error(response.message);
+      this.panel.post({ type: "rastered", pages: response.pages.map(ownPixels), scale });
+    } catch {
+      this.panel.post({ type: "raster_failed", pages });
+    }
+  }
+
+  async forwardSearch(editor) {
+    const logical = this.logicalPath(editor.document);
+    if (logical === null) return false;
+    const response = await this.engine.request({
+      op: "forwardSearch",
+      path: logical,
+      line: editor.selection.active.line + 1
+    });
+    if (response.status === "located") this.panel.post({ type: "located", rect: response.rect });
+    this.panel.reveal();
+    return true;
+  }
+
+  async backwardSearch({ pageIndex, hBp, vBp }) {
+    if (![pageIndex, hBp, vBp].every(Number.isFinite)) return;
+    const response = await this.engine.request({ op: "backwardSearch", pageIndex, hBp, vBp });
+    if (response.status !== "located" || !response.source) return;
+    try {
+      const file = sourceFilePath(this.document.fileName, response.source.path);
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
+      const line = Math.max(0, Math.min(document.lineCount - 1, response.source.line - 1));
+      const position = new vscode.Position(line, 0);
+      const editor = await vscode.window.showTextDocument(document, { viewColumn: vscode.ViewColumn.One, preview: false });
+      editor.selection = new vscode.Selection(position, position);
+      editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+    } catch (error) {
+      this.output.appendLine(`[preview] could not reveal source: ${error.message}`);
+    }
+  }
+
+  async exportPdf() {
+    const target = path.join(this.root, `${path.parse(this.primary).name}.pdf`);
+    this.setStatus("$(sync~spin) TeXyoN: exporting…");
+    const response = await this.loop.settled(() => this.engine.request({ op: "export" }));
+    if (response.status !== "exported") throw new Error(response.message || "the export failed");
+    await fs.promises.writeFile(target, response.data);
+    this.setStatus("$(check) TeXyoN: exported");
+    return target;
+  }
+
+  cancel() {
+    this.engine.cancel();
   }
 
   setStatus(text) {
@@ -71,241 +223,51 @@ class PreviewSession {
     this.status.show();
   }
 
-  childPath(document) {
-    if (document.isUntitled || document.uri.scheme !== "file") return null;
-    try {
-      return childLogicalPath(this.document.fileName, document.fileName);
-    } catch (error) {
-      this.output.appendLine(`[preview] ignoring child ${document.fileName}: ${error.message}`);
-      return null;
-    }
-  }
-
-  initialize(protocolVersion) {
-    const children = [];
-    const seen = new Set();
-    for (const document of vscode.workspace.textDocuments) {
-      if (!document.isDirty || document === this.document) continue;
-      const logical = this.childPath(document);
-      if (logical !== null && !seen.has(logical)) {
-        seen.add(logical);
-        children.push({ path: logical, text: document.getText() });
-      }
-    }
-    children.sort((left, right) => left.path.localeCompare(right.path));
-    this.send({
-      type: "initialize",
-      protocol_version: protocolVersion,
-      primary_path: this.document.fileName,
-      primary_text: this.document.getText(),
-      children
-    });
-    this.initialized = true;
-    this.setStatus("$(sync~spin) texyon: compiling…");
-  }
-
-  send(message) {
-    if (this.disposed || !this.process || this.process.exitCode !== null || !this.process.stdin.writable) return;
-    if (message.type === "initialize") {
-      this.mutationStarted.set("0", performance.now());
-    } else if (message.type === "replace") {
-      this.nextMutation += 1n;
-      this.mutationStarted.set(this.nextMutation.toString(), performance.now());
-    }
-    this.process.stdin.write(`${JSON.stringify(message)}\n`);
-  }
-
-  reportFrameTiming(event) {
-    const started = this.mutationStarted.get(event.applied_request_seq);
-    if (started === undefined) return;
-    const elapsed = Math.max(0, performance.now() - started);
-    this.output.appendLine(
-      `[preview] frame ${event.frame_id} ${event.phase} end-to-end ${elapsed.toFixed(2)} ms`
-    );
-    if (!event.tail_pending) this.mutationStarted.delete(event.applied_request_seq);
-  }
-
-  onServerLine(line) {
-    const parsed = parseServerLine(line);
-    if (parsed.error) {
-      this.fail(parsed.error);
-      return;
-    }
-    const event = parsed.event;
-    if (!this.ready) {
-      if (event.type !== "ready") {
-        this.fail(`expected ready, received ${event.type || "unknown event"}`);
-        return;
-      }
-      if (event.protocol_version !== PROTOCOL_VERSION ||
-          !Array.isArray(event.capabilities) || !event.capabilities.includes("svg")) {
-        this.fail(`incompatible preview protocol ${event.protocol_version}`);
-        return;
-      }
-      this.ready = true;
-      this.synctex = event.capabilities.includes("synctex");
-      this.output.appendLine(`[preview] ready; bundle ${event.bundle_digest}`);
-      this.initialize(event.protocol_version);
-      return;
-    }
-
-    switch (event.type) {
-      case "update":
-        this.hasFrame = true;
-        this.reportFrameTiming(event);
-        this.panel.postUpdate(event);
-        if (Array.isArray(event.unsupported_pages) && event.unsupported_pages.length > 0) {
-          this.output.appendLine(`[preview] unsupported renderer operations: ${JSON.stringify(event.unsupported_pages)}`);
-        }
-        this.setStatus(event.outcome === "error"
-          ? "$(warning) texyon: source error (kept coherent preview)"
-          : Array.isArray(event.unsupported_pages) && event.unsupported_pages.length > 0
-            ? "$(warning) texyon: preview may omit unsupported content"
-          : `$(check) texyon: ${event.page_count} page${event.page_count === 1 ? "" : "s"}`);
-        break;
-      case "cancelled":
-        this.mutationStarted.delete(event.applied_request_seq);
-        break;
-      case "stopped":
-        this.setStatus("$(debug-pause) texyon: stopped; edit to resume");
-        break;
-      case "aborted":
-        this.mutationStarted.delete(event.applied_request_seq);
-        this.output.appendLine(`[preview] compile aborted:\n${event.log_tail || ""}`);
-        this.setStatus("$(warning) texyon: source error (kept last preview)");
-        break;
-      case "rejected":
-        this.mutationStarted.delete(event.request_seq);
-        this.output.appendLine(`[preview] request rejected: ${event.reason}`);
-        this.setStatus("$(warning) texyon: edit rejected");
-        break;
-      case "forward_search_result":
-        this.panel.showForwardSearch(event.result || null);
-        break;
-      case "backward_search_result":
-        if (event.result) this.revealSource(event.result);
-        break;
-      case "fatal":
-        this.fail(`server session failed: ${event.reason}`);
-        break;
-      default:
-        this.fail(`unknown server event ${event.type}`);
-    }
-  }
-
-  onViewerMessage(message) {
-    if (!message || typeof message.type !== "string") return;
-    if (message.type === "ready") {
-      if (this.hasFrame) this.send({ type: "resync" });
-    } else if (message.type === "viewport") {
-      this.send({ type: "viewport", first: message.first, last: message.last });
-    } else if (message.type === "painted") {
-      if (typeof message.frame_id === "string" &&
-          typeof message.paint_ms === "number" && Number.isFinite(message.paint_ms) && message.paint_ms >= 0) {
-        this.output.appendLine(
-          `[preview] frame ${message.frame_id} painted in ${message.paint_ms.toFixed(2)} ms`
-        );
-        this.send({ type: "painted", frame_id: message.frame_id, paint_ms: message.paint_ms });
-      }
-    } else if (message.type === "backward_search" && this.synctex) {
-      this.send({
-        type: "backward_search",
-        query_id: this.queryId(),
-        page_index: message.page_index,
-        h_bp: message.h_bp,
-        v_bp: message.v_bp
-      });
-    } else if (message.type === "viewer_error") {
-      this.fail(`webview rejected a frame: ${message.message}`);
-    }
-  }
-
-  queryId() {
-    this.nextQuery = this.nextQuery === ((1n << 64n) - 1n) ? 1n : this.nextQuery + 1n;
-    return this.nextQuery.toString();
-  }
-
-  forwardSearch(editor) {
-    if (!this.initialized || !this.synctex || !editor) return false;
-    let logical;
-    if (editor.document === this.document) logical = this.document.fileName;
-    else logical = this.childPath(editor.document);
-    if (logical === null) return false;
-    this.send({
-      type: "forward_search",
-      query_id: this.queryId(),
-      path: logical,
-      line: editor.selection.active.line + 1
-    });
-    this.panel.reveal();
-    return true;
-  }
-
-  async revealSource(result) {
-    try {
-      const fileName = sourceFilePath(this.document.fileName, result.path);
-      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(fileName));
-      const line = Math.max(0, Math.min(document.lineCount - 1, result.line - 1));
-      const position = new vscode.Position(line, 0);
-      const editor = await vscode.window.showTextDocument(document, {
-        viewColumn: vscode.ViewColumn.One,
-        preserveFocus: false,
-        preview: false
-      });
-      editor.selection = new vscode.Selection(position, position);
-      editor.revealRange(
-        new vscode.Range(position, position),
-        vscode.TextEditorRevealType.InCenterIfOutsideViewport
-      );
-    } catch (error) {
-      this.output.appendLine(`[preview] could not reveal source: ${error.message}`);
-    }
-  }
-
-  cancel() {
-    if (this.initialized) this.send({ type: "cancel" });
-  }
-
-  fail(message) {
-    if (this.disposed) return;
-    this.output.appendLine(`[preview] ${message}`);
-    this.panel.showError(message);
-    this.setStatus("$(error) texyon: preview failed");
-    vscode.window.showErrorMessage(`TeXyon preview: ${message}`);
-    this.dispose(false, true);
-  }
-
   onExit(code, signal) {
     if (this.disposed) return;
-    const detail = signal ? `signal ${signal}` : `exit ${code}`;
+    this.loop.stop();
+    const detail = signal ? `signal ${signal}` : `exit code ${code}`;
     this.output.appendLine(`[preview] server stopped (${detail})`);
-    this.panel.showError(`Preview server stopped (${detail}). Start a new preview to recover.`);
-    this.setStatus(code === 0 ? "texyon: stopped" : "$(error) texyon: server died");
-    this.dispose(false, true);
+    if (Date.now() - this.startedAt > RESTART_WINDOW_MS) {
+      this.start();
+      return;
+    }
+    this.fatal(`the preview server stopped (${detail})`);
   }
 
-  dispose(sendShutdown, retainPanel = false) {
+  fatal(message) {
+    if (this.disposed) return;
+    this.failed(message);
+    this.setStatus("$(error) TeXyoN: preview stopped");
+    vscode.window.showErrorMessage(`TeXyoN preview: ${message}`);
+    this.dispose(true);
+  }
+
+  dispose(retainPanel = false) {
     if (this.disposed) return;
     this.disposed = true;
-    if (sendShutdown) this.sendRawShutdown();
-    if (sendShutdown) this.setStatus("texyon: stopped");
-    if (this.lines) this.lines.close();
+    this.loop.stop();
+    void this.engine.close();
     for (const disposable of this.disposables.splice(0)) disposable.dispose();
+    this.diagnostics.clear();
     if (!retainPanel) this.panel.dispose();
-    if (this.process && this.process.exitCode === null) {
-      const process = this.process;
-      setTimeout(() => {
-        if (process.exitCode === null) process.kill();
-      }, 1500).unref();
-    }
     this.onClose(this);
   }
+}
 
-  sendRawShutdown() {
-    if (this.process && this.process.exitCode === null && this.process.stdin.writable) {
-      this.process.stdin.end(`${JSON.stringify({ type: "shutdown" })}\n`);
-    }
-  }
+/** Copy pixels out of the frame they were decoded from, so the webview gets only them. */
+function ownPixels(page) {
+  return { index: page.index, data: new Uint8Array(page.data) };
+}
+
+function withOwnedPixels(report) {
+  return { ...report, rasters: report.rasters.map(ownPixels) };
+}
+
+function openLink(uri) {
+  if (typeof uri !== "string") return;
+  const parsed = vscode.Uri.parse(uri, true);
+  if (["http", "https", "mailto"].includes(parsed.scheme)) void vscode.env.openExternal(parsed);
 }
 
 function resolveExecutable(context, configuration) {
@@ -325,39 +287,54 @@ function resolveExecutable(context, configuration) {
 }
 
 function activate(context) {
-  const output = vscode.window.createOutputChannel("TeXyon Live Preview");
+  const output = vscode.window.createOutputChannel("TeXyoN Live Preview");
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 20);
+  const diagnostics = vscode.languages.createDiagnosticCollection("texyon");
   status.command = "texyon.start";
-  context.subscriptions.push(output, status);
+  context.subscriptions.push(output, status, diagnostics);
 
-  context.subscriptions.push(vscode.commands.registerCommand("texyon.start", () => {
+  const command = (name, run) => context.subscriptions.push(vscode.commands.registerCommand(name, run));
+
+  command("texyon.start", () => {
     const document = vscode.window.activeTextEditor && vscode.window.activeTextEditor.document;
     if (!document || document.isUntitled || document.uri.scheme !== "file") {
-      vscode.window.showErrorMessage("Open a saved TeX document before starting live preview.");
+      vscode.window.showErrorMessage("Open a saved TeX document before starting the live preview.");
       return;
     }
-    if (activeSession) activeSession.dispose(true);
-    const configuration = vscode.workspace.getConfiguration("texyon");
-    activeSession = new PreviewSession(context, document, configuration, output, status, (closed) => {
+    if (activeSession) activeSession.dispose();
+    activeSession = new PreviewSession(context, document, output, status, diagnostics, (closed) => {
       if (activeSession === closed) activeSession = null;
     });
-  }));
-  context.subscriptions.push(vscode.commands.registerCommand("texyon.stop", () => {
-    if (activeSession) activeSession.dispose(true);
-  }));
-  context.subscriptions.push(vscode.commands.registerCommand("texyon.cancel", () => {
+  });
+  command("texyon.stop", () => {
+    if (activeSession) activeSession.dispose();
+    status.text = "TeXyoN: stopped";
+  });
+  command("texyon.cancel", () => {
     if (activeSession) activeSession.cancel();
-  }));
-  context.subscriptions.push(vscode.commands.registerCommand("texyon.forwardSearch", () => {
+  });
+  command("texyon.forwardSearch", async () => {
     const editor = vscode.window.activeTextEditor;
-    if (!activeSession || !activeSession.forwardSearch(editor)) {
-      vscode.window.showInformationMessage("Start a SyncTeX-capable preview and place the cursor in one of its TeX sources.");
+    if (!activeSession || !editor || !(await activeSession.forwardSearch(editor))) {
+      vscode.window.showInformationMessage("Start a live preview and place the cursor in one of its TeX sources.");
     }
-  }));
+  });
+  command("texyon.exportPdf", async () => {
+    if (!activeSession) {
+      vscode.window.showInformationMessage("Start a live preview first.");
+      return;
+    }
+    try {
+      const target = await activeSession.exportPdf();
+      vscode.window.showInformationMessage(`Exported ${path.basename(target)}.`);
+    } catch (error) {
+      vscode.window.showErrorMessage(`TeXyoN export: ${error.message}`);
+    }
+  });
 }
 
 function deactivate() {
-  if (activeSession) activeSession.dispose(true);
+  if (activeSession) activeSession.dispose();
 }
 
 module.exports = { activate, deactivate };
