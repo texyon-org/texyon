@@ -14,7 +14,7 @@ use crate::fonts::{
 use crate::input::TokenType;
 use crate::mem::{
     ADJUST_HEAD, CONTRIB_HEAD, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, PAGE_HEAD, PRE_ADJUST_HEAD,
-    SS_GLUE, TEMP_HEAD, ZERO_GLUE,
+    SS_GLUE, TEMP_HEAD_TOKS, ZERO_GLUE,
 };
 use crate::mem_types::ListStateRecord;
 use crate::node::{
@@ -595,8 +595,8 @@ pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
         return crate::errors::error(st);
     }
     crate::input::back_input(st)?;
-    let p = st.mem.get_avail()?;
-    TEMP_HEAD.set_link(&mut st.mem, p);
+    let p = st.mem.get_avail_token()?;
+    TEMP_HEAD_TOKS.set_link(&mut st.mem, p);
     crate::output::error_here_with_diagnostic(st, "Missing ");
     match st.save_stack.cur_group {
         GroupCode::SemiSimple => {
@@ -609,7 +609,7 @@ pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
         }
         GroupCode::MathLeft => {
             p.set_token(&mut st.mem, Token::from_cs(FROZEN_RIGHT));
-            let q = st.mem.get_avail()?;
+            let q = st.mem.get_avail_token()?;
             p.set_link(&mut st.mem, q);
             q.set_token(&mut st.mem, Token::other(b'.'));
             crate::output::print_esc(st, "right.");
@@ -620,7 +620,7 @@ pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
         }
     }
     crate::output::print(st, " inserted");
-    crate::input::begin_token_list(st, TEMP_HEAD.link(&st.mem), TokenType::Inserted)?;
+    crate::input::begin_token_list(st, TEMP_HEAD_TOKS.link(&st.mem), TokenType::Inserted)?;
     crate::output::capture_to_diagnostic(st, None);
     st.errors.help(&[
         "I've inserted something that you may have forgotten.",

@@ -132,22 +132,22 @@ pub(crate) struct InputState {
 /// `start` and `loc` of a token-list level, which point into `mem`.
 impl InputState {
     #[inline]
-    pub(crate) fn token_start(&self) -> crate::units::MemPtr {
-        crate::units::MemPtr::from_raw(self.start)
+    pub(crate) fn token_start(&self) -> crate::token::TokenList {
+        crate::token::TokenList::from_ptr(crate::units::MemPtr::from_raw(self.start))
     }
     #[inline]
-    pub(crate) fn token_loc(&self) -> crate::units::MemPtr {
-        crate::units::MemPtr::from_raw(self.loc)
+    pub(crate) fn token_loc(&self) -> crate::token::TokenList {
+        crate::token::TokenList::from_ptr(crate::units::MemPtr::from_raw(self.loc))
     }
     #[inline]
-    pub(crate) fn set_token_loc(&mut self, p: crate::units::MemPtr) {
-        self.loc = p.raw();
+    pub(crate) fn set_token_loc(&mut self, p: crate::token::TokenList) {
+        self.loc = p.ptr().raw();
     }
     /// Starts reading the token list `p` from its first node.
     #[inline]
-    pub(crate) fn set_token_list(&mut self, p: crate::units::MemPtr) {
-        self.start = p.raw();
-        self.loc = p.raw();
+    pub(crate) fn set_token_list(&mut self, p: crate::token::TokenList) {
+        self.start = p.ptr().raw();
+        self.loc = p.ptr().raw();
     }
 }
 
@@ -163,9 +163,9 @@ pub(crate) enum InputSlot {
 
 #[derive(Default)]
 pub(crate) struct InputClusterState {
-    pub param_stack: Vec<crate::units::MemPtr>,
+    pub param_stack: Vec<crate::token::TokenList>,
     /// The last node of each `param_stack` list, so it can be freed without a walk.
-    pub param_tail: Vec<crate::units::MemPtr>,
+    pub param_tail: Vec<crate::token::TokenList>,
     pub line_stack: Vec<i32>,
     pub grp_stack: Vec<i32>,
     pub if_stack: Vec<crate::units::MemPtr>,
@@ -368,6 +368,11 @@ impl EqtbState {
     pub(crate) fn equiv_ptr(&self, p: i32) -> crate::units::MemPtr {
         crate::units::MemPtr::from_raw(self.equiv(p))
     }
+    /// `equiv(p)` of a macro or token-list entry.
+    #[inline]
+    pub(crate) fn equiv_tokens(&self, p: i32) -> crate::token::TokenList {
+        crate::token::TokenList::from_ptr(self.equiv_ptr(p))
+    }
     #[inline]
     pub(crate) fn set_equiv(&mut self, p: i32, v: i32) {
         self.set_b32s1(p, v);
@@ -394,8 +399,8 @@ impl EqtbState {
         FontId::from_raw(self.equiv(crate::consts::CUR_FONT_LOC))
     }
     #[inline]
-    pub(crate) fn tok_par(&self, n: TokPar) -> crate::units::MemPtr {
-        self.equiv_ptr(n.loc())
+    pub(crate) fn tok_par(&self, n: TokPar) -> crate::token::TokenList {
+        self.equiv_tokens(n.loc())
     }
     #[inline]
     pub(crate) fn par_shape(&self) -> Option<crate::node::NodePtr<crate::node::ParShapeNode>> {
@@ -426,8 +431,8 @@ impl EqtbState {
         Scaled::from_raw(self.int_at(crate::consts::SCALED_BASE + n))
     }
     #[inline]
-    pub(crate) fn toks(&self, n: i32) -> crate::units::MemPtr {
-        self.equiv_ptr(crate::consts::TOKS_BASE + n)
+    pub(crate) fn toks(&self, n: i32) -> crate::token::TokenList {
+        self.equiv_tokens(crate::consts::TOKS_BASE + n)
     }
     #[inline]
     pub(crate) fn count(&self, n: i32) -> i32 {
@@ -850,23 +855,23 @@ impl SaveStackState {
 
 /// `cur_mark`, the marks of the current page and split.
 #[derive(Default, Clone, Copy)]
-pub(crate) struct CurMarks([crate::units::MemPtr; 5]);
+pub(crate) struct CurMarks([crate::token::TokenList; 5]);
 
 impl CurMarks {
-    pub(crate) const NULL: CurMarks = CurMarks([crate::units::MemPtr::NULL; 5]);
+    pub(crate) const NULL: CurMarks = CurMarks([crate::token::TokenList::NULL; 5]);
 }
 
 impl std::ops::Index<crate::codes::MarkCode> for CurMarks {
-    type Output = crate::units::MemPtr;
+    type Output = crate::token::TokenList;
     #[inline]
-    fn index(&self, m: crate::codes::MarkCode) -> &crate::units::MemPtr {
+    fn index(&self, m: crate::codes::MarkCode) -> &crate::token::TokenList {
         &self.0[m as usize]
     }
 }
 
 impl std::ops::IndexMut<crate::codes::MarkCode> for CurMarks {
     #[inline]
-    fn index_mut(&mut self, m: crate::codes::MarkCode) -> &mut crate::units::MemPtr {
+    fn index_mut(&mut self, m: crate::codes::MarkCode) -> &mut crate::token::TokenList {
         &mut self.0[m as usize]
     }
 }
@@ -936,7 +941,7 @@ pub(crate) struct ScannerState {
     pub cur_val1: i32,
     pub scanner_status: crate::codes::ScannerStatus,
     pub warning_index: i32,
-    pub def_ref: crate::units::MemPtr,
+    pub def_ref: crate::token::TokenList,
     pub long_state: Cmd,
     pub align_state: i32,
     pub expand_depth: i32,
@@ -1711,6 +1716,18 @@ impl ScannerState {
     #[inline]
     pub(crate) fn cur_val_ptr(&self) -> crate::units::MemPtr {
         crate::units::MemPtr::from_raw(self.cur_val)
+    }
+
+    /// `cur_val` as a token list.
+    #[inline]
+    pub(crate) fn cur_val_tokens(&self) -> crate::token::TokenList {
+        crate::token::TokenList::from_ptr(self.cur_val_ptr())
+    }
+
+    /// `cur_chr` as the macro a call command carries.
+    #[inline]
+    pub(crate) fn cur_chr_tokens(&self) -> crate::token::TokenList {
+        crate::token::TokenList::from_ptr(self.cur_chr_ptr())
     }
 
     /// `cur_chr` as the pointer a macro or register command carries.

@@ -3,6 +3,8 @@
 
 use crate::cmd::Cmd;
 use crate::consts::CS_TOKEN_FLAG;
+use crate::state::MemState;
+use crate::units::MemPtr;
 
 /// One more than the largest character code a token can carry.
 pub(crate) const MAX_CHAR_VAL: i32 = 0x20_0000;
@@ -130,3 +132,63 @@ impl Token {
 
 const LEFT_BRACE_LIMIT: i32 = Token::new(Cmd::RightBrace, 0).0;
 const RIGHT_BRACE_LIMIT: i32 = Token::new(Cmd::MathShift, 0).0;
+
+/// A pointer into a token list: its reference-count head, one of its token
+/// nodes, or null.
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+#[repr(transparent)]
+pub(crate) struct TokenList(MemPtr);
+
+impl TokenList {
+    pub(crate) const NULL: TokenList = TokenList(MemPtr::NULL);
+
+    /// The token list a memory word or an overloaded field points at.
+    #[inline(always)]
+    pub(crate) const fn from_ptr(p: MemPtr) -> TokenList {
+        TokenList(p)
+    }
+
+    /// The pointer for a memory word or an overloaded field.
+    #[inline(always)]
+    pub(crate) const fn ptr(self) -> MemPtr {
+        self.0
+    }
+
+    #[inline(always)]
+    pub(crate) fn is_null(self) -> bool {
+        self.0.is_null()
+    }
+
+    #[inline(always)]
+    pub(crate) fn link(self, mem: &MemState) -> TokenList {
+        TokenList(self.0.link(mem))
+    }
+
+    #[inline(always)]
+    pub(crate) fn set_link(self, mem: &mut MemState, q: TokenList) {
+        self.0.set_link(mem, q.0);
+    }
+
+    /// The token held by this node.
+    #[inline(always)]
+    pub(crate) fn token(self, mem: &MemState) -> Token {
+        Token(mem.b32s0(self.0))
+    }
+
+    #[inline(always)]
+    pub(crate) fn set_token(self, mem: &mut MemState, t: Token) {
+        mem.set_b32s0(self.0, t.0);
+    }
+
+    /// The reference count in the head node, one less than the number of
+    /// references.
+    #[inline(always)]
+    pub(crate) fn ref_count(self, mem: &MemState) -> i32 {
+        mem.b32s0(self.0)
+    }
+
+    #[inline(always)]
+    pub(crate) fn set_ref_count(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s0(self.0, v);
+    }
+}

@@ -44,14 +44,14 @@ impl EqtbState {
 }
 
 fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WhatsitNode>) -> Result<(), Abort> {
-    let q = st.mem.get_avail()?;
+    let q = st.mem.get_avail_token()?;
     q.set_token(&mut st.mem, Token::right_brace(b'}'));
-    let r = st.mem.get_avail()?;
+    let r = st.mem.get_avail_token()?;
     q.set_link(&mut st.mem, r);
     r.set_token(&mut st.mem, Token::from_cs(END_WRITE));
     crate::input::begin_token_list(st, q, TokenType::Inserted)?;
     crate::input::begin_token_list(st, write.write_tokens(&st.mem), TokenType::Write)?;
-    let q = st.mem.get_avail()?;
+    let q = st.mem.get_avail_token()?;
     q.set_token(&mut st.mem, Token::left_brace(b'{'));
     crate::input::begin_token_list(st, q, TokenType::Inserted)?;
 
@@ -94,7 +94,7 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WhatsitNode>) ->
     let def_ref = st.scanner.def_ref;
     crate::output::token_show(st, def_ref);
     crate::output::print_ln(st);
-    st.mem.flush_list(def_ref);
+    st.mem.flush_token_list(def_ref);
 
     if j == 18 {
         st.shipout.selector = st.eqtb.log_selector();

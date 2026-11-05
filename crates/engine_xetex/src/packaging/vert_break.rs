@@ -13,6 +13,7 @@ use crate::node::{
 };
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, MemState, ScannerState, ShipoutState};
+use crate::token::TokenList;
 use crate::units::{MemIdx, MemPtr, Scaled};
 
 use super::{print_vpack_diag, PackOutcome, ADDITIONAL, EXACTLY};
@@ -356,9 +357,9 @@ impl MemState {
 
         if !scanner.cur_mark[MarkCode::SplitFirst].is_null() {
             self.delete_token_ref(scanner.cur_mark[MarkCode::SplitFirst]);
-            scanner.cur_mark[MarkCode::SplitFirst] = MemPtr::NULL;
+            scanner.cur_mark[MarkCode::SplitFirst] = TokenList::NULL;
             self.delete_token_ref(scanner.cur_mark[MarkCode::SplitBot]);
-            scanner.cur_mark[MarkCode::SplitBot] = MemPtr::NULL;
+            scanner.cur_mark[MarkCode::SplitBot] = TokenList::NULL;
         }
 
         Ok(())
@@ -410,7 +411,7 @@ impl MemState {
         } else if scanner.cur_mark[MarkCode::SplitFirst].is_null() {
             scanner.cur_mark[MarkCode::SplitFirst] = mark_ptr;
             scanner.cur_mark[MarkCode::SplitBot] = mark_ptr;
-            mark_ptr.set_info(self, mark_ptr.info(self) + 2);
+            mark_ptr.set_ref_count(self, mark_ptr.ref_count(self) + 2);
         } else {
             self.delete_token_ref(scanner.cur_mark[MarkCode::SplitBot]);
             scanner.cur_mark[MarkCode::SplitBot] = mark_ptr;
@@ -681,9 +682,9 @@ impl MemState {
             MarksAction::VsplitInit => {
                 if !node.mark(self, MarkCode::SplitFirst).is_null() {
                     self.delete_token_ref(node.mark(self, MarkCode::SplitFirst));
-                    node.set_mark(self, MarkCode::SplitFirst, MemPtr::NULL);
+                    node.set_mark(self, MarkCode::SplitFirst, TokenList::NULL);
                     self.delete_token_ref(node.mark(self, MarkCode::SplitBot));
-                    node.set_mark(self, MarkCode::SplitBot, MemPtr::NULL);
+                    node.set_mark(self, MarkCode::SplitBot, TokenList::NULL);
                 }
             }
             MarksAction::FireUpInit => {
@@ -692,11 +693,11 @@ impl MemState {
                         self.delete_token_ref(node.mark(self, MarkCode::Top));
                     }
                     self.delete_token_ref(node.mark(self, MarkCode::First));
-                    node.set_mark(self, MarkCode::First, MemPtr::NULL);
+                    node.set_mark(self, MarkCode::First, TokenList::NULL);
                     let bot = node.mark(self, MarkCode::Bot);
                     if bot.link(self).is_null() {
                         self.delete_token_ref(bot);
-                        node.set_mark(self, MarkCode::Bot, MemPtr::NULL);
+                        node.set_mark(self, MarkCode::Bot, TokenList::NULL);
                     } else {
                         self.add_token_ref(bot);
                     }
@@ -712,10 +713,10 @@ impl MemState {
             }
             MarksAction::DestroyMarks => {
                 for mark in MarkCode::ALL {
-                    scanner.cur_ptr = node.mark(self, mark);
+                    scanner.cur_ptr = node.mark(self, mark).ptr();
                     if !scanner.cur_ptr.is_null() {
-                        self.delete_token_ref(scanner.cur_ptr);
-                        node.set_mark(self, mark, MemPtr::NULL);
+                        self.delete_token_ref(TokenList::from_ptr(scanner.cur_ptr));
+                        node.set_mark(self, mark, TokenList::NULL);
                     }
                 }
             }

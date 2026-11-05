@@ -37,7 +37,7 @@ use crate::state::{
     ConfigState, CurMarks, EngineState, EqtbState, FontState, GroupCode, InteractionMode, MemState,
     PerFont, Selector,
 };
-use crate::token::Token;
+use crate::token::{Token, TokenList};
 use crate::units::{FontId, MemPtr, NodeType, Scaled, StrNumber};
 
 /// A `get_node` request this large merges every free block into the rover list.
@@ -789,8 +789,8 @@ pub(crate) fn initialize_engine(
     st.input.source_filename_stack = vec![StrNumber::NONE; in_open_words];
     st.input.full_source_filename_stack = vec![StrNumber::NONE; in_open_words];
     st.input.eof_seen = vec![false; in_open_words];
-    st.input.param_stack = vec![MemPtr::default(); st.input.param_size as usize + 1];
-    st.input.param_tail = vec![MemPtr::default(); st.input.param_size as usize + 1];
+    st.input.param_stack = vec![TokenList::NULL; st.input.param_size as usize + 1];
+    st.input.param_tail = vec![TokenList::NULL; st.input.param_size as usize + 1];
     st.hyph.hyph_word = vec![StrNumber::NONE; hyph_words];
     st.hyph.hyph_list = vec![MemPtr::NULL; hyph_words];
     st.hyph.hyph_link = vec![0; hyph_words];

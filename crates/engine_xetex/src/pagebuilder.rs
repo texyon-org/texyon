@@ -14,6 +14,7 @@ use crate::packaging::{MarksAction, ADDITIONAL, EXACTLY};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::scan::fetch_box;
 use crate::state::{EngineState, GroupCode, PageContents, ShipoutState};
+use crate::token::TokenList;
 use crate::units::{MemPtr, Scaled};
 
 // Indices into `page_so_far`, whose entries 2 to 5 hold the stretch of each order.
@@ -66,7 +67,7 @@ fn ensure_vbox(st: &mut EngineState, n: u8) -> Result<(), Abort> {
 }
 
 /// Records the new mark `mark_ptr` as the first and bottom mark of class `class`.
-fn update_marks(st: &mut EngineState, class: i32, mark_ptr: MemPtr) -> Result<(), Abort> {
+fn update_marks(st: &mut EngineState, class: i32, mark_ptr: TokenList) -> Result<(), Abort> {
     if class != 0 {
         let sa = st
             .mem
@@ -179,7 +180,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
         st.mem.add_token_ref(st.scanner.cur_mark[MarkCode::Top]);
         st.mem
             .delete_token_ref(st.scanner.cur_mark[MarkCode::First]);
-        st.scanner.cur_mark[MarkCode::First] = MemPtr::NULL;
+        st.scanner.cur_mark[MarkCode::First] = TokenList::NULL;
     }
 
     if c == best {

@@ -11,7 +11,7 @@ use crate::mem_types::MemoryWord;
 use crate::node::{NodePtr, SaNode};
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, GroupCode, MemState, SaveStackState, ScannerState};
-use crate::token::Token;
+use crate::token::{Token, TokenList};
 use crate::units::{MemAddr, MemPtr};
 
 // Save-stack entry types.
@@ -214,7 +214,7 @@ impl MemState {
         let ptr = MemPtr::from_raw(equiv);
         match eq_type {
             Cmd::Call | Cmd::LongCall | Cmd::OuterCall | Cmd::LongOuterCall => {
-                self.delete_token_ref(ptr)
+                self.delete_token_ref(TokenList::from_ptr(ptr))
             }
             Cmd::GlueRef => self.delete_glue_ref(crate::node::NodePtr::from_glue_ptr(ptr)),
             Cmd::ShapeRef => {
@@ -326,7 +326,7 @@ impl MemState {
             if p.sa_index(self) < BOX_VAL_LIMIT {
                 return Some(value);
             }
-            self.delete_token_ref(value);
+            self.delete_token_ref(TokenList::from_ptr(value));
         }
         None
     }
@@ -460,7 +460,7 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
                 let t = st.scanner.cur_tok;
                 st.scanner.cur_tok = Token(p);
                 if a {
-                    let pn = st.mem.get_avail()?;
+                    let pn = st.mem.get_avail_token()?;
                     pn.set_token(&mut st.mem, st.scanner.cur_tok);
                     pn.set_link(&mut st.mem, st.input.cur_input.token_loc());
                     st.input.cur_input.set_token_list(pn);

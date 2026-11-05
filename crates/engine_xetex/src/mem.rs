@@ -14,6 +14,7 @@ use crate::node::{
 };
 use crate::params::GluePar;
 use crate::state::{EqtbState, MemState};
+use crate::token::TokenList;
 use crate::units::{FontId, GlueSign, MemAddr, MemIdx, MemPtr, Scaled};
 
 pub(crate) const ZERO_GLUE: NodePtr<GlueSpecNode> = static_spec(0);
@@ -32,17 +33,20 @@ pub(crate) const CONTRIB_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 1);
 pub(crate) const PAGE_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 2);
 pub(crate) const TEMP_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 3);
 pub(crate) const HOLD_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 4);
+/// `temp_head` and `hold_head` as heads of token lists.
+pub(crate) const TEMP_HEAD_TOKS: TokenList = TokenList::from_ptr(TEMP_HEAD);
+pub(crate) const HOLD_HEAD_TOKS: TokenList = TokenList::from_ptr(HOLD_HEAD);
 pub(crate) const ADJUST_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 5);
 pub(crate) const ACTIVE_LIST: MemPtr = MemPtr::from_raw(MEM_TOP - 7);
 pub(crate) const ALIGN_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 8);
 // SAFETY: the static word at `MEM_TOP - 9` ends every span list.
 pub(crate) const END_SPAN: NodePtr<SpanNode> =
     NodePtr::from_idx_unchecked(MemIdx::from_raw(MEM_TOP - 9));
-pub(crate) const OMIT_TEMPLATE: MemPtr = MemPtr::from_raw(MEM_TOP - 10);
+pub(crate) const OMIT_TEMPLATE: TokenList = TokenList::from_ptr(MemPtr::from_raw(MEM_TOP - 10));
 pub(crate) const NULL_LIST: MemPtr = MemPtr::from_raw(MEM_TOP - 11);
 pub(crate) const LIG_TRICK: MemPtr = MemPtr::from_raw(MEM_TOP - 12);
 pub(crate) const GARBAGE: MemPtr = MemPtr::from_raw(MEM_TOP - 12);
-pub(crate) const BACKUP_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 13);
+pub(crate) const BACKUP_HEAD: TokenList = TokenList::from_ptr(MemPtr::from_raw(MEM_TOP - 13));
 pub(crate) const PRE_ADJUST_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 14);
 pub(crate) const HI_MEM_STAT_MIN: i32 = MEM_TOP - 14;
 pub(crate) const HI_MEM_STAT_USAGE: i32 = 15;
@@ -115,6 +119,12 @@ impl MemState {
         self.avail = p;
     }
 
+    /// `flush_list_with_tail` for a token list.
+    #[inline]
+    pub(crate) fn flush_token_list_with_tail(&mut self, p: TokenList, tail: TokenList) {
+        self.flush_list_with_tail(p.ptr(), tail.ptr());
+    }
+
     /// `flush_list` for a list whose last node `tail` the caller already knows.
     #[inline]
     pub fn flush_list_with_tail(&mut self, p: MemPtr, tail: MemPtr) {
@@ -130,27 +140,39 @@ impl MemState {
     #[inline(always)]
     pub(crate) fn store_new_token(
         &mut self,
-        tail: &mut MemPtr,
+        tail: &mut TokenList,
         tok: crate::token::Token,
     ) -> Result<(), Abort> {
-        let q = self.get_avail()?;
+        let q = self.get_avail_token()?;
         tail.set_link(self, q);
         q.set_token(self, tok);
         *tail = q;
         Ok(())
     }
 
+    /// `get_avail` for a token node.
+    #[inline(always)]
+    pub(crate) fn get_avail_token(&mut self) -> Result<TokenList, Abort> {
+        self.get_avail().map(TokenList::from_ptr)
+    }
+
+    /// Returns the token list `p` to the free list.
     #[inline]
-    pub(crate) fn add_token_ref(&mut self, p: MemPtr) {
-        p.set_token_ref_count(self, p.token_ref_count(self) + 1);
+    pub(crate) fn flush_token_list(&mut self, p: TokenList) {
+        self.flush_list(p.ptr());
+    }
+
+    #[inline]
+    pub(crate) fn add_token_ref(&mut self, p: TokenList) {
+        p.set_ref_count(self, p.ref_count(self) + 1);
     }
 
     /// Drops a reference to token list `p`, freeing it with the last one.
-    pub fn delete_token_ref(&mut self, p: MemPtr) {
-        if p.token_ref_count(self) == TEX_NULL {
-            self.flush_list(p);
+    pub(crate) fn delete_token_ref(&mut self, p: TokenList) {
+        if p.ref_count(self) == TEX_NULL {
+            self.flush_token_list(p);
         } else {
-            p.set_token_ref_count(self, p.token_ref_count(self) - 1);
+            p.set_ref_count(self, p.ref_count(self) - 1);
         }
     }
 

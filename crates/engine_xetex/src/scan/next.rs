@@ -18,8 +18,7 @@ use crate::output::{
 };
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, InputClusterState, MemState, Selector};
-use crate::token::Token;
-use crate::units::MemPtr;
+use crate::token::{Token, TokenList};
 
 use super::toks::finish_line;
 use super::NO_EXPAND_FLAG;
@@ -27,7 +26,7 @@ use super::NO_EXPAND_FLAG;
 impl MemState {
     /// Whether the macro whose token list starts at `ref_count` is `\protected`.
     #[inline]
-    pub(crate) fn is_protected_macro(&self, ref_count: MemPtr) -> bool {
+    pub(crate) fn is_protected_macro(&self, ref_count: TokenList) -> bool {
         ref_count.link(self).token(self) == Token::PROTECTED
     }
 }
@@ -40,7 +39,7 @@ pub(crate) fn get_x_or_protected(st: &mut EngineState) -> Result<(), Abort> {
         }
         if st.scanner.cur_cmd >= Cmd::Call
             && st.scanner.cur_cmd < Cmd::EndTemplate
-            && st.mem.is_protected_macro(st.scanner.cur_chr_ptr())
+            && st.mem.is_protected_macro(st.scanner.cur_chr_tokens())
         {
             return Ok(());
         }
@@ -67,7 +66,7 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
     if st.scanner.cur_cs != 0 {
         let ci = st.input.cur_input;
         if ci.state == TOKEN_LIST || ci.name < 1 || ci.name > 17 {
-            let p = st.mem.get_avail()?;
+            let p = st.mem.get_avail_token()?;
             p.set_token(&mut st.mem, Token::from_cs(st.scanner.cur_cs));
             begin_token_list(st, p, TokenType::BackedUp)?;
         }
@@ -84,7 +83,7 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
             error_here_with_diagnostic(st, "Forbidden control sequence found");
         }
 
-        let p = st.mem.get_avail()?;
+        let p = st.mem.get_avail_token()?;
         let mut inserted = p;
         match st.scanner.scanner_status {
             ScannerStatus::Defining => {
@@ -99,7 +98,7 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
             ScannerStatus::Aligning => {
                 print(st, " while scanning preamble");
                 p.set_token(&mut st.mem, Token::right_brace(b'}'));
-                inserted = st.mem.get_avail()?;
+                inserted = st.mem.get_avail_token()?;
                 inserted.set_link(&mut st.mem, p);
                 inserted.set_token(&mut st.mem, Token::from_cs(FROZEN_CR));
                 st.scanner.align_state = -1_000_000;
@@ -556,7 +555,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                 if st.scanner.cur_cmd >= Cmd::OuterCall {
                     if st.scanner.cur_cmd == Cmd::DontExpand {
                         st.scanner.cur_cs = st.input.cur_input.token_loc().token(&st.mem).cs();
-                        st.input.cur_input.set_token_loc(MemPtr::NULL);
+                        st.input.cur_input.set_token_loc(TokenList::NULL);
                         fetch_cs_meaning(st);
                         if st.scanner.cur_cmd > Cmd::MAX_COMMAND {
                             st.scanner.cur_cmd = Cmd::Relax;
@@ -727,7 +726,7 @@ fn plain_list_token(st: &EngineState, t: Token, stop_at_mac_param: bool) -> bool
 
 /// Advances past the token at `q` as `get_next` would and returns the next node.
 #[inline(always)]
-fn consume_list_token(st: &mut EngineState, q: MemPtr) -> MemPtr {
+fn consume_list_token(st: &mut EngineState, q: TokenList) -> TokenList {
     st.scanner.logical_clock = st.scanner.logical_clock.wrapping_add(1);
     let next = q.link(&st.mem);
     st.input.cur_input.set_token_loc(next);
@@ -741,7 +740,7 @@ fn consume_list_token(st: &mut EngineState, q: MemPtr) -> MemPtr {
 #[inline(always)]
 pub(crate) fn copy_group_tokens(
     st: &mut EngineState,
-    p: &mut MemPtr,
+    p: &mut TokenList,
     unbalance: &mut i32,
     stop_at_mac_param: bool,
 ) -> Result<bool, Abort> {
@@ -782,7 +781,7 @@ pub(crate) fn copy_group_tokens(
 #[inline]
 pub(crate) fn copy_delimited_tokens(
     st: &mut EngineState,
-    p: &mut MemPtr,
+    p: &mut TokenList,
     m: &mut i32,
     delim: Token,
 ) -> Result<(), Abort> {

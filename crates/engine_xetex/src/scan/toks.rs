@@ -7,14 +7,14 @@ use crate::consts::{ACTIVE_BASE, CLOSED, JUST_OPEN, NORMAL, TEX_NULL};
 use crate::errors::{error, Abort};
 use crate::expand::expand;
 use crate::input::{back_error, NEW_LINE};
-use crate::mem::TEMP_HEAD;
+use crate::mem::{TEMP_HEAD, TEMP_HEAD_TOKS};
 use crate::node::{NodePtr, PseudoLineNode};
 use crate::output::{
     capture_to_diagnostic, error_here_with_diagnostic, print, print_err, print_esc, print_int,
 };
 use crate::params::IntPar;
 use crate::state::{EngineState, MemState, Selector};
-use crate::token::Token;
+use crate::token::{Token, TokenList};
 use crate::units::{MemPtr, StrNumber};
 
 use super::internal::{scan_something_internal, set_cur_val};
@@ -30,13 +30,13 @@ impl MemState {
         strings: &mut crate::state::StringsState,
         b: i32,
         cat: Option<Cmd>,
-    ) -> Result<MemPtr, Abort> {
+    ) -> Result<TokenList, Abort> {
         if strings.pool_ptr + 1 > strings.pool_size {
             return Err(Abort::PoolOverflow);
         }
 
-        let mut p = TEMP_HEAD;
-        p.set_link(self, MemPtr::NULL);
+        let mut p = TEMP_HEAD_TOKS;
+        p.set_link(self, TokenList::NULL);
         let mut k = b;
 
         while k < strings.pool_ptr {
@@ -62,7 +62,7 @@ impl MemState {
                 }
             };
 
-            let q = self.get_avail()?;
+            let q = self.get_avail_token()?;
             p.set_link(self, q);
             q.set_token(self, t);
             p = q;
@@ -183,13 +183,13 @@ pub(crate) fn read_toks(st: &mut EngineState, n: i32, r: i32, j: i32) -> Result<
         }
     }
 
-    st.scanner.cur_val = def_ref.raw();
+    st.scanner.cur_val = def_ref.ptr().raw();
     st.scanner.scanner_status = ScannerStatus::Normal;
     st.scanner.align_state = s;
     Ok(())
 }
 
-fn tokens_to_string(st: &mut EngineState, p: MemPtr) -> Result<StrNumber, Abort> {
+fn tokens_to_string(st: &mut EngineState, p: TokenList) -> Result<StrNumber, Abort> {
     if st.shipout.selector == Selector::NewString {
         return Err(Abort::PdfError(&[
             "tokens",
@@ -209,46 +209,46 @@ fn tokens_to_string(st: &mut EngineState, p: MemPtr) -> Result<StrNumber, Abort>
 #[inline(always)]
 pub(crate) fn store_new_token(
     st: &mut EngineState,
-    tail: &mut MemPtr,
+    tail: &mut TokenList,
     token: Token,
 ) -> Result<(), Abort> {
     st.mem.store_new_token(tail, token)
 }
 
 /// Starts a new reference-counted token list in `def_ref` and returns it.
-fn new_def_ref(st: &mut EngineState) -> Result<MemPtr, Abort> {
-    let def_ref = st.mem.get_avail()?;
+fn new_def_ref(st: &mut EngineState) -> Result<TokenList, Abort> {
+    let def_ref = st.mem.get_avail_token()?;
     st.scanner.def_ref = def_ref;
-    def_ref.set_info(&mut st.mem, TEX_NULL);
+    def_ref.set_ref_count(&mut st.mem, TEX_NULL);
     Ok(def_ref)
 }
 
-pub(crate) fn the_toks(st: &mut EngineState, code: TheCode) -> Result<MemPtr, Abort> {
+pub(crate) fn the_toks(st: &mut EngineState, code: TheCode) -> Result<TokenList, Abort> {
     if code != TheCode::The {
         scan_general_text(st)?;
         if code == TheCode::Unexpanded {
-            return Ok(st.scanner.cur_val_ptr());
+            return Ok(st.scanner.cur_val_tokens());
         }
         let old_setting = st.shipout.selector;
         st.shipout.selector = Selector::NewString;
         let b = st.strings.pool_ptr;
-        let p = st.mem.get_avail()?;
-        let list = TEMP_HEAD.link(&st.mem);
+        let p = st.mem.get_avail_token()?;
+        let list = TEMP_HEAD_TOKS.link(&st.mem);
         p.set_link(&mut st.mem, list);
         crate::output::token_show(st, p);
-        st.mem.flush_list(p);
+        st.mem.flush_token_list(p);
         st.shipout.selector = old_setting;
         return st.mem.str_toks_cat(&mut st.strings, b, None);
     }
     get_x_token(st)?;
     scan_something_internal(st, ValueLevel::Tok, false)?;
     if st.scanner.cur_val_level >= ValueLevel::Ident {
-        let mut p = TEMP_HEAD;
-        p.set_link(&mut st.mem, MemPtr::NULL);
+        let mut p = TEMP_HEAD_TOKS;
+        p.set_link(&mut st.mem, TokenList::NULL);
         if st.scanner.cur_val_level == ValueLevel::Ident {
             store_new_token(st, &mut p, Token::from_cs(st.scanner.cur_val))?;
         } else if st.scanner.cur_val != TEX_NULL {
-            let mut r = st.scanner.cur_val_ptr().link(&st.mem);
+            let mut r = st.scanner.cur_val_tokens().link(&st.mem);
             while !r.is_null() {
                 store_new_token(st, &mut p, r.token(&st.mem))?;
                 r = r.link(&st.mem);
@@ -283,7 +283,7 @@ pub(crate) fn scan_toks(
     st: &mut EngineState,
     macro_def: bool,
     xpand: bool,
-) -> Result<MemPtr, Abort> {
+) -> Result<TokenList, Abort> {
     if macro_def {
         st.scanner.scanner_status = ScannerStatus::Defining;
     } else {
@@ -356,7 +356,7 @@ pub(crate) fn scan_toks(
                 loop {
                     get_next(st)?;
                     if st.scanner.cur_cmd >= Cmd::Call
-                        && st.mem.is_protected_macro(st.scanner.cur_chr_ptr())
+                        && st.mem.is_protected_macro(st.scanner.cur_chr_tokens())
                     {
                         st.scanner.cur_cmd = Cmd::Relax;
                         st.scanner.cur_chr = NO_EXPAND_FLAG;
@@ -368,7 +368,7 @@ pub(crate) fn scan_toks(
                         expand(st)?;
                     } else {
                         let tail = the_toks(st, crate::expand::the_code(st)?)?;
-                        let list = TEMP_HEAD.link(&st.mem);
+                        let list = TEMP_HEAD_TOKS.link(&st.mem);
                         if !list.is_null() {
                             p.set_link(&mut st.mem, list);
                             p = tail;
@@ -433,7 +433,7 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
     scan_general_text(st)?;
     let old_setting = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
-    crate::output::token_show(st, TEMP_HEAD);
+    crate::output::token_show(st, TEMP_HEAD_TOKS);
     st.shipout.selector = old_setting;
     let head = TEMP_HEAD.link(&st.mem);
     st.mem.flush_list(head);
@@ -535,13 +535,13 @@ fn scan_general_text(st: &mut EngineState) -> Result<(), Abort> {
     }
     let def_ref = st.scanner.def_ref;
     let list = def_ref.link(&st.mem);
-    st.mem.free_avail(def_ref);
+    st.mem.free_avail(def_ref.ptr());
     st.scanner.cur_val = if list.is_null() {
         TEMP_HEAD.raw()
     } else {
-        p.raw()
+        p.ptr().raw()
     };
-    TEMP_HEAD.set_link(&mut st.mem, list);
+    TEMP_HEAD_TOKS.set_link(&mut st.mem, list);
     st.scanner.scanner_status = saved_status;
     st.scanner.warning_index = saved_warning_index;
     st.scanner.def_ref = saved_def_ref;

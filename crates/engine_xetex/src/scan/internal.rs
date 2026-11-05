@@ -23,6 +23,7 @@ use crate::output::{
 };
 use crate::params::TokPar;
 use crate::state::{EngineState, FontEngineHandle};
+use crate::token::TokenList;
 use crate::units::{FontId, MemPtr, NodeType, Scaled, StrNumber};
 use std::rc::Rc;
 use texyon_xetex_layout::get_cp_code;
@@ -60,8 +61,8 @@ pub(super) fn find_sa(st: &mut EngineState, t: ValueLevel, n: i32) -> Option<Nod
 }
 
 /// The token list held by sparse register `sa`, null when unset.
-pub(crate) fn sa_token_list(st: &EngineState, sa: Option<NodePtr<SaNode>>) -> MemPtr {
-    sa.map_or(MemPtr::NULL, |sa| sa.sa_ptr(&st.mem))
+pub(crate) fn sa_token_list(st: &EngineState, sa: Option<NodePtr<SaNode>>) -> TokenList {
+    sa.map_or(TokenList::NULL, |sa| sa.sa_toks(&st.mem))
 }
 
 /// Replaces the glue in `cur_val` by a negated copy and returns the original glue.
@@ -193,6 +194,7 @@ fn fetch_token_list(st: &mut EngineState, m: i32, level: ValueLevel) -> Result<(
                 let sa = find_sa(st, ValueLevel::Tok, n);
                 sa_token_list(st, sa)
             }
+            .ptr()
             .raw();
         } else {
             st.scanner.cur_val = NodePtr::<SaNode>::at(MemPtr::from_raw(m))
@@ -207,7 +209,7 @@ fn fetch_token_list(st: &mut EngineState, m: i32, level: ValueLevel) -> Result<(
             scan_char_class_not_ignored(st)?;
             let n = st.scanner.cur_ptr.raw() * CHAR_CLASS_LIMIT + st.scanner.cur_val;
             let sa = find_sa(st, ValueLevel::InterChar, n);
-            st.scanner.cur_val = sa_token_list(st, sa).raw();
+            st.scanner.cur_val = sa_token_list(st, sa).ptr().raw();
         } else {
             st.scanner.cur_val = st.eqtb.equiv(m);
         }

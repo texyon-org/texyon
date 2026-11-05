@@ -605,7 +605,7 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
         )?;
 
         let _ = crate::scan::scan_toks(st, false, false)?;
-        st.mem.flush_list(st.scanner.def_ref);
+        st.mem.flush_token_list(st.scanner.def_ref);
         return Ok(());
     }
 

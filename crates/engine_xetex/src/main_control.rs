@@ -82,7 +82,7 @@ pub(crate) fn shift_case(st: &mut EngineState) -> Result<(), Abort> {
     }
     let def_ref = st.scanner.def_ref;
     crate::input::begin_token_list(st, def_ref.link(&st.mem), TokenType::BackedUp)?;
-    st.mem.free_avail(def_ref);
+    st.mem.free_avail(def_ref.ptr());
     Ok(())
 }
 

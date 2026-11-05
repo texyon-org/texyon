@@ -12,7 +12,8 @@ use crate::node::{AnyNode, CondNode, NodePtr, PageInsNode};
 use crate::packaging::EXACTLY;
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, GroupCode, InteractionMode, Selector};
-use crate::units::{MemPtr, NodeType, Scaled};
+use crate::token::TokenList;
+use crate::units::{NodeType, Scaled};
 
 use super::cmd_chr::{print_cmd_chr, print_meaning};
 use super::show_box::{show_box, show_node_list};
@@ -67,15 +68,15 @@ fn set_trick_count(st: &mut EngineState) {
     st.errors.trick_count = tc.max(st.errors.error_line);
 }
 
-pub(crate) fn show_token_list(st: &mut EngineState, mut p: MemPtr, q: i32, l: i32) {
+pub(crate) fn show_token_list(st: &mut EngineState, mut p: TokenList, q: i32, l: i32) {
     let mut match_chr = i32::from(b'#');
     let mut n = i32::from(b'0');
     st.errors.tally = 0;
     while !p.is_null() && st.errors.tally < l {
-        if p.raw() == q {
+        if p.ptr().raw() == q {
             set_trick_count(st);
         }
-        if p < st.mem.hi_mem_min || p > st.mem.mem_end {
+        if p.ptr() < st.mem.hi_mem_min || p.ptr() > st.mem.mem_end {
             print_esc(st, "CLOBBERED.");
             return;
         }
@@ -161,12 +162,12 @@ pub(super) fn flush_last_string(st: &mut EngineState) {
 pub(crate) fn issue_message(st: &mut EngineState) -> Result<(), Abort> {
     let c = st.scanner.cur_chr as u8;
     let toks = crate::scan::scan_toks(st, false, true)?;
-    GARBAGE.set_link(&mut st.mem, toks);
+    GARBAGE.set_link(&mut st.mem, toks.ptr());
     let old_setting = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
     token_show(st, st.scanner.def_ref);
     st.shipout.selector = old_setting;
-    st.mem.flush_list(st.scanner.def_ref);
+    st.mem.flush_token_list(st.scanner.def_ref);
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
         return Err(Abort::PoolOverflow);
     }
@@ -489,7 +490,7 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
             };
             crate::scan::the_toks(st, the)?;
             print_nl(st, "> ");
-            token_show(st, TEMP_HEAD);
+            token_show(st, crate::mem::TEMP_HEAD_TOKS);
             let list = TEMP_HEAD.link(&st.mem);
             st.mem.flush_list(list);
         }

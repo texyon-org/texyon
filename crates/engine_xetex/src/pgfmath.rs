@@ -11,7 +11,7 @@ use crate::errors::Abort;
 use crate::node::{NodePtr, SaNode};
 use crate::params::IntPar;
 use crate::state::EngineState;
-use crate::token::Token;
+use crate::token::{Token, TokenList};
 use crate::units::{FontId, MemPtr};
 
 pub(crate) mod eval;
@@ -346,7 +346,7 @@ fn cs_name(st: &EngineState, cs: i32) -> Option<String> {
     crate::introspect::read_string(st, text)
 }
 
-fn list_tokens(st: &EngineState, mut p: MemPtr) -> Vec<Token> {
+fn list_tokens(st: &EngineState, mut p: TokenList) -> Vec<Token> {
     let mut out = Vec::new();
     while !p.is_null() {
         out.push(p.token(&st.mem));
@@ -359,7 +359,7 @@ fn macro_tokens(st: &EngineState, cs: i32) -> Option<Vec<Token>> {
     if !matches!(st.eqtb.eq_type(cs), Cmd::Call | Cmd::LongCall) {
         return None;
     }
-    let first = MemPtr::from_raw(st.eqtb.equiv(cs)).link(&st.mem);
+    let first = st.eqtb.equiv_tokens(cs).link(&st.mem);
     if first.is_null() || first.token(&st.mem) != Token::END_MATCH {
         return None;
     }
@@ -557,9 +557,9 @@ fn selected_font(st: &mut EngineState, known: &KnownCs) -> Option<eval::Font> {
 }
 
 /// Letters get catcode 11 like the `Y` and `e` of `\pgfmathfloatcreate`.
-fn result_macro(st: &mut EngineState, text: &[u8]) -> Result<MemPtr, Abort> {
-    let head = st.mem.get_avail()?;
-    head.set_info(&mut st.mem, TEX_NULL);
+fn result_macro(st: &mut EngineState, text: &[u8]) -> Result<TokenList, Abort> {
+    let head = st.mem.get_avail_token()?;
+    head.set_ref_count(&mut st.mem, TEX_NULL);
     let mut tail = head;
     st.mem.store_new_token(&mut tail, Token::END_MATCH)?;
     for &b in text {
@@ -576,7 +576,7 @@ fn result_macro(st: &mut EngineState, text: &[u8]) -> Result<MemPtr, Abort> {
 fn commit(st: &mut EngineState, known: &KnownCs, answer: &Answer) -> Result<(), Abort> {
     let body = match answer {
         Answer::Expression => {
-            let shared = MemPtr::from_raw(st.eqtb.equiv(known.expression()));
+            let shared = st.eqtb.equiv_tokens(known.expression());
             st.mem.add_token_ref(shared);
             shared
         }
@@ -598,7 +598,7 @@ fn commit(st: &mut EngineState, known: &KnownCs, answer: &Answer) -> Result<(), 
         &mut st.scanner,
         known.result(),
         Cmd::Call,
-        body.raw(),
+        body.ptr().raw(),
     )
 }
 
@@ -888,7 +888,7 @@ fn run_native(
 /// True when answered, then `macro_call` frees the arguments and skips the body.
 #[cold]
 #[inline(never)]
-pub(crate) fn native_macro(st: &mut EngineState, kind: Native, args: &[MemPtr]) -> bool {
+pub(crate) fn native_macro(st: &mut EngineState, kind: Native, args: &[TokenList]) -> bool {
     if TRACING.iter().any(|&p| st.eqtb.int_par(p) > 0) || st.eqtb.int_par(IntPar::GlobalDefs) != 0 {
         return false;
     }
@@ -916,7 +916,7 @@ pub(crate) fn native_macro(st: &mut EngineState, kind: Native, args: &[MemPtr]) 
                         &mut st.scanner,
                         cs,
                         Cmd::Call,
-                        body.raw(),
+                        body.ptr().raw(),
                     )?;
                 }
                 Effect::Comparison(value) => {

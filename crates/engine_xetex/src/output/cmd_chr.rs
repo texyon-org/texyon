@@ -19,6 +19,7 @@ use crate::math::{
 use crate::node::{NodePtr, SaNode};
 use crate::params::TokPar;
 use crate::state::{EngineState, InteractionMode};
+use crate::token::TokenList;
 use crate::units::{FontId, MemPtr, NodeType};
 
 use super::{
@@ -540,7 +541,10 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
         Cmd::Call | Cmd::LongCall | Cmd::OuterCall | Cmd::LongOuterCall => {
             // Bit 0 is long, bit 1 outer, bit 2 protected.
             let mut n = i32::from(cmd.is_long_call()) + 2 * i32::from(cmd.is_outer_call());
-            if st.mem.is_protected_macro(MemPtr::from_raw(chr_code)) {
+            if st
+                .mem
+                .is_protected_macro(TokenList::from_ptr(MemPtr::from_raw(chr_code)))
+            {
                 n += 4;
             }
             if n / 4 % 2 != 0 {
@@ -573,7 +577,7 @@ pub(crate) fn print_meaning(st: &mut EngineState) {
     if cmd >= Cmd::Call {
         print_char(st, b':');
         print_ln(st);
-        token_show(st, st.scanner.cur_chr_ptr());
+        token_show(st, st.scanner.cur_chr_tokens());
     } else if cmd == Cmd::TopBotMark {
         if let Some(mark) = MarkCode::from_raw(chr) {
             print_char(st, b':');

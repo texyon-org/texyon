@@ -14,6 +14,7 @@ use crate::consts::{
 };
 use crate::errors::Abort;
 use crate::state::MemState;
+use crate::token::TokenList;
 use crate::units::{
     FontId, GlueSign, InvalidNodeType, MemAddr, MemIdx, MemPtr, NodeType, Scaled, StrNumber,
 };
@@ -107,6 +108,18 @@ impl Slot for Scaled {
     #[inline(always)]
     fn encode(self) -> i32 {
         self.raw()
+    }
+}
+
+impl Slot for TokenList {
+    type Raw = i32;
+    #[inline(always)]
+    fn decode(raw: i32) -> Self {
+        TokenList::from_ptr(MemPtr::from_raw(raw))
+    }
+    #[inline(always)]
+    fn encode(self) -> i32 {
+        self.ptr().raw()
     }
 }
 
@@ -545,26 +558,6 @@ impl MemPtr {
     }
     #[inline]
     pub fn set_info(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s0(self, v);
-    }
-
-    /// The token held by a token-list node.
-    #[inline]
-    pub fn token(self, mem: &MemState) -> crate::token::Token {
-        crate::token::Token(mem.b32s0(self))
-    }
-    #[inline]
-    pub fn set_token(self, mem: &mut MemState, t: crate::token::Token) {
-        mem.set_b32s0(self, t.0);
-    }
-    /// The reference count in a token list's head node, one less than the
-    /// number of references.
-    #[inline]
-    pub fn token_ref_count(self, mem: &MemState) -> i32 {
-        mem.b32s0(self)
-    }
-    #[inline]
-    pub fn set_token_ref_count(self, mem: &mut MemState, v: i32) {
         mem.set_b32s0(self, v);
     }
 }
@@ -1200,7 +1193,7 @@ impl NodePtr<PenaltyNode> {
 
 impl NodePtr<MarkNode> {
     fields! {
-        mark_ptr / set_mark_ptr: MemPtr = b32s1 @ 1;
+        mark_ptr / set_mark_ptr: TokenList = b32s1 @ 1;
         mark_class / set_mark_class: i32 = b32s0 @ 1;
     }
 }
@@ -1298,8 +1291,8 @@ impl NodePtr<GlueNode> {
 
 impl NodePtr<AlignRecord> {
     fields! {
-        v_part / set_v_part: MemPtr = b32s1 @ 2;
-        u_part / set_u_part: MemPtr = b32s1 @ 3;
+        v_part / set_v_part: TokenList = b32s1 @ 2;
+        u_part / set_u_part: TokenList = b32s1 @ 3;
         /// The command that ended the current entry of this column.
         extra_info / set_extra_info: i32 = b32s0 @ 5;
     }
@@ -1537,7 +1530,7 @@ impl NodePtr<WhatsitNode> {
     }
 
     fields! {
-        write_tokens / set_write_tokens: MemPtr = b32s1 @ 1;
+        write_tokens / set_write_tokens: TokenList = b32s1 @ 1;
         write_stream / set_write_stream: i32 = b32s0 @ 1;
         open_name / set_open_name: StrNumber = b32s1 @ 1;
         open_area / set_open_area: StrNumber = b32s0 @ 2;
@@ -1681,6 +1674,8 @@ impl NodePtr<SaNode> {
         sa_ref / set_sa_ref: i32 = b32s0 @ 1;
         /// A box or token-list value, in child slot 1.
         sa_ptr / set_sa_ptr: MemPtr = b32s1 @ 1;
+        /// A token-list register's value, in the same slot.
+        sa_toks: TokenList = b32s1 @ 1;
         /// A count or dimension register's number, in the same slot.
         sa_num / set_sa_num: i32 = b32s1 @ 1;
         /// A count or dimension value.
@@ -1697,12 +1692,12 @@ impl NodePtr<SaNode> {
 
     /// Mark `m` of a mark class record.
     #[inline]
-    pub fn mark(self, mem: &MemState, m: crate::codes::MarkCode) -> MemPtr {
-        self.child(mem, m.raw())
+    pub fn mark(self, mem: &MemState, m: crate::codes::MarkCode) -> TokenList {
+        TokenList::from_ptr(self.child(mem, m.raw()))
     }
     #[inline]
-    pub fn set_mark(self, mem: &mut MemState, m: crate::codes::MarkCode, v: MemPtr) {
-        self.set_child(mem, m.raw(), v);
+    pub fn set_mark(self, mem: &mut MemState, m: crate::codes::MarkCode, v: TokenList) {
+        self.set_child(mem, m.raw(), v.ptr());
     }
 
     /// Child or mark slot `i`, packed two per word from +1.
@@ -2040,7 +2035,7 @@ mod tests {
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), -10000);
 
         let mark: NodePtr<MarkNode> = at(&mut mem, 100, Some(NodeType::Mark));
-        mark.set_mark_ptr(&mut mem, MemPtr::from_raw(77));
+        mark.set_mark_ptr(&mut mem, TokenList::from_ptr(MemPtr::from_raw(77)));
         mark.set_mark_class(&mut mem, 3);
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 77);
         assert_eq!(mem.b32s0(MemPtr::from_raw(101)), 3);
@@ -2089,8 +2084,8 @@ mod tests {
         assert_eq!(NodePtr::<GlueNode>::tab_skip_after(&mem, head).ptr(), g1);
         assert!(rec.next_column(&mem).is_none());
 
-        rec.set_v_part(&mut mem, MemPtr::from_raw(0x22));
-        rec.set_u_part(&mut mem, MemPtr::from_raw(0x33));
+        rec.set_v_part(&mut mem, TokenList::from_ptr(MemPtr::from_raw(0x22)));
+        rec.set_u_part(&mut mem, TokenList::from_ptr(MemPtr::from_raw(0x33)));
         rec.set_extra_info(&mut mem, 0x55);
         rec.span_head()
             .set_next(&mut mem, NodePtr::at(MemPtr::from_raw(40)));
@@ -2165,7 +2160,10 @@ mod tests {
         assert_eq!(mem.b32s1(MemPtr::from_raw(105)), 0);
 
         mem.set_b32s1(MemPtr::from_raw(101), 0x55);
-        assert_eq!(w.write_tokens(&mem), MemPtr::from_raw(0x55));
+        assert_eq!(
+            w.write_tokens(&mem),
+            TokenList::from_ptr(MemPtr::from_raw(0x55))
+        );
         assert_eq!(w.what_lang(&mem), 0x55);
         mem.set_b16s1(MemPtr::from_raw(101), 4);
         mem.set_b16s0(MemPtr::from_raw(101), 5);

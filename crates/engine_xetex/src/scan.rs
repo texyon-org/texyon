@@ -14,7 +14,7 @@ use crate::output::{capture_to_diagnostic, error_here_with_diagnostic, print_cmd
 use crate::packaging::{ADDITIONAL, EXACTLY};
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, ErrorState, GroupCode, MemState, ScannerState};
-use crate::token::Token;
+use crate::token::{Token, TokenList};
 use crate::units::{MemPtr, NodeType, Scaled};
 
 mod internal;
@@ -371,7 +371,7 @@ pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, 
     let keyword = keyword.as_bytes();
     let save_cur_cs = st.scanner.cur_cs;
     let mut p = BACKUP_HEAD;
-    p.set_link(&mut st.mem, MemPtr::NULL);
+    p.set_link(&mut st.mem, TokenList::NULL);
     let mut i = 0;
     while i < keyword.len() {
         get_x_token(st)?;
@@ -391,7 +391,7 @@ pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, 
         }
     }
     let matched = BACKUP_HEAD.link(&st.mem);
-    st.mem.flush_list_with_tail(matched, p);
+    st.mem.flush_token_list_with_tail(matched, p);
     Ok(true)
 }
 

@@ -7,7 +7,7 @@ use crate::consts::{
 };
 use crate::errors::Abort;
 use crate::input::{TokenType, TOKEN_LIST};
-use crate::mem::{ALIGN_HEAD, END_SPAN, HOLD_HEAD, ZERO_GLUE};
+use crate::mem::{ALIGN_HEAD, END_SPAN, HOLD_HEAD, HOLD_HEAD_TOKS, ZERO_GLUE};
 use crate::node::{
     AlignColumn, AlignRecord, AlignStackNode, AnyBox, AnyNode, GlueNode, NodePtr, RuleDimen,
     SpanNode, UnsetNode, RUNNING,
@@ -15,7 +15,7 @@ use crate::node::{
 use crate::packaging::ADDITIONAL;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::state::{EngineState, GroupCode, MemState};
-use crate::token::Token;
+use crate::token::{Token, TokenList};
 use crate::units::{GlueSign, MemPtr, Scaled};
 
 use super::assign::{define, do_assignments};
@@ -106,8 +106,8 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
     let mut column = st.mem.first_column::<AlignRecord>();
     while let Some(q) = column {
         let (u_part, v_part) = (q.u_part(&st.mem), q.v_part(&st.mem));
-        st.mem.flush_list(u_part);
-        st.mem.flush_list(v_part);
+        st.mem.flush_token_list(u_part);
+        st.mem.flush_token_list(v_part);
         let next = q.next_column(&st.mem);
         if q.width(&st.mem) == RUNNING {
             q.set_width(&mut st.mem, Scaled::ZERO);
@@ -572,15 +572,15 @@ fn pop_alignment(st: &mut EngineState) {
 }
 
 impl MemState {
-    /// Copies token list `r` through `HOLD_HEAD` and returns the copy.
-    fn copy_token_list(&mut self, mut r: MemPtr) -> Result<MemPtr, Abort> {
-        let mut q = HOLD_HEAD;
+    /// Copies token list `r` through `HOLD_HEAD_TOKS` and returns the copy.
+    fn copy_token_list(&mut self, mut r: TokenList) -> Result<TokenList, Abort> {
+        let mut q = HOLD_HEAD_TOKS;
         while !r.is_null() {
             self.store_new_token(&mut q, r.token(self))?;
             r = r.link(self);
         }
-        q.set_link(self, MemPtr::NULL);
-        Ok(HOLD_HEAD.link(self))
+        q.set_link(self, TokenList::NULL);
+        Ok(HOLD_HEAD_TOKS.link(self))
     }
 
     /// A fresh preamble column with an empty span list and no entries yet.
@@ -791,8 +791,8 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
             break;
         }
 
-        let mut p = HOLD_HEAD;
-        p.set_link(&mut st.mem, MemPtr::NULL);
+        let mut p = HOLD_HEAD_TOKS;
+        p.set_link(&mut st.mem, TokenList::NULL);
         loop {
             get_preamble_token(st)?;
             if st.scanner.cur_cmd == Cmd::MacParam {
@@ -801,7 +801,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
             if (Cmd::TabMark..=Cmd::CarRet).contains(&st.scanner.cur_cmd)
                 && st.scanner.align_state == -1_000_000
             {
-                if p == HOLD_HEAD
+                if p == HOLD_HEAD_TOKS
                     && st.scanner.cur_loop.is_null()
                     && st.scanner.cur_cmd == Cmd::TabMark
                 {
@@ -816,7 +816,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
                     crate::input::back_error(st)?;
                     break;
                 }
-            } else if st.scanner.cur_cmd != Cmd::Spacer || p != HOLD_HEAD {
+            } else if st.scanner.cur_cmd != Cmd::Spacer || p != HOLD_HEAD_TOKS {
                 st.mem.store_new_token(&mut p, st.scanner.cur_tok)?;
             }
         }
@@ -824,11 +824,11 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
         let column = st.mem.new_align_record()?;
         st.scanner.cur_align.set_link(&mut st.mem, column.ptr());
         st.scanner.cur_align = column.ptr();
-        let u_part = HOLD_HEAD.link(&st.mem);
+        let u_part = HOLD_HEAD_TOKS.link(&st.mem);
         column.set_u_part(&mut st.mem, u_part);
 
-        p = HOLD_HEAD;
-        p.set_link(&mut st.mem, MemPtr::NULL);
+        p = HOLD_HEAD_TOKS;
+        p.set_link(&mut st.mem, TokenList::NULL);
         loop {
             get_preamble_token(st)?;
             if (Cmd::TabMark..=Cmd::CarRet).contains(&st.scanner.cur_cmd)
@@ -850,7 +850,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
         }
         st.mem
             .store_new_token(&mut p, Token::from_cs(FROZEN_END_TEMPLATE))?;
-        let v_part = HOLD_HEAD.link(&st.mem);
+        let v_part = HOLD_HEAD_TOKS.link(&st.mem);
         column.set_v_part(&mut st.mem, v_part);
     }
 

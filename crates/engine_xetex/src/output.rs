@@ -14,6 +14,7 @@ use crate::node::{
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::save::DIMEN_VAL_LIMIT;
 use crate::state::{EngineState, GroupCode, Selector};
+use crate::token::TokenList;
 use crate::units::{FontId, MemPtr, Scaled, StrNumber};
 
 mod cmd_chr;
@@ -768,7 +769,7 @@ pub(crate) fn print_group(st: &mut EngineState, e: bool) {
     }
 }
 
-pub(crate) fn token_show(st: &mut EngineState, p: MemPtr) {
+pub(crate) fn token_show(st: &mut EngineState, p: TokenList) {
     if !p.is_null() {
         let head = p.link(&st.mem);
         show_token_list(st, head, TEX_NULL, 10_000_000);
@@ -900,9 +901,9 @@ fn print_font_and_char(st: &mut EngineState, p: MemPtr) {
     }
 }
 
-fn print_mark(st: &mut EngineState, p: MemPtr) {
+fn print_mark(st: &mut EngineState, p: TokenList) {
     print_char(st, b'{');
-    if p < st.mem.hi_mem_min || p > st.mem.mem_end {
+    if p.ptr() < st.mem.hi_mem_min || p.ptr() > st.mem.mem_end {
         print_esc(st, "CLOBBERED.");
     } else {
         let head = p.link(&st.mem);

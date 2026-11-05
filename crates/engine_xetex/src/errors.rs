@@ -2,7 +2,6 @@ use crate::bridge::{output_flush, set_error_message};
 use crate::cmd::Cmd;
 use crate::codes::ScannerStatus;
 use crate::consts::{HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, MEM_TOP, TEX_NULL};
-use crate::mem::{HOLD_HEAD, TEMP_HEAD};
 use crate::output::{
     begin_diagnostic, capture_to_diagnostic, diagnostic_begin_capture_warning_here, end_diagnostic,
     error_here_with_diagnostic, print, print_char, print_cmd_chr, print_err, print_esc,
@@ -356,8 +355,8 @@ pub(crate) fn box_error(st: &mut EngineState, n: u8) -> Result<(), Abort> {
 pub(crate) fn runaway(st: &mut EngineState) {
     let (msg, p) = match st.scanner.scanner_status {
         ScannerStatus::Defining => ("Runaway definition", st.scanner.def_ref),
-        ScannerStatus::Matching => ("Runaway argument", TEMP_HEAD),
-        ScannerStatus::Aligning => ("Runaway preamble", HOLD_HEAD),
+        ScannerStatus::Matching => ("Runaway argument", crate::mem::TEMP_HEAD_TOKS),
+        ScannerStatus::Aligning => ("Runaway preamble", crate::mem::HOLD_HEAD_TOKS),
         ScannerStatus::Absorbing => ("Runaway text", st.scanner.def_ref),
         _ => return,
     };

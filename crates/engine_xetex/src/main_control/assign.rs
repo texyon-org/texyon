@@ -16,7 +16,7 @@ use crate::node::{GlueSpecNode, NodePtr, ParShapeNode, PenaltiesNode, SaNode};
 use crate::params::{IntPar, TokPar};
 use crate::scan::fetch_box;
 use crate::state::{EngineState, MemState, Selector};
-use crate::token::Token;
+use crate::token::{Token, TokenList};
 use crate::units::{FontId, MemPtr, Scaled, StrNumber};
 
 use texyon_xetex_layout::set_cp_code;
@@ -540,17 +540,17 @@ fn define_toks(
     e: bool,
     global: bool,
     p: i32,
-    list: MemPtr,
+    list: TokenList,
 ) -> Result<(), Abort> {
     if e {
-        return sa_define(st, global, NodePtr::at(MemPtr::from_raw(p)), list);
+        return sa_define(st, global, NodePtr::at(MemPtr::from_raw(p)), list.ptr());
     }
     let t = if list.is_null() {
         Cmd::UndefinedCs
     } else {
         Cmd::Call
     };
-    define(st, global, p, t, list.raw())?;
+    define(st, global, p, t, list.ptr().raw())?;
     Ok(())
 }
 
@@ -612,7 +612,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             let p = st.scanner.cur_cs;
             crate::scan::scan_toks(st, true, expand)?;
             if protected {
-                let q = st.mem.get_avail()?;
+                let q = st.mem.get_avail_token()?;
                 q.set_token(&mut st.mem, Token::PROTECTED);
                 let body = st.scanner.def_ref.link(&st.mem);
                 q.set_link(&mut st.mem, body);
@@ -623,7 +623,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 a >= 4,
                 p,
                 Cmd::call(a % 2 == 1, a % 4 >= 2),
-                st.scanner.def_ref.raw(),
+                st.scanner.def_ref.ptr().raw(),
             )?;
         }
         Cmd::Let => {
@@ -652,7 +652,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 crate::input::back_input(st)?;
             }
             if st.scanner.cur_cmd >= Cmd::Call {
-                st.mem.add_token_ref(st.scanner.cur_chr_ptr());
+                st.mem.add_token_ref(st.scanner.cur_chr_tokens());
             } else if (st.scanner.cur_cmd == Cmd::Register
                 || st.scanner.cur_cmd == Cmd::ToksRegister)
                 && !(0..=19).contains(&st.scanner.cur_chr)
@@ -921,7 +921,7 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
                     crate::scan::sa_token_list(st, sa)
                 }
             } else {
-                NodePtr::<SaNode>::at(MemPtr::from_raw(st.scanner.cur_chr)).sa_ptr(&st.mem)
+                NodePtr::<SaNode>::at(MemPtr::from_raw(st.scanner.cur_chr)).sa_toks(&st.mem)
             }
         } else if st.scanner.cur_chr == TokPar::XetexInterCharToks.loc() {
             let n = scan_inter_char_pair(st)?;
@@ -930,7 +930,7 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
                 .find_sa_element(&mut st.scanner, ValueLevel::InterChar, n);
             crate::scan::sa_token_list(st, sa)
         } else {
-            st.eqtb.equiv_ptr(st.scanner.cur_chr)
+            st.eqtb.equiv_tokens(st.scanner.cur_chr)
         };
         if !list.is_null() {
             st.mem.add_token_ref(list);
@@ -943,15 +943,15 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
     let tail = crate::scan::scan_toks(st, false, false)?;
     let def_ref = st.scanner.def_ref;
     if def_ref.link(&st.mem).is_null() {
-        define_toks(st, e, global, p, MemPtr::NULL)?;
-        st.mem.free_avail(def_ref);
+        define_toks(st, e, global, p, TokenList::NULL)?;
+        st.mem.free_avail(def_ref.ptr());
         return Ok(());
     }
     if p == TokPar::OutputRoutine.loc() && !e {
         let mut tail = tail;
         st.mem
             .store_new_token(&mut tail, Token::right_brace(b'}'))?;
-        let q = st.mem.get_avail()?;
+        let q = st.mem.get_avail_token()?;
         q.set_token(&mut st.mem, Token::left_brace(b'{'));
         let body = def_ref.link(&st.mem);
         q.set_link(&mut st.mem, body);

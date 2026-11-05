@@ -13,7 +13,7 @@ use crate::input::{TokenType, TOKEN_LIST};
 use crate::node::{AnyNode, CharNode, LigItem, NodePtr, WhatsitNode};
 use crate::params::IntPar;
 use crate::state::{EngineState, MemState};
-use crate::token::Token;
+use crate::token::{Token, TokenList};
 use crate::units::{FontId, MemIdx, MemPtr};
 
 fn inter_char_tokens_enabled(st: &EngineState) -> bool {
@@ -22,11 +22,11 @@ fn inter_char_tokens_enabled(st: &EngineState) -> bool {
 
 /// The `\XeTeXinterchartoks` list for class pair `n`, if set. Leaves the
 /// pair's trie record, possibly null, in `cur_ptr`.
-fn inter_char_toks(st: &mut EngineState, n: i32) -> Option<MemPtr> {
+fn inter_char_toks(st: &mut EngineState, n: i32) -> Option<TokenList> {
     let list = st
         .mem
         .find_sa_element(&mut st.scanner, ValueLevel::InterChar, n)?
-        .sa_ptr(&st.mem);
+        .sa_toks(&st.mem);
     (!list.is_null()).then_some(list)
 }
 

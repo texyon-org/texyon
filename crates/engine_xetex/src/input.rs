@@ -8,8 +8,8 @@ use crate::io::u_close;
 use crate::node::{NodePtr, PseudoLineNode};
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, InputClusterState, InputState, MemState};
-use crate::token::Token;
-use crate::units::{MemPtr, StrNumber};
+use crate::token::{Token, TokenList};
+use crate::units::StrNumber;
 
 code_enum! {
     /// What a token-list level reads (`token_type`). It lives in `index`,
@@ -122,7 +122,7 @@ pub(crate) fn end_token_list(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
         TokenType::BackedUp | TokenType::BackedUpChar | TokenType::Inserted => {
-            st.mem.flush_list(ci.token_start());
+            st.mem.flush_token_list(ci.token_start());
         }
         t => {
             st.mem.delete_token_ref(ci.token_start());
@@ -130,8 +130,10 @@ pub(crate) fn end_token_list(st: &mut EngineState) -> Result<(), Abort> {
                 while st.input.param_ptr > ci.limit {
                     st.input.param_ptr -= 1;
                     let k = st.input.param_ptr as usize;
-                    st.mem
-                        .flush_list_with_tail(st.input.param_stack[k], st.input.param_tail[k]);
+                    st.mem.flush_token_list_with_tail(
+                        st.input.param_stack[k],
+                        st.input.param_tail[k],
+                    );
                 }
             }
         }
@@ -147,7 +149,7 @@ pub(crate) fn back_input(st: &mut EngineState) -> Result<(), Abort> {
     {
         end_token_list(st)?;
     }
-    let p = st.mem.get_avail()?;
+    let p = st.mem.get_avail_token()?;
     p.set_token(&mut st.mem, st.scanner.cur_tok);
     if st.scanner.cur_tok.is_brace() {
         if st.scanner.cur_tok.is_left_brace() {
@@ -285,12 +287,12 @@ pub(crate) fn insert_relax(st: &mut EngineState) -> Result<(), Abort> {
 
 pub(crate) fn begin_token_list(
     st: &mut EngineState,
-    list: MemPtr,
+    list: TokenList,
     t: TokenType,
 ) -> Result<(), Abort> {
     push_input(st)?;
     st.input.cur_input.state = TOKEN_LIST;
-    st.input.cur_input.start = list.raw();
+    st.input.cur_input.start = list.ptr().raw();
     st.input.cur_input.set_token_type(t);
     if t < TokenType::Macro {
         st.input.cur_input.set_token_loc(list);

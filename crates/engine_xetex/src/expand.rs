@@ -12,7 +12,7 @@ use crate::consts::{
 use crate::errors::{error, Abort};
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::{back_error, back_input, begin_token_list, TokenType, TOKEN_LIST};
-use crate::mem::{BACKUP_HEAD, GARBAGE, TEMP_HEAD, ZERO_GLUE};
+use crate::mem::{BACKUP_HEAD, GARBAGE, TEMP_HEAD_TOKS, ZERO_GLUE};
 use crate::node::{AnyBox, AnyNode, CondNode, NodePtr};
 use crate::output::{
     begin_diagnostic, capture_to_diagnostic, diagnostic_begin_capture_warning_here, end_diagnostic,
@@ -25,7 +25,7 @@ use crate::scan::{
     get_x_token, scan_int, store_new_token, NO_EXPAND_FLAG,
 };
 use crate::state::{EngineState, MemState, Selector};
-use crate::token::Token;
+use crate::token::{Token, TokenList};
 use crate::units::{FontId, MemPtr, Scaled, StrNumber};
 
 /// The `\the` variant in `cur_chr`.
@@ -39,9 +39,9 @@ pub(crate) fn ins_the_toks(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 /// Inserts the list at `link(temp_head)` whose tail is `tail`.
-fn ins_temp_head_list(st: &mut EngineState, tail: MemPtr) -> Result<(), Abort> {
-    GARBAGE.set_link(&mut st.mem, tail);
-    begin_token_list(st, TEMP_HEAD.link(&st.mem), TokenType::Inserted)?;
+fn ins_temp_head_list(st: &mut EngineState, tail: TokenList) -> Result<(), Abort> {
+    GARBAGE.set_link(&mut st.mem, tail.ptr());
+    begin_token_list(st, TEMP_HEAD_TOKS.link(&st.mem), TokenType::Inserted)?;
     Ok(())
 }
 
@@ -94,7 +94,7 @@ fn get_token_unexpanded(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 /// Copies the character tokens of `list` into `buffer[first..]`, returning the end index.
-fn token_chars_to_buffer(st: &mut EngineState, list: MemPtr) -> Result<i32, Abort> {
+fn token_chars_to_buffer(st: &mut EngineState, list: TokenList) -> Result<i32, Abort> {
     let mut j = st.input.first;
     let mut p = list;
     while !p.is_null() {
@@ -116,8 +116,8 @@ fn token_chars_to_buffer(st: &mut EngineState, list: MemPtr) -> Result<i32, Abor
 
 /// Scans the tokens of a `\csname`-like name up to the terminating control sequence.
 /// Returns the head node and the last node of the scanned list.
-fn scan_cs_name_tokens(st: &mut EngineState) -> Result<(MemPtr, MemPtr), Abort> {
-    let head = st.mem.get_avail()?;
+fn scan_cs_name_tokens(st: &mut EngineState) -> Result<(TokenList, TokenList), Abort> {
+    let head = st.mem.get_avail_token()?;
     let mut tail = head;
     let saved_in_csname = st.scanner.is_in_csname;
     st.scanner.is_in_csname = true;
@@ -265,14 +265,14 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             } else if st.scanner.cur_cmd < Cmd::Call {
                 st.scanner.cur_chr == q
             } else {
-                let mut p = st.scanner.cur_chr_ptr().link(&st.mem);
-                let mut q = st.eqtb.equiv_ptr(n).link(&st.mem);
+                let mut p = st.scanner.cur_chr_tokens().link(&st.mem);
+                let mut q = st.eqtb.equiv_tokens(n).link(&st.mem);
                 if p == q {
                     true
                 } else {
                     while !p.is_null() && !q.is_null() {
                         if p.token(&st.mem) != q.token(&st.mem) {
-                            p = MemPtr::NULL;
+                            p = TokenList::NULL;
                         } else {
                             p = p.link(&st.mem);
                             q = q.link(&st.mem);
@@ -310,7 +310,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
                 st.eqtb
                     .id_lookup(&mut st.strings, &st.input.buffer, first, m - first)?
             };
-            st.mem.flush_list_with_tail(head, tail);
+            st.mem.flush_token_list_with_tail(head, tail);
             st.eqtb.eq_type(st.scanner.cur_cs) != Cmd::UndefinedCs
         }
         IfCode::InCsName => st.scanner.is_in_csname,
@@ -408,7 +408,7 @@ fn scan_int_or_dimen(st: &mut EngineState, this_if: IfCode) -> Result<(), Abort>
 struct SavedScan {
     status: ScannerStatus,
     warning_index: i32,
-    def_ref: MemPtr,
+    def_ref: TokenList,
     pending_str: bool,
 }
 
@@ -566,7 +566,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             let def_ref = st.scanner.def_ref;
             let list = def_ref.link(&st.mem);
             begin_token_list(st, list, TokenType::Inserted)?;
-            st.mem.free_avail(st.scanner.def_ref);
+            st.mem.free_avail(st.scanner.def_ref.ptr());
             st.scanner.def_ref = saved.def_ref;
             unseal_pending_str(st, &saved);
             return Ok(());
@@ -779,7 +779,7 @@ fn not_font_error(st: &mut EngineState, c: ConvertCode, f: FontId, msg: &str) ->
 
 /// Puts `token` in front of the backed-up token list on top of the input stack.
 fn prepend_to_backed_up(st: &mut EngineState, token: Token) -> Result<(), Abort> {
-    let p = st.mem.get_avail()?;
+    let p = st.mem.get_avail_token()?;
     p.set_token(&mut st.mem, token);
     p.set_link(&mut st.mem, st.input.cur_input.token_loc());
     st.input.cur_input.set_token_list(p);
@@ -824,15 +824,15 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     st.scanner.cur_val = 0;
                 }
                 if st.scanner.cur_val == 0 {
-                    st.scanner.cur_ptr = st.scanner.cur_mark[mark];
+                    st.scanner.cur_ptr = st.scanner.cur_mark[mark].ptr();
                 } else {
                     let n = st.scanner.cur_val;
                     if let Some(sa) = st.mem.find_sa_element(&mut st.scanner, ValueLevel::Mark, n) {
-                        st.scanner.cur_ptr = sa.mark(&st.mem, mark);
+                        st.scanner.cur_ptr = sa.mark(&st.mem, mark).ptr();
                     }
                 }
                 if !st.scanner.cur_ptr.is_null() {
-                    begin_token_list(st, st.scanner.cur_ptr, TokenType::Mark)?;
+                    begin_token_list(st, TokenList::from_ptr(st.scanner.cur_ptr), TokenType::Mark)?;
                 }
             }
             Cmd::ExpandAfter => {
@@ -907,7 +907,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                 } else {
                     SINGLE_BASE + st.input.buffer[first as usize]
                 };
-                st.mem.flush_list_with_tail(head, tail);
+                st.mem.flush_token_list_with_tail(head, tail);
                 let cs = st.scanner.cur_cs;
                 if st.eqtb.eq_type(cs) == Cmd::UndefinedCs {
                     let _ = st.eqtb.eq_define(
@@ -983,7 +983,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
 #[cold]
 fn runaway_par_in_argument(
     st: &mut EngineState,
-    pstack: &mut [MemPtr; 9],
+    pstack: &mut [TokenList; 9],
     n: i32,
     unbalance: i32,
 ) -> Result<(), Abort> {
@@ -1000,10 +1000,10 @@ fn runaway_par_in_argument(
         ]);
         back_error(st)?;
     }
-    pstack[n as usize] = TEMP_HEAD.link(&st.mem);
+    pstack[n as usize] = TEMP_HEAD_TOKS.link(&st.mem);
     st.scanner.align_state -= unbalance;
     for &list in &pstack[..=n as usize] {
-        st.mem.flush_list(list);
+        st.mem.flush_token_list(list);
     }
     Ok(())
 }
@@ -1030,7 +1030,7 @@ fn extra_right_brace_in_argument(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 #[cold]
-fn trace_macro_call(st: &mut EngineState, ref_count: MemPtr) {
+fn trace_macro_call(st: &mut EngineState, ref_count: TokenList) {
     begin_diagnostic(st);
     diagnostic_begin_capture_warning_here(st);
     let stack_levels = st.eqtb.int_par(IntPar::TracingStackLevels);
@@ -1058,7 +1058,7 @@ fn trace_macro_call(st: &mut EngineState, ref_count: MemPtr) {
 }
 
 #[cold]
-fn trace_macro_param(st: &mut EngineState, match_chr: i32, n: i32, list: MemPtr) {
+fn trace_macro_param(st: &mut EngineState, match_chr: i32, n: i32, list: TokenList) {
     let stack_levels = st.eqtb.int_par(IntPar::TracingStackLevels);
     if stack_levels == 0 || st.input.input_ptr < stack_levels {
         begin_diagnostic(st);
@@ -1086,7 +1086,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
     let save_scanner_status = st.scanner.scanner_status;
     let save_warning_index = st.scanner.warning_index;
     st.scanner.warning_index = st.scanner.cur_cs;
-    let ref_count = st.scanner.cur_chr_ptr();
+    let ref_count = st.scanner.cur_chr_tokens();
     let mut r = ref_count.link(&st.mem);
     let mut n: i32 = 0;
 
@@ -1098,10 +1098,10 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
         r = r.link(&st.mem);
     }
 
-    let mut pstack = [MemPtr::NULL; 9];
-    let mut ptail = [MemPtr::NULL; 9];
+    let mut pstack = [TokenList::NULL; 9];
+    let mut ptail = [TokenList::NULL; 9];
     let mut match_chr: i32 = 0;
-    let mut rbrace_ptr = MemPtr::NULL;
+    let mut rbrace_ptr = TokenList::NULL;
 
     'exit: {
         if r.token(&st.mem) != Token::END_MATCH {
@@ -1111,18 +1111,18 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
             st.scanner.long_state = st.scanner.long_state.without_outer();
 
             loop {
-                TEMP_HEAD.set_link(&mut st.mem, MemPtr::NULL);
-                let s: MemPtr;
-                let mut p = MemPtr::NULL;
+                TEMP_HEAD_TOKS.set_link(&mut st.mem, TokenList::NULL);
+                let s: TokenList;
+                let mut p = TokenList::NULL;
                 let mut m: i32 = 0;
                 let rt = r.token(&st.mem);
                 if rt >= Token::END_MATCH || rt < Token::match_(0) {
-                    s = MemPtr::NULL;
+                    s = TokenList::NULL;
                 } else {
                     match_chr = rt.chr();
                     s = r.link(&st.mem);
                     r = s;
-                    p = TEMP_HEAD;
+                    p = TEMP_HEAD_TOKS;
                 }
 
                 'continue_: loop {
@@ -1245,14 +1245,14 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                 if !s.is_null() {
                     if m == 1 && p.token(&st.mem).is_brace() {
                         // Strip the braces around a single braced argument.
-                        rbrace_ptr.set_link(&mut st.mem, MemPtr::NULL);
-                        st.mem.free_avail(p);
-                        p = TEMP_HEAD.link(&st.mem);
+                        rbrace_ptr.set_link(&mut st.mem, TokenList::NULL);
+                        st.mem.free_avail(p.ptr());
+                        p = TEMP_HEAD_TOKS.link(&st.mem);
                         pstack[n as usize] = p.link(&st.mem);
                         ptail[n as usize] = rbrace_ptr;
-                        st.mem.free_avail(p);
+                        st.mem.free_avail(p.ptr());
                     } else {
-                        pstack[n as usize] = TEMP_HEAD.link(&st.mem);
+                        pstack[n as usize] = TEMP_HEAD_TOKS.link(&st.mem);
                         ptail[n as usize] = p;
                     }
                     n += 1;
@@ -1271,7 +1271,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
             if let Some(kind) = st.eqtb.pgfmath.native(st.scanner.warning_index) {
                 if crate::pgfmath::native_macro(st, kind, &pstack[..n as usize]) {
                     for k in 0..n as usize {
-                        st.mem.flush_list_with_tail(pstack[k], ptail[k]);
+                        st.mem.flush_token_list_with_tail(pstack[k], ptail[k]);
                     }
                     break 'exit;
                 }
