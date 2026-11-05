@@ -42,15 +42,18 @@ const MOV_Z_SEEN: i32 = 12;
 const REVERSED: u16 = 1;
 
 /// Slack TeX adds to leader glue against floating-point rounding.
-const LEADER_SLOP: Scaled = Scaled(10);
+const LEADER_SLOP: Scaled = Scaled::from_raw(10);
 
 /// How many leader boxes of size `size` fit in `total`, and the leftover space.
 fn leader_count_and_rest(total: Scaled, size: Scaled) -> (i32, Scaled) {
-    (total.0 / size.0, Scaled(total.0 % size.0))
+    (
+        total.raw() / size.raw(),
+        Scaled::from_raw(total.raw() % size.raw()),
+    )
 }
 
-pub(crate) const ONE_INCH: Scaled = Scaled(4_736_287);
-const ONE_INCH_LESS_ONE: Scaled = Scaled(ONE_INCH.0 - 1);
+pub(crate) const ONE_INCH: Scaled = Scaled::from_raw(4_736_287);
+const ONE_INCH_LESS_ONE: Scaled = Scaled::from_raw(ONE_INCH.raw() - 1);
 
 impl MemState {
     pub fn new_edge(&mut self, s: i16, w: Scaled) -> Result<NodePtr<EdgeNode>, Abort> {
@@ -357,12 +360,12 @@ impl GlueRounding {
         let width = spec.width(mem) - self.cur_g;
         if self.is_set(mem, spec) {
             if self.sign == GlueSign::Stretching {
-                self.cur_glue += f64::from(spec.stretch(mem).0);
+                self.cur_glue += f64::from(spec.stretch(mem).raw());
             } else {
-                self.cur_glue -= f64::from(spec.shrink(mem).0);
+                self.cur_glue -= f64::from(spec.shrink(mem).raw());
             }
             let glue_temp = (self.set * self.cur_glue).clamp(-1_000_000_000.0, 1_000_000_000.0);
-            self.cur_g = Scaled(crate::scaled_math::tex_round(glue_temp));
+            self.cur_g = Scaled::round(glue_temp);
         }
         width + self.cur_g
     }
@@ -510,14 +513,14 @@ impl MemState {
                     width += spec.width(self);
                     match g_sign {
                         GlueSign::Stretching if spec.stretch_order(self) == g_order => {
-                            width += Scaled(crate::scaled_math::tex_round(
-                                this_box.glue_set(self) * f64::from(spec.stretch(self).0),
-                            ));
+                            width += Scaled::round(
+                                this_box.glue_set(self) * f64::from(spec.stretch(self).raw()),
+                            );
                         }
                         GlueSign::Shrinking if spec.shrink_order(self) == g_order => {
-                            width -= Scaled(crate::scaled_math::tex_round(
-                                this_box.glue_set(self) * f64::from(spec.shrink(self).0),
-                            ));
+                            width -= Scaled::round(
+                                this_box.glue_set(self) * f64::from(spec.shrink(self).raw()),
+                            );
                         }
                         _ => {}
                     }
@@ -590,7 +593,7 @@ impl MemState {
     }
 
     fn leader_of(&self, glue: NodePtr<GlueNode>) -> Leader {
-        match self.classify(glue.leader_ptr(self).0) {
+        match self.classify(glue.leader_ptr(self)) {
             Ok(AnyNode::Rule(rule)) => Leader::Rule(rule),
             Ok(AnyNode::HList(h)) => Leader::Box(AnyBox::HList(h)),
             Ok(AnyNode::VList(v)) => Leader::Box(AnyBox::VList(v)),
@@ -727,8 +730,8 @@ fn hlist_glue_out(
             let mut lx = Scaled::ZERO;
             if subtype == A_LEADERS {
                 let save_h = st.shipout.cur_h;
-                st.shipout.cur_h =
-                    left_edge + leader_wd * ((st.shipout.cur_h - left_edge).0 / leader_wd.0);
+                st.shipout.cur_h = left_edge
+                    + leader_wd * ((st.shipout.cur_h - left_edge).raw() / leader_wd.raw());
                 if st.shipout.cur_h < save_h {
                     st.shipout.cur_h += leader_wd;
                 }
@@ -808,8 +811,8 @@ fn native_word_out(
 
 impl ShipoutState {
     fn pdf_save_pos(&mut self) {
-        self.pdf_last_x_pos = (self.cur_h + ONE_INCH_LESS_ONE).0;
-        self.pdf_last_y_pos = (self.cur_page_height - self.cur_v - ONE_INCH_LESS_ONE).0;
+        self.pdf_last_x_pos = (self.cur_h + ONE_INCH_LESS_ONE).raw();
+        self.pdf_last_y_pos = (self.cur_page_height - self.cur_v - ONE_INCH_LESS_ONE).raw();
     }
 }
 
@@ -962,8 +965,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
                 st.shipout.cur_h += math_width;
             }
             AnyNode::Ligature(ligature) => {
-                st.mem
-                    .set_word(LIG_TRICK, st.mem.word(ligature.idx().offset(1).0));
+                st.mem.set_word(LIG_TRICK, st.mem.word(ligature.idx() + 1));
                 let next = ligature.link(&st.mem);
                 p = LIG_TRICK;
                 p.set_link(&mut st.mem, next);
@@ -1216,7 +1218,8 @@ fn vlist_leaders_out(
     let mut lx = Scaled::ZERO;
     if subtype == A_LEADERS {
         let save_v = st.shipout.cur_v;
-        st.shipout.cur_v = top_edge + leader_ht * ((st.shipout.cur_v - top_edge).0 / leader_ht.0);
+        st.shipout.cur_v =
+            top_edge + leader_ht * ((st.shipout.cur_v - top_edge).raw() / leader_ht.raw());
         if st.shipout.cur_v < save_v {
             st.shipout.cur_v += leader_ht;
         }
@@ -1396,7 +1399,7 @@ impl MemState {
                         self.flush_list(ligature.lig_ptr(self));
                         self.temp_ptr = ligature.ptr();
                         let c = self.get_avail()?;
-                        self.set_word(c.0, self.word(ligature.idx().offset(1).0));
+                        self.set_word(c, self.word(ligature.idx() + 1));
                         c.set_link(self, q);
                         self.free_node(ligature.ptr(), SMALL_NODE_SIZE);
                         p = c;

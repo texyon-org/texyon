@@ -72,10 +72,10 @@ pub(crate) fn show_token_list(st: &mut EngineState, mut p: MemPtr, q: i32, l: i3
     let mut n = i32::from(b'0');
     st.errors.tally = 0;
     while !p.is_null() && st.errors.tally < l {
-        if p.0 == q {
+        if p.raw() == q {
             set_trick_count(st);
         }
-        if p.0 < st.mem.hi_mem_min || p.0 > st.mem.mem_end {
+        if p < st.mem.hi_mem_min || p > st.mem.mem_end {
             print_esc(st, "CLOBBERED.");
             return;
         }
@@ -363,7 +363,7 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                         Cmd::Vmove
                     };
                     print_cmd_chr(st, cmd, if i > 0 { 0 } else { 1 });
-                    print_scaled(st, Scaled(i.abs()));
+                    print_scaled(st, Scaled::from_raw(i.abs()));
                     print(st, "pt");
                 } else if i < SHIP_OUT_FLAG {
                     let mut box_num = i;
@@ -394,7 +394,7 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                 } else {
                     print(st, "spread");
                 }
-                print_scaled(st, Scaled(spec));
+                print_scaled(st, Scaled::from_raw(spec));
                 print(st, "pt");
             }
         }

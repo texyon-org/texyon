@@ -95,11 +95,12 @@ pub(crate) fn get_strings_started(st: &mut EngineState) -> Result<(), Abort> {
 impl MemState {
     /// TeX's `sort_avail`: orders the variable-size free list by address.
     pub(crate) fn sort_avail(&mut self) {
-        let block = |p: i32| NodePtr::<FreeBlock>::at(p);
+        let block = NodePtr::<FreeBlock>::at;
+        let end = MemPtr::from_raw(MAX_HALFWORD);
         let _ = self.get_node(GET_NODE_HEAD_SENTINEL);
         let old_rover = self.rover;
         let mut p = block(old_rover).rlink(self);
-        block(old_rover).set_rlink(self, MAX_HALFWORD);
+        block(old_rover).set_rlink(self, end);
 
         while p != old_rover {
             let rover = self.rover;
@@ -123,7 +124,7 @@ impl MemState {
 
         let rover = self.rover;
         p = rover;
-        while block(p).rlink(self) != MAX_HALFWORD {
+        while block(p).rlink(self) != end {
             let next = block(p).rlink(self);
             block(next).set_llink(self, p);
             p = next;
@@ -169,7 +170,8 @@ fn primitive(st: &mut EngineState, ident: &str, c: Cmd, o: i32) -> Result<(), Ab
     } else {
         let ch = i32::from(bytes[0]);
         st.scanner.cur_val = ch + SINGLE_BASE;
-        st.eqtb.prim_lookup(&mut st.strings, StrNumber(ch))?
+        st.eqtb
+            .prim_lookup(&mut st.strings, StrNumber::from_raw(ch))?
     };
 
     st.eqtb.set_eq(st.scanner.cur_val, c, o, LEVEL_ONE);
@@ -211,7 +213,7 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
         crate::output::show_save_groups(st);
     }
 
-    while st.scanner.cond_ptr.0 != TEX_NULL {
+    while st.scanner.cond_ptr.raw() != TEX_NULL {
         crate::output::print_nl(st, b'(');
         crate::output::print_esc(st, "end occurred ");
         crate::output::print(st, "when ");
@@ -346,7 +348,7 @@ fn initialize_more_variables(st: &mut EngineState) {
 
     st.input.read_open = [CLOSED; 17];
 
-    st.scanner.cond_ptr.0 = TEX_NULL;
+    st.scanner.cond_ptr = MemPtr::NULL;
     st.scanner.if_limit = FiOrElseCode::Normal;
     st.scanner.cur_if = 0;
     st.scanner.if_line = 0;
@@ -357,20 +359,20 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.shipout.dvi.last_bop = -1;
     st.shipout.doing_leaders = false;
     st.shipout.dead_cycles = 0;
-    st.scanner.adjust_tail.0 = TEX_NULL;
+    st.scanner.adjust_tail = MemPtr::NULL;
     st.shipout.last_badness = 0;
-    st.scanner.pre_adjust_tail.0 = TEX_NULL;
+    st.scanner.pre_adjust_tail = MemPtr::NULL;
     st.scanner.pack_begin_line = 0;
     st.scanner.empty.s1 = EMPTY;
     st.scanner.empty.s0 = TEX_NULL;
     st.scanner.align_ptr = MemPtr::NULL;
-    st.scanner.cur_align.0 = TEX_NULL;
+    st.scanner.cur_align = MemPtr::NULL;
     st.scanner.cur_span = MemPtr::NULL;
-    st.scanner.cur_loop.0 = TEX_NULL;
-    st.scanner.cur_head.0 = TEX_NULL;
-    st.scanner.cur_tail.0 = TEX_NULL;
-    st.scanner.cur_pre_head.0 = TEX_NULL;
-    st.scanner.cur_pre_tail.0 = TEX_NULL;
+    st.scanner.cur_loop = MemPtr::NULL;
+    st.scanner.cur_head = MemPtr::NULL;
+    st.scanner.cur_tail = MemPtr::NULL;
+    st.scanner.cur_pre_head = MemPtr::NULL;
+    st.scanner.cur_pre_tail = MemPtr::NULL;
     st.scanner.cur_f = NULL_FONT;
     st.hyph.max_hyph_char = TOO_BIG_LANG;
 
@@ -398,10 +400,10 @@ fn initialize_more_variables(st: &mut EngineState) {
 
     st.shipout.write_open = [false; 18];
 
-    st.scanner.lr_ptr.0 = TEX_NULL;
+    st.scanner.lr_ptr = MemPtr::NULL;
     st.scanner.lr_problems = 0;
     st.scanner.cur_dir = LEFT_TO_RIGHT;
-    st.input.pseudo_files.0 = TEX_NULL;
+    st.input.pseudo_files = MemPtr::NULL;
     st.scanner.sa_root[ValueLevel::Mark] = MemPtr::NULL;
     st.scanner.sa_null = MemoryWord {
         b32: B32x2 {
@@ -409,7 +411,7 @@ fn initialize_more_variables(st: &mut EngineState) {
             s1: TEX_NULL,
         },
     };
-    st.scanner.sa_chain.0 = TEX_NULL;
+    st.scanner.sa_chain = MemPtr::NULL;
     st.scanner.sa_level = LEVEL_ZERO;
     st.scanner.disc_ptr[BoxCode::LastBox as usize] = MemPtr::NULL;
     st.scanner.disc_ptr[BoxCode::Vsplit as usize] = MemPtr::NULL;
@@ -439,20 +441,20 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     FIL_NEG_GLUE.set_stretch(mem, -Scaled::UNITY);
     FIL_NEG_GLUE.set_stretch_order(mem, FIL);
 
-    mem.rover = 20;
+    mem.rover = MemPtr::from_raw(20);
     let rover = NodePtr::<FreeBlock>::at(mem.rover);
     rover.mark_empty(mem);
     rover.set_node_size(mem, 1000);
     rover.set_llink(mem, mem.rover);
     rover.set_rlink(mem, mem.rover);
     mem.lo_mem_max = mem.rover + 1000;
-    let end = MemPtr(mem.lo_mem_max);
+    let end = mem.lo_mem_max;
     end.set_link(mem, MemPtr::NULL);
     end.set_info(mem, TEX_NULL);
 
-    let template = mem.word(mem.lo_mem_max);
+    let template = mem.word(end);
     for k in HI_MEM_STAT_MIN..=MEM_TOP {
-        mem.set_word(k, template);
+        mem.set_word(MemPtr::from_raw(k), template);
     }
 
     OMIT_TEMPLATE.set_token(mem, Token::from_cs(FROZEN_END_TEMPLATE));
@@ -468,9 +470,9 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     page_ins.set_link(mem, PAGE_INS_HEAD);
     mem.set_b16s1(PAGE_HEAD, NodeType::Glue.as_raw());
     mem.set_b16s0(PAGE_HEAD, NORMAL);
-    mem.avail = TEX_NULL;
-    mem.mem_end = MEM_TOP;
-    mem.hi_mem_min = HI_MEM_STAT_MIN;
+    mem.avail = MemPtr::NULL;
+    mem.mem_end = MemPtr::from_raw(MEM_TOP);
+    mem.hi_mem_min = MemPtr::from_raw(HI_MEM_STAT_MIN);
     mem.var_used = 20;
     mem.dyn_used = HI_MEM_STAT_USAGE;
 
@@ -622,13 +624,13 @@ fn initialize_primitives(st: &mut EngineState) -> Result<(), Abort> {
     st.eqtb.set_eq(
         FROZEN_END_TEMPLATE,
         Cmd::EndTemplate,
-        NULL_LIST.0,
+        NULL_LIST.raw(),
         LEVEL_ONE,
     );
 
     set_frozen_text(st, FROZEN_ENDV, "endtemplate")?;
     st.eqtb
-        .set_eq(FROZEN_ENDV, Cmd::Endv, NULL_LIST.0, LEVEL_ONE);
+        .set_eq(FROZEN_ENDV, Cmd::Endv, NULL_LIST.raw(), LEVEL_ONE);
 
     set_frozen_text(st, FROZEN_DONT_EXPAND, "notexpanded:")?;
     st.eqtb.set_eq_type(FROZEN_DONT_EXPAND, Cmd::DontExpand);
@@ -723,7 +725,7 @@ impl FontState {
         self.bchar_label = PerFont::filled(len, 0);
         self.font_bchar = PerFont::filled(len, 0);
         self.font_false_bchar = PerFont::filled(len, 0);
-        self.font_glue = PerFont::filled(len, MemPtr(0));
+        self.font_glue = PerFont::filled(len, MemPtr::default());
         self.hyphen_char = PerFont::filled(len, 0);
         self.skew_char = PerFont::filled(len, 0);
         self.char_base = PerFont::filled(len, 0);
@@ -757,7 +759,7 @@ pub(crate) fn initialize_engine(
     st.strings.string_vacancies = 90_000;
     st.strings.max_strings = 565_536;
     st.fonts.font_mem_size = 8_000_000;
-    st.fonts.font_max = FontId(9_000);
+    st.fonts.font_max = FontId::from_raw(9_000);
     st.hyph.trie_size = 1_000_000;
     st.hyph.hyph_size = HYPH_SIZE;
     st.input.buf_size = 200_000;
@@ -783,7 +785,7 @@ pub(crate) fn initialize_engine(
     st.input.input_stack = vec![Default::default(); st.input.stack_size as usize + 1];
     st.input.line_stack = vec![0; in_open_words];
     st.input.grp_stack = vec![0; in_open_words];
-    st.input.if_stack = vec![MemPtr::from_raw(0); in_open_words];
+    st.input.if_stack = vec![MemPtr::default(); in_open_words];
     st.input.source_filename_stack = vec![StrNumber::NONE; in_open_words];
     st.input.full_source_filename_stack = vec![StrNumber::NONE; in_open_words];
     st.input.eof_seen = vec![false; in_open_words];
@@ -822,7 +824,7 @@ pub(crate) fn initialize_engine(
     if st.input.max_in_open >= 128 {
         bad = 6;
     }
-    if st.fonts.font_max.0 > FONT_BASE + 9000 {
+    if st.fonts.font_max.raw() > FONT_BASE + 9000 {
         bad = 16;
     }
     if st.save_stack.save_size > MAX_HALFWORD || st.strings.max_strings > MAX_HALFWORD {

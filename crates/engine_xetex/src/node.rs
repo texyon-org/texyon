@@ -44,7 +44,7 @@ impl<K: NodeKind> PartialEq for NodePtr<K> {
 impl<K: NodeKind> Eq for NodePtr<K> {}
 impl<K: NodeKind> std::fmt::Debug for NodePtr<K> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "NodePtr({})", self.idx.0)
+        write!(f, "NodePtr({})", self.idx.raw())
     }
 }
 
@@ -102,11 +102,11 @@ impl Slot for Scaled {
     type Raw = i32;
     #[inline(always)]
     fn decode(raw: i32) -> Self {
-        Scaled(raw)
+        Scaled::from_raw(raw)
     }
     #[inline(always)]
     fn encode(self) -> i32 {
-        self.0
+        self.raw()
     }
 }
 
@@ -114,11 +114,11 @@ impl Slot for MemPtr {
     type Raw = i32;
     #[inline(always)]
     fn decode(raw: i32) -> Self {
-        MemPtr(raw)
+        MemPtr::from_raw(raw)
     }
     #[inline(always)]
     fn encode(self) -> i32 {
-        self.0
+        self.raw()
     }
 }
 
@@ -126,11 +126,11 @@ impl Slot for NodePtr<GlueSpecNode> {
     type Raw = i32;
     #[inline(always)]
     fn decode(raw: i32) -> Self {
-        NodePtr::from_glue_ptr(MemPtr(raw))
+        NodePtr::from_glue_ptr(MemPtr::from_raw(raw))
     }
     #[inline(always)]
     fn encode(self) -> i32 {
-        self.idx.0
+        self.idx.raw()
     }
 }
 
@@ -138,11 +138,11 @@ impl Slot for StrNumber {
     type Raw = i32;
     #[inline(always)]
     fn decode(raw: i32) -> Self {
-        StrNumber(raw)
+        StrNumber::from_raw(raw)
     }
     #[inline(always)]
     fn encode(self) -> i32 {
-        self.0
+        self.raw()
     }
 }
 
@@ -150,11 +150,11 @@ impl Slot for FontId {
     type Raw = u16;
     #[inline(always)]
     fn decode(raw: u16) -> Self {
-        FontId(i32::from(raw))
+        FontId::from_raw(i32::from(raw))
     }
     #[inline(always)]
     fn encode(self) -> u16 {
-        self.0 as u16
+        self.raw() as u16
     }
 }
 
@@ -239,12 +239,12 @@ macro_rules! fields {
         $(#[$m])*
         #[inline]
         pub fn $get(self, mem: &MemState) -> $ty {
-            <$ty as Slot>::decode(mem.$slot(self.idx.0 + $off))
+            <$ty as Slot>::decode(mem.$slot(self.idx + $off))
         }
         $(
             #[inline]
             pub fn $set(self, mem: &mut MemState, v: $ty) {
-                write_slot!(mem, $slot, self.idx.0 + $off, <$ty as Slot>::encode(v))
+                write_slot!(mem, $slot, self.idx + $off, <$ty as Slot>::encode(v))
             }
         )?
     )*};
@@ -509,11 +509,11 @@ impl<K: IsBox> NodePtr<K> {
 
     #[inline]
     pub fn glue_set(self, mem: &MemState) -> f64 {
-        mem.word(self.idx.0 + 6).gr()
+        mem.word(self.idx + 6).gr()
     }
     #[inline]
     pub fn set_glue_set(self, mem: &mut MemState, v: f64) {
-        mem.set_gr(self.idx.0 + 6, v);
+        mem.set_gr(self.idx + 6, v);
     }
 }
 
@@ -527,45 +527,45 @@ impl<K: HasSyncFields> NodePtr<K> {
 impl MemPtr {
     #[inline]
     pub fn link(self, mem: &MemState) -> MemPtr {
-        MemPtr(mem.b32s1(self.0))
+        MemPtr::from_raw(mem.b32s1(self))
     }
     #[inline]
     pub fn set_link(self, mem: &mut MemState, q: MemPtr) {
-        mem.set_b32s1(self.0, q.0);
+        mem.set_b32s1(self, q.raw());
     }
     /// Knuth's `info`, the payload half of a one-word node.
     #[inline]
     pub fn info(self, mem: &MemState) -> i32 {
-        mem.b32s0(self.0)
+        mem.b32s0(self)
     }
     /// `info` of a node whose payload is a pointer.
     #[inline]
     pub fn info_ptr(self, mem: &MemState) -> MemPtr {
-        MemPtr(self.info(mem))
+        MemPtr::from_raw(self.info(mem))
     }
     #[inline]
     pub fn set_info(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s0(self.0, v);
+        mem.set_b32s0(self, v);
     }
 
     /// The token held by a token-list node.
     #[inline]
     pub fn token(self, mem: &MemState) -> crate::token::Token {
-        crate::token::Token(mem.b32s0(self.0))
+        crate::token::Token(mem.b32s0(self))
     }
     #[inline]
     pub fn set_token(self, mem: &mut MemState, t: crate::token::Token) {
-        mem.set_b32s0(self.0, t.0);
+        mem.set_b32s0(self, t.0);
     }
     /// The reference count in a token list's head node, one less than the
     /// number of references.
     #[inline]
     pub fn token_ref_count(self, mem: &MemState) -> i32 {
-        mem.b32s0(self.0)
+        mem.b32s0(self)
     }
     #[inline]
     pub fn set_token_ref_count(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s0(self.0, v);
+        mem.set_b32s0(self, v);
     }
 }
 
@@ -581,7 +581,7 @@ impl NodePtr<HListNode> {
 /// Stamps a new type code and rewraps the handle.
 #[inline]
 fn retype<K: NodeKind, L: NodeKind>(p: NodePtr<K>, mem: &mut MemState, ty: NodeType) -> NodePtr<L> {
-    mem.set_b16s1(p.idx.0, ty.as_raw());
+    mem.set_b16s1(p.idx, ty.as_raw());
     NodePtr::from_idx_unchecked(p.idx)
 }
 
@@ -598,7 +598,7 @@ impl RuleDimen {
         if raw == NULL_FLAG {
             RuleDimen::Running
         } else {
-            RuleDimen::Set(Scaled(raw))
+            RuleDimen::Set(Scaled::from_raw(raw))
         }
     }
 
@@ -606,19 +606,19 @@ impl RuleDimen {
     pub fn raw(self) -> i32 {
         match self {
             RuleDimen::Running => NULL_FLAG,
-            RuleDimen::Set(v) => v.0,
+            RuleDimen::Set(v) => v.raw(),
         }
     }
 
     /// The stored word as a length, `RUNNING` for a running dimension.
     #[inline]
     pub fn to_scaled(self) -> Scaled {
-        Scaled(self.raw())
+        Scaled::from_raw(self.raw())
     }
 }
 
 /// A running rule dimension seen as a length, as TeX's arithmetic sees it.
-pub(crate) const RUNNING: Scaled = Scaled(NULL_FLAG);
+pub(crate) const RUNNING: Scaled = Scaled::from_raw(NULL_FLAG);
 
 impl NodePtr<RuleNode> {
     fields! {
@@ -850,7 +850,7 @@ impl MemState {
     /// Classifies `p` unless it is null or a character.
     #[inline]
     pub fn classify_non_char(&self, p: MemPtr) -> Option<AnyNode> {
-        if p.is_null() || p.0 >= self.hi_mem_min {
+        if p.is_null() || p >= self.hi_mem_min {
             return None;
         }
         self.classify(p).ok()
@@ -910,7 +910,7 @@ impl MemState {
     /// `p` as a character node, if it lies in the one-word region.
     #[inline]
     pub fn as_char(&self, p: MemPtr) -> Option<NodePtr<CharNode>> {
-        (p.0 >= self.hi_mem_min).then(|| NodePtr::at(p))
+        (p >= self.hi_mem_min).then(|| NodePtr::at(p))
     }
 }
 
@@ -925,7 +925,7 @@ impl NodePtr<LigatureNode> {
     /// The font and character word, laid out like a character node.
     #[inline]
     pub fn char_word(self) -> NodePtr<CharNode> {
-        NodePtr::at(self.idx.0 + 1)
+        NodePtr::at(self.idx + 1)
     }
 }
 
@@ -957,8 +957,8 @@ impl NodePtr<StyleNode> {
     /// Zeroes the two payload words, as `new_style` does.
     #[inline]
     pub fn clear_payload(self, mem: &mut MemState) {
-        mem.set_b32s1(self.idx.0 + 1, 0);
-        mem.set_b32s1(self.idx.0 + 2, 0);
+        mem.set_b32s1(self.idx + 1, 0);
+        mem.set_b32s1(self.idx + 2, 0);
     }
 
     /// Reads a type-14 node of a shipped list as the edge it is.
@@ -1010,16 +1010,16 @@ impl NodePtr<Noad> {
 
     #[inline]
     pub fn noad_type(self, mem: &MemState) -> NodeType {
-        NodeType::from_raw(mem.b16s1(self.idx.0)).expect("valid noad type")
+        NodeType::from_raw(mem.b16s1(self.idx)).expect("valid noad type")
     }
     #[inline]
     pub fn set_noad_type(self, mem: &mut MemState, nt: NodeType) {
-        mem.set_b16s1(self.idx.0, nt.as_raw());
+        mem.set_b16s1(self.idx, nt.as_raw());
     }
     /// Stamps a type code taken from `cur_chr`, which a caller may fix up after.
     #[inline]
     pub fn set_type_code(self, mem: &mut MemState, code: u16) {
-        mem.set_b16s1(self.idx.0, code);
+        mem.set_b16s1(self.idx, code);
     }
 
     fields! {
@@ -1041,15 +1041,15 @@ impl NodePtr<Noad> {
 
     #[inline]
     pub fn nucleus(self) -> NodePtr<MathField> {
-        NodePtr::at(self.idx.0 + 1)
+        NodePtr::at(self.idx + 1)
     }
     #[inline]
     pub fn supscr(self) -> NodePtr<MathField> {
-        NodePtr::at(self.idx.0 + 2)
+        NodePtr::at(self.idx + 2)
     }
     #[inline]
     pub fn subscr(self) -> NodePtr<MathField> {
-        NodePtr::at(self.idx.0 + 3)
+        NodePtr::at(self.idx + 3)
     }
     /// A fraction's numerator, which shares the superscript word.
     #[inline]
@@ -1063,21 +1063,21 @@ impl NodePtr<Noad> {
     }
     #[inline]
     pub fn accent_chr(self) -> NodePtr<MathField> {
-        NodePtr::at(self.idx.0 + 4)
+        NodePtr::at(self.idx + 4)
     }
     /// A left or right noad's delimiter, in the nucleus word.
     #[inline]
     pub fn delimiter(self) -> NodePtr<DelimiterField> {
-        NodePtr::at(self.idx.0 + 1)
+        NodePtr::at(self.idx + 1)
     }
     /// A radical's delimiter, or a fraction's left one.
     #[inline]
     pub fn left_delimiter(self) -> NodePtr<DelimiterField> {
-        NodePtr::at(self.idx.0 + 4)
+        NodePtr::at(self.idx + 4)
     }
     #[inline]
     pub fn right_delimiter(self) -> NodePtr<DelimiterField> {
-        NodePtr::at(self.idx.0 + 5)
+        NodePtr::at(self.idx + 5)
     }
 }
 
@@ -1107,7 +1107,7 @@ impl NodePtr<MathField> {
     }
     #[inline]
     pub fn copy_from(self, mem: &mut MemState, src: NodePtr<MathField>) {
-        mem.set_word(self.idx.0, mem.word(src.idx.0));
+        mem.set_word(self.idx, mem.word(src.idx));
     }
 }
 
@@ -1124,22 +1124,22 @@ impl NodePtr<DelimiterField> {
     /// The small variant's `(family, character)`.
     #[inline]
     pub fn small(self, mem: &MemState) -> (i32, i32) {
-        Self::variant(mem.b16s3(self.idx.0), mem.b16s2(self.idx.0))
+        Self::variant(mem.b16s3(self.idx), mem.b16s2(self.idx))
     }
     /// The large variant's `(family, character)`.
     #[inline]
     pub fn large(self, mem: &MemState) -> (i32, i32) {
-        Self::variant(mem.b16s1(self.idx.0), mem.b16s0(self.idx.0))
+        Self::variant(mem.b16s1(self.idx), mem.b16s0(self.idx))
     }
     #[inline]
     pub fn set_small(self, mem: &mut MemState, plane_and_fam: u16, char: u16) {
-        mem.set_b16s3(self.idx.0, plane_and_fam);
-        mem.set_b16s2(self.idx.0, char);
+        mem.set_b16s3(self.idx, plane_and_fam);
+        mem.set_b16s2(self.idx, char);
     }
     #[inline]
     pub fn set_large(self, mem: &mut MemState, plane_and_fam: u16, char: u16) {
-        mem.set_b16s1(self.idx.0, plane_and_fam);
-        mem.set_b16s0(self.idx.0, char);
+        mem.set_b16s1(self.idx, plane_and_fam);
+        mem.set_b16s0(self.idx, char);
     }
     #[inline]
     pub fn clear(self, mem: &mut MemState) {
@@ -1223,11 +1223,11 @@ impl NodePtr<InsNode> {
 impl NodePtr<PageInsNode> {
     #[inline]
     pub fn is_split_up(self, mem: &MemState) -> bool {
-        mem.b16s1(self.idx.0) == 1
+        mem.b16s1(self.idx) == 1
     }
     #[inline]
     pub fn set_split_up(self, mem: &mut MemState, split: bool) {
-        mem.set_b16s1(self.idx.0, u16::from(split));
+        mem.set_b16s1(self.idx, u16::from(split));
     }
 
     fields! {
@@ -1332,11 +1332,11 @@ impl NodePtr<SpanNode> {
 
     #[inline]
     pub fn next(self, mem: &MemState) -> NodePtr<SpanNode> {
-        NodePtr::at(mem.b32s0(self.idx.0))
+        NodePtr::at(MemPtr::from_raw(mem.b32s0(self.idx)))
     }
     #[inline]
     pub fn set_next(self, mem: &mut MemState, v: NodePtr<SpanNode>) {
-        mem.set_b32s0(self.idx.0, v.idx.0);
+        mem.set_b32s0(self.idx, v.idx.raw());
     }
 }
 
@@ -1361,19 +1361,19 @@ impl NodePtr<ParShapeNode> {
 
     #[inline]
     pub fn indent(self, mem: &MemState, line: i32) -> Scaled {
-        Scaled(mem.b32s1(self.idx.0 + 2 * line - 1))
+        Scaled::from_raw(mem.b32s1(self.idx + 2 * line - 1))
     }
     #[inline]
     pub fn set_indent(self, mem: &mut MemState, line: i32, v: Scaled) {
-        mem.set_b32s1(self.idx.0 + 2 * line - 1, v.0);
+        mem.set_b32s1(self.idx + 2 * line - 1, v.raw());
     }
     #[inline]
     pub fn line_width(self, mem: &MemState, line: i32) -> Scaled {
-        Scaled(mem.b32s1(self.idx.0 + 2 * line))
+        Scaled::from_raw(mem.b32s1(self.idx + 2 * line))
     }
     #[inline]
     pub fn set_line_width(self, mem: &mut MemState, line: i32, v: Scaled) {
-        mem.set_b32s1(self.idx.0 + 2 * line, v.0);
+        mem.set_b32s1(self.idx + 2 * line, v.raw());
     }
 }
 
@@ -1385,17 +1385,17 @@ impl NodePtr<PenaltiesNode> {
     /// Stores half the node size, as a `\parshape` array does.
     #[inline]
     pub fn set_words(self, mem: &mut MemState, words: i32) {
-        mem.set_b32s0(self.idx.0, words);
+        mem.set_b32s0(self.idx, words);
     }
 
     /// Entry `k`, counting from 1.
     #[inline]
     pub fn penalty(self, mem: &MemState, k: i32) -> i32 {
-        mem.b32s1(self.idx.0 + 1 + k)
+        mem.b32s1(self.idx + 1 + k)
     }
     #[inline]
     pub fn set_penalty(self, mem: &mut MemState, k: i32, v: i32) {
-        mem.set_b32s1(self.idx.0 + 1 + k, v);
+        mem.set_b32s1(self.idx + 1 + k, v);
     }
 }
 
@@ -1407,33 +1407,38 @@ impl NodePtr<PseudoLineNode> {
     /// The four characters in word `k`, counting from 1.
     #[inline]
     pub fn chars(self, mem: &MemState, k: i32) -> [u16; 4] {
-        let w = self.idx.0 + k;
-        [mem.b16s3(w), mem.b16s2(w), mem.b16s1(w), mem.b16s0(w)]
+        let w = self.idx.raw() + k;
+        [
+            mem.b16s3(MemPtr::from_raw(w)),
+            mem.b16s2(MemPtr::from_raw(w)),
+            mem.b16s1(MemPtr::from_raw(w)),
+            mem.b16s0(MemPtr::from_raw(w)),
+        ]
     }
     #[inline]
     pub fn set_chars(self, mem: &mut MemState, k: i32, chars: [u16; 4]) {
-        let w = self.idx.0 + k;
-        mem.set_b16s3(w, chars[0]);
-        mem.set_b16s2(w, chars[1]);
-        mem.set_b16s1(w, chars[2]);
-        mem.set_b16s0(w, chars[3]);
+        let w = self.idx.raw() + k;
+        mem.set_b16s3(MemPtr::from_raw(w), chars[0]);
+        mem.set_b16s2(MemPtr::from_raw(w), chars[1]);
+        mem.set_b16s1(MemPtr::from_raw(w), chars[2]);
+        mem.set_b16s0(MemPtr::from_raw(w), chars[3]);
     }
 }
 
 impl NodePtr<FreeBlock> {
     fields! {
         node_size / set_node_size: i32 = b32s0 @ 0;
-        llink / set_llink: i32 = b32s0 @ 1;
-        rlink / set_rlink: i32 = b32s1 @ 1;
+        llink / set_llink: MemPtr = b32s0 @ 1;
+        rlink / set_rlink: MemPtr = b32s1 @ 1;
     }
 
     #[inline]
     pub fn is_empty(self, mem: &MemState) -> bool {
-        mem.b32s1(self.idx.0) == crate::consts::MAX_HALFWORD
+        mem.b32s1(self.idx) == crate::consts::MAX_HALFWORD
     }
     #[inline]
     pub fn mark_empty(self, mem: &mut MemState) {
-        mem.set_b32s1(self.idx.0, crate::consts::MAX_HALFWORD);
+        mem.set_b32s1(self.idx, crate::consts::MAX_HALFWORD);
     }
 }
 
@@ -1528,7 +1533,7 @@ impl NodePtr<WhatsitNode> {
 
     #[inline]
     pub fn whatsit_subtype(self, mem: &MemState) -> Option<WhatsitSubtype> {
-        WhatsitSubtype::from_raw(mem.b16s0(self.idx.0))
+        WhatsitSubtype::from_raw(mem.b16s0(self.idx))
     }
 
     fields! {
@@ -1557,53 +1562,53 @@ impl NodePtr<WhatsitNode> {
     /// Node size in words, used to free or copy a native node.
     #[inline]
     pub fn native_size(self, mem: &MemState) -> i32 {
-        i32::from(mem.b16s3(self.idx.0 + 4))
+        i32::from(mem.b16s3(self.idx + 4))
     }
     #[inline]
     pub fn set_native_size(self, mem: &mut MemState, words: i32) {
-        mem.set_b16s3(self.idx.0 + 4, words as u16);
+        mem.set_b16s3(self.idx + 4, words as u16);
     }
 
     #[inline]
     pub fn set_native_glyph_info_handle(self, mem: &mut MemState, handle: i32) {
-        mem.set_b32s0(self.idx.0 + 5, handle);
-        mem.set_b32s1(self.idx.0 + 5, 0);
+        mem.set_b32s0(self.idx + 5, handle);
+        mem.set_b32s1(self.idx + 5, 0);
     }
 
     /// The picture transform `[a, b, c, d, x, y]`.
     #[inline]
     pub fn pic_transform(self, mem: &MemState) -> [Scaled; 6] {
         std::array::from_fn(|k| {
-            let q = self.idx.0 + 5 + k as i32 / 2;
-            Scaled(if k % 2 == 0 {
-                mem.b32s0(q)
+            let q = self.idx.raw() + 5 + k as i32 / 2;
+            Scaled::from_raw(if k % 2 == 0 {
+                mem.b32s0(MemPtr::from_raw(q))
             } else {
-                mem.b32s1(q)
+                mem.b32s1(MemPtr::from_raw(q))
             })
         })
     }
     #[inline]
     pub fn set_pic_transform(self, mem: &mut MemState, t: [Scaled; 6]) {
         for (k, v) in (0..).zip(t) {
-            let q = self.idx.0 + 5 + k / 2;
+            let q = self.idx.raw() + 5 + k / 2;
             if k % 2 == 0 {
-                mem.set_b32s0(q, v.0);
+                mem.set_b32s0(MemPtr::from_raw(q), v.raw());
             } else {
-                mem.set_b32s1(q, v.0);
+                mem.set_b32s1(MemPtr::from_raw(q), v.raw());
             }
         }
     }
 
     #[inline]
     pub fn pic_path(self, mem: &MemState) -> &[u8] {
-        let start = (self.idx.0 + PIC_NODE_SIZE) as usize * 8;
+        let start = (self.idx.raw() + PIC_NODE_SIZE) as usize * 8;
         &mem.bytes()[start..start + self.pic_path_len(mem) as usize]
     }
     /// Stores `path` inline, the node must have room for it.
     #[inline]
     pub fn set_pic_path(self, mem: &mut MemState, path: &[u8]) {
-        let start = self.idx.0 + PIC_NODE_SIZE;
-        mem.journal_mark_range(start, path.len().div_ceil(8));
+        let start = self.idx.raw() + PIC_NODE_SIZE;
+        mem.journal_mark_range(MemPtr::from_raw(start), path.len().div_ceil(8));
         let at = start as usize * 8;
         mem.bytes_mut()[at..at + path.len()].copy_from_slice(path);
     }
@@ -1611,7 +1616,7 @@ impl NodePtr<WhatsitNode> {
     /// The index in `mem.units()` where the text starts.
     #[inline]
     pub fn native_text_start(self) -> usize {
-        (self.idx.0 + NATIVE_NODE_SIZE) as usize * 4
+        (self.idx.raw() + NATIVE_NODE_SIZE) as usize * 4
     }
 
     #[inline]
@@ -1624,7 +1629,7 @@ impl NodePtr<WhatsitNode> {
     #[inline]
     pub fn mark_native_text(self, mem: &mut MemState) {
         let words = crate::state::native_text_words(i32::from(self.native_length(mem)));
-        mem.journal_mark_range(self.idx.0 + NATIVE_NODE_SIZE, words);
+        mem.journal_mark_range(self.idx + NATIVE_NODE_SIZE, words);
     }
 
     /// The text, journaled for writing.
@@ -1703,20 +1708,20 @@ impl NodePtr<SaNode> {
     /// Child or mark slot `i`, packed two per word from +1.
     #[inline]
     pub fn child(self, mem: &MemState, i: i32) -> MemPtr {
-        let w = self.idx.0 + i / 2 + 1;
+        let w = self.idx.raw() + i / 2 + 1;
         MemPtr::from_raw(if i % 2 != 0 {
-            mem.b32s1(w)
+            mem.b32s1(MemPtr::from_raw(w))
         } else {
-            mem.b32s0(w)
+            mem.b32s0(MemPtr::from_raw(w))
         })
     }
     #[inline]
     pub fn set_child(self, mem: &mut MemState, i: i32, v: MemPtr) {
-        let w = self.idx.0 + i / 2 + 1;
+        let w = self.idx.raw() + i / 2 + 1;
         if i % 2 != 0 {
-            mem.set_b32s1(w, v.0);
+            mem.set_b32s1(MemPtr::from_raw(w), v.raw());
         } else {
-            mem.set_b32s0(w, v.0);
+            mem.set_b32s0(MemPtr::from_raw(w), v.raw());
         }
     }
 
@@ -1809,7 +1814,7 @@ mod tests {
     fn fresh_mem(n: usize) -> MemState {
         MemState {
             data: vec![Default::default(); n],
-            hi_mem_min: 1_000_000,
+            hi_mem_min: MemPtr::from_raw(1_000_000),
             ..Default::default()
         }
     }
@@ -1818,22 +1823,22 @@ mod tests {
     fn arena_with_free_block() -> MemState {
         let mut mem = fresh_mem(64);
         let rover = 10;
-        mem.rover = rover;
-        mem.lo_mem_max = 30;
-        mem.hi_mem_min = 60;
-        mem.set_b32s0(rover, 20);
-        mem.set_b32s1(rover, MAX_HALFWORD);
-        mem.set_b32s1(rover + 1, rover);
-        mem.set_b32s0(rover + 1, rover);
-        mem.set_b32s1(30, 0);
+        mem.rover = MemPtr::from_raw(rover);
+        mem.lo_mem_max = MemPtr::from_raw(30);
+        mem.hi_mem_min = MemPtr::from_raw(60);
+        mem.set_b32s0(MemPtr::from_raw(rover), 20);
+        mem.set_b32s1(MemPtr::from_raw(rover), MAX_HALFWORD);
+        mem.set_b32s1(MemPtr::from_raw(rover + 1), rover);
+        mem.set_b32s0(MemPtr::from_raw(rover + 1), rover);
+        mem.set_b32s1(MemPtr::from_raw(30), 0);
         mem
     }
 
     fn at<K: NodeKind>(mem: &mut MemState, p: i32, ty: Option<NodeType>) -> NodePtr<K> {
         if let Some(ty) = ty {
-            mem.set_b16s1(p, ty.as_raw());
+            mem.set_b16s1(MemPtr::from_raw(p), ty.as_raw());
         }
-        NodePtr::from_idx_unchecked(MemIdx::new(p))
+        NodePtr::from_idx_unchecked(MemIdx::new(MemPtr::from_raw(p)))
     }
 
     #[test]
@@ -1887,27 +1892,27 @@ mod tests {
     fn headerless_records_alloc_without_stamping() {
         let mut mem = arena_with_free_block();
         let spec = NodePtr::<GlueSpecNode>::alloc(&mut mem).unwrap();
-        spec.set_width(&mut mem, Scaled(0x1234));
-        assert_eq!(spec.width(&mem), Scaled(0x1234));
+        spec.set_width(&mut mem, Scaled::from_raw(0x1234));
+        assert_eq!(spec.width(&mem), Scaled::from_raw(0x1234));
         let item = NodePtr::<LigItem>::alloc(&mut mem).unwrap();
         item.set_character(&mut mem, 45);
-        item.set_component(&mut mem, MemPtr(34));
-        assert_eq!(mem.b16s0(item.idx().0), 45);
-        assert_eq!(mem.b32s1(item.idx().0 + 1), 34);
+        item.set_component(&mut mem, MemPtr::from_raw(34));
+        assert_eq!(mem.b16s0(item.idx()), 45);
+        assert_eq!(mem.b32s1(item.idx() + 1), 34);
     }
 
     #[test]
     fn sync_trailer_is_the_last_word() {
         let mut mem = fresh_mem(200);
         let b: NodePtr<HListNode> = at(&mut mem, 100, Some(NodeType::HList));
-        mem.set_b32s0(100 + BOX_NODE_SIZE - 1, 42);
-        mem.set_b32s1(100 + BOX_NODE_SIZE - 1, 7);
+        mem.set_b32s0(MemPtr::from_raw(100 + BOX_NODE_SIZE - 1), 42);
+        mem.set_b32s1(MemPtr::from_raw(100 + BOX_NODE_SIZE - 1), 7);
         assert_eq!(b.sync_tag(&mem), 42);
         assert_eq!(AnyBox::HList(b).sync_line(&mem), 7);
 
         let k: NodePtr<KernNode> = at(&mut mem, 100, Some(NodeType::Kern));
-        mem.set_b32s0(100 + MEDIUM_NODE_SIZE - 1, 9);
-        mem.set_b32s1(100 + MEDIUM_NODE_SIZE - 1, 3);
+        mem.set_b32s0(MemPtr::from_raw(100 + MEDIUM_NODE_SIZE - 1), 9);
+        mem.set_b32s1(MemPtr::from_raw(100 + MEDIUM_NODE_SIZE - 1), 3);
         assert_eq!(k.sync_tag(&mem), 9);
         assert_eq!(k.sync_line(&mem), 3);
     }
@@ -1916,23 +1921,23 @@ mod tests {
     fn box_fields_land_in_their_words() {
         let mut mem = fresh_mem(200);
         let b: NodePtr<HListNode> = at(&mut mem, 100, Some(NodeType::HList));
-        b.set_width(&mut mem, Scaled(0x1111));
-        b.set_depth(&mut mem, Scaled(0x2222));
-        b.set_height(&mut mem, Scaled(0x3333));
-        b.set_shift_amount(&mut mem, Scaled(0x4444));
-        b.set_list_ptr(&mut mem, MemPtr(150));
+        b.set_width(&mut mem, Scaled::from_raw(0x1111));
+        b.set_depth(&mut mem, Scaled::from_raw(0x2222));
+        b.set_height(&mut mem, Scaled::from_raw(0x3333));
+        b.set_shift_amount(&mut mem, Scaled::from_raw(0x4444));
+        b.set_list_ptr(&mut mem, MemPtr::from_raw(150));
         b.set_glue_sign(&mut mem, GlueSign::Shrinking);
         b.set_glue_order(&mut mem, 1);
         b.set_glue_set(&mut mem, 1.5);
         assert_eq!(b.glue_sign(&mem), GlueSign::Shrinking);
         assert_eq!(b.glue_set(&mem), 1.5);
-        assert_eq!(mem.b32s1(101), 0x1111);
-        assert_eq!(mem.b32s1(102), 0x2222);
-        assert_eq!(mem.b32s1(103), 0x3333);
-        assert_eq!(mem.b32s1(104), 0x4444);
-        assert_eq!(mem.b32s1(105), 150);
-        assert_eq!(mem.b16s1(105), 2);
-        assert_eq!(mem.b16s0(105), 1);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 0x1111);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(102)), 0x2222);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(103)), 0x3333);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(104)), 0x4444);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(105)), 150);
+        assert_eq!(mem.b16s1(MemPtr::from_raw(105)), 2);
+        assert_eq!(mem.b16s0(MemPtr::from_raw(105)), 1);
 
         b.set_list_ptr(&mut mem, MemPtr::NULL);
         assert!(b.list_ptr(&mem).as_idx().is_none());
@@ -1958,10 +1963,10 @@ mod tests {
             (170, NodeType::Unset),
         ];
         for (p, ty) in cases {
-            mem.set_b16s1(p, ty.as_raw());
+            mem.set_b16s1(MemPtr::from_raw(p), ty.as_raw());
         }
-        mem.set_b16s1(180, 35);
-        let c = |p| mem.classify(p);
+        mem.set_b16s1(MemPtr::from_raw(180), 35);
+        let c = |p| mem.classify(MemPtr::from_raw(p));
         use AnyNode::*;
         assert!(matches!(c(40), Ok(HList(_))));
         assert!(matches!(c(50), Ok(VList(_))));
@@ -1978,11 +1983,14 @@ mod tests {
         assert!(matches!(c(160), Ok(Whatsit(_))));
         assert!(matches!(c(170), Ok(Unset(_))));
         assert!(c(180).is_err());
-        assert_eq!(c(40).unwrap().idx().0, 40);
+        assert_eq!(c(40).unwrap().idx().raw(), 40);
 
-        assert!(matches!(mem.classify_box(50), Ok(Some(AnyBox::VList(_)))));
-        assert!(matches!(mem.classify_box(70), Ok(None)));
-        assert!(mem.classify_box(180).is_err());
+        assert!(matches!(
+            mem.classify_box(MemPtr::from_raw(50)),
+            Ok(Some(AnyBox::VList(_)))
+        ));
+        assert!(matches!(mem.classify_box(MemPtr::from_raw(70)), Ok(None)));
+        assert!(mem.classify_box(MemPtr::from_raw(180)).is_err());
     }
 
     #[test]
@@ -1991,81 +1999,86 @@ mod tests {
         let r: NodePtr<RuleNode> = at(&mut mem, 100, Some(NodeType::Rule));
         r.set_width(&mut mem, RuleDimen::Running);
         r.set_depth(&mut mem, RuleDimen::Set(Scaled::ZERO));
-        r.set_height(&mut mem, RuleDimen::Set(Scaled(0x2222)));
+        r.set_height(&mut mem, RuleDimen::Set(Scaled::from_raw(0x2222)));
         assert_eq!(r.width(&mem), RuleDimen::Running);
         assert_eq!(r.depth(&mem), RuleDimen::Set(Scaled::ZERO));
-        assert_eq!(mem.b32s1(101), NULL_FLAG);
-        assert_eq!(mem.b32s1(103), 0x2222);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(101)), NULL_FLAG);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(103)), 0x2222);
     }
 
     #[test]
     fn small_node_fields_land_in_their_words() {
         let mut mem = fresh_mem(200);
         let lig: NodePtr<LigatureNode> = at(&mut mem, 100, Some(NodeType::Ligature));
-        lig.set_font(&mut mem, FontId(77));
+        lig.set_font(&mut mem, FontId::from_raw(77));
         lig.set_character(&mut mem, 0x1234);
-        assert_eq!(lig.font(&mem), FontId(77));
-        assert_eq!(mem.b16s1(101), 77);
-        assert_eq!(mem.b16s0(101), 0x1234);
-        lig.set_lig_ptr(&mut mem, MemPtr(150));
-        assert_eq!(mem.b32s1(101), 150);
+        assert_eq!(lig.font(&mem), FontId::from_raw(77));
+        assert_eq!(mem.b16s1(MemPtr::from_raw(101)), 77);
+        assert_eq!(mem.b16s0(MemPtr::from_raw(101)), 0x1234);
+        lig.set_lig_ptr(&mut mem, MemPtr::from_raw(150));
+        assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 150);
 
         let disc: NodePtr<DiscNode> = at(&mut mem, 100, Some(NodeType::Disc));
-        disc.set_pre_break(&mut mem, MemPtr(150));
-        disc.set_post_break(&mut mem, MemPtr(160));
-        assert_eq!(mem.b32s0(101), 150);
-        assert_eq!(mem.b32s1(101), 160);
+        disc.set_pre_break(&mut mem, MemPtr::from_raw(150));
+        disc.set_post_break(&mut mem, MemPtr::from_raw(160));
+        assert_eq!(mem.b32s0(MemPtr::from_raw(101)), 150);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 160);
 
         let math: NodePtr<MathNode> = at(&mut mem, 100, Some(NodeType::Math));
         math.set_subtype(&mut mem, 3);
-        math.set_width(&mut mem, Scaled(0x1234));
-        assert_eq!(mem.b16s0(100), 3);
-        assert_eq!(mem.b32s1(101), 0x1234);
+        math.set_width(&mut mem, Scaled::from_raw(0x1234));
+        assert_eq!(mem.b16s0(MemPtr::from_raw(100)), 3);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 0x1234);
 
         let style: NodePtr<StyleNode> = at(&mut mem, 100, Some(NodeType::Style));
         style.clear_payload(&mut mem);
-        assert_eq!(mem.b32s1(101), 0);
-        assert_eq!(mem.b32s1(102), 0);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 0);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(102)), 0);
 
         let pen: NodePtr<PenaltyNode> = at(&mut mem, 100, Some(NodeType::Penalty));
         pen.set_penalty(&mut mem, -10000);
-        assert_eq!(mem.b32s1(101), -10000);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(101)), -10000);
 
         let mark: NodePtr<MarkNode> = at(&mut mem, 100, Some(NodeType::Mark));
-        mark.set_mark_ptr(&mut mem, MemPtr(77));
+        mark.set_mark_ptr(&mut mem, MemPtr::from_raw(77));
         mark.set_mark_class(&mut mem, 3);
-        assert_eq!(mem.b32s1(101), 77);
-        assert_eq!(mem.b32s0(101), 3);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 77);
+        assert_eq!(mem.b32s0(MemPtr::from_raw(101)), 3);
 
         let adj: NodePtr<AdjustNode> = at(&mut mem, 100, Some(NodeType::Adjust));
-        adj.set_adjust_ptr(&mut mem, MemPtr(88));
-        assert_eq!(mem.b32s1(101), 88);
+        adj.set_adjust_ptr(&mut mem, MemPtr::from_raw(88));
+        assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 88);
 
         let ins: NodePtr<InsNode> = at(&mut mem, 100, Some(NodeType::Ins));
-        ins.set_ins_ptr(&mut mem, MemPtr(55));
-        ins.set_split_top_ptr(&mut mem, NodePtr::from_glue_ptr(MemPtr(66)));
-        assert_eq!(mem.b32s0(104), 55);
-        assert_eq!(mem.b32s1(104), 66);
+        ins.set_ins_ptr(&mut mem, MemPtr::from_raw(55));
+        ins.set_split_top_ptr(&mut mem, NodePtr::from_glue_ptr(MemPtr::from_raw(66)));
+        assert_eq!(mem.b32s0(MemPtr::from_raw(104)), 55);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(104)), 66);
     }
 
     #[test]
     fn choice_branches_land_in_their_words() {
         let mut mem = fresh_mem(200);
         let c: NodePtr<ChoiceNode> = at(&mut mem, 100, Some(NodeType::Choice));
-        c.set_display_mlist(&mut mem, MemPtr(11));
-        c.set_text_mlist(&mut mem, MemPtr(22));
-        c.set_script_mlist(&mut mem, MemPtr(33));
-        c.set_script_script_mlist(&mut mem, MemPtr(44));
-        assert_eq!(mem.b32s0(101), 11);
-        assert_eq!(mem.b32s1(101), 22);
-        assert_eq!(mem.b32s0(102), 33);
-        assert_eq!(mem.b32s1(102), 44);
+        c.set_display_mlist(&mut mem, MemPtr::from_raw(11));
+        c.set_text_mlist(&mut mem, MemPtr::from_raw(22));
+        c.set_script_mlist(&mut mem, MemPtr::from_raw(33));
+        c.set_script_script_mlist(&mut mem, MemPtr::from_raw(44));
+        assert_eq!(mem.b32s0(MemPtr::from_raw(101)), 11);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 22);
+        assert_eq!(mem.b32s0(MemPtr::from_raw(102)), 33);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(102)), 44);
     }
 
     #[test]
     fn alignment_records_walk_the_preamble_and_become_unset() {
         let mut mem = fresh_mem(200);
-        let (head, g1, col, g2) = (MemPtr(10), MemPtr(20), MemPtr(100), MemPtr(30));
+        let (head, g1, col, g2) = (
+            MemPtr::from_raw(10),
+            MemPtr::from_raw(20),
+            MemPtr::from_raw(100),
+            MemPtr::from_raw(30),
+        );
         head.set_link(&mut mem, g1);
         g1.set_link(&mut mem, col);
         col.set_link(&mut mem, g2);
@@ -2076,60 +2089,86 @@ mod tests {
         assert_eq!(NodePtr::<GlueNode>::tab_skip_after(&mem, head).ptr(), g1);
         assert!(rec.next_column(&mem).is_none());
 
-        rec.set_v_part(&mut mem, MemPtr(0x22));
-        rec.set_u_part(&mut mem, MemPtr(0x33));
+        rec.set_v_part(&mut mem, MemPtr::from_raw(0x22));
+        rec.set_u_part(&mut mem, MemPtr::from_raw(0x33));
         rec.set_extra_info(&mut mem, 0x55);
-        rec.span_head().set_next(&mut mem, NodePtr::at(40));
-        assert_eq!((mem.b32s1(102), mem.b32s1(103)), (0x22, 0x33));
-        assert_eq!((mem.b32s0(105), mem.b32s0(100)), (0x55, 40));
+        rec.span_head()
+            .set_next(&mut mem, NodePtr::at(MemPtr::from_raw(40)));
+        assert_eq!(
+            (
+                mem.b32s1(MemPtr::from_raw(102)),
+                mem.b32s1(MemPtr::from_raw(103))
+            ),
+            (0x22, 0x33)
+        );
+        assert_eq!(
+            (
+                mem.b32s0(MemPtr::from_raw(105)),
+                mem.b32s0(MemPtr::from_raw(100))
+            ),
+            (0x55, 40)
+        );
 
         let u = rec.into_unset(&mut mem);
-        assert_eq!(mem.b16s1(100), NodeType::Unset.as_raw());
+        assert_eq!(mem.b16s1(MemPtr::from_raw(100)), NodeType::Unset.as_raw());
         assert_eq!(
             (u.height(&mem), u.depth(&mem)),
             (Scaled::ZERO, Scaled::ZERO)
         );
-        assert_eq!((mem.b16s0(100), mem.b32s1(104), mem.b32s1(106)), (0, 0, 0));
+        assert_eq!(
+            (
+                mem.b16s0(MemPtr::from_raw(100)),
+                mem.b32s1(MemPtr::from_raw(104)),
+                mem.b32s1(MemPtr::from_raw(106))
+            ),
+            (0, 0, 0)
+        );
         assert_eq!(u.link(&mem), g2);
 
-        let span: NodePtr<SpanNode> = NodePtr::at(40);
+        let span: NodePtr<SpanNode> = NodePtr::at(MemPtr::from_raw(40));
         span.set_span_count(&mut mem, 3);
-        span.set_width(&mut mem, Scaled(0x66));
-        assert_eq!((mem.b32s1(40), mem.b32s1(41)), (3, 0x66));
+        span.set_width(&mut mem, Scaled::from_raw(0x66));
+        assert_eq!(
+            (
+                mem.b32s1(MemPtr::from_raw(40)),
+                mem.b32s1(MemPtr::from_raw(41))
+            ),
+            (3, 0x66)
+        );
     }
 
     #[test]
     fn unset_and_whatsit_fields_land_in_their_words() {
         let mut mem = fresh_mem(200);
         let u: NodePtr<UnsetNode> = at(&mut mem, 100, Some(NodeType::Unset));
-        mem.set_b32s1(101, 0x111);
-        mem.set_b32s1(103, 0x333);
-        u.set_list_ptr(&mut mem, MemPtr(0x444));
-        assert_eq!(u.width(&mem), Scaled(0x111));
-        assert_eq!(u.height(&mem), Scaled(0x333));
-        assert_eq!(mem.b32s1(105), 0x444);
+        mem.set_b32s1(MemPtr::from_raw(101), 0x111);
+        mem.set_b32s1(MemPtr::from_raw(103), 0x333);
+        u.set_list_ptr(&mut mem, MemPtr::from_raw(0x444));
+        assert_eq!(u.width(&mem), Scaled::from_raw(0x111));
+        assert_eq!(u.height(&mem), Scaled::from_raw(0x333));
+        assert_eq!(mem.b32s1(MemPtr::from_raw(105)), 0x444);
 
         let w: NodePtr<WhatsitNode> = at(&mut mem, 100, Some(NodeType::Whatsit));
         w.set_subtype(&mut mem, 40);
         assert_eq!(w.whatsit_subtype(&mem), Some(WhatsitSubtype::NativeWord));
-        mem.set_b16s3(104, 6);
-        mem.set_b16s2(104, 7);
-        mem.set_b16s1(104, 9);
+        mem.set_b16s3(MemPtr::from_raw(104), 6);
+        mem.set_b16s2(MemPtr::from_raw(104), 7);
+        mem.set_b16s1(MemPtr::from_raw(104), 9);
         assert_eq!(w.native_size(&mem), 6);
-        assert_eq!(w.native_font(&mem), FontId(7));
+        assert_eq!(w.native_font(&mem), FontId::from_raw(7));
         assert_eq!(w.native_length(&mem), 9);
         assert_eq!(w.pic_path_len(&mem), 9);
         w.set_native_glyph_count(&mut mem, 3);
-        assert_eq!(mem.b16s0(104), 3);
+        assert_eq!(mem.b16s0(MemPtr::from_raw(104)), 3);
         w.set_native_glyph_info_handle(&mut mem, 7);
         assert_eq!(w.native_glyph_info_handle(&mem), 7);
-        assert_eq!(mem.b32s1(105), 0);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(105)), 0);
 
-        mem.set_b32s1(101, 0x55);
-        assert_eq!(w.write_tokens(&mem), MemPtr(0x55));
+        mem.set_b32s1(MemPtr::from_raw(101), 0x55);
+        assert_eq!(w.write_tokens(&mem), MemPtr::from_raw(0x55));
         assert_eq!(w.what_lang(&mem), 0x55);
-        mem.set_b16s1(101, 4);
-        mem.set_b16s0(101, 5);
+        mem.set_b16s1(MemPtr::from_raw(101), 4);
+        mem.set_b16s0(MemPtr::from_raw(101), 5);
         assert_eq!(w.what_lhm(&mem), 4);
         assert_eq!(w.what_rhm(&mem), 5);
     }
@@ -2139,16 +2178,16 @@ mod tests {
         let mut mem = fresh_mem(200);
         let node: NodePtr<SaNode> = at(&mut mem, 100, None);
         for i in 0..6 {
-            node.set_child(&mut mem, i, MemPtr(1000 + i));
+            node.set_child(&mut mem, i, MemPtr::from_raw(1000 + i));
         }
         for i in 0..6 {
-            assert_eq!(node.child(&mem, i), MemPtr(1000 + i));
+            assert_eq!(node.child(&mem, i), MemPtr::from_raw(1000 + i));
         }
-        assert_eq!(mem.b32s0(101), 1000);
-        assert_eq!(mem.b32s1(101), 1001);
-        assert_eq!(mem.b32s1(103), 1005);
+        assert_eq!(mem.b32s0(MemPtr::from_raw(101)), 1000);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 1001);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(103)), 1005);
         node.set_ref_count(&mut mem, 7);
-        assert_eq!(mem.b16s0(100), 7);
+        assert_eq!(mem.b16s0(MemPtr::from_raw(100)), 7);
     }
 
     #[test]
@@ -2156,26 +2195,26 @@ mod tests {
         let mut mem = fresh_mem(200);
         let g: NodePtr<GlueNode> = at(&mut mem, 100, Some(NodeType::Glue));
         g.set_subtype(&mut mem, 7);
-        g.set_glue_ptr(&mut mem, NodePtr::from_glue_ptr(MemPtr(150)));
-        g.set_leader_ptr(&mut mem, MemPtr(160));
-        assert_eq!(mem.b16s0(100), 7);
-        assert_eq!(mem.b32s0(101), 150);
-        assert_eq!(mem.b32s1(101), 160);
-        assert_eq!(g.glue_ptr(&mem).idx(), MemIdx(150));
+        g.set_glue_ptr(&mut mem, NodePtr::from_glue_ptr(MemPtr::from_raw(150)));
+        g.set_leader_ptr(&mut mem, MemPtr::from_raw(160));
+        assert_eq!(mem.b16s0(MemPtr::from_raw(100)), 7);
+        assert_eq!(mem.b32s0(MemPtr::from_raw(101)), 150);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 160);
+        assert_eq!(g.glue_ptr(&mem).idx(), MemIdx::from_raw(150));
 
         let s: NodePtr<GlueSpecNode> = at(&mut mem, 150, None);
         s.set_ref_count(&mut mem, 42);
         s.set_stretch_order(&mut mem, 2);
         s.set_shrink_order(&mut mem, 1);
-        s.set_width(&mut mem, Scaled(0x4444));
-        s.set_stretch(&mut mem, Scaled(0x5555));
-        s.set_shrink(&mut mem, Scaled(0x6666));
-        assert_eq!(mem.b32s1(150), 42);
-        assert_eq!(mem.b16s1(150), 2);
-        assert_eq!(mem.b16s0(150), 1);
-        assert_eq!(mem.b32s1(151), 0x4444);
-        assert_eq!(mem.b32s1(152), 0x5555);
-        assert_eq!(mem.b32s1(153), 0x6666);
+        s.set_width(&mut mem, Scaled::from_raw(0x4444));
+        s.set_stretch(&mut mem, Scaled::from_raw(0x5555));
+        s.set_shrink(&mut mem, Scaled::from_raw(0x6666));
+        assert_eq!(mem.b32s1(MemPtr::from_raw(150)), 42);
+        assert_eq!(mem.b16s1(MemPtr::from_raw(150)), 2);
+        assert_eq!(mem.b16s0(MemPtr::from_raw(150)), 1);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(151)), 0x4444);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(152)), 0x5555);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(153)), 0x6666);
     }
 
     #[test]
@@ -2183,23 +2222,23 @@ mod tests {
         let mut mem = fresh_mem(200);
         let n: NodePtr<Noad> = at(&mut mem, 100, Some(NodeType::OrdNoad));
         n.nucleus().set_math_type(&mut mem, 1);
-        n.nucleus().set_info(&mut mem, MemPtr(123));
-        assert_eq!(mem.b32s1(101), 1);
-        assert_eq!(mem.b32s0(101), 123);
+        n.nucleus().set_info(&mut mem, MemPtr::from_raw(123));
+        assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 1);
+        assert_eq!(mem.b32s0(MemPtr::from_raw(101)), 123);
         n.nucleus().set_character(&mut mem, 45);
         n.nucleus().set_plane_and_fam(&mut mem, 2 + 3 * 256);
         assert_eq!(n.nucleus().fam(&mem), 2);
         assert_eq!(n.nucleus().full_char(&mem), 45 + 3 * 65_536);
         n.accent_chr().set_character(&mut mem, 48);
         n.accent_chr().set_plane_and_fam(&mut mem, 5);
-        assert_eq!(mem.b16s0(104), 48);
-        assert_eq!(mem.b16s1(104), 5);
+        assert_eq!(mem.b16s0(MemPtr::from_raw(104)), 48);
+        assert_eq!(mem.b16s1(MemPtr::from_raw(104)), 5);
         n.right_delimiter().set_small(&mut mem, 1 + 256, 7);
         n.right_delimiter().set_large(&mut mem, 2, 9);
         assert_eq!(n.right_delimiter().small(&mem), (1, 7 + 65_536));
         assert_eq!(n.right_delimiter().large(&mem), (2, 9));
-        assert_eq!(mem.b16s3(105), 1 + 256);
-        assert_eq!(mem.b16s0(105), 9);
+        assert_eq!(mem.b16s3(MemPtr::from_raw(105)), 1 + 256);
+        assert_eq!(mem.b16s0(MemPtr::from_raw(105)), 9);
     }
 
     #[test]
@@ -2208,35 +2247,35 @@ mod tests {
         let a: NodePtr<ActiveNode> = at(&mut mem, 100, None);
         a.set_break_type(&mut mem, 1);
         a.set_fitness(&mut mem, 2);
-        a.set_break_node(&mut mem, MemPtr(150));
+        a.set_break_node(&mut mem, MemPtr::from_raw(150));
         a.set_line_number(&mut mem, 7);
         a.set_total_demerits(&mut mem, 0x5151);
-        a.set_shortfall(&mut mem, Scaled(-0x20));
-        a.set_glue(&mut mem, Scaled(0x30));
-        assert_eq!(mem.b16s1(100), 1);
-        assert_eq!(mem.b16s0(100), 2);
-        assert_eq!(mem.b32s1(101), 150);
-        assert_eq!(mem.b32s0(101), 7);
-        assert_eq!(mem.b32s1(102), 0x5151);
-        assert_eq!(mem.b32s1(103), -0x20);
-        assert_eq!(mem.b32s1(104), 0x30);
+        a.set_shortfall(&mut mem, Scaled::from_raw(-0x20));
+        a.set_glue(&mut mem, Scaled::from_raw(0x30));
+        assert_eq!(mem.b16s1(MemPtr::from_raw(100)), 1);
+        assert_eq!(mem.b16s0(MemPtr::from_raw(100)), 2);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 150);
+        assert_eq!(mem.b32s0(MemPtr::from_raw(101)), 7);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(102)), 0x5151);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(103)), -0x20);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(104)), 0x30);
 
         let d: NodePtr<DeltaNode> = at(&mut mem, 100, None);
-        d.set_dwidth(&mut mem, Scaled(0x11));
-        d.set_dstretch3(&mut mem, Scaled(0x55));
-        d.set_dshrink(&mut mem, Scaled(-0x66));
-        assert_eq!(mem.b32s1(101), 0x11);
-        assert_eq!(mem.b32s1(105), 0x55);
-        assert_eq!(mem.b32s1(106), -0x66);
+        d.set_dwidth(&mut mem, Scaled::from_raw(0x11));
+        d.set_dstretch3(&mut mem, Scaled::from_raw(0x55));
+        d.set_dshrink(&mut mem, Scaled::from_raw(-0x66));
+        assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 0x11);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(105)), 0x55);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(106)), -0x66);
 
         let pn: NodePtr<PassiveNode> = at(&mut mem, 100, None);
-        pn.set_link(&mut mem, MemPtr(90));
-        pn.set_cur_break(&mut mem, MemPtr(150));
-        pn.set_prev_break(&mut mem, MemPtr(80));
-        assert_eq!(pn.next_break(&mem), MemPtr(80));
-        assert_eq!(mem.b32s1(100), 90);
-        assert_eq!(mem.b32s1(101), 150);
-        pn.set_next_break(&mut mem, MemPtr(70));
-        assert_eq!(mem.b32s0(101), 70);
+        pn.set_link(&mut mem, MemPtr::from_raw(90));
+        pn.set_cur_break(&mut mem, MemPtr::from_raw(150));
+        pn.set_prev_break(&mut mem, MemPtr::from_raw(80));
+        assert_eq!(pn.next_break(&mem), MemPtr::from_raw(80));
+        assert_eq!(mem.b32s1(MemPtr::from_raw(100)), 90);
+        assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 150);
+        pn.set_next_break(&mut mem, MemPtr::from_raw(70));
+        assert_eq!(mem.b32s0(MemPtr::from_raw(101)), 70);
     }
 }

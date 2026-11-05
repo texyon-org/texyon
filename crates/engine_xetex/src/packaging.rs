@@ -106,7 +106,7 @@ impl MemState {
         r.set_glue_order(self, o);
         r.set_glue_sign(self, sign);
         if totals[o as usize] != Scaled::ZERO {
-            r.set_glue_set(self, excess / f64::from(totals[o as usize].0));
+            r.set_glue_set(self, excess / f64::from(totals[o as usize].raw()));
         } else {
             r.set_glue_sign(self, GlueSign::Normal);
             r.set_glue_set(self, 0.0);
@@ -124,9 +124,8 @@ impl MemState {
     /// `q` is a char node (whose font sits in the type field).
     fn disc_replace_count(&self, q: MemPtr) -> Option<i32> {
         match self.as_char(q) {
-            Some(ch) => {
-                (ch.font(self).0 == NodeType::Disc as i32).then(|| i32::from(ch.character(self)))
-            }
+            Some(ch) => (ch.font(self).raw() == NodeType::Disc as i32)
+                .then(|| i32::from(ch.character(self))),
             None => self.as_disc(q).map(|disc| i32::from(disc.subtype(self))),
         }
     }
@@ -344,8 +343,8 @@ impl MemState {
                                 (rule.height(self).to_scaled(), rule.depth(self).to_scaled())
                             }
                             _ => (
-                                Scaled(self.b32s1(leader + 3)),
-                                Scaled(self.b32s1(leader + 2)),
+                                Scaled::from_raw(self.b32s1(leader + 3)),
+                                Scaled::from_raw(self.b32s1(leader + 2)),
                             ),
                         };
                         h = h.max(leader_h);
@@ -409,7 +408,7 @@ impl MemState {
             let o = self.set_box_glue(
                 r_node,
                 GlueSign::Stretching,
-                f64::from(x.0),
+                f64::from(x.raw()),
                 &scanner.total_stretch,
             );
             if o == NORMAL && has_list {
@@ -429,7 +428,7 @@ impl MemState {
             let o = self.set_box_glue(
                 r_node,
                 GlueSign::Shrinking,
-                f64::from((-x).0),
+                f64::from((-x).raw()),
                 &scanner.total_shrink,
             );
             if scanner.total_shrink[o as usize] < (-x) && o == NORMAL && has_list {
@@ -667,7 +666,7 @@ impl MemState {
                             Ok(AnyNode::HList(b)) => b.width(self),
                             Ok(AnyNode::VList(b)) => b.width(self),
                             Ok(AnyNode::Rule(rule)) => rule.width(self).to_scaled(),
-                            _ => Scaled(self.b32s1(leader + 1)),
+                            _ => Scaled::from_raw(self.b32s1(leader + 1)),
                         };
                         w = w.max(leader_w);
                     }
@@ -700,7 +699,7 @@ impl MemState {
             let o = self.set_box_glue(
                 r_node,
                 GlueSign::Stretching,
-                f64::from(x.0),
+                f64::from(x.raw()),
                 &scanner.total_stretch,
             );
             if o == NORMAL && has_list {
@@ -720,7 +719,7 @@ impl MemState {
             let o = self.set_box_glue(
                 r_node,
                 GlueSign::Shrinking,
-                (-i64::from(x.0)) as f64,
+                (-i64::from(x.raw())) as f64,
                 &scanner.total_shrink,
             );
             if scanner.total_shrink[o as usize] < (-x) && o == NORMAL && has_list {

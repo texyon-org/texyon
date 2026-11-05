@@ -157,14 +157,14 @@ fn change_if_limit(
     p: impl crate::units::MemAddr,
 ) -> Result<(), Abort> {
     let p = p.addr();
-    if p == st.scanner.cond_ptr.0 {
+    if p == st.scanner.cond_ptr.raw() {
         st.scanner.if_limit = l;
         return Ok(());
     }
     let mut q = st.scanner.cond_ptr;
     while !q.is_null() {
         let next = q.link(&st.mem);
-        if next.0 == p {
+        if next.raw() == p {
             NodePtr::<CondNode>::at(q).set_if_limit(&mut st.mem, l);
             return Ok(());
         }
@@ -188,7 +188,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.if_limit = FiOrElseCode::If;
     st.scanner.if_line = st.mem.line;
 
-    let save_cond_ptr = st.scanner.cond_ptr.0;
+    let save_cond_ptr = st.scanner.cond_ptr;
     let (this_if, is_unless) = IfCode::decode(st.scanner.cur_chr).ok_or(Abort::Confusion("if"))?;
 
     let mut b = match this_if {
@@ -341,7 +341,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             }
             while n != 0 {
                 crate::scan::pass_text(st)?;
-                if st.scanner.cond_ptr.0 == save_cond_ptr {
+                if st.scanner.cond_ptr == save_cond_ptr {
                     if st.scanner.cur_chr != FiOrElseCode::Or.raw() {
                         skipped_branch_end(st);
                         return Ok(());
@@ -379,7 +379,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
 
     loop {
         crate::scan::pass_text(st)?;
-        if st.scanner.cond_ptr.0 == save_cond_ptr {
+        if st.scanner.cond_ptr == save_cond_ptr {
             if st.scanner.cur_chr != FiOrElseCode::Or.raw() {
                 skipped_branch_end(st);
                 return Ok(());
@@ -408,7 +408,7 @@ fn scan_int_or_dimen(st: &mut EngineState, this_if: IfCode) -> Result<(), Abort>
 struct SavedScan {
     status: ScannerStatus,
     warning_index: i32,
-    def_ref: i32,
+    def_ref: MemPtr,
     pending_str: bool,
 }
 
@@ -417,7 +417,7 @@ fn save_scan(st: &mut EngineState) -> Result<SavedScan, Abort> {
     let saved = SavedScan {
         status: st.scanner.scanner_status,
         warning_index: st.scanner.warning_index,
-        def_ref: st.scanner.def_ref.0,
+        def_ref: st.scanner.def_ref,
         pending_str: st.strings.cur_string_start() < st.strings.pool_ptr,
     };
     if saved.pending_str {
@@ -427,7 +427,7 @@ fn save_scan(st: &mut EngineState) -> Result<SavedScan, Abort> {
 }
 
 fn restore_scan(st: &mut EngineState, saved: &SavedScan) {
-    st.scanner.def_ref.0 = saved.def_ref;
+    st.scanner.def_ref = saved.def_ref;
     st.scanner.warning_index = saved.warning_index;
     st.scanner.scanner_status = saved.status;
 }
@@ -567,7 +567,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             let list = def_ref.link(&st.mem);
             begin_token_list(st, list, TokenType::Inserted)?;
             st.mem.free_avail(st.scanner.def_ref);
-            st.scanner.def_ref.0 = saved.def_ref;
+            st.scanner.def_ref = saved.def_ref;
             unseal_pending_str(st, &saved);
             return Ok(());
         }

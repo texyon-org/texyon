@@ -70,11 +70,11 @@ macro_rules! newtype_item {
             const SIZE: usize = 4;
             #[inline]
             fn put(self, out: &mut Vec<u8>) {
-                self.0.put(out);
+                self.raw().put(out);
             }
             #[inline]
             fn get(bytes: &[u8]) -> Self {
-                $t(i32::get(bytes))
+                $t::from_raw(i32::get(bytes))
             }
         }
     )*};
@@ -172,6 +172,14 @@ trait FmtStream {
 
     fn int_in(&mut self, v: &mut i32, low: i32, high: i32) -> Result<(), Abort> {
         self.items_in(std::slice::from_mut(v), low, high)
+    }
+
+    fn ptr_in(&mut self, v: &mut MemPtr, low: i32, high: i32) -> Result<(), Abort> {
+        self.items_in(
+            std::slice::from_mut(v),
+            MemPtr::from_raw(low),
+            MemPtr::from_raw(high),
+        )
     }
 
     /// A size that must be at least `low` and fit the engine's `high` limit.
@@ -331,7 +339,7 @@ pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     print_nl(st, "");
     print(st, st.strings.format_ident);
 
-    while st.input.pseudo_files.0 != TEX_NULL {
+    while st.input.pseudo_files.raw() != TEX_NULL {
         st.mem.pseudo_close(&mut st.input);
     }
 
@@ -474,22 +482,22 @@ fn dynamic_memory<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), A
         st.mem.sort_avail();
     }
     let mem = &mut st.mem;
-    s.int_in(&mut mem.lo_mem_max, 1019, MEM_TOP - HI_MEM_STAT_USAGE)?;
-    s.int_in(&mut mem.rover, 20, mem.lo_mem_max)?;
+    s.ptr_in(&mut mem.lo_mem_max, 1019, MEM_TOP - HI_MEM_STAT_USAGE)?;
+    s.ptr_in(&mut mem.rover, 20, mem.lo_mem_max.raw())?;
     let lo_mem_max = mem.lo_mem_max;
 
     s.items_in(
         st.scanner.sa_root.registers_mut(),
-        MemPtr(MIN_HALFWORD),
-        MemPtr(lo_mem_max),
+        MemPtr::from_raw(MIN_HALFWORD),
+        lo_mem_max,
     )?;
 
     let mut words = 0;
     let mut var_used = 0;
-    let mut p = 0;
+    let mut p = MemPtr::MEM_BOT;
     let mut q = mem.rover;
     loop {
-        s.items(span(&mut mem.data, p, q + 2 - p))?;
+        s.items(span(&mut mem.data, p.raw(), q + 2 - p))?;
         words += q + 2 - p;
         var_used += q - p;
         let block = NodePtr::<FreeBlock>::at(q);
@@ -503,22 +511,26 @@ fn dynamic_memory<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), A
             break;
         }
     }
-    s.items(span(&mut mem.data, p, lo_mem_max + 1 - p))?;
+    s.items(span(&mut mem.data, p.raw(), lo_mem_max + 1 - p))?;
     words += lo_mem_max + 1 - p;
     var_used += lo_mem_max - p;
 
-    s.int_in(&mut mem.hi_mem_min, lo_mem_max + 1, HI_MEM_STAT_MIN)?;
-    s.int_in(&mut mem.avail, MIN_HALFWORD, MEM_TOP)?;
+    s.ptr_in(&mut mem.hi_mem_min, lo_mem_max.raw() + 1, HI_MEM_STAT_MIN)?;
+    s.ptr_in(&mut mem.avail, MIN_HALFWORD, MEM_TOP)?;
     if S::LOADING {
-        mem.mem_end = MEM_TOP;
+        mem.mem_end = MemPtr::from_raw(MEM_TOP);
     }
     let (hi_mem_min, mem_end) = (mem.hi_mem_min, mem.mem_end);
-    s.items(span(&mut mem.data, hi_mem_min, mem_end + 1 - hi_mem_min))?;
+    s.items(span(
+        &mut mem.data,
+        hi_mem_min.raw(),
+        mem_end + 1 - hi_mem_min,
+    ))?;
     words += mem_end + 1 - hi_mem_min;
 
     if !S::LOADING {
         let mut dyn_used = mem_end + 1 - hi_mem_min;
-        let mut p = MemPtr(mem.avail);
+        let mut p = mem.avail;
         while !p.is_null() {
             dyn_used -= 1;
             p = p.link(mem);
@@ -675,8 +687,8 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
 }
 
 fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
-    let max_str = StrNumber(st.strings.str_ptr);
-    let lo_mem_max = MemPtr(st.mem.lo_mem_max);
+    let max_str = StrNumber::from_raw(st.strings.str_ptr);
+    let lo_mem_max = st.mem.lo_mem_max;
     let fonts = &mut st.fonts;
     s.size(
         &mut fonts.fmem_ptr,
@@ -691,7 +703,7 @@ fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort>
     s.items(span(&mut fonts.font_info, 0, fonts.fmem_ptr))?;
 
     s.size(
-        &mut fonts.font_ptr.0,
+        &mut fonts.font_ptr.raw(),
         FONT_BASE,
         FONT_BASE + MAX_FONT_MAX,
         "must increase font_max",
@@ -714,12 +726,12 @@ fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort>
     s.items(fonts_of(&mut fonts.skew_char, last))?;
     s.items_in(
         fonts_of(&mut fonts.font_name, last),
-        StrNumber(i32::MIN),
+        StrNumber::from_raw(i32::MIN),
         max_str,
     )?;
     s.items_in(
         fonts_of(&mut fonts.font_area, last),
-        StrNumber(i32::MIN),
+        StrNumber::from_raw(i32::MIN),
         max_str,
     )?;
     s.items(fonts_of(&mut fonts.font_bc, last))?;
@@ -735,7 +747,7 @@ fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort>
     s.items(fonts_of(&mut fonts.param_base, last))?;
     s.items_in(
         fonts_of(&mut fonts.font_glue, last),
-        MemPtr(MIN_HALFWORD),
+        MemPtr::from_raw(MIN_HALFWORD),
         lo_mem_max,
     )?;
     s.items_in(fonts_of(&mut fonts.bchar_label, last), 0, max_font_index)?;
@@ -750,8 +762,8 @@ fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort>
 
 fn print_dumped_fonts(st: &mut EngineState) -> Result<(), Abort> {
     let font_ptr = st.fonts.font_ptr;
-    for k in FONT_BASE..=font_ptr.0 {
-        let f = FontId(k);
+    for k in FONT_BASE..=font_ptr.raw() {
+        let f = FontId::from_raw(k);
         print_nl(st, "\\font");
         crate::output::print_esc(st, st.eqtb.font_id_text(f));
         print_char(st, b'=');
@@ -788,8 +800,8 @@ fn print_dumped_fonts(st: &mut EngineState) -> Result<(), Abort> {
     print_ln(st);
     print_int(st, st.fonts.fmem_ptr - 7);
     print(st, " words of font info for ");
-    print_int(st, font_ptr.0);
-    if font_ptr.0 != FONT_BASE + 1 {
+    print_int(st, font_ptr.raw());
+    if font_ptr.raw() != FONT_BASE + 1 {
         print(st, " preloaded fonts");
     } else {
         print(st, " preloaded font");
@@ -836,10 +848,10 @@ fn hyphenation_tables<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(
             hyph.hyph_link[h] = hyph.hyph_next as u16;
             s.items_in(
                 std::slice::from_mut(&mut hyph.hyph_word[h]),
-                StrNumber(0),
-                StrNumber(st.strings.str_ptr),
+                StrNumber::from_raw(0),
+                StrNumber::from_raw(st.strings.str_ptr),
             )?;
-            s.int_in(&mut hyph.hyph_list[h].0, MIN_HALFWORD, MAX_HALFWORD)?;
+            s.int_in(&mut hyph.hyph_list[h].raw(), MIN_HALFWORD, MAX_HALFWORD)?;
         }
 
         hyph.hyph_next = (j + 1).max(HYPH_PRIME);
@@ -853,8 +865,8 @@ fn hyphenation_tables<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(
             let h = k as usize;
             if hyph.hyph_word[h] != StrNumber::NONE {
                 s.int(&mut (k + 65_536 * i32::from(hyph.hyph_link[h])))?;
-                s.int(&mut hyph.hyph_word[h].0)?;
-                s.int(&mut hyph.hyph_list[h].0)?;
+                s.int(&mut hyph.hyph_word[h].raw())?;
+                s.int(&mut hyph.hyph_list[h].raw())?;
             }
         }
 

@@ -68,7 +68,7 @@ pub(crate) fn sa_token_list(st: &EngineState, sa: Option<NodePtr<SaNode>>) -> Me
 fn negate_glue(st: &mut EngineState) -> Result<i32, Abort> {
     let old = st.scanner.cur_val;
     let spec = st.mem.new_spec(glue_spec(old))?;
-    st.scanner.cur_val = spec.ptr().0;
+    st.scanner.cur_val = spec.ptr().raw();
     map_glue(st, spec, |_, x| -x);
     Ok(old)
 }
@@ -193,19 +193,21 @@ fn fetch_token_list(st: &mut EngineState, m: i32, level: ValueLevel) -> Result<(
                 let sa = find_sa(st, ValueLevel::Tok, n);
                 sa_token_list(st, sa)
             }
-            .0;
+            .raw();
         } else {
-            st.scanner.cur_val = NodePtr::<SaNode>::at(m).sa_ptr(&st.mem).0;
+            st.scanner.cur_val = NodePtr::<SaNode>::at(MemPtr::from_raw(m))
+                .sa_ptr(&st.mem)
+                .raw();
         }
         st.scanner.cur_val_level = ValueLevel::Tok;
     } else if st.scanner.cur_cmd == Cmd::AssignToks {
         if st.scanner.cur_chr == TokPar::XetexInterCharToks.loc() {
             scan_char_class_not_ignored(st)?;
-            st.scanner.cur_ptr.0 = st.scanner.cur_val;
+            st.scanner.cur_ptr = MemPtr::from_raw(st.scanner.cur_val);
             scan_char_class_not_ignored(st)?;
-            let n = st.scanner.cur_ptr.0 * CHAR_CLASS_LIMIT + st.scanner.cur_val;
+            let n = st.scanner.cur_ptr.raw() * CHAR_CLASS_LIMIT + st.scanner.cur_val;
             let sa = find_sa(st, ValueLevel::InterChar, n);
-            st.scanner.cur_val = sa_token_list(st, sa).0;
+            st.scanner.cur_val = sa_token_list(st, sa).raw();
         } else {
             st.scanner.cur_val = st.eqtb.equiv(m);
         }
@@ -220,12 +222,12 @@ fn fetch_token_list(st: &mut EngineState, m: i32, level: ValueLevel) -> Result<(
 
 fn fetch_register(st: &mut EngineState, m: i32) -> Result<(), Abort> {
     let Some(level) = ValueLevel::from_raw(m) else {
-        let sa = NodePtr::<SaNode>::at(m);
+        let sa = NodePtr::<SaNode>::at(MemPtr::from_raw(m));
         let level = sa.sa_type(&st.mem);
         let value = if level < ValueLevel::Glue {
             sa.sa_int(&st.mem)
         } else {
-            sa.sa_ptr(&st.mem).0
+            sa.sa_ptr(&st.mem).raw()
         };
         set_cur_val(st, value, level);
         return Ok(());
@@ -237,7 +239,7 @@ fn fetch_register(st: &mut EngineState, m: i32) -> Result<(), Abort> {
         st.scanner.cur_val = match find_sa(st, level, n) {
             None => 0,
             Some(sa) if level < ValueLevel::Glue => sa.sa_int(&st.mem),
-            Some(sa) => sa.sa_ptr(&st.mem).0,
+            Some(sa) => sa.sa_ptr(&st.mem).raw(),
         };
     } else {
         let base = match level {
@@ -642,7 +644,7 @@ fn fetch_last_node_item(st: &mut EngineState, code: LastItemCode) {
                 st.scanner.set_cur_dimen(k.width(&st.mem))
             }
             (LastItemCode::LastSkip, Ok(AnyNode::Glue(g))) => {
-                st.scanner.cur_val = g.glue_ptr(&st.mem).ptr().0;
+                st.scanner.cur_val = g.glue_ptr(&st.mem).ptr().raw();
                 if g.subtype(&st.mem) == MU_GLUE {
                     st.scanner.cur_val_level = ValueLevel::Mu;
                 }
@@ -660,7 +662,7 @@ fn fetch_last_node_item(st: &mut EngineState, code: LastItemCode) {
                     LastItemCode::LastKern => st.scanner.set_cur_dimen(st.shipout.last_kern),
                     LastItemCode::LastSkip => {
                         if let Some(spec) = st.shipout.last_glue {
-                            st.scanner.cur_val = spec.ptr().0;
+                            st.scanner.cur_val = spec.ptr().raw();
                         }
                     }
                     _ => {}
@@ -710,7 +712,7 @@ pub(super) fn scan_something_internal(
                         },
                     );
                 } else if m == i32::from(VMODE) {
-                    set_cur_val(st, st.input.cur_list.prev_depth().0, ValueLevel::Dimen);
+                    set_cur_val(st, st.input.cur_list.prev_depth().raw(), ValueLevel::Dimen);
                 } else {
                     set_cur_val(st, st.input.cur_list.space_factor(), ValueLevel::Int);
                 }
@@ -748,7 +750,7 @@ pub(super) fn scan_something_internal(
                 } else {
                     st.shipout.page_so_far[m as usize]
                 };
-                set_cur_val(st, v.0, ValueLevel::Dimen);
+                set_cur_val(st, v.raw(), ValueLevel::Dimen);
             }
             Cmd::SetShape => {
                 if m > PAR_SHAPE_LOC {
@@ -773,7 +775,7 @@ pub(super) fn scan_something_internal(
                     Some(b) if m == BoxDimenCode::Depth.raw() => b.depth(&st.mem),
                     Some(b) => b.height(&st.mem),
                 };
-                set_cur_val(st, v.0, ValueLevel::Dimen);
+                set_cur_val(st, v.raw(), ValueLevel::Dimen);
             }
             Cmd::CharGiven | Cmd::MathGiven | Cmd::XetexMathGiven => {
                 set_cur_val(st, m, ValueLevel::Int)
@@ -783,7 +785,7 @@ pub(super) fn scan_something_internal(
                 st.fonts.set_font_info_sc(st.fonts.fmem_ptr, Scaled::ZERO);
                 set_cur_val(
                     st,
-                    st.fonts.font_info_sc(st.scanner.cur_val).0,
+                    st.fonts.font_info_sc(st.scanner.cur_val).raw(),
                     ValueLevel::Dimen,
                 );
             }
@@ -800,12 +802,16 @@ pub(super) fn scan_something_internal(
                         }
                         let code = st.scanner.cur_val as u32;
                         match m {
-                            LP_CODE_BASE => {
-                                set_cur_val(st, get_cp_code(f.0, code, LEFT_SIDE), ValueLevel::Int)
-                            }
-                            RP_CODE_BASE => {
-                                set_cur_val(st, get_cp_code(f.0, code, RIGHT_SIDE), ValueLevel::Int)
-                            }
+                            LP_CODE_BASE => set_cur_val(
+                                st,
+                                get_cp_code(f.raw(), code, LEFT_SIDE),
+                                ValueLevel::Int,
+                            ),
+                            RP_CODE_BASE => set_cur_val(
+                                st,
+                                get_cp_code(f.raw(), code, RIGHT_SIDE),
+                                ValueLevel::Int,
+                            ),
                             _ => {}
                         }
                     }
@@ -917,11 +923,11 @@ pub(crate) fn scan_font_ident(st: &mut EngineState) -> Result<FontId, Abort> {
     get_x_non_blank(st)?;
     let f = match st.scanner.cur_cmd {
         Cmd::DefFont => st.eqtb.cur_font(),
-        Cmd::SetFont => FontId(st.scanner.cur_chr),
+        Cmd::SetFont => FontId::from_raw(st.scanner.cur_chr),
         Cmd::DefFamily => {
             let m = st.scanner.cur_chr;
             scan_math_fam_int(st)?;
-            FontId(st.eqtb.equiv(m + st.scanner.cur_val))
+            FontId::from_raw(st.eqtb.equiv(m + st.scanner.cur_val))
         }
         _ => {
             print_err(st, "Missing font identifier");
@@ -933,7 +939,7 @@ pub(crate) fn scan_font_ident(st: &mut EngineState) -> Result<FontId, Abort> {
             NULL_FONT
         }
     };
-    st.scanner.cur_val = f.0;
+    st.scanner.cur_val = f.raw();
     Ok(f)
 }
 

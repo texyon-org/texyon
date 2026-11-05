@@ -60,7 +60,7 @@ impl MemState {
 impl ErrorState {
     /// The integer and fractional parts of the mu factor `m`, as `math_glue` splits it.
     fn mu_parts(&mut self, m: Scaled) -> (i32, i32) {
-        let mut n = self.x_over_n(m.0, 65_536);
+        let mut n = self.x_over_n(m.raw(), 65_536);
         let mut f = self.tex_remainder;
         if f < 0 {
             n -= 1;
@@ -585,7 +585,7 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
                         let size_h =
                             f64::from(glyph.height(&st.mem) + glyph.depth(&st.mem)) * 5.0 / 4.0;
                         if f64::from(h1) < size_h {
-                            h1 = Scaled(size_h as i32);
+                            h1 = Scaled::from_raw(size_h as i32);
                         }
                         let c_glyph = i32::from(glyph.native_glyph(&st.mem));
                         let mut n: i32 = 0;
@@ -903,7 +903,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
         base.supscr().copy_from(mem, q.supscr());
         base.subscr().copy_from(mem, q.subscr());
         for script in [q.supscr(), q.subscr()] {
-            script.set_info(mem, MemPtr(0));
+            script.set_info(mem, MemPtr::default());
             script.set_math_type(mem, EMPTY);
         }
         q.nucleus().set_math_type(mem, SUB_MLIST);
@@ -1558,9 +1558,9 @@ impl MemState {
             p.set_link(self, b.list_ptr(self));
             b.set_list_ptr(self, p.ptr());
             // XeTeX reads box height and width off the glue node here.
-            let raw = p.ptr().0;
-            b.set_height(self, Scaled(self.b32s1(raw + 3)));
-            b.set_width(self, Scaled(self.b32s1(raw + 1)));
+            let glue = p.ptr();
+            b.set_height(self, Scaled::from_raw(self.b32s1(glue + 3)));
+            b.set_width(self, Scaled::from_raw(self.b32s1(glue + 1)));
         }
         Ok(())
     }

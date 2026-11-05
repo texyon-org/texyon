@@ -297,6 +297,7 @@ pub(crate) fn disarm(st: &mut crate::state::EngineState) {
 mod tests {
     use super::*;
     use crate::mem_types::B32x2;
+    use crate::units::MemPtr;
 
     fn word(value: i32) -> MemoryWord {
         MemoryWord {
@@ -449,9 +450,9 @@ mod tests {
         };
         mem.journal.arm(mem.data.len());
 
-        mem.set_b32s1(0, 10);
-        mem.set_b16s0(0, 11);
-        mem.journal_mark_range(2, 2);
+        mem.set_b32s1(MemPtr::MEM_BOT, 10);
+        mem.set_b16s0(MemPtr::MEM_BOT, 11);
+        mem.journal_mark_range(MemPtr::from_raw(2), 2);
         mem.data[2] = word(12);
         mem.data[3] = word(13);
 
@@ -471,7 +472,7 @@ mod tests {
         eqtb.journal.words.arm(eqtb.data.len());
         eqtb.journal.hash.arm();
         eqtb.set_equiv(1, 5);
-        eqtb.set_text(514, crate::units::StrNumber(6));
+        eqtb.set_text(514, crate::units::StrNumber::from_raw(6));
         eqtb.journal.words.seal().apply_to(&mut eqtb.data);
         eqtb.journal.hash.seal().apply_to(&mut eqtb.hash);
         assert_eq!(bits(eqtb.data[1]), 0);
@@ -484,8 +485,8 @@ mod tests {
             ..Default::default()
         };
         fonts.font_info_journal.arm();
-        fonts.set_font_info_sc(1, crate::units::Scaled(7));
-        fonts.set_font_info_sc(2, crate::units::Scaled(8)); // append region: dead after scalar rewind
+        fonts.set_font_info_sc(1, crate::units::Scaled::from_raw(7));
+        fonts.set_font_info_sc(2, crate::units::Scaled::from_raw(8)); // append region: dead after scalar rewind
         let delta = fonts.font_info_journal.seal();
         assert_eq!(delta.len(), 1);
         delta.apply_to(&mut fonts.font_info);

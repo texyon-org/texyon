@@ -111,7 +111,7 @@ mod tests {
     fn blob(x: i32, gid: u16) -> GlyphBlob {
         GlyphBlob {
             locations: vec![FixedPoint {
-                x: Scaled(x),
+                x: Scaled::from_raw(x),
                 y: Scaled::ZERO,
             }],
             gids: vec![gid],
@@ -134,10 +134,10 @@ mod tests {
         let mut arena = GlyphBlobArena::default();
         let first = arena.insert(blob(5, 9));
         let second = arena.clone_handle(first);
-        arena.get_mut(second).locations[0].x = Scaled(42);
+        arena.get_mut(second).locations[0].x = Scaled::from_raw(42);
 
-        assert_eq!(arena.get(first).locations[0].x, Scaled(5));
-        assert_eq!(arena.get(second).locations[0].x, Scaled(42));
+        assert_eq!(arena.get(first).locations[0].x, Scaled::from_raw(5));
+        assert_eq!(arena.get(second).locations[0].x, Scaled::from_raw(42));
         arena.release(first);
         assert_eq!(arena.get(second).gids, [9]);
     }

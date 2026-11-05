@@ -171,11 +171,11 @@ impl EngineBundle {
 }
 
 struct MemBundle {
-    lo_mem_max: i32,
-    hi_mem_min: i32,
-    avail: i32,
-    mem_end: i32,
-    rover: i32,
+    lo_mem_max: MemPtr,
+    hi_mem_min: MemPtr,
+    avail: MemPtr,
+    mem_end: MemPtr,
+    rover: MemPtr,
     var_used: i32,
     dyn_used: i32,
     line: i32,
@@ -674,7 +674,7 @@ impl FontBundle {
             fmem_epoch_base: _,
             mapped_text,
         } = src;
-        let count = font_ptr.0 + 1;
+        let count = font_ptr.raw() + 1;
         Self {
             loaded_font_mapping: loaded_font_mapping.clone(),
             loaded_font_flags: *loaded_font_flags,
@@ -695,7 +695,7 @@ impl FontBundle {
     }
 
     fn restore(&self, dst: &mut FontState) {
-        for f in (self.font_ptr.0 + 1..=dst.font_ptr.0).map(FontId) {
+        for f in (self.font_ptr.raw() + 1..=dst.font_ptr.raw()).map(FontId::from_raw) {
             dst.font_layout_engine[f] = None;
             dst.font_mapping[f] = None;
         }
@@ -705,7 +705,7 @@ impl FontBundle {
         dst.release_linebreak_state();
         // Slots reused after the checkpoint may have emitted font definitions
         // in the abandoned timeline, so they must start unused.
-        let restored_font_count = (self.font_ptr.0 + 1).max(0) as usize;
+        let restored_font_count = (self.font_ptr.raw() + 1).max(0) as usize;
         if let Some(abandoned) = dst.font_used.as_mut_slice().get_mut(restored_font_count..) {
             abandoned.fill(false);
         }
@@ -932,7 +932,7 @@ mod tests {
         st.hyph.hc[0] = 14;
         let glyph = st.mem.glyph_blobs.insert(GlyphBlob {
             locations: vec![FixedPoint {
-                x: Scaled(15),
+                x: Scaled::from_raw(15),
                 y: Scaled::ZERO,
             }],
             gids: vec![16],
@@ -952,7 +952,7 @@ mod tests {
         st.save_stack.set_saved(-1, 120);
         st.input.buffer[0] = 130;
         st.hyph.hc[0] = 140;
-        st.mem.glyph_blobs.get_mut(glyph).locations[0].x = Scaled(150);
+        st.mem.glyph_blobs.get_mut(glyph).locations[0].x = Scaled::from_raw(150);
         st.input.input_file.push(crate::state::InputSlot::Terminal);
 
         bundle.restore(&mut st);
@@ -971,7 +971,10 @@ mod tests {
         assert_eq!(st.save_stack.save_index(0), 12);
         assert_eq!(st.input.buffer[0], 13);
         assert_eq!(st.hyph.hc[0], 14);
-        assert_eq!(st.mem.glyph_blobs.get(glyph).locations[0].x, Scaled(15));
+        assert_eq!(
+            st.mem.glyph_blobs.get(glyph).locations[0].x,
+            Scaled::from_raw(15)
+        );
         assert!(matches!(
             st.input.input_file.last(),
             Some(crate::state::InputSlot::Terminal)
@@ -984,17 +987,17 @@ mod tests {
             font_layout_engine: crate::state::PerFont::filled(4, None),
             font_mapping: crate::state::PerFont::filled(4, None),
             font_used: crate::state::PerFont::filled(4, false),
-            font_ptr: FontId(1),
+            font_ptr: FontId::from_raw(1),
             ..Default::default()
         };
         let checkpoint = FontBundle::capture(&fonts);
 
-        fonts.font_ptr = FontId(3);
-        fonts.font_used[FontId(2)] = true;
-        fonts.font_used[FontId(3)] = true;
+        fonts.font_ptr = FontId::from_raw(3);
+        fonts.font_used[FontId::from_raw(2)] = true;
+        fonts.font_used[FontId::from_raw(3)] = true;
         checkpoint.restore(&mut fonts);
 
-        assert_eq!(fonts.font_ptr, FontId(1));
+        assert_eq!(fonts.font_ptr, FontId::from_raw(1));
         assert_eq!(fonts.font_used.as_slice(), [false, false, false, false]);
     }
 

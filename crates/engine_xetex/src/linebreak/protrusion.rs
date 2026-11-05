@@ -119,7 +119,8 @@ impl LinebreakState {
                     }
                     Some(WhatsitSubtype::Glyph) => {
                         let f = w.native_font(mem);
-                        let cp = get_cp_code(f.0, u32::from(w.native_glyph(mem)), i32::from(side));
+                        let cp =
+                            get_cp_code(f.raw(), u32::from(w.native_glyph(mem)), i32::from(side));
                         return protrusion(errors, fonts, f, cp);
                     }
                     _ => return Scaled::ZERO,
@@ -129,7 +130,7 @@ impl LinebreakState {
             }
         };
 
-        let cp = get_cp_code(f.0, u32::from(c), i32::from(side));
+        let cp = get_cp_code(f.raw(), u32::from(c), i32::from(side));
         if side == 0 {
             self.last_leftmost_char = char_ptr;
         } else {

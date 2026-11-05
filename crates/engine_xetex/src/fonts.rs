@@ -28,9 +28,9 @@ use crate::ext::loaded_font_design_size;
 
 const EOF: i32 = -1;
 /// The `font_area` of an AAT font, which no real area string can equal.
-pub(crate) const AAT_FONT_FLAG: StrNumber = StrNumber(0xFFFF);
+pub(crate) const AAT_FONT_FLAG: StrNumber = StrNumber::from_raw(0xFFFF);
 /// The `font_area` of an OpenType or Graphite font.
-pub(crate) const OTGR_FONT_FLAG: StrNumber = StrNumber(0xFFFE);
+pub(crate) const OTGR_FONT_FLAG: StrNumber = StrNumber::from_raw(0xFFFE);
 pub(crate) const SLANT_CODE: i32 = 1;
 pub(crate) const SPACE_CODE: i32 = 2;
 pub(crate) const SPACE_STRETCH_CODE: i32 = 3;
@@ -177,12 +177,12 @@ impl FontState {
 
     /// A native font's ascent, which it keeps in `height_base`.
     pub(crate) fn native_height(&self, f: FontId) -> Scaled {
-        Scaled(self.height_base[f])
+        Scaled::from_raw(self.height_base[f])
     }
 
     /// A native font's descent, which it keeps in `depth_base`.
     pub(crate) fn native_depth(&self, f: FontId) -> Scaled {
-        Scaled(self.depth_base[f])
+        Scaled::from_raw(self.depth_base[f])
     }
 
     #[inline]
@@ -426,8 +426,8 @@ fn read_scaled_word(handle: usize, z: i32, beta: i32, alpha: i32) -> Option<Scal
     let [a, b, c, d] = read_tfm_bytes(handle)?;
     let sw = (((((d * z) / 256) + c * z) / 256) + b * z) / beta;
     match a {
-        0 => Some(Scaled(sw)),
-        255 => Some(Scaled(sw - alpha)),
+        0 => Some(Scaled::from_raw(sw)),
+        255 => Some(Scaled::from_raw(sw - alpha)),
         _ => None,
     }
 }
@@ -451,7 +451,7 @@ fn font_error_start(st: &mut EngineState, u: i32, nom: StrNumber, aire: StrNumbe
         print(st, "pt");
     } else if s != DESIGN_SIZE {
         print(st, " scaled ");
-        print_int(st, -s.0);
+        print_int(st, -s.raw());
     }
 }
 
@@ -478,7 +478,7 @@ pub(crate) fn read_font_info(
         print_char(st, b'"');
         if s < Scaled::ZERO {
             print(st, " scaled ");
-            print_int(st, -s.0);
+            print_int(st, -s.raw());
         } else {
             print(st, " at ");
             print_scaled(st, s);
@@ -692,17 +692,17 @@ impl FontState {
             lh -= 1;
         }
 
-        self.font_dsize[f] = Scaled(z);
+        self.font_dsize[f] = Scaled::from_raw(z);
         if s != DESIGN_SIZE {
             if s >= Scaled::ZERO {
-                z = s.0;
+                z = s.raw();
             } else {
-                let (q, rem, overflowed) = crate::scaled_math::xn_over_d_parts(z, -s.0, 1000);
+                let (q, rem, overflowed) = crate::scaled_math::xn_over_d_parts(z, -s.raw(), 1000);
                 z = q;
                 scale_side_effect = Some((rem, overflowed));
             }
         }
-        self.font_size[f] = Scaled(z);
+        self.font_size[f] = Scaled::from_raw(z);
 
         let char_exists =
             |fonts: &FontState, ch: i32| (bc..=ec).contains(&ch) && fonts.char_info(f, ch).exists();
@@ -833,7 +833,7 @@ impl FontState {
                 }
                 sw = sw * 256 + tfm_getc(tfm_file);
                 sw = sw * 256 + tfm_getc(tfm_file);
-                Scaled((sw * 16) + (tfm_getc(tfm_file) / 16))
+                Scaled::from_raw((sw * 16) + (tfm_getc(tfm_file) / 16))
             } else {
                 read!(read_scaled_word(tfm_file, z, beta, alpha))
             };
@@ -893,8 +893,8 @@ impl FontState {
             ot_get_font_metrics(&font_engine)
         };
 
-        self.height_base[font_ptr] = metrics.ascent.0;
-        self.depth_base[font_ptr] = -metrics.descent.0;
+        self.height_base[font_ptr] = metrics.ascent.raw();
+        self.depth_base[font_ptr] = -metrics.descent.raw();
         self.font_params[font_ptr] = num_font_dimens;
         self.font_bc[font_ptr] = 0;
         self.font_ec[font_ptr] = 65_535;
@@ -931,7 +931,8 @@ pub(crate) fn load_native_font(
     let actual_size = if s >= Scaled::ZERO {
         s
     } else if s != DESIGN_SIZE {
-        st.errors.xn_over_d(loaded_font_design_size(), -s.0, 1000)
+        st.errors
+            .xn_over_d(loaded_font_design_size(), -s.raw(), 1000)
     } else {
         loaded_font_design_size()
     };
@@ -1009,7 +1010,7 @@ pub(crate) fn load_native_font(
     }
 
     if num_font_dimens == 65 {
-        st.fonts.push_font_info(Scaled(num_font_dimens));
+        st.fonts.push_font_info(Scaled::from_raw(num_font_dimens));
         for k in 0..=55 {
             let v = st.fonts.get_ot_math_constant(font_ptr, k);
             st.fonts.push_font_info(v);

@@ -63,9 +63,9 @@ fn layout_visual_run(bidi: &Bidi, engine: &FontEngineHandle, text: &[u16], run_i
 }
 
 fn cached_or_measured_bbox(engine: &FontEngineHandle, f: FontId, gid: u16) -> GlyphBBox {
-    cached_glyph_bbox(f.0 as u16, gid).unwrap_or_else(|| {
+    cached_glyph_bbox(f.raw() as u16, gid).unwrap_or_else(|| {
         let bbox = engine.glyph_bounds(u32::from(gid));
-        cache_glyph_bbox(f.0 as u16, gid, bbox);
+        cache_glyph_bbox(f.raw() as u16, gid, bbox);
         bbox
     })
 }
@@ -92,7 +92,7 @@ impl MemState {
             RIGHT_SIDE => gids[glyph_count - 1],
             _ => unreachable!(),
         };
-        get_cp_code(f.0, u32::from(actual_glyph), side)
+        get_cp_code(f.raw(), u32::from(actual_glyph), side)
     }
 }
 
@@ -412,7 +412,7 @@ impl FontState {
 
         let name_len = name.len() as u8;
         let mut def = Vec::with_capacity(4 + 2 + 1 + name_len as usize + 4 + 16);
-        def.extend_from_slice(&(size.0 as u32).to_be_bytes());
+        def.extend_from_slice(&(size.raw() as u32).to_be_bytes());
         def.extend_from_slice(&flags.to_be_bytes());
         def.push(name_len);
         def.extend_from_slice(&name[..name_len as usize]);
@@ -426,7 +426,7 @@ impl FontState {
             (XDV_FLAG_EMBOLDEN, embolden),
         ] {
             if flags & flag != 0 {
-                def.extend_from_slice(&(d2fix(f64::from(v)).0 as u32).to_be_bytes());
+                def.extend_from_slice(&(d2fix(f64::from(v)).raw() as u32).to_be_bytes());
             }
         }
 

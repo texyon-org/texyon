@@ -211,7 +211,7 @@ impl MemState {
         let Some(eq_type) = Cmd::from_raw(i32::from(eq_type)) else {
             return Ok(());
         };
-        let ptr = MemPtr(equiv);
+        let ptr = MemPtr::from_raw(equiv);
         match eq_type {
             Cmd::Call | Cmd::LongCall | Cmd::OuterCall | Cmd::LongOuterCall => {
                 self.delete_token_ref(ptr)
@@ -225,7 +225,7 @@ impl MemState {
             }
             Cmd::BoxRef => self.flush_node_list(ptr)?,
             Cmd::ToksRegister | Cmd::Register if !(0..=19).contains(&equiv) => {
-                self.delete_sa_ref(scanner, equiv);
+                self.delete_sa_ref(scanner, MemPtr::from_raw(equiv));
             }
             _ => {}
         }
@@ -277,18 +277,17 @@ impl MemState {
         &mut self,
         scanner: &mut ScannerState,
         save_stack: &mut SaveStackState,
-        p: i32,
+        p: NodePtr<SaNode>,
     ) -> Result<(), Abort> {
         if save_stack.cur_level != scanner.sa_level {
             if save_stack.save_stack_full() {
                 return Err(Abort::SaveOverflow);
             }
-            save_stack.set_save_entry(RESTORE_SA, scanner.sa_level, scanner.sa_chain.0);
+            save_stack.set_save_entry(RESTORE_SA, scanner.sa_level, scanner.sa_chain.raw());
             save_stack.save_ptr += 1;
             scanner.sa_chain = MemPtr::NULL;
             scanner.sa_level = save_stack.cur_level;
         }
-        let p = sa(p);
         let mut i = p.sa_index(self);
         let q;
         if i < DIMEN_VAL_LIMIT {
@@ -307,7 +306,7 @@ impl MemState {
             q.set_sa_ptr(self, v);
         }
         // sa_loc
-        q.set_sa_ref(self, p.idx().0);
+        q.set_sa_ref(self, p.idx().raw());
         q.set_sa_index(self, i);
         let lev = p.sa_lev(self);
         q.set_sa_lev(self, lev);
@@ -336,19 +335,18 @@ impl MemState {
         &mut self,
         scanner: &mut ScannerState,
         save_stack: &mut SaveStackState,
-        p: i32,
+        node: NodePtr<SaNode>,
         e: MemPtr,
     ) -> Result<SaMutationResult, Abort> {
-        let node = sa(p);
         node.set_sa_ref(self, node.sa_ref(self) + 1);
         let mut result = SaMutationResult::default();
         if node.sa_ptr(self) == e {
-            result.flush_list = self.sa_destroy(p);
+            result.flush_list = self.sa_destroy(node.idx());
         } else {
             if node.sa_lev(self) == save_stack.cur_level {
-                result.flush_list = self.sa_destroy(p);
+                result.flush_list = self.sa_destroy(node.idx());
             } else {
-                self.sa_save(scanner, save_stack, p)?;
+                self.sa_save(scanner, save_stack, node)?;
             }
             node.set_sa_lev(self, save_stack.cur_level);
             node.set_sa_ptr(self, e);
@@ -360,14 +358,13 @@ impl MemState {
         &mut self,
         scanner: &mut ScannerState,
         save_stack: &mut SaveStackState,
-        p: i32,
+        node: NodePtr<SaNode>,
         w: i32,
     ) -> Result<SaMutationResult, Abort> {
-        let node = sa(p);
         node.set_sa_ref(self, node.sa_ref(self) + 1);
         if node.sa_int(self) != w {
             if node.sa_lev(self) != save_stack.cur_level {
-                self.sa_save(scanner, save_stack, p)?;
+                self.sa_save(scanner, save_stack, node)?;
             }
             node.set_sa_lev(self, save_stack.cur_level);
             node.set_sa_int(self, w);
@@ -375,8 +372,7 @@ impl MemState {
         Ok(SaMutationResult::default())
     }
 
-    pub(crate) fn gsa_def(&mut self, p: impl MemAddr, e: MemPtr) -> SaMutationResult {
-        let p = sa(p);
+    pub(crate) fn gsa_def(&mut self, p: NodePtr<SaNode>, e: MemPtr) -> SaMutationResult {
         p.set_sa_ref(self, p.sa_ref(self) + 1);
         let flush_list = self.sa_destroy(p.idx());
         p.set_sa_lev(self, LEVEL_ONE);
@@ -384,8 +380,7 @@ impl MemState {
         SaMutationResult { flush_list }
     }
 
-    pub(crate) fn gsa_w_def(&mut self, p: impl MemAddr, w: i32) -> SaMutationResult {
-        let p = sa(p);
+    pub(crate) fn gsa_w_def(&mut self, p: NodePtr<SaNode>, w: i32) -> SaMutationResult {
         p.set_sa_ref(self, p.sa_ref(self) + 1);
         p.set_sa_lev(self, LEVEL_ONE);
         p.set_sa_int(self, w);
@@ -396,20 +391,20 @@ impl MemState {
 /// Applies the deferred flush and reference drop of an `sa_def`-family result.
 pub(crate) fn finish_sa_mutation(
     st: &mut EngineState,
-    p: i32,
+    p: NodePtr<SaNode>,
     result: SaMutationResult,
 ) -> Result<(), Abort> {
     if let Some(list) = result.flush_list {
         st.mem.flush_node_list(list)?;
     }
-    st.mem.delete_sa_ref(&mut st.scanner, p);
+    st.mem.delete_sa_ref(&mut st.scanner, p.ptr());
     Ok(())
 }
 
 fn sa_restore(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         let chain = sa(st.scanner.sa_chain);
-        let p = sa(chain.sa_ref(&st.mem));
+        let p = sa(MemPtr::from_raw(chain.sa_ref(&st.mem)));
         let mut flush_list = None;
         if p.sa_lev(&st.mem) == LEVEL_ONE {
             if p.sa_index(&st.mem) >= DIMEN_VAL_LIMIT {

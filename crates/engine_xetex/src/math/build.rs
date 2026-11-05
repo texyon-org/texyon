@@ -115,8 +115,8 @@ pub(crate) fn start_eq_no(st: &mut EngineState) -> Result<(), Abort> {
 
 impl ListStateRecord {
     fn apply_math_limit_switch(&mut self, mem: &mut MemState, limit: u16) -> bool {
-        let tail = self.tail.0;
-        if self.head.0 == tail {
+        let tail = self.tail;
+        if self.head == tail {
             return false;
         }
         match mem.classify_noad(tail) {

@@ -175,7 +175,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
         Cmd::ToksRegister => {
             print_esc(st, "toks");
             if chr_code != 0 {
-                if let Some(q) = NodePtr::<SaNode>::from_ptr(MemPtr(chr_code)) {
+                if let Some(q) = NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(chr_code)) {
                     print_sa_num(st, q);
                 }
             }
@@ -209,7 +209,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
             let sa = if (0..=19).contains(&chr_code) {
                 None
             } else {
-                NodePtr::<SaNode>::from_ptr(MemPtr(chr_code))
+                NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(chr_code))
             };
             let level = sa.map_or(ValueLevel::from_raw(chr_code), |q| Some(q.sa_type(&st.mem)));
             let name = match level {
@@ -502,7 +502,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
             };
             print_esc(st, name);
         }
-        Cmd::SetFont => print_font_select(st, FontId(chr_code)),
+        Cmd::SetFont => print_font_select(st, FontId::from_raw(chr_code)),
         Cmd::SetInteraction => {
             const BATCH: i32 = InteractionMode::Batch as i32;
             const NONSTOP: i32 = InteractionMode::Nonstop as i32;
@@ -540,7 +540,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
         Cmd::Call | Cmd::LongCall | Cmd::OuterCall | Cmd::LongOuterCall => {
             // Bit 0 is long, bit 1 outer, bit 2 protected.
             let mut n = i32::from(cmd.is_long_call()) + 2 * i32::from(cmd.is_outer_call());
-            if st.mem.is_protected_macro(MemPtr(chr_code)) {
+            if st.mem.is_protected_macro(MemPtr::from_raw(chr_code)) {
                 n += 4;
             }
             if n / 4 % 2 != 0 {

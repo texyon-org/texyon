@@ -20,7 +20,7 @@ impl StringsState {
         if s.is_pool_string() {
             return self.str_start(s.next()) - self.str_start(s);
         }
-        match s.0 {
+        match s.raw() {
             32..=126 => 1,
             ..=127 => 3,
             128..=255 => 4,
@@ -35,7 +35,7 @@ impl StringsState {
         self.str_ptr += 1;
         let slot = self.cur_start_slot();
         self.str_start[slot] = self.pool_ptr;
-        Ok(StrNumber(self.str_ptr - 1))
+        Ok(StrNumber::from_raw(self.str_ptr - 1))
     }
 
     pub fn append_str(&mut self, s: StrNumber) -> Result<(), Abort> {
@@ -86,7 +86,7 @@ impl StringsState {
                 if x.is_pool_string() {
                     self.str_pool[self.str_start(x) as usize]
                 } else {
-                    x.0 as u16
+                    x.raw() as u16
                 }
             };
             return first_unit(s) == first_unit(t);
@@ -103,9 +103,9 @@ impl StringsState {
         if len == 0 {
             return EMPTY_STRING;
         }
-        (TOO_BIG_CHAR..search.0)
+        (TOO_BIG_CHAR..search.raw())
             .rev()
-            .map(StrNumber)
+            .map(StrNumber::from_raw)
             .find(|&s| self.length(s) == len && self.str_eq_str(s, search))
             .unwrap_or_default()
     }
@@ -114,7 +114,7 @@ impl StringsState {
     pub fn slow_make_string(&mut self) -> Result<StrNumber, Abort> {
         let t = self.make_string()?;
         let s = self.search_string(t);
-        if s.0 > 0 {
+        if s.raw() > 0 {
             self.flush_str(t);
             return Ok(s);
         }
@@ -126,11 +126,11 @@ impl StringsState {
         const STRING_CONSTANTS: &[&[u8]] = &[b"this marks the start of the stringpool", b""];
 
         let mut total_len = 0;
-        let mut g = StrNumber(0);
+        let mut g = StrNumber::from_raw(0);
         for s in STRING_CONSTANTS {
             total_len += s.len();
             if total_len >= spare_size as usize {
-                return Ok(StrNumber(0));
+                return Ok(StrNumber::from_raw(0));
             }
             for &byte in *s {
                 self.append_char(u16::from(byte));
@@ -142,9 +142,9 @@ impl StringsState {
 
     /// Frees `s` if it is the most recently made string.
     pub fn flush_str(&mut self, s: StrNumber) {
-        if s.0 == self.str_ptr - 1 {
+        if s.raw() == self.str_ptr - 1 {
             self.str_ptr -= 1;
-            self.pool_ptr = self.str_start(StrNumber(self.str_ptr));
+            self.pool_ptr = self.str_start(StrNumber::from_raw(self.str_ptr));
         }
     }
 }

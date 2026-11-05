@@ -291,7 +291,9 @@ pub(crate) fn set_input_file_encoding(
             f.encoding_mode = mode as i16;
         }
         ICUMAPPING => {
-            let name = st.strings.texstring_bytes(StrNumber(encoding_data));
+            let name = st
+                .strings
+                .texstring_bytes(StrNumber::from_raw(encoding_data));
             match icu_converter_open(&name) {
                 Err(err) => {
                     crate::output::begin_diagnostic(st);
@@ -738,7 +740,7 @@ pub(crate) fn end_name(st: &mut EngineState) -> Result<(), Abort> {
         st.scanner.cur_area = EMPTY_STRING;
     } else {
         let strings = &mut st.strings;
-        st.scanner.cur_area = StrNumber(strings.str_ptr);
+        st.scanner.cur_area = StrNumber::from_raw(strings.str_ptr);
         let start = strings.cur_string_start();
         strings.str_start[(strings.str_ptr + 1 - TOO_BIG_CHAR) as usize] = start + area_delimiter;
         strings.str_ptr += 1;
@@ -760,7 +762,7 @@ pub(crate) fn end_name(st: &mut EngineState) -> Result<(), Abort> {
     } else {
         let strings = &mut st.strings;
         let shift = st.scanner.ext_delimiter - area_delimiter - 1;
-        st.scanner.cur_name = StrNumber(strings.str_ptr);
+        st.scanner.cur_name = StrNumber::from_raw(strings.str_ptr);
         let start = strings.cur_string_start();
         strings.str_start[(strings.str_ptr + 1 - TOO_BIG_CHAR) as usize] = start + shift;
         strings.str_ptr += 1;
@@ -787,7 +789,7 @@ pub(crate) fn make_name_string(st: &mut EngineState) -> Result<StrNumber, Abort>
         || st.strings.str_ptr == st.strings.max_strings
         || st.strings.cur_length() > 0
     {
-        return Ok(StrNumber(i32::from(b'?')));
+        return Ok(StrNumber::from_raw(i32::from(b'?')));
     }
 
     let name16 = st.input.name_of_file16();
@@ -961,7 +963,7 @@ pub(crate) fn scan_and_pack_name(st: &mut EngineState) -> Result<(), Abort> {
 
 pub(crate) fn scan_file_name_braced(st: &mut EngineState) -> Result<(), Abort> {
     let save_scanner_status = st.scanner.scanner_status;
-    let save_def_ref = st.scanner.def_ref.0;
+    let save_def_ref = st.scanner.def_ref;
     let save_cur_cs = st.scanner.cur_cs;
     let save_stop_at_space = st.scanner.stop_at_space;
 
@@ -977,7 +979,7 @@ pub(crate) fn scan_file_name_braced(st: &mut EngineState) -> Result<(), Abort> {
 
     let s = st.strings.make_string()?;
     st.mem.delete_token_ref(st.scanner.def_ref);
-    st.scanner.def_ref.0 = save_def_ref;
+    st.scanner.def_ref = save_def_ref;
     st.scanner.cur_cs = save_cur_cs;
     st.scanner.scanner_status = save_scanner_status;
 
@@ -1096,7 +1098,7 @@ pub(crate) fn start_input(
     rescan_opened_name(st)?;
 
     let name = make_name_string(st)?;
-    st.input.cur_input.name = name.0;
+    st.input.cur_input.name = name.raw();
     let in_open = st.input.in_open as usize;
     st.input.source_filename_stack[in_open] = name;
     let full_name = st.input.name_of_input_file.clone();
@@ -1106,7 +1108,7 @@ pub(crate) fn start_input(
     if st.input.cur_input.name == st.strings.str_ptr - 1 {
         let temp_str = st.strings.search_string(name);
         if temp_str > StrNumber::NONE {
-            st.input.cur_input.name = temp_str.0;
+            st.input.cur_input.name = temp_str.raw();
             st.strings.str_ptr -= 1;
             st.strings.pool_ptr = st.strings.cur_string_start();
         }

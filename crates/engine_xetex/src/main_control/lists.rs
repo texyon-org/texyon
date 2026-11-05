@@ -462,7 +462,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             crate::save::unsave(st)?;
             st.save_stack.save_ptr -= 2;
             let head = st.input.cur_list.head.link(&st.mem);
-            let size = Scaled(st.save_stack.saved(1));
+            let size = Scaled::from_raw(st.save_stack.saved(1));
             let spec_mode = st.save_stack.saved(0) as i16;
             let p = crate::packaging::vpackage(st, head, size, spec_mode, MAX_DIMEN)?;
             st.mem.pop_nest(&mut st.input);
@@ -476,7 +476,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
         GroupCode::Math => {
             crate::save::unsave(st)?;
             st.save_stack.save_ptr -= 1;
-            let save_loc = NodePtr::<MathField>::at(st.save_stack.saved(0));
+            let save_loc = NodePtr::<MathField>::at(MemPtr::from_raw(st.save_stack.saved(0)));
             save_loc.set_math_type(&mut st.mem, SUB_MLIST);
             let p = crate::math::fin_mlist(st, MemPtr::NULL)?;
             save_loc.set_info(&mut st.mem, p);
@@ -495,7 +495,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
                     st.mem.free_node(noad.ptr(), NOAD_SIZE);
                 }
                 NodeType::AccentNoad
-                    if save_loc.idx().0 == st.input.cur_list.tail.0 + 1
+                    if save_loc.idx().raw() == st.input.cur_list.tail.raw() + 1
                         && matches!(
                             st.mem.classify(st.input.cur_list.tail),
                             Ok(AnyNode::Noad(t)) if t.noad_type(&st.mem) == NodeType::OrdNoad
@@ -519,10 +519,10 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
 pub(super) fn append_glue(st: &mut EngineState) -> Result<NodePtr<GlueNode>, Abort> {
     let s = SkipCode::from_raw(st.scanner.cur_chr).ok_or(Abort::Confusion("append_glue"))?;
     match s {
-        SkipCode::Fil => st.scanner.cur_val = FIL_GLUE.idx().0,
-        SkipCode::Fill => st.scanner.cur_val = FILL_GLUE.idx().0,
-        SkipCode::Ss => st.scanner.cur_val = SS_GLUE.idx().0,
-        SkipCode::FilNeg => st.scanner.cur_val = FIL_NEG_GLUE.idx().0,
+        SkipCode::Fil => st.scanner.cur_val = FIL_GLUE.idx().raw(),
+        SkipCode::Fill => st.scanner.cur_val = FILL_GLUE.idx().raw(),
+        SkipCode::Ss => st.scanner.cur_val = SS_GLUE.idx().raw(),
+        SkipCode::FilNeg => st.scanner.cur_val = FIL_NEG_GLUE.idx().raw(),
         SkipCode::Skip => crate::scan::scan_glue(st, ValueLevel::Glue)?,
         SkipCode::Mskip => crate::scan::scan_glue(st, ValueLevel::Mu)?,
     }
@@ -861,9 +861,7 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
     } else {
         f64::from(w - a) / 2.0
     };
-    let delta = Scaled(crate::scaled_math::tex_round(
-        delta + f64::from(h) * t - f64::from(x) * s,
-    ));
+    let delta = Scaled::round(delta + f64::from(h) * t - f64::from(x) * s);
     let r = st.mem.new_kern(delta)?;
     r.set_subtype(&mut st.mem, ACC_KERN);
     st.input.cur_list.tail.set_link(&mut st.mem, r.ptr());

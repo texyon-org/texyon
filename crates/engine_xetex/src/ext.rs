@@ -70,11 +70,11 @@ fn option_value(s: &[u8], key: &[u8]) -> Option<Result<usize, ()>> {
 }
 
 pub(crate) fn d2fix(d: f64) -> Scaled {
-    Scaled((d * 65536.0 + 0.5) as i32)
+    Scaled::from_raw((d * 65536.0 + 0.5) as i32)
 }
 
 pub(crate) fn fix2d(f: Scaled) -> f64 {
-    f64::from(f.0) / 65536.0
+    f64::from(f.raw()) / 65536.0
 }
 
 /// Parses a decimal like `-12.5` from the front of `s`, advancing it.
@@ -171,7 +171,7 @@ fn get_encoding_mode_and_info(st: &mut EngineState, bytes: &[u8]) -> Result<(c_i
         Ok((RAW, 0))
     } else {
         let info = st.strings.make_tex_string(bytes)?;
-        Ok((ICUMAPPING, info.0))
+        Ok((ICUMAPPING, info.raw()))
     }
 }
 
@@ -516,8 +516,9 @@ fn load_ot_font(
         opts.embolden = (f64::from(opts.embolden) * fix2d(scaled_size) / 100.0) as f32;
     }
     if opts.letterspace != 0.0 {
-        st.fonts.loaded_font_letter_space =
-            Scaled((f64::from(opts.letterspace) / 100.0 * f64::from(scaled_size.0)) as i32);
+        st.fonts.loaded_font_letter_space = Scaled::from_raw(
+            (f64::from(opts.letterspace) / 100.0 * f64::from(scaled_size.raw())) as i32,
+        );
     }
     if st.fonts.loaded_font_flags & FONT_FLAGS_COLORED == 0 {
         opts.rgb_value = 0x000000FF;
@@ -545,11 +546,11 @@ fn load_ot_font(
 
 /// The design size of the font the font manager loaded last.
 pub(crate) fn loaded_font_design_size() -> Scaled {
-    Scaled(FontManager::with_font_manager(|mgr| mgr.font_design_size()))
+    Scaled::from_raw(FontManager::with_font_manager(|mgr| mgr.font_design_size()))
 }
 
 fn set_loaded_font_design_size(size: Scaled) {
-    FontManager::with_font_manager(|mgr| mgr.set_font_design_size(size.0));
+    FontManager::with_font_manager(|mgr| mgr.set_font_design_size(size.raw()));
 }
 
 fn set_req_engine(engine: Engine) {
@@ -568,11 +569,11 @@ fn c_path(path: &[u8]) -> &str {
 /// The font in file `path` at face `index`.
 fn font_from_file(path: &[u8], index: c_int, point_size: Scaled) -> Option<Font> {
     let path = c_path(path);
-    with_bridge(|io| Font::from_file(path, index as usize, point_size.0, io))
+    with_bridge(|io| Font::from_file(path, index as usize, point_size.raw(), io))
 }
 
 fn font_from_platform(font_ref: &PlatformFontRef, point_size: Scaled) -> Option<Font> {
-    with_bridge(|io| Font::from_platform(font_ref.clone(), point_size.0, io))
+    with_bridge(|io| Font::from_platform(font_ref.clone(), point_size.raw(), io))
 }
 
 impl ErrorState {
@@ -585,7 +586,7 @@ impl ErrorState {
         if scaled_size == DESIGN_SIZE {
             dsize
         } else {
-            self.xn_over_d(dsize, -scaled_size.0, 1000)
+            self.xn_over_d(dsize, -scaled_size.raw(), 1000)
         }
     }
 }
@@ -751,7 +752,7 @@ pub(crate) fn ot_get_font_metrics(engine: &FontEngineHandle) -> NativeFontMetric
     let descent = d2fix(f64::from(d));
 
     let slant = d2fix(
-        fix2d(Scaled(engine.font().slant())) * f64::from(engine.extend())
+        fix2d(Scaled::from_raw(engine.font().slant())) * f64::from(engine.extend())
             + f64::from(engine.slant()),
     );
 

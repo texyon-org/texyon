@@ -9,7 +9,7 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::fonts::QUAD_CODE;
 use crate::input::TokenType;
-use crate::mem::{ADJUST_HEAD, GARBAGE, PRE_ADJUST_HEAD, TEMP_HEAD, TEX_NULL, ZERO_GLUE};
+use crate::mem::{ADJUST_HEAD, GARBAGE, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::node::{AnyBox, AnyNode, GlueNode, NodePtr};
 use crate::packaging::{ADDITIONAL, EXACTLY};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
@@ -155,7 +155,7 @@ fn app_display(
         st.mem.set_display_skip(skip, tg, e);
         u.set_link(&mut st.mem, t);
     } else {
-        st.mem.set_b32s1(t + 1, e.0);
+        st.mem.set_b32s1(t + 1, e.raw());
         t.set_link(&mut st.mem, u);
         q.set_link(&mut st.mem, t);
     }
@@ -168,7 +168,7 @@ fn app_display(
         st.mem.set_display_skip(skip, rg, d);
         r.set_link(&mut st.mem, u);
     } else {
-        st.mem.set_b32s1(r + 1, d.0);
+        st.mem.set_b32s1(r + 1, d.raw());
         r.set_link(&mut st.mem, p);
         u.set_link(&mut st.mem, r);
         match copy {
@@ -306,10 +306,10 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
     let mut b = crate::packaging::hpack(st, p, Scaled::ZERO, ADDITIONAL)?;
     p = b.list_ptr(&st.mem);
-    let t = st.scanner.adjust_tail.0;
-    st.scanner.adjust_tail.0 = TEX_NULL;
-    let pre_t = st.scanner.pre_adjust_tail.0;
-    st.scanner.pre_adjust_tail.0 = TEX_NULL;
+    let t = st.scanner.adjust_tail;
+    st.scanner.adjust_tail = MemPtr::NULL;
+    let pre_t = st.scanner.pre_adjust_tail;
+    st.scanner.pre_adjust_tail = MemPtr::NULL;
     let mut w = b.width(&st.mem);
     let z = st.eqtb.dimen_par(DimenPar::DisplayWidth);
     let mut s = st.eqtb.dimen_par(DimenPar::DisplayIndent);
@@ -405,15 +405,15 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     let cl = &mut st.input.cur_list;
-    if t != ADJUST_HEAD.0 {
+    if t != ADJUST_HEAD {
         let adjusts = ADJUST_HEAD.link(&st.mem);
         cl.tail.set_link(&mut st.mem, adjusts);
-        cl.tail.0 = t;
+        cl.tail = t;
     }
-    if pre_t != PRE_ADJUST_HEAD.0 {
+    if pre_t != PRE_ADJUST_HEAD {
         let pre_adjusts = PRE_ADJUST_HEAD.link(&st.mem);
         cl.tail.set_link(&mut st.mem, pre_adjusts);
-        cl.tail.0 = pre_t;
+        cl.tail = pre_t;
     }
 
     let pen = st
@@ -664,11 +664,11 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
         crate::main_control::push_math(st, GroupCode::MathShift)?;
         st.input.cur_list.mode = MMODE;
         define_word(st, IntPar::CurFam.loc(), -1)?;
-        define_word(st, DimenPar::PreDisplaySize.loc(), w.0)?;
+        define_word(st, DimenPar::PreDisplaySize.loc(), w.raw())?;
         st.input.cur_list.e_tex_aux = j;
         define_word(st, IntPar::PreDisplayDirection.loc(), x)?;
-        define_word(st, DimenPar::DisplayWidth.loc(), l.0)?;
-        define_word(st, DimenPar::DisplayIndent.loc(), s.0)?;
+        define_word(st, DimenPar::DisplayWidth.loc(), l.raw())?;
+        define_word(st, DimenPar::DisplayIndent.loc(), s.raw())?;
 
         if st.config.semantic_pagination_enabled {
             crate::ext::insert_special(st, "tdux:cs dmath")?;

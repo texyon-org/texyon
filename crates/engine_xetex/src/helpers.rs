@@ -3,7 +3,7 @@ use crate::units::Scaled;
 
 /// Badness of stretching or shrinking natural size `t` by available amount `s`.
 pub fn badness(t: Scaled, s: Scaled) -> i32 {
-    let (t, s) = (t.0, s.0);
+    let (t, s) = (t.raw(), s.raw());
     if t == 0 {
         return 0;
     }
@@ -52,33 +52,36 @@ mod tests {
 
     #[test]
     fn badness_zero_t() {
-        assert_eq!(badness(Scaled::ZERO, Scaled(1000)), 0);
+        assert_eq!(badness(Scaled::ZERO, Scaled::from_raw(1000)), 0);
     }
 
     #[test]
     fn badness_zero_or_neg_s() {
-        assert_eq!(badness(Scaled(1), Scaled::ZERO), INF_BAD);
-        assert_eq!(badness(Scaled(1), Scaled(-5)), INF_BAD);
+        assert_eq!(badness(Scaled::from_raw(1), Scaled::ZERO), INF_BAD);
+        assert_eq!(badness(Scaled::from_raw(1), Scaled::from_raw(-5)), INF_BAD);
     }
 
     #[test]
     fn badness_perfect_fit() {
-        assert_eq!(badness(Scaled(1000), Scaled(1000)), 100);
+        assert_eq!(badness(Scaled::from_raw(1000), Scaled::from_raw(1000)), 100);
     }
 
     #[test]
     fn badness_small_ratio_gives_zero() {
-        assert_eq!(badness(Scaled(1), Scaled(1_000_000)), 0);
+        assert_eq!(badness(Scaled::from_raw(1), Scaled::from_raw(1_000_000)), 0);
     }
 
     #[test]
     fn badness_large_t_s_path() {
-        assert_eq!(badness(Scaled(8_000_000), Scaled(1_000_000)), INF_BAD);
+        assert_eq!(
+            badness(Scaled::from_raw(8_000_000), Scaled::from_raw(1_000_000)),
+            INF_BAD
+        );
     }
 
     #[test]
     fn badness_large_s_path() {
-        let b = badness(Scaled(8_000_000), Scaled(2_000_000));
+        let b = badness(Scaled::from_raw(8_000_000), Scaled::from_raw(2_000_000));
         assert!(b < INF_BAD);
         assert!(b > 0);
     }

@@ -134,15 +134,15 @@ impl EqtbState {
     pub fn prim_lookup(&mut self, strings: &mut StringsState, s: StrNumber) -> Result<i32, Abort> {
         let mut p;
         let l;
-        if s.0 <= BIGGEST_CHAR {
-            if s.0 < 0 {
+        if s.raw() <= BIGGEST_CHAR {
+            if s.raw() < 0 {
                 return Ok(UNDEFINED_PRIMITIVE);
             }
-            p = s.0 % PRIM_PRIME + 1;
+            p = s.raw() % PRIM_PRIME + 1;
             l = 0;
         } else {
             let j = strings.str_start[s.slot()];
-            l = if s.0 == strings.str_ptr {
+            l = if s.raw() == strings.str_ptr {
                 strings.cur_length()
             } else {
                 strings.length(s)
@@ -161,11 +161,11 @@ impl EqtbState {
             // A primitive's text is stored one past its string number.
             let text = self.prim_s1(p);
             if text > TOO_BIG_CHAR {
-                let name = StrNumber(text - 1);
+                let name = StrNumber::from_raw(text - 1);
                 if strings.length(name) == l && strings.str_eq_str(name, s) {
                     return Ok(p);
                 }
-            } else if text == 1 + s.0 {
+            } else if text == 1 + s.raw() {
                 return Ok(p);
             }
 
@@ -189,7 +189,7 @@ impl EqtbState {
                         self.set_prim_s0(p, self.prim_used);
                         p = self.prim_used;
                     }
-                    self.set_prim_s1(p, s.0 + 1);
+                    self.set_prim_s1(p, s.raw() + 1);
                 }
                 return Ok(p);
             }
@@ -205,7 +205,7 @@ impl EqtbState {
         cs: i32,
     ) -> Result<i32, Abort> {
         let s = if cs < HASH_BASE {
-            StrNumber(cs - crate::consts::SINGLE_BASE)
+            StrNumber::from_raw(cs - crate::consts::SINGLE_BASE)
         } else {
             self.text(cs)
         };

@@ -110,8 +110,7 @@ impl MemState {
     }
 
     #[inline]
-    fn classify_active_or_delta(&self, p: impl MemAddr) -> ActiveOrDelta {
-        let p = p.addr();
+    fn classify_active_or_delta(&self, p: impl MemAddr + Copy) -> ActiveOrDelta {
         if active(p).break_type(self) == DELTA_NODE {
             ActiveOrDelta::Delta(delta_node(p))
         } else {
@@ -702,7 +701,7 @@ fn shrink_fitness(b: i32) -> usize {
 /// Badness and fitness class of a line that is `shortfall` short with `stretch` available.
 #[inline]
 fn stretch_badness(shortfall: Scaled, stretch: Scaled) -> (i32, usize) {
-    if shortfall > Scaled(7_230_584) && stretch < Scaled(1_663_497) {
+    if shortfall > Scaled::from_raw(7_230_584) && stretch < Scaled::from_raw(1_663_497) {
         (INF_BAD, VERY_LOOSE_FIT)
     } else {
         let b = crate::helpers::badness(shortfall, stretch);
@@ -971,8 +970,8 @@ impl MemState {
                             errors.arith_error = false;
                             g = errors.fract(
                                 g,
-                                r_active.shortfall(self).0,
-                                r_active.glue(self).0,
+                                r_active.shortfall(self).raw(),
+                                r_active.glue(self).raw(),
                                 MAX_DIMEN,
                             );
                             let last_line_fit = eqtb.int_par(IntPar::LastLineFit);

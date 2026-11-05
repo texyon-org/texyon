@@ -588,7 +588,7 @@ pub(super) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
             if !st.mem.is_char_node(st.mainloop.lig_stack) {
                 let item = NodePtr::<LigItem>::at(st.mainloop.lig_stack);
                 let lig_ptr = item.component(&st.mem);
-                if lig_ptr.0 > TEX_NULL {
+                if lig_ptr.raw() > TEX_NULL {
                     st.input.cur_list.tail_append(&mut st.mem, lig_ptr);
                 }
                 st.mainloop.lig_stack = item.link(&st.mem);
@@ -596,7 +596,7 @@ pub(super) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
                 main_i = cur_l_info(st);
                 st.mainloop.ligature_present = true;
                 if st.mainloop.lig_stack.is_null() {
-                    if lig_ptr.0 > TEX_NULL {
+                    if lig_ptr.raw() > TEX_NULL {
                         if !lookahead(st)? {
                             return Ok(true);
                         }

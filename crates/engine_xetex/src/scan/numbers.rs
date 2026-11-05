@@ -667,7 +667,7 @@ pub(crate) fn scan_glue(st: &mut EngineState, level: ValueLevel) -> Result<(), A
         gs.set_shrink_order(&mut st.mem, st.scanner.cur_order);
     }
 
-    st.scanner.cur_val = gs.ptr().0;
+    st.scanner.cur_val = gs.ptr().raw();
     Ok(())
 }
 pub(super) fn scan_normal_glue(st: &mut EngineState) -> Result<(), Abort> {
@@ -829,7 +829,7 @@ pub(super) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
                 {
                     st.errors.arith_error = true;
                     st.mem.delete_glue_ref(glue_spec(f));
-                    f = st.mem.new_spec(crate::mem::ZERO_GLUE)?.ptr().0;
+                    f = st.mem.new_spec(crate::mem::ZERO_GLUE)?.ptr().raw();
                 }
             }
 
@@ -837,7 +837,7 @@ pub(super) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
                 EXPR_NONE => {
                     if l >= ValueLevel::Glue && o != EXPR_NONE {
                         let term = st.mem.new_spec(glue_spec(f))?;
-                        t = term.ptr().0;
+                        t = term.ptr().raw();
                         st.mem.delete_glue_ref(glue_spec(f));
                         normalize_glue_orders(st, term);
                     } else {
@@ -855,7 +855,7 @@ pub(super) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
                     } else {
                         // TeX's `nx_plus_y` here takes the component as its integer factor.
                         map_glue(st, glue_spec(t), |errors, x| {
-                            Scaled(errors.mult_and_add(x.0, f, 0, MAX_HALFWORD))
+                            Scaled::from_raw(errors.mult_and_add(x.raw(), f, 0, MAX_HALFWORD))
                         });
                     }
                 }
@@ -864,7 +864,7 @@ pub(super) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
                         t = st.errors.quotient(t, f);
                     } else {
                         map_glue(st, glue_spec(t), |errors, x| {
-                            Scaled(errors.quotient(x.0, f))
+                            Scaled::from_raw(errors.quotient(x.raw(), f))
                         });
                     }
                 }

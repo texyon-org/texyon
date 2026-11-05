@@ -6,7 +6,21 @@ use crate::consts::TEX_NULL;
 /// A valid, non-null index into the `mem` arena.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 #[repr(transparent)]
-pub struct MemIdx(pub i32);
+pub struct MemIdx(i32);
+
+impl MemIdx {
+    /// The value from its raw form in a memory word, file or FFI call.
+    #[inline(always)]
+    pub const fn from_raw(raw: i32) -> MemIdx {
+        MemIdx(raw)
+    }
+
+    /// The raw form for a memory word, file or FFI call.
+    #[inline(always)]
+    pub const fn raw(self) -> i32 {
+        self.0
+    }
+}
 
 impl MemIdx {
     #[inline]
@@ -25,7 +39,68 @@ impl MemIdx {
 /// A TeX pointer: an arena index or `TEX_NULL` (which is not zero).
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 #[repr(transparent)]
-pub struct MemPtr(pub i32);
+pub struct MemPtr(i32);
+
+impl MemPtr {
+    /// The value from its raw form in a memory word, file or FFI call.
+    #[inline(always)]
+    pub const fn from_raw(raw: i32) -> MemPtr {
+        MemPtr(raw)
+    }
+
+    /// The raw form for a memory word, file or FFI call.
+    #[inline(always)]
+    pub const fn raw(self) -> i32 {
+        self.0
+    }
+}
+
+impl std::ops::Add<i32> for MemIdx {
+    type Output = MemIdx;
+    #[inline]
+    fn add(self, rhs: i32) -> MemIdx {
+        self.offset(rhs)
+    }
+}
+
+impl std::ops::Sub<i32> for MemIdx {
+    type Output = MemIdx;
+    #[inline]
+    fn sub(self, rhs: i32) -> MemIdx {
+        self.offset(-rhs)
+    }
+}
+
+/// The number of words from `rhs` to `self`.
+impl std::ops::Sub for MemPtr {
+    type Output = i32;
+    #[inline]
+    fn sub(self, rhs: MemPtr) -> i32 {
+        self.0 - rhs.0
+    }
+}
+
+impl std::ops::Sub<i32> for MemPtr {
+    type Output = MemPtr;
+    #[inline]
+    fn sub(self, rhs: i32) -> MemPtr {
+        MemPtr(self.0 - rhs)
+    }
+}
+
+impl std::ops::AddAssign<i32> for MemPtr {
+    #[inline]
+    fn add_assign(&mut self, rhs: i32) {
+        self.0 += rhs;
+    }
+}
+
+impl std::ops::SubAssign<i32> for MemPtr {
+    #[inline]
+    fn sub_assign(&mut self, rhs: i32) {
+        self.0 -= rhs;
+    }
+}
 
 impl std::ops::Add<i32> for MemPtr {
     type Output = MemPtr;
@@ -38,12 +113,6 @@ impl std::ops::Add<i32> for MemPtr {
 /// Anything the raw word accessors accept as an arena address.
 pub trait MemAddr {
     fn addr(self) -> i32;
-}
-impl MemAddr for i32 {
-    #[inline]
-    fn addr(self) -> i32 {
-        self
-    }
 }
 impl MemAddr for MemPtr {
     #[inline]
@@ -60,11 +129,8 @@ impl MemAddr for MemIdx {
 
 impl MemPtr {
     pub const NULL: MemPtr = MemPtr(TEX_NULL);
-
-    #[inline]
-    pub fn from_raw(raw: i32) -> MemPtr {
-        MemPtr(raw)
-    }
+    /// The lowest arena address, TeX's `mem_bot`.
+    pub const MEM_BOT: MemPtr = MemPtr(0);
 
     #[inline]
     pub fn from_idx(idx: MemIdx) -> MemPtr {
@@ -92,12 +158,32 @@ impl MemPtr {
 /// exceed `max_dimen`, and TeX checks overflow only where WEB says so.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 #[repr(transparent)]
-pub struct Scaled(pub i32);
+pub struct Scaled(i32);
+
+impl Scaled {
+    /// The value from its raw form in a memory word, file or FFI call.
+    #[inline(always)]
+    pub const fn from_raw(raw: i32) -> Scaled {
+        Scaled(raw)
+    }
+
+    /// The raw form for a memory word, file or FFI call.
+    #[inline(always)]
+    pub const fn raw(self) -> i32 {
+        self.0
+    }
+}
 
 impl Scaled {
     pub const ZERO: Scaled = Scaled(0);
     /// One point, TeX's `unity`.
     pub const UNITY: Scaled = Scaled(0x10000);
+
+    /// `r` scaled points rounded to the nearest, as TeX's `round`.
+    #[inline]
+    pub fn round(r: f64) -> Scaled {
+        Scaled(crate::scaled_math::tex_round(r))
+    }
 
     /// TeX's `half`, rounding odd values up.
     #[inline]
@@ -186,7 +272,21 @@ impl std::iter::Sum for Scaled {
 /// An internal font number.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 #[repr(transparent)]
-pub struct FontId(pub i32);
+pub struct FontId(i32);
+
+impl FontId {
+    /// The value from its raw form in a memory word, file or FFI call.
+    #[inline(always)]
+    pub const fn from_raw(raw: i32) -> FontId {
+        FontId(raw)
+    }
+
+    /// The raw form for a memory word, file or FFI call.
+    #[inline(always)]
+    pub const fn raw(self) -> i32 {
+        self.0
+    }
+}
 
 impl FontId {
     #[inline(always)]
@@ -220,7 +320,21 @@ impl FontId {
 /// A string number: a single character below `TOO_BIG_CHAR`, else a pool string.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 #[repr(transparent)]
-pub struct StrNumber(pub i32);
+pub struct StrNumber(i32);
+
+impl StrNumber {
+    /// The value from its raw form in a memory word, file or FFI call.
+    #[inline(always)]
+    pub const fn from_raw(raw: i32) -> StrNumber {
+        StrNumber(raw)
+    }
+
+    /// The raw form for a memory word, file or FFI call.
+    #[inline(always)]
+    pub const fn raw(self) -> i32 {
+        self.0
+    }
+}
 
 impl StrNumber {
     /// `0`, which TeX uses for "no string" in `job_name` and friends.
@@ -380,13 +494,13 @@ mod tests {
         assert_ne!(MemPtr::NULL.0, 0);
         assert!(MemPtr::NULL.is_null());
         assert!(MemPtr::NULL.as_idx().is_none());
-        assert!(!MemPtr::from_raw(0).is_null());
-        assert_eq!(MemPtr::from_raw(0).as_idx(), Some(MemIdx(0)));
+        assert!(!MemPtr::MEM_BOT.is_null());
+        assert_eq!(MemPtr::MEM_BOT.as_idx(), Some(MemIdx(0)));
     }
 
     #[test]
     fn memidx_offset_walks_node_fields() {
-        let p = MemIdx::new(100);
+        let p = MemIdx::new(MemPtr::from_raw(100));
         assert_eq!(p.offset(1), MemIdx(101));
         assert_eq!(p.offset(5).0 as usize, 105);
     }

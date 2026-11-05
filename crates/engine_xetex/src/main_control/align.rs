@@ -130,7 +130,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
 
     st.save_stack.save_ptr -= 2;
     st.scanner.pack_begin_line = -st.input.cur_list.mode_line;
-    let spec_size = Scaled(st.save_stack.saved(1));
+    let spec_size = Scaled::from_raw(st.save_stack.saved(1));
     let spec_mode = st.save_stack.saved(0) as i16;
     let head = ALIGN_HEAD.link(&st.mem);
     let p = if st.input.cur_list.mode == INNER_VMODE {
@@ -207,16 +207,16 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                             GlueSign::Stretching
                                 if spec.stretch_order(&st.mem) == p.glue_order(&st.mem) =>
                             {
-                                t += Scaled(crate::scaled_math::tex_round(
+                                t += Scaled::round(
                                     p.glue_set(&st.mem) * f64::from(spec.stretch(&st.mem)),
-                                ));
+                                );
                             }
                             GlueSign::Shrinking
                                 if spec.shrink_order(&st.mem) == p.glue_order(&st.mem) =>
                             {
-                                t -= Scaled(crate::scaled_math::tex_round(
+                                t -= Scaled::round(
                                     p.glue_set(&st.mem) * f64::from(spec.shrink(&st.mem)),
-                                ));
+                                );
                             }
                             _ => {}
                         }

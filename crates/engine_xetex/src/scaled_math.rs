@@ -24,11 +24,11 @@ impl TexWord for i32 {
 impl TexWord for Scaled {
     #[inline(always)]
     fn raw(self) -> i32 {
-        self.0
+        self.raw()
     }
     #[inline(always)]
     fn from_raw(raw: i32) -> Self {
-        Scaled(raw)
+        Scaled::from_raw(raw)
     }
 }
 
@@ -399,7 +399,7 @@ impl ErrorState {
 fn m_log(st: &mut EngineState, mut x: i32) -> i32 {
     if x <= 0 {
         crate::output::error_here_with_diagnostic(st, "Logarithm of ");
-        crate::output::print_scaled(st, Scaled(x));
+        crate::output::print_scaled(st, Scaled::from_raw(x));
         crate::output::print(st, " has been replaced by 0");
         crate::output::capture_to_diagnostic(st, None);
         st.errors.help(&[

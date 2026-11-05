@@ -135,7 +135,7 @@ pub(super) fn package(st: &mut EngineState, vtop: bool) -> Result<(), Abort> {
     let v = st.eqtb.int_par(IntPar::XetexUpwards);
     st.eqtb.set_int_par(IntPar::XetexUpwards, u);
     let list = st.input.cur_list.head.link(&st.mem);
-    let size = Scaled(st.save_stack.saved(2));
+    let size = Scaled::from_raw(st.save_stack.saved(2));
     let spec_mode = st.save_stack.saved(1) as i16;
     if st.input.cur_list.mode == INNER_HMODE {
         let b = crate::packaging::hpack(st, list, size, spec_mode)?;
@@ -168,7 +168,7 @@ fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
             Some(BoxOrRule::Box(b)) => b,
             Some(BoxOrRule::Rule(_)) => unreachable!("only leaders take a rule"),
         };
-        b.set_shift_amount(&mut st.mem, Scaled(box_context));
+        b.set_shift_amount(&mut st.mem, Scaled::from_raw(box_context));
         if st.input.cur_list.mode.abs() == VMODE {
             if !st.scanner.pre_adjust_tail.is_null() {
                 if st.scanner.pre_adjust_tail != PRE_ADJUST_HEAD {
@@ -209,12 +209,12 @@ fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
         st.scanner.cur_val = n;
         let cb = st.scanner.cur_box.map_or(MemPtr::NULL, |b| b.ptr());
         if n < 256 {
-            define(st, global, BOX_BASE + n, Cmd::BoxRef, cb.0)?;
+            define(st, global, BOX_BASE + n, Cmd::BoxRef, cb.raw())?;
         } else {
             let sa = st
                 .mem
                 .create_sa_element(&mut st.scanner, ValueLevel::BOX, n)?;
-            sa_define(st, global, sa.idx().0, cb)?;
+            sa_define(st, global, sa, cb)?;
         }
     } else if let Some(cb) = st.scanner.cur_box {
         if box_context == SHIP_OUT_FLAG {

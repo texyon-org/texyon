@@ -17,11 +17,11 @@ const PREVIEW_HANDLE: usize = usize::MAX;
 
 impl ShipoutState {
     fn synctex_curh(&self) -> i32 {
-        (self.cur_h + ONE_INCH).0
+        (self.cur_h + ONE_INCH).raw()
     }
 
     fn synctex_curv(&self) -> i32 {
-        (self.cur_v + ONE_INCH).0
+        (self.cur_v + ONE_INCH).raw()
     }
 }
 
@@ -154,7 +154,7 @@ impl SynctexCtxt {
             kind,
             b.sync_tag(mem),
             b.sync_line(mem),
-            &[b.width(mem).0, b.height(mem).0, b.depth(mem).0],
+            &[b.width(mem).raw(), b.height(mem).raw(), b.depth(mem).raw()],
         );
     }
 
@@ -163,7 +163,7 @@ impl SynctexCtxt {
             'k',
             kern.sync_tag(mem),
             kern.sync_line(mem),
-            &[kern.width(mem).0],
+            &[kern.width(mem).raw()],
         );
     }
 
@@ -239,7 +239,7 @@ pub fn synctex_init_command(st: &mut EngineState) {
     synctex.file = INVALID_HANDLE;
     synctex.root_name = None;
     synctex.count = 0;
-    synctex.node = MemPtr(0);
+    synctex.node = MemPtr::default();
     synctex.deferred_kern = None;
     synctex.tag = 0;
     synctex.line = 0;
@@ -428,7 +428,7 @@ fn flush_deferred_kern(st: &mut EngineState) {
 
 impl SynctexCtxt {
     fn context_changed(&self, tag: i32, line: i32) -> bool {
-        self.node.0 == 0 || tag != self.tag || line != self.line
+        self.node.raw() == 0 || tag != self.tag || line != self.line
     }
 }
 
@@ -482,7 +482,11 @@ pub fn synctex_horizontal_rule_or_glue(st: &mut EngineState, p: MemPtr) {
             'r',
             tag,
             line,
-            &[shipout.rule_wd.0, shipout.rule_ht.0, shipout.rule_dp.0],
+            &[
+                shipout.rule_wd.raw(),
+                shipout.rule_ht.raw(),
+                shipout.rule_dp.raw(),
+            ],
         ),
         Ok(AnyNode::Glue(_)) => synctex.record_node('g', tag, line, &[]),
         Ok(AnyNode::Kern(k)) => synctex.record_kern(&st.mem, k),

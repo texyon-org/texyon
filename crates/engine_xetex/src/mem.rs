@@ -24,25 +24,26 @@ pub(crate) const FIL_NEG_GLUE: NodePtr<GlueSpecNode> = static_spec(4);
 
 /// The `k`th of the glue specs that INITEX builds at the bottom of `mem`.
 const fn static_spec(k: i32) -> NodePtr<GlueSpecNode> {
-    NodePtr::from_idx_unchecked(MemIdx(k * GLUE_SPEC_SIZE))
+    NodePtr::from_idx_unchecked(MemIdx::from_raw(k * GLUE_SPEC_SIZE))
 }
 
-pub(crate) const PAGE_INS_HEAD: MemPtr = MemPtr(MEM_TOP);
-pub(crate) const CONTRIB_HEAD: MemPtr = MemPtr(MEM_TOP - 1);
-pub(crate) const PAGE_HEAD: MemPtr = MemPtr(MEM_TOP - 2);
-pub(crate) const TEMP_HEAD: MemPtr = MemPtr(MEM_TOP - 3);
-pub(crate) const HOLD_HEAD: MemPtr = MemPtr(MEM_TOP - 4);
-pub(crate) const ADJUST_HEAD: MemPtr = MemPtr(MEM_TOP - 5);
-pub(crate) const ACTIVE_LIST: MemPtr = MemPtr(MEM_TOP - 7);
-pub(crate) const ALIGN_HEAD: MemPtr = MemPtr(MEM_TOP - 8);
+pub(crate) const PAGE_INS_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP);
+pub(crate) const CONTRIB_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 1);
+pub(crate) const PAGE_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 2);
+pub(crate) const TEMP_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 3);
+pub(crate) const HOLD_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 4);
+pub(crate) const ADJUST_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 5);
+pub(crate) const ACTIVE_LIST: MemPtr = MemPtr::from_raw(MEM_TOP - 7);
+pub(crate) const ALIGN_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 8);
 // SAFETY: the static word at `MEM_TOP - 9` ends every span list.
-pub(crate) const END_SPAN: NodePtr<SpanNode> = NodePtr::from_idx_unchecked(MemIdx(MEM_TOP - 9));
-pub(crate) const OMIT_TEMPLATE: MemPtr = MemPtr(MEM_TOP - 10);
-pub(crate) const NULL_LIST: MemPtr = MemPtr(MEM_TOP - 11);
-pub(crate) const LIG_TRICK: MemPtr = MemPtr(MEM_TOP - 12);
-pub(crate) const GARBAGE: MemPtr = MemPtr(MEM_TOP - 12);
-pub(crate) const BACKUP_HEAD: MemPtr = MemPtr(MEM_TOP - 13);
-pub(crate) const PRE_ADJUST_HEAD: MemPtr = MemPtr(MEM_TOP - 14);
+pub(crate) const END_SPAN: NodePtr<SpanNode> =
+    NodePtr::from_idx_unchecked(MemIdx::from_raw(MEM_TOP - 9));
+pub(crate) const OMIT_TEMPLATE: MemPtr = MemPtr::from_raw(MEM_TOP - 10);
+pub(crate) const NULL_LIST: MemPtr = MemPtr::from_raw(MEM_TOP - 11);
+pub(crate) const LIG_TRICK: MemPtr = MemPtr::from_raw(MEM_TOP - 12);
+pub(crate) const GARBAGE: MemPtr = MemPtr::from_raw(MEM_TOP - 12);
+pub(crate) const BACKUP_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 13);
+pub(crate) const PRE_ADJUST_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 14);
 pub(crate) const HI_MEM_STAT_MIN: i32 = MEM_TOP - 14;
 pub(crate) const HI_MEM_STAT_USAGE: i32 = 15;
 
@@ -73,10 +74,10 @@ impl MemState {
     #[inline(always)]
     pub fn get_avail(&mut self) -> Result<MemPtr, Abort> {
         let p = self.avail;
-        if p != TEX_NULL {
-            self.avail = self.b32s1(p);
-            self.set_b32s1(p, TEX_NULL);
-            Ok(MemPtr(p))
+        if !p.is_null() {
+            self.avail = p.link(self);
+            p.set_link(self, MemPtr::NULL);
+            Ok(p)
         } else {
             self.get_avail_grow()
         }
@@ -84,7 +85,7 @@ impl MemState {
 
     #[cold]
     fn get_avail_grow(&mut self) -> Result<MemPtr, Abort> {
-        let p = if self.mem_end < MEM_TOP {
+        let p = if self.mem_end < MemPtr::from_raw(MEM_TOP) {
             self.mem_end += 1;
             self.mem_end
         } else {
@@ -94,15 +95,15 @@ impl MemState {
             }
             self.hi_mem_min
         };
-        self.set_b32s1(p, TEX_NULL);
-        Ok(MemPtr(p))
+        p.set_link(self, MemPtr::NULL);
+        Ok(p)
     }
 
     /// Returns the one-word node `p` to the free list.
     #[inline]
     pub fn free_avail(&mut self, p: MemPtr) {
-        p.set_link(self, MemPtr(self.avail));
-        self.avail = p.0;
+        p.set_link(self, self.avail);
+        self.avail = p;
     }
 
     /// Returns the one-word list `p` to the free list.
@@ -110,8 +111,8 @@ impl MemState {
         if p.is_null() {
             return;
         }
-        self.list_tail(p).set_link(self, MemPtr(self.avail));
-        self.avail = p.0;
+        self.list_tail(p).set_link(self, self.avail);
+        self.avail = p;
     }
 
     /// `flush_list` for a list whose last node `tail` the caller already knows.
@@ -121,8 +122,8 @@ impl MemState {
             return;
         }
         debug_assert_eq!(self.list_tail(p), tail);
-        tail.set_link(self, MemPtr(self.avail));
-        self.avail = p.0;
+        tail.set_link(self, self.avail);
+        self.avail = p;
     }
 
     /// TeX's `store_new_token`: appends `tok` after `tail` and makes it the tail.
@@ -201,7 +202,7 @@ impl MemState {
     /// Whether `p` lies in the one-word region, where every node is a character.
     #[inline]
     pub fn is_char_node(&self, p: impl MemAddr) -> bool {
-        p.addr() >= self.hi_mem_min
+        p.addr() >= self.hi_mem_min.raw()
     }
 
     /// TeX's `push_LR`.
@@ -229,7 +230,7 @@ impl MemState {
     /// TeX's `get_node`. The request `0x4000_0000` is `sort_avail`'s probe
     /// and yields `MAX_HALFWORD`.
     pub fn get_node(&mut self, s: i32) -> Result<MemPtr, Abort> {
-        let block = |p: i32| NodePtr::<FreeBlock>::at(p);
+        let block = NodePtr::<FreeBlock>::at;
         let r = 'restart: loop {
             let mut p = self.rover;
             loop {
@@ -269,17 +270,18 @@ impl MemState {
             }
 
             if s == 0x4000_0000 {
-                return Ok(MemPtr(MAX_HALFWORD));
+                return Ok(MemPtr::from_raw(MAX_HALFWORD));
             }
 
-            if self.lo_mem_max + 2 < self.hi_mem_min && self.lo_mem_max + 2 <= MAX_HALFWORD {
+            let max_halfword = MemPtr::from_raw(MAX_HALFWORD);
+            if self.lo_mem_max + 2 < self.hi_mem_min && self.lo_mem_max + 2 <= max_halfword {
                 // Grow lo-mem by a new free block below `hi_mem_min`.
                 let t = if self.hi_mem_min - self.lo_mem_max >= 1998 {
                     self.lo_mem_max + 1000
                 } else {
                     self.lo_mem_max + 1 + (self.hi_mem_min - self.lo_mem_max) / 2
                 };
-                let t = t.min(MAX_HALFWORD);
+                let t = t.min(max_halfword);
 
                 let rover = self.rover;
                 let left_neighbor = block(rover).llink(self);
@@ -291,9 +293,8 @@ impl MemState {
                 block(q).mark_empty(self);
                 block(q).set_node_size(self, t - self.lo_mem_max);
                 self.lo_mem_max = t;
-                let end = MemPtr(t);
-                end.set_link(self, MemPtr::NULL);
-                end.set_info(self, TEX_NULL);
+                t.set_link(self, MemPtr::NULL);
+                t.set_info(self, TEX_NULL);
                 self.rover = q;
                 continue 'restart;
             }
@@ -301,26 +302,26 @@ impl MemState {
             return Err(Abort::NodeOverflow);
         };
 
-        MemPtr(r).set_link(self, MemPtr::NULL);
+        r.set_link(self, MemPtr::NULL);
         if s >= MEDIUM_NODE_SIZE {
             self.set_b32s0(r + s - 1, self.cur_synctex_tag);
             self.set_b32s1(r + s - 1, self.line);
         }
-        Ok(MemPtr(r))
+        Ok(r)
     }
 
     /// Returns the `s`-word node `p` to the variable-size free list.
     pub fn free_node(&mut self, p: MemPtr, s: i32) {
-        let block = |p: i32| NodePtr::<FreeBlock>::at(p);
-        let freed = block(p.0);
+        let block = NodePtr::<FreeBlock>::at;
+        let freed = block(p);
         freed.set_node_size(self, s);
         freed.mark_empty(self);
         let rover = self.rover;
         let q = block(rover).llink(self);
         freed.set_llink(self, q);
         freed.set_rlink(self, rover);
-        block(rover).set_llink(self, p.0);
-        block(q).set_rlink(self, p.0);
+        block(rover).set_llink(self, p);
+        block(q).set_rlink(self, p);
     }
 
     // --- node constructors ---
@@ -397,7 +398,7 @@ impl MemState {
     /// An unshared copy of the glue spec `src`.
     pub fn new_spec(&mut self, src: NodePtr<GlueSpecNode>) -> Result<NodePtr<GlueSpecNode>, Abort> {
         let q = NodePtr::<GlueSpecNode>::alloc(self)?;
-        self.set_word(q.idx().0, self.word(src.idx().0));
+        self.set_word(q.idx(), self.word(src.idx()));
         q.set_ref_count(self, TEX_NULL);
         q.set_width(self, src.width(self));
         q.set_stretch(self, src.stretch(self));

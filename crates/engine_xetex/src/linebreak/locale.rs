@@ -75,7 +75,7 @@ pub(crate) fn do_locale_linebreaks(st: &mut EngineState, s: i32, len: i32) -> Re
     let main_f = st.mainloop.main_f;
     let text = st.scanner.native_text[s as usize..(s + len) as usize].to_vec();
 
-    let locale = StrNumber(st.eqtb.int_par(IntPar::XetexLinebreakLocale));
+    let locale = StrNumber::from_raw(st.eqtb.int_par(IntPar::XetexLinebreakLocale));
     if locale == StrNumber::NONE || len == 1 {
         return append_native_word(st, main_f, &text);
     }

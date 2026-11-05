@@ -245,7 +245,7 @@ pub(crate) fn pseudo_input(st: &mut EngineState) -> Result<bool, Abort> {
         return Ok(false);
     };
     let rest = line.link(&st.mem);
-    files.set_info(&mut st.mem, rest.0);
+    files.set_info(&mut st.mem, rest.raw());
     let size = line.size(&st.mem);
     if 4 * size - 3 >= st.input.buf_size - st.input.last {
         st.input.cur_input.loc = st.input.first;
@@ -290,7 +290,7 @@ pub(crate) fn begin_token_list(
 ) -> Result<(), Abort> {
     push_input(st)?;
     st.input.cur_input.state = TOKEN_LIST;
-    st.input.cur_input.start = list.0;
+    st.input.cur_input.start = list.raw();
     st.input.cur_input.set_token_type(t);
     if t < TokenType::Macro {
         st.input.cur_input.set_token_loc(list);

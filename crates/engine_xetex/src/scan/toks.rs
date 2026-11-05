@@ -183,7 +183,7 @@ pub(crate) fn read_toks(st: &mut EngineState, n: i32, r: i32, j: i32) -> Result<
         }
     }
 
-    st.scanner.cur_val = def_ref.0;
+    st.scanner.cur_val = def_ref.raw();
     st.scanner.scanner_status = ScannerStatus::Normal;
     st.scanner.align_state = s;
     Ok(())
@@ -266,11 +266,11 @@ pub(crate) fn the_toks(st: &mut EngineState, code: TheCode) -> Result<MemPtr, Ab
                 print(st, "pt");
             }
             ValueLevel::Glue => {
-                crate::output::print_spec(st, st.scanner.cur_val, Some("pt"));
+                crate::output::print_spec(st, MemPtr::from_raw(st.scanner.cur_val), Some("pt"));
                 st.mem.delete_glue_ref(st.scanner.cur_glue());
             }
             ValueLevel::Mu => {
-                crate::output::print_spec(st, st.scanner.cur_val, Some("mu"));
+                crate::output::print_spec(st, MemPtr::from_raw(st.scanner.cur_val), Some("mu"));
                 st.mem.delete_glue_ref(st.scanner.cur_glue());
             }
             _ => {}
@@ -481,7 +481,7 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     let lines = file.link(&st.mem);
-    file.set_info(&mut st.mem, lines.0);
+    file.set_info(&mut st.mem, lines.raw());
     file.set_link(&mut st.mem, st.input.pseudo_files);
     st.input.pseudo_files = file;
     st.strings.flush_str(s);
@@ -536,7 +536,11 @@ fn scan_general_text(st: &mut EngineState) -> Result<(), Abort> {
     let def_ref = st.scanner.def_ref;
     let list = def_ref.link(&st.mem);
     st.mem.free_avail(def_ref);
-    st.scanner.cur_val = if list.is_null() { TEMP_HEAD.0 } else { p.0 };
+    st.scanner.cur_val = if list.is_null() {
+        TEMP_HEAD.raw()
+    } else {
+        p.raw()
+    };
     TEMP_HEAD.set_link(&mut st.mem, list);
     st.scanner.scanner_status = saved_status;
     st.scanner.warning_index = saved_warning_index;

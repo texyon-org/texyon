@@ -140,7 +140,7 @@ impl FontState {
         match n {
             HB_OT_MATH_CONSTANT_SCRIPT_PERCENT_SCALE_DOWN
             | HB_OT_MATH_CONSTANT_SCRIPT_SCRIPT_PERCENT_SCALE_DOWN
-            | HB_OT_MATH_CONSTANT_RADICAL_DEGREE_BOTTOM_RAISE_PERCENT => Scaled(rval),
+            | HB_OT_MATH_CONSTANT_RADICAL_DEGREE_BOTTOM_RAISE_PERCENT => Scaled::from_raw(rval),
             _ => units_to_fix(engine.font(), rval),
         }
     }
@@ -157,7 +157,7 @@ impl FontState {
             self.font_size[f]
         } else if n == DELIM2 {
             // No OT parameter fits, so XeTeX uses 1.5em clamped to the delim1 height.
-            Scaled((1.5 * f64::from(self.font_size[f].0)) as i32)
+            Scaled::from_raw((1.5 * f64::from(self.font_size[f].raw())) as i32)
                 .min(self.get_native_mathsy_param(f, DELIM1))
         } else {
             self.mapped_constant(f, &TEX_SYM_TO_OT_MAP, n)
@@ -180,7 +180,7 @@ impl FontState {
         adv: &mut Scaled,
         horiz: bool,
     ) -> i32 {
-        *adv = Scaled(-1);
+        *adv = Scaled::from_raw(-1);
         let Some(engine) = self.ot_engine(f) else {
             return g;
         };

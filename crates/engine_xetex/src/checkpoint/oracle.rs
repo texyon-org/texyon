@@ -62,16 +62,16 @@ fn digest_mem(st: &EngineState) -> u64 {
     let mut h = Fnv::new();
     let mem = &st.mem;
     h.i32s(&[
-        mem.lo_mem_max,
-        mem.hi_mem_min,
-        mem.avail,
-        mem.mem_end,
-        mem.rover,
+        mem.lo_mem_max.raw(),
+        mem.hi_mem_min.raw(),
+        mem.avail.raw(),
+        mem.mem_end.raw(),
+        mem.rover.raw(),
         mem.var_used,
         mem.dyn_used,
         mem.line,
         mem.cur_synctex_tag,
-        mem.temp_ptr.0,
+        mem.temp_ptr.raw(),
     ]);
     for &word in &mem.data {
         h.word(memory_word(word));
@@ -83,8 +83,8 @@ fn digest_mem(st: &EngineState) -> u64 {
                 h.word(1);
                 h.word(blob.locations.len() as u64);
                 for location in &blob.locations {
-                    h.i32(location.x.0);
-                    h.i32(location.y.0);
+                    h.i32(location.x.raw());
+                    h.i32(location.y.raw());
                 }
                 h.word(blob.gids.len() as u64);
                 for &gid in &blob.gids {
@@ -130,12 +130,12 @@ fn digest_strings(st: &EngineState) -> u64 {
         strings.max_strings,
         strings.init_str_ptr,
         strings.init_pool_ptr,
-        strings.job_name.0,
-        strings.texmf_log_name.0,
+        strings.job_name.raw(),
+        strings.texmf_log_name.raw(),
         strings.string_vacancies,
         strings.pool_size,
         strings.pool_ptr,
-        strings.format_ident.0,
+        strings.format_ident.raw(),
         strings.edit_name_start,
     ]);
     let start_top = strings.cur_start_slot();
@@ -170,39 +170,39 @@ fn digest_fonts(st: &EngineState) -> u64 {
     let fonts = &st.fonts;
     h.i32s(&[
         i32::from(fonts.loaded_font_flags),
-        fonts.loaded_font_letter_space.0,
-        fonts.native_font_type_flag.0,
+        fonts.loaded_font_letter_space.raw(),
+        fonts.native_font_type_flag.raw(),
         fonts.font_mem_size,
-        fonts.font_max.0,
+        fonts.font_max.raw(),
         fonts.fmem_ptr,
-        fonts.font_ptr.0,
+        fonts.font_ptr.raw(),
     ]);
     h.word(u64::from(fonts.xtx_ligature_present));
     h.word(u64::from(fonts.gave_char_warning_help));
     for &word in fonts.font_info.iter().take(fonts.fmem_ptr.max(0) as usize) {
         h.word(memory_word(word));
     }
-    let font_count = (fonts.font_ptr.0 + 1).max(0) as usize;
+    let font_count = (fonts.font_ptr.raw() + 1).max(0) as usize;
     macro_rules! hash_values {
-        ($field:ident $(.$raw:tt)?) => {
+        ($field:ident $(.$raw:ident())?) => {
             for &value in fonts.$field.as_slice().iter().take(font_count) {
-                h.word(value$(.$raw)? as u64);
+                h.word(value$(.$raw())? as u64);
             }
         };
     }
     hash_values!(font_flags);
-    hash_values!(font_letter_space.0);
-    hash_values!(font_size.0);
-    hash_values!(font_dsize.0);
+    hash_values!(font_letter_space.raw());
+    hash_values!(font_size.raw());
+    hash_values!(font_dsize.raw());
     hash_values!(font_params);
-    hash_values!(font_name.0);
-    hash_values!(font_area.0);
+    hash_values!(font_name.raw());
+    hash_values!(font_area.raw());
     hash_values!(font_bc);
     hash_values!(font_ec);
     hash_values!(bchar_label);
     hash_values!(font_bchar);
     hash_values!(font_false_bchar);
-    hash_values!(font_glue.0);
+    hash_values!(font_glue.raw());
     hash_values!(font_used);
     hash_values!(char_base);
     hash_values!(width_base);
@@ -241,9 +241,9 @@ fn digest_input_state(h: &mut Fnv, input: &InputState) {
 
 fn digest_list(h: &mut Fnv, list: &ListStateRecord) {
     h.i32(list.mode.into());
-    h.i32(list.head.0);
-    h.i32(list.tail.0);
-    h.i32(list.e_tex_aux.0);
+    h.i32(list.head.raw());
+    h.i32(list.tail.raw());
+    h.i32(list.e_tex_aux.raw());
     h.i32(list.prev_graf);
     h.i32(list.mode_line);
     h.word(memory_word(list.aux));
@@ -255,7 +255,7 @@ fn digest_input(st: &EngineState) -> u64 {
     h.i32s(&[
         input.open_parens,
         input.in_open,
-        input.pseudo_files.0,
+        input.pseudo_files.raw(),
         input.nest_ptr,
         input.max_nest_stack,
         input.input_ptr,
@@ -284,20 +284,25 @@ fn digest_input(st: &EngineState) -> u64 {
         digest_list(&mut h, value);
     }
     digest_list(&mut h, &input.cur_list);
-    h.i32s(
-        input
-            .param_stack
-            .iter()
-            .take(input.param_ptr.max(0) as usize)
-            .map(|p| &p.0),
-    );
+    for p in input
+        .param_stack
+        .iter()
+        .take(input.param_ptr.max(0) as usize)
+    {
+        h.i32(p.raw());
+    }
     h.i32s(&input.line_stack);
     h.i32s(&input.grp_stack);
     for &value in &input.if_stack {
-        h.i32(value.0);
+        h.i32(value.raw());
     }
-    h.i32s(input.source_filename_stack.iter().map(|s| &s.0));
-    h.i32s(input.full_source_filename_stack.iter().map(|s| &s.0));
+    for s in input
+        .source_filename_stack
+        .iter()
+        .chain(&input.full_source_filename_stack)
+    {
+        h.i32(s.raw());
+    }
     for &value in &input.eof_seen {
         h.word(u64::from(value));
     }
@@ -310,13 +315,13 @@ fn digest_scanner(st: &EngineState) -> u64 {
     for value in [
         scanner.logical_clock as i64,
         i64::from(scanner.align_state),
-        i64::from(scanner.cond_ptr.0),
+        i64::from(scanner.cond_ptr.raw()),
         i64::from(scanner.cur_cs),
         i64::from(i32::from(scanner.cur_cmd)),
         i64::from(scanner.cur_chr),
         i64::from(scanner.cur_tok.0),
         i64::from(scanner.cur_val),
-        i64::from(st.shipout.page_tail.0),
+        i64::from(st.shipout.page_tail.raw()),
         st.shipout.page_contents as i64,
         i64::from(st.shipout.dead_cycles),
         i64::from(st.shipout.total_pages),
@@ -342,7 +347,7 @@ fn digest_hyph(st: &EngineState) -> u64 {
     let hyph = &st.hyph;
     h.word(hyph.tables_gen);
     h.i32s(&[
-        hyph.hf.0,
+        hyph.hf.raw(),
         hyph.max_hyph_char,
         hyph.trie_max,
         hyph.trie_size,
@@ -355,9 +360,9 @@ fn digest_hyph(st: &EngineState) -> u64 {
         hyph.hyph_index as i32,
     ]);
     macro_rules! hash_values {
-        ($field:ident $(.$raw:tt)?) => {
+        ($field:ident $(.$raw:ident())?) => {
             for &value in &hyph.$field {
-                h.word(value$(.$raw)? as u64);
+                h.word(value$(.$raw())? as u64);
             }
         };
     }
@@ -381,8 +386,8 @@ fn digest_hyph(st: &EngineState) -> u64 {
     hash_values!(trie_r);
     hash_values!(trie_hash);
     hash_values!(trie_taken);
-    hash_values!(hyph_word.0);
-    hash_values!(hyph_list.0);
+    hash_values!(hyph_word.raw());
+    hash_values!(hyph_list.raw());
     hash_values!(hyph_link);
     hash_values!(trie_op_hash_array);
     h.finish()

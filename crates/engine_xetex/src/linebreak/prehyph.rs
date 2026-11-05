@@ -247,11 +247,11 @@ fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
                     }
                     let mut j = st.linebreak.hn;
                     let mut q = lig.lig_ptr(&st.mem);
-                    if q.0 > TEX_NULL {
+                    if q.raw() > TEX_NULL {
                         st.hyph.hyf_bchar =
                             i32::from(NodePtr::<CharNode>::at(q).character(&st.mem));
                     }
-                    while q.0 > TEX_NULL {
+                    while q.raw() > TEX_NULL {
                         let c = i32::from(NodePtr::<CharNode>::at(q).character(&st.mem));
                         let hc0 = st.hyph.hyph_code(&st.eqtb, c);
                         st.hyph.hc[0] = hc0;

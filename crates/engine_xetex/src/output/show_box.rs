@@ -34,9 +34,9 @@ pub(crate) fn show_box(st: &mut EngineState, p: MemPtr) {
 }
 
 pub(crate) fn short_display(st: &mut EngineState, mut p: MemPtr) {
-    while p.0 > 0 {
+    while p.raw() > 0 {
         if st.mem.is_char_node(p) {
-            if p.0 <= st.mem.mem_end {
+            if p <= st.mem.mem_end {
                 let ch = NodePtr::<CharNode>::at(p);
                 let font = ch.font(&st.mem);
                 if font != st.errors.font_in_short_display {
@@ -146,16 +146,16 @@ fn print_subsidiary_data(st: &mut EngineState, p: NodePtr<MathField>, c: u8) {
 
 pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
     if st.strings.cur_length() > st.errors.depth_threshold {
-        if p.0 > TEX_NULL {
+        if p.raw() > TEX_NULL {
             print(st, " []");
         }
         return;
     }
     let mut n = 0;
-    while p.0 > 0 {
+    while p.raw() > 0 {
         print_ln(st);
         print_current_string(st);
-        if p.0 > st.mem.mem_end {
+        if p > st.mem.mem_end {
             print(st, "Bad link, display aborted.");
             return;
         }
@@ -357,7 +357,7 @@ fn show_box_node(st: &mut EngineState, b: AnyBox) {
             }
             print_glue(st, Scaled::UNITY * 20000, order, None);
         } else {
-            let set = Scaled(crate::scaled_math::tex_round(65536.0 * g));
+            let set = Scaled::round(65536.0 * g);
             print_glue(st, set, order, None);
         }
     }

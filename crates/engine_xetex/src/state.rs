@@ -91,7 +91,7 @@ impl Default for SynctexCtxt {
             file: 0, // INVALID_HANDLE
             root_name: None,
             count: 0,
-            node: crate::units::MemPtr::from_raw(0),
+            node: crate::units::MemPtr::default(),
             deferred_kern: None,
             tag: 0,
             line: 0,
@@ -133,21 +133,21 @@ pub(crate) struct InputState {
 impl InputState {
     #[inline]
     pub(crate) fn token_start(&self) -> crate::units::MemPtr {
-        crate::units::MemPtr(self.start)
+        crate::units::MemPtr::from_raw(self.start)
     }
     #[inline]
     pub(crate) fn token_loc(&self) -> crate::units::MemPtr {
-        crate::units::MemPtr(self.loc)
+        crate::units::MemPtr::from_raw(self.loc)
     }
     #[inline]
     pub(crate) fn set_token_loc(&mut self, p: crate::units::MemPtr) {
-        self.loc = p.0;
+        self.loc = p.raw();
     }
     /// Starts reading the token list `p` from its first node.
     #[inline]
     pub(crate) fn set_token_list(&mut self, p: crate::units::MemPtr) {
-        self.start = p.0;
-        self.loc = p.0;
+        self.start = p.raw();
+        self.loc = p.raw();
     }
 }
 
@@ -292,7 +292,7 @@ impl EqtbState {
     /// The name of control sequence `p`, `text(p)`.
     #[inline]
     pub fn text(&self, p: i32) -> StrNumber {
-        StrNumber(self.hash[(p - HASH_OFFSET) as usize].s1)
+        StrNumber::from_raw(self.hash[(p - HASH_OFFSET) as usize].s1)
     }
 
     #[inline]
@@ -301,7 +301,7 @@ impl EqtbState {
         if self.journal.hash.armed() {
             self.journal.hash.note(index, self.hash[index]);
         }
-        self.hash[index].s1 = s.0;
+        self.hash[index].s1 = s.raw();
     }
 
     #[inline]
@@ -366,7 +366,7 @@ impl EqtbState {
     /// `equiv(p)` of an entry that holds a pointer.
     #[inline]
     pub(crate) fn equiv_ptr(&self, p: i32) -> crate::units::MemPtr {
-        crate::units::MemPtr(self.equiv(p))
+        crate::units::MemPtr::from_raw(self.equiv(p))
     }
     #[inline]
     pub(crate) fn set_equiv(&mut self, p: i32, v: i32) {
@@ -391,7 +391,7 @@ impl EqtbState {
 
     #[inline]
     pub(crate) fn cur_font(&self) -> FontId {
-        FontId(self.equiv(crate::consts::CUR_FONT_LOC))
+        FontId::from_raw(self.equiv(crate::consts::CUR_FONT_LOC))
     }
     #[inline]
     pub(crate) fn tok_par(&self, n: TokPar) -> crate::units::MemPtr {
@@ -415,7 +415,7 @@ impl EqtbState {
     }
     #[inline]
     pub(crate) fn set_box_reg(&mut self, n: i32, p: crate::units::MemPtr) {
-        self.set_equiv(crate::consts::BOX_BASE + n, p.0);
+        self.set_equiv(crate::consts::BOX_BASE + n, p.raw());
     }
     #[inline]
     pub(crate) fn skip(&self, n: i32) -> crate::node::NodePtr<crate::node::GlueSpecNode> {
@@ -423,7 +423,7 @@ impl EqtbState {
     }
     #[inline]
     pub(crate) fn dimen(&self, n: i32) -> Scaled {
-        Scaled(self.int_at(crate::consts::SCALED_BASE + n))
+        Scaled::from_raw(self.int_at(crate::consts::SCALED_BASE + n))
     }
     #[inline]
     pub(crate) fn toks(&self, n: i32) -> crate::units::MemPtr {
@@ -435,7 +435,7 @@ impl EqtbState {
     }
     #[inline]
     pub(crate) fn math_font(&self, n: i32) -> FontId {
-        FontId(self.equiv(crate::consts::MATH_FONT_BASE + n))
+        FontId::from_raw(self.equiv(crate::consts::MATH_FONT_BASE + n))
     }
     #[inline]
     pub(crate) fn cat_code(&self, c: i32) -> Cmd {
@@ -487,11 +487,11 @@ impl EqtbState {
     }
     #[inline]
     pub fn dimen_par(&self, n: DimenPar) -> Scaled {
-        Scaled(self.b32s1(n.loc()))
+        Scaled::from_raw(self.b32s1(n.loc()))
     }
     #[inline]
     pub fn set_dimen_par(&mut self, n: DimenPar, v: Scaled) {
-        self.set_b32s1(n.loc(), v.0);
+        self.set_b32s1(n.loc(), v.raw());
     }
     /// The spec of glue parameter `n`, never null.
     #[inline]
@@ -505,7 +505,7 @@ impl EqtbState {
         n: GluePar,
         spec: crate::node::NodePtr<crate::node::GlueSpecNode>,
     ) {
-        self.set_b32s1(n.loc(), spec.ptr().0);
+        self.set_b32s1(n.loc(), spec.ptr().raw());
     }
 
     #[inline]
@@ -531,11 +531,11 @@ pub(crate) struct MemState {
     /// Owned shaped-glyph payloads referenced by handles in native nodes.
     pub glyph_blobs: crate::glyph_arena::GlyphBlobArena,
     pub journal: crate::journal::WordJournal,
-    pub lo_mem_max: i32,
-    pub hi_mem_min: i32,
-    pub avail: i32,
-    pub mem_end: i32,
-    pub rover: i32,
+    pub lo_mem_max: crate::units::MemPtr,
+    pub hi_mem_min: crate::units::MemPtr,
+    pub avail: crate::units::MemPtr,
+    pub mem_end: crate::units::MemPtr,
+    pub rover: crate::units::MemPtr,
     pub var_used: i32,
     pub dyn_used: i32,
     /// TeX's `line`, kept here because `get_node` stamps it into new nodes.
@@ -824,7 +824,7 @@ impl SaveStackState {
     /// `save_index(k)` of an entry that saved a pointer.
     #[inline]
     pub(crate) fn save_index_ptr(&self, k: i32) -> crate::units::MemPtr {
-        crate::units::MemPtr(self.save_index(k))
+        crate::units::MemPtr::from_raw(self.save_index(k))
     }
     /// Writes a restore entry at `save_ptr`.
     #[inline]
@@ -1069,7 +1069,7 @@ impl Default for FontState {
             loaded_font_flags: 0,
             saved_mapping_name: None,
             brk_iter: None,
-            brk_locale_str_num: StrNumber(0),
+            brk_locale_str_num: StrNumber::from_raw(0),
             font_layout_engine: PerFont::default(),
             font_mapping: PerFont::default(),
             loaded_font_letter_space: Scaled::ZERO,
@@ -1123,7 +1123,7 @@ impl FontState {
     /// `font_info[k].sc`.
     #[inline]
     pub(crate) fn font_info_sc(&self, k: i32) -> Scaled {
-        Scaled(self.font_info[k as usize].b32().s1)
+        Scaled::from_raw(self.font_info[k as usize].b32().s1)
     }
 
     /// Font parameter `n` of font `f`.
@@ -1147,7 +1147,7 @@ impl FontState {
         if self.font_info_journal.armed() && k < self.fmem_epoch_base {
             self.font_info_journal.note(index, self.font_info[index]);
         }
-        self.font_info[index].b32.s1 = v.0;
+        self.font_info[index].b32.s1 = v.raw();
     }
 }
 
@@ -1514,13 +1514,13 @@ pub(crate) struct LinebreakState {
 impl Default for LinebreakState {
     fn default() -> Self {
         Self {
-            last_leftmost_char: crate::units::MemPtr::from_raw(0),
-            last_rightmost_char: crate::units::MemPtr::from_raw(0),
-            hlist_stack: vec![crate::units::MemPtr::from_raw(0); 513],
+            last_leftmost_char: crate::units::MemPtr::default(),
+            last_rightmost_char: crate::units::MemPtr::default(),
+            hlist_stack: vec![crate::units::MemPtr::default(); 513],
             hlist_stack_level: 0,
-            first_p: crate::units::MemPtr::from_raw(0),
-            global_prev_p: crate::units::MemPtr::from_raw(0),
-            cur_p: crate::units::MemPtr::from_raw(0),
+            first_p: crate::units::MemPtr::default(),
+            global_prev_p: crate::units::MemPtr::default(),
+            cur_p: crate::units::MemPtr::default(),
             last_special_line: 0,
             first_width: Scaled::ZERO,
             second_width: Scaled::ZERO,
@@ -1528,13 +1528,13 @@ impl Default for LinebreakState {
             second_indent: Scaled::ZERO,
             best_line: 0,
             hn: 0,
-            ha: crate::units::MemPtr::from_raw(0),
-            hb: crate::units::MemPtr::from_raw(0),
-            passive: crate::units::MemPtr::from_raw(0),
+            ha: crate::units::MemPtr::default(),
+            hb: crate::units::MemPtr::default(),
+            passive: crate::units::MemPtr::default(),
             cur_active_width: [Scaled::ZERO; 7],
             background: [Scaled::ZERO; 7],
             break_width: [Scaled::ZERO; 7],
-            best_place: [crate::units::MemPtr::from_raw(0); 4],
+            best_place: [crate::units::MemPtr::default(); 4],
             best_pl_line: [0; 4],
             disc_width: Scaled::ZERO,
             final_pass: false,
@@ -1612,7 +1612,7 @@ impl Default for HyphState {
             is_hyph: false,
             hf: crate::consts::NULL_FONT,
             max_hyph_char: 0,
-            init_list: crate::units::MemPtr::from_raw(0),
+            init_list: crate::units::MemPtr::default(),
             init_lig: false,
             init_lft: false,
             hyphen_passed: 0,
@@ -1693,12 +1693,12 @@ impl ScannerState {
     /// `cur_val` as the dimension that `scan_dimen` left there.
     #[inline]
     pub(crate) fn cur_dimen(&self) -> Scaled {
-        Scaled(self.cur_val)
+        Scaled::from_raw(self.cur_val)
     }
 
     #[inline]
     pub(crate) fn set_cur_dimen(&mut self, d: Scaled) {
-        self.cur_val = d.0;
+        self.cur_val = d.raw();
     }
 
     /// `cur_val` as the glue spec that `scan_glue` left there.
@@ -1710,13 +1710,13 @@ impl ScannerState {
     /// `cur_val` as a pointer, such as a token list.
     #[inline]
     pub(crate) fn cur_val_ptr(&self) -> crate::units::MemPtr {
-        crate::units::MemPtr(self.cur_val)
+        crate::units::MemPtr::from_raw(self.cur_val)
     }
 
     /// `cur_chr` as the pointer a macro or register command carries.
     #[inline]
     pub(crate) fn cur_chr_ptr(&self) -> crate::units::MemPtr {
-        crate::units::MemPtr(self.cur_chr)
+        crate::units::MemPtr::from_raw(self.cur_chr)
     }
 
     /// Grows `native_text` until `extra` more units fit.

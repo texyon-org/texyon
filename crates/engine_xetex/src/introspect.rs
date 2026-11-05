@@ -79,7 +79,7 @@ fn resolve_wrappers(found: Vec<DefinedCommand>) -> Vec<DefinedCommand> {
 
 fn collect(st: &EngineState, slot: i32, found: &mut Vec<DefinedCommand>) {
     let text = st.eqtb.text(slot);
-    if text <= StrNumber::NONE || text.0 >= st.strings.str_ptr {
+    if text <= StrNumber::NONE || text.raw() >= st.strings.str_ptr {
         return;
     }
     let meaning = st.eqtb.eq_type(slot);
@@ -118,7 +118,7 @@ fn describe_macro(st: &EngineState, body: crate::units::MemPtr) -> (bool, u8) {
 
     // Guards against following a corrupt list.
     for _ in 0..64 {
-        if at.0 <= 0 {
+        if at.raw() <= 0 {
             break;
         }
         let token = at.token(&st.mem);

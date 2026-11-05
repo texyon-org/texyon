@@ -232,7 +232,7 @@ pub(crate) fn scan_math(st: &mut EngineState, p: NodePtr<MathField>) -> Result<(
                 _ => {
                     back_input(st)?;
                     scan_left_brace(st)?;
-                    st.save_stack.set_saved(0, p.idx().0);
+                    st.save_stack.set_saved(0, p.idx().raw());
                     st.save_stack.save_ptr += 1;
                     crate::main_control::push_math(st, GroupCode::Math)?;
                     return Ok(());

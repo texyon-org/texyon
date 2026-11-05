@@ -239,7 +239,7 @@ pub(super) fn build_opentype_assembly(
         b.set_glue_sign(&mut st.mem, GlueSign::Stretching);
         let ratio = f64::from(o) / f64::from(str);
         b.set_glue_set(&mut st.mem, ratio);
-        let set_dim = nat + Scaled(crate::scaled_math::tex_round(f64::from(str) * ratio));
+        let set_dim = nat + Scaled::round(f64::from(str) * ratio);
         if horiz {
             b.set_width(&mut st.mem, set_dim);
         } else {

@@ -111,7 +111,7 @@ impl TexStr for i32 {
 impl TexStr for StrNumber {
     #[inline]
     fn print_to(self, st: &mut EngineState) {
-        print_pool_str(st, self.0);
+        print_pool_str(st, self.raw());
     }
 }
 
@@ -198,7 +198,7 @@ pub(crate) fn print_roman_int(st: &mut EngineState, mut n: i32) {
 }
 
 pub(crate) fn print_scaled(st: &mut EngineState, s: Scaled) {
-    let mut s = s.0;
+    let mut s = s.raw();
     if s < 0 {
         print_char(st, b'-');
         s = s.wrapping_neg();
@@ -595,7 +595,7 @@ pub(crate) fn print_file_name(st: &mut EngineState, n: StrNumber, a: StrNumber, 
 /// The name string of a multi-letter control sequence at eqtb location `p`.
 fn cs_text(st: &EngineState, p: i32) -> StrNumber {
     if (PRIM_EQTB_BASE..FROZEN_NULL_FONT).contains(&p) {
-        StrNumber(st.eqtb.prim_s1(p - PRIM_EQTB_BASE) - 1)
+        StrNumber::from_raw(st.eqtb.prim_s1(p - PRIM_EQTB_BASE) - 1)
     } else {
         st.eqtb.text(p)
     }
@@ -621,7 +621,7 @@ pub(crate) fn print_cs(st: &mut EngineState, p: i32) {
         }
     } else if (UNDEFINED_CONTROL_SEQUENCE..=EQTB_SIZE).contains(&p) || p > st.eqtb.eqtb_top {
         print_esc(st, "IMPOSSIBLE.");
-    } else if st.eqtb.text(p).0 >= st.strings.str_ptr {
+    } else if st.eqtb.text(p).raw() >= st.strings.str_ptr {
         print_esc(st, "NONEXISTENT.");
     } else {
         print_esc(st, cs_text(st, p));
@@ -776,10 +776,10 @@ pub(crate) fn token_show(st: &mut EngineState, p: MemPtr) {
 }
 
 pub(crate) fn print_spec(st: &mut EngineState, p: impl crate::units::MemAddr, s: Option<&str>) {
-    let p = p.addr();
-    let spec = (0..st.mem.lo_mem_max)
+    let p = MemPtr::from_raw(p.addr());
+    let spec = (MemPtr::MEM_BOT..st.mem.lo_mem_max)
         .contains(&p)
-        .then(|| NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr(p)));
+        .then(|| NodePtr::<GlueSpecNode>::from_glue_ptr(p));
     let Some(gs) = spec else {
         print_char(st, b'*');
         return;
@@ -892,7 +892,7 @@ fn print_font_char(st: &mut EngineState, font: FontId, c: u16) {
 }
 
 fn print_font_and_char(st: &mut EngineState, p: MemPtr) {
-    if p.0 > st.mem.mem_end {
+    if p > st.mem.mem_end {
         print_esc(st, "CLOBBERED.");
     } else {
         let ch = NodePtr::<CharNode>::at(p);
@@ -902,7 +902,7 @@ fn print_font_and_char(st: &mut EngineState, p: MemPtr) {
 
 fn print_mark(st: &mut EngineState, p: MemPtr) {
     print_char(st, b'{');
-    if p.0 < st.mem.hi_mem_min || p.0 > st.mem.mem_end {
+    if p < st.mem.hi_mem_min || p > st.mem.mem_end {
         print_esc(st, "CLOBBERED.");
     } else {
         let head = p.link(&st.mem);

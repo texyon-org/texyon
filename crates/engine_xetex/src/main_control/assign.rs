@@ -144,7 +144,7 @@ fn trap_zero_glue(st: &mut EngineState) {
     {
         mem.add_glue_ref(ZERO_GLUE);
         mem.delete_glue_ref(spec);
-        st.scanner.cur_val = ZERO_GLUE.idx().0;
+        st.scanner.cur_val = ZERO_GLUE.idx().raw();
     }
 }
 
@@ -165,7 +165,7 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         if u == NULL_CS {
             st.strings.make_tex_string("FONT")?
         } else {
-            StrNumber(u - SINGLE_BASE)
+            StrNumber::from_raw(u - SINGLE_BASE)
         }
     } else {
         let old_setting = st.shipout.selector;
@@ -187,7 +187,7 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     let s = if crate::scan::scan_keyword(st, "at")? {
         crate::scan::scan_dimen(st, false, false, false)?;
         let size = st.scanner.cur_dimen();
-        if size <= Scaled::ZERO || size >= Scaled(0x800_0000) {
+        if size <= Scaled::ZERO || size >= Scaled::from_raw(0x800_0000) {
             crate::output::error_here_with_diagnostic(st, "Improper `at' size (");
             crate::output::print_scaled(st, size);
             crate::output::print(st, "pt), replaced by 10pt");
@@ -216,7 +216,7 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             crate::errors::int_error(st, mag)?;
             DESIGN_SIZE
         } else {
-            Scaled(-mag)
+            Scaled::from_raw(-mag)
         }
     } else {
         DESIGN_SIZE
@@ -227,7 +227,7 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         if s > Scaled::ZERO {
             s == st.fonts.font_size[f]
         } else {
-            st.fonts.font_size[f] == st.errors.xn_over_d(st.fonts.font_dsize[f], -s.0, 1000)
+            st.fonts.font_size[f] == st.errors.xn_over_d(st.fonts.font_dsize[f], -s.raw(), 1000)
         }
     };
     let f = 'search: {
@@ -258,7 +258,7 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         read_font_info(st, u, st.scanner.cur_name, st.scanner.cur_area, s)?
     };
 
-    define(st, global, u, Cmd::SetFont, f.0)?;
+    define(st, global, u, Cmd::SetFont, f.raw())?;
     let word = st.eqtb.word(u);
     st.eqtb.set_word(f.id_loc(), word);
     st.eqtb.set_text(f.id_loc(), t);
@@ -293,13 +293,17 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         }
         let Some(p) = ValueLevel::from_raw(st.scanner.cur_chr) else {
             let l = st.scanner.cur_chr;
-            break 'found (l, NodePtr::<SaNode>::at(l).sa_type(&st.mem), true);
+            break 'found (
+                l,
+                NodePtr::<SaNode>::at(MemPtr::from_raw(l)).sa_type(&st.mem),
+                true,
+            );
         };
         crate::scan::scan_register_num(st)?;
         let n = st.scanner.cur_val;
         if n > 255 {
             let sa = st.mem.create_sa_element(&mut st.scanner, p, n)?;
-            break 'found (sa.idx().0, p, true);
+            break 'found (sa.idx().raw(), p, true);
         }
         let base = match p {
             ValueLevel::Int => COUNT_BASE,
@@ -312,9 +316,15 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     };
 
     let (w, s) = match (p < ValueLevel::Glue, e) {
-        (true, true) => (NodePtr::<SaNode>::at(l).sa_int(&st.mem), MemPtr::NULL),
+        (true, true) => (
+            NodePtr::<SaNode>::at(MemPtr::from_raw(l)).sa_int(&st.mem),
+            MemPtr::NULL,
+        ),
         (true, false) => (st.eqtb.equiv(l), MemPtr::NULL),
-        (false, true) => (0, NodePtr::<SaNode>::at(l).sa_ptr(&st.mem)),
+        (false, true) => (
+            0,
+            NodePtr::<SaNode>::at(MemPtr::from_raw(l)).sa_ptr(&st.mem),
+        ),
         (false, false) => (0, st.eqtb.equiv_ptr(l)),
     };
 
@@ -369,7 +379,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
                     sum.set_shrink(&mut st.mem, v);
                     sum.set_shrink_order(&mut st.mem, order);
                 }
-                st.scanner.cur_val = sum.ptr().0;
+                st.scanner.cur_val = sum.ptr().raw();
             }
         }
     } else {
@@ -397,13 +407,13 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
                 old.stretch(&st.mem),
                 old.shrink(&st.mem),
             );
-            let v = scale(&mut st.errors, width.0, MAX_HALFWORD);
-            r.set_width(&mut st.mem, Scaled(v));
-            let v = scale(&mut st.errors, stretch.0, MAX_HALFWORD);
-            r.set_stretch(&mut st.mem, Scaled(v));
-            let v = scale(&mut st.errors, shrink.0, MAX_HALFWORD);
-            r.set_shrink(&mut st.mem, Scaled(v));
-            st.scanner.cur_val = r.ptr().0;
+            let v = scale(&mut st.errors, width.raw(), MAX_HALFWORD);
+            r.set_width(&mut st.mem, Scaled::from_raw(v));
+            let v = scale(&mut st.errors, stretch.raw(), MAX_HALFWORD);
+            r.set_stretch(&mut st.mem, Scaled::from_raw(v));
+            let v = scale(&mut st.errors, shrink.raw(), MAX_HALFWORD);
+            r.set_shrink(&mut st.mem, Scaled::from_raw(v));
+            st.scanner.cur_val = r.ptr().raw();
         }
     }
 
@@ -423,7 +433,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     if p < ValueLevel::Glue {
         let value = st.scanner.cur_val;
         if e {
-            sa_word_define(st, global, l, value)?;
+            sa_word_define(st, global, NodePtr::at(MemPtr::from_raw(l)), value)?;
         } else {
             word_define(st, global, l, value)?;
         }
@@ -431,9 +441,9 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         trap_zero_glue(st);
         let value = st.scanner.cur_glue().ptr();
         if e {
-            sa_define(st, global, l, value)?;
+            sa_define(st, global, NodePtr::at(MemPtr::from_raw(l)), value)?;
         } else {
-            define(st, global, l, Cmd::GlueRef, value.0)?;
+            define(st, global, l, Cmd::GlueRef, value.raw())?;
         }
     }
     Ok(())
@@ -478,7 +488,7 @@ pub(super) fn word_define(st: &mut EngineState, global: bool, p: i32, w: i32) ->
 pub(super) fn sa_define(
     st: &mut EngineState,
     global: bool,
-    p: i32,
+    p: NodePtr<SaNode>,
     e: MemPtr,
 ) -> Result<(), Abort> {
     let result = if global {
@@ -490,7 +500,12 @@ pub(super) fn sa_define(
     Ok(())
 }
 
-fn sa_word_define(st: &mut EngineState, global: bool, p: i32, w: i32) -> Result<(), Abort> {
+fn sa_word_define(
+    st: &mut EngineState,
+    global: bool,
+    p: NodePtr<SaNode>,
+    w: i32,
+) -> Result<(), Abort> {
     let result = if global {
         st.mem.gsa_w_def(p, w)
     } else {
@@ -514,9 +529,9 @@ impl MemState {
 fn scan_inter_char_pair(st: &mut EngineState) -> Result<i32, Abort> {
     crate::scan::scan_char_class_not_ignored(st)?;
     // TeX parks the first class in `cur_ptr` while scanning the second.
-    st.scanner.cur_ptr.0 = st.scanner.cur_val;
+    st.scanner.cur_ptr = MemPtr::from_raw(st.scanner.cur_val);
     crate::scan::scan_char_class_not_ignored(st)?;
-    Ok(st.scanner.cur_ptr.0 * CHAR_CLASS_LIMIT + st.scanner.cur_val)
+    Ok(st.scanner.cur_ptr.raw() * CHAR_CLASS_LIMIT + st.scanner.cur_val)
 }
 
 /// Defines token list register `p`, a sparse-array entry if `e`, as `list`.
@@ -528,14 +543,14 @@ fn define_toks(
     list: MemPtr,
 ) -> Result<(), Abort> {
     if e {
-        return sa_define(st, global, p, list);
+        return sa_define(st, global, NodePtr::at(MemPtr::from_raw(p)), list);
     }
     let t = if list.is_null() {
         Cmd::UndefinedCs
     } else {
         Cmd::Call
     };
-    define(st, global, p, t, list.0)?;
+    define(st, global, p, t, list.raw())?;
     Ok(())
 }
 
@@ -608,7 +623,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 a >= 4,
                 p,
                 Cmd::call(a % 2 == 1, a % 4 >= 2),
-                st.scanner.def_ref.0,
+                st.scanner.def_ref.raw(),
             )?;
         }
         Cmd::Let => {
@@ -783,8 +798,8 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 crate::scan::scan_optional_equals(st)?;
                 crate::scan::scan_int(st)?;
                 match n {
-                    LP_CODE_BASE => set_cp_code(f.0, p as u32, LEFT_SIDE, st.scanner.cur_val),
-                    RP_CODE_BASE => set_cp_code(f.0, p as u32, RIGHT_SIDE, st.scanner.cur_val),
+                    LP_CODE_BASE => set_cp_code(f.raw(), p as u32, LEFT_SIDE, st.scanner.cur_val),
+                    RP_CODE_BASE => set_cp_code(f.raw(), p as u32, RIGHT_SIDE, st.scanner.cur_val),
                     _ => {}
                 }
             }
@@ -841,7 +856,7 @@ fn shorthand_def(st: &mut EngineState, global: bool) -> Result<(), Abort> {
                 } else {
                     Cmd::Register
                 };
-                (t, st.scanner.cur_ptr.0)
+                (t, st.scanner.cur_ptr.raw())
             } else {
                 let (t, base) = match n {
                     ShorthandDefCode::Count => (Cmd::AssignInt, COUNT_BASE),
@@ -870,7 +885,7 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
                 let sa = st
                     .mem
                     .create_sa_element(&mut st.scanner, ValueLevel::Tok, reg)?;
-                st.scanner.cur_chr = sa.idx().0;
+                st.scanner.cur_chr = sa.idx().raw();
                 e = true;
             } else {
                 st.scanner.cur_chr = TOKS_BASE + st.scanner.cur_val;
@@ -883,7 +898,7 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
         let sa = st
             .mem
             .create_sa_element(&mut st.scanner, ValueLevel::InterChar, n)?;
-        st.scanner.cur_chr = sa.idx().0;
+        st.scanner.cur_chr = sa.idx().raw();
         e = true;
     }
     let p = st.scanner.cur_chr;
@@ -906,7 +921,7 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
                     crate::scan::sa_token_list(st, sa)
                 }
             } else {
-                NodePtr::<SaNode>::at(st.scanner.cur_chr).sa_ptr(&st.mem)
+                NodePtr::<SaNode>::at(MemPtr::from_raw(st.scanner.cur_chr)).sa_ptr(&st.mem)
             }
         } else if st.scanner.cur_chr == TokPar::XetexInterCharToks.loc() {
             let n = scan_inter_char_pair(st)?;
@@ -1072,6 +1087,6 @@ fn set_shape(st: &mut EngineState, global: bool) -> Result<(), Abort> {
         }
         p
     };
-    define(st, global, q, Cmd::ShapeRef, p.0)?;
+    define(st, global, q, Cmd::ShapeRef, p.raw())?;
     Ok(())
 }

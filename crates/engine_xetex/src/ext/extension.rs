@@ -327,7 +327,8 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
             } else {
                 st.scanner.cur_name
             };
-            st.eqtb.set_int_par(IntPar::XetexLinebreakLocale, locale.0);
+            st.eqtb
+                .set_int_par(IntPar::XetexLinebreakLocale, locale.raw());
         }
     }
     Ok(())

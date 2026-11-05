@@ -327,8 +327,8 @@ impl DviWriter {
 
     fn rule(&mut self, opcode: u8, height: Scaled, width: Scaled) -> Result<(), Abort> {
         self.out(opcode)?;
-        self.four(height.0)?;
-        self.four(width.0)
+        self.four(height.raw())?;
+        self.four(width.raw())
     }
 
     /// Selects font number `k`.
@@ -357,8 +357,8 @@ impl DviWriter {
             self.bytes(&[FNT_DEF1 + 1, (k / 256) as u8, (k % 256) as u8])?;
         }
         self.bytes(&check)?;
-        self.four(size.0)?;
-        self.four(design_size.0)?;
+        self.four(size.raw())?;
+        self.four(design_size.raw())?;
         self.bytes(&[area.len() as u8, name.len() as u8])?;
         self.text(area)?;
         self.text(name)
@@ -410,11 +410,11 @@ impl DviWriter {
         locations: &[FixedPoint],
         gids: &[u16],
     ) -> Result<(), Abort> {
-        self.four(width.0)?;
+        self.four(width.raw())?;
         self.two(gids.len() as u16)?;
         for loc in locations {
-            self.four(loc.x.0)?;
-            self.four(loc.y.0)?;
+            self.four(loc.x.raw())?;
+            self.four(loc.y.raw())?;
         }
         for &gid in gids {
             self.two(gid)?;
@@ -435,7 +435,7 @@ impl DviWriter {
 
     /// `right` or `down` by `w`, in as few bytes as it fits.
     pub(crate) fn movement(&mut self, axis: Axis, w: Scaled) -> Result<(), Abort> {
-        let w = w.0;
+        let w = w.raw();
         let len = if w.wrapping_abs() >= 0x800000 {
             4
         } else if w.wrapping_abs() >= 0x8000 {
@@ -486,8 +486,8 @@ impl DviWriter {
         total_pages: i32,
     ) -> Result<(), Abort> {
         self.four(mag)?;
-        self.four(max_v.0)?;
-        self.four(max_h.0)?;
+        self.four(max_v.raw())?;
+        self.four(max_h.raw())?;
         let max_push = self.max_push;
         self.bytes(&[
             (max_push / 256) as u8,

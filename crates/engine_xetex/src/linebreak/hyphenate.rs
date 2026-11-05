@@ -127,7 +127,7 @@ fn pop_lig_stack(
 ) {
     let item = lig_item(st.mainloop.lig_stack);
     let component = item.component(&st.mem);
-    if component.0 > TEX_NULL {
+    if component.raw() > TEX_NULL {
         t.set_link(&mut st.mem, component);
         *t = component;
         *j += 1;
@@ -163,7 +163,7 @@ fn reconstitute(
         if st.mainloop.ligature_present {
             st.mainloop.lft_hit = st.hyph.init_lft;
         }
-        while p.0 > TEX_NULL {
+        while p.raw() > TEX_NULL {
             let c = NodePtr::<CharNode>::at(p).character(&st.mem);
             t = st.mem.append_char(t, st.hyph.hf, c)?;
             p = p.link(&st.mem);
@@ -230,7 +230,7 @@ fn reconstitute(
                             }
                             2 | 6 => {
                                 st.mainloop.cur_r = i32::from(q.lig_char());
-                                if st.mainloop.lig_stack.0 > TEX_NULL {
+                                if st.mainloop.lig_stack.raw() > TEX_NULL {
                                     lig_item(st.mainloop.lig_stack)
                                         .set_character(&mut st.mem, st.mainloop.cur_r as u16);
                                 } else {
@@ -264,7 +264,7 @@ fn reconstitute(
                             _ => {
                                 st.mainloop.cur_l = i32::from(q.lig_char());
                                 st.mainloop.ligature_present = true;
-                                if st.mainloop.lig_stack.0 > TEX_NULL {
+                                if st.mainloop.lig_stack.raw() > TEX_NULL {
                                     pop_lig_stack(st, &mut t, &mut j, n, bchar, hchar, &mut cur_rh);
                                 } else if j == n {
                                     break 'continue_;
@@ -320,7 +320,7 @@ fn reconstitute(
             kern.set_sync_tag(&mut st.mem, 0);
         }
 
-        if st.mainloop.lig_stack.0 > TEX_NULL {
+        if st.mainloop.lig_stack.raw() > TEX_NULL {
             st.mainloop.cur_q = t;
             st.mainloop.cur_l = i32::from(lig_item(st.mainloop.lig_stack).character(&st.mem));
             st.mainloop.ligature_present = true;
@@ -475,7 +475,7 @@ impl MemState {
         minor_tail: &mut MemPtr,
     ) {
         let hold = HOLD_HEAD.link(self);
-        if hold.0 <= TEX_NULL {
+        if hold.raw() <= TEX_NULL {
             return;
         }
         if !minor_tail.is_null() {
@@ -582,7 +582,7 @@ fn insert_hyphens(
                 disc.set_link(&mut st.mem, hold);
                 let mut major_tail = disc.ptr();
                 let mut r_count = 0;
-                while major_tail.link(&st.mem).0 > TEX_NULL {
+                while major_tail.link(&st.mem).raw() > TEX_NULL {
                     major_tail = major_tail.link(&st.mem);
                     r_count += 1;
                 }
@@ -640,7 +640,7 @@ fn insert_hyphens(
                         j = reconstitute(st, j, hn, bchar, TOO_BIG_CHAR)? + 1;
                         let hold = HOLD_HEAD.link(&st.mem);
                         major_tail.set_link(&mut st.mem, hold);
-                        while major_tail.link(&st.mem).0 > TEX_NULL {
+                        while major_tail.link(&st.mem).raw() > TEX_NULL {
                             major_tail = major_tail.link(&st.mem);
                             r_count += 1;
                         }

@@ -592,7 +592,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
             && st.scanner.align_state == 0
         {
             if st.scanner.scanner_status == ScannerStatus::Aligning
-                || st.scanner.cur_align.0 == TEX_NULL
+                || st.scanner.cur_align.raw() == TEX_NULL
             {
                 return Err(Abort::Fatal(
                     "(interwoven alignment preambles are not allowed)",

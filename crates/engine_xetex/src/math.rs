@@ -19,7 +19,7 @@ pub(crate) const DELIMITED_CODE: i32 = 3;
 pub(crate) const ABOVE_CODE: i32 = 0;
 pub(crate) const OVER_CODE: i32 = 1;
 pub(crate) const ATOP_CODE: i32 = 2;
-pub(crate) const DEFAULT_CODE: Scaled = Scaled(0x4000_0000);
+pub(crate) const DEFAULT_CODE: Scaled = Scaled::from_raw(0x4000_0000);
 
 const BOTTOM_ACC: u16 = 2;
 pub(crate) const MIDDLE_NOAD: u16 = 1;

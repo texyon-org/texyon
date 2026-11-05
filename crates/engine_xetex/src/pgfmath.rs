@@ -330,7 +330,7 @@ fn lookup(st: &mut EngineState, name: &str) -> Option<i32> {
         .id_lookup(&mut st.strings, &buffer, 0, buffer.len() as i32);
     st.eqtb.no_new_control_sequence = saved;
     match found {
-        Ok(p) if p >= HASH_BASE && st.eqtb.text(p).0 > 0 => Some(p),
+        Ok(p) if p >= HASH_BASE && st.eqtb.text(p).raw() > 0 => Some(p),
         _ => None,
     }
 }
@@ -340,7 +340,7 @@ fn cs_name(st: &EngineState, cs: i32) -> Option<String> {
         return None;
     }
     let text = st.eqtb.text(cs);
-    if text.0 <= 0 || text.0 >= st.strings.str_ptr {
+    if text.raw() <= 0 || text.raw() >= st.strings.str_ptr {
         return None;
     }
     crate::introspect::read_string(st, text)
@@ -359,7 +359,7 @@ fn macro_tokens(st: &EngineState, cs: i32) -> Option<Vec<Token>> {
     if !matches!(st.eqtb.eq_type(cs), Cmd::Call | Cmd::LongCall) {
         return None;
     }
-    let first = MemPtr(st.eqtb.equiv(cs)).link(&st.mem);
+    let first = MemPtr::from_raw(st.eqtb.equiv(cs)).link(&st.mem);
     if first.is_null() || first.token(&st.mem) != Token::END_MATCH {
         return None;
     }
@@ -525,7 +525,7 @@ fn register_item(st: &EngineState, cs: i32) -> Result<Item, &'static str> {
         Cmd::AssignDimen => Ok(Item::Dimen(st.eqtb.int_at(m))),
         Cmd::AssignInt => Ok(Item::Count(st.eqtb.int_at(m))),
         Cmd::Register if ValueLevel::from_raw(m).is_none() => {
-            let sa = NodePtr::<SaNode>::at(m);
+            let sa = NodePtr::<SaNode>::at(MemPtr::from_raw(m));
             match sa.sa_type(&st.mem) {
                 ValueLevel::Int => Ok(Item::Count(sa.sa_int(&st.mem))),
                 ValueLevel::Dimen => Ok(Item::Dimen(sa.sa_int(&st.mem))),
@@ -549,10 +549,10 @@ fn selected_font(st: &mut EngineState, known: &KnownCs) -> Option<eval::Font> {
     if st.eqtb.eq_type(id) != Cmd::SetFont {
         return None;
     }
-    let font = FontId(st.eqtb.equiv(id));
+    let font = FontId::from_raw(st.eqtb.equiv(id));
     Some(eval::Font {
-        quad: st.fonts.param(font, crate::fonts::QUAD_CODE).0,
-        x_height: st.fonts.param(font, crate::fonts::X_HEIGHT_CODE).0,
+        quad: st.fonts.param(font, crate::fonts::QUAD_CODE).raw(),
+        x_height: st.fonts.param(font, crate::fonts::X_HEIGHT_CODE).raw(),
     })
 }
 
@@ -576,7 +576,7 @@ fn result_macro(st: &mut EngineState, text: &[u8]) -> Result<MemPtr, Abort> {
 fn commit(st: &mut EngineState, known: &KnownCs, answer: &Answer) -> Result<(), Abort> {
     let body = match answer {
         Answer::Expression => {
-            let shared = MemPtr(st.eqtb.equiv(known.expression()));
+            let shared = MemPtr::from_raw(st.eqtb.equiv(known.expression()));
             st.mem.add_token_ref(shared);
             shared
         }
@@ -598,7 +598,7 @@ fn commit(st: &mut EngineState, known: &KnownCs, answer: &Answer) -> Result<(), 
         &mut st.scanner,
         known.result(),
         Cmd::Call,
-        body.0,
+        body.raw(),
     )
 }
 
@@ -916,7 +916,7 @@ pub(crate) fn native_macro(st: &mut EngineState, kind: Native, args: &[MemPtr]) 
                         &mut st.scanner,
                         cs,
                         Cmd::Call,
-                        body.0,
+                        body.raw(),
                     )?;
                 }
                 Effect::Comparison(value) => {
