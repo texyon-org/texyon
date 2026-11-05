@@ -260,6 +260,11 @@ impl<P: ResourceProvider, B: Backend, S: FrameSink> ResidentPreviewProcessor<P, 
         self.engine.defined_commands()
     }
 
+    /// Make the next compile typeset the whole document, for a multi-pass build.
+    pub fn replay_from_start(&mut self) {
+        self.engine.replay_from_start();
+    }
+
     /// Reach the publication sink mutably, e.g. to drain retained frames.
     pub fn sink_mut(&mut self) -> &mut S {
         &mut self.sink

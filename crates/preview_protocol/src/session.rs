@@ -207,6 +207,11 @@ pub enum HostRequest<B> {
         /// Leave pages out of compile reports and draw them to pixels instead.
         #[serde(default)]
         raster: bool,
+        /// What `\today` and `\time` say, as wall-clock seconds since the epoch.
+        /// Fixed for the session so an unchanged document typesets the same.
+        /// Absent means 1970.
+        #[serde(default)]
+        build_date: Option<u64>,
         /// Let a compile send only the part of a page that changed since the
         /// session last drew it at the same scale.
         #[serde(default)]
@@ -257,6 +262,10 @@ pub enum SessionRequest {
     /// Typeset what a viewport-bounded compile left.
     ContinueTail,
 
+    /// Typeset the whole document from the top, so the files it reads back
+    /// from its last run (the `.aux`, the `.toc`) are read again.
+    FullPass,
+
     /// Draw published pages to pixels, in a raster session.
     #[serde(rename_all = "camelCase")]
     Raster {
@@ -267,7 +276,12 @@ pub enum SessionRequest {
     },
 
     /// Write the current document as PDF.
-    Export,
+    #[serde(rename_all = "camelCase")]
+    Export {
+        /// The PDF's creation date, in seconds since the epoch. Absent means now.
+        #[serde(default)]
+        now: Option<u64>,
+    },
 
     /// Find the boxes a source line produced.
     #[serde(rename_all = "camelCase")]
@@ -419,6 +433,16 @@ pub enum Response<B> {
     Ok,
     /// A compile or tail run finished.
     Compiled(Box<CompileReport<B>>),
+    /// A full pass finished.
+    #[serde(rename_all = "camelCase")]
+    Passed {
+        /// What it produced.
+        #[serde(flatten)]
+        report: Box<CompileReport<B>>,
+        /// Whether a file it reads back came out different, so another pass
+        /// would typeset differently. Not `changed`, which the report uses for pages.
+        rerun: bool,
+    },
     /// A PDF.
     Exported(B),
     /// The answer to a search.

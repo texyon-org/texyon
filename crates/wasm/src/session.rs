@@ -1,6 +1,10 @@
 //! The shared [`PreviewSession`] with the JavaScript host behind it.
 
-use std::{cell::RefCell, rc::Rc, time::Duration};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    time::{Duration, SystemTime},
+};
 
 use texyon_engine_xetex::EnginePreviewConfig;
 use texyon_errors::{anyhow::anyhow, Result};
@@ -45,8 +49,16 @@ impl SessionHost for WasmHost {
 pub type Session = PreviewSession<HostResources, MupdfBackend, WasmHost>;
 
 /// Create a session. The format is read on the first compile.
-pub fn open(format_name: &str, primary_name: &str, raster: bool) -> Result<Session> {
+pub fn open(
+    format_name: &str,
+    primary_name: &str,
+    raster: bool,
+    build_date: Option<u64>,
+) -> Result<Session> {
     let mut engine = EnginePreviewConfig::new(format_name);
+    if let Some(seconds) = build_date {
+        engine.build_date = SystemTime::UNIX_EPOCH + Duration::from_secs(seconds);
+    }
     engine.ladder_target_bytes = LADDER_TARGET_BYTES;
     engine.ladder_hard_bytes = LADDER_HARD_BYTES;
     engine.tail_chunk = Some(TAIL_CHUNK);

@@ -80,12 +80,13 @@ fn dispatch(text: &str) -> Response<HostBuffer> {
             format,
             primary,
             raster,
+            build_date,
             ..
         }) => {
             if slot.is_some() {
                 return Response::error("a session is already open");
             }
-            match session::open(&format, &primary, raster) {
+            match session::open(&format, &primary, raster, build_date) {
                 Ok(session) => {
                     *slot = Some(session);
                     Response::Ok

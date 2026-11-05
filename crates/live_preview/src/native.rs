@@ -44,6 +44,8 @@ pub struct OpenRequest {
     pub raster: bool,
     /// Whether a compile may send only the changed part of a page.
     pub patches: bool,
+    /// Wall-clock seconds since the epoch for `\today`, or `None` for 1970.
+    pub build_date: Option<u64>,
 }
 
 /// Sources the session does not hold, read from the project directory.
@@ -176,6 +178,7 @@ where
                 root,
                 raster,
                 patches,
+                build_date,
             })) => match (&session, root) {
                 (Some(_), _) => (Response::error("a session is already open"), false),
                 (None, None) => (Response::error("a native session needs a root"), false),
@@ -185,6 +188,7 @@ where
                     root,
                     raster,
                     patches,
+                    build_date,
                 }) {
                     Ok(opened) => {
                         *cancellation.lock().unwrap_or_else(PoisonError::into_inner) =
@@ -295,6 +299,7 @@ mod tests {
             root: Some("/doc".into()),
             raster: true,
             patches: true,
+            build_date: Some(1_700_000_000),
         });
         let encoded = rmp_serde::to_vec_named(&open).unwrap();
         assert_eq!(

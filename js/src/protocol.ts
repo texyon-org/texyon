@@ -361,21 +361,25 @@ export interface EngineOptions {
   onRecompileNeeded?: () => void;
 }
 
+/** Where an export is, for a progress indicator. */
+export type ExportStep = { phase: "pass"; pass: number } | { phase: "writing" };
+
 /** What an export produced. */
 export interface ExportResult {
   /** The complete PDF. */
   pdf: Uint8Array<ArrayBuffer>;
   /**
-   * Frames produced while settling the document before exporting.
+   * Frames produced by the full passes before exporting.
    *
-   * A viewport-bounded compile stops at the last visible page, and exporting
-   * that would give you a PDF missing its tail — so {@link
-   * TexyonEngine.exportPdf} finishes the document first. These are the frames
-   * that produced, in order, and a viewer that wants to stay in step with the
-   * engine should apply them exactly as it applies a compile result. Empty when
-   * the document was already settled, which is the usual case.
+   * {@link TexyonEngine.exportPdf} typesets the whole document again until
+   * what it reads back (the .aux) stops changing, so references and page
+   * numbers agree. These are the frames that produced, in order, and a viewer
+   * that wants to stay in step with the engine should apply them exactly as it
+   * applies a compile result.
    */
   tail: CompileResult[];
+  /** Whether the passes ran out before the document stopped changing. */
+  unsettled: boolean;
   /** Milliseconds spent in xdvipdfmx, measured in the Worker. */
   elapsedMs: number;
 }
@@ -425,6 +429,7 @@ export type WorkerRequest =
       vBp: number;
     }
   | { id: number; kind: "continueTail" }
+  | { id: number; kind: "fullPass" }
   | { id: number; kind: "export" }
   | { id: number; kind: "cancel" }
   | { id: number; kind: "shutdown" };
@@ -443,6 +448,7 @@ export interface SerializableEngineOptions {
 export type WorkerResponse =
   | { id: number; kind: "ok" }
   | { id: number; kind: "compiled"; result: CompileResult }
+  | { id: number; kind: "passed"; result: CompileResult; changed: boolean }
   | { id: number; kind: "exported"; pdf: Uint8Array<ArrayBuffer>; elapsedMs: number }
   | { id: number; kind: "located"; located: Located | null; source: SourceSpot | null }
   | { id: number; kind: "commands"; commands: EngineCommand[] }

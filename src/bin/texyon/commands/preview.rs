@@ -3,7 +3,7 @@
 
 use std::{
     io::{BufReader, BufWriter},
-    time::SystemTime,
+    time::{Duration, SystemTime},
 };
 
 use clap::Parser;
@@ -129,7 +129,10 @@ fn open(
     };
 
     let mut engine = EnginePreviewConfig::new(format_name);
-    engine.build_date = SystemTime::UNIX_EPOCH;
+    engine.build_date = SystemTime::UNIX_EPOCH
+        + request
+            .build_date
+            .map_or(Duration::ZERO, Duration::from_secs);
     engine.deterministic = true;
     engine.verify_rewinds = tuning.verify_rewinds;
     engine.ladder_target_bytes = tuning.ladder_bytes;

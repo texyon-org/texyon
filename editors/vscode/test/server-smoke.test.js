@@ -24,7 +24,9 @@ test("the real server opens, draws pixels, finds sources, exports and shuts down
   });
   t.after(() => engine.process.kill());
 
-  const opened = await engine.request({ op: "open", format: "latex", primary: "main.tex", root, raster: true });
+  const opened = await engine.request({
+    op: "open", format: "latex", primary: "main.tex", root, raster: true, buildDate: 1_700_000_000
+  });
   assert.equal(opened.status, "ok", stderr);
 
   const text = "\\documentclass{article}\\begin{document}Hello preview.\n\\input{chapter}\n\\undefined\n\\end{document}\n";
@@ -61,12 +63,13 @@ test("the real server opens, draws pixels, finds sources, exports and shuts down
   assert.equal(located.status, "located");
   assert.equal(located.rect.pageIndex, 0);
 
-  // Export refuses while pages past the viewport are left to typeset.
-  for (;;) {
-    const settled = await engine.request({ op: "continueTail" });
-    if (settled.status === "idle" || !settled.tailPending) break;
-  }
-  const exported = await engine.request({ op: "export" });
+  // A full pass typesets the whole document, so export has no tail left to refuse.
+  const passed = await engine.request({ op: "fullPass" });
+  assert.equal(passed.status, "passed", passed.message);
+  assert.equal(passed.tailPending, false);
+  assert.match(passed.log, /chapter/);
+
+  const exported = await engine.request({ op: "export", now: 1_700_000_000 });
   assert.equal(exported.status, "exported", exported.message);
   assert.equal(Buffer.from(exported.data.subarray(0, 5)).toString(), "%PDF-");
 

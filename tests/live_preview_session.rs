@@ -12,8 +12,8 @@ use texyon::io::testing::SingleInputFileIo;
 use texyon::io::{IoProvider, IoStack, MemoryIo};
 use texyon::live_preview::{
     AssembledDocument, DocumentAssembler, DocumentFragment, DocumentRoot, FramePatch, FrameSink,
-    PreviewWorkerProcessor, ResidentEngineOutput, ResidentEngineSupport, ResidentPreviewProcessor,
-    ResidentXeTeX, SourceSet, WorkerRun,
+    PreviewSession, PreviewWorkerProcessor, ResidentEngineOutput, ResidentEngineSupport,
+    ResidentPreviewProcessor, ResidentXeTeX, SessionConfig, SessionHost, SourceSet, WorkerRun,
 };
 use texyon_bridge_core::{CoreBridgeLauncher, MinimalDriver};
 use texyon_io_base::stdstreams::BufferedPrimaryIo;
@@ -1557,23 +1557,110 @@ fn alternating_editor_children_and_primary_share_one_snapshot_revision() {
     runner.finish().unwrap();
 }
 
+/// Renderer resources for plain TeX's Computer Modern, from the test assets.
+struct ClassicResources;
+
+impl ResourceProvider for ClassicResources {
+    fn resolve(&self, request: &ResourceRequest) -> Result<Option<Resource>, RenderError> {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let path = match request.kind {
+            ResourceKind::Tfm => root.join("tests/assets/cmr10.tfm"),
+            ResourceKind::FontProgram => root.join("tests/assets/cmr10.pfb"),
+            _ => return Ok(None),
+        };
+        Ok(Some(Resource::from_bytes(std::fs::read(path).unwrap())))
+    }
+}
+
+/// A host whose sources all arrive inline.
+struct InlineSources;
+
+impl SessionHost for InlineSources {
+    fn read_source(&mut self, _path: &str) -> texyon_errors::Result<Option<Vec<u8>>> {
+        Ok(None)
+    }
+}
+
+/// Compile `text` once, then run one full pass, returning that pass's
+/// transcript and whether it asked for another.
+fn compile_then_full_pass(text: &str) -> (String, bool) {
+    let temp = tempfile::tempdir().unwrap();
+    let mut session = PreviewSession::new(
+        SessionConfig {
+            engine: EnginePreviewConfig::new("plain.fmt"),
+            root: DocumentRoot::new(temp.path()).unwrap(),
+            primary: "main.tex".into(),
+            raster: false,
+            patches: false,
+            limits: ProtocolLimits::default(),
+        },
+        ResidentEngineSupport::Fixture {
+            format_path: util::ensure_plain_format().unwrap(),
+            assets_dir: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets"),
+        },
+        ClassicResources,
+        NullBackend,
+        InlineSources,
+    );
+    let first = session
+        .compile(
+            [("main.tex".to_owned(), 1)].into(),
+            Default::default(),
+            [("main.tex".to_owned(), text.to_owned())].into(),
+            None,
+            None,
+        )
+        .unwrap();
+    assert!(String::from_utf8_lossy(&first.log).contains("read=none"));
+    let (pass, rerun) = session.full_pass().unwrap();
+    session.finish().unwrap();
+    (String::from_utf8_lossy(&pass.log).into_owned(), rerun)
+}
+
+/// Reads `\jobname.aux` at the start and writes `written` to it at the end,
+/// with enough pages between that a resumed run starts past the read.
+fn aux_round_trip(written: &str) -> String {
+    let mut text = String::from(
+        "\\hsize=220pt\n\\newread\\r \\openin\\r=\\jobname.aux\n\\ifeof\\r \\def\\v{none}\\else \\read\\r to\\v \\closein\\r\\fi\n\\message{read=\\v}\n",
+    );
+    for index in 0..2400 {
+        text.push_str(&format!(
+            "line {index} has enough words for typesetting\\par\n"
+        ));
+    }
+    text.push_str(&format!(
+        "\\immediate\\openout1=\\jobname.aux \\immediate\\write1{{{written}}}\\immediate\\closeout1\n\\bye\n"
+    ));
+    text
+}
+
+#[test]
+fn a_full_pass_rereads_what_the_last_run_wrote() {
+    let _serial = session_test_lock();
+    util::set_test_root();
+    let (log, rerun) = compile_then_full_pass(&aux_round_trip("seen"));
+    assert!(
+        log.contains("read=seen"),
+        "the pass did not read the .aux back:\n{log}"
+    );
+    assert!(!rerun, "an unchanged .aux asked for another pass");
+}
+
+#[test]
+fn a_full_pass_asks_for_another_while_the_aux_changes() {
+    let _serial = session_test_lock();
+    util::set_test_root();
+    // Writes what it read plus one more mark, so every pass changes the .aux.
+    let (log, rerun) = compile_then_full_pass(&aux_round_trip("\\v x"));
+    assert!(
+        log.contains("read=nonex"),
+        "the pass did not read the .aux back:\n{log}"
+    );
+    assert!(rerun, "a changed .aux did not ask for another pass");
+}
+
 #[test]
 fn resident_processor_publishes_engine_output_as_svg_frame() {
-    struct ClassicResources;
-
-    impl ResourceProvider for ClassicResources {
-        fn resolve(&self, request: &ResourceRequest) -> Result<Option<Resource>, RenderError> {
-            let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-            let path = match request.kind {
-                ResourceKind::Tfm => root.join("tests/assets/cmr10.tfm"),
-                ResourceKind::FontProgram => root.join("tests/assets/cmr10.pfb"),
-                ResourceKind::Encoding => return Ok(None),
-                _ => return Ok(None),
-            };
-            Ok(Some(Resource::from_bytes(std::fs::read(path).unwrap())))
-        }
-    }
-
     let _serial = session_test_lock();
     util::set_test_root();
     let temp = tempfile::tempdir().unwrap();

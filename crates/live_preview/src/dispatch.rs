@@ -1,5 +1,7 @@
 //! Answer protocol requests on an open session, the same way for every host.
 
+use std::time::{Duration, SystemTime};
+
 use texyon_engine_xetex::introspect::{self, DefinedCommand};
 use texyon_preview_protocol::session::{
     Command, CommandKind, CompileReport, Destination, Link, PageOverlay, RasterPage, RenderedPage,
@@ -48,10 +50,21 @@ where
             },
             Err(error) => Response::error(error),
         },
-        SessionRequest::Export => match session.export_pdf() {
-            Ok(pdf) => Response::Exported(B::hand_over(pdf)),
+        SessionRequest::FullPass => match session.full_pass() {
+            Ok((output, rerun)) => Response::Passed {
+                report: Box::new(report(session.host(), output)),
+                rerun,
+            },
             Err(error) => Response::error(error),
         },
+        SessionRequest::Export { now } => {
+            match session.export_pdf(now.map_or_else(SystemTime::now, |seconds| {
+                SystemTime::UNIX_EPOCH + Duration::from_secs(seconds)
+            })) {
+                Ok(pdf) => Response::Exported(B::hand_over(pdf)),
+                Err(error) => Response::error(error),
+            }
+        }
         SessionRequest::ForwardSearch { path, line } => {
             let found = session.forward_search(&path, line);
             Response::Located {

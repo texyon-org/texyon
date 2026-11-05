@@ -107,6 +107,7 @@ type RawResponse =
   | { status: "located"; rect: SyncRect | null; boxes?: SyncRect[]; source: SourceSpot | null }
   | { status: "commands"; commands: EngineCommand[] }
   | ({ status: "compiled" } & RawCompileReport)
+  | ({ status: "passed"; rerun: boolean } & RawCompileReport)
   | { status: "exported"; ptr: number; len: number }
   | { status: "rastered"; pages: RawRaster[] }
   | { status: "idle" }
@@ -758,6 +759,7 @@ async function init(opts: SerializableEngineOptions): Promise<void> {
     format: parsed.format,
     primary: opts.primary,
     raster: opts.raster,
+    buildDate: wallClock(),
   });
   if (opened.status === "error") throw new Error(opened.message);
 
@@ -796,6 +798,16 @@ async function takeRasters(raw: RawRaster[], scale: number): Promise<PageRaster[
 }
 
 /** Turn the module's compile report into the public result. */
+/**
+ * Local wall-clock seconds, for `\today`. The engine reads its date as UTC, so
+ * this is shifted by the time zone, and it is taken once per session so an
+ * unchanged document still typesets to the same bytes.
+ */
+function wallClock(): number {
+  const now = new Date();
+  return Math.floor(now.getTime() / 1000) - now.getTimezoneOffset() * 60;
+}
+
 function collect(
   report: RawCompileReport,
   elapsedMs: number,
@@ -872,7 +884,8 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       }
 
       case "compile":
-      case "continueTail": {
+      case "continueTail":
+      case "fullPass": {
         // Before anything that can fail, so the page and the Worker agree on
         // what the sources say whenever a compile message was accepted.
         if (request.kind === "compile") {
@@ -897,6 +910,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
             format: formatName,
             primary: options!.primary,
             raster: options!.raster,
+            buildDate: wallClock(),
           });
           if (reopened.status === "error") throw new Error(reopened.message);
           restartPending = false;
@@ -919,7 +933,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
             scale: request.scale,
           });
         } else {
-          reply = call({ op: "continueTail" });
+          reply = call({ op: request.kind });
         }
         const elapsed = performance.now() - engineStart;
 
@@ -927,12 +941,14 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
           post({ id: request.id, kind: "error", message: reply.message });
         } else if (reply.status === "idle") {
           post({ id: request.id, kind: "idle" });
-        } else if (reply.status === "compiled") {
+        } else if (reply.status === "compiled" || reply.status === "passed") {
           compiledSinceOpen = true;
           const rasters = await takeRasters(reply.rasters, rasterScale ?? 0);
           const result = collect(reply, elapsed, rasters);
           post(
-            { id: request.id, kind: "compiled", result },
+            reply.status === "passed"
+              ? { id: request.id, kind: "passed", result, changed: reply.rerun }
+              : { id: request.id, kind: "compiled", result },
             rasters.map(({ bitmap }) => bitmap),
           );
           // Deliberately not awaited: the frame is already on its way, and
@@ -963,7 +979,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
       case "export": {
         const started = performance.now();
-        const reply = call({ op: "export" });
+        const reply = call({ op: "export", now: Math.floor(Date.now() / 1000) });
 
         if (reply.status === "error") {
           post({ id: request.id, kind: "error", message: reply.message });

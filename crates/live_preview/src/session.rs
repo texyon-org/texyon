@@ -430,11 +430,37 @@ impl<P: ResourceProvider + 'static, B: Backend + 'static, H: SessionHost> Previe
         Some(found)
     }
 
+    /// Typeset the whole document again from the top, so what it reads back
+    /// from its own last run (the `.aux`, the `.toc`) is read afresh.
+    ///
+    /// Also returns whether any such file came out different, which means
+    /// another pass would typeset differently.
+    pub fn full_pass(&mut self) -> Result<(CompileOutput, bool)> {
+        let Some(sources) = self.sources.as_ref() else {
+            bail!("nothing has been typeset yet");
+        };
+        let snapshot = sources.snapshot();
+        let skip = [self.log_name.as_str(), self.xdv_name.as_str()];
+        let before = self.processor.engine().written_fingerprint(&skip);
+
+        self.begin_operation()?;
+        self.processor.replay_from_start();
+        let run = self
+            .processor
+            .compile(snapshot, self.request_seq, None, &self.cancellation);
+        let output = self.collect(normalize(run))?;
+
+        let skip = [self.log_name.as_str(), self.xdv_name.as_str()];
+        let rerun = self.processor.engine().written_fingerprint(&skip) != before;
+        Ok((output, rerun))
+    }
+
     /// Run the preview's own XDV through xdvipdfmx, so the export matches
     /// what is on screen.
     ///
-    /// Refuses while a tail is pending, which would truncate the PDF.
-    pub fn export_pdf(&mut self) -> Result<Vec<u8>> {
+    /// Refuses while a tail is pending, which would truncate the PDF. `now`
+    /// is the creation date to record, since the engine's clock is pinned.
+    pub fn export_pdf(&mut self, now: SystemTime) -> Result<Vec<u8>> {
         let Some(document) = self.processor.pipeline().last_document() else {
             bail!("nothing has been typeset yet");
         };
@@ -455,8 +481,7 @@ impl<P: ResourceProvider + 'static, B: Backend + 'static, H: SessionHost> Previe
                 .engine_mut()
                 .with_support(&mut files, &mut |launcher| {
                     let mut engine = XdvipdfmxEngine::default();
-                    // The default is the Unix epoch.
-                    engine.build_date(SystemTime::now());
+                    engine.build_date(now);
                     engine.process(launcher, xdv_name, pdf_name)
                 })
                 .map_err(|error| anyhow!("could not write the PDF: {error}"))?;

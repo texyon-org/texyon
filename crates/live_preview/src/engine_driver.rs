@@ -1,6 +1,7 @@
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     fmt,
+    hash::{DefaultHasher, Hash, Hasher},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -327,6 +328,24 @@ impl ResidentXeTeX {
             .map(|file| file.data.clone())
     }
 
+    /// A hash of every file engine operations wrote, except `skip`, to tell
+    /// whether a pass changed what the next one reads back. Terminal output
+    /// is never read back, so it is skipped too.
+    pub fn written_fingerprint(&self, skip: &[&str]) -> BTreeMap<String, u64> {
+        let stdout = self.output.stdout_key();
+        self.output
+            .files
+            .borrow()
+            .iter()
+            .filter(|(name, _)| name.as_str() != stdout && !skip.contains(&name.as_str()))
+            .map(|(name, file)| {
+                let mut hasher = DefaultHasher::new();
+                file.data.hash(&mut hasher);
+                (name.clone(), hasher.finish())
+            })
+            .collect()
+    }
+
     /// Run another engine over `files` stacked on this engine's support I/O.
     pub fn with_support(
         &mut self,
@@ -344,6 +363,13 @@ impl ResidentXeTeX {
             .as_ref()
             .map(IncrementalXeTeXSession::defined_commands)
             .unwrap_or_default()
+    }
+
+    /// Make the next compile typeset the whole document. A no-op before the first.
+    pub fn replay_from_start(&mut self) {
+        if let Some(session) = &mut self.session {
+            session.replay_from_start();
+        }
     }
 
     /// Whether this resident engine retains a viewport tail continuation.
