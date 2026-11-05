@@ -2,7 +2,7 @@
   "name": "texyon",
   "displayName": "TeXyoN Live Preview",
   "description": "Live LaTeX preview that updates as you type, backed by a resident TeXyoN engine.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "texyon",
   "license": "AGPL-3.0-or-later",
   "icon": "media/icon.png",
