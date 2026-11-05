@@ -24,13 +24,14 @@ use texyon_errors::{
 };
 use texyon_io_base::MemoryIo;
 use texyon_preview_protocol::{
-    session::{Outcome, SourceEdit},
+    session::{Outcome, PixelRect, SourceEdit},
     OperationMetrics, ProtocolLimits, RequestSeq, SourceFile, SourceLocation,
 };
 use texyon_preview_render::{Backend, Destination, Link, PageVisual, ResourceProvider};
 
 use crate::{
     diagnostics::{self, Diagnostic},
+    raster_patch::{changed_rect, crop, DrawnPages},
     AcceptedSourceSnapshot, CollectingSink, DocumentRoot, EngineSupport, ForwardSearch,
     PreviewWorkerProcessor, PublishedFrame, ResidentPreviewError, ResidentPreviewProcessor,
     ResidentXeTeX, SourceSet, WorkerRun,
@@ -83,6 +84,8 @@ pub struct SessionConfig {
     pub primary: String,
     /// Leave pages out of compile output and draw them to pixels on request.
     pub raster: bool,
+    /// Let a compile send only the part of a page that changed, see [`RasterPage::region`].
+    pub patches: bool,
     /// Source size limits.
     pub limits: ProtocolLimits,
 }
@@ -107,6 +110,8 @@ pub struct RenderedPage {
 pub struct RasterPage {
     /// Zero-based page index.
     pub index: usize,
+    /// Where `pixels` go on the page last drawn at this scale, or `None` for the whole page.
+    pub region: Option<PixelRect>,
     /// Width and height as little-endian `u32`, then RGBA rows.
     pub pixels: Vec<u8>,
 }
@@ -174,6 +179,8 @@ pub struct PreviewSession<P, B, H> {
     pdf_name: String,
     limits: ProtocolLimits,
     raster: bool,
+    /// What the client was last sent of each page, in a session that sends patches.
+    drawn: Option<DrawnPages>,
     /// Where the last compile asked for pixels, kept for its tail.
     view: Option<RasterView>,
 }
@@ -192,6 +199,7 @@ impl<P: ResourceProvider + 'static, B: Backend + 'static, H: SessionHost> Previe
             root,
             primary,
             raster,
+            patches,
             limits,
         } = config;
         let cancellation = EngineCancellation::new();
@@ -226,6 +234,7 @@ impl<P: ResourceProvider + 'static, B: Backend + 'static, H: SessionHost> Previe
             pdf_name,
             limits,
             raster,
+            drawn: patches.then(DrawnPages::default),
             view: None,
         }
     }
@@ -276,20 +285,64 @@ impl<P: ResourceProvider + 'static, B: Backend + 'static, H: SessionHost> Previe
         self.collect(normalize(run))
     }
 
-    /// Draw published pages to pixels at `scale` pixels per bp.
+    /// Draw published pages to pixels at `scale` pixels per bp, whole.
     pub fn rasterize(&mut self, pages: &[usize], scale: f32) -> Result<Vec<RasterPage>> {
+        Ok(self
+            .draw(pages, scale)?
+            .into_iter()
+            .map(|(index, pixels)| {
+                if let Some(drawn) = &mut self.drawn {
+                    drawn.replace(index, scale, pixels.clone());
+                }
+                RasterPage {
+                    index,
+                    region: None,
+                    pixels,
+                }
+            })
+            .collect())
+    }
+
+    /// Draw changed pages, as patches against what the client has where that is smaller.
+    fn rasterize_patched(&mut self, pages: &[usize], scale: f32) -> Result<Vec<RasterPage>> {
+        let Some(mut drawn) = self.drawn.take() else {
+            return self.rasterize(pages, scale);
+        };
+        let pages = self.draw(pages, scale).map(|pages| {
+            pages
+                .into_iter()
+                .map(|(index, pixels)| {
+                    let patch = drawn
+                        .replace(index, scale, pixels.clone())
+                        .and_then(|before| changed_rect(&before, &pixels))
+                        .and_then(|rect| Some((rect, crop(&pixels, rect)?)));
+                    match patch {
+                        Some((rect, pixels)) => RasterPage {
+                            index,
+                            region: Some(rect),
+                            pixels,
+                        },
+                        None => RasterPage {
+                            index,
+                            region: None,
+                            pixels,
+                        },
+                    }
+                })
+                .collect()
+        });
+        self.drawn = Some(drawn);
+        pages
+    }
+
+    fn draw(&mut self, pages: &[usize], scale: f32) -> Result<Vec<(usize, Vec<u8>)>> {
         if !self.raster {
             bail!("this session draws SVG");
         }
-        let drawn = self
-            .processor
+        self.processor
             .pipeline_mut()
             .rasterize(pages, scale)
-            .map_err(|error| anyhow!("could not draw the pages: {error}"))?;
-        Ok(drawn
-            .into_iter()
-            .map(|(index, pixels)| RasterPage { index, pixels })
-            .collect())
+            .map_err(|error| anyhow!("could not draw the pages: {error}"))
     }
 
     /// The changed pages the host is showing, drawn at its scale.
@@ -305,7 +358,7 @@ impl<P: ResourceProvider + 'static, B: Backend + 'static, H: SessionHost> Previe
             .filter(|index| (first..=last).contains(index))
             .collect();
         let started = Instant::now();
-        let rasters = self.rasterize(&pages, view.scale)?;
+        let rasters = self.rasterize_patched(&pages, view.scale)?;
         Ok((rasters, started.elapsed().as_secs_f64() * 1000.0))
     }
 

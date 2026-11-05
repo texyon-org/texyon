@@ -7,6 +7,7 @@ mod engine_driver;
 mod pipeline;
 mod processor;
 mod publication;
+mod raster_patch;
 mod session;
 mod sink;
 mod source;

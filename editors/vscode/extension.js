@@ -47,6 +47,7 @@ class PreviewSession {
         this.loop.schedule();
       })
     );
+    void vscode.commands.executeCommand("setContext", "texyon.previewOpen", true);
     this.start();
   }
 
@@ -66,6 +67,7 @@ class PreviewSession {
       compiled: (report) => this.compiled(report),
       failed: (message) => this.failed(message),
       busy: (running) => {
+        this.panel.post({ type: "busy", running });
         if (running) this.setStatus("$(sync~spin) TeXyoN: compiling…");
       }
     });
@@ -74,7 +76,8 @@ class PreviewSession {
       format: configuration.get("format", "latex"),
       primary: this.primary,
       root: this.root,
-      raster: true
+      raster: true,
+      patches: true
     });
     opened.then((response) => {
       if (response.status !== "ok") this.fatal(response.message || "could not open the preview session");
@@ -218,6 +221,10 @@ class PreviewSession {
     this.engine.cancel();
   }
 
+  zoom(action) {
+    this.panel.post({ type: "zoom", action });
+  }
+
   setStatus(text) {
     this.status.text = text;
     this.status.show();
@@ -250,6 +257,7 @@ class PreviewSession {
     void this.engine.close();
     for (const disposable of this.disposables.splice(0)) disposable.dispose();
     this.diagnostics.clear();
+    void vscode.commands.executeCommand("setContext", "texyon.previewOpen", false);
     if (!retainPanel) this.panel.dispose();
     this.onClose(this);
   }
@@ -257,7 +265,7 @@ class PreviewSession {
 
 /** Copy pixels out of the frame they were decoded from, so the webview gets only them. */
 function ownPixels(page) {
-  return { index: page.index, data: new Uint8Array(page.data) };
+  return { index: page.index, region: page.region || null, data: new Uint8Array(page.data) };
 }
 
 function withOwnedPixels(report) {
@@ -319,6 +327,11 @@ function activate(context) {
       vscode.window.showInformationMessage("Start a live preview and place the cursor in one of its TeX sources.");
     }
   });
+  for (const action of ["in", "out", "fit"]) {
+    command(`texyon.zoom${action[0].toUpperCase()}${action.slice(1)}`, () => {
+      if (activeSession) activeSession.zoom(action);
+    });
+  }
   command("texyon.exportPdf", async () => {
     if (!activeSession) {
       vscode.window.showInformationMessage("Start a live preview first.");

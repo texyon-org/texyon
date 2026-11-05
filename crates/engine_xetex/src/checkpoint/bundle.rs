@@ -99,7 +99,10 @@ impl EngineBundle {
         st.errors.clone_from(&self.errors);
 
         let mut dvi = take(&mut st.shipout.dvi);
+        // Operation-scoped, so a rewind after an abort still says where its transcript began.
+        let log_resumed_at = st.shipout.log_resumed_at;
         st.shipout = self.shipout.clone();
+        st.shipout.log_resumed_at = log_resumed_at;
         dvi.restore(&self.dvi);
         st.shipout.dvi = dvi;
 

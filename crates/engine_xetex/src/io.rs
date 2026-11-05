@@ -13,7 +13,7 @@ use texyon_bridge_core::EOF;
 pub(crate) use crate::bridge::{input_close, input_seek};
 use crate::bridge::{
     input_getc, input_open, input_open_primary, input_ungetc, last_input_abspath, output_close,
-    output_flush, output_open, output_putc, FileFormat,
+    output_flush, output_open, FileFormat,
 };
 use crate::cmd::{LEFT_BRACE, OTHER_CHAR, RELAX, SPACER};
 use crate::errors::Abort;
@@ -844,6 +844,8 @@ pub(crate) fn open_log_file(st: &mut EngineState) -> Result<(), Abort> {
         return Err(Abort::Internal("cannot open log file output"));
     }
     st.shipout.log_file = handle;
+    st.shipout.log_bytes = 0;
+    st.shipout.log_resumed_at = None;
 
     st.strings.texmf_log_name = make_name_string(st)?;
     st.shipout.selector = Selector::LogOnly;
@@ -882,6 +884,7 @@ pub(crate) fn reopen_resident_outputs(st: &mut EngineState) -> Result<(), Abort>
             return Err(Abort::Internal("cannot reopen log file output"));
         }
         st.shipout.log_file = handle;
+        st.shipout.log_resumed_at = Some(st.shipout.log_bytes);
     }
 
     if st.shipout.output_file_name != StrNumber::NONE {
@@ -921,9 +924,8 @@ pub(crate) fn close_files_and_terminate(st: &mut EngineState) -> Result<(), Abor
     crate::synctex::synctex_terminate(st);
 
     if st.errors.log_opened {
-        let log_file = st.shipout.log_file;
-        output_putc(log_file, b'\n');
-        output_close(log_file);
+        crate::output::log_putc(st, b'\n');
+        output_close(st.shipout.log_file);
         st.shipout.selector = st.shipout.selector.without_log();
         if st.shipout.selector == Selector::TermOnly {
             crate::output::print_nl(st, "Transcript written on ");
