@@ -2,7 +2,7 @@
 
 ## Project goal
 
-TeXyoN is a LaTeX engine built for live preview: XeTeX ported to Rust from Tectonic, kept resident between edits so a keystroke re-typesets only what it has to and redraws only the pages that changed. Two frontends drive it: the web editor (texyon-org/editor, through the wasm build) and the VS Code extension in `editors/vscode` (through the native binary).
+TeXyoN is a LaTeX engine built for live preview: XeTeX ported to Rust from Tectonic, kept resident between edits so a keystroke re-typesets only what it has to and redraws only the pages that changed. Two frontends drive it: the web editor (texyon-org/editor, through the wasm build) and the VS Code extension in `packages/vscode` (through the native binary).
 
 `README.md` is the front door and should describe the project this way: what it does, current status, how to build and run it.
 
@@ -32,7 +32,7 @@ TeXyoN is a LaTeX engine built for live preview: XeTeX ported to Rust from Tecto
 - `cargo fmt --all` (stable rustfmt), `cargo clippy -p <crate> --all-targets --no-deps -- -D warnings`, `cargo test -p <crate>` for what changed.
 - Engine behaviour changes: the goldens corpus (`crates/engine_xetex/scripts/corpus.sh`) and the upstream harness (`crates/engine_xetex/tests/upstream/run.py`). Both take minutes and load the machine, so ask before running them.
 - Wasm changes: the real test is the editor. Build the engine assets from the editor repo and type in `/sample`.
-- `editors/vscode`: `npm test`.
+- `packages/vscode`: `npm test`.
 - Agent worktrees use their own target directory, never the main checkout's.
 
 ## Commits

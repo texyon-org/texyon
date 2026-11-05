@@ -26,7 +26,7 @@ categories = [
 ]
 license = "MIT"
 edition = "2021"
-exclude = ["/dist/", "/reference_sources/", "/release-bundle/"]
+exclude = ["/build/", "/reference_sources/", "/release-bundle/"]
 
 [workspace]
 members = [
@@ -151,7 +151,7 @@ tempfile = "^3.1"
 [package.metadata.vcpkg]
 git = "https://github.com/microsoft/vcpkg"
 rev = "a62ce77d56ee07513b4b67de1ec2daeaebfae51a"
-overlay-triplets-path = "dist/vcpkg-triplets"
+overlay-triplets-path = "build/vcpkg/vcpkg-triplets"
 
 # If other targets start using custom triplets like x86_64-pc-windows-msvc,
 # add them to crates/dep_support/src/lib.rs:new_from_vcpkg() to give users

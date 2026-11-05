@@ -47,7 +47,7 @@ function intoModule(bytes) {
   return { ptr, len: bytes.length };
 }
 
-/** The WASI surface the module touches. See js/src/wasi.ts for the real one. */
+/** The WASI surface the module touches. See packages/wasm/src/wasi.ts for the real one. */
 function wasiImports() {
   const view = () => new DataView(engine.memory.buffer);
   const ok = () => 0;
@@ -117,7 +117,7 @@ function wasiImports() {
     poll_oneoff: () => 52,
     // Present so instantiation cannot fail on a call we did not predict —
     // which imports std emits varies with the Rust toolchain. Mirrors
-    // js/src/wasi.ts.
+    // packages/wasm/src/wasi.ts.
     args_get: ok,
     args_sizes_get(count, size) {
       const v = view();

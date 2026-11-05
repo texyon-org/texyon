@@ -27,7 +27,7 @@ crates/engine_xetex/tests/corpus/goldens/*.tmp
 /tools/wasm/*.tar.gz
 /tools/wasm/vendor/
 node_modules/
-/js/dist/
+/packages/wasm/dist/
 
 *.tsbuildinfo
 /tools/mupdf/vendor/

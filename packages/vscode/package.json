@@ -9,9 +9,9 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/texyon-org/texyon",
-    "directory": "editors/vscode"
+    "directory": "packages/vscode"
   },
-  "homepage": "https://github.com/texyon-org/texyon/tree/master/editors/vscode#readme",
+  "homepage": "https://github.com/texyon-org/texyon/tree/master/packages/vscode#readme",
   "bugs": {
     "url": "https://github.com/texyon-org/texyon/issues"
   },

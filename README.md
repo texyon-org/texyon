@@ -11,7 +11,7 @@ than a full compile.
 
 - **Web editor** ([texyon-org/editor](https://github.com/texyon-org/editor)):
   the engine compiled to WebAssembly, running in a Web Worker.
-- **VS Code** ([`editors/vscode`](editors/vscode)): a native engine process
+- **VS Code** ([`packages/vscode`](packages/vscode)): a native engine process
   behind a preview panel. Install it from the Marketplace as *TeXyoN Live
   Preview*.
 
@@ -48,7 +48,7 @@ TEXYON_MUPDF_DIR="$PWD/tools/mupdf/vendor/mupdf" \
 ```
 
 Windows builds with MSVC and vcpkg, see
-[`editors/vscode/README.md`](editors/vscode/README.md). The WebAssembly build
+[`packages/vscode/README.md`](packages/vscode/README.md). The WebAssembly build
 lives in `crates/wasm` and is assembled by the web editor's
 `tools/build-engine.sh`.
 
@@ -68,8 +68,8 @@ format, and later runs reuse that cache.
 | `crates/engine_bibtex` | BibTeX. |
 | `crates/bridge_*`, `crates/xetex_layout` | FreeType, HarfBuzz, ICU, fontconfig and font layout. |
 | `crates/bundles`, `crates/geturl` | TeX Live support bundles and their download. |
-| `editors/vscode` | The VS Code extension. |
-| `js` | The `@texyon/wasm` package the web editor uses. |
+| `packages/vscode` | The VS Code extension. |
+| `packages/wasm` | The `@texyon/wasm` package the web editor uses. |
 | `docs/live-preview` | Preview architecture and protocol notes. |
 
 ## Testing

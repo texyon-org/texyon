@@ -1,7 +1,7 @@
 # Building Tectonic for WebAssembly
 
 This directory builds the engine into a `wasm32-wasip1` module that runs LaTeX
-in a browser. The TypeScript wrapper is in [`js/`](../../js), and
+in a browser. The TypeScript wrapper is in [`packages/wasm/`](../../packages/wasm), and
 the [ZapTeX editor](https://github.com/zaptex-org/editor) is built on it.
 
 ## Quick start
@@ -47,7 +47,7 @@ the stack, at a cost this project cannot pay.
 wasi-sdk gives a libc and a libc++ and nothing else, which is what we want: all
 real I/O is answered by the host through two imports, and the WASI syscalls the
 module still makes are shimmed in about 200 lines
-([`js/src/wasi.ts`](../../js/src/wasi.ts)).
+([`packages/wasm/src/wasi.ts`](../../packages/wasm/src/wasi.ts)).
 
 ## Things that were not obvious
 

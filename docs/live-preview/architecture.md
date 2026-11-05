@@ -49,7 +49,7 @@ has no symlinks to guard against.
 9. **Native server** (`native.rs`) runs the session on its own thread and
    speaks [the session protocol](protocol.md) over stdio. A reader thread
    applies `cancel` at once.
-10. **VS Code client** (`editors/vscode`) keeps one compile in flight, draws
+10. **VS Code client** (`packages/vscode`) keeps one compile in flight, draws
     the pixels it gets on canvases, asks for stale pages as they scroll into
     view, and shows diagnostics in the Problems panel.
 
