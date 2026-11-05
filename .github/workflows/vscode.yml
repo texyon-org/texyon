@@ -81,22 +81,46 @@ jobs:
             # GNU tar reads a drive letter in the archive path as a remote host.
             ws="$PWD"
             (cd "$RUNNER_TEMP" && tar -xf "$name" -C "$ws/target/vcpkg-cache")
-            echo "hit=true" >> "$GITHUB_OUTPUT"
           fi
+          (cd target/vcpkg-cache && find . -name '*.zip' | sort) > "$RUNNER_TEMP/restored.txt"
       - name: "Install vcpkg dependencies"
         if: ${{ runner.os != 'Linux' }}
         uses: ./.github/actions/vcpkg-deps
         with:
           target: ${{ matrix.target }}
+      # vcpkg reuses a package only if its ABI, which includes the compiler, still
+      # matches. Keep what this build used and upload whenever that changed, so a
+      # runner image update costs one cold build instead of every build after it.
       - name: "Save prebuilt vcpkg packages"
-        if: ${{ runner.os != 'Linux' && steps.vcpkg-binaries.outputs.hit != 'true' }}
+        if: ${{ runner.os != 'Linux' }}
         continue-on-error: true
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           NAME: ${{ steps.vcpkg-binaries.outputs.name }}
         run: |
+          sha=sha256sum
+          command -v sha256sum >/dev/null || sha="shasum -a 256"
           ws="$PWD"
+          # A cached package is named by the SHA-256 of its vcpkg_abi_info.txt.
+          used="$(find target/vcpkg/installed -name vcpkg_abi_info.txt -exec $sha {} + | cut -c1-64 | sort -u)"
+          if [[ -z "$used" ]]; then
+            echo "::warning::found no installed vcpkg packages, leaving the cache as it is"
+            exit 0
+          fi
+          cd target/vcpkg-cache
+          stale="$(find . -name '*.zip' | while read -r zip; do
+            grep -qx "$(basename "$zip" .zip)" <<< "$used" || echo "$zip"
+          done)"
+          if [[ -n "$stale" ]] && [[ "$(wc -l <<< "$stale")" -lt "$(find . -name '*.zip' | wc -l)" ]]; then
+            xargs rm <<< "$stale"
+          elif [[ -n "$stale" ]]; then
+            echo "::warning::no cached package matched an installed ABI, keeping them all"
+          fi
+          if find . -name '*.zip' | sort | cmp -s - "$RUNNER_TEMP/restored.txt"; then
+            echo "The prebuilt packages are current."
+            exit 0
+          fi
           (cd "$RUNNER_TEMP" && tar -cf "$NAME" -C "$ws/target/vcpkg-cache" .)
           gh release view vcpkg-binaries >/dev/null 2>&1 \
             || gh release create vcpkg-binaries --title "Prebuilt vcpkg packages" \
