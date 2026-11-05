@@ -7,7 +7,7 @@ lints.workspace = true
 
 [package]
 name = "texyon_xetex_layout"
-version = "0.0.0-dev.0" # assigned with cranko (see README)
+version = "0.0.0-dev.0"
 authors = ["Peter Williams <peter@newton.cx>"]
 description = """
 XeTeX's font loading and layout interface encapsulation, as a crate.
@@ -38,12 +38,3 @@ texyon_mac_core = { path = "../mac_core", version = "0.0.0-dev.0" }
 [features]
 external-harfbuzz = ["texyon_bridge_harfbuzz/external-harfbuzz"]
 
-[package.metadata.internal_dep_versions]
-texyon_mac_core = "6932d5f15fec0fb5c219b887bdd11b72641af07a"
-texyon_bridge_core = "thiscommit:2021-01-16:wie2Ejoh"
-texyon_bridge_fontconfig = "89268e8317eee0e23f9c0d572aa764d4504d85b5"
-texyon_bridge_graphite2 = "2722731f9e32c6963fe8c8566a201b33672c5c5a"
-texyon_bridge_freetype2 = "2c1ffcd702a662c003bd3d7d0ca4d169784cb6ad"
-texyon_bridge_harfbuzz = "2c1ffcd702a662c003bd3d7d0ca4d169784cb6ad"
-texyon_bridge_icu = "thiscommit:2023-09-17:6uIZ4lA"
-texyon_io_base = "41168a9fa2902401afc79e60bbefa638bde6df2d"

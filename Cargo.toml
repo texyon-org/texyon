@@ -6,7 +6,7 @@ lints.workspace = true
 
 [package]
 name = "texyon"
-version = "0.0.0-dev.0" # assigned with cranko (see README)
+version = "0.0.0-dev.0"
 authors = ["Peter Williams <peter@newton.cx>"]
 description = """
 A fast, embeddable TeX/LaTeX engine: XeTeX ported to Rust, with incremental live preview.
@@ -15,7 +15,7 @@ Forked from Tectonic and uses the TeX Live distribution of support files.
 homepage = "https://github.com/texyon-org/texyon"
 documentation = "https://docs.rs/texyon"
 repository = "https://github.com/texyon-org/texyon"
-readme = "CARGO_README.md"
+readme = "README.md"
 keywords = ["tex", "latex", "typesetting", "font"]
 categories = [
     "command-line-interface",
@@ -27,7 +27,6 @@ categories = [
 license = "MIT"
 edition = "2021"
 exclude = ["/dist/", "/reference_sources/", "/release-bundle/"]
-
 
 [workspace]
 members = [
@@ -41,9 +40,7 @@ members = [
     "crates/bundles",
     "crates/cfg_support",
     "crates/dep_support",
-    "crates/docmodel",
     "crates/engine_bibtex",
-    "crates/engine_spx2html",
     "crates/engine_xdvipdfmx",
     "crates/engine_xetex",
     "crates/errors",
@@ -57,7 +54,6 @@ members = [
     "crates/status_base",
     "crates/wasm",
     "crates/xdv",
-    "crates/xetex_format",
     "crates/xetex_layout",
 ]
 
@@ -75,19 +71,16 @@ crate-type = ["rlib"]
 
 [dependencies]
 byte-unit = "^5.0"
-cfg-if = "1.0"
 error-chain = "^0.12"
 flate2 = { version = "^1.0.19", default-features = false, features = ["zlib"] }
 lazy_static = "^1.4"
 quick-xml = "0.37"
-serde = { version = "^1.0", features = ["derive"], optional = true }
+serde = { version = "^1.0", features = ["derive"] }
 sha2 = "^0.10"
 clap = { version = "4.5.1", features = ["derive"] }
 texyon_bridge_core = { path = "crates/bridge_core", version = "0.0.0-dev.0" }
 texyon_bundles = { path = "crates/bundles", version = "0.0.0-dev.0", default-features = false }
-texyon_docmodel = { path = "crates/docmodel", version = "0.0.0-dev.0", optional = true }
 texyon_engine_bibtex = { path = "crates/engine_bibtex", version = "0.0.0-dev.0" }
-texyon_engine_spx2html = { path = "crates/engine_spx2html", version = "0.0.0-dev.0" }
 texyon_engine_xdvipdfmx = { path = "crates/engine_xdvipdfmx", version = "0.0.0-dev.0" }
 texyon_engine_xetex = { path = "crates/engine_xetex", version = "0.0.0-dev.0" }
 texyon_errors = { path = "crates/errors", version = "0.0.0-dev.0" }
@@ -101,30 +94,15 @@ texyon_xdv = { path = "crates/xdv", version = "0.0.0-dev.0" }
 texyon_xetex_layout = { path = "crates/xetex_layout", version = "0.0.0-dev.0" }
 tempfile = "^3.1"
 termcolor = "^1.1"
-toml = { version = "^0.8", optional = true }
+toml = "^0.8"
 which = "8.0"
 zip = { version = "4.0", default-features = false, features = ["deflate"] }
-clap_complete = "4.5.1"
 walkdir = "2"
 regex = "1.10.2"
 anyhow = "1.0.80"
 tar = "0.4.40"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# Dependencies of the `tectonic` CLI that have no WebAssembly port: `open`
-# shells out to a desktop file handler, and watchexec's filesystem watcher (and
-# with it tokio's net/process features) needs a real OS. `cargo build --lib`
-# compiles every entry in [dependencies] regardless of who uses it, so these
-# have to be target-gated rather than merely feature-gated for the library to
-# build for wasm. Native builds are unaffected.
-[target.'cfg(not(target_family = "wasm"))'.dependencies]
-open = "^5.0"
-tokio = "^1.0"
-watchexec = "8.0"
-watchexec-filterer-globset = "8.0"
-watchexec-signals = "5.0"
-watchexec-supervisor = "5.0"
 
 # The CLI itself is likewise native-only. Making it require a feature that is on
 # by default keeps `cargo build` behaving exactly as before while letting a
@@ -135,18 +113,10 @@ path = "src/bin/texyon/main.rs"
 required-features = ["cli"]
 
 [features]
-default = ["cli", "geturl-reqwest", "serialization"]
+default = ["cli", "geturl-reqwest"]
 
-# The command-line program, and the native-only dependencies it needs.
+# The command-line program, which a WebAssembly build of the library skips.
 cli = []
-
-# The main motivation for this feature was to be able to compile without
-# proc-macros (via serde-derive), for statically-linked targets which can't use
-# them. In the CI, we now build for statically-linked targets using a
-# cross-compilation model that allows us to have proc-macros anyway. So maybe
-# this feature should go away? It's kind of annoying to support, and at this
-# point proc-macros may have snuck into the dependency tree elsewhere, anyway.
-serialization = ["serde", "texyon_docmodel", "toml"]
 
 external-harfbuzz = ["texyon_engine_xetex/external-harfbuzz"]
 
@@ -208,26 +178,3 @@ x86_64-pc-windows-msvc = { triplet = "x64-windows-static-release", install = [
     "libmupdf",
 ] }
 
-[package.metadata.internal_dep_versions]
-texyon_bridge_core = "thiscommit:2023-06-11:PvhF7YB"
-texyon_preview_protocol = "thiscommit:2026-08-19:editor-ci"
-texyon_preview_render = "thiscommit:2026-08-19:editor-ci"
-texyon_bridge_flate = "thiscommit:2021-01-01:eer4ahL4"
-texyon_bridge_graphite2 = "2c1ffcd702a662c003bd3d7d0ca4d169784cb6ad"
-texyon_bridge_harfbuzz = "thiscommit:2023-09-17:FZwRtUP"
-texyon_bridge_icu = "thiscommit:2023-09-17:AwTXf3W"
-texyon_bundles = "thiscommit:2022-03-29:SFnXSaL"
-texyon_cfg_support = "thiscommit:aeRoo7oa"
-texyon_dep_support = "5faf4205bdd3d31101b749fc32857dd746f9e5bc"
-texyon_docmodel = "a88a0418a9c3c559d023d9b1da9b03fce3a469e5"
-texyon_engine_bibtex = "thiscommit:2021-01-17:KuhaeG1e"
-texyon_engine_spx2html = "thiscommit:2022-11-22:vicemXu"
-texyon_engine_xdvipdfmx = "8a003834b1f6d967d33cc07de4cc025af14560da"
-texyon_engine_xetex = "c135e6a4a5a2e8c2dc4edcbcfd93f7d466ff8f88"
-texyon_errors = "317ae79ceaa2593fb56090e37bf1f5cc24213dd9"
-texyon_geturl = "68c5fc525c5fead75913bd90380043761bde9f61"
-texyon_io_base = "thiscommit:2026-07-25:live-preview-extraction"
-texyon_live_preview = "thiscommit:2026-07-25:live-preview-extraction"
-texyon_status_base = "317ae79ceaa2593fb56090e37bf1f5cc24213dd9"
-texyon_xdv = "c91f2ef37858d1a0a724a5c3ddc2f7ea46373c77"
-texyon_xetex_layout = "2c1ffcd702a662c003bd3d7d0ca4d169784cb6ad"

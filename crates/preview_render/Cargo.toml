@@ -23,6 +23,3 @@ cc = "^1.0"
 texyon_dep_support = { path = "../dep_support", version = "0.0.0-dev.0" }
 vcpkg = "^0.2.15"
 
-[package.metadata.internal_dep_versions]
-texyon_dep_support = "thiscommit:2026-08-19:preview-render"
-texyon_xdv = "thiscommit:2026-08-19:preview-render"

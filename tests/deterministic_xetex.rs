@@ -50,6 +50,7 @@ fn refresh_timezone() {
         fn tzset();
     }
 
+    // SAFETY: tzset rereads TZ, and this binary has one test, so no thread changes it meanwhile.
     unsafe { tzset() };
 }
 

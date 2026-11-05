@@ -6,12 +6,11 @@ use lazy_static::lazy_static;
 use std::io::ErrorKind;
 use std::{
     env,
-    fs::{self, File, OpenOptions},
+    fs::{self, File},
     io::{Read, Write},
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
-    str, thread,
-    time::{Duration, Instant},
+    str,
 };
 use tempfile::TempDir;
 
@@ -75,6 +74,7 @@ fn prep_tectonic(cwd: &Path, args: &[&str]) -> Command {
     };
 
     command
+        .arg("compile")
         .args(args)
         .current_dir(cwd)
         .env(texyon::test_util::TEST_ROOT_ENV_VAR, TEST_ROOT.as_os_str());
@@ -86,25 +86,6 @@ fn run_tectonic(cwd: &Path, args: &[&str]) -> Output {
     command.env("BROWSER", "echo");
     println!("running {command:?}");
     command.output().expect("tectonic failed to start")
-}
-
-fn run_tectonic_until(cwd: &Path, args: &[&str], mut kill: impl FnMut() -> bool) -> Output {
-    let mut command = prep_tectonic(cwd, args);
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
-    command.env("BROWSER", "echo");
-
-    println!("running {command:?} until test passes");
-    let mut child = command.spawn().expect("tectonic failed to start");
-    while !kill() {
-        thread::sleep(Duration::from_secs(1));
-    }
-
-    // Ignore if the child already died
-    // TODO: This causes coverage to not be reported
-    let _ = child.kill();
-    child
-        .wait_with_output()
-        .expect("tectonic failed to execute")
 }
 
 fn run_tectonic_with_stdin(cwd: &Path, args: &[&str], stdin: &str) -> Output {
@@ -193,50 +174,6 @@ fn check_file(tempdir: &TempDir, rest: &str) {
             p.to_string_lossy()
         );
     }
-}
-
-fn setup_v2() -> (tempfile::TempDir, PathBuf) {
-    util::set_test_root();
-
-    let tempdir = setup_and_copy_files(&[]);
-    let mut temppath = tempdir.path().to_owned();
-    let output = run_tectonic(&temppath, &["-X", "new", "doc"]);
-    success_or_panic(&output);
-
-    temppath.push("doc");
-
-    // To run a build in our test setup, we can only use plain TeX. So, jankily
-    // change the format ...
-
-    {
-        let mut toml_path = temppath.clone();
-        toml_path.push("Texyon.toml");
-        let mut file = OpenOptions::new().append(true).open(toml_path).unwrap();
-        writeln!(file, "tex_format = 'plain'").unwrap();
-    }
-
-    // ... and write some files that are plain TeX.
-
-    {
-        let mut path = temppath.clone();
-        path.push("src");
-
-        {
-            path.push("_preamble.tex");
-            let mut file = File::create(&path).unwrap();
-            writeln!(file).unwrap();
-            path.pop();
-        }
-
-        {
-            path.push("_postamble.tex");
-            let mut file = File::create(&path).unwrap();
-            writeln!(file, "\\end").unwrap();
-            path.pop();
-        }
-    }
-
-    (tempdir, temppath)
 }
 
 /* Keep tests alphabetized */
@@ -599,7 +536,7 @@ fn stdin_content() {
     success_or_panic(&output);
 }
 
-/// Test various web bundle overrides for the v1 CLI & `-X compile`
+/// Test where `--bundle` may go on the command line
 #[test]
 fn bundle_overrides() {
     let filename = "subdirectory/content/1.tex";
@@ -618,261 +555,16 @@ fn bundle_overrides() {
     error_or_panic(&output);
 
     // test with a good bundle (override)
-    let mut valid_args: Vec<Vec<&str>> = vec![
+    let valid_args: Vec<Vec<&str>> = vec![
         // different positions
         [&arg_good_bundle[..], &[fmt_arg, filename]].concat(),
         [&[fmt_arg], &arg_good_bundle[..], &[filename]].concat(),
         [&[fmt_arg], &[filename], &arg_good_bundle[..]].concat(),
     ];
 
-    // test `-X compile`
-    #[cfg(feature = "serialization")]
-    valid_args.extend([
-        [
-            &["-X"],
-            &["compile"],
-            &arg_good_bundle[..],
-            &[fmt_arg],
-            &[filename],
-        ]
-        .concat(),
-        [
-            &["-X"],
-            &["compile"],
-            &[fmt_arg],
-            &arg_good_bundle[..],
-            &[filename],
-        ]
-        .concat(),
-        [
-            &["-X"],
-            &["compile"],
-            &[fmt_arg],
-            &[filename],
-            &arg_good_bundle[..],
-        ]
-        .concat(),
-    ]);
-
     for args in valid_args {
         let output = run_tectonic(&temppath, &args);
         success_or_panic(&output);
-    }
-}
-
-/// Test various web bundle overrides for the v2 CLI
-#[cfg(feature = "serialization")]
-#[test]
-fn v2_bundle_overrides() {
-    let arg_bad_bundle = ["--bundle", "bad-bundle"];
-    let arg_good_bundle = ["--bundle", "test-bundle://"];
-
-    // test `-X command`
-    for command in ["new", "init"] {
-        // test with a bad bundle
-        let tempdir = setup_and_copy_files(&[]);
-        let temppath = tempdir.path().to_owned();
-        let output = run_tectonic(&temppath, &[&arg_bad_bundle[..], &["-X", command]].concat());
-        error_or_panic(&output);
-
-        // test with a good bundle (override)
-        let valid_args: Vec<Vec<&str>> = vec![[&["-X", command], &arg_good_bundle[..]].concat()];
-
-        for args in valid_args {
-            let tempdir = setup_and_copy_files(&[]);
-            let temppath = tempdir.path().to_owned();
-            let output = run_tectonic(&temppath, &args);
-            success_or_panic(&output);
-        }
-    }
-
-    // test `-X build`
-    let (_tempdir, temppath) = setup_v2();
-
-    // `--bundle` is ignored
-    let output = run_tectonic(
-        &temppath,
-        &[&["-X"], &["build"], &arg_bad_bundle[..]].concat(),
-    );
-    success_or_panic(&output);
-}
-
-#[cfg(feature = "serialization")]
-#[test]
-fn v2_build_basic() {
-    let (_tempdir, temppath) = setup_v2();
-    let output = run_tectonic(&temppath, &["-X", "build"]);
-    success_or_panic(&output);
-}
-
-#[test]
-#[cfg(all(feature = "serialization", not(windows)))] // `echo` may not be available
-fn v2_build_open() {
-    let (_tempdir, temppath) = setup_v2();
-    let output = run_tectonic(&temppath, &["-X", "build", "--open"]);
-    success_or_panic(&output);
-}
-
-#[cfg(feature = "serialization")]
-#[test]
-fn v2_build_multiple_outputs() {
-    util::set_test_root();
-
-    let tempdir = setup_and_copy_files(&[]);
-    let mut temppath = tempdir.path().to_owned();
-    let output = run_tectonic(&temppath, &["-X", "new", "doc"]);
-    success_or_panic(&output);
-
-    temppath.push("doc");
-
-    // To run a build in our test setup, we can only use plain TeX. So, jankily
-    // change the format ...
-
-    {
-        let mut toml_path = temppath.clone();
-        toml_path.push("Texyon.toml");
-        let mut file = OpenOptions::new().append(true).open(toml_path).unwrap();
-        writeln!(
-            file,
-            "tex_format = 'plain'
-
-            [[output]]
-            name = 'alt'
-            type = 'pdf'
-            tex_format = 'plain'
-            preamble = '_preamble_alt.tex'
-            index = 'index_alt.tex'
-            postamble = '_postamble_alt.tex'
-            "
-        )
-        .unwrap();
-    }
-
-    // ... and write some files that are plain TeX.
-
-    {
-        let mut path = temppath.clone();
-        path.push("src");
-
-        {
-            path.push("_preamble.tex");
-            let mut file = File::create(&path).unwrap();
-            writeln!(file).unwrap();
-            path.pop();
-        }
-        {
-            path.push("_preamble_alt.tex");
-            let mut file = File::create(&path).unwrap();
-            writeln!(file).unwrap();
-            path.pop();
-        }
-
-        {
-            path.push("index_alt.tex");
-            let mut file = File::create(&path).unwrap();
-            writeln!(file, "Hello, alt!").unwrap();
-            path.pop();
-        }
-
-        {
-            path.push("_postamble.tex");
-            let mut file = File::create(&path).unwrap();
-            writeln!(file, "\\end").unwrap();
-            path.pop();
-        }
-        {
-            path.push("_postamble_alt.tex");
-            let mut file = File::create(&path).unwrap();
-            writeln!(file, "\\end").unwrap();
-            path.pop();
-        }
-    }
-
-    // Now we can build.
-
-    let output = run_tectonic(&temppath, &["-X", "build"]);
-    success_or_panic(&output);
-}
-
-#[test]
-#[cfg(feature = "serialization")]
-fn v2_dump_basic() {
-    let (_tempdir, temppath) = setup_v2();
-    let output = run_tectonic(&temppath, &["-X", "dump", "default.log"]);
-    success_or_panic(&output);
-
-    let t = std::str::from_utf8(&output.stdout[..]).unwrap();
-    let mut saw_it = false;
-
-    for line in t.lines() {
-        if line.contains("(default (_preamble.tex) (index.tex) (_postamble.tex [1] ) )") {
-            saw_it = true;
-            break;
-        }
-    }
-
-    assert!(saw_it);
-}
-
-#[test]
-#[cfg(feature = "serialization")]
-fn v2_dump_suffix() {
-    let (_tempdir, mut temppath) = setup_v2();
-
-    temppath.push("src");
-    temppath.push("index.tex");
-
-    {
-        let mut file = File::create(&temppath).unwrap();
-        #[allow(clippy::write_literal)]
-        writeln!(
-            file,
-            "{}", // <= works around {} fussiness in Rust format strings
-            r"\newwrite\w
-\immediate\openout\w=first.demo\relax
-\immediate\write\w{content-un}
-\immediate\closeout\w
-\immediate\openout\w=second.demo\relax
-\immediate\write\w{content-deux}
-\immediate\closeout\w
-"
-        )
-        .unwrap();
-    }
-
-    temppath.pop();
-    temppath.pop();
-
-    let output = run_tectonic(&temppath, &["-X", "dump", "-s", "demo"]);
-    success_or_panic(&output);
-
-    let t = std::str::from_utf8(&output.stdout[..]).unwrap();
-    let mut saw_first = false;
-    let mut saw_second = false;
-
-    for line in t.lines() {
-        if line.contains("content-un") {
-            saw_first = true;
-        }
-
-        if line.contains("content-deux") {
-            saw_second = true;
-        }
-    }
-
-    assert!(saw_first && saw_second);
-}
-
-/// Checks that shell completions are correctly generated
-#[cfg(feature = "serialization")]
-#[test]
-fn v2_show_shell_completions() {
-    let (_tempdir, temppath) = setup_v2();
-    let output = run_tectonic(&temppath, &["-X", "show", "shell-completions", "zsh"]);
-    success_or_panic(&output);
-
-    if !String::from_utf8_lossy(&output.stdout).contains("compdef _nextonic nextonic") {
-        panic!("shell completions generation failed.")
     }
 }
 
@@ -994,62 +686,4 @@ fn extra_search_paths() {
         "\\input 1.tex\n\\bye",
     );
     error_or_panic(&output);
-}
-
-/// Ensures that watch command succeeds, and when a file is changed while running it rebuilds
-/// periodically
-#[cfg(all(feature = "serialization", not(target_arch = "mips")))]
-#[test]
-fn v2_watch_succeeds() {
-    let (_tempdir, temppath) = setup_v2();
-
-    // Timeout the test after 5 minutes - we should definitely run twice in that range
-    let max_time = Duration::from_secs(60 * 5);
-    let path = temppath.clone();
-
-    // Make sure `default.pdf` already exists - just makes the test easier to implement
-    let output = run_tectonic(&temppath, &["-X", "build"]);
-    success_or_panic(&output);
-
-    let thread = thread::spawn(move || {
-        // Give the process time to start up. Tried a channel, doesn't really work, so we just do
-        // a best-effort 'sleep for long enough it should have started'.
-        thread::sleep(Duration::from_secs(5));
-
-        let input = path.join("src/index.tex");
-        let output = path.join("build/default/default.pdf");
-        let start = Instant::now();
-        let mut start_mod = None;
-        let mut modified = 0;
-        while Instant::now() - start < max_time {
-            if modified >= 3 {
-                break;
-            }
-
-            {
-                let mut file = File::create(&input).unwrap();
-                writeln!(file, "New Text {modified}").unwrap();
-            }
-
-            let new_mod = output.metadata().and_then(|meta| meta.modified()).unwrap();
-            if start_mod.is_none_or(|start_mod| new_mod > start_mod) {
-                start_mod = Some(new_mod);
-                modified += 1;
-            }
-
-            thread::sleep(Duration::from_secs(5));
-        }
-    });
-
-    let output = run_tectonic_until(&temppath, &["-X", "watch"], || thread.is_finished());
-    // TODO: Make timeout kill child in a way that terminates it gracefully, such as ctrl-c, not SIGKILL
-    // success_or_panic(&output);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    println!("-- stdout --\n{stdout}\n-- end stdout --");
-    println!("-- stderr --\n{stderr}\n-- end stderr --");
-
-    thread.join().unwrap();
-
-    assert!(stdout.matches("Running TeX").count() >= 2);
 }
