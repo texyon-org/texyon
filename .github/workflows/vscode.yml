@@ -5,6 +5,12 @@ name: "VS Code Extension"
 
 on:
   workflow_dispatch:
+    inputs:
+      platform:
+        description: "Build only this platform"
+        type: choice
+        options: [ all, linux-x64, darwin-arm64, win32-x64 ]
+        default: all
   push:
     tags: [ "vscode-v*" ]
 
@@ -13,26 +19,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # A manual run can build one platform, so a trial does not pay for macOS.
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      include: ${{ steps.plan.outputs.include }}
+    steps:
+      - id: plan
+        env:
+          PLATFORM: ${{ inputs.platform || 'all' }}
+        run: |
+          # 22.04 for an older glibc baseline.
+          all='[
+            {"image": "ubuntu-22.04", "target": "x86_64-unknown-linux-gnu", "vsce-target": "linux-x64",
+             "features": "preview-mupdf,native-tls-vendored"},
+            {"image": "macos-14", "target": "aarch64-apple-darwin", "vsce-target": "darwin-arm64",
+             "features": "preview-mupdf", "vcpkg-triplet": "arm64-osx-release"},
+            {"image": "windows-latest", "target": "x86_64-pc-windows-msvc", "vsce-target": "win32-x64",
+             "features": "preview-mupdf", "vcpkg-triplet": "x64-windows-static-release"}
+          ]'
+          echo "include=$(jq -c --arg p "$PLATFORM" 'map(select($p == "all" or .["vsce-target"] == $p))' <<< "$all")" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: plan
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # 22.04 for an older glibc baseline.
-          - image: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            vsce-target: linux-x64
-            features: preview-mupdf,native-tls-vendored
-          - image: macos-14
-            target: aarch64-apple-darwin
-            vsce-target: darwin-arm64
-            features: preview-mupdf
-            vcpkg-triplet: arm64-osx-release
-          - image: windows-latest
-            target: x86_64-pc-windows-msvc
-            vsce-target: win32-x64
-            features: preview-mupdf,external-harfbuzz
-            vcpkg-triplet: x64-windows-static-release
+        include: ${{ fromJSON(needs.plan.outputs.include) }}
     runs-on: ${{ matrix.image }}
     # A cold vcpkg cache rebuilds ICU and friends.
     timeout-minutes: 120
@@ -72,8 +86,15 @@ jobs:
           # macOS has only shasum, Git Bash on Windows only sha256sum.
           sha=sha256sum
           command -v sha256sum >/dev/null || sha="shasum -a 256"
+          # Only Windows takes MuPDF from vcpkg, compiled against the bundled
+          # HarfBuzz headers, which vcpkg does not hash.
           key="$({ sed -n '/^\[package.metadata.vcpkg\]/,/^\[package.metadata.internal/p' Cargo.toml
-                   cat dist/vcpkg-triplets/* dist/vcpkg-ports/*/*; } | $sha | cut -c1-16)"
+                   cat dist/vcpkg-triplets/*
+                   if [[ $RUNNER_OS == Windows ]]; then
+                     cat dist/vcpkg-ports/*/*
+                     git ls-tree HEAD crates/bridge_harfbuzz/harfbuzz
+                   fi
+                 } | $sha | cut -c1-16)"
           name="vcpkg-${{ matrix.target }}-$key.tar"
           echo "name=$name" >> "$GITHUB_OUTPUT"
           mkdir -p target/vcpkg-cache

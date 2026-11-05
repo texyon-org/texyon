@@ -8,7 +8,6 @@
   "dependencies": [
     "freetype",
     "gumbo",
-    "harfbuzz",
     "jbig2dec",
     "libjpeg-turbo",
     "openjpeg",

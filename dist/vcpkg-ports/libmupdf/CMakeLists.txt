@@ -21,8 +21,6 @@ endif()
 
 find_package(freetype NO_MODULE REQUIRED)
 find_package(JPEG REQUIRED)
-find_path(HARFBUZZ_INCLUDE hb.h PATH_SUFFIXES harfbuzz)
-find_library(HARFBUZZ_LIBRARIES harfbuzz)
 find_package(ZLIB REQUIRED)
 find_package(OpenJPEG CONFIG REQUIRED)
 find_library(JBIG2DEC_LIB NAMES jbig2decd jbig2dec)
@@ -77,7 +75,6 @@ target_link_libraries(libmupdf PRIVATE
   openjp2
   freetype
   ${JPEG_LIBRARIES}
-  ${HARFBUZZ_LIBRARIES}
   ${JBIG2DEC_LIB}
   ZLIB::ZLIB
 )
