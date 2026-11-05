@@ -1,73 +1,85 @@
-[![Build Status](https://dev.azure.com/tectonic-typesetting/tectonic/_apis/build/status/tectonic-typesetting.tectonic?branchName=master)](https://dev.azure.com/tectonic-typesetting/tectonic/_build/latest?definitionId=11&branchName=master)
-[![](http://meritbadge.herokuapp.com/tectonic)](https://crates.io/crates/tectonic)
-[![codecov](https://codecov.io/gh/tectonic-typesetting/tectonic/branch/master/graph/badge.svg)](https://codecov.io/gh/tectonic-typesetting/tectonic)
+# TeXyoN
 
-# Tectonic
+TeXyoN is a LaTeX engine built for live preview. It is XeTeX, ported to Rust
+from [Tectonic](https://github.com/tectonic-typesetting/tectonic), kept
+resident between edits: an edit replays from a checkpoint just before it,
+typesets only up to the pages on screen, and redraws only the pages whose
+appearance changed. A keystroke in a long document costs milliseconds rather
+than a full compile.
 
-Tectonic is a modernized, complete, self-contained
-[TeX](https://en.wikipedia.org/wiki/TeX)/[LaTeX](https://www.latex-project.org/)
-engine, powered by [XeTeX](http://xetex.sourceforge.net/) and
-[TeXLive](https://www.tug.org/texlive/).
+## Where it runs
 
-## Read this first
+- **Web editor** ([texyon-org/editor](https://github.com/texyon-org/editor)):
+  the engine compiled to WebAssembly, running in a Web Worker.
+- **VS Code** ([`editors/vscode`](editors/vscode)): a native engine process
+  behind a preview panel. Install it from the Marketplace as *TeXyoN Live
+  Preview*.
 
-If you just want to compile TeX documents, you should probably **click through
-to [the main Tectonic website](https://tectonic-typesetting.github.io/)**. This
-page is primarily aimed at folks interested in how Tectonic works "under the
-hood." If you want to build the [`tectonic`][crate] Rust crate, check out [its
-README](./CARGO_README.md).
+Both speak the same [session protocol](docs/live-preview/protocol.md) to the
+same session in `crates/live_preview`, so a preview feature lands in both.
 
-[crate]: https://crates.io/crates/tectonic
+## Status
 
-## Developer dashboard
+- The XeTeX engine is fully Rust and matches the reference output on the
+  repository's 639-document corpus.
+- Live preview supports viewport-bounded compiles, pixel or SVG pages, errors
+  by source line, source navigation in both directions, and PDF export.
+- The preview does not run BibTeX yet.
+- The native preview runs on Linux and Windows. The macOS build does not wire
+  up the MuPDF renderer yet, so its extension cannot preview.
 
-<a href="https://repology.org/metapackage/tectonic">
-    <img src="https://repology.org/badge/vertical-allrepos/tectonic.svg" alt="Packaging status" align="right">
-</a>
+## Building
 
-- [User website](https://tectonic-typesetting.github.io/)
-- [Community discussion forum](https://github.com/tectonic-typesetting/tectonic/discussions)
-- [Installation](https://tectonic-typesetting.github.io/book/latest/installation/)
-- [Build instructions](https://tectonic-typesetting.github.io/book/latest/howto/build-tectonic/)
-- [API documentation](https://docs.rs/tectonic/)
-- [Issues](https://github.com/tectonic-typesetting/tectonic/issues/)
-- [Changelog](https://github.com/tectonic-typesetting/tectonic/blob/release/CHANGELOG.md)
+The command-line program has three commands: `compile`, `preview` and
+`bundle`.
 
-## Technical ecosystem
+```sh
+cargo build --release -p texyon
+target/release/texyon compile document.tex
+```
 
-If you’re interested in Tectonic as a software tool, you might also want to check out:
+The live preview needs the MuPDF renderer, which is opt-in because MuPDF is
+AGPL licensed. On Linux:
 
-- One of the following [GitHub Actions](https://github.com/features/actions)
-    - [setup-tectonic](https://github.com/marketplace/actions/setup-tectonic), which lets you use texyon directly in your workflows (supports caching + optionally biber)
-    - [compile-latex](https://github.com/marketplace/actions/compile-latex) contributed by [Vinay
-  Sharma](https://github.com/vinay0410), which is powered by Tectonic.
-- [tt.ente.ninja](https://tt.ente.ninja), which runs Tectonic against a subset
-  of the [arxiv.org](https://arxiv.org/) corpus à la the Rust tool
-  [Crater](https://github.com/rust-lang/crater) — a
-  [project](https://github.com/Mrmaxmeier/tectonic-on-arXiv) by
-  [@Mrmaxmeier](https://github.com/Mrmaxmeier/)
+```sh
+tools/mupdf/build.sh
+TEXYON_MUPDF_DIR="$PWD/tools/mupdf/vendor/mupdf" \
+  cargo build --release -p texyon --features preview-mupdf
+```
 
-## The "reference sources"
+Windows builds with MSVC and vcpkg, see
+[`editors/vscode/README.md`](editors/vscode/README.md). The WebAssembly build
+lives in `crates/wasm` and is assembled by the web editor's
+`tools/build-engine.sh`.
 
-Much of the core code of Tectonic is derived from
-[XeTeX](http://xetex.sourceforge.net/), and we strive to track and maintain
-compatibility with upstream as much as possible. However, the nature of the
-Tectonic project is such that its source code is going to diverge from that of
-XeTeX over time. We can do our best to track the *semantics* of changes to
-XeTeX, but the expression of those changes in source form may well change
-greatly over time.
+The first compile downloads the TeX Live support files it needs and builds the
+format, and later runs reuse that cache.
 
-In this repository, the Git submodule `reference_sources` links to the
-["staging repository"](https://github.com/tectonic-typesetting/tectonic-staging)
-that tracks the XeTeX source
-code that we use as a reference. In particular, the version of the reference
-code in the submodule is the most recent code whose semantics are *guaranteed*
-to be expressed in Tectonic, to the best of our efforts. You don’t need to
-clone `reference_sources` to build Tectonic (which is good because everyone is
-always super confused by how Git submodules work!). It just provides a
-convenient way for Git to track the exact reference code that we are using at
-any given time.
+## Layout
 
-Please see
-[the tectonic-staging README](https://github.com/tectonic-typesetting/tectonic-staging#readme)
-for more information. (Or at least, more words on the topic.)
+| Path | What it is |
+| --- | --- |
+| `crates/engine_xetex` | The XeTeX engine, with its resident session and checkpoints. See its `ARCHITECTURE.md`. |
+| `crates/live_preview` | The preview session every host drives, and the native stream server. |
+| `crates/preview_render` | XDV analysis and page rendering (MuPDF). |
+| `crates/preview_protocol` | The messages hosts exchange with a session. |
+| `crates/wasm` | The WebAssembly host. |
+| `crates/engine_xdvipdfmx`, `crates/pdf_io` | PDF output. |
+| `crates/engine_bibtex` | BibTeX. |
+| `crates/bridge_*`, `crates/xetex_layout` | FreeType, HarfBuzz, ICU, fontconfig and font layout. |
+| `crates/bundles`, `crates/geturl` | TeX Live support bundles and their download. |
+| `editors/vscode` | The VS Code extension. |
+| `js` | The `@texyon/wasm` package the web editor uses. |
+| `docs/live-preview` | Preview architecture and protocol notes. |
+
+## Testing
+
+`cargo test --workspace` runs the unit and integration tests. Changes to engine
+behaviour are checked against the goldens corpus
+(`crates/engine_xetex/scripts/corpus.sh`) and the upstream TeX Live harness
+(`crates/engine_xetex/tests/upstream/run.py`).
+
+## License
+
+The libraries are MIT licensed. The MuPDF renderer backend, the native preview
+binary that links it, and the VS Code extension are AGPL v3 or later.

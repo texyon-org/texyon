@@ -9,7 +9,6 @@
 //! running the command-line client. So we begrudgingly have a *little*
 //! configuration.
 
-#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::{
     path::PathBuf,
@@ -60,19 +59,18 @@ pub fn maybe_return_test_bundle(bundle: Option<String>) -> Result<Box<dyn Bundle
 }
 
 /// Top-level persistent configuration required for the engine
-#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(Deserialize, Serialize)]
 pub struct PersistentConfig {
     default_bundles: Vec<BundleInfo>,
 }
 
 /// Information about a default bundle
-#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(Deserialize, Serialize)]
 pub struct BundleInfo {
     url: String,
 }
 
 impl PersistentConfig {
-    #[cfg(feature = "serialization")]
     /// Open the per-user configuration file.
     ///
     /// This file is stored in TOML format. If the configuration file does not
@@ -118,18 +116,6 @@ impl PersistentConfig {
         };
 
         Ok(config)
-    }
-
-    #[cfg(not(feature = "serialization"))]
-    /// Return a default configuration structure.
-    ///
-    /// In most builds of Tectonic, this function reads a per-user
-    /// configuration file and returns it. However, this version of Tectonic
-    /// has been built without the `serde` feature, so it cannot deserialize
-    /// the file. Therefore, this function always returns the default
-    /// configuration.
-    pub fn open(_auto_create_config_file: bool) -> Result<PersistentConfig> {
-        Ok(PersistentConfig::default())
     }
 
     /// Get the default bundle URL for this configuration

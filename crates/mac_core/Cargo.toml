@@ -19,5 +19,3 @@ libc = "0.2"
 [build-dependencies]
 texyon_cfg_support = { path = "../cfg_support", version = "0.0.0-dev.0" }
 
-[package.metadata.internal_dep_versions]
-texyon_cfg_support = "thiscommit:aeRoo7oa"

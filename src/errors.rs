@@ -23,36 +23,8 @@ use std::{
 use texyon_errors::Error as NewError;
 use zip::result::ZipError;
 
-cfg_if::cfg_if! {
-    if #[cfg(feature = "toml")] {
-        pub type ReadError = toml::de::Error;
-        pub type WriteError = toml::ser::Error;
-    } else {
-        use std::error;
-
-        #[derive(Debug)]
-        pub enum ReadError {}
-
-        impl Display for ReadError {
-            fn fmt(&self, _fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-                Ok(())
-            }
-        }
-
-        impl error::Error for ReadError { }
-
-        #[derive(Debug)]
-        pub enum WriteError {}
-
-        impl Display for WriteError {
-            fn fmt(&self, _fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-                Ok(())
-            }
-        }
-
-        impl error::Error for WriteError { }
-    }
-}
+pub type ReadError = toml::de::Error;
+pub type WriteError = toml::ser::Error;
 
 error_chain! {
     types {

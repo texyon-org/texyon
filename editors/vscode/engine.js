@@ -74,7 +74,7 @@ class NativeEngine {
   constructor(executable, { cwd, onExit, onStderr }) {
     this.waiting = [];
     this.closed = false;
-    this.process = cp.spawn(executable, ["-X", "preview", "--protocol", String(PROTOCOL_VERSION)], {
+    this.process = cp.spawn(executable, ["preview", "--protocol", String(PROTOCOL_VERSION)], {
       cwd,
       stdio: ["pipe", "pipe", "pipe"]
     });

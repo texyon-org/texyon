@@ -5,7 +5,7 @@ lints.workspace = true
 
 [package]
 name = "texyon_geturl"
-version = "0.0.0-dev.0"  # assigned with cranko (see README)
+version = "0.0.0-dev.0" 
 authors = ["Peter Williams <peter@newton.cx>"]
 description = """
 A generic interface for HTTP GETs and byte-range requests, with pluggable backends.
@@ -32,6 +32,3 @@ native-tls-vendored = ["reqwest/native-tls-vendored"]
 # reqwest and curl when enabled, since a wasm build cannot have those anyway.
 wasm-fetch = []
 
-[package.metadata.internal_dep_versions]
-texyon_errors = "e04798bcd9b1c1d68cc0a318a710bb30230a0300"
-texyon_status_base = "401387acfd98113133db6981c301426431f55ea3"

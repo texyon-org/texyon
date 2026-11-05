@@ -7,7 +7,7 @@ lints.workspace = true
 
 [package]
 name = "texyon_engine_xdvipdfmx"
-version = "0.0.0-dev.0"  # assigned with cranko (see README)
+version = "0.0.0-dev.0" 
 authors = ["Peter Williams <peter@newton.cx>"]
 description = """
 The `xdvipdfmx` program as a reusable crate.
@@ -29,7 +29,3 @@ texyon_pdf_io = { path = "../pdf_io", version = "0.0.0-dev.0" }
 [build-dependencies]
 cc = "^1.0.66"
 
-[package.metadata.internal_dep_versions]
-texyon_bridge_core = "thiscommit:2021-01-17:fohCh1sh"
-texyon_errors = "5c9ba661edf5ef669f24f9904f99cca369d999e7"
-texyon_pdf_io = "thiscommit:2022-10-21:pkYKcMI"

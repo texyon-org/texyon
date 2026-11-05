@@ -28,7 +28,6 @@ use std::{
 };
 use texyon_bridge_core::{CoreBridgeLauncher, DriverHooks, SecuritySettings, SystemRequestError};
 use texyon_bundles::Bundle;
-use texyon_engine_spx2html::AssetSpecification;
 use texyon_io_base::{
     digest::DigestData,
     filesystem::{FilesystemIo, FilesystemPrimaryInputIo},
@@ -48,7 +47,7 @@ use crate::{
     status::StatusBackend,
     tt_error, tt_note, tt_warning,
     unstable_opts::UnstableOptions,
-    BibtexEngine, Spx2HtmlEngine, TexEngine, TexOutcome, XdvipdfmxEngine, FORMAT_SERIAL,
+    BibtexEngine, TexEngine, TexOutcome, XdvipdfmxEngine, FORMAT_SERIAL,
 };
 
 /// Different patterns with which files may have been accessed by the
@@ -119,8 +118,6 @@ impl FileSummary {
 pub enum OutputFormat {
     /// A '.aux' file.
     Aux,
-    /// A '.html' file.
-    Html,
     /// An extended DVI file.
     Xdv,
     /// A '.pdf' file.
@@ -136,7 +133,6 @@ impl FromStr for OutputFormat {
     fn from_str(a_str: &str) -> StdResult<Self, Self::Err> {
         match a_str {
             "aux" => Ok(OutputFormat::Aux),
-            "html" => Ok(OutputFormat::Html),
             "xdv" => Ok(OutputFormat::Xdv),
             "pdf" => Ok(OutputFormat::Pdf),
             "fmt" => Ok(OutputFormat::Format),
@@ -834,10 +830,6 @@ pub struct ProcessingSessionBuilder {
     build_date: Option<SystemTime>,
     unstables: UnstableOptions,
     shell_escape_mode: ShellEscapeMode,
-    html_assets_spec_path: Option<String>,
-    html_precomputed_assets: Option<AssetSpecification>,
-    html_do_not_emit_files: bool,
-    html_do_not_emit_assets: bool,
 }
 
 impl ProcessingSessionBuilder {
@@ -1063,67 +1055,6 @@ impl ProcessingSessionBuilder {
         self
     }
 
-    /// When using HTML mode, emit an asset specification file instead of actual
-    /// asset files.
-    ///
-    /// "Assets" are files like fonts and images that accompany the HTML output
-    /// generated during processing. By default, these are emitted during
-    /// processing. If this method is called, the assets will *not* be created.
-    /// Instead, an "asset specification" file will be emitted to the given
-    /// output path. This specification file contains the information needed to
-    /// generate the assets upon a later invocation. Asset specification files
-    /// can be merged, allowing the results of multiple separate TeX
-    /// compilations to be synthesized into one HTML output tree.
-    ///
-    /// If the build does not use HTML mode, this setting has no effect.
-    pub fn html_assets_spec_path<S: ToString>(&mut self, path: S) -> &mut Self {
-        self.html_assets_spec_path = Some(path.to_string());
-        self
-    }
-
-    /// In HTML mode, use a precomputed asset specification.
-    ///
-    /// "Assets" are files like fonts and images that accompany the HTML output
-    /// generated during processing. By default, the engine gathers these during
-    /// processing and emits them at the end. After this method is used,
-    /// however, it will generate HTML outputs assuming the information given in
-    /// the asset specification given here. If the input calls for new assets or
-    /// different options inconsistent with the specification, processing will
-    /// abort with an error.
-    ///
-    /// The purpose of this mode is to allow for a unified set of assets to be
-    /// created from multiple independent runs of the SPX-to-HTML stage. First,
-    /// the different inputs should be processed independently, and their
-    /// individual assets should saved. These should then be merged. Then the
-    /// inputs should be reprocessed, all using the merged asset specification.
-    /// In one — but only one — of these sessions, the assets should actually be
-    /// emitted.
-    pub fn html_precomputed_assets(&mut self, assets: AssetSpecification) -> &mut Self {
-        self.html_precomputed_assets = Some(assets);
-        self
-    }
-
-    /// Set whether templated outputs should be created during HTML processing.
-    ///
-    /// This mode can be useful if you want to analyze what *would* be created
-    /// during HTML processing without actually creating the files.
-    pub fn html_emit_files(&mut self, do_emit: bool) -> &mut Self {
-        self.html_do_not_emit_files = !do_emit;
-        self
-    }
-
-    /// Set whether supporting asset files should be created during HTML
-    /// processing.
-    ///
-    /// This mode can be useful if you want to analyze what *would* be created
-    /// during HTML processing without actually creating the files. If you call
-    /// [`Self::html_assets_spec_path`], this setting will ignored, and no
-    /// assets will be emitted to disk.
-    pub fn html_emit_assets(&mut self, do_emit: bool) -> &mut Self {
-        self.html_do_not_emit_assets = !do_emit;
-        self
-    }
-
     /// Creates a `ProcessingSession`.
     pub fn create(self, status: &mut dyn StatusBackend) -> Result<ProcessingSession> {
         // First, work on the "bridge state", which gathers the subset of our
@@ -1232,11 +1163,7 @@ impl ProcessingSessionBuilder {
         let mut aux_path = PathBuf::from(tex_input_name.clone());
         aux_path.set_extension("aux");
         let mut xdv_path = aux_path.clone();
-        xdv_path.set_extension(if self.output_format == OutputFormat::Html {
-            "spx"
-        } else {
-            "xdv"
-        });
+        xdv_path.set_extension("xdv");
         let mut pdf_path = aux_path.clone();
         pdf_path.set_extension("pdf");
 
@@ -1278,10 +1205,6 @@ impl ProcessingSessionBuilder {
             build_date: self.build_date.unwrap_or(SystemTime::UNIX_EPOCH),
             unstables: self.unstables,
             shell_escape_mode,
-            html_assets_spec_path: self.html_assets_spec_path,
-            html_precomputed_assets: self.html_precomputed_assets,
-            html_emit_files: !self.html_do_not_emit_files,
-            html_emit_assets: !self.html_do_not_emit_assets,
         })
     }
 }
@@ -1348,11 +1271,6 @@ pub struct ProcessingSession {
     /// How to handle shell-escape. The `Defaulted` option will never
     /// be used here.
     shell_escape_mode: ShellEscapeMode,
-
-    html_assets_spec_path: Option<String>,
-    html_precomputed_assets: Option<AssetSpecification>,
-    html_emit_files: bool,
-    html_emit_assets: bool,
 }
 
 const DEFAULT_MAX_TEX_PASSES: usize = 6;
@@ -1762,12 +1680,8 @@ impl ProcessingSession {
             tt_warning!(status, "{}", warnings);
         }
 
-        // And finally, xdvipdfmx or spx2html. Maybe.
-
         if let OutputFormat::Pdf = self.output_format {
             self.xdvipdfmx_pass(status)?;
-        } else if let OutputFormat::Html = self.output_format {
-            self.spx2html_pass(status)?;
         }
 
         Ok(0)
@@ -1889,7 +1803,6 @@ impl ProcessingSession {
                 .halt_on_error_mode(!self.unstables.continue_on_errors)
                 .initex_mode(self.output_format == OutputFormat::Format)
                 .synctex(self.synctex_enabled)
-                .semantic_pagination(self.output_format == OutputFormat::Html)
                 .shell_escape(self.shell_escape_mode != ShellEscapeMode::Disabled)
                 .deterministic_mode(self.unstables.deterministic_mode)
                 .build_date(self.build_date)
@@ -1992,34 +1905,6 @@ impl ProcessingSession {
             }
 
             engine.process(&mut launcher, &self.tex_xdv_path, &self.tex_pdf_path)?;
-        }
-
-        self.bs.mem.files.borrow_mut().remove(&self.tex_xdv_path);
-        Ok(0)
-    }
-
-    fn spx2html_pass(&mut self, status: &mut dyn StatusBackend) -> Result<i32> {
-        {
-            let mut engine = Spx2HtmlEngine::default();
-
-            match (self.html_emit_files, self.output_path.as_ref()) {
-                (true, Some(p)) => engine.output_base(p),
-                (false, _) => engine.do_not_emit_files(),
-                (true, None) => return Err(errmsg!("HTML output must be saved directly to disk")),
-            };
-
-            if let Some(p) = self.html_assets_spec_path.as_ref() {
-                engine.assets_spec_path(p);
-            } else if !self.html_emit_assets {
-                engine.do_not_emit_assets();
-            }
-
-            if let Some(a) = self.html_precomputed_assets.as_ref() {
-                engine.precomputed_assets(a.clone());
-            }
-
-            status.note_highlighted("Running ", "spx2html", " ...");
-            engine.process_to_filesystem(&mut self.bs, status, &self.tex_xdv_path)?;
         }
 
         self.bs.mem.files.borrow_mut().remove(&self.tex_xdv_path);

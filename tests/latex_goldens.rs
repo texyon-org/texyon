@@ -71,6 +71,7 @@ fn compile_and_hash(tex_path: &Path) -> Option<String> {
     }
 
     let output = Command::new(&bin)
+        .arg("compile")
         .arg("--outfmt=xdv")
         .arg("--outdir")
         .arg(tempdir.path())

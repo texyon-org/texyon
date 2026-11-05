@@ -39,13 +39,3 @@ texyon_preview_render = { path = "../preview_render", version = "0.0.0-dev.0", f
 texyon_status_base = { path = "../status_base", version = "0.0.0-dev.0" }
 texyon_xdv = { path = "../xdv", version = "0.0.0-dev.0" }
 
-[package.metadata.internal_dep_versions]
-texyon_bridge_core = "thiscommit:2026-08-19:wasm-engine"
-texyon_engine_xetex = "thiscommit:2026-08-19:wasm-engine"
-texyon_errors = "thiscommit:2026-08-19:wasm-engine"
-texyon_io_base = "thiscommit:2026-08-19:wasm-engine"
-texyon_live_preview = "thiscommit:2026-08-19:wasm-engine"
-texyon_preview_protocol = "thiscommit:2026-08-19:wasm-engine"
-texyon_preview_render = "thiscommit:2026-08-19:wasm-engine"
-texyon_status_base = "thiscommit:2026-08-19:wasm-engine"
-texyon_xdv = "thiscommit:2026-08-19:wasm-engine"

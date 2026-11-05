@@ -47,8 +47,6 @@
 //!
 //! - [`texyon_bundles`](https://docs.rs/texyon_bundles) for the"bundles" of
 //!   TeX support files underlying Tectonic processing.
-//! - [`texyon_docmodel`](https://docs.rs/texyon_docmodel) for the Tectonic
-//!   "document model" expressed in `Texyon.toml` files.
 //! - [`texyon_engine_xetex`](https://docs.rs/texyon_engine_xetex) for the
 //!   XeTeX engine.
 //! - [`texyon_engine_xdvipdfmx`](https://docs.rs/texyon_engine_xdvipdfmx)
@@ -79,8 +77,6 @@
 
 pub mod config;
 pub mod digest;
-#[cfg(feature = "serialization")]
-pub mod docmodel;
 pub mod driver;
 pub mod engines;
 pub mod errors;
@@ -94,7 +90,6 @@ pub mod unstable_opts;
 pub mod test_util;
 
 pub use crate::engines::bibtex::BibtexEngine;
-pub use crate::engines::spx2html::Spx2HtmlEngine;
 pub use crate::engines::tex::{TexEngine, TexOutcome};
 pub use crate::engines::xdvipdfmx::XdvipdfmxEngine;
 pub use crate::errors::{Error, ErrorKind, Result};

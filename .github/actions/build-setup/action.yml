@@ -5,10 +5,6 @@ inputs:
     description: "Rust toolchain to use"
     required: false
     default: "stable"
-  release-bundle:
-    description: "Whether to restore the cranko release commit from the prep job's artifact"
-    required: false
-    default: 'true'
 runs:
   using: "composite"
   steps:
@@ -24,33 +20,3 @@ runs:
         rustup -V
         rustc -Vv
         cargo -V
-    - name: Install latest Cranko (Ubuntu/macOS)
-      if: ${{ runner.os != 'Windows' }}
-      shell: bash
-      run: |
-        d="$(mktemp -d /tmp/cranko.XXXXXX)"
-        cd "$d"
-        curl --proto '=https' --tlsv1.2 -sSf https://pkgw.github.io/cranko/fetch-latest.sh | sh
-        echo "PATH=$d:$PATH" >> "$GITHUB_ENV"
-    - name: Install latest Cranko (Windows)
-      if: ${{ runner.os == 'Windows' }}
-      shell: pwsh
-      run: |
-        $d = Join-Path $Env:Temp cranko-$(New-Guid)
-        [void][System.IO.Directory]::CreateDirectory($d)
-        cd $d
-        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-        iex ((New-Object System.Net.WebClient).DownloadString('https://pkgw.github.io/cranko/fetch-latest.ps1'))
-        Add-Content -Value "PATH=${d};$Env:PATH" -Path $Env:GITHUB_ENV -Encoding utf8
-    - name: Install release artifact
-      if: ${{ inputs.release-bundle == 'true' }}
-      uses: actions/download-artifact@v4
-      with:
-        name: release-bundle
-        path: ${{ github.workspace }}/release-bundle
-    - name: Restore release commit
-      if: ${{ inputs.release-bundle == 'true' }}
-      shell: bash
-      run: |
-        git switch -c release
-        git pull --ff-only $GITHUB_WORKSPACE/release-bundle/release.bundle

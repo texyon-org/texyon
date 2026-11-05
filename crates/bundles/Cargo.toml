@@ -7,7 +7,7 @@ lints.workspace = true
 
 [package]
 name = "texyon_bundles"
-version = "0.0.0-dev.0" # assigned with cranko (see README)
+version = "0.0.0-dev.0"
 authors = ["Peter Williams <peter@newton.cx>"]
 description = """
 Tectonic "bundle" (support file collection) implementations.
@@ -35,8 +35,3 @@ geturl-reqwest = ["texyon_geturl/reqwest"]
 geturl-wasm-fetch = ["texyon_geturl/wasm-fetch"]
 native-tls-vendored = ["texyon_geturl/native-tls-vendored"]
 
-[package.metadata.internal_dep_versions]
-texyon_errors = "5c9ba661edf5ef669f24f9904f99cca369d999e7"
-texyon_geturl = "68c5fc525c5fead75913bd90380043761bde9f61"
-texyon_io_base = "thiscommit:2021-06-13:s9130zU"
-texyon_status_base = "317ae79ceaa2593fb56090e37bf1f5cc24213dd9"

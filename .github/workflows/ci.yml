@@ -1,6 +1,5 @@
-# The routine checks: formatting and a native Linux build-and-test. The full
-# release matrix and the cranko machinery live in release.yml, which runs on
-# the rc branch, not here.
+# The routine checks: formatting and a native Linux build-and-test. The VS Code
+# extension is built and released by vscode.yml.
 
 name: "CI"
 
@@ -40,9 +39,6 @@ jobs:
           submodules: true
       - name: "Generic Setup"
         uses: ./.github/actions/build-setup
-        with:
-          # No cranko prep job here; build and test the tree as pushed.
-          release-bundle: 'false'
       - uses: Swatinem/rust-cache@v2
       - name: "Install pkg-config dependencies"
         uses: ./.github/actions/pkgconfig-deps
