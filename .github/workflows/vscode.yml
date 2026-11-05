@@ -83,19 +83,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # macOS has only shasum, Git Bash on Windows only sha256sum.
-          sha=sha256sum
-          command -v sha256sum >/dev/null || sha="shasum -a 256"
-          # Only Windows takes MuPDF from vcpkg, compiled against the bundled
-          # HarfBuzz headers, which vcpkg does not hash.
-          key="$({ sed -n '/^\[package.metadata.vcpkg\]/,/^\[package.metadata.internal/p' Cargo.toml
-                   cat dist/vcpkg-triplets/*
-                   if [[ $RUNNER_OS == Windows ]]; then
-                     cat dist/vcpkg-ports/*/*
-                     git ls-tree HEAD crates/bridge_harfbuzz/harfbuzz
-                   fi
-                 } | $sha | cut -c1-16)"
-          name="vcpkg-${{ matrix.target }}-$key.tar"
+          # vcpkg keys every package by its own ABI hash, so one archive per
+          # target serves any change and only the affected packages rebuild.
+          name="vcpkg-${{ matrix.target }}.tar"
           echo "name=$name" >> "$GITHUB_OUTPUT"
           mkdir -p target/vcpkg-cache
           if gh release download vcpkg-binaries -p "$name" -D "$RUNNER_TEMP"; then
@@ -104,6 +94,17 @@ jobs:
             (cd "$RUNNER_TEMP" && tar -xf "$name" -C "$ws/target/vcpkg-cache")
           fi
           (cd target/vcpkg-cache && find . -name '*.zip' | sort) > "$RUNNER_TEMP/restored.txt"
+      # vcpkg does not hash the bundled HarfBuzz headers MuPDF compiles against,
+      # so the port pins their version and a cached MuPDF must match it.
+      - name: "Check the MuPDF port's HarfBuzz pin"
+        if: ${{ runner.os == 'Windows' }}
+        shell: bash
+        run: |
+          pin="$(sed -n 's/^set(BUNDLED_HARFBUZZ_VERSION "\(.*\)")$/\1/p' dist/vcpkg-ports/libmupdf/portfile.cmake)"
+          if ! grep -qx "#define HB_VERSION_STRING \"$pin\"" crates/bridge_harfbuzz/harfbuzz/src/hb-version.h; then
+            echo "::error::dist/vcpkg-ports/libmupdf pins HarfBuzz '$pin' but the submodule is $(grep HB_VERSION_STRING crates/bridge_harfbuzz/harfbuzz/src/hb-version.h | tail -1)"
+            exit 1
+          fi
       - name: "Install vcpkg dependencies"
         if: ${{ runner.os != 'Linux' }}
         uses: ./.github/actions/vcpkg-deps
