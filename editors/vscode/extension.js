@@ -10,6 +10,9 @@ const { PreviewPanel } = require("./panel");
 const { childLogicalPath, sourceFilePath } = require("./path-authority");
 const { SourceTracker } = require("./sources");
 
+/** LaTeX rarely needs more than three passes, and some documents never settle. */
+const MAX_EXPORT_PASSES = 5;
+
 /** A server that dies sooner than this after starting is not restarted. */
 const RESTART_WINDOW_MS = 10_000;
 
@@ -77,7 +80,8 @@ class PreviewSession {
       primary: this.primary,
       root: this.root,
       raster: true,
-      patches: true
+      patches: true,
+      buildDate: wallClock()
     });
     opened.then((response) => {
       if (response.status !== "ok") this.fatal(response.message || "could not open the preview session");
@@ -210,7 +214,20 @@ class PreviewSession {
   async exportPdf() {
     const target = path.join(this.root, `${path.parse(this.primary).name}.pdf`);
     this.setStatus("$(sync~spin) TeXyoN: exporting…");
-    const response = await this.loop.settled(() => this.engine.request({ op: "export" }));
+    const response = await this.loop.settled(async () => {
+      // The preview resumes from checkpoints and never rereads its .aux, so
+      // references settle only by typesetting from the top until it stops changing.
+      for (let pass = 1; pass <= MAX_EXPORT_PASSES; pass += 1) {
+        this.setStatus(`$(sync~spin) TeXyoN: exporting, pass ${pass}…`);
+        const passed = await this.engine.request({ op: "fullPass" });
+        if (passed.status !== "passed") throw new Error(passed.message || `unexpected ${passed.status} reply`);
+        this.compiled(passed);
+        if (passed.aborted) throw new Error(`the document did not finish: ${passed.aborted}`);
+        if (!passed.rerun) break;
+      }
+      this.setStatus("$(sync~spin) TeXyoN: writing the PDF…");
+      return this.engine.request({ op: "export", now: Math.floor(Date.now() / 1000) });
+    });
     if (response.status !== "exported") throw new Error(response.message || "the export failed");
     await fs.promises.writeFile(target, response.data);
     this.setStatus("$(check) TeXyoN: exported");
@@ -261,6 +278,12 @@ class PreviewSession {
     if (!retainPanel) this.panel.dispose();
     this.onClose(this);
   }
+}
+
+/** Local wall-clock seconds for `\today`, since the engine reads its date as UTC. */
+function wallClock() {
+  const now = new Date();
+  return Math.floor(now.getTime() / 1000) - now.getTimezoneOffset() * 60;
 }
 
 /** Copy pixels out of the frame they were decoded from, so the webview gets only them. */

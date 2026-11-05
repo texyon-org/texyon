@@ -333,6 +333,8 @@ pub struct IncrementalXeTeXSession {
     strings_base: Option<StringWatermark>,
     last_sources: Option<SourceSnapshot>,
     pending_continuation: Option<TailContinuation>,
+    /// The next edit replays from rung zero, so files read at the start (the .aux) are read again.
+    from_start: bool,
     opened: bool,
     dead: bool,
     owns_global_lease: bool,
@@ -356,6 +358,7 @@ impl IncrementalXeTeXSession {
             strings_base: None,
             last_sources: None,
             pending_continuation: None,
+            from_start: false,
             opened: false,
             dead: false,
             owns_global_lease: false,
@@ -474,6 +477,7 @@ impl IncrementalXeTeXSession {
             bail!("resident XeTeX session was edited before open");
         }
         self.pending_continuation = None;
+        let from_start = std::mem::take(&mut self.from_start);
         let input = sources.primary().as_str().to_owned();
         let revision = sources.revision();
         let pending_fences = self
@@ -489,7 +493,11 @@ impl IncrementalXeTeXSession {
             .expect("opened session without string watermark");
         let state = &mut *self.state;
         let ladder = self.ladder.as_mut().expect("opened session without ladder");
-        let selection = ladder.select_replay_fence(&sources);
+        let selection = if from_start {
+            None
+        } else {
+            ladder.select_replay_fence(&sources)
+        };
         let replay_rung = selection.as_ref().map_or(0, |(target, _)| *target);
         let replay_clock = ladder.rung_clock(replay_rung).unwrap_or(0);
         let mut checkpoint_activity = CheckpointActivity::default();
@@ -655,6 +663,11 @@ impl IncrementalXeTeXSession {
     /// nothing, so it is safe to call between operations.
     pub fn defined_commands(&self) -> Vec<crate::introspect::DefinedCommand> {
         crate::introspect::defined_commands(&self.state)
+    }
+
+    /// Make the next [`edit`](Self::edit) typeset the whole document, even with unchanged sources.
+    pub fn replay_from_start(&mut self) {
+        self.from_start = true;
     }
 
     /// Whether a viewport-bounded foreground operation left resumable tail work.

@@ -34,6 +34,7 @@ export type {
   EngineCommand,
   EngineOptions,
   ExportResult,
+  ExportStep,
   LoadProgress,
   LogLevel,
   LogLine,
@@ -53,6 +54,7 @@ import type {
   EngineCommand,
   EngineOptions,
   ExportResult,
+  ExportStep,
   Located,
   LoadProgress,
   LogLine,
@@ -65,6 +67,9 @@ import type {
   WorkerResponse,
 } from "./protocol.js";
 import { spliceBetween } from "./splice.js";
+
+/** Full passes an export may take. LaTeX rarely needs more than three, and some documents never settle. */
+const MAX_PASSES = 5;
 
 /** Thrown when the engine could not do what was asked. */
 export class TexyonError extends Error {
@@ -140,6 +145,11 @@ export class TexyonEngine {
         pending.reject(new TexyonError(message.message));
       } else if (message.kind === "compiled") {
         (pending.resolve as (value: CompileResult) => void)(message.result);
+      } else if (message.kind === "passed") {
+        (pending.resolve as (value: { result: CompileResult; changed: boolean }) => void)({
+          result: message.result,
+          changed: message.changed,
+        });
       } else if (message.kind === "exported") {
         (pending.resolve as (value: { pdf: Uint8Array<ArrayBuffer>; elapsedMs: number }) => void)({
           pdf: message.pdf,
@@ -389,39 +399,37 @@ export class TexyonEngine {
   /**
    * Produce a PDF of the current document.
    *
-   * This is the preview's own output run through xdvipdfmx — the same XDV the
-   * viewer is showing, not a second compile — so a download cannot disagree
-   * with what was on screen.
+   * The preview replays from the nearest checkpoint, so it never reads its
+   * .aux again and its references can lag. This typesets the whole document
+   * from the top until the files it reads back stop changing, like running
+   * LaTeX until it stops asking for a rerun, then runs the result through
+   * xdvipdfmx. The passes' frames come back in {@link ExportResult.tail};
+   * apply them as you would a compile result to keep the viewer in step.
    *
-   * A viewport-bounded compile stops at the last visible page, and exporting
-   * that would silently drop the tail. So this settles the document first and
-   * hands back the frames that took, in {@link ExportResult.tail}; apply them
-   * as you would a compile result to keep the viewer in step. Usually it is
-   * empty, because the document was already finished.
+   * Each pass is a whole compile, so `onStep` says which one is running.
    */
-  async exportPdf(): Promise<ExportResult> {
+  async exportPdf(onStep?: (step: ExportStep) => void): Promise<ExportResult> {
     return this.#queue(async () => {
       const tail: CompileResult[] = [];
-
-      // Settle through the end of the document. Each continuation reports
-      // whether more is pending, so this terminates on the engine's own
-      // account rather than a fixed bound.
-      for (;;) {
-        const frame = await this.#send<CompileResult | null>({
+      let unsettled = true;
+      for (let pass = 0; pass < MAX_PASSES && unsettled; pass++) {
+        onStep?.({ phase: "pass", pass: pass + 1 });
+        const { result, changed } = await this.#send<{ result: CompileResult; changed: boolean }>({
           id: 0,
-          kind: "continueTail",
+          kind: "fullPass",
         });
-        if (!frame) break;
-        tail.push(frame);
-        if (!frame.tailPending) break;
+        tail.push(result);
+        if (result.aborted) throw new TexyonError(`the document did not finish: ${result.aborted}`);
+        unsettled = changed;
       }
 
+      onStep?.({ phase: "writing" });
       const { pdf, elapsedMs } = await this.#send<{
         pdf: Uint8Array<ArrayBuffer>;
         elapsedMs: number;
       }>({ id: 0, kind: "export" });
 
-      return { pdf, tail, elapsedMs };
+      return { pdf, tail, unsettled, elapsedMs };
     });
   }
 
