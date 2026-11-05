@@ -316,6 +316,9 @@ pub struct EngineFrame {
     pub checkpoint_rungs_rejected: usize,
     /// A resumable tail remains after a viewport-bounded foreground edit.
     pub tail_pending: bool,
+    /// Transcript bytes of the previous operation this one's `.log` continues,
+    /// since a resumed run writes only what it executed.
+    pub log_resumed_at: Option<u64>,
 }
 
 /// One initialized XeTeX state repeatedly replayed from rung zero.
@@ -734,6 +737,7 @@ impl IncrementalXeTeXSession {
             checkpoint_rungs_dropped: checkpoint_activity.dropped,
             checkpoint_rungs_rejected: checkpoint_activity.rejected,
             tail_pending: false,
+            log_resumed_at: self.state.shipout.log_resumed_at,
         };
         let (history, splice_at, tail_pending) = match result {
             OperationResult::Complete { history, splice_at } => (history, splice_at, false),
@@ -861,6 +865,7 @@ fn run_document(
     } else {
         state.shipout.dvi.manifest.begin_operation();
     }
+    state.shipout.log_resumed_at = None;
     let execution = match splice {
         Some(splice) => {
             crate::engine::resume_resident_document(state, splice.resume_pending_command)

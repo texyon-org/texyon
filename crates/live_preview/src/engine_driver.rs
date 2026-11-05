@@ -209,6 +209,7 @@ impl ResidentXeTeX {
         let engine_snapshot = snapshot.engine_snapshot();
         let output_name = output_name(engine_snapshot.primary().as_str());
         self.output_name = Some(output_name.clone());
+        let previous_log = self.written_file(&log_name(&output_name));
 
         let session = match self.session.take() {
             Some(session) => session,
@@ -240,6 +241,7 @@ impl ResidentXeTeX {
                 ResidentEngineError::Engine("engine operation produced no frame".into())
             })?;
         self.opened = true;
+        self.continue_transcript(&frame, &output_name, previous_log);
 
         let xdv = self.captured_xdv(&frame, &output_name)?;
         Ok(ResidentEngineOutput { frame, xdv })
@@ -261,6 +263,12 @@ impl ResidentXeTeX {
             .output_name
             .clone()
             .ok_or_else(|| ResidentEngineError::MissingOutput("pending XDV name".into()))?;
+        let previous_log = self
+            .output
+            .files
+            .borrow()
+            .get(&log_name(&output_name))
+            .map(|file| file.data.clone());
         let frame = self
             .support
             .with_launcher(&mut self.output, &mut |launcher| {
@@ -270,8 +278,29 @@ impl ResidentXeTeX {
         let Some(frame) = frame else {
             return Ok(None);
         };
+        self.continue_transcript(&frame, &output_name, previous_log);
         let xdv = self.captured_xdv(&frame, &output_name)?;
         Ok(Some(ResidentEngineOutput { frame, xdv }))
+    }
+
+    /// Put the previous transcript up to where this operation resumed in
+    /// front of what it wrote, so the `.log` always covers the whole document.
+    fn continue_transcript(
+        &mut self,
+        frame: &EngineFrame,
+        output_name: &str,
+        previous: Option<Vec<u8>>,
+    ) {
+        let (Some(resumed_at), Some(mut previous)) = (frame.log_resumed_at, previous) else {
+            return;
+        };
+        let mut files = self.output.files.borrow_mut();
+        let Some(log) = files.get_mut(&log_name(output_name)) else {
+            return;
+        };
+        previous.truncate(usize::try_from(resumed_at).unwrap_or(usize::MAX));
+        previous.extend_from_slice(&log.data);
+        log.data = previous;
     }
 
     fn captured_xdv(
@@ -336,6 +365,11 @@ impl ResidentXeTeX {
             .map(|_| ())
             .map_err(|error| ResidentEngineError::Engine(error.to_string()))
     }
+}
+
+fn log_name(output_name: &str) -> String {
+    let stem = output_name.strip_suffix(".xdv").unwrap_or(output_name);
+    format!("{stem}.log")
 }
 
 fn output_name(input: &str) -> String {

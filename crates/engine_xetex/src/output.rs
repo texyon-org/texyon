@@ -226,6 +226,12 @@ fn warn_char(st: &mut EngineState, c: i32) {
     }
 }
 
+/// Write one transcript byte, counting it so a resumed run can continue the transcript.
+pub(crate) fn log_putc(st: &mut EngineState, byte: u8) {
+    output_putc(st.shipout.log_file, byte);
+    st.shipout.log_bytes += 1;
+}
+
 pub(crate) fn print_ln(st: &mut EngineState) {
     match st.shipout.selector {
         sel @ (Selector::TermOnly | Selector::LogOnly | Selector::TermAndLog) => {
@@ -234,7 +240,7 @@ pub(crate) fn print_ln(st: &mut EngineState) {
                 output_putc(st.shipout.rust_stdout, b'\n');
             }
             if sel != Selector::TermOnly {
-                output_putc(st.shipout.log_file, b'\n');
+                log_putc(st, b'\n');
             }
             if sel != Selector::LogOnly {
                 st.shipout.term_offset = 0;
@@ -263,7 +269,7 @@ pub(crate) fn print_raw_char(st: &mut EngineState, s: impl Into<i32>, incr_offse
                 output_putc(st.shipout.rust_stdout, s as u8);
             }
             if to_log {
-                output_putc(st.shipout.log_file, s as u8);
+                log_putc(st, s as u8);
             }
             if incr_offset {
                 if to_term {
@@ -278,7 +284,7 @@ pub(crate) fn print_raw_char(st: &mut EngineState, s: impl Into<i32>, incr_offse
                 st.shipout.term_offset = 0;
             }
             if to_log && st.shipout.file_offset == st.config.max_print_line {
-                output_putc(st.shipout.log_file, b'\n');
+                log_putc(st, b'\n');
                 st.shipout.file_offset = 0;
             }
         }

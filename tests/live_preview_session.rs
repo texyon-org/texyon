@@ -1047,6 +1047,79 @@ fn viewport_foreground_and_tail_reassemble_to_cold_xdv() {
     runner.finish().unwrap();
 }
 
+/// The transcript of a fresh resident run over `text`, viewport and all.
+fn resident_transcript(
+    root: &std::path::Path,
+    text: &[u8],
+    edit: Option<&[u8]>,
+    viewport: Option<(usize, usize)>,
+) -> Vec<u8> {
+    let mut sources = SourceSet::initialize(
+        DocumentRoot::new(root).unwrap(),
+        "main.tex",
+        String::from_utf8(text.to_vec()).unwrap(),
+        vec![],
+        ProtocolLimits::default(),
+    )
+    .unwrap();
+    let support = ResidentEngineSupport::Fixture {
+        format_path: util::ensure_plain_format().unwrap(),
+        assets_dir: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets"),
+    };
+    let cancellation = EngineCancellation::new();
+    let mut runner = ResidentXeTeX::new(support, EnginePreviewConfig::new("plain.fmt"));
+    runner
+        .compile(sources.snapshot(), None, &cancellation)
+        .unwrap();
+    if let Some(edit) = edit {
+        sources
+            .replace(None, String::from_utf8(edit.to_vec()).unwrap())
+            .unwrap();
+        let foreground = runner
+            .compile(sources.snapshot(), viewport, &cancellation)
+            .unwrap();
+        assert!(foreground.frame.log_resumed_at.is_some());
+        while runner.has_pending_tail() {
+            runner.continue_tail(&cancellation).unwrap();
+        }
+    }
+    let log = runner.written_file("main.log").expect("no transcript");
+    runner.finish().unwrap();
+    log
+}
+
+#[test]
+fn a_resumed_run_keeps_the_whole_transcript() {
+    let _serial = session_test_lock();
+    util::set_test_root();
+    let mut original = String::from("\\hsize=220pt\nAn \\undefined error before the fence\\par\n");
+    for index in 0..2400 {
+        if index == 2100 {
+            original.push_str("ORIGINAL TAIL MARKER\\par\n");
+        } else {
+            original.push_str(&format!(
+                "line {index} has enough words for typesetting\\par\n"
+            ));
+        }
+    }
+    original.push_str("\\bye\n");
+    let edited = original.replace("ORIGINAL TAIL MARKER", "EDITED TAIL MARKER");
+    let temp = tempfile::tempdir().unwrap();
+
+    let resumed = resident_transcript(
+        temp.path(),
+        original.as_bytes(),
+        Some(edited.as_bytes()),
+        None,
+    );
+    let fresh = resident_transcript(temp.path(), edited.as_bytes(), None, None);
+    assert!(String::from_utf8_lossy(&fresh).contains("Undefined control sequence"));
+    assert_eq!(
+        String::from_utf8_lossy(&resumed),
+        String::from_utf8_lossy(&fresh)
+    );
+}
+
 #[test]
 fn chunked_tail_interrupted_by_an_edit_reassembles_to_cold_xdv() {
     let _serial = session_test_lock();

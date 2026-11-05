@@ -1232,6 +1232,11 @@ pub(crate) struct ShipoutState {
     pub write_prefix: [Vec<i32>; 16],
     pub rust_stdout: usize,
     pub log_file: usize,
+    /// Transcript bytes written so far, captured with every checkpoint.
+    pub log_bytes: u64,
+    /// Where this operation's transcript continues the previous one, if it
+    /// resumed. Operation-scoped, so checkpoint restores keep it.
+    pub log_resumed_at: Option<u64>,
     pub current_diagnostic: Option<crate::bridge::Diagnostic>,
     pub best_page_break: crate::units::MemPtr,
     pub best_size: Scaled,
