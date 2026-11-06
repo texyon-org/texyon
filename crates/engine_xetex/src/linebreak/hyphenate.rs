@@ -1,13 +1,13 @@
 //! Post-hyphenation: `hyphenate`, `reconstitute` and native-word hyphens.
 
-use crate::consts::{MIN_TRIE_OP, NON_ADDRESS, SMALL_NODE_SIZE, TEX_NULL, TOO_BIG_CHAR};
+use crate::consts::{MIN_TRIE_OP, SMALL_NODE_SIZE, TEX_NULL, TOO_BIG_CHAR};
 use crate::errors::Abort;
 use crate::fonts::CharTag;
 use crate::mem::HOLD_HEAD;
 use crate::node::{AnyNode, CharNode, DiscNode, LigItem, NodePtr, WhatsitNode};
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, FontState, MemState};
-use crate::units::{FontId, MemPtr, Scaled, StrNumber};
+use crate::units::{FontId, FontInfoIdx, MemPtr, Scaled, StrNumber};
 
 use super::odd;
 
@@ -181,7 +181,7 @@ fn reconstitute(
         'continue_: loop {
             let (mut k, mut q) = if st.mainloop.cur_l == TOO_BIG_CHAR {
                 let k = st.fonts.bchar_label[st.hyph.hf];
-                if k == NON_ADDRESS {
+                if k == FontInfoIdx::NON_ADDRESS {
                     break 'continue_;
                 }
                 (k, st.fonts.lig_kern_step(k))
@@ -616,7 +616,7 @@ fn insert_hyphens(
                 disc.set_post_break(&mut st.mem, MemPtr::NULL);
                 let mut c_loc = 0;
                 let mut c = 0;
-                if st.fonts.bchar_label[st.hyph.hf] != NON_ADDRESS {
+                if st.fonts.bchar_label[st.hyph.hf] != FontInfoIdx::NON_ADDRESS {
                     l -= 1;
                     c = st.hyph.hu[l];
                     c_loc = l;

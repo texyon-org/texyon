@@ -3,7 +3,9 @@
 use crate::cmd::Cmd;
 use crate::codes::{FiOrElseCode, ValueLevel};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
-use crate::units::{BufPos, EqtbPtr, FontId, PoolPos, PrimNum, SavePtr, Scaled, StrNumber};
+use crate::units::{
+    BufPos, EqtbPtr, FontId, FontInfoIdx, PoolPos, PrimNum, SavePtr, Scaled, StrNumber,
+};
 
 #[derive(Default)]
 pub(crate) struct EngineState {
@@ -1172,9 +1174,10 @@ pub(crate) struct FontState {
     pub xtx_ligature_present: bool,
     pub gave_char_warning_help: bool,
     pub native_font_type_flag: StrNumber,
-    pub font_mem_size: i32,
+    /// The end of `font_info`.
+    pub font_mem_size: FontInfoIdx,
     pub font_max: FontId,
-    pub fmem_ptr: i32,
+    pub fmem_ptr: FontInfoIdx,
     pub font_ptr: FontId,
     pub font_flags: PerFont<i8>,
     pub font_letter_space: PerFont<Scaled>,
@@ -1186,26 +1189,26 @@ pub(crate) struct FontState {
     pub font_area: PerFont<StrNumber>,
     pub font_bc: PerFont<u16>,
     pub font_ec: PerFont<u16>,
-    pub bchar_label: PerFont<i32>,
+    pub bchar_label: PerFont<FontInfoIdx>,
     pub font_bchar: PerFont<i32>,
     pub font_false_bchar: PerFont<i32>,
     pub font_glue: PerFont<crate::units::MemPtr>,
     pub font_used: PerFont<bool>,
-    pub char_base: PerFont<i32>,
-    pub width_base: PerFont<i32>,
-    pub height_base: PerFont<i32>,
-    pub depth_base: PerFont<i32>,
-    pub italic_base: PerFont<i32>,
-    pub lig_kern_base: PerFont<i32>,
-    pub kern_base: PerFont<i32>,
-    pub exten_base: PerFont<i32>,
-    pub param_base: PerFont<i32>,
+    pub char_base: PerFont<FontInfoIdx>,
+    pub width_base: PerFont<FontInfoIdx>,
+    pub height_base: PerFont<FontInfoIdx>,
+    pub depth_base: PerFont<FontInfoIdx>,
+    pub italic_base: PerFont<FontInfoIdx>,
+    pub lig_kern_base: PerFont<FontInfoIdx>,
+    pub kern_base: PerFont<FontInfoIdx>,
+    pub exten_base: PerFont<FontInfoIdx>,
+    pub param_base: PerFont<FontInfoIdx>,
     pub hyphen_char: PerFont<i32>,
     pub skew_char: PerFont<i32>,
     pub font_info: Vec<crate::mem_types::MemoryWord>,
     pub font_info_journal: crate::journal::PlainTrail<crate::mem_types::MemoryWord>,
     /// Font-memory high-water mark at the start of the open journal epoch.
-    pub fmem_epoch_base: i32,
+    pub fmem_epoch_base: FontInfoIdx,
     pub mapped_text: Vec<u16>,
     pub cp_codes: crate::fonts::ProtrusionCodes,
     /// Glyph bounds in TeX points, valid for the fonts through `font_ptr`.
@@ -1228,9 +1231,9 @@ impl Default for FontState {
             xtx_ligature_present: false,
             gave_char_warning_help: false,
             native_font_type_flag: StrNumber::NONE,
-            font_mem_size: 0,
+            font_mem_size: FontInfoIdx::ZERO,
             font_max: crate::consts::NULL_FONT,
-            fmem_ptr: 0,
+            fmem_ptr: FontInfoIdx::ZERO,
             font_ptr: crate::consts::NULL_FONT,
             font_flags: PerFont::default(),
             font_letter_space: PerFont::default(),
@@ -1260,7 +1263,7 @@ impl Default for FontState {
             skew_char: PerFont::default(),
             font_info: Vec::new(),
             font_info_journal: crate::journal::PlainTrail::default(),
-            fmem_epoch_base: 0,
+            fmem_epoch_base: FontInfoIdx::ZERO,
             mapped_text: Vec::new(),
             cp_codes: crate::fonts::ProtrusionCodes::default(),
             glyph_bboxes: std::cell::RefCell::default(),
@@ -1270,25 +1273,25 @@ impl Default for FontState {
 
 impl FontState {
     #[inline]
-    pub(crate) fn font_info_b16(&self, k: i32) -> crate::mem_types::B16x4 {
-        self.font_info[k as usize].b16()
+    pub(crate) fn font_info_b16(&self, k: FontInfoIdx) -> crate::mem_types::B16x4 {
+        self.font_info[k.index()].b16()
     }
 
     /// `font_info[k].sc`.
     #[inline]
-    pub(crate) fn font_info_sc(&self, k: i32) -> Scaled {
-        Scaled::from_raw(self.font_info[k as usize].b32().s1)
+    pub(crate) fn font_info_sc(&self, k: FontInfoIdx) -> Scaled {
+        Scaled::from_raw(self.font_info[k.index()].b32().s1)
     }
 
     /// Font parameter `n` of font `f`.
     #[inline]
     pub(crate) fn param(&self, f: FontId, n: i32) -> Scaled {
-        self.font_info_sc(n + self.param_base[f])
+        self.font_info_sc(self.param_base[f] + n)
     }
 
     #[inline]
-    pub(crate) fn set_font_info_b16(&mut self, k: i32, v: crate::mem_types::B16x4) {
-        let index = k as usize;
+    pub(crate) fn set_font_info_b16(&mut self, k: FontInfoIdx, v: crate::mem_types::B16x4) {
+        let index = k.index();
         if self.font_info_journal.armed() && k < self.fmem_epoch_base {
             self.font_info_journal.note(index, self.font_info[index]);
         }
@@ -1296,8 +1299,8 @@ impl FontState {
     }
 
     #[inline]
-    pub(crate) fn set_font_info_sc(&mut self, k: i32, v: Scaled) {
-        let index = k as usize;
+    pub(crate) fn set_font_info_sc(&mut self, k: FontInfoIdx, v: Scaled) {
+        let index = k.index();
         if self.font_info_journal.armed() && k < self.fmem_epoch_base {
             self.font_info_journal.note(index, self.font_info[index]);
         }

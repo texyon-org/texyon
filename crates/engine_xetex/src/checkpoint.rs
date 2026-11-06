@@ -637,7 +637,7 @@ mod tests {
     #[derive(Clone, Copy)]
     struct Bundle {
         mem_end: MemPtr,
-        fmem_ptr: i32,
+        fmem_ptr: crate::units::FontInfoIdx,
     }
 
     fn bundle(st: &EngineState) -> Bundle {
@@ -680,7 +680,7 @@ mod tests {
         st.mem.set_b32s1(MemPtr::MEM_BOT, 20);
         st.mem.set_b32s1(MemPtr::from_raw(2), 21);
         st.eqtb.set_equiv(crate::units::EqtbPtr::from_raw(1), 22);
-        st.fonts.fmem_ptr = 2;
+        st.fonts.fmem_ptr = crate::units::FontInfoIdx::from_raw(2);
         let rung = bundle(&st);
         ladder.push(&mut st, rung, 2, true, false);
 
@@ -693,7 +693,7 @@ mod tests {
         assert_eq!(value(st.mem.data[3]), 0);
         assert_eq!(value(st.eqtb.data[1]), 11);
         assert_eq!(st.mem.mem_end, MemPtr::from_raw(12));
-        assert_eq!(st.fonts.fmem_ptr, 0);
+        assert_eq!(st.fonts.fmem_ptr, crate::units::FontInfoIdx::from_raw(0));
         assert_eq!(ladder.len(), 2);
     }
 

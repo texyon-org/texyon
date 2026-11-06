@@ -26,7 +26,7 @@ use crate::output::{print, print_char, print_int, print_ln, print_nl};
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, InteractionMode, PerFont, Selector};
 use crate::token::Token;
-use crate::units::{EqtbPtr, FontId, MemPtr, PoolPos, SavePtr, Scaled, StrNumber};
+use crate::units::{EqtbPtr, FontId, FontInfoIdx, MemPtr, PoolPos, SavePtr, Scaled, StrNumber};
 
 const FORMAT_HEADER_MAGIC: i32 = 0x5454_4E43;
 const FORMAT_FOOTER_MAGIC: i32 = 0x0000_029A;
@@ -80,7 +80,7 @@ macro_rules! newtype_item {
     )*};
 }
 
-newtype_item!(Scaled, MemPtr, StrNumber, EqtbPtr, PoolPos);
+newtype_item!(Scaled, MemPtr, StrNumber, EqtbPtr, PoolPos, FontInfoIdx);
 
 impl FmtItem for B32x2 {
     const SIZE: usize = 8;
@@ -710,15 +710,15 @@ fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort>
     let fonts = &mut st.fonts;
     s.size(
         &mut fonts.fmem_ptr,
-        7,
-        SUP_FONT_MEM_SIZE,
+        FontInfoIdx::from_raw(7),
+        FontInfoIdx::from_raw(SUP_FONT_MEM_SIZE),
         "must increase font_mem_size",
     )?;
     if S::LOADING {
         fonts.font_mem_size = fonts.font_mem_size.max(fonts.fmem_ptr);
-        fonts.font_info = crate::mem_types::zeroed_vec(fonts.font_mem_size as usize + 1);
+        fonts.font_info = crate::mem_types::zeroed_vec(fonts.font_mem_size.index() + 1);
     }
-    s.items(span(&mut fonts.font_info, 0, fonts.fmem_ptr))?;
+    s.items(span(&mut fonts.font_info, 0, fonts.fmem_ptr.raw()))?;
 
     let mut font_ptr = fonts.font_ptr.raw();
     s.size(
@@ -770,7 +770,11 @@ fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort>
         MemPtr::from_raw(MIN_HALFWORD),
         lo_mem_max,
     )?;
-    s.items_in(fonts_of(&mut fonts.bchar_label, last), 0, max_font_index)?;
+    s.items_in(
+        fonts_of(&mut fonts.bchar_label, last),
+        FontInfoIdx::ZERO,
+        max_font_index,
+    )?;
     s.items_in(fonts_of(&mut fonts.font_bchar, last), 0, TOO_BIG_CHAR)?;
     s.items_in(fonts_of(&mut fonts.font_false_bchar, last), 0, TOO_BIG_CHAR)?;
 
@@ -818,7 +822,7 @@ fn print_dumped_fonts(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     print_ln(st);
-    print_int(st, st.fonts.fmem_ptr - 7);
+    print_int(st, st.fonts.fmem_ptr.raw() - 7);
     print(st, " words of font info for ");
     print_int(st, font_ptr.raw());
     if font_ptr.raw() != FONT_BASE + 1 {
@@ -1023,7 +1027,7 @@ mod tests {
         st.strings.str_start = vec![crate::units::PoolPos::ZERO; 4];
         st.eqtb.hash = vec![B32x2 { s0: 0, s1: 0 }; hash_slot(FONT_ID_BASE + 2) as usize];
         st.fonts.font_max = FontId::from_raw(FONT_BASE + 1);
-        st.fonts.fmem_ptr = 7;
+        st.fonts.fmem_ptr = FontInfoIdx::from_raw(7);
         st.fonts.font_info = crate::mem_types::zeroed_vec(8);
         st.fonts.alloc_font_arrays();
         st

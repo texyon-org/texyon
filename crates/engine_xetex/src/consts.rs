@@ -35,7 +35,6 @@ pub const NULL_FONT: crate::units::FontId = crate::units::FontId::from_raw(FONT_
 /// The `\font` size that means the design size, `scaled 1000`.
 pub const DESIGN_SIZE: crate::units::Scaled = crate::units::Scaled::from_raw(-1000);
 pub const MAX_FONT_MAX: i32 = 9_000;
-pub const NON_ADDRESS: i32 = 0;
 pub const MIN_TRIE_OP: u16 = 0;
 pub const INVALID_HANDLE: usize = 0;
 

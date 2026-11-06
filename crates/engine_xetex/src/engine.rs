@@ -11,9 +11,9 @@ use crate::consts::{
     FROZEN_END_TEMPLATE, FROZEN_PRIMITIVE, FROZEN_PROTECTION, GLUE_BASE, HASH_BASE,
     HISTORY_FATAL_ERROR, HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, IGNORE_DEPTH, INT_BASE,
     LC_CODE_BASE, LEFT_TO_RIGHT, LEVEL_ONE, LEVEL_ZERO, LOCAL_BASE, MATH_CODE_BASE, MATH_FONT_BASE,
-    MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP, MIN_TRIE_OP, NON_ADDRESS, NORMAL, NULL_FONT,
-    NUMBER_MATH_FAMILIES, NUMBER_USVS, PAR_SHAPE_LOC, PRIM_SIZE, SF_CODE_BASE, SINGLE_BASE,
-    TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, VMODE,
+    MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP, MIN_TRIE_OP, NORMAL, NULL_FONT, NUMBER_MATH_FAMILIES,
+    NUMBER_USVS, PAR_SHAPE_LOC, PRIM_SIZE, SF_CODE_BASE, SINGLE_BASE, TEX_NULL, TOKS_BASE,
+    TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, VMODE,
 };
 use crate::errors::Abort;
 use crate::format_io::load_fmt_file;
@@ -39,8 +39,8 @@ use crate::state::{
 };
 use crate::token::Token;
 use crate::units::{
-    BufPos, EqtbPtr, FontId, GlueOrder, MemPtr, NodeType, PoolPos, PrimNum, SavePtr, Scaled,
-    StrNumber,
+    BufPos, EqtbPtr, FontId, FontInfoIdx, GlueOrder, MemPtr, NodeType, PoolPos, PrimNum, SavePtr,
+    Scaled, StrNumber,
 };
 
 /// A `get_node` request this large merges every free block into the rover list.
@@ -732,21 +732,21 @@ impl FontState {
         self.font_area = PerFont::filled(len, StrNumber::NONE);
         self.font_bc = PerFont::filled(len, 0);
         self.font_ec = PerFont::filled(len, 0);
-        self.bchar_label = PerFont::filled(len, 0);
+        self.bchar_label = PerFont::filled(len, FontInfoIdx::ZERO);
         self.font_bchar = PerFont::filled(len, 0);
         self.font_false_bchar = PerFont::filled(len, 0);
         self.font_glue = PerFont::filled(len, MemPtr::default());
         self.hyphen_char = PerFont::filled(len, 0);
         self.skew_char = PerFont::filled(len, 0);
-        self.char_base = PerFont::filled(len, 0);
-        self.width_base = PerFont::filled(len, 0);
-        self.height_base = PerFont::filled(len, 0);
-        self.depth_base = PerFont::filled(len, 0);
-        self.italic_base = PerFont::filled(len, 0);
-        self.lig_kern_base = PerFont::filled(len, 0);
-        self.kern_base = PerFont::filled(len, 0);
-        self.exten_base = PerFont::filled(len, 0);
-        self.param_base = PerFont::filled(len, 0);
+        self.char_base = PerFont::filled(len, FontInfoIdx::ZERO);
+        self.width_base = PerFont::filled(len, FontInfoIdx::ZERO);
+        self.height_base = PerFont::filled(len, FontInfoIdx::ZERO);
+        self.depth_base = PerFont::filled(len, FontInfoIdx::ZERO);
+        self.italic_base = PerFont::filled(len, FontInfoIdx::ZERO);
+        self.lig_kern_base = PerFont::filled(len, FontInfoIdx::ZERO);
+        self.kern_base = PerFont::filled(len, FontInfoIdx::ZERO);
+        self.exten_base = PerFont::filled(len, FontInfoIdx::ZERO);
+        self.param_base = PerFont::filled(len, FontInfoIdx::ZERO);
     }
 }
 
@@ -768,7 +768,7 @@ pub(crate) fn initialize_engine(
     st.strings.pool_size = PoolPos::from_raw(6_250_000);
     st.strings.string_vacancies = 90_000;
     st.strings.max_strings = StrNumber::from_raw(565_536);
-    st.fonts.font_mem_size = 8_000_000;
+    st.fonts.font_mem_size = FontInfoIdx::from_raw(8_000_000);
     st.fonts.font_max = FontId::from_raw(9_000);
     st.hyph.trie_size = 1_000_000;
     st.hyph.hyph_size = HYPH_SIZE;
@@ -814,7 +814,7 @@ pub(crate) fn initialize_engine(
         st.eqtb.data = zeroed_vec(st.eqtb.eqtb_top.index() + 1);
         st.strings.str_start = vec![PoolPos::ZERO; st.strings.max_strings.slot() + 1];
         st.strings.str_pool = vec![0; st.strings.pool_size.index() + 1];
-        st.fonts.font_info = zeroed_vec(st.fonts.font_mem_size as usize + 1);
+        st.fonts.font_info = zeroed_vec(st.fonts.font_mem_size.index() + 1);
     }
 
     st.errors.history = HISTORY_FATAL_ERROR;
@@ -959,19 +959,19 @@ pub(crate) fn initialize_engine(
         let fonts = &mut st.fonts;
         let f = NULL_FONT;
         fonts.font_ptr = NULL_FONT;
-        fonts.fmem_ptr = 7;
+        fonts.fmem_ptr = FontInfoIdx::from_raw(7);
         fonts.font_name[f] = nullfont_name;
         fonts.font_area[f] = EMPTY_STRING;
         fonts.hyphen_char[f] = i32::from(b'-');
         fonts.skew_char[f] = -1;
-        fonts.bchar_label[f] = NON_ADDRESS;
+        fonts.bchar_label[f] = FontInfoIdx::NON_ADDRESS;
         fonts.font_bchar[f] = TOO_BIG_CHAR;
         fonts.font_false_bchar[f] = TOO_BIG_CHAR;
         fonts.font_bc[f] = 1;
         fonts.font_ec[f] = 0;
         fonts.font_glue[f] = MemPtr::NULL;
         fonts.font_params[f] = 7;
-        fonts.param_base[f] = -1;
+        fonts.param_base[f] = FontInfoIdx::from_raw(-1);
         for word in &mut fonts.font_info[..7] {
             word.b32.s1 = 0;
         }

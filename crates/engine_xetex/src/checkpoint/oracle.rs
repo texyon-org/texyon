@@ -169,14 +169,14 @@ fn digest_fonts(st: &EngineState) -> u64 {
         i32::from(fonts.loaded_font_flags),
         fonts.loaded_font_letter_space.raw(),
         fonts.native_font_type_flag.raw(),
-        fonts.font_mem_size,
+        fonts.font_mem_size.raw(),
         fonts.font_max.raw(),
-        fonts.fmem_ptr,
+        fonts.fmem_ptr.raw(),
         fonts.font_ptr.raw(),
     ]);
     h.word(u64::from(fonts.xtx_ligature_present));
     h.word(u64::from(fonts.gave_char_warning_help));
-    for &word in fonts.font_info.iter().take(fonts.fmem_ptr.max(0) as usize) {
+    for &word in fonts.font_info.iter().take(fonts.fmem_ptr.index()) {
         h.word(memory_word(word));
     }
     let font_count = (fonts.font_ptr.raw() + 1).max(0) as usize;
@@ -196,20 +196,20 @@ fn digest_fonts(st: &EngineState) -> u64 {
     hash_values!(font_area.raw());
     hash_values!(font_bc);
     hash_values!(font_ec);
-    hash_values!(bchar_label);
+    hash_values!(bchar_label.raw());
     hash_values!(font_bchar);
     hash_values!(font_false_bchar);
     hash_values!(font_glue.raw());
     hash_values!(font_used);
-    hash_values!(char_base);
-    hash_values!(width_base);
-    hash_values!(height_base);
-    hash_values!(depth_base);
-    hash_values!(italic_base);
-    hash_values!(lig_kern_base);
-    hash_values!(kern_base);
-    hash_values!(exten_base);
-    hash_values!(param_base);
+    hash_values!(char_base.raw());
+    hash_values!(width_base.raw());
+    hash_values!(height_base.raw());
+    hash_values!(depth_base.raw());
+    hash_values!(italic_base.raw());
+    hash_values!(lig_kern_base.raw());
+    hash_values!(kern_base.raw());
+    hash_values!(exten_base.raw());
+    hash_values!(param_base.raw());
     hash_values!(hyphen_char);
     hash_values!(skew_char);
     for value in fonts.font_check.as_slice().iter().take(font_count) {

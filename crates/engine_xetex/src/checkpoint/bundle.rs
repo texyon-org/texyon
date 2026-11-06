@@ -13,7 +13,9 @@ use crate::state::{
     MemState, SaveStackState, ScannerState, ShipoutState, StringsState, SynctexCtxt, TexmfState,
 };
 use crate::sync_index::PreviewSyncIndex;
-use crate::units::{BufPos, EqtbPtr, FontId, MemPtr, PoolPos, SavePtr, Scaled, StrNumber};
+use crate::units::{
+    BufPos, EqtbPtr, FontId, FontInfoIdx, MemPtr, PoolPos, SavePtr, Scaled, StrNumber,
+};
 
 fn vec_bytes<T>(values: &Vec<T>) -> usize {
     values.capacity() * size_of::<T>()
@@ -573,20 +575,20 @@ font_arrays! {
     font_area: StrNumber,
     font_bc: u16,
     font_ec: u16,
-    bchar_label: i32,
+    bchar_label: FontInfoIdx,
     font_bchar: i32,
     font_false_bchar: i32,
     font_glue: MemPtr,
     font_used: bool,
-    char_base: i32,
-    width_base: i32,
-    height_base: i32,
-    depth_base: i32,
-    italic_base: i32,
-    lig_kern_base: i32,
-    kern_base: i32,
-    exten_base: i32,
-    param_base: i32,
+    char_base: FontInfoIdx,
+    width_base: FontInfoIdx,
+    height_base: FontInfoIdx,
+    depth_base: FontInfoIdx,
+    italic_base: FontInfoIdx,
+    lig_kern_base: FontInfoIdx,
+    kern_base: FontInfoIdx,
+    exten_base: FontInfoIdx,
+    param_base: FontInfoIdx,
     hyphen_char: i32,
     skew_char: i32,
 }
@@ -599,9 +601,9 @@ struct FontBundle {
     xtx_ligature_present: bool,
     gave_char_warning_help: bool,
     native_font_type_flag: StrNumber,
-    font_mem_size: i32,
+    font_mem_size: FontInfoIdx,
     font_max: FontId,
-    fmem_ptr: i32,
+    fmem_ptr: FontInfoIdx,
     font_ptr: FontId,
     arrays: FontArrays,
     engines: Vec<Option<std::rc::Rc<FontEngineHandle>>>,

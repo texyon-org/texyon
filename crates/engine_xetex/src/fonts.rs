@@ -2,8 +2,7 @@
 //! character nodes and the TFM `char_info` accessors.
 
 use crate::consts::{
-    DESIGN_SIZE, EMPTY_STRING, INVALID_HANDLE, NATIVE_NODE_SIZE, NON_ADDRESS, NULL_FONT,
-    TOO_BIG_CHAR,
+    DESIGN_SIZE, EMPTY_STRING, INVALID_HANDLE, NATIVE_NODE_SIZE, NULL_FONT, TOO_BIG_CHAR,
 };
 use crate::ext::{
     aat_get_font_metrics, apply_tfm_font_mapping, find_native_font, load_tfm_font_mapping,
@@ -19,7 +18,7 @@ use crate::output::{
 };
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, FontState, MemState};
-use crate::units::{EqtbPtr, FontId, MemPtr, Scaled, StrNumber};
+use crate::units::{EqtbPtr, FontId, FontInfoIdx, MemPtr, Scaled, StrNumber};
 
 use crate::bridge::{input_getc, FileFormat};
 use crate::errors::Abort;
@@ -185,7 +184,7 @@ impl LigKernStep {
 
     /// The index of the next instruction for the character, from this one's `k`.
     #[inline]
-    pub(crate) fn next_index(self, k: i32) -> i32 {
+    pub(crate) fn next_index(self, k: FontInfoIdx) -> FontInfoIdx {
         k + i32::from(self.0.s3) + 1
     }
 }
@@ -207,12 +206,17 @@ impl FontState {
 
     /// A native font's ascent, which it keeps in `height_base`.
     pub(crate) fn native_height(&self, f: FontId) -> Scaled {
-        Scaled::from_raw(self.height_base[f])
+        Scaled::from_raw(self.height_base[f].raw())
     }
 
     /// A native font's descent, which it keeps in `depth_base`.
     pub(crate) fn native_depth(&self, f: FontId) -> Scaled {
-        Scaled::from_raw(self.depth_base[f])
+        Scaled::from_raw(self.depth_base[f].raw())
+    }
+
+    fn set_native_extent(&mut self, f: FontId, ascent: Scaled, descent: Scaled) {
+        self.height_base[f] = FontInfoIdx::from_raw(ascent.raw());
+        self.depth_base[f] = FontInfoIdx::from_raw(-descent.raw());
     }
 
     #[inline]
@@ -249,14 +253,14 @@ impl FontState {
 
     /// The lig/kern instruction at `font_info` index `k`.
     #[inline]
-    pub(crate) fn lig_kern_step(&self, k: i32) -> LigKernStep {
+    pub(crate) fn lig_kern_step(&self, k: FontInfoIdx) -> LigKernStep {
         LigKernStep(self.font_info_b16(k))
     }
 
     /// The index and first instruction of the lig/kern program of `i`, which
     /// is tagged `Lig`.
     #[inline]
-    pub(crate) fn lig_kern_start(&self, f: FontId, i: CharInfo) -> (i32, LigKernStep) {
+    pub(crate) fn lig_kern_start(&self, f: FontId, i: CharInfo) -> (FontInfoIdx, LigKernStep) {
         let k = self.lig_kern_base[f] + i32::from(i.remainder());
         let step = self.lig_kern_step(k);
         if !step.is_redirect() {
@@ -737,7 +741,7 @@ impl FontState {
         let char_exists =
             |fonts: &FontState, ch: i32| (bc..=ec).contains(&ch) && fonts.char_info(f, ch).exists();
 
-        for k in self.fmem_ptr..self.width_base[f] {
+        for k in self.fmem_ptr.until(self.width_base[f]) {
             let bytes = read!(read_tfm_bytes(tfm_file));
             let [a, b, c, d] = bytes;
             self.set_font_info_b16(k, four_quarters(bytes));
@@ -753,7 +757,7 @@ impl FontState {
                         bad!();
                     }
                     // A charlist must not cycle back to the current character.
-                    let current = k + bc - self.fmem_ptr;
+                    let current = (k - self.fmem_ptr) + bc;
                     let mut dd = d;
                     while dd < current {
                         let qw = self.char_info(f, dd);
@@ -778,7 +782,7 @@ impl FontState {
         let beta = 256 / alpha;
         alpha *= z;
 
-        for k in self.width_base[f]..self.lig_kern_base[f] {
+        for k in self.width_base[f].until(self.lig_kern_base[f]) {
             let sw = read!(read_scaled_word(tfm_file, z, beta, alpha));
             self.set_font_info_sc(k, sw);
         }
@@ -797,7 +801,7 @@ impl FontState {
         if nl > 0 {
             let lig_kern_base = self.lig_kern_base[f];
             let lig_kern_end = self.kern_base[f] + 256 * 128;
-            for k in lig_kern_base..lig_kern_end {
+            for k in lig_kern_base.until(lig_kern_end) {
                 let bytes = read!(read_tfm_bytes(tfm_file));
                 let [a, b, c, d] = bytes;
                 self.set_font_info_b16(k, four_quarters(bytes));
@@ -831,12 +835,12 @@ impl FontState {
             }
         }
 
-        for k in self.kern_base[f] + 256 * 128..self.exten_base[f] {
+        for k in (self.kern_base[f] + 256 * 128).until(self.exten_base[f]) {
             let sw = read!(read_scaled_word(tfm_file, z, beta, alpha));
             self.set_font_info_sc(k, sw);
         }
 
-        for k in self.exten_base[f]..self.param_base[f] {
+        for k in self.exten_base[f].until(self.param_base[f]) {
             let bytes = read!(read_tfm_bytes(tfm_file));
             let [a, b, c, d] = bytes;
             self.set_font_info_b16(k, four_quarters(bytes));
@@ -877,9 +881,9 @@ impl FontState {
         self.hyphen_char[f] = eqtb.int_par(IntPar::DefaultHyphenChar);
         self.skew_char[f] = eqtb.int_par(IntPar::DefaultSkewChar);
         if bch_label < nl {
-            self.bchar_label[f] = bch_label + self.lig_kern_base[f];
+            self.bchar_label[f] = self.lig_kern_base[f] + bch_label;
         } else {
-            self.bchar_label[f] = NON_ADDRESS;
+            self.bchar_label[f] = FontInfoIdx::NON_ADDRESS;
         }
         self.font_bchar[f] = bchar;
         self.font_false_bchar[f] = bchar;
@@ -923,8 +927,7 @@ impl FontState {
             ot_get_font_metrics(&font_engine)
         };
 
-        self.height_base[font_ptr] = metrics.ascent.raw();
-        self.depth_base[font_ptr] = -metrics.descent.raw();
+        self.set_native_extent(font_ptr, metrics.ascent, metrics.descent);
         self.font_params[font_ptr] = num_font_dimens;
         self.font_bc[font_ptr] = 0;
         self.font_ec[font_ptr] = 65_535;

@@ -25,7 +25,7 @@ use crate::output::{
 use crate::params::TokPar;
 use crate::state::{EngineState, FontEngineHandle};
 use crate::token::TokenList;
-use crate::units::{EqtbPtr, FontId, MemPtr, NodeType, Scaled, StrNumber};
+use crate::units::{EqtbPtr, FontId, FontInfoIdx, MemPtr, NodeType, Scaled, StrNumber};
 use std::rc::Rc;
 
 use super::next::get_x_non_blank;
@@ -931,12 +931,12 @@ pub(crate) fn scan_font_ident(st: &mut EngineState) -> Result<FontId, Abort> {
 }
 
 /// The `font_info` index of the `\fontdimen` being scanned.
-pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<i32, Abort> {
+pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<FontInfoIdx, Abort> {
     let n = scan_int(st)?;
     let f = scan_font_ident(st)?;
 
-    if n <= 0 {
-        st.scanner.cur_val = st.fonts.fmem_ptr;
+    let k = if n <= 0 {
+        st.fonts.fmem_ptr
     } else {
         if writing
             && (SPACE_CODE..=SPACE_SHRINK_CODE).contains(&n)
@@ -948,16 +948,16 @@ pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<i32
         }
 
         if n <= st.fonts.font_params[f] {
-            st.scanner.cur_val = n + st.fonts.param_base[f];
+            st.fonts.param_base[f] + n
         } else if f < st.fonts.font_ptr {
-            st.scanner.cur_val = st.fonts.fmem_ptr;
+            st.fonts.fmem_ptr
         } else {
             // Only the most recently loaded font can grow its parameter area.
             loop {
                 if st.fonts.fmem_ptr == st.fonts.font_mem_size {
                     return Err(Abort::Overflow {
                         what: "font memory",
-                        n: st.fonts.font_mem_size,
+                        n: st.fonts.font_mem_size.raw(),
                     });
                 }
                 st.fonts.set_font_info_sc(st.fonts.fmem_ptr, Scaled::ZERO);
@@ -967,11 +967,11 @@ pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<i32
                     break;
                 }
             }
-            st.scanner.cur_val = st.fonts.fmem_ptr - 1;
+            st.fonts.fmem_ptr - 1
         }
-    }
+    };
 
-    if st.scanner.cur_val == st.fonts.fmem_ptr {
+    if k == st.fonts.fmem_ptr {
         error_here_with_diagnostic(st, "Font ");
         crate::output::print_esc(st, st.eqtb.font_id_text(f));
         print(st, " has only ");
@@ -984,7 +984,7 @@ pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<i32
         ]);
         error(st)?;
     }
-    Ok(st.scanner.cur_val)
+    Ok(k)
 }
 
 pub(crate) fn scan_glyph_number(st: &mut EngineState, f: FontId) -> Result<i32, Abort> {

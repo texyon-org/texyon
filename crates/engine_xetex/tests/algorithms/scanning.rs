@@ -86,3 +86,23 @@ fn showtokens_detokenizes_its_argument() {
     let r = run(r"\showtokens{a#b}");
     assert_eq!(r.shown(), ["a##b"]);
 }
+
+#[test]
+fn fontdimen_grows_only_the_newest_font() {
+    let r = run(r"\font\rm=cmr10 \font\mi=cmmi10
+                  \showthe\fontdimen6\rm
+                  \fontdimen9\mi=3pt \showthe\fontdimen9\mi \showthe\fontdimen8\mi
+                  \fontdimen8\rm=5pt \showthe\fontdimen8\rm \showthe\fontdimen0\mi");
+    assert_eq!(
+        r.shown(),
+        ["10.00002pt", "3.0pt", "0.0pt", "0.0pt", "0.0pt"]
+    );
+    assert_eq!(
+        r.errors(),
+        [
+            r"Font \rm has only 7 fontdimen parameters.",
+            r"Font \rm has only 7 fontdimen parameters.",
+            r"Font \mi has only 9 fontdimen parameters.",
+        ]
+    );
+}

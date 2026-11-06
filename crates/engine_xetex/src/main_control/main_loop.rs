@@ -3,8 +3,7 @@
 use crate::cmd::Cmd;
 use crate::codes::ValueLevel;
 use crate::consts::{
-    CHAR_CLASS_LIMIT, HMODE, NATIVE_NODE_SIZE, NON_ADDRESS, SPACE_ADJUSTMENT, TEX_NULL,
-    TOO_BIG_CHAR,
+    CHAR_CLASS_LIMIT, HMODE, NATIVE_NODE_SIZE, SPACE_ADJUSTMENT, TEX_NULL, TOO_BIG_CHAR,
 };
 use crate::errors::Abort;
 use crate::ext::append_src_special;
@@ -14,7 +13,7 @@ use crate::node::{AnyNode, CharNode, LigItem, NodePtr, WhatsitNode};
 use crate::params::IntPar;
 use crate::state::{EngineState, MemState};
 use crate::token::{Token, TokenList};
-use crate::units::{FontId, MemIdx, MemPtr};
+use crate::units::{FontId, FontInfoIdx, MemIdx, MemPtr};
 
 fn inter_char_tokens_enabled(st: &EngineState) -> bool {
     st.eqtb.int_par(IntPar::XetexInterCharTokens) > 0
@@ -451,7 +450,7 @@ pub(super) enum Resume {
     /// `main_lig_loop`.
     LigLoop,
     /// `main_lig_loop+1` at lig/kern program index `k`.
-    LigProgram(i32),
+    LigProgram(FontInfoIdx),
     /// `main_loop_move+2`.
     Move2,
 }
@@ -540,11 +539,11 @@ pub(super) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
 
     let bchar_label = if st.mainloop.cancel_boundary {
         st.mainloop.cancel_boundary = false;
-        NON_ADDRESS
+        FontInfoIdx::NON_ADDRESS
     } else {
         st.fonts.bchar_label[mf]
     };
-    let mut resume = if bchar_label != NON_ADDRESS {
+    let mut resume = if bchar_label != FontInfoIdx::NON_ADDRESS {
         st.mainloop.cur_r = st.mainloop.cur_l;
         st.mainloop.cur_l = TOO_BIG_CHAR;
         Resume::LigProgram(bchar_label)
@@ -642,7 +641,7 @@ pub(super) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
 #[inline(always)]
 fn lig_kern_program(
     st: &mut EngineState,
-    mut k: i32,
+    mut k: FontInfoIdx,
     mut step: LigKernStep,
     main_i: &mut CharInfo,
 ) -> Result<LigExit, Abort> {
