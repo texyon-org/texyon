@@ -1,8 +1,8 @@
 //! Post-hyphenation: `hyphenate`, `reconstitute` and native-word hyphens.
 
-use crate::consts::{SMALL_NODE_SIZE, TEX_NULL, TOO_BIG_CHAR};
+use crate::consts::{SMALL_NODE_SIZE, TEX_NULL};
 use crate::errors::Abort;
-use crate::fonts::CharTag;
+use crate::fonts::{CharTag, LigChar};
 use crate::hyphenation::TrieOp;
 use crate::mem::HOLD_HEAD;
 use crate::node::{AnyNode, CharNode, DiscNode, LigItem, NodePtr, WhatsitNode};
@@ -106,12 +106,18 @@ impl MemState {
 }
 
 /// Load `cur_r` for position `j` and return the hyphen char still to be tried there.
-fn update_right(st: &mut EngineState, j: usize, n: usize, bchar: i32, hchar: i32) -> i32 {
+fn update_right(
+    st: &mut EngineState,
+    j: usize,
+    n: usize,
+    bchar: LigChar,
+    hchar: LigChar,
+) -> LigChar {
     st.mainloop.cur_r = if j < n { st.hyph.hu[j + 1] } else { bchar };
     if odd(st.hyph.hyf[j]) {
         hchar
     } else {
-        TOO_BIG_CHAR
+        LigChar::NONE
     }
 }
 
@@ -122,9 +128,9 @@ fn pop_lig_stack(
     t: &mut MemPtr,
     j: &mut usize,
     n: usize,
-    bchar: i32,
-    hchar: i32,
-    cur_rh: &mut i32,
+    bchar: LigChar,
+    hchar: LigChar,
+    cur_rh: &mut LigChar,
 ) {
     let item = lig_item(st.mainloop.lig_stack);
     let component = item.component(&st.mem);
@@ -138,7 +144,7 @@ fn pop_lig_stack(
     if st.mainloop.lig_stack.is_null() {
         *cur_rh = update_right(st, *j, n, bchar, hchar);
     } else {
-        st.mainloop.cur_r = i32::from(lig_item(st.mainloop.lig_stack).character(&st.mem));
+        st.mainloop.cur_r = LigChar::of(lig_item(st.mainloop.lig_stack).character(&st.mem));
     }
 }
 
@@ -148,8 +154,8 @@ fn reconstitute(
     st: &mut EngineState,
     mut j: usize,
     n: usize,
-    mut bchar: i32,
-    mut hchar: i32,
+    mut bchar: LigChar,
+    mut hchar: LigChar,
 ) -> Result<usize, Abort> {
     st.hyph.hyphen_passed = 0;
     let mut t = HOLD_HEAD;
@@ -169,10 +175,10 @@ fn reconstitute(
             t = st.mem.append_char(t, st.hyph.hf, c)?;
             p = p.link(&st.mem);
         }
-    } else if st.mainloop.cur_l < TOO_BIG_CHAR {
+    } else if st.mainloop.cur_l.is_char() {
         t = st
             .mem
-            .append_char(t, st.hyph.hf, st.mainloop.cur_l as u16)?;
+            .append_char(t, st.hyph.hf, st.mainloop.cur_l.code())?;
     }
 
     st.mainloop.lig_stack = MemPtr::NULL;
@@ -180,7 +186,7 @@ fn reconstitute(
 
     loop {
         'continue_: loop {
-            let (mut k, mut q) = if st.mainloop.cur_l == TOO_BIG_CHAR {
+            let (mut k, mut q) = if st.mainloop.cur_l == LigChar::NONE {
                 let k = st.fonts.bchar_label[st.hyph.hf];
                 if k == FontInfoIdx::NON_ADDRESS {
                     break 'continue_;
@@ -189,14 +195,14 @@ fn reconstitute(
             } else {
                 let info = st
                     .fonts
-                    .effective_char_info(st.hyph.hf, st.mainloop.cur_l as u16);
+                    .effective_char_info(st.hyph.hf, st.mainloop.cur_l.code());
                 if info.tag() != CharTag::Lig {
                     break 'continue_;
                 }
                 st.fonts.lig_kern_start(st.hyph.hf, info)
             };
 
-            let mut test_char = if cur_rh < TOO_BIG_CHAR {
+            let mut test_char = if cur_rh.is_char() {
                 cur_rh
             } else {
                 st.mainloop.cur_r
@@ -204,20 +210,20 @@ fn reconstitute(
 
             loop {
                 if q.matches(test_char) {
-                    if cur_rh < TOO_BIG_CHAR {
+                    if cur_rh.is_char() {
                         st.hyph.hyphen_passed = j;
-                        hchar = TOO_BIG_CHAR;
-                        cur_rh = TOO_BIG_CHAR;
+                        hchar = LigChar::NONE;
+                        cur_rh = LigChar::NONE;
                         continue 'continue_;
                     }
 
-                    if hchar < TOO_BIG_CHAR && odd(st.hyph.hyf[j]) {
+                    if hchar.is_char() && odd(st.hyph.hyf[j]) {
                         st.hyph.hyphen_passed = j;
-                        hchar = TOO_BIG_CHAR;
+                        hchar = LigChar::NONE;
                     }
 
                     if !q.is_kern() {
-                        if st.mainloop.cur_l == TOO_BIG_CHAR {
+                        if st.mainloop.cur_l == LigChar::NONE {
                             st.mainloop.lft_hit = true;
                         }
                         if j == n && st.mainloop.lig_stack.is_null() {
@@ -226,31 +232,31 @@ fn reconstitute(
 
                         match q.lig_op() {
                             1 | 5 => {
-                                st.mainloop.cur_l = i32::from(q.lig_char());
+                                st.mainloop.cur_l = LigChar::of(q.lig_char());
                                 st.mainloop.ligature_present = true;
                             }
                             2 | 6 => {
-                                st.mainloop.cur_r = i32::from(q.lig_char());
+                                st.mainloop.cur_r = LigChar::of(q.lig_char());
                                 if st.mainloop.lig_stack.raw() > TEX_NULL {
                                     lig_item(st.mainloop.lig_stack)
-                                        .set_character(&mut st.mem, st.mainloop.cur_r as u16);
+                                        .set_character(&mut st.mem, st.mainloop.cur_r.code());
                                 } else {
-                                    let item = st.mem.new_lig_item(st.mainloop.cur_r as u16)?;
+                                    let item = st.mem.new_lig_item(st.mainloop.cur_r.code())?;
                                     st.mainloop.lig_stack = item.ptr();
                                     if j == n {
-                                        bchar = TOO_BIG_CHAR;
+                                        bchar = LigChar::NONE;
                                     } else {
                                         let p = st
                                             .mem
-                                            .new_char(st.hyph.hf, st.hyph.hu[j + 1] as u16)?;
+                                            .new_char(st.hyph.hf, st.hyph.hu[j + 1].code())?;
                                         item.set_component(&mut st.mem, p.ptr());
                                     }
                                 }
                             }
                             3 => {
-                                st.mainloop.cur_r = i32::from(q.lig_char());
+                                st.mainloop.cur_r = LigChar::of(q.lig_char());
                                 let below = st.mainloop.lig_stack;
-                                let item = st.mem.new_lig_item(st.mainloop.cur_r as u16)?;
+                                let item = st.mem.new_lig_item(st.mainloop.cur_r.code())?;
                                 st.mainloop.lig_stack = item.ptr();
                                 item.ptr().set_link(&mut st.mem, below);
                             }
@@ -259,11 +265,11 @@ fn reconstitute(
                                     t = wrap_lig(st, false)?;
                                 }
                                 st.mainloop.cur_q = t;
-                                st.mainloop.cur_l = i32::from(q.lig_char());
+                                st.mainloop.cur_l = LigChar::of(q.lig_char());
                                 st.mainloop.ligature_present = true;
                             }
                             _ => {
-                                st.mainloop.cur_l = i32::from(q.lig_char());
+                                st.mainloop.cur_l = LigChar::of(q.lig_char());
                                 st.mainloop.ligature_present = true;
                                 if st.mainloop.lig_stack.raw() > TEX_NULL {
                                     pop_lig_stack(st, &mut t, &mut j, n, bchar, hchar, &mut cur_rh);
@@ -273,7 +279,7 @@ fn reconstitute(
                                     t = st.mem.append_char(
                                         t,
                                         st.hyph.hf,
-                                        st.mainloop.cur_r as u16,
+                                        st.mainloop.cur_r.code(),
                                     )?;
                                     j += 1;
                                     cur_rh = update_right(st, j, n, bchar, hchar);
@@ -292,16 +298,16 @@ fn reconstitute(
                 }
 
                 if q.is_last() {
-                    if cur_rh == TOO_BIG_CHAR {
+                    if cur_rh == LigChar::NONE {
                         break 'continue_;
                     }
-                    cur_rh = TOO_BIG_CHAR;
+                    cur_rh = LigChar::NONE;
                     continue 'continue_;
                 }
 
                 k = q.next_index(k);
                 q = st.fonts.lig_kern_step(k);
-                test_char = if cur_rh < TOO_BIG_CHAR {
+                test_char = if cur_rh.is_char() {
                     cur_rh
                 } else {
                     st.mainloop.cur_r
@@ -323,7 +329,7 @@ fn reconstitute(
 
         if st.mainloop.lig_stack.raw() > TEX_NULL {
             st.mainloop.cur_q = t;
-            st.mainloop.cur_l = i32::from(lig_item(st.mainloop.lig_stack).character(&st.mem));
+            st.mainloop.cur_l = LigChar::of(lig_item(st.mainloop.lig_stack).character(&st.mem));
             st.mainloop.ligature_present = true;
             pop_lig_stack(st, &mut t, &mut j, n, bchar, hchar, &mut cur_rh);
             continue;
@@ -339,7 +345,7 @@ fn wrap_lig(st: &mut EngineState, rt: bool) -> Result<MemPtr, Abort> {
     let components = st.mainloop.cur_q.link(&st.mem);
     let lig = st
         .mem
-        .new_ligature(st.hyph.hf, st.mainloop.cur_l as u16, components)?;
+        .new_ligature(st.hyph.hf, st.mainloop.cur_l.code(), components)?;
     if st.mainloop.lft_hit {
         lig.set_subtype(&mut st.mem, 2);
         st.mainloop.lft_hit = false;
@@ -375,7 +381,7 @@ fn hyphenate_native_word(
             s.set_link(&mut st.mem, q.ptr());
 
             let disc = st.mem.new_disc()?;
-            let hyphen = crate::fonts::new_native_character(st, hf, hyf_char as u32)?;
+            let hyphen = crate::fonts::new_native_character(st, hf, u32::from(hyf_char.code()))?;
             disc.set_pre_break(&mut st.mem, hyphen.ptr());
             q.set_link(&mut st.mem, disc.ptr());
             s = disc.ptr();
@@ -519,7 +525,7 @@ fn insert_hyphens(
     let bchar = st.hyph.hyf_bchar;
 
     let found2 = |st: &mut EngineState| {
-        st.hyph.hu[0] = st.hyph.max_hyph_char;
+        st.hyph.hu[0] = LigChar::from_raw(st.hyph.max_hyph_char);
         st.hyph.init_lig = false;
         st.hyph.init_list = MemPtr::NULL;
         (ha, 0)
@@ -530,7 +536,7 @@ fn insert_hyphens(
         } else {
             st.hyph.init_list = ha;
             st.hyph.init_lig = false;
-            st.hyph.hu[0] = i32::from(ha_ch.character(&st.mem));
+            st.hyph.hu[0] = LigChar::of(ha_ch.character(&st.mem));
             (st.mem.predecessor(st.linebreak.cur_p, ha), 0)
         }
     } else if let Ok(AnyNode::Ligature(ha_lig)) = st.mem.classify(ha) {
@@ -540,9 +546,9 @@ fn insert_hyphens(
             st.hyph.init_list = ha_lig.lig_ptr(&st.mem);
             st.hyph.init_lig = true;
             st.hyph.init_lft = ha_lig.subtype(&st.mem) > 1;
-            st.hyph.hu[0] = i32::from(ha_lig.character(&st.mem));
+            st.hyph.hu[0] = LigChar::of(ha_lig.character(&st.mem));
             if st.hyph.init_list.is_null() && st.hyph.init_lft {
-                st.hyph.hu[0] = st.hyph.max_hyph_char;
+                st.hyph.hu[0] = LigChar::from_raw(st.hyph.max_hyph_char);
                 st.hyph.init_lig = false;
             }
             st.mem.free_node(ha, SMALL_NODE_SIZE);
@@ -593,8 +599,8 @@ fn insert_hyphens(
                 let mut minor_tail = MemPtr::NULL;
                 disc.set_pre_break(&mut st.mem, MemPtr::NULL);
                 let hyf_node =
-                    crate::main_control::new_character(st, st.hyph.hf, st.hyph.hyf_char as u16)?;
-                let mut saved_c = 0;
+                    crate::main_control::new_character(st, st.hyph.hf, st.hyph.hyf_char.code())?;
+                let mut saved_c = LigChar::NONE;
                 if let Some(node) = hyf_node {
                     i += 1;
                     saved_c = st.hyph.hu[i];
@@ -604,7 +610,7 @@ fn insert_hyphens(
 
                 while l <= i {
                     let font_bchar = st.fonts.font_bchar[st.hyph.hf];
-                    l = reconstitute(st, l, i, font_bchar, TOO_BIG_CHAR)? + 1;
+                    l = reconstitute(st, l, i, font_bchar, LigChar::NONE)? + 1;
                     st.mem.append_to_disc_list(disc, false, &mut minor_tail);
                 }
 
@@ -616,17 +622,17 @@ fn insert_hyphens(
                 minor_tail = MemPtr::NULL;
                 disc.set_post_break(&mut st.mem, MemPtr::NULL);
                 let mut c_loc = 0;
-                let mut c = 0;
+                let mut c = LigChar::NONE;
                 if st.fonts.bchar_label[st.hyph.hf] != FontInfoIdx::NON_ADDRESS {
                     l -= 1;
                     c = st.hyph.hu[l];
                     c_loc = l;
-                    st.hyph.hu[l] = st.hyph.max_hyph_char;
+                    st.hyph.hu[l] = LigChar::from_raw(st.hyph.max_hyph_char);
                 }
 
                 while l < j {
                     loop {
-                        l = reconstitute(st, l, hn, bchar, TOO_BIG_CHAR)? + 1;
+                        l = reconstitute(st, l, hn, bchar, LigChar::NONE)? + 1;
                         if c_loc > 0 {
                             st.hyph.hu[c_loc] = c;
                             c_loc = 0;
@@ -638,7 +644,7 @@ fn insert_hyphens(
                     }
 
                     while l > j {
-                        j = reconstitute(st, j, hn, bchar, TOO_BIG_CHAR)? + 1;
+                        j = reconstitute(st, j, hn, bchar, LigChar::NONE)? + 1;
                         let hold = HOLD_HEAD.link(&st.mem);
                         major_tail.set_link(&mut st.mem, hold);
                         while major_tail.link(&st.mem).raw() > TEX_NULL {

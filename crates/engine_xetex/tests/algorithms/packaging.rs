@@ -107,3 +107,18 @@ fn vpack_sets_glue_like_hpack() {
         .\glue 0.0 plus 2.0",
     );
 }
+
+#[test]
+fn the_main_loop_builds_ligatures_and_kerns() {
+    let r = run(r"\font\rm=cmr10 \rm \setbox0\hbox{ffi AV}\showbox0");
+    assert_lines(
+        &r.boxes()[0],
+        r"
+        \hbox(6.94444+0.0)x25.55559
+        .\rm ^^N (ligature ffi)
+        .\glue 3.33333 plus 1.66666 minus 1.11111
+        .\rm A
+        .\kern-1.11113
+        .\rm V",
+    );
+}

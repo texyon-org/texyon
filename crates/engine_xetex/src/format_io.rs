@@ -16,6 +16,7 @@ use crate::consts::{
 };
 use crate::engine::{POOL_FREE, STRINGS_FREE};
 use crate::errors::Abort;
+use crate::fonts::LigChar;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::hash::{hash_slot, HASH_PRIME};
 use crate::hyphenation::{TrieOp, TriePtr, BIGGEST_LANG, HYPH_PRIME, TRIE_OP_SIZE};
@@ -87,7 +88,8 @@ newtype_item!(
     EqtbPtr,
     PoolPos,
     FontInfoIdx,
-    TriePtr
+    TriePtr,
+    LigChar
 );
 
 impl FmtItem for B32x2 {
@@ -783,8 +785,16 @@ fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort>
         FontInfoIdx::ZERO,
         max_font_index,
     )?;
-    s.items_in(fonts_of(&mut fonts.font_bchar, last), 0, TOO_BIG_CHAR)?;
-    s.items_in(fonts_of(&mut fonts.font_false_bchar, last), 0, TOO_BIG_CHAR)?;
+    s.items_in(
+        fonts_of(&mut fonts.font_bchar, last),
+        LigChar::of(0),
+        LigChar::NONE,
+    )?;
+    s.items_in(
+        fonts_of(&mut fonts.font_false_bchar, last),
+        LigChar::of(0),
+        LigChar::NONE,
+    )?;
 
     if !S::LOADING {
         print_dumped_fonts(st)?;

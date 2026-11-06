@@ -725,7 +725,7 @@ impl MemState {
         scanner.cur_c = i32::from(p.nucleus().character(self));
         let (mut a, mut step) = fonts.lig_kern_start(scanner.cur_f, scanner.cur_i);
         loop {
-            if step.matches(scanner.cur_c) {
+            if step.matches(crate::fonts::LigChar::from_raw(scanner.cur_c)) {
                 if step.is_kern() {
                     let kern_width = fonts.char_kern(scanner.cur_f, step);
                     let p_kern = self.new_kern(kern_width)?;

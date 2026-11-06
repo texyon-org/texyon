@@ -2,12 +2,10 @@
 
 use crate::cmd::Cmd;
 use crate::codes::ValueLevel;
-use crate::consts::{
-    CHAR_CLASS_LIMIT, HMODE, NATIVE_NODE_SIZE, SPACE_ADJUSTMENT, TEX_NULL, TOO_BIG_CHAR,
-};
+use crate::consts::{CHAR_CLASS_LIMIT, HMODE, NATIVE_NODE_SIZE, SPACE_ADJUSTMENT, TEX_NULL};
 use crate::errors::Abort;
 use crate::ext::append_src_special;
-use crate::fonts::{CharInfo, CharTag, LigKernStep, SPACE_CODE};
+use crate::fonts::{CharInfo, CharTag, LigChar, LigKernStep, SPACE_CODE};
 use crate::input::{TokenType, TOKEN_LIST};
 use crate::node::{AnyNode, CharNode, LigItem, NodePtr, WhatsitNode};
 use crate::params::IntPar;
@@ -429,8 +427,8 @@ fn shape_interword_space(st: &mut EngineState, mf: FontId) -> Result<(), Abort> 
 
 /// The character on top of `lig_stack`, a char node or a lig item alike.
 #[inline(always)]
-fn lig_stack_char(st: &EngineState) -> i32 {
-    i32::from(NodePtr::<CharNode>::at(st.mainloop.lig_stack).character(&st.mem))
+fn lig_stack_char(st: &EngineState) -> LigChar {
+    LigChar::of(NodePtr::<CharNode>::at(st.mainloop.lig_stack).character(&st.mem))
 }
 
 /// Where the ligature/kern program scan ended.
@@ -459,7 +457,7 @@ pub(super) enum Resume {
 /// discretionary. `rt_hit` says whether a right boundary hit may count.
 #[inline(always)]
 fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), Abort> {
-    if st.mainloop.cur_l >= TOO_BIG_CHAR {
+    if !st.mainloop.cur_l.is_char() {
         return Ok(());
     }
     let main_f = st.mainloop.main_f;
@@ -473,7 +471,7 @@ fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), Abort> {
         let lig_list = st.mainloop.cur_q.link(&st.mem);
         let lig = st
             .mem
-            .new_ligature(main_f, st.mainloop.cur_l as u16, lig_list)?;
+            .new_ligature(main_f, st.mainloop.cur_l.code(), lig_list)?;
         if st.mainloop.lft_hit {
             lig.set_subtype(&mut st.mem, 2);
             st.mainloop.lft_hit = false;
@@ -500,7 +498,7 @@ fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), Abort> {
 #[inline(always)]
 fn cur_l_info(st: &mut EngineState) -> CharInfo {
     let main_f = st.mainloop.main_f;
-    let c = st.fonts.effective_char(main_f, st.mainloop.cur_l as u16);
+    let c = st.fonts.effective_char(main_f, st.mainloop.cur_l.code());
     st.fonts.char_info(main_f, c)
 }
 
@@ -532,8 +530,8 @@ pub(super) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
     {
         st.input.cur_list.fix_language(&mut st.mem, &st.eqtb)?;
     }
-    st.mainloop.cur_l = st.scanner.cur_chr;
-    let ls = st.mem.new_char(mf, st.mainloop.cur_l as u16)?;
+    st.mainloop.cur_l = LigChar::from_raw(st.scanner.cur_chr);
+    let ls = st.mem.new_char(mf, st.mainloop.cur_l.code())?;
     st.mainloop.lig_stack = ls.ptr();
     st.mainloop.cur_q = st.input.cur_list.tail;
 
@@ -545,7 +543,7 @@ pub(super) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
     };
     let mut resume = if bchar_label != FontInfoIdx::NON_ADDRESS {
         st.mainloop.cur_r = st.mainloop.cur_l;
-        st.mainloop.cur_l = TOO_BIG_CHAR;
+        st.mainloop.cur_l = LigChar::NONE;
         Resume::LigProgram(bchar_label)
     } else {
         Resume::Move2
@@ -560,7 +558,7 @@ pub(super) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
                 Some(lig_kern_program(st, k, step, &mut main_i)?)
             }
             Resume::LigLoop
-                if main_i.tag() != CharTag::Lig || st.mainloop.cur_r == TOO_BIG_CHAR =>
+                if main_i.tag() != CharTag::Lig || st.mainloop.cur_r == LigChar::NONE =>
             {
                 Some(LigExit::Wrapup)
             }
@@ -619,7 +617,7 @@ pub(super) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
         } else {
             main_i = st
                 .fonts
-                .effective_char_info(main_f, st.mainloop.cur_l as u16);
+                .effective_char_info(main_f, st.mainloop.cur_l.code());
             main_i.exists()
         };
         if !exists {
@@ -662,7 +660,7 @@ fn lig_kern_program(
             st.input.cur_list.tail_append(&mut st.mem, kern.ptr());
             return Ok(LigExit::Move);
         }
-        if st.mainloop.cur_l == TOO_BIG_CHAR {
+        if st.mainloop.cur_l == LigChar::NONE {
             st.mainloop.lft_hit = true;
         } else if st.mainloop.lig_stack.is_null() {
             st.mainloop.rt_hit = true;
@@ -670,16 +668,16 @@ fn lig_kern_program(
         let op = step.lig_op();
         match op {
             1 | 5 => {
-                st.mainloop.cur_l = i32::from(step.lig_char());
+                st.mainloop.cur_l = LigChar::of(step.lig_char());
                 *main_i = cur_l_info(st);
                 st.mainloop.ligature_present = true;
             }
             2 | 6 => {
-                st.mainloop.cur_r = i32::from(step.lig_char());
-                let c = st.mainloop.cur_r as u16;
+                st.mainloop.cur_r = LigChar::of(step.lig_char());
+                let c = st.mainloop.cur_r.code();
                 if st.mainloop.lig_stack.is_null() {
                     st.mainloop.lig_stack = st.mem.new_lig_item(c)?.ptr();
-                    st.mainloop.bchar = TOO_BIG_CHAR;
+                    st.mainloop.bchar = LigChar::NONE;
                 } else if st.mem.is_char_node(st.mainloop.lig_stack) {
                     let prev = st.mainloop.lig_stack;
                     let item = st.mem.new_lig_item(c)?;
@@ -690,21 +688,21 @@ fn lig_kern_program(
                 }
             }
             3 => {
-                st.mainloop.cur_r = i32::from(step.lig_char());
+                st.mainloop.cur_r = LigChar::of(step.lig_char());
                 let prev = st.mainloop.lig_stack;
-                let item = st.mem.new_lig_item(st.mainloop.cur_r as u16)?;
+                let item = st.mem.new_lig_item(st.mainloop.cur_r.code())?;
                 st.mainloop.lig_stack = item.ptr();
                 item.ptr().set_link(&mut st.mem, prev);
             }
             7 | 11 => {
                 wrapup(st, false)?;
                 st.mainloop.cur_q = st.input.cur_list.tail;
-                st.mainloop.cur_l = i32::from(step.lig_char());
+                st.mainloop.cur_l = LigChar::of(step.lig_char());
                 *main_i = cur_l_info(st);
                 st.mainloop.ligature_present = true;
             }
             _ => {
-                st.mainloop.cur_l = i32::from(step.lig_char());
+                st.mainloop.cur_l = LigChar::of(step.lig_char());
                 st.mainloop.ligature_present = true;
                 return Ok(if st.mainloop.lig_stack.is_null() {
                     LigExit::Wrapup
@@ -716,7 +714,7 @@ fn lig_kern_program(
         if op > 4 && op != 7 {
             return Ok(LigExit::Wrapup);
         }
-        if st.mainloop.cur_l < TOO_BIG_CHAR {
+        if st.mainloop.cur_l.is_char() {
             return Ok(LigExit::Restart);
         }
         k = st.fonts.bchar_label[st.mainloop.main_f];
@@ -736,7 +734,7 @@ fn lookahead(st: &mut EngineState) -> Result<bool, Abort> {
     if !is_char_cmd(st.scanner.cur_cmd) {
         if st.scanner.cur_cmd != Cmd::CharNum {
             if st.scanner.cur_cmd == Cmd::NoBoundary {
-                st.mainloop.bchar = TOO_BIG_CHAR;
+                st.mainloop.bchar = LigChar::NONE;
             }
             st.mainloop.cur_r = st.mainloop.bchar;
             st.mainloop.lig_stack = MemPtr::NULL;
@@ -758,9 +756,9 @@ fn lookahead(st: &mut EngineState) -> Result<bool, Abort> {
     let c = st.scanner.cur_chr;
     let ls = st.mem.new_char(st.mainloop.main_f, c as u16)?;
     st.mainloop.lig_stack = ls.ptr();
-    st.mainloop.cur_r = c;
-    if c == st.mainloop.false_bchar {
-        st.mainloop.cur_r = TOO_BIG_CHAR;
+    st.mainloop.cur_r = LigChar::from_raw(c);
+    if st.mainloop.cur_r == st.mainloop.false_bchar {
+        st.mainloop.cur_r = LigChar::NONE;
     }
     Ok(true)
 }

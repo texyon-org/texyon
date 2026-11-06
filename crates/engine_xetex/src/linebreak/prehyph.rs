@@ -1,7 +1,8 @@
 //! Pre-hyphenation: finding the words `hyphenate` should try.
 
-use crate::consts::{L_CODE, NORMAL, TEX_NULL, TOO_BIG_CHAR};
+use crate::consts::{L_CODE, NORMAL, TEX_NULL};
 use crate::errors::Abort;
+use crate::fonts::LigChar;
 use crate::node::{AnyNode, CharNode, NodePtr, WhatsitNode, WhatsitSubtype};
 use crate::params::IntPar;
 use crate::state::{EngineState, MemState};
@@ -136,8 +137,8 @@ pub(super) fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), Abo
         s = prev_s.link(&st.mem);
     }
 
-    st.hyph.hyf_char = st.fonts.hyphen_char[st.hyph.hf];
-    if st.hyph.hyf_char < 0 || st.hyph.hyf_char > TOO_BIG_CHAR - 1 {
+    st.hyph.hyf_char = LigChar::from_raw(st.fonts.hyphen_char[st.hyph.hf]);
+    if st.hyph.hyf_char.raw() < 0 || !st.hyph.hyf_char.is_char() {
         return Ok(());
     }
     st.linebreak.ha = prev_s;
@@ -199,17 +200,17 @@ fn collect_native_word(
                 st.linebreak.hn += 1;
                 let hn = usize::from(st.linebreak.hn);
                 if c < 65_536 {
-                    st.hyph.hu[hn] = c;
+                    st.hyph.hu[hn] = LigChar::from_raw(c);
                     st.hyph.hc[hn] = hc0;
                 } else {
-                    st.hyph.hu[hn] = (c - 65_536) / 1024 + 0xD800;
+                    st.hyph.hu[hn] = LigChar::from_raw((c - 65_536) / 1024 + 0xD800);
                     st.hyph.hc[hn] = (hc0 - 65_536) / 1024 + 0xD800;
                     st.linebreak.hn += 1;
-                    st.hyph.hu[hn + 1] = c % 1024 + 0xDC00;
+                    st.hyph.hu[hn + 1] = LigChar::from_raw(c % 1024 + 0xDC00);
                     st.hyph.hc[hn + 1] = hc0 % 1024 + 0xDC00;
                     l += 1;
                 }
-                st.hyph.hyf_bchar = TOO_BIG_CHAR;
+                st.hyph.hyf_bchar = LigChar::NONE;
             }
             l += 1;
         }
@@ -227,7 +228,7 @@ fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
                 return s;
             }
             let c = i32::from(ch.character(&st.mem));
-            st.hyph.hyf_bchar = c;
+            st.hyph.hyf_bchar = LigChar::from_raw(c);
             let hc0 = st.hyph.hyph_code(&st.eqtb, c);
             st.hyph.hc[0] = hc0;
             if hc0 == 0 || hc0 > st.hyph.max_hyph_char || i32::from(st.linebreak.hn) == max_len {
@@ -236,9 +237,9 @@ fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
             st.linebreak.hb = s;
             st.linebreak.hn += 1;
             let hn = usize::from(st.linebreak.hn);
-            st.hyph.hu[hn] = c;
+            st.hyph.hu[hn] = LigChar::from_raw(c);
             st.hyph.hc[hn] = hc0;
-            st.hyph.hyf_bchar = TOO_BIG_CHAR;
+            st.hyph.hyf_bchar = LigChar::NONE;
         } else {
             match st.mem.classify(s) {
                 Ok(AnyNode::Ligature(lig)) => {
@@ -249,7 +250,7 @@ fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
                     let mut q = lig.lig_ptr(&st.mem);
                     if q.raw() > TEX_NULL {
                         st.hyph.hyf_bchar =
-                            i32::from(NodePtr::<CharNode>::at(q).character(&st.mem));
+                            LigChar::of(NodePtr::<CharNode>::at(q).character(&st.mem));
                     }
                     while q.raw() > TEX_NULL {
                         let c = i32::from(NodePtr::<CharNode>::at(q).character(&st.mem));
@@ -259,7 +260,7 @@ fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
                             return s;
                         }
                         j += 1;
-                        st.hyph.hu[usize::from(j)] = c;
+                        st.hyph.hu[usize::from(j)] = LigChar::from_raw(c);
                         st.hyph.hc[usize::from(j)] = hc0;
                         q = q.link(&st.mem);
                     }
@@ -268,7 +269,7 @@ fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
                     st.hyph.hyf_bchar = if odd(lig.subtype(&st.mem) as u8) {
                         st.fonts.font_bchar[st.hyph.hf]
                     } else {
-                        TOO_BIG_CHAR
+                        LigChar::NONE
                     };
                 }
                 Ok(AnyNode::Kern(k)) if k.subtype(&st.mem) == NORMAL => {

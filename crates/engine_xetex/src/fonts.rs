@@ -161,8 +161,8 @@ impl LigKernStep {
 
     /// The instruction applies to next character `c`.
     #[inline]
-    pub(crate) fn matches(self, c: i32) -> bool {
-        i32::from(self.next_char()) == c && !self.is_redirect()
+    pub(crate) fn matches(self, c: LigChar) -> bool {
+        i32::from(self.next_char()) == c.0 && !self.is_redirect()
     }
 
     #[inline]
@@ -186,6 +186,43 @@ impl LigKernStep {
     #[inline]
     pub(crate) fn next_index(self, k: FontInfoIdx) -> FontInfoIdx {
         k + i32::from(self.0.s3) + 1
+    }
+}
+
+/// A character in a lig/kern program, or `NONE` (WEB's `non_char`) for a boundary.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
+pub(crate) struct LigChar(i32);
+
+impl LigChar {
+    pub(crate) const NONE: LigChar = LigChar(TOO_BIG_CHAR);
+
+    /// The value from a character code, a sentinel such as `max_hyph_char`, or a format file.
+    #[inline]
+    pub(crate) const fn from_raw(raw: i32) -> LigChar {
+        LigChar(raw)
+    }
+
+    /// The raw form for a format file.
+    #[inline]
+    pub(crate) const fn raw(self) -> i32 {
+        self.0
+    }
+
+    #[inline]
+    pub(crate) fn of(c: u16) -> LigChar {
+        LigChar(i32::from(c))
+    }
+
+    /// Below `NONE`, so a real character rather than a boundary.
+    #[inline]
+    pub(crate) fn is_char(self) -> bool {
+        self.0 < TOO_BIG_CHAR
+    }
+
+    /// The code as a node stores it, cut to 16 bits as WEB's `qi` does.
+    #[inline]
+    pub(crate) fn code(self) -> u16 {
+        self.0 as u16
     }
 }
 
@@ -885,10 +922,10 @@ impl FontState {
         } else {
             self.bchar_label[f] = FontInfoIdx::NON_ADDRESS;
         }
-        self.font_bchar[f] = bchar;
-        self.font_false_bchar[f] = bchar;
+        self.font_bchar[f] = LigChar(bchar);
+        self.font_false_bchar[f] = LigChar(bchar);
         if bchar <= ec && bchar >= bc && self.char_info(f, bchar).exists() {
-            self.font_false_bchar[f] = TOO_BIG_CHAR;
+            self.font_false_bchar[f] = LigChar::NONE;
         }
 
         self.font_name[f] = nom;

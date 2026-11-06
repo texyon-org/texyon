@@ -197,8 +197,8 @@ fn digest_fonts(st: &EngineState) -> u64 {
     hash_values!(font_bc);
     hash_values!(font_ec);
     hash_values!(bchar_label.raw());
-    hash_values!(font_bchar);
-    hash_values!(font_false_bchar);
+    hash_values!(font_bchar.raw());
+    hash_values!(font_false_bchar.raw());
     hash_values!(font_glue.raw());
     hash_values!(font_used);
     hash_values!(char_base.raw());
@@ -359,7 +359,7 @@ fn digest_hyph(st: &EngineState) -> u64 {
         };
     }
     hash_values!(hc);
-    hash_values!(hu);
+    hash_values!(hu.raw());
     hash_values!(hyf);
     hash_values!(trie_min);
     hash_values!(hyf_distance);

@@ -4,7 +4,7 @@ use std::mem::{size_of, take};
 use std::sync::Arc;
 
 use crate::dvi::DviWriter;
-use crate::fonts::ProtrusionCodes;
+use crate::fonts::{LigChar, ProtrusionCodes};
 use crate::mem_types::{ListStateRecord, MemoryWord};
 use crate::stack::TexStack;
 use crate::state::{
@@ -576,8 +576,8 @@ font_arrays! {
     font_bc: u16,
     font_ec: u16,
     bchar_label: FontInfoIdx,
-    font_bchar: i32,
-    font_false_bchar: i32,
+    font_bchar: LigChar,
+    font_false_bchar: LigChar,
     font_glue: MemPtr,
     font_used: bool,
     char_base: FontInfoIdx,
@@ -799,14 +799,14 @@ struct HyphBundle {
     hyph_start: crate::hyphenation::TriePtr,
     hyph_index: Option<crate::hyphenation::TriePtr>,
     cur_lang: u8,
-    hyf_char: i32,
+    hyf_char: LigChar,
     l_hyf: i32,
     r_hyf: i32,
     init_l_hyf: i32,
     init_r_hyf: i32,
-    hyf_bchar: i32,
+    hyf_bchar: LigChar,
     hc: Vec<i32>,
-    hu: Vec<i32>,
+    hu: Vec<LigChar>,
     hyf: Vec<u8>,
     tables: Arc<HyphTables>,
 }
