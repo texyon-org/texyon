@@ -995,10 +995,7 @@ fn catch_operation(
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         run_locked(api, state, operation)
     }))
-    .unwrap_or_else(|_| {
-        texyon_xetex_layout::reset_font_caches();
-        OperationResult::Panicked
-    })
+    .unwrap_or(OperationResult::Panicked)
 }
 
 fn run_locked<R>(

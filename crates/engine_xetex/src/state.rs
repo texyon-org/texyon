@@ -1207,6 +1207,11 @@ pub(crate) struct FontState {
     /// Font-memory high-water mark at the start of the open journal epoch.
     pub fmem_epoch_base: i32,
     pub mapped_text: Vec<u16>,
+    pub cp_codes: crate::fonts::ProtrusionCodes,
+    /// Glyph bounds in TeX points, valid for the fonts through `font_ptr`.
+    pub glyph_bboxes: std::cell::RefCell<
+        std::collections::BTreeMap<(FontId, u16), texyon_xetex_layout::GlyphBBox>,
+    >,
 }
 
 impl Default for FontState {
@@ -1257,6 +1262,8 @@ impl Default for FontState {
             font_info_journal: crate::journal::PlainTrail::default(),
             fmem_epoch_base: 0,
             mapped_text: Vec::new(),
+            cp_codes: crate::fonts::ProtrusionCodes::default(),
+            glyph_bboxes: std::cell::RefCell::default(),
         }
     }
 }

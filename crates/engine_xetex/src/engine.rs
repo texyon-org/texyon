@@ -673,9 +673,6 @@ pub(crate) fn run_engine(
     input_file_name: &str,
     build_date: libc::time_t,
 ) -> i32 {
-    texyon_xetex_layout::reset_font_caches();
-    let _layout_cache_guard = OnDrop(texyon_xetex_layout::reset_font_caches);
-
     let _bridge = crate::bridge::enter(api);
 
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1076,7 +1073,6 @@ fn initial_random_seed(
 
 pub(crate) fn cleanup(st: &mut EngineState) {
     crate::journal::disarm(st);
-    texyon_xetex_layout::reset_font_caches();
     pdf_files_close();
     st.shipout.dvi.release_buffer();
 

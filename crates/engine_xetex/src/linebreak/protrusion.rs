@@ -2,12 +2,11 @@
 
 use crate::consts::NORMAL;
 use crate::errors::Abort;
-use crate::fonts::QUAD_CODE;
+use crate::fonts::{Side, QUAD_CODE};
 use crate::mem::{TEMP_HEAD, ZERO_GLUE};
 use crate::node::{ActiveNode, AnyBox, AnyNode, DiscNode, HListNode, NodePtr, WhatsitSubtype};
 use crate::state::{ErrorState, FontState, LinebreakState, MemState};
 use crate::units::{FontId, MemPtr, Scaled};
-use texyon_xetex_layout::get_cp_code;
 
 use super::passive_node;
 
@@ -77,7 +76,10 @@ impl LinebreakState {
             None => mem.find_protchar_left(self, l, true)?,
         };
 
-        Some(self.char_pw(errors, mem, fonts, l, 0) + self.char_pw(errors, mem, fonts, r, 1))
+        Some(
+            self.char_pw(errors, mem, fonts, l, Side::Left)
+                + self.char_pw(errors, mem, fonts, r, Side::Right),
+        )
     }
 
     /// The protrusion (`\lpcode`/`\rpcode` scaled to the font quad) of `p`, recording
@@ -88,14 +90,14 @@ impl LinebreakState {
         mem: &MemState,
         fonts: &FontState,
         p: MemPtr,
-        side: i16,
+        side: Side,
     ) -> Scaled {
         fn protrusion(errors: &mut ErrorState, fonts: &FontState, f: FontId, cp: i32) -> Scaled {
             let quad = fonts.param(f, QUAD_CODE);
             errors.round_xn_over_d(quad, cp, 1000)
         }
 
-        if side == 0 {
+        if side == Side::Left {
             self.last_leftmost_char = MemPtr::NULL;
         } else {
             self.last_rightmost_char = MemPtr::NULL;
@@ -114,13 +116,14 @@ impl LinebreakState {
                             return Scaled::ZERO;
                         }
                         let f = w.native_font(mem);
-                        let cp = mem.get_native_word_cp(w, side as libc::c_int);
+                        let cp = mem
+                            .native_word_edge_glyph(w, side)
+                            .map_or(0, |g| fonts.cp_codes.get(f, side, u32::from(g)));
                         return protrusion(errors, fonts, f, cp);
                     }
                     Some(WhatsitSubtype::Glyph) => {
                         let f = w.native_font(mem);
-                        let cp =
-                            get_cp_code(f.raw(), u32::from(w.native_glyph(mem)), i32::from(side));
+                        let cp = fonts.cp_codes.get(f, side, u32::from(w.native_glyph(mem)));
                         return protrusion(errors, fonts, f, cp);
                     }
                     _ => return Scaled::ZERO,
@@ -130,8 +133,8 @@ impl LinebreakState {
             }
         };
 
-        let cp = get_cp_code(f.raw(), u32::from(c), i32::from(side));
-        if side == 0 {
+        let cp = fonts.cp_codes.get(f, side, u32::from(c));
+        if side == Side::Left {
             self.last_leftmost_char = char_ptr;
         } else {
             self.last_rightmost_char = char_ptr;
@@ -166,7 +169,7 @@ impl LinebreakState {
             (p, ptmp)
         };
 
-        let w = self.char_pw(errors, mem, fonts, p, 1);
+        let w = self.char_pw(errors, mem, fonts, p, Side::Right);
         if w == Scaled::ZERO {
             return Ok(q);
         }
@@ -191,7 +194,7 @@ impl LinebreakState {
                 "hlist stack failure",
             ]))?;
 
-        let w = self.char_pw(errors, mem, fonts, p, 0);
+        let w = self.char_pw(errors, mem, fonts, p, Side::Left);
         if w == Scaled::ZERO {
             return Ok(q);
         }

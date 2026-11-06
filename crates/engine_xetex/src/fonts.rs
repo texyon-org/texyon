@@ -25,6 +25,36 @@ use crate::bridge::{input_getc, FileFormat};
 use crate::errors::Abort;
 
 use crate::ext::loaded_font_design_size;
+use std::collections::BTreeMap;
+use std::rc::Rc;
+
+/// The edge of a line a character protrudes into.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+pub(crate) enum Side {
+    Left,
+    Right,
+}
+
+/// `\lpcode` and `\rpcode` values, keyed by font and character or glyph.
+/// Clones share the table until one of them is written.
+#[derive(Clone, Default, PartialEq, Eq, Debug)]
+pub(crate) struct ProtrusionCodes(Rc<BTreeMap<(FontId, Side, u32), i32>>);
+
+impl ProtrusionCodes {
+    /// The code of `c` in font `f`, 0 when unset.
+    pub(crate) fn get(&self, f: FontId, side: Side, c: u32) -> i32 {
+        self.0.get(&(f, side, c)).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn set(&mut self, f: FontId, side: Side, c: u32, value: i32) {
+        Rc::make_mut(&mut self.0).insert((f, side, c), value);
+    }
+
+    /// Every set code, in key order.
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&(FontId, Side, u32), &i32)> {
+        self.0.iter()
+    }
+}
 
 const EOF: i32 = -1;
 /// The `font_area` of an AAT font, which no real area string can equal.

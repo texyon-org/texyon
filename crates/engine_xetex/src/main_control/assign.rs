@@ -4,9 +4,9 @@ use crate::cmd::Cmd;
 use crate::codes::{BoxDimenCode, PageIntCode, ShorthandDefCode, ValueLevel};
 use crate::consts::{
     ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_USV, CAT_CODE_BASE, CHAR_CLASS_LIMIT, COUNT_BASE,
-    CUR_FONT_LOC, DEL_CODE_BASE, DESIGN_SIZE, FONT_BASE, HASH_BASE, LEFT_SIDE, MATH_CODE_BASE,
-    MAX_HALFWORD, MU_SKIP_BASE, NORMAL, NULL_CS, PAR_SHAPE_LOC, RIGHT_SIDE, SCALED_BASE,
-    SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, TEX_INFINITY, TOKS_BASE, TOO_BIG_USV, VMODE,
+    CUR_FONT_LOC, DEL_CODE_BASE, DESIGN_SIZE, FONT_BASE, HASH_BASE, MATH_CODE_BASE, MAX_HALFWORD,
+    MU_SKIP_BASE, NORMAL, NULL_CS, PAR_SHAPE_LOC, SCALED_BASE, SF_CODE_BASE, SINGLE_BASE,
+    SKIP_BASE, TEX_INFINITY, TOKS_BASE, TOO_BIG_USV, VMODE,
 };
 use crate::errors::Abort;
 use crate::fonts::read_font_info;
@@ -19,7 +19,7 @@ use crate::state::{EngineState, MemState, Selector};
 use crate::token::{Token, TokenList};
 use crate::units::{EqtbPtr, FontId, GlueOrder, MemPtr, Scaled, StrNumber};
 
-use texyon_xetex_layout::set_cp_code;
+use crate::fonts::Side;
 
 use super::boxes::scan_box;
 use super::{BOX_FLAG, GLOBAL_BOX_FLAG, LP_CODE_BASE, RP_CODE_BASE};
@@ -795,8 +795,8 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 crate::scan::scan_optional_equals(st)?;
                 let v = crate::scan::scan_int(st)?;
                 match n {
-                    LP_CODE_BASE => set_cp_code(f.raw(), p as u32, LEFT_SIDE, v),
-                    RP_CODE_BASE => set_cp_code(f.raw(), p as u32, RIGHT_SIDE, v),
+                    LP_CODE_BASE => st.fonts.cp_codes.set(f, Side::Left, p as u32, v),
+                    RP_CODE_BASE => st.fonts.cp_codes.set(f, Side::Right, p as u32, v),
                     _ => {}
                 }
             }

@@ -1,8 +1,7 @@
 //! Shaping and measuring native word and glyph nodes.
 
-use crate::consts::{LEFT_SIDE, RIGHT_SIDE};
 use crate::errors::Abort;
-use crate::fonts::OTGR_FONT_FLAG;
+use crate::fonts::{Side, OTGR_FONT_FLAG};
 use crate::glyph_arena::{FixedPoint, GlyphBlob};
 use crate::layout::{
     Bidi, FontMappingHandle, K_STATUS_NO_ERROR, K_STATUS_OUTPUT_BUFFER_FULL, UBIDI_MIXED, UBIDI_RTL,
@@ -12,9 +11,7 @@ use crate::state::{FontEngineHandle, FontState, MemState};
 use crate::units::{FontId, Scaled, StrNumber};
 use std::ffi::c_int;
 use std::rc::Rc;
-use texyon_xetex_layout::{
-    cache_glyph_bbox, cached_glyph_bbox, get_cp_code, FloatPoint, GlyphBBox,
-};
+use texyon_xetex_layout::{FloatPoint, GlyphBBox};
 
 use super::{d2fix, fix2d, FONT_FLAGS_COLORED, FONT_FLAGS_VERTICAL};
 
@@ -62,12 +59,15 @@ fn layout_visual_run(bidi: &Bidi, engine: &FontEngineHandle, text: &[u16], run_i
     engine.layout_chars(run, dir == UBIDI_RTL) as i32
 }
 
-fn cached_or_measured_bbox(engine: &FontEngineHandle, f: FontId, gid: u16) -> GlyphBBox {
-    cached_glyph_bbox(f.raw() as u16, gid).unwrap_or_else(|| {
-        let bbox = engine.glyph_bounds(u32::from(gid));
-        cache_glyph_bbox(f.raw() as u16, gid, bbox);
-        bbox
-    })
+impl FontState {
+    /// The bounds of glyph `gid` of font `f`, measured once per font slot.
+    fn glyph_bbox(&self, engine: &FontEngineHandle, f: FontId, gid: u16) -> GlyphBBox {
+        *self
+            .glyph_bboxes
+            .borrow_mut()
+            .entry((f, gid))
+            .or_insert_with(|| engine.glyph_bounds(u32::from(gid)))
+    }
 }
 
 impl MemState {
@@ -79,20 +79,23 @@ impl MemState {
         }
     }
 
-    /// The protrusion code of the first or last glyph of native word `w`.
-    pub fn get_native_word_cp(&self, w: NodePtr<WhatsitNode>, side: c_int) -> i32 {
-        let glyph_count = w.native_glyph_count(self) as usize;
-        let f = w.native_font(self);
+    /// The first or last glyph of native word `w`, whose protrusion code applies.
+    pub(crate) fn native_word_edge_glyph(
+        &self,
+        w: NodePtr<WhatsitNode>,
+        side: Side,
+    ) -> Option<u16> {
+        let glyph_count = usize::from(w.native_glyph_count(self));
         if glyph_count == 0 {
-            return 0;
+            return None;
         }
         let gids = &self.glyph_blobs.get(w.native_glyph_info_handle(self)).gids;
-        let actual_glyph = match side {
-            LEFT_SIDE => gids[0],
-            RIGHT_SIDE => gids[glyph_count - 1],
-            _ => unreachable!(),
-        };
-        get_cp_code(f.raw(), u32::from(actual_glyph), side)
+        let gids = gids.get(..glyph_count)?;
+        match side {
+            Side::Left => gids.first(),
+            Side::Right => gids.last(),
+        }
+        .copied()
     }
 }
 
@@ -200,7 +203,7 @@ impl FontState {
             let mut y_max = -65536.0f32;
             for (loc, &gid) in shaped.locations[..glyph_count].iter().zip(&shaped.gids) {
                 let y = fix2d(-loc.y) as f32;
-                let bbox = cached_or_measured_bbox(engine, f, gid);
+                let bbox = self.glyph_bbox(engine, f, gid);
                 let ht = bbox.y_max;
                 let dp = -bbox.y_min;
                 if y + ht > y_max {

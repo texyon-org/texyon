@@ -220,6 +220,10 @@ fn digest_fonts(st: &EngineState) -> u64 {
     for engine in fonts.font_layout_engine.as_slice().iter().take(font_count) {
         h.word(u64::from(engine.is_some()));
     }
+    for (&(f, side, c), &value) in fonts.cp_codes.iter() {
+        h.i32s(&[f.raw(), side as i32, value]);
+        h.word(u64::from(c));
+    }
     for mapping in fonts.font_mapping.as_slice().iter().take(font_count) {
         h.word(u64::from(mapping.is_some()));
     }

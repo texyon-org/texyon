@@ -4,6 +4,7 @@ use std::mem::{size_of, take};
 use std::sync::Arc;
 
 use crate::dvi::DviWriter;
+use crate::fonts::ProtrusionCodes;
 use crate::mem_types::{ListStateRecord, MemoryWord};
 use crate::stack::TexStack;
 use crate::state::{
@@ -606,6 +607,7 @@ struct FontBundle {
     engines: Vec<Option<std::rc::Rc<FontEngineHandle>>>,
     mappings: Vec<Option<Arc<FontMappingHandle>>>,
     mapped_text: Vec<u16>,
+    cp_codes: ProtrusionCodes,
 }
 
 impl FontBundle {
@@ -656,6 +658,8 @@ impl FontBundle {
             font_info_journal: _,
             fmem_epoch_base: _,
             mapped_text,
+            cp_codes,
+            glyph_bboxes: _,
         } = src;
         let count = font_ptr.raw() + 1;
         Self {
@@ -674,6 +678,7 @@ impl FontBundle {
             engines: live_prefix(font_layout_engine.as_slice(), count),
             mappings: live_prefix(font_mapping.as_slice(), count),
             mapped_text: mapped_text.clone(),
+            cp_codes: cp_codes.clone(),
         }
     }
 
@@ -706,6 +711,11 @@ impl FontBundle {
         dst.font_ptr = self.font_ptr;
         self.arrays.restore(dst);
         dst.mapped_text.clone_from(&self.mapped_text);
+        dst.cp_codes.clone_from(&self.cp_codes);
+        // Font slots past the restored `font_ptr` may be reloaded with other fonts.
+        dst.glyph_bboxes
+            .get_mut()
+            .retain(|&(f, _), _| f <= self.font_ptr);
     }
 
     fn allocated_bytes(&self) -> usize {
@@ -981,6 +991,39 @@ mod tests {
 
         assert_eq!(fonts.font_ptr, FontId::from_raw(1));
         assert_eq!(fonts.font_used.as_slice(), [false, false, false, false]);
+    }
+
+    #[test]
+    fn font_restore_rolls_back_protrusion_codes_and_stale_glyph_bounds() {
+        use crate::fonts::Side;
+        use texyon_xetex_layout::GlyphBBox;
+
+        let mut fonts = FontState {
+            font_layout_engine: crate::state::PerFont::filled(4, None),
+            font_mapping: crate::state::PerFont::filled(4, None),
+            font_used: crate::state::PerFont::filled(4, false),
+            font_ptr: FontId::from_raw(1),
+            ..Default::default()
+        };
+        let (f1, f2) = (FontId::from_raw(1), FontId::from_raw(2));
+        fonts.cp_codes.set(f1, Side::Left, 65, 50);
+        let checkpoint = FontBundle::capture(&fonts);
+
+        fonts.font_ptr = f2;
+        fonts.cp_codes.set(f1, Side::Left, 65, 70);
+        fonts.cp_codes.set(f1, Side::Right, 65, 80);
+        let bbox = GlyphBBox {
+            y_max: 1.0,
+            ..GlyphBBox::default()
+        };
+        fonts.glyph_bboxes.get_mut().insert((f1, 3), bbox);
+        fonts.glyph_bboxes.get_mut().insert((f2, 3), bbox);
+        checkpoint.restore(&mut fonts);
+
+        assert_eq!(fonts.cp_codes.get(f1, Side::Left, 65), 50);
+        assert_eq!(fonts.cp_codes.get(f1, Side::Right, 65), 0);
+        let cached: Vec<_> = fonts.glyph_bboxes.get_mut().keys().copied().collect();
+        assert_eq!(cached, [(f1, 3)]);
     }
 
     #[test]

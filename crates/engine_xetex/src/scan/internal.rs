@@ -3,9 +3,9 @@
 use crate::cmd::Cmd;
 use crate::codes::{BoxDimenCode, FiOrElseCode, IfCode, LastItemCode, PageIntCode, ValueLevel};
 use crate::consts::{
-    ACTIVE_MATH_CHAR, CHAR_CLASS_LIMIT, COUNT_BASE, DEL_CODE_BASE, END_M_CODE, LEFT_SIDE,
-    MATH_CODE_BASE, MAX_DIMEN, MU_GLUE, MU_SKIP_BASE, NULL_FONT, PAR_SHAPE_LOC, RIGHT_SIDE,
-    SCALED_BASE, SF_CODE_BASE, SKIP_BASE, VMODE,
+    ACTIVE_MATH_CHAR, CHAR_CLASS_LIMIT, COUNT_BASE, DEL_CODE_BASE, END_M_CODE, MATH_CODE_BASE,
+    MAX_DIMEN, MU_GLUE, MU_SKIP_BASE, NULL_FONT, PAR_SHAPE_LOC, SCALED_BASE, SF_CODE_BASE,
+    SKIP_BASE, VMODE,
 };
 use crate::errors::{error, mu_error, Abort};
 use crate::ext::{
@@ -13,6 +13,7 @@ use crate::ext::{
     gr_font_get_named, gr_font_get_named_1, ot_font_get, ot_font_get_1, ot_font_get_2,
     ot_font_get_3,
 };
+use crate::fonts::Side;
 use crate::fonts::{AAT_FONT_FLAG, SPACE_CODE, SPACE_SHRINK_CODE};
 use crate::input::{back_error, back_input};
 use crate::main_control::{LP_CODE_BASE, RP_CODE_BASE};
@@ -26,7 +27,6 @@ use crate::state::{EngineState, FontEngineHandle};
 use crate::token::TokenList;
 use crate::units::{EqtbPtr, FontId, MemPtr, NodeType, Scaled, StrNumber};
 use std::rc::Rc;
-use texyon_xetex_layout::get_cp_code;
 
 use super::next::get_x_non_blank;
 use super::numbers::{
@@ -791,12 +791,12 @@ pub(super) fn scan_something_internal(
                         match m {
                             LP_CODE_BASE => set_cur_val(
                                 st,
-                                get_cp_code(f.raw(), code, LEFT_SIDE),
+                                st.fonts.cp_codes.get(f, Side::Left, code),
                                 ValueLevel::Int,
                             ),
                             RP_CODE_BASE => set_cur_val(
                                 st,
-                                get_cp_code(f.raw(), code, RIGHT_SIDE),
+                                st.fonts.cp_codes.get(f, Side::Right, code),
                                 ValueLevel::Int,
                             ),
                             _ => {}
