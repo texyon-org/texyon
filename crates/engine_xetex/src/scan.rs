@@ -343,7 +343,7 @@ impl MemState {
 /// `link(temp_head)` and returns its tail.
 /// The math code given by `\mathchar` or a XeTeX form, per `cur_chr`.
 pub(crate) fn scan_math_char_num(st: &mut EngineState) -> Result<i32, Abort> {
-    Ok(match MathCharNumCode::from_raw(st.scanner.cur_chr) {
+    Ok(match st.scanner.chr_code::<MathCharNumCode>() {
         Some(MathCharNumCode::UmathChar) => scan_umath_code(st)?,
         Some(MathCharNumCode::UmathCharNum) => {
             scan_xetex_math_char_int(st)?;
@@ -358,7 +358,7 @@ pub(crate) fn scan_math_char_num(st: &mut EngineState) -> Result<i32, Abort> {
 
 /// The math code of the small character given by `\delimiter` or `\Udelimiter`.
 pub(crate) fn scan_delim_num(st: &mut EngineState) -> Result<i32, Abort> {
-    Ok(match DelimNumCode::from_raw(st.scanner.cur_chr) {
+    Ok(match st.scanner.chr_code::<DelimNumCode>() {
         Some(DelimNumCode::Udelimiter) => scan_umath_code(st)?,
         _ => {
             scan_delimiter_int(st)?;

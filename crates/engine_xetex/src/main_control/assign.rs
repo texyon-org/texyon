@@ -93,7 +93,7 @@ fn alter_page_so_far(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 fn alter_integer(st: &mut EngineState) -> Result<(), Abort> {
-    let code = PageIntCode::from_raw(st.scanner.cur_chr);
+    let code = st.scanner.chr_code::<PageIntCode>();
     crate::scan::scan_optional_equals(st)?;
     crate::scan::scan_int(st)?;
     match code {
@@ -291,8 +291,8 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
                 return crate::errors::error(st);
             }
         }
-        let Some(p) = ValueLevel::from_raw(st.scanner.cur_chr) else {
-            let sa = NodePtr::<SaNode>::at(MemPtr::from_raw(st.scanner.cur_chr));
+        let Some(p) = st.scanner.chr_code::<ValueLevel>() else {
+            let sa = st.scanner.chr_sa();
             break 'found (RegisterLoc::Sparse(sa), sa.sa_type(&st.mem));
         };
         crate::scan::scan_register_num(st)?;
@@ -662,7 +662,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             define(st, a >= 4, p, st.scanner.cur_cmd, st.scanner.cur_chr)?;
         }
         Cmd::ShorthandDef => {
-            if st.scanner.cur_chr == ShorthandDefCode::CharSub.raw() {
+            if st.scanner.chr_code() == Some(ShorthandDefCode::CharSub) {
                 crate::output::print_err(st, "vestigial MLTeX shorthand encountered??");
                 st.errors
                     .help(&["This should never happen in Tectonic, where MLTeX has been excised."]);
@@ -818,8 +818,10 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 fn shorthand_def(st: &mut EngineState, global: bool) -> Result<(), Abort> {
-    let n =
-        ShorthandDefCode::from_raw(st.scanner.cur_chr).ok_or(Abort::Confusion("shorthand_def"))?;
+    let n = st
+        .scanner
+        .chr_code::<ShorthandDefCode>()
+        .ok_or(Abort::Confusion("shorthand_def"))?;
     crate::scan::get_r_token(st)?;
     let p = st.scanner.cur_cs;
     define(st, global, p, Cmd::Relax, TOO_BIG_USV)?;
@@ -889,7 +891,7 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
                 RegisterLoc::Eqtb(TOKS_BASE + st.scanner.cur_val)
             }
         } else {
-            RegisterLoc::Sparse(NodePtr::at(MemPtr::from_raw(st.scanner.cur_chr)))
+            RegisterLoc::Sparse(st.scanner.chr_sa())
         }
     } else if st.scanner.chr_loc() == TokPar::XetexInterCharToks.loc() {
         let n = scan_inter_char_pair(st)?;
@@ -919,7 +921,7 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
                     crate::scan::sa_token_list(st, sa)
                 }
             } else {
-                NodePtr::<SaNode>::at(MemPtr::from_raw(st.scanner.cur_chr)).sa_toks(&st.mem)
+                st.scanner.chr_sa().sa_toks(&st.mem)
             }
         } else if st.scanner.chr_loc() == TokPar::XetexInterCharToks.loc() {
             let n = scan_inter_char_pair(st)?;

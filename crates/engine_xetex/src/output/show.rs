@@ -417,7 +417,7 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
 pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
     diagnostic_begin_capture_warning_here(st);
 
-    let code = ShowCode::from_raw(st.scanner.cur_chr);
+    let code = st.scanner.chr_code::<ShowCode>();
     match code {
         Some(ShowCode::Lists) => {
             begin_diagnostic(st);

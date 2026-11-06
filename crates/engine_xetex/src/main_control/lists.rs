@@ -517,7 +517,10 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 pub(super) fn append_glue(st: &mut EngineState) -> Result<NodePtr<GlueNode>, Abort> {
-    let s = SkipCode::from_raw(st.scanner.cur_chr).ok_or(Abort::Confusion("append_glue"))?;
+    let s = st
+        .scanner
+        .chr_code::<SkipCode>()
+        .ok_or(Abort::Confusion("append_glue"))?;
     match s {
         SkipCode::Fil => st.scanner.cur_val = FIL_GLUE.idx().raw(),
         SkipCode::Fill => st.scanner.cur_val = FILL_GLUE.idx().raw(),

@@ -154,7 +154,10 @@ impl ListStateRecord {
 
 pub(crate) fn math_radical(st: &mut EngineState) -> Result<(), Abort> {
     let tail = st.input.cur_list.append_radical_noad(&mut st.mem)?;
-    let code = RadicalCode::from_raw(st.scanner.cur_chr).ok_or(Abort::Confusion("radical"))?;
+    let code = st
+        .scanner
+        .chr_code::<RadicalCode>()
+        .ok_or(Abort::Confusion("radical"))?;
     scan_delimiter(st, tail.left_delimiter(), Some(code))?;
     crate::scan::scan_math(st, tail.nucleus())
 }
@@ -489,7 +492,7 @@ pub(crate) fn math_ac(st: &mut EngineState) -> Result<(), Abort> {
 
     let tail = st.input.cur_list.append_accent_noad(&mut st.mem)?;
 
-    if MathAccentCode::from_raw(st.scanner.cur_chr) == Some(MathAccentCode::UmathAccent) {
+    if st.scanner.chr_code::<MathAccentCode>() == Some(MathAccentCode::UmathAccent) {
         if crate::scan::scan_keyword(st, "fixed")? {
             tail.set_subtype(&mut st.mem, FIXED_ACC);
         } else if crate::scan::scan_keyword(st, "bottom")? {

@@ -165,7 +165,10 @@ fn io_whatsit(st: &mut EngineState, code: ExtensionCode) -> Result<NodePtr<Whats
 
 pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
     let mode = st.input.cur_list.mode.abs();
-    let code = ExtensionCode::from_raw(st.scanner.cur_chr).ok_or(Abort::Confusion("ext1"))?;
+    let code = st
+        .scanner
+        .chr_code::<ExtensionCode>()
+        .ok_or(Abort::Confusion("ext1"))?;
     match code {
         ExtensionCode::Open | ExtensionCode::Write | ExtensionCode::Close => {
             io_whatsit(st, code)?;
@@ -181,7 +184,7 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
         ExtensionCode::Immediate => {
             get_x_token(st)?;
             let io_code =
-                match ExtensionCode::from_raw(st.scanner.cur_chr) {
+                match st.scanner.chr_code::<ExtensionCode>() {
                     Some(
                         c @ (ExtensionCode::Open | ExtensionCode::Write | ExtensionCode::Close),
                     ) if st.scanner.cur_cmd == Cmd::Extension => Some(c),

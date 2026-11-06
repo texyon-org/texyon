@@ -1717,6 +1717,24 @@ impl InputClusterState {
 pub(crate) const NATIVE_TEXT_MAX: i32 = 1 << 20;
 
 impl ScannerState {
+    /// `cur_chr` as the modifier code of a command, `None` when it is not one.
+    #[inline(always)]
+    pub(crate) fn chr_code<T: crate::codes::ChrCode>(&self) -> Option<T> {
+        T::from_chr(self.cur_chr)
+    }
+
+    /// `cur_chr` of `set_font`.
+    #[inline(always)]
+    pub(crate) fn chr_font(&self) -> FontId {
+        FontId::from_raw(self.cur_chr)
+    }
+
+    /// `cur_chr` of a register command that names a sparse-array register.
+    #[inline(always)]
+    pub(crate) fn chr_sa(&self) -> crate::node::NodePtr<crate::node::SaNode> {
+        crate::node::NodePtr::at(crate::units::MemPtr::from_raw(self.cur_chr))
+    }
+
     /// `cur_chr` of a command whose chr code is an `eqtb` location.
     #[inline(always)]
     pub(crate) fn chr_loc(&self) -> EqtbPtr {

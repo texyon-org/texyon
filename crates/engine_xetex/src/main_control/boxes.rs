@@ -312,7 +312,10 @@ fn unlink_effective_tail(st: &mut EngineState, tx: MemPtr) -> Result<bool, Abort
 }
 
 pub(super) fn begin_box(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
-    let code = BoxCode::from_raw(st.scanner.cur_chr).ok_or(Abort::Confusion("begin_box"))?;
+    let code = st
+        .scanner
+        .chr_code::<BoxCode>()
+        .ok_or(Abort::Confusion("begin_box"))?;
     match code {
         BoxCode::Box => {
             crate::scan::scan_register_num(st)?;

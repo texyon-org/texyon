@@ -30,7 +30,9 @@ use crate::units::{EqtbPtr, FontId, MemPtr, Scaled, StrNumber};
 
 /// The `\the` variant in `cur_chr`.
 pub(crate) fn the_code(st: &EngineState) -> Result<TheCode, Abort> {
-    TheCode::from_raw(st.scanner.cur_chr).ok_or(Abort::Confusion("the"))
+    st.scanner
+        .chr_code::<TheCode>()
+        .ok_or(Abort::Confusion("the"))
 }
 
 pub(crate) fn ins_the_toks(st: &mut EngineState) -> Result<(), Abort> {
@@ -61,7 +63,7 @@ fn pop_fi(st: &mut EngineState) {
 
 /// Handles the `\else` or `\fi` that ended a skipped conditional branch.
 fn skipped_branch_end(st: &mut EngineState) {
-    if st.scanner.cur_chr == FiOrElseCode::Fi.raw() {
+    if st.scanner.chr_code() == Some(FiOrElseCode::Fi) {
         pop_fi(st);
     } else {
         st.scanner.if_limit = FiOrElseCode::Fi;
@@ -342,12 +344,12 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             while n != 0 {
                 crate::scan::pass_text(st)?;
                 if st.scanner.cond_ptr == save_cond_ptr {
-                    if st.scanner.cur_chr != FiOrElseCode::Or.raw() {
+                    if st.scanner.chr_code() != Some(FiOrElseCode::Or) {
                         skipped_branch_end(st);
                         return Ok(());
                     }
                     n = n.wrapping_sub(1);
-                } else if st.scanner.cur_chr == FiOrElseCode::Fi.raw() {
+                } else if st.scanner.chr_code() == Some(FiOrElseCode::Fi) {
                     pop_fi(st);
                 }
             }
@@ -380,7 +382,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         crate::scan::pass_text(st)?;
         if st.scanner.cond_ptr == save_cond_ptr {
-            if st.scanner.cur_chr != FiOrElseCode::Or.raw() {
+            if st.scanner.chr_code() != Some(FiOrElseCode::Or) {
                 skipped_branch_end(st);
                 return Ok(());
             }
@@ -390,7 +392,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             st.errors
                 .help(&[r"I'm ignoring this; it doesn't match any \if."]);
             error(st)?;
-        } else if st.scanner.cur_chr == FiOrElseCode::Fi.raw() {
+        } else if st.scanner.chr_code() == Some(FiOrElseCode::Fi) {
             pop_fi(st);
         }
     }
@@ -545,7 +547,10 @@ fn print_margin_kern(
 }
 
 pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
-    let c = ConvertCode::from_raw(st.scanner.cur_chr).ok_or(Abort::Confusion("convert"))?;
+    let c = st
+        .scanner
+        .chr_code::<ConvertCode>()
+        .ok_or(Abort::Confusion("convert"))?;
     let mut cat: Option<Cmd> = None;
     let mut fnt = NULL_FONT;
     let mut arg1: i32 = 0;
@@ -849,7 +854,8 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     back_input(st)?;
                 } else {
                     get_token(st)?;
-                    if st.scanner.cur_cmd == Cmd::IfTest && st.scanner.cur_chr != IfCode::Case.raw()
+                    if st.scanner.cur_cmd == Cmd::IfTest
+                        && st.scanner.chr_code() != Some(IfCode::Case)
                     {
                         st.scanner.cur_chr += IfCode::UNLESS;
                         continue 'reswitch;
@@ -942,13 +948,13 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                         error(st)?;
                     }
                 } else {
-                    while st.scanner.cur_chr != FiOrElseCode::Fi.raw() {
+                    while st.scanner.chr_code() != Some(FiOrElseCode::Fi) {
                         crate::scan::pass_text(st)?;
                     }
                     pop_fi(st);
                 }
             }
-            Cmd::Input => match InputCode::from_raw(st.scanner.cur_chr) {
+            Cmd::Input => match st.scanner.chr_code::<InputCode>() {
                 Some(InputCode::EndInput) => st.input.force_eof = true,
                 Some(InputCode::ScanTokens) => crate::scan::pseudo_start(st)?,
                 _ if st.scanner.name_in_progress => crate::input::insert_relax(st)?,

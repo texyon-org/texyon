@@ -934,7 +934,7 @@ pub(crate) fn scan_font_ident(st: &mut EngineState) -> Result<FontId, Abort> {
     get_x_non_blank(st)?;
     let f = match st.scanner.cur_cmd {
         Cmd::DefFont => st.eqtb.cur_font(),
-        Cmd::SetFont => FontId::from_raw(st.scanner.cur_chr),
+        Cmd::SetFont => st.scanner.chr_font(),
         Cmd::DefFamily => {
             let m = st.scanner.chr_loc();
             scan_math_fam_int(st)?;
