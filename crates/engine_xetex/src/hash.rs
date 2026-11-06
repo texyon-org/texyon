@@ -6,12 +6,18 @@ use crate::consts::{
 };
 use crate::errors::Abort;
 use crate::state::{EqtbState, StringsState};
-use crate::units::StrNumber;
+use crate::units::{EqtbPtr, StrNumber};
 
 pub(crate) const HASH_OFFSET: i32 = 514;
 pub(crate) const HASH_SIZE: i32 = 15000;
 pub(crate) const HASH_PRIME: i32 = 8501;
 const PRIM_PRIME: i32 = 1777;
+
+/// The index of control sequence `p` in the `hash` array.
+#[inline(always)]
+pub(crate) fn hash_slot(p: EqtbPtr) -> i32 {
+    p.raw() - HASH_OFFSET
+}
 const PRIM_BASE: i32 = 1;
 
 impl StringsState {
@@ -35,7 +41,7 @@ impl EqtbState {
         buffer: &[i32],
         j: i32,
         l: i32,
-    ) -> Result<i32, Abort> {
+    ) -> Result<EqtbPtr, Abort> {
         let mut h: i32 = 0;
         for k in j..=(j + l - 1) {
             h = h + h + buffer[k as usize];
@@ -51,7 +57,7 @@ impl EqtbState {
             }
         }
 
-        let mut p = h + HASH_BASE;
+        let mut p = HASH_BASE + h;
 
         let mut utf16_len = l;
         for k in j..j + l {
@@ -69,15 +75,15 @@ impl EqtbState {
                 return Ok(p);
             }
 
-            if self.hash_s0(p) == 0 {
+            if self.hash_s0(p).is_none() {
                 if self.no_new_control_sequence {
                     p = UNDEFINED_CONTROL_SEQUENCE;
                 } else {
                     if text > StrNumber::NONE {
                         if self.hash_high < self.hash_extra {
                             self.hash_high += 1;
-                            self.set_hash_s0(p, self.hash_high + EQTB_SIZE);
-                            p = self.hash_high + EQTB_SIZE;
+                            self.set_hash_s0(p, EQTB_SIZE + self.hash_high);
+                            p = EQTB_SIZE + self.hash_high;
                         } else {
                             loop {
                                 if self.hash_used == HASH_BASE {
@@ -202,7 +208,7 @@ impl EqtbState {
     pub(crate) fn prim_lookup_cs(
         &mut self,
         strings: &mut StringsState,
-        cs: i32,
+        cs: EqtbPtr,
     ) -> Result<i32, Abort> {
         let s = if cs < HASH_BASE {
             StrNumber::from_raw(cs - crate::consts::SINGLE_BASE)

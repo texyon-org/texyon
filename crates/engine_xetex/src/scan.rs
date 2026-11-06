@@ -3,8 +3,8 @@
 use crate::cmd::Cmd;
 use crate::codes::{DelimNumCode, MathCharNumCode, ValueLevel};
 use crate::consts::{
-    ACTIVE_MATH_CHAR, BIGGEST_USV, EQTB_SIZE, FROZEN_CONTROL_SEQUENCE, FROZEN_PROTECTION,
-    MATH_CHAR, NUMBER_MATH_FAMILIES,
+    ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_USV, EQTB_SIZE, FROZEN_CONTROL_SEQUENCE,
+    FROZEN_PROTECTION, MATH_CHAR, NUMBER_MATH_FAMILIES,
 };
 use crate::errors::{error, Abort};
 use crate::input::{back_error, back_input, begin_token_list, ins_error, TokenType};
@@ -163,7 +163,7 @@ pub(crate) fn get_r_token(st: &mut EngineState) -> Result<(), Abort> {
                 break;
             }
         }
-        if st.scanner.cur_cs == 0
+        if st.scanner.cur_cs.is_none()
             || st.scanner.cur_cs > st.eqtb.eqtb_top
             || (st.scanner.cur_cs > FROZEN_CONTROL_SEQUENCE && st.scanner.cur_cs <= EQTB_SIZE)
         {
@@ -175,7 +175,7 @@ pub(crate) fn get_r_token(st: &mut EngineState) -> Result<(), Abort> {
                 "You can recover graciously from this error, if you're",
                 "careful; see exercise 27.2 in The TeXbook.",
             ]);
-            if st.scanner.cur_cs == 0 {
+            if st.scanner.cur_cs.is_none() {
                 back_input(st)?;
             }
             st.scanner.cur_tok = Token::from_cs(FROZEN_PROTECTION);
@@ -211,7 +211,7 @@ pub(crate) fn scan_math(st: &mut EngineState, p: NodePtr<MathField>) -> Result<(
                 Cmd::Letter | Cmd::OtherChar | Cmd::CharGiven => {
                     let mc = st.eqtb.math_code(st.scanner.cur_chr);
                     if mc & 0x1FFFFF == ACTIVE_MATH_CHAR {
-                        st.scanner.cur_cs = st.scanner.cur_chr + 1;
+                        st.scanner.cur_cs = ACTIVE_BASE + st.scanner.cur_chr;
                         fetch_cs_meaning(st);
                         x_token(st)?;
                         back_input(st)?;
@@ -255,7 +255,7 @@ pub(crate) fn scan_math(st: &mut EngineState, p: NodePtr<MathField>) -> Result<(
 
 pub(crate) fn set_math_char(st: &mut EngineState, c: i32) -> Result<(), Abort> {
     if math_char(c) == ACTIVE_MATH_CHAR {
-        st.scanner.cur_cs = st.scanner.cur_chr + 1;
+        st.scanner.cur_cs = ACTIVE_BASE + st.scanner.cur_chr;
         fetch_cs_meaning(st);
         x_token(st)?;
         back_input(st)?;
@@ -376,7 +376,9 @@ pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, 
     while i < keyword.len() {
         get_x_token(st)?;
         let ch = i32::from(keyword[i]);
-        if st.scanner.cur_cs == 0 && (st.scanner.cur_chr == ch || st.scanner.cur_chr == ch - 32) {
+        if st.scanner.cur_cs.is_none()
+            && (st.scanner.cur_chr == ch || st.scanner.cur_chr == ch - 32)
+        {
             store_new_token(st, &mut p, st.scanner.cur_tok)?;
             i += 1;
         } else if st.scanner.cur_cmd != Cmd::Spacer || p != BACKUP_HEAD {

@@ -44,7 +44,7 @@ pub(super) fn insert_boundary_inter_char_toks(st: &mut EngineState) -> Result<bo
     let Some(list) = inter_char_toks(st, sc * CHAR_CLASS_LIMIT + CHAR_CLASS_LIMIT - 1) else {
         return Ok(false);
     };
-    if st.scanner.cur_cs == 0 {
+    if st.scanner.cur_cs.is_none() {
         if st.scanner.cur_cmd == Cmd::CharNum {
             st.scanner.cur_cmd = Cmd::OtherChar;
         }

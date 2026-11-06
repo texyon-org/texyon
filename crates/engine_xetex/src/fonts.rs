@@ -19,7 +19,7 @@ use crate::output::{
 };
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, FontState, MemState};
-use crate::units::{FontId, MemPtr, Scaled, StrNumber};
+use crate::units::{EqtbPtr, FontId, MemPtr, Scaled, StrNumber};
 
 use crate::bridge::{input_getc, FileFormat};
 use crate::errors::Abort;
@@ -433,7 +433,7 @@ fn read_scaled_word(handle: usize, z: i32, beta: i32, alpha: i32) -> Option<Scal
 }
 
 /// Start a "Font \cs=name at size" error.
-fn font_error_start(st: &mut EngineState, u: i32, nom: StrNumber, aire: StrNumber, s: Scaled) {
+fn font_error_start(st: &mut EngineState, u: EqtbPtr, nom: StrNumber, aire: StrNumber, s: Scaled) {
     error_here_with_diagnostic(st, "Font ");
     sprint_cs(st, u);
     print_char(st, b'=');
@@ -457,7 +457,7 @@ fn font_error_start(st: &mut EngineState, u: i32, nom: StrNumber, aire: StrNumbe
 
 pub(crate) fn read_font_info(
     st: &mut EngineState,
-    u: i32,
+    u: EqtbPtr,
     nom: StrNumber,
     aire: StrNumber,
     s: Scaled,
@@ -918,7 +918,7 @@ impl FontState {
 /// Load a native OpenType/Graphite font and set up its TeX font tables.
 pub(crate) fn load_native_font(
     st: &mut EngineState,
-    u: i32,
+    u: EqtbPtr,
     nom: StrNumber,
     aire: StrNumber,
     s: Scaled,

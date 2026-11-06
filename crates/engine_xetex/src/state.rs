@@ -2,9 +2,8 @@
 
 use crate::cmd::Cmd;
 use crate::codes::{FiOrElseCode, ValueLevel};
-use crate::hash::HASH_OFFSET;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
-use crate::units::{FontId, Scaled, StrNumber};
+use crate::units::{EqtbPtr, FontId, Scaled, StrNumber};
 
 #[derive(Default)]
 pub(crate) struct EngineState {
@@ -129,6 +128,19 @@ pub(crate) struct InputState {
     pub synctex_tag: i32,
 }
 
+impl InputState {
+    /// `name` of a macro level: the control sequence being expanded.
+    #[inline]
+    pub(crate) fn macro_name(&self) -> EqtbPtr {
+        EqtbPtr::from_raw(self.name)
+    }
+
+    #[inline]
+    pub(crate) fn set_macro_name(&mut self, cs: EqtbPtr) {
+        self.name = cs.raw();
+    }
+}
+
 /// `start` and `loc` of a token-list level, which point into `mem`.
 impl InputState {
     #[inline]
@@ -191,7 +203,7 @@ pub(crate) struct InputClusterState {
     pub nest_size: i32,
     pub max_in_stack: i32,
     pub base_ptr: i32,
-    pub par_loc: i32,
+    pub par_loc: crate::units::EqtbPtr,
     pub par_token: crate::token::Token,
     pub param_ptr: i32,
     pub max_param_stack: i32,
@@ -209,7 +221,7 @@ pub(crate) struct InputClusterState {
 }
 
 pub(crate) struct EqtbState {
-    pub hash_used: i32,
+    pub hash_used: EqtbPtr,
     pub hash_high: i32,
     pub no_new_control_sequence: bool,
     pub prim_used: i32,
@@ -219,8 +231,8 @@ pub(crate) struct EqtbState {
     pub xeq_level: Vec<u16>,
     pub hash: Vec<crate::mem_types::B32x2>,
     pub hash_extra: i32,
-    pub eqtb_top: i32,
-    pub hash_top: i32,
+    pub eqtb_top: crate::units::EqtbPtr,
+    pub hash_top: crate::units::EqtbPtr,
     pub journal: crate::journal::EqtbJournal,
     pub pgfmath: crate::pgfmath::KnownCs,
 }
@@ -228,7 +240,7 @@ pub(crate) struct EqtbState {
 impl Default for EqtbState {
     fn default() -> Self {
         EqtbState {
-            hash_used: 0,
+            hash_used: EqtbPtr::NONE,
             hash_high: 0,
             no_new_control_sequence: false,
             prim_used: 0,
@@ -240,8 +252,8 @@ impl Default for EqtbState {
             xeq_level: vec![0u16; 1_114_730],
             hash: Vec::new(),
             hash_extra: 0,
-            eqtb_top: 0,
-            hash_top: 0,
+            eqtb_top: EqtbPtr::NONE,
+            hash_top: EqtbPtr::NONE,
             journal: crate::journal::EqtbJournal::default(),
             pgfmath: crate::pgfmath::KnownCs::default(),
         }
@@ -257,47 +269,47 @@ impl EqtbState {
     }
 
     #[inline]
-    fn b32s1(&self, p: i32) -> i32 {
-        self.data[p as usize].b32().s1
+    fn b32s1(&self, p: EqtbPtr) -> i32 {
+        self.data[p.index()].b32().s1
     }
 
     #[inline]
-    fn set_b32s1(&mut self, p: i32, v: i32) {
-        let index = p as usize;
+    fn set_b32s1(&mut self, p: EqtbPtr, v: i32) {
+        let index = p.index();
         self.note(index);
         self.data[index].b32.s1 = v;
     }
 
     #[inline]
-    pub fn set_word(&mut self, p: i32, value: crate::mem_types::MemoryWord) {
-        let index = p as usize;
+    pub fn set_word(&mut self, p: EqtbPtr, value: crate::mem_types::MemoryWord) {
+        let index = p.index();
         self.note(index);
         self.data[index] = value;
     }
 
     #[inline]
-    pub fn hash_s0(&self, p: i32) -> i32 {
-        self.hash[(p - HASH_OFFSET) as usize].s0
+    pub fn hash_s0(&self, p: EqtbPtr) -> EqtbPtr {
+        EqtbPtr::from_raw(self.hash[crate::hash::hash_slot(p) as usize].s0)
     }
 
     #[inline]
-    pub fn set_hash_s0(&mut self, p: i32, v: i32) {
-        let index = (p - HASH_OFFSET) as usize;
+    pub fn set_hash_s0(&mut self, p: EqtbPtr, v: EqtbPtr) {
+        let index = crate::hash::hash_slot(p) as usize;
         if self.journal.hash.armed() {
             self.journal.hash.note(index, self.hash[index]);
         }
-        self.hash[index].s0 = v;
+        self.hash[index].s0 = v.raw();
     }
 
     /// The name of control sequence `p`, `text(p)`.
     #[inline]
-    pub fn text(&self, p: i32) -> StrNumber {
-        StrNumber::from_raw(self.hash[(p - HASH_OFFSET) as usize].s1)
+    pub fn text(&self, p: EqtbPtr) -> StrNumber {
+        StrNumber::from_raw(self.hash[crate::hash::hash_slot(p) as usize].s1)
     }
 
     #[inline]
-    pub fn set_text(&mut self, p: i32, s: StrNumber) {
-        let index = (p - HASH_OFFSET) as usize;
+    pub fn set_text(&mut self, p: EqtbPtr, s: StrNumber) {
+        let index = crate::hash::hash_slot(p) as usize;
         if self.journal.hash.armed() {
             self.journal.hash.note(index, self.hash[index]);
         }
@@ -333,58 +345,63 @@ impl EqtbState {
     }
 
     #[inline]
-    pub fn word(&self, p: i32) -> crate::mem_types::MemoryWord {
-        self.data[p as usize]
+    pub fn word(&self, p: EqtbPtr) -> crate::mem_types::MemoryWord {
+        self.data[p.index()]
     }
 
     #[inline]
-    fn b16s1(&self, p: i32) -> u16 {
-        self.data[p as usize].b16().s1
+    fn b16s1(&self, p: EqtbPtr) -> u16 {
+        self.data[p.index()].b16().s1
     }
 
     /// The command code of control-sequence entry `p`.
     #[inline]
-    pub(crate) fn eq_type(&self, p: i32) -> Cmd {
+    pub(crate) fn eq_type(&self, p: EqtbPtr) -> Cmd {
         Cmd::from_stored(self.b16s1(p))
     }
     #[inline]
-    pub(crate) fn set_eq_type(&mut self, p: i32, t: Cmd) {
+    pub(crate) fn set_eq_type(&mut self, p: EqtbPtr, t: Cmd) {
         self.set_b16s1(p, t.into());
     }
     #[inline]
-    pub(crate) fn eq_level(&self, p: i32) -> u16 {
+    pub(crate) fn eq_level(&self, p: EqtbPtr) -> u16 {
         self.b16s0(p)
     }
     #[inline]
-    pub(crate) fn set_eq_level(&mut self, p: i32, l: u16) {
+    pub(crate) fn set_eq_level(&mut self, p: EqtbPtr, l: u16) {
         self.set_b16s0(p, l);
     }
     #[inline]
-    pub(crate) fn equiv(&self, p: i32) -> i32 {
+    pub(crate) fn equiv(&self, p: EqtbPtr) -> i32 {
         self.b32s1(p)
     }
     /// `equiv(p)` of an entry that holds a pointer.
     #[inline]
-    pub(crate) fn equiv_ptr(&self, p: i32) -> crate::units::MemPtr {
+    pub(crate) fn equiv_ptr(&self, p: EqtbPtr) -> crate::units::MemPtr {
         crate::units::MemPtr::from_raw(self.equiv(p))
+    }
+    /// `equiv(p)` of an entry that holds an `eqtb` location, as a `\countdef` does.
+    #[inline]
+    pub(crate) fn equiv_loc(&self, p: EqtbPtr) -> EqtbPtr {
+        EqtbPtr::from_raw(self.equiv(p))
     }
     /// `equiv(p)` of a macro or token-list entry.
     #[inline]
-    pub(crate) fn equiv_tokens(&self, p: i32) -> crate::token::TokenList {
+    pub(crate) fn equiv_tokens(&self, p: EqtbPtr) -> crate::token::TokenList {
         crate::token::TokenList::from_ptr(self.equiv_ptr(p))
     }
     #[inline]
-    pub(crate) fn set_equiv(&mut self, p: i32, v: i32) {
+    pub(crate) fn set_equiv(&mut self, p: EqtbPtr, v: i32) {
         self.set_b32s1(p, v);
     }
 
     /// `eqtb[p].int`, a word in the integer or dimension regions.
     #[inline]
-    pub(crate) fn int_at(&self, p: i32) -> i32 {
+    pub(crate) fn int_at(&self, p: EqtbPtr) -> i32 {
         self.b32s1(p)
     }
     #[inline]
-    pub(crate) fn set_int_at(&mut self, p: i32, v: i32) {
+    pub(crate) fn set_int_at(&mut self, p: EqtbPtr, v: i32) {
         self.set_b32s1(p, v);
     }
 
@@ -410,7 +427,7 @@ impl EqtbState {
     #[inline]
     pub(crate) fn penalties(
         &self,
-        loc: i32,
+        loc: EqtbPtr,
     ) -> Option<crate::node::NodePtr<crate::node::PenaltiesNode>> {
         crate::node::NodePtr::from_ptr(self.equiv_ptr(loc))
     }
@@ -464,20 +481,20 @@ impl EqtbState {
     }
 
     #[inline]
-    fn set_b16s1(&mut self, p: i32, v: u16) {
-        let index = p as usize;
+    fn set_b16s1(&mut self, p: EqtbPtr, v: u16) {
+        let index = p.index();
         self.note(index);
         self.data[index].b16.s1 = v;
     }
 
     #[inline]
-    fn b16s0(&self, p: i32) -> u16 {
-        self.data[p as usize].b16().s0
+    fn b16s0(&self, p: EqtbPtr) -> u16 {
+        self.data[p.index()].b16().s0
     }
 
     #[inline]
-    fn set_b16s0(&mut self, p: i32, v: u16) {
-        let index = p as usize;
+    fn set_b16s0(&mut self, p: EqtbPtr, v: u16) {
+        let index = p.index();
         self.note(index);
         self.data[index].b16.s0 = v;
     }
@@ -514,12 +531,12 @@ impl EqtbState {
     }
 
     #[inline]
-    pub fn xeq_level_at(&self, p: i32) -> u16 {
+    pub fn xeq_level_at(&self, p: EqtbPtr) -> u16 {
         self.xeq_level[(p - crate::consts::INT_BASE) as usize]
     }
 
     #[inline]
-    pub fn set_xeq_level_at(&mut self, p: i32, v: u16) {
+    pub fn set_xeq_level_at(&mut self, p: EqtbPtr, v: u16) {
         let index = (p - crate::consts::INT_BASE) as usize;
         if self.journal.xeq.armed() {
             self.journal.xeq.note(index, self.xeq_level[index]);
@@ -826,6 +843,11 @@ impl SaveStackState {
     pub(crate) fn save_index(&self, k: i32) -> i32 {
         self.b32s1(k)
     }
+    /// `save_index(k)` of an entry that saved an `eqtb` location.
+    #[inline]
+    pub(crate) fn save_loc(&self, k: i32) -> EqtbPtr {
+        EqtbPtr::from_raw(self.b32s1(k))
+    }
     /// `save_index(k)` of an entry that saved a pointer.
     #[inline]
     pub(crate) fn save_index_ptr(&self, k: i32) -> crate::units::MemPtr {
@@ -940,14 +962,14 @@ pub(crate) struct ScannerState {
     pub cur_val_level: ValueLevel,
     pub cur_val1: i32,
     pub scanner_status: crate::codes::ScannerStatus,
-    pub warning_index: i32,
+    pub warning_index: EqtbPtr,
     pub def_ref: crate::token::TokenList,
     pub long_state: Cmd,
     pub align_state: i32,
     pub expand_depth: i32,
     pub cur_cmd: Cmd,
     pub cur_chr: i32,
-    pub cur_cs: i32,
+    pub cur_cs: crate::units::EqtbPtr,
     pub cur_tok: crate::token::Token,
     pub cur_val: i32,
     pub cur_ptr: crate::units::MemPtr,
@@ -1261,7 +1283,7 @@ pub(crate) struct ShipoutState {
     pub cur_page_height: Scaled,
     pub cur_h_offset: Scaled,
     pub cur_v_offset: Scaled,
-    pub write_loc: i32,
+    pub write_loc: crate::units::EqtbPtr,
     pub output_file_name: StrNumber,
     pub down_ptr: crate::units::MemPtr,
     pub right_ptr: crate::units::MemPtr,
@@ -1695,6 +1717,12 @@ impl InputClusterState {
 pub(crate) const NATIVE_TEXT_MAX: i32 = 1 << 20;
 
 impl ScannerState {
+    /// `cur_chr` of a command whose chr code is an `eqtb` location.
+    #[inline(always)]
+    pub(crate) fn chr_loc(&self) -> EqtbPtr {
+        EqtbPtr::from_raw(self.cur_chr)
+    }
+
     /// `cur_val` as the dimension that `scan_dimen` left there.
     #[inline]
     pub(crate) fn cur_dimen(&self) -> Scaled {
@@ -1722,6 +1750,12 @@ impl ScannerState {
     #[inline]
     pub(crate) fn cur_val_tokens(&self) -> crate::token::TokenList {
         crate::token::TokenList::from_ptr(self.cur_val_ptr())
+    }
+
+    /// `cur_val` at level `ident`: the control sequence of a font identifier.
+    #[inline]
+    pub(crate) fn cur_val_loc(&self) -> EqtbPtr {
+        EqtbPtr::from_raw(self.cur_val)
     }
 
     /// `cur_chr` as the macro a call command carries.

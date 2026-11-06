@@ -38,7 +38,7 @@ use crate::state::{
     PerFont, Selector,
 };
 use crate::token::{Token, TokenList};
-use crate::units::{FontId, MemPtr, NodeType, Scaled, StrNumber};
+use crate::units::{EqtbPtr, FontId, MemPtr, NodeType, Scaled, StrNumber};
 
 /// A `get_node` request this large merges every free block into the rover list.
 const GET_NODE_HEAD_SENTINEL: i32 = 0x4000_0000;
@@ -60,7 +60,7 @@ const _: () = assert!(
         && MAX_FONT_MAX >= TEX_NULL
         && MAX_FONT_MAX <= MAX_HALFWORD
         && HASH_OFFSET >= 0
-        && HASH_OFFSET <= HASH_BASE
+        && HASH_OFFSET <= HASH_BASE.raw()
         && 2 * MAX_HALFWORD >= MEM_TOP
 );
 
@@ -136,15 +136,22 @@ impl MemState {
 }
 
 impl EqtbState {
-    pub(crate) fn set_eq(&mut self, p: i32, eq_type: Cmd, equiv: i32, level: u16) {
+    /// Sets `eqtb[from..to]` to `w`.
+    pub(crate) fn fill(&mut self, from: EqtbPtr, to: EqtbPtr, w: crate::mem_types::MemoryWord) {
+        self.data[from.index()..to.index()].fill(w);
+    }
+
+    pub(crate) fn set_eq(&mut self, p: EqtbPtr, eq_type: Cmd, equiv: i32, level: u16) {
         self.set_eq_type(p, eq_type);
         self.set_equiv(p, equiv);
         self.set_eq_level(p, level);
     }
 }
 
-fn primitive(st: &mut EngineState, ident: &str, c: Cmd, o: i32) -> Result<(), Abort> {
+/// Defines primitive `ident` and returns its control sequence.
+fn primitive(st: &mut EngineState, ident: &str, c: Cmd, o: i32) -> Result<EqtbPtr, Abort> {
     let bytes = ident.as_bytes();
+    let cs;
     let prim_val = if bytes.len() > 1 {
         let len = bytes.len() as i32;
         let s = st.strings.make_tex_string(ident)?;
@@ -160,23 +167,23 @@ fn primitive(st: &mut EngineState, ident: &str, c: Cmd, o: i32) -> Result<(), Ab
             *slot = i32::from(b);
         }
 
-        st.scanner.cur_val =
-            st.eqtb
-                .id_lookup(&mut st.strings, &st.input.buffer, st.input.first, len)?;
+        cs = st
+            .eqtb
+            .id_lookup(&mut st.strings, &st.input.buffer, st.input.first, len)?;
         st.strings.str_ptr -= 1;
         st.strings.discard_cur_string();
-        st.eqtb.set_text(st.scanner.cur_val, s);
+        st.eqtb.set_text(cs, s);
         st.eqtb.prim_lookup(&mut st.strings, s)?
     } else {
         let ch = i32::from(bytes[0]);
-        st.scanner.cur_val = ch + SINGLE_BASE;
+        cs = SINGLE_BASE + ch;
         st.eqtb
             .prim_lookup(&mut st.strings, StrNumber::from_raw(ch))?
     };
 
-    st.eqtb.set_eq(st.scanner.cur_val, c, o, LEVEL_ONE);
+    st.eqtb.set_eq(cs, c, o, LEVEL_ONE);
     st.eqtb.set_eq(PRIM_EQTB_BASE + prim_val, c, o, LEVEL_ONE);
-    Ok(())
+    Ok(cs)
 }
 
 pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
@@ -322,7 +329,7 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.shipout.last_node_type = -1;
     st.shipout.page_so_far[7] = Scaled::ZERO;
 
-    for k in INT_BASE..=EQTB_SIZE {
+    for k in INT_BASE.through(EQTB_SIZE) {
         st.eqtb.set_xeq_level_at(k, LEVEL_ONE);
     }
 
@@ -484,35 +491,41 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
         LEVEL_ZERO,
     );
     let undefined_entry = eqtb.word(UNDEFINED_CONTROL_SEQUENCE);
-    eqtb.data[ACTIVE_BASE as usize..=eqtb.eqtb_top as usize].fill(undefined_entry);
+    eqtb.fill(ACTIVE_BASE, eqtb.eqtb_top + 1, undefined_entry);
 
     eqtb.set_eq(GLUE_BASE, Cmd::GlueRef, 0, LEVEL_ONE);
     let glue_base_entry = eqtb.word(GLUE_BASE);
-    eqtb.data[(GLUE_BASE + 1) as usize..LOCAL_BASE as usize].fill(glue_base_entry);
+    eqtb.fill(GLUE_BASE + 1, LOCAL_BASE, glue_base_entry);
 
     let zero_glue_refs = ZERO_GLUE.ref_count(&st.mem) + 531;
     ZERO_GLUE.set_ref_count(&mut st.mem, zero_glue_refs);
 
     eqtb.set_eq(PAR_SHAPE_LOC, Cmd::ShapeRef, TEX_NULL, LEVEL_ONE);
     let par_shape_entry = eqtb.word(PAR_SHAPE_LOC);
-    eqtb.data[ETEX_PEN_BASE as usize..(ETEX_PEN_BASE + NUM_ETEX_PENALTIES) as usize]
-        .fill(par_shape_entry);
+    eqtb.fill(
+        ETEX_PEN_BASE,
+        ETEX_PEN_BASE + NUM_ETEX_PENALTIES,
+        par_shape_entry,
+    );
 
     let toks_end = TOKS_BASE + NUMBER_REGS;
-    eqtb.data[TokPar::OutputRoutine.loc() as usize..toks_end as usize].fill(undefined_entry);
+    eqtb.fill(TokPar::OutputRoutine.loc(), toks_end, undefined_entry);
 
     eqtb.set_eq(BOX_BASE, Cmd::BoxRef, TEX_NULL, LEVEL_ONE);
     let box_base_entry = eqtb.word(BOX_BASE);
-    eqtb.data[(BOX_BASE + 1) as usize..(BOX_BASE + NUMBER_REGS) as usize].fill(box_base_entry);
+    eqtb.fill(BOX_BASE + 1, BOX_BASE + NUMBER_REGS, box_base_entry);
 
     eqtb.set_eq(CUR_FONT_LOC, Cmd::Data, FONT_BASE, LEVEL_ONE);
     let cur_font_entry = eqtb.word(CUR_FONT_LOC);
-    eqtb.data[MATH_FONT_BASE as usize..(MATH_FONT_BASE + NUMBER_MATH_FONTS) as usize]
-        .fill(cur_font_entry);
+    eqtb.fill(
+        MATH_FONT_BASE,
+        MATH_FONT_BASE + NUMBER_MATH_FONTS,
+        cur_font_entry,
+    );
 
     eqtb.set_eq(CAT_CODE_BASE, Cmd::Data, 0, LEVEL_ONE);
     let cat_code_entry = eqtb.word(CAT_CODE_BASE);
-    eqtb.data[(CAT_CODE_BASE + 1) as usize..INT_BASE as usize].fill(cat_code_entry);
+    eqtb.fill(CAT_CODE_BASE + 1, INT_BASE, cat_code_entry);
 
     for k in 0..NUMBER_USVS {
         eqtb.set_equiv(CAT_CODE_BASE + k, Cmd::OtherChar.into());
@@ -550,7 +563,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
         eqtb.set_equiv(SF_CODE_BASE + k, 999);
     }
 
-    for k in INT_BASE..DEL_CODE_BASE {
+    for k in INT_BASE.until(DEL_CODE_BASE) {
         eqtb.set_int_at(k, 0);
     }
 
@@ -566,7 +579,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     }
     eqtb.set_int_at(DEL_CODE_BASE + i32::from(b'.'), 0);
 
-    for k in DIMEN_BASE..=EQTB_SIZE {
+    for k in DIMEN_BASE.through(EQTB_SIZE) {
         eqtb.set_int_at(k, 0);
     }
 
@@ -590,7 +603,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     st.eqtb.set_int_par(IntPar::XetexHyphenatableLength, 63);
 }
 
-fn set_frozen_text(st: &mut EngineState, p: i32, text: &str) -> Result<(), Abort> {
+fn set_frozen_text(st: &mut EngineState, p: EqtbPtr, text: &str) -> Result<(), Abort> {
     let s = st.strings.make_tex_string(text)?;
     st.eqtb.set_text(p, s);
     Ok(())
@@ -603,19 +616,19 @@ fn initialize_primitives(st: &mut EngineState) -> Result<(), Abort> {
     st.input.first = 0;
 
     for prim in crate::primitives::PRIMITIVES {
-        primitive(st, prim.name, prim.cmd, prim.chr)?;
+        let cs = primitive(st, prim.name, prim.cmd, prim.chr)?;
         match prim.init {
             PrimInit::None => {}
             PrimInit::Par => {
-                st.input.par_loc = st.scanner.cur_val;
+                st.input.par_loc = cs;
                 st.input.par_token = Token::from_cs(st.input.par_loc);
             }
             PrimInit::Write => {
-                st.shipout.write_loc = st.scanner.cur_val;
+                st.shipout.write_loc = cs;
             }
             PrimInit::Frozen(frozen) => {
                 set_frozen_text(st, frozen, prim.name)?;
-                st.eqtb.data[frozen as usize] = st.eqtb.word(st.scanner.cur_val);
+                st.eqtb.data[frozen.index()] = st.eqtb.word(cs);
             }
         }
     }
@@ -804,10 +817,10 @@ pub(crate) fn initialize_engine(
         } else {
             st.eqtb.eqtb_top
         };
-        st.eqtb.hash = zeroed_vec((1 + st.eqtb.hash_top - HASH_OFFSET) as usize);
+        st.eqtb.hash = zeroed_vec((1 + st.eqtb.hash_top.raw() - HASH_OFFSET) as usize);
         st.eqtb.hash_used = st.eqtb.hash_top;
 
-        st.eqtb.data = zeroed_vec(st.eqtb.eqtb_top as usize + 1);
+        st.eqtb.data = zeroed_vec(st.eqtb.eqtb_top.index() + 1);
         st.strings.str_start = vec![0; st.strings.max_strings as usize + 1];
         st.strings.str_pool = vec![0; st.strings.pool_size as usize + 1];
         st.fonts.font_info = zeroed_vec(st.fonts.font_mem_size as usize + 1);
@@ -833,7 +846,7 @@ pub(crate) fn initialize_engine(
     if st.input.buf_size > MAX_HALFWORD {
         bad = 18;
     }
-    if CS_TOKEN_FLAG + EQTB_SIZE + st.eqtb.hash_extra > MAX_HALFWORD {
+    if CS_TOKEN_FLAG + EQTB_SIZE.raw() + st.eqtb.hash_extra > MAX_HALFWORD {
         bad = 21;
     }
     if bad > 0 {
@@ -892,7 +905,7 @@ pub(crate) fn initialize_engine(
     st.fonts.gave_char_warning_help = false;
 
     st.scanner.scanner_status = ScannerStatus::Normal;
-    st.scanner.warning_index = TEX_NULL;
+    st.scanner.warning_index = EqtbPtr::NONE;
     st.input.first = 1;
     st.input.cur_input.state = NEW_LINE;
     st.input.cur_input.start = 1;

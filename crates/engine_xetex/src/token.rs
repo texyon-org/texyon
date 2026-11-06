@@ -4,7 +4,7 @@
 use crate::cmd::Cmd;
 use crate::consts::CS_TOKEN_FLAG;
 use crate::state::MemState;
-use crate::units::MemPtr;
+use crate::units::{EqtbPtr, MemPtr};
 
 /// One more than the largest character code a token can carry.
 pub(crate) const MAX_CHAR_VAL: i32 = 0x20_0000;
@@ -32,8 +32,8 @@ impl Token {
 
     /// The token of control sequence `p`.
     #[inline(always)]
-    pub(crate) const fn from_cs(p: i32) -> Token {
-        Token(CS_TOKEN_FLAG + p)
+    pub(crate) const fn from_cs(p: EqtbPtr) -> Token {
+        Token(CS_TOKEN_FLAG + p.raw())
     }
 
     #[inline(always)]
@@ -85,8 +85,8 @@ impl Token {
 
     /// The control sequence of a [`Token::is_cs`] token.
     #[inline(always)]
-    pub(crate) const fn cs(self) -> i32 {
-        self.0 - CS_TOKEN_FLAG
+    pub(crate) const fn cs(self) -> EqtbPtr {
+        EqtbPtr::from_raw(self.0 - CS_TOKEN_FLAG)
     }
 
     /// The category of a character token.

@@ -17,7 +17,7 @@ use crate::consts::{
 use crate::engine::{POOL_FREE, STRINGS_FREE};
 use crate::errors::Abort;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
-use crate::hash::{HASH_OFFSET, HASH_PRIME};
+use crate::hash::{hash_slot, HASH_PRIME};
 use crate::hyphenation::{BIGGEST_LANG, HYPH_PRIME, MAX_TRIE_OP, TRIE_OP_SIZE};
 use crate::mem::{CONTRIB_HEAD, HI_MEM_STAT_MIN, HI_MEM_STAT_USAGE, PAGE_HEAD};
 use crate::mem_types::{B16x4, B32x2, MemoryWord};
@@ -26,7 +26,7 @@ use crate::output::{print, print_char, print_int, print_ln, print_nl};
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, InteractionMode, PerFont, Selector};
 use crate::token::Token;
-use crate::units::{FontId, MemPtr, Scaled, StrNumber};
+use crate::units::{EqtbPtr, FontId, MemPtr, Scaled, StrNumber};
 
 const FORMAT_HEADER_MAGIC: i32 = 0x5454_4E43;
 const FORMAT_FOOTER_MAGIC: i32 = 0x0000_029A;
@@ -80,7 +80,7 @@ macro_rules! newtype_item {
     )*};
 }
 
-newtype_item!(Scaled, MemPtr, StrNumber);
+newtype_item!(Scaled, MemPtr, StrNumber, EqtbPtr);
 
 impl FmtItem for B32x2 {
     const SIZE: usize = 8;
@@ -270,6 +270,10 @@ impl FmtStream for Undump {
 }
 
 /// `v[start..start + n]`, empty when `n <= 0`.
+fn eqtb_span(v: &mut [MemoryWord], start: EqtbPtr, n: i32) -> &mut [MemoryWord] {
+    span(v, start.raw(), n)
+}
+
 fn span<T>(v: &mut [T], start: i32, n: i32) -> &mut [T] {
     if n <= 0 {
         return &mut [];
@@ -413,12 +417,12 @@ fn header<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
         } else {
             eqtb.eqtb_top
         };
-        eqtb.hash = crate::mem_types::zeroed_vec((1 + eqtb.hash_top - HASH_OFFSET) as usize);
+        eqtb.hash = crate::mem_types::zeroed_vec((1 + hash_slot(eqtb.hash_top)) as usize);
 
-        eqtb.data = crate::mem_types::zeroed_vec(eqtb.eqtb_top as usize + 1);
+        eqtb.data = crate::mem_types::zeroed_vec(eqtb.eqtb_top.index() + 1);
         eqtb.set_eq(UNDEFINED_CONTROL_SEQUENCE, Cmd::UndefinedCs, TEX_NULL, 0);
         let undefined_entry = eqtb.word(UNDEFINED_CONTROL_SEQUENCE);
-        eqtb.data[(EQTB_SIZE + 1) as usize..].fill(undefined_entry);
+        eqtb.data[(EQTB_SIZE + 1).index()..].fill(undefined_entry);
 
         st.scanner.max_reg_num = 32_767;
     }
@@ -431,7 +435,7 @@ fn header<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
         st.mem.data = crate::mem_types::zeroed_vec(MEM_TOP as usize + 1);
     }
 
-    s.constant(EQTB_SIZE)?;
+    s.constant(EQTB_SIZE.raw())?;
     s.constant(HASH_PRIME)?;
     s.constant(HYPH_PRIME)
 }
@@ -557,10 +561,10 @@ fn dynamic_memory<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), A
 fn dump_eqtb_runs<S: FmtStream>(
     s: &mut S,
     eqtb: &mut EqtbState,
-    mut k: i32,
-    last: i32,
-    same: impl Fn(&EqtbState, i32, i32) -> bool,
-) -> Result<i32, Abort> {
+    mut k: EqtbPtr,
+    last: EqtbPtr,
+    same: impl Fn(&EqtbState, EqtbPtr, EqtbPtr) -> bool,
+) -> Result<EqtbPtr, Abort> {
     loop {
         let mut j = k;
         while j < last && !same(eqtb, j, j + 1) {
@@ -578,7 +582,7 @@ fn dump_eqtb_runs<S: FmtStream>(
         };
 
         s.int(&mut (l - k))?;
-        s.items(span(&mut eqtb.data, k, l - k))?;
+        s.items(eqtb_span(&mut eqtb.data, k, l - k))?;
         k = j + 1;
         s.int(&mut (k - l))?;
         if k > last {
@@ -595,15 +599,15 @@ fn undump_eqtb_runs<S: FmtStream>(s: &mut S, eqtb: &mut EqtbState) -> Result<(),
         if x < 1 || k + x > EQTB_SIZE + 1 {
             return Err(bad_fmt());
         }
-        s.items(span(&mut eqtb.data, k, x))?;
+        s.items(eqtb_span(&mut eqtb.data, k, x))?;
         k += x;
 
         s.int(&mut x)?;
         if x < 0 || k + x > EQTB_SIZE + 1 {
             return Err(bad_fmt());
         }
-        let repeated = eqtb.data[(k - 1) as usize];
-        eqtb.data[k as usize..(k + x) as usize].fill(repeated);
+        let repeated = eqtb.word(k - 1);
+        eqtb.fill(k, k + x, repeated);
         k += x;
         if k > EQTB_SIZE {
             return Ok(());
@@ -625,41 +629,55 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
             eqtb.int_at(a) == eqtb.int_at(b)
         })?;
     }
-    s.items(span(&mut eqtb.data, EQTB_SIZE + 1, eqtb.hash_high))?;
+    s.items(eqtb_span(&mut eqtb.data, EQTB_SIZE + 1, eqtb.hash_high))?;
     if S::LOADING {
-        let mut entries = (ACTIVE_BASE..INT_BASE).chain(EQTB_SIZE + 1..=EQTB_SIZE + eqtb.hash_high);
+        let mut entries = ACTIVE_BASE
+            .until(INT_BASE)
+            .chain((EQTB_SIZE + 1).through(EQTB_SIZE + eqtb.hash_high));
         if entries.any(|k| Cmd::from_raw(i32::from(eqtb.word(k).b16().s1)).is_none()) {
             return Err(bad_fmt());
         }
     }
 
-    s.int_in(&mut st.input.par_loc, HASH_BASE, eqtb.hash_top)?;
+    s.items_in(
+        std::slice::from_mut(&mut st.input.par_loc),
+        HASH_BASE,
+        eqtb.hash_top,
+    )?;
     if S::LOADING {
         st.input.par_token = Token::from_cs(st.input.par_loc);
     }
-    s.int_in(&mut st.shipout.write_loc, HASH_BASE, eqtb.hash_top)?;
+    s.items_in(
+        std::slice::from_mut(&mut st.shipout.write_loc),
+        HASH_BASE,
+        eqtb.hash_top,
+    )?;
 
     s.items(&mut eqtb.prim[..=PRIM_SIZE as usize])?;
 
-    s.int_in(&mut eqtb.hash_used, HASH_BASE, FROZEN_CONTROL_SEQUENCE)?;
+    s.items_in(
+        std::slice::from_mut(&mut eqtb.hash_used),
+        HASH_BASE,
+        FROZEN_CONTROL_SEQUENCE,
+    )?;
     let hash_used = eqtb.hash_used;
     if S::LOADING {
         let mut p = HASH_BASE - 1;
         loop {
-            let mut next = 0;
-            s.int_in(&mut next, p + 1, hash_used)?;
+            let mut next = EqtbPtr::NONE;
+            s.items_in(std::slice::from_mut(&mut next), p + 1, hash_used)?;
             p = next;
-            s.items(span(&mut eqtb.hash, p - HASH_OFFSET, 1))?;
+            s.items(span(&mut eqtb.hash, hash_slot(p), 1))?;
             if p == hash_used {
                 break;
             }
         }
     } else {
         eqtb.cs_count = (FROZEN_CONTROL_SEQUENCE - 1) - hash_used + eqtb.hash_high;
-        for mut p in HASH_BASE..=hash_used {
-            let entry = &mut eqtb.hash[(p - HASH_OFFSET) as usize];
+        for mut p in HASH_BASE.through(hash_used) {
+            let entry = &mut eqtb.hash[hash_slot(p) as usize];
             if entry.s1 != 0 {
-                s.int(&mut p)?;
+                s.items(std::slice::from_mut(&mut p))?;
                 s.items(std::slice::from_mut(entry))?;
                 eqtb.cs_count += 1;
             }
@@ -668,12 +686,12 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
 
     s.items(span(
         &mut eqtb.hash,
-        hash_used + 1 - HASH_OFFSET,
+        hash_slot(hash_used + 1),
         (UNDEFINED_CONTROL_SEQUENCE - 1) - hash_used,
     ))?;
     s.items(span(
         &mut eqtb.hash,
-        EQTB_SIZE + 1 - HASH_OFFSET,
+        hash_slot(EQTB_SIZE + 1),
         eqtb.hash_high,
     ))?;
     s.int(&mut eqtb.cs_count)?;
@@ -968,7 +986,6 @@ fn hyphenation_tables<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(
 mod tests {
     use super::*;
     use crate::consts::FONT_ID_BASE;
-    use crate::hash::HASH_OFFSET;
     use crate::mem_types::B32x2;
     use crate::state::Selector;
 
@@ -1002,9 +1019,9 @@ mod tests {
     fn font_state() -> EngineState {
         let mut st = EngineState::default();
         st.shipout.selector = Selector::NoPrint;
-        st.eqtb.data = crate::mem_types::zeroed_vec(EQTB_SIZE as usize + 1);
+        st.eqtb.data = crate::mem_types::zeroed_vec(EQTB_SIZE.index() + 1);
         st.strings.str_start = vec![0; 4];
-        st.eqtb.hash = vec![B32x2 { s0: 0, s1: 0 }; (FONT_ID_BASE + 2 - HASH_OFFSET) as usize];
+        st.eqtb.hash = vec![B32x2 { s0: 0, s1: 0 }; hash_slot(FONT_ID_BASE + 2) as usize];
         st.fonts.font_max = FontId::from_raw(FONT_BASE + 1);
         st.fonts.fmem_ptr = 7;
         st.fonts.font_info = crate::mem_types::zeroed_vec(8);

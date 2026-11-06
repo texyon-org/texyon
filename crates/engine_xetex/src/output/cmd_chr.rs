@@ -20,7 +20,7 @@ use crate::node::{NodePtr, SaNode};
 use crate::params::TokPar;
 use crate::state::{EngineState, InteractionMode};
 use crate::token::TokenList;
-use crate::units::{FontId, MemPtr, NodeType};
+use crate::units::{EqtbPtr, FontId, MemPtr, NodeType};
 
 use super::{
     print, print_char, print_code, print_esc, print_font_select, print_hex, print_int,
@@ -46,6 +46,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
         Cmd::Letter => char_cmd(st, "the letter "),
         Cmd::OtherChar => char_cmd(st, "the character "),
         Cmd::AssignGlue | Cmd::AssignMuGlue => {
+            let chr_code = EqtbPtr::from_raw(chr_code);
             if chr_code < SKIP_BASE {
                 print_skip_param(st, chr_code - GLUE_BASE);
             } else if chr_code < MU_SKIP_BASE {
@@ -57,6 +58,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
             }
         }
         Cmd::AssignToks => {
+            let chr_code = EqtbPtr::from_raw(chr_code);
             if chr_code >= TOKS_BASE {
                 print_esc(st, "toks");
                 print_int(st, chr_code - TOKS_BASE);
@@ -66,6 +68,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
             }
         }
         Cmd::AssignInt => {
+            let chr_code = EqtbPtr::from_raw(chr_code);
             if chr_code < COUNT_BASE {
                 print_param(st, chr_code - INT_BASE);
             } else {
@@ -74,6 +77,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
             }
         }
         Cmd::AssignDimen => {
+            let chr_code = EqtbPtr::from_raw(chr_code);
             if chr_code < SCALED_BASE {
                 print_length_param(st, chr_code - DIMEN_BASE);
             } else {
@@ -156,6 +160,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
         Cmd::SetBox => print_esc(st, "setbox"),
         Cmd::SetPrevGraf => print_esc(st, "prevgraf"),
         Cmd::SetShape => {
+            let chr_code = EqtbPtr::from_raw(chr_code);
             let name = if chr_code == PAR_SHAPE_LOC {
                 "parshape"
             } else {
@@ -464,6 +469,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
             print_hex(st, crate::scan::math_char(chr_code));
         }
         Cmd::DefCode => {
+            let chr_code = EqtbPtr::from_raw(chr_code);
             let name = match chr_code {
                 LC_CODE_BASE => "lccode",
                 UC_CODE_BASE => "uccode",
@@ -475,6 +481,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
             print_esc(st, name);
         }
         Cmd::XetexDefCode => {
+            let chr_code = EqtbPtr::from_raw(chr_code);
             let name = match chr_code {
                 SF_CODE_BASE => "XeTeXcharclass",
                 MATH_CODE_BASE => "Umathcodenum",
@@ -484,7 +491,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
             };
             print_esc(st, name);
         }
-        Cmd::DefFamily => print_size(st, chr_code - MATH_FONT_BASE),
+        Cmd::DefFamily => print_size(st, EqtbPtr::from_raw(chr_code) - MATH_FONT_BASE),
         Cmd::HyphData => print_esc(
             st,
             if chr_code == 1 {
@@ -527,7 +534,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
         ),
         Cmd::CaseShift => print_esc(
             st,
-            if chr_code == LC_CODE_BASE {
+            if EqtbPtr::from_raw(chr_code) == LC_CODE_BASE {
                 "lowercase"
             } else {
                 "uppercase"

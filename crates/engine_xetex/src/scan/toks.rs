@@ -15,7 +15,7 @@ use crate::output::{
 use crate::params::IntPar;
 use crate::state::{EngineState, MemState, Selector};
 use crate::token::{Token, TokenList};
-use crate::units::{MemPtr, StrNumber};
+use crate::units::{EqtbPtr, MemPtr, StrNumber};
 
 use super::internal::{scan_something_internal, set_cur_val};
 use super::next::{get_next, get_token, get_x_token, x_token};
@@ -96,7 +96,7 @@ fn close_read_file(st: &mut EngineState, m: usize) -> Result<(), Abort> {
     Ok(())
 }
 
-pub(crate) fn read_toks(st: &mut EngineState, n: i32, r: i32, j: i32) -> Result<(), Abort> {
+pub(crate) fn read_toks(st: &mut EngineState, n: i32, r: EqtbPtr, j: i32) -> Result<(), Abort> {
     st.scanner.scanner_status = ScannerStatus::Defining;
     st.scanner.warning_index = r;
     let def_ref = new_def_ref(st)?;
@@ -246,7 +246,7 @@ pub(crate) fn the_toks(st: &mut EngineState, code: TheCode) -> Result<TokenList,
         let mut p = TEMP_HEAD_TOKS;
         p.set_link(&mut st.mem, TokenList::NULL);
         if st.scanner.cur_val_level == ValueLevel::Ident {
-            store_new_token(st, &mut p, Token::from_cs(st.scanner.cur_val))?;
+            store_new_token(st, &mut p, Token::from_cs(st.scanner.cur_val_loc()))?;
         } else if st.scanner.cur_val != TEX_NULL {
             let mut r = st.scanner.cur_val_tokens().link(&st.mem);
             while !r.is_null() {

@@ -24,7 +24,7 @@ use crate::output::{
 use crate::params::TokPar;
 use crate::state::{EngineState, FontEngineHandle};
 use crate::token::TokenList;
-use crate::units::{FontId, MemPtr, NodeType, Scaled, StrNumber};
+use crate::units::{EqtbPtr, FontId, MemPtr, NodeType, Scaled, StrNumber};
 use std::rc::Rc;
 use texyon_xetex_layout::get_cp_code;
 
@@ -104,7 +104,7 @@ fn font_query_error(
     Ok(())
 }
 
-fn fetch_def_code(st: &mut EngineState, m: i32) -> Result<(), Abort> {
+fn fetch_def_code(st: &mut EngineState, m: EqtbPtr) -> Result<(), Abort> {
     scan_usv_num(st)?;
     let n = st.scanner.cur_val;
     if m == MATH_CODE_BASE {
@@ -148,7 +148,7 @@ fn fetch_def_code(st: &mut EngineState, m: i32) -> Result<(), Abort> {
     Ok(())
 }
 
-fn fetch_xetex_def_code(st: &mut EngineState, m: i32) -> Result<(), Abort> {
+fn fetch_xetex_def_code(st: &mut EngineState, m: EqtbPtr) -> Result<(), Abort> {
     scan_usv_num(st)?;
     let n = st.scanner.cur_val;
     let (err, help1, help0) = if m == SF_CODE_BASE {
@@ -203,7 +203,7 @@ fn fetch_token_list(st: &mut EngineState, m: i32, level: ValueLevel) -> Result<(
         }
         st.scanner.cur_val_level = ValueLevel::Tok;
     } else if st.scanner.cur_cmd == Cmd::AssignToks {
-        if st.scanner.cur_chr == TokPar::XetexInterCharToks.loc() {
+        if st.scanner.chr_loc() == TokPar::XetexInterCharToks.loc() {
             scan_char_class_not_ignored(st)?;
             st.scanner.cur_ptr = MemPtr::from_raw(st.scanner.cur_val);
             scan_char_class_not_ignored(st)?;
@@ -211,13 +211,13 @@ fn fetch_token_list(st: &mut EngineState, m: i32, level: ValueLevel) -> Result<(
             let sa = find_sa(st, ValueLevel::InterChar, n);
             st.scanner.cur_val = sa_token_list(st, sa).ptr().raw();
         } else {
-            st.scanner.cur_val = st.eqtb.equiv(m);
+            st.scanner.cur_val = st.eqtb.equiv(st.scanner.chr_loc());
         }
         st.scanner.cur_val_level = ValueLevel::Tok;
     } else {
         back_input(st)?;
         let f = scan_font_ident(st)?;
-        set_cur_val(st, f.id_loc(), ValueLevel::Ident);
+        set_cur_val(st, f.id_loc().raw(), ValueLevel::Ident);
     }
     Ok(())
 }
@@ -683,15 +683,23 @@ pub(super) fn scan_something_internal(
     loop {
         let m = st.scanner.cur_chr;
         match st.scanner.cur_cmd {
-            Cmd::DefCode => fetch_def_code(st, m)?,
-            Cmd::XetexDefCode => fetch_xetex_def_code(st, m)?,
+            Cmd::DefCode => fetch_def_code(st, st.scanner.chr_loc())?,
+            Cmd::XetexDefCode => fetch_xetex_def_code(st, st.scanner.chr_loc())?,
             Cmd::ToksRegister | Cmd::AssignToks | Cmd::DefFamily | Cmd::SetFont | Cmd::DefFont => {
                 fetch_token_list(st, m, level)?
             }
-            Cmd::AssignInt => set_cur_val(st, st.eqtb.int_at(m), ValueLevel::Int),
-            Cmd::AssignDimen => set_cur_val(st, st.eqtb.int_at(m), ValueLevel::Dimen),
-            Cmd::AssignGlue => set_cur_val(st, st.eqtb.equiv(m), ValueLevel::Glue),
-            Cmd::AssignMuGlue => set_cur_val(st, st.eqtb.equiv(m), ValueLevel::Mu),
+            Cmd::AssignInt => {
+                set_cur_val(st, st.eqtb.int_at(st.scanner.chr_loc()), ValueLevel::Int)
+            }
+            Cmd::AssignDimen => {
+                set_cur_val(st, st.eqtb.int_at(st.scanner.chr_loc()), ValueLevel::Dimen)
+            }
+            Cmd::AssignGlue => {
+                set_cur_val(st, st.eqtb.equiv(st.scanner.chr_loc()), ValueLevel::Glue)
+            }
+            Cmd::AssignMuGlue => {
+                set_cur_val(st, st.eqtb.equiv(st.scanner.chr_loc()), ValueLevel::Mu)
+            }
             Cmd::SetAux => {
                 if i32::from(st.input.cur_list.mode.abs()) != m {
                     error_here_with_diagnostic(st, "Improper ");
@@ -755,6 +763,7 @@ pub(super) fn scan_something_internal(
                 set_cur_val(st, v.raw(), ValueLevel::Dimen);
             }
             Cmd::SetShape => {
+                let m = st.scanner.chr_loc();
                 if m > PAR_SHAPE_LOC {
                     scan_int(st)?;
                     st.scanner.cur_val = match st.eqtb.penalties(m) {
@@ -927,7 +936,7 @@ pub(crate) fn scan_font_ident(st: &mut EngineState) -> Result<FontId, Abort> {
         Cmd::DefFont => st.eqtb.cur_font(),
         Cmd::SetFont => FontId::from_raw(st.scanner.cur_chr),
         Cmd::DefFamily => {
-            let m = st.scanner.cur_chr;
+            let m = st.scanner.chr_loc();
             scan_math_fam_int(st)?;
             FontId::from_raw(st.eqtb.equiv(m + st.scanner.cur_val))
         }

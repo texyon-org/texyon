@@ -100,13 +100,13 @@ fn digest_eqtb(st: &EngineState) -> u64 {
     let mut h = Fnv::new();
     let eqtb = &st.eqtb;
     h.i32s(&[
-        eqtb.hash_used,
+        eqtb.hash_used.raw(),
         eqtb.hash_high,
         eqtb.prim_used,
         eqtb.cs_count,
         eqtb.hash_extra,
-        eqtb.eqtb_top,
-        eqtb.hash_top,
+        eqtb.eqtb_top.raw(),
+        eqtb.hash_top.raw(),
     ]);
     h.word(u64::from(eqtb.no_new_control_sequence));
     for &word in &eqtb.data {
@@ -261,7 +261,7 @@ fn digest_input(st: &EngineState) -> u64 {
         input.input_ptr,
         input.max_in_stack,
         input.base_ptr,
-        input.par_loc,
+        input.par_loc.raw(),
         input.par_token.0,
         input.param_ptr,
         input.max_param_stack,
@@ -316,7 +316,7 @@ fn digest_scanner(st: &EngineState) -> u64 {
         scanner.logical_clock as i64,
         i64::from(scanner.align_state),
         i64::from(scanner.cond_ptr.raw()),
-        i64::from(scanner.cur_cs),
+        i64::from(scanner.cur_cs.raw()),
         i64::from(i32::from(scanner.cur_cmd)),
         i64::from(scanner.cur_chr),
         i64::from(scanner.cur_tok.0),

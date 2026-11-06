@@ -14,7 +14,7 @@ use crate::mem::ZERO_GLUE;
 use crate::params::{GluePar, IntPar, TokPar};
 use crate::state::{EngineState, GroupCode};
 use crate::token::Token;
-use crate::units::{MemPtr, Scaled};
+use crate::units::{EqtbPtr, MemPtr, Scaled};
 
 mod align;
 mod assign;
@@ -66,7 +66,7 @@ fn begin_every(st: &mut EngineState, par: TokPar, kind: TokenType) -> Result<(),
 }
 
 pub(crate) fn shift_case(st: &mut EngineState) -> Result<(), Abort> {
-    let b = st.scanner.cur_chr;
+    let b = st.scanner.chr_loc();
     crate::scan::scan_toks(st, false, false)?;
     let mut p = st.scanner.def_ref.link(&st.mem);
     while !p.is_null() {
@@ -183,12 +183,15 @@ pub(crate) fn main_control_ignore_spaces(st: &mut EngineState) -> Result<(), Abo
         st.scanner.scanner_status = saved;
         outcome?;
 
-        st.scanner.cur_cs = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)?;
-
-        if st.scanner.cur_cs != UNDEFINED_PRIMITIVE {
-            st.scanner.cur_cmd = st.eqtb.eq_type(PRIM_EQTB_BASE + st.scanner.cur_cs);
-            st.scanner.cur_chr = st.eqtb.equiv(PRIM_EQTB_BASE + st.scanner.cur_cs);
-            st.scanner.cur_tok = Token::from_cs(PRIM_EQTB_BASE + st.scanner.cur_cs);
+        let prim = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)?;
+        if prim == UNDEFINED_PRIMITIVE {
+            st.scanner.cur_cs = EqtbPtr::NONE;
+        } else {
+            let p = PRIM_EQTB_BASE + prim;
+            st.scanner.cur_cmd = st.eqtb.eq_type(p);
+            st.scanner.cur_chr = st.eqtb.equiv(p);
+            st.scanner.cur_cs = p;
+            st.scanner.cur_tok = Token::from_cs(p);
         }
     }
     Ok(())

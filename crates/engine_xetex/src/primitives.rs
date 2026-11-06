@@ -21,7 +21,7 @@ pub(crate) enum PrimInit {
     Par,
     Write,
     /// Copy the definition to this frozen eqtb location.
-    Frozen(i32),
+    Frozen(crate::units::EqtbPtr),
 }
 
 #[derive(Copy, Clone)]
@@ -43,25 +43,25 @@ const fn p(name: &'static str, cmd: Cmd, chr: i32) -> PrimitiveDef {
 
 const fn int_par(n: IntPar) -> PrimitiveDef {
     match n.name() {
-        Some(name) => p(name, Cmd::AssignInt, n.loc()),
+        Some(name) => p(name, Cmd::AssignInt, n.loc().raw()),
         None => panic!("parameter without a primitive"),
     }
 }
 
 const fn dimen_par(n: DimenPar) -> PrimitiveDef {
-    p(n.name(), Cmd::AssignDimen, n.loc())
+    p(n.name(), Cmd::AssignDimen, n.loc().raw())
 }
 
 const fn tok_par(n: TokPar) -> PrimitiveDef {
-    p(n.name(), Cmd::AssignToks, n.loc())
+    p(n.name(), Cmd::AssignToks, n.loc().raw())
 }
 
 const fn glue_par(n: GluePar) -> PrimitiveDef {
-    p(n.name(), Cmd::AssignGlue, n.loc())
+    p(n.name(), Cmd::AssignGlue, n.loc().raw())
 }
 
 const fn mu_glue_par(n: GluePar) -> PrimitiveDef {
-    p(n.name(), Cmd::AssignMuGlue, n.loc())
+    p(n.name(), Cmd::AssignMuGlue, n.loc().raw())
 }
 
 /// A primitive named after its `chr_code` enum variant.
@@ -211,8 +211,8 @@ pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
     p("mathchoice", Cmd::MathChoice, 0),
     p("nonscript", Cmd::NonScript, 0),
     p("vcenter", Cmd::Vcenter, 0),
-    p("lowercase", Cmd::CaseShift, LC_CODE_BASE),
-    p("uppercase", Cmd::CaseShift, UC_CODE_BASE),
+    p("lowercase", Cmd::CaseShift, LC_CODE_BASE.raw()),
+    p("uppercase", Cmd::CaseShift, UC_CODE_BASE.raw()),
     p("message", Cmd::Message, 0),
     p("errmessage", Cmd::Message, 1),
     code!(Cmd::Extension, ExtensionCode::Open),
@@ -327,24 +327,36 @@ pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
     code!(Cmd::SetBoxDimen, BoxDimenCode::Width),
     code!(Cmd::SetBoxDimen, BoxDimenCode::Depth),
     code!(Cmd::SetBoxDimen, BoxDimenCode::Height),
-    p("catcode", Cmd::DefCode, CAT_CODE_BASE),
-    p("lccode", Cmd::DefCode, LC_CODE_BASE),
-    p("uccode", Cmd::DefCode, UC_CODE_BASE),
-    p("sfcode", Cmd::DefCode, SF_CODE_BASE),
-    p("mathcode", Cmd::DefCode, MATH_CODE_BASE),
-    p("delcode", Cmd::DefCode, DEL_CODE_BASE),
-    p("XeTeXcharclass", Cmd::XetexDefCode, SF_CODE_BASE),
-    p("Umathcodenum", Cmd::XetexDefCode, MATH_CODE_BASE),
-    p("XeTeXmathcodenum", Cmd::XetexDefCode, MATH_CODE_BASE),
-    p("Umathcode", Cmd::XetexDefCode, MATH_CODE_BASE + 1),
-    p("XeTeXmathcode", Cmd::XetexDefCode, MATH_CODE_BASE + 1),
-    p("Udelcodenum", Cmd::XetexDefCode, DEL_CODE_BASE),
-    p("XeTeXdelcodenum", Cmd::XetexDefCode, DEL_CODE_BASE),
-    p("Udelcode", Cmd::XetexDefCode, DEL_CODE_BASE + 1),
-    p("XeTeXdelcode", Cmd::XetexDefCode, DEL_CODE_BASE + 1),
-    p("textfont", Cmd::DefFamily, MATH_FONT_BASE),
-    p("scriptfont", Cmd::DefFamily, MATH_FONT_BASE + 256),
-    p("scriptscriptfont", Cmd::DefFamily, MATH_FONT_BASE + 512),
+    p("catcode", Cmd::DefCode, CAT_CODE_BASE.raw()),
+    p("lccode", Cmd::DefCode, LC_CODE_BASE.raw()),
+    p("uccode", Cmd::DefCode, UC_CODE_BASE.raw()),
+    p("sfcode", Cmd::DefCode, SF_CODE_BASE.raw()),
+    p("mathcode", Cmd::DefCode, MATH_CODE_BASE.raw()),
+    p("delcode", Cmd::DefCode, DEL_CODE_BASE.raw()),
+    p("XeTeXcharclass", Cmd::XetexDefCode, SF_CODE_BASE.raw()),
+    p("Umathcodenum", Cmd::XetexDefCode, MATH_CODE_BASE.raw()),
+    p("XeTeXmathcodenum", Cmd::XetexDefCode, MATH_CODE_BASE.raw()),
+    p("Umathcode", Cmd::XetexDefCode, MATH_CODE_BASE.plus(1).raw()),
+    p(
+        "XeTeXmathcode",
+        Cmd::XetexDefCode,
+        MATH_CODE_BASE.plus(1).raw(),
+    ),
+    p("Udelcodenum", Cmd::XetexDefCode, DEL_CODE_BASE.raw()),
+    p("XeTeXdelcodenum", Cmd::XetexDefCode, DEL_CODE_BASE.raw()),
+    p("Udelcode", Cmd::XetexDefCode, DEL_CODE_BASE.plus(1).raw()),
+    p(
+        "XeTeXdelcode",
+        Cmd::XetexDefCode,
+        DEL_CODE_BASE.plus(1).raw(),
+    ),
+    p("textfont", Cmd::DefFamily, MATH_FONT_BASE.raw()),
+    p("scriptfont", Cmd::DefFamily, MATH_FONT_BASE.plus(256).raw()),
+    p(
+        "scriptscriptfont",
+        Cmd::DefFamily,
+        MATH_FONT_BASE.plus(512).raw(),
+    ),
     p("nullfont", Cmd::SetFont, 0).init(PrimInit::Frozen(FROZEN_NULL_FONT)),
     p("font", Cmd::DefFont, 0),
     p("count", Cmd::Register, 0),
@@ -605,7 +617,7 @@ pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
     mu_glue_par(GluePar::ThinMuSkip),
     mu_glue_par(GluePar::MedMuSkip),
     mu_glue_par(GluePar::ThickMuSkip),
-    p("parshape", Cmd::SetShape, PAR_SHAPE_LOC),
+    p("parshape", Cmd::SetShape, PAR_SHAPE_LOC.raw()),
     tok_par(TokPar::OutputRoutine),
     tok_par(TokPar::EveryPar),
     tok_par(TokPar::EveryMath),
@@ -618,8 +630,12 @@ pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
     tok_par(TokPar::EveryEof),
     tok_par(TokPar::XetexInterCharToks),
     tok_par(TokPar::TectonicCoda),
-    p("interlinepenalties", Cmd::SetShape, ETEX_PEN_BASE),
-    p("clubpenalties", Cmd::SetShape, ETEX_PEN_BASE + 1),
-    p("widowpenalties", Cmd::SetShape, ETEX_PEN_BASE + 2),
-    p("displaywidowpenalties", Cmd::SetShape, ETEX_PEN_BASE + 3),
+    p("interlinepenalties", Cmd::SetShape, ETEX_PEN_BASE.raw()),
+    p("clubpenalties", Cmd::SetShape, ETEX_PEN_BASE.plus(1).raw()),
+    p("widowpenalties", Cmd::SetShape, ETEX_PEN_BASE.plus(2).raw()),
+    p(
+        "displaywidowpenalties",
+        Cmd::SetShape,
+        ETEX_PEN_BASE.plus(3).raw(),
+    ),
 ];

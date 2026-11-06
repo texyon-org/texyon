@@ -3,6 +3,7 @@
 
 use crate::codes::code_enum;
 use crate::consts::{DIMEN_BASE, GLUE_BASE, INT_BASE, LOCAL_BASE};
+use crate::units::EqtbPtr;
 
 code_enum! {
     pub(crate) enum IntPar: u8 {
@@ -182,8 +183,8 @@ impl IntPar {
 
     /// The `eqtb` location.
     #[inline]
-    pub(crate) const fn loc(self) -> i32 {
-        INT_BASE + self as i32
+    pub(crate) const fn loc(self) -> EqtbPtr {
+        INT_BASE.plus(self as i32)
     }
 }
 
@@ -246,8 +247,8 @@ impl DimenPar {
 
     /// The `eqtb` location.
     #[inline]
-    pub(crate) const fn loc(self) -> i32 {
-        DIMEN_BASE + self as i32
+    pub(crate) const fn loc(self) -> EqtbPtr {
+        DIMEN_BASE.plus(self as i32)
     }
 }
 
@@ -309,8 +310,8 @@ impl GluePar {
 
     /// The `eqtb` location.
     #[inline]
-    pub(crate) const fn loc(self) -> i32 {
-        GLUE_BASE + self as i32
+    pub(crate) const fn loc(self) -> EqtbPtr {
+        GLUE_BASE.plus(self as i32)
     }
 }
 
@@ -335,7 +336,7 @@ code_enum! {
 impl TokPar {
     /// The `eqtb` location.
     #[inline]
-    pub(crate) const fn loc(self) -> i32 {
-        LOCAL_BASE + self as i32
+    pub(crate) const fn loc(self) -> EqtbPtr {
+        LOCAL_BASE.plus(self as i32)
     }
 }

@@ -12,7 +12,7 @@ use crate::node::{NodePtr, SaNode};
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, GroupCode, MemState, SaveStackState, ScannerState};
 use crate::token::{Token, TokenList};
-use crate::units::{MemAddr, MemPtr};
+use crate::units::{EqtbPtr, MemAddr, MemPtr};
 
 // Save-stack entry types.
 const RESTORE_OLD_VALUE: u16 = 0;
@@ -33,7 +33,7 @@ impl EqtbState {
     pub(crate) fn eq_word_define(
         &mut self,
         save_stack: &mut SaveStackState,
-        p: i32,
+        p: EqtbPtr,
         w: i32,
     ) -> Result<(), Abort> {
         if self.int_at(p) == w {
@@ -48,7 +48,7 @@ impl EqtbState {
         Ok(())
     }
 
-    pub(crate) fn geq_word_define(&mut self, p: i32, w: i32) {
+    pub(crate) fn geq_word_define(&mut self, p: EqtbPtr, w: i32) {
         self.set_int_at(p, w);
         self.set_xeq_level_at(p, LEVEL_ONE);
     }
@@ -85,7 +85,7 @@ impl SaveStackState {
         Ok(())
     }
 
-    pub(crate) fn eq_save(&mut self, eqtb: &EqtbState, p: i32, l: u16) -> Result<(), Abort> {
+    pub(crate) fn eq_save(&mut self, eqtb: &EqtbState, p: EqtbPtr, l: u16) -> Result<(), Abort> {
         if self.save_stack_full() {
             return Err(Abort::SaveOverflow);
         }
@@ -96,7 +96,7 @@ impl SaveStackState {
             self.save_ptr += 1;
             RESTORE_OLD_VALUE
         };
-        self.set_save_entry(kind, l, p);
+        self.set_save_entry(kind, l, p.raw());
         self.save_ptr += 1;
         Ok(())
     }
@@ -153,7 +153,7 @@ impl EqtbState {
         save_stack: &mut SaveStackState,
         mem: &mut MemState,
         scanner: &mut ScannerState,
-        p: i32,
+        p: EqtbPtr,
         t: Cmd,
         e: i32,
     ) -> Result<(), Abort> {
@@ -175,7 +175,7 @@ impl EqtbState {
         &mut self,
         mem: &mut MemState,
         scanner: &mut ScannerState,
-        p: i32,
+        p: EqtbPtr,
         t: Cmd,
         e: i32,
     ) -> Result<(), Abort> {
@@ -453,12 +453,11 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         st.save_stack.save_ptr -= 1;
         let sp = st.save_stack.save_ptr;
-        let p = st.save_stack.save_index(sp);
         match st.save_stack.save_type(sp) {
             LEVEL_BOUNDARY => break,
             INSERT_TOKEN => {
                 let t = st.scanner.cur_tok;
-                st.scanner.cur_tok = Token(p);
+                st.scanner.cur_tok = Token(st.save_stack.save_index(sp));
                 if a {
                     let pn = st.mem.get_avail_token()?;
                     pn.set_token(&mut st.mem, st.scanner.cur_tok);
@@ -483,6 +482,7 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
                 st.scanner.sa_level = st.save_stack.save_level(st.save_stack.save_ptr);
             }
             kind => {
+                let p = st.save_stack.save_loc(sp);
                 if kind == RESTORE_OLD_VALUE {
                     l = st.save_stack.save_level(sp);
                     st.save_stack.save_ptr -= 1;

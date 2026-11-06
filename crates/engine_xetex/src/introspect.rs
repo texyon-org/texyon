@@ -2,7 +2,7 @@
 //! editor completions. Safe to run between operations on a resident session.
 
 use crate::token::Token;
-use crate::units::StrNumber;
+use crate::units::{EqtbPtr, StrNumber};
 use std::collections::HashMap;
 
 use crate::cmd::Cmd;
@@ -37,7 +37,7 @@ pub struct DefinedCommand {
 /// companion names folded into their public command (see [`resolve_wrappers`]).
 pub(crate) fn defined_commands(st: &EngineState) -> Vec<DefinedCommand> {
     let mut found = Vec::new();
-    for slot in HASH_BASE..FROZEN_CONTROL_SEQUENCE {
+    for slot in HASH_BASE.until(FROZEN_CONTROL_SEQUENCE) {
         collect(st, slot, &mut found);
     }
     for offset in 1..=st.eqtb.hash_high {
@@ -77,7 +77,7 @@ fn resolve_wrappers(found: Vec<DefinedCommand>) -> Vec<DefinedCommand> {
     resolved
 }
 
-fn collect(st: &EngineState, slot: i32, found: &mut Vec<DefinedCommand>) {
+fn collect(st: &EngineState, slot: EqtbPtr, found: &mut Vec<DefinedCommand>) {
     let text = st.eqtb.text(slot);
     if text <= StrNumber::NONE || text.raw() >= st.strings.str_ptr {
         return;

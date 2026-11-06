@@ -672,14 +672,14 @@ mod tests {
         let mut ladder = CheckpointLadder::new(bundle(&st), 0);
 
         st.mem.set_b32s1(MemPtr::MEM_BOT, 10);
-        st.eqtb.set_equiv(1, 11);
+        st.eqtb.set_equiv(crate::units::EqtbPtr::from_raw(1), 11);
         st.mem.mem_end = MemPtr::from_raw(12);
         let rung = bundle(&st);
         ladder.push(&mut st, rung, 1, true, false);
 
         st.mem.set_b32s1(MemPtr::MEM_BOT, 20);
         st.mem.set_b32s1(MemPtr::from_raw(2), 21);
-        st.eqtb.set_equiv(1, 22);
+        st.eqtb.set_equiv(crate::units::EqtbPtr::from_raw(1), 22);
         st.fonts.fmem_ptr = 2;
         let rung = bundle(&st);
         ladder.push(&mut st, rung, 2, true, false);

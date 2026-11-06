@@ -11,7 +11,7 @@ use crate::state::{
     MemState, SaveStackState, ScannerState, ShipoutState, StringsState, SynctexCtxt, TexmfState,
 };
 use crate::sync_index::PreviewSyncIndex;
-use crate::units::{FontId, MemPtr, Scaled, StrNumber};
+use crate::units::{EqtbPtr, FontId, MemPtr, Scaled, StrNumber};
 
 fn vec_bytes<T>(values: &Vec<T>) -> usize {
     values.capacity() * size_of::<T>()
@@ -236,14 +236,14 @@ impl MemBundle {
 }
 
 struct EqtbBundle {
-    hash_used: i32,
+    hash_used: EqtbPtr,
     hash_high: i32,
     no_new_control_sequence: bool,
     prim_used: i32,
     cs_count: i32,
     hash_extra: i32,
-    eqtb_top: i32,
-    hash_top: i32,
+    eqtb_top: EqtbPtr,
+    hash_top: EqtbPtr,
     pgfmath: crate::pgfmath::KnownCs,
 }
 
@@ -441,7 +441,7 @@ struct InputBundle {
     input_ptr: i32,
     max_in_stack: i32,
     base_ptr: i32,
-    par_loc: i32,
+    par_loc: EqtbPtr,
     par_token: crate::token::Token,
     param_ptr: i32,
     max_param_stack: i32,

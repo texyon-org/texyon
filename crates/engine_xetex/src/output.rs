@@ -15,7 +15,7 @@ use crate::params::{DimenPar, GluePar, IntPar};
 use crate::save::DIMEN_VAL_LIMIT;
 use crate::state::{EngineState, GroupCode, Selector};
 use crate::token::TokenList;
-use crate::units::{FontId, MemPtr, Scaled, StrNumber};
+use crate::units::{EqtbPtr, FontId, MemPtr, Scaled, StrNumber};
 
 mod cmd_chr;
 mod show;
@@ -594,7 +594,7 @@ pub(crate) fn print_file_name(st: &mut EngineState, n: StrNumber, a: StrNumber, 
 }
 
 /// The name string of a multi-letter control sequence at eqtb location `p`.
-fn cs_text(st: &EngineState, p: i32) -> StrNumber {
+fn cs_text(st: &EngineState, p: EqtbPtr) -> StrNumber {
     if (PRIM_EQTB_BASE..FROZEN_NULL_FONT).contains(&p) {
         StrNumber::from_raw(st.eqtb.prim_s1(p - PRIM_EQTB_BASE) - 1)
     } else {
@@ -602,7 +602,7 @@ fn cs_text(st: &EngineState, p: i32) -> StrNumber {
     }
 }
 
-pub(crate) fn print_cs(st: &mut EngineState, p: i32) {
+pub(crate) fn print_cs(st: &mut EngineState, p: EqtbPtr) {
     if p < HASH_BASE {
         if p >= SINGLE_BASE {
             if p == NULL_CS {
@@ -618,7 +618,7 @@ pub(crate) fn print_cs(st: &mut EngineState, p: i32) {
         } else if p < ACTIVE_BASE {
             print_esc(st, "IMPOSSIBLE.");
         } else {
-            print_char(st, p - 1);
+            print_char(st, p - ACTIVE_BASE);
         }
     } else if (UNDEFINED_CONTROL_SEQUENCE..=EQTB_SIZE).contains(&p) || p > st.eqtb.eqtb_top {
         print_esc(st, "IMPOSSIBLE.");
@@ -631,11 +631,11 @@ pub(crate) fn print_cs(st: &mut EngineState, p: i32) {
 }
 
 /// Like [`print_cs`] but without the trailing space.
-pub(crate) fn sprint_cs(st: &mut EngineState, p: i32) {
+pub(crate) fn sprint_cs(st: &mut EngineState, p: EqtbPtr) {
     if p >= HASH_BASE {
         print_esc(st, cs_text(st, p));
     } else if p < SINGLE_BASE {
-        print_char(st, p - 1);
+        print_char(st, p - ACTIVE_BASE);
     } else if p < NULL_CS {
         print_esc(st, p - SINGLE_BASE);
     } else {

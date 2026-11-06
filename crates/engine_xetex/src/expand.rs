@@ -26,7 +26,7 @@ use crate::scan::{
 };
 use crate::state::{EngineState, MemState, Selector};
 use crate::token::{Token, TokenList};
-use crate::units::{FontId, MemPtr, Scaled, StrNumber};
+use crate::units::{EqtbPtr, FontId, MemPtr, Scaled, StrNumber};
 
 /// The `\the` variant in `cur_chr`.
 pub(crate) fn the_code(st: &EngineState) -> Result<TheCode, Abort> {
@@ -123,7 +123,7 @@ fn scan_cs_name_tokens(st: &mut EngineState) -> Result<(TokenList, TokenList), A
     st.scanner.is_in_csname = true;
     loop {
         get_x_token(st)?;
-        if st.scanner.cur_cs != 0 {
+        if !st.scanner.cur_cs.is_none() {
             break;
         }
         store_new_token(st, &mut tail, st.scanner.cur_tok)?;
@@ -407,7 +407,7 @@ fn scan_int_or_dimen(st: &mut EngineState, this_if: IfCode) -> Result<(), Abort>
 /// Scanner state saved around a `conv_toks` primitive that reads a general text.
 struct SavedScan {
     status: ScannerStatus,
-    warning_index: i32,
+    warning_index: EqtbPtr,
     def_ref: TokenList,
     pending_str: bool,
 }
@@ -708,7 +708,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
         ConvertCode::Number | ConvertCode::Strcmp => print_int(st, st.scanner.cur_val),
         ConvertCode::RomanNumeral => crate::output::print_roman_int(st, st.scanner.cur_val),
         ConvertCode::String => {
-            if st.scanner.cur_cs != 0 {
+            if !st.scanner.cur_cs.is_none() {
                 sprint_cs(st, st.scanner.cur_cs);
             } else {
                 print_char(st, st.scanner.cur_chr);
@@ -875,15 +875,14 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     }
                 } else {
                     get_token_unexpanded(st)?;
-                    st.scanner.cur_cs =
-                        st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)?;
-                    if st.scanner.cur_cs != UNDEFINED_PRIMITIVE {
-                        let cmd = st.eqtb.eq_type(PRIM_EQTB_BASE + st.scanner.cur_cs);
+                    let prim = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)?;
+                    if prim != UNDEFINED_PRIMITIVE {
+                        let cmd = st.eqtb.eq_type(PRIM_EQTB_BASE + prim);
                         if cmd > Cmd::MAX_COMMAND {
                             st.scanner.cur_cmd = cmd;
-                            st.scanner.cur_chr = st.eqtb.equiv(PRIM_EQTB_BASE + st.scanner.cur_cs);
+                            st.scanner.cur_chr = st.eqtb.equiv(PRIM_EQTB_BASE + prim);
                             st.scanner.cur_tok = Token::new(st.scanner.cur_cmd, st.scanner.cur_chr);
-                            st.scanner.cur_cs = 0;
+                            st.scanner.cur_cs = crate::units::EqtbPtr::NONE;
                             continue 'reswitch;
                         }
                         back_input(st)?;
@@ -1286,7 +1285,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
         }
 
         begin_token_list(st, ref_count, TokenType::Macro)?;
-        st.input.cur_input.name = st.scanner.warning_index;
+        st.input.cur_input.set_macro_name(st.scanner.warning_index);
         st.input.cur_input.set_token_loc(r.link(&st.mem));
 
         if n > 0 {

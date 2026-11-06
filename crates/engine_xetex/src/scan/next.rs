@@ -4,7 +4,7 @@ use crate::bridge::output_flush;
 use crate::cmd::Cmd;
 use crate::codes::{FiOrElseCode, ScannerStatus};
 use crate::consts::{
-    BIGGEST_USV, FROZEN_CR, FROZEN_ENDV, FROZEN_FI, NULL_CS, SINGLE_BASE, TEX_NULL,
+    ACTIVE_BASE, BIGGEST_USV, FROZEN_CR, FROZEN_ENDV, FROZEN_FI, NULL_CS, SINGLE_BASE, TEX_NULL,
 };
 use crate::errors::{error, Abort};
 use crate::expand::{expand, macro_call};
@@ -63,7 +63,7 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
     }
     st.errors.deletions_allowed = false;
 
-    if st.scanner.cur_cs != 0 {
+    if !st.scanner.cur_cs.is_none() {
         let ci = st.input.cur_input;
         if ci.state == TOKEN_LIST || ci.name < 1 || ci.name > 17 {
             let p = st.mem.get_avail_token()?;
@@ -76,10 +76,10 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
 
     let outcome = if st.scanner.scanner_status > ScannerStatus::Skipping {
         crate::errors::runaway(st);
-        if st.scanner.cur_cs == 0 {
+        if st.scanner.cur_cs.is_none() {
             error_here_with_diagnostic(st, "File ended");
         } else {
-            st.scanner.cur_cs = 0;
+            st.scanner.cur_cs = crate::units::EqtbPtr::NONE;
             error_here_with_diagnostic(st, "Forbidden control sequence found");
         }
 
@@ -130,8 +130,8 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
         let skip_line = st.scanner.skip_line;
         print_int(st, skip_line);
         capture_to_diagnostic(st, None);
-        let cause = if st.scanner.cur_cs != 0 {
-            st.scanner.cur_cs = 0;
+        let cause = if !st.scanner.cur_cs.is_none() {
+            st.scanner.cur_cs = crate::units::EqtbPtr::NONE;
             "A forbidden control sequence occurred in skipped text."
         } else {
             "The file ended while I was skipping conditional text."
@@ -230,7 +230,7 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
                     st.scanner.cur_cs = t.cs();
                     fetch_cs_meaning(st);
                 } else {
-                    st.scanner.cur_cs = 0;
+                    st.scanner.cur_cs = crate::units::EqtbPtr::NONE;
                     st.scanner.cur_cmd = t.cmd();
                     st.scanner.cur_chr = t.chr();
                     match st.scanner.cur_cmd {
@@ -252,7 +252,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.logical_clock = st.scanner.logical_clock.wrapping_add(1);
 
     'restart: loop {
-        st.scanner.cur_cs = 0;
+        st.scanner.cur_cs = crate::units::EqtbPtr::NONE;
 
         if st.input.cur_input.state != TOKEN_LIST {
             'texswitch: loop {
@@ -364,7 +364,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
 
                             // Active character.
                             14 | 30 | 46 => {
-                                st.scanner.cur_cs = st.scanner.cur_chr + 1;
+                                st.scanner.cur_cs = ACTIVE_BASE + st.scanner.cur_chr;
                                 fetch_cs_meaning(st);
                                 st.input.cur_input.state = MID_LINE;
                                 if st.scanner.cur_cmd >= Cmd::OuterCall {
@@ -628,7 +628,7 @@ pub(crate) fn get_x_non_blank(st: &mut EngineState) -> Result<(), Abort> {
 
 #[inline(always)]
 fn pack_cur_tok(st: &mut EngineState) {
-    st.scanner.cur_tok = if st.scanner.cur_cs == 0 {
+    st.scanner.cur_tok = if st.scanner.cur_cs.is_none() {
         Token::new(st.scanner.cur_cmd, st.scanner.cur_chr)
     } else {
         Token::from_cs(st.scanner.cur_cs)
@@ -759,7 +759,7 @@ pub(crate) fn copy_group_tokens(
                 *unbalance -= 1;
                 if *unbalance == 0 {
                     consume_list_token(st, q);
-                    st.scanner.cur_cs = 0;
+                    st.scanner.cur_cs = crate::units::EqtbPtr::NONE;
                     st.scanner.cur_cmd = t.cmd();
                     st.scanner.cur_chr = t.chr();
                     st.scanner.cur_tok = t;

@@ -475,7 +475,7 @@ fn get_preamble_token(st: &mut EngineState) -> Result<(), Abort> {
                 "(interwoven alignment preambles are not allowed)",
             ));
         }
-        if st.scanner.cur_cmd != Cmd::AssignGlue || st.scanner.cur_chr != GluePar::TabSkip.loc() {
+        if st.scanner.cur_cmd != Cmd::AssignGlue || st.scanner.chr_loc() != GluePar::TabSkip.loc() {
             return Ok(());
         }
         crate::scan::scan_optional_equals(st)?;

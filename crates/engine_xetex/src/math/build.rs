@@ -10,7 +10,7 @@ use crate::mem_types::ListStateRecord;
 use crate::node::{ChoiceNode, DelimiterField, MathField, Noad, NodePtr};
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, EqtbState, GroupCode, MemState, SaveStackState};
-use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{EqtbPtr, MemIdx, MemPtr, NodeType, Scaled};
 
 use super::{
     ABOVE_CODE, ATOP_CODE, BOTTOM_ACC, DEFAULT_CODE, DELIMITED_CODE, MIDDLE_NOAD, OVER_CODE,
@@ -93,7 +93,7 @@ fn scan_delimiter(
     Ok(())
 }
 
-pub(super) fn define_word(st: &mut EngineState, loc: i32, val: i32) -> Result<(), Abort> {
+pub(super) fn define_word(st: &mut EngineState, loc: EqtbPtr, val: i32) -> Result<(), Abort> {
     st.eqtb.eq_word_define(&mut st.save_stack, loc, val)
 }
 

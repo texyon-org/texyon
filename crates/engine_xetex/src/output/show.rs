@@ -439,7 +439,7 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
         Some(ShowCode::Show) => {
             crate::scan::get_token(st)?;
             print_nl(st, "> ");
-            if st.scanner.cur_cs != 0 {
+            if !st.scanner.cur_cs.is_none() {
                 sprint_cs(st, st.scanner.cur_cs);
                 print_char(st, b'=');
             }
@@ -734,7 +734,7 @@ pub(crate) fn show_context(st: &mut EngineState) {
                     match ci.token_type() {
                         TokenType::Macro => {
                             print_ln(st);
-                            print_cs(st, ci.name);
+                            print_cs(st, ci.macro_name());
                         }
                         t => print_nl(st, t.label(ci.loc)),
                     }
