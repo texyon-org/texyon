@@ -3,8 +3,7 @@
 use crate::cmd::Cmd;
 use crate::consts::{
     AFTER, A_LEADERS, BEFORE, BEGIN_L_CODE, BEGIN_M_CODE, BOX_NODE_SIZE, DLIST, END_L_CODE,
-    END_M_CODE, HMODE, INF_PENALTY, LEFT_TO_RIGHT, L_CODE, MAX_DIMEN, MMODE, RIGHT_TO_LEFT, R_CODE,
-    SCRIPT_SIZE, TEXT_SIZE,
+    END_M_CODE, HMODE, INF_PENALTY, L_CODE, MAX_DIMEN, MMODE, R_CODE, SCRIPT_SIZE, TEXT_SIZE,
 };
 use crate::errors::Abort;
 use crate::fonts::QUAD_CODE;
@@ -14,7 +13,7 @@ use crate::node::{AnyBox, AnyNode, GlueNode, NodePtr};
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::state::{EngineState, EqtbState, FontState, GroupCode, MemState};
-use crate::units::{GlueOrder, GlueSign, MemPtr, NodeType, Scaled};
+use crate::units::{Dir, GlueOrder, GlueSign, MemPtr, NodeType, Scaled};
 
 use super::build::{define_word, fin_mlist};
 use super::mlist::mlist_to_hlist;
@@ -500,7 +499,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                 let end = st.mem.new_math(Scaled::ZERO, END_L_CODE)?.ptr();
                 let list = jb.list_ptr(&st.mem);
                 st.mem.just_copy(list, begin, end)?;
-                st.scanner.cur_dir = RIGHT_TO_LEFT;
+                st.scanner.cur_dir = Dir::Rtl;
                 p = begin;
             }
 
@@ -552,7 +551,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                                         &mut st.scanner.lr_ptr,
                                         crate::mem::end_lr_type(subtype),
                                     )?;
-                                    if i32::from(subtype / R_CODE) != i32::from(st.scanner.cur_dir)
+                                    if Dir::from_code(subtype / R_CODE) != Some(st.scanner.cur_dir)
                                     {
                                         st.mem.just_reverse(&mut st.scanner, p)?;
                                         p = TEMP_HEAD;
@@ -566,7 +565,8 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                         }
                         // An EDGE_NODE, which shares type 14 with STYLE_NODE.
                         Ok(AnyNode::Style(edge)) => {
-                            st.scanner.cur_dir = edge.subtype(&st.mem) as i16;
+                            st.scanner.cur_dir = Dir::from_code(edge.subtype(&st.mem))
+                                .ok_or(Abort::Confusion("LR"))?;
                             (edge.as_edge().width(&st.mem), false)
                         }
                         Ok(AnyNode::Glue(g)) => {
@@ -625,7 +625,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                 }
             }
 
-            st.scanner.cur_dir = LEFT_TO_RIGHT;
+            st.scanner.cur_dir = Dir::Ltr;
             let temp_head = TEMP_HEAD.link(&st.mem);
             st.mem.flush_node_list(temp_head)?;
         }

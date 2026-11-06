@@ -2,9 +2,8 @@
 
 use crate::bridge::{output_close, output_flush, output_open};
 use crate::consts::{
-    A_LEADERS, BEFORE, C_LEADERS, DLIST, INVALID_HANDLE, LEFT_TO_RIGHT, L_CODE, MAX_DIMEN,
-    MEDIUM_NODE_SIZE, MIN_HALFWORD, NORMAL, NULL_FONT, RIGHT_TO_LEFT, R_CODE, SMALL_NODE_SIZE,
-    SPACE_ADJUSTMENT,
+    A_LEADERS, BEFORE, C_LEADERS, DLIST, INVALID_HANDLE, L_CODE, MAX_DIMEN, MEDIUM_NODE_SIZE,
+    MIN_HALFWORD, NORMAL, NULL_FONT, R_CODE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT,
 };
 use crate::dvi::{Axis, MoveReg};
 use crate::errors::Abort;
@@ -19,7 +18,7 @@ use crate::params::{DimenPar, IntPar};
 use crate::state::{
     EqtbState, FontState, MemState, ScannerState, Selector, ShipoutState, StringsState,
 };
-use crate::units::{FontId, GlueOrder, GlueSign, MemPtr, Scaled, StrNumber};
+use crate::units::{Dir, FontId, GlueOrder, GlueSign, MemPtr, Scaled, StrNumber};
 
 mod whatsits;
 
@@ -56,9 +55,9 @@ pub(crate) const ONE_INCH: Scaled = Scaled::from_raw(4_736_287);
 const ONE_INCH_LESS_ONE: Scaled = Scaled::from_raw(ONE_INCH.raw() - 1);
 
 impl MemState {
-    pub fn new_edge(&mut self, s: i16, w: Scaled) -> Result<NodePtr<EdgeNode>, Abort> {
+    pub fn new_edge(&mut self, dir: Dir, w: Scaled) -> Result<NodePtr<EdgeNode>, Abort> {
         let p = NodePtr::<EdgeNode>::alloc(self)?;
-        p.set_subtype(self, s as u16);
+        p.set_subtype(self, dir.code());
         p.set_width(self, w);
         p.set_edge_dist(self, Scaled::ZERO);
         Ok(p)
@@ -206,7 +205,7 @@ pub(crate) fn ship_out(st: &mut crate::state::EngineState, page: AnyBox) -> Resu
         crate::output::print_ln(st);
     }
 
-    if !st.scanner.lr_ptr.is_null() || st.scanner.cur_dir != LEFT_TO_RIGHT {
+    if !st.scanner.lr_ptr.is_null() || st.scanner.cur_dir != Dir::Ltr {
         return Err(Abort::Confusion("LR3"));
     }
     if st.eqtb.int_par(IntPar::TracingOutput) <= 0 {
@@ -601,8 +600,8 @@ impl MemState {
         }
     }
 
-    fn lr_dir(&self, math: NodePtr<MathNode>) -> i16 {
-        (math.subtype(self) / R_CODE) as i16
+    fn lr_dir(&self, math: NodePtr<MathNode>) -> Option<Dir> {
+        Dir::from_code(math.subtype(self) / R_CODE)
     }
 
     /// The LR stack top matches the end code of `math`.
@@ -672,7 +671,7 @@ fn vlist_rule_out(
     st.shipout.rule_ht += st.shipout.rule_dp;
     st.shipout.move_past_vlist_rule(upwards);
     if st.shipout.rule_ht > Scaled::ZERO && st.shipout.rule_wd > Scaled::ZERO {
-        if st.scanner.cur_dir == RIGHT_TO_LEFT {
+        if st.scanner.cur_dir == Dir::Rtl {
             st.shipout.cur_h -= st.shipout.rule_wd;
         }
         synch_h(st)?;
@@ -723,7 +722,7 @@ fn hlist_glue_out(
         let leader_wd = leader.width(&st.mem);
         if leader_wd > Scaled::ZERO && st.shipout.rule_wd > Scaled::ZERO {
             st.shipout.rule_wd += LEADER_SLOP;
-            if st.scanner.cur_dir == RIGHT_TO_LEFT {
+            if st.scanner.cur_dir == Dir::Rtl {
                 st.shipout.cur_h -= LEADER_SLOP;
             }
             let edge = st.shipout.cur_h + st.shipout.rule_wd;
@@ -750,7 +749,7 @@ fn hlist_glue_out(
                 synch_v(st)?;
                 synch_h(st)?;
                 let (save_h, _) = with_saved_dvi_pos(st, |st| {
-                    if st.scanner.cur_dir == RIGHT_TO_LEFT {
+                    if st.scanner.cur_dir == Dir::Rtl {
                         st.shipout.cur_h += leader_wd;
                     }
                     ship_leader_box(st, leader)
@@ -759,7 +758,7 @@ fn hlist_glue_out(
                 st.shipout.cur_h = save_h + leader_wd + lx;
             }
 
-            st.shipout.cur_h = if st.scanner.cur_dir == RIGHT_TO_LEFT {
+            st.shipout.cur_h = if st.scanner.cur_dir == Dir::Rtl {
                 edge
             } else {
                 edge - LEADER_SLOP
@@ -862,15 +861,15 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
     st.mem.push_lr(&mut st.scanner.lr_ptr, BEFORE.into())?;
 
     if this_box.subtype(&st.mem) == DLIST {
-        if st.scanner.cur_dir == RIGHT_TO_LEFT {
-            st.scanner.cur_dir = LEFT_TO_RIGHT;
+        if st.scanner.cur_dir == Dir::Rtl {
+            st.scanner.cur_dir = Dir::Ltr;
             st.shipout.cur_h -= this_box.width(&st.mem);
         } else {
             this_box.set_subtype(&mut st.mem, 0);
         }
     }
 
-    if st.scanner.cur_dir == RIGHT_TO_LEFT && this_box.subtype(&st.mem) != REVERSED {
+    if st.scanner.cur_dir == Dir::Rtl && this_box.subtype(&st.mem) != REVERSED {
         let save_h = st.shipout.cur_h;
         st.mem.temp_ptr = p;
         let kern = st.mem.new_kern(Scaled::ZERO)?;
@@ -948,7 +947,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
                 } else {
                     let end_type = end_lr_type(math.subtype(&st.mem));
                     st.mem.push_lr(&mut st.scanner.lr_ptr, end_type)?;
-                    if st.mem.lr_dir(math) != st.scanner.cur_dir {
+                    if st.mem.lr_dir(math) != Some(st.scanner.cur_dir) {
                         let edge = reverse_segment(
                             st,
                             math,
@@ -976,7 +975,8 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
                 let edge = style.as_edge();
                 st.shipout.cur_h += edge.width(&st.mem);
                 left_edge = st.shipout.cur_h + edge.edge_dist(&st.mem);
-                st.scanner.cur_dir = edge.subtype(&st.mem) as i16;
+                st.scanner.cur_dir =
+                    Dir::from_code(edge.subtype(&st.mem)).ok_or(Abort::Confusion("LR"))?;
             }
             _ => {}
         }
@@ -994,7 +994,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
     }
     st.mem.pop_lr(&mut st.scanner.lr_ptr);
     if this_box.subtype(&st.mem) == DLIST {
-        st.scanner.cur_dir = RIGHT_TO_LEFT;
+        st.scanner.cur_dir = Dir::Rtl;
     }
     st.mem.pop_dvi_level(&mut st.shipout, save_loc)
 }
@@ -1014,7 +1014,7 @@ fn hlist_box_out(
     }
     st.shipout.cur_v = base_line + b.shift_amount(&st.mem);
     let edge = st.shipout.cur_h + b.width(&st.mem);
-    if st.scanner.cur_dir == RIGHT_TO_LEFT {
+    if st.scanner.cur_dir == Dir::Rtl {
         st.shipout.cur_h = edge;
     }
     with_saved_dvi_pos(st, |st| ship_box(st, b))?;
@@ -1037,11 +1037,13 @@ fn reverse_segment(
     st.mem.temp_ptr = math.link(&st.mem);
     st.shipout.rule_wd = math_width;
     st.mem.free_node(math.ptr(), MEDIUM_NODE_SIZE);
-    st.scanner.cur_dir = 1 - st.scanner.cur_dir;
+    st.scanner.cur_dir = st.scanner.cur_dir.reversed();
     let edge = st.mem.new_edge(st.scanner.cur_dir, st.shipout.rule_wd)?;
     prev_p.set_link(&mut st.mem, edge.ptr());
     st.shipout.cur_h = st.shipout.cur_h - left_edge + st.shipout.rule_wd;
-    let end = st.mem.new_edge(1 - st.scanner.cur_dir, Scaled::ZERO)?;
+    let end = st
+        .mem
+        .new_edge(st.scanner.cur_dir.reversed(), Scaled::ZERO)?;
     let reversed = st.mem.reverse(
         &mut st.shipout,
         &mut st.scanner,
@@ -1051,7 +1053,7 @@ fn reverse_segment(
     )?;
     edge.set_link(&mut st.mem, reversed);
     edge.set_edge_dist(&mut st.mem, st.shipout.cur_h);
-    st.scanner.cur_dir = 1 - st.scanner.cur_dir;
+    st.scanner.cur_dir = st.scanner.cur_dir.reversed();
     st.shipout.cur_h = save_h;
     Ok(edge)
 }
@@ -1172,7 +1174,7 @@ fn vlist_box_out(
     }
     synch_v(st)?;
     let shift = b.shift_amount(&st.mem);
-    st.shipout.cur_h = if st.scanner.cur_dir == RIGHT_TO_LEFT {
+    st.shipout.cur_h = if st.scanner.cur_dir == Dir::Rtl {
         left_edge - shift
     } else {
         left_edge + shift
@@ -1235,7 +1237,7 @@ fn vlist_leaders_out(
 
     while st.shipout.cur_v + leader_ht <= edge {
         let shift = leader.shift_amount(&st.mem);
-        st.shipout.cur_h = if st.scanner.cur_dir == RIGHT_TO_LEFT {
+        st.shipout.cur_h = if st.scanner.cur_dir == Dir::Rtl {
             left_edge - shift
         } else {
             left_edge + shift
@@ -1435,7 +1437,7 @@ impl MemState {
                         } else {
                             let end_type = end_lr_type(math.subtype(self));
                             self.push_lr(&mut scanner.lr_ptr, end_type)?;
-                            if n > MIN_HALFWORD || self.lr_dir(math) != scanner.cur_dir {
+                            if n > MIN_HALFWORD || self.lr_dir(math) != Some(scanner.cur_dir) {
                                 n += 1;
                                 math.set_subtype(self, math.subtype(self) + 1);
                             } else {

@@ -621,6 +621,39 @@ impl std::ops::SubAssign<i32> for FontInfoIdx {
     }
 }
 
+/// A text direction, as TeX--XeT stores it in edge subtypes and math subtypes over `R_CODE`.
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+pub enum Dir {
+    #[default]
+    Ltr = 0,
+    Rtl = 1,
+}
+
+impl Dir {
+    /// The direction stored as `code`, `None` for any other value.
+    #[inline]
+    pub fn from_code(code: u16) -> Option<Dir> {
+        match code {
+            0 => Some(Dir::Ltr),
+            1 => Some(Dir::Rtl),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn code(self) -> u16 {
+        self as u16
+    }
+
+    #[inline]
+    pub fn reversed(self) -> Dir {
+        match self {
+            Dir::Ltr => Dir::Rtl,
+            Dir::Rtl => Dir::Ltr,
+        }
+    }
+}
+
 /// A position on the save stack.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 #[repr(transparent)]

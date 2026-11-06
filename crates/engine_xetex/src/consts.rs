@@ -49,8 +49,6 @@ pub const HMODE: i16 = 104;
 pub const MMODE: i16 = 207;
 pub const LEVEL_ZERO: u16 = 0;
 pub const LEVEL_ONE: u16 = 1;
-pub const LEFT_TO_RIGHT: i16 = 0;
-pub const RIGHT_TO_LEFT: i16 = 1;
 
 pub const SMALL_NODE_SIZE: i32 = 2;
 pub const MEDIUM_NODE_SIZE: i32 = 3;

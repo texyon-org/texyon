@@ -12,7 +12,7 @@ use crate::node::{
     AnyBox, AnyNode, DiscNode, GlueNode, NodeKind, NodePtr, WhatsitNode, WhatsitSubtype,
 };
 use crate::state::{MemState, ScannerState};
-use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{Dir, MemIdx, MemPtr, NodeType, Scaled};
 
 const SYNCTEX_FIELD_SIZE: i32 = 1;
 const MEMORY_WORD_SIZE: i32 = 8;
@@ -171,7 +171,7 @@ impl MemState {
 
         let t = self.new_edge(scanner.cur_dir, Scaled::ZERO)?;
         let mut l = t.ptr();
-        scanner.cur_dir = 1 - scanner.cur_dir;
+        scanner.cur_dir = scanner.cur_dir.reversed();
 
         'done: {
             while !q.is_null() {
@@ -216,7 +216,9 @@ impl MemState {
                     } else {
                         self.push_lr(&mut scanner.lr_ptr, end_lr_type(subtype))?;
 
-                        if n > MIN_HALFWORD || (subtype / R_CODE) as i16 != scanner.cur_dir {
+                        if n > MIN_HALFWORD
+                            || Dir::from_code(subtype / R_CODE) != Some(scanner.cur_dir)
+                        {
                             n += 1;
                             math.set_subtype(self, subtype + 1);
                         } else {

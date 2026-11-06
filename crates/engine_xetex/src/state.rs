@@ -1119,7 +1119,7 @@ pub(crate) struct ScannerState {
     pub best_height_plus_depth: Scaled,
     pub lr_ptr: crate::units::MemPtr,
     pub lr_problems: i32,
-    pub cur_dir: i16,
+    pub cur_dir: crate::units::Dir,
     pub sa_root: SaRoots,
     pub sa_null: crate::mem_types::MemoryWord,
     pub empty: crate::mem_types::B32x2,
