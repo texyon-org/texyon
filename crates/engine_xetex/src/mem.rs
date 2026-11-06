@@ -533,15 +533,10 @@ impl MemState {
 // --- the semantic nest ---
 
 pub(crate) fn push_nest(st: &mut crate::state::EngineState) -> Result<(), Abort> {
-    let np = st.input.nest_ptr;
-    if np > st.input.max_nest_stack {
-        st.input.max_nest_stack = np;
-        if np == st.input.nest_size {
-            return Err(Abort::NestOverflow);
-        }
-    }
-    st.input.nest[np as usize] = st.input.cur_list;
-    st.input.nest_ptr = np + 1;
+    st.input
+        .nest
+        .push(st.input.cur_list)
+        .map_err(|_| Abort::NestOverflow)?;
     let h = st.mem.get_avail()?;
     let cl = &mut st.input.cur_list;
     cl.head = h;
@@ -553,9 +548,9 @@ pub(crate) fn push_nest(st: &mut crate::state::EngineState) -> Result<(), Abort>
 }
 
 impl MemState {
-    pub fn pop_nest(&mut self, input: &mut crate::state::InputClusterState) {
+    pub fn pop_nest(&mut self, input: &mut crate::state::InputClusterState) -> Result<(), Abort> {
         self.free_avail(input.cur_list.head);
-        input.nest_ptr -= 1;
-        input.cur_list = input.nest[input.nest_ptr as usize];
+        input.cur_list = input.nest.pop().ok_or(Abort::Confusion("pop_nest"))?;
+        Ok(())
     }
 }

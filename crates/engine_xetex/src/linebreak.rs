@@ -418,7 +418,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<AnyBox, Abort>
     st.hyph.init_r_hyf = (st.input.cur_list.prev_graf / 65_536) % 64;
     let init_cur_lang = (st.input.cur_list.prev_graf % 65_536) as u8;
 
-    st.mem.pop_nest(&mut st.input);
+    st.mem.pop_nest(&mut st.input)?;
     st.errors.no_shrink_error_yet = true;
 
     for n in [GluePar::LeftSkip, GluePar::RightSkip] {

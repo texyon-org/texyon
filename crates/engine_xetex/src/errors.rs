@@ -193,7 +193,7 @@ impl Abort {
                 Self::overflow_report(st, "save size", n);
             }
             Abort::NestOverflow => {
-                let n = st.input.nest_size;
+                let n = i32::try_from(st.input.nest.size()).unwrap_or(i32::MAX);
                 Self::overflow_report(st, "semantic nest size", n);
             }
             Abort::Confusion(s) => {

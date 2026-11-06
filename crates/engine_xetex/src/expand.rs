@@ -24,7 +24,7 @@ use crate::scan::{
     copy_delimited_tokens, copy_group_tokens, fetch_box, get_next, get_token, get_x_non_blank,
     get_x_token, scan_int, store_new_token, NO_EXPAND_FLAG,
 };
-use crate::state::{EngineState, MemState, Selector};
+use crate::state::{EngineState, MacroParam, MemState, Selector};
 use crate::token::{Token, TokenList};
 use crate::units::{EqtbPtr, FontId, MemPtr, Scaled, StrNumber};
 
@@ -1028,10 +1028,10 @@ fn trace_macro_call(st: &mut EngineState, ref_count: TokenList) {
     diagnostic_begin_capture_warning_here(st);
     let stack_levels = st.eqtb.int_par(IntPar::TracingStackLevels);
     if stack_levels > 0 {
-        if st.input.input_ptr < stack_levels {
+        if st.input.input_depth() < stack_levels {
             crate::output::print_ln(st);
             print_char(st, b'~');
-            for _ in 0..st.input.input_ptr {
+            for _ in 0..st.input.input_depth() {
                 print_char(st, b'.');
             }
             crate::output::print_cs(st, st.scanner.warning_index);
@@ -1053,7 +1053,7 @@ fn trace_macro_call(st: &mut EngineState, ref_count: TokenList) {
 #[cold]
 fn trace_macro_param(st: &mut EngineState, match_chr: i32, n: i32, list: TokenList) {
     let stack_levels = st.eqtb.int_par(IntPar::TracingStackLevels);
-    if stack_levels == 0 || st.input.input_ptr < stack_levels {
+    if stack_levels == 0 || st.input.input_depth() < stack_levels {
         begin_diagnostic(st);
         diagnostic_begin_capture_warning_here(st);
         crate::output::print_nl(st, match_chr);
@@ -1283,19 +1283,14 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
         st.input.cur_input.set_token_loc(r.link(&st.mem));
 
         if n > 0 {
-            if st.input.param_ptr + n > st.input.max_param_stack {
-                st.input.max_param_stack = st.input.param_ptr + n;
-                if st.input.max_param_stack > st.input.param_size {
-                    return Err(Abort::Overflow {
-                        what: "parameter stack size",
-                        n: st.input.param_size,
-                    });
-                }
-            }
-            let base = st.input.param_ptr as usize;
-            st.input.param_stack[base..base + n as usize].copy_from_slice(&pstack[..n as usize]);
-            st.input.param_tail[base..base + n as usize].copy_from_slice(&ptail[..n as usize]);
-            st.input.param_ptr += n;
+            let params: [MacroParam; 9] = std::array::from_fn(|k| MacroParam {
+                list: pstack[k],
+                tail: ptail[k],
+            });
+            let stack = &mut st.input.param_stack;
+            stack
+                .push_all(&params[..n as usize])
+                .map_err(|_| stack.overflow("parameter stack size"))?;
         }
     }
 

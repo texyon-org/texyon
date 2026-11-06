@@ -37,7 +37,7 @@ fn page_ins(p: MemPtr) -> NodePtr<PageInsNode> {
 
 /// TeX's `contrib_tail`, the tail of the outermost vertical list.
 fn set_contrib_tail(st: &mut EngineState, tail: MemPtr) {
-    if st.input.nest_ptr == 0 {
+    if st.input.nest.is_empty() {
         st.input.cur_list.tail = tail;
     } else {
         st.input.nest[0].tail = tail;

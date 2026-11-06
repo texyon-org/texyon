@@ -852,7 +852,7 @@ pub(crate) fn open_log_file(st: &mut EngineState) -> Result<(), Abort> {
     st.shipout.selector = Selector::LogOnly;
     st.errors.log_opened = true;
 
-    st.input.input_stack[st.input.input_ptr as usize] = st.input.cur_input;
+    st.input.input_stack.park(st.input.cur_input);
 
     crate::output::print_nl(st, "**");
     let mut l = st.input.input_stack[0].limit;
@@ -1134,7 +1134,7 @@ pub(crate) fn start_input(
         crate::output::diagnostic_begin_capture_warning_here(st);
         crate::output::print_ln(st);
         crate::output::print_char(st, b'~');
-        let v = st.input.input_ptr - 1;
+        let v = st.input.input_depth() - 1;
         if v < tracing_stack_levels {
             for _ in 0..v {
                 crate::output::print_char(st, b'.');

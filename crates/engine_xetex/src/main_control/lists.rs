@@ -45,7 +45,7 @@ pub(super) fn end_graf(st: &mut EngineState) -> Result<(), Abort> {
         return Ok(());
     }
     if st.input.cur_list.head == st.input.cur_list.tail {
-        st.mem.pop_nest(&mut st.input);
+        st.mem.pop_nest(&mut st.input)?;
     } else {
         crate::linebreak::line_break(st, false)?;
     }
@@ -276,7 +276,7 @@ pub(crate) fn new_graf(st: &mut EngineState, indented: bool) -> Result<(), Abort
         }
     }
     begin_every(st, TokPar::EveryPar, TokenType::EveryPar)?;
-    if st.input.nest_ptr == 1 {
+    if st.input.nest.len() == 1 {
         crate::pagebuilder::build_page(st)?;
     }
     Ok(())
@@ -355,7 +355,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             st.save_stack.save_ptr -= 2;
             let head = st.input.cur_list.head.link(&st.mem);
             let p = crate::packaging::vpackage(st, head, Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
-            st.mem.pop_nest(&mut st.input);
+            st.mem.pop_nest(&mut st.input)?;
             let n = st.save_stack.saved(0);
             if n < 255 {
                 let ins = NodePtr::<InsNode>::alloc(&mut st.mem)?;
@@ -378,7 +378,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
                 st.mem.delete_glue_ref(split_top_skip);
             }
             st.mem.free_node(p.ptr(), BOX_NODE_SIZE);
-            if st.input.nest_ptr == 0 {
+            if st.input.nest.is_empty() {
                 crate::pagebuilder::build_page(st)?;
             }
         }
@@ -439,7 +439,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             let last_box = st.scanner.disc_ptr[BoxCode::LastBox as usize];
             st.mem.flush_node_list(last_box)?;
             st.scanner.disc_ptr[BoxCode::LastBox as usize] = MemPtr::NULL;
-            st.mem.pop_nest(&mut st.input);
+            st.mem.pop_nest(&mut st.input)?;
             crate::pagebuilder::build_page(st)?;
         }
         GroupCode::Disc => build_discretionary(st)?,
@@ -467,7 +467,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             let size = Scaled::from_raw(st.save_stack.saved(1));
             let spec_mode = st.save_stack.saved(0) as i16;
             let p = crate::packaging::vpackage(st, head, size, spec_mode, MAX_DIMEN)?;
-            st.mem.pop_nest(&mut st.input);
+            st.mem.pop_nest(&mut st.input)?;
             let noad = st.mem.new_noad()?;
             st.input.cur_list.tail_append(&mut st.mem, noad.ptr());
             noad.set_noad_type(&mut st.mem, NodeType::VcenterNoad);
@@ -708,7 +708,7 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     p = head.link(&st.mem);
-    st.mem.pop_nest(&mut st.input);
+    st.mem.pop_nest(&mut st.input)?;
     // SAFETY: `append_discretionary` left the disc node as the enclosing list's tail.
     let disc = NodePtr::<DiscNode>::from_idx_unchecked(MemIdx::new(st.input.cur_list.tail));
     let part = st.save_stack.saved(-1);

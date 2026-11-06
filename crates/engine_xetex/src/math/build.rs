@@ -207,7 +207,7 @@ impl ListStateRecord {
 
 pub(crate) fn fin_mlist(st: &mut crate::state::EngineState, p: MemPtr) -> Result<MemPtr, Abort> {
     let q = st.input.cur_list.fin_mlist(&mut st.mem, p)?;
-    st.mem.pop_nest(&mut st.input);
+    st.mem.pop_nest(&mut st.input)?;
     Ok(q)
 }
 
@@ -240,7 +240,7 @@ impl ListStateRecord {
 pub(crate) fn build_choices(st: &mut crate::state::EngineState) -> Result<(), Abort> {
     crate::save::unsave(st)?;
     let p = st.input.cur_list.fin_mlist(&mut st.mem, MemPtr::NULL)?;
-    st.mem.pop_nest(&mut st.input);
+    st.mem.pop_nest(&mut st.input)?;
     let complete = st
         .input
         .cur_list

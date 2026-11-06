@@ -41,7 +41,7 @@ pub(crate) fn resume_after_display(st: &mut EngineState) -> Result<(), Abort> {
     if st.scanner.cur_cmd != Cmd::Spacer {
         crate::input::back_input(st)?;
     }
-    if st.input.nest_ptr == 1 {
+    if st.input.nest.len() == 1 {
         crate::pagebuilder::build_page(st)?;
     }
     Ok(())
@@ -467,7 +467,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
         let x;
 
         if st.input.cur_list.head == st.input.cur_list.tail {
-            st.mem.pop_nest(&mut st.input);
+            st.mem.pop_nest(&mut st.input)?;
             x = pre_display_direction(st);
         } else {
             let jb = crate::linebreak::line_break(st, true)?;
@@ -678,7 +678,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
         if !every_display.is_null() {
             crate::input::begin_token_list(st, every_display, TokenType::EveryDisplay)?;
         }
-        if st.input.nest_ptr == 1 {
+        if st.input.nest.len() == 1 {
             crate::pagebuilder::build_page(st)?;
         }
     } else {

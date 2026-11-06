@@ -712,7 +712,7 @@ pub(super) fn scan_something_internal(
                 if st.input.cur_list.mode == 0 {
                     set_cur_val(st, 0, ValueLevel::Int);
                 } else {
-                    let np = st.input.nest_ptr as usize;
+                    let np = st.input.nest.len();
                     st.input.nest[np] = st.input.cur_list;
                     let mut p = np;
                     while st.input.nest[p].mode.abs() != VMODE {

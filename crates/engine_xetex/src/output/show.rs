@@ -217,8 +217,8 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
         Found,
     }
 
-    let mut p = st.input.nest_ptr;
-    st.input.nest[p as usize] = st.input.cur_list;
+    let mut p = st.input.nest.len();
+    st.input.nest.park(st.input.cur_list);
     let saved_ptr = st.save_stack.save_ptr;
     let saved_level = st.save_stack.cur_level;
     let saved_group = st.save_stack.cur_group;
@@ -238,7 +238,7 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
 
         // Find the enclosing non-paragraph mode, leaving `p` just below it.
         let m = loop {
-            let cur_m = st.input.nest[p as usize].mode;
+            let cur_m = st.input.nest[p].mode;
             if p == 0 {
                 break VMODE;
             }
@@ -279,8 +279,10 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                 } else {
                     print_esc(st, "cr");
                 }
-                if p >= i32::from(a) {
-                    p -= i32::from(a);
+                match a {
+                    1 if p >= 1 => p -= 1,
+                    -1 => p += 1,
+                    _ => {}
                 }
                 a = 0;
                 Entry::Found
@@ -332,7 +334,7 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
             GroupCode::MathShift => {
                 if m == MMODE {
                     print_char(st, b'$');
-                } else if st.input.nest[p as usize].mode == MMODE {
+                } else if st.input.nest[p].mode == MMODE {
                     print_cmd_chr(st, Cmd::EqNo, st.save_stack.saved(-2));
                     print_char(st, b')');
                     st.save_stack.cur_level -= 1;
@@ -343,7 +345,7 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                 Entry::Found
             }
             GroupCode::MathLeft => {
-                let delim = st.input.nest[(p + 1) as usize].e_tex_aux;
+                let delim = st.input.nest[p + 1].e_tex_aux;
                 if st.mem.node_type(delim) == Ok(NodeType::LeftNoad) {
                     print_esc(st, "left");
                 } else {
@@ -358,7 +360,7 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
             let i = st.save_stack.saved(-4);
             if i != 0 {
                 if i < BOX_FLAG {
-                    let cmd = if st.input.nest[p as usize].mode.abs() == VMODE {
+                    let cmd = if st.input.nest[p].mode.abs() == VMODE {
                         Cmd::Hmove
                     } else {
                         Cmd::Vmove
@@ -592,11 +594,11 @@ fn show_page_so_far(st: &mut EngineState) {
 }
 
 fn show_activities(st: &mut EngineState) {
-    st.input.nest[st.input.nest_ptr as usize] = st.input.cur_list;
+    st.input.nest.park(st.input.cur_list);
     print_nl(st, "");
     print_ln(st);
-    for p in (0..=st.input.nest_ptr).rev() {
-        let nest = st.input.nest[p as usize];
+    for p in (0..=st.input.nest.len()).rev() {
+        let nest = st.input.nest[p];
         let m = nest.mode;
         print_nl(st, "### ");
         print_mode(st, i32::from(m));
@@ -668,21 +670,24 @@ fn begin_pseudoprint(st: &mut EngineState) -> i32 {
 }
 
 pub(crate) fn show_context(st: &mut EngineState) {
-    st.input.base_ptr = st.input.input_ptr;
-    st.input.input_stack[st.input.base_ptr as usize] = st.input.cur_input;
+    st.input.base_ptr = st.input.input_stack.len();
+    st.input.input_stack.park(st.input.cur_input);
     let mut nn = -1;
     let mut bottom_line = false;
 
     loop {
-        st.input.cur_input = st.input.input_stack[st.input.base_ptr as usize];
+        st.input.cur_input = st.input.input_stack[st.input.base_ptr];
         st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;
         let ci = st.input.cur_input;
         if ci.state != TOKEN_LIST && (ci.name > 19 || st.input.base_ptr == 0) {
             bottom_line = true;
         }
         let error_context_lines = st.eqtb.int_par(IntPar::ErrorContextLines);
-        if st.input.base_ptr == st.input.input_ptr || bottom_line || nn < error_context_lines {
-            if st.input.base_ptr == st.input.input_ptr
+        if st.input.base_ptr == st.input.input_stack.len()
+            || bottom_line
+            || nn < error_context_lines
+        {
+            if st.input.base_ptr == st.input.input_stack.len()
                 || ci.state != TOKEN_LIST
                 || ci.token_type() != TokenType::BackedUp
                 || ci.loc != TEX_NULL
@@ -794,6 +799,6 @@ pub(crate) fn show_context(st: &mut EngineState) {
         }
         st.input.base_ptr -= 1;
     }
-    st.input.cur_input = st.input.input_stack[st.input.input_ptr as usize];
+    st.input.cur_input = st.input.input_stack[st.input.input_stack.len()];
     st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;
 }

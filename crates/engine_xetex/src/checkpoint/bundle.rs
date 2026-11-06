@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use crate::dvi::DviWriter;
 use crate::mem_types::{ListStateRecord, MemoryWord};
+use crate::stack::TexStack;
 use crate::state::{
     ConfigState, EngineState, EqtbState, ErrorState, FontEngineHandle, FontMappingHandle,
     FontState, GroupCode, HyphState, InputClusterState, InputState, LinebreakState, MainLoopState,
@@ -421,10 +422,9 @@ impl SaveBundle {
 /// rebuilds, so a rung never owns a live UFile.
 struct InputBundle {
     buffer: Vec<i32>,
-    input_stack: Vec<InputState>,
-    param_stack: Vec<crate::token::TokenList>,
-    param_tail: Vec<crate::token::TokenList>,
-    nest: Vec<ListStateRecord>,
+    input_stack: StackBundle<InputState>,
+    param_stack: StackBundle<crate::state::MacroParam>,
+    nest: StackBundle<ListStateRecord>,
     line_stack: Vec<i32>,
     grp_stack: Vec<i32>,
     if_stack: Vec<MemPtr>,
@@ -436,15 +436,9 @@ struct InputBundle {
     open_parens: i32,
     in_open: i32,
     pseudo_files: MemPtr,
-    nest_ptr: i32,
-    max_nest_stack: i32,
-    input_ptr: i32,
-    max_in_stack: i32,
-    base_ptr: i32,
+    base_ptr: usize,
     par_loc: EqtbPtr,
     par_token: crate::token::Token,
-    param_ptr: i32,
-    max_param_stack: i32,
     force_eof: bool,
     first: i32,
     last: i32,
@@ -455,6 +449,36 @@ struct InputBundle {
     abspath_of_input_file: Vec<u8>,
 }
 
+/// The live part of a [`TexStack`], with its depth and high-water mark.
+struct StackBundle<T> {
+    slots: Vec<T>,
+    len: usize,
+    max_len: usize,
+}
+
+impl<T: Copy + Default> StackBundle<T> {
+    /// The entries and the parked top slot.
+    fn with_parked(src: &TexStack<T>) -> Self {
+        Self::of(src, src.with_parked())
+    }
+
+    fn entries(src: &TexStack<T>) -> Self {
+        Self::of(src, src.entries())
+    }
+
+    fn of(src: &TexStack<T>, slots: &[T]) -> Self {
+        StackBundle {
+            slots: slots.to_vec(),
+            len: src.len(),
+            max_len: src.max_len(),
+        }
+    }
+
+    fn restore(&self, dst: &mut TexStack<T>) {
+        dst.restore(&self.slots, self.len, self.max_len);
+    }
+}
+
 fn live_prefix<T: Clone>(values: &[T], len: i32) -> Vec<T> {
     values[..(len.max(0) as usize).min(values.len())].to_vec()
 }
@@ -463,10 +487,9 @@ impl InputBundle {
     fn capture(src: &InputClusterState) -> Self {
         Self {
             buffer: live_prefix(&src.buffer, src.buffer_in_use()),
-            input_stack: live_prefix(&src.input_stack, src.input_ptr + 1),
-            param_stack: live_prefix(&src.param_stack, src.param_ptr),
-            param_tail: live_prefix(&src.param_tail, src.param_ptr),
-            nest: live_prefix(&src.nest, src.nest_ptr + 1),
+            input_stack: StackBundle::with_parked(&src.input_stack),
+            param_stack: StackBundle::entries(&src.param_stack),
+            nest: StackBundle::with_parked(&src.nest),
             line_stack: src.line_stack.clone(),
             grp_stack: src.grp_stack.clone(),
             if_stack: src.if_stack.clone(),
@@ -478,15 +501,9 @@ impl InputBundle {
             open_parens: src.open_parens,
             in_open: src.in_open,
             pseudo_files: src.pseudo_files,
-            nest_ptr: src.nest_ptr,
-            max_nest_stack: src.max_nest_stack,
-            input_ptr: src.input_ptr,
-            max_in_stack: src.max_in_stack,
             base_ptr: src.base_ptr,
             par_loc: src.par_loc,
             par_token: src.par_token,
-            param_ptr: src.param_ptr,
-            max_param_stack: src.max_param_stack,
             force_eof: src.force_eof,
             first: src.first,
             last: src.last,
@@ -500,10 +517,9 @@ impl InputBundle {
 
     fn restore(&self, dst: &mut InputClusterState) {
         dst.buffer[..self.buffer.len()].copy_from_slice(&self.buffer);
-        dst.input_stack[..self.input_stack.len()].copy_from_slice(&self.input_stack);
-        dst.param_stack[..self.param_stack.len()].copy_from_slice(&self.param_stack);
-        dst.param_tail[..self.param_tail.len()].copy_from_slice(&self.param_tail);
-        dst.nest[..self.nest.len()].copy_from_slice(&self.nest);
+        self.input_stack.restore(&mut dst.input_stack);
+        self.param_stack.restore(&mut dst.param_stack);
+        self.nest.restore(&mut dst.nest);
         dst.line_stack.clone_from(&self.line_stack);
         dst.grp_stack.clone_from(&self.grp_stack);
         dst.if_stack.clone_from(&self.if_stack);
@@ -517,15 +533,9 @@ impl InputBundle {
         dst.open_parens = self.open_parens;
         dst.in_open = self.in_open;
         dst.pseudo_files = self.pseudo_files;
-        dst.nest_ptr = self.nest_ptr;
-        dst.max_nest_stack = self.max_nest_stack;
-        dst.input_ptr = self.input_ptr;
-        dst.max_in_stack = self.max_in_stack;
         dst.base_ptr = self.base_ptr;
         dst.par_loc = self.par_loc;
         dst.par_token = self.par_token;
-        dst.param_ptr = self.param_ptr;
-        dst.max_param_stack = self.max_param_stack;
         dst.force_eof = self.force_eof;
         dst.first = self.first;
         dst.last = self.last;
@@ -539,10 +549,9 @@ impl InputBundle {
 
     fn allocated_bytes(&self) -> usize {
         vec_bytes(&self.buffer)
-            + vec_bytes(&self.input_stack)
-            + vec_bytes(&self.param_stack)
-            + vec_bytes(&self.param_tail)
-            + vec_bytes(&self.nest)
+            + vec_bytes(&self.input_stack.slots)
+            + vec_bytes(&self.param_stack.slots)
+            + vec_bytes(&self.nest.slots)
             + vec_bytes(&self.line_stack)
             + vec_bytes(&self.grp_stack)
             + vec_bytes(&self.if_stack)
@@ -904,10 +913,9 @@ mod tests {
         st.strings.str_pool = vec![0; 16];
         st.strings.str_start = vec![0; 8];
         st.input.buffer = vec![0; 8];
-        st.input.input_stack = vec![crate::state::InputState::default(); 4];
-        st.input.param_stack = vec![crate::token::TokenList::NULL; 4];
-        st.input.param_tail = vec![crate::token::TokenList::NULL; 4];
-        st.input.nest = vec![crate::mem_types::ListStateRecord::default(); 4];
+        st.input.input_stack = TexStack::with_size(3);
+        st.input.param_stack = TexStack::with_size(3);
+        st.input.nest = TexStack::with_size(3);
         st.save_stack.data = crate::mem_types::zeroed_vec(4);
         st
     }

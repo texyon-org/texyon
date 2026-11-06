@@ -65,6 +65,7 @@ mod scaled_math;
 mod scan;
 mod session;
 mod shipout;
+mod stack;
 mod state;
 mod string_pool;
 mod sync_index;

@@ -21,17 +21,17 @@ use super::{
 
 /// Walks `base_ptr` down to the file at input level `level`, reporting whether it is a real file.
 fn level_is_file(st: &mut EngineState, level: i32) -> bool {
-    while st.input.input_stack[st.input.base_ptr as usize].state == TOKEN_LIST
-        || i32::from(st.input.input_stack[st.input.base_ptr as usize].index) > level
+    while st.input.input_stack[st.input.base_ptr].state == TOKEN_LIST
+        || i32::from(st.input.input_stack[st.input.base_ptr].index) > level
     {
         st.input.base_ptr -= 1;
     }
-    st.input.input_stack[st.input.base_ptr as usize].name > 17
+    st.input.input_stack[st.input.base_ptr].name > 17
 }
 
 pub(crate) fn group_warning(st: &mut EngineState) {
-    st.input.base_ptr = st.input.input_ptr;
-    st.input.input_stack[st.input.base_ptr as usize] = st.input.cur_input;
+    st.input.base_ptr = st.input.input_stack.len();
+    st.input.input_stack.park(st.input.cur_input);
     let mut i = st.input.in_open;
     let mut w = false;
     while st.input.grp_stack[i as usize] == st.save_stack.cur_boundary && i > 0 {
@@ -57,8 +57,8 @@ pub(crate) fn group_warning(st: &mut EngineState) {
 }
 
 pub(crate) fn if_warning(st: &mut EngineState) {
-    st.input.base_ptr = st.input.input_ptr;
-    st.input.input_stack[st.input.base_ptr as usize] = st.input.cur_input;
+    st.input.base_ptr = st.input.input_stack.len();
+    st.input.input_stack.park(st.input.cur_input);
     let mut i = st.input.in_open;
     let mut w = false;
     while st.input.if_stack[i as usize] == st.scanner.cond_ptr {

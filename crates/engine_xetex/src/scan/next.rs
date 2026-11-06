@@ -529,7 +529,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                         st.scanner.cur_chr = 0;
                         return Ok(());
                     }
-                    if st.input.input_ptr > 0 {
+                    if !st.input.input_stack.is_empty() {
                         crate::input::end_file_reading(st)?;
                         continue 'restart;
                     }
@@ -572,8 +572,8 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                     Cmd::LeftBrace => st.scanner.align_state += 1,
                     Cmd::RightBrace => st.scanner.align_state -= 1,
                     Cmd::OUT_PARAM => {
-                        let param = st.input.param_stack
-                            [(st.input.cur_input.limit + st.scanner.cur_chr - 1) as usize];
+                        let k = st.input.cur_input.param_start() + st.scanner.cur_chr as usize - 1;
+                        let param = st.input.param_stack[k].list;
                         begin_token_list(st, param, TokenType::Parameter)?;
                         continue 'restart;
                     }

@@ -116,6 +116,14 @@ pub(crate) struct TexmfState {
     pub start_time_str: Vec<u8>,
 }
 
+/// A macro argument on the parameter stack, with its last node so it can be
+/// freed without a walk.
+#[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
+pub(crate) struct MacroParam {
+    pub list: crate::token::TokenList,
+    pub tail: crate::token::TokenList,
+}
+
 /// One level of TeX's input stack (`in_state_record`).
 #[derive(Copy, Clone, Default)]
 pub(crate) struct InputState {
@@ -128,7 +136,26 @@ pub(crate) struct InputState {
     pub synctex_tag: i32,
 }
 
+impl InputClusterState {
+    /// The number of input levels below the current one, `input_ptr`.
+    #[inline]
+    pub(crate) fn input_depth(&self) -> i32 {
+        i32::try_from(self.input_stack.len()).unwrap_or(i32::MAX)
+    }
+}
+
 impl InputState {
+    /// `limit` of a macro level: where its parameters start on the parameter stack.
+    #[inline]
+    pub(crate) fn param_start(&self) -> usize {
+        usize::try_from(self.limit).unwrap_or(0)
+    }
+
+    #[inline]
+    pub(crate) fn set_param_start(&mut self, n: usize) {
+        self.limit = i32::try_from(n).unwrap_or(i32::MAX);
+    }
+
     /// `name` of a macro level: the control sequence being expanded.
     #[inline]
     pub(crate) fn macro_name(&self) -> EqtbPtr {
@@ -175,9 +202,7 @@ pub(crate) enum InputSlot {
 
 #[derive(Default)]
 pub(crate) struct InputClusterState {
-    pub param_stack: Vec<crate::token::TokenList>,
-    /// The last node of each `param_stack` list, so it can be freed without a walk.
-    pub param_tail: Vec<crate::token::TokenList>,
+    pub param_stack: crate::stack::TexStack<MacroParam>,
     pub line_stack: Vec<i32>,
     pub grp_stack: Vec<i32>,
     pub if_stack: Vec<crate::units::MemPtr>,
@@ -185,28 +210,20 @@ pub(crate) struct InputClusterState {
     pub full_source_filename_stack: Vec<StrNumber>,
     pub eof_seen: Vec<bool>,
     pub buffer: Vec<i32>,
-    pub input_stack: Vec<InputState>,
+    pub input_stack: crate::stack::TexStack<InputState>,
     pub cur_input: InputState,
     pub input_file: Vec<InputSlot>,
-    pub nest: Vec<crate::mem_types::ListStateRecord>,
+    pub nest: crate::stack::TexStack<crate::mem_types::ListStateRecord>,
     pub cur_list: crate::mem_types::ListStateRecord,
     pub open_parens: i32,
     pub in_open: i32,
     pub pseudo_files: crate::units::MemPtr,
-    pub nest_ptr: i32,
-    pub max_nest_stack: i32,
-    pub input_ptr: i32,
-    pub stack_size: i32,
     pub buf_size: i32,
-    pub param_size: i32,
     pub max_in_open: i32,
-    pub nest_size: i32,
-    pub max_in_stack: i32,
-    pub base_ptr: i32,
+    /// The level `show_context` and its relatives are looking at.
+    pub base_ptr: usize,
     pub par_loc: crate::units::EqtbPtr,
     pub par_token: crate::token::Token,
-    pub param_ptr: i32,
-    pub max_param_stack: i32,
     pub force_eof: bool,
     pub first: i32,
     pub last: i32,

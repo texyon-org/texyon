@@ -96,7 +96,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
     }
     crate::save::unsave(st)?;
 
-    let in_display = st.input.nest[(st.input.nest_ptr - 1) as usize].mode == MMODE;
+    let in_display = st.input.nest[st.input.nest.len() - 1].mode == MMODE;
     let o = if in_display {
         st.eqtb.dimen_par(DimenPar::DisplayIndent)
     } else {
@@ -303,7 +303,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
     let aux_save_s1 = st.input.cur_list.aux_s1();
     let rows = st.input.cur_list.head.link(&st.mem);
     let rows_tail = st.input.cur_list.tail;
-    st.mem.pop_nest(&mut st.input);
+    st.mem.pop_nest(&mut st.input)?;
 
     if st.input.cur_list.mode == MMODE {
         do_assignments(st)?;
@@ -318,7 +318,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
             crate::math::check_display_end(st)?;
         }
         st.mem.flush_node_list(st.input.cur_list.e_tex_aux)?;
-        st.mem.pop_nest(&mut st.input);
+        st.mem.pop_nest(&mut st.input)?;
         let pre_penalty = st.eqtb.int_par(IntPar::PreDisplayPenalty);
         let pen = st.mem.new_penalty(pre_penalty)?;
         st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
@@ -698,7 +698,7 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
         let o = st.scanner.total_shrink.max_order();
         u.set_glue_sign(&mut st.mem, o);
         u.set_glue_shrink(&mut st.mem, st.scanner.total_shrink[o]);
-        st.mem.pop_nest(&mut st.input);
+        st.mem.pop_nest(&mut st.input)?;
         st.input.cur_list.tail_append(&mut st.mem, u.ptr());
         let spec = cur_align.tab_skip(&st.mem).glue_ptr(&st.mem);
         let g = st.mem.new_glue(spec)?;
@@ -720,7 +720,7 @@ fn fin_row(st: &mut EngineState) -> Result<(), Abort> {
     let head = st.input.cur_list.head.link(&st.mem);
     let p = if st.input.cur_list.mode == INNER_HMODE {
         let row = crate::packaging::hpack(st, head, Scaled::ZERO, ADDITIONAL)?;
-        st.mem.pop_nest(&mut st.input);
+        st.mem.pop_nest(&mut st.input)?;
         if st.scanner.cur_pre_head != st.scanner.cur_pre_tail {
             append_list(st, st.scanner.cur_pre_head, st.scanner.cur_pre_tail);
         }
@@ -733,7 +733,7 @@ fn fin_row(st: &mut EngineState) -> Result<(), Abort> {
         row
     } else {
         let row = crate::packaging::vpackage(st, head, Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
-        st.mem.pop_nest(&mut st.input);
+        st.mem.pop_nest(&mut st.input)?;
         st.input.cur_list.tail_append(&mut st.mem, row.ptr());
         st.input.cur_list.set_aux_s0(1000);
         row
@@ -769,7 +769,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
     crate::mem::push_nest(st)?;
     if st.input.cur_list.mode == MMODE {
         st.input.cur_list.mode = INNER_VMODE;
-        let prev_depth = st.input.nest[(st.input.nest_ptr - 2) as usize].prev_depth();
+        let prev_depth = st.input.nest[st.input.nest.len() - 2].prev_depth();
         st.input.cur_list.set_prev_depth(prev_depth);
     } else if st.input.cur_list.mode > 0 {
         st.input.cur_list.mode = -st.input.cur_list.mode;
@@ -866,15 +866,15 @@ pub(super) fn do_endv(st: &mut EngineState) -> Result<(), Abort> {
         r.state == TOKEN_LIST && r.loc == TEX_NULL && r.token_type() == TokenType::VTemplate
     }
 
-    st.input.base_ptr = st.input.input_ptr;
-    st.input.input_stack[st.input.base_ptr as usize] = st.input.cur_input;
-    while st.input.input_stack[st.input.base_ptr as usize].state == TOKEN_LIST
-        && st.input.input_stack[st.input.base_ptr as usize].loc == TEX_NULL
-        && st.input.input_stack[st.input.base_ptr as usize].token_type() != TokenType::VTemplate
+    st.input.base_ptr = st.input.input_stack.len();
+    st.input.input_stack.park(st.input.cur_input);
+    while st.input.input_stack[st.input.base_ptr].state == TOKEN_LIST
+        && st.input.input_stack[st.input.base_ptr].loc == TEX_NULL
+        && st.input.input_stack[st.input.base_ptr].token_type() != TokenType::VTemplate
     {
         st.input.base_ptr -= 1;
     }
-    if !is_v_template_end(&st.input.input_stack[st.input.base_ptr as usize]) {
+    if !is_v_template_end(&st.input.input_stack[st.input.base_ptr]) {
         return Err(Abort::Fatal(
             "(interwoven alignment preambles are not allowed)",
         ));

@@ -86,26 +86,21 @@ pub(crate) const NEW_LINE: u16 = 33;
 
 #[inline]
 fn push_input(st: &mut EngineState) -> Result<(), Abort> {
-    let ptr = st.input.input_ptr;
-    if ptr > st.input.max_in_stack {
-        st.input.max_in_stack = ptr;
-        if ptr == st.input.stack_size {
-            return Err(Abort::Overflow {
-                what: "input stack size",
-                n: st.input.stack_size,
-            });
-        }
-    }
-    st.input.input_stack[ptr as usize] = st.input.cur_input;
-    st.input.input_ptr = ptr + 1;
-    Ok(())
+    let stack = &mut st.input.input_stack;
+    stack
+        .push(st.input.cur_input)
+        .map_err(|_| stack.overflow("input stack size"))
 }
 
 #[inline]
-fn pop_input(st: &mut EngineState) {
-    st.input.input_ptr -= 1;
-    st.input.cur_input = st.input.input_stack[st.input.input_ptr as usize];
+fn pop_input(st: &mut EngineState) -> Result<(), Abort> {
+    st.input.cur_input = st
+        .input
+        .input_stack
+        .pop()
+        .ok_or(Abort::Confusion("pop_input"))?;
     st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;
+    Ok(())
 }
 
 pub(crate) fn end_token_list(st: &mut EngineState) -> Result<(), Abort> {
@@ -127,18 +122,15 @@ pub(crate) fn end_token_list(st: &mut EngineState) -> Result<(), Abort> {
         t => {
             st.mem.delete_token_ref(ci.token_start());
             if t == TokenType::Macro {
-                while st.input.param_ptr > ci.limit {
-                    st.input.param_ptr -= 1;
-                    let k = st.input.param_ptr as usize;
-                    st.mem.flush_token_list_with_tail(
-                        st.input.param_stack[k],
-                        st.input.param_tail[k],
-                    );
+                while st.input.param_stack.len() > ci.param_start() {
+                    if let Some(param) = st.input.param_stack.pop() {
+                        st.mem.flush_token_list_with_tail(param.list, param.tail);
+                    }
                 }
             }
         }
     }
-    pop_input(st);
+    pop_input(st)?;
     Ok(())
 }
 
@@ -235,7 +227,7 @@ pub(crate) fn end_file_reading(st: &mut EngineState) -> Result<(), Abort> {
         }
         _ => {}
     }
-    pop_input(st);
+    pop_input(st)?;
     st.input.in_open -= 1;
     Ok(())
 }
@@ -300,7 +292,9 @@ pub(crate) fn begin_token_list(
     }
     st.mem.add_token_ref(list);
     if t == TokenType::Macro {
-        st.input.cur_input.limit = st.input.param_ptr;
+        st.input
+            .cur_input
+            .set_param_start(st.input.param_stack.len());
         return Ok(());
     }
     st.input.cur_input.set_token_loc(list.link(&st.mem));

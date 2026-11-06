@@ -33,11 +33,12 @@ use crate::node::{ActiveNode, CondNode, FreeBlock, NodePtr, PageInsNode};
 use crate::packaging::MarksAction;
 use crate::params::{IntPar, TokPar};
 use crate::scan::{set_class, set_family};
+use crate::stack::TexStack;
 use crate::state::{
     ConfigState, CurMarks, EngineState, EqtbState, FontState, GroupCode, InteractionMode, MemState,
     PerFont, Selector,
 };
-use crate::token::{Token, TokenList};
+use crate::token::Token;
 use crate::units::{EqtbPtr, FontId, GlueOrder, MemPtr, NodeType, Scaled, StrNumber};
 
 /// A `get_node` request this large merges every free block into the rover list.
@@ -52,6 +53,9 @@ const NUMBER_REGS: i32 = 256;
 const NUMBER_MATH_FONTS: i32 = 3 * NUMBER_MATH_FAMILIES;
 const TOO_BIG_LANG: i32 = 256;
 const VAR_FAM_CLASS: i32 = 7;
+const NEST_SIZE: usize = 500;
+const PARAM_SIZE: usize = 10_000;
+const STACK_SIZE: usize = 5_000;
 
 const _: () = assert!(
     MEM_TOP >= 1100
@@ -197,7 +201,7 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
         crate::io::open_log_file(st)?;
     }
 
-    while st.input.input_ptr > 0 {
+    while !st.input.input_stack.is_empty() {
         if st.input.cur_input.state == TOKEN_LIST {
             crate::input::end_token_list(st)?;
         } else {
@@ -311,8 +315,7 @@ fn initialize_more_variables(st: &mut EngineState) {
     }
     st.errors.spec_log[28] = 1;
 
-    st.input.nest_ptr = 0;
-    st.input.max_nest_stack = 0;
+    st.input.nest.reset();
     st.input.cur_list.mode = VMODE;
     st.input.cur_list.head = CONTRIB_HEAD;
     st.input.cur_list.tail = CONTRIB_HEAD;
@@ -776,11 +779,11 @@ pub(crate) fn initialize_engine(
     st.hyph.trie_size = 1_000_000;
     st.hyph.hyph_size = HYPH_SIZE;
     st.input.buf_size = 200_000;
-    st.input.nest_size = 500;
+
     st.input.max_in_open = 15;
-    st.input.param_size = 10_000;
+
     st.save_stack.save_size = 80_000;
-    st.input.stack_size = 5_000;
+
     st.errors.error_line = 79;
     st.errors.half_error_line = 50;
     st.config.max_print_line = 79;
@@ -790,20 +793,19 @@ pub(crate) fn initialize_engine(
     let in_open_words = st.input.max_in_open as usize + 1;
     let hyph_words = HYPH_SIZE as usize + 1;
     st.input.buffer = vec![0; st.input.buf_size as usize + 1];
-    st.input.nest = vec![Default::default(); st.input.nest_size as usize + 1];
+    st.input.nest = TexStack::with_size(NEST_SIZE);
     st.save_stack.data = zeroed_vec(st.save_stack.save_size as usize + 1);
     st.input.input_file = std::iter::repeat_with(|| crate::state::InputSlot::Empty)
         .take(in_open_words)
         .collect();
-    st.input.input_stack = vec![Default::default(); st.input.stack_size as usize + 1];
+    st.input.input_stack = TexStack::with_size(STACK_SIZE);
     st.input.line_stack = vec![0; in_open_words];
     st.input.grp_stack = vec![0; in_open_words];
     st.input.if_stack = vec![MemPtr::default(); in_open_words];
     st.input.source_filename_stack = vec![StrNumber::NONE; in_open_words];
     st.input.full_source_filename_stack = vec![StrNumber::NONE; in_open_words];
     st.input.eof_seen = vec![false; in_open_words];
-    st.input.param_stack = vec![TokenList::NULL; st.input.param_size as usize + 1];
-    st.input.param_tail = vec![TokenList::NULL; st.input.param_size as usize + 1];
+    st.input.param_stack = TexStack::with_size(PARAM_SIZE);
     st.hyph.hyph_word = vec![StrNumber::NONE; hyph_words];
     st.hyph.hyph_list = vec![MemPtr::NULL; hyph_words];
     st.hyph.hyph_link = vec![0; hyph_words];
@@ -890,8 +892,7 @@ pub(crate) fn initialize_engine(
     st.scanner.name_in_progress = false;
     st.errors.log_opened = false;
 
-    st.input.input_ptr = 0;
-    st.input.max_in_stack = 0;
+    st.input.input_stack.reset();
     st.input.source_filename_stack[0] = StrNumber::NONE;
     st.input.full_source_filename_stack[0] = StrNumber::NONE;
     st.input.in_open = 0;
@@ -899,8 +900,7 @@ pub(crate) fn initialize_engine(
     st.input.max_buf_stack = 0;
     st.input.grp_stack[0] = 0;
     st.input.if_stack[0] = MemPtr::NULL;
-    st.input.param_ptr = 0;
-    st.input.max_param_stack = 0;
+    st.input.param_stack.reset();
     st.scanner.used_tectonic_coda_tokens = false;
     st.fonts.gave_char_warning_help = false;
 
@@ -1108,12 +1108,11 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     let input = &mut st.input;
     input.name_of_input_file = Vec::new();
     input.abspath_of_input_file = Vec::new();
-    input.nest = Vec::new();
+    input.nest.release();
     input.input_file = Vec::new();
     input.read_file = Default::default();
-    input.input_stack = Vec::new();
-    input.param_stack = Vec::new();
-    input.param_tail = Vec::new();
+    input.input_stack.release();
+    input.param_stack.release();
     input.line_stack = Vec::new();
     input.grp_stack = Vec::new();
     input.if_stack = Vec::new();

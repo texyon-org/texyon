@@ -249,6 +249,11 @@ fn digest_list(h: &mut Fnv, list: &ListStateRecord) {
     h.word(memory_word(list.aux));
 }
 
+/// A stack depth as the digest's `i32` words.
+fn depth(n: usize) -> i32 {
+    i32::try_from(n).unwrap_or(i32::MAX)
+}
+
 fn digest_input(st: &EngineState) -> u64 {
     let mut h = Fnv::new();
     let input = &st.input;
@@ -256,15 +261,15 @@ fn digest_input(st: &EngineState) -> u64 {
         input.open_parens,
         input.in_open,
         input.pseudo_files.raw(),
-        input.nest_ptr,
-        input.max_nest_stack,
-        input.input_ptr,
-        input.max_in_stack,
-        input.base_ptr,
+        depth(input.nest.len()),
+        depth(input.nest.max_len()),
+        depth(input.input_stack.len()),
+        depth(input.input_stack.max_len()),
+        depth(input.base_ptr),
         input.par_loc.raw(),
         input.par_token.0,
-        input.param_ptr,
-        input.max_param_stack,
+        depth(input.param_stack.len()),
+        depth(input.param_stack.max_len()),
         input.first,
         input.last,
         input.max_buf_stack,
@@ -272,24 +277,16 @@ fn digest_input(st: &EngineState) -> u64 {
     h.word(u64::from(input.force_eof));
     let buffer_end = input.buffer_in_use().max(0) as usize;
     h.i32s(input.buffer.iter().take(buffer_end));
-    for value in input
-        .input_stack
-        .iter()
-        .take((input.input_ptr + 1).max(0) as usize)
-    {
+    for value in input.input_stack.with_parked() {
         digest_input_state(&mut h, value);
     }
     digest_input_state(&mut h, &input.cur_input);
-    for value in input.nest.iter().take((input.nest_ptr + 1).max(0) as usize) {
+    for value in input.nest.with_parked() {
         digest_list(&mut h, value);
     }
     digest_list(&mut h, &input.cur_list);
-    for p in input
-        .param_stack
-        .iter()
-        .take(input.param_ptr.max(0) as usize)
-    {
-        h.i32(p.ptr().raw());
+    for p in input.param_stack.entries() {
+        h.i32(p.list.ptr().raw());
     }
     h.i32s(&input.line_stack);
     h.i32s(&input.grp_stack);

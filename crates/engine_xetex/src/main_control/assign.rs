@@ -63,7 +63,7 @@ fn alter_aux(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 fn alter_prev_graf(st: &mut EngineState) -> Result<(), Abort> {
-    let np = st.input.nest_ptr as usize;
+    let np = st.input.nest.len();
     st.input.nest[np] = st.input.cur_list;
     let mut p = np;
     while st.input.nest[p].mode.abs() != VMODE {

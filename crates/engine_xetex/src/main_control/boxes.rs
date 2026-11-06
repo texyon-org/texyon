@@ -155,7 +155,7 @@ pub(super) fn package(st: &mut EngineState, vtop: bool) -> Result<(), Abort> {
         }
     }
     st.eqtb.set_int_par(IntPar::XetexUpwards, v);
-    st.mem.pop_nest(&mut st.input);
+    st.mem.pop_nest(&mut st.input)?;
     let box_context = st.save_stack.saved(0);
     box_end(st, box_context)
 }
