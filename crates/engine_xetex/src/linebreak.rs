@@ -8,8 +8,8 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::mem::{ACTIVE_LIST, TEMP_HEAD};
 use crate::node::{
-    ActiveNode, AnyBox, AnyNode, CharNode, DeltaNode, DiscNode, FixedNode, GlueNode, GlueSpecNode,
-    NodePtr, PassiveNode, WhatsitSubtype,
+    link_of, ActiveNode, AnyBox, AnyNode, CharNode, DeltaNode, DiscNode, FixedNode, GlueNode,
+    GlueSpecNode, NodePtr, PassiveNode, WhatsitSubtype,
 };
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{
@@ -177,7 +177,7 @@ impl MemState {
         }
 
         scanner.active_width[1..].copy_from_slice(&linebreak.background[1..]);
-        linebreak.passive = MemPtr::NULL;
+        linebreak.passive = None;
         errors.font_in_short_display = NULL_FONT;
         linebreak.cur_p = TEMP_HEAD.link(self);
         linebreak.global_prev_p = linebreak.cur_p;
@@ -197,11 +197,10 @@ impl MemState {
             q = next;
         }
 
-        q = linebreak.passive;
-        while !q.is_null() {
-            let next = passive_node(q).link(self);
-            passive_node(q).free(self);
-            q = next;
+        let mut passive = linebreak.passive;
+        while let Some(p) = passive {
+            passive = p.next(self);
+            p.free(self);
         }
     }
 
@@ -806,13 +805,13 @@ impl MemState {
         for fit_class in VERY_LOOSE_FIT..=TIGHT_FIT {
             if linebreak.minimal_demerits[fit_class] <= linebreak.minimum_demerits {
                 let passive = NodePtr::<PassiveNode>::alloc(self)?;
-                passive.set_link(self, linebreak.passive);
-                linebreak.passive = passive.ptr();
+                passive.set_link(self, link_of(linebreak.passive));
+                linebreak.passive = Some(passive);
                 passive.set_cur_break(self, linebreak.cur_p);
                 passive.set_prev_break(self, linebreak.best_place[fit_class]);
 
                 let q = self.new_active_node(i32::from(linebreak.active_node_size), r)?;
-                q.set_break_node(self, linebreak.passive);
+                q.set_break_node(self, passive.ptr());
                 q.set_line_number(self, linebreak.best_pl_line[fit_class].wrapping_add(1));
                 q.set_fitness(self, fit_class as u16);
                 q.set_break_type(self, break_type as u16);

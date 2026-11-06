@@ -12,8 +12,8 @@ use crate::ext::apply_tfm_font_mapping;
 use crate::glyph_arena::FixedPoint;
 use crate::mem::{end_lr_type, LIG_TRICK};
 use crate::node::{
-    AnyBox, AnyNode, EdgeNode, GlueNode, GlueSpecNode, MathNode, MovementNode, NodePtr, RuleNode,
-    WhatsitNode, WhatsitSubtype, RUNNING,
+    link_of, AnyBox, AnyNode, EdgeNode, GlueNode, GlueSpecNode, MathNode, MovementNode, NodePtr,
+    RuleNode, WhatsitNode, WhatsitSubtype, RUNNING,
 };
 use crate::params::{DimenPar, IntPar};
 use crate::state::{
@@ -112,8 +112,8 @@ pub fn initialize_shipout_variables(st: &mut crate::state::EngineState) {
     let s = &mut st.shipout;
     s.output_file_name = StrNumber::NONE;
     s.dvi.init();
-    s.down_ptr = MemPtr::NULL;
-    s.right_ptr = MemPtr::NULL;
+    s.down_ptr = None;
+    s.right_ptr = None;
 }
 
 /// Emit the current string (the tail of the pool) as a DVI special and drop it.
@@ -1257,12 +1257,12 @@ impl MemState {
         self.prune_movement_list(&mut shipout.right_ptr, l);
     }
 
-    fn prune_movement_list(&mut self, head: &mut MemPtr, l: i32) {
-        while let Some(p) = NodePtr::<MovementNode>::from_ptr(*head) {
+    fn prune_movement_list(&mut self, head: &mut Option<NodePtr<MovementNode>>, l: i32) {
+        while let Some(p) = *head {
             if p.location(self) < l {
                 return;
             }
-            *head = p.link(self);
+            *head = p.next(self);
             p.free(self);
         }
     }
@@ -1478,14 +1478,14 @@ impl MemState {
             Axis::Down => &mut shipout.down_ptr,
             Axis::Right => &mut shipout.right_ptr,
         };
-        q.set_link(self, *head);
-        *head = q.ptr();
+        q.set_link(self, link_of(*head));
+        *head = Some(q);
 
-        let mut p = NodePtr::<MovementNode>::from_ptr(q.link(self));
+        let mut p = q.next(self);
         let mut mstate = MOV_NONE_SEEN;
         let found = 'search: {
             while let Some(node) = p {
-                p = NodePtr::<MovementNode>::from_ptr(node.link(self));
+                p = node.next(self);
                 if node.distance(self) != w {
                     match mstate + node.state(self) {
                         1 => mstate = MOV_Y_SEEN,
