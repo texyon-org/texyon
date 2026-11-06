@@ -1193,6 +1193,12 @@ impl NodePtr<GlueNode> {
 }
 
 impl NodePtr<GlueSpecNode> {
+    /// The spec at `p`, `None` when the pointer is null.
+    #[inline]
+    pub fn from_spec_link(p: MemPtr) -> Option<NodePtr<GlueSpecNode>> {
+        p.as_idx().map(NodePtr::from_idx_unchecked)
+    }
+
     /// The spec a glue pointer references. Glue pointers are never null.
     #[inline]
     pub fn from_glue_ptr(p: MemPtr) -> NodePtr<GlueSpecNode> {

@@ -199,7 +199,9 @@ fn digest_fonts(st: &EngineState) -> u64 {
     hash_values!(bchar_label.raw());
     hash_values!(font_bchar.raw());
     hash_values!(font_false_bchar.raw());
-    hash_values!(font_glue.raw());
+    for &glue in fonts.font_glue.as_slice().iter().take(font_count) {
+        h.i32(crate::node::link_of(glue).raw());
+    }
     hash_values!(font_used);
     hash_values!(char_base.raw());
     hash_values!(width_base.raw());

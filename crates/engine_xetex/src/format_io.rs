@@ -22,7 +22,7 @@ use crate::hash::{hash_slot, HASH_PRIME};
 use crate::hyphenation::{TrieOp, TriePtr, BIGGEST_LANG, HYPH_PRIME, TRIE_OP_SIZE};
 use crate::mem::{CONTRIB_HEAD, HI_MEM_STAT_MIN, HI_MEM_STAT_USAGE, PAGE_HEAD};
 use crate::mem_types::{B16x4, B32x2, MemoryWord};
-use crate::node::{FreeBlock, NodePtr};
+use crate::node::{link_of, FreeBlock, NodePtr};
 use crate::output::{print, print_char, print_int, print_ln, print_nl};
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, InteractionMode, PerFont, Selector};
@@ -775,11 +775,12 @@ fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort>
     s.items(fonts_of(&mut fonts.kern_base, last))?;
     s.items(fonts_of(&mut fonts.exten_base, last))?;
     s.items(fonts_of(&mut fonts.param_base, last))?;
-    s.items_in(
-        fonts_of(&mut fonts.font_glue, last),
-        MemPtr::from_raw(MIN_HALFWORD),
-        lo_mem_max,
-    )?;
+    let glue = fonts_of(&mut fonts.font_glue, last);
+    let mut links: Vec<MemPtr> = glue.iter().map(|&g| link_of(g)).collect();
+    s.items_in(&mut links, MemPtr::from_raw(MIN_HALFWORD), lo_mem_max)?;
+    for (g, &p) in glue.iter_mut().zip(&links) {
+        *g = NodePtr::from_spec_link(p);
+    }
     s.items_in(
         fonts_of(&mut fonts.bchar_label, last),
         FontInfoIdx::ZERO,

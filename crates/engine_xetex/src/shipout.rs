@@ -425,7 +425,7 @@ impl MemState {
                     q = self.skip_interword_fillers(q);
                     match self.classify_non_char(q) {
                         Some(AnyNode::Glue(glue)) if glue.subtype(self) == NORMAL => {
-                            if glue.glue_ptr(self).ptr() == fonts.font_glue[font] {
+                            if Some(glue.glue_ptr(self)) == fonts.font_glue[font] {
                                 q = self.skip_interword_fillers(glue.link(self));
                                 if let Some(w) = same_font_word(self, q) {
                                     last = w;

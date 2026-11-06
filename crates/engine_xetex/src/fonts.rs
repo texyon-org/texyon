@@ -18,7 +18,7 @@ use crate::output::{
 };
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, FontState, MemState};
-use crate::units::{EqtbPtr, FontId, FontInfoIdx, MemPtr, Scaled, StrNumber};
+use crate::units::{EqtbPtr, FontId, FontInfoIdx, Scaled, StrNumber};
 
 use crate::bridge::{input_getc, FileFormat};
 use crate::errors::Abort;
@@ -932,7 +932,7 @@ impl FontState {
         self.font_area[f] = aire;
         self.font_bc[f] = bc as u16;
         self.font_ec[f] = ec as u16;
-        self.font_glue[f] = MemPtr::NULL;
+        self.font_glue[f] = None;
         self.param_base[f] -= 1;
         self.fmem_ptr += lf;
         self.font_ptr = f;
@@ -954,7 +954,7 @@ impl FontState {
         self.font_area[font_ptr] = self.native_font_type_flag;
         self.font_name[font_ptr] = full_name;
         self.font_check[font_ptr] = [0; 4];
-        self.font_glue[font_ptr] = MemPtr::NULL;
+        self.font_glue[font_ptr] = None;
         self.font_dsize[font_ptr] = loaded_font_design_size();
         self.font_size[font_ptr] = actual_size;
 

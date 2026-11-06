@@ -938,13 +938,10 @@ pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<Fon
     let k = if n <= 0 {
         st.fonts.fmem_ptr
     } else {
-        if writing
-            && (SPACE_CODE..=SPACE_SHRINK_CODE).contains(&n)
-            && !st.fonts.font_glue[f].is_null()
-        {
-            st.mem
-                .delete_glue_ref(NodePtr::from_glue_ptr(st.fonts.font_glue[f]));
-            st.fonts.font_glue[f] = MemPtr::NULL;
+        if writing && (SPACE_CODE..=SPACE_SHRINK_CODE).contains(&n) {
+            if let Some(glue) = st.fonts.font_glue[f].take() {
+                st.mem.delete_glue_ref(glue);
+            }
         }
 
         if n <= st.fonts.font_params[f] {

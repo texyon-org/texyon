@@ -1193,7 +1193,8 @@ pub(crate) struct FontState {
     pub bchar_label: PerFont<FontInfoIdx>,
     pub font_bchar: PerFont<crate::fonts::LigChar>,
     pub font_false_bchar: PerFont<crate::fonts::LigChar>,
-    pub font_glue: PerFont<crate::units::MemPtr>,
+    /// The interword glue built from the font's parameters, once a space needs it.
+    pub font_glue: PerFont<Option<crate::node::NodePtr<crate::node::GlueSpecNode>>>,
     pub font_used: PerFont<bool>,
     pub char_base: PerFont<FontInfoIdx>,
     pub width_base: PerFont<FontInfoIdx>,

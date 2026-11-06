@@ -578,7 +578,7 @@ font_arrays! {
     bchar_label: FontInfoIdx,
     font_bchar: LigChar,
     font_false_bchar: LigChar,
-    font_glue: MemPtr,
+    font_glue: Option<crate::node::NodePtr<crate::node::GlueSpecNode>>,
     font_used: bool,
     char_base: FontInfoIdx,
     width_base: FontInfoIdx,

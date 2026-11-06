@@ -134,3 +134,10 @@ fn the_conditional_stack_tracks_nesting() {
                   \ifcase 1 \or \showthe\currentiflevel \else \fi \showthe\currentiflevel");
     assert_eq!(r.shown(), ["0", "2", "1", "1", "0"]);
 }
+
+#[test]
+fn changing_a_space_fontdimen_rebuilds_the_space_glue() {
+    let r = run(r"\font\rm=cmr10 \rm \setbox0\hbox{a b}
+                  \fontdimen2\rm=10pt \setbox2\hbox{a b} \showthe\wd0 \showthe\wd2");
+    assert_eq!(r.shown(), ["13.88892pt", "20.55559pt"]);
+}

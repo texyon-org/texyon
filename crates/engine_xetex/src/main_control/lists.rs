@@ -228,15 +228,14 @@ pub(super) fn app_space(st: &mut EngineState) -> Result<(), Abort> {
 /// The current font's interword glue spec, built from its parameters on first use.
 pub(super) fn font_space_glue(st: &mut EngineState) -> Result<NodePtr<GlueSpecNode>, Abort> {
     let cf = st.eqtb.cur_font();
-    let glue = st.fonts.font_glue[cf];
-    if !glue.is_null() {
-        return Ok(NodePtr::from_glue_ptr(glue));
+    if let Some(glue) = st.fonts.font_glue[cf] {
+        return Ok(glue);
     }
     let spec = st.mem.new_spec(ZERO_GLUE)?;
     spec.set_width(&mut st.mem, st.fonts.param(cf, SPACE_CODE));
     spec.set_stretch(&mut st.mem, st.fonts.param(cf, SPACE_STRETCH_CODE));
     spec.set_shrink(&mut st.mem, st.fonts.param(cf, SPACE_SHRINK_CODE));
-    st.fonts.font_glue[cf] = spec.ptr();
+    st.fonts.font_glue[cf] = Some(spec);
     Ok(spec)
 }
 

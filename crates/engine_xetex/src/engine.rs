@@ -734,7 +734,7 @@ impl FontState {
         self.bchar_label = PerFont::filled(len, FontInfoIdx::ZERO);
         self.font_bchar = PerFont::filled(len, crate::fonts::LigChar::of(0));
         self.font_false_bchar = PerFont::filled(len, crate::fonts::LigChar::of(0));
-        self.font_glue = PerFont::filled(len, MemPtr::default());
+        self.font_glue = PerFont::filled(len, None);
         self.hyphen_char = PerFont::filled(len, 0);
         self.skew_char = PerFont::filled(len, 0);
         self.char_base = PerFont::filled(len, FontInfoIdx::ZERO);
@@ -968,7 +968,7 @@ pub(crate) fn initialize_engine(
         fonts.font_false_bchar[f] = crate::fonts::LigChar::NONE;
         fonts.font_bc[f] = 1;
         fonts.font_ec[f] = 0;
-        fonts.font_glue[f] = MemPtr::NULL;
+        fonts.font_glue[f] = None;
         fonts.font_params[f] = 7;
         fonts.param_base[f] = FontInfoIdx::from_raw(-1);
         for word in &mut fonts.font_info[..7] {
