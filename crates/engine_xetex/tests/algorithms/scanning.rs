@@ -113,3 +113,16 @@ fn hyphenchar_and_skewchar_are_assigned_separately() {
                   \showthe\hyphenchar\rm \showthe\skewchar\rm");
     assert_eq!(r.shown(), ["-1", "45"]);
 }
+
+#[test]
+fn showgroups_walks_nested_simple_groups_at_the_outer_level() {
+    let r = run(r"{{\showgroups}}");
+    assert_eq!(
+        r.lines_starting("### "),
+        [
+            "### simple group (level 2) entered at line 5 ({)",
+            "### simple group (level 1) entered at line 5 ({)",
+            "### bottom level",
+        ]
+    );
+}

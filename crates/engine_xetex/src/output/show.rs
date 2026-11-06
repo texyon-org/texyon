@@ -232,8 +232,9 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
         }
 
         // Find the enclosing non-paragraph mode, leaving `p` just below it.
+        // A simple group steps `p` up, so it can pass the parked slot as in WEB.
         let m = loop {
-            let cur_m = st.input.nest[p].mode;
+            let cur_m = st.input.nest.stale_slot(p).mode;
             if p == 0 {
                 break VMODE;
             }
@@ -329,7 +330,7 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
             GroupCode::MathShift => {
                 if m == MMODE {
                     print_char(st, b'$');
-                } else if st.input.nest[p].mode == MMODE {
+                } else if st.input.nest.stale_slot(p).mode == MMODE {
                     print_cmd_chr(st, Cmd::EqNo, st.save_stack.saved(-2));
                     print_char(st, b')');
                     st.save_stack.cur_level -= 1;
@@ -340,7 +341,7 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                 Entry::Found
             }
             GroupCode::MathLeft => {
-                let delim = st.input.nest[p + 1].e_tex_aux;
+                let delim = st.input.nest.stale_slot(p + 1).e_tex_aux;
                 if st.mem.node_type(delim) == Ok(NodeType::LeftNoad) {
                     print_esc(st, "left");
                 } else {
@@ -355,7 +356,7 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
             let i = st.save_stack.saved(-4);
             if i != 0 {
                 if i < BOX_FLAG {
-                    let cmd = if st.input.nest[p].mode.abs() == VMODE {
+                    let cmd = if st.input.nest.stale_slot(p).mode.abs() == VMODE {
                         Cmd::Hmove
                     } else {
                         Cmd::Vmove

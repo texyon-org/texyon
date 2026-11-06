@@ -99,6 +99,12 @@ impl<T: Copy + Default> TexStack<T> {
         self.slots[self.len] = top;
     }
 
+    /// Slot `i`, which may lie past the parked one and hold a stale entry, as WEB's arrays allow.
+    #[inline]
+    pub(crate) fn stale_slot(&self, i: usize) -> &T {
+        &self.slots[i]
+    }
+
     /// The entries and the parked slot, as a checkpoint keeps them. Empty before allocation.
     pub(crate) fn with_parked(&self) -> &[T] {
         &self.slots[..(self.len + 1).min(self.slots.len())]
