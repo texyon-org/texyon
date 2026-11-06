@@ -21,7 +21,7 @@ use crate::units::{FontId, GlueOrder, MemPtr, NodeType, Scaled};
 
 use super::delimiters::{build_opentype_assembly, rebox, var_delimiter};
 use super::scripts::make_scripts;
-use super::{BOTTOM_ACC, DEFAULT_CODE, LIMITS, SCRIPT_STYLE, TEXT_STYLE};
+use super::{MathStyle, BOTTOM_ACC, DEFAULT_CODE, LIMITS};
 
 const DISPLAYOPERATORMINHEIGHT: i32 = 3;
 const ACCENTBASEHEIGHT: i32 = 6;
@@ -127,7 +127,7 @@ impl ListStateRecord {
 pub(super) fn clean_box(
     st: &mut EngineState,
     p: NodePtr<MathField>,
-    s: i16,
+    s: MathStyle,
 ) -> Result<AnyBox, Abort> {
     let q = match p.math_type(&st.mem) {
         MATH_CHAR => {
@@ -172,7 +172,7 @@ pub(super) fn clean_box(
 
 /// Runs `mlist_to_hlist` on `mlist` at style `s` without penalties and returns
 /// the resulting list, restoring the current style.
-fn sublist_to_hlist(st: &mut EngineState, mlist: MemPtr, s: i16) -> Result<MemPtr, Abort> {
+fn sublist_to_hlist(st: &mut EngineState, mlist: MemPtr, s: MathStyle) -> Result<MemPtr, Abort> {
     st.scanner.cur_mlist = mlist;
     let save_style = st.scanner.cur_style;
     st.scanner.cur_style = s;
@@ -186,10 +186,10 @@ fn sublist_to_hlist(st: &mut EngineState, mlist: MemPtr, s: i16) -> Result<MemPt
 
 #[inline]
 pub(super) fn set_cur_size_and_mu(st: &mut EngineState) {
-    st.scanner.cur_size = if st.scanner.cur_style < SCRIPT_STYLE {
+    st.scanner.cur_size = if st.scanner.cur_style < MathStyle::SCRIPT {
         TEXT_SIZE
     } else {
-        SCRIPT_SIZE * ((i32::from(st.scanner.cur_style) - 2) / 2)
+        SCRIPT_SIZE * ((i32::from(st.scanner.cur_style.raw()) - 2) / 2)
     };
     let mq = st.fonts.math_quad(&st.eqtb, st.scanner.cur_size);
     st.scanner.cur_mu = st.errors.x_over_n(mq, 18);
@@ -276,7 +276,7 @@ impl MemState {
 }
 
 fn make_over(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
-    let x = clean_box(st, q.nucleus(), 2 * (st.scanner.cur_style / 2) + 1)?;
+    let x = clean_box(st, q.nucleus(), st.scanner.cur_style.cramped())?;
     let rule_thickness = st
         .fonts
         .default_rule_thickness(&st.eqtb, st.scanner.cur_size);
@@ -329,18 +329,18 @@ fn make_radical(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
             .default_rule_thickness(&st.eqtb, st.scanner.cur_size)
     };
 
-    let clean_style = 2 * (st.scanner.cur_style / 2) + 1;
+    let clean_style = st.scanner.cur_style.cramped();
     let x = clean_box(st, q.nucleus(), clean_style)?;
     let cur_style = st.scanner.cur_style;
     let cur_size = st.scanner.cur_size;
     let mut clr = if is_ot_math {
-        if cur_style < TEXT_STYLE {
+        if cur_style < MathStyle::TEXT {
             st.fonts
                 .get_ot_math_constant(f, RADICALDISPLAYSTYLEVERTICALGAP)
         } else {
             st.fonts.get_ot_math_constant(f, RADICALVERTICALGAP)
         }
-    } else if cur_style < TEXT_STYLE {
+    } else if cur_style < MathStyle::TEXT {
         rule_thickness + st.fonts.math_x_height(&st.eqtb, cur_size).abs() / 4
     } else {
         rule_thickness + rule_thickness.abs() / 4
@@ -425,10 +425,8 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
         q.set_thickness(&mut st.mem, drt);
     }
 
-    let cs = st.scanner.cur_style;
-    let mut x = clean_box(st, q.numerator(), cs + 2 - 2 * (cs / 6))?;
-    let cs = st.scanner.cur_style;
-    let mut z = clean_box(st, q.denominator(), 2 * (cs / 2) + 3 - 2 * (cs / 6))?;
+    let mut x = clean_box(st, q.numerator(), st.scanner.cur_style.num())?;
+    let mut z = clean_box(st, q.denominator(), st.scanner.cur_style.denom())?;
 
     if x.width(&st.mem) < z.width(&st.mem) {
         let w = z.width(&st.mem);
@@ -441,7 +439,7 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
     let cur_style = st.scanner.cur_style;
     let cur_size = st.scanner.cur_size;
     let cur_f = st.scanner.cur_f;
-    let (mut shift_up, mut shift_down) = if cur_style < TEXT_STYLE {
+    let (mut shift_up, mut shift_down) = if cur_style < MathStyle::TEXT {
         (
             st.fonts.num1(&st.eqtb, cur_size),
             st.fonts.denom1(&st.eqtb, cur_size),
@@ -460,13 +458,13 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
     let delta;
     if q.thickness(&st.mem) == Scaled::ZERO {
         let clr = if st.fonts.font_is_ot_math(cur_f) {
-            if cur_style < TEXT_STYLE {
+            if cur_style < MathStyle::TEXT {
                 st.fonts
                     .get_ot_math_constant(cur_f, STACKDISPLAYSTYLEGAPMIN)
             } else {
                 st.fonts.get_ot_math_constant(cur_f, STACKGAPMIN)
             }
-        } else if cur_style < TEXT_STYLE {
+        } else if cur_style < MathStyle::TEXT {
             st.fonts.default_rule_thickness(&st.eqtb, cur_size) * 7
         } else {
             st.fonts.default_rule_thickness(&st.eqtb, cur_size) * 3
@@ -481,7 +479,7 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
         let axis_height = st.fonts.axis_height(&st.eqtb, cur_size);
         let (delta1, delta2) = if st.fonts.font_is_ot_math(cur_f) {
             delta = q.thickness(&st.mem).half();
-            let clr_num = if cur_style < TEXT_STYLE {
+            let clr_num = if cur_style < MathStyle::TEXT {
                 st.fonts
                     .get_ot_math_constant(cur_f, FRACTIONNUMDISPLAYSTYLEGAPMIN)
             } else {
@@ -490,7 +488,7 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
             };
             let delta1 = clr_num - ((shift_up - x.depth(&st.mem)) - (axis_height + delta));
 
-            let clr_den = if cur_style < TEXT_STYLE {
+            let clr_den = if cur_style < MathStyle::TEXT {
                 st.fonts
                     .get_ot_math_constant(cur_f, FRACTIONDENOMDISPLAYSTYLEGAPMIN)
             } else {
@@ -500,7 +498,7 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
             let delta2 = clr_den - ((axis_height - delta) - (z.height(&st.mem) - shift_down));
             (delta1, delta2)
         } else {
-            let clr = if cur_style < TEXT_STYLE {
+            let clr = if cur_style < MathStyle::TEXT {
                 q.thickness(&st.mem) * 3
             } else {
                 q.thickness(&st.mem)
@@ -532,7 +530,7 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
         axis_height,
     })?;
 
-    let delimiter_size = if cur_style < TEXT_STYLE {
+    let delimiter_size = if cur_style < MathStyle::TEXT {
         st.fonts.delim1(&st.eqtb, cur_size)
     } else {
         st.fonts.delim2(&st.eqtb, cur_size)
@@ -551,7 +549,7 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
 fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
     let mut delta = Scaled::ZERO;
 
-    if q.subtype(&st.mem) == NORMAL && st.scanner.cur_style < TEXT_STYLE {
+    if q.subtype(&st.mem) == NORMAL && st.scanner.cur_style < MathStyle::TEXT {
         q.set_subtype(&mut st.mem, LIMITS);
     }
 
@@ -560,7 +558,7 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
 
         let f = st.scanner.cur_f;
         if !st.fonts.font_uses_opentype(f) {
-            if st.scanner.cur_style < TEXT_STYLE && st.scanner.cur_i.tag() == CharTag::List {
+            if st.scanner.cur_style < MathStyle::TEXT && st.scanner.cur_i.tag() == CharTag::List {
                 let c = st.scanner.cur_i.remainder();
                 let i_info = st.fonts.char_info(f, i32::from(c));
                 if i_info.exists() {
@@ -578,7 +576,7 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
         if st.fonts.font_is_ot_math(cur_f) {
             if let Some(glyph) = st.mem.glyph_whatsit(x.list_ptr(&st.mem)) {
                 let (width, height, depth) = 'found: {
-                    if st.scanner.cur_style < TEXT_STYLE {
+                    if st.scanner.cur_style < MathStyle::TEXT {
                         let mut h1 = st
                             .fonts
                             .get_ot_math_constant(cur_f, DISPLAYOPERATORMINHEIGHT);
@@ -647,10 +645,10 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
 
     let save_f = st.scanner.cur_f;
     if q.subtype(&st.mem) == LIMITS {
-        let cs = i32::from(st.scanner.cur_style);
-        let x = clean_box(st, q.supscr(), (2 * (cs / 4) + 4 + (cs % 2)) as i16)?;
-        let y = clean_box(st, q.nucleus(), st.scanner.cur_style)?;
-        let z = clean_box(st, q.subscr(), (2 * (cs / 4) + 5) as i16)?;
+        let cs = st.scanner.cur_style;
+        let x = clean_box(st, q.supscr(), cs.sup())?;
+        let y = clean_box(st, q.nucleus(), cs)?;
+        let z = clean_box(st, q.subscr(), cs.sub())?;
 
         let v = AnyBox::VList(st.mem.new_null_box()?.into_vlist(&mut st.mem));
         let w = y.width(&st.mem).max(x.width(&st.mem)).max(z.width(&st.mem));
@@ -842,7 +840,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
         if !bottom_accent {
             s = compute_ot_math_accent_pos(st, q)?;
         }
-        x = clean_box(st, q.nucleus(), 2 * (st.scanner.cur_style / 2) + 1)?;
+        x = clean_box(st, q.nucleus(), st.scanner.cur_style.cramped())?;
     } else if st.scanner.cur_i.exists() {
         let mut acc_i = st.scanner.cur_i;
         if q.nucleus().math_type(&st.mem) == MATH_CHAR {
@@ -866,7 +864,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
                 };
             }
         }
-        x = clean_box(st, q.nucleus(), 2 * (st.scanner.cur_style / 2) + 1)?;
+        x = clean_box(st, q.nucleus(), st.scanner.cur_style.cramped())?;
         let w = x.width(&st.mem);
         while acc_i.tag() == CharTag::List {
             let larger = i32::from(acc_i.remainder());
@@ -1023,7 +1021,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
 fn make_left_right(
     st: &mut EngineState,
     q: NodePtr<Noad>,
-    style: i16,
+    style: MathStyle,
     max_d: Scaled,
     max_h: Scaled,
 ) -> Result<NodeType, Abort> {
@@ -1049,9 +1047,9 @@ impl MemState {
     fn mlist_choice_node(
         &mut self,
         choice: NodePtr<ChoiceNode>,
-        cur_style: i16,
+        cur_style: MathStyle,
     ) -> Result<(), Abort> {
-        let kept = match cur_style / 2 {
+        let kept = match cur_style.level() {
             0 => {
                 let p = choice.display_mlist(self);
                 choice.set_display_mlist(self, MemPtr::NULL);
@@ -1078,7 +1076,7 @@ impl MemState {
         self.flush_node_list(choice.text_mlist(self))?;
         self.flush_node_list(choice.script_mlist(self))?;
         self.flush_node_list(choice.script_script_mlist(self))?;
-        let style = choice.into_style(self, cur_style as u16);
+        let style = choice.into_style(self, cur_style.raw());
         if !kept.is_null() {
             let z = style.link(self);
             style.set_link(self, kept);
@@ -1136,7 +1134,7 @@ impl MemState {
     }
 }
 
-fn mlist_advance(st: &mut EngineState, qn: NodePtr<Noad>, style: i16) -> (u16, MemPtr) {
+fn mlist_advance(st: &mut EngineState, qn: NodePtr<Noad>, style: MathStyle) -> (u16, MemPtr) {
     let mut r_type = qn.noad_type(&st.mem).as_raw();
     let next = qn.link(&st.mem);
     if r_type == NodeType::RightNoad.as_raw() {
@@ -1323,7 +1321,7 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                     _ => unreachable!("AnyNode::Noad always has a noad type (16..=31)"),
                 },
                 Ok(AnyNode::Style(sn)) => {
-                    st.scanner.cur_style = sn.subtype(&st.mem) as i16;
+                    st.scanner.cur_style = MathStyle::from_raw(sn.subtype(&st.mem));
                     set_cur_size_and_mu(st);
                     break 'reswitch FirstPass::DoneWithNode;
                 }
@@ -1442,7 +1440,7 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                 SecondPass::Splice(qn)
             }
             Ok(AnyNode::Style(sn)) => {
-                st.scanner.cur_style = sn.subtype(&st.mem) as i16;
+                st.scanner.cur_style = MathStyle::from_raw(sn.subtype(&st.mem));
                 s = STYLE_NODE_SIZE;
                 set_cur_size_and_mu(st);
                 SecondPass::StyleNode
@@ -1479,7 +1477,7 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                 let x = match spacing {
                     b'0' => None,
                     b'2' => Some(GluePar::ThinMuSkip),
-                    b'1' | b'3' | b'4' if st.scanner.cur_style >= SCRIPT_STYLE => None,
+                    b'1' | b'3' | b'4' if st.scanner.cur_style >= MathStyle::SCRIPT => None,
                     b'1' => Some(GluePar::ThinMuSkip),
                     b'3' => Some(GluePar::MedMuSkip),
                     b'4' => Some(GluePar::ThickMuSkip),

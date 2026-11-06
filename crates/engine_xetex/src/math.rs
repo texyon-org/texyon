@@ -27,8 +27,67 @@ pub(crate) const MIDDLE_NOAD: u16 = 1;
 pub(crate) const LIMITS: u16 = 1;
 pub(crate) const NO_LIMITS: u16 = 2;
 const SCRIPT_SCRIPT_SIZE: i32 = 512;
-const TEXT_STYLE: i16 = 2;
-const SCRIPT_STYLE: i16 = 4;
+/// A math style: display 0, text 2, script 4, scriptscript 6, one more when cramped.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
+pub(crate) struct MathStyle(u16);
+
+impl MathStyle {
+    pub(crate) const DISPLAY: MathStyle = MathStyle(0);
+    pub(crate) const TEXT: MathStyle = MathStyle(2);
+    pub(crate) const SCRIPT: MathStyle = MathStyle(4);
+
+    /// The style a style node or `\mathchoice` stores as `raw`.
+    #[inline]
+    pub(crate) const fn from_raw(raw: u16) -> MathStyle {
+        MathStyle(raw)
+    }
+
+    #[inline]
+    pub(crate) const fn raw(self) -> u16 {
+        self.0
+    }
+
+    #[inline]
+    pub(crate) fn is_cramped(self) -> bool {
+        !self.0.is_multiple_of(2)
+    }
+
+    /// 0 for display, 1 text, 2 script, 3 scriptscript.
+    #[inline]
+    pub(crate) fn level(self) -> u16 {
+        self.0 / 2
+    }
+
+    /// WEB's `cramped_style`.
+    #[inline]
+    pub(crate) fn cramped(self) -> MathStyle {
+        MathStyle(2 * (self.0 / 2) + 1)
+    }
+
+    /// WEB's `sub_style`.
+    #[inline]
+    pub(crate) fn sub(self) -> MathStyle {
+        MathStyle(2 * (self.0 / 4) + 5)
+    }
+
+    /// WEB's `sup_style`.
+    #[inline]
+    pub(crate) fn sup(self) -> MathStyle {
+        MathStyle(2 * (self.0 / 4) + 4 + self.0 % 2)
+    }
+
+    /// WEB's `num_style`.
+    #[inline]
+    pub(crate) fn num(self) -> MathStyle {
+        MathStyle(self.0 + 2 - 2 * (self.0 / 6))
+    }
+
+    /// WEB's `denom_style`.
+    #[inline]
+    pub(crate) fn denom(self) -> MathStyle {
+        MathStyle(2 * (self.0 / 2) + 3 - 2 * (self.0 / 6))
+    }
+}
 
 impl FontState {
     #[inline]
@@ -152,5 +211,23 @@ impl FontState {
 
     pub fn big_op_spacing5(&self, eqtb: &EqtbState, cur_size: i32) -> Scaled {
         self.math_ext_param(eqtb, cur_size, 13)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MathStyle;
+
+    #[test]
+    fn style_transitions_follow_the_tex_table() {
+        // D D' T T' S S' SS SS', as in The TeXbook, Appendix G.
+        let all = (0..8).map(MathStyle::from_raw);
+        let row =
+            |f: fn(MathStyle) -> MathStyle| all.clone().map(|s| f(s).raw()).collect::<Vec<_>>();
+        assert_eq!(row(MathStyle::sup), [4, 5, 4, 5, 6, 7, 6, 7]);
+        assert_eq!(row(MathStyle::sub), [5, 5, 5, 5, 7, 7, 7, 7]);
+        assert_eq!(row(MathStyle::num), [2, 3, 4, 5, 6, 7, 6, 7]);
+        assert_eq!(row(MathStyle::denom), [3, 3, 5, 5, 7, 7, 7, 7]);
+        assert_eq!(row(MathStyle::cramped), [1, 1, 3, 3, 5, 5, 7, 7]);
     }
 }

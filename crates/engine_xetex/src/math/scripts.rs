@@ -12,7 +12,7 @@ use crate::state::{EngineState, MemState};
 use crate::units::{FontId, MemPtr, NodeType, Scaled};
 
 use super::mlist::{clean_box, fetch, set_cur_size_and_mu};
-use super::{SCRIPT_SCRIPT_SIZE, SCRIPT_STYLE, TEXT_STYLE};
+use super::{MathStyle, SCRIPT_SCRIPT_SIZE};
 
 const SUBSCRIPTTOPMAX: i32 = 9;
 const SUPERSCRIPTBOTTOMMIN: i32 = 13;
@@ -105,7 +105,7 @@ struct ScriptBoxPrep {
 fn clean_script_box(
     st: &mut EngineState,
     script_field: NodePtr<MathField>,
-    clean_style: i16,
+    clean_style: MathStyle,
     saved_font: FontId,
     adjustment: ScriptBoxAdjustment,
 ) -> Result<ScriptBoxPrep, Abort> {
@@ -114,9 +114,9 @@ fn clean_script_box(
         ScriptBoxAdjustment::Sub1 => st.fonts.sub1(&st.eqtb, st.scanner.cur_size),
         ScriptBoxAdjustment::Sub2 => st.fonts.sub2(&st.eqtb, st.scanner.cur_size),
         ScriptBoxAdjustment::Superscript => {
-            if st.scanner.cur_style % 2 != 0 {
+            if st.scanner.cur_style.is_cramped() {
                 st.fonts.sup3(&st.eqtb, st.scanner.cur_size)
-            } else if st.scanner.cur_style < TEXT_STYLE {
+            } else if st.scanner.cur_style < MathStyle::TEXT {
                 st.fonts.sup1(&st.eqtb, st.scanner.cur_size)
             } else {
                 st.fonts.sup2(&st.eqtb, st.scanner.cur_size)
@@ -145,7 +145,7 @@ fn initial_script_shifts(st: &mut EngineState, p: MemPtr) -> Result<ScriptShifts
         })
     } else {
         let zb = crate::packaging::hpack(st, p, PackSpec::NATURAL)?;
-        let t = if st.scanner.cur_style < SCRIPT_STYLE {
+        let t = if st.scanner.cur_style < MathStyle::SCRIPT {
             SCRIPT_SIZE
         } else {
             SCRIPT_SCRIPT_SIZE
@@ -238,7 +238,7 @@ fn prepare_subscript(
     let script_field = q.subscr();
     let (glyph, font) = first_script_glyph(st, script_field)?;
     let save_f = st.scanner.cur_f;
-    let clean_style = 2 * (st.scanner.cur_style / 4) + 5;
+    let clean_style = st.scanner.cur_style.sub();
     let prepared = clean_script_box(st, script_field, clean_style, save_f, adjustment)?;
     Ok(PreparedScript {
         box_node: prepared.box_node,
@@ -285,7 +285,7 @@ fn prepare_superscript(
 ) -> Result<PreparedScript, Abort> {
     let (glyph, font) = first_script_glyph(st, q.supscr())?;
     let save_f = st.scanner.cur_f;
-    let clean_style = 2 * (st.scanner.cur_style / 4) + 4 + (st.scanner.cur_style % 2);
+    let clean_style = st.scanner.cur_style.sup();
     let prepared = clean_script_box(
         st,
         q.supscr(),
@@ -403,8 +403,8 @@ impl MemState {
     fn first_script_glyph_step(
         &self,
         script: NodePtr<MathField>,
-        initial_math_style: i16,
-    ) -> (Option<NodePtr<MathField>>, i16) {
+        initial_math_style: MathStyle,
+    ) -> (Option<NodePtr<MathField>>, MathStyle) {
         if script.math_type(self) != SUB_MLIST {
             return (Some(script), initial_math_style);
         }
@@ -416,10 +416,10 @@ impl MemState {
             script_ptr = match node {
                 Ok(AnyNode::Kern(_) | AnyNode::Glue(_)) => script_ptr.link(self),
                 Ok(AnyNode::Style(sn)) => {
-                    style = sn.subtype(self) as i16;
+                    style = MathStyle::from_raw(sn.subtype(self));
                     script_ptr.link(self)
                 }
-                Ok(AnyNode::Choice(cn)) => match style / 2 {
+                Ok(AnyNode::Choice(cn)) => match style.level() {
                     0 => cn.display_mlist(self),
                     1 => cn.text_mlist(self),
                     2 => cn.script_mlist(self),
@@ -446,7 +446,7 @@ fn first_script_glyph(
     let mut script_g: u16 = 0;
     let mut script_f = NULL_FONT;
 
-    let initial_math_style = 2 * (st.scanner.cur_style / 4) + 5;
+    let initial_math_style = st.scanner.cur_style.sub();
     let (script_head, this_math_style) = st
         .mem
         .first_script_glyph_step(script_head, initial_math_style);

@@ -17,11 +17,10 @@ use crate::units::{Dir, GlueOrder, GlueSign, MemPtr, NodeType, Scaled};
 
 use super::build::{define_word, fin_mlist};
 use super::mlist::mlist_to_hlist;
-use super::{SCRIPT_SCRIPT_SIZE, TEXT_STYLE};
+use super::{MathStyle, SCRIPT_SCRIPT_SIZE};
 
 const TOTAL_MATHSY_PARAMS: i32 = 22;
 const TOTAL_MATHEX_PARAMS: i32 = 13;
-const DISPLAY_STYLE: i16 = 0;
 
 pub(crate) fn resume_after_display(st: &mut EngineState) -> Result<(), Abort> {
     if st.save_stack.cur_group != GroupCode::MathShift {
@@ -247,7 +246,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     if i32::from(st.input.cur_list.mode) == -m {
         check_display_end(st)?;
         st.scanner.cur_mlist = p;
-        st.scanner.cur_style = TEXT_STYLE;
+        st.scanner.cur_style = MathStyle::TEXT;
         st.scanner.mlist_penalties = false;
         mlist_to_hlist(st)?;
         let eqno = crate::packaging::hpack(st, TEMP_HEAD.link(&st.mem), PackSpec::NATURAL)?;
@@ -272,7 +271,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
         let node = st.mem.new_math(math_surround, BEFORE)?;
         st.input.cur_list.tail_append(&mut st.mem, node.ptr());
         st.scanner.cur_mlist = p;
-        st.scanner.cur_style = TEXT_STYLE;
+        st.scanner.cur_style = MathStyle::TEXT;
         st.scanner.mlist_penalties = st.input.cur_list.mode > 0;
         mlist_to_hlist(st)?;
         let hlist = TEMP_HEAD.link(&st.mem);
@@ -297,7 +296,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
         check_display_end(st)?;
     }
     st.scanner.cur_mlist = p;
-    st.scanner.cur_style = DISPLAY_STYLE;
+    st.scanner.cur_style = MathStyle::DISPLAY;
     st.scanner.mlist_penalties = false;
     mlist_to_hlist(st)?;
     let mut p = TEMP_HEAD.link(&st.mem);

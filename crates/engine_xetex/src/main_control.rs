@@ -425,7 +425,9 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
         (MMODE, Cmd::Accent | Cmd::MathAccent) => crate::math::math_ac(st)?,
         (MMODE, Cmd::Vcenter) => math_vcenter(st)?,
         (MMODE, Cmd::MathStyle) => {
-            let s = st.mem.new_style(st.scanner.cur_chr as i16)?;
+            let s = st
+                .mem
+                .new_style(crate::math::MathStyle::from_raw(st.scanner.cur_chr as u16))?;
             st.input.cur_list.tail_append(&mut st.mem, s.ptr());
         }
         (MMODE, Cmd::NonScript) => {

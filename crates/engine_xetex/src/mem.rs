@@ -487,9 +487,9 @@ impl MemState {
         Ok(p)
     }
 
-    pub fn new_style(&mut self, s: i16) -> Result<NodePtr<StyleNode>, Abort> {
+    pub fn new_style(&mut self, s: crate::math::MathStyle) -> Result<NodePtr<StyleNode>, Abort> {
         let p = NodePtr::<StyleNode>::alloc(self)?;
-        p.set_subtype(self, s as u16);
+        p.set_subtype(self, s.raw());
         p.clear_payload(self);
         Ok(p)
     }

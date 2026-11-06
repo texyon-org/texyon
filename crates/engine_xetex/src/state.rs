@@ -1099,7 +1099,7 @@ pub(crate) struct ScannerState {
     pub cur_mark: CurMarks,
     pub disc_ptr: [crate::units::MemPtr; 4],
     pub cur_mlist: crate::units::MemPtr,
-    pub cur_style: i16,
+    pub cur_style: crate::math::MathStyle,
     pub cur_size: i32,
     pub cur_mu: Scaled,
     pub mlist_penalties: bool,
