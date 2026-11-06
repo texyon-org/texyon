@@ -488,6 +488,20 @@ impl<K: ListRecord> NodePtr<K> {
     }
 }
 
+impl<K: ListRecord + HasLink> NodePtr<K> {
+    /// The next record on the list, `None` at its end.
+    #[inline]
+    pub fn next(self, mem: &MemState) -> Option<Self> {
+        Self::from_ptr(self.link(mem))
+    }
+}
+
+/// The link value of an optional node, null for `None`.
+#[inline]
+pub fn link_of<K: NodeKind>(p: Option<NodePtr<K>>) -> MemPtr {
+    p.map_or(MemPtr::NULL, NodePtr::ptr)
+}
+
 impl<K: ListRecord + FixedNode> NodePtr<K> {
     #[inline]
     pub fn free(self, mem: &mut MemState) {

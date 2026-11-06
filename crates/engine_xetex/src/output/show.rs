@@ -8,7 +8,7 @@ use crate::errors::{error, Abort};
 use crate::input::{TokenType, TOKEN_LIST};
 use crate::main_control::{BOX_FLAG, GLOBAL_BOX_FLAG, LEADER_FLAG, SHIP_OUT_FLAG};
 use crate::mem::{CONTRIB_HEAD, GARBAGE, PAGE_HEAD, PAGE_INS_HEAD, TEMP_HEAD};
-use crate::node::{AnyNode, CondNode, NodePtr, PageInsNode};
+use crate::node::{AnyNode, NodePtr, PageInsNode};
 use crate::packaging::PackSpec;
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, GroupCode, InteractionMode, Selector};
@@ -47,9 +47,9 @@ pub(crate) fn show_cur_cmd_chr(st: &mut EngineState) {
             (1, st.mem.line)
         };
         let mut p = st.scanner.cond_ptr;
-        while !p.is_null() {
+        while let Some(cond) = p {
             n += 1;
-            p = p.link(&st.mem);
+            p = cond.next(&st.mem);
         }
         print(st, "(level ");
         print_int(st, n);
@@ -450,21 +450,21 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
             begin_diagnostic(st);
             print_nl(st, "");
             print_ln(st);
-            if st.scanner.cond_ptr.is_null() {
+            if st.scanner.cond_ptr.is_none() {
                 print_nl(st, "### ");
                 print(st, "no active conditionals");
             } else {
                 let mut n = 0;
                 let mut p = st.scanner.cond_ptr;
-                while !p.is_null() {
+                while let Some(cond) = p {
                     n += 1;
-                    p = p.link(&st.mem);
+                    p = cond.next(&st.mem);
                 }
                 let mut p = st.scanner.cond_ptr;
                 let mut t = st.scanner.cur_if;
                 let mut l = st.scanner.if_line;
                 let mut m = st.scanner.if_limit;
-                while !p.is_null() {
+                while let Some(cond) = p {
                     print_nl(st, "### level ");
                     print_int(st, n);
                     print(st, ": ");
@@ -474,8 +474,8 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
                     }
                     print_if_line(st, l);
                     n -= 1;
-                    (t, l, m) = NodePtr::<CondNode>::at(p).saved_state(&st.mem);
-                    p = p.link(&st.mem);
+                    (t, l, m) = cond.saved_state(&st.mem);
+                    p = cond.next(&st.mem);
                 }
             }
         }

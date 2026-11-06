@@ -452,14 +452,14 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<(), Abor
         LastItemCode::CurrentIfLevel => {
             let mut q = st.scanner.cond_ptr;
             let mut depth = 0;
-            while !q.is_null() {
+            while let Some(cond) = q {
                 depth += 1;
-                q = q.link(&st.mem);
+                q = cond.next(&st.mem);
             }
             st.scanner.cur_val = depth;
         }
         LastItemCode::CurrentIfType => {
-            st.scanner.cur_val = if st.scanner.cond_ptr.is_null() {
+            st.scanner.cur_val = if st.scanner.cond_ptr.is_none() {
                 0
             } else if i32::from(st.scanner.cur_if) < IfCode::UNLESS {
                 i32::from(st.scanner.cur_if) + 1

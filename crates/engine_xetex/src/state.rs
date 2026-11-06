@@ -154,7 +154,7 @@ pub(crate) struct OpenLevel {
     /// `cur_boundary` when the file was opened.
     pub grp: crate::units::SavePtr,
     /// `cond_ptr` when the file was opened.
-    pub cond: crate::units::MemPtr,
+    pub cond: Option<crate::node::NodePtr<crate::node::CondNode>>,
     pub source_name: StrNumber,
     pub full_source_name: StrNumber,
     /// Whether `\everyeof` has been inserted at its end.
@@ -1075,7 +1075,8 @@ pub(crate) struct ScannerState {
     pub sa_chain: crate::units::MemPtr,
     pub sa_level: u16,
     pub max_reg_num: i32,
-    pub cond_ptr: crate::units::MemPtr,
+    /// The innermost incomplete conditional, `None` outside any.
+    pub cond_ptr: Option<crate::node::NodePtr<crate::node::CondNode>>,
     pub if_limit: FiOrElseCode,
     pub cur_if: i16,
     pub if_line: i32,

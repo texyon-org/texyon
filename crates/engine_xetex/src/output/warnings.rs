@@ -6,7 +6,6 @@ use crate::codes::FiOrElseCode;
 use crate::errors::{error, Abort};
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::TOKEN_LIST;
-use crate::node::{CondNode, NodePtr};
 use crate::params::IntPar;
 use crate::state::{EngineState, Selector};
 use crate::units::FontId;
@@ -65,7 +64,7 @@ pub(crate) fn if_warning(st: &mut EngineState) {
         if st.eqtb.int_par(IntPar::TracingNesting) > 0 && level_is_file(st, i) {
             w = true;
         }
-        st.input.open_levels[i].cond = st.scanner.cond_ptr.link(&st.mem);
+        st.input.open_levels[i].cond = st.scanner.cond_ptr.and_then(|c| c.next(&st.mem));
         i -= 1;
     }
     if w {
@@ -131,9 +130,11 @@ pub(crate) fn file_warning(st: &mut EngineState) {
         print_if_line(st, st.scanner.if_line);
         print(st, " is incomplete");
         capture_to_diagnostic(st, None);
-        let cond = NodePtr::<CondNode>::at(st.scanner.cond_ptr);
+        let Some(cond) = st.scanner.cond_ptr else {
+            break;
+        };
         (st.scanner.cur_if, st.scanner.if_line, st.scanner.if_limit) = cond.saved_state(&st.mem);
-        st.scanner.cond_ptr = cond.link(&st.mem);
+        st.scanner.cond_ptr = cond.next(&st.mem);
     }
     st.scanner.cond_ptr = saved_cond;
     st.scanner.if_limit = saved_limit;

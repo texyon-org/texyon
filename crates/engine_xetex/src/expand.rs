@@ -12,7 +12,7 @@ use crate::errors::{error, Abort};
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::{back_error, back_input, begin_token_list, TokenType, TOKEN_LIST};
 use crate::mem::{BACKUP_HEAD, GARBAGE, TEMP_HEAD_TOKS, ZERO_GLUE};
-use crate::node::{AnyBox, AnyNode, CondNode, NodePtr};
+use crate::node::{link_of, AnyBox, AnyNode, CondNode, NodePtr};
 use crate::output::{
     begin_diagnostic, capture_to_diagnostic, diagnostic_begin_capture_warning_here, end_diagnostic,
     error_here_with_diagnostic, print, print_char, print_cmd_chr, print_err, print_esc, print_int,
@@ -46,27 +46,29 @@ fn ins_temp_head_list(st: &mut EngineState, tail: TokenList) -> Result<(), Abort
     Ok(())
 }
 
-fn pop_cond_node(st: &mut EngineState) {
-    let p = NodePtr::<CondNode>::at(st.scanner.cond_ptr);
+fn pop_cond_node(st: &mut EngineState) -> Result<(), Abort> {
+    let p = st.scanner.cond_ptr.ok_or(Abort::Confusion("if"))?;
     (st.scanner.cur_if, st.scanner.if_line, st.scanner.if_limit) = p.saved_state(&st.mem);
-    st.scanner.cond_ptr = p.link(&st.mem);
+    st.scanner.cond_ptr = p.next(&st.mem);
     p.free(&mut st.mem);
+    Ok(())
 }
 
-fn pop_fi(st: &mut EngineState) {
+fn pop_fi(st: &mut EngineState) -> Result<(), Abort> {
     if st.input.open_levels[st.input.in_open].cond == st.scanner.cond_ptr {
         crate::output::if_warning(st);
     }
-    pop_cond_node(st);
+    pop_cond_node(st)
 }
 
 /// Handles the `\else` or `\fi` that ended a skipped conditional branch.
-fn skipped_branch_end(st: &mut EngineState) {
+fn skipped_branch_end(st: &mut EngineState) -> Result<(), Abort> {
     if st.scanner.chr_code() == Some(FiOrElseCode::Fi) {
-        pop_fi(st);
+        pop_fi(st)?;
     } else {
         st.scanner.if_limit = FiOrElseCode::Fi;
     }
+    Ok(())
 }
 
 fn get_x_token_or_active_char(st: &mut EngineState) -> Result<(), Abort> {
@@ -152,18 +154,17 @@ fn trace_diagnostic(st: &mut EngineState, text: &str) {
 fn change_if_limit(
     st: &mut EngineState,
     l: FiOrElseCode,
-    p: impl crate::units::MemAddr,
+    p: Option<NodePtr<CondNode>>,
 ) -> Result<(), Abort> {
-    let p = p.addr();
-    if p == st.scanner.cond_ptr.raw() {
+    if p == st.scanner.cond_ptr {
         st.scanner.if_limit = l;
         return Ok(());
     }
     let mut q = st.scanner.cond_ptr;
-    while !q.is_null() {
-        let next = q.link(&st.mem);
-        if next.raw() == p {
-            NodePtr::<CondNode>::at(q).set_if_limit(&mut st.mem, l);
+    while let Some(cond) = q {
+        let next = cond.next(&st.mem);
+        if next == p {
+            cond.set_if_limit(&mut st.mem, l);
             return Ok(());
         }
         q = next;
@@ -177,11 +178,11 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     let cond_node = NodePtr::<CondNode>::alloc(&mut st.mem)?;
-    cond_node.set_link(&mut st.mem, st.scanner.cond_ptr);
+    cond_node.set_link(&mut st.mem, link_of(st.scanner.cond_ptr));
     cond_node.set_if_limit(&mut st.mem, st.scanner.if_limit);
     cond_node.set_cur_if(&mut st.mem, st.scanner.cur_if as u16);
     cond_node.set_if_line(&mut st.mem, st.scanner.if_line);
-    st.scanner.cond_ptr = cond_node.ptr();
+    st.scanner.cond_ptr = Some(cond_node);
     st.scanner.cur_if = st.scanner.cur_chr as i16;
     st.scanner.if_limit = FiOrElseCode::If;
     st.scanner.if_line = st.mem.line;
@@ -334,12 +335,12 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
                 crate::scan::pass_text(st)?;
                 if st.scanner.cond_ptr == save_cond_ptr {
                     if st.scanner.chr_code() != Some(FiOrElseCode::Or) {
-                        skipped_branch_end(st);
+                        skipped_branch_end(st)?;
                         return Ok(());
                     }
                     n = n.wrapping_sub(1);
                 } else if st.scanner.chr_code() == Some(FiOrElseCode::Fi) {
-                    pop_fi(st);
+                    pop_fi(st)?;
                 }
             }
             change_if_limit(st, FiOrElseCode::Or, save_cond_ptr)?;
@@ -373,7 +374,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
         crate::scan::pass_text(st)?;
         if st.scanner.cond_ptr == save_cond_ptr {
             if st.scanner.chr_code() != Some(FiOrElseCode::Or) {
-                skipped_branch_end(st);
+                skipped_branch_end(st)?;
                 return Ok(());
             }
             error_here_with_diagnostic(st, "Extra ");
@@ -383,7 +384,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
                 .help(&[r"I'm ignoring this; it doesn't match any \if."]);
             error(st)?;
         } else if st.scanner.chr_code() == Some(FiOrElseCode::Fi) {
-            pop_fi(st);
+            pop_fi(st)?;
         }
     }
 }
@@ -936,7 +937,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     while st.scanner.chr_code() != Some(FiOrElseCode::Fi) {
                         crate::scan::pass_text(st)?;
                     }
-                    pop_fi(st);
+                    pop_fi(st)?;
                 }
             }
             Cmd::Input => match st.scanner.chr_code::<InputCode>() {

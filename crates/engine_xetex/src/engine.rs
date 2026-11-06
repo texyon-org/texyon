@@ -28,7 +28,7 @@ use crate::mem::{
     HI_MEM_STAT_USAGE, NULL_LIST, OMIT_TEMPLATE, PAGE_HEAD, PAGE_INS_HEAD, SS_GLUE, ZERO_GLUE,
 };
 use crate::mem_types::{zeroed_vec, B32x2, MemoryWord};
-use crate::node::{ActiveNode, CondNode, FreeBlock, NodePtr, PageInsNode};
+use crate::node::{ActiveNode, FreeBlock, NodePtr, PageInsNode};
 use crate::packaging::MarksAction;
 use crate::params::{IntPar, TokPar};
 use crate::scan::{set_class, set_family};
@@ -222,7 +222,7 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
         crate::output::show_save_groups(st);
     }
 
-    while st.scanner.cond_ptr.raw() != TEX_NULL {
+    while let Some(cond) = st.scanner.cond_ptr {
         crate::output::print_nl(st, b'(');
         crate::output::print_esc(st, "end occurred ");
         crate::output::print(st, "when ");
@@ -233,11 +233,10 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
             crate::output::print_int(st, if_line);
         }
         crate::output::print(st, " was incomplete)");
-        let cond = NodePtr::<CondNode>::at(st.scanner.cond_ptr);
         st.scanner.if_line = cond.if_line(&st.mem);
         st.scanner.cur_if = cond.cur_if(&st.mem) as i16;
         st.mem.temp_ptr = cond.ptr();
-        st.scanner.cond_ptr = cond.link(&st.mem);
+        st.scanner.cond_ptr = cond.next(&st.mem);
         cond.free(&mut st.mem);
     }
 
@@ -356,7 +355,7 @@ fn initialize_more_variables(st: &mut EngineState) {
 
     st.input.read_open = [CLOSED; 17];
 
-    st.scanner.cond_ptr = MemPtr::NULL;
+    st.scanner.cond_ptr = None;
     st.scanner.if_limit = FiOrElseCode::Normal;
     st.scanner.cur_if = 0;
     st.scanner.if_line = 0;

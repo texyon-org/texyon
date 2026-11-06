@@ -292,7 +292,7 @@ fn digest_input(st: &EngineState) -> u64 {
         h.i32s(&[
             level.outer_line,
             level.grp.raw(),
-            level.cond.raw(),
+            crate::node::link_of(level.cond).raw(),
             level.source_name.raw(),
             level.full_source_name.raw(),
         ]);
@@ -307,7 +307,7 @@ fn digest_scanner(st: &EngineState) -> u64 {
     for value in [
         scanner.logical_clock as i64,
         i64::from(scanner.align_state),
-        i64::from(scanner.cond_ptr.raw()),
+        i64::from(crate::node::link_of(scanner.cond_ptr).raw()),
         i64::from(scanner.cur_cs.raw()),
         i64::from(i32::from(scanner.cur_cmd)),
         i64::from(scanner.cur_chr),

@@ -126,3 +126,11 @@ fn showgroups_walks_nested_simple_groups_at_the_outer_level() {
         ]
     );
 }
+
+#[test]
+fn the_conditional_stack_tracks_nesting() {
+    let r = run(r"\showthe\currentiflevel
+                  \iftrue \iftrue \showthe\currentiflevel \fi \showthe\currentiflevel \fi
+                  \ifcase 1 \or \showthe\currentiflevel \else \fi \showthe\currentiflevel");
+    assert_eq!(r.shown(), ["0", "2", "1", "1", "0"]);
+}
