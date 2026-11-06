@@ -240,7 +240,7 @@ struct EqtbBundle {
     hash_used: EqtbPtr,
     hash_high: i32,
     no_new_control_sequence: bool,
-    prim_used: i32,
+    prim_used: crate::units::PrimNum,
     cs_count: i32,
     hash_extra: i32,
     eqtb_top: EqtbPtr,

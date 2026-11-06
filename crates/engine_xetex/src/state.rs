@@ -3,7 +3,7 @@
 use crate::cmd::Cmd;
 use crate::codes::{FiOrElseCode, ValueLevel};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
-use crate::units::{BufPos, EqtbPtr, FontId, PoolPos, SavePtr, Scaled, StrNumber};
+use crate::units::{BufPos, EqtbPtr, FontId, PoolPos, PrimNum, SavePtr, Scaled, StrNumber};
 
 #[derive(Default)]
 pub(crate) struct EngineState {
@@ -296,7 +296,7 @@ pub(crate) struct EqtbState {
     pub hash_used: EqtbPtr,
     pub hash_high: i32,
     pub no_new_control_sequence: bool,
-    pub prim_used: i32,
+    pub prim_used: PrimNum,
     pub cs_count: i32,
     pub data: Vec<crate::mem_types::MemoryWord>,
     pub prim: Vec<crate::mem_types::B32x2>,
@@ -315,7 +315,7 @@ impl Default for EqtbState {
             hash_used: EqtbPtr::NONE,
             hash_high: 0,
             no_new_control_sequence: false,
-            prim_used: 0,
+            prim_used: PrimNum::UNDEFINED,
             cs_count: 0,
             data: Vec::new(),
             // PRIM_SIZE + 1 = 2101.
@@ -388,32 +388,36 @@ impl EqtbState {
         self.hash[index].s1 = s.raw();
     }
 
+    /// The next slot in `p`'s hash chain.
     #[inline]
-    pub fn prim_s0(&self, p: i32) -> i32 {
-        self.prim[p as usize].s0
+    pub fn prim_next(&self, p: PrimNum) -> PrimNum {
+        PrimNum::from_raw(self.prim[p.index()].s0)
     }
 
     #[inline]
-    pub fn set_prim_s0(&mut self, p: i32, v: i32) {
-        let index = p as usize;
+    pub fn set_prim_next(&mut self, p: PrimNum, next: PrimNum) {
+        let index = p.index();
         if self.journal.prim.armed() {
             self.journal.prim.note(index, self.prim[index]);
         }
-        self.prim[index].s0 = v;
+        self.prim[index].s0 = next.raw();
+    }
+
+    /// The name of the primitive in slot `p`, if the slot is used.
+    #[inline]
+    pub fn prim_text(&self, p: PrimNum) -> Option<StrNumber> {
+        // Stored one past the string number so that 0 means unused.
+        let raw = self.prim[p.index()].s1;
+        (raw != 0).then(|| StrNumber::from_raw(raw - 1))
     }
 
     #[inline]
-    pub fn prim_s1(&self, p: i32) -> i32 {
-        self.prim[p as usize].s1
-    }
-
-    #[inline]
-    pub fn set_prim_s1(&mut self, p: i32, v: i32) {
-        let index = p as usize;
+    pub fn set_prim_text(&mut self, p: PrimNum, s: Option<StrNumber>) {
+        let index = p.index();
         if self.journal.prim.armed() {
             self.journal.prim.note(index, self.prim[index]);
         }
-        self.prim[index].s1 = v;
+        self.prim[index].s1 = s.map_or(0, |s| s.raw() + 1);
     }
 
     #[inline]

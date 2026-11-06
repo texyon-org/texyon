@@ -131,7 +131,6 @@ pub const PRIM_SIZE: i32 = 2100;
 pub const FROZEN_NULL_FONT: EqtbPtr = PRIM_EQTB_BASE.plus(PRIM_SIZE);
 pub const FONT_ID_BASE: EqtbPtr = FROZEN_NULL_FONT.plus(-FONT_BASE);
 pub const UNDEFINED_CONTROL_SEQUENCE: EqtbPtr = FROZEN_NULL_FONT.plus(MAX_FONT_MAX + 1);
-pub const UNDEFINED_PRIMITIVE: i32 = 0;
 
 pub const GLUE_BASE: EqtbPtr = UNDEFINED_CONTROL_SEQUENCE.plus(1);
 pub const SKIP_BASE: EqtbPtr = GLUE_BASE.plus(19);

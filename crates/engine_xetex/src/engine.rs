@@ -12,9 +12,8 @@ use crate::consts::{
     HISTORY_FATAL_ERROR, HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, IGNORE_DEPTH, INT_BASE,
     LC_CODE_BASE, LEFT_TO_RIGHT, LEVEL_ONE, LEVEL_ZERO, LOCAL_BASE, MATH_CODE_BASE, MATH_FONT_BASE,
     MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP, MIN_TRIE_OP, NON_ADDRESS, NORMAL, NULL_FONT,
-    NUMBER_MATH_FAMILIES, NUMBER_USVS, PAR_SHAPE_LOC, PRIM_EQTB_BASE, PRIM_SIZE, SF_CODE_BASE,
-    SINGLE_BASE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE,
-    VMODE,
+    NUMBER_MATH_FAMILIES, NUMBER_USVS, PAR_SHAPE_LOC, PRIM_SIZE, SF_CODE_BASE, SINGLE_BASE,
+    TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, VMODE,
 };
 use crate::errors::Abort;
 use crate::format_io::load_fmt_file;
@@ -40,7 +39,8 @@ use crate::state::{
 };
 use crate::token::Token;
 use crate::units::{
-    BufPos, EqtbPtr, FontId, GlueOrder, MemPtr, NodeType, PoolPos, SavePtr, Scaled, StrNumber,
+    BufPos, EqtbPtr, FontId, GlueOrder, MemPtr, NodeType, PoolPos, PrimNum, SavePtr, Scaled,
+    StrNumber,
 };
 
 /// A `get_node` request this large merges every free block into the rover list.
@@ -184,7 +184,7 @@ fn primitive(st: &mut EngineState, ident: &str, c: Cmd, o: i32) -> Result<EqtbPt
     };
 
     st.eqtb.set_eq(cs, c, o, LEVEL_ONE);
-    st.eqtb.set_eq(PRIM_EQTB_BASE + prim_val, c, o, LEVEL_ONE);
+    st.eqtb.set_eq(prim_val.eqtb_loc(), c, o, LEVEL_ONE);
     Ok(cs)
 }
 
@@ -335,9 +335,9 @@ fn initialize_more_variables(st: &mut EngineState) {
     }
 
     st.eqtb.no_new_control_sequence = true;
-    for k in 0..=PRIM_SIZE {
-        st.eqtb.set_prim_s0(k, 0);
-        st.eqtb.set_prim_s1(k, 0);
+    for k in PrimNum::all() {
+        st.eqtb.set_prim_next(k, PrimNum::UNDEFINED);
+        st.eqtb.set_prim_text(k, None);
     }
 
     st.save_stack.save_ptr = SavePtr::ZERO;
@@ -583,7 +583,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
         eqtb.set_int_at(k, 0);
     }
 
-    eqtb.prim_used = PRIM_SIZE;
+    eqtb.prim_used = PrimNum::from_raw(PRIM_SIZE);
     eqtb.hash_used = FROZEN_CONTROL_SEQUENCE;
     eqtb.hash_high = 0;
     eqtb.cs_count = 0;

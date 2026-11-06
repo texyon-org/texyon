@@ -4,8 +4,7 @@ use crate::cmd::Cmd;
 use crate::codes::ValueLevel;
 use crate::consts::{
     ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, FROZEN_PRIMITIVE,
-    FROZEN_RELAX, MAX_DIMEN, MAX_HALFWORD, NUMBER_MATH_FAMILIES, PRIM_EQTB_BASE, SINGLE_BASE,
-    TEX_INFINITY, UNDEFINED_PRIMITIVE,
+    FROZEN_RELAX, MAX_DIMEN, MAX_HALFWORD, NUMBER_MATH_FAMILIES, SINGLE_BASE, TEX_INFINITY,
 };
 use crate::errors::{error, int_error, mu_error, Abort};
 use crate::fonts::{QUAD_CODE, X_HEIGHT_CODE};
@@ -243,11 +242,10 @@ fn scan_optional_space(st: &mut EngineState) -> Result<(), Abort> {
 /// Reads the token after `\primitive` and replaces it by the primitive's meaning.
 pub(super) fn get_primitive_token(st: &mut EngineState) -> Result<(), Abort> {
     get_token(st)?;
-    let p = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)?;
-    if p != UNDEFINED_PRIMITIVE {
-        st.scanner.cur_cmd = st.eqtb.eq_type(PRIM_EQTB_BASE + p);
-        st.scanner.cur_chr = st.eqtb.equiv(PRIM_EQTB_BASE + p);
-        st.scanner.cur_cs = PRIM_EQTB_BASE + p;
+    if let Some(p) = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)? {
+        st.scanner.cur_cmd = st.eqtb.eq_type(p.eqtb_loc());
+        st.scanner.cur_chr = st.eqtb.equiv(p.eqtb_loc());
+        st.scanner.cur_cs = p.eqtb_loc();
         st.scanner.cur_tok = Token::from_cs(st.scanner.cur_cs);
     } else {
         st.scanner.cur_cmd = Cmd::Relax;

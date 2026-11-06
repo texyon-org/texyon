@@ -498,6 +498,57 @@ impl std::ops::SubAssign<i32> for PoolPos {
     }
 }
 
+/// A primitive's slot in the `prim` table, which `\\primitive` looks names up in.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
+#[repr(transparent)]
+pub struct PrimNum(i32);
+
+impl PrimNum {
+    /// No primitive has this name.
+    pub const UNDEFINED: PrimNum = PrimNum(0);
+
+    /// The value from its raw form in a `prim` link.
+    #[inline(always)]
+    pub const fn from_raw(raw: i32) -> PrimNum {
+        PrimNum(raw)
+    }
+
+    /// The raw form for a `prim` link.
+    #[inline(always)]
+    pub const fn raw(self) -> i32 {
+        self.0
+    }
+
+    #[inline(always)]
+    pub fn index(self) -> usize {
+        self.0 as usize
+    }
+
+    #[inline]
+    pub fn prev(self) -> PrimNum {
+        PrimNum(self.0 - 1)
+    }
+
+    /// The frozen eqtb location holding this primitive's meaning.
+    #[inline]
+    pub fn eqtb_loc(self) -> EqtbPtr {
+        crate::consts::PRIM_EQTB_BASE.plus(self.0)
+    }
+
+    /// The primitive whose meaning sits at frozen eqtb location `p`, if any.
+    #[inline]
+    pub fn at_eqtb_loc(p: EqtbPtr) -> Option<PrimNum> {
+        (crate::consts::PRIM_EQTB_BASE..crate::consts::FROZEN_NULL_FONT)
+            .contains(&p)
+            .then(|| PrimNum(p - crate::consts::PRIM_EQTB_BASE))
+    }
+
+    /// All slots of the `prim` table.
+    pub fn all() -> impl Iterator<Item = PrimNum> {
+        (0..=crate::consts::PRIM_SIZE).map(PrimNum)
+    }
+}
+
 /// A position on the save stack.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 #[repr(transparent)]

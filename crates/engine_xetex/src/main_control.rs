@@ -2,10 +2,7 @@
 
 use crate::cmd::Cmd;
 use crate::codes::ScannerStatus;
-use crate::consts::{
-    A_LEADERS, COND_MATH_GLUE, HMODE, IGNORE_DEPTH, MMODE, PRIM_EQTB_BASE, SINGLE_BASE,
-    UNDEFINED_PRIMITIVE, VMODE,
-};
+use crate::consts::{A_LEADERS, COND_MATH_GLUE, HMODE, IGNORE_DEPTH, MMODE, SINGLE_BASE, VMODE};
 use crate::errors::Abort;
 use crate::ext::do_extension;
 use crate::input::TokenType;
@@ -183,15 +180,14 @@ pub(crate) fn main_control_ignore_spaces(st: &mut EngineState) -> Result<(), Abo
         st.scanner.scanner_status = saved;
         outcome?;
 
-        let prim = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)?;
-        if prim == UNDEFINED_PRIMITIVE {
-            st.scanner.cur_cs = EqtbPtr::NONE;
-        } else {
-            let p = PRIM_EQTB_BASE + prim;
+        if let Some(prim) = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)? {
+            let p = prim.eqtb_loc();
             st.scanner.cur_cmd = st.eqtb.eq_type(p);
             st.scanner.cur_chr = st.eqtb.equiv(p);
             st.scanner.cur_cs = p;
             st.scanner.cur_tok = Token::from_cs(p);
+        } else {
+            st.scanner.cur_cs = EqtbPtr::NONE;
         }
     }
     Ok(())

@@ -102,7 +102,7 @@ fn digest_eqtb(st: &EngineState) -> u64 {
     h.i32s(&[
         eqtb.hash_used.raw(),
         eqtb.hash_high,
-        eqtb.prim_used,
+        eqtb.prim_used.raw(),
         eqtb.cs_count,
         eqtb.hash_extra,
         eqtb.eqtb_top.raw(),

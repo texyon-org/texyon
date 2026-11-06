@@ -2,11 +2,10 @@
 
 use crate::consts::{
     BIGGEST_CHAR, EQTB_SIZE, HASH_BASE, PRIM_SIZE, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
-    UNDEFINED_PRIMITIVE,
 };
 use crate::errors::Abort;
 use crate::state::{EqtbState, StringsState};
-use crate::units::{EqtbPtr, StrNumber};
+use crate::units::{EqtbPtr, PrimNum, StrNumber};
 
 pub(crate) const HASH_OFFSET: i32 = 514;
 pub(crate) const HASH_SIZE: i32 = 15000;
@@ -18,7 +17,7 @@ const PRIM_PRIME: i32 = 1777;
 pub(crate) fn hash_slot(p: EqtbPtr) -> i32 {
     p.raw() - HASH_OFFSET
 }
-const PRIM_BASE: i32 = 1;
+const PRIM_BASE: PrimNum = PrimNum::from_raw(1);
 
 impl StringsState {
     #[inline]
@@ -134,14 +133,18 @@ impl EqtbState {
         }
     }
 
-    pub fn prim_lookup(&mut self, strings: &mut StringsState, s: StrNumber) -> Result<i32, Abort> {
+    pub fn prim_lookup(
+        &mut self,
+        strings: &mut StringsState,
+        s: StrNumber,
+    ) -> Result<PrimNum, Abort> {
         let mut p;
         let l;
         if s.raw() <= BIGGEST_CHAR {
             if s.raw() < 0 {
-                return Ok(UNDEFINED_PRIMITIVE);
+                return Ok(PrimNum::UNDEFINED);
             }
-            p = s.raw() % PRIM_PRIME + 1;
+            p = PrimNum::from_raw(s.raw() % PRIM_PRIME + 1);
             l = 0;
         } else {
             let j = strings.str_start(s);
@@ -157,26 +160,26 @@ impl EqtbState {
                     h -= PRIM_PRIME;
                 }
             }
-            p = h + 1;
+            p = PrimNum::from_raw(h + 1);
         }
 
         loop {
-            // A primitive's text is stored one past its string number.
-            let text = self.prim_s1(p);
-            if text > TOO_BIG_CHAR {
-                let name = StrNumber::from_raw(text - 1);
-                if strings.length(name) == l && strings.str_eq_str(name, s) {
-                    return Ok(p);
+            let text = self.prim_text(p);
+            match text {
+                Some(name) if name.is_pool_string() => {
+                    if strings.length(name) == l && strings.str_eq_str(name, s) {
+                        return Ok(p);
+                    }
                 }
-            } else if text == 1 + s.raw() {
-                return Ok(p);
+                Some(name) if name == s => return Ok(p),
+                _ => {}
             }
 
-            if self.prim_s0(p) == 0 {
+            if self.prim_next(p) == PrimNum::UNDEFINED {
                 if self.no_new_control_sequence {
-                    p = UNDEFINED_PRIMITIVE;
+                    p = PrimNum::UNDEFINED;
                 } else {
-                    if text > 0 {
+                    if text.is_some() {
                         loop {
                             if self.prim_used == PRIM_BASE {
                                 return Err(Abort::Overflow {
@@ -184,34 +187,101 @@ impl EqtbState {
                                     n: PRIM_SIZE,
                                 });
                             }
-                            self.prim_used -= 1;
-                            if self.prim_s1(self.prim_used) == 0 {
+                            self.prim_used = self.prim_used.prev();
+                            if self.prim_text(self.prim_used).is_none() {
                                 break;
                             }
                         }
-                        self.set_prim_s0(p, self.prim_used);
+                        self.set_prim_next(p, self.prim_used);
                         p = self.prim_used;
                     }
-                    self.set_prim_s1(p, s.raw() + 1);
+                    self.set_prim_text(p, Some(s));
                 }
                 return Ok(p);
             }
 
-            p = self.prim_s0(p);
+            p = self.prim_next(p);
         }
     }
 
-    /// `prim_lookup` of the name of control sequence `cs`.
+    /// The primitive named like control sequence `cs`, if there is one.
     pub(crate) fn prim_lookup_cs(
         &mut self,
         strings: &mut StringsState,
         cs: EqtbPtr,
-    ) -> Result<i32, Abort> {
+    ) -> Result<Option<PrimNum>, Abort> {
         let s = if cs < HASH_BASE {
             StrNumber::from_raw(cs - crate::consts::SINGLE_BASE)
         } else {
             self.text(cs)
         };
-        self.prim_lookup(strings, s)
+        let p = self.prim_lookup(strings, s)?;
+        Ok((p != PrimNum::UNDEFINED).then_some(p))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::units::PoolPos;
+
+    fn tables() -> (EqtbState, StringsState) {
+        let eqtb = EqtbState {
+            prim_used: PrimNum::from_raw(PRIM_SIZE),
+            ..EqtbState::default()
+        };
+        let strings = StringsState {
+            str_ptr: StrNumber::from_raw(TOO_BIG_CHAR),
+            max_strings: StrNumber::from_raw(TOO_BIG_CHAR + 8),
+            pool_size: PoolPos::from_raw(32),
+            str_start: vec![PoolPos::ZERO; 9],
+            str_pool: vec![0; 33],
+            ..StringsState::default()
+        };
+        (eqtb, strings)
+    }
+
+    fn make(strings: &mut StringsState, text: &str) -> StrNumber {
+        strings.append_units(&text.encode_utf16().collect::<Vec<_>>());
+        strings.make_string().expect("room for the string")
+    }
+
+    #[test]
+    fn prim_lookup_chains_colliding_names() {
+        let (mut eqtb, mut strings) = tables();
+        let a = StrNumber::from_raw(97);
+        let b = StrNumber::from_raw(97 + PRIM_PRIME);
+        let first = eqtb.prim_lookup(&mut strings, a).expect("lookup");
+        let second = eqtb.prim_lookup(&mut strings, b).expect("lookup");
+        assert_eq!(first, PrimNum::from_raw(98));
+        assert_eq!(second, PrimNum::from_raw(PRIM_SIZE - 1));
+        assert_eq!(eqtb.prim_next(first), second);
+        assert_eq!(eqtb.prim_text(second), Some(b));
+        assert_eq!(eqtb.prim_lookup(&mut strings, b).expect("lookup"), second);
+        assert_eq!(eqtb.prim_lookup(&mut strings, a).expect("lookup"), first);
+
+        eqtb.no_new_control_sequence = true;
+        let c = StrNumber::from_raw(97 + 2 * PRIM_PRIME);
+        assert_eq!(
+            eqtb.prim_lookup(&mut strings, c).expect("lookup"),
+            PrimNum::UNDEFINED
+        );
+    }
+
+    #[test]
+    fn prim_lookup_matches_pool_names_by_content() {
+        let (mut eqtb, mut strings) = tables();
+        // Same length and same hash bucket.
+        let ac = make(&mut strings, "ac");
+        let ba = make(&mut strings, "ba");
+        let p = eqtb.prim_lookup(&mut strings, ac).expect("lookup");
+        let again = make(&mut strings, "ac");
+        assert_eq!(eqtb.prim_lookup(&mut strings, again).expect("lookup"), p);
+
+        eqtb.no_new_control_sequence = true;
+        assert_eq!(
+            eqtb.prim_lookup(&mut strings, ba).expect("lookup"),
+            PrimNum::UNDEFINED
+        );
     }
 }

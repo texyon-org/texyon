@@ -6,7 +6,7 @@ use crate::codes::{
 };
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_USV, FROZEN_DONT_EXPAND, FROZEN_ENDV, FROZEN_PRIMITIVE, HMODE, MMODE,
-    NULL_CS, NULL_FONT, PRIM_EQTB_BASE, SINGLE_BASE, TOO_BIG_USV, UNDEFINED_PRIMITIVE, VMODE,
+    NULL_CS, NULL_FONT, SINGLE_BASE, TOO_BIG_USV, VMODE,
 };
 use crate::errors::{error, Abort};
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
@@ -349,9 +349,10 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             get_next_unexpanded(st)?;
             let m = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)?;
             st.scanner.cur_cmd != Cmd::UndefinedCs
-                && m != UNDEFINED_PRIMITIVE
-                && st.scanner.cur_cmd == st.eqtb.eq_type(PRIM_EQTB_BASE + m)
-                && st.scanner.cur_chr == st.eqtb.equiv(PRIM_EQTB_BASE + m)
+                && m.is_some_and(|m| {
+                    st.scanner.cur_cmd == st.eqtb.eq_type(m.eqtb_loc())
+                        && st.scanner.cur_chr == st.eqtb.equiv(m.eqtb_loc())
+                })
         }
     };
 
@@ -866,11 +867,11 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                 } else {
                     get_token_unexpanded(st)?;
                     let prim = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)?;
-                    if prim != UNDEFINED_PRIMITIVE {
-                        let cmd = st.eqtb.eq_type(PRIM_EQTB_BASE + prim);
+                    if let Some(prim) = prim {
+                        let cmd = st.eqtb.eq_type(prim.eqtb_loc());
                         if cmd > Cmd::MAX_COMMAND {
                             st.scanner.cur_cmd = cmd;
-                            st.scanner.cur_chr = st.eqtb.equiv(PRIM_EQTB_BASE + prim);
+                            st.scanner.cur_chr = st.eqtb.equiv(prim.eqtb_loc());
                             st.scanner.cur_tok = Token::new(st.scanner.cur_cmd, st.scanner.cur_chr);
                             st.scanner.cur_cs = crate::units::EqtbPtr::NONE;
                             continue 'reswitch;

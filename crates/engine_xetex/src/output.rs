@@ -3,9 +3,9 @@
 use crate::bridge::{diag_append, diag_append_byte, diag_finish, output_putc, Diagnostic};
 use crate::cmd::Cmd;
 use crate::consts::{
-    ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_USV, EQTB_SIZE, FROZEN_NULL_FONT, HASH_BASE,
-    HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, NULL_CS, PRIM_EQTB_BASE, SCRIPT_SIZE, SINGLE_BASE,
-    TEXT_SIZE, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
+    ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_USV, EQTB_SIZE, HASH_BASE, HISTORY_SPOTLESS,
+    HISTORY_WARNING_ISSUED, NULL_CS, SCRIPT_SIZE, SINGLE_BASE, TEXT_SIZE, TOO_BIG_CHAR,
+    UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::node::{
@@ -15,7 +15,7 @@ use crate::params::{DimenPar, GluePar, IntPar};
 use crate::save::DIMEN_VAL_LIMIT;
 use crate::state::{EngineState, GroupCode, Selector};
 use crate::token::TokenList;
-use crate::units::{EqtbPtr, FontId, GlueOrder, MemPtr, Scaled, StrNumber};
+use crate::units::{EqtbPtr, FontId, GlueOrder, MemPtr, PrimNum, Scaled, StrNumber};
 
 mod cmd_chr;
 mod show;
@@ -593,10 +593,9 @@ pub(crate) fn print_file_name(st: &mut EngineState, n: StrNumber, a: StrNumber, 
 
 /// The name string of a multi-letter control sequence at eqtb location `p`.
 fn cs_text(st: &EngineState, p: EqtbPtr) -> StrNumber {
-    if (PRIM_EQTB_BASE..FROZEN_NULL_FONT).contains(&p) {
-        StrNumber::from_raw(st.eqtb.prim_s1(p - PRIM_EQTB_BASE) - 1)
-    } else {
-        st.eqtb.text(p)
+    match PrimNum::at_eqtb_loc(p) {
+        Some(prim) => st.eqtb.prim_text(prim).unwrap_or(StrNumber::from_raw(-1)),
+        None => st.eqtb.text(p),
     }
 }
 
