@@ -9,7 +9,7 @@ use crate::input::{TokenType, TOKEN_LIST};
 use crate::main_control::{BOX_FLAG, GLOBAL_BOX_FLAG, LEADER_FLAG, SHIP_OUT_FLAG};
 use crate::mem::{CONTRIB_HEAD, GARBAGE, PAGE_HEAD, PAGE_INS_HEAD, TEMP_HEAD};
 use crate::node::{AnyNode, CondNode, NodePtr, PageInsNode};
-use crate::packaging::EXACTLY;
+use crate::packaging::PackSpec;
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, GroupCode, InteractionMode, Selector};
 use crate::token::TokenList;
@@ -389,15 +389,15 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
 
         if matches!(entry, Entry::BoxContext | Entry::Found1) {
             print_esc(st, s);
-            let spec = st.save_stack.saved(-2);
-            if spec != 0 {
+            let (word, amount) = match st.save_stack.spec_at(-3) {
+                Some(PackSpec::Exactly(size)) => ("to", size),
+                Some(PackSpec::Additional(extra)) => ("spread", extra),
+                None => ("spread", Scaled::ZERO),
+            };
+            if amount != Scaled::ZERO {
                 print_char(st, b' ');
-                if st.save_stack.saved(-3) == i32::from(EXACTLY) {
-                    print(st, "to");
-                } else {
-                    print(st, "spread");
-                }
-                print_scaled(st, Scaled::from_raw(spec));
+                print(st, word);
+                print_scaled(st, amount);
                 print(st, "pt");
             }
         }

@@ -21,7 +21,7 @@ use crate::node::{
     AdjustNode, AnyNode, CharNode, DiscNode, GlueNode, GlueSpecNode, InsNode, MarkNode, MathField,
     NodePtr, WhatsitNode, WhatsitSubtype,
 };
-use crate::packaging::ADDITIONAL;
+use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::state::{EngineState, GroupCode, MemState};
 use crate::token::Token;
@@ -354,7 +354,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             crate::save::unsave(st)?;
             st.save_stack.save_ptr -= 2;
             let head = st.input.cur_list.head.link(&st.mem);
-            let p = crate::packaging::vpackage(st, head, Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
+            let p = crate::packaging::vpackage(st, head, PackSpec::NATURAL, MAX_DIMEN)?;
             st.mem.pop_nest(&mut st.input)?;
             let n = st.save_stack.saved(0);
             if n < 255 {
@@ -462,11 +462,9 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
         GroupCode::Vcenter => {
             end_graf(st)?;
             crate::save::unsave(st)?;
-            st.save_stack.save_ptr -= 2;
+            let spec = st.save_stack.pop_spec()?;
             let head = st.input.cur_list.head.link(&st.mem);
-            let size = Scaled::from_raw(st.save_stack.saved(1));
-            let spec_mode = st.save_stack.saved(0) as i16;
-            let p = crate::packaging::vpackage(st, head, size, spec_mode, MAX_DIMEN)?;
+            let p = crate::packaging::vpackage(st, head, spec, MAX_DIMEN)?;
             st.mem.pop_nest(&mut st.input)?;
             let noad = st.mem.new_noad()?;
             st.input.cur_list.tail_append(&mut st.mem, noad.ptr());
@@ -851,7 +849,7 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
     let accent = if h == x {
         p.ptr()
     } else {
-        let b = crate::packaging::hpack(st, p.ptr(), Scaled::ZERO, ADDITIONAL)?;
+        let b = crate::packaging::hpack(st, p.ptr(), PackSpec::NATURAL)?;
         b.set_shift_amount(&mut st.mem, x - h);
         b.ptr()
     };

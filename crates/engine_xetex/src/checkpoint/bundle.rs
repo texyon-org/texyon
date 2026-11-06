@@ -12,7 +12,7 @@ use crate::state::{
     MemState, SaveStackState, ScannerState, ShipoutState, StringsState, SynctexCtxt, TexmfState,
 };
 use crate::sync_index::PreviewSyncIndex;
-use crate::units::{EqtbPtr, FontId, MemPtr, Scaled, StrNumber};
+use crate::units::{EqtbPtr, FontId, MemPtr, SavePtr, Scaled, StrNumber};
 
 fn vec_bytes<T>(values: &Vec<T>) -> usize {
     values.capacity() * size_of::<T>()
@@ -380,18 +380,18 @@ impl StringsBundle {
 }
 
 struct SaveBundle {
-    save_ptr: i32,
-    max_save_stack: i32,
-    save_size: i32,
+    save_ptr: SavePtr,
+    max_save_stack: SavePtr,
+    save_size: usize,
     cur_level: u16,
     cur_group: GroupCode,
-    cur_boundary: i32,
+    cur_boundary: SavePtr,
     data: Vec<MemoryWord>,
 }
 
 impl SaveBundle {
     fn capture(src: &SaveStackState) -> Self {
-        let end = src.save_ptr.max(0) as usize;
+        let end = src.save_ptr.index();
         Self {
             save_ptr: src.save_ptr,
             max_save_stack: src.max_save_stack,
@@ -911,7 +911,7 @@ mod tests {
         }
         st.strings.str_pool[0] = 11;
         st.strings.pool_ptr = 1;
-        st.save_stack.save_ptr = 1;
+        st.save_stack.save_ptr = SavePtr::from_raw(1);
         st.save_stack.set_saved(-1, 12);
         st.input.buffer[0] = 13;
         st.input.last = 1;
@@ -954,7 +954,7 @@ mod tests {
         st.shipout.dvi.manifest.finish_page(8);
         assert_eq!(st.shipout.dvi.manifest.take_pages().len(), 1);
         assert_eq!(st.strings.str_pool[0], 11);
-        assert_eq!(st.save_stack.save_index(0), 12);
+        assert_eq!(st.save_stack.save_index(SavePtr::ZERO), 12);
         assert_eq!(st.input.buffer[0], 13);
         assert_eq!(st.hyph.hc[0], 14);
         assert_eq!(

@@ -9,7 +9,7 @@ use crate::errors::Abort;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
 use crate::node::{ActiveNode, AnyBox, AnyNode, MathNode, NodePtr};
-use crate::packaging::{ADDITIONAL, EXACTLY};
+use crate::packaging::PackSpec;
 use crate::params::{GluePar, IntPar};
 use crate::state::{
     ConfigState, EngineState, EqtbState, ErrorState, FontState, LinebreakState, MemState,
@@ -395,12 +395,12 @@ pub(super) fn post_line_break(
             cur_line,
         )?;
 
-        let (w, m) = if hpack.semantic_pagination {
-            (Scaled::ZERO, ADDITIONAL)
+        let spec = if hpack.semantic_pagination {
+            PackSpec::NATURAL
         } else {
-            (hpack.cur_width, EXACTLY)
+            PackSpec::Exactly(hpack.cur_width)
         };
-        let just_box = crate::packaging::hpack(st, hpack.q, w, m)?;
+        let just_box = crate::packaging::hpack(st, hpack.q, spec)?;
 
         match st.input.cur_list.post_line_break_suffix(
             &mut st.mem,

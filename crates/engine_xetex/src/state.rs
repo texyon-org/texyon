@@ -3,7 +3,7 @@
 use crate::cmd::Cmd;
 use crate::codes::{FiOrElseCode, ValueLevel};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
-use crate::units::{EqtbPtr, FontId, Scaled, StrNumber};
+use crate::units::{EqtbPtr, FontId, SavePtr, Scaled, StrNumber};
 
 #[derive(Default)]
 pub(crate) struct EngineState {
@@ -123,7 +123,7 @@ pub(crate) struct OpenLevel {
     /// The enclosing file's line when this one was opened.
     pub outer_line: i32,
     /// `cur_boundary` when the file was opened.
-    pub grp: i32,
+    pub grp: crate::units::SavePtr,
     /// `cond_ptr` when the file was opened.
     pub cond: crate::units::MemPtr,
     pub source_name: StrNumber,
@@ -803,51 +803,76 @@ impl GroupCode {
     }
 }
 
+/// The kind of a save-stack entry.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[repr(u16)]
+pub(crate) enum SaveType {
+    RestoreOldValue = 0,
+    RestoreZero = 1,
+    InsertToken = 2,
+    LevelBoundary = 3,
+    RestoreSa = 4,
+}
+
+impl SaveType {
+    #[inline]
+    pub(crate) fn from_raw(raw: u16) -> Option<SaveType> {
+        Some(match raw {
+            0 => SaveType::RestoreOldValue,
+            1 => SaveType::RestoreZero,
+            2 => SaveType::InsertToken,
+            3 => SaveType::LevelBoundary,
+            4 => SaveType::RestoreSa,
+            _ => return None,
+        })
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct SaveStackState {
-    pub save_ptr: i32,
-    pub max_save_stack: i32,
-    pub save_size: i32,
+    pub save_ptr: SavePtr,
+    pub max_save_stack: SavePtr,
+    pub save_size: usize,
     pub cur_level: u16,
     pub cur_group: GroupCode,
-    pub cur_boundary: i32,
+    pub cur_boundary: SavePtr,
     pub data: Vec<crate::mem_types::MemoryWord>,
 }
 
 impl SaveStackState {
     #[inline]
-    fn b32s1(&self, k: i32) -> i32 {
-        self.data[k as usize].b32().s1
+    fn b32s1(&self, k: SavePtr) -> i32 {
+        self.data[k.index()].b32().s1
     }
 
     #[inline]
-    fn set_b32s1(&mut self, k: i32, v: i32) {
-        self.data[k as usize].b32.s1 = v;
+    fn set_b32s1(&mut self, k: SavePtr, v: i32) {
+        self.data[k.index()].b32.s1 = v;
     }
 
     #[inline]
-    fn set_b16s1(&mut self, k: i32, v: u16) {
-        self.data[k as usize].b16.s1 = v;
+    fn set_b16s1(&mut self, k: SavePtr, v: u16) {
+        self.data[k.index()].b16.s1 = v;
     }
 
     #[inline]
-    fn set_b16s0(&mut self, k: i32, v: u16) {
-        self.data[k as usize].b16.s0 = v;
+    fn set_b16s0(&mut self, k: SavePtr, v: u16) {
+        self.data[k.index()].b16.s0 = v;
     }
 
     #[inline]
-    pub(crate) fn set_word(&mut self, k: i32, w: crate::mem_types::MemoryWord) {
-        self.data[k as usize] = w;
+    pub(crate) fn set_word(&mut self, k: SavePtr, w: crate::mem_types::MemoryWord) {
+        self.data[k.index()] = w;
     }
 
     #[inline]
-    fn b16s1(&self, k: i32) -> u16 {
-        self.data[k as usize].b16().s1
+    fn b16s1(&self, k: SavePtr) -> u16 {
+        self.data[k.index()].b16().s1
     }
 
     #[inline]
-    fn b16s0(&self, k: i32) -> u16 {
-        self.data[k as usize].b16().s0
+    fn b16s0(&self, k: SavePtr) -> u16 {
+        self.data[k.index()].b16().s0
     }
 
     /// WEB's `saved(k)`, the word `k` entries above `save_ptr`.
@@ -861,46 +886,66 @@ impl SaveStackState {
     }
 
     #[inline]
-    pub(crate) fn save_type(&self, k: i32) -> u16 {
-        self.b16s1(k)
+    pub(crate) fn save_type(&self, k: SavePtr) -> Option<SaveType> {
+        SaveType::from_raw(self.b16s1(k))
     }
     #[inline]
-    pub(crate) fn save_level(&self, k: i32) -> u16 {
+    pub(crate) fn save_level(&self, k: SavePtr) -> u16 {
         self.b16s0(k)
     }
     #[inline]
-    pub(crate) fn save_index(&self, k: i32) -> i32 {
+    pub(crate) fn save_index(&self, k: SavePtr) -> i32 {
         self.b32s1(k)
     }
+    /// Pushes a box's size spec, to be read back after its group by [`pop_spec`](Self::pop_spec).
+    pub(crate) fn push_spec(&mut self, spec: crate::packaging::PackSpec) {
+        let (code, amount) = spec.to_words();
+        self.set_saved(0, code);
+        self.set_saved(1, amount);
+        self.save_ptr += 2;
+    }
+
+    /// Pops the size spec [`push_spec`](Self::push_spec) saved.
+    pub(crate) fn pop_spec(&mut self) -> Result<crate::packaging::PackSpec, crate::errors::Abort> {
+        self.save_ptr -= 2;
+        self.spec_at(0)
+            .ok_or(crate::errors::Abort::Confusion("pop_spec"))
+    }
+
+    /// The size spec saved at `saved(k)` and `saved(k + 1)`.
+    pub(crate) fn spec_at(&self, k: i32) -> Option<crate::packaging::PackSpec> {
+        crate::packaging::PackSpec::from_words(self.saved(k), self.saved(k + 1))
+    }
+
     /// `save_index(k)` of an entry that saved an `eqtb` location.
     #[inline]
-    pub(crate) fn save_loc(&self, k: i32) -> EqtbPtr {
+    pub(crate) fn save_loc(&self, k: SavePtr) -> EqtbPtr {
         EqtbPtr::from_raw(self.b32s1(k))
     }
     /// `save_index(k)` of an entry that saved a pointer.
     #[inline]
-    pub(crate) fn save_index_ptr(&self, k: i32) -> crate::units::MemPtr {
+    pub(crate) fn save_index_ptr(&self, k: SavePtr) -> crate::units::MemPtr {
         crate::units::MemPtr::from_raw(self.save_index(k))
     }
     /// Writes a restore entry at `save_ptr`.
     #[inline]
-    pub(crate) fn set_save_entry(&mut self, kind: u16, level: u16, index: i32) {
+    pub(crate) fn set_save_entry(&mut self, kind: SaveType, level: u16, index: i32) {
         let k = self.save_ptr;
-        self.set_b16s1(k, kind);
+        self.set_b16s1(k, kind as u16);
         self.set_b16s0(k, level);
         self.set_b32s1(k, index);
     }
 
     /// The group and enclosing boundary saved by the level boundary at `k`.
     #[inline]
-    pub(crate) fn boundary_at(&self, k: i32) -> (GroupCode, i32) {
+    pub(crate) fn boundary_at(&self, k: SavePtr) -> (GroupCode, SavePtr) {
         let group = GroupCode::from_raw(self.b16s0(k) as u8).expect("valid group code");
-        (group, self.b32s1(k))
+        (group, SavePtr::from_raw(self.b32s1(k)))
     }
 
     #[inline]
-    pub(crate) fn word(&self, k: i32) -> crate::mem_types::MemoryWord {
-        self.data[k as usize]
+    pub(crate) fn word(&self, k: SavePtr) -> crate::mem_types::MemoryWord {
+        self.data[k.index()]
     }
 }
 

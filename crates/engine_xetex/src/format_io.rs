@@ -26,7 +26,7 @@ use crate::output::{print, print_char, print_int, print_ln, print_nl};
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, InteractionMode, PerFont, Selector};
 use crate::token::Token;
-use crate::units::{EqtbPtr, FontId, MemPtr, Scaled, StrNumber};
+use crate::units::{EqtbPtr, FontId, MemPtr, SavePtr, Scaled, StrNumber};
 
 const FORMAT_HEADER_MAGIC: i32 = 0x5454_4E43;
 const FORMAT_FOOTER_MAGIC: i32 = 0x0000_029A;
@@ -287,7 +287,7 @@ fn fonts_of<T>(v: &mut PerFont<T>, font_ptr: FontId) -> &mut [T] {
 }
 
 pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
-    if st.save_stack.save_ptr != 0 {
+    if st.save_stack.save_ptr != SavePtr::ZERO {
         crate::output::print_err(st, "You can't dump inside a group");
         st.errors.help(&[r"`{...\dump}' is a no-no."]);
 

@@ -6,7 +6,7 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::node::{AnyBox, AnyNode, MathField, Noad, NodePtr};
 use crate::ot_math::ScriptKind;
-use crate::packaging::ADDITIONAL;
+use crate::packaging::PackSpec;
 use crate::params::DimenPar;
 use crate::state::{EngineState, MemState};
 use crate::units::{FontId, MemPtr, NodeType, Scaled};
@@ -144,7 +144,7 @@ fn initial_script_shifts(st: &mut EngineState, p: MemPtr) -> Result<ScriptShifts
             down: Scaled::ZERO,
         })
     } else {
-        let zb = crate::packaging::hpack(st, p, Scaled::ZERO, ADDITIONAL)?;
+        let zb = crate::packaging::hpack(st, p, PackSpec::NATURAL)?;
         let t = if st.scanner.cur_style < SCRIPT_STYLE {
             SCRIPT_SIZE
         } else {
@@ -216,8 +216,7 @@ fn finish_subsup_stack(st: &mut EngineState, input: SubSupStackInput) -> Result<
     input.x.set_link(&mut st.mem, kern.ptr());
     kern.set_link(&mut st.mem, input.y.ptr());
 
-    let packaged =
-        crate::packaging::vpackage(st, input.x.ptr(), Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
+    let packaged = crate::packaging::vpackage(st, input.x.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
     packaged.set_shift_amount(&mut st.mem, input.shift_down);
     st.mem.append_to_new_hlist(input.q, packaged.ptr());
     Ok(())

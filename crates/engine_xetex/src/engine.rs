@@ -39,7 +39,7 @@ use crate::state::{
     PerFont, Selector,
 };
 use crate::token::Token;
-use crate::units::{EqtbPtr, FontId, GlueOrder, MemPtr, NodeType, Scaled, StrNumber};
+use crate::units::{EqtbPtr, FontId, GlueOrder, MemPtr, NodeType, SavePtr, Scaled, StrNumber};
 
 /// A `get_node` request this large merges every free block into the rover list.
 const GET_NODE_HEAD_SENTINEL: i32 = 0x4000_0000;
@@ -342,11 +342,11 @@ fn initialize_more_variables(st: &mut EngineState) {
         st.eqtb.set_prim_s1(k, 0);
     }
 
-    st.save_stack.save_ptr = 0;
+    st.save_stack.save_ptr = SavePtr::ZERO;
     st.save_stack.cur_level = LEVEL_ONE;
     st.save_stack.cur_group = GroupCode::BottomLevel;
-    st.save_stack.cur_boundary = 0;
-    st.save_stack.max_save_stack = 0;
+    st.save_stack.cur_boundary = SavePtr::ZERO;
+    st.save_stack.max_save_stack = SavePtr::ZERO;
     st.scanner.mag_set = 0;
     st.scanner.expand_depth_count = 0;
     st.scanner.is_in_csname = false;
@@ -794,7 +794,7 @@ pub(crate) fn initialize_engine(
     let hyph_words = HYPH_SIZE as usize + 1;
     st.input.buffer = vec![0; st.input.buf_size as usize + 1];
     st.input.nest = TexStack::with_size(NEST_SIZE);
-    st.save_stack.data = zeroed_vec(st.save_stack.save_size as usize + 1);
+    st.save_stack.data = zeroed_vec(st.save_stack.save_size + 1);
     st.input.input_file = std::iter::repeat_with(|| crate::state::InputSlot::Empty)
         .take(in_open_words)
         .collect();
@@ -837,7 +837,9 @@ pub(crate) fn initialize_engine(
     if st.fonts.font_max.raw() > FONT_BASE + 9000 {
         bad = 16;
     }
-    if st.save_stack.save_size > MAX_HALFWORD || st.strings.max_strings > MAX_HALFWORD {
+    if i32::try_from(st.save_stack.save_size).map_or(true, |s| s > MAX_HALFWORD)
+        || st.strings.max_strings > MAX_HALFWORD
+    {
         bad = 17;
     }
     if st.input.buf_size > MAX_HALFWORD {

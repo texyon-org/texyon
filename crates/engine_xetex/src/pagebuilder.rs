@@ -10,7 +10,7 @@ use crate::helpers::badness;
 use crate::input::TokenType;
 use crate::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
 use crate::node::{AnyBox, AnyNode, InsNode, NodePtr, PageInsNode, WhatsitSubtype};
-use crate::packaging::{MarksAction, ADDITIONAL, EXACTLY};
+use crate::packaging::{MarksAction, PackSpec};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::scan::fetch_box;
 use crate::state::{EngineState, GroupCode, PageContents, ShipoutState};
@@ -133,7 +133,7 @@ fn place_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Re
             .prune_page_top(&mut st.scanner, &st.eqtb, broken_ptr, false)?;
         ins.set_ins_ptr(&mut st.mem, pruned);
         if !pruned.is_null() {
-            let tmp = crate::packaging::vpackage(st, pruned, Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
+            let tmp = crate::packaging::vpackage(st, pruned, PackSpec::NATURAL, MAX_DIMEN)?;
             let size = tmp.height(&st.mem) + tmp.depth(&st.mem);
             ins.set_height(&mut st.mem, size);
             st.mem.free_node(tmp.ptr(), BOX_NODE_SIZE);
@@ -145,7 +145,7 @@ fn place_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Re
     let b = fetch_box(st, i32::from(n)).expect("insertion box made in fire_up");
     let list = b.list_ptr(&st.mem);
     st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
-    let packed = crate::packaging::vpackage(st, list, Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
+    let packed = crate::packaging::vpackage(st, list, PackSpec::NATURAL, MAX_DIMEN)?;
     st.eqtb.set_box_reg(i32::from(n), packed.ptr());
     Ok(wait)
 }
@@ -273,8 +273,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     let page = crate::packaging::vpackage(
         st,
         PAGE_HEAD.link(&st.mem),
-        st.shipout.best_size,
-        EXACTLY,
+        PackSpec::Exactly(st.shipout.best_size),
         st.shipout.page_max_depth,
     )?;
     st.eqtb.set_box_reg(255, page.ptr());

@@ -38,7 +38,7 @@ pub(crate) fn group_warning(st: &mut EngineState) {
         if st.eqtb.int_par(IntPar::TracingNesting) > 0 && level_is_file(st, i) {
             w = true;
         }
-        st.input.open_levels[i].grp = st.save_stack.save_index(st.save_stack.save_ptr);
+        st.input.open_levels[i].grp = st.save_stack.boundary_at(st.save_stack.save_ptr).1;
         i -= 1;
     }
     if w {

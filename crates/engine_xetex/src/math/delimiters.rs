@@ -6,7 +6,7 @@ use crate::fonts::{CharInfo, CharTag, AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::mem::SS_GLUE;
 use crate::node::{AnyBox, AnyNode, DelimiterField, NodePtr, WhatsitNode, WhatsitSubtype};
 use crate::ot_math::GlyphAssembly;
-use crate::packaging::{ADDITIONAL, EXACTLY};
+use crate::packaging::PackSpec;
 use crate::params::DimenPar;
 use crate::state::{EngineState, FontState, MemState};
 use crate::units::{FontId, GlueOrder, GlueSign, Scaled};
@@ -138,7 +138,7 @@ fn native_glyph_vbox(st: &mut EngineState, f: FontId, g: u16) -> Result<AnyBox, 
 pub(super) fn rebox(st: &mut EngineState, b: AnyBox, w: Scaled) -> Result<AnyBox, Abort> {
     let mut b = b;
     if b.width(&st.mem) != w && !b.list_ptr(&st.mem).is_null() && matches!(b, AnyBox::VList(_)) {
-        b = crate::packaging::hpack(st, b.ptr(), Scaled::ZERO, ADDITIONAL)?;
+        b = crate::packaging::hpack(st, b.ptr(), PackSpec::NATURAL)?;
     }
     if b.width(&st.mem) == w || b.list_ptr(&st.mem).is_null() {
         b.set_width(&mut st.mem, w);
@@ -166,7 +166,7 @@ pub(super) fn rebox(st: &mut EngineState, b: AnyBox, w: Scaled) -> Result<AnyBox
     }
     let tail_glue = mem.new_glue(SS_GLUE)?;
     p.set_link(mem, tail_glue.ptr());
-    crate::packaging::hpack(st, g.ptr(), w, EXACTLY)
+    crate::packaging::hpack(st, g.ptr(), PackSpec::Exactly(w))
 }
 
 pub(super) fn build_opentype_assembly(

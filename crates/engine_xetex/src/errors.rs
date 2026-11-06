@@ -189,7 +189,7 @@ impl Abort {
             }
             Abort::NodeOverflow => Self::overflow_report(st, "main memory size", MEM_TOP + 1),
             Abort::SaveOverflow => {
-                let n = st.save_stack.save_size;
+                let n = i32::try_from(st.save_stack.save_size).unwrap_or(i32::MAX);
                 Self::overflow_report(st, "save size", n);
             }
             Abort::NestOverflow => {

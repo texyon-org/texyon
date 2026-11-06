@@ -357,6 +357,55 @@ impl std::ops::Sub for EqtbPtr {
     }
 }
 
+/// A position on the save stack.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
+#[repr(transparent)]
+pub struct SavePtr(i32);
+
+impl SavePtr {
+    /// The bottom of the save stack.
+    pub const ZERO: SavePtr = SavePtr(0);
+
+    /// The value from its raw form in a memory word.
+    #[inline(always)]
+    pub const fn from_raw(raw: i32) -> SavePtr {
+        SavePtr(raw)
+    }
+
+    /// The raw form for a memory word.
+    #[inline(always)]
+    pub const fn raw(self) -> i32 {
+        self.0
+    }
+
+    #[inline(always)]
+    pub fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl std::ops::Add<i32> for SavePtr {
+    type Output = SavePtr;
+    #[inline(always)]
+    fn add(self, rhs: i32) -> SavePtr {
+        SavePtr(self.0 + rhs)
+    }
+}
+
+impl std::ops::AddAssign<i32> for SavePtr {
+    #[inline(always)]
+    fn add_assign(&mut self, rhs: i32) {
+        self.0 += rhs;
+    }
+}
+
+impl std::ops::SubAssign<i32> for SavePtr {
+    #[inline(always)]
+    fn sub_assign(&mut self, rhs: i32) {
+        self.0 -= rhs;
+    }
+}
+
 /// An internal font number.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 #[repr(transparent)]

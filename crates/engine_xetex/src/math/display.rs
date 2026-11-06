@@ -11,7 +11,7 @@ use crate::fonts::QUAD_CODE;
 use crate::input::TokenType;
 use crate::mem::{ADJUST_HEAD, GARBAGE, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::node::{AnyBox, AnyNode, GlueNode, NodePtr};
-use crate::packaging::{ADDITIONAL, EXACTLY};
+use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::state::{EngineState, EqtbState, FontState, GroupCode, MemState};
 use crate::units::{GlueOrder, GlueSign, MemPtr, NodeType, Scaled};
@@ -173,7 +173,7 @@ fn app_display(
         u.set_link(&mut st.mem, r);
         match copy {
             None => {
-                b = crate::packaging::hpack(st, u, Scaled::ZERO, ADDITIONAL)?;
+                b = crate::packaging::hpack(st, u, PackSpec::NATURAL)?;
                 b.set_shift_amount(&mut st.mem, s);
             }
             Some(bc) => bc.set_list_ptr(&mut st.mem, u),
@@ -251,7 +251,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
         st.scanner.cur_style = TEXT_STYLE;
         st.scanner.mlist_penalties = false;
         mlist_to_hlist(st)?;
-        let eqno = crate::packaging::hpack(st, TEMP_HEAD.link(&st.mem), Scaled::ZERO, ADDITIONAL)?;
+        let eqno = crate::packaging::hpack(st, TEMP_HEAD.link(&st.mem), PackSpec::NATURAL)?;
         eqno.set_subtype(&mut st.mem, DLIST);
         a = Some(eqno);
         crate::save::unsave(st)?;
@@ -304,7 +304,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     let mut p = TEMP_HEAD.link(&st.mem);
     st.scanner.adjust_tail = ADJUST_HEAD;
     st.scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
-    let mut b = crate::packaging::hpack(st, p, Scaled::ZERO, ADDITIONAL)?;
+    let mut b = crate::packaging::hpack(st, p, PackSpec::NATURAL)?;
     p = b.list_ptr(&st.mem);
     let t = st.scanner.adjust_tail;
     st.scanner.adjust_tail = MemPtr::NULL;
@@ -335,12 +335,12 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
                 || st.scanner.total_shrink[GlueOrder::Filll] != Scaled::ZERO)
         {
             st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
-            b = crate::packaging::hpack(st, p, z - q, EXACTLY)?;
+            b = crate::packaging::hpack(st, p, PackSpec::Exactly(z - q))?;
         } else {
             e = Scaled::ZERO;
             if w > z {
                 st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
-                b = crate::packaging::hpack(st, p, z, EXACTLY)?;
+                b = crate::packaging::hpack(st, p, PackSpec::Exactly(z))?;
             }
         }
         w = b.width(&st.mem);
@@ -391,7 +391,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
             b.set_link(&mut st.mem, r.ptr());
             r.set_link(&mut st.mem, eqno.ptr());
         }
-        b = crate::packaging::hpack(st, b.ptr(), Scaled::ZERO, ADDITIONAL)?;
+        b = crate::packaging::hpack(st, b.ptr(), PackSpec::NATURAL)?;
     }
 
     app_display(st, j, b, d)?;

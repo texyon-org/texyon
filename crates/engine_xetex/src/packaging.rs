@@ -22,8 +22,43 @@ pub(crate) use self::vert_break::{vert_break, vsplit, MarksAction};
 /// The word of a box whose link field is its `list_ptr`.
 const LIST_OFFSET: i32 = 5;
 
-pub(crate) const EXACTLY: i16 = 0;
-pub(crate) const ADDITIONAL: i16 = 1;
+/// The size `hpack` and `vpack` aim for: exactly some size, or the natural size plus some.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum PackSpec {
+    Exactly(Scaled),
+    Additional(Scaled),
+}
+
+impl PackSpec {
+    /// The natural size.
+    pub(crate) const NATURAL: PackSpec = PackSpec::Additional(Scaled::ZERO);
+
+    /// The size to set a box of natural size `natural` to.
+    #[inline]
+    pub(crate) fn target(self, natural: Scaled) -> Scaled {
+        match self {
+            PackSpec::Exactly(size) => size,
+            PackSpec::Additional(extra) => natural + extra,
+        }
+    }
+
+    /// WEB's `exactly`/`additional` code and the amount, as the save stack keeps them.
+    pub(crate) fn to_words(self) -> (i32, i32) {
+        match self {
+            PackSpec::Exactly(size) => (0, size.raw()),
+            PackSpec::Additional(extra) => (1, extra.raw()),
+        }
+    }
+
+    pub(crate) fn from_words(code: i32, amount: i32) -> Option<PackSpec> {
+        let amount = Scaled::from_raw(amount);
+        match code {
+            0 => Some(PackSpec::Exactly(amount)),
+            1 => Some(PackSpec::Additional(amount)),
+            _ => None,
+        }
+    }
+}
 
 impl ListStateRecord {
     /// Append box `b` to the current vertical list, preceded by interline glue.
@@ -206,8 +241,7 @@ impl MemState {
         scanner: &mut ScannerState,
         shipout: &mut ShipoutState,
         list: MemPtr,
-        w: Scaled,
-        m: i16,
+        spec: PackSpec,
     ) -> Result<PackOutcome, Abort> {
         shipout.last_badness = 0;
         let r_node = NodePtr::<HListNode>::alloc(self)?;
@@ -381,7 +415,7 @@ impl MemState {
         r_node.set_height(self, h);
         r_node.set_depth(self, d);
 
-        let w = if m == ADDITIONAL { x + w } else { w };
+        let w = spec.target(x);
         r_node.set_width(self, w);
         x = w - x;
 
@@ -554,20 +588,14 @@ fn print_hpack_common_ending(st: &mut EngineState, box_ptr: AnyBox) {
 }
 
 /// `hpack`, printing its over/underfull diagnostics in order.
-pub(crate) fn hpack(
-    st: &mut EngineState,
-    list: MemPtr,
-    w: Scaled,
-    m: i16,
-) -> Result<AnyBox, Abort> {
+pub(crate) fn hpack(st: &mut EngineState, list: MemPtr, spec: PackSpec) -> Result<AnyBox, Abort> {
     let outcome = st.mem.hpack(
         &st.eqtb,
         &mut st.fonts,
         &mut st.scanner,
         &mut st.shipout,
         list,
-        w,
-        m,
+        spec,
     )?;
     for diag in outcome.diags.into_iter().flatten() {
         print_hpack_diag(st, outcome.r_box, diag);
@@ -583,8 +611,7 @@ impl MemState {
         scanner: &mut ScannerState,
         shipout: &mut ShipoutState,
         list: MemPtr,
-        h: Scaled,
-        m: i16,
+        spec: PackSpec,
         l: Scaled,
     ) -> Result<PackOutcome, Abort> {
         shipout.last_badness = 0;
@@ -672,7 +699,7 @@ impl MemState {
             r_node.set_depth(self, d);
         }
 
-        let h = if m == ADDITIONAL { x + h } else { h };
+        let h = spec.target(x);
         r_node.set_height(self, h);
         x = h - x;
 
@@ -799,15 +826,41 @@ fn print_vpack_common_ending(st: &mut EngineState, box_ptr: AnyBox) {
 pub(crate) fn vpackage(
     st: &mut EngineState,
     list: MemPtr,
-    h: Scaled,
-    m: i16,
+    spec: PackSpec,
     l: Scaled,
 ) -> Result<AnyBox, Abort> {
     let outcome = st
         .mem
-        .vpackage(&st.eqtb, &mut st.scanner, &mut st.shipout, list, h, m, l)?;
+        .vpackage(&st.eqtb, &mut st.scanner, &mut st.shipout, list, spec, l)?;
     for diag in outcome.diags.into_iter().flatten() {
         print_vpack_diag(st, outcome.r_box, diag);
     }
     Ok(outcome.r_box)
+}
+
+#[cfg(test)]
+mod pack_spec_tests {
+    use super::PackSpec;
+    use crate::units::Scaled;
+
+    #[test]
+    fn spec_round_trips_through_save_stack_words() {
+        let size = Scaled::from_raw(12_345);
+        for spec in [PackSpec::Exactly(size), PackSpec::Additional(size)] {
+            let (code, amount) = spec.to_words();
+            assert_eq!(PackSpec::from_words(code, amount), Some(spec));
+        }
+        assert_eq!(PackSpec::from_words(2, 0), None);
+    }
+
+    #[test]
+    fn target_adds_only_for_additional() {
+        let natural = Scaled::from_raw(100);
+        let w = Scaled::from_raw(7);
+        assert_eq!(PackSpec::Exactly(w).target(natural), w);
+        assert_eq!(
+            PackSpec::Additional(w).target(natural),
+            Scaled::from_raw(107)
+        );
+    }
 }

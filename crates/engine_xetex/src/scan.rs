@@ -11,7 +11,7 @@ use crate::input::{back_error, back_input, begin_token_list, ins_error, TokenTyp
 use crate::mem::BACKUP_HEAD;
 use crate::node::{AnyBox, MathField, NodePtr, RuleDimen, RuleNode};
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic, print_cmd_chr, print_err};
-use crate::packaging::{ADDITIONAL, EXACTLY};
+use crate::packaging::PackSpec;
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, ErrorState, GroupCode, MemState, ScannerState};
 use crate::token::{Token, TokenList};
@@ -84,20 +84,18 @@ pub(crate) fn scan_spec(
     } else {
         0
     };
-    let (spec_code, amount) = if scan_keyword(st, "to")? {
-        (EXACTLY, scan_dimen(st, false, false, false)?)
+    let spec = if scan_keyword(st, "to")? {
+        PackSpec::Exactly(scan_dimen(st, false, false, false)?)
     } else if scan_keyword(st, "spread")? {
-        (ADDITIONAL, scan_dimen(st, false, false, false)?)
+        PackSpec::Additional(scan_dimen(st, false, false, false)?)
     } else {
-        (ADDITIONAL, Scaled::ZERO)
+        PackSpec::NATURAL
     };
     if three_codes {
         st.save_stack.set_saved(0, s);
         st.save_stack.save_ptr += 1;
     }
-    st.save_stack.set_saved(0, i32::from(spec_code));
-    st.save_stack.set_saved(1, amount.raw());
-    st.save_stack.save_ptr += 2;
+    st.save_stack.push_spec(spec);
     st.save_stack.new_save_level(c, st.mem.line)?;
     scan_left_brace(st)?;
     Ok(())

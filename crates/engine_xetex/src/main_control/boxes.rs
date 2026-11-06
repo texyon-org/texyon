@@ -130,17 +130,16 @@ pub(super) fn package(st: &mut EngineState, vtop: bool) -> Result<(), Abort> {
     let d = st.eqtb.dimen_par(DimenPar::BoxMaxDepth);
     let u = st.eqtb.int_par(IntPar::XetexUpwards);
     crate::save::unsave(st)?;
-    st.save_stack.save_ptr -= 3;
+    let spec = st.save_stack.pop_spec()?;
+    st.save_stack.save_ptr -= 1;
     let v = st.eqtb.int_par(IntPar::XetexUpwards);
     st.eqtb.set_int_par(IntPar::XetexUpwards, u);
     let list = st.input.cur_list.head.link(&st.mem);
-    let size = Scaled::from_raw(st.save_stack.saved(2));
-    let spec_mode = st.save_stack.saved(1) as i16;
     if st.input.cur_list.mode == INNER_HMODE {
-        let b = crate::packaging::hpack(st, list, size, spec_mode)?;
+        let b = crate::packaging::hpack(st, list, spec)?;
         st.scanner.cur_box = Some(BoxOrRule::Box(b));
     } else {
-        let b = crate::packaging::vpackage(st, list, size, spec_mode, d)?;
+        let b = crate::packaging::vpackage(st, list, spec, d)?;
         st.scanner.cur_box = Some(BoxOrRule::Box(b));
         if vtop {
             let h = match b.list_ptr(&st.mem).as_idx().map(|p| st.mem.classify(p)) {

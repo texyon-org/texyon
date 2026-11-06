@@ -12,7 +12,7 @@ use crate::node::{
     AlignColumn, AlignRecord, AlignStackNode, AnyBox, AnyNode, GlueNode, NodePtr, RuleDimen,
     SpanNode, UnsetNode, RUNNING,
 };
-use crate::packaging::ADDITIONAL;
+use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::state::{EngineState, GroupCode, MemState};
 use crate::token::{Token, TokenList};
@@ -128,15 +128,13 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
         column = next;
     }
 
-    st.save_stack.save_ptr -= 2;
+    let spec = st.save_stack.pop_spec()?;
     st.scanner.pack_begin_line = -st.input.cur_list.mode_line;
-    let spec_size = Scaled::from_raw(st.save_stack.saved(1));
-    let spec_mode = st.save_stack.saved(0) as i16;
     let head = ALIGN_HEAD.link(&st.mem);
     let p = if st.input.cur_list.mode == INNER_VMODE {
         let rule_save = st.eqtb.dimen_par(DimenPar::OverfullRule);
         st.eqtb.set_dimen_par(DimenPar::OverfullRule, Scaled::ZERO);
-        let packed = crate::packaging::hpack(st, head, spec_size, spec_mode)?;
+        let packed = crate::packaging::hpack(st, head, spec)?;
         st.eqtb.set_dimen_par(DimenPar::OverfullRule, rule_save);
         packed
     } else {
@@ -144,7 +142,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
             q.set_height(mem, q.width(mem));
             q.set_width(mem, Scaled::ZERO);
         });
-        let packed = crate::packaging::vpackage(st, head, spec_size, spec_mode, MAX_DIMEN)?;
+        let packed = crate::packaging::vpackage(st, head, spec, MAX_DIMEN)?;
         st.mem.for_each_preamble_column(|mem, q| {
             q.set_width(mem, q.height(mem));
             q.set_height(mem, Scaled::ZERO);
@@ -283,7 +281,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                 if o != Scaled::ZERO {
                     let next = rule.link(&st.mem);
                     rule.set_link(&mut st.mem, MemPtr::NULL);
-                    let boxed = crate::packaging::hpack(st, rule.ptr(), Scaled::ZERO, ADDITIONAL)?;
+                    let boxed = crate::packaging::hpack(st, rule.ptr(), PackSpec::NATURAL)?;
                     boxed.set_shift_amount(&mut st.mem, o);
                     boxed.set_link(&mut st.mem, next);
                     s.set_link(&mut st.mem, boxed.ptr());
@@ -650,14 +648,14 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
         let (u, w) = if st.input.cur_list.mode == INNER_HMODE {
             st.scanner.adjust_tail = st.scanner.cur_tail;
             st.scanner.pre_adjust_tail = st.scanner.cur_pre_tail;
-            let u = crate::packaging::hpack(st, head, Scaled::ZERO, ADDITIONAL)?;
+            let u = crate::packaging::hpack(st, head, PackSpec::NATURAL)?;
             st.scanner.cur_tail = st.scanner.adjust_tail;
             st.scanner.adjust_tail = MemPtr::NULL;
             st.scanner.cur_pre_tail = st.scanner.pre_adjust_tail;
             st.scanner.pre_adjust_tail = MemPtr::NULL;
             (u, u.width(&st.mem))
         } else {
-            let u = crate::packaging::vpackage(st, head, Scaled::ZERO, ADDITIONAL, Scaled::ZERO)?;
+            let u = crate::packaging::vpackage(st, head, PackSpec::NATURAL, Scaled::ZERO)?;
             (u, u.height(&st.mem))
         };
         let mut n: i32 = 0;
@@ -719,7 +717,7 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
 fn fin_row(st: &mut EngineState) -> Result<(), Abort> {
     let head = st.input.cur_list.head.link(&st.mem);
     let p = if st.input.cur_list.mode == INNER_HMODE {
-        let row = crate::packaging::hpack(st, head, Scaled::ZERO, ADDITIONAL)?;
+        let row = crate::packaging::hpack(st, head, PackSpec::NATURAL)?;
         st.mem.pop_nest(&mut st.input)?;
         if st.scanner.cur_pre_head != st.scanner.cur_pre_tail {
             append_list(st, st.scanner.cur_pre_head, st.scanner.cur_pre_tail);
@@ -732,7 +730,7 @@ fn fin_row(st: &mut EngineState) -> Result<(), Abort> {
         }
         row
     } else {
-        let row = crate::packaging::vpackage(st, head, Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
+        let row = crate::packaging::vpackage(st, head, PackSpec::NATURAL, MAX_DIMEN)?;
         st.mem.pop_nest(&mut st.input)?;
         st.input.cur_list.tail_append(&mut st.mem, row.ptr());
         st.input.cur_list.set_aux_s0(1000);

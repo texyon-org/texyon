@@ -14,7 +14,7 @@ use crate::node::{
     AnyBox, AnyNode, ChoiceNode, GlueNode, GlueSpecNode, KernNode, MathField, Noad, NodePtr,
     RuleDimen, RuleNode, WhatsitNode, WhatsitSubtype,
 };
-use crate::packaging::ADDITIONAL;
+use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, ErrorState, FontState, MemState, ScannerState};
 use crate::units::{FontId, GlueOrder, MemPtr, NodeType, Scaled};
@@ -151,7 +151,7 @@ pub(super) fn clean_box(
     };
     let x_box = match lone_box {
         Some(b) => b,
-        None => crate::packaging::hpack(st, q, Scaled::ZERO, ADDITIONAL)?,
+        None => crate::packaging::hpack(st, q, PackSpec::NATURAL)?,
     };
 
     let head = x_box.list_ptr(&st.mem);
@@ -281,7 +281,7 @@ fn make_over(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
         .fonts
         .default_rule_thickness(&st.eqtb, st.scanner.cur_size);
     let p = st.mem.overbar(x, rule_thickness * 3, rule_thickness)?;
-    let x = crate::packaging::vpackage(st, p, Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
+    let x = crate::packaging::vpackage(st, p, PackSpec::NATURAL, MAX_DIMEN)?;
     st.mem.set_nucleus_box(q, x);
     Ok(())
 }
@@ -296,7 +296,7 @@ fn make_under(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
     let rule = st.mem.fraction_rule(rule_thickness)?;
     kern.set_link(&mut st.mem, rule.ptr());
 
-    let y = crate::packaging::vpackage(st, x.ptr(), Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
+    let y = crate::packaging::vpackage(st, x.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
     let mem = &mut st.mem;
     let delta = y.height(mem) + y.depth(mem) + rule_thickness;
     y.set_height(mem, x.height(mem));
@@ -359,9 +359,9 @@ fn make_radical(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
     }
     y.set_shift_amount(mem, -(x.height(mem) + clr));
     let p = mem.overbar(x, clr, y.height(mem))?;
-    let overbar_box = crate::packaging::vpackage(st, p, Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
+    let overbar_box = crate::packaging::vpackage(st, p, PackSpec::NATURAL, MAX_DIMEN)?;
     y.set_link(&mut st.mem, overbar_box.ptr());
-    let hbox = crate::packaging::hpack(st, y.ptr(), Scaled::ZERO, ADDITIONAL)?;
+    let hbox = crate::packaging::hpack(st, y.ptr(), PackSpec::NATURAL)?;
     st.mem.set_nucleus_box(q, hbox);
     Ok(())
 }
@@ -542,7 +542,7 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
     let right_delim = var_delimiter(st, q.right_delimiter(), cur_size, delimiter_size)?;
     left_delim.set_link(&mut st.mem, v.ptr());
     v.set_link(&mut st.mem, right_delim.ptr());
-    let hbox = crate::packaging::hpack(st, left_delim.ptr(), Scaled::ZERO, ADDITIONAL)?;
+    let hbox = crate::packaging::hpack(st, left_delim.ptr(), PackSpec::NATURAL)?;
     q.set_new_hlist(&mut st.mem, hbox.ptr());
     Ok(())
 }
@@ -996,7 +996,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
     y.set_width(&mut st.mem, Scaled::ZERO);
     let v = if bottom_accent {
         x.set_link(&mut st.mem, y.ptr());
-        let v = crate::packaging::vpackage(st, x.ptr(), Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
+        let v = crate::packaging::vpackage(st, x.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
         let v_height = v.height(&st.mem);
         v.set_shift_amount(&mut st.mem, -(h - v_height));
         v
@@ -1004,7 +1004,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
         let kern = st.mem.new_kern(-delta)?;
         kern.set_link(&mut st.mem, x.ptr());
         y.set_link(&mut st.mem, kern.ptr());
-        let v = crate::packaging::vpackage(st, y.ptr(), Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
+        let v = crate::packaging::vpackage(st, y.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
         let mem = &mut st.mem;
         if v.height(mem) < h {
             let kern = mem.new_kern(h - v.height(mem))?;
@@ -1202,7 +1202,7 @@ fn mlist_nucleus(st: &mut EngineState, qn: NodePtr<Noad>, mut delta: Scaled) -> 
             let mlist = qn.nucleus().info(&st.mem);
             let style = st.scanner.cur_style;
             let list = sublist_to_hlist(st, mlist, style)?;
-            crate::packaging::hpack(st, list, Scaled::ZERO, ADDITIONAL)?.ptr()
+            crate::packaging::hpack(st, list, PackSpec::NATURAL)?.ptr()
         }
         _ => return Err(Abort::Confusion("mlist2")),
     };
@@ -1379,7 +1379,7 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                     mlist_nucleus(st, qn, delta)?;
                 }
                 let list = qn.new_hlist(&st.mem);
-                let z_box = crate::packaging::hpack(st, list, Scaled::ZERO, ADDITIONAL)?;
+                let z_box = crate::packaging::hpack(st, list, PackSpec::NATURAL)?;
                 st.mem.mlist_track_box(z_box, &mut max_h, &mut max_d);
                 qn
             }

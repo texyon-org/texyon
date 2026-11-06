@@ -153,13 +153,13 @@ fn digest_strings(st: &EngineState) -> u64 {
 fn digest_save(st: &EngineState) -> u64 {
     let mut h = Fnv::new();
     let save = &st.save_stack;
-    h.i32(save.save_ptr);
-    h.i32(save.max_save_stack);
-    h.i32(save.save_size);
+    h.i32(save.save_ptr.raw());
+    h.i32(save.max_save_stack.raw());
+    h.i32(depth(save.save_size));
     h.word(u64::from(save.cur_level));
     h.word(u64::from(save.cur_group.as_raw()));
-    h.i32(save.cur_boundary);
-    for &word in save.data.iter().take(save.save_ptr.max(0) as usize) {
+    h.i32(save.cur_boundary.raw());
+    for &word in save.data.iter().take(save.save_ptr.index()) {
         h.word(memory_word(word));
     }
     h.finish()
@@ -291,7 +291,7 @@ fn digest_input(st: &EngineState) -> u64 {
     for level in &input.open_levels {
         h.i32s(&[
             level.outer_line,
-            level.grp,
+            level.grp.raw(),
             level.cond.raw(),
             level.source_name.raw(),
             level.full_source_name.raw(),

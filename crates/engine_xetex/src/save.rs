@@ -10,16 +10,11 @@ use crate::mem::ZERO_GLUE;
 use crate::mem_types::MemoryWord;
 use crate::node::{NodePtr, SaNode};
 use crate::params::IntPar;
-use crate::state::{EngineState, EqtbState, GroupCode, MemState, SaveStackState, ScannerState};
+use crate::state::{
+    EngineState, EqtbState, GroupCode, MemState, SaveStackState, SaveType, ScannerState,
+};
 use crate::token::{Token, TokenList};
 use crate::units::{EqtbPtr, MemAddr, MemPtr};
-
-// Save-stack entry types.
-const RESTORE_OLD_VALUE: u16 = 0;
-const RESTORE_ZERO: u16 = 1;
-const INSERT_TOKEN: u16 = 2;
-const LEVEL_BOUNDARY: u16 = 3;
-const RESTORE_SA: u16 = 4;
 
 const POINTER_NODE_SIZE: i32 = 2;
 const WORD_NODE_SIZE: i32 = 3;
@@ -59,7 +54,7 @@ impl SaveStackState {
     fn save_stack_full(&mut self) -> bool {
         if self.save_ptr > self.max_save_stack {
             self.max_save_stack = self.save_ptr;
-            return self.max_save_stack > self.save_size - 7;
+            return self.max_save_stack.index() + 7 > self.save_size;
         }
         false
     }
@@ -71,7 +66,7 @@ impl SaveStackState {
         self.set_saved(0, line);
         self.save_ptr += 1;
         let (group, boundary) = (u16::from(self.cur_group.as_raw()), self.cur_boundary);
-        self.set_save_entry(LEVEL_BOUNDARY, group, boundary);
+        self.set_save_entry(SaveType::LevelBoundary, group, boundary.raw());
         if self.cur_level == u16::MAX {
             return Err(Abort::Overflow {
                 what: "grouping levels",
@@ -90,11 +85,11 @@ impl SaveStackState {
             return Err(Abort::SaveOverflow);
         }
         let kind = if l == LEVEL_ZERO {
-            RESTORE_ZERO
+            SaveType::RestoreZero
         } else {
             self.set_word(self.save_ptr, eqtb.word(p));
             self.save_ptr += 1;
-            RESTORE_OLD_VALUE
+            SaveType::RestoreOldValue
         };
         self.set_save_entry(kind, l, p.raw());
         self.save_ptr += 1;
@@ -106,7 +101,7 @@ impl SaveStackState {
             if self.save_stack_full() {
                 return Err(Abort::SaveOverflow);
             }
-            self.set_save_entry(INSERT_TOKEN, LEVEL_ZERO, t.0);
+            self.set_save_entry(SaveType::InsertToken, LEVEL_ZERO, t.0);
             self.save_ptr += 1;
         }
         Ok(())
@@ -283,7 +278,11 @@ impl MemState {
             if save_stack.save_stack_full() {
                 return Err(Abort::SaveOverflow);
             }
-            save_stack.set_save_entry(RESTORE_SA, scanner.sa_level, scanner.sa_chain.raw());
+            save_stack.set_save_entry(
+                SaveType::RestoreSa,
+                scanner.sa_level,
+                scanner.sa_chain.raw(),
+            );
             save_stack.save_ptr += 1;
             scanner.sa_chain = MemPtr::NULL;
             scanner.sa_level = save_stack.cur_level;
@@ -453,9 +452,13 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         st.save_stack.save_ptr -= 1;
         let sp = st.save_stack.save_ptr;
-        match st.save_stack.save_type(sp) {
-            LEVEL_BOUNDARY => break,
-            INSERT_TOKEN => {
+        let kind = st
+            .save_stack
+            .save_type(sp)
+            .ok_or(Abort::Confusion("save_type"))?;
+        match kind {
+            SaveType::LevelBoundary => break,
+            SaveType::InsertToken => {
                 let t = st.scanner.cur_tok;
                 st.scanner.cur_tok = Token(st.save_stack.save_index(sp));
                 if a {
@@ -476,14 +479,14 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
                 }
                 st.scanner.cur_tok = t;
             }
-            RESTORE_SA => {
+            SaveType::RestoreSa => {
                 sa_restore(st)?;
                 st.scanner.sa_chain = st.save_stack.save_index_ptr(sp);
                 st.scanner.sa_level = st.save_stack.save_level(st.save_stack.save_ptr);
             }
-            kind => {
+            SaveType::RestoreOldValue | SaveType::RestoreZero => {
                 let p = st.save_stack.save_loc(sp);
-                if kind == RESTORE_OLD_VALUE {
+                if kind == SaveType::RestoreOldValue {
                     l = st.save_stack.save_level(sp);
                     st.save_stack.save_ptr -= 1;
                 } else {
