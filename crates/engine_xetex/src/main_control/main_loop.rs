@@ -425,10 +425,59 @@ fn shape_interword_space(st: &mut EngineState, mf: FontId) -> Result<(), Abort> 
     Ok(())
 }
 
+/// The top of the ligature stack: the lookahead character, or a lig item that
+/// a ligature instruction pushed.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(crate) enum LigStack {
+    Char(NodePtr<CharNode>),
+    Item(NodePtr<LigItem>),
+}
+
+impl LigStack {
+    #[inline]
+    pub(crate) fn ptr(self) -> MemPtr {
+        match self {
+            LigStack::Char(c) => c.ptr(),
+            LigStack::Item(i) => i.ptr(),
+        }
+    }
+
+    /// The character it carries.
+    #[inline]
+    pub(crate) fn character(self, mem: &MemState) -> LigChar {
+        LigChar::of(match self {
+            LigStack::Char(c) => c.character(mem),
+            LigStack::Item(i) => i.character(mem),
+        })
+    }
+}
+
+impl MemState {
+    /// The ligature stack entry at link `p`, `None` when the stack ends there.
+    #[inline]
+    pub(crate) fn lig_stack_at(&self, p: MemPtr) -> Option<LigStack> {
+        if p.is_null() {
+            None
+        } else if self.is_char_node(p) {
+            Some(LigStack::Char(NodePtr::at(p)))
+        } else {
+            Some(LigStack::Item(NodePtr::at(p)))
+        }
+    }
+}
+
+/// The link value of the ligature stack top, null when empty.
+#[inline]
+fn lig_stack_ptr(st: &EngineState) -> MemPtr {
+    st.mainloop.lig_stack.map_or(MemPtr::NULL, LigStack::ptr)
+}
+
 /// The character on top of `lig_stack`, a char node or a lig item alike.
 #[inline(always)]
 fn lig_stack_char(st: &EngineState) -> LigChar {
-    LigChar::of(NodePtr::<CharNode>::at(st.mainloop.lig_stack).character(&st.mem))
+    st.mainloop
+        .lig_stack
+        .map_or(LigChar::NONE, |top| top.character(&st.mem))
 }
 
 /// Where the ligature/kern program scan ended.
@@ -476,7 +525,7 @@ fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), Abort> {
             lig.set_subtype(&mut st.mem, 2);
             st.mainloop.lft_hit = false;
         }
-        if rt_hit && st.mainloop.rt_hit && st.mainloop.lig_stack.is_null() {
+        if rt_hit && st.mainloop.rt_hit && st.mainloop.lig_stack.is_none() {
             let s = lig.subtype(&st.mem);
             lig.set_subtype(&mut st.mem, s + 1);
             st.mainloop.rt_hit = false;
@@ -532,7 +581,7 @@ pub(super) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
     }
     st.mainloop.cur_l = LigChar::from_raw(st.scanner.cur_chr);
     let ls = st.mem.new_char(mf, st.mainloop.cur_l.code())?;
-    st.mainloop.lig_stack = ls.ptr();
+    st.mainloop.lig_stack = Some(LigStack::Char(ls));
     st.mainloop.cur_q = st.input.cur_list.tail;
 
     let bchar_label = if st.mainloop.cancel_boundary {
@@ -574,24 +623,23 @@ pub(super) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
                 LigExit::Move | LigExit::Move1 => {}
             }
             if !matches!(exit, LigExit::Move1) {
-                if st.mainloop.lig_stack.is_null() {
+                if st.mainloop.lig_stack.is_none() {
                     return Ok(false);
                 }
                 st.mainloop.cur_q = st.input.cur_list.tail;
                 st.mainloop.cur_l = lig_stack_char(st);
             }
 
-            if !st.mem.is_char_node(st.mainloop.lig_stack) {
-                let item = NodePtr::<LigItem>::at(st.mainloop.lig_stack);
+            if let Some(LigStack::Item(item)) = st.mainloop.lig_stack {
                 let lig_ptr = item.component(&st.mem);
                 if lig_ptr.raw() > TEX_NULL {
                     st.input.cur_list.tail_append(&mut st.mem, lig_ptr);
                 }
-                st.mainloop.lig_stack = item.link(&st.mem);
+                st.mainloop.lig_stack = st.mem.lig_stack_at(item.link(&st.mem));
                 item.free(&mut st.mem);
                 main_i = cur_l_info(st);
                 st.mainloop.ligature_present = true;
-                if st.mainloop.lig_stack.is_null() {
+                if st.mainloop.lig_stack.is_none() {
                     if lig_ptr.raw() > TEX_NULL {
                         if !lookahead(st)? {
                             return Ok(true);
@@ -622,12 +670,11 @@ pub(super) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
         };
         if !exists {
             crate::output::char_warning(st, main_f, st.scanner.cur_chr)?;
-            st.mem.free_avail(st.mainloop.lig_stack);
+            st.mem.free_avail(lig_stack_ptr(st));
             return Ok(true);
         }
-        st.input
-            .cur_list
-            .tail_append(&mut st.mem, st.mainloop.lig_stack);
+        let top = lig_stack_ptr(st);
+        st.input.cur_list.tail_append(&mut st.mem, top);
         if !lookahead(st)? {
             return Ok(true);
         }
@@ -662,7 +709,7 @@ fn lig_kern_program(
         }
         if st.mainloop.cur_l == LigChar::NONE {
             st.mainloop.lft_hit = true;
-        } else if st.mainloop.lig_stack.is_null() {
+        } else if st.mainloop.lig_stack.is_none() {
             st.mainloop.rt_hit = true;
         }
         let op = step.lig_op();
@@ -675,23 +722,25 @@ fn lig_kern_program(
             2 | 6 => {
                 st.mainloop.cur_r = LigChar::of(step.lig_char());
                 let c = st.mainloop.cur_r.code();
-                if st.mainloop.lig_stack.is_null() {
-                    st.mainloop.lig_stack = st.mem.new_lig_item(c)?.ptr();
-                    st.mainloop.bchar = LigChar::NONE;
-                } else if st.mem.is_char_node(st.mainloop.lig_stack) {
-                    let prev = st.mainloop.lig_stack;
-                    let item = st.mem.new_lig_item(c)?;
-                    st.mainloop.lig_stack = item.ptr();
-                    item.set_component(&mut st.mem, prev);
-                } else {
-                    NodePtr::<LigItem>::at(st.mainloop.lig_stack).set_character(&mut st.mem, c);
+                match st.mainloop.lig_stack {
+                    None => {
+                        let item = st.mem.new_lig_item(c)?;
+                        st.mainloop.lig_stack = Some(LigStack::Item(item));
+                        st.mainloop.bchar = LigChar::NONE;
+                    }
+                    Some(LigStack::Char(prev)) => {
+                        let item = st.mem.new_lig_item(c)?;
+                        st.mainloop.lig_stack = Some(LigStack::Item(item));
+                        item.set_component(&mut st.mem, prev.ptr());
+                    }
+                    Some(LigStack::Item(item)) => item.set_character(&mut st.mem, c),
                 }
             }
             3 => {
                 st.mainloop.cur_r = LigChar::of(step.lig_char());
-                let prev = st.mainloop.lig_stack;
+                let prev = lig_stack_ptr(st);
                 let item = st.mem.new_lig_item(st.mainloop.cur_r.code())?;
-                st.mainloop.lig_stack = item.ptr();
+                st.mainloop.lig_stack = Some(LigStack::Item(item));
                 item.ptr().set_link(&mut st.mem, prev);
             }
             7 | 11 => {
@@ -704,7 +753,7 @@ fn lig_kern_program(
             _ => {
                 st.mainloop.cur_l = LigChar::of(step.lig_char());
                 st.mainloop.ligature_present = true;
-                return Ok(if st.mainloop.lig_stack.is_null() {
+                return Ok(if st.mainloop.lig_stack.is_none() {
                     LigExit::Wrapup
                 } else {
                     LigExit::Move1
@@ -737,7 +786,7 @@ fn lookahead(st: &mut EngineState) -> Result<bool, Abort> {
                 st.mainloop.bchar = LigChar::NONE;
             }
             st.mainloop.cur_r = st.mainloop.bchar;
-            st.mainloop.lig_stack = MemPtr::NULL;
+            st.mainloop.lig_stack = None;
             return Ok(true);
         }
         st.scanner.cur_chr = crate::scan::scan_char_num(st)?;
@@ -755,7 +804,7 @@ fn lookahead(st: &mut EngineState) -> Result<bool, Abort> {
 
     let c = st.scanner.cur_chr;
     let ls = st.mem.new_char(st.mainloop.main_f, c as u16)?;
-    st.mainloop.lig_stack = ls.ptr();
+    st.mainloop.lig_stack = Some(LigStack::Char(ls));
     st.mainloop.cur_r = LigChar::from_raw(c);
     if st.mainloop.cur_r == st.mainloop.false_bchar {
         st.mainloop.cur_r = LigChar::NONE;

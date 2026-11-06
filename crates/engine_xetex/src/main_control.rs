@@ -18,6 +18,7 @@ mod assign;
 mod boxes;
 mod lists;
 mod main_loop;
+pub(crate) use main_loop::LigStack;
 
 use self::align::{align_error, do_endv, init_align, no_align_error, omit_error};
 use self::assign::prefixed_command;

@@ -45,7 +45,7 @@ pub(crate) struct MainLoopState {
     pub cur_l: crate::fonts::LigChar,
     pub cur_r: crate::fonts::LigChar,
     pub cur_q: crate::units::MemPtr,
-    pub lig_stack: crate::units::MemPtr,
+    pub lig_stack: Option<crate::main_control::LigStack>,
     pub ligature_present: bool,
     pub lft_hit: bool,
     pub rt_hit: bool,

@@ -4,6 +4,7 @@ use crate::consts::{SMALL_NODE_SIZE, TEX_NULL};
 use crate::errors::Abort;
 use crate::fonts::{CharTag, LigChar};
 use crate::hyphenation::TrieOp;
+use crate::main_control::LigStack;
 use crate::mem::HOLD_HEAD;
 use crate::node::{AnyNode, CharNode, DiscNode, LigItem, NodePtr, WhatsitNode};
 use crate::params::IntPar;
@@ -90,10 +91,13 @@ pub(super) fn split_native_word(
     Ok(tail)
 }
 
-/// A lig item on `mainloop.lig_stack`, which `reconstitute` fills only with lig items.
+/// The top of `mainloop.lig_stack` as a lig item, which is all `reconstitute` pushes.
 #[inline]
-fn lig_item(p: MemPtr) -> NodePtr<LigItem> {
-    NodePtr::at(p)
+fn top_item(st: &EngineState) -> Option<NodePtr<LigItem>> {
+    match st.mainloop.lig_stack? {
+        LigStack::Item(item) => Some(item),
+        LigStack::Char(c) => Some(NodePtr::at(c.ptr())),
+    }
 }
 
 impl MemState {
@@ -132,19 +136,20 @@ fn pop_lig_stack(
     hchar: LigChar,
     cur_rh: &mut LigChar,
 ) {
-    let item = lig_item(st.mainloop.lig_stack);
+    let Some(item) = top_item(st) else {
+        return;
+    };
     let component = item.component(&st.mem);
     if component.raw() > TEX_NULL {
         t.set_link(&mut st.mem, component);
         *t = component;
         *j += 1;
     }
-    st.mainloop.lig_stack = item.ptr().link(&st.mem);
+    st.mainloop.lig_stack = st.mem.lig_stack_at(item.ptr().link(&st.mem));
     st.mem.free_node(item.ptr(), SMALL_NODE_SIZE);
-    if st.mainloop.lig_stack.is_null() {
-        *cur_rh = update_right(st, *j, n, bchar, hchar);
-    } else {
-        st.mainloop.cur_r = LigChar::of(lig_item(st.mainloop.lig_stack).character(&st.mem));
+    match st.mainloop.lig_stack {
+        None => *cur_rh = update_right(st, *j, n, bchar, hchar),
+        Some(top) => st.mainloop.cur_r = top.character(&st.mem),
     }
 }
 
@@ -181,7 +186,7 @@ fn reconstitute(
             .append_char(t, st.hyph.hf, st.mainloop.cur_l.code())?;
     }
 
-    st.mainloop.lig_stack = MemPtr::NULL;
+    st.mainloop.lig_stack = None;
     let mut cur_rh = update_right(st, j, n, bchar, hchar);
 
     loop {
@@ -226,7 +231,7 @@ fn reconstitute(
                         if st.mainloop.cur_l == LigChar::NONE {
                             st.mainloop.lft_hit = true;
                         }
-                        if j == n && st.mainloop.lig_stack.is_null() {
+                        if j == n && st.mainloop.lig_stack.is_none() {
                             st.mainloop.rt_hit = true;
                         }
 
@@ -237,12 +242,11 @@ fn reconstitute(
                             }
                             2 | 6 => {
                                 st.mainloop.cur_r = LigChar::of(q.lig_char());
-                                if st.mainloop.lig_stack.raw() > TEX_NULL {
-                                    lig_item(st.mainloop.lig_stack)
-                                        .set_character(&mut st.mem, st.mainloop.cur_r.code());
+                                if let Some(top) = top_item(st) {
+                                    top.set_character(&mut st.mem, st.mainloop.cur_r.code());
                                 } else {
                                     let item = st.mem.new_lig_item(st.mainloop.cur_r.code())?;
-                                    st.mainloop.lig_stack = item.ptr();
+                                    st.mainloop.lig_stack = Some(LigStack::Item(item));
                                     if j == n {
                                         bchar = LigChar::NONE;
                                     } else {
@@ -255,9 +259,10 @@ fn reconstitute(
                             }
                             3 => {
                                 st.mainloop.cur_r = LigChar::of(q.lig_char());
-                                let below = st.mainloop.lig_stack;
+                                let below =
+                                    st.mainloop.lig_stack.map_or(MemPtr::NULL, LigStack::ptr);
                                 let item = st.mem.new_lig_item(st.mainloop.cur_r.code())?;
-                                st.mainloop.lig_stack = item.ptr();
+                                st.mainloop.lig_stack = Some(LigStack::Item(item));
                                 item.ptr().set_link(&mut st.mem, below);
                             }
                             7 | 11 => {
@@ -271,7 +276,7 @@ fn reconstitute(
                             _ => {
                                 st.mainloop.cur_l = LigChar::of(q.lig_char());
                                 st.mainloop.ligature_present = true;
-                                if st.mainloop.lig_stack.raw() > TEX_NULL {
+                                if st.mainloop.lig_stack.is_some() {
                                     pop_lig_stack(st, &mut t, &mut j, n, bchar, hchar, &mut cur_rh);
                                 } else if j == n {
                                     break 'continue_;
@@ -327,9 +332,9 @@ fn reconstitute(
             kern.set_sync_tag(&mut st.mem, 0);
         }
 
-        if st.mainloop.lig_stack.raw() > TEX_NULL {
+        if let Some(top) = st.mainloop.lig_stack {
             st.mainloop.cur_q = t;
-            st.mainloop.cur_l = LigChar::of(lig_item(st.mainloop.lig_stack).character(&st.mem));
+            st.mainloop.cur_l = top.character(&st.mem);
             st.mainloop.ligature_present = true;
             pop_lig_stack(st, &mut t, &mut j, n, bchar, hchar, &mut cur_rh);
             continue;
@@ -350,7 +355,7 @@ fn wrap_lig(st: &mut EngineState, rt: bool) -> Result<MemPtr, Abort> {
         lig.set_subtype(&mut st.mem, 2);
         st.mainloop.lft_hit = false;
     }
-    if rt && st.mainloop.rt_hit && st.mainloop.lig_stack.is_null() {
+    if rt && st.mainloop.rt_hit && st.mainloop.lig_stack.is_none() {
         let s = lig.subtype(&st.mem);
         lig.set_subtype(&mut st.mem, s + 1);
         st.mainloop.rt_hit = false;
