@@ -11,9 +11,9 @@ use crate::consts::{
     FROZEN_END_TEMPLATE, FROZEN_PRIMITIVE, FROZEN_PROTECTION, GLUE_BASE, HASH_BASE,
     HISTORY_FATAL_ERROR, HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, IGNORE_DEPTH, INT_BASE,
     LC_CODE_BASE, LEFT_TO_RIGHT, LEVEL_ONE, LEVEL_ZERO, LOCAL_BASE, MATH_CODE_BASE, MATH_FONT_BASE,
-    MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP, MIN_TRIE_OP, NORMAL, NULL_FONT, NUMBER_MATH_FAMILIES,
-    NUMBER_USVS, PAR_SHAPE_LOC, PRIM_SIZE, SF_CODE_BASE, SINGLE_BASE, TEX_NULL, TOKS_BASE,
-    TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, VMODE,
+    MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP, NORMAL, NULL_FONT, NUMBER_MATH_FAMILIES, NUMBER_USVS,
+    PAR_SHAPE_LOC, PRIM_SIZE, SF_CODE_BASE, SINGLE_BASE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR,
+    UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, VMODE,
 };
 use crate::errors::Abort;
 use crate::format_io::load_fmt_file;
@@ -590,8 +590,8 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
 
     let hyph = &mut st.hyph;
     hyph.trie_op_hash_array[..=(2 * TRIE_OP_SIZE) as usize].fill(0);
-    hyph.trie_used[..=BIGGEST_LANG as usize].fill(MIN_TRIE_OP);
-    hyph.max_op_used = MIN_TRIE_OP;
+    hyph.trie_used[..=BIGGEST_LANG as usize].fill(crate::hyphenation::TrieOp::NONE.raw());
+    hyph.max_op_used = crate::hyphenation::TrieOp::NONE.raw();
     hyph.trie_op_ptr = 0;
     hyph.trie_not_ready = true;
 
@@ -948,7 +948,7 @@ pub(crate) fn initialize_engine(
         hyph.trie_hash = vec![0; trie_len];
         hyph.trie_taken = vec![false; trie_len];
         hyph.trie_ptr = 0;
-        hyph.hyph_start = 0;
+        hyph.hyph_start = crate::hyphenation::TriePtr::NULL;
 
         st.fonts.alloc_font_arrays();
 

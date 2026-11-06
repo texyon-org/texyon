@@ -341,15 +341,15 @@ fn digest_hyph(st: &EngineState) -> u64 {
     h.i32s(&[
         hyph.hf.raw(),
         hyph.max_hyph_char,
-        hyph.trie_max,
+        hyph.trie_max.raw(),
         hyph.trie_size,
         hyph.trie_ptr,
         hyph.hyph_count,
         hyph.hyph_size,
         hyph.hyph_next,
         hyph.trie_op_ptr,
-        hyph.hyph_start,
-        hyph.hyph_index as i32,
+        hyph.hyph_start.raw(),
+        hyph.hyph_index.map_or(0, |p| p.raw()),
     ]);
     macro_rules! hash_values {
         ($field:ident $(.$raw:ident())?) => {

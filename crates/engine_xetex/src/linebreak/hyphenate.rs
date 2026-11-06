@@ -1,8 +1,9 @@
 //! Post-hyphenation: `hyphenate`, `reconstitute` and native-word hyphens.
 
-use crate::consts::{MIN_TRIE_OP, SMALL_NODE_SIZE, TEX_NULL, TOO_BIG_CHAR};
+use crate::consts::{SMALL_NODE_SIZE, TEX_NULL, TOO_BIG_CHAR};
 use crate::errors::Abort;
 use crate::fonts::CharTag;
+use crate::hyphenation::TrieOp;
 use crate::mem::HOLD_HEAD;
 use crate::node::{AnyNode, CharNode, DiscNode, LigItem, NodePtr, WhatsitNode};
 use crate::params::IntPar;
@@ -445,20 +446,20 @@ pub(super) fn hyphenate(
     let op_base = hyph.op_start[usize::from(hyph.cur_lang)];
 
     for j in 0..=hn + 1 - hyph.r_hyf as usize {
-        let mut z = root + hyph.hc[j] as usize;
+        let mut z = root.plus(hyph.hc[j] as usize);
         let mut l = j;
         while hyph.hc[l] == i32::from(hyph.trie_char(z)) {
             let mut v = hyph.trie_op(z);
-            while v != usize::from(MIN_TRIE_OP) {
-                let op = hyph.hyph_op(v + op_base);
+            while v != TrieOp::NONE {
+                let op = hyph.hyph_op(op_base, v);
                 let i = l - usize::from(op.distance);
                 if op.num > hyph.hyf[i] {
                     hyph.hyf[i] = op.num;
                 }
-                v = usize::from(op.next);
+                v = op.next;
             }
             l += 1;
-            z = hyph.trie_link(z) + hyph.hc[l] as usize;
+            z = hyph.trie_link(z).plus(hyph.hc[l] as usize);
         }
     }
 

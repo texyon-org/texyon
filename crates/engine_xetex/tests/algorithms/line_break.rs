@@ -138,3 +138,47 @@ fn line_numbers_wrapped_by_prevgraf_are_past_the_parshape() {
         .all(|l| l == ".\\penalty 8"));
     assert_eq!(r.shown(), ["-2147483642"]);
 }
+
+/// Typesets each word on its own and returns the hyphenated words, as `\showhyphens` reports them.
+fn hyphenated(setup: &str, words: &str) -> Vec<String> {
+    let r = run(&format!(
+        r"\font\rm=cmr10 \rm \hyphenchar\rm=`- \lefthyphenmin=1 \righthyphenmin=1
+        \lccode`a=`a \lccode`b=`b \lccode`c=`c \lccode`d=`d
+        {setup}
+        \hsize=1000pt \parfillskip=0pt \pretolerance=-1 \tolerance=-1 \hbadness=0
+        \setbox0\vbox{{\ {words}}}"
+    ));
+    r.log
+        .lines()
+        .filter_map(|l| l.strip_prefix(r"[] \rm "))
+        .map(str::to_owned)
+        .collect()
+}
+
+#[test]
+fn patterns_take_the_highest_value_at_each_position() {
+    let words = hyphenated(r"\patterns{a1b b1c ab2c c1d}", "abcd");
+    assert_eq!(words, ["a-bc-d"]);
+}
+
+#[test]
+fn exceptions_override_patterns() {
+    let words = hyphenated(r"\patterns{a1b} \hyphenation{abc-d}", r"abcd\ abab");
+    assert_eq!(words, ["abc-d a-ba-b"]);
+}
+
+#[test]
+fn saved_hyph_codes_outlive_later_lccode_changes() {
+    let saved = hyphenated(r"\savinghyphcodes=1 \patterns{c1d} \lccode`d=0", "abcd");
+    let unsaved = hyphenated(r"\patterns{c1d} \lccode`d=0", "abcd");
+    assert_eq!(
+        (saved, unsaved),
+        (vec!["abc-d".to_owned()], vec!["abcd".to_owned()])
+    );
+}
+
+#[test]
+fn every_digit_of_a_pattern_applies() {
+    let words = hyphenated(r"\patterns{a1b3c}", "abc");
+    assert_eq!(words, ["a-b-c"]);
+}

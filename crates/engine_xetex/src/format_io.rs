@@ -18,7 +18,7 @@ use crate::engine::{POOL_FREE, STRINGS_FREE};
 use crate::errors::Abort;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::hash::{hash_slot, HASH_PRIME};
-use crate::hyphenation::{BIGGEST_LANG, HYPH_PRIME, MAX_TRIE_OP, TRIE_OP_SIZE};
+use crate::hyphenation::{TrieOp, TriePtr, BIGGEST_LANG, HYPH_PRIME, TRIE_OP_SIZE};
 use crate::mem::{CONTRIB_HEAD, HI_MEM_STAT_MIN, HI_MEM_STAT_USAGE, PAGE_HEAD};
 use crate::mem_types::{B16x4, B32x2, MemoryWord};
 use crate::node::{FreeBlock, NodePtr};
@@ -80,7 +80,15 @@ macro_rules! newtype_item {
     )*};
 }
 
-newtype_item!(Scaled, MemPtr, StrNumber, EqtbPtr, PoolPos, FontInfoIdx);
+newtype_item!(
+    Scaled,
+    MemPtr,
+    StrNumber,
+    EqtbPtr,
+    PoolPos,
+    FontInfoIdx,
+    TriePtr
+);
 
 impl FmtItem for B32x2 {
     const SIZE: usize = 8;
@@ -910,14 +918,18 @@ fn hyphenation_tables<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(
     let hyph = &mut st.hyph;
     s.size(
         &mut hyph.trie_max,
-        0,
-        hyph.trie_size,
+        TriePtr::NULL,
+        TriePtr::from_raw(hyph.trie_size),
         "must increase trie_size",
     )?;
     let trie_max = hyph.trie_max;
-    s.int_in(&mut hyph.hyph_start, 0, trie_max)?;
+    s.items_in(
+        std::slice::from_mut(&mut hyph.hyph_start),
+        TriePtr::NULL,
+        trie_max,
+    )?;
     if S::LOADING {
-        let trie_len = trie_max as usize + 1;
+        let trie_len = trie_max.index() + 1;
         if hyph.trie_trl.is_empty() {
             hyph.trie_trl = vec![0; trie_len];
         }
@@ -928,9 +940,9 @@ fn hyphenation_tables<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(
             hyph.trie_trc = vec![0; trie_len];
         }
     }
-    s.items(span(&mut hyph.trie_trl, 0, trie_max + 1))?;
-    s.items(span(&mut hyph.trie_tro, 0, trie_max + 1))?;
-    s.items(span(&mut hyph.trie_trc, 0, trie_max + 1))?;
+    s.items(span(&mut hyph.trie_trl, 0, trie_max.raw() + 1))?;
+    s.items(span(&mut hyph.trie_tro, 0, trie_max.raw() + 1))?;
+    s.items(span(&mut hyph.trie_trc, 0, trie_max.raw() + 1))?;
     s.int(&mut hyph.max_hyph_char)?;
 
     s.size(
@@ -942,7 +954,7 @@ fn hyphenation_tables<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(
     let op_count = hyph.trie_op_ptr;
     s.items(span(&mut hyph.hyf_distance, 1, op_count))?;
     s.items(span(&mut hyph.hyf_num, 1, op_count))?;
-    s.items_in(span(&mut hyph.hyf_next, 1, op_count), 0, MAX_TRIE_OP)?;
+    s.items_in(span(&mut hyph.hyf_next, 1, op_count), 0, TrieOp::MAX.raw())?;
 
     if S::LOADING {
         hyph.trie_used[..=BIGGEST_LANG as usize].fill(0);
@@ -960,7 +972,7 @@ fn hyphenation_tables<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(
         hyph.trie_not_ready = false;
     } else {
         print_nl(st, "Hyphenation trie of length ");
-        print_int(st, trie_max);
+        print_int(st, trie_max.raw());
         print(st, " has ");
         print_int(st, op_count);
         if op_count != 1 {
