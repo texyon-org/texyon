@@ -6,8 +6,7 @@ use crate::codes::{
 };
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_USV, FROZEN_DONT_EXPAND, FROZEN_ENDV, FROZEN_PRIMITIVE, HMODE, MMODE,
-    NULL_CS, NULL_FONT, PRIM_EQTB_BASE, SINGLE_BASE, TEX_NULL, TOO_BIG_USV, UNDEFINED_PRIMITIVE,
-    VMODE,
+    NULL_CS, NULL_FONT, PRIM_EQTB_BASE, SINGLE_BASE, TOO_BIG_USV, UNDEFINED_PRIMITIVE, VMODE,
 };
 use crate::errors::{error, Abort};
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
@@ -26,7 +25,7 @@ use crate::scan::{
 };
 use crate::state::{EngineState, MacroParam, MemState, Selector};
 use crate::token::{Token, TokenList};
-use crate::units::{EqtbPtr, FontId, MemPtr, Scaled, StrNumber};
+use crate::units::{BufPos, EqtbPtr, FontId, MemPtr, Scaled, StrNumber};
 
 /// The `\the` variant in `cur_chr`.
 pub(crate) fn the_code(st: &EngineState) -> Result<TheCode, Abort> {
@@ -96,20 +95,17 @@ fn get_token_unexpanded(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 /// Copies the character tokens of `list` into `buffer[first..]`, returning the end index.
-fn token_chars_to_buffer(st: &mut EngineState, list: TokenList) -> Result<i32, Abort> {
+fn token_chars_to_buffer(st: &mut EngineState, list: TokenList) -> Result<BufPos, Abort> {
     let mut j = st.input.first;
     let mut p = list;
     while !p.is_null() {
         if j >= st.input.max_buf_stack {
             st.input.max_buf_stack = j + 1;
             if st.input.max_buf_stack == st.input.buf_size {
-                return Err(Abort::Overflow {
-                    what: "buffer size",
-                    n: st.input.buf_size,
-                });
+                return Err(st.input.buffer_overflow());
             }
         }
-        st.input.buffer[j as usize] = p.token(&st.mem).chr();
+        st.input.buffer[j] = p.token(&st.mem).chr();
         j += 1;
         p = p.link(&st.mem);
     }
@@ -302,10 +298,10 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             st.scanner.cur_cs = if m == first {
                 NULL_CS
             } else if m == first + 1 {
-                SINGLE_BASE + st.input.buffer[first as usize]
+                SINGLE_BASE + st.input.buffer[first]
             } else {
                 st.eqtb
-                    .id_lookup(&mut st.strings, &st.input.buffer, first, m - first)?
+                    .id_lookup(&mut st.strings, st.input.buffer.span(first, m))?
             };
             st.mem.flush_token_list_with_tail(head, tail);
             st.eqtb.eq_type(st.scanner.cur_cs) != Cmd::UndefinedCs
@@ -447,7 +443,7 @@ fn scan_text_to_string(st: &mut EngineState, saved: &SavedScan) -> Result<StrNum
     st.shipout.selector = Selector::NewString;
     let text = st.scanner.def_ref.link(&st.mem);
     let limit = st.strings.pool_size - st.strings.pool_ptr;
-    crate::output::show_token_list(st, text, TEX_NULL, limit);
+    crate::output::show_token_list(st, text, TokenList::NULL, limit);
     st.shipout.selector = old_selector;
     let s = st.strings.make_string()?;
     st.mem.delete_token_ref(st.scanner.def_ref);
@@ -888,17 +884,17 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                 let (head, tail) = scan_cs_name_tokens(st)?;
                 let first = st.input.first;
                 let j = token_chars_to_buffer(st, head.link(&st.mem))?;
-                st.scanner.cur_cs = if j > first + 1 || st.input.buffer[first as usize] > 65535 {
+                st.scanner.cur_cs = if j > first + 1 || st.input.buffer[first] > 65535 {
                     st.eqtb.no_new_control_sequence = false;
-                    let cs =
-                        st.eqtb
-                            .id_lookup(&mut st.strings, &st.input.buffer, first, j - first)?;
+                    let cs = st
+                        .eqtb
+                        .id_lookup(&mut st.strings, st.input.buffer.span(first, j))?;
                     st.eqtb.no_new_control_sequence = true;
                     cs
                 } else if j == first {
                     NULL_CS
                 } else {
-                    SINGLE_BASE + st.input.buffer[first as usize]
+                    SINGLE_BASE + st.input.buffer[first]
                 };
                 st.mem.flush_token_list_with_tail(head, tail);
                 let cs = st.scanner.cur_cs;
@@ -1059,7 +1055,7 @@ fn trace_macro_param(st: &mut EngineState, match_chr: i32, n: i32, list: TokenLi
         crate::output::print_nl(st, match_chr);
         print_int(st, n);
         print(st, "<-");
-        crate::output::show_token_list(st, list, TEX_NULL, 1000);
+        crate::output::show_token_list(st, list, TokenList::NULL, 1000);
         capture_to_diagnostic(st, None);
         end_diagnostic(st, false);
     }
@@ -1272,7 +1268,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
         }
 
         while st.input.cur_input.state == TOKEN_LIST
-            && st.input.cur_input.loc == TEX_NULL
+            && st.input.cur_input.token_loc().is_null()
             && st.input.cur_input.token_type() != TokenType::VTemplate
         {
             crate::input::end_token_list(st)?;

@@ -3,7 +3,7 @@
 use crate::bridge::output_flush;
 use crate::cmd::Cmd;
 use crate::codes::{FiOrElseCode, ShowCode, TheCode};
-use crate::consts::{A_LEADERS, HMODE, IGNORE_DEPTH, MMODE, TEX_NULL, VMODE};
+use crate::consts::{A_LEADERS, HMODE, IGNORE_DEPTH, MMODE, VMODE};
 use crate::errors::{error, Abort};
 use crate::input::{TokenType, TOKEN_LIST};
 use crate::main_control::{BOX_FLAG, GLOBAL_BOX_FLAG, LEADER_FLAG, SHIP_OUT_FLAG};
@@ -68,12 +68,13 @@ fn set_trick_count(st: &mut EngineState) {
     st.errors.trick_count = tc.max(st.errors.error_line);
 }
 
-pub(crate) fn show_token_list(st: &mut EngineState, mut p: TokenList, q: i32, l: i32) {
+/// Shows `p`, marking where `q` starts for `show_context`'s two-line display.
+pub(crate) fn show_token_list(st: &mut EngineState, mut p: TokenList, q: TokenList, l: i32) {
     let mut match_chr = i32::from(b'#');
     let mut n = i32::from(b'0');
     st.errors.tally = 0;
     while !p.is_null() && st.errors.tally < l {
-        if p.ptr().raw() == q {
+        if p == q {
             set_trick_count(st);
         }
         if p.ptr() < st.mem.hi_mem_min || p.ptr() > st.mem.mem_end {
@@ -690,7 +691,7 @@ pub(crate) fn show_context(st: &mut EngineState) {
             if st.input.base_ptr == st.input.input_stack.len()
                 || ci.state != TOKEN_LIST
                 || ci.token_type() != TokenType::BackedUp
-                || ci.loc != TEX_NULL
+                || !ci.token_loc().is_null()
             {
                 st.errors.tally = 0;
                 let old_setting = st.shipout.selector;
@@ -726,16 +727,16 @@ pub(crate) fn show_context(st: &mut EngineState) {
                     print_char(st, b' ');
                     l = begin_pseudoprint(st);
                     let end_line_char = st.eqtb.int_par(IntPar::EndLineChar);
-                    let j = if st.input.buffer[ci.limit as usize] == end_line_char {
+                    let j = if st.input.buffer[ci.limit] == end_line_char {
                         ci.limit
                     } else {
                         ci.limit + 1
                     };
-                    for i in ci.start..j {
+                    for i in ci.start.until(j) {
                         if i == ci.loc {
                             set_trick_count(st);
                         }
-                        print_char(st, st.input.buffer[i as usize]);
+                        print_char(st, st.input.buffer[i]);
                     }
                 } else {
                     match ci.token_type() {
@@ -743,14 +744,14 @@ pub(crate) fn show_context(st: &mut EngineState) {
                             print_ln(st);
                             print_cs(st, ci.macro_name());
                         }
-                        t => print_nl(st, t.label(ci.loc)),
+                        t => print_nl(st, t.label(ci.token_loc())),
                     }
                     l = begin_pseudoprint(st);
                     if ci.token_type() < TokenType::Macro {
-                        show_token_list(st, ci.token_start(), ci.loc, 100_000);
+                        show_token_list(st, ci.token_start(), ci.token_loc(), 100_000);
                     } else {
                         let list = ci.token_start().link(&st.mem);
-                        show_token_list(st, list, ci.loc, 100_000);
+                        show_token_list(st, list, ci.token_loc(), 100_000);
                     }
                 }
                 st.shipout.selector = old_setting;

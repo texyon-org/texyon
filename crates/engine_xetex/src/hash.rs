@@ -35,16 +35,17 @@ fn hash_mod_rare(h: i32) -> i32 {
 }
 
 impl EqtbState {
+    /// The control sequence named by the characters `name`, entered in the hash
+    /// unless `no_new_control_sequence`.
     pub fn id_lookup(
         &mut self,
         strings: &mut StringsState,
-        buffer: &[i32],
-        j: i32,
-        l: i32,
+        name: &[i32],
     ) -> Result<EqtbPtr, Abort> {
+        let l = i32::try_from(name.len()).map_err(|_| Abort::PoolOverflow)?;
         let mut h: i32 = 0;
-        for k in j..=(j + l - 1) {
-            h = h + h + buffer[k as usize];
+        for &c in name {
+            h = h + h + c;
             // Peeled subtractions: a plain while loop becomes a slow imul modulo chain.
             if h >= HASH_PRIME {
                 h -= HASH_PRIME;
@@ -59,18 +60,15 @@ impl EqtbState {
 
         let mut p = HASH_BASE + h;
 
-        let mut utf16_len = l;
-        for k in j..j + l {
-            if buffer[k as usize] >= TOO_BIG_CHAR {
-                utf16_len += 1;
-            }
-        }
+        let utf16_len = name
+            .iter()
+            .fold(l, |n, &c| if c >= TOO_BIG_CHAR { n + 1 } else { n });
 
         loop {
             let text = self.text(p);
             if text > StrNumber::NONE
                 && strings.length(text) == utf16_len
-                && strings.str_eq_buf(buffer, text, j)
+                && strings.str_eq_buf(name, text)
             {
                 return Ok(p);
             }
@@ -113,8 +111,7 @@ impl EqtbState {
                             strings.str_pool[strings.pool_ptr as usize];
                     }
 
-                    for k in j..j + l {
-                        let bk = buffer[k as usize];
+                    for &bk in name {
                         if bk < TOO_BIG_CHAR {
                             strings.append_char(bk as u16);
                         } else {
@@ -127,7 +124,7 @@ impl EqtbState {
 
                     let s_idx = strings.make_string()?;
                     self.set_text(p, s_idx);
-                    self.pgfmath.note(&buffer[j as usize..(j + l) as usize], p);
+                    self.pgfmath.note(name, p);
                     strings.pool_ptr += d;
                 }
                 return Ok(p);

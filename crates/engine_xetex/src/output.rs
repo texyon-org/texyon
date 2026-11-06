@@ -5,7 +5,7 @@ use crate::cmd::Cmd;
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_USV, EQTB_SIZE, FROZEN_NULL_FONT, HASH_BASE,
     HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, NULL_CS, PRIM_EQTB_BASE, SCRIPT_SIZE, SINGLE_BASE,
-    TEXT_SIZE, TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
+    TEXT_SIZE, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::node::{
@@ -772,7 +772,7 @@ pub(crate) fn print_group(st: &mut EngineState, e: bool) {
 pub(crate) fn token_show(st: &mut EngineState, p: TokenList) {
     if !p.is_null() {
         let head = p.link(&st.mem);
-        show_token_list(st, head, TEX_NULL, 10_000_000);
+        show_token_list(st, head, TokenList::NULL, 10_000_000);
     }
 }
 
@@ -908,7 +908,7 @@ fn print_mark(st: &mut EngineState, p: TokenList) {
     } else {
         let head = p.link(&st.mem);
         let l = st.config.max_print_line - 10;
-        show_token_list(st, head, TEX_NULL, l);
+        show_token_list(st, head, TokenList::NULL, l);
     }
     print_char(st, b'}');
 }

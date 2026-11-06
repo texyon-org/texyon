@@ -6,7 +6,7 @@ use crate::input::NEW_LINE;
 use crate::layout::FontMappingHandle;
 use crate::params::IntPar;
 use crate::state::{EngineState, Selector};
-use crate::units::StrNumber;
+use crate::units::{BufPos, StrNumber};
 use crate::utf8::next_utf8_char;
 use texyon_bridge_core::EOF;
 
@@ -370,8 +370,8 @@ fn apply_normalization(
         }
     };
 
-    let first = st.input.first as usize;
-    let out = utf32_bytes_mut(&mut st.input.buffer[first..st.input.buf_size as usize]);
+    let first = st.input.first.index();
+    let out = utf32_bytes_mut(&mut st.input.buffer.0[first..st.input.buf_size.index()]);
     let (status, out_used) = converter.convert(utf32_bytes(units), out);
     if status != K_STATUS_NO_ERROR {
         return Err(line_too_long());
@@ -404,7 +404,7 @@ fn input_line_with(
     }
 
     st.input.last = st.input.first;
-    let buf_size = st.input.buf_size as usize;
+    let buf_size = st.input.buf_size.index();
     if norm == 1 || norm == 2 {
         scratch.utf32.resize(buf_size, 0);
     }
@@ -453,8 +453,8 @@ fn input_line_with(
             let units = &scratch.utf32[..(len / 4) as usize];
             apply_normalization(st, &mut scratch.normalizers, units, norm)?;
         } else {
-            let first = st.input.first as usize;
-            let out = utf32_bytes_mut(&mut st.input.buffer[first..buf_size]);
+            let first = st.input.first.index();
+            let out = utf32_bytes_mut(&mut st.input.buffer.0[first..buf_size]);
             let (len, error_code) = icu_to_utf32(cnv, out, source);
             if error_code != 0 {
                 conversion_error(st, error_code);
@@ -495,14 +495,14 @@ fn input_line_with(
             apply_normalization(st, &mut scratch.normalizers, &scratch.utf32[..len], norm)?;
         } else {
             if st.input.last < st.input.buf_size && !is_line_end(i) {
-                st.input.buffer[st.input.last as usize] = i;
+                st.input.buffer[st.input.last] = i;
                 st.input.last += 1;
                 while st.input.last < st.input.buf_size {
                     i = get_uni_c(st, f)?;
                     if is_line_end(i) {
                         break;
                     }
-                    st.input.buffer[st.input.last as usize] = i;
+                    st.input.buffer[st.input.last] = i;
                     st.input.last += 1;
                 }
             }
@@ -520,13 +520,13 @@ fn input_line_with(
         f.skip_next_lf = 1;
     }
 
-    st.input.buffer[st.input.last as usize] = i32::from(b' ');
+    st.input.buffer[st.input.last] = i32::from(b' ');
     if st.input.last >= st.input.max_buf_stack {
         st.input.max_buf_stack = st.input.last;
     }
 
     while st.input.last > st.input.first {
-        let c = st.input.buffer[(st.input.last - 1) as usize];
+        let c = st.input.buffer[st.input.last - 1];
         if c != i32::from(b' ') && c != i32::from(b'\r') && c != i32::from(b'\n') {
             break;
         }
@@ -856,11 +856,11 @@ pub(crate) fn open_log_file(st: &mut EngineState) -> Result<(), Abort> {
 
     crate::output::print_nl(st, "**");
     let mut l = st.input.input_stack[0].limit;
-    if st.input.buffer[l as usize] == st.eqtb.int_par(IntPar::EndLineChar) {
+    if st.input.buffer[l] == st.eqtb.int_par(IntPar::EndLineChar) {
         l -= 1;
     }
-    for k in 1..=l {
-        crate::output::print(st, st.input.buffer[k as usize]);
+    for k in BufPos::from_raw(1).until(l + 1) {
+        crate::output::print(st, st.input.buffer[k]);
     }
 
     crate::output::print_ln(st);
@@ -942,7 +942,7 @@ pub(crate) fn close_files_and_terminate(st: &mut EngineState) -> Result<(), Abor
 pub fn init_io(st: &mut EngineState) {
     let first = st.input.first;
     st.input.input_file[0] = crate::state::InputSlot::Terminal;
-    st.input.buffer[first as usize] = 0;
+    st.input.buffer[first] = 0;
     st.input.last = first;
     st.input.cur_input.loc = first;
     st.input.cur_input.limit = first;
@@ -973,7 +973,7 @@ pub(crate) fn scan_file_name_braced(st: &mut EngineState) -> Result<(), Abort> {
     st.shipout.selector = Selector::NewString;
     let arg = st.scanner.def_ref.link(&st.mem);
     let l = st.strings.pool_size - st.strings.pool_ptr;
-    crate::output::show_token_list(st, arg, crate::mem::TEX_NULL, l);
+    crate::output::show_token_list(st, arg, crate::token::TokenList::NULL, l);
     st.shipout.selector = st.shipout.old_setting;
 
     let s = st.strings.make_string()?;

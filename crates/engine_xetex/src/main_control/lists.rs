@@ -383,7 +383,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
         GroupCode::Output => {
-            if st.input.cur_input.loc != TEX_NULL
+            if !st.input.cur_input.token_loc().is_null()
                 || (st.input.cur_input.token_type() != TokenType::Output
                     && st.input.cur_input.token_type() != TokenType::BackedUp)
             {
@@ -395,7 +395,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
                 crate::errors::error(st)?;
                 loop {
                     crate::scan::get_token(st)?;
-                    if st.input.cur_input.loc == TEX_NULL {
+                    if st.input.cur_input.token_loc().is_null() {
                         break;
                     }
                 }

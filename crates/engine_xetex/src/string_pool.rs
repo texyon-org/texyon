@@ -53,11 +53,15 @@ impl StringsState {
     }
 
     /// Whether string `s` equals the buffer run starting at `k`.
-    pub fn str_eq_buf(&self, buffer: &[i32], s: StrNumber, mut k: i32) -> bool {
+    /// Whether pool string `s` spells the characters `name`, after UTF-16 encoding.
+    pub fn str_eq_buf(&self, name: &[i32], s: StrNumber) -> bool {
         let mut j = self.str_start(s);
         let end = self.str_start(s.next());
+        let mut k = 0;
         while j < end {
-            let c = buffer[k as usize];
+            let Some(&c) = name.get(k) else {
+                return false;
+            };
             if c >= TOO_BIG_CHAR {
                 let hi = 0xD800 + (c - TOO_BIG_CHAR) / 1024;
                 let lo = 0xDC00 + (c - TOO_BIG_CHAR) % 1024;

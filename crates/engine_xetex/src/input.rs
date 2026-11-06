@@ -2,7 +2,7 @@
 
 use crate::cmd::Cmd;
 use crate::codes::code_enum;
-use crate::consts::{FROZEN_RELAX, TEX_NULL};
+use crate::consts::FROZEN_RELAX;
 use crate::errors::Abort;
 use crate::io::u_close;
 use crate::node::{NodePtr, PseudoLineNode};
@@ -41,11 +41,11 @@ code_enum! {
 
 impl TokenType {
     /// How `show_context` introduces a level of this type, except a macro.
-    pub(crate) fn label(self, loc: i32) -> &'static str {
+    pub(crate) fn label(self, loc: TokenList) -> &'static str {
         match self {
             TokenType::Parameter => "<argument> ",
             TokenType::UTemplate | TokenType::VTemplate => "<template> ",
-            TokenType::BackedUp | TokenType::BackedUpChar if loc == TEX_NULL => "<recently read> ",
+            TokenType::BackedUp | TokenType::BackedUpChar if loc.is_null() => "<recently read> ",
             TokenType::BackedUp | TokenType::BackedUpChar => "<to be read again> ",
             TokenType::Inserted => "<inserted text> ",
             TokenType::Macro => unreachable!("a macro level shows its name"),
@@ -136,7 +136,7 @@ pub(crate) fn end_token_list(st: &mut EngineState) -> Result<(), Abort> {
 
 pub(crate) fn back_input(st: &mut EngineState) -> Result<(), Abort> {
     while st.input.cur_input.state == TOKEN_LIST
-        && st.input.cur_input.loc == TEX_NULL
+        && st.input.cur_input.token_loc().is_null()
         && st.input.cur_input.token_type() != TokenType::VTemplate
     {
         end_token_list(st)?;
@@ -190,10 +190,7 @@ pub(crate) fn begin_file_reading(st: &mut EngineState) -> Result<(), Abort> {
         });
     }
     if st.input.first == st.input.buf_size {
-        return Err(Abort::Overflow {
-            what: "buffer size",
-            n: st.input.buf_size,
-        });
+        return Err(st.input.buffer_overflow());
     }
     st.input.in_open += 1;
     push_input(st)?;
@@ -246,24 +243,19 @@ pub(crate) fn pseudo_input(st: &mut EngineState) -> Result<bool, Abort> {
     if 4 * size - 3 >= st.input.buf_size - st.input.last {
         st.input.cur_input.loc = st.input.first;
         st.input.cur_input.limit = st.input.last - 1;
-        return Err(Abort::Overflow {
-            what: "buffer size",
-            n: st.input.buf_size,
-        });
+        return Err(st.input.buffer_overflow());
     }
     st.input.last = st.input.first;
     for k in 1..size {
-        let last = st.input.last as usize;
+        let last = st.input.last.index();
         let chars = line.chars(&st.mem, k).map(i32::from);
-        st.input.buffer[last..last + 4].copy_from_slice(&chars);
+        st.input.buffer.0[last..last + 4].copy_from_slice(&chars);
         st.input.last += 4;
     }
     if st.input.last >= st.input.max_buf_stack {
         st.input.max_buf_stack = st.input.last + 1;
     }
-    while st.input.last > st.input.first
-        && st.input.buffer[(st.input.last - 1) as usize] == i32::from(b' ')
-    {
+    while st.input.last > st.input.first && st.input.buffer[st.input.last - 1] == i32::from(b' ') {
         st.input.last -= 1;
     }
     st.mem.free_node(line.ptr(), size);
@@ -286,7 +278,7 @@ pub(crate) fn begin_token_list(
 ) -> Result<(), Abort> {
     push_input(st)?;
     st.input.cur_input.state = TOKEN_LIST;
-    st.input.cur_input.start = list.ptr().raw();
+    st.input.cur_input.set_token_start(list);
     st.input.cur_input.set_token_type(t);
     if t < TokenType::Macro {
         st.input.cur_input.set_token_loc(list);

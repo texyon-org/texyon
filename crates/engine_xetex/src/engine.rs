@@ -39,7 +39,9 @@ use crate::state::{
     PerFont, Selector,
 };
 use crate::token::Token;
-use crate::units::{EqtbPtr, FontId, GlueOrder, MemPtr, NodeType, SavePtr, Scaled, StrNumber};
+use crate::units::{
+    BufPos, EqtbPtr, FontId, GlueOrder, MemPtr, NodeType, SavePtr, Scaled, StrNumber,
+};
 
 /// A `get_node` request this large merges every free block into the rover list.
 const GET_NODE_HEAD_SENTINEL: i32 = 0x4000_0000;
@@ -161,19 +163,16 @@ fn primitive(st: &mut EngineState, ident: &str, c: Cmd, o: i32) -> Result<EqtbPt
         let s = st.strings.make_tex_string(ident)?;
 
         if st.input.first + len > st.input.buf_size + 1 {
-            return Err(Abort::Overflow {
-                what: "buffer size",
-                n: st.input.buf_size,
-            });
+            return Err(st.input.buffer_overflow());
         }
-        let first = st.input.first as usize;
-        for (slot, &b) in st.input.buffer[first..].iter_mut().zip(bytes) {
+        let first = st.input.first;
+        for (slot, &b) in st.input.buffer.0[first.index()..].iter_mut().zip(bytes) {
             *slot = i32::from(b);
         }
 
         cs = st
             .eqtb
-            .id_lookup(&mut st.strings, &st.input.buffer, st.input.first, len)?;
+            .id_lookup(&mut st.strings, st.input.buffer.span(first, first + len))?;
         st.strings.str_ptr -= 1;
         st.strings.discard_cur_string();
         st.eqtb.set_text(cs, s);
@@ -616,7 +615,7 @@ fn initialize_primitives(st: &mut EngineState) -> Result<(), Abort> {
     use crate::primitives::PrimInit;
 
     st.eqtb.no_new_control_sequence = false;
-    st.input.first = 0;
+    st.input.first = BufPos::ZERO;
 
     for prim in crate::primitives::PRIMITIVES {
         let cs = primitive(st, prim.name, prim.cmd, prim.chr)?;
@@ -778,7 +777,7 @@ pub(crate) fn initialize_engine(
     st.fonts.font_max = FontId::from_raw(9_000);
     st.hyph.trie_size = 1_000_000;
     st.hyph.hyph_size = HYPH_SIZE;
-    st.input.buf_size = 200_000;
+    st.input.buf_size = BufPos::from_raw(200_000);
 
     st.input.max_in_open = 15;
 
@@ -792,7 +791,7 @@ pub(crate) fn initialize_engine(
 
     let in_open_words = st.input.max_in_open + 1;
     let hyph_words = HYPH_SIZE as usize + 1;
-    st.input.buffer = vec![0; st.input.buf_size as usize + 1];
+    st.input.buffer = crate::state::InputBuffer(vec![0; st.input.buf_size.index() + 1]);
     st.input.nest = TexStack::with_size(NEST_SIZE);
     st.save_stack.data = zeroed_vec(st.save_stack.save_size + 1);
     st.input.input_file = std::iter::repeat_with(|| crate::state::InputSlot::Empty)
@@ -842,7 +841,7 @@ pub(crate) fn initialize_engine(
     {
         bad = 17;
     }
-    if st.input.buf_size > MAX_HALFWORD {
+    if st.input.buf_size.raw() > MAX_HALFWORD {
         bad = 18;
     }
     if CS_TOKEN_FLAG + EQTB_SIZE.raw() + st.eqtb.hash_extra > MAX_HALFWORD {
@@ -893,7 +892,7 @@ pub(crate) fn initialize_engine(
     st.input.open_levels[0] = crate::state::OpenLevel::default();
     st.input.in_open = 0;
     st.input.open_parens = 0;
-    st.input.max_buf_stack = 0;
+    st.input.max_buf_stack = BufPos::ZERO;
 
     st.input.param_stack.reset();
     st.scanner.used_tectonic_coda_tokens = false;
@@ -901,9 +900,9 @@ pub(crate) fn initialize_engine(
 
     st.scanner.scanner_status = ScannerStatus::Normal;
     st.scanner.warning_index = EqtbPtr::NONE;
-    st.input.first = 1;
+    st.input.first = BufPos::from_raw(1);
     st.input.cur_input.state = NEW_LINE;
-    st.input.cur_input.start = 1;
+    st.input.cur_input.start = BufPos::from_raw(1);
     st.input.cur_input.index = 0;
     st.mem.line = 0;
     st.input.cur_input.name = 0;
@@ -926,7 +925,7 @@ pub(crate) fn initialize_engine(
 
     let end_line_char = st.eqtb.int_par(IntPar::EndLineChar);
     if (0..=BIGGEST_CHAR).contains(&end_line_char) {
-        st.input.buffer[st.input.cur_input.limit as usize] = end_line_char;
+        st.input.buffer[st.input.cur_input.limit] = end_line_char;
     } else {
         st.input.cur_input.limit -= 1;
     }
@@ -1109,7 +1108,7 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     input.input_stack.release();
     input.param_stack.release();
     input.open_levels = Vec::new();
-    input.buffer = Vec::new();
+    input.buffer = crate::state::InputBuffer::default();
     input.name_of_file = Vec::new();
 
     st.scanner.native_text = Vec::new();

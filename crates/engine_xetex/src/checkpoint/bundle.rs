@@ -12,7 +12,7 @@ use crate::state::{
     MemState, SaveStackState, ScannerState, ShipoutState, StringsState, SynctexCtxt, TexmfState,
 };
 use crate::sync_index::PreviewSyncIndex;
-use crate::units::{EqtbPtr, FontId, MemPtr, SavePtr, Scaled, StrNumber};
+use crate::units::{BufPos, EqtbPtr, FontId, MemPtr, SavePtr, Scaled, StrNumber};
 
 fn vec_bytes<T>(values: &Vec<T>) -> usize {
     values.capacity() * size_of::<T>()
@@ -435,9 +435,9 @@ struct InputBundle {
     par_loc: EqtbPtr,
     par_token: crate::token::Token,
     force_eof: bool,
-    first: i32,
-    last: i32,
-    max_buf_stack: i32,
+    first: BufPos,
+    last: BufPos,
+    max_buf_stack: BufPos,
     read_open: [u8; 17],
     name_of_file: Vec<u8>,
     name_of_input_file: Vec<u8>,
@@ -481,7 +481,7 @@ fn live_prefix<T: Clone>(values: &[T], len: i32) -> Vec<T> {
 impl InputBundle {
     fn capture(src: &InputClusterState) -> Self {
         Self {
-            buffer: live_prefix(&src.buffer, src.buffer_in_use()),
+            buffer: src.buffer.0[..src.buffer_in_use().min(src.buffer.0.len())].to_vec(),
             input_stack: StackBundle::with_parked(&src.input_stack),
             param_stack: StackBundle::entries(&src.param_stack),
             nest: StackBundle::with_parked(&src.nest),
@@ -506,7 +506,7 @@ impl InputBundle {
     }
 
     fn restore(&self, dst: &mut InputClusterState) {
-        dst.buffer[..self.buffer.len()].copy_from_slice(&self.buffer);
+        dst.buffer.0[..self.buffer.len()].copy_from_slice(&self.buffer);
         self.input_stack.restore(&mut dst.input_stack);
         self.param_stack.restore(&mut dst.param_stack);
         self.nest.restore(&mut dst.nest);
@@ -890,7 +890,7 @@ mod tests {
         let mut st = EngineState::default();
         st.strings.str_pool = vec![0; 16];
         st.strings.str_start = vec![0; 8];
-        st.input.buffer = vec![0; 8];
+        st.input.buffer = crate::state::InputBuffer(vec![0; 8]);
         st.input.input_stack = TexStack::with_size(3);
         st.input.param_stack = TexStack::with_size(3);
         st.input.nest = TexStack::with_size(3);
@@ -913,8 +913,8 @@ mod tests {
         st.strings.pool_ptr = 1;
         st.save_stack.save_ptr = SavePtr::from_raw(1);
         st.save_stack.set_saved(-1, 12);
-        st.input.buffer[0] = 13;
-        st.input.last = 1;
+        st.input.buffer.0[0] = 13;
+        st.input.last = BufPos::from_raw(1);
         st.hyph.hc[0] = 14;
         let glyph = st.mem.glyph_blobs.insert(GlyphBlob {
             locations: vec![FixedPoint {
@@ -936,7 +936,7 @@ mod tests {
         st.shipout.dvi.manifest.record_byte(139);
         st.strings.str_pool[0] = 110;
         st.save_stack.set_saved(-1, 120);
-        st.input.buffer[0] = 130;
+        st.input.buffer.0[0] = 130;
         st.hyph.hc[0] = 140;
         st.mem.glyph_blobs.get_mut(glyph).locations[0].x = Scaled::from_raw(150);
         st.input.input_file.push(crate::state::InputSlot::Terminal);
@@ -955,7 +955,7 @@ mod tests {
         assert_eq!(st.shipout.dvi.manifest.take_pages().len(), 1);
         assert_eq!(st.strings.str_pool[0], 11);
         assert_eq!(st.save_stack.save_index(SavePtr::ZERO), 12);
-        assert_eq!(st.input.buffer[0], 13);
+        assert_eq!(st.input.buffer.0[0], 13);
         assert_eq!(st.hyph.hc[0], 14);
         assert_eq!(
             st.mem.glyph_blobs.get(glyph).locations[0].x,

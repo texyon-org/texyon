@@ -2,9 +2,7 @@
 
 use crate::cmd::Cmd;
 use crate::codes::{ScannerStatus, ValueLevel};
-use crate::consts::{
-    DLIST, FROZEN_END_TEMPLATE, HMODE, IGNORE_DEPTH, MAX_DIMEN, MMODE, TEX_NULL, VMODE,
-};
+use crate::consts::{DLIST, FROZEN_END_TEMPLATE, HMODE, IGNORE_DEPTH, MAX_DIMEN, MMODE, VMODE};
 use crate::errors::Abort;
 use crate::input::{TokenType, TOKEN_LIST};
 use crate::mem::{ALIGN_HEAD, END_SPAN, HOLD_HEAD, HOLD_HEAD_TOKS, ZERO_GLUE};
@@ -861,13 +859,15 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
 
 pub(super) fn do_endv(st: &mut EngineState) -> Result<(), Abort> {
     fn is_v_template_end(r: &crate::state::InputState) -> bool {
-        r.state == TOKEN_LIST && r.loc == TEX_NULL && r.token_type() == TokenType::VTemplate
+        r.state == TOKEN_LIST && r.token_loc().is_null() && r.token_type() == TokenType::VTemplate
     }
 
     st.input.base_ptr = st.input.input_stack.len();
     st.input.input_stack.park(st.input.cur_input);
     while st.input.input_stack[st.input.base_ptr].state == TOKEN_LIST
-        && st.input.input_stack[st.input.base_ptr].loc == TEX_NULL
+        && st.input.input_stack[st.input.base_ptr]
+            .token_loc()
+            .is_null()
         && st.input.input_stack[st.input.base_ptr].token_type() != TokenType::VTemplate
     {
         st.input.base_ptr -= 1;

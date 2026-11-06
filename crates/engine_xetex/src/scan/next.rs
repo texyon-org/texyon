@@ -19,6 +19,7 @@ use crate::output::{
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, InputClusterState, MemState, Selector};
 use crate::token::{Token, TokenList};
+use crate::units::BufPos;
 
 use super::toks::finish_line;
 use super::NO_EXPAND_FLAG;
@@ -173,35 +174,32 @@ impl InputClusterState {
     /// Reduces a `^^` sequence at `buffer[k - 1..]` inside a control-sequence name.
     /// Returns whether the buffer changed, in which case the name must be rescanned.
     #[cold]
-    fn reduce_cs_sup_mark(&mut self, k: i32, chr: i32) -> bool {
+    fn reduce_cs_sup_mark(&mut self, k: BufPos, chr: i32) -> bool {
         let limit = self.cur_input.limit;
         let buf = &mut self.buffer;
         let mut sup_count: i32 = 2;
-        while sup_count < 6
-            && k + 2 * sup_count - 2 <= limit
-            && buf[(k + sup_count - 1) as usize] == chr
-        {
+        while sup_count < 6 && k + 2 * sup_count - 2 <= limit && buf[k + sup_count - 1] == chr {
             sup_count += 1;
         }
-        let digits = (k + sup_count - 1)..(k + 2 * sup_count - 1);
-        let (new_chr, shift) = if digits.clone().all(|i| is_lc_hex(buf[i as usize])) {
-            let new_chr = digits.fold(0, |v, i| 16 * v + hex_digit_value(buf[i as usize]));
+        let digits = (k + sup_count - 1).until(k + 2 * sup_count - 1);
+        let (new_chr, shift) = if digits.clone().all(|i| is_lc_hex(buf[i])) {
+            let new_chr = digits.fold(0, |v, i| 16 * v + hex_digit_value(buf[i]));
             if new_chr > BIGGEST_USV {
                 return false;
             }
             (new_chr, 2 * sup_count - 1)
         } else {
-            let c = buf[(k + 1) as usize];
+            let c = buf[k + 1];
             if c >= 128 {
                 return false;
             }
             (if c < 64 { c + 64 } else { c - 64 }, 2)
         };
-        buf[(k - 1) as usize] = new_chr;
+        buf[k - 1] = new_chr;
         self.cur_input.limit -= shift;
         let mut i = k;
         while i <= self.cur_input.limit {
-            self.buffer[i as usize] = self.buffer[(i + shift) as usize];
+            self.buffer[i] = self.buffer[i + shift];
             i += 1;
         }
         true
@@ -258,14 +256,14 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
             'texswitch: loop {
                 if st.input.cur_input.loc <= st.input.cur_input.limit {
                     let loc = st.input.cur_input.loc;
-                    st.scanner.cur_chr = st.input.buffer[loc as usize];
+                    st.scanner.cur_chr = st.input.buffer[loc];
                     st.input.cur_input.loc = loc + 1;
 
                     if (0xD800..0xDC00).contains(&st.scanner.cur_chr)
                         && loc < st.input.cur_input.limit
-                        && (0xDC00..0xE000).contains(&st.input.buffer[(loc + 1) as usize])
+                        && (0xDC00..0xE000).contains(&st.input.buffer[loc + 1])
                     {
-                        let lower = st.input.buffer[(loc + 1) as usize] - 0xDC00;
+                        let lower = st.input.buffer[loc + 1] - 0xDC00;
                         st.input.cur_input.loc = loc + 2;
                         st.scanner.cur_chr = 65536 + (st.scanner.cur_chr - 0xD800) * 1024 + lower;
                     }
@@ -286,7 +284,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                                 } else {
                                     'start_cs: loop {
                                         let start = st.input.cur_input.loc;
-                                        let first_chr = st.input.buffer[start as usize];
+                                        let first_chr = st.input.buffer[start];
                                         let first_cat = st.eqtb.cat_code(first_chr);
                                         let mut k = start + 1;
                                         st.input.cur_input.state = if first_cat == Cmd::Letter
@@ -302,7 +300,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                                             let mut chr;
                                             let mut cat;
                                             loop {
-                                                chr = st.input.buffer[k as usize];
+                                                chr = st.input.buffer[k];
                                                 cat = st.eqtb.cat_code(chr);
                                                 k += 1;
                                                 if cat != Cmd::Letter
@@ -312,7 +310,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                                                 }
                                             }
                                             if cat == Cmd::SupMark
-                                                && st.input.buffer[k as usize] == chr
+                                                && st.input.buffer[k] == chr
                                                 && k < st.input.cur_input.limit
                                                 && st.input.reduce_cs_sup_mark(k, chr)
                                             {
@@ -325,15 +323,13 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                                                 let loc = st.input.cur_input.loc;
                                                 st.scanner.cur_cs = st.eqtb.id_lookup(
                                                     &mut st.strings,
-                                                    &st.input.buffer,
-                                                    loc,
-                                                    k - loc,
+                                                    st.input.buffer.span(loc, k),
                                                 )?;
                                                 st.input.cur_input.loc = k;
                                                 break 'start_cs;
                                             }
                                         } else if first_cat == Cmd::SupMark
-                                            && st.input.buffer[k as usize] == first_chr
+                                            && st.input.buffer[k] == first_chr
                                             && k < st.input.cur_input.limit
                                             && st.input.reduce_cs_sup_mark(k, first_chr)
                                         {
@@ -341,16 +337,13 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                                         }
 
                                         let loc = st.input.cur_input.loc;
-                                        if st.input.buffer[loc as usize] > 65535 {
+                                        if st.input.buffer[loc] > 65535 {
                                             st.scanner.cur_cs = st.eqtb.id_lookup(
                                                 &mut st.strings,
-                                                &st.input.buffer,
-                                                loc,
-                                                1,
+                                                st.input.buffer.span(loc, loc + 1),
                                             )?;
                                         } else {
-                                            st.scanner.cur_cs =
-                                                SINGLE_BASE + st.input.buffer[loc as usize];
+                                            st.scanner.cur_cs = SINGLE_BASE + st.input.buffer[loc];
                                         }
                                         st.input.cur_input.loc = loc + 1;
                                         break 'start_cs;
@@ -377,27 +370,27 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                                 let loc = st.input.cur_input.loc;
                                 let limit = st.input.cur_input.limit;
                                 let buf = &st.input.buffer;
-                                if st.scanner.cur_chr == buf[loc as usize] && loc < limit {
+                                if st.scanner.cur_chr == buf[loc] && loc < limit {
                                     let mut sup_count: i32 = 2;
                                     while sup_count < 6
                                         && loc + 2 * sup_count - 2 <= limit
-                                        && st.scanner.cur_chr == buf[(loc + sup_count - 1) as usize]
+                                        && st.scanner.cur_chr == buf[loc + sup_count - 1]
                                     {
                                         sup_count += 1;
                                     }
-                                    let digits = (loc + sup_count - 1)..(loc + 2 * sup_count - 1);
-                                    if digits.clone().all(|i| is_lc_hex(buf[i as usize])) {
-                                        let new_chr = digits.fold(0, |v, i| {
-                                            16 * v + hex_digit_value(buf[i as usize])
-                                        });
+                                    let digits =
+                                        (loc + sup_count - 1).until(loc + 2 * sup_count - 1);
+                                    if digits.clone().all(|i| is_lc_hex(buf[i])) {
+                                        let new_chr =
+                                            digits.fold(0, |v, i| 16 * v + hex_digit_value(buf[i]));
                                         if new_chr <= BIGGEST_USV {
                                             st.scanner.cur_chr = new_chr;
                                             st.input.cur_input.loc = loc + 2 * sup_count - 1;
                                             continue 'reswitch;
                                         }
-                                        st.scanner.cur_chr = buf[loc as usize];
+                                        st.scanner.cur_chr = buf[loc];
                                     } else {
-                                        let c = buf[(loc + 1) as usize];
+                                        let c = buf[loc + 1];
                                         if c < 128 {
                                             st.input.cur_input.loc = loc + 2;
                                             st.scanner.cur_chr =

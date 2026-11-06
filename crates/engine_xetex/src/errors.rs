@@ -1,7 +1,7 @@
 use crate::bridge::{output_flush, set_error_message};
 use crate::cmd::Cmd;
 use crate::codes::ScannerStatus;
-use crate::consts::{HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, MEM_TOP, TEX_NULL};
+use crate::consts::{HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, MEM_TOP};
 use crate::output::{
     begin_diagnostic, capture_to_diagnostic, diagnostic_begin_capture_warning_here, end_diagnostic,
     error_here_with_diagnostic, print, print_char, print_cmd_chr, print_err, print_esc,
@@ -365,5 +365,5 @@ pub(crate) fn runaway(st: &mut EngineState) {
     print_ln(st);
     let head = p.link(&st.mem);
     let l = st.errors.error_line - 10;
-    show_token_list(st, head, TEX_NULL, l);
+    show_token_list(st, head, crate::token::TokenList::NULL, l);
 }

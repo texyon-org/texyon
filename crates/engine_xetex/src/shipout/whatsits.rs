@@ -1,7 +1,7 @@
 //! Shipping whatsits: `\special`, `\write`, the `\openout` streams and pictures.
 
 use crate::bridge::{output_close, output_open, shell_escape};
-use crate::consts::{END_WRITE, INVALID_HANDLE, TEX_NULL};
+use crate::consts::{END_WRITE, INVALID_HANDLE};
 use crate::errors::Abort;
 use crate::input::TokenType;
 use crate::node::{NodePtr, WhatsitNode, WhatsitSubtype};
@@ -22,7 +22,7 @@ fn special_out(
     st.shipout.selector = Selector::NewString;
     let tokens = special.write_tokens(&st.mem).link(&st.mem);
     let avail = st.strings.pool_size - st.strings.pool_ptr;
-    crate::output::show_token_list(st, tokens, TEX_NULL, avail);
+    crate::output::show_token_list(st, tokens, crate::token::TokenList::NULL, avail);
     st.shipout.selector = old_setting;
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
         return Err(Abort::PoolOverflow);

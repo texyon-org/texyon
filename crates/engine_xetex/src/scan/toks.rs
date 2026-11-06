@@ -15,7 +15,7 @@ use crate::output::{
 use crate::params::IntPar;
 use crate::state::{EngineState, MemState, Selector};
 use crate::token::{Token, TokenList};
-use crate::units::{EqtbPtr, MemPtr, StrNumber};
+use crate::units::{BufPos, EqtbPtr, MemPtr, StrNumber};
 
 use super::internal::{scan_something_internal, set_cur_val};
 use super::next::{get_next, get_token, get_x_token, x_token};
@@ -79,7 +79,7 @@ impl MemState {
 pub(crate) fn finish_line(st: &mut EngineState) {
     let end_char = st.eqtb.int_par(IntPar::EndLineChar);
     if (0..=255).contains(&end_char) {
-        st.input.buffer[st.input.cur_input.limit as usize] = end_char;
+        st.input.buffer[st.input.cur_input.limit] = end_char;
     } else {
         st.input.cur_input.limit -= 1;
     }
@@ -138,7 +138,7 @@ pub(crate) fn read_toks(
                     capture_to_diagnostic(st, None);
                     st.errors.help(&[r"This \read has unbalanced braces."]);
                     st.scanner.align_state = 1_000_000;
-                    st.input.cur_input.limit = 0;
+                    st.input.cur_input.limit = BufPos::ZERO;
                     error(st)?;
                 }
             }
@@ -151,7 +151,7 @@ pub(crate) fn read_toks(
         if j == 1 {
             let mut loc = st.input.cur_input.loc;
             while loc <= st.input.cur_input.limit {
-                let c = st.input.buffer[loc as usize];
+                let c = st.input.buffer[loc];
                 loc += 1;
                 let tok = if c == i32::from(b' ') {
                     Token::SPACE
@@ -205,7 +205,7 @@ fn tokens_to_string(st: &mut EngineState, p: TokenList) -> Result<StrNumber, Abo
     st.shipout.selector = Selector::NewString;
     let arg = p.link(&st.mem);
     let l = st.strings.pool_size - st.strings.pool_ptr;
-    crate::output::show_token_list(st, arg, TEX_NULL, l);
+    crate::output::show_token_list(st, arg, TokenList::NULL, l);
     st.shipout.selector = st.shipout.old_setting;
     st.strings.make_string()
 }

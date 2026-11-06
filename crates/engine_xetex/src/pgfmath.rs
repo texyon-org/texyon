@@ -325,9 +325,7 @@ fn lookup(st: &mut EngineState, name: &str) -> Option<EqtbPtr> {
     let buffer: Vec<i32> = name.chars().map(|c| c as i32).collect();
     let saved = st.eqtb.no_new_control_sequence;
     st.eqtb.no_new_control_sequence = true;
-    let found = st
-        .eqtb
-        .id_lookup(&mut st.strings, &buffer, 0, buffer.len() as i32);
+    let found = st.eqtb.id_lookup(&mut st.strings, &buffer);
     st.eqtb.no_new_control_sequence = saved;
     match found {
         Ok(p) if p >= HASH_BASE && st.eqtb.text(p).raw() > 0 => Some(p),

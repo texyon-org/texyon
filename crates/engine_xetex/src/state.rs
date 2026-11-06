@@ -3,7 +3,7 @@
 use crate::cmd::Cmd;
 use crate::codes::{FiOrElseCode, ValueLevel};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
-use crate::units::{EqtbPtr, FontId, SavePtr, Scaled, StrNumber};
+use crate::units::{BufPos, EqtbPtr, FontId, SavePtr, Scaled, StrNumber};
 
 #[derive(Default)]
 pub(crate) struct EngineState {
@@ -116,6 +116,33 @@ pub(crate) struct TexmfState {
     pub start_time_str: Vec<u8>,
 }
 
+/// TeX's input `buffer` of characters, indexed by position.
+#[derive(Clone, Default, Debug)]
+pub(crate) struct InputBuffer(pub Vec<i32>);
+
+impl std::ops::Index<BufPos> for InputBuffer {
+    type Output = i32;
+    #[inline(always)]
+    fn index(&self, p: BufPos) -> &i32 {
+        &self.0[p.index()]
+    }
+}
+
+impl std::ops::IndexMut<BufPos> for InputBuffer {
+    #[inline(always)]
+    fn index_mut(&mut self, p: BufPos) -> &mut i32 {
+        &mut self.0[p.index()]
+    }
+}
+
+impl InputBuffer {
+    /// The characters from `start` up to but not including `end`.
+    #[inline]
+    pub(crate) fn span(&self, start: BufPos, end: BufPos) -> &[i32] {
+        &self.0[start.index()..end.index()]
+    }
+}
+
 /// What TeX keeps per open input file in `line_stack`, `grp_stack`,
 /// `if_stack`, `eof_seen` and the source name stacks.
 #[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
@@ -145,14 +172,25 @@ pub(crate) struct MacroParam {
 pub(crate) struct InputState {
     pub state: u16,
     pub index: u16,
-    pub start: i32,
-    pub loc: i32,
-    pub limit: i32,
+    /// On token-list levels `start` and `loc` hold `mem` pointers, read through
+    /// [`token_start`](Self::token_start) and [`token_loc`](Self::token_loc), and
+    /// a macro level's `limit` is its [`param_start`](Self::param_start).
+    pub start: BufPos,
+    pub loc: BufPos,
+    pub limit: BufPos,
     pub name: i32,
     pub synctex_tag: i32,
 }
 
 impl InputClusterState {
+    /// TeX's buffer size overflow error.
+    pub(crate) fn buffer_overflow(&self) -> crate::errors::Abort {
+        crate::errors::Abort::Overflow {
+            what: "buffer size",
+            n: self.buf_size.raw(),
+        }
+    }
+
     /// The number of input levels below the current one, `input_ptr`.
     #[inline]
     pub(crate) fn input_depth(&self) -> i32 {
@@ -164,12 +202,12 @@ impl InputState {
     /// `limit` of a macro level: where its parameters start on the parameter stack.
     #[inline]
     pub(crate) fn param_start(&self) -> usize {
-        usize::try_from(self.limit).unwrap_or(0)
+        usize::try_from(self.limit.raw()).unwrap_or(0)
     }
 
     #[inline]
     pub(crate) fn set_param_start(&mut self, n: usize) {
-        self.limit = i32::try_from(n).unwrap_or(i32::MAX);
+        self.limit = BufPos::from_raw(i32::try_from(n).unwrap_or(i32::MAX));
     }
 
     /// `name` of a macro level: the control sequence being expanded.
@@ -188,21 +226,25 @@ impl InputState {
 impl InputState {
     #[inline]
     pub(crate) fn token_start(&self) -> crate::token::TokenList {
-        crate::token::TokenList::from_ptr(crate::units::MemPtr::from_raw(self.start))
+        crate::token::TokenList::from_ptr(crate::units::MemPtr::from_raw(self.start.raw()))
     }
     #[inline]
     pub(crate) fn token_loc(&self) -> crate::token::TokenList {
-        crate::token::TokenList::from_ptr(crate::units::MemPtr::from_raw(self.loc))
+        crate::token::TokenList::from_ptr(crate::units::MemPtr::from_raw(self.loc.raw()))
     }
     #[inline]
     pub(crate) fn set_token_loc(&mut self, p: crate::token::TokenList) {
-        self.loc = p.ptr().raw();
+        self.loc = BufPos::from_raw(p.ptr().raw());
+    }
+    #[inline]
+    pub(crate) fn set_token_start(&mut self, p: crate::token::TokenList) {
+        self.start = BufPos::from_raw(p.ptr().raw());
     }
     /// Starts reading the token list `p` from its first node.
     #[inline]
     pub(crate) fn set_token_list(&mut self, p: crate::token::TokenList) {
-        self.start = p.ptr().raw();
-        self.loc = p.ptr().raw();
+        self.start = BufPos::from_raw(p.ptr().raw());
+        self.loc = BufPos::from_raw(p.ptr().raw());
     }
 }
 
@@ -221,7 +263,7 @@ pub(crate) struct InputClusterState {
     pub param_stack: crate::stack::TexStack<MacroParam>,
     /// Per open input file, indexed by `in_open`. Level 0 is the terminal.
     pub open_levels: Vec<OpenLevel>,
-    pub buffer: Vec<i32>,
+    pub buffer: InputBuffer,
     pub input_stack: crate::stack::TexStack<InputState>,
     pub cur_input: InputState,
     pub input_file: Vec<InputSlot>,
@@ -230,16 +272,17 @@ pub(crate) struct InputClusterState {
     pub open_parens: i32,
     pub in_open: usize,
     pub pseudo_files: crate::units::MemPtr,
-    pub buf_size: i32,
+    /// The last usable `buffer` position.
+    pub buf_size: BufPos,
     pub max_in_open: usize,
     /// The level `show_context` and its relatives are looking at.
     pub base_ptr: usize,
     pub par_loc: crate::units::EqtbPtr,
     pub par_token: crate::token::Token,
     pub force_eof: bool,
-    pub first: i32,
-    pub last: i32,
-    pub max_buf_stack: i32,
+    pub first: BufPos,
+    pub last: BufPos,
+    pub max_buf_stack: BufPos,
     pub read_open: [u8; 17],
     pub read_file: [InputSlot; 16],
     /// UTF-8, and cut short by a NUL between `check_for_tfm_font_mapping` and the open.
@@ -1765,8 +1808,8 @@ impl Default for HyphState {
 impl InputClusterState {
     /// How much of `buffer` has ever held input.
     #[inline]
-    pub(crate) fn buffer_in_use(&self) -> i32 {
-        self.max_buf_stack.max(self.last).max(self.first) + 1
+    pub(crate) fn buffer_in_use(&self) -> usize {
+        (self.max_buf_stack.max(self.last).max(self.first) + 1).index()
     }
 
     /// `name_of_file` up to a font mapping cut.

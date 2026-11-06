@@ -232,9 +232,9 @@ fn digest_fonts(st: &EngineState) -> u64 {
 fn digest_input_state(h: &mut Fnv, input: &InputState) {
     h.word(u64::from(input.state));
     h.word(u64::from(input.index));
-    h.i32(input.start);
-    h.i32(input.loc);
-    h.i32(input.limit);
+    h.i32(input.start.raw());
+    h.i32(input.loc.raw());
+    h.i32(input.limit.raw());
     h.i32(input.name);
     h.i32(input.synctex_tag);
 }
@@ -270,13 +270,12 @@ fn digest_input(st: &EngineState) -> u64 {
         input.par_token.0,
         depth(input.param_stack.len()),
         depth(input.param_stack.max_len()),
-        input.first,
-        input.last,
-        input.max_buf_stack,
+        input.first.raw(),
+        input.last.raw(),
+        input.max_buf_stack.raw(),
     ]);
     h.word(u64::from(input.force_eof));
-    let buffer_end = input.buffer_in_use().max(0) as usize;
-    h.i32s(input.buffer.iter().take(buffer_end));
+    h.i32s(input.buffer.0.iter().take(input.buffer_in_use()));
     for value in input.input_stack.with_parked() {
         digest_input_state(&mut h, value);
     }

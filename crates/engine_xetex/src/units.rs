@@ -357,6 +357,77 @@ impl std::ops::Sub for EqtbPtr {
     }
 }
 
+/// A position in the input `buffer`. It can sit one before a line, as an empty
+/// line's `limit` does.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
+#[repr(transparent)]
+pub struct BufPos(i32);
+
+impl BufPos {
+    pub const ZERO: BufPos = BufPos(0);
+
+    /// The value from its raw form in a memory word or a size setting.
+    #[inline(always)]
+    pub const fn from_raw(raw: i32) -> BufPos {
+        BufPos(raw)
+    }
+
+    /// The raw form for a memory word.
+    #[inline(always)]
+    pub const fn raw(self) -> i32 {
+        self.0
+    }
+
+    #[inline(always)]
+    pub fn index(self) -> usize {
+        self.0 as usize
+    }
+
+    /// The positions from `self` up to but not including `end`.
+    pub fn until(self, end: BufPos) -> impl DoubleEndedIterator<Item = BufPos> + Clone {
+        (self.0..end.0).map(BufPos)
+    }
+}
+
+impl std::ops::Add<i32> for BufPos {
+    type Output = BufPos;
+    #[inline(always)]
+    fn add(self, rhs: i32) -> BufPos {
+        BufPos(self.0 + rhs)
+    }
+}
+
+impl std::ops::Sub<i32> for BufPos {
+    type Output = BufPos;
+    #[inline(always)]
+    fn sub(self, rhs: i32) -> BufPos {
+        BufPos(self.0 - rhs)
+    }
+}
+
+/// The number of positions from `rhs` to `self`.
+impl std::ops::Sub for BufPos {
+    type Output = i32;
+    #[inline(always)]
+    fn sub(self, rhs: BufPos) -> i32 {
+        self.0 - rhs.0
+    }
+}
+
+impl std::ops::AddAssign<i32> for BufPos {
+    #[inline(always)]
+    fn add_assign(&mut self, rhs: i32) {
+        self.0 += rhs;
+    }
+}
+
+impl std::ops::SubAssign<i32> for BufPos {
+    #[inline(always)]
+    fn sub_assign(&mut self, rhs: i32) {
+        self.0 -= rhs;
+    }
+}
+
 /// A position on the save stack.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 #[repr(transparent)]
