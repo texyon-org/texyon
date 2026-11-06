@@ -1,6 +1,6 @@
 //! Boxes for math characters and delimiters: `char_box`, `var_delimiter`, `rebox`.
 
-use crate::consts::{BOX_NODE_SIZE, GLYPH_NODE_SIZE, NORMAL, NULL_FONT, SCRIPT_SIZE};
+use crate::consts::{BOX_NODE_SIZE, GLYPH_NODE_SIZE, NULL_FONT, SCRIPT_SIZE};
 use crate::errors::Abort;
 use crate::fonts::{CharInfo, CharTag, AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::mem::SS_GLUE;
@@ -9,7 +9,7 @@ use crate::ot_math::GlyphAssembly;
 use crate::packaging::{ADDITIONAL, EXACTLY};
 use crate::params::DimenPar;
 use crate::state::{EngineState, FontState, MemState};
-use crate::units::{FontId, GlueSign, Scaled};
+use crate::units::{FontId, GlueOrder, GlueSign, Scaled};
 
 impl FontState {
     pub(super) fn measure_glyph(
@@ -235,7 +235,7 @@ pub(super) fn build_opentype_assembly(
     }
     if s > nat && str > Scaled::ZERO {
         let o = (s - nat).min(str);
-        b.set_glue_order(&mut st.mem, NORMAL);
+        b.set_glue_order(&mut st.mem, GlueOrder::Normal);
         b.set_glue_sign(&mut st.mem, GlueSign::Stretching);
         let ratio = f64::from(o) / f64::from(str);
         b.set_glue_set(&mut st.mem, ratio);

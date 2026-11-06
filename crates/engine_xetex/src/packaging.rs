@@ -1,9 +1,7 @@
 //! Box packing (`hpack`, `vpackage`), vertical breaking (`vert_break`,
 //! `vsplit`, `prune_page_top`, `do_marks`) and node-list copying and freeing.
 
-use crate::consts::{
-    A_LEADERS, BEFORE, EXPLICIT, FIL, FILL, FILLL, IGNORE_DEPTH, NORMAL, NULL_FONT, SMALL_NODE_SIZE,
-};
+use crate::consts::{A_LEADERS, BEFORE, EXPLICIT, IGNORE_DEPTH, NULL_FONT, SMALL_NODE_SIZE};
 use crate::errors::Abort;
 use crate::mem::{end_lr_type, GARBAGE};
 use crate::mem_types::ListStateRecord;
@@ -13,7 +11,7 @@ use crate::node::{
 };
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, FontState, MemState, ScannerState, ShipoutState};
-use crate::units::{GlueSign, MemPtr, NodeType, Scaled};
+use crate::units::{GlueOrder, GlueSign, MemPtr, NodeType, OrderTotals, Scaled};
 
 mod copy;
 mod vert_break;
@@ -78,20 +76,6 @@ struct PackOutcome {
     diags: [Option<PackDiag>; 2],
 }
 
-/// The highest glue order with a nonzero total.
-#[inline]
-pub(crate) fn glue_order(totals: &[Scaled; 4]) -> u16 {
-    if totals[FILLL as usize] != Scaled::ZERO {
-        FILLL
-    } else if totals[FILL as usize] != Scaled::ZERO {
-        FILL
-    } else if totals[FIL as usize] != Scaled::ZERO {
-        FIL
-    } else {
-        NORMAL
-    }
-}
-
 impl MemState {
     /// Set `r`'s glue to distribute `excess` over the highest-order `totals`,
     /// returning that order.
@@ -100,13 +84,13 @@ impl MemState {
         r: NodePtr<K>,
         sign: GlueSign,
         excess: f64,
-        totals: &[Scaled; 4],
-    ) -> u16 {
-        let o = glue_order(totals);
+        totals: &OrderTotals,
+    ) -> GlueOrder {
+        let o = totals.max_order();
         r.set_glue_order(self, o);
         r.set_glue_sign(self, sign);
-        if totals[o as usize] != Scaled::ZERO {
-            r.set_glue_set(self, excess / f64::from(totals[o as usize].raw()));
+        if totals[o] != Scaled::ZERO {
+            r.set_glue_set(self, excess / f64::from(totals[o].raw()));
         } else {
             r.set_glue_sign(self, GlueSign::Normal);
             r.set_glue_set(self, 0.0);
@@ -116,7 +100,7 @@ impl MemState {
 
     fn clear_box_glue<K: IsBox>(&mut self, r: NodePtr<K>) {
         r.set_glue_sign(self, GlueSign::Normal);
-        r.set_glue_order(self, NORMAL);
+        r.set_glue_order(self, GlueOrder::Normal);
         r.set_glue_set(self, 0.0);
     }
 
@@ -235,8 +219,8 @@ impl MemState {
         let mut h = Scaled::ZERO;
         let mut d = Scaled::ZERO;
         let mut x = Scaled::ZERO;
-        scanner.total_stretch = [Scaled::ZERO; 4];
-        scanner.total_shrink = [Scaled::ZERO; 4];
+        scanner.total_stretch = OrderTotals::ZERO;
+        scanner.total_shrink = OrderTotals::ZERO;
         let mut diags = [None, None];
         let texxet = eqtb.int_par(IntPar::Texxet) > 0;
 
@@ -332,8 +316,8 @@ impl MemState {
                 Ok(AnyNode::Glue(glue)) => {
                     let spec = glue.glue_ptr(self);
                     x += spec.width(self);
-                    scanner.total_stretch[spec.stretch_order(self) as usize] += spec.stretch(self);
-                    scanner.total_shrink[spec.shrink_order(self) as usize] += spec.shrink(self);
+                    scanner.total_stretch[spec.stretch_order(self)] += spec.stretch(self);
+                    scanner.total_shrink[spec.shrink_order(self)] += spec.shrink(self);
                     if glue.subtype(self) >= A_LEADERS {
                         let leader = glue.leader_ptr(self);
                         let (leader_h, leader_d) = match self.classify(leader) {
@@ -411,9 +395,9 @@ impl MemState {
                 f64::from(x.raw()),
                 &scanner.total_stretch,
             );
-            if o == NORMAL && has_list {
+            if o == GlueOrder::Normal && has_list {
                 shipout.last_badness =
-                    crate::helpers::badness(x, scanner.total_stretch[NORMAL as usize]);
+                    crate::helpers::badness(x, scanner.total_stretch[GlueOrder::Normal]);
                 if shipout.last_badness > eqtb.int_par(IntPar::Hbadness) {
                     push_slot(
                         &mut diags,
@@ -431,10 +415,10 @@ impl MemState {
                 f64::from((-x).raw()),
                 &scanner.total_shrink,
             );
-            if scanner.total_shrink[o as usize] < (-x) && o == NORMAL && has_list {
+            if scanner.total_shrink[o] < (-x) && o == GlueOrder::Normal && has_list {
                 shipout.last_badness = 1_000_000;
                 r_node.set_glue_set(self, 1.0);
-                let excess = (-x) - scanner.total_shrink[NORMAL as usize];
+                let excess = (-x) - scanner.total_shrink[GlueOrder::Normal];
                 let hfuzz = eqtb.dimen_par(DimenPar::Hfuzz);
                 if excess > hfuzz || eqtb.int_par(IntPar::Hbadness) < 100 {
                     let overfull_rule = eqtb.dimen_par(DimenPar::OverfullRule);
@@ -446,9 +430,9 @@ impl MemState {
                     }
                     push_slot(&mut diags, PackDiag::HOverfull { excess });
                 }
-            } else if o == NORMAL && has_list {
+            } else if o == GlueOrder::Normal && has_list {
                 shipout.last_badness =
-                    crate::helpers::badness(-x, scanner.total_shrink[NORMAL as usize]);
+                    crate::helpers::badness(-x, scanner.total_shrink[GlueOrder::Normal]);
                 if shipout.last_badness > eqtb.int_par(IntPar::Hbadness) {
                     push_slot(
                         &mut diags,
@@ -613,8 +597,8 @@ impl MemState {
         let mut w = Scaled::ZERO;
         let mut d = Scaled::ZERO;
         let mut x = Scaled::ZERO;
-        scanner.total_stretch = [Scaled::ZERO; 4];
-        scanner.total_shrink = [Scaled::ZERO; 4];
+        scanner.total_stretch = OrderTotals::ZERO;
+        scanner.total_shrink = OrderTotals::ZERO;
         let mut diags = [None, None];
 
         let mut p = list;
@@ -658,8 +642,8 @@ impl MemState {
                     d = Scaled::ZERO;
                     let spec = glue.glue_ptr(self);
                     x += spec.width(self);
-                    scanner.total_stretch[spec.stretch_order(self) as usize] += spec.stretch(self);
-                    scanner.total_shrink[spec.shrink_order(self) as usize] += spec.shrink(self);
+                    scanner.total_stretch[spec.stretch_order(self)] += spec.stretch(self);
+                    scanner.total_shrink[spec.shrink_order(self)] += spec.shrink(self);
                     if glue.subtype(self) >= A_LEADERS {
                         let leader = glue.leader_ptr(self);
                         let leader_w = match self.classify(leader) {
@@ -702,9 +686,9 @@ impl MemState {
                 f64::from(x.raw()),
                 &scanner.total_stretch,
             );
-            if o == NORMAL && has_list {
+            if o == GlueOrder::Normal && has_list {
                 shipout.last_badness =
-                    crate::helpers::badness(x, scanner.total_stretch[NORMAL as usize]);
+                    crate::helpers::badness(x, scanner.total_stretch[GlueOrder::Normal]);
                 if shipout.last_badness > eqtb.int_par(IntPar::Vbadness) {
                     push_slot(
                         &mut diags,
@@ -722,17 +706,17 @@ impl MemState {
                 (-i64::from(x.raw())) as f64,
                 &scanner.total_shrink,
             );
-            if scanner.total_shrink[o as usize] < (-x) && o == NORMAL && has_list {
+            if scanner.total_shrink[o] < (-x) && o == GlueOrder::Normal && has_list {
                 shipout.last_badness = 1_000_000;
                 r_node.set_glue_set(self, 1.0);
-                let excess = (-x) - scanner.total_shrink[NORMAL as usize];
+                let excess = (-x) - scanner.total_shrink[GlueOrder::Normal];
                 if excess > eqtb.dimen_par(DimenPar::Vfuzz) || eqtb.int_par(IntPar::Vbadness) < 100
                 {
                     push_slot(&mut diags, PackDiag::VOverfull { excess });
                 }
-            } else if o == NORMAL && has_list {
+            } else if o == GlueOrder::Normal && has_list {
                 shipout.last_badness =
-                    crate::helpers::badness(-x, scanner.total_shrink[NORMAL as usize]);
+                    crate::helpers::badness(-x, scanner.total_shrink[GlueOrder::Normal]);
                 if shipout.last_badness > eqtb.int_par(IntPar::Vbadness) {
                     push_slot(
                         &mut diags,

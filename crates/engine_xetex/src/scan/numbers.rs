@@ -3,9 +3,9 @@
 use crate::cmd::Cmd;
 use crate::codes::ValueLevel;
 use crate::consts::{
-    ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, FIL, FILLL,
-    FROZEN_PRIMITIVE, FROZEN_RELAX, MAX_DIMEN, MAX_HALFWORD, NORMAL, NUMBER_MATH_FAMILIES,
-    PRIM_EQTB_BASE, SINGLE_BASE, TEX_INFINITY, UNDEFINED_PRIMITIVE,
+    ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, FROZEN_PRIMITIVE,
+    FROZEN_RELAX, MAX_DIMEN, MAX_HALFWORD, NUMBER_MATH_FAMILIES, PRIM_EQTB_BASE, SINGLE_BASE,
+    TEX_INFINITY, UNDEFINED_PRIMITIVE,
 };
 use crate::errors::{error, int_error, mu_error, Abort};
 use crate::fonts::{QUAD_CODE, X_HEIGHT_CODE};
@@ -15,7 +15,7 @@ use crate::output::{capture_to_diagnostic, error_here_with_diagnostic, print_err
 use crate::params::IntPar;
 use crate::state::EngineState;
 use crate::token::Token;
-use crate::units::{MemPtr, Scaled};
+use crate::units::{GlueOrder, MemPtr, Scaled};
 
 use super::internal::scan_something_internal;
 use super::next::{get_token, get_x_non_blank, get_x_token};
@@ -38,7 +38,6 @@ const EXPR_SUB: i16 = 2;
 const EXPR_MULT: i16 = 3;
 const EXPR_DIV: i16 = 4;
 const EXPR_SCALE: i16 = 5;
-const NORMAL_EXPR: u16 = 0;
 
 /// Reports a bad integer `value` with two help lines.
 pub(super) fn bad_int_error(
@@ -403,7 +402,7 @@ pub(crate) fn xetex_scan_dimen(
     let mut negative = false;
 
     st.errors.arith_error = false;
-    st.scanner.cur_order = NORMAL;
+    st.scanner.cur_order = GlueOrder::Normal;
 
     'attach_sign: {
         if !shortcut {
@@ -482,14 +481,15 @@ pub(crate) fn xetex_scan_dimen(
         if requires_units {
             let apply_fraction = 'units: {
                 if inf && scan_keyword(st, "fil")? {
-                    st.scanner.cur_order = FIL;
+                    st.scanner.cur_order = GlueOrder::Fil;
                     while scan_keyword(st, "l")? {
-                        if st.scanner.cur_order == FILLL {
-                            print_err(st, "Illegal unit of measure (replaced by filll)");
-                            st.errors.help(&["I dddon't go any higher than filll."]);
-                            error(st)?;
-                        } else {
-                            st.scanner.cur_order += 1;
+                        match st.scanner.cur_order.next() {
+                            Some(next) => st.scanner.cur_order = next,
+                            None => {
+                                print_err(st, "Illegal unit of measure (replaced by filll)");
+                                st.errors.help(&["I dddon't go any higher than filll."]);
+                                error(st)?;
+                            }
                         }
                     }
                     break 'units true;
@@ -692,10 +692,10 @@ pub(super) fn map_glue(
 
 fn normalize_glue_orders(st: &mut EngineState, spec: NodePtr<GlueSpecNode>) {
     if spec.stretch(&st.mem) == Scaled::ZERO {
-        spec.set_stretch_order(&mut st.mem, NORMAL_EXPR);
+        spec.set_stretch_order(&mut st.mem, GlueOrder::Normal);
     }
     if spec.shrink(&st.mem) == Scaled::ZERO {
-        spec.set_shrink_order(&mut st.mem, NORMAL_EXPR);
+        spec.set_shrink_order(&mut st.mem, GlueOrder::Normal);
     }
 }
 

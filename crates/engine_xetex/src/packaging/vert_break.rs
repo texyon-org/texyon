@@ -3,7 +3,7 @@
 use crate::codes::{BoxCode, MarkCode, ValueLevel};
 use crate::consts::{
     BOX_NODE_SIZE, EJECT_PENALTY, INDEX_NODE_SIZE, INF_BAD, INF_PENALTY, MARK_CLASS_NODE_SIZE,
-    MAX_DIMEN, MAX_HALFWORD, NORMAL,
+    MAX_DIMEN, MAX_HALFWORD,
 };
 use crate::errors::Abort;
 use crate::mem::TEMP_HEAD;
@@ -14,7 +14,7 @@ use crate::node::{
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, MemState, ScannerState, ShipoutState};
 use crate::token::TokenList;
-use crate::units::{MemIdx, MemPtr, Scaled};
+use crate::units::{GlueOrder, MemIdx, MemPtr, Scaled};
 
 use super::{print_vpack_diag, PackOutcome, ADDITIONAL, EXACTLY};
 
@@ -259,7 +259,9 @@ impl MemState {
                     scanner.active_width[2 + spec.stretch_order(self) as usize] +=
                         spec.stretch(self);
                     scanner.active_width[6] += spec.shrink(self);
-                    if spec.shrink_order(self) != NORMAL && spec.shrink(self) != Scaled::ZERO {
+                    if spec.shrink_order(self) != GlueOrder::Normal
+                        && spec.shrink(self) != Scaled::ZERO
+                    {
                         cursor.finish_glue_after_shrinkage = Some(glue);
                         return Ok(VertBreakStep::InfiniteShrinkage { glue, spec });
                     }

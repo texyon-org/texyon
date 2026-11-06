@@ -3,8 +3,8 @@
 use crate::cmd::Cmd;
 use crate::consts::{
     AFTER, A_LEADERS, BEFORE, BEGIN_L_CODE, BEGIN_M_CODE, BOX_NODE_SIZE, DLIST, END_L_CODE,
-    END_M_CODE, FIL, FILL, FILLL, HMODE, INF_PENALTY, LEFT_TO_RIGHT, L_CODE, MAX_DIMEN, MMODE,
-    RIGHT_TO_LEFT, R_CODE, SCRIPT_SIZE, TEXT_SIZE,
+    END_M_CODE, HMODE, INF_PENALTY, LEFT_TO_RIGHT, L_CODE, MAX_DIMEN, MMODE, RIGHT_TO_LEFT, R_CODE,
+    SCRIPT_SIZE, TEXT_SIZE,
 };
 use crate::errors::Abort;
 use crate::fonts::QUAD_CODE;
@@ -14,7 +14,7 @@ use crate::node::{AnyBox, AnyNode, GlueNode, NodePtr};
 use crate::packaging::{ADDITIONAL, EXACTLY};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::state::{EngineState, EqtbState, FontState, GroupCode, MemState};
-use crate::units::{GlueSign, MemPtr, NodeType, Scaled};
+use crate::units::{GlueOrder, GlueSign, MemPtr, NodeType, Scaled};
 
 use super::build::{define_word, fin_mlist};
 use super::mlist::mlist_to_hlist;
@@ -329,10 +329,10 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     }
     if w + q > z {
         if e != Scaled::ZERO
-            && (w - st.scanner.total_shrink[0] + q <= z
-                || st.scanner.total_shrink[FIL as usize] != Scaled::ZERO
-                || st.scanner.total_shrink[FILL as usize] != Scaled::ZERO
-                || st.scanner.total_shrink[FILLL as usize] != Scaled::ZERO)
+            && (w - st.scanner.total_shrink[GlueOrder::Normal] + q <= z
+                || st.scanner.total_shrink[GlueOrder::Fil] != Scaled::ZERO
+                || st.scanner.total_shrink[GlueOrder::Fill] != Scaled::ZERO
+                || st.scanner.total_shrink[GlueOrder::Filll] != Scaled::ZERO)
         {
             st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
             b = crate::packaging::hpack(st, p, z - q, EXACTLY)?;

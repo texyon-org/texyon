@@ -15,7 +15,7 @@ use crate::node::{
 use crate::params::GluePar;
 use crate::state::{EqtbState, MemState};
 use crate::token::TokenList;
-use crate::units::{FontId, GlueSign, MemAddr, MemIdx, MemPtr, Scaled};
+use crate::units::{FontId, GlueOrder, GlueSign, MemAddr, MemIdx, MemPtr, Scaled};
 
 pub(crate) const ZERO_GLUE: NodePtr<GlueSpecNode> = static_spec(0);
 pub(crate) const FIL_GLUE: NodePtr<GlueSpecNode> = static_spec(1);
@@ -357,7 +357,7 @@ impl MemState {
         p.set_shift_amount(self, Scaled::ZERO);
         p.set_list_ptr(self, MemPtr::NULL);
         p.set_glue_sign(self, GlueSign::Normal);
-        p.set_glue_order(self, NORMAL);
+        p.set_glue_order(self, GlueOrder::Normal);
         p.set_glue_set(self, 0.0);
         Ok(p)
     }

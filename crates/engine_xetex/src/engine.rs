@@ -7,7 +7,7 @@ use crate::codes::{BoxCode, FiOrElseCode, MarkCode, ScannerStatus, ValueLevel};
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_LANG, BOX_BASE, CAT_CODE_BASE, CLOSED, CS_TOKEN_FLAG,
     CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, EMPTY, EMPTY_STRING, END_WRITE, EQTB_SIZE,
-    ETEX_PEN_BASE, FIL, FILL, FONT_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_DONT_EXPAND, FROZEN_ENDV,
+    ETEX_PEN_BASE, FONT_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_DONT_EXPAND, FROZEN_ENDV,
     FROZEN_END_TEMPLATE, FROZEN_PRIMITIVE, FROZEN_PROTECTION, GLUE_BASE, HASH_BASE,
     HISTORY_FATAL_ERROR, HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, IGNORE_DEPTH, INT_BASE,
     LC_CODE_BASE, LEFT_TO_RIGHT, LEVEL_ONE, LEVEL_ZERO, LOCAL_BASE, MATH_CODE_BASE, MATH_FONT_BASE,
@@ -38,7 +38,7 @@ use crate::state::{
     PerFont, Selector,
 };
 use crate::token::{Token, TokenList};
-use crate::units::{EqtbPtr, FontId, MemPtr, NodeType, Scaled, StrNumber};
+use crate::units::{EqtbPtr, FontId, GlueOrder, MemPtr, NodeType, Scaled, StrNumber};
 
 /// A `get_node` request this large merges every free block into the rover list.
 const GET_NODE_HEAD_SENTINEL: i32 = 0x4000_0000;
@@ -351,7 +351,7 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.scanner.cur_val = 0;
     st.scanner.cur_val_level = ValueLevel::Int;
     st.scanner.radix = 0;
-    st.scanner.cur_order = NORMAL;
+    st.scanner.cur_order = GlueOrder::Normal;
 
     st.input.read_open = [CLOSED; 17];
 
@@ -433,20 +433,20 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
         spec.set_stretch(mem, Scaled::ZERO);
         spec.set_shrink(mem, Scaled::ZERO);
         spec.set_ref_count(mem, TEX_NULL + 1);
-        spec.set_stretch_order(mem, NORMAL);
-        spec.set_shrink_order(mem, NORMAL);
+        spec.set_stretch_order(mem, GlueOrder::Normal);
+        spec.set_shrink_order(mem, GlueOrder::Normal);
     }
 
     FIL_GLUE.set_stretch(mem, Scaled::UNITY);
-    FIL_GLUE.set_stretch_order(mem, FIL);
+    FIL_GLUE.set_stretch_order(mem, GlueOrder::Fil);
     FILL_GLUE.set_stretch(mem, Scaled::UNITY);
-    FILL_GLUE.set_stretch_order(mem, FILL);
+    FILL_GLUE.set_stretch_order(mem, GlueOrder::Fill);
     SS_GLUE.set_stretch(mem, Scaled::UNITY);
-    SS_GLUE.set_stretch_order(mem, FIL);
+    SS_GLUE.set_stretch_order(mem, GlueOrder::Fil);
     SS_GLUE.set_shrink(mem, Scaled::UNITY);
-    SS_GLUE.set_shrink_order(mem, FIL);
+    SS_GLUE.set_shrink_order(mem, GlueOrder::Fil);
     FIL_NEG_GLUE.set_stretch(mem, -Scaled::UNITY);
-    FIL_NEG_GLUE.set_stretch_order(mem, FIL);
+    FIL_NEG_GLUE.set_stretch_order(mem, GlueOrder::Fil);
 
     mem.rover = MemPtr::from_raw(20);
     let rover = NodePtr::<FreeBlock>::at(mem.rover);

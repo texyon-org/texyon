@@ -3,7 +3,7 @@
 use crate::cmd::Cmd;
 use crate::codes::{ScannerStatus, ValueLevel};
 use crate::consts::{
-    DLIST, FROZEN_END_TEMPLATE, HMODE, IGNORE_DEPTH, MAX_DIMEN, MMODE, NORMAL, TEX_NULL, VMODE,
+    DLIST, FROZEN_END_TEMPLATE, HMODE, IGNORE_DEPTH, MAX_DIMEN, MMODE, TEX_NULL, VMODE,
 };
 use crate::errors::Abort;
 use crate::input::{TokenType, TOKEN_LIST};
@@ -16,7 +16,7 @@ use crate::packaging::ADDITIONAL;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::state::{EngineState, GroupCode, MemState};
 use crate::token::{Token, TokenList};
-use crate::units::{GlueSign, MemPtr, Scaled};
+use crate::units::{GlueOrder, GlueSign, MemPtr, Scaled};
 
 use super::assign::{define, do_assignments};
 use super::lists::{end_graf, normal_paragraph, off_save};
@@ -401,9 +401,9 @@ impl MemState {
         col: NodePtr<UnsetNode>,
         t: Scaled,
         natural: Scaled,
-    ) -> (GlueSign, u16, f64) {
+    ) -> (GlueSign, GlueOrder, f64) {
         if t == natural {
-            return (GlueSign::Normal, NORMAL, 0.0);
+            return (GlueSign::Normal, GlueOrder::Normal, 0.0);
         }
         if t > natural {
             let stretch = col.glue_stretch(self);
@@ -418,7 +418,7 @@ impl MemState {
         let shrink = col.glue_shrink(self);
         let ratio = if shrink == Scaled::ZERO {
             0.0
-        } else if order == NORMAL && natural - t > shrink {
+        } else if order == GlueOrder::Normal && natural - t > shrink {
             1.0
         } else {
             f64::from(natural - t) / f64::from(shrink)
@@ -692,12 +692,12 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
         }
         let u = u.into_unset(&mut st.mem);
         u.set_subtype(&mut st.mem, n as u16);
-        let o = crate::packaging::glue_order(&st.scanner.total_stretch);
+        let o = st.scanner.total_stretch.max_order();
         u.set_glue_order(&mut st.mem, o);
-        u.set_glue_stretch(&mut st.mem, st.scanner.total_stretch[o as usize]);
-        let o = crate::packaging::glue_order(&st.scanner.total_shrink);
+        u.set_glue_stretch(&mut st.mem, st.scanner.total_stretch[o]);
+        let o = st.scanner.total_shrink.max_order();
         u.set_glue_sign(&mut st.mem, o);
-        u.set_glue_shrink(&mut st.mem, st.scanner.total_shrink[o as usize]);
+        u.set_glue_shrink(&mut st.mem, st.scanner.total_shrink[o]);
         st.mem.pop_nest(&mut st.input);
         st.input.cur_list.tail_append(&mut st.mem, u.ptr());
         let spec = cur_align.tab_skip(&st.mem).glue_ptr(&st.mem);

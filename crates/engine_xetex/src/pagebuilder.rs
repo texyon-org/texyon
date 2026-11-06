@@ -3,7 +3,7 @@
 use crate::codes::{BoxCode, MarkCode, ValueLevel};
 use crate::consts::{
     AWFUL_BAD, BOX_NODE_SIZE, EJECT_PENALTY, IGNORE_DEPTH, INF_BAD, INF_PENALTY, INS_NODE_SIZE,
-    MAX_DIMEN, MAX_HALFWORD, NORMAL, VMODE,
+    MAX_DIMEN, MAX_HALFWORD, VMODE,
 };
 use crate::errors::Abort;
 use crate::helpers::badness;
@@ -15,7 +15,7 @@ use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::scan::fetch_box;
 use crate::state::{EngineState, GroupCode, PageContents, ShipoutState};
 use crate::token::TokenList;
-use crate::units::{MemPtr, Scaled};
+use crate::units::{GlueOrder, MemPtr, Scaled};
 
 // Indices into `page_so_far`, whose entries 2 to 5 hold the stretch of each order.
 const PAGE_GOAL: usize = 0;
@@ -446,7 +446,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         let order = skip.stretch_order(&st.mem) as usize;
         st.shipout.page_so_far[2 + order] += skip.stretch(&st.mem);
         st.shipout.page_so_far[PAGE_SHRINK] += skip.shrink(&st.mem);
-        if skip.shrink_order(&st.mem) != NORMAL && skip.shrink(&st.mem) != Scaled::ZERO {
+        if skip.shrink_order(&st.mem) != GlueOrder::Normal && skip.shrink(&st.mem) != Scaled::ZERO {
             crate::output::error_here_with_diagnostic(st, "Infinite glue shrinkage inserted from ");
             crate::output::print_esc(st, "skip");
             crate::output::print_int(st, i32::from(n));
@@ -709,7 +709,7 @@ fn page_glue_width(
     let order = spec.stretch_order(&st.mem) as usize;
     st.shipout.page_so_far[2 + order] += spec.stretch(&st.mem);
     st.shipout.page_so_far[PAGE_SHRINK] += spec.shrink(&st.mem);
-    if spec.shrink_order(&st.mem) == NORMAL || spec.shrink(&st.mem) == Scaled::ZERO {
+    if spec.shrink_order(&st.mem) == GlueOrder::Normal || spec.shrink(&st.mem) == Scaled::ZERO {
         return Ok(spec.width(&st.mem));
     }
     crate::output::print_err(st, "Infinite glue shrinkage found on current page");
@@ -721,7 +721,7 @@ fn page_glue_width(
     ]);
     crate::errors::error(st)?;
     let finite = st.mem.new_spec(spec)?;
-    finite.set_shrink_order(&mut st.mem, NORMAL);
+    finite.set_shrink_order(&mut st.mem, GlueOrder::Normal);
     st.mem.delete_glue_ref(spec);
     glue.set_glue_ptr(&mut st.mem, finite);
     Ok(finite.width(&st.mem))

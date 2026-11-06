@@ -2,7 +2,7 @@
 
 use crate::bridge::{output_close, output_flush, output_open};
 use crate::consts::{
-    A_LEADERS, BEFORE, C_LEADERS, DLIST, FILLL, INVALID_HANDLE, LEFT_TO_RIGHT, L_CODE, MAX_DIMEN,
+    A_LEADERS, BEFORE, C_LEADERS, DLIST, INVALID_HANDLE, LEFT_TO_RIGHT, L_CODE, MAX_DIMEN,
     MEDIUM_NODE_SIZE, MIN_HALFWORD, NORMAL, NULL_FONT, RIGHT_TO_LEFT, R_CODE, SMALL_NODE_SIZE,
     SPACE_ADJUSTMENT,
 };
@@ -19,7 +19,7 @@ use crate::params::{DimenPar, IntPar};
 use crate::state::{
     EqtbState, FontState, MemState, ScannerState, Selector, ShipoutState, StringsState,
 };
-use crate::units::{FontId, GlueSign, MemPtr, Scaled, StrNumber};
+use crate::units::{FontId, GlueOrder, GlueSign, MemPtr, Scaled, StrNumber};
 
 mod whatsits;
 
@@ -328,7 +328,7 @@ fn dvi_font_select(st: &mut crate::state::EngineState, f: FontId) -> Result<(), 
 /// The glue-setting state of the box being shipped, carried across glue nodes
 /// so rounding errors do not accumulate.
 struct GlueRounding {
-    order: u16,
+    order: GlueOrder,
     sign: GlueSign,
     set: f64,
     cur_g: Scaled,
@@ -582,8 +582,8 @@ impl MemState {
             glue.into_kern(self, w);
         } else {
             let rigid = NodePtr::<GlueSpecNode>::alloc(self)?;
-            rigid.set_stretch_order(self, FILLL + 1);
-            rigid.set_shrink_order(self, FILLL + 1);
+            rigid.set_stretch_order(self, GlueOrder::Rigid);
+            rigid.set_shrink_order(self, GlueOrder::Rigid);
             rigid.set_width(self, w);
             rigid.set_stretch(self, Scaled::ZERO);
             rigid.set_shrink(self, Scaled::ZERO);

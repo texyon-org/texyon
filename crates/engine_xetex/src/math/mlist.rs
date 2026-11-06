@@ -17,7 +17,7 @@ use crate::node::{
 use crate::packaging::ADDITIONAL;
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, ErrorState, FontState, MemState, ScannerState};
-use crate::units::{FontId, MemPtr, NodeType, Scaled};
+use crate::units::{FontId, GlueOrder, MemPtr, NodeType, Scaled};
 
 use super::delimiters::{build_opentype_assembly, rebox, var_delimiter};
 use super::scripts::make_scripts;
@@ -85,11 +85,11 @@ fn math_glue(
     let shrink_order = spec.shrink_order(&st.mem);
     let width = st.errors.mu_mult(mu, spec.width(&st.mem));
     let mut stretch = spec.stretch(&st.mem);
-    if stretch_order == NORMAL {
+    if stretch_order == GlueOrder::Normal {
         stretch = st.errors.mu_mult(mu, stretch);
     }
     let mut shrink = spec.shrink(&st.mem);
-    if shrink_order == NORMAL {
+    if shrink_order == GlueOrder::Normal {
         shrink = st.errors.mu_mult(mu, shrink);
     }
 

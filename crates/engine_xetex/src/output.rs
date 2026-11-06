@@ -3,9 +3,9 @@
 use crate::bridge::{diag_append, diag_append_byte, diag_finish, output_putc, Diagnostic};
 use crate::cmd::Cmd;
 use crate::consts::{
-    ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_USV, EQTB_SIZE, FILLL, FROZEN_NULL_FONT, HASH_BASE,
-    HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, NORMAL, NULL_CS, PRIM_EQTB_BASE, SCRIPT_SIZE,
-    SINGLE_BASE, TEXT_SIZE, TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
+    ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_USV, EQTB_SIZE, FROZEN_NULL_FONT, HASH_BASE,
+    HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, NULL_CS, PRIM_EQTB_BASE, SCRIPT_SIZE, SINGLE_BASE,
+    TEXT_SIZE, TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::node::{
@@ -15,7 +15,7 @@ use crate::params::{DimenPar, GluePar, IntPar};
 use crate::save::DIMEN_VAL_LIMIT;
 use crate::state::{EngineState, GroupCode, Selector};
 use crate::token::TokenList;
-use crate::units::{EqtbPtr, FontId, MemPtr, Scaled, StrNumber};
+use crate::units::{EqtbPtr, FontId, GlueOrder, MemPtr, Scaled, StrNumber};
 
 mod cmd_chr;
 mod show;
@@ -868,13 +868,13 @@ pub(crate) fn print_rule_dimen(st: &mut EngineState, d: RuleDimen) {
 }
 
 /// Prints `d` with its fil/fill/filll order, or the unit `s` for finite glue.
-pub(crate) fn print_glue(st: &mut EngineState, d: Scaled, order: u16, s: Option<&str>) {
+pub(crate) fn print_glue(st: &mut EngineState, d: Scaled, order: GlueOrder, s: Option<&str>) {
     print_scaled(st, d);
-    if !(NORMAL..=FILLL).contains(&order) {
+    if order == GlueOrder::Rigid {
         print(st, "foul");
-    } else if order > NORMAL {
+    } else if order > GlueOrder::Normal {
         print(st, "fil");
-        for _ in 1..order {
+        for _ in 1..order.as_raw() {
             print_char(st, b'l');
         }
     } else if let Some(s) = s {

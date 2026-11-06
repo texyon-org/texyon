@@ -563,10 +563,115 @@ impl GlueSign {
     }
 }
 
+/// The order of infinity of a stretch or shrink: finite, fil, fill or filll.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
+#[repr(u16)]
+pub enum GlueOrder {
+    #[default]
+    Normal = 0,
+    Fil = 1,
+    Fill = 2,
+    Filll = 3,
+    /// `filll + 1`, which matches no box's glue order, so the glue stays rigid.
+    Rigid = 4,
+}
+
+impl GlueOrder {
+    /// The orders from finite up.
+    pub const ALL: [GlueOrder; 4] = [
+        GlueOrder::Normal,
+        GlueOrder::Fil,
+        GlueOrder::Fill,
+        GlueOrder::Filll,
+    ];
+
+    #[inline]
+    pub fn from_raw(raw: u16) -> GlueOrder {
+        match raw {
+            1 => GlueOrder::Fil,
+            2 => GlueOrder::Fill,
+            3 => GlueOrder::Filll,
+            4 => GlueOrder::Rigid,
+            _ => GlueOrder::Normal,
+        }
+    }
+
+    #[inline]
+    pub const fn as_raw(self) -> u16 {
+        self as u16
+    }
+
+    /// The next higher order, `None` above `filll`.
+    #[inline]
+    pub fn next(self) -> Option<GlueOrder> {
+        match self {
+            GlueOrder::Normal => Some(GlueOrder::Fil),
+            GlueOrder::Fil => Some(GlueOrder::Fill),
+            GlueOrder::Fill => Some(GlueOrder::Filll),
+            GlueOrder::Filll | GlueOrder::Rigid => None,
+        }
+    }
+}
+
+/// A total per glue order, as `total_stretch` and `total_shrink` keep.
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+pub struct OrderTotals([Scaled; 4]);
+
+impl OrderTotals {
+    pub const ZERO: OrderTotals = OrderTotals([Scaled::ZERO; 4]);
+
+    /// The highest order with a nonzero total, `Normal` when all are zero.
+    #[inline]
+    pub fn max_order(&self) -> GlueOrder {
+        GlueOrder::ALL
+            .into_iter()
+            .rev()
+            .find(|&o| self[o] != Scaled::ZERO)
+            .unwrap_or(GlueOrder::Normal)
+    }
+}
+
+impl std::ops::Index<GlueOrder> for OrderTotals {
+    type Output = Scaled;
+    #[inline(always)]
+    fn index(&self, o: GlueOrder) -> &Scaled {
+        &self.0[usize::from(o.as_raw())]
+    }
+}
+
+impl std::ops::IndexMut<GlueOrder> for OrderTotals {
+    #[inline(always)]
+    fn index_mut(&mut self, o: GlueOrder) -> &mut Scaled {
+        &mut self.0[usize::from(o.as_raw())]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::mem::size_of;
+
+    #[test]
+    fn glue_order_round_trips_through_memory() {
+        for o in [
+            GlueOrder::Normal,
+            GlueOrder::Fil,
+            GlueOrder::Fill,
+            GlueOrder::Filll,
+            GlueOrder::Rigid,
+        ] {
+            assert_eq!(GlueOrder::from_raw(o.as_raw()), o);
+        }
+    }
+
+    #[test]
+    fn order_totals_pick_the_highest_nonzero_order() {
+        let mut t = OrderTotals::ZERO;
+        assert_eq!(t.max_order(), GlueOrder::Normal);
+        t[GlueOrder::Normal] = Scaled::UNITY;
+        t[GlueOrder::Fill] = Scaled::UNITY;
+        assert_eq!(t.max_order(), GlueOrder::Fill);
+    }
 
     #[test]
     fn newtypes_are_zero_cost_repr() {

@@ -3,7 +3,7 @@
 
 use crate::consts::{
     AWFUL_BAD, EJECT_PENALTY, EXPLICIT, INF_BAD, INF_PENALTY, L_CODE, MAX_DIMEN, MAX_HALFWORD,
-    NORMAL, NULL_FONT,
+    NULL_FONT,
 };
 use crate::errors::Abort;
 use crate::mem::{ACTIVE_LIST, TEMP_HEAD};
@@ -16,7 +16,7 @@ use crate::state::{
     ConfigState, EngineState, EqtbState, ErrorState, FontState, LinebreakState, MemState,
     ScannerState,
 };
-use crate::units::{FontId, MemAddr, MemPtr, NodeType, Scaled};
+use crate::units::{FontId, GlueOrder, MemAddr, MemPtr, NodeType, Scaled};
 
 mod hyphenate;
 mod locale;
@@ -106,7 +106,7 @@ fn set_delta_widths(d: NodePtr<DeltaNode>, mem: &mut MemState, w: &[Scaled; 7]) 
 impl MemState {
     #[inline]
     fn has_infinite_shrink(&self, spec: NodePtr<GlueSpecNode>) -> bool {
-        spec.shrink_order(self) != NORMAL && spec.shrink(self) != Scaled::ZERO
+        spec.shrink_order(self) != GlueOrder::Normal && spec.shrink(self) != Scaled::ZERO
     }
 
     #[inline]
@@ -150,7 +150,7 @@ impl MemState {
         spec: NodePtr<GlueSpecNode>,
     ) -> Result<NodePtr<GlueSpecNode>, Abort> {
         let q = self.new_spec(spec)?;
-        q.set_shrink_order(self, NORMAL);
+        q.set_shrink_order(self, GlueOrder::Normal);
         self.delete_glue_ref(spec);
         Ok(q)
     }
@@ -445,13 +445,14 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<AnyBox, Abort>
         let spec = last_line_fill.glue_ptr(&st.mem);
         let lb = &mut st.linebreak;
         if spec.stretch(&st.mem) > Scaled::ZERO
-            && spec.stretch_order(&st.mem) > NORMAL
+            && spec.stretch_order(&st.mem) > GlueOrder::Normal
             && lb.background[3..=5] == [Scaled::ZERO; 3]
         {
             lb.do_last_line_fit = true;
             lb.active_node_size = ACTIVE_NODE_SIZE_EXTENDED;
             lb.fill_width = [Scaled::ZERO; 3];
-            lb.fill_width[(spec.stretch_order(&st.mem) - 1) as usize] = spec.stretch(&st.mem);
+            let order = spec.stretch_order(&st.mem);
+            lb.fill_width[usize::from(order.as_raw() - 1)] = spec.stretch(&st.mem);
         }
     }
 

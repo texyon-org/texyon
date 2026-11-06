@@ -16,7 +16,8 @@ use crate::errors::Abort;
 use crate::state::MemState;
 use crate::token::TokenList;
 use crate::units::{
-    FontId, GlueSign, InvalidNodeType, MemAddr, MemIdx, MemPtr, NodeType, Scaled, StrNumber,
+    FontId, GlueOrder, GlueSign, InvalidNodeType, MemAddr, MemIdx, MemPtr, NodeType, Scaled,
+    StrNumber,
 };
 
 /// Marker for node kinds, implemented by the uninhabited kind enums below.
@@ -176,6 +177,18 @@ impl Slot for GlueSign {
     #[inline(always)]
     fn decode(raw: u16) -> Self {
         GlueSign::from_raw(raw)
+    }
+    #[inline(always)]
+    fn encode(self) -> u16 {
+        self.as_raw()
+    }
+}
+
+impl Slot for crate::units::GlueOrder {
+    type Raw = u16;
+    #[inline(always)]
+    fn decode(raw: u16) -> Self {
+        crate::units::GlueOrder::from_raw(raw)
     }
     #[inline(always)]
     fn encode(self) -> u16 {
@@ -517,7 +530,7 @@ impl<K: IsBox> NodePtr<K> {
     fields! {
         shift_amount / set_shift_amount: Scaled = b32s1 @ 4;
         glue_sign / set_glue_sign: GlueSign = b16s1 @ 5;
-        glue_order / set_glue_order: u16 = b16s0 @ 5;
+        glue_order / set_glue_order: crate::units::GlueOrder = b16s0 @ 5;
     }
 
     #[inline]
@@ -653,7 +666,7 @@ impl AnyBox {
         list_ptr(mem: &MemState) -> MemPtr;
         subtype(mem: &MemState) -> u16;
         glue_sign(mem: &MemState) -> GlueSign;
-        glue_order(mem: &MemState) -> u16;
+        glue_order(mem: &MemState) -> crate::units::GlueOrder;
         glue_set(mem: &MemState) -> f64;
         set_width(mem: &mut MemState, w: Scaled);
         set_depth(mem: &mut MemState, d: Scaled);
@@ -663,7 +676,7 @@ impl AnyBox {
         set_link(mem: &mut MemState, q: MemPtr);
         set_subtype(mem: &mut MemState, v: u16);
         set_glue_sign(mem: &mut MemState, v: GlueSign);
-        set_glue_order(mem: &mut MemState, v: u16);
+        set_glue_order(mem: &mut MemState, v: crate::units::GlueOrder);
         set_glue_set(mem: &mut MemState, v: f64);
     }
 
@@ -1176,8 +1189,8 @@ impl NodePtr<GlueSpecNode> {
     fields! {
         /// A reference count, not a link, although it shares the link word.
         ref_count / set_ref_count: i32 = b32s1 @ 0;
-        stretch_order / set_stretch_order: u16 = b16s1 @ 0;
-        shrink_order / set_shrink_order: u16 = b16s0 @ 0;
+        stretch_order / set_stretch_order: crate::units::GlueOrder = b16s1 @ 0;
+        shrink_order / set_shrink_order: crate::units::GlueOrder = b16s0 @ 0;
         stretch / set_stretch: Scaled = b32s1 @ 2;
         shrink / set_shrink: Scaled = b32s1 @ 3;
     }
@@ -1236,9 +1249,9 @@ impl NodePtr<UnsetNode> {
     fields! {
         glue_shrink / set_glue_shrink: Scaled = b32s1 @ 4;
         /// The shrink order.
-        glue_sign / set_glue_sign: u16 = b16s1 @ 5;
+        glue_sign / set_glue_sign: crate::units::GlueOrder = b16s1 @ 5;
         /// The stretch order.
-        glue_order / set_glue_order: u16 = b16s0 @ 5;
+        glue_order / set_glue_order: crate::units::GlueOrder = b16s0 @ 5;
         glue_stretch / set_glue_stretch: Scaled = b32s1 @ 6;
     }
 
@@ -1309,8 +1322,8 @@ impl NodePtr<AlignRecord> {
         u.set_subtype(mem, 0);
         u.set_height(mem, Scaled::ZERO);
         u.set_depth(mem, Scaled::ZERO);
-        u.set_glue_order(mem, NORMAL);
-        u.set_glue_sign(mem, NORMAL);
+        u.set_glue_order(mem, GlueOrder::Normal);
+        u.set_glue_sign(mem, GlueOrder::Normal);
         u.set_glue_stretch(mem, Scaled::ZERO);
         u.set_glue_shrink(mem, Scaled::ZERO);
         u
@@ -1922,7 +1935,7 @@ mod tests {
         b.set_shift_amount(&mut mem, Scaled::from_raw(0x4444));
         b.set_list_ptr(&mut mem, MemPtr::from_raw(150));
         b.set_glue_sign(&mut mem, GlueSign::Shrinking);
-        b.set_glue_order(&mut mem, 1);
+        b.set_glue_order(&mut mem, GlueOrder::Fil);
         b.set_glue_set(&mut mem, 1.5);
         assert_eq!(b.glue_sign(&mem), GlueSign::Shrinking);
         assert_eq!(b.glue_set(&mem), 1.5);
@@ -2202,8 +2215,8 @@ mod tests {
 
         let s: NodePtr<GlueSpecNode> = at(&mut mem, 150, None);
         s.set_ref_count(&mut mem, 42);
-        s.set_stretch_order(&mut mem, 2);
-        s.set_shrink_order(&mut mem, 1);
+        s.set_stretch_order(&mut mem, GlueOrder::Fill);
+        s.set_shrink_order(&mut mem, GlueOrder::Fil);
         s.set_width(&mut mem, Scaled::from_raw(0x4444));
         s.set_stretch(&mut mem, Scaled::from_raw(0x5555));
         s.set_shrink(&mut mem, Scaled::from_raw(0x6666));

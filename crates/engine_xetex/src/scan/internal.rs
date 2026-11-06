@@ -493,9 +493,9 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<(), Abor
             let q = st.scanner.cur_val;
             let spec = glue_spec(q);
             st.scanner.cur_val = if m == LastItemCode::GlueStretchOrder {
-                i32::from(spec.stretch_order(&st.mem))
+                i32::from(spec.stretch_order(&st.mem).as_raw())
             } else {
-                i32::from(spec.shrink_order(&st.mem))
+                i32::from(spec.shrink_order(&st.mem).as_raw())
             };
             st.mem.delete_glue_ref(glue_spec(q));
         }

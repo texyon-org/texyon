@@ -17,7 +17,7 @@ use crate::params::{IntPar, TokPar};
 use crate::scan::fetch_box;
 use crate::state::{EngineState, MemState, Selector};
 use crate::token::{Token, TokenList};
-use crate::units::{EqtbPtr, FontId, MemPtr, Scaled, StrNumber};
+use crate::units::{EqtbPtr, FontId, GlueOrder, MemPtr, Scaled, StrNumber};
 
 use texyon_xetex_layout::set_cp_code;
 
@@ -344,7 +344,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
                 let width = sum.width(&st.mem) + old.width(&st.mem);
                 sum.set_width(&mut st.mem, width);
                 if sum.stretch(&st.mem) == Scaled::ZERO {
-                    sum.set_stretch_order(&mut st.mem, NORMAL);
+                    sum.set_stretch_order(&mut st.mem, GlueOrder::Normal);
                 }
                 if sum.stretch_order(&st.mem) == old.stretch_order(&st.mem) {
                     let v = sum.stretch(&st.mem) + old.stretch(&st.mem);
@@ -357,7 +357,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
                     sum.set_stretch_order(&mut st.mem, order);
                 }
                 if sum.shrink(&st.mem) == Scaled::ZERO {
-                    sum.set_shrink_order(&mut st.mem, NORMAL);
+                    sum.set_shrink_order(&mut st.mem, GlueOrder::Normal);
                 }
                 if sum.shrink_order(&st.mem) == old.shrink_order(&st.mem) {
                     let v = sum.shrink(&st.mem) + old.shrink(&st.mem);
