@@ -780,11 +780,11 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             let f = crate::scan::scan_font_ident(st)?;
             if n < 2 {
                 crate::scan::scan_optional_equals(st)?;
-                let n = crate::scan::scan_int(st)?;
+                let v = crate::scan::scan_int(st)?;
                 if n == 0 {
-                    st.fonts.hyphen_char[f] = n;
+                    st.fonts.hyphen_char[f] = v;
                 } else {
-                    st.fonts.skew_char[f] = n;
+                    st.fonts.skew_char[f] = v;
                 }
             } else {
                 let p = if st.fonts.is_native_font(f) {

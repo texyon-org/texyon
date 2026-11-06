@@ -106,3 +106,10 @@ fn fontdimen_grows_only_the_newest_font() {
         ]
     );
 }
+
+#[test]
+fn hyphenchar_and_skewchar_are_assigned_separately() {
+    let r = run(r"\font\rm=cmr10 \hyphenchar\rm=-1 \skewchar\rm=45
+                  \showthe\hyphenchar\rm \showthe\skewchar\rm");
+    assert_eq!(r.shown(), ["-1", "45"]);
+}
