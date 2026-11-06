@@ -143,7 +143,6 @@ fn trap_zero_glue(st: &mut EngineState, spec: NodePtr<GlueSpecNode>) -> NodePtr<
     {
         mem.add_glue_ref(ZERO_GLUE);
         mem.delete_glue_ref(spec);
-        st.scanner.cur_val = ZERO_GLUE.idx().raw();
         ZERO_GLUE
     } else {
         spec
@@ -324,21 +323,23 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     }
     st.errors.arith_error = false;
 
-    if q < Cmd::Multiply {
+    let value = if q < Cmd::Multiply {
         if p < ValueLevel::Glue {
-            if p == ValueLevel::Int {
-                crate::scan::scan_int(st)?;
+            let v = if p == ValueLevel::Int {
+                crate::scan::scan_int(st)?
             } else {
-                crate::scan::scan_dimen(st, false, false, false)?;
-            }
-            if q == Cmd::Advance {
-                st.scanner.cur_val = st.scanner.cur_val.wrapping_add(w);
-            }
+                crate::scan::scan_dimen(st, false, false, false)?.raw()
+            };
+            RegisterValue::Word(if q == Cmd::Advance {
+                v.wrapping_add(w)
+            } else {
+                v
+            })
         } else {
-            crate::scan::scan_glue(st, p)?;
+            let g = crate::scan::scan_glue(st, p)?;
             if q == Cmd::Advance {
-                let sum = st.mem.new_spec(st.scanner.cur_glue())?;
-                st.mem.delete_glue_ref(st.scanner.cur_glue());
+                let sum = st.mem.new_spec(g)?;
+                st.mem.delete_glue_ref(g);
                 let old = NodePtr::<GlueSpecNode>::from_glue_ptr(s);
                 let width = sum.width(&st.mem) + old.width(&st.mem);
                 sum.set_width(&mut st.mem, width);
@@ -368,7 +369,9 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
                     sum.set_shrink(&mut st.mem, v);
                     sum.set_shrink_order(&mut st.mem, order);
                 }
-                st.scanner.cur_val = sum.ptr().raw();
+                RegisterValue::Glue(sum)
+            } else {
+                RegisterValue::Glue(g)
             }
         }
     } else {
@@ -386,7 +389,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             } else {
                 MAX_HALFWORD
             };
-            st.scanner.cur_val = scale(&mut st.errors, w, max_answer);
+            RegisterValue::Word(scale(&mut st.errors, w, max_answer))
         } else {
             let old = NodePtr::<GlueSpecNode>::from_glue_ptr(s);
             let r = st.mem.new_spec(old)?;
@@ -401,9 +404,9 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             r.set_stretch(&mut st.mem, Scaled::from_raw(v));
             let v = scale(&mut st.errors, shrink.raw(), MAX_HALFWORD);
             r.set_shrink(&mut st.mem, Scaled::from_raw(v));
-            st.scanner.cur_val = r.ptr().raw();
+            RegisterValue::Glue(r)
         }
-    }
+    };
 
     if st.errors.arith_error {
         crate::output::print_err(st, "Arithmetic overflow");
@@ -411,27 +414,34 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             "I can't carry out that multiplication or division,",
             "since the result is out of range.",
         ]);
-        if p >= ValueLevel::Glue {
-            st.mem.delete_glue_ref(st.scanner.cur_glue());
+        if let RegisterValue::Glue(g) = value {
+            st.mem.delete_glue_ref(g);
         }
         return crate::errors::error(st);
     }
 
     let global = a >= 4;
-    if p < ValueLevel::Glue {
-        let value = st.scanner.cur_val;
-        match l {
-            RegisterLoc::Sparse(sa) => sa_word_define(st, global, sa, value)?,
-            RegisterLoc::Eqtb(l) => word_define(st, global, l, value)?,
-        }
-    } else {
-        let value = trap_zero_glue(st, st.scanner.cur_glue()).ptr();
-        match l {
-            RegisterLoc::Sparse(sa) => sa_define(st, global, sa, value)?,
-            RegisterLoc::Eqtb(l) => define(st, global, l, Cmd::GlueRef, value.raw())?,
+    match value {
+        RegisterValue::Word(v) => match l {
+            RegisterLoc::Sparse(sa) => sa_word_define(st, global, sa, v)?,
+            RegisterLoc::Eqtb(l) => word_define(st, global, l, v)?,
+        },
+        RegisterValue::Glue(g) => {
+            let g = trap_zero_glue(st, g).ptr();
+            match l {
+                RegisterLoc::Sparse(sa) => sa_define(st, global, sa, g)?,
+                RegisterLoc::Eqtb(l) => define(st, global, l, Cmd::GlueRef, g.raw())?,
+            }
         }
     }
     Ok(())
+}
+
+/// A register's new value in `\advance`, `\multiply` or `\divide`.
+#[derive(Clone, Copy)]
+enum RegisterValue {
+    Word(i32),
+    Glue(NodePtr<GlueSpecNode>),
 }
 
 pub(super) fn do_assignments(st: &mut EngineState) -> Result<(), Abort> {

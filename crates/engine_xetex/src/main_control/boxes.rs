@@ -205,7 +205,6 @@ fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
         } else {
             (box_context - GLOBAL_BOX_FLAG, true)
         };
-        st.scanner.cur_val = n;
         let cb = st.scanner.cur_box.map_or(MemPtr::NULL, |b| b.ptr());
         if n < 256 {
             define(st, global, BOX_BASE + n, Cmd::BoxRef, cb.raw())?;
