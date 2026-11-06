@@ -790,7 +790,7 @@ pub(crate) fn initialize_engine(
     st.scanner.expand_depth = 10_000;
     st.eqtb.hash_extra = 600_000;
 
-    let in_open_words = st.input.max_in_open as usize + 1;
+    let in_open_words = st.input.max_in_open + 1;
     let hyph_words = HYPH_SIZE as usize + 1;
     st.input.buffer = vec![0; st.input.buf_size as usize + 1];
     st.input.nest = TexStack::with_size(NEST_SIZE);
@@ -799,12 +799,7 @@ pub(crate) fn initialize_engine(
         .take(in_open_words)
         .collect();
     st.input.input_stack = TexStack::with_size(STACK_SIZE);
-    st.input.line_stack = vec![0; in_open_words];
-    st.input.grp_stack = vec![0; in_open_words];
-    st.input.if_stack = vec![MemPtr::default(); in_open_words];
-    st.input.source_filename_stack = vec![StrNumber::NONE; in_open_words];
-    st.input.full_source_filename_stack = vec![StrNumber::NONE; in_open_words];
-    st.input.eof_seen = vec![false; in_open_words];
+    st.input.open_levels = vec![crate::state::OpenLevel::default(); in_open_words];
     st.input.param_stack = TexStack::with_size(PARAM_SIZE);
     st.hyph.hyph_word = vec![StrNumber::NONE; hyph_words];
     st.hyph.hyph_list = vec![MemPtr::NULL; hyph_words];
@@ -893,13 +888,11 @@ pub(crate) fn initialize_engine(
     st.errors.log_opened = false;
 
     st.input.input_stack.reset();
-    st.input.source_filename_stack[0] = StrNumber::NONE;
-    st.input.full_source_filename_stack[0] = StrNumber::NONE;
+    st.input.open_levels[0] = crate::state::OpenLevel::default();
     st.input.in_open = 0;
     st.input.open_parens = 0;
     st.input.max_buf_stack = 0;
-    st.input.grp_stack[0] = 0;
-    st.input.if_stack[0] = MemPtr::NULL;
+
     st.input.param_stack.reset();
     st.scanner.used_tectonic_coda_tokens = false;
     st.fonts.gave_char_warning_help = false;
@@ -1095,7 +1088,7 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     st.fonts.font_mapping.as_mut_slice().fill(None);
     st.fonts.loaded_font_mapping = None;
 
-    for i in 1..=st.input.in_open as usize {
+    for i in 1..=st.input.in_open {
         // Teardown has begun, so a serious close error is absorbed.
         let _ = crate::io::u_close(std::mem::take(&mut st.input.input_file[i]));
     }
@@ -1113,12 +1106,7 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     input.read_file = Default::default();
     input.input_stack.release();
     input.param_stack.release();
-    input.line_stack = Vec::new();
-    input.grp_stack = Vec::new();
-    input.if_stack = Vec::new();
-    input.source_filename_stack = Vec::new();
-    input.full_source_filename_stack = Vec::new();
-    input.eof_seen = Vec::new();
+    input.open_levels = Vec::new();
     input.buffer = Vec::new();
     input.name_of_file = Vec::new();
 

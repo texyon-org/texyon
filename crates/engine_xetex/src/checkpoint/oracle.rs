@@ -259,7 +259,7 @@ fn digest_input(st: &EngineState) -> u64 {
     let input = &st.input;
     h.i32s(&[
         input.open_parens,
-        input.in_open,
+        depth(input.in_open),
         input.pseudo_files.raw(),
         depth(input.nest.len()),
         depth(input.nest.max_len()),
@@ -288,20 +288,15 @@ fn digest_input(st: &EngineState) -> u64 {
     for p in input.param_stack.entries() {
         h.i32(p.list.ptr().raw());
     }
-    h.i32s(&input.line_stack);
-    h.i32s(&input.grp_stack);
-    for &value in &input.if_stack {
-        h.i32(value.raw());
-    }
-    for s in input
-        .source_filename_stack
-        .iter()
-        .chain(&input.full_source_filename_stack)
-    {
-        h.i32(s.raw());
-    }
-    for &value in &input.eof_seen {
-        h.word(u64::from(value));
+    for level in &input.open_levels {
+        h.i32s(&[
+            level.outer_line,
+            level.grp,
+            level.cond.raw(),
+            level.source_name.raw(),
+            level.full_source_name.raw(),
+        ]);
+        h.word(u64::from(level.eof_seen));
     }
     h.finish()
 }

@@ -55,7 +55,7 @@ fn pop_cond_node(st: &mut EngineState) {
 }
 
 fn pop_fi(st: &mut EngineState) {
-    if st.input.if_stack[st.input.in_open as usize] == st.scanner.cond_ptr {
+    if st.input.open_levels[st.input.in_open].cond == st.scanner.cond_ptr {
         crate::output::if_warning(st);
     }
     pop_cond_node(st);

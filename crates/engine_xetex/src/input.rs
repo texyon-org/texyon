@@ -186,7 +186,7 @@ pub(crate) fn begin_file_reading(st: &mut EngineState) -> Result<(), Abort> {
     if st.input.in_open == st.input.max_in_open {
         return Err(Abort::Overflow {
             what: "text input levels",
-            n: st.input.max_in_open,
+            n: i32::try_from(st.input.max_in_open).unwrap_or(i32::MAX),
         });
     }
     if st.input.first == st.input.buf_size {
@@ -197,14 +197,16 @@ pub(crate) fn begin_file_reading(st: &mut EngineState) -> Result<(), Abort> {
     }
     st.input.in_open += 1;
     push_input(st)?;
-    let idx = st.input.in_open as usize;
-    st.input.cur_input.index = idx as u16;
-    st.input.source_filename_stack[idx] = StrNumber::NONE;
-    st.input.full_source_filename_stack[idx] = StrNumber::NONE;
-    st.input.eof_seen[idx] = false;
-    st.input.grp_stack[idx] = st.save_stack.cur_boundary;
-    st.input.if_stack[idx] = st.scanner.cond_ptr;
-    st.input.line_stack[idx] = st.mem.line;
+    let idx = st.input.in_open;
+    st.input.cur_input.index = u16::try_from(idx).map_err(|_| Abort::Confusion("in_open"))?;
+    st.input.open_levels[idx] = crate::state::OpenLevel {
+        outer_line: st.mem.line,
+        grp: st.save_stack.cur_boundary,
+        cond: st.scanner.cond_ptr,
+        source_name: StrNumber::NONE,
+        full_source_name: StrNumber::NONE,
+        eof_seen: false,
+    };
     st.input.cur_input.start = st.input.first;
     st.input.cur_input.state = MID_LINE;
     st.input.cur_input.name = 0;
@@ -215,7 +217,7 @@ pub(crate) fn begin_file_reading(st: &mut EngineState) -> Result<(), Abort> {
 
 pub(crate) fn end_file_reading(st: &mut EngineState) -> Result<(), Abort> {
     st.input.first = st.input.cur_input.start;
-    st.mem.line = st.input.line_stack[st.input.cur_input.index as usize];
+    st.mem.line = st.input.open_levels[usize::from(st.input.cur_input.index)].outer_line;
     match st.input.cur_input.name {
         18 | 19 => st.mem.pseudo_close(&mut st.input),
         name if name > 17 => {

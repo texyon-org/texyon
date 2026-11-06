@@ -493,9 +493,9 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                         } else {
                             let index = st.input.cur_input.index as usize;
                             let every_eof = st.eqtb.tok_par(TokPar::EveryEof);
-                            if !every_eof.is_null() && !st.input.eof_seen[index] {
+                            if !every_eof.is_null() && !st.input.open_levels[index].eof_seen {
                                 st.input.cur_input.limit = st.input.first - 1;
-                                st.input.eof_seen[index] = true;
+                                st.input.open_levels[index].eof_seen = true;
                                 begin_token_list(st, every_eof, TokenType::EveryEof)?;
                                 continue 'restart;
                             }
@@ -504,10 +504,10 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                     }
 
                     if st.input.force_eof {
-                        let in_open = st.input.in_open as usize;
+                        let in_open = st.input.in_open;
                         if st.eqtb.int_par(IntPar::TracingNesting) > 0
-                            && (st.input.grp_stack[in_open] != st.save_stack.cur_boundary
-                                || st.input.if_stack[in_open] != st.scanner.cond_ptr)
+                            && (st.input.open_levels[in_open].grp != st.save_stack.cur_boundary
+                                || st.input.open_levels[in_open].cond != st.scanner.cond_ptr)
                         {
                             crate::output::file_warning(st);
                         }

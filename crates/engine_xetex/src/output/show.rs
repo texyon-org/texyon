@@ -714,10 +714,13 @@ pub(crate) fn show_context(st: &mut EngineState) {
                         }
                     } else {
                         print_nl(st, "l.");
-                        if i32::from(ci.index) == st.input.in_open {
+                        if usize::from(ci.index) == st.input.in_open {
                             print_int(st, st.mem.line);
                         } else {
-                            print_int(st, st.input.line_stack[ci.index as usize + 1]);
+                            print_int(
+                                st,
+                                st.input.open_levels[usize::from(ci.index) + 1].outer_line,
+                            );
                         }
                     }
                     print_char(st, b' ');

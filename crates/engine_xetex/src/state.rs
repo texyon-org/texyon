@@ -116,6 +116,22 @@ pub(crate) struct TexmfState {
     pub start_time_str: Vec<u8>,
 }
 
+/// What TeX keeps per open input file in `line_stack`, `grp_stack`,
+/// `if_stack`, `eof_seen` and the source name stacks.
+#[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
+pub(crate) struct OpenLevel {
+    /// The enclosing file's line when this one was opened.
+    pub outer_line: i32,
+    /// `cur_boundary` when the file was opened.
+    pub grp: i32,
+    /// `cond_ptr` when the file was opened.
+    pub cond: crate::units::MemPtr,
+    pub source_name: StrNumber,
+    pub full_source_name: StrNumber,
+    /// Whether `\everyeof` has been inserted at its end.
+    pub eof_seen: bool,
+}
+
 /// A macro argument on the parameter stack, with its last node so it can be
 /// freed without a walk.
 #[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
@@ -203,12 +219,8 @@ pub(crate) enum InputSlot {
 #[derive(Default)]
 pub(crate) struct InputClusterState {
     pub param_stack: crate::stack::TexStack<MacroParam>,
-    pub line_stack: Vec<i32>,
-    pub grp_stack: Vec<i32>,
-    pub if_stack: Vec<crate::units::MemPtr>,
-    pub source_filename_stack: Vec<StrNumber>,
-    pub full_source_filename_stack: Vec<StrNumber>,
-    pub eof_seen: Vec<bool>,
+    /// Per open input file, indexed by `in_open`. Level 0 is the terminal.
+    pub open_levels: Vec<OpenLevel>,
     pub buffer: Vec<i32>,
     pub input_stack: crate::stack::TexStack<InputState>,
     pub cur_input: InputState,
@@ -216,10 +228,10 @@ pub(crate) struct InputClusterState {
     pub nest: crate::stack::TexStack<crate::mem_types::ListStateRecord>,
     pub cur_list: crate::mem_types::ListStateRecord,
     pub open_parens: i32,
-    pub in_open: i32,
+    pub in_open: usize,
     pub pseudo_files: crate::units::MemPtr,
     pub buf_size: i32,
-    pub max_in_open: i32,
+    pub max_in_open: usize,
     /// The level `show_context` and its relatives are looking at.
     pub base_ptr: usize,
     pub par_loc: crate::units::EqtbPtr,

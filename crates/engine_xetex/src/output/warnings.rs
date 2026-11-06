@@ -20,9 +20,9 @@ use super::{
 };
 
 /// Walks `base_ptr` down to the file at input level `level`, reporting whether it is a real file.
-fn level_is_file(st: &mut EngineState, level: i32) -> bool {
+fn level_is_file(st: &mut EngineState, level: usize) -> bool {
     while st.input.input_stack[st.input.base_ptr].state == TOKEN_LIST
-        || i32::from(st.input.input_stack[st.input.base_ptr].index) > level
+        || usize::from(st.input.input_stack[st.input.base_ptr].index) > level
     {
         st.input.base_ptr -= 1;
     }
@@ -34,11 +34,11 @@ pub(crate) fn group_warning(st: &mut EngineState) {
     st.input.input_stack.park(st.input.cur_input);
     let mut i = st.input.in_open;
     let mut w = false;
-    while st.input.grp_stack[i as usize] == st.save_stack.cur_boundary && i > 0 {
+    while st.input.open_levels[i].grp == st.save_stack.cur_boundary && i > 0 {
         if st.eqtb.int_par(IntPar::TracingNesting) > 0 && level_is_file(st, i) {
             w = true;
         }
-        st.input.grp_stack[i as usize] = st.save_stack.save_index(st.save_stack.save_ptr);
+        st.input.open_levels[i].grp = st.save_stack.save_index(st.save_stack.save_ptr);
         i -= 1;
     }
     if w {
@@ -61,11 +61,11 @@ pub(crate) fn if_warning(st: &mut EngineState) {
     st.input.input_stack.park(st.input.cur_input);
     let mut i = st.input.in_open;
     let mut w = false;
-    while st.input.if_stack[i as usize] == st.scanner.cond_ptr {
+    while st.input.open_levels[i].cond == st.scanner.cond_ptr {
         if st.eqtb.int_par(IntPar::TracingNesting) > 0 && level_is_file(st, i) {
             w = true;
         }
-        st.input.if_stack[i as usize] = st.scanner.cond_ptr.link(&st.mem);
+        st.input.open_levels[i].cond = st.scanner.cond_ptr.link(&st.mem);
         i -= 1;
     }
     if w {
@@ -102,7 +102,7 @@ pub(crate) fn file_warning(st: &mut EngineState) {
     let saved_level = st.save_stack.cur_level;
     let saved_group = st.save_stack.cur_group;
     st.save_stack.save_ptr = st.save_stack.cur_boundary;
-    while st.input.grp_stack[st.input.in_open as usize] != st.save_stack.save_ptr {
+    while st.input.open_levels[st.input.in_open].grp != st.save_stack.save_ptr {
         st.save_stack.cur_level -= 1;
         print_nl(st, "Warning: ");
         diagnostic_begin_capture_warning_here(st);
@@ -120,7 +120,7 @@ pub(crate) fn file_warning(st: &mut EngineState) {
     let saved_limit = st.scanner.if_limit;
     let saved_if = st.scanner.cur_if;
     let saved_line = st.scanner.if_line;
-    while st.input.if_stack[st.input.in_open as usize] != st.scanner.cond_ptr {
+    while st.input.open_levels[st.input.in_open].cond != st.scanner.cond_ptr {
         print_nl(st, "Warning: ");
         diagnostic_begin_capture_warning_here(st);
         print(st, "end of file when ");

@@ -452,7 +452,7 @@ pub(crate) fn append_to_diagnostic(st: &mut EngineState, text: &str) {
 /// The innermost input level that is a real file, with its current line.
 fn current_file_line(st: &EngineState) -> Option<(StrNumber, i32)> {
     let mut level = st.input.in_open;
-    while level > 0 && st.input.full_source_filename_stack[level as usize] == StrNumber::NONE {
+    while level > 0 && st.input.open_levels[level].full_source_name == StrNumber::NONE {
         level -= 1;
     }
     if level == 0 {
@@ -461,9 +461,9 @@ fn current_file_line(st: &EngineState) -> Option<(StrNumber, i32)> {
     let line = if level == st.input.in_open {
         st.mem.line
     } else {
-        st.input.line_stack[(level + 1) as usize]
+        st.input.open_levels[level + 1].outer_line
     };
-    Some((st.input.full_source_filename_stack[level as usize], line))
+    Some((st.input.open_levels[level].full_source_name, line))
 }
 
 fn diagnostic_print_file_line(st: &EngineState, diagnostic: &mut Diagnostic) {

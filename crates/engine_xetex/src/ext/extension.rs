@@ -26,7 +26,7 @@ use super::get_encoding_mode_and_info;
 /// The current source file if the input position moved since the last source
 /// special.
 fn new_source_position(st: &mut EngineState) -> Option<StrNumber> {
-    let fname = st.input.source_filename_stack[st.input.in_open as usize];
+    let fname = st.input.open_levels[st.input.in_open].source_name;
     (fname > StrNumber::NONE && crate::texmfmp::is_new_source(st, fname, st.mem.line))
         .then_some(fname)
 }
@@ -303,7 +303,7 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
                 crate::errors::error(st)?;
             } else {
                 // `\scantokens` occupies an input level without a UFile.
-                let slot = crate::io::FileSlot::Input(st.input.in_open as usize);
+                let slot = crate::io::FileSlot::Input(st.input.in_open);
                 crate::io::with_slot_file(st, slot, |st, f| {
                     crate::io::set_input_file_encoding(st, f, enc_mode, info)
                 })

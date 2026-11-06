@@ -1098,11 +1098,11 @@ pub(crate) fn start_input(
 
     let name = make_name_string(st)?;
     st.input.cur_input.name = name.raw();
-    let in_open = st.input.in_open as usize;
-    st.input.source_filename_stack[in_open] = name;
+    let in_open = st.input.in_open;
+    st.input.open_levels[in_open].source_name = name;
     let full_name = st.input.name_of_input_file.clone();
     let full_name = st.strings.make_tex_string(full_name)?;
-    st.input.full_source_filename_stack[in_open] = full_name;
+    st.input.open_levels[in_open].full_source_name = full_name;
 
     if st.input.cur_input.name == st.strings.str_ptr - 1 {
         let temp_str = st.strings.search_string(name);

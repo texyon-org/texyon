@@ -505,7 +505,7 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
     }
-    if st.input.grp_stack[st.input.in_open as usize] == st.save_stack.cur_boundary {
+    if st.input.open_levels[st.input.in_open].grp == st.save_stack.cur_boundary {
         crate::output::group_warning(st);
     }
     let ss = &mut st.save_stack;

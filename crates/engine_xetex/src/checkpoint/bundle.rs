@@ -425,16 +425,11 @@ struct InputBundle {
     input_stack: StackBundle<InputState>,
     param_stack: StackBundle<crate::state::MacroParam>,
     nest: StackBundle<ListStateRecord>,
-    line_stack: Vec<i32>,
-    grp_stack: Vec<i32>,
-    if_stack: Vec<MemPtr>,
-    source_filename_stack: Vec<StrNumber>,
-    full_source_filename_stack: Vec<StrNumber>,
-    eof_seen: Vec<bool>,
+    open_levels: Vec<crate::state::OpenLevel>,
     cur_input: InputState,
     cur_list: ListStateRecord,
     open_parens: i32,
-    in_open: i32,
+    in_open: usize,
     pseudo_files: MemPtr,
     base_ptr: usize,
     par_loc: EqtbPtr,
@@ -490,12 +485,7 @@ impl InputBundle {
             input_stack: StackBundle::with_parked(&src.input_stack),
             param_stack: StackBundle::entries(&src.param_stack),
             nest: StackBundle::with_parked(&src.nest),
-            line_stack: src.line_stack.clone(),
-            grp_stack: src.grp_stack.clone(),
-            if_stack: src.if_stack.clone(),
-            source_filename_stack: src.source_filename_stack.clone(),
-            full_source_filename_stack: src.full_source_filename_stack.clone(),
-            eof_seen: src.eof_seen.clone(),
+            open_levels: src.open_levels.clone(),
             cur_input: src.cur_input,
             cur_list: src.cur_list,
             open_parens: src.open_parens,
@@ -520,14 +510,7 @@ impl InputBundle {
         self.input_stack.restore(&mut dst.input_stack);
         self.param_stack.restore(&mut dst.param_stack);
         self.nest.restore(&mut dst.nest);
-        dst.line_stack.clone_from(&self.line_stack);
-        dst.grp_stack.clone_from(&self.grp_stack);
-        dst.if_stack.clone_from(&self.if_stack);
-        dst.source_filename_stack
-            .clone_from(&self.source_filename_stack);
-        dst.full_source_filename_stack
-            .clone_from(&self.full_source_filename_stack);
-        dst.eof_seen.clone_from(&self.eof_seen);
+        dst.open_levels.clone_from(&self.open_levels);
         dst.cur_input = self.cur_input;
         dst.cur_list = self.cur_list;
         dst.open_parens = self.open_parens;
@@ -552,12 +535,7 @@ impl InputBundle {
             + vec_bytes(&self.input_stack.slots)
             + vec_bytes(&self.param_stack.slots)
             + vec_bytes(&self.nest.slots)
-            + vec_bytes(&self.line_stack)
-            + vec_bytes(&self.grp_stack)
-            + vec_bytes(&self.if_stack)
-            + vec_bytes(&self.source_filename_stack)
-            + vec_bytes(&self.full_source_filename_stack)
-            + vec_bytes(&self.eof_seen)
+            + vec_bytes(&self.open_levels)
             + vec_bytes(&self.name_of_file)
     }
 }
