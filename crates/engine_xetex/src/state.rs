@@ -1063,7 +1063,7 @@ pub(crate) struct ScannerState {
     pub cur_align: crate::units::MemPtr,
     pub cur_span: crate::units::MemPtr,
     pub cur_loop: crate::units::MemPtr,
-    pub align_ptr: crate::units::MemPtr,
+    pub align_ptr: Option<crate::node::NodePtr<crate::node::AlignStackNode>>,
     pub cur_head: crate::units::MemPtr,
     pub cur_tail: crate::units::MemPtr,
     pub cur_pre_head: crate::units::MemPtr,
@@ -1072,7 +1072,7 @@ pub(crate) struct ScannerState {
     pub mag_set: i32,
     pub radix: u8,
     pub expand_depth_count: i32,
-    pub sa_chain: crate::units::MemPtr,
+    pub sa_chain: Option<crate::node::NodePtr<crate::node::SaNode>>,
     pub sa_level: u16,
     pub max_reg_num: i32,
     /// The innermost incomplete conditional, `None` outside any.

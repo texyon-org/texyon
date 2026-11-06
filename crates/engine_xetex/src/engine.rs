@@ -372,7 +372,7 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.scanner.pack_begin_line = 0;
     st.scanner.empty.s1 = EMPTY;
     st.scanner.empty.s0 = TEX_NULL;
-    st.scanner.align_ptr = MemPtr::NULL;
+    st.scanner.align_ptr = None;
     st.scanner.cur_align = MemPtr::NULL;
     st.scanner.cur_span = MemPtr::NULL;
     st.scanner.cur_loop = MemPtr::NULL;
@@ -418,7 +418,7 @@ fn initialize_more_variables(st: &mut EngineState) {
             s1: TEX_NULL,
         },
     };
-    st.scanner.sa_chain = MemPtr::NULL;
+    st.scanner.sa_chain = None;
     st.scanner.sa_level = LEVEL_ZERO;
     st.scanner.disc_ptr[BoxCode::LastBox as usize] = MemPtr::NULL;
     st.scanner.disc_ptr[BoxCode::Vsplit as usize] = MemPtr::NULL;

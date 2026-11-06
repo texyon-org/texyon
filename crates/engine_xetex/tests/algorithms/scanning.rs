@@ -141,3 +141,12 @@ fn changing_a_space_fontdimen_rebuilds_the_space_glue() {
                   \fontdimen2\rm=10pt \setbox2\hbox{a b} \showthe\wd0 \showthe\wd2");
     assert_eq!(r.shown(), ["13.88892pt", "20.55559pt"]);
 }
+
+#[test]
+fn sparse_registers_restore_at_group_end() {
+    let r = run(r"\count300=1 \dimen400=1pt
+                  {\count300=2 {\global\dimen400=3pt \count300=4 \showthe\count300}
+                   \showthe\count300 \showthe\dimen400}
+                  \showthe\count300 \showthe\dimen400");
+    assert_eq!(r.shown(), ["4", "2", "3.0pt", "1", "3.0pt"]);
+}

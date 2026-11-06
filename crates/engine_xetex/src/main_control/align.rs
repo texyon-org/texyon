@@ -7,8 +7,8 @@ use crate::errors::Abort;
 use crate::input::{TokenType, TOKEN_LIST};
 use crate::mem::{ALIGN_HEAD, END_SPAN, HOLD_HEAD, HOLD_HEAD_TOKS, ZERO_GLUE};
 use crate::node::{
-    AlignColumn, AlignRecord, AlignStackNode, AnyBox, AnyNode, GlueNode, NodePtr, RuleDimen,
-    SpanNode, UnsetNode, RUNNING,
+    link_of, AlignColumn, AlignRecord, AlignStackNode, AnyBox, AnyNode, GlueNode, NodePtr,
+    RuleDimen, SpanNode, UnsetNode, RUNNING,
 };
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
@@ -293,7 +293,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     st.mem.flush_node_list(p.ptr())?;
-    pop_alignment(st);
+    pop_alignment(st)?;
 
     let aux_save_s0 = st.input.cur_list.aux_s0();
     let aux_save_s1 = st.input.cur_list.aux_s1();
@@ -533,7 +533,7 @@ fn init_col(st: &mut EngineState) -> Result<(), Abort> {
 fn push_alignment(st: &mut EngineState) -> Result<(), Abort> {
     let p = NodePtr::<AlignStackNode>::alloc(&mut st.mem)?;
     let (mem, sc) = (&mut st.mem, &st.scanner);
-    p.set_link(mem, sc.align_ptr);
+    p.set_link(mem, link_of(sc.align_ptr));
     p.set_cur_align(mem, sc.cur_align);
     p.set_preamble(mem, ALIGN_HEAD.link(mem));
     p.set_cur_span(mem, sc.cur_span);
@@ -543,16 +543,16 @@ fn push_alignment(st: &mut EngineState) -> Result<(), Abort> {
     p.set_cur_tail(mem, sc.cur_tail);
     p.set_cur_pre_head(mem, sc.cur_pre_head);
     p.set_cur_pre_tail(mem, sc.cur_pre_tail);
-    st.scanner.align_ptr = p.ptr();
+    st.scanner.align_ptr = Some(p);
     st.scanner.cur_head = st.mem.get_avail()?;
     st.scanner.cur_pre_head = st.mem.get_avail()?;
     Ok(())
 }
 
-fn pop_alignment(st: &mut EngineState) {
+fn pop_alignment(st: &mut EngineState) -> Result<(), Abort> {
+    let p = st.scanner.align_ptr.ok_or(Abort::Confusion("align"))?;
     st.mem.free_avail(st.scanner.cur_head);
     st.mem.free_avail(st.scanner.cur_pre_head);
-    let p = NodePtr::<AlignStackNode>::at(st.scanner.align_ptr);
     let (mem, sc) = (&mut st.mem, &mut st.scanner);
     sc.cur_tail = p.cur_tail(mem);
     sc.cur_head = p.cur_head(mem);
@@ -563,8 +563,9 @@ fn pop_alignment(st: &mut EngineState) {
     sc.cur_span = p.cur_span(mem);
     ALIGN_HEAD.set_link(mem, p.preamble(mem));
     sc.cur_align = p.cur_align(mem);
-    sc.align_ptr = p.link(mem);
+    sc.align_ptr = p.next(mem);
     p.free(mem);
+    Ok(())
 }
 
 impl MemState {

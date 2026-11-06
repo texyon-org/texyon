@@ -8,7 +8,7 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::mem::ZERO_GLUE;
 use crate::mem_types::MemoryWord;
-use crate::node::{NodePtr, SaNode};
+use crate::node::{link_of, NodePtr, SaNode};
 use crate::params::IntPar;
 use crate::state::{
     EngineState, EqtbState, GroupCode, MemState, SaveStackState, SaveType, ScannerState,
@@ -281,10 +281,10 @@ impl MemState {
             save_stack.set_save_entry(
                 SaveType::RestoreSa,
                 scanner.sa_level,
-                scanner.sa_chain.raw(),
+                link_of(scanner.sa_chain).raw(),
             );
             save_stack.save_ptr += 1;
-            scanner.sa_chain = MemPtr::NULL;
+            scanner.sa_chain = None;
             scanner.sa_level = save_stack.cur_level;
         }
         let mut i = p.sa_index(self);
@@ -309,8 +309,8 @@ impl MemState {
         q.set_sa_index(self, i);
         let lev = p.sa_lev(self);
         q.set_sa_lev(self, lev);
-        q.set_link(self, scanner.sa_chain);
-        scanner.sa_chain = q.ptr();
+        q.set_link(self, link_of(scanner.sa_chain));
+        scanner.sa_chain = Some(q);
         p.set_sa_ref(self, p.sa_ref(self) + 1);
         Ok(())
     }
@@ -401,8 +401,7 @@ pub(crate) fn finish_sa_mutation(
 }
 
 fn sa_restore(st: &mut EngineState) -> Result<(), Abort> {
-    loop {
-        let chain = sa(st.scanner.sa_chain);
+    while let Some(chain) = st.scanner.sa_chain {
         let p = sa(MemPtr::from_raw(chain.sa_ref(&st.mem)));
         let mut flush_list = None;
         if p.sa_lev(&st.mem) == LEVEL_ONE {
@@ -429,17 +428,15 @@ fn sa_restore(st: &mut EngineState) -> Result<(), Abort> {
             st.mem.flush_node_list(list)?;
         }
         st.mem.delete_sa_ref(&mut st.scanner, p.idx());
-        st.scanner.sa_chain = chain.link(&st.mem);
+        st.scanner.sa_chain = chain.next(&st.mem);
         let size = if chain.sa_index(&st.mem) < DIMEN_VAL_LIMIT {
             WORD_NODE_SIZE
         } else {
             POINTER_NODE_SIZE
         };
         st.mem.free_node(chain.ptr(), size);
-        if st.scanner.sa_chain.is_null() {
-            return Ok(());
-        }
     }
+    Ok(())
 }
 
 pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
@@ -481,7 +478,7 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
             }
             SaveType::RestoreSa => {
                 sa_restore(st)?;
-                st.scanner.sa_chain = st.save_stack.save_index_ptr(sp);
+                st.scanner.sa_chain = NodePtr::from_ptr(st.save_stack.save_index_ptr(sp));
                 st.scanner.sa_level = st.save_stack.save_level(st.save_stack.save_ptr);
             }
             SaveType::RestoreOldValue | SaveType::RestoreZero => {
