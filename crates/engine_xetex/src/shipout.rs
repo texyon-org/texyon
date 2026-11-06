@@ -1299,7 +1299,7 @@ pub(crate) fn finalize_dvi_file(st: &mut crate::state::EngineState) -> Result<()
         .dvi
         .finish(id_byte(st.config.semantic_pagination_enabled))?;
 
-    let k = output_close(st.shipout.dvi.file) as u8;
+    let k = u8::from(output_close(st.shipout.dvi.file));
     if k == 0 {
         crate::output::print_nl(st, "Output written on ");
         crate::output::print(st, st.shipout.output_file_name);

@@ -9,6 +9,39 @@ pub(crate) struct ComponentDigest {
     pub(crate) value: u64,
 }
 
+/// A table value widened to a hash word. Signed values sign-extend.
+trait HashWord {
+    fn hash_word(self) -> u64;
+}
+
+macro_rules! unsigned_hash_word {
+    ($($t:ty),*) => {$(
+        impl HashWord for $t {
+            fn hash_word(self) -> u64 {
+                u64::from(self)
+            }
+        }
+    )*};
+}
+unsigned_hash_word!(bool, u8, u16, u32);
+
+macro_rules! signed_hash_word {
+    ($($t:ty),*) => {$(
+        impl HashWord for $t {
+            fn hash_word(self) -> u64 {
+                i64::from(self) as u64
+            }
+        }
+    )*};
+}
+signed_hash_word!(i8, i16, i32);
+
+impl HashWord for usize {
+    fn hash_word(self) -> u64 {
+        u64::try_from(self).unwrap_or(u64::MAX)
+    }
+}
+
 pub(crate) fn digest_state(st: &EngineState) -> Vec<ComponentDigest> {
     let component = |name, digest: fn(&EngineState) -> u64| ComponentDigest {
         name,
@@ -183,7 +216,7 @@ fn digest_fonts(st: &EngineState) -> u64 {
     macro_rules! hash_values {
         ($field:ident $(.$raw:ident())?) => {
             for &value in fonts.$field.as_slice().iter().take(font_count) {
-                h.word(value$(.$raw())? as u64);
+                h.word(HashWord::hash_word(value$(.$raw())?));
             }
         };
     }
@@ -356,7 +389,7 @@ fn digest_hyph(st: &EngineState) -> u64 {
     macro_rules! hash_values {
         ($field:ident $(.$raw:ident())?) => {
             for &value in &hyph.$field {
-                h.word(value$(.$raw())? as u64);
+                h.word(HashWord::hash_word(value$(.$raw())?));
             }
         };
     }

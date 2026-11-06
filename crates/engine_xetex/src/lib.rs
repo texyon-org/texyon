@@ -15,6 +15,8 @@
 //! [Tectonic]: https://tectonic-typesetting.github.io/
 //! [`tectonic`]: https://docs.rs/tectonic/
 
+#![deny(clippy::cast_lossless)]
+
 use crate::state::ConfigState;
 
 use std::time::SystemTime;
