@@ -666,8 +666,7 @@ fn rescan_opened_name(st: &mut EngineState) -> Result<(), Abort> {
 /// `\openin` and `\closein`.
 pub(crate) fn open_or_close(st: &mut EngineState) -> Result<(), Abort> {
     let c = st.scanner.cur_chr as u8;
-    crate::scan::scan_four_bit_int(st)?;
-    let n = st.scanner.cur_val as u8 as usize;
+    let n = usize::try_from(crate::scan::scan_four_bit_int(st)?).unwrap_or(0);
 
     if st.input.read_open[n] != CLOSED {
         let slot = std::mem::take(&mut st.input.read_file[n]);

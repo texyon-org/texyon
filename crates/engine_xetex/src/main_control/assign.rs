@@ -45,20 +45,20 @@ fn alter_aux(st: &mut EngineState) -> Result<(), Abort> {
     let c = st.scanner.cur_chr;
     crate::scan::scan_optional_equals(st)?;
     if c == i32::from(VMODE) {
-        crate::scan::scan_dimen(st, false, false, false)?;
-        st.input.cur_list.set_prev_depth(st.scanner.cur_dimen());
+        let d = crate::scan::scan_dimen(st, false, false, false)?;
+        st.input.cur_list.set_prev_depth(d);
         return Ok(());
     }
-    crate::scan::scan_int(st)?;
-    if st.scanner.cur_val <= 0 || st.scanner.cur_val > 32767 {
+    let n = crate::scan::scan_int(st)?;
+    if n <= 0 || n > 32767 {
         crate::output::error_here_with_diagnostic(st, "Bad space factor");
-        crate::output::append_to_diagnostic(st, &format!(" ({})", st.scanner.cur_val));
+        crate::output::append_to_diagnostic(st, &format!(" ({})", n));
         crate::output::capture_to_diagnostic(st, None);
         st.errors
             .help(&["I allow only values in the range 1..32767 here."]);
-        return crate::errors::int_error(st, st.scanner.cur_val);
+        return crate::errors::int_error(st, n);
     }
-    st.input.cur_list.set_space_factor(st.scanner.cur_val);
+    st.input.cur_list.set_space_factor(n);
     Ok(())
 }
 
@@ -70,16 +70,16 @@ fn alter_prev_graf(st: &mut EngineState) -> Result<(), Abort> {
         p -= 1;
     }
     crate::scan::scan_optional_equals(st)?;
-    crate::scan::scan_int(st)?;
-    if st.scanner.cur_val < 0 {
+    let n = crate::scan::scan_int(st)?;
+    if n < 0 {
         crate::output::error_here_with_diagnostic(st, "Bad ");
-        crate::output::append_to_diagnostic(st, &format!(" ({})", st.scanner.cur_val));
+        crate::output::append_to_diagnostic(st, &format!(" ({})", n));
         crate::output::print_esc(st, "prevgraf");
         crate::output::capture_to_diagnostic(st, None);
         st.errors.help(&["I allow only nonnegative values here."]);
-        return crate::errors::int_error(st, st.scanner.cur_val);
+        return crate::errors::int_error(st, n);
     }
-    st.input.nest[p].prev_graf = st.scanner.cur_val;
+    st.input.nest[p].prev_graf = n;
     st.input.cur_list = st.input.nest[np];
     Ok(())
 }
@@ -87,44 +87,44 @@ fn alter_prev_graf(st: &mut EngineState) -> Result<(), Abort> {
 fn alter_page_so_far(st: &mut EngineState) -> Result<(), Abort> {
     let c = st.scanner.cur_chr as usize;
     crate::scan::scan_optional_equals(st)?;
-    crate::scan::scan_dimen(st, false, false, false)?;
-    st.shipout.page_so_far[c] = st.scanner.cur_dimen();
+    let d = crate::scan::scan_dimen(st, false, false, false)?;
+    st.shipout.page_so_far[c] = d;
     Ok(())
 }
 
 fn alter_integer(st: &mut EngineState) -> Result<(), Abort> {
     let code = st.scanner.chr_code::<PageIntCode>();
     crate::scan::scan_optional_equals(st)?;
-    crate::scan::scan_int(st)?;
+    let n = crate::scan::scan_int(st)?;
     match code {
-        Some(PageIntCode::DeadCycles) => st.shipout.dead_cycles = st.scanner.cur_val,
+        Some(PageIntCode::DeadCycles) => st.shipout.dead_cycles = n,
         Some(PageIntCode::InteractionMode) => {
-            if crate::state::InteractionMode::from_raw(st.scanner.cur_val).is_none() {
+            if crate::state::InteractionMode::from_raw(n).is_none() {
                 crate::output::error_here_with_diagnostic(st, "Bad interaction mode");
-                crate::output::append_to_diagnostic(st, &format!(" ({})", st.scanner.cur_val));
+                crate::output::append_to_diagnostic(st, &format!(" ({})", n));
                 crate::output::capture_to_diagnostic(st, None);
                 st.errors.help(&[
                     "Modes are 0=batch, 1=nonstop, 2=scroll, and",
                     "3=errorstop. Proceed, and I'll ignore this case.",
                 ]);
-                return crate::errors::int_error(st, st.scanner.cur_val);
+                return crate::errors::int_error(st, n);
             }
-            st.scanner.cur_chr = st.scanner.cur_val;
+            st.scanner.cur_chr = n;
             new_interaction(st);
         }
-        _ => st.shipout.insert_penalties = st.scanner.cur_val,
+        _ => st.shipout.insert_penalties = n,
     }
     Ok(())
 }
 
 fn alter_box_dimen(st: &mut EngineState) -> Result<(), Abort> {
     let c = st.scanner.cur_chr;
-    crate::scan::scan_register_num(st)?;
-    let b = fetch_box(st, st.scanner.cur_val);
+    let n = crate::scan::scan_register_num(st)?;
+    let b = fetch_box(st, n);
     crate::scan::scan_optional_equals(st)?;
-    crate::scan::scan_dimen(st, false, false, false)?;
+    let d = crate::scan::scan_dimen(st, false, false, false)?;
     if let Some(b) = b {
-        let v = st.scanner.cur_dimen();
+        let v = d;
         match BoxDimenCode::from_raw(c) {
             Some(BoxDimenCode::Width) => b.set_width(&mut st.mem, v),
             Some(BoxDimenCode::Depth) => b.set_depth(&mut st.mem, v),
@@ -134,9 +134,8 @@ fn alter_box_dimen(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-/// Replaces an all-zero scanned glue spec in `cur_val` by the shared `zero_glue`.
-fn trap_zero_glue(st: &mut EngineState) {
-    let spec = st.scanner.cur_glue();
+/// `spec`, or the shared `zero_glue` in its place when it is all zero.
+fn trap_zero_glue(st: &mut EngineState, spec: NodePtr<GlueSpecNode>) -> NodePtr<GlueSpecNode> {
     let mem = &mut st.mem;
     if spec.width(mem) == Scaled::ZERO
         && spec.stretch(mem) == Scaled::ZERO
@@ -145,6 +144,9 @@ fn trap_zero_glue(st: &mut EngineState) {
         mem.add_glue_ref(ZERO_GLUE);
         mem.delete_glue_ref(spec);
         st.scanner.cur_val = ZERO_GLUE.idx().raw();
+        ZERO_GLUE
+    } else {
+        spec
     }
 }
 
@@ -185,8 +187,7 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     crate::io::scan_file_name(st)?;
     st.scanner.name_in_progress = true;
     let s = if crate::scan::scan_keyword(st, "at")? {
-        crate::scan::scan_dimen(st, false, false, false)?;
-        let size = st.scanner.cur_dimen();
+        let size = crate::scan::scan_dimen(st, false, false, false)?;
         if size <= Scaled::ZERO || size >= Scaled::from_raw(0x800_0000) {
             crate::output::error_here_with_diagnostic(st, "Improper `at' size (");
             crate::output::print_scaled(st, size);
@@ -202,8 +203,7 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             size
         }
     } else if crate::scan::scan_keyword(st, "scaled")? {
-        crate::scan::scan_int(st)?;
-        let mag = st.scanner.cur_val;
+        let mag = crate::scan::scan_int(st)?;
         if mag <= 0 || mag > 32768 {
             crate::output::error_here_with_diagnostic(
                 st,
@@ -295,8 +295,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             let sa = st.scanner.chr_sa();
             break 'found (RegisterLoc::Sparse(sa), sa.sa_type(&st.mem));
         };
-        crate::scan::scan_register_num(st)?;
-        let n = st.scanner.cur_val;
+        let n = crate::scan::scan_register_num(st)?;
         if n > 255 {
             let sa = st.mem.create_sa_element(&mut st.scanner, p, n)?;
             break 'found (RegisterLoc::Sparse(sa), p);
@@ -373,8 +372,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             }
         }
     } else {
-        crate::scan::scan_int(st)?;
-        let n = st.scanner.cur_val;
+        let n = crate::scan::scan_int(st)?;
         let scale = |errors: &mut crate::state::ErrorState, x: i32, max_answer: i32| {
             if q == Cmd::Multiply {
                 errors.mult_and_add(x, n, 0, max_answer)
@@ -427,8 +425,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             RegisterLoc::Eqtb(l) => word_define(st, global, l, value)?,
         }
     } else {
-        trap_zero_glue(st);
-        let value = st.scanner.cur_glue().ptr();
+        let value = trap_zero_glue(st, st.scanner.cur_glue()).ptr();
         match l {
             RegisterLoc::Sparse(sa) => sa_define(st, global, sa, value)?,
             RegisterLoc::Eqtb(l) => define(st, global, l, Cmd::GlueRef, value.raw())?,
@@ -520,11 +517,9 @@ impl MemState {
 /// The `sa_ptr` of a sparse-array record, or null without one.
 /// Scans a pair of character classes into its `\XeTeXinterchartoks` index.
 fn scan_inter_char_pair(st: &mut EngineState) -> Result<i32, Abort> {
-    crate::scan::scan_char_class_not_ignored(st)?;
-    // TeX parks the first class in `cur_ptr` while scanning the second.
-    st.scanner.cur_ptr = MemPtr::from_raw(st.scanner.cur_val);
-    crate::scan::scan_char_class_not_ignored(st)?;
-    Ok(st.scanner.cur_ptr.raw() * CHAR_CLASS_LIMIT + st.scanner.cur_val)
+    let first = crate::scan::scan_char_class_not_ignored(st)?;
+    let second = crate::scan::scan_char_class_not_ignored(st)?;
+    Ok(first * CHAR_CLASS_LIMIT + second)
 }
 
 /// Defines token list register `p`, a sparse-array entry if `e`, as `list`.
@@ -673,8 +668,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
         }
         Cmd::ReadToCs => {
             let j = st.scanner.cur_chr;
-            crate::scan::scan_int(st)?;
-            let n = st.scanner.cur_val;
+            let n = crate::scan::scan_int(st)?;
             if !crate::scan::scan_keyword(st, "to")? {
                 crate::output::print_err(st, "Missing `to' inserted");
                 st.errors.help(&[
@@ -685,21 +679,21 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             }
             crate::scan::get_r_token(st)?;
             let p = st.scanner.cur_cs;
-            crate::scan::read_toks(st, n, p, j)?;
-            define(st, a >= 4, p, Cmd::Call, st.scanner.cur_val)?;
+            let list = crate::scan::read_toks(st, n, p, j)?;
+            define(st, a >= 4, p, Cmd::Call, list.ptr().raw())?;
         }
         Cmd::ToksRegister | Cmd::AssignToks => assign_toks(st, a >= 4)?,
         Cmd::AssignInt => {
             let p = st.scanner.chr_loc();
             crate::scan::scan_optional_equals(st)?;
-            crate::scan::scan_int(st)?;
-            word_define(st, a >= 4, p, st.scanner.cur_val)?;
+            let n = crate::scan::scan_int(st)?;
+            word_define(st, a >= 4, p, n)?;
         }
         Cmd::AssignDimen => {
             let p = st.scanner.chr_loc();
             crate::scan::scan_optional_equals(st)?;
-            crate::scan::scan_dimen(st, false, false, false)?;
-            word_define(st, a >= 4, p, st.scanner.cur_val)?;
+            let d = crate::scan::scan_dimen(st, false, false, false)?;
+            word_define(st, a >= 4, p, d.raw())?;
         }
         Cmd::AssignGlue | Cmd::AssignMuGlue => {
             let p = st.scanner.chr_loc();
@@ -709,29 +703,29 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 ValueLevel::Glue
             };
             crate::scan::scan_optional_equals(st)?;
-            crate::scan::scan_glue(st, level)?;
-            trap_zero_glue(st);
-            define(st, a >= 4, p, Cmd::GlueRef, st.scanner.cur_val)?;
+            let g = crate::scan::scan_glue(st, level)?;
+            let g = trap_zero_glue(st, g);
+            define(st, a >= 4, p, Cmd::GlueRef, g.ptr().raw())?;
         }
         Cmd::XetexDefCode => xetex_def_code(st, a >= 4)?,
         Cmd::DefCode => def_code(st, a >= 4)?,
         Cmd::DefFamily => {
             let base = st.scanner.chr_loc();
-            crate::scan::scan_math_fam_int(st)?;
-            let p = base + st.scanner.cur_val;
+            let fam = crate::scan::scan_math_fam_int(st)?;
+            let p = base + fam;
             crate::scan::scan_optional_equals(st)?;
-            crate::scan::scan_font_ident(st)?;
-            define(st, a >= 4, p, Cmd::Data, st.scanner.cur_val)?;
+            let f = crate::scan::scan_font_ident(st)?;
+            define(st, a >= 4, p, Cmd::Data, f.raw())?;
         }
         Cmd::Register | Cmd::Advance | Cmd::Multiply | Cmd::Divide => {
             do_register_command(st, a as i16)?
         }
         Cmd::SetBox => {
-            crate::scan::scan_register_num(st)?;
+            let n = crate::scan::scan_register_num(st)?;
             let n = if a >= 4 {
-                GLOBAL_BOX_FLAG + st.scanner.cur_val
+                GLOBAL_BOX_FLAG + n
             } else {
-                BOX_FLAG + st.scanner.cur_val
+                BOX_FLAG + n
             };
             crate::scan::scan_optional_equals(st)?;
             if st.scanner.set_box_allowed {
@@ -771,35 +765,33 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
         Cmd::AssignFontDimen => {
-            crate::scan::find_font_dimen(st, true)?;
-            let k = st.scanner.cur_val;
+            let k = crate::scan::find_font_dimen(st, true)?;
             crate::scan::scan_optional_equals(st)?;
-            crate::scan::scan_dimen(st, false, false, false)?;
-            st.fonts.set_font_info_sc(k, st.scanner.cur_dimen());
+            let d = crate::scan::scan_dimen(st, false, false, false)?;
+            st.fonts.set_font_info_sc(k, d);
         }
         Cmd::AssignFontInt => {
             let n = st.scanner.cur_chr;
             let f = crate::scan::scan_font_ident(st)?;
             if n < 2 {
                 crate::scan::scan_optional_equals(st)?;
-                crate::scan::scan_int(st)?;
+                let n = crate::scan::scan_int(st)?;
                 if n == 0 {
-                    st.fonts.hyphen_char[f] = st.scanner.cur_val;
+                    st.fonts.hyphen_char[f] = n;
                 } else {
-                    st.fonts.skew_char[f] = st.scanner.cur_val;
+                    st.fonts.skew_char[f] = n;
                 }
             } else {
-                if st.fonts.is_native_font(f) {
-                    crate::scan::scan_glyph_number(st, f)?;
+                let p = if st.fonts.is_native_font(f) {
+                    crate::scan::scan_glyph_number(st, f)?
                 } else {
-                    crate::scan::scan_char_num(st)?;
-                }
-                let p = st.scanner.cur_val;
+                    crate::scan::scan_char_num(st)?
+                };
                 crate::scan::scan_optional_equals(st)?;
-                crate::scan::scan_int(st)?;
+                let v = crate::scan::scan_int(st)?;
                 match n {
-                    LP_CODE_BASE => set_cp_code(f.raw(), p as u32, LEFT_SIDE, st.scanner.cur_val),
-                    RP_CODE_BASE => set_cp_code(f.raw(), p as u32, RIGHT_SIDE, st.scanner.cur_val),
+                    LP_CODE_BASE => set_cp_code(f.raw(), p as u32, LEFT_SIDE, v),
+                    RP_CODE_BASE => set_cp_code(f.raw(), p as u32, RIGHT_SIDE, v),
                     _ => {}
                 }
             }
@@ -828,21 +820,21 @@ fn shorthand_def(st: &mut EngineState, global: bool) -> Result<(), Abort> {
     crate::scan::scan_optional_equals(st)?;
     let (t, e) = match n {
         ShorthandDefCode::Char => {
-            crate::scan::scan_usv_num(st)?;
-            (Cmd::CharGiven, st.scanner.cur_val)
+            let c = crate::scan::scan_usv_num(st)?;
+            (Cmd::CharGiven, c)
         }
         ShorthandDefCode::MathChar => {
-            crate::scan::scan_fifteen_bit_int(st)?;
-            (Cmd::MathGiven, st.scanner.cur_val)
+            let c = crate::scan::scan_fifteen_bit_int(st)?;
+            (Cmd::MathGiven, c)
         }
         ShorthandDefCode::XetexMathCharNum => {
-            crate::scan::scan_xetex_math_char_int(st)?;
-            (Cmd::XetexMathGiven, st.scanner.cur_val)
+            let c = crate::scan::scan_xetex_math_char_int(st)?;
+            (Cmd::XetexMathGiven, c)
         }
         ShorthandDefCode::XetexMathChar => (Cmd::XetexMathGiven, crate::scan::scan_umath_code(st)?),
         _ => {
-            crate::scan::scan_register_num(st)?;
-            if st.scanner.cur_val > 255 {
+            let reg = crate::scan::scan_register_num(st)?;
+            if reg > 255 {
                 let level = match n {
                     ShorthandDefCode::Count => ValueLevel::Int,
                     ShorthandDefCode::Dimen => ValueLevel::Dimen,
@@ -850,7 +842,6 @@ fn shorthand_def(st: &mut EngineState, global: bool) -> Result<(), Abort> {
                     ShorthandDefCode::MuSkip => ValueLevel::Mu,
                     _ => ValueLevel::Tok,
                 };
-                let reg = st.scanner.cur_val;
                 let sa = st.mem.create_sa_element(&mut st.scanner, level, reg)?;
                 st.mem.add_sa_ref(sa.ptr());
                 let t = if level == ValueLevel::Tok {
@@ -868,7 +859,7 @@ fn shorthand_def(st: &mut EngineState, global: bool) -> Result<(), Abort> {
                     ShorthandDefCode::Toks => (Cmd::AssignToks, TOKS_BASE),
                     _ => return Ok(()),
                 };
-                (t, (base + st.scanner.cur_val).raw())
+                (t, (base + reg).raw())
             }
         }
     };
@@ -880,15 +871,15 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
     let cs = st.scanner.cur_cs;
     let target = if st.scanner.cur_cmd == Cmd::ToksRegister {
         if st.scanner.cur_chr == 0 {
-            crate::scan::scan_register_num(st)?;
-            if st.scanner.cur_val > 255 {
-                let reg = st.scanner.cur_val;
+            let n = crate::scan::scan_register_num(st)?;
+            if n > 255 {
+                let reg = n;
                 let sa = st
                     .mem
                     .create_sa_element(&mut st.scanner, ValueLevel::Tok, reg)?;
                 RegisterLoc::Sparse(sa)
             } else {
-                RegisterLoc::Eqtb(TOKS_BASE + st.scanner.cur_val)
+                RegisterLoc::Eqtb(TOKS_BASE + n)
             }
         } else {
             RegisterLoc::Sparse(st.scanner.chr_sa())
@@ -910,11 +901,11 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
     {
         let list = if st.scanner.cur_cmd == Cmd::ToksRegister {
             if st.scanner.cur_chr == 0 {
-                crate::scan::scan_register_num(st)?;
-                if st.scanner.cur_val < 256 {
-                    st.eqtb.toks(st.scanner.cur_val)
+                let n = crate::scan::scan_register_num(st)?;
+                if n < 256 {
+                    st.eqtb.toks(n)
                 } else {
-                    let reg = st.scanner.cur_val;
+                    let reg = n;
                     let sa = st
                         .mem
                         .find_sa_element(&mut st.scanner, ValueLevel::Tok, reg);
@@ -967,34 +958,34 @@ fn xetex_def_code(st: &mut EngineState, global: bool) -> Result<(), Abort> {
     } else {
         chr - 1
     };
-    crate::scan::scan_usv_num(st)?;
-    let p = base + st.scanner.cur_val;
+    let c = crate::scan::scan_usv_num(st)?;
+    let p = base + c;
     if chr == SF_CODE_BASE {
-        let sf = st.eqtb.sf_code(st.scanner.cur_val) % 65536;
+        let sf = st.eqtb.sf_code(c) % 65536;
         crate::scan::scan_optional_equals(st)?;
-        crate::scan::scan_char_class(st)?;
-        let v = st.scanner.cur_val.wrapping_mul(65536).wrapping_add(sf);
+        let class = crate::scan::scan_char_class(st)?;
+        let v = class.wrapping_mul(65536).wrapping_add(sf);
         define(st, global, p, Cmd::Data, v)?;
     } else if chr == MATH_CODE_BASE {
         crate::scan::scan_optional_equals(st)?;
-        crate::scan::scan_xetex_math_char_int(st)?;
-        define(st, global, p, Cmd::Data, st.scanner.cur_val)?;
+        let c = crate::scan::scan_xetex_math_char_int(st)?;
+        define(st, global, p, Cmd::Data, c)?;
     } else if chr == MATH_CODE_BASE + 1 {
         crate::scan::scan_optional_equals(st)?;
         let v = crate::scan::scan_umath_code(st)?;
         define(st, global, p, Cmd::Data, v)?;
     } else if chr == DEL_CODE_BASE {
         crate::scan::scan_optional_equals(st)?;
-        crate::scan::scan_int(st)?;
-        word_define(st, global, p, st.scanner.cur_val)?;
+        let v = crate::scan::scan_int(st)?;
+        word_define(st, global, p, v)?;
     } else {
         crate::scan::scan_optional_equals(st)?;
         // Extended delimiter code flag.
         let mut n: i32 = 0x4000_0000;
-        crate::scan::scan_math_fam_int(st)?;
-        n = n.wrapping_add(st.scanner.cur_val.wrapping_mul(0x20_0000));
-        crate::scan::scan_usv_num(st)?;
-        n = n.wrapping_add(st.scanner.cur_val);
+        let fam = crate::scan::scan_math_fam_int(st)?;
+        n = n.wrapping_add(fam.wrapping_mul(0x20_0000));
+        let c = crate::scan::scan_usv_num(st)?;
+        n = n.wrapping_add(c);
         word_define(st, global, p, n)?;
     }
     Ok(())
@@ -1013,13 +1004,13 @@ fn def_code(st: &mut EngineState, global: bool) -> Result<(), Abort> {
     } else {
         BIGGEST_USV
     };
-    crate::scan::scan_usv_num(st)?;
-    let p = chr + st.scanner.cur_val;
+    let c = crate::scan::scan_usv_num(st)?;
+    let p = chr + c;
     crate::scan::scan_optional_equals(st)?;
-    crate::scan::scan_int(st)?;
-    if (st.scanner.cur_val < 0 && p < DEL_CODE_BASE) || st.scanner.cur_val > max {
+    let mut v = crate::scan::scan_int(st)?;
+    if (v < 0 && p < DEL_CODE_BASE) || v > max {
         crate::output::error_here_with_diagnostic(st, "Invalid code (");
-        crate::output::print_int(st, st.scanner.cur_val);
+        crate::output::print_int(st, v);
         if p < DEL_CODE_BASE {
             crate::output::print(st, "), should be in the range 0..");
         } else {
@@ -1030,26 +1021,26 @@ fn def_code(st: &mut EngineState, global: bool) -> Result<(), Abort> {
         st.errors
             .help(&["I'm going to use 0 instead of that illegal code value."]);
         crate::errors::error(st)?;
-        st.scanner.cur_val = 0;
+        v = 0;
     }
     if p < MATH_CODE_BASE {
         let v = if p >= SF_CODE_BASE {
             (st.eqtb.int_at(p) / 65536)
                 .wrapping_mul(65536)
-                .wrapping_add(st.scanner.cur_val)
+                .wrapping_add(v)
         } else {
-            st.scanner.cur_val
+            v
         };
         define(st, global, p, Cmd::Data, v)?;
     } else if p < DEL_CODE_BASE {
-        st.scanner.cur_val = if st.scanner.cur_val == 32768 {
+        v = if v == 32768 {
             ACTIVE_MATH_CHAR
         } else {
-            crate::scan::math_code_from_tex(st.scanner.cur_val)
+            crate::scan::math_code_from_tex(v)
         };
-        define(st, global, p, Cmd::Data, st.scanner.cur_val)?;
+        define(st, global, p, Cmd::Data, v)?;
     } else {
-        word_define(st, global, p, st.scanner.cur_val)?;
+        word_define(st, global, p, v)?;
     }
     Ok(())
 }
@@ -1057,8 +1048,7 @@ fn def_code(st: &mut EngineState, global: bool) -> Result<(), Abort> {
 fn set_shape(st: &mut EngineState, global: bool) -> Result<(), Abort> {
     let q = st.scanner.chr_loc();
     crate::scan::scan_optional_equals(st)?;
-    crate::scan::scan_int(st)?;
-    let n = st.scanner.cur_val;
+    let n = crate::scan::scan_int(st)?;
     let p = if n <= 0 {
         MemPtr::NULL
     } else if q > PAR_SHAPE_LOC {
@@ -1068,8 +1058,8 @@ fn set_shape(st: &mut EngineState, global: bool) -> Result<(), Abort> {
         penalties.set_words(&mut st.mem, words);
         penalties.set_count(&mut st.mem, n);
         for k in 1..=n {
-            crate::scan::scan_int(st)?;
-            penalties.set_penalty(&mut st.mem, k, st.scanner.cur_val);
+            let v = crate::scan::scan_int(st)?;
+            penalties.set_penalty(&mut st.mem, k, v);
         }
         if n & 1 == 0 {
             penalties.set_penalty(&mut st.mem, n + 1, 0);
@@ -1080,10 +1070,10 @@ fn set_shape(st: &mut EngineState, global: bool) -> Result<(), Abort> {
         let shape = NodePtr::<ParShapeNode>::at(p);
         shape.set_lines(&mut st.mem, n);
         for line in 1..=n {
-            crate::scan::scan_dimen(st, false, false, false)?;
-            shape.set_indent(&mut st.mem, line, st.scanner.cur_dimen());
-            crate::scan::scan_dimen(st, false, false, false)?;
-            shape.set_line_width(&mut st.mem, line, st.scanner.cur_dimen());
+            let indent = crate::scan::scan_dimen(st, false, false, false)?;
+            shape.set_indent(&mut st.mem, line, indent);
+            let width = crate::scan::scan_dimen(st, false, false, false)?;
+            shape.set_line_width(&mut st.mem, line, width);
         }
         p
     };

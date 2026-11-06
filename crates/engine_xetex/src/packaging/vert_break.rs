@@ -319,6 +319,8 @@ pub(crate) fn vert_break(
 }
 
 struct VsplitState {
+    /// The box register being split.
+    n: i32,
     h: Scaled,
     v: NodePtr<VListNode>,
     split_max_d: Scaled,
@@ -369,7 +371,6 @@ impl MemState {
 }
 
 fn start_vsplit(st: &mut EngineState, n: i32, h: Scaled) -> Result<VsplitStart, Abort> {
-    st.scanner.cur_val = n;
     let v = crate::scan::fetch_box(st, n);
     st.mem.reset_vsplit_marks(&mut st.scanner)?;
 
@@ -385,6 +386,7 @@ fn start_vsplit(st: &mut EngineState, n: i32, h: Scaled) -> Result<VsplitStart, 
     };
 
     Ok(VsplitStart::Ready(VsplitState {
+        n,
         h,
         v,
         split_max_d: st.eqtb.dimen_par(DimenPar::SplitMaxDepth),
@@ -477,8 +479,7 @@ impl MemState {
             q = packed.r_box.ptr();
             push_slot(&mut packages, packed);
         }
-        let n = scanner.cur_val;
-        self.change_box(scanner, eqtb, n, q);
+        self.change_box(scanner, eqtb, state.n, q);
 
         let packed = self.vpackage(
             eqtb,

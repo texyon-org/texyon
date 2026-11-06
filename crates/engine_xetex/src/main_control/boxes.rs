@@ -28,8 +28,8 @@ pub(super) fn unpackage(st: &mut EngineState) -> Result<(), Abort> {
         *disc = MemPtr::NULL;
     } else {
         let c = st.scanner.cur_chr;
-        crate::scan::scan_register_num(st)?;
-        let Some(b) = fetch_box(st, st.scanner.cur_val) else {
+        let n = crate::scan::scan_register_num(st)?;
+        let Some(b) = fetch_box(st, n) else {
             return Ok(());
         };
         let mode = st.input.cur_list.mode.abs();
@@ -51,7 +51,6 @@ pub(super) fn unpackage(st: &mut EngineState) -> Result<(), Abort> {
             st.input.cur_list.tail.set_link(&mut st.mem, copy);
         } else {
             st.input.cur_list.tail.set_link(&mut st.mem, list);
-            let n = st.scanner.cur_val;
             st.mem
                 .change_box(&mut st.scanner, &mut st.eqtb, n, MemPtr::NULL);
             st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
@@ -318,15 +317,14 @@ pub(super) fn begin_box(st: &mut EngineState, box_context: i32) -> Result<(), Ab
         .ok_or(Abort::Confusion("begin_box"))?;
     match code {
         BoxCode::Box => {
-            crate::scan::scan_register_num(st)?;
-            let n = st.scanner.cur_val;
+            let n = crate::scan::scan_register_num(st)?;
             st.scanner.cur_box = fetch_box(st, n).map(BoxOrRule::Box);
             st.mem
                 .change_box(&mut st.scanner, &mut st.eqtb, n, MemPtr::NULL);
         }
         BoxCode::Copy => {
-            crate::scan::scan_register_num(st)?;
-            st.scanner.cur_box = match fetch_box(st, st.scanner.cur_val) {
+            let n = crate::scan::scan_register_num(st)?;
+            st.scanner.cur_box = match fetch_box(st, n) {
                 Some(b) => Some(BoxOrRule::Box(st.mem.copy_box(b)?)),
                 None => None,
             };
@@ -359,8 +357,7 @@ pub(super) fn begin_box(st: &mut EngineState, box_context: i32) -> Result<(), Ab
             }
         }
         BoxCode::Vsplit => {
-            crate::scan::scan_register_num(st)?;
-            let n = st.scanner.cur_val;
+            let n = crate::scan::scan_register_num(st)?;
             if !crate::scan::scan_keyword(st, "to")? {
                 crate::output::print_err(st, "Missing `to' inserted");
                 st.errors.help(&[
@@ -369,9 +366,8 @@ pub(super) fn begin_box(st: &mut EngineState, box_context: i32) -> Result<(), Ab
                 ]);
                 crate::errors::error(st)?;
             }
-            crate::scan::scan_dimen(st, false, false, false)?;
-            st.scanner.cur_box =
-                crate::packaging::vsplit(st, n, st.scanner.cur_dimen())?.map(BoxOrRule::Box);
+            let d = crate::scan::scan_dimen(st, false, false, false)?;
+            st.scanner.cur_box = crate::packaging::vsplit(st, n, d)?.map(BoxOrRule::Box);
         }
         BoxCode::Vtop | BoxCode::Vbox | BoxCode::Hbox => {
             st.save_stack.set_saved(0, box_context);

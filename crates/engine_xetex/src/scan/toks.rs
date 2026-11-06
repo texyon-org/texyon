@@ -96,7 +96,12 @@ fn close_read_file(st: &mut EngineState, m: usize) -> Result<(), Abort> {
     Ok(())
 }
 
-pub(crate) fn read_toks(st: &mut EngineState, n: i32, r: EqtbPtr, j: i32) -> Result<(), Abort> {
+pub(crate) fn read_toks(
+    st: &mut EngineState,
+    n: i32,
+    r: EqtbPtr,
+    j: i32,
+) -> Result<TokenList, Abort> {
     st.scanner.scanner_status = ScannerStatus::Defining;
     st.scanner.warning_index = r;
     let def_ref = new_def_ref(st)?;
@@ -186,7 +191,7 @@ pub(crate) fn read_toks(st: &mut EngineState, n: i32, r: EqtbPtr, j: i32) -> Res
     st.scanner.cur_val = def_ref.ptr().raw();
     st.scanner.scanner_status = ScannerStatus::Normal;
     st.scanner.align_state = s;
-    Ok(())
+    Ok(def_ref)
 }
 
 fn tokens_to_string(st: &mut EngineState, p: TokenList) -> Result<StrNumber, Abort> {
@@ -561,7 +566,7 @@ fn scan_toks_to_string(st: &mut EngineState) -> Result<StrNumber, Abort> {
 }
 
 /// `\strcmp`: compares two general texts as strings.
-pub(crate) fn compare_strings(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn compare_strings(st: &mut EngineState) -> Result<i32, Abort> {
     let save_cur_cs = st.scanner.cur_cs;
     let s1 = scan_toks_to_string(st)?;
     st.scanner.cur_cs = save_cur_cs;
@@ -581,5 +586,5 @@ pub(crate) fn compare_strings(st: &mut EngineState) -> Result<(), Abort> {
     st.strings.flush_str(s2);
     st.strings.flush_str(s1);
     set_cur_val(st, result, ValueLevel::Int);
-    Ok(())
+    Ok(result)
 }

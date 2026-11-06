@@ -71,15 +71,15 @@ fn scan_int_up_to(
     max: i32,
     err: &str,
     help: &'static str,
-) -> Result<(), Abort> {
-    scan_int(st)?;
-    if st.scanner.cur_val < 0 || st.scanner.cur_val > max {
+) -> Result<i32, Abort> {
+    let n = scan_int(st)?;
+    if n < 0 || n > max {
         int_range_error(st, err, help)?;
     }
-    Ok(())
+    Ok(st.scanner.cur_val)
 }
 
-pub(crate) fn scan_char_class(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn scan_char_class(st: &mut EngineState) -> Result<i32, Abort> {
     scan_int_up_to(
         st,
         CHAR_CLASS_LIMIT,
@@ -88,7 +88,7 @@ pub(crate) fn scan_char_class(st: &mut EngineState) -> Result<(), Abort> {
     )
 }
 
-pub(crate) fn scan_char_class_not_ignored(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn scan_char_class_not_ignored(st: &mut EngineState) -> Result<i32, Abort> {
     scan_int_up_to(
         st,
         CHAR_CLASS_LIMIT,
@@ -97,7 +97,7 @@ pub(crate) fn scan_char_class_not_ignored(st: &mut EngineState) -> Result<(), Ab
     )
 }
 
-pub(crate) fn scan_eight_bit_int(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn scan_eight_bit_int(st: &mut EngineState) -> Result<i32, Abort> {
     scan_int_up_to(
         st,
         255,
@@ -106,7 +106,7 @@ pub(crate) fn scan_eight_bit_int(st: &mut EngineState) -> Result<(), Abort> {
     )
 }
 
-pub(crate) fn scan_math_class_int(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn scan_math_class_int(st: &mut EngineState) -> Result<i32, Abort> {
     scan_int_up_to(
         st,
         7,
@@ -115,7 +115,7 @@ pub(crate) fn scan_math_class_int(st: &mut EngineState) -> Result<(), Abort> {
     )
 }
 
-pub(crate) fn scan_math_fam_int(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn scan_math_fam_int(st: &mut EngineState) -> Result<i32, Abort> {
     scan_int_up_to(
         st,
         NUMBER_MATH_FAMILIES - 1,
@@ -124,7 +124,7 @@ pub(crate) fn scan_math_fam_int(st: &mut EngineState) -> Result<(), Abort> {
     )
 }
 
-pub(crate) fn scan_four_bit_int(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn scan_four_bit_int(st: &mut EngineState) -> Result<i32, Abort> {
     scan_int_up_to(
         st,
         15,
@@ -133,7 +133,7 @@ pub(crate) fn scan_four_bit_int(st: &mut EngineState) -> Result<(), Abort> {
     )
 }
 
-pub(crate) fn scan_four_bit_int_or_18(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn scan_four_bit_int_or_18(st: &mut EngineState) -> Result<i32, Abort> {
     scan_int(st)?;
     if st.scanner.cur_val < 0 || (st.scanner.cur_val > 15 && st.scanner.cur_val != 18) {
         int_range_error(
@@ -142,10 +142,10 @@ pub(crate) fn scan_four_bit_int_or_18(st: &mut EngineState) -> Result<(), Abort>
             "Since I expected to read a number between 0 and 15,",
         )?;
     }
-    Ok(())
+    Ok(st.scanner.cur_val)
 }
 
-pub(crate) fn scan_fifteen_bit_int(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn scan_fifteen_bit_int(st: &mut EngineState) -> Result<i32, Abort> {
     scan_int_up_to(
         st,
         32767,
@@ -154,7 +154,7 @@ pub(crate) fn scan_fifteen_bit_int(st: &mut EngineState) -> Result<(), Abort> {
     )
 }
 
-pub(crate) fn scan_char_num(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn scan_char_num(st: &mut EngineState) -> Result<i32, Abort> {
     scan_int_up_to(
         st,
         BIGGEST_CHAR,
@@ -163,7 +163,7 @@ pub(crate) fn scan_char_num(st: &mut EngineState) -> Result<(), Abort> {
     )
 }
 
-pub(crate) fn scan_usv_num(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn scan_usv_num(st: &mut EngineState) -> Result<i32, Abort> {
     scan_int_up_to(
         st,
         BIGGEST_USV,
@@ -172,7 +172,7 @@ pub(crate) fn scan_usv_num(st: &mut EngineState) -> Result<(), Abort> {
     )
 }
 
-pub(crate) fn scan_delimiter_int(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn scan_delimiter_int(st: &mut EngineState) -> Result<i32, Abort> {
     scan_int_up_to(
         st,
         0x7FF_FFFF,
@@ -181,7 +181,7 @@ pub(crate) fn scan_delimiter_int(st: &mut EngineState) -> Result<(), Abort> {
     )
 }
 
-pub(crate) fn scan_register_num(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn scan_register_num(st: &mut EngineState) -> Result<i32, Abort> {
     scan_int(st)?;
     if st.scanner.cur_val < 0 || st.scanner.cur_val > st.scanner.max_reg_num {
         int_range_error(
@@ -190,10 +190,10 @@ pub(crate) fn scan_register_num(st: &mut EngineState) -> Result<(), Abort> {
             "A register number must be between 0 and 32767.",
         )?;
     }
-    Ok(())
+    Ok(st.scanner.cur_val)
 }
 
-pub(crate) fn scan_xetex_math_char_int(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn scan_xetex_math_char_int(st: &mut EngineState) -> Result<i32, Abort> {
     scan_int(st)?;
     if math_char(st.scanner.cur_val) == ACTIVE_MATH_CHAR {
         if st.scanner.cur_val != ACTIVE_MATH_CHAR {
@@ -213,7 +213,7 @@ pub(crate) fn scan_xetex_math_char_int(st: &mut EngineState) -> Result<(), Abort
             "Since I expected a character number between 0 and \"10FFFF,",
         )?;
     }
-    Ok(())
+    Ok(st.scanner.cur_val)
 }
 
 /// Skips blanks and signs, returning whether the net sign is negative.
@@ -258,7 +258,7 @@ pub(super) fn get_primitive_token(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-pub(crate) fn scan_int(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn scan_int(st: &mut EngineState) -> Result<i32, Abort> {
     let mut ok_so_far = true;
     st.scanner.radix = 0;
     let negative = scan_signs(st)?;
@@ -354,14 +354,14 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<(), Abort> {
     if negative {
         st.scanner.cur_val = st.scanner.cur_val.wrapping_neg();
     }
-    Ok(())
+    Ok(st.scanner.cur_val)
 }
 pub(crate) fn scan_dimen(
     st: &mut EngineState,
     mu: bool,
     inf: bool,
     shortcut: bool,
-) -> Result<(), Abort> {
+) -> Result<Scaled, Abort> {
     xetex_scan_dimen(st, mu, inf, shortcut, true)
 }
 /// A glue spec pointer held in a raw word.
@@ -397,7 +397,7 @@ pub(crate) fn xetex_scan_dimen(
     inf: bool,
     shortcut: bool,
     requires_units: bool,
-) -> Result<(), Abort> {
+) -> Result<Scaled, Abort> {
     let mut f: i32 = 0;
     let mut negative = false;
 
@@ -618,7 +618,7 @@ pub(crate) fn xetex_scan_dimen(
     if negative {
         st.scanner.cur_val = st.scanner.cur_val.wrapping_neg();
     }
-    Ok(())
+    Ok(st.scanner.cur_dimen())
 }
 fn attach_fraction(st: &mut EngineState, f: i32) {
     if st.scanner.cur_val >= 16384 {
@@ -628,7 +628,10 @@ fn attach_fraction(st: &mut EngineState, f: i32) {
     }
 }
 
-pub(crate) fn scan_glue(st: &mut EngineState, level: ValueLevel) -> Result<(), Abort> {
+pub(crate) fn scan_glue(
+    st: &mut EngineState,
+    level: ValueLevel,
+) -> Result<NodePtr<GlueSpecNode>, Abort> {
     let mu = level == ValueLevel::Mu;
     let negative = scan_signs(st)?;
 
@@ -638,7 +641,7 @@ pub(crate) fn scan_glue(st: &mut EngineState, level: ValueLevel) -> Result<(), A
             if st.scanner.cur_val_level != level {
                 mu_error(st)?;
             }
-            return Ok(());
+            return Ok(st.scanner.cur_glue());
         }
         if st.scanner.cur_val_level == ValueLevel::Int {
             scan_dimen(st, mu, false, true)?;
@@ -657,23 +660,23 @@ pub(crate) fn scan_glue(st: &mut EngineState, level: ValueLevel) -> Result<(), A
     gs.set_width(&mut st.mem, st.scanner.cur_dimen());
 
     if scan_keyword(st, "plus")? {
-        scan_dimen(st, mu, true, false)?;
-        gs.set_stretch(&mut st.mem, st.scanner.cur_dimen());
+        let d = scan_dimen(st, mu, true, false)?;
+        gs.set_stretch(&mut st.mem, d);
         gs.set_stretch_order(&mut st.mem, st.scanner.cur_order);
     }
     if scan_keyword(st, "minus")? {
-        scan_dimen(st, mu, true, false)?;
-        gs.set_shrink(&mut st.mem, st.scanner.cur_dimen());
+        let d = scan_dimen(st, mu, true, false)?;
+        gs.set_shrink(&mut st.mem, d);
         gs.set_shrink_order(&mut st.mem, st.scanner.cur_order);
     }
 
     st.scanner.cur_val = gs.ptr().raw();
-    Ok(())
+    Ok(st.scanner.cur_glue())
 }
-pub(super) fn scan_normal_glue(st: &mut EngineState) -> Result<(), Abort> {
+pub(super) fn scan_normal_glue(st: &mut EngineState) -> Result<NodePtr<GlueSpecNode>, Abort> {
     scan_glue(st, ValueLevel::Glue)
 }
-pub(super) fn scan_mu_glue(st: &mut EngineState) -> Result<(), Abort> {
+pub(super) fn scan_mu_glue(st: &mut EngineState) -> Result<NodePtr<GlueSpecNode>, Abort> {
     scan_glue(st, ValueLevel::Mu)
 }
 /// Applies `op` to the width, stretch and shrink of `spec`, in that order.
@@ -774,13 +777,12 @@ pub(super) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
                     continue 'restart;
                 }
                 back_input(st)?;
-                match o {
+                f = match o {
                     ValueLevel::Int => scan_int(st)?,
-                    ValueLevel::Dimen => scan_dimen(st, false, false, false)?,
-                    ValueLevel::Glue => scan_normal_glue(st)?,
-                    _ => scan_mu_glue(st)?,
-                }
-                f = st.scanner.cur_val;
+                    ValueLevel::Dimen => scan_dimen(st, false, false, false)?.raw(),
+                    ValueLevel::Glue => scan_normal_glue(st)?.ptr().raw(),
+                    _ => scan_mu_glue(st)?.ptr().raw(),
+                };
             }
             scan_factor = true;
 

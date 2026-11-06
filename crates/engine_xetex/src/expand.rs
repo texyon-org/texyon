@@ -214,8 +214,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
         IfCode::Num | IfCode::Dim => {
-            scan_int_or_dimen(st, this_if)?;
-            let n = st.scanner.cur_val;
+            let n = scan_int_or_dimen(st, this_if)?;
             get_x_non_blank(st)?;
             let relation =
                 if (Token::other(b'<')..=Token::other(b'>')).contains(&st.scanner.cur_tok) {
@@ -229,25 +228,21 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
                     back_error(st)?;
                     b'='
                 };
-            scan_int_or_dimen(st, this_if)?;
-            let cv = st.scanner.cur_val;
+            let cv = scan_int_or_dimen(st, this_if)?;
             match relation {
                 b'<' => n < cv,
                 b'=' => n == cv,
                 _ => n > cv,
             }
         }
-        IfCode::Odd => {
-            scan_int(st)?;
-            st.scanner.cur_val % 2 != 0
-        }
+        IfCode::Odd => scan_int(st)? % 2 != 0,
         IfCode::VMode => st.input.cur_list.mode.abs() == VMODE,
         IfCode::HMode => st.input.cur_list.mode.abs() == HMODE,
         IfCode::MMode => st.input.cur_list.mode.abs() == MMODE,
         IfCode::Inner => st.input.cur_list.mode < 0,
         IfCode::Void | IfCode::HBox | IfCode::VBox => {
-            crate::scan::scan_register_num(st)?;
-            let contents = fetch_box(st, st.scanner.cur_val);
+            let n = crate::scan::scan_register_num(st)?;
+            let contents = fetch_box(st, n);
             match this_if {
                 IfCode::Void => contents.is_none(),
                 IfCode::HBox => matches!(contents, Some(AnyBox::HList(_))),
@@ -287,11 +282,11 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             b
         }
         IfCode::Eof => {
-            crate::scan::scan_four_bit_int_or_18(st)?;
-            if st.scanner.cur_val == 18 {
+            let n = crate::scan::scan_four_bit_int_or_18(st)?;
+            if n == 18 {
                 !st.config.shell_escape_enabled
             } else {
-                st.input.read_open[st.scanner.cur_val as usize] == crate::consts::CLOSED
+                st.input.read_open[n as usize] == crate::consts::CLOSED
             }
         }
         IfCode::True => true,
@@ -318,8 +313,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
         IfCode::InCsName => st.scanner.is_in_csname,
         IfCode::FontChar => {
             let f = crate::scan::scan_font_ident(st)?;
-            crate::scan::scan_usv_num(st)?;
-            let c = st.scanner.cur_val;
+            let c = crate::scan::scan_usv_num(st)?;
             let fa = st.fonts.font_area[f];
             if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
                 st.fonts.map_char_to_glyph(f, c)? > 0
@@ -330,8 +324,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
         IfCode::Case => {
-            scan_int(st)?;
-            let mut n = st.scanner.cur_val;
+            let mut n = scan_int(st)?;
             if st.eqtb.int_par(IntPar::TracingCommands) > 1 {
                 begin_diagnostic(st);
                 diagnostic_begin_capture_warning_here(st);
@@ -398,11 +391,12 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
     }
 }
 
-fn scan_int_or_dimen(st: &mut EngineState, this_if: IfCode) -> Result<(), Abort> {
+/// An `\ifnum` or `\ifdim` operand, a dimension compared as its raw value.
+fn scan_int_or_dimen(st: &mut EngineState, this_if: IfCode) -> Result<i32, Abort> {
     if this_if == IfCode::Num {
         scan_int(st)
     } else {
-        crate::scan::scan_dimen(st, false, false, false)
+        Ok(crate::scan::scan_dimen(st, false, false, false)?.raw())
     }
 }
 
@@ -481,17 +475,17 @@ fn scan_nonnegative_int(
     err: &str,
     help: &'static str,
 ) -> Result<i32, Abort> {
-    st.scanner.cur_val = 0;
-    if crate::scan::scan_keyword(st, keyword)? {
-        scan_int(st)?;
-        if st.scanner.cur_val < 0 {
-            print_err(st, err);
-            st.errors.help(&[help, "I changed this one to zero."]);
-            crate::errors::int_error(st, st.scanner.cur_val)?;
-            st.scanner.cur_val = 0;
-        }
+    if !crate::scan::scan_keyword(st, keyword)? {
+        return Ok(0);
     }
-    Ok(st.scanner.cur_val)
+    let n = scan_int(st)?;
+    if n < 0 {
+        print_err(st, err);
+        st.errors.help(&[help, "I changed this one to zero."]);
+        crate::errors::int_error(st, n)?;
+        return Ok(0);
+    }
+    Ok(n)
 }
 
 impl MemState {
@@ -555,11 +549,12 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
     let mut fnt = NULL_FONT;
     let mut arg1: i32 = 0;
     let mut arg2: i32 = 0;
+    let mut num: i32 = 0;
     let mut margin_list = MemPtr::NULL;
 
     match c {
         ConvertCode::Number | ConvertCode::RomanNumeral | ConvertCode::UniformDeviate => {
-            scan_int(st)?
+            num = scan_int(st)?;
         }
         ConvertCode::String | ConvertCode::Meaning => get_token_unexpanded(st)?,
         ConvertCode::FontName => fnt = crate::scan::scan_font_ident(st)?,
@@ -577,8 +572,8 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             return Ok(());
         }
         ConvertCode::LeftMarginKern | ConvertCode::RightMarginKern => {
-            crate::scan::scan_register_num(st)?;
-            let Some(AnyBox::HList(hbox)) = fetch_box(st, st.scanner.cur_val) else {
+            let n = crate::scan::scan_register_num(st)?;
+            let Some(AnyBox::HList(hbox)) = fetch_box(st, n) else {
                 return Err(Abort::PdfError(&[
                     "marginkern",
                     "a non-empty hbox expected",
@@ -635,16 +630,14 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
         }
         ConvertCode::Strcmp => {
             let saved = save_scan(st)?;
-            crate::scan::compare_strings(st)?;
+            num = crate::scan::compare_strings(st)?;
             restore_scan(st, &saved);
             unseal_pending_str(st, &saved);
         }
-        ConvertCode::Uchar => crate::scan::scan_usv_num(st)?,
+        ConvertCode::Uchar => num = crate::scan::scan_usv_num(st)?,
         ConvertCode::Ucharcat => {
-            crate::scan::scan_usv_num(st)?;
-            let saved_chr = st.scanner.cur_val;
-            scan_int(st)?;
-            let code = st.scanner.cur_val;
+            let saved_chr = crate::scan::scan_usv_num(st)?;
+            let code = scan_int(st)?;
             let valid = Cmd::from_raw(code).filter(|c| {
                 (Cmd::LeftBrace..=Cmd::ACTIVE_CHAR).contains(c)
                     && *c != Cmd::OUT_PARAM
@@ -662,13 +655,12 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
                 error(st)?;
                 cat = Some(Cmd::OtherChar);
             }
-            st.scanner.cur_val = saved_chr;
+            num = saved_chr;
         }
         ConvertCode::XetexVariationName => {
             fnt = crate::scan::scan_font_ident(st)?;
             if st.fonts.font_area[fnt] == AAT_FONT_FLAG {
-                scan_int(st)?;
-                arg1 = st.scanner.cur_val;
+                arg1 = scan_int(st)?;
                 arg2 = 0;
             } else {
                 not_font_error(st, c, fnt, "; not an AAT font")?;
@@ -677,11 +669,9 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
         ConvertCode::XetexFeatureName | ConvertCode::XetexSelectorName => {
             fnt = crate::scan::scan_font_ident(st)?;
             if is_aat_or_graphite(st, fnt) {
-                scan_int(st)?;
-                arg1 = st.scanner.cur_val;
+                arg1 = scan_int(st)?;
                 if c == ConvertCode::XetexSelectorName {
-                    scan_int(st)?;
-                    arg2 = st.scanner.cur_val;
+                    arg2 = scan_int(st)?;
                 } else {
                     arg2 = 0;
                 }
@@ -693,8 +683,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             fnt = crate::scan::scan_font_ident(st)?;
             let fa = st.fonts.font_area[fnt];
             if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
-                scan_int(st)?;
-                arg1 = st.scanner.cur_val;
+                arg1 = scan_int(st)?;
             } else {
                 not_font_error(st, c, fnt, "; not a native platform font")?;
             }
@@ -710,8 +699,8 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
     let b = st.strings.pool_ptr;
 
     match c {
-        ConvertCode::Number | ConvertCode::Strcmp => print_int(st, st.scanner.cur_val),
-        ConvertCode::RomanNumeral => crate::output::print_roman_int(st, st.scanner.cur_val),
+        ConvertCode::Number | ConvertCode::Strcmp => print_int(st, num),
+        ConvertCode::RomanNumeral => crate::output::print_roman_int(st, num),
         ConvertCode::String => {
             if !st.scanner.cur_cs.is_none() {
                 sprint_cs(st, st.scanner.cur_cs);
@@ -734,14 +723,14 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
         ConvertCode::UniformDeviate => {
-            let v = st.errors.unif_rand(st.scanner.cur_val);
+            let v = st.errors.unif_rand(num);
             print_int(st, v);
         }
         ConvertCode::NormalDeviate => {
             let v = crate::scaled_math::norm_rand(st);
             print_int(st, v);
         }
-        ConvertCode::Uchar | ConvertCode::Ucharcat => print_char(st, st.scanner.cur_val),
+        ConvertCode::Uchar | ConvertCode::Ucharcat => print_char(st, num),
         ConvertCode::XetexRevision => print(st, ".999994"),
         // AAT fonts have no names to print on this platform.
         ConvertCode::XetexVariationName => {}
@@ -823,18 +812,17 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
             Cmd::TopBotMark => {
                 let mark = MarkCode::from_raw(st.scanner.cur_chr % MarkCode::MARKS)
                     .ok_or(Abort::Confusion("top_bot_mark"))?;
-                if st.scanner.cur_chr >= MarkCode::MARKS {
-                    crate::scan::scan_register_num(st)?;
+                let n = if st.scanner.cur_chr >= MarkCode::MARKS {
+                    crate::scan::scan_register_num(st)?
                 } else {
-                    st.scanner.cur_val = 0;
-                }
-                if st.scanner.cur_val == 0 {
+                    0
+                };
+                if n == 0 {
                     st.scanner.cur_ptr = st.scanner.cur_mark[mark].ptr();
-                } else {
-                    let n = st.scanner.cur_val;
-                    if let Some(sa) = st.mem.find_sa_element(&mut st.scanner, ValueLevel::Mark, n) {
-                        st.scanner.cur_ptr = sa.mark(&st.mem, mark).ptr();
-                    }
+                } else if let Some(sa) =
+                    st.mem.find_sa_element(&mut st.scanner, ValueLevel::Mark, n)
+                {
+                    st.scanner.cur_ptr = sa.mark(&st.mem, mark).ptr();
                 }
                 if !st.scanner.cur_ptr.is_null() {
                     begin_token_list(st, TokenList::from_ptr(st.scanner.cur_ptr), TokenType::Mark)?;

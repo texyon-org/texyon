@@ -60,8 +60,8 @@ pub(super) fn end_graf(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 pub(super) fn append_penalty(st: &mut EngineState) -> Result<(), Abort> {
-    crate::scan::scan_int(st)?;
-    let p = st.mem.new_penalty(st.scanner.cur_val)?;
+    let n = crate::scan::scan_int(st)?;
+    let p = st.mem.new_penalty(n)?;
     st.input.cur_list.tail_append(&mut st.mem, p.ptr());
     if st.input.cur_list.mode == VMODE {
         crate::pagebuilder::build_page(st)?;
@@ -151,22 +151,24 @@ pub(super) fn head_for_vmode(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 pub(super) fn begin_insert_or_adjust(st: &mut EngineState) -> Result<(), Abort> {
-    if st.scanner.cur_cmd == Cmd::Vadjust {
-        st.scanner.cur_val = 255;
+    let n = if st.scanner.cur_cmd == Cmd::Vadjust {
+        255
     } else {
-        crate::scan::scan_eight_bit_int(st)?;
-        if st.scanner.cur_val == 255 {
-            crate::output::error_here_with_diagnostic(st, "You can't ");
-            crate::output::print_esc(st, "insert");
-            crate::output::print_int(st, st.scanner.cur_val);
-            crate::output::capture_to_diagnostic(st, None);
-            st.errors
-                .help(&[r"I'm changing to \insert0; box 255 is special."]);
-            crate::errors::error(st)?;
-            st.scanner.cur_val = 0;
+        match crate::scan::scan_eight_bit_int(st)? {
+            255 => {
+                crate::output::error_here_with_diagnostic(st, "You can't ");
+                crate::output::print_esc(st, "insert");
+                crate::output::print_int(st, 255);
+                crate::output::capture_to_diagnostic(st, None);
+                st.errors
+                    .help(&[r"I'm changing to \insert0; box 255 is special."]);
+                crate::errors::error(st)?;
+                0
+            }
+            n => n,
         }
-    }
-    st.save_stack.set_saved(0, st.scanner.cur_val);
+    };
+    st.save_stack.set_saved(0, n);
     let pre = st.scanner.cur_cmd == Cmd::Vadjust && crate::scan::scan_keyword(st, "pre")?;
     st.save_stack.set_saved(1, i32::from(pre));
     st.save_stack.save_ptr += 2;
@@ -521,15 +523,15 @@ pub(super) fn append_glue(st: &mut EngineState) -> Result<NodePtr<GlueNode>, Abo
         .scanner
         .chr_code::<SkipCode>()
         .ok_or(Abort::Confusion("append_glue"))?;
-    match s {
-        SkipCode::Fil => st.scanner.cur_val = FIL_GLUE.idx().raw(),
-        SkipCode::Fill => st.scanner.cur_val = FILL_GLUE.idx().raw(),
-        SkipCode::Ss => st.scanner.cur_val = SS_GLUE.idx().raw(),
-        SkipCode::FilNeg => st.scanner.cur_val = FIL_NEG_GLUE.idx().raw(),
+    let spec = match s {
+        SkipCode::Fil => FIL_GLUE,
+        SkipCode::Fill => FILL_GLUE,
+        SkipCode::Ss => SS_GLUE,
+        SkipCode::FilNeg => FIL_NEG_GLUE,
         SkipCode::Skip => crate::scan::scan_glue(st, ValueLevel::Glue)?,
         SkipCode::Mskip => crate::scan::scan_glue(st, ValueLevel::Mu)?,
-    }
-    let g = st.mem.new_glue(st.scanner.cur_glue())?;
+    };
+    let g = st.mem.new_glue(spec)?;
     st.input.cur_list.tail_append(&mut st.mem, g.ptr());
     if matches!(s, SkipCode::Skip | SkipCode::Mskip) {
         let spec = g.glue_ptr(&st.mem);
@@ -544,8 +546,8 @@ pub(super) fn append_glue(st: &mut EngineState) -> Result<NodePtr<GlueNode>, Abo
 
 pub(super) fn append_kern(st: &mut EngineState) -> Result<(), Abort> {
     let s = st.scanner.cur_chr as u16;
-    crate::scan::scan_dimen(st, s == MU_GLUE, false, false)?;
-    let p = st.mem.new_kern(st.scanner.cur_dimen())?;
+    let d = crate::scan::scan_dimen(st, s == MU_GLUE, false, false)?;
+    let p = st.mem.new_kern(d)?;
     p.set_subtype(&mut st.mem, s);
     st.input.cur_list.tail_append(&mut st.mem, p.ptr());
     Ok(())
@@ -555,8 +557,7 @@ pub(super) fn make_mark(st: &mut EngineState) -> Result<(), Abort> {
     let c = if st.scanner.cur_chr == 0 {
         0
     } else {
-        crate::scan::scan_register_num(st)?;
-        st.scanner.cur_val
+        crate::scan::scan_register_num(st)?
     };
     crate::scan::scan_toks(st, false, true)?;
     let mark = NodePtr::<MarkNode>::alloc(&mut st.mem)?;
@@ -786,9 +787,9 @@ pub(super) fn append_italic_correction(st: &mut EngineState) -> Result<(), Abort
 }
 
 pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
-    crate::scan::scan_char_num(st)?;
+    let c = crate::scan::scan_char_num(st)?;
     let f = st.eqtb.cur_font();
-    let Some(p) = new_character(st, f, st.scanner.cur_val as u16)? else {
+    let Some(p) = new_character(st, f, c as u16)? else {
         return Ok(());
     };
     let x = st.fonts.param(f, X_HEIGHT_CODE);
@@ -799,9 +800,7 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
         NewChar::Native(w) => {
             let a = w.width(&st.mem);
             if a == Scaled::ZERO {
-                (lsb, rsb) = st
-                    .fonts
-                    .get_native_char_sidebearings(f, st.scanner.cur_val)?;
+                (lsb, rsb) = st.fonts.get_native_char_sidebearings(f, c)?;
             }
             a
         }
@@ -814,19 +813,18 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
 
     do_assignments(st)?;
     let f = st.eqtb.cur_font();
-    let q = match st.scanner.cur_cmd {
+    let (q, qc) = match st.scanner.cur_cmd {
         Cmd::Letter | Cmd::OtherChar | Cmd::CharGiven => {
-            let q = new_character(st, f, st.scanner.cur_chr as u16)?;
-            st.scanner.cur_val = st.scanner.cur_chr;
-            q
+            let qc = st.scanner.cur_chr;
+            (new_character(st, f, qc as u16)?, qc)
         }
         Cmd::CharNum => {
-            crate::scan::scan_char_num(st)?;
-            new_character(st, f, st.scanner.cur_val as u16)?
+            let qc = crate::scan::scan_char_num(st)?;
+            (new_character(st, f, qc as u16)?, qc)
         }
         _ => {
             crate::input::back_input(st)?;
-            None
+            (None, 0)
         }
     };
     let Some(q) = q else {
@@ -839,9 +837,7 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
     let (w, h) = match q {
         NewChar::Native(w) => {
             let w = w.width(&st.mem);
-            let (h, _) = st
-                .fonts
-                .get_native_char_height_depth(f, st.scanner.cur_val)?;
+            let (h, _) = st.fonts.get_native_char_height_depth(f, qc)?;
             (w, h)
         }
         NewChar::Char(ch) => {

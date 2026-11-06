@@ -105,13 +105,11 @@ fn font_query_error(
 }
 
 fn fetch_def_code(st: &mut EngineState, m: EqtbPtr) -> Result<(), Abort> {
-    scan_usv_num(st)?;
-    let n = st.scanner.cur_val;
+    let n = scan_usv_num(st)?;
     if m == MATH_CODE_BASE {
-        let code = st.eqtb.math_code(n);
-        st.scanner.cur_val1 = code;
+        let mut code = st.eqtb.math_code(n);
         if math_char(code) == ACTIVE_MATH_CHAR {
-            st.scanner.cur_val1 = 0x8000;
+            code = 0x8000;
         } else if math_class(code) > 7 || math_fam(code) > 15 || math_char(code) > 255 {
             bad_int_error(
                 st,
@@ -120,14 +118,13 @@ fn fetch_def_code(st: &mut EngineState, m: EqtbPtr) -> Result<(), Abort> {
                 "A mathchar number must be between 0 and \"7FFF.",
                 "I changed this one to zero.",
             )?;
-            st.scanner.cur_val1 = 0;
+            code = 0;
         }
-        let code = st.scanner.cur_val1;
         let v = math_class(code) * 0x1000 + math_fam(code) * 0x100 + math_char(code);
         set_cur_val(st, v, ValueLevel::Int);
     } else if m == DEL_CODE_BASE {
-        st.scanner.cur_val1 = st.eqtb.del_code(n);
-        if st.scanner.cur_val1 >= 0x4000_0000 {
+        let code = st.eqtb.del_code(n);
+        if code >= 0x4000_0000 {
             print_err(st, "Extended delcode used as delcode");
             st.errors.help(&[
                 "A delimiter code must be between 0 and \"7FFFFFF.",
@@ -136,7 +133,7 @@ fn fetch_def_code(st: &mut EngineState, m: EqtbPtr) -> Result<(), Abort> {
             error(st)?;
             set_cur_val(st, 0, ValueLevel::Int);
         } else {
-            set_cur_val(st, st.scanner.cur_val1, ValueLevel::Int);
+            set_cur_val(st, code, ValueLevel::Int);
         }
     } else if m < SF_CODE_BASE {
         set_cur_val(st, st.eqtb.equiv(m + n), ValueLevel::Int);
@@ -149,8 +146,7 @@ fn fetch_def_code(st: &mut EngineState, m: EqtbPtr) -> Result<(), Abort> {
 }
 
 fn fetch_xetex_def_code(st: &mut EngineState, m: EqtbPtr) -> Result<(), Abort> {
-    scan_usv_num(st)?;
-    let n = st.scanner.cur_val;
+    let n = scan_usv_num(st)?;
     let (err, help1, help0) = if m == SF_CODE_BASE {
         set_cur_val(st, st.eqtb.sf_code(n) / 65536, ValueLevel::Int);
         return Ok(());
@@ -186,8 +182,7 @@ fn fetch_token_list(st: &mut EngineState, m: i32, level: ValueLevel) -> Result<(
         set_cur_val(st, 0, ValueLevel::Dimen);
     } else if st.scanner.cur_cmd < Cmd::AssignToks {
         if m == 0 {
-            scan_register_num(st)?;
-            let n = st.scanner.cur_val;
+            let n = scan_register_num(st)?;
             st.scanner.cur_val = if n < 256 {
                 st.eqtb.toks(n)
             } else {
@@ -204,10 +199,9 @@ fn fetch_token_list(st: &mut EngineState, m: i32, level: ValueLevel) -> Result<(
         st.scanner.cur_val_level = ValueLevel::Tok;
     } else if st.scanner.cur_cmd == Cmd::AssignToks {
         if st.scanner.chr_loc() == TokPar::XetexInterCharToks.loc() {
-            scan_char_class_not_ignored(st)?;
-            st.scanner.cur_ptr = MemPtr::from_raw(st.scanner.cur_val);
-            scan_char_class_not_ignored(st)?;
-            let n = st.scanner.cur_ptr.raw() * CHAR_CLASS_LIMIT + st.scanner.cur_val;
+            let first = scan_char_class_not_ignored(st)?;
+            let second = scan_char_class_not_ignored(st)?;
+            let n = first * CHAR_CLASS_LIMIT + second;
             let sa = find_sa(st, ValueLevel::InterChar, n);
             st.scanner.cur_val = sa_token_list(st, sa).ptr().raw();
         } else {
@@ -234,8 +228,7 @@ fn fetch_register(st: &mut EngineState, m: i32) -> Result<(), Abort> {
         set_cur_val(st, value, level);
         return Ok(());
     };
-    scan_register_num(st)?;
-    let n = st.scanner.cur_val;
+    let n = scan_register_num(st)?;
     st.scanner.cur_val_level = level;
     if n > 255 {
         st.scanner.cur_val = match find_sa(st, level, n) {
@@ -307,11 +300,11 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<(), Abor
         | LastItemCode::XetexCountSelectors => {
             let (f, engine, fa) = scan_font_engine(st)?;
             if fa == AAT_FONT_FLAG {
-                scan_int(st)?;
-                st.scanner.cur_val = aat_font_get_1(m, st.scanner.cur_val);
+                let k = scan_int(st)?;
+                st.scanner.cur_val = aat_font_get_1(m, k);
             } else if let Some(engine) = graphite_engine(&engine) {
-                scan_int(st)?;
-                st.scanner.cur_val = ot_font_get_1(m, engine, st.scanner.cur_val);
+                let k = scan_int(st)?;
+                st.scanner.cur_val = ot_font_get_1(m, engine, k);
             } else {
                 font_query_error(st, m, f, "; not an AAT or Graphite font", -1)?;
             }
@@ -319,15 +312,13 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<(), Abor
         LastItemCode::XetexSelectorCode | LastItemCode::XetexIsDefaultSelector => {
             let (f, engine, fa) = scan_font_engine(st)?;
             if fa == AAT_FONT_FLAG {
-                scan_int(st)?;
-                let k = st.scanner.cur_val;
-                scan_int(st)?;
-                st.scanner.cur_val = aat_font_get_2(m, k, st.scanner.cur_val);
+                let k = scan_int(st)?;
+                let kk = scan_int(st)?;
+                st.scanner.cur_val = aat_font_get_2(m, k, kk);
             } else if let Some(engine) = graphite_engine(&engine) {
-                scan_int(st)?;
-                let k = st.scanner.cur_val;
-                scan_int(st)?;
-                st.scanner.cur_val = ot_font_get_2(m, engine, k, st.scanner.cur_val);
+                let k = scan_int(st)?;
+                let kk = scan_int(st)?;
+                st.scanner.cur_val = ot_font_get_2(m, engine, k, kk);
             } else {
                 font_query_error(st, m, f, "; not an AAT or Graphite font", -1)?;
             }
@@ -356,13 +347,11 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<(), Abor
         LastItemCode::XetexFindSelectorByName => {
             let (f, engine, fa) = scan_font_engine(st)?;
             if fa == AAT_FONT_FLAG {
-                scan_int(st)?;
-                let k = st.scanner.cur_val;
+                let k = scan_int(st)?;
                 crate::io::scan_and_pack_name(st)?;
                 st.scanner.cur_val = aat_font_get_named_1(m, k);
             } else if let Some(engine) = graphite_engine(&engine) {
-                scan_int(st)?;
-                let k = st.scanner.cur_val;
+                let k = scan_int(st)?;
                 crate::io::scan_and_pack_name(st)?;
                 st.scanner.cur_val = gr_font_get_named_1(st, m, engine, k);
             } else {
@@ -380,8 +369,8 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<(), Abor
         LastItemCode::XetexOtCountLanguages | LastItemCode::XetexOtScript => {
             let (f, engine, _) = scan_font_engine(st)?;
             if let Some(engine) = opentype_engine(&engine) {
-                scan_int(st)?;
-                st.scanner.cur_val = ot_font_get_1(m, engine, st.scanner.cur_val);
+                let k = scan_int(st)?;
+                st.scanner.cur_val = ot_font_get_1(m, engine, k);
             } else {
                 font_query_error(st, m, f, "; not an OpenType Layout font", -1)?;
             }
@@ -389,10 +378,9 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<(), Abor
         LastItemCode::XetexOtCountFeatures | LastItemCode::XetexOtLanguage => {
             let (f, engine, _) = scan_font_engine(st)?;
             if let Some(engine) = opentype_engine(&engine) {
-                scan_int(st)?;
-                let k = st.scanner.cur_val;
-                scan_int(st)?;
-                st.scanner.cur_val = ot_font_get_2(m, engine, k, st.scanner.cur_val);
+                let k = scan_int(st)?;
+                let kk = scan_int(st)?;
+                st.scanner.cur_val = ot_font_get_2(m, engine, k, kk);
             } else {
                 font_query_error(st, m, f, "; not an OpenType Layout font", -1)?;
             }
@@ -400,12 +388,10 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<(), Abor
         LastItemCode::XetexOtFeature => {
             let (f, engine, _) = scan_font_engine(st)?;
             if let Some(engine) = opentype_engine(&engine) {
-                scan_int(st)?;
-                let k = st.scanner.cur_val;
-                scan_int(st)?;
-                let kk = st.scanner.cur_val;
-                scan_int(st)?;
-                st.scanner.cur_val = ot_font_get_3(m, engine, k, kk, st.scanner.cur_val);
+                let k = scan_int(st)?;
+                let kk = scan_int(st)?;
+                let kkk = scan_int(st)?;
+                st.scanner.cur_val = ot_font_get_3(m, engine, k, kk, kkk);
             } else {
                 font_query_error(st, m, f, "; not an OpenType Layout font", -1)?;
             }
@@ -413,8 +399,8 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<(), Abor
         LastItemCode::XetexMapCharToGlyph => {
             let f = st.eqtb.cur_font();
             if st.fonts.is_native_font(f) {
-                scan_int(st)?;
-                st.scanner.cur_val = st.fonts.map_char_to_glyph(f, st.scanner.cur_val)?;
+                let c = scan_int(st)?;
+                st.scanner.cur_val = st.fonts.map_char_to_glyph(f, c)?;
             } else {
                 font_query_error(st, m, f, "; not a native platform font", 0)?;
             }
@@ -489,15 +475,13 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<(), Abor
             };
         }
         LastItemCode::GlueStretchOrder | LastItemCode::GlueShrinkOrder => {
-            scan_normal_glue(st)?;
-            let q = st.scanner.cur_val;
-            let spec = glue_spec(q);
+            let spec = scan_normal_glue(st)?;
             st.scanner.cur_val = if m == LastItemCode::GlueStretchOrder {
                 i32::from(spec.stretch_order(&st.mem).as_raw())
             } else {
                 i32::from(spec.shrink_order(&st.mem).as_raw())
             };
-            st.mem.delete_glue_ref(glue_spec(q));
+            st.mem.delete_glue_ref(spec);
         }
         _ => {}
     }
@@ -510,8 +494,7 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: LastItemCode) -> Result<(), Ab
         LastItemCode::XetexGlyphBounds => {
             let f = st.eqtb.cur_font();
             if st.fonts.is_native_font(f) {
-                scan_int(st)?;
-                let edge = st.scanner.cur_val;
+                let edge = scan_int(st)?;
                 if !(1..=4).contains(&edge) {
                     error_here_with_diagnostic(
                         st,
@@ -523,8 +506,8 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: LastItemCode) -> Result<(), Ab
                     error(st)?;
                     st.scanner.cur_val = 0;
                 } else {
-                    scan_int(st)?;
-                    let bound = st.fonts.get_glyph_bounds(f, edge, st.scanner.cur_val)?;
+                    let glyph = scan_int(st)?;
+                    let bound = st.fonts.get_glyph_bounds(f, edge, glyph)?;
                     st.scanner.set_cur_dimen(bound);
                 }
             } else {
@@ -536,8 +519,7 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: LastItemCode) -> Result<(), Ab
         | LastItemCode::FontCharDp
         | LastItemCode::FontCharIc => {
             let f = scan_font_ident(st)?;
-            scan_usv_num(st)?;
-            let c = st.scanner.cur_val;
+            let c = scan_usv_num(st)?;
             let d = if st.fonts.is_native_font(f) {
                 let fonts = &st.fonts;
                 match m {
@@ -569,14 +551,14 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: LastItemCode) -> Result<(), Ab
                 LastItemCode::ParShapeIndent => 1,
                 _ => 2,
             };
-            scan_int(st)?;
+            let mut n = scan_int(st)?;
             match st.eqtb.par_shape() {
-                Some(shape) if st.scanner.cur_val > 0 => {
+                Some(shape) if n > 0 => {
                     if q == 2 {
-                        q = st.scanner.cur_val % 2;
-                        st.scanner.cur_val = st.scanner.cur_val / 2 + q;
+                        q = n % 2;
+                        n = n / 2 + q;
                     }
-                    let line = st.scanner.cur_val.min(shape.lines(&st.mem));
+                    let line = n.min(shape.lines(&st.mem));
                     let d = if q == 0 {
                         shape.line_width(&st.mem, line)
                     } else {
@@ -588,8 +570,7 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: LastItemCode) -> Result<(), Ab
             }
         }
         LastItemCode::GlueStretch | LastItemCode::GlueShrink => {
-            scan_normal_glue(st)?;
-            let spec = glue_spec(st.scanner.cur_val);
+            let spec = scan_normal_glue(st)?;
             let d = if m == LastItemCode::GlueStretch {
                 spec.stretch(&st.mem)
             } else {
@@ -765,10 +746,10 @@ pub(super) fn scan_something_internal(
             Cmd::SetShape => {
                 let m = st.scanner.chr_loc();
                 if m > PAR_SHAPE_LOC {
-                    scan_int(st)?;
+                    let n = scan_int(st)?;
                     st.scanner.cur_val = match st.eqtb.penalties(m) {
-                        Some(penalties) if st.scanner.cur_val >= 0 => {
-                            let k = st.scanner.cur_val.min(penalties.count(&st.mem));
+                        Some(penalties) if n >= 0 => {
+                            let k = n.min(penalties.count(&st.mem));
                             penalties.penalty(&st.mem, k)
                         }
                         _ => 0,
@@ -779,8 +760,8 @@ pub(super) fn scan_something_internal(
                 st.scanner.cur_val_level = ValueLevel::Int;
             }
             Cmd::SetBoxDimen => {
-                scan_register_num(st)?;
-                let v = match fetch_box(st, st.scanner.cur_val) {
+                let n = scan_register_num(st)?;
+                let v = match fetch_box(st, n) {
                     None => Scaled::ZERO,
                     Some(b) if m == BoxDimenCode::Width.raw() => b.width(&st.mem),
                     Some(b) if m == BoxDimenCode::Depth.raw() => b.depth(&st.mem),
@@ -792,13 +773,9 @@ pub(super) fn scan_something_internal(
                 set_cur_val(st, m, ValueLevel::Int)
             }
             Cmd::AssignFontDimen => {
-                find_font_dimen(st, false)?;
+                let k = find_font_dimen(st, false)?;
                 st.fonts.set_font_info_sc(st.fonts.fmem_ptr, Scaled::ZERO);
-                set_cur_val(
-                    st,
-                    st.fonts.font_info_sc(st.scanner.cur_val).raw(),
-                    ValueLevel::Dimen,
-                );
+                set_cur_val(st, st.fonts.font_info_sc(k).raw(), ValueLevel::Dimen);
             }
             Cmd::AssignFontInt => {
                 let f = scan_font_ident(st)?;
@@ -806,12 +783,11 @@ pub(super) fn scan_something_internal(
                     0 => set_cur_val(st, st.fonts.hyphen_char[f], ValueLevel::Int),
                     1 => set_cur_val(st, st.fonts.skew_char[f], ValueLevel::Int),
                     _ => {
-                        if st.fonts.is_native_font(f) {
-                            scan_glyph_number(st, f)?;
+                        let code = if st.fonts.is_native_font(f) {
+                            scan_glyph_number(st, f)?
                         } else {
-                            scan_char_num(st)?;
-                        }
-                        let code = st.scanner.cur_val as u32;
+                            scan_char_num(st)?
+                        } as u32;
                         match m {
                             LP_CODE_BASE => set_cur_val(
                                 st,
@@ -937,8 +913,8 @@ pub(crate) fn scan_font_ident(st: &mut EngineState) -> Result<FontId, Abort> {
         Cmd::SetFont => st.scanner.chr_font(),
         Cmd::DefFamily => {
             let m = st.scanner.chr_loc();
-            scan_math_fam_int(st)?;
-            FontId::from_raw(st.eqtb.equiv(m + st.scanner.cur_val))
+            let fam = scan_math_fam_int(st)?;
+            FontId::from_raw(st.eqtb.equiv(m + fam))
         }
         _ => {
             print_err(st, "Missing font identifier");
@@ -954,9 +930,9 @@ pub(crate) fn scan_font_ident(st: &mut EngineState) -> Result<FontId, Abort> {
     Ok(f)
 }
 
-pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<(), Abort> {
-    scan_int(st)?;
-    let n = st.scanner.cur_val;
+/// The `font_info` index of the `\fontdimen` being scanned.
+pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<i32, Abort> {
+    let n = scan_int(st)?;
     let f = scan_font_ident(st)?;
 
     if n <= 0 {
@@ -1008,21 +984,20 @@ pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<(),
         ]);
         error(st)?;
     }
-    Ok(())
+    Ok(st.scanner.cur_val)
 }
 
-pub(crate) fn scan_glyph_number(st: &mut EngineState, f: FontId) -> Result<(), Abort> {
-    if scan_keyword(st, "/")? {
+pub(crate) fn scan_glyph_number(st: &mut EngineState, f: FontId) -> Result<i32, Abort> {
+    let v = if scan_keyword(st, "/")? {
         crate::io::scan_and_pack_name(st)?;
         let name = st.input.name_of_file_bytes();
-        let v = st.fonts.map_glyph_to_index(f, name)?;
-        set_cur_val(st, v, ValueLevel::Int);
+        st.fonts.map_glyph_to_index(f, name)?
     } else if scan_keyword(st, "u")? {
-        scan_char_num(st)?;
-        let v = st.fonts.map_char_to_glyph(f, st.scanner.cur_val)?;
-        set_cur_val(st, v, ValueLevel::Int);
+        let c = scan_char_num(st)?;
+        st.fonts.map_char_to_glyph(f, c)?
     } else {
-        scan_int(st)?;
-    }
-    Ok(())
+        return scan_int(st);
+    };
+    set_cur_val(st, v, ValueLevel::Int);
+    Ok(v)
 }

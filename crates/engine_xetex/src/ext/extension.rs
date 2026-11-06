@@ -121,17 +121,16 @@ fn new_write_whatsit(
     size: i32,
 ) -> Result<NodePtr<WhatsitNode>, Abort> {
     let w = new_whatsit(st, subtype, size)?;
-    if size != WRITE_NODE_SIZE {
-        crate::scan::scan_four_bit_int(st)?;
+    let stream = if size != WRITE_NODE_SIZE {
+        crate::scan::scan_four_bit_int(st)?
     } else {
-        scan_int(st)?;
-        if st.scanner.cur_val < 0 {
-            st.scanner.cur_val = 17;
-        } else if st.scanner.cur_val > 15 && st.scanner.cur_val != 18 {
-            st.scanner.cur_val = 16;
+        match scan_int(st)? {
+            n if n < 0 => 17,
+            n if n > 15 && n != 18 => 16,
+            n => n,
         }
-    }
-    w.set_write_stream(&mut st.mem, st.scanner.cur_val);
+    };
+    w.set_write_stream(&mut st.mem, stream);
     Ok(w)
 }
 
@@ -207,11 +206,9 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
                 crate::errors::report_illegal_case(st)?;
             } else {
                 let w = new_whatsit(st, WhatsitSubtype::Language, SMALL_NODE_SIZE)?;
-                scan_int(st)?;
-                let lang = if st.scanner.cur_val <= 0 || st.scanner.cur_val > 255 {
-                    0
-                } else {
-                    st.scanner.cur_val
+                let lang = match scan_int(st)? {
+                    n @ 1..=255 => n,
+                    _ => 0,
                 };
                 st.input.cur_list.set_clang(lang);
                 w.set_what_lang(&mut st.mem, lang);
@@ -234,11 +231,7 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
         }
 
         ExtensionCode::SetRandomSeed => {
-            scan_int(st)?;
-            if st.scanner.cur_val < 0 {
-                st.scanner.cur_val = st.scanner.cur_val.wrapping_neg();
-            }
-            st.errors.random_seed = st.scanner.cur_val;
+            st.errors.random_seed = scan_int(st)?.wrapping_abs();
             let random_seed = st.errors.random_seed;
             st.errors.init_randoms(random_seed);
         }
@@ -270,20 +263,23 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
                     );
                 }
                 let w = new_whatsit(st, WhatsitSubtype::Glyph, GLYPH_NODE_SIZE)?;
-                scan_int(st)?;
-                if st.scanner.cur_val < 0 || st.scanner.cur_val > 65535 {
-                    error_here_with_diagnostic(st, "Bad glyph number");
-                    crate::output::append_to_diagnostic(st, &format!(" ({})", st.scanner.cur_val));
-                    capture_to_diagnostic(st, None);
-                    st.errors.help(&[
-                        "A glyph number must be between 0 and 65535.",
-                        "I changed this one to zero.",
-                    ]);
-                    crate::errors::int_error(st, st.scanner.cur_val)?;
-                    st.scanner.cur_val = 0;
-                }
+                let n = scan_int(st)?;
+                let glyph = match u16::try_from(n) {
+                    Ok(glyph) => glyph,
+                    Err(_) => {
+                        error_here_with_diagnostic(st, "Bad glyph number");
+                        crate::output::append_to_diagnostic(st, &format!(" ({})", n));
+                        capture_to_diagnostic(st, None);
+                        st.errors.help(&[
+                            "A glyph number must be between 0 and 65535.",
+                            "I changed this one to zero.",
+                        ]);
+                        crate::errors::int_error(st, n)?;
+                        0
+                    }
+                };
                 w.set_native_font(&mut st.mem, cur_font);
-                w.set_native_glyph(&mut st.mem, st.scanner.cur_val as u16);
+                w.set_native_glyph(&mut st.mem, glyph);
                 let use_glyph_metrics = st.eqtb.int_par(IntPar::XetexUseGlyphMetrics) > 0;
                 st.fonts
                     .measure_native_glyph(&mut st.mem, w, use_glyph_metrics)?;

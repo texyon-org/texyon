@@ -424,8 +424,7 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
             show_activities(st);
         }
         Some(ShowCode::Box) => {
-            crate::scan::scan_register_num(st)?;
-            let n = st.scanner.cur_val;
+            let n = crate::scan::scan_register_num(st)?;
             let contents = crate::scan::fetch_box(st, n);
             begin_diagnostic(st);
             print_nl(st, "> \\box");

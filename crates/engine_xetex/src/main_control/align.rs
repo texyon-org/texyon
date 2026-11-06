@@ -479,14 +479,14 @@ fn get_preamble_token(st: &mut EngineState) -> Result<(), Abort> {
             return Ok(());
         }
         crate::scan::scan_optional_equals(st)?;
-        crate::scan::scan_glue(st, ValueLevel::Glue)?;
+        let g = crate::scan::scan_glue(st, ValueLevel::Glue)?;
         let global = st.eqtb.int_par(IntPar::GlobalDefs) > 0;
         define(
             st,
             global,
             GluePar::TabSkip.loc(),
             Cmd::GlueRef,
-            st.scanner.cur_val,
+            g.ptr().raw(),
         )?;
     }
 }

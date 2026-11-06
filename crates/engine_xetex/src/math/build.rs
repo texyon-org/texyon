@@ -18,21 +18,24 @@ use super::{
 
 const FIXED_ACC: u16 = 1;
 
+/// The family and character of a `\Udelimiter`, encoded with the extended flag.
+fn scan_extended_delimiter(st: &mut EngineState) -> Result<i32, Abort> {
+    let fam = crate::scan::scan_math_fam_int(st)?;
+    let c = crate::scan::scan_usv_num(st)?;
+    Ok(0x4000_0000 + fam * 0x20_0000 + c)
+}
+
 /// Scans a delimiter into `p`, after `\radical` or `\Uradical` when `radical` is given.
 fn scan_delimiter(
     st: &mut EngineState,
     p: NodePtr<DelimiterField>,
     radical: Option<RadicalCode>,
 ) -> Result<(), Abort> {
-    if let Some(radical) = radical {
+    let mut v = if let Some(radical) = radical {
         if radical == RadicalCode::Uradical {
-            st.scanner.cur_val1 = 0x4000_0000;
-            crate::scan::scan_math_fam_int(st)?;
-            st.scanner.cur_val1 += st.scanner.cur_val * 0x20_0000;
-            crate::scan::scan_usv_num(st)?;
-            st.scanner.cur_val += st.scanner.cur_val1;
+            scan_extended_delimiter(st)?
         } else {
-            crate::scan::scan_delimiter_int(st)?;
+            crate::scan::scan_delimiter_int(st)?
         }
     } else {
         loop {
@@ -43,26 +46,17 @@ fn scan_delimiter(
         }
 
         match st.scanner.cur_cmd {
-            Cmd::Letter | Cmd::OtherChar => {
-                st.scanner.cur_val = st.eqtb.del_code(st.scanner.cur_chr)
+            Cmd::Letter | Cmd::OtherChar => st.eqtb.del_code(st.scanner.cur_chr),
+            Cmd::DelimNum if st.scanner.cur_chr == 1 => {
+                crate::scan::scan_math_class_int(st)?;
+                scan_extended_delimiter(st)?
             }
-            Cmd::DelimNum => {
-                if st.scanner.cur_chr == 1 {
-                    st.scanner.cur_val1 = 0x4000_0000;
-                    crate::scan::scan_math_class_int(st)?;
-                    crate::scan::scan_math_fam_int(st)?;
-                    st.scanner.cur_val1 += st.scanner.cur_val * 0x20_0000;
-                    crate::scan::scan_usv_num(st)?;
-                    st.scanner.cur_val += st.scanner.cur_val1;
-                } else {
-                    crate::scan::scan_delimiter_int(st)?;
-                }
-            }
-            _ => st.scanner.cur_val = -1,
+            Cmd::DelimNum => crate::scan::scan_delimiter_int(st)?,
+            _ => -1,
         }
-    }
+    };
 
-    if st.scanner.cur_val < 0 {
+    if v < 0 {
         crate::output::print_error_prefix(st);
         crate::output::print(st, "Missing delimiter (. inserted)");
         st.errors.help(&[
@@ -74,10 +68,9 @@ fn scan_delimiter(
             r"nonnegative, or you can use `\delimiter <delimiter code>'.",
         ]);
         crate::input::back_error(st)?;
-        st.scanner.cur_val = 0;
+        v = 0;
     }
 
-    let v = st.scanner.cur_val;
     if v >= 0x4000_0000 {
         let plane_and_fam = ((v % 0x20_0000) / 0x1_0000) * 0x100 + (v / 0x20_0000) % 0x100;
         p.set_small(&mut st.mem, plane_and_fam as u16, (v % 0x1_0000) as u16);
@@ -381,8 +374,8 @@ pub(crate) fn math_fraction(st: &mut EngineState) -> Result<(), Abort> {
 
         match c % DELIMITED_CODE {
             ABOVE_CODE => {
-                crate::scan::scan_dimen(st, false, false, false)?;
-                aux.set_thickness(&mut st.mem, st.scanner.cur_dimen());
+                let d = crate::scan::scan_dimen(st, false, false, false)?;
+                aux.set_thickness(&mut st.mem, d);
             }
             OVER_CODE => aux.set_thickness(&mut st.mem, DEFAULT_CODE),
             ATOP_CODE => aux.set_thickness(&mut st.mem, Scaled::ZERO),
@@ -492,7 +485,7 @@ pub(crate) fn math_ac(st: &mut EngineState) -> Result<(), Abort> {
 
     let tail = st.input.cur_list.append_accent_noad(&mut st.mem)?;
 
-    if st.scanner.chr_code::<MathAccentCode>() == Some(MathAccentCode::UmathAccent) {
+    let value = if st.scanner.chr_code::<MathAccentCode>() == Some(MathAccentCode::UmathAccent) {
         if crate::scan::scan_keyword(st, "fixed")? {
             tail.set_subtype(&mut st.mem, FIXED_ACC);
         } else if crate::scan::scan_keyword(st, "bottom")? {
@@ -502,13 +495,10 @@ pub(crate) fn math_ac(st: &mut EngineState) -> Result<(), Abort> {
                 tail.set_subtype(&mut st.mem, BOTTOM_ACC);
             }
         }
-        st.scanner.cur_val = crate::scan::scan_umath_code(st)?;
+        crate::scan::scan_umath_code(st)?
     } else {
-        crate::scan::scan_fifteen_bit_int(st)?;
-        st.scanner.cur_val = crate::scan::math_code_from_tex(st.scanner.cur_val);
-    }
-
-    let value = st.scanner.cur_val;
+        crate::scan::math_code_from_tex(crate::scan::scan_fifteen_bit_int(st)?)
+    };
     st.mem.finish_accent_math_field(&st.eqtb, tail, value);
     crate::scan::scan_math(st, tail.nucleus())
 }

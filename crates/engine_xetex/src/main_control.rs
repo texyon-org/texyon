@@ -219,8 +219,7 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
         match cmd {
             Cmd::Letter | Cmd::OtherChar | Cmd::CharGiven | Cmd::CharNum => {
                 if cmd == Cmd::CharNum {
-                    crate::scan::scan_usv_num(st)?;
-                    st.scanner.cur_chr = st.scanner.cur_val;
+                    st.scanner.cur_chr = crate::scan::scan_usv_num(st)?;
                 }
                 return Ok(if main_control_main_loop(st)? {
                     Next::BigSwitch
@@ -325,13 +324,9 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
         (_, Cmd::RightBrace) => handle_right_brace(st)?,
         (VMODE, Cmd::Hmove) | (HMODE | MMODE, Cmd::Vmove) => {
             let t = st.scanner.cur_chr;
-            crate::scan::scan_dimen(st, false, false, false)?;
-            let shift = if t == 0 {
-                st.scanner.cur_val
-            } else {
-                -st.scanner.cur_val
-            };
-            scan_box(st, shift)?;
+            let d = crate::scan::scan_dimen(st, false, false, false)?;
+            let shift = if t == 0 { d } else { -d };
+            scan_box(st, shift.raw())?;
         }
         (_, Cmd::LeaderShip) => {
             scan_box(st, LEADER_FLAG - i32::from(A_LEADERS) + st.scanner.cur_chr)?
@@ -412,8 +407,7 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
             crate::scan::set_math_char(st, st.eqtb.math_code(st.scanner.cur_chr))?
         }
         (MMODE, Cmd::CharNum) => {
-            crate::scan::scan_char_num(st)?;
-            st.scanner.cur_chr = st.scanner.cur_val;
+            st.scanner.cur_chr = crate::scan::scan_char_num(st)?;
             crate::scan::set_math_char(st, st.eqtb.math_code(st.scanner.cur_chr))?;
         }
         (MMODE, Cmd::MathCharNum) => {

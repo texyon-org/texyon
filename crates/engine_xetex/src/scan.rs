@@ -84,23 +84,19 @@ pub(crate) fn scan_spec(
     } else {
         0
     };
-    let spec_code;
-    if scan_keyword(st, "to")? {
-        spec_code = EXACTLY;
-        scan_dimen(st, false, false, false)?;
+    let (spec_code, amount) = if scan_keyword(st, "to")? {
+        (EXACTLY, scan_dimen(st, false, false, false)?)
     } else if scan_keyword(st, "spread")? {
-        spec_code = ADDITIONAL;
-        scan_dimen(st, false, false, false)?;
+        (ADDITIONAL, scan_dimen(st, false, false, false)?)
     } else {
-        spec_code = ADDITIONAL;
-        st.scanner.cur_val = 0;
-    }
+        (ADDITIONAL, Scaled::ZERO)
+    };
     if three_codes {
         st.save_stack.set_saved(0, s);
         st.save_stack.save_ptr += 1;
     }
     st.save_stack.set_saved(0, i32::from(spec_code));
-    st.save_stack.set_saved(1, st.scanner.cur_val);
+    st.save_stack.set_saved(1, amount.raw());
     st.save_stack.save_ptr += 2;
     st.save_stack.new_save_level(c, st.mem.line)?;
     scan_left_brace(st)?;
@@ -127,14 +123,14 @@ pub(crate) fn scan_rule_spec(st: &mut EngineState) -> Result<NodePtr<RuleNode>, 
     }
     loop {
         if scan_keyword(st, "width")? {
-            xetex_scan_dimen(st, false, false, false, true)?;
-            r.set_width(&mut st.mem, RuleDimen::from_raw(st.scanner.cur_val));
+            let d = xetex_scan_dimen(st, false, false, false, true)?;
+            r.set_width(&mut st.mem, RuleDimen::from_raw(d.raw()));
         } else if scan_keyword(st, "height")? {
-            xetex_scan_dimen(st, false, false, false, true)?;
-            r.set_height(&mut st.mem, RuleDimen::from_raw(st.scanner.cur_val));
+            let d = xetex_scan_dimen(st, false, false, false, true)?;
+            r.set_height(&mut st.mem, RuleDimen::from_raw(d.raw()));
         } else if scan_keyword(st, "depth")? {
-            xetex_scan_dimen(st, false, false, false, true)?;
-            r.set_depth(&mut st.mem, RuleDimen::from_raw(st.scanner.cur_val));
+            let d = xetex_scan_dimen(st, false, false, false, true)?;
+            r.set_depth(&mut st.mem, RuleDimen::from_raw(d.raw()));
         } else {
             break;
         }
@@ -193,12 +189,9 @@ pub(crate) fn math_code_from_tex(v: i32) -> i32 {
 
 /// Scans the class, family and character of a `\Umathchar`-style code.
 pub(crate) fn scan_umath_code(st: &mut EngineState) -> Result<i32, Abort> {
-    scan_math_class_int(st)?;
-    let class = set_class(st.scanner.cur_val);
-    scan_math_fam_int(st)?;
-    let family = set_family(st.scanner.cur_val);
-    scan_usv_num(st)?;
-    Ok(class + family + st.scanner.cur_val)
+    let class = set_class(scan_math_class_int(st)?);
+    let family = set_family(scan_math_fam_int(st)?);
+    Ok(class + family + scan_usv_num(st)?)
 }
 
 /// Scans one math field into the nucleus-like field `p`.
@@ -220,8 +213,7 @@ pub(crate) fn scan_math(st: &mut EngineState, p: NodePtr<MathField>) -> Result<(
                     mc
                 }
                 Cmd::CharNum => {
-                    scan_char_num(st)?;
-                    st.scanner.cur_chr = st.scanner.cur_val;
+                    st.scanner.cur_chr = scan_char_num(st)?;
                     st.scanner.cur_cmd = Cmd::CharGiven;
                     continue;
                 }
@@ -345,14 +337,8 @@ impl MemState {
 pub(crate) fn scan_math_char_num(st: &mut EngineState) -> Result<i32, Abort> {
     Ok(match st.scanner.chr_code::<MathCharNumCode>() {
         Some(MathCharNumCode::UmathChar) => scan_umath_code(st)?,
-        Some(MathCharNumCode::UmathCharNum) => {
-            scan_xetex_math_char_int(st)?;
-            st.scanner.cur_val
-        }
-        _ => {
-            scan_fifteen_bit_int(st)?;
-            math_code_from_tex(st.scanner.cur_val)
-        }
+        Some(MathCharNumCode::UmathCharNum) => scan_xetex_math_char_int(st)?,
+        _ => math_code_from_tex(scan_fifteen_bit_int(st)?),
     })
 }
 
@@ -360,10 +346,7 @@ pub(crate) fn scan_math_char_num(st: &mut EngineState) -> Result<i32, Abort> {
 pub(crate) fn scan_delim_num(st: &mut EngineState) -> Result<i32, Abort> {
     Ok(match st.scanner.chr_code::<DelimNumCode>() {
         Some(DelimNumCode::Udelimiter) => scan_umath_code(st)?,
-        _ => {
-            scan_delimiter_int(st)?;
-            math_code_from_tex(st.scanner.cur_val / 4096)
-        }
+        _ => math_code_from_tex(scan_delimiter_int(st)? / 4096),
     })
 }
 

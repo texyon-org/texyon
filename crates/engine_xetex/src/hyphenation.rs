@@ -739,8 +739,7 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
                     break;
                 }
                 Cmd::CharNum => {
-                    crate::scan::scan_char_num(st)?;
-                    st.scanner.cur_chr = st.scanner.cur_val;
+                    st.scanner.cur_chr = crate::scan::scan_char_num(st)?;
                     st.scanner.cur_cmd = Cmd::CharGiven;
                 }
                 Cmd::Spacer | Cmd::RightBrace => {

@@ -244,8 +244,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
             continue;
         }
         if st.scanner.cur_cmd == Cmd::CharNum {
-            crate::scan::scan_usv_num(st)?;
-            st.scanner.cur_chr = st.scanner.cur_val;
+            st.scanner.cur_chr = crate::scan::scan_usv_num(st)?;
             continue;
         }
         insert_boundary_inter_char_toks(st)?;
@@ -744,8 +743,7 @@ fn lookahead(st: &mut EngineState) -> Result<bool, Abort> {
             st.mainloop.lig_stack = MemPtr::NULL;
             return Ok(true);
         }
-        crate::scan::scan_char_num(st)?;
-        st.scanner.cur_chr = st.scanner.cur_val;
+        st.scanner.cur_chr = crate::scan::scan_char_num(st)?;
     }
 
     let sc = adjust_space_factor(st);

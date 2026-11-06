@@ -960,7 +960,6 @@ pub(crate) struct ScannerState {
     pub is_in_csname: bool,
     pub used_tectonic_coda_tokens: bool,
     pub cur_val_level: ValueLevel,
-    pub cur_val1: i32,
     pub scanner_status: crate::codes::ScannerStatus,
     pub warning_index: EqtbPtr,
     pub def_ref: crate::token::TokenList,

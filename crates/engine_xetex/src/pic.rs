@@ -365,13 +365,13 @@ impl Placement {
 
 /// Scan an image dimension, reporting and ignoring non-positive values.
 fn scan_image_size(st: &mut EngineState) -> Result<Option<f64>, Abort> {
-    crate::scan::scan_dimen(st, false, false, false)?;
-    if st.scanner.cur_val > 0 {
-        return Ok(Some(fix2d(st.scanner.cur_dimen())));
+    let d = crate::scan::scan_dimen(st, false, false, false)?;
+    if d > Scaled::ZERO {
+        return Ok(Some(fix2d(d)));
     }
     crate::output::error_here_with_diagnostic(st, "Improper image ");
     crate::output::print(st, "size (");
-    crate::output::print_scaled(st, st.scanner.cur_dimen());
+    crate::output::print_scaled(st, d);
     crate::output::print(st, "pt) will be ignored");
     crate::output::capture_to_diagnostic(st, None);
     st.errors.help(&[
@@ -383,8 +383,7 @@ fn scan_image_size(st: &mut EngineState) -> Result<Option<f64>, Abort> {
 }
 
 fn scan_scale_factor(st: &mut EngineState) -> Result<f64, Abort> {
-    crate::scan::scan_int(st)?;
-    Ok(f64::from(st.scanner.cur_val) / 1000.0)
+    Ok(f64::from(crate::scan::scan_int(st)?) / 1000.0)
 }
 
 pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abort> {
@@ -394,8 +393,7 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
     let mut page = 0;
     if is_pdf {
         if crate::scan::scan_keyword(st, "page")? {
-            crate::scan::scan_int(st)?;
-            page = st.scanner.cur_val;
+            page = crate::scan::scan_int(st)?;
         }
         let keywords = [
             ("crop", PageboxType::Crop),
@@ -458,13 +456,13 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
                 y_size_req = size;
             }
         } else if crate::scan::scan_keyword(st, "rotated")? {
-            crate::scan::xetex_scan_dimen(st, false, false, false, false)?;
+            let angle = crate::scan::xetex_scan_dimen(st, false, false, false, false)?;
             if !no_size_req {
                 placement.scale_to(x_size_req, y_size_req);
                 x_size_req = 0.0;
                 y_size_req = 0.0;
             }
-            let angle = fix2d(st.scanner.cur_dimen()) * std::f64::consts::PI / 180.0;
+            let angle = fix2d(angle) * std::f64::consts::PI / 180.0;
             let rotation = Transform::rotation(angle);
             for c in &mut placement.corners {
                 rotation.apply(c);
