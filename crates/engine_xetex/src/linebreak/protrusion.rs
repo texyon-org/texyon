@@ -82,10 +82,9 @@ impl LinebreakState {
         )
     }
 
-    /// The protrusion (`\lpcode`/`\rpcode` scaled to the font quad) of `p`, recording
-    /// the protruding char in `last_leftmost_char`/`last_rightmost_char`.
+    /// The protrusion (`\lpcode`/`\rpcode` scaled to the font quad) of `p`.
     fn char_pw(
-        &mut self,
+        &self,
         errors: &mut ErrorState,
         mem: &MemState,
         fonts: &FontState,
@@ -97,17 +96,12 @@ impl LinebreakState {
             errors.round_xn_over_d(quad, cp, 1000)
         }
 
-        if side == Side::Left {
-            self.last_leftmost_char = MemPtr::NULL;
-        } else {
-            self.last_rightmost_char = MemPtr::NULL;
-        }
         if p.is_null() {
             return Scaled::ZERO;
         }
 
-        let (char_ptr, f, c) = if let Some(ch) = mem.as_char(p) {
-            (p, ch.font(mem), ch.character(mem))
+        let (f, c) = if let Some(ch) = mem.as_char(p) {
+            (ch.font(mem), ch.character(mem))
         } else {
             match mem.classify(p) {
                 Ok(AnyNode::Whatsit(w)) => match w.whatsit_subtype(mem) {
@@ -128,17 +122,12 @@ impl LinebreakState {
                     }
                     _ => return Scaled::ZERO,
                 },
-                Ok(AnyNode::Ligature(lig)) => (lig.ptr() + 1, lig.font(mem), lig.character(mem)),
+                Ok(AnyNode::Ligature(lig)) => (lig.font(mem), lig.character(mem)),
                 _ => return Scaled::ZERO,
             }
         };
 
         let cp = fonts.cp_codes.get(f, side, u32::from(c));
-        if side == Side::Left {
-            self.last_leftmost_char = char_ptr;
-        } else {
-            self.last_rightmost_char = char_ptr;
-        }
         if cp == 0 {
             return Scaled::ZERO;
         }

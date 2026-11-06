@@ -1640,8 +1640,6 @@ impl StringsState {
 /// The line breaker's per-paragraph scratch.
 #[derive(Clone)]
 pub(crate) struct LinebreakState {
-    pub last_leftmost_char: crate::units::MemPtr,
-    pub last_rightmost_char: crate::units::MemPtr,
     pub hlist_stack: Vec<crate::units::MemPtr>,
     pub hlist_stack_level: i16,
     pub first_p: crate::units::MemPtr,
@@ -1679,8 +1677,6 @@ pub(crate) struct LinebreakState {
 impl Default for LinebreakState {
     fn default() -> Self {
         Self {
-            last_leftmost_char: crate::units::MemPtr::default(),
-            last_rightmost_char: crate::units::MemPtr::default(),
             hlist_stack: vec![crate::units::MemPtr::default(); 513],
             hlist_stack_level: 0,
             first_p: crate::units::MemPtr::default(),
