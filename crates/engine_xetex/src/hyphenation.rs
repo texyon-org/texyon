@@ -265,6 +265,12 @@ impl HyphState {
         }
     }
 
+    /// The exception slot after `h` in its hash chain, stored one up so 0 ends the chain.
+    #[inline]
+    pub(crate) fn hyph_chain_next(&self, h: usize) -> Option<usize> {
+        usize::from(self.hyph_link[h]).checked_sub(1)
+    }
+
     /// The exception-dictionary hash of the word `hc[1..=n]`.
     pub(crate) fn exception_hash(&self, n: usize) -> usize {
         self.hc[1..=n]
@@ -934,16 +940,21 @@ fn store_hyph_exception(st: &mut EngineState, mut n: usize, p: MemPtr) -> Result
             break;
         }
 
-        if hyph.hyph_link[h] == 0 {
-            hyph.hyph_link[h] = hyph.hyph_next as u16;
-            if hyph.hyph_next >= hyph.hyph_size {
-                hyph.hyph_next = HYPH_PRIME;
+        h = match hyph.hyph_chain_next(h) {
+            Some(next) => next,
+            None => {
+                // `hyph_next` is a link too, and nonzero after the overflow check.
+                let link = hyph.hyph_next;
+                hyph.hyph_link[h] = link as u16;
+                if hyph.hyph_next >= hyph.hyph_size {
+                    hyph.hyph_next = HYPH_PRIME;
+                }
+                if hyph.hyph_next > HYPH_PRIME {
+                    hyph.hyph_next += 1;
+                }
+                link as usize - 1
             }
-            if hyph.hyph_next > HYPH_PRIME {
-                hyph.hyph_next += 1;
-            }
-        }
-        h = usize::from(hyph.hyph_link[h]) - 1;
+        };
     }
 
     hyph.hyph_word[h] = s;

@@ -434,11 +434,10 @@ pub(super) fn hyphenate(
             return insert_hyphens(st, hn, native_ha);
         }
 
-        let link = st.hyph.hyph_link[h];
-        if link == 0 {
+        let Some(next) = st.hyph.hyph_chain_next(h) else {
             break;
-        }
-        h = usize::from(link) - 1;
+        };
+        h = next;
     }
 
     let Some(root) = st.hyph.pattern_root(st.hyph.cur_lang) else {

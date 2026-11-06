@@ -182,3 +182,10 @@ fn every_digit_of_a_pattern_applies() {
     let words = hyphenated(r"\patterns{a1b3c}", "abc");
     assert_eq!(words, ["a-b-c"]);
 }
+
+#[test]
+fn exceptions_with_the_same_hash_share_a_chain() {
+    // `aac` and `aba` land in the same exception slot.
+    let words = hyphenated(r"\hyphenation{a-ac ab-a}", r"aac\ aba");
+    assert_eq!(words, ["a-ac ab-a"]);
+}
