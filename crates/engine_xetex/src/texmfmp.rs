@@ -74,7 +74,7 @@ impl StringsState {
         }
         let base = self.str_start[s.slot()];
         let len = self.str_start[s.next().slot()] - base;
-        let unit = |i: i32| u32::from(self.str_pool[(base + i) as usize]);
+        let unit = |i: i32| u32::from(self.str_pool[(base + i).index()]);
 
         let mut out = Vec::with_capacity(len as usize * 3);
         let mut i = 0;
@@ -133,7 +133,7 @@ impl StringsState {
 
     /// Appends `bytes` if they fit, else marks the pool as full.
     fn push_bytes_or_fill(&mut self, bytes: &[u8]) {
-        if self.pool_ptr as usize + bytes.len() >= self.pool_size as usize {
+        if self.pool_ptr.index() + bytes.len() >= self.pool_size.index() {
             self.pool_ptr = self.pool_size;
         } else {
             self.push_bytes(bytes);
@@ -156,7 +156,7 @@ impl StringsState {
             return Ok(EMPTY_STRING);
         }
 
-        if self.pool_ptr as usize + s.len() >= self.pool_size as usize {
+        if self.pool_ptr.index() + s.len() >= self.pool_size.index() {
             return Err(Abort::Internal("string pool overflow"));
         }
 
@@ -191,13 +191,12 @@ pub(crate) fn make_src_special(
     st: &mut crate::state::EngineState,
     srcfilename: StrNumber,
     lineno: i32,
-) -> Result<i32, ()> {
+) -> Result<crate::units::PoolPos, ()> {
     let old_pool_ptr = st.strings.pool_ptr;
     let filename = st.strings.texstring_bytes(srcfilename);
     let prefix = format!("src:{} ", lineno);
 
-    if st.strings.pool_ptr as usize + prefix.len() + filename.len() >= st.strings.pool_size as usize
-    {
+    if st.strings.pool_ptr.index() + prefix.len() + filename.len() >= st.strings.pool_size.index() {
         return Err(());
     }
     st.strings.push_bytes(prefix.as_bytes());

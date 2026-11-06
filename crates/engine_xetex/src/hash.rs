@@ -107,8 +107,8 @@ impl EqtbState {
                     let d = strings.cur_length();
                     while strings.pool_ptr > strings.cur_string_start() {
                         strings.pool_ptr -= 1;
-                        strings.str_pool[(strings.pool_ptr + l) as usize] =
-                            strings.str_pool[strings.pool_ptr as usize];
+                        strings.str_pool[(strings.pool_ptr + l).index()] =
+                            strings.str_pool[strings.pool_ptr.index()];
                     }
 
                     for &bk in name {
@@ -144,15 +144,15 @@ impl EqtbState {
             p = s.raw() % PRIM_PRIME + 1;
             l = 0;
         } else {
-            let j = strings.str_start[s.slot()];
-            l = if s.raw() == strings.str_ptr {
+            let j = strings.str_start(s);
+            l = if s == strings.str_ptr {
                 strings.cur_length()
             } else {
                 strings.length(s)
             };
-            let mut h = i32::from(strings.str_pool[j as usize]);
-            for k in j + 1..j + l {
-                h = h + h + i32::from(strings.str_pool[k as usize]);
+            let mut h = i32::from(strings.str_pool[j.index()]);
+            for k in (j + 1).until(j + l) {
+                h = h + h + i32::from(strings.str_pool[k.index()]);
                 while h >= PRIM_PRIME {
                     h -= PRIM_PRIME;
                 }

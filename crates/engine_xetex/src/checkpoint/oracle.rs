@@ -126,25 +126,22 @@ fn digest_strings(st: &EngineState) -> u64 {
     let mut h = Fnv::new();
     let strings = &st.strings;
     h.i32s(&[
-        strings.str_ptr,
-        strings.max_strings,
-        strings.init_str_ptr,
-        strings.init_pool_ptr,
+        strings.str_ptr.raw(),
+        strings.max_strings.raw(),
+        strings.init_str_ptr.raw(),
+        strings.init_pool_ptr.raw(),
         strings.job_name.raw(),
         strings.texmf_log_name.raw(),
         strings.string_vacancies,
-        strings.pool_size,
-        strings.pool_ptr,
+        strings.pool_size.raw(),
+        strings.pool_ptr.raw(),
         strings.format_ident.raw(),
-        strings.edit_name_start,
     ]);
     let start_top = strings.cur_start_slot();
-    h.i32s(strings.str_start.iter().take(start_top.saturating_add(1)));
-    for &value in strings
-        .str_pool
-        .iter()
-        .take(strings.pool_ptr.max(0) as usize)
-    {
+    for p in strings.str_start.iter().take(start_top.saturating_add(1)) {
+        h.i32(p.raw());
+    }
+    for &value in strings.str_pool.iter().take(strings.pool_ptr.index()) {
         h.word(u64::from(value));
     }
     h.finish()

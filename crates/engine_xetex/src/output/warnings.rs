@@ -12,7 +12,7 @@ use crate::state::{EngineState, Selector};
 use crate::units::FontId;
 
 use super::cmd_chr::print_cmd_chr;
-use super::show::{flush_last_string, show_context};
+use super::show::show_context;
 use super::{
     begin_diagnostic, capture_to_diagnostic, diagnostic_begin_capture_warning_here, end_diagnostic,
     note_warning_issued, print, print_char, print_code, print_error_prefix, print_esc, print_group,
@@ -251,7 +251,7 @@ pub(crate) fn char_warning(st: &mut EngineState, f: FontId, c: i32) -> Result<()
     st.shipout.selector = prev_sel;
     let s = st.strings.make_string()?;
     let chr = st.strings.texstring_bytes(s);
-    flush_last_string(st);
+    st.strings.flush_string();
     issue_warning(&format!(
         "could not represent character \"{}\" (0x{:x}) in font \"{}\"",
         String::from_utf8_lossy(&chr),

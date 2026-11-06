@@ -299,7 +299,7 @@ pub(crate) fn print_raw_char(st: &mut EngineState, s: impl Into<i32>, incr_offse
         Selector::NewString => {
             let pp = st.strings.pool_ptr;
             if pp < st.strings.pool_size {
-                st.strings.str_pool[pp as usize] = s as u16;
+                st.strings.str_pool[pp.index()] = s as u16;
                 st.strings.pool_ptr = pp + 1;
             }
         }
@@ -379,7 +379,7 @@ pub(crate) fn print(st: &mut EngineState, s: impl TexStr) {
 }
 
 fn print_pool_str(st: &mut EngineState, s: i32) {
-    if s >= st.strings.str_ptr {
+    if s >= st.strings.str_ptr.raw() {
         return print(st, "???");
     }
     if s <= BIGGEST_CHAR {
@@ -401,9 +401,7 @@ fn print_pool_str(st: &mut EngineState, s: i32) {
         return;
     }
 
-    let pool_idx = (s - TOO_BIG_CHAR) as usize;
-    let mut i = st.strings.str_start[pool_idx] as usize;
-    let end = st.strings.str_start[pool_idx + 1] as usize;
+    let std::ops::Range { start: mut i, end } = st.strings.str_range(StrNumber::from_raw(s));
     while i < end {
         let c = st.strings.str_pool[i];
         if i + 1 < end {
@@ -429,8 +427,8 @@ fn surrogate_pair(hi: u16, lo: u16) -> Option<i32> {
 
 fn print_current_string(st: &mut EngineState) {
     let start = st.strings.cur_string_start();
-    for j in start..st.strings.pool_ptr {
-        let c = st.strings.str_pool[j as usize];
+    for j in start.until(st.strings.pool_ptr) {
+        let c = st.strings.str_pool[j.index()];
         print_char(st, i32::from(c));
     }
 }
@@ -622,7 +620,7 @@ pub(crate) fn print_cs(st: &mut EngineState, p: EqtbPtr) {
         }
     } else if (UNDEFINED_CONTROL_SEQUENCE..=EQTB_SIZE).contains(&p) || p > st.eqtb.eqtb_top {
         print_esc(st, "IMPOSSIBLE.");
-    } else if st.eqtb.text(p).raw() >= st.strings.str_ptr {
+    } else if st.eqtb.text(p) >= st.strings.str_ptr {
         print_esc(st, "NONEXISTENT.");
     } else {
         print_esc(st, cs_text(st, p));

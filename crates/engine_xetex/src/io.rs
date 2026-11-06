@@ -1,7 +1,7 @@
 //! Low-level input and output: encoded line reading, file names, and the
 //! log and input-file lifecycle.
 
-use crate::consts::{BIGGEST_CHAR, CLOSED, EMPTY_STRING, INVALID_HANDLE, JUST_OPEN, TOO_BIG_CHAR};
+use crate::consts::{BIGGEST_CHAR, CLOSED, EMPTY_STRING, INVALID_HANDLE, JUST_OPEN};
 use crate::input::NEW_LINE;
 use crate::layout::FontMappingHandle;
 use crate::params::IntPar;
@@ -730,7 +730,7 @@ pub(crate) fn more_name(st: &mut EngineState, c: u16) -> Result<bool, Abort> {
 }
 
 pub(crate) fn end_name(st: &mut EngineState) -> Result<(), Abort> {
-    if st.strings.str_ptr + 3 > st.strings.max_strings {
+    if st.strings.str_ptr.offset(3) > st.strings.max_strings {
         return Err(Abort::StringOverflow);
     }
 
@@ -739,17 +739,17 @@ pub(crate) fn end_name(st: &mut EngineState) -> Result<(), Abort> {
         st.scanner.cur_area = EMPTY_STRING;
     } else {
         let strings = &mut st.strings;
-        st.scanner.cur_area = StrNumber::from_raw(strings.str_ptr);
+        st.scanner.cur_area = strings.str_ptr;
         let start = strings.cur_string_start();
-        strings.str_start[(strings.str_ptr + 1 - TOO_BIG_CHAR) as usize] = start + area_delimiter;
-        strings.str_ptr += 1;
+        strings.str_start[strings.str_ptr.next().slot()] = start + area_delimiter;
+        strings.str_ptr = strings.str_ptr.next();
         let temp_str = strings.search_string(st.scanner.cur_area);
         if temp_str > StrNumber::NONE {
             st.scanner.cur_area = temp_str;
-            strings.str_ptr -= 1;
-            let base = strings.str_start[(strings.str_ptr + 1 - TOO_BIG_CHAR) as usize];
-            for j in base..strings.pool_ptr {
-                strings.str_pool[(j - area_delimiter) as usize] = strings.str_pool[j as usize];
+            let base = strings.str_start[strings.str_ptr.slot()];
+            strings.str_ptr = strings.str_ptr.prev();
+            for j in base.until(strings.pool_ptr) {
+                strings.str_pool[(j - area_delimiter).index()] = strings.str_pool[j.index()];
             }
             strings.pool_ptr -= area_delimiter;
         }
@@ -761,20 +761,20 @@ pub(crate) fn end_name(st: &mut EngineState) -> Result<(), Abort> {
     } else {
         let strings = &mut st.strings;
         let shift = st.scanner.ext_delimiter - area_delimiter - 1;
-        st.scanner.cur_name = StrNumber::from_raw(strings.str_ptr);
+        st.scanner.cur_name = strings.str_ptr;
         let start = strings.cur_string_start();
-        strings.str_start[(strings.str_ptr + 1 - TOO_BIG_CHAR) as usize] = start + shift;
-        strings.str_ptr += 1;
+        strings.str_start[strings.str_ptr.next().slot()] = start + shift;
+        strings.str_ptr = strings.str_ptr.next();
 
         st.scanner.cur_ext = strings.make_string()?;
-        strings.str_ptr -= 1;
+        strings.str_ptr = strings.str_ptr.prev();
         let temp_str = strings.search_string(st.scanner.cur_name);
         if temp_str > StrNumber::NONE {
             st.scanner.cur_name = temp_str;
-            strings.str_ptr -= 1;
-            let base = strings.str_start[(strings.str_ptr + 1 - TOO_BIG_CHAR) as usize];
-            for j in base..strings.pool_ptr {
-                strings.str_pool[(j - shift) as usize] = strings.str_pool[j as usize];
+            let base = strings.str_start[strings.str_ptr.slot()];
+            strings.str_ptr = strings.str_ptr.prev();
+            for j in base.until(strings.pool_ptr) {
+                strings.str_pool[(j - shift).index()] = strings.str_pool[j.index()];
             }
             strings.pool_ptr -= shift;
         }
@@ -983,10 +983,8 @@ pub(crate) fn scan_file_name_braced(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.scanner_status = save_scanner_status;
 
     begin_name(st);
-    let start = st.strings.str_start[s.slot()];
-    let end = st.strings.str_start[s.next().slot()];
-    for i in start..end {
-        let c = st.strings.str_pool[i as usize];
+    for i in st.strings.str_range(s) {
+        let c = st.strings.str_pool[i];
         more_name(st, c)?;
     }
     st.scanner.stop_at_space = save_stop_at_space;
@@ -1104,12 +1102,11 @@ pub(crate) fn start_input(
     let full_name = st.strings.make_tex_string(full_name)?;
     st.input.open_levels[in_open].full_source_name = full_name;
 
-    if st.input.cur_input.name == st.strings.str_ptr - 1 {
+    if st.input.cur_input.name == st.strings.str_ptr.prev().raw() {
         let temp_str = st.strings.search_string(name);
         if temp_str > StrNumber::NONE {
             st.input.cur_input.name = temp_str.raw();
-            st.strings.str_ptr -= 1;
-            st.strings.pool_ptr = st.strings.cur_string_start();
+            st.strings.flush_string();
         }
     }
 

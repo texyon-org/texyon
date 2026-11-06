@@ -26,7 +26,7 @@ use crate::output::{print, print_char, print_int, print_ln, print_nl};
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, InteractionMode, PerFont, Selector};
 use crate::token::Token;
-use crate::units::{EqtbPtr, FontId, MemPtr, SavePtr, Scaled, StrNumber};
+use crate::units::{EqtbPtr, FontId, MemPtr, PoolPos, SavePtr, Scaled, StrNumber};
 
 const FORMAT_HEADER_MAGIC: i32 = 0x5454_4E43;
 const FORMAT_FOOTER_MAGIC: i32 = 0x0000_029A;
@@ -80,7 +80,7 @@ macro_rules! newtype_item {
     )*};
 }
 
-newtype_item!(Scaled, MemPtr, StrNumber, EqtbPtr);
+newtype_item!(Scaled, MemPtr, StrNumber, EqtbPtr, PoolPos);
 
 impl FmtItem for B32x2 {
     const SIZE: usize = 8;
@@ -183,14 +183,14 @@ trait FmtStream {
     }
 
     /// A size that must be at least `low` and fit the engine's `high` limit.
-    fn size(
+    fn size<T: FmtItem + PartialOrd>(
         &mut self,
-        v: &mut i32,
-        low: i32,
-        high: i32,
+        v: &mut T,
+        low: T,
+        high: T,
         too_big: &'static str,
     ) -> Result<(), Abort> {
-        self.int(v)?;
+        self.items(std::slice::from_mut(v))?;
         if Self::LOADING {
             if *v < low {
                 return Err(bad_fmt());
@@ -337,8 +337,7 @@ pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     let name_string = crate::io::make_name_string(st)?;
     print(st, name_string);
 
-    st.strings.str_ptr -= 1;
-    st.strings.discard_cur_string();
+    st.strings.flush_string();
 
     print_nl(st, "");
     print(st, st.strings.format_ident);
@@ -444,39 +443,40 @@ fn string_pool<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abor
     let strings = &mut st.strings;
     s.size(
         &mut strings.pool_ptr,
-        0,
-        SUP_POOL_SIZE - POOL_FREE,
+        PoolPos::ZERO,
+        PoolPos::from_raw(SUP_POOL_SIZE - POOL_FREE),
         "must increase string_pool_size",
     )?;
     s.size(
         &mut strings.str_ptr,
-        0,
-        SUP_MAX_STRINGS - STRINGS_FREE,
+        StrNumber::NONE,
+        StrNumber::from_raw(SUP_MAX_STRINGS - STRINGS_FREE),
         "must increase sup_strings",
     )?;
     let (pool_ptr, str_ptr) = (strings.pool_ptr, strings.str_ptr);
     if S::LOADING {
         strings.pool_size = strings.pool_size.max(pool_ptr + POOL_FREE);
-        strings.max_strings = strings.max_strings.max(str_ptr + STRINGS_FREE);
-        strings.str_start = vec![0; strings.max_strings as usize + 1];
-        strings.str_pool = vec![0; strings.pool_size as usize + 1];
+        strings.max_strings = strings.max_strings.max(str_ptr.offset(STRINGS_FREE));
+        strings.str_start = vec![PoolPos::ZERO; strings.max_strings.slot() + 1];
+        strings.str_pool = vec![0; strings.pool_size.index() + 1];
     }
 
+    let starts = str_ptr - StrNumber::from_raw(TOO_BIG_CHAR) + 1;
     s.items_in(
-        span(&mut strings.str_start, 0, str_ptr - TOO_BIG_CHAR + 1),
-        0,
+        span(&mut strings.str_start, 0, starts),
+        PoolPos::ZERO,
         pool_ptr,
     )?;
-    s.items(span(&mut strings.str_pool, 0, pool_ptr))?;
+    s.items(span(&mut strings.str_pool, 0, pool_ptr.raw()))?;
 
     if S::LOADING {
         strings.init_str_ptr = str_ptr;
         strings.init_pool_ptr = pool_ptr;
     } else {
         print_ln(st);
-        print_int(st, str_ptr);
+        print_int(st, str_ptr.raw());
         print(st, " strings of total length ");
-        print_int(st, pool_ptr);
+        print_int(st, pool_ptr.raw());
     }
     Ok(())
 }
@@ -705,7 +705,7 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
 }
 
 fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
-    let max_str = StrNumber::from_raw(st.strings.str_ptr);
+    let max_str = st.strings.str_ptr;
     let lo_mem_max = st.mem.lo_mem_max;
     let fonts = &mut st.fonts;
     s.size(
@@ -869,7 +869,7 @@ fn hyphenation_tables<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(
             s.items_in(
                 std::slice::from_mut(&mut hyph.hyph_word[h]),
                 StrNumber::from_raw(0),
-                StrNumber::from_raw(st.strings.str_ptr),
+                st.strings.str_ptr,
             )?;
             s.ptr_in(&mut hyph.hyph_list[h], MIN_HALFWORD, MAX_HALFWORD)?;
         }
@@ -1020,7 +1020,7 @@ mod tests {
         let mut st = EngineState::default();
         st.shipout.selector = Selector::NoPrint;
         st.eqtb.data = crate::mem_types::zeroed_vec(EQTB_SIZE.index() + 1);
-        st.strings.str_start = vec![0; 4];
+        st.strings.str_start = vec![crate::units::PoolPos::ZERO; 4];
         st.eqtb.hash = vec![B32x2 { s0: 0, s1: 0 }; hash_slot(FONT_ID_BASE + 2) as usize];
         st.fonts.font_max = FontId::from_raw(FONT_BASE + 1);
         st.fonts.fmem_ptr = 7;

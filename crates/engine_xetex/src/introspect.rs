@@ -79,7 +79,7 @@ fn resolve_wrappers(found: Vec<DefinedCommand>) -> Vec<DefinedCommand> {
 
 fn collect(st: &EngineState, slot: EqtbPtr, found: &mut Vec<DefinedCommand>) {
     let text = st.eqtb.text(slot);
-    if text <= StrNumber::NONE || text.raw() >= st.strings.str_ptr {
+    if text <= StrNumber::NONE || text >= st.strings.str_ptr {
         return;
     }
     let meaning = st.eqtb.eq_type(slot);
@@ -137,8 +137,8 @@ fn describe_macro(st: &EngineState, body: crate::token::TokenList) -> (bool, u8)
 
 pub(crate) fn read_string(st: &EngineState, s: StrNumber) -> Option<String> {
     let str_start = &st.strings.str_start;
-    let start = *str_start.get(s.slot())? as usize;
-    let end = *str_start.get(s.next().slot())? as usize;
+    let start = str_start.get(s.slot())?.index();
+    let end = str_start.get(s.next().slot())?.index();
     let units = st.strings.str_pool.get(start..end)?;
     char::decode_utf16(units.iter().copied())
         .collect::<Result<String, _>>()

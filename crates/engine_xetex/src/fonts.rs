@@ -951,8 +951,7 @@ pub(crate) fn load_native_font(
             && st.fonts.font_size[f] == actual_size
         {
             drop(font_engine);
-            st.strings.str_ptr -= 1;
-            st.strings.pool_ptr = st.strings.cur_string_start();
+            st.strings.flush_string();
             return Ok(f);
         }
     }

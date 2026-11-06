@@ -149,11 +149,6 @@ fn trap_zero_glue(st: &mut EngineState, spec: NodePtr<GlueSpecNode>) -> NodePtr<
     }
 }
 
-fn flush_last_string(st: &mut EngineState) {
-    st.strings.str_ptr -= 1;
-    st.strings.discard_cur_string();
-}
-
 fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     if st.strings.job_name == StrNumber::NONE {
         crate::io::open_log_file(st)?;
@@ -249,7 +244,7 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             }
             let full_name = st.strings.make_string()?;
             let same_name = st.strings.str_eq_str(st.fonts.font_name[f], full_name);
-            flush_last_string(st);
+            st.strings.flush_string();
             if same_name && st.fonts.is_native_font(f) && size_matches(st, f) {
                 break 'search f;
             }

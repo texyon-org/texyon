@@ -154,12 +154,6 @@ pub(super) fn show_info(st: &mut EngineState) {
     show_node_list(st, p);
 }
 
-/// Drops the most recently made string.
-pub(super) fn flush_last_string(st: &mut EngineState) {
-    st.strings.str_ptr -= 1;
-    st.strings.discard_cur_string();
-}
-
 pub(crate) fn issue_message(st: &mut EngineState) -> Result<(), Abort> {
     let c = st.scanner.cur_chr as u8;
     let toks = crate::scan::scan_toks(st, false, true)?;
@@ -205,7 +199,7 @@ pub(crate) fn issue_message(st: &mut EngineState) -> Result<(), Abort> {
         st.errors.use_err_help = false;
         outcome?;
     }
-    flush_last_string(st);
+    st.strings.flush_string();
     Ok(())
 }
 

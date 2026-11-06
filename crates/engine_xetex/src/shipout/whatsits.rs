@@ -106,8 +106,8 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WhatsitNode>) ->
             crate::output::diagnostic_begin_capture_warning_here(st);
             crate::output::print_nl(st, "runsystem(");
             let base = st.strings.cur_string_start();
-            for k in base..st.strings.pool_ptr {
-                crate::output::print(st, i32::from(st.strings.str_pool[k as usize]));
+            for k in base.until(st.strings.pool_ptr) {
+                crate::output::print(st, i32::from(st.strings.str_pool[k.index()]));
             }
             crate::output::print(st, ")...");
             crate::output::print(st, "disabled");

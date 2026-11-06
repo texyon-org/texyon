@@ -4,16 +4,17 @@
 use crate::consts::{EMPTY_STRING, TOO_BIG_CHAR};
 use crate::errors::Abort;
 use crate::state::StringsState;
-use crate::units::StrNumber;
+use crate::units::{PoolPos, StrNumber};
 
 impl StringsState {
-    fn str_start(&self, s: StrNumber) -> i32 {
+    /// Where pool string `s` starts in `str_pool`.
+    pub(crate) fn str_start(&self, s: StrNumber) -> PoolPos {
         self.str_start[s.slot()]
     }
 
     /// The `str_pool` range of string `s`.
     pub(crate) fn str_range(&self, s: StrNumber) -> std::ops::Range<usize> {
-        self.str_start(s) as usize..self.str_start(s.next()) as usize
+        self.str_start(s).index()..self.str_start(s.next()).index()
     }
 
     pub fn length(&self, s: StrNumber) -> i32 {
@@ -32,10 +33,10 @@ impl StringsState {
         if self.str_ptr == self.max_strings {
             return Err(Abort::StringOverflow);
         }
-        self.str_ptr += 1;
+        self.str_ptr = self.str_ptr.next();
         let slot = self.cur_start_slot();
         self.str_start[slot] = self.pool_ptr;
-        Ok(StrNumber::from_raw(self.str_ptr - 1))
+        Ok(self.str_ptr.prev())
     }
 
     pub fn append_str(&mut self, s: StrNumber) -> Result<(), Abort> {
@@ -43,8 +44,8 @@ impl StringsState {
         if self.pool_ptr + len > self.pool_size {
             return Err(Abort::PoolOverflow);
         }
-        let src = self.str_start(s) as usize;
-        let dst = self.pool_ptr as usize;
+        let src = self.str_start(s).index();
+        let dst = self.pool_ptr.index();
         for i in 0..len.max(0) as usize {
             self.str_pool[dst + i] = self.str_pool[src + i];
         }
@@ -52,7 +53,6 @@ impl StringsState {
         Ok(())
     }
 
-    /// Whether string `s` equals the buffer run starting at `k`.
     /// Whether pool string `s` spells the characters `name`, after UTF-16 encoding.
     pub fn str_eq_buf(&self, name: &[i32], s: StrNumber) -> bool {
         let mut j = self.str_start(s);
@@ -65,13 +65,13 @@ impl StringsState {
             if c >= TOO_BIG_CHAR {
                 let hi = 0xD800 + (c - TOO_BIG_CHAR) / 1024;
                 let lo = 0xDC00 + (c - TOO_BIG_CHAR) % 1024;
-                if i32::from(self.str_pool[j as usize]) != hi
-                    || i32::from(self.str_pool[(j + 1) as usize]) != lo
+                if i32::from(self.str_pool[j.index()]) != hi
+                    || i32::from(self.str_pool[(j + 1).index()]) != lo
                 {
                     return false;
                 }
                 j += 1;
-            } else if i32::from(self.str_pool[j as usize]) != c {
+            } else if i32::from(self.str_pool[j.index()]) != c {
                 return false;
             }
             j += 1;
@@ -88,17 +88,16 @@ impl StringsState {
         if len == 1 {
             let first_unit = |x: StrNumber| {
                 if x.is_pool_string() {
-                    self.str_pool[self.str_start(x) as usize]
+                    self.str_pool[self.str_start(x).index()]
                 } else {
                     x.raw() as u16
                 }
             };
             return first_unit(s) == first_unit(t);
         }
-        let j = self.str_start(s) as usize;
-        let k = self.str_start(t) as usize;
-        let n = (self.str_start(s.next()) as usize).saturating_sub(j);
-        self.str_pool[j..j + n] == self.str_pool[k..k + n]
+        let n = self.str_range(s).len();
+        let k = self.str_start(t).index();
+        self.str_pool[self.str_range(s)] == self.str_pool[k..k + n]
     }
 
     /// An existing string equal to `search`, or 0 if none.
@@ -146,9 +145,63 @@ impl StringsState {
 
     /// Frees `s` if it is the most recently made string.
     pub fn flush_str(&mut self, s: StrNumber) {
-        if s.raw() == self.str_ptr - 1 {
-            self.str_ptr -= 1;
-            self.pool_ptr = self.str_start(StrNumber::from_raw(self.str_ptr));
+        if s == self.str_ptr.prev() {
+            self.flush_string();
         }
+    }
+
+    /// TeX's `flush_string`: frees the most recently made string.
+    pub fn flush_string(&mut self) {
+        self.str_ptr = self.str_ptr.prev();
+        self.pool_ptr = self.str_start(self.str_ptr);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pool() -> StringsState {
+        StringsState {
+            str_ptr: StrNumber::from_raw(TOO_BIG_CHAR),
+            max_strings: StrNumber::from_raw(TOO_BIG_CHAR + 8),
+            pool_size: PoolPos::from_raw(32),
+            str_start: vec![PoolPos::ZERO; 9],
+            str_pool: vec![0; 33],
+            ..StringsState::default()
+        }
+    }
+
+    fn make(strings: &mut StringsState, text: &str) -> StrNumber {
+        strings.append_units(&text.encode_utf16().collect::<Vec<_>>());
+        strings.make_string().expect("room for the string")
+    }
+
+    #[test]
+    fn str_eq_str_compares_contents() {
+        let mut strings = pool();
+        let ab = make(&mut strings, "ab");
+        let ac = make(&mut strings, "ac");
+        let ab2 = make(&mut strings, "ab");
+        assert!(strings.str_eq_str(ab, ab2));
+        assert!(!strings.str_eq_str(ab, ac));
+        assert_eq!(strings.search_string(ab2), ab);
+    }
+
+    #[test]
+    fn flush_str_frees_only_the_latest_string() {
+        let mut strings = pool();
+        let first = make(&mut strings, "abc");
+        let second = make(&mut strings, "de");
+        strings.flush_str(first);
+        assert_eq!(
+            (strings.str_ptr, strings.pool_ptr),
+            (second.next(), PoolPos::from_raw(5))
+        );
+        strings.flush_str(second);
+        assert_eq!(
+            (strings.str_ptr, strings.pool_ptr),
+            (second, PoolPos::from_raw(3))
+        );
     }
 }

@@ -428,6 +428,76 @@ impl std::ops::SubAssign<i32> for BufPos {
     }
 }
 
+/// A position in `str_pool`, the UTF-16 units of all pool strings.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
+#[repr(transparent)]
+pub struct PoolPos(i32);
+
+impl PoolPos {
+    pub const ZERO: PoolPos = PoolPos(0);
+
+    /// The value from its raw form in a format file or a size setting.
+    #[inline(always)]
+    pub const fn from_raw(raw: i32) -> PoolPos {
+        PoolPos(raw)
+    }
+
+    /// The raw form for a format file.
+    #[inline(always)]
+    pub const fn raw(self) -> i32 {
+        self.0
+    }
+
+    #[inline(always)]
+    pub fn index(self) -> usize {
+        self.0 as usize
+    }
+
+    /// The positions from `self` up to but not including `end`.
+    pub fn until(self, end: PoolPos) -> impl DoubleEndedIterator<Item = PoolPos> + Clone {
+        (self.0..end.0).map(PoolPos)
+    }
+}
+
+impl std::ops::Add<i32> for PoolPos {
+    type Output = PoolPos;
+    #[inline(always)]
+    fn add(self, rhs: i32) -> PoolPos {
+        PoolPos(self.0 + rhs)
+    }
+}
+
+impl std::ops::Sub<i32> for PoolPos {
+    type Output = PoolPos;
+    #[inline(always)]
+    fn sub(self, rhs: i32) -> PoolPos {
+        PoolPos(self.0 - rhs)
+    }
+}
+
+/// The number of units from `rhs` to `self`.
+impl std::ops::Sub for PoolPos {
+    type Output = i32;
+    #[inline(always)]
+    fn sub(self, rhs: PoolPos) -> i32 {
+        self.0 - rhs.0
+    }
+}
+
+impl std::ops::AddAssign<i32> for PoolPos {
+    #[inline(always)]
+    fn add_assign(&mut self, rhs: i32) {
+        self.0 += rhs;
+    }
+}
+
+impl std::ops::SubAssign<i32> for PoolPos {
+    #[inline(always)]
+    fn sub_assign(&mut self, rhs: i32) {
+        self.0 -= rhs;
+    }
+}
+
 /// A position on the save stack.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 #[repr(transparent)]
@@ -563,6 +633,26 @@ impl StrNumber {
     #[inline]
     pub fn next(self) -> StrNumber {
         StrNumber(self.0 + 1)
+    }
+
+    #[inline]
+    pub fn prev(self) -> StrNumber {
+        StrNumber(self.0 - 1)
+    }
+
+    /// The string `n` numbers after `self`.
+    #[inline]
+    pub fn offset(self, n: i32) -> StrNumber {
+        StrNumber(self.0 + n)
+    }
+}
+
+/// The number of strings from `rhs` to `self`.
+impl std::ops::Sub for StrNumber {
+    type Output = i32;
+    #[inline(always)]
+    fn sub(self, rhs: StrNumber) -> i32 {
+        self.0 - rhs.0
     }
 }
 

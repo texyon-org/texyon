@@ -750,7 +750,7 @@ mod tests {
     fn engine_bundle_ladder_restores_clock_and_scalar_state() {
         let mut st = state();
         st.strings.str_pool = vec![0; 4];
-        st.strings.str_start = vec![0; 4];
+        st.strings.str_start = vec![crate::units::PoolPos::ZERO; 4];
         let strings_base = StringWatermark::capture(&st);
         let mut ladder = CheckpointLadder::from_engine(&st, strings_base);
 
@@ -919,7 +919,7 @@ mod tests {
     fn oracle_names_a_write_that_bypassed_the_mem_journal() {
         let mut st = state();
         st.strings.str_pool = vec![0; 4];
-        st.strings.str_start = vec![0; 4];
+        st.strings.str_start = vec![crate::units::PoolPos::ZERO; 4];
         let strings_base = StringWatermark::capture(&st);
         let mut ladder = CheckpointLadder::from_engine_verified(&st, strings_base);
 
@@ -935,7 +935,7 @@ mod tests {
     fn oracle_verifies_survivors_after_decimation() {
         let mut st = state();
         st.strings.str_pool = vec![0; 4];
-        st.strings.str_start = vec![0; 4];
+        st.strings.str_start = vec![crate::units::PoolPos::ZERO; 4];
         let strings_base = StringWatermark::capture(&st);
         let mut ladder = CheckpointLadder::from_engine_verified(&st, strings_base);
         for clock in 1..=4 {
@@ -961,7 +961,7 @@ mod tests {
 
         let mut st = state();
         st.strings.str_pool = vec![0; 4];
-        st.strings.str_start = vec![0; 4];
+        st.strings.str_start = vec![crate::units::PoolPos::ZERO; 4];
         let strings_base = StringWatermark::capture(&st);
         let mut ladder = CheckpointLadder::from_engine_verified(&st, strings_base);
         run_prefix(&mut st, 17);

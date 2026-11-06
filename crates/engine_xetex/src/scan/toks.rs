@@ -28,7 +28,7 @@ impl MemState {
     pub(crate) fn str_toks_cat(
         &mut self,
         strings: &mut crate::state::StringsState,
-        b: i32,
+        b: crate::units::PoolPos,
         cat: Option<Cmd>,
     ) -> Result<TokenList, Abort> {
         if strings.pool_ptr + 1 > strings.pool_size {
@@ -40,18 +40,18 @@ impl MemState {
         let mut k = b;
 
         while k < strings.pool_ptr {
-            let mut c = i32::from(strings.str_pool[k as usize]);
+            let mut c = i32::from(strings.str_pool[k.index()]);
 
             let t = if c == i32::from(b' ') && cat.is_none() {
                 Token::SPACE
             } else {
                 if (0xD800..0xDC00).contains(&c) && k + 1 < strings.pool_ptr {
-                    let lo = i32::from(strings.str_pool[(k + 1) as usize]);
+                    let lo = i32::from(strings.str_pool[(k + 1).index()]);
                     if (0xDC00..0xE000).contains(&lo) {
                         k += 1;
                         c = 0x10000
                             + ((c - 0xD800) << 10)
-                            + (i32::from(strings.str_pool[k as usize]) - 0xDC00);
+                            + (i32::from(strings.str_pool[k.index()]) - 0xDC00);
                     }
                 }
 
@@ -447,8 +447,8 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
         return Err(Abort::PoolOverflow);
     }
     let s = st.strings.make_string()?;
-    st.strings.str_pool[st.strings.pool_ptr as usize] = u16::from(b' ');
-    let mut l = st.strings.str_start[s.slot()];
+    st.strings.str_pool[st.strings.pool_ptr.index()] = u16::from(b' ');
+    let mut l = st.strings.str_start(s);
     let nl = st.eqtb.int_par(IntPar::NewLineChar) as u16;
     let file = st.mem.get_avail()?;
     let mut last_line = file;
@@ -456,7 +456,7 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
     // Each line becomes a node of words holding four characters each.
     while l < st.strings.pool_ptr {
         let m = l;
-        while l < st.strings.pool_ptr && st.strings.str_pool[l as usize] != nl {
+        while l < st.strings.pool_ptr && st.strings.str_pool[l.index()] != nl {
             l += 1;
         }
         let size = ((l - m + 7) / 4).max(2);
@@ -467,7 +467,7 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
         let mut w = 1;
         let mut k = m;
         for _ in 2..size {
-            let pool = &st.strings.str_pool[k as usize..];
+            let pool = &st.strings.str_pool[k.index()..];
             let chars = [pool[0], pool[1], pool[2], pool[3]];
             line.set_chars(&mut st.mem, w, chars);
             w += 1;
@@ -476,11 +476,11 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
         let mut chars = [u16::from(b' '); 4];
         for (i, c) in chars.iter_mut().enumerate() {
             if l > k + i as i32 {
-                *c = st.strings.str_pool[(k + i as i32) as usize];
+                *c = st.strings.str_pool[(k + i as i32).index()];
             }
         }
         line.set_chars(&mut st.mem, w, chars);
-        if st.strings.str_pool[l as usize] == nl {
+        if st.strings.str_pool[l.index()] == nl {
             l += 1;
         }
     }
@@ -572,11 +572,7 @@ pub(crate) fn compare_strings(st: &mut EngineState) -> Result<i32, Abort> {
     st.scanner.cur_cs = save_cur_cs;
     let s2 = scan_toks_to_string(st)?;
 
-    let range = |s: StrNumber| {
-        let start = st.strings.str_start[s.slot()] as usize;
-        let end = st.strings.str_start[s.next().slot()] as usize;
-        &st.strings.str_pool[start..end]
-    };
+    let range = |s: StrNumber| &st.strings.str_pool[st.strings.str_range(s)];
     let result = match range(s1).cmp(range(s2)) {
         std::cmp::Ordering::Less => -1,
         std::cmp::Ordering::Equal => 0,

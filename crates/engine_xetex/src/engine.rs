@@ -40,7 +40,7 @@ use crate::state::{
 };
 use crate::token::Token;
 use crate::units::{
-    BufPos, EqtbPtr, FontId, GlueOrder, MemPtr, NodeType, SavePtr, Scaled, StrNumber,
+    BufPos, EqtbPtr, FontId, GlueOrder, MemPtr, NodeType, PoolPos, SavePtr, Scaled, StrNumber,
 };
 
 /// A `get_node` request this large merges every free block into the rover list.
@@ -86,11 +86,11 @@ pub(crate) fn output_file_extension(st: &EngineState) -> &'static str {
 }
 
 pub(crate) fn get_strings_started(st: &mut EngineState) -> Result<(), Abort> {
-    st.strings.pool_ptr = 0;
-    st.strings.str_start[0] = 0;
-    st.strings.str_ptr = TOO_BIG_CHAR;
+    st.strings.pool_ptr = PoolPos::ZERO;
+    st.strings.str_start[0] = PoolPos::ZERO;
+    st.strings.str_ptr = StrNumber::from_raw(TOO_BIG_CHAR);
 
-    let spare_size = st.strings.pool_size - st.strings.string_vacancies;
+    let spare_size = st.strings.pool_size.raw() - st.strings.string_vacancies;
     let loaded = st.strings.load_pool_strings(spare_size)?;
     if loaded == StrNumber::NONE {
         return Err(Abort::Internal("must increase pool_size"));
@@ -173,8 +173,7 @@ fn primitive(st: &mut EngineState, ident: &str, c: Cmd, o: i32) -> Result<EqtbPt
         cs = st
             .eqtb
             .id_lookup(&mut st.strings, st.input.buffer.span(first, first + len))?;
-        st.strings.str_ptr -= 1;
-        st.strings.discard_cur_string();
+        st.strings.flush_string();
         st.eqtb.set_text(cs, s);
         st.eqtb.prim_lookup(&mut st.strings, s)?
     } else {
@@ -424,7 +423,6 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.scanner.sa_level = LEVEL_ZERO;
     st.scanner.disc_ptr[BoxCode::LastBox as usize] = MemPtr::NULL;
     st.scanner.disc_ptr[BoxCode::Vsplit as usize] = MemPtr::NULL;
-    st.strings.edit_name_start = 0;
     st.scanner.stop_at_space = true;
 }
 
@@ -770,9 +768,9 @@ pub(crate) fn initialize_engine(
         st.config.file_line_error_style_p = 0;
     }
 
-    st.strings.pool_size = 6_250_000;
+    st.strings.pool_size = PoolPos::from_raw(6_250_000);
     st.strings.string_vacancies = 90_000;
-    st.strings.max_strings = 565_536;
+    st.strings.max_strings = StrNumber::from_raw(565_536);
     st.fonts.font_mem_size = 8_000_000;
     st.fonts.font_max = FontId::from_raw(9_000);
     st.hyph.trie_size = 1_000_000;
@@ -817,8 +815,8 @@ pub(crate) fn initialize_engine(
         st.eqtb.hash_used = st.eqtb.hash_top;
 
         st.eqtb.data = zeroed_vec(st.eqtb.eqtb_top.index() + 1);
-        st.strings.str_start = vec![0; st.strings.max_strings as usize + 1];
-        st.strings.str_pool = vec![0; st.strings.pool_size as usize + 1];
+        st.strings.str_start = vec![PoolPos::ZERO; st.strings.max_strings.slot() + 1];
+        st.strings.str_pool = vec![0; st.strings.pool_size.index() + 1];
         st.fonts.font_info = zeroed_vec(st.fonts.font_mem_size as usize + 1);
     }
 
@@ -837,7 +835,7 @@ pub(crate) fn initialize_engine(
         bad = 16;
     }
     if i32::try_from(st.save_stack.save_size).map_or(true, |s| s > MAX_HALFWORD)
-        || st.strings.max_strings > MAX_HALFWORD
+        || st.strings.max_strings.raw() > MAX_HALFWORD
     {
         bad = 17;
     }

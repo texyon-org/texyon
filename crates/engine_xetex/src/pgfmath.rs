@@ -338,7 +338,7 @@ fn cs_name(st: &EngineState, cs: EqtbPtr) -> Option<String> {
         return None;
     }
     let text = st.eqtb.text(cs);
-    if text.raw() <= 0 || text.raw() >= st.strings.str_ptr {
+    if text.raw() <= 0 || text >= st.strings.str_ptr {
         return None;
     }
     crate::introspect::read_string(st, text)

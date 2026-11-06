@@ -12,7 +12,7 @@ use crate::state::{
     MemState, SaveStackState, ScannerState, ShipoutState, StringsState, SynctexCtxt, TexmfState,
 };
 use crate::sync_index::PreviewSyncIndex;
-use crate::units::{BufPos, EqtbPtr, FontId, MemPtr, SavePtr, Scaled, StrNumber};
+use crate::units::{BufPos, EqtbPtr, FontId, MemPtr, PoolPos, SavePtr, Scaled, StrNumber};
 
 fn vec_bytes<T>(values: &Vec<T>) -> usize {
     values.capacity() * size_of::<T>()
@@ -31,7 +31,7 @@ impl StringWatermark {
 
     fn of(strings: &StringsState) -> Self {
         Self {
-            pool: strings.pool_ptr.max(0) as usize,
+            pool: strings.pool_ptr.index(),
             starts: strings.cur_start_slot(),
         }
     }
@@ -294,19 +294,18 @@ impl EqtbBundle {
 
 struct StringsBundle {
     base: StringWatermark,
-    str_ptr: i32,
-    max_strings: i32,
-    init_str_ptr: i32,
-    init_pool_ptr: i32,
+    str_ptr: StrNumber,
+    max_strings: StrNumber,
+    init_str_ptr: StrNumber,
+    init_pool_ptr: PoolPos,
     job_name: StrNumber,
     texmf_log_name: StrNumber,
     string_vacancies: i32,
-    pool_size: i32,
-    pool_ptr: i32,
+    pool_size: PoolPos,
+    pool_ptr: PoolPos,
     format_ident: StrNumber,
-    edit_name_start: i32,
     pool_span: Vec<u16>,
-    start_span: Vec<i32>,
+    start_span: Vec<PoolPos>,
 }
 
 impl StringsBundle {
@@ -323,7 +322,6 @@ impl StringsBundle {
             pool_size,
             pool_ptr,
             format_ident,
-            edit_name_start,
             str_start,
             str_pool,
         } = src;
@@ -347,7 +345,6 @@ impl StringsBundle {
             pool_size: *pool_size,
             pool_ptr: *pool_ptr,
             format_ident: *format_ident,
-            edit_name_start: *edit_name_start,
             pool_span: str_pool[base.pool..top.pool].to_vec(),
             start_span: if base.starts < str_start.len() {
                 str_start[base.starts..=top.starts.min(str_start.len() - 1)].to_vec()
@@ -368,7 +365,6 @@ impl StringsBundle {
         dst.pool_size = self.pool_size;
         dst.pool_ptr = self.pool_ptr;
         dst.format_ident = self.format_ident;
-        dst.edit_name_start = self.edit_name_start;
         dst.str_pool[self.base.pool..][..self.pool_span.len()].copy_from_slice(&self.pool_span);
         dst.str_start[self.base.starts..][..self.start_span.len()]
             .copy_from_slice(&self.start_span);
@@ -889,7 +885,7 @@ mod tests {
     fn state() -> EngineState {
         let mut st = EngineState::default();
         st.strings.str_pool = vec![0; 16];
-        st.strings.str_start = vec![0; 8];
+        st.strings.str_start = vec![crate::units::PoolPos::ZERO; 8];
         st.input.buffer = crate::state::InputBuffer(vec![0; 8]);
         st.input.input_stack = TexStack::with_size(3);
         st.input.param_stack = TexStack::with_size(3);
@@ -910,7 +906,7 @@ mod tests {
             st.shipout.dvi.set_char(c).unwrap();
         }
         st.strings.str_pool[0] = 11;
-        st.strings.pool_ptr = 1;
+        st.strings.pool_ptr = crate::units::PoolPos::from_raw(1);
         st.save_stack.save_ptr = SavePtr::from_raw(1);
         st.save_stack.set_saved(-1, 12);
         st.input.buffer.0[0] = 13;

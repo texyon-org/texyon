@@ -537,7 +537,7 @@ impl MemState {
         let nlen = strings.cur_length();
         let word = self.new_native_word_node(eqtb, first.native_font(self), nlen)?;
         word.set_subtype(self, first.subtype(self));
-        let base = strings.cur_string_start() as usize;
+        let base = strings.cur_string_start().index();
         word.native_text_mut(self)
             .copy_from_slice(&strings.str_pool[base..base + nlen as usize]);
         word.set_width(self, width);

@@ -815,8 +815,7 @@ fn store_hyph_exception(st: &mut EngineState, mut n: usize, p: MemPtr) -> Result
         if strings.length(k) == strings.length(s)
             && strings.str_pool[strings.str_range(k)] == strings.str_pool[strings.str_range(s)]
         {
-            st.strings.str_ptr -= 1;
-            st.strings.pool_ptr = st.strings.cur_string_start();
+            st.strings.flush_string();
             s = k;
             hyph.hyph_count -= 1;
             break;

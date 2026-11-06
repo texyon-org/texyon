@@ -426,7 +426,7 @@ fn restore_scan(st: &mut EngineState, saved: &SavedScan) {
 
 fn unseal_pending_str(st: &mut EngineState, saved: &SavedScan) {
     if saved.pending_str {
-        st.strings.str_ptr -= 1;
+        st.strings.str_ptr = st.strings.str_ptr.prev();
     }
 }
 
@@ -456,7 +456,7 @@ fn ins_file_query_result(
     st: &mut EngineState,
     saved: &SavedScan,
     s: StrNumber,
-    b: i32,
+    b: crate::units::PoolPos,
 ) -> Result<(), Abort> {
     let tail = st.mem.str_toks_cat(&mut st.strings, b, None)?;
     st.strings.flush_str(s);
