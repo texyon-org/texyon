@@ -394,7 +394,7 @@ fn scan_int_or_dimen(st: &mut EngineState, this_if: IfCode) -> Result<i32, Abort
     if this_if == IfCode::Num {
         scan_int(st)
     } else {
-        Ok(crate::scan::scan_dimen(st, false, false, false)?.raw())
+        Ok(crate::scan::scan_dimen(st, false, false)?.raw())
     }
 }
 
@@ -787,8 +787,6 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
         });
     }
 
-    let cv_backup = st.scanner.cur_val;
-    let cvl_backup = st.scanner.cur_val_level;
     let radix_backup = st.scanner.radix;
     let co_backup = st.scanner.cur_order;
     let backup_backup = BACKUP_HEAD.link(&st.mem);
@@ -961,8 +959,6 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
         break;
     }
 
-    st.scanner.cur_val = cv_backup;
-    st.scanner.cur_val_level = cvl_backup;
     st.scanner.radix = radix_backup;
     st.scanner.cur_order = co_backup;
     BACKUP_HEAD.set_link(&mut st.mem, backup_backup);

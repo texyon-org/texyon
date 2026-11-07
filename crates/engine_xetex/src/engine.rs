@@ -348,8 +348,6 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.scanner.expand_depth_count = 0;
     st.scanner.is_in_csname = false;
     st.scanner.cur_mark = CurMarks::NULL;
-    st.scanner.cur_val = 0;
-    st.scanner.cur_val_level = ValueLevel::Int;
     st.scanner.radix = 0;
     st.scanner.cur_order = GlueOrder::Normal;
 

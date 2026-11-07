@@ -364,7 +364,7 @@ pub(super) fn begin_box(st: &mut EngineState, box_context: i32) -> Result<(), Ab
                 ]);
                 crate::errors::error(st)?;
             }
-            let d = crate::scan::scan_dimen(st, false, false, false)?;
+            let d = crate::scan::scan_dimen(st, false, false)?;
             st.scanner.cur_box = crate::packaging::vsplit(st, n, d)?.map(BoxOrRule::Box);
         }
         BoxCode::Vtop | BoxCode::Vbox | BoxCode::Hbox => {

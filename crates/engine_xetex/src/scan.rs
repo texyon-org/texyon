@@ -85,9 +85,9 @@ pub(crate) fn scan_spec(
         0
     };
     let spec = if scan_keyword(st, "to")? {
-        PackSpec::Exactly(scan_dimen(st, false, false, false)?)
+        PackSpec::Exactly(scan_dimen(st, false, false)?)
     } else if scan_keyword(st, "spread")? {
-        PackSpec::Additional(scan_dimen(st, false, false, false)?)
+        PackSpec::Additional(scan_dimen(st, false, false)?)
     } else {
         PackSpec::NATURAL
     };
@@ -121,13 +121,13 @@ pub(crate) fn scan_rule_spec(st: &mut EngineState) -> Result<NodePtr<RuleNode>, 
     }
     loop {
         if scan_keyword(st, "width")? {
-            let d = xetex_scan_dimen(st, false, false, false, true)?;
+            let d = xetex_scan_dimen(st, false, false, true)?;
             r.set_width(&mut st.mem, RuleDimen::from_raw(d.raw()));
         } else if scan_keyword(st, "height")? {
-            let d = xetex_scan_dimen(st, false, false, false, true)?;
+            let d = xetex_scan_dimen(st, false, false, true)?;
             r.set_height(&mut st.mem, RuleDimen::from_raw(d.raw()));
         } else if scan_keyword(st, "depth")? {
-            let d = xetex_scan_dimen(st, false, false, false, true)?;
+            let d = xetex_scan_dimen(st, false, false, true)?;
             r.set_depth(&mut st.mem, RuleDimen::from_raw(d.raw()));
         } else {
             break;

@@ -58,8 +58,9 @@ State and memory:
     `TOO_BIG_CHAR`, else a pool string): the string pool API, `text(p)`,
     font names and areas, `job_name` and the scanned file name parts.
     `StrNumber::NONE` is TeX's 0 for "no string".
-  - `cur_val` stays a raw `i32` because it holds whatever was scanned.
-    `cur_dimen()` and `set_cur_dimen()` read and write it as a length.
+  - `CurVal` (`scan/internal.rs`) replaces WEB's `cur_val` and
+    `cur_val_level` globals: `scan_something_internal` and `scan_expr`
+    return the value tagged with its level.
 - `consts.rs`: WEB `@d` constants and the `eqtb` layout (region bases).
 - `params.rs`: `IntPar`, `DimenPar`, `GluePar` and `TokPar`, the `eqtb`
   parameters read through `EqtbState::int_par`, `dimen_par`, `glue_par` and
@@ -71,7 +72,7 @@ State and memory:
   `cat_code`, `par_shape`, ...). The save stack has `saved(k)` and
   `save_type`/`save_level`/`save_index`.
   Integer fields that can hold a pointer have typed getters, so callers do
-  not convert: `equiv_ptr`, `save_index_ptr`, `cur_chr_ptr`/`cur_val_ptr`,
+  not convert: `equiv_ptr`, `save_index_ptr`, `cur_chr_ptr`,
   a token-list level's `token_start`/`token_loc`, a nest level's
   `prev_depth`/`space_factor`/`clang`/`incompleat_noad` (its `aux` word by
   mode) and `info_ptr` of a one-word node.
@@ -83,7 +84,7 @@ State and memory:
   `BoxDimenCode`, `ShowCode`, `InputCode`, `PageIntCode`, `TheCode`,
   `MarkCode`, `MathCharNumCode`, `DelimNumCode`, `MathAccentCode`,
   `RadicalCode`) and other small code sets (`ValueLevel` for
-  `cur_val_level` and sparse-array types, `ScannerStatus`). `cur_mark` is
+  `CurVal` levels and sparse-array types, `ScannerStatus`). `cur_mark` is
   indexed by `MarkCode` and `sa_root` by `ValueLevel`. `code_enum!`
   gives each `from_raw` (a jump table) and `raw`, and `name()` where the
   variants are primitives, which `primitives.rs` and `print_cmd_chr` share.

@@ -16,7 +16,7 @@ use crate::state::EngineState;
 use crate::token::Token;
 use crate::units::{GlueOrder, MemPtr, Scaled};
 
-use super::internal::scan_something_internal;
+use super::internal::{scan_something_internal, CurVal};
 use super::next::{get_token, get_x_non_blank, get_x_token};
 use super::{math_char, scan_keyword};
 
@@ -53,16 +53,15 @@ pub(super) fn bad_int_error(
     int_error(st, value)
 }
 
-fn int_range_error(st: &mut EngineState, err: &str, help1: &'static str) -> Result<(), Abort> {
-    bad_int_error(
-        st,
-        err,
-        st.scanner.cur_val,
-        help1,
-        "I changed this one to zero.",
-    )?;
-    st.scanner.cur_val = 0;
-    Ok(())
+/// Reports the out-of-range integer `value` and yields zero in its place.
+fn int_range_error(
+    st: &mut EngineState,
+    err: &str,
+    value: i32,
+    help1: &'static str,
+) -> Result<i32, Abort> {
+    bad_int_error(st, err, value, help1, "I changed this one to zero.")?;
+    Ok(0)
 }
 
 fn scan_int_up_to(
@@ -73,9 +72,9 @@ fn scan_int_up_to(
 ) -> Result<i32, Abort> {
     let n = scan_int(st)?;
     if n < 0 || n > max {
-        int_range_error(st, err, help)?;
+        return int_range_error(st, err, n, help);
     }
-    Ok(st.scanner.cur_val)
+    Ok(n)
 }
 
 pub(crate) fn scan_char_class(st: &mut EngineState) -> Result<i32, Abort> {
@@ -133,15 +132,16 @@ pub(crate) fn scan_four_bit_int(st: &mut EngineState) -> Result<i32, Abort> {
 }
 
 pub(crate) fn scan_four_bit_int_or_18(st: &mut EngineState) -> Result<i32, Abort> {
-    scan_int(st)?;
-    if st.scanner.cur_val < 0 || (st.scanner.cur_val > 15 && st.scanner.cur_val != 18) {
-        int_range_error(
+    let n = scan_int(st)?;
+    if n < 0 || (n > 15 && n != 18) {
+        return int_range_error(
             st,
             "Bad number",
+            n,
             "Since I expected to read a number between 0 and 15,",
-        )?;
+        );
     }
-    Ok(st.scanner.cur_val)
+    Ok(n)
 }
 
 pub(crate) fn scan_fifteen_bit_int(st: &mut EngineState) -> Result<i32, Abort> {
@@ -181,38 +181,40 @@ pub(crate) fn scan_delimiter_int(st: &mut EngineState) -> Result<i32, Abort> {
 }
 
 pub(crate) fn scan_register_num(st: &mut EngineState) -> Result<i32, Abort> {
-    scan_int(st)?;
-    if st.scanner.cur_val < 0 || st.scanner.cur_val > st.scanner.max_reg_num {
-        int_range_error(
+    let n = scan_int(st)?;
+    if n < 0 || n > st.scanner.max_reg_num {
+        return int_range_error(
             st,
             "Bad register code",
+            n,
             "A register number must be between 0 and 32767.",
-        )?;
+        );
     }
-    Ok(st.scanner.cur_val)
+    Ok(n)
 }
 
 pub(crate) fn scan_xetex_math_char_int(st: &mut EngineState) -> Result<i32, Abort> {
-    scan_int(st)?;
-    if math_char(st.scanner.cur_val) == ACTIVE_MATH_CHAR {
-        if st.scanner.cur_val != ACTIVE_MATH_CHAR {
+    let n = scan_int(st)?;
+    if math_char(n) == ACTIVE_MATH_CHAR {
+        if n != ACTIVE_MATH_CHAR {
             bad_int_error(
                 st,
                 "Bad active XeTeX math code",
-                st.scanner.cur_val,
+                n,
                 "Since I ignore class and family for active math chars,",
                 "I changed this one to \"1FFFFF.",
             )?;
-            st.scanner.cur_val = ACTIVE_MATH_CHAR;
+            return Ok(ACTIVE_MATH_CHAR);
         }
-    } else if math_char(st.scanner.cur_val) > BIGGEST_USV {
-        int_range_error(
+    } else if math_char(n) > BIGGEST_USV {
+        return int_range_error(
             st,
             "Bad XeTeX math character code",
+            n,
             "Since I expected a character number between 0 and \"10FFFF,",
-        )?;
+        );
     }
-    Ok(st.scanner.cur_val)
+    Ok(n)
 }
 
 /// Skips blanks and signs, returning whether the net sign is negative.
@@ -258,6 +260,7 @@ pub(super) fn get_primitive_token(st: &mut EngineState) -> Result<(), Abort> {
 
 pub(crate) fn scan_int(st: &mut EngineState) -> Result<i32, Abort> {
     let mut ok_so_far = true;
+    let mut v: i32;
     st.scanner.radix = 0;
     let negative = scan_signs(st)?;
 
@@ -265,24 +268,24 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<i32, Abort> {
         if st.scanner.cur_tok == ALPHA_TOKEN {
             get_token(st)?;
             if !st.scanner.cur_tok.is_cs() {
-                st.scanner.cur_val = st.scanner.cur_chr;
+                v = st.scanner.cur_chr;
                 if st.scanner.cur_cmd == Cmd::RightBrace {
                     st.scanner.align_state += 1;
                 } else if st.scanner.cur_cmd < Cmd::RightBrace {
                     st.scanner.align_state -= 1;
                 }
             } else if st.scanner.cur_tok < Token::from_cs(SINGLE_BASE) {
-                st.scanner.cur_val = st.scanner.cur_tok.cs() - ACTIVE_BASE;
+                v = st.scanner.cur_tok.cs() - ACTIVE_BASE;
             } else {
-                st.scanner.cur_val = st.scanner.cur_tok.cs() - SINGLE_BASE;
+                v = st.scanner.cur_tok.cs() - SINGLE_BASE;
             }
-            if st.scanner.cur_val > BIGGEST_USV {
+            if v > BIGGEST_USV {
                 print_err(st, "Improper alphabetic constant");
                 st.errors.help(&[
                     "A one-character control sequence belongs after a ` mark.",
                     r"So I'm essentially inserting \0 here.",
                 ]);
-                st.scanner.cur_val = i32::from(b'0');
+                v = i32::from(b'0');
                 back_error(st)?;
             } else {
                 scan_optional_space(st)?;
@@ -292,7 +295,10 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<i32, Abort> {
             continue;
         } else if st.scanner.cur_cmd >= Cmd::MIN_INTERNAL && st.scanner.cur_cmd <= Cmd::MAX_INTERNAL
         {
-            scan_something_internal(st, ValueLevel::Int, false)?;
+            v = match scan_something_internal(st, ValueLevel::Int, false)? {
+                CurVal::Int(n) => n,
+                _ => return Err(Abort::Confusion("scan_int")),
+            };
         } else {
             let (radix, m) = if st.scanner.cur_tok == OCTAL_TOKEN {
                 get_x_token(st)?;
@@ -305,7 +311,7 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<i32, Abort> {
             };
             st.scanner.radix = radix as u8;
             let mut vacuous = true;
-            st.scanner.cur_val = 0;
+            v = 0;
             loop {
                 let tok = st.scanner.cur_tok;
                 let d = if let Some(d) = tok.other_digit().filter(|&d| d < radix) {
@@ -318,7 +324,7 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<i32, Abort> {
                     break;
                 };
                 vacuous = false;
-                if st.scanner.cur_val >= m && (st.scanner.cur_val > m || d > 7 || radix != 10) {
+                if v >= m && (v > m || d > 7 || radix != 10) {
                     if ok_so_far {
                         print_err(st, "Number too big");
                         st.errors.help(&[
@@ -326,11 +332,11 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<i32, Abort> {
                             "so I'm using that number instead of yours.",
                         ]);
                         error(st)?;
-                        st.scanner.cur_val = TEX_INFINITY;
+                        v = TEX_INFINITY;
                         ok_so_far = false;
                     }
                 } else {
-                    st.scanner.cur_val = st.scanner.cur_val * radix + d;
+                    v = v * radix + d;
                 }
                 get_x_token(st)?;
             }
@@ -350,77 +356,89 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<i32, Abort> {
     }
 
     if negative {
-        st.scanner.cur_val = st.scanner.cur_val.wrapping_neg();
+        v = v.wrapping_neg();
     }
-    Ok(st.scanner.cur_val)
+    Ok(v)
 }
-pub(crate) fn scan_dimen(
+
+pub(crate) fn scan_dimen(st: &mut EngineState, mu: bool, inf: bool) -> Result<Scaled, Abort> {
+    scan_dimen_from(st, mu, inf, None, true)
+}
+
+/// Scans a dimension, or a bare number when `requires_units` is false.
+pub(crate) fn xetex_scan_dimen(
     st: &mut EngineState,
     mu: bool,
     inf: bool,
-    shortcut: bool,
+    requires_units: bool,
 ) -> Result<Scaled, Abort> {
-    xetex_scan_dimen(st, mu, inf, shortcut, true)
+    scan_dimen_from(st, mu, inf, None, requires_units)
 }
+
 /// A glue spec pointer held in a raw word.
 pub(super) fn glue_spec(p: i32) -> NodePtr<GlueSpecNode> {
     NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(p))
 }
 
-/// Replaces the glue in `cur_val` by its width, releasing the glue.
-pub(super) fn glue_to_width(st: &mut EngineState) {
-    let spec = st.scanner.cur_glue();
-    st.scanner.set_cur_dimen(spec.width(&st.mem));
+/// The width of a scanned glue value, releasing the glue.
+fn release_to_width(st: &mut EngineState, spec: NodePtr<GlueSpecNode>) -> Scaled {
+    let width = spec.width(&st.mem);
     st.mem.delete_glue_ref(spec);
+    width
 }
 
-/// Scales `cur_val` and the fraction `f` by `num / denom`.
-fn scale_dimen(st: &mut EngineState, f: &mut i32, num: i32, denom: i32) {
-    st.scanner.cur_val = st.errors.xn_over_d(st.scanner.cur_val, num, denom);
+/// Scales `v` and the fraction `f` by `num / denom`.
+fn scale_dimen(st: &mut EngineState, v: &mut i32, f: &mut i32, num: i32, denom: i32) {
+    *v = st.errors.xn_over_d(*v, num, denom);
     *f = (num * *f + 65536 * st.errors.tex_remainder) / denom;
-    st.scanner.cur_val += *f / 65536;
+    *v += *f / 65536;
     *f %= 65536;
 }
 
-/// Sets `cur_val` to `integer.fraction` times the unit `v`.
-fn attach_unit(st: &mut EngineState, integer: i32, fraction: i32, v: Scaled) {
+/// `integer.fraction` times the unit `v`.
+fn attach_unit(st: &mut EngineState, integer: i32, fraction: i32, v: Scaled) -> Scaled {
     let fraction_part = st.errors.xn_over_d(v, fraction, 65536);
-    let d = st.errors.mult_and_add(integer, v, fraction_part, MAX_DIMEN);
-    st.scanner.set_cur_dimen(d);
+    st.errors.mult_and_add(integer, v, fraction_part, MAX_DIMEN)
 }
 
-pub(crate) fn xetex_scan_dimen(
+/// Scans a dimension. `shortcut` is an integer already scanned, which then only needs units.
+fn scan_dimen_from(
     st: &mut EngineState,
     mu: bool,
     inf: bool,
-    shortcut: bool,
+    shortcut: Option<i32>,
     requires_units: bool,
 ) -> Result<Scaled, Abort> {
     let mut f: i32 = 0;
     let mut negative = false;
+    let mut v: i32;
 
     st.errors.arith_error = false;
     st.scanner.cur_order = GlueOrder::Normal;
 
     'attach_sign: {
-        if !shortcut {
+        if let Some(n) = shortcut {
+            v = n;
+        } else {
             negative = scan_signs(st)?;
 
             if st.scanner.cur_cmd >= Cmd::MIN_INTERNAL && st.scanner.cur_cmd <= Cmd::MAX_INTERNAL {
                 if mu {
-                    scan_something_internal(st, ValueLevel::Mu, false)?;
-                    if st.scanner.cur_val_level >= ValueLevel::Glue {
-                        glue_to_width(st);
+                    let val = scan_something_internal(st, ValueLevel::Mu, false)?;
+                    v = match val.glue() {
+                        Some(spec) => release_to_width(st, spec),
+                        None => val.scaled()?,
                     }
-                    if st.scanner.cur_val_level == ValueLevel::Mu {
-                        break 'attach_sign;
-                    }
-                    if st.scanner.cur_val_level != ValueLevel::Int {
-                        mu_error(st)?;
+                    .raw();
+                    match val {
+                        CurVal::Mu(_) => break 'attach_sign,
+                        CurVal::Int(_) => {}
+                        _ => mu_error(st)?,
                     }
                 } else {
-                    scan_something_internal(st, ValueLevel::Dimen, false)?;
-                    if st.scanner.cur_val_level == ValueLevel::Dimen {
+                    let val = scan_something_internal(st, ValueLevel::Dimen, false)?;
+                    v = val.scaled()?.raw();
+                    if let CurVal::Dimen(_) = val {
                         break 'attach_sign;
                     }
                 }
@@ -430,10 +448,10 @@ pub(crate) fn xetex_scan_dimen(
                     st.scanner.cur_tok = POINT_TOKEN;
                 }
                 if st.scanner.cur_tok != POINT_TOKEN {
-                    scan_int(st)?;
+                    v = scan_int(st)?;
                 } else {
                     st.scanner.radix = 10;
-                    st.scanner.cur_val = 0;
+                    v = 0;
                 }
                 if st.scanner.cur_tok == CONTINENTAL_POINT_TOKEN {
                     st.scanner.cur_tok = POINT_TOKEN;
@@ -471,9 +489,9 @@ pub(crate) fn xetex_scan_dimen(
             }
         }
 
-        if st.scanner.cur_val < 0 {
+        if v < 0 {
             negative = !negative;
-            st.scanner.cur_val = st.scanner.cur_val.wrapping_neg();
+            v = v.wrapping_neg();
         }
 
         if requires_units {
@@ -493,24 +511,26 @@ pub(crate) fn xetex_scan_dimen(
                     break 'units true;
                 }
 
-                let save_cur_val = st.scanner.cur_val;
+                let integer = v;
                 get_x_non_blank(st)?;
 
                 if st.scanner.cur_cmd >= Cmd::MIN_INTERNAL
                     && st.scanner.cur_cmd <= Cmd::MAX_INTERNAL
                 {
-                    if mu {
-                        scan_something_internal(st, ValueLevel::Mu, false)?;
-                        if st.scanner.cur_val_level >= ValueLevel::Glue {
-                            glue_to_width(st);
-                        }
-                        if st.scanner.cur_val_level != ValueLevel::Mu {
+                    let unit = if mu {
+                        let val = scan_something_internal(st, ValueLevel::Mu, false)?;
+                        let unit = match val.glue() {
+                            Some(spec) => release_to_width(st, spec),
+                            None => val.scaled()?,
+                        };
+                        if !matches!(val, CurVal::Mu(_)) {
                             mu_error(st)?;
                         }
+                        unit
                     } else {
-                        scan_something_internal(st, ValueLevel::Dimen, false)?;
-                    }
-                    attach_unit(st, save_cur_val, f, st.scanner.cur_dimen());
+                        scan_something_internal(st, ValueLevel::Dimen, false)?.scaled()?
+                    };
+                    v = attach_unit(st, integer, f, unit).raw();
                     break 'attach_sign;
                 }
 
@@ -526,9 +546,9 @@ pub(crate) fn xetex_scan_dimen(
                     };
                     if let Some(code) = font_param {
                         let font = st.eqtb.cur_font();
-                        let v = st.fonts.param(font, code);
+                        let unit = st.fonts.param(font, code);
                         scan_optional_space(st)?;
-                        attach_unit(st, save_cur_val, f, v);
+                        v = attach_unit(st, integer, f, unit).raw();
                         break 'attach_sign;
                     }
                 }
@@ -553,7 +573,7 @@ pub(crate) fn xetex_scan_dimen(
                     crate::save::prepare_mag(st)?;
                     let mag = st.eqtb.int_par(IntPar::Mag);
                     if mag != 1000 {
-                        scale_dimen(st, &mut f, 1000, mag);
+                        scale_dimen(st, &mut v, &mut f, 1000, mag);
                     }
                 }
 
@@ -590,39 +610,40 @@ pub(crate) fn xetex_scan_dimen(
                     error(st)?;
                     break 'units true;
                 };
-                scale_dimen(st, &mut f, num, denom);
+                scale_dimen(st, &mut v, &mut f, num, denom);
                 true
             };
 
             if apply_fraction {
-                attach_fraction(st, f);
+                attach_fraction(st, &mut v, f);
             }
             scan_optional_space(st)?;
         } else {
-            attach_fraction(st, f);
+            attach_fraction(st, &mut v, f);
         }
     }
 
-    if st.errors.arith_error || st.scanner.cur_val.wrapping_abs() >= 0x4000_0000 {
+    if st.errors.arith_error || v.wrapping_abs() >= 0x4000_0000 {
         print_err(st, "Dimension too large");
         st.errors.help(&[
             "I can't work with sizes bigger than about 19 feet.",
             "Continue and I'll use the largest value I can.",
         ]);
         error(st)?;
-        st.scanner.cur_val = MAX_HALFWORD;
+        v = MAX_HALFWORD;
         st.errors.arith_error = false;
     }
     if negative {
-        st.scanner.cur_val = st.scanner.cur_val.wrapping_neg();
+        v = v.wrapping_neg();
     }
-    Ok(st.scanner.cur_dimen())
+    Ok(Scaled::from_raw(v))
 }
-fn attach_fraction(st: &mut EngineState, f: i32) {
-    if st.scanner.cur_val >= 16384 {
+
+fn attach_fraction(st: &mut EngineState, v: &mut i32, f: i32) {
+    if *v >= 16384 {
         st.errors.arith_error = true;
     } else {
-        st.scanner.cur_val = st.scanner.cur_val.wrapping_mul(65536).wrapping_add(f);
+        *v = v.wrapping_mul(65536).wrapping_add(f);
     }
 }
 
@@ -633,43 +654,49 @@ pub(crate) fn scan_glue(
     let mu = level == ValueLevel::Mu;
     let negative = scan_signs(st)?;
 
-    if st.scanner.cur_cmd >= Cmd::MIN_INTERNAL && st.scanner.cur_cmd <= Cmd::MAX_INTERNAL {
-        scan_something_internal(st, level, negative)?;
-        if st.scanner.cur_val_level >= ValueLevel::Glue {
-            if st.scanner.cur_val_level != level {
-                mu_error(st)?;
+    let width =
+        if st.scanner.cur_cmd >= Cmd::MIN_INTERNAL && st.scanner.cur_cmd <= Cmd::MAX_INTERNAL {
+            let val = scan_something_internal(st, level, negative)?;
+            if let Some(spec) = val.glue() {
+                if val.level() != level {
+                    mu_error(st)?;
+                }
+                return Ok(spec);
             }
-            return Ok(st.scanner.cur_glue());
-        }
-        if st.scanner.cur_val_level == ValueLevel::Int {
-            scan_dimen(st, mu, false, true)?;
-        } else if level == ValueLevel::Mu {
-            mu_error(st)?;
-        }
-    } else {
-        back_input(st)?;
-        scan_dimen(st, mu, false, false)?;
-        if negative {
-            st.scanner.cur_val = st.scanner.cur_val.wrapping_neg();
-        }
-    }
+            match val {
+                CurVal::Int(n) => scan_dimen_from(st, mu, false, Some(n), true)?,
+                _ => {
+                    if level == ValueLevel::Mu {
+                        mu_error(st)?;
+                    }
+                    val.scaled()?
+                }
+            }
+        } else {
+            back_input(st)?;
+            let d = scan_dimen(st, mu, false)?;
+            if negative {
+                -d
+            } else {
+                d
+            }
+        };
 
     let gs = st.mem.new_spec(crate::mem::ZERO_GLUE)?;
-    gs.set_width(&mut st.mem, st.scanner.cur_dimen());
+    gs.set_width(&mut st.mem, width);
 
     if scan_keyword(st, "plus")? {
-        let d = scan_dimen(st, mu, true, false)?;
+        let d = scan_dimen(st, mu, true)?;
         gs.set_stretch(&mut st.mem, d);
         gs.set_stretch_order(&mut st.mem, st.scanner.cur_order);
     }
     if scan_keyword(st, "minus")? {
-        let d = scan_dimen(st, mu, true, false)?;
+        let d = scan_dimen(st, mu, true)?;
         gs.set_shrink(&mut st.mem, d);
         gs.set_shrink_order(&mut st.mem, st.scanner.cur_order);
     }
 
-    st.scanner.cur_val = gs.ptr().raw();
-    Ok(st.scanner.cur_glue())
+    Ok(gs)
 }
 pub(super) fn scan_normal_glue(st: &mut EngineState) -> Result<NodePtr<GlueSpecNode>, Abort> {
     scan_glue(st, ValueLevel::Glue)
@@ -727,8 +754,8 @@ fn add_glue(st: &mut EngineState, e: NodePtr<GlueSpecNode>, t: NodePtr<GlueSpecN
     normalize_glue_orders(st, e);
 }
 
-pub(super) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
-    let mut l = st.scanner.cur_val_level;
+/// Scans an `\numexpr`-style expression whose result has level `l`.
+pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVal, Abort> {
     let a = st.errors.arith_error;
     let mut b = false;
     let mut p = MemPtr::NULL;
@@ -777,7 +804,7 @@ pub(super) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
                 back_input(st)?;
                 f = match o {
                     ValueLevel::Int => scan_int(st)?,
-                    ValueLevel::Dimen => scan_dimen(st, false, false, false)?.raw(),
+                    ValueLevel::Dimen => scan_dimen(st, false, false)?.raw(),
                     ValueLevel::Glue => scan_normal_glue(st)?.ptr().raw(),
                     _ => scan_mu_glue(st)?.ptr().raw(),
                 };
@@ -938,7 +965,5 @@ pub(super) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
         }
     }
     st.errors.arith_error = a;
-    st.scanner.cur_val = e;
-    st.scanner.cur_val_level = l;
-    Ok(())
+    CurVal::from_word(l, e)
 }

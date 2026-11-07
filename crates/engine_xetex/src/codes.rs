@@ -93,19 +93,6 @@ code_enum! {
 impl ValueLevel {
     /// `box_val`, the sparse-array type of box registers.
     pub(crate) const BOX: ValueLevel = ValueLevel::Ident;
-
-    /// TeX's `decr(cur_val_level)` when coercing: glue to dimen to int.
-    pub(crate) const fn lower(self) -> ValueLevel {
-        match self {
-            ValueLevel::Int | ValueLevel::Dimen => ValueLevel::Int,
-            ValueLevel::Glue => ValueLevel::Dimen,
-            ValueLevel::Mu => ValueLevel::Glue,
-            ValueLevel::Ident => ValueLevel::Mu,
-            ValueLevel::Tok => ValueLevel::Ident,
-            ValueLevel::InterChar => ValueLevel::Tok,
-            ValueLevel::Mark => ValueLevel::InterChar,
-        }
-    }
 }
 
 code_enum! {

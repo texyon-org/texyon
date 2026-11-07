@@ -543,7 +543,7 @@ pub(super) fn append_glue(st: &mut EngineState) -> Result<NodePtr<GlueNode>, Abo
 
 pub(super) fn append_kern(st: &mut EngineState) -> Result<(), Abort> {
     let s = st.scanner.cur_chr as u16;
-    let d = crate::scan::scan_dimen(st, s == MU_GLUE, false, false)?;
+    let d = crate::scan::scan_dimen(st, s == MU_GLUE, false)?;
     let p = st.mem.new_kern(d)?;
     p.set_subtype(&mut st.mem, s);
     st.input.cur_list.tail_append(&mut st.mem, p.ptr());

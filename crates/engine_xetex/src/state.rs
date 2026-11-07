@@ -1083,7 +1083,6 @@ pub(crate) struct ScannerState {
     pub skip_line: i32,
     pub is_in_csname: bool,
     pub used_tectonic_coda_tokens: bool,
-    pub cur_val_level: ValueLevel,
     pub scanner_status: crate::codes::ScannerStatus,
     pub warning_index: EqtbPtr,
     pub def_ref: crate::token::TokenList,
@@ -1094,7 +1093,6 @@ pub(crate) struct ScannerState {
     pub cur_chr: i32,
     pub cur_cs: crate::units::EqtbPtr,
     pub cur_tok: crate::token::Token,
-    pub cur_val: i32,
     pub cur_ptr: crate::units::MemPtr,
     pub cur_mark: CurMarks,
     pub disc_ptr: [crate::units::MemPtr; 4],
@@ -1875,41 +1873,6 @@ impl ScannerState {
     #[inline(always)]
     pub(crate) fn chr_loc(&self) -> EqtbPtr {
         EqtbPtr::from_raw(self.cur_chr)
-    }
-
-    /// `cur_val` as the dimension that `scan_dimen` left there.
-    #[inline]
-    pub(crate) fn cur_dimen(&self) -> Scaled {
-        Scaled::from_raw(self.cur_val)
-    }
-
-    #[inline]
-    pub(crate) fn set_cur_dimen(&mut self, d: Scaled) {
-        self.cur_val = d.raw();
-    }
-
-    /// `cur_val` as the glue spec that `scan_glue` left there.
-    #[inline]
-    pub(crate) fn cur_glue(&self) -> crate::node::NodePtr<crate::node::GlueSpecNode> {
-        crate::node::NodePtr::from_glue_ptr(self.cur_val_ptr())
-    }
-
-    /// `cur_val` as a pointer, such as a token list.
-    #[inline]
-    pub(crate) fn cur_val_ptr(&self) -> crate::units::MemPtr {
-        crate::units::MemPtr::from_raw(self.cur_val)
-    }
-
-    /// `cur_val` as a token list.
-    #[inline]
-    pub(crate) fn cur_val_tokens(&self) -> crate::token::TokenList {
-        crate::token::TokenList::from_ptr(self.cur_val_ptr())
-    }
-
-    /// `cur_val` at level `ident`: the control sequence of a font identifier.
-    #[inline]
-    pub(crate) fn cur_val_loc(&self) -> EqtbPtr {
-        EqtbPtr::from_raw(self.cur_val)
     }
 
     /// `cur_chr` as the macro a call command carries.

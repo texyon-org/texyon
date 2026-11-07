@@ -150,3 +150,75 @@ fn sparse_registers_restore_at_group_end() {
                   \showthe\count300 \showthe\dimen400");
     assert_eq!(r.shown(), ["4", "2", "3.0pt", "1", "3.0pt"]);
 }
+
+#[test]
+fn internal_values_coerce_down_to_the_wanted_level() {
+    let r = run(
+        r"\skip1=3pt plus 1fil \dimen1=\skip1 \count1=\skip1 \count2=\dimen1
+                  \dimen2=2\skip1 \count3=4 \skip2=\count3 pt plus 1pt
+                  \showthe\dimen1 \showthe\count1 \showthe\count2 \showthe\dimen2
+                  \showthe\skip2",
+    );
+    assert_eq!(
+        r.shown(),
+        ["3.0pt", "196608", "196608", "6.0pt", "4.0pt plus 1.0pt"]
+    );
+    assert_eq!(r.errors(), Vec::<&str>::new());
+}
+
+#[test]
+fn negated_internal_values_leave_their_source_alone() {
+    let r = run(r"\skip1=1pt plus 2fil minus 3pt \skip2=-\skip1
+                  \skip3=-\glueexpr\skip1*2\relax \dimen1=-\dimexpr 1pt+1pt\relax
+                  \count1=-\numexpr 3\relax \showthe\skip1 \showthe\skip2 \showthe\skip3
+                  \showthe\dimen1 \showthe\count1");
+    assert_eq!(
+        r.shown(),
+        [
+            "1.0pt plus 2.0fil minus 3.0pt",
+            "-1.0pt plus -2.0fil minus -3.0pt",
+            "-2.0pt plus -4.0fil minus -6.0pt",
+            "-2.0pt",
+            "-3"
+        ]
+    );
+}
+
+#[test]
+fn a_fetched_glue_register_keeps_its_spec_alive() {
+    let r = run(r"\skip1=1pt plus 1fil \skip2=\skip1 \skip1=2pt
+                  \skip3=5pt minus 1pt \skip4=6pt minus 2pt \showthe\skip2");
+    assert_eq!(r.shown(), ["1.0pt plus 1.0fil"]);
+}
+
+#[test]
+fn mu_glue_converts_only_through_mutoglue_and_gluetomu() {
+    let r = run(r"\muskip1=3mu plus 1fil \skip1=2pt minus 1pt
+                  \showthe\mutoglue\muskip1 \showthe\gluetomu\skip1 \dimen1=\muskip1
+                  \showthe\dimen1");
+    assert_eq!(
+        r.shown(),
+        ["3.0pt plus 1.0fil", "2.0mu minus 1.0mu", "3.0pt"]
+    );
+    assert_eq!(r.errors(), ["Incompatible glue units."]);
+}
+
+#[test]
+fn last_items_read_the_tail_of_the_current_list() {
+    let r = run(
+        r"\setbox0\hbox{\showthe\lastnodetype \penalty7 \showthe\lastpenalty
+                  \showthe\lastnodetype \kern2pt \showthe\lastkern \showthe\lastpenalty}
+                  \setbox0\hbox{$\mskip 3mu plus 1fil \showthe\lastskip$}",
+    );
+    assert_eq!(
+        r.shown(),
+        ["-1", "7", "13", "2.0pt", "0", "3.0mu plus 1.0fil"]
+    );
+}
+
+#[test]
+fn the_rejects_ignorespaces() {
+    let r = run(r"\count1=\the\ignorespaces 5 \showthe\count1");
+    assert_eq!(r.errors(), ["You can't use `\\ignorespaces' after \\the."]);
+    assert_eq!(r.shown(), ["5"]);
+}

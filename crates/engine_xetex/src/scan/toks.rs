@@ -15,9 +15,9 @@ use crate::output::{
 use crate::params::IntPar;
 use crate::state::{EngineState, MemState, Selector};
 use crate::token::{Token, TokenList};
-use crate::units::{BufPos, EqtbPtr, MemPtr, StrNumber};
+use crate::units::{BufPos, EqtbPtr, StrNumber};
 
-use super::internal::{scan_something_internal, set_cur_val};
+use super::internal::{scan_something_internal, CurVal};
 use super::next::{get_next, get_token, get_x_token, x_token};
 use super::{scan_left_brace, NO_EXPAND_FLAG};
 
@@ -188,7 +188,6 @@ pub(crate) fn read_toks(
         }
     }
 
-    st.scanner.cur_val = def_ref.ptr().raw();
     st.scanner.scanner_status = ScannerStatus::Normal;
     st.scanner.align_state = s;
     Ok(def_ref)
@@ -230,9 +229,9 @@ fn new_def_ref(st: &mut EngineState) -> Result<TokenList, Abort> {
 
 pub(crate) fn the_toks(st: &mut EngineState, code: TheCode) -> Result<TokenList, Abort> {
     if code != TheCode::The {
-        scan_general_text(st)?;
+        let tail = scan_general_text(st)?;
         if code == TheCode::Unexpanded {
-            return Ok(st.scanner.cur_val_tokens());
+            return Ok(tail);
         }
         let old_setting = st.shipout.selector;
         st.shipout.selector = Selector::NewString;
@@ -246,39 +245,38 @@ pub(crate) fn the_toks(st: &mut EngineState, code: TheCode) -> Result<TokenList,
         return st.mem.str_toks_cat(&mut st.strings, b, None);
     }
     get_x_token(st)?;
-    scan_something_internal(st, ValueLevel::Tok, false)?;
-    if st.scanner.cur_val_level >= ValueLevel::Ident {
+    let val = scan_something_internal(st, ValueLevel::Tok, false)?;
+    if let CurVal::Ident(_) | CurVal::Tok(_) = val {
         let mut p = TEMP_HEAD_TOKS;
         p.set_link(&mut st.mem, TokenList::NULL);
-        if st.scanner.cur_val_level == ValueLevel::Ident {
-            store_new_token(st, &mut p, Token::from_cs(st.scanner.cur_val_loc()))?;
-        } else if st.scanner.cur_val != TEX_NULL {
-            let mut r = st.scanner.cur_val_tokens().link(&st.mem);
-            while !r.is_null() {
-                store_new_token(st, &mut p, r.token(&st.mem))?;
-                r = r.link(&st.mem);
+        match val {
+            CurVal::Ident(loc) => store_new_token(st, &mut p, Token::from_cs(loc))?,
+            CurVal::Tok(list) if !list.is_null() => {
+                let mut r = list.link(&st.mem);
+                while !r.is_null() {
+                    store_new_token(st, &mut p, r.token(&st.mem))?;
+                    r = r.link(&st.mem);
+                }
             }
+            _ => {}
         }
         Ok(p)
     } else {
         let old_setting = st.shipout.selector;
         st.shipout.selector = Selector::NewString;
         let b = st.strings.pool_ptr;
-        match st.scanner.cur_val_level {
-            ValueLevel::Int => print_int(st, st.scanner.cur_val),
-            ValueLevel::Dimen => {
-                crate::output::print_scaled(st, st.scanner.cur_dimen());
+        match val {
+            CurVal::Int(n) => print_int(st, n),
+            CurVal::Dimen(d) => {
+                crate::output::print_scaled(st, d);
                 print(st, "pt");
             }
-            ValueLevel::Glue => {
-                crate::output::print_spec(st, MemPtr::from_raw(st.scanner.cur_val), Some("pt"));
-                st.mem.delete_glue_ref(st.scanner.cur_glue());
+            CurVal::Glue(spec) | CurVal::Mu(spec) => {
+                let unit = if let CurVal::Mu(_) = val { "mu" } else { "pt" };
+                crate::output::print_spec(st, spec.ptr(), Some(unit));
+                st.mem.delete_glue_ref(spec);
             }
-            ValueLevel::Mu => {
-                crate::output::print_spec(st, MemPtr::from_raw(st.scanner.cur_val), Some("mu"));
-                st.mem.delete_glue_ref(st.scanner.cur_glue());
-            }
-            _ => {}
+            CurVal::Ident(_) | CurVal::Tok(_) => {}
         }
         st.shipout.selector = old_setting;
         st.mem.str_toks_cat(&mut st.strings, b, None)
@@ -514,8 +512,8 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
     }
     Ok(())
 }
-/// Scans a balanced text into a list at `link(temp_head)`; `cur_val` is its tail.
-fn scan_general_text(st: &mut EngineState) -> Result<(), Abort> {
+/// Scans a balanced text into a list at `link(temp_head)` and returns its tail.
+fn scan_general_text(st: &mut EngineState) -> Result<TokenList, Abort> {
     let saved_status = st.scanner.scanner_status;
     let saved_warning_index = st.scanner.warning_index;
     let saved_def_ref = st.scanner.def_ref;
@@ -541,16 +539,12 @@ fn scan_general_text(st: &mut EngineState) -> Result<(), Abort> {
     let def_ref = st.scanner.def_ref;
     let list = def_ref.link(&st.mem);
     st.mem.free_avail(def_ref.ptr());
-    st.scanner.cur_val = if list.is_null() {
-        TEMP_HEAD.raw()
-    } else {
-        p.ptr().raw()
-    };
+    let tail = if list.is_null() { TEMP_HEAD_TOKS } else { p };
     TEMP_HEAD_TOKS.set_link(&mut st.mem, list);
     st.scanner.scanner_status = saved_status;
     st.scanner.warning_index = saved_warning_index;
     st.scanner.def_ref = saved_def_ref;
-    Ok(())
+    Ok(tail)
 }
 
 pub(crate) fn scan_pdf_ext_toks(st: &mut EngineState) -> Result<(), Abort> {
@@ -581,6 +575,5 @@ pub(crate) fn compare_strings(st: &mut EngineState) -> Result<i32, Abort> {
 
     st.strings.flush_str(s2);
     st.strings.flush_str(s1);
-    set_cur_val(st, result, ValueLevel::Int);
     Ok(result)
 }

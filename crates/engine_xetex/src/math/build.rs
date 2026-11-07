@@ -353,7 +353,7 @@ pub(crate) fn math_fraction(st: &mut EngineState) -> Result<(), Abort> {
         }
 
         if c % DELIMITED_CODE == ABOVE_CODE {
-            crate::scan::scan_dimen(st, false, false, false)?;
+            crate::scan::scan_dimen(st, false, false)?;
         }
 
         crate::output::print_error_prefix(st);
@@ -374,7 +374,7 @@ pub(crate) fn math_fraction(st: &mut EngineState) -> Result<(), Abort> {
 
         match c % DELIMITED_CODE {
             ABOVE_CODE => {
-                let d = crate::scan::scan_dimen(st, false, false, false)?;
+                let d = crate::scan::scan_dimen(st, false, false)?;
                 aux.set_thickness(&mut st.mem, d);
             }
             OVER_CODE => aux.set_thickness(&mut st.mem, DEFAULT_CODE),
