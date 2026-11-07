@@ -485,10 +485,10 @@ impl MemState {
         match node {
             AnyNode::Ins(_) | AnyNode::Mark(_) | AnyNode::Adjust(_) | AnyNode::Penalty(_) => true,
             AnyNode::Disc(d) => {
-                d.pre_break(self).is_null() && d.post_break(self).is_null() && d.subtype(self) == 0
+                self[d].pre_break.is_null() && self[d].post_break.is_null() && self[d].subtype == 0
             }
-            AnyNode::Math(m) => m.width(self) == Scaled::ZERO,
-            AnyNode::Kern(k) => k.width(self) == Scaled::ZERO || k.subtype(self) == 0,
+            AnyNode::Math(m) => self[m].width == Scaled::ZERO,
+            AnyNode::Kern(k) => self[k].width == Scaled::ZERO || self[k].subtype == 0,
             AnyNode::Glue(g) => {
                 g.glue_ptr(self) == ZERO_GLUE || g.subtype(self) == par_skip.subtype()
             }
@@ -518,8 +518,8 @@ fn print_margin_kern(
         }
         match st.mem.classify(p) {
             Ok(node) if st.mem.is_margin_kern_filler(node, par_skip) => p = next(&st.mem, p),
-            Ok(AnyNode::MarginKern(mk)) if mk.subtype(&st.mem) == side => {
-                break Some(mk.width(&st.mem))
+            Ok(AnyNode::MarginKern(mk)) if st.mem[mk].subtype == side => {
+                break Some(st.mem[mk].width)
             }
             _ => break None,
         }

@@ -599,16 +599,14 @@ macro_rules! impl_traits {
     ($trait:ident: $($kind:ident),*) => {$(impl $trait for $kind {})*};
 }
 
-impl_traits!(HasNodeHeader: RuleNode, InsNode, MarkNode, AdjustNode,
-    LigatureNode, DiscNode, WhatsitNode, MathNode, GlueNode, KernNode, PenaltyNode, UnsetNode,
-    StyleNode, ChoiceNode, EdgeNode, Noad, MarginKernNode, SaNode, PageInsNode, DeltaNode);
+impl_traits!(HasNodeHeader: RuleNode, InsNode, LigatureNode, WhatsitNode, GlueNode, UnsetNode,
+    Noad, SaNode, PageInsNode, DeltaNode);
 impl_traits!(HasLink: MovementNode, ActiveNode, PassiveNode, CondNode, CharNode,
     AlignRecord, AlignStackNode, ExprNode, PseudoLineNode, LigItem);
-impl_traits!(HasWidth: UnsetNode, WhatsitNode, MathNode, KernNode,
-    EdgeNode, MarginKernNode, AlignRecord, SpanNode);
+impl_traits!(HasWidth: UnsetNode, WhatsitNode, AlignRecord, SpanNode);
 impl_traits!(HasHeightDepth: UnsetNode, WhatsitNode, InsNode);
 impl_traits!(HasListPtr: UnsetNode);
-impl_traits!(HasSyncFields: RuleNode, GlueNode, KernNode, MathNode);
+impl_traits!(HasSyncFields: RuleNode, GlueNode);
 
 /// A record kept only on its own list, which therefore proves its kind.
 pub trait ListRecord: NodeKind {}
@@ -685,7 +683,7 @@ impl<K: HasListPtr> NodePtr<K> {
 
 impl<K: HasSyncFields> NodePtr<K> {
     fields! {
-        sync_tag / set_sync_tag: i32 = b32s0 @ K::SIZE - 1;
+        sync_tag: i32 = b32s0 @ K::SIZE - 1;
         sync_line: i32 = b32s1 @ K::SIZE - 1;
     }
 }
@@ -884,8 +882,8 @@ impl AnyNode {
         match self {
             AnyNode::Box(p) => mem[p].width,
             AnyNode::Rule(p) => p.width(mem).to_scaled(),
-            AnyNode::Kern(p) => p.width(mem),
-            AnyNode::Math(p) => p.width(mem),
+            AnyNode::Kern(p) => mem[p].width,
+            AnyNode::Math(p) => mem[p].width,
             AnyNode::Whatsit(p) => p.width(mem),
             _ => Scaled::ZERO,
         }
@@ -1025,13 +1023,6 @@ impl NodePtr<LigItem> {
     }
 }
 
-impl NodePtr<DiscNode> {
-    fields! {
-        pre_break / set_pre_break: MemPtr = b32s0 @ 1;
-        post_break / set_post_break: MemPtr = b32s1 @ 1;
-    }
-}
-
 // --- math, glue, kern, penalty ---
 
 impl NodePtr<MathNode> {
@@ -1043,13 +1034,6 @@ impl NodePtr<MathNode> {
 }
 
 impl NodePtr<StyleNode> {
-    /// Zeroes the two payload words, as `new_style` does.
-    #[inline]
-    pub fn clear_payload(self, mem: &mut MemState) {
-        mem.set_b32s1(self.idx + 1, 0);
-        mem.set_b32s1(self.idx + 2, 0);
-    }
-
     /// Reads a type-14 node of a shipped list as the edge it is.
     #[inline]
     pub fn as_edge(self) -> NodePtr<EdgeNode> {
@@ -1057,26 +1041,14 @@ impl NodePtr<StyleNode> {
     }
 }
 
-impl NodePtr<EdgeNode> {
-    fields! {
-        edge_dist / set_edge_dist: Scaled = b32s1 @ 2;
-    }
-}
-
 impl NodePtr<ChoiceNode> {
-    fields! {
-        display_mlist / set_display_mlist: MemPtr = b32s0 @ 1;
-        text_mlist / set_text_mlist: MemPtr = b32s1 @ 1;
-        script_mlist / set_script_mlist: MemPtr = b32s0 @ 2;
-        script_script_mlist / set_script_script_mlist: MemPtr = b32s1 @ 2;
-    }
-
     /// Retypes the node as a style node for `style`.
     #[inline]
     pub fn into_style(self, mem: &mut MemState, style: u16) -> NodePtr<StyleNode> {
         let p: NodePtr<StyleNode> = retype(self, mem, NodeType::Style);
-        p.set_subtype(mem, style);
-        p.clear_payload(mem);
+        let layout = &mut mem[p];
+        layout.subtype = style;
+        layout.clear_payload();
         p
     }
 }
@@ -1256,7 +1228,7 @@ impl NodePtr<GlueNode> {
     #[inline]
     pub fn into_kern(self, mem: &mut MemState, w: Scaled) -> NodePtr<KernNode> {
         let kern: NodePtr<KernNode> = retype(self, mem, NodeType::Kern);
-        kern.set_width(mem, w);
+        mem[kern].width = w;
         kern
     }
 }
@@ -1276,26 +1248,7 @@ impl NodePtr<GlueSpecNode> {
     }
 }
 
-impl NodePtr<PenaltyNode> {
-    fields! {
-        penalty / set_penalty: i32 = b32s1 @ 1;
-    }
-}
-
 // --- page-builder nodes ---
-
-impl NodePtr<MarkNode> {
-    fields! {
-        mark_ptr / set_mark_ptr: TokenList = b32s1 @ 1;
-        mark_class / set_mark_class: i32 = b32s0 @ 1;
-    }
-}
-
-impl NodePtr<AdjustNode> {
-    fields! {
-        adjust_ptr / set_adjust_ptr: MemPtr = b32s1 @ 1;
-    }
-}
 
 impl NodePtr<InsNode> {
     fields! {
@@ -2015,8 +1968,8 @@ mod tests {
         let k: NodePtr<KernNode> = at(&mut mem, 100, Some(NodeType::Kern));
         mem.set_b32s0(MemPtr::from_raw(100 + MEDIUM_NODE_SIZE - 1), 9);
         mem.set_b32s1(MemPtr::from_raw(100 + MEDIUM_NODE_SIZE - 1), 3);
-        assert_eq!(k.sync_tag(&mem), 9);
-        assert_eq!(k.sync_line(&mem), 3);
+        assert_eq!(mem[k].sync_tag, 9);
+        assert_eq!(mem[k].sync_line, 3);
     }
 
     #[test]
@@ -2095,34 +2048,36 @@ mod tests {
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 150);
 
         let disc: NodePtr<DiscNode> = at(&mut mem, 100, Some(NodeType::Disc));
-        disc.set_pre_break(&mut mem, MemPtr::from_raw(150));
-        disc.set_post_break(&mut mem, MemPtr::from_raw(160));
+        mem[disc].pre_break = MemPtr::from_raw(150);
+        mem[disc].post_break = MemPtr::from_raw(160);
         assert_eq!(mem.b32s0(MemPtr::from_raw(101)), 150);
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 160);
 
         let math: NodePtr<MathNode> = at(&mut mem, 100, Some(NodeType::Math));
-        math.set_subtype(&mut mem, 3);
-        math.set_width(&mut mem, Scaled::from_raw(0x1234));
+        mem[math].subtype = 3;
+        mem[math].width = Scaled::from_raw(0x1234);
         assert_eq!(mem.b16s0(MemPtr::from_raw(100)), 3);
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 0x1234);
 
         let style: NodePtr<StyleNode> = at(&mut mem, 100, Some(NodeType::Style));
-        style.clear_payload(&mut mem);
+        mem.set_b32s1(MemPtr::from_raw(101), 9);
+        mem.set_b32s1(MemPtr::from_raw(102), 9);
+        mem[style].clear_payload();
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 0);
         assert_eq!(mem.b32s1(MemPtr::from_raw(102)), 0);
 
         let pen: NodePtr<PenaltyNode> = at(&mut mem, 100, Some(NodeType::Penalty));
-        pen.set_penalty(&mut mem, -10000);
+        mem[pen].penalty = -10000;
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), -10000);
 
         let mark: NodePtr<MarkNode> = at(&mut mem, 100, Some(NodeType::Mark));
-        mark.set_mark_ptr(&mut mem, TokenList::from_ptr(MemPtr::from_raw(77)));
-        mark.set_mark_class(&mut mem, 3);
+        mem[mark].mark_ptr = TokenList::from_ptr(MemPtr::from_raw(77));
+        mem[mark].mark_class = 3;
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 77);
         assert_eq!(mem.b32s0(MemPtr::from_raw(101)), 3);
 
         let adj: NodePtr<AdjustNode> = at(&mut mem, 100, Some(NodeType::Adjust));
-        adj.set_adjust_ptr(&mut mem, MemPtr::from_raw(88));
+        mem[adj].adjust_ptr = MemPtr::from_raw(88);
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 88);
 
         let ins: NodePtr<InsNode> = at(&mut mem, 100, Some(NodeType::Ins));
@@ -2136,10 +2091,10 @@ mod tests {
     fn choice_branches_land_in_their_words() {
         let mut mem = fresh_mem(200);
         let c: NodePtr<ChoiceNode> = at(&mut mem, 100, Some(NodeType::Choice));
-        c.set_display_mlist(&mut mem, MemPtr::from_raw(11));
-        c.set_text_mlist(&mut mem, MemPtr::from_raw(22));
-        c.set_script_mlist(&mut mem, MemPtr::from_raw(33));
-        c.set_script_script_mlist(&mut mem, MemPtr::from_raw(44));
+        mem[c].display_mlist = MemPtr::from_raw(11);
+        mem[c].text_mlist = MemPtr::from_raw(22);
+        mem[c].script_mlist = MemPtr::from_raw(33);
+        mem[c].script_script_mlist = MemPtr::from_raw(44);
         assert_eq!(mem.b32s0(MemPtr::from_raw(101)), 11);
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 22);
         assert_eq!(mem.b32s0(MemPtr::from_raw(102)), 33);

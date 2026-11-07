@@ -411,16 +411,16 @@ impl MemState {
 
     pub fn new_disc(&mut self) -> Result<NodePtr<DiscNode>, Abort> {
         let p = NodePtr::<DiscNode>::alloc(self)?;
-        p.set_subtype(self, 0);
-        p.set_pre_break(self, MemPtr::NULL);
-        p.set_post_break(self, MemPtr::NULL);
+        self[p].subtype = 0;
+        self[p].pre_break = MemPtr::NULL;
+        self[p].post_break = MemPtr::NULL;
         Ok(p)
     }
 
     pub fn new_math(&mut self, w: Scaled, s: u16) -> Result<NodePtr<MathNode>, Abort> {
         let p = NodePtr::<MathNode>::alloc(self)?;
-        p.set_subtype(self, s);
-        p.set_width(self, w);
+        self[p].subtype = s;
+        self[p].width = w;
         Ok(p)
     }
 
@@ -476,15 +476,15 @@ impl MemState {
 
     pub fn new_kern(&mut self, w: Scaled) -> Result<NodePtr<KernNode>, Abort> {
         let p = NodePtr::<KernNode>::alloc(self)?;
-        p.set_subtype(self, NORMAL);
-        p.set_width(self, w);
+        self[p].subtype = NORMAL;
+        self[p].width = w;
         Ok(p)
     }
 
     pub fn new_penalty(&mut self, m: i32) -> Result<NodePtr<PenaltyNode>, Abort> {
         let p = NodePtr::<PenaltyNode>::alloc(self)?;
-        p.set_subtype(self, 0);
-        p.set_penalty(self, m);
+        self[p].subtype = 0;
+        self[p].penalty = m;
         Ok(p)
     }
 
@@ -496,18 +496,18 @@ impl MemState {
 
     pub fn new_style(&mut self, s: crate::math::MathStyle) -> Result<NodePtr<StyleNode>, Abort> {
         let p = NodePtr::<StyleNode>::alloc(self)?;
-        p.set_subtype(self, s.raw());
-        p.clear_payload(self);
+        self[p].subtype = s.raw();
+        self[p].clear_payload();
         Ok(p)
     }
 
     pub fn new_choice(&mut self) -> Result<NodePtr<ChoiceNode>, Abort> {
         let p = NodePtr::<ChoiceNode>::alloc(self)?;
-        p.set_subtype(self, 0);
-        p.set_display_mlist(self, MemPtr::NULL);
-        p.set_text_mlist(self, MemPtr::NULL);
-        p.set_script_mlist(self, MemPtr::NULL);
-        p.set_script_script_mlist(self, MemPtr::NULL);
+        self[p].subtype = 0;
+        self[p].display_mlist = MemPtr::NULL;
+        self[p].text_mlist = MemPtr::NULL;
+        self[p].script_mlist = MemPtr::NULL;
+        self[p].script_script_mlist = MemPtr::NULL;
         Ok(p)
     }
 
@@ -517,8 +517,8 @@ impl MemState {
         side: i16,
     ) -> Result<NodePtr<MarginKernNode>, Abort> {
         let k = NodePtr::<MarginKernNode>::alloc(self)?;
-        k.set_subtype(self, side as u16);
-        k.set_width(self, w);
+        self[k].subtype = side as u16;
+        self[k].width = w;
         Ok(k)
     }
 

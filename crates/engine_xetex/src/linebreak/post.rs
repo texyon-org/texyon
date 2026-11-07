@@ -53,7 +53,7 @@ impl LinebreakState {
                 let mut r = q;
                 loop {
                     let s = mem.new_math(Scaled::ZERO, (temp_ptr.info(mem) - 1) as u16)?;
-                    s.set_link(mem, r);
+                    mem[s].link = r;
                     r = s.ptr();
                     temp_ptr = temp_ptr.link(mem);
                     if temp_ptr.is_null() {
@@ -94,9 +94,9 @@ impl LinebreakState {
                 }
                 Ok(AnyNode::Disc(d)) => {
                     let mut r;
-                    let t = d.subtype(mem);
+                    let t = mem[d].subtype;
                     if t == 0 {
-                        r = d.link(mem);
+                        r = mem[d].link;
                     } else {
                         r = q;
                         for _ in 1..t {
@@ -105,32 +105,32 @@ impl LinebreakState {
                         let s = r.link(mem);
                         r = s.link(mem);
                         s.set_link(mem, MemPtr::NULL);
-                        mem.flush_node_list(d.link(mem))?;
-                        d.set_subtype(mem, 0);
+                        mem.flush_node_list(mem[d].link)?;
+                        mem[d].subtype = 0;
                     }
 
-                    let post_break = d.post_break(mem);
+                    let post_break = mem[d].post_break;
                     if !post_break.is_null() {
                         mem.list_tail(post_break).set_link(mem, r);
                         r = post_break;
-                        d.set_post_break(mem, MemPtr::NULL);
+                        mem[d].post_break = MemPtr::NULL;
                         post_disc_break = true;
                     }
 
-                    let pre_break = d.pre_break(mem);
+                    let pre_break = mem[d].pre_break;
                     if !pre_break.is_null() {
-                        d.set_link(mem, pre_break);
+                        mem[d].link = pre_break;
                         q = mem.list_tail(pre_break);
-                        d.set_pre_break(mem, MemPtr::NULL);
+                        mem[d].pre_break = MemPtr::NULL;
                         pre_break_tail = true;
                     }
 
                     q.set_link(mem, r);
                     disc_break = true;
                 }
-                Ok(AnyNode::Kern(k)) => k.set_width(mem, Scaled::ZERO),
+                Ok(AnyNode::Kern(k)) => mem[k].width = Scaled::ZERO,
                 Ok(AnyNode::Math(m)) => {
-                    m.set_width(mem, Scaled::ZERO);
+                    mem[m].width = Scaled::ZERO;
                     if texxet {
                         mem.update_lr_stack(m, lr_ptr)?;
                     }
@@ -227,7 +227,7 @@ impl MemState {
 
     /// Track the LR nesting of a math node on the `lr_ptr` stack.
     fn update_lr_stack(&mut self, q: NodePtr<MathNode>, lr_ptr: &mut MemPtr) -> Result<(), Abort> {
-        let subtype = q.subtype(self);
+        let subtype = self[q].subtype;
         let end_lr = crate::mem::end_lr_type(subtype);
         if subtype % 2 == 1 {
             if !lr_ptr.is_null() && lr_ptr.info(self) == end_lr {
@@ -345,7 +345,7 @@ impl ListStateRecord {
                 match node {
                     Ok(node) if node.precedes_break() => break,
                     Ok(AnyNode::Kern(k))
-                        if k.subtype(mem) != EXPLICIT && k.subtype(mem) != SPACE_ADJUSTMENT =>
+                        if mem[k].subtype != EXPLICIT && mem[k].subtype != SPACE_ADJUSTMENT =>
                     {
                         break
                     }

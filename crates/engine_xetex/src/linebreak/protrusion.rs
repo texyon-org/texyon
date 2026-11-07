@@ -53,7 +53,7 @@ impl LinebreakState {
 
         let r = mem.prev_rightmost(self.global_prev_p, self.cur_p);
         let r = match p_disc {
-            Some(d) if !d.pre_break(mem).is_null() => mem.list_tail(d.pre_break(mem)),
+            Some(d) if !mem[d].pre_break.is_null() => mem.list_tail(mem[d].pre_break),
             _ => mem.find_protchar_right(self, l, r)?,
         };
 
@@ -63,10 +63,10 @@ impl LinebreakState {
             mem.classify_disc(l).ok().flatten()
         };
         l = match l_disc {
-            Some(d) if !d.post_break(mem).is_null() => d.post_break(mem),
+            Some(d) if !mem[d].post_break.is_null() => mem[d].post_break,
             Some(d) => {
-                l = d.link(mem);
-                for _ in 0..d.subtype(mem) {
+                l = mem[d].link;
+                for _ in 0..mem[d].subtype {
                     if !l.link(mem).is_null() {
                         l = l.link(mem);
                     }
@@ -164,7 +164,7 @@ impl LinebreakState {
         }
 
         let k = mem.new_margin_kern(-w, 1)?;
-        k.set_link(mem, ptmp.link(mem));
+        mem[k].link = ptmp.link(mem);
         ptmp.set_link(mem, k.ptr());
         Ok(if ptmp == q { q.link(mem) } else { q })
     }
@@ -189,7 +189,7 @@ impl LinebreakState {
         }
 
         let k = mem.new_margin_kern(-w, 0)?;
-        k.set_link(mem, q);
+        mem[k].link = q;
         Ok(k.ptr())
     }
 }
@@ -235,10 +235,10 @@ impl MemState {
                 true
             }
             Ok(AnyNode::Disc(d)) => {
-                d.pre_break(self).is_null() && d.post_break(self).is_null() && d.subtype(self) == 0
+                self[d].pre_break.is_null() && self[d].post_break.is_null() && self[d].subtype == 0
             }
-            Ok(AnyNode::Math(m)) => m.width(self) == Scaled::ZERO,
-            Ok(AnyNode::Kern(k)) => k.width(self) == Scaled::ZERO || k.subtype(self) == NORMAL,
+            Ok(AnyNode::Math(m)) => self[m].width == Scaled::ZERO,
+            Ok(AnyNode::Kern(k)) => self[k].width == Scaled::ZERO || self[k].subtype == NORMAL,
             Ok(AnyNode::Glue(g)) => g.glue_ptr(self) == ZERO_GLUE,
             Ok(AnyNode::Box(h)) => self.is_empty_hlist(h),
             _ => false,

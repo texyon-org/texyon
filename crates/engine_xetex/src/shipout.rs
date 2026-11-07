@@ -58,9 +58,9 @@ const ONE_INCH_LESS_ONE: Scaled = Scaled::from_raw(ONE_INCH.raw() - 1);
 impl MemState {
     pub fn new_edge(&mut self, dir: Dir, w: Scaled) -> Result<NodePtr<EdgeNode>, Abort> {
         let p = NodePtr::<EdgeNode>::alloc(self)?;
-        p.set_subtype(self, dir.code());
-        p.set_width(self, w);
-        p.set_edge_dist(self, Scaled::ZERO);
+        self[p].subtype = dir.code();
+        self[p].width = w;
+        self[p].edge_dist = Scaled::ZERO;
         Ok(p)
     }
 }
@@ -389,7 +389,7 @@ struct NativeWordRun {
 
 impl MemState {
     fn is_space_adjustment(&self, q: MemPtr) -> bool {
-        matches!(self.classify_non_char(q), Some(AnyNode::Kern(k)) if k.subtype(self) == SPACE_ADJUSTMENT)
+        matches!(self.classify_non_char(q), Some(AnyNode::Kern(k)) if self[k].subtype == SPACE_ADJUSTMENT)
     }
 
     /// Merge runs of native words separated by interword glue into single nodes
@@ -521,7 +521,7 @@ impl MemState {
                         _ => {}
                     }
                 }
-                Ok(AnyNode::Kern(kern)) => width += kern.width(self),
+                Ok(AnyNode::Kern(kern)) => width += self[kern].width,
                 _ => {}
             }
             if q == last.ptr() {
@@ -597,12 +597,12 @@ impl MemState {
     }
 
     fn lr_dir(&self, math: NodePtr<MathNode>) -> Option<Dir> {
-        Dir::from_code(math.subtype(self) / R_CODE)
+        Dir::from_code(self[math].subtype / R_CODE)
     }
 
     /// The LR stack top matches the end code of `math`.
     fn lr_matches(&self, scanner: &ScannerState, math: NodePtr<MathNode>) -> bool {
-        scanner.lr_ptr.info(self) == end_lr_type(math.subtype(self))
+        scanner.lr_ptr.info(self) == end_lr_type(self[math].subtype)
     }
 
     fn pop_dvi_level(&mut self, shipout: &mut ShipoutState, save_loc: i32) -> Result<(), Abort> {
@@ -873,7 +873,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
         let save_h = st.shipout.cur_h;
         st.mem.temp_ptr = p;
         let kern = st.mem.new_kern(Scaled::ZERO)?;
-        kern.set_sync_tag(&mut st.mem, 0);
+        st.mem[kern].sync_tag = 0;
         prev_p.set_link(&mut st.mem, kern.ptr());
         st.shipout.cur_h = Scaled::ZERO;
         let reversed = st.mem.reverse(
@@ -883,8 +883,8 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
             None,
             &mut rounding,
         )?;
-        kern.set_link(&mut st.mem, reversed);
-        kern.set_width(&mut st.mem, -st.shipout.cur_h);
+        st.mem[kern].link = reversed;
+        st.mem[kern].width = -st.shipout.cur_h;
         st.shipout.cur_h = save_h;
         st.mem[this_box].subtype = REVERSED;
         p = kern.ptr();
@@ -929,22 +929,22 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
             AnyNode::Glue(glue) => {
                 hlist_glue_out(st, this_box, base_line, left_edge, glue, &mut rounding)?
             }
-            AnyNode::MarginKern(kern) => st.shipout.cur_h += kern.width(&st.mem),
+            AnyNode::MarginKern(kern) => st.shipout.cur_h += st.mem[kern].width,
             AnyNode::Kern(kern) => {
                 crate::synctex::synctex_kern(st, kern, this_box);
-                st.shipout.cur_h += kern.width(&st.mem);
+                st.shipout.cur_h += st.mem[kern].width;
             }
             AnyNode::Math(math) => {
                 crate::synctex::synctex_math(st, math);
-                let math_width = math.width(&st.mem);
-                if !math.subtype(&st.mem).is_multiple_of(2) {
+                let math_width = st.mem[math].width;
+                if !st.mem[math].subtype.is_multiple_of(2) {
                     if st.mem.lr_matches(&st.scanner, math) {
                         st.mem.pop_lr(&mut st.scanner.lr_ptr);
-                    } else if math.subtype(&st.mem) > L_CODE {
+                    } else if st.mem[math].subtype > L_CODE {
                         st.scanner.lr_problems += 1;
                     }
                 } else {
-                    let end_type = end_lr_type(math.subtype(&st.mem));
+                    let end_type = end_lr_type(st.mem[math].subtype);
                     st.mem.push_lr(&mut st.scanner.lr_ptr, end_type)?;
                     if st.mem.lr_dir(math) != Some(st.scanner.cur_dir) {
                         let edge = reverse_segment(
@@ -972,10 +972,10 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
             }
             AnyNode::Style(style) => {
                 let edge = style.as_edge();
-                st.shipout.cur_h += edge.width(&st.mem);
-                left_edge = st.shipout.cur_h + edge.edge_dist(&st.mem);
+                st.shipout.cur_h += st.mem[edge].width;
+                left_edge = st.shipout.cur_h + st.mem[edge].edge_dist;
                 st.scanner.cur_dir =
-                    Dir::from_code(edge.subtype(&st.mem)).ok_or(Abort::Confusion("LR"))?;
+                    Dir::from_code(st.mem[edge].subtype).ok_or(Abort::Confusion("LR"))?;
             }
             _ => {}
         }
@@ -1034,7 +1034,7 @@ fn reverse_segment(
     rounding: &mut GlueRounding,
 ) -> Result<NodePtr<EdgeNode>, Abort> {
     let save_h = st.shipout.cur_h;
-    st.mem.temp_ptr = math.link(&st.mem);
+    st.mem.temp_ptr = st.mem[math].link;
     st.shipout.rule_wd = math_width;
     st.mem.free_node(math.ptr(), MEDIUM_NODE_SIZE);
     st.scanner.cur_dir = st.scanner.cur_dir.reversed();
@@ -1051,8 +1051,8 @@ fn reverse_segment(
         Some(end),
         rounding,
     )?;
-    edge.set_link(&mut st.mem, reversed);
-    edge.set_edge_dist(&mut st.mem, st.shipout.cur_h);
+    st.mem[edge].link = reversed;
+    st.mem[edge].edge_dist = st.shipout.cur_h;
     st.scanner.cur_dir = st.scanner.cur_dir.reversed();
     st.shipout.cur_h = save_h;
     Ok(edge)
@@ -1133,9 +1133,9 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
             }
             AnyNode::Kern(kern) => {
                 if upwards {
-                    st.shipout.cur_v -= kern.width(&st.mem);
+                    st.shipout.cur_v -= st.mem[kern].width;
                 } else {
-                    st.shipout.cur_v += kern.width(&st.mem);
+                    st.shipout.cur_v += st.mem[kern].width;
                 }
             }
             _ => {}
@@ -1379,7 +1379,7 @@ impl MemState {
                         shipout.rule_wd = node.hlist_width(self);
                     }
                     Ok(AnyNode::Kern(kern)) => {
-                        shipout.rule_wd = kern.width(self);
+                        shipout.rule_wd = self[kern].width;
                         now_kern = true;
                     }
                     Ok(AnyNode::Whatsit(w)) => {
@@ -1408,8 +1408,8 @@ impl MemState {
                         continue;
                     }
                     Ok(AnyNode::Math(math)) => {
-                        shipout.rule_wd = math.width(self);
-                        if !math.subtype(self).is_multiple_of(2) {
+                        shipout.rule_wd = self[math].width;
+                        if !self[math].subtype.is_multiple_of(2) {
                             if !self.lr_matches(scanner, math) {
                                 math.into_kern(self);
                                 now_kern = true;
@@ -1418,7 +1418,7 @@ impl MemState {
                                 self.pop_lr(&mut scanner.lr_ptr);
                                 if n > MIN_HALFWORD {
                                     n -= 1;
-                                    math.set_subtype(self, math.subtype(self) - 1);
+                                    self[math].subtype -= 1;
                                 } else {
                                     math.into_kern(self);
                                     now_kern = true;
@@ -1427,19 +1427,19 @@ impl MemState {
                                     } else {
                                         self.free_node(math.ptr(), MEDIUM_NODE_SIZE);
                                         let t = t.expect("a segment reversal ends at its edge");
-                                        t.set_link(self, q);
-                                        t.set_width(self, shipout.rule_wd);
-                                        t.set_edge_dist(self, -shipout.cur_h - shipout.rule_wd);
+                                        self[t].link = q;
+                                        self[t].width = shipout.rule_wd;
+                                        self[t].edge_dist = -shipout.cur_h - shipout.rule_wd;
                                         return Ok(l);
                                     }
                                 }
                             }
                         } else {
-                            let end_type = end_lr_type(math.subtype(self));
+                            let end_type = end_lr_type(self[math].subtype);
                             self.push_lr(&mut scanner.lr_ptr, end_type)?;
                             if n > MIN_HALFWORD || self.lr_dir(math) != Some(scanner.cur_dir) {
                                 n += 1;
-                                math.set_subtype(self, math.subtype(self) + 1);
+                                self[math].subtype += 1;
                             } else {
                                 math.into_kern(self);
                                 now_kern = true;

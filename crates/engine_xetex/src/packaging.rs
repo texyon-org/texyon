@@ -143,7 +143,7 @@ impl MemState {
         match self.as_char(q) {
             Some(ch) => (ch.font(self).raw() == NodeType::Disc as i32)
                 .then(|| i32::from(ch.character(self))),
-            None => self.as_disc(q).map(|disc| i32::from(disc.subtype(self))),
+            None => self.as_disc(q).map(|disc| i32::from(self[disc].subtype)),
         }
     }
 
@@ -183,7 +183,7 @@ impl MemState {
                 pp = next.link(self);
             } else if let Some(next) = self
                 .as_disc(pp)
-                .and_then(|disc| same_font(self, disc.link(self)))
+                .and_then(|disc| same_font(self, self[disc].link))
             {
                 pp = next.link(self);
             } else {
@@ -296,8 +296,8 @@ impl MemState {
                 Ok(AnyNode::Adjust(adjust)) => {
                     if !scanner.adjust_tail.is_null() || !scanner.pre_adjust_tail.is_null() {
                         q = self.predecessor(q, p);
-                        let adjust_list = adjust.adjust_ptr(self);
-                        let tail = if adjust.subtype(self) != 0 {
+                        let adjust_list = self[adjust].adjust_ptr;
+                        let tail = if self[adjust].subtype != 0 {
                             &mut scanner.pre_adjust_tail
                         } else {
                             &mut scanner.adjust_tail
@@ -307,7 +307,7 @@ impl MemState {
                         }
                         tail.set_link(self, adjust_list);
                         *tail = self.list_tail(*tail);
-                        p = adjust.link(self);
+                        p = self[adjust].link;
                         self.free_node(adjust.ptr(), SMALL_NODE_SIZE);
                         q.set_link(self, p);
                         p = q;
@@ -361,21 +361,22 @@ impl MemState {
                     }
                 }
                 Ok(AnyNode::Kern(kern)) => {
-                    x += kern.width(self);
+                    x += self[kern].width;
                 }
                 Ok(AnyNode::MarginKern(kern)) => {
-                    x += kern.width(self);
+                    x += self[kern].width;
                 }
                 Ok(AnyNode::Math(math)) => {
-                    x += math.width(self);
+                    x += self[math].width;
                     if texxet {
-                        let subtype = math.subtype(self);
+                        let subtype = self[math].subtype;
                         if subtype % 2 == 1 {
                             if scanner.lr_ptr.info(self) == end_lr_type(subtype) {
                                 self.pop_lr(&mut scanner.lr_ptr);
                             } else {
                                 scanner.lr_problems += 1;
-                                math.into_kern(self).set_subtype(self, EXPLICIT);
+                                let kern = math.into_kern(self);
+                                self[kern].subtype = EXPLICIT;
                             }
                         } else {
                             self.push_lr(&mut scanner.lr_ptr, end_lr_type(subtype))?;
@@ -673,7 +674,7 @@ impl MemState {
                     }
                 }
                 Ok(AnyNode::Kern(kern)) => {
-                    x += d + kern.width(self);
+                    x += d + self[kern].width;
                     d = Scaled::ZERO;
                 }
                 _ => {}

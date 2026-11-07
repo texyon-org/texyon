@@ -401,7 +401,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
             let tail_penalty = tail_glue.into_penalty(&mut st.mem);
             st.mem.delete_glue_ref(spec);
             st.mem.flush_node_list(leaders)?;
-            tail_penalty.set_penalty(&mut st.mem, INF_PENALTY);
+            st.mem[tail_penalty].penalty = INF_PENALTY;
         }
     }
 
@@ -579,10 +579,10 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                     }
                 }
                 AnyNode::Kern(k) => {
-                    if k.subtype(&st.mem) == EXPLICIT {
-                        kern_break(st, k.link(&st.mem), auto_breaking)?;
+                    if st.mem[k].subtype == EXPLICIT {
+                        kern_break(st, st.mem[k].link, auto_breaking)?;
                     }
-                    st.scanner.active_width[1] += k.width(&st.mem);
+                    st.scanner.active_width[1] += st.mem[k].width;
                 }
                 AnyNode::Ligature(lig) => {
                     let f = lig.font(&st.mem);
@@ -591,7 +591,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                     st.scanner.active_width[1] += st.fonts.effective_char_width(f, c);
                 }
                 AnyNode::Disc(d) => {
-                    let pre_break = d.pre_break(&st.mem);
+                    let pre_break = st.mem[d].pre_break;
                     st.linebreak.disc_width = Scaled::ZERO;
                     if pre_break.is_null() {
                         let pi = st.eqtb.int_par(IntPar::ExHyphenPenalty);
@@ -611,8 +611,8 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                         st.scanner.active_width[1] -= st.linebreak.disc_width;
                     }
 
-                    let mut s = d.link(&st.mem);
-                    for _ in 0..d.subtype(&st.mem) {
+                    let mut s = st.mem[d].link;
+                    for _ in 0..st.mem[d].subtype {
                         st.scanner.active_width[1] += st
                             .mem
                             .disc_node_width(&mut st.fonts, s)
@@ -626,21 +626,21 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                     continue;
                 }
                 AnyNode::Math(m) => {
-                    if m.subtype(&st.mem) < L_CODE {
-                        auto_breaking = odd(m.subtype(&st.mem) as u8);
+                    if st.mem[m].subtype < L_CODE {
+                        auto_breaking = odd(st.mem[m].subtype as u8);
                     }
-                    kern_break(st, m.link(&st.mem), auto_breaking)?;
-                    st.scanner.active_width[1] += m.width(&st.mem);
+                    kern_break(st, st.mem[m].link, auto_breaking)?;
+                    st.scanner.active_width[1] += st.mem[m].width;
                 }
                 AnyNode::Penalty(pen) => {
-                    line_break_try_break(st, pen.penalty(&st.mem), UNHYPHENATED, None)?;
+                    line_break_try_break(st, st.mem[pen].penalty, UNHYPHENATED, None)?;
                 }
                 AnyNode::Mark(_) | AnyNode::Ins(_) | AnyNode::Adjust(_) => {}
                 _ => return Err(Abort::Confusion("paragraph")),
             }
 
             prev_breakable = node.precedes_break()
-                || matches!(node, AnyNode::Kern(k) if k.subtype(&st.mem) != EXPLICIT);
+                || matches!(node, AnyNode::Kern(k) if st.mem[k].subtype != EXPLICIT);
             st.linebreak.global_prev_p = cur;
             st.linebreak.cur_p = cur.link(&st.mem);
         }
@@ -720,9 +720,9 @@ impl MemState {
 
         if let Some(cur_disc) = disc {
             let mut v = cur_disc.ptr();
-            s = cur_disc.post_break(self);
+            s = self[cur_disc].post_break;
 
-            for _ in 0..cur_disc.subtype(self) {
+            for _ in 0..self[cur_disc].subtype {
                 v = v.link(self);
                 linebreak.break_width[1] -= self.disc_node_width(fonts, v).map_err(|whatsit| {
                     Abort::Confusion(if whatsit { "disc1a" } else { "disc1" })
@@ -737,7 +737,7 @@ impl MemState {
             }
 
             linebreak.break_width[1] += linebreak.disc_width;
-            if cur_disc.post_break(self).is_null() {
+            if self[cur_disc].post_break.is_null() {
                 s = v.link(self);
             }
         }
@@ -752,9 +752,9 @@ impl MemState {
                     linebreak.break_width[6] -= self[spec].shrink;
                 }
                 Ok(AnyNode::Penalty(_)) => {}
-                Ok(AnyNode::Math(m)) => linebreak.break_width[1] -= m.width(self),
-                Ok(AnyNode::Kern(k)) if k.subtype(self) == EXPLICIT => {
-                    linebreak.break_width[1] -= k.width(self);
+                Ok(AnyNode::Math(m)) => linebreak.break_width[1] -= self[m].width,
+                Ok(AnyNode::Kern(k)) if self[k].subtype == EXPLICIT => {
+                    linebreak.break_width[1] -= self[k].width;
                 }
                 _ => break,
             }

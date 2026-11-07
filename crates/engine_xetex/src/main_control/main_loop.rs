@@ -141,7 +141,7 @@ fn find_main_ppp(st: &mut EngineState) {
     while ppp != pp && ppp.link(&st.mem) != pp {
         if !st.mem.is_char_node(ppp) {
             if let Ok(AnyNode::Disc(disc)) = st.mem.classify(ppp) {
-                for _ in 0..disc.subtype(&st.mem) {
+                for _ in 0..st.mem[disc].subtype {
                     ppp = ppp.link(&st.mem);
                 }
             }
@@ -417,9 +417,9 @@ fn shape_interword_space(st: &mut EngineState, mf: FontId) -> Result<(), Abort> 
     let space = st.fonts.param(mf, SPACE_CODE);
     if t != space {
         let kern = st.mem.new_kern(t - space)?;
-        kern.set_subtype(&mut st.mem, SPACE_ADJUSTMENT);
+        st.mem[kern].subtype = SPACE_ADJUSTMENT;
         let next = glue.link(&st.mem);
-        kern.set_link(&mut st.mem, next);
+        st.mem[kern].link = next;
         glue.set_link(&mut st.mem, kern.ptr());
     }
     Ok(())

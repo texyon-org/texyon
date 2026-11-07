@@ -155,8 +155,8 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     let best = st.shipout.best_page_break;
     let output_penalty = match best.as_idx().map(|b| st.mem.classify(b)) {
         Some(Ok(AnyNode::Penalty(pen))) => {
-            let v = pen.penalty(&st.mem);
-            pen.set_penalty(&mut st.mem, INF_PENALTY);
+            let v = st.mem[pen].penalty;
+            st.mem[pen].penalty = INF_PENALTY;
             v
         }
         _ => INF_PENALTY,
@@ -246,7 +246,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
                 }
             }
             Ok(AnyNode::Mark(mark)) => {
-                update_marks(st, mark.mark_class(&st.mem), mark.mark_ptr(&st.mem))?;
+                update_marks(st, st.mem[mark].mark_class, st.mem[mark].mark_ptr)?;
                 prev_p = p;
             }
             _ => prev_p = p,
@@ -380,8 +380,8 @@ fn update_last_node_info(st: &mut EngineState, node: AnyNode, node_type: i32) {
             let refs = st.mem[spec].ref_count;
             st.mem[spec].ref_count = refs + 1;
         }
-        AnyNode::Penalty(penalty) => st.shipout.last_penalty = penalty.penalty(&st.mem),
-        AnyNode::Kern(kern) => st.shipout.last_kern = kern.width(&st.mem),
+        AnyNode::Penalty(penalty) => st.shipout.last_penalty = st.mem[penalty].penalty,
+        AnyNode::Kern(kern) => st.shipout.last_kern = st.mem[kern].width,
         _ => {}
     }
 }
@@ -512,7 +512,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         st.shipout.insert_penalties = st
             .shipout
             .insert_penalties
-            .wrapping_add(pen.penalty(&st.mem));
+            .wrapping_add(st.mem[pen].penalty);
     }
     Ok(())
 }
@@ -597,7 +597,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
             }
             AnyNode::Kern(_) if below_box => PageStep::Discard,
             AnyNode::Kern(kern) => {
-                let next = kern.link(&st.mem);
+                let next = st.mem[kern].link;
                 if next.is_null() {
                     return Ok(());
                 }
@@ -608,7 +608,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
                 }
             }
             AnyNode::Penalty(_) if below_box => PageStep::Discard,
-            AnyNode::Penalty(pen) => PageStep::Break(pen.penalty(&st.mem)),
+            AnyNode::Penalty(pen) => PageStep::Break(st.mem[pen].penalty),
             AnyNode::Mark(_) => PageStep::Contribute,
             AnyNode::Ins(ins) => {
                 append_insertion(st, ins, p)?;
@@ -665,7 +665,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
         match step {
             PageStep::UpdateHeights => {
                 let width = match node {
-                    AnyNode::Kern(kern) => kern.width(&st.mem),
+                    AnyNode::Kern(kern) => st.mem[kern].width,
                     AnyNode::Glue(glue) => page_glue_width(st, glue)?,
                     _ => unreachable!("only glue and kern update the page heights"),
                 };

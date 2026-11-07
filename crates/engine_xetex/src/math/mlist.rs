@@ -48,11 +48,11 @@ impl MemState {
 
     pub fn overbar(&mut self, b: NodePtr<BoxNode>, k: Scaled, t: Scaled) -> Result<MemPtr, Abort> {
         let p = self.new_kern(k)?;
-        p.set_link(self, b.ptr());
+        self[p].link = b.ptr();
         let q = self.fraction_rule(t)?;
         q.set_link(self, p.ptr());
         let r = self.new_kern(t)?;
-        r.set_link(self, q.ptr());
+        self[r].link = q.ptr();
         Ok(r.ptr())
     }
 }
@@ -103,11 +103,11 @@ fn math_glue(
 }
 
 fn math_kern(st: &mut EngineState, p: NodePtr<KernNode>, m: Scaled) {
-    if p.subtype(&st.mem) == MU_GLUE {
+    if st.mem[p].subtype == MU_GLUE {
         let mu = st.errors.mu_parts(m);
-        let width = st.errors.mu_mult(mu, p.width(&st.mem));
-        p.set_width(&mut st.mem, width);
-        p.set_subtype(&mut st.mem, EXPLICIT);
+        let width = st.errors.mu_mult(mu, st.mem[p].width);
+        st.mem[p].width = width;
+        st.mem[p].subtype = EXPLICIT;
     }
 }
 
@@ -294,7 +294,7 @@ fn make_under(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
     let kern = st.mem.new_kern(rule_thickness * 3)?;
     st.mem[x].link = kern.ptr();
     let rule = st.mem.fraction_rule(rule_thickness)?;
-    kern.set_link(&mut st.mem, rule.ptr());
+    st.mem[kern].link = rule.ptr();
 
     let y = crate::packaging::vpackage(st, x.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
     let mem = &mut st.mem;
@@ -392,17 +392,17 @@ impl MemState {
         if assembly.rule_thickness == Scaled::ZERO {
             let kw = (assembly.shift_up - self[xb].depth) - (self[zb].height - assembly.shift_down);
             p = self.new_kern(kw)?;
-            p.set_link(self, assembly.z.ptr());
+            self[p].link = assembly.z.ptr();
         } else {
             let y = self.fraction_rule(assembly.rule_thickness)?;
             let p1w =
                 (assembly.axis_height - assembly.delta) - (self[zb].height - assembly.shift_down);
             let p1 = self.new_kern(p1w)?;
             y.set_link(self, p1.ptr());
-            p1.set_link(self, assembly.z.ptr());
+            self[p1].link = assembly.z.ptr();
             let pw = (assembly.shift_up - self[xb].depth) - (assembly.axis_height + assembly.delta);
             p = self.new_kern(pw)?;
-            p.set_link(self, y.ptr());
+            self[p].link = y.ptr();
         }
 
         self[xb].link = p.ptr();
@@ -678,10 +678,10 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
         } else {
             let shift_up = (bos3 - mem[x].depth).max(bos1);
             let p = mem.new_kern(shift_up)?;
-            p.set_link(mem, y.ptr());
+            mem[p].link = y.ptr();
             mem[x].link = p.ptr();
             let p = mem.new_kern(bos5)?;
-            p.set_link(mem, x.ptr());
+            mem[p].link = x.ptr();
             mem[v].list_ptr = p.ptr();
             let height = mem[v].height + bos5 + mem[x].height + mem[x].depth + shift_up;
             mem[v].height = height;
@@ -693,7 +693,7 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
             let shift_down = (bos4 - mem[z].height).max(bos2);
             let p = mem.new_kern(shift_down)?;
             mem[y].link = p.ptr();
-            p.set_link(mem, z.ptr());
+            mem[p].link = z.ptr();
             let p = mem.new_kern(bos5)?;
             mem[z].link = p.ptr();
             let depth = mem[v].depth + bos5 + mem[z].height + mem[z].depth + shift_down;
@@ -727,7 +727,7 @@ impl MemState {
                     let kern_width = fonts.char_kern(scanner.cur_f, step);
                     let p_kern = self.new_kern(kern_width)?;
                     let link_q = q.link(self);
-                    p_kern.set_link(self, link_q);
+                    self[p_kern].link = link_q;
                     q.set_link(self, p_kern.ptr());
                     return Ok(MakeOrdStep::Return);
                 }
@@ -999,13 +999,13 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
         v
     } else {
         let kern = st.mem.new_kern(-delta)?;
-        kern.set_link(&mut st.mem, x.ptr());
+        st.mem[kern].link = x.ptr();
         st.mem[y].link = kern.ptr();
         let v = crate::packaging::vpackage(st, y.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
         let mem = &mut st.mem;
         if mem[v].height < h {
             let kern = mem.new_kern(h - mem[v].height)?;
-            kern.set_link(mem, mem[v].list_ptr);
+            mem[kern].link = mem[v].list_ptr;
             mem[v].list_ptr = kern.ptr();
             mem[v].height = h;
         }
@@ -1050,35 +1050,35 @@ impl MemState {
     ) -> Result<(), Abort> {
         let kept = match cur_style.level() {
             0 => {
-                let p = choice.display_mlist(self);
-                choice.set_display_mlist(self, MemPtr::NULL);
+                let p = self[choice].display_mlist;
+                self[choice].display_mlist = MemPtr::NULL;
                 p
             }
             1 => {
-                let p = choice.text_mlist(self);
-                choice.set_text_mlist(self, MemPtr::NULL);
+                let p = self[choice].text_mlist;
+                self[choice].text_mlist = MemPtr::NULL;
                 p
             }
             2 => {
-                let p = choice.script_mlist(self);
-                choice.set_script_mlist(self, MemPtr::NULL);
+                let p = self[choice].script_mlist;
+                self[choice].script_mlist = MemPtr::NULL;
                 p
             }
             3 => {
-                let p = choice.script_script_mlist(self);
-                choice.set_script_script_mlist(self, MemPtr::NULL);
+                let p = self[choice].script_script_mlist;
+                self[choice].script_script_mlist = MemPtr::NULL;
                 p
             }
             _ => MemPtr::NULL,
         };
-        self.flush_node_list(choice.display_mlist(self))?;
-        self.flush_node_list(choice.text_mlist(self))?;
-        self.flush_node_list(choice.script_mlist(self))?;
-        self.flush_node_list(choice.script_script_mlist(self))?;
+        self.flush_node_list(self[choice].display_mlist)?;
+        self.flush_node_list(self[choice].text_mlist)?;
+        self.flush_node_list(self[choice].script_mlist)?;
+        self.flush_node_list(self[choice].script_script_mlist)?;
         let style = choice.into_style(self, cur_style.raw());
         if !kept.is_null() {
-            let z = style.link(self);
-            style.set_link(self, kept);
+            let z = self[style].link;
+            self[style].link = kept;
             let mut p = kept;
             while !p.link(self).is_null() {
                 p = p.link(self);
@@ -1320,7 +1320,7 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                     _ => unreachable!("AnyNode::Noad always has a noad type (16..=31)"),
                 },
                 Ok(AnyNode::Style(sn)) => {
-                    st.scanner.cur_style = MathStyle::from_raw(sn.subtype(&st.mem));
+                    st.scanner.cur_style = MathStyle::from_raw(st.mem[sn].subtype);
                     set_cur_size_and_mu(st);
                     break 'reswitch FirstPass::DoneWithNode;
                 }
@@ -1439,7 +1439,7 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                 SecondPass::Splice(qn)
             }
             Ok(AnyNode::Style(sn)) => {
-                st.scanner.cur_style = MathStyle::from_raw(sn.subtype(&st.mem));
+                st.scanner.cur_style = MathStyle::from_raw(st.mem[sn].subtype);
                 s = STYLE_NODE_SIZE;
                 set_cur_size_and_mu(st);
                 SecondPass::StyleNode

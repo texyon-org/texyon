@@ -212,7 +212,7 @@ fn finish_subsup_stack(st: &mut EngineState, input: SubSupStackInput) -> Result<
     st.mem[input.x].shift_amount = sup_kern + input.delta - sub_kern;
     let kern = st.mem.new_kern(kern_width)?;
     st.mem[input.x].link = kern.ptr();
-    kern.set_link(&mut st.mem, input.y.ptr());
+    st.mem[kern].link = input.y.ptr();
 
     let packaged = crate::packaging::vpackage(st, input.x.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
     st.mem[packaged].shift_amount = input.shift_down;
@@ -414,14 +414,14 @@ impl MemState {
             script_ptr = match node {
                 Ok(AnyNode::Kern(_) | AnyNode::Glue(_)) => script_ptr.link(self),
                 Ok(AnyNode::Style(sn)) => {
-                    style = MathStyle::from_raw(sn.subtype(self));
+                    style = MathStyle::from_raw(self[sn].subtype);
                     script_ptr.link(self)
                 }
                 Ok(AnyNode::Choice(cn)) => match style.level() {
-                    0 => cn.display_mlist(self),
-                    1 => cn.text_mlist(self),
-                    2 => cn.script_mlist(self),
-                    3 => cn.script_script_mlist(self),
+                    0 => self[cn].display_mlist,
+                    1 => self[cn].text_mlist,
+                    2 => self[cn].script_mlist,
+                    3 => self[cn].script_script_mlist,
                     _ => script_ptr,
                 },
                 Ok(AnyNode::Noad(n))

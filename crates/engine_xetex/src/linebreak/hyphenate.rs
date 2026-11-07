@@ -329,7 +329,7 @@ fn reconstitute(
             t.set_link(&mut st.mem, kern.ptr());
             t = kern.ptr();
             w = Scaled::ZERO;
-            kern.set_sync_tag(&mut st.mem, 0);
+            st.mem[kern].sync_tag = 0;
         }
 
         if let Some(top) = st.mainloop.lig_stack {
@@ -387,7 +387,7 @@ fn hyphenate_native_word(
 
             let disc = st.mem.new_disc()?;
             let hyphen = crate::fonts::new_native_character(st, hf, u32::from(hyf_char.code()))?;
-            disc.set_pre_break(&mut st.mem, hyphen.ptr());
+            st.mem[disc].pre_break = hyphen.ptr();
             q.set_link(&mut st.mem, disc.ptr());
             s = disc.ptr();
             st.hyph.hyphen_passed = j;
@@ -492,9 +492,9 @@ impl MemState {
         if !minor_tail.is_null() {
             minor_tail.set_link(self, hold);
         } else if post {
-            disc.set_post_break(self, hold);
+            self[disc].post_break = hold;
         } else {
-            disc.set_pre_break(self, hold);
+            self[disc].pre_break = hold;
         }
         *minor_tail = self.list_tail(hold);
     }
@@ -590,7 +590,7 @@ fn insert_hyphens(
             loop {
                 let disc = NodePtr::<DiscNode>::alloc(&mut st.mem)?;
                 let hold = HOLD_HEAD.link(&st.mem);
-                disc.set_link(&mut st.mem, hold);
+                st.mem[disc].link = hold;
                 let mut major_tail = disc.ptr();
                 let mut r_count = 0;
                 while major_tail.link(&st.mem).raw() > TEX_NULL {
@@ -601,7 +601,7 @@ fn insert_hyphens(
                 let mut i = st.hyph.hyphen_passed;
                 st.hyph.hyf[i] = 0;
                 let mut minor_tail = MemPtr::NULL;
-                disc.set_pre_break(&mut st.mem, MemPtr::NULL);
+                st.mem[disc].pre_break = MemPtr::NULL;
                 let hyf_node =
                     crate::main_control::new_character(st, st.hyph.hf, st.hyph.hyf_char.code())?;
                 let mut saved_c = LigChar::NONE;
@@ -624,7 +624,7 @@ fn insert_hyphens(
                 }
 
                 minor_tail = MemPtr::NULL;
-                disc.set_post_break(&mut st.mem, MemPtr::NULL);
+                st.mem[disc].post_break = MemPtr::NULL;
                 let mut c_loc = 0;
                 let mut c = LigChar::NONE;
                 if st.fonts.bchar_label[st.hyph.hf] != FontInfoIdx::NON_ADDRESS {
@@ -659,13 +659,13 @@ fn insert_hyphens(
                 }
 
                 if r_count > 127 {
-                    let replacement = disc.link(&st.mem);
+                    let replacement = st.mem[disc].link;
                     s.set_link(&mut st.mem, replacement);
-                    disc.set_link(&mut st.mem, MemPtr::NULL);
+                    st.mem[disc].link = MemPtr::NULL;
                     st.mem.flush_node_list(disc.ptr())?;
                 } else {
                     s.set_link(&mut st.mem, disc.ptr());
-                    disc.set_subtype(&mut st.mem, r_count as u16);
+                    st.mem[disc].subtype = r_count as u16;
                 }
                 s = major_tail;
                 st.hyph.hyphen_passed = j - 1;

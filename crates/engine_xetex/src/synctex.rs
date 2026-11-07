@@ -161,9 +161,9 @@ impl SynctexCtxt {
     fn record_kern(&mut self, mem: &crate::state::MemState, kern: NodePtr<KernNode>) {
         self.record_node(
             'k',
-            kern.sync_tag(mem),
-            kern.sync_line(mem),
-            &[kern.width(mem).raw()],
+            mem[kern].sync_tag,
+            mem[kern].sync_line,
+            &[mem[kern].width.raw()],
         );
     }
 
@@ -446,7 +446,7 @@ pub fn synctex_math(st: &mut EngineState, p: NodePtr<MathNode>) {
     if !synctex_active(st) {
         return;
     }
-    let (tag, line) = (p.sync_tag(&st.mem), p.sync_line(&st.mem));
+    let (tag, line) = (st.mem[p].sync_tag, st.mem[p].sync_line);
     // A kern deferred in an unchanged context is dropped.
     if st.synctex.context_changed(tag, line) {
         flush_deferred_kern(st);
@@ -462,7 +462,7 @@ pub fn synctex_horizontal_rule_or_glue(st: &mut EngineState, p: MemPtr) {
     let (tag, line) = match node {
         Ok(AnyNode::Rule(r)) => (r.sync_tag(&st.mem), r.sync_line(&st.mem)),
         Ok(AnyNode::Glue(g)) => (g.sync_tag(&st.mem), g.sync_line(&st.mem)),
-        Ok(AnyNode::Kern(k)) => (k.sync_tag(&st.mem), k.sync_line(&st.mem)),
+        Ok(AnyNode::Kern(k)) => (st.mem[k].sync_tag, st.mem[k].sync_line),
         _ => {
             issue_error(&format!(
                 "unknown node type {} in SyncTeX",
@@ -495,7 +495,7 @@ pub fn synctex_horizontal_rule_or_glue(st: &mut EngineState, p: MemPtr) {
 }
 
 pub fn synctex_kern(st: &mut EngineState, p: NodePtr<KernNode>, this_box: NodePtr<BoxNode>) {
-    let (tag, line) = (p.sync_tag(&st.mem), p.sync_line(&st.mem));
+    let (tag, line) = (st.mem[p].sync_tag, st.mem[p].sync_line);
     if synctex_ignored(st, tag, line) {
         return;
     }

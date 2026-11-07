@@ -164,7 +164,7 @@ impl MemState {
                 }
             }
             AnyNode::Kern(kern) => {
-                let next = kern.link(self);
+                let next = self[kern].link;
                 if !next.is_null() && matches!(self.classify(next), Ok(AnyNode::Glue(_))) {
                     Ok(VertBreakNext::CheckPi {
                         pi: 0,
@@ -177,7 +177,7 @@ impl MemState {
                 }
             }
             AnyNode::Penalty(penalty) => Ok(VertBreakNext::CheckPi {
-                pi: penalty.penalty(self),
+                pi: self[penalty].penalty,
                 update_after: None,
             }),
             AnyNode::Ins(_) | AnyNode::Mark(_) => Ok(VertBreakNext::NotFound),
@@ -246,7 +246,7 @@ impl MemState {
 
             match update_source {
                 Some(VertBreakUpdateSource::Kern(kern)) => {
-                    self.finish_vert_break_updated_height(scanner, cursor, kern.width(self), d);
+                    self.finish_vert_break_updated_height(scanner, cursor, self[kern].width, d);
                 }
                 Some(VertBreakUpdateSource::Glue(glue)) => {
                     let spec = glue.glue_ptr(self);
@@ -394,8 +394,8 @@ impl MemState {
         scanner: &mut ScannerState,
         mark: NodePtr<MarkNode>,
     ) -> Result<(), Abort> {
-        let mark_class = mark.mark_class(self);
-        let mark_ptr = mark.mark_ptr(self);
+        let mark_class = self[mark].mark_class;
+        let mark_ptr = self[mark].mark_ptr;
         if mark_class != 0 {
             let element = self.create_sa_element(scanner, ValueLevel::Mark, mark_class)?;
             if element.mark(self, MarkCode::SplitFirst).is_null() {

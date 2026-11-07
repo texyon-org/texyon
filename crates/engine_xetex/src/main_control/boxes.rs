@@ -246,7 +246,7 @@ fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
 impl MemState {
     fn is_math_node(&self, p: MemPtr, subtype: u16) -> bool {
         !self.is_char_node(p)
-            && matches!(self.classify(p), Ok(AnyNode::Math(m)) if m.subtype(self) == subtype)
+            && matches!(self.classify(p), Ok(AnyNode::Math(m)) if self[m].subtype == subtype)
     }
 }
 
@@ -273,14 +273,14 @@ fn unlink_effective_tail(st: &mut EngineState, tx: MemPtr) -> Result<bool, Abort
         if !st.mem.is_char_node(q) {
             match st.mem.classify(q) {
                 Ok(AnyNode::Disc(disc)) => {
-                    for _ in 0..disc.subtype(&st.mem) {
+                    for _ in 0..st.mem[disc].subtype {
                         p = p.link(&st.mem);
                     }
                     if p == tx {
                         return Ok(false);
                     }
                 }
-                Ok(AnyNode::Math(m)) => fm = m.subtype(&st.mem) == BEGIN_M_CODE,
+                Ok(AnyNode::Math(m)) => fm = st.mem[m].subtype == BEGIN_M_CODE,
                 _ => {}
             }
         }

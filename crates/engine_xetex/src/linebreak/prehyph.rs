@@ -28,7 +28,7 @@ impl MemState {
                 match self.classify(s) {
                     Ok(AnyNode::Ligature(_)) => {}
                     Ok(AnyNode::Kern(k)) => {
-                        if k.subtype(self) != NORMAL {
+                        if self[k].subtype != NORMAL {
                             return Some(s);
                         }
                     }
@@ -41,7 +41,7 @@ impl MemState {
                         | AnyNode::Mark(_),
                     ) => return Some(s),
                     Ok(AnyNode::Math(m)) if math_ok => {
-                        return (m.subtype(self) >= L_CODE).then_some(s);
+                        return (self[m].subtype >= L_CODE).then_some(s);
                     }
                     _ => return None,
                 }
@@ -79,12 +79,12 @@ pub(super) fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), Abo
                     s = prev_s.link(&st.mem);
                     continue;
                 }
-                Ok(AnyNode::Kern(k)) if k.subtype(&st.mem) == NORMAL => {
+                Ok(AnyNode::Kern(k)) if st.mem[k].subtype == NORMAL => {
                     prev_s = s;
                     s = prev_s.link(&st.mem);
                     continue;
                 }
-                Ok(AnyNode::Math(m)) if m.subtype(&st.mem) >= L_CODE => {
+                Ok(AnyNode::Math(m)) if st.mem[m].subtype >= L_CODE => {
                     prev_s = s;
                     s = prev_s.link(&st.mem);
                     continue;
@@ -272,7 +272,7 @@ fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
                         LigChar::NONE
                     };
                 }
-                Ok(AnyNode::Kern(k)) if k.subtype(&st.mem) == NORMAL => {
+                Ok(AnyNode::Kern(k)) if st.mem[k].subtype == NORMAL => {
                     st.linebreak.hb = s;
                     st.hyph.hyf_bchar = st.fonts.font_bchar[st.hyph.hf];
                 }

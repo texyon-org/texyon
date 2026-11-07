@@ -186,7 +186,7 @@ impl MemState {
                 q = p.link(self);
 
                 if let Ok(AnyNode::Math(math)) = self.classify(p) {
-                    let subtype = math.subtype(self);
+                    let subtype = self[math].subtype;
                     if subtype % 2 == 1 {
                         if scanner.lr_ptr.info(self) != end_lr_type(subtype) {
                             math.into_kern(self);
@@ -196,13 +196,13 @@ impl MemState {
 
                             if n > MIN_HALFWORD {
                                 n -= 1;
-                                math.set_subtype(self, subtype - 1);
+                                self[math].subtype = subtype - 1;
                             } else if m > MIN_HALFWORD {
                                 m -= 1;
                                 math.into_kern(self);
                             } else {
-                                t.set_width(self, math.width(self));
-                                t.set_link(self, q);
+                                self[t].width = self[math].width;
+                                self[t].link = q;
                                 self.free_node(p, MEDIUM_NODE_SIZE);
                                 break 'done;
                             }
@@ -214,7 +214,7 @@ impl MemState {
                             || Dir::from_code(subtype / R_CODE) != Some(scanner.cur_dir)
                         {
                             n += 1;
-                            math.set_subtype(self, subtype + 1);
+                            self[math].subtype = subtype + 1;
                         } else {
                             math.into_kern(self);
                             m += 1;
@@ -281,24 +281,24 @@ impl MemState {
                     SMALL_NODE_SIZE
                 }
                 AnyNode::Mark(mark) => {
-                    self.delete_token_ref(mark.mark_ptr(self));
+                    self.delete_token_ref(self[mark].mark_ptr);
                     SMALL_NODE_SIZE
                 }
                 AnyNode::Disc(disc) => {
-                    self.flush_node_list(disc.pre_break(self))?;
-                    self.flush_node_list(disc.post_break(self))?;
+                    self.flush_node_list(self[disc].pre_break)?;
+                    self.flush_node_list(self[disc].post_break)?;
                     SMALL_NODE_SIZE
                 }
                 AnyNode::Adjust(adjust) => {
-                    self.flush_node_list(adjust.adjust_ptr(self))?;
+                    self.flush_node_list(self[adjust].adjust_ptr)?;
                     SMALL_NODE_SIZE
                 }
                 AnyNode::Style(_) => STYLE_NODE_SIZE,
                 AnyNode::Choice(choice) => {
-                    self.flush_node_list(choice.display_mlist(self))?;
-                    self.flush_node_list(choice.text_mlist(self))?;
-                    self.flush_node_list(choice.script_mlist(self))?;
-                    self.flush_node_list(choice.script_script_mlist(self))?;
+                    self.flush_node_list(self[choice].display_mlist)?;
+                    self.flush_node_list(self[choice].text_mlist)?;
+                    self.flush_node_list(self[choice].script_mlist)?;
+                    self.flush_node_list(self[choice].script_script_mlist)?;
                     STYLE_NODE_SIZE
                 }
                 AnyNode::Noad(noad) => match noad.noad_type(self) {
@@ -415,22 +415,22 @@ impl MemState {
                 let r = self.get_node(SMALL_NODE_SIZE)?;
                 self.copy_words(r, p, 1);
                 let copy = copied_node(disc, r);
-                let pre_break = self.copy_list(disc.pre_break(self))?;
-                copy.set_pre_break(self, pre_break);
-                let post_break = self.copy_list(disc.post_break(self))?;
-                copy.set_post_break(self, post_break);
+                let pre_break = self.copy_list(self[disc].pre_break)?;
+                self[copy].pre_break = pre_break;
+                let post_break = self.copy_list(self[disc].post_break)?;
+                self[copy].post_break = post_break;
                 (r, 0)
             }
             AnyNode::Mark(mark) => {
                 let r = self.get_node(SMALL_NODE_SIZE)?;
-                self.add_token_ref(mark.mark_ptr(self));
+                self.add_token_ref(self[mark].mark_ptr);
                 (r, SMALL_NODE_SIZE)
             }
             AnyNode::Adjust(adjust) => {
                 let r = self.get_node(SMALL_NODE_SIZE)?;
                 self.copy_words(r, p, 1);
-                let list = self.copy_list(adjust.adjust_ptr(self))?;
-                copied_node(adjust, r).set_adjust_ptr(self, list);
+                let list = self.copy_list(self[adjust].adjust_ptr)?;
+                self[copied_node(adjust, r)].adjust_ptr = list;
                 (r, 0)
             }
             _ => return Err(Abort::Confusion("copying")),

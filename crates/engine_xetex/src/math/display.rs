@@ -382,12 +382,12 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
         let r = st.mem.new_kern(z - w - e - d)?;
         if l {
             st.mem[eqno].link = r.ptr();
-            r.set_link(&mut st.mem, b.ptr());
+            st.mem[r].link = b.ptr();
             b = eqno;
             d = Scaled::ZERO;
         } else {
             st.mem[b].link = r.ptr();
-            r.set_link(&mut st.mem, eqno.ptr());
+            st.mem[r].link = eqno.ptr();
         }
         b = crate::packaging::hpack(st, b.ptr(), PackSpec::NATURAL)?;
     }
@@ -530,11 +530,11 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                             st.fonts.xtx_ligature_present = true;
                             continue 'reswitch;
                         }
-                        Ok(AnyNode::Kern(k)) => (k.width(&st.mem), false),
-                        Ok(AnyNode::MarginKern(k)) => (k.width(&st.mem), false),
+                        Ok(AnyNode::Kern(k)) => (st.mem[k].width, false),
+                        Ok(AnyNode::MarginKern(k)) => (st.mem[k].width, false),
                         Ok(AnyNode::Math(m)) => {
-                            let d = m.width(&st.mem);
-                            let subtype = m.subtype(&st.mem);
+                            let d = st.mem[m].width;
+                            let subtype = st.mem[m].subtype;
                             if texxet {
                                 if subtype & 1 != 0 {
                                     if st.scanner.lr_ptr.info(&st.mem)
@@ -564,9 +564,9 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                         }
                         // An EDGE_NODE, which shares type 14 with STYLE_NODE.
                         Ok(AnyNode::Style(edge)) => {
-                            st.scanner.cur_dir = Dir::from_code(edge.subtype(&st.mem))
+                            st.scanner.cur_dir = Dir::from_code(st.mem[edge].subtype)
                                 .ok_or(Abort::Confusion("LR"))?;
-                            (edge.as_edge().width(&st.mem), false)
+                            (st.mem[edge.as_edge()].width, false)
                         }
                         Ok(AnyNode::Glue(g)) => {
                             let spec = g.glue_ptr(&st.mem);

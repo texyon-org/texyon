@@ -372,9 +372,9 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
                 let adj = NodePtr::<AdjustNode>::alloc(&mut st.mem)?;
                 st.input.cur_list.tail_append(&mut st.mem, adj.ptr());
                 let pre = st.save_stack.saved(1);
-                adj.set_subtype(&mut st.mem, pre as u16);
+                st.mem[adj].subtype = pre as u16;
                 let list = st.mem[p].list_ptr;
-                adj.set_adjust_ptr(&mut st.mem, list);
+                st.mem[adj].adjust_ptr = list;
                 st.mem.delete_glue_ref(split_top_skip);
             }
             st.mem.free_node(p.ptr(), BOX_NODE_SIZE);
@@ -542,7 +542,7 @@ pub(super) fn append_kern(st: &mut EngineState, mu: bool) -> Result<(), Abort> {
     let s = if mu { MU_GLUE } else { EXPLICIT };
     let d = crate::scan::scan_dimen(st, mu, false)?;
     let p = st.mem.new_kern(d)?;
-    p.set_subtype(&mut st.mem, s);
+    st.mem[p].subtype = s;
     st.input.cur_list.tail_append(&mut st.mem, p.ptr());
     Ok(())
 }
@@ -555,9 +555,9 @@ pub(super) fn make_mark(st: &mut EngineState, marks: bool) -> Result<(), Abort> 
     };
     crate::scan::scan_toks(st, false, true)?;
     let mark = NodePtr::<MarkNode>::alloc(&mut st.mem)?;
-    mark.set_mark_class(&mut st.mem, c);
-    mark.set_subtype(&mut st.mem, 0);
-    mark.set_mark_ptr(&mut st.mem, st.scanner.def_ref);
+    st.mem[mark].mark_class = c;
+    st.mem[mark].subtype = 0;
+    st.mem[mark].mark_ptr = st.scanner.def_ref;
     st.input.cur_list.tail_append(&mut st.mem, mark.ptr());
     Ok(())
 }
@@ -647,7 +647,7 @@ pub(super) fn append_discretionary(st: &mut EngineState, hyphen: bool) -> Result
         let c = st.fonts.hyphen_char[f];
         if (0..=BIGGEST_CHAR).contains(&c) {
             let ch = new_character(st, f, c as u16)?;
-            d.set_pre_break(&mut st.mem, ch.map_or(MemPtr::NULL, NewChar::ptr));
+            st.mem[d].pre_break = ch.map_or(MemPtr::NULL, NewChar::ptr);
         }
         return Ok(());
     }
@@ -703,8 +703,8 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
     let disc = NodePtr::<DiscNode>::from_idx_unchecked(MemIdx::new(st.input.cur_list.tail));
     let part = st.save_stack.saved(-1);
     match part {
-        0 => disc.set_pre_break(&mut st.mem, p),
-        1 => disc.set_post_break(&mut st.mem, p),
+        0 => st.mem[disc].pre_break = p,
+        1 => st.mem[disc].post_break = p,
         2 => {
             if n > 0 && st.input.cur_list.mode.abs() == MMODE {
                 crate::output::error_here_with_diagnostic(st, "Illegal math ");
@@ -718,10 +718,10 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
                 n = 0;
                 crate::errors::error(st)?;
             } else {
-                disc.set_link(&mut st.mem, p);
+                st.mem[disc].link = p;
             }
             if n <= i32::from(u16::MAX) {
-                disc.set_subtype(&mut st.mem, n as u16);
+                st.mem[disc].subtype = n as u16;
             } else {
                 crate::output::print_err(st, "Discretionary list is too long");
                 st.errors.help(&[
@@ -772,7 +772,7 @@ pub(super) fn append_italic_correction(st: &mut EngineState) -> Result<(), Abort
     };
     let kern = st.mem.new_kern(italic)?;
     st.input.cur_list.tail_append(&mut st.mem, kern.ptr());
-    kern.set_subtype(&mut st.mem, EXPLICIT);
+    st.mem[kern].subtype = EXPLICIT;
     Ok(())
 }
 
@@ -852,12 +852,12 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
     };
     let delta = Scaled::round(delta + f64::from(h) * t - f64::from(x) * s);
     let r = st.mem.new_kern(delta)?;
-    r.set_subtype(&mut st.mem, ACC_KERN);
+    st.mem[r].subtype = ACC_KERN;
     st.input.cur_list.tail.set_link(&mut st.mem, r.ptr());
-    r.set_link(&mut st.mem, accent);
+    st.mem[r].link = accent;
     let back = st.mem.new_kern(-a - delta)?;
     st.input.cur_list.tail = back.ptr();
-    back.set_subtype(&mut st.mem, ACC_KERN);
+    st.mem[back].subtype = ACC_KERN;
     accent.set_link(&mut st.mem, back.ptr());
     st.input.cur_list.tail_append(&mut st.mem, q.ptr());
     st.input.cur_list.set_space_factor(1000);

@@ -676,7 +676,7 @@ fn fetch_last_node_item(st: &EngineState, code: LastItemCode) -> CurVal {
     let mut tx = st.input.cur_list.tail;
     let mut node = (!st.mem.is_char_node(tx)).then(|| st.mem.classify(tx));
     if let Some(Ok(AnyNode::Math(math))) = node {
-        if math.subtype(&st.mem) == END_M_CODE {
+        if st.mem[math].subtype == END_M_CODE {
             tx = st.mem.predecessor(head, tx);
             node = (!st.mem.is_char_node(tx)).then(|| st.mem.classify(tx));
         }
@@ -699,12 +699,12 @@ fn fetch_last_node_item(st: &EngineState, code: LastItemCode) -> CurVal {
             0
         }),
         LastItemCode::LastPenalty => CurVal::Int(match node {
-            Some(Ok(AnyNode::Penalty(p))) => p.penalty(&st.mem),
+            Some(Ok(AnyNode::Penalty(p))) => st.mem[p].penalty,
             None if at_page_head => st.shipout.last_penalty,
             _ => 0,
         }),
         LastItemCode::LastKern => CurVal::Dimen(match node {
-            Some(Ok(AnyNode::Kern(k))) => k.width(&st.mem),
+            Some(Ok(AnyNode::Kern(k))) => st.mem[k].width,
             None if at_page_head => st.shipout.last_kern,
             _ => Scaled::ZERO,
         }),

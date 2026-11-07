@@ -82,7 +82,7 @@ pub(crate) fn short_display(st: &mut EngineState, mut p: MemPtr) {
                     }
                 }
                 Ok(AnyNode::Math(m)) => {
-                    if m.subtype(&st.mem) >= L_CODE {
+                    if st.mem[m].subtype >= L_CODE {
                         print(st, "[]");
                     } else {
                         print_char(st, b'$');
@@ -90,9 +90,9 @@ pub(crate) fn short_display(st: &mut EngineState, mut p: MemPtr) {
                 }
                 Ok(AnyNode::Ligature(l)) => short_display(st, l.lig_ptr(&st.mem)),
                 Ok(AnyNode::Disc(d)) => {
-                    short_display(st, d.pre_break(&st.mem));
-                    short_display(st, d.post_break(&st.mem));
-                    for _ in 0..d.subtype(&st.mem) {
+                    short_display(st, st.mem[d].pre_break);
+                    short_display(st, st.mem[d].post_break);
+                    for _ in 0..st.mem[d].subtype {
                         if !p.link(&st.mem).is_null() {
                             p = p.link(&st.mem);
                         }
@@ -218,13 +218,13 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
                 Ok(AnyNode::Whatsit(node)) => show_whatsit(st, node),
                 Ok(AnyNode::Glue(node)) => show_glue(st, node),
                 Ok(AnyNode::Kern(node)) => {
-                    let sub = node.subtype(&st.mem);
+                    let sub = st.mem[node].subtype;
                     if sub != MU_GLUE {
                         print_esc(st, "kern");
                         if sub != 0 {
                             print_char(st, b' ');
                         }
-                        print_scaled(st, node.width(&st.mem));
+                        print_scaled(st, st.mem[node].width);
                         if sub == ACC_KERN {
                             print(st, " (for accent)");
                         } else if sub == SPACE_ADJUSTMENT {
@@ -232,21 +232,21 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
                         }
                     } else {
                         print_esc(st, "mkern");
-                        print_scaled(st, node.width(&st.mem));
+                        print_scaled(st, st.mem[node].width);
                         print(st, "mu");
                     }
                 }
                 Ok(AnyNode::MarginKern(node)) => {
                     print_esc(st, "kern");
-                    print_scaled(st, node.width(&st.mem));
-                    if node.subtype(&st.mem) == 0 {
+                    print_scaled(st, st.mem[node].width);
+                    if st.mem[node].subtype == 0 {
                         print(st, " (left margin)");
                     } else {
                         print(st, " (right margin)");
                     }
                 }
                 Ok(AnyNode::Math(node)) => {
-                    let sub = node.subtype(&st.mem);
+                    let sub = st.mem[node].subtype;
                     if sub > AFTER {
                         print_esc(st, if sub % 2 == 1 { "end" } else { "begin" });
                         let dir = if sub > R_CODE {
@@ -264,9 +264,9 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
                         } else {
                             print(st, "off");
                         }
-                        if node.width(&st.mem) != Scaled::ZERO {
+                        if st.mem[node].width != Scaled::ZERO {
                             print(st, ", surrounded ");
-                            print_scaled(st, node.width(&st.mem));
+                            print_scaled(st, st.mem[node].width);
                         }
                     }
                 }
@@ -286,41 +286,41 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
                 }
                 Ok(AnyNode::Penalty(node)) => {
                     print_esc(st, "penalty ");
-                    print_int(st, node.penalty(&st.mem));
+                    print_int(st, st.mem[node].penalty);
                 }
                 Ok(AnyNode::Disc(node)) => {
                     print_esc(st, "discretionary");
-                    let replace_count = node.subtype(&st.mem);
+                    let replace_count = st.mem[node].subtype;
                     if replace_count > 0 {
                         print(st, " replacing ");
                         print_int(st, i32::from(replace_count));
                     }
-                    node_list_display(st, b'.', node.pre_break(&st.mem));
-                    node_list_display(st, b'|', node.post_break(&st.mem));
+                    node_list_display(st, b'.', st.mem[node].pre_break);
+                    node_list_display(st, b'|', st.mem[node].post_break);
                 }
                 Ok(AnyNode::Mark(node)) => {
                     print_esc(st, "mark");
-                    let class = node.mark_class(&st.mem);
+                    let class = st.mem[node].mark_class;
                     if class != 0 {
                         print_char(st, b's');
                         print_int(st, class);
                     }
-                    print_mark(st, node.mark_ptr(&st.mem));
+                    print_mark(st, st.mem[node].mark_ptr);
                 }
                 Ok(AnyNode::Adjust(node)) => {
                     print_esc(st, "vadjust");
-                    if node.subtype(&st.mem) != 0 {
+                    if st.mem[node].subtype != 0 {
                         print(st, " pre ");
                     }
-                    node_list_display(st, b'.', node.adjust_ptr(&st.mem));
+                    node_list_display(st, b'.', st.mem[node].adjust_ptr);
                 }
-                Ok(AnyNode::Style(node)) => print_style(st, i32::from(node.subtype(&st.mem))),
+                Ok(AnyNode::Style(node)) => print_style(st, i32::from(st.mem[node].subtype)),
                 Ok(AnyNode::Choice(node)) => {
                     print_esc(st, "mathchoice");
-                    node_list_display(st, b'D', node.display_mlist(&st.mem));
-                    node_list_display(st, b'T', node.text_mlist(&st.mem));
-                    node_list_display(st, b'S', node.script_mlist(&st.mem));
-                    node_list_display(st, b's', node.script_script_mlist(&st.mem));
+                    node_list_display(st, b'D', st.mem[node].display_mlist);
+                    node_list_display(st, b'T', st.mem[node].text_mlist);
+                    node_list_display(st, b'S', st.mem[node].script_mlist);
+                    node_list_display(st, b's', st.mem[node].script_script_mlist);
                 }
                 Ok(AnyNode::Noad(node)) => show_noad(st, node),
                 Err(_) => print(st, "Unknown node type!"),

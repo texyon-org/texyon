@@ -222,11 +222,11 @@ impl ListStateRecord {
         // SAFETY: `append_choices` left the choice node as the enclosing list's tail.
         let tail = NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(self.tail));
         match save_stack.saved(-1) {
-            0 => tail.set_display_mlist(mem, p),
-            1 => tail.set_text_mlist(mem, p),
-            2 => tail.set_script_mlist(mem, p),
+            0 => mem[tail].display_mlist = p,
+            1 => mem[tail].text_mlist = p,
+            2 => mem[tail].script_mlist = p,
             3 => {
-                tail.set_script_script_mlist(mem, p);
+                mem[tail].script_script_mlist = p;
                 save_stack.save_ptr -= 1;
                 return true;
             }

@@ -6,8 +6,12 @@
 
 use bytemuck::{Pod, Zeroable};
 
-use crate::node::{BoxNode, FixedNode, GlueSpecNode, NodePtr, Stored};
+use crate::node::{
+    AdjustNode, BoxNode, ChoiceNode, DiscNode, EdgeNode, FixedNode, GlueSpecNode, KernNode,
+    MarginKernNode, MarkNode, MathNode, NodePtr, PenaltyNode, Stored, StyleNode,
+};
 use crate::state::MemState;
+use crate::token::TokenList;
 use crate::units::{GlueOrder, GlueSign, MemPtr, Orientation, Scaled};
 
 #[cfg(not(target_endian = "little"))]
@@ -100,6 +104,156 @@ pub struct BoxLayout {
 
 overlay!(BoxNode => BoxLayout);
 
+/// A kern. Its subtype tells normal, explicit, accent and math kerns apart.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct KernLayout {
+    pub subtype: u16,
+    _type: u16,
+    pub link: MemPtr,
+    _unused1: i32,
+    pub width: Scaled,
+    pub sync_tag: i32,
+    pub sync_line: i32,
+}
+
+overlay!(KernNode => KernLayout);
+
+/// A math-on/off node, or a TeX--XeT LR boundary, by its subtype.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct MathLayout {
+    pub subtype: u16,
+    _type: u16,
+    pub link: MemPtr,
+    _unused1: i32,
+    pub width: Scaled,
+    pub sync_tag: i32,
+    pub sync_line: i32,
+}
+
+overlay!(MathNode => MathLayout);
+
+/// A margin kern. Its subtype is the side it protrudes on.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct MarginKernLayout {
+    pub subtype: u16,
+    _type: u16,
+    pub link: MemPtr,
+    _unused1: i32,
+    pub width: Scaled,
+    _margin_char: i32,
+    _unused2: i32,
+}
+
+overlay!(MarginKernNode => MarginKernLayout);
+
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct PenaltyLayout {
+    pub subtype: u16,
+    _type: u16,
+    pub link: MemPtr,
+    _unused1: i32,
+    pub penalty: i32,
+    _unused2: [i32; 2],
+}
+
+overlay!(PenaltyNode => PenaltyLayout);
+
+/// A `\vadjust` list, the subtype selects pre or post placement.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct AdjustLayout {
+    pub subtype: u16,
+    _type: u16,
+    pub link: MemPtr,
+    _unused1: i32,
+    pub adjust_ptr: MemPtr,
+}
+
+overlay!(AdjustNode => AdjustLayout);
+
+/// A discretionary. Its subtype is the replace count.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct DiscLayout {
+    pub subtype: u16,
+    _type: u16,
+    pub link: MemPtr,
+    pub pre_break: MemPtr,
+    pub post_break: MemPtr,
+}
+
+overlay!(DiscNode => DiscLayout);
+
+/// A `\mathchoice` node with one mlist per style.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct ChoiceLayout {
+    pub subtype: u16,
+    _type: u16,
+    pub link: MemPtr,
+    pub display_mlist: MemPtr,
+    pub text_mlist: MemPtr,
+    pub script_mlist: MemPtr,
+    pub script_script_mlist: MemPtr,
+}
+
+overlay!(ChoiceNode => ChoiceLayout);
+
+/// A style change in an mlist. Its subtype is the style.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct StyleLayout {
+    pub subtype: u16,
+    _type: u16,
+    pub link: MemPtr,
+    _unused1: i32,
+    payload1: i32,
+    _unused2: i32,
+    payload2: i32,
+}
+
+overlay!(StyleNode => StyleLayout);
+
+impl StyleLayout {
+    /// Zeroes the two payload words, as `new_style` does.
+    #[inline]
+    pub fn clear_payload(&mut self) {
+        self.payload1 = 0;
+        self.payload2 = 0;
+    }
+}
+
+/// An LR edge in a shipped list. Its subtype is the direction.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct EdgeLayout {
+    pub subtype: u16,
+    _type: u16,
+    pub link: MemPtr,
+    _unused1: i32,
+    pub width: Scaled,
+    _unused2: i32,
+    pub edge_dist: Scaled,
+}
+
+overlay!(EdgeNode => EdgeLayout);
+
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct MarkLayout {
+    pub subtype: u16,
+    _type: u16,
+    pub link: MemPtr,
+    pub mark_class: i32,
+    pub mark_ptr: TokenList,
+}
+
+overlay!(MarkNode => MarkLayout);
+
 impl BoxLayout {
     #[inline]
     pub fn is_hlist(&self) -> bool {
@@ -174,6 +328,22 @@ mod tests {
         assert_eq!([5, 6, 7, 8].map(|i| mem.b32s0(at(i))), [0; 4]);
         assert_eq!((mem.b32s0(at(10)), mem.b32s1(at(10))), (0, 0x3FE0_0000));
         assert_eq!((mem.b32s0(at(11)), mem.b32s1(at(11))), (16, 17));
+    }
+
+    #[test]
+    fn edge_and_margin_kern_fields_land_on_their_words() {
+        let mut mem = arena();
+        let at = MemIdx::from_raw;
+        let e: NodePtr<EdgeNode> = NodePtr::from_idx_unchecked(at(4));
+        let edge = &mut mem[e];
+        edge.subtype = 1;
+        edge.width = Scaled::from_raw(11);
+        edge.edge_dist = Scaled::from_raw(12);
+        assert_eq!(mem.b16s0(at(4)), 1);
+        assert_eq!([5, 6].map(|i| mem.b32s1(at(i))), [11, 12]);
+        let m: NodePtr<MarginKernNode> = NodePtr::from_idx_unchecked(at(8));
+        mem[m].width = Scaled::from_raw(13);
+        assert_eq!(mem.b32s1(at(9)), 13);
     }
 
     #[test]
