@@ -16,8 +16,8 @@ use crate::node::{
     MovementNode, NativeWordNode, Noad, NodeKind, NodePtr, OpenNode, PageInsNode, ParShapeNode,
     PassiveNode, PenaltiesNode, PenaltyNode, PicNode, PseudoLineNode, RadicalNoad, RuleNode,
     SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved,
-    SaSavedPointer, SaSavedWord, SaWordNode, SpanNode, Stored, StoredDimen, StyleNode, UnsetNode,
-    WhatsitNode, WhatsitSubtype, WriteNode,
+    SaSavedPointer, SaSavedWord, SaWordNode, SizedWhatsit, SpanNode, Stored, StoredDimen,
+    StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype, WriteNode,
 };
 use crate::state::MemState;
 use crate::token::TokenList;
@@ -385,6 +385,23 @@ impl NativeWordLayout {
 
 overlay!(NativeWordNode => NativeWordLayout, crate::consts::NATIVE_NODE_SIZE);
 array_overlay!(NativeWordNode => u16, |h| i32::from(h.length));
+
+/// The dimensions a native word, glyph and picture share.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct SizedWhatsitLayout {
+    pub subtype: Stored<WhatsitSubtype>,
+    _type: u16,
+    pub link: MemPtr,
+    _unused1: i32,
+    pub width: Scaled,
+    _unused2: i32,
+    pub depth: Scaled,
+    _unused3: i32,
+    pub height: Scaled,
+}
+
+overlay!(SizedWhatsit => SizedWhatsitLayout, 4);
 
 /// A glue specification. Its first word holds the fill orders and a reference
 /// count in place of a type code and link.
@@ -1799,6 +1816,32 @@ mod tests {
         assert_eq!(mem.entries(dst), [0; 5]);
         assert_eq!(mem.entries(src), [1, 2, 3]);
         assert!(mem.entries_mut_and(dst, dst).is_err());
+    }
+
+    #[test]
+    fn sized_whatsits_share_their_dimension_words() {
+        let mut mem = MemState {
+            data: vec![Default::default(); 24],
+            ..Default::default()
+        };
+        let at = MemIdx::from_raw;
+        let w = native_word_at(&mut mem, 2, &[]);
+        mem[w].depth = Scaled::from_raw(5);
+        let g: NodePtr<GlyphNode> = NodePtr::from_idx_unchecked(at(10));
+        mem[g].subtype = WhatsitSubtype::Glyph.into();
+        mem[g].height = Scaled::from_raw(6);
+        let sized = |mem: &MemState, p: NodePtr<WhatsitNode>| p.sized(mem).map(|s| mem[s]);
+        assert_eq!(
+            sized(&mem, w.whatsit()).map(|s| s.depth),
+            Some(Scaled::from_raw(5))
+        );
+        assert_eq!(
+            sized(&mem, g.whatsit()).map(|s| s.height),
+            Some(Scaled::from_raw(6))
+        );
+        let l: NodePtr<LanguageNode> = NodePtr::from_idx_unchecked(at(16));
+        mem[l].subtype = WhatsitSubtype::Language.into();
+        assert!(l.whatsit().sized(&mem).is_none());
     }
 
     #[test]

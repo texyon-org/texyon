@@ -5,9 +5,7 @@ use crate::consts::{A_LEADERS, BEFORE, EXPLICIT, IGNORE_DEPTH, NULL_FONT, SMALL_
 use crate::errors::Abort;
 use crate::mem::{end_lr_type, GARBAGE};
 use crate::mem_types::ListStateRecord;
-use crate::node::{
-    AnyNode, BoxNode, CharNode, NativeWordNode, NodePtr, RuleDimen, WhatsitSubtype, WhatsitVariant,
-};
+use crate::node::{AnyNode, BoxNode, CharNode, NativeWordNode, NodePtr, RuleDimen, WhatsitVariant};
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, FontState, MemState, ScannerState, ShipoutState};
 use crate::units::{GlueOrder, GlueSign, MemPtr, NodeType, OrderTotals, Orientation, Scaled};
@@ -331,12 +329,14 @@ impl MemState {
                         d = d.max(self[native].depth);
                         x += self[native].width;
                     }
-                    Some(WhatsitVariant::Glyph(_) | WhatsitVariant::Pic(_)) => {
-                        h = h.max(w.height(self));
-                        d = d.max(w.depth(self));
-                        x += w.width(self);
+                    _ => {
+                        if let Some(sized) = w.sized(self) {
+                            let sized = self[sized];
+                            h = h.max(sized.height);
+                            d = d.max(sized.depth);
+                            x += sized.width;
+                        }
                     }
-                    _ => {}
                 },
                 Ok(AnyNode::Glue(glue)) => {
                     let spec = self[glue].glue_ptr;
@@ -646,13 +646,11 @@ impl MemState {
                     w = w.max(self[u].width);
                 }
                 Ok(AnyNode::Whatsit(wn)) => {
-                    if matches!(
-                        wn.whatsit_subtype(self),
-                        Some(WhatsitSubtype::Pic | WhatsitSubtype::Pdf)
-                    ) {
-                        x += d + wn.height(self);
-                        d = wn.depth(self);
-                        w = w.max(wn.width(self));
+                    if let Some(WhatsitVariant::Pic(pic)) = wn.variant(self) {
+                        let pic = self[pic];
+                        x += d + pic.height;
+                        d = pic.depth;
+                        w = w.max(pic.width);
                     }
                 }
                 Ok(AnyNode::Glue(glue)) => {

@@ -357,11 +357,7 @@ impl MemState {
             Ok(node @ (AnyNode::Box(_) | AnyNode::Rule(_) | AnyNode::Kern(_))) => {
                 Ok(node.hlist_width(self))
             }
-            Ok(AnyNode::Whatsit(w)) => w
-                .whatsit_subtype(self)
-                .is_some_and(|s| s.has_dimensions())
-                .then(|| w.width(self))
-                .ok_or(true),
+            Ok(AnyNode::Whatsit(w)) => w.sized(self).map(|s| self[s].width).ok_or(true),
             _ => Err(false),
         }
     }
@@ -547,11 +543,8 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                 AnyNode::Whatsit(w) => {
                     if let Some(WhatsitVariant::Language(language)) = w.variant(&st.mem) {
                         set_language(st, language);
-                    } else if w
-                        .whatsit_subtype(&st.mem)
-                        .is_some_and(|s| s.has_dimensions())
-                    {
-                        st.scanner.active_width[1] += w.width(&st.mem);
+                    } else if let Some(sized) = w.sized(&st.mem) {
+                        st.scanner.active_width[1] += st.mem[sized].width;
                     }
                 }
                 AnyNode::Glue(cur_glue) => {

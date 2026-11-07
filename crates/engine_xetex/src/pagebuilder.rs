@@ -9,7 +9,7 @@ use crate::errors::Abort;
 use crate::helpers::badness;
 use crate::input::TokenType;
 use crate::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
-use crate::node::{AnyNode, InsNode, NodePtr, PageInsNode, SaLeaf, WhatsitSubtype};
+use crate::node::{AnyNode, InsNode, NodePtr, PageInsNode, SaLeaf, WhatsitVariant};
 use crate::packaging::{MarksAction, PackSpec};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::scan::fetch_box;
@@ -576,13 +576,11 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
                 PageStep::Contribute
             }
             AnyNode::Whatsit(w) => {
-                if matches!(
-                    w.whatsit_subtype(&st.mem),
-                    Some(WhatsitSubtype::Pic | WhatsitSubtype::Pdf)
-                ) {
+                if let Some(WhatsitVariant::Pic(pic)) = w.variant(&st.mem) {
+                    let pic = st.mem[pic];
                     st.shipout.page_so_far[PAGE_TOTAL] +=
-                        st.shipout.page_so_far[PAGE_DEPTH] + w.height(&st.mem);
-                    st.shipout.page_so_far[PAGE_DEPTH] = w.depth(&st.mem);
+                        st.shipout.page_so_far[PAGE_DEPTH] + pic.height;
+                    st.shipout.page_so_far[PAGE_DEPTH] = pic.depth;
                 }
                 PageStep::Contribute
             }

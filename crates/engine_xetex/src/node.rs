@@ -1,9 +1,9 @@
 //! Typed node handles over the flat `mem` arena.
 //!
 //! [`NodePtr<K>`] is a `Copy` index plus a compile-time kind marker, so a field
-//! access compiles to the same load/store as the raw `mem[p + k]` form. Kinds
-//! with a layout in [`crate::overlay`] index the arena (`mem[p].width`), the
-//! others pass it as context: `p.width(mem)`, `p.set_width(mem, w)`.
+//! access compiles to the same load/store as the raw `mem[p + k]` form. Every
+//! kind's layout lives in [`crate::overlay`] and indexes the arena:
+//! `mem[p].width`, `mem.entries(p)` for the text or array after a header.
 
 use std::marker::PhantomData;
 
@@ -15,10 +15,8 @@ use crate::consts::{
 };
 use crate::errors::Abort;
 use crate::state::MemState;
-use crate::token::TokenList;
 use crate::units::{
-    FontId, GlueOrder, GlueSign, InvalidNodeType, MemAddr, MemIdx, MemPtr, NodeType, Orientation,
-    Scaled, StrNumber,
+    GlueOrder, GlueSign, InvalidNodeType, MemAddr, MemIdx, MemPtr, NodeType, Orientation, Scaled,
 };
 
 /// Marker for node kinds, implemented by the uninhabited kind enums below.
@@ -129,65 +127,6 @@ impl<K: NodeKind> From<NodePtr<K>> for Link<K> {
     #[inline]
     fn from(p: NodePtr<K>) -> Self {
         Link(p.ptr(), PhantomData)
-    }
-}
-
-/// A value stored in one subfield of a memory word.
-trait Slot: Copy {
-    type Raw;
-    fn decode(raw: Self::Raw) -> Self;
-}
-
-macro_rules! identity_slot {
-    ($($t:ty),*) => {$(
-        impl Slot for $t {
-            type Raw = $t;
-            #[inline(always)]
-            fn decode(raw: $t) -> $t {
-                raw
-            }
-        }
-    )*};
-}
-identity_slot!(i32, u16);
-
-impl Slot for Scaled {
-    type Raw = i32;
-    #[inline(always)]
-    fn decode(raw: i32) -> Self {
-        Scaled::from_raw(raw)
-    }
-}
-
-impl Slot for TokenList {
-    type Raw = i32;
-    #[inline(always)]
-    fn decode(raw: i32) -> Self {
-        TokenList::from_ptr(MemPtr::from_raw(raw))
-    }
-}
-
-impl Slot for MemPtr {
-    type Raw = i32;
-    #[inline(always)]
-    fn decode(raw: i32) -> Self {
-        MemPtr::from_raw(raw)
-    }
-}
-
-impl Slot for StrNumber {
-    type Raw = i32;
-    #[inline(always)]
-    fn decode(raw: i32) -> Self {
-        StrNumber::from_raw(raw)
-    }
-}
-
-impl Slot for FontId {
-    type Raw = u16;
-    #[inline(always)]
-    fn decode(raw: u16) -> Self {
-        FontId::new(raw)
     }
 }
 
@@ -307,14 +246,6 @@ impl<T: StoredCode> PartialOrd<T> for Stored<T> {
     }
 }
 
-impl<T: StoredCode> Slot for Stored<T> {
-    type Raw = u16;
-    #[inline(always)]
-    fn decode(raw: u16) -> Self {
-        Stored::from_raw(raw)
-    }
-}
-
 impl StoredCode for GlueSign {
     #[inline]
     fn from_u16(raw: u16) -> Option<Self> {
@@ -379,17 +310,6 @@ const _: () = assert!(
     Orientation::Horizontal.node_type().as_raw() == Orientation::Horizontal.as_raw()
         && Orientation::Vertical.node_type().as_raw() == Orientation::Vertical.as_raw()
 );
-
-/// Field getters: `getter: Type = subfield @ word_offset;`.
-macro_rules! fields {
-    ($($(#[$m:meta])* $get:ident: $ty:ty = $slot:ident @ $off:expr;)*) => {$(
-        $(#[$m])*
-        #[inline]
-        pub fn $get(self, mem: &MemState) -> $ty {
-            <$ty as Slot>::decode(mem.$slot(self.idx + $off))
-        }
-    )*};
-}
 
 /// A kind with a fixed allocation size and header type code.
 pub trait FixedNode: NodeKind {
@@ -481,6 +401,8 @@ node_kinds! {
     PicNode;
     /// A run of text in one native font, stored inline as UTF-16.
     NativeWordNode;
+    /// A native word, glyph or picture, through the dimensions they share.
+    SizedWhatsit;
     /// An alignment box before its column widths are known. Words +4..+6 hold
     /// the accumulated shrink, span count and stretch instead of box glue.
     UnsetNode;
@@ -630,10 +552,6 @@ const MOVEMENT_NODE_SIZE: i32 = 3;
 
 /// A `link` in word 0, which generic list walks read as an untyped word.
 pub trait HasLink: NodeKind {}
-/// A `Scaled` width at +1.
-pub trait HasWidth: NodeKind {}
-/// `Scaled` depth and height at +2 and +3.
-pub trait HasHeightDepth: NodeKind {}
 
 macro_rules! impl_traits {
     ($trait:ident: $($kind:ident),*) => {$(impl $trait for $kind {})*};
@@ -645,8 +563,6 @@ impl_traits!(HasLink: BoxNode, RuleNode, InsNode, MarkNode, AdjustNode, Ligature
     SaSaved, SaSavedWord, SaSavedPointer, PageInsNode, ActiveNode, DeltaNode, PassiveNode,
     MovementNode, CondNode, CharNode, AlignRecord, AlignStackNode, ExprNode, PseudoLineNode,
     LigItem);
-impl_traits!(HasWidth: WhatsitNode);
-impl_traits!(HasHeightDepth: WhatsitNode);
 
 /// A record kept only on its own list, which therefore proves its kind.
 pub trait ListRecord: NodeKind {}
@@ -688,19 +604,6 @@ impl<K: ListRecord + FixedNode> NodePtr<K> {
     #[inline]
     pub fn free(self, mem: &mut MemState) {
         mem.free_node(self.ptr(), K::SIZE);
-    }
-}
-
-impl<K: HasWidth> NodePtr<K> {
-    fields! {
-        width: Scaled = b32s1 @ 1;
-    }
-}
-
-impl<K: HasHeightDepth> NodePtr<K> {
-    fields! {
-        depth: Scaled = b32s1 @ 2;
-        height: Scaled = b32s1 @ 3;
     }
 }
 
@@ -911,7 +814,7 @@ impl AnyNode {
             AnyNode::Rule(p) => mem[p].width.to_scaled(),
             AnyNode::Kern(p) => mem[p].width,
             AnyNode::Math(p) => mem[p].width,
-            AnyNode::Whatsit(p) => p.width(mem),
+            AnyNode::Whatsit(p) => p.sized(mem).map_or(Scaled::ZERO, |s| mem[s].width),
             _ => Scaled::ZERO,
         }
     }
@@ -1466,6 +1369,16 @@ impl NodePtr<WhatsitNode> {
         })
     }
 
+    /// The whatsit's dimensions, for a native word, glyph or picture.
+    #[inline]
+    pub fn sized(self, mem: &MemState) -> Option<NodePtr<SizedWhatsit>> {
+        mem[self]
+            .subtype
+            .get()?
+            .has_dimensions()
+            .then_some(NodePtr::from_idx_unchecked(self.idx))
+    }
+
     #[inline]
     pub fn whatsit_subtype(self, mem: &MemState) -> Option<WhatsitSubtype> {
         WhatsitSubtype::from_raw(mem.b16s0(self.idx))
@@ -1606,6 +1519,8 @@ impl NodePtr<SaSavedPointer> {
 mod tests {
     use super::*;
     use crate::consts::MAX_HALFWORD;
+    use crate::token::TokenList;
+    use crate::units::FontId;
     use std::mem::size_of;
 
     fn fresh_mem(n: usize) -> MemState {

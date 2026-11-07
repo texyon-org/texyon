@@ -588,13 +588,10 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                             }
                             (st.mem[spec].width, st.mem[g].subtype >= A_LEADERS)
                         }
-                        Ok(AnyNode::Whatsit(wn))
-                            if wn
-                                .whatsit_subtype(&st.mem)
-                                .is_some_and(|s| s.has_dimensions()) =>
-                        {
-                            (wn.width(&st.mem), true)
-                        }
+                        Ok(AnyNode::Whatsit(wn)) => match wn.sized(&st.mem) {
+                            Some(sized) => (st.mem[sized].width, true),
+                            None => (Scaled::ZERO, false),
+                        },
                         _ => (Scaled::ZERO, false),
                     };
                 };

@@ -233,10 +233,13 @@ pub(super) fn build_opentype_assembly(
     while !p.is_null() {
         match st.mem.classify(p) {
             Ok(AnyNode::Whatsit(pw)) => {
-                if horiz {
-                    nat += pw.width(&st.mem);
-                } else {
-                    nat += pw.height(&st.mem) + pw.depth(&st.mem);
+                if let Some(sized) = pw.sized(&st.mem) {
+                    let sized = st.mem[sized];
+                    if horiz {
+                        nat += sized.width;
+                    } else {
+                        nat += sized.height + sized.depth;
+                    }
                 }
             }
             Ok(AnyNode::Glue(gn)) => {

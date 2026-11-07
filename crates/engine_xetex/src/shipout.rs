@@ -1384,8 +1384,8 @@ impl MemState {
                         now_kern = true;
                     }
                     Ok(AnyNode::Whatsit(w)) => {
-                        if w.whatsit_subtype(self).is_some_and(|s| s.has_dimensions()) {
-                            shipout.rule_wd = w.width(self);
+                        if let Some(sized) = w.sized(self) {
+                            shipout.rule_wd = self[sized].width;
                         } else {
                             add_width = false;
                         }

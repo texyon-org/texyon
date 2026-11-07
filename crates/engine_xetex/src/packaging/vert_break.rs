@@ -6,7 +6,7 @@ use crate::errors::Abort;
 use crate::mem::TEMP_HEAD;
 use crate::node::{
     link_of, AnyNode, BoxNode, FixedNode, GlueNode, GlueSpecNode, KernNode, MarkNode, NodePtr,
-    SaIndexNode, SaLeaf, SaMarkClassNode, WhatsitSubtype,
+    SaIndexNode, SaLeaf, SaMarkClassNode, WhatsitVariant,
 };
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, MemState, ScannerState, ShipoutState};
@@ -140,12 +140,9 @@ impl MemState {
                 Ok(VertBreakNext::NotFound)
             }
             AnyNode::Whatsit(w) => {
-                if matches!(
-                    w.whatsit_subtype(self),
-                    Some(WhatsitSubtype::Pic | WhatsitSubtype::Pdf)
-                ) {
-                    scanner.active_width[1] += cursor.prev_dp + w.height(self);
-                    cursor.prev_dp = w.depth(self);
+                if let Some(WhatsitVariant::Pic(pic)) = w.variant(self) {
+                    scanner.active_width[1] += cursor.prev_dp + self[pic].height;
+                    cursor.prev_dp = self[pic].depth;
                 }
                 Ok(VertBreakNext::NotFound)
             }
