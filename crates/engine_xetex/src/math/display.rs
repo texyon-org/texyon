@@ -637,9 +637,10 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                 .cur_list
                 .prev_graf
                 .saturating_add(2)
-                .min(shape.lines(&st.mem));
-            s = shape.indent(&st.mem, line);
-            l = shape.line_width(&st.mem, line);
+                .min(st.mem[shape].lines);
+            let line = shape.line(&st.mem, line);
+            s = line.indent;
+            l = line.width;
         } else {
             let hang = st.eqtb.dimen_par(DimenPar::HangIndent);
             let hang_after = st.eqtb.int_par(IntPar::HangAfter);

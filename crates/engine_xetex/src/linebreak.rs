@@ -449,9 +449,11 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
     let par_shape = st.eqtb.par_shape();
     let lb = &mut st.linebreak;
     if let Some(shape) = par_shape {
-        lb.last_special_line = shape.lines(&st.mem) - 1;
-        lb.second_width = shape.line_width(&st.mem, lb.last_special_line + 1);
-        lb.second_indent = shape.indent(&st.mem, lb.last_special_line + 1);
+        let lines = st.mem[shape].lines;
+        let last = shape.line(&st.mem, lines);
+        lb.last_special_line = lines - 1;
+        lb.second_width = last.width;
+        lb.second_indent = last.indent;
     } else {
         let hang_indent = st.eqtb.dimen_par(DimenPar::HangIndent);
         let hsize = st.eqtb.dimen_par(DimenPar::Hsize);
@@ -909,7 +911,7 @@ impl MemState {
                     } else if let Some(shape) = eqtb.par_shape() {
                         // A huge \prevgraf wraps line numbers negative, past the shape.
                         if l > 0 {
-                            shape.line_width(self, l)
+                            shape.line(self, l).width
                         } else {
                             linebreak.second_width
                         }

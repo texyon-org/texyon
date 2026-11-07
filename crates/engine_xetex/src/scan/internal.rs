@@ -652,11 +652,11 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: LastItemCode) -> Result<Scaled
                         q = n % 2;
                         n = n / 2 + q;
                     }
-                    let line = n.min(shape.lines(&st.mem));
+                    let line = shape.line(&st.mem, n.min(st.mem[shape].lines));
                     if q == 0 {
-                        shape.line_width(&st.mem, line)
+                        line.width
                     } else {
-                        shape.indent(&st.mem, line)
+                        line.indent
                     }
                 }
                 _ => Scaled::ZERO,
@@ -839,7 +839,7 @@ pub(super) fn scan_something_internal(
                     _ => 0,
                 }
             } else {
-                st.eqtb.par_shape().map_or(0, |s| s.lines(&st.mem))
+                st.eqtb.par_shape().map_or(0, |s| st.mem[s].lines)
             }),
             Some(Command::SetBoxDimen(code)) => {
                 let n = scan_register_num(st)?;

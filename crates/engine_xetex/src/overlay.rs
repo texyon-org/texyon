@@ -13,9 +13,9 @@ use crate::node::{
     ChoiceNode, CondNode, DelimiterField, DeltaNode, DiscNode, EdgeNode, ExprNode, FenceNoad,
     FixedNode, FractionNoad, FreeBlock, GlueNode, GlueSpecNode, InsNode, KernNode, LigItem,
     LigatureNode, Link, MarginKernNode, MarkNode, MathField, MathNode, MovementNode, Noad,
-    NodeKind, NodePtr, PageInsNode, PassiveNode, PenaltyNode, RadicalNoad, RuleNode, SaChild,
-    SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved, SaSavedPointer,
-    SaSavedWord, SaWordNode, SpanNode, Stored, StoredDimen, StyleNode, UnsetNode,
+    NodeKind, NodePtr, PageInsNode, ParShapeNode, PassiveNode, PenaltyNode, RadicalNoad, RuleNode,
+    SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved,
+    SaSavedPointer, SaSavedWord, SaWordNode, SpanNode, Stored, StoredDimen, StyleNode, UnsetNode,
 };
 use crate::state::MemState;
 use crate::token::TokenList;
@@ -76,6 +76,81 @@ macro_rules! overlay {
         );
     };
 }
+
+/// A node kind laid out as its header `Layout` followed by equal entries, as
+/// many as the size in the header leaves room for.
+pub trait ArrayOverlay: Overlay {
+    /// The struct laid over each entry.
+    type Entry: Pod;
+    const ENTRY_WORDS: i32;
+    /// The node's size in words, read from its header.
+    fn size(header: &Self::Layout) -> i32;
+}
+
+/// Declares the entry layout of an array node kind, whose header is its
+/// `overlay!` layout.
+macro_rules! array_overlay {
+    ($kind:ty => $entry:ty, $words:expr, |$header:ident| $size:expr) => {
+        impl ArrayOverlay for $kind {
+            type Entry = $entry;
+            const ENTRY_WORDS: i32 = $words;
+            #[inline]
+            fn size($header: &<$kind as Overlay>::Layout) -> i32 {
+                $size
+            }
+        }
+        const _: () = assert!(
+            std::mem::size_of::<$entry>()
+                == std::mem::size_of::<crate::mem_types::MemoryWord>() * $words as usize
+        );
+    };
+}
+
+impl MemState {
+    fn entry_words<K: ArrayOverlay>(&self, p: NodePtr<K>) -> std::ops::Range<usize> {
+        let entries = (K::size(&self[p]) - K::WORDS) / K::ENTRY_WORDS;
+        (p.idx() + K::WORDS).words(entries * K::ENTRY_WORDS)
+    }
+
+    /// The entries that follow an array node's header.
+    #[inline]
+    pub fn entries<K: ArrayOverlay>(&self, p: NodePtr<K>) -> &[K::Entry] {
+        bytemuck::cast_slice(&self.data[self.entry_words(p)])
+    }
+
+    /// The entries that follow an array node's header, noted in the journal.
+    #[inline]
+    pub fn entries_mut<K: ArrayOverlay>(&mut self, p: NodePtr<K>) -> &mut [K::Entry] {
+        let words = self.entry_words(p);
+        let start = words.start;
+        let entries = &mut self.data[words];
+        if self.journal.armed() {
+            self.journal.note_run(start, entries);
+        }
+        bytemuck::cast_slice_mut(entries)
+    }
+}
+
+/// The header of a `\parshape` array.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct ParShapeHeader {
+    pub lines: i32,
+    _link: i32,
+}
+
+/// One line of a `\parshape` array.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct ParShapeLine {
+    _unused0: i32,
+    pub indent: Scaled,
+    _unused1: i32,
+    pub width: Scaled,
+}
+
+overlay!(ParShapeNode => ParShapeHeader, 1);
+array_overlay!(ParShapeNode => ParShapeLine, 2, |h| 2 * h.lines + 1);
 
 /// A glue specification. Its first word holds the fill orders and a reference
 /// count in place of a type code and link.
@@ -1250,6 +1325,56 @@ mod tests {
         assert_eq!(
             (spec.ref_count, spec.width, spec.stretch, spec.shrink),
             (0, Scaled::ZERO, Scaled::ZERO, Scaled::from_raw(5))
+        );
+    }
+
+    fn shape_at(idx: i32) -> NodePtr<ParShapeNode> {
+        NodePtr::from_idx_unchecked(MemIdx::from_raw(idx))
+    }
+
+    #[test]
+    fn par_shape_lines_land_on_their_words() {
+        let mut mem = arena();
+        let s = shape_at(4);
+        mem[s].lines = 2;
+        let lines = mem.entries_mut(s);
+        assert_eq!(lines.len(), 2);
+        lines[0].indent = Scaled::from_raw(11);
+        lines[0].width = Scaled::from_raw(12);
+        lines[1].indent = Scaled::from_raw(13);
+        lines[1].width = Scaled::from_raw(14);
+        let at = MemIdx::from_raw;
+        assert_eq!(mem.b32s0(at(4)), 2);
+        assert_eq!([5, 6, 7, 8].map(|i| mem.b32s1(at(i))), [11, 12, 13, 14]);
+        assert_eq!([3, 4, 9].map(|i| mem.b32s1(at(i))), [0; 3]);
+        assert_eq!([5, 6, 7, 8, 9].map(|i| mem.b32s0(at(i))), [0; 5]);
+        assert_eq!(s.line(&mem, 2).width, Scaled::from_raw(14));
+    }
+
+    #[test]
+    fn a_negative_size_leaves_no_entries() {
+        let mut mem = arena();
+        let s = shape_at(4);
+        mem[s].lines = -3;
+        assert!(mem.entries(s).is_empty());
+    }
+
+    #[test]
+    fn mutable_entries_journal_every_entry_word() {
+        let mut mem = arena();
+        let s = shape_at(4);
+        mem[s].lines = 2;
+        mem.entries_mut(s)[1].width = Scaled::from_raw(5);
+        mem.journal.arm(16);
+        let lines = mem.entries_mut(s);
+        lines[0].indent = Scaled::from_raw(1);
+        lines[1].width = Scaled::from_raw(2);
+        let delta = mem.journal.seal(&mem.data);
+        delta.apply_to(&mut mem.data);
+        let lines = mem.entries(s);
+        assert_eq!(
+            (lines[0].indent, lines[1].width),
+            (Scaled::ZERO, Scaled::from_raw(5))
         );
     }
 }

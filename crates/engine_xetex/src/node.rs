@@ -1360,25 +1360,10 @@ impl NodePtr<AlignRecord> {
 }
 
 impl NodePtr<ParShapeNode> {
-    fields! {
-        lines / set_lines: i32 = b32s0 @ 0;
-    }
-
+    /// Line `k`, counting from 1. Panics outside the shape.
     #[inline]
-    pub fn indent(self, mem: &MemState, line: i32) -> Scaled {
-        Scaled::from_raw(mem.b32s1(self.idx + 2 * line - 1))
-    }
-    #[inline]
-    pub fn set_indent(self, mem: &mut MemState, line: i32, v: Scaled) {
-        mem.set_b32s1(self.idx + 2 * line - 1, v.raw());
-    }
-    #[inline]
-    pub fn line_width(self, mem: &MemState, line: i32) -> Scaled {
-        Scaled::from_raw(mem.b32s1(self.idx + 2 * line))
-    }
-    #[inline]
-    pub fn set_line_width(self, mem: &mut MemState, line: i32, v: Scaled) {
-        mem.set_b32s1(self.idx + 2 * line, v.raw());
+    pub fn line(self, mem: &MemState, k: i32) -> crate::overlay::ParShapeLine {
+        mem.entries(self)[usize::try_from(k - 1).unwrap_or(usize::MAX)]
     }
 }
 

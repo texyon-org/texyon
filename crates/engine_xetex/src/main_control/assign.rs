@@ -1068,12 +1068,12 @@ fn set_shape(st: &mut EngineState, global: bool, q: EqtbPtr) -> Result<(), Abort
     } else {
         let p = st.mem.get_node(2 * n + 1)?;
         let shape = NodePtr::<ParShapeNode>::at(p);
-        shape.set_lines(&mut st.mem, n);
-        for line in 1..=n {
+        st.mem[shape].lines = n;
+        for line in 0..st.mem.entries(shape).len() {
             let indent = crate::scan::scan_dimen(st, false, false)?;
-            shape.set_indent(&mut st.mem, line, indent);
+            st.mem.entries_mut(shape)[line].indent = indent;
             let width = crate::scan::scan_dimen(st, false, false)?;
-            shape.set_line_width(&mut st.mem, line, width);
+            st.mem.entries_mut(shape)[line].width = width;
         }
         p
     };

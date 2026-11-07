@@ -188,7 +188,8 @@ impl LinebreakState {
         } else if let Some(shape) = eqtb.par_shape() {
             // A huge \prevgraf wraps line numbers negative, past the shape.
             if cur_line > 0 {
-                (shape.line_width(mem, cur_line), shape.indent(mem, cur_line))
+                let line = shape.line(mem, cur_line);
+                (line.width, line.indent)
             } else {
                 (self.second_width, self.second_indent)
             }
