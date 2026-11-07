@@ -524,9 +524,9 @@ fn register_item(st: &EngineState, cs: EqtbPtr) -> Result<Item, &'static str> {
         Cmd::AssignInt => Ok(Item::Count(st.eqtb.int_at(st.eqtb.equiv_loc(cs)))),
         Cmd::Register if ValueLevel::from_raw(m).is_none() => {
             let sa = NodePtr::<SaNode>::at(MemPtr::from_raw(m));
-            match sa.sa_type(&st.mem) {
-                ValueLevel::Int => Ok(Item::Count(sa.sa_int(&st.mem))),
-                ValueLevel::Dimen => Ok(Item::Dimen(sa.sa_int(&st.mem))),
+            match sa.sa_type(&st.mem).get() {
+                Some(ValueLevel::Int) => Ok(Item::Count(sa.sa_int(&st.mem))),
+                Some(ValueLevel::Dimen) => Ok(Item::Dimen(sa.sa_int(&st.mem))),
                 _ => Err("unsupported register"),
             }
         }

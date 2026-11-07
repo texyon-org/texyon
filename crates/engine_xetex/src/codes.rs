@@ -55,6 +55,17 @@ macro_rules! code_enum {
                 self as i32
             }
         }
+
+        impl crate::node::StoredCode for $name {
+            #[inline]
+            fn from_u16(raw: u16) -> Option<Self> {
+                Self::from_raw(i32::from(raw))
+            }
+            #[inline]
+            fn to_u16(self) -> u16 {
+                self as u16
+            }
+        }
     };
 }
 

@@ -60,7 +60,7 @@ fn skipped_branch_end(st: &mut EngineState) -> Result<(), Abort> {
     if st.scanner.fi_or_else() == Some(FiOrElseCode::Fi) {
         pop_fi(st)?;
     } else {
-        st.scanner.if_limit = FiOrElseCode::Fi;
+        st.scanner.if_limit = FiOrElseCode::Fi.into();
     }
     Ok(())
 }
@@ -151,7 +151,7 @@ fn change_if_limit(
     p: Option<NodePtr<CondNode>>,
 ) -> Result<(), Abort> {
     if p == st.scanner.cond_ptr {
-        st.scanner.if_limit = l;
+        st.scanner.if_limit = l.into();
         return Ok(());
     }
     let mut q = st.scanner.cond_ptr;
@@ -178,7 +178,7 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
     cond_node.set_if_line(&mut st.mem, st.scanner.if_line);
     st.scanner.cond_ptr = Some(cond_node);
     st.scanner.cur_if = (this_if.raw() + if is_unless { IfCode::UNLESS } else { 0 }) as i16;
-    st.scanner.if_limit = FiOrElseCode::If;
+    st.scanner.if_limit = FiOrElseCode::If.into();
     st.scanner.if_line = st.mem.line;
 
     let save_cond_ptr = st.scanner.cond_ptr;
@@ -908,7 +908,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                 {
                     show_cur_cmd_chr(st);
                 }
-                if code.raw() > st.scanner.if_limit.raw() {
+                if st.scanner.if_limit < code {
                     if st.scanner.if_limit == FiOrElseCode::If {
                         crate::input::insert_relax(st)?;
                     } else {

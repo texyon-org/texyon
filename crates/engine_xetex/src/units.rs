@@ -915,15 +915,6 @@ pub enum GlueSign {
 
 impl GlueSign {
     #[inline]
-    pub fn from_raw(raw: u16) -> GlueSign {
-        match raw {
-            1 => GlueSign::Stretching,
-            2 => GlueSign::Shrinking,
-            _ => GlueSign::Normal,
-        }
-    }
-
-    #[inline]
     pub const fn as_raw(self) -> u16 {
         self as u16
     }
@@ -950,17 +941,6 @@ impl GlueOrder {
         GlueOrder::Fill,
         GlueOrder::Filll,
     ];
-
-    #[inline]
-    pub fn from_raw(raw: u16) -> GlueOrder {
-        match raw {
-            1 => GlueOrder::Fil,
-            2 => GlueOrder::Fill,
-            3 => GlueOrder::Filll,
-            4 => GlueOrder::Rigid,
-            _ => GlueOrder::Normal,
-        }
-    }
 
     #[inline]
     pub const fn as_raw(self) -> u16 {
@@ -997,6 +977,17 @@ impl OrderTotals {
     }
 }
 
+impl OrderTotals {
+    #[inline(always)]
+    pub(crate) fn as_array(&self) -> &[Scaled; 4] {
+        &self.0
+    }
+    #[inline(always)]
+    pub(crate) fn as_array_mut(&mut self) -> &mut [Scaled; 4] {
+        &mut self.0
+    }
+}
+
 impl std::ops::Index<GlueOrder> for OrderTotals {
     type Output = Scaled;
     #[inline(always)]
@@ -1026,7 +1017,10 @@ mod tests {
             GlueOrder::Filll,
             GlueOrder::Rigid,
         ] {
-            assert_eq!(GlueOrder::from_raw(o.as_raw()), o);
+            assert_eq!(
+                <GlueOrder as crate::node::StoredCode>::from_u16(o.as_raw()),
+                Some(o)
+            );
         }
     }
 

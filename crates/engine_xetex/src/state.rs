@@ -1077,7 +1077,7 @@ pub(crate) struct ScannerState {
     pub max_reg_num: i32,
     /// The innermost incomplete conditional, `None` outside any.
     pub cond_ptr: Option<crate::node::NodePtr<crate::node::CondNode>>,
-    pub if_limit: FiOrElseCode,
+    pub if_limit: crate::node::Stored<FiOrElseCode>,
     pub cur_if: i16,
     pub if_line: i32,
     pub skip_line: i32,

@@ -8,6 +8,7 @@ use crate::consts::{DLIST, FROZEN_END_TEMPLATE, HMODE, IGNORE_DEPTH, MAX_DIMEN, 
 use crate::errors::Abort;
 use crate::input::{TokenType, TOKEN_LIST};
 use crate::mem::{ALIGN_HEAD, END_SPAN, HOLD_HEAD, HOLD_HEAD_TOKS, ZERO_GLUE};
+use crate::node::Stored;
 use crate::node::{
     link_of, AlignColumn, AlignRecord, AlignStackNode, AnyBox, AnyNode, GlueNode, NodePtr,
     RuleDimen, SpanNode, UnsetNode, RUNNING,
@@ -201,15 +202,15 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                         u = g.ptr();
                         g.set_subtype(&mut st.mem, GluePar::TabSkip.subtype());
                         t += spec.width(&st.mem);
-                        match p.glue_sign(&st.mem) {
-                            GlueSign::Stretching
+                        match p.glue_sign(&st.mem).get() {
+                            Some(GlueSign::Stretching)
                                 if spec.stretch_order(&st.mem) == p.glue_order(&st.mem) =>
                             {
                                 t += Scaled::round(
                                     p.glue_set(&st.mem) * f64::from(spec.stretch(&st.mem)),
                                 );
                             }
-                            GlueSign::Shrinking
+                            Some(GlueSign::Shrinking)
                                 if spec.shrink_order(&st.mem) == p.glue_order(&st.mem) =>
                             {
                                 t -= Scaled::round(
@@ -399,9 +400,9 @@ impl MemState {
         col: NodePtr<UnsetNode>,
         t: Scaled,
         natural: Scaled,
-    ) -> (GlueSign, GlueOrder, f64) {
+    ) -> (GlueSign, Stored<GlueOrder>, f64) {
         if t == natural {
-            return (GlueSign::Normal, GlueOrder::Normal, 0.0);
+            return (GlueSign::Normal, GlueOrder::Normal.into(), 0.0);
         }
         if t > natural {
             let stretch = col.glue_stretch(self);

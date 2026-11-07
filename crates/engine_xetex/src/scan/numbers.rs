@@ -938,7 +938,7 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
             n = q.n(&st.mem);
             s = (q.state(&st.mem) / 4) as i16;
             r = (q.state(&st.mem) % 4) as i16;
-            l = q.level(&st.mem);
+            l = q.level(&st.mem).get().ok_or(Abort::Confusion("expr"))?;
             p = q.link(&st.mem);
             q.free(&mut st.mem);
             scan_factor = false;

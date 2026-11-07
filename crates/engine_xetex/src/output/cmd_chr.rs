@@ -217,7 +217,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
             } else {
                 NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(chr_code))
             };
-            let level = sa.map_or(ValueLevel::from_raw(chr_code), |q| Some(q.sa_type(&st.mem)));
+            let level = sa.map_or(ValueLevel::from_raw(chr_code), |q| q.sa_type(&st.mem).get());
             let name = match level {
                 Some(ValueLevel::Int) => "count",
                 Some(ValueLevel::Dimen) => "dimen",

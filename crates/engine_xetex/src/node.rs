@@ -172,57 +172,160 @@ impl Slot for FontId {
     }
 }
 
-impl Slot for GlueSign {
+impl std::ops::Index<Stored<GlueOrder>> for crate::units::OrderTotals {
+    type Output = Scaled;
+    #[inline(always)]
+    fn index(&self, o: Stored<GlueOrder>) -> &Scaled {
+        &self.as_array()[o.index()]
+    }
+}
+
+impl std::ops::IndexMut<Stored<GlueOrder>> for crate::units::OrderTotals {
+    #[inline(always)]
+    fn index_mut(&mut self, o: Stored<GlueOrder>) -> &mut Scaled {
+        &mut self.as_array_mut()[o.index()]
+    }
+}
+
+/// A code set a node stores in a 16-bit subfield.
+pub trait StoredCode: Copy {
+    /// The code `raw` stands for, `None` when it is none of them.
+    fn from_u16(raw: u16) -> Option<Self>;
+    fn to_u16(self) -> u16;
+}
+
+/// A code as a node stores it. The raw bits are kept, so a value outside the
+/// code set (a WEB sentinel, a fresh node's leftovers) reads back unchanged.
+#[repr(transparent)]
+pub struct Stored<T>(u16, PhantomData<fn() -> T>);
+
+impl<T> Copy for Stored<T> {}
+impl<T> Clone for Stored<T> {
+    #[inline]
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<T> PartialEq for Stored<T> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+impl<T> Eq for Stored<T> {}
+impl<T> Default for Stored<T> {
+    #[inline]
+    fn default() -> Self {
+        Stored(0, PhantomData)
+    }
+}
+impl<T> std::fmt::Debug for Stored<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Stored({})", self.0)
+    }
+}
+
+impl<T: StoredCode> Stored<T> {
+    #[inline]
+    pub const fn from_raw(raw: u16) -> Self {
+        Stored(raw, PhantomData)
+    }
+
+    #[inline]
+    pub const fn raw(self) -> u16 {
+        self.0
+    }
+
+    /// The code, `None` when the stored bits are not one.
+    #[inline]
+    pub fn get(self) -> Option<T> {
+        T::from_u16(self.0)
+    }
+
+    /// The raw code as an array index, as WEB indexes by it.
+    #[inline]
+    pub fn index(self) -> usize {
+        usize::from(self.0)
+    }
+}
+
+impl<T: StoredCode> From<T> for Stored<T> {
+    #[inline]
+    fn from(code: T) -> Self {
+        Stored(code.to_u16(), PhantomData)
+    }
+}
+
+impl<T: StoredCode> PartialEq<T> for Stored<T> {
+    #[inline]
+    fn eq(&self, other: &T) -> bool {
+        self.0 == other.to_u16()
+    }
+}
+
+// Codes compare as WEB compares them, by their raw numbers.
+impl<T> PartialOrd for Stored<T> {
+    #[inline]
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl<T> Ord for Stored<T> {
+    #[inline]
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+impl<T: StoredCode> PartialOrd<T> for Stored<T> {
+    #[inline]
+    fn partial_cmp(&self, other: &T) -> Option<std::cmp::Ordering> {
+        Some(self.0.cmp(&other.to_u16()))
+    }
+}
+
+impl<T: StoredCode> Slot for Stored<T> {
     type Raw = u16;
     #[inline(always)]
     fn decode(raw: u16) -> Self {
-        GlueSign::from_raw(raw)
+        Stored::from_raw(raw)
     }
     #[inline(always)]
     fn encode(self) -> u16 {
+        self.0
+    }
+}
+
+impl StoredCode for GlueSign {
+    #[inline]
+    fn from_u16(raw: u16) -> Option<Self> {
+        match raw {
+            0 => Some(GlueSign::Normal),
+            1 => Some(GlueSign::Stretching),
+            2 => Some(GlueSign::Shrinking),
+            _ => None,
+        }
+    }
+    #[inline]
+    fn to_u16(self) -> u16 {
         self.as_raw()
     }
 }
 
-impl Slot for crate::units::GlueOrder {
-    type Raw = u16;
-    #[inline(always)]
-    fn decode(raw: u16) -> Self {
-        crate::units::GlueOrder::from_raw(raw)
+impl StoredCode for GlueOrder {
+    #[inline]
+    fn from_u16(raw: u16) -> Option<Self> {
+        match raw {
+            0 => Some(GlueOrder::Normal),
+            1 => Some(GlueOrder::Fil),
+            2 => Some(GlueOrder::Fill),
+            3 => Some(GlueOrder::Filll),
+            4 => Some(GlueOrder::Rigid),
+            _ => None,
+        }
     }
-    #[inline(always)]
-    fn encode(self) -> u16 {
+    #[inline]
+    fn to_u16(self) -> u16 {
         self.as_raw()
-    }
-}
-
-impl Slot for crate::codes::ValueLevel {
-    type Raw = u16;
-    #[inline(always)]
-    fn decode(raw: u16) -> Self {
-        match Self::from_raw(i32::from(raw)) {
-            Some(level) => level,
-            None => unreachable!("value level out of range"),
-        }
-    }
-    #[inline(always)]
-    fn encode(self) -> u16 {
-        self as u16
-    }
-}
-
-impl Slot for crate::codes::FiOrElseCode {
-    type Raw = u16;
-    #[inline(always)]
-    fn decode(raw: u16) -> Self {
-        match Self::from_raw(i32::from(raw)) {
-            Some(code) => code,
-            None => unreachable!("if_limit out of range"),
-        }
-    }
-    #[inline(always)]
-    fn encode(self) -> u16 {
-        self as u16
     }
 }
 
@@ -271,6 +374,24 @@ macro_rules! fields {
             #[inline]
             pub fn $set(self, mem: &mut MemState, v: $ty) {
                 write_slot!(mem, $slot, self.idx + $off, <$ty as Slot>::encode(v))
+            }
+        )?
+    )*};
+}
+
+/// Code fields: `getter / setter: Code = subfield @ word_offset;`. The getter
+/// returns the raw [`Stored`] code, the setter takes the code or a `Stored`.
+macro_rules! stored_fields {
+    ($($(#[$m:meta])* $get:ident $(/ $set:ident)?: $ty:ty = $slot:ident @ $off:expr;)*) => {$(
+        $(#[$m])*
+        #[inline]
+        pub fn $get(self, mem: &MemState) -> Stored<$ty> {
+            Stored::from_raw(mem.$slot(self.idx + $off))
+        }
+        $(
+            #[inline]
+            pub fn $set(self, mem: &mut MemState, v: impl Into<Stored<$ty>>) {
+                write_slot!(mem, $slot, self.idx + $off, v.into().raw())
             }
         )?
     )*};
@@ -541,10 +662,12 @@ impl<K: HasListPtr> NodePtr<K> {
 }
 
 impl<K: IsBox> NodePtr<K> {
+    stored_fields! {
+        glue_sign / set_glue_sign: GlueSign = b16s1 @ 5;
+        glue_order / set_glue_order: GlueOrder = b16s0 @ 5;
+    }
     fields! {
         shift_amount / set_shift_amount: Scaled = b32s1 @ 4;
-        glue_sign / set_glue_sign: GlueSign = b16s1 @ 5;
-        glue_order / set_glue_order: crate::units::GlueOrder = b16s0 @ 5;
     }
 
     #[inline]
@@ -679,8 +802,8 @@ impl AnyBox {
         shift_amount(mem: &MemState) -> Scaled;
         list_ptr(mem: &MemState) -> MemPtr;
         subtype(mem: &MemState) -> u16;
-        glue_sign(mem: &MemState) -> GlueSign;
-        glue_order(mem: &MemState) -> crate::units::GlueOrder;
+        glue_sign(mem: &MemState) -> Stored<GlueSign>;
+        glue_order(mem: &MemState) -> Stored<GlueOrder>;
         glue_set(mem: &MemState) -> f64;
         set_width(mem: &mut MemState, w: Scaled);
         set_depth(mem: &mut MemState, d: Scaled);
@@ -689,8 +812,8 @@ impl AnyBox {
         set_list_ptr(mem: &mut MemState, q: MemPtr);
         set_link(mem: &mut MemState, q: MemPtr);
         set_subtype(mem: &mut MemState, v: u16);
-        set_glue_sign(mem: &mut MemState, v: GlueSign);
-        set_glue_order(mem: &mut MemState, v: crate::units::GlueOrder);
+        set_glue_sign(mem: &mut MemState, v: impl Into<Stored<GlueSign>>);
+        set_glue_order(mem: &mut MemState, v: impl Into<Stored<GlueOrder>>);
         set_glue_set(mem: &mut MemState, v: f64);
     }
 
@@ -1193,6 +1316,11 @@ impl NodePtr<GlueNode> {
 }
 
 impl NodePtr<GlueSpecNode> {
+    stored_fields! {
+        stretch_order / set_stretch_order: GlueOrder = b16s1 @ 0;
+        shrink_order / set_shrink_order: GlueOrder = b16s0 @ 0;
+    }
+
     /// The spec at `p`, `None` when the pointer is null.
     #[inline]
     pub fn from_spec_link(p: MemPtr) -> Option<NodePtr<GlueSpecNode>> {
@@ -1209,8 +1337,6 @@ impl NodePtr<GlueSpecNode> {
     fields! {
         /// A reference count, not a link, although it shares the link word.
         ref_count / set_ref_count: i32 = b32s1 @ 0;
-        stretch_order / set_stretch_order: crate::units::GlueOrder = b16s1 @ 0;
-        shrink_order / set_shrink_order: crate::units::GlueOrder = b16s0 @ 0;
         stretch / set_stretch: Scaled = b32s1 @ 2;
         shrink / set_shrink: Scaled = b32s1 @ 3;
     }
@@ -1266,12 +1392,14 @@ impl NodePtr<PageInsNode> {
 }
 
 impl NodePtr<UnsetNode> {
+    stored_fields! {
+        /// The shrink order.
+        glue_sign / set_glue_sign: GlueOrder = b16s1 @ 5;
+        /// The stretch order.
+        glue_order / set_glue_order: GlueOrder = b16s0 @ 5;
+    }
     fields! {
         glue_shrink / set_glue_shrink: Scaled = b32s1 @ 4;
-        /// The shrink order.
-        glue_sign / set_glue_sign: crate::units::GlueOrder = b16s1 @ 5;
-        /// The stretch order.
-        glue_order / set_glue_order: crate::units::GlueOrder = b16s0 @ 5;
         glue_stretch / set_glue_stretch: Scaled = b32s1 @ 6;
     }
 
@@ -1469,9 +1597,11 @@ impl NodePtr<FreeBlock> {
 }
 
 impl NodePtr<ExprNode> {
-    fields! {
+    stored_fields! {
         /// The value level of the suspended expression.
         level / set_level: crate::codes::ValueLevel = b16s1 @ 0;
+    }
+    fields! {
         /// The pending operators, as `4 * s + r`.
         state / set_state: u16 = b16s0 @ 0;
         e / set_e: i32 = b32s1 @ 1;
@@ -1715,12 +1845,10 @@ impl NodePtr<SaNode> {
         sa_int / set_sa_int: i32 = b32s1 @ 2;
     }
 
+    /// The register type, from the high bits of the index code.
     #[inline]
-    pub fn sa_type(self, mem: &MemState) -> crate::codes::ValueLevel {
-        match crate::codes::ValueLevel::from_raw(i32::from(self.sa_index(mem) / 64)) {
-            Some(t) => t,
-            None => unreachable!("sparse-array index out of range"),
-        }
+    pub fn sa_type(self, mem: &MemState) -> Stored<crate::codes::ValueLevel> {
+        Stored::from_raw(self.sa_index(mem) / 64)
     }
 
     /// Mark `m` of a mark class record.
@@ -1763,15 +1891,17 @@ impl NodePtr<SaNode> {
 // --- the conditional stack ---
 
 impl NodePtr<CondNode> {
-    fields! {
+    stored_fields! {
         if_limit / set_if_limit: crate::codes::FiOrElseCode = b16s1 @ 0;
+    }
+    fields! {
         cur_if / set_cur_if: u16 = b16s0 @ 0;
         if_line / set_if_line: i32 = b32s1 @ 1;
     }
 
     /// The saved `(cur_if, if_line, if_limit)`.
     #[inline]
-    pub fn saved_state(self, mem: &MemState) -> (i16, i32, crate::codes::FiOrElseCode) {
+    pub fn saved_state(self, mem: &MemState) -> (i16, i32, Stored<crate::codes::FiOrElseCode>) {
         (
             self.cur_if(mem) as i16,
             self.if_line(mem),
@@ -1914,6 +2044,21 @@ mod tests {
         assert_eq!(n.noad_type(&mem), NodeType::AccentNoad);
         let n = NodePtr::<Noad>::alloc_fraction(&mut mem).unwrap();
         assert!(matches!(mem.classify(n.idx()), Ok(AnyNode::Noad(_))));
+    }
+
+    #[test]
+    fn stored_codes_keep_bits_outside_their_code_set() {
+        let mut mem = arena_with_free_block();
+        let s = NodePtr::<GlueSpecNode>::alloc(&mut mem).unwrap();
+        s.set_stretch_order(&mut mem, Stored::<GlueOrder>::from_raw(7));
+        s.set_shrink_order(&mut mem, GlueOrder::Fill);
+        let stretch = s.stretch_order(&mem);
+        assert_eq!(stretch.raw(), 7);
+        assert_eq!(stretch.get(), None);
+        assert!(stretch > GlueOrder::Filll);
+        assert_eq!(s.shrink_order(&mem), GlueOrder::Fill);
+        assert_eq!(s.shrink_order(&mem).get(), Some(GlueOrder::Fill));
+        assert!(s.shrink_order(&mem) < stretch);
     }
 
     #[test]

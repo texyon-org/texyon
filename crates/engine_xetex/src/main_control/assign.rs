@@ -292,7 +292,11 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         let p = match cmd {
             Some(Command::Register(RegisterRef::Scanned(level))) => level,
             Some(Command::Register(RegisterRef::Sparse(sa))) => {
-                break 'found (RegisterLoc::Sparse(sa), sa.sa_type(&st.mem))
+                let level = sa
+                    .sa_type(&st.mem)
+                    .get()
+                    .ok_or(Abort::Confusion("sa_type"))?;
+                break 'found (RegisterLoc::Sparse(sa), level);
             }
             _ => return Err(Abort::Confusion("register")),
         };

@@ -256,7 +256,7 @@ impl MemState {
                 }
                 Some(VertBreakUpdateSource::Glue(glue)) => {
                     let spec = glue.glue_ptr(self);
-                    scanner.active_width[2 + spec.stretch_order(self) as usize] +=
+                    scanner.active_width[2 + spec.stretch_order(self).index()] +=
                         spec.stretch(self);
                     scanner.active_width[6] += spec.shrink(self);
                     if spec.shrink_order(self) != GlueOrder::Normal

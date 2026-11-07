@@ -8,6 +8,7 @@ use crate::consts::{
     UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
+use crate::node::Stored;
 use crate::node::{
     CharNode, DelimiterField, GlueSpecNode, MathField, NodePtr, RuleDimen, SaNode, WhatsitNode,
 };
@@ -865,13 +866,19 @@ pub(crate) fn print_rule_dimen(st: &mut EngineState, d: RuleDimen) {
 }
 
 /// Prints `d` with its fil/fill/filll order, or the unit `s` for finite glue.
-pub(crate) fn print_glue(st: &mut EngineState, d: Scaled, order: GlueOrder, s: Option<&str>) {
+pub(crate) fn print_glue(
+    st: &mut EngineState,
+    d: Scaled,
+    order: impl Into<Stored<GlueOrder>>,
+    s: Option<&str>,
+) {
+    let order = order.into();
     print_scaled(st, d);
-    if order == GlueOrder::Rigid {
+    if order > GlueOrder::Filll {
         print(st, "foul");
     } else if order > GlueOrder::Normal {
         print(st, "fil");
-        for _ in 1..order.as_raw() {
+        for _ in 1..order.raw() {
             print_char(st, b'l');
         }
     } else if let Some(s) = s {

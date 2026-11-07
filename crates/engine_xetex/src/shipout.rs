@@ -10,6 +10,7 @@ use crate::errors::Abort;
 use crate::ext::apply_tfm_font_mapping;
 use crate::glyph_arena::FixedPoint;
 use crate::mem::{end_lr_type, LIG_TRICK};
+use crate::node::Stored;
 use crate::node::{
     link_of, AnyBox, AnyNode, EdgeNode, GlueNode, GlueSpecNode, MathNode, MovementNode, NodePtr,
     RuleNode, WhatsitNode, WhatsitSubtype, RUNNING,
@@ -327,8 +328,8 @@ fn dvi_font_select(st: &mut crate::state::EngineState, f: FontId) -> Result<(), 
 /// The glue-setting state of the box being shipped, carried across glue nodes
 /// so rounding errors do not accumulate.
 struct GlueRounding {
-    order: GlueOrder,
-    sign: GlueSign,
+    order: Stored<GlueOrder>,
+    sign: Stored<GlueSign>,
     set: f64,
     cur_g: Scaled,
     cur_glue: f64,
@@ -347,10 +348,10 @@ impl GlueRounding {
 
     /// Whether the box stretches or shrinks `spec`'s component.
     fn is_set(&self, mem: &MemState, spec: NodePtr<GlueSpecNode>) -> bool {
-        match self.sign {
-            GlueSign::Stretching => spec.stretch_order(mem) == self.order,
-            GlueSign::Shrinking => spec.shrink_order(mem) == self.order,
-            GlueSign::Normal => false,
+        match self.sign.get() {
+            Some(GlueSign::Stretching) => spec.stretch_order(mem) == self.order,
+            Some(GlueSign::Shrinking) => spec.shrink_order(mem) == self.order,
+            Some(GlueSign::Normal) | None => false,
         }
     }
 
@@ -510,13 +511,13 @@ impl MemState {
                     strings.append_char(u16::from(b' '));
                     let spec = glue.glue_ptr(self);
                     width += spec.width(self);
-                    match g_sign {
-                        GlueSign::Stretching if spec.stretch_order(self) == g_order => {
+                    match g_sign.get() {
+                        Some(GlueSign::Stretching) if spec.stretch_order(self) == g_order => {
                             width += Scaled::round(
                                 this_box.glue_set(self) * f64::from(spec.stretch(self).raw()),
                             );
                         }
-                        GlueSign::Shrinking if spec.shrink_order(self) == g_order => {
+                        Some(GlueSign::Shrinking) if spec.shrink_order(self) == g_order => {
                             width -= Scaled::round(
                                 this_box.glue_set(self) * f64::from(spec.shrink(self).raw()),
                             );

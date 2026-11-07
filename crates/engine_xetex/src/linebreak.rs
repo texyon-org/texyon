@@ -434,8 +434,8 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<AnyBox, Abort>
     let background = &mut st.linebreak.background;
     background[1] = left_skip.width(mem) + right_skip.width(mem);
     background[2..=5].fill(Scaled::ZERO);
-    background[2 + left_skip.stretch_order(mem) as usize] = left_skip.stretch(mem);
-    background[2 + right_skip.stretch_order(mem) as usize] += right_skip.stretch(mem);
+    background[2 + left_skip.stretch_order(mem).index()] = left_skip.stretch(mem);
+    background[2 + right_skip.stretch_order(mem).index()] += right_skip.stretch(mem);
     background[6] = left_skip.shrink(mem) + right_skip.shrink(mem);
 
     st.linebreak.do_last_line_fit = false;
@@ -451,7 +451,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<AnyBox, Abort>
             lb.active_node_size = ACTIVE_NODE_SIZE_EXTENDED;
             lb.fill_width = [Scaled::ZERO; 3];
             let order = spec.stretch_order(&st.mem);
-            lb.fill_width[usize::from(order.as_raw() - 1)] = spec.stretch(&st.mem);
+            lb.fill_width[order.index() - 1] = spec.stretch(&st.mem);
         }
     }
 
@@ -574,7 +574,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<AnyBox, Abort>
                     }
                     let aw = &mut st.scanner.active_width;
                     aw[1] += spec.width(&st.mem);
-                    aw[2 + spec.stretch_order(&st.mem) as usize] += spec.stretch(&st.mem);
+                    aw[2 + spec.stretch_order(&st.mem).index()] += spec.stretch(&st.mem);
                     aw[6] += spec.shrink(&st.mem);
 
                     if second_pass && auto_breaking {
@@ -750,7 +750,7 @@ impl MemState {
                 Ok(AnyNode::Glue(g)) => {
                     let spec = g.glue_ptr(self);
                     linebreak.break_width[1] -= spec.width(self);
-                    linebreak.break_width[2 + spec.stretch_order(self) as usize] -=
+                    linebreak.break_width[2 + spec.stretch_order(self).index()] -=
                         spec.stretch(self);
                     linebreak.break_width[6] -= spec.shrink(self);
                 }

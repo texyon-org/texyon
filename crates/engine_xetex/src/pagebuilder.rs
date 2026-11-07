@@ -442,7 +442,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         let count = st.eqtb.count(i32::from(n));
         let h = scale_by_count(st, height, count);
         st.shipout.page_so_far[PAGE_GOAL] -= h + skip.width(&st.mem);
-        let order = skip.stretch_order(&st.mem) as usize;
+        let order = skip.stretch_order(&st.mem).index();
         st.shipout.page_so_far[2 + order] += skip.stretch(&st.mem);
         st.shipout.page_so_far[PAGE_SHRINK] += skip.shrink(&st.mem);
         if skip.shrink_order(&st.mem) != GlueOrder::Normal && skip.shrink(&st.mem) != Scaled::ZERO {
@@ -705,7 +705,7 @@ fn page_glue_width(
     glue: NodePtr<crate::node::GlueNode>,
 ) -> Result<Scaled, Abort> {
     let spec = glue.glue_ptr(&st.mem);
-    let order = spec.stretch_order(&st.mem) as usize;
+    let order = spec.stretch_order(&st.mem).index();
     st.shipout.page_so_far[2 + order] += spec.stretch(&st.mem);
     st.shipout.page_so_far[PAGE_SHRINK] += spec.shrink(&st.mem);
     if spec.shrink_order(&st.mem) == GlueOrder::Normal || spec.shrink(&st.mem) == Scaled::ZERO {

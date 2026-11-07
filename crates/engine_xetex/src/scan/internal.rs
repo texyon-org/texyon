@@ -309,7 +309,10 @@ fn fetch_register(st: &mut EngineState, r: RegisterRef) -> Result<CurVal, Abort>
     let level = match r {
         RegisterRef::Scanned(level) => level,
         RegisterRef::Sparse(sa) => {
-            let level = sa.sa_type(&st.mem);
+            let level = sa
+                .sa_type(&st.mem)
+                .get()
+                .ok_or(Abort::Confusion("sa_type"))?;
             let word = if level < ValueLevel::Glue {
                 sa.sa_int(&st.mem)
             } else {
@@ -555,9 +558,9 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<i32, Abo
                 -(i32::from(st.scanner.cur_if) - 31)
             }
         }
-        LastItemCode::CurrentIfBranch => match st.scanner.if_limit {
-            FiOrElseCode::Or | FiOrElseCode::Else => 1,
-            FiOrElseCode::Fi => -1,
+        LastItemCode::CurrentIfBranch => match st.scanner.if_limit.get() {
+            Some(FiOrElseCode::Or | FiOrElseCode::Else) => 1,
+            Some(FiOrElseCode::Fi) => -1,
             _ => 0,
         },
         LastItemCode::GlueStretchOrder | LastItemCode::GlueShrinkOrder => {
@@ -568,7 +571,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<i32, Abo
                 spec.shrink_order(&st.mem)
             };
             st.mem.delete_glue_ref(spec);
-            i32::from(order.as_raw())
+            i32::from(order.raw())
         }
         _ => return Err(Abort::Confusion("last_item")),
     })

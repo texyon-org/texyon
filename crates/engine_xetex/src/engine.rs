@@ -354,7 +354,7 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.input.read_open = [CLOSED; 17];
 
     st.scanner.cond_ptr = None;
-    st.scanner.if_limit = FiOrElseCode::Normal;
+    st.scanner.if_limit = FiOrElseCode::Normal.into();
     st.scanner.cur_if = 0;
     st.scanner.if_line = 0;
     st.shipout.total_pages = 0;

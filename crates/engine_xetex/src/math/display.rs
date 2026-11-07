@@ -571,14 +571,14 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                         Ok(AnyNode::Glue(g)) => {
                             let spec = g.glue_ptr(&st.mem);
                             let order = jb.glue_order(&st.mem);
-                            match jb.glue_sign(&st.mem) {
-                                GlueSign::Stretching
+                            match jb.glue_sign(&st.mem).get() {
+                                Some(GlueSign::Stretching)
                                     if order == spec.stretch_order(&st.mem)
                                         && spec.stretch(&st.mem) != Scaled::ZERO =>
                                 {
                                     v = MAX_DIMEN;
                                 }
-                                GlueSign::Shrinking
+                                Some(GlueSign::Shrinking)
                                     if order == spec.shrink_order(&st.mem)
                                         && spec.shrink(&st.mem) != Scaled::ZERO =>
                                 {
