@@ -33,8 +33,8 @@ impl EngineDelta {
 
     fn take_open(st: &mut EngineState) -> Self {
         let delta = Self {
-            mem: st.mem.journal.seal(),
-            eqtb: st.eqtb.journal.words.seal(),
+            mem: st.mem.journal.seal(&st.mem.data),
+            eqtb: st.eqtb.journal.words.seal(&st.eqtb.data),
             xeq: st.eqtb.journal.xeq.seal(),
             hash: st.eqtb.journal.hash.seal(),
             prim: st.eqtb.journal.prim.seal(),

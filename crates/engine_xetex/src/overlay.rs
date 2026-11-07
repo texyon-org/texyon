@@ -836,7 +836,7 @@ mod tests {
         spec.width = Scaled::from_raw(2);
         spec.stretch = Scaled::from_raw(3);
         spec.shrink = Scaled::from_raw(4);
-        let delta = mem.journal.seal();
+        let delta = mem.journal.seal(&mem.data);
         delta.apply_to(&mut mem.data);
         let spec = mem[s];
         assert_eq!(

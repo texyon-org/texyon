@@ -80,10 +80,16 @@ impl WordJournal {
         }
     }
 
-    pub(crate) fn seal(&mut self) -> WordDelta {
+    /// Closes the epoch. A word back at its pre-image needs no restoring, so it
+    /// is dropped, which also undoes the cost of noting a node's unwritten words.
+    pub(crate) fn seal(&mut self, data: &[MemoryWord]) -> WordDelta {
         for e in &self.entries {
             self.touched[e.idx as usize >> 6] = 0;
         }
+        self.entries.retain(|e| {
+            let old = e.old;
+            bytemuck::cast::<_, u64>(data[e.idx as usize]) != bytemuck::cast::<_, u64>(old)
+        });
         WordDelta {
             entries: std::mem::take(&mut self.entries),
         }
@@ -348,11 +354,27 @@ mod tests {
         data[130] = word(9);
         assert_eq!(journal.open_len(), 2);
 
-        let delta = journal.seal();
+        let delta = journal.seal(&data);
         assert_eq!(delta.len(), 2);
         delta.apply_to(&mut data);
         assert_eq!(bits(data[7]), bits(word(0)));
         assert_eq!(bits(data[130]), bits(word(0)));
+    }
+
+    #[test]
+    fn sealing_drops_words_back_at_their_preimage() {
+        let mut data = vec![word(0); 4];
+        let mut journal = WordJournal::default();
+        journal.arm(data.len());
+        journal.note_run(0, &data[..3]);
+        data[1] = word(1);
+        data[2] = word(1);
+        data[2] = word(0);
+
+        let delta = journal.seal(&data);
+        assert_eq!(delta.len(), 1);
+        delta.apply_to(&mut data);
+        assert_eq!(bits(data[1]), bits(word(0)));
     }
 
     #[test]
@@ -387,10 +409,10 @@ mod tests {
         journal.arm(data.len());
         journal.note(3, data[3]);
         data[3] = word(1);
-        let first = journal.seal();
+        let first = journal.seal(&data);
         journal.note(3, data[3]);
         data[3] = word(2);
-        let second = journal.seal();
+        let second = journal.seal(&data);
 
         second.apply_to(&mut data);
         assert_eq!(bits(data[3]), bits(word(1)));
@@ -424,12 +446,12 @@ mod tests {
         data[0] = word(1);
         journal.note(1, data[1]);
         data[1] = word(1);
-        let older = journal.seal();
+        let older = journal.seal(&data);
         journal.note(0, data[0]);
         data[0] = word(2);
         journal.note(2, data[2]);
         data[2] = word(2);
-        let mut newer = journal.seal();
+        let mut newer = journal.seal(&data);
 
         newer.compose_with_older(older);
         newer.apply_to(&mut data);
@@ -503,7 +525,7 @@ mod tests {
         mem.data[2] = word(12);
         mem.data[3] = word(13);
 
-        let delta = mem.journal.seal();
+        let delta = mem.journal.seal(&mem.data);
         assert_eq!(delta.len(), 3);
         delta.apply_to(&mut mem.data);
         assert!(mem.data.iter().all(|value| bits(*value) == 0));
@@ -523,7 +545,7 @@ mod tests {
             crate::units::EqtbPtr::from_raw(514),
             crate::units::StrNumber::from_raw(6),
         );
-        eqtb.journal.words.seal().apply_to(&mut eqtb.data);
+        eqtb.journal.words.seal(&eqtb.data).apply_to(&mut eqtb.data);
         eqtb.journal.hash.seal().apply_to(&mut eqtb.hash);
         assert_eq!(bits(eqtb.data[1]), 0);
         assert_eq!(eqtb.hash[0].s1, 0);
