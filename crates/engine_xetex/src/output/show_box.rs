@@ -417,14 +417,14 @@ fn show_whatsit(st: &mut EngineState, node: NodePtr<WhatsitNode>) {
             print_int(st, i32::from(st.mem[glyph].glyph));
         }
         Some(WhatsitVariant::Pic(pic)) => {
-            if pic.whatsit_subtype(&st.mem) == Some(WhatsitSubtype::Pic) {
+            if st.mem[pic].subtype.get() == Some(WhatsitSubtype::Pic) {
                 print_esc(st, "XeTeXpicfile");
             } else {
                 print_esc(st, "XeTeXpdffile");
             }
             print(st, " \"");
-            for i in 0..pic.pic_path_len(&st.mem) as usize {
-                let b = pic.pic_path(&st.mem)[i];
+            for i in 0..st.mem.entries(pic).len() {
+                let b = st.mem.entries(pic)[i];
                 print_raw_char(st, i32::from(b), true);
             }
             print(st, b'"');

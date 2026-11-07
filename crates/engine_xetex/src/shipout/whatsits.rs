@@ -4,7 +4,7 @@ use crate::bridge::{output_close, output_open, shell_escape};
 use crate::consts::{END_WRITE, INVALID_HANDLE};
 use crate::errors::Abort;
 use crate::input::TokenType;
-use crate::node::{NodePtr, OpenNode, WhatsitNode, WhatsitVariant, WriteNode};
+use crate::node::{NodePtr, OpenNode, PicNode, WhatsitNode, WhatsitVariant, WriteNode};
 use crate::params::IntPar;
 use crate::state::{EqtbState, Selector};
 use crate::token::Token;
@@ -126,28 +126,27 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WriteNode>) -> R
 
 pub(super) fn pic_out(
     st: &mut crate::state::EngineState,
-    pic: NodePtr<WhatsitNode>,
+    pic: NodePtr<PicNode>,
 ) -> Result<(), Abort> {
     synch_h(st)?;
     synch_v(st)?;
+    let node = st.mem[pic];
     let old_setting = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
     crate::output::print(st, "pdf:image ");
     crate::output::print(st, "matrix ");
-    for v in pic.pic_transform(&st.mem) {
+    for v in node.transform {
         crate::output::print_scaled(st, v);
         crate::output::print(st, b' ');
     }
     crate::output::print(st, "page ");
-    crate::output::print_int(st, i32::from(pic.pic_page(&st.mem)));
+    crate::output::print_int(st, i32::from(node.page));
     crate::output::print(st, b' ');
-    if let Some(label) =
-        crate::pic::PageboxType::from_raw(pic.pic_pagebox(&st.mem)).and_then(|pb| pb.label())
-    {
+    if let Some(label) = crate::pic::PageboxType::from_raw(node.pagebox).and_then(|pb| pb.label()) {
         crate::output::print(st, label);
     }
     crate::output::print(st, b'(');
-    let path = pic.pic_path(&st.mem).to_vec();
+    let path = st.mem.entries(pic).to_vec();
     for byte in path {
         crate::output::print_raw_char(st, i32::from(byte), true);
     }

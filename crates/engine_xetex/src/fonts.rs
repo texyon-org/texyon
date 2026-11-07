@@ -361,7 +361,7 @@ impl MemState {
         subtype: WhatsitSubtype,
     ) -> Result<NodePtr<WhatsitNode>, Abort> {
         let size = NATIVE_NODE_SIZE + (n * 2 + 7) / 8;
-        let w = NodePtr::<WhatsitNode>::alloc(self, size, subtype)?;
+        let w = NodePtr::<WhatsitNode>::alloc_sized(self, size, subtype)?;
         w.set_native_size(self, size);
         w.set_native_font(self, f);
         w.set_native_length(self, n as u16);

@@ -10,8 +10,8 @@ use std::marker::PhantomData;
 use crate::consts::{
     ACCENT_NOAD_SIZE, BOX_NODE_SIZE, FRACTION_NOAD_SIZE, GLUE_SPEC_SIZE, GLYPH_NODE_SIZE,
     INDEX_NODE_SIZE, INS_NODE_SIZE, MARGIN_KERN_NODE_SIZE, MARK_CLASS_NODE_SIZE, MEDIUM_NODE_SIZE,
-    NATIVE_NODE_SIZE, NOAD_SIZE, NULL_FLAG, OPEN_NODE_SIZE, PAGE_INS_NODE_SIZE, PIC_NODE_SIZE,
-    RADICAL_NOAD_SIZE, RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE, WRITE_NODE_SIZE,
+    NATIVE_NODE_SIZE, NOAD_SIZE, NULL_FLAG, OPEN_NODE_SIZE, PAGE_INS_NODE_SIZE, RADICAL_NOAD_SIZE,
+    RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE, WRITE_NODE_SIZE,
 };
 use crate::errors::Abort;
 use crate::state::MemState;
@@ -533,6 +533,8 @@ node_kinds! {
     LanguageNode = Whatsit, SMALL_NODE_SIZE;
     /// One glyph of a native font, by glyph id.
     GlyphNode = Whatsit, GLYPH_NODE_SIZE;
+    /// A `\XeTeXpicfile` or `\XeTeXpdffile` image, its path stored inline.
+    PicNode;
     /// An alignment box before its column widths are known. Words +4..+6 hold
     /// the accumulated shrink, span count and stretch instead of box glue.
     UnsetNode;
@@ -1466,16 +1468,20 @@ impl StoredCode for WhatsitSubtype {
     }
 }
 
-/// A fixed-layout whatsit kind, which widens to [`WhatsitNode`].
-pub trait WhatsitKind: FixedNode {}
+/// A whatsit kind, which widens to [`WhatsitNode`].
+pub trait WhatsitKind: NodeKind {}
 
-impl_traits!(WhatsitKind: OpenNode, WriteNode, LanguageNode, GlyphNode);
+impl_traits!(WhatsitKind: WhatsitNode, OpenNode, WriteNode, LanguageNode, GlyphNode, PicNode);
 
 impl<K: WhatsitKind> NodePtr<K> {
-    /// A fresh whatsit of the given subtype, other fields uninitialised.
+    /// A fresh `size`-word whatsit of the given subtype, other fields uninitialised.
     #[inline]
-    pub fn alloc_whatsit(mem: &mut MemState, subtype: WhatsitSubtype) -> Result<Self, Abort> {
-        let p = Self::alloc(mem)?;
+    pub fn alloc_sized(
+        mem: &mut MemState,
+        size: i32,
+        subtype: WhatsitSubtype,
+    ) -> Result<Self, Abort> {
+        let p: Self = mem.alloc_node(size, Some(NodeType::Whatsit))?;
         mem[p.whatsit()].subtype = subtype.into();
         Ok(p)
     }
@@ -1484,6 +1490,14 @@ impl<K: WhatsitKind> NodePtr<K> {
     #[inline]
     pub fn whatsit(self) -> NodePtr<WhatsitNode> {
         NodePtr::from_idx_unchecked(self.idx)
+    }
+}
+
+impl<K: WhatsitKind + FixedNode> NodePtr<K> {
+    /// A fresh whatsit of the given subtype, other fields uninitialised.
+    #[inline]
+    pub fn alloc_whatsit(mem: &mut MemState, subtype: WhatsitSubtype) -> Result<Self, Abort> {
+        Self::alloc_sized(mem, K::SIZE, subtype)
     }
 }
 
@@ -1498,7 +1512,7 @@ pub enum WhatsitVariant {
     SavePos,
     NativeWord(NodePtr<WhatsitNode>),
     Glyph(NodePtr<GlyphNode>),
-    Pic(NodePtr<WhatsitNode>),
+    Pic(NodePtr<PicNode>),
 }
 
 impl NodePtr<WhatsitNode> {
@@ -1516,16 +1530,8 @@ impl NodePtr<WhatsitNode> {
             S::PdfSavePos => WhatsitVariant::SavePos,
             S::NativeWord | S::NativeWordAt => WhatsitVariant::NativeWord(self),
             S::Glyph => WhatsitVariant::Glyph(NodePtr::from_idx_unchecked(p)),
-            S::Pic | S::Pdf => WhatsitVariant::Pic(self),
+            S::Pic | S::Pdf => WhatsitVariant::Pic(NodePtr::from_idx_unchecked(p)),
         })
-    }
-
-    /// A fresh `size`-word whatsit of the given subtype, fields uninitialised.
-    #[inline]
-    pub fn alloc(mem: &mut MemState, size: i32, subtype: WhatsitSubtype) -> Result<Self, Abort> {
-        let p: Self = mem.alloc_node(size, Some(NodeType::Whatsit))?;
-        p.set_subtype(mem, subtype as u16);
-        Ok(p)
     }
 
     #[inline]
@@ -1540,10 +1546,6 @@ impl NodePtr<WhatsitNode> {
         native_glyph_count / set_native_glyph_count: u16 = b16s0 @ 4;
         /// One-based shaped-glyph arena handle, zero when unshaped.
         native_glyph_info_handle: i32 = b32s0 @ 5;
-        /// Path byte length of a picture, in the native length slot.
-        pic_path_len / set_pic_path_len: u16 = b16s1 @ 4;
-        pic_page / set_pic_page: u16 = b16s0 @ 4;
-        pic_pagebox / set_pic_pagebox: u16 = b16s1 @ 8;
     }
 
     /// Node size in words, used to free or copy a native node.
@@ -1560,44 +1562,6 @@ impl NodePtr<WhatsitNode> {
     pub fn set_native_glyph_info_handle(self, mem: &mut MemState, handle: i32) {
         mem.set_b32s0(self.idx + 5, handle);
         mem.set_b32s1(self.idx + 5, 0);
-    }
-
-    /// The picture transform `[a, b, c, d, x, y]`.
-    #[inline]
-    pub fn pic_transform(self, mem: &MemState) -> [Scaled; 6] {
-        std::array::from_fn(|k| {
-            let q = self.idx.raw() + 5 + k as i32 / 2;
-            Scaled::from_raw(if k % 2 == 0 {
-                mem.b32s0(MemPtr::from_raw(q))
-            } else {
-                mem.b32s1(MemPtr::from_raw(q))
-            })
-        })
-    }
-    #[inline]
-    pub fn set_pic_transform(self, mem: &mut MemState, t: [Scaled; 6]) {
-        for (k, v) in (0..).zip(t) {
-            let q = self.idx.raw() + 5 + k / 2;
-            if k % 2 == 0 {
-                mem.set_b32s0(MemPtr::from_raw(q), v.raw());
-            } else {
-                mem.set_b32s1(MemPtr::from_raw(q), v.raw());
-            }
-        }
-    }
-
-    #[inline]
-    pub fn pic_path(self, mem: &MemState) -> &[u8] {
-        let start = (self.idx.raw() + PIC_NODE_SIZE) as usize * 8;
-        &mem.bytes()[start..start + self.pic_path_len(mem) as usize]
-    }
-    /// Stores `path` inline, the node must have room for it.
-    #[inline]
-    pub fn set_pic_path(self, mem: &mut MemState, path: &[u8]) {
-        let start = self.idx.raw() + PIC_NODE_SIZE;
-        mem.journal_mark_range(MemPtr::from_raw(start), path.len().div_ceil(8));
-        let at = start as usize * 8;
-        mem.bytes_mut()[at..at + path.len()].copy_from_slice(path);
     }
 
     /// The index in `mem.units()` where the text starts.
@@ -2108,7 +2072,6 @@ mod tests {
         assert_eq!(w.native_size(&mem), 6);
         assert_eq!(w.native_font(&mem), FontId::new(7));
         assert_eq!(w.native_length(&mem), 9);
-        assert_eq!(w.pic_path_len(&mem), 9);
         w.set_native_glyph_count(&mut mem, 3);
         assert_eq!(mem.b16s0(MemPtr::from_raw(104)), 3);
         w.set_native_glyph_info_handle(&mut mem, 7);

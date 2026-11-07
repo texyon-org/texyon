@@ -43,7 +43,7 @@ impl MemState {
             WhatsitVariant::Glyph(_) => GLYPH_NODE_SIZE,
             WhatsitVariant::Pic(pic) => {
                 PIC_NODE_SIZE
-                    + (i32::from(pic.pic_path_len(self)) + MEMORY_WORD_SIZE - 1) / MEMORY_WORD_SIZE
+                    + (i32::from(self[pic].path_len) + MEMORY_WORD_SIZE - 1) / MEMORY_WORD_SIZE
             }
         })
     }

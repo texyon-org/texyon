@@ -106,7 +106,7 @@ pub(crate) fn insert_special(st: &mut EngineState, text: &str) -> Result<(), Abo
     Ok(())
 }
 
-fn append_whatsit<K: WhatsitKind>(
+fn append_whatsit<K: WhatsitKind + crate::node::FixedNode>(
     st: &mut EngineState,
     subtype: WhatsitSubtype,
 ) -> Result<NodePtr<K>, Abort> {
@@ -212,7 +212,7 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
         }
 
         ExtensionCode::PdfSavePos => {
-            st.input.cur_list.new_whatsit(
+            st.input.cur_list.new_whatsit::<WhatsitNode>(
                 &mut st.mem,
                 WhatsitSubtype::PdfSavePos,
                 SMALL_NODE_SIZE,

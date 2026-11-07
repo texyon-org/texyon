@@ -14,7 +14,7 @@ use crate::node::{
     FixedNode, FractionNoad, FreeBlock, GlueNode, GlueSpecNode, GlyphNode, InsNode, KernNode,
     LanguageNode, LigItem, LigatureNode, Link, MarginKernNode, MarkNode, MathField, MathNode,
     MovementNode, Noad, NodeKind, NodePtr, OpenNode, PageInsNode, ParShapeNode, PassiveNode,
-    PenaltiesNode, PenaltyNode, PseudoLineNode, RadicalNoad, RuleNode, SaChild, SaElement,
+    PenaltiesNode, PenaltyNode, PicNode, PseudoLineNode, RadicalNoad, RuleNode, SaChild, SaElement,
     SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved, SaSavedPointer, SaSavedWord,
     SaWordNode, SpanNode, Stored, StoredDimen, StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype,
     WriteNode,
@@ -288,6 +288,32 @@ pub struct GlyphLayout {
 }
 
 overlay!(GlyphNode => GlyphLayout);
+
+/// A picture. Its path bytes follow the header.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct PicLayout {
+    pub subtype: Stored<WhatsitSubtype>,
+    _type: u16,
+    pub link: MemPtr,
+    _unused1: i32,
+    pub width: Scaled,
+    _unused2: i32,
+    pub depth: Scaled,
+    _unused3: i32,
+    pub height: Scaled,
+    pub page: u16,
+    pub path_len: u16,
+    _unused4: [u16; 2],
+    /// `[a, b, c, d, x, y]`.
+    pub transform: [Scaled; 6],
+    _unused5: u16,
+    pub pagebox: u16,
+    _unused6: i32,
+}
+
+overlay!(PicNode => PicLayout, crate::consts::PIC_NODE_SIZE);
+array_overlay!(PicNode => u8, |h| i32::from(h.path_len));
 
 /// A glue specification. Its first word holds the fill orders and a reference
 /// count in place of a type code and link.
@@ -1597,6 +1623,38 @@ mod tests {
             [0, 14, 15, 0]
         );
         assert!(matches!(g.whatsit().variant(&mem), Some(WhatsitVariant::Glyph(p)) if p == g));
+    }
+
+    #[test]
+    fn pic_fields_and_path_land_on_their_words() {
+        let mut mem = MemState {
+            data: vec![Default::default(); 24],
+            ..Default::default()
+        };
+        let at = MemIdx::from_raw;
+        let p: NodePtr<PicNode> = NodePtr::from_idx_unchecked(at(4));
+        let pic = &mut mem[p];
+        pic.subtype = WhatsitSubtype::Pdf.into();
+        pic.width = Scaled::from_raw(11);
+        pic.depth = Scaled::from_raw(12);
+        pic.height = Scaled::from_raw(13);
+        pic.page = 2;
+        pic.path_len = 10;
+        pic.transform = [21, 22, 23, 24, 25, 26].map(Scaled::from_raw);
+        pic.pagebox = 3;
+        mem.entries_mut(p).copy_from_slice(b"0123456789");
+        assert_eq!(mem.b16s0(at(4)), 44);
+        assert_eq!([5, 6, 7].map(|i| mem.b32s1(at(i))), [11, 12, 13]);
+        assert_eq!((mem.b16s0(at(8)), mem.b16s1(at(8))), (2, 10));
+        assert_eq!(
+            [9, 10, 11].map(|i| [mem.b32s0(at(i)), mem.b32s1(at(i))]),
+            [[21, 22], [23, 24], [25, 26]]
+        );
+        assert_eq!((mem.b16s0(at(12)), mem.b16s1(at(12))), (0, 3));
+        assert_eq!(mem.b16s0(at(13)), u16::from_le_bytes(*b"01"));
+        assert_eq!(mem.b16s0(at(14)), u16::from_le_bytes(*b"89"));
+        assert_eq!(mem.b16s1(at(14)), 0);
+        assert!(matches!(p.whatsit().variant(&mem), Some(WhatsitVariant::Pic(q)) if q == p));
     }
 
     #[test]

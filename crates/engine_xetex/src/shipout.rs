@@ -920,7 +920,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
                 Some(WhatsitVariant::Glyph(glyph)) => glyph_out(st, glyph)?,
                 Some(WhatsitVariant::Pic(pic)) => {
                     st.shipout.cur_v = base_line;
-                    let edge = st.shipout.cur_h + pic.width(&st.mem);
+                    let edge = st.shipout.cur_h + st.mem[pic].width;
                     with_saved_dvi_pos(st, |st| pic_out(st, pic))?;
                     st.shipout.cur_h = edge;
                     st.shipout.cur_v = base_line;
@@ -1105,10 +1105,10 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
                 }
                 Some(WhatsitVariant::Pic(pic)) => {
                     let (_, save_v) = with_saved_dvi_pos(st, |st| {
-                        st.shipout.cur_v += pic.height(&st.mem);
+                        st.shipout.cur_v += st.mem[pic].height;
                         pic_out(st, pic)
                     })?;
-                    st.shipout.cur_v = save_v + pic.depth(&st.mem);
+                    st.shipout.cur_v = save_v + st.mem[pic].depth;
                     st.shipout.cur_h = left_edge;
                 }
                 Some(WhatsitVariant::SavePos) => st.shipout.pdf_save_pos(),

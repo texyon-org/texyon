@@ -754,22 +754,6 @@ impl MemState {
         }
     }
 
-    /// `mem` as bytes, eight per word.
-    #[inline]
-    pub(crate) fn bytes(&self) -> &[u8] {
-        // SAFETY: as in `units`.
-        unsafe { std::slice::from_raw_parts(self.data.as_ptr().cast(), self.data.len() * 8) }
-    }
-
-    /// `bytes`, writable. Journaling the words written is up to the caller.
-    #[inline]
-    pub(crate) fn bytes_mut(&mut self) -> &mut [u8] {
-        // SAFETY: as in `units_mut`.
-        unsafe {
-            std::slice::from_raw_parts_mut(self.data.as_mut_ptr().cast(), self.data.len() * 8)
-        }
-    }
-
     #[inline]
     pub(crate) fn word(&self, p: impl crate::units::MemAddr) -> crate::mem_types::MemoryWord {
         self.data[p.addr() as usize]

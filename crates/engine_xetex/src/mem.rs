@@ -8,9 +8,9 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::mem_types::ListStateRecord;
 use crate::node::{
-    BoxNode, CharNode, ChoiceNode, DiscNode, FreeBlock, GlueNode, GlueSpecNode, KernNode, LigItem,
-    LigatureNode, MarginKernNode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode,
-    SpanNode, StyleNode, WhatsitKind, WhatsitNode, WhatsitSubtype,
+    BoxNode, CharNode, ChoiceNode, DiscNode, FixedNode, FreeBlock, GlueNode, GlueSpecNode,
+    KernNode, LigItem, LigatureNode, MarginKernNode, MathNode, Noad, NodePtr, PenaltyNode,
+    RuleDimen, RuleNode, SpanNode, StyleNode, WhatsitKind, WhatsitSubtype,
 };
 use crate::params::GluePar;
 use crate::state::{EqtbState, MemState};
@@ -62,19 +62,19 @@ pub(crate) fn end_lr_type(subtype: u16) -> i32 {
 
 impl ListStateRecord {
     /// A `size`-word whatsit appended to the current list.
-    pub fn new_whatsit(
+    pub fn new_whatsit<K: WhatsitKind>(
         &mut self,
         mem: &mut MemState,
         subtype: WhatsitSubtype,
         size: i32,
-    ) -> Result<NodePtr<WhatsitNode>, Abort> {
-        let p = NodePtr::<WhatsitNode>::alloc(mem, size, subtype)?;
+    ) -> Result<NodePtr<K>, Abort> {
+        let p = NodePtr::<K>::alloc_sized(mem, size, subtype)?;
         self.tail_append(mem, p.ptr());
         Ok(p)
     }
 
     /// A fixed-layout whatsit appended to the current list.
-    pub fn append_whatsit<K: WhatsitKind>(
+    pub fn append_whatsit<K: WhatsitKind + FixedNode>(
         &mut self,
         mem: &mut MemState,
         subtype: WhatsitSubtype,
