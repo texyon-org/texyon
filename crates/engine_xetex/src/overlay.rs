@@ -13,11 +13,11 @@ use crate::node::{
     ChoiceNode, CondNode, DelimiterField, DeltaNode, DiscNode, EdgeNode, ExprNode, FenceNoad,
     FixedNode, FractionNoad, FreeBlock, GlueNode, GlueSpecNode, GlyphNode, InsNode, KernNode,
     LanguageNode, LigItem, LigatureNode, Link, MarginKernNode, MarkNode, MathField, MathNode,
-    MovementNode, Noad, NodeKind, NodePtr, OpenNode, PageInsNode, ParShapeNode, PassiveNode,
-    PenaltiesNode, PenaltyNode, PicNode, PseudoLineNode, RadicalNoad, RuleNode, SaChild, SaElement,
-    SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved, SaSavedPointer, SaSavedWord,
-    SaWordNode, SpanNode, Stored, StoredDimen, StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype,
-    WriteNode,
+    MovementNode, NativeWordNode, Noad, NodeKind, NodePtr, OpenNode, PageInsNode, ParShapeNode,
+    PassiveNode, PenaltiesNode, PenaltyNode, PicNode, PseudoLineNode, RadicalNoad, RuleNode,
+    SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved,
+    SaSavedPointer, SaSavedWord, SaWordNode, SpanNode, Stored, StoredDimen, StyleNode, UnsetNode,
+    WhatsitNode, WhatsitSubtype, WriteNode,
 };
 use crate::state::MemState;
 use crate::token::TokenList;
@@ -105,6 +105,12 @@ macro_rules! array_overlay {
     };
 }
 
+/// The entries of one array node, writable, beside those of another.
+pub type EntriesMutAnd<'a, K, L> = (
+    &'a mut [<K as ArrayOverlay>::Entry],
+    &'a [<L as ArrayOverlay>::Entry],
+);
+
 impl MemState {
     /// The words holding `p`'s entries, and the entries' length in bytes.
     #[inline]
@@ -122,6 +128,33 @@ impl MemState {
         let (words, bytes) = self.entry_words(p);
         let words: &[u8] = bytemuck::cast_slice(&self.data[words]);
         bytemuck::cast_slice(&words[..bytes])
+    }
+
+    /// The entries of `dst`, noted in the journal, beside those of another
+    /// node `src`. A confusion when the two overlap.
+    #[inline]
+    pub fn entries_mut_and<K: ArrayOverlay, L: ArrayOverlay>(
+        &mut self,
+        dst: NodePtr<K>,
+        src: NodePtr<L>,
+    ) -> Result<EntriesMutAnd<'_, K, L>, crate::errors::Abort> {
+        let (dst_words, dst_bytes) = self.entry_words(dst);
+        let (src_words, src_bytes) = self.entry_words(src);
+        if self.journal.armed() {
+            if let Some(words) = self.data.get(dst_words.clone()) {
+                self.journal.note_run(dst_words.start, words);
+            }
+        }
+        let [dst, src] = self
+            .data
+            .get_disjoint_mut([dst_words, src_words])
+            .map_err(|_| crate::errors::Abort::Confusion("entries"))?;
+        let dst: &mut [u8] = bytemuck::cast_slice_mut(dst);
+        let src: &[u8] = bytemuck::cast_slice(src);
+        Ok((
+            bytemuck::cast_slice_mut(&mut dst[..dst_bytes]),
+            bytemuck::cast_slice(&src[..src_bytes]),
+        ))
     }
 
     /// The entries that follow an array node's header, noted in the journal.
@@ -314,6 +347,44 @@ pub struct PicLayout {
 
 overlay!(PicNode => PicLayout, crate::consts::PIC_NODE_SIZE);
 array_overlay!(PicNode => u8, |h| i32::from(h.path_len));
+
+/// A native word. Its UTF-16 text follows the header, and its shaped glyphs
+/// live in `mem.glyph_blobs` under `glyph_info`.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct NativeWordLayout {
+    pub subtype: Stored<WhatsitSubtype>,
+    _type: u16,
+    pub link: MemPtr,
+    _unused1: i32,
+    pub width: Scaled,
+    _unused2: i32,
+    pub depth: Scaled,
+    _unused3: i32,
+    pub height: Scaled,
+    pub glyph_count: u16,
+    /// The text length in UTF-16 units.
+    pub length: u16,
+    pub font: FontId,
+    /// The node size in words.
+    pub size: u16,
+    /// One-based shaped-glyph arena handle, zero when unshaped.
+    pub glyph_info: i32,
+    _unused4: i32,
+}
+
+impl NativeWordLayout {
+    /// Forgets the shaped glyphs, without releasing them.
+    #[inline]
+    pub fn clear_glyphs(&mut self) {
+        self.glyph_count = 0;
+        self.glyph_info = 0;
+        self._unused4 = 0;
+    }
+}
+
+overlay!(NativeWordNode => NativeWordLayout, crate::consts::NATIVE_NODE_SIZE);
+array_overlay!(NativeWordNode => u16, |h| i32::from(h.length));
 
 /// A glue specification. Its first word holds the fill orders and a reference
 /// count in place of a type code and link.
@@ -1655,6 +1726,79 @@ mod tests {
         assert_eq!(mem.b16s0(at(14)), u16::from_le_bytes(*b"89"));
         assert_eq!(mem.b16s1(at(14)), 0);
         assert!(matches!(p.whatsit().variant(&mem), Some(WhatsitVariant::Pic(q)) if q == p));
+    }
+
+    fn native_word_at(mem: &mut MemState, idx: i32, text: &[u16]) -> NodePtr<NativeWordNode> {
+        let w: NodePtr<NativeWordNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(idx));
+        let word = &mut mem[w];
+        word.subtype = WhatsitSubtype::NativeWord.into();
+        word.length = text.len() as u16;
+        mem.entries_mut(w).copy_from_slice(text);
+        w
+    }
+
+    #[test]
+    fn native_word_fields_and_text_land_on_their_words() {
+        let mut mem = MemState {
+            data: vec![Default::default(); 24],
+            ..Default::default()
+        };
+        let at = MemIdx::from_raw;
+        let w = native_word_at(&mut mem, 4, &[1, 2, 3, 4, 5]);
+        let word = &mut mem[w];
+        word.width = Scaled::from_raw(11);
+        word.depth = Scaled::from_raw(12);
+        word.height = Scaled::from_raw(13);
+        word.glyph_count = 6;
+        word.font = FontId::new(7);
+        word.size = 8;
+        word.glyph_info = 9;
+        assert_eq!(mem.b16s0(at(4)), 40);
+        assert_eq!([5, 6, 7].map(|i| mem.b32s1(at(i))), [11, 12, 13]);
+        assert_eq!(
+            [
+                mem.b16s0(at(8)),
+                mem.b16s1(at(8)),
+                mem.b16s2(at(8)),
+                mem.b16s3(at(8))
+            ],
+            [6, 5, 7, 8]
+        );
+        assert_eq!((mem.b32s0(at(9)), mem.b32s1(at(9))), (9, 0));
+        assert_eq!(
+            [
+                mem.b16s0(at(10)),
+                mem.b16s1(at(10)),
+                mem.b16s2(at(10)),
+                mem.b16s3(at(10))
+            ],
+            [1, 2, 3, 4]
+        );
+        assert_eq!((mem.b16s0(at(11)), mem.b16s1(at(11))), (5, 0));
+        mem[w].clear_glyphs();
+        assert_eq!((mem.b16s0(at(8)), mem.b32s0(at(9))), (0, 0));
+        assert!(matches!(w.whatsit().variant(&mem), Some(WhatsitVariant::NativeWord(p)) if p == w));
+    }
+
+    #[test]
+    fn entries_of_two_nodes_copy_and_journal_the_destination() {
+        let mut mem = MemState {
+            data: vec![Default::default(); 24],
+            ..Default::default()
+        };
+        let src = native_word_at(&mut mem, 2, &[1, 2, 3]);
+        let dst = native_word_at(&mut mem, 10, &[0; 5]);
+        mem.journal.arm(24);
+        let Ok((to, from)) = mem.entries_mut_and(dst, src) else {
+            panic!("two separate nodes overlap");
+        };
+        to[1..4].copy_from_slice(from);
+        assert_eq!(mem.entries(dst), [0, 1, 2, 3, 0]);
+        let delta = mem.journal.seal(&mem.data);
+        delta.apply_to(&mut mem.data);
+        assert_eq!(mem.entries(dst), [0; 5]);
+        assert_eq!(mem.entries(src), [1, 2, 3]);
+        assert!(mem.entries_mut_and(dst, dst).is_err());
     }
 
     #[test]

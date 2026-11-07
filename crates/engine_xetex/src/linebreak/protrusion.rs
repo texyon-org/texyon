@@ -106,10 +106,10 @@ impl LinebreakState {
             match mem.classify(p) {
                 Ok(AnyNode::Whatsit(w)) => match w.variant(mem) {
                     Some(WhatsitVariant::NativeWord(w)) => {
-                        if w.native_glyph_info_handle(mem) == 0 {
+                        if mem[w].glyph_info == 0 {
                             return Scaled::ZERO;
                         }
-                        let f = w.native_font(mem);
+                        let f = mem[w].font;
                         let cp = mem
                             .native_word_edge_glyph(w, side)
                             .map_or(0, |g| fonts.cp_codes.get(f, side, u32::from(g)));

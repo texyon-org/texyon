@@ -13,7 +13,7 @@ use crate::mem::{end_lr_type, LIG_TRICK};
 use crate::node::Stored;
 use crate::node::{
     link_of, AnyNode, BoxNode, EdgeNode, GlueNode, GlueSpecNode, GlyphNode, MathNode, MovementNode,
-    NodePtr, RuleNode, WhatsitNode, WhatsitSubtype, WhatsitVariant, RUNNING,
+    NativeWordNode, NodePtr, RuleNode, WhatsitSubtype, WhatsitVariant, RUNNING,
 };
 use crate::params::{DimenPar, IntPar};
 use crate::state::{
@@ -382,8 +382,8 @@ impl FontState {
 /// Native words of one font joined by interword glue, and their text length
 /// with a space for each glue.
 struct NativeWordRun {
-    first: NodePtr<WhatsitNode>,
-    last: NodePtr<WhatsitNode>,
+    first: NodePtr<NativeWordNode>,
+    last: NodePtr<NativeWordNode>,
     text_len: i32,
 }
 
@@ -405,18 +405,17 @@ impl MemState {
         let mut p = self[this_box].list_ptr;
 
         while !p.is_null() {
-            let first = self.as_native_word(p).filter(|r| {
-                fonts.font_letter_space[r.native_font(self)] == Scaled::ZERO
-                    && !p.link(self).is_null()
+            let first = self.as_native_word(p).filter(|&r| {
+                fonts.font_letter_space[self[r].font] == Scaled::ZERO && !p.link(self).is_null()
             });
             if let Some(r) = first {
-                let font = r.native_font(self);
+                let font = self[r].font;
                 let same_font_word = |mem: &MemState, q: MemPtr| {
-                    mem.as_native_word(q).filter(|w| w.native_font(mem) == font)
+                    mem.as_native_word(q).filter(|&w| mem[w].font == font)
                 };
                 let mut last = r;
-                let mut text_len = i32::from(r.native_length(self));
-                let mut q = r.link(self);
+                let mut text_len = i32::from(self[r].length);
+                let mut q = self[r].link;
                 loop {
                     q = self.skip_interword_fillers(q);
                     match self.classify_non_char(q) {
@@ -425,8 +424,8 @@ impl MemState {
                                 q = self.skip_interword_fillers(self[glue].link);
                                 if let Some(w) = same_font_word(self, q) {
                                     last = w;
-                                    text_len += 1 + i32::from(w.native_length(self));
-                                    q = w.link(self);
+                                    text_len += 1 + i32::from(self[w].length);
+                                    q = self[w].link;
                                     continue;
                                 }
                             } else {
@@ -436,8 +435,8 @@ impl MemState {
                                 q = self.skip_interword_fillers(q.link(self));
                                 if let Some(w) = same_font_word(self, q) {
                                     last = w;
-                                    text_len += 1 + i32::from(w.native_length(self));
-                                    q = w.link(self);
+                                    text_len += 1 + i32::from(self[w].length);
+                                    q = self[w].link;
                                     continue;
                                 }
                             }
@@ -445,7 +444,7 @@ impl MemState {
                         Some(AnyNode::Whatsit(_)) => {
                             if let Some(w) = same_font_word(self, q) {
                                 last = w;
-                                q = w.link(self);
+                                q = self[w].link;
                                 continue;
                             }
                         }
@@ -496,11 +495,11 @@ impl MemState {
         loop {
             match self.classify(q) {
                 Ok(AnyNode::Whatsit(w)) => {
-                    if w.whatsit_subtype(self).is_some_and(|s| s.is_native_word()) {
-                        for &unit in w.native_text(self) {
+                    if let Some(WhatsitVariant::NativeWord(word)) = w.variant(self) {
+                        for &unit in self.entries(word) {
                             strings.append_char(unit);
                         }
-                        width += w.width(self);
+                        width += self[word].width;
                     }
                 }
                 Ok(AnyNode::Glue(glue)) => {
@@ -531,21 +530,21 @@ impl MemState {
         }
 
         let nlen = strings.cur_length();
-        let word = self.new_native_word_node(eqtb, first.native_font(self), nlen)?;
-        word.set_subtype(self, first.subtype(self));
+        let word = self.new_native_word_node(eqtb, self[first].font, nlen)?;
+        self[word].subtype = self[first].subtype;
         let base = strings.cur_string_start().index();
-        word.native_text_mut(self)
+        self.entries_mut(word)
             .copy_from_slice(&strings.str_pool[base..base + nlen as usize]);
-        word.set_width(self, width);
+        self[word].width = width;
         fonts.store_justified_native_glyphs(self, word)?;
 
         prev_p.set_link(self, word.ptr());
-        word.set_link(self, last.link(self));
-        last.set_link(self, MemPtr::NULL);
+        self[word].link = self[last].link;
+        self[last].link = MemPtr::NULL;
 
         let mut tail = word.ptr();
         let mut prev_p = first.ptr();
-        let mut p = first.link(self);
+        let mut p = self[first].link;
         while !p.is_null() {
             if self
                 .classify_non_char(p)
@@ -786,25 +785,25 @@ fn glyph_out(st: &mut crate::state::EngineState, glyph: NodePtr<GlyphNode>) -> R
 /// A native word, with its text as ActualText for `actual_text`.
 fn native_word_out(
     st: &mut crate::state::EngineState,
-    word: NodePtr<WhatsitNode>,
+    word: NodePtr<NativeWordNode>,
     actual_text: bool,
 ) -> Result<(), Abort> {
     synch_h(st)?;
     synch_v(st)?;
-    dvi_font_select(st, word.native_font(&st.mem))?;
+    dvi_font_select(st, st.mem[word].font)?;
     if actual_text {
-        if word.native_length(&st.mem) > 0 || word.native_glyph_info_handle(&st.mem) != 0 {
+        if st.mem[word].length > 0 || st.mem[word].glyph_info != 0 {
             let (width, locations, gids) = glyph_array(&st.mem, word);
-            let text = word.native_text(&st.mem);
+            let text = st.mem.entries(word);
             st.shipout
                 .dvi
                 .set_text_and_glyphs(text, width, locations, gids)?;
         }
-    } else if word.native_glyph_info_handle(&st.mem) != 0 {
+    } else if st.mem[word].glyph_info != 0 {
         let (width, locations, gids) = glyph_array(&st.mem, word);
         st.shipout.dvi.set_glyphs(width, locations, gids)?;
     }
-    st.shipout.cur_h += word.width(&st.mem);
+    st.shipout.cur_h += st.mem[word].width;
     st.shipout.dvi_h = st.shipout.cur_h;
     Ok(())
 }
@@ -1332,11 +1331,11 @@ pub(crate) fn finalize_dvi_file(st: &mut crate::state::EngineState) -> Result<()
 }
 
 /// The glyph array of `word`: its width, glyph positions and glyph ids.
-fn glyph_array(mem: &MemState, word: NodePtr<WhatsitNode>) -> (Scaled, &[FixedPoint], &[u16]) {
-    let count = word.native_glyph_count(mem) as usize;
-    let glyphs = mem.glyph_blobs.get(word.native_glyph_info_handle(mem));
+fn glyph_array(mem: &MemState, word: NodePtr<NativeWordNode>) -> (Scaled, &[FixedPoint], &[u16]) {
+    let count = mem[word].glyph_count as usize;
+    let glyphs = mem.glyph_blobs.get(mem[word].glyph_info);
     (
-        word.width(mem),
+        mem[word].width,
         &glyphs.locations[..count],
         &glyphs.gids[..count],
     )

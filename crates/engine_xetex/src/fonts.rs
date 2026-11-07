@@ -10,7 +10,7 @@ use crate::ext::{
 };
 use crate::io::{open_input_file, pack_file_name};
 use crate::mem_types::B16x4;
-use crate::node::{NodePtr, WhatsitNode, WhatsitSubtype};
+use crate::node::{NativeWordNode, NodePtr, WhatsitSubtype};
 use crate::output::{
     begin_diagnostic, capture_to_diagnostic, char_warning, diagnostic_begin_capture_warning_here,
     end_diagnostic, error_here_with_diagnostic, print, print_char, print_file_name, print_int,
@@ -359,14 +359,14 @@ impl MemState {
         f: FontId,
         n: i32,
         subtype: WhatsitSubtype,
-    ) -> Result<NodePtr<WhatsitNode>, Abort> {
+    ) -> Result<NodePtr<NativeWordNode>, Abort> {
         let size = NATIVE_NODE_SIZE + (n * 2 + 7) / 8;
-        let w = NodePtr::<WhatsitNode>::alloc_sized(self, size, subtype)?;
-        w.set_native_size(self, size);
-        w.set_native_font(self, f);
-        w.set_native_length(self, n as u16);
-        w.set_native_glyph_count(self, 0);
-        w.set_native_glyph_info_handle(self, 0);
+        let w = NodePtr::<NativeWordNode>::alloc_sized(self, size, subtype)?;
+        let word = &mut self[w];
+        word.size = size as u16;
+        word.font = f;
+        word.length = n as u16;
+        word.clear_glyphs();
         Ok(w)
     }
 
@@ -376,7 +376,7 @@ impl MemState {
         eqtb: &EqtbState,
         f: FontId,
         n: i32,
-    ) -> Result<NodePtr<WhatsitNode>, Abort> {
+    ) -> Result<NodePtr<NativeWordNode>, Abort> {
         let subtype = if eqtb.int_par(IntPar::XetexGenerateActualText) > 0 {
             WhatsitSubtype::NativeWordAt
         } else {
@@ -391,18 +391,18 @@ impl MemState {
         fonts: &FontState,
         f: FontId,
         src: NativeCharSrc,
-    ) -> Result<NodePtr<WhatsitNode>, Abort> {
+    ) -> Result<NodePtr<NativeWordNode>, Abort> {
         match src {
             NativeCharSrc::Mapped(len) => {
                 let w = self.new_native_word_node(eqtb, f, len)?;
-                w.native_text_mut(self)
+                self.entries_mut(w)
                     .copy_from_slice(&fonts.mapped_text[..len as usize]);
                 Ok(w)
             }
             NativeCharSrc::Single(c) => {
                 let (units, n) = crate::utf8::utf16_units(c);
                 let w = self.new_native_word(f, n as i32, WhatsitSubtype::NativeWord)?;
-                w.native_text_mut(self).copy_from_slice(&units[..n]);
+                self.entries_mut(w).copy_from_slice(&units[..n]);
                 Ok(w)
             }
         }
@@ -423,7 +423,7 @@ pub(crate) fn new_native_character(
     st: &mut EngineState,
     f: FontId,
     c: u32,
-) -> Result<NodePtr<WhatsitNode>, Abort> {
+) -> Result<NodePtr<NativeWordNode>, Abort> {
     let src = if let Some(map) = st.fonts.font_mapping[f].clone() {
         let (units, n) = crate::utf8::utf16_units(c);
         if st.strings.pool_ptr + n as i32 > st.strings.pool_size {
@@ -1061,7 +1061,7 @@ pub(crate) fn load_native_font(
     );
 
     let space = new_native_character(st, font_ptr, u32::from(b' '))?;
-    let space_width = space.width(&st.mem) + st.fonts.loaded_font_letter_space;
+    let space_width = st.mem[space].width + st.fonts.loaded_font_letter_space;
     space.free_native(&mut st.mem);
 
     let size = st.fonts.font_size[font_ptr];

@@ -10,7 +10,8 @@ use crate::consts::{
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::node::Stored;
 use crate::node::{
-    CharNode, DelimiterField, GlueSpecNode, MathField, NodePtr, RuleDimen, SaElement, WhatsitNode,
+    CharNode, DelimiterField, GlueSpecNode, MathField, NativeWordNode, NodePtr, RuleDimen,
+    SaElement,
 };
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, GroupCode, Selector};
@@ -640,13 +641,13 @@ pub(crate) fn sprint_cs(st: &mut EngineState, p: EqtbPtr) {
     }
 }
 
-fn print_native_word(st: &mut EngineState, p: NodePtr<WhatsitNode>) {
-    let len = p.native_length(&st.mem) as usize;
+fn print_native_word(st: &mut EngineState, p: NodePtr<NativeWordNode>) {
+    let len = st.mem.entries(p).len();
     let mut i = 0;
     while i < len {
-        let c = p.native_text(&st.mem)[i];
+        let c = st.mem.entries(p)[i];
         if i + 1 < len {
-            if let Some(pair) = surrogate_pair(c, p.native_text(&st.mem)[i + 1]) {
+            if let Some(pair) = surrogate_pair(c, st.mem.entries(p)[i + 1]) {
                 print_char(st, pair);
                 i += 2;
                 continue;

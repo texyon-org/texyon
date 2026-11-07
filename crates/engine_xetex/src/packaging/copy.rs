@@ -39,7 +39,7 @@ impl MemState {
             }
             WhatsitVariant::Language(_) => LanguageNode::SIZE,
             WhatsitVariant::SavePos => SMALL_NODE_SIZE,
-            WhatsitVariant::NativeWord(word) => word.native_size(self),
+            WhatsitVariant::NativeWord(word) => i32::from(self[word].size),
             WhatsitVariant::Glyph(_) => GLYPH_NODE_SIZE,
             WhatsitVariant::Pic(pic) => {
                 PIC_NODE_SIZE
@@ -92,8 +92,7 @@ impl MemState {
             Some(WhatsitVariant::NativeWord(word)) => {
                 self.copy_words(r, word.ptr(), size);
                 let copy = copied_node(word, r);
-                copy.set_native_glyph_info_handle(self, 0);
-                copy.set_native_glyph_count(self, 0);
+                self[copy].clear_glyphs();
                 copy.share_native_glyphs(self, word);
                 Ok((r, 0))
             }

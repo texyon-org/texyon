@@ -13,7 +13,7 @@ fn append_native_word(st: &mut EngineState, f: FontId, text: &[u16]) -> Result<(
         .new_native_word_node(&st.eqtb, f, text.len() as i32)?;
     st.input.cur_list.tail_append(&mut st.mem, w.ptr());
     if !text.is_empty() {
-        w.native_text_mut(&mut st.mem).copy_from_slice(text);
+        st.mem.entries_mut(w).copy_from_slice(text);
     }
     st.mem.set_native_metrics(&st.eqtb, &st.fonts, w)?;
     Ok(())

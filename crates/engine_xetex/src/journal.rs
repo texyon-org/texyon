@@ -512,7 +512,7 @@ mod tests {
     }
 
     #[test]
-    fn mem_setters_and_raw_ranges_capture_preimages() {
+    fn mem_setters_capture_preimages() {
         let mut mem = crate::state::MemState {
             data: vec![word(0); 4],
             ..Default::default()
@@ -521,12 +521,10 @@ mod tests {
 
         mem.set_b32s1(MemPtr::MEM_BOT, 10);
         mem.set_b16s0(MemPtr::MEM_BOT, 11);
-        mem.journal_mark_range(MemPtr::from_raw(2), 2);
-        mem.data[2] = word(12);
-        mem.data[3] = word(13);
+        mem.set_b32s0(MemPtr::from_raw(2), 12);
 
         let delta = mem.journal.seal(&mem.data);
-        assert_eq!(delta.len(), 3);
+        assert_eq!(delta.len(), 2);
         delta.apply_to(&mut mem.data);
         assert!(mem.data.iter().all(|value| bits(*value) == 0));
     }

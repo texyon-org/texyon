@@ -63,10 +63,8 @@ pub(crate) fn short_display(st: &mut EngineState, mut p: MemPtr) {
                     | AnyNode::Unset(_),
                 ) => print(st, "[]"),
                 Ok(AnyNode::Whatsit(w)) => {
-                    if w.whatsit_subtype(&st.mem)
-                        .is_some_and(|s| s.is_native_word())
-                    {
-                        let font = w.native_font(&st.mem);
+                    if let Some(WhatsitVariant::NativeWord(w)) = w.variant(&st.mem) {
+                        let font = st.mem[w].font;
                         if font != st.errors.font_in_short_display {
                             print_esc(st, st.eqtb.font_id_text(font));
                             print_char(st, b' ');
@@ -373,8 +371,8 @@ fn show_box_node(st: &mut EngineState, b: NodePtr<BoxNode>) {
 }
 
 fn show_whatsit(st: &mut EngineState, node: NodePtr<WhatsitNode>) {
-    let print_font = |st: &mut EngineState| {
-        print_esc(st, st.eqtb.font_id_text(node.native_font(&st.mem)));
+    let print_font = |st: &mut EngineState, font| {
+        print_esc(st, st.eqtb.font_id_text(font));
     };
     match node.variant(&st.mem) {
         Some(WhatsitVariant::Open(open)) => {
@@ -407,12 +405,12 @@ fn show_whatsit(st: &mut EngineState, node: NodePtr<WhatsitNode>) {
         }
         Some(WhatsitVariant::SavePos) => print_esc(st, "pdfsavepos"),
         Some(WhatsitVariant::NativeWord(word)) => {
-            print_font(st);
+            print_font(st, st.mem[word].font);
             print_char(st, b' ');
             print_native_word(st, word);
         }
         Some(WhatsitVariant::Glyph(glyph)) => {
-            print_font(st);
+            print_font(st, st.mem[glyph].font);
             print(st, " glyph#");
             print_int(st, i32::from(st.mem[glyph].glyph));
         }

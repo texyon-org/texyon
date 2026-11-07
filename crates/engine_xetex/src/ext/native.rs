@@ -6,7 +6,7 @@ use crate::glyph_arena::{FixedPoint, GlyphBlob};
 use crate::layout::{
     Bidi, FontMappingHandle, K_STATUS_NO_ERROR, K_STATUS_OUTPUT_BUFFER_FULL, UBIDI_MIXED, UBIDI_RTL,
 };
-use crate::node::{GlyphNode, NodePtr, WhatsitNode};
+use crate::node::{GlyphNode, NativeWordNode, NodePtr};
 use crate::state::{FontEngineHandle, FontState, MemState};
 use crate::units::{FontId, Scaled, StrNumber};
 use std::ffi::c_int;
@@ -71,25 +71,25 @@ impl FontState {
 }
 
 impl MemState {
-    pub fn get_native_glyph(&self, w: NodePtr<WhatsitNode>, index: u32) -> u16 {
-        if index as usize >= w.native_glyph_count(self) as usize {
+    pub fn get_native_glyph(&self, w: NodePtr<NativeWordNode>, index: u32) -> u16 {
+        if index as usize >= self[w].glyph_count as usize {
             0
         } else {
-            self.glyph_blobs.get(w.native_glyph_info_handle(self)).gids[index as usize]
+            self.glyph_blobs.get(self[w].glyph_info).gids[index as usize]
         }
     }
 
     /// The first or last glyph of native word `w`, whose protrusion code applies.
     pub(crate) fn native_word_edge_glyph(
         &self,
-        w: NodePtr<WhatsitNode>,
+        w: NodePtr<NativeWordNode>,
         side: Side,
     ) -> Option<u16> {
-        let glyph_count = usize::from(w.native_glyph_count(self));
+        let glyph_count = usize::from(self[w].glyph_count);
         if glyph_count == 0 {
             return None;
         }
-        let gids = &self.glyph_blobs.get(w.native_glyph_info_handle(self)).gids;
+        let gids = &self.glyph_blobs.get(self[w].glyph_info).gids;
         let gids = gids.get(..glyph_count)?;
         match side {
             Side::Left => gids.first(),
@@ -139,11 +139,11 @@ impl FontState {
     pub fn measure_native_node(
         &self,
         mem: &mut MemState,
-        w: NodePtr<WhatsitNode>,
+        w: NodePtr<NativeWordNode>,
         use_glyph_metrics: bool,
     ) -> Result<(), Abort> {
-        let text = w.native_text(mem).to_vec();
-        let f = w.native_font(mem);
+        let text = mem.entries(w).to_vec();
+        let f = mem[w].font;
         let engine = self.require_ot_engine(f, "bad native font flag in `measure_native_node`")?;
 
         let bidi = Bidi::new(&text, engine.default_dir());
@@ -174,8 +174,8 @@ impl FontState {
                 0.0
             }
         };
-        w.set_width(mem, d2fix(width));
-        w.set_native_glyph_count(mem, shaped.gids.len() as u16);
+        mem[w].width = d2fix(width);
+        mem[w].glyph_count = shaped.gids.len() as u16;
         drop(bidi);
 
         let letter_space = self.font_letter_space[f];
@@ -190,14 +190,14 @@ impl FontState {
             }
             if ls_delta != Scaled::ZERO {
                 ls_delta -= letter_space;
-                w.set_width(mem, w.width(mem) + ls_delta);
+                mem[w].width += ls_delta;
             }
         }
 
-        let glyph_count = w.native_glyph_count(mem) as usize;
+        let glyph_count = mem[w].glyph_count as usize;
         if !use_glyph_metrics || glyph_count == 0 {
-            w.set_height(mem, self.native_height(f));
-            w.set_depth(mem, self.native_depth(f));
+            mem[w].height = self.native_height(f);
+            mem[w].depth = self.native_depth(f);
         } else {
             let mut y_min = 65536.0f32;
             let mut y_max = -65536.0f32;
@@ -213,11 +213,11 @@ impl FontState {
                     y_min = y - dp;
                 }
             }
-            w.set_height(mem, d2fix(f64::from(y_max)));
-            w.set_depth(mem, -d2fix(f64::from(y_min)));
+            mem[w].height = d2fix(f64::from(y_max));
+            mem[w].depth = -d2fix(f64::from(y_min));
         }
 
-        let old_handle = w.native_glyph_info_handle(mem);
+        let old_handle = mem[w].glyph_info;
         if old_handle != 0 {
             mem.glyph_blobs.release(old_handle);
         }
@@ -231,15 +231,19 @@ impl FontState {
                 gids: shaped.gids,
             })
         };
-        w.set_native_glyph_info_handle(mem, handle);
+        mem[w].glyph_info = handle;
         Ok(())
     }
 
-    pub fn get_native_italic_correction(&self, mem: &MemState, w: NodePtr<WhatsitNode>) -> Scaled {
-        let f = w.native_font(mem);
-        let n = w.native_glyph_count(mem) as usize;
+    pub fn get_native_italic_correction(
+        &self,
+        mem: &MemState,
+        w: NodePtr<NativeWordNode>,
+    ) -> Scaled {
+        let f = mem[w].font;
+        let n = mem[w].glyph_count as usize;
         if n > 0 {
-            let last_glyph = mem.glyph_blobs.get(w.native_glyph_info_handle(mem)).gids[n - 1];
+            let last_glyph = mem.glyph_blobs.get(mem[w].glyph_info).gids[n - 1];
             if let Some(engine) = self.layout_engine(f) {
                 return d2fix(f64::from(engine.glyph_ital_corr(u32::from(last_glyph))))
                     + self.font_letter_space[f];
@@ -466,19 +470,19 @@ impl FontState {
     pub fn store_justified_native_glyphs(
         &self,
         mem: &mut MemState,
-        w: NodePtr<WhatsitNode>,
+        w: NodePtr<NativeWordNode>,
     ) -> Result<(), Abort> {
-        let f = w.native_font(mem);
-        let saved_width = w.width(mem);
+        let f = mem[w].font;
+        let saved_width = mem[w].width;
         self.measure_native_node(mem, w, false)?;
 
-        let width = w.width(mem);
+        let width = mem[w].width;
         if width == saved_width {
             return Ok(());
         }
         let just_amount = fix2d(saved_width - width);
-        let glyph_count = w.native_glyph_count(mem) as usize;
-        let handle = w.native_glyph_info_handle(mem);
+        let glyph_count = mem[w].glyph_count as usize;
+        let handle = mem[w].glyph_info;
         let glyphs = mem.glyph_blobs.get_mut(handle);
 
         let space_glyph = self.map_char_to_glyph(f, i32::from(b' '))?;
@@ -507,7 +511,7 @@ impl FontState {
             }
         }
 
-        w.set_width(mem, saved_width);
+        mem[w].width = saved_width;
         Ok(())
     }
 }

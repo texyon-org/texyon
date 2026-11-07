@@ -2,16 +2,16 @@
 
 use crate::cmd::Cmd;
 use crate::codes::ValueLevel;
-use crate::consts::{CHAR_CLASS_LIMIT, HMODE, NATIVE_NODE_SIZE, SPACE_ADJUSTMENT, TEX_NULL};
+use crate::consts::{CHAR_CLASS_LIMIT, HMODE, SPACE_ADJUSTMENT, TEX_NULL};
 use crate::errors::Abort;
 use crate::ext::append_src_special;
 use crate::fonts::{CharInfo, CharTag, LigChar, LigKernStep, SPACE_CODE};
 use crate::input::{TokenType, TOKEN_LIST};
-use crate::node::{AnyNode, CharNode, LigItem, NodePtr, SaLeaf, WhatsitNode};
+use crate::node::{AnyNode, CharNode, LigItem, NativeWordNode, NodePtr, SaLeaf};
 use crate::params::IntPar;
 use crate::state::{EngineState, MemState};
 use crate::token::{Token, TokenList};
-use crate::units::{FontId, FontInfoIdx, MemIdx, MemPtr};
+use crate::units::{FontId, FontInfoIdx, MemPtr};
 
 fn inter_char_tokens_enabled(st: &EngineState) -> bool {
     st.eqtb.int_par(IntPar::XetexInterCharTokens) > 0
@@ -157,13 +157,13 @@ fn find_main_ppp(st: &mut EngineState) {
 }
 
 /// The native word `main_pp` if new text in font `f` can extend it.
-fn extendable_native_word(st: &EngineState, f: FontId) -> Option<NodePtr<WhatsitNode>> {
+fn extendable_native_word(st: &EngineState, f: FontId) -> Option<NodePtr<NativeWordNode>> {
     let (pp, ppp) = (st.mainloop.main_pp, st.mainloop.main_ppp);
     if pp.is_null() {
         return None;
     }
     let word = st.mem.as_native_word(pp)?;
-    let extendable = word.native_font(&st.mem) == f
+    let extendable = st.mem[word].font == f
         && ppp != pp
         && !st.mem.is_char_node(ppp)
         && !matches!(st.mem.classify(ppp), Ok(AnyNode::Disc(_)));
@@ -171,23 +171,21 @@ fn extendable_native_word(st: &EngineState, f: FontId) -> Option<NodePtr<Whatsit
 }
 
 impl MemState {
-    /// Writes `text` into `node`'s text at `at`, unjournaled.
-    fn write_native_text(&mut self, node: NodePtr<WhatsitNode>, at: i32, text: &[u16]) {
-        let to = node.native_text_start() + at as usize;
-        self.units_mut()[to..to + text.len()].copy_from_slice(text);
+    /// Writes `text` into `node`'s text at `at`.
+    fn write_native_text(&mut self, node: NodePtr<NativeWordNode>, at: usize, text: &[u16]) {
+        self.entries_mut(node)[at..at + text.len()].copy_from_slice(text);
     }
 
-    /// Copies the text of `src` into `node`'s text at `at`, unjournaled.
+    /// Copies the text of `src` into `node`'s text at `at`.
     fn copy_native_text_into(
         &mut self,
-        node: NodePtr<WhatsitNode>,
-        at: i32,
-        src: NodePtr<WhatsitNode>,
-    ) {
-        let from = src.native_text_start();
-        let len = src.native_length(self) as usize;
-        self.units_mut()
-            .copy_within(from..from + len, node.native_text_start() + at as usize);
+        node: NodePtr<NativeWordNode>,
+        at: usize,
+        src: NodePtr<NativeWordNode>,
+    ) -> Result<(), Abort> {
+        let (to, from) = self.entries_mut_and(node, src)?;
+        to[at..at + from.len()].copy_from_slice(from);
+        Ok(())
     }
 }
 
@@ -294,11 +292,11 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
                 st.mainloop.main_h = remaining;
             }
             if let Some(word) = extendable_native_word(st, mf) {
-                let old_len = i32::from(word.native_length(&st.mem));
+                let old_len = i32::from(st.mem[word].length);
                 remaining = st.mainloop.main_h + old_len;
                 st.scanner.reserve_native_text(remaining)?;
                 st.scanner.save_native_len = st.scanner.native_len;
-                for &c in word.native_text(&st.mem) {
+                for &c in st.mem.entries(word) {
                     st.scanner.push_native_text(c);
                 }
                 for i in 0..st.mainloop.main_h {
@@ -311,9 +309,9 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
                 start = st.mainloop.main_h;
                 st.mainloop.main_h = 0;
                 advance_past_hyphen(st, start, remaining);
-                let next = word.link(&st.mem);
+                let next = st.mem[word].link;
                 st.mainloop.main_ppp.set_link(&mut st.mem, next);
-                word.set_link(&mut st.mem, MemPtr::NULL);
+                st.mem[word].link = MemPtr::NULL;
                 st.mem.flush_node_list(word.ptr())?;
                 st.mainloop.main_pp = st.input.cur_list.tail;
                 while st.mainloop.main_ppp.link(&st.mem) != st.mainloop.main_pp {
@@ -338,19 +336,20 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
     } else {
         let pp = st.mainloop.main_pp;
         let old = extendable_native_word(st, mf);
-        let old_len = old.map_or(0, |w| i32::from(w.native_length(&st.mem)));
-        let node = st.mem.new_native_word_node(&st.eqtb, mf, len + old_len)?;
+        let old_len = old.map_or(0, |w| st.mem[w].length);
+        let node = st
+            .mem
+            .new_native_word_node(&st.eqtb, mf, len + i32::from(old_len))?;
         pp.set_link(&mut st.mem, node.ptr());
         st.input.cur_list.tail = node.ptr();
-        st.mem.journal_mark_range(
-            node.idx().offset(NATIVE_NODE_SIZE),
-            crate::state::native_text_words(len + old_len),
-        );
         if let Some(word) = old {
-            st.mem.copy_native_text_into(node, 0, word);
+            st.mem.copy_native_text_into(node, 0, word)?;
         }
-        st.mem
-            .write_native_text(node, old_len, &st.scanner.native_text[..len as usize]);
+        st.mem.write_native_text(
+            node,
+            usize::from(old_len),
+            &st.scanner.native_text[..len as usize],
+        );
         let metrics = use_glyph_metrics(st);
         st.fonts.measure_native_node(&mut st.mem, node, metrics)?;
         if let Some(word) = old {
@@ -360,9 +359,9 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
                     prev = prev.link(&st.mem);
                 }
             }
-            let next = word.link(&st.mem);
+            let next = st.mem[word].link;
             prev.set_link(&mut st.mem, next);
-            word.set_link(&mut st.mem, MemPtr::NULL);
+            st.mem[word].link = MemPtr::NULL;
             st.mem.flush_node_list(word.ptr())?;
         }
     }
@@ -385,10 +384,10 @@ fn shape_interword_space(st: &mut EngineState, mf: FontId) -> Result<(), Abort> 
         }
         p = p.link(&st.mem);
     }
-    let Some(prev_word) = prev_word.filter(|w| w.native_font(&st.mem) == mf) else {
+    let Some(prev_word) = prev_word.filter(|&w| st.mem[w].font == mf) else {
         return Ok(());
     };
-    let glue = st.mem.skip_interword_fillers(prev_word.link(&st.mem));
+    let glue = st.mem.skip_interword_fillers(st.mem[prev_word].link);
     if st.mem.is_char_node(glue) {
         return Ok(());
     }
@@ -398,23 +397,21 @@ fn shape_interword_space(st: &mut EngineState, mf: FontId) -> Result<(), Abort> 
     if st.mem.skip_interword_fillers(st.mem[glue].link) != tail {
         return Ok(());
     }
-    let tail_word = NodePtr::<WhatsitNode>::from_idx_unchecked(MemIdx::new(tail));
-    let prev_len = i32::from(prev_word.native_length(&st.mem));
-    let tail_len = i32::from(tail_word.native_length(&st.mem));
+    let Some(tail_word) = st.mem.as_native_word(tail) else {
+        return Ok(());
+    };
+    let prev_len = usize::from(st.mem[prev_word].length);
+    let tail_len = usize::from(st.mem[tail_word].length);
     let len = prev_len + 1 + tail_len;
-    let joined = st.mem.new_native_word_node(&st.eqtb, mf, len)?;
-    st.mem.journal_mark_range(
-        joined.idx().offset(NATIVE_NODE_SIZE),
-        crate::state::native_text_words(len),
-    );
-    st.mem.copy_native_text_into(joined, 0, prev_word);
+    let joined = st.mem.new_native_word_node(&st.eqtb, mf, len as i32)?;
+    st.mem.copy_native_text_into(joined, 0, prev_word)?;
     st.mem
         .write_native_text(joined, prev_len, &[u16::from(b' ')]);
     st.mem
-        .copy_native_text_into(joined, prev_len + 1, tail_word);
+        .copy_native_text_into(joined, prev_len + 1, tail_word)?;
     let metrics = use_glyph_metrics(st);
     st.fonts.measure_native_node(&mut st.mem, joined, metrics)?;
-    let t = joined.width(&st.mem) - prev_word.width(&st.mem) - tail_word.width(&st.mem);
+    let t = st.mem[joined].width - st.mem[prev_word].width - st.mem[tail_word].width;
     joined.free_native(&mut st.mem);
     // TeX reads `width(font_glue[f])`, which stays null while `\spaceskip` supplies the glue.
     let space = st.fonts.param(mf, SPACE_CODE);

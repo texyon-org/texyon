@@ -5,7 +5,7 @@ use crate::errors::Abort;
 use crate::fonts::{CharInfo, CharTag, AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::mem::SS_GLUE;
 use crate::node::{
-    AnyNode, BoxNode, DelimiterField, GlyphNode, NodePtr, WhatsitNode, WhatsitSubtype,
+    AnyNode, BoxNode, DelimiterField, GlyphNode, NativeWordNode, NodePtr, WhatsitSubtype,
 };
 use crate::ot_math::GlyphAssembly;
 use crate::packaging::PackSpec;
@@ -26,12 +26,12 @@ impl FontState {
 impl MemState {
     pub(super) fn native_char_box(
         &mut self,
-        p: NodePtr<WhatsitNode>,
+        p: NodePtr<NativeWordNode>,
     ) -> Result<NodePtr<BoxNode>, Abort> {
         let b = self.new_null_box()?;
-        self[b].height = p.height(self);
-        self[b].width = p.width(self);
-        self[b].depth = p.depth(self).max(Scaled::ZERO);
+        self[b].height = self[p].height;
+        self[b].width = self[p].width;
+        self[b].depth = self[p].depth.max(Scaled::ZERO);
         self[b].list_ptr = p.ptr();
         Ok(b)
     }

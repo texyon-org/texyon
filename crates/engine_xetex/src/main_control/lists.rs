@@ -20,7 +20,7 @@ use crate::mem::{
 use crate::mem_types::ListStateRecord;
 use crate::node::{
     AdjustNode, AnyNode, CharNode, DiscNode, GlueNode, GlueSpecNode, InsNode, LanguageNode,
-    MarkNode, MathField, NoadVariant, NodePtr, WhatsitNode, WhatsitSubtype, WhatsitVariant,
+    MarkNode, MathField, NativeWordNode, NoadVariant, NodePtr, WhatsitSubtype, WhatsitVariant,
 };
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
@@ -286,7 +286,7 @@ pub(crate) fn new_graf(st: &mut EngineState, indented: bool) -> Result<(), Abort
 #[derive(Copy, Clone)]
 pub(crate) enum NewChar {
     Char(NodePtr<CharNode>),
-    Native(NodePtr<WhatsitNode>),
+    Native(NodePtr<NativeWordNode>),
 }
 
 impl NewChar {
@@ -790,7 +790,7 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
     let mut rsb = Scaled::ZERO;
     let a = match p {
         NewChar::Native(w) => {
-            let a = w.width(&st.mem);
+            let a = st.mem[w].width;
             if a == Scaled::ZERO {
                 (lsb, rsb) = st.fonts.get_native_char_sidebearings(f, c)?;
             }
@@ -828,7 +828,7 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
     let t = f64::from(st.fonts.param(f, SLANT_CODE)) / 65536.0;
     let (w, h) = match q {
         NewChar::Native(w) => {
-            let w = w.width(&st.mem);
+            let w = st.mem[w].width;
             let (h, _) = st.fonts.get_native_char_height_depth(f, qc)?;
             (w, h)
         }

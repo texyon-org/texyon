@@ -5,7 +5,9 @@ use crate::consts::{A_LEADERS, BEFORE, EXPLICIT, IGNORE_DEPTH, NULL_FONT, SMALL_
 use crate::errors::Abort;
 use crate::mem::{end_lr_type, GARBAGE};
 use crate::mem_types::ListStateRecord;
-use crate::node::{AnyNode, BoxNode, CharNode, NodePtr, RuleDimen, WhatsitNode, WhatsitSubtype};
+use crate::node::{
+    AnyNode, BoxNode, CharNode, NativeWordNode, NodePtr, RuleDimen, WhatsitSubtype, WhatsitVariant,
+};
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, FontState, MemState, ScannerState, ShipoutState};
 use crate::units::{GlueOrder, GlueSign, MemPtr, NodeType, OrderTotals, Orientation, Scaled};
@@ -156,13 +158,12 @@ impl MemState {
         fonts: &FontState,
         r_node: NodePtr<BoxNode>,
         mut q: MemPtr,
-        w: NodePtr<WhatsitNode>,
-    ) -> Result<(MemPtr, NodePtr<WhatsitNode>), Abort> {
+        w: NodePtr<NativeWordNode>,
+    ) -> Result<(MemPtr, NodePtr<NativeWordNode>), Abort> {
         let p = w.ptr();
-        let font = w.native_font(self);
-        let same_font = |mem: &MemState, p: MemPtr| {
-            mem.as_native_word(p).filter(|w| w.native_font(mem) == font)
-        };
+        let font = self[w].font;
+        let same_font =
+            |mem: &MemState, p: MemPtr| mem.as_native_word(p).filter(|&w| mem[w].font == font);
 
         let mut k = if q != r_node.ptr() + LIST_OFFSET {
             self.disc_replace_count(q).unwrap_or(0)
@@ -180,12 +181,12 @@ impl MemState {
         let mut pp = p.link(self);
         while k <= 0 && !pp.is_null() && !self.is_char_node(pp) {
             if let Some(next) = same_font(self, pp) {
-                pp = next.link(self);
+                pp = self[next].link;
             } else if let Some(next) = self
                 .as_disc(pp)
                 .and_then(|disc| same_font(self, self[disc].link))
             {
-                pp = next.link(self);
+                pp = self[next].link;
             } else {
                 break;
             }
@@ -198,28 +199,25 @@ impl MemState {
         let mut s = p;
         while s != pp {
             if let Some(sw) = self.as_native_word(s) {
-                total_chars += i32::from(sw.native_length(self));
+                total_chars += i32::from(self[sw].length);
             }
             s = s.link(self);
         }
 
         let merged = self.new_native_word_node(eqtb, font, total_chars)?;
-        merged.set_subtype(self, w.subtype(self));
+        self[merged].subtype = self[w].subtype;
         q.set_link(self, merged.ptr());
         let last = self.predecessor(p, pp);
-        merged.set_link(self, last.link(self));
+        self[merged].link = last.link(self);
         last.set_link(self, MemPtr::NULL);
 
-        total_chars = 0;
+        let mut at = 0;
         let mut s = p;
         loop {
             if let Some(sw) = self.as_native_word(s) {
-                let count = sw.native_length(self) as usize;
-                merged.mark_native_text(self);
-                let from = sw.native_text_start();
-                let to = merged.native_text_start() + total_chars as usize;
-                self.units_mut().copy_within(from..from + count, to);
-                total_chars += count as i32;
+                let (to, from) = self.entries_mut_and(merged, sw)?;
+                to[at..at + from.len()].copy_from_slice(from);
+                at += from.len();
             }
             if s.link(self).is_null() {
                 break;
@@ -323,16 +321,17 @@ impl MemState {
                         p = q;
                     }
                 }
-                Ok(AnyNode::Whatsit(w)) => match w.whatsit_subtype(self) {
-                    Some(WhatsitSubtype::NativeWord | WhatsitSubtype::NativeWordAt) => {
-                        let (new_q, native) = self.merge_native_words(eqtb, fonts, r_node, q, w)?;
+                Ok(AnyNode::Whatsit(w)) => match w.variant(self) {
+                    Some(WhatsitVariant::NativeWord(word)) => {
+                        let (new_q, native) =
+                            self.merge_native_words(eqtb, fonts, r_node, q, word)?;
                         q = new_q;
                         p = native.ptr();
-                        h = h.max(native.height(self));
-                        d = d.max(native.depth(self));
-                        x += native.width(self);
+                        h = h.max(self[native].height);
+                        d = d.max(self[native].depth);
+                        x += self[native].width;
                     }
-                    Some(WhatsitSubtype::Glyph | WhatsitSubtype::Pic | WhatsitSubtype::Pdf) => {
+                    Some(WhatsitVariant::Glyph(_) | WhatsitVariant::Pic(_)) => {
                         h = h.max(w.height(self));
                         d = d.max(w.depth(self));
                         x += w.width(self);

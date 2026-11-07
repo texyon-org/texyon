@@ -3,7 +3,7 @@
 use crate::consts::{L_CODE, NORMAL, TEX_NULL};
 use crate::errors::Abort;
 use crate::fonts::LigChar;
-use crate::node::{AnyNode, CharNode, LanguageNode, NodePtr, WhatsitNode, WhatsitVariant};
+use crate::node::{AnyNode, CharNode, LanguageNode, NativeWordNode, NodePtr, WhatsitVariant};
 use crate::params::IntPar;
 use crate::state::{EngineState, MemState};
 use crate::units::MemPtr;
@@ -91,14 +91,14 @@ pub(super) fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), Abo
                     continue;
                 }
                 Ok(AnyNode::Whatsit(w)) => {
-                    let subtype = w.whatsit_subtype(&st.mem);
-                    if subtype.is_some_and(|sub| sub.is_native_word()) {
-                        let len = usize::from(w.native_length(&st.mem));
+                    let variant = w.variant(&st.mem);
+                    if let Some(WhatsitVariant::NativeWord(word)) = variant {
+                        let len = usize::from(st.mem[word].length);
                         let mut l = 0;
                         while l < len {
-                            let c = st.mem.get_native_usv(w, l);
+                            let c = st.mem.get_native_usv(word, l);
                             if st.eqtb.lc_code(c) != 0 {
-                                st.hyph.hf = w.native_font(&st.mem);
+                                st.hyph.hf = st.mem[word].font;
                                 prev_s = s;
                                 if st.eqtb.lc_code(c) == c || uc_hyph {
                                     break;
@@ -115,7 +115,7 @@ pub(super) fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), Abo
                         }
                     }
 
-                    if let Some(WhatsitVariant::Language(language)) = w.variant(&st.mem) {
+                    if let Some(WhatsitVariant::Language(language)) = variant {
                         set_language(st, language);
                     }
                     prev_s = s;
@@ -149,7 +149,7 @@ pub(super) fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), Abo
 
     let native_ha = match st.mem.as_native_word(st.linebreak.ha) {
         Some(ha) => {
-            let Some(end) = st.mem.find_word_end(ha.link(&st.mem), false) else {
+            let Some(end) = st.mem.find_word_end(st.mem[ha].link, false) else {
                 return Ok(());
             };
             s = end;
@@ -174,12 +174,12 @@ pub(super) fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), Abo
 /// where the hyphenatable part begins or ends. Returns the word's final node.
 fn collect_native_word(
     st: &mut EngineState,
-    mut ha: NodePtr<WhatsitNode>,
+    mut ha: NodePtr<NativeWordNode>,
     max_len: i32,
-) -> Result<NodePtr<WhatsitNode>, Abort> {
+) -> Result<NodePtr<NativeWordNode>, Abort> {
     st.linebreak.hn = 0;
     'restart: loop {
-        let len = usize::from(ha.native_length(&st.mem));
+        let len = usize::from(st.mem[ha].length);
         let mut l = 0;
         while l < len {
             let c = st.mem.get_native_usv(ha, l);

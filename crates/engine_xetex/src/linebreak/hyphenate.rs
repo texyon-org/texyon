@@ -6,7 +6,7 @@ use crate::fonts::{CharTag, LigChar};
 use crate::hyphenation::TrieOp;
 use crate::main_control::LigStack;
 use crate::mem::HOLD_HEAD;
-use crate::node::{AnyNode, CharNode, DiscNode, LigItem, NodePtr, WhatsitNode};
+use crate::node::{AnyNode, CharNode, DiscNode, LigItem, NativeWordNode, NodePtr};
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, FontState, MemState};
 use crate::units::{FontId, FontInfoIdx, MemPtr, Scaled, StrNumber};
@@ -15,12 +15,12 @@ use super::odd;
 
 impl MemState {
     /// The Unicode scalar at UTF-16 offset `i` of `w`'s text.
-    pub(super) fn get_native_usv(&self, w: NodePtr<WhatsitNode>, i: usize) -> i32 {
-        let at = w.native_text_start() + i;
-        let c = self.units()[at];
+    pub(super) fn get_native_usv(&self, w: NodePtr<NativeWordNode>, i: usize) -> i32 {
+        let text = self.entries(w);
+        let c = text[i];
 
         if (0xD800..0xDC00).contains(&c) {
-            let lo = self.units()[at + 1];
+            let lo = text[i + 1];
             return 0x10000 + (i32::from(c) - 0xD800) * 0x400 + i32::from(lo) - 0xDC00;
         }
 
@@ -30,25 +30,24 @@ impl MemState {
     /// Copy `len` UTF-16 units of `src`'s text, starting at `start`, into `dst`.
     fn copy_native_text(
         &mut self,
-        dst: NodePtr<WhatsitNode>,
-        src: NodePtr<WhatsitNode>,
+        dst: NodePtr<NativeWordNode>,
+        src: NodePtr<NativeWordNode>,
         start: usize,
         len: usize,
-    ) {
+    ) -> Result<(), Abort> {
         if len == 0 {
-            return;
+            return Ok(());
         }
-        dst.mark_native_text(self);
-        let from = src.native_text_start() + start;
-        self.units_mut()
-            .copy_within(from..from + len, dst.native_text_start());
+        let (to, from) = self.entries_mut_and(dst, src)?;
+        to[..len].copy_from_slice(&from[start..start + len]);
+        Ok(())
     }
 
     pub(crate) fn set_native_metrics(
         &mut self,
         eqtb: &EqtbState,
         fonts: &FontState,
-        w: NodePtr<WhatsitNode>,
+        w: NodePtr<NativeWordNode>,
     ) -> Result<(), Abort> {
         let use_glyph_metrics = eqtb.int_par(IntPar::XetexUseGlyphMetrics) > 0;
         fonts.measure_native_node(self, w, use_glyph_metrics)
@@ -60,13 +59,13 @@ impl MemState {
         eqtb: &EqtbState,
         fonts: &FontState,
         f: FontId,
-        src: NodePtr<WhatsitNode>,
+        src: NodePtr<NativeWordNode>,
         start: usize,
         len: usize,
-    ) -> Result<NodePtr<WhatsitNode>, Abort> {
+    ) -> Result<NodePtr<NativeWordNode>, Abort> {
         let q = self.new_native_word_node(eqtb, f, len as i32)?;
-        q.set_subtype(self, src.subtype(self));
-        self.copy_native_text(q, src, start, len);
+        self[q].subtype = self[src].subtype;
+        self.copy_native_text(q, src, start, len)?;
         self.set_native_metrics(eqtb, fonts, q)?;
         Ok(q)
     }
@@ -76,17 +75,17 @@ impl MemState {
 /// linked after it.
 pub(super) fn split_native_word(
     st: &mut EngineState,
-    ha: NodePtr<WhatsitNode>,
+    ha: NodePtr<NativeWordNode>,
     start: usize,
-) -> Result<NodePtr<WhatsitNode>, Abort> {
-    let len = usize::from(ha.native_length(&st.mem));
+) -> Result<NodePtr<NativeWordNode>, Abort> {
+    let len = usize::from(st.mem[ha].length);
     let tail =
         st.mem
             .native_word_fragment(&st.eqtb, &st.fonts, st.hyph.hf, ha, start, len - start)?;
-    let next = ha.link(&st.mem);
-    tail.set_link(&mut st.mem, next);
-    ha.set_link(&mut st.mem, tail.ptr());
-    ha.set_native_length(&mut st.mem, start as u16);
+    let next = st.mem[ha].link;
+    st.mem[tail].link = next;
+    st.mem[ha].link = tail.ptr();
+    st.mem[ha].length = start as u16;
     st.mem.set_native_metrics(&st.eqtb, &st.fonts, ha)?;
     Ok(tail)
 }
@@ -369,7 +368,7 @@ fn wrap_lig(st: &mut EngineState, rt: bool) -> Result<MemPtr, Abort> {
 /// discretionaries.
 fn hyphenate_native_word(
     st: &mut EngineState,
-    ha: NodePtr<WhatsitNode>,
+    ha: NodePtr<NativeWordNode>,
     hn: usize,
 ) -> Result<(), Abort> {
     let hf = st.hyph.hf;
@@ -388,22 +387,22 @@ fn hyphenate_native_word(
             let disc = st.mem.new_disc()?;
             let hyphen = crate::fonts::new_native_character(st, hf, u32::from(hyf_char.code()))?;
             st.mem[disc].pre_break = hyphen.ptr();
-            q.set_link(&mut st.mem, disc.ptr());
+            st.mem[q].link = disc.ptr();
             s = disc.ptr();
             st.hyph.hyphen_passed = j;
         }
     }
 
-    let hn = ha.native_length(&st.mem);
+    let hn = st.mem[ha].length;
     st.linebreak.hn = hn;
     let hp = st.hyph.hyphen_passed;
     let q = st
         .mem
         .native_word_fragment(&st.eqtb, &st.fonts, hf, ha, hp, usize::from(hn) - hp)?;
     s.set_link(&mut st.mem, q.ptr());
-    let next = ha.link(&st.mem);
-    q.set_link(&mut st.mem, next);
-    ha.set_link(&mut st.mem, MemPtr::NULL);
+    let next = st.mem[ha].link;
+    st.mem[q].link = next;
+    st.mem[ha].link = MemPtr::NULL;
     st.mem.flush_node_list(ha.ptr())
 }
 
@@ -412,7 +411,7 @@ fn hyphenate_native_word(
 /// the word's node when it is a native word.
 pub(super) fn hyphenate(
     st: &mut EngineState,
-    native_ha: Option<NodePtr<WhatsitNode>>,
+    native_ha: Option<NodePtr<NativeWordNode>>,
 ) -> Result<(), Abort> {
     let hn = usize::from(st.linebreak.hn);
     st.hyph.hyf[..=hn].fill(0);
@@ -505,7 +504,7 @@ impl MemState {
 fn insert_hyphens(
     st: &mut EngineState,
     hn: usize,
-    native_ha: Option<NodePtr<WhatsitNode>>,
+    native_ha: Option<NodePtr<NativeWordNode>>,
 ) -> Result<(), Abort> {
     let l_hyf = st.hyph.l_hyf as usize;
     let r_hyf = st.hyph.r_hyf as usize;

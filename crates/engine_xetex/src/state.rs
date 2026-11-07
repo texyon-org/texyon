@@ -685,12 +685,12 @@ impl MemState {
         self.data[p.addr() as usize].b16().s1
     }
 
-    #[inline]
+    #[cfg(test)]
     pub(crate) fn b16s2(&self, p: impl crate::units::MemAddr) -> u16 {
         self.data[p.addr() as usize].b16().s2
     }
 
-    #[inline]
+    #[cfg(test)]
     pub(crate) fn b16s3(&self, p: impl crate::units::MemAddr) -> u16 {
         self.data[p.addr() as usize].b16().s3
     }
@@ -724,37 +724,6 @@ impl MemState {
     }
 
     #[inline]
-    pub(crate) fn set_b16s2(&mut self, p: impl crate::units::MemAddr, v: u16) {
-        let index = p.addr() as usize;
-        self.note(index);
-        self.data[index].b16.s2 = v;
-    }
-
-    #[inline]
-    pub(crate) fn set_b16s3(&mut self, p: impl crate::units::MemAddr, v: u16) {
-        let index = p.addr() as usize;
-        self.note(index);
-        self.data[index].b16.s3 = v;
-    }
-
-    /// `mem` as UTF-16 units, four per word, for text stored inline in nodes.
-    #[inline]
-    pub(crate) fn units(&self) -> &[u16] {
-        // SAFETY: a `MemoryWord` is 8 bytes of plain data, 8-aligned, so its
-        // storage reads as four valid `u16`s.
-        unsafe { std::slice::from_raw_parts(self.data.as_ptr().cast(), self.data.len() * 4) }
-    }
-
-    /// `units`, writable. Journaling the words written is up to the caller.
-    #[inline]
-    pub(crate) fn units_mut(&mut self) -> &mut [u16] {
-        // SAFETY: as in `units`, and any `u16`s written form valid words.
-        unsafe {
-            std::slice::from_raw_parts_mut(self.data.as_mut_ptr().cast(), self.data.len() * 4)
-        }
-    }
-
-    #[inline]
     pub(crate) fn word(&self, p: impl crate::units::MemAddr) -> crate::mem_types::MemoryWord {
         self.data[p.addr() as usize]
     }
@@ -769,22 +738,6 @@ impl MemState {
         self.note(index);
         self.data[index] = w;
     }
-
-    /// Journals `words` words from `p` before a raw pointer writes them.
-    pub(crate) fn journal_mark_range(&mut self, p: impl crate::units::MemAddr, words: usize) {
-        if !self.journal.armed() {
-            return;
-        }
-        let start = p.addr() as usize;
-        for index in start..start + words {
-            self.journal.note(index, self.data[index]);
-        }
-    }
-}
-
-pub(crate) fn native_text_words(units: i32) -> usize {
-    (units.max(0) as usize * std::mem::size_of::<u16>())
-        .div_ceil(std::mem::size_of::<crate::mem_types::MemoryWord>())
 }
 
 /// The kind of group on the save stack (`cur_group`).

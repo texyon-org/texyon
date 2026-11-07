@@ -10,8 +10,8 @@ use std::marker::PhantomData;
 use crate::consts::{
     ACCENT_NOAD_SIZE, BOX_NODE_SIZE, FRACTION_NOAD_SIZE, GLUE_SPEC_SIZE, GLYPH_NODE_SIZE,
     INDEX_NODE_SIZE, INS_NODE_SIZE, MARGIN_KERN_NODE_SIZE, MARK_CLASS_NODE_SIZE, MEDIUM_NODE_SIZE,
-    NATIVE_NODE_SIZE, NOAD_SIZE, NULL_FLAG, OPEN_NODE_SIZE, PAGE_INS_NODE_SIZE, RADICAL_NOAD_SIZE,
-    RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE, WRITE_NODE_SIZE,
+    NOAD_SIZE, NULL_FLAG, OPEN_NODE_SIZE, PAGE_INS_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE,
+    SMALL_NODE_SIZE, STYLE_NODE_SIZE, WRITE_NODE_SIZE,
 };
 use crate::errors::Abort;
 use crate::state::MemState;
@@ -136,7 +136,6 @@ impl<K: NodeKind> From<NodePtr<K>> for Link<K> {
 trait Slot: Copy {
     type Raw;
     fn decode(raw: Self::Raw) -> Self;
-    fn encode(self) -> Self::Raw;
 }
 
 macro_rules! identity_slot {
@@ -146,10 +145,6 @@ macro_rules! identity_slot {
             #[inline(always)]
             fn decode(raw: $t) -> $t {
                 raw
-            }
-            #[inline(always)]
-            fn encode(self) -> $t {
-                self
             }
         }
     )*};
@@ -162,10 +157,6 @@ impl Slot for Scaled {
     fn decode(raw: i32) -> Self {
         Scaled::from_raw(raw)
     }
-    #[inline(always)]
-    fn encode(self) -> i32 {
-        self.raw()
-    }
 }
 
 impl Slot for TokenList {
@@ -173,10 +164,6 @@ impl Slot for TokenList {
     #[inline(always)]
     fn decode(raw: i32) -> Self {
         TokenList::from_ptr(MemPtr::from_raw(raw))
-    }
-    #[inline(always)]
-    fn encode(self) -> i32 {
-        self.ptr().raw()
     }
 }
 
@@ -186,10 +173,6 @@ impl Slot for MemPtr {
     fn decode(raw: i32) -> Self {
         MemPtr::from_raw(raw)
     }
-    #[inline(always)]
-    fn encode(self) -> i32 {
-        self.raw()
-    }
 }
 
 impl Slot for StrNumber {
@@ -198,10 +181,6 @@ impl Slot for StrNumber {
     fn decode(raw: i32) -> Self {
         StrNumber::from_raw(raw)
     }
-    #[inline(always)]
-    fn encode(self) -> i32 {
-        self.raw()
-    }
 }
 
 impl Slot for FontId {
@@ -209,10 +188,6 @@ impl Slot for FontId {
     #[inline(always)]
     fn decode(raw: u16) -> Self {
         FontId::new(raw)
-    }
-    #[inline(always)]
-    fn encode(self) -> u16 {
-        self.get()
     }
 }
 
@@ -338,10 +313,6 @@ impl<T: StoredCode> Slot for Stored<T> {
     fn decode(raw: u16) -> Self {
         Stored::from_raw(raw)
     }
-    #[inline(always)]
-    fn encode(self) -> u16 {
-        self.0
-    }
 }
 
 impl StoredCode for GlueSign {
@@ -409,41 +380,14 @@ const _: () = assert!(
         && Orientation::Vertical.node_type().as_raw() == Orientation::Vertical.as_raw()
 );
 
-macro_rules! write_slot {
-    ($mem:ident, b32s0, $p:expr, $v:expr) => {
-        $mem.set_b32s0($p, $v)
-    };
-    ($mem:ident, b32s1, $p:expr, $v:expr) => {
-        $mem.set_b32s1($p, $v)
-    };
-    ($mem:ident, b16s0, $p:expr, $v:expr) => {
-        $mem.set_b16s0($p, $v)
-    };
-    ($mem:ident, b16s1, $p:expr, $v:expr) => {
-        $mem.set_b16s1($p, $v)
-    };
-    ($mem:ident, b16s2, $p:expr, $v:expr) => {
-        $mem.set_b16s2($p, $v)
-    };
-    ($mem:ident, b16s3, $p:expr, $v:expr) => {
-        $mem.set_b16s3($p, $v)
-    };
-}
-
-/// Field accessors: `getter / setter: Type = subfield @ word_offset;`.
+/// Field getters: `getter: Type = subfield @ word_offset;`.
 macro_rules! fields {
-    ($($(#[$m:meta])* $get:ident $(/ $set:ident)?: $ty:ty = $slot:ident @ $off:expr;)*) => {$(
+    ($($(#[$m:meta])* $get:ident: $ty:ty = $slot:ident @ $off:expr;)*) => {$(
         $(#[$m])*
         #[inline]
         pub fn $get(self, mem: &MemState) -> $ty {
             <$ty as Slot>::decode(mem.$slot(self.idx + $off))
         }
-        $(
-            #[inline]
-            pub fn $set(self, mem: &mut MemState, v: $ty) {
-                write_slot!(mem, $slot, self.idx + $off, <$ty as Slot>::encode(v))
-            }
-        )?
     )*};
 }
 
@@ -535,6 +479,8 @@ node_kinds! {
     GlyphNode = Whatsit, GLYPH_NODE_SIZE;
     /// A `\XeTeXpicfile` or `\XeTeXpdffile` image, its path stored inline.
     PicNode;
+    /// A run of text in one native font, stored inline as UTF-16.
+    NativeWordNode;
     /// An alignment box before its column widths are known. Words +4..+6 hold
     /// the accumulated shrink, span count and stretch instead of box glue.
     UnsetNode;
@@ -684,10 +630,6 @@ const MOVEMENT_NODE_SIZE: i32 = 3;
 
 /// A `link` in word 0, which generic list walks read as an untyped word.
 pub trait HasLink: NodeKind {}
-/// A kind still read through accessors rather than a layout.
-pub trait Accessed: HasLink {}
-/// A list-node header: type in `b16.s1`, subtype in `b16.s0`, link in `b32.s1`.
-pub trait HasNodeHeader: Accessed {}
 /// A `Scaled` width at +1.
 pub trait HasWidth: NodeKind {}
 /// `Scaled` depth and height at +2 and +3.
@@ -703,8 +645,6 @@ impl_traits!(HasLink: BoxNode, RuleNode, InsNode, MarkNode, AdjustNode, Ligature
     SaSaved, SaSavedWord, SaSavedPointer, PageInsNode, ActiveNode, DeltaNode, PassiveNode,
     MovementNode, CondNode, CharNode, AlignRecord, AlignStackNode, ExprNode, PseudoLineNode,
     LigItem);
-impl_traits!(Accessed: WhatsitNode);
-impl_traits!(HasNodeHeader: WhatsitNode);
 impl_traits!(HasWidth: WhatsitNode);
 impl_traits!(HasHeightDepth: WhatsitNode);
 
@@ -751,28 +691,16 @@ impl<K: ListRecord + FixedNode> NodePtr<K> {
     }
 }
 
-impl<K: Accessed> NodePtr<K> {
-    fields! {
-        link / set_link: MemPtr = b32s1 @ 0;
-    }
-}
-
-impl<K: HasNodeHeader> NodePtr<K> {
-    fields! {
-        subtype / set_subtype: u16 = b16s0 @ 0;
-    }
-}
-
 impl<K: HasWidth> NodePtr<K> {
     fields! {
-        width / set_width: Scaled = b32s1 @ 1;
+        width: Scaled = b32s1 @ 1;
     }
 }
 
 impl<K: HasHeightDepth> NodePtr<K> {
     fields! {
-        depth / set_depth: Scaled = b32s1 @ 2;
-        height / set_height: Scaled = b32s1 @ 3;
+        depth: Scaled = b32s1 @ 2;
+        height: Scaled = b32s1 @ 3;
     }
 }
 
@@ -1042,11 +970,12 @@ impl MemState {
 
     /// `p` as a native-word whatsit, if it is one.
     #[inline]
-    pub fn as_native_word(&self, p: MemPtr) -> Option<NodePtr<WhatsitNode>> {
+    pub fn as_native_word(&self, p: MemPtr) -> Option<NodePtr<NativeWordNode>> {
         match self.classify_non_char(p)? {
-            AnyNode::Whatsit(w) if w.whatsit_subtype(self).is_some_and(|s| s.is_native_word()) => {
-                Some(w)
-            }
+            AnyNode::Whatsit(w) => match w.variant(self)? {
+                WhatsitVariant::NativeWord(word) => Some(word),
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -1471,7 +1400,8 @@ impl StoredCode for WhatsitSubtype {
 /// A whatsit kind, which widens to [`WhatsitNode`].
 pub trait WhatsitKind: NodeKind {}
 
-impl_traits!(WhatsitKind: WhatsitNode, OpenNode, WriteNode, LanguageNode, GlyphNode, PicNode);
+impl_traits!(WhatsitKind: WhatsitNode, OpenNode, WriteNode, LanguageNode, GlyphNode, PicNode,
+    NativeWordNode);
 
 impl<K: WhatsitKind> NodePtr<K> {
     /// A fresh `size`-word whatsit of the given subtype, other fields uninitialised.
@@ -1510,7 +1440,7 @@ pub enum WhatsitVariant {
     Special(NodePtr<WriteNode>),
     Language(NodePtr<LanguageNode>),
     SavePos,
-    NativeWord(NodePtr<WhatsitNode>),
+    NativeWord(NodePtr<NativeWordNode>),
     Glyph(NodePtr<GlyphNode>),
     Pic(NodePtr<PicNode>),
 }
@@ -1528,7 +1458,9 @@ impl NodePtr<WhatsitNode> {
             S::Special => WhatsitVariant::Special(NodePtr::from_idx_unchecked(p)),
             S::Language => WhatsitVariant::Language(NodePtr::from_idx_unchecked(p)),
             S::PdfSavePos => WhatsitVariant::SavePos,
-            S::NativeWord | S::NativeWordAt => WhatsitVariant::NativeWord(self),
+            S::NativeWord | S::NativeWordAt => {
+                WhatsitVariant::NativeWord(NodePtr::from_idx_unchecked(p))
+            }
             S::Glyph => WhatsitVariant::Glyph(NodePtr::from_idx_unchecked(p)),
             S::Pic | S::Pdf => WhatsitVariant::Pic(NodePtr::from_idx_unchecked(p)),
         })
@@ -1538,85 +1470,33 @@ impl NodePtr<WhatsitNode> {
     pub fn whatsit_subtype(self, mem: &MemState) -> Option<WhatsitSubtype> {
         WhatsitSubtype::from_raw(mem.b16s0(self.idx))
     }
+}
 
-    fields! {
-        native_font / set_native_font: FontId = b16s2 @ 4;
-        /// UTF-16 length of a native word.
-        native_length / set_native_length: u16 = b16s1 @ 4;
-        native_glyph_count / set_native_glyph_count: u16 = b16s0 @ 4;
-        /// One-based shaped-glyph arena handle, zero when unshaped.
-        native_glyph_info_handle: i32 = b32s0 @ 5;
-    }
-
-    /// Node size in words, used to free or copy a native node.
-    #[inline]
-    pub fn native_size(self, mem: &MemState) -> i32 {
-        i32::from(mem.b16s3(self.idx + 4))
-    }
-    #[inline]
-    pub fn set_native_size(self, mem: &mut MemState, words: i32) {
-        mem.set_b16s3(self.idx + 4, words as u16);
-    }
-
-    #[inline]
-    pub fn set_native_glyph_info_handle(self, mem: &mut MemState, handle: i32) {
-        mem.set_b32s0(self.idx + 5, handle);
-        mem.set_b32s1(self.idx + 5, 0);
-    }
-
-    /// The index in `mem.units()` where the text starts.
-    #[inline]
-    pub fn native_text_start(self) -> usize {
-        (self.idx.raw() + NATIVE_NODE_SIZE) as usize * 4
-    }
-
-    #[inline]
-    pub fn native_text(self, mem: &MemState) -> &[u16] {
-        let start = self.native_text_start();
-        &mem.units()[start..start + self.native_length(mem) as usize]
-    }
-
-    /// Journals the words of the text before it is written.
-    #[inline]
-    pub fn mark_native_text(self, mem: &mut MemState) {
-        let words = crate::state::native_text_words(i32::from(self.native_length(mem)));
-        mem.journal_mark_range(self.idx + NATIVE_NODE_SIZE, words);
-    }
-
-    /// The text, journaled for writing.
-    #[inline]
-    pub fn native_text_mut(self, mem: &mut MemState) -> &mut [u16] {
-        self.mark_native_text(mem);
-        let start = self.native_text_start();
-        let len = self.native_length(mem) as usize;
-        &mut mem.units_mut()[start..start + len]
-    }
-
+impl NodePtr<NativeWordNode> {
     /// Drops the shaped-glyph payload of a native word.
     pub fn release_native_glyphs(self, mem: &mut MemState) {
-        let handle = self.native_glyph_info_handle(mem);
+        let handle = mem[self].glyph_info;
         if handle != 0 {
             mem.glyph_blobs.release(handle);
-            self.set_native_glyph_info_handle(mem, 0);
-            self.set_native_glyph_count(mem, 0);
+            mem[self].clear_glyphs();
         }
     }
 
     /// Gives this copy of `src` its own handle on `src`'s shaped glyphs.
     pub fn share_native_glyphs(self, mem: &mut MemState, src: Self) {
-        let handle = src.native_glyph_info_handle(mem);
-        if handle != 0 {
-            let count = src.native_glyph_count(mem);
-            let copy = mem.glyph_blobs.clone_handle(handle);
-            self.set_native_glyph_info_handle(mem, copy);
-            self.set_native_glyph_count(mem, count);
+        let src = mem[src];
+        if src.glyph_info != 0 {
+            let copy = mem.glyph_blobs.clone_handle(src.glyph_info);
+            let word = &mut mem[self];
+            word.glyph_info = copy;
+            word.glyph_count = src.glyph_count;
         }
     }
 
     /// Frees a native word together with its shaped glyphs.
     pub fn free_native(self, mem: &mut MemState) {
         self.release_native_glyphs(mem);
-        mem.free_node(self.ptr(), self.native_size(mem));
+        mem.free_node(self.ptr(), i32::from(mem[self].size));
     }
 }
 
@@ -2062,21 +1942,6 @@ mod tests {
         assert_eq!(mem[u].width, Scaled::from_raw(0x111));
         assert_eq!(mem[u].height, Scaled::from_raw(0x333));
         assert_eq!(mem.b32s1(MemPtr::from_raw(105)), 0x444);
-
-        let w: NodePtr<WhatsitNode> = at(&mut mem, 100, Some(NodeType::Whatsit));
-        w.set_subtype(&mut mem, 40);
-        assert_eq!(w.whatsit_subtype(&mem), Some(WhatsitSubtype::NativeWord));
-        mem.set_b16s3(MemPtr::from_raw(104), 6);
-        mem.set_b16s2(MemPtr::from_raw(104), 7);
-        mem.set_b16s1(MemPtr::from_raw(104), 9);
-        assert_eq!(w.native_size(&mem), 6);
-        assert_eq!(w.native_font(&mem), FontId::new(7));
-        assert_eq!(w.native_length(&mem), 9);
-        w.set_native_glyph_count(&mut mem, 3);
-        assert_eq!(mem.b16s0(MemPtr::from_raw(104)), 3);
-        w.set_native_glyph_info_handle(&mut mem, 7);
-        assert_eq!(w.native_glyph_info_handle(&mem), 7);
-        assert_eq!(mem.b32s1(MemPtr::from_raw(105)), 0);
     }
 
     #[test]
