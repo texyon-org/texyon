@@ -44,7 +44,7 @@ impl LinebreakState {
         q: NodePtr<ActiveNode>,
         p_disc: Option<NodePtr<DiscNode>>,
     ) -> Option<Scaled> {
-        let break_node = q.break_node(mem);
+        let break_node = mem[q].break_node;
         let mut l = if break_node.is_null() {
             self.first_p
         } else {

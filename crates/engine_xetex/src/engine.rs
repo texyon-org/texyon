@@ -465,9 +465,10 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     mem[END_SPAN].span_count = i32::from(u16::MAX) + 1;
     mem.set_b32s0(END_SPAN.idx(), TEX_NULL);
     let active = NodePtr::<ActiveNode>::at(ACTIVE_LIST);
-    active.set_break_type(mem, HYPHENATED as u16);
-    active.set_line_number(mem, MAX_HALFWORD);
-    active.set_fitness(mem, 0);
+    let a = &mut mem[active];
+    a.break_type = HYPHENATED as u16;
+    a.line_number = MAX_HALFWORD;
+    a.fitness = 0;
     let page_ins = NodePtr::<PageInsNode>::at(PAGE_INS_HEAD);
     mem[page_ins].subtype = 255;
     mem[page_ins].set_split_up(true);

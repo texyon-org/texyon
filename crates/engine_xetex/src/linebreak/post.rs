@@ -212,7 +212,7 @@ impl LinebreakState {
 
 impl MemState {
     fn reverse_best_breaks(&mut self, linebreak: &mut LinebreakState, best: NodePtr<ActiveNode>) {
-        let mut q = best.break_node(self);
+        let mut q = self[best].break_node;
         linebreak.cur_p = MemPtr::NULL;
         loop {
             let r = passive_node(q);

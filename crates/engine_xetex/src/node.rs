@@ -510,6 +510,11 @@ impl FixedNode for LigItem {
     const SIZE: i32 = SMALL_NODE_SIZE;
     const TYPE: Option<NodeType> = None;
 }
+/// Always the extended `\lastlinefit` size, unlike WEB's 3 or 5 words per paragraph.
+impl FixedNode for ActiveNode {
+    const SIZE: i32 = 5;
+    const TYPE: Option<NodeType> = None;
+}
 impl FixedNode for PassiveNode {
     const SIZE: i32 = 2;
     const TYPE: Option<NodeType> = None;
@@ -575,7 +580,7 @@ impl_traits!(HasLink: BoxNode, RuleNode, InsNode, MarkNode, AdjustNode, Ligature
     EdgeNode, Noad, MarginKernNode, SaNode, PageInsNode, ActiveNode, DeltaNode, PassiveNode,
     MovementNode, CondNode, CharNode, AlignRecord, AlignStackNode, ExprNode, PseudoLineNode,
     LigItem);
-impl_traits!(Accessed: WhatsitNode, Noad, SaNode, ActiveNode, PseudoLineNode);
+impl_traits!(Accessed: WhatsitNode, Noad, SaNode, PseudoLineNode);
 impl_traits!(HasNodeHeader: WhatsitNode, Noad, SaNode);
 impl_traits!(HasWidth: WhatsitNode);
 impl_traits!(HasHeightDepth: WhatsitNode);
@@ -1610,21 +1615,6 @@ impl NodePtr<SaNode> {
 
 // --- the line breaker's active, delta and passive lists ---
 
-impl NodePtr<ActiveNode> {
-    fields! {
-        fitness / set_fitness: u16 = b16s0 @ 0;
-        /// Unhyphenated or hyphenated, in the type word.
-        break_type / set_break_type: u16 = b16s1 @ 0;
-        break_node / set_break_node: MemPtr = b32s1 @ 1;
-        line_number / set_line_number: i32 = b32s0 @ 1;
-        total_demerits / set_total_demerits: i32 = b32s1 @ 2;
-        /// Extended (`\lastlinefit`) active nodes only.
-        shortfall / set_shortfall: Scaled = b32s1 @ 3;
-        /// Extended (`\lastlinefit`) active nodes only.
-        glue / set_glue: Scaled = b32s1 @ 4;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2055,13 +2045,16 @@ mod tests {
     fn line_breaker_records_land_in_their_words() {
         let mut mem = fresh_mem(200);
         let a: NodePtr<ActiveNode> = at(&mut mem, 100, None);
-        a.set_break_type(&mut mem, 1);
-        a.set_fitness(&mut mem, 2);
-        a.set_break_node(&mut mem, MemPtr::from_raw(150));
-        a.set_line_number(&mut mem, 7);
-        a.set_total_demerits(&mut mem, 0x5151);
-        a.set_shortfall(&mut mem, Scaled::from_raw(-0x20));
-        a.set_glue(&mut mem, Scaled::from_raw(0x30));
+        let n = &mut mem[a];
+        n.break_type = 1;
+        n.fitness = 2;
+        n.link = MemPtr::from_raw(160);
+        n.break_node = MemPtr::from_raw(150);
+        n.line_number = 7;
+        n.total_demerits = 0x5151;
+        n.shortfall = Scaled::from_raw(-0x20);
+        n.glue = Scaled::from_raw(0x30);
+        assert_eq!(MemPtr::from_raw(100).link(&mem), MemPtr::from_raw(160));
         assert_eq!(mem.b16s1(MemPtr::from_raw(100)), 1);
         assert_eq!(mem.b16s0(MemPtr::from_raw(100)), 2);
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 150);

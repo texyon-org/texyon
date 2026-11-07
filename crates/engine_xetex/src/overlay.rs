@@ -8,11 +8,11 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::codes::{FiOrElseCode, ValueLevel};
 use crate::node::{
-    AdjustNode, AlignRecord, AlignStackNode, BoxNode, CharNode, ChoiceNode, CondNode, DeltaNode,
-    DiscNode, EdgeNode, ExprNode, FixedNode, FreeBlock, GlueNode, GlueSpecNode, InsNode, KernNode,
-    LigItem, LigatureNode, MarginKernNode, MarkNode, MathNode, MovementNode, NodeKind, NodePtr,
-    PageInsNode, PassiveNode, PenaltyNode, RuleNode, SpanNode, Stored, StoredDimen, StyleNode,
-    UnsetNode,
+    ActiveNode, AdjustNode, AlignRecord, AlignStackNode, BoxNode, CharNode, ChoiceNode, CondNode,
+    DeltaNode, DiscNode, EdgeNode, ExprNode, FixedNode, FreeBlock, GlueNode, GlueSpecNode, InsNode,
+    KernNode, LigItem, LigatureNode, MarginKernNode, MarkNode, MathNode, MovementNode, NodeKind,
+    NodePtr, PageInsNode, PassiveNode, PenaltyNode, RuleNode, SpanNode, Stored, StoredDimen,
+    StyleNode, UnsetNode,
 };
 use crate::state::MemState;
 use crate::token::TokenList;
@@ -268,6 +268,28 @@ pub struct MarkLayout {
 }
 
 overlay!(MarkNode => MarkLayout);
+
+/// A line-breaker active node, one feasible break still in play.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct ActiveLayout {
+    pub fitness: u16,
+    /// Unhyphenated or hyphenated, in the type word.
+    pub break_type: u16,
+    pub link: MemPtr,
+    pub line_number: i32,
+    pub break_node: MemPtr,
+    _unused1: i32,
+    pub total_demerits: i32,
+    _unused2: i32,
+    /// `\lastlinefit` only, zero otherwise.
+    pub shortfall: Scaled,
+    _unused3: i32,
+    /// `\lastlinefit` only, zero otherwise.
+    pub glue: Scaled,
+}
+
+overlay!(ActiveNode => ActiveLayout);
 
 /// A line-breaker delta node: the change in the totals between active nodes.
 #[repr(C)]
