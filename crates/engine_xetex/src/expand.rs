@@ -13,7 +13,7 @@ use crate::errors::{error, Abort};
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::{back_error, back_input, begin_token_list, TokenType, TOKEN_LIST};
 use crate::mem::{BACKUP_HEAD, GARBAGE, TEMP_HEAD_TOKS, ZERO_GLUE};
-use crate::node::{link_of, AnyNode, CondNode, NodePtr};
+use crate::node::{link_of, AnyNode, CondNode, NodePtr, SaLeaf};
 use crate::output::{
     begin_diagnostic, capture_to_diagnostic, diagnostic_begin_capture_warning_here, end_diagnostic,
     error_here_with_diagnostic, print, print_char, print_cmd_chr, print_err, print_esc, print_int,
@@ -803,10 +803,10 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                 };
                 if n == 0 {
                     st.scanner.cur_ptr = st.scanner.cur_mark[mark].ptr();
-                } else if let Some(sa) =
+                } else if let Some(SaLeaf::MarkClass(m)) =
                     st.mem.find_sa_element(&mut st.scanner, ValueLevel::Mark, n)
                 {
-                    st.scanner.cur_ptr = sa.mark(&st.mem, mark).ptr();
+                    st.scanner.cur_ptr = st.mem[m].mark(mark).ptr();
                 }
                 if !st.scanner.cur_ptr.is_null() {
                     begin_token_list(st, TokenList::from_ptr(st.scanner.cur_ptr), TokenType::Mark)?;

@@ -1,19 +1,17 @@
 //! Breaking vertical lists: `vert_break`, `vsplit`, `prune_page_top` and `do_marks`.
 
 use crate::codes::{BoxCode, MarkCode, ValueLevel};
-use crate::consts::{
-    BOX_NODE_SIZE, EJECT_PENALTY, INDEX_NODE_SIZE, INF_BAD, INF_PENALTY, MARK_CLASS_NODE_SIZE,
-    MAX_DIMEN, MAX_HALFWORD,
-};
+use crate::consts::{BOX_NODE_SIZE, EJECT_PENALTY, INF_BAD, INF_PENALTY, MAX_DIMEN, MAX_HALFWORD};
 use crate::errors::Abort;
 use crate::mem::TEMP_HEAD;
 use crate::node::{
-    AnyNode, BoxNode, GlueNode, GlueSpecNode, KernNode, MarkNode, NodePtr, SaNode, WhatsitSubtype,
+    link_of, AnyNode, BoxNode, FixedNode, GlueNode, GlueSpecNode, KernNode, MarkNode, NodePtr,
+    SaIndexNode, SaLeaf, SaMarkClassNode, WhatsitSubtype,
 };
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, MemState, ScannerState, ShipoutState};
 use crate::token::TokenList;
-use crate::units::{GlueOrder, MemIdx, MemPtr, Scaled};
+use crate::units::{GlueOrder, MemPtr, Scaled};
 
 use super::{print_vpack_diag, PackOutcome, PackSpec};
 
@@ -347,9 +345,9 @@ impl MemState {
         self.flush_node_list(scanner.disc_ptr[BoxCode::Vsplit as usize])?;
         scanner.disc_ptr[BoxCode::Vsplit as usize] = MemPtr::NULL;
 
-        if let Some(root) = scanner.sa_root[ValueLevel::Mark].as_idx() {
+        if let Some(root) = scanner.sa_root.get(ValueLevel::Mark) {
             if self.do_marks(scanner, MarksAction::VsplitInit, 0, root) {
-                scanner.sa_root[ValueLevel::Mark] = MemPtr::NULL;
+                scanner.sa_root.set(ValueLevel::Mark, None);
             }
         }
 
@@ -397,14 +395,18 @@ impl MemState {
         let mark_class = self[mark].mark_class;
         let mark_ptr = self[mark].mark_ptr;
         if mark_class != 0 {
-            let element = self.create_sa_element(scanner, ValueLevel::Mark, mark_class)?;
-            if element.mark(self, MarkCode::SplitFirst).is_null() {
-                element.set_mark(self, MarkCode::SplitFirst, mark_ptr);
+            let SaLeaf::MarkClass(m) =
+                self.create_sa_element(scanner, ValueLevel::Mark, mark_class)?
+            else {
+                return Err(Abort::Confusion("marks"));
+            };
+            if self[m].mark(MarkCode::SplitFirst).is_null() {
+                self[m].set_mark(MarkCode::SplitFirst, mark_ptr);
                 self.add_token_ref(mark_ptr);
             } else {
-                self.delete_token_ref(element.mark(self, MarkCode::SplitBot));
+                self.delete_token_ref(self[m].mark(MarkCode::SplitBot));
             }
-            element.set_mark(self, MarkCode::SplitBot, mark_ptr);
+            self[m].set_mark(MarkCode::SplitBot, mark_ptr);
             self.add_token_ref(mark_ptr);
         } else if scanner.cur_mark[MarkCode::SplitFirst].is_null() {
             scanner.cur_mark[MarkCode::SplitFirst] = mark_ptr;
@@ -465,7 +467,7 @@ impl MemState {
             q = packed.r_box.ptr();
             push_slot(&mut packages, packed);
         }
-        self.change_box(scanner, eqtb, state.n, q);
+        self.change_box(scanner, eqtb, state.n, q)?;
 
         let packed = self.vpackage(
             eqtb,
@@ -640,82 +642,97 @@ impl MemState {
         Ok(TEMP_HEAD.link(self))
     }
 
-    /// Apply mark action `a` to the sparse-array mark tree `q` at level `l`.
-    /// Returns whether the record at `q` was freed.
+    /// Apply mark action `a` to the mark-class tree below index node `q` at
+    /// level `l`. Returns whether `q` was freed.
     pub fn do_marks(
         &mut self,
         scanner: &mut ScannerState,
         a: MarksAction,
         l: i16,
-        q: MemIdx,
+        q: NodePtr<SaIndexNode>,
     ) -> bool {
-        let node = NodePtr::<SaNode>::at(q);
-
-        if l < 4 {
-            for i in 0..=15 {
-                scanner.cur_ptr = node.child(self, i);
-                if let Some(cur) = scanner.cur_ptr.as_idx() {
-                    if self.do_marks(scanner, a, l + 1, cur) {
-                        node.set_child(self, i, MemPtr::NULL);
-                        node.set_ref_count(self, node.ref_count(self) - 1);
-                    }
+        // XeTeX widened index nodes to 64 children but its do_marks still visits 16.
+        for i in 0..16 {
+            let freed = if l < 3 {
+                let child = self[q].child_index(i);
+                scanner.cur_ptr = link_of(child);
+                child.is_some_and(|c| self.do_marks(scanner, a, l + 1, c))
+            } else {
+                let child = self[q].child_leaf(i, ValueLevel::Mark);
+                scanner.cur_ptr = link_of(child.map(SaLeaf::element));
+                match child {
+                    Some(SaLeaf::MarkClass(m)) => self.do_mark_class(scanner, a, m),
+                    _ => false,
                 }
+            };
+            if freed {
+                let n = &mut self[q];
+                n.clear_child(i);
+                n.used -= 1;
             }
-
-            if node.ref_count(self) == 0 {
-                self.free_node(MemPtr::from_idx(q), INDEX_NODE_SIZE);
-                return true;
-            }
-            return false;
         }
+        if self[q].used == 0 {
+            self.free_node(q.ptr(), SaIndexNode::SIZE);
+            return true;
+        }
+        false
+    }
 
+    /// Apply mark action `a` to mark class `node`. Returns whether it was freed.
+    fn do_mark_class(
+        &mut self,
+        scanner: &mut ScannerState,
+        a: MarksAction,
+        node: NodePtr<SaMarkClassNode>,
+    ) -> bool {
         match a {
             MarksAction::VsplitInit => {
-                if !node.mark(self, MarkCode::SplitFirst).is_null() {
-                    self.delete_token_ref(node.mark(self, MarkCode::SplitFirst));
-                    node.set_mark(self, MarkCode::SplitFirst, TokenList::NULL);
-                    self.delete_token_ref(node.mark(self, MarkCode::SplitBot));
-                    node.set_mark(self, MarkCode::SplitBot, TokenList::NULL);
+                if !self[node].mark(MarkCode::SplitFirst).is_null() {
+                    self.delete_token_ref(self[node].mark(MarkCode::SplitFirst));
+                    self[node].set_mark(MarkCode::SplitFirst, TokenList::NULL);
+                    self.delete_token_ref(self[node].mark(MarkCode::SplitBot));
+                    self[node].set_mark(MarkCode::SplitBot, TokenList::NULL);
                 }
             }
             MarksAction::FireUpInit => {
-                if !node.mark(self, MarkCode::Bot).is_null() {
-                    if !node.mark(self, MarkCode::Top).is_null() {
-                        self.delete_token_ref(node.mark(self, MarkCode::Top));
+                if !self[node].mark(MarkCode::Bot).is_null() {
+                    if !self[node].mark(MarkCode::Top).is_null() {
+                        self.delete_token_ref(self[node].mark(MarkCode::Top));
                     }
-                    self.delete_token_ref(node.mark(self, MarkCode::First));
-                    node.set_mark(self, MarkCode::First, TokenList::NULL);
-                    let bot = node.mark(self, MarkCode::Bot);
+                    self.delete_token_ref(self[node].mark(MarkCode::First));
+                    self[node].set_mark(MarkCode::First, TokenList::NULL);
+                    let bot = self[node].mark(MarkCode::Bot);
                     if bot.link(self).is_null() {
                         self.delete_token_ref(bot);
-                        node.set_mark(self, MarkCode::Bot, TokenList::NULL);
+                        self[node].set_mark(MarkCode::Bot, TokenList::NULL);
                     } else {
                         self.add_token_ref(bot);
                     }
-                    node.set_mark(self, MarkCode::Top, node.mark(self, MarkCode::Bot));
+                    let bot = self[node].mark(MarkCode::Bot);
+                    self[node].set_mark(MarkCode::Top, bot);
                 }
             }
             MarksAction::FireUpDone => {
-                let top = node.mark(self, MarkCode::Top);
-                if !top.is_null() && node.mark(self, MarkCode::First).is_null() {
-                    node.set_mark(self, MarkCode::First, top);
+                let top = self[node].mark(MarkCode::Top);
+                if !top.is_null() && self[node].mark(MarkCode::First).is_null() {
+                    self[node].set_mark(MarkCode::First, top);
                     self.add_token_ref(top);
                 }
             }
             MarksAction::DestroyMarks => {
                 for mark in MarkCode::ALL {
-                    scanner.cur_ptr = node.mark(self, mark).ptr();
+                    scanner.cur_ptr = self[node].mark(mark).ptr();
                     if !scanner.cur_ptr.is_null() {
                         self.delete_token_ref(TokenList::from_ptr(scanner.cur_ptr));
-                        node.set_mark(self, mark, TokenList::NULL);
+                        self[node].set_mark(mark, TokenList::NULL);
                     }
                 }
             }
         }
 
-        if node.mark(self, MarkCode::Bot).is_null() && node.mark(self, MarkCode::SplitBot).is_null()
+        if self[node].mark(MarkCode::Bot).is_null() && self[node].mark(MarkCode::SplitBot).is_null()
         {
-            self.free_node(MemPtr::from_idx(q), MARK_CLASS_NODE_SIZE);
+            self.free_node(node.ptr(), SaMarkClassNode::SIZE);
             return true;
         }
         false

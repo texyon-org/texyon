@@ -8,10 +8,10 @@
 use std::marker::PhantomData;
 
 use crate::consts::{
-    ACCENT_NOAD_SIZE, BOX_NODE_SIZE, FRACTION_NOAD_SIZE, GLUE_SPEC_SIZE, INS_NODE_SIZE,
-    MARGIN_KERN_NODE_SIZE, MEDIUM_NODE_SIZE, NATIVE_NODE_SIZE, NOAD_SIZE, NULL_FLAG,
-    PAGE_INS_NODE_SIZE, PIC_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE, SMALL_NODE_SIZE,
-    STYLE_NODE_SIZE,
+    ACCENT_NOAD_SIZE, BOX_NODE_SIZE, FRACTION_NOAD_SIZE, GLUE_SPEC_SIZE, INDEX_NODE_SIZE,
+    INS_NODE_SIZE, MARGIN_KERN_NODE_SIZE, MARK_CLASS_NODE_SIZE, MEDIUM_NODE_SIZE, NATIVE_NODE_SIZE,
+    NOAD_SIZE, NULL_FLAG, PAGE_INS_NODE_SIZE, PIC_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE,
+    SMALL_NODE_SIZE, STYLE_NODE_SIZE,
 };
 use crate::errors::Abort;
 use crate::state::MemState;
@@ -78,6 +78,57 @@ impl<K: NodeKind> NodePtr<K> {
     #[inline]
     pub fn ptr(self) -> MemPtr {
         MemPtr::from_idx(self.idx)
+    }
+}
+
+/// A nullable pointer to a `K` as a node stores it: the raw half-word,
+/// `TEX_NULL` for none.
+#[repr(transparent)]
+pub struct Link<K: NodeKind>(MemPtr, PhantomData<fn() -> K>);
+
+impl<K: NodeKind> Copy for Link<K> {}
+impl<K: NodeKind> Clone for Link<K> {
+    #[inline]
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<K: NodeKind> PartialEq for Link<K> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+impl<K: NodeKind> Eq for Link<K> {}
+// SAFETY: a `MemPtr` and a zero-sized marker, valid at all-zero bits.
+unsafe impl<K: NodeKind + 'static> bytemuck::Zeroable for Link<K> {}
+// SAFETY: a `MemPtr` and a zero-sized marker, so no padding and any bits are valid.
+unsafe impl<K: NodeKind + 'static> bytemuck::Pod for Link<K> {}
+impl<K: NodeKind> std::fmt::Debug for Link<K> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Link({})", self.0.raw())
+    }
+}
+
+impl<K: NodeKind> Link<K> {
+    /// The node, `None` for a null link.
+    #[inline]
+    pub fn get(self) -> Option<NodePtr<K>> {
+        self.0.as_idx().map(NodePtr::from_idx_unchecked)
+    }
+}
+
+impl<K: NodeKind> From<Option<NodePtr<K>>> for Link<K> {
+    #[inline]
+    fn from(p: Option<NodePtr<K>>) -> Self {
+        Link(link_of(p), PhantomData)
+    }
+}
+
+impl<K: NodeKind> From<NodePtr<K>> for Link<K> {
+    #[inline]
+    fn from(p: NodePtr<K>) -> Self {
+        Link(p.ptr(), PhantomData)
     }
 }
 
@@ -482,8 +533,23 @@ node_kinds! {
     GlueSpecNode;
     /// An entry of the ligature reconstitution stack.
     LigItem;
-    /// An eTeX sparse-array record: an index node or a register value.
-    SaNode;
+    /// An eTeX sparse-array index node: 64 children, two per word.
+    SaIndexNode;
+    /// A sparse-array element, the leaf below the last index level, read
+    /// through its header until its type picks the layout.
+    SaElement;
+    /// A count or dimension register element.
+    SaWordNode;
+    /// A glue, muglue, box or token-list register element.
+    SaPointerNode;
+    /// The marks of one mark class.
+    SaMarkClassNode;
+    /// An entry of the sparse-array save chain, read through its header.
+    SaSaved;
+    /// A saved count or dimension value.
+    SaSavedWord;
+    /// A saved pointer value.
+    SaSavedPointer;
     /// A record on the page builder's insertion ring. Its type code is
     /// `inserting` or `split_up`, its subtype the insertion's box number.
     PageInsNode;
@@ -535,6 +601,30 @@ impl FixedNode for LigItem {
 /// Always the extended `\lastlinefit` size, unlike WEB's 3 or 5 words per paragraph.
 impl FixedNode for ActiveNode {
     const SIZE: i32 = 5;
+    const TYPE: Option<NodeType> = None;
+}
+impl FixedNode for SaIndexNode {
+    const SIZE: i32 = INDEX_NODE_SIZE;
+    const TYPE: Option<NodeType> = None;
+}
+impl FixedNode for SaWordNode {
+    const SIZE: i32 = 3;
+    const TYPE: Option<NodeType> = None;
+}
+impl FixedNode for SaPointerNode {
+    const SIZE: i32 = 2;
+    const TYPE: Option<NodeType> = None;
+}
+impl FixedNode for SaMarkClassNode {
+    const SIZE: i32 = MARK_CLASS_NODE_SIZE;
+    const TYPE: Option<NodeType> = None;
+}
+impl FixedNode for SaSavedWord {
+    const SIZE: i32 = SaWordNode::SIZE;
+    const TYPE: Option<NodeType> = None;
+}
+impl FixedNode for SaSavedPointer {
+    const SIZE: i32 = SaPointerNode::SIZE;
     const TYPE: Option<NodeType> = None;
 }
 impl FixedNode for PassiveNode {
@@ -599,18 +689,20 @@ macro_rules! impl_traits {
 
 impl_traits!(HasLink: BoxNode, RuleNode, InsNode, MarkNode, AdjustNode, LigatureNode, DiscNode,
     WhatsitNode, MathNode, GlueNode, KernNode, PenaltyNode, UnsetNode, StyleNode, ChoiceNode,
-    EdgeNode, Noad, RadicalNoad, AccentNoad, FractionNoad, FenceNoad, AnyNoad, MarginKernNode, SaNode, PageInsNode, ActiveNode, DeltaNode, PassiveNode,
+    EdgeNode, Noad, RadicalNoad, AccentNoad, FractionNoad, FenceNoad, AnyNoad, MarginKernNode, SaIndexNode, SaElement, SaWordNode, SaPointerNode, SaMarkClassNode,
+    SaSaved, SaSavedWord, SaSavedPointer, PageInsNode, ActiveNode, DeltaNode, PassiveNode,
     MovementNode, CondNode, CharNode, AlignRecord, AlignStackNode, ExprNode, PseudoLineNode,
     LigItem);
-impl_traits!(Accessed: WhatsitNode, SaNode, PseudoLineNode);
-impl_traits!(HasNodeHeader: WhatsitNode, SaNode);
+impl_traits!(Accessed: WhatsitNode, PseudoLineNode);
+impl_traits!(HasNodeHeader: WhatsitNode);
 impl_traits!(HasWidth: WhatsitNode);
 impl_traits!(HasHeightDepth: WhatsitNode);
 
 /// A record kept only on its own list, which therefore proves its kind.
 pub trait ListRecord: NodeKind {}
 
-impl_traits!(ListRecord: SaNode, PageInsNode, MovementNode, ActiveNode, DeltaNode, PassiveNode,
+impl_traits!(ListRecord: SaIndexNode, SaElement, SaWordNode, SaPointerNode, SaMarkClassNode,
+    SaSaved, SaSavedWord, SaSavedPointer, PageInsNode, MovementNode, ActiveNode, DeltaNode, PassiveNode,
     LigItem, CondNode, CharNode, AlignRecord, SpanNode, AlignStackNode, ParShapeNode, PenaltiesNode,
     ExprNode, PseudoLineNode, MathField, DelimiterField, FreeBlock);
 
@@ -1555,64 +1647,101 @@ impl NodePtr<WhatsitNode> {
 
 // --- eTeX sparse arrays ---
 
-impl NodePtr<SaNode> {
-    fields! {
-        /// An index node's count of populated children.
-        ref_count / set_ref_count: u16 = b16s0 @ 0;
-        /// Type and index code.
-        sa_index / set_sa_index: u16 = b16s1 @ 0;
-        sa_lev / set_sa_lev: u16 = b16s0 @ 0;
-        sa_ref / set_sa_ref: i32 = b32s0 @ 1;
-        /// A box or token-list value, in child slot 1.
-        sa_ptr / set_sa_ptr: MemPtr = b32s1 @ 1;
-        /// A token-list register's value, in the same slot.
-        sa_toks: TokenList = b32s1 @ 1;
-        /// A count or dimension register's number, in the same slot.
-        sa_num / set_sa_num: i32 = b32s1 @ 1;
-        /// A count or dimension value.
-        sa_int / set_sa_int: i32 = b32s1 @ 2;
-    }
+/// A sparse-array kind that hangs in a tree slot.
+pub trait SaChild: NodeKind {}
 
-    /// The register type, from the high bits of the index code.
-    #[inline]
-    pub fn sa_type(self, mem: &MemState) -> Stored<crate::codes::ValueLevel> {
-        Stored::from_raw(self.sa_index(mem) / 64)
-    }
+impl_traits!(SaChild: SaIndexNode, SaElement, SaWordNode, SaPointerNode, SaMarkClassNode);
 
-    /// Mark `m` of a mark class record.
-    #[inline]
-    pub fn mark(self, mem: &MemState, m: crate::codes::MarkCode) -> TokenList {
-        TokenList::from_ptr(self.child(mem, m.raw()))
-    }
-    #[inline]
-    pub fn set_mark(self, mem: &mut MemState, m: crate::codes::MarkCode, v: TokenList) {
-        self.set_child(mem, m.raw(), v.ptr());
-    }
+/// A sparse-array element kind, which widens to [`SaElement`].
+pub trait SaElementKind: NodeKind {}
 
-    /// Child or mark slot `i`, packed two per word from +1.
+impl_traits!(SaElementKind: SaWordNode, SaPointerNode, SaMarkClassNode);
+
+impl<K: SaElementKind> NodePtr<K> {
+    /// The element as any element, for its header.
     #[inline]
-    pub fn child(self, mem: &MemState, i: i32) -> MemPtr {
-        let w = self.idx.raw() + i / 2 + 1;
-        MemPtr::from_raw(if i % 2 != 0 {
-            mem.b32s1(MemPtr::from_raw(w))
-        } else {
-            mem.b32s0(MemPtr::from_raw(w))
-        })
+    pub fn element(self) -> NodePtr<SaElement> {
+        NodePtr::from_idx_unchecked(self.idx)
     }
+}
+
+/// A sparse-array element by its layout, read off its type.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum SaLeaf {
+    Word(NodePtr<SaWordNode>),
+    Pointer(NodePtr<SaPointerNode>),
+    MarkClass(NodePtr<SaMarkClassNode>),
+}
+
+impl SaLeaf {
+    /// The leaf layout of an element of type `t` at `idx`.
     #[inline]
-    pub fn set_child(self, mem: &mut MemState, i: i32, v: MemPtr) {
-        let w = self.idx.raw() + i / 2 + 1;
-        if i % 2 != 0 {
-            mem.set_b32s1(MemPtr::from_raw(w), v.raw());
-        } else {
-            mem.set_b32s0(MemPtr::from_raw(w), v.raw());
+    pub fn of_type(t: crate::codes::ValueLevel, idx: MemIdx) -> SaLeaf {
+        use crate::codes::ValueLevel;
+        match t {
+            ValueLevel::Int | ValueLevel::Dimen => SaLeaf::Word(NodePtr::from_idx_unchecked(idx)),
+            ValueLevel::Mark => SaLeaf::MarkClass(NodePtr::from_idx_unchecked(idx)),
+            _ => SaLeaf::Pointer(NodePtr::from_idx_unchecked(idx)),
         }
     }
 
-    /// The parent index node, non-null below the root.
     #[inline]
-    pub fn parent(self, mem: &MemState) -> NodePtr<SaNode> {
-        Self::at(self.link(mem))
+    pub fn element(self) -> NodePtr<SaElement> {
+        match self {
+            SaLeaf::Word(p) => p.element(),
+            SaLeaf::Pointer(p) => p.element(),
+            SaLeaf::MarkClass(p) => p.element(),
+        }
+    }
+}
+
+impl NodePtr<SaElement> {
+    /// The element's layout, from the type in its header. `None` for a type
+    /// outside the sparse-array set.
+    #[inline]
+    pub fn leaf(self, mem: &MemState) -> Option<SaLeaf> {
+        Some(SaLeaf::of_type(mem[self].sa_type().get()?, self.idx))
+    }
+
+    #[inline]
+    pub fn word(self, mem: &MemState) -> Option<NodePtr<SaWordNode>> {
+        match self.leaf(mem)? {
+            SaLeaf::Word(p) => Some(p),
+            _ => None,
+        }
+    }
+}
+
+/// A save-chain entry by its layout.
+#[derive(Copy, Clone, Debug)]
+pub enum SaSavedEntry {
+    Word(NodePtr<SaSavedWord>),
+    Pointer(NodePtr<SaSavedPointer>),
+}
+
+impl NodePtr<SaSaved> {
+    /// The entry's layout, from the type in its header.
+    #[inline]
+    pub fn entry(self, mem: &MemState) -> SaSavedEntry {
+        if mem[self].sa_index < crate::save::DIMEN_VAL_LIMIT {
+            SaSavedEntry::Word(NodePtr::from_idx_unchecked(self.idx))
+        } else {
+            SaSavedEntry::Pointer(NodePtr::from_idx_unchecked(self.idx))
+        }
+    }
+}
+
+impl NodePtr<SaSavedWord> {
+    #[inline]
+    pub fn saved(self) -> NodePtr<SaSaved> {
+        NodePtr::from_idx_unchecked(self.idx)
+    }
+}
+
+impl NodePtr<SaSavedPointer> {
+    #[inline]
+    pub fn saved(self) -> NodePtr<SaSaved> {
+        NodePtr::from_idx_unchecked(self.idx)
     }
 }
 
@@ -1988,20 +2117,75 @@ mod tests {
     }
 
     #[test]
-    fn sa_children_pack_two_per_word() {
+    fn sparse_array_records_land_in_their_words() {
+        use crate::codes::{MarkCode, ValueLevel};
+        let w = |p: i32| MemPtr::from_raw(p);
         let mut mem = fresh_mem(200);
-        let node: NodePtr<SaNode> = at(&mut mem, 100, None);
-        for i in 0..6 {
-            node.set_child(&mut mem, i, MemPtr::from_raw(1000 + i));
+        let q: NodePtr<SaIndexNode> = at(&mut mem, 100, None);
+        let leaf: NodePtr<SaElement> = at(&mut mem, 150, None);
+        let b = &mut mem[q];
+        b.used = 7;
+        b.sa_index = 5;
+        b.link = Link::from(Some(q));
+        b.set_child(0, Some(leaf));
+        b.set_child(1, Some(q));
+        b.set_child(63, Some(leaf));
+        assert_eq!([mem.b16s0(w(100)), mem.b16s1(w(100))], [7, 5]);
+        assert_eq!(mem.b32s1(w(100)), 100);
+        assert_eq!([mem.b32s0(w(101)), mem.b32s1(w(101))], [150, 100]);
+        assert_eq!(mem.b32s1(w(132)), 150);
+        assert_eq!(mem[q].child_index(1), Some(q));
+        assert_eq!(mem[q].child_element(63), Some(leaf));
+        mem[q].clear_child(63);
+        assert_eq!(mem.b32s1(w(132)), MemPtr::NULL.raw());
+        assert_eq!(mem[q].child_element(63), None);
+
+        let c: NodePtr<SaWordNode> = at(&mut mem, 150, None);
+        let b = &mut mem[c];
+        b.sa_lev = 3;
+        b.sa_index = 64 + 9;
+        b.link = q;
+        b.sa_ref = -4;
+        b.sa_num = 300;
+        b.sa_int = 0x51;
+        assert_eq!([mem.b16s0(w(150)), mem.b16s1(w(150))], [3, 64 + 9]);
+        assert_eq!(mem.b32s1(w(150)), 100);
+        assert_eq!([mem.b32s0(w(151)), mem.b32s1(w(151))], [-4, 300]);
+        assert_eq!(mem.b32s1(w(152)), 0x51);
+        assert_eq!(mem[leaf].sa_type(), ValueLevel::Dimen);
+        assert_eq!(mem[leaf].slot(), 9);
+        assert_eq!(leaf.leaf(&mem), Some(SaLeaf::Word(c)));
+
+        let p: NodePtr<SaPointerNode> = at(&mut mem, 150, None);
+        mem[p].sa_index = 64 * 5;
+        mem[p].sa_ptr = w(77);
+        assert_eq!(mem.b32s1(w(151)), 77);
+        assert_eq!(mem[p].toks(), TokenList::from_ptr(w(77)));
+        assert_eq!(leaf.leaf(&mem), Some(SaLeaf::Pointer(p)));
+
+        let m: NodePtr<SaMarkClassNode> = at(&mut mem, 150, None);
+        mem[m].sa_index = 64 * 7;
+        for (k, code) in MarkCode::ALL.into_iter().enumerate() {
+            let k = i32::try_from(k).unwrap();
+            mem[m].set_mark(code, TokenList::from_ptr(w(10 + k)));
         }
-        for i in 0..6 {
-            assert_eq!(node.child(&mem, i), MemPtr::from_raw(1000 + i));
-        }
-        assert_eq!(mem.b32s0(MemPtr::from_raw(101)), 1000);
-        assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 1001);
-        assert_eq!(mem.b32s1(MemPtr::from_raw(103)), 1005);
-        node.set_ref_count(&mut mem, 7);
-        assert_eq!(mem.b16s0(MemPtr::from_raw(100)), 7);
+        assert_eq!([mem.b32s0(w(151)), mem.b32s1(w(151))], [10, 11]);
+        assert_eq!([mem.b32s0(w(152)), mem.b32s1(w(152))], [12, 13]);
+        assert_eq!(mem.b32s0(w(153)), 14);
+        assert_eq!(leaf.leaf(&mem), Some(SaLeaf::MarkClass(m)));
+
+        let s: NodePtr<SaSavedWord> = at(&mut mem, 160, None);
+        mem[s].sa_index = 64 + 9;
+        mem[s].sa_loc = c;
+        mem[s].sa_int = -9;
+        assert_eq!(mem.b32s0(w(161)), 150);
+        assert_eq!(mem.b32s1(w(162)), -9);
+        assert!(matches!(s.saved().entry(&mem), SaSavedEntry::Word(e) if e == s));
+        let s: NodePtr<SaSavedPointer> = at(&mut mem, 160, None);
+        mem[s].sa_index = 64 * 2;
+        mem[s].sa_ptr = w(88);
+        assert_eq!([mem.b32s0(w(161)), mem.b32s1(w(161))], [150, 88]);
+        assert!(matches!(s.saved().entry(&mem), SaSavedEntry::Pointer(e) if e == s));
     }
 
     #[test]

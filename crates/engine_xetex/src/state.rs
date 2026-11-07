@@ -1036,20 +1036,25 @@ impl SaRoots {
     pub(crate) fn registers_mut(&mut self) -> &mut [crate::units::MemPtr] {
         &mut self.0[ValueLevel::Int as usize..=ValueLevel::InterChar as usize]
     }
-}
 
-impl std::ops::Index<ValueLevel> for SaRoots {
-    type Output = crate::units::MemPtr;
+    /// The root index node of the tree for type `t`.
     #[inline]
-    fn index(&self, t: ValueLevel) -> &crate::units::MemPtr {
-        &self.0[t as usize]
+    pub(crate) fn get(
+        &self,
+        t: ValueLevel,
+    ) -> Option<crate::node::NodePtr<crate::node::SaIndexNode>> {
+        self.0[t as usize]
+            .as_idx()
+            .map(crate::node::NodePtr::from_idx_unchecked)
     }
-}
 
-impl std::ops::IndexMut<ValueLevel> for SaRoots {
     #[inline]
-    fn index_mut(&mut self, t: ValueLevel) -> &mut crate::units::MemPtr {
-        &mut self.0[t as usize]
+    pub(crate) fn set(
+        &mut self,
+        t: ValueLevel,
+        root: Option<crate::node::NodePtr<crate::node::SaIndexNode>>,
+    ) {
+        self.0[t as usize] = crate::node::link_of(root);
     }
 }
 
@@ -1078,7 +1083,7 @@ pub(crate) struct ScannerState {
     pub mag_set: i32,
     pub radix: u8,
     pub expand_depth_count: i32,
-    pub sa_chain: Option<crate::node::NodePtr<crate::node::SaNode>>,
+    pub sa_chain: Option<crate::node::NodePtr<crate::node::SaSaved>>,
     pub sa_level: u16,
     pub max_reg_num: i32,
     /// The innermost incomplete conditional, `None` outside any.
@@ -1125,7 +1130,6 @@ pub(crate) struct ScannerState {
     pub lr_problems: i32,
     pub cur_dir: crate::units::Dir,
     pub sa_root: SaRoots,
-    pub sa_null: crate::mem_types::MemoryWord,
     pub empty: crate::mem_types::B32x2,
     pub native_text: Vec<u16>,
     pub native_text_size: i32,

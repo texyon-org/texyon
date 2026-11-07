@@ -2,27 +2,25 @@
 use crate::cmd::Cmd;
 use crate::codes::ValueLevel;
 use crate::consts::{
-    EQTB_SIZE, INDEX_NODE_SIZE, INT_BASE, LEVEL_ONE, LEVEL_ZERO, MARK_CLASS_NODE_SIZE, TEX_NULL,
-    UNDEFINED_CONTROL_SEQUENCE,
+    EQTB_SIZE, INT_BASE, LEVEL_ONE, LEVEL_ZERO, TEX_NULL, UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::errors::Abort;
 use crate::mem::ZERO_GLUE;
 use crate::mem_types::MemoryWord;
-use crate::node::{link_of, NodePtr, SaNode};
+use crate::node::{
+    link_of, FixedNode, NodePtr, SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode,
+    SaPointerNode, SaSavedEntry, SaSavedPointer, SaSavedWord, SaWordNode,
+};
 use crate::params::IntPar;
 use crate::state::{
     EngineState, EqtbState, GroupCode, MemState, SaveStackState, SaveType, ScannerState,
 };
 use crate::token::{Token, TokenList};
-use crate::units::{EqtbPtr, MemAddr, MemPtr};
-
-const POINTER_NODE_SIZE: i32 = 2;
-const WORD_NODE_SIZE: i32 = 3;
+use crate::units::{EqtbPtr, MemPtr};
 
 pub(crate) const DIMEN_VAL_LIMIT: u16 = 128;
 pub(crate) const MU_VAL_LIMIT: u16 = 256;
 pub(crate) const BOX_VAL_LIMIT: u16 = 320;
-pub(crate) const TOK_VAL_LIMIT: u16 = 384;
 
 impl EqtbState {
     pub(crate) fn eq_word_define(
@@ -182,13 +180,6 @@ impl EqtbState {
     }
 }
 
-/// A sparse-array record. These carry no type tag and are reached only
-/// through the trie or a register's `eqtb` entry.
-#[inline]
-fn sa(p: impl MemAddr) -> NodePtr<SaNode> {
-    NodePtr::at(p)
-}
-
 /// Deferred flush work from an `sa_def`/`sa_w_def`-family mutation.
 #[derive(Default)]
 pub(crate) struct SaMutationResult {
@@ -220,109 +211,118 @@ impl MemState {
             }
             Cmd::BoxRef => self.flush_node_list(ptr)?,
             Cmd::ToksRegister | Cmd::Register if !(0..=19).contains(&equiv) => {
-                self.delete_sa_ref(scanner, MemPtr::from_raw(equiv));
+                self.delete_sa_ref(scanner, NodePtr::at(ptr))?;
             }
             _ => {}
         }
         Ok(())
     }
 
-    pub fn delete_sa_ref(&mut self, scanner: &mut ScannerState, q: impl MemAddr) {
-        let mut q = sa(q);
-        q.set_sa_ref(self, q.sa_ref(self) - 1);
-        if q.sa_ref(self) != TEX_NULL {
-            return;
-        }
-        let mut s = if q.sa_index(self) < DIMEN_VAL_LIMIT {
-            if q.sa_int(self) != 0 {
-                return;
-            }
-            WORD_NODE_SIZE
-        } else {
-            if q.sa_index(self) < MU_VAL_LIMIT {
-                if q.sa_ptr(self) != ZERO_GLUE.ptr() {
-                    return;
+    /// Drops a reference to register `q`. Once it is unreferenced and back
+    /// at its default value, frees it and the index nodes it leaves empty.
+    pub fn delete_sa_ref(
+        &mut self,
+        scanner: &mut ScannerState,
+        q: NodePtr<SaElement>,
+    ) -> Result<(), Abort> {
+        let size = match q.leaf(self).ok_or(Abort::Confusion("sa"))? {
+            SaLeaf::Word(w) => {
+                let n = &mut self[w];
+                n.sa_ref -= 1;
+                if n.sa_ref != TEX_NULL || n.sa_int != 0 {
+                    return Ok(());
                 }
-                self.delete_glue_ref(ZERO_GLUE);
-            } else if !q.sa_ptr(self).is_null() {
-                return;
+                SaWordNode::SIZE
             }
-            POINTER_NODE_SIZE
+            SaLeaf::Pointer(p) => {
+                let n = &mut self[p];
+                n.sa_ref -= 1;
+                if n.sa_ref != TEX_NULL {
+                    return Ok(());
+                }
+                if n.sa_index < MU_VAL_LIMIT {
+                    if n.sa_ptr != ZERO_GLUE.ptr() {
+                        return Ok(());
+                    }
+                    self.delete_glue_ref(ZERO_GLUE);
+                } else if !n.sa_ptr.is_null() {
+                    return Ok(());
+                }
+                SaPointerNode::SIZE
+            }
+            SaLeaf::MarkClass(_) => return Err(Abort::Confusion("sa")),
         };
+        let mut slot = self[q].slot();
+        let mut parent = self[q].link;
+        self.free_node(q.ptr(), size);
         loop {
-            let i = i32::from(q.sa_index(self) % 64);
-            let next = q.link(self);
-            self.free_node(q.ptr(), s);
-            if next.is_null() {
-                let root_type = ValueLevel::from_raw(i).expect("sparse array type");
-                scanner.sa_root[root_type] = MemPtr::NULL;
-                return;
+            let n = &mut self[parent];
+            n.clear_child(slot);
+            n.used -= 1;
+            if n.used > 0 {
+                return Ok(());
             }
-            q = sa(next);
-            q.set_child(self, i, MemPtr::NULL);
-            q.set_ref_count(self, q.ref_count(self) - 1);
-            s = INDEX_NODE_SIZE;
-            if q.ref_count(self) > 0 {
-                break;
+            let (up_slot, up) = (n.sa_index % 64, n.link);
+            self.free_node(parent.ptr(), SaIndexNode::SIZE);
+            match up.get() {
+                Some(up) => (slot, parent) = (usize::from(up_slot), up),
+                None => {
+                    let root_type =
+                        ValueLevel::from_raw(i32::from(up_slot)).ok_or(Abort::Confusion("sa"))?;
+                    scanner.sa_root.set(root_type, None);
+                    return Ok(());
+                }
             }
         }
     }
 
-    pub fn sa_save(
+    pub fn sa_save_word(
         &mut self,
         scanner: &mut ScannerState,
         save_stack: &mut SaveStackState,
-        p: NodePtr<SaNode>,
+        p: NodePtr<SaWordNode>,
     ) -> Result<(), Abort> {
-        if save_stack.cur_level != scanner.sa_level {
-            if save_stack.save_stack_full() {
-                return Err(Abort::SaveOverflow);
-            }
-            save_stack.set_save_entry(
-                SaveType::RestoreSa,
-                scanner.sa_level,
-                link_of(scanner.sa_chain).raw(),
-            );
-            save_stack.save_ptr += 1;
-            scanner.sa_chain = None;
-            scanner.sa_level = save_stack.cur_level;
-        }
-        let mut i = p.sa_index(self);
-        let q;
-        if i < DIMEN_VAL_LIMIT {
-            if p.sa_int(self) == 0 {
-                q = sa(self.get_node(POINTER_NODE_SIZE)?);
-                i = TOK_VAL_LIMIT;
-            } else {
-                q = sa(self.get_node(WORD_NODE_SIZE)?);
-                let v = p.sa_int(self);
-                q.set_sa_int(self, v);
-            }
-            q.set_sa_ptr(self, MemPtr::NULL);
-        } else {
-            q = sa(self.get_node(POINTER_NODE_SIZE)?);
-            let v = p.sa_ptr(self);
-            q.set_sa_ptr(self, v);
-        }
-        // sa_loc
-        q.set_sa_ref(self, p.idx().raw());
-        q.set_sa_index(self, i);
-        let lev = p.sa_lev(self);
-        q.set_sa_lev(self, lev);
-        q.set_link(self, link_of(scanner.sa_chain));
-        scanner.sa_chain = Some(q);
-        p.set_sa_ref(self, p.sa_ref(self) + 1);
+        start_sa_chain(scanner, save_stack)?;
+        let q = NodePtr::<SaSavedWord>::alloc(self)?;
+        let reg = self[p];
+        let e = &mut self[q];
+        e.sa_lev = reg.sa_lev;
+        e.sa_index = reg.sa_index;
+        e.link = scanner.sa_chain.into();
+        e.sa_loc = p;
+        e.sa_int = reg.sa_int;
+        scanner.sa_chain = Some(q.saved());
+        self[p].sa_ref += 1;
         Ok(())
     }
 
-    /// Releases the value of `p`, returning a box list the caller must flush.
-    pub(crate) fn sa_destroy(&mut self, p: impl MemAddr) -> Option<MemPtr> {
-        let p = sa(p);
-        let value = p.sa_ptr(self);
-        if p.sa_index(self) < MU_VAL_LIMIT {
+    pub fn sa_save_pointer(
+        &mut self,
+        scanner: &mut ScannerState,
+        save_stack: &mut SaveStackState,
+        p: NodePtr<SaPointerNode>,
+    ) -> Result<(), Abort> {
+        start_sa_chain(scanner, save_stack)?;
+        let q = NodePtr::<SaSavedPointer>::alloc(self)?;
+        let reg = self[p];
+        let e = &mut self[q];
+        e.sa_lev = reg.sa_lev;
+        e.sa_index = reg.sa_index;
+        e.link = scanner.sa_chain.into();
+        e.sa_loc = p;
+        e.sa_ptr = reg.sa_ptr;
+        scanner.sa_chain = Some(q.saved());
+        self[p].sa_ref += 1;
+        Ok(())
+    }
+
+    /// Releases a pointer register's `value`, returning a box list the caller
+    /// must flush.
+    pub(crate) fn sa_destroy(&mut self, sa_index: u16, value: MemPtr) -> Option<MemPtr> {
+        if sa_index < MU_VAL_LIMIT {
             self.delete_glue_ref(crate::node::NodePtr::from_glue_ptr(value));
         } else if !value.is_null() {
-            if p.sa_index(self) < BOX_VAL_LIMIT {
+            if sa_index < BOX_VAL_LIMIT {
                 return Some(value);
             }
             self.delete_token_ref(TokenList::from_ptr(value));
@@ -334,21 +334,23 @@ impl MemState {
         &mut self,
         scanner: &mut ScannerState,
         save_stack: &mut SaveStackState,
-        node: NodePtr<SaNode>,
+        node: NodePtr<SaPointerNode>,
         e: MemPtr,
     ) -> Result<SaMutationResult, Abort> {
-        node.set_sa_ref(self, node.sa_ref(self) + 1);
+        self[node].sa_ref += 1;
         let mut result = SaMutationResult::default();
-        if node.sa_ptr(self) == e {
-            result.flush_list = self.sa_destroy(node.idx());
+        let reg = self[node];
+        if reg.sa_ptr == e {
+            result.flush_list = self.sa_destroy(reg.sa_index, reg.sa_ptr);
         } else {
-            if node.sa_lev(self) == save_stack.cur_level {
-                result.flush_list = self.sa_destroy(node.idx());
+            if reg.sa_lev == save_stack.cur_level {
+                result.flush_list = self.sa_destroy(reg.sa_index, reg.sa_ptr);
             } else {
-                self.sa_save(scanner, save_stack, node)?;
+                self.sa_save_pointer(scanner, save_stack, node)?;
             }
-            node.set_sa_lev(self, save_stack.cur_level);
-            node.set_sa_ptr(self, e);
+            let n = &mut self[node];
+            n.sa_lev = save_stack.cur_level;
+            n.sa_ptr = e;
         }
         Ok(result)
     }
@@ -357,84 +359,110 @@ impl MemState {
         &mut self,
         scanner: &mut ScannerState,
         save_stack: &mut SaveStackState,
-        node: NodePtr<SaNode>,
+        node: NodePtr<SaWordNode>,
         w: i32,
     ) -> Result<SaMutationResult, Abort> {
-        node.set_sa_ref(self, node.sa_ref(self) + 1);
-        if node.sa_int(self) != w {
-            if node.sa_lev(self) != save_stack.cur_level {
-                self.sa_save(scanner, save_stack, node)?;
+        self[node].sa_ref += 1;
+        let reg = self[node];
+        if reg.sa_int != w {
+            if reg.sa_lev != save_stack.cur_level {
+                self.sa_save_word(scanner, save_stack, node)?;
             }
-            node.set_sa_lev(self, save_stack.cur_level);
-            node.set_sa_int(self, w);
+            let n = &mut self[node];
+            n.sa_lev = save_stack.cur_level;
+            n.sa_int = w;
         }
         Ok(SaMutationResult::default())
     }
 
-    pub(crate) fn gsa_def(&mut self, p: NodePtr<SaNode>, e: MemPtr) -> SaMutationResult {
-        p.set_sa_ref(self, p.sa_ref(self) + 1);
-        let flush_list = self.sa_destroy(p.idx());
-        p.set_sa_lev(self, LEVEL_ONE);
-        p.set_sa_ptr(self, e);
+    pub(crate) fn gsa_def(&mut self, p: NodePtr<SaPointerNode>, e: MemPtr) -> SaMutationResult {
+        self[p].sa_ref += 1;
+        let reg = self[p];
+        let flush_list = self.sa_destroy(reg.sa_index, reg.sa_ptr);
+        let n = &mut self[p];
+        n.sa_lev = LEVEL_ONE;
+        n.sa_ptr = e;
         SaMutationResult { flush_list }
     }
 
-    pub(crate) fn gsa_w_def(&mut self, p: NodePtr<SaNode>, w: i32) -> SaMutationResult {
-        p.set_sa_ref(self, p.sa_ref(self) + 1);
-        p.set_sa_lev(self, LEVEL_ONE);
-        p.set_sa_int(self, w);
+    pub(crate) fn gsa_w_def(&mut self, p: NodePtr<SaWordNode>, w: i32) -> SaMutationResult {
+        let n = &mut self[p];
+        n.sa_ref += 1;
+        n.sa_lev = LEVEL_ONE;
+        n.sa_int = w;
         SaMutationResult::default()
     }
+}
+
+/// Opens a new save-chain level when the group level moved since the last save.
+fn start_sa_chain(
+    scanner: &mut ScannerState,
+    save_stack: &mut SaveStackState,
+) -> Result<(), Abort> {
+    if save_stack.cur_level != scanner.sa_level {
+        if save_stack.save_stack_full() {
+            return Err(Abort::SaveOverflow);
+        }
+        save_stack.set_save_entry(
+            SaveType::RestoreSa,
+            scanner.sa_level,
+            link_of(scanner.sa_chain).raw(),
+        );
+        save_stack.save_ptr += 1;
+        scanner.sa_chain = None;
+        scanner.sa_level = save_stack.cur_level;
+    }
+    Ok(())
 }
 
 /// Applies the deferred flush and reference drop of an `sa_def`-family result.
 pub(crate) fn finish_sa_mutation(
     st: &mut EngineState,
-    p: NodePtr<SaNode>,
+    p: NodePtr<SaElement>,
     result: SaMutationResult,
 ) -> Result<(), Abort> {
     if let Some(list) = result.flush_list {
         st.mem.flush_node_list(list)?;
     }
-    st.mem.delete_sa_ref(&mut st.scanner, p.ptr());
-    Ok(())
+    st.mem.delete_sa_ref(&mut st.scanner, p)
 }
 
 fn sa_restore(st: &mut EngineState) -> Result<(), Abort> {
     while let Some(chain) = st.scanner.sa_chain {
-        let p = sa(MemPtr::from_raw(chain.sa_ref(&st.mem)));
-        let mut flush_list = None;
-        if p.sa_lev(&st.mem) == LEVEL_ONE {
-            if p.sa_index(&st.mem) >= DIMEN_VAL_LIMIT {
-                flush_list = st.mem.sa_destroy(chain.idx());
+        let next = st.mem[chain].link.get();
+        match chain.entry(&st.mem) {
+            SaSavedEntry::Word(c) => {
+                let saved = st.mem[c];
+                let p = saved.sa_loc;
+                if st.mem[p].sa_lev != LEVEL_ONE {
+                    let n = &mut st.mem[p];
+                    n.sa_int = saved.sa_int;
+                    n.sa_lev = saved.sa_lev;
+                }
+                st.mem.delete_sa_ref(&mut st.scanner, p.element())?;
+                st.mem.free_node(c.ptr(), SaSavedWord::SIZE);
             }
-        } else {
-            if p.sa_index(&st.mem) < DIMEN_VAL_LIMIT {
-                let v = if chain.sa_index(&st.mem) < DIMEN_VAL_LIMIT {
-                    chain.sa_int(&st.mem)
+            SaSavedEntry::Pointer(c) => {
+                let saved = st.mem[c];
+                let p = saved.sa_loc;
+                let reg = st.mem[p];
+                let flush_list = if reg.sa_lev == LEVEL_ONE {
+                    st.mem.sa_destroy(saved.sa_index, saved.sa_ptr)
                 } else {
-                    0
+                    let flush_list = st.mem.sa_destroy(reg.sa_index, reg.sa_ptr);
+                    let n = &mut st.mem[p];
+                    n.sa_ptr = saved.sa_ptr;
+                    n.sa_lev = saved.sa_lev;
+                    flush_list
                 };
-                p.set_sa_int(&mut st.mem, v);
-            } else {
-                flush_list = st.mem.sa_destroy(p.idx());
-                let v = chain.sa_ptr(&st.mem);
-                p.set_sa_ptr(&mut st.mem, v);
+                if let Some(list) = flush_list {
+                    st.mem.flush_node_list(list)?;
+                }
+                st.mem.delete_sa_ref(&mut st.scanner, p.element())?;
+                st.mem.free_node(c.ptr(), SaSavedPointer::SIZE);
             }
-            let lev = chain.sa_lev(&st.mem);
-            p.set_sa_lev(&mut st.mem, lev);
         }
-        if let Some(list) = flush_list {
-            st.mem.flush_node_list(list)?;
-        }
-        st.mem.delete_sa_ref(&mut st.scanner, p.idx());
-        st.scanner.sa_chain = chain.next(&st.mem);
-        let size = if chain.sa_index(&st.mem) < DIMEN_VAL_LIMIT {
-            WORD_NODE_SIZE
-        } else {
-            POINTER_NODE_SIZE
-        };
-        st.mem.free_node(chain.ptr(), size);
+        st.scanner.sa_chain = next;
     }
     Ok(())
 }
@@ -514,123 +542,140 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-fn sa_levels(n: i32) -> [i32; 4] {
-    [n / 0x40000, (n / 4096) % 64, (n / 64) % 64, n % 64]
+/// The four 6-bit trie slots of register `n`, from the root down.
+fn sa_levels(n: i32) -> Option<[u16; 4]> {
+    let digit = |d: i32| u16::try_from(d).ok().filter(|&d| d < 64);
+    Some([
+        digit(n / 0x40000)?,
+        digit((n / 4096) % 64)?,
+        digit((n / 64) % 64)?,
+        digit(n % 64)?,
+    ])
 }
 
 impl MemState {
-    /// Allocates a trie index node below `q`, also leaving it in `cur_ptr`.
+    /// Allocates an index node below `parent`, also leaving it in `cur_ptr`.
     fn new_index(
         &mut self,
         scanner: &mut ScannerState,
-        i: u16,
-        q: MemPtr,
-    ) -> Result<NodePtr<SaNode>, Abort> {
-        let p = sa(self.get_node(INDEX_NODE_SIZE)?);
+        sa_index: u16,
+        parent: Option<NodePtr<SaIndexNode>>,
+    ) -> Result<NodePtr<SaIndexNode>, Abort> {
+        let p = NodePtr::<SaIndexNode>::alloc(self)?;
         scanner.cur_ptr = p.ptr();
-        p.set_sa_index(self, i);
-        p.set_ref_count(self, 0);
-        p.set_link(self, q);
-        for k in 1..INDEX_NODE_SIZE {
-            self.set_word(p.idx().offset(k), scanner.sa_null);
-        }
+        let n = &mut self[p];
+        n.sa_index = sa_index;
+        n.used = 0;
+        n.link = parent.into();
+        n.clear_children();
         Ok(p)
     }
 
-    fn add_sa_child(&mut self, q: NodePtr<SaNode>, i: i32, p: NodePtr<SaNode>) {
-        q.set_child(self, i, p.ptr());
-        q.set_ref_count(self, q.ref_count(self) + 1);
+    fn add_sa_child<K: SaChild>(&mut self, q: NodePtr<SaIndexNode>, i: u16, p: NodePtr<K>) {
+        let n = &mut self[q];
+        n.set_child(usize::from(i), Some(p));
+        n.used += 1;
     }
 
     /// Creates the missing trie levels below `q` for `levels`, ending in the
-    /// data record for type `t` and register `n`.
+    /// element for type `t` and register `n`.
     fn sa_alloc_chain(
         &mut self,
         scanner: &mut ScannerState,
         t: ValueLevel,
         n: i32,
-        mut q: NodePtr<SaNode>,
-        levels: &[i32],
-    ) -> Result<NodePtr<SaNode>, Abort> {
-        let (&leaf_i, index_levels) = levels.split_last().expect("non-empty trie path");
+        mut q: NodePtr<SaIndexNode>,
+        levels: &[u16],
+    ) -> Result<SaLeaf, Abort> {
+        let (&leaf_i, index_levels) = levels.split_last().ok_or(Abort::Confusion("sa"))?;
         for &i in index_levels {
-            let p = self.new_index(scanner, i as u16, q.ptr())?;
+            let p = self.new_index(scanner, i, Some(q))?;
             self.add_sa_child(q, i, p);
             q = p;
         }
-        let p;
-        if t == ValueLevel::Mark {
-            p = sa(self.get_node(MARK_CLASS_NODE_SIZE)?);
-            scanner.cur_ptr = p.ptr();
-            for k in 1..=3 {
-                self.set_word(p.idx().offset(k), scanner.sa_null);
-            }
+        let leaf = if t == ValueLevel::Mark {
+            let m = NodePtr::<SaMarkClassNode>::alloc(self)?;
+            self[m].clear_marks();
+            SaLeaf::MarkClass(m)
         } else if t <= ValueLevel::Dimen {
-            p = sa(self.get_node(WORD_NODE_SIZE)?);
-            scanner.cur_ptr = p.ptr();
-            p.set_sa_int(self, 0);
-            p.set_sa_num(self, n);
-            p.set_sa_ref(self, TEX_NULL);
+            let w = NodePtr::<SaWordNode>::alloc(self)?;
+            let r = &mut self[w];
+            r.sa_int = 0;
+            r.sa_num = n;
+            r.sa_ref = TEX_NULL;
+            SaLeaf::Word(w)
         } else {
-            p = sa(self.get_node(POINTER_NODE_SIZE)?);
-            scanner.cur_ptr = p.ptr();
-            if t <= ValueLevel::Mu {
-                p.set_sa_ptr(self, ZERO_GLUE.ptr());
+            let p = NodePtr::<SaPointerNode>::alloc(self)?;
+            let value = if t <= ValueLevel::Mu {
                 self.add_glue_ref(ZERO_GLUE);
+                ZERO_GLUE.ptr()
             } else {
-                p.set_sa_ptr(self, MemPtr::NULL);
-            }
-            p.set_sa_ref(self, TEX_NULL);
-        }
-        p.set_sa_index(self, (64 * t.raw() + leaf_i) as u16);
-        p.set_sa_lev(self, LEVEL_ONE);
-        p.set_link(self, q.ptr());
-        self.add_sa_child(q, leaf_i, p);
-        Ok(p)
+                MemPtr::NULL
+            };
+            let r = &mut self[p];
+            r.sa_ptr = value;
+            r.sa_ref = TEX_NULL;
+            SaLeaf::Pointer(p)
+        };
+        let e = leaf.element();
+        scanner.cur_ptr = e.ptr();
+        let h = &mut self[e];
+        h.sa_index = 64 * u16::from(t as u8) + leaf_i;
+        h.sa_lev = LEVEL_ONE;
+        h.link = q;
+        self.add_sa_child(q, leaf_i, e);
+        Ok(leaf)
     }
 
-    /// TeX's `find_sa_element` without creation: the record for type `t`,
+    /// TeX's `find_sa_element` without creation: the element for type `t`,
     /// register `n`, if any, also left in `cur_ptr`.
     pub fn find_sa_element(
         &self,
         scanner: &mut ScannerState,
         t: ValueLevel,
         n: i32,
-    ) -> Option<NodePtr<SaNode>> {
-        let mut p = scanner.sa_root[t];
-        for i in sa_levels(n) {
-            if p.is_null() {
-                break;
-            }
-            p = sa(p).child(self, i);
-        }
-        scanner.cur_ptr = p;
-        NodePtr::from_ptr(p)
+    ) -> Option<SaLeaf> {
+        let found = self.sa_lookup(scanner.sa_root.get(t), n);
+        scanner.cur_ptr = link_of(found);
+        found.map(|e| SaLeaf::of_type(t, e.idx()))
     }
 
-    /// TeX's `find_sa_element` with creation, also leaving the record in
-    /// `cur_ptr`. `None` when main memory is exhausted.
+    fn sa_lookup(&self, root: Option<NodePtr<SaIndexNode>>, n: i32) -> Option<NodePtr<SaElement>> {
+        let [d1, d2, d3, d4] = sa_levels(n)?;
+        let mut q = root?;
+        for d in [d1, d2, d3] {
+            q = self[q].child_index(usize::from(d))?;
+        }
+        self[q].child_element(usize::from(d4))
+    }
+
+    /// TeX's `find_sa_element` with creation, also leaving the element in
+    /// `cur_ptr`.
     pub fn create_sa_element(
         &mut self,
         scanner: &mut ScannerState,
         t: ValueLevel,
         n: i32,
-    ) -> Result<NodePtr<SaNode>, Abort> {
-        let levels = sa_levels(n);
-        scanner.cur_ptr = scanner.sa_root[t];
-        if scanner.cur_ptr.is_null() {
-            let root = self.new_index(scanner, t as u16, MemPtr::NULL)?;
-            scanner.sa_root[t] = root.ptr();
+    ) -> Result<SaLeaf, Abort> {
+        let levels = sa_levels(n).ok_or(Abort::Confusion("sa"))?;
+        let Some(mut q) = scanner.sa_root.get(t) else {
+            let root = self.new_index(scanner, u16::from(t as u8), None)?;
+            scanner.sa_root.set(t, Some(root));
             return self.sa_alloc_chain(scanner, t, n, root, &levels);
-        }
-        for k in 0..levels.len() {
-            let q = sa(scanner.cur_ptr);
-            scanner.cur_ptr = q.child(self, levels[k]);
-            if scanner.cur_ptr.is_null() {
-                return self.sa_alloc_chain(scanner, t, n, q, &levels[k..]);
+        };
+        for k in 0..3 {
+            match self[q].child_index(usize::from(levels[k])) {
+                Some(child) => q = child,
+                None => return self.sa_alloc_chain(scanner, t, n, q, &levels[k..]),
             }
         }
-        Ok(sa(scanner.cur_ptr))
+        match self[q].child_element(usize::from(levels[3])) {
+            Some(e) => {
+                scanner.cur_ptr = e.ptr();
+                Ok(SaLeaf::of_type(t, e.idx()))
+            }
+            None => self.sa_alloc_chain(scanner, t, n, q, &levels[3..]),
+        }
     }
 }
 
@@ -638,7 +683,6 @@ impl MemState {
 mod tests {
     use super::*;
     use crate::consts::MAX_HALFWORD;
-    use crate::mem_types::B32x2;
 
     /// An arena whose free list is one block of leftover words, none `TEX_NULL`.
     fn arena() -> (MemState, ScannerState) {
@@ -659,15 +703,7 @@ mod tests {
         mem.set_b32s0(rover + 1, rover.raw());
         mem.set_b32s1(mem.lo_mem_max, 0);
 
-        let mut scanner = ScannerState {
-            sa_null: MemoryWord {
-                b32: B32x2 {
-                    s0: TEX_NULL,
-                    s1: TEX_NULL,
-                },
-            },
-            ..Default::default()
-        };
+        let mut scanner = ScannerState::default();
         scanner.sa_root.registers_mut().fill(MemPtr::NULL);
         (mem, scanner)
     }
@@ -675,13 +711,16 @@ mod tests {
     #[test]
     fn a_count_register_back_at_zero_frees_its_tree() {
         let (mut mem, mut scanner) = arena();
-        let p = mem
+        let SaLeaf::Word(p) = mem
             .create_sa_element(&mut scanner, ValueLevel::Int, 300)
-            .unwrap();
-        assert!(!scanner.sa_root[ValueLevel::Int].is_null());
+            .unwrap()
+        else {
+            panic!("a count register is a word element");
+        };
+        assert!(scanner.sa_root.get(ValueLevel::Int).is_some());
         let result = mem.gsa_w_def(p, 0);
         assert!(result.flush_list.is_none());
-        mem.delete_sa_ref(&mut scanner, p.idx());
-        assert!(scanner.sa_root[ValueLevel::Int].is_null());
+        mem.delete_sa_ref(&mut scanner, p.element()).unwrap();
+        assert!(scanner.sa_root.get(ValueLevel::Int).is_none());
     }
 }

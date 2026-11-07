@@ -8,7 +8,7 @@ use crate::cmd::Cmd;
 use crate::codes::ValueLevel;
 use crate::consts::{HASH_BASE, TEX_NULL};
 use crate::errors::Abort;
-use crate::node::{NodePtr, SaNode};
+use crate::node::{NodePtr, SaElement};
 use crate::params::IntPar;
 use crate::state::EngineState;
 use crate::token::{Token, TokenList};
@@ -523,10 +523,10 @@ fn register_item(st: &EngineState, cs: EqtbPtr) -> Result<Item, &'static str> {
         Cmd::AssignDimen => Ok(Item::Dimen(st.eqtb.int_at(st.eqtb.equiv_loc(cs)))),
         Cmd::AssignInt => Ok(Item::Count(st.eqtb.int_at(st.eqtb.equiv_loc(cs)))),
         Cmd::Register if ValueLevel::from_raw(m).is_none() => {
-            let sa = NodePtr::<SaNode>::at(MemPtr::from_raw(m));
-            match sa.sa_type(&st.mem).get() {
-                Some(ValueLevel::Int) => Ok(Item::Count(sa.sa_int(&st.mem))),
-                Some(ValueLevel::Dimen) => Ok(Item::Dimen(sa.sa_int(&st.mem))),
+            let sa = NodePtr::<SaElement>::at(MemPtr::from_raw(m));
+            match (sa.word(&st.mem), st.mem[sa].sa_type().get()) {
+                (Some(w), Some(ValueLevel::Int)) => Ok(Item::Count(st.mem[w].sa_int)),
+                (Some(w), Some(ValueLevel::Dimen)) => Ok(Item::Dimen(st.mem[w].sa_int)),
                 _ => Err("unsupported register"),
             }
         }

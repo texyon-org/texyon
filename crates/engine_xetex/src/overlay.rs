@@ -6,15 +6,16 @@
 
 use bytemuck::{Pod, Zeroable};
 
-use crate::codes::{FiOrElseCode, ValueLevel};
+use crate::codes::{FiOrElseCode, MarkCode, ValueLevel};
 use crate::consts::{EMPTY, NORMAL};
 use crate::node::{
     AccentNoad, ActiveNode, AdjustNode, AlignRecord, AlignStackNode, AnyNoad, BoxNode, CharNode,
     ChoiceNode, CondNode, DelimiterField, DeltaNode, DiscNode, EdgeNode, ExprNode, FenceNoad,
     FixedNode, FractionNoad, FreeBlock, GlueNode, GlueSpecNode, InsNode, KernNode, LigItem,
-    LigatureNode, MarginKernNode, MarkNode, MathField, MathNode, MovementNode, Noad, NodeKind,
-    NodePtr, PageInsNode, PassiveNode, PenaltyNode, RadicalNoad, RuleNode, SpanNode, Stored,
-    StoredDimen, StyleNode, UnsetNode,
+    LigatureNode, Link, MarginKernNode, MarkNode, MathField, MathNode, MovementNode, Noad,
+    NodeKind, NodePtr, PageInsNode, PassiveNode, PenaltyNode, RadicalNoad, RuleNode, SaChild,
+    SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved, SaSavedPointer,
+    SaSavedWord, SaWordNode, SpanNode, Stored, StoredDimen, StyleNode, UnsetNode,
 };
 use crate::state::MemState;
 use crate::token::TokenList;
@@ -54,7 +55,7 @@ impl<K: Overlay> std::ops::IndexMut<NodePtr<K>> for MemState {
 
 /// The most words a layout covers. `mem` keeps all but one of them as slack
 /// past `MEM_TOP`, so a layout read at a list head near the top stays in bounds.
-pub(crate) const MAX_LAYOUT_WORDS: i32 = 8;
+pub(crate) const MAX_LAYOUT_WORDS: i32 = crate::consts::INDEX_NODE_SIZE;
 
 /// Declares the layout of a node kind and checks it covers the node exactly.
 /// The word count defaults to the kind's allocation size.
@@ -471,6 +472,188 @@ pub struct FenceLayout {
 }
 
 overlay!(FenceNoad => FenceLayout);
+
+/// An eTeX sparse-array index node.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct SaIndexLayout {
+    /// `sa_used`, the count of non-null children.
+    pub used: u16,
+    /// The node's slot in its parent, or the tree's type at the root.
+    pub sa_index: u16,
+    pub link: Link<SaIndexNode>,
+    /// Index nodes above the last level, elements on it.
+    children: [MemPtr; 64],
+}
+
+overlay!(SaIndexNode => SaIndexLayout);
+
+impl SaIndexLayout {
+    /// Child `i` of a node above the last index level.
+    #[inline]
+    pub fn child_index(&self, i: usize) -> Option<NodePtr<SaIndexNode>> {
+        self.children[i].as_idx().map(NodePtr::from_idx_unchecked)
+    }
+    /// Child `i` of a node on the last index level.
+    #[inline]
+    pub fn child_element(&self, i: usize) -> Option<NodePtr<SaElement>> {
+        self.children[i].as_idx().map(NodePtr::from_idx_unchecked)
+    }
+    /// Child `i` of a node on the last index level of the tree for type `t`,
+    /// whose elements all have the layout `t` gives.
+    #[inline]
+    pub fn child_leaf(&self, i: usize, t: ValueLevel) -> Option<SaLeaf> {
+        self.child_element(i).map(|e| SaLeaf::of_type(t, e.idx()))
+    }
+    #[inline]
+    pub fn set_child<K: SaChild>(&mut self, i: usize, p: Option<NodePtr<K>>) {
+        self.children[i] = crate::node::link_of(p);
+    }
+    #[inline]
+    pub fn clear_child(&mut self, i: usize) {
+        self.children[i] = MemPtr::NULL;
+    }
+    #[inline]
+    pub fn clear_children(&mut self) {
+        self.children = [MemPtr::NULL; 64];
+    }
+}
+
+/// The header every sparse-array element shares.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct SaElementHead {
+    pub sa_lev: u16,
+    /// The type times 64 plus the slot in the parent.
+    pub sa_index: u16,
+    pub link: NodePtr<SaIndexNode>,
+}
+
+overlay!(SaElement => SaElementHead, 1);
+
+impl SaElementHead {
+    #[inline]
+    pub fn sa_type(&self) -> Stored<ValueLevel> {
+        Stored::from_raw(self.sa_index / 64)
+    }
+    /// The element's slot in its parent.
+    #[inline]
+    pub fn slot(&self) -> usize {
+        usize::from(self.sa_index % 64)
+    }
+}
+
+/// A count or dimension register.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct SaWordLayout {
+    /// The grouping level of the value.
+    pub sa_lev: u16,
+    pub sa_index: u16,
+    pub link: NodePtr<SaIndexNode>,
+    /// References beyond the tree, `TEX_NULL` for none.
+    pub sa_ref: i32,
+    /// The register number.
+    pub sa_num: i32,
+    _unused1: i32,
+    /// The count, or the dimension's raw value.
+    pub sa_int: i32,
+}
+
+overlay!(SaWordNode => SaWordLayout);
+
+/// A glue, muglue, box or token-list register.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct SaPointerLayout {
+    /// The grouping level of the value.
+    pub sa_lev: u16,
+    pub sa_index: u16,
+    pub link: NodePtr<SaIndexNode>,
+    /// References beyond the tree, `TEX_NULL` for none.
+    pub sa_ref: i32,
+    /// A glue spec, box or token list by the element's type.
+    pub sa_ptr: MemPtr,
+}
+
+overlay!(SaPointerNode => SaPointerLayout);
+
+impl SaPointerLayout {
+    /// The value of a token-list register.
+    #[inline]
+    pub fn toks(&self) -> TokenList {
+        TokenList::from_ptr(self.sa_ptr)
+    }
+}
+
+/// The marks of one mark class.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct SaMarkClassLayout {
+    pub sa_lev: u16,
+    pub sa_index: u16,
+    pub link: NodePtr<SaIndexNode>,
+    marks: [TokenList; 6],
+}
+
+overlay!(SaMarkClassNode => SaMarkClassLayout);
+
+impl SaMarkClassLayout {
+    #[inline]
+    pub fn mark(&self, m: MarkCode) -> TokenList {
+        self.marks[m as usize]
+    }
+    #[inline]
+    pub fn set_mark(&mut self, m: MarkCode, v: TokenList) {
+        self.marks[m as usize] = v;
+    }
+    #[inline]
+    pub fn clear_marks(&mut self) {
+        self.marks = [TokenList::NULL; 6];
+    }
+}
+
+/// The header every save-chain entry shares.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct SaSavedHead {
+    /// The saved grouping level.
+    pub sa_lev: u16,
+    pub sa_index: u16,
+    pub link: Link<SaSaved>,
+}
+
+overlay!(SaSaved => SaSavedHead, 1);
+
+/// A saved count or dimension.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct SaSavedWordLayout {
+    pub sa_lev: u16,
+    pub sa_index: u16,
+    pub link: Link<SaSaved>,
+    /// The register the entry restores.
+    pub sa_loc: NodePtr<SaWordNode>,
+    _unused1: i32,
+    _unused2: i32,
+    pub sa_int: i32,
+}
+
+overlay!(SaSavedWord => SaSavedWordLayout);
+
+/// A saved glue spec, box or token list.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct SaSavedPointerLayout {
+    pub sa_lev: u16,
+    pub sa_index: u16,
+    pub link: Link<SaSaved>,
+    /// The register the entry restores.
+    pub sa_loc: NodePtr<SaPointerNode>,
+    pub sa_ptr: MemPtr,
+}
+
+overlay!(SaSavedPointer => SaSavedPointerLayout);
 
 /// A line-breaker active node, one feasible break still in play.
 #[repr(C)]

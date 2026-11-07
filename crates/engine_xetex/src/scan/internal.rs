@@ -21,7 +21,7 @@ use crate::fonts::Side;
 use crate::fonts::{AAT_FONT_FLAG, SPACE_CODE, SPACE_SHRINK_CODE};
 use crate::input::{back_error, back_input};
 use crate::mem::ZERO_GLUE;
-use crate::node::{AnyNode, GlueSpecNode, NodePtr, SaNode};
+use crate::node::{AnyNode, GlueSpecNode, NodePtr, SaLeaf};
 use crate::output::{
     capture_to_diagnostic, error_here_with_diagnostic, print, print_cmd_chr, print_err, print_esc,
     print_int, print_nl,
@@ -157,13 +157,16 @@ impl CurVal {
 }
 
 /// The sparse-array element of type `t` for register `n`, if it exists.
-pub(super) fn find_sa(st: &mut EngineState, t: ValueLevel, n: i32) -> Option<NodePtr<SaNode>> {
+pub(super) fn find_sa(st: &mut EngineState, t: ValueLevel, n: i32) -> Option<SaLeaf> {
     st.mem.find_sa_element(&mut st.scanner, t, n)
 }
 
 /// The token list held by sparse register `sa`, null when unset.
-pub(crate) fn sa_token_list(st: &EngineState, sa: Option<NodePtr<SaNode>>) -> TokenList {
-    sa.map_or(TokenList::NULL, |sa| sa.sa_toks(&st.mem))
+pub(crate) fn sa_token_list(st: &EngineState, sa: Option<SaLeaf>) -> TokenList {
+    match sa {
+        Some(SaLeaf::Pointer(p)) => st.mem[p].toks(),
+        _ => TokenList::NULL,
+    }
 }
 
 /// A new spec holding `old` with all three components negated.
@@ -288,7 +291,7 @@ fn fetch_token_list(
                 sa_token_list(st, sa)
             })
         }
-        Command::ToksRegister(Some(sa)) => CurVal::Tok(TokenList::from_ptr(sa.sa_ptr(&st.mem))),
+        Command::ToksRegister(Some(sa)) => CurVal::Tok(st.mem[sa].toks()),
         Command::AssignToks(loc) if loc == TokPar::XetexInterCharToks.loc() => {
             let first = scan_char_class_not_ignored(st)?;
             let second = scan_char_class_not_ignored(st)?;
@@ -305,28 +308,32 @@ fn fetch_token_list(
     })
 }
 
+/// A sparse register's value as its raw word.
+fn sa_register_word(st: &EngineState, leaf: SaLeaf) -> Result<i32, Abort> {
+    match leaf {
+        SaLeaf::Word(w) => Ok(st.mem[w].sa_int),
+        SaLeaf::Pointer(p) => Ok(st.mem[p].sa_ptr.raw()),
+        SaLeaf::MarkClass(_) => Err(Abort::Confusion("register")),
+    }
+}
+
 fn fetch_register(st: &mut EngineState, r: RegisterRef) -> Result<CurVal, Abort> {
     let level = match r {
         RegisterRef::Scanned(level) => level,
         RegisterRef::Sparse(sa) => {
-            let level = sa
-                .sa_type(&st.mem)
+            let level = st.mem[sa]
+                .sa_type()
                 .get()
                 .ok_or(Abort::Confusion("sa_type"))?;
-            let word = if level < ValueLevel::Glue {
-                sa.sa_int(&st.mem)
-            } else {
-                sa.sa_ptr(&st.mem).raw()
-            };
-            return CurVal::from_word(level, word);
+            let leaf = sa.leaf(&st.mem).ok_or(Abort::Confusion("sa_type"))?;
+            return CurVal::from_word(level, sa_register_word(st, leaf)?);
         }
     };
     let n = scan_register_num(st)?;
     let word = if n > 255 {
         match find_sa(st, level, n) {
             None => 0,
-            Some(sa) if level < ValueLevel::Glue => sa.sa_int(&st.mem),
-            Some(sa) => sa.sa_ptr(&st.mem).raw(),
+            Some(leaf) => sa_register_word(st, leaf)?,
         }
     } else {
         let base = level.register_base().ok_or(Abort::Confusion("register"))?;

@@ -37,3 +37,14 @@ fn vsplit_takes_the_best_break_that_fits() {
     assert_eq!(r.shown(), ["70.0pt", "90.0pt", "10000"]);
     assert!(r.log.contains("[a|a]"));
 }
+
+#[test]
+fn mark_classes_carry_over_like_xetex() {
+    let r = run(&format!(
+        r"{PAGE}\output={{\edef\x{{\topmarks5,\firstmarks5,\topmarks20,\firstmarks20}}\show\x
+          \setbox0\box255 \deadcycles=0 }}
+          \l\marks5{{A}}\marks20{{B}}\penalty-10000 \l\penalty-10000"
+    ));
+    // XeTeX's do_marks visits 16 of each index node's 64 slots, so class 20 never moves on.
+    assert_eq!(r.lines_starting("->"), ["->,A,,B.", "->A,A,,B."]);
+}

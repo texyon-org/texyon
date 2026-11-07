@@ -10,7 +10,7 @@ use crate::codes::{
 use crate::consts::BIGGEST_USV;
 use crate::main_control::{CR_CR_CODE, SPAN_CODE};
 use crate::math::MathStyle;
-use crate::node::{NodePtr, SaNode};
+use crate::node::{NodePtr, SaElement, SaPointerNode};
 use crate::scan::NO_EXPAND_FLAG;
 use crate::state::InteractionMode;
 use crate::token::TokenList;
@@ -43,7 +43,7 @@ pub(crate) enum RegisterRef {
     /// `\count`, `\dimen`, `\skip` or `\muskip`, whose number follows.
     Scanned(ValueLevel),
     /// A register above 255 that `\countdef` and friends bound to a name.
-    Sparse(NodePtr<SaNode>),
+    Sparse(NodePtr<SaElement>),
 }
 
 /// A `&` or `\span`.
@@ -168,7 +168,7 @@ pub(crate) enum Command {
     XetexMathGiven(i32),
     LastItem(LastItemCode),
     /// `\toks`, or a token register `\toksdef` bound to a name.
-    ToksRegister(Option<NodePtr<SaNode>>),
+    ToksRegister(Option<NodePtr<SaPointerNode>>),
     AssignToks(EqtbPtr),
     AssignInt(EqtbPtr),
     AssignDimen(EqtbPtr),

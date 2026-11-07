@@ -230,3 +230,31 @@ fn mode_and_page_quantities_read_their_own_state() {
     assert_eq!(r.errors(), ["Improper \\spacefactor."]);
     assert_eq!(r.shown(), ["0", "-1000.0pt", "16383.99998pt", "2", "1000"]);
 }
+
+#[test]
+fn sparse_pointer_registers_restore_and_print_their_names() {
+    let r = run(
+        r"\skip300=1pt {\skip300=2pt plus 1fil \showthe\skip300} \showthe\skip300
+                  \toks300={a}{\toks300={b}\showthe\toks300}\showthe\toks300
+                  \setbox300\hbox{\vrule width 5pt}{\setbox300\hbox{}}\showthe\wd300
+                  \countdef\c=301 \c=5 {\c=6 \showthe\count301}\showthe\c
+                  \toksdef\t=4100 \t={z}\showthe\t \show\c \show\t
+                  \skip300=0pt \toks300={} \count301=0 \showthe\c",
+    );
+    assert_eq!(
+        r.lines_starting("> "),
+        [
+            "> 2.0pt plus 1.0fil.",
+            "> 1.0pt.",
+            "> b.",
+            "> a.",
+            "> 5.0pt.",
+            "> 6.",
+            "> 5.",
+            "> z.",
+            r"> \c=\count301.",
+            r"> \t=\toks4100.",
+            "> 0.",
+        ]
+    );
+}

@@ -10,7 +10,7 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::input::TokenType;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD};
-use crate::node::{AnyNode, BoxOrRule};
+use crate::node::{AnyNode, BoxOrRule, SaLeaf};
 use crate::params::{DimenPar, IntPar, TokPar};
 use crate::scan::fetch_box;
 use crate::state::{EngineState, GroupCode, MemState};
@@ -52,7 +52,7 @@ pub(super) fn unpackage(st: &mut EngineState, c: BoxCode) -> Result<(), Abort> {
         } else {
             st.input.cur_list.tail.set_link(&mut st.mem, list);
             st.mem
-                .change_box(&mut st.scanner, &mut st.eqtb, n, MemPtr::NULL);
+                .change_box(&mut st.scanner, &mut st.eqtb, n, MemPtr::NULL)?;
             st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
         }
     }
@@ -202,10 +202,13 @@ fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
         if n < 256 {
             define(st, global, BOX_BASE + n, Cmd::BoxRef, cb.raw())?;
         } else {
-            let sa = st
-                .mem
-                .create_sa_element(&mut st.scanner, ValueLevel::BOX, n)?;
-            sa_define(st, global, sa, cb)?;
+            let SaLeaf::Pointer(p) =
+                st.mem
+                    .create_sa_element(&mut st.scanner, ValueLevel::BOX, n)?
+            else {
+                return Err(Abort::Confusion("box"));
+            };
+            sa_define(st, global, p, cb)?;
         }
     } else if let Some(cb) = st.scanner.cur_box {
         if box_context == SHIP_OUT_FLAG {
@@ -312,7 +315,7 @@ pub(super) fn begin_box(
             let n = crate::scan::scan_register_num(st)?;
             st.scanner.cur_box = fetch_box(st, n).map(BoxOrRule::Box);
             st.mem
-                .change_box(&mut st.scanner, &mut st.eqtb, n, MemPtr::NULL);
+                .change_box(&mut st.scanner, &mut st.eqtb, n, MemPtr::NULL)?;
         }
         BoxCode::Copy => {
             let n = crate::scan::scan_register_num(st)?;

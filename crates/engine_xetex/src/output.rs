@@ -10,10 +10,9 @@ use crate::consts::{
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::node::Stored;
 use crate::node::{
-    CharNode, DelimiterField, GlueSpecNode, MathField, NodePtr, RuleDimen, SaNode, WhatsitNode,
+    CharNode, DelimiterField, GlueSpecNode, MathField, NodePtr, RuleDimen, SaElement, WhatsitNode,
 };
 use crate::params::{DimenPar, GluePar, IntPar};
-use crate::save::DIMEN_VAL_LIMIT;
 use crate::state::{EngineState, GroupCode, Selector};
 use crate::token::TokenList;
 use crate::units::{EqtbPtr, FontId, GlueOrder, MemPtr, PrimNum, Scaled, StrNumber};
@@ -663,18 +662,25 @@ fn print_native_word(st: &mut EngineState, p: NodePtr<WhatsitNode>) {
     }
 }
 
-fn print_sa_num(st: &mut EngineState, q: NodePtr<SaNode>) {
+fn print_sa_num(st: &mut EngineState, q: NodePtr<SaElement>) {
     let mem = &st.mem;
-    let n = if q.sa_index(mem) < DIMEN_VAL_LIMIT {
-        q.sa_num(mem)
-    } else {
-        let q1 = q.parent(mem);
-        let q2 = q1.parent(mem);
-        let q3 = q2.parent(mem);
-        let digit = |q: NodePtr<SaNode>| i32::from(q.sa_index(mem));
-        digit(q) % 64 + 64 * digit(q1) + 64 * 64 * (digit(q2) + 64 * digit(q3))
+    let n = match q.word(mem) {
+        Some(w) => Some(mem[w].sa_num),
+        None => {
+            let q1 = mem[q].link;
+            let q2 = mem[q1].link.get();
+            let q3 = q2.and_then(|q2| mem[q2].link.get());
+            q2.zip(q3).map(|(q2, q3)| {
+                let digit = |i: u16| i32::from(i);
+                digit(mem[q].sa_index) % 64
+                    + 64 * digit(mem[q1].sa_index)
+                    + 64 * 64 * (digit(mem[q2].sa_index) + 64 * digit(mem[q3].sa_index))
+            })
+        }
     };
-    print_int(st, n);
+    if let Some(n) = n {
+        print_int(st, n);
+    }
 }
 
 pub(crate) fn begin_diagnostic(st: &mut EngineState) {

@@ -10,7 +10,7 @@ use crate::consts::{
 use crate::errors::{error, Abort};
 use crate::input::{back_error, back_input, begin_token_list, ins_error, TokenType};
 use crate::mem::BACKUP_HEAD;
-use crate::node::{BoxNode, MathField, NodePtr, RuleDimen, RuleNode, Stored};
+use crate::node::{BoxNode, MathField, NodePtr, RuleDimen, RuleNode, SaLeaf, Stored};
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic, print_cmd_chr, print_err};
 use crate::packaging::PackSpec;
 use crate::params::IntPar;
@@ -300,7 +300,10 @@ pub(crate) fn fetch_box(st: &mut EngineState, n: i32) -> Option<NodePtr<BoxNode>
     let contents = if n < 256 {
         st.eqtb.box_reg(n)
     } else {
-        find_sa(st, ValueLevel::BOX, n)?.sa_ptr(&st.mem)
+        match find_sa(st, ValueLevel::BOX, n)? {
+            SaLeaf::Pointer(p) => st.mem[p].sa_ptr,
+            SaLeaf::Word(_) | SaLeaf::MarkClass(_) => return None,
+        }
     };
     st.mem.classify_box(contents.as_idx()?).ok().flatten()
 }
@@ -313,16 +316,18 @@ impl MemState {
         eqtb: &mut EqtbState,
         n: i32,
         v: MemPtr,
-    ) {
+    ) -> Result<(), Abort> {
         if n < 256 {
             eqtb.set_box_reg(n, v);
-            return;
+            return Ok(());
         }
-        if let Some(sa) = self.find_sa_element(scanner, ValueLevel::BOX, n) {
-            sa.set_sa_ptr(self, v);
-            sa.set_sa_ref(self, sa.sa_ref(self) + 1);
-            self.delete_sa_ref(scanner, sa.idx());
+        if let Some(SaLeaf::Pointer(p)) = self.find_sa_element(scanner, ValueLevel::BOX, n) {
+            let r = &mut self[p];
+            r.sa_ptr = v;
+            r.sa_ref += 1;
+            self.delete_sa_ref(scanner, p.element())?;
         }
+        Ok(())
     }
 }
 

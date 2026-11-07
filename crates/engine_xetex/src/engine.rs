@@ -27,7 +27,7 @@ use crate::mem::{
     ACTIVE_LIST, CONTRIB_HEAD, END_SPAN, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, HI_MEM_STAT_MIN,
     HI_MEM_STAT_USAGE, NULL_LIST, OMIT_TEMPLATE, PAGE_HEAD, PAGE_INS_HEAD, SS_GLUE, ZERO_GLUE,
 };
-use crate::mem_types::{zeroed_vec, B32x2, MemoryWord};
+use crate::mem_types::zeroed_vec;
 use crate::node::{ActiveNode, FreeBlock, NodePtr, PageInsNode};
 use crate::packaging::MarksAction;
 use crate::params::{IntPar, TokPar};
@@ -265,12 +265,12 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
         }
     }
 
-    if let Some(marks) = st.scanner.sa_root[ValueLevel::Mark].as_idx() {
+    if let Some(marks) = st.scanner.sa_root.get(ValueLevel::Mark) {
         if st
             .mem
             .do_marks(&mut st.scanner, MarksAction::DestroyMarks, 0, marks)
         {
-            st.scanner.sa_root[ValueLevel::Mark] = MemPtr::NULL;
+            st.scanner.sa_root.set(ValueLevel::Mark, None);
         }
     }
 
@@ -409,13 +409,7 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.scanner.lr_problems = 0;
     st.scanner.cur_dir = crate::units::Dir::Ltr;
     st.input.pseudo_files = MemPtr::NULL;
-    st.scanner.sa_root[ValueLevel::Mark] = MemPtr::NULL;
-    st.scanner.sa_null = MemoryWord {
-        b32: B32x2 {
-            s0: TEX_NULL,
-            s1: TEX_NULL,
-        },
-    };
+    st.scanner.sa_root.set(ValueLevel::Mark, None);
     st.scanner.sa_chain = None;
     st.scanner.sa_level = LEVEL_ZERO;
     st.scanner.disc_ptr[BoxCode::LastBox as usize] = MemPtr::NULL;

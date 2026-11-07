@@ -16,7 +16,7 @@ use crate::main_control::{CR_CODE, LP_CODE_BASE, RP_CODE_BASE, SPAN_CODE};
 use crate::math::{
     ABOVE_CODE, ATOP_CODE, DELIMITED_CODE, LIMITS, MIDDLE_NOAD, NO_LIMITS, OVER_CODE,
 };
-use crate::node::{NodePtr, SaNode};
+use crate::node::{NodePtr, SaElement};
 use crate::params::TokPar;
 use crate::state::{EngineState, InteractionMode};
 use crate::token::TokenList;
@@ -181,7 +181,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
         Cmd::ToksRegister => {
             print_esc(st, "toks");
             if chr_code != 0 {
-                if let Some(q) = NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(chr_code)) {
+                if let Some(q) = NodePtr::<SaElement>::from_ptr(MemPtr::from_raw(chr_code)) {
                     print_sa_num(st, q);
                 }
             }
@@ -215,9 +215,11 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
             let sa = if (0..=19).contains(&chr_code) {
                 None
             } else {
-                NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(chr_code))
+                NodePtr::<SaElement>::from_ptr(MemPtr::from_raw(chr_code))
             };
-            let level = sa.map_or(ValueLevel::from_raw(chr_code), |q| q.sa_type(&st.mem).get());
+            let level = sa.map_or(ValueLevel::from_raw(chr_code), |q| {
+                st.mem[q].sa_type().get()
+            });
             let name = match level {
                 Some(ValueLevel::Int) => "count",
                 Some(ValueLevel::Dimen) => "dimen",
