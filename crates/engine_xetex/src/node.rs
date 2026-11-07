@@ -1,9 +1,9 @@
 //! Typed node handles over the flat `mem` arena.
 //!
 //! [`NodePtr<K>`] is a `Copy` index plus a compile-time kind marker, so a field
-//! access compiles to the same load/store as the raw `mem[p + k]` form. Fields
-//! are read by passing the arena as context: `p.width(mem)`,
-//! `p.set_width(mem, w)`.
+//! access compiles to the same load/store as the raw `mem[p + k]` form. Kinds
+//! with a layout in [`crate::overlay`] index the arena (`mem[p].width`), the
+//! others pass it as context: `p.width(mem)`, `p.set_width(mem, w)`.
 
 use std::marker::PhantomData;
 
@@ -16,8 +16,8 @@ use crate::errors::Abort;
 use crate::state::MemState;
 use crate::token::TokenList;
 use crate::units::{
-    FontId, GlueOrder, GlueSign, InvalidNodeType, MemAddr, MemIdx, MemPtr, NodeType, Scaled,
-    StrNumber,
+    FontId, GlueOrder, GlueSign, InvalidNodeType, MemAddr, MemIdx, MemPtr, NodeType, Orientation,
+    Scaled, StrNumber,
 };
 
 /// Marker for node kinds, implemented by the uninhabited kind enums below.
@@ -334,6 +334,26 @@ impl StoredCode for GlueOrder {
     }
 }
 
+impl StoredCode for Orientation {
+    #[inline]
+    fn from_u16(raw: u16) -> Option<Self> {
+        match raw {
+            0 => Some(Orientation::Horizontal),
+            1 => Some(Orientation::Vertical),
+            _ => None,
+        }
+    }
+    #[inline]
+    fn to_u16(self) -> u16 {
+        self.as_raw()
+    }
+}
+
+const _: () = assert!(
+    Orientation::Horizontal.node_type().as_raw() == Orientation::Horizontal.as_raw()
+        && Orientation::Vertical.node_type().as_raw() == Orientation::Vertical.as_raw()
+);
+
 impl Slot for RuleDimen {
     type Raw = i32;
     #[inline(always)]
@@ -447,8 +467,8 @@ macro_rules! node_kinds {
 }
 
 node_kinds! {
-    HListNode = HList, BOX_NODE_SIZE;
-    VListNode = VList, BOX_NODE_SIZE;
+    /// An hlist or vlist box. `alloc` makes an hlist.
+    BoxNode = HList, BOX_NODE_SIZE;
     RuleNode = Rule, RULE_NODE_SIZE;
     InsNode = Ins, INS_NODE_SIZE;
     MarkNode = Mark, SMALL_NODE_SIZE;
@@ -570,8 +590,6 @@ pub trait HasWidth: NodeKind {}
 pub trait HasHeightDepth: NodeKind {}
 /// A child list at +5.
 pub trait HasListPtr: NodeKind {}
-/// The hlist/vlist box layout: shift at +4 and glue setting at +5 and +6.
-pub trait IsBox: HasWidth + HasHeightDepth + HasListPtr {}
 /// The SyncTeX tag and line that `get_node` stamps into a node's last word.
 pub trait HasSyncFields: FixedNode {}
 
@@ -581,17 +599,16 @@ macro_rules! impl_traits {
     ($trait:ident: $($kind:ident),*) => {$(impl $trait for $kind {})*};
 }
 
-impl_traits!(HasNodeHeader: HListNode, VListNode, RuleNode, InsNode, MarkNode, AdjustNode,
+impl_traits!(HasNodeHeader: RuleNode, InsNode, MarkNode, AdjustNode,
     LigatureNode, DiscNode, WhatsitNode, MathNode, GlueNode, KernNode, PenaltyNode, UnsetNode,
     StyleNode, ChoiceNode, EdgeNode, Noad, MarginKernNode, SaNode, PageInsNode, DeltaNode);
 impl_traits!(HasLink: MovementNode, ActiveNode, PassiveNode, CondNode, CharNode,
     AlignRecord, AlignStackNode, ExprNode, PseudoLineNode, LigItem);
-impl_traits!(HasWidth: HListNode, VListNode, UnsetNode, WhatsitNode, MathNode, KernNode,
+impl_traits!(HasWidth: UnsetNode, WhatsitNode, MathNode, KernNode,
     EdgeNode, MarginKernNode, AlignRecord, SpanNode);
-impl_traits!(HasHeightDepth: HListNode, VListNode, UnsetNode, WhatsitNode, InsNode);
-impl_traits!(HasListPtr: HListNode, VListNode, UnsetNode);
-impl_traits!(IsBox: HListNode, VListNode);
-impl_traits!(HasSyncFields: HListNode, VListNode, RuleNode, GlueNode, KernNode, MathNode);
+impl_traits!(HasHeightDepth: UnsetNode, WhatsitNode, InsNode);
+impl_traits!(HasListPtr: UnsetNode);
+impl_traits!(HasSyncFields: RuleNode, GlueNode, KernNode, MathNode);
 
 /// A record kept only on its own list, which therefore proves its kind.
 pub trait ListRecord: NodeKind {}
@@ -666,25 +683,6 @@ impl<K: HasListPtr> NodePtr<K> {
     }
 }
 
-impl<K: IsBox> NodePtr<K> {
-    stored_fields! {
-        glue_sign / set_glue_sign: GlueSign = b16s1 @ 5;
-        glue_order / set_glue_order: GlueOrder = b16s0 @ 5;
-    }
-    fields! {
-        shift_amount / set_shift_amount: Scaled = b32s1 @ 4;
-    }
-
-    #[inline]
-    pub fn glue_set(self, mem: &MemState) -> f64 {
-        mem.word(self.idx + 6).gr()
-    }
-    #[inline]
-    pub fn set_glue_set(self, mem: &mut MemState, v: f64) {
-        mem.set_gr(self.idx + 6, v);
-    }
-}
-
 impl<K: HasSyncFields> NodePtr<K> {
     fields! {
         sync_tag / set_sync_tag: i32 = b32s0 @ K::SIZE - 1;
@@ -719,10 +717,16 @@ impl MemPtr {
 
 // --- boxes and rules ---
 
-impl NodePtr<HListNode> {
+impl NodePtr<BoxNode> {
     #[inline]
-    pub fn into_vlist(self, mem: &mut MemState) -> NodePtr<VListNode> {
-        retype(self, mem, NodeType::VList)
+    pub fn into_unset(self, mem: &mut MemState) -> NodePtr<UnsetNode> {
+        retype(self, mem, NodeType::Unset)
+    }
+
+    /// The pseudo-node whose `link` is `list_ptr`, for splicing at the list head.
+    #[inline]
+    pub fn list_head(self) -> MemPtr {
+        MemPtr::from_idx(self.idx.offset(5))
     }
 }
 
@@ -776,72 +780,11 @@ impl NodePtr<RuleNode> {
     }
 }
 
-/// A classified box: either an hlist or a vlist node.
-#[derive(Copy, Clone, Debug)]
-pub enum AnyBox {
-    HList(NodePtr<HListNode>),
-    VList(NodePtr<VListNode>),
-}
-
-macro_rules! box_delegate {
-    ($($name:ident($($arg:ident: $t:ty),*) $(-> $ret:ty)?;)*) => {$(
-        #[inline]
-        pub fn $name(self, $($arg: $t),*) $(-> $ret)? {
-            match self {
-                AnyBox::HList(p) => p.$name($($arg),*),
-                AnyBox::VList(p) => p.$name($($arg),*),
-            }
-        }
-    )*};
-}
-
-impl AnyBox {
-    box_delegate! {
-        idx() -> MemIdx;
-        ptr() -> MemPtr;
-        sync_tag(mem: &MemState) -> i32;
-        sync_line(mem: &MemState) -> i32;
-        width(mem: &MemState) -> Scaled;
-        depth(mem: &MemState) -> Scaled;
-        height(mem: &MemState) -> Scaled;
-        shift_amount(mem: &MemState) -> Scaled;
-        list_ptr(mem: &MemState) -> MemPtr;
-        subtype(mem: &MemState) -> u16;
-        glue_sign(mem: &MemState) -> Stored<GlueSign>;
-        glue_order(mem: &MemState) -> Stored<GlueOrder>;
-        glue_set(mem: &MemState) -> f64;
-        set_width(mem: &mut MemState, w: Scaled);
-        set_depth(mem: &mut MemState, d: Scaled);
-        set_height(mem: &mut MemState, h: Scaled);
-        set_shift_amount(mem: &mut MemState, s: Scaled);
-        set_list_ptr(mem: &mut MemState, q: MemPtr);
-        set_link(mem: &mut MemState, q: MemPtr);
-        set_subtype(mem: &mut MemState, v: u16);
-        set_glue_sign(mem: &mut MemState, v: impl Into<Stored<GlueSign>>);
-        set_glue_order(mem: &mut MemState, v: impl Into<Stored<GlueOrder>>);
-        set_glue_set(mem: &mut MemState, v: f64);
-    }
-
-    #[inline]
-    pub fn into_unset(self, mem: &mut MemState) -> NodePtr<UnsetNode> {
-        match self {
-            AnyBox::HList(p) => retype(p, mem, NodeType::Unset),
-            AnyBox::VList(p) => retype(p, mem, NodeType::Unset),
-        }
-    }
-
-    /// The pseudo-node whose `link` is `list_ptr`, for splicing at the list head.
-    #[inline]
-    pub fn list_head(self) -> MemPtr {
-        MemPtr::from_idx(self.idx().offset(5))
-    }
-}
-
 /// What `\box`, `\hrule` and friends leave in `cur_box`: a rule only where
 /// leaders accept one.
 #[derive(Copy, Clone, Debug)]
 pub enum BoxOrRule {
-    Box(AnyBox),
+    Box(NodePtr<BoxNode>),
     Rule(NodePtr<RuleNode>),
 }
 
@@ -862,8 +805,8 @@ impl BoxOrRule {
 /// know their context and do not classify.
 #[derive(Copy, Clone, Debug)]
 pub enum AnyNode {
-    HList(NodePtr<HListNode>),
-    VList(NodePtr<VListNode>),
+    /// An hlist or vlist box.
+    Box(NodePtr<BoxNode>),
     Rule(NodePtr<RuleNode>),
     Ins(NodePtr<InsNode>),
     Mark(NodePtr<MarkNode>),
@@ -887,8 +830,7 @@ impl AnyNode {
     #[inline]
     pub fn idx(self) -> MemIdx {
         match self {
-            AnyNode::HList(p) => p.idx(),
-            AnyNode::VList(p) => p.idx(),
+            AnyNode::Box(p) => p.idx(),
             AnyNode::Rule(p) => p.idx(),
             AnyNode::Ins(p) => p.idx(),
             AnyNode::Mark(p) => p.idx(),
@@ -914,8 +856,7 @@ impl AnyNode {
     pub fn precedes_break(self) -> bool {
         matches!(
             self,
-            AnyNode::HList(_)
-                | AnyNode::VList(_)
+            AnyNode::Box(_)
                 | AnyNode::Rule(_)
                 | AnyNode::Ins(_)
                 | AnyNode::Mark(_)
@@ -941,8 +882,7 @@ impl AnyNode {
     #[inline]
     pub fn hlist_width(self, mem: &MemState) -> Scaled {
         match self {
-            AnyNode::HList(p) => p.width(mem),
-            AnyNode::VList(p) => p.width(mem),
+            AnyNode::Box(p) => mem[p].width,
             AnyNode::Rule(p) => p.width(mem).to_scaled(),
             AnyNode::Kern(p) => p.width(mem),
             AnyNode::Math(p) => p.width(mem),
@@ -972,8 +912,7 @@ impl MemState {
         let p = MemIdx::new(p);
         // SAFETY (every arm): the type code just read from `p` proves its kind.
         Ok(match self.node_type(p)? {
-            HList => AnyNode::HList(NodePtr::from_idx_unchecked(p)),
-            VList => AnyNode::VList(NodePtr::from_idx_unchecked(p)),
+            HList | VList => AnyNode::Box(NodePtr::from_idx_unchecked(p)),
             Rule => AnyNode::Rule(NodePtr::from_idx_unchecked(p)),
             Ins => AnyNode::Ins(NodePtr::from_idx_unchecked(p)),
             Mark => AnyNode::Mark(NodePtr::from_idx_unchecked(p)),
@@ -1017,10 +956,12 @@ impl MemState {
 
     /// `Ok(None)` for a valid non-box node.
     #[inline]
-    pub fn classify_box(&self, p: impl MemAddr) -> Result<Option<AnyBox>, InvalidNodeType> {
+    pub fn classify_box(
+        &self,
+        p: impl MemAddr,
+    ) -> Result<Option<NodePtr<BoxNode>>, InvalidNodeType> {
         Ok(match self.classify(p)? {
-            AnyNode::HList(b) => Some(AnyBox::HList(b)),
-            AnyNode::VList(b) => Some(AnyBox::VList(b)),
+            AnyNode::Box(b) => Some(b),
             _ => None,
         })
     }
@@ -1396,14 +1337,10 @@ impl NodePtr<UnsetNode> {
         glue_stretch / set_glue_stretch: Scaled = b32s1 @ 6;
     }
 
+    /// Turns the finished unset node into a box of orientation `o`.
     #[inline]
-    pub fn into_hlist(self, mem: &mut MemState) -> NodePtr<HListNode> {
-        retype(self, mem, NodeType::HList)
-    }
-
-    #[inline]
-    pub fn into_vlist(self, mem: &mut MemState) -> NodePtr<VListNode> {
-        retype(self, mem, NodeType::VList)
+    pub fn into_box(self, mem: &mut MemState, o: Orientation) -> NodePtr<BoxNode> {
+        retype(self, mem, o.node_type())
     }
 }
 
@@ -1994,7 +1931,7 @@ mod tests {
 
     #[test]
     fn handles_are_zero_cost() {
-        assert_eq!(size_of::<NodePtr<HListNode>>(), size_of::<i32>());
+        assert_eq!(size_of::<NodePtr<BoxNode>>(), size_of::<i32>());
         assert_eq!(size_of::<NodePtr<GlueSpecNode>>(), size_of::<i32>());
         assert_eq!(size_of::<NodePtr<Noad>>(), size_of::<i32>());
     }
@@ -2002,8 +1939,8 @@ mod tests {
     #[test]
     fn alloc_stamps_the_type_that_classify_reads_back() {
         let mut mem = arena_with_free_block();
-        let h = NodePtr::<HListNode>::alloc(&mut mem).unwrap();
-        assert!(matches!(mem.classify(h.idx()), Ok(AnyNode::HList(_))));
+        let h = NodePtr::<BoxNode>::alloc(&mut mem).unwrap();
+        assert!(matches!(mem.classify(h.idx()), Ok(AnyNode::Box(b)) if mem[b].is_hlist()));
         let mut mem = arena_with_free_block();
         let r = NodePtr::<RuleNode>::alloc(&mut mem).unwrap();
         assert!(matches!(mem.classify(r.idx()), Ok(AnyNode::Rule(_))));
@@ -2070,43 +2007,16 @@ mod tests {
     #[test]
     fn sync_trailer_is_the_last_word() {
         let mut mem = fresh_mem(200);
-        let b: NodePtr<HListNode> = at(&mut mem, 100, Some(NodeType::HList));
+        let b: NodePtr<BoxNode> = at(&mut mem, 100, Some(NodeType::HList));
         mem.set_b32s0(MemPtr::from_raw(100 + BOX_NODE_SIZE - 1), 42);
         mem.set_b32s1(MemPtr::from_raw(100 + BOX_NODE_SIZE - 1), 7);
-        assert_eq!(b.sync_tag(&mem), 42);
-        assert_eq!(AnyBox::HList(b).sync_line(&mem), 7);
+        assert_eq!((mem[b].sync_tag, mem[b].sync_line), (42, 7));
 
         let k: NodePtr<KernNode> = at(&mut mem, 100, Some(NodeType::Kern));
         mem.set_b32s0(MemPtr::from_raw(100 + MEDIUM_NODE_SIZE - 1), 9);
         mem.set_b32s1(MemPtr::from_raw(100 + MEDIUM_NODE_SIZE - 1), 3);
         assert_eq!(k.sync_tag(&mem), 9);
         assert_eq!(k.sync_line(&mem), 3);
-    }
-
-    #[test]
-    fn box_fields_land_in_their_words() {
-        let mut mem = fresh_mem(200);
-        let b: NodePtr<HListNode> = at(&mut mem, 100, Some(NodeType::HList));
-        b.set_width(&mut mem, Scaled::from_raw(0x1111));
-        b.set_depth(&mut mem, Scaled::from_raw(0x2222));
-        b.set_height(&mut mem, Scaled::from_raw(0x3333));
-        b.set_shift_amount(&mut mem, Scaled::from_raw(0x4444));
-        b.set_list_ptr(&mut mem, MemPtr::from_raw(150));
-        b.set_glue_sign(&mut mem, GlueSign::Shrinking);
-        b.set_glue_order(&mut mem, GlueOrder::Fil);
-        b.set_glue_set(&mut mem, 1.5);
-        assert_eq!(b.glue_sign(&mem), GlueSign::Shrinking);
-        assert_eq!(b.glue_set(&mem), 1.5);
-        assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 0x1111);
-        assert_eq!(mem.b32s1(MemPtr::from_raw(102)), 0x2222);
-        assert_eq!(mem.b32s1(MemPtr::from_raw(103)), 0x3333);
-        assert_eq!(mem.b32s1(MemPtr::from_raw(104)), 0x4444);
-        assert_eq!(mem.b32s1(MemPtr::from_raw(105)), 150);
-        assert_eq!(mem.b16s1(MemPtr::from_raw(105)), 2);
-        assert_eq!(mem.b16s0(MemPtr::from_raw(105)), 1);
-
-        b.set_list_ptr(&mut mem, MemPtr::NULL);
-        assert!(b.list_ptr(&mem).as_idx().is_none());
     }
 
     #[test]
@@ -2134,8 +2044,8 @@ mod tests {
         mem.set_b16s1(MemPtr::from_raw(180), 35);
         let c = |p| mem.classify(MemPtr::from_raw(p));
         use AnyNode::*;
-        assert!(matches!(c(40), Ok(HList(_))));
-        assert!(matches!(c(50), Ok(VList(_))));
+        assert!(matches!(c(40), Ok(Box(b)) if mem[b].is_hlist()));
+        assert!(matches!(c(50), Ok(Box(b)) if mem[b].is_vlist()));
         assert!(matches!(c(60), Ok(Rule(_))));
         assert!(matches!(c(70), Ok(Glue(_))));
         assert!(matches!(c(80), Ok(Kern(_))));
@@ -2153,7 +2063,7 @@ mod tests {
 
         assert!(matches!(
             mem.classify_box(MemPtr::from_raw(50)),
-            Ok(Some(AnyBox::VList(_)))
+            Ok(Some(b)) if mem[b].is_vlist()
         ));
         assert!(matches!(mem.classify_box(MemPtr::from_raw(70)), Ok(None)));
         assert!(mem.classify_box(MemPtr::from_raw(180)).is_err());

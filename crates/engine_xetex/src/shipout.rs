@@ -12,7 +12,7 @@ use crate::glyph_arena::FixedPoint;
 use crate::mem::{end_lr_type, LIG_TRICK};
 use crate::node::Stored;
 use crate::node::{
-    link_of, AnyBox, AnyNode, EdgeNode, GlueNode, GlueSpecNode, MathNode, MovementNode, NodePtr,
+    link_of, AnyNode, BoxNode, EdgeNode, GlueNode, GlueSpecNode, MathNode, MovementNode, NodePtr,
     RuleNode, WhatsitNode, WhatsitSubtype, RUNNING,
 };
 use crate::params::{DimenPar, IntPar};
@@ -123,7 +123,10 @@ fn dvi_special_from_cur_string(st: &mut crate::state::EngineState) -> Result<(),
     Ok(())
 }
 
-pub(crate) fn ship_out(st: &mut crate::state::EngineState, page: AnyBox) -> Result<(), Abort> {
+pub(crate) fn ship_out(
+    st: &mut crate::state::EngineState,
+    page: NodePtr<BoxNode>,
+) -> Result<(), Abort> {
     let p = page.ptr();
     let mag = st.eqtb.int_par(IntPar::Mag);
     let job_name = st.strings.texstring_bytes(st.strings.job_name);
@@ -164,11 +167,7 @@ pub(crate) fn ship_out(st: &mut crate::state::EngineState, page: AnyBox) -> Resu
         crate::output::end_diagnostic(st, true);
     }
 
-    let (height, depth, width) = (
-        page.height(&st.mem),
-        page.depth(&st.mem),
-        page.width(&st.mem),
-    );
+    let (height, depth, width) = (st.mem[page].height, st.mem[page].depth, st.mem[page].width);
     let h_offset = st.eqtb.dimen_par(DimenPar::HOffset);
     let v_offset = st.eqtb.dimen_par(DimenPar::VOffset);
     if height > MAX_DIMEN
@@ -219,12 +218,8 @@ pub(crate) fn ship_out(st: &mut crate::state::EngineState, page: AnyBox) -> Resu
     Ok(())
 }
 
-fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<(), Abort> {
-    let (height, depth, width) = (
-        page.height(&st.mem),
-        page.depth(&st.mem),
-        page.width(&st.mem),
-    );
+fn ship_page(st: &mut crate::state::EngineState, page: NodePtr<BoxNode>) -> Result<(), Abort> {
+    let (height, depth, width) = (st.mem[page].height, st.mem[page].depth, st.mem[page].width);
     let h_offset = st.eqtb.dimen_par(DimenPar::HOffset);
     let v_offset = st.eqtb.dimen_par(DimenPar::VOffset);
     let pdf_page_width = st.eqtb.dimen_par(DimenPar::PdfPageWidth);
@@ -293,9 +288,10 @@ fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<(), Abo
     dvi_special_from_cur_string(st)?;
 
     st.shipout.cur_v = height + v_offset;
-    match page {
-        AnyBox::VList(_) => vlist_out(st, page)?,
-        AnyBox::HList(_) => hlist_out(st, page)?,
+    if st.mem[page].is_vlist() {
+        vlist_out(st, page)?;
+    } else {
+        hlist_out(st, page)?;
     }
 
     st.shipout.dvi.eop(st.scanner.logical_clock)?;
@@ -336,11 +332,11 @@ struct GlueRounding {
 }
 
 impl GlueRounding {
-    fn new(mem: &MemState, this_box: AnyBox) -> GlueRounding {
+    fn new(mem: &MemState, this_box: NodePtr<BoxNode>) -> GlueRounding {
         GlueRounding {
-            order: this_box.glue_order(mem),
-            sign: this_box.glue_sign(mem),
-            set: this_box.glue_set(mem),
+            order: mem[this_box].glue_order,
+            sign: mem[this_box].glue_sign,
+            set: mem[this_box].glue_set,
             cur_g: Scaled::ZERO,
             cur_glue: 0.0,
         }
@@ -373,7 +369,7 @@ impl GlueRounding {
 
 enum Leader {
     Rule(NodePtr<RuleNode>),
-    Box(AnyBox),
+    Box(NodePtr<BoxNode>),
 }
 
 impl FontState {
@@ -403,10 +399,10 @@ impl MemState {
         strings: &mut StringsState,
         fonts: &FontState,
         eqtb: &EqtbState,
-        this_box: AnyBox,
+        this_box: NodePtr<BoxNode>,
     ) -> Result<(), Abort> {
         let mut prev_p = this_box.list_head();
-        let mut p = this_box.list_ptr(self);
+        let mut p = self[this_box].list_ptr;
 
         while !p.is_null() {
             let first = self.as_native_word(p).filter(|r| {
@@ -480,7 +476,7 @@ impl MemState {
         strings: &mut StringsState,
         fonts: &FontState,
         eqtb: &EqtbState,
-        this_box: AnyBox,
+        this_box: NodePtr<BoxNode>,
         prev_p: MemPtr,
         run: NativeWordRun,
     ) -> Result<MemPtr, Abort> {
@@ -493,8 +489,8 @@ impl MemState {
             return Err(Abort::PoolOverflow);
         }
 
-        let g_order = this_box.glue_order(self);
-        let g_sign = this_box.glue_sign(self);
+        let g_order = self[this_box].glue_order;
+        let g_sign = self[this_box].glue_sign;
         let mut width = Scaled::ZERO;
         let mut q = first.ptr();
         loop {
@@ -514,12 +510,12 @@ impl MemState {
                     match g_sign.get() {
                         Some(GlueSign::Stretching) if self[spec].stretch_order == g_order => {
                             width += Scaled::round(
-                                this_box.glue_set(self) * f64::from(self[spec].stretch.raw()),
+                                self[this_box].glue_set * f64::from(self[spec].stretch.raw()),
                             );
                         }
                         Some(GlueSign::Shrinking) if self[spec].shrink_order == g_order => {
                             width -= Scaled::round(
-                                this_box.glue_set(self) * f64::from(self[spec].shrink.raw()),
+                                self[this_box].glue_set * f64::from(self[spec].shrink.raw()),
                             );
                         }
                         _ => {}
@@ -595,8 +591,7 @@ impl MemState {
     fn leader_of(&self, glue: NodePtr<GlueNode>) -> Leader {
         match self.classify(glue.leader_ptr(self)) {
             Ok(AnyNode::Rule(rule)) => Leader::Rule(rule),
-            Ok(AnyNode::HList(h)) => Leader::Box(AnyBox::HList(h)),
-            Ok(AnyNode::VList(v)) => Leader::Box(AnyBox::VList(v)),
+            Ok(AnyNode::Box(b)) => Leader::Box(b),
             other => unreachable!("leaders must be a rule or a box, found {other:?}"),
         }
     }
@@ -616,15 +611,19 @@ impl MemState {
     }
 }
 
-fn ship_box(st: &mut crate::state::EngineState, b: AnyBox) -> Result<(), Abort> {
-    match b {
-        AnyBox::HList(_) => hlist_out(st, b),
-        AnyBox::VList(_) => vlist_out(st, b),
+fn ship_box(st: &mut crate::state::EngineState, b: NodePtr<BoxNode>) -> Result<(), Abort> {
+    if st.mem[b].is_vlist() {
+        vlist_out(st, b)
+    } else {
+        hlist_out(st, b)
     }
 }
 
 /// Ship one copy of a leader box with `doing_leaders` set.
-fn ship_leader_box(st: &mut crate::state::EngineState, leader: AnyBox) -> Result<(), Abort> {
+fn ship_leader_box(
+    st: &mut crate::state::EngineState,
+    leader: NodePtr<BoxNode>,
+) -> Result<(), Abort> {
     let outer_doing_leaders = st.shipout.doing_leaders;
     st.shipout.doing_leaders = true;
     ship_box(st, leader)?;
@@ -634,15 +633,15 @@ fn ship_leader_box(st: &mut crate::state::EngineState, leader: AnyBox) -> Result
 
 fn hlist_rule_out(
     st: &mut crate::state::EngineState,
-    this_box: AnyBox,
+    this_box: NodePtr<BoxNode>,
     base_line: Scaled,
     p: MemPtr,
 ) -> Result<(), Abort> {
     if st.shipout.rule_ht == RUNNING {
-        st.shipout.rule_ht = this_box.height(&st.mem);
+        st.shipout.rule_ht = st.mem[this_box].height;
     }
     if st.shipout.rule_dp == RUNNING {
-        st.shipout.rule_dp = this_box.depth(&st.mem);
+        st.shipout.rule_dp = st.mem[this_box].depth;
     }
     st.shipout.rule_ht += st.shipout.rule_dp;
     if st.shipout.rule_ht > Scaled::ZERO && st.shipout.rule_wd > Scaled::ZERO {
@@ -662,12 +661,12 @@ fn hlist_rule_out(
 
 fn vlist_rule_out(
     st: &mut crate::state::EngineState,
-    this_box: AnyBox,
+    this_box: NodePtr<BoxNode>,
     left_edge: Scaled,
     upwards: bool,
 ) -> Result<(), Abort> {
     if st.shipout.rule_wd == RUNNING {
-        st.shipout.rule_wd = this_box.width(&st.mem);
+        st.shipout.rule_wd = st.mem[this_box].width;
     }
     st.shipout.rule_ht += st.shipout.rule_dp;
     st.shipout.move_past_vlist_rule(upwards);
@@ -698,7 +697,7 @@ impl ShipoutState {
 /// Move right past glue `glue` or output its leaders.
 fn hlist_glue_out(
     st: &mut crate::state::EngineState,
-    this_box: AnyBox,
+    this_box: NodePtr<BoxNode>,
     base_line: Scaled,
     left_edge: Scaled,
     glue: NodePtr<GlueNode>,
@@ -720,7 +719,7 @@ fn hlist_glue_out(
             }
             Leader::Box(leader) => leader,
         };
-        let leader_wd = leader.width(&st.mem);
+        let leader_wd = st.mem[leader].width;
         if leader_wd > Scaled::ZERO && st.shipout.rule_wd > Scaled::ZERO {
             st.shipout.rule_wd += LEADER_SLOP;
             if st.scanner.cur_dir == Dir::Rtl {
@@ -746,7 +745,7 @@ fn hlist_glue_out(
             }
 
             while st.shipout.cur_h + leader_wd <= edge {
-                st.shipout.cur_v = base_line + leader.shift_amount(&st.mem);
+                st.shipout.cur_v = base_line + st.mem[leader].shift_amount;
                 synch_v(st)?;
                 synch_h(st)?;
                 let (save_h, _) = with_saved_dvi_pos(st, |st| {
@@ -846,7 +845,7 @@ fn chars_out(
     Ok((p, prev_p))
 }
 
-fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(), Abort> {
+fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> Result<(), Abort> {
     st.mem.temp_ptr = this_box.ptr();
     let mut rounding = GlueRounding::new(&st.mem, this_box);
     if st.eqtb.int_par(IntPar::XetexInterwordSpaceShaping) > 1 {
@@ -855,22 +854,22 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
     }
 
     // A raw cursor: it can be LIG_TRICK, and nodes get retyped in place.
-    let mut p = this_box.list_ptr(&st.mem);
+    let mut p = st.mem[this_box].list_ptr;
     let save_loc = st.shipout.dvi.enter_level()?;
     let base_line = st.shipout.cur_v;
     let mut prev_p = this_box.list_head();
     st.mem.push_lr(&mut st.scanner.lr_ptr, BEFORE.into())?;
 
-    if this_box.subtype(&st.mem) == DLIST {
+    if st.mem[this_box].subtype == DLIST {
         if st.scanner.cur_dir == Dir::Rtl {
             st.scanner.cur_dir = Dir::Ltr;
-            st.shipout.cur_h -= this_box.width(&st.mem);
+            st.shipout.cur_h -= st.mem[this_box].width;
         } else {
-            this_box.set_subtype(&mut st.mem, 0);
+            st.mem[this_box].subtype = 0;
         }
     }
 
-    if st.scanner.cur_dir == Dir::Rtl && this_box.subtype(&st.mem) != REVERSED {
+    if st.scanner.cur_dir == Dir::Rtl && st.mem[this_box].subtype != REVERSED {
         let save_h = st.shipout.cur_h;
         st.mem.temp_ptr = p;
         let kern = st.mem.new_kern(Scaled::ZERO)?;
@@ -887,7 +886,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
         kern.set_link(&mut st.mem, reversed);
         kern.set_width(&mut st.mem, -st.shipout.cur_h);
         st.shipout.cur_h = save_h;
-        this_box.set_subtype(&mut st.mem, REVERSED);
+        st.mem[this_box].subtype = REVERSED;
         p = kern.ptr();
     }
 
@@ -904,8 +903,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
             .classify(p)
             .map_err(|_| Abort::Confusion("hlistout"))?
         {
-            AnyNode::HList(h) => hlist_box_out(st, AnyBox::HList(h), base_line)?,
-            AnyNode::VList(v) => hlist_box_out(st, AnyBox::VList(v), base_line)?,
+            AnyNode::Box(b) => hlist_box_out(st, b, base_line)?,
             AnyNode::Rule(rule) => {
                 st.shipout.rule_ht = rule.height(&st.mem).to_scaled();
                 st.shipout.rule_dp = rule.depth(&st.mem).to_scaled();
@@ -994,7 +992,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
         st.mem.pop_lr(&mut st.scanner.lr_ptr);
     }
     st.mem.pop_lr(&mut st.scanner.lr_ptr);
-    if this_box.subtype(&st.mem) == DLIST {
+    if st.mem[this_box].subtype == DLIST {
         st.scanner.cur_dir = Dir::Rtl;
     }
     st.mem.pop_dvi_level(&mut st.shipout, save_loc)
@@ -1002,19 +1000,20 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
 
 fn hlist_box_out(
     st: &mut crate::state::EngineState,
-    b: AnyBox,
+    b: NodePtr<BoxNode>,
     base_line: Scaled,
 ) -> Result<(), Abort> {
-    if b.list_ptr(&st.mem).is_null() {
-        match b {
-            AnyBox::VList(v) => crate::synctex::synctex_void_vlist(st, v),
-            AnyBox::HList(h) => crate::synctex::synctex_void_hlist(st, h),
+    if st.mem[b].list_ptr.is_null() {
+        if st.mem[b].is_vlist() {
+            crate::synctex::synctex_void_vlist(st, b);
+        } else {
+            crate::synctex::synctex_void_hlist(st, b);
         }
-        st.shipout.cur_h += b.width(&st.mem);
+        st.shipout.cur_h += st.mem[b].width;
         return Ok(());
     }
-    st.shipout.cur_v = base_line + b.shift_amount(&st.mem);
-    let edge = st.shipout.cur_h + b.width(&st.mem);
+    st.shipout.cur_v = base_line + st.mem[b].shift_amount;
+    let edge = st.shipout.cur_h + st.mem[b].width;
     if st.scanner.cur_dir == Dir::Rtl {
         st.shipout.cur_h = edge;
     }
@@ -1059,18 +1058,18 @@ fn reverse_segment(
     Ok(edge)
 }
 
-fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(), Abort> {
+fn vlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> Result<(), Abort> {
     st.mem.temp_ptr = this_box.ptr();
     let mut rounding = GlueRounding::new(&st.mem, this_box);
-    let mut p = this_box.list_ptr(&st.mem);
-    let upwards = this_box.subtype(&st.mem) == 1;
+    let mut p = st.mem[this_box].list_ptr;
+    let upwards = st.mem[this_box].subtype == 1;
     let save_loc = st.shipout.dvi.enter_level()?;
     let left_edge = st.shipout.cur_h;
     crate::synctex::synctex_vlist(st, this_box);
     if upwards {
-        st.shipout.cur_v += this_box.depth(&st.mem);
+        st.shipout.cur_v += st.mem[this_box].depth;
     } else {
-        st.shipout.cur_v -= this_box.height(&st.mem);
+        st.shipout.cur_v -= st.mem[this_box].height;
     }
     let top_edge = st.shipout.cur_v;
 
@@ -1083,8 +1082,7 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
             .classify(p)
             .map_err(|_| Abort::Confusion("vlistout"))?
         {
-            AnyNode::HList(h) => vlist_box_out(st, AnyBox::HList(h), left_edge, upwards)?,
-            AnyNode::VList(v) => vlist_box_out(st, AnyBox::VList(v), left_edge, upwards)?,
+            AnyNode::Box(b) => vlist_box_out(st, b, left_edge, upwards)?,
             AnyNode::Rule(rule) => {
                 st.shipout.rule_ht = rule.height(&st.mem).to_scaled();
                 st.shipout.rule_dp = rule.depth(&st.mem).to_scaled();
@@ -1151,20 +1149,21 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
 
 fn vlist_box_out(
     st: &mut crate::state::EngineState,
-    b: AnyBox,
+    b: NodePtr<BoxNode>,
     left_edge: Scaled,
     upwards: bool,
 ) -> Result<(), Abort> {
-    let (height, depth) = (b.height(&st.mem), b.depth(&st.mem));
+    let (height, depth) = (st.mem[b].height, st.mem[b].depth);
     if upwards {
         st.shipout.cur_v -= depth;
     } else {
         st.shipout.cur_v += height;
     }
-    if b.list_ptr(&st.mem).is_null() {
-        match b {
-            AnyBox::VList(v) => crate::synctex::synctex_void_vlist(st, v),
-            AnyBox::HList(h) => crate::synctex::synctex_void_hlist(st, h),
+    if st.mem[b].list_ptr.is_null() {
+        if st.mem[b].is_vlist() {
+            crate::synctex::synctex_void_vlist(st, b);
+        } else {
+            crate::synctex::synctex_void_hlist(st, b);
         }
         if upwards {
             st.shipout.cur_v -= height;
@@ -1174,7 +1173,7 @@ fn vlist_box_out(
         return Ok(());
     }
     synch_v(st)?;
-    let shift = b.shift_amount(&st.mem);
+    let shift = st.mem[b].shift_amount;
     st.shipout.cur_h = if st.scanner.cur_dir == Dir::Rtl {
         left_edge - shift
     } else {
@@ -1182,9 +1181,9 @@ fn vlist_box_out(
     };
     let (_, save_v) = with_saved_dvi_pos(st, |st| ship_box(st, b))?;
     st.shipout.cur_v = if upwards {
-        save_v - b.height(&st.mem)
+        save_v - st.mem[b].height
     } else {
-        save_v + b.depth(&st.mem)
+        save_v + st.mem[b].depth
     };
     st.shipout.cur_h = left_edge;
     Ok(())
@@ -1205,13 +1204,13 @@ fn with_saved_dvi_pos(
 
 fn vlist_leaders_out(
     st: &mut crate::state::EngineState,
-    leader: AnyBox,
+    leader: NodePtr<BoxNode>,
     subtype: u16,
     left_edge: Scaled,
     top_edge: Scaled,
     upwards: bool,
 ) -> Result<(), Abort> {
-    let leader_ht = leader.height(&st.mem) + leader.depth(&st.mem);
+    let leader_ht = st.mem[leader].height + st.mem[leader].depth;
     if leader_ht <= Scaled::ZERO || st.shipout.rule_ht <= Scaled::ZERO {
         st.shipout.move_past_vlist_rule(upwards);
         return Ok(());
@@ -1237,18 +1236,18 @@ fn vlist_leaders_out(
     }
 
     while st.shipout.cur_v + leader_ht <= edge {
-        let shift = leader.shift_amount(&st.mem);
+        let shift = st.mem[leader].shift_amount;
         st.shipout.cur_h = if st.scanner.cur_dir == Dir::Rtl {
             left_edge - shift
         } else {
             left_edge + shift
         };
         synch_h(st)?;
-        st.shipout.cur_v += leader.height(&st.mem);
+        st.shipout.cur_v += st.mem[leader].height;
         synch_v(st)?;
         let (_, save_v) = with_saved_dvi_pos(st, |st| ship_leader_box(st, leader))?;
         st.shipout.cur_h = left_edge;
-        st.shipout.cur_v = save_v - leader.height(&st.mem) + leader_ht + lx;
+        st.shipout.cur_v = save_v - st.mem[leader].height + leader_ht + lx;
     }
     st.shipout.cur_v = edge - LEADER_SLOP;
     Ok(())
@@ -1376,7 +1375,7 @@ impl MemState {
                 let mut add_width = true;
                 let mut now_kern = false;
                 match self.classify(p) {
-                    Ok(node @ (AnyNode::HList(_) | AnyNode::VList(_) | AnyNode::Rule(_))) => {
+                    Ok(node @ (AnyNode::Box(_) | AnyNode::Rule(_))) => {
                         shipout.rule_wd = node.hlist_width(self);
                     }
                     Ok(AnyNode::Kern(kern)) => {

@@ -123,9 +123,9 @@ fn alter_box_dimen(st: &mut EngineState, code: BoxDimenCode) -> Result<(), Abort
     if let Some(b) = b {
         let v = d;
         match code {
-            BoxDimenCode::Width => b.set_width(&mut st.mem, v),
-            BoxDimenCode::Depth => b.set_depth(&mut st.mem, v),
-            BoxDimenCode::Height => b.set_height(&mut st.mem, v),
+            BoxDimenCode::Width => st.mem[b].width = v,
+            BoxDimenCode::Depth => st.mem[b].depth = v,
+            BoxDimenCode::Height => st.mem[b].height = v,
         }
     }
     Ok(())

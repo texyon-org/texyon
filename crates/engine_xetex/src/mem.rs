@@ -8,14 +8,14 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::mem_types::ListStateRecord;
 use crate::node::{
-    CharNode, ChoiceNode, DiscNode, FreeBlock, GlueNode, GlueSpecNode, HListNode, KernNode,
-    LigItem, LigatureNode, MarginKernNode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen,
-    RuleNode, SpanNode, StyleNode, WhatsitNode, WhatsitSubtype,
+    BoxNode, CharNode, ChoiceNode, DiscNode, FreeBlock, GlueNode, GlueSpecNode, KernNode, LigItem,
+    LigatureNode, MarginKernNode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode,
+    SpanNode, StyleNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::params::GluePar;
 use crate::state::{EqtbState, MemState};
 use crate::token::TokenList;
-use crate::units::{FontId, GlueOrder, GlueSign, MemAddr, MemIdx, MemPtr, Scaled};
+use crate::units::{FontId, GlueOrder, GlueSign, MemAddr, MemIdx, MemPtr, Orientation, Scaled};
 
 pub(crate) const ZERO_GLUE: NodePtr<GlueSpecNode> = static_spec(0);
 pub(crate) const FIL_GLUE: NodePtr<GlueSpecNode> = static_spec(1);
@@ -348,17 +348,24 @@ impl MemState {
 
     // --- node constructors ---
 
-    pub fn new_null_box(&mut self) -> Result<NodePtr<HListNode>, Abort> {
-        let p = NodePtr::<HListNode>::alloc(self)?;
-        p.set_subtype(self, 0);
-        p.set_width(self, Scaled::ZERO);
-        p.set_depth(self, Scaled::ZERO);
-        p.set_height(self, Scaled::ZERO);
-        p.set_shift_amount(self, Scaled::ZERO);
-        p.set_list_ptr(self, MemPtr::NULL);
-        p.set_glue_sign(self, GlueSign::Normal);
-        p.set_glue_order(self, GlueOrder::Normal);
-        p.set_glue_set(self, 0.0);
+    /// An empty vlist, WEB's `new_null_box` retyped to `vlist_node`.
+    pub fn new_null_vbox(&mut self) -> Result<NodePtr<BoxNode>, Abort> {
+        let b = self.new_null_box()?;
+        self[b].orientation = Orientation::Vertical.into();
+        Ok(b)
+    }
+
+    pub fn new_null_box(&mut self) -> Result<NodePtr<BoxNode>, Abort> {
+        let p = NodePtr::<BoxNode>::alloc(self)?;
+        self[p].subtype = 0;
+        self[p].width = Scaled::ZERO;
+        self[p].depth = Scaled::ZERO;
+        self[p].height = Scaled::ZERO;
+        self[p].shift_amount = Scaled::ZERO;
+        self[p].list_ptr = MemPtr::NULL;
+        self[p].glue_sign = GlueSign::Normal.into();
+        self[p].glue_order = GlueOrder::Normal.into();
+        self[p].glue_set = 0.0;
         Ok(p)
     }
 

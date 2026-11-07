@@ -838,9 +838,9 @@ pub(super) fn scan_something_internal(
                 let n = scan_register_num(st)?;
                 CurVal::Dimen(match (fetch_box(st, n), code) {
                     (None, _) => Scaled::ZERO,
-                    (Some(b), BoxDimenCode::Width) => b.width(&st.mem),
-                    (Some(b), BoxDimenCode::Depth) => b.depth(&st.mem),
-                    (Some(b), BoxDimenCode::Height) => b.height(&st.mem),
+                    (Some(b), BoxDimenCode::Width) => st.mem[b].width,
+                    (Some(b), BoxDimenCode::Depth) => st.mem[b].depth,
+                    (Some(b), BoxDimenCode::Height) => st.mem[b].height,
                 })
             }
             Some(Command::CharGiven(c)) => CurVal::Int(c.raw()),

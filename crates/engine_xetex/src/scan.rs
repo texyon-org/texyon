@@ -10,7 +10,7 @@ use crate::consts::{
 use crate::errors::{error, Abort};
 use crate::input::{back_error, back_input, begin_token_list, ins_error, TokenType};
 use crate::mem::BACKUP_HEAD;
-use crate::node::{AnyBox, MathField, NodePtr, RuleDimen, RuleNode};
+use crate::node::{BoxNode, MathField, NodePtr, RuleDimen, RuleNode};
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic, print_cmd_chr, print_err};
 use crate::packaging::PackSpec;
 use crate::params::IntPar;
@@ -300,7 +300,7 @@ pub(crate) fn set_family(x: i32) -> i32 {
 }
 
 /// The contents of box register `n`, or `None` if it is void.
-pub(crate) fn fetch_box(st: &mut EngineState, n: i32) -> Option<AnyBox> {
+pub(crate) fn fetch_box(st: &mut EngineState, n: i32) -> Option<NodePtr<BoxNode>> {
     let contents = if n < 256 {
         st.eqtb.box_reg(n)
     } else {

@@ -46,12 +46,6 @@ impl MemoryWord {
         // SAFETY: as in `b32`.
         unsafe { self.b16 }
     }
-
-    #[inline]
-    pub fn gr(self) -> f64 {
-        // SAFETY: as in `b32`.
-        unsafe { self.gr }
-    }
 }
 
 impl Default for MemoryWord {

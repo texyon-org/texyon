@@ -5,13 +5,10 @@ use crate::consts::{A_LEADERS, BEFORE, EXPLICIT, IGNORE_DEPTH, NULL_FONT, SMALL_
 use crate::errors::Abort;
 use crate::mem::{end_lr_type, GARBAGE};
 use crate::mem_types::ListStateRecord;
-use crate::node::{
-    AnyBox, AnyNode, CharNode, HListNode, IsBox, NodePtr, RuleDimen, VListNode, WhatsitNode,
-    WhatsitSubtype,
-};
+use crate::node::{AnyNode, BoxNode, CharNode, NodePtr, RuleDimen, WhatsitNode, WhatsitSubtype};
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, FontState, MemState, ScannerState, ShipoutState};
-use crate::units::{GlueOrder, GlueSign, MemPtr, NodeType, OrderTotals, Scaled};
+use crate::units::{GlueOrder, GlueSign, MemPtr, NodeType, OrderTotals, Orientation, Scaled};
 
 mod copy;
 mod vert_break;
@@ -66,7 +63,7 @@ impl ListStateRecord {
         &mut self,
         mem: &mut MemState,
         eqtb: &EqtbState,
-        b: AnyBox,
+        b: NodePtr<BoxNode>,
     ) -> Result<(), Abort> {
         let upwards = eqtb.int_par(IntPar::XetexUpwards) > 0;
         let prev_depth = self.prev_depth();
@@ -74,7 +71,7 @@ impl ListStateRecord {
             let baseline_skip = eqtb.glue_par(GluePar::BaselineSkip);
             let d = mem[baseline_skip].width
                 - prev_depth
-                - if upwards { b.depth(mem) } else { b.height(mem) };
+                - if upwards { mem[b].depth } else { mem[b].height };
             let p = if d < eqtb.dimen_par(DimenPar::LineSkipLimit) {
                 mem.new_param_glue(eqtb, GluePar::LineSkip)?
             } else {
@@ -86,12 +83,12 @@ impl ListStateRecord {
             self.tail_append(mem, p.ptr());
         }
         self.tail_append(mem, b.ptr());
-        self.set_prev_depth(if upwards { b.height(mem) } else { b.depth(mem) });
+        self.set_prev_depth(if upwards { mem[b].height } else { mem[b].depth });
         Ok(())
     }
 }
 
-pub(crate) fn append_to_vlist(st: &mut EngineState, b: AnyBox) -> Result<(), Abort> {
+pub(crate) fn append_to_vlist(st: &mut EngineState, b: NodePtr<BoxNode>) -> Result<(), Abort> {
     st.input.cur_list.append_to_vlist(&mut st.mem, &st.eqtb, b)
 }
 
@@ -108,36 +105,36 @@ pub(crate) enum PackDiag {
 
 #[derive(Copy, Clone)]
 struct PackOutcome {
-    r_box: AnyBox,
+    r_box: NodePtr<BoxNode>,
     diags: [Option<PackDiag>; 2],
 }
 
 impl MemState {
     /// Set `r`'s glue to distribute `excess` over the highest-order `totals`,
     /// returning that order.
-    fn set_box_glue<K: IsBox>(
+    fn set_box_glue(
         &mut self,
-        r: NodePtr<K>,
+        r: NodePtr<BoxNode>,
         sign: GlueSign,
         excess: f64,
         totals: &OrderTotals,
     ) -> GlueOrder {
         let o = totals.max_order();
-        r.set_glue_order(self, o);
-        r.set_glue_sign(self, sign);
+        self[r].glue_order = o.into();
+        self[r].glue_sign = sign.into();
         if totals[o] != Scaled::ZERO {
-            r.set_glue_set(self, excess / f64::from(totals[o].raw()));
+            self[r].glue_set = excess / f64::from(totals[o].raw());
         } else {
-            r.set_glue_sign(self, GlueSign::Normal);
-            r.set_glue_set(self, 0.0);
+            self[r].glue_sign = GlueSign::Normal.into();
+            self[r].glue_set = 0.0;
         }
         o
     }
 
-    fn clear_box_glue<K: IsBox>(&mut self, r: NodePtr<K>) {
-        r.set_glue_sign(self, GlueSign::Normal);
-        r.set_glue_order(self, GlueOrder::Normal);
-        r.set_glue_set(self, 0.0);
+    fn clear_box_glue(&mut self, r: NodePtr<BoxNode>) {
+        self[r].glue_sign = GlueSign::Normal.into();
+        self[r].glue_order = GlueOrder::Normal.into();
+        self[r].glue_set = 0.0;
     }
 
     /// `replace_count(q)` if `type(q)=disc_node`, read like TeX does even when
@@ -157,7 +154,7 @@ impl MemState {
         &mut self,
         eqtb: &EqtbState,
         fonts: &FontState,
-        r_node: NodePtr<HListNode>,
+        r_node: NodePtr<BoxNode>,
         mut q: MemPtr,
         w: NodePtr<WhatsitNode>,
     ) -> Result<(MemPtr, NodePtr<WhatsitNode>), Abort> {
@@ -245,10 +242,10 @@ impl MemState {
         spec: PackSpec,
     ) -> Result<PackOutcome, Abort> {
         shipout.last_badness = 0;
-        let r_node = NodePtr::<HListNode>::alloc(self)?;
-        r_node.set_subtype(self, 0);
-        r_node.set_shift_amount(self, Scaled::ZERO);
-        r_node.set_list_ptr(self, list);
+        let r_node = NodePtr::<BoxNode>::alloc(self)?;
+        self[r_node].subtype = 0;
+        self[r_node].shift_amount = Scaled::ZERO;
+        self[r_node].list_ptr = list;
         // `q` trails `p`, starting at the word whose link is the list pointer.
         let mut q = r_node.ptr() + LIST_OFFSET;
         let mut h = Scaled::ZERO;
@@ -280,17 +277,11 @@ impl MemState {
             }
 
             match self.classify(p) {
-                Ok(AnyNode::HList(b)) => {
-                    let s = b.shift_amount(self);
-                    x += b.width(self);
-                    h = h.max(b.height(self) - s);
-                    d = d.max(b.depth(self) + s);
-                }
-                Ok(AnyNode::VList(b)) => {
-                    let s = b.shift_amount(self);
-                    x += b.width(self);
-                    h = h.max(b.height(self) - s);
-                    d = d.max(b.depth(self) + s);
+                Ok(AnyNode::Box(b)) => {
+                    let s = self[b].shift_amount;
+                    x += self[b].width;
+                    h = h.max(self[b].height - s);
+                    d = d.max(self[b].depth + s);
                 }
                 Ok(AnyNode::Rule(rule)) => {
                     x += rule.width(self).to_scaled();
@@ -356,8 +347,7 @@ impl MemState {
                     if glue.subtype(self) >= A_LEADERS {
                         let leader = glue.leader_ptr(self);
                         let (leader_h, leader_d) = match self.classify(leader) {
-                            Ok(AnyNode::HList(b)) => (b.height(self), b.depth(self)),
-                            Ok(AnyNode::VList(b)) => (b.height(self), b.depth(self)),
+                            Ok(AnyNode::Box(b)) => (self[b].height, self[b].depth),
                             Ok(AnyNode::Rule(rule)) => {
                                 (rule.height(self).to_scaled(), rule.depth(self).to_scaled())
                             }
@@ -413,14 +403,14 @@ impl MemState {
         if !scanner.pre_adjust_tail.is_null() {
             scanner.pre_adjust_tail.set_link(self, MemPtr::NULL);
         }
-        r_node.set_height(self, h);
-        r_node.set_depth(self, d);
+        self[r_node].height = h;
+        self[r_node].depth = d;
 
         let w = spec.target(x);
-        r_node.set_width(self, w);
+        self[r_node].width = w;
         x = w - x;
 
-        let has_list = !r_node.list_ptr(self).is_null();
+        let has_list = !self[r_node].list_ptr.is_null();
         if x == Scaled::ZERO {
             self.clear_box_glue(r_node);
         } else if x > Scaled::ZERO {
@@ -452,7 +442,7 @@ impl MemState {
             );
             if scanner.total_shrink[o] < (-x) && o == GlueOrder::Normal && has_list {
                 shipout.last_badness = 1_000_000;
-                r_node.set_glue_set(self, 1.0);
+                self[r_node].glue_set = 1.0;
                 let excess = (-x) - scanner.total_shrink[GlueOrder::Normal];
                 let hfuzz = eqtb.dimen_par(DimenPar::Hfuzz);
                 if excess > hfuzz || eqtb.int_par(IntPar::Hbadness) < 100 {
@@ -510,13 +500,13 @@ impl MemState {
         }
 
         Ok(PackOutcome {
-            r_box: AnyBox::HList(r_node),
+            r_box: r_node,
             diags,
         })
     }
 }
 
-pub(crate) fn print_hpack_diag(st: &mut EngineState, box_ptr: AnyBox, diag: PackDiag) {
+pub(crate) fn print_hpack_diag(st: &mut EngineState, box_ptr: NodePtr<BoxNode>, diag: PackDiag) {
     use crate::output::{
         diagnostic_begin_capture_warning_here, print, print_int, print_ln, print_nl, print_scaled,
     };
@@ -555,7 +545,7 @@ pub(crate) fn print_hpack_diag(st: &mut EngineState, box_ptr: AnyBox, diag: Pack
     print_hpack_common_ending(st, box_ptr);
 }
 
-fn print_hpack_common_ending(st: &mut EngineState, box_ptr: AnyBox) {
+fn print_hpack_common_ending(st: &mut EngineState, box_ptr: NodePtr<BoxNode>) {
     use crate::output::{
         begin_diagnostic, capture_to_diagnostic, end_diagnostic, print, print_int, print_ln,
         short_display, show_box,
@@ -580,7 +570,7 @@ fn print_hpack_common_ending(st: &mut EngineState, box_ptr: AnyBox) {
     capture_to_diagnostic(st, None);
     print_ln(st);
     st.errors.font_in_short_display = NULL_FONT;
-    let list = box_ptr.list_ptr(&st.mem);
+    let list = st.mem[box_ptr].list_ptr;
     short_display(st, list);
     print_ln(st);
     begin_diagnostic(st);
@@ -589,7 +579,11 @@ fn print_hpack_common_ending(st: &mut EngineState, box_ptr: AnyBox) {
 }
 
 /// `hpack`, printing its over/underfull diagnostics in order.
-pub(crate) fn hpack(st: &mut EngineState, list: MemPtr, spec: PackSpec) -> Result<AnyBox, Abort> {
+pub(crate) fn hpack(
+    st: &mut EngineState,
+    list: MemPtr,
+    spec: PackSpec,
+) -> Result<NodePtr<BoxNode>, Abort> {
     let outcome = st.mem.hpack(
         &st.eqtb,
         &mut st.fonts,
@@ -616,11 +610,12 @@ impl MemState {
         l: Scaled,
     ) -> Result<PackOutcome, Abort> {
         shipout.last_badness = 0;
-        let r_node = NodePtr::<VListNode>::alloc(self)?;
+        let r_node = NodePtr::<BoxNode>::alloc(self)?;
+        self[r_node].orientation = Orientation::Vertical.into();
         let upwards = eqtb.int_par(IntPar::XetexUpwards) > 0;
-        r_node.set_subtype(self, u16::from(upwards));
-        r_node.set_shift_amount(self, Scaled::ZERO);
-        r_node.set_list_ptr(self, list);
+        self[r_node].subtype = u16::from(upwards);
+        self[r_node].shift_amount = Scaled::ZERO;
+        self[r_node].list_ptr = list;
 
         let mut w = Scaled::ZERO;
         let mut d = Scaled::ZERO;
@@ -635,15 +630,10 @@ impl MemState {
                 return Err(Abort::Confusion("vpack"));
             }
             match self.classify(p) {
-                Ok(AnyNode::HList(b)) => {
-                    x += d + b.height(self);
-                    d = b.depth(self);
-                    w = w.max(b.width(self) + b.shift_amount(self));
-                }
-                Ok(AnyNode::VList(b)) => {
-                    x += d + b.height(self);
-                    d = b.depth(self);
-                    w = w.max(b.width(self) + b.shift_amount(self));
+                Ok(AnyNode::Box(b)) => {
+                    x += d + self[b].height;
+                    d = self[b].depth;
+                    w = w.max(self[b].width + self[b].shift_amount);
                 }
                 Ok(AnyNode::Rule(rule)) => {
                     x += d + rule.height(self).to_scaled();
@@ -675,8 +665,7 @@ impl MemState {
                     if glue.subtype(self) >= A_LEADERS {
                         let leader = glue.leader_ptr(self);
                         let leader_w = match self.classify(leader) {
-                            Ok(AnyNode::HList(b)) => b.width(self),
-                            Ok(AnyNode::VList(b)) => b.width(self),
+                            Ok(AnyNode::Box(b)) => self[b].width,
                             Ok(AnyNode::Rule(rule)) => rule.width(self).to_scaled(),
                             _ => Scaled::from_raw(self.b32s1(leader + 1)),
                         };
@@ -692,19 +681,19 @@ impl MemState {
             p = p.link(self);
         }
 
-        r_node.set_width(self, w);
+        self[r_node].width = w;
         if d > l {
             x += d - l;
-            r_node.set_depth(self, l);
+            self[r_node].depth = l;
         } else {
-            r_node.set_depth(self, d);
+            self[r_node].depth = d;
         }
 
         let h = spec.target(x);
-        r_node.set_height(self, h);
+        self[r_node].height = h;
         x = h - x;
 
-        let has_list = !r_node.list_ptr(self).is_null();
+        let has_list = !self[r_node].list_ptr.is_null();
         if x == Scaled::ZERO {
             self.clear_box_glue(r_node);
         } else if x > Scaled::ZERO {
@@ -736,7 +725,7 @@ impl MemState {
             );
             if scanner.total_shrink[o] < (-x) && o == GlueOrder::Normal && has_list {
                 shipout.last_badness = 1_000_000;
-                r_node.set_glue_set(self, 1.0);
+                self[r_node].glue_set = 1.0;
                 let excess = (-x) - scanner.total_shrink[GlueOrder::Normal];
                 if excess > eqtb.dimen_par(DimenPar::Vfuzz) || eqtb.int_par(IntPar::Vbadness) < 100
                 {
@@ -757,13 +746,13 @@ impl MemState {
         }
 
         Ok(PackOutcome {
-            r_box: AnyBox::VList(r_node),
+            r_box: r_node,
             diags,
         })
     }
 }
 
-pub(crate) fn print_vpack_diag(st: &mut EngineState, box_ptr: AnyBox, diag: PackDiag) {
+pub(crate) fn print_vpack_diag(st: &mut EngineState, box_ptr: NodePtr<BoxNode>, diag: PackDiag) {
     use crate::output::{
         diagnostic_begin_capture_warning_here, print, print_int, print_ln, print_nl, print_scaled,
     };
@@ -798,7 +787,7 @@ pub(crate) fn print_vpack_diag(st: &mut EngineState, box_ptr: AnyBox, diag: Pack
     print_vpack_common_ending(st, box_ptr);
 }
 
-fn print_vpack_common_ending(st: &mut EngineState, box_ptr: AnyBox) {
+fn print_vpack_common_ending(st: &mut EngineState, box_ptr: NodePtr<BoxNode>) {
     use crate::output::{
         begin_diagnostic, capture_to_diagnostic, end_diagnostic, print, print_int, print_ln,
         show_box,
@@ -829,7 +818,7 @@ pub(crate) fn vpackage(
     list: MemPtr,
     spec: PackSpec,
     l: Scaled,
-) -> Result<AnyBox, Abort> {
+) -> Result<NodePtr<BoxNode>, Abort> {
     let outcome = st
         .mem
         .vpackage(&st.eqtb, &mut st.scanner, &mut st.shipout, list, spec, l)?;

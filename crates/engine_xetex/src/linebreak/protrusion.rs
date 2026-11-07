@@ -4,7 +4,7 @@ use crate::consts::NORMAL;
 use crate::errors::Abort;
 use crate::fonts::{Side, QUAD_CODE};
 use crate::mem::{TEMP_HEAD, ZERO_GLUE};
-use crate::node::{ActiveNode, AnyBox, AnyNode, DiscNode, HListNode, NodePtr, WhatsitSubtype};
+use crate::node::{ActiveNode, AnyNode, BoxNode, DiscNode, NodePtr, WhatsitSubtype};
 use crate::state::{ErrorState, FontState, LinebreakState, MemState};
 use crate::units::{FontId, MemPtr, Scaled};
 
@@ -202,23 +202,26 @@ impl MemState {
     }
 
     #[inline]
-    fn is_empty_hlist(&self, b: NodePtr<HListNode>) -> bool {
-        b.width(self) == Scaled::ZERO
-            && b.height(self) == Scaled::ZERO
-            && b.depth(self) == Scaled::ZERO
-            && b.list_ptr(self).is_null()
+    fn is_empty_hlist(&self, b: NodePtr<BoxNode>) -> bool {
+        self[b].is_hlist()
+            && self[b].width == Scaled::ZERO
+            && self[b].height == Scaled::ZERO
+            && self[b].depth == Scaled::ZERO
+            && self[b].list_ptr.is_null()
     }
 
     #[inline]
     fn is_empty_box(&self, p: MemPtr) -> bool {
-        matches!(self.classify_box(p), Ok(Some(AnyBox::HList(b))) if self.is_empty_hlist(b))
+        matches!(self.classify_box(p), Ok(Some(b)) if self.is_empty_hlist(b))
     }
 
     /// The list of `p` if `p` is an hlist with a nonempty list.
     #[inline]
     fn nonempty_hlist(&self, p: MemPtr) -> Option<MemPtr> {
         match self.classify_box(p) {
-            Ok(Some(AnyBox::HList(b))) => Some(b.list_ptr(self)).filter(|list| !list.is_null()),
+            Ok(Some(b)) if self[b].is_hlist() => {
+                Some(self[b].list_ptr).filter(|list| !list.is_null())
+            }
             _ => None,
         }
     }
@@ -237,7 +240,7 @@ impl MemState {
             Ok(AnyNode::Math(m)) => m.width(self) == Scaled::ZERO,
             Ok(AnyNode::Kern(k)) => k.width(self) == Scaled::ZERO || k.subtype(self) == NORMAL,
             Ok(AnyNode::Glue(g)) => g.glue_ptr(self) == ZERO_GLUE,
-            Ok(AnyNode::HList(h)) => self.is_empty_hlist(h),
+            Ok(AnyNode::Box(h)) => self.is_empty_hlist(h),
             _ => false,
         }
     }

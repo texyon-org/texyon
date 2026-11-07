@@ -724,13 +724,6 @@ impl MemState {
         self.data[index].b16.s3 = v;
     }
 
-    #[inline]
-    pub(crate) fn set_gr(&mut self, p: impl crate::units::MemAddr, v: f64) {
-        let index = p.addr() as usize;
-        self.note(index);
-        self.data[index].gr = v;
-    }
-
     /// `mem` as UTF-16 units, four per word, for text stored inline in nodes.
     #[inline]
     pub(crate) fn units(&self) -> &[u16] {

@@ -8,7 +8,7 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::mem::{ACTIVE_LIST, TEMP_HEAD};
 use crate::node::{
-    link_of, ActiveNode, AnyBox, AnyNode, CharNode, DeltaNode, DiscNode, FixedNode, GlueNode,
+    link_of, ActiveNode, AnyNode, BoxNode, CharNode, DeltaNode, DiscNode, FixedNode, GlueNode,
     GlueSpecNode, NodePtr, PassiveNode, WhatsitSubtype,
 };
 use crate::params::{DimenPar, GluePar, IntPar};
@@ -361,10 +361,9 @@ impl MemState {
                 fonts.xtx_ligature_present = true;
                 Ok(fonts.effective_char_width(f, lig.character(self)))
             }
-            Ok(
-                node
-                @ (AnyNode::HList(_) | AnyNode::VList(_) | AnyNode::Rule(_) | AnyNode::Kern(_)),
-            ) => Ok(node.hlist_width(self)),
+            Ok(node @ (AnyNode::Box(_) | AnyNode::Rule(_) | AnyNode::Kern(_))) => {
+                Ok(node.hlist_width(self))
+            }
             Ok(AnyNode::Whatsit(w)) => w
                 .whatsit_subtype(self)
                 .is_some_and(|s| s.has_dimensions())
@@ -376,7 +375,7 @@ impl MemState {
 }
 
 /// Break the current paragraph into lines, returning the last line's box.
-pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<AnyBox, Abort> {
+pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNode>, Abort> {
     st.scanner.pack_begin_line = st.input.cur_list.mode_line;
     let first = st.input.cur_list.head.link(&st.mem);
     TEMP_HEAD.set_link(&mut st.mem, first);
@@ -549,7 +548,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<AnyBox, Abort>
                 return Err(Abort::Confusion("paragraph"));
             };
             match node {
-                AnyNode::HList(_) | AnyNode::VList(_) | AnyNode::Rule(_) => {
+                AnyNode::Box(_) | AnyNode::Rule(_) => {
                     st.scanner.active_width[1] += node.hlist_width(&st.mem);
                 }
                 AnyNode::Whatsit(w) => {

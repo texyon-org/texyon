@@ -9,7 +9,7 @@ use crate::errors::Abort;
 use crate::helpers::badness;
 use crate::input::TokenType;
 use crate::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
-use crate::node::{AnyBox, AnyNode, InsNode, NodePtr, PageInsNode, WhatsitSubtype};
+use crate::node::{AnyNode, InsNode, NodePtr, PageInsNode, WhatsitSubtype};
 use crate::packaging::{MarksAction, PackSpec};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::scan::fetch_box;
@@ -54,7 +54,7 @@ fn freeze_page_specs(st: &mut EngineState, contents: PageContents) {
 }
 
 fn ensure_vbox(st: &mut EngineState, n: u8) -> Result<(), Abort> {
-    if !matches!(fetch_box(st, i32::from(n)), Some(AnyBox::HList(_))) {
+    if !fetch_box(st, i32::from(n)).is_some_and(|b| st.mem[b].is_hlist()) {
         return Ok(());
     }
     crate::output::print_err(st, "Insertions can only be added to a vbox");
@@ -134,7 +134,7 @@ fn place_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Re
         ins.set_ins_ptr(&mut st.mem, pruned);
         if !pruned.is_null() {
             let tmp = crate::packaging::vpackage(st, pruned, PackSpec::NATURAL, MAX_DIMEN)?;
-            let size = tmp.height(&st.mem) + tmp.depth(&st.mem);
+            let size = st.mem[tmp].height + st.mem[tmp].depth;
             ins.set_height(&mut st.mem, size);
             st.mem.free_node(tmp.ptr(), BOX_NODE_SIZE);
             wait = true;
@@ -143,7 +143,7 @@ fn place_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Re
     rec.set_best_ins_ptr(&mut st.mem, MemPtr::NULL);
     let n = rec.subtype(&st.mem) as u8;
     let b = fetch_box(st, i32::from(n)).expect("insertion box made in fire_up");
-    let list = b.list_ptr(&st.mem);
+    let list = st.mem[b].list_ptr;
     st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
     let packed = crate::packaging::vpackage(st, list, PackSpec::NATURAL, MAX_DIMEN)?;
     st.eqtb.set_box_reg(i32::from(n), packed.ptr());
@@ -433,7 +433,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         rec.set_split_up(&mut st.mem, false);
         ensure_vbox(st, n)?;
         let height = match fetch_box(st, i32::from(n)) {
-            Some(b) => b.height(&st.mem) + b.depth(&st.mem),
+            Some(b) => st.mem[b].height + st.mem[b].depth,
             None => Scaled::ZERO,
         };
         rec.set_height(&mut st.mem, height);
@@ -544,10 +544,9 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
 
         let below_box = st.shipout.page_contents < PageContents::BoxThere;
         let step = match node {
-            AnyNode::HList(_) | AnyNode::VList(_) | AnyNode::Rule(_) => {
+            AnyNode::Box(_) | AnyNode::Rule(_) => {
                 let (height, depth) = match node {
-                    AnyNode::HList(b) => (b.height(&st.mem), b.depth(&st.mem)),
-                    AnyNode::VList(b) => (b.height(&st.mem), b.depth(&st.mem)),
+                    AnyNode::Box(b) => (st.mem[b].height, st.mem[b].depth),
                     AnyNode::Rule(r) => {
                         (r.height(&st.mem).to_scaled(), r.depth(&st.mem).to_scaled())
                     }

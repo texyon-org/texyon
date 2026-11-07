@@ -9,7 +9,7 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::mem::{end_lr_type, TEMP_HEAD};
 use crate::node::{
-    AnyBox, AnyNode, DiscNode, GlueNode, NodeKind, NodePtr, WhatsitNode, WhatsitSubtype,
+    AnyNode, BoxNode, DiscNode, GlueNode, NodeKind, NodePtr, WhatsitNode, WhatsitSubtype,
 };
 use crate::state::{MemState, ScannerState};
 use crate::units::{Dir, MemIdx, MemPtr, NodeType, Scaled};
@@ -55,14 +55,15 @@ impl MemState {
         }
     }
 
-    fn copy_box_shell(&mut self, src: AnyBox, list: MemPtr) -> Result<AnyBox, Abort> {
+    fn copy_box_shell(
+        &mut self,
+        src: NodePtr<BoxNode>,
+        list: MemPtr,
+    ) -> Result<NodePtr<BoxNode>, Abort> {
         let r = self.get_node(BOX_NODE_SIZE)?;
         self.copy_words(r, src.ptr(), BOX_NODE_SIZE);
-        let r = match src {
-            AnyBox::HList(b) => AnyBox::HList(copied_node(b, r)),
-            AnyBox::VList(b) => AnyBox::VList(copied_node(b, r)),
-        };
-        r.set_list_ptr(self, list);
+        let r = copied_node(src, r);
+        self[r].list_ptr = list;
         Ok(r)
     }
 
@@ -113,14 +114,7 @@ impl MemState {
                 Some((r, 1))
             } else {
                 match self.classify(p).ok() {
-                    Some(AnyNode::HList(b)) => Some((
-                        self.copy_box_shell(AnyBox::HList(b), MemPtr::NULL)?.ptr(),
-                        0,
-                    )),
-                    Some(AnyNode::VList(b)) => Some((
-                        self.copy_box_shell(AnyBox::VList(b), MemPtr::NULL)?.ptr(),
-                        0,
-                    )),
+                    Some(AnyNode::Box(b)) => Some((self.copy_box_shell(b, MemPtr::NULL)?.ptr(), 0)),
                     Some(AnyNode::Rule(_)) => {
                         Some((self.get_node(RULE_NODE_SIZE)?, RULE_NODE_SIZE))
                     }
@@ -248,12 +242,8 @@ impl MemState {
             }
 
             let size = match self.classify(p).map_err(|_| Abort::Confusion("flushing"))? {
-                AnyNode::HList(b) => {
-                    self.flush_node_list(b.list_ptr(self))?;
-                    BOX_NODE_SIZE
-                }
-                AnyNode::VList(b) => {
-                    self.flush_node_list(b.list_ptr(self))?;
+                AnyNode::Box(b) => {
+                    self.flush_node_list(self[b].list_ptr)?;
                     BOX_NODE_SIZE
                 }
                 AnyNode::Unset(u) => {
@@ -344,12 +334,9 @@ impl MemState {
 
     /// A deep copy of the list `p`.
     /// A copy of box `b` and its contents.
-    pub(crate) fn copy_box(&mut self, b: AnyBox) -> Result<AnyBox, Abort> {
+    pub(crate) fn copy_box(&mut self, b: NodePtr<BoxNode>) -> Result<NodePtr<BoxNode>, Abort> {
         let r = self.copy_list(b.ptr())?;
-        Ok(match b {
-            AnyBox::HList(h) => AnyBox::HList(copied_node(h, r)),
-            AnyBox::VList(v) => AnyBox::VList(copied_node(v, r)),
-        })
+        Ok(copied_node(b, r))
     }
 
     pub fn copy_node_list(&mut self, p: MemPtr) -> Result<MemPtr, Abort> {
@@ -381,13 +368,9 @@ impl MemState {
     fn copy_node(&mut self, p: MemPtr) -> Result<(MemPtr, i32), Abort> {
         let node = self.classify(p).map_err(|_| Abort::Confusion("copying"))?;
         Ok(match node {
-            AnyNode::HList(b) => {
-                let list = self.copy_list(b.list_ptr(self))?;
-                (self.copy_box_shell(AnyBox::HList(b), list)?.ptr(), 0)
-            }
-            AnyNode::VList(b) => {
-                let list = self.copy_list(b.list_ptr(self))?;
-                (self.copy_box_shell(AnyBox::VList(b), list)?.ptr(), 0)
+            AnyNode::Box(b) => {
+                let list = self.copy_list(self[b].list_ptr)?;
+                (self.copy_box_shell(b, list)?.ptr(), 0)
             }
             AnyNode::Unset(u) => {
                 let r = self.get_node(BOX_NODE_SIZE)?;

@@ -10,7 +10,7 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::input::TokenType;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD};
-use crate::node::{AnyBox, AnyNode, BoxOrRule};
+use crate::node::{AnyNode, BoxOrRule};
 use crate::params::{DimenPar, IntPar, TokPar};
 use crate::scan::fetch_box;
 use crate::state::{EngineState, GroupCode, MemState};
@@ -34,8 +34,8 @@ pub(super) fn unpackage(st: &mut EngineState, c: BoxCode) -> Result<(), Abort> {
         };
         let mode = st.input.cur_list.mode.abs();
         if mode == MMODE
-            || (mode == VMODE && !matches!(b, AnyBox::VList(_)))
-            || (mode == HMODE && !matches!(b, AnyBox::HList(_)))
+            || (mode == VMODE && !st.mem[b].is_vlist())
+            || (mode == HMODE && !st.mem[b].is_hlist())
         {
             crate::output::print_err(st, "Incompatible list can't be unboxed");
             st.errors.help(&[
@@ -45,7 +45,7 @@ pub(super) fn unpackage(st: &mut EngineState, c: BoxCode) -> Result<(), Abort> {
             ]);
             return crate::errors::error(st);
         }
-        let list = b.list_ptr(&st.mem);
+        let list = st.mem[b].list_ptr;
         if c == BoxCode::Copy {
             let copy = st.mem.copy_node_list(list)?;
             st.input.cur_list.tail.set_link(&mut st.mem, copy);
@@ -137,15 +137,14 @@ pub(super) fn package(st: &mut EngineState, vtop: bool) -> Result<(), Abort> {
         let b = crate::packaging::vpackage(st, list, spec, d)?;
         st.scanner.cur_box = Some(BoxOrRule::Box(b));
         if vtop {
-            let h = match b.list_ptr(&st.mem).as_idx().map(|p| st.mem.classify(p)) {
-                Some(Ok(AnyNode::HList(first))) => first.height(&st.mem),
-                Some(Ok(AnyNode::VList(first))) => first.height(&st.mem),
+            let h = match st.mem[b].list_ptr.as_idx().map(|p| st.mem.classify(p)) {
+                Some(Ok(AnyNode::Box(first))) => st.mem[first].height,
                 Some(Ok(AnyNode::Rule(first))) => first.height(&st.mem).to_scaled(),
                 _ => Scaled::ZERO,
             };
-            let depth = b.depth(&st.mem) - h + b.height(&st.mem);
-            b.set_depth(&mut st.mem, depth);
-            b.set_height(&mut st.mem, h);
+            let depth = st.mem[b].depth - h + st.mem[b].height;
+            st.mem[b].depth = depth;
+            st.mem[b].height = h;
         }
     }
     st.eqtb.set_int_par(IntPar::XetexUpwards, v);
@@ -161,7 +160,7 @@ fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
             Some(BoxOrRule::Box(b)) => b,
             Some(BoxOrRule::Rule(_)) => unreachable!("only leaders take a rule"),
         };
-        b.set_shift_amount(&mut st.mem, Scaled::from_raw(box_context));
+        st.mem[b].shift_amount = Scaled::from_raw(box_context);
         if st.input.cur_list.mode.abs() == VMODE {
             if !st.scanner.pre_adjust_tail.is_null() {
                 if st.scanner.pre_adjust_tail != PRE_ADJUST_HEAD {
@@ -346,7 +345,7 @@ pub(super) fn begin_box(
                     if let Ok(Some(b)) = st.mem.classify_box(tx) {
                         if unlink_effective_tail(st, tx)? {
                             st.scanner.cur_box = Some(BoxOrRule::Box(b));
-                            b.set_shift_amount(&mut st.mem, Scaled::ZERO);
+                            st.mem[b].shift_amount = Scaled::ZERO;
                         }
                     }
                 }

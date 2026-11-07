@@ -8,7 +8,7 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
-use crate::node::{ActiveNode, AnyBox, AnyNode, MathNode, NodePtr};
+use crate::node::{ActiveNode, AnyNode, BoxNode, MathNode, NodePtr};
 use crate::packaging::PackSpec;
 use crate::params::{GluePar, IntPar};
 use crate::state::{
@@ -259,13 +259,13 @@ impl ListStateRecord {
         scanner: &mut ScannerState,
         linebreak: &mut LinebreakState,
         eqtb: &EqtbState,
-        just_box: AnyBox,
+        just_box: NodePtr<BoxNode>,
         hpack: PostLineHpack,
         d: bool,
         lr_ptr: &mut MemPtr,
         cur_line: &mut i32,
     ) -> Result<bool, Abort> {
-        just_box.set_shift_amount(mem, hpack.cur_indent);
+        mem[just_box].shift_amount = hpack.cur_indent;
 
         if scanner.pre_adjust_tail != PRE_ADJUST_HEAD {
             self.tail.set_link(mem, PRE_ADJUST_HEAD.link(mem));
@@ -377,7 +377,7 @@ pub(super) fn post_line_break(
     st: &mut EngineState,
     best: NodePtr<ActiveNode>,
     d: bool,
-) -> Result<AnyBox, Abort> {
+) -> Result<NodePtr<BoxNode>, Abort> {
     let mut lr_ptr = st.input.cur_list.e_tex_aux;
 
     st.mem.reverse_best_breaks(&mut st.linebreak, best);

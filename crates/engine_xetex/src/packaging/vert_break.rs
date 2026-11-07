@@ -8,8 +8,7 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::mem::TEMP_HEAD;
 use crate::node::{
-    AnyBox, AnyNode, GlueNode, GlueSpecNode, KernNode, MarkNode, NodePtr, SaNode, VListNode,
-    WhatsitSubtype,
+    AnyNode, BoxNode, GlueNode, GlueSpecNode, KernNode, MarkNode, NodePtr, SaNode, WhatsitSubtype,
 };
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, MemState, ScannerState, ShipoutState};
@@ -132,14 +131,9 @@ impl MemState {
             .map_err(|_| Abort::Confusion("vertbreak"))?;
         cursor.breakable = node.precedes_break();
         match node {
-            AnyNode::HList(b) => {
-                scanner.active_width[1] += cursor.prev_dp + b.height(self);
-                cursor.prev_dp = b.depth(self);
-                Ok(VertBreakNext::NotFound)
-            }
-            AnyNode::VList(b) => {
-                scanner.active_width[1] += cursor.prev_dp + b.height(self);
-                cursor.prev_dp = b.depth(self);
+            AnyNode::Box(b) => {
+                scanner.active_width[1] += cursor.prev_dp + self[b].height;
+                cursor.prev_dp = self[b].depth;
                 Ok(VertBreakNext::NotFound)
             }
             AnyNode::Rule(rule) => {
@@ -322,14 +316,14 @@ struct VsplitState {
     /// The box register being split.
     n: i32,
     h: Scaled,
-    v: NodePtr<VListNode>,
+    v: NodePtr<BoxNode>,
     split_max_d: Scaled,
     vert_break: VertBreakCursor,
 }
 
 #[derive(Copy, Clone)]
 struct VsplitOutcome {
-    result: Option<AnyBox>,
+    result: Option<NodePtr<BoxNode>>,
     packages: [Option<PackOutcome>; 2],
 }
 
@@ -381,8 +375,8 @@ fn start_vsplit(st: &mut EngineState, n: i32, h: Scaled) -> Result<VsplitStart, 
                 packages: [None, None],
             }))
         }
-        Some(AnyBox::VList(v)) => v,
-        Some(AnyBox::HList(_)) => return Ok(VsplitStart::NeedsVboxDiagnostic),
+        Some(v) if st.mem[v].is_vlist() => v,
+        Some(_) => return Ok(VsplitStart::NeedsVboxDiagnostic),
     };
 
     Ok(VsplitStart::Ready(VsplitState {
@@ -390,7 +384,7 @@ fn start_vsplit(st: &mut EngineState, n: i32, h: Scaled) -> Result<VsplitStart, 
         h,
         v,
         split_max_d: st.eqtb.dimen_par(DimenPar::SplitMaxDepth),
-        vert_break: st.scanner.start_vert_break(v.list_ptr(&st.mem)),
+        vert_break: st.scanner.start_vert_break(st.mem[v].list_ptr),
     }))
 }
 
@@ -431,9 +425,9 @@ impl MemState {
         state: &VsplitState,
         q: MemPtr,
     ) -> Result<MemPtr, Abort> {
-        let mut p = state.v.list_ptr(self);
+        let mut p = self[state.v].list_ptr;
         if p == q {
-            state.v.set_list_ptr(self, MemPtr::NULL);
+            self[state.v].list_ptr = MemPtr::NULL;
         } else {
             loop {
                 if let AnyNode::Mark(mark) =
@@ -449,7 +443,7 @@ impl MemState {
             }
         }
 
-        Ok(state.v.list_ptr(self))
+        Ok(self[state.v].list_ptr)
     }
 
     fn finish_vsplit_after_break(
@@ -528,7 +522,11 @@ fn print_vsplit_packages(st: &mut EngineState, outcome: VsplitOutcome) {
 }
 
 /// `\vsplit n to h`: the box split off the top of box register `n`.
-pub(crate) fn vsplit(st: &mut EngineState, n: i32, h: Scaled) -> Result<Option<AnyBox>, Abort> {
+pub(crate) fn vsplit(
+    st: &mut EngineState,
+    n: i32,
+    h: Scaled,
+) -> Result<Option<NodePtr<BoxNode>>, Abort> {
     let mut state = match start_vsplit(st, n, h)? {
         VsplitStart::Done(outcome) => {
             print_vsplit_packages(st, outcome);
@@ -622,8 +620,7 @@ impl MemState {
         while !p.is_null() {
             let node = self.classify(p).map_err(|_| Abort::Confusion("pruning"))?;
             let height = match node {
-                AnyNode::HList(b) => b.height(self),
-                AnyNode::VList(b) => b.height(self),
+                AnyNode::Box(b) => self[b].height,
                 AnyNode::Rule(rule) => rule.height(self).to_scaled(),
                 AnyNode::Whatsit(_) | AnyNode::Mark(_) | AnyNode::Ins(_) => {
                     prev_p = p;

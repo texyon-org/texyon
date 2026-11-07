@@ -13,7 +13,7 @@ use crate::errors::{error, Abort};
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::{back_error, back_input, begin_token_list, TokenType, TOKEN_LIST};
 use crate::mem::{BACKUP_HEAD, GARBAGE, TEMP_HEAD_TOKS, ZERO_GLUE};
-use crate::node::{link_of, AnyBox, AnyNode, CondNode, NodePtr};
+use crate::node::{link_of, AnyNode, CondNode, NodePtr};
 use crate::output::{
     begin_diagnostic, capture_to_diagnostic, diagnostic_begin_capture_warning_here, end_diagnostic,
     error_here_with_diagnostic, print, print_char, print_cmd_chr, print_err, print_esc, print_int,
@@ -235,8 +235,8 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
             let contents = fetch_box(st, n);
             match this_if {
                 IfCode::Void => contents.is_none(),
-                IfCode::HBox => matches!(contents, Some(AnyBox::HList(_))),
-                _ => matches!(contents, Some(AnyBox::VList(_))),
+                IfCode::HBox => contents.is_some_and(|b| st.mem[b].is_hlist()),
+                _ => contents.is_some_and(|b| st.mem[b].is_vlist()),
             }
         }
         IfCode::X => {
@@ -492,11 +492,11 @@ impl MemState {
             AnyNode::Glue(g) => {
                 g.glue_ptr(self) == ZERO_GLUE || g.subtype(self) == par_skip.subtype()
             }
-            AnyNode::HList(h) => {
-                h.width(self) == Scaled::ZERO
-                    && h.height(self) == Scaled::ZERO
-                    && h.depth(self) == Scaled::ZERO
-                    && h.list_ptr(self).is_null()
+            AnyNode::Box(h) if self[h].is_hlist() => {
+                self[h].width == Scaled::ZERO
+                    && self[h].height == Scaled::ZERO
+                    && self[h].depth == Scaled::ZERO
+                    && self[h].list_ptr.is_null()
             }
             _ => false,
         }
@@ -560,13 +560,13 @@ fn conv_toks(st: &mut EngineState, c: ConvertCode) -> Result<(), Abort> {
         }
         ConvertCode::LeftMarginKern | ConvertCode::RightMarginKern => {
             let n = crate::scan::scan_register_num(st)?;
-            let Some(AnyBox::HList(hbox)) = fetch_box(st, n) else {
+            let Some(hbox) = fetch_box(st, n).filter(|&b| st.mem[b].is_hlist()) else {
                 return Err(Abort::PdfError(&[
                     "marginkern",
                     "a non-empty hbox expected",
                 ]));
             };
-            margin_list = hbox.list_ptr(&st.mem);
+            margin_list = st.mem[hbox].list_ptr;
         }
         ConvertCode::CreationDate => {
             let b = st.strings.pool_ptr;

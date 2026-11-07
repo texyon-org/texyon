@@ -45,7 +45,19 @@ impl MemIdx {
 }
 
 /// A TeX pointer: an arena index or `TEX_NULL` (which is not zero).
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
+#[derive(
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Debug,
+    Hash,
+    Default,
+    bytemuck::Pod,
+    bytemuck::Zeroable,
+)]
 #[repr(transparent)]
 pub struct MemPtr(i32);
 
@@ -921,6 +933,31 @@ impl NodeType {
     #[inline]
     pub const fn as_raw(self) -> u16 {
         self as u16
+    }
+}
+
+/// Whether a box stacks its list horizontally (hlist) or vertically (vlist).
+/// The raw values are the box's `NODE_type` codes.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[repr(u16)]
+pub enum Orientation {
+    Horizontal = 0,
+    Vertical = 1,
+}
+
+impl Orientation {
+    #[inline]
+    pub const fn as_raw(self) -> u16 {
+        self as u16
+    }
+
+    /// The box type code with this orientation.
+    #[inline]
+    pub const fn node_type(self) -> NodeType {
+        match self {
+            Orientation::Horizontal => NodeType::HList,
+            Orientation::Vertical => NodeType::VList,
+        }
     }
 }
 

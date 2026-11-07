@@ -17,11 +17,14 @@ State and memory:
   constructors (`new_glue`, `new_null_box`, ...), glue reference counts and
   the semantic nest.
 - `node.rs`: typed handles. `NodePtr<K>` is a `Copy` index tagged with a kind
-  (`HListNode`, `GlueNode`, `GlueSpecNode`, `UnsetNode`, `AlignRecord`, ...).
-  Fields are read as `p.width(mem)` and written as `p.set_width(mem, w)`.
-  Shared layouts are traits (`HasLink`, `HasWidth`, `IsBox`, ...), `FixedNode`
-  kinds get `alloc`/`free`, and `ListRecord` kinds get `at` because their list
-  proves their kind. `AnyNode`/`AnyBox` come out of `MemState::classify`.
+  (`BoxNode`, `GlueNode`, `GlueSpecNode`, `UnsetNode`, `AlignRecord`, ...).
+  Kinds with a layout struct in `overlay.rs` (`BoxNode`, `GlueSpecNode`) are
+  read as `mem[p].width` and written as `mem[p].width = w`. The others still
+  use accessors, `p.width(mem)` and `p.set_width(mem, w)`, with shared fields
+  as traits (`HasLink`, `HasWidth`, ...). An hlist and a vlist are one
+  `BoxNode`, told apart by `mem[b].orientation`. `FixedNode` kinds get
+  `alloc`/`free`, and `ListRecord` kinds get `at` because their list proves
+  their kind. `AnyNode` comes out of `MemState::classify`.
   Noad subfields are `NodePtr<MathField>` and `NodePtr<DelimiterField>`
   (`q.nucleus()`, `q.left_delimiter()`, ...). Token lists are `MemPtr` chains
   read with `p.token(mem)` and `p.link(mem)`, their heads carrying

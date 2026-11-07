@@ -4,7 +4,7 @@ use crate::consts::{BOX_NODE_SIZE, GLYPH_NODE_SIZE, NULL_FONT, SCRIPT_SIZE};
 use crate::errors::Abort;
 use crate::fonts::{CharInfo, CharTag, AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::mem::SS_GLUE;
-use crate::node::{AnyBox, AnyNode, DelimiterField, NodePtr, WhatsitNode, WhatsitSubtype};
+use crate::node::{AnyNode, BoxNode, DelimiterField, NodePtr, WhatsitNode, WhatsitSubtype};
 use crate::ot_math::GlyphAssembly;
 use crate::packaging::PackSpec;
 use crate::params::DimenPar;
@@ -22,17 +22,20 @@ impl FontState {
 }
 
 impl MemState {
-    pub(super) fn native_char_box(&mut self, p: NodePtr<WhatsitNode>) -> Result<AnyBox, Abort> {
+    pub(super) fn native_char_box(
+        &mut self,
+        p: NodePtr<WhatsitNode>,
+    ) -> Result<NodePtr<BoxNode>, Abort> {
         let b = self.new_null_box()?;
-        b.set_height(self, p.height(self));
-        b.set_width(self, p.width(self));
-        b.set_depth(self, p.depth(self).max(Scaled::ZERO));
-        b.set_list_ptr(self, p.ptr());
-        Ok(AnyBox::HList(b))
+        self[b].height = p.height(self);
+        self[b].width = p.width(self);
+        self[b].depth = p.depth(self).max(Scaled::ZERO);
+        self[b].list_ptr = p.ptr();
+        Ok(b)
     }
 }
 
-fn char_box(st: &mut EngineState, f: FontId, c: i32) -> Result<AnyBox, Abort> {
+fn char_box(st: &mut EngineState, f: FontId, c: i32) -> Result<NodePtr<BoxNode>, Abort> {
     let area = st.fonts.font_area[f];
     if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
         let p = crate::fonts::new_native_character(st, f, c as u32)?;
@@ -48,7 +51,7 @@ impl MemState {
         fonts: &mut FontState,
         f: FontId,
         c: u16,
-    ) -> Result<AnyBox, Abort> {
+    ) -> Result<NodePtr<BoxNode>, Abort> {
         let c_eff = fonts.effective_char(f, c);
         let q = fonts.char_info(f, c_eff);
         let width = fonts.char_width(f, q) + fonts.char_italic(f, q);
@@ -56,20 +59,20 @@ impl MemState {
         let depth = fonts.char_depth(f, q);
 
         let b = self.new_null_box()?;
-        b.set_width(self, width);
-        b.set_height(self, height);
-        b.set_depth(self, depth);
+        self[b].width = width;
+        self[b].height = height;
+        self[b].depth = depth;
         let p = self.new_char(f, c)?;
-        b.set_list_ptr(self, p.ptr());
-        Ok(AnyBox::HList(b))
+        self[b].list_ptr = p.ptr();
+        Ok(b)
     }
 
-    fn stack_into_box(&mut self, b_box: AnyBox, p: AnyBox) {
-        let link = b_box.list_ptr(self);
-        p.set_link(self, link);
-        b_box.set_list_ptr(self, p.ptr());
-        let h = p.height(self);
-        b_box.set_height(self, h);
+    fn stack_into_box(&mut self, b_box: NodePtr<BoxNode>, p: NodePtr<BoxNode>) {
+        let link = self[b_box].list_ptr;
+        self[p].link = link;
+        self[b_box].list_ptr = p.ptr();
+        let h = self[p].height;
+        self[b_box].height = h;
     }
 }
 
@@ -94,64 +97,73 @@ fn new_measured_glyph(
     Ok(p)
 }
 
-fn stack_glyph_into_box(st: &mut EngineState, b: AnyBox, f: FontId, g: i32) -> Result<(), Abort> {
+fn stack_glyph_into_box(
+    st: &mut EngineState,
+    b: NodePtr<BoxNode>,
+    f: FontId,
+    g: i32,
+) -> Result<(), Abort> {
     let p = new_measured_glyph(st, f, g)?;
     let mem = &mut st.mem;
-    if matches!(b, AnyBox::HList(_)) {
-        let mut q = b.list_ptr(mem);
+    if mem[b].is_hlist() {
+        let mut q = mem[b].list_ptr;
         if q.is_null() {
-            b.set_list_ptr(mem, p.ptr());
+            mem[b].list_ptr = p.ptr();
         } else {
             while !q.link(mem).is_null() {
                 q = q.link(mem);
             }
             q.set_link(mem, p.ptr());
-            if b.height(mem) < p.height(mem) {
-                b.set_height(mem, p.height(mem));
+            if mem[b].height < p.height(mem) {
+                mem[b].height = p.height(mem);
             }
-            if b.depth(mem) < p.depth(mem) {
-                b.set_depth(mem, p.depth(mem));
+            if mem[b].depth < p.depth(mem) {
+                mem[b].depth = p.depth(mem);
             }
         }
     } else {
-        p.set_link(mem, b.list_ptr(mem));
-        b.set_list_ptr(mem, p.ptr());
-        b.set_height(mem, p.height(mem));
-        if b.width(mem) < p.width(mem) {
-            b.set_width(mem, p.width(mem));
+        p.set_link(mem, mem[b].list_ptr);
+        mem[b].list_ptr = p.ptr();
+        mem[b].height = p.height(mem);
+        if mem[b].width < p.width(mem) {
+            mem[b].width = p.width(mem);
         }
     }
     Ok(())
 }
 
-fn native_glyph_vbox(st: &mut EngineState, f: FontId, g: u16) -> Result<AnyBox, Abort> {
-    let b = AnyBox::VList(st.mem.new_null_box()?.into_vlist(&mut st.mem));
+fn native_glyph_vbox(st: &mut EngineState, f: FontId, g: u16) -> Result<NodePtr<BoxNode>, Abort> {
+    let b = st.mem.new_null_vbox()?;
     let p = new_measured_glyph(st, f, i32::from(g))?;
     let mem = &mut st.mem;
-    b.set_list_ptr(mem, p.ptr());
-    b.set_width(mem, p.width(mem));
-    b.set_height(mem, p.height(mem));
-    b.set_depth(mem, p.depth(mem));
+    mem[b].list_ptr = p.ptr();
+    mem[b].width = p.width(mem);
+    mem[b].height = p.height(mem);
+    mem[b].depth = p.depth(mem);
     Ok(b)
 }
 
-pub(super) fn rebox(st: &mut EngineState, b: AnyBox, w: Scaled) -> Result<AnyBox, Abort> {
+pub(super) fn rebox(
+    st: &mut EngineState,
+    b: NodePtr<BoxNode>,
+    w: Scaled,
+) -> Result<NodePtr<BoxNode>, Abort> {
     let mut b = b;
-    if b.width(&st.mem) != w && !b.list_ptr(&st.mem).is_null() && matches!(b, AnyBox::VList(_)) {
+    if st.mem[b].width != w && !st.mem[b].list_ptr.is_null() && st.mem[b].is_vlist() {
         b = crate::packaging::hpack(st, b.ptr(), PackSpec::NATURAL)?;
     }
-    if b.width(&st.mem) == w || b.list_ptr(&st.mem).is_null() {
-        b.set_width(&mut st.mem, w);
+    if st.mem[b].width == w || st.mem[b].list_ptr.is_null() {
+        st.mem[b].width = w;
         return Ok(b);
     }
 
-    let mut p = b.list_ptr(&st.mem);
+    let mut p = st.mem[b].list_ptr;
     if let Some(ch) = st.mem.as_char(p).filter(|_| p.link(&st.mem).is_null()) {
         let f = ch.font(&st.mem);
         let c = st.fonts.effective_char(f, ch.character(&st.mem));
         let q = st.fonts.char_info(f, c);
         let v = st.fonts.char_width(f, q);
-        let bw = b.width(&st.mem);
+        let bw = st.mem[b].width;
         if v != bw {
             let k = st.mem.new_kern(bw - v)?;
             p.set_link(&mut st.mem, k.ptr());
@@ -175,11 +187,11 @@ pub(super) fn build_opentype_assembly(
     a: &GlyphAssembly,
     s: Scaled,
     horiz: bool,
-) -> Result<AnyBox, Abort> {
+) -> Result<NodePtr<BoxNode>, Abort> {
     let b = if horiz {
-        AnyBox::HList(st.mem.new_null_box()?)
+        st.mem.new_null_box()?
     } else {
-        AnyBox::VList(st.mem.new_null_box()?.into_vlist(&mut st.mem))
+        st.mem.new_null_vbox()?
     };
     // Extenders repeat `n` times, other parts once.
     let repeats = |i: i32, n: i32| if a.is_extender(i) { n } else { 1 };
@@ -212,7 +224,7 @@ pub(super) fn build_opentype_assembly(
             prev_o = a.end_connector(&st.fonts, f, i);
         }
     }
-    let mut p = b.list_ptr(&st.mem);
+    let mut p = st.mem[b].list_ptr;
     let mut nat = Scaled::ZERO;
     let mut str = Scaled::ZERO;
     while !p.is_null() {
@@ -235,20 +247,20 @@ pub(super) fn build_opentype_assembly(
     }
     if s > nat && str > Scaled::ZERO {
         let o = (s - nat).min(str);
-        b.set_glue_order(&mut st.mem, GlueOrder::Normal);
-        b.set_glue_sign(&mut st.mem, GlueSign::Stretching);
+        st.mem[b].glue_order = GlueOrder::Normal.into();
+        st.mem[b].glue_sign = GlueSign::Stretching.into();
         let ratio = f64::from(o) / f64::from(str);
-        b.set_glue_set(&mut st.mem, ratio);
+        st.mem[b].glue_set = ratio;
         let set_dim = nat + Scaled::round(f64::from(str) * ratio);
         if horiz {
-            b.set_width(&mut st.mem, set_dim);
+            st.mem[b].width = set_dim;
         } else {
-            b.set_height(&mut st.mem, set_dim);
+            st.mem[b].height = set_dim;
         }
     } else if horiz {
-        b.set_width(&mut st.mem, nat);
+        st.mem[b].width = nat;
     } else {
-        b.set_height(&mut st.mem, nat);
+        st.mem[b].height = nat;
     }
     Ok(b)
 }
@@ -260,14 +272,14 @@ impl MemState {
         f: FontId,
         q: CharInfo,
         v: Scaled,
-    ) -> Result<AnyBox, Abort> {
-        let vb = AnyBox::VList(self.new_null_box()?.into_vlist(self));
+    ) -> Result<NodePtr<BoxNode>, Abort> {
+        let vb = self.new_null_vbox()?;
         let r = fonts.ext_recipe(f, q);
         let u = fonts.height_plus_depth(f, r.rep);
         let effective_c = fonts.effective_char(f, r.rep);
         let qq = fonts.char_info(f, effective_c);
         let box_width = fonts.char_width(f, qq) + fonts.char_italic(f, qq);
-        vb.set_width(self, box_width);
+        self[vb].width = box_width;
         let mut w = Scaled::ZERO;
         if r.bot != 0 {
             w += fonts.height_plus_depth(f, r.bot);
@@ -309,8 +321,8 @@ impl MemState {
             let p = self.char_box_tfm(fonts, f, r.top)?;
             self.stack_into_box(vb, p);
         }
-        let height = vb.height(self);
-        vb.set_depth(self, w - height);
+        let height = self[vb].height;
+        self[vb].depth = w - height;
         Ok(vb)
     }
 }
@@ -320,7 +332,7 @@ pub(super) fn var_delimiter(
     d: NodePtr<DelimiterField>,
     s: i32,
     v: Scaled,
-) -> Result<AnyBox, Abort> {
+) -> Result<NodePtr<BoxNode>, Abort> {
     let mut f = NULL_FONT;
     let mut ot_assembly: Option<GlyphAssembly> = None;
     let mut c: u16 = 0;
@@ -409,8 +421,8 @@ pub(super) fn var_delimiter(
     let b = if f == NULL_FONT {
         let b = st.mem.new_null_box()?;
         let width = st.eqtb.dimen_par(DimenPar::NullDelimiterSpace);
-        b.set_width(&mut st.mem, width);
-        AnyBox::HList(b)
+        st.mem[b].width = width;
+        b
     } else if !st.fonts.font_uses_opentype(f) {
         if q.tag() == CharTag::Ext {
             st.mem.build_ext_delimiter_box(&mut st.fonts, f, q, v)?
@@ -423,7 +435,7 @@ pub(super) fn var_delimiter(
         native_glyph_vbox(st, f, c)?
     };
     let axis = st.fonts.axis_height(&st.eqtb, s);
-    let shift = (b.height(&st.mem) - b.depth(&st.mem)).half() - axis;
-    b.set_shift_amount(&mut st.mem, shift);
+    let shift = (st.mem[b].height - st.mem[b].depth).half() - axis;
+    st.mem[b].shift_amount = shift;
     Ok(b)
 }

@@ -6,7 +6,7 @@ use crate::consts::{
 };
 use crate::math::{DEFAULT_CODE, LIMITS};
 use crate::mem::ZERO_GLUE;
-use crate::node::{AnyBox, AnyNode, CharNode, MathField, NodePtr, WhatsitNode, WhatsitSubtype};
+use crate::node::{AnyNode, BoxNode, CharNode, MathField, NodePtr, WhatsitNode, WhatsitSubtype};
 use crate::params::IntPar;
 use crate::state::EngineState;
 use crate::units::{GlueSign, MemPtr, NodeType, Scaled};
@@ -53,8 +53,7 @@ pub(crate) fn short_display(st: &mut EngineState, mut p: MemPtr) {
         } else {
             match st.mem.classify(p) {
                 Ok(
-                    AnyNode::HList(_)
-                    | AnyNode::VList(_)
+                    AnyNode::Box(_)
                     | AnyNode::Ins(_)
                     | AnyNode::Mark(_)
                     | AnyNode::Adjust(_)
@@ -168,8 +167,7 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
             print_font_and_char(st, p);
         } else {
             match st.mem.classify(p) {
-                Ok(AnyNode::HList(b)) => show_box_node(st, AnyBox::HList(b)),
-                Ok(AnyNode::VList(b)) => show_box_node(st, AnyBox::VList(b)),
+                Ok(AnyNode::Box(b)) => show_box_node(st, b),
                 Ok(AnyNode::Unset(node)) => {
                     print_esc(st, "unset");
                     print(st, "box(");
@@ -332,23 +330,23 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
     }
 }
 
-fn show_box_node(st: &mut EngineState, b: AnyBox) {
-    let is_hlist = matches!(b, AnyBox::HList(_));
+fn show_box_node(st: &mut EngineState, b: NodePtr<BoxNode>) {
+    let is_hlist = st.mem[b].is_hlist();
     print_esc(st, i32::from(if is_hlist { b'h' } else { b'v' }));
     print(st, "box(");
-    print_scaled(st, b.height(&st.mem));
+    print_scaled(st, st.mem[b].height);
     print_char(st, b'+');
-    print_scaled(st, b.depth(&st.mem));
+    print_scaled(st, st.mem[b].depth);
     print(st, ")x");
-    print_scaled(st, b.width(&st.mem));
-    let g = b.glue_set(&st.mem);
-    let glue_sign = b.glue_sign(&st.mem);
+    print_scaled(st, st.mem[b].width);
+    let g = st.mem[b].glue_set;
+    let glue_sign = st.mem[b].glue_sign;
     if g != 0.0 && glue_sign != GlueSign::Normal {
         print(st, ", glue set ");
         if glue_sign == GlueSign::Shrinking {
             print(st, "- ");
         }
-        let order = b.glue_order(&st.mem);
+        let order = st.mem[b].glue_order;
         if g.abs() > 20000.0 {
             if g > 0.0 {
                 print_char(st, b'>');
@@ -361,14 +359,14 @@ fn show_box_node(st: &mut EngineState, b: AnyBox) {
             print_glue(st, set, order, None);
         }
     }
-    if b.shift_amount(&st.mem) != Scaled::ZERO {
+    if st.mem[b].shift_amount != Scaled::ZERO {
         print(st, ", shifted ");
-        print_scaled(st, b.shift_amount(&st.mem));
+        print_scaled(st, st.mem[b].shift_amount);
     }
-    if is_hlist && b.subtype(&st.mem) == DLIST {
+    if is_hlist && st.mem[b].subtype == DLIST {
         print(st, ", display");
     }
-    node_list_display(st, b'.', b.list_ptr(&st.mem));
+    node_list_display(st, b'.', st.mem[b].list_ptr);
 }
 
 fn show_whatsit(st: &mut EngineState, node: NodePtr<WhatsitNode>) {

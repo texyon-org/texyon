@@ -4,7 +4,7 @@ use crate::consts::{
     BOX_NODE_SIZE, EMPTY, MATH_CHAR, MAX_DIMEN, NULL_FONT, SCRIPT_SIZE, SUB_MLIST,
 };
 use crate::errors::Abort;
-use crate::node::{AnyBox, AnyNode, MathField, Noad, NodePtr};
+use crate::node::{AnyNode, BoxNode, MathField, Noad, NodePtr};
 use crate::ot_math::ScriptKind;
 use crate::packaging::PackSpec;
 use crate::params::DimenPar;
@@ -98,7 +98,7 @@ enum ScriptBoxAdjustment {
 }
 
 struct ScriptBoxPrep {
-    box_node: AnyBox,
+    box_node: NodePtr<BoxNode>,
     shift: Scaled,
 }
 
@@ -124,8 +124,8 @@ fn clean_script_box(
         }
     };
     st.scanner.cur_f = saved_font;
-    let w = node.width(&st.mem) + st.eqtb.dimen_par(DimenPar::ScriptSpace);
-    node.set_width(&mut st.mem, w);
+    let w = st.mem[node].width + st.eqtb.dimen_par(DimenPar::ScriptSpace);
+    st.mem[node].width = w;
     Ok(ScriptBoxPrep {
         box_node: node,
         shift,
@@ -151,8 +151,8 @@ fn initial_script_shifts(st: &mut EngineState, p: MemPtr) -> Result<ScriptShifts
             SCRIPT_SCRIPT_SIZE
         };
         let shifts = ScriptShifts {
-            up: zb.height(&st.mem) - st.fonts.sup_drop(&st.eqtb, t),
-            down: zb.depth(&st.mem) + st.fonts.sub_drop(&st.eqtb, t),
+            up: st.mem[zb].height - st.fonts.sup_drop(&st.eqtb, t),
+            down: st.mem[zb].depth + st.fonts.sub_drop(&st.eqtb, t),
         };
         st.mem.free_node(zb.ptr(), BOX_NODE_SIZE);
         Ok(shifts)
@@ -162,8 +162,8 @@ fn initial_script_shifts(st: &mut EngineState, p: MemPtr) -> Result<ScriptShifts
 struct SubSupStackInput {
     q: NodePtr<Noad>,
     p: MemPtr,
-    x: AnyBox,
-    y: AnyBox,
+    x: NodePtr<BoxNode>,
+    y: NodePtr<BoxNode>,
     sub_f: FontId,
     sub_g: u16,
     sup_f: FontId,
@@ -208,22 +208,20 @@ fn finish_subsup_stack(st: &mut EngineState, input: SubSupStackInput) -> Result<
     }
 
     let kern_width =
-        (input.shift_up - input.x.depth(&st.mem)) - (input.y.height(&st.mem) - input.shift_down);
-    input
-        .x
-        .set_shift_amount(&mut st.mem, sup_kern + input.delta - sub_kern);
+        (input.shift_up - st.mem[input.x].depth) - (st.mem[input.y].height - input.shift_down);
+    st.mem[input.x].shift_amount = sup_kern + input.delta - sub_kern;
     let kern = st.mem.new_kern(kern_width)?;
-    input.x.set_link(&mut st.mem, kern.ptr());
+    st.mem[input.x].link = kern.ptr();
     kern.set_link(&mut st.mem, input.y.ptr());
 
     let packaged = crate::packaging::vpackage(st, input.x.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
-    packaged.set_shift_amount(&mut st.mem, input.shift_down);
+    st.mem[packaged].shift_amount = input.shift_down;
     st.mem.append_to_new_hlist(input.q, packaged.ptr());
     Ok(())
 }
 
 struct PreparedScript {
-    box_node: AnyBox,
+    box_node: NodePtr<BoxNode>,
     glyph: u16,
     font: FontId,
     shift: Scaled,
@@ -262,7 +260,7 @@ fn finish_subscript_only(
     } = prepare_subscript(st, q, ScriptBoxAdjustment::Sub1, shift_down)?;
 
     let cur_f = st.scanner.cur_f;
-    let box_depth = x.height(&st.mem);
+    let box_depth = st.mem[x].height;
     let x_height = st.fonts.math_x_height(&st.eqtb, st.scanner.cur_size);
     let clr = if st.fonts.font_is_ot_math(cur_f) {
         box_depth - st.fonts.get_ot_math_constant(cur_f, SUBSCRIPTTOPMAX)
@@ -271,7 +269,7 @@ fn finish_subscript_only(
     };
 
     let shift_down = shift_down.max(clr);
-    x.set_shift_amount(&mut st.mem, shift_down);
+    st.mem[x].shift_amount = shift_down;
 
     let _ = maybe_attach_script_kern(st, q, p, sub_f, sub_g, ScriptKind::Sub, shift_down)?;
     st.mem.append_to_new_hlist(q, x.ptr());
@@ -296,7 +294,7 @@ fn prepare_superscript(
     shift_up = shift_up.max(prepared.shift);
 
     let cur_f = st.scanner.cur_f;
-    let box_height = prepared.box_node.depth(&st.mem);
+    let box_height = st.mem[prepared.box_node].depth;
     let x_height = st.fonts.math_x_height(&st.eqtb, st.scanner.cur_size);
     let clr = if st.fonts.font_is_ot_math(cur_f) {
         box_height + st.fonts.get_ot_math_constant(cur_f, SUPERSCRIPTBOTTOMMIN)
@@ -333,7 +331,7 @@ fn finish_superscript_branch(
             ScriptKind::Sup,
             shift_up,
         )?;
-        x.set_shift_amount(&mut st.mem, -shift_up);
+        st.mem[x].shift_amount = -shift_up;
         st.mem.append_to_new_hlist(q, x.ptr());
         return Ok(());
     }
@@ -347,8 +345,8 @@ fn finish_superscript_branch(
     shift_down = shift;
 
     let cur_f = st.scanner.cur_f;
-    let x_height_node = x.depth(&st.mem);
-    let y_depth = y.height(&st.mem);
+    let x_height_node = st.mem[x].depth;
+    let y_depth = st.mem[y].height;
     let default_rule_thickness = st
         .fonts
         .default_rule_thickness(&st.eqtb, st.scanner.cur_size);
@@ -363,7 +361,7 @@ fn finish_superscript_branch(
     if clr > Scaled::ZERO {
         shift_down += clr;
         let cur_f = st.scanner.cur_f;
-        let x_height_node = x.depth(&st.mem);
+        let x_height_node = st.mem[x].depth;
         let x_height = st.fonts.math_x_height(&st.eqtb, st.scanner.cur_size);
         clr = if st.fonts.font_is_ot_math(cur_f) {
             st.fonts

@@ -9,7 +9,7 @@ use crate::errors::Abort;
 use crate::fonts::QUAD_CODE;
 use crate::input::TokenType;
 use crate::mem::{ADJUST_HEAD, GARBAGE, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
-use crate::node::{AnyBox, AnyNode, GlueNode, NodePtr};
+use crate::node::{AnyNode, BoxNode, GlueNode, NodePtr};
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::state::{EngineState, EqtbState, FontState, GroupCode, MemState};
@@ -74,14 +74,14 @@ impl MemState {
 
 fn app_display(
     st: &mut EngineState,
-    j: Option<AnyBox>,
-    orig: AnyBox,
+    j: Option<NodePtr<BoxNode>>,
+    orig: NodePtr<BoxNode>,
     d: Scaled,
 ) -> Result<(), Abort> {
     let s = st.eqtb.dimen_par(DimenPar::DisplayIndent);
     let x = st.eqtb.int_par(IntPar::PreDisplayDirection);
     if x == 0 {
-        orig.set_shift_amount(&mut st.mem, s + d);
+        st.mem[orig].shift_amount = s + d;
         crate::packaging::append_to_vlist(st, orig)?;
         return Ok(());
     }
@@ -90,19 +90,19 @@ fn app_display(
     let z = st.eqtb.dimen_par(DimenPar::DisplayWidth);
     let mut e;
     if x > 0 {
-        e = z - d - orig.width(&st.mem);
+        e = z - d - st.mem[orig].width;
     } else {
         e = d;
-        d = z - e - orig.width(&st.mem);
+        d = z - e - st.mem[orig].width;
     }
     let copy = if let Some(j) = j {
         let bc = st.mem.copy_box(j)?;
-        let (h, dp) = (orig.height(&st.mem), orig.depth(&st.mem));
-        bc.set_height(&mut st.mem, h);
-        bc.set_depth(&mut st.mem, dp);
-        let s2 = s - bc.shift_amount(&st.mem);
+        let (h, dp) = (st.mem[orig].height, st.mem[orig].depth);
+        st.mem[bc].height = h;
+        st.mem[bc].depth = dp;
+        let s2 = s - st.mem[bc].shift_amount;
         d += s2;
-        e = e + bc.width(&st.mem) - z - s2;
+        e = e + st.mem[bc].width - z - s2;
         Some(bc)
     } else {
         None
@@ -110,11 +110,11 @@ fn app_display(
     let mut b = copy.unwrap_or(orig);
 
     let (p, q);
-    if orig.subtype(&st.mem) == DLIST {
+    if st.mem[orig].subtype == DLIST {
         p = orig.ptr();
         q = p;
     } else {
-        let mut r = orig.list_ptr(&st.mem);
+        let mut r = st.mem[orig].list_ptr;
         st.mem.free_node(orig.ptr(), BOX_NODE_SIZE);
         if r.is_null() {
             return Err(Abort::Confusion("LR4"));
@@ -141,7 +141,7 @@ fn app_display(
             st.mem.new_kern(Scaled::ZERO)?.ptr(),
         ),
         Some(bc) => {
-            let r = bc.list_ptr(&st.mem);
+            let r = st.mem[bc].list_ptr;
             (r, r.link(&st.mem))
         }
     };
@@ -172,9 +172,9 @@ fn app_display(
         match copy {
             None => {
                 b = crate::packaging::hpack(st, u, PackSpec::NATURAL)?;
-                b.set_shift_amount(&mut st.mem, s);
+                st.mem[b].shift_amount = s;
             }
-            Some(bc) => bc.set_list_ptr(&mut st.mem, u),
+            Some(bc) => st.mem[bc].list_ptr = u,
         }
     }
     crate::packaging::append_to_vlist(st, b)?;
@@ -227,7 +227,7 @@ pub(crate) fn check_display_end(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 /// The box `init_math` saved for the paragraph line before a display, if any.
-fn pre_display_box(st: &EngineState) -> Option<AnyBox> {
+fn pre_display_box(st: &EngineState) -> Option<NodePtr<BoxNode>> {
     if st.input.cur_list.mode != MMODE {
         return None;
     }
@@ -250,7 +250,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
         st.scanner.mlist_penalties = false;
         mlist_to_hlist(st)?;
         let eqno = crate::packaging::hpack(st, TEMP_HEAD.link(&st.mem), PackSpec::NATURAL)?;
-        eqno.set_subtype(&mut st.mem, DLIST);
+        st.mem[eqno].subtype = DLIST;
         a = Some(eqno);
         crate::save::unsave(st)?;
         st.save_stack.save_ptr -= 1;
@@ -303,12 +303,12 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.adjust_tail = ADJUST_HEAD;
     st.scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
     let mut b = crate::packaging::hpack(st, p, PackSpec::NATURAL)?;
-    p = b.list_ptr(&st.mem);
+    p = st.mem[b].list_ptr;
     let t = st.scanner.adjust_tail;
     st.scanner.adjust_tail = MemPtr::NULL;
     let pre_t = st.scanner.pre_adjust_tail;
     st.scanner.pre_adjust_tail = MemPtr::NULL;
-    let mut w = b.width(&st.mem);
+    let mut w = st.mem[b].width;
     let z = st.eqtb.dimen_par(DimenPar::DisplayWidth);
     let mut s = st.eqtb.dimen_par(DimenPar::DisplayIndent);
     if st.eqtb.int_par(IntPar::PreDisplayDirection) < 0 {
@@ -317,7 +317,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     let (mut e, q);
     match a {
         Some(eqno) if !danger => {
-            e = eqno.width(&st.mem);
+            e = st.mem[eqno].width;
             q = e + st.fonts.math_quad(&st.eqtb, TEXT_SIZE);
         }
         _ => {
@@ -341,9 +341,9 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
                 b = crate::packaging::hpack(st, p, PackSpec::Exactly(z))?;
             }
         }
-        w = b.width(&st.mem);
+        w = st.mem[b].width;
     }
-    b.set_subtype(&mut st.mem, DLIST);
+    st.mem[b].subtype = DLIST;
     let mut d = (z - w).half();
     if e > Scaled::ZERO && d < e * 2 {
         d = (z - w - e).half();
@@ -381,12 +381,12 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     if let Some(eqno) = a.filter(|_| e != Scaled::ZERO) {
         let r = st.mem.new_kern(z - w - e - d)?;
         if l {
-            eqno.set_link(&mut st.mem, r.ptr());
+            st.mem[eqno].link = r.ptr();
             r.set_link(&mut st.mem, b.ptr());
             b = eqno;
             d = Scaled::ZERO;
         } else {
-            b.set_link(&mut st.mem, r.ptr());
+            st.mem[b].link = r.ptr();
             r.set_link(&mut st.mem, eqno.ptr());
         }
         b = crate::packaging::hpack(st, b.ptr(), PackSpec::NATURAL)?;
@@ -397,7 +397,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     if let Some(eqno) = a.filter(|_| e == Scaled::ZERO && !l) {
         let pen = st.mem.new_penalty(INF_PENALTY)?;
         st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
-        let a_width = eqno.width(&st.mem);
+        let a_width = st.mem[eqno].width;
         app_display(st, j, eqno, z - a_width)?;
         g2 = None;
     }
@@ -477,26 +477,26 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
             let jbox = st.mem.new_null_box()?;
             j = jbox.ptr();
             let mem = &mut st.mem;
-            jbox.set_width(mem, jb.width(mem));
-            jbox.set_shift_amount(mem, jb.shift_amount(mem));
-            jbox.set_list_ptr(mem, left);
-            jbox.set_glue_order(mem, jb.glue_order(mem));
-            jbox.set_glue_sign(mem, jb.glue_sign(mem));
-            jbox.set_glue_set(mem, jb.glue_set(mem));
+            mem[jbox].width = mem[jb].width;
+            mem[jbox].shift_amount = mem[jb].shift_amount;
+            mem[jbox].list_ptr = left;
+            mem[jbox].glue_order = mem[jb].glue_order;
+            mem[jbox].glue_sign = mem[jb].glue_sign;
+            mem[jbox].glue_set = mem[jb].glue_set;
 
-            let mut v = jb.shift_amount(&st.mem);
+            let mut v = st.mem[jb].shift_amount;
             x = pre_display_direction(st);
 
             let mut p;
             if x >= 0 {
-                p = jb.list_ptr(&st.mem);
+                p = st.mem[jb].list_ptr;
                 TEMP_HEAD.set_link(&mut st.mem, MemPtr::NULL);
             } else {
-                v = -v - jb.width(&st.mem);
+                v = -v - st.mem[jb].width;
                 let begin = st.mem.new_math(Scaled::ZERO, BEGIN_L_CODE)?.ptr();
                 TEMP_HEAD.set_link(&mut st.mem, begin);
                 let end = st.mem.new_math(Scaled::ZERO, END_L_CODE)?.ptr();
-                let list = jb.list_ptr(&st.mem);
+                let list = st.mem[jb].list_ptr;
                 st.mem.just_copy(list, begin, end)?;
                 st.scanner.cur_dir = Dir::Rtl;
                 p = begin;
@@ -519,7 +519,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                         break (d, true);
                     }
                     break match st.mem.classify(p) {
-                        Ok(node @ (AnyNode::HList(_) | AnyNode::VList(_) | AnyNode::Rule(_))) => {
+                        Ok(node @ (AnyNode::Box(_) | AnyNode::Rule(_))) => {
                             (node.hlist_width(&st.mem), true)
                         }
                         Ok(AnyNode::Ligature(lig)) => {
@@ -570,8 +570,8 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                         }
                         Ok(AnyNode::Glue(g)) => {
                             let spec = g.glue_ptr(&st.mem);
-                            let order = jb.glue_order(&st.mem);
-                            match jb.glue_sign(&st.mem).get() {
+                            let order = st.mem[jb].glue_order;
+                            match st.mem[jb].glue_sign.get() {
                                 Some(GlueSign::Stretching)
                                     if order == st.mem[spec].stretch_order
                                         && st.mem[spec].stretch != Scaled::ZERO =>

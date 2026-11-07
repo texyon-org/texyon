@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 
 use crate::bridge::{issue_error, issue_warning, output_close, output_open, output_write};
 use crate::consts::INVALID_HANDLE;
-use crate::node::{AnyBox, AnyNode, HListNode, KernNode, MathNode, NodePtr, VListNode};
+use crate::node::{AnyNode, BoxNode, KernNode, MathNode, NodePtr};
 use crate::shipout::ONE_INCH;
 use crate::state::{EngineState, EqtbState, ShipoutState, SynctexCtxt};
 use crate::sync_index::RecordKind;
@@ -149,12 +149,12 @@ impl SynctexCtxt {
         }
     }
 
-    fn record_box(&mut self, mem: &crate::state::MemState, kind: char, b: AnyBox) {
+    fn record_box(&mut self, mem: &crate::state::MemState, kind: char, b: NodePtr<BoxNode>) {
         self.record_node(
             kind,
-            b.sync_tag(mem),
-            b.sync_line(mem),
-            &[b.width(mem).raw(), b.height(mem).raw(), b.depth(mem).raw()],
+            mem[b].sync_tag,
+            mem[b].sync_line,
+            &[mem[b].width.raw(), mem[b].height.raw(), mem[b].depth.raw()],
         );
     }
 
@@ -359,12 +359,12 @@ fn enter_node(st: &mut EngineState, node: MemPtr, tag: i32, line: i32) {
     synctex.deferred_kern = None;
 }
 
-fn enter_box(st: &mut EngineState, b: AnyBox) {
-    let (tag, line) = (b.sync_tag(&st.mem), b.sync_line(&st.mem));
+fn enter_box(st: &mut EngineState, b: NodePtr<BoxNode>) {
+    let (tag, line) = (st.mem[b].sync_tag, st.mem[b].sync_line);
     enter_node(st, b.ptr(), tag, line);
 }
 
-pub fn synctex_vlist(st: &mut EngineState, this_box: AnyBox) {
+pub fn synctex_vlist(st: &mut EngineState, this_box: NodePtr<BoxNode>) {
     if !synctex_active(st) {
         return;
     }
@@ -373,7 +373,7 @@ pub fn synctex_vlist(st: &mut EngineState, this_box: AnyBox) {
     st.synctex.record_box(&st.mem, '[', this_box);
 }
 
-pub fn synctex_tsilv(st: &mut EngineState, this_box: AnyBox) {
+pub fn synctex_tsilv(st: &mut EngineState, this_box: NodePtr<BoxNode>) {
     if !synctex_active(st) {
         return;
     }
@@ -384,15 +384,15 @@ pub fn synctex_tsilv(st: &mut EngineState, this_box: AnyBox) {
     st.synctex.record("]\n");
 }
 
-pub fn synctex_void_vlist(st: &mut EngineState, p: NodePtr<VListNode>) {
+pub fn synctex_void_vlist(st: &mut EngineState, p: NodePtr<BoxNode>) {
     if !synctex_active(st) {
         return;
     }
-    enter_box(st, AnyBox::VList(p));
-    st.synctex.record_box(&st.mem, 'v', AnyBox::VList(p));
+    enter_box(st, p);
+    st.synctex.record_box(&st.mem, 'v', p);
 }
 
-pub fn synctex_hlist(st: &mut EngineState, this_box: AnyBox) {
+pub fn synctex_hlist(st: &mut EngineState, this_box: NodePtr<BoxNode>) {
     if !synctex_active(st) {
         return;
     }
@@ -401,7 +401,7 @@ pub fn synctex_hlist(st: &mut EngineState, this_box: AnyBox) {
     st.synctex.record_box(&st.mem, '(', this_box);
 }
 
-pub fn synctex_tsilh(st: &mut EngineState, this_box: AnyBox) {
+pub fn synctex_tsilh(st: &mut EngineState, this_box: NodePtr<BoxNode>) {
     if !synctex_active(st) {
         return;
     }
@@ -432,14 +432,14 @@ impl SynctexCtxt {
     }
 }
 
-pub fn synctex_void_hlist(st: &mut EngineState, p: NodePtr<HListNode>) {
-    let (tag, line) = (p.sync_tag(&st.mem), p.sync_line(&st.mem));
+pub fn synctex_void_hlist(st: &mut EngineState, p: NodePtr<BoxNode>) {
+    let (tag, line) = (st.mem[p].sync_tag, st.mem[p].sync_line);
     if synctex_ignored(st, tag, line) {
         return;
     }
     flush_deferred_kern(st);
     enter_node(st, p.ptr(), tag, line);
-    st.synctex.record_box(&st.mem, 'h', AnyBox::HList(p));
+    st.synctex.record_box(&st.mem, 'h', p);
 }
 
 pub fn synctex_math(st: &mut EngineState, p: NodePtr<MathNode>) {
@@ -494,7 +494,7 @@ pub fn synctex_horizontal_rule_or_glue(st: &mut EngineState, p: MemPtr) {
     }
 }
 
-pub fn synctex_kern(st: &mut EngineState, p: NodePtr<KernNode>, this_box: AnyBox) {
+pub fn synctex_kern(st: &mut EngineState, p: NodePtr<KernNode>, this_box: NodePtr<BoxNode>) {
     let (tag, line) = (p.sync_tag(&st.mem), p.sync_line(&st.mem));
     if synctex_ignored(st, tag, line) {
         return;

@@ -10,14 +10,14 @@ use crate::input::{TokenType, TOKEN_LIST};
 use crate::mem::{ALIGN_HEAD, END_SPAN, HOLD_HEAD, HOLD_HEAD_TOKS, ZERO_GLUE};
 use crate::node::Stored;
 use crate::node::{
-    link_of, AlignColumn, AlignRecord, AlignStackNode, AnyBox, AnyNode, GlueNode, NodePtr,
-    RuleDimen, SpanNode, UnsetNode, RUNNING,
+    link_of, AlignColumn, AlignRecord, AlignStackNode, AnyNode, GlueNode, NodePtr, RuleDimen,
+    SpanNode, UnsetNode, RUNNING,
 };
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::state::{EngineState, GroupCode, MemState};
 use crate::token::{Token, TokenList};
-use crate::units::{GlueOrder, GlueSign, MemPtr, Scaled};
+use crate::units::{GlueOrder, GlueSign, MemPtr, Orientation, Scaled};
 
 use super::assign::{define, do_assignments};
 use super::lists::{end_graf, normal_paragraph, off_save};
@@ -158,32 +158,32 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
         match st.mem.classify_non_char(q) {
             Some(AnyNode::Unset(row)) => {
                 let row = if st.input.cur_list.mode == INNER_VMODE {
-                    let b = row.into_hlist(&mut st.mem);
-                    let width = p.width(&st.mem);
-                    b.set_width(&mut st.mem, width);
+                    let b = row.into_box(&mut st.mem, Orientation::Horizontal);
+                    let width = st.mem[p].width;
+                    st.mem[b].width = width;
                     if in_display {
-                        b.set_subtype(&mut st.mem, DLIST);
+                        st.mem[b].subtype = DLIST;
                     }
-                    AnyBox::HList(b)
+                    b
                 } else {
-                    let b = row.into_vlist(&mut st.mem);
-                    let height = p.height(&st.mem);
-                    b.set_height(&mut st.mem, height);
-                    AnyBox::VList(b)
+                    let b = row.into_box(&mut st.mem, Orientation::Vertical);
+                    let height = st.mem[p].height;
+                    st.mem[b].height = height;
+                    b
                 };
                 let (order, sign, set) = (
-                    p.glue_order(&st.mem),
-                    p.glue_sign(&st.mem),
-                    p.glue_set(&st.mem),
+                    st.mem[p].glue_order,
+                    st.mem[p].glue_sign,
+                    st.mem[p].glue_set,
                 );
-                row.set_glue_order(&mut st.mem, order);
-                row.set_glue_sign(&mut st.mem, sign);
-                row.set_glue_set(&mut st.mem, set);
-                row.set_shift_amount(&mut st.mem, o);
+                st.mem[row].glue_order = order;
+                st.mem[row].glue_sign = sign;
+                st.mem[row].glue_set = set;
+                st.mem[row].shift_amount = o;
 
-                let mut r = row.list_ptr(&st.mem).link(&st.mem);
+                let mut r = st.mem[row].list_ptr.link(&st.mem);
                 let mut proto_column =
-                    NodePtr::<UnsetNode>::after_tab_skip(&st.mem, p.list_ptr(&st.mem));
+                    NodePtr::<UnsetNode>::after_tab_skip(&st.mem, st.mem[p].list_ptr);
                 loop {
                     let (Ok(AnyNode::Unset(col)), Some(mut proto)) =
                         (st.mem.classify(r), proto_column)
@@ -202,19 +202,19 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                         u = g.ptr();
                         g.set_subtype(&mut st.mem, GluePar::TabSkip.subtype());
                         t += st.mem[spec].width;
-                        match p.glue_sign(&st.mem).get() {
+                        match st.mem[p].glue_sign.get() {
                             Some(GlueSign::Stretching)
-                                if st.mem[spec].stretch_order == p.glue_order(&st.mem) =>
+                                if st.mem[spec].stretch_order == st.mem[p].glue_order =>
                             {
                                 t += Scaled::round(
-                                    p.glue_set(&st.mem) * f64::from(st.mem[spec].stretch),
+                                    st.mem[p].glue_set * f64::from(st.mem[spec].stretch),
                                 );
                             }
                             Some(GlueSign::Shrinking)
-                                if st.mem[spec].shrink_order == p.glue_order(&st.mem) =>
+                                if st.mem[spec].shrink_order == st.mem[p].glue_order =>
                             {
                                 t -= Scaled::round(
-                                    p.glue_set(&st.mem) * f64::from(st.mem[spec].shrink),
+                                    st.mem[p].glue_set * f64::from(st.mem[spec].shrink),
                                 );
                             }
                             _ => {}
@@ -229,32 +229,34 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                         let span_w = proto.width(&st.mem);
                         t += span_w;
                         if st.input.cur_list.mode == INNER_VMODE {
-                            nb.set_width(&mut st.mem, span_w);
+                            st.mem[nb].width = span_w;
                         } else {
-                            nb.into_vlist(&mut st.mem).set_height(&mut st.mem, span_w);
+                            let nb = &mut st.mem[nb];
+                            nb.orientation = Orientation::Vertical.into();
+                            nb.height = span_w;
                         }
                     }
                     let col = if st.input.cur_list.mode == INNER_VMODE {
-                        let (h, d) = (row.height(&st.mem), row.depth(&st.mem));
+                        let (h, d) = (st.mem[row].height, st.mem[row].depth);
                         col.set_height(&mut st.mem, h);
                         col.set_depth(&mut st.mem, d);
                         let glue = st.mem.unset_glue(col, t, col.width(&st.mem));
-                        let b = col.into_hlist(&mut st.mem);
-                        b.set_width(&mut st.mem, w);
-                        (AnyBox::HList(b), glue)
+                        let b = col.into_box(&mut st.mem, Orientation::Horizontal);
+                        st.mem[b].width = w;
+                        (b, glue)
                     } else {
-                        let width = row.width(&st.mem);
+                        let width = st.mem[row].width;
                         col.set_width(&mut st.mem, width);
                         let glue = st.mem.unset_glue(col, t, col.height(&st.mem));
-                        let b = col.into_vlist(&mut st.mem);
-                        b.set_height(&mut st.mem, w);
-                        (AnyBox::VList(b), glue)
+                        let b = col.into_box(&mut st.mem, Orientation::Vertical);
+                        st.mem[b].height = w;
+                        (b, glue)
                     };
                     let (b, (sign, order, set)) = col;
-                    b.set_glue_sign(&mut st.mem, sign);
-                    b.set_glue_order(&mut st.mem, order);
-                    b.set_glue_set(&mut st.mem, set);
-                    b.set_shift_amount(&mut st.mem, Scaled::ZERO);
+                    st.mem[b].glue_sign = sign.into();
+                    st.mem[b].glue_order = order;
+                    st.mem[b].glue_set = set;
+                    st.mem[b].shift_amount = Scaled::ZERO;
                     if u != HOLD_HEAD {
                         let (rest, spanned) = (r.link(&st.mem), HOLD_HEAD.link(&st.mem));
                         u.set_link(&mut st.mem, rest);
@@ -269,7 +271,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                 }
             }
             Some(AnyNode::Rule(rule)) => {
-                let (w, h, d) = (p.width(&st.mem), p.height(&st.mem), p.depth(&st.mem));
+                let (w, h, d) = (st.mem[p].width, st.mem[p].height, st.mem[p].depth);
                 if rule.width(&st.mem) == RuleDimen::Running {
                     rule.set_width(&mut st.mem, RuleDimen::Set(w));
                 }
@@ -283,8 +285,8 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                     let next = rule.link(&st.mem);
                     rule.set_link(&mut st.mem, MemPtr::NULL);
                     let boxed = crate::packaging::hpack(st, rule.ptr(), PackSpec::NATURAL)?;
-                    boxed.set_shift_amount(&mut st.mem, o);
-                    boxed.set_link(&mut st.mem, next);
+                    st.mem[boxed].shift_amount = o;
+                    st.mem[boxed].link = next;
                     s.set_link(&mut st.mem, boxed.ptr());
                     q = boxed.ptr();
                 }
@@ -655,10 +657,10 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
             st.scanner.adjust_tail = MemPtr::NULL;
             st.scanner.cur_pre_tail = st.scanner.pre_adjust_tail;
             st.scanner.pre_adjust_tail = MemPtr::NULL;
-            (u, u.width(&st.mem))
+            (u, st.mem[u].width)
         } else {
             let u = crate::packaging::vpackage(st, head, PackSpec::NATURAL, Scaled::ZERO)?;
-            (u, u.height(&st.mem))
+            (u, st.mem[u].height)
         };
         let mut n: i32 = 0;
         if st.scanner.cur_span != st.scanner.cur_align {
