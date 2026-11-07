@@ -664,8 +664,7 @@ fn rescan_opened_name(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 /// `\openin` and `\closein`.
-pub(crate) fn open_or_close(st: &mut EngineState) -> Result<(), Abort> {
-    let c = st.scanner.cur_chr as u8;
+pub(crate) fn open_or_close(st: &mut EngineState, open: bool) -> Result<(), Abort> {
     let n = usize::try_from(crate::scan::scan_four_bit_int(st)?).unwrap_or(0);
 
     if st.input.read_open[n] != CLOSED {
@@ -676,7 +675,7 @@ pub(crate) fn open_or_close(st: &mut EngineState) -> Result<(), Abort> {
         st.input.read_open[n] = CLOSED;
     }
 
-    if c == 0 {
+    if !open {
         return Ok(());
     }
 

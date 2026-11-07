@@ -122,3 +122,47 @@ fn the_main_loop_builds_ligatures_and_kerns() {
         .\rm V",
     );
 }
+
+#[test]
+fn box_shifts_follow_the_direction_of_each_command() {
+    let r = run(r"\setbox1\hbox{}
+                  \setbox0\vbox{\moveleft 2pt\copy1 \moveright 3pt\copy1}
+                  \setbox2\hbox{\raise1pt\copy1\lower2pt\copy1}
+                  \showbox0 \showbox2");
+    assert_lines(
+        &r.boxes()[0],
+        r"
+        \vbox(0.0+0.0)x3.0
+        .\hbox(0.0+0.0)x0.0, shifted -2.0
+        .\glue(\baselineskip) 0.0
+        .\hbox(0.0+0.0)x0.0, shifted 3.0",
+    );
+    assert_lines(
+        &r.boxes()[1],
+        r"
+        \hbox(1.0+2.0)x0.0
+        .\hbox(0.0+0.0)x0.0, shifted -1.0
+        .\hbox(0.0+0.0)x0.0, shifted 2.0",
+    );
+}
+
+#[test]
+fn removals_take_only_their_own_node_type() {
+    let r = run(r"\parindent=5pt
+                  \setbox0\hbox{\kern1pt\kern2pt\unkern\hskip3pt\unkern\unskip
+                                \penalty5\unskip\unpenalty\indent\noindent}
+                  \showbox0");
+    assert_lines(
+        &r.boxes()[0],
+        r"
+        \hbox(0.0+0.0)x6.0
+        .\kern 1.0
+        .\hbox(0.0+0.0)x5.0",
+    );
+}
+
+#[test]
+fn case_shifts_use_their_own_code_table() {
+    let r = run(r"\lowercase{\count1=`A} \uppercase{\count2=`a} \showthe\count1 \showthe\count2");
+    assert_eq!(r.shown(), ["97", "65"]);
+}

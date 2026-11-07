@@ -1851,6 +1851,19 @@ impl InputClusterState {
 pub(crate) const NATIVE_TEXT_MAX: i32 = 1 << 20;
 
 impl ScannerState {
+    /// `(cur_cmd, cur_chr)` decoded into one typed command.
+    #[inline]
+    pub(crate) fn command(&self) -> Result<crate::command::Command, crate::errors::Abort> {
+        self.try_command()
+            .ok_or(crate::errors::Abort::Confusion("cur_chr"))
+    }
+
+    /// `(cur_cmd, cur_chr)` decoded, `None` for a token that is no command.
+    #[inline]
+    pub(crate) fn try_command(&self) -> Option<crate::command::Command> {
+        crate::command::Command::decode(self.cur_cmd, self.cur_chr)
+    }
+
     /// `cur_chr` as the modifier code of a command, `None` when it is not one.
     #[inline(always)]
     pub(crate) fn chr_code<T: crate::codes::ChrCode>(&self) -> Option<T> {
@@ -1861,12 +1874,6 @@ impl ScannerState {
     #[inline(always)]
     pub(crate) fn chr_font(&self) -> FontId {
         FontId::from_raw(self.cur_chr)
-    }
-
-    /// `cur_chr` of a register command that names a sparse-array register.
-    #[inline(always)]
-    pub(crate) fn chr_sa(&self) -> crate::node::NodePtr<crate::node::SaNode> {
-        crate::node::NodePtr::at(crate::units::MemPtr::from_raw(self.cur_chr))
     }
 
     /// `cur_chr` of a command whose chr code is an `eqtb` location.

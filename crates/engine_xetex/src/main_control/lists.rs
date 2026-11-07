@@ -2,6 +2,7 @@
 
 use crate::cmd::Cmd;
 use crate::codes::{BoxCode, SkipCode, ValueLevel};
+use crate::command::Command;
 use crate::consts::{
     ACC_KERN, BIGGEST_CHAR, BOX_NODE_SIZE, EMPTY, ETEX_PEN_BASE, EXPLICIT, FROZEN_CR,
     FROZEN_END_GROUP, FROZEN_RIGHT, HMODE, IGNORE_DEPTH, MAX_DIMEN, MMODE, MU_GLUE, NOAD_SIZE,
@@ -109,8 +110,8 @@ pub(super) fn its_all_over(st: &mut EngineState) -> Result<bool, Abort> {
     Ok(false)
 }
 
-pub(super) fn indent_in_hmode(st: &mut EngineState) -> Result<(), Abort> {
-    if st.scanner.cur_chr <= 0 {
+pub(super) fn indent_in_hmode(st: &mut EngineState, indent: bool) -> Result<(), Abort> {
+    if !indent {
         return Ok(());
     }
     let b = st.mem.new_null_box()?;
@@ -515,11 +516,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-pub(super) fn append_glue(st: &mut EngineState) -> Result<NodePtr<GlueNode>, Abort> {
-    let s = st
-        .scanner
-        .chr_code::<SkipCode>()
-        .ok_or(Abort::Confusion("append_glue"))?;
+pub(super) fn append_glue(st: &mut EngineState, s: SkipCode) -> Result<NodePtr<GlueNode>, Abort> {
     let spec = match s {
         SkipCode::Fil => FIL_GLUE,
         SkipCode::Fill => FILL_GLUE,
@@ -541,20 +538,20 @@ pub(super) fn append_glue(st: &mut EngineState) -> Result<NodePtr<GlueNode>, Abo
     Ok(g)
 }
 
-pub(super) fn append_kern(st: &mut EngineState) -> Result<(), Abort> {
-    let s = st.scanner.cur_chr as u16;
-    let d = crate::scan::scan_dimen(st, s == MU_GLUE, false)?;
+pub(super) fn append_kern(st: &mut EngineState, mu: bool) -> Result<(), Abort> {
+    let s = if mu { MU_GLUE } else { EXPLICIT };
+    let d = crate::scan::scan_dimen(st, mu, false)?;
     let p = st.mem.new_kern(d)?;
     p.set_subtype(&mut st.mem, s);
     st.input.cur_list.tail_append(&mut st.mem, p.ptr());
     Ok(())
 }
 
-pub(super) fn make_mark(st: &mut EngineState) -> Result<(), Abort> {
-    let c = if st.scanner.cur_chr == 0 {
-        0
-    } else {
+pub(super) fn make_mark(st: &mut EngineState, marks: bool) -> Result<(), Abort> {
+    let c = if marks {
         crate::scan::scan_register_num(st)?
+    } else {
+        0
     };
     crate::scan::scan_toks(st, false, true)?;
     let mark = NodePtr::<MarkNode>::alloc(&mut st.mem)?;
@@ -642,10 +639,10 @@ fn begin_disc_group(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-pub(super) fn append_discretionary(st: &mut EngineState) -> Result<(), Abort> {
+pub(super) fn append_discretionary(st: &mut EngineState, hyphen: bool) -> Result<(), Abort> {
     let d = st.mem.new_disc()?;
     st.input.cur_list.tail_append(&mut st.mem, d.ptr());
-    if st.scanner.cur_chr == 1 {
+    if hyphen {
         let f = st.eqtb.cur_font();
         let c = st.fonts.hyphen_char[f];
         if (0..=BIGGEST_CHAR).contains(&c) {
@@ -810,12 +807,12 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
 
     do_assignments(st)?;
     let f = st.eqtb.cur_font();
-    let (q, qc) = match st.scanner.cur_cmd {
-        Cmd::Letter | Cmd::OtherChar | Cmd::CharGiven => {
-            let qc = st.scanner.cur_chr;
+    let (q, qc) = match st.scanner.try_command() {
+        Some(Command::Letter(c) | Command::OtherChar(c) | Command::CharGiven(c)) => {
+            let qc = c.raw();
             (new_character(st, f, qc as u16)?, qc)
         }
-        Cmd::CharNum => {
+        Some(Command::CharNum) => {
             let qc = crate::scan::scan_char_num(st)?;
             (new_character(st, f, qc as u16)?, qc)
         }

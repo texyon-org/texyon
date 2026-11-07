@@ -1,12 +1,15 @@
 //! Mode-independent processing: `prefixed_command` and its assignments.
 
 use crate::cmd::Cmd;
-use crate::codes::{BoxDimenCode, PageIntCode, ShorthandDefCode, ValueLevel};
+use crate::codes::{
+    AuxCode, BoxDimenCode, FontIntCode, PageDimenCode, PageIntCode, ShorthandDefCode, ValueLevel,
+};
+use crate::command::{Command, RegisterRef};
 use crate::consts::{
     ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_USV, CAT_CODE_BASE, CHAR_CLASS_LIMIT, COUNT_BASE,
     CUR_FONT_LOC, DEL_CODE_BASE, DESIGN_SIZE, FONT_BASE, HASH_BASE, MATH_CODE_BASE, MAX_HALFWORD,
-    MU_SKIP_BASE, NORMAL, NULL_CS, PAR_SHAPE_LOC, SCALED_BASE, SF_CODE_BASE, SINGLE_BASE,
-    SKIP_BASE, TEX_INFINITY, TOKS_BASE, TOO_BIG_USV, VMODE,
+    MU_SKIP_BASE, NULL_CS, PAR_SHAPE_LOC, SCALED_BASE, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE,
+    TEX_INFINITY, TOKS_BASE, TOO_BIG_USV, VMODE,
 };
 use crate::errors::Abort;
 use crate::fonts::read_font_info;
@@ -15,19 +18,18 @@ use crate::mem::ZERO_GLUE;
 use crate::node::{GlueSpecNode, NodePtr, ParShapeNode, PenaltiesNode, SaNode};
 use crate::params::{IntPar, TokPar};
 use crate::scan::fetch_box;
-use crate::state::{EngineState, MemState, Selector};
+use crate::state::{EngineState, InteractionMode, MemState, Selector};
 use crate::token::{Token, TokenList};
 use crate::units::{EqtbPtr, FontId, GlueOrder, MemPtr, Scaled, StrNumber};
 
 use crate::fonts::Side;
 
 use super::boxes::scan_box;
-use super::{BOX_FLAG, GLOBAL_BOX_FLAG, LP_CODE_BASE, RP_CODE_BASE};
+use super::{BOX_FLAG, GLOBAL_BOX_FLAG};
 
-fn new_interaction(st: &mut EngineState) {
+fn new_interaction(st: &mut EngineState, mode: InteractionMode) {
     crate::output::print_ln(st);
-    st.errors.interaction = crate::state::InteractionMode::from_raw(st.scanner.cur_chr)
-        .expect("interaction primitive chr is 0..=3");
+    st.errors.interaction = mode;
     st.shipout.selector = if st.errors.interaction == crate::state::InteractionMode::Batch {
         Selector::NoPrint
     } else {
@@ -38,13 +40,12 @@ fn new_interaction(st: &mut EngineState) {
     }
 }
 
-fn alter_aux(st: &mut EngineState) -> Result<(), Abort> {
-    if st.scanner.cur_chr != i32::from(st.input.cur_list.mode.abs()) {
+fn alter_aux(st: &mut EngineState, code: AuxCode) -> Result<(), Abort> {
+    if code.mode() != st.input.cur_list.mode.abs() {
         return crate::errors::report_illegal_case(st);
     }
-    let c = st.scanner.cur_chr;
     crate::scan::scan_optional_equals(st)?;
-    if c == i32::from(VMODE) {
+    if code == AuxCode::PrevDepth {
         let d = crate::scan::scan_dimen(st, false, false)?;
         st.input.cur_list.set_prev_depth(d);
         return Ok(());
@@ -84,22 +85,20 @@ fn alter_prev_graf(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-fn alter_page_so_far(st: &mut EngineState) -> Result<(), Abort> {
-    let c = st.scanner.cur_chr as usize;
+fn alter_page_so_far(st: &mut EngineState, code: PageDimenCode) -> Result<(), Abort> {
     crate::scan::scan_optional_equals(st)?;
     let d = crate::scan::scan_dimen(st, false, false)?;
-    st.shipout.page_so_far[c] = d;
+    st.shipout.page_so_far[code.index()] = d;
     Ok(())
 }
 
-fn alter_integer(st: &mut EngineState) -> Result<(), Abort> {
-    let code = st.scanner.chr_code::<PageIntCode>();
+fn alter_integer(st: &mut EngineState, code: PageIntCode) -> Result<(), Abort> {
     crate::scan::scan_optional_equals(st)?;
     let n = crate::scan::scan_int(st)?;
     match code {
-        Some(PageIntCode::DeadCycles) => st.shipout.dead_cycles = n,
-        Some(PageIntCode::InteractionMode) => {
-            if crate::state::InteractionMode::from_raw(n).is_none() {
+        PageIntCode::DeadCycles => st.shipout.dead_cycles = n,
+        PageIntCode::InteractionMode => {
+            let Some(mode) = InteractionMode::from_raw(n) else {
                 crate::output::error_here_with_diagnostic(st, "Bad interaction mode");
                 crate::output::append_to_diagnostic(st, &format!(" ({})", n));
                 crate::output::capture_to_diagnostic(st, None);
@@ -108,27 +107,25 @@ fn alter_integer(st: &mut EngineState) -> Result<(), Abort> {
                     "3=errorstop. Proceed, and I'll ignore this case.",
                 ]);
                 return crate::errors::int_error(st, n);
-            }
-            st.scanner.cur_chr = n;
-            new_interaction(st);
+            };
+            new_interaction(st, mode);
         }
-        _ => st.shipout.insert_penalties = n,
+        PageIntCode::InsertPenalties => st.shipout.insert_penalties = n,
     }
     Ok(())
 }
 
-fn alter_box_dimen(st: &mut EngineState) -> Result<(), Abort> {
-    let c = st.scanner.cur_chr;
+fn alter_box_dimen(st: &mut EngineState, code: BoxDimenCode) -> Result<(), Abort> {
     let n = crate::scan::scan_register_num(st)?;
     let b = fetch_box(st, n);
     crate::scan::scan_optional_equals(st)?;
     let d = crate::scan::scan_dimen(st, false, false)?;
     if let Some(b) = b {
         let v = d;
-        match BoxDimenCode::from_raw(c) {
-            Some(BoxDimenCode::Width) => b.set_width(&mut st.mem, v),
-            Some(BoxDimenCode::Depth) => b.set_depth(&mut st.mem, v),
-            _ => b.set_height(&mut st.mem, v),
+        match code {
+            BoxDimenCode::Width => b.set_width(&mut st.mem, v),
+            BoxDimenCode::Depth => b.set_depth(&mut st.mem, v),
+            BoxDimenCode::Height => b.set_height(&mut st.mem, v),
         }
     }
     Ok(())
@@ -262,17 +259,24 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
 fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     let q = st.scanner.cur_cmd;
     let (l, p) = 'found: {
+        let mut cmd = st.scanner.try_command();
         if q != Cmd::Register {
             crate::scan::get_x_token(st)?;
-            let level = match st.scanner.cur_cmd {
-                Cmd::AssignInt => Some(ValueLevel::Int),
-                Cmd::AssignDimen => Some(ValueLevel::Dimen),
-                Cmd::AssignGlue => Some(ValueLevel::Glue),
-                Cmd::AssignMuGlue => Some(ValueLevel::Mu),
-                _ => None,
-            };
-            if let Some(level) = level {
-                break 'found (RegisterLoc::Eqtb(st.scanner.chr_loc()), level);
+            cmd = st.scanner.try_command();
+            match cmd {
+                Some(Command::AssignInt(loc)) => {
+                    break 'found (RegisterLoc::Eqtb(loc), ValueLevel::Int)
+                }
+                Some(Command::AssignDimen(loc)) => {
+                    break 'found (RegisterLoc::Eqtb(loc), ValueLevel::Dimen)
+                }
+                Some(Command::AssignGlue(loc)) => {
+                    break 'found (RegisterLoc::Eqtb(loc), ValueLevel::Glue)
+                }
+                Some(Command::AssignMuGlue(loc)) => {
+                    break 'found (RegisterLoc::Eqtb(loc), ValueLevel::Mu)
+                }
+                _ => {}
             }
             if st.scanner.cur_cmd != Cmd::Register {
                 crate::output::error_here_with_diagnostic(st, "You can't use `");
@@ -285,22 +289,19 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
                 return crate::errors::error(st);
             }
         }
-        let Some(p) = st.scanner.chr_code::<ValueLevel>() else {
-            let sa = st.scanner.chr_sa();
-            break 'found (RegisterLoc::Sparse(sa), sa.sa_type(&st.mem));
+        let p = match cmd {
+            Some(Command::Register(RegisterRef::Scanned(level))) => level,
+            Some(Command::Register(RegisterRef::Sparse(sa))) => {
+                break 'found (RegisterLoc::Sparse(sa), sa.sa_type(&st.mem))
+            }
+            _ => return Err(Abort::Confusion("register")),
         };
         let n = crate::scan::scan_register_num(st)?;
         if n > 255 {
             let sa = st.mem.create_sa_element(&mut st.scanner, p, n)?;
             break 'found (RegisterLoc::Sparse(sa), p);
         }
-        let base = match p {
-            ValueLevel::Int => COUNT_BASE,
-            ValueLevel::Dimen => SCALED_BASE,
-            ValueLevel::Glue => SKIP_BASE,
-            ValueLevel::Mu => MU_SKIP_BASE,
-            _ => unreachable!("register value level"),
-        };
+        let base = p.register_base().ok_or(Abort::Confusion("register"))?;
         (RegisterLoc::Eqtb(base + n), p)
     };
 
@@ -556,9 +557,9 @@ fn define_toks(
 
 pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
     let mut a: i32 = 0;
-    while st.scanner.cur_cmd == Cmd::Prefix {
-        if (a / st.scanner.cur_chr) & 1 == 0 {
-            a += st.scanner.cur_chr;
+    while let Some(Command::Prefix(code)) = st.scanner.try_command() {
+        if (a / code.raw()) & 1 == 0 {
+            a += code.raw();
         }
         crate::scan::get_x_non_blank_non_relax(st)?;
         if st.scanner.cur_cmd <= Cmd::MAX_NON_PREFIXED_COMMAND {
@@ -601,13 +602,12 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
         a += 4;
     }
 
-    match st.scanner.cur_cmd {
-        Cmd::SetFont => define(st, a >= 4, CUR_FONT_LOC, Cmd::Data, st.scanner.cur_chr)?,
-        Cmd::Def => {
-            if st.scanner.cur_chr & 1 != 0 && a < 4 && st.eqtb.int_par(IntPar::GlobalDefs) >= 0 {
+    match st.scanner.command()? {
+        Command::SetFont(f) => define(st, a >= 4, CUR_FONT_LOC, Cmd::Data, f.raw())?,
+        Command::Def { global, expand } => {
+            if global && a < 4 && st.eqtb.int_par(IntPar::GlobalDefs) >= 0 {
                 a += 4;
             }
-            let expand = st.scanner.cur_chr >= 2;
             crate::scan::get_r_token(st)?;
             let p = st.scanner.cur_cs;
             crate::scan::scan_toks(st, true, expand)?;
@@ -626,11 +626,10 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 st.scanner.def_ref.ptr().raw(),
             )?;
         }
-        Cmd::Let => {
-            let n = st.scanner.cur_chr;
+        Command::Let { future } => {
             crate::scan::get_r_token(st)?;
             let p = st.scanner.cur_cs;
-            if n == i32::from(NORMAL) {
+            if !future {
                 loop {
                     crate::scan::get_token(st)?;
                     if st.scanner.cur_cmd != Cmd::Spacer {
@@ -661,18 +660,17 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             }
             define(st, a >= 4, p, st.scanner.cur_cmd, st.scanner.cur_chr)?;
         }
-        Cmd::ShorthandDef => {
-            if st.scanner.chr_code() == Some(ShorthandDefCode::CharSub) {
+        Command::ShorthandDef(code) => {
+            if code == ShorthandDefCode::CharSub {
                 crate::output::print_err(st, "vestigial MLTeX shorthand encountered??");
                 st.errors
                     .help(&["This should never happen in Tectonic, where MLTeX has been excised."]);
                 crate::errors::error(st)?;
             } else {
-                shorthand_def(st, a >= 4)?;
+                shorthand_def(st, a >= 4, code)?;
             }
         }
-        Cmd::ReadToCs => {
-            let j = st.scanner.cur_chr;
+        Command::ReadToCs { line } => {
             let n = crate::scan::scan_int(st)?;
             if !crate::scan::scan_keyword(st, "to")? {
                 crate::output::print_err(st, "Missing `to' inserted");
@@ -684,25 +682,22 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             }
             crate::scan::get_r_token(st)?;
             let p = st.scanner.cur_cs;
-            let list = crate::scan::read_toks(st, n, p, j)?;
+            let list = crate::scan::read_toks(st, n, p, line)?;
             define(st, a >= 4, p, Cmd::Call, list.ptr().raw())?;
         }
-        Cmd::ToksRegister | Cmd::AssignToks => assign_toks(st, a >= 4)?,
-        Cmd::AssignInt => {
-            let p = st.scanner.chr_loc();
+        cmd @ (Command::ToksRegister(_) | Command::AssignToks(_)) => assign_toks(st, a >= 4, cmd)?,
+        Command::AssignInt(p) => {
             crate::scan::scan_optional_equals(st)?;
             let n = crate::scan::scan_int(st)?;
             word_define(st, a >= 4, p, n)?;
         }
-        Cmd::AssignDimen => {
-            let p = st.scanner.chr_loc();
+        Command::AssignDimen(p) => {
             crate::scan::scan_optional_equals(st)?;
             let d = crate::scan::scan_dimen(st, false, false)?;
             word_define(st, a >= 4, p, d.raw())?;
         }
-        Cmd::AssignGlue | Cmd::AssignMuGlue => {
-            let p = st.scanner.chr_loc();
-            let level = if st.scanner.cur_cmd == Cmd::AssignMuGlue {
+        cmd @ (Command::AssignGlue(p) | Command::AssignMuGlue(p)) => {
+            let level = if let Command::AssignMuGlue(_) = cmd {
                 ValueLevel::Mu
             } else {
                 ValueLevel::Glue
@@ -712,20 +707,19 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             let g = trap_zero_glue(st, g);
             define(st, a >= 4, p, Cmd::GlueRef, g.ptr().raw())?;
         }
-        Cmd::XetexDefCode => xetex_def_code(st, a >= 4)?,
-        Cmd::DefCode => def_code(st, a >= 4)?,
-        Cmd::DefFamily => {
-            let base = st.scanner.chr_loc();
+        Command::XetexDefCode(base) => xetex_def_code(st, a >= 4, base)?,
+        Command::DefCode(base) => def_code(st, a >= 4, base)?,
+        Command::DefFamily(base) => {
             let fam = crate::scan::scan_math_fam_int(st)?;
             let p = base + fam;
             crate::scan::scan_optional_equals(st)?;
             let f = crate::scan::scan_font_ident(st)?;
             define(st, a >= 4, p, Cmd::Data, f.raw())?;
         }
-        Cmd::Register | Cmd::Advance | Cmd::Multiply | Cmd::Divide => {
+        Command::Register(_) | Command::Advance | Command::Multiply | Command::Divide => {
             do_register_command(st, a as i16)?
         }
-        Cmd::SetBox => {
+        Command::SetBox => {
             let n = crate::scan::scan_register_num(st)?;
             let n = if a >= 4 {
                 GLOBAL_BOX_FLAG + n
@@ -746,14 +740,14 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 crate::errors::error(st)?;
             }
         }
-        Cmd::SetAux => alter_aux(st)?,
-        Cmd::SetPrevGraf => alter_prev_graf(st)?,
-        Cmd::SetPageDimen => alter_page_so_far(st)?,
-        Cmd::SetPageInt => alter_integer(st)?,
-        Cmd::SetBoxDimen => alter_box_dimen(st)?,
-        Cmd::SetShape => set_shape(st, a >= 4)?,
-        Cmd::HyphData => {
-            if st.scanner.cur_chr != 1 {
+        Command::SetAux(code) => alter_aux(st, code)?,
+        Command::SetPrevGraf => alter_prev_graf(st)?,
+        Command::SetPageDimen(code) => alter_page_so_far(st, code)?,
+        Command::SetPageInt(code) => alter_integer(st, code)?,
+        Command::SetBoxDimen(code) => alter_box_dimen(st, code)?,
+        Command::SetShape(loc) => set_shape(st, a >= 4, loc)?,
+        Command::HyphData { patterns } => {
+            if !patterns {
                 new_hyph_exceptions(st)?;
             } else if st.config.in_initex_mode {
                 new_patterns(st)?;
@@ -769,24 +763,29 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 }
             }
         }
-        Cmd::AssignFontDimen => {
+        Command::AssignFontDimen => {
             let k = crate::scan::find_font_dimen(st, true)?;
             crate::scan::scan_optional_equals(st)?;
             let d = crate::scan::scan_dimen(st, false, false)?;
             st.fonts.set_font_info_sc(k, d);
         }
-        Cmd::AssignFontInt => {
-            let n = st.scanner.cur_chr;
+        Command::AssignFontInt(code) => {
             let f = crate::scan::scan_font_ident(st)?;
-            if n < 2 {
-                crate::scan::scan_optional_equals(st)?;
-                let v = crate::scan::scan_int(st)?;
-                if n == 0 {
-                    st.fonts.hyphen_char[f] = v;
-                } else {
-                    st.fonts.skew_char[f] = v;
+            let side = match code {
+                FontIntCode::HyphenChar | FontIntCode::SkewChar => {
+                    crate::scan::scan_optional_equals(st)?;
+                    let v = crate::scan::scan_int(st)?;
+                    if code == FontIntCode::HyphenChar {
+                        st.fonts.hyphen_char[f] = v;
+                    } else {
+                        st.fonts.skew_char[f] = v;
+                    }
+                    None
                 }
-            } else {
+                FontIntCode::LpCode => Some(Side::Left),
+                FontIntCode::RpCode => Some(Side::Right),
+            };
+            if let Some(side) = side {
                 let p = if st.fonts.is_native_font(f) {
                     crate::scan::scan_glyph_number(st, f)?
                 } else {
@@ -794,15 +793,11 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 };
                 crate::scan::scan_optional_equals(st)?;
                 let v = crate::scan::scan_int(st)?;
-                match n {
-                    LP_CODE_BASE => st.fonts.cp_codes.set(f, Side::Left, p as u32, v),
-                    RP_CODE_BASE => st.fonts.cp_codes.set(f, Side::Right, p as u32, v),
-                    _ => {}
-                }
+                st.fonts.cp_codes.set(f, side, p as u32, v);
             }
         }
-        Cmd::DefFont => new_font(st, a as i16)?,
-        Cmd::SetInteraction => new_interaction(st),
+        Command::DefFont => new_font(st, a as i16)?,
+        Command::SetInteraction(mode) => new_interaction(st, mode),
         _ => return Err(Abort::Confusion("prefix")),
     }
 
@@ -814,11 +809,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-fn shorthand_def(st: &mut EngineState, global: bool) -> Result<(), Abort> {
-    let n = st
-        .scanner
-        .chr_code::<ShorthandDefCode>()
-        .ok_or(Abort::Confusion("shorthand_def"))?;
+fn shorthand_def(st: &mut EngineState, global: bool, n: ShorthandDefCode) -> Result<(), Abort> {
     crate::scan::get_r_token(st)?;
     let p = st.scanner.cur_cs;
     define(st, global, p, Cmd::Relax, TOO_BIG_USV)?;
@@ -872,62 +863,56 @@ fn shorthand_def(st: &mut EngineState, global: bool) -> Result<(), Abort> {
     Ok(())
 }
 
-fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
+fn assign_toks(st: &mut EngineState, global: bool, cmd: Command) -> Result<(), Abort> {
     let cs = st.scanner.cur_cs;
-    let target = if st.scanner.cur_cmd == Cmd::ToksRegister {
-        if st.scanner.cur_chr == 0 {
+    let target = match cmd {
+        Command::ToksRegister(None) => {
             let n = crate::scan::scan_register_num(st)?;
             if n > 255 {
-                let reg = n;
                 let sa = st
                     .mem
-                    .create_sa_element(&mut st.scanner, ValueLevel::Tok, reg)?;
+                    .create_sa_element(&mut st.scanner, ValueLevel::Tok, n)?;
                 RegisterLoc::Sparse(sa)
             } else {
                 RegisterLoc::Eqtb(TOKS_BASE + n)
             }
-        } else {
-            RegisterLoc::Sparse(st.scanner.chr_sa())
         }
-    } else if st.scanner.chr_loc() == TokPar::XetexInterCharToks.loc() {
-        let n = scan_inter_char_pair(st)?;
-        let sa = st
-            .mem
-            .create_sa_element(&mut st.scanner, ValueLevel::InterChar, n)?;
-        RegisterLoc::Sparse(sa)
-    } else {
-        RegisterLoc::Eqtb(st.scanner.chr_loc())
+        Command::ToksRegister(Some(sa)) => RegisterLoc::Sparse(sa),
+        Command::AssignToks(loc) if loc == TokPar::XetexInterCharToks.loc() => {
+            let n = scan_inter_char_pair(st)?;
+            let sa = st
+                .mem
+                .create_sa_element(&mut st.scanner, ValueLevel::InterChar, n)?;
+            RegisterLoc::Sparse(sa)
+        }
+        Command::AssignToks(loc) => RegisterLoc::Eqtb(loc),
+        _ => return Err(Abort::Confusion("assign_toks")),
     };
     crate::scan::scan_optional_equals(st)?;
     crate::scan::get_x_non_blank_non_relax(st)?;
 
-    if st.scanner.cur_cmd != Cmd::LeftBrace
-        && (st.scanner.cur_cmd == Cmd::ToksRegister || st.scanner.cur_cmd == Cmd::AssignToks)
-    {
-        let list = if st.scanner.cur_cmd == Cmd::ToksRegister {
-            if st.scanner.cur_chr == 0 {
-                let n = crate::scan::scan_register_num(st)?;
-                if n < 256 {
-                    st.eqtb.toks(n)
-                } else {
-                    let reg = n;
-                    let sa = st
-                        .mem
-                        .find_sa_element(&mut st.scanner, ValueLevel::Tok, reg);
-                    crate::scan::sa_token_list(st, sa)
-                }
+    let source = match st.scanner.try_command() {
+        Some(Command::ToksRegister(None)) => {
+            let n = crate::scan::scan_register_num(st)?;
+            Some(if n < 256 {
+                st.eqtb.toks(n)
             } else {
-                st.scanner.chr_sa().sa_toks(&st.mem)
-            }
-        } else if st.scanner.chr_loc() == TokPar::XetexInterCharToks.loc() {
+                let sa = st.mem.find_sa_element(&mut st.scanner, ValueLevel::Tok, n);
+                crate::scan::sa_token_list(st, sa)
+            })
+        }
+        Some(Command::ToksRegister(Some(sa))) => Some(sa.sa_toks(&st.mem)),
+        Some(Command::AssignToks(loc)) if loc == TokPar::XetexInterCharToks.loc() => {
             let n = scan_inter_char_pair(st)?;
             let sa = st
                 .mem
                 .find_sa_element(&mut st.scanner, ValueLevel::InterChar, n);
-            crate::scan::sa_token_list(st, sa)
-        } else {
-            st.eqtb.equiv_tokens(st.scanner.chr_loc())
-        };
+            Some(crate::scan::sa_token_list(st, sa))
+        }
+        Some(Command::AssignToks(loc)) => Some(st.eqtb.equiv_tokens(loc)),
+        _ => None,
+    };
+    if let Some(list) = source {
         if !list.is_null() {
             st.mem.add_token_ref(list);
         }
@@ -956,8 +941,7 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
     define_toks(st, global, target, def_ref)
 }
 
-fn xetex_def_code(st: &mut EngineState, global: bool) -> Result<(), Abort> {
-    let chr = st.scanner.chr_loc();
+fn xetex_def_code(st: &mut EngineState, global: bool, chr: EqtbPtr) -> Result<(), Abort> {
     let base = if chr == SF_CODE_BASE || chr == MATH_CODE_BASE || chr == DEL_CODE_BASE {
         chr
     } else {
@@ -996,8 +980,7 @@ fn xetex_def_code(st: &mut EngineState, global: bool) -> Result<(), Abort> {
     Ok(())
 }
 
-fn def_code(st: &mut EngineState, global: bool) -> Result<(), Abort> {
-    let chr = st.scanner.chr_loc();
+fn def_code(st: &mut EngineState, global: bool, chr: EqtbPtr) -> Result<(), Abort> {
     let max = if chr == CAT_CODE_BASE {
         Cmd::MAX_CHAR_CODE.into()
     } else if chr == MATH_CODE_BASE {
@@ -1050,8 +1033,7 @@ fn def_code(st: &mut EngineState, global: bool) -> Result<(), Abort> {
     Ok(())
 }
 
-fn set_shape(st: &mut EngineState, global: bool) -> Result<(), Abort> {
-    let q = st.scanner.chr_loc();
+fn set_shape(st: &mut EngineState, global: bool, q: EqtbPtr) -> Result<(), Abort> {
     crate::scan::scan_optional_equals(st)?;
     let n = crate::scan::scan_int(st)?;
     let p = if n <= 0 {

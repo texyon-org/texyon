@@ -28,6 +28,7 @@ mod cancellation;
 mod checkpoint;
 mod cmd;
 mod codes;
+mod command;
 mod compat;
 mod consts;
 mod dvi;

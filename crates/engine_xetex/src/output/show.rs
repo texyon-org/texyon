@@ -154,8 +154,7 @@ pub(super) fn show_info(st: &mut EngineState) {
     show_node_list(st, p);
 }
 
-pub(crate) fn issue_message(st: &mut EngineState) -> Result<(), Abort> {
-    let c = st.scanner.cur_chr as u8;
+pub(crate) fn issue_message(st: &mut EngineState, err: bool) -> Result<(), Abort> {
     let toks = crate::scan::scan_toks(st, false, true)?;
     GARBAGE.set_link(&mut st.mem, toks.ptr());
     let old_setting = st.shipout.selector;
@@ -167,7 +166,7 @@ pub(crate) fn issue_message(st: &mut EngineState) -> Result<(), Abort> {
         return Err(Abort::PoolOverflow);
     }
     let s = st.strings.make_string()?;
-    if c == 0 {
+    if !err {
         let len = st.strings.length(s);
         if st.shipout.term_offset + len > st.config.max_print_line - 2 {
             print_ln(st);
@@ -412,16 +411,15 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
     st.save_stack.cur_group = saved_group;
 }
 
-pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), Abort> {
     diagnostic_begin_capture_warning_here(st);
 
-    let code = st.scanner.chr_code::<ShowCode>();
     match code {
-        Some(ShowCode::Lists) => {
+        ShowCode::Lists => {
             begin_diagnostic(st);
             show_activities(st);
         }
-        Some(ShowCode::Box) => {
+        ShowCode::Box => {
             let n = crate::scan::scan_register_num(st)?;
             let contents = crate::scan::fetch_box(st, n);
             begin_diagnostic(st);
@@ -433,7 +431,7 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
                 None => print(st, "void"),
             }
         }
-        Some(ShowCode::Show) => {
+        ShowCode::Show => {
             crate::scan::get_token(st)?;
             print_nl(st, "> ");
             if !st.scanner.cur_cs.is_none() {
@@ -442,11 +440,11 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
             }
             print_meaning(st);
         }
-        Some(ShowCode::Groups) => {
+        ShowCode::Groups => {
             begin_diagnostic(st);
             show_save_groups(st);
         }
-        Some(ShowCode::Ifs) => {
+        ShowCode::Ifs => {
             begin_diagnostic(st);
             print_nl(st, "");
             print_ln(st);
@@ -479,8 +477,8 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
                 }
             }
         }
-        _ => {
-            let the = if code == Some(ShowCode::Tokens) {
+        ShowCode::The | ShowCode::Tokens => {
+            let the = if code == ShowCode::Tokens {
                 TheCode::Detokenize
             } else {
                 TheCode::The
@@ -495,7 +493,7 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
 
     if matches!(
         code,
-        Some(ShowCode::Lists | ShowCode::Box | ShowCode::Groups | ShowCode::Ifs)
+        ShowCode::Lists | ShowCode::Box | ShowCode::Groups | ShowCode::Ifs
     ) {
         capture_to_diagnostic(st, None);
         end_diagnostic(st, true);

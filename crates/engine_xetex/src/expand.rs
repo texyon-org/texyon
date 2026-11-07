@@ -2,8 +2,9 @@
 
 use crate::cmd::Cmd;
 use crate::codes::{
-    ConvertCode, FiOrElseCode, IfCode, InputCode, MarkCode, ScannerStatus, TheCode, ValueLevel,
+    ConvertCode, FiOrElseCode, IfCode, InputCode, ScannerStatus, TheCode, ValueLevel,
 };
+use crate::command::Command;
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_USV, FROZEN_DONT_EXPAND, FROZEN_ENDV, FROZEN_PRIMITIVE, HMODE, MMODE,
     NULL_CS, NULL_FONT, SINGLE_BASE, TOO_BIG_USV, VMODE,
@@ -27,15 +28,8 @@ use crate::state::{EngineState, MacroParam, MemState, Selector};
 use crate::token::{Token, TokenList};
 use crate::units::{BufPos, EqtbPtr, FontId, MemPtr, Scaled, StrNumber};
 
-/// The `\the` variant in `cur_chr`.
-pub(crate) fn the_code(st: &EngineState) -> Result<TheCode, Abort> {
-    st.scanner
-        .chr_code::<TheCode>()
-        .ok_or(Abort::Confusion("the"))
-}
-
-pub(crate) fn ins_the_toks(st: &mut EngineState) -> Result<(), Abort> {
-    let tail = crate::scan::the_toks(st, the_code(st)?)?;
+fn ins_the_toks(st: &mut EngineState, code: TheCode) -> Result<(), Abort> {
+    let tail = crate::scan::the_toks(st, code)?;
     ins_temp_head_list(st, tail)
 }
 
@@ -172,7 +166,7 @@ fn change_if_limit(
     Err(Abort::Confusion("if"))
 }
 
-pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
+fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result<(), Abort> {
     if st.eqtb.int_par(IntPar::TracingIfs) > 0 && st.eqtb.int_par(IntPar::TracingCommands) <= 1 {
         show_cur_cmd_chr(st);
     }
@@ -183,12 +177,11 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
     cond_node.set_cur_if(&mut st.mem, st.scanner.cur_if as u16);
     cond_node.set_if_line(&mut st.mem, st.scanner.if_line);
     st.scanner.cond_ptr = Some(cond_node);
-    st.scanner.cur_if = st.scanner.cur_chr as i16;
+    st.scanner.cur_if = (this_if.raw() + if is_unless { IfCode::UNLESS } else { 0 }) as i16;
     st.scanner.if_limit = FiOrElseCode::If;
     st.scanner.if_line = st.mem.line;
 
     let save_cond_ptr = st.scanner.cond_ptr;
-    let (this_if, is_unless) = IfCode::decode(st.scanner.cur_chr).ok_or(Abort::Confusion("if"))?;
 
     let mut b = match this_if {
         IfCode::Char | IfCode::Cat => {
@@ -538,11 +531,7 @@ fn print_margin_kern(
     print(st, "pt");
 }
 
-pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
-    let c = st
-        .scanner
-        .chr_code::<ConvertCode>()
-        .ok_or(Abort::Confusion("convert"))?;
+fn conv_toks(st: &mut EngineState, c: ConvertCode) -> Result<(), Abort> {
     let mut cat: Option<Cmd> = None;
     let mut fnt = NULL_FONT;
     let mut arg1: i32 = 0;
@@ -804,11 +793,9 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
         if st.eqtb.int_par(IntPar::TracingCommands) > 1 {
             show_cur_cmd_chr(st);
         }
-        match st.scanner.cur_cmd {
-            Cmd::TopBotMark => {
-                let mark = MarkCode::from_raw(st.scanner.cur_chr % MarkCode::MARKS)
-                    .ok_or(Abort::Confusion("top_bot_mark"))?;
-                let n = if st.scanner.cur_chr >= MarkCode::MARKS {
+        match st.scanner.command()? {
+            Command::TopBotMark { code: mark, marks } => {
+                let n = if marks {
                     crate::scan::scan_register_num(st)?
                 } else {
                     0
@@ -824,8 +811,8 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     begin_token_list(st, TokenList::from_ptr(st.scanner.cur_ptr), TokenType::Mark)?;
                 }
             }
-            Cmd::ExpandAfter => {
-                if st.scanner.cur_chr == 0 {
+            Command::ExpandAfter { unless } => {
+                if !unless {
                     get_token(st)?;
                     let t = st.scanner.cur_tok;
                     get_token(st)?;
@@ -838,9 +825,10 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     back_input(st)?;
                 } else {
                     get_token(st)?;
-                    if st.scanner.cur_cmd == Cmd::IfTest
-                        && st.scanner.chr_code() != Some(IfCode::Case)
-                    {
+                    if matches!(
+                        st.scanner.try_command(),
+                        Some(Command::IfTest { code, .. }) if code != IfCode::Case
+                    ) {
                         st.scanner.cur_chr += IfCode::UNLESS;
                         continue 'reswitch;
                     }
@@ -855,8 +843,8 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     back_error(st)?;
                 }
             }
-            Cmd::NoExpand => {
-                if st.scanner.cur_chr == 0 {
+            Command::NoExpand { primitive } => {
+                if !primitive {
                     get_token_unexpanded(st)?;
                     let t = st.scanner.cur_tok;
                     back_input(st)?;
@@ -880,7 +868,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     }
                 }
             }
-            Cmd::CsName => {
+            Command::CsName => {
                 let (head, tail) = scan_cs_name_tokens(st)?;
                 let first = st.input.first;
                 let j = token_chars_to_buffer(st, head.link(&st.mem))?;
@@ -911,21 +899,21 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                 st.scanner.cur_tok = Token::from_cs(st.scanner.cur_cs);
                 back_input(st)?;
             }
-            Cmd::Convert => conv_toks(st)?,
-            Cmd::The => ins_the_toks(st)?,
-            Cmd::IfTest => conditional(st)?,
-            Cmd::FiOrElse => {
+            Command::Convert(code) => conv_toks(st, code)?,
+            Command::The(code) => ins_the_toks(st, code)?,
+            Command::IfTest { code, unless } => conditional(st, code, unless)?,
+            Command::FiOrElse(code) => {
                 if st.eqtb.int_par(IntPar::TracingIfs) > 0
                     && st.eqtb.int_par(IntPar::TracingCommands) <= 1
                 {
                     show_cur_cmd_chr(st);
                 }
-                if st.scanner.cur_chr > st.scanner.if_limit.raw() {
+                if code.raw() > st.scanner.if_limit.raw() {
                     if st.scanner.if_limit == FiOrElseCode::If {
                         crate::input::insert_relax(st)?;
                     } else {
                         error_here_with_diagnostic(st, "Extra ");
-                        print_cmd_chr(st, Cmd::FiOrElse, st.scanner.cur_chr);
+                        print_cmd_chr(st, Cmd::FiOrElse, code.raw());
                         capture_to_diagnostic(st, None);
                         st.errors
                             .help(&[r"I'm ignoring this; it doesn't match any \if."]);
@@ -938,9 +926,9 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     pop_fi(st)?;
                 }
             }
-            Cmd::Input => match st.scanner.chr_code::<InputCode>() {
-                Some(InputCode::EndInput) => st.input.force_eof = true,
-                Some(InputCode::ScanTokens) => crate::scan::pseudo_start(st)?,
+            Command::Input(code) => match code {
+                InputCode::EndInput => st.input.force_eof = true,
+                InputCode::ScanTokens => crate::scan::pseudo_start(st)?,
                 _ if st.scanner.name_in_progress => crate::input::insert_relax(st)?,
                 _ => crate::io::start_input(st, None)?,
             },

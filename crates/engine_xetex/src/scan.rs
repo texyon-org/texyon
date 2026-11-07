@@ -2,6 +2,7 @@
 
 use crate::cmd::Cmd;
 use crate::codes::{DelimNumCode, MathCharNumCode, ValueLevel};
+use crate::command::Command;
 use crate::consts::{
     ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_USV, EQTB_SIZE, FROZEN_CONTROL_SEQUENCE,
     FROZEN_PROTECTION, MATH_CHAR, NUMBER_MATH_FAMILIES,
@@ -198,11 +199,11 @@ pub(crate) fn scan_math(st: &mut EngineState, p: NodePtr<MathField>) -> Result<(
     'main: loop {
         get_x_non_blank_non_relax(st)?;
         c = loop {
-            break match st.scanner.cur_cmd {
-                Cmd::Letter | Cmd::OtherChar | Cmd::CharGiven => {
-                    let mc = st.eqtb.math_code(st.scanner.cur_chr);
+            break match st.scanner.try_command() {
+                Some(Command::Letter(ch) | Command::OtherChar(ch) | Command::CharGiven(ch)) => {
+                    let mc = st.eqtb.math_code(ch.raw());
                     if mc & 0x1FFFFF == ACTIVE_MATH_CHAR {
-                        st.scanner.cur_cs = ACTIVE_BASE + st.scanner.cur_chr;
+                        st.scanner.cur_cs = ACTIVE_BASE + ch.raw();
                         fetch_cs_meaning(st);
                         x_token(st)?;
                         back_input(st)?;
@@ -210,15 +211,15 @@ pub(crate) fn scan_math(st: &mut EngineState, p: NodePtr<MathField>) -> Result<(
                     }
                     mc
                 }
-                Cmd::CharNum => {
+                Some(Command::CharNum) => {
                     st.scanner.cur_chr = scan_char_num(st)?;
                     st.scanner.cur_cmd = Cmd::CharGiven;
                     continue;
                 }
-                Cmd::MathCharNum => scan_math_char_num(st)?,
-                Cmd::MathGiven => math_code_from_tex(st.scanner.cur_chr),
-                Cmd::XetexMathGiven => st.scanner.cur_chr,
-                Cmd::DelimNum => scan_delim_num(st)?,
+                Some(Command::MathCharNum(code)) => scan_math_char_num(st, code)?,
+                Some(Command::MathGiven(code)) => math_code_from_tex(code),
+                Some(Command::XetexMathGiven(code)) => code,
+                Some(Command::DelimNum(code)) => scan_delim_num(st, code)?,
                 _ => {
                     back_input(st)?;
                     scan_left_brace(st)?;
@@ -331,20 +332,23 @@ impl MemState {
 
 /// Builds the token list for `\the` (or `\unexpanded`/`\detokenize`) at
 /// `link(temp_head)` and returns its tail.
-/// The math code given by `\mathchar` or a XeTeX form, per `cur_chr`.
-pub(crate) fn scan_math_char_num(st: &mut EngineState) -> Result<i32, Abort> {
-    Ok(match st.scanner.chr_code::<MathCharNumCode>() {
-        Some(MathCharNumCode::UmathChar) => scan_umath_code(st)?,
-        Some(MathCharNumCode::UmathCharNum) => scan_xetex_math_char_int(st)?,
-        _ => math_code_from_tex(scan_fifteen_bit_int(st)?),
+/// The math code given by `\mathchar` or a XeTeX form.
+pub(crate) fn scan_math_char_num(
+    st: &mut EngineState,
+    code: MathCharNumCode,
+) -> Result<i32, Abort> {
+    Ok(match code {
+        MathCharNumCode::UmathChar => scan_umath_code(st)?,
+        MathCharNumCode::UmathCharNum => scan_xetex_math_char_int(st)?,
+        MathCharNumCode::MathChar => math_code_from_tex(scan_fifteen_bit_int(st)?),
     })
 }
 
 /// The math code of the small character given by `\delimiter` or `\Udelimiter`.
-pub(crate) fn scan_delim_num(st: &mut EngineState) -> Result<i32, Abort> {
-    Ok(match st.scanner.chr_code::<DelimNumCode>() {
-        Some(DelimNumCode::Udelimiter) => scan_umath_code(st)?,
-        _ => math_code_from_tex(scan_delimiter_int(st)? / 4096),
+pub(crate) fn scan_delim_num(st: &mut EngineState, code: DelimNumCode) -> Result<i32, Abort> {
+    Ok(match code {
+        DelimNumCode::Udelimiter => scan_umath_code(st)?,
+        DelimNumCode::Delimiter => math_code_from_tex(scan_delimiter_int(st)? / 4096),
     })
 }
 

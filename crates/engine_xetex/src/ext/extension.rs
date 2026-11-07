@@ -2,6 +2,7 @@
 
 use crate::cmd::Cmd;
 use crate::codes::ExtensionCode;
+use crate::command::Command;
 use crate::consts::{
     FROZEN_SPECIAL, GLYPH_NODE_SIZE, HMODE, MMODE, OPEN_NODE_SIZE, SMALL_NODE_SIZE, VMODE,
     WRITE_NODE_SIZE,
@@ -162,12 +163,8 @@ fn io_whatsit(st: &mut EngineState, code: ExtensionCode) -> Result<NodePtr<Whats
     })
 }
 
-pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<(), Abort> {
     let mode = st.input.cur_list.mode.abs();
-    let code = st
-        .scanner
-        .chr_code::<ExtensionCode>()
-        .ok_or(Abort::Confusion("ext1"))?;
     match code {
         ExtensionCode::Open | ExtensionCode::Write | ExtensionCode::Close => {
             io_whatsit(st, code)?;
@@ -182,13 +179,12 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
 
         ExtensionCode::Immediate => {
             get_x_token(st)?;
-            let io_code =
-                match st.scanner.chr_code::<ExtensionCode>() {
-                    Some(
-                        c @ (ExtensionCode::Open | ExtensionCode::Write | ExtensionCode::Close),
-                    ) if st.scanner.cur_cmd == Cmd::Extension => Some(c),
-                    _ => None,
-                };
+            let io_code = match st.scanner.try_command() {
+                Some(Command::Extension(
+                    c @ (ExtensionCode::Open | ExtensionCode::Write | ExtensionCode::Close),
+                )) => Some(c),
+                _ => None,
+            };
             if let Some(io_code) = io_code {
                 let p = st.input.cur_list.tail;
                 let w = io_whatsit(st, io_code)?;

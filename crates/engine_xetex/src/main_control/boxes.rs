@@ -2,6 +2,7 @@
 
 use crate::cmd::Cmd;
 use crate::codes::{BoxCode, ValueLevel};
+use crate::command::Command;
 use crate::consts::{
     A_LEADERS, BEGIN_M_CODE, BOX_BASE, BOX_NODE_SIZE, END_M_CODE, HMODE, IGNORE_DEPTH,
     MARGIN_KERN_NODE_SIZE, MMODE, SUB_BOX, VMODE,
@@ -21,13 +22,12 @@ use super::{
     append_list, begin_every, BOX_FLAG, GLOBAL_BOX_FLAG, INNER_HMODE, LEADER_FLAG, SHIP_OUT_FLAG,
 };
 
-pub(super) fn unpackage(st: &mut EngineState) -> Result<(), Abort> {
-    if st.scanner.cur_chr > BoxCode::Copy.raw() {
-        let disc = &mut st.scanner.disc_ptr[st.scanner.cur_chr as usize];
+pub(super) fn unpackage(st: &mut EngineState, c: BoxCode) -> Result<(), Abort> {
+    if matches!(c, BoxCode::LastBox | BoxCode::Vsplit) {
+        let disc = &mut st.scanner.disc_ptr[c as usize];
         st.input.cur_list.tail.set_link(&mut st.mem, *disc);
         *disc = MemPtr::NULL;
     } else {
-        let c = st.scanner.cur_chr;
         let n = crate::scan::scan_register_num(st)?;
         let Some(b) = fetch_box(st, n) else {
             return Ok(());
@@ -46,7 +46,7 @@ pub(super) fn unpackage(st: &mut EngineState) -> Result<(), Abort> {
             return crate::errors::error(st);
         }
         let list = b.list_ptr(&st.mem);
-        if c == BoxCode::Copy.raw() {
+        if c == BoxCode::Copy {
             let copy = st.mem.copy_node_list(list)?;
             st.input.cur_list.tail.set_link(&mut st.mem, copy);
         } else {
@@ -72,13 +72,13 @@ pub(super) fn unpackage(st: &mut EngineState) -> Result<(), Abort> {
     }
 }
 
-pub(super) fn delete_last(st: &mut EngineState) -> Result<(), Abort> {
+pub(super) fn delete_last(st: &mut EngineState, t: NodeType) -> Result<(), Abort> {
     if st.input.cur_list.mode == VMODE && st.input.cur_list.tail == st.input.cur_list.head {
-        if st.scanner.cur_chr as u16 != NodeType::Glue.as_raw() || st.shipout.last_glue.is_some() {
+        if t != NodeType::Glue || st.shipout.last_glue.is_some() {
             crate::errors::you_cant(st);
-            let remedy = if st.scanner.cur_chr as u16 == NodeType::Kern.as_raw() {
+            let remedy = if t == NodeType::Kern {
                 r"Try `I\kern-\lastkern' instead."
-            } else if st.scanner.cur_chr as u16 != NodeType::Glue.as_raw() {
+            } else if t != NodeType::Glue {
                 "Perhaps you can make the output routine do it."
             } else {
                 r"Try `I\vskip-\lastskip' instead."
@@ -92,12 +92,7 @@ pub(super) fn delete_last(st: &mut EngineState) -> Result<(), Abort> {
         return Ok(());
     }
     let tx = effective_tail(st);
-    if st.mem.is_char_node(tx)
-        || st
-            .mem
-            .node_type(tx)
-            .map_or(true, |t| i32::from(t.as_raw()) != st.scanner.cur_chr)
-    {
+    if st.mem.is_char_node(tx) || st.mem.node_type(tx) != Ok(t) {
         return Ok(());
     }
     if unlink_effective_tail(st, tx)? {
@@ -108,8 +103,8 @@ pub(super) fn delete_last(st: &mut EngineState) -> Result<(), Abort> {
 
 pub(super) fn scan_box(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
     crate::scan::get_x_non_blank_non_relax(st)?;
-    if st.scanner.cur_cmd == Cmd::MakeBox {
-        begin_box(st, box_context)
+    if let Some(Command::MakeBox(code)) = st.scanner.try_command() {
+        begin_box(st, box_context, code)
     } else if box_context >= LEADER_FLAG
         && (st.scanner.cur_cmd == Cmd::Hrule || st.scanner.cur_cmd == Cmd::Vrule)
     {
@@ -223,10 +218,13 @@ fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
         }
         crate::scan::get_x_non_blank_non_relax(st)?;
         let vertical = st.input.cur_list.mode.abs() == VMODE;
-        if (st.scanner.cur_cmd == Cmd::Hskip && !vertical)
-            || (st.scanner.cur_cmd == Cmd::Vskip && vertical)
-        {
-            let g = append_glue(st)?;
+        let skip = match st.scanner.try_command() {
+            Some(Command::Hskip(s)) if !vertical => Some(s),
+            Some(Command::Vskip(s)) if vertical => Some(s),
+            _ => None,
+        };
+        if let Some(s) = skip {
+            let g = append_glue(st, s)?;
             g.set_subtype(
                 &mut st.mem,
                 (box_context - (LEADER_FLAG - i32::from(A_LEADERS))) as u16,
@@ -308,11 +306,11 @@ fn unlink_effective_tail(st: &mut EngineState, tx: MemPtr) -> Result<bool, Abort
     Ok(true)
 }
 
-pub(super) fn begin_box(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
-    let code = st
-        .scanner
-        .chr_code::<BoxCode>()
-        .ok_or(Abort::Confusion("begin_box"))?;
+pub(super) fn begin_box(
+    st: &mut EngineState,
+    box_context: i32,
+    code: BoxCode,
+) -> Result<(), Abort> {
     match code {
         BoxCode::Box => {
             let n = crate::scan::scan_register_num(st)?;

@@ -1,7 +1,12 @@
 //! Building math lists: the math-mode commands and `fin_mlist`.
 
 use crate::cmd::Cmd;
+use crate::codes::AboveCode;
+use crate::codes::DelimNumCode;
+use crate::codes::LeftRightCode;
+use crate::codes::LimitCode;
 use crate::codes::{MathAccentCode, RadicalCode};
+use crate::command::Command;
 use crate::consts::{EMPTY, MATH_CHAR, NORMAL, NUMBER_MATH_FAMILIES, SUB_MLIST};
 use crate::errors::Abort;
 use crate::input::TokenType;
@@ -12,9 +17,7 @@ use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, EqtbState, GroupCode, MemState, SaveStackState};
 use crate::units::{EqtbPtr, MemIdx, MemPtr, NodeType, Scaled};
 
-use super::{
-    ABOVE_CODE, ATOP_CODE, BOTTOM_ACC, DEFAULT_CODE, DELIMITED_CODE, MIDDLE_NOAD, OVER_CODE,
-};
+use super::{BOTTOM_ACC, DEFAULT_CODE, MIDDLE_NOAD};
 
 const FIXED_ACC: u16 = 1;
 
@@ -45,13 +48,15 @@ fn scan_delimiter(
             }
         }
 
-        match st.scanner.cur_cmd {
-            Cmd::Letter | Cmd::OtherChar => st.eqtb.del_code(st.scanner.cur_chr),
-            Cmd::DelimNum if st.scanner.cur_chr == 1 => {
+        match st.scanner.try_command() {
+            Some(Command::Letter(c) | Command::OtherChar(c)) => st.eqtb.del_code(c.raw()),
+            Some(Command::DelimNum(DelimNumCode::Udelimiter)) => {
                 crate::scan::scan_math_class_int(st)?;
                 scan_extended_delimiter(st)?
             }
-            Cmd::DelimNum => crate::scan::scan_delimiter_int(st)?,
+            Some(Command::DelimNum(DelimNumCode::Delimiter)) => {
+                crate::scan::scan_delimiter_int(st)?
+            }
             _ => -1,
         }
     };
@@ -90,8 +95,8 @@ pub(super) fn define_word(st: &mut EngineState, loc: EqtbPtr, val: i32) -> Resul
     st.eqtb.eq_word_define(&mut st.save_stack, loc, val)
 }
 
-pub(crate) fn start_eq_no(st: &mut EngineState) -> Result<(), Abort> {
-    st.save_stack.set_saved(0, st.scanner.cur_chr);
+pub(crate) fn start_eq_no(st: &mut EngineState, left: bool) -> Result<(), Abort> {
+    st.save_stack.set_saved(0, i32::from(left));
     st.save_stack.save_ptr += 1;
 
     crate::main_control::push_math(st, GroupCode::MathShift)?;
@@ -122,11 +127,11 @@ impl ListStateRecord {
     }
 }
 
-pub(crate) fn math_limit_switch(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn math_limit_switch(st: &mut EngineState, code: LimitCode) -> Result<(), Abort> {
     if st
         .input
         .cur_list
-        .apply_math_limit_switch(&mut st.mem, st.scanner.cur_chr as u16)
+        .apply_math_limit_switch(&mut st.mem, code as u16)
     {
         return Ok(());
     }
@@ -145,12 +150,8 @@ impl ListStateRecord {
     }
 }
 
-pub(crate) fn math_radical(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn math_radical(st: &mut EngineState, code: RadicalCode) -> Result<(), Abort> {
     let tail = st.input.cur_list.append_radical_noad(&mut st.mem)?;
-    let code = st
-        .scanner
-        .chr_code::<RadicalCode>()
-        .ok_or(Abort::Confusion("radical"))?;
     scan_delimiter(st, tail.left_delimiter(), Some(code))?;
     crate::scan::scan_math(st, tail.nucleus())
 }
@@ -343,16 +344,24 @@ impl ListStateRecord {
     }
 }
 
-pub(crate) fn math_fraction(st: &mut EngineState) -> Result<(), Abort> {
-    let c = st.scanner.cur_chr;
+pub(crate) fn math_fraction(st: &mut EngineState, code: AboveCode) -> Result<(), Abort> {
+    let delimited = matches!(
+        code,
+        AboveCode::AboveWithDelims | AboveCode::OverWithDelims | AboveCode::AtopWithDelims
+    );
+    let kind = match code {
+        AboveCode::Above | AboveCode::AboveWithDelims => AboveCode::Above,
+        AboveCode::Over | AboveCode::OverWithDelims => AboveCode::Over,
+        AboveCode::Atop | AboveCode::AtopWithDelims => AboveCode::Atop,
+    };
 
     if st.input.cur_list.incompleat_noad().is_some() {
-        if c >= DELIMITED_CODE {
+        if delimited {
             scan_delimiter(st, NodePtr::at(GARBAGE), None)?;
             scan_delimiter(st, NodePtr::at(GARBAGE), None)?;
         }
 
-        if c % DELIMITED_CODE == ABOVE_CODE {
+        if kind == AboveCode::Above {
             crate::scan::scan_dimen(st, false, false)?;
         }
 
@@ -367,19 +376,18 @@ pub(crate) fn math_fraction(st: &mut EngineState) -> Result<(), Abort> {
     } else {
         let aux = st.input.cur_list.start_fraction_noad(&mut st.mem)?;
 
-        if c >= DELIMITED_CODE {
+        if delimited {
             scan_delimiter(st, aux.left_delimiter(), None)?;
             scan_delimiter(st, aux.right_delimiter(), None)?;
         }
 
-        match c % DELIMITED_CODE {
-            ABOVE_CODE => {
+        match kind {
+            AboveCode::Over => aux.set_thickness(&mut st.mem, DEFAULT_CODE),
+            AboveCode::Atop => aux.set_thickness(&mut st.mem, Scaled::ZERO),
+            _ => {
                 let d = crate::scan::scan_dimen(st, false, false)?;
                 aux.set_thickness(&mut st.mem, d);
             }
-            OVER_CODE => aux.set_thickness(&mut st.mem, DEFAULT_CODE),
-            ATOP_CODE => aux.set_thickness(&mut st.mem, Scaled::ZERO),
-            _ => {}
         }
     }
     Ok(())
@@ -417,8 +425,8 @@ impl MemState {
     }
 }
 
-pub(crate) fn math_left_right(st: &mut EngineState) -> Result<(), Abort> {
-    let t = st.scanner.cur_chr as u16;
+pub(crate) fn math_left_right(st: &mut EngineState, code: LeftRightCode) -> Result<(), Abort> {
+    let t = code as u16;
     if t != NodeType::LeftNoad.as_raw() && st.save_stack.cur_group != GroupCode::MathLeft {
         if st.save_stack.cur_group == GroupCode::MathShift {
             scan_delimiter(st, NodePtr::at(GARBAGE), None)?;
@@ -470,8 +478,9 @@ pub(crate) fn math_left_right(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-pub(crate) fn math_ac(st: &mut EngineState) -> Result<(), Abort> {
-    if st.scanner.cur_cmd == Cmd::Accent {
+/// `\mathaccent`, `\Umathaccent`, or `\accent` in math mode when `code` is `None`.
+pub(crate) fn math_ac(st: &mut EngineState, code: Option<MathAccentCode>) -> Result<(), Abort> {
+    if code.is_none() {
         crate::output::error_here_with_diagnostic(st, "Please use ");
         crate::output::print_esc(st, "mathaccent");
         crate::output::print(st, " for accents in math mode");
@@ -485,7 +494,7 @@ pub(crate) fn math_ac(st: &mut EngineState) -> Result<(), Abort> {
 
     let tail = st.input.cur_list.append_accent_noad(&mut st.mem)?;
 
-    let value = if st.scanner.chr_code::<MathAccentCode>() == Some(MathAccentCode::UmathAccent) {
+    let value = if code == Some(MathAccentCode::UmathAccent) {
         if crate::scan::scan_keyword(st, "fixed")? {
             tail.set_subtype(&mut st.mem, FIXED_ACC);
         } else if crate::scan::scan_keyword(st, "bottom")? {

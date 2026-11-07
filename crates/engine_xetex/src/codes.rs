@@ -93,6 +93,17 @@ code_enum! {
 impl ValueLevel {
     /// `box_val`, the sparse-array type of box registers.
     pub(crate) const BOX: ValueLevel = ValueLevel::Ident;
+
+    /// Where registers 0..=255 of this type live in `eqtb`, `None` past `Mu`.
+    pub(crate) const fn register_base(self) -> Option<crate::units::EqtbPtr> {
+        match self {
+            ValueLevel::Int => Some(crate::consts::COUNT_BASE),
+            ValueLevel::Dimen => Some(crate::consts::SCALED_BASE),
+            ValueLevel::Glue => Some(crate::consts::SKIP_BASE),
+            ValueLevel::Mu => Some(crate::consts::MU_SKIP_BASE),
+            _ => None,
+        }
+    }
 }
 
 code_enum! {
@@ -455,3 +466,127 @@ code_enum! {
         Uradical = 1 => "Uradical",
     }
 }
+
+code_enum! {
+    /// The `chr_code` of `\shipout` and the leaders primitives.
+    pub(crate) enum LeaderCode: u8 {
+        Shipout = 99 => "shipout",
+        ALeaders = 100 => "leaders",
+        CLeaders = 101 => "cleaders",
+        XLeaders = 102 => "xleaders",
+    }
+}
+
+code_enum! {
+    /// The `chr_code` of `\valign` and the TeX--XeT direction primitives.
+    pub(crate) enum ValignCode: u8 {
+        Valign = 0 => "valign",
+        BeginL = 6 => "beginL",
+        EndL = 7 => "endL",
+        BeginR = 10 => "beginR",
+        EndR = 11 => "endR",
+    }
+}
+
+code_enum! {
+    /// The `chr_code` of `\middle`, `\left` and `\right`: the noad they make.
+    pub(crate) enum LeftRightCode: u8 {
+        Middle = 1 => "middle",
+        Left = 30 => "left",
+        Right = 31 => "right",
+    }
+}
+
+code_enum! {
+    /// The `chr_code` of `\displaylimits`, `\limits` and `\nolimits`.
+    pub(crate) enum LimitCode: u8 {
+        Normal = 0 => "displaylimits",
+        Limits = 1 => "limits",
+        NoLimits = 2 => "nolimits",
+    }
+}
+
+code_enum! {
+    /// The `chr_code` of `\above` and the other generalized fractions.
+    pub(crate) enum AboveCode: u8 {
+        Above = 0 => "above",
+        Over = 1 => "over",
+        Atop = 2 => "atop",
+        AboveWithDelims = 3 => "abovewithdelims",
+        OverWithDelims = 4 => "overwithdelims",
+        AtopWithDelims = 5 => "atopwithdelims",
+    }
+}
+
+code_enum! {
+    /// The `chr_code` of `\hyphenchar`, `\skewchar`, `\lpcode` and `\rpcode`.
+    pub(crate) enum FontIntCode: u8 {
+        HyphenChar = 0 => "hyphenchar",
+        SkewChar = 1 => "skewchar",
+        LpCode = 2 => "lpcode",
+        RpCode = 3 => "rpcode",
+    }
+}
+
+code_enum! {
+    /// The `chr_code` of `\prevdepth` and `\spacefactor`: the mode they belong to.
+    pub(crate) enum AuxCode: u8 {
+        PrevDepth = 1 => "prevdepth",
+        SpaceFactor = 104 => "spacefactor",
+    }
+}
+
+impl AuxCode {
+    /// The mode in which the quantity exists.
+    pub(crate) const fn mode(self) -> i16 {
+        self as i16
+    }
+}
+
+code_enum! {
+    /// The `chr_code` of `\pagegoal` and the other `page_so_far` entries.
+    pub(crate) enum PageDimenCode: u8 {
+        Goal = 0 => "pagegoal",
+        Total = 1 => "pagetotal",
+        Stretch = 2 => "pagestretch",
+        FilStretch = 3 => "pagefilstretch",
+        FillStretch = 4 => "pagefillstretch",
+        FilllStretch = 5 => "pagefilllstretch",
+        Shrink = 6 => "pageshrink",
+        Depth = 7 => "pagedepth",
+    }
+}
+
+impl PageDimenCode {
+    /// The index into `page_so_far`.
+    pub(crate) const fn index(self) -> usize {
+        self as usize
+    }
+}
+
+code_enum! {
+    /// The `chr_code` of `\long`, `\outer`, `\global` and `\protected`, a prefix bit.
+    pub(crate) enum PrefixCode: u8 {
+        Long = 1 => "long",
+        Outer = 2 => "outer",
+        Global = 4 => "global",
+        Protected = 8 => "protected",
+    }
+}
+
+const _: () = {
+    assert!(ValignCode::BeginL.raw() == crate::consts::BEGIN_L_CODE as i32);
+    assert!(ValignCode::EndL.raw() == crate::consts::END_L_CODE as i32);
+    assert!(ValignCode::BeginR.raw() == crate::consts::BEGIN_R_CODE as i32);
+    assert!(ValignCode::EndR.raw() == (crate::consts::R_CODE + crate::consts::END_M_CODE) as i32);
+    assert!(LeaderCode::ALeaders.raw() == crate::consts::A_LEADERS as i32);
+    assert!(AuxCode::PrevDepth.mode() == crate::consts::VMODE);
+    assert!(AuxCode::SpaceFactor.mode() == crate::consts::HMODE);
+    assert!(LeftRightCode::Middle.raw() == crate::math::MIDDLE_NOAD as i32);
+    assert!(LeftRightCode::Left.raw() == crate::units::NodeType::LeftNoad as i32);
+    assert!(LeftRightCode::Right.raw() == crate::units::NodeType::RightNoad as i32);
+    assert!(LimitCode::Limits.raw() == crate::math::LIMITS as i32);
+    assert!(LimitCode::NoLimits.raw() == crate::math::NO_LIMITS as i32);
+    assert!(FontIntCode::LpCode.raw() == crate::main_control::LP_CODE_BASE);
+    assert!(FontIntCode::RpCode.raw() == crate::main_control::RP_CODE_BASE);
+};

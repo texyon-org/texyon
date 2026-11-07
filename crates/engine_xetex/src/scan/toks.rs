@@ -20,6 +20,7 @@ use crate::units::{BufPos, EqtbPtr, StrNumber};
 use super::internal::{scan_something_internal, CurVal};
 use super::next::{get_next, get_token, get_x_token, x_token};
 use super::{scan_left_brace, NO_EXPAND_FLAG};
+use crate::command::Command;
 
 const ZERO_TOKEN: Token = Token::other(b'0');
 
@@ -100,7 +101,7 @@ pub(crate) fn read_toks(
     st: &mut EngineState,
     n: i32,
     r: EqtbPtr,
-    j: i32,
+    line: bool,
 ) -> Result<TokenList, Abort> {
     st.scanner.scanner_status = ScannerStatus::Defining;
     st.scanner.warning_index = r;
@@ -148,7 +149,7 @@ pub(crate) fn read_toks(
         finish_line(st);
         st.input.cur_input.state = NEW_LINE;
 
-        if j == 1 {
+        if line {
             let mut loc = st.input.cur_input.loc;
             while loc <= st.input.cur_input.limit {
                 let c = st.input.buffer[loc];
@@ -358,24 +359,25 @@ pub(crate) fn scan_toks(
             if xpand {
                 loop {
                     get_next(st)?;
-                    if st.scanner.cur_cmd >= Cmd::Call
-                        && st.mem.is_protected_macro(st.scanner.cur_chr_tokens())
-                    {
+                    if matches!(
+                        st.scanner.try_command(),
+                        Some(Command::Call { body, .. }) if st.mem.is_protected_macro(body)
+                    ) {
                         st.scanner.cur_cmd = Cmd::Relax;
                         st.scanner.cur_chr = NO_EXPAND_FLAG;
                     }
                     if st.scanner.cur_cmd <= Cmd::MAX_COMMAND {
                         break;
                     }
-                    if st.scanner.cur_cmd != Cmd::The {
-                        expand(st)?;
-                    } else {
-                        let tail = the_toks(st, crate::expand::the_code(st)?)?;
+                    if let Some(Command::The(code)) = st.scanner.try_command() {
+                        let tail = the_toks(st, code)?;
                         let list = TEMP_HEAD_TOKS.link(&st.mem);
                         if !list.is_null() {
                             p.set_link(&mut st.mem, list);
                             p = tail;
                         }
+                    } else {
+                        expand(st)?;
                     }
                 }
                 x_token(st)?;
