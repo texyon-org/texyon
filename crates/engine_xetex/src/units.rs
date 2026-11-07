@@ -29,8 +29,10 @@ impl MemIdx {
     #[inline]
     pub fn words(self, len: i32) -> std::ops::Range<usize> {
         // A negative start becomes an index past any arena, so slicing rejects it.
-        let start = usize::try_from(self.0).unwrap_or(usize::MAX);
-        start..start.saturating_add(usize::try_from(len).unwrap_or(0))
+        // Staying in i32 range lets the compiler fold a constant-length slice check.
+        const PAST_ANY_ARENA: usize = 0x7FFF_FFFF;
+        let start = usize::try_from(self.0).unwrap_or(PAST_ANY_ARENA);
+        start..start + usize::try_from(len).unwrap_or(0)
     }
 
     #[inline]

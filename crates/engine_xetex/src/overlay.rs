@@ -623,6 +623,13 @@ mod tests {
     }
 
     #[test]
+    fn a_negative_index_selects_no_words() {
+        let mem = arena();
+        assert!(mem.data.get(MemIdx::from_raw(-1).words(2)).is_none());
+        assert_eq!(MemIdx::from_raw(3).words(2), 3..5);
+    }
+
+    #[test]
     fn the_largest_layout_fits_at_the_top_of_mem() {
         let mut mem = MemState {
             data: crate::mem_types::zeroed_vec(crate::mem::MEM_WORDS),
