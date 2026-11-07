@@ -188,3 +188,22 @@ fn alignment_preambles_expand_span_and_set_tabskip() {
         ..\glue(\tabskip) 2.0",
     );
 }
+
+#[test]
+fn io_whatsits_keep_their_fields_through_a_copy() {
+    let r = run(r"\lefthyphenmin=2 \righthyphenmin=3
+        \setbox0\hbox{\openout3=foo \write3{x}\closeout3 \write-1{y}\special{s}\setlanguage5 }
+        \setbox1\copy0 \setbox0\hbox{}\showbox1 \immediate\write-1{hello}");
+    assert_lines(
+        &r.boxes()[0],
+        r"
+        \hbox(0.0+0.0)x0.0
+        .\openout3=foo
+        .\write3{x}
+        .\closeout3
+        .\write-{y}
+        .\special{s}
+        .\setlanguage5 (hyphenmin 2,3)",
+    );
+    assert!(r.log.lines().any(|l| l == "hello"));
+}

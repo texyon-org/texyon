@@ -10,8 +10,8 @@ use std::marker::PhantomData;
 use crate::consts::{
     ACCENT_NOAD_SIZE, BOX_NODE_SIZE, FRACTION_NOAD_SIZE, GLUE_SPEC_SIZE, INDEX_NODE_SIZE,
     INS_NODE_SIZE, MARGIN_KERN_NODE_SIZE, MARK_CLASS_NODE_SIZE, MEDIUM_NODE_SIZE, NATIVE_NODE_SIZE,
-    NOAD_SIZE, NULL_FLAG, PAGE_INS_NODE_SIZE, PIC_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE,
-    SMALL_NODE_SIZE, STYLE_NODE_SIZE,
+    NOAD_SIZE, NULL_FLAG, OPEN_NODE_SIZE, PAGE_INS_NODE_SIZE, PIC_NODE_SIZE, RADICAL_NOAD_SIZE,
+    RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE, WRITE_NODE_SIZE,
 };
 use crate::errors::Abort;
 use crate::state::MemState;
@@ -523,8 +523,14 @@ node_kinds! {
     /// Any noad, through the words every noad shares.
     AnyNoad;
     MarginKernNode = MarginKern, MARGIN_KERN_NODE_SIZE;
-    /// Variable-size, sub-classified by [`WhatsitSubtype`].
+    /// Any whatsit, through its header. [`NodePtr::variant`] gives its layout.
     WhatsitNode;
+    /// `\openout`: a stream and a file name.
+    OpenNode = Whatsit, OPEN_NODE_SIZE;
+    /// `\write`, `\closeout` or `\special`: a stream and a token list.
+    WriteNode = Whatsit, WRITE_NODE_SIZE;
+    /// A language change: the language and its hyphenation minima.
+    LanguageNode = Whatsit, SMALL_NODE_SIZE;
     /// An alignment box before its column widths are known. Words +4..+6 hold
     /// the accumulated shrink, span count and stretch instead of box glue.
     UnsetNode;
@@ -1447,7 +1453,71 @@ impl WhatsitSubtype {
     }
 }
 
+impl StoredCode for WhatsitSubtype {
+    #[inline]
+    fn from_u16(raw: u16) -> Option<Self> {
+        WhatsitSubtype::from_raw(raw)
+    }
+    #[inline]
+    fn to_u16(self) -> u16 {
+        self as u16
+    }
+}
+
+/// A fixed-layout whatsit kind, which widens to [`WhatsitNode`].
+pub trait WhatsitKind: FixedNode {}
+
+impl_traits!(WhatsitKind: OpenNode, WriteNode, LanguageNode);
+
+impl<K: WhatsitKind> NodePtr<K> {
+    /// A fresh whatsit of the given subtype, other fields uninitialised.
+    #[inline]
+    pub fn alloc_whatsit(mem: &mut MemState, subtype: WhatsitSubtype) -> Result<Self, Abort> {
+        let p = Self::alloc(mem)?;
+        mem[p.whatsit()].subtype = subtype.into();
+        Ok(p)
+    }
+
+    /// The whatsit as any whatsit, for its header.
+    #[inline]
+    pub fn whatsit(self) -> NodePtr<WhatsitNode> {
+        NodePtr::from_idx_unchecked(self.idx)
+    }
+}
+
+/// A whatsit by its layout, read off its subtype.
+#[derive(Copy, Clone, Debug)]
+pub enum WhatsitVariant {
+    Open(NodePtr<OpenNode>),
+    Write(NodePtr<WriteNode>),
+    Close(NodePtr<WriteNode>),
+    Special(NodePtr<WriteNode>),
+    Language(NodePtr<LanguageNode>),
+    SavePos,
+    NativeWord(NodePtr<WhatsitNode>),
+    Glyph(NodePtr<WhatsitNode>),
+    Pic(NodePtr<WhatsitNode>),
+}
+
 impl NodePtr<WhatsitNode> {
+    /// The whatsit's layout, from its subtype. `None` for an unknown subtype.
+    #[inline]
+    pub fn variant(self, mem: &MemState) -> Option<WhatsitVariant> {
+        use WhatsitSubtype as S;
+        let p = self.idx;
+        Some(match mem[self].subtype.get()? {
+            S::Open => WhatsitVariant::Open(NodePtr::from_idx_unchecked(p)),
+            S::Write => WhatsitVariant::Write(NodePtr::from_idx_unchecked(p)),
+            S::Close => WhatsitVariant::Close(NodePtr::from_idx_unchecked(p)),
+            S::Special => WhatsitVariant::Special(NodePtr::from_idx_unchecked(p)),
+            S::Language => WhatsitVariant::Language(NodePtr::from_idx_unchecked(p)),
+            S::PdfSavePos => WhatsitVariant::SavePos,
+            S::NativeWord | S::NativeWordAt => WhatsitVariant::NativeWord(self),
+            S::Glyph => WhatsitVariant::Glyph(self),
+            S::Pic | S::Pdf => WhatsitVariant::Pic(self),
+        })
+    }
+
     /// A fresh `size`-word whatsit of the given subtype, fields uninitialised.
     #[inline]
     pub fn alloc(mem: &mut MemState, size: i32, subtype: WhatsitSubtype) -> Result<Self, Abort> {
@@ -1462,14 +1532,6 @@ impl NodePtr<WhatsitNode> {
     }
 
     fields! {
-        write_tokens / set_write_tokens: TokenList = b32s1 @ 1;
-        write_stream / set_write_stream: i32 = b32s0 @ 1;
-        open_name / set_open_name: StrNumber = b32s1 @ 1;
-        open_area / set_open_area: StrNumber = b32s0 @ 2;
-        open_ext / set_open_ext: StrNumber = b32s1 @ 2;
-        what_lang / set_what_lang: i32 = b32s1 @ 1;
-        what_lhm / set_what_lhm: u16 = b16s1 @ 1;
-        what_rhm / set_what_rhm: u16 = b16s0 @ 1;
         native_font / set_native_font: FontId = b16s2 @ 4;
         /// UTF-16 length of a native word.
         native_length / set_native_length: u16 = b16s1 @ 4;
@@ -2052,17 +2114,6 @@ mod tests {
         w.set_native_glyph_info_handle(&mut mem, 7);
         assert_eq!(w.native_glyph_info_handle(&mem), 7);
         assert_eq!(mem.b32s1(MemPtr::from_raw(105)), 0);
-
-        mem.set_b32s1(MemPtr::from_raw(101), 0x55);
-        assert_eq!(
-            w.write_tokens(&mem),
-            TokenList::from_ptr(MemPtr::from_raw(0x55))
-        );
-        assert_eq!(w.what_lang(&mem), 0x55);
-        mem.set_b16s1(MemPtr::from_raw(101), 4);
-        mem.set_b16s0(MemPtr::from_raw(101), 5);
-        assert_eq!(w.what_lhm(&mem), 4);
-        assert_eq!(w.what_rhm(&mem), 5);
     }
 
     #[test]

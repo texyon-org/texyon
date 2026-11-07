@@ -9,7 +9,7 @@ use crate::errors::Abort;
 use crate::mem::{ACTIVE_LIST, TEMP_HEAD};
 use crate::node::{
     link_of, ActiveNode, AnyNode, BoxNode, CharNode, DeltaNode, DiscNode, GlueNode, GlueSpecNode,
-    NodePtr, PassiveNode, WhatsitSubtype,
+    NodePtr, PassiveNode, WhatsitVariant,
 };
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{
@@ -545,10 +545,12 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                     st.scanner.active_width[1] += node.hlist_width(&st.mem);
                 }
                 AnyNode::Whatsit(w) => {
-                    let subtype = w.whatsit_subtype(&st.mem);
-                    if subtype == Some(WhatsitSubtype::Language) {
-                        set_language(st, w);
-                    } else if subtype.is_some_and(|s| s.has_dimensions()) {
+                    if let Some(WhatsitVariant::Language(language)) = w.variant(&st.mem) {
+                        set_language(st, language);
+                    } else if w
+                        .whatsit_subtype(&st.mem)
+                        .is_some_and(|s| s.has_dimensions())
+                    {
                         st.scanner.active_width[1] += w.width(&st.mem);
                     }
                 }

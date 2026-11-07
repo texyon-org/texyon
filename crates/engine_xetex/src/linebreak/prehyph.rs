@@ -3,7 +3,7 @@
 use crate::consts::{L_CODE, NORMAL, TEX_NULL};
 use crate::errors::Abort;
 use crate::fonts::LigChar;
-use crate::node::{AnyNode, CharNode, NodePtr, WhatsitNode, WhatsitSubtype};
+use crate::node::{AnyNode, CharNode, LanguageNode, NodePtr, WhatsitNode, WhatsitVariant};
 use crate::params::IntPar;
 use crate::state::{EngineState, MemState};
 use crate::units::MemPtr;
@@ -12,10 +12,11 @@ use super::hyphenate::{hyphenate, split_native_word};
 use super::odd;
 
 /// Switch hyphenation to the language of a `\language` whatsit.
-pub(super) fn set_language(st: &mut EngineState, w: NodePtr<WhatsitNode>) {
-    st.hyph.cur_lang = w.what_lang(&st.mem) as u8;
-    st.hyph.l_hyf = i32::from(w.what_lhm(&st.mem));
-    st.hyph.r_hyf = i32::from(w.what_rhm(&st.mem));
+pub(super) fn set_language(st: &mut EngineState, w: NodePtr<LanguageNode>) {
+    let language = st.mem[w];
+    st.hyph.cur_lang = language.lang as u8;
+    st.hyph.l_hyf = i32::from(language.lhm);
+    st.hyph.r_hyf = i32::from(language.rhm);
     st.hyph.set_hyph_index();
 }
 
@@ -114,8 +115,8 @@ pub(super) fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), Abo
                         }
                     }
 
-                    if subtype == Some(WhatsitSubtype::Language) {
-                        set_language(st, w);
+                    if let Some(WhatsitVariant::Language(language)) = w.variant(&st.mem) {
+                        set_language(st, language);
                     }
                     prev_s = s;
                     s = prev_s.link(&st.mem);

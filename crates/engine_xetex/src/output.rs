@@ -528,9 +528,8 @@ pub(crate) fn print_size(st: &mut EngineState, s: i32) {
     );
 }
 
-fn print_write_whatsit(st: &mut EngineState, s: &str, p: NodePtr<WhatsitNode>) {
+fn print_write_whatsit(st: &mut EngineState, s: &str, v: i32) {
     print_esc(st, s);
-    let v = p.write_stream(&st.mem);
     if v < 16 {
         print_int(st, v);
     } else if v == 16 {

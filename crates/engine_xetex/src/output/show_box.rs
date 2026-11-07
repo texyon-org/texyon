@@ -8,7 +8,7 @@ use crate::math::{DEFAULT_CODE, LIMITS};
 use crate::mem::ZERO_GLUE;
 use crate::node::{
     AnyNoad, AnyNode, BoxNode, CharNode, MathField, NoadVariant, NodePtr, WhatsitNode,
-    WhatsitSubtype,
+    WhatsitSubtype, WhatsitVariant,
 };
 use crate::params::IntPar;
 use crate::state::EngineState;
@@ -376,60 +376,60 @@ fn show_whatsit(st: &mut EngineState, node: NodePtr<WhatsitNode>) {
     let print_font = |st: &mut EngineState| {
         print_esc(st, st.eqtb.font_id_text(node.native_font(&st.mem)));
     };
-    match node.whatsit_subtype(&st.mem) {
-        Some(WhatsitSubtype::Open) => {
-            print_write_whatsit(st, "openout", node);
+    match node.variant(&st.mem) {
+        Some(WhatsitVariant::Open(open)) => {
+            let open = st.mem[open];
+            print_write_whatsit(st, "openout", open.stream);
             print_char(st, b'=');
-            let (name, area, ext) = (
-                node.open_name(&st.mem),
-                node.open_area(&st.mem),
-                node.open_ext(&st.mem),
-            );
-            print_file_name(st, name, area, ext);
+            print_file_name(st, open.name, open.area, open.ext);
         }
-        Some(WhatsitSubtype::Write) => {
-            print_write_whatsit(st, "write", node);
-            print_mark(st, node.write_tokens(&st.mem));
+        Some(WhatsitVariant::Write(write)) => {
+            let write = st.mem[write];
+            print_write_whatsit(st, "write", write.stream);
+            print_mark(st, write.tokens);
         }
-        Some(WhatsitSubtype::Close) => print_write_whatsit(st, "closeout", node),
-        Some(WhatsitSubtype::Special) => {
+        Some(WhatsitVariant::Close(close)) => {
+            print_write_whatsit(st, "closeout", st.mem[close].stream);
+        }
+        Some(WhatsitVariant::Special(special)) => {
             print_esc(st, "special");
-            print_mark(st, node.write_tokens(&st.mem));
+            print_mark(st, st.mem[special].tokens);
         }
-        Some(WhatsitSubtype::Language) => {
+        Some(WhatsitVariant::Language(language)) => {
+            let language = st.mem[language];
             print_esc(st, "setlanguage");
-            print_int(st, node.what_lang(&st.mem));
+            print_int(st, language.lang);
             print(st, " (hyphenmin ");
-            print_int(st, i32::from(node.what_lhm(&st.mem)));
+            print_int(st, i32::from(language.lhm));
             print_char(st, b',');
-            print_int(st, i32::from(node.what_rhm(&st.mem)));
+            print_int(st, i32::from(language.rhm));
             print_char(st, b')');
         }
-        Some(WhatsitSubtype::PdfSavePos) => print_esc(st, "pdfsavepos"),
-        Some(WhatsitSubtype::NativeWord | WhatsitSubtype::NativeWordAt) => {
+        Some(WhatsitVariant::SavePos) => print_esc(st, "pdfsavepos"),
+        Some(WhatsitVariant::NativeWord(word)) => {
             print_font(st);
             print_char(st, b' ');
-            print_native_word(st, node);
+            print_native_word(st, word);
         }
-        Some(WhatsitSubtype::Glyph) => {
+        Some(WhatsitVariant::Glyph(glyph)) => {
             print_font(st);
             print(st, " glyph#");
-            print_int(st, i32::from(node.native_glyph(&st.mem)));
+            print_int(st, i32::from(glyph.native_glyph(&st.mem)));
         }
-        Some(sub @ (WhatsitSubtype::Pic | WhatsitSubtype::Pdf)) => {
-            if sub == WhatsitSubtype::Pic {
+        Some(WhatsitVariant::Pic(pic)) => {
+            if pic.whatsit_subtype(&st.mem) == Some(WhatsitSubtype::Pic) {
                 print_esc(st, "XeTeXpicfile");
             } else {
                 print_esc(st, "XeTeXpdffile");
             }
             print(st, " \"");
-            for i in 0..node.pic_path_len(&st.mem) as usize {
-                let b = node.pic_path(&st.mem)[i];
+            for i in 0..pic.pic_path_len(&st.mem) as usize {
+                let b = pic.pic_path(&st.mem)[i];
                 print_raw_char(st, i32::from(b), true);
             }
             print(st, b'"');
         }
-        _ => print(st, "whatsit?"),
+        None => print(st, "whatsit?"),
     }
 }
 

@@ -11,16 +11,16 @@ use crate::consts::{EMPTY, NORMAL};
 use crate::node::{
     AccentNoad, ActiveNode, AdjustNode, AlignRecord, AlignStackNode, AnyNoad, BoxNode, CharNode,
     ChoiceNode, CondNode, DelimiterField, DeltaNode, DiscNode, EdgeNode, ExprNode, FenceNoad,
-    FixedNode, FractionNoad, FreeBlock, GlueNode, GlueSpecNode, InsNode, KernNode, LigItem,
-    LigatureNode, Link, MarginKernNode, MarkNode, MathField, MathNode, MovementNode, Noad,
-    NodeKind, NodePtr, PageInsNode, ParShapeNode, PassiveNode, PenaltiesNode, PenaltyNode,
-    PseudoLineNode, RadicalNoad, RuleNode, SaChild, SaElement, SaIndexNode, SaLeaf,
+    FixedNode, FractionNoad, FreeBlock, GlueNode, GlueSpecNode, InsNode, KernNode, LanguageNode,
+    LigItem, LigatureNode, Link, MarginKernNode, MarkNode, MathField, MathNode, MovementNode, Noad,
+    NodeKind, NodePtr, OpenNode, PageInsNode, ParShapeNode, PassiveNode, PenaltiesNode,
+    PenaltyNode, PseudoLineNode, RadicalNoad, RuleNode, SaChild, SaElement, SaIndexNode, SaLeaf,
     SaMarkClassNode, SaPointerNode, SaSaved, SaSavedPointer, SaSavedWord, SaWordNode, SpanNode,
-    Stored, StoredDimen, StyleNode, UnsetNode,
+    Stored, StoredDimen, StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype, WriteNode,
 };
 use crate::state::MemState;
 use crate::token::TokenList;
-use crate::units::{FontId, GlueOrder, GlueSign, MemPtr, NodeType, Orientation, Scaled};
+use crate::units::{FontId, GlueOrder, GlueSign, MemPtr, NodeType, Orientation, Scaled, StrNumber};
 
 #[cfg(not(target_endian = "little"))]
 compile_error!("node layouts assume little-endian memory words");
@@ -79,56 +79,61 @@ macro_rules! overlay {
 }
 
 /// A node kind laid out as its header `Layout` followed by equal entries, as
-/// many as the size in the header leaves room for.
+/// many as its header says. Entries may be smaller than a word.
 pub trait ArrayOverlay: Overlay {
     /// The struct laid over each entry.
     type Entry: Pod;
-    const ENTRY_WORDS: i32;
-    /// The node's size in words, read from its header.
-    fn size(header: &Self::Layout) -> i32;
+    /// The number of entries, read from the header.
+    fn len(header: &Self::Layout) -> i32;
 }
 
 /// Declares the entry layout of an array node kind, whose header is its
 /// `overlay!` layout.
 macro_rules! array_overlay {
-    ($kind:ty => $entry:ty, $words:expr, |$header:ident| $size:expr) => {
+    ($kind:ty => $entry:ty, |$header:ident| $len:expr) => {
         impl ArrayOverlay for $kind {
             type Entry = $entry;
-            const ENTRY_WORDS: i32 = $words;
             #[inline]
-            fn size($header: &<$kind as Overlay>::Layout) -> i32 {
-                $size
+            fn len($header: &<$kind as Overlay>::Layout) -> i32 {
+                $len
             }
         }
         const _: () = assert!(
-            std::mem::size_of::<$entry>()
-                == std::mem::size_of::<crate::mem_types::MemoryWord>() * $words as usize
+            std::mem::align_of::<$entry>() <= std::mem::align_of::<crate::mem_types::MemoryWord>()
         );
     };
 }
 
 impl MemState {
-    fn entry_words<K: ArrayOverlay>(&self, p: NodePtr<K>) -> std::ops::Range<usize> {
-        let entries = (K::size(&self[p]) - K::WORDS) / K::ENTRY_WORDS;
-        (p.idx() + K::WORDS).words(entries * K::ENTRY_WORDS)
+    /// The words holding `p`'s entries, and the entries' length in bytes.
+    #[inline]
+    fn entry_words<K: ArrayOverlay>(&self, p: NodePtr<K>) -> (std::ops::Range<usize>, usize) {
+        let first = (p.idx() + K::WORDS).words(0).start;
+        let len = usize::try_from(K::len(&self[p])).unwrap_or(0);
+        let bytes = len.saturating_mul(std::mem::size_of::<K::Entry>());
+        let words = bytes.div_ceil(std::mem::size_of::<crate::mem_types::MemoryWord>());
+        (first..first.saturating_add(words), bytes)
     }
 
     /// The entries that follow an array node's header.
     #[inline]
     pub fn entries<K: ArrayOverlay>(&self, p: NodePtr<K>) -> &[K::Entry] {
-        bytemuck::cast_slice(&self.data[self.entry_words(p)])
+        let (words, bytes) = self.entry_words(p);
+        let words: &[u8] = bytemuck::cast_slice(&self.data[words]);
+        bytemuck::cast_slice(&words[..bytes])
     }
 
     /// The entries that follow an array node's header, noted in the journal.
     #[inline]
     pub fn entries_mut<K: ArrayOverlay>(&mut self, p: NodePtr<K>) -> &mut [K::Entry] {
-        let words = self.entry_words(p);
+        let (words, bytes) = self.entry_words(p);
         let start = words.start;
-        let entries = &mut self.data[words];
+        let words = &mut self.data[words];
         if self.journal.armed() {
-            self.journal.note_run(start, entries);
+            self.journal.note_run(start, words);
         }
-        bytemuck::cast_slice_mut(entries)
+        let words: &mut [u8] = bytemuck::cast_slice_mut(words);
+        bytemuck::cast_slice_mut(&mut words[..bytes])
     }
 }
 
@@ -151,7 +156,7 @@ pub struct ParShapeLine {
 }
 
 overlay!(ParShapeNode => ParShapeHeader, 1);
-array_overlay!(ParShapeNode => ParShapeLine, 2, |h| 2 * h.lines + 1);
+array_overlay!(ParShapeNode => ParShapeLine, |h| h.lines);
 
 /// The header of an e-TeX penalty array.
 #[repr(C)]
@@ -173,7 +178,7 @@ pub struct PenaltyEntry {
 }
 
 overlay!(PenaltiesNode => PenaltiesHeader, 2);
-array_overlay!(PenaltiesNode => PenaltyEntry, 1, |h| 2 * h.half_size + 1);
+array_overlay!(PenaltiesNode => PenaltyEntry, |h| 2 * h.half_size - 1);
 
 /// The header of a `\scantokens` pseudo-file line.
 #[repr(C)]
@@ -206,7 +211,60 @@ impl PseudoWord {
 }
 
 overlay!(PseudoLineNode => PseudoLineHeader, 1);
-array_overlay!(PseudoLineNode => PseudoWord, 1, |h| h.size);
+array_overlay!(PseudoLineNode => PseudoWord, |h| h.size - 1);
+
+/// Any whatsit: its subtype and link.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct WhatsitLayout {
+    pub subtype: Stored<WhatsitSubtype>,
+    _type: u16,
+    pub link: MemPtr,
+}
+
+overlay!(WhatsitNode => WhatsitLayout, 1);
+
+/// `\openout`.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct OpenLayout {
+    pub subtype: Stored<WhatsitSubtype>,
+    _type: u16,
+    pub link: MemPtr,
+    pub stream: i32,
+    pub name: StrNumber,
+    pub area: StrNumber,
+    pub ext: StrNumber,
+}
+
+overlay!(OpenNode => OpenLayout);
+
+/// `\write`, `\closeout` or `\special`. A close has no tokens, a special
+/// no stream.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct WriteLayout {
+    pub subtype: Stored<WhatsitSubtype>,
+    _type: u16,
+    pub link: MemPtr,
+    pub stream: i32,
+    pub tokens: TokenList,
+}
+
+overlay!(WriteNode => WriteLayout);
+
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct LanguageLayout {
+    pub subtype: Stored<WhatsitSubtype>,
+    _type: u16,
+    pub link: MemPtr,
+    pub rhm: u16,
+    pub lhm: u16,
+    pub lang: i32,
+}
+
+overlay!(LanguageNode => LanguageLayout);
 
 /// A glue specification. Its first word holds the fill orders and a reference
 /// count in place of a type code and link.
@@ -1148,6 +1206,7 @@ impl BoxLayout {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::node::WhatsitVariant;
     use crate::units::MemIdx;
 
     fn arena() -> MemState {
@@ -1448,6 +1507,46 @@ mod tests {
         );
         assert_eq!((mem.b32s0(at(5)), mem.b32s1(at(5))), (0, 0));
         assert_eq!(mem.entries(p)[1].chars(), [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn io_whatsit_fields_land_on_their_words() {
+        let mut mem = arena();
+        let at = MemIdx::from_raw;
+        let o: NodePtr<OpenNode> = NodePtr::from_idx_unchecked(at(4));
+        let open = &mut mem[o];
+        open.subtype = WhatsitSubtype::Open.into();
+        open.link = MemPtr::from_raw(3);
+        open.stream = 5;
+        open.name = StrNumber::from_raw(6);
+        open.area = StrNumber::from_raw(7);
+        open.ext = StrNumber::from_raw(8);
+        assert_eq!((mem.b16s0(at(4)), mem.b32s1(at(4))), (0, 3));
+        assert_eq!([mem.b32s0(at(5)), mem.b32s1(at(5))], [5, 6]);
+        assert_eq!([mem.b32s0(at(6)), mem.b32s1(at(6))], [7, 8]);
+        assert!(matches!(o.whatsit().variant(&mem), Some(WhatsitVariant::Open(p)) if p == o));
+
+        let w: NodePtr<WriteNode> = NodePtr::from_idx_unchecked(at(8));
+        let write = &mut mem[w];
+        write.subtype = WhatsitSubtype::Special.into();
+        write.stream = 9;
+        write.tokens = TokenList::from_ptr(MemPtr::from_raw(10));
+        assert_eq!(mem.b16s0(at(8)), 3);
+        assert_eq!([mem.b32s0(at(9)), mem.b32s1(at(9))], [9, 10]);
+        assert!(matches!(w.whatsit().variant(&mem), Some(WhatsitVariant::Special(p)) if p == w));
+
+        let l: NodePtr<LanguageNode> = NodePtr::from_idx_unchecked(at(12));
+        let language = &mut mem[l];
+        language.subtype = WhatsitSubtype::Language.into();
+        language.lang = 11;
+        language.lhm = 2;
+        language.rhm = 3;
+        assert_eq!(mem.b16s0(at(12)), 4);
+        assert_eq!(
+            (mem.b16s1(at(13)), mem.b16s0(at(13)), mem.b32s1(at(13))),
+            (2, 3, 11)
+        );
+        assert!(matches!(l.whatsit().variant(&mem), Some(WhatsitVariant::Language(p)) if p == l));
     }
 
     #[test]

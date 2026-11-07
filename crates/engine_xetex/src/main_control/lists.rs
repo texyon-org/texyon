@@ -6,7 +6,7 @@ use crate::command::Command;
 use crate::consts::{
     ACC_KERN, BIGGEST_CHAR, BOX_NODE_SIZE, EMPTY, ETEX_PEN_BASE, EXPLICIT, FROZEN_CR,
     FROZEN_END_GROUP, FROZEN_RIGHT, HMODE, IGNORE_DEPTH, MAX_DIMEN, MMODE, MU_GLUE, NOAD_SIZE,
-    NULL_FLAG, PAR_SHAPE_LOC, SMALL_NODE_SIZE, SUB_BOX, SUB_MLIST, TEX_NULL, VMODE,
+    NULL_FLAG, PAR_SHAPE_LOC, SUB_BOX, SUB_MLIST, TEX_NULL, VMODE,
 };
 use crate::errors::Abort;
 use crate::fonts::{
@@ -19,8 +19,8 @@ use crate::mem::{
 };
 use crate::mem_types::ListStateRecord;
 use crate::node::{
-    AdjustNode, AnyNode, CharNode, DiscNode, GlueNode, GlueSpecNode, InsNode, MarkNode, MathField,
-    NoadVariant, NodePtr, WhatsitNode, WhatsitSubtype,
+    AdjustNode, AnyNode, CharNode, DiscNode, GlueNode, GlueSpecNode, InsNode, LanguageNode,
+    MarkNode, MathField, NoadVariant, NodePtr, WhatsitNode, WhatsitSubtype,
 };
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
@@ -573,13 +573,12 @@ impl ListStateRecord {
         if l == self.clang() {
             return Ok(());
         }
-        let w = self.new_whatsit(mem, WhatsitSubtype::Language, SMALL_NODE_SIZE)?;
-        w.set_what_lang(mem, l);
+        let w = self.append_whatsit::<LanguageNode>(mem, WhatsitSubtype::Language)?;
         self.set_clang(l);
-        let lhm = crate::helpers::norm_min(eqtb.int_par(IntPar::LeftHyphenMin)) as u16;
-        w.set_what_lhm(mem, lhm);
-        let rhm = crate::helpers::norm_min(eqtb.int_par(IntPar::RightHyphenMin)) as u16;
-        w.set_what_rhm(mem, rhm);
+        let language = &mut mem[w];
+        language.lang = l;
+        language.lhm = crate::helpers::norm_min(eqtb.int_par(IntPar::LeftHyphenMin)) as u16;
+        language.rhm = crate::helpers::norm_min(eqtb.int_par(IntPar::RightHyphenMin)) as u16;
         Ok(())
     }
 }

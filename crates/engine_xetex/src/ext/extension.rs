@@ -3,17 +3,16 @@
 use crate::cmd::Cmd;
 use crate::codes::ExtensionCode;
 use crate::command::Command;
-use crate::consts::{
-    FROZEN_SPECIAL, GLYPH_NODE_SIZE, HMODE, MMODE, OPEN_NODE_SIZE, SMALL_NODE_SIZE, VMODE,
-    WRITE_NODE_SIZE,
-};
+use crate::consts::{FROZEN_SPECIAL, GLYPH_NODE_SIZE, HMODE, MMODE, SMALL_NODE_SIZE, VMODE};
 use crate::errors::Abort;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::TokenType;
 use crate::io::AUTO;
 use crate::main_control::new_graf;
 use crate::mem::TEMP_HEAD_TOKS;
-use crate::node::{NodePtr, WhatsitNode, WhatsitSubtype};
+use crate::node::{
+    LanguageNode, NodePtr, OpenNode, WhatsitKind, WhatsitNode, WhatsitSubtype, WriteNode,
+};
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic};
 use crate::params::IntPar;
 use crate::pic::load_picture;
@@ -40,8 +39,8 @@ pub(crate) fn append_src_special(st: &mut EngineState) -> Result<(), Abort> {
     let w = st
         .input
         .cur_list
-        .new_whatsit(&mut st.mem, WhatsitSubtype::Special, WRITE_NODE_SIZE)?;
-    w.set_write_stream(&mut st.mem, 0);
+        .append_whatsit::<WriteNode>(&mut st.mem, WhatsitSubtype::Special)?;
+    st.mem[w].stream = 0;
     let d = st.mem.get_avail_token()?;
     st.scanner.def_ref = d;
     d.set_ref_count(&mut st.mem, crate::mem::TEX_NULL);
@@ -50,7 +49,7 @@ pub(crate) fn append_src_special(st: &mut EngineState) -> Result<(), Abort> {
     st.mem.str_toks_cat(&mut st.strings, b, None)?;
     let text = TEMP_HEAD_TOKS.link(&st.mem);
     d.set_link(&mut st.mem, text);
-    w.set_write_tokens(&mut st.mem, d);
+    st.mem[w].tokens = d;
     crate::texmfmp::remember_source_info(st, fname, st.mem.line);
     Ok(())
 }
@@ -107,22 +106,16 @@ pub(crate) fn insert_special(st: &mut EngineState, text: &str) -> Result<(), Abo
     Ok(())
 }
 
-fn new_whatsit(
+fn append_whatsit<K: WhatsitKind>(
     st: &mut EngineState,
     subtype: WhatsitSubtype,
-    size: i32,
-) -> Result<NodePtr<WhatsitNode>, Abort> {
-    st.input.cur_list.new_whatsit(&mut st.mem, subtype, size)
+) -> Result<NodePtr<K>, Abort> {
+    st.input.cur_list.append_whatsit(&mut st.mem, subtype)
 }
 
-/// Append an `\openout`/`\write`/`\closeout` whatsit and scan its stream number.
-fn new_write_whatsit(
-    st: &mut EngineState,
-    subtype: WhatsitSubtype,
-    size: i32,
-) -> Result<NodePtr<WhatsitNode>, Abort> {
-    let w = new_whatsit(st, subtype, size)?;
-    let stream = if size != WRITE_NODE_SIZE {
+/// The stream number of an `\openout` (`open`), or of a `\write` or `\closeout`.
+fn scan_write_stream(st: &mut EngineState, open: bool) -> Result<i32, Abort> {
+    Ok(if open {
         crate::scan::scan_four_bit_int(st)?
     } else {
         match scan_int(st)? {
@@ -130,35 +123,37 @@ fn new_write_whatsit(
             n if n > 15 && n != 18 => 16,
             n => n,
         }
-    };
-    w.set_write_stream(&mut st.mem, stream);
-    Ok(w)
+    })
 }
 
 /// Appends the `\openout`, `\write` or `\closeout` whatsit for `cur_chr`.
 fn io_whatsit(st: &mut EngineState, code: ExtensionCode) -> Result<NodePtr<WhatsitNode>, Abort> {
     Ok(match code {
         ExtensionCode::Open => {
-            let w = new_write_whatsit(st, WhatsitSubtype::Open, OPEN_NODE_SIZE)?;
+            let w = append_whatsit::<OpenNode>(st, WhatsitSubtype::Open)?;
+            st.mem[w].stream = scan_write_stream(st, true)?;
             crate::scan::scan_optional_equals(st)?;
             crate::io::scan_file_name(st)?;
-            w.set_open_name(&mut st.mem, st.scanner.cur_name);
-            w.set_open_area(&mut st.mem, st.scanner.cur_area);
-            w.set_open_ext(&mut st.mem, st.scanner.cur_ext);
-            w
+            let open = &mut st.mem[w];
+            open.name = st.scanner.cur_name;
+            open.area = st.scanner.cur_area;
+            open.ext = st.scanner.cur_ext;
+            w.whatsit()
         }
         ExtensionCode::Write => {
             let k = st.scanner.cur_cs;
-            let w = new_write_whatsit(st, WhatsitSubtype::Write, WRITE_NODE_SIZE)?;
+            let w = append_whatsit::<WriteNode>(st, WhatsitSubtype::Write)?;
+            st.mem[w].stream = scan_write_stream(st, false)?;
             st.scanner.cur_cs = k;
             crate::scan::scan_toks(st, false, false)?;
-            w.set_write_tokens(&mut st.mem, st.scanner.def_ref);
-            w
+            st.mem[w].tokens = st.scanner.def_ref;
+            w.whatsit()
         }
         _ => {
-            let w = new_write_whatsit(st, WhatsitSubtype::Close, WRITE_NODE_SIZE)?;
-            w.set_write_tokens(&mut st.mem, TokenList::NULL);
-            w
+            let w = append_whatsit::<WriteNode>(st, WhatsitSubtype::Close)?;
+            st.mem[w].stream = scan_write_stream(st, false)?;
+            st.mem[w].tokens = TokenList::NULL;
+            w.whatsit()
         }
     })
 }
@@ -171,10 +166,10 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
         }
 
         ExtensionCode::Special => {
-            let w = new_whatsit(st, WhatsitSubtype::Special, WRITE_NODE_SIZE)?;
-            w.set_write_stream(&mut st.mem, crate::mem::TEX_NULL);
+            let w = append_whatsit::<WriteNode>(st, WhatsitSubtype::Special)?;
+            st.mem[w].stream = crate::mem::TEX_NULL;
             crate::scan::scan_toks(st, false, true)?;
-            w.set_write_tokens(&mut st.mem, st.scanner.def_ref);
+            st.mem[w].tokens = st.scanner.def_ref;
         }
 
         ExtensionCode::Immediate => {
@@ -201,22 +196,27 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
             if mode != HMODE {
                 crate::errors::report_illegal_case(st)?;
             } else {
-                let w = new_whatsit(st, WhatsitSubtype::Language, SMALL_NODE_SIZE)?;
+                let w = append_whatsit::<LanguageNode>(st, WhatsitSubtype::Language)?;
                 let lang = match scan_int(st)? {
                     n @ 1..=255 => n,
                     _ => 0,
                 };
                 st.input.cur_list.set_clang(lang);
-                w.set_what_lang(&mut st.mem, lang);
                 let lhm = crate::helpers::norm_min(st.eqtb.int_par(IntPar::LeftHyphenMin));
-                w.set_what_lhm(&mut st.mem, lhm as u16);
                 let rhm = crate::helpers::norm_min(st.eqtb.int_par(IntPar::RightHyphenMin));
-                w.set_what_rhm(&mut st.mem, rhm as u16);
+                let language = &mut st.mem[w];
+                language.lang = lang;
+                language.lhm = lhm as u16;
+                language.rhm = rhm as u16;
             }
         }
 
         ExtensionCode::PdfSavePos => {
-            new_whatsit(st, WhatsitSubtype::PdfSavePos, SMALL_NODE_SIZE)?;
+            st.input.cur_list.new_whatsit(
+                &mut st.mem,
+                WhatsitSubtype::PdfSavePos,
+                SMALL_NODE_SIZE,
+            )?;
         }
 
         ExtensionCode::ResetTimer => {
@@ -258,7 +258,11 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
                         "; not a native platform font",
                     );
                 }
-                let w = new_whatsit(st, WhatsitSubtype::Glyph, GLYPH_NODE_SIZE)?;
+                let w = st.input.cur_list.new_whatsit(
+                    &mut st.mem,
+                    WhatsitSubtype::Glyph,
+                    GLYPH_NODE_SIZE,
+                )?;
                 let n = scan_int(st)?;
                 let glyph = match u16::try_from(n) {
                     Ok(glyph) => glyph,

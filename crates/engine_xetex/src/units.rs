@@ -817,7 +817,19 @@ impl TryFrom<i32> for FontId {
 }
 
 /// A string number: a single character below `TOO_BIG_CHAR`, else a pool string.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
+#[derive(
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Debug,
+    Hash,
+    Default,
+    bytemuck::Pod,
+    bytemuck::Zeroable,
+)]
 #[repr(transparent)]
 pub struct StrNumber(i32);
 

@@ -2,14 +2,13 @@
 
 use crate::consts::{
     BOX_NODE_SIZE, GLYPH_NODE_SIZE, INS_NODE_SIZE, MARGIN_KERN_NODE_SIZE, MEDIUM_NODE_SIZE,
-    MIN_HALFWORD, OPEN_NODE_SIZE, PIC_NODE_SIZE, RULE_NODE_SIZE, R_CODE, SMALL_NODE_SIZE,
-    STYLE_NODE_SIZE, SUB_BOX, WRITE_NODE_SIZE,
+    MIN_HALFWORD, PIC_NODE_SIZE, RULE_NODE_SIZE, R_CODE, SMALL_NODE_SIZE, STYLE_NODE_SIZE, SUB_BOX,
 };
 use crate::errors::Abort;
 use crate::mem::{end_lr_type, TEMP_HEAD};
 use crate::node::{
-    AnyNode, BoxNode, DiscNode, GlueNode, NoadVariant, NodeKind, NodePtr, WhatsitNode,
-    WhatsitSubtype,
+    AnyNode, BoxNode, DiscNode, FixedNode, GlueNode, LanguageNode, NoadVariant, NodeKind, NodePtr,
+    OpenNode, WhatsitNode, WhatsitVariant, WriteNode,
 };
 use crate::state::{MemState, ScannerState};
 use crate::units::{Dir, MemIdx, MemPtr, Scaled};
@@ -33,16 +32,18 @@ impl MemState {
 
     /// The size of whatsit `w`, `None` for an unknown subtype.
     fn whatsit_node_size(&self, w: NodePtr<WhatsitNode>) -> Option<i32> {
-        use WhatsitSubtype::*;
-        Some(match w.whatsit_subtype(self)? {
-            Open => OPEN_NODE_SIZE,
-            Write | Special => WRITE_NODE_SIZE,
-            Close | Language | PdfSavePos => SMALL_NODE_SIZE,
-            NativeWord | NativeWordAt => w.native_size(self),
-            Glyph => GLYPH_NODE_SIZE,
-            Pic | Pdf => {
+        Some(match w.variant(self)? {
+            WhatsitVariant::Open(_) => OpenNode::SIZE,
+            WhatsitVariant::Write(_) | WhatsitVariant::Close(_) | WhatsitVariant::Special(_) => {
+                WriteNode::SIZE
+            }
+            WhatsitVariant::Language(_) => LanguageNode::SIZE,
+            WhatsitVariant::SavePos => SMALL_NODE_SIZE,
+            WhatsitVariant::NativeWord(word) => word.native_size(self),
+            WhatsitVariant::Glyph(_) => GLYPH_NODE_SIZE,
+            WhatsitVariant::Pic(pic) => {
                 PIC_NODE_SIZE
-                    + (i32::from(w.pic_path_len(self)) + MEMORY_WORD_SIZE - 1) / MEMORY_WORD_SIZE
+                    + (i32::from(pic.pic_path_len(self)) + MEMORY_WORD_SIZE - 1) / MEMORY_WORD_SIZE
             }
         })
     }
@@ -87,20 +88,20 @@ impl MemState {
             return Err(Abort::Confusion("ext2"));
         };
         let r = self.get_node(size)?;
-        match w.whatsit_subtype(self) {
-            Some(WhatsitSubtype::NativeWord | WhatsitSubtype::NativeWordAt) => {
-                self.copy_words(r, w.ptr(), size);
-                let copy = copied_node(w, r);
+        match w.variant(self) {
+            Some(WhatsitVariant::NativeWord(word)) => {
+                self.copy_words(r, word.ptr(), size);
+                let copy = copied_node(word, r);
                 copy.set_native_glyph_info_handle(self, 0);
                 copy.set_native_glyph_count(self, 0);
-                copy.share_native_glyphs(self, w);
+                copy.share_native_glyphs(self, word);
                 Ok((r, 0))
             }
-            Some(WhatsitSubtype::Write | WhatsitSubtype::Special) => {
-                self.add_token_ref(w.write_tokens(self));
+            Some(WhatsitVariant::Write(p) | WhatsitVariant::Special(p)) => {
+                self.add_token_ref(self[p].tokens);
                 Ok((r, size))
             }
-            Some(WhatsitSubtype::PdfSavePos) => Ok((r, 1)),
+            Some(WhatsitVariant::SavePos) => Ok((r, 1)),
             _ => Ok((r, size)),
         }
     }
@@ -258,13 +259,11 @@ impl MemState {
                 }
                 AnyNode::Whatsit(w) => {
                     let size = self.whatsit_node_size(w).ok_or(Abort::Confusion("ext3"))?;
-                    match w.whatsit_subtype(self) {
-                        Some(WhatsitSubtype::Write | WhatsitSubtype::Special) => {
-                            self.delete_token_ref(w.write_tokens(self));
+                    match w.variant(self) {
+                        Some(WhatsitVariant::Write(p) | WhatsitVariant::Special(p)) => {
+                            self.delete_token_ref(self[p].tokens);
                         }
-                        Some(WhatsitSubtype::NativeWord | WhatsitSubtype::NativeWordAt) => {
-                            w.release_native_glyphs(self);
-                        }
+                        Some(WhatsitVariant::NativeWord(word)) => word.release_native_glyphs(self),
                         _ => {}
                     }
                     size

@@ -10,7 +10,7 @@ use crate::mem_types::ListStateRecord;
 use crate::node::{
     BoxNode, CharNode, ChoiceNode, DiscNode, FreeBlock, GlueNode, GlueSpecNode, KernNode, LigItem,
     LigatureNode, MarginKernNode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode,
-    SpanNode, StyleNode, WhatsitNode, WhatsitSubtype,
+    SpanNode, StyleNode, WhatsitKind, WhatsitNode, WhatsitSubtype,
 };
 use crate::params::GluePar;
 use crate::state::{EqtbState, MemState};
@@ -69,6 +69,17 @@ impl ListStateRecord {
         size: i32,
     ) -> Result<NodePtr<WhatsitNode>, Abort> {
         let p = NodePtr::<WhatsitNode>::alloc(mem, size, subtype)?;
+        self.tail_append(mem, p.ptr());
+        Ok(p)
+    }
+
+    /// A fixed-layout whatsit appended to the current list.
+    pub fn append_whatsit<K: WhatsitKind>(
+        &mut self,
+        mem: &mut MemState,
+        subtype: WhatsitSubtype,
+    ) -> Result<NodePtr<K>, Abort> {
+        let p = NodePtr::<K>::alloc_whatsit(mem, subtype)?;
         self.tail_append(mem, p.ptr());
         Ok(p)
     }

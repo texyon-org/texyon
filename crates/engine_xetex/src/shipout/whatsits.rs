@@ -4,7 +4,7 @@ use crate::bridge::{output_close, output_open, shell_escape};
 use crate::consts::{END_WRITE, INVALID_HANDLE};
 use crate::errors::Abort;
 use crate::input::TokenType;
-use crate::node::{NodePtr, WhatsitNode, WhatsitSubtype};
+use crate::node::{NodePtr, OpenNode, WhatsitNode, WhatsitVariant, WriteNode};
 use crate::params::IntPar;
 use crate::state::{EqtbState, Selector};
 use crate::token::Token;
@@ -13,14 +13,14 @@ use super::{dvi_special_from_cur_string, synch_h, synch_v};
 
 fn special_out(
     st: &mut crate::state::EngineState,
-    special: NodePtr<WhatsitNode>,
+    special: NodePtr<WriteNode>,
 ) -> Result<(), Abort> {
     synch_h(st)?;
     synch_v(st)?;
     st.shipout.doing_special = true;
     let old_setting = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
-    let tokens = special.write_tokens(&st.mem).link(&st.mem);
+    let tokens = st.mem[special].tokens.link(&st.mem);
     let avail = st.strings.pool_size - st.strings.pool_ptr;
     crate::output::show_token_list(st, tokens, crate::token::TokenList::NULL, avail);
     st.shipout.selector = old_setting;
@@ -43,14 +43,14 @@ impl EqtbState {
     }
 }
 
-fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WhatsitNode>) -> Result<(), Abort> {
+fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WriteNode>) -> Result<(), Abort> {
     let q = st.mem.get_avail_token()?;
     q.set_token(&mut st.mem, Token::right_brace(b'}'));
     let r = st.mem.get_avail_token()?;
     q.set_link(&mut st.mem, r);
     r.set_token(&mut st.mem, Token::from_cs(END_WRITE));
     crate::input::begin_token_list(st, q, TokenType::Inserted)?;
-    crate::input::begin_token_list(st, write.write_tokens(&st.mem), TokenType::Write)?;
+    crate::input::begin_token_list(st, st.mem[write].tokens, TokenType::Write)?;
     let q = st.mem.get_avail_token()?;
     q.set_token(&mut st.mem, Token::left_brace(b'{'));
     crate::input::begin_token_list(st, q, TokenType::Inserted)?;
@@ -79,7 +79,7 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WhatsitNode>) ->
     crate::input::end_token_list(st)?;
 
     let old_setting = st.shipout.selector;
-    let j = write.write_stream(&st.mem);
+    let j = st.mem[write].stream;
     if j == 18 {
         st.shipout.selector = Selector::NewString;
     } else if st.shipout.write_open[j as usize] {
@@ -161,48 +161,53 @@ pub(crate) fn out_what(
     st: &mut crate::state::EngineState,
     w: NodePtr<WhatsitNode>,
 ) -> Result<(), Abort> {
-    let subtype = w.whatsit_subtype(&st.mem);
-    match subtype {
-        Some(WhatsitSubtype::Open | WhatsitSubtype::Write | WhatsitSubtype::Close) => {
-            if !st.shipout.doing_leaders {
-                out_write_stream(st, w, subtype)?;
-            }
+    let leaders = st.shipout.doing_leaders;
+    match w.variant(&st.mem) {
+        Some(WhatsitVariant::Write(write)) if !leaders => write_out(st, write)?,
+        Some(WhatsitVariant::Open(open)) if !leaders => {
+            out_write_stream(st, st.mem[open].stream, Some(open))?
         }
-        Some(WhatsitSubtype::Special) => special_out(st, w)?,
-        Some(WhatsitSubtype::Language) => {}
+        Some(WhatsitVariant::Close(close)) if !leaders => {
+            out_write_stream(st, st.mem[close].stream, None)?
+        }
+        Some(
+            WhatsitVariant::Write(_)
+            | WhatsitVariant::Open(_)
+            | WhatsitVariant::Close(_)
+            | WhatsitVariant::Language(_),
+        ) => {}
+        Some(WhatsitVariant::Special(special)) => special_out(st, special)?,
         _ => return Err(Abort::Confusion("ext4")),
     }
     Ok(())
 }
 
+/// `\openout` (`open`) or `\closeout` (`None`) on stream `j`.
 fn out_write_stream(
     st: &mut crate::state::EngineState,
-    w: NodePtr<WhatsitNode>,
-    subtype: Option<WhatsitSubtype>,
+    j: i32,
+    open: Option<NodePtr<OpenNode>>,
 ) -> Result<(), Abort> {
-    if subtype == Some(WhatsitSubtype::Write) {
-        return write_out(st, w);
-    }
-    let j = w.write_stream(&st.mem);
     let stream = j as usize;
     if st.shipout.write_open[stream] {
         ensure_write_stream_open(st, stream)?;
         output_close(st.shipout.write_file[stream]);
     }
-    if subtype == Some(WhatsitSubtype::Close) {
+    let Some(open) = open else {
         st.shipout.write_open[stream] = false;
         if j < 16 {
             st.shipout.write_file[stream] = INVALID_HANDLE;
         }
         return Ok(());
-    }
+    };
     if j >= 16 {
         return Ok(());
     }
 
-    st.scanner.cur_name = w.open_name(&st.mem);
-    st.scanner.cur_area = w.open_area(&st.mem);
-    st.scanner.cur_ext = w.open_ext(&st.mem);
+    let open = st.mem[open];
+    st.scanner.cur_name = open.name;
+    st.scanner.cur_area = open.area;
+    st.scanner.cur_ext = open.ext;
     if st.strings.length(st.scanner.cur_ext) == 0 {
         st.scanner.cur_ext = st.strings.make_tex_string(".tex")?;
     }
