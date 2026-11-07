@@ -693,7 +693,7 @@ impl_traits!(HasLink: BoxNode, RuleNode, InsNode, MarkNode, AdjustNode, Ligature
     SaSaved, SaSavedWord, SaSavedPointer, PageInsNode, ActiveNode, DeltaNode, PassiveNode,
     MovementNode, CondNode, CharNode, AlignRecord, AlignStackNode, ExprNode, PseudoLineNode,
     LigItem);
-impl_traits!(Accessed: WhatsitNode, PseudoLineNode);
+impl_traits!(Accessed: WhatsitNode);
 impl_traits!(HasNodeHeader: WhatsitNode);
 impl_traits!(HasWidth: WhatsitNode);
 impl_traits!(HasHeightDepth: WhatsitNode);
@@ -1376,32 +1376,6 @@ impl NodePtr<PenaltiesNode> {
             return mem[self].count;
         }
         mem.entries(self)[usize::try_from(k - 1).unwrap_or(usize::MAX)].value
-    }
-}
-
-impl NodePtr<PseudoLineNode> {
-    fields! {
-        size / set_size: i32 = b32s0 @ 0;
-    }
-
-    /// The four characters in word `k`, counting from 1.
-    #[inline]
-    pub fn chars(self, mem: &MemState, k: i32) -> [u16; 4] {
-        let w = self.idx.raw() + k;
-        [
-            mem.b16s3(MemPtr::from_raw(w)),
-            mem.b16s2(MemPtr::from_raw(w)),
-            mem.b16s1(MemPtr::from_raw(w)),
-            mem.b16s0(MemPtr::from_raw(w)),
-        ]
-    }
-    #[inline]
-    pub fn set_chars(self, mem: &mut MemState, k: i32, chars: [u16; 4]) {
-        let w = self.idx.raw() + k;
-        mem.set_b16s3(MemPtr::from_raw(w), chars[0]);
-        mem.set_b16s2(MemPtr::from_raw(w), chars[1]);
-        mem.set_b16s1(MemPtr::from_raw(w), chars[2]);
-        mem.set_b16s0(MemPtr::from_raw(w), chars[3]);
     }
 }
 

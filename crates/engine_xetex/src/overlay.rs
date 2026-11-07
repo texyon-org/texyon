@@ -14,9 +14,9 @@ use crate::node::{
     FixedNode, FractionNoad, FreeBlock, GlueNode, GlueSpecNode, InsNode, KernNode, LigItem,
     LigatureNode, Link, MarginKernNode, MarkNode, MathField, MathNode, MovementNode, Noad,
     NodeKind, NodePtr, PageInsNode, ParShapeNode, PassiveNode, PenaltiesNode, PenaltyNode,
-    RadicalNoad, RuleNode, SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode,
-    SaSaved, SaSavedPointer, SaSavedWord, SaWordNode, SpanNode, Stored, StoredDimen, StyleNode,
-    UnsetNode,
+    PseudoLineNode, RadicalNoad, RuleNode, SaChild, SaElement, SaIndexNode, SaLeaf,
+    SaMarkClassNode, SaPointerNode, SaSaved, SaSavedPointer, SaSavedWord, SaWordNode, SpanNode,
+    Stored, StoredDimen, StyleNode, UnsetNode,
 };
 use crate::state::MemState;
 use crate::token::TokenList;
@@ -174,6 +174,39 @@ pub struct PenaltyEntry {
 
 overlay!(PenaltiesNode => PenaltiesHeader, 2);
 array_overlay!(PenaltiesNode => PenaltyEntry, 1, |h| 2 * h.half_size + 1);
+
+/// The header of a `\scantokens` pseudo-file line.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct PseudoLineHeader {
+    pub size: i32,
+    pub link: Link<PseudoLineNode>,
+}
+
+/// Four characters of a pseudo-file line, stored last first.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct PseudoWord {
+    reversed: [u16; 4],
+}
+
+impl PseudoWord {
+    #[inline]
+    pub fn new([a, b, c, d]: [u16; 4]) -> Self {
+        PseudoWord {
+            reversed: [d, c, b, a],
+        }
+    }
+
+    #[inline]
+    pub fn chars(self) -> [u16; 4] {
+        let [d, c, b, a] = self.reversed;
+        [a, b, c, d]
+    }
+}
+
+overlay!(PseudoLineNode => PseudoLineHeader, 1);
+array_overlay!(PseudoLineNode => PseudoWord, 1, |h| h.size);
 
 /// A glue specification. Its first word holds the fill orders and a reference
 /// count in place of a type code and link.
@@ -1390,6 +1423,31 @@ mod tests {
         assert_eq!([6, 7, 8, 9].map(|i| mem.b32s1(at(i))), [11, 12, 0, 0]);
         assert_eq!([4, 5, 6, 7, 8].map(|i| mem.b32s0(at(i))), [2, 0, 0, 0, 0]);
         assert_eq!([0, 1, 2].map(|k| p.penalty(&mem, k)), [2, 11, 12]);
+    }
+
+    #[test]
+    fn pseudo_lines_land_on_their_words() {
+        let mut mem = arena();
+        let p: NodePtr<PseudoLineNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(4));
+        let header = &mut mem[p];
+        header.size = 3;
+        header.link = Some(NodePtr::from_idx_unchecked(MemIdx::from_raw(9))).into();
+        let words = mem.entries_mut(p);
+        assert_eq!(words.len(), 2);
+        words[1] = PseudoWord::new([1, 2, 3, 4]);
+        let at = MemIdx::from_raw;
+        assert_eq!((mem.b32s0(at(4)), mem.b32s1(at(4))), (3, 9));
+        assert_eq!(
+            [
+                mem.b16s3(at(6)),
+                mem.b16s2(at(6)),
+                mem.b16s1(at(6)),
+                mem.b16s0(at(6))
+            ],
+            [1, 2, 3, 4]
+        );
+        assert_eq!((mem.b32s0(at(5)), mem.b32s1(at(5))), (0, 0));
+        assert_eq!(mem.entries(p)[1].chars(), [1, 2, 3, 4]);
     }
 
     #[test]

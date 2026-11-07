@@ -5,7 +5,7 @@ use crate::codes::code_enum;
 use crate::consts::FROZEN_RELAX;
 use crate::errors::Abort;
 use crate::io::u_close;
-use crate::node::{NodePtr, PseudoLineNode};
+use crate::node::{link_of, NodePtr, PseudoLineNode};
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, InputClusterState, InputState, MemState};
 use crate::token::{Token, TokenList};
@@ -172,12 +172,13 @@ impl MemState {
     pub(crate) fn pseudo_close(&mut self, input: &mut InputClusterState) {
         let file = input.pseudo_files;
         let next_file = file.link(self);
-        let mut line = file.info_ptr(self);
+        let mut line = NodePtr::<PseudoLineNode>::from_ptr(file.info_ptr(self));
         self.free_avail(file);
         input.pseudo_files = next_file;
-        while let Some(l) = NodePtr::<PseudoLineNode>::from_ptr(line) {
-            line = l.link(self);
-            self.free_node(l.ptr(), l.size(self));
+        while let Some(l) = line {
+            let header = self[l];
+            line = header.link.get();
+            self.free_node(l.ptr(), header.size);
         }
     }
 }
@@ -237,18 +238,18 @@ pub(crate) fn pseudo_input(st: &mut EngineState) -> Result<bool, Abort> {
     let Some(line) = NodePtr::<PseudoLineNode>::from_ptr(files.info_ptr(&st.mem)) else {
         return Ok(false);
     };
-    let rest = line.link(&st.mem);
-    files.set_info(&mut st.mem, rest.raw());
-    let size = line.size(&st.mem);
+    let header = st.mem[line];
+    files.set_info(&mut st.mem, link_of(header.link.get()).raw());
+    let size = header.size;
     if 4 * size - 3 >= st.input.buf_size - st.input.last {
         st.input.cur_input.loc = st.input.first;
         st.input.cur_input.limit = st.input.last - 1;
         return Err(st.input.buffer_overflow());
     }
     st.input.last = st.input.first;
-    for k in 1..size {
+    for word in st.mem.entries(line) {
         let last = st.input.last.index();
-        let chars = line.chars(&st.mem, k).map(i32::from);
+        let chars = word.chars().map(i32::from);
         st.input.buffer.0[last..last + 4].copy_from_slice(&chars);
         st.input.last += 4;
     }

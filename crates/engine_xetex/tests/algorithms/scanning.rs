@@ -91,6 +91,13 @@ fn penalty_arrays_read_the_count_at_zero_and_clamp_to_the_last() {
 }
 
 #[test]
+fn scantokens_reads_back_each_line_of_its_pseudo_file() {
+    let r = run(r"\newlinechar=`\^^J \everyeof{\noexpand}
+                  \edef\x{\scantokens{abcdefghi^^Jxy}}\toks0=\expandafter{\x}\showthe\toks0");
+    assert_eq!(r.shown(), ["abcdefghi xy "]);
+}
+
+#[test]
 fn showtokens_detokenizes_its_argument() {
     let r = run(r"\showtokens{a#b}");
     assert_eq!(r.shown(), ["a##b"]);

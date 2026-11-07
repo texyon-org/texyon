@@ -12,6 +12,7 @@ use crate::node::{NodePtr, PseudoLineNode};
 use crate::output::{
     capture_to_diagnostic, error_here_with_diagnostic, print, print_err, print_esc, print_int,
 };
+use crate::overlay::PseudoWord;
 use crate::params::IntPar;
 use crate::state::{EngineState, MemState, Selector};
 use crate::token::{Token, TokenList};
@@ -463,23 +464,22 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
         let line = NodePtr::<PseudoLineNode>::at(st.mem.get_node(size)?);
         last_line.set_link(&mut st.mem, line.ptr());
         last_line = line.ptr();
-        line.set_size(&mut st.mem, size);
-        let mut w = 1;
+        st.mem[line].size = size;
         let mut k = m;
-        for _ in 2..size {
-            let pool = &st.strings.str_pool[k.index()..];
-            let chars = [pool[0], pool[1], pool[2], pool[3]];
-            line.set_chars(&mut st.mem, w, chars);
-            w += 1;
-            k += 4;
-        }
-        let mut chars = [u16::from(b' '); 4];
-        for (i, c) in chars.iter_mut().enumerate() {
-            if l > k + i as i32 {
-                *c = st.strings.str_pool[(k + i as i32).index()];
+        if let Some((last, full)) = st.mem.entries_mut(line).split_last_mut() {
+            for word in full {
+                let pool = &st.strings.str_pool[k.index()..];
+                *word = PseudoWord::new([pool[0], pool[1], pool[2], pool[3]]);
+                k += 4;
             }
+            let mut chars = [u16::from(b' '); 4];
+            for (i, c) in chars.iter_mut().enumerate() {
+                if l > k + i as i32 {
+                    *c = st.strings.str_pool[(k + i as i32).index()];
+                }
+            }
+            *last = PseudoWord::new(chars);
         }
-        line.set_chars(&mut st.mem, w, chars);
         if st.strings.str_pool[l.index()] == nl {
             l += 1;
         }
