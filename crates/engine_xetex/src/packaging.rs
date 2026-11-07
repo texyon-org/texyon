@@ -141,8 +141,8 @@ impl MemState {
     /// `q` is a char node (whose font sits in the type field).
     fn disc_replace_count(&self, q: MemPtr) -> Option<i32> {
         match self.as_char(q) {
-            Some(ch) => (ch.font(self).raw() == NodeType::Disc as i32)
-                .then(|| i32::from(ch.character(self))),
+            Some(ch) => (self[ch].font.raw() == NodeType::Disc as i32)
+                .then(|| i32::from(self[ch].character)),
             None => self.as_disc(q).map(|disc| i32::from(self[disc].subtype)),
         }
     }
@@ -263,8 +263,8 @@ impl MemState {
         let mut p = list;
         'outer: while !p.is_null() {
             while let Some(ch) = self.as_char(p) {
-                let f = ch.font(self);
-                let c = fonts.effective_char(f, ch.character(self));
+                let f = self[ch].font;
+                let c = fonts.effective_char(f, self[ch].character);
                 let info = fonts.char_info(f, c);
                 x += fonts.char_width(f, info);
                 h = h.max(fonts.char_height(f, info));
@@ -386,9 +386,9 @@ impl MemState {
                 Ok(AnyNode::Ligature(lig)) => {
                     // Measure the ligature as its character through the scratch char node.
                     let scratch = NodePtr::<CharNode>::at(GARBAGE);
-                    scratch.set_font(self, lig.font(self));
-                    scratch.set_character(self, lig.character(self));
-                    GARBAGE.set_link(self, lig.link(self));
+                    self[scratch].font = self[lig].font;
+                    self[scratch].character = self[lig].character;
+                    GARBAGE.set_link(self, self[lig].link);
                     p = GARBAGE;
                     fonts.xtx_ligature_present = true;
                     continue 'outer;

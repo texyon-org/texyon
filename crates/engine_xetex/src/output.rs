@@ -901,7 +901,7 @@ fn print_font_and_char(st: &mut EngineState, p: MemPtr) {
         print_esc(st, "CLOBBERED.");
     } else {
         let ch = NodePtr::<CharNode>::at(p);
-        print_font_char(st, ch.font(&st.mem), ch.character(&st.mem));
+        print_font_char(st, st.mem[ch].font, st.mem[ch].character);
     }
 }
 

@@ -159,8 +159,8 @@ pub(super) fn rebox(
 
     let mut p = st.mem[b].list_ptr;
     if let Some(ch) = st.mem.as_char(p).filter(|_| p.link(&st.mem).is_null()) {
-        let f = ch.font(&st.mem);
-        let c = st.fonts.effective_char(f, ch.character(&st.mem));
+        let f = st.mem[ch].font;
+        let c = st.fonts.effective_char(f, st.mem[ch].character);
         let q = st.fonts.char_info(f, c);
         let v = st.fonts.char_width(f, q);
         let bw = st.mem[b].width;

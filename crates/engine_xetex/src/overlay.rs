@@ -8,22 +8,23 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::codes::{FiOrElseCode, ValueLevel};
 use crate::node::{
-    AdjustNode, AlignRecord, AlignStackNode, BoxNode, ChoiceNode, CondNode, DeltaNode, DiscNode,
-    EdgeNode, ExprNode, FixedNode, GlueNode, GlueSpecNode, InsNode, KernNode, LigItem,
-    MarginKernNode, MarkNode, MathNode, MovementNode, NodePtr, PageInsNode, PassiveNode,
-    PenaltyNode, RuleNode, SpanNode, Stored, StoredDimen, StyleNode, UnsetNode,
+    AdjustNode, AlignRecord, AlignStackNode, BoxNode, CharNode, ChoiceNode, CondNode, DeltaNode,
+    DiscNode, EdgeNode, ExprNode, FixedNode, GlueNode, GlueSpecNode, InsNode, KernNode, LigItem,
+    LigatureNode, MarginKernNode, MarkNode, MathNode, MovementNode, NodeKind, NodePtr, PageInsNode,
+    PassiveNode, PenaltyNode, RuleNode, SpanNode, Stored, StoredDimen, StyleNode, UnsetNode,
 };
 use crate::state::MemState;
 use crate::token::TokenList;
-use crate::units::{GlueOrder, GlueSign, MemPtr, Orientation, Scaled};
+use crate::units::{FontId, GlueOrder, GlueSign, MemPtr, Orientation, Scaled};
 
 #[cfg(not(target_endian = "little"))]
 compile_error!("node layouts assume little-endian memory words");
 
 /// A node kind whose words read as one `#[repr(C)]` layout struct.
-pub trait Overlay: FixedNode {
-    /// The struct laid over the node's `SIZE` words.
+pub trait Overlay: NodeKind {
+    /// The struct laid over the node's `WORDS` words.
     type Layout: Pod;
+    const WORDS: i32;
 }
 
 impl<K: Overlay> std::ops::Index<NodePtr<K>> for MemState {
@@ -31,14 +32,14 @@ impl<K: Overlay> std::ops::Index<NodePtr<K>> for MemState {
 
     #[inline]
     fn index(&self, p: NodePtr<K>) -> &K::Layout {
-        bytemuck::from_bytes(bytemuck::cast_slice(&self.data[p.idx().words(K::SIZE)]))
+        bytemuck::from_bytes(bytemuck::cast_slice(&self.data[p.idx().words(K::WORDS)]))
     }
 }
 
 impl<K: Overlay> std::ops::IndexMut<NodePtr<K>> for MemState {
     #[inline]
     fn index_mut(&mut self, p: NodePtr<K>) -> &mut K::Layout {
-        let words = p.idx().words(K::SIZE);
+        let words = p.idx().words(K::WORDS);
         if self.journal.armed() {
             for index in words.clone() {
                 self.journal.note(index, self.data[index]);
@@ -52,17 +53,22 @@ impl<K: Overlay> std::ops::IndexMut<NodePtr<K>> for MemState {
 /// past `MEM_TOP`, so a layout read at a list head near the top stays in bounds.
 pub(crate) const MAX_LAYOUT_WORDS: i32 = 8;
 
-/// Declares the layout of a fixed node kind and checks it covers the node exactly.
+/// Declares the layout of a node kind and checks it covers the node exactly.
+/// The word count defaults to the kind's allocation size.
 macro_rules! overlay {
     ($kind:ty => $layout:ty) => {
+        overlay!($kind => $layout, <$kind as FixedNode>::SIZE);
+    };
+    ($kind:ty => $layout:ty, $words:expr) => {
         impl Overlay for $kind {
             type Layout = $layout;
+            const WORDS: i32 = $words;
         }
-        const _: () = assert!(<$kind as FixedNode>::SIZE <= MAX_LAYOUT_WORDS);
+        const _: () = assert!(<$kind as Overlay>::WORDS <= MAX_LAYOUT_WORDS);
         const _: () = assert!(
             std::mem::size_of::<$layout>()
                 == std::mem::size_of::<crate::mem_types::MemoryWord>()
-                    * <$kind as FixedNode>::SIZE as usize
+                    * <$kind as Overlay>::WORDS as usize
         );
     };
 }
@@ -536,6 +542,32 @@ pub struct UnsetLayout {
 
 overlay!(UnsetNode => UnsetLayout);
 
+/// A one-word character node in the upper part of `mem`.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct CharLayout {
+    pub character: u16,
+    pub font: FontId,
+    pub link: MemPtr,
+}
+
+overlay!(CharNode => CharLayout, 1);
+
+/// A ligature. Its +1 word is laid out like a character node, see `char_word`.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct LigatureLayout {
+    pub subtype: u16,
+    _type: u16,
+    pub link: MemPtr,
+    pub character: u16,
+    pub font: FontId,
+    /// The original characters the ligature was formed from.
+    pub lig_ptr: MemPtr,
+}
+
+overlay!(LigatureNode => LigatureLayout);
+
 impl BoxLayout {
     #[inline]
     pub fn is_hlist(&self) -> bool {
@@ -730,6 +762,17 @@ mod tests {
             .collect();
         assert_eq!(words, [(1, 2), (3, 4)]);
         assert_eq!(mem.b32s1(at(15)), 5);
+    }
+
+    #[test]
+    fn char_fields_land_on_their_word() {
+        let mut mem = arena();
+        let at = MemIdx::from_raw;
+        let c: NodePtr<CharNode> = NodePtr::from_idx_unchecked(at(15));
+        let ch = &mut mem[c];
+        (ch.character, ch.font, ch.link) = (65, FontId::new(3), MemPtr::from_raw(9));
+        assert_eq!((mem.b16s0(at(15)), mem.b16s1(at(15))), (65, 3));
+        assert_eq!(mem.b32s1(at(15)), 9);
     }
 
     #[test]

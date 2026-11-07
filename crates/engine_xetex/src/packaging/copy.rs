@@ -277,7 +277,7 @@ impl MemState {
                 AnyNode::Kern(_) | AnyNode::Math(_) | AnyNode::Penalty(_) => MEDIUM_NODE_SIZE,
                 AnyNode::MarginKern(_) => MARGIN_KERN_NODE_SIZE,
                 AnyNode::Ligature(lig) => {
-                    self.flush_node_list(lig.lig_ptr(self))?;
+                    self.flush_node_list(self[lig].lig_ptr)?;
                     SMALL_NODE_SIZE
                 }
                 AnyNode::Mark(mark) => {
@@ -407,8 +407,8 @@ impl MemState {
             AnyNode::Ligature(lig) => {
                 let r = self.get_node(SMALL_NODE_SIZE)?;
                 self.copy_words(r, p, SMALL_NODE_SIZE);
-                let components = self.copy_list(lig.lig_ptr(self))?;
-                copied_node(lig, r).set_lig_ptr(self, components);
+                let components = self.copy_list(self[lig].lig_ptr)?;
+                self[copied_node(lig, r)].lig_ptr = components;
                 (r, 0)
             }
             AnyNode::Disc(disc) => {

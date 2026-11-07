@@ -38,7 +38,7 @@ pub(crate) fn short_display(st: &mut EngineState, mut p: MemPtr) {
         if st.mem.is_char_node(p) {
             if p <= st.mem.mem_end {
                 let ch = NodePtr::<CharNode>::at(p);
-                let font = ch.font(&st.mem);
+                let font = st.mem[ch].font;
                 if font != st.errors.font_in_short_display {
                     if font > st.fonts.font_max {
                         print_char(st, b'*');
@@ -48,7 +48,7 @@ pub(crate) fn short_display(st: &mut EngineState, mut p: MemPtr) {
                     print_char(st, b' ');
                     st.errors.font_in_short_display = font;
                 }
-                print(st, i32::from(ch.character(&st.mem)));
+                print(st, i32::from(st.mem[ch].character));
             }
         } else {
             match st.mem.classify(p) {
@@ -88,7 +88,7 @@ pub(crate) fn short_display(st: &mut EngineState, mut p: MemPtr) {
                         print_char(st, b'$');
                     }
                 }
-                Ok(AnyNode::Ligature(l)) => short_display(st, l.lig_ptr(&st.mem)),
+                Ok(AnyNode::Ligature(l)) => short_display(st, st.mem[l].lig_ptr),
                 Ok(AnyNode::Disc(d)) => {
                     short_display(st, st.mem[d].pre_break);
                     short_display(st, st.mem[d].post_break);
@@ -271,15 +271,15 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
                     }
                 }
                 Ok(AnyNode::Ligature(node)) => {
-                    let font = node.font(&st.mem);
-                    print_font_char(st, font, node.character(&st.mem));
+                    let font = st.mem[node].font;
+                    print_font_char(st, font, st.mem[node].character);
                     print(st, " (ligature ");
-                    if node.subtype(&st.mem) > 1 {
+                    if st.mem[node].subtype > 1 {
                         print_char(st, b'|');
                     }
                     st.errors.font_in_short_display = font;
-                    short_display(st, node.lig_ptr(&st.mem));
-                    if node.subtype(&st.mem) % 2 == 1 {
+                    short_display(st, st.mem[node].lig_ptr);
+                    if st.mem[node].subtype % 2 == 1 {
                         print_char(st, b'|');
                     }
                     print_char(st, b')');

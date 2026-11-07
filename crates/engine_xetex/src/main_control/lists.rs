@@ -744,8 +744,8 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
 
 /// The italic correction of character `ch`.
 fn char_italic(st: &mut EngineState, ch: NodePtr<CharNode>) -> Scaled {
-    let f = ch.font(&st.mem);
-    let c = st.fonts.effective_char(f, ch.character(&st.mem));
+    let f = st.mem[ch].font;
+    let c = st.fonts.effective_char(f, st.mem[ch].character);
     let info = st.fonts.char_info(f, c);
     st.fonts.char_italic(f, info)
 }
@@ -795,7 +795,7 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
             a
         }
         NewChar::Char(ch) => {
-            let c = st.fonts.effective_char(f, ch.character(&st.mem));
+            let c = st.fonts.effective_char(f, st.mem[ch].character);
             let info = st.fonts.char_info(f, c);
             st.fonts.char_width(f, info)
         }
@@ -831,7 +831,7 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
             (w, h)
         }
         NewChar::Char(ch) => {
-            let c = st.fonts.effective_char(f, ch.character(&st.mem));
+            let c = st.fonts.effective_char(f, st.mem[ch].character);
             let info = st.fonts.char_info(f, c);
             let w = st.fonts.char_width(f, info);
             let h = st.fonts.char_height(f, info);

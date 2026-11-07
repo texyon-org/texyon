@@ -446,7 +446,7 @@ impl LigStack {
     #[inline]
     pub(crate) fn character(self, mem: &MemState) -> LigChar {
         LigChar::of(match self {
-            LigStack::Char(c) => c.character(mem),
+            LigStack::Char(c) => mem[c].character,
             LigStack::Item(i) => mem[i].character,
         })
     }
@@ -511,7 +511,7 @@ fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), Abort> {
     }
     let main_f = st.mainloop.main_f;
     if !st.mainloop.cur_q.link(&st.mem).is_null()
-        && i32::from(NodePtr::<CharNode>::at(st.input.cur_list.tail).character(&st.mem))
+        && i32::from(st.mem[NodePtr::<CharNode>::at(st.input.cur_list.tail)].character)
             == st.fonts.hyphen_char[main_f]
     {
         st.mainloop.ins_disc = true;
@@ -522,12 +522,12 @@ fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), Abort> {
             .mem
             .new_ligature(main_f, st.mainloop.cur_l.code(), lig_list)?;
         if st.mainloop.lft_hit {
-            lig.set_subtype(&mut st.mem, 2);
+            st.mem[lig].subtype = 2;
             st.mainloop.lft_hit = false;
         }
         if rt_hit && st.mainloop.rt_hit && st.mainloop.lig_stack.is_none() {
-            let s = lig.subtype(&st.mem);
-            lig.set_subtype(&mut st.mem, s + 1);
+            let s = st.mem[lig].subtype;
+            st.mem[lig].subtype = s + 1;
             st.mainloop.rt_hit = false;
         }
         st.mainloop.cur_q.set_link(&mut st.mem, lig.ptr());

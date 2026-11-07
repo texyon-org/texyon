@@ -513,8 +513,8 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
             'outer: while !p.is_null() {
                 let (d, found) = 'reswitch: loop {
                     if let Some(ch) = st.mem.as_char(p) {
-                        let f = ch.font(&st.mem);
-                        let c = st.fonts.effective_char(f, ch.character(&st.mem));
+                        let f = st.mem[ch].font;
+                        let c = st.fonts.effective_char(f, st.mem[ch].character);
                         let d = st.fonts.char_width(f, st.fonts.char_info(f, c));
                         break (d, true);
                     }
@@ -524,7 +524,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                         }
                         Ok(AnyNode::Ligature(lig)) => {
                             st.mem.set_word(GARBAGE, st.mem.word(lig.char_word().idx()));
-                            let next = lig.link(&st.mem);
+                            let next = st.mem[lig].link;
                             GARBAGE.set_link(&mut st.mem, next);
                             p = GARBAGE;
                             st.fonts.xtx_ligature_present = true;

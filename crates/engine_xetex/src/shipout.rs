@@ -825,8 +825,8 @@ fn chars_out(
     synch_h(st)?;
     synch_v(st)?;
     while let Some(ch) = st.mem.as_char(p) {
-        let f = ch.font(&st.mem);
-        let mut c = ch.character(&st.mem);
+        let f = st.mem[ch].font;
+        let mut c = st.mem[ch].character;
         if p != LIG_TRICK {
             if let Some(mapping) = st.fonts.font_mapping[f].as_deref() {
                 c = apply_tfm_font_mapping(mapping, c as libc::c_int) as u16;
@@ -964,7 +964,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
             }
             AnyNode::Ligature(ligature) => {
                 st.mem.set_word(LIG_TRICK, st.mem.word(ligature.idx() + 1));
-                let next = ligature.link(&st.mem);
+                let next = st.mem[ligature].link;
                 p = LIG_TRICK;
                 p.set_link(&mut st.mem, next);
                 st.fonts.xtx_ligature_present = true;
@@ -1360,8 +1360,8 @@ impl MemState {
             while !p.is_null() {
                 if self.is_char_node(p) {
                     while let Some(ch) = self.as_char(p) {
-                        let f = ch.font(self);
-                        let c = fonts.effective_char(f, ch.character(self));
+                        let f = self[ch].font;
+                        let c = fonts.effective_char(f, self[ch].character);
                         shipout.cur_h += fonts.font_character_width(f, c);
                         let q = p.link(self);
                         p.set_link(self, l);
@@ -1398,7 +1398,7 @@ impl MemState {
                         }
                     }
                     Ok(AnyNode::Ligature(ligature)) => {
-                        self.flush_list(ligature.lig_ptr(self));
+                        self.flush_list(self[ligature].lig_ptr);
                         self.temp_ptr = ligature.ptr();
                         let c = self.get_avail()?;
                         self.set_word(c, self.word(ligature.idx() + 1));

@@ -386,8 +386,8 @@ impl MemState {
     #[inline]
     pub fn new_char(&mut self, f: FontId, c: u16) -> Result<NodePtr<CharNode>, Abort> {
         let p = NodePtr::<CharNode>::at(self.get_avail()?);
-        p.set_font(self, f);
-        p.set_character(self, c);
+        self[p].font = f;
+        self[p].character = c;
         Ok(p)
     }
 
@@ -398,10 +398,10 @@ impl MemState {
         q: MemPtr,
     ) -> Result<NodePtr<LigatureNode>, Abort> {
         let p = NodePtr::<LigatureNode>::alloc(self)?;
-        p.set_font(self, f);
-        p.set_character(self, c);
-        p.set_lig_ptr(self, q);
-        p.set_subtype(self, 0);
+        self[p].font = f;
+        self[p].character = c;
+        self[p].lig_ptr = q;
+        self[p].subtype = 0;
         Ok(p)
     }
 

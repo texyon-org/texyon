@@ -352,14 +352,14 @@ impl MemState {
     #[inline]
     fn disc_node_width(&self, fonts: &mut FontState, p: MemPtr) -> Result<Scaled, bool> {
         if let Some(ch) = self.as_char(p) {
-            return Ok(fonts.effective_char_width(ch.font(self), ch.character(self)));
+            return Ok(fonts.effective_char_width(self[ch].font, self[ch].character));
         }
 
         match self.classify(p) {
             Ok(AnyNode::Ligature(lig)) => {
-                let f = lig.font(self);
+                let f = self[lig].font;
                 fonts.xtx_ligature_present = true;
-                Ok(fonts.effective_char_width(f, lig.character(self)))
+                Ok(fonts.effective_char_width(f, self[lig].character))
             }
             Ok(node @ (AnyNode::Box(_) | AnyNode::Rule(_) | AnyNode::Kern(_))) => {
                 Ok(node.hlist_width(self))
@@ -533,8 +533,8 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                 st.linebreak.global_prev_p = cur;
                 loop {
                     let ch = NodePtr::<CharNode>::at(cur);
-                    let f = ch.font(&st.mem);
-                    let c = ch.character(&st.mem);
+                    let f = st.mem[ch].font;
+                    let c = st.mem[ch].character;
                     st.scanner.active_width[1] += st.fonts.effective_char_width(f, c);
                     cur = cur.link(&st.mem);
                     if !st.mem.is_char_node(cur) {
@@ -585,9 +585,9 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                     st.scanner.active_width[1] += st.mem[k].width;
                 }
                 AnyNode::Ligature(lig) => {
-                    let f = lig.font(&st.mem);
+                    let f = st.mem[lig].font;
                     st.fonts.xtx_ligature_present = true;
-                    let c = lig.character(&st.mem);
+                    let c = st.mem[lig].character;
                     st.scanner.active_width[1] += st.fonts.effective_char_width(f, c);
                 }
                 AnyNode::Disc(d) => {

@@ -176,7 +176,7 @@ fn reconstitute(
             st.mainloop.lft_hit = st.hyph.init_lft;
         }
         while p.raw() > TEX_NULL {
-            let c = NodePtr::<CharNode>::at(p).character(&st.mem);
+            let c = st.mem[NodePtr::<CharNode>::at(p)].character;
             t = st.mem.append_char(t, st.hyph.hf, c)?;
             p = p.link(&st.mem);
         }
@@ -352,12 +352,12 @@ fn wrap_lig(st: &mut EngineState, rt: bool) -> Result<MemPtr, Abort> {
         .mem
         .new_ligature(st.hyph.hf, st.mainloop.cur_l.code(), components)?;
     if st.mainloop.lft_hit {
-        lig.set_subtype(&mut st.mem, 2);
+        st.mem[lig].subtype = 2;
         st.mainloop.lft_hit = false;
     }
     if rt && st.mainloop.rt_hit && st.mainloop.lig_stack.is_none() {
-        let s = lig.subtype(&st.mem);
-        lig.set_subtype(&mut st.mem, s + 1);
+        let s = st.mem[lig].subtype;
+        st.mem[lig].subtype = s + 1;
         st.mainloop.rt_hit = false;
     }
     st.mainloop.cur_q.set_link(&mut st.mem, lig.ptr());
@@ -535,22 +535,22 @@ fn insert_hyphens(
         (ha, 0)
     };
     let (mut s, mut j) = if let Some(ha_ch) = st.mem.as_char(ha) {
-        if ha_ch.font(&st.mem) != st.hyph.hf {
+        if st.mem[ha_ch].font != st.hyph.hf {
             found2(st)
         } else {
             st.hyph.init_list = ha;
             st.hyph.init_lig = false;
-            st.hyph.hu[0] = LigChar::of(ha_ch.character(&st.mem));
+            st.hyph.hu[0] = LigChar::of(st.mem[ha_ch].character);
             (st.mem.predecessor(st.linebreak.cur_p, ha), 0)
         }
     } else if let Ok(AnyNode::Ligature(ha_lig)) = st.mem.classify(ha) {
-        if ha_lig.font(&st.mem) != st.hyph.hf {
+        if st.mem[ha_lig].font != st.hyph.hf {
             found2(st)
         } else {
-            st.hyph.init_list = ha_lig.lig_ptr(&st.mem);
+            st.hyph.init_list = st.mem[ha_lig].lig_ptr;
             st.hyph.init_lig = true;
-            st.hyph.init_lft = ha_lig.subtype(&st.mem) > 1;
-            st.hyph.hu[0] = LigChar::of(ha_lig.character(&st.mem));
+            st.hyph.init_lft = st.mem[ha_lig].subtype > 1;
+            st.hyph.hu[0] = LigChar::of(st.mem[ha_lig].character);
             if st.hyph.init_list.is_null() && st.hyph.init_lft {
                 st.hyph.hu[0] = LigChar::from_raw(st.hyph.max_hyph_char);
                 st.hyph.init_lig = false;
@@ -561,7 +561,7 @@ fn insert_hyphens(
     } else if !st.mem.is_char_node(r)
         && matches!(
             st.mem.classify(r),
-            Ok(AnyNode::Ligature(lig)) if lig.subtype(&st.mem) > 1
+            Ok(AnyNode::Ligature(lig)) if st.mem[lig].subtype > 1
         )
     {
         found2(st)

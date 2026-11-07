@@ -575,9 +575,8 @@ impl_traits!(HasLink: BoxNode, RuleNode, InsNode, MarkNode, AdjustNode, Ligature
     EdgeNode, Noad, MarginKernNode, SaNode, PageInsNode, ActiveNode, DeltaNode, PassiveNode,
     MovementNode, CondNode, CharNode, AlignRecord, AlignStackNode, ExprNode, PseudoLineNode,
     LigItem);
-impl_traits!(Accessed: LigatureNode, WhatsitNode, Noad, SaNode, ActiveNode, CharNode,
-    PseudoLineNode);
-impl_traits!(HasNodeHeader: LigatureNode, WhatsitNode, Noad, SaNode);
+impl_traits!(Accessed: WhatsitNode, Noad, SaNode, ActiveNode, PseudoLineNode);
+impl_traits!(HasNodeHeader: WhatsitNode, Noad, SaNode);
 impl_traits!(HasWidth: WhatsitNode);
 impl_traits!(HasHeightDepth: WhatsitNode);
 
@@ -957,13 +956,6 @@ impl MemState {
 
 // --- character-bearing nodes ---
 
-impl NodePtr<CharNode> {
-    fields! {
-        font / set_font: FontId = b16s1 @ 0;
-        character / set_character: u16 = b16s0 @ 0;
-    }
-}
-
 impl MemState {
     /// `p` as a character node, if it lies in the one-word region.
     #[inline]
@@ -973,13 +965,6 @@ impl MemState {
 }
 
 impl NodePtr<LigatureNode> {
-    fields! {
-        font / set_font: FontId = b16s1 @ 1;
-        character / set_character: u16 = b16s0 @ 1;
-        /// The original characters the ligature was formed from.
-        lig_ptr / set_lig_ptr: MemPtr = b32s1 @ 1;
-    }
-
     /// The font and character word, laid out like a character node.
     #[inline]
     pub fn char_word(self) -> NodePtr<CharNode> {
@@ -1850,12 +1835,12 @@ mod tests {
     fn small_node_fields_land_in_their_words() {
         let mut mem = fresh_mem(200);
         let lig: NodePtr<LigatureNode> = at(&mut mem, 100, Some(NodeType::Ligature));
-        lig.set_font(&mut mem, FontId::new(77));
-        lig.set_character(&mut mem, 0x1234);
-        assert_eq!(lig.font(&mem), FontId::new(77));
+        mem[lig].font = FontId::new(77);
+        mem[lig].character = 0x1234;
+        assert_eq!(mem[lig].font, FontId::new(77));
         assert_eq!(mem.b16s1(MemPtr::from_raw(101)), 77);
         assert_eq!(mem.b16s0(MemPtr::from_raw(101)), 0x1234);
-        lig.set_lig_ptr(&mut mem, MemPtr::from_raw(150));
+        mem[lig].lig_ptr = MemPtr::from_raw(150);
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 150);
 
         let disc: NodePtr<DiscNode> = at(&mut mem, 100, Some(NodeType::Disc));

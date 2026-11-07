@@ -65,14 +65,14 @@ pub(super) fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), Abo
     loop {
         let c;
         if let Some(ch) = st.mem.as_char(s) {
-            c = i32::from(ch.character(&st.mem));
-            st.hyph.hf = ch.font(&st.mem);
+            c = i32::from(st.mem[ch].character);
+            st.hyph.hf = st.mem[ch].font;
         } else {
             match st.mem.classify(s) {
-                Ok(AnyNode::Ligature(lig)) if !lig.lig_ptr(&st.mem).is_null() => {
-                    let first = NodePtr::<CharNode>::at(lig.lig_ptr(&st.mem));
-                    c = i32::from(first.character(&st.mem));
-                    st.hyph.hf = first.font(&st.mem);
+                Ok(AnyNode::Ligature(lig)) if !st.mem[lig].lig_ptr.is_null() => {
+                    let first = NodePtr::<CharNode>::at(st.mem[lig].lig_ptr);
+                    c = i32::from(st.mem[first].character);
+                    st.hyph.hf = st.mem[first].font;
                 }
                 Ok(AnyNode::Ligature(_)) => {
                     prev_s = s;
@@ -224,10 +224,10 @@ fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
     st.linebreak.hn = 0;
     loop {
         if let Some(ch) = st.mem.as_char(s) {
-            if ch.font(&st.mem) != st.hyph.hf {
+            if st.mem[ch].font != st.hyph.hf {
                 return s;
             }
-            let c = i32::from(ch.character(&st.mem));
+            let c = i32::from(st.mem[ch].character);
             st.hyph.hyf_bchar = LigChar::from_raw(c);
             let hc0 = st.hyph.hyph_code(&st.eqtb, c);
             st.hyph.hc[0] = hc0;
@@ -243,17 +243,17 @@ fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
         } else {
             match st.mem.classify(s) {
                 Ok(AnyNode::Ligature(lig)) => {
-                    if lig.font(&st.mem) != st.hyph.hf {
+                    if st.mem[lig].font != st.hyph.hf {
                         return s;
                     }
                     let mut j = st.linebreak.hn;
-                    let mut q = lig.lig_ptr(&st.mem);
+                    let mut q = st.mem[lig].lig_ptr;
                     if q.raw() > TEX_NULL {
                         st.hyph.hyf_bchar =
-                            LigChar::of(NodePtr::<CharNode>::at(q).character(&st.mem));
+                            LigChar::of(st.mem[NodePtr::<CharNode>::at(q)].character);
                     }
                     while q.raw() > TEX_NULL {
-                        let c = i32::from(NodePtr::<CharNode>::at(q).character(&st.mem));
+                        let c = i32::from(st.mem[NodePtr::<CharNode>::at(q)].character);
                         let hc0 = st.hyph.hyph_code(&st.eqtb, c);
                         st.hyph.hc[0] = hc0;
                         if hc0 == 0 || hc0 > st.hyph.max_hyph_char || i32::from(j) == max_len {
@@ -266,7 +266,7 @@ fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
                     }
                     st.linebreak.hb = s;
                     st.linebreak.hn = j;
-                    st.hyph.hyf_bchar = if odd(lig.subtype(&st.mem) as u8) {
+                    st.hyph.hyf_bchar = if odd(st.mem[lig].subtype as u8) {
                         st.fonts.font_bchar[st.hyph.hf]
                     } else {
                         LigChar::NONE

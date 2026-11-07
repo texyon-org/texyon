@@ -101,7 +101,7 @@ impl LinebreakState {
         }
 
         let (f, c) = if let Some(ch) = mem.as_char(p) {
-            (ch.font(mem), ch.character(mem))
+            (mem[ch].font, mem[ch].character)
         } else {
             match mem.classify(p) {
                 Ok(AnyNode::Whatsit(w)) => match w.whatsit_subtype(mem) {
@@ -122,7 +122,7 @@ impl LinebreakState {
                     }
                     _ => return Scaled::ZERO,
                 },
-                Ok(AnyNode::Ligature(lig)) => (lig.font(mem), lig.character(mem)),
+                Ok(AnyNode::Ligature(lig)) => (mem[lig].font, mem[lig].character),
                 _ => return Scaled::ZERO,
             }
         };
