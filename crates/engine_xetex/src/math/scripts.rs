@@ -69,8 +69,8 @@ fn maybe_attach_script_kern(
     };
 
     let kern = st.fonts.get_ot_math_kern(
-        nucleus.native_font(&st.mem),
-        i32::from(nucleus.native_glyph(&st.mem)),
+        st.mem[nucleus].font,
+        i32::from(st.mem[nucleus].glyph),
         script_f,
         i32::from(script_g),
         kind,

@@ -414,7 +414,7 @@ fn show_whatsit(st: &mut EngineState, node: NodePtr<WhatsitNode>) {
         Some(WhatsitVariant::Glyph(glyph)) => {
             print_font(st);
             print(st, " glyph#");
-            print_int(st, i32::from(glyph.native_glyph(&st.mem)));
+            print_int(st, i32::from(st.mem[glyph].glyph));
         }
         Some(WhatsitVariant::Pic(pic)) => {
             if pic.whatsit_subtype(&st.mem) == Some(WhatsitSubtype::Pic) {

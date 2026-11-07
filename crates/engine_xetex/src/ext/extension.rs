@@ -3,7 +3,7 @@
 use crate::cmd::Cmd;
 use crate::codes::ExtensionCode;
 use crate::command::Command;
-use crate::consts::{FROZEN_SPECIAL, GLYPH_NODE_SIZE, HMODE, MMODE, SMALL_NODE_SIZE, VMODE};
+use crate::consts::{FROZEN_SPECIAL, HMODE, MMODE, SMALL_NODE_SIZE, VMODE};
 use crate::errors::Abort;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::TokenType;
@@ -11,7 +11,7 @@ use crate::io::AUTO;
 use crate::main_control::new_graf;
 use crate::mem::TEMP_HEAD_TOKS;
 use crate::node::{
-    LanguageNode, NodePtr, OpenNode, WhatsitKind, WhatsitNode, WhatsitSubtype, WriteNode,
+    GlyphNode, LanguageNode, NodePtr, OpenNode, WhatsitKind, WhatsitNode, WhatsitSubtype, WriteNode,
 };
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic};
 use crate::params::IntPar;
@@ -258,11 +258,7 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
                         "; not a native platform font",
                     );
                 }
-                let w = st.input.cur_list.new_whatsit(
-                    &mut st.mem,
-                    WhatsitSubtype::Glyph,
-                    GLYPH_NODE_SIZE,
-                )?;
+                let w = append_whatsit::<GlyphNode>(st, WhatsitSubtype::Glyph)?;
                 let n = scan_int(st)?;
                 let glyph = match u16::try_from(n) {
                     Ok(glyph) => glyph,
@@ -278,8 +274,9 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
                         0
                     }
                 };
-                w.set_native_font(&mut st.mem, cur_font);
-                w.set_native_glyph(&mut st.mem, glyph);
+                let node = &mut st.mem[w];
+                node.font = cur_font;
+                node.glyph = glyph;
                 let use_glyph_metrics = st.eqtb.int_par(IntPar::XetexUseGlyphMetrics) > 0;
                 st.fonts
                     .measure_native_glyph(&mut st.mem, w, use_glyph_metrics)?;

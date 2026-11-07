@@ -6,7 +6,7 @@ use crate::glyph_arena::{FixedPoint, GlyphBlob};
 use crate::layout::{
     Bidi, FontMappingHandle, K_STATUS_NO_ERROR, K_STATUS_OUTPUT_BUFFER_FULL, UBIDI_MIXED, UBIDI_RTL,
 };
-use crate::node::{NodePtr, WhatsitNode};
+use crate::node::{GlyphNode, NodePtr, WhatsitNode};
 use crate::state::{FontEngineHandle, FontState, MemState};
 use crate::units::{FontId, Scaled, StrNumber};
 use std::ffi::c_int;
@@ -251,11 +251,11 @@ impl FontState {
     pub fn get_native_glyph_italic_correction(
         &self,
         mem: &MemState,
-        w: NodePtr<WhatsitNode>,
+        w: NodePtr<GlyphNode>,
     ) -> Scaled {
-        let gid = w.native_glyph(mem);
-        match self.layout_engine(w.native_font(mem)) {
-            Some(engine) => d2fix(f64::from(engine.glyph_ital_corr(u32::from(gid)))),
+        let glyph = mem[w];
+        match self.layout_engine(glyph.font) {
+            Some(engine) => d2fix(f64::from(engine.glyph_ital_corr(u32::from(glyph.glyph)))),
             None => Scaled::ZERO,
         }
     }
@@ -263,21 +263,23 @@ impl FontState {
     pub fn measure_native_glyph(
         &self,
         mem: &mut MemState,
-        w: NodePtr<WhatsitNode>,
+        w: NodePtr<GlyphNode>,
         use_glyph_metrics: bool,
     ) -> Result<(), Abort> {
-        let gid = u32::from(w.native_glyph(mem));
-        let f = w.native_font(mem);
+        let gid = u32::from(mem[w].glyph);
+        let f = mem[w].font;
         let engine = self.require_ot_engine(f, "bad native font flag in `measure_native_glyph`")?;
-        w.set_width(mem, d2fix(f64::from(engine.font().glyph_width(gid))));
-        if use_glyph_metrics {
+        let width = d2fix(f64::from(engine.font().glyph_width(gid)));
+        let (height, depth) = if use_glyph_metrics {
             let (ht, dp) = engine.glyph_height_depth(gid);
-            w.set_height(mem, d2fix(f64::from(ht)));
-            w.set_depth(mem, d2fix(f64::from(dp)));
+            (d2fix(f64::from(ht)), d2fix(f64::from(dp)))
         } else {
-            w.set_height(mem, self.native_height(f));
-            w.set_depth(mem, self.native_depth(f));
-        }
+            (self.native_height(f), self.native_depth(f))
+        };
+        let glyph = &mut mem[w];
+        glyph.width = width;
+        glyph.height = height;
+        glyph.depth = depth;
         Ok(())
     }
 

@@ -12,8 +12,8 @@ use crate::glyph_arena::FixedPoint;
 use crate::mem::{end_lr_type, LIG_TRICK};
 use crate::node::Stored;
 use crate::node::{
-    link_of, AnyNode, BoxNode, EdgeNode, GlueNode, GlueSpecNode, MathNode, MovementNode, NodePtr,
-    RuleNode, WhatsitNode, WhatsitSubtype, RUNNING,
+    link_of, AnyNode, BoxNode, EdgeNode, GlueNode, GlueSpecNode, GlyphNode, MathNode, MovementNode,
+    NodePtr, RuleNode, WhatsitNode, WhatsitSubtype, WhatsitVariant, RUNNING,
 };
 use crate::params::{DimenPar, IntPar};
 use crate::state::{
@@ -772,36 +772,37 @@ fn hlist_glue_out(
     Ok(())
 }
 
+fn glyph_out(st: &mut crate::state::EngineState, glyph: NodePtr<GlyphNode>) -> Result<(), Abort> {
+    synch_h(st)?;
+    synch_v(st)?;
+    let glyph = st.mem[glyph];
+    dvi_font_select(st, glyph.font)?;
+    st.shipout.dvi.set_glyph(glyph.width, glyph.glyph)?;
+    st.shipout.cur_h += glyph.width;
+    st.shipout.dvi_h = st.shipout.cur_h;
+    Ok(())
+}
+
+/// A native word, with its text as ActualText for `actual_text`.
 fn native_word_out(
     st: &mut crate::state::EngineState,
     word: NodePtr<WhatsitNode>,
-    subtype: WhatsitSubtype,
+    actual_text: bool,
 ) -> Result<(), Abort> {
     synch_h(st)?;
     synch_v(st)?;
     dvi_font_select(st, word.native_font(&st.mem))?;
-    match subtype {
-        WhatsitSubtype::Glyph => {
-            let width = word.width(&st.mem);
+    if actual_text {
+        if word.native_length(&st.mem) > 0 || word.native_glyph_info_handle(&st.mem) != 0 {
+            let (width, locations, gids) = glyph_array(&st.mem, word);
+            let text = word.native_text(&st.mem);
             st.shipout
                 .dvi
-                .set_glyph(width, word.native_glyph(&st.mem))?;
+                .set_text_and_glyphs(text, width, locations, gids)?;
         }
-        WhatsitSubtype::NativeWordAt => {
-            if word.native_length(&st.mem) > 0 || word.native_glyph_info_handle(&st.mem) != 0 {
-                let (width, locations, gids) = glyph_array(&st.mem, word);
-                let text = word.native_text(&st.mem);
-                st.shipout
-                    .dvi
-                    .set_text_and_glyphs(text, width, locations, gids)?;
-            }
-        }
-        _ => {
-            if word.native_glyph_info_handle(&st.mem) != 0 {
-                let (width, locations, gids) = glyph_array(&st.mem, word);
-                st.shipout.dvi.set_glyphs(width, locations, gids)?;
-            }
-        }
+    } else if word.native_glyph_info_handle(&st.mem) != 0 {
+        let (width, locations, gids) = glyph_array(&st.mem, word);
+        st.shipout.dvi.set_glyphs(width, locations, gids)?;
     }
     st.shipout.cur_h += word.width(&st.mem);
     st.shipout.dvi_h = st.shipout.cur_h;
@@ -910,20 +911,21 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
                 st.shipout.rule_wd = st.mem[rule].width.to_scaled();
                 hlist_rule_out(st, this_box, base_line, rule.ptr())?;
             }
-            AnyNode::Whatsit(whatsit) => match whatsit.whatsit_subtype(&st.mem) {
-                Some(
-                    subtype @ (WhatsitSubtype::NativeWord
-                    | WhatsitSubtype::NativeWordAt
-                    | WhatsitSubtype::Glyph),
-                ) => native_word_out(st, whatsit, subtype)?,
-                Some(WhatsitSubtype::Pic | WhatsitSubtype::Pdf) => {
+            AnyNode::Whatsit(whatsit) => match whatsit.variant(&st.mem) {
+                Some(WhatsitVariant::NativeWord(word)) => {
+                    let actual_text =
+                        whatsit.whatsit_subtype(&st.mem) == Some(WhatsitSubtype::NativeWordAt);
+                    native_word_out(st, word, actual_text)?
+                }
+                Some(WhatsitVariant::Glyph(glyph)) => glyph_out(st, glyph)?,
+                Some(WhatsitVariant::Pic(pic)) => {
                     st.shipout.cur_v = base_line;
-                    let edge = st.shipout.cur_h + whatsit.width(&st.mem);
-                    with_saved_dvi_pos(st, |st| pic_out(st, whatsit))?;
+                    let edge = st.shipout.cur_h + pic.width(&st.mem);
+                    with_saved_dvi_pos(st, |st| pic_out(st, pic))?;
                     st.shipout.cur_h = edge;
                     st.shipout.cur_v = base_line;
                 }
-                Some(WhatsitSubtype::PdfSavePos) => st.shipout.pdf_save_pos(),
+                Some(WhatsitVariant::SavePos) => st.shipout.pdf_save_pos(),
                 _ => out_what(st, whatsit)?,
             },
             AnyNode::Glue(glue) => {
@@ -1089,27 +1091,27 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
                 st.shipout.rule_wd = st.mem[rule].width.to_scaled();
                 vlist_rule_out(st, this_box, left_edge, upwards)?;
             }
-            AnyNode::Whatsit(whatsit) => match whatsit.whatsit_subtype(&st.mem) {
-                Some(WhatsitSubtype::Glyph) => {
-                    st.shipout.cur_v += whatsit.height(&st.mem);
+            AnyNode::Whatsit(whatsit) => match whatsit.variant(&st.mem) {
+                Some(WhatsitVariant::Glyph(glyph)) => {
+                    let glyph = st.mem[glyph];
+                    st.shipout.cur_v += glyph.height;
                     st.shipout.cur_h = left_edge;
                     synch_h(st)?;
                     synch_v(st)?;
-                    dvi_font_select(st, whatsit.native_font(&st.mem))?;
-                    let glyph = whatsit.native_glyph(&st.mem);
-                    st.shipout.dvi.set_glyph(Scaled::ZERO, glyph)?;
-                    st.shipout.cur_v += whatsit.depth(&st.mem);
+                    dvi_font_select(st, glyph.font)?;
+                    st.shipout.dvi.set_glyph(Scaled::ZERO, glyph.glyph)?;
+                    st.shipout.cur_v += glyph.depth;
                     st.shipout.cur_h = left_edge;
                 }
-                Some(WhatsitSubtype::Pic | WhatsitSubtype::Pdf) => {
+                Some(WhatsitVariant::Pic(pic)) => {
                     let (_, save_v) = with_saved_dvi_pos(st, |st| {
-                        st.shipout.cur_v += whatsit.height(&st.mem);
-                        pic_out(st, whatsit)
+                        st.shipout.cur_v += pic.height(&st.mem);
+                        pic_out(st, pic)
                     })?;
-                    st.shipout.cur_v = save_v + whatsit.depth(&st.mem);
+                    st.shipout.cur_v = save_v + pic.depth(&st.mem);
                     st.shipout.cur_h = left_edge;
                 }
-                Some(WhatsitSubtype::PdfSavePos) => st.shipout.pdf_save_pos(),
+                Some(WhatsitVariant::SavePos) => st.shipout.pdf_save_pos(),
                 _ => out_what(st, whatsit)?,
             },
             AnyNode::Glue(glue) => {

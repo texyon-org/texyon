@@ -1,10 +1,12 @@
 //! Boxes for math characters and delimiters: `char_box`, `var_delimiter`, `rebox`.
 
-use crate::consts::{BOX_NODE_SIZE, GLYPH_NODE_SIZE, NULL_FONT, SCRIPT_SIZE};
+use crate::consts::{BOX_NODE_SIZE, NULL_FONT, SCRIPT_SIZE};
 use crate::errors::Abort;
 use crate::fonts::{CharInfo, CharTag, AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::mem::SS_GLUE;
-use crate::node::{AnyNode, BoxNode, DelimiterField, NodePtr, WhatsitNode, WhatsitSubtype};
+use crate::node::{
+    AnyNode, BoxNode, DelimiterField, GlyphNode, NodePtr, WhatsitNode, WhatsitSubtype,
+};
 use crate::ot_math::GlyphAssembly;
 use crate::packaging::PackSpec;
 use crate::params::DimenPar;
@@ -15,7 +17,7 @@ impl FontState {
     pub(super) fn measure_glyph(
         &self,
         mem: &mut MemState,
-        p: NodePtr<WhatsitNode>,
+        p: NodePtr<GlyphNode>,
     ) -> Result<(), Abort> {
         self.measure_native_glyph(mem, p, true)
     }
@@ -89,10 +91,11 @@ fn new_measured_glyph(
     st: &mut EngineState,
     f: FontId,
     g: i32,
-) -> Result<NodePtr<WhatsitNode>, Abort> {
-    let p = NodePtr::<WhatsitNode>::alloc(&mut st.mem, GLYPH_NODE_SIZE, WhatsitSubtype::Glyph)?;
-    p.set_native_font(&mut st.mem, f);
-    p.set_native_glyph(&mut st.mem, g as u16);
+) -> Result<NodePtr<GlyphNode>, Abort> {
+    let p = NodePtr::<GlyphNode>::alloc_whatsit(&mut st.mem, WhatsitSubtype::Glyph)?;
+    let glyph = &mut st.mem[p];
+    glyph.font = f;
+    glyph.glyph = g as u16;
     st.fonts.measure_glyph(&mut st.mem, p)?;
     Ok(p)
 }
@@ -114,19 +117,19 @@ fn stack_glyph_into_box(
                 q = q.link(mem);
             }
             q.set_link(mem, p.ptr());
-            if mem[b].height < p.height(mem) {
-                mem[b].height = p.height(mem);
+            if mem[b].height < mem[p].height {
+                mem[b].height = mem[p].height;
             }
-            if mem[b].depth < p.depth(mem) {
-                mem[b].depth = p.depth(mem);
+            if mem[b].depth < mem[p].depth {
+                mem[b].depth = mem[p].depth;
             }
         }
     } else {
-        p.set_link(mem, mem[b].list_ptr);
+        mem[p].link = mem[b].list_ptr;
         mem[b].list_ptr = p.ptr();
-        mem[b].height = p.height(mem);
-        if mem[b].width < p.width(mem) {
-            mem[b].width = p.width(mem);
+        mem[b].height = mem[p].height;
+        if mem[b].width < mem[p].width {
+            mem[b].width = mem[p].width;
         }
     }
     Ok(())
@@ -137,9 +140,9 @@ fn native_glyph_vbox(st: &mut EngineState, f: FontId, g: u16) -> Result<NodePtr<
     let p = new_measured_glyph(st, f, i32::from(g))?;
     let mem = &mut st.mem;
     mem[b].list_ptr = p.ptr();
-    mem[b].width = p.width(mem);
-    mem[b].height = p.height(mem);
-    mem[b].depth = p.depth(mem);
+    mem[b].width = mem[p].width;
+    mem[b].height = mem[p].height;
+    mem[b].depth = mem[p].depth;
     Ok(b)
 }
 

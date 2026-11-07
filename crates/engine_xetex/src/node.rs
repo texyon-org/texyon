@@ -8,10 +8,10 @@
 use std::marker::PhantomData;
 
 use crate::consts::{
-    ACCENT_NOAD_SIZE, BOX_NODE_SIZE, FRACTION_NOAD_SIZE, GLUE_SPEC_SIZE, INDEX_NODE_SIZE,
-    INS_NODE_SIZE, MARGIN_KERN_NODE_SIZE, MARK_CLASS_NODE_SIZE, MEDIUM_NODE_SIZE, NATIVE_NODE_SIZE,
-    NOAD_SIZE, NULL_FLAG, OPEN_NODE_SIZE, PAGE_INS_NODE_SIZE, PIC_NODE_SIZE, RADICAL_NOAD_SIZE,
-    RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE, WRITE_NODE_SIZE,
+    ACCENT_NOAD_SIZE, BOX_NODE_SIZE, FRACTION_NOAD_SIZE, GLUE_SPEC_SIZE, GLYPH_NODE_SIZE,
+    INDEX_NODE_SIZE, INS_NODE_SIZE, MARGIN_KERN_NODE_SIZE, MARK_CLASS_NODE_SIZE, MEDIUM_NODE_SIZE,
+    NATIVE_NODE_SIZE, NOAD_SIZE, NULL_FLAG, OPEN_NODE_SIZE, PAGE_INS_NODE_SIZE, PIC_NODE_SIZE,
+    RADICAL_NOAD_SIZE, RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE, WRITE_NODE_SIZE,
 };
 use crate::errors::Abort;
 use crate::state::MemState;
@@ -531,6 +531,8 @@ node_kinds! {
     WriteNode = Whatsit, WRITE_NODE_SIZE;
     /// A language change: the language and its hyphenation minima.
     LanguageNode = Whatsit, SMALL_NODE_SIZE;
+    /// One glyph of a native font, by glyph id.
+    GlyphNode = Whatsit, GLYPH_NODE_SIZE;
     /// An alignment box before its column widths are known. Words +4..+6 hold
     /// the accumulated shrink, span count and stretch instead of box glue.
     UnsetNode;
@@ -1467,7 +1469,7 @@ impl StoredCode for WhatsitSubtype {
 /// A fixed-layout whatsit kind, which widens to [`WhatsitNode`].
 pub trait WhatsitKind: FixedNode {}
 
-impl_traits!(WhatsitKind: OpenNode, WriteNode, LanguageNode);
+impl_traits!(WhatsitKind: OpenNode, WriteNode, LanguageNode, GlyphNode);
 
 impl<K: WhatsitKind> NodePtr<K> {
     /// A fresh whatsit of the given subtype, other fields uninitialised.
@@ -1495,7 +1497,7 @@ pub enum WhatsitVariant {
     Language(NodePtr<LanguageNode>),
     SavePos,
     NativeWord(NodePtr<WhatsitNode>),
-    Glyph(NodePtr<WhatsitNode>),
+    Glyph(NodePtr<GlyphNode>),
     Pic(NodePtr<WhatsitNode>),
 }
 
@@ -1513,7 +1515,7 @@ impl NodePtr<WhatsitNode> {
             S::Language => WhatsitVariant::Language(NodePtr::from_idx_unchecked(p)),
             S::PdfSavePos => WhatsitVariant::SavePos,
             S::NativeWord | S::NativeWordAt => WhatsitVariant::NativeWord(self),
-            S::Glyph => WhatsitVariant::Glyph(self),
+            S::Glyph => WhatsitVariant::Glyph(NodePtr::from_idx_unchecked(p)),
             S::Pic | S::Pdf => WhatsitVariant::Pic(self),
         })
     }
@@ -1535,8 +1537,6 @@ impl NodePtr<WhatsitNode> {
         native_font / set_native_font: FontId = b16s2 @ 4;
         /// UTF-16 length of a native word.
         native_length / set_native_length: u16 = b16s1 @ 4;
-        /// Glyph id of a glyph node, in the native length slot.
-        native_glyph / set_native_glyph: u16 = b16s1 @ 4;
         native_glyph_count / set_native_glyph_count: u16 = b16s0 @ 4;
         /// One-based shaped-glyph arena handle, zero when unshaped.
         native_glyph_info_handle: i32 = b32s0 @ 5;

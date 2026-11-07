@@ -4,7 +4,7 @@ use crate::consts::NORMAL;
 use crate::errors::Abort;
 use crate::fonts::{Side, QUAD_CODE};
 use crate::mem::{TEMP_HEAD, ZERO_GLUE};
-use crate::node::{ActiveNode, AnyNode, BoxNode, DiscNode, NodePtr, WhatsitSubtype};
+use crate::node::{ActiveNode, AnyNode, BoxNode, DiscNode, NodePtr, WhatsitVariant};
 use crate::state::{ErrorState, FontState, LinebreakState, MemState};
 use crate::units::{FontId, MemPtr, Scaled};
 
@@ -104,8 +104,8 @@ impl LinebreakState {
             (mem[ch].font, mem[ch].character)
         } else {
             match mem.classify(p) {
-                Ok(AnyNode::Whatsit(w)) => match w.whatsit_subtype(mem) {
-                    Some(s) if s.is_native_word() => {
+                Ok(AnyNode::Whatsit(w)) => match w.variant(mem) {
+                    Some(WhatsitVariant::NativeWord(w)) => {
                         if w.native_glyph_info_handle(mem) == 0 {
                             return Scaled::ZERO;
                         }
@@ -115,10 +115,10 @@ impl LinebreakState {
                             .map_or(0, |g| fonts.cp_codes.get(f, side, u32::from(g)));
                         return protrusion(errors, fonts, f, cp);
                     }
-                    Some(WhatsitSubtype::Glyph) => {
-                        let f = w.native_font(mem);
-                        let cp = fonts.cp_codes.get(f, side, u32::from(w.native_glyph(mem)));
-                        return protrusion(errors, fonts, f, cp);
+                    Some(WhatsitVariant::Glyph(glyph)) => {
+                        let glyph = mem[glyph];
+                        let cp = fonts.cp_codes.get(glyph.font, side, u32::from(glyph.glyph));
+                        return protrusion(errors, fonts, glyph.font, cp);
                     }
                     _ => return Scaled::ZERO,
                 },

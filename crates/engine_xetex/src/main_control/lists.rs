@@ -20,7 +20,7 @@ use crate::mem::{
 use crate::mem_types::ListStateRecord;
 use crate::node::{
     AdjustNode, AnyNode, CharNode, DiscNode, GlueNode, GlueSpecNode, InsNode, LanguageNode,
-    MarkNode, MathField, NoadVariant, NodePtr, WhatsitNode, WhatsitSubtype,
+    MarkNode, MathField, NoadVariant, NodePtr, WhatsitNode, WhatsitSubtype, WhatsitVariant,
 };
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
@@ -760,10 +760,12 @@ pub(super) fn append_italic_correction(st: &mut EngineState) -> Result<(), Abort
     } else {
         match st.mem.classify(tail) {
             Ok(AnyNode::Ligature(lig)) => char_italic(st, lig.char_word()),
-            Ok(AnyNode::Whatsit(w)) => match w.whatsit_subtype(&st.mem) {
-                Some(s) if s.is_native_word() => st.fonts.get_native_italic_correction(&st.mem, w),
-                Some(WhatsitSubtype::Glyph) => {
-                    st.fonts.get_native_glyph_italic_correction(&st.mem, w)
+            Ok(AnyNode::Whatsit(w)) => match w.variant(&st.mem) {
+                Some(WhatsitVariant::NativeWord(word)) => {
+                    st.fonts.get_native_italic_correction(&st.mem, word)
+                }
+                Some(WhatsitVariant::Glyph(glyph)) => {
+                    st.fonts.get_native_glyph_italic_correction(&st.mem, glyph)
                 }
                 _ => return Ok(()),
             },

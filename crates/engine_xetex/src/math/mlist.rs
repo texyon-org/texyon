@@ -11,8 +11,8 @@ use crate::mem::{TEMP_HEAD, TEX_NULL, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
 use crate::node::{
     AccentNoad, AnyNoad, AnyNode, BoxNode, ChoiceNode, FenceNoad, FractionNoad, GlueNode,
-    GlueSpecNode, KernNode, MathField, Noad, NoadVariant, NodePtr, RadicalNoad, RuleDimen,
-    RuleNode, WhatsitNode, WhatsitSubtype,
+    GlueSpecNode, GlyphNode, KernNode, MathField, Noad, NoadVariant, NodePtr, RadicalNoad,
+    RuleDimen, RuleNode, WhatsitSubtype, WhatsitVariant,
 };
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar};
@@ -410,11 +410,12 @@ impl MemState {
         Ok(vb)
     }
 
-    pub(super) fn glyph_whatsit(&self, p: MemPtr) -> Option<NodePtr<WhatsitNode>> {
+    pub(super) fn glyph_whatsit(&self, p: MemPtr) -> Option<NodePtr<GlyphNode>> {
         match self.classify_non_char(p)? {
-            AnyNode::Whatsit(w) if w.whatsit_subtype(self) == Some(WhatsitSubtype::Glyph) => {
-                Some(w)
-            }
+            AnyNode::Whatsit(w) => match w.variant(self)? {
+                WhatsitVariant::Glyph(glyph) => Some(glyph),
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -584,11 +585,11 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
                             .fonts
                             .get_ot_math_constant(cur_f, DISPLAYOPERATORMINHEIGHT);
                         let size_h =
-                            f64::from(glyph.height(&st.mem) + glyph.depth(&st.mem)) * 5.0 / 4.0;
+                            f64::from(st.mem[glyph].height + st.mem[glyph].depth) * 5.0 / 4.0;
                         if f64::from(h1) < size_h {
                             h1 = Scaled::from_raw(size_h as i32);
                         }
-                        let c_glyph = i32::from(glyph.native_glyph(&st.mem));
+                        let c_glyph = i32::from(st.mem[glyph].glyph);
                         let mut n: i32 = 0;
                         let mut h2 = Scaled::ZERO;
                         loop {
@@ -596,7 +597,7 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
                                 .fonts
                                 .get_ot_math_variant(cur_f, c_glyph, n, &mut h2, false);
                             if h2 > Scaled::ZERO {
-                                glyph.set_native_glyph(&mut st.mem, g as u16);
+                                st.mem[glyph].glyph = g as u16;
                                 st.fonts.measure_glyph(&mut st.mem, glyph)?;
                             }
                             n += 1;
@@ -619,11 +620,11 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
                     }
                     delta = st
                         .fonts
-                        .get_ot_math_ital_corr(cur_f, i32::from(glyph.native_glyph(&st.mem)));
+                        .get_ot_math_ital_corr(cur_f, i32::from(st.mem[glyph].glyph));
                     (
-                        glyph.width(&st.mem),
-                        glyph.height(&st.mem),
-                        glyph.depth(&st.mem),
+                        st.mem[glyph].width,
+                        st.mem[glyph].height,
+                        st.mem[glyph].depth,
                     )
                 };
                 st.mem[x].width = width;
@@ -918,11 +919,11 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<AccentNoad>) -> Result<(), 
     if is_native {
         let old = crate::fonts::new_native_character(st, f, c as u32)?;
         y = st.mem.native_char_box(old)?;
-        let glyph =
-            NodePtr::<WhatsitNode>::alloc(&mut st.mem, GLYPH_NODE_SIZE, WhatsitSubtype::Glyph)?;
-        glyph.set_native_font(&mut st.mem, f);
+        let glyph = NodePtr::<GlyphNode>::alloc_whatsit(&mut st.mem, WhatsitSubtype::Glyph)?;
         let glyph_id = st.mem.get_native_glyph(old, 0);
-        glyph.set_native_glyph(&mut st.mem, glyph_id);
+        let node = &mut st.mem[glyph];
+        node.font = f;
+        node.glyph = glyph_id;
         st.fonts.measure_glyph(&mut st.mem, glyph)?;
         old.free_native(&mut st.mem);
         st.mem[y].list_ptr = glyph.ptr();
@@ -931,13 +932,13 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<AccentNoad>) -> Result<(), 
         if !kind.is_multiple_of(2) {
             st.fonts.measure_glyph(&mut st.mem, glyph)?;
         } else {
-            let c_glyph = i32::from(glyph.native_glyph(&st.mem));
+            let c_glyph = i32::from(st.mem[glyph].glyph);
             let mut n: i32 = 0;
             let mut w2 = Scaled::ZERO;
             loop {
                 let g = st.fonts.get_ot_math_variant(f, c_glyph, n, &mut w2, true);
                 if w2 > Scaled::ZERO && w2 <= w {
-                    glyph.set_native_glyph(&mut st.mem, g as u16);
+                    st.mem[glyph].glyph = g as u16;
                     st.fonts.measure_glyph(&mut st.mem, glyph)?;
                     n += 1;
                 }
@@ -960,7 +961,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<AccentNoad>) -> Result<(), 
         let mem = &mut st.mem;
         let (gw, gh, gd) = match assembly_box {
             Some(b) => (mem[b].width, mem[b].height, mem[b].depth),
-            None => (glyph.width(mem), glyph.height(mem), glyph.depth(mem)),
+            None => (mem[glyph].width, mem[glyph].height, mem[glyph].depth),
         };
         mem[y].width = gw;
         mem[y].height = gh;
@@ -976,7 +977,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<AccentNoad>) -> Result<(), 
         let attach = match assembly_box {
             None => st
                 .fonts
-                .get_ot_math_accent_pos(f, i32::from(glyph.native_glyph(mem))),
+                .get_ot_math_accent_pos(f, i32::from(mem[glyph].glyph)),
             Some(_) => INFINITE_DIMEN,
         };
         let sa = if attach == INFINITE_DIMEN {
@@ -1157,19 +1158,17 @@ fn mlist_nucleus(st: &mut EngineState, qn: NodePtr<Noad>, mut delta: Scaled) -> 
             let area = st.fonts.font_area[cur_f];
             let p = if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
                 let z = crate::fonts::new_native_character(st, cur_f, st.scanner.cur_c as u32)?;
-                let glyph = NodePtr::<WhatsitNode>::alloc(
-                    &mut st.mem,
-                    GLYPH_NODE_SIZE,
-                    WhatsitSubtype::Glyph,
-                )?;
-                glyph.set_native_font(&mut st.mem, cur_f);
+                let glyph =
+                    NodePtr::<GlyphNode>::alloc_whatsit(&mut st.mem, WhatsitSubtype::Glyph)?;
                 let z_glyph = st.mem.get_native_glyph(z, 0);
-                glyph.set_native_glyph(&mut st.mem, z_glyph);
+                let node = &mut st.mem[glyph];
+                node.font = cur_f;
+                node.glyph = z_glyph;
                 st.fonts.measure_glyph(&mut st.mem, glyph)?;
                 z.free_native(&mut st.mem);
                 delta = st
                     .fonts
-                    .get_ot_math_ital_corr(cur_f, i32::from(glyph.native_glyph(&st.mem)));
+                    .get_ot_math_ital_corr(cur_f, i32::from(st.mem[glyph].glyph));
                 if st.mem[qn.nucleus()].math_type == MATH_TEXT_CHAR
                     && !st.fonts.font_is_ot_math(cur_f)
                 {

@@ -11,12 +11,13 @@ use crate::consts::{EMPTY, NORMAL};
 use crate::node::{
     AccentNoad, ActiveNode, AdjustNode, AlignRecord, AlignStackNode, AnyNoad, BoxNode, CharNode,
     ChoiceNode, CondNode, DelimiterField, DeltaNode, DiscNode, EdgeNode, ExprNode, FenceNoad,
-    FixedNode, FractionNoad, FreeBlock, GlueNode, GlueSpecNode, InsNode, KernNode, LanguageNode,
-    LigItem, LigatureNode, Link, MarginKernNode, MarkNode, MathField, MathNode, MovementNode, Noad,
-    NodeKind, NodePtr, OpenNode, PageInsNode, ParShapeNode, PassiveNode, PenaltiesNode,
-    PenaltyNode, PseudoLineNode, RadicalNoad, RuleNode, SaChild, SaElement, SaIndexNode, SaLeaf,
-    SaMarkClassNode, SaPointerNode, SaSaved, SaSavedPointer, SaSavedWord, SaWordNode, SpanNode,
-    Stored, StoredDimen, StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype, WriteNode,
+    FixedNode, FractionNoad, FreeBlock, GlueNode, GlueSpecNode, GlyphNode, InsNode, KernNode,
+    LanguageNode, LigItem, LigatureNode, Link, MarginKernNode, MarkNode, MathField, MathNode,
+    MovementNode, Noad, NodeKind, NodePtr, OpenNode, PageInsNode, ParShapeNode, PassiveNode,
+    PenaltiesNode, PenaltyNode, PseudoLineNode, RadicalNoad, RuleNode, SaChild, SaElement,
+    SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved, SaSavedPointer, SaSavedWord,
+    SaWordNode, SpanNode, Stored, StoredDimen, StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype,
+    WriteNode,
 };
 use crate::state::MemState;
 use crate::token::TokenList;
@@ -265,6 +266,28 @@ pub struct LanguageLayout {
 }
 
 overlay!(LanguageNode => LanguageLayout);
+
+/// A glyph of a native font. The glyph id sits where a native word keeps
+/// its length.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct GlyphLayout {
+    pub subtype: Stored<WhatsitSubtype>,
+    _type: u16,
+    pub link: MemPtr,
+    _unused1: i32,
+    pub width: Scaled,
+    _unused2: i32,
+    pub depth: Scaled,
+    _unused3: i32,
+    pub height: Scaled,
+    _glyph_count: u16,
+    pub glyph: u16,
+    pub font: FontId,
+    _size: u16,
+}
+
+overlay!(GlyphNode => GlyphLayout);
 
 /// A glue specification. Its first word holds the fill orders and a reference
 /// count in place of a type code and link.
@@ -1547,6 +1570,33 @@ mod tests {
             (2, 3, 11)
         );
         assert!(matches!(l.whatsit().variant(&mem), Some(WhatsitVariant::Language(p)) if p == l));
+    }
+
+    #[test]
+    fn glyph_fields_land_on_their_words() {
+        let mut mem = arena();
+        let at = MemIdx::from_raw;
+        let g: NodePtr<GlyphNode> = NodePtr::from_idx_unchecked(at(4));
+        let glyph = &mut mem[g];
+        glyph.subtype = WhatsitSubtype::Glyph.into();
+        glyph.width = Scaled::from_raw(11);
+        glyph.depth = Scaled::from_raw(12);
+        glyph.height = Scaled::from_raw(13);
+        glyph.glyph = 14;
+        glyph.font = FontId::new(15);
+        assert_eq!(mem.b16s0(at(4)), 42);
+        assert_eq!([5, 6, 7].map(|i| mem.b32s1(at(i))), [11, 12, 13]);
+        assert_eq!([5, 6, 7].map(|i| mem.b32s0(at(i))), [0; 3]);
+        assert_eq!(
+            [
+                mem.b16s0(at(8)),
+                mem.b16s1(at(8)),
+                mem.b16s2(at(8)),
+                mem.b16s3(at(8))
+            ],
+            [0, 14, 15, 0]
+        );
+        assert!(matches!(g.whatsit().variant(&mem), Some(WhatsitVariant::Glyph(p)) if p == g));
     }
 
     #[test]
