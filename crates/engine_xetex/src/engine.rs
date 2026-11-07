@@ -797,7 +797,7 @@ pub(crate) fn initialize_engine(
     st.hyph.hyph_link = vec![0; hyph_words];
 
     if st.config.in_initex_mode {
-        st.mem.data = zeroed_vec(MEM_TOP as usize + 2);
+        st.mem.data = zeroed_vec(crate::mem::MEM_WORDS);
 
         st.eqtb.eqtb_top = EQTB_SIZE + st.eqtb.hash_extra;
         st.eqtb.hash_top = if st.eqtb.hash_extra == 0 {

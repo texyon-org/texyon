@@ -441,7 +441,7 @@ fn header<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
         st.input.cur_list.head = CONTRIB_HEAD;
         st.input.cur_list.tail = CONTRIB_HEAD;
         st.shipout.page_tail = PAGE_HEAD;
-        st.mem.data = crate::mem_types::zeroed_vec(MEM_TOP as usize + 1);
+        st.mem.data = crate::mem_types::zeroed_vec(crate::mem::MEM_WORDS);
     }
 
     s.constant(EQTB_SIZE.raw())?;

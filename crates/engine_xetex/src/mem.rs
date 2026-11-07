@@ -28,6 +28,9 @@ const fn static_spec(k: i32) -> NodePtr<GlueSpecNode> {
     NodePtr::from_idx_unchecked(MemIdx::from_raw(k * GLUE_SPEC_SIZE))
 }
 
+/// The arena length: `MEM_TOP` and the words below it, then layout slack.
+pub(crate) const MEM_WORDS: usize = (MEM_TOP + crate::overlay::MAX_LAYOUT_WORDS) as usize;
+
 pub(crate) const PAGE_INS_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP);
 pub(crate) const CONTRIB_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 1);
 pub(crate) const PAGE_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 2);

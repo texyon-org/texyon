@@ -48,12 +48,17 @@ impl<K: Overlay> std::ops::IndexMut<NodePtr<K>> for MemState {
     }
 }
 
+/// The most words a layout covers. `mem` keeps all but one of them as slack
+/// past `MEM_TOP`, so a layout read at a list head near the top stays in bounds.
+pub(crate) const MAX_LAYOUT_WORDS: i32 = 8;
+
 /// Declares the layout of a fixed node kind and checks it covers the node exactly.
 macro_rules! overlay {
     ($kind:ty => $layout:ty) => {
         impl Overlay for $kind {
             type Layout = $layout;
         }
+        const _: () = assert!(<$kind as FixedNode>::SIZE <= MAX_LAYOUT_WORDS);
         const _: () = assert!(
             std::mem::size_of::<$layout>()
                 == std::mem::size_of::<crate::mem_types::MemoryWord>()
@@ -461,6 +466,18 @@ mod tests {
 
     fn spec_at(idx: i32) -> NodePtr<GlueSpecNode> {
         NodePtr::from_idx_unchecked(MemIdx::from_raw(idx))
+    }
+
+    #[test]
+    fn the_largest_layout_fits_at_the_top_of_mem() {
+        let mut mem = MemState {
+            data: crate::mem_types::zeroed_vec(crate::mem::MEM_WORDS),
+            ..Default::default()
+        };
+        let top: NodePtr<BoxNode> =
+            NodePtr::from_idx_unchecked(MemIdx::new(crate::mem::PAGE_INS_HEAD));
+        mem[top].link = MemPtr::from_raw(5);
+        assert_eq!(mem.b32s1(crate::mem::PAGE_INS_HEAD), 5);
     }
 
     #[test]
