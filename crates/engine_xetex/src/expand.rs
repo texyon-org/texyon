@@ -172,10 +172,11 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
     }
 
     let cond_node = NodePtr::<CondNode>::alloc(&mut st.mem)?;
-    st.mem[cond_node].link = link_of(st.scanner.cond_ptr);
-    st.mem[cond_node].if_limit = st.scanner.if_limit;
-    st.mem[cond_node].cur_if = st.scanner.cur_if as u16;
-    st.mem[cond_node].if_line = st.scanner.if_line;
+    let node = &mut st.mem[cond_node];
+    node.link = link_of(st.scanner.cond_ptr);
+    node.if_limit = st.scanner.if_limit;
+    node.cur_if = st.scanner.cur_if as u16;
+    node.if_line = st.scanner.if_line;
     st.scanner.cond_ptr = Some(cond_node);
     st.scanner.cur_if = (this_if.raw() + if is_unless { IfCode::UNLESS } else { 0 }) as i16;
     st.scanner.if_limit = FiOrElseCode::If.into();

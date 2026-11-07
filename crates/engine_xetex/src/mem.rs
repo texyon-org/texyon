@@ -338,13 +338,13 @@ impl MemState {
     /// Returns the `s`-word node `p` to the variable-size free list.
     pub fn free_node(&mut self, p: MemPtr, s: i32) {
         let block = NodePtr::<FreeBlock>::at;
-        let freed = block(p);
-        self[freed].node_size = s;
-        self[freed].mark_empty();
         let rover = self.rover;
         let q = self[block(rover)].llink;
-        self[freed].llink = q;
-        self[freed].rlink = rover;
+        let freed = &mut self[block(p)];
+        freed.node_size = s;
+        freed.mark_empty();
+        freed.llink = q;
+        freed.rlink = rover;
         self[block(rover)].llink = p;
         self[block(q)].rlink = p;
     }

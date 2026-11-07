@@ -58,6 +58,28 @@ impl WordJournal {
         }
     }
 
+    /// Notes every word of a node. One mask test settles the usual case, where
+    /// all of them are already noted, at any node size.
+    #[inline]
+    pub(crate) fn note_run(&mut self, start: usize, words: &[MemoryWord]) {
+        debug_assert!(self.armed);
+        let shift = start & 63;
+        if shift + words.len() <= 64 {
+            let mask = (u64::MAX >> ((64 - words.len()) & 63)) << shift;
+            if self.touched[start >> 6] & mask == mask {
+                return;
+            }
+        }
+        self.note_each(start, words);
+    }
+
+    #[inline(never)]
+    fn note_each(&mut self, start: usize, words: &[MemoryWord]) {
+        for (index, &old) in (start..).zip(words) {
+            self.note(index, old);
+        }
+    }
+
     pub(crate) fn seal(&mut self) -> WordDelta {
         for e in &self.entries {
             self.touched[e.idx as usize >> 6] = 0;
@@ -331,6 +353,31 @@ mod tests {
         delta.apply_to(&mut data);
         assert_eq!(bits(data[7]), bits(word(0)));
         assert_eq!(bits(data[130]), bits(word(0)));
+    }
+
+    #[test]
+    fn note_run_saves_each_word_once_across_a_bitmap_boundary() {
+        let data: Vec<_> = (0..128).map(word).collect();
+        let mut journal = WordJournal::default();
+        journal.arm(data.len());
+        journal.note(62, data[62]);
+        journal.note(63, data[63]);
+        journal.note_run(62, &data[62..66]);
+        assert_eq!(journal.open_len(), 4);
+        journal.note_run(62, &data[62..66]);
+        assert_eq!(journal.open_len(), 4);
+    }
+
+    #[test]
+    fn note_run_saves_the_unnoted_words_of_a_partly_noted_node() {
+        let data: Vec<_> = (0..16).map(word).collect();
+        let mut journal = WordJournal::default();
+        journal.arm(data.len());
+        journal.note(5, data[5]);
+        journal.note_run(4, &data[4..6]);
+        assert_eq!(journal.open_len(), 2);
+        journal.note_run(4, &data[4..6]);
+        assert_eq!(journal.open_len(), 2);
     }
 
     #[test]

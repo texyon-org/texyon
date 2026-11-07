@@ -41,12 +41,12 @@ impl<K: Overlay> std::ops::IndexMut<NodePtr<K>> for MemState {
     #[inline]
     fn index_mut(&mut self, p: NodePtr<K>) -> &mut K::Layout {
         let words = p.idx().words(K::WORDS);
+        let start = words.start;
+        let node = &mut self.data[words];
         if self.journal.armed() {
-            for index in words.clone() {
-                self.journal.note(index, self.data[index]);
-            }
+            self.journal.note_run(start, node);
         }
-        bytemuck::from_bytes_mut(bytemuck::cast_slice_mut(&mut self.data[words]))
+        bytemuck::from_bytes_mut(bytemuck::cast_slice_mut(node))
     }
 }
 
