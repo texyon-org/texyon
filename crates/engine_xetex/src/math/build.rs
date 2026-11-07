@@ -78,15 +78,11 @@ fn scan_delimiter(
 
     if v >= 0x4000_0000 {
         let plane_and_fam = ((v % 0x20_0000) / 0x1_0000) * 0x100 + (v / 0x20_0000) % 0x100;
-        p.set_small(&mut st.mem, plane_and_fam as u16, (v % 0x1_0000) as u16);
-        p.set_large(&mut st.mem, 0, 0);
+        st.mem[p].set_small(plane_and_fam as u16, (v % 0x1_0000) as u16);
+        st.mem[p].set_large(0, 0);
     } else {
-        p.set_small(
-            &mut st.mem,
-            ((v / 0x10_0000) % 16) as u16,
-            ((v / 0x1000) % 0x100) as u16,
-        );
-        p.set_large(&mut st.mem, ((v / 0x100) % 16) as u16, (v % 0x100) as u16);
+        st.mem[p].set_small(((v / 0x10_0000) % 16) as u16, ((v / 0x1000) % 0x100) as u16);
+        st.mem[p].set_large(((v / 0x100) % 16) as u16, (v % 0x100) as u16);
     }
     Ok(())
 }
@@ -183,18 +179,19 @@ impl ListStateRecord {
     fn fin_mlist(&mut self, mem: &mut MemState, p: MemPtr) -> Result<MemPtr, Abort> {
         let q;
         if let Some(aux_noad) = self.incompleat_noad() {
-            aux_noad.subscr().set_math_type(mem, SUB_MLIST);
-            aux_noad.subscr().set_info(mem, self.head.link(mem));
+            mem[aux_noad.subscr()].math_type = SUB_MLIST;
+            let list = self.head.link(mem);
+            mem[aux_noad.subscr()].set_info(list);
             if p.is_null() {
                 q = aux_noad.ptr();
             } else {
-                q = aux_noad.supscr().info(mem);
+                q = mem[aux_noad.supscr()].info();
                 let etex_aux = self.e_tex_aux;
                 if mem.node_type(q) != Ok(NodeType::LeftNoad) || etex_aux.is_null() {
                     return Err(Abort::Confusion("right"));
                 }
                 let etex_link = etex_aux.link(mem);
-                aux_noad.supscr().set_info(mem, etex_link);
+                mem[aux_noad.supscr()].set_info(etex_link);
                 etex_aux.set_link(mem, aux_noad.ptr());
                 aux_noad.set_link(mem, p);
             }
@@ -279,7 +276,7 @@ impl ListStateRecord {
             if let Ok(Some(n)) = mem.classify_noad(self.tail) {
                 if n.noad_type(mem).as_raw() < NodeType::LeftNoad.as_raw() {
                     let field = script(n);
-                    t = field.math_type(mem);
+                    t = mem[field].math_type;
                     p = Some(field);
                 }
             }
@@ -332,11 +329,12 @@ impl ListStateRecord {
         let fraction = NodePtr::<Noad>::alloc_fraction(mem)?;
         self.set_incompleat_noad(Some(fraction));
         fraction.set_subtype(mem, NORMAL);
-        fraction.supscr().set_math_type(mem, SUB_MLIST);
-        fraction.supscr().set_info(mem, self.head.link(mem));
-        fraction.subscr().clear(mem);
-        fraction.left_delimiter().clear(mem);
-        fraction.right_delimiter().clear(mem);
+        mem[fraction.supscr()].math_type = SUB_MLIST;
+        let list = self.head.link(mem);
+        mem[fraction.supscr()].set_info(list);
+        mem[fraction.subscr()].clear();
+        mem[fraction.left_delimiter()].clear();
+        mem[fraction.right_delimiter()].clear();
 
         self.head.set_link(mem, MemPtr::NULL);
         self.tail = self.head;
@@ -398,30 +396,25 @@ impl ListStateRecord {
         let accent = NodePtr::<Noad>::alloc_accent(mem)?;
         self.tail_append(mem, accent.ptr());
         accent.clear_fields(mem);
-        accent.accent_chr().set_math_type(mem, MATH_CHAR);
+        mem[accent.accent_chr()].math_type = MATH_CHAR;
         Ok(accent)
     }
 }
 
 impl MemState {
     fn finish_accent_math_field(&mut self, eqtb: &EqtbState, tail: NodePtr<Noad>, value: i32) {
-        tail.accent_chr()
-            .set_character(self, (value % 65536) as u16);
+        self[tail.accent_chr()].set_character((value % 65536) as u16);
         let intpar_cur_fam = eqtb.int_par(IntPar::CurFam);
         if crate::scan::math_class(value) == 7
             && (0..NUMBER_MATH_FAMILIES).contains(&intpar_cur_fam)
         {
-            tail.accent_chr()
-                .set_plane_and_fam(self, intpar_cur_fam as u16);
+            self[tail.accent_chr()].set_plane_and_fam(intpar_cur_fam as u16);
         } else {
-            tail.accent_chr()
-                .set_plane_and_fam(self, crate::scan::math_fam(value) as u16);
+            self[tail.accent_chr()].set_plane_and_fam(crate::scan::math_fam(value) as u16);
         }
-        let current_fam = tail.accent_chr().plane_and_fam(self);
-        tail.accent_chr().set_plane_and_fam(
-            self,
-            current_fam + (crate::scan::math_char(value) / 65536) as u16 * 256,
-        );
+        let current_fam = self[tail.accent_chr()].plane_and_fam();
+        self[tail.accent_chr()]
+            .set_plane_and_fam(current_fam + (crate::scan::math_char(value) / 65536) as u16 * 256);
     }
 }
 
@@ -471,8 +464,8 @@ pub(crate) fn math_left_right(st: &mut EngineState, code: LeftRightCode) -> Resu
             let cl = &mut st.input.cur_list;
             cl.tail_append(&mut st.mem, inner.ptr());
             inner.set_noad_type(&mut st.mem, NodeType::InnerNoad);
-            inner.nucleus().set_math_type(&mut st.mem, SUB_MLIST);
-            inner.nucleus().set_info(&mut st.mem, q);
+            st.mem[inner.nucleus()].math_type = SUB_MLIST;
+            st.mem[inner.nucleus()].set_info(q);
         }
     }
     Ok(())

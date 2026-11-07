@@ -8,7 +8,7 @@
 use std::marker::PhantomData;
 
 use crate::consts::{
-    ACCENT_NOAD_SIZE, BOX_NODE_SIZE, EMPTY, FRACTION_NOAD_SIZE, GLUE_SPEC_SIZE, INS_NODE_SIZE,
+    ACCENT_NOAD_SIZE, BOX_NODE_SIZE, FRACTION_NOAD_SIZE, GLUE_SPEC_SIZE, INS_NODE_SIZE,
     MARGIN_KERN_NODE_SIZE, MEDIUM_NODE_SIZE, NATIVE_NODE_SIZE, NOAD_SIZE, NORMAL, NULL_FLAG,
     PAGE_INS_NODE_SIZE, PIC_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE, SMALL_NODE_SIZE,
     STYLE_NODE_SIZE,
@@ -1050,7 +1050,7 @@ impl NodePtr<Noad> {
     pub fn clear_fields(self, mem: &mut MemState) {
         self.set_subtype(mem, NORMAL);
         for field in [self.nucleus(), self.supscr(), self.subscr()] {
-            field.clear(mem);
+            mem[field].clear();
         }
     }
 
@@ -1093,77 +1093,6 @@ impl NodePtr<Noad> {
     #[inline]
     pub fn right_delimiter(self) -> NodePtr<DelimiterField> {
         NodePtr::at(self.idx + 5)
-    }
-}
-
-impl NodePtr<MathField> {
-    fields! {
-        math_type / set_math_type: i32 = b32s1 @ 0;
-        /// The list of a `SUB_BOX` or `SUB_MLIST` field.
-        info / set_info: MemPtr = b32s0 @ 0;
-        character / set_character: u16 = b16s0 @ 0;
-        /// The family in the low byte and the character's plane above it.
-        plane_and_fam / set_plane_and_fam: u16 = b16s1 @ 0;
-    }
-
-    #[inline]
-    pub fn fam(self, mem: &MemState) -> i32 {
-        i32::from(self.plane_and_fam(mem)) % 256
-    }
-    /// The character code with its plane.
-    #[inline]
-    pub fn full_char(self, mem: &MemState) -> i32 {
-        i32::from(self.character(mem)) + (i32::from(self.plane_and_fam(mem)) / 256) * 65_536
-    }
-    #[inline]
-    pub fn clear(self, mem: &mut MemState) {
-        self.set_math_type(mem, EMPTY);
-        self.set_info(mem, MemPtr::NULL);
-    }
-    #[inline]
-    pub fn copy_from(self, mem: &mut MemState, src: NodePtr<MathField>) {
-        mem.set_word(self.idx, mem.word(src.idx));
-    }
-}
-
-/// A delimiter's small and large variants, each a family and a character.
-impl NodePtr<DelimiterField> {
-    #[inline]
-    fn variant(plane_and_fam: u16, char: u16) -> (i32, i32) {
-        let plane_and_fam = i32::from(plane_and_fam);
-        (
-            plane_and_fam % 256,
-            i32::from(char) + (plane_and_fam / 256) * 65_536,
-        )
-    }
-    /// The small variant's `(family, character)`.
-    #[inline]
-    pub fn small(self, mem: &MemState) -> (i32, i32) {
-        Self::variant(mem.b16s3(self.idx), mem.b16s2(self.idx))
-    }
-    /// The large variant's `(family, character)`.
-    #[inline]
-    pub fn large(self, mem: &MemState) -> (i32, i32) {
-        Self::variant(mem.b16s1(self.idx), mem.b16s0(self.idx))
-    }
-    #[inline]
-    pub fn set_small(self, mem: &mut MemState, plane_and_fam: u16, char: u16) {
-        mem.set_b16s3(self.idx, plane_and_fam);
-        mem.set_b16s2(self.idx, char);
-    }
-    #[inline]
-    pub fn set_large(self, mem: &mut MemState, plane_and_fam: u16, char: u16) {
-        mem.set_b16s1(self.idx, plane_and_fam);
-        mem.set_b16s0(self.idx, char);
-    }
-    #[inline]
-    pub fn clear(self, mem: &mut MemState) {
-        self.set_small(mem, 0, 0);
-        self.set_large(mem, 0, 0);
-    }
-    #[inline]
-    pub fn is_null(self, mem: &MemState) -> bool {
-        self.small(mem) == (0, 0) && self.large(mem) == (0, 0)
     }
 }
 
@@ -2021,24 +1950,58 @@ mod tests {
     fn noad_fields_land_in_their_words() {
         let mut mem = fresh_mem(200);
         let n: NodePtr<Noad> = at(&mut mem, 100, Some(NodeType::OrdNoad));
-        n.nucleus().set_math_type(&mut mem, 1);
-        n.nucleus().set_info(&mut mem, MemPtr::from_raw(123));
+        mem[n.nucleus()].math_type = 1;
+        mem[n.nucleus()].set_info(MemPtr::from_raw(123));
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 1);
         assert_eq!(mem.b32s0(MemPtr::from_raw(101)), 123);
-        n.nucleus().set_character(&mut mem, 45);
-        n.nucleus().set_plane_and_fam(&mut mem, 2 + 3 * 256);
-        assert_eq!(n.nucleus().fam(&mem), 2);
-        assert_eq!(n.nucleus().full_char(&mem), 45 + 3 * 65_536);
-        n.accent_chr().set_character(&mut mem, 48);
-        n.accent_chr().set_plane_and_fam(&mut mem, 5);
+        mem[n.nucleus()].set_character(45);
+        mem[n.nucleus()].set_plane_and_fam(2 + 3 * 256);
+        assert_eq!(mem[n.nucleus()].fam(), 2);
+        assert_eq!(mem[n.nucleus()].full_char(), 45 + 3 * 65_536);
+        mem[n.accent_chr()].set_character(48);
+        mem[n.accent_chr()].set_plane_and_fam(5);
         assert_eq!(mem.b16s0(MemPtr::from_raw(104)), 48);
         assert_eq!(mem.b16s1(MemPtr::from_raw(104)), 5);
-        n.right_delimiter().set_small(&mut mem, 1 + 256, 7);
-        n.right_delimiter().set_large(&mut mem, 2, 9);
-        assert_eq!(n.right_delimiter().small(&mem), (1, 7 + 65_536));
-        assert_eq!(n.right_delimiter().large(&mem), (2, 9));
+        mem[n.right_delimiter()].set_small(1 + 256, 7);
+        mem[n.right_delimiter()].set_large(2, 9);
+        assert_eq!(mem[n.right_delimiter()].small(), (1, 7 + 65_536));
+        assert_eq!(mem[n.right_delimiter()].large(), (2, 9));
         assert_eq!(mem.b16s3(MemPtr::from_raw(105)), 1 + 256);
         assert_eq!(mem.b16s0(MemPtr::from_raw(105)), 9);
+    }
+
+    #[test]
+    fn math_and_delimiter_words_land_in_their_halves() {
+        let mut mem = fresh_mem(200);
+        let w = MemPtr::from_raw(100);
+        let f: NodePtr<MathField> = NodePtr::at(w);
+        mem[f].math_type = 3;
+        mem[f].set_character(0x1234);
+        mem[f].set_plane_and_fam(0x0205);
+        assert_eq!(mem.b32s1(w), 3);
+        assert_eq!(mem.b16s0(w), 0x1234);
+        assert_eq!(mem.b16s1(w), 0x0205);
+        assert_eq!(mem[f].fam(), 5);
+        assert_eq!(mem[f].full_char(), 0x2_1234);
+        mem[f].set_info(MemPtr::from_raw(0x0012_3456));
+        assert_eq!(mem.b32s0(w), 0x0012_3456);
+        mem[f].set_info(MemPtr::NULL);
+        assert_eq!(mem.b32s0(w), MemPtr::NULL.raw());
+        assert_eq!(mem[f].info(), MemPtr::NULL);
+        assert_eq!(mem.b32s1(w), 3);
+
+        let d: NodePtr<DelimiterField> = NodePtr::at(w);
+        mem[d].set_small(0x0103, 0x41);
+        mem[d].set_large(0x0204, 0x42);
+        assert_eq!(
+            [mem.b16s0(w), mem.b16s1(w), mem.b16s2(w), mem.b16s3(w)],
+            [0x42, 0x0204, 0x41, 0x0103]
+        );
+        assert_eq!(mem[d].small(), (3, 0x1_0041));
+        assert_eq!(mem[d].large(), (4, 0x2_0042));
+        assert!(!mem[d].is_null());
+        mem[d].clear();
+        assert!(mem[d].is_null());
     }
 
     #[test]

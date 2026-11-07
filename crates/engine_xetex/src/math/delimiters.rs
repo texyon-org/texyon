@@ -339,7 +339,7 @@ pub(super) fn var_delimiter(
     let mut w = Scaled::ZERO;
     let mut q = CharInfo::NULL;
     let mut large_attempt = false;
-    let (mut z, mut x) = d.small(&st.mem);
+    let (mut z, mut x) = st.mem[d].small();
     'found: {
         loop {
             if z != 0 || x != 0 {
@@ -415,7 +415,7 @@ pub(super) fn var_delimiter(
                 break 'found;
             }
             large_attempt = true;
-            (z, x) = d.large(&st.mem);
+            (z, x) = st.mem[d].large();
         }
     }
     let b = if f == NULL_FONT {

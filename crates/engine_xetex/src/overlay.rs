@@ -7,12 +7,13 @@
 use bytemuck::{Pod, Zeroable};
 
 use crate::codes::{FiOrElseCode, ValueLevel};
+use crate::consts::EMPTY;
 use crate::node::{
     ActiveNode, AdjustNode, AlignRecord, AlignStackNode, BoxNode, CharNode, ChoiceNode, CondNode,
-    DeltaNode, DiscNode, EdgeNode, ExprNode, FixedNode, FreeBlock, GlueNode, GlueSpecNode, InsNode,
-    KernNode, LigItem, LigatureNode, MarginKernNode, MarkNode, MathNode, MovementNode, NodeKind,
-    NodePtr, PageInsNode, PassiveNode, PenaltyNode, RuleNode, SpanNode, Stored, StoredDimen,
-    StyleNode, UnsetNode,
+    DelimiterField, DeltaNode, DiscNode, EdgeNode, ExprNode, FixedNode, FreeBlock, GlueNode,
+    GlueSpecNode, InsNode, KernNode, LigItem, LigatureNode, MarginKernNode, MarkNode, MathField,
+    MathNode, MovementNode, NodeKind, NodePtr, PageInsNode, PassiveNode, PenaltyNode, RuleNode,
+    SpanNode, Stored, StoredDimen, StyleNode, UnsetNode,
 };
 use crate::state::MemState;
 use crate::token::TokenList;
@@ -268,6 +269,113 @@ pub struct MarkLayout {
 }
 
 overlay!(MarkNode => MarkLayout);
+
+/// A noad's nucleus, script or accent word: its math type, then either a
+/// character and family or a sub-list in the shared payload half.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct MathWord {
+    character: u16,
+    plane_and_fam: u16,
+    pub math_type: i32,
+}
+
+overlay!(MathField => MathWord, 1);
+
+impl MathWord {
+    /// The list of a `SUB_BOX` or `SUB_MLIST` field.
+    #[inline]
+    pub fn info(&self) -> MemPtr {
+        MemPtr::from_raw(bytemuck::cast([self.character, self.plane_and_fam]))
+    }
+    #[inline]
+    pub fn set_info(&mut self, p: MemPtr) {
+        [self.character, self.plane_and_fam] = bytemuck::cast(p.raw());
+    }
+    #[inline]
+    pub fn character(&self) -> u16 {
+        self.character
+    }
+    #[inline]
+    pub fn set_character(&mut self, c: u16) {
+        self.character = c;
+    }
+    /// The family in the low byte and the character's plane above it.
+    #[inline]
+    pub fn plane_and_fam(&self) -> u16 {
+        self.plane_and_fam
+    }
+    #[inline]
+    pub fn set_plane_and_fam(&mut self, v: u16) {
+        self.plane_and_fam = v;
+    }
+    #[inline]
+    pub fn fam(&self) -> i32 {
+        i32::from(self.plane_and_fam) % 256
+    }
+    /// The character code with its plane.
+    #[inline]
+    pub fn full_char(&self) -> i32 {
+        i32::from(self.character) + (i32::from(self.plane_and_fam) / 256) * 65_536
+    }
+    #[inline]
+    pub fn clear(&mut self) {
+        self.math_type = EMPTY;
+        self.set_info(MemPtr::NULL);
+    }
+}
+
+/// A delimiter word: a large and a small variant, each a character and a
+/// family with the character's plane above it.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct DelimiterWord {
+    large_char: u16,
+    large_plane_and_fam: u16,
+    small_char: u16,
+    small_plane_and_fam: u16,
+}
+
+overlay!(DelimiterField => DelimiterWord, 1);
+
+impl DelimiterWord {
+    #[inline]
+    fn variant(plane_and_fam: u16, char: u16) -> (i32, i32) {
+        let plane_and_fam = i32::from(plane_and_fam);
+        (
+            plane_and_fam % 256,
+            i32::from(char) + (plane_and_fam / 256) * 65_536,
+        )
+    }
+    /// The small variant's `(family, character)`.
+    #[inline]
+    pub fn small(&self) -> (i32, i32) {
+        Self::variant(self.small_plane_and_fam, self.small_char)
+    }
+    /// The large variant's `(family, character)`.
+    #[inline]
+    pub fn large(&self) -> (i32, i32) {
+        Self::variant(self.large_plane_and_fam, self.large_char)
+    }
+    #[inline]
+    pub fn set_small(&mut self, plane_and_fam: u16, char: u16) {
+        self.small_plane_and_fam = plane_and_fam;
+        self.small_char = char;
+    }
+    #[inline]
+    pub fn set_large(&mut self, plane_and_fam: u16, char: u16) {
+        self.large_plane_and_fam = plane_and_fam;
+        self.large_char = char;
+    }
+    #[inline]
+    pub fn clear(&mut self) {
+        *self = Self::zeroed();
+    }
+    #[inline]
+    pub fn is_null(&self) -> bool {
+        self.small() == (0, 0) && self.large() == (0, 0)
+    }
+}
 
 /// A line-breaker active node, one feasible break still in play.
 #[repr(C)]

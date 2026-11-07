@@ -186,8 +186,8 @@ fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
                 b.ptr()
             } else {
                 let noad = st.mem.new_noad()?;
-                noad.nucleus().set_math_type(&mut st.mem, SUB_BOX);
-                noad.nucleus().set_info(&mut st.mem, b.ptr());
+                st.mem[noad.nucleus()].math_type = SUB_BOX;
+                st.mem[noad.nucleus()].set_info(b.ptr());
                 noad.ptr()
             };
             st.input.cur_list.tail_append(&mut st.mem, node);

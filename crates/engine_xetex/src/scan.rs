@@ -232,15 +232,15 @@ pub(crate) fn scan_math(st: &mut EngineState, p: NodePtr<MathField>) -> Result<(
         };
         break;
     }
-    p.set_math_type(&mut st.mem, MATH_CHAR);
-    p.set_character(&mut st.mem, (c % 65536) as u16);
+    st.mem[p].math_type = MATH_CHAR;
+    st.mem[p].set_character((c % 65536) as u16);
     let cur_fam = st.eqtb.int_par(IntPar::CurFam);
     let fam = if math_class(c) == 7 && (0..NUMBER_MATH_FAMILIES).contains(&cur_fam) {
         cur_fam as u16
     } else {
         math_fam(c) as u16
     };
-    p.set_plane_and_fam(&mut st.mem, fam + (math_char(c) / 65536) as u16 * 256);
+    st.mem[p].set_plane_and_fam(fam + (math_char(c) / 65536) as u16 * 256);
     Ok(())
 }
 
@@ -252,15 +252,14 @@ pub(crate) fn set_math_char(st: &mut EngineState, c: i32) -> Result<(), Abort> {
         back_input(st)?;
     } else {
         let nd = st.mem.new_noad()?;
-        nd.nucleus().set_math_type(&mut st.mem, MATH_CHAR);
+        st.mem[nd.nucleus()].math_type = MATH_CHAR;
         let ch = math_char(c);
-        nd.nucleus().set_character(&mut st.mem, (ch % 65536) as u16);
-        nd.nucleus()
-            .set_plane_and_fam(&mut st.mem, math_fam(c) as u16);
+        st.mem[nd.nucleus()].set_character((ch % 65536) as u16);
+        st.mem[nd.nucleus()].set_plane_and_fam(math_fam(c) as u16);
         if math_class(c) == 7 {
             let cf = st.eqtb.int_par(IntPar::CurFam);
             if (0..NUMBER_MATH_FAMILIES).contains(&cf) {
-                nd.nucleus().set_plane_and_fam(&mut st.mem, cf as u16);
+                st.mem[nd.nucleus()].set_plane_and_fam(cf as u16);
             }
             nd.set_noad_type(&mut st.mem, NodeType::OrdNoad);
         } else {
@@ -270,8 +269,8 @@ pub(crate) fn set_math_char(st: &mut EngineState, c: i32) -> Result<(), Abort> {
                     .expect("valid noad type"),
             );
         }
-        let fam = nd.nucleus().plane_and_fam(&st.mem) + (ch / 65536) as u16 * 256;
-        nd.nucleus().set_plane_and_fam(&mut st.mem, fam);
+        let fam = st.mem[nd.nucleus()].plane_and_fam() + (ch / 65536) as u16 * 256;
+        st.mem[nd.nucleus()].set_plane_and_fam(fam);
         st.input.cur_list.tail_append(&mut st.mem, nd.ptr());
     }
     Ok(())

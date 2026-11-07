@@ -121,8 +121,8 @@ pub(super) fn indent_in_hmode(st: &mut EngineState, indent: bool) -> Result<(), 
         b.ptr()
     } else {
         let q = st.mem.new_noad()?;
-        q.nucleus().set_math_type(&mut st.mem, SUB_BOX);
-        q.nucleus().set_info(&mut st.mem, b.ptr());
+        st.mem[q.nucleus()].math_type = SUB_BOX;
+        st.mem[q.nucleus()].set_info(b.ptr());
         q.ptr()
     };
     st.input.cur_list.tail_append(&mut st.mem, p);
@@ -469,17 +469,17 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             let noad = st.mem.new_noad()?;
             st.input.cur_list.tail_append(&mut st.mem, noad.ptr());
             noad.set_noad_type(&mut st.mem, NodeType::VcenterNoad);
-            noad.nucleus().set_math_type(&mut st.mem, SUB_BOX);
-            noad.nucleus().set_info(&mut st.mem, p.ptr());
+            st.mem[noad.nucleus()].math_type = SUB_BOX;
+            st.mem[noad.nucleus()].set_info(p.ptr());
         }
         GroupCode::MathChoice => crate::math::build_choices(st)?,
         GroupCode::Math => {
             crate::save::unsave(st)?;
             st.save_stack.save_ptr -= 1;
             let save_loc = NodePtr::<MathField>::at(MemPtr::from_raw(st.save_stack.saved(0)));
-            save_loc.set_math_type(&mut st.mem, SUB_MLIST);
+            st.mem[save_loc].math_type = SUB_MLIST;
             let p = crate::math::fin_mlist(st, MemPtr::NULL)?;
-            save_loc.set_info(&mut st.mem, p);
+            st.mem[save_loc].set_info(p);
             if p.is_null() || !p.link(&st.mem).is_null() {
                 return Ok(());
             }
@@ -488,10 +488,10 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             };
             match noad.noad_type(&st.mem) {
                 NodeType::OrdNoad
-                    if noad.subscr().math_type(&st.mem) == EMPTY
-                        && noad.supscr().math_type(&st.mem) == EMPTY =>
+                    if st.mem[noad.subscr()].math_type == EMPTY
+                        && st.mem[noad.supscr()].math_type == EMPTY =>
                 {
-                    save_loc.copy_from(&mut st.mem, noad.nucleus());
+                    st.mem[save_loc] = st.mem[noad.nucleus()];
                     st.mem.free_node(noad.ptr(), NOAD_SIZE);
                 }
                 NodeType::AccentNoad

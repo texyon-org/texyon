@@ -115,14 +115,14 @@ fn node_list_display(st: &mut EngineState, c: u8, list: MemPtr) {
 /// Shows the noad field at `p`, marked with `c` in the indentation string.
 fn print_subsidiary_data(st: &mut EngineState, p: NodePtr<MathField>, c: u8) {
     if st.strings.cur_length() >= st.errors.depth_threshold {
-        if p.math_type(&st.mem) != EMPTY {
+        if st.mem[p].math_type != EMPTY {
             print(st, " []");
         }
         return;
     }
     st.strings.append_char(u16::from(c));
     st.mem.temp_ptr = p.ptr();
-    match p.math_type(&st.mem) {
+    match st.mem[p].math_type {
         MATH_CHAR => {
             print_ln(st);
             print_current_string(st);
@@ -130,7 +130,7 @@ fn print_subsidiary_data(st: &mut EngineState, p: NodePtr<MathField>, c: u8) {
         }
         SUB_BOX => show_info(st),
         SUB_MLIST => {
-            if p.info(&st.mem).is_null() {
+            if st.mem[p].info().is_null() {
                 print_ln(st);
                 print_current_string(st);
                 print(st, "{}");
@@ -474,12 +474,12 @@ fn show_noad(st: &mut EngineState, node: NodePtr<crate::node::Noad>) {
             print_scaled(st, thickness);
         }
         let left = node.left_delimiter();
-        if !left.is_null(&st.mem) {
+        if !st.mem[left].is_null() {
             print(st, ", left-delimiter ");
             print_delimiter(st, left);
         }
         let right = node.right_delimiter();
-        if !right.is_null(&st.mem) {
+        if !st.mem[right].is_null() {
             print(st, ", right-delimiter ");
             print_delimiter(st, right);
         }

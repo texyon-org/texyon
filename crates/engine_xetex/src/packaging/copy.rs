@@ -304,19 +304,19 @@ impl MemState {
                 AnyNode::Noad(noad) => match noad.noad_type(self) {
                     NodeType::LeftNoad | NodeType::RightNoad => NOAD_SIZE,
                     NodeType::FractionNoad => {
-                        self.flush_node_list(noad.supscr().info(self))?;
-                        self.flush_node_list(noad.subscr().info(self))?;
+                        self.flush_node_list(self[noad.supscr()].info())?;
+                        self.flush_node_list(self[noad.subscr()].info())?;
                         FRACTION_NOAD_SIZE
                     }
                     noad_type => {
-                        if noad.nucleus().math_type(self) >= SUB_BOX {
-                            self.flush_node_list(noad.nucleus().info(self))?;
+                        if self[noad.nucleus()].math_type >= SUB_BOX {
+                            self.flush_node_list(self[noad.nucleus()].info())?;
                         }
-                        if noad.supscr().math_type(self) >= SUB_BOX {
-                            self.flush_node_list(noad.supscr().info(self))?;
+                        if self[noad.supscr()].math_type >= SUB_BOX {
+                            self.flush_node_list(self[noad.supscr()].info())?;
                         }
-                        if noad.subscr().math_type(self) >= SUB_BOX {
-                            self.flush_node_list(noad.subscr().info(self))?;
+                        if self[noad.subscr()].math_type >= SUB_BOX {
+                            self.flush_node_list(self[noad.subscr()].info())?;
                         }
                         match noad_type {
                             NodeType::RadicalNoad => RADICAL_NOAD_SIZE,

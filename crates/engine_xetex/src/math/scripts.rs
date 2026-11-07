@@ -189,7 +189,7 @@ fn finish_subsup_stack(st: &mut EngineState, input: SubSupStackInput) -> Result<
     p = attachment.p;
     sub_kern = attachment.kern;
     if attachment.is_ot_math {
-        let sub_empty = input.q.subscr().math_type(&st.mem) == EMPTY;
+        let sub_empty = st.mem[input.q.subscr()].math_type == EMPTY;
         if sub_empty {
             let attachment = maybe_attach_script_kern(
                 st,
@@ -320,7 +320,7 @@ fn finish_superscript_branch(
 ) -> Result<(), Abort> {
     let x = superscript.box_node;
     let shift_up = superscript.shift;
-    let sub_empty = q.subscr().math_type(&st.mem) == EMPTY;
+    let sub_empty = st.mem[q.subscr()].math_type == EMPTY;
     if sub_empty {
         let _ = maybe_attach_script_kern(
             st,
@@ -403,10 +403,10 @@ impl MemState {
         script: NodePtr<MathField>,
         initial_math_style: MathStyle,
     ) -> (Option<NodePtr<MathField>>, MathStyle) {
-        if script.math_type(self) != SUB_MLIST {
+        if self[script].math_type != SUB_MLIST {
             return (Some(script), initial_math_style);
         }
-        let mut script_ptr = script.info(self);
+        let mut script_ptr = self[script].info();
         let mut found = None;
         let mut style = initial_math_style;
         while script_ptr >= MemPtr::MEM_BOT && script_ptr <= self.mem_end {
@@ -448,7 +448,7 @@ fn first_script_glyph(
     let (script_head, this_math_style) = st
         .mem
         .first_script_glyph_step(script_head, initial_math_style);
-    let math_char = script_head.filter(|h| h.math_type(&st.mem) == MATH_CHAR);
+    let math_char = script_head.filter(|&h| st.mem[h].math_type == MATH_CHAR);
 
     if let Some(script_head) = math_char {
         let save_f = st.scanner.cur_f;
@@ -485,7 +485,7 @@ pub(super) fn make_scripts(
     let p = q.new_hlist(&st.mem);
     let shifts = initial_script_shifts(st, p)?;
 
-    if q.supscr().math_type(&st.mem) == EMPTY {
+    if st.mem[q.supscr()].math_type == EMPTY {
         finish_subscript_only(st, q, p, shifts.down)?;
     } else {
         let superscript = prepare_superscript(st, q, shifts.up)?;
