@@ -548,25 +548,25 @@ fn show_page_so_far(st: &mut EngineState) {
                 let ins = NodePtr::<PageInsNode>::at(r);
                 print_ln(st);
                 print_esc(st, "insert");
-                let box_num = ins.subtype(&st.mem);
+                let box_num = st.mem[ins].subtype;
                 print_int(st, i32::from(box_num));
                 print(st, " adds ");
                 let count = st.eqtb.count(i32::from(box_num));
-                let height = ins.height(&st.mem);
+                let height = st.mem[ins].height;
                 let adds = if count == 1000 {
                     height
                 } else {
                     st.errors.x_over_n(height, 1000) * count
                 };
                 print_scaled(st, adds);
-                if ins.is_split_up(&st.mem) {
-                    let broken_ins = ins.broken_ins(&st.mem);
+                if st.mem[ins].is_split_up() {
+                    let broken_ins = st.mem[ins].broken_ins;
                     let mut q = PAGE_HEAD;
                     let mut t = 0;
                     loop {
                         q = q.link(&st.mem);
                         if let Ok(AnyNode::Ins(node)) = st.mem.classify(q) {
-                            if node.subtype(&st.mem) == box_num {
+                            if st.mem[node].subtype == box_num {
                                 t += 1;
                             }
                         }

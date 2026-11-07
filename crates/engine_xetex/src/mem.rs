@@ -445,10 +445,10 @@ impl MemState {
         n: GluePar,
     ) -> Result<NodePtr<GlueNode>, Abort> {
         let p = NodePtr::<GlueNode>::alloc(self)?;
-        p.set_subtype(self, n.subtype());
-        p.set_leader_ptr(self, MemPtr::NULL);
+        self[p].subtype = n.subtype();
+        self[p].leader_ptr = MemPtr::NULL;
         let spec = eqtb.glue_par(n);
-        p.set_glue_ptr(self, spec);
+        self[p].glue_ptr = spec;
         self.add_glue_ref(spec);
         Ok(p)
     }
@@ -456,9 +456,9 @@ impl MemState {
     /// Glue sharing the spec `q`.
     pub fn new_glue(&mut self, q: NodePtr<GlueSpecNode>) -> Result<NodePtr<GlueNode>, Abort> {
         let p = NodePtr::<GlueNode>::alloc(self)?;
-        p.set_subtype(self, NORMAL);
-        p.set_leader_ptr(self, MemPtr::NULL);
-        p.set_glue_ptr(self, q);
+        self[p].subtype = NORMAL;
+        self[p].leader_ptr = MemPtr::NULL;
+        self[p].glue_ptr = q;
         self.add_glue_ref(q);
         Ok(p)
     }
@@ -473,7 +473,7 @@ impl MemState {
         self.temp_ptr = s.ptr();
         let p = self.new_glue(s)?;
         self[s].ref_count = TEX_NULL;
-        p.set_subtype(self, n.subtype());
+        self[p].subtype = n.subtype();
         Ok(p)
     }
 

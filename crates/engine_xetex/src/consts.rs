@@ -56,6 +56,7 @@ pub const GLUE_SPEC_SIZE: i32 = 4;
 pub const RULE_NODE_SIZE: i32 = 5;
 pub const BOX_NODE_SIZE: i32 = 8;
 pub const INS_NODE_SIZE: i32 = 5;
+pub const PAGE_INS_NODE_SIZE: i32 = 4;
 pub const MARGIN_KERN_NODE_SIZE: i32 = 3;
 pub const GLYPH_NODE_SIZE: i32 = 5;
 pub const NATIVE_NODE_SIZE: i32 = 6;

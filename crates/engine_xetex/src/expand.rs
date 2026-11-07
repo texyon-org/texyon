@@ -490,7 +490,7 @@ impl MemState {
             AnyNode::Math(m) => self[m].width == Scaled::ZERO,
             AnyNode::Kern(k) => self[k].width == Scaled::ZERO || self[k].subtype == 0,
             AnyNode::Glue(g) => {
-                g.glue_ptr(self) == ZERO_GLUE || g.subtype(self) == par_skip.subtype()
+                self[g].glue_ptr == ZERO_GLUE || self[g].subtype == par_skip.subtype()
             }
             AnyNode::Box(h) if self[h].is_hlist() => {
                 self[h].width == Scaled::ZERO

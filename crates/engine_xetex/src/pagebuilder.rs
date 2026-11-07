@@ -3,7 +3,7 @@
 use crate::codes::{BoxCode, MarkCode, ValueLevel};
 use crate::consts::{
     AWFUL_BAD, BOX_NODE_SIZE, EJECT_PENALTY, IGNORE_DEPTH, INF_BAD, INF_PENALTY, INS_NODE_SIZE,
-    MAX_DIMEN, MAX_HALFWORD, VMODE,
+    MAX_DIMEN, MAX_HALFWORD, PAGE_INS_NODE_SIZE, VMODE,
 };
 use crate::errors::Abort;
 use crate::helpers::badness;
@@ -23,7 +23,6 @@ const PAGE_TOTAL: usize = 1;
 const PAGE_SHRINK: usize = 6;
 const PAGE_DEPTH: usize = 7;
 
-const PAGE_INS_NODE_SIZE: i32 = 4;
 const DEPLORABLE: i32 = 100_000;
 
 pub fn initialize_pagebuilder_variables(st: &mut EngineState) {
@@ -101,47 +100,47 @@ fn update_marks(st: &mut EngineState, class: i32, mark_ptr: TokenList) -> Result
 /// Returns whether it has to wait for the next page.
 fn place_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Result<bool, Abort> {
     let mut r = PAGE_INS_HEAD.link(&st.mem);
-    while page_ins(r).subtype(&st.mem) != ins.subtype(&st.mem) {
+    while st.mem[page_ins(r)].subtype != st.mem[ins].subtype {
         r = r.link(&st.mem);
     }
     let rec = page_ins(r);
-    if rec.best_ins_ptr(&st.mem).is_null() {
+    if st.mem[rec].best_ins_ptr.is_null() {
         return Ok(true);
     }
-    let mut s = rec.last_ins_ptr(&st.mem);
-    let list = ins.ins_ptr(&st.mem);
+    let mut s = st.mem[rec].last_ins_ptr;
+    let list = st.mem[ins].ins_ptr;
     s.set_link(&mut st.mem, list);
-    if rec.best_ins_ptr(&st.mem) != p {
+    if st.mem[rec].best_ins_ptr != p {
         while !s.link(&st.mem).is_null() {
             s = s.link(&st.mem);
         }
-        rec.set_last_ins_ptr(&mut st.mem, s);
+        st.mem[rec].last_ins_ptr = s;
         return Ok(false);
     }
 
     let mut wait = false;
-    let broken_ptr = rec.broken_ptr(&st.mem);
-    if rec.is_split_up(&st.mem) && rec.broken_ins(&st.mem) == p && !broken_ptr.is_null() {
+    let broken_ptr = st.mem[rec].broken_ptr;
+    if st.mem[rec].is_split_up() && st.mem[rec].broken_ins == p && !broken_ptr.is_null() {
         while s.link(&st.mem) != broken_ptr {
             s = s.link(&st.mem);
         }
         s.set_link(&mut st.mem, MemPtr::NULL);
         st.eqtb
-            .set_glue_par(GluePar::SplitTopSkip, ins.split_top_ptr(&st.mem));
+            .set_glue_par(GluePar::SplitTopSkip, st.mem[ins].split_top_ptr);
         let pruned = st
             .mem
             .prune_page_top(&mut st.scanner, &st.eqtb, broken_ptr, false)?;
-        ins.set_ins_ptr(&mut st.mem, pruned);
+        st.mem[ins].ins_ptr = pruned;
         if !pruned.is_null() {
             let tmp = crate::packaging::vpackage(st, pruned, PackSpec::NATURAL, MAX_DIMEN)?;
             let size = st.mem[tmp].height + st.mem[tmp].depth;
-            ins.set_height(&mut st.mem, size);
+            st.mem[ins].height = size;
             st.mem.free_node(tmp.ptr(), BOX_NODE_SIZE);
             wait = true;
         }
     }
-    rec.set_best_ins_ptr(&mut st.mem, MemPtr::NULL);
-    let n = rec.subtype(&st.mem) as u8;
+    st.mem[rec].best_ins_ptr = MemPtr::NULL;
+    let n = st.mem[rec].subtype as u8;
     let b = fetch_box(st, i32::from(n)).expect("insertion box made in fire_up");
     let list = st.mem[b].list_ptr;
     st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
@@ -206,8 +205,8 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
         let mut r = PAGE_INS_HEAD.link(&st.mem);
         while r != PAGE_INS_HEAD {
             let rec = page_ins(r);
-            if !rec.best_ins_ptr(&st.mem).is_null() {
-                let n = rec.subtype(&st.mem) as u8;
+            if !st.mem[rec].best_ins_ptr.is_null() {
+                let n = st.mem[rec].subtype as u8;
                 ensure_vbox(st, n)?;
                 if st.eqtb.box_reg(i32::from(n)).is_null() {
                     let b = st.mem.new_null_box()?;
@@ -218,7 +217,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
                 while !p.link(&st.mem).is_null() {
                     p = p.link(&st.mem);
                 }
-                rec.set_last_ins_ptr(&mut st.mem, p);
+                st.mem[rec].last_ins_ptr = p;
             }
             r = r.link(&st.mem);
         }
@@ -232,15 +231,15 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
         match st.mem.classify(p) {
             Ok(AnyNode::Ins(ins)) if process_inserts => {
                 let wait = place_insertion(st, ins, p)?;
-                let next = ins.link(&st.mem);
+                let next = st.mem[ins].link;
                 prev_p.set_link(&mut st.mem, next);
-                ins.set_link(&mut st.mem, MemPtr::NULL);
+                st.mem[ins].link = MemPtr::NULL;
                 if wait {
                     hold_tail.set_link(&mut st.mem, p);
                     hold_tail = p;
                     st.shipout.insert_penalties += 1;
                 } else {
-                    let split_top = ins.split_top_ptr(&st.mem);
+                    let split_top = st.mem[ins].split_top_ptr;
                     st.mem.delete_glue_ref(split_top);
                     st.mem.free_node(p, INS_NODE_SIZE);
                 }
@@ -375,7 +374,7 @@ fn update_last_node_info(st: &mut EngineState, node: AnyNode, node_type: i32) {
     st.shipout.last_glue = None;
     match node {
         AnyNode::Glue(glue) => {
-            let spec = glue.glue_ptr(&st.mem);
+            let spec = st.mem[glue].glue_ptr;
             st.shipout.last_glue = Some(spec);
             let refs = st.mem[spec].ref_count;
             st.mem[spec].ref_count = refs + 1;
@@ -417,27 +416,27 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
     if st.shipout.page_contents == PageContents::Empty {
         freeze_page_specs(st, PageContents::InsertsOnly);
     }
-    let n = ins.subtype(&st.mem) as u8;
+    let n = st.mem[ins].subtype as u8;
     let mut r = PAGE_INS_HEAD;
-    while u16::from(n) >= page_ins(r.link(&st.mem)).subtype(&st.mem) {
+    while u16::from(n) >= st.mem[page_ins(r.link(&st.mem))].subtype {
         r = r.link(&st.mem);
     }
-    if page_ins(r).subtype(&st.mem) as u8 != n {
+    if st.mem[page_ins(r)].subtype as u8 != n {
         let q = st.mem.get_node(PAGE_INS_NODE_SIZE)?;
         let next = r.link(&st.mem);
         q.set_link(&mut st.mem, next);
         r.set_link(&mut st.mem, q);
         r = q;
         let rec = page_ins(r);
-        rec.set_subtype(&mut st.mem, u16::from(n));
-        rec.set_split_up(&mut st.mem, false);
+        st.mem[rec].subtype = u16::from(n);
+        st.mem[rec].set_split_up(false);
         ensure_vbox(st, n)?;
         let height = match fetch_box(st, i32::from(n)) {
             Some(b) => st.mem[b].height + st.mem[b].depth,
             None => Scaled::ZERO,
         };
-        rec.set_height(&mut st.mem, height);
-        rec.set_best_ins_ptr(&mut st.mem, MemPtr::NULL);
+        st.mem[rec].height = height;
+        st.mem[rec].best_ins_ptr = MemPtr::NULL;
         let skip = st.eqtb.skip(i32::from(n));
         let count = st.eqtb.count(i32::from(n));
         let h = scale_by_count(st, height, count);
@@ -460,24 +459,24 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
     }
 
     let rec = page_ins(r);
-    if rec.is_split_up(&st.mem) {
+    if st.mem[rec].is_split_up() {
         st.shipout.insert_penalties = st
             .shipout
             .insert_penalties
-            .wrapping_add(ins.float_cost(&st.mem));
+            .wrapping_add(st.mem[ins].float_cost);
         return Ok(());
     }
-    rec.set_last_ins_ptr(&mut st.mem, p);
+    st.mem[rec].last_ins_ptr = p;
     let so_far = st.shipout.page_so_far;
     let delta = so_far[PAGE_GOAL] - so_far[PAGE_TOTAL] - so_far[PAGE_DEPTH] + so_far[PAGE_SHRINK];
     let count = st.eqtb.count(i32::from(n));
-    let ins_height = ins.height(&st.mem);
+    let ins_height = st.mem[ins].height;
     let h = scale_by_count(st, ins_height, count);
     let max_height = st.eqtb.dimen(i32::from(n));
-    if (h <= Scaled::ZERO || h <= delta) && ins_height + rec.height(&st.mem) <= max_height {
+    if (h <= Scaled::ZERO || h <= delta) && ins_height + st.mem[rec].height <= max_height {
         st.shipout.page_so_far[PAGE_GOAL] -= h;
-        let height = rec.height(&st.mem) + ins_height;
-        rec.set_height(&mut st.mem, height);
+        let height = st.mem[rec].height + ins_height;
+        st.mem[rec].height = height;
         return Ok(());
     }
 
@@ -491,21 +490,21 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
             st.errors.x_over_n(w, count) * 1000
         }
     };
-    let room = max_height - rec.height(&st.mem);
+    let room = max_height - st.mem[rec].height;
     if w > room {
         w = room;
     }
-    let q = crate::packaging::vert_break(st, ins.ins_ptr(&st.mem), w, ins.depth(&st.mem))?;
-    let height = rec.height(&st.mem) + st.scanner.best_height_plus_depth;
-    rec.set_height(&mut st.mem, height);
+    let q = crate::packaging::vert_break(st, st.mem[ins].ins_ptr, w, st.mem[ins].depth)?;
+    let height = st.mem[rec].height + st.scanner.best_height_plus_depth;
+    st.mem[rec].height = height;
     if count != 1000 {
         st.scanner.best_height_plus_depth =
             scale_by_count(st, st.scanner.best_height_plus_depth, count);
     }
     st.shipout.page_so_far[PAGE_GOAL] -= st.scanner.best_height_plus_depth;
-    rec.set_split_up(&mut st.mem, true);
-    rec.set_broken_ptr(&mut st.mem, q);
-    rec.set_broken_ins(&mut st.mem, p);
+    st.mem[rec].set_split_up(true);
+    st.mem[rec].broken_ptr = q;
+    st.mem[rec].broken_ins = p;
     if q.is_null() {
         st.shipout.insert_penalties = st.shipout.insert_penalties.wrapping_add(EJECT_PENALTY);
     } else if let Ok(AnyNode::Penalty(pen)) = st.mem.classify(q) {
@@ -557,7 +556,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
                         st.shipout.page_contents = PageContents::BoxThere;
                     }
                     let q = st.mem.new_skip_param(&st.eqtb, GluePar::TopSkip)?;
-                    let spec = q.glue_ptr(&st.mem);
+                    let spec = st.mem[q].glue_ptr;
                     let width = st.mem[spec].width;
                     let width = if width > height {
                         width - height
@@ -565,7 +564,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
                         Scaled::ZERO
                     };
                     st.mem[spec].width = width;
-                    q.set_link(&mut st.mem, p);
+                    st.mem[q].link = p;
                     CONTRIB_HEAD.set_link(&mut st.mem, q.ptr());
                     continue;
                 }
@@ -638,8 +637,8 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
                         let mut r = PAGE_INS_HEAD.link(&st.mem);
                         while r != PAGE_INS_HEAD {
                             let rec = page_ins(r);
-                            let last = rec.last_ins_ptr(&st.mem);
-                            rec.set_best_ins_ptr(&mut st.mem, last);
+                            let last = st.mem[rec].last_ins_ptr;
+                            st.mem[rec].best_ins_ptr = last;
                             r = r.link(&st.mem);
                         }
                     }
@@ -701,7 +700,7 @@ fn page_glue_width(
     st: &mut EngineState,
     glue: NodePtr<crate::node::GlueNode>,
 ) -> Result<Scaled, Abort> {
-    let spec = glue.glue_ptr(&st.mem);
+    let spec = st.mem[glue].glue_ptr;
     let order = st.mem[spec].stretch_order.index();
     st.shipout.page_so_far[2 + order] += st.mem[spec].stretch;
     st.shipout.page_so_far[PAGE_SHRINK] += st.mem[spec].shrink;
@@ -719,7 +718,7 @@ fn page_glue_width(
     let finite = st.mem.new_spec(spec)?;
     st.mem[finite].shrink_order = GlueOrder::Normal.into();
     st.mem.delete_glue_ref(spec);
-    glue.set_glue_ptr(&mut st.mem, finite);
+    st.mem[glue].glue_ptr = finite;
     Ok(st.mem[finite].width)
 }
 

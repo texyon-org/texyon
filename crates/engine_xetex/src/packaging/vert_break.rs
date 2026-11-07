@@ -194,7 +194,7 @@ impl MemState {
     ) -> Result<VertBreakStep, Abort> {
         loop {
             if let Some(glue) = cursor.finish_glue_after_shrinkage.take() {
-                let spec = glue.glue_ptr(self);
+                let spec = self[glue].glue_ptr;
                 self.finish_vert_break_updated_height(scanner, cursor, self[spec].width, d);
                 continue;
             }
@@ -249,7 +249,7 @@ impl MemState {
                     self.finish_vert_break_updated_height(scanner, cursor, self[kern].width, d);
                 }
                 Some(VertBreakUpdateSource::Glue(glue)) => {
-                    let spec = glue.glue_ptr(self);
+                    let spec = self[glue].glue_ptr;
                     scanner.active_width[2 + self[spec].stretch_order.index()] +=
                         self[spec].stretch;
                     scanner.active_width[6] += self[spec].shrink;
@@ -285,7 +285,7 @@ impl MemState {
         spec: NodePtr<GlueSpecNode>,
     ) -> Result<(), Abort> {
         let spec = self.finite_shrink(spec)?;
-        glue.set_glue_ptr(self, spec);
+        self[glue].glue_ptr = spec;
         Ok(())
     }
 }
@@ -567,8 +567,8 @@ impl MemState {
     ) -> Result<(), Abort> {
         let q = self.new_skip_param(eqtb, GluePar::SplitTopSkip)?;
         prev_p.set_link(self, q.ptr());
-        q.set_link(self, p);
-        let spec = q.glue_ptr(self);
+        self[q].link = p;
+        let spec = self[q].glue_ptr;
         let avail_ht = self[spec].width;
         if avail_ht > height {
             self[spec].width = avail_ht - height;

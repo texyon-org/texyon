@@ -113,11 +113,11 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
         if st.mem[q].width == RUNNING {
             st.mem[q].width = Scaled::ZERO;
             let glue = q.tab_skip(&st.mem);
-            let spec = glue.glue_ptr(&st.mem);
+            let spec = st.mem[glue].glue_ptr;
             if spec != ZERO_GLUE {
                 st.mem.add_glue_ref(ZERO_GLUE);
                 st.mem.delete_glue_ref(spec);
-                glue.set_glue_ptr(&mut st.mem, ZERO_GLUE);
+                st.mem[glue].glue_ptr = ZERO_GLUE;
             }
         }
         if let Some(next) = next {
@@ -140,13 +140,13 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
         packed
     } else {
         st.mem.for_each_preamble_column(|mem, q| {
-            q.set_height(mem, q.width(mem));
-            q.set_width(mem, Scaled::ZERO);
+            mem[q].height = mem[q].width;
+            mem[q].width = Scaled::ZERO;
         });
         let packed = crate::packaging::vpackage(st, head, spec, MAX_DIMEN)?;
         st.mem.for_each_preamble_column(|mem, q| {
-            q.set_width(mem, q.height(mem));
-            q.set_height(mem, Scaled::ZERO);
+            mem[q].width = mem[q].height;
+            mem[q].height = Scaled::ZERO;
         });
         packed
     };
@@ -190,17 +190,17 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                     else {
                         return Err(Abort::Confusion("align"));
                     };
-                    let n = col.subtype(&st.mem);
-                    let w = proto.width(&st.mem);
+                    let n = st.mem[col].subtype;
+                    let w = st.mem[proto].width;
                     let mut t = w;
                     let mut u = HOLD_HEAD;
-                    col.set_subtype(&mut st.mem, 0);
+                    st.mem[col].subtype = 0;
                     for _ in 0..n {
-                        let spec = proto.tab_skip(&st.mem).glue_ptr(&st.mem);
+                        let spec = st.mem[proto.tab_skip(&st.mem)].glue_ptr;
                         let g = st.mem.new_glue(spec)?;
                         u.set_link(&mut st.mem, g.ptr());
                         u = g.ptr();
-                        g.set_subtype(&mut st.mem, GluePar::TabSkip.subtype());
+                        st.mem[g].subtype = GluePar::TabSkip.subtype();
                         t += st.mem[spec].width;
                         match st.mem[p].glue_sign.get() {
                             Some(GlueSign::Stretching)
@@ -226,7 +226,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                         let nb = st.mem.new_null_box()?;
                         u.set_link(&mut st.mem, nb.ptr());
                         u = nb.ptr();
-                        let span_w = proto.width(&st.mem);
+                        let span_w = st.mem[proto].width;
                         t += span_w;
                         if st.input.cur_list.mode == INNER_VMODE {
                             st.mem[nb].width = span_w;
@@ -238,16 +238,16 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                     }
                     let col = if st.input.cur_list.mode == INNER_VMODE {
                         let (h, d) = (st.mem[row].height, st.mem[row].depth);
-                        col.set_height(&mut st.mem, h);
-                        col.set_depth(&mut st.mem, d);
-                        let glue = st.mem.unset_glue(col, t, col.width(&st.mem));
+                        st.mem[col].height = h;
+                        st.mem[col].depth = d;
+                        let glue = st.mem.unset_glue(col, t, st.mem[col].width);
                         let b = col.into_box(&mut st.mem, Orientation::Horizontal);
                         st.mem[b].width = w;
                         (b, glue)
                     } else {
                         let width = st.mem[row].width;
-                        col.set_width(&mut st.mem, width);
-                        let glue = st.mem.unset_glue(col, t, col.height(&st.mem));
+                        st.mem[col].width = width;
+                        let glue = st.mem.unset_glue(col, t, st.mem[col].height);
                         let b = col.into_box(&mut st.mem, Orientation::Vertical);
                         st.mem[b].height = w;
                         (b, glue)
@@ -365,7 +365,7 @@ impl MemState {
 
     /// Folds column `q`'s span widths, less its own width and tabskip, into `next`'s.
     fn merge_spans(&mut self, q: NodePtr<AlignRecord>, next: NodePtr<AlignRecord>) {
-        let t = self[q].width + self[q.tab_skip(self).glue_ptr(self)].width;
+        let t = self[q].width + self[self[q.tab_skip(self)].glue_ptr].width;
         let mut r = self[q.span_head()].next;
         let mut s = END_SPAN;
         self[s].next = next.span_head();
@@ -407,16 +407,16 @@ impl MemState {
             return (GlueSign::Normal, GlueOrder::Normal.into(), 0.0);
         }
         if t > natural {
-            let stretch = col.glue_stretch(self);
+            let stretch = self[col].glue_stretch;
             let ratio = if stretch == Scaled::ZERO {
                 0.0
             } else {
                 f64::from(t - natural) / f64::from(stretch)
             };
-            return (GlueSign::Stretching, col.glue_order(self), ratio);
+            return (GlueSign::Stretching, self[col].glue_order, ratio);
         }
-        let order = col.glue_sign(self);
-        let shrink = col.glue_shrink(self);
+        let order = self[col].glue_sign;
+        let shrink = self[col].glue_shrink;
         let ratio = if shrink == Scaled::ZERO {
             0.0
         } else if order == GlueOrder::Normal && natural - t > shrink {
@@ -513,11 +513,11 @@ fn init_row(st: &mut EngineState) -> Result<(), Abort> {
         st.input.cur_list.set_aux_s1(0);
     }
     let tab_skip = NodePtr::<GlueNode>::tab_skip_after(&st.mem, ALIGN_HEAD);
-    let spec = tab_skip.glue_ptr(&st.mem);
+    let spec = st.mem[tab_skip].glue_ptr;
     let glue = st.mem.new_glue(spec)?;
     st.input.cur_list.tail_append(&mut st.mem, glue.ptr());
-    glue.set_subtype(&mut st.mem, GluePar::TabSkip.subtype());
-    st.scanner.cur_align = tab_skip.link(&st.mem);
+    st.mem[glue].subtype = GluePar::TabSkip.subtype();
+    st.scanner.cur_align = st.mem[tab_skip].link;
     st.scanner.cur_tail = st.scanner.cur_head;
     st.scanner.cur_pre_tail = st.scanner.cur_pre_head;
     init_span(st, st.scanner.cur_align)
@@ -624,10 +624,10 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
             st.mem[column].v_part = v_part;
             let tab_skip = template.tab_skip(&st.mem);
             st.scanner.cur_loop = tab_skip.ptr();
-            let spec = tab_skip.glue_ptr(&st.mem);
+            let spec = st.mem[tab_skip].glue_ptr;
             let g = st.mem.new_glue(spec)?;
             st.mem[column].link = g.ptr();
-            g.set_subtype(&mut st.mem, GluePar::TabSkip.subtype());
+            st.mem[g].subtype = GluePar::TabSkip.subtype();
         } else {
             crate::output::error_here_with_diagnostic(
                 st,
@@ -693,19 +693,19 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
             st.mem[cur_align].width = w;
         }
         let u = u.into_unset(&mut st.mem);
-        u.set_subtype(&mut st.mem, n as u16);
+        st.mem[u].subtype = n as u16;
         let o = st.scanner.total_stretch.max_order();
-        u.set_glue_order(&mut st.mem, o);
-        u.set_glue_stretch(&mut st.mem, st.scanner.total_stretch[o]);
+        st.mem[u].glue_order = o.into();
+        st.mem[u].glue_stretch = st.scanner.total_stretch[o];
         let o = st.scanner.total_shrink.max_order();
-        u.set_glue_sign(&mut st.mem, o);
-        u.set_glue_shrink(&mut st.mem, st.scanner.total_shrink[o]);
+        st.mem[u].glue_sign = o.into();
+        st.mem[u].glue_shrink = st.scanner.total_shrink[o];
         st.mem.pop_nest(&mut st.input)?;
         st.input.cur_list.tail_append(&mut st.mem, u.ptr());
-        let spec = cur_align.tab_skip(&st.mem).glue_ptr(&st.mem);
+        let spec = st.mem[cur_align.tab_skip(&st.mem)].glue_ptr;
         let g = st.mem.new_glue(spec)?;
         st.input.cur_list.tail_append(&mut st.mem, g.ptr());
-        g.set_subtype(&mut st.mem, GluePar::TabSkip.subtype());
+        st.mem[g].subtype = GluePar::TabSkip.subtype();
         if st.mem[cur_align].extra_info >= CR_CODE {
             return Ok(true);
         }
@@ -740,8 +740,8 @@ fn fin_row(st: &mut EngineState) -> Result<(), Abort> {
         st.input.cur_list.set_aux_s0(1000);
         row
     };
-    p.into_unset(&mut st.mem)
-        .set_glue_stretch(&mut st.mem, Scaled::ZERO);
+    let unset = p.into_unset(&mut st.mem);
+    st.mem[unset].glue_stretch = Scaled::ZERO;
     begin_every(st, TokPar::EveryCr, TokenType::EveryCr)?;
     align_peek(st)
 }

@@ -281,14 +281,14 @@ impl MemState {
             return Ok(());
         }
 
-        let old_spec = last_line_fill.glue_ptr(self);
+        let old_spec = self[last_line_fill].glue_ptr;
         let spec = self.new_spec(old_spec)?;
         self.delete_glue_ref(old_spec);
 
         let extra = best.shortfall(self) - best.glue(self);
         self[spec].width += extra;
         self[spec].stretch = Scaled::ZERO;
-        last_line_fill.set_glue_ptr(self, spec);
+        self[last_line_fill].glue_ptr = spec;
         Ok(())
     }
 }
@@ -396,8 +396,8 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
         }
         Some(tail_glue) => {
             // The trailing glue becomes the infinite penalty in place.
-            let spec = tail_glue.glue_ptr(&st.mem);
-            let leaders = tail_glue.leader_ptr(&st.mem);
+            let spec = st.mem[tail_glue].glue_ptr;
+            let leaders = st.mem[tail_glue].leader_ptr;
             let tail_penalty = tail_glue.into_penalty(&mut st.mem);
             st.mem.delete_glue_ref(spec);
             st.mem.flush_node_list(leaders)?;
@@ -438,7 +438,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
     st.linebreak.do_last_line_fit = false;
     st.linebreak.active_node_size = ACTIVE_NODE_SIZE_NORMAL;
     if st.eqtb.int_par(IntPar::LastLineFit) > 0 {
-        let spec = last_line_fill.glue_ptr(&st.mem);
+        let spec = st.mem[last_line_fill].glue_ptr;
         let lb = &mut st.linebreak;
         if st.mem[spec].stretch > Scaled::ZERO
             && st.mem[spec].stretch_order > GlueOrder::Normal
@@ -564,10 +564,10 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                         line_break_try_break(st, 0, UNHYPHENATED, None)?;
                     }
 
-                    let mut spec = cur_glue.glue_ptr(&st.mem);
+                    let mut spec = st.mem[cur_glue].glue_ptr;
                     if st.mem.has_infinite_shrink(spec) {
                         spec = finite_shrink(st, spec)?;
-                        cur_glue.set_glue_ptr(&mut st.mem, spec);
+                        st.mem[cur_glue].glue_ptr = spec;
                     }
                     let aw = &mut st.scanner.active_width;
                     aw[1] += st.mem[spec].width;
@@ -745,7 +745,7 @@ impl MemState {
         while !s.is_null() && !self.is_char_node(s) {
             match self.classify(s) {
                 Ok(AnyNode::Glue(g)) => {
-                    let spec = g.glue_ptr(self);
+                    let spec = self[g].glue_ptr;
                     linebreak.break_width[1] -= self[spec].width;
                     linebreak.break_width[2 + self[spec].stretch_order.index()] -=
                         self[spec].stretch;

@@ -76,7 +76,7 @@ impl ListStateRecord {
                 mem.new_param_glue(eqtb, GluePar::LineSkip)?
             } else {
                 let p = mem.new_skip_param(eqtb, GluePar::BaselineSkip)?;
-                let spec = p.glue_ptr(mem);
+                let spec = mem[p].glue_ptr;
                 mem[spec].width = d;
                 p
             };
@@ -289,9 +289,9 @@ impl MemState {
                     d = d.max(self[rule].depth.to_scaled());
                 }
                 Ok(AnyNode::Unset(u)) => {
-                    x += u.width(self);
-                    h = h.max(u.height(self));
-                    d = d.max(u.depth(self));
+                    x += self[u].width;
+                    h = h.max(self[u].height);
+                    d = d.max(self[u].depth);
                 }
                 Ok(AnyNode::Adjust(adjust)) => {
                     if !scanner.adjust_tail.is_null() || !scanner.pre_adjust_tail.is_null() {
@@ -340,12 +340,12 @@ impl MemState {
                     _ => {}
                 },
                 Ok(AnyNode::Glue(glue)) => {
-                    let spec = glue.glue_ptr(self);
+                    let spec = self[glue].glue_ptr;
                     x += self[spec].width;
                     scanner.total_stretch[self[spec].stretch_order] += self[spec].stretch;
                     scanner.total_shrink[self[spec].shrink_order] += self[spec].shrink;
-                    if glue.subtype(self) >= A_LEADERS {
-                        let leader = glue.leader_ptr(self);
+                    if self[glue].subtype >= A_LEADERS {
+                        let leader = self[glue].leader_ptr;
                         let (leader_h, leader_d) = match self.classify(leader) {
                             Ok(AnyNode::Box(b)) => (self[b].height, self[b].depth),
                             Ok(AnyNode::Rule(rule)) => {
@@ -642,9 +642,9 @@ impl MemState {
                     w = w.max(self[rule].width.to_scaled());
                 }
                 Ok(AnyNode::Unset(u)) => {
-                    x += d + u.height(self);
-                    d = u.depth(self);
-                    w = w.max(u.width(self));
+                    x += d + self[u].height;
+                    d = self[u].depth;
+                    w = w.max(self[u].width);
                 }
                 Ok(AnyNode::Whatsit(wn)) => {
                     if matches!(
@@ -659,12 +659,12 @@ impl MemState {
                 Ok(AnyNode::Glue(glue)) => {
                     x += d;
                     d = Scaled::ZERO;
-                    let spec = glue.glue_ptr(self);
+                    let spec = self[glue].glue_ptr;
                     x += self[spec].width;
                     scanner.total_stretch[self[spec].stretch_order] += self[spec].stretch;
                     scanner.total_shrink[self[spec].shrink_order] += self[spec].shrink;
-                    if glue.subtype(self) >= A_LEADERS {
-                        let leader = glue.leader_ptr(self);
+                    if self[glue].subtype >= A_LEADERS {
+                        let leader = self[glue].leader_ptr;
                         let leader_w = match self.classify(leader) {
                             Ok(AnyNode::Box(b)) => self[b].width,
                             Ok(AnyNode::Rule(rule)) => self[rule].width.to_scaled(),

@@ -1108,7 +1108,7 @@ impl MemState {
             return Ok(());
         }
 
-        let p = glue.link(self);
+        let p = self[glue].link;
         let Some(p_idx) = p.as_idx() else {
             return Ok(());
         };
@@ -1116,7 +1116,7 @@ impl MemState {
             self.classify(p_idx),
             Ok(AnyNode::Glue(_) | AnyNode::Kern(_))
         ) {
-            glue.set_link(self, p.link(self));
+            self[glue].link = p.link(self);
             p.set_link(self, MemPtr::NULL);
             self.flush_node_list(p)?;
         }
@@ -1342,14 +1342,14 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                     break 'reswitch FirstPass::DoneWithNode;
                 }
                 Ok(AnyNode::Glue(glue)) => {
-                    let subtype = glue.subtype(&st.mem);
+                    let subtype = st.mem[glue].subtype;
                     let mu = st.scanner.cur_mu;
-                    let x = glue.glue_ptr(&st.mem);
+                    let x = st.mem[glue].glue_ptr;
                     if subtype == MU_GLUE {
                         let y = math_glue(st, x, mu)?;
                         st.mem.delete_glue_ref(x);
-                        glue.set_glue_ptr(&mut st.mem, y);
-                        glue.set_subtype(&mut st.mem, NORMAL);
+                        st.mem[glue].glue_ptr = y;
+                        st.mem[glue].subtype = NORMAL;
                     } else if subtype == COND_MATH_GLUE {
                         let cur_size = st.scanner.cur_size;
                         st.mem.mlist_cond_math_glue(glue, cur_size)?;
@@ -1489,7 +1489,7 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                     let z = st.mem.new_glue(y)?;
                     st.mem[y].ref_count = TEX_NULL;
                     p.set_link(&mut st.mem, z.ptr());
-                    z.set_subtype(&mut st.mem, x.subtype());
+                    st.mem[z].subtype = x.subtype();
                     p = z.ptr();
                 }
             }
@@ -1552,7 +1552,7 @@ impl MemState {
                 q.set_link(self, p.ptr());
             }
         } else {
-            p.set_link(self, self[b].list_ptr);
+            self[p].link = self[b].list_ptr;
             self[b].list_ptr = p.ptr();
             // XeTeX reads box height and width off the glue node here.
             let glue = p.ptr();

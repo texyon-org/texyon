@@ -77,7 +77,7 @@ pub(crate) fn short_display(st: &mut EngineState, mut p: MemPtr) {
                 Ok(AnyNode::Rule(_)) => print_char(st, b'|'),
                 Ok(AnyNode::Glue(g)) => {
                     // Glue pointing at the shared zero spec prints nothing.
-                    if g.glue_ptr(&st.mem) != ZERO_GLUE {
+                    if st.mem[g].glue_ptr != ZERO_GLUE {
                         print_char(st, b' ');
                     }
                 }
@@ -171,28 +171,28 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
                 Ok(AnyNode::Unset(node)) => {
                     print_esc(st, "unset");
                     print(st, "box(");
-                    print_scaled(st, node.height(&st.mem));
+                    print_scaled(st, st.mem[node].height);
                     print_char(st, b'+');
-                    print_scaled(st, node.depth(&st.mem));
+                    print_scaled(st, st.mem[node].depth);
                     print(st, ")x");
-                    print_scaled(st, node.width(&st.mem));
-                    let span_count = node.subtype(&st.mem);
+                    print_scaled(st, st.mem[node].width);
+                    let span_count = st.mem[node].subtype;
                     if span_count != 0 {
                         print(st, " (");
                         print_int(st, i32::from(span_count) + 1);
                         print(st, " columns)");
                     }
-                    if node.glue_stretch(&st.mem) != Scaled::ZERO {
+                    if st.mem[node].glue_stretch != Scaled::ZERO {
                         print(st, ", stretch ");
-                        let order = node.glue_order(&st.mem);
-                        print_glue(st, node.glue_stretch(&st.mem), order, None);
+                        let order = st.mem[node].glue_order;
+                        print_glue(st, st.mem[node].glue_stretch, order, None);
                     }
-                    if node.glue_shrink(&st.mem) != Scaled::ZERO {
+                    if st.mem[node].glue_shrink != Scaled::ZERO {
                         print(st, ", shrink ");
-                        let order = node.glue_sign(&st.mem);
-                        print_glue(st, node.glue_shrink(&st.mem), order, None);
+                        let order = st.mem[node].glue_sign;
+                        print_glue(st, st.mem[node].glue_shrink, order, None);
                     }
-                    node_list_display(st, b'.', node.list_ptr(&st.mem));
+                    node_list_display(st, b'.', st.mem[node].list_ptr);
                 }
                 Ok(AnyNode::Rule(node)) => {
                     print_esc(st, "rule(");
@@ -204,16 +204,16 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
                 }
                 Ok(AnyNode::Ins(node)) => {
                     print_esc(st, "insert");
-                    print_int(st, i32::from(node.subtype(&st.mem)));
+                    print_int(st, i32::from(st.mem[node].subtype));
                     print(st, ", natural size ");
-                    print_scaled(st, node.height(&st.mem));
+                    print_scaled(st, st.mem[node].height);
                     print(st, "; split(");
-                    print_spec(st, node.split_top_ptr(&st.mem).ptr(), None);
+                    print_spec(st, st.mem[node].split_top_ptr.ptr(), None);
                     print_char(st, b',');
-                    print_scaled(st, node.depth(&st.mem));
+                    print_scaled(st, st.mem[node].depth);
                     print(st, "); float cost ");
-                    print_int(st, node.float_cost(&st.mem));
-                    node_list_display(st, b'.', node.ins_ptr(&st.mem));
+                    print_int(st, st.mem[node].float_cost);
+                    node_list_display(st, b'.', st.mem[node].ins_ptr);
                 }
                 Ok(AnyNode::Whatsit(node)) => show_whatsit(st, node),
                 Ok(AnyNode::Glue(node)) => show_glue(st, node),
@@ -431,7 +431,7 @@ fn show_whatsit(st: &mut EngineState, node: NodePtr<WhatsitNode>) {
 }
 
 fn show_glue(st: &mut EngineState, node: NodePtr<crate::node::GlueNode>) {
-    let sub = node.subtype(&st.mem);
+    let sub = st.mem[node].subtype;
     if sub >= A_LEADERS {
         print_esc(st, "");
         if sub == C_LEADERS {
@@ -440,8 +440,8 @@ fn show_glue(st: &mut EngineState, node: NodePtr<crate::node::GlueNode>) {
             print_char(st, b'x');
         }
         print(st, "leaders ");
-        print_spec(st, node.glue_ptr(&st.mem).ptr(), None);
-        node_list_display(st, b'.', node.leader_ptr(&st.mem));
+        print_spec(st, st.mem[node].glue_ptr.ptr(), None);
+        node_list_display(st, b'.', st.mem[node].leader_ptr);
         return;
     }
     print_esc(st, "glue");
@@ -459,7 +459,7 @@ fn show_glue(st: &mut EngineState, node: NodePtr<crate::node::GlueNode>) {
     if sub != COND_MATH_GLUE {
         print_char(st, b' ');
         let unit = (sub >= COND_MATH_GLUE).then_some("mu");
-        print_spec(st, node.glue_ptr(&st.mem).ptr(), unit);
+        print_spec(st, st.mem[node].glue_ptr.ptr(), unit);
     }
 }
 

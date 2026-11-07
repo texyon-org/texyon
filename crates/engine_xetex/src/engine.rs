@@ -469,9 +469,9 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     active.set_line_number(mem, MAX_HALFWORD);
     active.set_fitness(mem, 0);
     let page_ins = NodePtr::<PageInsNode>::at(PAGE_INS_HEAD);
-    page_ins.set_subtype(mem, 255);
-    page_ins.set_split_up(mem, true);
-    page_ins.set_link(mem, PAGE_INS_HEAD);
+    mem[page_ins].subtype = 255;
+    mem[page_ins].set_split_up(true);
+    mem[page_ins].link = PAGE_INS_HEAD;
     mem.set_b16s1(PAGE_HEAD, NodeType::Glue.as_raw());
     mem.set_b16s0(PAGE_HEAD, NORMAL);
     mem.avail = MemPtr::NULL;

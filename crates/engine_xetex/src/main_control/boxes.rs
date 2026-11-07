@@ -224,11 +224,8 @@ fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
         };
         if let Some(s) = skip {
             let g = append_glue(st, s)?;
-            g.set_subtype(
-                &mut st.mem,
-                (box_context - (LEADER_FLAG - i32::from(A_LEADERS))) as u16,
-            );
-            g.set_leader_ptr(&mut st.mem, cb.ptr());
+            st.mem[g].subtype = (box_context - (LEADER_FLAG - i32::from(A_LEADERS))) as u16;
+            st.mem[g].leader_ptr = cb.ptr();
         } else {
             crate::output::print_err(st, "Leaders not followed by proper glue");
             st.errors.help(&[

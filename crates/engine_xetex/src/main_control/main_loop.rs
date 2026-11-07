@@ -392,7 +392,7 @@ fn shape_interword_space(st: &mut EngineState, mf: FontId) -> Result<(), Abort> 
     let Ok(AnyNode::Glue(glue)) = st.mem.classify(glue) else {
         return Ok(());
     };
-    if st.mem.skip_interword_fillers(glue.link(&st.mem)) != tail {
+    if st.mem.skip_interword_fillers(st.mem[glue].link) != tail {
         return Ok(());
     }
     let tail_word = NodePtr::<WhatsitNode>::from_idx_unchecked(MemIdx::new(tail));
@@ -418,9 +418,9 @@ fn shape_interword_space(st: &mut EngineState, mf: FontId) -> Result<(), Abort> 
     if t != space {
         let kern = st.mem.new_kern(t - space)?;
         st.mem[kern].subtype = SPACE_ADJUSTMENT;
-        let next = glue.link(&st.mem);
+        let next = st.mem[glue].link;
         st.mem[kern].link = next;
-        glue.set_link(&mut st.mem, kern.ptr());
+        st.mem[glue].link = kern.ptr();
     }
     Ok(())
 }

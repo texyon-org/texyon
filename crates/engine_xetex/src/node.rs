@@ -10,7 +10,8 @@ use std::marker::PhantomData;
 use crate::consts::{
     ACCENT_NOAD_SIZE, BOX_NODE_SIZE, EMPTY, FRACTION_NOAD_SIZE, GLUE_SPEC_SIZE, INS_NODE_SIZE,
     MARGIN_KERN_NODE_SIZE, MEDIUM_NODE_SIZE, NATIVE_NODE_SIZE, NOAD_SIZE, NORMAL, NULL_FLAG,
-    PIC_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE,
+    PAGE_INS_NODE_SIZE, PIC_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE, SMALL_NODE_SIZE,
+    STYLE_NODE_SIZE,
 };
 use crate::errors::Abort;
 use crate::state::MemState;
@@ -137,18 +138,6 @@ impl Slot for MemPtr {
     #[inline(always)]
     fn encode(self) -> i32 {
         self.raw()
-    }
-}
-
-impl Slot for NodePtr<GlueSpecNode> {
-    type Raw = i32;
-    #[inline(always)]
-    fn decode(raw: i32) -> Self {
-        NodePtr::from_glue_ptr(MemPtr::from_raw(raw))
-    }
-    #[inline(always)]
-    fn encode(self) -> i32 {
-        self.idx.raw()
     }
 }
 
@@ -396,24 +385,6 @@ macro_rules! fields {
     )*};
 }
 
-/// Code fields: `getter / setter: Code = subfield @ word_offset;`. The getter
-/// returns the raw [`Stored`] code, the setter takes the code or a `Stored`.
-macro_rules! stored_fields {
-    ($($(#[$m:meta])* $get:ident $(/ $set:ident)?: $ty:ty = $slot:ident @ $off:expr;)*) => {$(
-        $(#[$m])*
-        #[inline]
-        pub fn $get(self, mem: &MemState) -> Stored<$ty> {
-            Stored::from_raw(mem.$slot(self.idx + $off))
-        }
-        $(
-            #[inline]
-            pub fn $set(self, mem: &mut MemState, v: impl Into<Stored<$ty>>) {
-                write_slot!(mem, $slot, self.idx + $off, v.into().raw())
-            }
-        )?
-    )*};
-}
-
 /// A kind with a fixed allocation size and header type code.
 pub trait FixedNode: NodeKind {
     const SIZE: i32;
@@ -563,6 +534,14 @@ impl FixedNode for AlignRecord {
     const SIZE: i32 = BOX_NODE_SIZE;
     const TYPE: Option<NodeType> = Some(NodeType::HList);
 }
+impl FixedNode for UnsetNode {
+    const SIZE: i32 = BOX_NODE_SIZE;
+    const TYPE: Option<NodeType> = Some(NodeType::Unset);
+}
+impl FixedNode for PageInsNode {
+    const SIZE: i32 = PAGE_INS_NODE_SIZE;
+    const TYPE: Option<NodeType> = None;
+}
 impl FixedNode for AlignStackNode {
     const SIZE: i32 = 6;
     const TYPE: Option<NodeType> = None;
@@ -586,10 +565,6 @@ pub trait HasNodeHeader: Accessed {}
 pub trait HasWidth: NodeKind {}
 /// `Scaled` depth and height at +2 and +3.
 pub trait HasHeightDepth: NodeKind {}
-/// A child list at +5.
-pub trait HasListPtr: NodeKind {}
-/// The SyncTeX tag and line that `get_node` stamps into a node's last word.
-pub trait HasSyncFields: FixedNode {}
 
 macro_rules! impl_traits {
     ($trait:ident: $($kind:ident),*) => {$(impl $trait for $kind {})*};
@@ -600,14 +575,11 @@ impl_traits!(HasLink: BoxNode, RuleNode, InsNode, MarkNode, AdjustNode, Ligature
     EdgeNode, Noad, MarginKernNode, SaNode, PageInsNode, ActiveNode, DeltaNode, PassiveNode,
     MovementNode, CondNode, CharNode, AlignRecord, AlignStackNode, ExprNode, PseudoLineNode,
     LigItem);
-impl_traits!(Accessed: InsNode, LigatureNode, WhatsitNode, GlueNode, UnsetNode, Noad,
-    SaNode, PageInsNode, ActiveNode, CharNode, PseudoLineNode);
-impl_traits!(HasNodeHeader: InsNode, LigatureNode, WhatsitNode, GlueNode, UnsetNode,
-    Noad, SaNode, PageInsNode);
-impl_traits!(HasWidth: UnsetNode, WhatsitNode);
-impl_traits!(HasHeightDepth: UnsetNode, WhatsitNode, InsNode);
-impl_traits!(HasListPtr: UnsetNode);
-impl_traits!(HasSyncFields: GlueNode);
+impl_traits!(Accessed: LigatureNode, WhatsitNode, Noad, SaNode, ActiveNode, CharNode,
+    PseudoLineNode);
+impl_traits!(HasNodeHeader: LigatureNode, WhatsitNode, Noad, SaNode);
+impl_traits!(HasWidth: WhatsitNode);
+impl_traits!(HasHeightDepth: WhatsitNode);
 
 /// A record kept only on its own list, which therefore proves its kind.
 pub trait ListRecord: NodeKind {}
@@ -673,19 +645,6 @@ impl<K: HasHeightDepth> NodePtr<K> {
     fields! {
         depth / set_depth: Scaled = b32s1 @ 2;
         height / set_height: Scaled = b32s1 @ 3;
-    }
-}
-
-impl<K: HasListPtr> NodePtr<K> {
-    fields! {
-        list_ptr / set_list_ptr: MemPtr = b32s1 @ 5;
-    }
-}
-
-impl<K: HasSyncFields> NodePtr<K> {
-    fields! {
-        sync_tag: i32 = b32s0 @ K::SIZE - 1;
-        sync_line: i32 = b32s1 @ K::SIZE - 1;
     }
 }
 
@@ -1219,11 +1178,6 @@ impl NodePtr<DelimiterField> {
 }
 
 impl NodePtr<GlueNode> {
-    fields! {
-        glue_ptr / set_glue_ptr: NodePtr<GlueSpecNode> = b32s0 @ 1;
-        leader_ptr / set_leader_ptr: MemPtr = b32s1 @ 1;
-    }
-
     #[inline]
     pub fn into_penalty(self, mem: &mut MemState) -> NodePtr<PenaltyNode> {
         retype(self, mem, NodeType::Penalty)
@@ -1255,46 +1209,7 @@ impl NodePtr<GlueSpecNode> {
 
 // --- page-builder nodes ---
 
-impl NodePtr<InsNode> {
-    fields! {
-        float_cost / set_float_cost: i32 = b32s1 @ 1;
-        ins_ptr / set_ins_ptr: MemPtr = b32s0 @ 4;
-        /// The `\splittopskip` glue spec.
-        split_top_ptr / set_split_top_ptr: NodePtr<GlueSpecNode> = b32s1 @ 4;
-    }
-}
-
-impl NodePtr<PageInsNode> {
-    #[inline]
-    pub fn is_split_up(self, mem: &MemState) -> bool {
-        mem.b16s1(self.idx) == 1
-    }
-    #[inline]
-    pub fn set_split_up(self, mem: &mut MemState, split: bool) {
-        mem.set_b16s1(self.idx, u16::from(split));
-    }
-
-    fields! {
-        broken_ins / set_broken_ins: MemPtr = b32s0 @ 1;
-        broken_ptr / set_broken_ptr: MemPtr = b32s1 @ 1;
-        best_ins_ptr / set_best_ins_ptr: MemPtr = b32s0 @ 2;
-        last_ins_ptr / set_last_ins_ptr: MemPtr = b32s1 @ 2;
-        height / set_height: Scaled = b32s1 @ 3;
-    }
-}
-
 impl NodePtr<UnsetNode> {
-    stored_fields! {
-        /// The shrink order.
-        glue_sign / set_glue_sign: GlueOrder = b16s1 @ 5;
-        /// The stretch order.
-        glue_order / set_glue_order: GlueOrder = b16s0 @ 5;
-    }
-    fields! {
-        glue_shrink / set_glue_shrink: Scaled = b32s1 @ 4;
-        glue_stretch / set_glue_stretch: Scaled = b32s1 @ 6;
-    }
-
     /// Turns the finished unset node into a box of orientation `o`.
     #[inline]
     pub fn into_box(self, mem: &mut MemState, o: Orientation) -> NodePtr<BoxNode> {
@@ -1348,13 +1263,13 @@ impl NodePtr<AlignRecord> {
     /// Turns the record into an empty unset box of its final width.
     pub fn into_unset(self, mem: &mut MemState) -> NodePtr<UnsetNode> {
         let u: NodePtr<UnsetNode> = retype(self, mem, NodeType::Unset);
-        u.set_subtype(mem, 0);
-        u.set_height(mem, Scaled::ZERO);
-        u.set_depth(mem, Scaled::ZERO);
-        u.set_glue_order(mem, GlueOrder::Normal);
-        u.set_glue_sign(mem, GlueOrder::Normal);
-        u.set_glue_stretch(mem, Scaled::ZERO);
-        u.set_glue_shrink(mem, Scaled::ZERO);
+        mem[u].subtype = 0;
+        mem[u].height = Scaled::ZERO;
+        mem[u].depth = Scaled::ZERO;
+        mem[u].glue_order = (GlueOrder::Normal).into();
+        mem[u].glue_sign = (GlueOrder::Normal).into();
+        mem[u].glue_stretch = Scaled::ZERO;
+        mem[u].glue_shrink = Scaled::ZERO;
         u
     }
 }
@@ -1977,8 +1892,8 @@ mod tests {
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 88);
 
         let ins: NodePtr<InsNode> = at(&mut mem, 100, Some(NodeType::Ins));
-        ins.set_ins_ptr(&mut mem, MemPtr::from_raw(55));
-        ins.set_split_top_ptr(&mut mem, NodePtr::from_glue_ptr(MemPtr::from_raw(66)));
+        mem[ins].ins_ptr = MemPtr::from_raw(55);
+        mem[ins].split_top_ptr = NodePtr::from_glue_ptr(MemPtr::from_raw(66));
         assert_eq!(mem.b32s0(MemPtr::from_raw(104)), 55);
         assert_eq!(mem.b32s1(MemPtr::from_raw(104)), 66);
     }
@@ -2038,10 +1953,7 @@ mod tests {
 
         let u = rec.into_unset(&mut mem);
         assert_eq!(mem.b16s1(MemPtr::from_raw(100)), NodeType::Unset.as_raw());
-        assert_eq!(
-            (u.height(&mem), u.depth(&mem)),
-            (Scaled::ZERO, Scaled::ZERO)
-        );
+        assert_eq!((mem[u].height, mem[u].depth), (Scaled::ZERO, Scaled::ZERO));
         assert_eq!(
             (
                 mem.b16s0(MemPtr::from_raw(100)),
@@ -2050,7 +1962,7 @@ mod tests {
             ),
             (0, 0, 0)
         );
-        assert_eq!(u.link(&mem), g2);
+        assert_eq!(mem[u].link, g2);
 
         let span: NodePtr<SpanNode> = NodePtr::at(MemPtr::from_raw(40));
         mem[span].span_count = 3;
@@ -2070,9 +1982,9 @@ mod tests {
         let u: NodePtr<UnsetNode> = at(&mut mem, 100, Some(NodeType::Unset));
         mem.set_b32s1(MemPtr::from_raw(101), 0x111);
         mem.set_b32s1(MemPtr::from_raw(103), 0x333);
-        u.set_list_ptr(&mut mem, MemPtr::from_raw(0x444));
-        assert_eq!(u.width(&mem), Scaled::from_raw(0x111));
-        assert_eq!(u.height(&mem), Scaled::from_raw(0x333));
+        mem[u].list_ptr = MemPtr::from_raw(0x444);
+        assert_eq!(mem[u].width, Scaled::from_raw(0x111));
+        assert_eq!(mem[u].height, Scaled::from_raw(0x333));
         assert_eq!(mem.b32s1(MemPtr::from_raw(105)), 0x444);
 
         let w: NodePtr<WhatsitNode> = at(&mut mem, 100, Some(NodeType::Whatsit));
@@ -2124,13 +2036,13 @@ mod tests {
     fn glue_node_and_spec_fields_land_in_their_words() {
         let mut mem = fresh_mem(200);
         let g: NodePtr<GlueNode> = at(&mut mem, 100, Some(NodeType::Glue));
-        g.set_subtype(&mut mem, 7);
-        g.set_glue_ptr(&mut mem, NodePtr::from_glue_ptr(MemPtr::from_raw(150)));
-        g.set_leader_ptr(&mut mem, MemPtr::from_raw(160));
+        mem[g].subtype = 7;
+        mem[g].glue_ptr = NodePtr::from_glue_ptr(MemPtr::from_raw(150));
+        mem[g].leader_ptr = MemPtr::from_raw(160);
         assert_eq!(mem.b16s0(MemPtr::from_raw(100)), 7);
         assert_eq!(mem.b32s0(MemPtr::from_raw(101)), 150);
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 160);
-        assert_eq!(g.glue_ptr(&mem).idx(), MemIdx::from_raw(150));
+        assert_eq!(mem[g].glue_ptr.idx(), MemIdx::from_raw(150));
 
         let s: NodePtr<GlueSpecNode> = at(&mut mem, 150, None);
         mem[s].ref_count = 42;

@@ -461,7 +461,7 @@ pub fn synctex_horizontal_rule_or_glue(st: &mut EngineState, p: MemPtr) {
     let node = st.mem.classify(p);
     let (tag, line) = match node {
         Ok(AnyNode::Rule(r)) => (st.mem[r].sync_tag, st.mem[r].sync_line),
-        Ok(AnyNode::Glue(g)) => (g.sync_tag(&st.mem), g.sync_line(&st.mem)),
+        Ok(AnyNode::Glue(g)) => (st.mem[g].sync_tag, st.mem[g].sync_line),
         Ok(AnyNode::Kern(k)) => (st.mem[k].sync_tag, st.mem[k].sync_line),
         _ => {
             issue_error(&format!(

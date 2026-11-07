@@ -450,7 +450,7 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
         (MMODE, Command::NonScript) => {
             let g = st.mem.new_glue(ZERO_GLUE)?;
             st.input.cur_list.tail_append(&mut st.mem, g.ptr());
-            g.set_subtype(&mut st.mem, COND_MATH_GLUE);
+            st.mem[g].subtype = COND_MATH_GLUE;
         }
         (MMODE, Command::MathChoice) => crate::math::append_choices(st)?,
         (MMODE, Command::SubMark(_) | Command::SupMark(_)) => crate::math::sub_sup(st)?,

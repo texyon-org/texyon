@@ -360,14 +360,14 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             if n < 255 {
                 let ins = NodePtr::<InsNode>::alloc(&mut st.mem)?;
                 st.input.cur_list.tail_append(&mut st.mem, ins.ptr());
-                ins.set_subtype(&mut st.mem, n as u16);
+                st.mem[ins].subtype = n as u16;
                 let height = st.mem[p].height + st.mem[p].depth;
-                ins.set_height(&mut st.mem, height);
+                st.mem[ins].height = height;
                 let list = st.mem[p].list_ptr;
-                ins.set_ins_ptr(&mut st.mem, list);
-                ins.set_split_top_ptr(&mut st.mem, split_top_skip);
-                ins.set_depth(&mut st.mem, d);
-                ins.set_float_cost(&mut st.mem, f);
+                st.mem[ins].ins_ptr = list;
+                st.mem[ins].split_top_ptr = split_top_skip;
+                st.mem[ins].depth = d;
+                st.mem[ins].float_cost = f;
             } else {
                 let adj = NodePtr::<AdjustNode>::alloc(&mut st.mem)?;
                 st.input.cur_list.tail_append(&mut st.mem, adj.ptr());
@@ -528,11 +528,11 @@ pub(super) fn append_glue(st: &mut EngineState, s: SkipCode) -> Result<NodePtr<G
     let g = st.mem.new_glue(spec)?;
     st.input.cur_list.tail_append(&mut st.mem, g.ptr());
     if matches!(s, SkipCode::Skip | SkipCode::Mskip) {
-        let spec = g.glue_ptr(&st.mem);
+        let spec = st.mem[g].glue_ptr;
         let refs = st.mem[spec].ref_count;
         st.mem[spec].ref_count = refs - 1;
         if s == SkipCode::Mskip {
-            g.set_subtype(&mut st.mem, MU_GLUE);
+            st.mem[g].subtype = MU_GLUE;
         }
     }
     Ok(g)

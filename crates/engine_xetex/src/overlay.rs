@@ -9,9 +9,9 @@ use bytemuck::{Pod, Zeroable};
 use crate::codes::{FiOrElseCode, ValueLevel};
 use crate::node::{
     AdjustNode, AlignRecord, AlignStackNode, BoxNode, ChoiceNode, CondNode, DeltaNode, DiscNode,
-    EdgeNode, ExprNode, FixedNode, GlueSpecNode, KernNode, LigItem, MarginKernNode, MarkNode,
-    MathNode, MovementNode, NodePtr, PassiveNode, PenaltyNode, RuleNode, SpanNode, Stored,
-    StoredDimen, StyleNode,
+    EdgeNode, ExprNode, FixedNode, GlueNode, GlueSpecNode, InsNode, KernNode, LigItem,
+    MarginKernNode, MarkNode, MathNode, MovementNode, NodePtr, PageInsNode, PassiveNode,
+    PenaltyNode, RuleNode, SpanNode, Stored, StoredDimen, StyleNode, UnsetNode,
 };
 use crate::state::MemState;
 use crate::token::TokenList;
@@ -440,6 +440,102 @@ pub struct RuleLayout {
 
 overlay!(RuleNode => RuleLayout);
 
+/// A glue node. Its subtype is a glue parameter, a leader kind or a math code.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct GlueLayout {
+    pub subtype: u16,
+    _type: u16,
+    pub link: MemPtr,
+    pub glue_ptr: NodePtr<GlueSpecNode>,
+    /// The leader box or rule, null for plain glue.
+    pub leader_ptr: MemPtr,
+    pub sync_tag: i32,
+    pub sync_line: i32,
+}
+
+overlay!(GlueNode => GlueLayout);
+
+/// An insertion. Its subtype is the box number.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct InsLayout {
+    pub subtype: u16,
+    _type: u16,
+    pub link: MemPtr,
+    _unused1: i32,
+    pub float_cost: i32,
+    _unused2: i32,
+    pub depth: Scaled,
+    _unused3: i32,
+    pub height: Scaled,
+    pub ins_ptr: MemPtr,
+    /// The `\splittopskip` glue spec.
+    pub split_top_ptr: NodePtr<GlueSpecNode>,
+}
+
+overlay!(InsNode => InsLayout);
+
+/// A record on the page builder's insertion ring. Its type code is
+/// `inserting` or `split_up`, its subtype the insertion's box number.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct PageInsLayout {
+    pub subtype: u16,
+    split_up: u16,
+    pub link: MemPtr,
+    pub broken_ins: MemPtr,
+    pub broken_ptr: MemPtr,
+    pub best_ins_ptr: MemPtr,
+    pub last_ins_ptr: MemPtr,
+    _unused3: i32,
+    pub height: Scaled,
+}
+
+overlay!(PageInsNode => PageInsLayout);
+
+impl PageInsLayout {
+    #[inline]
+    pub fn is_split_up(&self) -> bool {
+        self.split_up == 1
+    }
+
+    #[inline]
+    pub fn set_split_up(&mut self, split: bool) {
+        self.split_up = u16::from(split);
+    }
+}
+
+/// An alignment box before its column widths are known. It keeps the box
+/// layout but holds shrink and stretch in place of shift and glue setting.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct UnsetLayout {
+    /// The number of columns spanned, less one.
+    pub subtype: u16,
+    _type: u16,
+    pub link: MemPtr,
+    _unused1: i32,
+    pub width: Scaled,
+    _unused2: i32,
+    pub depth: Scaled,
+    _unused3: i32,
+    pub height: Scaled,
+    _unused4: i32,
+    pub glue_shrink: Scaled,
+    /// The stretch order.
+    pub glue_order: Stored<GlueOrder>,
+    /// The shrink order.
+    pub glue_sign: Stored<GlueOrder>,
+    pub list_ptr: MemPtr,
+    _unused6: i32,
+    pub glue_stretch: Scaled,
+    pub sync_tag: i32,
+    pub sync_line: i32,
+}
+
+overlay!(UnsetNode => UnsetLayout);
+
 impl BoxLayout {
     #[inline]
     pub fn is_hlist(&self) -> bool {
@@ -589,6 +685,51 @@ mod tests {
             .map(|i| (mem.b32s0(at(i)), mem.b32s1(at(i))))
             .collect();
         assert_eq!(words, [(1, 2), (3, 4), (0, 5), (0, 6), (7, 8), (9, 10)]);
+    }
+
+    #[test]
+    fn unset_and_page_ins_fields_land_on_their_words() {
+        let mut mem = arena();
+        let at = MemIdx::from_raw;
+        let ptr = MemPtr::from_raw;
+        let u: NodePtr<UnsetNode> = NodePtr::from_idx_unchecked(at(4));
+        let unset = &mut mem[u];
+        unset.subtype = 2;
+        (unset.width, unset.depth, unset.height) = (
+            Scaled::from_raw(11),
+            Scaled::from_raw(12),
+            Scaled::from_raw(13),
+        );
+        unset.glue_shrink = Scaled::from_raw(14);
+        unset.glue_order = GlueOrder::Fil.into();
+        unset.glue_sign = GlueOrder::Filll.into();
+        unset.list_ptr = ptr(15);
+        unset.glue_stretch = Scaled::from_raw(16);
+        assert_eq!(mem.b16s0(at(4)), 2);
+        assert_eq!(
+            [5, 6, 7, 8, 9, 10].map(|i| mem.b32s1(at(i))),
+            [11, 12, 13, 14, 15, 16]
+        );
+        assert_eq!((mem.b16s0(at(9)), mem.b16s1(at(9))), (1, 3));
+
+        let r: NodePtr<PageInsNode> = NodePtr::from_idx_unchecked(at(12));
+        let rec = &mut mem[r];
+        rec.subtype = 9;
+        rec.set_split_up(true);
+        (
+            rec.broken_ins,
+            rec.broken_ptr,
+            rec.best_ins_ptr,
+            rec.last_ins_ptr,
+        ) = (ptr(1), ptr(2), ptr(3), ptr(4));
+        rec.height = Scaled::from_raw(5);
+        assert!(mem[r].is_split_up());
+        assert_eq!((mem.b16s0(at(12)), mem.b16s1(at(12))), (9, 1));
+        let words: Vec<_> = (13..15)
+            .map(|i| (mem.b32s0(at(i)), mem.b32s1(at(i))))
+            .collect();
+        assert_eq!(words, [(1, 2), (3, 4)]);
+        assert_eq!(mem.b32s1(at(15)), 5);
     }
 
     #[test]

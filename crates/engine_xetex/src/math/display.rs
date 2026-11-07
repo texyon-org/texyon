@@ -62,8 +62,8 @@ impl FontState {
 impl MemState {
     /// Fills the fresh spec of `skip` with `w` minus the glue of `g`, negating its stretch and shrink.
     fn set_display_skip(&mut self, skip: NodePtr<GlueNode>, g: NodePtr<GlueNode>, w: Scaled) {
-        let src = g.glue_ptr(self);
-        let dst = skip.glue_ptr(self);
+        let src = self[g].glue_ptr;
+        let dst = self[skip].glue_ptr;
         self[dst].stretch_order = self[src].stretch_order;
         self[dst].shrink_order = self[src].shrink_order;
         self[dst].width = w - self[src].width;
@@ -149,7 +149,7 @@ fn app_display(
     if let Ok(AnyNode::Glue(tg)) = st.mem.classify(t) {
         let skip = st.mem.new_skip_param(&st.eqtb, GluePar::RightSkip)?;
         q.set_link(&mut st.mem, skip.ptr());
-        skip.set_link(&mut st.mem, u);
+        st.mem[skip].link = u;
         st.mem.set_display_skip(skip, tg, e);
         u.set_link(&mut st.mem, t);
     } else {
@@ -162,7 +162,7 @@ fn app_display(
     if let Ok(AnyNode::Glue(rg)) = st.mem.classify(r) {
         let skip = st.mem.new_skip_param(&st.eqtb, GluePar::LeftSkip)?;
         u.set_link(&mut st.mem, skip.ptr());
-        skip.set_link(&mut st.mem, p);
+        st.mem[skip].link = p;
         st.mem.set_display_skip(skip, rg, d);
         r.set_link(&mut st.mem, u);
     } else {
@@ -569,7 +569,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                             (st.mem[edge.as_edge()].width, false)
                         }
                         Ok(AnyNode::Glue(g)) => {
-                            let spec = g.glue_ptr(&st.mem);
+                            let spec = st.mem[g].glue_ptr;
                             let order = st.mem[jb].glue_order;
                             match st.mem[jb].glue_sign.get() {
                                 Some(GlueSign::Stretching)
@@ -586,7 +586,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                                 }
                                 _ => {}
                             }
-                            (st.mem[spec].width, g.subtype(&st.mem) >= A_LEADERS)
+                            (st.mem[spec].width, st.mem[g].subtype >= A_LEADERS)
                         }
                         Ok(AnyNode::Whatsit(wn))
                             if wn

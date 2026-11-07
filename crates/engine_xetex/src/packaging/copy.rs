@@ -69,14 +69,14 @@ impl MemState {
 
     /// A copy of glue node `p` sharing its spec. The leader pointer is left to the caller.
     fn copy_glue_shell(&mut self, p: NodePtr<GlueNode>) -> Result<NodePtr<GlueNode>, Abort> {
-        let spec = p.glue_ptr(self);
+        let spec = self[p].glue_ptr;
         let r = self.get_node(MEDIUM_NODE_SIZE)?;
         self.add_glue_ref(spec);
         let sync = MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE;
         self.set_word(r, self.word(p.ptr()));
         self.set_word(r + sync, self.word(p.ptr() + sync));
         let r = copied_node(p, r);
-        r.set_glue_ptr(self, spec);
+        self[r].glue_ptr = spec;
         Ok(r)
     }
 
@@ -128,7 +128,7 @@ impl MemState {
                     }
                     Some(AnyNode::Glue(g)) => {
                         let r = self.copy_glue_shell(g)?;
-                        r.set_leader_ptr(self, MemPtr::NULL);
+                        self[r].leader_ptr = MemPtr::NULL;
                         Some((r.ptr(), 0))
                     }
                     Some(AnyNode::Whatsit(w)) => Some(self.copy_whatsit(w)?),
@@ -247,13 +247,13 @@ impl MemState {
                     BOX_NODE_SIZE
                 }
                 AnyNode::Unset(u) => {
-                    self.flush_node_list(u.list_ptr(self))?;
+                    self.flush_node_list(self[u].list_ptr)?;
                     BOX_NODE_SIZE
                 }
                 AnyNode::Rule(_) => RULE_NODE_SIZE,
                 AnyNode::Ins(ins) => {
-                    self.flush_node_list(ins.ins_ptr(self))?;
-                    self.delete_glue_ref(ins.split_top_ptr(self));
+                    self.flush_node_list(self[ins].ins_ptr)?;
+                    self.delete_glue_ref(self[ins].split_top_ptr);
                     INS_NODE_SIZE
                 }
                 AnyNode::Whatsit(w) => {
@@ -270,8 +270,8 @@ impl MemState {
                     size
                 }
                 AnyNode::Glue(glue) => {
-                    self.delete_glue_ref(glue.glue_ptr(self));
-                    self.flush_node_list(glue.leader_ptr(self))?;
+                    self.delete_glue_ref(self[glue].glue_ptr);
+                    self.flush_node_list(self[glue].leader_ptr)?;
                     MEDIUM_NODE_SIZE
                 }
                 AnyNode::Kern(_) | AnyNode::Math(_) | AnyNode::Penalty(_) => MEDIUM_NODE_SIZE,
@@ -375,8 +375,8 @@ impl MemState {
             AnyNode::Unset(u) => {
                 let r = self.get_node(BOX_NODE_SIZE)?;
                 self.copy_words(r, p, BOX_NODE_SIZE);
-                let list = self.copy_list(u.list_ptr(self))?;
-                copied_node(u, r).set_list_ptr(self, list);
+                let list = self.copy_list(self[u].list_ptr)?;
+                self[copied_node(u, r)].list_ptr = list;
                 (r, 0)
             }
             AnyNode::Rule(_) => (
@@ -386,16 +386,16 @@ impl MemState {
             AnyNode::Ins(ins) => {
                 let r = self.get_node(INS_NODE_SIZE)?;
                 self.copy_words(r, p, INS_NODE_SIZE);
-                self.add_glue_ref(ins.split_top_ptr(self));
-                let list = self.copy_list(ins.ins_ptr(self))?;
-                copied_node(ins, r).set_ins_ptr(self, list);
+                self.add_glue_ref(self[ins].split_top_ptr);
+                let list = self.copy_list(self[ins].ins_ptr)?;
+                self[copied_node(ins, r)].ins_ptr = list;
                 (r, 0)
             }
             AnyNode::Whatsit(w) => self.copy_whatsit(w)?,
             AnyNode::Glue(g) => {
                 let r = self.copy_glue_shell(g)?;
-                let leaders = self.copy_list(g.leader_ptr(self))?;
-                r.set_leader_ptr(self, leaders);
+                let leaders = self.copy_list(self[g].leader_ptr)?;
+                self[r].leader_ptr = leaders;
                 (r.ptr(), 0)
             }
             AnyNode::Kern(_) | AnyNode::Math(_) | AnyNode::Penalty(_) => {

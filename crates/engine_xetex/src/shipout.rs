@@ -420,9 +420,9 @@ impl MemState {
                 loop {
                     q = self.skip_interword_fillers(q);
                     match self.classify_non_char(q) {
-                        Some(AnyNode::Glue(glue)) if glue.subtype(self) == NORMAL => {
-                            if Some(glue.glue_ptr(self)) == fonts.font_glue[font] {
-                                q = self.skip_interword_fillers(glue.link(self));
+                        Some(AnyNode::Glue(glue)) if self[glue].subtype == NORMAL => {
+                            if Some(self[glue].glue_ptr) == fonts.font_glue[font] {
+                                q = self.skip_interword_fillers(self[glue].link);
                                 if let Some(w) = same_font_word(self, q) {
                                     last = w;
                                     text_len += 1 + i32::from(w.native_length(self));
@@ -430,7 +430,7 @@ impl MemState {
                                     continue;
                                 }
                             } else {
-                                q = glue.link(self);
+                                q = self[glue].link;
                             }
                             if self.is_space_adjustment(q) {
                                 q = self.skip_interword_fillers(q.link(self));
@@ -505,7 +505,7 @@ impl MemState {
                 }
                 Ok(AnyNode::Glue(glue)) => {
                     strings.append_char(u16::from(b' '));
-                    let spec = glue.glue_ptr(self);
+                    let spec = self[glue].glue_ptr;
                     width += self[spec].width;
                     match g_sign.get() {
                         Some(GlueSign::Stretching) if self[spec].stretch_order == g_order => {
@@ -574,7 +574,7 @@ impl MemState {
         w: Scaled,
     ) -> Result<(), Abort> {
         self.delete_glue_ref(spec);
-        if glue.subtype(self) < A_LEADERS {
+        if self[glue].subtype < A_LEADERS {
             glue.into_kern(self, w);
         } else {
             let rigid = NodePtr::<GlueSpecNode>::alloc(self)?;
@@ -583,13 +583,13 @@ impl MemState {
             self[rigid].width = w;
             self[rigid].stretch = Scaled::ZERO;
             self[rigid].shrink = Scaled::ZERO;
-            glue.set_glue_ptr(self, rigid);
+            self[glue].glue_ptr = rigid;
         }
         Ok(())
     }
 
     fn leader_of(&self, glue: NodePtr<GlueNode>) -> Leader {
-        match self.classify(glue.leader_ptr(self)) {
+        match self.classify(self[glue].leader_ptr) {
             Ok(AnyNode::Rule(rule)) => Leader::Rule(rule),
             Ok(AnyNode::Box(b)) => Leader::Box(b),
             other => unreachable!("leaders must be a rule or a box, found {other:?}"),
@@ -703,13 +703,13 @@ fn hlist_glue_out(
     glue: NodePtr<GlueNode>,
     rounding: &mut GlueRounding,
 ) -> Result<(), Abort> {
-    let spec = glue.glue_ptr(&st.mem);
+    let spec = st.mem[glue].glue_ptr;
     st.shipout.rule_wd = rounding.width(&st.mem, spec);
     if rounding.is_set(&st.mem, spec) {
         st.mem.freeze_set_glue(glue, spec, st.shipout.rule_wd)?;
     }
 
-    let subtype = glue.subtype(&st.mem);
+    let subtype = st.mem[glue].subtype;
     if subtype >= A_LEADERS {
         let leader = match st.mem.leader_of(glue) {
             Leader::Rule(rule) => {
@@ -1113,9 +1113,9 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
                 _ => out_what(st, whatsit)?,
             },
             AnyNode::Glue(glue) => {
-                let spec = glue.glue_ptr(&st.mem);
+                let spec = st.mem[glue].glue_ptr;
                 st.shipout.rule_ht = rounding.width(&st.mem, spec);
-                let subtype = glue.subtype(&st.mem);
+                let subtype = st.mem[glue].subtype;
                 if subtype < A_LEADERS {
                     st.shipout.move_past_vlist_rule(upwards);
                 } else {
@@ -1390,11 +1390,11 @@ impl MemState {
                         }
                     }
                     Ok(AnyNode::Glue(glue)) => {
-                        let spec = glue.glue_ptr(self);
+                        let spec = self[glue].glue_ptr;
                         shipout.rule_wd = rounding.width(self, spec);
                         if rounding.is_set(self, spec) {
                             self.freeze_set_glue(glue, spec, shipout.rule_wd)?;
-                            now_kern = glue.subtype(self) < A_LEADERS;
+                            now_kern = self[glue].subtype < A_LEADERS;
                         }
                     }
                     Ok(AnyNode::Ligature(ligature)) => {

@@ -709,10 +709,10 @@ fn fetch_last_node_item(st: &EngineState, code: LastItemCode) -> CurVal {
             _ => Scaled::ZERO,
         }),
         _ => match node {
-            Some(Ok(AnyNode::Glue(g))) if g.subtype(&st.mem) == MU_GLUE => {
-                CurVal::Mu(g.glue_ptr(&st.mem))
+            Some(Ok(AnyNode::Glue(g))) if st.mem[g].subtype == MU_GLUE => {
+                CurVal::Mu(st.mem[g].glue_ptr)
             }
-            Some(Ok(AnyNode::Glue(g))) => CurVal::Glue(g.glue_ptr(&st.mem)),
+            Some(Ok(AnyNode::Glue(g))) => CurVal::Glue(st.mem[g].glue_ptr),
             None if at_page_head => CurVal::Glue(st.shipout.last_glue.unwrap_or(ZERO_GLUE)),
             _ => CurVal::Glue(ZERO_GLUE),
         },

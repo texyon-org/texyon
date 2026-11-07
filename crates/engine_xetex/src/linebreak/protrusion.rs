@@ -239,7 +239,7 @@ impl MemState {
             }
             Ok(AnyNode::Math(m)) => self[m].width == Scaled::ZERO,
             Ok(AnyNode::Kern(k)) => self[k].width == Scaled::ZERO || self[k].subtype == NORMAL,
-            Ok(AnyNode::Glue(g)) => g.glue_ptr(self) == ZERO_GLUE,
+            Ok(AnyNode::Glue(g)) => self[g].glue_ptr == ZERO_GLUE,
             Ok(AnyNode::Box(h)) => self.is_empty_hlist(h),
             _ => false,
         }

@@ -84,11 +84,11 @@ impl LinebreakState {
         } else {
             match mem.classify(q) {
                 Ok(AnyNode::Glue(g)) => {
-                    let old_spec = g.glue_ptr(mem);
+                    let old_spec = mem[g].glue_ptr;
                     mem.delete_glue_ref(old_spec);
                     let right_skip = eqtb.glue_par(GluePar::RightSkip);
-                    g.set_glue_ptr(mem, right_skip);
-                    g.set_subtype(mem, GluePar::RightSkip.subtype());
+                    mem[g].glue_ptr = right_skip;
+                    mem[g].subtype = GluePar::RightSkip.subtype();
                     mem.add_glue_ref(right_skip);
                     glue_break = true;
                 }
@@ -145,7 +145,7 @@ impl LinebreakState {
 
         if !glue_break {
             let r = mem.new_param_glue(eqtb, GluePar::RightSkip)?;
-            r.set_link(mem, q.link(mem));
+            mem[r].link = q.link(mem);
             q.set_link(mem, r.ptr());
             q = r.ptr();
         }
@@ -179,7 +179,7 @@ impl LinebreakState {
 
         if eqtb.glue_par(GluePar::LeftSkip) != ZERO_GLUE {
             let r = mem.new_param_glue(eqtb, GluePar::LeftSkip)?;
-            r.set_link(mem, q);
+            mem[r].link = q;
             q = r.ptr();
         }
 

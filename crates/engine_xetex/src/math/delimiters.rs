@@ -172,7 +172,7 @@ pub(super) fn rebox(
     let mem = &mut st.mem;
     mem.free_node(b.ptr(), BOX_NODE_SIZE);
     let g = mem.new_glue(SS_GLUE)?;
-    g.set_link(mem, p);
+    mem[g].link = p;
     while !p.link(mem).is_null() {
         p = p.link(mem);
     }
@@ -237,7 +237,7 @@ pub(super) fn build_opentype_assembly(
                 }
             }
             Ok(AnyNode::Glue(gn)) => {
-                let gs = gn.glue_ptr(&st.mem);
+                let gs = st.mem[gn].glue_ptr;
                 nat += st.mem[gs].width;
                 str += st.mem[gs].stretch;
             }
