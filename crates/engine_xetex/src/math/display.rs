@@ -64,11 +64,11 @@ impl MemState {
     fn set_display_skip(&mut self, skip: NodePtr<GlueNode>, g: NodePtr<GlueNode>, w: Scaled) {
         let src = g.glue_ptr(self);
         let dst = skip.glue_ptr(self);
-        dst.set_stretch_order(self, src.stretch_order(self));
-        dst.set_shrink_order(self, src.shrink_order(self));
-        dst.set_width(self, w - src.width(self));
-        dst.set_stretch(self, -src.stretch(self));
-        dst.set_shrink(self, -src.shrink(self));
+        self[dst].stretch_order = self[src].stretch_order;
+        self[dst].shrink_order = self[src].shrink_order;
+        self[dst].width = w - self[src].width;
+        self[dst].stretch = -self[src].stretch;
+        self[dst].shrink = -self[src].shrink;
     }
 }
 
@@ -573,20 +573,20 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                             let order = jb.glue_order(&st.mem);
                             match jb.glue_sign(&st.mem).get() {
                                 Some(GlueSign::Stretching)
-                                    if order == spec.stretch_order(&st.mem)
-                                        && spec.stretch(&st.mem) != Scaled::ZERO =>
+                                    if order == st.mem[spec].stretch_order
+                                        && st.mem[spec].stretch != Scaled::ZERO =>
                                 {
                                     v = MAX_DIMEN;
                                 }
                                 Some(GlueSign::Shrinking)
-                                    if order == spec.shrink_order(&st.mem)
-                                        && spec.shrink(&st.mem) != Scaled::ZERO =>
+                                    if order == st.mem[spec].shrink_order
+                                        && st.mem[spec].shrink != Scaled::ZERO =>
                                 {
                                     v = MAX_DIMEN;
                                 }
                                 _ => {}
                             }
-                            (spec.width(&st.mem), g.subtype(&st.mem) >= A_LEADERS)
+                            (st.mem[spec].width, g.subtype(&st.mem) >= A_LEADERS)
                         }
                         Ok(AnyNode::Whatsit(wn))
                             if wn

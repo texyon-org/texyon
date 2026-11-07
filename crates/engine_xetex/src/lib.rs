@@ -55,6 +55,7 @@ mod mem_types;
 mod node;
 mod ot_math;
 mod output;
+mod overlay;
 mod packaging;
 mod page_manifest;
 mod pagebuilder;

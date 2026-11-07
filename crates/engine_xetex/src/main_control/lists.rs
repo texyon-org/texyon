@@ -203,18 +203,18 @@ pub(super) fn app_space(st: &mut EngineState) -> Result<(), Abort> {
         if space_factor >= 2000 {
             let cf = st.eqtb.cur_font();
             let extra = st.fonts.param(cf, EXTRA_SPACE_CODE);
-            let width = spec.width(&st.mem) + extra;
-            spec.set_width(&mut st.mem, width);
+            let width = st.mem[spec].width + extra;
+            st.mem[spec].width = width;
         }
         let (stretch, _, stretch_overflow) =
-            crate::scaled_math::xn_over_d_parts(spec.stretch(&st.mem), space_factor, 1000);
-        spec.set_stretch(&mut st.mem, stretch);
+            crate::scaled_math::xn_over_d_parts(st.mem[spec].stretch, space_factor, 1000);
+        st.mem[spec].stretch = stretch;
         let (shrink, remainder, shrink_overflow) =
-            crate::scaled_math::xn_over_d_parts(spec.shrink(&st.mem), 1000, space_factor);
-        spec.set_shrink(&mut st.mem, shrink);
+            crate::scaled_math::xn_over_d_parts(st.mem[spec].shrink, 1000, space_factor);
+        st.mem[spec].shrink = shrink;
         side_effects = Some((remainder, stretch_overflow || shrink_overflow));
         q = st.mem.new_glue(spec)?.ptr();
-        spec.set_ref_count(&mut st.mem, TEX_NULL);
+        st.mem[spec].ref_count = TEX_NULL;
     }
     st.input.cur_list.tail_append(&mut st.mem, q);
     if let Some((remainder, overflowed)) = side_effects {
@@ -233,9 +233,9 @@ pub(super) fn font_space_glue(st: &mut EngineState) -> Result<NodePtr<GlueSpecNo
         return Ok(glue);
     }
     let spec = st.mem.new_spec(ZERO_GLUE)?;
-    spec.set_width(&mut st.mem, st.fonts.param(cf, SPACE_CODE));
-    spec.set_stretch(&mut st.mem, st.fonts.param(cf, SPACE_STRETCH_CODE));
-    spec.set_shrink(&mut st.mem, st.fonts.param(cf, SPACE_SHRINK_CODE));
+    st.mem[spec].width = st.fonts.param(cf, SPACE_CODE);
+    st.mem[spec].stretch = st.fonts.param(cf, SPACE_STRETCH_CODE);
+    st.mem[spec].shrink = st.fonts.param(cf, SPACE_SHRINK_CODE);
     st.fonts.font_glue[cf] = Some(spec);
     Ok(spec)
 }
@@ -529,8 +529,8 @@ pub(super) fn append_glue(st: &mut EngineState, s: SkipCode) -> Result<NodePtr<G
     st.input.cur_list.tail_append(&mut st.mem, g.ptr());
     if matches!(s, SkipCode::Skip | SkipCode::Mskip) {
         let spec = g.glue_ptr(&st.mem);
-        let refs = spec.ref_count(&st.mem);
-        spec.set_ref_count(&mut st.mem, refs - 1);
+        let refs = st.mem[spec].ref_count;
+        st.mem[spec].ref_count = refs - 1;
         if s == SkipCode::Mskip {
             g.set_subtype(&mut st.mem, MU_GLUE);
         }

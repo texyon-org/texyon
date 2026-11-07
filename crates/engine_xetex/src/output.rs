@@ -783,17 +783,17 @@ pub(crate) fn print_spec(st: &mut EngineState, p: impl crate::units::MemAddr, s:
         print_char(st, b'*');
         return;
     };
-    print_scaled(st, gs.width(&st.mem));
+    print_scaled(st, st.mem[gs].width);
     if let Some(s) = s {
         print(st, s);
     }
-    if gs.stretch(&st.mem) != Scaled::ZERO {
+    if st.mem[gs].stretch != Scaled::ZERO {
         print(st, " plus ");
-        print_glue(st, gs.stretch(&st.mem), gs.stretch_order(&st.mem), s);
+        print_glue(st, st.mem[gs].stretch, st.mem[gs].stretch_order, s);
     }
-    if gs.shrink(&st.mem) != Scaled::ZERO {
+    if st.mem[gs].shrink != Scaled::ZERO {
         print(st, " minus ");
-        print_glue(st, gs.shrink(&st.mem), gs.shrink_order(&st.mem), s);
+        print_glue(st, st.mem[gs].shrink, st.mem[gs].shrink_order, s);
     }
 }
 

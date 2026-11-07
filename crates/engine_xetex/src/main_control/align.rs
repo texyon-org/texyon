@@ -201,20 +201,20 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                         u.set_link(&mut st.mem, g.ptr());
                         u = g.ptr();
                         g.set_subtype(&mut st.mem, GluePar::TabSkip.subtype());
-                        t += spec.width(&st.mem);
+                        t += st.mem[spec].width;
                         match p.glue_sign(&st.mem).get() {
                             Some(GlueSign::Stretching)
-                                if spec.stretch_order(&st.mem) == p.glue_order(&st.mem) =>
+                                if st.mem[spec].stretch_order == p.glue_order(&st.mem) =>
                             {
                                 t += Scaled::round(
-                                    p.glue_set(&st.mem) * f64::from(spec.stretch(&st.mem)),
+                                    p.glue_set(&st.mem) * f64::from(st.mem[spec].stretch),
                                 );
                             }
                             Some(GlueSign::Shrinking)
-                                if spec.shrink_order(&st.mem) == p.glue_order(&st.mem) =>
+                                if st.mem[spec].shrink_order == p.glue_order(&st.mem) =>
                             {
                                 t -= Scaled::round(
-                                    p.glue_set(&st.mem) * f64::from(spec.shrink(&st.mem)),
+                                    p.glue_set(&st.mem) * f64::from(st.mem[spec].shrink),
                                 );
                             }
                             _ => {}
@@ -363,7 +363,7 @@ impl MemState {
 
     /// Folds column `q`'s span widths, less its own width and tabskip, into `next`'s.
     fn merge_spans(&mut self, q: NodePtr<AlignRecord>, next: NodePtr<AlignRecord>) {
-        let t = q.width(self) + q.tab_skip(self).glue_ptr(self).width(self);
+        let t = q.width(self) + self[q.tab_skip(self).glue_ptr(self)].width;
         let mut r = q.span_head().next(self);
         let mut s = END_SPAN;
         s.set_next(self, next.span_head());

@@ -23,6 +23,14 @@ impl MemIdx {
 }
 
 impl MemIdx {
+    /// The `len` words starting here, as a range of `mem` indices.
+    #[inline]
+    pub fn words(self, len: i32) -> std::ops::Range<usize> {
+        // A negative start becomes an index past any arena, so slicing rejects it.
+        let start = usize::try_from(self.0).unwrap_or(usize::MAX);
+        start..start.saturating_add(usize::try_from(len).unwrap_or(0))
+    }
+
     #[inline]
     pub fn new(idx: impl MemAddr) -> MemIdx {
         let idx = idx.addr();
@@ -156,7 +164,19 @@ impl MemPtr {
 ///
 /// Arithmetic wraps like TeX's 32-bit integers: sums of legal dimensions can
 /// exceed `max_dimen`, and TeX checks overflow only where WEB says so.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
+#[derive(
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Debug,
+    Hash,
+    Default,
+    bytemuck::Pod,
+    bytemuck::Zeroable,
+)]
 #[repr(transparent)]
 pub struct Scaled(i32);
 

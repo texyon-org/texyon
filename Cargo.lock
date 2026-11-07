@@ -2240,6 +2240,7 @@ dependencies = [
 name = "texyon_engine_xetex"
 version = "0.0.0-dev.0"
 dependencies = [
+ "bytemuck",
  "cc",
  "libc",
  "texyon_bridge_core",

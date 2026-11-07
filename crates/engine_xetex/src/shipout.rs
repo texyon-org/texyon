@@ -349,20 +349,20 @@ impl GlueRounding {
     /// Whether the box stretches or shrinks `spec`'s component.
     fn is_set(&self, mem: &MemState, spec: NodePtr<GlueSpecNode>) -> bool {
         match self.sign.get() {
-            Some(GlueSign::Stretching) => spec.stretch_order(mem) == self.order,
-            Some(GlueSign::Shrinking) => spec.shrink_order(mem) == self.order,
+            Some(GlueSign::Stretching) => mem[spec].stretch_order == self.order,
+            Some(GlueSign::Shrinking) => mem[spec].shrink_order == self.order,
             Some(GlueSign::Normal) | None => false,
         }
     }
 
     /// The rounded width of `spec` as set in this box.
     fn width(&mut self, mem: &MemState, spec: NodePtr<GlueSpecNode>) -> Scaled {
-        let width = spec.width(mem) - self.cur_g;
+        let width = mem[spec].width - self.cur_g;
         if self.is_set(mem, spec) {
             if self.sign == GlueSign::Stretching {
-                self.cur_glue += f64::from(spec.stretch(mem).raw());
+                self.cur_glue += f64::from(mem[spec].stretch.raw());
             } else {
-                self.cur_glue -= f64::from(spec.shrink(mem).raw());
+                self.cur_glue -= f64::from(mem[spec].shrink.raw());
             }
             let glue_temp = (self.set * self.cur_glue).clamp(-1_000_000_000.0, 1_000_000_000.0);
             self.cur_g = Scaled::round(glue_temp);
@@ -510,16 +510,16 @@ impl MemState {
                 Ok(AnyNode::Glue(glue)) => {
                     strings.append_char(u16::from(b' '));
                     let spec = glue.glue_ptr(self);
-                    width += spec.width(self);
+                    width += self[spec].width;
                     match g_sign.get() {
-                        Some(GlueSign::Stretching) if spec.stretch_order(self) == g_order => {
+                        Some(GlueSign::Stretching) if self[spec].stretch_order == g_order => {
                             width += Scaled::round(
-                                this_box.glue_set(self) * f64::from(spec.stretch(self).raw()),
+                                this_box.glue_set(self) * f64::from(self[spec].stretch.raw()),
                             );
                         }
-                        Some(GlueSign::Shrinking) if spec.shrink_order(self) == g_order => {
+                        Some(GlueSign::Shrinking) if self[spec].shrink_order == g_order => {
                             width -= Scaled::round(
-                                this_box.glue_set(self) * f64::from(spec.shrink(self).raw()),
+                                this_box.glue_set(self) * f64::from(self[spec].shrink.raw()),
                             );
                         }
                         _ => {}
@@ -582,11 +582,11 @@ impl MemState {
             glue.into_kern(self, w);
         } else {
             let rigid = NodePtr::<GlueSpecNode>::alloc(self)?;
-            rigid.set_stretch_order(self, GlueOrder::Rigid);
-            rigid.set_shrink_order(self, GlueOrder::Rigid);
-            rigid.set_width(self, w);
-            rigid.set_stretch(self, Scaled::ZERO);
-            rigid.set_shrink(self, Scaled::ZERO);
+            self[rigid].stretch_order = GlueOrder::Rigid.into();
+            self[rigid].shrink_order = GlueOrder::Rigid.into();
+            self[rigid].width = w;
+            self[rigid].stretch = Scaled::ZERO;
+            self[rigid].shrink = Scaled::ZERO;
             glue.set_glue_ptr(self, rigid);
         }
         Ok(())

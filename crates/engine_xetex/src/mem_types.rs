@@ -4,7 +4,7 @@ use std::mem::size_of;
 
 /// Two 32-bit halves, `s0` at the lower address.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct B32x2 {
     pub s0: i32,
     pub s1: i32,
@@ -12,7 +12,7 @@ pub struct B32x2 {
 
 /// Four 16-bit quarters.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct B16x4 {
     pub s0: u16,
     pub s1: u16,
@@ -28,6 +28,11 @@ pub union MemoryWord {
     pub b16: B16x4,
     pub gr: f64,
 }
+
+// SAFETY: every field is 8 bytes of plain data, valid at all-zero bits.
+unsafe impl bytemuck::Zeroable for MemoryWord {}
+// SAFETY: every field is 8 bytes of plain data without padding, so any bits are valid.
+unsafe impl bytemuck::Pod for MemoryWord {}
 
 impl MemoryWord {
     #[inline]

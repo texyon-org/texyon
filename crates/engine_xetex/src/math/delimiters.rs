@@ -226,8 +226,8 @@ pub(super) fn build_opentype_assembly(
             }
             Ok(AnyNode::Glue(gn)) => {
                 let gs = gn.glue_ptr(&st.mem);
-                nat += gs.width(&st.mem);
-                str += gs.stretch(&st.mem);
+                nat += st.mem[gs].width;
+                str += st.mem[gs].stretch;
             }
             _ => {}
         }

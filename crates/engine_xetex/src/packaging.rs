@@ -72,14 +72,15 @@ impl ListStateRecord {
         let prev_depth = self.prev_depth();
         if prev_depth > IGNORE_DEPTH {
             let baseline_skip = eqtb.glue_par(GluePar::BaselineSkip);
-            let d = baseline_skip.width(mem)
+            let d = mem[baseline_skip].width
                 - prev_depth
                 - if upwards { b.depth(mem) } else { b.height(mem) };
             let p = if d < eqtb.dimen_par(DimenPar::LineSkipLimit) {
                 mem.new_param_glue(eqtb, GluePar::LineSkip)?
             } else {
                 let p = mem.new_skip_param(eqtb, GluePar::BaselineSkip)?;
-                p.glue_ptr(mem).set_width(mem, d);
+                let spec = p.glue_ptr(mem);
+                mem[spec].width = d;
                 p
             };
             self.tail_append(mem, p.ptr());
@@ -349,9 +350,9 @@ impl MemState {
                 },
                 Ok(AnyNode::Glue(glue)) => {
                     let spec = glue.glue_ptr(self);
-                    x += spec.width(self);
-                    scanner.total_stretch[spec.stretch_order(self)] += spec.stretch(self);
-                    scanner.total_shrink[spec.shrink_order(self)] += spec.shrink(self);
+                    x += self[spec].width;
+                    scanner.total_stretch[self[spec].stretch_order] += self[spec].stretch;
+                    scanner.total_shrink[self[spec].shrink_order] += self[spec].shrink;
                     if glue.subtype(self) >= A_LEADERS {
                         let leader = glue.leader_ptr(self);
                         let (leader_h, leader_d) = match self.classify(leader) {
@@ -668,9 +669,9 @@ impl MemState {
                     x += d;
                     d = Scaled::ZERO;
                     let spec = glue.glue_ptr(self);
-                    x += spec.width(self);
-                    scanner.total_stretch[spec.stretch_order(self)] += spec.stretch(self);
-                    scanner.total_shrink[spec.shrink_order(self)] += spec.shrink(self);
+                    x += self[spec].width;
+                    scanner.total_stretch[self[spec].stretch_order] += self[spec].stretch;
+                    scanner.total_shrink[self[spec].shrink_order] += self[spec].shrink;
                     if glue.subtype(self) >= A_LEADERS {
                         let leader = glue.leader_ptr(self);
                         let leader_w = match self.classify(leader) {

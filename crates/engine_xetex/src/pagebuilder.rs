@@ -377,8 +377,8 @@ fn update_last_node_info(st: &mut EngineState, node: AnyNode, node_type: i32) {
         AnyNode::Glue(glue) => {
             let spec = glue.glue_ptr(&st.mem);
             st.shipout.last_glue = Some(spec);
-            let refs = spec.ref_count(&st.mem);
-            spec.set_ref_count(&mut st.mem, refs + 1);
+            let refs = st.mem[spec].ref_count;
+            st.mem[spec].ref_count = refs + 1;
         }
         AnyNode::Penalty(penalty) => st.shipout.last_penalty = penalty.penalty(&st.mem),
         AnyNode::Kern(kern) => st.shipout.last_kern = kern.width(&st.mem),
@@ -441,11 +441,11 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         let skip = st.eqtb.skip(i32::from(n));
         let count = st.eqtb.count(i32::from(n));
         let h = scale_by_count(st, height, count);
-        st.shipout.page_so_far[PAGE_GOAL] -= h + skip.width(&st.mem);
-        let order = skip.stretch_order(&st.mem).index();
-        st.shipout.page_so_far[2 + order] += skip.stretch(&st.mem);
-        st.shipout.page_so_far[PAGE_SHRINK] += skip.shrink(&st.mem);
-        if skip.shrink_order(&st.mem) != GlueOrder::Normal && skip.shrink(&st.mem) != Scaled::ZERO {
+        st.shipout.page_so_far[PAGE_GOAL] -= h + st.mem[skip].width;
+        let order = st.mem[skip].stretch_order.index();
+        st.shipout.page_so_far[2 + order] += st.mem[skip].stretch;
+        st.shipout.page_so_far[PAGE_SHRINK] += st.mem[skip].shrink;
+        if st.mem[skip].shrink_order != GlueOrder::Normal && st.mem[skip].shrink != Scaled::ZERO {
             crate::output::error_here_with_diagnostic(st, "Infinite glue shrinkage inserted from ");
             crate::output::print_esc(st, "skip");
             crate::output::print_int(st, i32::from(n));
@@ -561,13 +561,13 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
                     }
                     let q = st.mem.new_skip_param(&st.eqtb, GluePar::TopSkip)?;
                     let spec = q.glue_ptr(&st.mem);
-                    let width = spec.width(&st.mem);
+                    let width = st.mem[spec].width;
                     let width = if width > height {
                         width - height
                     } else {
                         Scaled::ZERO
                     };
-                    spec.set_width(&mut st.mem, width);
+                    st.mem[spec].width = width;
                     q.set_link(&mut st.mem, p);
                     CONTRIB_HEAD.set_link(&mut st.mem, q.ptr());
                     continue;
@@ -705,11 +705,11 @@ fn page_glue_width(
     glue: NodePtr<crate::node::GlueNode>,
 ) -> Result<Scaled, Abort> {
     let spec = glue.glue_ptr(&st.mem);
-    let order = spec.stretch_order(&st.mem).index();
-    st.shipout.page_so_far[2 + order] += spec.stretch(&st.mem);
-    st.shipout.page_so_far[PAGE_SHRINK] += spec.shrink(&st.mem);
-    if spec.shrink_order(&st.mem) == GlueOrder::Normal || spec.shrink(&st.mem) == Scaled::ZERO {
-        return Ok(spec.width(&st.mem));
+    let order = st.mem[spec].stretch_order.index();
+    st.shipout.page_so_far[2 + order] += st.mem[spec].stretch;
+    st.shipout.page_so_far[PAGE_SHRINK] += st.mem[spec].shrink;
+    if st.mem[spec].shrink_order == GlueOrder::Normal || st.mem[spec].shrink == Scaled::ZERO {
+        return Ok(st.mem[spec].width);
     }
     crate::output::print_err(st, "Infinite glue shrinkage found on current page");
     st.errors.help(&[
@@ -720,10 +720,10 @@ fn page_glue_width(
     ]);
     crate::errors::error(st)?;
     let finite = st.mem.new_spec(spec)?;
-    finite.set_shrink_order(&mut st.mem, GlueOrder::Normal);
+    st.mem[finite].shrink_order = GlueOrder::Normal.into();
     st.mem.delete_glue_ref(spec);
     glue.set_glue_ptr(&mut st.mem, finite);
-    Ok(finite.width(&st.mem))
+    Ok(st.mem[finite].width)
 }
 
 /// Moves `p` from the contribution list to the current page.

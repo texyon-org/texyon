@@ -81,24 +81,24 @@ fn math_glue(
     m: Scaled,
 ) -> Result<NodePtr<GlueSpecNode>, Abort> {
     let mu = st.errors.mu_parts(m);
-    let stretch_order = spec.stretch_order(&st.mem);
-    let shrink_order = spec.shrink_order(&st.mem);
-    let width = st.errors.mu_mult(mu, spec.width(&st.mem));
-    let mut stretch = spec.stretch(&st.mem);
+    let stretch_order = st.mem[spec].stretch_order;
+    let shrink_order = st.mem[spec].shrink_order;
+    let width = st.errors.mu_mult(mu, st.mem[spec].width);
+    let mut stretch = st.mem[spec].stretch;
     if stretch_order == GlueOrder::Normal {
         stretch = st.errors.mu_mult(mu, stretch);
     }
-    let mut shrink = spec.shrink(&st.mem);
+    let mut shrink = st.mem[spec].shrink;
     if shrink_order == GlueOrder::Normal {
         shrink = st.errors.mu_mult(mu, shrink);
     }
 
     let p = NodePtr::<GlueSpecNode>::alloc(&mut st.mem)?;
-    p.set_width(&mut st.mem, width);
-    p.set_stretch_order(&mut st.mem, stretch_order);
-    p.set_stretch(&mut st.mem, stretch);
-    p.set_shrink_order(&mut st.mem, shrink_order);
-    p.set_shrink(&mut st.mem, shrink);
+    st.mem[p].width = width;
+    st.mem[p].stretch_order = stretch_order;
+    st.mem[p].stretch = stretch;
+    st.mem[p].shrink_order = shrink_order;
+    st.mem[p].shrink = shrink;
     Ok(p)
 }
 
@@ -1488,7 +1488,7 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                     let mu = st.scanner.cur_mu;
                     let y = math_glue(st, g, mu)?;
                     let z = st.mem.new_glue(y)?;
-                    y.set_ref_count(&mut st.mem, TEX_NULL);
+                    st.mem[y].ref_count = TEX_NULL;
                     p.set_link(&mut st.mem, z.ptr());
                     z.set_subtype(&mut st.mem, x.subtype());
                     p = z.ptr();
@@ -1539,8 +1539,8 @@ impl MemState {
         max: Scaled,
     ) -> Result<(), Abort> {
         let spec = self.new_spec(ZERO_GLUE)?;
-        spec.set_width(self, min);
-        spec.set_stretch(self, max - min);
+        self[spec].width = min;
+        self[spec].stretch = max - min;
         let p = self.new_glue(spec)?;
         if matches!(b, AnyBox::HList(_)) {
             let mut q = b.list_ptr(self);

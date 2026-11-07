@@ -115,7 +115,7 @@ impl CurVal {
         Ok(match self {
             CurVal::Dimen(d) => CurVal::Int(d.raw()),
             CurVal::Glue(spec) => {
-                let width = spec.width(&st.mem);
+                let width = st.mem[spec].width;
                 if release {
                     st.mem.delete_glue_ref(spec);
                 }
@@ -566,9 +566,9 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<i32, Abo
         LastItemCode::GlueStretchOrder | LastItemCode::GlueShrinkOrder => {
             let spec = scan_normal_glue(st)?;
             let order = if m == LastItemCode::GlueStretchOrder {
-                spec.stretch_order(&st.mem)
+                st.mem[spec].stretch_order
             } else {
-                spec.shrink_order(&st.mem)
+                st.mem[spec].shrink_order
             };
             st.mem.delete_glue_ref(spec);
             i32::from(order.raw())
@@ -658,9 +658,9 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: LastItemCode) -> Result<Scaled
         LastItemCode::GlueStretch | LastItemCode::GlueShrink => {
             let spec = scan_normal_glue(st)?;
             let d = if m == LastItemCode::GlueStretch {
-                spec.stretch(&st.mem)
+                st.mem[spec].stretch
             } else {
-                spec.shrink(&st.mem)
+                st.mem[spec].shrink
             };
             st.mem.delete_glue_ref(spec);
             d
@@ -900,8 +900,8 @@ pub(super) fn scan_something_internal(
         v.negate(st)
     } else {
         if let Some(spec) = v.glue() {
-            let refs = spec.ref_count(&st.mem);
-            spec.set_ref_count(&mut st.mem, refs + 1);
+            let refs = st.mem[spec].ref_count;
+            st.mem[spec].ref_count = refs + 1;
         }
         Ok(v)
     }

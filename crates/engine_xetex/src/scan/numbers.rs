@@ -382,7 +382,7 @@ pub(super) fn glue_spec(p: i32) -> NodePtr<GlueSpecNode> {
 
 /// The width of a scanned glue value, releasing the glue.
 fn release_to_width(st: &mut EngineState, spec: NodePtr<GlueSpecNode>) -> Scaled {
-    let width = spec.width(&st.mem);
+    let width = st.mem[spec].width;
     st.mem.delete_glue_ref(spec);
     width
 }
@@ -683,17 +683,17 @@ pub(crate) fn scan_glue(
         };
 
     let gs = st.mem.new_spec(crate::mem::ZERO_GLUE)?;
-    gs.set_width(&mut st.mem, width);
+    st.mem[gs].width = width;
 
     if scan_keyword(st, "plus")? {
         let d = scan_dimen(st, mu, true)?;
-        gs.set_stretch(&mut st.mem, d);
-        gs.set_stretch_order(&mut st.mem, st.scanner.cur_order);
+        st.mem[gs].stretch = d;
+        st.mem[gs].stretch_order = (st.scanner.cur_order).into();
     }
     if scan_keyword(st, "minus")? {
         let d = scan_dimen(st, mu, true)?;
-        gs.set_shrink(&mut st.mem, d);
-        gs.set_shrink_order(&mut st.mem, st.scanner.cur_order);
+        st.mem[gs].shrink = d;
+        st.mem[gs].shrink_order = (st.scanner.cur_order).into();
     }
 
     Ok(gs)
@@ -710,20 +710,20 @@ pub(super) fn map_glue(
     spec: NodePtr<GlueSpecNode>,
     mut op: impl FnMut(&mut crate::state::ErrorState, Scaled) -> Scaled,
 ) {
-    let width = op(&mut st.errors, spec.width(&st.mem));
-    spec.set_width(&mut st.mem, width);
-    let stretch = op(&mut st.errors, spec.stretch(&st.mem));
-    spec.set_stretch(&mut st.mem, stretch);
-    let shrink = op(&mut st.errors, spec.shrink(&st.mem));
-    spec.set_shrink(&mut st.mem, shrink);
+    let width = op(&mut st.errors, st.mem[spec].width);
+    st.mem[spec].width = width;
+    let stretch = op(&mut st.errors, st.mem[spec].stretch);
+    st.mem[spec].stretch = stretch;
+    let shrink = op(&mut st.errors, st.mem[spec].shrink);
+    st.mem[spec].shrink = shrink;
 }
 
 fn normalize_glue_orders(st: &mut EngineState, spec: NodePtr<GlueSpecNode>) {
-    if spec.stretch(&st.mem) == Scaled::ZERO {
-        spec.set_stretch_order(&mut st.mem, GlueOrder::Normal);
+    if st.mem[spec].stretch == Scaled::ZERO {
+        st.mem[spec].stretch_order = GlueOrder::Normal.into();
     }
-    if spec.shrink(&st.mem) == Scaled::ZERO {
-        spec.set_shrink_order(&mut st.mem, GlueOrder::Normal);
+    if st.mem[spec].shrink == Scaled::ZERO {
+        st.mem[spec].shrink_order = GlueOrder::Normal.into();
     }
 }
 
@@ -731,24 +731,24 @@ fn normalize_glue_orders(st: &mut EngineState, spec: NodePtr<GlueSpecNode>) {
 fn add_glue(st: &mut EngineState, e: NodePtr<GlueSpecNode>, t: NodePtr<GlueSpecNode>, sub: bool) {
     let mem = &mut st.mem;
     let errors = &mut st.errors;
-    let width = errors.add_or_sub(e.width(mem), t.width(mem), MAX_DIMEN, sub);
-    e.set_width(mem, width);
+    let width = errors.add_or_sub(mem[e].width, mem[t].width, MAX_DIMEN, sub);
+    mem[e].width = width;
     let (e_order, t_order, t_stretch) =
-        (e.stretch_order(mem), t.stretch_order(mem), t.stretch(mem));
+        (mem[e].stretch_order, mem[t].stretch_order, mem[t].stretch);
     if e_order == t_order {
-        let stretch = errors.add_or_sub(e.stretch(mem), t_stretch, MAX_DIMEN, sub);
-        e.set_stretch(mem, stretch);
+        let stretch = errors.add_or_sub(mem[e].stretch, t_stretch, MAX_DIMEN, sub);
+        mem[e].stretch = stretch;
     } else if e_order < t_order && t_stretch != Scaled::ZERO {
-        e.set_stretch(mem, t_stretch);
-        e.set_stretch_order(mem, t_order);
+        mem[e].stretch = t_stretch;
+        mem[e].stretch_order = t_order;
     }
-    let (e_order, t_order, t_shrink) = (e.shrink_order(mem), t.shrink_order(mem), t.shrink(mem));
+    let (e_order, t_order, t_shrink) = (mem[e].shrink_order, mem[t].shrink_order, mem[t].shrink);
     if e_order == t_order {
-        let shrink = errors.add_or_sub(e.shrink(mem), t_shrink, MAX_DIMEN, sub);
-        e.set_shrink(mem, shrink);
+        let shrink = errors.add_or_sub(mem[e].shrink, t_shrink, MAX_DIMEN, sub);
+        mem[e].shrink = shrink;
     } else if e_order < t_order && t_shrink != Scaled::ZERO {
-        e.set_shrink(mem, t_shrink);
-        e.set_shrink_order(mem, t_order);
+        mem[e].shrink = t_shrink;
+        mem[e].shrink_order = t_order;
     }
     mem.delete_glue_ref(t);
     normalize_glue_orders(st, e);
@@ -850,9 +850,9 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
                 }
             } else {
                 let spec = glue_spec(f);
-                if spec.width(&st.mem).abs() > MAX_DIMEN
-                    || spec.stretch(&st.mem).abs() > MAX_DIMEN
-                    || spec.shrink(&st.mem).abs() > MAX_DIMEN
+                if st.mem[spec].width.abs() > MAX_DIMEN
+                    || st.mem[spec].stretch.abs() > MAX_DIMEN
+                    || st.mem[spec].shrink.abs() > MAX_DIMEN
                 {
                     st.errors.arith_error = true;
                     st.mem.delete_glue_ref(glue_spec(f));
@@ -958,8 +958,8 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
             st.mem.delete_glue_ref(glue_spec(e));
             e = 0;
             let zero_glue = glue_spec(e);
-            let refs = zero_glue.ref_count(&st.mem);
-            zero_glue.set_ref_count(&mut st.mem, refs + 1);
+            let refs = st.mem[zero_glue].ref_count;
+            st.mem[zero_glue].ref_count = refs + 1;
         } else {
             e = 0;
         }

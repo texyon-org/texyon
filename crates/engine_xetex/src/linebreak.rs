@@ -106,7 +106,7 @@ fn set_delta_widths(d: NodePtr<DeltaNode>, mem: &mut MemState, w: &[Scaled; 7]) 
 impl MemState {
     #[inline]
     fn has_infinite_shrink(&self, spec: NodePtr<GlueSpecNode>) -> bool {
-        spec.shrink_order(self) != GlueOrder::Normal && spec.shrink(self) != Scaled::ZERO
+        self[spec].shrink_order != GlueOrder::Normal && self[spec].shrink != Scaled::ZERO
     }
 
     #[inline]
@@ -150,7 +150,7 @@ impl MemState {
         spec: NodePtr<GlueSpecNode>,
     ) -> Result<NodePtr<GlueSpecNode>, Abort> {
         let q = self.new_spec(spec)?;
-        q.set_shrink_order(self, GlueOrder::Normal);
+        self[q].shrink_order = GlueOrder::Normal.into();
         self.delete_glue_ref(spec);
         Ok(q)
     }
@@ -285,11 +285,9 @@ impl MemState {
         let spec = self.new_spec(old_spec)?;
         self.delete_glue_ref(old_spec);
 
-        spec.set_width(
-            self,
-            spec.width(self) + best.shortfall(self) - best.glue(self),
-        );
-        spec.set_stretch(self, Scaled::ZERO);
+        let extra = best.shortfall(self) - best.glue(self);
+        self[spec].width += extra;
+        self[spec].stretch = Scaled::ZERO;
         last_line_fill.set_glue_ptr(self, spec);
         Ok(())
     }
@@ -432,26 +430,26 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<AnyBox, Abort>
     let right_skip = st.eqtb.glue_par(GluePar::RightSkip);
     let mem = &st.mem;
     let background = &mut st.linebreak.background;
-    background[1] = left_skip.width(mem) + right_skip.width(mem);
+    background[1] = mem[left_skip].width + mem[right_skip].width;
     background[2..=5].fill(Scaled::ZERO);
-    background[2 + left_skip.stretch_order(mem).index()] = left_skip.stretch(mem);
-    background[2 + right_skip.stretch_order(mem).index()] += right_skip.stretch(mem);
-    background[6] = left_skip.shrink(mem) + right_skip.shrink(mem);
+    background[2 + mem[left_skip].stretch_order.index()] = mem[left_skip].stretch;
+    background[2 + mem[right_skip].stretch_order.index()] += mem[right_skip].stretch;
+    background[6] = mem[left_skip].shrink + mem[right_skip].shrink;
 
     st.linebreak.do_last_line_fit = false;
     st.linebreak.active_node_size = ACTIVE_NODE_SIZE_NORMAL;
     if st.eqtb.int_par(IntPar::LastLineFit) > 0 {
         let spec = last_line_fill.glue_ptr(&st.mem);
         let lb = &mut st.linebreak;
-        if spec.stretch(&st.mem) > Scaled::ZERO
-            && spec.stretch_order(&st.mem) > GlueOrder::Normal
+        if st.mem[spec].stretch > Scaled::ZERO
+            && st.mem[spec].stretch_order > GlueOrder::Normal
             && lb.background[3..=5] == [Scaled::ZERO; 3]
         {
             lb.do_last_line_fit = true;
             lb.active_node_size = ACTIVE_NODE_SIZE_EXTENDED;
             lb.fill_width = [Scaled::ZERO; 3];
-            let order = spec.stretch_order(&st.mem);
-            lb.fill_width[order.index() - 1] = spec.stretch(&st.mem);
+            let order = st.mem[spec].stretch_order;
+            lb.fill_width[order.index() - 1] = st.mem[spec].stretch;
         }
     }
 
@@ -573,9 +571,9 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<AnyBox, Abort>
                         cur_glue.set_glue_ptr(&mut st.mem, spec);
                     }
                     let aw = &mut st.scanner.active_width;
-                    aw[1] += spec.width(&st.mem);
-                    aw[2 + spec.stretch_order(&st.mem).index()] += spec.stretch(&st.mem);
-                    aw[6] += spec.shrink(&st.mem);
+                    aw[1] += st.mem[spec].width;
+                    aw[2 + st.mem[spec].stretch_order.index()] += st.mem[spec].stretch;
+                    aw[6] += st.mem[spec].shrink;
 
                     if second_pass && auto_breaking {
                         try_hyphenate(st, cur)?;
@@ -749,10 +747,10 @@ impl MemState {
             match self.classify(s) {
                 Ok(AnyNode::Glue(g)) => {
                     let spec = g.glue_ptr(self);
-                    linebreak.break_width[1] -= spec.width(self);
-                    linebreak.break_width[2 + spec.stretch_order(self).index()] -=
-                        spec.stretch(self);
-                    linebreak.break_width[6] -= spec.shrink(self);
+                    linebreak.break_width[1] -= self[spec].width;
+                    linebreak.break_width[2 + self[spec].stretch_order.index()] -=
+                        self[spec].stretch;
+                    linebreak.break_width[6] -= self[spec].shrink;
                 }
                 Ok(AnyNode::Penalty(_)) => {}
                 Ok(AnyNode::Math(m)) => linebreak.break_width[1] -= m.width(self),

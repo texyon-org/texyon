@@ -421,10 +421,10 @@ impl MemState {
     pub fn new_spec(&mut self, src: NodePtr<GlueSpecNode>) -> Result<NodePtr<GlueSpecNode>, Abort> {
         let q = NodePtr::<GlueSpecNode>::alloc(self)?;
         self.set_word(q.idx(), self.word(src.idx()));
-        q.set_ref_count(self, TEX_NULL);
-        q.set_width(self, src.width(self));
-        q.set_stretch(self, src.stretch(self));
-        q.set_shrink(self, src.shrink(self));
+        self[q].ref_count = TEX_NULL;
+        self[q].width = self[src].width;
+        self[q].stretch = self[src].stretch;
+        self[q].shrink = self[src].shrink;
         Ok(q)
     }
 
@@ -462,7 +462,7 @@ impl MemState {
         let s = self.new_spec(eqtb.glue_par(n))?;
         self.temp_ptr = s.ptr();
         let p = self.new_glue(s)?;
-        s.set_ref_count(self, TEX_NULL);
+        self[s].ref_count = TEX_NULL;
         p.set_subtype(self, n.subtype());
         Ok(p)
     }
@@ -517,15 +517,15 @@ impl MemState {
 
     #[inline]
     pub fn add_glue_ref(&mut self, spec: NodePtr<GlueSpecNode>) {
-        spec.set_ref_count(self, spec.ref_count(self) + 1);
+        self[spec].ref_count += 1;
     }
 
     /// Drops a reference to `spec`, freeing it with the last one.
     pub fn delete_glue_ref(&mut self, spec: NodePtr<GlueSpecNode>) {
-        if spec.ref_count(self) == TEX_NULL {
+        if self[spec].ref_count == TEX_NULL {
             self.free_node(spec.ptr(), GLUE_SPEC_SIZE);
         } else {
-            spec.set_ref_count(self, spec.ref_count(self) - 1);
+            self[spec].ref_count -= 1;
         }
     }
 }

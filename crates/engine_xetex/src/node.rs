@@ -213,6 +213,11 @@ impl<T> PartialEq for Stored<T> {
     }
 }
 impl<T> Eq for Stored<T> {}
+// SAFETY: a `u16` and a zero-sized marker, valid at all-zero bits.
+unsafe impl<T: 'static> bytemuck::Zeroable for Stored<T> {}
+// SAFETY: a `u16` and a zero-sized marker, so no padding and any bits are valid.
+unsafe impl<T: 'static> bytemuck::Pod for Stored<T> {}
+
 impl<T> Default for Stored<T> {
     #[inline]
     fn default() -> Self {
@@ -582,7 +587,7 @@ impl_traits!(HasNodeHeader: HListNode, VListNode, RuleNode, InsNode, MarkNode, A
 impl_traits!(HasLink: MovementNode, ActiveNode, PassiveNode, CondNode, CharNode,
     AlignRecord, AlignStackNode, ExprNode, PseudoLineNode, LigItem);
 impl_traits!(HasWidth: HListNode, VListNode, UnsetNode, WhatsitNode, MathNode, KernNode,
-    EdgeNode, MarginKernNode, GlueSpecNode, AlignRecord, SpanNode);
+    EdgeNode, MarginKernNode, AlignRecord, SpanNode);
 impl_traits!(HasHeightDepth: HListNode, VListNode, UnsetNode, WhatsitNode, InsNode);
 impl_traits!(HasListPtr: HListNode, VListNode, UnsetNode);
 impl_traits!(IsBox: HListNode, VListNode);
@@ -1316,11 +1321,6 @@ impl NodePtr<GlueNode> {
 }
 
 impl NodePtr<GlueSpecNode> {
-    stored_fields! {
-        stretch_order / set_stretch_order: GlueOrder = b16s1 @ 0;
-        shrink_order / set_shrink_order: GlueOrder = b16s0 @ 0;
-    }
-
     /// The spec at `p`, `None` when the pointer is null.
     #[inline]
     pub fn from_spec_link(p: MemPtr) -> Option<NodePtr<GlueSpecNode>> {
@@ -1332,13 +1332,6 @@ impl NodePtr<GlueSpecNode> {
     pub fn from_glue_ptr(p: MemPtr) -> NodePtr<GlueSpecNode> {
         let idx = p.as_idx().expect("null glue spec");
         NodePtr::from_idx_unchecked(idx)
-    }
-
-    fields! {
-        /// A reference count, not a link, although it shares the link word.
-        ref_count / set_ref_count: i32 = b32s1 @ 0;
-        stretch / set_stretch: Scaled = b32s1 @ 2;
-        shrink / set_shrink: Scaled = b32s1 @ 3;
     }
 }
 
@@ -2050,23 +2043,23 @@ mod tests {
     fn stored_codes_keep_bits_outside_their_code_set() {
         let mut mem = arena_with_free_block();
         let s = NodePtr::<GlueSpecNode>::alloc(&mut mem).unwrap();
-        s.set_stretch_order(&mut mem, Stored::<GlueOrder>::from_raw(7));
-        s.set_shrink_order(&mut mem, GlueOrder::Fill);
-        let stretch = s.stretch_order(&mem);
+        mem[s].stretch_order = Stored::from_raw(7);
+        mem[s].shrink_order = GlueOrder::Fill.into();
+        let stretch = mem[s].stretch_order;
         assert_eq!(stretch.raw(), 7);
         assert_eq!(stretch.get(), None);
         assert!(stretch > GlueOrder::Filll);
-        assert_eq!(s.shrink_order(&mem), GlueOrder::Fill);
-        assert_eq!(s.shrink_order(&mem).get(), Some(GlueOrder::Fill));
-        assert!(s.shrink_order(&mem) < stretch);
+        assert_eq!(mem[s].shrink_order, GlueOrder::Fill);
+        assert_eq!(mem[s].shrink_order.get(), Some(GlueOrder::Fill));
+        assert!(mem[s].shrink_order < stretch);
     }
 
     #[test]
     fn headerless_records_alloc_without_stamping() {
         let mut mem = arena_with_free_block();
         let spec = NodePtr::<GlueSpecNode>::alloc(&mut mem).unwrap();
-        spec.set_width(&mut mem, Scaled::from_raw(0x1234));
-        assert_eq!(spec.width(&mem), Scaled::from_raw(0x1234));
+        mem[spec].width = Scaled::from_raw(0x1234);
+        assert_eq!(mem[spec].width, Scaled::from_raw(0x1234));
         let item = NodePtr::<LigItem>::alloc(&mut mem).unwrap();
         item.set_character(&mut mem, 45);
         item.set_component(&mut mem, MemPtr::from_raw(34));
@@ -2379,12 +2372,12 @@ mod tests {
         assert_eq!(g.glue_ptr(&mem).idx(), MemIdx::from_raw(150));
 
         let s: NodePtr<GlueSpecNode> = at(&mut mem, 150, None);
-        s.set_ref_count(&mut mem, 42);
-        s.set_stretch_order(&mut mem, GlueOrder::Fill);
-        s.set_shrink_order(&mut mem, GlueOrder::Fil);
-        s.set_width(&mut mem, Scaled::from_raw(0x4444));
-        s.set_stretch(&mut mem, Scaled::from_raw(0x5555));
-        s.set_shrink(&mut mem, Scaled::from_raw(0x6666));
+        mem[s].ref_count = 42;
+        mem[s].stretch_order = GlueOrder::Fill.into();
+        mem[s].shrink_order = GlueOrder::Fil.into();
+        mem[s].width = Scaled::from_raw(0x4444);
+        mem[s].stretch = Scaled::from_raw(0x5555);
+        mem[s].shrink = Scaled::from_raw(0x6666);
         assert_eq!(mem.b32s1(MemPtr::from_raw(150)), 42);
         assert_eq!(mem.b16s1(MemPtr::from_raw(150)), 2);
         assert_eq!(mem.b16s0(MemPtr::from_raw(150)), 1);

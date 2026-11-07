@@ -134,9 +134,9 @@ fn alter_box_dimen(st: &mut EngineState, code: BoxDimenCode) -> Result<(), Abort
 /// `spec`, or the shared `zero_glue` in its place when it is all zero.
 fn trap_zero_glue(st: &mut EngineState, spec: NodePtr<GlueSpecNode>) -> NodePtr<GlueSpecNode> {
     let mem = &mut st.mem;
-    if spec.width(mem) == Scaled::ZERO
-        && spec.stretch(mem) == Scaled::ZERO
-        && spec.shrink(mem) == Scaled::ZERO
+    if mem[spec].width == Scaled::ZERO
+        && mem[spec].stretch == Scaled::ZERO
+        && mem[spec].shrink == Scaled::ZERO
     {
         mem.add_glue_ref(ZERO_GLUE);
         mem.delete_glue_ref(spec);
@@ -341,33 +341,33 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
                 let sum = st.mem.new_spec(g)?;
                 st.mem.delete_glue_ref(g);
                 let old = NodePtr::<GlueSpecNode>::from_glue_ptr(s);
-                let width = sum.width(&st.mem) + old.width(&st.mem);
-                sum.set_width(&mut st.mem, width);
-                if sum.stretch(&st.mem) == Scaled::ZERO {
-                    sum.set_stretch_order(&mut st.mem, GlueOrder::Normal);
+                let width = st.mem[sum].width + st.mem[old].width;
+                st.mem[sum].width = width;
+                if st.mem[sum].stretch == Scaled::ZERO {
+                    st.mem[sum].stretch_order = GlueOrder::Normal.into();
                 }
-                if sum.stretch_order(&st.mem) == old.stretch_order(&st.mem) {
-                    let v = sum.stretch(&st.mem) + old.stretch(&st.mem);
-                    sum.set_stretch(&mut st.mem, v);
-                } else if sum.stretch_order(&st.mem) < old.stretch_order(&st.mem)
-                    && old.stretch(&st.mem) != Scaled::ZERO
+                if st.mem[sum].stretch_order == st.mem[old].stretch_order {
+                    let v = st.mem[sum].stretch + st.mem[old].stretch;
+                    st.mem[sum].stretch = v;
+                } else if st.mem[sum].stretch_order < st.mem[old].stretch_order
+                    && st.mem[old].stretch != Scaled::ZERO
                 {
-                    let (v, order) = (old.stretch(&st.mem), old.stretch_order(&st.mem));
-                    sum.set_stretch(&mut st.mem, v);
-                    sum.set_stretch_order(&mut st.mem, order);
+                    let (v, order) = (st.mem[old].stretch, st.mem[old].stretch_order);
+                    st.mem[sum].stretch = v;
+                    st.mem[sum].stretch_order = order;
                 }
-                if sum.shrink(&st.mem) == Scaled::ZERO {
-                    sum.set_shrink_order(&mut st.mem, GlueOrder::Normal);
+                if st.mem[sum].shrink == Scaled::ZERO {
+                    st.mem[sum].shrink_order = GlueOrder::Normal.into();
                 }
-                if sum.shrink_order(&st.mem) == old.shrink_order(&st.mem) {
-                    let v = sum.shrink(&st.mem) + old.shrink(&st.mem);
-                    sum.set_shrink(&mut st.mem, v);
-                } else if sum.shrink_order(&st.mem) < old.shrink_order(&st.mem)
-                    && old.shrink(&st.mem) != Scaled::ZERO
+                if st.mem[sum].shrink_order == st.mem[old].shrink_order {
+                    let v = st.mem[sum].shrink + st.mem[old].shrink;
+                    st.mem[sum].shrink = v;
+                } else if st.mem[sum].shrink_order < st.mem[old].shrink_order
+                    && st.mem[old].shrink != Scaled::ZERO
                 {
-                    let (v, order) = (old.shrink(&st.mem), old.shrink_order(&st.mem));
-                    sum.set_shrink(&mut st.mem, v);
-                    sum.set_shrink_order(&mut st.mem, order);
+                    let (v, order) = (st.mem[old].shrink, st.mem[old].shrink_order);
+                    st.mem[sum].shrink = v;
+                    st.mem[sum].shrink_order = order;
                 }
                 RegisterValue::Glue(sum)
             } else {
@@ -393,17 +393,14 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         } else {
             let old = NodePtr::<GlueSpecNode>::from_glue_ptr(s);
             let r = st.mem.new_spec(old)?;
-            let (width, stretch, shrink) = (
-                old.width(&st.mem),
-                old.stretch(&st.mem),
-                old.shrink(&st.mem),
-            );
+            let (width, stretch, shrink) =
+                (st.mem[old].width, st.mem[old].stretch, st.mem[old].shrink);
             let v = scale(&mut st.errors, width.raw(), MAX_HALFWORD);
-            r.set_width(&mut st.mem, Scaled::from_raw(v));
+            st.mem[r].width = Scaled::from_raw(v);
             let v = scale(&mut st.errors, stretch.raw(), MAX_HALFWORD);
-            r.set_stretch(&mut st.mem, Scaled::from_raw(v));
+            st.mem[r].stretch = Scaled::from_raw(v);
             let v = scale(&mut st.errors, shrink.raw(), MAX_HALFWORD);
-            r.set_shrink(&mut st.mem, Scaled::from_raw(v));
+            st.mem[r].shrink = Scaled::from_raw(v);
             RegisterValue::Glue(r)
         }
     };

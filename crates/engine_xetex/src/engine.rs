@@ -426,24 +426,24 @@ fn initialize_more_variables(st: &mut EngineState) {
 fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumber) {
     let mem = &mut st.mem;
     for spec in [ZERO_GLUE, FIL_GLUE, FILL_GLUE, SS_GLUE, FIL_NEG_GLUE] {
-        spec.set_width(mem, Scaled::ZERO);
-        spec.set_stretch(mem, Scaled::ZERO);
-        spec.set_shrink(mem, Scaled::ZERO);
-        spec.set_ref_count(mem, TEX_NULL + 1);
-        spec.set_stretch_order(mem, GlueOrder::Normal);
-        spec.set_shrink_order(mem, GlueOrder::Normal);
+        mem[spec].width = Scaled::ZERO;
+        mem[spec].stretch = Scaled::ZERO;
+        mem[spec].shrink = Scaled::ZERO;
+        mem[spec].ref_count = TEX_NULL + 1;
+        mem[spec].stretch_order = GlueOrder::Normal.into();
+        mem[spec].shrink_order = GlueOrder::Normal.into();
     }
 
-    FIL_GLUE.set_stretch(mem, Scaled::UNITY);
-    FIL_GLUE.set_stretch_order(mem, GlueOrder::Fil);
-    FILL_GLUE.set_stretch(mem, Scaled::UNITY);
-    FILL_GLUE.set_stretch_order(mem, GlueOrder::Fill);
-    SS_GLUE.set_stretch(mem, Scaled::UNITY);
-    SS_GLUE.set_stretch_order(mem, GlueOrder::Fil);
-    SS_GLUE.set_shrink(mem, Scaled::UNITY);
-    SS_GLUE.set_shrink_order(mem, GlueOrder::Fil);
-    FIL_NEG_GLUE.set_stretch(mem, -Scaled::UNITY);
-    FIL_NEG_GLUE.set_stretch_order(mem, GlueOrder::Fil);
+    mem[FIL_GLUE].stretch = Scaled::UNITY;
+    mem[FIL_GLUE].stretch_order = GlueOrder::Fil.into();
+    mem[FILL_GLUE].stretch = Scaled::UNITY;
+    mem[FILL_GLUE].stretch_order = GlueOrder::Fill.into();
+    mem[SS_GLUE].stretch = Scaled::UNITY;
+    mem[SS_GLUE].stretch_order = GlueOrder::Fil.into();
+    mem[SS_GLUE].shrink = Scaled::UNITY;
+    mem[SS_GLUE].shrink_order = GlueOrder::Fil.into();
+    mem[FIL_NEG_GLUE].stretch = -Scaled::UNITY;
+    mem[FIL_NEG_GLUE].stretch_order = GlueOrder::Fil.into();
 
     mem.rover = MemPtr::from_raw(20);
     let rover = NodePtr::<FreeBlock>::at(mem.rover);
@@ -494,8 +494,8 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     let glue_base_entry = eqtb.word(GLUE_BASE);
     eqtb.fill(GLUE_BASE + 1, LOCAL_BASE, glue_base_entry);
 
-    let zero_glue_refs = ZERO_GLUE.ref_count(&st.mem) + 531;
-    ZERO_GLUE.set_ref_count(&mut st.mem, zero_glue_refs);
+    let zero_glue_refs = st.mem[ZERO_GLUE].ref_count + 531;
+    st.mem[ZERO_GLUE].ref_count = zero_glue_refs;
 
     eqtb.set_eq(PAR_SHAPE_LOC, Cmd::ShapeRef, TEX_NULL, LEVEL_ONE);
     let par_shape_entry = eqtb.word(PAR_SHAPE_LOC);

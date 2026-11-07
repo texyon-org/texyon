@@ -201,7 +201,7 @@ impl MemState {
         loop {
             if let Some(glue) = cursor.finish_glue_after_shrinkage.take() {
                 let spec = glue.glue_ptr(self);
-                self.finish_vert_break_updated_height(scanner, cursor, spec.width(self), d);
+                self.finish_vert_break_updated_height(scanner, cursor, self[spec].width, d);
                 continue;
             }
 
@@ -256,16 +256,16 @@ impl MemState {
                 }
                 Some(VertBreakUpdateSource::Glue(glue)) => {
                     let spec = glue.glue_ptr(self);
-                    scanner.active_width[2 + spec.stretch_order(self).index()] +=
-                        spec.stretch(self);
-                    scanner.active_width[6] += spec.shrink(self);
-                    if spec.shrink_order(self) != GlueOrder::Normal
-                        && spec.shrink(self) != Scaled::ZERO
+                    scanner.active_width[2 + self[spec].stretch_order.index()] +=
+                        self[spec].stretch;
+                    scanner.active_width[6] += self[spec].shrink;
+                    if self[spec].shrink_order != GlueOrder::Normal
+                        && self[spec].shrink != Scaled::ZERO
                     {
                         cursor.finish_glue_after_shrinkage = Some(glue);
                         return Ok(VertBreakStep::InfiniteShrinkage { glue, spec });
                     }
-                    self.finish_vert_break_updated_height(scanner, cursor, spec.width(self), d);
+                    self.finish_vert_break_updated_height(scanner, cursor, self[spec].width, d);
                 }
                 None => self.advance_vert_break(scanner, cursor, d),
             }
@@ -571,11 +571,11 @@ impl MemState {
         prev_p.set_link(self, q.ptr());
         q.set_link(self, p);
         let spec = q.glue_ptr(self);
-        let avail_ht = spec.width(self);
+        let avail_ht = self[spec].width;
         if avail_ht > height {
-            spec.set_width(self, avail_ht - height);
+            self[spec].width = avail_ht - height;
         } else {
-            spec.set_width(self, Scaled::ZERO);
+            self[spec].width = Scaled::ZERO;
         }
         Ok(())
     }
