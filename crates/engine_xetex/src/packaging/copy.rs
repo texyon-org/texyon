@@ -1,18 +1,18 @@
 //! Copying and destroying node lists: `copy_node_list`, `flush_node_list`, `just_copy`.
 
 use crate::consts::{
-    ACCENT_NOAD_SIZE, BOX_NODE_SIZE, FRACTION_NOAD_SIZE, GLYPH_NODE_SIZE, INS_NODE_SIZE,
-    MARGIN_KERN_NODE_SIZE, MEDIUM_NODE_SIZE, MIN_HALFWORD, NOAD_SIZE, OPEN_NODE_SIZE,
-    PIC_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE, R_CODE, SMALL_NODE_SIZE, STYLE_NODE_SIZE,
-    SUB_BOX, WRITE_NODE_SIZE,
+    BOX_NODE_SIZE, GLYPH_NODE_SIZE, INS_NODE_SIZE, MARGIN_KERN_NODE_SIZE, MEDIUM_NODE_SIZE,
+    MIN_HALFWORD, OPEN_NODE_SIZE, PIC_NODE_SIZE, RULE_NODE_SIZE, R_CODE, SMALL_NODE_SIZE,
+    STYLE_NODE_SIZE, SUB_BOX, WRITE_NODE_SIZE,
 };
 use crate::errors::Abort;
 use crate::mem::{end_lr_type, TEMP_HEAD};
 use crate::node::{
-    AnyNode, BoxNode, DiscNode, GlueNode, NodeKind, NodePtr, WhatsitNode, WhatsitSubtype,
+    AnyNode, BoxNode, DiscNode, GlueNode, NoadVariant, NodeKind, NodePtr, WhatsitNode,
+    WhatsitSubtype,
 };
 use crate::state::{MemState, ScannerState};
-use crate::units::{Dir, MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{Dir, MemIdx, MemPtr, Scaled};
 
 const SYNCTEX_FIELD_SIZE: i32 = 1;
 const MEMORY_WORD_SIZE: i32 = 8;
@@ -301,30 +301,20 @@ impl MemState {
                     self.flush_node_list(self[choice].script_script_mlist)?;
                     STYLE_NODE_SIZE
                 }
-                AnyNode::Noad(noad) => match noad.noad_type(self) {
-                    NodeType::LeftNoad | NodeType::RightNoad => NOAD_SIZE,
-                    NodeType::FractionNoad => {
-                        self.flush_node_list(self[noad.supscr()].info())?;
-                        self.flush_node_list(self[noad.subscr()].info())?;
-                        FRACTION_NOAD_SIZE
-                    }
-                    noad_type => {
-                        if self[noad.nucleus()].math_type >= SUB_BOX {
-                            self.flush_node_list(self[noad.nucleus()].info())?;
-                        }
-                        if self[noad.supscr()].math_type >= SUB_BOX {
-                            self.flush_node_list(self[noad.supscr()].info())?;
-                        }
-                        if self[noad.subscr()].math_type >= SUB_BOX {
-                            self.flush_node_list(self[noad.subscr()].info())?;
-                        }
-                        match noad_type {
-                            NodeType::RadicalNoad => RADICAL_NOAD_SIZE,
-                            NodeType::AccentNoad => ACCENT_NOAD_SIZE,
-                            _ => NOAD_SIZE,
+                AnyNode::Noad(any) => {
+                    let v = any.variant(self);
+                    if let NoadVariant::Fraction(f) = v {
+                        self.flush_node_list(self[f].numerator.info())?;
+                        self.flush_node_list(self[f].denominator.info())?;
+                    } else if let Some(n) = v.as_noad() {
+                        for field in [self[n].nucleus, self[n].supscr, self[n].subscr] {
+                            if field.math_type >= SUB_BOX {
+                                self.flush_node_list(field.info())?;
+                            }
                         }
                     }
-                },
+                    v.size()
+                }
             };
             self.free_node(p, size);
             p = q;

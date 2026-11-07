@@ -6,7 +6,10 @@ use crate::consts::{
 };
 use crate::math::{DEFAULT_CODE, LIMITS};
 use crate::mem::ZERO_GLUE;
-use crate::node::{AnyNode, BoxNode, CharNode, MathField, NodePtr, WhatsitNode, WhatsitSubtype};
+use crate::node::{
+    AnyNoad, AnyNode, BoxNode, CharNode, MathField, NoadVariant, NodePtr, WhatsitNode,
+    WhatsitSubtype,
+};
 use crate::params::IntPar;
 use crate::state::EngineState;
 use crate::units::{GlueSign, MemPtr, NodeType, Scaled};
@@ -463,66 +466,80 @@ fn show_glue(st: &mut EngineState, node: NodePtr<crate::node::GlueNode>) {
     }
 }
 
-fn show_noad(st: &mut EngineState, node: NodePtr<crate::node::Noad>) {
-    let nt = node.noad_type(&st.mem);
-    if nt == NodeType::FractionNoad {
-        print_esc(st, "fraction, thickness ");
-        let thickness = node.thickness(&st.mem);
-        if thickness == DEFAULT_CODE {
-            print(st, "= default");
-        } else {
-            print_scaled(st, thickness);
+fn show_noad(st: &mut EngineState, any: NodePtr<AnyNoad>) {
+    let n = match any.variant(&st.mem) {
+        NoadVariant::Fraction(f) => {
+            print_esc(st, "fraction, thickness ");
+            let thickness = st.mem[f].thickness;
+            if thickness == DEFAULT_CODE {
+                print(st, "= default");
+            } else {
+                print_scaled(st, thickness);
+            }
+            let left = f.left_delimiter();
+            if !st.mem[left].is_null() {
+                print(st, ", left-delimiter ");
+                print_delimiter(st, left);
+            }
+            let right = f.right_delimiter();
+            if !st.mem[right].is_null() {
+                print(st, ", right-delimiter ");
+                print_delimiter(st, right);
+            }
+            print_subsidiary_data(st, f.numerator(), b'\\');
+            print_subsidiary_data(st, f.denominator(), b'/');
+            return;
         }
-        let left = node.left_delimiter();
-        if !st.mem[left].is_null() {
-            print(st, ", left-delimiter ");
-            print_delimiter(st, left);
+        NoadVariant::Fence(f) => {
+            let name = if st.mem[f].noad_type == NodeType::LeftNoad {
+                "left"
+            } else if st.mem[f].subtype == 0 {
+                "right"
+            } else {
+                "middle"
+            };
+            print_esc(st, name);
+            print_delimiter(st, f.delimiter());
+            print_subsidiary_data(st, f.supscr(), b'^');
+            print_subsidiary_data(st, f.subscr(), b'_');
+            return;
         }
-        let right = node.right_delimiter();
-        if !st.mem[right].is_null() {
-            print(st, ", right-delimiter ");
-            print_delimiter(st, right);
+        NoadVariant::Radical(r) => {
+            print_esc(st, "radical");
+            print_delimiter(st, r.left_delimiter());
+            r.as_noad()
         }
-        print_subsidiary_data(st, node.numerator(), b'\\');
-        print_subsidiary_data(st, node.denominator(), b'/');
-        return;
-    }
-
-    let name = match nt {
-        NodeType::OrdNoad => "mathord",
-        NodeType::OpNoad => "mathop",
-        NodeType::BinNoad => "mathbin",
-        NodeType::RelNoad => "mathrel",
-        NodeType::OpenNoad => "mathopen",
-        NodeType::CloseNoad => "mathclose",
-        NodeType::PunctNoad => "mathpunct",
-        NodeType::InnerNoad => "mathinner",
-        NodeType::OverNoad => "overline",
-        NodeType::UnderNoad => "underline",
-        NodeType::VcenterNoad => "vcenter",
-        NodeType::RadicalNoad => "radical",
-        NodeType::AccentNoad => "accent",
-        NodeType::LeftNoad => "left",
-        NodeType::RightNoad if node.subtype(&st.mem) == 0 => "right",
-        NodeType::RightNoad => "middle",
-        _ => "",
+        NoadVariant::Accent(a) => {
+            print_esc(st, "accent");
+            print_fam_and_char(st, a.accent_chr());
+            a.as_noad()
+        }
+        NoadVariant::Noad(n) => {
+            let name = match st.mem[n].noad_type.get() {
+                Some(NodeType::OrdNoad) => "mathord",
+                Some(NodeType::OpNoad) => "mathop",
+                Some(NodeType::BinNoad) => "mathbin",
+                Some(NodeType::RelNoad) => "mathrel",
+                Some(NodeType::OpenNoad) => "mathopen",
+                Some(NodeType::CloseNoad) => "mathclose",
+                Some(NodeType::PunctNoad) => "mathpunct",
+                Some(NodeType::InnerNoad) => "mathinner",
+                Some(NodeType::OverNoad) => "overline",
+                Some(NodeType::UnderNoad) => "underline",
+                Some(NodeType::VcenterNoad) => "vcenter",
+                _ => "",
+            };
+            if !name.is_empty() {
+                print_esc(st, name);
+            }
+            n
+        }
     };
-    if !name.is_empty() {
-        print_esc(st, name);
+    let sub = st.mem[n].subtype;
+    if sub != 0 {
+        print_esc(st, if sub == LIMITS { "limits" } else { "nolimits" });
     }
-    match nt {
-        NodeType::RadicalNoad => print_delimiter(st, node.left_delimiter()),
-        NodeType::AccentNoad => print_fam_and_char(st, node.accent_chr()),
-        NodeType::LeftNoad | NodeType::RightNoad => print_delimiter(st, node.delimiter()),
-        _ => {}
-    }
-    if !matches!(nt, NodeType::LeftNoad | NodeType::RightNoad) {
-        let sub = node.subtype(&st.mem);
-        if sub != 0 {
-            print_esc(st, if sub == LIMITS { "limits" } else { "nolimits" });
-        }
-        print_subsidiary_data(st, node.nucleus(), b'.');
-    }
-    print_subsidiary_data(st, node.supscr(), b'^');
-    print_subsidiary_data(st, node.subscr(), b'_');
+    print_subsidiary_data(st, n.nucleus(), b'.');
+    print_subsidiary_data(st, n.supscr(), b'^');
+    print_subsidiary_data(st, n.subscr(), b'_');
 }

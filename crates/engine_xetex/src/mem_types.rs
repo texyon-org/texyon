@@ -138,13 +138,16 @@ impl ListStateRecord {
     }
     /// `incompleat_noad`, math mode's pending fraction.
     #[inline]
-    pub fn incompleat_noad(&self) -> Option<crate::node::NodePtr<crate::node::Noad>> {
+    pub fn incompleat_noad(&self) -> Option<crate::node::NodePtr<crate::node::FractionNoad>> {
         let p = crate::units::MemPtr::from_raw(self.aux_s1()).as_idx()?;
         // SAFETY: math mode only stores a fraction noad here.
         Some(crate::node::NodePtr::from_idx_unchecked(p))
     }
     #[inline]
-    pub fn set_incompleat_noad(&mut self, n: Option<crate::node::NodePtr<crate::node::Noad>>) {
+    pub fn set_incompleat_noad(
+        &mut self,
+        n: Option<crate::node::NodePtr<crate::node::FractionNoad>>,
+    ) {
         self.set_aux_s1(n.map_or(crate::consts::TEX_NULL, |n| n.idx().raw()));
     }
     #[inline]

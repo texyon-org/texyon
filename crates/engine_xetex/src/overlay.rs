@@ -7,17 +7,18 @@
 use bytemuck::{Pod, Zeroable};
 
 use crate::codes::{FiOrElseCode, ValueLevel};
-use crate::consts::EMPTY;
+use crate::consts::{EMPTY, NORMAL};
 use crate::node::{
-    ActiveNode, AdjustNode, AlignRecord, AlignStackNode, BoxNode, CharNode, ChoiceNode, CondNode,
-    DelimiterField, DeltaNode, DiscNode, EdgeNode, ExprNode, FixedNode, FreeBlock, GlueNode,
-    GlueSpecNode, InsNode, KernNode, LigItem, LigatureNode, MarginKernNode, MarkNode, MathField,
-    MathNode, MovementNode, NodeKind, NodePtr, PageInsNode, PassiveNode, PenaltyNode, RuleNode,
-    SpanNode, Stored, StoredDimen, StyleNode, UnsetNode,
+    AccentNoad, ActiveNode, AdjustNode, AlignRecord, AlignStackNode, AnyNoad, BoxNode, CharNode,
+    ChoiceNode, CondNode, DelimiterField, DeltaNode, DiscNode, EdgeNode, ExprNode, FenceNoad,
+    FixedNode, FractionNoad, FreeBlock, GlueNode, GlueSpecNode, InsNode, KernNode, LigItem,
+    LigatureNode, MarginKernNode, MarkNode, MathField, MathNode, MovementNode, Noad, NodeKind,
+    NodePtr, PageInsNode, PassiveNode, PenaltyNode, RadicalNoad, RuleNode, SpanNode, Stored,
+    StoredDimen, StyleNode, UnsetNode,
 };
 use crate::state::MemState;
 use crate::token::TokenList;
-use crate::units::{FontId, GlueOrder, GlueSign, MemPtr, Orientation, Scaled};
+use crate::units::{FontId, GlueOrder, GlueSign, MemPtr, NodeType, Orientation, Scaled};
 
 #[cfg(not(target_endian = "little"))]
 compile_error!("node layouts assume little-endian memory words");
@@ -376,6 +377,100 @@ impl DelimiterWord {
         self.small() == (0, 0) && self.large() == (0, 0)
     }
 }
+
+/// The words every noad shares: the header, then a payload word whose upper
+/// half holds the translated hlist once `mlist_to_hlist` has converted the noad.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct NoadHead {
+    pub subtype: u16,
+    pub noad_type: Stored<NodeType>,
+    pub link: MemPtr,
+    _payload: i32,
+    pub new_hlist: MemPtr,
+}
+
+overlay!(AnyNoad => NoadHead, 2);
+
+/// A noad with a nucleus and two scripts.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct NoadLayout {
+    /// `\limits` or `\nolimits` on an operator, else normal.
+    pub subtype: u16,
+    pub noad_type: Stored<NodeType>,
+    pub link: MemPtr,
+    pub nucleus: MathWord,
+    pub supscr: MathWord,
+    pub subscr: MathWord,
+}
+
+overlay!(Noad => NoadLayout);
+
+impl NoadLayout {
+    /// Empty fields and a normal subtype, as a new noad starts.
+    #[inline]
+    pub fn clear_fields(&mut self) {
+        self.subtype = NORMAL;
+        self.nucleus.clear();
+        self.supscr.clear();
+        self.subscr.clear();
+    }
+}
+
+/// A radical: a noad, then its delimiter.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct RadicalLayout {
+    pub base: NoadLayout,
+    pub left_delimiter: DelimiterWord,
+}
+
+overlay!(RadicalNoad => RadicalLayout);
+
+/// A math accent: a noad, then its accent character. The subtype marks
+/// fixed and bottom accents.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct AccentLayout {
+    pub base: NoadLayout,
+    pub accent_chr: MathWord,
+}
+
+overlay!(AccentNoad => AccentLayout);
+
+/// A generalized fraction.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct FractionLayout {
+    pub subtype: u16,
+    pub noad_type: Stored<NodeType>,
+    pub link: MemPtr,
+    _unused1: i32,
+    /// The rule thickness, `DEFAULT_CODE` for the font's.
+    pub thickness: Scaled,
+    pub numerator: MathWord,
+    pub denominator: MathWord,
+    pub left_delimiter: DelimiterWord,
+    pub right_delimiter: DelimiterWord,
+}
+
+overlay!(FractionNoad => FractionLayout);
+
+/// A `\left`, `\middle` or `\right` delimiter. A middle one is a right noad
+/// with a `MIDDLE_NOAD` subtype. WEB leaves the script words empty but reads them.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct FenceLayout {
+    pub subtype: u16,
+    pub noad_type: Stored<NodeType>,
+    pub link: MemPtr,
+    pub delimiter: DelimiterWord,
+    pub supscr: MathWord,
+    pub subscr: MathWord,
+}
+
+overlay!(FenceNoad => FenceLayout);
 
 /// A line-breaker active node, one feasible break still in play.
 #[repr(C)]

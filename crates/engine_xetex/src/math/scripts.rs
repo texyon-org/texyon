@@ -4,7 +4,7 @@ use crate::consts::{
     BOX_NODE_SIZE, EMPTY, MATH_CHAR, MAX_DIMEN, NULL_FONT, SCRIPT_SIZE, SUB_MLIST,
 };
 use crate::errors::Abort;
-use crate::node::{AnyNode, BoxNode, MathField, Noad, NodePtr};
+use crate::node::{AnyNode, BoxNode, MathField, Noad, NoadVariant, NodePtr};
 use crate::ot_math::ScriptKind;
 use crate::packaging::PackSpec;
 use crate::params::DimenPar;
@@ -21,9 +21,9 @@ const SUPERSCRIPTBOTTOMMAXWITHSUBSCRIPT: i32 = 16;
 
 impl MemState {
     fn append_to_new_hlist(&mut self, q: NodePtr<Noad>, node: MemPtr) {
-        let head = q.new_hlist(self);
+        let head = self[q.any()].new_hlist;
         if head.is_null() {
-            q.set_new_hlist(self, node);
+            self[q.any()].new_hlist = node;
         } else {
             let mut tail = head;
             while !tail.link(self).is_null() {
@@ -81,7 +81,7 @@ fn maybe_attach_script_kern(
     } else {
         let k = st.mem.new_kern(kern)?;
         st.mem.append_to_new_hlist(q, k.ptr());
-        q.new_hlist(&st.mem)
+        st.mem[q.any()].new_hlist
     };
     Ok(ScriptKernAttachment {
         p,
@@ -424,10 +424,12 @@ impl MemState {
                     3 => self[cn].script_script_mlist,
                     _ => script_ptr,
                 },
-                Ok(AnyNode::Noad(n))
-                    if n.noad_type(self).as_raw() <= NodeType::PunctNoad.as_raw() =>
-                {
-                    found = Some(n.nucleus());
+                Ok(AnyNode::Noad(any)) => {
+                    if let NoadVariant::Noad(n) = any.variant(self) {
+                        if self[n].noad_type <= NodeType::PunctNoad {
+                            found = Some(n.nucleus());
+                        }
+                    }
                     MemPtr::NULL
                 }
                 _ => MemPtr::NULL,
@@ -482,7 +484,7 @@ pub(super) fn make_scripts(
     q: NodePtr<Noad>,
     delta: Scaled,
 ) -> Result<(), Abort> {
-    let p = q.new_hlist(&st.mem);
+    let p = st.mem[q.any()].new_hlist;
     let shifts = initial_script_shifts(st, p)?;
 
     if st.mem[q.supscr()].math_type == EMPTY {

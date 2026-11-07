@@ -1,18 +1,18 @@
 //! Typesetting math formulas: `mlist_to_hlist` and the `make_*` noad handlers.
 
 use crate::consts::{
-    ACCENT_NOAD_SIZE, BOX_NODE_SIZE, COND_MATH_GLUE, EMPTY, EXPLICIT, FRACTION_NOAD_SIZE,
-    GLYPH_NODE_SIZE, INFINITE_DIMEN, INF_PENALTY, MATH_CHAR, MATH_TEXT_CHAR, MAX_DIMEN,
-    MEDIUM_NODE_SIZE, MU_GLUE, NOAD_SIZE, NORMAL, NULL_FONT, RADICAL_NOAD_SIZE, SCRIPT_SIZE,
-    STYLE_NODE_SIZE, SUB_BOX, SUB_MLIST, TEXT_SIZE,
+    BOX_NODE_SIZE, COND_MATH_GLUE, EMPTY, EXPLICIT, GLYPH_NODE_SIZE, INFINITE_DIMEN, INF_PENALTY,
+    MATH_CHAR, MATH_TEXT_CHAR, MAX_DIMEN, MEDIUM_NODE_SIZE, MU_GLUE, NOAD_SIZE, NORMAL, NULL_FONT,
+    SCRIPT_SIZE, STYLE_NODE_SIZE, SUB_BOX, SUB_MLIST, TEXT_SIZE,
 };
 use crate::errors::Abort;
 use crate::fonts::{CharInfo, CharTag, AAT_FONT_FLAG, OTGR_FONT_FLAG, SPACE_CODE, X_HEIGHT_CODE};
 use crate::mem::{TEMP_HEAD, TEX_NULL, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
 use crate::node::{
-    AnyNode, BoxNode, ChoiceNode, GlueNode, GlueSpecNode, KernNode, MathField, Noad, NodePtr,
-    RuleDimen, RuleNode, WhatsitNode, WhatsitSubtype,
+    AccentNoad, AnyNoad, AnyNode, BoxNode, ChoiceNode, FenceNoad, FractionNoad, GlueNode,
+    GlueSpecNode, KernNode, MathField, Noad, NoadVariant, NodePtr, RadicalNoad, RuleDimen,
+    RuleNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar};
@@ -320,7 +320,7 @@ fn make_vcenter(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
     Ok(())
 }
 
-fn make_radical(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
+fn make_radical(st: &mut EngineState, q: NodePtr<RadicalNoad>) -> Result<(), Abort> {
     let f = st
         .eqtb
         .math_font(st.mem[q.left_delimiter()].small().0 + st.scanner.cur_size);
@@ -333,7 +333,7 @@ fn make_radical(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
     };
 
     let clean_style = st.scanner.cur_style.cramped();
-    let x = clean_box(st, q.nucleus(), clean_style)?;
+    let x = clean_box(st, q.as_noad().nucleus(), clean_style)?;
     let cur_style = st.scanner.cur_style;
     let cur_size = st.scanner.cur_size;
     let mut clr = if is_ot_math {
@@ -365,7 +365,7 @@ fn make_radical(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
     let overbar_box = crate::packaging::vpackage(st, p, PackSpec::NATURAL, MAX_DIMEN)?;
     st.mem[y].link = overbar_box.ptr();
     let hbox = crate::packaging::hpack(st, y.ptr(), PackSpec::NATURAL)?;
-    st.mem.set_nucleus_box(q, hbox);
+    st.mem.set_nucleus_box(q.as_noad(), hbox);
     Ok(())
 }
 
@@ -420,12 +420,12 @@ impl MemState {
     }
 }
 
-fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
-    if q.thickness(&st.mem) == DEFAULT_CODE {
+fn make_fraction(st: &mut EngineState, q: NodePtr<FractionNoad>) -> Result<(), Abort> {
+    if st.mem[q].thickness == DEFAULT_CODE {
         let drt = st
             .fonts
             .default_rule_thickness(&st.eqtb, st.scanner.cur_size);
-        q.set_thickness(&mut st.mem, drt);
+        st.mem[q].thickness = drt;
     }
 
     let mut x = clean_box(st, q.numerator(), st.scanner.cur_style.num())?;
@@ -449,7 +449,7 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
         )
     } else {
         (
-            if q.thickness(&st.mem) != Scaled::ZERO {
+            if st.mem[q].thickness != Scaled::ZERO {
                 st.fonts.num2(&st.eqtb, cur_size)
             } else {
                 st.fonts.num3(&st.eqtb, cur_size)
@@ -459,7 +459,7 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
     };
 
     let delta;
-    if q.thickness(&st.mem) == Scaled::ZERO {
+    if st.mem[q].thickness == Scaled::ZERO {
         let clr = if st.fonts.font_is_ot_math(cur_f) {
             if cur_style < MathStyle::TEXT {
                 st.fonts
@@ -481,7 +481,7 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
     } else {
         let axis_height = st.fonts.axis_height(&st.eqtb, cur_size);
         let (delta1, delta2) = if st.fonts.font_is_ot_math(cur_f) {
-            delta = q.thickness(&st.mem).half();
+            delta = st.mem[q].thickness.half();
             let clr_num = if cur_style < MathStyle::TEXT {
                 st.fonts
                     .get_ot_math_constant(cur_f, FRACTIONNUMDISPLAYSTYLEGAPMIN)
@@ -502,11 +502,11 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
             (delta1, delta2)
         } else {
             let clr = if cur_style < MathStyle::TEXT {
-                q.thickness(&st.mem) * 3
+                st.mem[q].thickness * 3
             } else {
-                q.thickness(&st.mem)
+                st.mem[q].thickness
             };
-            delta = q.thickness(&st.mem).half();
+            delta = st.mem[q].thickness.half();
             (
                 clr - ((shift_up - st.mem[x].depth) - (axis_height + delta)),
                 clr - ((axis_height - delta) - (st.mem[z].height - shift_down)),
@@ -522,7 +522,7 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
     }
 
     let axis_height = st.fonts.axis_height(&st.eqtb, cur_size);
-    let rule_thickness = q.thickness(&st.mem);
+    let rule_thickness = st.mem[q].thickness;
     let v = st.mem.make_fraction(FractionAssembly {
         x,
         z,
@@ -544,7 +544,7 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
     st.mem[left_delim].link = v.ptr();
     st.mem[v].link = right_delim.ptr();
     let hbox = crate::packaging::hpack(st, left_delim.ptr(), PackSpec::NATURAL)?;
-    q.set_new_hlist(&mut st.mem, hbox.ptr());
+    st.mem[q.any()].new_hlist = hbox.ptr();
     Ok(())
 }
 
@@ -552,8 +552,8 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
 fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
     let mut delta = Scaled::ZERO;
 
-    if q.subtype(&st.mem) == NORMAL && st.scanner.cur_style < MathStyle::TEXT {
-        q.set_subtype(&mut st.mem, LIMITS);
+    if st.mem[q].subtype == NORMAL && st.scanner.cur_style < MathStyle::TEXT {
+        st.mem[q].subtype = LIMITS;
     }
 
     if st.mem[q.nucleus()].math_type == MATH_CHAR {
@@ -634,7 +634,7 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
 
         let axis_height = st.fonts.axis_height(&st.eqtb, st.scanner.cur_size);
         let mem = &mut st.mem;
-        if mem[q.subscr()].math_type != EMPTY && q.subtype(mem) != LIMITS {
+        if mem[q.subscr()].math_type != EMPTY && mem[q].subtype != LIMITS {
             mem[x].width -= delta;
         }
         let shift = (mem[x].height - mem[x].depth).half() - axis_height;
@@ -643,7 +643,7 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
     }
 
     let save_f = st.scanner.cur_f;
-    if q.subtype(&st.mem) == LIMITS {
+    if st.mem[q].subtype == LIMITS {
         let cs = st.scanner.cur_style;
         let x = clean_box(st, q.supscr(), cs.sup())?;
         let y = clean_box(st, q.nucleus(), cs)?;
@@ -700,7 +700,7 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
             mem[v].depth = depth;
         }
 
-        q.set_new_hlist(mem, v.ptr());
+        mem[q.any()].new_hlist = v.ptr();
     }
 
     Ok(delta)
@@ -726,9 +726,8 @@ impl MemState {
                 if step.is_kern() {
                     let kern_width = fonts.char_kern(scanner.cur_f, step);
                     let p_kern = self.new_kern(kern_width)?;
-                    let link_q = q.link(self);
-                    self[p_kern].link = link_q;
-                    q.set_link(self, p_kern.ptr());
+                    self[p_kern].link = self[q].link;
+                    self[q].link = p_kern.ptr();
                     return Ok(MakeOrdStep::Return);
                 }
                 let op = step.lig_op();
@@ -744,8 +743,8 @@ impl MemState {
                         self[r.nucleus()].set_character(step.lig_char());
                         let fam = self[q.nucleus()].plane_and_fam() % 256;
                         self[r.nucleus()].set_plane_and_fam(fam);
-                        q.set_link(self, r.ptr());
-                        r.set_link(self, p.ptr());
+                        self[q].link = r.ptr();
+                        self[r].link = p.ptr();
                         if op < 11 {
                             self[r.nucleus()].math_type = MATH_CHAR;
                         } else {
@@ -753,8 +752,7 @@ impl MemState {
                         }
                     }
                     _ => {
-                        let link_p = p.link(self);
-                        q.set_link(self, link_p);
+                        self[q].link = self[p].link;
                         self[q.nucleus()].set_character(step.lig_char());
                         self[q.subscr()] = self[p.subscr()];
                         self[q.supscr()] = self[p.supscr()];
@@ -787,14 +785,18 @@ fn make_ord(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
         if st.mem[q.nucleus()].math_type != MATH_CHAR {
             return Ok(());
         }
-        let p = q.link(&st.mem);
+        let p = st.mem[q].link;
         let Some(p) = p.as_idx() else {
             return Ok(());
         };
-        let p_node = match st.mem.classify_noad(p) {
-            Ok(Some(pn))
-                if (NodeType::OrdNoad.as_raw()..=NodeType::PunctNoad.as_raw())
-                    .contains(&pn.noad_type(&st.mem).as_raw()) =>
+        let p_node = match st
+            .mem
+            .classify_noad(p)
+            .map(|n| n.map(|n| n.variant(&st.mem)))
+        {
+            Ok(Some(NoadVariant::Noad(pn)))
+                if st.mem[pn].noad_type >= NodeType::OrdNoad
+                    && st.mem[pn].noad_type <= NodeType::PunctNoad =>
             {
                 pn
             }
@@ -825,12 +827,13 @@ fn make_ord(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
     }
 }
 
-fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
+fn make_math_accent(st: &mut EngineState, q: NodePtr<AccentNoad>) -> Result<(), Abort> {
+    let n = q.as_noad();
     fetch(st, q.accent_chr())?;
     let f = st.scanner.cur_f;
     let mut c = st.scanner.cur_c;
     let area = st.fonts.font_area[f];
-    let kind = q.subtype(&st.mem);
+    let kind = st.mem[q].base.subtype;
     let bottom_accent = kind == BOTTOM_ACC || kind == BOTTOM_ACC + 1;
     let is_native = area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG;
 
@@ -840,11 +843,11 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
         if !bottom_accent {
             s = compute_ot_math_accent_pos(st, q)?;
         }
-        x = clean_box(st, q.nucleus(), st.scanner.cur_style.cramped())?;
+        x = clean_box(st, n.nucleus(), st.scanner.cur_style.cramped())?;
     } else if st.scanner.cur_i.exists() {
         let mut acc_i = st.scanner.cur_i;
-        if st.mem[q.nucleus()].math_type == MATH_CHAR {
-            fetch(st, q.nucleus())?;
+        if st.mem[n.nucleus()].math_type == MATH_CHAR {
+            fetch(st, n.nucleus())?;
             if st.scanner.cur_i.tag() == CharTag::Lig {
                 let cur_f = st.scanner.cur_f;
                 let (mut a, mut step) = st.fonts.lig_kern_start(cur_f, st.scanner.cur_i);
@@ -864,7 +867,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
                 };
             }
         }
-        x = clean_box(st, q.nucleus(), st.scanner.cur_style.cramped())?;
+        x = clean_box(st, n.nucleus(), st.scanner.cur_style.cramped())?;
         let w = st.mem[x].width;
         while acc_i.tag() == CharTag::List {
             let larger = i32::from(acc_i.remainder());
@@ -891,22 +894,22 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
         h.min(st.fonts.param(f, X_HEIGHT_CODE))
     };
 
-    if (st.mem[q.supscr()].math_type != EMPTY || st.mem[q.subscr()].math_type != EMPTY)
-        && st.mem[q.nucleus()].math_type == MATH_CHAR
+    if (st.mem[n.supscr()].math_type != EMPTY || st.mem[n.subscr()].math_type != EMPTY)
+        && st.mem[n.nucleus()].math_type == MATH_CHAR
     {
         st.mem.flush_node_list(x.ptr())?;
         let base = st.mem.new_noad()?;
         let mem = &mut st.mem;
-        mem[base.nucleus()] = mem[q.nucleus()];
-        mem[base.supscr()] = mem[q.supscr()];
-        mem[base.subscr()] = mem[q.subscr()];
-        for script in [q.supscr(), q.subscr()] {
+        mem[base.nucleus()] = mem[n.nucleus()];
+        mem[base.supscr()] = mem[n.supscr()];
+        mem[base.subscr()] = mem[n.subscr()];
+        for script in [n.supscr(), n.subscr()] {
             mem[script].set_info(MemPtr::default());
             mem[script].math_type = EMPTY;
         }
-        mem[q.nucleus()].math_type = SUB_MLIST;
-        mem[q.nucleus()].set_info(base.ptr());
-        x = clean_box(st, q.nucleus(), st.scanner.cur_style)?;
+        mem[n.nucleus()].math_type = SUB_MLIST;
+        mem[n.nucleus()].set_info(base.ptr());
+        x = clean_box(st, n.nucleus(), st.scanner.cur_style)?;
         delta += st.mem[x].height - h;
         h = st.mem[x].height;
     }
@@ -1014,13 +1017,13 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
     };
     let x_width = st.mem[x].width;
     st.mem[v].width = x_width;
-    st.mem.set_nucleus_box(q, v);
+    st.mem.set_nucleus_box(n, v);
     Ok(())
 }
 
 fn make_left_right(
     st: &mut EngineState,
-    q: NodePtr<Noad>,
+    q: NodePtr<FenceNoad>,
     style: MathStyle,
     max_d: Scaled,
     max_h: Scaled,
@@ -1035,8 +1038,8 @@ fn make_left_right(
     let delta1 = (max_h + max_d - delta2).max(delta2);
     let delta = ((delta1 / 500) * delimiter_factor).max(delta1 + delta1 - delimiter_shortfall);
     let delimiter = var_delimiter(st, q.delimiter(), size, delta)?;
-    q.set_new_hlist(&mut st.mem, delimiter.ptr());
-    Ok(if q.noad_type(&st.mem) == NodeType::LeftNoad {
+    st.mem[q.any()].new_hlist = delimiter.ptr();
+    Ok(if st.mem[q].noad_type == NodeType::LeftNoad {
         NodeType::OpenNoad
     } else {
         NodeType::CloseNoad
@@ -1134,9 +1137,9 @@ impl MemState {
     }
 }
 
-fn mlist_advance(st: &mut EngineState, qn: NodePtr<Noad>, style: MathStyle) -> (u16, MemPtr) {
-    let mut r_type = qn.noad_type(&st.mem).as_raw();
-    let next = qn.link(&st.mem);
+fn mlist_advance(st: &mut EngineState, qn: NodePtr<AnyNoad>, style: MathStyle) -> (u16, MemPtr) {
+    let mut r_type = st.mem[qn].noad_type.raw();
+    let next = st.mem[qn].link;
     if r_type == NodeType::RightNoad.as_raw() {
         r_type = NodeType::LeftNoad.as_raw();
         st.scanner.cur_style = style;
@@ -1204,7 +1207,7 @@ fn mlist_nucleus(st: &mut EngineState, qn: NodePtr<Noad>, mut delta: Scaled) -> 
         }
         _ => return Err(Abort::Confusion("mlist2")),
     };
-    qn.set_new_hlist(&mut st.mem, p);
+    st.mem[qn.any()].new_hlist = p;
     let need_scripts =
         st.mem[qn.subscr()].math_type != EMPTY || st.mem[qn.supscr()].math_type != EMPTY;
     if need_scripts {
@@ -1226,12 +1229,25 @@ const MATH_SPACING: [&[u8; 8]; 8] = [
     b"12341011",
 ];
 
+/// Packs the translated hlist of `qn` to track the list's height and depth.
+fn check_noad_dimensions(
+    st: &mut EngineState,
+    qn: NodePtr<AnyNoad>,
+    max_h: &mut Scaled,
+    max_d: &mut Scaled,
+) -> Result<(), Abort> {
+    let list = st.mem[qn].new_hlist;
+    let z_box = crate::packaging::hpack(st, list, PackSpec::NATURAL)?;
+    st.mem.mlist_track_box(z_box, max_h, max_d);
+    Ok(())
+}
+
 pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
     let mlist = st.scanner.cur_mlist;
     let penalties = st.scanner.mlist_penalties;
     let style = st.scanner.cur_style;
     let mut q = mlist;
-    let mut r: Option<NodePtr<Noad>> = None;
+    let mut r: Option<NodePtr<AnyNoad>> = None;
     let mut r_type = NodeType::OpNoad.as_raw();
     let mut max_h = Scaled::ZERO;
     let mut max_d = Scaled::ZERO;
@@ -1240,8 +1256,8 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
 
     enum FirstPass {
         ProcessNucleus(NodePtr<Noad>),
-        CheckDimensions(NodePtr<Noad>),
-        DoneWithNoad(NodePtr<Noad>),
+        CheckDimensions(NodePtr<AnyNoad>),
+        DoneWithNoad(NodePtr<AnyNoad>),
         DoneWithNode,
     }
 
@@ -1250,75 +1266,79 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
         let action = 'reswitch: loop {
             delta = Scaled::ZERO;
             match st.mem.classify(q) {
-                Ok(AnyNode::Noad(qn)) => match qn.noad_type(&st.mem) {
-                    NodeType::BinNoad => {
-                        match NodeType::from_raw(r_type) {
-                            Ok(NodeType::BinNoad)
-                            | Ok(NodeType::OpNoad)
-                            | Ok(NodeType::RelNoad)
-                            | Ok(NodeType::OpenNoad)
-                            | Ok(NodeType::PunctNoad)
-                            | Ok(NodeType::LeftNoad) => {
-                                qn.set_noad_type(&mut st.mem, NodeType::OrdNoad);
-                                continue 'reswitch;
-                            }
-                            _ => {}
-                        }
-                        break 'reswitch FirstPass::ProcessNucleus(qn);
-                    }
-                    nt @ (NodeType::RelNoad
-                    | NodeType::CloseNoad
-                    | NodeType::PunctNoad
-                    | NodeType::RightNoad) => {
-                        if r_type == NodeType::BinNoad.as_raw() {
-                            r.expect("r_type == Bin implies a previous noad")
-                                .set_noad_type(&mut st.mem, NodeType::OrdNoad);
-                        }
-                        if nt == NodeType::RightNoad {
-                            break 'reswitch FirstPass::DoneWithNoad(qn);
-                        }
-                        break 'reswitch FirstPass::ProcessNucleus(qn);
-                    }
-                    NodeType::LeftNoad => break 'reswitch FirstPass::DoneWithNoad(qn),
-                    NodeType::FractionNoad => {
-                        make_fraction(st, qn)?;
+                Ok(AnyNode::Noad(qn)) => match qn.variant(&st.mem) {
+                    NoadVariant::Fraction(f) => {
+                        make_fraction(st, f)?;
                         break 'reswitch FirstPass::CheckDimensions(qn);
                     }
-                    NodeType::OpNoad => {
-                        delta = make_op(st, qn)?;
-                        if qn.subtype(&st.mem) == LIMITS {
-                            break 'reswitch FirstPass::CheckDimensions(qn);
+                    NoadVariant::Radical(rad) => {
+                        make_radical(st, rad)?;
+                        break 'reswitch FirstPass::ProcessNucleus(rad.as_noad());
+                    }
+                    NoadVariant::Accent(acc) => {
+                        make_math_accent(st, acc)?;
+                        break 'reswitch FirstPass::ProcessNucleus(acc.as_noad());
+                    }
+                    NoadVariant::Fence(f) => {
+                        if st.mem[f].noad_type == NodeType::RightNoad
+                            && r_type == NodeType::BinNoad.as_raw()
+                        {
+                            let r = r.ok_or(Abort::Confusion("mlist1"))?;
+                            st.mem[r].noad_type = NodeType::OrdNoad.into();
                         }
-                        break 'reswitch FirstPass::ProcessNucleus(qn);
+                        break 'reswitch FirstPass::DoneWithNoad(qn);
                     }
-                    NodeType::OrdNoad => {
-                        make_ord(st, qn)?;
-                        break 'reswitch FirstPass::ProcessNucleus(qn);
-                    }
-                    NodeType::OpenNoad | NodeType::InnerNoad => {
-                        break 'reswitch FirstPass::ProcessNucleus(qn)
-                    }
-                    NodeType::RadicalNoad => {
-                        make_radical(st, qn)?;
-                        break 'reswitch FirstPass::ProcessNucleus(qn);
-                    }
-                    NodeType::OverNoad => {
-                        make_over(st, qn)?;
-                        break 'reswitch FirstPass::ProcessNucleus(qn);
-                    }
-                    NodeType::UnderNoad => {
-                        make_under(st, qn)?;
-                        break 'reswitch FirstPass::ProcessNucleus(qn);
-                    }
-                    NodeType::AccentNoad => {
-                        make_math_accent(st, qn)?;
-                        break 'reswitch FirstPass::ProcessNucleus(qn);
-                    }
-                    NodeType::VcenterNoad => {
-                        make_vcenter(st, qn)?;
-                        break 'reswitch FirstPass::ProcessNucleus(qn);
-                    }
-                    _ => unreachable!("AnyNode::Noad always has a noad type (16..=31)"),
+                    NoadVariant::Noad(n) => match st.mem[n].noad_type.get() {
+                        Some(NodeType::BinNoad) => {
+                            match NodeType::from_raw(r_type) {
+                                Ok(NodeType::BinNoad)
+                                | Ok(NodeType::OpNoad)
+                                | Ok(NodeType::RelNoad)
+                                | Ok(NodeType::OpenNoad)
+                                | Ok(NodeType::PunctNoad)
+                                | Ok(NodeType::LeftNoad) => {
+                                    st.mem[n].noad_type = NodeType::OrdNoad.into();
+                                    continue 'reswitch;
+                                }
+                                _ => {}
+                            }
+                            break 'reswitch FirstPass::ProcessNucleus(n);
+                        }
+                        Some(NodeType::RelNoad | NodeType::CloseNoad | NodeType::PunctNoad) => {
+                            if r_type == NodeType::BinNoad.as_raw() {
+                                let r = r.ok_or(Abort::Confusion("mlist1"))?;
+                                st.mem[r].noad_type = NodeType::OrdNoad.into();
+                            }
+                            break 'reswitch FirstPass::ProcessNucleus(n);
+                        }
+                        Some(NodeType::OpNoad) => {
+                            delta = make_op(st, n)?;
+                            if st.mem[n].subtype == LIMITS {
+                                break 'reswitch FirstPass::CheckDimensions(qn);
+                            }
+                            break 'reswitch FirstPass::ProcessNucleus(n);
+                        }
+                        Some(NodeType::OrdNoad) => {
+                            make_ord(st, n)?;
+                            break 'reswitch FirstPass::ProcessNucleus(n);
+                        }
+                        Some(NodeType::OpenNoad | NodeType::InnerNoad) => {
+                            break 'reswitch FirstPass::ProcessNucleus(n)
+                        }
+                        Some(NodeType::OverNoad) => {
+                            make_over(st, n)?;
+                            break 'reswitch FirstPass::ProcessNucleus(n);
+                        }
+                        Some(NodeType::UnderNoad) => {
+                            make_under(st, n)?;
+                            break 'reswitch FirstPass::ProcessNucleus(n);
+                        }
+                        Some(NodeType::VcenterNoad) => {
+                            make_vcenter(st, n)?;
+                            break 'reswitch FirstPass::ProcessNucleus(n);
+                        }
+                        _ => return Err(Abort::Confusion("mlist1")),
+                    },
                 },
                 Ok(AnyNode::Style(sn)) => {
                     st.scanner.cur_style = MathStyle::from_raw(st.mem[sn].subtype);
@@ -1372,13 +1392,13 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                 continue;
             }
             FirstPass::DoneWithNoad(qn) => qn,
-            FirstPass::ProcessNucleus(qn) | FirstPass::CheckDimensions(qn) => {
-                if matches!(action, FirstPass::ProcessNucleus(_)) {
-                    mlist_nucleus(st, qn, delta)?;
-                }
-                let list = qn.new_hlist(&st.mem);
-                let z_box = crate::packaging::hpack(st, list, PackSpec::NATURAL)?;
-                st.mem.mlist_track_box(z_box, &mut max_h, &mut max_d);
+            FirstPass::ProcessNucleus(n) => {
+                mlist_nucleus(st, n, delta)?;
+                check_noad_dimensions(st, n.any(), &mut max_h, &mut max_d)?;
+                n.any()
+            }
+            FirstPass::CheckDimensions(qn) => {
+                check_noad_dimensions(st, qn, &mut max_h, &mut max_d)?;
                 qn
             }
         };
@@ -1388,8 +1408,8 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
 
     let mut p = TEMP_HEAD;
     if r_type == NodeType::BinNoad.as_raw() {
-        r.expect("r_type == Bin implies a previous noad")
-            .set_noad_type(&mut st.mem, NodeType::OrdNoad);
+        let r = r.ok_or(Abort::Confusion("mlist1"))?;
+        st.mem[r].noad_type = NodeType::OrdNoad.into();
     }
     p.set_link(&mut st.mem, MemPtr::NULL);
     q = mlist;
@@ -1398,7 +1418,7 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
     set_cur_size_and_mu(st);
 
     enum SecondPass {
-        Splice(NodePtr<Noad>),
+        Splice(NodePtr<AnyNoad>),
         StyleNode,
         Moved,
     }
@@ -1409,33 +1429,38 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
         let mut pen = INF_PENALTY;
         let step = match st.mem.classify(q) {
             Ok(AnyNode::Noad(qn)) => {
-                match qn.noad_type(&st.mem) {
-                    NodeType::OpNoad
-                    | NodeType::OpenNoad
-                    | NodeType::CloseNoad
-                    | NodeType::PunctNoad
-                    | NodeType::InnerNoad => {
-                        t = qn.noad_type(&st.mem).as_raw();
+                let variant = qn.variant(&st.mem);
+                s = variant.size();
+                match variant {
+                    NoadVariant::Noad(n) => match st.mem[n].noad_type.get() {
+                        Some(
+                            nt @ (NodeType::OpNoad
+                            | NodeType::OpenNoad
+                            | NodeType::CloseNoad
+                            | NodeType::PunctNoad
+                            | NodeType::InnerNoad),
+                        ) => t = nt.as_raw(),
+                        Some(NodeType::BinNoad) => {
+                            t = NodeType::BinNoad.as_raw();
+                            pen = st.eqtb.int_par(IntPar::BinOpPenalty);
+                        }
+                        Some(NodeType::RelNoad) => {
+                            t = NodeType::RelNoad.as_raw();
+                            pen = st.eqtb.int_par(IntPar::RelPenalty);
+                        }
+                        Some(
+                            NodeType::OrdNoad
+                            | NodeType::VcenterNoad
+                            | NodeType::OverNoad
+                            | NodeType::UnderNoad,
+                        ) => {}
+                        _ => return Err(Abort::Confusion("mlist3")),
+                    },
+                    NoadVariant::Radical(_) | NoadVariant::Accent(_) | NoadVariant::Fraction(_) => {
                     }
-                    NodeType::BinNoad => {
-                        t = NodeType::BinNoad.as_raw();
-                        pen = st.eqtb.int_par(IntPar::BinOpPenalty);
+                    NoadVariant::Fence(f) => {
+                        t = make_left_right(st, f, style, max_d, max_h)?.as_raw();
                     }
-                    NodeType::RelNoad => {
-                        t = NodeType::RelNoad.as_raw();
-                        pen = st.eqtb.int_par(IntPar::RelPenalty);
-                    }
-                    NodeType::OrdNoad
-                    | NodeType::VcenterNoad
-                    | NodeType::OverNoad
-                    | NodeType::UnderNoad => {}
-                    NodeType::RadicalNoad => s = RADICAL_NOAD_SIZE,
-                    NodeType::AccentNoad => s = ACCENT_NOAD_SIZE,
-                    NodeType::FractionNoad => s = FRACTION_NOAD_SIZE,
-                    NodeType::LeftNoad | NodeType::RightNoad => {
-                        t = make_left_right(st, qn, style, max_d, max_h)?.as_raw();
-                    }
-                    _ => return Err(Abort::Confusion("mlist3")),
                 }
                 SecondPass::Splice(qn)
             }
@@ -1495,7 +1520,7 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                 }
             }
 
-            let head = qn.new_hlist(&st.mem);
+            let head = st.mem[qn].new_hlist;
             if !head.is_null() {
                 p.set_link(&mut st.mem, head);
                 let mut tail = head;
@@ -1506,7 +1531,7 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
             }
 
             if penalties && pen < INF_PENALTY {
-                if let Some(next) = qn.link(&st.mem).as_idx() {
+                if let Some(next) = st.mem[qn].link.as_idx() {
                     if !matches!(
                         st.mem.node_type(next),
                         Ok(NodeType::Penalty | NodeType::RelNoad)
@@ -1518,7 +1543,7 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                 }
             }
 
-            if qn.noad_type(&st.mem) == NodeType::RightNoad {
+            if st.mem[qn].noad_type == NodeType::RightNoad {
                 t = NodeType::OpenNoad.as_raw();
             }
             r_type = t;
@@ -1564,11 +1589,14 @@ impl MemState {
     }
 }
 
-fn compute_ot_math_accent_pos(st: &mut EngineState, mut p: NodePtr<Noad>) -> Result<Scaled, Abort> {
+fn compute_ot_math_accent_pos(
+    st: &mut EngineState,
+    mut p: NodePtr<AccentNoad>,
+) -> Result<Scaled, Abort> {
     loop {
-        match st.mem[p.nucleus()].math_type {
+        match st.mem[p.as_noad().nucleus()].math_type {
             MATH_CHAR => {
-                fetch(st, p.nucleus())?;
+                fetch(st, p.as_noad().nucleus())?;
                 let f = st.scanner.cur_f;
                 let c = st.scanner.cur_c;
                 let q = crate::fonts::new_native_character(st, f, c as u32)?;
@@ -1576,9 +1604,12 @@ fn compute_ot_math_accent_pos(st: &mut EngineState, mut p: NodePtr<Noad>) -> Res
                 return Ok(st.fonts.get_ot_math_accent_pos(f, i32::from(g)));
             }
             SUB_MLIST => {
-                let r = st.mem[p.nucleus()].info();
+                let r = st.mem[p.as_noad().nucleus()].info();
                 match r.as_idx().map(|ri| st.mem.classify_noad(ri)) {
-                    Some(Ok(Some(rn))) if rn.noad_type(&st.mem) == NodeType::AccentNoad => p = rn,
+                    Some(Ok(Some(rn))) => match rn.variant(&st.mem) {
+                        NoadVariant::Accent(a) => p = a,
+                        _ => return Ok(INFINITE_DIMEN),
+                    },
                     _ => return Ok(INFINITE_DIMEN),
                 }
             }

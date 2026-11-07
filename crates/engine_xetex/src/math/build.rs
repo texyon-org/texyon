@@ -12,7 +12,10 @@ use crate::errors::Abort;
 use crate::input::TokenType;
 use crate::mem::GARBAGE;
 use crate::mem_types::ListStateRecord;
-use crate::node::{ChoiceNode, DelimiterField, MathField, Noad, NodePtr};
+use crate::node::{
+    AccentNoad, ChoiceNode, DelimiterField, FenceNoad, FractionNoad, MathField, Noad, NoadVariant,
+    NodePtr, RadicalNoad,
+};
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, EqtbState, GroupCode, MemState, SaveStackState};
 use crate::units::{EqtbPtr, MemIdx, MemPtr, NodeType, Scaled};
@@ -113,9 +116,12 @@ impl ListStateRecord {
         if self.head == tail {
             return false;
         }
-        match mem.classify_noad(tail) {
-            Ok(Some(noad)) if noad.noad_type(mem) == NodeType::OpNoad => {
-                noad.set_subtype(mem, limit);
+        let Ok(Some(any)) = mem.classify_noad(tail) else {
+            return false;
+        };
+        match any.variant(mem) {
+            NoadVariant::Noad(n) if mem[n].noad_type == NodeType::OpNoad => {
+                mem[n].subtype = limit;
                 true
             }
             _ => false,
@@ -138,10 +144,10 @@ pub(crate) fn math_limit_switch(st: &mut EngineState, code: LimitCode) -> Result
 }
 
 impl ListStateRecord {
-    fn append_radical_noad(&mut self, mem: &mut MemState) -> Result<NodePtr<Noad>, Abort> {
-        let node = NodePtr::<Noad>::alloc_radical(mem)?;
+    fn append_radical_noad(&mut self, mem: &mut MemState) -> Result<NodePtr<RadicalNoad>, Abort> {
+        let node = NodePtr::<RadicalNoad>::alloc(mem)?;
         self.tail_append(mem, node.ptr());
-        node.clear_fields(mem);
+        mem[node].base.clear_fields();
         Ok(node)
     }
 }
@@ -149,7 +155,7 @@ impl ListStateRecord {
 pub(crate) fn math_radical(st: &mut EngineState, code: RadicalCode) -> Result<(), Abort> {
     let tail = st.input.cur_list.append_radical_noad(&mut st.mem)?;
     scan_delimiter(st, tail.left_delimiter(), Some(code))?;
-    crate::scan::scan_math(st, tail.nucleus())
+    crate::scan::scan_math(st, tail.as_noad().nucleus())
 }
 
 impl ListStateRecord {
@@ -179,21 +185,22 @@ impl ListStateRecord {
     fn fin_mlist(&mut self, mem: &mut MemState, p: MemPtr) -> Result<MemPtr, Abort> {
         let q;
         if let Some(aux_noad) = self.incompleat_noad() {
-            mem[aux_noad.subscr()].math_type = SUB_MLIST;
             let list = self.head.link(mem);
-            mem[aux_noad.subscr()].set_info(list);
+            let d = &mut mem[aux_noad].denominator;
+            d.math_type = SUB_MLIST;
+            d.set_info(list);
             if p.is_null() {
                 q = aux_noad.ptr();
             } else {
-                q = mem[aux_noad.supscr()].info();
+                q = mem[aux_noad].numerator.info();
                 let etex_aux = self.e_tex_aux;
                 if mem.node_type(q) != Ok(NodeType::LeftNoad) || etex_aux.is_null() {
                     return Err(Abort::Confusion("right"));
                 }
                 let etex_link = etex_aux.link(mem);
-                mem[aux_noad.supscr()].set_info(etex_link);
+                mem[aux_noad].numerator.set_info(etex_link);
                 etex_aux.set_link(mem, aux_noad.ptr());
-                aux_noad.set_link(mem, p);
+                mem[aux_noad].link = p;
             }
         } else {
             self.tail.set_link(mem, p);
@@ -262,20 +269,24 @@ impl ListStateRecord {
         mem: &mut MemState,
         cmd: Cmd,
     ) -> Result<(NodePtr<MathField>, Option<ScriptDuplication>), Abort> {
-        let script = |n: NodePtr<Noad>| {
-            if cmd == Cmd::SupMark {
-                n.supscr()
-            } else {
-                n.subscr()
-            }
-        };
+        let sup = cmd == Cmd::SupMark;
+        let script = |n: NodePtr<Noad>| if sup { n.supscr() } else { n.subscr() };
         let mut t = EMPTY;
         let mut p = None;
 
         if self.tail != self.head {
-            if let Ok(Some(n)) = mem.classify_noad(self.tail) {
-                if n.noad_type(mem).as_raw() < NodeType::LeftNoad.as_raw() {
-                    let field = script(n);
+            if let Ok(Some(any)) = mem.classify_noad(self.tail) {
+                // WEB's `scripts_allowed` admits fractions, whose script words are the numerator and denominator.
+                let field = match any.variant(mem) {
+                    NoadVariant::Noad(n) => Some(script(n)),
+                    NoadVariant::Radical(r) => Some(script(r.as_noad())),
+                    NoadVariant::Accent(a) => Some(script(a.as_noad())),
+                    NoadVariant::Fraction(f) => {
+                        Some(if sup { f.numerator() } else { f.denominator() })
+                    }
+                    NoadVariant::Fence(_) => None,
+                };
+                if let Some(field) = field {
                     t = mem[field].math_type;
                     p = Some(field);
                 }
@@ -289,7 +300,7 @@ impl ListStateRecord {
                 let noad = mem.new_noad()?;
                 self.tail_append(mem, noad.ptr());
                 if t != EMPTY {
-                    duplicate = Some(if cmd == Cmd::SupMark {
+                    duplicate = Some(if sup {
                         ScriptDuplication::Superscript
                     } else {
                         ScriptDuplication::Subscript
@@ -325,16 +336,17 @@ pub(crate) fn sub_sup(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 impl ListStateRecord {
-    fn start_fraction_noad(&mut self, mem: &mut MemState) -> Result<NodePtr<Noad>, Abort> {
-        let fraction = NodePtr::<Noad>::alloc_fraction(mem)?;
+    fn start_fraction_noad(&mut self, mem: &mut MemState) -> Result<NodePtr<FractionNoad>, Abort> {
+        let fraction = NodePtr::<FractionNoad>::alloc(mem)?;
         self.set_incompleat_noad(Some(fraction));
-        fraction.set_subtype(mem, NORMAL);
-        mem[fraction.supscr()].math_type = SUB_MLIST;
         let list = self.head.link(mem);
-        mem[fraction.supscr()].set_info(list);
-        mem[fraction.subscr()].clear();
-        mem[fraction.left_delimiter()].clear();
-        mem[fraction.right_delimiter()].clear();
+        let f = &mut mem[fraction];
+        f.subtype = NORMAL;
+        f.numerator.math_type = SUB_MLIST;
+        f.numerator.set_info(list);
+        f.denominator.clear();
+        f.left_delimiter.clear();
+        f.right_delimiter.clear();
 
         self.head.set_link(mem, MemPtr::NULL);
         self.tail = self.head;
@@ -380,11 +392,11 @@ pub(crate) fn math_fraction(st: &mut EngineState, code: AboveCode) -> Result<(),
         }
 
         match kind {
-            AboveCode::Over => aux.set_thickness(&mut st.mem, DEFAULT_CODE),
-            AboveCode::Atop => aux.set_thickness(&mut st.mem, Scaled::ZERO),
+            AboveCode::Over => st.mem[aux].thickness = DEFAULT_CODE,
+            AboveCode::Atop => st.mem[aux].thickness = Scaled::ZERO,
             _ => {
                 let d = crate::scan::scan_dimen(st, false, false)?;
-                aux.set_thickness(&mut st.mem, d);
+                st.mem[aux].thickness = d;
             }
         }
     }
@@ -392,17 +404,23 @@ pub(crate) fn math_fraction(st: &mut EngineState, code: AboveCode) -> Result<(),
 }
 
 impl ListStateRecord {
-    fn append_accent_noad(&mut self, mem: &mut MemState) -> Result<NodePtr<Noad>, Abort> {
-        let accent = NodePtr::<Noad>::alloc_accent(mem)?;
+    fn append_accent_noad(&mut self, mem: &mut MemState) -> Result<NodePtr<AccentNoad>, Abort> {
+        let accent = NodePtr::<AccentNoad>::alloc(mem)?;
         self.tail_append(mem, accent.ptr());
-        accent.clear_fields(mem);
-        mem[accent.accent_chr()].math_type = MATH_CHAR;
+        let a = &mut mem[accent];
+        a.base.clear_fields();
+        a.accent_chr.math_type = MATH_CHAR;
         Ok(accent)
     }
 }
 
 impl MemState {
-    fn finish_accent_math_field(&mut self, eqtb: &EqtbState, tail: NodePtr<Noad>, value: i32) {
+    fn finish_accent_math_field(
+        &mut self,
+        eqtb: &EqtbState,
+        tail: NodePtr<AccentNoad>,
+        value: i32,
+    ) {
         self[tail.accent_chr()].set_character((value % 65536) as u16);
         let intpar_cur_fam = eqtb.int_par(IntPar::CurFam);
         if crate::scan::math_class(value) == 7
@@ -415,6 +433,27 @@ impl MemState {
         let current_fam = self[tail.accent_chr()].plane_and_fam();
         self[tail.accent_chr()]
             .set_plane_and_fam(current_fam + (crate::scan::math_char(value) / 65536) as u16 * 256);
+    }
+}
+
+impl MemState {
+    /// A fence noad for `code`. A middle one is a right noad with a `MIDDLE_NOAD` subtype.
+    fn new_fence(&mut self, code: LeftRightCode) -> Result<NodePtr<FenceNoad>, Abort> {
+        let p = NodePtr::<FenceNoad>::alloc(self)?;
+        let n = &mut self[p];
+        n.subtype = NORMAL;
+        n.delimiter.clear();
+        n.supscr.clear();
+        n.subscr.clear();
+        match code {
+            LeftRightCode::Left => {}
+            LeftRightCode::Right => n.noad_type = NodeType::RightNoad.into(),
+            LeftRightCode::Middle => {
+                n.noad_type = NodeType::RightNoad.into();
+                n.subtype = MIDDLE_NOAD;
+            }
+        }
+        Ok(p)
     }
 }
 
@@ -439,13 +478,8 @@ pub(crate) fn math_left_right(st: &mut EngineState, code: LeftRightCode) -> Resu
             crate::main_control::off_save(st)?;
         }
     } else {
-        let p = st.mem.new_noad()?;
-        p.set_type_code(&mut st.mem, t);
+        let p = st.mem.new_fence(code)?;
         scan_delimiter(st, p.delimiter(), None)?;
-        if t == MIDDLE_NOAD {
-            p.set_noad_type(&mut st.mem, NodeType::RightNoad);
-            p.set_subtype(&mut st.mem, MIDDLE_NOAD);
-        }
         let q = if t == NodeType::LeftNoad.as_raw() {
             p.ptr()
         } else {
@@ -463,9 +497,10 @@ pub(crate) fn math_left_right(st: &mut EngineState, code: LeftRightCode) -> Resu
             let inner = st.mem.new_noad()?;
             let cl = &mut st.input.cur_list;
             cl.tail_append(&mut st.mem, inner.ptr());
-            inner.set_noad_type(&mut st.mem, NodeType::InnerNoad);
-            st.mem[inner.nucleus()].math_type = SUB_MLIST;
-            st.mem[inner.nucleus()].set_info(q);
+            let n = &mut st.mem[inner];
+            n.noad_type = NodeType::InnerNoad.into();
+            n.nucleus.math_type = SUB_MLIST;
+            n.nucleus.set_info(q);
         }
     }
     Ok(())
@@ -489,12 +524,12 @@ pub(crate) fn math_ac(st: &mut EngineState, code: Option<MathAccentCode>) -> Res
 
     let value = if code == Some(MathAccentCode::UmathAccent) {
         if crate::scan::scan_keyword(st, "fixed")? {
-            tail.set_subtype(&mut st.mem, FIXED_ACC);
+            st.mem[tail].base.subtype = FIXED_ACC;
         } else if crate::scan::scan_keyword(st, "bottom")? {
             if crate::scan::scan_keyword(st, "fixed")? {
-                tail.set_subtype(&mut st.mem, BOTTOM_ACC + 1);
+                st.mem[tail].base.subtype = BOTTOM_ACC + 1;
             } else {
-                tail.set_subtype(&mut st.mem, BOTTOM_ACC);
+                st.mem[tail].base.subtype = BOTTOM_ACC;
             }
         }
         crate::scan::scan_umath_code(st)?
@@ -502,5 +537,5 @@ pub(crate) fn math_ac(st: &mut EngineState, code: Option<MathAccentCode>) -> Res
         crate::scan::math_code_from_tex(crate::scan::scan_fifteen_bit_int(st)?)
     };
     st.mem.finish_accent_math_field(&st.eqtb, tail, value);
-    crate::scan::scan_math(st, tail.nucleus())
+    crate::scan::scan_math(st, tail.as_noad().nucleus())
 }

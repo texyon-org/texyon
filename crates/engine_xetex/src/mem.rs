@@ -493,7 +493,7 @@ impl MemState {
 
     pub fn new_noad(&mut self) -> Result<NodePtr<Noad>, Abort> {
         let p = NodePtr::<Noad>::alloc(self)?;
-        p.clear_fields(self);
+        self[p].clear_fields();
         Ok(p)
     }
 

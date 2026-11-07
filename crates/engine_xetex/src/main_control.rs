@@ -149,7 +149,7 @@ fn append_noad(st: &mut EngineState, kind: Option<NodeType>) -> Result<(), Abort
     let n = st.mem.new_noad()?;
     st.input.cur_list.tail_append(&mut st.mem, n.ptr());
     match kind {
-        Some(t) => n.set_type_code(&mut st.mem, t.as_raw()),
+        Some(t) => st.mem[n].noad_type = t.into(),
         None => crate::input::back_input(st)?,
     }
     crate::scan::scan_math(st, n.nucleus())?;

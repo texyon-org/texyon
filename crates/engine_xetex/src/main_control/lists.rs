@@ -20,7 +20,7 @@ use crate::mem::{
 use crate::mem_types::ListStateRecord;
 use crate::node::{
     AdjustNode, AnyNode, CharNode, DiscNode, GlueNode, GlueSpecNode, InsNode, MarkNode, MathField,
-    NodePtr, WhatsitNode, WhatsitSubtype,
+    NoadVariant, NodePtr, WhatsitNode, WhatsitSubtype,
 };
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
@@ -468,7 +468,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             st.mem.pop_nest(&mut st.input)?;
             let noad = st.mem.new_noad()?;
             st.input.cur_list.tail_append(&mut st.mem, noad.ptr());
-            noad.set_noad_type(&mut st.mem, NodeType::VcenterNoad);
+            st.mem[noad].noad_type = NodeType::VcenterNoad.into();
             st.mem[noad.nucleus()].math_type = SUB_BOX;
             st.mem[noad.nucleus()].set_info(p.ptr());
         }
@@ -486,28 +486,29 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             let Ok(AnyNode::Noad(noad)) = st.mem.classify(p) else {
                 return Ok(());
             };
-            match noad.noad_type(&st.mem) {
-                NodeType::OrdNoad
-                    if st.mem[noad.subscr()].math_type == EMPTY
-                        && st.mem[noad.supscr()].math_type == EMPTY =>
+            match noad.variant(&st.mem) {
+                NoadVariant::Noad(n)
+                    if st.mem[n].noad_type == NodeType::OrdNoad
+                        && st.mem[n].subscr.math_type == EMPTY
+                        && st.mem[n].supscr.math_type == EMPTY =>
                 {
-                    st.mem[save_loc] = st.mem[noad.nucleus()];
-                    st.mem.free_node(noad.ptr(), NOAD_SIZE);
+                    st.mem[save_loc] = st.mem[n].nucleus;
+                    st.mem.free_node(n.ptr(), NOAD_SIZE);
                 }
-                NodeType::AccentNoad
+                NoadVariant::Accent(a)
                     if save_loc.idx().raw() == st.input.cur_list.tail.raw() + 1
                         && matches!(
                             st.mem.classify(st.input.cur_list.tail),
-                            Ok(AnyNode::Noad(t)) if t.noad_type(&st.mem) == NodeType::OrdNoad
+                            Ok(AnyNode::Noad(t)) if st.mem[t].noad_type == NodeType::OrdNoad
                         ) =>
                 {
                     let mut q = st.input.cur_list.head;
                     while q.link(&st.mem) != st.input.cur_list.tail {
                         q = q.link(&st.mem);
                     }
-                    q.set_link(&mut st.mem, noad.ptr());
+                    q.set_link(&mut st.mem, a.ptr());
                     st.mem.free_node(st.input.cur_list.tail, NOAD_SIZE);
-                    st.input.cur_list.tail = noad.ptr();
+                    st.input.cur_list.tail = a.ptr();
                 }
                 _ => {}
             }

@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 
 use crate::consts::{
     ACCENT_NOAD_SIZE, BOX_NODE_SIZE, FRACTION_NOAD_SIZE, GLUE_SPEC_SIZE, INS_NODE_SIZE,
-    MARGIN_KERN_NODE_SIZE, MEDIUM_NODE_SIZE, NATIVE_NODE_SIZE, NOAD_SIZE, NORMAL, NULL_FLAG,
+    MARGIN_KERN_NODE_SIZE, MEDIUM_NODE_SIZE, NATIVE_NODE_SIZE, NOAD_SIZE, NULL_FLAG,
     PAGE_INS_NODE_SIZE, PIC_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE, SMALL_NODE_SIZE,
     STYLE_NODE_SIZE,
 };
@@ -327,6 +327,17 @@ impl StoredCode for GlueOrder {
     }
 }
 
+impl StoredCode for NodeType {
+    #[inline]
+    fn from_u16(raw: u16) -> Option<Self> {
+        NodeType::from_raw(raw).ok()
+    }
+    #[inline]
+    fn to_u16(self) -> u16 {
+        self.as_raw()
+    }
+}
+
 impl StoredCode for Orientation {
     #[inline]
     fn from_u16(raw: u16) -> Option<Self> {
@@ -447,8 +458,19 @@ node_kinds! {
     ChoiceNode = Choice, STYLE_NODE_SIZE;
     /// An LR edge in a shipped list. XeTeX aliases its type code to style.
     EdgeNode = Style, STYLE_NODE_SIZE;
-    /// Any noad. `alloc` makes an ordinary noad of `NOAD_SIZE`.
+    /// A noad with a nucleus and two scripts: ord through inner, overline,
+    /// underline and vcenter. `alloc` makes an ordinary one.
     Noad = OrdNoad, NOAD_SIZE;
+    /// A radical: a noad, then its delimiter.
+    RadicalNoad = RadicalNoad, RADICAL_NOAD_SIZE;
+    /// A math accent: a noad, then its accent character.
+    AccentNoad = AccentNoad, ACCENT_NOAD_SIZE;
+    /// A generalized fraction.
+    FractionNoad = FractionNoad, FRACTION_NOAD_SIZE;
+    /// A `\left`, `\middle` or `\right` delimiter. `alloc` makes a left one.
+    FenceNoad = LeftNoad, NOAD_SIZE;
+    /// Any noad, through the words every noad shares.
+    AnyNoad;
     MarginKernNode = MarginKern, MARGIN_KERN_NODE_SIZE;
     /// Variable-size, sub-classified by [`WhatsitSubtype`].
     WhatsitNode;
@@ -577,11 +599,11 @@ macro_rules! impl_traits {
 
 impl_traits!(HasLink: BoxNode, RuleNode, InsNode, MarkNode, AdjustNode, LigatureNode, DiscNode,
     WhatsitNode, MathNode, GlueNode, KernNode, PenaltyNode, UnsetNode, StyleNode, ChoiceNode,
-    EdgeNode, Noad, MarginKernNode, SaNode, PageInsNode, ActiveNode, DeltaNode, PassiveNode,
+    EdgeNode, Noad, RadicalNoad, AccentNoad, FractionNoad, FenceNoad, AnyNoad, MarginKernNode, SaNode, PageInsNode, ActiveNode, DeltaNode, PassiveNode,
     MovementNode, CondNode, CharNode, AlignRecord, AlignStackNode, ExprNode, PseudoLineNode,
     LigItem);
-impl_traits!(Accessed: WhatsitNode, Noad, SaNode, PseudoLineNode);
-impl_traits!(HasNodeHeader: WhatsitNode, Noad, SaNode);
+impl_traits!(Accessed: WhatsitNode, SaNode, PseudoLineNode);
+impl_traits!(HasNodeHeader: WhatsitNode, SaNode);
 impl_traits!(HasWidth: WhatsitNode);
 impl_traits!(HasHeightDepth: WhatsitNode);
 
@@ -794,8 +816,8 @@ pub enum AnyNode {
     Unset(NodePtr<UnsetNode>),
     Style(NodePtr<StyleNode>),
     Choice(NodePtr<ChoiceNode>),
-    /// Any noad, refine with [`NodePtr::<Noad>::noad_type`].
-    Noad(NodePtr<Noad>),
+    /// Any noad, refine with [`NodePtr::<AnyNoad>::variant`].
+    Noad(NodePtr<AnyNoad>),
     MarginKern(NodePtr<MarginKernNode>),
 }
 
@@ -951,7 +973,10 @@ impl MemState {
     }
 
     #[inline]
-    pub fn classify_noad(&self, p: impl MemAddr) -> Result<Option<NodePtr<Noad>>, InvalidNodeType> {
+    pub fn classify_noad(
+        &self,
+        p: impl MemAddr,
+    ) -> Result<Option<NodePtr<AnyNoad>>, InvalidNodeType> {
         Ok(match self.classify(p)? {
             AnyNode::Noad(n) => Some(n),
             _ => None,
@@ -1007,53 +1032,72 @@ impl NodePtr<ChoiceNode> {
     }
 }
 
-impl NodePtr<Noad> {
-    #[inline]
-    pub fn alloc_radical(mem: &mut MemState) -> Result<NodePtr<Noad>, Abort> {
-        mem.alloc_node(RADICAL_NOAD_SIZE, Some(NodeType::RadicalNoad))
-    }
+/// A noad kind, which widens to [`AnyNoad`] for the words every noad shares.
+pub trait NoadKind: NodeKind {}
 
-    #[inline]
-    pub fn alloc_accent(mem: &mut MemState) -> Result<NodePtr<Noad>, Abort> {
-        mem.alloc_node(ACCENT_NOAD_SIZE, Some(NodeType::AccentNoad))
-    }
+impl_traits!(NoadKind: Noad, RadicalNoad, AccentNoad, FractionNoad, FenceNoad);
 
+impl<K: NoadKind> NodePtr<K> {
+    /// The noad as any noad, for its header and translated hlist.
     #[inline]
-    pub fn alloc_fraction(mem: &mut MemState) -> Result<NodePtr<Noad>, Abort> {
-        mem.alloc_node(FRACTION_NOAD_SIZE, Some(NodeType::FractionNoad))
+    pub fn any(self) -> NodePtr<AnyNoad> {
+        NodePtr::from_idx_unchecked(self.idx)
     }
+}
 
-    #[inline]
-    pub fn noad_type(self, mem: &MemState) -> NodeType {
-        NodeType::from_raw(mem.b16s1(self.idx)).expect("valid noad type")
-    }
-    #[inline]
-    pub fn set_noad_type(self, mem: &mut MemState, nt: NodeType) {
-        mem.set_b16s1(self.idx, nt.as_raw());
-    }
-    /// Stamps a type code taken from `cur_chr`, which a caller may fix up after.
-    #[inline]
-    pub fn set_type_code(self, mem: &mut MemState, code: u16) {
-        mem.set_b16s1(self.idx, code);
-    }
+/// A noad by its layout, read off its type code.
+#[derive(Copy, Clone, Debug)]
+pub enum NoadVariant {
+    Noad(NodePtr<Noad>),
+    Radical(NodePtr<RadicalNoad>),
+    Accent(NodePtr<AccentNoad>),
+    Fraction(NodePtr<FractionNoad>),
+    Fence(NodePtr<FenceNoad>),
+}
 
-    fields! {
-        /// The translated hlist, which reuses the nucleus type word once
-        /// `mlist_to_hlist` has converted the nucleus.
-        new_hlist / set_new_hlist: MemPtr = b32s1 @ 1;
-        /// A fraction's rule thickness, in the nucleus type word.
-        thickness / set_thickness: Scaled = b32s1 @ 1;
-    }
-
-    /// The empty fields and normal subtype of a fresh noad.
+impl NoadVariant {
+    /// The nucleus and scripts of a noad that has them, all but fractions and fences.
     #[inline]
-    pub fn clear_fields(self, mem: &mut MemState) {
-        self.set_subtype(mem, NORMAL);
-        for field in [self.nucleus(), self.supscr(), self.subscr()] {
-            mem[field].clear();
+    pub fn as_noad(self) -> Option<NodePtr<Noad>> {
+        match self {
+            NoadVariant::Noad(n) => Some(n),
+            NoadVariant::Radical(r) => Some(r.as_noad()),
+            NoadVariant::Accent(a) => Some(a.as_noad()),
+            NoadVariant::Fraction(_) | NoadVariant::Fence(_) => None,
         }
     }
 
+    /// The words the noad occupies.
+    #[inline]
+    pub fn size(self) -> i32 {
+        match self {
+            NoadVariant::Noad(_) => Noad::SIZE,
+            NoadVariant::Radical(_) => RadicalNoad::SIZE,
+            NoadVariant::Accent(_) => AccentNoad::SIZE,
+            NoadVariant::Fraction(_) => FractionNoad::SIZE,
+            NoadVariant::Fence(_) => FenceNoad::SIZE,
+        }
+    }
+}
+
+impl NodePtr<AnyNoad> {
+    /// The noad's layout, from its type code.
+    #[inline]
+    pub fn variant(self, mem: &MemState) -> NoadVariant {
+        let p = self.idx;
+        match mem[self].noad_type.get() {
+            Some(NodeType::RadicalNoad) => NoadVariant::Radical(NodePtr::from_idx_unchecked(p)),
+            Some(NodeType::AccentNoad) => NoadVariant::Accent(NodePtr::from_idx_unchecked(p)),
+            Some(NodeType::FractionNoad) => NoadVariant::Fraction(NodePtr::from_idx_unchecked(p)),
+            Some(NodeType::LeftNoad | NodeType::RightNoad) => {
+                NoadVariant::Fence(NodePtr::from_idx_unchecked(p))
+            }
+            _ => NoadVariant::Noad(NodePtr::from_idx_unchecked(p)),
+        }
+    }
+}
+
+impl NodePtr<Noad> {
     #[inline]
     pub fn nucleus(self) -> NodePtr<MathField> {
         NodePtr::at(self.idx + 1)
@@ -1066,26 +1110,41 @@ impl NodePtr<Noad> {
     pub fn subscr(self) -> NodePtr<MathField> {
         NodePtr::at(self.idx + 3)
     }
-    /// A fraction's numerator, which shares the superscript word.
+}
+
+impl NodePtr<RadicalNoad> {
+    /// The radical's nucleus and scripts, laid out as a plain noad.
     #[inline]
-    pub fn numerator(self) -> NodePtr<MathField> {
-        self.supscr()
+    pub fn as_noad(self) -> NodePtr<Noad> {
+        NodePtr::from_idx_unchecked(self.idx)
     }
-    /// A fraction's denominator, which shares the subscript word.
     #[inline]
-    pub fn denominator(self) -> NodePtr<MathField> {
-        self.subscr()
+    pub fn left_delimiter(self) -> NodePtr<DelimiterField> {
+        NodePtr::at(self.idx + 4)
+    }
+}
+
+impl NodePtr<AccentNoad> {
+    /// The accentee and scripts, laid out as a plain noad.
+    #[inline]
+    pub fn as_noad(self) -> NodePtr<Noad> {
+        NodePtr::from_idx_unchecked(self.idx)
     }
     #[inline]
     pub fn accent_chr(self) -> NodePtr<MathField> {
         NodePtr::at(self.idx + 4)
     }
-    /// A left or right noad's delimiter, in the nucleus word.
+}
+
+impl NodePtr<FractionNoad> {
     #[inline]
-    pub fn delimiter(self) -> NodePtr<DelimiterField> {
-        NodePtr::at(self.idx + 1)
+    pub fn numerator(self) -> NodePtr<MathField> {
+        NodePtr::at(self.idx + 2)
     }
-    /// A radical's delimiter, or a fraction's left one.
+    #[inline]
+    pub fn denominator(self) -> NodePtr<MathField> {
+        NodePtr::at(self.idx + 3)
+    }
     #[inline]
     pub fn left_delimiter(self) -> NodePtr<DelimiterField> {
         NodePtr::at(self.idx + 4)
@@ -1093,6 +1152,21 @@ impl NodePtr<Noad> {
     #[inline]
     pub fn right_delimiter(self) -> NodePtr<DelimiterField> {
         NodePtr::at(self.idx + 5)
+    }
+}
+
+impl NodePtr<FenceNoad> {
+    #[inline]
+    pub fn delimiter(self) -> NodePtr<DelimiterField> {
+        NodePtr::at(self.idx + 1)
+    }
+    #[inline]
+    pub fn supscr(self) -> NodePtr<MathField> {
+        NodePtr::at(self.idx + 2)
+    }
+    #[inline]
+    pub fn subscr(self) -> NodePtr<MathField> {
+        NodePtr::at(self.idx + 3)
     }
 }
 
@@ -1618,13 +1692,24 @@ mod tests {
 
         let mut mem = arena_with_free_block();
         let n = NodePtr::<Noad>::alloc(&mut mem).unwrap();
-        assert_eq!(n.noad_type(&mem), NodeType::OrdNoad);
-        let n = NodePtr::<Noad>::alloc_radical(&mut mem).unwrap();
-        assert_eq!(n.noad_type(&mem), NodeType::RadicalNoad);
-        let n = NodePtr::<Noad>::alloc_accent(&mut mem).unwrap();
-        assert_eq!(n.noad_type(&mem), NodeType::AccentNoad);
-        let n = NodePtr::<Noad>::alloc_fraction(&mut mem).unwrap();
-        assert!(matches!(mem.classify(n.idx()), Ok(AnyNode::Noad(_))));
+        assert_eq!(mem[n].noad_type, NodeType::OrdNoad);
+        assert!(matches!(n.any().variant(&mem), NoadVariant::Noad(_)));
+        let r = NodePtr::<RadicalNoad>::alloc(&mut mem).unwrap();
+        assert!(matches!(r.any().variant(&mem), NoadVariant::Radical(_)));
+        let a = NodePtr::<AccentNoad>::alloc(&mut mem).unwrap();
+        assert!(matches!(a.any().variant(&mem), NoadVariant::Accent(_)));
+        let f = NodePtr::<FractionNoad>::alloc(&mut mem).unwrap();
+        assert!(matches!(
+            mem.classify(f.idx()),
+            Ok(AnyNode::Noad(any)) if matches!(any.variant(&mem), NoadVariant::Fraction(_))
+        ));
+
+        let mut mem = arena_with_free_block();
+        let l = NodePtr::<FenceNoad>::alloc(&mut mem).unwrap();
+        assert_eq!(mem[l].noad_type, NodeType::LeftNoad);
+        assert!(matches!(l.any().variant(&mem), NoadVariant::Fence(_)));
+        mem[l].noad_type = NodeType::RightNoad.into();
+        assert!(matches!(l.any().variant(&mem), NoadVariant::Fence(_)));
     }
 
     #[test]
@@ -1948,26 +2033,62 @@ mod tests {
 
     #[test]
     fn noad_fields_land_in_their_words() {
+        let w = |p: i32| MemPtr::from_raw(p);
         let mut mem = fresh_mem(200);
         let n: NodePtr<Noad> = at(&mut mem, 100, Some(NodeType::OrdNoad));
-        mem[n.nucleus()].math_type = 1;
-        mem[n.nucleus()].set_info(MemPtr::from_raw(123));
-        assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 1);
-        assert_eq!(mem.b32s0(MemPtr::from_raw(101)), 123);
-        mem[n.nucleus()].set_character(45);
-        mem[n.nucleus()].set_plane_and_fam(2 + 3 * 256);
-        assert_eq!(mem[n.nucleus()].fam(), 2);
-        assert_eq!(mem[n.nucleus()].full_char(), 45 + 3 * 65_536);
-        mem[n.accent_chr()].set_character(48);
-        mem[n.accent_chr()].set_plane_and_fam(5);
-        assert_eq!(mem.b16s0(MemPtr::from_raw(104)), 48);
-        assert_eq!(mem.b16s1(MemPtr::from_raw(104)), 5);
-        mem[n.right_delimiter()].set_small(1 + 256, 7);
-        mem[n.right_delimiter()].set_large(2, 9);
-        assert_eq!(mem[n.right_delimiter()].small(), (1, 7 + 65_536));
-        assert_eq!(mem[n.right_delimiter()].large(), (2, 9));
-        assert_eq!(mem.b16s3(MemPtr::from_raw(105)), 1 + 256);
-        assert_eq!(mem.b16s0(MemPtr::from_raw(105)), 9);
+        let b = &mut mem[n];
+        b.subtype = 2;
+        b.nucleus.math_type = 1;
+        b.supscr.math_type = 2;
+        b.subscr.math_type = 3;
+        assert_eq!(mem.b16s0(w(100)), 2);
+        assert_eq!(mem.b16s1(w(100)), NodeType::OrdNoad.as_raw());
+        assert_eq!(
+            [mem.b32s1(w(101)), mem.b32s1(w(102)), mem.b32s1(w(103))],
+            [1, 2, 3]
+        );
+        assert_eq!(mem[n.supscr()].math_type, 2);
+        mem[n.any()].new_hlist = w(77);
+        assert_eq!(mem.b32s1(w(101)), 77);
+        assert_eq!(mem[n.any()].link, mem[n].link);
+
+        let a: NodePtr<AccentNoad> = at(&mut mem, 100, Some(NodeType::AccentNoad));
+        mem[a].base.subtype = 1;
+        mem[a].accent_chr.set_character(48);
+        mem[a].accent_chr.set_plane_and_fam(5);
+        assert_eq!(mem.b16s0(w(100)), 1);
+        assert_eq!([mem.b16s0(w(104)), mem.b16s1(w(104))], [48, 5]);
+        assert_eq!(mem[a.accent_chr()].character(), 48);
+        assert_eq!(a.as_noad().nucleus().idx(), n.nucleus().idx());
+
+        let r: NodePtr<RadicalNoad> = at(&mut mem, 100, Some(NodeType::RadicalNoad));
+        mem[r].left_delimiter.set_small(3, 4);
+        assert_eq!([mem.b16s2(w(104)), mem.b16s3(w(104))], [4, 3]);
+        assert_eq!(mem[r.left_delimiter()].small(), (3, 4));
+
+        let f: NodePtr<FractionNoad> = at(&mut mem, 100, Some(NodeType::FractionNoad));
+        let b = &mut mem[f];
+        b.thickness = Scaled::from_raw(0x51);
+        b.numerator.math_type = 6;
+        b.denominator.math_type = 7;
+        b.left_delimiter.set_large(8, 9);
+        b.right_delimiter.set_small(1 + 256, 7);
+        b.right_delimiter.set_large(2, 9);
+        assert_eq!(mem.b32s1(w(101)), 0x51);
+        assert_eq!([mem.b32s1(w(102)), mem.b32s1(w(103))], [6, 7]);
+        assert_eq!([mem.b16s0(w(104)), mem.b16s1(w(104))], [9, 8]);
+        assert_eq!(mem.b16s3(w(105)), 1 + 256);
+        assert_eq!(mem.b16s0(w(105)), 9);
+        assert_eq!(mem[f.right_delimiter()].small(), (1, 7 + 65_536));
+        assert_eq!(mem[f.numerator()].math_type, 6);
+        assert_eq!(mem[f.denominator()].math_type, 7);
+
+        let e: NodePtr<FenceNoad> = at(&mut mem, 100, Some(NodeType::RightNoad));
+        mem[e].delimiter.set_large(2, 9);
+        mem[e].subscr.math_type = 5;
+        assert_eq!([mem.b16s0(w(101)), mem.b16s1(w(101))], [9, 2]);
+        assert_eq!(mem.b32s1(w(103)), 5);
+        assert_eq!(mem[e.delimiter()].large(), (2, 9));
     }
 
     #[test]

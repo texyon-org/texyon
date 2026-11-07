@@ -108,3 +108,136 @@ fn left_and_right_build_extensible_delimiters() {
         .\mathoff",
     );
 }
+
+const EVERY_NOAD: &str = r#"\mathop{x}\limits^y_x \radical"270370{x^y} \mathaccent"7015 x_y
+    \overline{x}\underline{y}\vcenter{}\mathpunct{x}\left(x\middle)x\over y"#;
+
+#[test]
+fn every_noad_kind_shows_its_fields() {
+    let r = run(&format!(
+        "{MATH_FONTS}\\setbox0\\hbox{{${EVERY_NOAD}\\showlists\\right)$}}"
+    ));
+    let start = r.log.find("### math mode").expect("the lists were shown");
+    let end = r.log[start..].find("! OK").expect("the show ended") + start;
+    assert_lines(
+        r.log[start..end].trim_end(),
+        r#"
+        ### math mode entered at line 13
+        \mathord
+        .\fam1 y
+        this will begin denominator of:
+        \fraction, thickness = default
+        \\left"28300
+        \\mathord
+        \.\fam1 x
+        \\middle"29301
+        \\mathord
+        \.\fam1 x
+        ### math mode entered at line 12
+        \mathop\limits
+        .\fam1 x
+        ^\fam1 y
+        _\fam1 x
+        \radical"270370
+        .\mathord
+        ..\fam1 x
+        .^\fam1 y
+        \accent\fam0 ^^U
+        .\fam1 x
+        _\fam1 y
+        \overline
+        .\fam1 x
+        \underline
+        .\fam1 y
+        \vcenter
+        .\vbox(0.0+0.0)x0.0
+        \mathpunct
+        .\fam1 x
+        ### restricted horizontal mode entered at line 12
+        spacefactor 1000
+        ### vertical mode entered at line 0
+        prevdepth ignored"#,
+    );
+}
+
+#[test]
+fn every_noad_kind_typesets() {
+    assert_lines(
+        &formula(&format!(r"{EVERY_NOAD}\right)")),
+        r"
+        \hbox(13.01387+7.0)x82.04173
+        .\mathon
+        .\vbox(13.01387+7.0)x5.71527
+        ..\kern1.0
+        ..\hbox(4.30554+1.94444)x5.71527, glue set 0.22684fil
+        ...\glue 0.0 plus 1.0fil minus 1.0fil
+        ...\mi y
+        ...\kern0.35878
+        ...\glue 0.0 plus 1.0fil minus 1.0fil
+        ..\kern1.11111
+        ..\hbox(4.65277+0.0)x5.71527
+        ...\hbox(4.30554+0.0)x5.71527, shifted -0.34723
+        ....\mi x
+        ..\kern1.69446
+        ..\hbox(4.30554+0.0)x5.71527
+        ...\mi x
+        ..\kern1.0
+        .\glue(\thinmuskip) 0.0
+        .\hbox(9.51314+0.88683)x19.31023
+        ..\hbox(0.39998+9.6)x8.33336, shifted -8.71318
+        ...\sy p
+        ..\vbox(9.51314+0.0)x10.97687
+        ...\kern0.39998
+        ...\rule(0.39998+0.0)x*
+        ...\kern1.38681
+        ...\hbox(7.32637+0.0)x10.97687
+        ....\mi x
+        ....\hbox(4.30554+1.94444)x5.2616, shifted -3.02083
+        .....\mi y
+        .\vbox(6.94444+3.44443)x10.97687
+        ..\hbox(6.94444+0.0)x0.0, shifted 0.35764
+        ...\rm ^^U
+        ..\kern-4.30554
+        ..\hbox(4.30554+3.44443)x10.97687
+        ...\mi x
+        ...\hbox(4.30554+1.94444)x5.2616, shifted 1.49998
+        ....\mi y
+        .\vbox(6.30544+0.0)x5.71527
+        ..\kern0.39998
+        ..\rule(0.39998+0.0)x*
+        ..\kern1.19994
+        ..\hbox(4.30554+0.0)x5.71527
+        ...\mi x
+        .\vbox(4.30554+3.94434)x5.2616
+        ..\hbox(4.30554+1.94444)x5.2616
+        ...\mi y
+        ..\kern1.19994
+        ..\rule(0.39998+0.0)x*
+        .\vbox(2.5+-2.5)x0.0
+        .\mi x
+        .\glue(\thinmuskip) 0.0
+        .\hbox(11.50008+6.50009)x29.34723
+        ..\hbox(0.39998+17.60019)x5.97223, shifted -11.1001
+        ...\ex ^^P
+        ..\mi x
+        ..\hbox(0.39998+17.60019)x5.97223, shifted -11.1001
+        ...\ex ^^Q
+        ..\hbox(8.24286+5.39285)x5.71527
+        ...\hbox(0.0+0.0)x0.0, shifted -2.5
+        ...\vbox(8.24286+5.39285)x5.71527
+        ....\hbox(4.30554+0.0)x5.71527
+        .....\mi x
+        ....\kern1.23732
+        ....\rule(0.39998+0.0)x*
+        ....\kern1.44287
+        ....\hbox(4.30554+1.94444)x5.71527, glue set 0.22684fil
+        .....\glue 0.0 plus 1.0fil minus 1.0fil
+        .....\mi y
+        .....\kern0.35878
+        .....\glue 0.0 plus 1.0fil minus 1.0fil
+        ...\hbox(0.0+0.0)x0.0, shifted -2.5
+        ..\hbox(0.39998+17.60019)x5.97223, shifted -11.1001
+        ...\ex ^^Q
+        .\mathoff",
+    );
+}

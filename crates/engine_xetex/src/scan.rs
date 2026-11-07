@@ -10,7 +10,7 @@ use crate::consts::{
 use crate::errors::{error, Abort};
 use crate::input::{back_error, back_input, begin_token_list, ins_error, TokenType};
 use crate::mem::BACKUP_HEAD;
-use crate::node::{BoxNode, MathField, NodePtr, RuleDimen, RuleNode};
+use crate::node::{BoxNode, MathField, NodePtr, RuleDimen, RuleNode, Stored};
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic, print_cmd_chr, print_err};
 use crate::packaging::PackSpec;
 use crate::params::IntPar;
@@ -261,13 +261,10 @@ pub(crate) fn set_math_char(st: &mut EngineState, c: i32) -> Result<(), Abort> {
             if (0..NUMBER_MATH_FAMILIES).contains(&cf) {
                 st.mem[nd.nucleus()].set_plane_and_fam(cf as u16);
             }
-            nd.set_noad_type(&mut st.mem, NodeType::OrdNoad);
+            st.mem[nd].noad_type = NodeType::OrdNoad.into();
         } else {
-            nd.set_noad_type(
-                &mut st.mem,
-                NodeType::from_raw(NodeType::OrdNoad.as_raw() + math_class(c) as u16)
-                    .expect("valid noad type"),
-            );
+            st.mem[nd].noad_type =
+                Stored::from_raw(NodeType::OrdNoad.as_raw() + math_class(c) as u16);
         }
         let fam = st.mem[nd.nucleus()].plane_and_fam() + (ch / 65536) as u16 * 256;
         st.mem[nd.nucleus()].set_plane_and_fam(fam);
