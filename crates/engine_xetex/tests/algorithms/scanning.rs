@@ -82,6 +82,15 @@ fn parshapedimen_clamps_to_the_last_line() {
 }
 
 #[test]
+fn penalty_arrays_read_the_count_at_zero_and_clamp_to_the_last() {
+    let r = run(r"\interlinepenalties 2 7 8 \clubpenalties 3 4 5 6
+                  \showthe\interlinepenalties 0 \showthe\interlinepenalties 1
+                  \showthe\interlinepenalties 9 \showthe\clubpenalties 3
+                  \showthe\clubpenalties 0 \showthe\widowpenalties 1");
+    assert_eq!(r.shown(), ["2", "7", "8", "6", "3", "0"]);
+}
+
+#[test]
 fn showtokens_detokenizes_its_argument() {
     let r = run(r"\showtokens{a#b}");
     assert_eq!(r.shown(), ["a##b"]);

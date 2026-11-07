@@ -244,7 +244,7 @@ impl MemState {
     /// A line number wrapped negative by a huge `\prevgraf` also gets the last.
     fn etex_penalty(&self, eqtb: &EqtbState, k: i32, n: i32) -> Option<i32> {
         let penalties = eqtb.penalties(ETEX_PEN_BASE + k)?;
-        let count = penalties.count(self);
+        let count = self[penalties].count;
         let n = if n > 0 { n.min(count) } else { count };
         Some(penalties.penalty(self, n))
     }

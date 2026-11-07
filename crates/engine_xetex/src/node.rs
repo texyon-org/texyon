@@ -1368,24 +1368,14 @@ impl NodePtr<ParShapeNode> {
 }
 
 impl NodePtr<PenaltiesNode> {
-    fields! {
-        count / set_count: i32 = b32s1 @ 1;
-    }
-
-    /// Stores half the node size, as a `\parshape` array does.
-    #[inline]
-    pub fn set_words(self, mem: &mut MemState, words: i32) {
-        mem.set_b32s0(self.idx, words);
-    }
-
-    /// Entry `k`, counting from 1.
+    /// Entry `k`, counting from 1, or the count for 0 as e-TeX reads it.
+    /// Panics past the entries.
     #[inline]
     pub fn penalty(self, mem: &MemState, k: i32) -> i32 {
-        mem.b32s1(self.idx + 1 + k)
-    }
-    #[inline]
-    pub fn set_penalty(self, mem: &mut MemState, k: i32, v: i32) {
-        mem.set_b32s1(self.idx + 1 + k, v);
+        if k == 0 {
+            return mem[self].count;
+        }
+        mem.entries(self)[usize::try_from(k - 1).unwrap_or(usize::MAX)].value
     }
 }
 

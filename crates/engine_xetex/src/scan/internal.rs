@@ -833,7 +833,7 @@ pub(super) fn scan_something_internal(
                 let n = scan_int(st)?;
                 match st.eqtb.penalties(m) {
                     Some(penalties) if n >= 0 => {
-                        let k = n.min(penalties.count(&st.mem));
+                        let k = n.min(st.mem[penalties].count);
                         penalties.penalty(&st.mem, k)
                     }
                     _ => 0,

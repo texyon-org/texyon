@@ -1055,14 +1055,17 @@ fn set_shape(st: &mut EngineState, global: bool, q: EqtbPtr) -> Result<(), Abort
         let words = n / 2 + 1;
         let p = st.mem.get_node(2 * words + 1)?;
         let penalties = NodePtr::<PenaltiesNode>::at(p);
-        penalties.set_words(&mut st.mem, words);
-        penalties.set_count(&mut st.mem, n);
-        for k in 1..=n {
-            let v = crate::scan::scan_int(st)?;
-            penalties.set_penalty(&mut st.mem, k, v);
-        }
-        if n & 1 == 0 {
-            penalties.set_penalty(&mut st.mem, n + 1, 0);
+        let header = &mut st.mem[penalties];
+        header.half_size = words;
+        header.count = n;
+        let slots = st.mem.entries(penalties).len();
+        for (k, slot) in (1..).zip(0..slots) {
+            let v = if k <= n {
+                crate::scan::scan_int(st)?
+            } else {
+                0
+            };
+            st.mem.entries_mut(penalties)[slot].value = v;
         }
         p
     } else {

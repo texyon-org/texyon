@@ -13,9 +13,10 @@ use crate::node::{
     ChoiceNode, CondNode, DelimiterField, DeltaNode, DiscNode, EdgeNode, ExprNode, FenceNoad,
     FixedNode, FractionNoad, FreeBlock, GlueNode, GlueSpecNode, InsNode, KernNode, LigItem,
     LigatureNode, Link, MarginKernNode, MarkNode, MathField, MathNode, MovementNode, Noad,
-    NodeKind, NodePtr, PageInsNode, ParShapeNode, PassiveNode, PenaltyNode, RadicalNoad, RuleNode,
-    SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved,
-    SaSavedPointer, SaSavedWord, SaWordNode, SpanNode, Stored, StoredDimen, StyleNode, UnsetNode,
+    NodeKind, NodePtr, PageInsNode, ParShapeNode, PassiveNode, PenaltiesNode, PenaltyNode,
+    RadicalNoad, RuleNode, SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode,
+    SaSaved, SaSavedPointer, SaSavedWord, SaWordNode, SpanNode, Stored, StoredDimen, StyleNode,
+    UnsetNode,
 };
 use crate::state::MemState;
 use crate::token::TokenList;
@@ -151,6 +152,28 @@ pub struct ParShapeLine {
 
 overlay!(ParShapeNode => ParShapeHeader, 1);
 array_overlay!(ParShapeNode => ParShapeLine, 2, |h| 2 * h.lines + 1);
+
+/// The header of an e-TeX penalty array.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct PenaltiesHeader {
+    /// Half the node size, rounded down, as for a `\parshape` array.
+    pub half_size: i32,
+    _link: i32,
+    _unused: i32,
+    pub count: i32,
+}
+
+/// One entry of an e-TeX penalty array, or the zero padding after an even count.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct PenaltyEntry {
+    _unused: i32,
+    pub value: i32,
+}
+
+overlay!(PenaltiesNode => PenaltiesHeader, 2);
+array_overlay!(PenaltiesNode => PenaltyEntry, 1, |h| 2 * h.half_size + 1);
 
 /// A glue specification. Its first word holds the fill orders and a reference
 /// count in place of a type code and link.
@@ -1349,6 +1372,24 @@ mod tests {
         assert_eq!([3, 4, 9].map(|i| mem.b32s1(at(i))), [0; 3]);
         assert_eq!([5, 6, 7, 8, 9].map(|i| mem.b32s0(at(i))), [0; 5]);
         assert_eq!(s.line(&mem, 2).width, Scaled::from_raw(14));
+    }
+
+    #[test]
+    fn penalties_land_on_their_words() {
+        let mut mem = arena();
+        let p: NodePtr<PenaltiesNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(4));
+        let header = &mut mem[p];
+        header.half_size = 2;
+        header.count = 2;
+        let entries = mem.entries_mut(p);
+        assert_eq!(entries.len(), 3);
+        entries[0].value = 11;
+        entries[1].value = 12;
+        let at = MemIdx::from_raw;
+        assert_eq!((mem.b32s0(at(4)), mem.b32s1(at(5))), (2, 2));
+        assert_eq!([6, 7, 8, 9].map(|i| mem.b32s1(at(i))), [11, 12, 0, 0]);
+        assert_eq!([4, 5, 6, 7, 8].map(|i| mem.b32s0(at(i))), [2, 0, 0, 0, 0]);
+        assert_eq!([0, 1, 2].map(|k| p.penalty(&mem, k)), [2, 11, 12]);
     }
 
     #[test]
