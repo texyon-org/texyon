@@ -1330,23 +1330,6 @@ impl NodePtr<PseudoLineNode> {
     }
 }
 
-impl NodePtr<FreeBlock> {
-    fields! {
-        node_size / set_node_size: i32 = b32s0 @ 0;
-        llink / set_llink: MemPtr = b32s0 @ 1;
-        rlink / set_rlink: MemPtr = b32s1 @ 1;
-    }
-
-    #[inline]
-    pub fn is_empty(self, mem: &MemState) -> bool {
-        mem.b32s1(self.idx) == crate::consts::MAX_HALFWORD
-    }
-    #[inline]
-    pub fn mark_empty(self, mem: &mut MemState) {
-        mem.set_b32s1(self.idx, crate::consts::MAX_HALFWORD);
-    }
-}
-
 // --- whatsits ---
 
 /// The subtype of a whatsit node. Only `NativeWord`..`Pdf` carry dimensions.

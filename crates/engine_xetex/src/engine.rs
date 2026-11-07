@@ -105,39 +105,39 @@ impl MemState {
         let end = MemPtr::from_raw(MAX_HALFWORD);
         let _ = self.get_node(GET_NODE_HEAD_SENTINEL);
         let old_rover = self.rover;
-        let mut p = block(old_rover).rlink(self);
-        block(old_rover).set_rlink(self, end);
+        let mut p = self[block(old_rover)].rlink;
+        self[block(old_rover)].rlink = end;
 
         while p != old_rover {
             let rover = self.rover;
             if p < rover {
                 let q = p;
-                p = block(q).rlink(self);
-                block(q).set_rlink(self, rover);
+                p = self[block(q)].rlink;
+                self[block(q)].rlink = rover;
                 self.rover = q;
             } else {
                 let mut q = rover;
-                while block(q).rlink(self) < p {
-                    q = block(q).rlink(self);
+                while self[block(q)].rlink < p {
+                    q = self[block(q)].rlink;
                 }
-                let r = block(p).rlink(self);
-                let after_q = block(q).rlink(self);
-                block(p).set_rlink(self, after_q);
-                block(q).set_rlink(self, p);
+                let r = self[block(p)].rlink;
+                let after_q = self[block(q)].rlink;
+                self[block(p)].rlink = after_q;
+                self[block(q)].rlink = p;
                 p = r;
             }
         }
 
         let rover = self.rover;
         p = rover;
-        while block(p).rlink(self) != end {
-            let next = block(p).rlink(self);
-            block(next).set_llink(self, p);
+        while self[block(p)].rlink != end {
+            let next = self[block(p)].rlink;
+            self[block(next)].llink = p;
             p = next;
         }
 
-        block(p).set_rlink(self, rover);
-        block(rover).set_llink(self, p);
+        self[block(p)].rlink = rover;
+        self[block(rover)].llink = p;
     }
 }
 
@@ -447,10 +447,10 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
 
     mem.rover = MemPtr::from_raw(20);
     let rover = NodePtr::<FreeBlock>::at(mem.rover);
-    rover.mark_empty(mem);
-    rover.set_node_size(mem, 1000);
-    rover.set_llink(mem, mem.rover);
-    rover.set_rlink(mem, mem.rover);
+    mem[rover].mark_empty();
+    mem[rover].node_size = 1000;
+    mem[rover].llink = mem.rover;
+    mem[rover].rlink = mem.rover;
     mem.lo_mem_max = mem.rover + 1000;
     let end = mem.lo_mem_max;
     end.set_link(mem, MemPtr::NULL);

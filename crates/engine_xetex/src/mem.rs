@@ -260,35 +260,35 @@ impl MemState {
             let mut p = self.rover;
             loop {
                 // Merge the free blocks that follow `p`.
-                let mut q = p + block(p).node_size(self);
-                while block(q).is_empty(self) {
-                    let t = block(q).rlink(self);
+                let mut q = p + self[block(p)].node_size;
+                while self[block(q)].is_empty() {
+                    let t = self[block(q)].rlink;
                     if q == self.rover {
                         self.rover = t;
                     }
-                    let q_left = block(q).llink(self);
-                    block(t).set_llink(self, q_left);
-                    block(q_left).set_rlink(self, t);
-                    q += block(q).node_size(self);
+                    let q_left = self[block(q)].llink;
+                    self[block(t)].llink = q_left;
+                    self[block(q_left)].rlink = t;
+                    q += self[block(q)].node_size;
                 }
 
                 let r = q - s;
                 if r > p + 1 {
-                    block(p).set_node_size(self, r - p);
+                    self[block(p)].node_size = r - p;
                     self.rover = p;
                     break 'restart r;
                 }
-                if r == p && block(p).rlink(self) != p {
-                    let new_rover = block(p).rlink(self);
-                    let t = block(p).llink(self);
+                if r == p && self[block(p)].rlink != p {
+                    let new_rover = self[block(p)].rlink;
+                    let t = self[block(p)].llink;
                     self.rover = new_rover;
-                    block(new_rover).set_llink(self, t);
-                    block(t).set_rlink(self, new_rover);
+                    self[block(new_rover)].llink = t;
+                    self[block(t)].rlink = new_rover;
                     break 'restart r;
                 }
 
-                block(p).set_node_size(self, q - p);
-                p = block(p).rlink(self);
+                self[block(p)].node_size = q - p;
+                p = self[block(p)].rlink;
                 if p == self.rover {
                     break;
                 }
@@ -309,14 +309,14 @@ impl MemState {
                 let t = t.min(max_halfword);
 
                 let rover = self.rover;
-                let left_neighbor = block(rover).llink(self);
+                let left_neighbor = self[block(rover)].llink;
                 let q = self.lo_mem_max;
-                block(left_neighbor).set_rlink(self, q);
-                block(rover).set_llink(self, q);
-                block(q).set_rlink(self, rover);
-                block(q).set_llink(self, left_neighbor);
-                block(q).mark_empty(self);
-                block(q).set_node_size(self, t - self.lo_mem_max);
+                self[block(left_neighbor)].rlink = q;
+                self[block(rover)].llink = q;
+                self[block(q)].rlink = rover;
+                self[block(q)].llink = left_neighbor;
+                self[block(q)].mark_empty();
+                self[block(q)].node_size = t - self.lo_mem_max;
                 self.lo_mem_max = t;
                 t.set_link(self, MemPtr::NULL);
                 t.set_info(self, TEX_NULL);
@@ -339,14 +339,14 @@ impl MemState {
     pub fn free_node(&mut self, p: MemPtr, s: i32) {
         let block = NodePtr::<FreeBlock>::at;
         let freed = block(p);
-        freed.set_node_size(self, s);
-        freed.mark_empty(self);
+        self[freed].node_size = s;
+        self[freed].mark_empty();
         let rover = self.rover;
-        let q = block(rover).llink(self);
-        freed.set_llink(self, q);
-        freed.set_rlink(self, rover);
-        block(rover).set_llink(self, p);
-        block(q).set_rlink(self, p);
+        let q = self[block(rover)].llink;
+        self[freed].llink = q;
+        self[freed].rlink = rover;
+        self[block(rover)].llink = p;
+        self[block(q)].rlink = p;
     }
 
     // --- node constructors ---

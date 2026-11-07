@@ -9,9 +9,10 @@ use bytemuck::{Pod, Zeroable};
 use crate::codes::{FiOrElseCode, ValueLevel};
 use crate::node::{
     AdjustNode, AlignRecord, AlignStackNode, BoxNode, CharNode, ChoiceNode, CondNode, DeltaNode,
-    DiscNode, EdgeNode, ExprNode, FixedNode, GlueNode, GlueSpecNode, InsNode, KernNode, LigItem,
-    LigatureNode, MarginKernNode, MarkNode, MathNode, MovementNode, NodeKind, NodePtr, PageInsNode,
-    PassiveNode, PenaltyNode, RuleNode, SpanNode, Stored, StoredDimen, StyleNode, UnsetNode,
+    DiscNode, EdgeNode, ExprNode, FixedNode, FreeBlock, GlueNode, GlueSpecNode, InsNode, KernNode,
+    LigItem, LigatureNode, MarginKernNode, MarkNode, MathNode, MovementNode, NodeKind, NodePtr,
+    PageInsNode, PassiveNode, PenaltyNode, RuleNode, SpanNode, Stored, StoredDimen, StyleNode,
+    UnsetNode,
 };
 use crate::state::MemState;
 use crate::token::TokenList;
@@ -568,6 +569,31 @@ pub struct LigatureLayout {
 
 overlay!(LigatureNode => LigatureLayout);
 
+/// The first two words of a block on the variable-size free list.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct FreeBlockLayout {
+    pub node_size: i32,
+    /// `MAX_HALFWORD` marks the block as free.
+    empty_flag: i32,
+    pub llink: MemPtr,
+    pub rlink: MemPtr,
+}
+
+overlay!(FreeBlock => FreeBlockLayout, 2);
+
+impl FreeBlockLayout {
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.empty_flag == crate::consts::MAX_HALFWORD
+    }
+
+    #[inline]
+    pub fn mark_empty(&mut self) {
+        self.empty_flag = crate::consts::MAX_HALFWORD;
+    }
+}
+
 impl BoxLayout {
     #[inline]
     pub fn is_hlist(&self) -> bool {
@@ -773,6 +799,23 @@ mod tests {
         (ch.character, ch.font, ch.link) = (65, FontId::new(3), MemPtr::from_raw(9));
         assert_eq!((mem.b16s0(at(15)), mem.b16s1(at(15))), (65, 3));
         assert_eq!(mem.b32s1(at(15)), 9);
+    }
+
+    #[test]
+    fn free_block_fields_land_on_their_words() {
+        let mut mem = arena();
+        let at = MemIdx::from_raw;
+        let b: NodePtr<FreeBlock> = NodePtr::from_idx_unchecked(at(6));
+        let block = &mut mem[b];
+        block.node_size = 40;
+        block.mark_empty();
+        (block.llink, block.rlink) = (MemPtr::from_raw(2), MemPtr::from_raw(3));
+        assert!(mem[b].is_empty());
+        assert_eq!(
+            (mem.b32s0(at(6)), mem.b32s1(at(6))),
+            (40, crate::consts::MAX_HALFWORD)
+        );
+        assert_eq!((mem.b32s0(at(7)), mem.b32s1(at(7))), (2, 3));
     }
 
     #[test]

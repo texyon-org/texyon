@@ -516,8 +516,8 @@ fn dynamic_memory<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), A
         words += q + 2 - p;
         var_used += q - p;
         let block = NodePtr::<FreeBlock>::at(q);
-        p = q + block.node_size(mem);
-        let next = block.rlink(mem);
+        p = q + mem[block].node_size;
+        let next = mem[block].rlink;
         if S::LOADING && (p > lo_mem_max || (q >= next && next != mem.rover)) {
             return Err(bad_fmt());
         }
