@@ -392,7 +392,7 @@ impl Command {
             Cmd::DefCode => Command::DefCode(loc),
             Cmd::XetexDefCode => Command::XetexDefCode(loc),
             Cmd::DefFamily => Command::DefFamily(loc),
-            Cmd::SetFont => Command::SetFont(FontId::from_raw(chr)),
+            Cmd::SetFont => Command::SetFont(FontId::try_from(chr).ok()?),
             Cmd::DefFont => Command::DefFont,
             Cmd::Register => Command::Register(match ValueLevel::from_raw(chr) {
                 Some(level) if level <= ValueLevel::Mu => RegisterRef::Scanned(level),

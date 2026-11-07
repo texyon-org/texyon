@@ -547,7 +547,7 @@ fn selected_font(st: &mut EngineState, known: &KnownCs) -> Option<eval::Font> {
     if st.eqtb.eq_type(id) != Cmd::SetFont {
         return None;
     }
-    let font = FontId::from_raw(st.eqtb.equiv(id));
+    let font = FontId::try_from(st.eqtb.equiv(id)).ok()?;
     Some(eval::Font {
         quad: st.fonts.param(font, crate::fonts::QUAD_CODE).raw(),
         x_height: st.fonts.param(font, crate::fonts::X_HEIGHT_CODE).raw(),

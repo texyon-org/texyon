@@ -10,9 +10,10 @@ use crate::bridge::{
 };
 use crate::cmd::Cmd;
 use crate::consts::{
-    ACTIVE_BASE, EMPTY_STRING, EQTB_SIZE, FONT_BASE, FROZEN_CONTROL_SEQUENCE, HASH_BASE,
-    HISTORY_FATAL_ERROR, INT_BASE, INVALID_HANDLE, MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP,
-    MIN_HALFWORD, PRIM_SIZE, TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
+    ACTIVE_BASE, CAT_CODE_BASE, CUR_FONT_LOC, EMPTY_STRING, EQTB_SIZE, FONT_BASE,
+    FROZEN_CONTROL_SEQUENCE, HASH_BASE, HISTORY_FATAL_ERROR, INT_BASE, INVALID_HANDLE,
+    MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP, MIN_HALFWORD, NULL_FONT, PRIM_SIZE, TEX_NULL,
+    TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::engine::{POOL_FREE, STRINGS_FREE};
 use crate::errors::Abort;
@@ -737,7 +738,7 @@ fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort>
         FONT_BASE + MAX_FONT_MAX,
         "must increase font_max",
     )?;
-    fonts.font_ptr = FontId::from_raw(font_ptr);
+    fonts.font_ptr = FontId::try_from(font_ptr).map_err(|_| bad_fmt())?;
     if S::LOADING {
         fonts.alloc_font_arrays();
     }
@@ -797,16 +798,35 @@ fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort>
         LigChar::NONE,
     )?;
 
-    if !S::LOADING {
+    if S::LOADING {
+        check_font_words(&st.eqtb, st.fonts.font_ptr)?;
+    } else {
         print_dumped_fonts(st)?;
     }
     Ok(())
 }
 
+/// Rejects a format whose eqtb names a font it does not load.
+fn check_font_words(eqtb: &EqtbState, font_ptr: FontId) -> Result<(), Abort> {
+    let loaded = |p| FontId::try_from(eqtb.equiv(p)).is_ok_and(|f| f <= font_ptr);
+    let set_font = ACTIVE_BASE
+        .until(INT_BASE)
+        .chain(EQTB_SIZE.plus(1).through(eqtb.eqtb_top))
+        .filter(|&p| eqtb.eq_type(p) == Cmd::SetFont);
+    if CUR_FONT_LOC
+        .until(CAT_CODE_BASE)
+        .chain(set_font)
+        .all(loaded)
+    {
+        Ok(())
+    } else {
+        Err(bad_fmt())
+    }
+}
+
 fn print_dumped_fonts(st: &mut EngineState) -> Result<(), Abort> {
     let font_ptr = st.fonts.font_ptr;
-    for k in FONT_BASE..=font_ptr.raw() {
-        let f = FontId::from_raw(k);
+    for f in std::iter::once(NULL_FONT).chain(font_ptr.loaded()) {
         print_nl(st, "\\font");
         crate::output::print_esc(st, st.eqtb.font_id_text(f));
         print_char(st, b'=');
@@ -1016,6 +1036,43 @@ mod tests {
     use crate::mem_types::B32x2;
     use crate::state::Selector;
 
+    fn eqtb_with_fonts() -> EqtbState {
+        let mut eqtb = EqtbState {
+            eqtb_top: EQTB_SIZE,
+            ..Default::default()
+        };
+        eqtb.data = crate::mem_types::zeroed_vec(EQTB_SIZE.index() + 1);
+        eqtb
+    }
+
+    #[test]
+    fn font_words_read_back_through_their_low_half() {
+        let mut eqtb = eqtb_with_fonts();
+        eqtb.set_equiv(CUR_FONT_LOC, FontId::new(300).raw());
+        eqtb.set_equiv(CUR_FONT_LOC + 1, FontId::new(7).raw());
+        assert_eq!(eqtb.cur_font(), FontId::new(300));
+        assert_eq!(eqtb.math_font(0), FontId::new(7));
+    }
+
+    #[test]
+    fn format_load_rejects_a_font_word_past_font_ptr() {
+        let font_ptr = FontId::new(3);
+        let mut eqtb = eqtb_with_fonts();
+        let id = FONT_ID_BASE + 2;
+        eqtb.set_eq_type(id, Cmd::SetFont);
+        eqtb.set_equiv(id, 3);
+        eqtb.set_equiv(CUR_FONT_LOC + 5, 2);
+        assert!(check_font_words(&eqtb, font_ptr).is_ok());
+
+        eqtb.set_equiv(id, 4);
+        assert!(check_font_words(&eqtb, font_ptr).is_err());
+        eqtb.set_equiv(id, 0x1_0002);
+        assert!(check_font_words(&eqtb, font_ptr).is_err());
+        eqtb.set_equiv(id, 3);
+        eqtb.set_equiv(CUR_FONT_LOC + 5, 4);
+        assert!(check_font_words(&eqtb, font_ptr).is_err());
+    }
+
     #[derive(Default)]
     struct VecDump(Vec<u8>);
 
@@ -1049,7 +1106,7 @@ mod tests {
         st.eqtb.data = crate::mem_types::zeroed_vec(EQTB_SIZE.index() + 1);
         st.strings.str_start = vec![crate::units::PoolPos::ZERO; 4];
         st.eqtb.hash = vec![B32x2 { s0: 0, s1: 0 }; hash_slot(FONT_ID_BASE + 2) as usize];
-        st.fonts.font_max = FontId::from_raw(FONT_BASE + 1);
+        st.fonts.font_max = FontId::new(1);
         st.fonts.fmem_ptr = FontInfoIdx::from_raw(7);
         st.fonts.font_info = crate::mem_types::zeroed_vec(8);
         st.fonts.alloc_font_arrays();
@@ -1059,18 +1116,15 @@ mod tests {
     #[test]
     fn font_info_load_restores_font_ptr() {
         let mut src = font_state();
-        src.fonts.font_ptr = FontId::from_raw(FONT_BASE);
-        src.fonts.font_size[FontId::from_raw(FONT_BASE)] = Scaled::from_raw(12);
+        src.fonts.font_ptr = NULL_FONT;
+        src.fonts.font_size[NULL_FONT] = Scaled::from_raw(12);
         let mut dump = VecDump::default();
         font_info(&mut dump, &mut src).expect("dump");
 
         let mut dst = font_state();
-        dst.fonts.font_ptr = FontId::from_raw(FONT_BASE + 1);
+        dst.fonts.font_ptr = FontId::new(1);
         font_info(&mut SliceUndump(&dump.0), &mut dst).expect("load");
-        assert_eq!(dst.fonts.font_ptr, FontId::from_raw(FONT_BASE));
-        assert_eq!(
-            dst.fonts.font_size[FontId::from_raw(FONT_BASE)],
-            Scaled::from_raw(12)
-        );
+        assert_eq!(dst.fonts.font_ptr, NULL_FONT);
+        assert_eq!(dst.fonts.font_size[NULL_FONT], Scaled::from_raw(12));
     }
 }

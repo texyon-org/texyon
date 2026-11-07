@@ -685,7 +685,7 @@ impl FontBundle {
     }
 
     fn restore(&self, dst: &mut FontState) {
-        for f in (self.font_ptr.raw() + 1..=dst.font_ptr.raw()).map(FontId::from_raw) {
+        for f in (self.font_ptr.get() + 1..=dst.font_ptr.get()).map(FontId::new) {
             dst.font_layout_engine[f] = None;
             dst.font_mapping[f] = None;
         }
@@ -981,17 +981,17 @@ mod tests {
             font_layout_engine: crate::state::PerFont::filled(4, None),
             font_mapping: crate::state::PerFont::filled(4, None),
             font_used: crate::state::PerFont::filled(4, false),
-            font_ptr: FontId::from_raw(1),
+            font_ptr: FontId::new(1),
             ..Default::default()
         };
         let checkpoint = FontBundle::capture(&fonts);
 
-        fonts.font_ptr = FontId::from_raw(3);
-        fonts.font_used[FontId::from_raw(2)] = true;
-        fonts.font_used[FontId::from_raw(3)] = true;
+        fonts.font_ptr = FontId::new(3);
+        fonts.font_used[FontId::new(2)] = true;
+        fonts.font_used[FontId::new(3)] = true;
         checkpoint.restore(&mut fonts);
 
-        assert_eq!(fonts.font_ptr, FontId::from_raw(1));
+        assert_eq!(fonts.font_ptr, FontId::new(1));
         assert_eq!(fonts.font_used.as_slice(), [false, false, false, false]);
     }
 
@@ -1004,10 +1004,10 @@ mod tests {
             font_layout_engine: crate::state::PerFont::filled(4, None),
             font_mapping: crate::state::PerFont::filled(4, None),
             font_used: crate::state::PerFont::filled(4, false),
-            font_ptr: FontId::from_raw(1),
+            font_ptr: FontId::new(1),
             ..Default::default()
         };
-        let (f1, f2) = (FontId::from_raw(1), FontId::from_raw(2));
+        let (f1, f2) = (FontId::new(1), FontId::new(2));
         fonts.cp_codes.set(f1, Side::Left, 65, 50);
         let checkpoint = FontBundle::capture(&fonts);
 

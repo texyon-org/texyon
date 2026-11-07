@@ -915,7 +915,7 @@ pub(crate) fn scan_font_ident(st: &mut EngineState) -> Result<FontId, Abort> {
         Some(Command::SetFont(f)) => f,
         Some(Command::DefFamily(m)) => {
             let fam = scan_math_fam_int(st)?;
-            FontId::from_raw(st.eqtb.equiv(m + fam))
+            st.eqtb.font_equiv(m + fam)
         }
         _ => {
             print_err(st, "Missing font identifier");

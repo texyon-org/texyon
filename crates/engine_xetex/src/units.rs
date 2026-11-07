@@ -737,41 +737,59 @@ impl std::ops::SubAssign<i32> for SavePtr {
     }
 }
 
-/// An internal font number.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
+/// An internal font number. Nodes store it in 16 bits, as WEB's quarterword.
+#[derive(
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Debug,
+    Hash,
+    Default,
+    bytemuck::Pod,
+    bytemuck::Zeroable,
+)]
 #[repr(transparent)]
-pub struct FontId(i32);
+pub struct FontId(u16);
+
+/// An eqtb word, format field or command code that is no font number.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct InvalidFontId(pub i32);
 
 impl FontId {
-    /// The value from its raw form in a memory word, file or FFI call.
     #[inline(always)]
-    pub const fn from_raw(raw: i32) -> FontId {
-        FontId(raw)
+    pub const fn new(n: u16) -> FontId {
+        FontId(n)
     }
 
-    /// The raw form for a memory word, file or FFI call.
     #[inline(always)]
-    pub const fn raw(self) -> i32 {
+    pub const fn get(self) -> u16 {
         self.0
     }
-}
 
-impl FontId {
+    /// The number widened for an eqtb word, format field or FFI call.
+    #[inline(always)]
+    pub fn raw(self) -> i32 {
+        i32::from(self.0)
+    }
+
     #[inline(always)]
     pub fn index(self) -> usize {
-        self.0 as usize
+        usize::from(self.0)
     }
 
     /// The `eqtb` location of the font's identifier, `font_id_base + f`.
     #[inline]
     pub fn id_loc(self) -> EqtbPtr {
-        crate::consts::FONT_ID_BASE + self.0
+        crate::consts::FONT_ID_BASE + self.raw()
     }
 
     /// The font's number in the DVI file, `f - font_base - 1`.
     #[inline]
     pub fn dvi_number(self) -> i32 {
-        self.0 - crate::consts::FONT_BASE - 1
+        self.raw() - crate::consts::FONT_BASE - 1
     }
 
     #[inline]
@@ -781,7 +799,18 @@ impl FontId {
 
     /// The fonts after `null_font` up to `self`, the loaded ones when `self` is `font_ptr`.
     pub fn loaded(self) -> impl DoubleEndedIterator<Item = FontId> {
-        (crate::consts::FONT_BASE + 1..=self.0).map(FontId)
+        (crate::consts::NULL_FONT.0 + 1..=self.0).map(FontId)
+    }
+}
+
+impl TryFrom<i32> for FontId {
+    type Error = InvalidFontId;
+
+    #[inline]
+    fn try_from(raw: i32) -> Result<FontId, InvalidFontId> {
+        u16::try_from(raw)
+            .map(FontId)
+            .map_err(|_| InvalidFontId(raw))
     }
 }
 
@@ -1097,7 +1126,7 @@ mod tests {
         assert_eq!(size_of::<MemIdx>(), size_of::<i32>());
         assert_eq!(size_of::<MemPtr>(), size_of::<i32>());
         assert_eq!(size_of::<Scaled>(), size_of::<i32>());
-        assert_eq!(size_of::<FontId>(), size_of::<i32>());
+        assert_eq!(size_of::<FontId>(), size_of::<u16>());
     }
 
     #[test]

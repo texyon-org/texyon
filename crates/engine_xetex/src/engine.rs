@@ -766,7 +766,7 @@ pub(crate) fn initialize_engine(
     st.strings.string_vacancies = 90_000;
     st.strings.max_strings = StrNumber::from_raw(565_536);
     st.fonts.font_mem_size = FontInfoIdx::from_raw(8_000_000);
-    st.fonts.font_max = FontId::from_raw(9_000);
+    st.fonts.font_max = FontId::new(9_000);
     st.hyph.trie_size = 1_000_000;
     st.hyph.hyph_size = HYPH_SIZE;
     st.input.buf_size = BufPos::from_raw(200_000);

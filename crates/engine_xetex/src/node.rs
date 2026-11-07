@@ -157,11 +157,11 @@ impl Slot for FontId {
     type Raw = u16;
     #[inline(always)]
     fn decode(raw: u16) -> Self {
-        FontId::from_raw(i32::from(raw))
+        FontId::new(raw)
     }
     #[inline(always)]
     fn encode(self) -> u16 {
-        self.raw() as u16
+        self.get()
     }
 }
 
@@ -1850,9 +1850,9 @@ mod tests {
     fn small_node_fields_land_in_their_words() {
         let mut mem = fresh_mem(200);
         let lig: NodePtr<LigatureNode> = at(&mut mem, 100, Some(NodeType::Ligature));
-        lig.set_font(&mut mem, FontId::from_raw(77));
+        lig.set_font(&mut mem, FontId::new(77));
         lig.set_character(&mut mem, 0x1234);
-        assert_eq!(lig.font(&mem), FontId::from_raw(77));
+        assert_eq!(lig.font(&mem), FontId::new(77));
         assert_eq!(mem.b16s1(MemPtr::from_raw(101)), 77);
         assert_eq!(mem.b16s0(MemPtr::from_raw(101)), 0x1234);
         lig.set_lig_ptr(&mut mem, MemPtr::from_raw(150));
@@ -1994,7 +1994,7 @@ mod tests {
         mem.set_b16s2(MemPtr::from_raw(104), 7);
         mem.set_b16s1(MemPtr::from_raw(104), 9);
         assert_eq!(w.native_size(&mem), 6);
-        assert_eq!(w.native_font(&mem), FontId::from_raw(7));
+        assert_eq!(w.native_font(&mem), FontId::new(7));
         assert_eq!(w.native_length(&mem), 9);
         assert_eq!(w.pic_path_len(&mem), 9);
         w.set_native_glyph_count(&mut mem, 3);

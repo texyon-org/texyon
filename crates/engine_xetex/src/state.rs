@@ -432,6 +432,12 @@ impl EqtbState {
         self.data[p.index()].b16().s1
     }
 
+    /// The low half of `equiv`.
+    #[inline]
+    fn b16s2(&self, p: EqtbPtr) -> u16 {
+        self.data[p.index()].b16().s2
+    }
+
     /// The command code of control-sequence entry `p`.
     #[inline]
     pub(crate) fn eq_type(&self, p: EqtbPtr) -> Cmd {
@@ -491,7 +497,14 @@ impl EqtbState {
 
     #[inline]
     pub(crate) fn cur_font(&self) -> FontId {
-        FontId::from_raw(self.equiv(crate::consts::CUR_FONT_LOC))
+        self.font_equiv(crate::consts::CUR_FONT_LOC)
+    }
+
+    /// The font an eqtb entry holds, read from the equiv's low half. Fonts are
+    /// written as `FontId` and format load checks them, so the high half is zero.
+    #[inline]
+    pub(crate) fn font_equiv(&self, p: EqtbPtr) -> FontId {
+        FontId::new(self.b16s2(p))
     }
     #[inline]
     pub(crate) fn tok_par(&self, n: TokPar) -> crate::token::TokenList {
@@ -535,7 +548,7 @@ impl EqtbState {
     }
     #[inline]
     pub(crate) fn math_font(&self, n: i32) -> FontId {
-        FontId::from_raw(self.equiv(crate::consts::MATH_FONT_BASE + n))
+        self.font_equiv(crate::consts::MATH_FONT_BASE + n)
     }
     #[inline]
     pub(crate) fn cat_code(&self, c: i32) -> Cmd {

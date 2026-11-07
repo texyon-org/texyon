@@ -31,7 +31,7 @@ pub const EJECT_PENALTY: i32 = -INF_PENALTY;
 pub const AWFUL_BAD: i32 = MAX_HALFWORD;
 pub const MEM_TOP: i32 = 4_999_999;
 pub const FONT_BASE: i32 = 0;
-pub const NULL_FONT: crate::units::FontId = crate::units::FontId::from_raw(FONT_BASE);
+pub const NULL_FONT: crate::units::FontId = crate::units::FontId::new(0);
 /// The `\font` size that means the design size, `scaled 1000`.
 pub const DESIGN_SIZE: crate::units::Scaled = crate::units::Scaled::from_raw(-1000);
 pub const MAX_FONT_MAX: i32 = 9_000;
@@ -149,6 +149,7 @@ pub const SCALED_BASE: EqtbPtr = DIMEN_BASE.plus(23);
 pub const EQTB_SIZE: EqtbPtr = SCALED_BASE.plus(255);
 
 const _: () = {
+    assert!(FONT_BASE == 0 && NULL_FONT.get() == 0);
     assert!(SINGLE_BASE.raw() == 1_114_113);
     assert!(NULL_CS.raw() == 2_228_225);
     assert!(HASH_BASE.raw() == 2_228_226);

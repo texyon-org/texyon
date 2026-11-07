@@ -510,7 +510,11 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
             };
             print_esc(st, name);
         }
-        Cmd::SetFont => print_font_select(st, FontId::from_raw(chr_code)),
+        Cmd::SetFont => {
+            if let Ok(f) = FontId::try_from(chr_code) {
+                print_font_select(st, f);
+            }
+        }
         Cmd::SetInteraction => {
             const BATCH: i32 = InteractionMode::Batch as i32;
             const NONSTOP: i32 = InteractionMode::Nonstop as i32;
