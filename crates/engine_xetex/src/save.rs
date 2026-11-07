@@ -570,6 +570,7 @@ impl MemState {
             scanner.cur_ptr = p.ptr();
             p.set_sa_int(self, 0);
             p.set_sa_num(self, n);
+            p.set_sa_ref(self, TEX_NULL);
         } else {
             p = sa(self.get_node(POINTER_NODE_SIZE)?);
             scanner.cur_ptr = p.ptr();
@@ -630,5 +631,57 @@ impl MemState {
             }
         }
         Ok(sa(scanner.cur_ptr))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::consts::MAX_HALFWORD;
+    use crate::mem_types::B32x2;
+
+    /// An arena whose free list is one block of leftover words, none `TEX_NULL`.
+    fn arena() -> (MemState, ScannerState) {
+        let mut mem = MemState {
+            data: crate::mem_types::zeroed_vec(300),
+            ..Default::default()
+        };
+        for k in 0..300 {
+            mem.set_b32s0(MemPtr::from_raw(k), 7);
+        }
+        let rover = MemPtr::from_raw(10);
+        mem.rover = rover;
+        mem.lo_mem_max = MemPtr::from_raw(250);
+        mem.hi_mem_min = MemPtr::from_raw(280);
+        mem.set_b32s0(rover, 240);
+        mem.set_b32s1(rover, MAX_HALFWORD);
+        mem.set_b32s1(rover + 1, rover.raw());
+        mem.set_b32s0(rover + 1, rover.raw());
+        mem.set_b32s1(mem.lo_mem_max, 0);
+
+        let mut scanner = ScannerState {
+            sa_null: MemoryWord {
+                b32: B32x2 {
+                    s0: TEX_NULL,
+                    s1: TEX_NULL,
+                },
+            },
+            ..Default::default()
+        };
+        scanner.sa_root.registers_mut().fill(MemPtr::NULL);
+        (mem, scanner)
+    }
+
+    #[test]
+    fn a_count_register_back_at_zero_frees_its_tree() {
+        let (mut mem, mut scanner) = arena();
+        let p = mem
+            .create_sa_element(&mut scanner, ValueLevel::Int, 300)
+            .unwrap();
+        assert!(!scanner.sa_root[ValueLevel::Int].is_null());
+        let result = mem.gsa_w_def(p, 0);
+        assert!(result.flush_list.is_none());
+        mem.delete_sa_ref(&mut scanner, p.idx());
+        assert!(scanner.sa_root[ValueLevel::Int].is_null());
     }
 }
