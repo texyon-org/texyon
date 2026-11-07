@@ -115,21 +115,21 @@ impl ErrorState {
 pub(crate) fn scan_rule_spec(st: &mut EngineState) -> Result<NodePtr<RuleNode>, Abort> {
     let r = st.mem.new_rule()?;
     if st.scanner.cur_cmd == Cmd::Vrule {
-        r.set_width(&mut st.mem, RuleDimen::from_raw(DEFAULT_RULE));
+        st.mem[r].width = RuleDimen::from_raw(DEFAULT_RULE).into();
     } else {
-        r.set_height(&mut st.mem, RuleDimen::from_raw(DEFAULT_RULE));
-        r.set_depth(&mut st.mem, RuleDimen::Set(Scaled::ZERO));
+        st.mem[r].height = RuleDimen::from_raw(DEFAULT_RULE).into();
+        st.mem[r].depth = RuleDimen::Set(Scaled::ZERO).into();
     }
     loop {
         if scan_keyword(st, "width")? {
             let d = xetex_scan_dimen(st, false, false, true)?;
-            r.set_width(&mut st.mem, RuleDimen::from_raw(d.raw()));
+            st.mem[r].width = RuleDimen::from_raw(d.raw()).into();
         } else if scan_keyword(st, "height")? {
             let d = xetex_scan_dimen(st, false, false, true)?;
-            r.set_height(&mut st.mem, RuleDimen::from_raw(d.raw()));
+            st.mem[r].height = RuleDimen::from_raw(d.raw()).into();
         } else if scan_keyword(st, "depth")? {
             let d = xetex_scan_dimen(st, false, false, true)?;
-            r.set_depth(&mut st.mem, RuleDimen::from_raw(d.raw()));
+            st.mem[r].depth = RuleDimen::from_raw(d.raw()).into();
         } else {
             break;
         }

@@ -139,7 +139,7 @@ pub(super) fn package(st: &mut EngineState, vtop: bool) -> Result<(), Abort> {
         if vtop {
             let h = match st.mem[b].list_ptr.as_idx().map(|p| st.mem.classify(p)) {
                 Some(Ok(AnyNode::Box(first))) => st.mem[first].height,
-                Some(Ok(AnyNode::Rule(first))) => first.height(&st.mem).to_scaled(),
+                Some(Ok(AnyNode::Rule(first))) => st.mem[first].height.to_scaled(),
                 _ => Scaled::ZERO,
             };
             let depth = st.mem[b].depth - h + st.mem[b].height;

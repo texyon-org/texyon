@@ -272,18 +272,18 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
             }
             Some(AnyNode::Rule(rule)) => {
                 let (w, h, d) = (st.mem[p].width, st.mem[p].height, st.mem[p].depth);
-                if rule.width(&st.mem) == RuleDimen::Running {
-                    rule.set_width(&mut st.mem, RuleDimen::Set(w));
+                if st.mem[rule].width.get() == RuleDimen::Running {
+                    st.mem[rule].width = RuleDimen::Set(w).into();
                 }
-                if rule.height(&st.mem) == RuleDimen::Running {
-                    rule.set_height(&mut st.mem, RuleDimen::Set(h));
+                if st.mem[rule].height.get() == RuleDimen::Running {
+                    st.mem[rule].height = RuleDimen::Set(h).into();
                 }
-                if rule.depth(&st.mem) == RuleDimen::Running {
-                    rule.set_depth(&mut st.mem, RuleDimen::Set(d));
+                if st.mem[rule].depth.get() == RuleDimen::Running {
+                    st.mem[rule].depth = RuleDimen::Set(d).into();
                 }
                 if o != Scaled::ZERO {
-                    let next = rule.link(&st.mem);
-                    rule.set_link(&mut st.mem, MemPtr::NULL);
+                    let next = st.mem[rule].link;
+                    st.mem[rule].link = MemPtr::NULL;
                     let boxed = crate::packaging::hpack(st, rule.ptr(), PackSpec::NATURAL)?;
                     st.mem[boxed].shift_amount = o;
                     st.mem[boxed].link = next;

@@ -39,10 +39,10 @@ const RADICALRULETHICKNESS: i32 = 51;
 impl MemState {
     pub fn fraction_rule(&mut self, t: Scaled) -> Result<NodePtr<RuleNode>, Abort> {
         let p = NodePtr::<RuleNode>::alloc(self)?;
-        p.set_subtype(self, 0);
-        p.set_width(self, RuleDimen::Running);
-        p.set_height(self, RuleDimen::Set(t));
-        p.set_depth(self, RuleDimen::Set(Scaled::ZERO));
+        self[p].subtype = 0;
+        self[p].width = RuleDimen::Running.into();
+        self[p].height = RuleDimen::Set(t).into();
+        self[p].depth = RuleDimen::Set(Scaled::ZERO).into();
         Ok(p)
     }
 
@@ -50,7 +50,7 @@ impl MemState {
         let p = self.new_kern(k)?;
         self[p].link = b.ptr();
         let q = self.fraction_rule(t)?;
-        q.set_link(self, p.ptr());
+        self[q].link = p.ptr();
         let r = self.new_kern(t)?;
         self[r].link = q.ptr();
         Ok(r.ptr())
@@ -398,7 +398,7 @@ impl MemState {
             let p1w =
                 (assembly.axis_height - assembly.delta) - (self[zb].height - assembly.shift_down);
             let p1 = self.new_kern(p1w)?;
-            y.set_link(self, p1.ptr());
+            self[y].link = p1.ptr();
             self[p1].link = assembly.z.ptr();
             let pw = (assembly.shift_up - self[xb].depth) - (assembly.axis_height + assembly.delta);
             p = self.new_kern(pw)?;
@@ -1089,8 +1089,8 @@ impl MemState {
     }
 
     fn mlist_track_rule(&self, rule: NodePtr<RuleNode>, max_h: &mut Scaled, max_d: &mut Scaled) {
-        *max_h = (*max_h).max(rule.height(self).to_scaled());
-        *max_d = (*max_d).max(rule.depth(self).to_scaled());
+        *max_h = (*max_h).max(self[rule].height.to_scaled());
+        *max_d = (*max_d).max(self[rule].depth.to_scaled());
     }
 
     fn mlist_track_box(&mut self, z: NodePtr<BoxNode>, max_h: &mut Scaled, max_d: &mut Scaled) {

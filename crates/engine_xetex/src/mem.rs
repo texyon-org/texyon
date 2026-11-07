@@ -372,10 +372,10 @@ impl MemState {
     /// A rule with running dimensions.
     pub fn new_rule(&mut self) -> Result<NodePtr<RuleNode>, Abort> {
         let p = NodePtr::<RuleNode>::alloc(self)?;
-        p.set_subtype(self, 0);
-        p.set_width(self, RuleDimen::Running);
-        p.set_depth(self, RuleDimen::Running);
-        p.set_height(self, RuleDimen::Running);
+        self[p].subtype = 0;
+        self[p].width = RuleDimen::Running.into();
+        self[p].depth = RuleDimen::Running.into();
+        self[p].height = RuleDimen::Running.into();
         Ok(p)
     }
 

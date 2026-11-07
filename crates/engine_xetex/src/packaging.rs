@@ -284,9 +284,9 @@ impl MemState {
                     d = d.max(self[b].depth + s);
                 }
                 Ok(AnyNode::Rule(rule)) => {
-                    x += rule.width(self).to_scaled();
-                    h = h.max(rule.height(self).to_scaled());
-                    d = d.max(rule.depth(self).to_scaled());
+                    x += self[rule].width.to_scaled();
+                    h = h.max(self[rule].height.to_scaled());
+                    d = d.max(self[rule].depth.to_scaled());
                 }
                 Ok(AnyNode::Unset(u)) => {
                     x += u.width(self);
@@ -349,7 +349,7 @@ impl MemState {
                         let (leader_h, leader_d) = match self.classify(leader) {
                             Ok(AnyNode::Box(b)) => (self[b].height, self[b].depth),
                             Ok(AnyNode::Rule(rule)) => {
-                                (rule.height(self).to_scaled(), rule.depth(self).to_scaled())
+                                (self[rule].height.to_scaled(), self[rule].depth.to_scaled())
                             }
                             _ => (
                                 Scaled::from_raw(self.b32s1(leader + 3)),
@@ -452,7 +452,7 @@ impl MemState {
                         q = self.list_tail(q);
                         let rule = self.new_rule()?;
                         q.set_link(self, rule.ptr());
-                        rule.set_width(self, RuleDimen::Set(overfull_rule));
+                        self[rule].width = RuleDimen::Set(overfull_rule).into();
                     }
                     push_slot(&mut diags, PackDiag::HOverfull { excess });
                 }
@@ -637,9 +637,9 @@ impl MemState {
                     w = w.max(self[b].width + self[b].shift_amount);
                 }
                 Ok(AnyNode::Rule(rule)) => {
-                    x += d + rule.height(self).to_scaled();
-                    d = rule.depth(self).to_scaled();
-                    w = w.max(rule.width(self).to_scaled());
+                    x += d + self[rule].height.to_scaled();
+                    d = self[rule].depth.to_scaled();
+                    w = w.max(self[rule].width.to_scaled());
                 }
                 Ok(AnyNode::Unset(u)) => {
                     x += d + u.height(self);
@@ -667,7 +667,7 @@ impl MemState {
                         let leader = glue.leader_ptr(self);
                         let leader_w = match self.classify(leader) {
                             Ok(AnyNode::Box(b)) => self[b].width,
-                            Ok(AnyNode::Rule(rule)) => rule.width(self).to_scaled(),
+                            Ok(AnyNode::Rule(rule)) => self[rule].width.to_scaled(),
                             _ => Scaled::from_raw(self.b32s1(leader + 1)),
                         };
                         w = w.max(leader_w);

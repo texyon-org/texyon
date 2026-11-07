@@ -10,7 +10,8 @@ use crate::codes::{FiOrElseCode, ValueLevel};
 use crate::node::{
     AdjustNode, AlignRecord, AlignStackNode, BoxNode, ChoiceNode, CondNode, DeltaNode, DiscNode,
     EdgeNode, ExprNode, FixedNode, GlueSpecNode, KernNode, LigItem, MarginKernNode, MarkNode,
-    MathNode, MovementNode, NodePtr, PassiveNode, PenaltyNode, SpanNode, Stored, StyleNode,
+    MathNode, MovementNode, NodePtr, PassiveNode, PenaltyNode, RuleNode, SpanNode, Stored,
+    StoredDimen, StyleNode,
 };
 use crate::state::MemState;
 use crate::token::TokenList;
@@ -414,6 +415,25 @@ pub struct LigItemLayout {
 }
 
 overlay!(LigItem => LigItemLayout);
+
+/// A rule. A running dimension holds `NULL_FLAG`.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct RuleLayout {
+    pub subtype: u16,
+    _type: u16,
+    pub link: MemPtr,
+    _unused1: i32,
+    pub width: StoredDimen,
+    _unused2: i32,
+    pub depth: StoredDimen,
+    _unused3: i32,
+    pub height: StoredDimen,
+    pub sync_tag: i32,
+    pub sync_line: i32,
+}
+
+overlay!(RuleNode => RuleLayout);
 
 impl BoxLayout {
     #[inline]

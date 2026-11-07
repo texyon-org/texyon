@@ -196,11 +196,11 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
                 }
                 Ok(AnyNode::Rule(node)) => {
                     print_esc(st, "rule(");
-                    print_rule_dimen(st, node.height(&st.mem));
+                    print_rule_dimen(st, st.mem[node].height.get());
                     print_char(st, b'+');
-                    print_rule_dimen(st, node.depth(&st.mem));
+                    print_rule_dimen(st, st.mem[node].depth.get());
                     print(st, ")x");
-                    print_rule_dimen(st, node.width(&st.mem));
+                    print_rule_dimen(st, st.mem[node].width.get());
                 }
                 Ok(AnyNode::Ins(node)) => {
                     print_esc(st, "insert");

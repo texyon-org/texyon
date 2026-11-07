@@ -547,9 +547,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
             AnyNode::Box(_) | AnyNode::Rule(_) => {
                 let (height, depth) = match node {
                     AnyNode::Box(b) => (st.mem[b].height, st.mem[b].depth),
-                    AnyNode::Rule(r) => {
-                        (r.height(&st.mem).to_scaled(), r.depth(&st.mem).to_scaled())
-                    }
+                    AnyNode::Rule(r) => (st.mem[r].height.to_scaled(), st.mem[r].depth.to_scaled()),
                     _ => unreachable!(),
                 };
                 if below_box {

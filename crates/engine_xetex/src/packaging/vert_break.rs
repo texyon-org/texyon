@@ -137,8 +137,8 @@ impl MemState {
                 Ok(VertBreakNext::NotFound)
             }
             AnyNode::Rule(rule) => {
-                scanner.active_width[1] += cursor.prev_dp + rule.height(self).to_scaled();
-                cursor.prev_dp = rule.depth(self).to_scaled();
+                scanner.active_width[1] += cursor.prev_dp + self[rule].height.to_scaled();
+                cursor.prev_dp = self[rule].depth.to_scaled();
                 Ok(VertBreakNext::NotFound)
             }
             AnyNode::Whatsit(w) => {
@@ -621,7 +621,7 @@ impl MemState {
             let node = self.classify(p).map_err(|_| Abort::Confusion("pruning"))?;
             let height = match node {
                 AnyNode::Box(b) => self[b].height,
-                AnyNode::Rule(rule) => rule.height(self).to_scaled(),
+                AnyNode::Rule(rule) => self[rule].height.to_scaled(),
                 AnyNode::Whatsit(_) | AnyNode::Mark(_) | AnyNode::Ins(_) => {
                     prev_p = p;
                     p = prev_p.link(self);

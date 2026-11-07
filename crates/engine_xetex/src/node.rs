@@ -358,18 +358,6 @@ const _: () = assert!(
         && Orientation::Vertical.node_type().as_raw() == Orientation::Vertical.as_raw()
 );
 
-impl Slot for RuleDimen {
-    type Raw = i32;
-    #[inline(always)]
-    fn decode(raw: i32) -> Self {
-        RuleDimen::from_raw(raw)
-    }
-    #[inline(always)]
-    fn encode(self) -> i32 {
-        self.raw()
-    }
-}
-
 macro_rules! write_slot {
     ($mem:ident, b32s0, $p:expr, $v:expr) => {
         $mem.set_b32s0($p, $v)
@@ -612,14 +600,14 @@ impl_traits!(HasLink: BoxNode, RuleNode, InsNode, MarkNode, AdjustNode, Ligature
     EdgeNode, Noad, MarginKernNode, SaNode, PageInsNode, ActiveNode, DeltaNode, PassiveNode,
     MovementNode, CondNode, CharNode, AlignRecord, AlignStackNode, ExprNode, PseudoLineNode,
     LigItem);
-impl_traits!(Accessed: RuleNode, InsNode, LigatureNode, WhatsitNode, GlueNode, UnsetNode, Noad,
+impl_traits!(Accessed: InsNode, LigatureNode, WhatsitNode, GlueNode, UnsetNode, Noad,
     SaNode, PageInsNode, ActiveNode, CharNode, PseudoLineNode);
-impl_traits!(HasNodeHeader: RuleNode, InsNode, LigatureNode, WhatsitNode, GlueNode, UnsetNode,
+impl_traits!(HasNodeHeader: InsNode, LigatureNode, WhatsitNode, GlueNode, UnsetNode,
     Noad, SaNode, PageInsNode);
 impl_traits!(HasWidth: UnsetNode, WhatsitNode);
 impl_traits!(HasHeightDepth: UnsetNode, WhatsitNode, InsNode);
 impl_traits!(HasListPtr: UnsetNode);
-impl_traits!(HasSyncFields: RuleNode, GlueNode);
+impl_traits!(HasSyncFields: GlueNode);
 
 /// A record kept only on its own list, which therefore proves its kind.
 pub trait ListRecord: NodeKind {}
@@ -772,22 +760,33 @@ impl RuleDimen {
             RuleDimen::Set(v) => v.raw(),
         }
     }
-
-    /// The stored word as a length, `RUNNING` for a running dimension.
-    #[inline]
-    pub fn to_scaled(self) -> Scaled {
-        Scaled::from_raw(self.raw())
-    }
 }
 
 /// A running rule dimension seen as a length, as TeX's arithmetic sees it.
 pub(crate) const RUNNING: Scaled = Scaled::from_raw(NULL_FLAG);
 
-impl NodePtr<RuleNode> {
-    fields! {
-        width / set_width: RuleDimen = b32s1 @ 1;
-        depth / set_depth: RuleDimen = b32s1 @ 2;
-        height / set_height: RuleDimen = b32s1 @ 3;
+/// A rule dimension as a node stores it, the raw word decoded by `get`.
+#[derive(Copy, Clone, PartialEq, Eq, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(transparent)]
+pub struct StoredDimen(i32);
+
+impl StoredDimen {
+    #[inline]
+    pub fn get(self) -> RuleDimen {
+        RuleDimen::from_raw(self.0)
+    }
+
+    /// The word as a length, `RUNNING` for a running dimension.
+    #[inline]
+    pub fn to_scaled(self) -> Scaled {
+        Scaled::from_raw(self.0)
+    }
+}
+
+impl From<RuleDimen> for StoredDimen {
+    #[inline]
+    fn from(d: RuleDimen) -> Self {
+        StoredDimen(d.raw())
     }
 }
 
@@ -894,7 +893,7 @@ impl AnyNode {
     pub fn hlist_width(self, mem: &MemState) -> Scaled {
         match self {
             AnyNode::Box(p) => mem[p].width,
-            AnyNode::Rule(p) => p.width(mem).to_scaled(),
+            AnyNode::Rule(p) => mem[p].width.to_scaled(),
             AnyNode::Kern(p) => mem[p].width,
             AnyNode::Math(p) => mem[p].width,
             AnyNode::Whatsit(p) => p.width(mem),
@@ -1923,11 +1922,11 @@ mod tests {
     fn rule_dimensions_model_the_running_sentinel() {
         let mut mem = fresh_mem(200);
         let r: NodePtr<RuleNode> = at(&mut mem, 100, Some(NodeType::Rule));
-        r.set_width(&mut mem, RuleDimen::Running);
-        r.set_depth(&mut mem, RuleDimen::Set(Scaled::ZERO));
-        r.set_height(&mut mem, RuleDimen::Set(Scaled::from_raw(0x2222)));
-        assert_eq!(r.width(&mem), RuleDimen::Running);
-        assert_eq!(r.depth(&mem), RuleDimen::Set(Scaled::ZERO));
+        mem[r].width = RuleDimen::Running.into();
+        mem[r].depth = RuleDimen::Set(Scaled::ZERO).into();
+        mem[r].height = RuleDimen::Set(Scaled::from_raw(0x2222)).into();
+        assert_eq!(mem[r].width.get(), RuleDimen::Running);
+        assert_eq!(mem[r].depth.get(), RuleDimen::Set(Scaled::ZERO));
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), NULL_FLAG);
         assert_eq!(mem.b32s1(MemPtr::from_raw(103)), 0x2222);
     }

@@ -713,8 +713,8 @@ fn hlist_glue_out(
     if subtype >= A_LEADERS {
         let leader = match st.mem.leader_of(glue) {
             Leader::Rule(rule) => {
-                st.shipout.rule_ht = rule.height(&st.mem).to_scaled();
-                st.shipout.rule_dp = rule.depth(&st.mem).to_scaled();
+                st.shipout.rule_ht = st.mem[rule].height.to_scaled();
+                st.shipout.rule_dp = st.mem[rule].depth.to_scaled();
                 return hlist_rule_out(st, this_box, base_line, glue.ptr());
             }
             Leader::Box(leader) => leader,
@@ -905,9 +905,9 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
         {
             AnyNode::Box(b) => hlist_box_out(st, b, base_line)?,
             AnyNode::Rule(rule) => {
-                st.shipout.rule_ht = rule.height(&st.mem).to_scaled();
-                st.shipout.rule_dp = rule.depth(&st.mem).to_scaled();
-                st.shipout.rule_wd = rule.width(&st.mem).to_scaled();
+                st.shipout.rule_ht = st.mem[rule].height.to_scaled();
+                st.shipout.rule_dp = st.mem[rule].depth.to_scaled();
+                st.shipout.rule_wd = st.mem[rule].width.to_scaled();
                 hlist_rule_out(st, this_box, base_line, rule.ptr())?;
             }
             AnyNode::Whatsit(whatsit) => match whatsit.whatsit_subtype(&st.mem) {
@@ -1084,9 +1084,9 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
         {
             AnyNode::Box(b) => vlist_box_out(st, b, left_edge, upwards)?,
             AnyNode::Rule(rule) => {
-                st.shipout.rule_ht = rule.height(&st.mem).to_scaled();
-                st.shipout.rule_dp = rule.depth(&st.mem).to_scaled();
-                st.shipout.rule_wd = rule.width(&st.mem).to_scaled();
+                st.shipout.rule_ht = st.mem[rule].height.to_scaled();
+                st.shipout.rule_dp = st.mem[rule].depth.to_scaled();
+                st.shipout.rule_wd = st.mem[rule].width.to_scaled();
                 vlist_rule_out(st, this_box, left_edge, upwards)?;
             }
             AnyNode::Whatsit(whatsit) => match whatsit.whatsit_subtype(&st.mem) {
@@ -1121,7 +1121,7 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
                 } else {
                     match st.mem.leader_of(glue) {
                         Leader::Rule(rule) => {
-                            st.shipout.rule_wd = rule.width(&st.mem).to_scaled();
+                            st.shipout.rule_wd = st.mem[rule].width.to_scaled();
                             st.shipout.rule_dp = Scaled::ZERO;
                             vlist_rule_out(st, this_box, left_edge, upwards)?;
                         }
