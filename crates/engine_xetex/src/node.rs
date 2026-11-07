@@ -44,6 +44,10 @@ impl<K: NodeKind> PartialEq for NodePtr<K> {
     }
 }
 impl<K: NodeKind> Eq for NodePtr<K> {}
+// SAFETY: a `MemIdx` and a zero-sized marker, valid at all-zero bits.
+unsafe impl<K: NodeKind + 'static> bytemuck::Zeroable for NodePtr<K> {}
+// SAFETY: a `MemIdx` and a zero-sized marker, so no padding and any bits are valid.
+unsafe impl<K: NodeKind + 'static> bytemuck::Pod for NodePtr<K> {}
 impl<K: NodeKind> std::fmt::Debug for NodePtr<K> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "NodePtr({})", self.idx.raw())
@@ -567,6 +571,10 @@ impl FixedNode for SpanNode {
     const SIZE: i32 = 2;
     const TYPE: Option<NodeType> = None;
 }
+impl FixedNode for AlignRecord {
+    const SIZE: i32 = BOX_NODE_SIZE;
+    const TYPE: Option<NodeType> = Some(NodeType::HList);
+}
 impl FixedNode for AlignStackNode {
     const SIZE: i32 = 6;
     const TYPE: Option<NodeType> = None;
@@ -580,10 +588,12 @@ const MOVEMENT_NODE_SIZE: i32 = 3;
 
 // --- shared layouts ---
 
-/// A `link` field in word 0.
+/// A `link` in word 0, which generic list walks read as an untyped word.
 pub trait HasLink: NodeKind {}
+/// A kind still read through accessors rather than a layout.
+pub trait Accessed: HasLink {}
 /// A list-node header: type in `b16.s1`, subtype in `b16.s0`, link in `b32.s1`.
-pub trait HasNodeHeader: HasLink {}
+pub trait HasNodeHeader: Accessed {}
 /// A `Scaled` width at +1.
 pub trait HasWidth: NodeKind {}
 /// `Scaled` depth and height at +2 and +3.
@@ -593,17 +603,20 @@ pub trait HasListPtr: NodeKind {}
 /// The SyncTeX tag and line that `get_node` stamps into a node's last word.
 pub trait HasSyncFields: FixedNode {}
 
-impl<K: HasNodeHeader> HasLink for K {}
-
 macro_rules! impl_traits {
     ($trait:ident: $($kind:ident),*) => {$(impl $trait for $kind {})*};
 }
 
+impl_traits!(HasLink: BoxNode, RuleNode, InsNode, MarkNode, AdjustNode, LigatureNode, DiscNode,
+    WhatsitNode, MathNode, GlueNode, KernNode, PenaltyNode, UnsetNode, StyleNode, ChoiceNode,
+    EdgeNode, Noad, MarginKernNode, SaNode, PageInsNode, ActiveNode, DeltaNode, PassiveNode,
+    MovementNode, CondNode, CharNode, AlignRecord, AlignStackNode, ExprNode, PseudoLineNode,
+    LigItem);
+impl_traits!(Accessed: RuleNode, InsNode, LigatureNode, WhatsitNode, GlueNode, UnsetNode, Noad,
+    SaNode, PageInsNode, ActiveNode, CharNode, PseudoLineNode);
 impl_traits!(HasNodeHeader: RuleNode, InsNode, LigatureNode, WhatsitNode, GlueNode, UnsetNode,
-    Noad, SaNode, PageInsNode, DeltaNode);
-impl_traits!(HasLink: MovementNode, ActiveNode, PassiveNode, CondNode, CharNode,
-    AlignRecord, AlignStackNode, ExprNode, PseudoLineNode, LigItem);
-impl_traits!(HasWidth: UnsetNode, WhatsitNode, AlignRecord, SpanNode);
+    Noad, SaNode, PageInsNode);
+impl_traits!(HasWidth: UnsetNode, WhatsitNode);
 impl_traits!(HasHeightDepth: UnsetNode, WhatsitNode, InsNode);
 impl_traits!(HasListPtr: UnsetNode);
 impl_traits!(HasSyncFields: RuleNode, GlueNode);
@@ -633,7 +646,7 @@ impl<K: ListRecord + HasLink> NodePtr<K> {
     /// The next record on the list, `None` at its end.
     #[inline]
     pub fn next(self, mem: &MemState) -> Option<Self> {
-        Self::from_ptr(self.link(mem))
+        Self::from_ptr(self.ptr().link(mem))
     }
 }
 
@@ -650,7 +663,7 @@ impl<K: ListRecord + FixedNode> NodePtr<K> {
     }
 }
 
-impl<K: HasLink> NodePtr<K> {
+impl<K: Accessed> NodePtr<K> {
     fields! {
         link / set_link: MemPtr = b32s1 @ 0;
     }
@@ -1016,13 +1029,6 @@ impl NodePtr<LigatureNode> {
     }
 }
 
-impl NodePtr<LigItem> {
-    fields! {
-        character / set_character: u16 = b16s0 @ 0;
-        component / set_component: MemPtr = b32s1 @ 1;
-    }
-}
-
 // --- math, glue, kern, penalty ---
 
 impl NodePtr<MathNode> {
@@ -1321,7 +1327,7 @@ impl<K: AlignColumn> NodePtr<K> {
 
     #[inline]
     pub fn next_column(self, mem: &MemState) -> Option<Self> {
-        Self::after_tab_skip(mem, self.link(mem))
+        Self::after_tab_skip(mem, self.ptr().link(mem))
     }
 }
 
@@ -1334,13 +1340,6 @@ impl NodePtr<GlueNode> {
 }
 
 impl NodePtr<AlignRecord> {
-    fields! {
-        v_part / set_v_part: TokenList = b32s1 @ 2;
-        u_part / set_u_part: TokenList = b32s1 @ 3;
-        /// The command that ended the current entry of this column.
-        extra_info / set_extra_info: i32 = b32s0 @ 5;
-    }
-
     /// The column viewed as the head of its span list.
     #[inline]
     pub fn span_head(self) -> NodePtr<SpanNode> {
@@ -1358,36 +1357,6 @@ impl NodePtr<AlignRecord> {
         u.set_glue_stretch(mem, Scaled::ZERO);
         u.set_glue_shrink(mem, Scaled::ZERO);
         u
-    }
-}
-
-impl NodePtr<SpanNode> {
-    fields! {
-        /// Columns spanned beyond the first. `END_SPAN` holds a larger sentinel.
-        span_count / set_span_count: i32 = b32s1 @ 0;
-    }
-
-    #[inline]
-    pub fn next(self, mem: &MemState) -> NodePtr<SpanNode> {
-        NodePtr::at(MemPtr::from_raw(mem.b32s0(self.idx)))
-    }
-    #[inline]
-    pub fn set_next(self, mem: &mut MemState, v: NodePtr<SpanNode>) {
-        mem.set_b32s0(self.idx, v.idx.raw());
-    }
-}
-
-impl NodePtr<AlignStackNode> {
-    fields! {
-        cur_align / set_cur_align: MemPtr = b32s0 @ 0;
-        preamble / set_preamble: MemPtr = b32s0 @ 1;
-        cur_span / set_cur_span: MemPtr = b32s1 @ 1;
-        cur_loop / set_cur_loop: MemPtr = b32s1 @ 2;
-        align_state / set_align_state: i32 = b32s1 @ 3;
-        cur_head / set_cur_head: MemPtr = b32s0 @ 4;
-        cur_tail / set_cur_tail: MemPtr = b32s1 @ 4;
-        cur_pre_head / set_cur_pre_head: MemPtr = b32s0 @ 5;
-        cur_pre_tail / set_cur_pre_tail: MemPtr = b32s1 @ 5;
     }
 }
 
@@ -1476,20 +1445,6 @@ impl NodePtr<FreeBlock> {
     #[inline]
     pub fn mark_empty(self, mem: &mut MemState) {
         mem.set_b32s1(self.idx, crate::consts::MAX_HALFWORD);
-    }
-}
-
-impl NodePtr<ExprNode> {
-    stored_fields! {
-        /// The value level of the suspended expression.
-        level / set_level: crate::codes::ValueLevel = b16s1 @ 0;
-    }
-    fields! {
-        /// The pending operators, as `4 * s + r`.
-        state / set_state: u16 = b16s0 @ 0;
-        e / set_e: i32 = b32s1 @ 1;
-        t / set_t: i32 = b32s1 @ 2;
-        n / set_n: i32 = b32s1 @ 3;
     }
 }
 
@@ -1771,40 +1726,6 @@ impl NodePtr<SaNode> {
     }
 }
 
-// --- the conditional stack ---
-
-impl NodePtr<CondNode> {
-    stored_fields! {
-        if_limit / set_if_limit: crate::codes::FiOrElseCode = b16s1 @ 0;
-    }
-    fields! {
-        cur_if / set_cur_if: u16 = b16s0 @ 0;
-        if_line / set_if_line: i32 = b32s1 @ 1;
-    }
-
-    /// The saved `(cur_if, if_line, if_limit)`.
-    #[inline]
-    pub fn saved_state(self, mem: &MemState) -> (i16, i32, Stored<crate::codes::FiOrElseCode>) {
-        (
-            self.cur_if(mem) as i16,
-            self.if_line(mem),
-            self.if_limit(mem),
-        )
-    }
-}
-
-// --- shipout movement records ---
-
-impl NodePtr<MovementNode> {
-    fields! {
-        /// Whether the movement may be reused, and as which command.
-        state / set_state: i32 = b32s0 @ 0;
-        distance / set_distance: Scaled = b32s1 @ 1;
-        /// The DVI offset where the movement was emitted.
-        location / set_location: i32 = b32s1 @ 2;
-    }
-}
-
 // --- the line breaker's active, delta and passive lists ---
 
 impl NodePtr<ActiveNode> {
@@ -1819,30 +1740,6 @@ impl NodePtr<ActiveNode> {
         shortfall / set_shortfall: Scaled = b32s1 @ 3;
         /// Extended (`\lastlinefit`) active nodes only.
         glue / set_glue: Scaled = b32s1 @ 4;
-    }
-}
-
-impl NodePtr<DeltaNode> {
-    fields! {
-        dwidth / set_dwidth: Scaled = b32s1 @ 1;
-        dstretch0 / set_dstretch0: Scaled = b32s1 @ 2;
-        dstretch1 / set_dstretch1: Scaled = b32s1 @ 3;
-        dstretch2 / set_dstretch2: Scaled = b32s1 @ 4;
-        dstretch3 / set_dstretch3: Scaled = b32s1 @ 5;
-        dshrink / set_dshrink: Scaled = b32s1 @ 6;
-    }
-}
-
-impl NodePtr<PassiveNode> {
-    fields! {
-        cur_break / set_cur_break: MemPtr = b32s1 @ 1;
-        next_break / set_next_break: MemPtr = b32s0 @ 1;
-    }
-
-    /// The previous break on the best path, reversed into `next_break` later.
-    #[inline]
-    pub fn set_prev_break(self, mem: &mut MemState, v: MemPtr) {
-        self.set_next_break(mem, v);
     }
 }
 
@@ -1951,8 +1848,8 @@ mod tests {
         mem[spec].width = Scaled::from_raw(0x1234);
         assert_eq!(mem[spec].width, Scaled::from_raw(0x1234));
         let item = NodePtr::<LigItem>::alloc(&mut mem).unwrap();
-        item.set_character(&mut mem, 45);
-        item.set_component(&mut mem, MemPtr::from_raw(34));
+        mem[item].character = 45;
+        mem[item].component = MemPtr::from_raw(34);
         assert_eq!(mem.b16s0(item.idx()), 45);
         assert_eq!(mem.b32s1(item.idx() + 1), 34);
     }
@@ -2120,11 +2017,11 @@ mod tests {
         assert_eq!(NodePtr::<GlueNode>::tab_skip_after(&mem, head).ptr(), g1);
         assert!(rec.next_column(&mem).is_none());
 
-        rec.set_v_part(&mut mem, TokenList::from_ptr(MemPtr::from_raw(0x22)));
-        rec.set_u_part(&mut mem, TokenList::from_ptr(MemPtr::from_raw(0x33)));
-        rec.set_extra_info(&mut mem, 0x55);
-        rec.span_head()
-            .set_next(&mut mem, NodePtr::at(MemPtr::from_raw(40)));
+        mem[rec].v_part = TokenList::from_ptr(MemPtr::from_raw(0x22));
+        mem[rec].u_part = TokenList::from_ptr(MemPtr::from_raw(0x33));
+        mem[rec].extra_info = 0x55;
+        let head = rec.span_head();
+        mem[head].next = NodePtr::at(MemPtr::from_raw(40));
         assert_eq!(
             (
                 mem.b32s1(MemPtr::from_raw(102)),
@@ -2157,8 +2054,8 @@ mod tests {
         assert_eq!(u.link(&mem), g2);
 
         let span: NodePtr<SpanNode> = NodePtr::at(MemPtr::from_raw(40));
-        span.set_span_count(&mut mem, 3);
-        span.set_width(&mut mem, Scaled::from_raw(0x66));
+        mem[span].span_count = 3;
+        mem[span].width = Scaled::from_raw(0x66);
         assert_eq!(
             (
                 mem.b32s1(MemPtr::from_raw(40)),
@@ -2295,21 +2192,21 @@ mod tests {
         assert_eq!(mem.b32s1(MemPtr::from_raw(104)), 0x30);
 
         let d: NodePtr<DeltaNode> = at(&mut mem, 100, None);
-        d.set_dwidth(&mut mem, Scaled::from_raw(0x11));
-        d.set_dstretch3(&mut mem, Scaled::from_raw(0x55));
-        d.set_dshrink(&mut mem, Scaled::from_raw(-0x66));
+        mem[d].dwidth = Scaled::from_raw(0x11);
+        mem[d].dstretch3 = Scaled::from_raw(0x55);
+        mem[d].dshrink = Scaled::from_raw(-0x66);
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 0x11);
         assert_eq!(mem.b32s1(MemPtr::from_raw(105)), 0x55);
         assert_eq!(mem.b32s1(MemPtr::from_raw(106)), -0x66);
 
         let pn: NodePtr<PassiveNode> = at(&mut mem, 100, None);
-        pn.set_link(&mut mem, MemPtr::from_raw(90));
-        pn.set_cur_break(&mut mem, MemPtr::from_raw(150));
-        pn.set_prev_break(&mut mem, MemPtr::from_raw(80));
-        assert_eq!(pn.next_break(&mem), MemPtr::from_raw(80));
+        mem[pn].link = MemPtr::from_raw(90);
+        mem[pn].cur_break = MemPtr::from_raw(150);
+        mem[pn].next_break = MemPtr::from_raw(80);
+        assert_eq!(mem[pn].next_break, MemPtr::from_raw(80));
         assert_eq!(mem.b32s1(MemPtr::from_raw(100)), 90);
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 150);
-        pn.set_next_break(&mut mem, MemPtr::from_raw(70));
+        mem[pn].next_break = MemPtr::from_raw(70);
         assert_eq!(mem.b32s0(MemPtr::from_raw(101)), 70);
     }
 }

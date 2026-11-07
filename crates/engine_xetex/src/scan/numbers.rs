@@ -791,12 +791,12 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
                 get_x_non_blank(st)?;
                 if st.scanner.cur_tok == Token::other(b'(') {
                     let q = NodePtr::<ExprNode>::alloc(&mut st.mem)?;
-                    q.set_link(&mut st.mem, p);
-                    q.set_level(&mut st.mem, l);
-                    q.set_state(&mut st.mem, (4 * s + r) as u16);
-                    q.set_e(&mut st.mem, e);
-                    q.set_t(&mut st.mem, t);
-                    q.set_n(&mut st.mem, n);
+                    st.mem[q].link = p;
+                    st.mem[q].level = l.into();
+                    st.mem[q].state = (4 * s + r) as u16;
+                    st.mem[q].e = e;
+                    st.mem[q].t = t;
+                    st.mem[q].n = n;
                     p = q.ptr();
                     l = o;
                     continue 'restart;
@@ -933,13 +933,13 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
             }
             f = e;
             let q = NodePtr::<ExprNode>::at(p);
-            e = q.e(&st.mem);
-            t = q.t(&st.mem);
-            n = q.n(&st.mem);
-            s = (q.state(&st.mem) / 4) as i16;
-            r = (q.state(&st.mem) % 4) as i16;
-            l = q.level(&st.mem).get().ok_or(Abort::Confusion("expr"))?;
-            p = q.link(&st.mem);
+            e = st.mem[q].e;
+            t = st.mem[q].t;
+            n = st.mem[q].n;
+            s = (st.mem[q].state / 4) as i16;
+            r = (st.mem[q].state % 4) as i16;
+            l = st.mem[q].level.get().ok_or(Abort::Confusion("expr"))?;
+            p = st.mem[q].link;
             q.free(&mut st.mem);
             scan_factor = false;
         }

@@ -591,12 +591,12 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                 ));
             }
             let column = NodePtr::<AlignRecord>::at(st.scanner.cur_align);
-            let saved_cmd = column.extra_info(&st.mem);
-            column.set_extra_info(&mut st.mem, st.scanner.cur_chr);
+            let saved_cmd = st.mem[column].extra_info;
+            st.mem[column].extra_info = st.scanner.cur_chr;
             let template = if Cmd::from_stored(saved_cmd) == Cmd::Omit {
                 OMIT_TEMPLATE
             } else {
-                column.v_part(&st.mem)
+                st.mem[column].v_part
             };
             begin_token_list(st, template, TokenType::VTemplate)?;
             st.scanner.cur_cmd = Cmd::from_stored(saved_cmd);

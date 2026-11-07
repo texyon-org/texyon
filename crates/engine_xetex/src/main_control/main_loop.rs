@@ -447,7 +447,7 @@ impl LigStack {
     pub(crate) fn character(self, mem: &MemState) -> LigChar {
         LigChar::of(match self {
             LigStack::Char(c) => c.character(mem),
-            LigStack::Item(i) => i.character(mem),
+            LigStack::Item(i) => mem[i].character,
         })
     }
 }
@@ -631,11 +631,11 @@ pub(super) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
             }
 
             if let Some(LigStack::Item(item)) = st.mainloop.lig_stack {
-                let lig_ptr = item.component(&st.mem);
+                let lig_ptr = st.mem[item].component;
                 if lig_ptr.raw() > TEX_NULL {
                     st.input.cur_list.tail_append(&mut st.mem, lig_ptr);
                 }
-                st.mainloop.lig_stack = st.mem.lig_stack_at(item.link(&st.mem));
+                st.mainloop.lig_stack = st.mem.lig_stack_at(st.mem[item].link);
                 item.free(&mut st.mem);
                 main_i = cur_l_info(st);
                 st.mainloop.ligature_present = true;
@@ -731,9 +731,9 @@ fn lig_kern_program(
                     Some(LigStack::Char(prev)) => {
                         let item = st.mem.new_lig_item(c)?;
                         st.mainloop.lig_stack = Some(LigStack::Item(item));
-                        item.set_component(&mut st.mem, prev.ptr());
+                        st.mem[item].component = prev.ptr();
                     }
-                    Some(LigStack::Item(item)) => item.set_character(&mut st.mem, c),
+                    Some(LigStack::Item(item)) => st.mem[item].character = c,
                 }
             }
             3 => {

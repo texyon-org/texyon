@@ -42,7 +42,7 @@ fn ins_temp_head_list(st: &mut EngineState, tail: TokenList) -> Result<(), Abort
 
 fn pop_cond_node(st: &mut EngineState) -> Result<(), Abort> {
     let p = st.scanner.cond_ptr.ok_or(Abort::Confusion("if"))?;
-    (st.scanner.cur_if, st.scanner.if_line, st.scanner.if_limit) = p.saved_state(&st.mem);
+    (st.scanner.cur_if, st.scanner.if_line, st.scanner.if_limit) = st.mem[p].saved_state();
     st.scanner.cond_ptr = p.next(&st.mem);
     p.free(&mut st.mem);
     Ok(())
@@ -158,7 +158,7 @@ fn change_if_limit(
     while let Some(cond) = q {
         let next = cond.next(&st.mem);
         if next == p {
-            cond.set_if_limit(&mut st.mem, l);
+            st.mem[cond].if_limit = l.into();
             return Ok(());
         }
         q = next;
@@ -172,10 +172,10 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
     }
 
     let cond_node = NodePtr::<CondNode>::alloc(&mut st.mem)?;
-    cond_node.set_link(&mut st.mem, link_of(st.scanner.cond_ptr));
-    cond_node.set_if_limit(&mut st.mem, st.scanner.if_limit);
-    cond_node.set_cur_if(&mut st.mem, st.scanner.cur_if as u16);
-    cond_node.set_if_line(&mut st.mem, st.scanner.if_line);
+    st.mem[cond_node].link = link_of(st.scanner.cond_ptr);
+    st.mem[cond_node].if_limit = st.scanner.if_limit;
+    st.mem[cond_node].cur_if = st.scanner.cur_if as u16;
+    st.mem[cond_node].if_line = st.scanner.if_line;
     st.scanner.cond_ptr = Some(cond_node);
     st.scanner.cur_if = (this_if.raw() + if is_unless { IfCode::UNLESS } else { 0 }) as i16;
     st.scanner.if_limit = FiOrElseCode::If.into();

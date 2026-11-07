@@ -4,7 +4,9 @@
 use crate::consts::TEX_NULL;
 
 /// A valid, non-null index into the `mem` arena.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[derive(
+    Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, bytemuck::Pod, bytemuck::Zeroable,
+)]
 #[repr(transparent)]
 pub struct MemIdx(i32);
 

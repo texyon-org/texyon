@@ -44,7 +44,7 @@ impl LinebreakState {
     ) -> Result<PostLineHpack, Abort> {
         let texxet = eqtb.int_par(IntPar::Texxet) > 0;
         let protrude = eqtb.int_par(IntPar::XetexProtrudeChars) > 0;
-        let cur_break = passive_node(self.cur_p).cur_break(mem);
+        let cur_break = mem[passive_node(self.cur_p)].cur_break;
 
         if texxet {
             let mut q = TEMP_HEAD.link(mem);
@@ -216,8 +216,8 @@ impl MemState {
         linebreak.cur_p = MemPtr::NULL;
         loop {
             let r = passive_node(q);
-            q = r.next_break(self);
-            r.set_next_break(self, linebreak.cur_p);
+            q = self[r].next_break;
+            self[r].next_break = linebreak.cur_p;
             linebreak.cur_p = r.ptr();
             if q.is_null() {
                 break;
@@ -329,11 +329,11 @@ impl ListStateRecord {
         }
 
         *cur_line = cur_line.wrapping_add(1);
-        linebreak.cur_p = passive_node(linebreak.cur_p).next_break(mem);
+        linebreak.cur_p = mem[passive_node(linebreak.cur_p)].next_break;
 
         if !linebreak.cur_p.is_null() && !hpack.post_disc_break {
             let texxet = eqtb.int_par(IntPar::Texxet) > 0;
-            let cur_break = passive_node(linebreak.cur_p).cur_break(mem);
+            let cur_break = mem[passive_node(linebreak.cur_p)].cur_break;
             let mut r = TEMP_HEAD;
             let mut q;
             loop {

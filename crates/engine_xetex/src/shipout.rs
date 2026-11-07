@@ -1261,7 +1261,7 @@ impl MemState {
 
     fn prune_movement_list(&mut self, head: &mut Option<NodePtr<MovementNode>>, l: i32) {
         while let Some(p) = *head {
-            if p.location(self) < l {
+            if self[p].location < l {
                 return;
             }
             *head = p.next(self);
@@ -1474,13 +1474,13 @@ impl MemState {
 
     fn movement(&mut self, shipout: &mut ShipoutState, w: Scaled, axis: Axis) -> Result<(), Abort> {
         let mut q = NodePtr::<MovementNode>::alloc(self)?;
-        q.set_distance(self, w);
-        q.set_location(self, shipout.dvi.pos());
+        self[q].distance = w;
+        self[q].location = shipout.dvi.pos();
         let head = match axis {
             Axis::Down => &mut shipout.down_ptr,
             Axis::Right => &mut shipout.right_ptr,
         };
-        q.set_link(self, link_of(*head));
+        self[q].link = link_of(*head);
         *head = Some(q);
 
         let mut p = q.next(self);
@@ -1488,8 +1488,8 @@ impl MemState {
         let found = 'search: {
             while let Some(node) = p {
                 p = node.next(self);
-                if node.distance(self) != w {
-                    match mstate + node.state(self) {
+                if self[node].distance != w {
+                    match mstate + self[node].state {
                         1 => mstate = MOV_Y_SEEN,
                         2 => mstate = MOV_Z_SEEN,
                         8 | 13 => break 'search None,
@@ -1497,7 +1497,7 @@ impl MemState {
                     }
                     continue;
                 }
-                let (reg, here) = match mstate + node.state(self) {
+                let (reg, here) = match mstate + self[node].state {
                     // NONE_SEEN or Z_SEEN meeting YZ_OK or Y_OK
                     3 | 4 | 15 | 16 => (MoveReg::Y, MOV_Y_HERE),
                     // NONE_SEEN meeting Z_OK, Y_SEEN meeting YZ_OK or Z_OK
@@ -1506,34 +1506,34 @@ impl MemState {
                     1 | 2 | 8 | 13 => break 'search Some(node),
                     _ => continue,
                 };
-                if !shipout.dvi.set_reg_at(node.location(self), reg) {
+                if !shipout.dvi.set_reg_at(self[node].location, reg) {
                     break 'search None;
                 }
-                node.set_state(self, here);
+                self[node].state = here;
                 break 'search Some(node);
             }
             None
         };
 
         let Some(found) = found else {
-            q.set_state(self, MOV_YZ_OK);
+            self[q].state = MOV_YZ_OK;
             return shipout.dvi.movement(axis, w);
         };
 
-        q.set_state(self, found.state(self));
-        let (reg, yz_becomes, fixed_from) = if q.state(self) == MOV_Y_HERE {
+        self[q].state = self[found].state;
+        let (reg, yz_becomes, fixed_from) = if self[q].state == MOV_Y_HERE {
             (MoveReg::Y, MOV_Z_OK, MOV_Y_OK)
         } else {
             (MoveReg::Z, MOV_Y_OK, MOV_Z_OK)
         };
-        while q.link(self) != found.ptr() {
-            q = NodePtr::<MovementNode>::from_ptr(q.link(self))
+        while self[q].link != found.ptr() {
+            q = NodePtr::<MovementNode>::from_ptr(self[q].link)
                 .expect("found movement record is linked from the new record");
-            let state = q.state(self);
+            let state = self[q].state;
             if state == MOV_YZ_OK {
-                q.set_state(self, yz_becomes);
+                self[q].state = yz_becomes;
             } else if state == fixed_from {
-                q.set_state(self, MOV_D_FIXED);
+                self[q].state = MOV_D_FIXED;
             }
         }
         shipout.dvi.movement_by_reg(axis, reg)

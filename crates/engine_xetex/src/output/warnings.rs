@@ -133,7 +133,7 @@ pub(crate) fn file_warning(st: &mut EngineState) {
         let Some(cond) = st.scanner.cond_ptr else {
             break;
         };
-        (st.scanner.cur_if, st.scanner.if_line, st.scanner.if_limit) = cond.saved_state(&st.mem);
+        (st.scanner.cur_if, st.scanner.if_line, st.scanner.if_limit) = st.mem[cond].saved_state();
         st.scanner.cond_ptr = cond.next(&st.mem);
     }
     st.scanner.cond_ptr = saved_cond;

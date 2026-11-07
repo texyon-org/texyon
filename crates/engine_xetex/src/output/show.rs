@@ -472,7 +472,7 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
                     }
                     print_if_line(st, l);
                     n -= 1;
-                    (t, l, m) = cond.saved_state(&st.mem);
+                    (t, l, m) = st.mem[cond].saved_state();
                     p = cond.next(&st.mem);
                 }
             }

@@ -48,7 +48,7 @@ impl LinebreakState {
         let mut l = if break_node.is_null() {
             self.first_p
         } else {
-            passive_node(break_node).cur_break(mem)
+            mem[passive_node(break_node)].cur_break
         };
 
         let r = mem.prev_rightmost(self.global_prev_p, self.cur_p);

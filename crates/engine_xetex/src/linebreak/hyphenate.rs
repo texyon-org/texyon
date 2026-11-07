@@ -139,7 +139,7 @@ fn pop_lig_stack(
     let Some(item) = top_item(st) else {
         return;
     };
-    let component = item.component(&st.mem);
+    let component = st.mem[item].component;
     if component.raw() > TEX_NULL {
         t.set_link(&mut st.mem, component);
         *t = component;
@@ -243,7 +243,7 @@ fn reconstitute(
                             2 | 6 => {
                                 st.mainloop.cur_r = LigChar::of(q.lig_char());
                                 if let Some(top) = top_item(st) {
-                                    top.set_character(&mut st.mem, st.mainloop.cur_r.code());
+                                    st.mem[top].character = st.mainloop.cur_r.code();
                                 } else {
                                     let item = st.mem.new_lig_item(st.mainloop.cur_r.code())?;
                                     st.mainloop.lig_stack = Some(LigStack::Item(item));
@@ -253,7 +253,7 @@ fn reconstitute(
                                         let p = st
                                             .mem
                                             .new_char(st.hyph.hf, st.hyph.hu[j + 1].code())?;
-                                        item.set_component(&mut st.mem, p.ptr());
+                                        st.mem[item].component = p.ptr();
                                     }
                                 }
                             }

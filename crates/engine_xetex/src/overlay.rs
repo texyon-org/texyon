@@ -6,9 +6,11 @@
 
 use bytemuck::{Pod, Zeroable};
 
+use crate::codes::{FiOrElseCode, ValueLevel};
 use crate::node::{
-    AdjustNode, BoxNode, ChoiceNode, DiscNode, EdgeNode, FixedNode, GlueSpecNode, KernNode,
-    MarginKernNode, MarkNode, MathNode, NodePtr, PenaltyNode, Stored, StyleNode,
+    AdjustNode, AlignRecord, AlignStackNode, BoxNode, ChoiceNode, CondNode, DeltaNode, DiscNode,
+    EdgeNode, ExprNode, FixedNode, GlueSpecNode, KernNode, LigItem, MarginKernNode, MarkNode,
+    MathNode, MovementNode, NodePtr, PassiveNode, PenaltyNode, SpanNode, Stored, StyleNode,
 };
 use crate::state::MemState;
 use crate::token::TokenList;
@@ -254,6 +256,165 @@ pub struct MarkLayout {
 
 overlay!(MarkNode => MarkLayout);
 
+/// A line-breaker delta node: the change in the totals between active nodes.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct DeltaLayout {
+    pub subtype: u16,
+    _type: u16,
+    pub link: MemPtr,
+    _unused1: i32,
+    pub dwidth: Scaled,
+    _unused2: i32,
+    pub dstretch0: Scaled,
+    _unused3: i32,
+    pub dstretch1: Scaled,
+    _unused4: i32,
+    pub dstretch2: Scaled,
+    _unused5: i32,
+    pub dstretch3: Scaled,
+    _unused6: i32,
+    pub dshrink: Scaled,
+}
+
+overlay!(DeltaNode => DeltaLayout);
+
+/// A line-breaker passive node, one feasible break.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct PassiveLayout {
+    /// A serial number, for tracing.
+    pub serial: i32,
+    pub link: MemPtr,
+    /// WEB's `prev_break` until `post_line_break` reverses the chain.
+    pub next_break: MemPtr,
+    pub cur_break: MemPtr,
+}
+
+overlay!(PassiveNode => PassiveLayout);
+
+/// An entry of the conditional stack, saving the enclosing `\if`.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct CondLayout {
+    pub cur_if: u16,
+    pub if_limit: Stored<FiOrElseCode>,
+    pub link: MemPtr,
+    _unused1: i32,
+    pub if_line: i32,
+}
+
+overlay!(CondNode => CondLayout);
+
+impl CondLayout {
+    /// The saved `(cur_if, if_line, if_limit)`.
+    #[inline]
+    pub fn saved_state(&self) -> (i16, i32, Stored<FiOrElseCode>) {
+        (self.cur_if as i16, self.if_line, self.if_limit)
+    }
+}
+
+/// A shipout `down_ptr`/`right_ptr` movement record.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct MovementLayout {
+    /// Whether the movement may be reused, and as which command.
+    pub state: i32,
+    pub link: MemPtr,
+    _unused1: i32,
+    pub distance: Scaled,
+    _unused2: i32,
+    /// The DVI offset where the movement was emitted.
+    pub location: i32,
+}
+
+overlay!(MovementNode => MovementLayout);
+
+/// An entry of a column's span list, ended by `END_SPAN`.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct SpanLayout {
+    pub next: NodePtr<SpanNode>,
+    /// Columns spanned beyond the first. `END_SPAN` holds a larger sentinel.
+    pub span_count: i32,
+    _unused1: i32,
+    pub width: Scaled,
+}
+
+overlay!(SpanNode => SpanLayout);
+
+/// An alignment preamble column: a null box holding the column's templates,
+/// natural width and span list.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct AlignRecordLayout {
+    /// The head of the span list, read through `span_head`.
+    _span_list: i32,
+    pub link: MemPtr,
+    _unused1: i32,
+    pub width: Scaled,
+    _unused2: i32,
+    pub v_part: TokenList,
+    _unused3: i32,
+    pub u_part: TokenList,
+    _unused4: [i32; 2],
+    /// The command that ended the current entry of this column.
+    pub extra_info: i32,
+    _unused5: [i32; 5],
+}
+
+overlay!(AlignRecord => AlignRecordLayout);
+
+/// A saved outer alignment on the `align_ptr` stack.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct AlignStackLayout {
+    pub cur_align: MemPtr,
+    pub link: MemPtr,
+    pub preamble: MemPtr,
+    pub cur_span: MemPtr,
+    _unused1: i32,
+    pub cur_loop: MemPtr,
+    _unused2: i32,
+    pub align_state: i32,
+    pub cur_head: MemPtr,
+    pub cur_tail: MemPtr,
+    pub cur_pre_head: MemPtr,
+    pub cur_pre_tail: MemPtr,
+}
+
+overlay!(AlignStackNode => AlignStackLayout);
+
+/// A suspended level of `\numexpr`-style expression scanning.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct ExprLayout {
+    pub state: u16,
+    pub level: Stored<ValueLevel>,
+    pub link: MemPtr,
+    _unused1: i32,
+    pub e: i32,
+    _unused2: i32,
+    pub t: i32,
+    _unused3: i32,
+    pub n: i32,
+}
+
+overlay!(ExprNode => ExprLayout);
+
+/// An entry of the ligature reconstitution stack.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct LigItemLayout {
+    pub character: u16,
+    _unused0: u16,
+    pub link: MemPtr,
+    _unused1: i32,
+    pub component: MemPtr,
+}
+
+overlay!(LigItem => LigItemLayout);
+
 impl BoxLayout {
     #[inline]
     pub fn is_hlist(&self) -> bool {
@@ -344,6 +505,53 @@ mod tests {
         let m: NodePtr<MarginKernNode> = NodePtr::from_idx_unchecked(at(8));
         mem[m].width = Scaled::from_raw(13);
         assert_eq!(mem.b32s1(at(9)), 13);
+    }
+
+    #[test]
+    fn stack_record_fields_land_on_their_words() {
+        let mut mem = arena();
+        let at = MemIdx::from_raw;
+        let ptr = MemPtr::from_raw;
+
+        let c: NodePtr<CondNode> = NodePtr::from_idx_unchecked(at(2));
+        let cond = &mut mem[c];
+        cond.cur_if = 7;
+        cond.if_limit = FiOrElseCode::Else.into();
+        cond.link = ptr(9);
+        cond.if_line = 11;
+        assert_eq!((mem.b16s0(at(2)), mem.b16s1(at(2))), (7, 3));
+        assert_eq!((mem.b32s1(at(2)), mem.b32s1(at(3))), (9, 11));
+
+        let e: NodePtr<ExprNode> = NodePtr::from_idx_unchecked(at(4));
+        let expr = &mut mem[e];
+        expr.state = 2;
+        expr.level = ValueLevel::Mu.into();
+        (expr.e, expr.t, expr.n) = (21, 22, 23);
+        assert_eq!((mem.b16s0(at(4)), mem.b16s1(at(4))), (2, 3));
+        assert_eq!([5, 6, 7].map(|i| mem.b32s1(at(i))), [21, 22, 23]);
+
+        let m: NodePtr<MovementNode> = NodePtr::from_idx_unchecked(at(8));
+        let mv = &mut mem[m];
+        (mv.state, mv.link, mv.distance, mv.location) = (5, ptr(6), Scaled::from_raw(31), 32);
+        assert_eq!((mem.b32s0(at(8)), mem.b32s1(at(8))), (5, 6));
+        assert_eq!((mem.b32s1(at(9)), mem.b32s1(at(10))), (31, 32));
+    }
+
+    #[test]
+    fn align_stack_fields_land_on_their_words() {
+        let mut mem = arena();
+        let at = MemIdx::from_raw;
+        let ptr = MemPtr::from_raw;
+        let a: NodePtr<AlignStackNode> = NodePtr::from_idx_unchecked(at(4));
+        let s = &mut mem[a];
+        (s.cur_align, s.link, s.preamble, s.cur_span) = (ptr(1), ptr(2), ptr(3), ptr(4));
+        (s.cur_loop, s.align_state) = (ptr(5), 6);
+        (s.cur_head, s.cur_tail, s.cur_pre_head, s.cur_pre_tail) =
+            (ptr(7), ptr(8), ptr(9), ptr(10));
+        let words: Vec<_> = (4..10)
+            .map(|i| (mem.b32s0(at(i)), mem.b32s1(at(i))))
+            .collect();
+        assert_eq!(words, [(1, 2), (3, 4), (0, 5), (0, 6), (7, 8), (9, 10)]);
     }
 
     #[test]

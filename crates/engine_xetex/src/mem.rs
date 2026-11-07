@@ -404,8 +404,8 @@ impl MemState {
 
     pub fn new_lig_item(&mut self, c: u16) -> Result<NodePtr<LigItem>, Abort> {
         let p = NodePtr::<LigItem>::alloc(self)?;
-        p.set_character(self, c);
-        p.set_component(self, MemPtr::NULL);
+        self[p].character = c;
+        self[p].component = MemPtr::NULL;
         Ok(p)
     }
 

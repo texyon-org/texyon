@@ -233,8 +233,8 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
             crate::output::print_int(st, if_line);
         }
         crate::output::print(st, " was incomplete)");
-        st.scanner.if_line = cond.if_line(&st.mem);
-        st.scanner.cur_if = cond.cur_if(&st.mem) as i16;
+        st.scanner.if_line = st.mem[cond].if_line;
+        st.scanner.cur_if = st.mem[cond].cur_if as i16;
         st.mem.temp_ptr = cond.ptr();
         st.scanner.cond_ptr = cond.next(&st.mem);
         cond.free(&mut st.mem);
@@ -462,7 +462,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     }
 
     OMIT_TEMPLATE.set_token(mem, Token::from_cs(FROZEN_END_TEMPLATE));
-    END_SPAN.set_span_count(mem, i32::from(u16::MAX) + 1);
+    mem[END_SPAN].span_count = i32::from(u16::MAX) + 1;
     mem.set_b32s0(END_SPAN.idx(), TEX_NULL);
     let active = NodePtr::<ActiveNode>::at(ACTIVE_LIST);
     active.set_break_type(mem, HYPHENATED as u16);

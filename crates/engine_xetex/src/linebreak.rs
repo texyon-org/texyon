@@ -84,23 +84,23 @@ enum ActiveOrDelta {
 fn delta_widths(d: NodePtr<DeltaNode>, mem: &MemState) -> [Scaled; 7] {
     [
         Scaled::ZERO,
-        d.dwidth(mem),
-        d.dstretch0(mem),
-        d.dstretch1(mem),
-        d.dstretch2(mem),
-        d.dstretch3(mem),
-        d.dshrink(mem),
+        mem[d].dwidth,
+        mem[d].dstretch0,
+        mem[d].dstretch1,
+        mem[d].dstretch2,
+        mem[d].dstretch3,
+        mem[d].dshrink,
     ]
 }
 
 #[inline]
 fn set_delta_widths(d: NodePtr<DeltaNode>, mem: &mut MemState, w: &[Scaled; 7]) {
-    d.set_dwidth(mem, w[1]);
-    d.set_dstretch0(mem, w[2]);
-    d.set_dstretch1(mem, w[3]);
-    d.set_dstretch2(mem, w[4]);
-    d.set_dstretch3(mem, w[5]);
-    d.set_dshrink(mem, w[6]);
+    mem[d].dwidth = w[1];
+    mem[d].dstretch0 = w[2];
+    mem[d].dstretch1 = w[3];
+    mem[d].dstretch2 = w[4];
+    mem[d].dstretch3 = w[5];
+    mem[d].dshrink = w[6];
 }
 
 impl MemState {
@@ -136,8 +136,8 @@ impl MemState {
         w: &[Scaled; 7],
     ) -> Result<NodePtr<DeltaNode>, Abort> {
         let p = NodePtr::<DeltaNode>::alloc(self)?;
-        p.set_link(self, link);
-        p.set_subtype(self, 0);
+        self[p].link = link;
+        self[p].subtype = 0;
         set_delta_widths(p, self, w);
         Ok(p)
     }
@@ -802,10 +802,10 @@ impl MemState {
         for fit_class in VERY_LOOSE_FIT..=TIGHT_FIT {
             if linebreak.minimal_demerits[fit_class] <= linebreak.minimum_demerits {
                 let passive = NodePtr::<PassiveNode>::alloc(self)?;
-                passive.set_link(self, link_of(linebreak.passive));
+                self[passive].link = link_of(linebreak.passive);
                 linebreak.passive = Some(passive);
-                passive.set_cur_break(self, linebreak.cur_p);
-                passive.set_prev_break(self, linebreak.best_place[fit_class]);
+                self[passive].cur_break = linebreak.cur_p;
+                self[passive].next_break = linebreak.best_place[fit_class];
 
                 let q = self.new_active_node(i32::from(linebreak.active_node_size), r)?;
                 q.set_break_node(self, passive.ptr());
@@ -1114,7 +1114,7 @@ impl MemState {
                     *width += delta;
                 }
                 linebreak.cur_active_width[1..].copy_from_slice(&scanner.active_width[1..]);
-                ACTIVE_LIST.set_link(self, r_delta.link(self));
+                ACTIVE_LIST.set_link(self, self[r_delta].link);
                 delta_node(r).free(self);
             }
         } else if let ActiveOrDelta::Delta(prev_delta) = self.classify_active_or_delta(*prev_r) {
@@ -1134,7 +1134,7 @@ impl MemState {
                     *width += delta;
                 }
                 set_delta_widths(prev_delta, self, &std::array::from_fn(|k| pw[k] + rw[k]));
-                prev_delta.set_link(self, r_delta.link(self));
+                self[prev_delta].link = self[r_delta].link;
                 delta_node(r).free(self);
             }
         }
