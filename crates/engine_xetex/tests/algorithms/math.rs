@@ -241,3 +241,12 @@ fn every_noad_kind_typesets() {
         .\mathoff",
     );
 }
+
+#[test]
+fn a_display_after_a_wrapped_prevgraf_takes_the_last_parshape_line() {
+    let r = run(&format!(
+        "{MATH_FONTS}\\setbox0\\vbox{{\\parshape 2 5pt 30pt 7pt 50pt \\noindent
+         \\prevgraf=2147483647 $$\\showthe\\displayindent \\showthe\\displaywidth$$}}"
+    ));
+    assert_eq!(r.shown(), ["7.0pt", "50.0pt"]);
+}

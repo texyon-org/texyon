@@ -636,7 +636,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                 .input
                 .cur_list
                 .prev_graf
-                .wrapping_add(2)
+                .saturating_add(2)
                 .min(shape.lines(&st.mem));
             s = shape.indent(&st.mem, line);
             l = shape.line_width(&st.mem, line);
