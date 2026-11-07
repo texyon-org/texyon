@@ -55,23 +55,10 @@ macro_rules! code_enum {
                 self as i32
             }
         }
-
-        impl crate::codes::ChrCode for $name {
-            #[inline(always)]
-            fn from_chr(v: i32) -> Option<Self> {
-                Self::from_raw(v)
-            }
-        }
     };
 }
 
 pub(crate) use code_enum;
-
-/// A code set a command carries in `cur_chr`.
-pub(crate) trait ChrCode: Sized {
-    /// The code `v` stands for, `None` when it is not one.
-    fn from_chr(v: i32) -> Option<Self>;
-}
 
 code_enum! {
     /// The type of a scanned value (`cur_val_level`), ordered as TeX compares

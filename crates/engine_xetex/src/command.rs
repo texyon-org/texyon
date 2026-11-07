@@ -247,6 +247,17 @@ pub(crate) enum Command {
     DontExpand,
 }
 
+impl crate::state::ScannerState {
+    /// The code of the current `\fi`, `\else` or `\or`, `None` for any other command.
+    #[inline]
+    pub(crate) fn fi_or_else(&self) -> Option<FiOrElseCode> {
+        match self.try_command() {
+            Some(Command::FiOrElse(code)) => Some(code),
+            _ => None,
+        }
+    }
+}
+
 impl Command {
     /// The command `cmd` with modifier `chr`, `None` when `chr` is not one of its codes.
     pub(crate) fn decode(cmd: Cmd, chr: i32) -> Option<Command> {

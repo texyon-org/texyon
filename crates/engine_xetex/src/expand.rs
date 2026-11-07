@@ -22,7 +22,7 @@ use crate::output::{
 use crate::params::{GluePar, IntPar};
 use crate::scan::{
     copy_delimited_tokens, copy_group_tokens, fetch_box, get_next, get_token, get_x_non_blank,
-    get_x_token, scan_int, store_new_token, NO_EXPAND_FLAG,
+    get_x_token, scan_int, store_new_token,
 };
 use crate::state::{EngineState, MacroParam, MemState, Selector};
 use crate::token::{Token, TokenList};
@@ -57,7 +57,7 @@ fn pop_fi(st: &mut EngineState) -> Result<(), Abort> {
 
 /// Handles the `\else` or `\fi` that ended a skipped conditional branch.
 fn skipped_branch_end(st: &mut EngineState) -> Result<(), Abort> {
-    if st.scanner.chr_code() == Some(FiOrElseCode::Fi) {
+    if st.scanner.fi_or_else() == Some(FiOrElseCode::Fi) {
         pop_fi(st)?;
     } else {
         st.scanner.if_limit = FiOrElseCode::Fi;
@@ -67,7 +67,7 @@ fn skipped_branch_end(st: &mut EngineState) -> Result<(), Abort> {
 
 fn get_x_token_or_active_char(st: &mut EngineState) -> Result<(), Abort> {
     get_x_token(st)?;
-    if st.scanner.cur_cmd == Cmd::Relax && st.scanner.cur_chr == NO_EXPAND_FLAG {
+    if st.scanner.try_command() == Some(Command::Relax { no_expand: true }) {
         st.scanner.cur_cmd = Cmd::ACTIVE_CHAR;
         st.scanner.cur_chr = st.scanner.cur_tok.cs() - ACTIVE_BASE;
     }
@@ -327,12 +327,12 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
             while n != 0 {
                 crate::scan::pass_text(st)?;
                 if st.scanner.cond_ptr == save_cond_ptr {
-                    if st.scanner.chr_code() != Some(FiOrElseCode::Or) {
+                    if st.scanner.fi_or_else() != Some(FiOrElseCode::Or) {
                         skipped_branch_end(st)?;
                         return Ok(());
                     }
                     n = n.wrapping_sub(1);
-                } else if st.scanner.chr_code() == Some(FiOrElseCode::Fi) {
+                } else if st.scanner.fi_or_else() == Some(FiOrElseCode::Fi) {
                     pop_fi(st)?;
                 }
             }
@@ -366,7 +366,7 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
     loop {
         crate::scan::pass_text(st)?;
         if st.scanner.cond_ptr == save_cond_ptr {
-            if st.scanner.chr_code() != Some(FiOrElseCode::Or) {
+            if st.scanner.fi_or_else() != Some(FiOrElseCode::Or) {
                 skipped_branch_end(st)?;
                 return Ok(());
             }
@@ -376,7 +376,7 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
             st.errors
                 .help(&[r"I'm ignoring this; it doesn't match any \if."]);
             error(st)?;
-        } else if st.scanner.chr_code() == Some(FiOrElseCode::Fi) {
+        } else if st.scanner.fi_or_else() == Some(FiOrElseCode::Fi) {
             pop_fi(st)?;
         }
     }
@@ -920,7 +920,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                         error(st)?;
                     }
                 } else {
-                    while st.scanner.chr_code() != Some(FiOrElseCode::Fi) {
+                    while st.scanner.fi_or_else() != Some(FiOrElseCode::Fi) {
                         crate::scan::pass_text(st)?;
                     }
                     pop_fi(st)?;

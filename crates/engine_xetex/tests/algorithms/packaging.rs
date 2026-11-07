@@ -166,3 +166,25 @@ fn case_shifts_use_their_own_code_table() {
     let r = run(r"\lowercase{\count1=`A} \uppercase{\count2=`a} \showthe\count1 \showthe\count2");
     assert_eq!(r.shown(), ["97", "65"]);
 }
+
+#[test]
+fn alignment_preambles_expand_span_and_set_tabskip() {
+    let r = run(r"\def\x{\hskip5pt##}\tabskip=1pt
+                  \setbox0\vbox{\halign{#\tabskip=2pt&\span\x\cr\hskip1pt&\hskip3pt\cr\crcr}}
+                  \showbox0");
+    assert_eq!(r.errors(), Vec::<&str>::new());
+    assert_lines(
+        &r.boxes()[0],
+        r"
+        \vbox(0.0+0.0)x14.0
+        .\hbox(0.0+0.0)x14.0
+        ..\glue(\tabskip) 1.0
+        ..\hbox(0.0+0.0)x1.0
+        ...\glue 1.0
+        ..\glue(\tabskip) 2.0
+        ..\hbox(0.0+0.0)x8.0
+        ...\glue 5.0
+        ...\glue 3.0
+        ..\glue(\tabskip) 2.0",
+    );
+}

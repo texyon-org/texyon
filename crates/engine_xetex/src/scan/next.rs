@@ -674,7 +674,7 @@ pub(crate) fn pass_text(st: &mut EngineState) -> Result<(), Abort> {
             if l == 0 {
                 break;
             }
-            if st.scanner.chr_code() == Some(FiOrElseCode::Fi) {
+            if st.scanner.fi_or_else() == Some(FiOrElseCode::Fi) {
                 l -= 1;
             }
         } else if st.scanner.cur_cmd == Cmd::IfTest {

@@ -1864,24 +1864,6 @@ impl ScannerState {
         crate::command::Command::decode(self.cur_cmd, self.cur_chr)
     }
 
-    /// `cur_chr` as the modifier code of a command, `None` when it is not one.
-    #[inline(always)]
-    pub(crate) fn chr_code<T: crate::codes::ChrCode>(&self) -> Option<T> {
-        T::from_chr(self.cur_chr)
-    }
-
-    /// `cur_chr` of `set_font`.
-    #[inline(always)]
-    pub(crate) fn chr_font(&self) -> FontId {
-        FontId::from_raw(self.cur_chr)
-    }
-
-    /// `cur_chr` of a command whose chr code is an `eqtb` location.
-    #[inline(always)]
-    pub(crate) fn chr_loc(&self) -> EqtbPtr {
-        EqtbPtr::from_raw(self.cur_chr)
-    }
-
     /// `cur_chr` as the macro a call command carries.
     #[inline]
     pub(crate) fn cur_chr_tokens(&self) -> crate::token::TokenList {

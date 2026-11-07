@@ -222,3 +222,11 @@ fn the_rejects_ignorespaces() {
     assert_eq!(r.errors(), ["You can't use `\\ignorespaces' after \\the."]);
     assert_eq!(r.shown(), ["5"]);
 }
+
+#[test]
+fn mode_and_page_quantities_read_their_own_state() {
+    let r = run(r"\showthe\spacefactor \showthe\prevdepth \showthe\pagegoal
+                  \showthe\interactionmode \setbox1\hbox{\showthe\spacefactor}");
+    assert_eq!(r.errors(), ["Improper \\spacefactor."]);
+    assert_eq!(r.shown(), ["0", "-1000.0pt", "16383.99998pt", "2", "1000"]);
+}

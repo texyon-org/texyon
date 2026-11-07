@@ -2,6 +2,8 @@
 
 use crate::cmd::Cmd;
 use crate::codes::{ScannerStatus, ValueLevel};
+use crate::command::Command;
+use crate::command::TabMark;
 use crate::consts::{DLIST, FROZEN_END_TEMPLATE, HMODE, IGNORE_DEPTH, MAX_DIMEN, MMODE, VMODE};
 use crate::errors::Abort;
 use crate::input::{TokenType, TOKEN_LIST};
@@ -18,7 +20,7 @@ use crate::units::{GlueOrder, GlueSign, MemPtr, Scaled};
 
 use super::assign::{define, do_assignments};
 use super::lists::{end_graf, normal_paragraph, off_save};
-use super::{append_list, begin_every, CR_CODE, CR_CR_CODE, INNER_HMODE, INNER_VMODE, SPAN_CODE};
+use super::{append_list, begin_every, CR_CODE, INNER_HMODE, INNER_VMODE, SPAN_CODE};
 
 pub(super) fn align_error(st: &mut EngineState) -> Result<(), Abort> {
     if st.scanner.align_state.abs() > 2 {
@@ -438,7 +440,7 @@ pub(super) fn align_peek(st: &mut EngineState) -> Result<(), Abort> {
                 return Ok(());
             }
             Cmd::RightBrace => return fin_align(st),
-            Cmd::CarRet if st.scanner.cur_chr == CR_CR_CODE => {}
+            Cmd::CarRet if st.scanner.try_command() == Some(Command::CarRet { crcr: true }) => {}
             _ => {
                 init_row(st)?;
                 return init_col(st);
@@ -459,7 +461,7 @@ fn get_x_non_blank_or_protected(st: &mut EngineState) -> Result<(), Abort> {
 fn get_preamble_token(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         crate::scan::get_token(st)?;
-        while st.scanner.cur_chr == SPAN_CODE && st.scanner.cur_cmd == Cmd::TabMark {
+        while st.scanner.try_command() == Some(Command::TabMark(TabMark::Span)) {
             crate::scan::get_token(st)?;
             if st.scanner.cur_cmd > Cmd::MAX_COMMAND {
                 crate::expand::expand(st)?;
@@ -471,7 +473,7 @@ fn get_preamble_token(st: &mut EngineState) -> Result<(), Abort> {
                 "(interwoven alignment preambles are not allowed)",
             ));
         }
-        if st.scanner.cur_cmd != Cmd::AssignGlue || st.scanner.chr_loc() != GluePar::TabSkip.loc() {
+        if st.scanner.try_command() != Some(Command::AssignGlue(GluePar::TabSkip.loc())) {
             return Ok(());
         }
         crate::scan::scan_optional_equals(st)?;

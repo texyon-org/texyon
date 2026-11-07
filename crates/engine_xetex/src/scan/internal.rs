@@ -1,11 +1,15 @@
 //! Internal quantities: `scan_something_internal` and the font queries behind it.
 
 use crate::cmd::Cmd;
+use crate::codes::AuxCode;
+use crate::codes::FontIntCode;
+use crate::codes::PageDimenCode;
 use crate::codes::{BoxDimenCode, FiOrElseCode, IfCode, LastItemCode, PageIntCode, ValueLevel};
+use crate::command::Command;
+use crate::command::RegisterRef;
 use crate::consts::{
-    ACTIVE_MATH_CHAR, CHAR_CLASS_LIMIT, COUNT_BASE, DEL_CODE_BASE, END_M_CODE, MATH_CODE_BASE,
-    MAX_DIMEN, MU_GLUE, MU_SKIP_BASE, NULL_FONT, PAR_SHAPE_LOC, SCALED_BASE, SF_CODE_BASE,
-    SKIP_BASE, VMODE,
+    ACTIVE_MATH_CHAR, CHAR_CLASS_LIMIT, DEL_CODE_BASE, END_M_CODE, MATH_CODE_BASE, MAX_DIMEN,
+    MU_GLUE, NULL_FONT, PAR_SHAPE_LOC, SF_CODE_BASE, VMODE,
 };
 use crate::errors::{error, mu_error, Abort};
 use crate::ext::{
@@ -16,7 +20,6 @@ use crate::ext::{
 use crate::fonts::Side;
 use crate::fonts::{AAT_FONT_FLAG, SPACE_CODE, SPACE_SHRINK_CODE};
 use crate::input::{back_error, back_input};
-use crate::main_control::{LP_CODE_BASE, RP_CODE_BASE};
 use crate::mem::ZERO_GLUE;
 use crate::node::{AnyNode, GlueSpecNode, NodePtr, SaNode};
 use crate::output::{
@@ -266,51 +269,54 @@ fn fetch_xetex_def_code(st: &mut EngineState, m: EqtbPtr) -> Result<i32, Abort> 
     Ok(0)
 }
 
-fn fetch_token_list(st: &mut EngineState, m: i32, level: ValueLevel) -> Result<CurVal, Abort> {
-    Ok(if level != ValueLevel::Tok {
+fn fetch_token_list(
+    st: &mut EngineState,
+    cmd: Command,
+    level: ValueLevel,
+) -> Result<CurVal, Abort> {
+    if level != ValueLevel::Tok {
         missing_number_error(st)?;
-        CurVal::Dimen(Scaled::ZERO)
-    } else if st.scanner.cur_cmd < Cmd::AssignToks {
-        CurVal::Tok(if m == 0 {
+        return Ok(CurVal::Dimen(Scaled::ZERO));
+    }
+    Ok(match cmd {
+        Command::ToksRegister(None) => {
             let n = scan_register_num(st)?;
-            if n < 256 {
+            CurVal::Tok(if n < 256 {
                 st.eqtb.toks(n)
             } else {
                 let sa = find_sa(st, ValueLevel::Tok, n);
                 sa_token_list(st, sa)
-            }
-        } else {
-            TokenList::from_ptr(NodePtr::<SaNode>::at(MemPtr::from_raw(m)).sa_ptr(&st.mem))
-        })
-    } else if st.scanner.cur_cmd == Cmd::AssignToks {
-        CurVal::Tok(
-            if st.scanner.chr_loc() == TokPar::XetexInterCharToks.loc() {
-                let first = scan_char_class_not_ignored(st)?;
-                let second = scan_char_class_not_ignored(st)?;
-                let n = first * CHAR_CLASS_LIMIT + second;
-                let sa = find_sa(st, ValueLevel::InterChar, n);
-                sa_token_list(st, sa)
-            } else {
-                TokenList::from_ptr(MemPtr::from_raw(st.eqtb.equiv(st.scanner.chr_loc())))
-            },
-        )
-    } else {
-        back_input(st)?;
-        let f = scan_font_ident(st)?;
-        CurVal::Ident(f.id_loc())
+            })
+        }
+        Command::ToksRegister(Some(sa)) => CurVal::Tok(TokenList::from_ptr(sa.sa_ptr(&st.mem))),
+        Command::AssignToks(loc) if loc == TokPar::XetexInterCharToks.loc() => {
+            let first = scan_char_class_not_ignored(st)?;
+            let second = scan_char_class_not_ignored(st)?;
+            let n = first * CHAR_CLASS_LIMIT + second;
+            let sa = find_sa(st, ValueLevel::InterChar, n);
+            CurVal::Tok(sa_token_list(st, sa))
+        }
+        Command::AssignToks(loc) => CurVal::Tok(st.eqtb.equiv_tokens(loc)),
+        _ => {
+            back_input(st)?;
+            let f = scan_font_ident(st)?;
+            CurVal::Ident(f.id_loc())
+        }
     })
 }
 
-fn fetch_register(st: &mut EngineState, m: i32) -> Result<CurVal, Abort> {
-    let Some(level) = ValueLevel::from_raw(m) else {
-        let sa = NodePtr::<SaNode>::at(MemPtr::from_raw(m));
-        let level = sa.sa_type(&st.mem);
-        let word = if level < ValueLevel::Glue {
-            sa.sa_int(&st.mem)
-        } else {
-            sa.sa_ptr(&st.mem).raw()
-        };
-        return CurVal::from_word(level, word);
+fn fetch_register(st: &mut EngineState, r: RegisterRef) -> Result<CurVal, Abort> {
+    let level = match r {
+        RegisterRef::Scanned(level) => level,
+        RegisterRef::Sparse(sa) => {
+            let level = sa.sa_type(&st.mem);
+            let word = if level < ValueLevel::Glue {
+                sa.sa_int(&st.mem)
+            } else {
+                sa.sa_ptr(&st.mem).raw()
+            };
+            return CurVal::from_word(level, word);
+        }
     };
     let n = scan_register_num(st)?;
     let word = if n > 255 {
@@ -320,13 +326,7 @@ fn fetch_register(st: &mut EngineState, m: i32) -> Result<CurVal, Abort> {
             Some(sa) => sa.sa_ptr(&st.mem).raw(),
         }
     } else {
-        let base = match level {
-            ValueLevel::Int => COUNT_BASE,
-            ValueLevel::Dimen => SCALED_BASE,
-            ValueLevel::Glue => SKIP_BASE,
-            ValueLevel::Mu => MU_SKIP_BASE,
-            _ => return Err(Abort::Confusion("register")),
-        };
+        let base = level.register_base().ok_or(Abort::Confusion("register"))?;
         st.eqtb.equiv(base + n)
     };
     CurVal::from_word(level, word)
@@ -755,23 +755,24 @@ pub(super) fn scan_something_internal(
         CurVal::Int(0)
     };
     let v = loop {
-        let m = st.scanner.cur_chr;
-        break match st.scanner.cur_cmd {
-            Cmd::DefCode => CurVal::Int(fetch_def_code(st, st.scanner.chr_loc())?),
-            Cmd::XetexDefCode => CurVal::Int(fetch_xetex_def_code(st, st.scanner.chr_loc())?),
-            Cmd::ToksRegister | Cmd::AssignToks | Cmd::DefFamily | Cmd::SetFont | Cmd::DefFont => {
-                fetch_token_list(st, m, level)?
-            }
-            Cmd::AssignInt => CurVal::Int(st.eqtb.int_at(st.scanner.chr_loc())),
-            Cmd::AssignDimen => {
-                CurVal::Dimen(Scaled::from_raw(st.eqtb.int_at(st.scanner.chr_loc())))
-            }
-            Cmd::AssignGlue => CurVal::Glue(glue_spec(st.eqtb.equiv(st.scanner.chr_loc()))),
-            Cmd::AssignMuGlue => CurVal::Mu(glue_spec(st.eqtb.equiv(st.scanner.chr_loc()))),
-            Cmd::SetAux => {
-                if i32::from(st.input.cur_list.mode.abs()) != m {
+        break match st.scanner.try_command() {
+            Some(Command::DefCode(base)) => CurVal::Int(fetch_def_code(st, base)?),
+            Some(Command::XetexDefCode(base)) => CurVal::Int(fetch_xetex_def_code(st, base)?),
+            Some(
+                cmd @ (Command::ToksRegister(_)
+                | Command::AssignToks(_)
+                | Command::DefFamily(_)
+                | Command::SetFont(_)
+                | Command::DefFont),
+            ) => fetch_token_list(st, cmd, level)?,
+            Some(Command::AssignInt(loc)) => CurVal::Int(st.eqtb.int_at(loc)),
+            Some(Command::AssignDimen(loc)) => CurVal::Dimen(Scaled::from_raw(st.eqtb.int_at(loc))),
+            Some(Command::AssignGlue(loc)) => CurVal::Glue(glue_spec(st.eqtb.equiv(loc))),
+            Some(Command::AssignMuGlue(loc)) => CurVal::Mu(glue_spec(st.eqtb.equiv(loc))),
+            Some(Command::SetAux(code)) => {
+                if st.input.cur_list.mode.abs() != code.mode() {
                     error_here_with_diagnostic(st, "Improper ");
-                    print_cmd_chr(st, Cmd::SetAux, m);
+                    print_cmd_chr(st, Cmd::SetAux, code.raw());
                     capture_to_diagnostic(st, None);
                     st.errors.help(&[
                         r"You can refer to \spacefactor only in horizontal mode;",
@@ -781,13 +782,13 @@ pub(super) fn scan_something_internal(
                     ]);
                     error(st)?;
                     zero
-                } else if m == i32::from(VMODE) {
+                } else if code == AuxCode::PrevDepth {
                     CurVal::Dimen(st.input.cur_list.prev_depth())
                 } else {
                     CurVal::Int(st.input.cur_list.space_factor())
                 }
             }
-            Cmd::SetPrevGraf => {
+            Some(Command::SetPrevGraf) => {
                 if st.input.cur_list.mode == 0 {
                     CurVal::Int(0)
                 } else {
@@ -800,77 +801,69 @@ pub(super) fn scan_something_internal(
                     CurVal::Int(st.input.nest[p].prev_graf)
                 }
             }
-            Cmd::SetPageInt => CurVal::Int(match PageIntCode::from_raw(m) {
-                Some(PageIntCode::DeadCycles) => st.shipout.dead_cycles,
-                Some(PageIntCode::InteractionMode) => st.errors.interaction as i32,
-                _ => st.shipout.insert_penalties,
+            Some(Command::SetPageInt(code)) => CurVal::Int(match code {
+                PageIntCode::DeadCycles => st.shipout.dead_cycles,
+                PageIntCode::InteractionMode => st.errors.interaction as i32,
+                PageIntCode::InsertPenalties => st.shipout.insert_penalties,
             }),
-            Cmd::SetPageDimen => CurVal::Dimen(
+            Some(Command::SetPageDimen(code)) => CurVal::Dimen(
                 if st.shipout.page_contents == crate::state::PageContents::Empty
                     && !st.shipout.output_active
                 {
-                    if m == 0 {
+                    if code == PageDimenCode::Goal {
                         MAX_DIMEN
                     } else {
                         Scaled::ZERO
                     }
                 } else {
-                    st.shipout.page_so_far[m as usize]
+                    st.shipout.page_so_far[code.index()]
                 },
             ),
-            Cmd::SetShape => {
-                let m = st.scanner.chr_loc();
-                CurVal::Int(if m > PAR_SHAPE_LOC {
-                    let n = scan_int(st)?;
-                    match st.eqtb.penalties(m) {
-                        Some(penalties) if n >= 0 => {
-                            let k = n.min(penalties.count(&st.mem));
-                            penalties.penalty(&st.mem, k)
-                        }
-                        _ => 0,
+            Some(Command::SetShape(m)) => CurVal::Int(if m > PAR_SHAPE_LOC {
+                let n = scan_int(st)?;
+                match st.eqtb.penalties(m) {
+                    Some(penalties) if n >= 0 => {
+                        let k = n.min(penalties.count(&st.mem));
+                        penalties.penalty(&st.mem, k)
                     }
-                } else {
-                    st.eqtb.par_shape().map_or(0, |s| s.lines(&st.mem))
-                })
-            }
-            Cmd::SetBoxDimen => {
+                    _ => 0,
+                }
+            } else {
+                st.eqtb.par_shape().map_or(0, |s| s.lines(&st.mem))
+            }),
+            Some(Command::SetBoxDimen(code)) => {
                 let n = scan_register_num(st)?;
-                CurVal::Dimen(match fetch_box(st, n) {
-                    None => Scaled::ZERO,
-                    Some(b) if m == BoxDimenCode::Width.raw() => b.width(&st.mem),
-                    Some(b) if m == BoxDimenCode::Depth.raw() => b.depth(&st.mem),
-                    Some(b) => b.height(&st.mem),
+                CurVal::Dimen(match (fetch_box(st, n), code) {
+                    (None, _) => Scaled::ZERO,
+                    (Some(b), BoxDimenCode::Width) => b.width(&st.mem),
+                    (Some(b), BoxDimenCode::Depth) => b.depth(&st.mem),
+                    (Some(b), BoxDimenCode::Height) => b.height(&st.mem),
                 })
             }
-            Cmd::CharGiven | Cmd::MathGiven | Cmd::XetexMathGiven => CurVal::Int(m),
-            Cmd::AssignFontDimen => {
+            Some(Command::CharGiven(c)) => CurVal::Int(c.raw()),
+            Some(Command::MathGiven(code) | Command::XetexMathGiven(code)) => CurVal::Int(code),
+            Some(Command::AssignFontDimen) => {
                 let k = find_font_dimen(st, false)?;
                 st.fonts.set_font_info_sc(st.fonts.fmem_ptr, Scaled::ZERO);
                 CurVal::Dimen(st.fonts.font_info_sc(k))
             }
-            Cmd::AssignFontInt => {
+            Some(Command::AssignFontInt(code)) => {
                 let f = scan_font_ident(st)?;
-                CurVal::Int(match m {
-                    0 => st.fonts.hyphen_char[f],
-                    1 => st.fonts.skew_char[f],
-                    _ => {
-                        let code = if st.fonts.is_native_font(f) {
-                            scan_glyph_number(st, f)?
-                        } else {
-                            scan_char_num(st)?
-                        } as u32;
-                        let side = match m {
-                            LP_CODE_BASE => Side::Left,
-                            RP_CODE_BASE => Side::Right,
-                            _ => return Err(Abort::Confusion("assign_font_int")),
-                        };
-                        st.fonts.cp_codes.get(f, side, code)
-                    }
-                })
+                let side = match code {
+                    FontIntCode::HyphenChar => break CurVal::Int(st.fonts.hyphen_char[f]),
+                    FontIntCode::SkewChar => break CurVal::Int(st.fonts.skew_char[f]),
+                    FontIntCode::LpCode => Side::Left,
+                    FontIntCode::RpCode => Side::Right,
+                };
+                let c = if st.fonts.is_native_font(f) {
+                    scan_glyph_number(st, f)?
+                } else {
+                    scan_char_num(st)?
+                } as u32;
+                CurVal::Int(st.fonts.cp_codes.get(f, side, c))
             }
-            Cmd::Register => fetch_register(st, m)?,
-            Cmd::LastItem => {
-                let code = LastItemCode::from_raw(m).ok_or(Abort::Confusion("last_item"))?;
+            Some(Command::Register(r)) => fetch_register(st, r)?,
+            Some(Command::LastItem(code)) => {
                 if code < LastItemCode::InputLineNo {
                     fetch_last_node_item(st, code)
                 } else if code < LastItemCode::XetexGlyphBounds {
@@ -881,13 +874,13 @@ pub(super) fn scan_something_internal(
                     return fetch_expr_item(st, code, level, negative);
                 }
             }
-            Cmd::IgnoreSpaces if m == 1 => {
+            Some(Command::IgnoreSpaces { primitive: true }) => {
                 get_primitive_token(st)?;
                 continue;
             }
             _ => {
                 error_here_with_diagnostic(st, "You can't use `");
-                print_cmd_chr(st, st.scanner.cur_cmd, m);
+                print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
                 print(st, "' after ");
                 print_esc(st, "the");
                 capture_to_diagnostic(st, None);
@@ -914,11 +907,10 @@ pub(super) fn scan_something_internal(
 /// Scans a font identifier.
 pub(crate) fn scan_font_ident(st: &mut EngineState) -> Result<FontId, Abort> {
     get_x_non_blank(st)?;
-    let f = match st.scanner.cur_cmd {
-        Cmd::DefFont => st.eqtb.cur_font(),
-        Cmd::SetFont => st.scanner.chr_font(),
-        Cmd::DefFamily => {
-            let m = st.scanner.chr_loc();
+    let f = match st.scanner.try_command() {
+        Some(Command::DefFont) => st.eqtb.cur_font(),
+        Some(Command::SetFont(f)) => f,
+        Some(Command::DefFamily(m)) => {
             let fam = scan_math_fam_int(st)?;
             FontId::from_raw(st.eqtb.equiv(m + fam))
         }
