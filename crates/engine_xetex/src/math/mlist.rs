@@ -40,7 +40,6 @@ const RADICALRULETHICKNESS: i32 = 51;
 impl MemState {
     pub fn fraction_rule(&mut self, t: Scaled) -> Result<NodePtr<RuleNode>, Abort> {
         let p = NodePtr::<RuleNode>::alloc(self)?;
-        self[p].subtype = 0;
         self[p].width = RuleDimen::Running.into();
         self[p].height = RuleDimen::Set(t).into();
         self[p].depth = RuleDimen::Set(Scaled::ZERO).into();

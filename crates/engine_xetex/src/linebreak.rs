@@ -133,7 +133,6 @@ impl MemState {
     ) -> Result<NodePtr<DeltaNode>, Abort> {
         let p = NodePtr::<DeltaNode>::alloc(self)?;
         self[p].link = link;
-        self[p].subtype = 0;
         set_delta_widths(p, self, w);
         Ok(p)
     }

@@ -567,7 +567,6 @@ pub(super) fn make_mark(st: &mut EngineState, marks: bool) -> Result<(), Abort> 
     crate::scan::scan_toks(st, false, true)?;
     let mark = NodePtr::<MarkNode>::alloc(&mut st.mem)?;
     st.mem[mark].mark_class = c;
-    st.mem[mark].subtype = 0;
     st.mem[mark].mark_ptr = st.scanner.def_ref;
     st.input.cur_list.tail_append(&mut st.mem, mark.ptr());
     Ok(())

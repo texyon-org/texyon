@@ -388,7 +388,6 @@ impl MemState {
     /// A rule with running dimensions.
     pub fn new_rule(&mut self) -> Result<NodePtr<RuleNode>, Abort> {
         let p = NodePtr::<RuleNode>::alloc(self)?;
-        self[p].subtype = 0;
         self[p].width = RuleDimen::Running.into();
         self[p].depth = RuleDimen::Running.into();
         self[p].height = RuleDimen::Running.into();
@@ -499,7 +498,6 @@ impl MemState {
 
     pub fn new_penalty(&mut self, m: i32) -> Result<NodePtr<PenaltyNode>, Abort> {
         let p = NodePtr::<PenaltyNode>::alloc(self)?;
-        self[p].subtype = 0;
         self[p].penalty = m;
         Ok(p)
     }
@@ -519,7 +517,6 @@ impl MemState {
 
     pub fn new_choice(&mut self) -> Result<NodePtr<ChoiceNode>, Abort> {
         let p = NodePtr::<ChoiceNode>::alloc(self)?;
-        self[p].subtype = 0;
         self[p].display_mlist = MemPtr::NULL;
         self[p].text_mlist = MemPtr::NULL;
         self[p].script_mlist = MemPtr::NULL;

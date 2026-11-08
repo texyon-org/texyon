@@ -534,7 +534,7 @@ overlay!(MarginKernNode => MarginKernLayout);
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct PenaltyLayout {
-    pub subtype: u16,
+    _subtype: u16,
     _type: u16,
     pub link: MemPtr,
     _unused1: i32,
@@ -574,7 +574,7 @@ overlay!(DiscNode => DiscLayout);
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct ChoiceLayout {
-    pub subtype: u16,
+    _subtype: u16,
     _type: u16,
     pub link: MemPtr,
     pub display_mlist: MemPtr,
@@ -627,7 +627,7 @@ overlay!(EdgeNode => EdgeLayout);
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct MarkLayout {
-    pub subtype: u16,
+    _subtype: u16,
     _type: u16,
     pub link: MemPtr,
     pub mark_class: i32,
@@ -748,7 +748,7 @@ impl DelimiterWord {
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct NoadHead {
-    pub subtype: u16,
+    _subtype: u16,
     pub noad_type: Stored<NodeType>,
     pub link: MemPtr,
     _payload: i32,
@@ -831,7 +831,7 @@ overlay!(AccentNoad => AccentLayout);
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct FractionLayout {
-    pub subtype: u16,
+    _subtype: u16,
     pub noad_type: Stored<NodeType>,
     pub link: MemPtr,
     _unused1: i32,
@@ -1068,7 +1068,7 @@ overlay!(ActiveNode => ActiveLayout);
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct DeltaLayout {
-    pub subtype: u16,
+    _subtype: u16,
     _type: u16,
     pub link: MemPtr,
     _unused1: i32,
@@ -1227,7 +1227,7 @@ overlay!(LigItem => LigItemLayout);
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct RuleLayout {
-    pub subtype: u16,
+    _subtype: u16,
     _type: u16,
     pub link: MemPtr,
     _unused1: i32,

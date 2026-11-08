@@ -7,7 +7,7 @@ use crate::codes::LeftRightCode;
 use crate::codes::LimitCode;
 use crate::codes::{MathAccentCode, RadicalCode};
 use crate::command::Command;
-use crate::consts::{EMPTY, MATH_CHAR, NORMAL, NUMBER_MATH_FAMILIES, SUB_MLIST};
+use crate::consts::{EMPTY, MATH_CHAR, NUMBER_MATH_FAMILIES, SUB_MLIST};
 use crate::errors::Abort;
 use crate::input::TokenType;
 use crate::mem::GARBAGE;
@@ -335,7 +335,6 @@ impl ListStateRecord {
         self.set_incompleat_noad(Some(fraction));
         let list = self.head.link(mem);
         let f = &mut mem[fraction];
-        f.subtype = NORMAL;
         f.numerator.math_type = SUB_MLIST;
         f.numerator.set_info(list);
         f.denominator.clear();

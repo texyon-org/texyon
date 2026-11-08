@@ -642,6 +642,7 @@ impl MemState {
         let p = self.get_node(size)?;
         if let Some(ty) = ty {
             self.set_b16s1(p, ty.as_raw());
+            self.set_b16s0(p, 0);
         }
         Ok(NodePtr::from_idx_unchecked(MemIdx::new(p)))
     }
@@ -1989,6 +1990,17 @@ mod tests {
     fn box_and_margin_codes_keep_web_codes() {
         assert_web_codes(&[(BoxLr::Normal, 0), (BoxLr::Reversed, 1), (BoxLr::Dlist, 2)]);
         assert_web_codes(&[(Side::Left, 0), (Side::Right, 1)]);
+    }
+
+    #[test]
+    fn alloc_zeroes_the_subtype_with_the_type() {
+        let mut mem = arena_with_free_block();
+        for i in 20..30 {
+            mem.set_b16s0(MemPtr::from_raw(i), 0xBEEF);
+        }
+        let p = NodePtr::<PenaltyNode>::alloc(&mut mem).unwrap();
+        assert_eq!(mem.b16s0(p.idx()), 0);
+        assert_eq!(mem.b16s1(p.idx()), NodeType::Penalty.as_raw());
     }
 
     /// An arena whose free list is the single block `[10, 30)`.
