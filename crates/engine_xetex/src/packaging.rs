@@ -135,9 +135,10 @@ impl MemState {
     }
 
     fn clear_box_glue(&mut self, r: NodePtr<BoxNode>) {
-        self[r].glue_sign = GlueSign::Normal.into();
-        self[r].glue_order = GlueOrder::Normal.into();
-        self[r].glue_set = 0.0;
+        let node = &mut self[r];
+        node.glue_sign = GlueSign::Normal.into();
+        node.glue_order = GlueOrder::Normal.into();
+        node.glue_set = 0.0;
     }
 
     /// `replace_count(q)` if `type(q)=disc_node`, read like TeX does even when

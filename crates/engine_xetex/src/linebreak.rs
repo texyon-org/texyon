@@ -92,12 +92,13 @@ fn delta_widths(d: NodePtr<DeltaNode>, mem: &MemState) -> [Scaled; 7] {
 
 #[inline]
 fn set_delta_widths(d: NodePtr<DeltaNode>, mem: &mut MemState, w: &[Scaled; 7]) {
-    mem[d].dwidth = w[1];
-    mem[d].dstretch0 = w[2];
-    mem[d].dstretch1 = w[3];
-    mem[d].dstretch2 = w[4];
-    mem[d].dstretch3 = w[5];
-    mem[d].dshrink = w[6];
+    let node = &mut mem[d];
+    node.dwidth = w[1];
+    node.dstretch0 = w[2];
+    node.dstretch1 = w[3];
+    node.dstretch2 = w[4];
+    node.dstretch3 = w[5];
+    node.dshrink = w[6];
 }
 
 impl MemState {

@@ -791,12 +791,13 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
                 get_x_non_blank(st)?;
                 if st.scanner.cur_tok == Token::other(b'(') {
                     let q = NodePtr::<ExprNode>::alloc(&mut st.mem)?;
-                    st.mem[q].link = p;
-                    st.mem[q].level = l.into();
-                    st.mem[q].state = (4 * s + r) as u16;
-                    st.mem[q].e = e;
-                    st.mem[q].t = t;
-                    st.mem[q].n = n;
+                    let node = &mut st.mem[q];
+                    node.link = p;
+                    node.level = l.into();
+                    node.state = (4 * s + r) as u16;
+                    node.e = e;
+                    node.t = t;
+                    node.n = n;
                     p = q.ptr();
                     l = o;
                     continue 'restart;

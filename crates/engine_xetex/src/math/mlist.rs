@@ -40,9 +40,10 @@ const RADICALRULETHICKNESS: i32 = 51;
 impl MemState {
     pub fn fraction_rule(&mut self, t: Scaled) -> Result<NodePtr<RuleNode>, Abort> {
         let p = NodePtr::<RuleNode>::alloc(self)?;
-        self[p].width = RuleDimen::Running.into();
-        self[p].height = RuleDimen::Set(t).into();
-        self[p].depth = RuleDimen::Set(Scaled::ZERO).into();
+        let node = &mut self[p];
+        node.width = RuleDimen::Running.into();
+        node.height = RuleDimen::Set(t).into();
+        node.depth = RuleDimen::Set(Scaled::ZERO).into();
         Ok(p)
     }
 
@@ -94,11 +95,12 @@ fn math_glue(
     }
 
     let p = NodePtr::<GlueSpecNode>::alloc(&mut st.mem)?;
-    st.mem[p].width = width;
-    st.mem[p].stretch_order = stretch_order;
-    st.mem[p].stretch = stretch;
-    st.mem[p].shrink_order = shrink_order;
-    st.mem[p].shrink = shrink;
+    let node = &mut st.mem[p];
+    node.width = width;
+    node.stretch_order = stretch_order;
+    node.stretch = stretch;
+    node.shrink_order = shrink_order;
+    node.shrink = shrink;
     Ok(p)
 }
 

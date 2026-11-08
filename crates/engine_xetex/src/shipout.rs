@@ -56,9 +56,10 @@ const ONE_INCH_LESS_ONE: Scaled = Scaled::from_raw(ONE_INCH.raw() - 1);
 impl MemState {
     pub fn new_edge(&mut self, dir: Dir, w: Scaled) -> Result<NodePtr<EdgeNode>, Abort> {
         let p = NodePtr::<EdgeNode>::alloc(self)?;
-        self[p].dir = dir.into();
-        self[p].width = w;
-        self[p].edge_dist = Scaled::ZERO;
+        let node = &mut self[p];
+        node.dir = dir.into();
+        node.width = w;
+        node.edge_dist = Scaled::ZERO;
         Ok(p)
     }
 }
@@ -575,11 +576,12 @@ impl MemState {
             glue.into_kern(self, w);
         } else {
             let rigid = NodePtr::<GlueSpecNode>::alloc(self)?;
-            self[rigid].stretch_order = GlueOrder::Rigid.into();
-            self[rigid].shrink_order = GlueOrder::Rigid.into();
-            self[rigid].width = w;
-            self[rigid].stretch = Scaled::ZERO;
-            self[rigid].shrink = Scaled::ZERO;
+            let node = &mut self[rigid];
+            node.stretch_order = GlueOrder::Rigid.into();
+            node.shrink_order = GlueOrder::Rigid.into();
+            node.width = w;
+            node.stretch = Scaled::ZERO;
+            node.shrink = Scaled::ZERO;
             self[glue].glue_ptr = rigid;
         }
         Ok(())

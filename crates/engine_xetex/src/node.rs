@@ -1505,13 +1505,14 @@ impl NodePtr<AlignRecord> {
     /// Turns the record into an empty unset box of its final width.
     pub fn into_unset(self, mem: &mut MemState) -> NodePtr<UnsetNode> {
         let u: NodePtr<UnsetNode> = retype(self, mem, NodeType::Unset);
-        mem[u].span_count = 0;
-        mem[u].height = Scaled::ZERO;
-        mem[u].depth = Scaled::ZERO;
-        mem[u].glue_order = (GlueOrder::Normal).into();
-        mem[u].glue_sign = (GlueOrder::Normal).into();
-        mem[u].glue_stretch = Scaled::ZERO;
-        mem[u].glue_shrink = Scaled::ZERO;
+        let node = &mut mem[u];
+        node.span_count = 0;
+        node.height = Scaled::ZERO;
+        node.depth = Scaled::ZERO;
+        node.glue_order = (GlueOrder::Normal).into();
+        node.glue_sign = (GlueOrder::Normal).into();
+        node.glue_stretch = Scaled::ZERO;
+        node.glue_shrink = Scaled::ZERO;
         u
     }
 }

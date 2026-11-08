@@ -373,24 +373,26 @@ impl MemState {
 
     pub fn new_null_box(&mut self) -> Result<NodePtr<BoxNode>, Abort> {
         let p = NodePtr::<BoxNode>::alloc(self)?;
-        self[p].set_lr(BoxLr::Normal);
-        self[p].width = Scaled::ZERO;
-        self[p].depth = Scaled::ZERO;
-        self[p].height = Scaled::ZERO;
-        self[p].shift_amount = Scaled::ZERO;
-        self[p].list_ptr = MemPtr::NULL;
-        self[p].glue_sign = GlueSign::Normal.into();
-        self[p].glue_order = GlueOrder::Normal.into();
-        self[p].glue_set = 0.0;
+        let node = &mut self[p];
+        node.set_lr(BoxLr::Normal);
+        node.width = Scaled::ZERO;
+        node.depth = Scaled::ZERO;
+        node.height = Scaled::ZERO;
+        node.shift_amount = Scaled::ZERO;
+        node.list_ptr = MemPtr::NULL;
+        node.glue_sign = GlueSign::Normal.into();
+        node.glue_order = GlueOrder::Normal.into();
+        node.glue_set = 0.0;
         Ok(p)
     }
 
     /// A rule with running dimensions.
     pub fn new_rule(&mut self) -> Result<NodePtr<RuleNode>, Abort> {
         let p = NodePtr::<RuleNode>::alloc(self)?;
-        self[p].width = RuleDimen::Running.into();
-        self[p].depth = RuleDimen::Running.into();
-        self[p].height = RuleDimen::Running.into();
+        let node = &mut self[p];
+        node.width = RuleDimen::Running.into();
+        node.depth = RuleDimen::Running.into();
+        node.height = RuleDimen::Running.into();
         Ok(p)
     }
 
@@ -410,10 +412,11 @@ impl MemState {
         q: MemPtr,
     ) -> Result<NodePtr<LigatureNode>, Abort> {
         let p = NodePtr::<LigatureNode>::alloc(self)?;
-        self[p].font = f;
-        self[p].character = c;
-        self[p].lig_ptr = q;
-        self[p].boundary = LigBoundary::None.into();
+        let node = &mut self[p];
+        node.font = f;
+        node.character = c;
+        node.lig_ptr = q;
+        node.boundary = LigBoundary::None.into();
         Ok(p)
     }
 
@@ -426,9 +429,10 @@ impl MemState {
 
     pub fn new_disc(&mut self) -> Result<NodePtr<DiscNode>, Abort> {
         let p = NodePtr::<DiscNode>::alloc(self)?;
-        self[p].replace_count = 0;
-        self[p].pre_break = MemPtr::NULL;
-        self[p].post_break = MemPtr::NULL;
+        let node = &mut self[p];
+        node.replace_count = 0;
+        node.pre_break = MemPtr::NULL;
+        node.post_break = MemPtr::NULL;
         Ok(p)
     }
 
@@ -443,10 +447,12 @@ impl MemState {
     pub fn new_spec(&mut self, src: NodePtr<GlueSpecNode>) -> Result<NodePtr<GlueSpecNode>, Abort> {
         let q = NodePtr::<GlueSpecNode>::alloc(self)?;
         self.set_word(q.idx(), self.word(src.idx()));
-        self[q].ref_count = TEX_NULL;
-        self[q].width = self[src].width;
-        self[q].stretch = self[src].stretch;
-        self[q].shrink = self[src].shrink;
+        let from = self[src];
+        let node = &mut self[q];
+        node.ref_count = TEX_NULL;
+        node.width = from.width;
+        node.stretch = from.stretch;
+        node.shrink = from.shrink;
         Ok(q)
     }
 
@@ -468,9 +474,10 @@ impl MemState {
     /// Glue sharing the spec `q`.
     pub fn new_glue(&mut self, q: NodePtr<GlueSpecNode>) -> Result<NodePtr<GlueNode>, Abort> {
         let p = NodePtr::<GlueNode>::alloc(self)?;
-        self[p].subtype = GlueKind::Normal.into();
-        self[p].leader_ptr = MemPtr::NULL;
-        self[p].glue_ptr = q;
+        let node = &mut self[p];
+        node.subtype = GlueKind::Normal.into();
+        node.leader_ptr = MemPtr::NULL;
+        node.glue_ptr = q;
         self.add_glue_ref(q);
         Ok(p)
     }
@@ -517,10 +524,11 @@ impl MemState {
 
     pub fn new_choice(&mut self) -> Result<NodePtr<ChoiceNode>, Abort> {
         let p = NodePtr::<ChoiceNode>::alloc(self)?;
-        self[p].display_mlist = MemPtr::NULL;
-        self[p].text_mlist = MemPtr::NULL;
-        self[p].script_mlist = MemPtr::NULL;
-        self[p].script_script_mlist = MemPtr::NULL;
+        let node = &mut self[p];
+        node.display_mlist = MemPtr::NULL;
+        node.text_mlist = MemPtr::NULL;
+        node.script_mlist = MemPtr::NULL;
+        node.script_script_mlist = MemPtr::NULL;
         Ok(p)
     }
 
