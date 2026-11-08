@@ -2,18 +2,19 @@
 
 use crate::bridge::{output_close, output_flush, output_open};
 use crate::consts::{
-    A_LEADERS, BEFORE, C_LEADERS, DLIST, INVALID_HANDLE, L_CODE, MAX_DIMEN, MEDIUM_NODE_SIZE,
-    MIN_HALFWORD, NORMAL, NULL_FONT, R_CODE, SMALL_NODE_SIZE,
+    A_LEADERS, C_LEADERS, DLIST, INVALID_HANDLE, MAX_DIMEN, MEDIUM_NODE_SIZE, MIN_HALFWORD, NORMAL,
+    NULL_FONT, SMALL_NODE_SIZE,
 };
 use crate::dvi::{Axis, MoveReg};
 use crate::errors::Abort;
 use crate::ext::apply_tfm_font_mapping;
 use crate::glyph_arena::FixedPoint;
-use crate::mem::{end_lr_type, LIG_TRICK};
+use crate::mem::LIG_TRICK;
 use crate::node::Stored;
 use crate::node::{
-    link_of, AnyNode, BoxNode, EdgeNode, GlueNode, GlueSpecNode, GlyphNode, KernSubtype, MathNode,
-    MovementNode, NativeWordNode, NodePtr, RuleNode, WhatsitSubtype, WhatsitVariant, RUNNING,
+    link_of, AnyNode, BoxNode, EdgeNode, GlueNode, GlueSpecNode, GlyphNode, KernSubtype, MathCode,
+    MathNode, MovementNode, NativeWordNode, NodePtr, RuleNode, WhatsitSubtype, WhatsitVariant,
+    RUNNING,
 };
 use crate::params::{DimenPar, IntPar};
 use crate::state::{
@@ -595,13 +596,9 @@ impl MemState {
         }
     }
 
-    fn lr_dir(&self, math: NodePtr<MathNode>) -> Option<Dir> {
-        Dir::from_code(self[math].subtype / R_CODE)
-    }
-
-    /// The LR stack top matches the end code of `math`.
-    fn lr_matches(&self, scanner: &ScannerState, math: NodePtr<MathNode>) -> bool {
-        scanner.lr_ptr.info(self) == end_lr_type(self[math].subtype)
+    /// The LR stack top matches the end code of `code`.
+    fn lr_matches(&self, scanner: &ScannerState, code: MathCode) -> bool {
+        self.lr_code(scanner.lr_ptr) == Some(code.lr_end())
     }
 
     fn pop_dvi_level(&mut self, shipout: &mut ShipoutState, save_loc: i32) -> Result<(), Abort> {
@@ -858,7 +855,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
     let save_loc = st.shipout.dvi.enter_level()?;
     let base_line = st.shipout.cur_v;
     let mut prev_p = this_box.list_head();
-    st.mem.push_lr(&mut st.scanner.lr_ptr, BEFORE.into())?;
+    st.mem.push_lr(&mut st.scanner.lr_ptr, MathCode::Before)?;
 
     if st.mem[this_box].subtype == DLIST {
         if st.scanner.cur_dir == Dir::Rtl {
@@ -938,16 +935,16 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
             AnyNode::Math(math) => {
                 crate::synctex::synctex_math(st, math);
                 let math_width = st.mem[math].width;
-                if !st.mem[math].subtype.is_multiple_of(2) {
-                    if st.mem.lr_matches(&st.scanner, math) {
+                let code = st.mem[math].code()?;
+                if code.is_end() {
+                    if st.mem.lr_matches(&st.scanner, code) {
                         st.mem.pop_lr(&mut st.scanner.lr_ptr);
-                    } else if st.mem[math].subtype > L_CODE {
+                    } else if code.is_lr() {
                         st.scanner.lr_problems += 1;
                     }
                 } else {
-                    let end_type = end_lr_type(st.mem[math].subtype);
-                    st.mem.push_lr(&mut st.scanner.lr_ptr, end_type)?;
-                    if st.mem.lr_dir(math) != Some(st.scanner.cur_dir) {
+                    st.mem.push_lr(&mut st.scanner.lr_ptr, code.lr_end())?;
+                    if code.dir() != st.scanner.cur_dir {
                         let edge = reverse_segment(
                             st,
                             math,
@@ -985,8 +982,12 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
 
     crate::synctex::synctex_tsilh(st, this_box);
 
-    while st.scanner.lr_ptr.info(&st.mem) != BEFORE.into() {
-        if st.scanner.lr_ptr.info(&st.mem) as u16 > L_CODE {
+    while st.mem.lr_code(st.scanner.lr_ptr) != Some(MathCode::Before) {
+        if st
+            .mem
+            .lr_code(st.scanner.lr_ptr)
+            .is_some_and(MathCode::is_lr)
+        {
             st.scanner.lr_problems += 10000;
         }
         st.mem.pop_lr(&mut st.scanner.lr_ptr);
@@ -1409,8 +1410,9 @@ impl MemState {
                     }
                     Ok(AnyNode::Math(math)) => {
                         shipout.rule_wd = self[math].width;
-                        if !self[math].subtype.is_multiple_of(2) {
-                            if !self.lr_matches(scanner, math) {
+                        let code = self[math].code()?;
+                        if code.is_end() {
+                            if !self.lr_matches(scanner, code) {
                                 math.into_kern(self);
                                 now_kern = true;
                                 scanner.lr_problems += 1;
@@ -1418,7 +1420,7 @@ impl MemState {
                                 self.pop_lr(&mut scanner.lr_ptr);
                                 if n > MIN_HALFWORD {
                                     n -= 1;
-                                    self[math].subtype -= 1;
+                                    self[math].subtype = code.as_begin().into();
                                 } else {
                                     math.into_kern(self);
                                     now_kern = true;
@@ -1435,11 +1437,10 @@ impl MemState {
                                 }
                             }
                         } else {
-                            let end_type = end_lr_type(self[math].subtype);
-                            self.push_lr(&mut scanner.lr_ptr, end_type)?;
-                            if n > MIN_HALFWORD || self.lr_dir(math) != Some(scanner.cur_dir) {
+                            self.push_lr(&mut scanner.lr_ptr, code.lr_end())?;
+                            if n > MIN_HALFWORD || code.dir() != scanner.cur_dir {
                                 n += 1;
-                                self[math].subtype += 1;
+                                self[math].subtype = code.as_end().into();
                             } else {
                                 math.into_kern(self);
                                 now_kern = true;
@@ -1466,8 +1467,8 @@ impl MemState {
             if t.is_none() && m == MIN_HALFWORD && n == MIN_HALFWORD {
                 return Ok(l);
             }
-            let dir = scanner.lr_ptr.info(self) as u16;
-            p = self.new_math(Scaled::ZERO, dir)?.ptr();
+            let code = self.lr_code(scanner.lr_ptr).ok_or(Abort::Confusion("LR"))?;
+            p = self.new_math(Scaled::ZERO, code)?.ptr();
             scanner.lr_problems += 10000;
         }
     }

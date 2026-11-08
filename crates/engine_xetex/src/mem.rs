@@ -2,15 +2,14 @@
 //! heads, and TeX's node constructors.
 
 pub(crate) use crate::consts::TEX_NULL;
-use crate::consts::{
-    END_M_CODE, GLUE_SPEC_SIZE, L_CODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP, NORMAL,
-};
+use crate::consts::{GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP, NORMAL};
 use crate::errors::Abort;
 use crate::mem_types::ListStateRecord;
 use crate::node::{
     BoxNode, CharNode, ChoiceNode, DiscNode, FixedNode, FreeBlock, GlueNode, GlueSpecNode,
-    KernNode, KernSubtype, LigBoundary, LigItem, LigatureNode, MarginKernNode, MathNode, Noad,
-    NodePtr, PenaltyNode, RuleDimen, RuleNode, SpanNode, StyleNode, WhatsitKind, WhatsitSubtype,
+    KernNode, KernSubtype, LigBoundary, LigItem, LigatureNode, MarginKernNode, MathCode, MathNode,
+    Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode, SpanNode, Stored, StoredCode, StyleNode,
+    WhatsitKind, WhatsitSubtype,
 };
 use crate::params::GluePar;
 use crate::state::{EqtbState, MemState};
@@ -53,12 +52,6 @@ pub(crate) const BACKUP_HEAD: TokenList = TokenList::from_ptr(MemPtr::from_raw(M
 pub(crate) const PRE_ADJUST_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 14);
 pub(crate) const HI_MEM_STAT_MIN: i32 = MEM_TOP - 14;
 pub(crate) const HI_MEM_STAT_USAGE: i32 = 15;
-
-/// TeX's `end_LR_type`: the LR entry that a math node of `subtype` closes.
-#[inline]
-pub(crate) fn end_lr_type(subtype: u16) -> i32 {
-    i32::from(L_CODE * (subtype / L_CODE) + END_M_CODE)
-}
 
 impl ListStateRecord {
     /// A `size`-word whatsit appended to the current list.
@@ -243,13 +236,21 @@ impl MemState {
 
     /// TeX's `push_LR`.
     #[inline]
-    pub(crate) fn push_lr(&mut self, lr_ptr: &mut MemPtr, info: i32) -> Result<(), Abort> {
+    pub(crate) fn push_lr(&mut self, lr_ptr: &mut MemPtr, code: MathCode) -> Result<(), Abort> {
         let t = self.get_avail()?;
         self.temp_ptr = t;
-        t.set_info(self, info);
+        t.set_info(self, i32::from(Stored::from(code).raw()));
         t.set_link(self, *lr_ptr);
         *lr_ptr = t;
         Ok(())
+    }
+
+    /// The code in LR stack entry `p`, `None` for anything else.
+    #[inline]
+    pub(crate) fn lr_code(&self, p: MemPtr) -> Option<MathCode> {
+        u16::try_from(p.info(self))
+            .ok()
+            .and_then(MathCode::from_u16)
     }
 
     /// TeX's `pop_LR`.
@@ -431,9 +432,9 @@ impl MemState {
         Ok(p)
     }
 
-    pub fn new_math(&mut self, w: Scaled, s: u16) -> Result<NodePtr<MathNode>, Abort> {
+    pub fn new_math(&mut self, w: Scaled, code: MathCode) -> Result<NodePtr<MathNode>, Abort> {
         let p = NodePtr::<MathNode>::alloc(self)?;
-        self[p].subtype = s;
+        self[p].subtype = code.into();
         self[p].width = w;
         Ok(p)
     }

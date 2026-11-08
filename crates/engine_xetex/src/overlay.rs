@@ -4,6 +4,7 @@
 //! `mem` with a [`NodePtr`] borrows the node as its layout, and a mutable
 //! borrow first notes the node's words in the journal.
 
+use crate::errors::Abort;
 use crate::math::MathStyle;
 use bytemuck::{Pod, Zeroable};
 
@@ -14,7 +15,7 @@ use crate::node::{
     BoxNode, CharNode, ChoiceNode, CondNode, DelimiterField, DeltaNode, DiscNode, EdgeNode,
     ExprNode, FenceNoad, FenceSubtype, FixedNode, FractionNoad, FreeBlock, GlueNode, GlueSpecNode,
     GlyphNode, InsNode, KernNode, KernSubtype, LanguageNode, LigBoundary, LigItem, LigatureNode,
-    Link, MarginKernNode, MarkNode, MathAccentKind, MathField, MathNode, MovementNode,
+    Link, MarginKernNode, MarkNode, MathAccentKind, MathCode, MathField, MathNode, MovementNode,
     NativeWordNode, Noad, NodeKind, NodePtr, OpenNode, PageInsNode, ParShapeNode, PassiveNode,
     PenaltiesNode, PenaltyNode, PicNode, PseudoLineNode, RadicalNoad, RuleNode, SaChild, SaElement,
     SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved, SaSavedPointer, SaSavedWord,
@@ -471,7 +472,7 @@ overlay!(KernNode => KernLayout);
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct MathLayout {
-    pub subtype: u16,
+    pub subtype: Stored<MathCode>,
     _type: u16,
     pub link: MemPtr,
     _unused1: i32,
@@ -481,6 +482,14 @@ pub struct MathLayout {
 }
 
 overlay!(MathNode => MathLayout);
+
+impl MathLayout {
+    /// The node's code. Every writer stores a [`MathCode`], so another value is a broken invariant.
+    #[inline]
+    pub fn code(&self) -> Result<MathCode, Abort> {
+        self.subtype.get().ok_or(Abort::Confusion("math code"))
+    }
+}
 
 /// A margin kern. Its subtype is the side it protrudes on.
 #[repr(C)]

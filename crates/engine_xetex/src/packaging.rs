@@ -1,13 +1,13 @@
 //! Box packing (`hpack`, `vpackage`), vertical breaking (`vert_break`,
 //! `vsplit`, `prune_page_top`, `do_marks`) and node-list copying and freeing.
 
-use crate::consts::{A_LEADERS, BEFORE, IGNORE_DEPTH, NULL_FONT, SMALL_NODE_SIZE};
+use crate::consts::{A_LEADERS, IGNORE_DEPTH, NULL_FONT, SMALL_NODE_SIZE};
 use crate::errors::Abort;
-use crate::mem::{end_lr_type, GARBAGE};
+use crate::mem::GARBAGE;
 use crate::mem_types::ListStateRecord;
 use crate::node::{
-    AdjustPlacement, AnyNode, BoxNode, CharNode, KernSubtype, NativeWordNode, NodePtr, RuleDimen,
-    WhatsitVariant,
+    AdjustPlacement, AnyNode, BoxNode, CharNode, KernSubtype, MathCode, NativeWordNode, NodePtr,
+    RuleDimen, WhatsitVariant,
 };
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, FontState, MemState, ScannerState, ShipoutState};
@@ -258,7 +258,7 @@ impl MemState {
         let texxet = eqtb.int_par(IntPar::Texxet) > 0;
 
         if texxet {
-            self.push_lr(&mut scanner.lr_ptr, BEFORE.into())?;
+            self.push_lr(&mut scanner.lr_ptr, MathCode::Before)?;
         }
 
         let mut p = list;
@@ -373,9 +373,9 @@ impl MemState {
                 Ok(AnyNode::Math(math)) => {
                     x += self[math].width;
                     if texxet {
-                        let subtype = self[math].subtype;
-                        if subtype % 2 == 1 {
-                            if scanner.lr_ptr.info(self) == end_lr_type(subtype) {
+                        let code = self[math].code()?;
+                        if code.is_end() {
+                            if self.lr_code(scanner.lr_ptr) == Some(code.lr_end()) {
                                 self.pop_lr(&mut scanner.lr_ptr);
                             } else {
                                 scanner.lr_problems += 1;
@@ -383,7 +383,7 @@ impl MemState {
                                 self[kern].subtype = KernSubtype::Explicit.into();
                             }
                         } else {
-                            self.push_lr(&mut scanner.lr_ptr, end_lr_type(subtype))?;
+                            self.push_lr(&mut scanner.lr_ptr, code.lr_end())?;
                         }
                     }
                 }
@@ -475,15 +475,16 @@ impl MemState {
         }
 
         if texxet {
-            if scanner.lr_ptr.info(self) != BEFORE.into() {
+            if self.lr_code(scanner.lr_ptr) != Some(MathCode::Before) {
                 q = self.list_tail(q);
                 loop {
-                    let math = self.new_math(Scaled::ZERO, scanner.lr_ptr.info(self) as u16)?;
+                    let code = self.lr_code(scanner.lr_ptr).ok_or(Abort::Confusion("LR"))?;
+                    let math = self.new_math(Scaled::ZERO, code)?;
                     q.set_link(self, math.ptr());
                     q = math.ptr();
                     scanner.lr_problems += 10000;
                     self.pop_lr(&mut scanner.lr_ptr);
-                    if scanner.lr_ptr.info(self) == BEFORE.into() {
+                    if self.lr_code(scanner.lr_ptr) == Some(MathCode::Before) {
                         break;
                     }
                 }

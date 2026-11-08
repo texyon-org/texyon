@@ -2,16 +2,16 @@
 
 use crate::consts::{
     BOX_NODE_SIZE, GLYPH_NODE_SIZE, INS_NODE_SIZE, MARGIN_KERN_NODE_SIZE, MEDIUM_NODE_SIZE,
-    MIN_HALFWORD, PIC_NODE_SIZE, RULE_NODE_SIZE, R_CODE, SMALL_NODE_SIZE, STYLE_NODE_SIZE, SUB_BOX,
+    MIN_HALFWORD, PIC_NODE_SIZE, RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE, SUB_BOX,
 };
 use crate::errors::Abort;
-use crate::mem::{end_lr_type, TEMP_HEAD};
+use crate::mem::TEMP_HEAD;
 use crate::node::{
     AnyNode, BoxNode, DiscNode, FixedNode, GlueNode, LanguageNode, NoadVariant, NodeKind, NodePtr,
     OpenNode, WhatsitNode, WhatsitVariant, WriteNode,
 };
 use crate::state::{MemState, ScannerState};
-use crate::units::{Dir, MemIdx, MemPtr, Scaled};
+use crate::units::{MemIdx, MemPtr, Scaled};
 
 const SYNCTEX_FIELD_SIZE: i32 = 1;
 const MEMORY_WORD_SIZE: i32 = 8;
@@ -186,9 +186,9 @@ impl MemState {
                 q = p.link(self);
 
                 if let Ok(AnyNode::Math(math)) = self.classify(p) {
-                    let subtype = self[math].subtype;
-                    if subtype % 2 == 1 {
-                        if scanner.lr_ptr.info(self) != end_lr_type(subtype) {
+                    let code = self[math].code()?;
+                    if code.is_end() {
+                        if self.lr_code(scanner.lr_ptr) != Some(code.lr_end()) {
                             math.into_kern(self);
                             scanner.lr_problems += 1;
                         } else {
@@ -196,7 +196,7 @@ impl MemState {
 
                             if n > MIN_HALFWORD {
                                 n -= 1;
-                                self[math].subtype = subtype - 1;
+                                self[math].subtype = code.as_begin().into();
                             } else if m > MIN_HALFWORD {
                                 m -= 1;
                                 math.into_kern(self);
@@ -208,13 +208,11 @@ impl MemState {
                             }
                         }
                     } else {
-                        self.push_lr(&mut scanner.lr_ptr, end_lr_type(subtype))?;
+                        self.push_lr(&mut scanner.lr_ptr, code.lr_end())?;
 
-                        if n > MIN_HALFWORD
-                            || Dir::from_code(subtype / R_CODE) != Some(scanner.cur_dir)
-                        {
+                        if n > MIN_HALFWORD || code.dir() != scanner.cur_dir {
                             n += 1;
-                            self[math].subtype = subtype + 1;
+                            self[math].subtype = code.as_end().into();
                         } else {
                             math.into_kern(self);
                             m += 1;

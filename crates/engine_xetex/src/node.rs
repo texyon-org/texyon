@@ -376,6 +376,92 @@ impl Stored<LigBoundary> {
     }
 }
 
+stored_code! {
+    /// A math node's code: math-on/off, the `\beginM`/`\endM` pair around a display, or a
+    /// TeX--XeT boundary. The LR stack holds these codes too.
+    pub enum MathCode {
+        /// `\mathon`.
+        Before = 0,
+        /// `\mathoff`.
+        After = 1,
+        /// Opens the segment around a display.
+        BeginM = 2,
+        /// Closes it.
+        EndM = 3,
+        /// `\beginL`.
+        BeginL = 6,
+        /// `\endL`.
+        EndL = 7,
+        /// `\beginR`.
+        BeginR = 10,
+        /// `\endR`.
+        EndR = 11,
+    }
+}
+
+impl MathCode {
+    /// Closes a segment: `\mathoff` or an end code.
+    #[inline]
+    pub fn is_end(self) -> bool {
+        matches!(
+            self,
+            MathCode::After | MathCode::EndM | MathCode::EndL | MathCode::EndR
+        )
+    }
+
+    /// A TeX--XeT `\beginL`..`\endR` boundary.
+    #[inline]
+    pub fn is_lr(self) -> bool {
+        matches!(
+            self,
+            MathCode::BeginL | MathCode::EndL | MathCode::BeginR | MathCode::EndR
+        )
+    }
+
+    /// The direction of the segment it bounds, left to right unless it is an R code.
+    #[inline]
+    pub fn dir(self) -> Dir {
+        match self {
+            MathCode::BeginR | MathCode::EndR => Dir::Rtl,
+            _ => Dir::Ltr,
+        }
+    }
+
+    /// TeX's `end_LR_type`: the LR stack entry this code opens or closes.
+    #[inline]
+    pub fn lr_end(self) -> MathCode {
+        match self {
+            MathCode::Before | MathCode::After | MathCode::BeginM | MathCode::EndM => {
+                MathCode::EndM
+            }
+            MathCode::BeginL | MathCode::EndL => MathCode::EndL,
+            MathCode::BeginR | MathCode::EndR => MathCode::EndR,
+        }
+    }
+
+    /// The opening code of its pair, WEB's `subtype - 1` on an end code.
+    #[inline]
+    pub fn as_begin(self) -> MathCode {
+        match self {
+            MathCode::Before | MathCode::After => MathCode::Before,
+            MathCode::BeginM | MathCode::EndM => MathCode::BeginM,
+            MathCode::BeginL | MathCode::EndL => MathCode::BeginL,
+            MathCode::BeginR | MathCode::EndR => MathCode::BeginR,
+        }
+    }
+
+    /// The closing code of its pair, WEB's `subtype + 1` on a begin code.
+    #[inline]
+    pub fn as_end(self) -> MathCode {
+        match self {
+            MathCode::Before | MathCode::After => MathCode::After,
+            MathCode::BeginM | MathCode::EndM => MathCode::EndM,
+            MathCode::BeginL | MathCode::EndL => MathCode::EndL,
+            MathCode::BeginR | MathCode::EndR => MathCode::EndR,
+        }
+    }
+}
+
 impl StoredCode for Dir {
     #[inline]
     fn from_u16(raw: u16) -> Option<Self> {
@@ -1746,6 +1832,43 @@ mod tests {
         );
     }
 
+    #[test]
+    fn math_codes_keep_web_codes_and_arithmetic() {
+        use MathCode as M;
+        let all = [
+            (M::Before, 0),
+            (M::After, 1),
+            (M::BeginM, 2),
+            (M::EndM, 3),
+            (M::BeginL, 6),
+            (M::EndL, 7),
+            (M::BeginR, 10),
+            (M::EndR, 11),
+        ];
+        assert_web_codes(&all);
+        for (code, raw) in all {
+            assert_eq!(code.is_end(), raw % 2 == 1, "{code:?}");
+            assert_eq!(code.is_lr(), raw >= 4, "{code:?}");
+            assert_eq!(
+                code.dir(),
+                if raw >= 8 { Dir::Rtl } else { Dir::Ltr },
+                "{code:?}"
+            );
+            // WEB's end_LR_type and the `subtype - 1`/`+ 1` flips, on the raw codes.
+            assert_eq!(
+                Stored::from(code.lr_end()).raw(),
+                4 * (raw / 4) + 3,
+                "{code:?}"
+            );
+            assert_eq!(
+                Stored::from(code.as_begin()).raw(),
+                raw - raw % 2,
+                "{code:?}"
+            );
+            assert_eq!(Stored::from(code.as_end()).raw(), raw | 1, "{code:?}");
+        }
+    }
+
     /// An arena whose free list is the single block `[10, 30)`.
     fn arena_with_free_block() -> MemState {
         let mut mem = fresh_mem(64);
@@ -1953,7 +2076,7 @@ mod tests {
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 160);
 
         let math: NodePtr<MathNode> = at(&mut mem, 100, Some(NodeType::Math));
-        mem[math].subtype = 3;
+        mem[math].subtype = MathCode::EndM.into();
         mem[math].width = Scaled::from_raw(0x1234);
         assert_eq!(mem.b16s0(MemPtr::from_raw(100)), 3);
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 0x1234);

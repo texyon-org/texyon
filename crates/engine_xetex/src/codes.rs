@@ -486,6 +486,20 @@ code_enum! {
     }
 }
 
+impl ValignCode {
+    /// The math node `\beginL`..`\endR` append, `None` for `\valign`.
+    pub(crate) fn math_code(self) -> Option<crate::node::MathCode> {
+        use crate::node::MathCode;
+        match self {
+            ValignCode::Valign => None,
+            ValignCode::BeginL => Some(MathCode::BeginL),
+            ValignCode::EndL => Some(MathCode::EndL),
+            ValignCode::BeginR => Some(MathCode::BeginR),
+            ValignCode::EndR => Some(MathCode::EndR),
+        }
+    }
+}
+
 code_enum! {
     /// The `chr_code` of `\middle`, `\left` and `\right`: the noad they make.
     pub(crate) enum LeftRightCode: u8 {
@@ -573,10 +587,6 @@ code_enum! {
 }
 
 const _: () = {
-    assert!(ValignCode::BeginL.raw() == crate::consts::BEGIN_L_CODE as i32);
-    assert!(ValignCode::EndL.raw() == crate::consts::END_L_CODE as i32);
-    assert!(ValignCode::BeginR.raw() == crate::consts::BEGIN_R_CODE as i32);
-    assert!(ValignCode::EndR.raw() == (crate::consts::R_CODE + crate::consts::END_M_CODE) as i32);
     assert!(LeaderCode::ALeaders.raw() == crate::consts::A_LEADERS as i32);
     assert!(AuxCode::PrevDepth.mode() == crate::consts::VMODE);
     assert!(AuxCode::SpaceFactor.mode() == crate::consts::HMODE);

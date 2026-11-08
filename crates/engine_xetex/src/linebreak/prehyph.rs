@@ -1,10 +1,10 @@
 //! Pre-hyphenation: finding the words `hyphenate` should try.
 
-use crate::consts::{L_CODE, TEX_NULL};
+use crate::consts::TEX_NULL;
 use crate::errors::Abort;
 use crate::fonts::LigChar;
 use crate::node::{
-    AnyNode, CharNode, KernSubtype, LanguageNode, NativeWordNode, NodePtr, WhatsitVariant,
+    AnyNode, CharNode, KernSubtype, LanguageNode, MathCode, NativeWordNode, NodePtr, WhatsitVariant,
 };
 use crate::params::IntPar;
 use crate::state::{EngineState, MemState};
@@ -43,7 +43,11 @@ impl MemState {
                         | AnyNode::Mark(_),
                     ) => return Some(s),
                     Ok(AnyNode::Math(m)) if math_ok => {
-                        return (self[m].subtype >= L_CODE).then_some(s);
+                        return self[m]
+                            .subtype
+                            .get()
+                            .is_some_and(MathCode::is_lr)
+                            .then_some(s);
                     }
                     _ => return None,
                 }
@@ -86,7 +90,7 @@ pub(super) fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), Abo
                     s = prev_s.link(&st.mem);
                     continue;
                 }
-                Ok(AnyNode::Math(m)) if st.mem[m].subtype >= L_CODE => {
+                Ok(AnyNode::Math(m)) if st.mem[m].subtype.get().is_some_and(MathCode::is_lr) => {
                     prev_s = s;
                     s = prev_s.link(&st.mem);
                     continue;

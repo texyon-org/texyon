@@ -2,7 +2,7 @@
 //!
 //! The "words" are 10pt rules, so the tests need no fonts.
 
-use crate::{assert_lines, rows, run};
+use crate::{assert_lines, rows, run, MATH_FONTS};
 
 const WORDS: &str = r"\def\w{\vrule width 10pt height 5pt \hskip 5pt plus 5pt minus 2pt}
 \def\s{\vrule width 10pt height 5pt \hskip 5pt plus 20pt}
@@ -188,4 +188,48 @@ fn exceptions_with_the_same_hash_share_a_chain() {
     // `aac` and `aba` land in the same exception slot.
     let words = hyphenated(r"\hyphenation{a-ac ab-a}", r"aac\ aba");
     assert_eq!(words, ["a-ac ab-a"]);
+}
+
+#[test]
+fn lr_segments_reopen_on_the_next_line() {
+    let r = run(&format!(
+        r"{MATH_FONTS}\TeXXeTstate=1 \hsize=20pt \parindent=0pt \rightskip=0pt plus 100pt
+          \setbox1\vbox{{\beginR x\hskip 30pt x\endR\par}}\showbox1
+          \setbox2\hbox{{$x$\beginL x\endR}}\showbox2"
+    ));
+    assert_lines(
+        &r.boxes()[0],
+        r"
+        \vbox(8.61108+0.0)x20.0
+        .\hbox(4.30554+0.0)x20.0, glue set 0.14722
+        ..\hbox(0.0+0.0)x0.0
+        ..\beginR
+        ..\rm x
+        ..\endR
+        ..\glue(\rightskip) 0.0 plus 100.0
+        .\glue(\lineskip) 0.0
+        .\hbox(4.30554+0.0)x20.0, glue set 0.14722
+        ..\beginR
+        ..\rm x
+        ..\endR
+        ..\penalty 10000
+        ..\glue(\parfillskip) 0.0
+        ..\glue(\rightskip) 0.0 plus 100.0",
+    );
+    assert_eq!(
+        r.lines_starting("\\endL or"),
+        [r"\endL or \endR problem (1 missing, 1 extra) detected at line 14"]
+    );
+    assert_lines(
+        &r.boxes()[1],
+        r"
+        \hbox(4.30554+0.0)x10.99307
+        .\mathon
+        .\mi x
+        .\mathoff
+        .\beginL
+        .\rm x
+        .\kern 0.0
+        .\endL",
+    );
 }

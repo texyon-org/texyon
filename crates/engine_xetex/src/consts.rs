@@ -79,15 +79,6 @@ pub const MU_GLUE: u16 = 99;
 pub const A_LEADERS: u16 = 100;
 pub const C_LEADERS: u16 = A_LEADERS + 1;
 pub const X_LEADERS: u16 = A_LEADERS + 2;
-pub const BEFORE: u16 = 0;
-pub const AFTER: u16 = 1;
-pub const BEGIN_M_CODE: u16 = 2;
-pub const END_M_CODE: u16 = 3;
-pub const L_CODE: u16 = 4;
-pub const R_CODE: u16 = 8;
-pub const BEGIN_L_CODE: u16 = L_CODE + BEGIN_M_CODE;
-pub const END_L_CODE: u16 = L_CODE + END_M_CODE;
-pub const BEGIN_R_CODE: u16 = R_CODE + BEGIN_M_CODE;
 
 // Math noad field types and sizes.
 pub const EMPTY: i32 = 0;

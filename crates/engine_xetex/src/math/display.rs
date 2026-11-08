@@ -2,14 +2,13 @@
 
 use crate::cmd::Cmd;
 use crate::consts::{
-    AFTER, A_LEADERS, BEFORE, BEGIN_L_CODE, BEGIN_M_CODE, BOX_NODE_SIZE, DLIST, END_L_CODE,
-    END_M_CODE, HMODE, INF_PENALTY, L_CODE, MAX_DIMEN, MMODE, R_CODE, SCRIPT_SIZE, TEXT_SIZE,
+    A_LEADERS, BOX_NODE_SIZE, DLIST, HMODE, INF_PENALTY, MAX_DIMEN, MMODE, SCRIPT_SIZE, TEXT_SIZE,
 };
 use crate::errors::Abort;
 use crate::fonts::QUAD_CODE;
 use crate::input::TokenType;
 use crate::mem::{ADJUST_HEAD, GARBAGE, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
-use crate::node::{AnyNode, BoxNode, GlueNode, NodePtr};
+use crate::node::{AnyNode, BoxNode, GlueNode, MathCode, NodePtr};
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::state::{EngineState, EqtbState, FontState, GroupCode, MemState};
@@ -145,7 +144,7 @@ fn app_display(
             (r, r.link(&st.mem))
         }
     };
-    let u = st.mem.new_math(Scaled::ZERO, END_M_CODE)?.ptr();
+    let u = st.mem.new_math(Scaled::ZERO, MathCode::EndM)?.ptr();
     if let Ok(AnyNode::Glue(tg)) = st.mem.classify(t) {
         let skip = st.mem.new_skip_param(&st.eqtb, GluePar::RightSkip)?;
         q.set_link(&mut st.mem, skip.ptr());
@@ -158,7 +157,7 @@ fn app_display(
         q.set_link(&mut st.mem, t);
     }
 
-    let u = st.mem.new_math(Scaled::ZERO, BEGIN_M_CODE)?.ptr();
+    let u = st.mem.new_math(Scaled::ZERO, MathCode::BeginM)?.ptr();
     if let Ok(AnyNode::Glue(rg)) = st.mem.classify(r) {
         let skip = st.mem.new_skip_param(&st.eqtb, GluePar::LeftSkip)?;
         u.set_link(&mut st.mem, skip.ptr());
@@ -268,7 +267,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
 
     if m < 0 {
         let math_surround = st.eqtb.dimen_par(DimenPar::MathSurround);
-        let node = st.mem.new_math(math_surround, BEFORE)?;
+        let node = st.mem.new_math(math_surround, MathCode::Before)?;
         st.input.cur_list.tail_append(&mut st.mem, node.ptr());
         st.scanner.cur_mlist = p;
         st.scanner.cur_style = MathStyle::TEXT;
@@ -280,7 +279,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
         while !cl.tail.link(&st.mem).is_null() {
             cl.tail = cl.tail.link(&st.mem);
         }
-        let node = st.mem.new_math(math_surround, AFTER)?;
+        let node = st.mem.new_math(math_surround, MathCode::After)?;
         st.input.cur_list.tail_append(&mut st.mem, node.ptr());
         st.input.cur_list.set_space_factor(1000);
 
@@ -440,7 +439,7 @@ fn pre_display_direction(st: &EngineState) -> i32 {
     let aux = st.input.cur_list.e_tex_aux;
     if aux.is_null() {
         0
-    } else if aux.info(&st.mem) >= R_CODE.into() {
+    } else if st.mem.lr_code(aux).map(MathCode::dir) == Some(Dir::Rtl) {
         -1
     } else {
         1
@@ -493,9 +492,9 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                 TEMP_HEAD.set_link(&mut st.mem, MemPtr::NULL);
             } else {
                 v = -v - st.mem[jb].width;
-                let begin = st.mem.new_math(Scaled::ZERO, BEGIN_L_CODE)?.ptr();
+                let begin = st.mem.new_math(Scaled::ZERO, MathCode::BeginL)?.ptr();
                 TEMP_HEAD.set_link(&mut st.mem, begin);
-                let end = st.mem.new_math(Scaled::ZERO, END_L_CODE)?.ptr();
+                let end = st.mem.new_math(Scaled::ZERO, MathCode::EndL)?.ptr();
                 let list = st.mem[jb].list_ptr;
                 st.mem.just_copy(list, begin, end)?;
                 st.scanner.cur_dir = Dir::Rtl;
@@ -507,7 +506,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
 
             let texxet = st.eqtb.int_par(IntPar::Texxet) > 0;
             if texxet {
-                st.mem.push_lr(&mut st.scanner.lr_ptr, BEFORE.into())?;
+                st.mem.push_lr(&mut st.scanner.lr_ptr, MathCode::Before)?;
             }
 
             'outer: while !p.is_null() {
@@ -534,29 +533,23 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                         Ok(AnyNode::MarginKern(k)) => (st.mem[k].width, false),
                         Ok(AnyNode::Math(m)) => {
                             let d = st.mem[m].width;
-                            let subtype = st.mem[m].subtype;
+                            let code = st.mem[m].code()?;
                             if texxet {
-                                if subtype & 1 != 0 {
-                                    if st.scanner.lr_ptr.info(&st.mem)
-                                        == crate::mem::end_lr_type(subtype)
-                                    {
+                                if code.is_end() {
+                                    if st.mem.lr_code(st.scanner.lr_ptr) == Some(code.lr_end()) {
                                         st.mem.pop_lr(&mut st.scanner.lr_ptr);
-                                    } else if subtype > L_CODE {
+                                    } else if code.is_lr() {
                                         w = MAX_DIMEN;
                                         break 'outer;
                                     }
                                 } else {
-                                    st.mem.push_lr(
-                                        &mut st.scanner.lr_ptr,
-                                        crate::mem::end_lr_type(subtype),
-                                    )?;
-                                    if Dir::from_code(subtype / R_CODE) != Some(st.scanner.cur_dir)
-                                    {
+                                    st.mem.push_lr(&mut st.scanner.lr_ptr, code.lr_end())?;
+                                    if code.dir() != st.scanner.cur_dir {
                                         st.mem.just_reverse(&mut st.scanner, p)?;
                                         p = TEMP_HEAD;
                                     }
                                 }
-                            } else if subtype >= L_CODE {
+                            } else if code.is_lr() {
                                 w = MAX_DIMEN;
                                 break 'outer;
                             }

@@ -2,14 +2,14 @@
 
 use crate::codes::LimitCode;
 use crate::consts::{
-    AFTER, A_LEADERS, COND_MATH_GLUE, C_LEADERS, DLIST, EMPTY, L_CODE, MATH_CHAR, R_CODE, SUB_BOX,
-    SUB_MLIST, TEX_NULL, X_LEADERS,
+    A_LEADERS, COND_MATH_GLUE, C_LEADERS, DLIST, EMPTY, MATH_CHAR, SUB_BOX, SUB_MLIST, TEX_NULL,
+    X_LEADERS,
 };
 use crate::math::DEFAULT_CODE;
 use crate::mem::ZERO_GLUE;
 use crate::node::{
-    AdjustPlacement, AnyNoad, AnyNode, BoxNode, CharNode, FenceSubtype, KernSubtype, MathField,
-    NoadVariant, NodePtr, WhatsitNode, WhatsitSubtype, WhatsitVariant,
+    AdjustPlacement, AnyNoad, AnyNode, BoxNode, CharNode, FenceSubtype, KernSubtype, MathCode,
+    MathField, NoadVariant, NodePtr, WhatsitNode, WhatsitSubtype, WhatsitVariant,
 };
 use crate::params::IntPar;
 use crate::state::EngineState;
@@ -84,7 +84,7 @@ pub(crate) fn short_display(st: &mut EngineState, mut p: MemPtr) {
                     }
                 }
                 Ok(AnyNode::Math(m)) => {
-                    if st.mem[m].subtype >= L_CODE {
+                    if st.mem[m].subtype.get().is_some_and(MathCode::is_lr) {
                         print(st, "[]");
                     } else {
                         print_char(st, b'$');
@@ -247,31 +247,33 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
                         print(st, " (right margin)");
                     }
                 }
-                Ok(AnyNode::Math(node)) => {
-                    let sub = st.mem[node].subtype;
-                    if sub > AFTER {
-                        print_esc(st, if sub % 2 == 1 { "end" } else { "begin" });
-                        let dir = if sub > R_CODE {
-                            b'R'
-                        } else if sub > L_CODE {
-                            b'L'
-                        } else {
-                            b'M'
-                        };
-                        print_char(st, i32::from(dir));
-                    } else {
+                Ok(AnyNode::Math(node)) => match st.mem[node].subtype.get() {
+                    Some(code @ (MathCode::Before | MathCode::After)) => {
                         print_esc(st, "math");
-                        if sub == 0 {
-                            print(st, "on");
-                        } else {
-                            print(st, "off");
-                        }
+                        print(
+                            st,
+                            if code == MathCode::Before {
+                                "on"
+                            } else {
+                                "off"
+                            },
+                        );
                         if st.mem[node].width != Scaled::ZERO {
                             print(st, ", surrounded ");
                             print_scaled(st, st.mem[node].width);
                         }
                     }
-                }
+                    Some(code) => {
+                        print_esc(st, if code.is_end() { "end" } else { "begin" });
+                        let dir = match code.lr_end() {
+                            MathCode::EndR => b'R',
+                            MathCode::EndL => b'L',
+                            _ => b'M',
+                        };
+                        print_char(st, i32::from(dir));
+                    }
+                    None => print(st, "Unknown math node!"),
+                },
                 Ok(AnyNode::Ligature(node)) => {
                     let font = st.mem[node].font;
                     print_font_char(st, font, st.mem[node].character);

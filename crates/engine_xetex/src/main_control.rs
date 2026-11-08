@@ -116,9 +116,9 @@ fn append_rule(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 fn valign_or_lr(st: &mut EngineState, code: ValignCode) -> Result<(), Abort> {
-    if code == ValignCode::Valign {
+    let Some(math_code) = code.math_code() else {
         return init_align(st);
-    }
+    };
     let enabled = crate::scan::eTeX_enabled(
         st,
         st.eqtb.int_par(IntPar::Texxet) > 0,
@@ -126,7 +126,7 @@ fn valign_or_lr(st: &mut EngineState, code: ValignCode) -> Result<(), Abort> {
         code.raw(),
     )?;
     if enabled {
-        let m = st.mem.new_math(Scaled::ZERO, code as u16)?;
+        let m = st.mem.new_math(Scaled::ZERO, math_code)?;
         st.input.cur_list.tail_append(&mut st.mem, m.ptr());
     }
     Ok(())

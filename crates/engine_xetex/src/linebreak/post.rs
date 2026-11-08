@@ -51,7 +51,8 @@ impl LinebreakState {
                 let mut temp_ptr = *lr_ptr;
                 let mut r = q;
                 loop {
-                    let s = mem.new_math(Scaled::ZERO, (temp_ptr.info(mem) - 1) as u16)?;
+                    let code = mem.lr_code(temp_ptr).ok_or(Abort::Confusion("LR"))?;
+                    let s = mem.new_math(Scaled::ZERO, code.as_begin())?;
                     mem[s].link = r;
                     r = s.ptr();
                     temp_ptr = temp_ptr.link(mem);
@@ -159,7 +160,8 @@ impl LinebreakState {
 
             r = *lr_ptr;
             while !r.is_null() {
-                let m = mem.new_math(Scaled::ZERO, r.info(mem) as u16)?;
+                let code = mem.lr_code(r).ok_or(Abort::Confusion("LR"))?;
+                let m = mem.new_math(Scaled::ZERO, code)?;
                 s.set_link(mem, m.ptr());
                 s = m.ptr();
                 r = r.link(mem);
@@ -227,10 +229,10 @@ impl MemState {
 
     /// Track the LR nesting of a math node on the `lr_ptr` stack.
     fn update_lr_stack(&mut self, q: NodePtr<MathNode>, lr_ptr: &mut MemPtr) -> Result<(), Abort> {
-        let subtype = self[q].subtype;
-        let end_lr = crate::mem::end_lr_type(subtype);
-        if subtype % 2 == 1 {
-            if !lr_ptr.is_null() && lr_ptr.info(self) == end_lr {
+        let code = self[q].code()?;
+        let end_lr = code.lr_end();
+        if code.is_end() {
+            if !lr_ptr.is_null() && self.lr_code(*lr_ptr) == Some(end_lr) {
                 self.pop_lr(lr_ptr);
             }
             Ok(())

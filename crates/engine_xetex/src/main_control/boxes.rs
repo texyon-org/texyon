@@ -4,13 +4,13 @@ use crate::cmd::Cmd;
 use crate::codes::{BoxCode, ValueLevel};
 use crate::command::Command;
 use crate::consts::{
-    A_LEADERS, BEGIN_M_CODE, BOX_BASE, BOX_NODE_SIZE, END_M_CODE, HMODE, IGNORE_DEPTH,
-    MARGIN_KERN_NODE_SIZE, MMODE, SUB_BOX, VMODE,
+    A_LEADERS, BOX_BASE, BOX_NODE_SIZE, HMODE, IGNORE_DEPTH, MARGIN_KERN_NODE_SIZE, MMODE, SUB_BOX,
+    VMODE,
 };
 use crate::errors::Abort;
 use crate::input::TokenType;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD};
-use crate::node::{AnyNode, BoxOrRule, SaLeaf};
+use crate::node::{AnyNode, BoxOrRule, MathCode, SaLeaf};
 use crate::params::{DimenPar, IntPar, TokPar};
 use crate::scan::fetch_box;
 use crate::state::{EngineState, GroupCode, MemState};
@@ -244,16 +244,16 @@ fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
 }
 
 impl MemState {
-    fn is_math_node(&self, p: MemPtr, subtype: u16) -> bool {
+    fn is_math_node(&self, p: MemPtr, code: MathCode) -> bool {
         !self.is_char_node(p)
-            && matches!(self.classify(p), Ok(AnyNode::Math(m)) if self[m].subtype == subtype)
+            && matches!(self.classify(p), Ok(AnyNode::Math(m)) if self[m].subtype == code)
     }
 }
 
 /// The last node of the current list, skipping a trailing end-of-math node.
 fn effective_tail(st: &EngineState) -> MemPtr {
     let tail = st.input.cur_list.tail;
-    if !st.mem.is_math_node(tail, END_M_CODE) {
+    if !st.mem.is_math_node(tail, MathCode::EndM) {
         return tail;
     }
     st.mem.predecessor(st.input.cur_list.head, tail)
@@ -280,7 +280,7 @@ fn unlink_effective_tail(st: &mut EngineState, tx: MemPtr) -> Result<bool, Abort
                         return Ok(false);
                     }
                 }
-                Ok(AnyNode::Math(m)) => fm = st.mem[m].subtype == BEGIN_M_CODE,
+                Ok(AnyNode::Math(m)) => fm = st.mem[m].subtype == MathCode::BeginM,
                 _ => {}
             }
         }

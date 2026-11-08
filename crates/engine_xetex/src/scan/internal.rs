@@ -8,8 +8,8 @@ use crate::codes::{BoxDimenCode, FiOrElseCode, IfCode, LastItemCode, PageIntCode
 use crate::command::Command;
 use crate::command::RegisterRef;
 use crate::consts::{
-    ACTIVE_MATH_CHAR, CHAR_CLASS_LIMIT, DEL_CODE_BASE, END_M_CODE, MATH_CODE_BASE, MAX_DIMEN,
-    MU_GLUE, NULL_FONT, PAR_SHAPE_LOC, SF_CODE_BASE, VMODE,
+    ACTIVE_MATH_CHAR, CHAR_CLASS_LIMIT, DEL_CODE_BASE, MATH_CODE_BASE, MAX_DIMEN, MU_GLUE,
+    NULL_FONT, PAR_SHAPE_LOC, SF_CODE_BASE, VMODE,
 };
 use crate::errors::{error, mu_error, Abort};
 use crate::ext::{
@@ -21,7 +21,7 @@ use crate::fonts::Side;
 use crate::fonts::{AAT_FONT_FLAG, SPACE_CODE, SPACE_SHRINK_CODE};
 use crate::input::{back_error, back_input};
 use crate::mem::ZERO_GLUE;
-use crate::node::{AnyNode, GlueSpecNode, NodePtr, SaLeaf};
+use crate::node::{AnyNode, GlueSpecNode, MathCode, NodePtr, SaLeaf};
 use crate::output::{
     capture_to_diagnostic, error_here_with_diagnostic, print, print_cmd_chr, print_err, print_esc,
     print_int, print_nl,
@@ -683,7 +683,7 @@ fn fetch_last_node_item(st: &EngineState, code: LastItemCode) -> CurVal {
     let mut tx = st.input.cur_list.tail;
     let mut node = (!st.mem.is_char_node(tx)).then(|| st.mem.classify(tx));
     if let Some(Ok(AnyNode::Math(math))) = node {
-        if st.mem[math].subtype == END_M_CODE {
+        if st.mem[math].subtype == MathCode::EndM {
             tx = st.mem.predecessor(head, tx);
             node = (!st.mem.is_char_node(tx)).then(|| st.mem.classify(tx));
         }

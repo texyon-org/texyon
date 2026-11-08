@@ -2,7 +2,7 @@
 //! character protrusion.
 
 use crate::consts::{
-    AWFUL_BAD, EJECT_PENALTY, INF_BAD, INF_PENALTY, L_CODE, MAX_DIMEN, MAX_HALFWORD, NULL_FONT,
+    AWFUL_BAD, EJECT_PENALTY, INF_BAD, INF_PENALTY, MAX_DIMEN, MAX_HALFWORD, NULL_FONT,
 };
 use crate::errors::Abort;
 use crate::mem::{ACTIVE_LIST, TEMP_HEAD};
@@ -613,8 +613,9 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                     continue;
                 }
                 AnyNode::Math(m) => {
-                    if st.mem[m].subtype < L_CODE {
-                        auto_breaking = odd(st.mem[m].subtype as u8);
+                    let code = st.mem[m].code()?;
+                    if !code.is_lr() {
+                        auto_breaking = code.is_end();
                     }
                     kern_break(st, st.mem[m].link, auto_breaking)?;
                     st.scanner.active_width[1] += st.mem[m].width;
