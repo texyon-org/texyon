@@ -284,3 +284,11 @@ fn interchartoks_classes_stop_below_the_ignored_class() {
     assert_eq!(r.lines_starting("! "), ["! Bad character class (4096)."]);
     assert_eq!(r.lines_starting("> "), ["> x.", "> y."]);
 }
+
+#[test]
+fn an_active_par_token_survives_the_format() {
+    let setup = r"\catcode`\~=13 \count1=0 \def~{\advance\count1 by 1 }\partokenname~";
+    let run = crate::run_on_format(setup, "\n\\showthe\\count1");
+    assert_eq!(run.errors(), Vec::<&str>::new());
+    assert_eq!(run.shown(), ["1"]);
+}

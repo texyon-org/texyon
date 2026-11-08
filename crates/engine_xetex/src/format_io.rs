@@ -650,10 +650,11 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
         }
     }
 
+    // \partokenname may name an active character or a control symbol.
     s.items_in(
         std::slice::from_mut(&mut st.input.par_loc),
-        HASH_BASE,
-        eqtb.hash_top,
+        ACTIVE_BASE,
+        EQTB_SIZE + eqtb.hash_high,
     )?;
     if S::LOADING {
         st.input.par_token = Token::from_cs(st.input.par_loc);

@@ -191,6 +191,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
         ),
         Cmd::Vcenter => print_esc(st, "vcenter"),
         Cmd::Vrule => print_esc(st, "vrule"),
+        Cmd::PartokenName => print_esc(st, "partokenname"),
         Cmd::ParEnd => print_esc(st, "par"),
         Cmd::Input => print_esc(
             st,

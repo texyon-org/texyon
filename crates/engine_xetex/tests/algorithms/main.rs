@@ -97,27 +97,51 @@ fn run(body: &str) -> Run {
 
 /// Runs `body` like [`run`], stopping at the first error when `halt_on_error` is set.
 fn run_with(body: &str, halt_on_error: bool) -> Run {
+    let mut outputs = MemoryIo::new(true);
     let source = format!("{PRELUDE}{body}\n\\end\n");
+    let reports = run_engine(&mut outputs, source, true, halt_on_error);
+    read_log(&outputs, reports)
+}
+
+/// Dumps a format from the prelude and `setup`, then runs `body` on that format.
+fn run_on_format(setup: &str, body: &str) -> Run {
+    let mut outputs = MemoryIo::new(true);
+    let dump = format!("{PRELUDE}{setup}\n\\dump\n");
+    run_engine(&mut outputs, dump, true, false);
+    let reports = run_engine(&mut outputs, format!("{body}\n\\end\n"), false, false);
+    read_log(&outputs, reports)
+}
+
+/// Runs `source` as `texput.tex`, with `texput.fmt` as the format, returning the error reports.
+fn run_engine(
+    outputs: &mut MemoryIo,
+    source: String,
+    initex: bool,
+    halt_on_error: bool,
+) -> Vec<String> {
     let assets = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/assets");
     let mut fonts = FilesystemIo::new(&assets, false, false, HashSet::new());
     let mut primary = Source(source.into_bytes());
-    let mut outputs = MemoryIo::new(true);
     let mut status = Reports::default();
     {
-        let io = IoStack::new(vec![&mut outputs, &mut primary, &mut fonts]);
+        let io = IoStack::new(vec![outputs, &mut primary, &mut fonts]);
         let mut hooks = MinimalDriver::new(io);
         let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
         let _ = TexEngine::default()
             .halt_on_error_mode(halt_on_error)
-            .initex_mode(true)
+            .initex_mode(initex)
             .deterministic_mode(true)
-            .process(&mut launcher, "UNUSED.fmt", "texput.tex");
+            .process(&mut launcher, "texput.fmt", "texput.tex");
     }
+    status.0
+}
+
+fn read_log(outputs: &MemoryIo, reports: Vec<String>) -> Run {
     let files = outputs.files.borrow();
     let log = files.get("texput.log").expect("the run wrote a log");
     Run {
         log: String::from_utf8_lossy(&log.data).into_owned(),
-        reports: status.0,
+        reports,
     }
 }
 

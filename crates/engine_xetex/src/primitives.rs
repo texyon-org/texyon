@@ -552,6 +552,8 @@ pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
     int_par(IntPar::HoldingInserts),
     int_par(IntPar::ErrorContextLines),
     int_par(IntPar::TracingStackLevels),
+    p("partokenname", Cmd::PartokenName, 0),
+    int_par(IntPar::PartokenContext),
     int_par(IntPar::ShowStream),
     int_par(IntPar::TracingAssigns),
     int_par(IntPar::TracingGroups),

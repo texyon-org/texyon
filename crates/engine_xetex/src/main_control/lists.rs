@@ -130,13 +130,52 @@ pub(super) fn indent_in_hmode(st: &mut EngineState, indent: bool) -> Result<(), 
     Ok(())
 }
 
+/// Puts the current token back with the par token in front of it.
+fn back_input_after_par_token(st: &mut EngineState) -> Result<(), Abort> {
+    crate::input::back_input(st)?;
+    st.scanner.cur_tok = st.input.par_token;
+    crate::input::back_input(st)?;
+    st.input.cur_input.set_token_type(TokenType::Inserted);
+    Ok(())
+}
+
+/// The least `\partokencontext` at which a group end in horizontal mode inserts the par token.
+#[derive(Clone, Copy)]
+pub(super) enum ParTokenContext {
+    /// `\vbox`, `\vtop` and `\vcenter`.
+    Boxes = 1,
+    /// Also `\insert`, `\vadjust`, `\output`, `\noalign` and `\valign` items.
+    AllGroups = 2,
+}
+
+impl ParTokenContext {
+    fn of_group(group: GroupCode) -> Option<ParTokenContext> {
+        match group {
+            GroupCode::Vbox | GroupCode::Vtop | GroupCode::Vcenter => Some(ParTokenContext::Boxes),
+            GroupCode::Insert | GroupCode::Output | GroupCode::NoAlign => {
+                Some(ParTokenContext::AllGroups)
+            }
+            _ => None,
+        }
+    }
+}
+
+/// partoken.ch: ends an open paragraph with the par token instead of `end_graf`.
+pub(super) fn insert_par_token_before(
+    st: &mut EngineState,
+    context: ParTokenContext,
+) -> Result<bool, Abort> {
+    if st.eqtb.int_par(IntPar::PartokenContext) < context as i32 || st.input.cur_list.mode != HMODE
+    {
+        return Ok(false);
+    }
+    back_input_after_par_token(st)?;
+    Ok(true)
+}
+
 pub(super) fn head_for_vmode(st: &mut EngineState) -> Result<(), Abort> {
     if st.input.cur_list.mode >= 0 {
-        crate::input::back_input(st)?;
-        st.scanner.cur_tok = st.input.par_token;
-        crate::input::back_input(st)?;
-        st.input.cur_input.set_token_type(TokenType::Inserted);
-        return Ok(());
+        return back_input_after_par_token(st);
     }
     if st.scanner.cur_cmd != Cmd::Hrule {
         return off_save(st);
@@ -319,6 +358,11 @@ pub(crate) fn new_character(
 }
 
 pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
+    if let Some(context) = ParTokenContext::of_group(st.save_stack.cur_group) {
+        if insert_par_token_before(st, context)? {
+            return Ok(());
+        }
+    }
     match st.save_stack.cur_group {
         GroupCode::Simple => crate::save::unsave(st)?,
         GroupCode::BottomLevel => {

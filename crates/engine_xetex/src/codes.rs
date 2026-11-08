@@ -272,7 +272,7 @@ code_enum! {
         Vsplit = 3 => "vsplit",
         Vtop = 4 => "vtop",
         Vbox = 5 => "vbox",
-        Hbox = 108 => "hbox",
+        Hbox = 109 => "hbox",
     }
 }
 
@@ -557,7 +557,7 @@ code_enum! {
     /// The `chr_code` of `\prevdepth` and `\spacefactor`: the mode they belong to.
     pub(crate) enum AuxCode: u8 {
         PrevDepth = 1 => "prevdepth",
-        SpaceFactor = 104 => "spacefactor",
+        SpaceFactor = 105 => "spacefactor",
     }
 }
 

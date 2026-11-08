@@ -1,0 +1,29 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\show\partokenname \showthe\partokenname
+\def\mypar{\message{[mypar]}\endgraf}
+\def\m#1{\message{[#1]}}
+\partokenname\mypar \show\par
+a
+
+b\m{x\par y}\m{x\mypar y}\m{x
+
+y}
+\long\def\l#1{\message{[long]}}\l{x\mypar y}
+{\partokenname\foo}\def\foo{\message{[foo]}\endgraf}
+c
+
+\partokenname x
+d
+
+\catcode`\~=13 \def~{\message{[tilde]}\endgraf}
+\partokenname~ e
+
+\def\!{\message{[bang]}\endgraf}
+\partokenname\! f
+
+\partokenname\undefinedcs g
+
+\partokenname\par h
+
+\showlists
+\bye

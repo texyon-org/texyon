@@ -31,7 +31,8 @@ use self::boxes::{begin_box, delete_last, scan_box, unpackage};
 use self::lists::{
     app_space, append_discretionary, append_glue, append_italic_correction, append_kern,
     append_penalty, begin_insert_or_adjust, end_graf, font_space_glue, handle_right_brace,
-    head_for_vmode, indent_in_hmode, its_all_over, make_accent, make_mark,
+    head_for_vmode, indent_in_hmode, insert_par_token_before, its_all_over, make_accent, make_mark,
+    ParTokenContext,
 };
 pub(crate) use self::lists::{
     new_character, new_graf, normal_paragraph, off_save, push_math, start_paragraph_language,
@@ -409,7 +410,11 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
                 in_math_shift_group(st, init_align)?;
             }
         }
-        (VMODE | HMODE, Command::Endv) => do_endv(st)?,
+        (VMODE | HMODE, Command::Endv) => {
+            if !insert_par_token_before(st, ParTokenContext::AllGroups)? {
+                do_endv(st)?;
+            }
+        }
         (_, Command::EndCsName) => crate::errors::cs_error(st)?,
 
         (HMODE, Command::MathShift(_)) => init_math(st)?,
@@ -459,6 +464,13 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
         (MMODE, Command::LeftRight(code)) => crate::math::math_left_right(st, code)?,
         (MMODE, Command::MathShift(_)) => in_math_shift_group(st, after_math)?,
 
+        (_, Command::PartokenName) => {
+            crate::scan::get_token(st)?;
+            if !st.scanner.cur_cs.is_none() {
+                st.input.par_loc = st.scanner.cur_cs;
+                st.input.par_token = st.scanner.cur_tok;
+            }
+        }
         (_, _) if cmd.is_prefixed() => prefixed_command(st)?,
         (_, Command::AfterAssignment) => {
             crate::scan::get_token(st)?;

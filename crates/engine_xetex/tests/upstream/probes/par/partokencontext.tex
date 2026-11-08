@@ -1,0 +1,15 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\showthe\partokencontext \show\partokencontext
+\def\par{\message{[par \the\partokencontext]}\endgraf}
+\def\t#1{\partokencontext=#1 \message{[context #1]}%
+  \setbox1\vbox{a}\showbox1
+  \setbox1\vtop{a}\showbox1
+  \setbox1\hbox{$\vcenter{a}$}\showbox1
+  \setbox1\vbox{\noindent b\vadjust{a}c\insert100{a}d\endgraf}\showbox1
+  \setbox1\vbox{\halign{##\cr\noalign{a}x\cr}}\showbox1
+  \setbox1\vbox{\noindent\valign{##\cr a\cr b\cr}\endgraf}\showbox1
+  {\output={\showbox255 \global\setbox3\box255 a}\hbox{}\penalty-10000 }%
+  \showlists}
+\t0 \t1 \t2 \t3 \t{-1}
+\output={\setbox0\box255 \deadcycles0 }
+\bye

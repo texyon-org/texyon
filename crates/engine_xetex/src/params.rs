@@ -92,6 +92,7 @@ code_enum! {
         PdfOutput = 82,
         ShowStream = 83,
         IgnorePrimitiveError = 84,
+        PartokenContext = 85,
     }
 }
 
@@ -181,6 +182,7 @@ impl IntPar {
             IntPar::PdfOutput => "pdfoutput",
             IntPar::ShowStream => "showstream",
             IntPar::IgnorePrimitiveError => "ignoreprimitiveerror",
+            IntPar::PartokenContext => "partokencontext",
             _ => return None,
         })
     }

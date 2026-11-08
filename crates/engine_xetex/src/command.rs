@@ -214,6 +214,8 @@ pub(crate) enum Command {
         patterns: bool,
     },
     SetInteraction(InteractionMode),
+    /// `\partokenname`.
+    PartokenName,
     UndefinedCs,
     /// `\expandafter` or `\unless`.
     ExpandAfter {
@@ -416,6 +418,7 @@ impl Command {
             Cmd::SetBox => Command::SetBox,
             Cmd::HyphData => Command::HyphData { patterns: flag(1)? },
             Cmd::SetInteraction => Command::SetInteraction(InteractionMode::from_raw(chr)?),
+            Cmd::PartokenName => Command::PartokenName,
             Cmd::UndefinedCs => Command::UndefinedCs,
             Cmd::ExpandAfter => Command::ExpandAfter { unless: flag(1)? },
             Cmd::NoExpand => Command::NoExpand {

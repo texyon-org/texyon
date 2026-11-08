@@ -53,3 +53,16 @@ entry names a later TeX Live version.
   2025 xetex. Probe `etex-ifcsname_astral_undefined`.
 - **Fix:** test `(m>first+1)or(buffer[first]>@"FFFF)` before `m=first`, as in `\csname`.
 - **TeXyoN:** looks the name up in the hash (`expand.rs`). Listed in `tests/upstream/known.tsv`.
+
+## 5. A prefix before `\partokenname` is a confusion
+
+- **Where:** TeX Live `partoken-102.ch`/`partoken.ch` (TL 2022 on). `partoken_name=103` becomes
+  `max_command`, above `max_non_prefixed_command`.
+- **Bug:** `prefixed_command` lets every command above `max_non_prefixed_command` through its
+  "You can't use a prefix with" check, but its case has no `partoken_name` branch, so
+  `\global\partokenname\foo` (or `\long`, `\outer`, `\protected`) ends in `confusion("prefix")`.
+- **Repro:** `\global\partokenname\foo` gives "This can't happen (prefix)" with TeX Live 2025
+  xetex. Probe `errors-partokenname_global`. pdfTeX shares the change file.
+- **Fix:** number `partoken_name` below `max_non_prefixed_command`, or reject it with the prefix
+  error in `prefixed_command`.
+- **TeXyoN:** keeps the upstream behaviour (`Abort::Confusion("prefix")`).

@@ -1,5 +1,6 @@
 //! Shared compile-time constants for the XeTeX engine, mirroring the WEB `@d` definitions.
 
+use crate::cmd::Cmd;
 use crate::units::EqtbPtr;
 
 pub const BIGGEST_CHAR: i32 = 0xFFFF;
@@ -45,8 +46,8 @@ pub const JUST_OPEN: u8 = 1;
 pub const CLOSED: u8 = 2;
 
 pub const VMODE: i16 = 1;
-pub const HMODE: i16 = 104;
-pub const MMODE: i16 = 207;
+pub const HMODE: i16 = VMODE + Cmd::MAX_COMMAND as i16 + 1;
+pub const MMODE: i16 = HMODE + Cmd::MAX_COMMAND as i16 + 1;
 pub const LEVEL_ZERO: u16 = 0;
 pub const LEVEL_ONE: u16 = 1;
 
@@ -124,7 +125,7 @@ pub const UC_CODE_BASE: EqtbPtr = LC_CODE_BASE.plus(NUMBER_USVS);
 pub const SF_CODE_BASE: EqtbPtr = UC_CODE_BASE.plus(NUMBER_USVS);
 pub const MATH_CODE_BASE: EqtbPtr = SF_CODE_BASE.plus(NUMBER_USVS);
 pub const INT_BASE: EqtbPtr = MATH_CODE_BASE.plus(NUMBER_USVS);
-pub const COUNT_BASE: EqtbPtr = INT_BASE.plus(85);
+pub const COUNT_BASE: EqtbPtr = INT_BASE.plus(86);
 pub const DEL_CODE_BASE: EqtbPtr = COUNT_BASE.plus(256);
 pub const DIMEN_BASE: EqtbPtr = DEL_CODE_BASE.plus(NUMBER_USVS);
 pub const SCALED_BASE: EqtbPtr = DIMEN_BASE.plus(23);
@@ -134,6 +135,7 @@ pub const XEQ_LEVEL_SIZE: usize = (EQTB_SIZE.raw() - INT_BASE.raw() + 1) as usiz
 
 const _: () = {
     assert!(FONT_BASE == 0 && NULL_FONT.get() == 0);
+    assert!(HMODE == 105 && MMODE == 209);
     assert!(SINGLE_BASE.raw() == 1_114_113);
     assert!(NULL_CS.raw() == 1_179_649);
     assert!(HASH_BASE.raw() == 1_179_650);
@@ -155,12 +157,12 @@ const _: () = {
     assert!(SF_CODE_BASE.raw() == 4_549_929);
     assert!(MATH_CODE_BASE.raw() == 5_664_041);
     assert!(INT_BASE.raw() == 6_778_153);
-    assert!(COUNT_BASE.raw() == 6_778_238);
-    assert!(DEL_CODE_BASE.raw() == 6_778_494);
-    assert!(DIMEN_BASE.raw() == 7_892_606);
-    assert!(SCALED_BASE.raw() == 7_892_629);
-    assert!(EQTB_SIZE.raw() == 7_892_884);
-    assert!(XEQ_LEVEL_SIZE == 1_114_732);
+    assert!(COUNT_BASE.raw() == 6_778_239);
+    assert!(DEL_CODE_BASE.raw() == 6_778_495);
+    assert!(DIMEN_BASE.raw() == 7_892_607);
+    assert!(SCALED_BASE.raw() == 7_892_630);
+    assert!(EQTB_SIZE.raw() == 7_892_885);
+    assert!(XEQ_LEVEL_SIZE == 1_114_733);
 };
 
 /// `\parshape`, first in the local region.

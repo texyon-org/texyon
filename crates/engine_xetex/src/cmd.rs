@@ -110,26 +110,27 @@ code_enum! {
         SetBox = 100,
         HyphData = 101,
         SetInteraction = 102,
-        UndefinedCs = 103,
-        ExpandAfter = 104,
-        NoExpand = 105,
-        Input = 106,
-        IfTest = 107,
-        FiOrElse = 108,
-        CsName = 109,
-        Convert = 110,
-        The = 111,
-        TopBotMark = 112,
-        Call = 113,
-        LongCall = 114,
-        OuterCall = 115,
-        LongOuterCall = 116,
-        EndTemplate = 117,
-        DontExpand = 118,
-        GlueRef = 119,
-        ShapeRef = 120,
-        BoxRef = 121,
-        Data = 122,
+        PartokenName = 103,
+        UndefinedCs = 104,
+        ExpandAfter = 105,
+        NoExpand = 106,
+        Input = 107,
+        IfTest = 108,
+        FiOrElse = 109,
+        CsName = 110,
+        Convert = 111,
+        The = 112,
+        TopBotMark = 113,
+        Call = 114,
+        LongCall = 115,
+        OuterCall = 116,
+        LongOuterCall = 117,
+        EndTemplate = 118,
+        DontExpand = 119,
+        GlueRef = 120,
+        ShapeRef = 121,
+        BoxRef = 122,
+        Data = 123,
     }
 }
 
@@ -146,7 +147,7 @@ impl Cmd {
     pub(crate) const MIN_INTERNAL: Cmd = Cmd::CharGiven;
     pub(crate) const MAX_NON_PREFIXED_COMMAND: Cmd = Cmd::LastItem;
     pub(crate) const MAX_INTERNAL: Cmd = Cmd::Register;
-    pub(crate) const MAX_COMMAND: Cmd = Cmd::SetInteraction;
+    pub(crate) const MAX_COMMAND: Cmd = Cmd::PartokenName;
 }
 
 impl Cmd {
