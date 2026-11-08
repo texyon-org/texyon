@@ -1,14 +1,15 @@
 //! Displaying boxes: `show_box`, `short_display` and `show_node_list`.
 
+use crate::codes::LimitCode;
 use crate::consts::{
     AFTER, A_LEADERS, COND_MATH_GLUE, C_LEADERS, DLIST, EMPTY, L_CODE, MATH_CHAR, R_CODE, SUB_BOX,
     SUB_MLIST, TEX_NULL, X_LEADERS,
 };
-use crate::math::{DEFAULT_CODE, LIMITS};
+use crate::math::DEFAULT_CODE;
 use crate::mem::ZERO_GLUE;
 use crate::node::{
-    AdjustPlacement, AnyNoad, AnyNode, BoxNode, CharNode, KernSubtype, MathField, NoadVariant,
-    NodePtr, WhatsitNode, WhatsitSubtype, WhatsitVariant,
+    AdjustPlacement, AnyNoad, AnyNode, BoxNode, CharNode, FenceSubtype, KernSubtype, MathField,
+    NoadVariant, NodePtr, WhatsitNode, WhatsitSubtype, WhatsitVariant,
 };
 use crate::params::IntPar;
 use crate::state::EngineState;
@@ -491,7 +492,7 @@ fn show_noad(st: &mut EngineState, any: NodePtr<AnyNoad>) {
         NoadVariant::Fence(f) => {
             let name = if st.mem[f].noad_type == NodeType::LeftNoad {
                 "left"
-            } else if st.mem[f].subtype == 0 {
+            } else if st.mem[f].subtype == FenceSubtype::Normal {
                 "right"
             } else {
                 "middle"
@@ -533,9 +534,15 @@ fn show_noad(st: &mut EngineState, any: NodePtr<AnyNoad>) {
             n
         }
     };
-    let sub = st.mem[n].subtype;
-    if sub != 0 {
-        print_esc(st, if sub == LIMITS { "limits" } else { "nolimits" });
+    // WEB shows every noad's subtype as limits, so a bottom accent shows `\nolimits`.
+    let limits = st.mem[n].limits();
+    if limits != LimitCode::Normal {
+        let name = if limits == LimitCode::Limits {
+            "limits"
+        } else {
+            "nolimits"
+        };
+        print_esc(st, name);
     }
     print_subsidiary_data(st, n.nucleus(), b'.');
     print_subsidiary_data(st, n.supscr(), b'^');

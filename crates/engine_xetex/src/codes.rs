@@ -580,11 +580,8 @@ const _: () = {
     assert!(LeaderCode::ALeaders.raw() == crate::consts::A_LEADERS as i32);
     assert!(AuxCode::PrevDepth.mode() == crate::consts::VMODE);
     assert!(AuxCode::SpaceFactor.mode() == crate::consts::HMODE);
-    assert!(LeftRightCode::Middle.raw() == crate::math::MIDDLE_NOAD as i32);
     assert!(LeftRightCode::Left.raw() == crate::units::NodeType::LeftNoad as i32);
     assert!(LeftRightCode::Right.raw() == crate::units::NodeType::RightNoad as i32);
-    assert!(LimitCode::Limits.raw() == crate::math::LIMITS as i32);
-    assert!(LimitCode::NoLimits.raw() == crate::math::NO_LIMITS as i32);
     assert!(FontIntCode::LpCode.raw() == crate::main_control::LP_CODE_BASE);
     assert!(FontIntCode::RpCode.raw() == crate::main_control::RP_CODE_BASE);
 };

@@ -3,8 +3,8 @@
 use crate::cmd::Cmd;
 use crate::codes::{
     BoxCode, BoxDimenCode, ConvertCode, DelimNumCode, ExtensionCode, FiOrElseCode, IfCode,
-    InputCode, LastItemCode, MarkCode, MathAccentCode, MathCharNumCode, PageIntCode, RadicalCode,
-    ShorthandDefCode, ShowCode, SkipCode, TheCode, ValueLevel,
+    InputCode, LastItemCode, LeftRightCode, LimitCode, MarkCode, MathAccentCode, MathCharNumCode,
+    PageIntCode, RadicalCode, ShorthandDefCode, ShowCode, SkipCode, TheCode, ValueLevel,
 };
 use crate::consts::{
     A_LEADERS, BEGIN_L_CODE, BEGIN_R_CODE, COUNT_BASE, DEL_CODE_BASE, DIMEN_BASE, END_L_CODE,
@@ -13,9 +13,7 @@ use crate::consts::{
     VMODE,
 };
 use crate::main_control::{CR_CODE, LP_CODE_BASE, RP_CODE_BASE, SPAN_CODE};
-use crate::math::{
-    ABOVE_CODE, ATOP_CODE, DELIMITED_CODE, LIMITS, MIDDLE_NOAD, NO_LIMITS, OVER_CODE,
-};
+use crate::math::{ABOVE_CODE, ATOP_CODE, DELIMITED_CODE, OVER_CODE};
 use crate::node::{NodePtr, SaElement};
 use crate::params::TokPar;
 use crate::state::{EngineState, InteractionMode};
@@ -405,9 +403,9 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
         }
         Cmd::LimitSwitch => print_esc(
             st,
-            match chr_code as u16 {
-                LIMITS => "limits",
-                NO_LIMITS => "nolimits",
+            match LimitCode::from_raw(chr_code) {
+                Some(LimitCode::Limits) => "limits",
+                Some(LimitCode::NoLimits) => "nolimits",
                 _ => "displaylimits",
             },
         ),
@@ -426,7 +424,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
         Cmd::LeftRight => {
             let name = if chr_code == NodeType::LeftNoad as i32 {
                 "left"
-            } else if chr_code == i32::from(MIDDLE_NOAD) {
+            } else if chr_code == LeftRightCode::Middle.raw() {
                 "middle"
             } else {
                 "right"

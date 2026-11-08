@@ -302,6 +302,42 @@ stored_code! {
     }
 }
 
+stored_code! {
+    /// A math accent's placement, set by `\Umathaccent fixed`, `bottom` or `bottom fixed`.
+    pub enum MathAccentKind {
+        /// Above the nucleus, stretched to its width.
+        Top = 0,
+        /// Above, at the accent's own width.
+        TopFixed = 1,
+        /// Below the nucleus, stretched.
+        Bottom = 2,
+        /// Below, at the accent's own width.
+        BottomFixed = 3,
+    }
+}
+
+impl MathAccentKind {
+    #[inline]
+    pub fn is_bottom(self) -> bool {
+        matches!(self, MathAccentKind::Bottom | MathAccentKind::BottomFixed)
+    }
+
+    #[inline]
+    pub fn is_fixed(self) -> bool {
+        matches!(self, MathAccentKind::TopFixed | MathAccentKind::BottomFixed)
+    }
+}
+
+stored_code! {
+    /// A right noad's subtype, which tells `\middle` from `\right`.
+    pub enum FenceSubtype {
+        /// `\left` or `\right`.
+        Normal = 0,
+        /// `\middle`.
+        Middle = 1,
+    }
+}
+
 impl StoredCode for Dir {
     #[inline]
     fn from_u16(raw: u16) -> Option<Self> {
@@ -1585,6 +1621,7 @@ impl NodePtr<SaSavedPointer> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::codes::LimitCode;
     use crate::consts::MAX_HALFWORD;
     use crate::token::TokenList;
     use crate::units::FontId;
@@ -1630,6 +1667,22 @@ mod tests {
     #[test]
     fn edge_directions_keep_web_codes() {
         assert_web_codes(&[(Dir::Ltr, 0), (Dir::Rtl, 1)]);
+    }
+
+    #[test]
+    fn noad_subtypes_keep_web_codes() {
+        assert_web_codes(&[
+            (LimitCode::Normal, 0),
+            (LimitCode::Limits, 1),
+            (LimitCode::NoLimits, 2),
+        ]);
+        assert_web_codes(&[
+            (MathAccentKind::Top, 0),
+            (MathAccentKind::TopFixed, 1),
+            (MathAccentKind::Bottom, 2),
+            (MathAccentKind::BottomFixed, 3),
+        ]);
+        assert_web_codes(&[(FenceSubtype::Normal, 0), (FenceSubtype::Middle, 1)]);
     }
 
     /// An arena whose free list is the single block `[10, 30)`.
@@ -2069,7 +2122,7 @@ mod tests {
         let mut mem = fresh_mem(200);
         let n: NodePtr<Noad> = at(&mut mem, 100, Some(NodeType::OrdNoad));
         let b = &mut mem[n];
-        b.subtype = 2;
+        b.set_limits(LimitCode::NoLimits);
         b.nucleus.math_type = 1;
         b.supscr.math_type = 2;
         b.subscr.math_type = 3;
@@ -2085,7 +2138,7 @@ mod tests {
         assert_eq!(mem[n.any()].link, mem[n].link);
 
         let a: NodePtr<AccentNoad> = at(&mut mem, 100, Some(NodeType::AccentNoad));
-        mem[a].base.subtype = 1;
+        mem[a].set_kind(MathAccentKind::TopFixed);
         mem[a].accent_chr.set_character(48);
         mem[a].accent_chr.set_plane_and_fam(5);
         assert_eq!(mem.b16s0(w(100)), 1);

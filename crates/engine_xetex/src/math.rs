@@ -23,11 +23,6 @@ pub(crate) const OVER_CODE: i32 = 1;
 pub(crate) const ATOP_CODE: i32 = 2;
 pub(crate) const DEFAULT_CODE: Scaled = Scaled::from_raw(0x4000_0000);
 
-const BOTTOM_ACC: u16 = 2;
-pub(crate) const MIDDLE_NOAD: u16 = 1;
-
-pub(crate) const LIMITS: u16 = 1;
-pub(crate) const NO_LIMITS: u16 = 2;
 const SCRIPT_SCRIPT_SIZE: i32 = 512;
 /// A math style: display 0, text 2, script 4, scriptscript 6, one more when cramped.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default, Pod, Zeroable)]

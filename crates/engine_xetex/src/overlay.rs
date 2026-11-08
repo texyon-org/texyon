@@ -7,18 +7,19 @@
 use crate::math::MathStyle;
 use bytemuck::{Pod, Zeroable};
 
-use crate::codes::{FiOrElseCode, MarkCode, ValueLevel};
+use crate::codes::{FiOrElseCode, LimitCode, MarkCode, ValueLevel};
 use crate::consts::{EMPTY, NORMAL};
 use crate::node::{
     AccentNoad, ActiveNode, AdjustNode, AdjustPlacement, AlignRecord, AlignStackNode, AnyNoad,
     BoxNode, CharNode, ChoiceNode, CondNode, DelimiterField, DeltaNode, DiscNode, EdgeNode,
-    ExprNode, FenceNoad, FixedNode, FractionNoad, FreeBlock, GlueNode, GlueSpecNode, GlyphNode,
-    InsNode, KernNode, KernSubtype, LanguageNode, LigItem, LigatureNode, Link, MarginKernNode,
-    MarkNode, MathField, MathNode, MovementNode, NativeWordNode, Noad, NodeKind, NodePtr, OpenNode,
-    PageInsNode, ParShapeNode, PassiveNode, PenaltiesNode, PenaltyNode, PicNode, PseudoLineNode,
-    RadicalNoad, RuleNode, SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode,
-    SaSaved, SaSavedPointer, SaSavedWord, SaWordNode, SizedWhatsit, SpanNode, Stored, StoredDimen,
-    StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype, WriteNode,
+    ExprNode, FenceNoad, FenceSubtype, FixedNode, FractionNoad, FreeBlock, GlueNode, GlueSpecNode,
+    GlyphNode, InsNode, KernNode, KernSubtype, LanguageNode, LigItem, LigatureNode, Link,
+    MarginKernNode, MarkNode, MathAccentKind, MathField, MathNode, MovementNode, NativeWordNode,
+    Noad, NodeKind, NodePtr, OpenNode, PageInsNode, ParShapeNode, PassiveNode, PenaltiesNode,
+    PenaltyNode, PicNode, PseudoLineNode, RadicalNoad, RuleNode, SaChild, SaElement, SaIndexNode,
+    SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved, SaSavedPointer, SaSavedWord, SaWordNode,
+    SizedWhatsit, SpanNode, Stored, StoredDimen, StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype,
+    WriteNode,
 };
 use crate::state::MemState;
 use crate::token::TokenList;
@@ -726,8 +727,7 @@ overlay!(AnyNoad => NoadHead, 2);
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct NoadLayout {
-    /// `\limits` or `\nolimits` on an operator, else normal.
-    pub subtype: u16,
+    subtype: u16,
     pub noad_type: Stored<NodeType>,
     pub link: MemPtr,
     pub nucleus: MathWord,
@@ -745,6 +745,17 @@ impl NoadLayout {
         self.nucleus.clear();
         self.supscr.clear();
         self.subscr.clear();
+    }
+
+    /// `\limits` or `\nolimits` on an operator. Accents keep their kind in the same half-word.
+    #[inline]
+    pub fn limits(&self) -> Stored<LimitCode> {
+        Stored::from_raw(self.subtype)
+    }
+
+    #[inline]
+    pub fn set_limits(&mut self, limits: LimitCode) {
+        self.subtype = Stored::from(limits).raw();
     }
 }
 
@@ -765,6 +776,19 @@ overlay!(RadicalNoad => RadicalLayout);
 pub struct AccentLayout {
     pub base: NoadLayout,
     pub accent_chr: MathWord,
+}
+
+impl AccentLayout {
+    /// Where the accent goes and whether it stretches, kept in the noad's subtype.
+    #[inline]
+    pub fn kind(&self) -> Stored<MathAccentKind> {
+        Stored::from_raw(self.base.subtype)
+    }
+
+    #[inline]
+    pub fn set_kind(&mut self, kind: MathAccentKind) {
+        self.base.subtype = Stored::from(kind).raw();
+    }
 }
 
 overlay!(AccentNoad => AccentLayout);
@@ -788,11 +812,11 @@ pub struct FractionLayout {
 overlay!(FractionNoad => FractionLayout);
 
 /// A `\left`, `\middle` or `\right` delimiter. A middle one is a right noad
-/// with a `MIDDLE_NOAD` subtype. WEB leaves the script words empty but reads them.
+/// with a middle subtype. WEB leaves the script words empty but reads them.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct FenceLayout {
-    pub subtype: u16,
+    pub subtype: Stored<FenceSubtype>,
     pub noad_type: Stored<NodeType>,
     pub link: MemPtr,
     pub delimiter: DelimiterWord,

@@ -269,3 +269,33 @@ fn a_style_change_picks_the_mathchoice_branch() {
         .\mathoff",
     );
 }
+
+#[test]
+fn umathaccent_keywords_place_the_accent() {
+    let r = run(&format!(
+        "{MATH_FONTS}\\setbox0\\hbox{{$\\Umathaccent\"0\"1\"7F x\\Umathaccent bottom\"0\"1\"7F x\\showlists$}}\\showbox0"
+    ));
+    // WEB shows any noad subtype as limits, so the bottom accent reads `\nolimits`.
+    assert_eq!(
+        r.lines_starting("\\accent"),
+        [r"\accent\fam1 ^^?", r"\accent\fam1 ^^?\nolimits"]
+    );
+    assert_lines(
+        &r.boxes()[0],
+        r"
+        \hbox(6.94444+6.94444)x11.43054
+        .\mathon
+        .\vbox(6.94444+0.0)x5.71527
+        ..\hbox(6.94444+0.0)x0.0, shifted -0.52856
+        ...\mi ^^?
+        ..\kern-4.30554
+        ..\hbox(4.30554+0.0)x5.71527
+        ...\mi x
+        .\vbox(11.24998+0.0)x5.71527, shifted 6.94444
+        ..\hbox(4.30554+0.0)x5.71527
+        ...\mi x
+        ..\hbox(6.94444+0.0)x0.0, shifted -0.52856
+        ...\mi ^^?
+        .\mathoff",
+    );
+}

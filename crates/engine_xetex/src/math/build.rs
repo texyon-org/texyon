@@ -13,16 +13,14 @@ use crate::input::TokenType;
 use crate::mem::GARBAGE;
 use crate::mem_types::ListStateRecord;
 use crate::node::{
-    AccentNoad, ChoiceNode, DelimiterField, FenceNoad, FractionNoad, MathField, Noad, NoadVariant,
-    NodePtr, RadicalNoad,
+    AccentNoad, ChoiceNode, DelimiterField, FenceNoad, FenceSubtype, FractionNoad, MathAccentKind,
+    MathField, Noad, NoadVariant, NodePtr, RadicalNoad,
 };
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, EqtbState, GroupCode, MemState, SaveStackState};
 use crate::units::{EqtbPtr, MemIdx, MemPtr, NodeType, Scaled};
 
-use super::{BOTTOM_ACC, DEFAULT_CODE, MIDDLE_NOAD};
-
-const FIXED_ACC: u16 = 1;
+use super::DEFAULT_CODE;
 
 /// The family and character of a `\Udelimiter`, encoded with the extended flag.
 fn scan_extended_delimiter(st: &mut EngineState) -> Result<i32, Abort> {
@@ -111,7 +109,7 @@ pub(crate) fn start_eq_no(st: &mut EngineState, left: bool) -> Result<(), Abort>
 }
 
 impl ListStateRecord {
-    fn apply_math_limit_switch(&mut self, mem: &mut MemState, limit: u16) -> bool {
+    fn apply_math_limit_switch(&mut self, mem: &mut MemState, limit: LimitCode) -> bool {
         let tail = self.tail;
         if self.head == tail {
             return false;
@@ -121,7 +119,7 @@ impl ListStateRecord {
         };
         match any.variant(mem) {
             NoadVariant::Noad(n) if mem[n].noad_type == NodeType::OpNoad => {
-                mem[n].subtype = limit;
+                mem[n].set_limits(limit);
                 true
             }
             _ => false,
@@ -130,11 +128,7 @@ impl ListStateRecord {
 }
 
 pub(crate) fn math_limit_switch(st: &mut EngineState, code: LimitCode) -> Result<(), Abort> {
-    if st
-        .input
-        .cur_list
-        .apply_math_limit_switch(&mut st.mem, code as u16)
-    {
+    if st.input.cur_list.apply_math_limit_switch(&mut st.mem, code) {
         return Ok(());
     }
     crate::output::print_err(st, "Limit controls must follow a math operator");
@@ -437,11 +431,11 @@ impl MemState {
 }
 
 impl MemState {
-    /// A fence noad for `code`. A middle one is a right noad with a `MIDDLE_NOAD` subtype.
+    /// A fence noad for `code`. A middle one is a right noad with a middle subtype.
     fn new_fence(&mut self, code: LeftRightCode) -> Result<NodePtr<FenceNoad>, Abort> {
         let p = NodePtr::<FenceNoad>::alloc(self)?;
         let n = &mut self[p];
-        n.subtype = NORMAL;
+        n.subtype = FenceSubtype::Normal.into();
         n.delimiter.clear();
         n.supscr.clear();
         n.subscr.clear();
@@ -450,7 +444,7 @@ impl MemState {
             LeftRightCode::Right => n.noad_type = NodeType::RightNoad.into(),
             LeftRightCode::Middle => {
                 n.noad_type = NodeType::RightNoad.into();
-                n.subtype = MIDDLE_NOAD;
+                n.subtype = FenceSubtype::Middle.into();
             }
         }
         Ok(p)
@@ -458,12 +452,11 @@ impl MemState {
 }
 
 pub(crate) fn math_left_right(st: &mut EngineState, code: LeftRightCode) -> Result<(), Abort> {
-    let t = code as u16;
-    if t != NodeType::LeftNoad.as_raw() && st.save_stack.cur_group != GroupCode::MathLeft {
+    if code != LeftRightCode::Left && st.save_stack.cur_group != GroupCode::MathLeft {
         if st.save_stack.cur_group == GroupCode::MathShift {
             scan_delimiter(st, NodePtr::at(GARBAGE), None)?;
             crate::output::error_here_with_diagnostic(st, "Extra ");
-            if t == MIDDLE_NOAD {
+            if code == LeftRightCode::Middle {
                 crate::output::print_esc(st, "middle");
                 st.errors
                     .help(&[r"I'm ignoring a \middle that had no matching \left."]);
@@ -480,14 +473,14 @@ pub(crate) fn math_left_right(st: &mut EngineState, code: LeftRightCode) -> Resu
     } else {
         let p = st.mem.new_fence(code)?;
         scan_delimiter(st, p.delimiter(), None)?;
-        let q = if t == NodeType::LeftNoad.as_raw() {
+        let q = if code == LeftRightCode::Left {
             p.ptr()
         } else {
             let q = fin_mlist(st, p.ptr())?;
             crate::save::unsave(st)?;
             q
         };
-        if t != NodeType::RightNoad.as_raw() {
+        if code != LeftRightCode::Right {
             crate::main_control::push_math(st, GroupCode::MathLeft)?;
             let cl = &mut st.input.cur_list;
             cl.head.set_link(&mut st.mem, q);
@@ -524,12 +517,12 @@ pub(crate) fn math_ac(st: &mut EngineState, code: Option<MathAccentCode>) -> Res
 
     let value = if code == Some(MathAccentCode::UmathAccent) {
         if crate::scan::scan_keyword(st, "fixed")? {
-            st.mem[tail].base.subtype = FIXED_ACC;
+            st.mem[tail].set_kind(MathAccentKind::TopFixed);
         } else if crate::scan::scan_keyword(st, "bottom")? {
             if crate::scan::scan_keyword(st, "fixed")? {
-                st.mem[tail].base.subtype = BOTTOM_ACC + 1;
+                st.mem[tail].set_kind(MathAccentKind::BottomFixed);
             } else {
-                st.mem[tail].base.subtype = BOTTOM_ACC;
+                st.mem[tail].set_kind(MathAccentKind::Bottom);
             }
         }
         crate::scan::scan_umath_code(st)?

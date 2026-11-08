@@ -1,5 +1,6 @@
 //! Typesetting math formulas: `mlist_to_hlist` and the `make_*` noad handlers.
 
+use crate::codes::LimitCode;
 use crate::consts::{
     BOX_NODE_SIZE, COND_MATH_GLUE, EMPTY, GLYPH_NODE_SIZE, INFINITE_DIMEN, INF_PENALTY, MATH_CHAR,
     MATH_TEXT_CHAR, MAX_DIMEN, MEDIUM_NODE_SIZE, MU_GLUE, NOAD_SIZE, NORMAL, NULL_FONT,
@@ -11,8 +12,8 @@ use crate::mem::{TEMP_HEAD, TEX_NULL, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
 use crate::node::{
     AccentNoad, AnyNoad, AnyNode, BoxNode, ChoiceNode, FenceNoad, FractionNoad, GlueNode,
-    GlueSpecNode, GlyphNode, KernNode, KernSubtype, MathField, Noad, NoadVariant, NodePtr,
-    RadicalNoad, RuleDimen, RuleNode, WhatsitSubtype, WhatsitVariant,
+    GlueSpecNode, GlyphNode, KernNode, KernSubtype, MathAccentKind, MathField, Noad, NoadVariant,
+    NodePtr, RadicalNoad, RuleDimen, RuleNode, WhatsitSubtype, WhatsitVariant,
 };
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar};
@@ -21,7 +22,7 @@ use crate::units::{FontId, GlueOrder, MemPtr, NodeType, Scaled};
 
 use super::delimiters::{build_opentype_assembly, rebox, var_delimiter};
 use super::scripts::make_scripts;
-use super::{MathStyle, BOTTOM_ACC, DEFAULT_CODE, LIMITS};
+use super::{MathStyle, DEFAULT_CODE};
 
 const DISPLAYOPERATORMINHEIGHT: i32 = 3;
 const ACCENTBASEHEIGHT: i32 = 6;
@@ -553,8 +554,8 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<FractionNoad>) -> Result<(), A
 fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
     let mut delta = Scaled::ZERO;
 
-    if st.mem[q].subtype == NORMAL && st.scanner.cur_style < MathStyle::TEXT {
-        st.mem[q].subtype = LIMITS;
+    if st.mem[q].limits() == LimitCode::Normal && st.scanner.cur_style < MathStyle::TEXT {
+        st.mem[q].set_limits(LimitCode::Limits);
     }
 
     if st.mem[q.nucleus()].math_type == MATH_CHAR {
@@ -635,7 +636,7 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
 
         let axis_height = st.fonts.axis_height(&st.eqtb, st.scanner.cur_size);
         let mem = &mut st.mem;
-        if mem[q.subscr()].math_type != EMPTY && mem[q].subtype != LIMITS {
+        if mem[q.subscr()].math_type != EMPTY && mem[q].limits() != LimitCode::Limits {
             mem[x].width -= delta;
         }
         let shift = (mem[x].height - mem[x].depth).half() - axis_height;
@@ -644,7 +645,7 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
     }
 
     let save_f = st.scanner.cur_f;
-    if st.mem[q].subtype == LIMITS {
+    if st.mem[q].limits() == LimitCode::Limits {
         let cs = st.scanner.cur_style;
         let x = clean_box(st, q.supscr(), cs.sup())?;
         let y = clean_box(st, q.nucleus(), cs)?;
@@ -834,8 +835,8 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<AccentNoad>) -> Result<(), 
     let f = st.scanner.cur_f;
     let mut c = st.scanner.cur_c;
     let area = st.fonts.font_area[f];
-    let kind = st.mem[q].base.subtype;
-    let bottom_accent = kind == BOTTOM_ACC || kind == BOTTOM_ACC + 1;
+    let kind = st.mem[q].kind().get();
+    let bottom_accent = kind.is_some_and(MathAccentKind::is_bottom);
     let is_native = area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG;
 
     let mut s = Scaled::ZERO;
@@ -929,7 +930,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<AccentNoad>) -> Result<(), 
         st.mem[y].list_ptr = glyph.ptr();
 
         let mut assembly_box = None;
-        if !kind.is_multiple_of(2) {
+        if kind.is_some_and(MathAccentKind::is_fixed) {
             st.fonts.measure_glyph(&mut st.mem, glyph)?;
         } else {
             let c_glyph = i32::from(st.mem[glyph].glyph);
@@ -1312,7 +1313,7 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                         }
                         Some(NodeType::OpNoad) => {
                             delta = make_op(st, n)?;
-                            if st.mem[n].subtype == LIMITS {
+                            if st.mem[n].limits() == LimitCode::Limits {
                                 break 'reswitch FirstPass::CheckDimensions(qn);
                             }
                             break 'reswitch FirstPass::ProcessNucleus(n);
