@@ -566,8 +566,13 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
                     let q = st.mem.new_skip_param(&st.eqtb, GluePar::TopSkip)?;
                     let spec = st.mem[q].glue_ptr;
                     let width = st.mem[spec].width;
-                    let width = if width > height {
-                        width - height
+                    let top = if st.eqtb.int_par(IntPar::XetexUpwards) > 0 {
+                        depth
+                    } else {
+                        height
+                    };
+                    let width = if width > top {
+                        width - top
                     } else {
                         Scaled::ZERO
                     };

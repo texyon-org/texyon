@@ -556,21 +556,22 @@ pub(crate) fn vsplit(
 }
 
 impl MemState {
-    /// Insert `\splittopskip` glue between `prev_p` and the box or rule `p` of `height`.
+    /// Insert `\splittopskip` glue between `prev_p` and the box or rule `p`, less its `top`
+    /// (height, or depth in upwards mode).
     fn insert_split_top_skip_before(
         &mut self,
         eqtb: &EqtbState,
         prev_p: MemPtr,
         p: MemPtr,
-        height: Scaled,
+        top: Scaled,
     ) -> Result<(), Abort> {
         let q = self.new_skip_param(eqtb, GluePar::SplitTopSkip)?;
         prev_p.set_link(self, q.ptr());
         self[q].link = p;
         let spec = self[q].glue_ptr;
         let avail_ht = self[spec].width;
-        if avail_ht > height {
-            self[spec].width = avail_ht - height;
+        if avail_ht > top {
+            self[spec].width = avail_ht - top;
         } else {
             self[spec].width = Scaled::ZERO;
         }
@@ -615,11 +616,14 @@ impl MemState {
         let mut prev_p = TEMP_HEAD;
         let mut r = MemPtr::NULL;
         TEMP_HEAD.set_link(self, p);
+        let upwards = eqtb.int_par(IntPar::XetexUpwards) > 0;
 
         while !p.is_null() {
             let node = self.classify(p).map_err(|_| Abort::Confusion("pruning"))?;
-            let height = match node {
+            let top = match node {
+                AnyNode::Box(b) if upwards => self[b].depth,
                 AnyNode::Box(b) => self[b].height,
+                AnyNode::Rule(rule) if upwards => self[rule].depth.to_scaled(),
                 AnyNode::Rule(rule) => self[rule].height.to_scaled(),
                 AnyNode::Whatsit(_) | AnyNode::Mark(_) | AnyNode::Ins(_) => {
                     prev_p = p;
@@ -632,7 +636,7 @@ impl MemState {
                 }
                 _ => return Err(Abort::Confusion("pruning")),
             };
-            self.insert_split_top_skip_before(eqtb, prev_p, p, height)?;
+            self.insert_split_top_skip_before(eqtb, prev_p, p, top)?;
             p = MemPtr::NULL;
         }
 
