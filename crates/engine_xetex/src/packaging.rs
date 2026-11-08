@@ -146,7 +146,9 @@ impl MemState {
         match self.as_char(q) {
             Some(ch) => (self[ch].font.raw() == NodeType::Disc as i32)
                 .then(|| i32::from(self[ch].character)),
-            None => self.as_disc(q).map(|disc| i32::from(self[disc].subtype)),
+            None => self
+                .as_disc(q)
+                .map(|disc| i32::from(self[disc].replace_count)),
         }
     }
 

@@ -273,7 +273,7 @@ fn unlink_effective_tail(st: &mut EngineState, tx: MemPtr) -> Result<bool, Abort
         if !st.mem.is_char_node(q) {
             match st.mem.classify(q) {
                 Ok(AnyNode::Disc(disc)) => {
-                    for _ in 0..st.mem[disc].subtype {
+                    for _ in 0..st.mem[disc].replace_count {
                         p = p.link(&st.mem);
                     }
                     if p == tx {

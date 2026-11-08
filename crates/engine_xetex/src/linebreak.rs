@@ -599,7 +599,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                     }
 
                     let mut s = st.mem[d].link;
-                    for _ in 0..st.mem[d].subtype {
+                    for _ in 0..st.mem[d].replace_count {
                         st.scanner.active_width[1] += st
                             .mem
                             .disc_node_width(&mut st.fonts, s)
@@ -709,7 +709,7 @@ impl MemState {
             let mut v = cur_disc.ptr();
             s = self[cur_disc].post_break;
 
-            for _ in 0..self[cur_disc].subtype {
+            for _ in 0..self[cur_disc].replace_count {
                 v = v.link(self);
                 linebreak.break_width[1] -= self.disc_node_width(fonts, v).map_err(|whatsit| {
                     Abort::Confusion(if whatsit { "disc1a" } else { "disc1" })

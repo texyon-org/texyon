@@ -664,7 +664,8 @@ fn insert_hyphens(
                     st.mem.flush_node_list(disc.ptr())?;
                 } else {
                     s.set_link(&mut st.mem, disc.ptr());
-                    st.mem[disc].subtype = r_count as u16;
+                    st.mem[disc].replace_count =
+                        u16::try_from(r_count).map_err(|_| Abort::Confusion("hyphenate"))?;
                 }
                 s = major_tail;
                 st.hyph.hyphen_passed = j - 1;

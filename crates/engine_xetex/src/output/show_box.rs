@@ -94,7 +94,7 @@ pub(crate) fn short_display(st: &mut EngineState, mut p: MemPtr) {
                 Ok(AnyNode::Disc(d)) => {
                     short_display(st, st.mem[d].pre_break);
                     short_display(st, st.mem[d].post_break);
-                    for _ in 0..st.mem[d].subtype {
+                    for _ in 0..st.mem[d].replace_count {
                         if !p.link(&st.mem).is_null() {
                             p = p.link(&st.mem);
                         }
@@ -178,7 +178,7 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
                     print_scaled(st, st.mem[node].depth);
                     print(st, ")x");
                     print_scaled(st, st.mem[node].width);
-                    let span_count = st.mem[node].subtype;
+                    let span_count = st.mem[node].span_count;
                     if span_count != 0 {
                         print(st, " (");
                         print_int(st, i32::from(span_count) + 1);
@@ -206,7 +206,7 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
                 }
                 Ok(AnyNode::Ins(node)) => {
                     print_esc(st, "insert");
-                    print_int(st, i32::from(st.mem[node].subtype));
+                    print_int(st, i32::from(st.mem[node].box_number));
                     print(st, ", natural size ");
                     print_scaled(st, st.mem[node].height);
                     print(st, "; split(");
@@ -292,7 +292,7 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
                 }
                 Ok(AnyNode::Disc(node)) => {
                     print_esc(st, "discretionary");
-                    let replace_count = st.mem[node].subtype;
+                    let replace_count = st.mem[node].replace_count;
                     if replace_count > 0 {
                         print(st, " replacing ");
                         print_int(st, i32::from(replace_count));

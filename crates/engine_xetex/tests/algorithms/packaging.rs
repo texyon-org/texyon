@@ -261,3 +261,42 @@ fn vadjust_pre_lands_before_the_line() {
         .\rule(1.0+0.0)x*",
     );
 }
+
+#[test]
+fn discretionaries_and_spans_keep_their_counts() {
+    let r = run(&format!(
+        r"{MATH_FONTS}\setbox0\hbox{{\discretionary{{a}}{{b}}{{cd}}}}\showbox0
+          \setbox1\vbox{{\halign{{#\tabskip=0pt&#\cr\hskip10pt&\hskip20pt\cr\hskip50pt\span\cr}}}}\showbox1"
+    ));
+    assert_lines(
+        &r.boxes()[0],
+        r"
+        \hbox(6.94444+0.0)x10.00002
+        .\discretionary replacing 2
+        ..\rm a
+        .|\rm b
+        .\rm c
+        .\rm d",
+    );
+    assert_lines(
+        &r.boxes()[1],
+        r"
+        \vbox(0.0+0.0)x50.0
+        .\hbox(0.0+0.0)x50.0
+        ..\glue(\tabskip) 0.0
+        ..\hbox(0.0+0.0)x10.0
+        ...\glue 10.0
+        ..\glue(\tabskip) 0.0
+        ..\hbox(0.0+0.0)x40.0
+        ...\glue 20.0
+        ..\glue(\tabskip) 0.0
+        .\glue(\baselineskip) 0.0
+        .\hbox(0.0+0.0)x50.0
+        ..\glue(\tabskip) 0.0
+        ..\hbox(0.0+0.0)x10.0
+        ...\glue 50.0
+        ..\glue(\tabskip) 0.0
+        ..\hbox(0.0+0.0)x40.0
+        ..\glue(\tabskip) 0.0",
+    );
+}

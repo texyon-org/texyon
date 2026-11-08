@@ -93,7 +93,7 @@ impl LinebreakState {
                 }
                 Ok(AnyNode::Disc(d)) => {
                     let mut r;
-                    let t = mem[d].subtype;
+                    let t = mem[d].replace_count;
                     if t == 0 {
                         r = mem[d].link;
                     } else {
@@ -105,7 +105,7 @@ impl LinebreakState {
                         r = s.link(mem);
                         s.set_link(mem, MemPtr::NULL);
                         mem.flush_node_list(mem[d].link)?;
-                        mem[d].subtype = 0;
+                        mem[d].replace_count = 0;
                     }
 
                     let post_break = mem[d].post_break;

@@ -65,7 +65,7 @@ impl LinebreakState {
             Some(d) if !mem[d].post_break.is_null() => mem[d].post_break,
             Some(d) => {
                 l = mem[d].link;
-                for _ in 0..mem[d].subtype {
+                for _ in 0..mem[d].replace_count {
                     if !l.link(mem).is_null() {
                         l = l.link(mem);
                     }
@@ -234,7 +234,9 @@ impl MemState {
                 true
             }
             Ok(AnyNode::Disc(d)) => {
-                self[d].pre_break.is_null() && self[d].post_break.is_null() && self[d].subtype == 0
+                self[d].pre_break.is_null()
+                    && self[d].post_break.is_null()
+                    && self[d].replace_count == 0
             }
             Ok(AnyNode::Math(m)) => self[m].width == Scaled::ZERO,
             Ok(AnyNode::Kern(k)) => {

@@ -52,6 +52,11 @@ fn freeze_page_specs(st: &mut EngineState, contents: PageContents) {
     shipout.least_page_cost = MAX_HALFWORD;
 }
 
+/// The box register of an insertion class, which `\insert` limits to 0..254.
+fn ins_box(box_number: u16) -> Result<u8, Abort> {
+    u8::try_from(box_number).map_err(|_| Abort::Confusion("insertion box"))
+}
+
 fn ensure_vbox(st: &mut EngineState, n: u8) -> Result<(), Abort> {
     if !fetch_box(st, i32::from(n)).is_some_and(|b| st.mem[b].is_hlist()) {
         return Ok(());
@@ -103,7 +108,7 @@ fn update_marks(st: &mut EngineState, class: i32, mark_ptr: TokenList) -> Result
 /// Returns whether it has to wait for the next page.
 fn place_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Result<bool, Abort> {
     let mut r = PAGE_INS_HEAD.link(&st.mem);
-    while st.mem[page_ins(r)].subtype != st.mem[ins].subtype {
+    while st.mem[page_ins(r)].box_number != st.mem[ins].box_number {
         r = r.link(&st.mem);
     }
     let rec = page_ins(r);
@@ -143,7 +148,7 @@ fn place_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Re
         }
     }
     st.mem[rec].best_ins_ptr = MemPtr::NULL;
-    let n = st.mem[rec].subtype as u8;
+    let n = ins_box(st.mem[rec].box_number)?;
     let b = fetch_box(st, i32::from(n)).expect("insertion box made in fire_up");
     let list = st.mem[b].list_ptr;
     st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
@@ -209,7 +214,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
         while r != PAGE_INS_HEAD {
             let rec = page_ins(r);
             if !st.mem[rec].best_ins_ptr.is_null() {
-                let n = st.mem[rec].subtype as u8;
+                let n = ins_box(st.mem[rec].box_number)?;
                 ensure_vbox(st, n)?;
                 if st.eqtb.box_reg(i32::from(n)).is_null() {
                     let b = st.mem.new_null_box()?;
@@ -419,19 +424,19 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
     if st.shipout.page_contents == PageContents::Empty {
         freeze_page_specs(st, PageContents::InsertsOnly);
     }
-    let n = st.mem[ins].subtype as u8;
+    let n = ins_box(st.mem[ins].box_number)?;
     let mut r = PAGE_INS_HEAD;
-    while u16::from(n) >= st.mem[page_ins(r.link(&st.mem))].subtype {
+    while u16::from(n) >= st.mem[page_ins(r.link(&st.mem))].box_number {
         r = r.link(&st.mem);
     }
-    if st.mem[page_ins(r)].subtype as u8 != n {
+    if st.mem[page_ins(r)].box_number != u16::from(n) {
         let q = st.mem.get_node(PAGE_INS_NODE_SIZE)?;
         let next = r.link(&st.mem);
         q.set_link(&mut st.mem, next);
         r.set_link(&mut st.mem, q);
         r = q;
         let rec = page_ins(r);
-        st.mem[rec].subtype = u16::from(n);
+        st.mem[rec].box_number = u16::from(n);
         st.mem[rec].set_split_up(false);
         ensure_vbox(st, n)?;
         let height = match fetch_box(st, i32::from(n)) {

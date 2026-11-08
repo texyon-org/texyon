@@ -548,7 +548,7 @@ fn show_page_so_far(st: &mut EngineState) {
                 let ins = NodePtr::<PageInsNode>::at(r);
                 print_ln(st);
                 print_esc(st, "insert");
-                let box_num = st.mem[ins].subtype;
+                let box_num = st.mem[ins].box_number;
                 print_int(st, i32::from(box_num));
                 print(st, " adds ");
                 let count = st.eqtb.count(i32::from(box_num));
@@ -566,7 +566,7 @@ fn show_page_so_far(st: &mut EngineState) {
                     loop {
                         q = q.link(&st.mem);
                         if let Ok(AnyNode::Ins(node)) = st.mem.classify(q) {
-                            if st.mem[node].subtype == box_num {
+                            if st.mem[node].box_number == box_num {
                                 t += 1;
                             }
                         }

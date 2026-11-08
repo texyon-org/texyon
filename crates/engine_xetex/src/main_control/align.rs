@@ -190,11 +190,11 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                     else {
                         return Err(Abort::Confusion("align"));
                     };
-                    let n = st.mem[col].subtype;
+                    let n = st.mem[col].span_count;
                     let w = st.mem[proto].width;
                     let mut t = w;
                     let mut u = HOLD_HEAD;
-                    st.mem[col].subtype = 0;
+                    st.mem[col].span_count = 0;
                     for _ in 0..n {
                         let spec = st.mem[proto.tab_skip(&st.mem)].glue_ptr;
                         let g = st.mem.new_glue(spec)?;
@@ -693,7 +693,7 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
             st.mem[cur_align].width = w;
         }
         let u = u.into_unset(&mut st.mem);
-        st.mem[u].subtype = n as u16;
+        st.mem[u].span_count = u16::try_from(n).map_err(|_| Abort::Confusion("span"))?;
         let o = st.scanner.total_stretch.max_order();
         st.mem[u].glue_order = o.into();
         st.mem[u].glue_stretch = st.scanner.total_stretch[o];

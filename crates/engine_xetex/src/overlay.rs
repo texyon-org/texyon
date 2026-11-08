@@ -523,11 +523,11 @@ pub struct AdjustLayout {
 
 overlay!(AdjustNode => AdjustLayout);
 
-/// A discretionary. Its subtype is the replace count.
+/// A discretionary.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct DiscLayout {
-    pub subtype: u16,
+    pub replace_count: u16,
     _type: u16,
     pub link: MemPtr,
     pub pre_break: MemPtr,
@@ -1224,11 +1224,11 @@ pub struct GlueLayout {
 
 overlay!(GlueNode => GlueLayout);
 
-/// An insertion. Its subtype is the box number.
+/// An insertion into the class of its box number.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct InsLayout {
-    pub subtype: u16,
+    pub box_number: u16,
     _type: u16,
     pub link: MemPtr,
     _unused1: i32,
@@ -1249,7 +1249,7 @@ overlay!(InsNode => InsLayout);
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct PageInsLayout {
-    pub subtype: u16,
+    pub box_number: u16,
     split_up: u16,
     pub link: MemPtr,
     pub broken_ins: MemPtr,
@@ -1280,7 +1280,7 @@ impl PageInsLayout {
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct UnsetLayout {
     /// The number of columns spanned, less one.
-    pub subtype: u16,
+    pub span_count: u16,
     _type: u16,
     pub link: MemPtr,
     _unused1: i32,
@@ -1521,7 +1521,7 @@ mod tests {
         let ptr = MemPtr::from_raw;
         let u: NodePtr<UnsetNode> = NodePtr::from_idx_unchecked(at(4));
         let unset = &mut mem[u];
-        unset.subtype = 2;
+        unset.span_count = 2;
         (unset.width, unset.depth, unset.height) = (
             Scaled::from_raw(11),
             Scaled::from_raw(12),
@@ -1541,7 +1541,7 @@ mod tests {
 
         let r: NodePtr<PageInsNode> = NodePtr::from_idx_unchecked(at(12));
         let rec = &mut mem[r];
-        rec.subtype = 9;
+        rec.box_number = 9;
         rec.set_split_up(true);
         (
             rec.broken_ins,

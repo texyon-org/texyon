@@ -486,7 +486,9 @@ impl MemState {
         match node {
             AnyNode::Ins(_) | AnyNode::Mark(_) | AnyNode::Adjust(_) | AnyNode::Penalty(_) => true,
             AnyNode::Disc(d) => {
-                self[d].pre_break.is_null() && self[d].post_break.is_null() && self[d].subtype == 0
+                self[d].pre_break.is_null()
+                    && self[d].post_break.is_null()
+                    && self[d].replace_count == 0
             }
             AnyNode::Math(m) => self[m].width == Scaled::ZERO,
             AnyNode::Kern(k) => {

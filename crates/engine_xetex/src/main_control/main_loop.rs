@@ -144,7 +144,7 @@ fn find_main_ppp(st: &mut EngineState) {
     while ppp != pp && ppp.link(&st.mem) != pp {
         if !st.mem.is_char_node(ppp) {
             if let Ok(AnyNode::Disc(disc)) = st.mem.classify(ppp) {
-                for _ in 0..st.mem[disc].subtype {
+                for _ in 0..st.mem[disc].replace_count {
                     ppp = ppp.link(&st.mem);
                 }
             }

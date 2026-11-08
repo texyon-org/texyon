@@ -48,3 +48,15 @@ fn mark_classes_carry_over_like_xetex() {
     // XeTeX's do_marks visits 16 of each index node's 64 slots, so class 20 never moves on.
     assert_eq!(r.lines_starting("->"), ["->,A,,B.", "->A,A,,B."]);
 }
+
+#[test]
+fn insertions_reach_the_box_of_their_class() {
+    let r = run(&format!(
+        r"{PAGE}\output={{\showthe\ht254 \showthe\ht7 \setbox0\box255 \deadcycles=0 }}
+          \count254=1000 \dimen254=100pt \count7=1000 \dimen7=100pt
+          \l\insert254{{\hrule height 4pt}}\insert7{{\hrule height 6pt}}\insert254{{\hrule height 3pt}}
+          \showlists \penalty-10000"
+    ));
+    assert_eq!(r.shown(), ["7.0pt", "6.0pt"]);
+    assert!(r.log.contains(r"\insert254 adds 7.0"), "{}", r.log);
+}

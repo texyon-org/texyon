@@ -361,7 +361,8 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             if n < 255 {
                 let ins = NodePtr::<InsNode>::alloc(&mut st.mem)?;
                 st.input.cur_list.tail_append(&mut st.mem, ins.ptr());
-                st.mem[ins].subtype = n as u16;
+                st.mem[ins].box_number =
+                    u16::try_from(n).map_err(|_| Abort::Confusion("insert"))?;
                 let height = st.mem[p].height + st.mem[p].depth;
                 st.mem[ins].height = height;
                 let list = st.mem[p].list_ptr;
@@ -729,8 +730,8 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
             } else {
                 st.mem[disc].link = p;
             }
-            if n <= i32::from(u16::MAX) {
-                st.mem[disc].subtype = n as u16;
+            if let Ok(count) = u16::try_from(n) {
+                st.mem[disc].replace_count = count;
             } else {
                 crate::output::print_err(st, "Discretionary list is too long");
                 st.errors.help(&[

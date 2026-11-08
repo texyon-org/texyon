@@ -425,7 +425,7 @@ impl MemState {
 
     pub fn new_disc(&mut self) -> Result<NodePtr<DiscNode>, Abort> {
         let p = NodePtr::<DiscNode>::alloc(self)?;
-        self[p].subtype = 0;
+        self[p].replace_count = 0;
         self[p].pre_break = MemPtr::NULL;
         self[p].post_break = MemPtr::NULL;
         Ok(p)
