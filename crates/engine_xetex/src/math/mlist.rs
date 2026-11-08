@@ -1080,7 +1080,7 @@ impl MemState {
         self.flush_node_list(self[choice].text_mlist)?;
         self.flush_node_list(self[choice].script_mlist)?;
         self.flush_node_list(self[choice].script_script_mlist)?;
-        let style = choice.into_style(self, cur_style.raw());
+        let style = choice.into_style(self, cur_style);
         if !kept.is_null() {
             let z = self[style].link;
             self[style].link = kept;
@@ -1340,7 +1340,7 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                     },
                 },
                 Ok(AnyNode::Style(sn)) => {
-                    st.scanner.cur_style = MathStyle::from_raw(st.mem[sn].subtype);
+                    st.scanner.cur_style = st.mem[sn].style;
                     set_cur_size_and_mu(st);
                     break 'reswitch FirstPass::DoneWithNode;
                 }
@@ -1464,7 +1464,7 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                 SecondPass::Splice(qn)
             }
             Ok(AnyNode::Style(sn)) => {
-                st.scanner.cur_style = MathStyle::from_raw(st.mem[sn].subtype);
+                st.scanner.cur_style = st.mem[sn].style;
                 s = STYLE_NODE_SIZE;
                 set_cur_size_and_mu(st);
                 SecondPass::StyleNode

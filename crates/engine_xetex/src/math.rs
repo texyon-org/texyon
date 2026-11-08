@@ -1,5 +1,7 @@
 //! Math mode: noad construction and `mlist_to_hlist`.
 
+use bytemuck::{Pod, Zeroable};
+
 use crate::state::{EqtbState, FontState};
 use crate::units::{FontId, Scaled};
 
@@ -28,7 +30,8 @@ pub(crate) const LIMITS: u16 = 1;
 pub(crate) const NO_LIMITS: u16 = 2;
 const SCRIPT_SCRIPT_SIZE: i32 = 512;
 /// A math style: display 0, text 2, script 4, scriptscript 6, one more when cramped.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default, Pod, Zeroable)]
+#[repr(transparent)]
 pub(crate) struct MathStyle(u16);
 
 impl MathStyle {

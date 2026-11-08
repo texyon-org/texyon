@@ -4,6 +4,7 @@
 //! `mem` with a [`NodePtr`] borrows the node as its layout, and a mutable
 //! borrow first notes the node's words in the journal.
 
+use crate::math::MathStyle;
 use bytemuck::{Pod, Zeroable};
 
 use crate::codes::{FiOrElseCode, MarkCode, ValueLevel};
@@ -547,11 +548,11 @@ pub struct ChoiceLayout {
 
 overlay!(ChoiceNode => ChoiceLayout);
 
-/// A style change in an mlist. Its subtype is the style.
+/// A style change in an mlist.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct StyleLayout {
-    pub subtype: u16,
+    pub style: MathStyle,
     _type: u16,
     pub link: MemPtr,
     _unused1: i32,

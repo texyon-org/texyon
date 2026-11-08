@@ -414,7 +414,7 @@ impl MemState {
             script_ptr = match node {
                 Ok(AnyNode::Kern(_) | AnyNode::Glue(_)) => script_ptr.link(self),
                 Ok(AnyNode::Style(sn)) => {
-                    style = MathStyle::from_raw(self[sn].subtype);
+                    style = self[sn].style;
                     script_ptr.link(self)
                 }
                 Ok(AnyNode::Choice(cn)) => match style.level() {

@@ -250,3 +250,22 @@ fn a_display_after_a_wrapped_prevgraf_takes_the_last_parshape_line() {
     ));
     assert_eq!(r.shown(), ["7.0pt", "50.0pt"]);
 }
+
+#[test]
+fn a_style_change_picks_the_mathchoice_branch() {
+    let r = run(&format!(
+        "{MATH_FONTS}\\medmuskip=4mu \\setbox0\\hbox{{$\\scriptstyle\\mathchoice{{x}}{{x}}{{y}}{{x}}+x\\showlists$}}\\showbox0"
+    ));
+    assert_eq!(r.lines_starting("\\scriptstyle"), [r"\scriptstyle"]);
+    assert_lines(
+        &r.boxes()[0],
+        r"
+        \hbox(5.83333+1.94444)x18.75467
+        .\mathon
+        .\mi y
+        .\kern0.35878
+        .\rm +
+        .\mi x
+        .\mathoff",
+    );
+}

@@ -564,7 +564,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                         }
                         // An EDGE_NODE, which shares type 14 with STYLE_NODE.
                         Ok(AnyNode::Style(edge)) => {
-                            st.scanner.cur_dir = Dir::from_code(st.mem[edge].subtype)
+                            st.scanner.cur_dir = Dir::from_code(st.mem[edge.as_edge()].subtype)
                                 .ok_or(Abort::Confusion("LR"))?;
                             (st.mem[edge.as_edge()].width, false)
                         }

@@ -510,7 +510,7 @@ impl MemState {
 
     pub fn new_style(&mut self, s: crate::math::MathStyle) -> Result<NodePtr<StyleNode>, Abort> {
         let p = NodePtr::<StyleNode>::alloc(self)?;
-        self[p].subtype = s.raw();
+        self[p].style = s;
         self[p].clear_payload();
         Ok(p)
     }

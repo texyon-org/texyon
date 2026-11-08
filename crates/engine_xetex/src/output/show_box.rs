@@ -315,7 +315,7 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
                     }
                     node_list_display(st, b'.', st.mem[node].adjust_ptr);
                 }
-                Ok(AnyNode::Style(node)) => print_style(st, i32::from(st.mem[node].subtype)),
+                Ok(AnyNode::Style(node)) => print_style(st, i32::from(st.mem[node].style.raw())),
                 Ok(AnyNode::Choice(node)) => {
                     print_esc(st, "mathchoice");
                     node_list_display(st, b'D', st.mem[node].display_mlist);

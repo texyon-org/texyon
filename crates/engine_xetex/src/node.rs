@@ -5,6 +5,7 @@
 //! kind's layout lives in [`crate::overlay`] and indexes the arena:
 //! `mem[p].width`, `mem.entries(p)` for the text or array after a header.
 
+use crate::math::MathStyle;
 use std::marker::PhantomData;
 
 use crate::consts::{
@@ -1011,10 +1012,10 @@ impl NodePtr<StyleNode> {
 impl NodePtr<ChoiceNode> {
     /// Retypes the node as a style node for `style`.
     #[inline]
-    pub fn into_style(self, mem: &mut MemState, style: u16) -> NodePtr<StyleNode> {
+    pub fn into_style(self, mem: &mut MemState, style: MathStyle) -> NodePtr<StyleNode> {
         let p: NodePtr<StyleNode> = retype(self, mem, NodeType::Style);
         let layout = &mut mem[p];
-        layout.subtype = style;
+        layout.style = style;
         layout.clear_payload();
         p
     }
@@ -1830,6 +1831,8 @@ mod tests {
         mem[style].clear_payload();
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 0);
         assert_eq!(mem.b32s1(MemPtr::from_raw(102)), 0);
+        mem[style].style = MathStyle::SCRIPT.cramped();
+        assert_eq!(mem.b16s0(MemPtr::from_raw(100)), 5);
 
         let pen: NodePtr<PenaltyNode> = at(&mut mem, 100, Some(NodeType::Penalty));
         mem[pen].penalty = -10000;
