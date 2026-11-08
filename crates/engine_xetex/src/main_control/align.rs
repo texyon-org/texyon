@@ -4,13 +4,13 @@ use crate::cmd::Cmd;
 use crate::codes::{ScannerStatus, ValueLevel};
 use crate::command::Command;
 use crate::command::TabMark;
-use crate::consts::{DLIST, FROZEN_END_TEMPLATE, HMODE, IGNORE_DEPTH, MAX_DIMEN, MMODE, VMODE};
+use crate::consts::{FROZEN_END_TEMPLATE, HMODE, IGNORE_DEPTH, MAX_DIMEN, MMODE, VMODE};
 use crate::errors::Abort;
 use crate::input::{TokenType, TOKEN_LIST};
 use crate::mem::{ALIGN_HEAD, END_SPAN, HOLD_HEAD, HOLD_HEAD_TOKS, ZERO_GLUE};
 use crate::node::Stored;
 use crate::node::{
-    link_of, AlignColumn, AlignRecord, AlignStackNode, AnyNode, GlueKind, GlueNode, NodePtr,
+    link_of, AlignColumn, AlignRecord, AlignStackNode, AnyNode, BoxLr, GlueKind, GlueNode, NodePtr,
     RuleDimen, SpanNode, UnsetNode, RUNNING,
 };
 use crate::packaging::PackSpec;
@@ -162,7 +162,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                     let width = st.mem[p].width;
                     st.mem[b].width = width;
                     if in_display {
-                        st.mem[b].subtype = DLIST;
+                        st.mem[b].set_lr(BoxLr::Dlist);
                     }
                     b
                 } else {

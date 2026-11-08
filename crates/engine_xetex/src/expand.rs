@@ -10,7 +10,7 @@ use crate::consts::{
     NULL_CS, NULL_FONT, SINGLE_BASE, TOO_BIG_USV, VMODE,
 };
 use crate::errors::{error, Abort};
-use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
+use crate::fonts::{Side, AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::{back_error, back_input, begin_token_list, TokenType, TOKEN_LIST};
 use crate::mem::{BACKUP_HEAD, GARBAGE, TEMP_HEAD_TOKS, ZERO_GLUE};
 use crate::node::{link_of, AnyNode, CondNode, GlueKind, KernSubtype, NodePtr, SaLeaf};
@@ -513,7 +513,7 @@ impl MemState {
 fn print_margin_kern(
     st: &mut EngineState,
     mut p: MemPtr,
-    side: u16,
+    side: Side,
     par_skip: GluePar,
     next: impl Fn(&crate::state::MemState, MemPtr) -> MemPtr,
 ) {
@@ -523,9 +523,7 @@ fn print_margin_kern(
         }
         match st.mem.classify(p) {
             Ok(node) if st.mem.is_margin_kern_filler(node, par_skip) => p = next(&st.mem, p),
-            Ok(AnyNode::MarginKern(mk)) if st.mem[mk].subtype == side => {
-                break Some(st.mem[mk].width)
-            }
+            Ok(AnyNode::MarginKern(mk)) if st.mem[mk].side == side => break Some(st.mem[mk].width),
             _ => break None,
         }
     };
@@ -706,10 +704,12 @@ fn conv_toks(st: &mut EngineState, c: ConvertCode) -> Result<(), Abort> {
         ConvertCode::LeftMarginKern | ConvertCode::RightMarginKern => {
             let list = margin_list;
             if c == ConvertCode::LeftMarginKern {
-                print_margin_kern(st, list, 0, GluePar::LeftSkip, |mem, p| p.link(mem));
+                print_margin_kern(st, list, Side::Left, GluePar::LeftSkip, |mem, p| {
+                    p.link(mem)
+                });
             } else {
                 let last = st.mem.prev_rightmost(list, MemPtr::NULL);
-                print_margin_kern(st, last, 1, GluePar::RightSkip, move |mem, p| {
+                print_margin_kern(st, last, Side::Right, GluePar::RightSkip, move |mem, p| {
                     mem.prev_rightmost(list, p)
                 });
             }

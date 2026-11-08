@@ -2,7 +2,7 @@
 
 use crate::bridge::{output_close, output_flush, output_open};
 use crate::consts::{
-    DLIST, INVALID_HANDLE, MAX_DIMEN, MEDIUM_NODE_SIZE, MIN_HALFWORD, NULL_FONT, SMALL_NODE_SIZE,
+    INVALID_HANDLE, MAX_DIMEN, MEDIUM_NODE_SIZE, MIN_HALFWORD, NULL_FONT, SMALL_NODE_SIZE,
 };
 use crate::dvi::{Axis, MoveReg};
 use crate::errors::Abort;
@@ -11,8 +11,8 @@ use crate::glyph_arena::FixedPoint;
 use crate::mem::LIG_TRICK;
 use crate::node::Stored;
 use crate::node::{
-    link_of, AnyNode, BoxNode, EdgeNode, GlueKind, GlueNode, GlueSpecNode, GlyphNode, KernSubtype,
-    LeaderKind, MathCode, MathNode, MovementNode, NativeWordNode, NodePtr, RuleNode,
+    link_of, AnyNode, BoxLr, BoxNode, EdgeNode, GlueKind, GlueNode, GlueSpecNode, GlyphNode,
+    KernSubtype, LeaderKind, MathCode, MathNode, MovementNode, NativeWordNode, NodePtr, RuleNode,
     WhatsitSubtype, WhatsitVariant, RUNNING,
 };
 use crate::params::{DimenPar, IntPar};
@@ -38,8 +38,6 @@ const MOV_Z_OK: i32 = 5;
 const MOV_Y_SEEN: i32 = 6;
 const MOV_D_FIXED: i32 = 6;
 const MOV_Z_SEEN: i32 = 12;
-
-const REVERSED: u16 = 1;
 
 /// Slack TeX adds to leader glue against floating-point rounding.
 const LEADER_SLOP: Scaled = Scaled::from_raw(10);
@@ -855,16 +853,16 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
     let mut prev_p = this_box.list_head();
     st.mem.push_lr(&mut st.scanner.lr_ptr, MathCode::Before)?;
 
-    if st.mem[this_box].subtype == DLIST {
+    if st.mem[this_box].lr() == BoxLr::Dlist {
         if st.scanner.cur_dir == Dir::Rtl {
             st.scanner.cur_dir = Dir::Ltr;
             st.shipout.cur_h -= st.mem[this_box].width;
         } else {
-            st.mem[this_box].subtype = 0;
+            st.mem[this_box].set_lr(BoxLr::Normal);
         }
     }
 
-    if st.scanner.cur_dir == Dir::Rtl && st.mem[this_box].subtype != REVERSED {
+    if st.scanner.cur_dir == Dir::Rtl && st.mem[this_box].lr() != BoxLr::Reversed {
         let save_h = st.shipout.cur_h;
         st.mem.temp_ptr = p;
         let kern = st.mem.new_kern(Scaled::ZERO)?;
@@ -881,7 +879,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
         st.mem[kern].link = reversed;
         st.mem[kern].width = -st.shipout.cur_h;
         st.shipout.cur_h = save_h;
-        st.mem[this_box].subtype = REVERSED;
+        st.mem[this_box].set_lr(BoxLr::Reversed);
         p = kern.ptr();
     }
 
@@ -991,7 +989,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
         st.mem.pop_lr(&mut st.scanner.lr_ptr);
     }
     st.mem.pop_lr(&mut st.scanner.lr_ptr);
-    if st.mem[this_box].subtype == DLIST {
+    if st.mem[this_box].lr() == BoxLr::Dlist {
         st.scanner.cur_dir = Dir::Rtl;
     }
     st.mem.pop_dvi_level(&mut st.shipout, save_loc)
@@ -1061,7 +1059,7 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
     st.mem.temp_ptr = this_box.ptr();
     let mut rounding = GlueRounding::new(&st.mem, this_box);
     let mut p = st.mem[this_box].list_ptr;
-    let upwards = st.mem[this_box].subtype == 1;
+    let upwards = st.mem[this_box].upwards();
     let save_loc = st.shipout.dvi.enter_level()?;
     let left_edge = st.shipout.cur_h;
     crate::synctex::synctex_vlist(st, this_box);

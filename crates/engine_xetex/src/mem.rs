@@ -4,9 +4,10 @@
 pub(crate) use crate::consts::TEX_NULL;
 use crate::consts::{GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP};
 use crate::errors::Abort;
+use crate::fonts::Side;
 use crate::mem_types::ListStateRecord;
 use crate::node::{
-    BoxNode, CharNode, ChoiceNode, DiscNode, FixedNode, FreeBlock, GlueKind, GlueNode,
+    BoxLr, BoxNode, CharNode, ChoiceNode, DiscNode, FixedNode, FreeBlock, GlueKind, GlueNode,
     GlueSpecNode, KernNode, KernSubtype, LigBoundary, LigItem, LigatureNode, MarginKernNode,
     MathCode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode, SpanNode, Stored,
     StoredCode, StyleNode, WhatsitKind, WhatsitSubtype,
@@ -372,7 +373,7 @@ impl MemState {
 
     pub fn new_null_box(&mut self) -> Result<NodePtr<BoxNode>, Abort> {
         let p = NodePtr::<BoxNode>::alloc(self)?;
-        self[p].subtype = 0;
+        self[p].set_lr(BoxLr::Normal);
         self[p].width = Scaled::ZERO;
         self[p].depth = Scaled::ZERO;
         self[p].height = Scaled::ZERO;
@@ -529,10 +530,10 @@ impl MemState {
     pub fn new_margin_kern(
         &mut self,
         w: Scaled,
-        side: i16,
+        side: Side,
     ) -> Result<NodePtr<MarginKernNode>, Abort> {
         let k = NodePtr::<MarginKernNode>::alloc(self)?;
-        self[k].subtype = side as u16;
+        self[k].side = side.into();
         self[k].width = w;
         Ok(k)
     }

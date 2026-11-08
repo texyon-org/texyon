@@ -162,7 +162,7 @@ impl LinebreakState {
             return Ok(q);
         }
 
-        let k = mem.new_margin_kern(-w, 1)?;
+        let k = mem.new_margin_kern(-w, Side::Right)?;
         mem[k].link = ptmp.link(mem);
         ptmp.set_link(mem, k.ptr());
         Ok(if ptmp == q { q.link(mem) } else { q })
@@ -187,7 +187,7 @@ impl LinebreakState {
             return Ok(q);
         }
 
-        let k = mem.new_margin_kern(-w, 0)?;
+        let k = mem.new_margin_kern(-w, Side::Left)?;
         mem[k].link = q;
         Ok(k.ptr())
     }

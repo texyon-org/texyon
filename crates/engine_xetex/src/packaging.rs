@@ -6,8 +6,8 @@ use crate::errors::Abort;
 use crate::mem::GARBAGE;
 use crate::mem_types::ListStateRecord;
 use crate::node::{
-    AdjustPlacement, AnyNode, BoxNode, CharNode, KernSubtype, MathCode, NativeWordNode, NodePtr,
-    RuleDimen, WhatsitVariant,
+    AdjustPlacement, AnyNode, BoxLr, BoxNode, CharNode, KernSubtype, MathCode, NativeWordNode,
+    NodePtr, RuleDimen, WhatsitVariant,
 };
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, FontState, MemState, ScannerState, ShipoutState};
@@ -244,7 +244,7 @@ impl MemState {
     ) -> Result<PackOutcome, Abort> {
         shipout.last_badness = 0;
         let r_node = NodePtr::<BoxNode>::alloc(self)?;
-        self[r_node].subtype = 0;
+        self[r_node].set_lr(BoxLr::Normal);
         self[r_node].shift_amount = Scaled::ZERO;
         self[r_node].list_ptr = list;
         // `q` trails `p`, starting at the word whose link is the list pointer.
@@ -619,7 +619,7 @@ impl MemState {
         let r_node = NodePtr::<BoxNode>::alloc(self)?;
         self[r_node].orientation = Orientation::Vertical.into();
         let upwards = eqtb.int_par(IntPar::XetexUpwards) > 0;
-        self[r_node].subtype = u16::from(upwards);
+        self[r_node].set_upwards(upwards);
         self[r_node].shift_amount = Scaled::ZERO;
         self[r_node].list_ptr = list;
 

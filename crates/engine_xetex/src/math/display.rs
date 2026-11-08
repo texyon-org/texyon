@@ -1,14 +1,12 @@
 //! Entering and leaving math mode: `init_math`, `after_math` and displays.
 
 use crate::cmd::Cmd;
-use crate::consts::{
-    BOX_NODE_SIZE, DLIST, HMODE, INF_PENALTY, MAX_DIMEN, MMODE, SCRIPT_SIZE, TEXT_SIZE,
-};
+use crate::consts::{BOX_NODE_SIZE, HMODE, INF_PENALTY, MAX_DIMEN, MMODE, SCRIPT_SIZE, TEXT_SIZE};
 use crate::errors::Abort;
 use crate::fonts::QUAD_CODE;
 use crate::input::TokenType;
 use crate::mem::{ADJUST_HEAD, GARBAGE, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
-use crate::node::{AnyNode, BoxNode, GlueNode, MathCode, NodePtr};
+use crate::node::{AnyNode, BoxLr, BoxNode, GlueNode, MathCode, NodePtr};
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::state::{EngineState, EqtbState, FontState, GroupCode, MemState};
@@ -109,7 +107,7 @@ fn app_display(
     let mut b = copy.unwrap_or(orig);
 
     let (p, q);
-    if st.mem[orig].subtype == DLIST {
+    if st.mem[orig].lr() == BoxLr::Dlist {
         p = orig.ptr();
         q = p;
     } else {
@@ -249,7 +247,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
         st.scanner.mlist_penalties = false;
         mlist_to_hlist(st)?;
         let eqno = crate::packaging::hpack(st, TEMP_HEAD.link(&st.mem), PackSpec::NATURAL)?;
-        st.mem[eqno].subtype = DLIST;
+        st.mem[eqno].set_lr(BoxLr::Dlist);
         a = Some(eqno);
         crate::save::unsave(st)?;
         st.save_stack.save_ptr -= 1;
@@ -342,7 +340,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
         }
         w = st.mem[b].width;
     }
-    st.mem[b].subtype = DLIST;
+    st.mem[b].set_lr(BoxLr::Dlist);
     let mut d = (z - w).half();
     if e > Scaled::ZERO && d < e * 2 {
         d = (z - w - e).half();

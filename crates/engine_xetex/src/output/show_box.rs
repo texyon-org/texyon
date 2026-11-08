@@ -1,13 +1,14 @@
 //! Displaying boxes: `show_box`, `short_display` and `show_node_list`.
 
 use crate::codes::LimitCode;
-use crate::consts::{DLIST, EMPTY, MATH_CHAR, SUB_BOX, SUB_MLIST, TEX_NULL};
+use crate::consts::{EMPTY, MATH_CHAR, SUB_BOX, SUB_MLIST, TEX_NULL};
+use crate::fonts::Side;
 use crate::math::DEFAULT_CODE;
 use crate::mem::ZERO_GLUE;
 use crate::node::{
-    AdjustPlacement, AnyNoad, AnyNode, BoxNode, CharNode, FenceSubtype, GlueKind, KernSubtype,
-    LeaderKind, MathCode, MathField, NoadVariant, NodePtr, WhatsitNode, WhatsitSubtype,
-    WhatsitVariant,
+    AdjustPlacement, AnyNoad, AnyNode, BoxLr, BoxNode, CharNode, FenceSubtype, GlueKind,
+    KernSubtype, LeaderKind, MathCode, MathField, NoadVariant, NodePtr, WhatsitNode,
+    WhatsitSubtype, WhatsitVariant,
 };
 use crate::params::IntPar;
 use crate::state::EngineState;
@@ -239,7 +240,7 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
                 Ok(AnyNode::MarginKern(node)) => {
                     print_esc(st, "kern");
                     print_scaled(st, st.mem[node].width);
-                    if st.mem[node].subtype == 0 {
+                    if st.mem[node].side == Side::Left {
                         print(st, " (left margin)");
                     } else {
                         print(st, " (right margin)");
@@ -365,7 +366,7 @@ fn show_box_node(st: &mut EngineState, b: NodePtr<BoxNode>) {
         print(st, ", shifted ");
         print_scaled(st, st.mem[b].shift_amount);
     }
-    if is_hlist && st.mem[b].subtype == DLIST {
+    if is_hlist && st.mem[b].lr() == BoxLr::Dlist {
         print(st, ", display");
     }
     node_list_display(st, b'.', st.mem[b].list_ptr);

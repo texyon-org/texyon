@@ -5,6 +5,7 @@
 //! borrow first notes the node's words in the journal.
 
 use crate::errors::Abort;
+use crate::fonts::Side;
 use crate::math::MathStyle;
 use bytemuck::{Pod, Zeroable};
 
@@ -12,7 +13,7 @@ use crate::codes::{FiOrElseCode, LimitCode, MarkCode, ValueLevel};
 use crate::consts::{EMPTY, NORMAL};
 use crate::node::{
     AccentNoad, ActiveNode, AdjustNode, AdjustPlacement, AlignRecord, AlignStackNode, AnyNoad,
-    BoxNode, CharNode, ChoiceNode, CondNode, DelimiterField, DeltaNode, DiscNode, EdgeNode,
+    BoxLr, BoxNode, CharNode, ChoiceNode, CondNode, DelimiterField, DeltaNode, DiscNode, EdgeNode,
     ExprNode, FenceNoad, FenceSubtype, FixedNode, FractionNoad, FreeBlock, GlueKind, GlueNode,
     GlueSpecNode, GlyphNode, InsNode, KernNode, KernSubtype, LanguageNode, LeaderKind, LigBoundary,
     LigItem, LigatureNode, Link, MarginKernNode, MarkNode, MathAccentKind, MathCode, MathField,
@@ -431,7 +432,7 @@ overlay!(GlueSpecNode => GlueSpec);
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct BoxLayout {
-    pub subtype: u16,
+    subtype: u16,
     pub orientation: Stored<Orientation>,
     pub link: MemPtr,
     _unused1: i32,
@@ -452,6 +453,30 @@ pub struct BoxLayout {
 }
 
 overlay!(BoxNode => BoxLayout);
+
+impl BoxLayout {
+    /// TeX--XeT's direction state of an hlist.
+    #[inline]
+    pub fn lr(&self) -> Stored<BoxLr> {
+        Stored::from_raw(self.subtype)
+    }
+
+    #[inline]
+    pub fn set_lr(&mut self, lr: BoxLr) {
+        self.subtype = Stored::from(lr).raw();
+    }
+
+    /// A vlist that XeTeX's `vpack` built bottom to top, kept in the same half-word.
+    #[inline]
+    pub fn upwards(&self) -> bool {
+        self.subtype == 1
+    }
+
+    #[inline]
+    pub fn set_upwards(&mut self, upwards: bool) {
+        self.subtype = u16::from(upwards);
+    }
+}
 
 /// A kern. Its subtype tells normal, explicit, accent and math kerns apart.
 #[repr(C)]
@@ -491,11 +516,11 @@ impl MathLayout {
     }
 }
 
-/// A margin kern. Its subtype is the side it protrudes on.
+/// A margin kern on the side it protrudes on.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct MarginKernLayout {
-    pub subtype: u16,
+    pub side: Stored<Side>,
     _type: u16,
     pub link: MemPtr,
     _unused1: i32,
@@ -1446,7 +1471,7 @@ mod tests {
         let mut mem = arena();
         let b: NodePtr<BoxNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(4));
         let bx = &mut mem[b];
-        bx.subtype = 2;
+        bx.set_lr(BoxLr::Dlist);
         bx.orientation = Orientation::Vertical.into();
         bx.link = MemPtr::from_raw(3);
         bx.width = Scaled::from_raw(11);
@@ -1469,6 +1494,11 @@ mod tests {
         assert_eq!([5, 6, 7, 8].map(|i| mem.b32s0(at(i))), [0; 4]);
         assert_eq!((mem.b32s0(at(10)), mem.b32s1(at(10))), (0, 0x3FE0_0000));
         assert_eq!((mem.b32s0(at(11)), mem.b32s1(at(11))), (16, 17));
+        mem[b].set_upwards(true);
+        assert!(mem[b].upwards() && mem[b].lr() == BoxLr::Reversed);
+        assert_eq!(mem.b16s0(at(4)), 1);
+        mem[b].set_upwards(false);
+        assert_eq!(mem.b16s0(at(4)), 0);
     }
 
     #[test]

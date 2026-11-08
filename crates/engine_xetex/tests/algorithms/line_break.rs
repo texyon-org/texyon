@@ -233,3 +233,64 @@ fn lr_segments_reopen_on_the_next_line() {
         .\endL",
     );
 }
+
+#[test]
+fn margin_kerns_keep_their_side() {
+    let r = run(&format!(
+        r"{MATH_FONTS}\XeTeXprotrudechars=2 \lpcode\rm`A=500 \rpcode\rm`B=500
+          \hsize=100pt \parindent=0pt \parfillskip=0pt
+          \setbox1\vbox{{AB\par\global\setbox4\lastbox}}\showbox4
+          \message{{[\leftmarginkern4|\rightmarginkern4]}}"
+    ));
+    assert!(r.log.contains("[-5.00002pt|-5.00002pt]"), "{}", r.log);
+    assert_lines(
+        &r.boxes()[0],
+        r"
+        \hbox(6.83331+0.0)x100.0
+        .\kern-5.00002 (left margin)
+        .\hbox(0.0+0.0)x0.0
+        .\rm A
+        .\rm B
+        .\penalty 10000
+        .\kern-5.00002 (right margin)
+        .\glue(\parfillskip) 0.0
+        .\glue(\rightskip) 0.0",
+    );
+}
+
+#[test]
+fn a_right_to_left_display_is_a_dlist() {
+    let r = run(&format!(
+        r"{MATH_FONTS}\TeXXeTstate=1 \hsize=100pt \parindent=0pt
+          \setbox1\vbox{{\beginR x$$\showlists x\eqno y$$\par}}\showbox1"
+    ));
+    assert_lines(
+        &r.boxes()[0],
+        r"
+        \vbox(10.55553+0.0)x100.0
+        .\hbox(4.30554+0.0)x100.0
+        ..\hbox(0.0+0.0)x0.0
+        ..\beginR
+        ..\rm x
+        ..\penalty 10000
+        ..\glue(\parfillskip) 0.0
+        ..\endR
+        ..\glue(\rightskip) 0.0
+        .\penalty 0
+        .\glue(\abovedisplayshortskip) 0.0
+        .\glue(\lineskip) 0.0
+        .\hbox(4.30554+1.94444)x100.0
+        ..\beginM
+        ..\kern0.0
+        ..\hbox(4.30554+1.94444)x5.2616, display
+        ...\mi y
+        ...\kern0.35878
+        ..\kern41.88077
+        ..\hbox(4.30554+0.0)x5.71527, display
+        ...\mi x
+        ..\kern47.14236
+        ..\endM
+        .\penalty 0
+        .\glue(\belowdisplayshortskip) 0.0",
+    );
+}

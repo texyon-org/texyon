@@ -5,6 +5,7 @@
 //! kind's layout lives in [`crate::overlay`] and indexes the arena:
 //! `mem[p].width`, `mem.entries(p)` for the text or array after a header.
 
+use crate::fonts::Side;
 use crate::math::MathStyle;
 use crate::params::GluePar;
 use std::marker::PhantomData;
@@ -514,6 +515,36 @@ impl StoredCode for GlueKind {
             GlueKind::CondMath => COND_MATH_GLUE,
             GlueKind::Mu => MU_GLUE,
             GlueKind::Leaders(kind) => kind.to_u16(),
+        }
+    }
+}
+
+stored_code! {
+    /// TeX--XeT's `box_lr` of an hlist.
+    pub enum BoxLr {
+        /// Not reversed yet.
+        Normal = 0,
+        /// Reversed for right-to-left output.
+        Reversed = 1,
+        /// A display whose lines run right to left.
+        Dlist = 2,
+    }
+}
+
+impl StoredCode for Side {
+    #[inline]
+    fn from_u16(raw: u16) -> Option<Self> {
+        match raw {
+            0 => Some(Side::Left),
+            1 => Some(Side::Right),
+            _ => None,
+        }
+    }
+    #[inline]
+    fn to_u16(self) -> u16 {
+        match self {
+            Side::Left => 0,
+            Side::Right => 1,
         }
     }
 }
@@ -1952,6 +1983,12 @@ mod tests {
         for n in valid {
             assert_eq!(GlueKind::from_u16(n).map(GlueKind::to_u16), Some(n));
         }
+    }
+
+    #[test]
+    fn box_and_margin_codes_keep_web_codes() {
+        assert_web_codes(&[(BoxLr::Normal, 0), (BoxLr::Reversed, 1), (BoxLr::Dlist, 2)]);
+        assert_web_codes(&[(Side::Left, 0), (Side::Right, 1)]);
     }
 
     /// An arena whose free list is the single block `[10, 30)`.
