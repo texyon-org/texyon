@@ -12,10 +12,10 @@ use crate::node::{
     AccentNoad, ActiveNode, AdjustNode, AlignRecord, AlignStackNode, AnyNoad, BoxNode, CharNode,
     ChoiceNode, CondNode, DelimiterField, DeltaNode, DiscNode, EdgeNode, ExprNode, FenceNoad,
     FixedNode, FractionNoad, FreeBlock, GlueNode, GlueSpecNode, GlyphNode, InsNode, KernNode,
-    LanguageNode, LigItem, LigatureNode, Link, MarginKernNode, MarkNode, MathField, MathNode,
-    MovementNode, NativeWordNode, Noad, NodeKind, NodePtr, OpenNode, PageInsNode, ParShapeNode,
-    PassiveNode, PenaltiesNode, PenaltyNode, PicNode, PseudoLineNode, RadicalNoad, RuleNode,
-    SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved,
+    KernSubtype, LanguageNode, LigItem, LigatureNode, Link, MarginKernNode, MarkNode, MathField,
+    MathNode, MovementNode, NativeWordNode, Noad, NodeKind, NodePtr, OpenNode, PageInsNode,
+    ParShapeNode, PassiveNode, PenaltiesNode, PenaltyNode, PicNode, PseudoLineNode, RadicalNoad,
+    RuleNode, SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved,
     SaSavedPointer, SaSavedWord, SaWordNode, SizedWhatsit, SpanNode, Stored, StoredDimen,
     StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype, WriteNode,
 };
@@ -452,7 +452,7 @@ overlay!(BoxNode => BoxLayout);
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct KernLayout {
-    pub subtype: u16,
+    pub subtype: Stored<KernSubtype>,
     _type: u16,
     pub link: MemPtr,
     _unused1: i32,

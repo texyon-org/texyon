@@ -3,7 +3,7 @@
 use crate::bridge::{output_close, output_flush, output_open};
 use crate::consts::{
     A_LEADERS, BEFORE, C_LEADERS, DLIST, INVALID_HANDLE, L_CODE, MAX_DIMEN, MEDIUM_NODE_SIZE,
-    MIN_HALFWORD, NORMAL, NULL_FONT, R_CODE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT,
+    MIN_HALFWORD, NORMAL, NULL_FONT, R_CODE, SMALL_NODE_SIZE,
 };
 use crate::dvi::{Axis, MoveReg};
 use crate::errors::Abort;
@@ -12,8 +12,8 @@ use crate::glyph_arena::FixedPoint;
 use crate::mem::{end_lr_type, LIG_TRICK};
 use crate::node::Stored;
 use crate::node::{
-    link_of, AnyNode, BoxNode, EdgeNode, GlueNode, GlueSpecNode, GlyphNode, MathNode, MovementNode,
-    NativeWordNode, NodePtr, RuleNode, WhatsitSubtype, WhatsitVariant, RUNNING,
+    link_of, AnyNode, BoxNode, EdgeNode, GlueNode, GlueSpecNode, GlyphNode, KernSubtype, MathNode,
+    MovementNode, NativeWordNode, NodePtr, RuleNode, WhatsitSubtype, WhatsitVariant, RUNNING,
 };
 use crate::params::{DimenPar, IntPar};
 use crate::state::{
@@ -389,7 +389,7 @@ struct NativeWordRun {
 
 impl MemState {
     fn is_space_adjustment(&self, q: MemPtr) -> bool {
-        matches!(self.classify_non_char(q), Some(AnyNode::Kern(k)) if self[k].subtype == SPACE_ADJUSTMENT)
+        matches!(self.classify_non_char(q), Some(AnyNode::Kern(k)) if self[k].subtype == KernSubtype::SpaceAdjustment)
     }
 
     /// Merge runs of native words separated by interword glue into single nodes

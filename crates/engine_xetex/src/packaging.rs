@@ -1,10 +1,11 @@
 //! Box packing (`hpack`, `vpackage`), vertical breaking (`vert_break`,
 //! `vsplit`, `prune_page_top`, `do_marks`) and node-list copying and freeing.
 
-use crate::consts::{A_LEADERS, BEFORE, EXPLICIT, IGNORE_DEPTH, NULL_FONT, SMALL_NODE_SIZE};
+use crate::consts::{A_LEADERS, BEFORE, IGNORE_DEPTH, NULL_FONT, SMALL_NODE_SIZE};
 use crate::errors::Abort;
 use crate::mem::{end_lr_type, GARBAGE};
 use crate::mem_types::ListStateRecord;
+use crate::node::KernSubtype;
 use crate::node::{AnyNode, BoxNode, CharNode, NativeWordNode, NodePtr, RuleDimen, WhatsitVariant};
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, FontState, MemState, ScannerState, ShipoutState};
@@ -375,7 +376,7 @@ impl MemState {
                             } else {
                                 scanner.lr_problems += 1;
                                 let kern = math.into_kern(self);
-                                self[kern].subtype = EXPLICIT;
+                                self[kern].subtype = KernSubtype::Explicit.into();
                             }
                         } else {
                             self.push_lr(&mut scanner.lr_ptr, end_lr_type(subtype))?;

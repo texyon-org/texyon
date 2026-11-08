@@ -4,9 +4,9 @@ use crate::cmd::Cmd;
 use crate::codes::{BoxCode, SkipCode, ValueLevel};
 use crate::command::Command;
 use crate::consts::{
-    ACC_KERN, BIGGEST_CHAR, BOX_NODE_SIZE, EMPTY, ETEX_PEN_BASE, EXPLICIT, FROZEN_CR,
-    FROZEN_END_GROUP, FROZEN_RIGHT, HMODE, IGNORE_DEPTH, MAX_DIMEN, MMODE, MU_GLUE, NOAD_SIZE,
-    NULL_FLAG, PAR_SHAPE_LOC, SUB_BOX, SUB_MLIST, TEX_NULL, VMODE,
+    BIGGEST_CHAR, BOX_NODE_SIZE, EMPTY, ETEX_PEN_BASE, FROZEN_CR, FROZEN_END_GROUP, FROZEN_RIGHT,
+    HMODE, IGNORE_DEPTH, MAX_DIMEN, MMODE, MU_GLUE, NOAD_SIZE, NULL_FLAG, PAR_SHAPE_LOC, SUB_BOX,
+    SUB_MLIST, TEX_NULL, VMODE,
 };
 use crate::errors::Abort;
 use crate::fonts::{
@@ -18,6 +18,7 @@ use crate::mem::{
     SS_GLUE, TEMP_HEAD_TOKS, ZERO_GLUE,
 };
 use crate::mem_types::ListStateRecord;
+use crate::node::KernSubtype;
 use crate::node::{
     AdjustNode, AnyNode, CharNode, DiscNode, GlueNode, GlueSpecNode, InsNode, LanguageNode,
     MarkNode, MathField, NativeWordNode, NoadVariant, NodePtr, WhatsitSubtype, WhatsitVariant,
@@ -540,10 +541,14 @@ pub(super) fn append_glue(st: &mut EngineState, s: SkipCode) -> Result<NodePtr<G
 }
 
 pub(super) fn append_kern(st: &mut EngineState, mu: bool) -> Result<(), Abort> {
-    let s = if mu { MU_GLUE } else { EXPLICIT };
+    let s = if mu {
+        KernSubtype::MuGlue
+    } else {
+        KernSubtype::Explicit
+    };
     let d = crate::scan::scan_dimen(st, mu, false)?;
     let p = st.mem.new_kern(d)?;
-    st.mem[p].subtype = s;
+    st.mem[p].subtype = s.into();
     st.input.cur_list.tail_append(&mut st.mem, p.ptr());
     Ok(())
 }
@@ -774,7 +779,7 @@ pub(super) fn append_italic_correction(st: &mut EngineState) -> Result<(), Abort
     };
     let kern = st.mem.new_kern(italic)?;
     st.input.cur_list.tail_append(&mut st.mem, kern.ptr());
-    st.mem[kern].subtype = EXPLICIT;
+    st.mem[kern].subtype = KernSubtype::Explicit.into();
     Ok(())
 }
 
@@ -854,12 +859,12 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
     };
     let delta = Scaled::round(delta + f64::from(h) * t - f64::from(x) * s);
     let r = st.mem.new_kern(delta)?;
-    st.mem[r].subtype = ACC_KERN;
+    st.mem[r].subtype = KernSubtype::AccKern.into();
     st.input.cur_list.tail.set_link(&mut st.mem, r.ptr());
     st.mem[r].link = accent;
     let back = st.mem.new_kern(-a - delta)?;
     st.input.cur_list.tail = back.ptr();
-    st.mem[back].subtype = ACC_KERN;
+    st.mem[back].subtype = KernSubtype::AccKern.into();
     accent.set_link(&mut st.mem, back.ptr());
     st.input.cur_list.tail_append(&mut st.mem, q.ptr());
     st.input.cur_list.set_space_factor(1000);

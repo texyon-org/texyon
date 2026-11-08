@@ -3,12 +3,11 @@
 use crate::consts::{
     ETEX_PENALTIES_PAR_CLUB_PENALTIES, ETEX_PENALTIES_PAR_DISPLAY_WIDOW_PENALTIES,
     ETEX_PENALTIES_PAR_INTER_LINE_PENALTIES, ETEX_PENALTIES_PAR_WIDOW_PENALTIES, ETEX_PEN_BASE,
-    EXPLICIT, SPACE_ADJUSTMENT,
 };
 use crate::errors::Abort;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
-use crate::node::{ActiveNode, AnyNode, BoxNode, MathNode, NodePtr};
+use crate::node::{ActiveNode, AnyNode, BoxNode, KernSubtype, MathNode, NodePtr};
 use crate::packaging::PackSpec;
 use crate::params::{GluePar, IntPar};
 use crate::state::{
@@ -346,7 +345,8 @@ impl ListStateRecord {
                 match node {
                     Ok(node) if node.precedes_break() => break,
                     Ok(AnyNode::Kern(k))
-                        if mem[k].subtype != EXPLICIT && mem[k].subtype != SPACE_ADJUSTMENT =>
+                        if mem[k].subtype != KernSubtype::Explicit
+                            && mem[k].subtype != KernSubtype::SpaceAdjustment =>
                     {
                         break
                     }

@@ -246,6 +246,50 @@ impl<T: StoredCode> PartialOrd<T> for Stored<T> {
     }
 }
 
+/// A `u16` code set a node subfield stores, with its [`StoredCode`] impl.
+macro_rules! stored_code {
+    ($(#[$m:meta])* $vis:vis enum $name:ident {
+        $($(#[$vm:meta])* $v:ident = $n:literal),+ $(,)?
+    }) => {
+        $(#[$m])*
+        #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+        #[repr(u16)]
+        $vis enum $name {
+            $($(#[$vm])* $v = $n),+
+        }
+
+        impl StoredCode for $name {
+            #[inline]
+            fn from_u16(raw: u16) -> Option<Self> {
+                match raw {
+                    $($n => Some($name::$v),)+
+                    _ => None,
+                }
+            }
+            #[inline]
+            fn to_u16(self) -> u16 {
+                self as u16
+            }
+        }
+    };
+}
+
+stored_code! {
+    /// What made a kern, which decides where a line may break and how it shows.
+    pub enum KernSubtype {
+        /// A font kern.
+        Normal = 0,
+        /// `\kern` or an italic correction.
+        Explicit = 1,
+        /// Around an accent.
+        AccKern = 2,
+        /// XeTeX's adjustment after an interword space.
+        SpaceAdjustment = 3,
+        /// `\mkern`, in mu until `mlist_to_hlist` converts it.
+        MuGlue = 99,
+    }
+}
+
 impl StoredCode for GlueSign {
     #[inline]
     fn from_u16(raw: u16) -> Option<Self> {
@@ -1529,6 +1573,30 @@ mod tests {
             hi_mem_min: MemPtr::from_raw(1_000_000),
             ..Default::default()
         }
+    }
+
+    /// Checks a code set against WEB's numbers, which formats and checkpoints store raw.
+    fn assert_web_codes<T: StoredCode + PartialEq + std::fmt::Debug>(codes: &[(T, u16)]) {
+        for &(code, raw) in codes {
+            assert_eq!(code.to_u16(), raw, "{code:?}");
+            assert_eq!(T::from_u16(raw), Some(code), "{raw}");
+        }
+        let unknown = (0..=u16::MAX).find(|n| codes.iter().all(|&(_, raw)| raw != *n));
+        if let Some(n) = unknown {
+            assert_eq!(T::from_u16(n), None);
+            assert_eq!(Stored::<T>::from_raw(n).raw(), n);
+        }
+    }
+
+    #[test]
+    fn kern_subtypes_keep_web_codes() {
+        assert_web_codes(&[
+            (KernSubtype::Normal, 0),
+            (KernSubtype::Explicit, 1),
+            (KernSubtype::AccKern, 2),
+            (KernSubtype::SpaceAdjustment, 3),
+            (KernSubtype::MuGlue, 99),
+        ]);
     }
 
     /// An arena whose free list is the single block `[10, 30)`.

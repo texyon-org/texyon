@@ -2,14 +2,13 @@
 //! character protrusion.
 
 use crate::consts::{
-    AWFUL_BAD, EJECT_PENALTY, EXPLICIT, INF_BAD, INF_PENALTY, L_CODE, MAX_DIMEN, MAX_HALFWORD,
-    NULL_FONT,
+    AWFUL_BAD, EJECT_PENALTY, INF_BAD, INF_PENALTY, L_CODE, MAX_DIMEN, MAX_HALFWORD, NULL_FONT,
 };
 use crate::errors::Abort;
 use crate::mem::{ACTIVE_LIST, TEMP_HEAD};
 use crate::node::{
     link_of, ActiveNode, AnyNode, BoxNode, CharNode, DeltaNode, DiscNode, GlueNode, GlueSpecNode,
-    NodePtr, PassiveNode, WhatsitVariant,
+    KernSubtype, NodePtr, PassiveNode, WhatsitVariant,
 };
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{
@@ -567,7 +566,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                     }
                 }
                 AnyNode::Kern(k) => {
-                    if st.mem[k].subtype == EXPLICIT {
+                    if st.mem[k].subtype == KernSubtype::Explicit {
                         kern_break(st, st.mem[k].link, auto_breaking)?;
                     }
                     st.scanner.active_width[1] += st.mem[k].width;
@@ -628,7 +627,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
             }
 
             prev_breakable = node.precedes_break()
-                || matches!(node, AnyNode::Kern(k) if st.mem[k].subtype != EXPLICIT);
+                || matches!(node, AnyNode::Kern(k) if st.mem[k].subtype != KernSubtype::Explicit);
             st.linebreak.global_prev_p = cur;
             st.linebreak.cur_p = cur.link(&st.mem);
         }
@@ -741,7 +740,7 @@ impl MemState {
                 }
                 Ok(AnyNode::Penalty(_)) => {}
                 Ok(AnyNode::Math(m)) => linebreak.break_width[1] -= self[m].width,
-                Ok(AnyNode::Kern(k)) if self[k].subtype == EXPLICIT => {
+                Ok(AnyNode::Kern(k)) if self[k].subtype == KernSubtype::Explicit => {
                     linebreak.break_width[1] -= self[k].width;
                 }
                 _ => break,

@@ -1,6 +1,6 @@
 //! `hpack` and `vpack`: box dimensions, glue setting and badness.
 
-use crate::{assert_lines, run, show_the};
+use crate::{assert_lines, run, show_the, MATH_FONTS};
 
 #[test]
 fn hpack_sums_widths_and_takes_extreme_heights() {
@@ -206,4 +206,32 @@ fn io_whatsits_keep_their_fields_through_a_copy() {
         .\setlanguage5 (hyphenmin 2,3)",
     );
     assert!(r.log.lines().any(|l| l == "hello"));
+}
+
+#[test]
+fn kerns_show_what_made_them() {
+    let r = run(&format!(
+        r#"{MATH_FONTS}\setbox0\hbox{{AV\kern1pt f\/{{\mi\accent"7F A}}$\mkern18mu\showlists$}}
+          \showbox0"#
+    ));
+    assert_eq!(r.lines_starting("\\mkern"), [r"\mkern18.0mu"]);
+    assert_lines(
+        &r.boxes()[0],
+        r"
+        \hbox(9.47221+0.0)x36.22203
+        .\rm A
+        .\kern-1.11113
+        .\rm V
+        .\kern 1.0
+        .\rm f
+        .\kern 0.77779
+        .\kern 2.99306 (for accent)
+        .\hbox(6.94444+0.0)x2.77779, shifted -2.52777
+        ..\mi ^^?
+        .\kern -5.77084 (for accent)
+        .\mi A
+        .\mathon
+        .\kern 9.99976
+        .\mathoff",
+    );
 }

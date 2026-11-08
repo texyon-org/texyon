@@ -9,8 +9,8 @@ use crate::errors::Abort;
 use crate::mem_types::ListStateRecord;
 use crate::node::{
     BoxNode, CharNode, ChoiceNode, DiscNode, FixedNode, FreeBlock, GlueNode, GlueSpecNode,
-    KernNode, LigItem, LigatureNode, MarginKernNode, MathNode, Noad, NodePtr, PenaltyNode,
-    RuleDimen, RuleNode, SpanNode, StyleNode, WhatsitKind, WhatsitSubtype,
+    KernNode, KernSubtype, LigItem, LigatureNode, MarginKernNode, MathNode, Noad, NodePtr,
+    PenaltyNode, RuleDimen, RuleNode, SpanNode, StyleNode, WhatsitKind, WhatsitSubtype,
 };
 use crate::params::GluePar;
 use crate::state::{EqtbState, MemState};
@@ -490,7 +490,7 @@ impl MemState {
 
     pub fn new_kern(&mut self, w: Scaled) -> Result<NodePtr<KernNode>, Abort> {
         let p = NodePtr::<KernNode>::alloc(self)?;
-        self[p].subtype = NORMAL;
+        self[p].subtype = KernSubtype::Normal.into();
         self[p].width = w;
         Ok(p)
     }

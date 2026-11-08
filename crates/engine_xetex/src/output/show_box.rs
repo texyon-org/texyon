@@ -1,11 +1,12 @@
 //! Displaying boxes: `show_box`, `short_display` and `show_node_list`.
 
 use crate::consts::{
-    ACC_KERN, AFTER, A_LEADERS, COND_MATH_GLUE, C_LEADERS, DLIST, EMPTY, L_CODE, MATH_CHAR,
-    MU_GLUE, R_CODE, SPACE_ADJUSTMENT, SUB_BOX, SUB_MLIST, TEX_NULL, X_LEADERS,
+    AFTER, A_LEADERS, COND_MATH_GLUE, C_LEADERS, DLIST, EMPTY, L_CODE, MATH_CHAR, R_CODE, SUB_BOX,
+    SUB_MLIST, TEX_NULL, X_LEADERS,
 };
 use crate::math::{DEFAULT_CODE, LIMITS};
 use crate::mem::ZERO_GLUE;
+use crate::node::KernSubtype;
 use crate::node::{
     AnyNoad, AnyNode, BoxNode, CharNode, MathField, NoadVariant, NodePtr, WhatsitNode,
     WhatsitSubtype, WhatsitVariant,
@@ -220,15 +221,15 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
                 Ok(AnyNode::Glue(node)) => show_glue(st, node),
                 Ok(AnyNode::Kern(node)) => {
                     let sub = st.mem[node].subtype;
-                    if sub != MU_GLUE {
+                    if sub != KernSubtype::MuGlue {
                         print_esc(st, "kern");
-                        if sub != 0 {
+                        if sub != KernSubtype::Normal {
                             print_char(st, b' ');
                         }
                         print_scaled(st, st.mem[node].width);
-                        if sub == ACC_KERN {
+                        if sub == KernSubtype::AccKern {
                             print(st, " (for accent)");
-                        } else if sub == SPACE_ADJUSTMENT {
+                        } else if sub == KernSubtype::SpaceAdjustment {
                             print(st, " (space adjustment)");
                         }
                     } else {

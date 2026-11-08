@@ -2,12 +2,12 @@
 
 use crate::cmd::Cmd;
 use crate::codes::ValueLevel;
-use crate::consts::{CHAR_CLASS_LIMIT, HMODE, SPACE_ADJUSTMENT, TEX_NULL};
+use crate::consts::{CHAR_CLASS_LIMIT, HMODE, TEX_NULL};
 use crate::errors::Abort;
 use crate::ext::append_src_special;
 use crate::fonts::{CharInfo, CharTag, LigChar, LigKernStep, SPACE_CODE};
 use crate::input::{TokenType, TOKEN_LIST};
-use crate::node::{AnyNode, CharNode, LigItem, NativeWordNode, NodePtr, SaLeaf};
+use crate::node::{AnyNode, CharNode, KernSubtype, LigItem, NativeWordNode, NodePtr, SaLeaf};
 use crate::params::IntPar;
 use crate::state::{EngineState, MemState};
 use crate::token::{Token, TokenList};
@@ -417,7 +417,7 @@ fn shape_interword_space(st: &mut EngineState, mf: FontId) -> Result<(), Abort> 
     let space = st.fonts.param(mf, SPACE_CODE);
     if t != space {
         let kern = st.mem.new_kern(t - space)?;
-        st.mem[kern].subtype = SPACE_ADJUSTMENT;
+        st.mem[kern].subtype = KernSubtype::SpaceAdjustment.into();
         let next = st.mem[glue].link;
         st.mem[kern].link = next;
         st.mem[glue].link = kern.ptr();

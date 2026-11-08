@@ -1,8 +1,8 @@
 //! Typesetting math formulas: `mlist_to_hlist` and the `make_*` noad handlers.
 
 use crate::consts::{
-    BOX_NODE_SIZE, COND_MATH_GLUE, EMPTY, EXPLICIT, GLYPH_NODE_SIZE, INFINITE_DIMEN, INF_PENALTY,
-    MATH_CHAR, MATH_TEXT_CHAR, MAX_DIMEN, MEDIUM_NODE_SIZE, MU_GLUE, NOAD_SIZE, NORMAL, NULL_FONT,
+    BOX_NODE_SIZE, COND_MATH_GLUE, EMPTY, GLYPH_NODE_SIZE, INFINITE_DIMEN, INF_PENALTY, MATH_CHAR,
+    MATH_TEXT_CHAR, MAX_DIMEN, MEDIUM_NODE_SIZE, MU_GLUE, NOAD_SIZE, NORMAL, NULL_FONT,
     SCRIPT_SIZE, STYLE_NODE_SIZE, SUB_BOX, SUB_MLIST, TEXT_SIZE,
 };
 use crate::errors::Abort;
@@ -11,8 +11,8 @@ use crate::mem::{TEMP_HEAD, TEX_NULL, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
 use crate::node::{
     AccentNoad, AnyNoad, AnyNode, BoxNode, ChoiceNode, FenceNoad, FractionNoad, GlueNode,
-    GlueSpecNode, GlyphNode, KernNode, MathField, Noad, NoadVariant, NodePtr, RadicalNoad,
-    RuleDimen, RuleNode, WhatsitSubtype, WhatsitVariant,
+    GlueSpecNode, GlyphNode, KernNode, KernSubtype, MathField, Noad, NoadVariant, NodePtr,
+    RadicalNoad, RuleDimen, RuleNode, WhatsitSubtype, WhatsitVariant,
 };
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar};
@@ -103,11 +103,11 @@ fn math_glue(
 }
 
 fn math_kern(st: &mut EngineState, p: NodePtr<KernNode>, m: Scaled) {
-    if st.mem[p].subtype == MU_GLUE {
+    if st.mem[p].subtype == KernSubtype::MuGlue {
         let mu = st.errors.mu_parts(m);
         let width = st.errors.mu_mult(mu, st.mem[p].width);
         st.mem[p].width = width;
-        st.mem[p].subtype = EXPLICIT;
+        st.mem[p].subtype = KernSubtype::Explicit.into();
     }
 }
 

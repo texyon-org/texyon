@@ -1,10 +1,9 @@
 //! Character protrusion: margin kerns and the protruding chars at line ends.
 
-use crate::consts::NORMAL;
 use crate::errors::Abort;
 use crate::fonts::{Side, QUAD_CODE};
 use crate::mem::{TEMP_HEAD, ZERO_GLUE};
-use crate::node::{ActiveNode, AnyNode, BoxNode, DiscNode, NodePtr, WhatsitVariant};
+use crate::node::{ActiveNode, AnyNode, BoxNode, DiscNode, KernSubtype, NodePtr, WhatsitVariant};
 use crate::state::{ErrorState, FontState, LinebreakState, MemState};
 use crate::units::{FontId, MemPtr, Scaled};
 
@@ -238,7 +237,9 @@ impl MemState {
                 self[d].pre_break.is_null() && self[d].post_break.is_null() && self[d].subtype == 0
             }
             Ok(AnyNode::Math(m)) => self[m].width == Scaled::ZERO,
-            Ok(AnyNode::Kern(k)) => self[k].width == Scaled::ZERO || self[k].subtype == NORMAL,
+            Ok(AnyNode::Kern(k)) => {
+                self[k].width == Scaled::ZERO || self[k].subtype == KernSubtype::Normal
+            }
             Ok(AnyNode::Glue(g)) => self[g].glue_ptr == ZERO_GLUE,
             Ok(AnyNode::Box(h)) => self.is_empty_hlist(h),
             _ => false,

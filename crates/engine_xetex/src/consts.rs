@@ -73,9 +73,6 @@ pub const FRACTION_NOAD_SIZE: i32 = 6;
 
 // Node subtypes.
 pub const NORMAL: u16 = 0;
-pub const EXPLICIT: u16 = 1;
-pub const ACC_KERN: u16 = 2;
-pub const SPACE_ADJUSTMENT: u16 = 3;
 pub const DLIST: u16 = 2;
 pub const COND_MATH_GLUE: u16 = 98;
 pub const MU_GLUE: u16 = 99;
