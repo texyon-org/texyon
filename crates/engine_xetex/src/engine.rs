@@ -393,6 +393,7 @@ fn initialize_more_variables(st: &mut EngineState) {
     }
 
     st.shipout.output_active = false;
+    st.shipout.output_can_end = false;
     st.shipout.insert_penalties = 0;
     st.mainloop.ligature_present = false;
     st.mainloop.cancel_boundary = false;

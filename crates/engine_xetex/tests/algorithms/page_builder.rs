@@ -60,3 +60,20 @@ fn insertions_reach_the_box_of_their_class() {
     assert_eq!(r.shown(), ["7.0pt", "6.0pt"]);
     assert!(r.log.contains(r"\insert254 adds 7.0"), "{}", r.log);
 }
+
+#[test]
+fn an_output_routine_left_open_is_fatal() {
+    let r = run(
+        r"\let\lb={ \vsize=100pt \output={\setbox0\box255 \deadcycles=0 \lb}
+        \hrule height 10pt \penalty-10000",
+    );
+    assert_eq!(r.errors(), ["Emergency stop."]);
+    assert_eq!(
+        r.lines_starting("Unbalanced"),
+        ["Unbalanced output routine"]
+    );
+    assert_eq!(
+        r.reports,
+        ["texput.tex:6: Emergency stop\nUnbalanced output routine"]
+    );
+}

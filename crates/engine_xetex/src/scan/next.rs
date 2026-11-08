@@ -4,7 +4,8 @@ use crate::bridge::output_flush;
 use crate::cmd::Cmd;
 use crate::codes::{FiOrElseCode, ScannerStatus};
 use crate::consts::{
-    ACTIVE_BASE, BIGGEST_USV, FROZEN_CR, FROZEN_ENDV, FROZEN_FI, NULL_CS, SINGLE_BASE, TEX_NULL,
+    ACTIVE_BASE, BIGGEST_USV, END_WRITE, FROZEN_CR, FROZEN_ENDV, FROZEN_FI, NULL_CS, SINGLE_BASE,
+    TEX_NULL,
 };
 use crate::errors::{error, Abort};
 use crate::expand::{expand, macro_call};
@@ -555,6 +556,9 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                             st.scanner.cur_chr = NO_EXPAND_FLAG;
                         }
                     } else {
+                        if st.scanner.cur_cs == END_WRITE && st.input.cur_list.mode == 0 {
+                            return Err(Abort::Fatal("Unbalanced write command"));
+                        }
                         check_outer_validity(st)?;
                     }
                 }

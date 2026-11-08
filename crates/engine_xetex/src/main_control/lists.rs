@@ -12,7 +12,7 @@ use crate::errors::Abort;
 use crate::fonts::{
     EXTRA_SPACE_CODE, SLANT_CODE, SPACE_CODE, SPACE_SHRINK_CODE, SPACE_STRETCH_CODE, X_HEIGHT_CODE,
 };
-use crate::input::TokenType;
+use crate::input::{TokenType, TOKEN_LIST};
 use crate::mem::{
     ADJUST_HEAD, CONTRIB_HEAD, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, PAGE_HEAD, PRE_ADJUST_HEAD,
     SS_GLUE, TEMP_HEAD_TOKS, ZERO_GLUE,
@@ -389,9 +389,15 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
         GroupCode::Output => {
-            if !st.input.cur_input.token_loc().is_null()
-                || (st.input.cur_input.token_type() != TokenType::Output
-                    && st.input.cur_input.token_type() != TokenType::BackedUp)
+            while st.input.cur_input.state == TOKEN_LIST
+                && st.input.cur_input.token_loc().is_null()
+                && st.input.cur_input.token_type() == TokenType::BackedUp
+            {
+                crate::input::end_token_list(st)?;
+            }
+            if st.input.cur_input.state != TOKEN_LIST
+                || !st.input.cur_input.token_loc().is_null()
+                || st.input.cur_input.token_type() != TokenType::Output
             {
                 crate::output::print_err(st, "Unbalanced output routine");
                 st.errors.help(&[
@@ -406,7 +412,9 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
                     }
                 }
             }
+            st.shipout.output_can_end = true;
             crate::input::end_token_list(st)?;
+            st.shipout.output_can_end = false;
             end_graf(st)?;
             crate::save::unsave(st)?;
             st.shipout.output_active = false;

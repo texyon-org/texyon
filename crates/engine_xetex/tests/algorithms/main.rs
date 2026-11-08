@@ -14,11 +14,11 @@ use std::path::Path;
 
 use texyon_bridge_core::{CoreBridgeLauncher, MinimalDriver};
 use texyon_engine_xetex::TexEngine;
-use texyon_errors::Result;
+use texyon_errors::{Error, Result};
 use texyon_io_base::filesystem::FilesystemIo;
 use texyon_io_base::stack::IoStack;
 use texyon_io_base::{InputFeatures, InputHandle, InputOrigin, IoProvider, MemoryIo, OpenResult};
-use texyon_status_base::{NoopStatusBackend, StatusBackend};
+use texyon_status_base::{MessageKind, StatusBackend};
 
 /// INITEX has no macros, so the category codes plain TeX sets come first.
 const PRELUDE: &str = r"\catcode`\{=1 \catcode`\}=2 \catcode`\$=3 \catcode`\&=4
@@ -68,9 +68,25 @@ impl IoProvider for Source {
     }
 }
 
+/// Keeps the error reports a run sends to its status backend.
+#[derive(Default)]
+struct Reports(Vec<String>);
+
+impl StatusBackend for Reports {
+    fn report(&mut self, kind: MessageKind, args: std::fmt::Arguments, _: Option<&Error>) {
+        if kind == MessageKind::Error {
+            self.0.push(args.to_string());
+        }
+    }
+
+    fn dump_error_logs(&mut self, _: &[u8]) {}
+}
+
 /// The log of one INITEX run.
 struct Run {
     log: String,
+    /// The error reports, such as the editor's diagnostics.
+    reports: Vec<String>,
 }
 
 /// Runs `body` after the prelude, then `\end`.
@@ -80,10 +96,10 @@ fn run(body: &str) -> Run {
     let mut fonts = FilesystemIo::new(&assets, false, false, HashSet::new());
     let mut primary = Source(source.into_bytes());
     let mut outputs = MemoryIo::new(true);
+    let mut status = Reports::default();
     {
         let io = IoStack::new(vec![&mut outputs, &mut primary, &mut fonts]);
         let mut hooks = MinimalDriver::new(io);
-        let mut status = NoopStatusBackend::default();
         let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
         let _ = TexEngine::default()
             .halt_on_error_mode(false)
@@ -95,6 +111,7 @@ fn run(body: &str) -> Run {
     let log = files.get("texput.log").expect("the run wrote a log");
     Run {
         log: String::from_utf8_lossy(&log.data).into_owned(),
+        reports: status.0,
     }
 }
 

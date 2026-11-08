@@ -59,6 +59,7 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WriteNode>) -> R
     st.input.cur_list.mode = 0;
     st.scanner.cur_cs = st.shipout.write_loc;
     crate::scan::scan_toks(st, false, true)?;
+    st.input.cur_list.mode = old_mode;
     crate::scan::get_token(st)?;
     if st.scanner.cur_tok != Token::from_cs(END_WRITE) {
         crate::output::error_here_with_diagnostic(st, "Unbalanced write command");
@@ -75,7 +76,6 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WriteNode>) -> R
             }
         }
     }
-    st.input.cur_list.mode = old_mode;
     crate::input::end_token_list(st)?;
 
     let old_setting = st.shipout.selector;

@@ -1261,6 +1261,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
         while st.input.cur_input.state == TOKEN_LIST
             && st.input.cur_input.token_loc().is_null()
             && st.input.cur_input.token_type() != TokenType::VTemplate
+            && st.input.cur_input.token_type() != TokenType::Output
         {
             crate::input::end_token_list(st)?;
         }

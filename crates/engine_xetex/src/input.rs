@@ -127,6 +127,8 @@ pub(crate) fn end_token_list(st: &mut EngineState) -> Result<(), Abort> {
                         st.mem.flush_token_list_with_tail(param.list, param.tail);
                     }
                 }
+            } else if t == TokenType::Output && !st.shipout.output_can_end {
+                return Err(Abort::Fatal("Unbalanced output routine"));
             }
         }
     }
@@ -138,6 +140,7 @@ pub(crate) fn back_input(st: &mut EngineState) -> Result<(), Abort> {
     while st.input.cur_input.state == TOKEN_LIST
         && st.input.cur_input.token_loc().is_null()
         && st.input.cur_input.token_type() != TokenType::VTemplate
+        && st.input.cur_input.token_type() != TokenType::Output
     {
         end_token_list(st)?;
     }

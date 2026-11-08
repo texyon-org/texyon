@@ -1327,6 +1327,8 @@ pub(crate) struct ShipoutState {
     pub last_node_type: i32,
     pub insert_penalties: i32,
     pub output_active: bool,
+    /// Set only while the finished `\output` level is popped.
+    pub output_can_end: bool,
     pub pdf_last_x_pos: i32,
     pub pdf_last_y_pos: i32,
     pub write_file: [usize; 16],
