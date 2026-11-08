@@ -9,8 +9,8 @@ use crate::errors::Abort;
 use crate::mem_types::ListStateRecord;
 use crate::node::{
     BoxNode, CharNode, ChoiceNode, DiscNode, FixedNode, FreeBlock, GlueNode, GlueSpecNode,
-    KernNode, KernSubtype, LigItem, LigatureNode, MarginKernNode, MathNode, Noad, NodePtr,
-    PenaltyNode, RuleDimen, RuleNode, SpanNode, StyleNode, WhatsitKind, WhatsitSubtype,
+    KernNode, KernSubtype, LigBoundary, LigItem, LigatureNode, MarginKernNode, MathNode, Noad,
+    NodePtr, PenaltyNode, RuleDimen, RuleNode, SpanNode, StyleNode, WhatsitKind, WhatsitSubtype,
 };
 use crate::params::GluePar;
 use crate::state::{EqtbState, MemState};
@@ -412,7 +412,7 @@ impl MemState {
         self[p].font = f;
         self[p].character = c;
         self[p].lig_ptr = q;
-        self[p].subtype = 0;
+        self[p].boundary = LigBoundary::None.into();
         Ok(p)
     }
 

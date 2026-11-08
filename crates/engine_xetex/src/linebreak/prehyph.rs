@@ -11,7 +11,6 @@ use crate::state::{EngineState, MemState};
 use crate::units::MemPtr;
 
 use super::hyphenate::{hyphenate, split_native_word};
-use super::odd;
 
 /// Switch hyphenation to the language of a `\language` whatsit.
 pub(super) fn set_language(st: &mut EngineState, w: NodePtr<LanguageNode>) {
@@ -269,7 +268,7 @@ fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
                     }
                     st.linebreak.hb = s;
                     st.linebreak.hn = j;
-                    st.hyph.hyf_bchar = if odd(st.mem[lig].subtype as u8) {
+                    st.hyph.hyf_bchar = if st.mem[lig].boundary.has_right() {
                         st.fonts.font_bchar[st.hyph.hf]
                     } else {
                         LigChar::NONE

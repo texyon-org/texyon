@@ -13,13 +13,13 @@ use crate::node::{
     AccentNoad, ActiveNode, AdjustNode, AdjustPlacement, AlignRecord, AlignStackNode, AnyNoad,
     BoxNode, CharNode, ChoiceNode, CondNode, DelimiterField, DeltaNode, DiscNode, EdgeNode,
     ExprNode, FenceNoad, FenceSubtype, FixedNode, FractionNoad, FreeBlock, GlueNode, GlueSpecNode,
-    GlyphNode, InsNode, KernNode, KernSubtype, LanguageNode, LigItem, LigatureNode, Link,
-    MarginKernNode, MarkNode, MathAccentKind, MathField, MathNode, MovementNode, NativeWordNode,
-    Noad, NodeKind, NodePtr, OpenNode, PageInsNode, ParShapeNode, PassiveNode, PenaltiesNode,
-    PenaltyNode, PicNode, PseudoLineNode, RadicalNoad, RuleNode, SaChild, SaElement, SaIndexNode,
-    SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved, SaSavedPointer, SaSavedWord, SaWordNode,
-    SizedWhatsit, SpanNode, Stored, StoredDimen, StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype,
-    WriteNode,
+    GlyphNode, InsNode, KernNode, KernSubtype, LanguageNode, LigBoundary, LigItem, LigatureNode,
+    Link, MarginKernNode, MarkNode, MathAccentKind, MathField, MathNode, MovementNode,
+    NativeWordNode, Noad, NodeKind, NodePtr, OpenNode, PageInsNode, ParShapeNode, PassiveNode,
+    PenaltiesNode, PenaltyNode, PicNode, PseudoLineNode, RadicalNoad, RuleNode, SaChild, SaElement,
+    SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved, SaSavedPointer, SaSavedWord,
+    SaWordNode, SizedWhatsit, SpanNode, Stored, StoredDimen, StyleNode, UnsetNode, WhatsitNode,
+    WhatsitSubtype, WriteNode,
 };
 use crate::state::MemState;
 use crate::token::TokenList;
@@ -1319,7 +1319,7 @@ overlay!(CharNode => CharLayout, 1);
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct LigatureLayout {
-    pub subtype: u16,
+    pub boundary: Stored<LigBoundary>,
     _type: u16,
     pub link: MemPtr,
     pub character: u16,

@@ -7,7 +7,9 @@ use crate::errors::Abort;
 use crate::ext::append_src_special;
 use crate::fonts::{CharInfo, CharTag, LigChar, LigKernStep, SPACE_CODE};
 use crate::input::{TokenType, TOKEN_LIST};
-use crate::node::{AnyNode, CharNode, KernSubtype, LigItem, NativeWordNode, NodePtr, SaLeaf};
+use crate::node::{
+    AnyNode, CharNode, KernSubtype, LigBoundary, LigItem, NativeWordNode, NodePtr, SaLeaf,
+};
 use crate::params::IntPar;
 use crate::state::{EngineState, MemState};
 use crate::token::{Token, TokenList};
@@ -521,15 +523,16 @@ fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), Abort> {
         let lig = st
             .mem
             .new_ligature(main_f, st.mainloop.cur_l.code(), lig_list)?;
+        let mut boundary = LigBoundary::None;
         if st.mainloop.lft_hit {
-            st.mem[lig].subtype = 2;
+            boundary = LigBoundary::Left;
             st.mainloop.lft_hit = false;
         }
         if rt_hit && st.mainloop.rt_hit && st.mainloop.lig_stack.is_none() {
-            let s = st.mem[lig].subtype;
-            st.mem[lig].subtype = s + 1;
+            boundary = boundary.with_right();
             st.mainloop.rt_hit = false;
         }
+        st.mem[lig].boundary = boundary.into();
         st.mainloop.cur_q.set_link(&mut st.mem, lig.ptr());
         st.input.cur_list.tail = lig.ptr();
         st.mainloop.ligature_present = false;

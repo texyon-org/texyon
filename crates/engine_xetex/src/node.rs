@@ -338,6 +338,44 @@ stored_code! {
     }
 }
 
+stored_code! {
+    /// The implicit boundary characters a ligature absorbed, shown as `|` around it.
+    pub enum LigBoundary {
+        /// None.
+        None = 0,
+        /// The right boundary character.
+        Right = 1,
+        /// The left boundary character.
+        Left = 2,
+        /// Both.
+        Both = 3,
+    }
+}
+
+impl LigBoundary {
+    /// The same boundaries plus the right one.
+    #[inline]
+    pub fn with_right(self) -> LigBoundary {
+        match self {
+            LigBoundary::None | LigBoundary::Right => LigBoundary::Right,
+            LigBoundary::Left | LigBoundary::Both => LigBoundary::Both,
+        }
+    }
+}
+
+// The bits WEB tests, so any stored value reads as WEB reads it.
+impl Stored<LigBoundary> {
+    #[inline]
+    pub fn has_left(self) -> bool {
+        self.raw() > 1
+    }
+
+    #[inline]
+    pub fn has_right(self) -> bool {
+        self.raw() % 2 == 1
+    }
+}
+
 impl StoredCode for Dir {
     #[inline]
     fn from_u16(raw: u16) -> Option<Self> {
@@ -1685,6 +1723,29 @@ mod tests {
         assert_web_codes(&[(FenceSubtype::Normal, 0), (FenceSubtype::Middle, 1)]);
     }
 
+    #[test]
+    fn ligature_boundaries_keep_web_codes_and_bits() {
+        use LigBoundary as B;
+        assert_web_codes(&[(B::None, 0), (B::Right, 1), (B::Left, 2), (B::Both, 3)]);
+        let added = [B::None, B::Right, B::Left, B::Both].map(B::with_right);
+        assert_eq!(added, [B::Right, B::Right, B::Both, B::Both]);
+        let bits = (0..6).map(|raw| {
+            let b = Stored::<B>::from_raw(raw);
+            (b.has_left(), b.has_right())
+        });
+        assert_eq!(
+            bits.collect::<Vec<_>>(),
+            [
+                (false, false),
+                (false, true),
+                (true, false),
+                (true, true),
+                (true, false),
+                (true, true)
+            ]
+        );
+    }
+
     /// An arena whose free list is the single block `[10, 30)`.
     fn arena_with_free_block() -> MemState {
         let mut mem = fresh_mem(64);
@@ -1882,6 +1943,8 @@ mod tests {
         assert_eq!(mem.b16s0(MemPtr::from_raw(101)), 0x1234);
         mem[lig].lig_ptr = MemPtr::from_raw(150);
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 150);
+        mem[lig].boundary = LigBoundary::Left.into();
+        assert_eq!(mem.b16s0(MemPtr::from_raw(100)), 2);
 
         let disc: NodePtr<DiscNode> = at(&mut mem, 100, Some(NodeType::Disc));
         mem[disc].pre_break = MemPtr::from_raw(150);

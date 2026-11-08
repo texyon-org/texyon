@@ -276,12 +276,12 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
                     let font = st.mem[node].font;
                     print_font_char(st, font, st.mem[node].character);
                     print(st, " (ligature ");
-                    if st.mem[node].subtype > 1 {
+                    if st.mem[node].boundary.has_left() {
                         print_char(st, b'|');
                     }
                     st.errors.font_in_short_display = font;
                     short_display(st, st.mem[node].lig_ptr);
-                    if st.mem[node].subtype % 2 == 1 {
+                    if st.mem[node].boundary.has_right() {
                         print_char(st, b'|');
                     }
                     print_char(st, b')');

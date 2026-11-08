@@ -6,7 +6,7 @@ use crate::fonts::{CharTag, LigChar};
 use crate::hyphenation::TrieOp;
 use crate::main_control::LigStack;
 use crate::mem::HOLD_HEAD;
-use crate::node::{AnyNode, CharNode, DiscNode, LigItem, NativeWordNode, NodePtr};
+use crate::node::{AnyNode, CharNode, DiscNode, LigBoundary, LigItem, NativeWordNode, NodePtr};
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, FontState, MemState};
 use crate::units::{FontId, FontInfoIdx, MemPtr, Scaled, StrNumber};
@@ -350,15 +350,16 @@ fn wrap_lig(st: &mut EngineState, rt: bool) -> Result<MemPtr, Abort> {
     let lig = st
         .mem
         .new_ligature(st.hyph.hf, st.mainloop.cur_l.code(), components)?;
+    let mut boundary = LigBoundary::None;
     if st.mainloop.lft_hit {
-        st.mem[lig].subtype = 2;
+        boundary = LigBoundary::Left;
         st.mainloop.lft_hit = false;
     }
     if rt && st.mainloop.rt_hit && st.mainloop.lig_stack.is_none() {
-        let s = st.mem[lig].subtype;
-        st.mem[lig].subtype = s + 1;
+        boundary = boundary.with_right();
         st.mainloop.rt_hit = false;
     }
+    st.mem[lig].boundary = boundary.into();
     st.mainloop.cur_q.set_link(&mut st.mem, lig.ptr());
     st.mainloop.ligature_present = false;
     Ok(lig.ptr())
@@ -548,7 +549,7 @@ fn insert_hyphens(
         } else {
             st.hyph.init_list = st.mem[ha_lig].lig_ptr;
             st.hyph.init_lig = true;
-            st.hyph.init_lft = st.mem[ha_lig].subtype > 1;
+            st.hyph.init_lft = st.mem[ha_lig].boundary.has_left();
             st.hyph.hu[0] = LigChar::of(st.mem[ha_lig].character);
             if st.hyph.init_list.is_null() && st.hyph.init_lft {
                 st.hyph.hu[0] = LigChar::from_raw(st.hyph.max_hyph_char);
@@ -560,7 +561,7 @@ fn insert_hyphens(
     } else if !st.mem.is_char_node(r)
         && matches!(
             st.mem.classify(r),
-            Ok(AnyNode::Ligature(lig)) if st.mem[lig].subtype > 1
+            Ok(AnyNode::Ligature(lig)) if st.mem[lig].boundary.has_left()
         )
     {
         found2(st)
