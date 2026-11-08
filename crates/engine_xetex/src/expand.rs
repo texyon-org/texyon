@@ -6,8 +6,8 @@ use crate::codes::{
 };
 use crate::command::Command;
 use crate::consts::{
-    ACTIVE_BASE, BIGGEST_USV, FROZEN_DONT_EXPAND, FROZEN_ENDV, FROZEN_PRIMITIVE, HMODE, MMODE,
-    NULL_CS, NULL_FONT, SINGLE_BASE, TOO_BIG_USV, VMODE,
+    ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_USV, FROZEN_DONT_EXPAND, FROZEN_ENDV, FROZEN_PRIMITIVE,
+    HMODE, MMODE, NULL_CS, NULL_FONT, SINGLE_BASE, TOO_BIG_USV, VMODE,
 };
 use crate::errors::{error, Abort};
 use crate::fonts::{Side, AAT_FONT_FLAG, OTGR_FONT_FLAG};
@@ -290,9 +290,10 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
             let (head, tail) = scan_cs_name_tokens(st)?;
             let first = st.input.first;
             let m = token_chars_to_buffer(st, head.link(&st.mem))?;
+            // Upstream keeps `single_base+c` here for c above U+FFFF and reads past `null_cs`.
             st.scanner.cur_cs = if m == first {
                 NULL_CS
-            } else if m == first + 1 {
+            } else if m == first + 1 && st.input.buffer[first] <= BIGGEST_CHAR {
                 SINGLE_BASE + st.input.buffer[first]
             } else {
                 st.eqtb

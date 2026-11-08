@@ -4,7 +4,8 @@ use crate::cmd::Cmd;
 use crate::codes::ValueLevel;
 use crate::consts::{
     ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, FROZEN_PRIMITIVE,
-    FROZEN_RELAX, MAX_DIMEN, MAX_HALFWORD, NUMBER_MATH_FAMILIES, SINGLE_BASE, TEX_INFINITY,
+    FROZEN_RELAX, MAX_DIMEN, MAX_HALFWORD, NULL_CS, NUMBER_MATH_FAMILIES, SINGLE_BASE,
+    TEX_INFINITY,
 };
 use crate::errors::{error, int_error, mu_error, Abort};
 use crate::fonts::{QUAD_CODE, X_HEIGHT_CODE};
@@ -278,8 +279,12 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<i32, Abort> {
                 }
             } else if st.scanner.cur_tok < Token::from_cs(SINGLE_BASE) {
                 v = st.scanner.cur_tok.cs() - ACTIVE_BASE;
-            } else {
+            } else if st.scanner.cur_tok < Token::from_cs(NULL_CS) {
                 v = st.scanner.cur_tok.cs() - SINGLE_BASE;
+            } else {
+                v = st
+                    .strings
+                    .astral_char(st.eqtb.text(st.scanner.cur_tok.cs()));
             }
             if v > BIGGEST_USV {
                 print_err(st, "Improper alphabetic constant");

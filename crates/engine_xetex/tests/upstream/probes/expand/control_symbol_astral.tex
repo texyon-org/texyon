@@ -1,0 +1,14 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\😀{grin}\def\a{\😀\😀x\b}
+\show\😀 \show\a
+\message{\number`\😀, \number`\a, \number`\^^^^^01f600}
+\count1=`\😀x \showthe\count1
+\expandafter\show\csname 😀\endcsname
+\message{\string\😀|\meaning\😀}
+\expandafter\let\csname 𝒜\endcsname=\relax \show\𝒜
+\ifx\😀\undefined\message{undef}\else\message{def}\fi
+\ifcsname 😀\endcsname\message{yes}\else\message{no}\fi
+\ifcsname a\endcsname\message{yes}\else\message{no}\fi
+\font\😃=cmr10 \message{\fontname\😃}\showthe\font \😃\showthe\font
+\setbox0\hbox{\😃 x}\showbox0
+\bye

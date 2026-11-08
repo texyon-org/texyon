@@ -17,6 +17,20 @@ impl StringsState {
         self.str_start(s).index()..self.str_start(s.next()).index()
     }
 
+    /// The character of `s` when it is one surrogate pair, else `TOO_BIG_USV`.
+    pub(crate) fn astral_char(&self, s: StrNumber) -> i32 {
+        if !s.is_pool_string() || self.length(s) != 2 {
+            return crate::consts::TOO_BIG_USV;
+        }
+        let start = self.str_start(s).index();
+        let (hi, lo) = (self.str_pool[start], self.str_pool[start + 1]);
+        if (0xD800..=0xDBFF).contains(&hi) && (0xDC00..=0xDFFF).contains(&lo) {
+            0x10000 + (i32::from(hi) - 0xD800) * 0x400 + i32::from(lo) - 0xDC00
+        } else {
+            crate::consts::TOO_BIG_USV
+        }
+    }
+
     pub fn length(&self, s: StrNumber) -> i32 {
         if s.is_pool_string() {
             return self.str_start(s.next()) - self.str_start(s);

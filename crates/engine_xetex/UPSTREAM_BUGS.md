@@ -1,8 +1,8 @@
 # XeTeX bugs found while porting
 
-Bugs in upstream `xetex.web` (XeTeX 0.999994, `reference_sources` stage2 export) that the port
-ran into, with what TeXyoN does about each. Line numbers are in
-`reference_sources/stage2/exports/xetexdir/xetex.web`.
+Bugs in upstream `xetex.web` that the port ran into, with what TeXyoN does about each. Line
+numbers are in `reference_sources/stage2/exports/xetexdir/xetex.web` (XeTeX 0.999994) unless an
+entry names a later TeX Live version.
 
 ## 1. `\XeTeXinterchartoks 4096` indexes past the sparse-array tree
 
@@ -40,3 +40,16 @@ ran into, with what TeXyoN does about each. Line numbers are in
   not a native word, so these reads take arbitrary words of another node.
 - **TeXyoN:** skips the kern when the tail is not a native word (`shape_interword_space`).
 - **Before reporting:** build a minimal document that reaches this with a non-native tail.
+
+## 4. `\ifcsname` with one character above U+FFFF reads past `null_cs`
+
+- **Where:** TeX Live trunk `xetex.web` (0.999996 on), `if_cs_code` (line 32813). Since the
+  2024-05-18 change, `null_cs=single_base+too_big_char`, and get_next and `\csname` look up a
+  single character above U+FFFF in the hash.
+- **Bug:** `\ifcsname` was not updated: `else cur_cs:=single_base+buffer[first]` still takes the
+  `single_base` slot for such a character, which lies past `null_cs` in the hash or later
+  regions, so the test reads an unrelated `eqtb` entry.
+- **Repro:** `\ifcsname 😀\endcsname yes\else no\fi` with `\😀` undefined says yes with TeX Live
+  2025 xetex. Probe `etex-ifcsname_astral_undefined`.
+- **Fix:** test `(m>first+1)or(buffer[first]>@"FFFF)` before `m=first`, as in `\csname`.
+- **TeXyoN:** looks the name up in the hash (`expand.rs`). Listed in `tests/upstream/known.tsv`.

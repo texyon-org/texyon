@@ -5,3 +5,4 @@ cov-control-graphite_names	TeX Live passes the WEB convert code to grprintfontna
 cov-layout-graphite_shape	TeX Live passes the WEB convert code to grprintfontname, which compares it with the C constant 8, so upstream prints no graphite feature or selector names
 cov-layout-nativeword_tracing_fonts	\XeTeXtracingfonts prints the full kpathsea path upstream, and lmroman scaled 1200 drifts 1sp from float font metrics
 mainloop-interchartoks_tfm	upstream accepts class 4096 in \XeTeXinterchartoks and indexes past the sparse-array node, TeXyoN rejects it with "Bad character class" as the help text promises
+etex-ifcsname_astral_undefined	upstream \ifcsname reads eqtb[single_base+c] past null_cs for one character above U+FFFF, TeXyoN looks it up in the hash like \csname (UPSTREAM_BUGS.md 4)
