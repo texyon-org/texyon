@@ -395,6 +395,11 @@ fn show_whatsit(st: &mut EngineState, node: NodePtr<WhatsitNode>) {
             print_esc(st, "special");
             print_mark(st, st.mem[special].tokens);
         }
+        Some(WhatsitVariant::LateSpecial(special)) => {
+            print_esc(st, "special");
+            print(st, " shipout");
+            print_mark(st, st.mem[special].tokens);
+        }
         Some(WhatsitVariant::Language(language)) => {
             let language = st.mem[language];
             print_esc(st, "setlanguage");

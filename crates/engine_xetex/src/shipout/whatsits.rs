@@ -7,20 +7,28 @@ use crate::input::TokenType;
 use crate::node::{NodePtr, OpenNode, PicNode, WhatsitNode, WhatsitVariant, WriteNode};
 use crate::params::IntPar;
 use crate::state::{EqtbState, Selector};
-use crate::token::Token;
+use crate::token::{Token, TokenList};
 
 use super::{dvi_special_from_cur_string, synch_h, synch_v};
 
+/// Emits `special`, expanding its tokens first when it is a `late` one.
 fn special_out(
     st: &mut crate::state::EngineState,
     special: NodePtr<WriteNode>,
+    late: bool,
 ) -> Result<(), Abort> {
     synch_h(st)?;
     synch_v(st)?;
     st.shipout.doing_special = true;
     let old_setting = st.shipout.selector;
+    let list = if late {
+        expand_write_tokens(st, st.mem[special].tokens)?;
+        st.scanner.def_ref
+    } else {
+        st.mem[special].tokens
+    };
     st.shipout.selector = Selector::NewString;
-    let tokens = st.mem[special].tokens.link(&st.mem);
+    let tokens = list.link(&st.mem);
     let avail = st.strings.pool_size - st.strings.pool_ptr;
     crate::output::show_token_list(st, tokens, crate::token::TokenList::NULL, avail);
     st.shipout.selector = old_setting;
@@ -28,6 +36,9 @@ fn special_out(
         return Err(Abort::PoolOverflow);
     }
     dvi_special_from_cur_string(st)?;
+    if late {
+        st.mem.flush_token_list(list);
+    }
     st.shipout.doing_special = false;
     Ok(())
 }
@@ -43,14 +54,15 @@ impl EqtbState {
     }
 }
 
-fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WriteNode>) -> Result<(), Abort> {
+/// Expands `tokens` as `\write` does, leaving the result in `def_ref`.
+fn expand_write_tokens(st: &mut crate::state::EngineState, tokens: TokenList) -> Result<(), Abort> {
     let q = st.mem.get_avail_token()?;
     q.set_token(&mut st.mem, Token::right_brace(b'}'));
     let r = st.mem.get_avail_token()?;
     q.set_link(&mut st.mem, r);
     r.set_token(&mut st.mem, Token::from_cs(END_WRITE));
     crate::input::begin_token_list(st, q, TokenType::Inserted)?;
-    crate::input::begin_token_list(st, st.mem[write].tokens, TokenType::Write)?;
+    crate::input::begin_token_list(st, tokens, TokenType::Write)?;
     let q = st.mem.get_avail_token()?;
     q.set_token(&mut st.mem, Token::left_brace(b'{'));
     crate::input::begin_token_list(st, q, TokenType::Inserted)?;
@@ -76,7 +88,11 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WriteNode>) -> R
             }
         }
     }
-    crate::input::end_token_list(st)?;
+    crate::input::end_token_list(st)
+}
+
+fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WriteNode>) -> Result<(), Abort> {
+    expand_write_tokens(st, st.mem[write].tokens)?;
 
     let old_setting = st.shipout.selector;
     let j = st.mem[write].stream;
@@ -175,7 +191,8 @@ pub(crate) fn out_what(
             | WhatsitVariant::Close(_)
             | WhatsitVariant::Language(_),
         ) => {}
-        Some(WhatsitVariant::Special(special)) => special_out(st, special)?,
+        Some(WhatsitVariant::Special(special)) => special_out(st, special, false)?,
+        Some(WhatsitVariant::LateSpecial(special)) => special_out(st, special, true)?,
         _ => return Err(Abort::Confusion("ext4")),
     }
     Ok(())

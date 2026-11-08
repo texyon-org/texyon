@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\x{early}
+\setbox1\hbox{\special shipout{late:\x}\special{now:\x}\special shipout {\the\count0}}
+\showbox1
+\def\x{later}
+\shipout\copy1
+\def\x{latest} \count0=5
+\shipout\box1
+\setbox2\hbox{\special shipoutx{plain}}
+\showbox2
+\bye

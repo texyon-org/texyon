@@ -34,9 +34,10 @@ impl MemState {
     fn whatsit_node_size(&self, w: NodePtr<WhatsitNode>) -> Option<i32> {
         Some(match w.variant(self)? {
             WhatsitVariant::Open(_) => OpenNode::SIZE,
-            WhatsitVariant::Write(_) | WhatsitVariant::Close(_) | WhatsitVariant::Special(_) => {
-                WriteNode::SIZE
-            }
+            WhatsitVariant::Write(_)
+            | WhatsitVariant::Close(_)
+            | WhatsitVariant::Special(_)
+            | WhatsitVariant::LateSpecial(_) => WriteNode::SIZE,
             WhatsitVariant::Language(_) => LanguageNode::SIZE,
             WhatsitVariant::SavePos => SMALL_NODE_SIZE,
             WhatsitVariant::NativeWord(word) => i32::from(self[word].size),
@@ -96,7 +97,11 @@ impl MemState {
                 copy.share_native_glyphs(self, word);
                 Ok((r, 0))
             }
-            Some(WhatsitVariant::Write(p) | WhatsitVariant::Special(p)) => {
+            Some(
+                WhatsitVariant::Write(p)
+                | WhatsitVariant::Special(p)
+                | WhatsitVariant::LateSpecial(p),
+            ) => {
                 self.add_token_ref(self[p].tokens);
                 Ok((r, size))
             }
@@ -257,7 +262,11 @@ impl MemState {
                 AnyNode::Whatsit(w) => {
                     let size = self.whatsit_node_size(w).ok_or(Abort::Confusion("ext3"))?;
                     match w.variant(self) {
-                        Some(WhatsitVariant::Write(p) | WhatsitVariant::Special(p)) => {
+                        Some(
+                            WhatsitVariant::Write(p)
+                            | WhatsitVariant::Special(p)
+                            | WhatsitVariant::LateSpecial(p),
+                        ) => {
                             self.delete_token_ref(self[p].tokens);
                         }
                         Some(WhatsitVariant::NativeWord(word)) => word.release_native_glyphs(self),

@@ -1547,8 +1547,10 @@ pub enum WhatsitSubtype {
     Write = 1,
     Close = 2,
     Special = 3,
-    Language = 4,
-    PdfSavePos = 21,
+    /// `\special shipout`, expanded when shipped out.
+    LateSpecial = 4,
+    Language = 5,
+    PdfSavePos = 23,
     NativeWord = 40,
     NativeWordAt = 41,
     Glyph = 42,
@@ -1563,8 +1565,9 @@ impl WhatsitSubtype {
             1 => WhatsitSubtype::Write,
             2 => WhatsitSubtype::Close,
             3 => WhatsitSubtype::Special,
-            4 => WhatsitSubtype::Language,
-            21 => WhatsitSubtype::PdfSavePos,
+            4 => WhatsitSubtype::LateSpecial,
+            5 => WhatsitSubtype::Language,
+            23 => WhatsitSubtype::PdfSavePos,
             40 => WhatsitSubtype::NativeWord,
             41 => WhatsitSubtype::NativeWordAt,
             42 => WhatsitSubtype::Glyph,
@@ -1600,6 +1603,7 @@ impl WhatsitSubtype {
                 | WhatsitSubtype::Write
                 | WhatsitSubtype::Close
                 | WhatsitSubtype::Special
+                | WhatsitSubtype::LateSpecial
                 | WhatsitSubtype::Language
         )
     }
@@ -1657,6 +1661,7 @@ pub enum WhatsitVariant {
     Write(NodePtr<WriteNode>),
     Close(NodePtr<WriteNode>),
     Special(NodePtr<WriteNode>),
+    LateSpecial(NodePtr<WriteNode>),
     Language(NodePtr<LanguageNode>),
     SavePos,
     NativeWord(NodePtr<NativeWordNode>),
@@ -1675,6 +1680,7 @@ impl NodePtr<WhatsitNode> {
             S::Write => WhatsitVariant::Write(NodePtr::from_idx_unchecked(p)),
             S::Close => WhatsitVariant::Close(NodePtr::from_idx_unchecked(p)),
             S::Special => WhatsitVariant::Special(NodePtr::from_idx_unchecked(p)),
+            S::LateSpecial => WhatsitVariant::LateSpecial(NodePtr::from_idx_unchecked(p)),
             S::Language => WhatsitVariant::Language(NodePtr::from_idx_unchecked(p)),
             S::PdfSavePos => WhatsitVariant::SavePos,
             S::NativeWord | S::NativeWordAt => {

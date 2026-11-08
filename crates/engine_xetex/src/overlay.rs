@@ -1755,7 +1755,7 @@ mod tests {
         language.lang = 11;
         language.lhm = 2;
         language.rhm = 3;
-        assert_eq!(mem.b16s0(at(12)), 4);
+        assert_eq!(mem.b16s0(at(12)), 5);
         assert_eq!(
             (mem.b16s1(at(13)), mem.b16s0(at(13)), mem.b32s1(at(13))),
             (2, 3, 11)

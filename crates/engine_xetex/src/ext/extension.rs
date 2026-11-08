@@ -166,9 +166,15 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
         }
 
         ExtensionCode::Special => {
-            let w = append_whatsit::<WriteNode>(st, WhatsitSubtype::Special)?;
+            let late = crate::scan::scan_keyword(st, "shipout")?;
+            let subtype = if late {
+                WhatsitSubtype::LateSpecial
+            } else {
+                WhatsitSubtype::Special
+            };
+            let w = append_whatsit::<WriteNode>(st, subtype)?;
             st.mem[w].stream = crate::mem::TEX_NULL;
-            crate::scan::scan_toks(st, false, true)?;
+            crate::scan::scan_toks(st, false, !late)?;
             st.mem[w].tokens = st.scanner.def_ref;
         }
 
