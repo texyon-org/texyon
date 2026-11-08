@@ -724,7 +724,7 @@ fn conv_toks(st: &mut EngineState, c: ConvertCode) -> Result<(), Abort> {
             print_int(st, v);
         }
         ConvertCode::Uchar | ConvertCode::Ucharcat => print_char(st, num),
-        ConvertCode::XetexRevision => print(st, ".999994"),
+        ConvertCode::XetexRevision => print(st, ".999997"),
         // AAT fonts have no names to print on this platform.
         ConvertCode::XetexVariationName => {}
         ConvertCode::XetexFeatureName | ConvertCode::XetexSelectorName => {
