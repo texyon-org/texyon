@@ -91,6 +91,7 @@ code_enum! {
         Synctex = 81,
         PdfOutput = 82,
         ShowStream = 83,
+        IgnorePrimitiveError = 84,
     }
 }
 
@@ -179,6 +180,7 @@ impl IntPar {
             IntPar::Synctex => "synctex",
             IntPar::PdfOutput => "pdfoutput",
             IntPar::ShowStream => "showstream",
+            IntPar::IgnorePrimitiveError => "ignoreprimitiveerror",
             _ => return None,
         })
     }

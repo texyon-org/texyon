@@ -562,6 +562,7 @@ pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
     int_par(IntPar::LastLineFit),
     int_par(IntPar::SavingVdiscards),
     int_par(IntPar::SavingHyphCodes),
+    int_par(IntPar::IgnorePrimitiveError),
     int_par(IntPar::SuppressFontnotfoundError),
     int_par(IntPar::XetexLinebreakPenalty),
     int_par(IntPar::XetexProtrudeChars),

@@ -8,8 +8,8 @@ use crate::output::{
     print_char, print_cmd_chr, print_err, print_esc, print_in_mode, print_int, print_ln, print_nl,
     show_box, show_context, show_token_list, token_show,
 };
-use crate::params::TokPar;
-use crate::state::{EngineState, ErrorState, GroupCode, InteractionMode, Selector};
+use crate::params::{IntPar, TokPar};
+use crate::state::{EngineState, EqtbState, ErrorState, GroupCode, InteractionMode, Selector};
 use crate::units::{FontId, StrNumber};
 
 impl ErrorState {
@@ -128,6 +128,22 @@ pub(crate) enum Abort {
     InputClose,
     CannotOpenInput,
     CannotOpenOutput,
+}
+
+/// An error `\ignoreprimitiveerror` can turn into a warning, valued by its bit (one-based).
+#[derive(Copy, Clone)]
+pub(crate) enum IgnoredError {
+    /// Infinite glue shrinkage in a box being split.
+    VsplitInfiniteShrink = 1,
+}
+
+impl EqtbState {
+    /// Whether `\ignoreprimitiveerror` has the bit for `e` set, as WEB's `is_bit_set` reads it.
+    pub(crate) fn ignores_primitive_error(&self, e: IgnoredError) -> bool {
+        let n = self.int_par(IntPar::IgnorePrimitiveError);
+        let m = 1_i32.checked_shl(e as u32 - 1).unwrap_or(0);
+        m != 0 && (n / m) % 2 != 0
+    }
 }
 
 impl Abort {

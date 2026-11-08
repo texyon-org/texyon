@@ -497,6 +497,19 @@ pub(crate) fn print_err(st: &mut EngineState, message: &str) {
     capture_to_diagnostic(st, None);
 }
 
+/// TeX Live's `print_ignored_err`: an error that `\ignoreprimitiveerror` turns into a warning.
+pub(crate) fn print_ignored_err(st: &mut EngineState, message: &str) {
+    if st.config.file_line_error_style_p != 0 {
+        print_file_line(st);
+    } else {
+        print_nl(st, "");
+    }
+    diagnostic_begin_capture_warning_here(st);
+    print(st, "ignored error: ");
+    print(st, message);
+    capture_to_diagnostic(st, None);
+}
+
 /// Starts an error line with `! ` or, in file:line:error style, the source position.
 pub(crate) fn print_error_prefix(st: &mut EngineState) {
     if st.config.file_line_error_style_p != 0 {

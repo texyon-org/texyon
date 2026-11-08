@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\showthe\ignoreprimitiveerror
+\def\t#1{\ignoreprimitiveerror=#1
+  \setbox1\vbox{\hrule height 5pt \vss \hrule height 5pt \vskip 0pt minus 1fil \hrule height 5pt}
+  \setbox2\vsplit1 to 7pt \showbox1 \showbox2}
+\t0 \t1 \t2 \t3 \t{-1} \t{-2}
+\show\ignoreprimitiveerror
+\bye

@@ -124,7 +124,7 @@ pub const UC_CODE_BASE: EqtbPtr = LC_CODE_BASE.plus(NUMBER_USVS);
 pub const SF_CODE_BASE: EqtbPtr = UC_CODE_BASE.plus(NUMBER_USVS);
 pub const MATH_CODE_BASE: EqtbPtr = SF_CODE_BASE.plus(NUMBER_USVS);
 pub const INT_BASE: EqtbPtr = MATH_CODE_BASE.plus(NUMBER_USVS);
-pub const COUNT_BASE: EqtbPtr = INT_BASE.plus(84);
+pub const COUNT_BASE: EqtbPtr = INT_BASE.plus(85);
 pub const DEL_CODE_BASE: EqtbPtr = COUNT_BASE.plus(256);
 pub const DIMEN_BASE: EqtbPtr = DEL_CODE_BASE.plus(NUMBER_USVS);
 pub const SCALED_BASE: EqtbPtr = DIMEN_BASE.plus(23);
@@ -155,12 +155,12 @@ const _: () = {
     assert!(SF_CODE_BASE.raw() == 5_598_505);
     assert!(MATH_CODE_BASE.raw() == 6_712_617);
     assert!(INT_BASE.raw() == 7_826_729);
-    assert!(COUNT_BASE.raw() == 7_826_813);
-    assert!(DEL_CODE_BASE.raw() == 7_827_069);
-    assert!(DIMEN_BASE.raw() == 8_941_181);
-    assert!(SCALED_BASE.raw() == 8_941_204);
-    assert!(EQTB_SIZE.raw() == 8_941_459);
-    assert!(XEQ_LEVEL_SIZE == 1_114_731);
+    assert!(COUNT_BASE.raw() == 7_826_814);
+    assert!(DEL_CODE_BASE.raw() == 7_827_070);
+    assert!(DIMEN_BASE.raw() == 8_941_182);
+    assert!(SCALED_BASE.raw() == 8_941_205);
+    assert!(EQTB_SIZE.raw() == 8_941_460);
+    assert!(XEQ_LEVEL_SIZE == 1_114_732);
 };
 
 /// `\parshape`, first in the local region.

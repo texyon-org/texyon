@@ -2,7 +2,7 @@
 
 use crate::codes::{BoxCode, MarkCode, ValueLevel};
 use crate::consts::{BOX_NODE_SIZE, EJECT_PENALTY, INF_BAD, INF_PENALTY, MAX_DIMEN, MAX_HALFWORD};
-use crate::errors::Abort;
+use crate::errors::{Abort, IgnoredError};
 use crate::mem::TEMP_HEAD;
 use crate::node::{
     link_of, AnyNode, BoxNode, FixedNode, GlueNode, GlueSpecNode, KernNode, MarkNode, NodePtr,
@@ -263,7 +263,15 @@ impl MemState {
 }
 
 fn print_vert_break_infinite_shrinkage_error(st: &mut EngineState) -> Result<(), Abort> {
-    crate::output::print_err(st, "Infinite glue shrinkage found in box being split");
+    const MESSAGE: &str = "Infinite glue shrinkage found in box being split";
+    if st
+        .eqtb
+        .ignores_primitive_error(IgnoredError::VsplitInfiniteShrink)
+    {
+        crate::output::print_ignored_err(st, MESSAGE);
+        return Ok(());
+    }
+    crate::output::print_err(st, MESSAGE);
     st.errors.help(&[
         r"The box you are \vsplitting contains some infinitely",
         r"shrinkable glue, e.g., `\vss' or `\vskip 0pt minus 1fil'.",
