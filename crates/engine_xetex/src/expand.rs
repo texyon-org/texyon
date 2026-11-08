@@ -6,8 +6,8 @@ use crate::codes::{
 };
 use crate::command::Command;
 use crate::consts::{
-    ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_USV, FROZEN_DONT_EXPAND, FROZEN_ENDV, FROZEN_PRIMITIVE,
-    HMODE, MMODE, NULL_CS, NULL_FONT, SINGLE_BASE, TOO_BIG_USV, VMODE,
+    ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_USV, END_WRITE, FROZEN_DONT_EXPAND, FROZEN_ENDV,
+    FROZEN_PRIMITIVE, HMODE, MMODE, NULL_CS, NULL_FONT, SINGLE_BASE, TOO_BIG_USV, VMODE,
 };
 use crate::errors::{error, Abort};
 use crate::fonts::{Side, AAT_FONT_FLAG, OTGR_FONT_FLAG};
@@ -854,7 +854,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     get_token_unexpanded(st)?;
                     let t = st.scanner.cur_tok;
                     back_input(st)?;
-                    if t.is_cs() {
+                    if t.is_cs() && t != Token::from_cs(END_WRITE) {
                         prepend_to_backed_up(st, Token::from_cs(FROZEN_DONT_EXPAND))?;
                     }
                 } else {

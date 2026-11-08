@@ -1,3 +1,8 @@
 \immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
-\def\gob#1{}\shipout\hbox{\write-1{a\expandafter\noexpand\gob}}
+\def\weird{\expandafter\weirda\expandafter{\iffalse}\fi}
+\def\weirda#1{\expandafter\weirdb\noexpand}
+\def\weirdb#1{\iffalse{\fi}#1\edef\mycontainendwrite{\noexpand#1}}
+\immediate\write-1{\weird}
+\expandafter\let\expandafter\myendwrite\mycontainendwrite
+\show\myendwrite
 \bye
