@@ -3,10 +3,10 @@ use crate::cmd::Cmd;
 use crate::codes::ScannerStatus;
 use crate::consts::{HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, MEM_TOP};
 use crate::output::{
-    begin_diagnostic, capture_to_diagnostic, diagnostic_begin_capture_warning_here, end_diagnostic,
-    error_here_with_diagnostic, print, print_char, print_cmd_chr, print_err, print_esc,
-    print_in_mode, print_int, print_ln, print_nl, show_box, show_context, show_token_list,
-    token_show,
+    append_to_diagnostic, begin_diagnostic, capture_to_diagnostic,
+    diagnostic_begin_capture_warning_here, end_diagnostic, error_here_with_diagnostic, print,
+    print_char, print_cmd_chr, print_err, print_esc, print_in_mode, print_int, print_ln, print_nl,
+    show_box, show_context, show_token_list, token_show,
 };
 use crate::params::TokPar;
 use crate::state::{EngineState, ErrorState, GroupCode, InteractionMode, Selector};
@@ -146,14 +146,14 @@ impl Abort {
         set_error_message("halted on overflow()");
     }
 
-    fn fatal_report(st: &mut EngineState, s: &str) {
+    fn fatal_report(st: &mut EngineState, s: &'static str) {
         pre_error_message(st);
         print(st, "Emergency stop");
-        print_nl(st, s);
-        capture_to_diagnostic(st, None);
-        let _ = crate::io::close_files_and_terminate(st);
-        crate::engine::cleanup(st);
-        output_flush(st.shipout.rust_stdout);
+        // WEB prints the reason as help, after the context, but the diagnostic needs it.
+        append_to_diagnostic(st, "\n");
+        append_to_diagnostic(st, s);
+        st.errors.help(&[s]);
+        post_error_message(st, true);
         set_error_message(s);
     }
 
