@@ -274,3 +274,13 @@ fn sparse_pointer_registers_restore_and_print_their_names() {
         ]
     );
 }
+
+#[test]
+fn interchartoks_classes_stop_below_the_ignored_class() {
+    let r = run(
+        r"\XeTeXinterchartoks 4095 0 {x}\XeTeXinterchartoks 4096 0 {y}
+        \showthe\XeTeXinterchartoks 4095 0 \showthe\XeTeXinterchartoks 0 0",
+    );
+    assert_eq!(r.lines_starting("! "), ["! Bad character class (4096)."]);
+    assert_eq!(r.lines_starting("> "), ["> x.", "> y."]);
+}

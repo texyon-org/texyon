@@ -9,3 +9,4 @@ etex-xetexrevision	Tectonic implements and reports XeTeX .999994
 cov-control-graphite_names	TeX Live passes the WEB convert code to grprintfontname, which compares it with the C constant 8, so upstream prints no graphite feature or selector names
 cov-layout-graphite_shape	TeX Live passes the WEB convert code to grprintfontname, which compares it with the C constant 8, so upstream prints no graphite feature or selector names
 cov-layout-nativeword_tracing_fonts	\XeTeXtracingfonts prints the full kpathsea path upstream, and lmroman scaled 1200 drifts 1sp from float font metrics
+mainloop-interchartoks_tfm	upstream accepts class 4096 in \XeTeXinterchartoks and indexes past the sparse-array node, TeXyoN rejects it with "Bad character class" as the help text promises

@@ -86,10 +86,12 @@ pub(crate) fn scan_char_class(st: &mut EngineState) -> Result<i32, Abort> {
     )
 }
 
+/// A class between two characters. WEB also lets 4096 through, which indexes past the
+/// interchartoks tree, so this keeps to the 0..4095 its help text promises.
 pub(crate) fn scan_char_class_not_ignored(st: &mut EngineState) -> Result<i32, Abort> {
     scan_int_up_to(
         st,
-        CHAR_CLASS_LIMIT,
+        CHAR_CLASS_LIMIT - 1,
         "Bad character class",
         "A class for inter-character transitions must be between 0 and 4095.",
     )
