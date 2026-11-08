@@ -1,15 +1,13 @@
 //! Displaying boxes: `show_box`, `short_display` and `show_node_list`.
 
 use crate::codes::LimitCode;
-use crate::consts::{
-    A_LEADERS, COND_MATH_GLUE, C_LEADERS, DLIST, EMPTY, MATH_CHAR, SUB_BOX, SUB_MLIST, TEX_NULL,
-    X_LEADERS,
-};
+use crate::consts::{DLIST, EMPTY, MATH_CHAR, SUB_BOX, SUB_MLIST, TEX_NULL};
 use crate::math::DEFAULT_CODE;
 use crate::mem::ZERO_GLUE;
 use crate::node::{
-    AdjustPlacement, AnyNoad, AnyNode, BoxNode, CharNode, FenceSubtype, KernSubtype, MathCode,
-    MathField, NoadVariant, NodePtr, WhatsitNode, WhatsitSubtype, WhatsitVariant,
+    AdjustPlacement, AnyNoad, AnyNode, BoxNode, CharNode, FenceSubtype, GlueKind, KernSubtype,
+    LeaderKind, MathCode, MathField, NoadVariant, NodePtr, WhatsitNode, WhatsitSubtype,
+    WhatsitVariant,
 };
 use crate::params::IntPar;
 use crate::state::EngineState;
@@ -435,13 +433,15 @@ fn show_whatsit(st: &mut EngineState, node: NodePtr<WhatsitNode>) {
 }
 
 fn show_glue(st: &mut EngineState, node: NodePtr<crate::node::GlueNode>) {
-    let sub = st.mem[node].subtype;
-    if sub >= A_LEADERS {
+    let Some(kind) = st.mem[node].subtype.get() else {
+        return print(st, "Unknown glue node!");
+    };
+    if let GlueKind::Leaders(leaders) = kind {
         print_esc(st, "");
-        if sub == C_LEADERS {
-            print_char(st, b'c');
-        } else if sub == X_LEADERS {
-            print_char(st, b'x');
+        match leaders {
+            LeaderKind::Aligned => {}
+            LeaderKind::Centered => print_char(st, b'c'),
+            LeaderKind::Expanded => print_char(st, b'x'),
         }
         print(st, "leaders ");
         print_spec(st, st.mem[node].glue_ptr.ptr(), None);
@@ -449,20 +449,27 @@ fn show_glue(st: &mut EngineState, node: NodePtr<crate::node::GlueNode>) {
         return;
     }
     print_esc(st, "glue");
-    if sub != 0 {
-        print_char(st, b'(');
-        if sub < COND_MATH_GLUE {
-            print_skip_param(st, i32::from(sub) - 1);
-        } else if sub == COND_MATH_GLUE {
-            print_esc(st, "nonscript");
-        } else {
-            print_esc(st, "mskip");
+    match kind {
+        GlueKind::Normal | GlueKind::Leaders(_) => {}
+        GlueKind::Param(par) => {
+            print_char(st, b'(');
+            print_skip_param(st, par.raw());
+            print_char(st, b')');
         }
-        print_char(st, b')');
+        GlueKind::CondMath => {
+            print_char(st, b'(');
+            print_esc(st, "nonscript");
+            print_char(st, b')');
+        }
+        GlueKind::Mu => {
+            print_char(st, b'(');
+            print_esc(st, "mskip");
+            print_char(st, b')');
+        }
     }
-    if sub != COND_MATH_GLUE {
+    if kind != GlueKind::CondMath {
         print_char(st, b' ');
-        let unit = (sub >= COND_MATH_GLUE).then_some("mu");
+        let unit = (kind == GlueKind::Mu).then_some("mu");
         print_spec(st, st.mem[node].glue_ptr.ptr(), unit);
     }
 }

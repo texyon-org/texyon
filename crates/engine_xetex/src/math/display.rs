@@ -2,7 +2,7 @@
 
 use crate::cmd::Cmd;
 use crate::consts::{
-    A_LEADERS, BOX_NODE_SIZE, DLIST, HMODE, INF_PENALTY, MAX_DIMEN, MMODE, SCRIPT_SIZE, TEXT_SIZE,
+    BOX_NODE_SIZE, DLIST, HMODE, INF_PENALTY, MAX_DIMEN, MMODE, SCRIPT_SIZE, TEXT_SIZE,
 };
 use crate::errors::Abort;
 use crate::fonts::QUAD_CODE;
@@ -581,7 +581,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                                 }
                                 _ => {}
                             }
-                            (st.mem[spec].width, st.mem[g].subtype >= A_LEADERS)
+                            (st.mem[spec].width, st.mem[g].leaders().is_some())
                         }
                         Ok(AnyNode::Whatsit(wn)) => match wn.sized(&st.mem) {
                             Some(sized) => (st.mem[sized].width, true),

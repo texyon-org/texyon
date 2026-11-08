@@ -475,6 +475,19 @@ code_enum! {
     }
 }
 
+impl LeaderCode {
+    /// The glue kind `\leaders`, `\cleaders` and `\xleaders` make, `None` for `\shipout`.
+    pub(crate) fn glue_leaders(self) -> Option<crate::node::LeaderKind> {
+        use crate::node::LeaderKind;
+        match self {
+            LeaderCode::Shipout => None,
+            LeaderCode::ALeaders => Some(LeaderKind::Aligned),
+            LeaderCode::CLeaders => Some(LeaderKind::Centered),
+            LeaderCode::XLeaders => Some(LeaderKind::Expanded),
+        }
+    }
+}
+
 code_enum! {
     /// The `chr_code` of `\valign` and the TeX--XeT direction primitives.
     pub(crate) enum ValignCode: u8 {
@@ -587,7 +600,6 @@ code_enum! {
 }
 
 const _: () = {
-    assert!(LeaderCode::ALeaders.raw() == crate::consts::A_LEADERS as i32);
     assert!(AuxCode::PrevDepth.mode() == crate::consts::VMODE);
     assert!(AuxCode::SpaceFactor.mode() == crate::consts::HMODE);
     assert!(LeftRightCode::Left.raw() == crate::units::NodeType::LeftNoad as i32);

@@ -2,14 +2,14 @@
 //! heads, and TeX's node constructors.
 
 pub(crate) use crate::consts::TEX_NULL;
-use crate::consts::{GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP, NORMAL};
+use crate::consts::{GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP};
 use crate::errors::Abort;
 use crate::mem_types::ListStateRecord;
 use crate::node::{
-    BoxNode, CharNode, ChoiceNode, DiscNode, FixedNode, FreeBlock, GlueNode, GlueSpecNode,
-    KernNode, KernSubtype, LigBoundary, LigItem, LigatureNode, MarginKernNode, MathCode, MathNode,
-    Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode, SpanNode, Stored, StoredCode, StyleNode,
-    WhatsitKind, WhatsitSubtype,
+    BoxNode, CharNode, ChoiceNode, DiscNode, FixedNode, FreeBlock, GlueKind, GlueNode,
+    GlueSpecNode, KernNode, KernSubtype, LigBoundary, LigItem, LigatureNode, MarginKernNode,
+    MathCode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode, SpanNode, Stored,
+    StoredCode, StyleNode, WhatsitKind, WhatsitSubtype,
 };
 use crate::params::GluePar;
 use crate::state::{EqtbState, MemState};
@@ -457,7 +457,7 @@ impl MemState {
         n: GluePar,
     ) -> Result<NodePtr<GlueNode>, Abort> {
         let p = NodePtr::<GlueNode>::alloc(self)?;
-        self[p].subtype = n.subtype();
+        self[p].subtype = GlueKind::Param(n).into();
         self[p].leader_ptr = MemPtr::NULL;
         let spec = eqtb.glue_par(n);
         self[p].glue_ptr = spec;
@@ -468,7 +468,7 @@ impl MemState {
     /// Glue sharing the spec `q`.
     pub fn new_glue(&mut self, q: NodePtr<GlueSpecNode>) -> Result<NodePtr<GlueNode>, Abort> {
         let p = NodePtr::<GlueNode>::alloc(self)?;
-        self[p].subtype = NORMAL;
+        self[p].subtype = GlueKind::Normal.into();
         self[p].leader_ptr = MemPtr::NULL;
         self[p].glue_ptr = q;
         self.add_glue_ref(q);
@@ -485,7 +485,7 @@ impl MemState {
         self.temp_ptr = s.ptr();
         let p = self.new_glue(s)?;
         self[s].ref_count = TEX_NULL;
-        self[p].subtype = n.subtype();
+        self[p].subtype = GlueKind::Param(n).into();
         Ok(p)
     }
 

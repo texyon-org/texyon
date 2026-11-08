@@ -1,16 +1,15 @@
 //! Boxes: `\hbox`, `\vbox`, `\box`, `\lastbox`, `\unhbox`, `\unskip` and friends.
 
 use crate::cmd::Cmd;
-use crate::codes::{BoxCode, ValueLevel};
+use crate::codes::{BoxCode, LeaderCode, ValueLevel};
 use crate::command::Command;
 use crate::consts::{
-    A_LEADERS, BOX_BASE, BOX_NODE_SIZE, HMODE, IGNORE_DEPTH, MARGIN_KERN_NODE_SIZE, MMODE, SUB_BOX,
-    VMODE,
+    BOX_BASE, BOX_NODE_SIZE, HMODE, IGNORE_DEPTH, MARGIN_KERN_NODE_SIZE, MMODE, SUB_BOX, VMODE,
 };
 use crate::errors::Abort;
 use crate::input::TokenType;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD};
-use crate::node::{AnyNode, BoxOrRule, MathCode, SaLeaf};
+use crate::node::{AnyNode, BoxOrRule, GlueKind, MathCode, SaLeaf};
 use crate::params::{DimenPar, IntPar, TokPar};
 use crate::scan::fetch_box;
 use crate::state::{EngineState, GroupCode, MemState};
@@ -227,7 +226,10 @@ fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
         };
         if let Some(s) = skip {
             let g = append_glue(st, s)?;
-            st.mem[g].subtype = (box_context - (LEADER_FLAG - i32::from(A_LEADERS))) as u16;
+            let kind = LeaderCode::from_raw(box_context - LEADER_FLAG + LeaderCode::ALeaders.raw())
+                .and_then(LeaderCode::glue_leaders)
+                .ok_or(Abort::Confusion("leaders"))?;
+            st.mem[g].subtype = GlueKind::Leaders(kind).into();
             st.mem[g].leader_ptr = cb.ptr();
         } else {
             crate::output::print_err(st, "Leaders not followed by proper glue");

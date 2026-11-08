@@ -2,8 +2,7 @@
 
 use crate::bridge::{output_close, output_flush, output_open};
 use crate::consts::{
-    A_LEADERS, C_LEADERS, DLIST, INVALID_HANDLE, MAX_DIMEN, MEDIUM_NODE_SIZE, MIN_HALFWORD, NORMAL,
-    NULL_FONT, SMALL_NODE_SIZE,
+    DLIST, INVALID_HANDLE, MAX_DIMEN, MEDIUM_NODE_SIZE, MIN_HALFWORD, NULL_FONT, SMALL_NODE_SIZE,
 };
 use crate::dvi::{Axis, MoveReg};
 use crate::errors::Abort;
@@ -12,9 +11,9 @@ use crate::glyph_arena::FixedPoint;
 use crate::mem::LIG_TRICK;
 use crate::node::Stored;
 use crate::node::{
-    link_of, AnyNode, BoxNode, EdgeNode, GlueNode, GlueSpecNode, GlyphNode, KernSubtype, MathCode,
-    MathNode, MovementNode, NativeWordNode, NodePtr, RuleNode, WhatsitSubtype, WhatsitVariant,
-    RUNNING,
+    link_of, AnyNode, BoxNode, EdgeNode, GlueKind, GlueNode, GlueSpecNode, GlyphNode, KernSubtype,
+    LeaderKind, MathCode, MathNode, MovementNode, NativeWordNode, NodePtr, RuleNode,
+    WhatsitSubtype, WhatsitVariant, RUNNING,
 };
 use crate::params::{DimenPar, IntPar};
 use crate::state::{
@@ -420,7 +419,7 @@ impl MemState {
                 loop {
                     q = self.skip_interword_fillers(q);
                     match self.classify_non_char(q) {
-                        Some(AnyNode::Glue(glue)) if self[glue].subtype == NORMAL => {
+                        Some(AnyNode::Glue(glue)) if self[glue].subtype == GlueKind::Normal => {
                             if Some(self[glue].glue_ptr) == fonts.font_glue[font] {
                                 q = self.skip_interword_fillers(self[glue].link);
                                 if let Some(w) = same_font_word(self, q) {
@@ -574,7 +573,7 @@ impl MemState {
         w: Scaled,
     ) -> Result<(), Abort> {
         self.delete_glue_ref(spec);
-        if self[glue].subtype < A_LEADERS {
+        if self[glue].leaders().is_none() {
             glue.into_kern(self, w);
         } else {
             let rigid = NodePtr::<GlueSpecNode>::alloc(self)?;
@@ -705,8 +704,7 @@ fn hlist_glue_out(
         st.mem.freeze_set_glue(glue, spec, st.shipout.rule_wd)?;
     }
 
-    let subtype = st.mem[glue].subtype;
-    if subtype >= A_LEADERS {
+    if let Some(kind) = st.mem[glue].leaders() {
         let leader = match st.mem.leader_of(glue) {
             Leader::Rule(rule) => {
                 st.shipout.rule_ht = st.mem[rule].height.to_scaled();
@@ -723,7 +721,7 @@ fn hlist_glue_out(
             }
             let edge = st.shipout.cur_h + st.shipout.rule_wd;
             let mut lx = Scaled::ZERO;
-            if subtype == A_LEADERS {
+            if kind == LeaderKind::Aligned {
                 let save_h = st.shipout.cur_h;
                 st.shipout.cur_h = left_edge
                     + leader_wd * ((st.shipout.cur_h - left_edge).raw() / leader_wd.raw());
@@ -732,7 +730,7 @@ fn hlist_glue_out(
                 }
             } else {
                 let (lq, lr) = leader_count_and_rest(st.shipout.rule_wd, leader_wd);
-                if subtype == C_LEADERS {
+                if kind == LeaderKind::Centered {
                     st.shipout.cur_h += lr / 2;
                 } else {
                     lx = lr / (lq + 1);
@@ -1116,10 +1114,7 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
             AnyNode::Glue(glue) => {
                 let spec = st.mem[glue].glue_ptr;
                 st.shipout.rule_ht = rounding.width(&st.mem, spec);
-                let subtype = st.mem[glue].subtype;
-                if subtype < A_LEADERS {
-                    st.shipout.move_past_vlist_rule(upwards);
-                } else {
+                if let Some(kind) = st.mem[glue].leaders() {
                     match st.mem.leader_of(glue) {
                         Leader::Rule(rule) => {
                             st.shipout.rule_wd = st.mem[rule].width.to_scaled();
@@ -1127,9 +1122,11 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
                             vlist_rule_out(st, this_box, left_edge, upwards)?;
                         }
                         Leader::Box(leader) => {
-                            vlist_leaders_out(st, leader, subtype, left_edge, top_edge, upwards)?
+                            vlist_leaders_out(st, leader, kind, left_edge, top_edge, upwards)?
                         }
                     }
+                } else {
+                    st.shipout.move_past_vlist_rule(upwards);
                 }
             }
             AnyNode::Kern(kern) => {
@@ -1206,7 +1203,7 @@ fn with_saved_dvi_pos(
 fn vlist_leaders_out(
     st: &mut crate::state::EngineState,
     leader: NodePtr<BoxNode>,
-    subtype: u16,
+    kind: LeaderKind,
     left_edge: Scaled,
     top_edge: Scaled,
     upwards: bool,
@@ -1219,7 +1216,7 @@ fn vlist_leaders_out(
     st.shipout.rule_ht += LEADER_SLOP;
     let edge = st.shipout.cur_v + st.shipout.rule_ht;
     let mut lx = Scaled::ZERO;
-    if subtype == A_LEADERS {
+    if kind == LeaderKind::Aligned {
         let save_v = st.shipout.cur_v;
         st.shipout.cur_v =
             top_edge + leader_ht * ((st.shipout.cur_v - top_edge).raw() / leader_ht.raw());
@@ -1228,7 +1225,7 @@ fn vlist_leaders_out(
         }
     } else {
         let (lq, lr) = leader_count_and_rest(st.shipout.rule_ht, leader_ht);
-        if subtype == C_LEADERS {
+        if kind == LeaderKind::Centered {
             st.shipout.cur_v += lr / 2;
         } else {
             lx = lr / (lq + 1);
@@ -1395,7 +1392,7 @@ impl MemState {
                         shipout.rule_wd = rounding.width(self, spec);
                         if rounding.is_set(self, spec) {
                             self.freeze_set_glue(glue, spec, shipout.rule_wd)?;
-                            now_kern = self[glue].subtype < A_LEADERS;
+                            now_kern = self[glue].leaders().is_none();
                         }
                     }
                     Ok(AnyNode::Ligature(ligature)) => {

@@ -1,7 +1,7 @@
 //! Box packing (`hpack`, `vpackage`), vertical breaking (`vert_break`,
 //! `vsplit`, `prune_page_top`, `do_marks`) and node-list copying and freeing.
 
-use crate::consts::{A_LEADERS, IGNORE_DEPTH, NULL_FONT, SMALL_NODE_SIZE};
+use crate::consts::{IGNORE_DEPTH, NULL_FONT, SMALL_NODE_SIZE};
 use crate::errors::Abort;
 use crate::mem::GARBAGE;
 use crate::mem_types::ListStateRecord;
@@ -348,7 +348,7 @@ impl MemState {
                     x += self[spec].width;
                     scanner.total_stretch[self[spec].stretch_order] += self[spec].stretch;
                     scanner.total_shrink[self[spec].shrink_order] += self[spec].shrink;
-                    if self[glue].subtype >= A_LEADERS {
+                    if self[glue].leaders().is_some() {
                         let leader = self[glue].leader_ptr;
                         let (leader_h, leader_d) = match self.classify(leader) {
                             Ok(AnyNode::Box(b)) => (self[b].height, self[b].depth),
@@ -666,7 +666,7 @@ impl MemState {
                     x += self[spec].width;
                     scanner.total_stretch[self[spec].stretch_order] += self[spec].stretch;
                     scanner.total_shrink[self[spec].shrink_order] += self[spec].shrink;
-                    if self[glue].subtype >= A_LEADERS {
+                    if self[glue].leaders().is_some() {
                         let leader = self[glue].leader_ptr;
                         let leader_w = match self.classify(leader) {
                             Ok(AnyNode::Box(b)) => self[b].width,

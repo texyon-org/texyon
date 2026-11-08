@@ -10,8 +10,8 @@ use crate::input::{TokenType, TOKEN_LIST};
 use crate::mem::{ALIGN_HEAD, END_SPAN, HOLD_HEAD, HOLD_HEAD_TOKS, ZERO_GLUE};
 use crate::node::Stored;
 use crate::node::{
-    link_of, AlignColumn, AlignRecord, AlignStackNode, AnyNode, GlueNode, NodePtr, RuleDimen,
-    SpanNode, UnsetNode, RUNNING,
+    link_of, AlignColumn, AlignRecord, AlignStackNode, AnyNode, GlueKind, GlueNode, NodePtr,
+    RuleDimen, SpanNode, UnsetNode, RUNNING,
 };
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
@@ -200,7 +200,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                         let g = st.mem.new_glue(spec)?;
                         u.set_link(&mut st.mem, g.ptr());
                         u = g.ptr();
-                        st.mem[g].subtype = GluePar::TabSkip.subtype();
+                        st.mem[g].subtype = GlueKind::Param(GluePar::TabSkip).into();
                         t += st.mem[spec].width;
                         match st.mem[p].glue_sign.get() {
                             Some(GlueSign::Stretching)
@@ -516,7 +516,7 @@ fn init_row(st: &mut EngineState) -> Result<(), Abort> {
     let spec = st.mem[tab_skip].glue_ptr;
     let glue = st.mem.new_glue(spec)?;
     st.input.cur_list.tail_append(&mut st.mem, glue.ptr());
-    st.mem[glue].subtype = GluePar::TabSkip.subtype();
+    st.mem[glue].subtype = GlueKind::Param(GluePar::TabSkip).into();
     st.scanner.cur_align = st.mem[tab_skip].link;
     st.scanner.cur_tail = st.scanner.cur_head;
     st.scanner.cur_pre_tail = st.scanner.cur_pre_head;
@@ -627,7 +627,7 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
             let spec = st.mem[tab_skip].glue_ptr;
             let g = st.mem.new_glue(spec)?;
             st.mem[column].link = g.ptr();
-            st.mem[g].subtype = GluePar::TabSkip.subtype();
+            st.mem[g].subtype = GlueKind::Param(GluePar::TabSkip).into();
         } else {
             crate::output::error_here_with_diagnostic(
                 st,
@@ -705,7 +705,7 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
         let spec = st.mem[cur_align.tab_skip(&st.mem)].glue_ptr;
         let g = st.mem.new_glue(spec)?;
         st.input.cur_list.tail_append(&mut st.mem, g.ptr());
-        st.mem[g].subtype = GluePar::TabSkip.subtype();
+        st.mem[g].subtype = GlueKind::Param(GluePar::TabSkip).into();
         if st.mem[cur_align].extra_info >= CR_CODE {
             return Ok(true);
         }

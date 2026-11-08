@@ -13,7 +13,7 @@ use crate::errors::{error, Abort};
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::{back_error, back_input, begin_token_list, TokenType, TOKEN_LIST};
 use crate::mem::{BACKUP_HEAD, GARBAGE, TEMP_HEAD_TOKS, ZERO_GLUE};
-use crate::node::{link_of, AnyNode, CondNode, KernSubtype, NodePtr, SaLeaf};
+use crate::node::{link_of, AnyNode, CondNode, GlueKind, KernSubtype, NodePtr, SaLeaf};
 use crate::output::{
     begin_diagnostic, capture_to_diagnostic, diagnostic_begin_capture_warning_here, end_diagnostic,
     error_here_with_diagnostic, print, print_char, print_cmd_chr, print_err, print_esc, print_int,
@@ -495,7 +495,7 @@ impl MemState {
                 self[k].width == Scaled::ZERO || self[k].subtype == KernSubtype::Normal
             }
             AnyNode::Glue(g) => {
-                self[g].glue_ptr == ZERO_GLUE || self[g].subtype == par_skip.subtype()
+                self[g].glue_ptr == ZERO_GLUE || self[g].subtype == GlueKind::Param(par_skip)
             }
             AnyNode::Box(h) if self[h].is_hlist() => {
                 self[h].width == Scaled::ZERO

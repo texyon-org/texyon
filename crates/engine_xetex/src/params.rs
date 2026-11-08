@@ -278,12 +278,6 @@ code_enum! {
 }
 
 impl GluePar {
-    /// The subtype of a glue node made from this parameter.
-    #[inline]
-    pub(crate) const fn subtype(self) -> u16 {
-        self as u16 + 1
-    }
-
     pub(crate) const fn name(self) -> &'static str {
         match self {
             GluePar::LineSkip => "lineskip",

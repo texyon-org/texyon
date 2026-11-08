@@ -74,11 +74,6 @@ pub const FRACTION_NOAD_SIZE: i32 = 6;
 // Node subtypes.
 pub const NORMAL: u16 = 0;
 pub const DLIST: u16 = 2;
-pub const COND_MATH_GLUE: u16 = 98;
-pub const MU_GLUE: u16 = 99;
-pub const A_LEADERS: u16 = 100;
-pub const C_LEADERS: u16 = A_LEADERS + 1;
-pub const X_LEADERS: u16 = A_LEADERS + 2;
 
 // Math noad field types and sizes.
 pub const EMPTY: i32 = 0;

@@ -300,3 +300,32 @@ fn discretionaries_and_spans_keep_their_counts() {
         ..\glue(\tabskip) 0.0",
     );
 }
+
+#[test]
+fn glue_shows_its_kind() {
+    let r = run(&format!(
+        r"{MATH_FONTS}\setbox0\hbox to 30pt{{\leaders\hrule\hfil\cleaders\hrule\hfil
+          \xleaders\hrule\hfil$x\nonscript\mskip 3mu x\showlists$}}\showbox0"
+    ));
+    assert_eq!(
+        r.lines_starting("\\glue"),
+        [r"\glue(\nonscript)", r"\glue(\mskip) 3.0mu"]
+    );
+    assert_lines(
+        &r.boxes()[0],
+        r"
+        \hbox(4.30554+0.0)x30.0, glue set 5.63428fil
+        .\leaders 0.0 plus 1.0fil
+        ..\rule(0.4+0.0)x*
+        .\cleaders 0.0 plus 1.0fil
+        ..\rule(0.4+0.0)x*
+        .\xleaders 0.0 plus 1.0fil
+        ..\rule(0.4+0.0)x*
+        .\mathon
+        .\mi x
+        .\glue(\nonscript)
+        .\glue 1.66663
+        .\mi x
+        .\mathoff",
+    );
+}

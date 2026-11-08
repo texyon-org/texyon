@@ -13,14 +13,14 @@ use crate::consts::{EMPTY, NORMAL};
 use crate::node::{
     AccentNoad, ActiveNode, AdjustNode, AdjustPlacement, AlignRecord, AlignStackNode, AnyNoad,
     BoxNode, CharNode, ChoiceNode, CondNode, DelimiterField, DeltaNode, DiscNode, EdgeNode,
-    ExprNode, FenceNoad, FenceSubtype, FixedNode, FractionNoad, FreeBlock, GlueNode, GlueSpecNode,
-    GlyphNode, InsNode, KernNode, KernSubtype, LanguageNode, LigBoundary, LigItem, LigatureNode,
-    Link, MarginKernNode, MarkNode, MathAccentKind, MathCode, MathField, MathNode, MovementNode,
-    NativeWordNode, Noad, NodeKind, NodePtr, OpenNode, PageInsNode, ParShapeNode, PassiveNode,
-    PenaltiesNode, PenaltyNode, PicNode, PseudoLineNode, RadicalNoad, RuleNode, SaChild, SaElement,
-    SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved, SaSavedPointer, SaSavedWord,
-    SaWordNode, SizedWhatsit, SpanNode, Stored, StoredDimen, StyleNode, UnsetNode, WhatsitNode,
-    WhatsitSubtype, WriteNode,
+    ExprNode, FenceNoad, FenceSubtype, FixedNode, FractionNoad, FreeBlock, GlueKind, GlueNode,
+    GlueSpecNode, GlyphNode, InsNode, KernNode, KernSubtype, LanguageNode, LeaderKind, LigBoundary,
+    LigItem, LigatureNode, Link, MarginKernNode, MarkNode, MathAccentKind, MathCode, MathField,
+    MathNode, MovementNode, NativeWordNode, Noad, NodeKind, NodePtr, OpenNode, PageInsNode,
+    ParShapeNode, PassiveNode, PenaltiesNode, PenaltyNode, PicNode, PseudoLineNode, RadicalNoad,
+    RuleNode, SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved,
+    SaSavedPointer, SaSavedWord, SaWordNode, SizedWhatsit, SpanNode, Stored, StoredDimen,
+    StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype, WriteNode,
 };
 use crate::state::MemState;
 use crate::token::TokenList;
@@ -1221,7 +1221,7 @@ overlay!(RuleNode => RuleLayout);
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct GlueLayout {
-    pub subtype: u16,
+    pub subtype: Stored<GlueKind>,
     _type: u16,
     pub link: MemPtr,
     pub glue_ptr: NodePtr<GlueSpecNode>,
@@ -1232,6 +1232,17 @@ pub struct GlueLayout {
 }
 
 overlay!(GlueNode => GlueLayout);
+
+impl GlueLayout {
+    /// The leader kind, `None` for any other glue.
+    #[inline]
+    pub fn leaders(&self) -> Option<LeaderKind> {
+        match self.subtype.get() {
+            Some(GlueKind::Leaders(kind)) => Some(kind),
+            _ => None,
+        }
+    }
+}
 
 /// An insertion into the class of its box number.
 #[repr(C)]

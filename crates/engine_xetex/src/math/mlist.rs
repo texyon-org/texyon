@@ -2,16 +2,16 @@
 
 use crate::codes::LimitCode;
 use crate::consts::{
-    BOX_NODE_SIZE, COND_MATH_GLUE, EMPTY, GLYPH_NODE_SIZE, INFINITE_DIMEN, INF_PENALTY, MATH_CHAR,
-    MATH_TEXT_CHAR, MAX_DIMEN, MEDIUM_NODE_SIZE, MU_GLUE, NOAD_SIZE, NORMAL, NULL_FONT,
-    SCRIPT_SIZE, STYLE_NODE_SIZE, SUB_BOX, SUB_MLIST, TEXT_SIZE,
+    BOX_NODE_SIZE, EMPTY, GLYPH_NODE_SIZE, INFINITE_DIMEN, INF_PENALTY, MATH_CHAR, MATH_TEXT_CHAR,
+    MAX_DIMEN, MEDIUM_NODE_SIZE, NOAD_SIZE, NULL_FONT, SCRIPT_SIZE, STYLE_NODE_SIZE, SUB_BOX,
+    SUB_MLIST, TEXT_SIZE,
 };
 use crate::errors::Abort;
 use crate::fonts::{CharInfo, CharTag, AAT_FONT_FLAG, OTGR_FONT_FLAG, SPACE_CODE, X_HEIGHT_CODE};
 use crate::mem::{TEMP_HEAD, TEX_NULL, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
 use crate::node::{
-    AccentNoad, AnyNoad, AnyNode, BoxNode, ChoiceNode, FenceNoad, FractionNoad, GlueNode,
+    AccentNoad, AnyNoad, AnyNode, BoxNode, ChoiceNode, FenceNoad, FractionNoad, GlueKind, GlueNode,
     GlueSpecNode, GlyphNode, KernNode, KernSubtype, MathAccentKind, MathField, Noad, NoadVariant,
     NodePtr, RadicalNoad, RuleDimen, RuleNode, WhatsitSubtype, WhatsitVariant,
 };
@@ -1366,12 +1366,12 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                     let subtype = st.mem[glue].subtype;
                     let mu = st.scanner.cur_mu;
                     let x = st.mem[glue].glue_ptr;
-                    if subtype == MU_GLUE {
+                    if subtype == GlueKind::Mu {
                         let y = math_glue(st, x, mu)?;
                         st.mem.delete_glue_ref(x);
                         st.mem[glue].glue_ptr = y;
-                        st.mem[glue].subtype = NORMAL;
-                    } else if subtype == COND_MATH_GLUE {
+                        st.mem[glue].subtype = GlueKind::Normal.into();
+                    } else if subtype == GlueKind::CondMath {
                         let cur_size = st.scanner.cur_size;
                         st.mem.mlist_cond_math_glue(glue, cur_size)?;
                     }
@@ -1515,7 +1515,7 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                     let z = st.mem.new_glue(y)?;
                     st.mem[y].ref_count = TEX_NULL;
                     p.set_link(&mut st.mem, z.ptr());
-                    st.mem[z].subtype = x.subtype();
+                    st.mem[z].subtype = GlueKind::Param(x).into();
                     p = z.ptr();
                 }
             }

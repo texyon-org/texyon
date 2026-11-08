@@ -7,7 +7,7 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
-use crate::node::{ActiveNode, AnyNode, BoxNode, KernSubtype, MathNode, NodePtr};
+use crate::node::{ActiveNode, AnyNode, BoxNode, GlueKind, KernSubtype, MathNode, NodePtr};
 use crate::packaging::PackSpec;
 use crate::params::{GluePar, IntPar};
 use crate::state::{
@@ -88,7 +88,7 @@ impl LinebreakState {
                     mem.delete_glue_ref(old_spec);
                     let right_skip = eqtb.glue_par(GluePar::RightSkip);
                     mem[g].glue_ptr = right_skip;
-                    mem[g].subtype = GluePar::RightSkip.subtype();
+                    mem[g].subtype = GlueKind::Param(GluePar::RightSkip).into();
                     mem.add_glue_ref(right_skip);
                     glue_break = true;
                 }

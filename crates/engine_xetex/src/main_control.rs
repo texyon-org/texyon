@@ -1,16 +1,17 @@
 //! The main control loop and its command dispatch.
 
 use crate::cmd::Cmd;
-use crate::codes::ScannerStatus;
 use crate::codes::SkipCode;
 use crate::codes::ValignCode;
+use crate::codes::{LeaderCode, ScannerStatus};
 use crate::command::Command;
-use crate::consts::{A_LEADERS, COND_MATH_GLUE, HMODE, IGNORE_DEPTH, MMODE, SINGLE_BASE, VMODE};
+use crate::consts::{HMODE, IGNORE_DEPTH, MMODE, SINGLE_BASE, VMODE};
 use crate::errors::Abort;
 use crate::ext::do_extension;
 use crate::input::TokenType;
 use crate::math::{after_math, init_math};
 use crate::mem::ZERO_GLUE;
+use crate::node::GlueKind;
 use crate::params::{GluePar, IntPar, TokPar};
 use crate::state::{EngineState, GroupCode};
 use crate::token::Token;
@@ -337,7 +338,7 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
             scan_box(st, shift.raw())?;
         }
         (_, Command::LeaderShip(code)) => {
-            scan_box(st, LEADER_FLAG - i32::from(A_LEADERS) + code.raw())?
+            scan_box(st, LEADER_FLAG - LeaderCode::ALeaders.raw() + code.raw())?
         }
         (_, Command::MakeBox(code)) => begin_box(st, 0, code)?,
         (VMODE, Command::StartPar { indent }) => new_graf(st, indent)?,
@@ -450,7 +451,7 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
         (MMODE, Command::NonScript) => {
             let g = st.mem.new_glue(ZERO_GLUE)?;
             st.input.cur_list.tail_append(&mut st.mem, g.ptr());
-            st.mem[g].subtype = COND_MATH_GLUE;
+            st.mem[g].subtype = GlueKind::CondMath.into();
         }
         (MMODE, Command::MathChoice) => crate::math::append_choices(st)?,
         (MMODE, Command::SubMark(_) | Command::SupMark(_)) => crate::math::sub_sup(st)?,

@@ -3,14 +3,14 @@
 use crate::cmd::Cmd;
 use crate::codes::{
     BoxCode, BoxDimenCode, ConvertCode, DelimNumCode, ExtensionCode, FiOrElseCode, IfCode,
-    InputCode, LastItemCode, LeftRightCode, LimitCode, MarkCode, MathAccentCode, MathCharNumCode,
-    PageIntCode, RadicalCode, ShorthandDefCode, ShowCode, SkipCode, TheCode, ValignCode,
-    ValueLevel,
+    InputCode, LastItemCode, LeaderCode, LeftRightCode, LimitCode, MarkCode, MathAccentCode,
+    MathCharNumCode, PageIntCode, RadicalCode, ShorthandDefCode, ShowCode, SkipCode, TheCode,
+    ValignCode, ValueLevel,
 };
 use crate::consts::{
-    A_LEADERS, COUNT_BASE, DEL_CODE_BASE, DIMEN_BASE, ETEX_PEN_BASE, GLUE_BASE, INT_BASE,
-    LC_CODE_BASE, LOCAL_BASE, MATH_CODE_BASE, MATH_FONT_BASE, MU_SKIP_BASE, PAR_SHAPE_LOC,
-    SCALED_BASE, SF_CODE_BASE, SKIP_BASE, TOKS_BASE, UC_CODE_BASE, VMODE,
+    COUNT_BASE, DEL_CODE_BASE, DIMEN_BASE, ETEX_PEN_BASE, GLUE_BASE, INT_BASE, LC_CODE_BASE,
+    LOCAL_BASE, MATH_CODE_BASE, MATH_FONT_BASE, MU_SKIP_BASE, PAR_SHAPE_LOC, SCALED_BASE,
+    SF_CODE_BASE, SKIP_BASE, TOKS_BASE, UC_CODE_BASE, VMODE,
 };
 use crate::main_control::{CR_CODE, LP_CODE_BASE, RP_CODE_BASE, SPAN_CODE};
 use crate::math::{ABOVE_CODE, ATOP_CODE, DELIMITED_CODE, OVER_CODE};
@@ -327,13 +327,10 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
             BoxCode::from_raw(chr_code).map_or("hbox", BoxCode::name),
         ),
         Cmd::LeaderShip => {
-            let name = match chr_code - i32::from(A_LEADERS) {
-                0 => "leaders",
-                1 => "cleaders",
-                2 => "xleaders",
-                _ => "shipout",
-            };
-            print_esc(st, name);
+            print_esc(
+                st,
+                LeaderCode::from_raw(chr_code).map_or("shipout", LeaderCode::name),
+            );
         }
         Cmd::StartPar => print_esc(st, if chr_code == 0 { "noindent" } else { "indent" }),
         Cmd::RemoveItem => {

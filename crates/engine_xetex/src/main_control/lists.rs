@@ -5,8 +5,8 @@ use crate::codes::{BoxCode, SkipCode, ValueLevel};
 use crate::command::Command;
 use crate::consts::{
     BIGGEST_CHAR, BOX_NODE_SIZE, EMPTY, ETEX_PEN_BASE, FROZEN_CR, FROZEN_END_GROUP, FROZEN_RIGHT,
-    HMODE, IGNORE_DEPTH, MAX_DIMEN, MMODE, MU_GLUE, NOAD_SIZE, NULL_FLAG, PAR_SHAPE_LOC, SUB_BOX,
-    SUB_MLIST, TEX_NULL, VMODE,
+    HMODE, IGNORE_DEPTH, MAX_DIMEN, MMODE, NOAD_SIZE, NULL_FLAG, PAR_SHAPE_LOC, SUB_BOX, SUB_MLIST,
+    TEX_NULL, VMODE,
 };
 use crate::errors::Abort;
 use crate::fonts::{
@@ -19,8 +19,8 @@ use crate::mem::{
 };
 use crate::mem_types::ListStateRecord;
 use crate::node::{
-    AdjustNode, AdjustPlacement, AnyNode, CharNode, DiscNode, GlueNode, GlueSpecNode, InsNode,
-    KernSubtype, LanguageNode, MarkNode, MathField, NativeWordNode, NoadVariant, NodePtr,
+    AdjustNode, AdjustPlacement, AnyNode, CharNode, DiscNode, GlueKind, GlueNode, GlueSpecNode,
+    InsNode, KernSubtype, LanguageNode, MarkNode, MathField, NativeWordNode, NoadVariant, NodePtr,
     WhatsitSubtype, WhatsitVariant,
 };
 use crate::packaging::PackSpec;
@@ -539,7 +539,7 @@ pub(super) fn append_glue(st: &mut EngineState, s: SkipCode) -> Result<NodePtr<G
         let refs = st.mem[spec].ref_count;
         st.mem[spec].ref_count = refs - 1;
         if s == SkipCode::Mskip {
-            st.mem[g].subtype = MU_GLUE;
+            st.mem[g].subtype = GlueKind::Mu.into();
         }
     }
     Ok(g)

@@ -6,6 +6,7 @@
 //! `mem[p].width`, `mem.entries(p)` for the text or array after a header.
 
 use crate::math::MathStyle;
+use crate::params::GluePar;
 use std::marker::PhantomData;
 
 use crate::consts::{
@@ -458,6 +459,61 @@ impl MathCode {
             MathCode::BeginM | MathCode::EndM => MathCode::EndM,
             MathCode::BeginL | MathCode::EndL => MathCode::EndL,
             MathCode::BeginR | MathCode::EndR => MathCode::EndR,
+        }
+    }
+}
+
+stored_code! {
+    /// How leaders repeat their box or rule.
+    pub enum LeaderKind {
+        /// `\leaders`, aligned on the enclosing box.
+        Aligned = 100,
+        /// `\cleaders`, centred.
+        Centered = 101,
+        /// `\xleaders`, expanded.
+        Expanded = 102,
+    }
+}
+
+/// What a glue node is: plain, made from a parameter, math glue or leaders.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum GlueKind {
+    /// Plain glue.
+    Normal,
+    /// From a glue parameter, so `\showbox` names it.
+    Param(GluePar),
+    /// Glue that `\nonscript` cancels in script styles.
+    CondMath,
+    /// `\mskip`, in mu until `mlist_to_hlist` converts it.
+    Mu,
+    /// `\leaders`, `\cleaders` or `\xleaders`.
+    Leaders(LeaderKind),
+}
+
+const COND_MATH_GLUE: u16 = 98;
+const MU_GLUE: u16 = 99;
+
+impl StoredCode for GlueKind {
+    #[inline]
+    fn from_u16(raw: u16) -> Option<Self> {
+        Some(match raw {
+            0 => GlueKind::Normal,
+            COND_MATH_GLUE => GlueKind::CondMath,
+            MU_GLUE => GlueKind::Mu,
+            _ => match LeaderKind::from_u16(raw) {
+                Some(kind) => GlueKind::Leaders(kind),
+                None => GlueKind::Param(GluePar::from_raw(i32::from(raw) - 1)?),
+            },
+        })
+    }
+    #[inline]
+    fn to_u16(self) -> u16 {
+        match self {
+            GlueKind::Normal => 0,
+            GlueKind::Param(p) => p as u16 + 1,
+            GlueKind::CondMath => COND_MATH_GLUE,
+            GlueKind::Mu => MU_GLUE,
+            GlueKind::Leaders(kind) => kind.to_u16(),
         }
     }
 }
@@ -1869,6 +1925,35 @@ mod tests {
         }
     }
 
+    #[test]
+    fn glue_kinds_keep_web_codes() {
+        use LeaderKind as L;
+        assert_web_codes(&[(L::Aligned, 100), (L::Centered, 101), (L::Expanded, 102)]);
+        let pairs = [
+            (GlueKind::Normal, 0),
+            (GlueKind::Param(GluePar::LineSkip), 1),
+            (GlueKind::Param(GluePar::TabSkip), 12),
+            (GlueKind::Param(GluePar::ThickMuSkip), 19),
+            (GlueKind::CondMath, 98),
+            (GlueKind::Mu, 99),
+            (GlueKind::Leaders(L::Aligned), 100),
+            (GlueKind::Leaders(L::Centered), 101),
+            (GlueKind::Leaders(L::Expanded), 102),
+        ];
+        for (kind, raw) in pairs {
+            assert_eq!(kind.to_u16(), raw, "{kind:?}");
+            assert_eq!(GlueKind::from_u16(raw), Some(kind), "{raw}");
+        }
+        let valid: Vec<u16> = (0..=u16::MAX)
+            .filter(|&n| GlueKind::from_u16(n).is_some())
+            .collect();
+        let expected: Vec<u16> = (0..=19).chain(98..=102).collect();
+        assert_eq!(valid, expected);
+        for n in valid {
+            assert_eq!(GlueKind::from_u16(n).map(GlueKind::to_u16), Some(n));
+        }
+    }
+
     /// An arena whose free list is the single block `[10, 30)`.
     fn arena_with_free_block() -> MemState {
         let mut mem = fresh_mem(64);
@@ -2279,10 +2364,10 @@ mod tests {
     fn glue_node_and_spec_fields_land_in_their_words() {
         let mut mem = fresh_mem(200);
         let g: NodePtr<GlueNode> = at(&mut mem, 100, Some(NodeType::Glue));
-        mem[g].subtype = 7;
+        mem[g].subtype = GlueKind::Param(GluePar::LeftSkip).into();
         mem[g].glue_ptr = NodePtr::from_glue_ptr(MemPtr::from_raw(150));
         mem[g].leader_ptr = MemPtr::from_raw(160);
-        assert_eq!(mem.b16s0(MemPtr::from_raw(100)), 7);
+        assert_eq!(mem.b16s0(MemPtr::from_raw(100)), 8);
         assert_eq!(mem.b32s0(MemPtr::from_raw(101)), 150);
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 160);
         assert_eq!(mem[g].glue_ptr.idx(), MemIdx::from_raw(150));

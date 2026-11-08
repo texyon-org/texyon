@@ -2,8 +2,8 @@
 
 use crate::bridge::output_flush;
 use crate::cmd::Cmd;
-use crate::codes::{FiOrElseCode, ShowCode, TheCode};
-use crate::consts::{A_LEADERS, HMODE, IGNORE_DEPTH, MMODE, VMODE};
+use crate::codes::{FiOrElseCode, LeaderCode, ShowCode, TheCode};
+use crate::consts::{HMODE, IGNORE_DEPTH, MMODE, VMODE};
 use crate::errors::{error, Abort};
 use crate::input::{TokenType, TOKEN_LIST};
 use crate::main_control::{BOX_FLAG, GLOBAL_BOX_FLAG, LEADER_FLAG, SHIP_OUT_FLAG};
@@ -376,7 +376,7 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                     print_cmd_chr(
                         st,
                         Cmd::LeaderShip,
-                        i - (LEADER_FLAG - i32::from(A_LEADERS)),
+                        i - LEADER_FLAG + LeaderCode::ALeaders.raw(),
                     );
                 }
             }
