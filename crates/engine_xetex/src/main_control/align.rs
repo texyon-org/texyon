@@ -46,7 +46,7 @@ pub(super) fn align_error(st: &mut EngineState) -> Result<(), Abort> {
                 "might try typing `S' now just to see what is salvageable.",
             ]);
         }
-        crate::errors::error(st)?;
+        crate::errors::finish_error(st)?;
     } else {
         crate::input::back_input(st)?;
         if st.scanner.align_state < 0 {
@@ -63,7 +63,7 @@ pub(super) fn align_error(st: &mut EngineState) -> Result<(), Abort> {
             "the current column of the current alignment.",
             "Try to go on, since this might almost work.",
         ]);
-        crate::input::ins_error(st)?;
+        crate::input::ins_finish_error(st)?;
     }
     Ok(())
 }
@@ -75,7 +75,7 @@ pub(super) fn no_align_error(st: &mut EngineState) -> Result<(), Abort> {
         r"I expect to see \noalign only after the \cr of",
         "an alignment. Proceed, and I'll ignore this case.",
     ]);
-    crate::errors::error(st)
+    crate::errors::finish_error(st)
 }
 pub(super) fn omit_error(st: &mut EngineState) -> Result<(), Abort> {
     crate::output::error_here_with_diagnostic(st, "Misplaced ");
@@ -85,7 +85,7 @@ pub(super) fn omit_error(st: &mut EngineState) -> Result<(), Abort> {
         r"I expect to see \omit only after tab marks or the \cr of",
         "an alignment. Proceed, and I'll ignore this case.",
     ]);
-    crate::errors::error(st)
+    crate::errors::finish_error(st)
 }
 fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
     if st.save_stack.cur_group != GroupCode::Align {
@@ -314,7 +314,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                 r"Displays can use special alignments (like \eqalignno)",
                 "only if nothing but the alignment itself is between $$'s.",
             ]);
-            crate::input::back_error(st)?;
+            crate::input::back_finish_error(st)?;
         } else {
             crate::math::check_display_end(st)?;
         }
@@ -641,7 +641,7 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
                 r"So I'll assume that you meant to type \cr instead.",
             ]);
             st.mem[cur_align].extra_info = CR_CODE;
-            crate::errors::error(st)?;
+            crate::errors::finish_error(st)?;
         }
     }
     if st.mem[cur_align].extra_info != SPAN_CODE {
@@ -764,7 +764,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
             "only if nothing but the alignment itself is between $$'s.",
             "So I've deleted the formulas that preceded this alignment.",
         ]);
-        crate::errors::error(st)?;
+        crate::errors::finish_error(st)?;
         st.input.cur_list.flush_math(&mut st.mem)?;
     }
 
@@ -815,7 +815,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
                         r"\halign or \valign is being set up. In this case you had",
                         "none, so I've put one in; maybe that will work.",
                     ]);
-                    crate::input::back_error(st)?;
+                    crate::input::back_finish_error(st)?;
                     break;
                 }
             } else if st.scanner.cur_cmd != Cmd::Spacer || p != HOLD_HEAD_TOKS {
@@ -845,7 +845,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
                     r"\halign or \valign is being set up. In this case you had",
                     "more than one, so I'm ignoring all but the first.",
                 ]);
-                crate::errors::error(st)?;
+                crate::errors::finish_error(st)?;
                 continue;
             }
             st.mem.store_new_token(&mut p, st.scanner.cur_tok)?;

@@ -42,7 +42,7 @@ pub(super) fn unpackage(st: &mut EngineState, c: BoxCode) -> Result<(), Abort> {
                 r"I refuse to unbox an \hbox in vertical mode or vice versa.",
                 "And I can't open any boxes in math mode.",
             ]);
-            return crate::errors::error(st);
+            return crate::errors::finish_error(st);
         }
         let list = st.mem[b].list_ptr;
         if c == BoxCode::Copy {
@@ -86,7 +86,7 @@ pub(super) fn delete_last(st: &mut EngineState, t: NodeType) -> Result<(), Abort
                 "Sorry...I usually can't take things from the current page.",
                 remedy,
             ]);
-            return crate::errors::error(st);
+            return crate::errors::finish_error(st);
         }
         return Ok(());
     }
@@ -116,7 +116,7 @@ pub(super) fn scan_box(st: &mut EngineState, box_context: i32) -> Result<(), Abo
             "something like that. So you might find something missing in",
             "your output. But keep trying; you can fix this later.",
         ]);
-        crate::input::back_error(st)
+        crate::input::back_finish_error(st)
     }
 }
 
@@ -238,7 +238,7 @@ fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
                 "I found the <box or rule>, but there's no suitable",
                 "<hskip or vskip>, so I'm ignoring these leaders.",
             ]);
-            crate::input::back_error(st)?;
+            crate::input::back_finish_error(st)?;
             st.mem.flush_node_list(cb.ptr())?;
         }
     }
@@ -331,7 +331,7 @@ pub(super) fn begin_box(
             if st.input.cur_list.mode.abs() == MMODE {
                 crate::errors::you_cant(st);
                 st.errors.help(&[r"Sorry; this \lastbox will be void."]);
-                crate::errors::error(st)?;
+                crate::errors::finish_error(st)?;
             } else if st.input.cur_list.mode == VMODE
                 && st.input.cur_list.head == st.input.cur_list.tail
             {
@@ -340,7 +340,7 @@ pub(super) fn begin_box(
                     "Sorry...I usually can't take things from the current page.",
                     r"This \lastbox will therefore be void.",
                 ]);
-                crate::errors::error(st)?;
+                crate::errors::finish_error(st)?;
             } else {
                 let tx = effective_tail(st);
                 if !st.mem.is_char_node(tx) {
@@ -361,7 +361,7 @@ pub(super) fn begin_box(
                     r"I'm working on `\vsplit<box number> to <dimen>';",
                     "will look for the <dimen> next.",
                 ]);
-                crate::errors::error(st)?;
+                crate::errors::finish_error(st)?;
             }
             let d = crate::scan::scan_dimen(st, false, false)?;
             st.scanner.cur_box = crate::packaging::vsplit(st, n, d)?.map(BoxOrRule::Box);

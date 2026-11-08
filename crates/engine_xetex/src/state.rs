@@ -763,7 +763,36 @@ pub(crate) enum GroupCode {
     MathLeft = 16,
 }
 
+/// The command that closes a group `}` cannot close, as TeX names it.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(crate) enum Closer {
+    EndGroup,
+    MathShift,
+    Right,
+}
+
+impl crate::output::TexPrint for Closer {
+    fn print_to(&self, st: &mut EngineState) {
+        use crate::output::{print, Esc};
+        match self {
+            Closer::EndGroup => print(st, Esc("endgroup")),
+            Closer::MathShift => print(st, '$'),
+            Closer::Right => print(st, Esc("right")),
+        }
+    }
+}
+
 impl GroupCode {
+    /// What closes this group, `None` for groups that `}` closes.
+    pub(crate) fn closer(self) -> Option<Closer> {
+        match self {
+            GroupCode::SemiSimple => Some(Closer::EndGroup),
+            GroupCode::MathShift => Some(Closer::MathShift),
+            GroupCode::MathLeft => Some(Closer::Right),
+            _ => None,
+        }
+    }
+
     #[inline]
     pub(crate) fn from_raw(v: u8) -> Option<GroupCode> {
         Some(match v {

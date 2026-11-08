@@ -163,15 +163,17 @@ fn finite_shrink(
 ) -> Result<NodePtr<GlueSpecNode>, Abort> {
     if st.errors.no_shrink_error_yet {
         st.errors.no_shrink_error_yet = false;
-        crate::output::print_err(st, "Infinite glue shrinkage found in a paragraph");
-        st.errors.help(&[
-            "The paragraph just ended includes some glue that has",
-            r"infinite shrinkability, e.g., `\hskip 0pt minus 1fil'.",
-            "Such glue doesn't belong there---it allows a paragraph",
-            "of any length to fit on one line. But it's safe to proceed,",
-            "since the offensive shrinkability has been made finite.",
-        ]);
-        crate::errors::error(st)?;
+        crate::errors::error(
+            st,
+            "Infinite glue shrinkage found in a paragraph",
+            &[
+                "The paragraph just ended includes some glue that has",
+                r"infinite shrinkability, e.g., `\hskip 0pt minus 1fil'.",
+                "Such glue doesn't belong there---it allows a paragraph",
+                "of any length to fit on one line. But it's safe to proceed,",
+                "since the offensive shrinkability has been made finite.",
+            ],
+        )?;
     }
     st.mem.finite_shrink(spec)
 }

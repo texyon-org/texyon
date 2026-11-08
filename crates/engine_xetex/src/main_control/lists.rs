@@ -188,7 +188,7 @@ pub(super) fn head_for_vmode(st: &mut EngineState) -> Result<(), Abort> {
         "To put a horizontal rule in an hbox or an alignment,",
         r"you should use \leaders or \hrulefill (see The TeXbook).",
     ]);
-    crate::errors::error(st)
+    crate::errors::finish_error(st)
 }
 
 pub(super) fn begin_insert_or_adjust(st: &mut EngineState) -> Result<(), Abort> {
@@ -203,7 +203,7 @@ pub(super) fn begin_insert_or_adjust(st: &mut EngineState) -> Result<(), Abort> 
                 crate::output::capture_to_diagnostic(st, None);
                 st.errors
                     .help(&[r"I'm changing to \insert0; box 255 is special."]);
-                crate::errors::error(st)?;
+                crate::errors::finish_error(st)?;
                 0
             }
             n => n,
@@ -371,7 +371,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
                 "You've closed more groups than you opened.",
                 "Such booboos are generally harmless, so keep going.",
             ]);
-            crate::errors::error(st)?;
+            crate::errors::finish_error(st)?;
         }
         GroupCode::SemiSimple | GroupCode::MathShift | GroupCode::MathLeft => {
             crate::errors::extra_right_brace(st)?;
@@ -448,7 +448,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
                     "Your sneaky output routine has problematic {'s and/or }'s.",
                     "I can't handle that very well; good luck.",
                 ]);
-                crate::errors::error(st)?;
+                crate::errors::finish_error(st)?;
                 loop {
                     crate::scan::get_token(st)?;
                     if st.input.cur_input.token_loc().is_null() {
@@ -510,7 +510,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             crate::output::capture_to_diagnostic(st, None);
             st.errors
                 .help(&["I'm guessing that you meant to end an alignment here."]);
-            crate::input::ins_error(st)?;
+            crate::input::ins_finish_error(st)?;
         }
         GroupCode::NoAlign => {
             end_graf(st)?;
@@ -651,7 +651,7 @@ pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
         crate::output::capture_to_diagnostic(st, None);
         st.errors
             .help(&["Things are pretty mixed up, but I think the worst is over."]);
-        return crate::errors::error(st);
+        return crate::errors::finish_error(st);
     }
     crate::input::back_input(st)?;
     let p = st.mem.get_avail_token()?;
@@ -688,7 +688,7 @@ pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
         "really didn't forget anything, try typing `2' now; then",
         "my insertion and my current dilemma will both disappear.",
     ]);
-    crate::errors::error(st)
+    crate::errors::finish_error(st)
 }
 
 fn begin_disc_group(st: &mut EngineState) -> Result<(), Abort> {
@@ -738,7 +738,7 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
                 crate::output::print_err(st, "Improper discretionary list");
                 st.errors
                     .help(&["Discretionary lists must contain only boxes and kerns."]);
-                crate::errors::error(st)?;
+                crate::errors::finish_error(st)?;
                 crate::output::begin_diagnostic(st);
                 crate::output::diagnostic_begin_capture_warning_here(st);
                 crate::output::print_nl(
@@ -777,7 +777,7 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
                 ]);
                 st.mem.flush_node_list(p)?;
                 n = 0;
-                crate::errors::error(st)?;
+                crate::errors::finish_error(st)?;
             } else {
                 st.mem[disc].link = p;
             }
@@ -789,7 +789,7 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
                     "Wow---I never thought anybody would tweak me here.",
                     "You can't seriously need such a huge discretionary list?",
                 ]);
-                crate::errors::error(st)?;
+                crate::errors::finish_error(st)?;
             }
             if n > 0 {
                 st.input.cur_list.tail = q;

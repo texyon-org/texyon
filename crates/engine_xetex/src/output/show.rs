@@ -4,7 +4,7 @@ use crate::bridge::output_flush;
 use crate::cmd::Cmd;
 use crate::codes::{FiOrElseCode, LeaderCode, ShowCode, TheCode};
 use crate::consts::{HMODE, IGNORE_DEPTH, MMODE, VMODE};
-use crate::errors::{error, Abort};
+use crate::errors::{finish_error, Abort};
 use crate::input::{TokenType, TOKEN_LIST};
 use crate::main_control::{BOX_FLAG, GLOBAL_BOX_FLAG, LEADER_FLAG, SHIP_OUT_FLAG};
 use crate::mem::{CONTRIB_HEAD, GARBAGE, PAGE_HEAD, PAGE_INS_HEAD, TEMP_HEAD};
@@ -194,7 +194,7 @@ pub(crate) fn issue_message(st: &mut EngineState, err: bool) -> Result<(), Abort
                 "and deduce the truth by order and method.",
             ]);
         }
-        let outcome = error(st);
+        let outcome = finish_error(st);
         st.errors.use_err_help = false;
         outcome?;
     }
@@ -545,7 +545,7 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
             "lists on your terminal as well as in the transcript file.",
         ]);
     }
-    error(st)
+    finish_error(st)
 }
 
 /// Sends a `\show...` to the `\write` stream `\showstream` names, if that stream is open.

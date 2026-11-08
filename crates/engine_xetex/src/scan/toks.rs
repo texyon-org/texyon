@@ -4,9 +4,9 @@ use crate::bridge::output_flush;
 use crate::cmd::Cmd;
 use crate::codes::{ScannerStatus, TheCode, ValueLevel};
 use crate::consts::{ACTIVE_BASE, CLOSED, JUST_OPEN, NORMAL, TEX_NULL};
-use crate::errors::{error, Abort};
+use crate::errors::{finish_error, Abort};
 use crate::expand::expand;
-use crate::input::{back_error, NEW_LINE};
+use crate::input::{back_finish_error, NEW_LINE};
 use crate::mem::{TEMP_HEAD, TEMP_HEAD_TOKS};
 use crate::node::{NodePtr, PseudoLineNode};
 use crate::output::{
@@ -141,7 +141,7 @@ pub(crate) fn read_toks(
                     st.errors.help(&[r"This \read has unbalanced braces."]);
                     st.scanner.align_state = 1_000_000;
                     st.input.cur_input.limit = BufPos::ZERO;
-                    error(st)?;
+                    finish_error(st)?;
                 }
             }
         }
@@ -322,7 +322,7 @@ pub(crate) fn scan_toks(
                             "I'm going to ignore the # sign you just used,",
                             "as well as the token that followed it.",
                         ]);
-                        error(st)?;
+                        finish_error(st)?;
                         continue;
                     }
                     t = Token(t.0 + 1);
@@ -332,7 +332,7 @@ pub(crate) fn scan_toks(
                             "I've inserted the digit you should have used after the #.",
                             "Type `1' to delete what you did use.",
                         ]);
-                        back_error(st)?;
+                        back_finish_error(st)?;
                     }
                     st.scanner.cur_tok = s;
                 }
@@ -347,7 +347,7 @@ pub(crate) fn scan_toks(
                         r"Where was the left brace? You said something like `\def\a}',",
                         r"which I'm going to interpret as `\def\a{}'.",
                     ]);
-                    error(st)?;
+                    finish_error(st)?;
                     break 'found;
                 }
             }
@@ -418,7 +418,7 @@ pub(crate) fn scan_toks(
                             "Or maybe a } was forgotten somewhere earlier, and things",
                             "are all screwed up? I'm going to assume that you meant ##.",
                         ]);
-                        back_error(st)?;
+                        back_finish_error(st)?;
                         st.scanner.cur_tok = s;
                     } else {
                         st.scanner.cur_tok = Token::out_param(st.scanner.cur_chr - i32::from(b'0'));

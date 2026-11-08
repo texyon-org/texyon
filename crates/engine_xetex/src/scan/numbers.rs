@@ -7,11 +7,11 @@ use crate::consts::{
     FROZEN_RELAX, MAX_DIMEN, MAX_HALFWORD, NULL_CS, NUMBER_MATH_FAMILIES, SINGLE_BASE,
     TEX_INFINITY,
 };
-use crate::errors::{error, int_error, mu_error, Abort};
+use crate::errors::{finish_error, mu_error, Abort};
 use crate::fonts::{QUAD_CODE, X_HEIGHT_CODE};
-use crate::input::{back_error, back_input};
+use crate::input::{back_finish_error, back_input};
 use crate::node::{ExprNode, GlueSpecNode, NodePtr};
-use crate::output::{capture_to_diagnostic, error_here_with_diagnostic, print_err};
+use crate::output::print_err;
 use crate::params::IntPar;
 use crate::state::EngineState;
 use crate::token::Token;
@@ -47,11 +47,7 @@ pub(super) fn bad_int_error(
     help1: &'static str,
     help0: &'static str,
 ) -> Result<(), Abort> {
-    error_here_with_diagnostic(st, err);
-    crate::output::append_to_diagnostic(st, &format!(" ({value})"));
-    capture_to_diagnostic(st, None);
-    st.errors.help(&[help1, help0]);
-    int_error(st, value)
+    crate::errors::error(st, (err, " (", value, ")"), &[help1, help0])
 }
 
 /// Reports the out-of-range integer `value` and yields zero in its place.
@@ -293,7 +289,7 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<i32, Abort> {
                     r"So I'm essentially inserting \0 here.",
                 ]);
                 v = i32::from(b'0');
-                back_error(st)?;
+                back_finish_error(st)?;
             } else {
                 scan_optional_space(st)?;
             }
@@ -338,7 +334,7 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<i32, Abort> {
                             "I can only go up to 2147483647='17777777777=\"7FFFFFFF,",
                             "so I'm using that number instead of yours.",
                         ]);
-                        error(st)?;
+                        finish_error(st)?;
                         v = TEX_INFINITY;
                         ok_so_far = false;
                     }
@@ -354,7 +350,7 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<i32, Abort> {
                     "(If you can't figure out why I needed to see a number,",
                     "look up `weird error' in the index to The TeXbook.)",
                 ]);
-                back_error(st)?;
+                back_finish_error(st)?;
             } else if st.scanner.cur_cmd != Cmd::Spacer {
                 back_input(st)?;
             }
@@ -511,7 +507,7 @@ fn scan_dimen_from(
                             None => {
                                 print_err(st, "Illegal unit of measure (replaced by filll)");
                                 st.errors.help(&["I dddon't go any higher than filll."]);
-                                error(st)?;
+                                finish_error(st)?;
                             }
                         }
                     }
@@ -571,7 +567,7 @@ fn scan_dimen_from(
                             "delete the erroneous units; e.g., type `2' to delete",
                             "two letters. (See Chapter 27 of The TeXbook.)",
                         ]);
-                        error(st)?;
+                        finish_error(st)?;
                         break 'units true;
                     }
                 }
@@ -614,7 +610,7 @@ fn scan_dimen_from(
                         "delete the erroneous units; e.g., type `2' to delete",
                         "two letters. (See Chapter 27 of The TeXbook.)",
                     ]);
-                    error(st)?;
+                    finish_error(st)?;
                     break 'units true;
                 };
                 scale_dimen(st, &mut v, &mut f, num, denom);
@@ -636,7 +632,7 @@ fn scan_dimen_from(
             "I can't work with sizes bigger than about 19 feet.",
             "Continue and I'll use the largest value I can.",
         ]);
-        error(st)?;
+        finish_error(st)?;
         v = MAX_HALFWORD;
         st.errors.arith_error = false;
     }
@@ -841,7 +837,7 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
                     print_err(st, "Missing ) inserted for expression");
                     st.errors
                         .help(&["I was expecting to see `+', `-', `*', `/', or `)'. Didn't."]);
-                    back_error(st)?;
+                    back_finish_error(st)?;
                 }
             }
 
@@ -961,7 +957,7 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
             "I can't evaluate this expression,",
             "since the result is out of range.",
         ]);
-        error(st)?;
+        finish_error(st)?;
         if l >= ValueLevel::Glue {
             st.mem.delete_glue_ref(glue_spec(e));
             e = 0;

@@ -205,7 +205,7 @@ fn check_math_fonts(st: &mut EngineState) -> Result<bool, Abort> {
     };
     crate::output::print_err(st, msg);
     st.errors.help(&help);
-    crate::errors::error(st)?;
+    crate::errors::finish_error(st)?;
     st.input.cur_list.flush_math(&mut st.mem)?;
     Ok(true)
 }
@@ -218,7 +218,7 @@ pub(crate) fn check_display_end(st: &mut EngineState) -> Result<(), Abort> {
             "The `$' that I just saw supposedly matches a previous `$$'.",
             "So I shall assume that you typed `$$' both times.",
         ]);
-        crate::input::back_error(st)?;
+        crate::input::back_finish_error(st)?;
     }
     Ok(())
 }

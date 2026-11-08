@@ -874,7 +874,7 @@ pub(crate) fn open_log_file(st: &mut EngineState) -> Result<(), Abort> {
         l -= 1;
     }
     for k in BufPos::from_raw(1).until(l + 1) {
-        crate::output::print(st, st.input.buffer[k]);
+        crate::output::print(st, StrNumber::single_char(st.input.buffer[k]));
     }
 
     crate::output::print_ln(st);

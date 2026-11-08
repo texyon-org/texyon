@@ -255,7 +255,7 @@ pub(super) fn fetch(st: &mut EngineState, a: NodePtr<MathField>) -> Result<(), A
             crate::output::print_char(st, i32::from(b' '));
             crate::output::print_int(st, fam);
             crate::output::print(st, " is undefined (character ");
-            crate::output::print(st, c);
+            crate::output::print(st, crate::units::StrNumber::single_char(c));
             crate::output::print_char(st, i32::from(b')'));
             crate::output::capture_to_diagnostic(st, None);
             st.errors.help(&[
@@ -264,7 +264,7 @@ pub(super) fn fetch(st: &mut EngineState, a: NodePtr<MathField>) -> Result<(), A
                 r"plain TeX doesn't allow \it or \sl in subscripts. Proceed,",
                 "and I'll try to forget that I needed that character.",
             ]);
-            crate::errors::error(st)
+            crate::errors::finish_error(st)
         }
         FetchOutcome::CharMissing { f, c } => crate::output::char_warning(st, f, c),
     }

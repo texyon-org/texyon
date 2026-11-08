@@ -306,7 +306,7 @@ pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
             st.errors.interaction = InteractionMode::Scroll;
         }
         if st.errors.log_opened {
-            crate::errors::error(st)?;
+            crate::errors::finish_error(st)?;
         }
 
         st.errors.history = HISTORY_FATAL_ERROR;
@@ -848,7 +848,7 @@ fn print_dumped_fonts(st: &mut EngineState) -> Result<(), Abort> {
                 "It won't work, and only confuses me.",
                 "(Load them at runtime, not as part of the format file.)",
             ]);
-            crate::errors::error(st)?;
+            crate::errors::finish_error(st)?;
         } else {
             crate::output::print_file_name(st, font_name, font_area, EMPTY_STRING);
         }

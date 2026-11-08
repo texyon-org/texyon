@@ -9,9 +9,9 @@ use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_USV, END_WRITE, FROZEN_DONT_EXPAND, FROZEN_ENDV,
     FROZEN_PRIMITIVE, HMODE, MMODE, NULL_CS, NULL_FONT, SINGLE_BASE, TOO_BIG_USV, VMODE,
 };
-use crate::errors::{error, Abort};
+use crate::errors::{finish_error, Abort};
 use crate::fonts::{Side, AAT_FONT_FLAG, OTGR_FONT_FLAG};
-use crate::input::{back_error, back_input, begin_token_list, TokenType, TOKEN_LIST};
+use crate::input::{back_finish_error, back_input, begin_token_list, TokenType, TOKEN_LIST};
 use crate::mem::{BACKUP_HEAD, GARBAGE, TEMP_HEAD_TOKS, ZERO_GLUE};
 use crate::node::{link_of, AnyNode, CondNode, GlueKind, KernSubtype, NodePtr, SaLeaf};
 use crate::output::{
@@ -123,15 +123,14 @@ fn scan_cs_name_tokens(st: &mut EngineState) -> Result<(TokenList, TokenList), A
         store_new_token(st, &mut tail, st.scanner.cur_tok)?;
     }
     if st.scanner.cur_cmd != Cmd::EndCsName {
-        error_here_with_diagnostic(st, "Missing ");
-        print_esc(st, "endcsname");
-        print(st, " inserted");
-        capture_to_diagnostic(st, None);
-        st.errors.help(&[
-            "The control sequence marked <to be read again> should",
-            r"not appear between \csname and \endcsname.",
-        ]);
-        back_error(st)?;
+        crate::errors::back_error(
+            st,
+            ("Missing ", crate::output::Esc("endcsname"), " inserted"),
+            &[
+                "The control sequence marked <to be read again> should",
+                r"not appear between \csname and \endcsname.",
+            ],
+        )?;
     }
     st.scanner.is_in_csname = saved_in_csname;
     Ok((head, tail))
@@ -216,7 +215,7 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
                     capture_to_diagnostic(st, None);
                     st.errors
                         .help(&["I was expecting to see `<', `=', or `>'. Didn't."]);
-                    back_error(st)?;
+                    back_finish_error(st)?;
                     b'='
                 };
             let cv = scan_int_or_dimen(st, this_if)?;
@@ -377,7 +376,7 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
             capture_to_diagnostic(st, None);
             st.errors
                 .help(&[r"I'm ignoring this; it doesn't match any \if."]);
-            error(st)?;
+            finish_error(st)?;
         } else if st.scanner.fi_or_else() == Some(FiOrElseCode::Fi) {
             pop_fi(st)?;
         }
@@ -643,7 +642,7 @@ fn conv_toks(st: &mut EngineState, c: ConvertCode) -> Result<(), Abort> {
                 capture_to_diagnostic(st, None);
                 st.errors
                     .help(&["I'm going to use 12 instead of that illegal code value."]);
-                error(st)?;
+                finish_error(st)?;
                 cat = Some(Cmd::OtherChar);
             }
             num = saved_chr;
@@ -846,7 +845,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     capture_to_diagnostic(st, None);
                     st.errors
                         .help(&["Continue, and I'll forget that it ever happened."]);
-                    back_error(st)?;
+                    back_finish_error(st)?;
                 }
             }
             Command::NoExpand { primitive } => {
@@ -923,7 +922,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                         capture_to_diagnostic(st, None);
                         st.errors
                             .help(&[r"I'm ignoring this; it doesn't match any \if."]);
-                        error(st)?;
+                        finish_error(st)?;
                     }
                 } else {
                     while st.scanner.fi_or_else() != Some(FiOrElseCode::Fi) {
@@ -947,7 +946,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     r"spelling (e.g., `I\hbox'). Otherwise just continue,",
                     "and I'll forget about whatever was undefined.",
                 ]);
-                error(st)?;
+                finish_error(st)?;
             }
         }
         break;
@@ -979,7 +978,7 @@ fn runaway_par_in_argument(
             "control sequence to too much text. How can we recover?",
             "My plan is to forget the whole thing and hope for the best.",
         ]);
-        back_error(st)?;
+        back_finish_error(st)?;
     }
     pstack[n as usize] = TEMP_HEAD_TOKS.link(&st.mem);
     st.scanner.align_state -= unbalance;
@@ -1007,7 +1006,7 @@ fn extra_right_brace_in_argument(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.align_state += 1;
     st.scanner.long_state = Cmd::Call;
     st.scanner.cur_tok = st.input.par_token;
-    crate::input::ins_error(st)
+    crate::input::ins_finish_error(st)
 }
 
 #[cold]
@@ -1044,7 +1043,7 @@ fn trace_macro_param(st: &mut EngineState, match_chr: i32, n: i32, list: TokenLi
     if stack_levels == 0 || st.input.input_depth() < stack_levels {
         begin_diagnostic(st);
         diagnostic_begin_capture_warning_here(st);
-        crate::output::print_nl(st, match_chr);
+        crate::output::print_nl(st, StrNumber::single_char(match_chr));
         print_int(st, n);
         print(st, "<-");
         crate::output::show_token_list(st, list, TokenList::NULL, 1000);
@@ -1135,7 +1134,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                                 "made up of letters only. The macro here has not been",
                                 "followed by the required stuff, so I'm ignoring it.",
                             ]);
-                            error(st)?;
+                            finish_error(st)?;
                             break 'exit;
                         }
                         // Contribute the partly matched delimiter to the argument.

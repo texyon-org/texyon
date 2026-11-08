@@ -180,7 +180,7 @@ pub(crate) fn ship_out(
             "The page just created is more than 18 feet tall or",
             "more than 18 feet wide, so I suspect something went wrong.",
         ]);
-        crate::errors::error(st)?;
+        crate::errors::finish_error(st)?;
 
         if st.eqtb.int_par(IntPar::TracingOutput) <= 0 {
             crate::output::begin_diagnostic(st);

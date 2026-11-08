@@ -3,7 +3,7 @@
 use crate::bridge::issue_warning;
 use crate::cmd::Cmd;
 use crate::codes::FiOrElseCode;
-use crate::errors::{error, Abort};
+use crate::errors::{finish_error, Abort};
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::TOKEN_LIST;
 use crate::params::IntPar;
@@ -238,7 +238,7 @@ pub(crate) fn char_warning(st: &mut EngineState, f: FontId, c: i32) -> Result<()
         st.eqtb.set_int_par(IntPar::TracingOnline, old_setting);
         if tracing_lost > 2 {
             st.errors.help(&[]);
-            error(st)?;
+            finish_error(st)?;
         } else {
             capture_to_diagnostic(st, None);
             end_diagnostic(st, false);

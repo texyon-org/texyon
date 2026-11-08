@@ -80,7 +80,7 @@ fn expand_write_tokens(st: &mut crate::state::EngineState, tokens: TokenList) ->
             r"On this page there's a \write with fewer real {'s than }'s.",
             "I can't handle that very well; good luck.",
         ]);
-        crate::errors::error(st)?;
+        crate::errors::finish_error(st)?;
         loop {
             crate::scan::get_token(st)?;
             if st.scanner.cur_tok == Token::from_cs(END_WRITE) {
@@ -123,7 +123,10 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WriteNode>) -> R
             crate::output::print_nl(st, "runsystem(");
             let base = st.strings.cur_string_start();
             for k in base.until(st.strings.pool_ptr) {
-                crate::output::print(st, i32::from(st.strings.str_pool[k.index()]));
+                crate::output::print(
+                    st,
+                    crate::units::StrNumber::single_char(i32::from(st.strings.str_pool[k.index()])),
+                );
             }
             crate::output::print(st, ")...");
             crate::output::print(st, "disabled");

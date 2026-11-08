@@ -352,7 +352,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
             r"\shipout, so I'm shipping \box255 out myself. Next time",
             r"increase \maxdeadcycles if you want me to be more patient!",
         ]);
-        crate::errors::error(st)?;
+        crate::errors::finish_error(st)?;
     }
 
     if !PAGE_HEAD.link(&st.mem).is_null() {
@@ -462,7 +462,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
                 "must have finite shrinkability. But you may proceed,",
                 "since the offensive shrinkability has been made finite.",
             ]);
-            crate::errors::error(st)?;
+            crate::errors::finish_error(st)?;
         }
     }
 
@@ -725,7 +725,7 @@ fn page_glue_width(
         "Such glue doesn't belong there; but you can safely proceed,",
         "since the offensive shrinkability has been made finite.",
     ]);
-    crate::errors::error(st)?;
+    crate::errors::finish_error(st)?;
     let finite = st.mem.new_spec(spec)?;
     st.mem[finite].shrink_order = GlueOrder::Normal.into();
     st.mem.delete_glue_ref(spec);

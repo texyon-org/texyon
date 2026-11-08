@@ -407,7 +407,7 @@ fn m_log(st: &mut EngineState, mut x: i32) -> i32 {
             "I'm zeroing this one. Proceed, with fingers crossed.",
         ]);
         // Unreachable: norm_rand always passes x >= 1.
-        let _ = crate::errors::error(st);
+        let _ = crate::errors::finish_error(st);
         return 0;
     }
 

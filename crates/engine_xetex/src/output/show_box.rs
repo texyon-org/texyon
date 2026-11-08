@@ -51,7 +51,10 @@ pub(crate) fn short_display(st: &mut EngineState, mut p: MemPtr) {
                     print_char(st, b' ');
                     st.errors.font_in_short_display = font;
                 }
-                print(st, i32::from(st.mem[ch].character));
+                print(
+                    st,
+                    crate::units::StrNumber::single_char(i32::from(st.mem[ch].character)),
+                );
             }
         } else {
             match st.mem.classify(p) {
@@ -335,7 +338,7 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
 
 fn show_box_node(st: &mut EngineState, b: NodePtr<BoxNode>) {
     let is_hlist = st.mem[b].is_hlist();
-    print_esc(st, i32::from(if is_hlist { b'h' } else { b'v' }));
+    print_esc(st, if is_hlist { b'h' } else { b'v' });
     print(st, "box(");
     print_scaled(st, st.mem[b].height);
     print_char(st, b'+');

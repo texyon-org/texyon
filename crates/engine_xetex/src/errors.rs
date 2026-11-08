@@ -6,10 +6,10 @@ use crate::output::{
     append_to_diagnostic, begin_diagnostic, capture_to_diagnostic,
     diagnostic_begin_capture_warning_here, end_diagnostic, error_here_with_diagnostic, print,
     print_char, print_cmd_chr, print_err, print_esc, print_in_mode, print_int, print_ln, print_nl,
-    show_box, show_context, show_token_list, token_show,
+    show_box, show_context, show_token_list, token_show, TexPrint,
 };
 use crate::params::{IntPar, TokPar};
-use crate::state::{EngineState, EqtbState, ErrorState, GroupCode, InteractionMode, Selector};
+use crate::state::{EngineState, EqtbState, ErrorState, InteractionMode, Selector};
 use crate::units::{FontId, StrNumber};
 
 impl ErrorState {
@@ -43,7 +43,7 @@ fn post_error_message(st: &mut EngineState, need_to_print_it: bool) {
     }
     if need_to_print_it && st.errors.log_opened {
         // Already committed to a fatal history, so a nested abort is dropped.
-        let _ = error(st);
+        let _ = finish_error(st);
     }
     st.errors.history = HISTORY_FATAL_ERROR;
     let _ = crate::io::close_files_and_terminate(st);
@@ -51,7 +51,7 @@ fn post_error_message(st: &mut EngineState, need_to_print_it: bool) {
     output_flush(st.shipout.rust_stdout);
 }
 
-pub(crate) fn error(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn finish_error(st: &mut EngineState) -> Result<(), Abort> {
     if st.errors.history < HISTORY_ERROR_ISSUED {
         st.errors.history = HISTORY_ERROR_ISSUED;
     }
@@ -277,7 +277,7 @@ pub(crate) fn int_error(st: &mut EngineState, n: i32) -> Result<(), Abort> {
     print(st, " (");
     print_int(st, n);
     print_char(st, b')');
-    error(st)
+    finish_error(st)
 }
 
 pub(crate) fn not_font_error_common(
@@ -293,37 +293,67 @@ pub(crate) fn not_font_error_common(
     print(st, st.fonts.font_name[f]);
     print(st, suffix);
     capture_to_diagnostic(st, None);
-    error(st)
+    finish_error(st)
 }
 
 pub(crate) fn give_err_help(st: &mut EngineState) {
     token_show(st, st.eqtb.tok_par(TokPar::ErrHelp));
 }
 
+/// Report a recoverable error and carry on (`print_err`, `help`, `error`).
+pub(crate) fn error(
+    st: &mut EngineState,
+    message: impl TexPrint,
+    help: &[&'static str],
+) -> Result<(), Abort> {
+    print_err(st, message);
+    st.errors.help(help);
+    finish_error(st)
+}
+
+/// [`error`], first putting the current token back to be read again.
+pub(crate) fn back_error(
+    st: &mut EngineState,
+    message: impl TexPrint,
+    help: &[&'static str],
+) -> Result<(), Abort> {
+    print_err(st, message);
+    st.errors.help(help);
+    crate::input::back_finish_error(st)
+}
+
+/// [`back_error`], marking the token as inserted rather than read.
+pub(crate) fn ins_error(
+    st: &mut EngineState,
+    message: impl TexPrint,
+    help: &[&'static str],
+) -> Result<(), Abort> {
+    print_err(st, message);
+    st.errors.help(help);
+    crate::input::ins_finish_error(st)
+}
+
 pub(crate) fn mu_error(st: &mut EngineState) -> Result<(), Abort> {
-    print_err(st, "Incompatible glue units");
-    st.errors
-        .help(&["I'm going to assume that 1mu=1pt when they're mixed."]);
-    error(st)
+    error(
+        st,
+        "Incompatible glue units",
+        &["I'm going to assume that 1mu=1pt when they're mixed."],
+    )
 }
 
 pub(crate) fn extra_right_brace(st: &mut EngineState) -> Result<(), Abort> {
-    error_here_with_diagnostic(st, "Extra }, or forgotten ");
-    match st.save_stack.cur_group {
-        GroupCode::SemiSimple => print_esc(st, "endgroup"),
-        GroupCode::MathShift => print_char(st, b'$'),
-        GroupCode::MathLeft => print_esc(st, "right"),
-        _ => {}
-    }
-    capture_to_diagnostic(st, None);
-    st.errors.help(&[
-        "I've deleted a group-closing symbol because it seems to be",
-        "spurious, as in `$x}$'. But perhaps the } is legitimate and",
-        r"you forgot something else, as in `\hbox{$x}'. In such cases",
-        "the way to recover is to insert both the forgotten and the",
-        "deleted material, e.g., by typing `I$}'.",
-    ]);
-    error(st)?;
+    let closer = st.save_stack.cur_group.closer();
+    error(
+        st,
+        ("Extra }, or forgotten ", closer),
+        &[
+            "I've deleted a group-closing symbol because it seems to be",
+            "spurious, as in `$x}$'. But perhaps the } is legitimate and",
+            r"you forgot something else, as in `\hbox{$x}'. In such cases",
+            "the way to recover is to insert both the forgotten and the",
+            "deleted material, e.g., by typing `I$}'.",
+        ],
+    )?;
     st.scanner.align_state += 1;
     Ok(())
 }
@@ -343,7 +373,7 @@ pub(crate) fn report_illegal_case(st: &mut EngineState) -> Result<(), Abort> {
         "If you're in the wrong mode, you might be able to",
         r"return to the right one by typing `I}' or `I$' or `I\par'.",
     ]);
-    error(st)
+    finish_error(st)
 }
 
 pub(crate) fn privileged(st: &mut EngineState) -> Result<bool, Abort> {
@@ -360,12 +390,12 @@ pub(crate) fn cs_error(st: &mut EngineState) -> Result<(), Abort> {
     capture_to_diagnostic(st, None);
     st.errors
         .help(&[r"I'm ignoring this, since I wasn't doing a \csname."]);
-    error(st)
+    finish_error(st)
 }
 
 pub(crate) fn box_error(st: &mut EngineState, n: u8) -> Result<(), Abort> {
     let box_val = st.eqtb.box_reg(i32::from(n));
-    error(st)?;
+    finish_error(st)?;
     begin_diagnostic(st);
     diagnostic_begin_capture_warning_here(st);
     print_nl(st, "The following box has been deleted:");

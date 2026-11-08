@@ -7,10 +7,10 @@ use crate::consts::{
     ACTIVE_BASE, BIGGEST_USV, END_WRITE, FROZEN_CR, FROZEN_ENDV, FROZEN_FI, NULL_CS, SINGLE_BASE,
     TEX_NULL,
 };
-use crate::errors::{error, Abort};
+use crate::errors::{finish_error, Abort};
 use crate::expand::{expand, macro_call};
 use crate::input::{
-    begin_token_list, ins_error, TokenType, MID_LINE, NEW_LINE, SKIP_BLANKS, TOKEN_LIST,
+    begin_token_list, ins_finish_error, TokenType, MID_LINE, NEW_LINE, SKIP_BLANKS, TOKEN_LIST,
 };
 use crate::mem::OMIT_TEMPLATE;
 use crate::node::{AlignRecord, NodePtr};
@@ -123,7 +123,7 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
             "I'll try to recover; but if the error is serious,",
             "you'd better type `E' or `X' now and fix your file.",
         ]);
-        error(st)
+        finish_error(st)
     } else {
         error_here_with_diagnostic(st, "Incomplete ");
         let cur_if = st.scanner.cur_if;
@@ -144,7 +144,7 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
             r"the matching `\fi'. I've inserted a `\fi'; this might work.",
         ]);
         st.scanner.cur_tok = Token::from_cs(FROZEN_FI);
-        ins_error(st)
+        ins_finish_error(st)
     };
     st.errors.deletions_allowed = true;
     outcome
@@ -411,7 +411,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                                     "Continue, and I'll forget that it ever happened.",
                                 ]);
                                 st.errors.deletions_allowed = false;
-                                error(st)?;
+                                finish_error(st)?;
                                 st.errors.deletions_allowed = true;
                                 continue 'restart;
                             }

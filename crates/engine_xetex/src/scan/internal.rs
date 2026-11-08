@@ -11,7 +11,7 @@ use crate::consts::{
     ACTIVE_MATH_CHAR, CHAR_CLASS_LIMIT, DEL_CODE_BASE, MATH_CODE_BASE, MAX_DIMEN, NULL_FONT,
     PAR_SHAPE_LOC, SF_CODE_BASE, VMODE,
 };
-use crate::errors::{error, mu_error, Abort};
+use crate::errors::{finish_error, mu_error, Abort};
 use crate::ext::{
     aat_font_get, aat_font_get_1, aat_font_get_2, aat_font_get_named, aat_font_get_named_1,
     gr_font_get_named, gr_font_get_named_1, ot_font_get, ot_font_get_1, ot_font_get_2,
@@ -19,7 +19,7 @@ use crate::ext::{
 };
 use crate::fonts::Side;
 use crate::fonts::{AAT_FONT_FLAG, SPACE_CODE, SPACE_SHRINK_CODE};
-use crate::input::{back_error, back_input};
+use crate::input::{back_finish_error, back_input};
 use crate::mem::ZERO_GLUE;
 use crate::node::{AnyNode, GlueKind, GlueSpecNode, MathCode, NodePtr, SaLeaf};
 use crate::output::{
@@ -50,7 +50,7 @@ fn missing_number_error(st: &mut EngineState) -> Result<(), Abort> {
         "(If you can't figure out why I needed to see a number,",
         "look up `weird error' in the index to The TeXbook.)",
     ]);
-    back_error(st)
+    back_finish_error(st)
 }
 
 /// A scanned internal quantity: TeX's `cur_val` together with its `cur_val_level`.
@@ -231,7 +231,7 @@ fn fetch_def_code(st: &mut EngineState, m: EqtbPtr) -> Result<i32, Abort> {
                 "A delimiter code must be between 0 and \"7FFFFFF.",
                 "I changed this one to zero.",
             ]);
-            error(st)?;
+            finish_error(st)?;
             0
         } else {
             code
@@ -268,7 +268,7 @@ fn fetch_xetex_def_code(st: &mut EngineState, m: EqtbPtr) -> Result<i32, Abort> 
     };
     print_err(st, err);
     st.errors.help(&[help1, help0]);
-    error(st)?;
+    finish_error(st)?;
     Ok(0)
 }
 
@@ -598,7 +598,7 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: LastItemCode) -> Result<Scaled
                     print_nl(st, "I don't know anything about edge ");
                     print_int(st, edge);
                     capture_to_diagnostic(st, None);
-                    error(st)?;
+                    finish_error(st)?;
                     Scaled::ZERO
                 } else {
                     let glyph = scan_int(st)?;
@@ -790,7 +790,7 @@ pub(super) fn scan_something_internal(
                         r"neither of these is meaningful inside \write. So",
                         "I'm forgetting what you said and using zero instead.",
                     ]);
-                    error(st)?;
+                    finish_error(st)?;
                     zero
                 } else if code == AuxCode::PrevDepth {
                     CurVal::Dimen(st.input.cur_list.prev_depth())
@@ -896,7 +896,7 @@ pub(super) fn scan_something_internal(
                 capture_to_diagnostic(st, None);
                 st.errors
                     .help(&["I'm forgetting what you said and using zero instead."]);
-                error(st)?;
+                finish_error(st)?;
                 zero
             }
         };
@@ -930,7 +930,7 @@ pub(crate) fn scan_font_ident(st: &mut EngineState) -> Result<FontId, Abort> {
                 "I was looking for a control sequence whose",
                 r"current meaning has been defined by \font.",
             ]);
-            back_error(st)?;
+            back_finish_error(st)?;
             NULL_FONT
         }
     };
@@ -986,7 +986,7 @@ pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<Fon
             "To increase the number of font parameters, you must",
             r"use \fontdimen immediately after the \font is loaded.",
         ]);
-        error(st)?;
+        finish_error(st)?;
     }
     Ok(k)
 }

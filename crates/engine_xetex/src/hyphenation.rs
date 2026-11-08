@@ -709,7 +709,7 @@ fn max_word_len(eqtb: &EqtbState) -> usize {
 fn raise_error(st: &mut EngineState, help: &[&'static str]) -> Result<(), Abort> {
     crate::output::capture_to_diagnostic(st, None);
     st.errors.help(help);
-    crate::errors::error(st)
+    crate::errors::finish_error(st)
 }
 
 pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {

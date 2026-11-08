@@ -851,6 +851,12 @@ impl StrNumber {
     /// `0`, which TeX uses for "no string" in `job_name` and friends.
     pub const NONE: StrNumber = StrNumber(0);
 
+    /// The single-character string of `c`, which WEB's `print(c)` prints.
+    #[inline]
+    pub const fn single_char(c: i32) -> StrNumber {
+        StrNumber(c)
+    }
+
     /// Whether this is a pool string rather than a single character.
     #[inline]
     pub fn is_pool_string(self) -> bool {

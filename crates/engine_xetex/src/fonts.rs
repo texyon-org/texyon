@@ -606,7 +606,7 @@ pub(crate) fn read_font_info(
                 print(st, " scaled to 2048pt or higher");
                 capture_to_diagnostic(st, None);
                 st.errors.help(&["I will ignore the scaling factor."]);
-                crate::errors::error(st)?;
+                crate::errors::finish_error(st)?;
             }
         }
         match parse {
@@ -642,7 +642,7 @@ pub(crate) fn read_font_info(
             r"e.g., type `I\font<same font id>=<substitute font name>'.",
         ]);
 
-        crate::errors::error(st)?;
+        crate::errors::finish_error(st)?;
     }
 
     if file_opened && crate::io::input_close(tfm_file) {
@@ -1065,7 +1065,7 @@ pub(crate) fn load_native_font(
             r"Or maybe try `I\font<same font id>=<name of loaded font>'.",
         ]);
 
-        crate::errors::error(st)?;
+        crate::errors::finish_error(st)?;
         return Ok(NULL_FONT);
     }
 

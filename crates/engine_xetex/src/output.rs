@@ -97,47 +97,114 @@ pub(crate) fn print_ucs_code(st: &mut EngineState, n: i32) {
     print_the_digs(st, k);
 }
 
-/// A printable TeX string: a pool string number, or literal bytes printed one
-/// `print_char` each.
-pub(crate) trait TexStr: Copy {
-    fn print_to(self, st: &mut EngineState);
+/// A value TeX prints, following `\escapechar`, `\newlinechar` and the selector.
+pub(crate) trait TexPrint {
+    fn print_to(&self, st: &mut EngineState);
 }
 
-impl TexStr for i32 {
+impl<T: TexPrint + ?Sized> TexPrint for &T {
     #[inline]
-    fn print_to(self, st: &mut EngineState) {
-        print_pool_str(st, self);
+    fn print_to(&self, st: &mut EngineState) {
+        (**self).print_to(st);
     }
 }
 
-impl TexStr for StrNumber {
+impl TexPrint for StrNumber {
     #[inline]
-    fn print_to(self, st: &mut EngineState) {
+    fn print_to(&self, st: &mut EngineState) {
         print_pool_str(st, self.raw());
     }
 }
 
 /// A byte prints as the single-character string of that code.
-impl TexStr for u8 {
+impl TexPrint for u8 {
     #[inline]
-    fn print_to(self, st: &mut EngineState) {
-        print_pool_str(st, i32::from(self));
+    fn print_to(&self, st: &mut EngineState) {
+        print_pool_str(st, i32::from(*self));
     }
 }
 
-impl TexStr for &str {
+/// Literal text, one `print_char` per byte.
+impl TexPrint for str {
     #[inline]
-    fn print_to(self, st: &mut EngineState) {
+    fn print_to(&self, st: &mut EngineState) {
         print_bytes(st, self.as_bytes());
     }
 }
 
-impl TexStr for &[u8] {
+impl TexPrint for [u8] {
     #[inline]
-    fn print_to(self, st: &mut EngineState) {
+    fn print_to(&self, st: &mut EngineState) {
         print_bytes(st, self);
     }
 }
+
+/// One character, as `print_char` prints it.
+impl TexPrint for char {
+    #[inline]
+    fn print_to(&self, st: &mut EngineState) {
+        print_char(st, u32::from(*self).cast_signed());
+    }
+}
+
+/// A decimal number, as `print_int` prints it.
+impl TexPrint for i32 {
+    #[inline]
+    fn print_to(&self, st: &mut EngineState) {
+        print_int(st, *self);
+    }
+}
+
+/// A dimension without its unit, as `print_scaled` prints it.
+impl TexPrint for Scaled {
+    #[inline]
+    fn print_to(&self, st: &mut EngineState) {
+        print_scaled(st, *self);
+    }
+}
+
+/// Nothing for `None`.
+impl<T: TexPrint> TexPrint for Option<T> {
+    #[inline]
+    fn print_to(&self, st: &mut EngineState) {
+        if let Some(value) = self {
+            value.print_to(st);
+        }
+    }
+}
+
+/// A control sequence name, printed after `\escapechar`.
+#[derive(Copy, Clone)]
+pub(crate) struct Esc<T>(pub T);
+
+impl<T: TexPrint> TexPrint for Esc<T> {
+    #[inline]
+    fn print_to(&self, st: &mut EngineState) {
+        print_escape_char(st);
+        self.0.print_to(st);
+    }
+}
+
+macro_rules! tex_print_tuple {
+    ($($part:ident: $T:ident),+) => {
+        impl<$($T: TexPrint),+> TexPrint for ($($T,)+) {
+            #[inline]
+            fn print_to(&self, st: &mut EngineState) {
+                let ($($part,)+) = self;
+                $($part.print_to(st);)+
+            }
+        }
+    };
+}
+
+tex_print_tuple!(a: A);
+tex_print_tuple!(a: A, b: B);
+tex_print_tuple!(a: A, b: B, c: C);
+tex_print_tuple!(a: A, b: B, c: C, d: D);
+tex_print_tuple!(a: A, b: B, c: C, d: D, e: E);
+tex_print_tuple!(a: A, b: B, c: C, d: D, e: E, f: F);
+tex_print_tuple!(a: A, b: B, c: C, d: D, e: E, f: F, g: G);
+tex_print_tuple!(a: A, b: B, c: C, d: D, e: E, f: F, g: G, h: H);
 
 fn print_bytes(st: &mut EngineState, bytes: &[u8]) {
     for &b in bytes {
@@ -151,7 +218,7 @@ fn at_line_start(st: &EngineState) -> bool {
         || (st.shipout.file_offset > 0 && sel >= Selector::LogOnly))
 }
 
-pub(crate) fn print_nl(st: &mut EngineState, s: impl TexStr) {
+pub(crate) fn print_nl(st: &mut EngineState, s: impl TexPrint) {
     if st.shipout.selector < Selector::NoPrint || !at_line_start(st) {
         print_ln(st);
     }
@@ -165,7 +232,7 @@ fn print_escape_char(st: &mut EngineState) {
     }
 }
 
-pub(crate) fn print_esc(st: &mut EngineState, s: impl TexStr) {
+pub(crate) fn print_esc(st: &mut EngineState, s: impl TexPrint) {
     print_escape_char(st);
     print(st, s);
 }
@@ -375,7 +442,7 @@ pub(crate) fn print_char(st: &mut EngineState, s: impl Into<i32>) {
     }
 }
 
-pub(crate) fn print(st: &mut EngineState, s: impl TexStr) {
+pub(crate) fn print(st: &mut EngineState, s: impl TexPrint) {
     s.print_to(st);
 }
 
@@ -492,8 +559,9 @@ pub(crate) fn error_here_with_diagnostic(st: &mut EngineState, message: &str) {
 }
 
 /// TeX's `print_err`: starts an error with `message` and closes its diagnostic.
-pub(crate) fn print_err(st: &mut EngineState, message: &str) {
-    error_here_with_diagnostic(st, message);
+pub(crate) fn print_err(st: &mut EngineState, message: impl TexPrint) {
+    error_here_with_diagnostic(st, "");
+    print(st, message);
     capture_to_diagnostic(st, None);
 }
 
@@ -597,9 +665,9 @@ pub(crate) fn print_file_name(st: &mut EngineState, n: StrNumber, a: StrNumber, 
         while let Some(unit) = units.next() {
             let c = i32::from(unit);
             if c == quote_char {
-                print(st, quote_char);
+                print(st, StrNumber::single_char(quote_char));
                 quote_char = QUOTE_SUM - quote_char;
-                print(st, quote_char);
+                print(st, StrNumber::single_char(quote_char));
             }
             let low = if (0xD800..=0xDBFF).contains(&unit) {
                 units.next_if(|lo| (0xDC00..=0xDFFF).contains(lo))
@@ -608,7 +676,7 @@ pub(crate) fn print_file_name(st: &mut EngineState, n: StrNumber, a: StrNumber, 
             };
             match low {
                 Some(lo) => print_char(st, 0x10000 + (c - 0xD800) * 0x400 + i32::from(lo) - 0xDC00),
-                None => print(st, c),
+                None => print(st, StrNumber::single_char(c)),
             }
         }
     }
@@ -634,7 +702,7 @@ pub(crate) fn print_cs(st: &mut EngineState, p: EqtbPtr) {
                 print_esc(st, "endcsname");
                 print_char(st, b' ');
             } else {
-                print_esc(st, p - SINGLE_BASE);
+                print_esc(st, StrNumber::single_char(p - SINGLE_BASE));
                 if st.eqtb.cat_code(p - SINGLE_BASE) == Cmd::Letter {
                     print_char(st, b' ');
                 }
@@ -661,7 +729,7 @@ pub(crate) fn sprint_cs(st: &mut EngineState, p: EqtbPtr) {
     } else if p < SINGLE_BASE {
         print_char(st, p - ACTIVE_BASE);
     } else if p < NULL_CS {
-        print_esc(st, p - SINGLE_BASE);
+        print_esc(st, StrNumber::single_char(p - SINGLE_BASE));
     } else {
         print_esc(st, "csname");
         print_esc(st, "endcsname");
@@ -865,7 +933,7 @@ pub(crate) fn print_style(st: &mut EngineState, c: i32) {
 /// Prints a character code, as a string number when it is one.
 fn print_code(st: &mut EngineState, c: i32) {
     if c < TOO_BIG_CHAR {
-        print(st, c);
+        print(st, StrNumber::single_char(c));
     } else {
         print_char(st, c);
     }
@@ -926,7 +994,7 @@ fn print_font_char(st: &mut EngineState, font: FontId, c: u16) {
         print_esc(st, st.eqtb.font_id_text(font));
     }
     print_char(st, b' ');
-    print(st, i32::from(c));
+    print(st, StrNumber::single_char(i32::from(c)));
 }
 
 fn print_font_and_char(st: &mut EngineState, p: MemPtr) {

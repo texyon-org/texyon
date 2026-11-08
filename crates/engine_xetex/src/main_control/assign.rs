@@ -167,7 +167,7 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         let old_setting = st.shipout.selector;
         st.shipout.selector = Selector::NewString;
         crate::output::print(st, "FONT");
-        crate::output::print(st, u - ACTIVE_BASE);
+        crate::output::print(st, StrNumber::single_char(u - ACTIVE_BASE));
         st.shipout.selector = old_setting;
         if st.strings.pool_ptr + 1 > st.strings.pool_size {
             return Err(Abort::PoolOverflow);
@@ -191,7 +191,7 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
                 "I can only handle fonts at positive sizes that are",
                 "less than 2048pt, so I've changed what you said to 10pt.",
             ]);
-            crate::errors::error(st)?;
+            crate::errors::finish_error(st)?;
             Scaled::UNITY * 10
         } else {
             size
@@ -291,7 +291,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
                 crate::output::capture_to_diagnostic(st, None);
                 st.errors
                     .help(&["I'm forgetting what you said and not changing anything."]);
-                return crate::errors::error(st);
+                return crate::errors::finish_error(st);
             }
         }
         let p = match cmd {
@@ -421,7 +421,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         if let RegisterValue::Glue(g) = value {
             st.mem.delete_glue_ref(g);
         }
-        return crate::errors::error(st);
+        return crate::errors::finish_error(st);
     }
 
     let global = a >= 4;
@@ -582,7 +582,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             crate::output::capture_to_diagnostic(st, None);
             st.errors
                 .help(&[r"I'll pretend you didn't say \long or \outer or \global or \protected."]);
-            return crate::input::back_error(st);
+            return crate::input::back_finish_error(st);
         }
         if st.eqtb.int_par(IntPar::TracingCommands) > 2 {
             crate::output::show_cur_cmd_chr(st);
@@ -606,7 +606,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
         crate::output::capture_to_diagnostic(st, None);
         st.errors
             .help(&[r"I'll pretend you didn't say \long or \outer or \protected here."]);
-        crate::errors::error(st)?;
+        crate::errors::finish_error(st)?;
     }
     let global_defs = st.eqtb.int_par(IntPar::GlobalDefs);
     if global_defs < 0 && a >= 4 {
@@ -680,7 +680,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 crate::output::print_err(st, "vestigial MLTeX shorthand encountered??");
                 st.errors
                     .help(&["This should never happen in Tectonic, where MLTeX has been excised."]);
-                crate::errors::error(st)?;
+                crate::errors::finish_error(st)?;
             } else {
                 shorthand_def(st, a >= 4, code)?;
             }
@@ -693,7 +693,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                     r"You should have said `\read<number> to \cs'.",
                     r"I'm going to look for the \cs now.",
                 ]);
-                crate::errors::error(st)?;
+                crate::errors::finish_error(st)?;
             }
             crate::scan::get_r_token(st)?;
             let p = st.scanner.cur_cs;
@@ -752,7 +752,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                     r"Sorry, \setbox is not allowed after \halign in a display,",
                     r"or between \accent and an accented character.",
                 ]);
-                crate::errors::error(st)?;
+                crate::errors::finish_error(st)?;
             }
         }
         Command::SetAux(code) => alter_aux(st, code)?,
@@ -769,7 +769,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             } else {
                 crate::output::print_err(st, "Patterns can be loaded only by INITEX");
                 st.errors.help(&[]);
-                crate::errors::error(st)?;
+                crate::errors::finish_error(st)?;
                 loop {
                     crate::scan::get_token(st)?;
                     if st.scanner.cur_cmd == Cmd::RightBrace {
@@ -1023,7 +1023,7 @@ fn def_code(st: &mut EngineState, global: bool, chr: EqtbPtr) -> Result<(), Abor
         crate::output::capture_to_diagnostic(st, None);
         st.errors
             .help(&["I'm going to use 0 instead of that illegal code value."]);
-        crate::errors::error(st)?;
+        crate::errors::finish_error(st)?;
         v = 0;
     }
     if p < MATH_CODE_BASE {

@@ -378,7 +378,7 @@ fn scan_image_size(st: &mut EngineState) -> Result<Option<f64>, Abort> {
         "I can't scale images to zero or negative sizes,",
         "so I'm ignoring this.",
     ]);
-    crate::errors::error(st)?;
+    crate::errors::finish_error(st)?;
     Ok(None)
 }
 
@@ -519,7 +519,7 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
         crate::output::error_here_with_diagnostic(st, "Unable to load picture or PDF file '");
         let (n, a, e) = (st.scanner.cur_name, st.scanner.cur_area, st.scanner.cur_ext);
         crate::output::print_file_name(st, n, a, e);
-        crate::output::print(st, i32::from(b'\''));
+        crate::output::print(st, b'\'');
         crate::output::capture_to_diagnostic(st, None);
         let reason = if result == FILE_NOT_FOUND {
             "the file was not found."
@@ -528,7 +528,7 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
         };
         st.errors
             .help(&["The requested image couldn't be read because", reason]);
-        crate::errors::error(st)?;
+        crate::errors::finish_error(st)?;
     }
     Ok(())
 }

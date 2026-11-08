@@ -303,7 +303,7 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
                     r"You can't use `auto' encoding here, only for \XeTeXdefaultencoding.",
                     "I'll ignore this and leave the current encoding unchanged.",
                 ]);
-                crate::errors::error(st)?;
+                crate::errors::finish_error(st)?;
             } else {
                 // `\scantokens` occupies an input level without a UFile.
                 let slot = crate::io::FileSlot::Input(st.input.in_open);

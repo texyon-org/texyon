@@ -160,15 +160,15 @@ pub(crate) fn back_input(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-pub(crate) fn back_error(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn back_finish_error(st: &mut EngineState) -> Result<(), Abort> {
     back_input(st)?;
-    crate::errors::error(st)
+    crate::errors::finish_error(st)
 }
 
-pub(crate) fn ins_error(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn ins_finish_error(st: &mut EngineState) -> Result<(), Abort> {
     back_input(st)?;
     st.input.cur_input.set_token_type(TokenType::Inserted);
-    crate::errors::error(st)
+    crate::errors::finish_error(st)
 }
 
 impl MemState {

@@ -73,7 +73,7 @@ fn scan_delimiter(
             r"Acceptable delimiters are characters whose \delcode is",
             r"nonnegative, or you can use `\delimiter <delimiter code>'.",
         ]);
-        crate::input::back_error(st)?;
+        crate::input::back_finish_error(st)?;
         v = 0;
     }
 
@@ -134,7 +134,7 @@ pub(crate) fn math_limit_switch(st: &mut EngineState, code: LimitCode) -> Result
     crate::output::print_err(st, "Limit controls must follow a math operator");
     st.errors
         .help(&[r"I'm ignoring this misplaced \limits or \nolimits command."]);
-    crate::errors::error(st)
+    crate::errors::finish_error(st)
 }
 
 impl ListStateRecord {
@@ -324,7 +324,7 @@ pub(crate) fn sub_sup(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
         crate::output::capture_to_diagnostic(st, None);
-        crate::errors::error(st)?;
+        crate::errors::finish_error(st)?;
     }
     crate::scan::scan_math(st, p)
 }
@@ -375,7 +375,7 @@ pub(crate) fn math_fraction(st: &mut EngineState, code: AboveCode) -> Result<(),
             r"know whether a construction like `x \over y \over z'",
             r"means `{x \over y} \over z' or `x \over {y \over z}'.",
         ]);
-        crate::errors::error(st)?;
+        crate::errors::finish_error(st)?;
     } else {
         let aux = st.input.cur_list.start_fraction_noad(&mut st.mem)?;
 
@@ -465,7 +465,7 @@ pub(crate) fn math_left_right(st: &mut EngineState, code: LeftRightCode) -> Resu
                     .help(&[r"I'm ignoring a \right that had no matching \left."]);
             }
             crate::output::capture_to_diagnostic(st, None);
-            crate::errors::error(st)?;
+            crate::errors::finish_error(st)?;
         } else {
             crate::main_control::off_save(st)?;
         }
@@ -509,7 +509,7 @@ pub(crate) fn math_ac(st: &mut EngineState, code: Option<MathAccentCode>) -> Res
             r"I'm changing \accent to \mathaccent here; wish me luck.",
             "(Accents are not the same in formulas as they are in text.)",
         ]);
-        crate::errors::error(st)?;
+        crate::errors::finish_error(st)?;
     }
 
     let tail = st.input.cur_list.append_accent_noad(&mut st.mem)?;

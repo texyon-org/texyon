@@ -7,8 +7,8 @@ use crate::consts::{
     ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_USV, EQTB_SIZE, FROZEN_CONTROL_SEQUENCE,
     FROZEN_PROTECTION, MATH_CHAR, NUMBER_MATH_FAMILIES,
 };
-use crate::errors::{error, Abort};
-use crate::input::{back_error, back_input, begin_token_list, ins_error, TokenType};
+use crate::errors::{finish_error, Abort};
+use crate::input::{back_finish_error, back_input, begin_token_list, ins_finish_error, TokenType};
 use crate::mem::BACKUP_HEAD;
 use crate::node::{BoxNode, MathField, NodePtr, RuleDimen, RuleNode, SaLeaf, Stored};
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic, print_cmd_chr, print_err};
@@ -59,12 +59,14 @@ impl EqtbState {
 pub(crate) fn insert_dollar_sign(st: &mut EngineState) -> Result<(), Abort> {
     back_input(st)?;
     st.scanner.cur_tok = Token::math_shift(b'$');
-    print_err(st, "Missing $ inserted");
-    st.errors.help(&[
-        "I've inserted a begin-math/end-math symbol since I think",
-        "you left one out. Proceed, with fingers crossed.",
-    ]);
-    ins_error(st)
+    crate::errors::ins_error(
+        st,
+        "Missing $ inserted",
+        &[
+            "I've inserted a begin-math/end-math symbol since I think",
+            "you left one out. Proceed, with fingers crossed.",
+        ],
+    )
 }
 
 pub(crate) fn scan_optional_equals(st: &mut EngineState) -> Result<(), Abort> {
@@ -145,7 +147,7 @@ pub(crate) fn eTeX_enabled(st: &mut EngineState, b: bool, j: Cmd, k: i32) -> Res
         capture_to_diagnostic(st, None);
         st.errors
             .help(&["Sorry, this optional e-TeX feature has been disabled."]);
-        error(st)?;
+        finish_error(st)?;
     }
     Ok(b)
 }
@@ -174,7 +176,7 @@ pub(crate) fn get_r_token(st: &mut EngineState) -> Result<(), Abort> {
                 back_input(st)?;
             }
             st.scanner.cur_tok = Token::from_cs(FROZEN_PROTECTION);
-            ins_error(st)?;
+            ins_finish_error(st)?;
         } else {
             return Ok(());
         }
@@ -393,7 +395,7 @@ pub(crate) fn scan_left_brace(st: &mut EngineState) -> Result<(), Abort> {
             "so that I will find a matching right brace soon.",
             "(If you're confused by all this, try typing `I}' now.)",
         ]);
-        back_error(st)?;
+        back_finish_error(st)?;
         st.scanner.cur_tok = Token::left_brace(b'{');
         st.scanner.cur_cmd = Cmd::LeftBrace;
         st.scanner.cur_chr = i32::from(b'{');
