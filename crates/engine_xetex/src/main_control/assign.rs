@@ -183,15 +183,14 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     let s = if crate::scan::scan_keyword(st, "at")? {
         let size = crate::scan::scan_dimen(st, false, false)?;
         if size <= Scaled::ZERO || size >= Scaled::from_raw(0x800_0000) {
-            crate::output::error_here_with_diagnostic(st, "Improper `at' size (");
-            crate::output::print_scaled(st, size);
-            crate::output::print(st, "pt), replaced by 10pt");
-            crate::output::capture_to_diagnostic(st, None);
-            st.errors.help(&[
-                "I can only handle fonts at positive sizes that are",
-                "less than 2048pt, so I've changed what you said to 10pt.",
-            ]);
-            crate::errors::finish_error(st)?;
+            crate::errors::error(
+                st,
+                ("Improper `at' size (", size, "pt), replaced by 10pt"),
+                &[
+                    "I can only handle fonts at positive sizes that are",
+                    "less than 2048pt, so I've changed what you said to 10pt.",
+                ],
+            )?;
             Scaled::UNITY * 10
         } else {
             size
@@ -284,14 +283,16 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
                 _ => {}
             }
             if st.scanner.cur_cmd != Cmd::Register {
-                crate::output::error_here_with_diagnostic(st, "You can't use `");
-                crate::output::print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
-                crate::output::print(st, "' after ");
-                crate::output::print_cmd_chr(st, q, 0);
-                crate::output::capture_to_diagnostic(st, None);
-                st.errors
-                    .help(&["I'm forgetting what you said and not changing anything."]);
-                return crate::errors::finish_error(st);
+                return crate::errors::error(
+                    st,
+                    (
+                        "You can't use `",
+                        crate::output::CmdChr(st.scanner.cur_cmd, st.scanner.cur_chr),
+                        "' after ",
+                        crate::output::CmdChr(q, 0),
+                    ),
+                    &["I'm forgetting what you said and not changing anything."],
+                );
             }
         }
         let p = match cmd {
@@ -677,10 +678,11 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
         }
         Command::ShorthandDef(code) => {
             if code == ShorthandDefCode::CharSub {
-                crate::output::print_err(st, "vestigial MLTeX shorthand encountered??");
-                st.errors
-                    .help(&["This should never happen in Tectonic, where MLTeX has been excised."]);
-                crate::errors::finish_error(st)?;
+                crate::errors::error(
+                    st,
+                    "vestigial MLTeX shorthand encountered??",
+                    &["This should never happen in Tectonic, where MLTeX has been excised."],
+                )?;
             } else {
                 shorthand_def(st, a >= 4, code)?;
             }
@@ -688,12 +690,14 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
         Command::ReadToCs { line } => {
             let n = crate::scan::scan_int(st)?;
             if !crate::scan::scan_keyword(st, "to")? {
-                crate::output::print_err(st, "Missing `to' inserted");
-                st.errors.help(&[
-                    r"You should have said `\read<number> to \cs'.",
-                    r"I'm going to look for the \cs now.",
-                ]);
-                crate::errors::finish_error(st)?;
+                crate::errors::error(
+                    st,
+                    "Missing `to' inserted",
+                    &[
+                        r"You should have said `\read<number> to \cs'.",
+                        r"I'm going to look for the \cs now.",
+                    ],
+                )?;
             }
             crate::scan::get_r_token(st)?;
             let p = st.scanner.cur_cs;
@@ -745,14 +749,14 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             if st.scanner.set_box_allowed {
                 scan_box(st, n)?;
             } else {
-                crate::output::error_here_with_diagnostic(st, "Improper ");
-                crate::output::print_esc(st, "setbox");
-                crate::output::capture_to_diagnostic(st, None);
-                st.errors.help(&[
-                    r"Sorry, \setbox is not allowed after \halign in a display,",
-                    r"or between \accent and an accented character.",
-                ]);
-                crate::errors::finish_error(st)?;
+                crate::errors::error(
+                    st,
+                    ("Improper ", crate::output::Esc("setbox")),
+                    &[
+                        r"Sorry, \setbox is not allowed after \halign in a display,",
+                        r"or between \accent and an accented character.",
+                    ],
+                )?;
             }
         }
         Command::SetAux(code) => alter_aux(st, code)?,
@@ -767,9 +771,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             } else if st.config.in_initex_mode {
                 new_patterns(st)?;
             } else {
-                crate::output::print_err(st, "Patterns can be loaded only by INITEX");
-                st.errors.help(&[]);
-                crate::errors::finish_error(st)?;
+                crate::errors::error(st, "Patterns can be loaded only by INITEX", &[])?;
                 loop {
                     crate::scan::get_token(st)?;
                     if st.scanner.cur_cmd == Cmd::RightBrace {

@@ -36,13 +36,15 @@ pub(super) fn unpackage(st: &mut EngineState, c: BoxCode) -> Result<(), Abort> {
             || (mode == VMODE && !st.mem[b].is_vlist())
             || (mode == HMODE && !st.mem[b].is_hlist())
         {
-            crate::output::print_err(st, "Incompatible list can't be unboxed");
-            st.errors.help(&[
-                "Sorry, Pandora. (You sneaky devil.)",
-                r"I refuse to unbox an \hbox in vertical mode or vice versa.",
-                "And I can't open any boxes in math mode.",
-            ]);
-            return crate::errors::finish_error(st);
+            return crate::errors::error(
+                st,
+                "Incompatible list can't be unboxed",
+                &[
+                    "Sorry, Pandora. (You sneaky devil.)",
+                    r"I refuse to unbox an \hbox in vertical mode or vice versa.",
+                    "And I can't open any boxes in math mode.",
+                ],
+            );
         }
         let list = st.mem[b].list_ptr;
         if c == BoxCode::Copy {
@@ -110,13 +112,15 @@ pub(super) fn scan_box(st: &mut EngineState, box_context: i32) -> Result<(), Abo
         st.scanner.cur_box = Some(BoxOrRule::Rule(crate::scan::scan_rule_spec(st)?));
         box_end(st, box_context)
     } else {
-        crate::output::print_err(st, "A <box> was supposed to be here");
-        st.errors.help(&[
-            r"I was expecting to see \hbox or \vbox or \copy or \box or",
-            "something like that. So you might find something missing in",
-            "your output. But keep trying; you can fix this later.",
-        ]);
-        crate::input::back_finish_error(st)
+        crate::errors::back_error(
+            st,
+            "A <box> was supposed to be here",
+            &[
+                r"I was expecting to see \hbox or \vbox or \copy or \box or",
+                "something like that. So you might find something missing in",
+                "your output. But keep trying; you can fix this later.",
+            ],
+        )
     }
 }
 
@@ -232,13 +236,15 @@ fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
             st.mem[g].subtype = GlueKind::Leaders(kind).into();
             st.mem[g].leader_ptr = cb.ptr();
         } else {
-            crate::output::print_err(st, "Leaders not followed by proper glue");
-            st.errors.help(&[
-                r"You should say `\leaders <box or rule><hskip or vskip>'.",
-                "I found the <box or rule>, but there's no suitable",
-                "<hskip or vskip>, so I'm ignoring these leaders.",
-            ]);
-            crate::input::back_finish_error(st)?;
+            crate::errors::back_error(
+                st,
+                "Leaders not followed by proper glue",
+                &[
+                    r"You should say `\leaders <box or rule><hskip or vskip>'.",
+                    "I found the <box or rule>, but there's no suitable",
+                    "<hskip or vskip>, so I'm ignoring these leaders.",
+                ],
+            )?;
             st.mem.flush_node_list(cb.ptr())?;
         }
     }
@@ -356,12 +362,14 @@ pub(super) fn begin_box(
         BoxCode::Vsplit => {
             let n = crate::scan::scan_register_num(st)?;
             if !crate::scan::scan_keyword(st, "to")? {
-                crate::output::print_err(st, "Missing `to' inserted");
-                st.errors.help(&[
-                    r"I'm working on `\vsplit<box number> to <dimen>';",
-                    "will look for the <dimen> next.",
-                ]);
-                crate::errors::finish_error(st)?;
+                crate::errors::error(
+                    st,
+                    "Missing `to' inserted",
+                    &[
+                        r"I'm working on `\vsplit<box number> to <dimen>';",
+                        "will look for the <dimen> next.",
+                    ],
+                )?;
             }
             let d = crate::scan::scan_dimen(st, false, false)?;
             st.scanner.cur_box = crate::packaging::vsplit(st, n, d)?.map(BoxOrRule::Box);

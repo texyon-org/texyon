@@ -19,13 +19,10 @@ use crate::ext::{
 };
 use crate::fonts::Side;
 use crate::fonts::{AAT_FONT_FLAG, SPACE_CODE, SPACE_SHRINK_CODE};
-use crate::input::{back_finish_error, back_input};
+use crate::input::back_input;
 use crate::mem::ZERO_GLUE;
 use crate::node::{AnyNode, GlueKind, GlueSpecNode, MathCode, NodePtr, SaLeaf};
-use crate::output::{
-    capture_to_diagnostic, error_here_with_diagnostic, print, print_cmd_chr, print_err, print_esc,
-    print_int, print_nl,
-};
+use crate::output::{capture_to_diagnostic, error_here_with_diagnostic, print_int, print_nl};
 use crate::params::TokPar;
 use crate::state::{EngineState, FontEngineHandle};
 use crate::token::TokenList;
@@ -44,13 +41,15 @@ const ETEX_VERSION: i32 = 2;
 const XETEX_VERSION: i32 = 0;
 
 fn missing_number_error(st: &mut EngineState) -> Result<(), Abort> {
-    print_err(st, "Missing number, treated as zero");
-    st.errors.help(&[
-        "A number should have been here; I inserted `0'.",
-        "(If you can't figure out why I needed to see a number,",
-        "look up `weird error' in the index to The TeXbook.)",
-    ]);
-    back_finish_error(st)
+    crate::errors::back_error(
+        st,
+        "Missing number, treated as zero",
+        &[
+            "A number should have been here; I inserted `0'.",
+            "(If you can't figure out why I needed to see a number,",
+            "look up `weird error' in the index to The TeXbook.)",
+        ],
+    )
 }
 
 /// A scanned internal quantity: TeX's `cur_val` together with its `cur_val_level`.
@@ -226,12 +225,14 @@ fn fetch_def_code(st: &mut EngineState, m: EqtbPtr) -> Result<i32, Abort> {
     } else if m == DEL_CODE_BASE {
         let code = st.eqtb.del_code(n);
         if code >= 0x4000_0000 {
-            print_err(st, "Extended delcode used as delcode");
-            st.errors.help(&[
-                "A delimiter code must be between 0 and \"7FFFFFF.",
-                "I changed this one to zero.",
-            ]);
-            finish_error(st)?;
+            crate::errors::error(
+                st,
+                "Extended delcode used as delcode",
+                &[
+                    "A delimiter code must be between 0 and \"7FFFFFF.",
+                    "I changed this one to zero.",
+                ],
+            )?;
             0
         } else {
             code
@@ -266,9 +267,7 @@ fn fetch_xetex_def_code(st: &mut EngineState, m: EqtbPtr) -> Result<i32, Abort> 
             r"use \Udelcodenum to access them as single values.",
         )
     };
-    print_err(st, err);
-    st.errors.help(&[help1, help0]);
-    finish_error(st)?;
+    crate::errors::error(st, err, &[help1, help0])?;
     Ok(0)
 }
 
@@ -781,16 +780,16 @@ pub(super) fn scan_something_internal(
             Some(Command::AssignMuGlue(loc)) => CurVal::Mu(glue_spec(st.eqtb.equiv(loc))),
             Some(Command::SetAux(code)) => {
                 if st.input.cur_list.mode.abs() != code.mode() {
-                    error_here_with_diagnostic(st, "Improper ");
-                    print_cmd_chr(st, Cmd::SetAux, code.raw());
-                    capture_to_diagnostic(st, None);
-                    st.errors.help(&[
-                        r"You can refer to \spacefactor only in horizontal mode;",
-                        r"you can refer to \prevdepth only in vertical mode; and",
-                        r"neither of these is meaningful inside \write. So",
-                        "I'm forgetting what you said and using zero instead.",
-                    ]);
-                    finish_error(st)?;
+                    crate::errors::error(
+                        st,
+                        ("Improper ", crate::output::CmdChr(Cmd::SetAux, code.raw())),
+                        &[
+                            r"You can refer to \spacefactor only in horizontal mode;",
+                            r"you can refer to \prevdepth only in vertical mode; and",
+                            r"neither of these is meaningful inside \write. So",
+                            "I'm forgetting what you said and using zero instead.",
+                        ],
+                    )?;
                     zero
                 } else if code == AuxCode::PrevDepth {
                     CurVal::Dimen(st.input.cur_list.prev_depth())
@@ -889,14 +888,16 @@ pub(super) fn scan_something_internal(
                 continue;
             }
             _ => {
-                error_here_with_diagnostic(st, "You can't use `");
-                print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
-                print(st, "' after ");
-                print_esc(st, "the");
-                capture_to_diagnostic(st, None);
-                st.errors
-                    .help(&["I'm forgetting what you said and using zero instead."]);
-                finish_error(st)?;
+                crate::errors::error(
+                    st,
+                    (
+                        "You can't use `",
+                        crate::output::CmdChr(st.scanner.cur_cmd, st.scanner.cur_chr),
+                        "' after ",
+                        crate::output::Esc("the"),
+                    ),
+                    &["I'm forgetting what you said and using zero instead."],
+                )?;
                 zero
             }
         };
@@ -925,12 +926,14 @@ pub(crate) fn scan_font_ident(st: &mut EngineState) -> Result<FontId, Abort> {
             st.eqtb.font_equiv(m + fam)
         }
         _ => {
-            print_err(st, "Missing font identifier");
-            st.errors.help(&[
-                "I was looking for a control sequence whose",
-                r"current meaning has been defined by \font.",
-            ]);
-            back_finish_error(st)?;
+            crate::errors::back_error(
+                st,
+                "Missing font identifier",
+                &[
+                    "I was looking for a control sequence whose",
+                    r"current meaning has been defined by \font.",
+                ],
+            )?;
             NULL_FONT
         }
     };
@@ -976,17 +979,20 @@ pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<Fon
     };
 
     if k == st.fonts.fmem_ptr {
-        error_here_with_diagnostic(st, "Font ");
-        crate::output::print_esc(st, st.eqtb.font_id_text(f));
-        print(st, " has only ");
-        print_int(st, st.fonts.font_params[f]);
-        print(st, " fontdimen parameters");
-        capture_to_diagnostic(st, None);
-        st.errors.help(&[
-            "To increase the number of font parameters, you must",
-            r"use \fontdimen immediately after the \font is loaded.",
-        ]);
-        finish_error(st)?;
+        crate::errors::error(
+            st,
+            (
+                "Font ",
+                crate::output::Esc(st.eqtb.font_id_text(f)),
+                " has only ",
+                st.fonts.font_params[f],
+                " fontdimen parameters",
+            ),
+            &[
+                "To increase the number of font parameters, you must",
+                r"use \fontdimen immediately after the \font is loaded.",
+            ],
+        )?;
     }
     Ok(k)
 }

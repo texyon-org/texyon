@@ -5,8 +5,8 @@ use crate::consts::{HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, MEM_TOP};
 use crate::output::{
     append_to_diagnostic, begin_diagnostic, capture_to_diagnostic,
     diagnostic_begin_capture_warning_here, end_diagnostic, error_here_with_diagnostic, print,
-    print_char, print_cmd_chr, print_err, print_esc, print_in_mode, print_int, print_ln, print_nl,
-    show_box, show_context, show_token_list, token_show, TexPrint,
+    print_char, print_cmd_chr, print_err, print_in_mode, print_int, print_ln, print_nl, show_box,
+    show_context, show_token_list, token_show, TexPrint,
 };
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, EqtbState, ErrorState, InteractionMode, Selector};
@@ -385,12 +385,11 @@ pub(crate) fn privileged(st: &mut EngineState) -> Result<bool, Abort> {
 }
 
 pub(crate) fn cs_error(st: &mut EngineState) -> Result<(), Abort> {
-    error_here_with_diagnostic(st, "Extra ");
-    print_esc(st, "endcsname");
-    capture_to_diagnostic(st, None);
-    st.errors
-        .help(&[r"I'm ignoring this, since I wasn't doing a \csname."]);
-    finish_error(st)
+    crate::errors::error(
+        st,
+        ("Extra ", crate::output::Esc("endcsname")),
+        &[r"I'm ignoring this, since I wasn't doing a \csname."],
+    )
 }
 
 pub(crate) fn box_error(st: &mut EngineState, n: u8) -> Result<(), Abort> {

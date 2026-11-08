@@ -180,15 +180,18 @@ pub(super) fn head_for_vmode(st: &mut EngineState) -> Result<(), Abort> {
     if st.scanner.cur_cmd != Cmd::Hrule {
         return off_save(st);
     }
-    crate::output::error_here_with_diagnostic(st, "You can't use `");
-    crate::output::print_esc(st, "hrule");
-    crate::output::print(st, "' here except with leaders");
-    crate::output::capture_to_diagnostic(st, None);
-    st.errors.help(&[
-        "To put a horizontal rule in an hbox or an alignment,",
-        r"you should use \leaders or \hrulefill (see The TeXbook).",
-    ]);
-    crate::errors::finish_error(st)
+    crate::errors::error(
+        st,
+        (
+            "You can't use `",
+            crate::output::Esc("hrule"),
+            "' here except with leaders",
+        ),
+        &[
+            "To put a horizontal rule in an hbox or an alignment,",
+            r"you should use \leaders or \hrulefill (see The TeXbook).",
+        ],
+    )
 }
 
 pub(super) fn begin_insert_or_adjust(st: &mut EngineState) -> Result<(), Abort> {
@@ -197,13 +200,11 @@ pub(super) fn begin_insert_or_adjust(st: &mut EngineState) -> Result<(), Abort> 
     } else {
         match crate::scan::scan_eight_bit_int(st)? {
             255 => {
-                crate::output::error_here_with_diagnostic(st, "You can't ");
-                crate::output::print_esc(st, "insert");
-                crate::output::print_int(st, 255);
-                crate::output::capture_to_diagnostic(st, None);
-                st.errors
-                    .help(&[r"I'm changing to \insert0; box 255 is special."]);
-                crate::errors::finish_error(st)?;
+                crate::errors::error(
+                    st,
+                    ("You can't ", crate::output::Esc("insert"), 255),
+                    &[r"I'm changing to \insert0; box 255 is special."],
+                )?;
                 0
             }
             n => n,
@@ -366,12 +367,14 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
     match st.save_stack.cur_group {
         GroupCode::Simple => crate::save::unsave(st)?,
         GroupCode::BottomLevel => {
-            crate::output::print_err(st, "Too many }'s");
-            st.errors.help(&[
-                "You've closed more groups than you opened.",
-                "Such booboos are generally harmless, so keep going.",
-            ]);
-            crate::errors::finish_error(st)?;
+            crate::errors::error(
+                st,
+                "Too many }'s",
+                &[
+                    "You've closed more groups than you opened.",
+                    "Such booboos are generally harmless, so keep going.",
+                ],
+            )?;
         }
         GroupCode::SemiSimple | GroupCode::MathShift | GroupCode::MathLeft => {
             crate::errors::extra_right_brace(st)?;
@@ -443,12 +446,14 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
                 || !st.input.cur_input.token_loc().is_null()
                 || st.input.cur_input.token_type() != TokenType::Output
             {
-                crate::output::print_err(st, "Unbalanced output routine");
-                st.errors.help(&[
-                    "Your sneaky output routine has problematic {'s and/or }'s.",
-                    "I can't handle that very well; good luck.",
-                ]);
-                crate::errors::finish_error(st)?;
+                crate::errors::error(
+                    st,
+                    "Unbalanced output routine",
+                    &[
+                        "Your sneaky output routine has problematic {'s and/or }'s.",
+                        "I can't handle that very well; good luck.",
+                    ],
+                )?;
                 loop {
                     crate::scan::get_token(st)?;
                     if st.input.cur_input.token_loc().is_null() {
@@ -504,13 +509,11 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
         GroupCode::Align => {
             crate::input::back_input(st)?;
             st.scanner.cur_tok = Token::from_cs(FROZEN_CR);
-            crate::output::error_here_with_diagnostic(st, "Missing ");
-            crate::output::print_esc(st, "cr");
-            crate::output::print(st, " inserted");
-            crate::output::capture_to_diagnostic(st, None);
-            st.errors
-                .help(&["I'm guessing that you meant to end an alignment here."]);
-            crate::input::ins_finish_error(st)?;
+            crate::errors::ins_error(
+                st,
+                ("Missing ", crate::output::Esc("cr"), " inserted"),
+                &["I'm guessing that you meant to end an alignment here."],
+            )?;
         }
         GroupCode::NoAlign => {
             end_graf(st)?;
@@ -646,12 +649,14 @@ impl ListStateRecord {
 
 pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
     if st.save_stack.cur_group == GroupCode::BottomLevel {
-        crate::output::error_here_with_diagnostic(st, "Extra ");
-        crate::output::print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
-        crate::output::capture_to_diagnostic(st, None);
-        st.errors
-            .help(&["Things are pretty mixed up, but I think the worst is over."]);
-        return crate::errors::finish_error(st);
+        return crate::errors::error(
+            st,
+            (
+                "Extra ",
+                crate::output::CmdChr(st.scanner.cur_cmd, st.scanner.cur_chr),
+            ),
+            &["Things are pretty mixed up, but I think the worst is over."],
+        );
     }
     crate::input::back_input(st)?;
     let p = st.mem.get_avail_token()?;
@@ -735,10 +740,11 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
                 _ => false,
             };
             if !allowed {
-                crate::output::print_err(st, "Improper discretionary list");
-                st.errors
-                    .help(&["Discretionary lists must contain only boxes and kerns."]);
-                crate::errors::finish_error(st)?;
+                crate::errors::error(
+                    st,
+                    "Improper discretionary list",
+                    &["Discretionary lists must contain only boxes and kerns."],
+                )?;
                 crate::output::begin_diagnostic(st);
                 crate::output::diagnostic_begin_capture_warning_here(st);
                 crate::output::print_nl(
@@ -784,12 +790,14 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
             if let Ok(count) = u16::try_from(n) {
                 st.mem[disc].replace_count = count;
             } else {
-                crate::output::print_err(st, "Discretionary list is too long");
-                st.errors.help(&[
-                    "Wow---I never thought anybody would tweak me here.",
-                    "You can't seriously need such a huge discretionary list?",
-                ]);
-                crate::errors::finish_error(st)?;
+                crate::errors::error(
+                    st,
+                    "Discretionary list is too long",
+                    &[
+                        "Wow---I never thought anybody would tweak me here.",
+                        "You can't seriously need such a huge discretionary list?",
+                    ],
+                )?;
             }
             if n > 0 {
                 st.input.cur_list.tail = q;

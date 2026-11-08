@@ -74,13 +74,14 @@ fn expand_write_tokens(st: &mut crate::state::EngineState, tokens: TokenList) ->
     st.input.cur_list.mode = old_mode;
     crate::scan::get_token(st)?;
     if st.scanner.cur_tok != Token::from_cs(END_WRITE) {
-        crate::output::error_here_with_diagnostic(st, "Unbalanced write command");
-        crate::output::capture_to_diagnostic(st, None);
-        st.errors.help(&[
-            r"On this page there's a \write with fewer real {'s than }'s.",
-            "I can't handle that very well; good luck.",
-        ]);
-        crate::errors::finish_error(st)?;
+        crate::errors::error(
+            st,
+            "Unbalanced write command",
+            &[
+                r"On this page there's a \write with fewer real {'s than }'s.",
+                "I can't handle that very well; good luck.",
+            ],
+        )?;
         loop {
             crate::scan::get_token(st)?;
             if st.scanner.cur_tok == Token::from_cs(END_WRITE) {

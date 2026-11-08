@@ -23,7 +23,7 @@ mod show;
 mod show_box;
 mod warnings;
 
-pub(crate) use self::cmd_chr::{print_cmd_chr, print_meaning};
+pub(crate) use self::cmd_chr::{print_cmd_chr, print_meaning, CmdChr};
 pub(crate) use self::show::{
     issue_message, show_context, show_cur_cmd_chr, show_save_groups, show_token_list, show_whatever,
 };

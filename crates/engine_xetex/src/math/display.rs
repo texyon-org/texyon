@@ -203,9 +203,7 @@ fn check_math_fonts(st: &mut EngineState) -> Result<bool, Abort> {
     } else {
         return Ok(false);
     };
-    crate::output::print_err(st, msg);
-    st.errors.help(&help);
-    crate::errors::finish_error(st)?;
+    crate::errors::error(st, msg, &help)?;
     st.input.cur_list.flush_math(&mut st.mem)?;
     Ok(true)
 }
@@ -213,12 +211,14 @@ fn check_math_fonts(st: &mut EngineState) -> Result<bool, Abort> {
 pub(crate) fn check_display_end(st: &mut EngineState) -> Result<(), Abort> {
     crate::scan::get_x_token(st)?;
     if st.scanner.cur_cmd != Cmd::MathShift {
-        crate::output::print_err(st, "Display math should end with $$");
-        st.errors.help(&[
-            "The `$' that I just saw supposedly matches a previous `$$'.",
-            "So I shall assume that you typed `$$' both times.",
-        ]);
-        crate::input::back_finish_error(st)?;
+        crate::errors::back_error(
+            st,
+            "Display math should end with $$",
+            &[
+                "The `$' that I just saw supposedly matches a previous `$$'.",
+                "So I shall assume that you typed `$$' both times.",
+            ],
+        )?;
     }
     Ok(())
 }

@@ -68,24 +68,24 @@ pub(super) fn align_error(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 pub(super) fn no_align_error(st: &mut EngineState) -> Result<(), Abort> {
-    crate::output::error_here_with_diagnostic(st, "Misplaced ");
-    crate::output::print_esc(st, "noalign");
-    crate::output::capture_to_diagnostic(st, None);
-    st.errors.help(&[
-        r"I expect to see \noalign only after the \cr of",
-        "an alignment. Proceed, and I'll ignore this case.",
-    ]);
-    crate::errors::finish_error(st)
+    crate::errors::error(
+        st,
+        ("Misplaced ", crate::output::Esc("noalign")),
+        &[
+            r"I expect to see \noalign only after the \cr of",
+            "an alignment. Proceed, and I'll ignore this case.",
+        ],
+    )
 }
 pub(super) fn omit_error(st: &mut EngineState) -> Result<(), Abort> {
-    crate::output::error_here_with_diagnostic(st, "Misplaced ");
-    crate::output::print_esc(st, "omit");
-    crate::output::capture_to_diagnostic(st, None);
-    st.errors.help(&[
-        r"I expect to see \omit only after tab marks or the \cr of",
-        "an alignment. Proceed, and I'll ignore this case.",
-    ]);
-    crate::errors::finish_error(st)
+    crate::errors::error(
+        st,
+        ("Misplaced ", crate::output::Esc("omit")),
+        &[
+            r"I expect to see \omit only after tab marks or the \cr of",
+            "an alignment. Proceed, and I'll ignore this case.",
+        ],
+    )
 }
 fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
     if st.save_stack.cur_group != GroupCode::Align {
@@ -309,12 +309,14 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
     if st.input.cur_list.mode == MMODE {
         do_assignments(st)?;
         if st.scanner.cur_cmd != Cmd::MathShift {
-            crate::output::print_err(st, "Missing $$ inserted");
-            st.errors.help(&[
-                r"Displays can use special alignments (like \eqalignno)",
-                "only if nothing but the alignment itself is between $$'s.",
-            ]);
-            crate::input::back_finish_error(st)?;
+            crate::errors::back_error(
+                st,
+                "Missing $$ inserted",
+                &[
+                    r"Displays can use special alignments (like \eqalignno)",
+                    "only if nothing but the alignment itself is between $$'s.",
+                ],
+            )?;
         } else {
             crate::math::check_display_end(st)?;
         }
@@ -755,16 +757,15 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
         && (st.input.cur_list.tail != st.input.cur_list.head
             || st.input.cur_list.incompleat_noad().is_some())
     {
-        crate::output::error_here_with_diagnostic(st, "Improper ");
-        crate::output::print_esc(st, "halign");
-        crate::output::print(st, " inside $$'s");
-        crate::output::capture_to_diagnostic(st, None);
-        st.errors.help(&[
-            r"Displays can use special alignments (like \eqalignno)",
-            "only if nothing but the alignment itself is between $$'s.",
-            "So I've deleted the formulas that preceded this alignment.",
-        ]);
-        crate::errors::finish_error(st)?;
+        crate::errors::error(
+            st,
+            ("Improper ", crate::output::Esc("halign"), " inside $$'s"),
+            &[
+                r"Displays can use special alignments (like \eqalignno)",
+                "only if nothing but the alignment itself is between $$'s.",
+                "So I've deleted the formulas that preceded this alignment.",
+            ],
+        )?;
         st.input.cur_list.flush_math(&mut st.mem)?;
     }
 
@@ -809,13 +810,15 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
                 {
                     st.scanner.cur_loop = st.scanner.cur_align;
                 } else {
-                    crate::output::print_err(st, "Missing # inserted in alignment preamble");
-                    st.errors.help(&[
-                        "There should be exactly one # between &'s, when an",
-                        r"\halign or \valign is being set up. In this case you had",
-                        "none, so I've put one in; maybe that will work.",
-                    ]);
-                    crate::input::back_finish_error(st)?;
+                    crate::errors::back_error(
+                        st,
+                        "Missing # inserted in alignment preamble",
+                        &[
+                            "There should be exactly one # between &'s, when an",
+                            r"\halign or \valign is being set up. In this case you had",
+                            "none, so I've put one in; maybe that will work.",
+                        ],
+                    )?;
                     break;
                 }
             } else if st.scanner.cur_cmd != Cmd::Spacer || p != HOLD_HEAD_TOKS {
@@ -839,13 +842,15 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
                 break;
             }
             if st.scanner.cur_cmd == Cmd::MacParam {
-                crate::output::print_err(st, "Only one # is allowed per tab");
-                st.errors.help(&[
-                    "There should be exactly one # between &'s, when an",
-                    r"\halign or \valign is being set up. In this case you had",
-                    "more than one, so I'm ignoring all but the first.",
-                ]);
-                crate::errors::finish_error(st)?;
+                crate::errors::error(
+                    st,
+                    "Only one # is allowed per tab",
+                    &[
+                        "There should be exactly one # between &'s, when an",
+                        r"\halign or \valign is being set up. In this case you had",
+                        "more than one, so I'm ignoring all but the first.",
+                    ],
+                )?;
                 continue;
             }
             st.mem.store_new_token(&mut p, st.scanner.cur_tok)?;

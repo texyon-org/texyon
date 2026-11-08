@@ -174,13 +174,14 @@ pub(crate) fn ship_out(
         || height + depth + v_offset > MAX_DIMEN
         || width + h_offset > MAX_DIMEN
     {
-        crate::output::error_here_with_diagnostic(st, "Huge page cannot be shipped out");
-        crate::output::capture_to_diagnostic(st, None);
-        st.errors.help(&[
-            "The page just created is more than 18 feet tall or",
-            "more than 18 feet wide, so I suspect something went wrong.",
-        ]);
-        crate::errors::finish_error(st)?;
+        crate::errors::error(
+            st,
+            "Huge page cannot be shipped out",
+            &[
+                "The page just created is more than 18 feet tall or",
+                "more than 18 feet wide, so I suspect something went wrong.",
+            ],
+        )?;
 
         if st.eqtb.int_par(IntPar::TracingOutput) <= 0 {
             crate::output::begin_diagnostic(st);

@@ -271,14 +271,16 @@ fn print_vert_break_infinite_shrinkage_error(st: &mut EngineState) -> Result<(),
         crate::output::print_ignored_err(st, MESSAGE);
         return Ok(());
     }
-    crate::output::print_err(st, MESSAGE);
-    st.errors.help(&[
-        r"The box you are \vsplitting contains some infinitely",
-        r"shrinkable glue, e.g., `\vss' or `\vskip 0pt minus 1fil'.",
-        "Such glue doesn't belong there; but you can safely proceed,",
-        "since the offensive shrinkability has been made finite.",
-    ]);
-    crate::errors::finish_error(st)
+    crate::errors::error(
+        st,
+        MESSAGE,
+        &[
+            r"The box you are \vsplitting contains some infinitely",
+            r"shrinkable glue, e.g., `\vss' or `\vskip 0pt minus 1fil'.",
+            "Such glue doesn't belong there; but you can safely proceed,",
+            "since the offensive shrinkability has been made finite.",
+        ],
+    )
 }
 
 impl MemState {
@@ -508,16 +510,19 @@ impl MemState {
 }
 
 fn print_vsplit_needs_vbox_error(st: &mut EngineState) -> Result<(), Abort> {
-    crate::output::error_here_with_diagnostic(st, "");
-    crate::output::print_esc(st, "vsplit");
-    crate::output::print(st, " needs a ");
-    crate::output::print_esc(st, "vbox");
-    crate::output::capture_to_diagnostic(st, None);
-    st.errors.help(&[
-        r"The box you are trying to split is an \hbox.",
-        "I can't split such a box, so I'll leave it alone.",
-    ]);
-    crate::errors::finish_error(st)
+    crate::errors::error(
+        st,
+        (
+            "",
+            crate::output::Esc("vsplit"),
+            " needs a ",
+            crate::output::Esc("vbox"),
+        ),
+        &[
+            r"The box you are trying to split is an \hbox.",
+            "I can't split such a box, so I'll leave it alone.",
+        ],
+    )
 }
 
 fn print_vsplit_packages(st: &mut EngineState, outcome: VsplitOutcome) {

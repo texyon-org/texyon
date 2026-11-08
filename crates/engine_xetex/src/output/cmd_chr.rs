@@ -26,6 +26,16 @@ use super::{
     print_style, token_show,
 };
 
+/// A command with its modifier, printed as its primitive name.
+#[derive(Copy, Clone)]
+pub(crate) struct CmdChr(pub Cmd, pub i32);
+
+impl crate::output::TexPrint for CmdChr {
+    fn print_to(&self, st: &mut EngineState) {
+        print_cmd_chr(st, self.0, self.1);
+    }
+}
+
 pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
     let char_cmd = |st: &mut EngineState, s: &str| {
         print(st, s);

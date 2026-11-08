@@ -7,11 +7,11 @@ use crate::consts::{
     ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_USV, EQTB_SIZE, FROZEN_CONTROL_SEQUENCE,
     FROZEN_PROTECTION, MATH_CHAR, NUMBER_MATH_FAMILIES,
 };
-use crate::errors::{finish_error, Abort};
-use crate::input::{back_finish_error, back_input, begin_token_list, ins_finish_error, TokenType};
+use crate::errors::Abort;
+use crate::input::{back_input, begin_token_list, ins_finish_error, TokenType};
 use crate::mem::BACKUP_HEAD;
 use crate::node::{BoxNode, MathField, NodePtr, RuleDimen, RuleNode, SaLeaf, Stored};
-use crate::output::{capture_to_diagnostic, error_here_with_diagnostic, print_cmd_chr, print_err};
+use crate::output::print_err;
 use crate::packaging::PackSpec;
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, ErrorState, GroupCode, MemState, ScannerState};
@@ -142,12 +142,11 @@ pub(crate) fn scan_rule_spec(st: &mut EngineState) -> Result<NodePtr<RuleNode>, 
 #[allow(non_snake_case)]
 pub(crate) fn eTeX_enabled(st: &mut EngineState, b: bool, j: Cmd, k: i32) -> Result<bool, Abort> {
     if !b {
-        error_here_with_diagnostic(st, "Improper ");
-        print_cmd_chr(st, j, k);
-        capture_to_diagnostic(st, None);
-        st.errors
-            .help(&["Sorry, this optional e-TeX feature has been disabled."]);
-        finish_error(st)?;
+        crate::errors::error(
+            st,
+            ("Improper ", crate::output::CmdChr(j, k)),
+            &["Sorry, this optional e-TeX feature has been disabled."],
+        )?;
     }
     Ok(b)
 }
@@ -388,14 +387,16 @@ pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, 
 pub(crate) fn scan_left_brace(st: &mut EngineState) -> Result<(), Abort> {
     get_x_non_blank_non_relax(st)?;
     if st.scanner.cur_cmd != Cmd::LeftBrace {
-        print_err(st, "Missing { inserted");
-        st.errors.help(&[
-            "A left brace was mandatory here, so I've put one in.",
-            "You might want to delete and/or insert some corrections",
-            "so that I will find a matching right brace soon.",
-            "(If you're confused by all this, try typing `I}' now.)",
-        ]);
-        back_finish_error(st)?;
+        crate::errors::back_error(
+            st,
+            "Missing { inserted",
+            &[
+                "A left brace was mandatory here, so I've put one in.",
+                "You might want to delete and/or insert some corrections",
+                "so that I will find a matching right brace soon.",
+                "(If you're confused by all this, try typing `I}' now.)",
+            ],
+        )?;
         st.scanner.cur_tok = Token::left_brace(b'{');
         st.scanner.cur_cmd = Cmd::LeftBrace;
         st.scanner.cur_chr = i32::from(b'{');

@@ -16,7 +16,7 @@ use crate::mem::{BACKUP_HEAD, GARBAGE, TEMP_HEAD_TOKS, ZERO_GLUE};
 use crate::node::{link_of, AnyNode, CondNode, GlueKind, KernSubtype, NodePtr, SaLeaf};
 use crate::output::{
     begin_diagnostic, capture_to_diagnostic, diagnostic_begin_capture_warning_here, end_diagnostic,
-    error_here_with_diagnostic, print, print_char, print_cmd_chr, print_err, print_esc, print_int,
+    error_here_with_diagnostic, print, print_char, print_cmd_chr, print_esc, print_int,
     print_scaled, show_cur_cmd_chr, sprint_cs,
 };
 use crate::params::{GluePar, IntPar};
@@ -210,12 +210,14 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
                 if (Token::other(b'<')..=Token::other(b'>')).contains(&st.scanner.cur_tok) {
                     st.scanner.cur_tok.chr() as u8
                 } else {
-                    error_here_with_diagnostic(st, "Missing = inserted for ");
-                    print_cmd_chr(st, Cmd::IfTest, this_if.raw());
-                    capture_to_diagnostic(st, None);
-                    st.errors
-                        .help(&["I was expecting to see `<', `=', or `>'. Didn't."]);
-                    back_finish_error(st)?;
+                    crate::errors::back_error(
+                        st,
+                        (
+                            "Missing = inserted for ",
+                            crate::output::CmdChr(Cmd::IfTest, this_if.raw()),
+                        ),
+                        &["I was expecting to see `<', `=', or `>'. Didn't."],
+                    )?;
                     b'='
                 };
             let cv = scan_int_or_dimen(st, this_if)?;
@@ -371,12 +373,11 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
                 skipped_branch_end(st)?;
                 return Ok(());
             }
-            error_here_with_diagnostic(st, "Extra ");
-            print_esc(st, "or");
-            capture_to_diagnostic(st, None);
-            st.errors
-                .help(&[r"I'm ignoring this; it doesn't match any \if."]);
-            finish_error(st)?;
+            crate::errors::error(
+                st,
+                ("Extra ", crate::output::Esc("or")),
+                &[r"I'm ignoring this; it doesn't match any \if."],
+            )?;
         } else if st.scanner.fi_or_else() == Some(FiOrElseCode::Fi) {
             pop_fi(st)?;
         }
@@ -472,9 +473,11 @@ fn scan_nonnegative_int(
     }
     let n = scan_int(st)?;
     if n < 0 {
-        print_err(st, err);
-        st.errors.help(&[help, "I changed this one to zero."]);
-        crate::errors::int_error(st, n)?;
+        crate::errors::error(
+            st,
+            (err, " (", n, ")"),
+            &[help, "I changed this one to zero."],
+        )?;
         return Ok(0);
     }
     Ok(n)
@@ -636,13 +639,15 @@ fn conv_toks(st: &mut EngineState, c: ConvertCode) -> Result<(), Abort> {
             if let Some(valid) = valid {
                 cat = Some(valid);
             } else {
-                error_here_with_diagnostic(st, "Invalid code (");
-                print_int(st, code);
-                print(st, "), should be in the ranges 1..4, 6..8, 10..13");
-                capture_to_diagnostic(st, None);
-                st.errors
-                    .help(&["I'm going to use 12 instead of that illegal code value."]);
-                finish_error(st)?;
+                crate::errors::error(
+                    st,
+                    (
+                        "Invalid code (",
+                        code,
+                        "), should be in the ranges 1..4, 6..8, 10..13",
+                    ),
+                    &["I'm going to use 12 instead of that illegal code value."],
+                )?;
                 cat = Some(Cmd::OtherChar);
             }
             num = saved_chr;
@@ -917,12 +922,11 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     if st.scanner.if_limit == FiOrElseCode::If {
                         crate::input::insert_relax(st)?;
                     } else {
-                        error_here_with_diagnostic(st, "Extra ");
-                        print_cmd_chr(st, Cmd::FiOrElse, code.raw());
-                        capture_to_diagnostic(st, None);
-                        st.errors
-                            .help(&[r"I'm ignoring this; it doesn't match any \if."]);
-                        finish_error(st)?;
+                        crate::errors::error(
+                            st,
+                            ("Extra ", crate::output::CmdChr(Cmd::FiOrElse, code.raw())),
+                            &[r"I'm ignoring this; it doesn't match any \if."],
+                        )?;
                     }
                 } else {
                     while st.scanner.fi_or_else() != Some(FiOrElseCode::Fi) {
@@ -938,15 +942,17 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                 _ => crate::io::start_input(st, None)?,
             },
             _ => {
-                print_err(st, "Undefined control sequence");
-                st.errors.help(&[
-                    "The control sequence at the end of the top line",
-                    r"of your error message was never \def'ed. If you have",
-                    r"misspelled it (e.g., `\hobx'), type `I' and the correct",
-                    r"spelling (e.g., `I\hbox'). Otherwise just continue,",
-                    "and I'll forget about whatever was undefined.",
-                ]);
-                finish_error(st)?;
+                crate::errors::error(
+                    st,
+                    "Undefined control sequence",
+                    &[
+                        "The control sequence at the end of the top line",
+                        r"of your error message was never \def'ed. If you have",
+                        r"misspelled it (e.g., `\hobx'), type `I' and the correct",
+                        r"spelling (e.g., `I\hbox'). Otherwise just continue,",
+                        "and I'll forget about whatever was undefined.",
+                    ],
+                )?;
             }
         }
         break;

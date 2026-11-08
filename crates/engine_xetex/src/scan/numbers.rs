@@ -7,7 +7,7 @@ use crate::consts::{
     FROZEN_RELAX, MAX_DIMEN, MAX_HALFWORD, NULL_CS, NUMBER_MATH_FAMILIES, SINGLE_BASE,
     TEX_INFINITY,
 };
-use crate::errors::{finish_error, mu_error, Abort};
+use crate::errors::{mu_error, Abort};
 use crate::fonts::{QUAD_CODE, X_HEIGHT_CODE};
 use crate::input::{back_finish_error, back_input};
 use crate::node::{ExprNode, GlueSpecNode, NodePtr};
@@ -329,12 +329,14 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<i32, Abort> {
                 vacuous = false;
                 if v >= m && (v > m || d > 7 || radix != 10) {
                     if ok_so_far {
-                        print_err(st, "Number too big");
-                        st.errors.help(&[
-                            "I can only go up to 2147483647='17777777777=\"7FFFFFFF,",
-                            "so I'm using that number instead of yours.",
-                        ]);
-                        finish_error(st)?;
+                        crate::errors::error(
+                            st,
+                            "Number too big",
+                            &[
+                                "I can only go up to 2147483647='17777777777=\"7FFFFFFF,",
+                                "so I'm using that number instead of yours.",
+                            ],
+                        )?;
                         v = TEX_INFINITY;
                         ok_so_far = false;
                     }
@@ -344,13 +346,15 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<i32, Abort> {
                 get_x_token(st)?;
             }
             if vacuous {
-                print_err(st, "Missing number, treated as zero");
-                st.errors.help(&[
-                    "A number should have been here; I inserted `0'.",
-                    "(If you can't figure out why I needed to see a number,",
-                    "look up `weird error' in the index to The TeXbook.)",
-                ]);
-                back_finish_error(st)?;
+                crate::errors::back_error(
+                    st,
+                    "Missing number, treated as zero",
+                    &[
+                        "A number should have been here; I inserted `0'.",
+                        "(If you can't figure out why I needed to see a number,",
+                        "look up `weird error' in the index to The TeXbook.)",
+                    ],
+                )?;
             } else if st.scanner.cur_cmd != Cmd::Spacer {
                 back_input(st)?;
             }
@@ -505,9 +509,11 @@ fn scan_dimen_from(
                         match st.scanner.cur_order.next() {
                             Some(next) => st.scanner.cur_order = next,
                             None => {
-                                print_err(st, "Illegal unit of measure (replaced by filll)");
-                                st.errors.help(&["I dddon't go any higher than filll."]);
-                                finish_error(st)?;
+                                crate::errors::error(
+                                    st,
+                                    "Illegal unit of measure (replaced by filll)",
+                                    &["I dddon't go any higher than filll."],
+                                )?;
                             }
                         }
                     }
@@ -560,14 +566,16 @@ fn scan_dimen_from(
                     if scan_keyword(st, "mu")? {
                         break 'units true;
                     } else {
-                        print_err(st, "Illegal unit of measure (mu inserted)");
-                        st.errors.help(&[
-                            "The unit of measurement in math glue must be mu.",
-                            "To recover gracefully from this error, it's best to",
-                            "delete the erroneous units; e.g., type `2' to delete",
-                            "two letters. (See Chapter 27 of The TeXbook.)",
-                        ]);
-                        finish_error(st)?;
+                        crate::errors::error(
+                            st,
+                            "Illegal unit of measure (mu inserted)",
+                            &[
+                                "The unit of measurement in math glue must be mu.",
+                                "To recover gracefully from this error, it's best to",
+                                "delete the erroneous units; e.g., type `2' to delete",
+                                "two letters. (See Chapter 27 of The TeXbook.)",
+                            ],
+                        )?;
                         break 'units true;
                     }
                 }
@@ -601,16 +609,18 @@ fn scan_dimen_from(
                 } else if scan_keyword(st, "sp")? {
                     break 'units false;
                 } else {
-                    print_err(st, "Illegal unit of measure (pt inserted)");
-                    st.errors.help(&[
-                        "Dimensions can be in units of em, ex, in, pt, pc,",
-                        "cm, mm, dd, cc, bp, or sp; but yours is a new one!",
-                        "I'll assume that you meant to say pt, for printer's points.",
-                        "To recover gracefully from this error, it's best to",
-                        "delete the erroneous units; e.g., type `2' to delete",
-                        "two letters. (See Chapter 27 of The TeXbook.)",
-                    ]);
-                    finish_error(st)?;
+                    crate::errors::error(
+                        st,
+                        "Illegal unit of measure (pt inserted)",
+                        &[
+                            "Dimensions can be in units of em, ex, in, pt, pc,",
+                            "cm, mm, dd, cc, bp, or sp; but yours is a new one!",
+                            "I'll assume that you meant to say pt, for printer's points.",
+                            "To recover gracefully from this error, it's best to",
+                            "delete the erroneous units; e.g., type `2' to delete",
+                            "two letters. (See Chapter 27 of The TeXbook.)",
+                        ],
+                    )?;
                     break 'units true;
                 };
                 scale_dimen(st, &mut v, &mut f, num, denom);
@@ -627,12 +637,14 @@ fn scan_dimen_from(
     }
 
     if st.errors.arith_error || v.wrapping_abs() >= 0x4000_0000 {
-        print_err(st, "Dimension too large");
-        st.errors.help(&[
-            "I can't work with sizes bigger than about 19 feet.",
-            "Continue and I'll use the largest value I can.",
-        ]);
-        finish_error(st)?;
+        crate::errors::error(
+            st,
+            "Dimension too large",
+            &[
+                "I can't work with sizes bigger than about 19 feet.",
+                "Continue and I'll use the largest value I can.",
+            ],
+        )?;
         v = MAX_HALFWORD;
         st.errors.arith_error = false;
     }
@@ -834,10 +846,11 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
                         back_input(st)?;
                     }
                 } else if st.scanner.cur_tok != Token::other(b')') {
-                    print_err(st, "Missing ) inserted for expression");
-                    st.errors
-                        .help(&["I was expecting to see `+', `-', `*', `/', or `)'. Didn't."]);
-                    back_finish_error(st)?;
+                    crate::errors::back_error(
+                        st,
+                        "Missing ) inserted for expression",
+                        &["I was expecting to see `+', `-', `*', `/', or `)'. Didn't."],
+                    )?;
                 }
             }
 
@@ -952,12 +965,14 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
     st.scanner.expand_depth_count -= 1;
 
     if b {
-        print_err(st, "Arithmetic overflow");
-        st.errors.help(&[
-            "I can't evaluate this expression,",
-            "since the result is out of range.",
-        ]);
-        finish_error(st)?;
+        crate::errors::error(
+            st,
+            "Arithmetic overflow",
+            &[
+                "I can't evaluate this expression,",
+                "since the result is out of range.",
+            ],
+        )?;
         if l >= ValueLevel::Glue {
             st.mem.delete_glue_ref(glue_spec(e));
             e = 0;

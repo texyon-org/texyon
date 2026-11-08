@@ -131,10 +131,11 @@ pub(crate) fn math_limit_switch(st: &mut EngineState, code: LimitCode) -> Result
     if st.input.cur_list.apply_math_limit_switch(&mut st.mem, code) {
         return Ok(());
     }
-    crate::output::print_err(st, "Limit controls must follow a math operator");
-    st.errors
-        .help(&[r"I'm ignoring this misplaced \limits or \nolimits command."]);
-    crate::errors::finish_error(st)
+    crate::errors::error(
+        st,
+        "Limit controls must follow a math operator",
+        &[r"I'm ignoring this misplaced \limits or \nolimits command."],
+    )
 }
 
 impl ListStateRecord {
@@ -501,15 +502,18 @@ pub(crate) fn math_left_right(st: &mut EngineState, code: LeftRightCode) -> Resu
 /// `\mathaccent`, `\Umathaccent`, or `\accent` in math mode when `code` is `None`.
 pub(crate) fn math_ac(st: &mut EngineState, code: Option<MathAccentCode>) -> Result<(), Abort> {
     if code.is_none() {
-        crate::output::error_here_with_diagnostic(st, "Please use ");
-        crate::output::print_esc(st, "mathaccent");
-        crate::output::print(st, " for accents in math mode");
-        crate::output::capture_to_diagnostic(st, None);
-        st.errors.help(&[
-            r"I'm changing \accent to \mathaccent here; wish me luck.",
-            "(Accents are not the same in formulas as they are in text.)",
-        ]);
-        crate::errors::finish_error(st)?;
+        crate::errors::error(
+            st,
+            (
+                "Please use ",
+                crate::output::Esc("mathaccent"),
+                " for accents in math mode",
+            ),
+            &[
+                r"I'm changing \accent to \mathaccent here; wish me luck.",
+                "(Accents are not the same in formulas as they are in text.)",
+            ],
+        )?;
     }
 
     let tail = st.input.cur_list.append_accent_noad(&mut st.mem)?;

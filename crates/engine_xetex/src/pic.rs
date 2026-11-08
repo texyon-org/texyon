@@ -369,16 +369,14 @@ fn scan_image_size(st: &mut EngineState) -> Result<Option<f64>, Abort> {
     if d > Scaled::ZERO {
         return Ok(Some(fix2d(d)));
     }
-    crate::output::error_here_with_diagnostic(st, "Improper image ");
-    crate::output::print(st, "size (");
-    crate::output::print_scaled(st, d);
-    crate::output::print(st, "pt) will be ignored");
-    crate::output::capture_to_diagnostic(st, None);
-    st.errors.help(&[
-        "I can't scale images to zero or negative sizes,",
-        "so I'm ignoring this.",
-    ]);
-    crate::errors::finish_error(st)?;
+    crate::errors::error(
+        st,
+        ("Improper image ", "size (", d, "pt) will be ignored"),
+        &[
+            "I can't scale images to zero or negative sizes,",
+            "so I'm ignoring this.",
+        ],
+    )?;
     Ok(None)
 }
 

@@ -317,12 +317,14 @@ pub(crate) fn scan_toks(
                         break true;
                     }
                     if t == Token::other(b'9') {
-                        print_err(st, "You already have nine parameters");
-                        st.errors.help(&[
-                            "I'm going to ignore the # sign you just used,",
-                            "as well as the token that followed it.",
-                        ]);
-                        finish_error(st)?;
+                        crate::errors::error(
+                            st,
+                            "You already have nine parameters",
+                            &[
+                                "I'm going to ignore the # sign you just used,",
+                                "as well as the token that followed it.",
+                            ],
+                        )?;
                         continue;
                     }
                     t = Token(t.0 + 1);

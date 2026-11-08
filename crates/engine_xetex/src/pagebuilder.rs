@@ -343,16 +343,19 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
             crate::scan::scan_left_brace(st)?;
             return Ok(());
         }
-        crate::output::error_here_with_diagnostic(st, "Output loop---");
-        crate::output::print_int(st, st.shipout.dead_cycles);
-        crate::output::print(st, " consecutive dead cycles");
-        crate::output::capture_to_diagnostic(st, None);
-        st.errors.help(&[
-            r"I've concluded that your \output is awry; it never does a",
-            r"\shipout, so I'm shipping \box255 out myself. Next time",
-            r"increase \maxdeadcycles if you want me to be more patient!",
-        ]);
-        crate::errors::finish_error(st)?;
+        crate::errors::error(
+            st,
+            (
+                "Output loop---",
+                st.shipout.dead_cycles,
+                " consecutive dead cycles",
+            ),
+            &[
+                r"I've concluded that your \output is awry; it never does a",
+                r"\shipout, so I'm shipping \box255 out myself. Next time",
+                r"increase \maxdeadcycles if you want me to be more patient!",
+            ],
+        )?;
     }
 
     if !PAGE_HEAD.link(&st.mem).is_null() {
@@ -453,16 +456,19 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         st.shipout.page_so_far[2 + order] += st.mem[skip].stretch;
         st.shipout.page_so_far[PAGE_SHRINK] += st.mem[skip].shrink;
         if st.mem[skip].shrink_order != GlueOrder::Normal && st.mem[skip].shrink != Scaled::ZERO {
-            crate::output::error_here_with_diagnostic(st, "Infinite glue shrinkage inserted from ");
-            crate::output::print_esc(st, "skip");
-            crate::output::print_int(st, i32::from(n));
-            crate::output::capture_to_diagnostic(st, None);
-            st.errors.help(&[
-                "The correction glue for page breaking with insertions",
-                "must have finite shrinkability. But you may proceed,",
-                "since the offensive shrinkability has been made finite.",
-            ]);
-            crate::errors::finish_error(st)?;
+            crate::errors::error(
+                st,
+                (
+                    "Infinite glue shrinkage inserted from ",
+                    crate::output::Esc("skip"),
+                    i32::from(n),
+                ),
+                &[
+                    "The correction glue for page breaking with insertions",
+                    "must have finite shrinkability. But you may proceed,",
+                    "since the offensive shrinkability has been made finite.",
+                ],
+            )?;
         }
     }
 
@@ -718,14 +724,16 @@ fn page_glue_width(
     if st.mem[spec].shrink_order == GlueOrder::Normal || st.mem[spec].shrink == Scaled::ZERO {
         return Ok(st.mem[spec].width);
     }
-    crate::output::print_err(st, "Infinite glue shrinkage found on current page");
-    st.errors.help(&[
-        "The page about to be output contains some infinitely",
-        r"shrinkable glue, e.g., `\vss' or `\vskip 0pt minus 1fil'.",
-        "Such glue doesn't belong there; but you can safely proceed,",
-        "since the offensive shrinkability has been made finite.",
-    ]);
-    crate::errors::finish_error(st)?;
+    crate::errors::error(
+        st,
+        "Infinite glue shrinkage found on current page",
+        &[
+            "The page about to be output contains some infinitely",
+            r"shrinkable glue, e.g., `\vss' or `\vskip 0pt minus 1fil'.",
+            "Such glue doesn't belong there; but you can safely proceed,",
+            "since the offensive shrinkability has been made finite.",
+        ],
+    )?;
     let finite = st.mem.new_spec(spec)?;
     st.mem[finite].shrink_order = GlueOrder::Normal.into();
     st.mem.delete_glue_ref(spec);
