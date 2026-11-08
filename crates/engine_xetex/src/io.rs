@@ -225,7 +225,16 @@ pub(crate) fn open_input_file(st: &mut EngineState, filefmt: FileFormat) -> usiz
     st.input.abspath_of_input_file = last_input_abspath();
     let len = st.input.name_of_file_bytes().len();
     st.input.name_of_file.truncate(len);
+    // TeX Live prints and reports the name the file was found under.
     st.input.name_of_input_file = st.input.name_of_file.clone();
+    if filefmt != FileFormat::TexyonPrimary {
+        if let Some(ext) = crate::bridge::last_input_extension() {
+            st.input.name_of_input_file.push(b'.');
+            st.input
+                .name_of_input_file
+                .extend_from_slice(ext.as_bytes());
+        }
+    }
     handle
 }
 

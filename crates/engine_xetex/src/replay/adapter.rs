@@ -142,6 +142,16 @@ pub(crate) fn clear_last_path() {
     });
 }
 
+/// Whether replay opened the last input, which it does only under the exact requested name.
+pub(crate) fn opened_last() -> bool {
+    ACTIVE.with(|active| {
+        active
+            .borrow()
+            .as_ref()
+            .is_some_and(|sources| sources.last_path.is_some())
+    })
+}
+
 pub(crate) fn last_abspath(max_len: usize) -> Option<Vec<u8>> {
     ACTIVE.with(|active| {
         let active = active.borrow();

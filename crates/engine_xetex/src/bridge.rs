@@ -92,6 +92,14 @@ pub(crate) fn input_open_primary() -> usize {
     InputId::to_raw(with_bridge(|es| es.input_open_primary()))
 }
 
+/// The extension the I/O layer appended to open the last input, if any.
+pub(crate) fn last_input_extension() -> Option<&'static str> {
+    if crate::replay::adapter::opened_last() {
+        return None;
+    }
+    with_bridge(|es| es.latest_input_extension())
+}
+
 /// Longest absolute input path kept, including C's terminating NUL.
 const ABSPATH_CAPACITY: usize = 1024;
 

@@ -419,6 +419,34 @@ pub struct CoreBridgeState<'a> {
     /// recent input didn't have a filesystem path (it came from a bundle or
     /// memory or something else).
     latest_input_path: Option<PathBuf>,
+
+    /// The extension [`CoreBridgeState::input_open`] appended to open the latest input.
+    latest_input_extension: Option<&'static str>,
+}
+
+/// An input found by [`CoreBridgeState::input_open_name_format`].
+struct OpenedInput {
+    handle: InputHandle,
+    path: Option<PathBuf>,
+    /// The extension appended to the requested name, if one was.
+    extension: Option<&'static str>,
+}
+
+impl OpenedInput {
+    fn with_extension(
+        opened: OpenResult<(InputHandle, Option<PathBuf>)>,
+        extension: Option<&'static str>,
+    ) -> OpenResult<OpenedInput> {
+        match opened {
+            OpenResult::Ok((handle, path)) => OpenResult::Ok(OpenedInput {
+                handle,
+                path,
+                extension,
+            }),
+            OpenResult::NotAvailable => OpenResult::NotAvailable,
+            OpenResult::Err(e) => OpenResult::Err(e),
+        }
+    }
 }
 
 impl<'a> CoreBridgeState<'a> {
@@ -435,6 +463,7 @@ impl<'a> CoreBridgeState<'a> {
             output_handles: Vec::new(),
             input_handles: Vec::new(),
             latest_input_path: None,
+            latest_input_extension: None,
             fs_emulation_settings,
         }
     }
@@ -464,6 +493,11 @@ impl<'a> CoreBridgeState<'a> {
             .report(diag.kind, format_args!("{}", diag.message), None);
     }
 
+    /// The extension appended to the requested name to open the latest input, if any.
+    pub fn latest_input_extension(&self) -> Option<&'static str> {
+        self.latest_input_extension
+    }
+
     /// The filesystem path of the most recently opened input, if it is known,
     /// exposed and UTF-8.
     pub fn latest_input_abspath(&self) -> Option<&str> {
@@ -477,20 +511,24 @@ impl<'a> CoreBridgeState<'a> {
         &mut self,
         name: &str,
         format: FileFormat,
-    ) -> OpenResult<(InputHandle, Option<PathBuf>)> {
+    ) -> OpenResult<OpenedInput> {
         let io = self.hooks.io();
 
-        if let FileFormat::Format = format {
-            match io.input_open_format(name, self.status) {
-                OpenResult::NotAvailable => {}
-                OpenResult::Err(e) => return OpenResult::Err(e),
-                OpenResult::Ok(h) => return OpenResult::Ok((h, None)),
+        let open = |io: &mut dyn IoProvider, name: &str, status: &mut dyn StatusBackend| {
+            if let FileFormat::Format = format {
+                match io.input_open_format(name, status) {
+                    OpenResult::Ok(h) => OpenResult::Ok((h, None)),
+                    OpenResult::NotAvailable => OpenResult::NotAvailable,
+                    OpenResult::Err(e) => OpenResult::Err(e),
+                }
+            } else {
+                io.input_open_name_with_abspath(name, status)
             }
-        } else {
-            match io.input_open_name_with_abspath(name, self.status) {
-                OpenResult::NotAvailable => {}
-                r => return r,
-            }
+        };
+
+        match open(io, name, self.status) {
+            OpenResult::NotAvailable => {}
+            r => return OpenedInput::with_extension(r, None),
         }
 
         // It wasn't available under the immediately-given name. Try adding
@@ -498,20 +536,10 @@ impl<'a> CoreBridgeState<'a> {
         // filename already has one. E.g., lipsum in TeXLive 2020 asks for
         // `lipsum.ltd.tex` under the name `lipsum.ltd`.
 
-        for e in format.extensions() {
-            let ext = format!("{name}.{e}");
-
-            if let FileFormat::Format = format {
-                match io.input_open_format(&ext, self.status) {
-                    OpenResult::NotAvailable => {}
-                    OpenResult::Err(e) => return OpenResult::Err(e),
-                    OpenResult::Ok(h) => return OpenResult::Ok((h, None)),
-                }
-            } else {
-                match io.input_open_name_with_abspath(&ext, self.status) {
-                    OpenResult::NotAvailable => {}
-                    r => return r,
-                }
+        for &e in format.extensions() {
+            match open(io, &format!("{name}.{e}"), self.status) {
+                OpenResult::NotAvailable => {}
+                r => return OpenedInput::with_extension(r, Some(e)),
             }
         }
 
@@ -523,7 +551,7 @@ impl<'a> CoreBridgeState<'a> {
         name: &str,
         format: FileFormat,
         is_gz: bool,
-    ) -> OpenResult<(InputHandle, Option<PathBuf>)> {
+    ) -> OpenResult<OpenedInput> {
         let base = self.input_open_name_format(name, format);
 
         if !is_gz {
@@ -531,11 +559,14 @@ impl<'a> CoreBridgeState<'a> {
         }
 
         match base {
-            OpenResult::Ok((ih, path)) => {
-                let origin = ih.origin();
-                let dr = GzDecoder::new(ih.into_inner());
+            OpenResult::Ok(opened) => {
+                let origin = opened.handle.origin();
+                let dr = GzDecoder::new(opened.handle.into_inner());
 
-                OpenResult::Ok((InputHandle::new(name, dr, origin), path))
+                OpenResult::Ok(OpenedInput {
+                    handle: InputHandle::new(name, dr, origin),
+                    ..opened
+                })
             }
             _ => base,
         }
@@ -552,7 +583,7 @@ impl<'a> CoreBridgeState<'a> {
         // idea to just go and read the file.
 
         let mut ih = match self.input_open_name_format(&name, FileFormat::Tex) {
-            OpenResult::Ok((ih, _path)) => ih,
+            OpenResult::Ok(opened) => opened.handle,
             OpenResult::NotAvailable => {
                 // We could issue a warning here, but the standard LaTeX
                 // "rerun check" implementations trigger it very often, which
@@ -700,8 +731,8 @@ impl<'a> CoreBridgeState<'a> {
     pub fn input_open(&mut self, name: &str, format: FileFormat, is_gz: bool) -> Option<InputId> {
         let name = normalize_tex_path(name);
 
-        let (ih, path) = match self.input_open_name_format_gz(&name, format, is_gz) {
-            OpenResult::Ok(tup) => tup,
+        let opened = match self.input_open_name_format_gz(&name, format, is_gz) {
+            OpenResult::Ok(opened) => opened,
             OpenResult::NotAvailable => {
                 return None;
             }
@@ -711,8 +742,9 @@ impl<'a> CoreBridgeState<'a> {
             }
         };
 
-        self.input_handles.push(Some(ih));
-        self.latest_input_path = path;
+        self.input_handles.push(Some(opened.handle));
+        self.latest_input_path = opened.path;
+        self.latest_input_extension = opened.extension;
         InputId::new(self.input_handles.len())
     }
 
@@ -734,6 +766,7 @@ impl<'a> CoreBridgeState<'a> {
 
         self.input_handles.push(Some(ih));
         self.latest_input_path = path;
+        self.latest_input_extension = None;
         InputId::new(self.input_handles.len())
     }
 
@@ -1491,7 +1524,7 @@ pub enum FileFormat {
 }
 
 impl FileFormat {
-    fn extensions(&self) -> &[&str] {
+    fn extensions(&self) -> &'static [&'static str] {
         match *self {
             FileFormat::Afm => &["afm"],
             FileFormat::Bib => &["bib"],
