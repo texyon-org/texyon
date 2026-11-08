@@ -588,14 +588,28 @@ pub(crate) fn print_file_name(st: &mut EngineState, n: StrNumber, a: StrNumber, 
         if s == StrNumber::NONE {
             continue;
         }
-        for j in st.strings.str_range(s) {
-            let c = i32::from(st.strings.str_pool[j]);
+        let units: Vec<u16> = st
+            .strings
+            .str_range(s)
+            .map(|j| st.strings.str_pool[j])
+            .collect();
+        let mut units = units.into_iter().peekable();
+        while let Some(unit) = units.next() {
+            let c = i32::from(unit);
             if c == quote_char {
                 print(st, quote_char);
                 quote_char = QUOTE_SUM - quote_char;
                 print(st, quote_char);
             }
-            print(st, c);
+            let low = if (0xD800..=0xDBFF).contains(&unit) {
+                units.next_if(|lo| (0xDC00..=0xDFFF).contains(lo))
+            } else {
+                None
+            };
+            match low {
+                Some(lo) => print_char(st, 0x10000 + (c - 0xD800) * 0x400 + i32::from(lo) - 0xDC00),
+                None => print(st, c),
+            }
         }
     }
 

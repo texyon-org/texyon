@@ -1,7 +1,7 @@
 //! Low-level input and output: encoded line reading, file names, and the
 //! log and input-file lifecycle.
 
-use crate::consts::{BIGGEST_CHAR, CLOSED, EMPTY_STRING, INVALID_HANDLE, JUST_OPEN};
+use crate::consts::{BIGGEST_USV, CLOSED, EMPTY_STRING, INVALID_HANDLE, JUST_OPEN};
 use crate::input::NEW_LINE;
 use crate::layout::FontMappingHandle;
 use crate::params::IntPar;
@@ -653,7 +653,7 @@ fn rescan_opened_name(st: &mut EngineState) -> Result<(), Abort> {
     begin_name(st);
     st.scanner.stop_at_space = false;
     for c in name16 {
-        if !more_name(st, c)? {
+        if !more_name(st, u32::from(c))? {
             break;
         }
     }
@@ -700,29 +700,35 @@ pub(crate) fn begin_name(st: &mut EngineState) {
     st.scanner.file_name_quote_char = 0;
 }
 
-pub(crate) fn more_name(st: &mut EngineState, c: u16) -> Result<bool, Abort> {
+/// Adds code point `c` to the file name being scanned, `false` at its end.
+pub(crate) fn more_name(st: &mut EngineState, c: u32) -> Result<bool, Abort> {
     let stop = st.scanner.stop_at_space;
     let q = st.scanner.file_name_quote_char;
-    if stop && q == 0 && c == u16::from(b' ') {
+    if stop && q == 0 && c == u32::from(b' ') {
         return Ok(false);
     }
-    if stop && q != 0 && c == q {
+    if stop && q != 0 && c == u32::from(q) {
         st.scanner.file_name_quote_char = 0;
         return Ok(true);
     }
-    if stop && q == 0 && (c == u16::from(b'"') || c == u16::from(b'\'')) {
-        st.scanner.file_name_quote_char = c;
-        st.scanner.quoted_filename = true;
-        return Ok(true);
+    if stop && q == 0 {
+        for quote in *b"\"'" {
+            if c == u32::from(quote) {
+                st.scanner.file_name_quote_char = u16::from(quote);
+                st.scanner.quoted_filename = true;
+                return Ok(true);
+            }
+        }
     }
-    if st.strings.pool_ptr + 1 > st.strings.pool_size {
+    let (units, n) = crate::utf8::utf16_units(c);
+    if st.strings.pool_ptr.index() + n > st.strings.pool_size.index() {
         return Err(Abort::PoolOverflow);
     }
-    st.strings.append_char(c);
-    if c == u16::from(b'/') {
+    st.strings.append_units(&units[..n]);
+    if c == u32::from(b'/') {
         st.scanner.area_delimiter = st.strings.cur_length();
         st.scanner.ext_delimiter = 0;
-    } else if c == u16::from(b'.') {
+    } else if c == u32::from(b'.') {
         st.scanner.ext_delimiter = st.strings.cur_length();
     }
     Ok(true)
@@ -804,7 +810,7 @@ pub(crate) fn make_name_string(st: &mut EngineState) -> Result<StrNumber, Abort>
     st.scanner.stop_at_space = false;
 
     for c in name16 {
-        if !more_name(st, c)? {
+        if !more_name(st, u32::from(c))? {
             break;
         }
     }
@@ -984,7 +990,7 @@ pub(crate) fn scan_file_name_braced(st: &mut EngineState) -> Result<(), Abort> {
     begin_name(st);
     for i in st.strings.str_range(s) {
         let c = st.strings.str_pool[i];
-        more_name(st, c)?;
+        more_name(st, u32::from(c))?;
     }
     st.scanner.stop_at_space = save_stop_at_space;
     Ok(())
@@ -1017,12 +1023,20 @@ pub(crate) fn scan_file_name(st: &mut EngineState) -> Result<(), Abort> {
         }
 
         loop {
-            if st.scanner.cur_cmd > Cmd::OtherChar || st.scanner.cur_chr > BIGGEST_CHAR {
-                crate::input::back_input(st)?;
-                break;
-            }
+            let c = match u32::try_from(st.scanner.cur_chr) {
+                Ok(c)
+                    if st.scanner.cur_cmd <= Cmd::OtherChar
+                        && st.scanner.cur_chr <= BIGGEST_USV =>
+                {
+                    c
+                }
+                _ => {
+                    crate::input::back_input(st)?;
+                    break;
+                }
+            };
 
-            if !more_name(st, st.scanner.cur_chr as u16)? {
+            if !more_name(st, c)? {
                 break;
             }
 
