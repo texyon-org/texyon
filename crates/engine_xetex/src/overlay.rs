@@ -12,16 +12,16 @@ use bytemuck::{Pod, Zeroable};
 use crate::codes::{FiOrElseCode, LimitCode, MarkCode, ValueLevel};
 use crate::consts::{EMPTY, NORMAL};
 use crate::node::{
-    AccentNoad, ActiveNode, AdjustNode, AdjustPlacement, AlignRecord, AlignStackNode, AnyNoad,
-    BoxLr, BoxNode, CharNode, ChoiceNode, CondNode, DelimiterField, DeltaNode, DiscNode, EdgeNode,
-    ExprNode, FenceNoad, FenceSubtype, FixedNode, FractionNoad, FreeBlock, GlueKind, GlueNode,
-    GlueSpecNode, GlyphNode, InsNode, KernNode, KernSubtype, LanguageNode, LeaderKind, LigBoundary,
-    LigItem, LigatureNode, Link, MarginKernNode, MarkNode, MathAccentKind, MathCode, MathField,
-    MathNode, MovementNode, NativeWordNode, Noad, NodeKind, NodePtr, OpenNode, PageInsNode,
-    ParShapeNode, PassiveNode, PenaltiesNode, PenaltyNode, PicNode, PseudoLineNode, RadicalNoad,
-    RuleNode, SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved,
-    SaSavedPointer, SaSavedWord, SaWordNode, SizedWhatsit, SpanNode, Stored, StoredDimen,
-    StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype, WriteNode,
+    AccentNoad, AdjustNode, AdjustPlacement, AlignRecord, AlignStackNode, AnyNoad, BoxLr, BoxNode,
+    CharNode, ChoiceNode, CondNode, DelimiterField, DiscNode, EdgeNode, ExprNode, FenceNoad,
+    FenceSubtype, FixedNode, FractionNoad, FreeBlock, GlueKind, GlueNode, GlueSpecNode, GlyphNode,
+    InsNode, KernNode, KernSubtype, LanguageNode, LeaderKind, LigBoundary, LigItem, LigatureNode,
+    Link, MarginKernNode, MarkNode, MathAccentKind, MathCode, MathField, MathNode, MovementNode,
+    NativeWordNode, Noad, NodeKind, NodePtr, OpenNode, PageInsNode, ParShapeNode, PenaltiesNode,
+    PenaltyNode, PicNode, PseudoLineNode, RadicalNoad, RuleNode, SaChild, SaElement, SaIndexNode,
+    SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved, SaSavedPointer, SaSavedWord, SaWordNode,
+    SizedWhatsit, SpanNode, Stored, StoredDimen, StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype,
+    WriteNode,
 };
 use crate::state::MemState;
 use crate::token::TokenList;
@@ -1041,65 +1041,6 @@ pub struct SaSavedPointerLayout {
 }
 
 overlay!(SaSavedPointer => SaSavedPointerLayout);
-
-/// A line-breaker active node, one feasible break still in play.
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct ActiveLayout {
-    pub fitness: u16,
-    /// Unhyphenated or hyphenated, in the type word.
-    pub break_type: u16,
-    pub link: MemPtr,
-    pub line_number: i32,
-    pub break_node: MemPtr,
-    _unused1: i32,
-    pub total_demerits: i32,
-    _unused2: i32,
-    /// `\lastlinefit` only, zero otherwise.
-    pub shortfall: Scaled,
-    _unused3: i32,
-    /// `\lastlinefit` only, zero otherwise.
-    pub glue: Scaled,
-}
-
-overlay!(ActiveNode => ActiveLayout);
-
-/// A line-breaker delta node: the change in the totals between active nodes.
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct DeltaLayout {
-    _subtype: u16,
-    _type: u16,
-    pub link: MemPtr,
-    _unused1: i32,
-    pub dwidth: Scaled,
-    _unused2: i32,
-    pub dstretch0: Scaled,
-    _unused3: i32,
-    pub dstretch1: Scaled,
-    _unused4: i32,
-    pub dstretch2: Scaled,
-    _unused5: i32,
-    pub dstretch3: Scaled,
-    _unused6: i32,
-    pub dshrink: Scaled,
-}
-
-overlay!(DeltaNode => DeltaLayout);
-
-/// A line-breaker passive node, one feasible break.
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct PassiveLayout {
-    /// A serial number, for tracing.
-    pub serial: i32,
-    pub link: MemPtr,
-    /// WEB's `prev_break` until `post_line_break` reverses the chain.
-    pub next_break: MemPtr,
-    pub cur_break: MemPtr,
-}
-
-overlay!(PassiveNode => PassiveLayout);
 
 /// An entry of the conditional stack, saving the enclosing `\if`.
 #[repr(C)]

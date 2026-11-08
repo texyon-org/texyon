@@ -3,11 +3,11 @@
 use crate::errors::Abort;
 use crate::fonts::{Side, QUAD_CODE};
 use crate::mem::{TEMP_HEAD, ZERO_GLUE};
-use crate::node::{ActiveNode, AnyNode, BoxNode, DiscNode, KernSubtype, NodePtr, WhatsitVariant};
+use crate::node::{AnyNode, BoxNode, DiscNode, KernSubtype, NodePtr, WhatsitVariant};
 use crate::state::{ErrorState, FontState, LinebreakState, MemState};
 use crate::units::{FontId, MemPtr, Scaled};
 
-use super::passive_node;
+use super::lists::PassiveId;
 
 const MAX_HLIST_STACK: i16 = 512;
 
@@ -33,21 +33,19 @@ impl LinebreakState {
         Some(self.hlist_stack[level as usize])
     }
 
-    /// Total protrusion of the line from `q`'s break to `cur_p`, which is `p_disc`
-    /// for a hyphenated break.
+    /// Total protrusion of the line from `break_node` (the paragraph start for
+    /// `None`) to `cur_p`, which is `p_disc` for a hyphenated break.
     pub(super) fn total_pw(
         &mut self,
         errors: &mut ErrorState,
         mem: &MemState,
         fonts: &FontState,
-        q: NodePtr<ActiveNode>,
+        break_node: Option<PassiveId>,
         p_disc: Option<NodePtr<DiscNode>>,
     ) -> Option<Scaled> {
-        let break_node = mem[q].break_node;
-        let mut l = if break_node.is_null() {
-            self.first_p
-        } else {
-            mem[passive_node(break_node)].cur_break
+        let mut l = match break_node {
+            None => self.first_p,
+            Some(b) => self.lists.passive(b).cur_break,
         };
 
         let r = mem.prev_rightmost(self.global_prev_p, self.cur_p);

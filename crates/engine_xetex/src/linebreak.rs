@@ -5,38 +5,30 @@ use crate::consts::{
     AWFUL_BAD, EJECT_PENALTY, INF_BAD, INF_PENALTY, MAX_DIMEN, MAX_HALFWORD, NULL_FONT,
 };
 use crate::errors::Abort;
-use crate::mem::{ACTIVE_LIST, TEMP_HEAD};
+use crate::mem::TEMP_HEAD;
 use crate::node::{
-    link_of, ActiveNode, AnyNode, BoxNode, CharNode, DeltaNode, DiscNode, GlueNode, GlueSpecNode,
-    KernSubtype, NodePtr, PassiveNode, WhatsitVariant,
+    AnyNode, BoxNode, CharNode, DiscNode, GlueNode, GlueSpecNode, KernSubtype, NodePtr,
+    WhatsitVariant,
 };
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{
     ConfigState, EngineState, EqtbState, ErrorState, FontState, LinebreakState, MemState,
     ScannerState,
 };
-use crate::units::{FontId, GlueOrder, MemAddr, MemPtr, NodeType, Scaled};
+use crate::units::{FontId, GlueOrder, MemPtr, Scaled};
 
 mod hyphenate;
+mod lists;
 mod locale;
 mod post;
 mod prehyph;
 mod protrusion;
 
+use self::lists::{widths, ActiveEntry, BreakType, Entry, EntryId, Fitness, Passive};
+pub(crate) use self::lists::{BreakLists, PassiveId};
 pub(crate) use self::locale::do_locale_linebreaks;
 use self::post::post_line_break;
 use self::prehyph::{set_language, try_hyphenate};
-
-const LAST_ACTIVE: MemPtr = ACTIVE_LIST;
-
-const DELTA_NODE: u16 = NodeType::Rule.as_raw();
-
-pub(crate) const UNHYPHENATED: i16 = 0;
-pub(crate) const HYPHENATED: i16 = 1;
-const VERY_LOOSE_FIT: usize = 0;
-const LOOSE_FIT: usize = 1;
-const DECENT_FIT: usize = 2;
-const TIGHT_FIT: usize = 3;
 
 #[inline]
 fn odd(v: u8) -> bool {
@@ -52,90 +44,10 @@ impl FontState {
     }
 }
 
-/// A node on the active list, which carries no `NODE_type` of its own.
-#[inline]
-fn active(p: impl MemAddr) -> NodePtr<ActiveNode> {
-    NodePtr::at(p)
-}
-
-#[inline]
-fn delta_node(p: impl MemAddr) -> NodePtr<DeltaNode> {
-    NodePtr::at(p)
-}
-
-#[inline]
-fn passive_node(p: impl MemAddr) -> NodePtr<PassiveNode> {
-    NodePtr::at(p)
-}
-
-/// An active-list entry. Its type word holds the break type (0/1) or
-/// `DELTA_NODE` (2), which `classify()` would misread as HList/VList/Rule.
-#[derive(Copy, Clone)]
-enum ActiveOrDelta {
-    Active(NodePtr<ActiveNode>),
-    Delta(NodePtr<DeltaNode>),
-}
-
-/// A delta node's six components, indexed like `active_width` (slot 0 unused).
-#[inline]
-fn delta_widths(d: NodePtr<DeltaNode>, mem: &MemState) -> [Scaled; 7] {
-    [
-        Scaled::ZERO,
-        mem[d].dwidth,
-        mem[d].dstretch0,
-        mem[d].dstretch1,
-        mem[d].dstretch2,
-        mem[d].dstretch3,
-        mem[d].dshrink,
-    ]
-}
-
-#[inline]
-fn set_delta_widths(d: NodePtr<DeltaNode>, mem: &mut MemState, w: &[Scaled; 7]) {
-    let node = &mut mem[d];
-    node.dwidth = w[1];
-    node.dstretch0 = w[2];
-    node.dstretch1 = w[3];
-    node.dstretch2 = w[4];
-    node.dstretch3 = w[5];
-    node.dshrink = w[6];
-}
-
 impl MemState {
     #[inline]
     fn has_infinite_shrink(&self, spec: NodePtr<GlueSpecNode>) -> bool {
         self[spec].shrink_order != GlueOrder::Normal && self[spec].shrink != Scaled::ZERO
-    }
-
-    #[inline]
-    fn classify_active_or_delta(&self, p: impl MemAddr + Copy) -> ActiveOrDelta {
-        if self[active(p)].break_type == DELTA_NODE {
-            ActiveOrDelta::Delta(delta_node(p))
-        } else {
-            ActiveOrDelta::Active(active(p))
-        }
-    }
-
-    /// A new active node before `link`, its `\lastlinefit` fields zeroed.
-    fn new_active_node(&mut self, link: MemPtr) -> Result<NodePtr<ActiveNode>, Abort> {
-        let p = NodePtr::<ActiveNode>::alloc(self)?;
-        let n = &mut self[p];
-        n.link = link;
-        n.shortfall = Scaled::ZERO;
-        n.glue = Scaled::ZERO;
-        Ok(p)
-    }
-
-    /// A new delta node before `link` holding `w[1..=6]`.
-    fn new_delta_node(
-        &mut self,
-        link: MemPtr,
-        w: &[Scaled; 7],
-    ) -> Result<NodePtr<DeltaNode>, Abort> {
-        let p = NodePtr::<DeltaNode>::alloc(self)?;
-        self[p].link = link;
-        set_delta_widths(p, self, w);
-        Ok(p)
     }
 }
 
@@ -152,135 +64,94 @@ impl MemState {
     }
 }
 
-impl MemState {
+impl LinebreakState {
     fn start_linebreak_pass(
         &mut self,
+        mem: &MemState,
         scanner: &mut ScannerState,
-        linebreak: &mut LinebreakState,
         errors: &mut ErrorState,
         prev_graf: i32,
     ) -> Result<(), Abort> {
-        let q = self.new_active_node(LAST_ACTIVE)?;
-        let n = &mut self[q];
-        n.break_type = UNHYPHENATED as u16;
-        n.fitness = DECENT_FIT as u16;
-        n.break_node = MemPtr::NULL;
-        n.line_number = prev_graf.wrapping_add(1);
-        n.total_demerits = 0;
-        ACTIVE_LIST.set_link(self, q.ptr());
+        self.lists.clear();
+        let q = self.lists.push(
+            EntryId::LAST_ACTIVE,
+            Entry::Active(ActiveEntry::start(prev_graf)),
+        )?;
+        self.lists.set_link(EntryId::ACTIVE_LIST, q);
 
-        scanner.active_width[1..].copy_from_slice(&linebreak.background[1..]);
-        linebreak.passive = None;
+        scanner.active_width[1..].copy_from_slice(&self.background[1..]);
         errors.font_in_short_display = NULL_FONT;
-        linebreak.cur_p = TEMP_HEAD.link(self);
-        linebreak.global_prev_p = linebreak.cur_p;
-        linebreak.first_p = linebreak.cur_p;
+        self.cur_p = TEMP_HEAD.link(mem);
+        self.global_prev_p = self.cur_p;
+        self.first_p = self.cur_p;
         Ok(())
     }
 
-    fn free_break_lists(&mut self, linebreak: &LinebreakState) {
-        let mut q = ACTIVE_LIST.link(self);
-        while q != LAST_ACTIVE {
-            let next = q.link(self);
-            match self.classify_active_or_delta(q) {
-                ActiveOrDelta::Delta(d) => d.free(self),
-                ActiveOrDelta::Active(a) => a.free(self),
-            }
-            q = next;
-        }
-
-        let mut passive = linebreak.passive;
-        while let Some(p) = passive {
-            passive = p.next(self);
-            p.free(self);
-        }
-    }
-
-    /// Pick the best active node and set `best_line`. `None` when the result
+    /// Pick the best active entry and set `best_line`. `None` when the result
     /// misses `\looseness` and another pass is due.
-    fn choose_best_break(
-        &self,
-        linebreak: &mut LinebreakState,
-        eqtb: &EqtbState,
-    ) -> Option<NodePtr<ActiveNode>> {
-        if ACTIVE_LIST.link(self) == LAST_ACTIVE {
-            return None;
+    fn choose_best_break(&mut self, eqtb: &EqtbState) -> Result<Option<ActiveEntry>, Abort> {
+        if self.lists.is_empty() {
+            return Ok(None);
         }
 
-        let mut r = ACTIVE_LIST.link(self);
         let mut fewest_demerits = MAX_HALFWORD;
         let mut best = None;
-        loop {
-            if let ActiveOrDelta::Active(a) = self.classify_active_or_delta(r) {
-                if self[a].total_demerits < fewest_demerits {
-                    fewest_demerits = self[a].total_demerits;
-                    best = Some(a);
-                }
-            }
-            r = r.link(self);
-            if r == LAST_ACTIVE {
-                break;
+        for a in self.lists.actives() {
+            if a.total_demerits < fewest_demerits {
+                fewest_demerits = a.total_demerits;
+                best = Some(a);
             }
         }
-        let mut best = best.expect("an active node has finite demerits");
-        linebreak.best_line = self[best].line_number;
+        let mut best = best.ok_or(Abort::Confusion("line breaking"))?;
+        self.best_line = best.line_number;
 
         let looseness = eqtb.int_par(IntPar::Looseness);
         if looseness == 0 {
-            return Some(best);
+            return Ok(Some(best));
         }
 
-        let mut r = ACTIVE_LIST.link(self);
         let mut actual_looseness = 0;
-        loop {
-            if let ActiveOrDelta::Active(a) = self.classify_active_or_delta(r) {
-                let line_diff = self[a].line_number.wrapping_sub(linebreak.best_line);
-                if (line_diff < actual_looseness && looseness <= line_diff)
-                    || (line_diff > actual_looseness && looseness >= line_diff)
-                {
-                    best = a;
-                    actual_looseness = line_diff;
-                    fewest_demerits = self[a].total_demerits;
-                } else if line_diff == actual_looseness && self[a].total_demerits < fewest_demerits
-                {
-                    best = a;
-                    fewest_demerits = self[a].total_demerits;
-                }
-            }
-            r = r.link(self);
-            if r == LAST_ACTIVE {
-                break;
+        for a in self.lists.actives() {
+            let line_diff = a.line_number.wrapping_sub(self.best_line);
+            if (line_diff < actual_looseness && looseness <= line_diff)
+                || (line_diff > actual_looseness && looseness >= line_diff)
+            {
+                best = a;
+                actual_looseness = line_diff;
+                fewest_demerits = a.total_demerits;
+            } else if line_diff == actual_looseness && a.total_demerits < fewest_demerits {
+                best = a;
+                fewest_demerits = a.total_demerits;
             }
         }
 
-        linebreak.best_line = self[best].line_number;
-        (actual_looseness == looseness || linebreak.final_pass).then_some(best)
+        self.best_line = best.line_number;
+        Ok((actual_looseness == looseness || self.final_pass).then_some(best))
     }
 
     /// Stretch the `\parfillskip` of the last line by the `\lastlinefit` adjustment.
     fn finish_last_line_fit(
         &mut self,
-        linebreak: &mut LinebreakState,
-        best: NodePtr<ActiveNode>,
+        mem: &mut MemState,
+        best: &ActiveEntry,
         last_line_fill: NodePtr<GlueNode>,
     ) -> Result<(), Abort> {
-        if !linebreak.do_last_line_fit {
+        if !self.do_last_line_fit {
             return Ok(());
         }
 
-        if self[best].shortfall == Scaled::ZERO {
-            linebreak.do_last_line_fit = false;
+        if best.shortfall == Scaled::ZERO {
+            self.do_last_line_fit = false;
             return Ok(());
         }
 
-        let old_spec = self[last_line_fill].glue_ptr;
-        let spec = self.new_spec(old_spec)?;
-        self.delete_glue_ref(old_spec);
+        let old_spec = mem[last_line_fill].glue_ptr;
+        let spec = mem.new_spec(old_spec)?;
+        mem.delete_glue_ref(old_spec);
 
-        let extra = self[best].shortfall - self[best].glue;
-        self[spec].width += extra;
-        self[spec].stretch = Scaled::ZERO;
-        self[last_line_fill].glue_ptr = spec;
+        mem[spec].width += best.shortfall - best.glue;
+        mem[spec].stretch = Scaled::ZERO;
+        mem[last_line_fill].glue_ptr = spec;
         Ok(())
     }
 }
@@ -309,13 +180,13 @@ fn finite_shrink(
 fn line_break_try_break(
     st: &mut EngineState,
     pi: i32,
-    break_type: i16,
+    break_type: BreakType,
     disc: Option<NodePtr<DiscNode>>,
 ) -> Result<(), Abort> {
     let s = &mut *st;
-    s.mem.try_break(
+    s.linebreak.try_break(
+        &s.mem,
         &mut s.scanner,
-        &mut s.linebreak,
         &s.eqtb,
         &mut s.fonts,
         &s.config,
@@ -333,7 +204,7 @@ fn kern_break(st: &mut EngineState, next: MemPtr, auto_breaking: bool) -> Result
         && auto_breaking
         && matches!(st.mem.classify(next), Ok(AnyNode::Glue(_)))
     {
-        line_break_try_break(st, 0, UNHYPHENATED, None)?;
+        line_break_try_break(st, 0, BreakType::Unhyphenated, None)?;
     }
     Ok(())
 }
@@ -503,9 +374,9 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
             st.hyph.set_hyph_index();
         }
 
-        st.mem.start_linebreak_pass(
+        st.linebreak.start_linebreak_pass(
+            &st.mem,
             &mut st.scanner,
-            &mut st.linebreak,
             &mut st.errors,
             st.input.cur_list.prev_graf,
         )?;
@@ -513,7 +384,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
         // Whether glue after the previous node is a legal breakpoint.
         let mut prev_breakable = false;
 
-        while !st.linebreak.cur_p.is_null() && ACTIVE_LIST.link(&st.mem) != LAST_ACTIVE {
+        while !st.linebreak.cur_p.is_null() && !st.linebreak.lists.is_empty() {
             let mut cur = st.linebreak.cur_p;
 
             if st.mem.is_char_node(cur) {
@@ -548,7 +419,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                 }
                 AnyNode::Glue(cur_glue) => {
                     if auto_breaking && prev_breakable {
-                        line_break_try_break(st, 0, UNHYPHENATED, None)?;
+                        line_break_try_break(st, 0, BreakType::Unhyphenated, None)?;
                     }
 
                     let mut spec = st.mem[cur_glue].glue_ptr;
@@ -582,7 +453,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                     st.linebreak.disc_width = Scaled::ZERO;
                     if pre_break.is_null() {
                         let pi = st.eqtb.int_par(IntPar::ExHyphenPenalty);
-                        line_break_try_break(st, pi, HYPHENATED, Some(d))?;
+                        line_break_try_break(st, pi, BreakType::Hyphenated, Some(d))?;
                     } else {
                         let mut s = pre_break;
                         while !s.is_null() {
@@ -594,7 +465,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                         }
                         st.scanner.active_width[1] += st.linebreak.disc_width;
                         let pi = st.eqtb.int_par(IntPar::HyphenPenalty);
-                        line_break_try_break(st, pi, HYPHENATED, Some(d))?;
+                        line_break_try_break(st, pi, BreakType::Hyphenated, Some(d))?;
                         st.scanner.active_width[1] -= st.linebreak.disc_width;
                     }
 
@@ -621,7 +492,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                     st.scanner.active_width[1] += st.mem[m].width;
                 }
                 AnyNode::Penalty(pen) => {
-                    line_break_try_break(st, st.mem[pen].penalty, UNHYPHENATED, None)?;
+                    line_break_try_break(st, st.mem[pen].penalty, BreakType::Unhyphenated, None)?;
                 }
                 AnyNode::Mark(_) | AnyNode::Ins(_) | AnyNode::Adjust(_) => {}
                 _ => return Err(Abort::Confusion("paragraph")),
@@ -634,13 +505,11 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
         }
 
         if st.linebreak.cur_p.is_null() {
-            line_break_try_break(st, EJECT_PENALTY, HYPHENATED, None)?;
-            if let Some(best) = st.mem.choose_best_break(&mut st.linebreak, &st.eqtb) {
+            line_break_try_break(st, EJECT_PENALTY, BreakType::Hyphenated, None)?;
+            if let Some(best) = st.linebreak.choose_best_break(&st.eqtb)? {
                 break best;
             }
         }
-
-        st.mem.free_break_lists(&st.linebreak);
 
         if !second_pass {
             st.linebreak.threshold = st.eqtb.int_par(IntPar::Tolerance);
@@ -652,42 +521,42 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
         }
     };
 
-    st.mem
-        .finish_last_line_fit(&mut st.linebreak, best, last_line_fill)?;
+    st.linebreak
+        .finish_last_line_fit(&mut st.mem, &best, last_line_fill)?;
 
-    let last_line = post_line_break(st, best, d)?;
+    let last_line = post_line_break(st, best.break_node, d)?;
 
-    st.mem.free_break_lists(&st.linebreak);
+    st.linebreak.lists.clear();
 
     st.scanner.pack_begin_line = 0;
     Ok(last_line)
 }
 
 #[inline]
-fn stretch_fitness(b: i32) -> usize {
+fn stretch_fitness(b: i32) -> Fitness {
     if b > 99 {
-        VERY_LOOSE_FIT
+        Fitness::VeryLoose
     } else if b > 12 {
-        LOOSE_FIT
+        Fitness::Loose
     } else {
-        DECENT_FIT
+        Fitness::Decent
     }
 }
 
 #[inline]
-fn shrink_fitness(b: i32) -> usize {
+fn shrink_fitness(b: i32) -> Fitness {
     if b > 12 {
-        TIGHT_FIT
+        Fitness::Tight
     } else {
-        DECENT_FIT
+        Fitness::Decent
     }
 }
 
 /// Badness and fitness class of a line that is `shortfall` short with `stretch` available.
 #[inline]
-fn stretch_badness(shortfall: Scaled, stretch: Scaled) -> (i32, usize) {
+fn stretch_badness(shortfall: Scaled, stretch: Scaled) -> (i32, Fitness) {
     if shortfall > Scaled::from_raw(7_230_584) && stretch < Scaled::from_raw(1_663_497) {
-        (INF_BAD, VERY_LOOSE_FIT)
+        (INF_BAD, Fitness::VeryLoose)
     } else {
         let b = crate::helpers::badness(shortfall, stretch);
         (b, stretch_fitness(b))
@@ -750,76 +619,80 @@ impl MemState {
         }
         Ok(())
     }
+}
 
-    /// Record the feasible breaks found so far as new active nodes before `r`, with
-    /// delta nodes around them (TeX's "insert new active nodes").
-    #[allow(clippy::too_many_arguments)]
+impl LinebreakState {
+    /// Record the feasible breaks found so far as new active entries before `r`, with
+    /// delta entries around them (TeX's "insert new active nodes").
     fn insert_new_active_nodes(
         &mut self,
         scanner: &mut ScannerState,
-        linebreak: &mut LinebreakState,
         eqtb: &EqtbState,
-        r: MemPtr,
-        prev_r: &mut MemPtr,
-        prev_prev_r: &mut MemPtr,
-        break_type: i16,
+        r: EntryId,
+        prev_r: &mut EntryId,
+        prev_prev_r: &mut Option<EntryId>,
+        break_type: BreakType,
     ) -> Result<(), Abort> {
-        let bw = linebreak.break_width;
-        let caw = linebreak.cur_active_width;
-        if let ActiveOrDelta::Delta(prev_delta) = self.classify_active_or_delta(*prev_r) {
-            let old = delta_widths(prev_delta, self);
-            let w = std::array::from_fn(|k| old[k] - caw[k] + bw[k]);
-            set_delta_widths(prev_delta, self, &w);
-        } else if *prev_r == ACTIVE_LIST {
+        let bw = self.break_width;
+        let caw = self.cur_active_width;
+        if let Entry::Delta(old) = self.lists.get_mut(*prev_r) {
+            *old = widths(|k| old[k] - caw[k] + bw[k]);
+        } else if *prev_r == EntryId::ACTIVE_LIST {
             scanner.active_width[1..].copy_from_slice(&bw[1..]);
         } else {
-            let w = std::array::from_fn(|k| bw[k] - caw[k]);
-            let q = self.new_delta_node(r, &w)?;
-            prev_r.set_link(self, q.ptr());
-            *prev_prev_r = *prev_r;
-            *prev_r = q.ptr();
+            let q = self
+                .lists
+                .push(r, Entry::Delta(widths(|k| bw[k] - caw[k])))?;
+            self.lists.set_link(*prev_r, q);
+            *prev_prev_r = Some(*prev_r);
+            *prev_r = q;
         }
 
         let adj = eqtb.int_par(IntPar::AdjDemerits).wrapping_abs();
-        if adj >= MAX_HALFWORD.wrapping_sub(linebreak.minimum_demerits) {
-            linebreak.minimum_demerits = AWFUL_BAD - 1;
+        if adj >= MAX_HALFWORD.wrapping_sub(self.minimum_demerits) {
+            self.minimum_demerits = AWFUL_BAD - 1;
         } else {
-            linebreak.minimum_demerits += adj;
+            self.minimum_demerits += adj;
         }
 
-        for fit_class in VERY_LOOSE_FIT..=TIGHT_FIT {
-            if linebreak.minimal_demerits[fit_class] <= linebreak.minimum_demerits {
-                let passive = NodePtr::<PassiveNode>::alloc(self)?;
-                self[passive].link = link_of(linebreak.passive);
-                linebreak.passive = Some(passive);
-                self[passive].cur_break = linebreak.cur_p;
-                self[passive].next_break = linebreak.best_place[fit_class];
-
-                let q = self.new_active_node(r)?;
-                let n = &mut self[q];
-                n.break_node = passive.ptr();
-                n.line_number = linebreak.best_pl_line[fit_class].wrapping_add(1);
-                n.fitness = fit_class as u16;
-                n.break_type = break_type as u16;
-                n.total_demerits = linebreak.minimal_demerits[fit_class];
-                if linebreak.do_last_line_fit {
-                    n.shortfall = linebreak.best_pl_short[fit_class];
-                    n.glue = linebreak.best_pl_glue[fit_class];
-                }
-
-                prev_r.set_link(self, q.ptr());
-                *prev_r = q.ptr();
+        for fitness in Fitness::ALL {
+            let i = fitness.index();
+            if self.minimal_demerits[i] <= self.minimum_demerits {
+                let passive = self.lists.push_passive(Passive {
+                    cur_break: self.cur_p,
+                    next_break: self.best_place[i],
+                })?;
+                let (shortfall, glue) = if self.do_last_line_fit {
+                    (self.best_pl_short[i], self.best_pl_glue[i])
+                } else {
+                    (Scaled::ZERO, Scaled::ZERO)
+                };
+                let q = self.lists.push(
+                    r,
+                    Entry::Active(ActiveEntry {
+                        fitness,
+                        break_type,
+                        line_number: self.best_pl_line[i].wrapping_add(1),
+                        break_node: Some(passive),
+                        total_demerits: self.minimal_demerits[i],
+                        shortfall,
+                        glue,
+                    }),
+                )?;
+                self.lists.set_link(*prev_r, q);
+                *prev_r = q;
             }
-            linebreak.minimal_demerits[fit_class] = MAX_HALFWORD;
+            self.minimal_demerits[i] = MAX_HALFWORD;
         }
-        linebreak.minimum_demerits = MAX_HALFWORD;
+        self.minimum_demerits = MAX_HALFWORD;
 
-        if r != LAST_ACTIVE {
-            let w = std::array::from_fn(|k| caw[k] - bw[k]);
-            let q = self.new_delta_node(r, &w)?;
-            prev_r.set_link(self, q.ptr());
-            *prev_prev_r = *prev_r;
-            *prev_r = q.ptr();
+        if r != EntryId::LAST_ACTIVE {
+            let q = self
+                .lists
+                .push(r, Entry::Delta(widths(|k| caw[k] - bw[k])))?;
+            self.lists.set_link(*prev_r, q);
+            *prev_prev_r = Some(*prev_r);
+            *prev_r = q;
         }
         Ok(())
     }
@@ -828,17 +701,17 @@ impl MemState {
     #[allow(clippy::too_many_arguments)]
     fn try_break(
         &mut self,
+        mem: &MemState,
         scanner: &mut ScannerState,
-        linebreak: &mut LinebreakState,
         eqtb: &EqtbState,
         fonts: &mut FontState,
         config: &ConfigState,
         errors: &mut ErrorState,
         mut pi: i32,
-        break_type: i16,
+        break_type: BreakType,
         disc: Option<NodePtr<DiscNode>>,
     ) -> Result<(), Abort> {
-        if config.semantic_pagination_enabled && !linebreak.cur_p.is_null() {
+        if config.semantic_pagination_enabled && !self.cur_p.is_null() {
             return Ok(());
         }
 
@@ -850,40 +723,40 @@ impl MemState {
         }
 
         let mut no_break_yet = true;
-        let mut prev_r = ACTIVE_LIST;
-        let mut prev_prev_r = MemPtr::NULL;
+        let mut prev_r = EntryId::ACTIVE_LIST;
+        let mut prev_prev_r = None;
         let mut old_l = 0;
         let mut line_width = Scaled::ZERO;
         let mut g = Scaled::ZERO;
 
-        linebreak.cur_active_width[1..].copy_from_slice(&scanner.active_width[1..]);
+        self.cur_active_width[1..].copy_from_slice(&scanner.active_width[1..]);
 
         loop {
-            let r = prev_r.link(self);
+            let r = self.lists.link(prev_r);
 
-            if let ActiveOrDelta::Delta(r_delta) = self.classify_active_or_delta(r) {
-                let w = delta_widths(r_delta, self);
-                for (width, delta) in linebreak.cur_active_width.iter_mut().zip(w) {
-                    *width += delta;
+            let r_active = match self.lists.get(r) {
+                Entry::Delta(w) => {
+                    for (width, delta) in self.cur_active_width.iter_mut().zip(w) {
+                        *width += delta;
+                    }
+                    prev_prev_r = Some(prev_r);
+                    prev_r = r;
+                    continue;
                 }
-                prev_prev_r = prev_r;
-                prev_r = r;
-                continue;
-            }
+                Entry::Active(a) => a,
+            };
 
-            let r_active = active(r);
-            let l = self[r_active].line_number;
+            let l = r_active.line_number;
             if l > old_l {
-                if linebreak.minimum_demerits < AWFUL_BAD
-                    && (old_l != linebreak.easy_line || r == LAST_ACTIVE)
+                if self.minimum_demerits < AWFUL_BAD
+                    && (old_l != self.easy_line || r == EntryId::LAST_ACTIVE)
                 {
                     if no_break_yet {
                         no_break_yet = false;
-                        self.compute_break_width(fonts, linebreak, disc)?;
+                        mem.compute_break_width(fonts, self, disc)?;
                     }
                     self.insert_new_active_nodes(
                         scanner,
-                        linebreak,
                         eqtb,
                         r,
                         &mut prev_r,
@@ -892,31 +765,31 @@ impl MemState {
                     )?;
                 }
 
-                if r == LAST_ACTIVE {
+                if r == EntryId::LAST_ACTIVE {
                     return Ok(());
                 }
 
-                if l > linebreak.easy_line {
-                    line_width = linebreak.second_width;
+                if l > self.easy_line {
+                    line_width = self.second_width;
                     old_l = MAX_HALFWORD - 1;
                 } else {
                     old_l = l;
-                    line_width = if l > linebreak.last_special_line {
-                        linebreak.second_width
+                    line_width = if l > self.last_special_line {
+                        self.second_width
                     } else if let Some(shape) = eqtb.par_shape() {
                         // A huge \prevgraf wraps line numbers negative, past the shape.
                         if l > 0 {
-                            shape.line(self, l).width
+                            shape.line(mem, l).width
                         } else {
-                            linebreak.second_width
+                            self.second_width
                         }
                     } else {
-                        linebreak.first_width
+                        self.first_width
                     };
                 }
             }
 
-            let caw = &linebreak.cur_active_width;
+            let caw = &self.cur_active_width;
             let mut artificial_demerits;
             let mut shortfall;
             if config.semantic_pagination_enabled {
@@ -927,26 +800,26 @@ impl MemState {
                 artificial_demerits = false;
                 shortfall = line_width - caw[1];
                 if eqtb.int_par(IntPar::XetexProtrudeChars) > 1 {
-                    shortfall += linebreak
-                        .total_pw(errors, self, fonts, r_active, disc)
+                    shortfall += self
+                        .total_pw(errors, mem, fonts, r_active.break_node, disc)
                         .ok_or(Abort::PdfError(&["total_pw", "hlist stack failure"]))?;
                 }
             }
 
-            let caw = linebreak.cur_active_width;
+            let caw = self.cur_active_width;
             let mut b = 0;
-            let mut fit_class = DECENT_FIT;
+            let mut fit_class = Fitness::Decent;
             let mut last_line_fit_found = false;
 
             if shortfall > Scaled::ZERO {
                 if caw[3] != Scaled::ZERO || caw[4] != Scaled::ZERO || caw[5] != Scaled::ZERO {
-                    if linebreak.do_last_line_fit
-                        && linebreak.cur_p.is_null()
-                        && self[r_active].shortfall != Scaled::ZERO
-                        && self[r_active].glue > Scaled::ZERO
-                        && caw[3..6] == linebreak.fill_width
+                    if self.do_last_line_fit
+                        && self.cur_p.is_null()
+                        && r_active.shortfall != Scaled::ZERO
+                        && r_active.glue > Scaled::ZERO
+                        && caw[3..6] == self.fill_width
                     {
-                        g = if self[r_active].shortfall > Scaled::ZERO {
+                        g = if r_active.shortfall > Scaled::ZERO {
                             caw[2]
                         } else {
                             caw[6]
@@ -956,8 +829,8 @@ impl MemState {
                             errors.arith_error = false;
                             g = errors.fract(
                                 g,
-                                self[r_active].shortfall.raw(),
-                                self[r_active].glue.raw(),
+                                r_active.shortfall.raw(),
+                                r_active.glue.raw(),
                                 MAX_DIMEN,
                             );
                             let last_line_fit = eqtb.int_par(IntPar::LastLineFit);
@@ -965,7 +838,7 @@ impl MemState {
                                 g = errors.fract(g, last_line_fit, 1000, MAX_DIMEN);
                             }
                             if errors.arith_error {
-                                g = if self[r_active].shortfall > Scaled::ZERO {
+                                g = if r_active.shortfall > Scaled::ZERO {
                                     MAX_DIMEN
                                 } else {
                                     -MAX_DIMEN
@@ -988,7 +861,7 @@ impl MemState {
                     if !last_line_fit_found {
                         shortfall = Scaled::ZERO;
                         b = 0;
-                        fit_class = DECENT_FIT;
+                        fit_class = Fitness::Decent;
                     }
                 } else {
                     (b, fit_class) = stretch_badness(shortfall, caw[2]);
@@ -1002,8 +875,8 @@ impl MemState {
                 fit_class = shrink_fitness(b);
             }
 
-            if linebreak.do_last_line_fit && !last_line_fit_found {
-                if linebreak.cur_p.is_null() {
+            if self.do_last_line_fit && !last_line_fit_found {
+                if self.cur_p.is_null() {
                     shortfall = Scaled::ZERO;
                 }
                 g = match shortfall.signum() {
@@ -1014,20 +887,20 @@ impl MemState {
             }
 
             let node_r_stays_active = if b > INF_BAD || pi == EJECT_PENALTY {
-                if linebreak.final_pass
-                    && linebreak.minimum_demerits == AWFUL_BAD
-                    && self[r_active].link == LAST_ACTIVE
-                    && prev_r == ACTIVE_LIST
+                if self.final_pass
+                    && self.minimum_demerits == AWFUL_BAD
+                    && self.lists.link(r) == EntryId::LAST_ACTIVE
+                    && prev_r == EntryId::ACTIVE_LIST
                 {
                     artificial_demerits = true;
-                } else if b > linebreak.threshold {
-                    self.deactivate_node(scanner, linebreak, r, &mut prev_r, &mut prev_prev_r);
+                } else if b > self.threshold {
+                    self.deactivate_node(scanner, r, &mut prev_r, &mut prev_prev_r)?;
                     continue;
                 }
                 false
             } else {
                 prev_r = r;
-                if b > linebreak.threshold {
+                if b > self.threshold {
                     continue;
                 }
                 true
@@ -1049,83 +922,79 @@ impl MemState {
                     d -= pi * pi;
                 }
 
-                if break_type == HYPHENATED && self[r_active].break_type as i16 == HYPHENATED {
-                    d = d.wrapping_add(if linebreak.cur_p.is_null() {
+                if break_type == BreakType::Hyphenated
+                    && r_active.break_type == BreakType::Hyphenated
+                {
+                    d = d.wrapping_add(if self.cur_p.is_null() {
                         eqtb.int_par(IntPar::FinalHyphenDemerits)
                     } else {
                         eqtb.int_par(IntPar::DoubleHyphenDemerits)
                     });
                 }
 
-                if (fit_class as i32 - i32::from(self[r_active].fitness)).abs() > 1 {
+                if fit_class.far_from(r_active.fitness) {
                     d = d.wrapping_add(eqtb.int_par(IntPar::AdjDemerits));
                 }
 
                 d
             };
 
-            d = d.wrapping_add(self[r_active].total_demerits);
-            if d <= linebreak.minimal_demerits[fit_class] {
-                linebreak.minimal_demerits[fit_class] = d;
-                linebreak.best_place[fit_class] = self[r_active].break_node;
-                linebreak.best_pl_line[fit_class] = l;
-                if linebreak.do_last_line_fit {
-                    linebreak.best_pl_short[fit_class] = shortfall;
-                    linebreak.best_pl_glue[fit_class] = g;
+            d = d.wrapping_add(r_active.total_demerits);
+            let i = fit_class.index();
+            if d <= self.minimal_demerits[i] {
+                self.minimal_demerits[i] = d;
+                self.best_place[i] = r_active.break_node;
+                self.best_pl_line[i] = l;
+                if self.do_last_line_fit {
+                    self.best_pl_short[i] = shortfall;
+                    self.best_pl_glue[i] = g;
                 }
-                linebreak.minimum_demerits = linebreak.minimum_demerits.min(d);
+                self.minimum_demerits = self.minimum_demerits.min(d);
             }
 
             if !node_r_stays_active {
-                self.deactivate_node(scanner, linebreak, r, &mut prev_r, &mut prev_prev_r);
+                self.deactivate_node(scanner, r, &mut prev_r, &mut prev_prev_r)?;
             }
         }
     }
 
-    /// Unlink and free the active node `r`, merging the delta nodes around it.
+    /// Unlink the active entry `r`, merging the delta entries around it.
     fn deactivate_node(
         &mut self,
         scanner: &mut ScannerState,
-        linebreak: &mut LinebreakState,
-        r: MemPtr,
-        prev_r: &mut MemPtr,
-        prev_prev_r: &mut MemPtr,
-    ) {
-        let next = r.link(self);
-        prev_r.set_link(self, next);
-        active(r).free(self);
+        r: EntryId,
+        prev_r: &mut EntryId,
+        prev_prev_r: &mut Option<EntryId>,
+    ) -> Result<(), Abort> {
+        let lists = &mut self.lists;
+        lists.set_link(*prev_r, lists.link(r));
 
-        if *prev_r == ACTIVE_LIST {
-            let r = ACTIVE_LIST.link(self);
-            if let ActiveOrDelta::Delta(r_delta) = self.classify_active_or_delta(r) {
-                let w = delta_widths(r_delta, self);
+        if *prev_r == EntryId::ACTIVE_LIST {
+            let r = lists.link(EntryId::ACTIVE_LIST);
+            if let Entry::Delta(w) = lists.get(r) {
                 for (width, delta) in scanner.active_width.iter_mut().zip(w) {
                     *width += delta;
                 }
-                linebreak.cur_active_width[1..].copy_from_slice(&scanner.active_width[1..]);
-                ACTIVE_LIST.set_link(self, self[r_delta].link);
-                delta_node(r).free(self);
+                self.cur_active_width[1..].copy_from_slice(&scanner.active_width[1..]);
+                lists.set_link(EntryId::ACTIVE_LIST, lists.link(r));
             }
-        } else if let ActiveOrDelta::Delta(prev_delta) = self.classify_active_or_delta(*prev_r) {
-            let r = prev_r.link(self);
-            if r == LAST_ACTIVE {
-                let w = delta_widths(prev_delta, self);
-                for (width, delta) in linebreak.cur_active_width.iter_mut().zip(w) {
+        } else if let Entry::Delta(pw) = lists.get(*prev_r) {
+            let r = lists.link(*prev_r);
+            if r == EntryId::LAST_ACTIVE {
+                for (width, delta) in self.cur_active_width.iter_mut().zip(pw) {
                     *width -= delta;
                 }
-                prev_prev_r.set_link(self, LAST_ACTIVE);
-                delta_node(*prev_r).free(self);
-                *prev_r = *prev_prev_r;
-            } else if let ActiveOrDelta::Delta(r_delta) = self.classify_active_or_delta(r) {
-                let rw = delta_widths(r_delta, self);
-                let pw = delta_widths(prev_delta, self);
-                for (width, delta) in linebreak.cur_active_width.iter_mut().zip(rw) {
+                let before = prev_prev_r.ok_or(Abort::Confusion("line breaking"))?;
+                lists.set_link(before, EntryId::LAST_ACTIVE);
+                *prev_r = before;
+            } else if let Entry::Delta(rw) = lists.get(r) {
+                for (width, delta) in self.cur_active_width.iter_mut().zip(rw) {
                     *width += delta;
                 }
-                set_delta_widths(prev_delta, self, &std::array::from_fn(|k| pw[k] + rw[k]));
-                self[prev_delta].link = self[r_delta].link;
-                delta_node(r).free(self);
+                *lists.get_mut(*prev_r) = Entry::Delta(widths(|k| pw[k] + rw[k]));
+                lists.set_link(*prev_r, lists.link(r));
             }
         }
+        Ok(())
     }
 }

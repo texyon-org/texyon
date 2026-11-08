@@ -748,12 +748,6 @@ node_kinds! {
     PageInsNode;
     /// A shipout `down_ptr`/`right_ptr` movement record.
     MovementNode;
-    /// A line-breaker active node. Its type word holds the break type.
-    ActiveNode;
-    /// A line-breaker delta node, sitting between active nodes.
-    DeltaNode;
-    /// A line-breaker passive node. Its info word is a serial number.
-    PassiveNode;
     /// An entry of the conditional stack, saving the enclosing `\if`.
     CondNode;
     /// A one-word character node. A ligature's +1 word has the same layout.
@@ -791,11 +785,6 @@ impl FixedNode for LigItem {
     const SIZE: i32 = SMALL_NODE_SIZE;
     const TYPE: Option<NodeType> = None;
 }
-/// Always the extended `\lastlinefit` size, unlike WEB's 3 or 5 words per paragraph.
-impl FixedNode for ActiveNode {
-    const SIZE: i32 = 5;
-    const TYPE: Option<NodeType> = None;
-}
 impl FixedNode for SaIndexNode {
     const SIZE: i32 = INDEX_NODE_SIZE;
     const TYPE: Option<NodeType> = None;
@@ -819,14 +808,6 @@ impl FixedNode for SaSavedWord {
 impl FixedNode for SaSavedPointer {
     const SIZE: i32 = SaPointerNode::SIZE;
     const TYPE: Option<NodeType> = None;
-}
-impl FixedNode for PassiveNode {
-    const SIZE: i32 = 2;
-    const TYPE: Option<NodeType> = None;
-}
-impl FixedNode for DeltaNode {
-    const SIZE: i32 = 7;
-    const TYPE: Option<NodeType> = Some(NodeType::Rule);
 }
 impl FixedNode for CondNode {
     const SIZE: i32 = 2;
@@ -875,15 +856,14 @@ macro_rules! impl_traits {
 impl_traits!(HasLink: BoxNode, RuleNode, InsNode, MarkNode, AdjustNode, LigatureNode, DiscNode,
     WhatsitNode, MathNode, GlueNode, KernNode, PenaltyNode, UnsetNode, StyleNode, ChoiceNode,
     EdgeNode, Noad, RadicalNoad, AccentNoad, FractionNoad, FenceNoad, AnyNoad, MarginKernNode, SaIndexNode, SaElement, SaWordNode, SaPointerNode, SaMarkClassNode,
-    SaSaved, SaSavedWord, SaSavedPointer, PageInsNode, ActiveNode, DeltaNode, PassiveNode,
-    MovementNode, CondNode, CharNode, AlignRecord, AlignStackNode, ExprNode, PseudoLineNode,
+    SaSaved, SaSavedWord, SaSavedPointer, PageInsNode, MovementNode, CondNode, CharNode, AlignRecord, AlignStackNode, ExprNode, PseudoLineNode,
     LigItem);
 
 /// A record kept only on its own list, which therefore proves its kind.
 pub trait ListRecord: NodeKind {}
 
 impl_traits!(ListRecord: SaIndexNode, SaElement, SaWordNode, SaPointerNode, SaMarkClassNode,
-    SaSaved, SaSavedWord, SaSavedPointer, PageInsNode, MovementNode, ActiveNode, DeltaNode, PassiveNode,
+    SaSaved, SaSavedWord, SaSavedPointer, PageInsNode, MovementNode,
     LigItem, CondNode, CharNode, AlignRecord, SpanNode, AlignStackNode, ParShapeNode, PenaltiesNode,
     ExprNode, PseudoLineNode, MathField, DelimiterField, FreeBlock);
 
@@ -1835,8 +1815,6 @@ impl NodePtr<SaSavedPointer> {
     }
 }
 
-// --- the line breaker's active, delta and passive lists ---
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2535,46 +2513,5 @@ mod tests {
         assert!(!mem[d].is_null());
         mem[d].clear();
         assert!(mem[d].is_null());
-    }
-
-    #[test]
-    fn line_breaker_records_land_in_their_words() {
-        let mut mem = fresh_mem(200);
-        let a: NodePtr<ActiveNode> = at(&mut mem, 100, None);
-        let n = &mut mem[a];
-        n.break_type = 1;
-        n.fitness = 2;
-        n.link = MemPtr::from_raw(160);
-        n.break_node = MemPtr::from_raw(150);
-        n.line_number = 7;
-        n.total_demerits = 0x5151;
-        n.shortfall = Scaled::from_raw(-0x20);
-        n.glue = Scaled::from_raw(0x30);
-        assert_eq!(MemPtr::from_raw(100).link(&mem), MemPtr::from_raw(160));
-        assert_eq!(mem.b16s1(MemPtr::from_raw(100)), 1);
-        assert_eq!(mem.b16s0(MemPtr::from_raw(100)), 2);
-        assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 150);
-        assert_eq!(mem.b32s0(MemPtr::from_raw(101)), 7);
-        assert_eq!(mem.b32s1(MemPtr::from_raw(102)), 0x5151);
-        assert_eq!(mem.b32s1(MemPtr::from_raw(103)), -0x20);
-        assert_eq!(mem.b32s1(MemPtr::from_raw(104)), 0x30);
-
-        let d: NodePtr<DeltaNode> = at(&mut mem, 100, None);
-        mem[d].dwidth = Scaled::from_raw(0x11);
-        mem[d].dstretch3 = Scaled::from_raw(0x55);
-        mem[d].dshrink = Scaled::from_raw(-0x66);
-        assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 0x11);
-        assert_eq!(mem.b32s1(MemPtr::from_raw(105)), 0x55);
-        assert_eq!(mem.b32s1(MemPtr::from_raw(106)), -0x66);
-
-        let pn: NodePtr<PassiveNode> = at(&mut mem, 100, None);
-        mem[pn].link = MemPtr::from_raw(90);
-        mem[pn].cur_break = MemPtr::from_raw(150);
-        mem[pn].next_break = MemPtr::from_raw(80);
-        assert_eq!(mem[pn].next_break, MemPtr::from_raw(80));
-        assert_eq!(mem.b32s1(MemPtr::from_raw(100)), 90);
-        assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 150);
-        mem[pn].next_break = MemPtr::from_raw(70);
-        assert_eq!(mem.b32s0(MemPtr::from_raw(101)), 70);
     }
 }

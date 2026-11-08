@@ -7,7 +7,7 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
-use crate::node::{ActiveNode, AnyNode, BoxNode, GlueKind, KernSubtype, MathNode, NodePtr};
+use crate::node::{AnyNode, BoxNode, GlueKind, KernSubtype, MathNode, NodePtr};
 use crate::packaging::PackSpec;
 use crate::params::{GluePar, IntPar};
 use crate::state::{
@@ -16,9 +16,11 @@ use crate::state::{
 };
 use crate::units::{MemPtr, Scaled};
 
-use super::passive_node;
+use super::lists::PassiveId;
 
 struct PostLineHpack {
+    /// The break that ends this line.
+    brk: PassiveId,
     q: MemPtr,
     cur_width: Scaled,
     cur_indent: Scaled,
@@ -40,10 +42,11 @@ impl LinebreakState {
         config: &ConfigState,
         lr_ptr: &mut MemPtr,
         cur_line: i32,
+        brk: PassiveId,
     ) -> Result<PostLineHpack, Abort> {
         let texxet = eqtb.int_par(IntPar::Texxet) > 0;
         let protrude = eqtb.int_par(IntPar::XetexProtrudeChars) > 0;
-        let cur_break = mem[passive_node(self.cur_p)].cur_break;
+        let cur_break = self.lists.passive(brk).cur_break;
 
         if texxet {
             let mut q = TEMP_HEAD.link(mem);
@@ -202,6 +205,7 @@ impl LinebreakState {
         scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
 
         Ok(PostLineHpack {
+            brk,
             q,
             cur_width,
             cur_indent,
@@ -212,21 +216,21 @@ impl LinebreakState {
     }
 }
 
-impl MemState {
-    fn reverse_best_breaks(&mut self, linebreak: &mut LinebreakState, best: NodePtr<ActiveNode>) {
-        let mut q = self[best].break_node;
-        linebreak.cur_p = MemPtr::NULL;
-        loop {
-            let r = passive_node(q);
-            q = self[r].next_break;
-            self[r].next_break = linebreak.cur_p;
-            linebreak.cur_p = r.ptr();
-            if q.is_null() {
-                break;
-            }
+impl LinebreakState {
+    /// Reverse the chain of breaks ending at `last`, returning the first line's break.
+    fn reverse_best_breaks(&mut self, last: Option<PassiveId>) -> Option<PassiveId> {
+        let mut q = last;
+        let mut first = None;
+        while let Some(r) = q {
+            q = self.lists.passive(r).next_break;
+            self.lists.passive_mut(r).next_break = first;
+            first = Some(r);
         }
+        first
     }
+}
 
+impl MemState {
     /// Track the LR nesting of a math node on the `lr_ptr` stack.
     fn update_lr_stack(&mut self, q: NodePtr<MathNode>, lr_ptr: &mut MemPtr) -> Result<(), Abort> {
         let code = self[q].code()?;
@@ -253,7 +257,7 @@ impl MemState {
 
 impl ListStateRecord {
     /// Append the packed line and the interline penalty, then prune discardable
-    /// nodes from the start of the next line. Returns whether the paragraph is done.
+    /// nodes from the start of the next line. Returns the next line's break, if any.
     #[allow(clippy::too_many_arguments)]
     fn post_line_break_suffix(
         &mut self,
@@ -266,7 +270,7 @@ impl ListStateRecord {
         d: bool,
         lr_ptr: &mut MemPtr,
         cur_line: &mut i32,
-    ) -> Result<bool, Abort> {
+    ) -> Result<Option<PassiveId>, Abort> {
         mem[just_box].shift_amount = hpack.cur_indent;
 
         if scanner.pre_adjust_tail != PRE_ADJUST_HEAD {
@@ -331,11 +335,11 @@ impl ListStateRecord {
         }
 
         *cur_line = cur_line.wrapping_add(1);
-        linebreak.cur_p = mem[passive_node(linebreak.cur_p)].next_break;
+        let next = linebreak.lists.passive(hpack.brk).next_break;
 
-        if !linebreak.cur_p.is_null() && !hpack.post_disc_break {
+        if let Some(next) = next.filter(|_| !hpack.post_disc_break) {
             let texxet = eqtb.int_par(IntPar::Texxet) > 0;
-            let cur_break = mem[passive_node(linebreak.cur_p)].cur_break;
+            let cur_break = linebreak.lists.passive(next).cur_break;
             let mut r = TEMP_HEAD;
             let mut q;
             loop {
@@ -370,7 +374,7 @@ impl ListStateRecord {
             }
         }
 
-        Ok(linebreak.cur_p.is_null())
+        Ok(next)
     }
 }
 
@@ -378,12 +382,15 @@ impl ListStateRecord {
 /// append them, returning the last line's box.
 pub(super) fn post_line_break(
     st: &mut EngineState,
-    best: NodePtr<ActiveNode>,
+    best: Option<PassiveId>,
     d: bool,
 ) -> Result<NodePtr<BoxNode>, Abort> {
     let mut lr_ptr = st.input.cur_list.e_tex_aux;
 
-    st.mem.reverse_best_breaks(&mut st.linebreak, best);
+    let mut brk = st
+        .linebreak
+        .reverse_best_breaks(best)
+        .ok_or(Abort::Confusion("line breaking"))?;
 
     let mut cur_line = st.input.cur_list.prev_graf.wrapping_add(1);
     let last_line = loop {
@@ -396,6 +403,7 @@ pub(super) fn post_line_break(
             &st.config,
             &mut lr_ptr,
             cur_line,
+            brk,
         )?;
 
         let spec = if hpack.semantic_pagination {
@@ -416,8 +424,8 @@ pub(super) fn post_line_break(
             &mut lr_ptr,
             &mut cur_line,
         ) {
-            Ok(true) => break just_box,
-            Ok(false) => {}
+            Ok(None) => break just_box,
+            Ok(Some(next)) => brk = next,
             Err(e) => return Err(e),
         }
     };

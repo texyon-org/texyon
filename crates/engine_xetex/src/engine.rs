@@ -22,13 +22,12 @@ use crate::helpers::OnDrop;
 use crate::hyphenation::{HYPH_PRIME, TRIE_OP_SIZE};
 use crate::input::{NEW_LINE, TOKEN_LIST};
 use crate::io::init_io;
-use crate::linebreak::HYPHENATED;
 use crate::mem::{
     ACTIVE_LIST, CONTRIB_HEAD, END_SPAN, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, HI_MEM_STAT_MIN,
     HI_MEM_STAT_USAGE, NULL_LIST, OMIT_TEMPLATE, PAGE_HEAD, PAGE_INS_HEAD, SS_GLUE, ZERO_GLUE,
 };
 use crate::mem_types::zeroed_vec;
-use crate::node::{ActiveNode, FreeBlock, NodePtr, PageInsNode};
+use crate::node::{FreeBlock, NodePtr, PageInsNode};
 use crate::packaging::MarksAction;
 use crate::params::{IntPar, TokPar};
 use crate::scan::{set_class, set_family};
@@ -459,11 +458,11 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     OMIT_TEMPLATE.set_token(mem, Token::from_cs(FROZEN_END_TEMPLATE));
     mem[END_SPAN].span_count = i32::from(u16::MAX) + 1;
     mem.set_b32s0(END_SPAN.idx(), TEX_NULL);
-    let active = NodePtr::<ActiveNode>::at(ACTIVE_LIST);
-    let a = &mut mem[active];
-    a.break_type = HYPHENATED as u16;
-    a.line_number = MAX_HALFWORD;
-    a.fitness = 0;
+    // WEB's last_active, unused since the line breaker keeps its lists outside
+    // mem, written so formats stay byte-identical.
+    mem.set_b16s1(ACTIVE_LIST, 1);
+    mem.set_b32s0(ACTIVE_LIST + 1, MAX_HALFWORD);
+    mem.set_b16s0(ACTIVE_LIST, 0);
     let page_ins = NodePtr::<PageInsNode>::at(PAGE_INS_HEAD);
     mem[page_ins].box_number = 255;
     mem[page_ins].set_split_up(true);
