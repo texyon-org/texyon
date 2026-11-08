@@ -55,12 +55,11 @@ fn alter_aux(st: &mut EngineState, code: AuxCode) -> Result<(), Abort> {
     }
     let n = crate::scan::scan_int(st)?;
     if n <= 0 || n > 32767 {
-        crate::output::error_here_with_diagnostic(st, "Bad space factor");
-        crate::output::append_to_diagnostic(st, &format!(" ({})", n));
-        crate::output::capture_to_diagnostic(st, None);
-        st.errors
-            .help(&["I allow only values in the range 1..32767 here."]);
-        return crate::errors::int_error(st, n);
+        return crate::errors::error(
+            st,
+            ("Bad space factor", " (", n, ")"),
+            &["I allow only values in the range 1..32767 here."],
+        );
     }
     st.input.cur_list.set_space_factor(n);
     Ok(())
@@ -76,12 +75,11 @@ fn alter_prev_graf(st: &mut EngineState) -> Result<(), Abort> {
     crate::scan::scan_optional_equals(st)?;
     let n = crate::scan::scan_int(st)?;
     if n < 0 {
-        crate::output::error_here_with_diagnostic(st, "Bad ");
-        crate::output::append_to_diagnostic(st, &format!(" ({})", n));
-        crate::output::print_esc(st, "prevgraf");
-        crate::output::capture_to_diagnostic(st, None);
-        st.errors.help(&["I allow only nonnegative values here."]);
-        return crate::errors::int_error(st, n);
+        return crate::errors::error(
+            st,
+            ("Bad ", crate::output::Esc("prevgraf"), " (", n, ")"),
+            &["I allow only nonnegative values here."],
+        );
     }
     st.input.nest[p].prev_graf = n;
     st.input.cur_list = st.input.nest[np];
@@ -102,14 +100,14 @@ fn alter_integer(st: &mut EngineState, code: PageIntCode) -> Result<(), Abort> {
         PageIntCode::DeadCycles => st.shipout.dead_cycles = n,
         PageIntCode::InteractionMode => {
             let Some(mode) = InteractionMode::from_raw(n) else {
-                crate::output::error_here_with_diagnostic(st, "Bad interaction mode");
-                crate::output::append_to_diagnostic(st, &format!(" ({})", n));
-                crate::output::capture_to_diagnostic(st, None);
-                st.errors.help(&[
-                    "Modes are 0=batch, 1=nonstop, 2=scroll, and",
-                    "3=errorstop. Proceed, and I'll ignore this case.",
-                ]);
-                return crate::errors::int_error(st, n);
+                return crate::errors::error(
+                    st,
+                    ("Bad interaction mode", " (", n, ")"),
+                    &[
+                        "Modes are 0=batch, 1=nonstop, 2=scroll, and",
+                        "3=errorstop. Proceed, and I'll ignore this case.",
+                    ],
+                );
             };
             new_interaction(st, mode);
         }
@@ -198,15 +196,16 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     } else if crate::scan::scan_keyword(st, "scaled")? {
         let mag = crate::scan::scan_int(st)?;
         if mag <= 0 || mag > 32768 {
-            crate::output::error_here_with_diagnostic(
+            crate::errors::error(
                 st,
-                "Illegal magnification has been changed to 1000",
-            );
-            crate::output::append_to_diagnostic(st, &format!(" ({})", mag));
-            crate::output::capture_to_diagnostic(st, None);
-            st.errors
-                .help(&["The magnification ratio must be between 1 and 32768."]);
-            crate::errors::int_error(st, mag)?;
+                (
+                    "Illegal magnification has been changed to 1000",
+                    " (",
+                    mag,
+                    ")",
+                ),
+                &["The magnification ratio must be between 1 and 32768."],
+            )?;
             DESIGN_SIZE
         } else {
             Scaled::from_raw(-mag)
@@ -414,15 +413,17 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     };
 
     if st.errors.arith_error {
-        crate::output::print_err(st, "Arithmetic overflow");
-        st.errors.help(&[
-            "I can't carry out that multiplication or division,",
-            "since the result is out of range.",
-        ]);
         if let RegisterValue::Glue(g) = value {
             st.mem.delete_glue_ref(g);
         }
-        return crate::errors::finish_error(st);
+        return crate::errors::error(
+            st,
+            "Arithmetic overflow",
+            &[
+                "I can't carry out that multiplication or division,",
+                "since the result is out of range.",
+            ],
+        );
     }
 
     let global = a >= 4;
@@ -577,13 +578,15 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
         }
         crate::scan::get_x_non_blank_non_relax(st)?;
         if !st.scanner.cur_cmd.is_prefixed() {
-            crate::output::error_here_with_diagnostic(st, "You can't use a prefix with `");
-            crate::output::print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
-            crate::output::print_char(st, i32::from(b'\''));
-            crate::output::capture_to_diagnostic(st, None);
-            st.errors
-                .help(&[r"I'll pretend you didn't say \long or \outer or \global or \protected."]);
-            return crate::input::back_finish_error(st);
+            return crate::errors::back_error(
+                st,
+                (
+                    "You can't use a prefix with `",
+                    crate::output::CmdChr(st.scanner.cur_cmd, st.scanner.cur_chr),
+                    '\'',
+                ),
+                &[r"I'll pretend you didn't say \long or \outer or \global or \protected."],
+            );
         }
         if st.eqtb.int_par(IntPar::TracingCommands) > 2 {
             crate::output::show_cur_cmd_chr(st);
@@ -595,19 +598,21 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
         a -= 8;
     }
     if st.scanner.cur_cmd != Cmd::Def && (a % 4 != 0 || protected) {
-        crate::output::error_here_with_diagnostic(st, "You can't use `");
-        crate::output::print_esc(st, "long");
-        crate::output::print(st, "' or `");
-        crate::output::print_esc(st, "outer");
-        crate::output::print(st, "' or `");
-        crate::output::print_esc(st, "protected");
-        crate::output::print(st, "' with `");
-        crate::output::print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
-        crate::output::print_char(st, i32::from(b'\''));
-        crate::output::capture_to_diagnostic(st, None);
-        st.errors
-            .help(&[r"I'll pretend you didn't say \long or \outer or \protected here."]);
-        crate::errors::finish_error(st)?;
+        crate::errors::error(
+            st,
+            (
+                "You can't use `",
+                crate::output::Esc("long"),
+                "' or `",
+                crate::output::Esc("outer"),
+                "' or `",
+                crate::output::Esc("protected"),
+                "' with `",
+                crate::output::CmdChr(st.scanner.cur_cmd, st.scanner.cur_chr),
+                '\'',
+            ),
+            &[r"I'll pretend you didn't say \long or \outer or \protected here."],
+        )?;
     }
     let global_defs = st.eqtb.int_par(IntPar::GlobalDefs);
     if global_defs < 0 && a >= 4 {
@@ -1014,18 +1019,16 @@ fn def_code(st: &mut EngineState, global: bool, chr: EqtbPtr) -> Result<(), Abor
     crate::scan::scan_optional_equals(st)?;
     let mut v = crate::scan::scan_int(st)?;
     if (v < 0 && p < DEL_CODE_BASE) || v > max {
-        crate::output::error_here_with_diagnostic(st, "Invalid code (");
-        crate::output::print_int(st, v);
-        if p < DEL_CODE_BASE {
-            crate::output::print(st, "), should be in the range 0..");
+        let bound = if p < DEL_CODE_BASE {
+            "), should be in the range 0.."
         } else {
-            crate::output::print(st, "), should be at most ");
-        }
-        crate::output::print_int(st, max);
-        crate::output::capture_to_diagnostic(st, None);
-        st.errors
-            .help(&["I'm going to use 0 instead of that illegal code value."]);
-        crate::errors::finish_error(st)?;
+            "), should be at most "
+        };
+        crate::errors::error(
+            st,
+            ("Invalid code (", v, bound, max),
+            &["I'm going to use 0 instead of that illegal code value."],
+        )?;
         v = 0;
     }
     if p < MATH_CODE_BASE {

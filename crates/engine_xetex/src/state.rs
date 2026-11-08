@@ -782,6 +782,35 @@ impl crate::output::TexPrint for Closer {
     }
 }
 
+/// What `off_save` inserts to close the current group, shown as the error names it.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(crate) struct Insertion(pub Option<Closer>);
+
+impl Insertion {
+    /// The inserted tokens, in reading order.
+    pub(crate) fn tokens(self) -> Vec<crate::token::Token> {
+        use crate::consts::{FROZEN_END_GROUP, FROZEN_RIGHT};
+        use crate::token::Token;
+        match self.0 {
+            Some(Closer::EndGroup) => vec![Token::from_cs(FROZEN_END_GROUP)],
+            Some(Closer::MathShift) => vec![Token::math_shift(b'$')],
+            Some(Closer::Right) => vec![Token::from_cs(FROZEN_RIGHT), Token::other(b'.')],
+            None => vec![Token::right_brace(b'}')],
+        }
+    }
+}
+
+impl crate::output::TexPrint for Insertion {
+    fn print_to(&self, st: &mut EngineState) {
+        use crate::output::{print, Esc};
+        match self.0 {
+            Some(Closer::Right) => print(st, Esc("right.")),
+            Some(closer) => print(st, closer),
+            None => print(st, '}'),
+        }
+    }
+}
+
 impl GroupCode {
     /// What closes this group, `None` for groups that `}` closes.
     pub(crate) fn closer(self) -> Option<Closer> {

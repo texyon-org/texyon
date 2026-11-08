@@ -514,19 +514,21 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
         let stored = path.len();
         path.copy_from_slice(&pic_path[..stored]);
     } else {
-        crate::output::error_here_with_diagnostic(st, "Unable to load picture or PDF file '");
-        let (n, a, e) = (st.scanner.cur_name, st.scanner.cur_area, st.scanner.cur_ext);
-        crate::output::print_file_name(st, n, a, e);
-        crate::output::print(st, b'\'');
-        crate::output::capture_to_diagnostic(st, None);
+        let file = crate::output::FileName {
+            name: st.scanner.cur_name,
+            area: st.scanner.cur_area,
+            ext: st.scanner.cur_ext,
+        };
         let reason = if result == FILE_NOT_FOUND {
             "the file was not found."
         } else {
             "it was not a recognized image format."
         };
-        st.errors
-            .help(&["The requested image couldn't be read because", reason]);
-        crate::errors::finish_error(st)?;
+        crate::errors::error(
+            st,
+            ("Unable to load picture or PDF file '", file, b'\''),
+            &["The requested image couldn't be read because", reason],
+        )?;
     }
     Ok(())
 }

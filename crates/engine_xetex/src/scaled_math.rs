@@ -398,16 +398,19 @@ impl ErrorState {
 /// `ln(x / 2^30) * 2^24`.
 fn m_log(st: &mut EngineState, mut x: i32) -> i32 {
     if x <= 0 {
-        crate::output::error_here_with_diagnostic(st, "Logarithm of ");
-        crate::output::print_scaled(st, Scaled::from_raw(x));
-        crate::output::print(st, " has been replaced by 0");
-        crate::output::capture_to_diagnostic(st, None);
-        st.errors.help(&[
-            "Since I don't take logs of non-positive numbers,",
-            "I'm zeroing this one. Proceed, with fingers crossed.",
-        ]);
         // Unreachable: norm_rand always passes x >= 1.
-        let _ = crate::errors::finish_error(st);
+        let _ = crate::errors::error(
+            st,
+            (
+                "Logarithm of ",
+                Scaled::from_raw(x),
+                " has been replaced by 0",
+            ),
+            &[
+                "Since I don't take logs of non-positive numbers,",
+                "I'm zeroing this one. Proceed, with fingers crossed.",
+            ],
+        );
         return 0;
     }
 

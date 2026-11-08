@@ -173,6 +173,60 @@ impl<T: TexPrint> TexPrint for Option<T> {
     }
 }
 
+/// A control sequence as written, as `sprint_cs` prints it.
+#[derive(Copy, Clone)]
+pub(crate) struct CsName(pub EqtbPtr);
+
+impl TexPrint for CsName {
+    fn print_to(&self, st: &mut EngineState) {
+        sprint_cs(st, self.0);
+    }
+}
+
+/// `T` on a fresh line, as `print_nl` prints it.
+#[derive(Copy, Clone)]
+pub(crate) struct Nl<T>(pub T);
+
+impl<T: TexPrint> TexPrint for Nl<T> {
+    fn print_to(&self, st: &mut EngineState) {
+        print_nl(st, &self.0);
+    }
+}
+
+/// A file name from its parts, quoted when it needs to be.
+#[derive(Copy, Clone)]
+pub(crate) struct FileName {
+    pub name: StrNumber,
+    pub area: StrNumber,
+    pub ext: StrNumber,
+}
+
+impl TexPrint for FileName {
+    fn print_to(&self, st: &mut EngineState) {
+        print_file_name(st, self.name, self.area, self.ext);
+    }
+}
+
+/// The family font command of a math size: `\textfont`, `\scriptfont` or `\scriptscriptfont`.
+#[derive(Copy, Clone)]
+pub(crate) struct FamFont(pub i32);
+
+impl TexPrint for FamFont {
+    fn print_to(&self, st: &mut EngineState) {
+        print_size(st, self.0);
+    }
+}
+
+/// `' in <mode>`, closing a `You can't use` message.
+#[derive(Copy, Clone)]
+pub(crate) struct InMode(pub i32);
+
+impl TexPrint for InMode {
+    fn print_to(&self, st: &mut EngineState) {
+        print_in_mode(st, self.0);
+    }
+}
+
 /// A control sequence name, printed after `\escapechar`.
 #[derive(Copy, Clone)]
 pub(crate) struct Esc<T>(pub T);
@@ -205,6 +259,10 @@ tex_print_tuple!(a: A, b: B, c: C, d: D, e: E);
 tex_print_tuple!(a: A, b: B, c: C, d: D, e: E, f: F);
 tex_print_tuple!(a: A, b: B, c: C, d: D, e: E, f: F, g: G);
 tex_print_tuple!(a: A, b: B, c: C, d: D, e: E, f: F, g: G, h: H);
+tex_print_tuple!(a: A, b: B, c: C, d: D, e: E, f: F, g: G, h: H, i: I);
+tex_print_tuple!(a: A, b: B, c: C, d: D, e: E, f: F, g: G, h: H, i: I, j: J);
+tex_print_tuple!(a: A, b: B, c: C, d: D, e: E, f: F, g: G, h: H, i: I, j: J, k: K);
+tex_print_tuple!(a: A, b: B, c: C, d: D, e: E, f: F, g: G, h: H, i: I, j: J, k: K, l: L);
 
 fn print_bytes(st: &mut EngineState, bytes: &[u8]) {
     for &b in bytes {

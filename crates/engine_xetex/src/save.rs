@@ -108,32 +108,39 @@ impl SaveStackState {
 
 /// Validates `\mag`, propagating a non-`Continue` error outcome.
 pub(crate) fn prepare_mag(st: &mut EngineState) -> Result<(), Abort> {
-    use crate::output::{capture_to_diagnostic, error_here_with_diagnostic};
-
     let mag = st.eqtb.int_par(IntPar::Mag);
     if st.scanner.mag_set > 0 && mag != st.scanner.mag_set {
         let mag_set = st.scanner.mag_set;
-        error_here_with_diagnostic(st, "Incompatible magnification (");
-        crate::output::print_int(st, mag);
-        crate::output::print(st, ");");
-        crate::output::print_nl(st, " the previous value will be retained");
-        crate::output::append_to_diagnostic(st, &format!(" ({})", mag_set));
-        capture_to_diagnostic(st, None);
-        st.errors.help(&[
-            "I can handle only one magnification ratio per job. So I've",
-            "reverted to the magnification you used earlier on this run.",
-        ]);
-        crate::errors::int_error(st, mag_set)?;
+        crate::errors::error(
+            st,
+            (
+                "Incompatible magnification (",
+                mag,
+                ");",
+                crate::output::Nl(" the previous value will be retained"),
+                " (",
+                mag_set,
+                ")",
+            ),
+            &[
+                "I can handle only one magnification ratio per job. So I've",
+                "reverted to the magnification you used earlier on this run.",
+            ],
+        )?;
         st.eqtb.geq_word_define(IntPar::Mag.loc(), mag_set);
     }
     let mag = st.eqtb.int_par(IntPar::Mag);
     if mag <= 0 || mag > 32768 {
-        error_here_with_diagnostic(st, "Illegal magnification has been changed to 1000");
-        crate::output::append_to_diagnostic(st, &format!(" ({})", mag));
-        capture_to_diagnostic(st, None);
-        st.errors
-            .help(&["The magnification ratio must be between 1 and 32768."]);
-        crate::errors::int_error(st, mag)?;
+        crate::errors::error(
+            st,
+            (
+                "Illegal magnification has been changed to 1000",
+                " (",
+                mag,
+                ")",
+            ),
+            &["The magnification ratio must be between 1 and 32768."],
+        )?;
         st.eqtb.geq_word_define(IntPar::Mag.loc(), 1000);
     }
     st.scanner.mag_set = st.eqtb.int_par(IntPar::Mag);

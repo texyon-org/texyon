@@ -11,7 +11,7 @@ use crate::consts::{
     ACTIVE_MATH_CHAR, CHAR_CLASS_LIMIT, DEL_CODE_BASE, MATH_CODE_BASE, MAX_DIMEN, NULL_FONT,
     PAR_SHAPE_LOC, SF_CODE_BASE, VMODE,
 };
-use crate::errors::{finish_error, mu_error, Abort};
+use crate::errors::{mu_error, Abort};
 use crate::ext::{
     aat_font_get, aat_font_get_1, aat_font_get_2, aat_font_get_named, aat_font_get_named_1,
     gr_font_get_named, gr_font_get_named_1, ot_font_get, ot_font_get_1, ot_font_get_2,
@@ -22,7 +22,6 @@ use crate::fonts::{AAT_FONT_FLAG, SPACE_CODE, SPACE_SHRINK_CODE};
 use crate::input::back_input;
 use crate::mem::ZERO_GLUE;
 use crate::node::{AnyNode, GlueKind, GlueSpecNode, MathCode, NodePtr, SaLeaf};
-use crate::output::{capture_to_diagnostic, error_here_with_diagnostic, print_int, print_nl};
 use crate::params::TokPar;
 use crate::state::{EngineState, FontEngineHandle};
 use crate::token::TokenList;
@@ -590,14 +589,15 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: LastItemCode) -> Result<Scaled
             if st.fonts.is_native_font(f) {
                 let edge = scan_int(st)?;
                 if !(1..=4).contains(&edge) {
-                    error_here_with_diagnostic(
+                    crate::errors::error(
                         st,
-                        "\\\\XeTeXglyphbounds requires an edge index from 1 to 4;",
-                    );
-                    print_nl(st, "I don't know anything about edge ");
-                    print_int(st, edge);
-                    capture_to_diagnostic(st, None);
-                    finish_error(st)?;
+                        (
+                            "\\\\XeTeXglyphbounds requires an edge index from 1 to 4;",
+                            crate::output::Nl("I don't know anything about edge "),
+                            edge,
+                        ),
+                        &[],
+                    )?;
                     Scaled::ZERO
                 } else {
                     let glyph = scan_int(st)?;

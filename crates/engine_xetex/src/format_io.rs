@@ -5,15 +5,13 @@
 //! into the same place, checking ranges. Items are stored big-endian, an
 //! 8-byte word as one 64-bit value.
 
-use crate::bridge::{
-    input_open, input_read, output_close, output_flush, output_open, output_write, FileFormat,
-};
+use crate::bridge::{input_open, input_read, output_close, output_open, output_write, FileFormat};
 use crate::cmd::Cmd;
 use crate::consts::{
     ACTIVE_BASE, CAT_CODE_BASE, CUR_FONT_LOC, EMPTY_STRING, EQTB_SIZE, FONT_BASE,
-    FROZEN_CONTROL_SEQUENCE, HASH_BASE, HISTORY_FATAL_ERROR, INT_BASE, INVALID_HANDLE,
-    MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP, MIN_HALFWORD, NULL_FONT, PRIM_SIZE, TEX_NULL,
-    TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
+    FROZEN_CONTROL_SEQUENCE, HASH_BASE, INT_BASE, INVALID_HANDLE, MAX_FONT_MAX, MAX_HALFWORD,
+    MEM_TOP, MIN_HALFWORD, NULL_FONT, PRIM_SIZE, TEX_NULL, TOO_BIG_CHAR,
+    UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::engine::{POOL_FREE, STRINGS_FREE};
 use crate::errors::Abort;
@@ -299,20 +297,7 @@ fn fonts_of<T>(v: &mut PerFont<T>, font_ptr: FontId) -> &mut [T] {
 
 pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     if st.save_stack.save_ptr != SavePtr::ZERO {
-        crate::output::print_err(st, "You can't dump inside a group");
-        st.errors.help(&[r"`{...\dump}' is a no-no."]);
-
-        if st.errors.interaction == InteractionMode::ErrorStop {
-            st.errors.interaction = InteractionMode::Scroll;
-        }
-        if st.errors.log_opened {
-            crate::errors::finish_error(st)?;
-        }
-
-        st.errors.history = HISTORY_FATAL_ERROR;
-        let _ = crate::io::close_files_and_terminate(st);
-        output_flush(st.shipout.rust_stdout);
-        return Err(Abort::Internal("\\dump inside a group"));
+        return Err(Abort::DumpInGroup);
     }
 
     st.shipout.selector = Selector::NewString;
@@ -839,16 +824,15 @@ fn print_dumped_fonts(st: &mut EngineState) -> Result<(), Abort> {
             || st.fonts.font_mapping[f].is_some()
         {
             crate::output::print_file_name(st, font_name, EMPTY_STRING, EMPTY_STRING);
-            crate::output::print_err(
+            crate::errors::error(
                 st,
                 "Can't \\dump a format with native fonts or font-mappings",
-            );
-            st.errors.help(&[
-                "You really, really don't want to do this.",
-                "It won't work, and only confuses me.",
-                "(Load them at runtime, not as part of the format file.)",
-            ]);
-            crate::errors::finish_error(st)?;
+                &[
+                    "You really, really don't want to do this.",
+                    "It won't work, and only confuses me.",
+                    "(Load them at runtime, not as part of the format file.)",
+                ],
+            )?;
         } else {
             crate::output::print_file_name(st, font_name, font_area, EMPTY_STRING);
         }

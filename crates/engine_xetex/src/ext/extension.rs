@@ -13,7 +13,6 @@ use crate::mem::TEMP_HEAD_TOKS;
 use crate::node::{
     GlyphNode, LanguageNode, NodePtr, OpenNode, WhatsitKind, WhatsitNode, WhatsitSubtype, WriteNode,
 };
-use crate::output::{capture_to_diagnostic, error_here_with_diagnostic};
 use crate::params::IntPar;
 use crate::pic::load_picture;
 use crate::scan::{get_x_token, scan_int};
@@ -269,14 +268,14 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
                 let glyph = match u16::try_from(n) {
                     Ok(glyph) => glyph,
                     Err(_) => {
-                        error_here_with_diagnostic(st, "Bad glyph number");
-                        crate::output::append_to_diagnostic(st, &format!(" ({})", n));
-                        capture_to_diagnostic(st, None);
-                        st.errors.help(&[
-                            "A glyph number must be between 0 and 65535.",
-                            "I changed this one to zero.",
-                        ]);
-                        crate::errors::int_error(st, n)?;
+                        crate::errors::error(
+                            st,
+                            ("Bad glyph number", " (", n, ")"),
+                            &[
+                                "A glyph number must be between 0 and 65535.",
+                                "I changed this one to zero.",
+                            ],
+                        )?;
                         0
                     }
                 };
@@ -294,16 +293,14 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
             let name = st.input.name_of_file_bytes().to_vec();
             let (enc_mode, info) = get_encoding_mode_and_info(st, &name)?;
             if enc_mode == AUTO {
-                error_here_with_diagnostic(
+                crate::errors::error(
                     st,
                     "Encoding mode `auto' is not valid for \\XeTeXinputencoding",
-                );
-                capture_to_diagnostic(st, None);
-                st.errors.help(&[
-                    r"You can't use `auto' encoding here, only for \XeTeXdefaultencoding.",
-                    "I'll ignore this and leave the current encoding unchanged.",
-                ]);
-                crate::errors::finish_error(st)?;
+                    &[
+                        r"You can't use `auto' encoding here, only for \XeTeXdefaultencoding.",
+                        "I'll ignore this and leave the current encoding unchanged.",
+                    ],
+                )?;
             } else {
                 // `\scantokens` occupies an input level without a UFile.
                 let slot = crate::io::FileSlot::Input(st.input.in_open);

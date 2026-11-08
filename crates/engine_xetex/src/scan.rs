@@ -8,10 +8,9 @@ use crate::consts::{
     FROZEN_PROTECTION, MATH_CHAR, NUMBER_MATH_FAMILIES,
 };
 use crate::errors::Abort;
-use crate::input::{back_input, begin_token_list, ins_finish_error, TokenType};
+use crate::input::{back_input, begin_token_list, TokenType};
 use crate::mem::BACKUP_HEAD;
 use crate::node::{BoxNode, MathField, NodePtr, RuleDimen, RuleNode, SaLeaf, Stored};
-use crate::output::print_err;
 use crate::packaging::PackSpec;
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, ErrorState, GroupCode, MemState, ScannerState};
@@ -163,19 +162,21 @@ pub(crate) fn get_r_token(st: &mut EngineState) -> Result<(), Abort> {
             || st.scanner.cur_cs > st.eqtb.eqtb_top
             || (st.scanner.cur_cs > FROZEN_CONTROL_SEQUENCE && st.scanner.cur_cs <= EQTB_SIZE)
         {
-            print_err(st, "Missing control sequence inserted");
-            st.errors.help(&[
-                r"Please don't say `\def cs{...}', say `\def\cs{...}'.",
-                "I've inserted an inaccessible control sequence so that your",
-                "definition will be completed without mixing me up too badly.",
-                "You can recover graciously from this error, if you're",
-                "careful; see exercise 27.2 in The TeXbook.",
-            ]);
             if st.scanner.cur_cs.is_none() {
                 back_input(st)?;
             }
             st.scanner.cur_tok = Token::from_cs(FROZEN_PROTECTION);
-            ins_finish_error(st)?;
+            crate::errors::ins_error(
+                st,
+                "Missing control sequence inserted",
+                &[
+                    r"Please don't say `\def cs{...}', say `\def\cs{...}'.",
+                    "I've inserted an inaccessible control sequence so that your",
+                    "definition will be completed without mixing me up too badly.",
+                    "You can recover graciously from this error, if you're",
+                    "careful; see exercise 27.2 in The TeXbook.",
+                ],
+            )?;
         } else {
             return Ok(());
         }

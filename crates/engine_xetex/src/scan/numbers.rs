@@ -9,9 +9,8 @@ use crate::consts::{
 };
 use crate::errors::{mu_error, Abort};
 use crate::fonts::{QUAD_CODE, X_HEIGHT_CODE};
-use crate::input::{back_finish_error, back_input};
+use crate::input::back_input;
 use crate::node::{ExprNode, GlueSpecNode, NodePtr};
-use crate::output::print_err;
 use crate::params::IntPar;
 use crate::state::EngineState;
 use crate::token::Token;
@@ -283,13 +282,15 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<i32, Abort> {
                     .astral_char(st.eqtb.text(st.scanner.cur_tok.cs()));
             }
             if v > BIGGEST_USV {
-                print_err(st, "Improper alphabetic constant");
-                st.errors.help(&[
-                    "A one-character control sequence belongs after a ` mark.",
-                    r"So I'm essentially inserting \0 here.",
-                ]);
                 v = i32::from(b'0');
-                back_finish_error(st)?;
+                crate::errors::back_error(
+                    st,
+                    "Improper alphabetic constant",
+                    &[
+                        "A one-character control sequence belongs after a ` mark.",
+                        r"So I'm essentially inserting \0 here.",
+                    ],
+                )?;
             } else {
                 scan_optional_space(st)?;
             }

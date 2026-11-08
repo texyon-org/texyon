@@ -61,13 +61,16 @@ fn ensure_vbox(st: &mut EngineState, n: u8) -> Result<(), Abort> {
     if !fetch_box(st, i32::from(n)).is_some_and(|b| st.mem[b].is_hlist()) {
         return Ok(());
     }
-    crate::output::print_err(st, "Insertions can only be added to a vbox");
-    st.errors.help(&[
-        r"Tut tut: You're trying to \insert into a",
-        r"\box register that now contains an \hbox.",
-        "Proceed, and I'll discard its present contents.",
-    ]);
-    crate::errors::box_error(st, n)
+    crate::errors::box_error(
+        st,
+        n,
+        "Insertions can only be added to a vbox",
+        &[
+            r"Tut tut: You're trying to \insert into a",
+            r"\box register that now contains an \hbox.",
+            "Proceed, and I'll discard its present contents.",
+        ],
+    )
 }
 
 /// Records the new mark `mark_ptr` as the first and bottom mark of class `class`.
@@ -194,15 +197,15 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
         st.shipout.best_page_break = MemPtr::NULL;
     }
     if !st.eqtb.box_reg(255).is_null() {
-        crate::output::error_here_with_diagnostic(st, "");
-        crate::output::print_esc(st, "box");
-        crate::output::print(st, "255 is not void");
-        crate::output::capture_to_diagnostic(st, None);
-        st.errors.help(&[
-            r"You shouldn't use \box255 except in \output routines.",
-            "Proceed, and I'll discard its present contents.",
-        ]);
-        crate::errors::box_error(st, 255)?;
+        crate::errors::box_error(
+            st,
+            255,
+            (crate::output::Esc("box"), "255 is not void"),
+            &[
+                r"You shouldn't use \box255 except in \output routines.",
+                "Proceed, and I'll discard its present contents.",
+            ],
+        )?;
     }
 
     st.shipout.insert_penalties = 0;

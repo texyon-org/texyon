@@ -4,9 +4,8 @@ use crate::cmd::Cmd;
 use crate::codes::{BoxCode, SkipCode, ValueLevel};
 use crate::command::Command;
 use crate::consts::{
-    BIGGEST_CHAR, BOX_NODE_SIZE, EMPTY, ETEX_PEN_BASE, FROZEN_CR, FROZEN_END_GROUP, FROZEN_RIGHT,
-    HMODE, IGNORE_DEPTH, MAX_DIMEN, MMODE, NOAD_SIZE, NULL_FLAG, PAR_SHAPE_LOC, SUB_BOX, SUB_MLIST,
-    TEX_NULL, VMODE,
+    BIGGEST_CHAR, BOX_NODE_SIZE, EMPTY, ETEX_PEN_BASE, FROZEN_CR, HMODE, IGNORE_DEPTH, MAX_DIMEN,
+    MMODE, NOAD_SIZE, NULL_FLAG, PAR_SHAPE_LOC, SUB_BOX, SUB_MLIST, TEX_NULL, VMODE,
 };
 use crate::errors::Abort;
 use crate::fonts::{
@@ -470,16 +469,20 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             st.shipout.insert_penalties = 0;
 
             if !st.eqtb.box_reg(255).is_null() {
-                crate::output::error_here_with_diagnostic(st, "Output routine didn't use all of ");
-                crate::output::print_esc(st, "box");
-                crate::output::print_int(st, 255);
-                crate::output::capture_to_diagnostic(st, None);
-                st.errors.help(&[
-                    r"Your \output commands should empty \box255,",
-                    r"e.g., by saying `\shipout\box255'.",
-                    "Proceed; I'll discard its present contents.",
-                ]);
-                crate::errors::box_error(st, 255)?;
+                crate::errors::box_error(
+                    st,
+                    255,
+                    (
+                        "Output routine didn't use all of ",
+                        crate::output::Esc("box"),
+                        255,
+                    ),
+                    &[
+                        r"Your \output commands should empty \box255,",
+                        r"e.g., by saying `\shipout\box255'.",
+                        "Proceed; I'll discard its present contents.",
+                    ],
+                )?;
             }
 
             if st.input.cur_list.tail != st.input.cur_list.head {
@@ -659,41 +662,26 @@ pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
         );
     }
     crate::input::back_input(st)?;
-    let p = st.mem.get_avail_token()?;
-    TEMP_HEAD_TOKS.set_link(&mut st.mem, p);
-    crate::output::error_here_with_diagnostic(st, "Missing ");
-    match st.save_stack.cur_group {
-        GroupCode::SemiSimple => {
-            p.set_token(&mut st.mem, Token::from_cs(FROZEN_END_GROUP));
-            crate::output::print_esc(st, "endgroup");
-        }
-        GroupCode::MathShift => {
-            p.set_token(&mut st.mem, Token::math_shift(b'$'));
-            crate::output::print_char(st, b'$');
-        }
-        GroupCode::MathLeft => {
-            p.set_token(&mut st.mem, Token::from_cs(FROZEN_RIGHT));
-            let q = st.mem.get_avail_token()?;
-            p.set_link(&mut st.mem, q);
-            q.set_token(&mut st.mem, Token::other(b'.'));
-            crate::output::print_esc(st, "right.");
-        }
-        _ => {
-            p.set_token(&mut st.mem, Token::right_brace(b'}'));
-            crate::output::print_char(st, b'}');
-        }
+    let insertion = crate::state::Insertion(st.save_stack.cur_group.closer());
+    let mut tail = TEMP_HEAD_TOKS;
+    for token in insertion.tokens() {
+        let q = st.mem.get_avail_token()?;
+        tail.set_link(&mut st.mem, q);
+        q.set_token(&mut st.mem, token);
+        tail = q;
     }
-    crate::output::print(st, " inserted");
     crate::input::begin_token_list(st, TEMP_HEAD_TOKS.link(&st.mem), TokenType::Inserted)?;
-    crate::output::capture_to_diagnostic(st, None);
-    st.errors.help(&[
-        "I've inserted something that you may have forgotten.",
-        "(See the <inserted text> above.)",
-        "With luck, this will get me unwedged. But if you",
-        "really didn't forget anything, try typing `2' now; then",
-        "my insertion and my current dilemma will both disappear.",
-    ]);
-    crate::errors::finish_error(st)
+    crate::errors::error(
+        st,
+        ("Missing ", insertion, " inserted"),
+        &[
+            "I've inserted something that you may have forgotten.",
+            "(See the <inserted text> above.)",
+            "With luck, this will get me unwedged. But if you",
+            "really didn't forget anything, try typing `2' now; then",
+            "my insertion and my current dilemma will both disappear.",
+        ],
+    )
 }
 
 fn begin_disc_group(st: &mut EngineState) -> Result<(), Abort> {
@@ -774,16 +762,16 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
         1 => st.mem[disc].post_break = p,
         2 => {
             if n > 0 && st.input.cur_list.mode.abs() == MMODE {
-                crate::output::error_here_with_diagnostic(st, "Illegal math ");
-                crate::output::print_esc(st, "discretionary");
-                crate::output::capture_to_diagnostic(st, None);
-                st.errors.help(&[
-                    "Sorry: The third part of a discretionary break must be",
-                    "empty, in math formulas. I had to delete your third part.",
-                ]);
                 st.mem.flush_node_list(p)?;
                 n = 0;
-                crate::errors::finish_error(st)?;
+                crate::errors::error(
+                    st,
+                    ("Illegal math ", crate::output::Esc("discretionary")),
+                    &[
+                        "Sorry: The third part of a discretionary break must be",
+                        "empty, in math formulas. I had to delete your third part.",
+                    ],
+                )?;
             } else {
                 st.mem[disc].link = p;
             }

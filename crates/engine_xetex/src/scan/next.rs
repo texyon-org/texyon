@@ -7,16 +7,11 @@ use crate::consts::{
     ACTIVE_BASE, BIGGEST_USV, END_WRITE, FROZEN_CR, FROZEN_ENDV, FROZEN_FI, NULL_CS, SINGLE_BASE,
     TEX_NULL,
 };
-use crate::errors::{finish_error, Abort};
+use crate::errors::Abort;
 use crate::expand::{expand, macro_call};
-use crate::input::{
-    begin_token_list, ins_finish_error, TokenType, MID_LINE, NEW_LINE, SKIP_BLANKS, TOKEN_LIST,
-};
+use crate::input::{begin_token_list, TokenType, MID_LINE, NEW_LINE, SKIP_BLANKS, TOKEN_LIST};
 use crate::mem::OMIT_TEMPLATE;
 use crate::node::{AlignRecord, NodePtr};
-use crate::output::{
-    capture_to_diagnostic, error_here_with_diagnostic, print, print_cmd_chr, print_err, print_int,
-};
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, InputClusterState, MemState, Selector};
 use crate::token::{Token, TokenList};
@@ -78,73 +73,75 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
 
     let outcome = if st.scanner.scanner_status > ScannerStatus::Skipping {
         crate::errors::runaway(st);
-        if st.scanner.cur_cs.is_none() {
-            error_here_with_diagnostic(st, "File ended");
+        let what = if st.scanner.cur_cs.is_none() {
+            "File ended"
         } else {
             st.scanner.cur_cs = crate::units::EqtbPtr::NONE;
-            error_here_with_diagnostic(st, "Forbidden control sequence found");
-        }
+            "Forbidden control sequence found"
+        };
 
         let p = st.mem.get_avail_token()?;
         let mut inserted = p;
-        match st.scanner.scanner_status {
+        let scanning = match st.scanner.scanner_status {
             ScannerStatus::Defining => {
-                print(st, " while scanning definition");
                 p.set_token(&mut st.mem, Token::right_brace(b'}'));
+                " while scanning definition"
             }
             ScannerStatus::Matching => {
-                print(st, " while scanning use");
                 p.set_token(&mut st.mem, st.input.par_token);
                 st.scanner.long_state = Cmd::OuterCall;
+                " while scanning use"
             }
             ScannerStatus::Aligning => {
-                print(st, " while scanning preamble");
                 p.set_token(&mut st.mem, Token::right_brace(b'}'));
                 inserted = st.mem.get_avail_token()?;
                 inserted.set_link(&mut st.mem, p);
                 inserted.set_token(&mut st.mem, Token::from_cs(FROZEN_CR));
                 st.scanner.align_state = -1_000_000;
+                " while scanning preamble"
             }
             ScannerStatus::Absorbing => {
-                print(st, " while scanning text");
                 p.set_token(&mut st.mem, Token::right_brace(b'}'));
+                " while scanning text"
             }
-            _ => {}
-        }
+            _ => "",
+        };
 
         begin_token_list(st, inserted, TokenType::Inserted)?;
-        print(st, " of ");
-        let warning_index = st.scanner.warning_index;
-        crate::output::sprint_cs(st, warning_index);
-        capture_to_diagnostic(st, None);
-        st.errors.help(&[
-            "I suspect you have forgotten a `}', causing me",
-            "to read past where you wanted me to stop.",
-            "I'll try to recover; but if the error is serious,",
-            "you'd better type `E' or `X' now and fix your file.",
-        ]);
-        finish_error(st)
+        let macro_name = crate::output::CsName(st.scanner.warning_index);
+        crate::errors::error(
+            st,
+            (what, scanning, " of ", macro_name),
+            &[
+                "I suspect you have forgotten a `}', causing me",
+                "to read past where you wanted me to stop.",
+                "I'll try to recover; but if the error is serious,",
+                "you'd better type `E' or `X' now and fix your file.",
+            ],
+        )
     } else {
-        error_here_with_diagnostic(st, "Incomplete ");
-        let cur_if = st.scanner.cur_if;
-        print_cmd_chr(st, Cmd::IfTest, i32::from(cur_if));
-        print(st, "; all text was ignored after line ");
-        let skip_line = st.scanner.skip_line;
-        print_int(st, skip_line);
-        capture_to_diagnostic(st, None);
+        let message = (
+            "Incomplete ",
+            crate::output::CmdChr(Cmd::IfTest, i32::from(st.scanner.cur_if)),
+            "; all text was ignored after line ",
+            st.scanner.skip_line,
+        );
         let cause = if !st.scanner.cur_cs.is_none() {
             st.scanner.cur_cs = crate::units::EqtbPtr::NONE;
             "A forbidden control sequence occurred in skipped text."
         } else {
             "The file ended while I was skipping conditional text."
         };
-        st.errors.help(&[
-            cause,
-            r"This kind of error happens when you say `\if...' and forget",
-            r"the matching `\fi'. I've inserted a `\fi'; this might work.",
-        ]);
         st.scanner.cur_tok = Token::from_cs(FROZEN_FI);
-        ins_finish_error(st)
+        crate::errors::ins_error(
+            st,
+            message,
+            &[
+                cause,
+                r"This kind of error happens when you say `\if...' and forget",
+                r"the matching `\fi'. I've inserted a `\fi'; this might work.",
+            ],
+        )
     };
     st.errors.deletions_allowed = true;
     outcome
@@ -405,13 +402,15 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
 
                             // Invalid character.
                             16 | 32 | 48 => {
-                                print_err(st, "Text line contains an invalid character");
-                                st.errors.help(&[
-                                    "A funny symbol that I can't read has just been input.",
-                                    "Continue, and I'll forget that it ever happened.",
-                                ]);
                                 st.errors.deletions_allowed = false;
-                                finish_error(st)?;
+                                crate::errors::error(
+                                    st,
+                                    "Text line contains an invalid character",
+                                    &[
+                                        "A funny symbol that I can't read has just been input.",
+                                        "Continue, and I'll forget that it ever happened.",
+                                    ],
+                                )?;
                                 st.errors.deletions_allowed = true;
                                 continue 'restart;
                             }

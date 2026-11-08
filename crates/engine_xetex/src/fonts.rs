@@ -13,8 +13,8 @@ use crate::mem_types::B16x4;
 use crate::node::{NativeWordNode, NodePtr, WhatsitSubtype};
 use crate::output::{
     begin_diagnostic, capture_to_diagnostic, char_warning, diagnostic_begin_capture_warning_here,
-    end_diagnostic, error_here_with_diagnostic, print, print_char, print_file_name, print_int,
-    print_nl, print_scaled, sprint_cs,
+    end_diagnostic, print, print_char, print_int, print_nl, print_scaled, CsName, FileName,
+    TexPrint,
 };
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, FontState, MemState};
@@ -503,26 +503,45 @@ fn read_scaled_word(handle: usize, z: i32, beta: i32, alpha: i32) -> Option<Scal
     }
 }
 
-/// Start a "Font \cs=name at size" error.
-fn font_error_start(st: &mut EngineState, u: EqtbPtr, nom: StrNumber, aire: StrNumber, s: Scaled) {
-    error_here_with_diagnostic(st, "Font ");
-    sprint_cs(st, u);
-    print_char(st, b'=');
-    let quote = st.scanner.file_name_quote_char;
-    if quote != 0 {
-        print_char(st, i32::from(quote));
+/// "Font \cs=name at size", how a font loading error names the font.
+#[derive(Copy, Clone)]
+struct FontSpec {
+    cs: EqtbPtr,
+    file: FileName,
+    quote: u16,
+    size: Scaled,
+}
+
+impl FontSpec {
+    fn new(st: &EngineState, cs: EqtbPtr, name: StrNumber, area: StrNumber, size: Scaled) -> Self {
+        Self {
+            cs,
+            file: FileName {
+                name,
+                area,
+                ext: st.scanner.cur_ext,
+            },
+            quote: st.scanner.file_name_quote_char,
+            size,
+        }
     }
-    print_file_name(st, nom, aire, st.scanner.cur_ext);
-    if quote != 0 {
-        print_char(st, i32::from(quote));
-    }
-    if s >= Scaled::ZERO {
-        print(st, " at ");
-        print_scaled(st, s);
-        print(st, "pt");
-    } else if s != DESIGN_SIZE {
-        print(st, " scaled ");
-        print_int(st, -s.raw());
+}
+
+impl TexPrint for FontSpec {
+    fn print_to(&self, st: &mut EngineState) {
+        print(st, ("Font ", CsName(self.cs), '='));
+        if self.quote != 0 {
+            print_char(st, self.quote);
+        }
+        print(st, self.file);
+        if self.quote != 0 {
+            print_char(st, self.quote);
+        }
+        if self.size >= Scaled::ZERO {
+            print(st, (" at ", self.size, "pt"));
+        } else if self.size != DESIGN_SIZE {
+            print(st, (" scaled ", -self.size.raw()));
+        }
     }
 }
 
@@ -602,11 +621,12 @@ pub(crate) fn read_font_info(
         if let Some(scaling) = scale_side_effect {
             st.errors.tex_remainder = scaling.remainder;
             if scaling.too_big {
-                font_error_start(st, u, nom, aire, s);
-                print(st, " scaled to 2048pt or higher");
-                capture_to_diagnostic(st, None);
-                st.errors.help(&["I will ignore the scaling factor."]);
-                crate::errors::finish_error(st)?;
+                let font = FontSpec::new(st, u, nom, aire, s);
+                crate::errors::error(
+                    st,
+                    (font, " scaled to 2048pt or higher"),
+                    &["I will ignore the scaling factor."],
+                )?;
             }
         }
         match parse {
@@ -623,7 +643,7 @@ pub(crate) fn read_font_info(
     }
 
     if bad_tfm && st.eqtb.int_par(IntPar::SuppressFontnotfoundError) == 0 {
-        font_error_start(st, u, nom, aire, s);
+        let font = FontSpec::new(st, u, nom, aire, s);
         let reason = if file_opened {
             " not loadable: Bad metric (TFM) file"
         } else if name_too_long {
@@ -631,18 +651,17 @@ pub(crate) fn read_font_info(
         } else {
             " not loadable: Metric (TFM) file or installed font not found"
         };
-        print(st, reason);
-        capture_to_diagnostic(st, None);
-
-        st.errors.help(&[
-            "I wasn't able to read the size data for this font,",
-            "so I will ignore the font specification.",
-            "[Wizards can fix TFM files using TFtoPL/PLtoTF.]",
-            "You might try inserting a different font spec;",
-            r"e.g., type `I\font<same font id>=<substitute font name>'.",
-        ]);
-
-        crate::errors::finish_error(st)?;
+        crate::errors::error(
+            st,
+            (font, reason),
+            &[
+                "I wasn't able to read the size data for this font,",
+                "so I will ignore the font specification.",
+                "[Wizards can fix TFM files using TFtoPL/PLtoTF.]",
+                "You might try inserting a different font spec;",
+                r"e.g., type `I\font<same font id>=<substitute font name>'.",
+            ],
+        )?;
     }
 
     if file_opened && crate::io::input_close(tfm_file) {
@@ -1054,18 +1073,17 @@ pub(crate) fn load_native_font(
     if st.fonts.font_ptr == st.fonts.font_max
         || st.fonts.fmem_ptr + num_font_dimens > st.fonts.font_mem_size
     {
-        font_error_start(st, u, nom, aire, s);
-        print(st, " not loaded: Not enough room left");
-        capture_to_diagnostic(st, None);
-
-        st.errors.help(&[
-            "I'm afraid I won't be able to make use of this font,",
-            "because my memory for character-size data is too small.",
-            "If you're really stuck, ask a wizard to enlarge me.",
-            r"Or maybe try `I\font<same font id>=<name of loaded font>'.",
-        ]);
-
-        crate::errors::finish_error(st)?;
+        let font = FontSpec::new(st, u, nom, aire, s);
+        crate::errors::error(
+            st,
+            (font, " not loaded: Not enough room left"),
+            &[
+                "I'm afraid I won't be able to make use of this font,",
+                "because my memory for character-size data is too small.",
+                "If you're really stuck, ask a wizard to enlarge me.",
+                r"Or maybe try `I\font<same font id>=<name of loaded font>'.",
+            ],
+        )?;
         return Ok(NULL_FONT);
     }
 

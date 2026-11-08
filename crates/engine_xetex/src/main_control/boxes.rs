@@ -76,7 +76,6 @@ pub(super) fn unpackage(st: &mut EngineState, c: BoxCode) -> Result<(), Abort> {
 pub(super) fn delete_last(st: &mut EngineState, t: NodeType) -> Result<(), Abort> {
     if st.input.cur_list.mode == VMODE && st.input.cur_list.tail == st.input.cur_list.head {
         if t != NodeType::Glue || st.shipout.last_glue.is_some() {
-            crate::errors::you_cant(st);
             let remedy = if t == NodeType::Kern {
                 r"Try `I\kern-\lastkern' instead."
             } else if t != NodeType::Glue {
@@ -84,11 +83,14 @@ pub(super) fn delete_last(st: &mut EngineState, t: NodeType) -> Result<(), Abort
             } else {
                 r"Try `I\vskip-\lastskip' instead."
             };
-            st.errors.help(&[
-                "Sorry...I usually can't take things from the current page.",
-                remedy,
-            ]);
-            return crate::errors::finish_error(st);
+            return crate::errors::error(
+                st,
+                crate::errors::you_cant(st),
+                &[
+                    "Sorry...I usually can't take things from the current page.",
+                    remedy,
+                ],
+            );
         }
         return Ok(());
     }
@@ -335,18 +337,22 @@ pub(super) fn begin_box(
         BoxCode::LastBox => {
             st.scanner.cur_box = None;
             if st.input.cur_list.mode.abs() == MMODE {
-                crate::errors::you_cant(st);
-                st.errors.help(&[r"Sorry; this \lastbox will be void."]);
-                crate::errors::finish_error(st)?;
+                crate::errors::error(
+                    st,
+                    crate::errors::you_cant(st),
+                    &[r"Sorry; this \lastbox will be void."],
+                )?;
             } else if st.input.cur_list.mode == VMODE
                 && st.input.cur_list.head == st.input.cur_list.tail
             {
-                crate::errors::you_cant(st);
-                st.errors.help(&[
-                    "Sorry...I usually can't take things from the current page.",
-                    r"This \lastbox will therefore be void.",
-                ]);
-                crate::errors::finish_error(st)?;
+                crate::errors::error(
+                    st,
+                    crate::errors::you_cant(st),
+                    &[
+                        "Sorry...I usually can't take things from the current page.",
+                        r"This \lastbox will therefore be void.",
+                    ],
+                )?;
             } else {
                 let tx = effective_tail(st);
                 if !st.mem.is_char_node(tx) {

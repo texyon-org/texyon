@@ -704,22 +704,13 @@ fn max_word_len(eqtb: &EqtbState) -> usize {
     usize::try_from(eqtb.max_hyphenatable_length()).unwrap_or(0)
 }
 
-/// Finish an error begun at the call site: set its help text (in display
-/// order) and run the recoverable `error()`.
-fn raise_error(st: &mut EngineState, help: &[&'static str]) -> Result<(), Abort> {
-    crate::output::capture_to_diagnostic(st, None);
-    st.errors.help(help);
-    crate::errors::finish_error(st)
-}
-
 pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
     st.hyph.tables_gen = st.hyph.tables_gen.wrapping_add(1);
 
     if !st.hyph.trie_not_ready {
-        crate::output::error_here_with_diagnostic(st, "Too late for ");
-        crate::output::print_esc(st, "patterns");
-        raise_error(
+        crate::errors::error(
             st,
+            ("Too late for ", crate::output::Esc("patterns")),
             &["All patterns must be given before typesetting begins."],
         )?;
 
@@ -752,8 +743,7 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
                     } else {
                         st.scanner.cur_chr = st.eqtb.lc_code(cur_chr);
                         if st.scanner.cur_chr == 0 {
-                            crate::output::error_here_with_diagnostic(st, "Nonletter");
-                            raise_error(st, &[APPENDIX_H])?;
+                            crate::errors::error(st, "Nonletter", &[APPENDIX_H])?;
                         }
                     }
 
@@ -773,8 +763,7 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
                 if k > 0 {
                     let (q, op, duplicate) = st.hyph.insert_pattern_word(k)?;
                     if duplicate {
-                        crate::output::error_here_with_diagnostic(st, "Duplicate pattern");
-                        raise_error(st, &[APPENDIX_H])?;
+                        crate::errors::error(st, "Duplicate pattern", &[APPENDIX_H])?;
                     }
                     st.hyph.set_trie_o(q, op);
                 }
@@ -788,9 +777,7 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
                 digit_sensed = false;
             }
             _ => {
-                crate::output::error_here_with_diagnostic(st, "Bad ");
-                crate::output::print_esc(st, "patterns");
-                raise_error(st, &[APPENDIX_H])?;
+                crate::errors::error(st, ("Bad ", crate::output::Esc("patterns")), &[APPENDIX_H])?;
             }
         }
     }
@@ -835,9 +822,9 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
                         st.hyph.hc[0] = st.hyph.hyph_code(&st.eqtb, st.scanner.cur_chr);
 
                         if st.hyph.hc[0] == 0 {
-                            crate::output::error_here_with_diagnostic(st, "Not a letter");
-                            raise_error(
+                            crate::errors::error(
                                 st,
+                                "Not a letter",
                                 &[
                                     r"Letters in \hyphenation words must have \lccode>0.",
                                     "Proceed; I'll ignore the character I just read.",
@@ -875,11 +862,13 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
                     break;
                 }
                 _ => {
-                    crate::output::error_here_with_diagnostic(st, "Improper ");
-                    crate::output::print_esc(st, "hyphenation");
-                    crate::output::print(st, " will be flushed");
-                    raise_error(
+                    crate::errors::error(
                         st,
+                        (
+                            "Improper ",
+                            crate::output::Esc("hyphenation"),
+                            " will be flushed",
+                        ),
                         &[
                             "Hyphenation exceptions must contain only letters",
                             "and hyphens. But continue; I'll forgive and forget.",

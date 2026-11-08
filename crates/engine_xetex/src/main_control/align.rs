@@ -25,45 +25,52 @@ use super::{append_list, begin_every, CR_CODE, INNER_HMODE, INNER_VMODE, SPAN_CO
 
 pub(super) fn align_error(st: &mut EngineState) -> Result<(), Abort> {
     if st.scanner.align_state.abs() > 2 {
-        crate::output::error_here_with_diagnostic(st, "Misplaced ");
-        crate::output::print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
-        crate::output::capture_to_diagnostic(st, None);
-        if st.scanner.cur_tok == Token::tab(b'&') {
-            st.errors.help(&[
+        let help: &[&'static str] = if st.scanner.cur_tok == Token::tab(b'&') {
+            &[
                 "I can't figure out why you would want to use a tab mark",
                 "here. If you just want an ampersand, the remedy is",
                 r"simple: Just type `I\&' now. But if some right brace",
                 "up above has ended a previous alignment prematurely,",
                 "you're probably due for more error messages, and you",
                 "might try typing `S' now just to see what is salvageable.",
-            ]);
+            ]
         } else {
-            st.errors.help(&[
+            &[
                 "I can't figure out why you would want to use a tab mark",
                 r"or \cr or \span just now. If something like a right brace",
                 "up above has ended a previous alignment prematurely,",
                 "you're probably due for more error messages, and you",
                 "might try typing `S' now just to see what is salvageable.",
-            ]);
-        }
-        crate::errors::finish_error(st)?;
+            ]
+        };
+        crate::errors::error(
+            st,
+            (
+                "Misplaced ",
+                crate::output::CmdChr(st.scanner.cur_cmd, st.scanner.cur_chr),
+            ),
+            help,
+        )?;
     } else {
         crate::input::back_input(st)?;
-        if st.scanner.align_state < 0 {
-            crate::output::print_err(st, "Missing { inserted");
+        let message = if st.scanner.align_state < 0 {
             st.scanner.align_state += 1;
             st.scanner.cur_tok = Token::left_brace(b'{');
+            "Missing { inserted"
         } else {
-            crate::output::print_err(st, "Missing } inserted");
             st.scanner.align_state -= 1;
             st.scanner.cur_tok = Token::right_brace(b'}');
-        }
-        st.errors.help(&[
-            "I've put in what seems to be necessary to fix",
-            "the current column of the current alignment.",
-            "Try to go on, since this might almost work.",
-        ]);
-        crate::input::ins_finish_error(st)?;
+            "Missing } inserted"
+        };
+        crate::errors::ins_error(
+            st,
+            message,
+            &[
+                "I've put in what seems to be necessary to fix",
+                "the current column of the current alignment.",
+                "Try to go on, since this might almost work.",
+            ],
+        )?;
     }
     Ok(())
 }
@@ -631,19 +638,19 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
             st.mem[column].link = g.ptr();
             st.mem[g].subtype = GlueKind::Param(GluePar::TabSkip).into();
         } else {
-            crate::output::error_here_with_diagnostic(
-                st,
-                "Extra alignment tab has been changed to ",
-            );
-            crate::output::print_esc(st, "cr");
-            crate::output::capture_to_diagnostic(st, None);
-            st.errors.help(&[
-                r"You have given more \span or & marks than there were",
-                r"in the preamble to the \halign or \valign now in progress.",
-                r"So I'll assume that you meant to type \cr instead.",
-            ]);
             st.mem[cur_align].extra_info = CR_CODE;
-            crate::errors::finish_error(st)?;
+            crate::errors::error(
+                st,
+                (
+                    "Extra alignment tab has been changed to ",
+                    crate::output::Esc("cr"),
+                ),
+                &[
+                    r"You have given more \span or & marks than there were",
+                    r"in the preamble to the \halign or \valign now in progress.",
+                    r"So I'll assume that you meant to type \cr instead.",
+                ],
+            )?;
         }
     }
     if st.mem[cur_align].extra_info != SPAN_CODE {

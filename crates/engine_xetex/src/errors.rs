@@ -5,8 +5,8 @@ use crate::consts::{HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, MEM_TOP};
 use crate::output::{
     append_to_diagnostic, begin_diagnostic, capture_to_diagnostic,
     diagnostic_begin_capture_warning_here, end_diagnostic, error_here_with_diagnostic, print,
-    print_char, print_cmd_chr, print_err, print_in_mode, print_int, print_ln, print_nl, show_box,
-    show_context, show_token_list, token_show, TexPrint,
+    print_char, print_err, print_int, print_ln, print_nl, show_box, show_context, show_token_list,
+    token_show, CmdChr, InMode, TexPrint,
 };
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, EqtbState, ErrorState, InteractionMode, Selector};
@@ -51,6 +51,8 @@ fn post_error_message(st: &mut EngineState, need_to_print_it: bool) {
     output_flush(st.shipout.rust_stdout);
 }
 
+/// TeX's `error`, after the message is printed: the context, the help, and
+/// the stop on `--halt-on-error` or the hundredth error.
 pub(crate) fn finish_error(st: &mut EngineState) -> Result<(), Abort> {
     if st.errors.history < HISTORY_ERROR_ISSUED {
         st.errors.history = HISTORY_ERROR_ISSUED;
@@ -124,6 +126,8 @@ pub(crate) enum Abort {
     NestOverflow,
     Confusion(&'static str),
     Fatal(&'static str),
+    /// `\dump` inside a group, which TeX reports and then succumbs to.
+    DumpInGroup,
     /// `pdf_error(t, p)`.
     PdfError(&'static [&'static str; 2]),
     /// `error` with `\haltonerror` set.
@@ -241,6 +245,12 @@ impl Abort {
                 set_error_message("halted on confusion()");
             }
             Abort::Fatal(s) => Self::fatal_report(st, s),
+            Abort::DumpInGroup => {
+                print_err(st, "You can't dump inside a group");
+                st.errors.help(&[r"`{...\dump}' is a no-no."]);
+                post_error_message(st, true);
+                set_error_message("\\dump inside a group");
+            }
             Abort::NoLegalEnd { open_log } => {
                 if open_log {
                     let _ = crate::io::open_log_file(st);
@@ -273,13 +283,6 @@ impl Abort {
     }
 }
 
-pub(crate) fn int_error(st: &mut EngineState, n: i32) -> Result<(), Abort> {
-    print(st, " (");
-    print_int(st, n);
-    print_char(st, b')');
-    finish_error(st)
-}
-
 pub(crate) fn not_font_error_common(
     st: &mut EngineState,
     cmd: Cmd,
@@ -287,13 +290,12 @@ pub(crate) fn not_font_error_common(
     f: FontId,
     suffix: &str,
 ) -> Result<(), Abort> {
-    error_here_with_diagnostic(st, "Cannot use ");
-    print_cmd_chr(st, cmd, c);
-    print(st, " with ");
-    print(st, st.fonts.font_name[f]);
-    print(st, suffix);
-    capture_to_diagnostic(st, None);
-    finish_error(st)
+    let font = st.fonts.font_name[f];
+    error(
+        st,
+        ("Cannot use ", CmdChr(cmd, c), " with ", font, suffix),
+        &[],
+    )
 }
 
 pub(crate) fn give_err_help(st: &mut EngineState) {
@@ -319,7 +321,8 @@ pub(crate) fn back_error(
 ) -> Result<(), Abort> {
     print_err(st, message);
     st.errors.help(help);
-    crate::input::back_finish_error(st)
+    crate::input::back_input(st)?;
+    finish_error(st)
 }
 
 /// [`back_error`], marking the token as inserted rather than read.
@@ -330,7 +333,11 @@ pub(crate) fn ins_error(
 ) -> Result<(), Abort> {
     print_err(st, message);
     st.errors.help(help);
-    crate::input::ins_finish_error(st)
+    crate::input::back_input(st)?;
+    st.input
+        .cur_input
+        .set_token_type(crate::input::TokenType::Inserted);
+    finish_error(st)
 }
 
 pub(crate) fn mu_error(st: &mut EngineState) -> Result<(), Abort> {
@@ -358,22 +365,26 @@ pub(crate) fn extra_right_brace(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-pub(crate) fn you_cant(st: &mut EngineState) {
-    error_here_with_diagnostic(st, "You can't use `");
-    print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
-    print_in_mode(st, i32::from(st.input.cur_list.mode));
-    capture_to_diagnostic(st, None);
+/// "You can't use `<current command>' in <mode>".
+pub(crate) fn you_cant(st: &EngineState) -> impl TexPrint {
+    (
+        "You can't use `",
+        CmdChr(st.scanner.cur_cmd, st.scanner.cur_chr),
+        InMode(i32::from(st.input.cur_list.mode)),
+    )
 }
 
 pub(crate) fn report_illegal_case(st: &mut EngineState) -> Result<(), Abort> {
-    you_cant(st);
-    st.errors.help(&[
-        "Sorry, but I'm not programmed to handle this case;",
-        "I'll just pretend that you didn't ask for it.",
-        "If you're in the wrong mode, you might be able to",
-        r"return to the right one by typing `I}' or `I$' or `I\par'.",
-    ]);
-    finish_error(st)
+    error(
+        st,
+        you_cant(st),
+        &[
+            "Sorry, but I'm not programmed to handle this case;",
+            "I'll just pretend that you didn't ask for it.",
+            "If you're in the wrong mode, you might be able to",
+            r"return to the right one by typing `I}' or `I$' or `I\par'.",
+        ],
+    )
 }
 
 pub(crate) fn privileged(st: &mut EngineState) -> Result<bool, Abort> {
@@ -392,9 +403,15 @@ pub(crate) fn cs_error(st: &mut EngineState) -> Result<(), Abort> {
     )
 }
 
-pub(crate) fn box_error(st: &mut EngineState, n: u8) -> Result<(), Abort> {
+/// [`error`], then show and discard box register `n`.
+pub(crate) fn box_error(
+    st: &mut EngineState,
+    n: u8,
+    message: impl TexPrint,
+    help: &[&'static str],
+) -> Result<(), Abort> {
     let box_val = st.eqtb.box_reg(i32::from(n));
-    finish_error(st)?;
+    error(st, message, help)?;
     begin_diagnostic(st);
     diagnostic_begin_capture_warning_here(st);
     print_nl(st, "The following box has been deleted:");

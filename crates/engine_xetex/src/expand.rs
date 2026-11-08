@@ -9,15 +9,14 @@ use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_USV, END_WRITE, FROZEN_DONT_EXPAND, FROZEN_ENDV,
     FROZEN_PRIMITIVE, HMODE, MMODE, NULL_CS, NULL_FONT, SINGLE_BASE, TOO_BIG_USV, VMODE,
 };
-use crate::errors::{finish_error, Abort};
+use crate::errors::Abort;
 use crate::fonts::{Side, AAT_FONT_FLAG, OTGR_FONT_FLAG};
-use crate::input::{back_finish_error, back_input, begin_token_list, TokenType, TOKEN_LIST};
+use crate::input::{back_input, begin_token_list, TokenType, TOKEN_LIST};
 use crate::mem::{BACKUP_HEAD, GARBAGE, TEMP_HEAD_TOKS, ZERO_GLUE};
 use crate::node::{link_of, AnyNode, CondNode, GlueKind, KernSubtype, NodePtr, SaLeaf};
 use crate::output::{
     begin_diagnostic, capture_to_diagnostic, diagnostic_begin_capture_warning_here, end_diagnostic,
-    error_here_with_diagnostic, print, print_char, print_cmd_chr, print_esc, print_int,
-    print_scaled, show_cur_cmd_chr, sprint_cs,
+    print, print_char, print_int, print_scaled, show_cur_cmd_chr, sprint_cs,
 };
 use crate::params::{GluePar, IntPar};
 use crate::scan::{
@@ -842,15 +841,17 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                         st.scanner.cur_chr += IfCode::UNLESS;
                         continue 'reswitch;
                     }
-                    error_here_with_diagnostic(st, "You can't use `");
-                    print_esc(st, "unless");
-                    print(st, "' before `");
-                    print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
-                    print_char(st, i32::from(b'\''));
-                    capture_to_diagnostic(st, None);
-                    st.errors
-                        .help(&["Continue, and I'll forget that it ever happened."]);
-                    back_finish_error(st)?;
+                    crate::errors::back_error(
+                        st,
+                        (
+                            "You can't use `",
+                            crate::output::Esc("unless"),
+                            "' before `",
+                            crate::output::CmdChr(st.scanner.cur_cmd, st.scanner.cur_chr),
+                            '\'',
+                        ),
+                        &["Continue, and I'll forget that it ever happened."],
+                    )?;
                 }
             }
             Command::NoExpand { primitive } => {
@@ -975,16 +976,19 @@ fn runaway_par_in_argument(
 ) -> Result<(), Abort> {
     if st.scanner.long_state == Cmd::Call {
         crate::errors::runaway(st);
-        error_here_with_diagnostic(st, "Paragraph ended before ");
-        sprint_cs(st, st.scanner.warning_index);
-        print(st, " was complete");
-        capture_to_diagnostic(st, None);
-        st.errors.help(&[
-            "I suspect you've forgotten a `}', causing me to apply this",
-            "control sequence to too much text. How can we recover?",
-            "My plan is to forget the whole thing and hope for the best.",
-        ]);
-        back_finish_error(st)?;
+        crate::errors::back_error(
+            st,
+            (
+                "Paragraph ended before ",
+                crate::output::CsName(st.scanner.warning_index),
+                " was complete",
+            ),
+            &[
+                "I suspect you've forgotten a `}', causing me to apply this",
+                "control sequence to too much text. How can we recover?",
+                "My plan is to forget the whole thing and hope for the best.",
+            ],
+        )?;
     }
     pstack[n as usize] = TEMP_HEAD_TOKS.link(&st.mem);
     st.scanner.align_state -= unbalance;
@@ -997,22 +1001,25 @@ fn runaway_par_in_argument(
 #[cold]
 fn extra_right_brace_in_argument(st: &mut EngineState) -> Result<(), Abort> {
     back_input(st)?;
-    error_here_with_diagnostic(st, "Argument of ");
-    sprint_cs(st, st.scanner.warning_index);
-    print(st, " has an extra }");
-    capture_to_diagnostic(st, None);
-    st.errors.help(&[
-        "I've run across a `}' that doesn't seem to match anything.",
-        r"For example, `\def\a#1{...}' and `\a}' would produce",
-        r"this error. If you simply proceed now, the `\par' that",
-        "I've just inserted will cause me to report a runaway",
-        "argument that might be the root of the problem. But if",
-        "your `}' was spurious, just type `2' and it will go away.",
-    ]);
     st.scanner.align_state += 1;
     st.scanner.long_state = Cmd::Call;
     st.scanner.cur_tok = st.input.par_token;
-    crate::input::ins_finish_error(st)
+    crate::errors::ins_error(
+        st,
+        (
+            "Argument of ",
+            crate::output::CsName(st.scanner.warning_index),
+            " has an extra }",
+        ),
+        &[
+            "I've run across a `}' that doesn't seem to match anything.",
+            r"For example, `\def\a#1{...}' and `\a}' would produce",
+            r"this error. If you simply proceed now, the `\par' that",
+            "I've just inserted will cause me to report a runaway",
+            "argument that might be the root of the problem. But if",
+            "your `}' was spurious, just type `2' and it will go away.",
+        ],
+    )
 }
 
 #[cold]
@@ -1130,17 +1137,20 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
 
                     if s != r {
                         if s.is_null() {
-                            error_here_with_diagnostic(st, "Use of ");
-                            sprint_cs(st, st.scanner.warning_index);
-                            print(st, " doesn't match its definition");
-                            capture_to_diagnostic(st, None);
-                            st.errors.help(&[
-                                r"If you say, e.g., `\def\a1{...}', then you must always",
-                                r"put `1' after `\a', since control sequence names are",
-                                "made up of letters only. The macro here has not been",
-                                "followed by the required stuff, so I'm ignoring it.",
-                            ]);
-                            finish_error(st)?;
+                            crate::errors::error(
+                                st,
+                                (
+                                    "Use of ",
+                                    crate::output::CsName(st.scanner.warning_index),
+                                    " doesn't match its definition",
+                                ),
+                                &[
+                                    r"If you say, e.g., `\def\a1{...}', then you must always",
+                                    r"put `1' after `\a', since control sequence names are",
+                                    "made up of letters only. The macro here has not been",
+                                    "followed by the required stuff, so I'm ignoring it.",
+                                ],
+                            )?;
                             break 'exit;
                         }
                         // Contribute the partly matched delimiter to the argument.

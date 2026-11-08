@@ -4,14 +4,12 @@ use crate::bridge::output_flush;
 use crate::cmd::Cmd;
 use crate::codes::{ScannerStatus, TheCode, ValueLevel};
 use crate::consts::{ACTIVE_BASE, CLOSED, JUST_OPEN, NORMAL, TEX_NULL};
-use crate::errors::{finish_error, Abort};
+use crate::errors::Abort;
 use crate::expand::expand;
-use crate::input::{back_finish_error, NEW_LINE};
+use crate::input::NEW_LINE;
 use crate::mem::{TEMP_HEAD, TEMP_HEAD_TOKS};
 use crate::node::{NodePtr, PseudoLineNode};
-use crate::output::{
-    capture_to_diagnostic, error_here_with_diagnostic, print, print_err, print_esc, print_int,
-};
+use crate::output::{print, print_int};
 use crate::overlay::PseudoWord;
 use crate::params::IntPar;
 use crate::state::{EngineState, MemState, Selector};
@@ -135,13 +133,13 @@ pub(crate) fn read_toks(
                 close_read_file(st, m)?;
                 if st.scanner.align_state != 1_000_000 {
                     crate::errors::runaway(st);
-                    error_here_with_diagnostic(st, "File ended within ");
-                    print_esc(st, "read");
-                    capture_to_diagnostic(st, None);
-                    st.errors.help(&[r"This \read has unbalanced braces."]);
                     st.scanner.align_state = 1_000_000;
                     st.input.cur_input.limit = BufPos::ZERO;
-                    finish_error(st)?;
+                    crate::errors::error(
+                        st,
+                        ("File ended within ", crate::output::Esc("read")),
+                        &[r"This \read has unbalanced braces."],
+                    )?;
                 }
             }
         }
@@ -329,12 +327,14 @@ pub(crate) fn scan_toks(
                     }
                     t = Token(t.0 + 1);
                     if st.scanner.cur_tok != t {
-                        error_here_with_diagnostic(st, "Parameters must be numbered consecutively");
-                        st.errors.help(&[
-                            "I've inserted the digit you should have used after the #.",
-                            "Type `1' to delete what you did use.",
-                        ]);
-                        back_finish_error(st)?;
+                        crate::errors::back_error(
+                            st,
+                            "Parameters must be numbered consecutively",
+                            &[
+                                "I've inserted the digit you should have used after the #.",
+                                "Type `1' to delete what you did use.",
+                            ],
+                        )?;
                     }
                     st.scanner.cur_tok = s;
                 }
@@ -343,13 +343,15 @@ pub(crate) fn scan_toks(
             if !ended_with_brace {
                 store_new_token(st, &mut p, Token::END_MATCH)?;
                 if st.scanner.cur_cmd == Cmd::RightBrace {
-                    print_err(st, "Missing { inserted");
                     st.scanner.align_state += 1;
-                    st.errors.help(&[
-                        r"Where was the left brace? You said something like `\def\a}',",
-                        r"which I'm going to interpret as `\def\a{}'.",
-                    ]);
-                    finish_error(st)?;
+                    crate::errors::error(
+                        st,
+                        "Missing { inserted",
+                        &[
+                            r"Where was the left brace? You said something like `\def\a}',",
+                            r"which I'm going to interpret as `\def\a{}'.",
+                        ],
+                    )?;
                     break 'found;
                 }
             }
@@ -409,18 +411,18 @@ pub(crate) fn scan_toks(
                 }
                 if st.scanner.cur_cmd != Cmd::MacParam {
                     if st.scanner.cur_tok <= ZERO_TOKEN || st.scanner.cur_tok > t {
-                        error_here_with_diagnostic(
+                        crate::errors::back_error(
                             st,
-                            "Illegal parameter number in definition of ",
-                        );
-                        crate::output::sprint_cs(st, st.scanner.warning_index);
-                        capture_to_diagnostic(st, None);
-                        st.errors.help(&[
-                            "You meant to type ## instead of #, right?",
-                            "Or maybe a } was forgotten somewhere earlier, and things",
-                            "are all screwed up? I'm going to assume that you meant ##.",
-                        ]);
-                        back_finish_error(st)?;
+                            (
+                                "Illegal parameter number in definition of ",
+                                crate::output::CsName(st.scanner.warning_index),
+                            ),
+                            &[
+                                "You meant to type ## instead of #, right?",
+                                "Or maybe a } was forgotten somewhere earlier, and things",
+                                "are all screwed up? I'm going to assume that you meant ##.",
+                            ],
+                        )?;
                         st.scanner.cur_tok = s;
                     } else {
                         st.scanner.cur_tok = Token::out_param(st.scanner.cur_chr - i32::from(b'0'));

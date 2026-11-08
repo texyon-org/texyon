@@ -3,7 +3,7 @@
 use crate::bridge::issue_warning;
 use crate::cmd::Cmd;
 use crate::codes::FiOrElseCode;
-use crate::errors::{finish_error, Abort};
+use crate::errors::Abort;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::TOKEN_LIST;
 use crate::params::IntPar;
@@ -14,8 +14,8 @@ use super::cmd_chr::print_cmd_chr;
 use super::show::show_context;
 use super::{
     begin_diagnostic, capture_to_diagnostic, diagnostic_begin_capture_warning_here, end_diagnostic,
-    note_warning_issued, print, print_char, print_code, print_error_prefix, print_esc, print_group,
-    print_hex, print_int, print_ln, print_name_of_file, print_nl, print_raw_bytes, print_ucs_code,
+    note_warning_issued, print, print_code, print_esc, print_group, print_hex, print_int, print_ln,
+    print_name_of_file, print_nl, print_raw_bytes, print_ucs_code, TexPrint,
 };
 
 /// Walks `base_ptr` down to the file at input level `level`, reporting whether it is a real file.
@@ -206,6 +206,27 @@ pub(crate) fn bad_utf8_warning(st: &mut EngineState) {
     end_diagnostic(st, false);
 }
 
+/// "<char> (<code>) in font <name>", the character a font lacks.
+#[derive(Copy, Clone)]
+struct LostChar {
+    font: FontId,
+    c: i32,
+}
+
+impl TexPrint for LostChar {
+    fn print_to(&self, st: &mut EngineState) {
+        print_code(st, self.c);
+        print(st, " (");
+        let area = st.fonts.font_area[self.font];
+        if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
+            print_ucs_code(st, self.c);
+        } else {
+            print_hex(st, self.c);
+        }
+        print(st, (')', " in font ", st.fonts.font_name[self.font]));
+    }
+}
+
 pub(crate) fn char_warning(st: &mut EngineState, f: FontId, c: i32) -> Result<(), Abort> {
     let tracing_lost = st.eqtb.int_par(IntPar::TracingLostChars);
     if tracing_lost > 0 {
@@ -213,33 +234,16 @@ pub(crate) fn char_warning(st: &mut EngineState, f: FontId, c: i32) -> Result<()
         if tracing_lost > 1 {
             st.eqtb.set_int_par(IntPar::TracingOnline, 1);
         }
+        let lost = LostChar { font: f, c };
         if tracing_lost > 2 {
-            print_error_prefix(st);
-            print(st, "Missing character: There is no ");
+            st.eqtb.set_int_par(IntPar::TracingOnline, old_setting);
+            crate::errors::error(st, ("Missing character: There is no ", lost), &[])?;
         } else {
             begin_diagnostic(st);
             diagnostic_begin_capture_warning_here(st);
             print_nl(st, "Missing character: There is no ");
-        }
-        print_code(st, c);
-        print(st, " (");
-        let area = st.fonts.font_area[f];
-        if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
-            print_ucs_code(st, c);
-        } else {
-            print_hex(st, c);
-        }
-        print_char(st, b')');
-        print(st, " in font ");
-        print(st, st.fonts.font_name[f]);
-        if tracing_lost < 3 {
-            print_char(st, b'!');
-        }
-        st.eqtb.set_int_par(IntPar::TracingOnline, old_setting);
-        if tracing_lost > 2 {
-            st.errors.help(&[]);
-            finish_error(st)?;
-        } else {
+            print(st, (lost, '!'));
+            st.eqtb.set_int_par(IntPar::TracingOnline, old_setting);
             capture_to_diagnostic(st, None);
             end_diagnostic(st, false);
         }

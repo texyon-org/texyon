@@ -63,17 +63,18 @@ fn scan_delimiter(
     };
 
     if v < 0 {
-        crate::output::print_error_prefix(st);
-        crate::output::print(st, "Missing delimiter (. inserted)");
-        st.errors.help(&[
-            r"I was expecting to see something like `(' or `\{' or",
-            r"`\}' here. If you typed, e.g., `{' instead of `\{', you",
-            "should probably delete the `{' by typing `1' now, so that",
-            "braces don't get unbalanced. Otherwise just proceed.",
-            r"Acceptable delimiters are characters whose \delcode is",
-            r"nonnegative, or you can use `\delimiter <delimiter code>'.",
-        ]);
-        crate::input::back_finish_error(st)?;
+        crate::errors::back_error(
+            st,
+            "Missing delimiter (. inserted)",
+            &[
+                r"I was expecting to see something like `(' or `\{' or",
+                r"`\}' here. If you typed, e.g., `{' instead of `\{', you",
+                "should probably delete the `{' by typing `1' now, so that",
+                "braces don't get unbalanced. Otherwise just proceed.",
+                r"Acceptable delimiters are characters whose \delcode is",
+                r"nonnegative, or you can use `\delimiter <delimiter code>'.",
+            ],
+        )?;
         v = 0;
     }
 
@@ -312,20 +313,17 @@ pub(crate) fn sub_sup(st: &mut EngineState) -> Result<(), Abort> {
     let cmd = st.scanner.cur_cmd;
     let (p, duplicate) = st.input.cur_list.prepare_sub_sup(&mut st.mem, cmd)?;
     if let Some(duplicate) = duplicate {
-        match duplicate {
-            ScriptDuplication::Superscript => {
-                crate::output::error_here_with_diagnostic(st, "Double superscript");
-                st.errors
-                    .help(&["I treat `x^1^2' essentially like `x^1{}^2'."]);
-            }
-            ScriptDuplication::Subscript => {
-                crate::output::error_here_with_diagnostic(st, "Double subscript");
-                st.errors
-                    .help(&["I treat `x_1_2' essentially like `x_1{}_2'."]);
-            }
-        }
-        crate::output::capture_to_diagnostic(st, None);
-        crate::errors::finish_error(st)?;
+        let (message, help) = match duplicate {
+            ScriptDuplication::Superscript => (
+                "Double superscript",
+                "I treat `x^1^2' essentially like `x^1{}^2'.",
+            ),
+            ScriptDuplication::Subscript => (
+                "Double subscript",
+                "I treat `x_1_2' essentially like `x_1{}_2'.",
+            ),
+        };
+        crate::errors::error(st, message, &[help])?;
     }
     crate::scan::scan_math(st, p)
 }
@@ -369,14 +367,15 @@ pub(crate) fn math_fraction(st: &mut EngineState, code: AboveCode) -> Result<(),
             crate::scan::scan_dimen(st, false, false)?;
         }
 
-        crate::output::print_error_prefix(st);
-        crate::output::print(st, "Ambiguous; you need another { and }");
-        st.errors.help(&[
-            "I'm ignoring this fraction specification, since I don't",
-            r"know whether a construction like `x \over y \over z'",
-            r"means `{x \over y} \over z' or `x \over {y \over z}'.",
-        ]);
-        crate::errors::finish_error(st)?;
+        crate::errors::error(
+            st,
+            "Ambiguous; you need another { and }",
+            &[
+                "I'm ignoring this fraction specification, since I don't",
+                r"know whether a construction like `x \over y \over z'",
+                r"means `{x \over y} \over z' or `x \over {y \over z}'.",
+            ],
+        )?;
     } else {
         let aux = st.input.cur_list.start_fraction_noad(&mut st.mem)?;
 
@@ -455,18 +454,18 @@ pub(crate) fn math_left_right(st: &mut EngineState, code: LeftRightCode) -> Resu
     if code != LeftRightCode::Left && st.save_stack.cur_group != GroupCode::MathLeft {
         if st.save_stack.cur_group == GroupCode::MathShift {
             scan_delimiter(st, NodePtr::at(GARBAGE), None)?;
-            crate::output::error_here_with_diagnostic(st, "Extra ");
-            if code == LeftRightCode::Middle {
-                crate::output::print_esc(st, "middle");
-                st.errors
-                    .help(&[r"I'm ignoring a \middle that had no matching \left."]);
+            let (name, help) = if code == LeftRightCode::Middle {
+                (
+                    "middle",
+                    r"I'm ignoring a \middle that had no matching \left.",
+                )
             } else {
-                crate::output::print_esc(st, "right");
-                st.errors
-                    .help(&[r"I'm ignoring a \right that had no matching \left."]);
-            }
-            crate::output::capture_to_diagnostic(st, None);
-            crate::errors::finish_error(st)?;
+                (
+                    "right",
+                    r"I'm ignoring a \right that had no matching \left.",
+                )
+            };
+            crate::errors::error(st, ("Extra ", crate::output::Esc(name)), &[help])?;
         } else {
             crate::main_control::off_save(st)?;
         }

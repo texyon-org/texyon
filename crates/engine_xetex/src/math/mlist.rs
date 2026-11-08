@@ -249,23 +249,23 @@ impl MemState {
 pub(super) fn fetch(st: &mut EngineState, a: NodePtr<MathField>) -> Result<(), Abort> {
     match st.mem.fetch(&st.fonts, &st.eqtb, &mut st.scanner, a) {
         FetchOutcome::Ok => Ok(()),
-        FetchOutcome::UndefinedFont { size, fam, c } => {
-            crate::output::error_here_with_diagnostic(st, "");
-            crate::output::print_size(st, size);
-            crate::output::print_char(st, i32::from(b' '));
-            crate::output::print_int(st, fam);
-            crate::output::print(st, " is undefined (character ");
-            crate::output::print(st, crate::units::StrNumber::single_char(c));
-            crate::output::print_char(st, i32::from(b')'));
-            crate::output::capture_to_diagnostic(st, None);
-            st.errors.help(&[
+        FetchOutcome::UndefinedFont { size, fam, c } => crate::errors::error(
+            st,
+            (
+                crate::output::FamFont(size),
+                ' ',
+                fam,
+                " is undefined (character ",
+                crate::units::StrNumber::single_char(c),
+                ')',
+            ),
+            &[
                 "Somewhere in the math formula just ended, you used the",
                 "stated character from an undefined font family. For example,",
                 r"plain TeX doesn't allow \it or \sl in subscripts. Proceed,",
                 "and I'll try to forget that I needed that character.",
-            ]);
-            crate::errors::finish_error(st)
-        }
+            ],
+        ),
         FetchOutcome::CharMissing { f, c } => crate::output::char_warning(st, f, c),
     }
 }

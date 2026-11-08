@@ -160,17 +160,6 @@ pub(crate) fn back_input(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-pub(crate) fn back_finish_error(st: &mut EngineState) -> Result<(), Abort> {
-    back_input(st)?;
-    crate::errors::finish_error(st)
-}
-
-pub(crate) fn ins_finish_error(st: &mut EngineState) -> Result<(), Abort> {
-    back_input(st)?;
-    st.input.cur_input.set_token_type(TokenType::Inserted);
-    crate::errors::finish_error(st)
-}
-
 impl MemState {
     pub(crate) fn pseudo_close(&mut self, input: &mut InputClusterState) {
         let file = input.pseudo_files;
