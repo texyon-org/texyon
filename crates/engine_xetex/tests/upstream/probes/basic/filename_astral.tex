@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\immediate\openout3=a😀b.tex
+\immediate\write3{\message{from a😀b}}
+\immediate\closeout3
+\input a😀b.tex
+\immediate\openout3="q😀 r.tex"
+\immediate\write3{\message{quoted}}
+\immediate\closeout3
+\input "q😀 r.tex"
+\input {q😀 r.tex}
+\bye

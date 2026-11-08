@@ -987,6 +987,7 @@ pub(crate) fn scan_file_name_braced(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.cur_cs = save_cur_cs;
     st.scanner.scanner_status = save_scanner_status;
 
+    st.scanner.stop_at_space = false;
     begin_name(st);
     for i in st.strings.str_range(s) {
         let c = st.strings.str_pool[i];
