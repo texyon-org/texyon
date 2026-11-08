@@ -18,10 +18,10 @@ use crate::mem::{
     SS_GLUE, TEMP_HEAD_TOKS, ZERO_GLUE,
 };
 use crate::mem_types::ListStateRecord;
-use crate::node::KernSubtype;
 use crate::node::{
-    AdjustNode, AnyNode, CharNode, DiscNode, GlueNode, GlueSpecNode, InsNode, LanguageNode,
-    MarkNode, MathField, NativeWordNode, NoadVariant, NodePtr, WhatsitSubtype, WhatsitVariant,
+    AdjustNode, AdjustPlacement, AnyNode, CharNode, DiscNode, GlueNode, GlueSpecNode, InsNode,
+    KernSubtype, LanguageNode, MarkNode, MathField, NativeWordNode, NoadVariant, NodePtr,
+    WhatsitSubtype, WhatsitVariant,
 };
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
@@ -372,8 +372,12 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             } else {
                 let adj = NodePtr::<AdjustNode>::alloc(&mut st.mem)?;
                 st.input.cur_list.tail_append(&mut st.mem, adj.ptr());
-                let pre = st.save_stack.saved(1);
-                st.mem[adj].subtype = pre as u16;
+                st.mem[adj].placement = if st.save_stack.saved(1) != 0 {
+                    AdjustPlacement::Pre
+                } else {
+                    AdjustPlacement::Post
+                }
+                .into();
                 let list = st.mem[p].list_ptr;
                 st.mem[adj].adjust_ptr = list;
                 st.mem.delete_glue_ref(split_top_skip);

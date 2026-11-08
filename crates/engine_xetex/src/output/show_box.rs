@@ -6,10 +6,9 @@ use crate::consts::{
 };
 use crate::math::{DEFAULT_CODE, LIMITS};
 use crate::mem::ZERO_GLUE;
-use crate::node::KernSubtype;
 use crate::node::{
-    AnyNoad, AnyNode, BoxNode, CharNode, MathField, NoadVariant, NodePtr, WhatsitNode,
-    WhatsitSubtype, WhatsitVariant,
+    AdjustPlacement, AnyNoad, AnyNode, BoxNode, CharNode, KernSubtype, MathField, NoadVariant,
+    NodePtr, WhatsitNode, WhatsitSubtype, WhatsitVariant,
 };
 use crate::params::IntPar;
 use crate::state::EngineState;
@@ -311,7 +310,7 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
                 }
                 Ok(AnyNode::Adjust(node)) => {
                     print_esc(st, "vadjust");
-                    if st.mem[node].subtype != 0 {
+                    if st.mem[node].placement == AdjustPlacement::Pre {
                         print(st, " pre ");
                     }
                     node_list_display(st, b'.', st.mem[node].adjust_ptr);

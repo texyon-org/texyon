@@ -5,8 +5,10 @@ use crate::consts::{A_LEADERS, BEFORE, IGNORE_DEPTH, NULL_FONT, SMALL_NODE_SIZE}
 use crate::errors::Abort;
 use crate::mem::{end_lr_type, GARBAGE};
 use crate::mem_types::ListStateRecord;
-use crate::node::KernSubtype;
-use crate::node::{AnyNode, BoxNode, CharNode, NativeWordNode, NodePtr, RuleDimen, WhatsitVariant};
+use crate::node::{
+    AdjustPlacement, AnyNode, BoxNode, CharNode, KernSubtype, NativeWordNode, NodePtr, RuleDimen,
+    WhatsitVariant,
+};
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, FontState, MemState, ScannerState, ShipoutState};
 use crate::units::{GlueOrder, GlueSign, MemPtr, NodeType, OrderTotals, Orientation, Scaled};
@@ -294,7 +296,7 @@ impl MemState {
                     if !scanner.adjust_tail.is_null() || !scanner.pre_adjust_tail.is_null() {
                         q = self.predecessor(q, p);
                         let adjust_list = self[adjust].adjust_ptr;
-                        let tail = if self[adjust].subtype != 0 {
+                        let tail = if self[adjust].placement == AdjustPlacement::Pre {
                             &mut scanner.pre_adjust_tail
                         } else {
                             &mut scanner.adjust_tail

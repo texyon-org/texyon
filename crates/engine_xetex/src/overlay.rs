@@ -9,14 +9,14 @@ use bytemuck::{Pod, Zeroable};
 use crate::codes::{FiOrElseCode, MarkCode, ValueLevel};
 use crate::consts::{EMPTY, NORMAL};
 use crate::node::{
-    AccentNoad, ActiveNode, AdjustNode, AlignRecord, AlignStackNode, AnyNoad, BoxNode, CharNode,
-    ChoiceNode, CondNode, DelimiterField, DeltaNode, DiscNode, EdgeNode, ExprNode, FenceNoad,
-    FixedNode, FractionNoad, FreeBlock, GlueNode, GlueSpecNode, GlyphNode, InsNode, KernNode,
-    KernSubtype, LanguageNode, LigItem, LigatureNode, Link, MarginKernNode, MarkNode, MathField,
-    MathNode, MovementNode, NativeWordNode, Noad, NodeKind, NodePtr, OpenNode, PageInsNode,
-    ParShapeNode, PassiveNode, PenaltiesNode, PenaltyNode, PicNode, PseudoLineNode, RadicalNoad,
-    RuleNode, SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved,
-    SaSavedPointer, SaSavedWord, SaWordNode, SizedWhatsit, SpanNode, Stored, StoredDimen,
+    AccentNoad, ActiveNode, AdjustNode, AdjustPlacement, AlignRecord, AlignStackNode, AnyNoad,
+    BoxNode, CharNode, ChoiceNode, CondNode, DelimiterField, DeltaNode, DiscNode, EdgeNode,
+    ExprNode, FenceNoad, FixedNode, FractionNoad, FreeBlock, GlueNode, GlueSpecNode, GlyphNode,
+    InsNode, KernNode, KernSubtype, LanguageNode, LigItem, LigatureNode, Link, MarginKernNode,
+    MarkNode, MathField, MathNode, MovementNode, NativeWordNode, Noad, NodeKind, NodePtr, OpenNode,
+    PageInsNode, ParShapeNode, PassiveNode, PenaltiesNode, PenaltyNode, PicNode, PseudoLineNode,
+    RadicalNoad, RuleNode, SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode,
+    SaSaved, SaSavedPointer, SaSavedWord, SaWordNode, SizedWhatsit, SpanNode, Stored, StoredDimen,
     StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype, WriteNode,
 };
 use crate::state::MemState;
@@ -506,11 +506,11 @@ pub struct PenaltyLayout {
 
 overlay!(PenaltyNode => PenaltyLayout);
 
-/// A `\vadjust` list, the subtype selects pre or post placement.
+/// A `\vadjust` list.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct AdjustLayout {
-    pub subtype: u16,
+    pub placement: Stored<AdjustPlacement>,
     _type: u16,
     pub link: MemPtr,
     _unused1: i32,

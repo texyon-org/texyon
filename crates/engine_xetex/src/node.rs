@@ -290,6 +290,16 @@ stored_code! {
     }
 }
 
+stored_code! {
+    /// Where a `\vadjust` list goes around the line that holds it.
+    pub enum AdjustPlacement {
+        /// After the line.
+        Post = 0,
+        /// Before the line, `\vadjust pre`.
+        Pre = 1,
+    }
+}
+
 impl StoredCode for GlueSign {
     #[inline]
     fn from_u16(raw: u16) -> Option<Self> {
@@ -405,7 +415,7 @@ node_kinds! {
     RuleNode = Rule, RULE_NODE_SIZE;
     InsNode = Ins, INS_NODE_SIZE;
     MarkNode = Mark, SMALL_NODE_SIZE;
-    /// A `\vadjust` list, the subtype selects pre or post placement.
+    /// A `\vadjust` list.
     AdjustNode = Adjust, SMALL_NODE_SIZE;
     LigatureNode = Ligature, SMALL_NODE_SIZE;
     DiscNode = Disc, SMALL_NODE_SIZE;
@@ -1599,6 +1609,11 @@ mod tests {
         ]);
     }
 
+    #[test]
+    fn adjust_placements_keep_web_codes() {
+        assert_web_codes(&[(AdjustPlacement::Post, 0), (AdjustPlacement::Pre, 1)]);
+    }
+
     /// An arena whose free list is the single block `[10, 30)`.
     fn arena_with_free_block() -> MemState {
         let mut mem = fresh_mem(64);
@@ -1829,6 +1844,8 @@ mod tests {
         let adj: NodePtr<AdjustNode> = at(&mut mem, 100, Some(NodeType::Adjust));
         mem[adj].adjust_ptr = MemPtr::from_raw(88);
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 88);
+        mem[adj].placement = AdjustPlacement::Pre.into();
+        assert_eq!(mem.b16s0(MemPtr::from_raw(100)), 1);
 
         let ins: NodePtr<InsNode> = at(&mut mem, 100, Some(NodeType::Ins));
         mem[ins].ins_ptr = MemPtr::from_raw(55);

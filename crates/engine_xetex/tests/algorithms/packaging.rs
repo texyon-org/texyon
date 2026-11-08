@@ -235,3 +235,29 @@ fn kerns_show_what_made_them() {
         .\mathoff",
     );
 }
+
+#[test]
+fn vadjust_pre_lands_before_the_line() {
+    let r = run(&format!(
+        r"{MATH_FONTS}\hsize=100pt \parindent=0pt \parfillskip=0pt plus 1fil
+          \setbox1\vbox{{x\vadjust{{\hrule height1pt}}\vadjust pre{{\hrule height2pt}}\showlists\par}}
+          \showbox1"
+    ));
+    assert_eq!(
+        r.lines_starting("\\vadjust"),
+        [r"\vadjust", r"\vadjust pre "]
+    );
+    assert_lines(
+        &r.boxes()[0],
+        r"
+        \vbox(7.30554+0.0)x100.0
+        .\rule(2.0+0.0)x*
+        .\hbox(4.30554+0.0)x100.0, glue set 94.7222fil
+        ..\hbox(0.0+0.0)x0.0
+        ..\rm x
+        ..\penalty 10000
+        ..\glue(\parfillskip) 0.0 plus 1.0fil
+        ..\glue(\rightskip) 0.0
+        .\rule(1.0+0.0)x*",
+    );
+}
