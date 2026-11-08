@@ -17,7 +17,8 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::state::MemState;
 use crate::units::{
-    GlueOrder, GlueSign, InvalidNodeType, MemAddr, MemIdx, MemPtr, NodeType, Orientation, Scaled,
+    Dir, GlueOrder, GlueSign, InvalidNodeType, MemAddr, MemIdx, MemPtr, NodeType, Orientation,
+    Scaled,
 };
 
 /// Marker for node kinds, implemented by the uninhabited kind enums below.
@@ -298,6 +299,17 @@ stored_code! {
         Post = 0,
         /// Before the line, `\vadjust pre`.
         Pre = 1,
+    }
+}
+
+impl StoredCode for Dir {
+    #[inline]
+    fn from_u16(raw: u16) -> Option<Self> {
+        Dir::from_code(raw)
+    }
+    #[inline]
+    fn to_u16(self) -> u16 {
+        self.code()
     }
 }
 
@@ -1613,6 +1625,11 @@ mod tests {
     #[test]
     fn adjust_placements_keep_web_codes() {
         assert_web_codes(&[(AdjustPlacement::Post, 0), (AdjustPlacement::Pre, 1)]);
+    }
+
+    #[test]
+    fn edge_directions_keep_web_codes() {
+        assert_web_codes(&[(Dir::Ltr, 0), (Dir::Rtl, 1)]);
     }
 
     /// An arena whose free list is the single block `[10, 30)`.

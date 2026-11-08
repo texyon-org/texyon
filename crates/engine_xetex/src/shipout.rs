@@ -58,7 +58,7 @@ const ONE_INCH_LESS_ONE: Scaled = Scaled::from_raw(ONE_INCH.raw() - 1);
 impl MemState {
     pub fn new_edge(&mut self, dir: Dir, w: Scaled) -> Result<NodePtr<EdgeNode>, Abort> {
         let p = NodePtr::<EdgeNode>::alloc(self)?;
-        self[p].subtype = dir.code();
+        self[p].dir = dir.into();
         self[p].width = w;
         self[p].edge_dist = Scaled::ZERO;
         Ok(p)
@@ -975,8 +975,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
                 let edge = style.as_edge();
                 st.shipout.cur_h += st.mem[edge].width;
                 left_edge = st.shipout.cur_h + st.mem[edge].edge_dist;
-                st.scanner.cur_dir =
-                    Dir::from_code(st.mem[edge].subtype).ok_or(Abort::Confusion("LR"))?;
+                st.scanner.cur_dir = st.mem[edge].dir.get().ok_or(Abort::Confusion("LR"))?;
             }
             _ => {}
         }

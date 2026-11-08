@@ -22,7 +22,9 @@ use crate::node::{
 };
 use crate::state::MemState;
 use crate::token::TokenList;
-use crate::units::{FontId, GlueOrder, GlueSign, MemPtr, NodeType, Orientation, Scaled, StrNumber};
+use crate::units::{
+    Dir, FontId, GlueOrder, GlueSign, MemPtr, NodeType, Orientation, Scaled, StrNumber,
+};
 
 #[cfg(not(target_endian = "little"))]
 compile_error!("node layouts assume little-endian memory words");
@@ -572,11 +574,11 @@ impl StyleLayout {
     }
 }
 
-/// An LR edge in a shipped list. Its subtype is the direction.
+/// An LR edge in a shipped list.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct EdgeLayout {
-    pub subtype: u16,
+    pub dir: Stored<Dir>,
     _type: u16,
     pub link: MemPtr,
     _unused1: i32,
@@ -1431,7 +1433,7 @@ mod tests {
         let at = MemIdx::from_raw;
         let e: NodePtr<EdgeNode> = NodePtr::from_idx_unchecked(at(4));
         let edge = &mut mem[e];
-        edge.subtype = 1;
+        edge.dir = Dir::Rtl.into();
         edge.width = Scaled::from_raw(11);
         edge.edge_dist = Scaled::from_raw(12);
         assert_eq!(mem.b16s0(at(4)), 1);
