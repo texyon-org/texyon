@@ -2,6 +2,7 @@
 //! expectations read back from what they `\show` in the log.
 
 mod arithmetic;
+mod errors;
 mod line_break;
 mod math;
 mod packaging;
@@ -91,6 +92,11 @@ struct Run {
 
 /// Runs `body` after the prelude, then `\end`.
 fn run(body: &str) -> Run {
+    run_with(body, false)
+}
+
+/// Runs `body` like [`run`], stopping at the first error when `halt_on_error` is set.
+fn run_with(body: &str, halt_on_error: bool) -> Run {
     let source = format!("{PRELUDE}{body}\n\\end\n");
     let assets = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/assets");
     let mut fonts = FilesystemIo::new(&assets, false, false, HashSet::new());
@@ -102,7 +108,7 @@ fn run(body: &str) -> Run {
         let mut hooks = MinimalDriver::new(io);
         let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
         let _ = TexEngine::default()
-            .halt_on_error_mode(false)
+            .halt_on_error_mode(halt_on_error)
             .initex_mode(true)
             .deterministic_mode(true)
             .process(&mut launcher, "UNUSED.fmt", "texput.tex");

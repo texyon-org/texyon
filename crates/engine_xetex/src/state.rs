@@ -1480,6 +1480,8 @@ pub(crate) struct ErrorState {
     pub deletions_allowed: bool,
     pub random_seed: i32,
     pub no_shrink_error_yet: bool,
+    /// Set once `--halt-on-error` has started to stop the run.
+    pub halting_on_error: bool,
     pub font_in_short_display: FontId,
     pub depth_threshold: i32,
     pub breadth_max: i32,
@@ -1512,6 +1514,7 @@ impl Default for ErrorState {
             deletions_allowed: false,
             random_seed: 0,
             no_shrink_error_yet: false,
+            halting_on_error: false,
             font_in_short_display: crate::consts::NULL_FONT,
             depth_threshold: 0,
             breadth_max: 0,

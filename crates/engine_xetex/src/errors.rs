@@ -58,6 +58,11 @@ pub(crate) fn error(st: &mut EngineState) -> Result<(), Abort> {
     print_char(st, b'.');
     show_context(st);
     if st.config.halt_on_error_p != 0 {
+        // A second error while halting would print the help again, so stop at once.
+        if !st.errors.halting_on_error {
+            st.errors.halting_on_error = true;
+            put_help_on_transcript(st);
+        }
         st.errors.history = HISTORY_FATAL_ERROR;
         return Err(Abort::HaltOnError);
     }
@@ -69,6 +74,12 @@ pub(crate) fn error(st: &mut EngineState) -> Result<(), Abort> {
         return Err(Abort::HundredErrors);
     }
 
+    put_help_on_transcript(st);
+    Ok(())
+}
+
+/// TeX's "Put help message on the transcript file".
+fn put_help_on_transcript(st: &mut EngineState) {
     if st.errors.interaction > InteractionMode::Batch {
         st.shipout.selector = st.shipout.selector.without_terminal();
     }
@@ -88,7 +99,6 @@ pub(crate) fn error(st: &mut EngineState) -> Result<(), Abort> {
         st.shipout.selector = st.shipout.selector.with_terminal();
     }
     print_ln(st);
-    Ok(())
 }
 
 /// Why a run ends early. Reported once, by [`Abort::into_history`].
