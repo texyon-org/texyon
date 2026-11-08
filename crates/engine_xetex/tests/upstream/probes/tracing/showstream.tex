@@ -1,0 +1,21 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\showthe\showstream
+\immediate\openout3=showstream.out
+\openout4=showstream4.out
+\showstream=3
+\def\a{xy}\show\a
+\showthe\count0
+\setbox0\hbox{x}\showbox0
+\hbox{\showlists}
+\begingroup\showgroups\endgroup
+\iftrue\showifs\fi
+\showtokens{a#b}
+\showstream=4 \show\a
+\showstream=-1 \show\a
+\showstream=16 \show\a
+\immediate\closeout3
+\showstream=3 \show\a
+\endlinechar-1
+\openin1=showstream.out
+\loop \unless\ifeof1 \read1 to\x \message{[\meaning\x]}\repeat
+\bye

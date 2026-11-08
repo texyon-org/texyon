@@ -416,12 +416,14 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
 
     match code {
         ShowCode::Lists => {
+            show_to_stream(st)?;
             begin_diagnostic(st);
             show_activities(st);
         }
         ShowCode::Box => {
             let n = crate::scan::scan_register_num(st)?;
             let contents = crate::scan::fetch_box(st, n);
+            show_to_stream(st)?;
             begin_diagnostic(st);
             print_nl(st, "> \\box");
             print_int(st, n);
@@ -433,6 +435,7 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
         }
         ShowCode::Show => {
             crate::scan::get_token(st)?;
+            show_to_stream(st)?;
             print_nl(st, "> ");
             if !st.scanner.cur_cs.is_none() {
                 sprint_cs(st, st.scanner.cur_cs);
@@ -441,10 +444,12 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
             print_meaning(st);
         }
         ShowCode::Groups => {
+            show_to_stream(st)?;
             begin_diagnostic(st);
             show_save_groups(st);
         }
         ShowCode::Ifs => {
+            show_to_stream(st)?;
             begin_diagnostic(st);
             print_nl(st, "");
             print_ln(st);
@@ -484,6 +489,7 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
                 TheCode::The
             };
             crate::scan::the_toks(st, the)?;
+            show_to_stream(st)?;
             print_nl(st, "> ");
             token_show(st, crate::mem::TEMP_HEAD_TOKS);
             let list = TEMP_HEAD.link(&st.mem);
@@ -509,6 +515,18 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
     }
 
     capture_to_diagnostic(st, None);
+    if st.shipout.selector < Selector::NoPrint {
+        print_ln(st);
+        st.shipout.selector = if st.errors.interaction == InteractionMode::Batch {
+            Selector::NoPrint
+        } else {
+            Selector::TermOnly
+        };
+        if st.errors.log_opened {
+            st.shipout.selector = st.shipout.selector.with_log();
+        }
+        return Ok(());
+    }
     if st.errors.interaction < InteractionMode::ErrorStop {
         st.errors.help(&[]);
         st.errors.error_count -= 1;
@@ -528,6 +546,21 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
         ]);
     }
     error(st)
+}
+
+/// Sends a `\show...` to the `\write` stream `\showstream` names, if that stream is open.
+fn show_to_stream(st: &mut EngineState) -> Result<(), Abort> {
+    let Ok(stream) = u8::try_from(st.eqtb.int_par(IntPar::ShowStream)) else {
+        return Ok(());
+    };
+    let Some(&open) = st.shipout.write_open.get(usize::from(stream)) else {
+        return Ok(());
+    };
+    if open && stream < Selector::NoPrint.raw() {
+        crate::shipout::ensure_write_stream_open(st, usize::from(stream))?;
+        st.shipout.selector = Selector::File(stream);
+    }
+    Ok(())
 }
 
 /// The outer vertical list part of `show_activities`: the current page and its insertions.

@@ -571,6 +571,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
         eqtb.set_int_at(DEL_CODE_BASE + k, -1);
     }
     eqtb.set_int_at(DEL_CODE_BASE + i32::from(b'.'), 0);
+    eqtb.set_int_par(IntPar::ShowStream, -1);
 
     for k in DIMEN_BASE.through(EQTB_SIZE) {
         eqtb.set_int_at(k, 0);

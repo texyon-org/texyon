@@ -152,7 +152,7 @@ fn at_line_start(st: &EngineState) -> bool {
 }
 
 pub(crate) fn print_nl(st: &mut EngineState, s: impl TexStr) {
-    if !at_line_start(st) {
+    if st.shipout.selector < Selector::NoPrint || !at_line_start(st) {
         print_ln(st);
     }
     print(st, s);

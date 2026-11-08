@@ -322,8 +322,7 @@ impl Default for EqtbState {
             data: Vec::new(),
             // PRIM_SIZE + 1 = 2101.
             prim: vec![crate::mem_types::B32x2 { s0: 0, s1: 0 }; 2101],
-            // EQTB_SIZE - INT_BASE + 1.
-            xeq_level: vec![0u16; 1_114_730],
+            xeq_level: vec![0u16; crate::consts::XEQ_LEVEL_SIZE],
             hash: Vec::new(),
             hash_extra: 0,
             eqtb_top: EqtbPtr::NONE,

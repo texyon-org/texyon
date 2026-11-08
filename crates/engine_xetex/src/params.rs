@@ -90,6 +90,7 @@ code_enum! {
         XetexHyphenatableLength = 80,
         Synctex = 81,
         PdfOutput = 82,
+        ShowStream = 83,
     }
 }
 
@@ -177,6 +178,7 @@ impl IntPar {
             IntPar::XetexHyphenatableLength => "XeTeXhyphenatablelength",
             IntPar::Synctex => "synctex",
             IntPar::PdfOutput => "pdfoutput",
+            IntPar::ShowStream => "showstream",
             _ => return None,
         })
     }
