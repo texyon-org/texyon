@@ -453,7 +453,7 @@ enum RegisterValue {
 pub(super) fn do_assignments(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         crate::scan::get_x_non_blank_non_relax(st)?;
-        if st.scanner.cur_cmd <= Cmd::MAX_NON_PREFIXED_COMMAND {
+        if !st.scanner.cur_cmd.is_prefixed() {
             return Ok(());
         }
         st.scanner.set_box_allowed = false;
@@ -575,7 +575,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             a += code.raw();
         }
         crate::scan::get_x_non_blank_non_relax(st)?;
-        if st.scanner.cur_cmd <= Cmd::MAX_NON_PREFIXED_COMMAND {
+        if !st.scanner.cur_cmd.is_prefixed() {
             crate::output::error_here_with_diagnostic(st, "You can't use a prefix with `");
             crate::output::print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
             crate::output::print_char(st, i32::from(b'\''));

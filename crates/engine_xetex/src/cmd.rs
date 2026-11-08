@@ -147,6 +147,8 @@ impl Cmd {
     pub(crate) const MIN_INTERNAL: Cmd = Cmd::CharGiven;
     pub(crate) const MAX_NON_PREFIXED_COMMAND: Cmd = Cmd::LastItem;
     pub(crate) const MAX_INTERNAL: Cmd = Cmd::Register;
+    /// partoken.ch numbers `\partokenname` above it but gives it no prefixed branch.
+    pub(crate) const MAX_PREFIXED_COMMAND: Cmd = Cmd::SetInteraction;
     pub(crate) const MAX_COMMAND: Cmd = Cmd::PartokenName;
 }
 
@@ -231,6 +233,6 @@ impl Cmd {
 
     /// A command that may follow `\global`, `\long` or `\outer`.
     pub(crate) fn is_prefixed(self) -> bool {
-        self > Cmd::MAX_NON_PREFIXED_COMMAND && self <= Cmd::MAX_COMMAND
+        self > Cmd::MAX_NON_PREFIXED_COMMAND && self <= Cmd::MAX_PREFIXED_COMMAND
     }
 }

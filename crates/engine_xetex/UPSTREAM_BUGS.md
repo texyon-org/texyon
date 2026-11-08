@@ -54,15 +54,19 @@ entry names a later TeX Live version.
 - **Fix:** test `(m>first+1)or(buffer[first]>@"FFFF)` before `m=first`, as in `\csname`.
 - **TeXyoN:** looks the name up in the hash (`expand.rs`). Listed in `tests/upstream/known.tsv`.
 
-## 5. A prefix before `\partokenname` is a confusion
+## 5. `\partokenname` after a prefix or `\accent` is a confusion
 
 - **Where:** TeX Live `partoken-102.ch`/`partoken.ch` (TL 2022 on). `partoken_name=103` becomes
   `max_command`, above `max_non_prefixed_command`.
-- **Bug:** `prefixed_command` lets every command above `max_non_prefixed_command` through its
-  "You can't use a prefix with" check, but its case has no `partoken_name` branch, so
-  `\global\partokenname\foo` (or `\long`, `\outer`, `\protected`) ends in `confusion("prefix")`.
-- **Repro:** `\global\partokenname\foo` gives "This can't happen (prefix)" with TeX Live 2025
-  xetex. Probe `errors-partokenname_global`. pdfTeX shares the change file.
-- **Fix:** number `partoken_name` below `max_non_prefixed_command`, or reject it with the prefix
-  error in `prefixed_command`.
-- **TeXyoN:** keeps the upstream behaviour (`Abort::Confusion("prefix")`).
+- **Bug:** `prefixed_command` and `do_assignments` treat every command above
+  `max_non_prefixed_command` as an assignment, but `prefixed_command`'s case has no
+  `partoken_name` branch. So `\global\partokenname\foo` (or `\long`, `\outer`, `\protected`)
+  and `\accent65 \partokenname\foo`, with no prefix, end in `confusion("prefix")`.
+  `do_assignments` also runs after a display alignment.
+- **Repro:** either line gives "This can't happen (prefix)" with TeX Live 2025 xetex. Probe
+  `errors-partokenname_prefix`. pdfTeX shares the change file.
+- **Fix:** test `cur_cmd>max_non_prefixed_command` and `cur_cmd<partoken_name` in both places, or
+  number `partoken_name` below `max_non_prefixed_command`.
+- **TeXyoN:** the first fix (`Cmd::MAX_PREFIXED_COMMAND`). A prefix gets "You can't use a prefix
+  with", and `do_assignments` stops at `\partokenname`, which then runs as usual. Test
+  `partokenname_takes_no_prefix_and_ends_assignments`, listed in `tests/upstream/known.tsv`.
