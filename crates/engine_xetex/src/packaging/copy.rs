@@ -5,6 +5,7 @@ use crate::consts::{
     MIN_HALFWORD, PIC_NODE_SIZE, RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE, SUB_BOX,
 };
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::mem::TEMP_HEAD;
 use crate::node::{
     AnyNode, BoxNode, DiscNode, FixedNode, GlueNode, LanguageNode, NoadVariant, NodeKind, NodePtr,
@@ -244,7 +245,7 @@ impl MemState {
                 continue;
             }
 
-            let size = match self.classify(p).map_err(|_| Abort::Confusion("flushing"))? {
+            let size = match self.classify(p).or_confusion("flushing")? {
                 AnyNode::Box(b) => {
                     self.flush_node_list(self[b].list_ptr)?;
                     BOX_NODE_SIZE
@@ -260,7 +261,7 @@ impl MemState {
                     INS_NODE_SIZE
                 }
                 AnyNode::Whatsit(w) => {
-                    let size = self.whatsit_node_size(w).ok_or(Abort::Confusion("ext3"))?;
+                    let size = self.whatsit_node_size(w).or_confusion("ext3")?;
                     match w.variant(self) {
                         Some(
                             WhatsitVariant::Write(p)
@@ -361,7 +362,7 @@ impl MemState {
     /// Allocate a copy of the non-char node `p`, returning it and how many of its
     /// leading words are still to be copied.
     fn copy_node(&mut self, p: MemPtr) -> Result<(MemPtr, i32), Abort> {
-        let node = self.classify(p).map_err(|_| Abort::Confusion("copying"))?;
+        let node = self.classify(p).or_confusion("copying")?;
         Ok(match node {
             AnyNode::Box(b) => {
                 let list = self.copy_list(self[b].list_ptr)?;

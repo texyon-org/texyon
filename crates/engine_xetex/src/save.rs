@@ -5,6 +5,7 @@ use crate::consts::{
     EQTB_SIZE, INT_BASE, LEVEL_ONE, LEVEL_ZERO, TEX_NULL, UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::mem::ZERO_GLUE;
 use crate::mem_types::MemoryWord;
 use crate::node::{
@@ -59,7 +60,7 @@ impl SaveStackState {
 
     pub(crate) fn new_save_level(&mut self, c: GroupCode, line: i32) -> Result<(), Abort> {
         if self.save_stack_full() {
-            return Err(Abort::SaveOverflow);
+            return Err(self.overflow());
         }
         self.set_saved(0, line);
         self.save_ptr += 1;
@@ -67,7 +68,7 @@ impl SaveStackState {
         self.set_save_entry(SaveType::LevelBoundary, group, boundary.raw());
         if self.cur_level == u16::MAX {
             return Err(Abort::Overflow {
-                what: "grouping levels",
+                capacity: crate::errors::Capacity::GroupingLevels,
                 n: i32::from(u16::MAX),
             });
         }
@@ -80,7 +81,7 @@ impl SaveStackState {
 
     pub(crate) fn eq_save(&mut self, eqtb: &EqtbState, p: EqtbPtr, l: u16) -> Result<(), Abort> {
         if self.save_stack_full() {
-            return Err(Abort::SaveOverflow);
+            return Err(self.overflow());
         }
         let kind = if l == LEVEL_ZERO {
             SaveType::RestoreZero
@@ -97,7 +98,7 @@ impl SaveStackState {
     pub(crate) fn save_for_after(&mut self, t: Token) -> Result<(), Abort> {
         if self.cur_level > LEVEL_ONE {
             if self.save_stack_full() {
-                return Err(Abort::SaveOverflow);
+                return Err(self.overflow());
             }
             self.set_save_entry(SaveType::InsertToken, LEVEL_ZERO, t.0);
             self.save_ptr += 1;
@@ -232,7 +233,7 @@ impl MemState {
         scanner: &mut ScannerState,
         q: NodePtr<SaElement>,
     ) -> Result<(), Abort> {
-        let size = match q.leaf(self).ok_or(Abort::Confusion("sa"))? {
+        let size = match q.leaf(self).or_confusion("sa")? {
             SaLeaf::Word(w) => {
                 let n = &mut self[w];
                 n.sa_ref -= 1;
@@ -274,8 +275,7 @@ impl MemState {
             match up.get() {
                 Some(up) => (slot, parent) = (usize::from(up_slot), up),
                 None => {
-                    let root_type =
-                        ValueLevel::from_raw(i32::from(up_slot)).ok_or(Abort::Confusion("sa"))?;
+                    let root_type = ValueLevel::from_raw(i32::from(up_slot)).or_confusion("sa")?;
                     scanner.sa_root.set(root_type, None);
                     return Ok(());
                 }
@@ -408,7 +408,7 @@ fn start_sa_chain(
 ) -> Result<(), Abort> {
     if save_stack.cur_level != scanner.sa_level {
         if save_stack.save_stack_full() {
-            return Err(Abort::SaveOverflow);
+            return Err(save_stack.overflow());
         }
         save_stack.set_save_entry(
             SaveType::RestoreSa,
@@ -484,10 +484,7 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         st.save_stack.save_ptr -= 1;
         let sp = st.save_stack.save_ptr;
-        let kind = st
-            .save_stack
-            .save_type(sp)
-            .ok_or(Abort::Confusion("save_type"))?;
+        let kind = st.save_stack.save_type(sp).or_confusion("save_type")?;
         match kind {
             SaveType::LevelBoundary => break,
             SaveType::InsertToken => {
@@ -594,7 +591,7 @@ impl MemState {
         mut q: NodePtr<SaIndexNode>,
         levels: &[u16],
     ) -> Result<SaLeaf, Abort> {
-        let (&leaf_i, index_levels) = levels.split_last().ok_or(Abort::Confusion("sa"))?;
+        let (&leaf_i, index_levels) = levels.split_last().or_confusion("sa")?;
         for &i in index_levels {
             let p = self.new_index(scanner, i, Some(q))?;
             self.add_sa_child(q, i, p);
@@ -664,7 +661,7 @@ impl MemState {
         t: ValueLevel,
         n: i32,
     ) -> Result<SaLeaf, Abort> {
-        let levels = sa_levels(n).ok_or(Abort::Confusion("sa"))?;
+        let levels = sa_levels(n).or_confusion("sa")?;
         let Some(mut q) = scanner.sa_root.get(t) else {
             let root = self.new_index(scanner, u16::from(t as u8), None)?;
             scanner.sa_root.set(t, Some(root));

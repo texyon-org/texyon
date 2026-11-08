@@ -3,6 +3,7 @@
 
 use crate::consts::{IGNORE_DEPTH, NULL_FONT, SMALL_NODE_SIZE};
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::mem::GARBAGE;
 use crate::mem_types::ListStateRecord;
 use crate::node::{
@@ -479,7 +480,7 @@ impl MemState {
             if self.lr_code(scanner.lr_ptr) != Some(MathCode::Before) {
                 q = self.list_tail(q);
                 loop {
-                    let code = self.lr_code(scanner.lr_ptr).ok_or(Abort::Confusion("LR"))?;
+                    let code = self.lr_code(scanner.lr_ptr).or_confusion("LR")?;
                     let math = self.new_math(Scaled::ZERO, code)?;
                     q.set_link(self, math.ptr());
                     q = math.ptr();

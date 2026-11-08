@@ -2,6 +2,7 @@
 
 use crate::consts::{SMALL_NODE_SIZE, TEX_NULL};
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::fonts::{CharTag, LigChar};
 use crate::hyphenation::TrieOp;
 use crate::main_control::LigStack;
@@ -666,7 +667,7 @@ fn insert_hyphens(
                 } else {
                     s.set_link(&mut st.mem, disc.ptr());
                     st.mem[disc].replace_count =
-                        u16::try_from(r_count).map_err(|_| Abort::Confusion("hyphenate"))?;
+                        u16::try_from(r_count).or_confusion("hyphenate")?;
                 }
                 s = major_tail;
                 st.hyph.hyphen_passed = j - 1;

@@ -111,19 +111,13 @@ pub(crate) enum Abort {
     Cancelled,
     /// A viewport-bounded resident operation stopped at a resumable command fence.
     Horizoned,
-    /// `overflow(what, n)`.
+    /// `overflow(capacity, n)`: a fixed capacity of size `n` ran out.
     Overflow {
-        what: &'static str,
+        capacity: Capacity,
         n: i32,
     },
-    PoolOverflow,
-    StringOverflow,
     /// `get_avail` ran out: the runaway text, then the main memory overflow.
     AvailOverflow,
-    /// `get_node` ran out: the main memory overflow alone.
-    NodeOverflow,
-    SaveOverflow,
-    NestOverflow,
     Confusion(&'static str),
     Fatal(&'static str),
     /// `\dump` inside a group, which TeX reports and then succumbs to.
@@ -140,8 +134,100 @@ pub(crate) enum Abort {
     /// A host-level failure: no TeX error is printed, only `msg` is surfaced.
     Internal(&'static str),
     InputClose,
-    CannotOpenInput,
-    CannotOpenOutput,
+    /// No input file could be opened under the name.
+    CannotOpenInput {
+        name: Box<[u8]>,
+    },
+    /// The output file of that name could not be created.
+    CannotOpenOutput {
+        name: Box<[u8]>,
+    },
+}
+
+/// Turns a broken internal invariant into TeX's "This can't happen" stop.
+pub(crate) trait OrConfusion<T> {
+    fn or_confusion(self, what: &'static str) -> Result<T, Abort>;
+}
+
+impl<T> OrConfusion<T> for Option<T> {
+    #[inline]
+    fn or_confusion(self, what: &'static str) -> Result<T, Abort> {
+        self.ok_or(Abort::Confusion(what))
+    }
+}
+
+impl<T, E> OrConfusion<T> for Result<T, E> {
+    #[inline]
+    fn or_confusion(self, what: &'static str) -> Result<T, Abort> {
+        self.map_err(|_| Abort::Confusion(what))
+    }
+}
+
+/// A fixed capacity of the engine that a run can exceed.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Capacity {
+    MainMemory,
+    PoolSize,
+    NumberOfStrings,
+    SaveSize,
+    SemanticNest,
+    InputStack,
+    ParameterStack,
+    TextInputLevels,
+    GroupingLevels,
+    BufferSize,
+    NativeTextSize,
+    FontMemory,
+    HashSize,
+    PrimitiveSize,
+    PatternMemory,
+    PatternMemoryOps,
+    PatternMemoryOpsPerLanguage,
+    ExceptionDictionary,
+    ExpansionDepth,
+}
+
+impl Capacity {
+    /// The name `overflow` prints.
+    fn name(self) -> &'static str {
+        match self {
+            Capacity::MainMemory => "main memory size",
+            Capacity::PoolSize => "pool size",
+            Capacity::NumberOfStrings => "number of strings",
+            Capacity::SaveSize => "save size",
+            Capacity::SemanticNest => "semantic nest size",
+            Capacity::InputStack => "input stack size",
+            Capacity::ParameterStack => "parameter stack size",
+            Capacity::TextInputLevels => "text input levels",
+            Capacity::GroupingLevels => "grouping levels",
+            Capacity::BufferSize => "buffer size",
+            Capacity::NativeTextSize => "native text size",
+            Capacity::FontMemory => "font memory",
+            Capacity::HashSize => "hash size",
+            Capacity::PrimitiveSize => "primitive size",
+            Capacity::PatternMemory => "pattern memory",
+            Capacity::PatternMemoryOps => "pattern memory ops",
+            Capacity::PatternMemoryOpsPerLanguage => "pattern memory ops per language",
+            Capacity::ExceptionDictionary => "exception dictionary",
+            Capacity::ExpansionDepth => "expansion depth",
+        }
+    }
+}
+
+impl Abort {
+    /// `get_node` ran out of main memory.
+    pub(crate) const NODE_OVERFLOW: Abort = Abort::Overflow {
+        capacity: Capacity::MainMemory,
+        n: MEM_TOP + 1,
+    };
+
+    /// `capacity`, whose size is a `usize`, ran out.
+    pub(crate) fn overflow(capacity: Capacity, n: usize) -> Abort {
+        Abort::Overflow {
+            capacity,
+            n: i32::try_from(n).unwrap_or(i32::MAX),
+        }
+    }
 }
 
 /// An error `\ignoreprimitiveerror` can turn into a warning, valued by its bit (one-based).
@@ -187,8 +273,7 @@ impl Abort {
         set_error_message(s);
     }
 
-    fn open_failure(st: &EngineState, what: &str) {
-        let name = st.input.name_of_file_bytes();
+    fn open_failure(what: &str, name: &[u8]) {
         let mut msg = format!("{what} \"").into_bytes();
         msg.extend_from_slice(name);
         msg.push(b'"');
@@ -204,27 +289,10 @@ impl Abort {
                 return Abort::Confusion("horizon stop escaped resident orchestration")
                     .into_history(st)
             }
-            Abort::Overflow { what, n } => Self::overflow_report(st, what, n),
-            Abort::PoolOverflow => {
-                let n = st.strings.pool_size - st.strings.init_pool_ptr;
-                Self::overflow_report(st, "pool size", n);
-            }
-            Abort::StringOverflow => {
-                let n = st.strings.max_strings - st.strings.init_str_ptr;
-                Self::overflow_report(st, "number of strings", n);
-            }
+            Abort::Overflow { capacity, n } => Self::overflow_report(st, capacity.name(), n),
             Abort::AvailOverflow => {
                 runaway(st);
-                Self::overflow_report(st, "main memory size", MEM_TOP + 1);
-            }
-            Abort::NodeOverflow => Self::overflow_report(st, "main memory size", MEM_TOP + 1),
-            Abort::SaveOverflow => {
-                let n = i32::try_from(st.save_stack.save_size).unwrap_or(i32::MAX);
-                Self::overflow_report(st, "save size", n);
-            }
-            Abort::NestOverflow => {
-                let n = i32::try_from(st.input.nest.size()).unwrap_or(i32::MAX);
-                Self::overflow_report(st, "semantic nest size", n);
+                Self::overflow_report(st, Capacity::MainMemory.name(), MEM_TOP + 1);
             }
             Abort::Confusion(s) => {
                 pre_error_message(st);
@@ -276,8 +344,12 @@ impl Abort {
             }
             Abort::Internal(msg) => set_error_message(msg),
             Abort::InputClose => set_error_message("serious internal error closing an input file"),
-            Abort::CannotOpenInput => Self::open_failure(st, "failed to open input file"),
-            Abort::CannotOpenOutput => Self::open_failure(st, "cannot open output file"),
+            Abort::CannotOpenInput { name } => {
+                Self::open_failure("failed to open input file", &name)
+            }
+            Abort::CannotOpenOutput { name } => {
+                Self::open_failure("cannot open output file", &name)
+            }
         }
         HISTORY_FATAL_ERROR
     }

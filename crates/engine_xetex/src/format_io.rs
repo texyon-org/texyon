@@ -318,7 +318,7 @@ pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     };
 
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
-        return Err(Abort::PoolOverflow);
+        return Err(st.strings.pool_overflow());
     }
 
     st.strings.format_ident = st.strings.make_string()?;

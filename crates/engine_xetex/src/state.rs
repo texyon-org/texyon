@@ -2,6 +2,7 @@
 
 use crate::cmd::Cmd;
 use crate::codes::{FiOrElseCode, ValueLevel};
+use crate::errors::OrConfusion;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::units::{
     BufPos, EqtbPtr, FontId, FontInfoIdx, PoolPos, PrimNum, SavePtr, Scaled, StrNumber,
@@ -188,7 +189,7 @@ impl InputClusterState {
     /// TeX's buffer size overflow error.
     pub(crate) fn buffer_overflow(&self) -> crate::errors::Abort {
         crate::errors::Abort::Overflow {
-            what: "buffer size",
+            capacity: crate::errors::Capacity::BufferSize,
             n: self.buf_size.raw(),
         }
     }
@@ -889,6 +890,11 @@ pub(crate) struct SaveStackState {
 }
 
 impl SaveStackState {
+    /// The save stack ran out.
+    pub(crate) fn overflow(&self) -> crate::errors::Abort {
+        crate::errors::Abort::overflow(crate::errors::Capacity::SaveSize, self.save_size)
+    }
+
     #[inline]
     fn b32s1(&self, k: SavePtr) -> i32 {
         self.data[k.index()].b32().s1
@@ -957,8 +963,7 @@ impl SaveStackState {
     /// Pops the size spec [`push_spec`](Self::push_spec) saved.
     pub(crate) fn pop_spec(&mut self) -> Result<crate::packaging::PackSpec, crate::errors::Abort> {
         self.save_ptr -= 2;
-        self.spec_at(0)
-            .ok_or(crate::errors::Abort::Confusion("pop_spec"))
+        self.spec_at(0).or_confusion("pop_spec")
     }
 
     /// The size spec saved at `saved(k)` and `saved(k + 1)`.
@@ -1600,6 +1605,22 @@ pub(crate) struct StringsState {
 }
 
 impl StringsState {
+    /// The string pool ran out.
+    pub(crate) fn pool_overflow(&self) -> crate::errors::Abort {
+        crate::errors::Abort::Overflow {
+            capacity: crate::errors::Capacity::PoolSize,
+            n: self.pool_size - self.init_pool_ptr,
+        }
+    }
+
+    /// The string table ran out.
+    pub(crate) fn string_overflow(&self) -> crate::errors::Abort {
+        crate::errors::Abort::Overflow {
+            capacity: crate::errors::Capacity::NumberOfStrings,
+            n: self.max_strings - self.init_str_ptr,
+        }
+    }
+
     /// The `str_start` slot of the string under construction.
     #[inline]
     pub(crate) fn cur_start_slot(&self) -> usize {
@@ -1862,8 +1883,7 @@ impl ScannerState {
     /// `(cur_cmd, cur_chr)` decoded into one typed command.
     #[inline]
     pub(crate) fn command(&self) -> Result<crate::command::Command, crate::errors::Abort> {
-        self.try_command()
-            .ok_or(crate::errors::Abort::Confusion("cur_chr"))
+        self.try_command().or_confusion("cur_chr")
     }
 
     /// `(cur_cmd, cur_chr)` decoded, `None` for a token that is no command.
@@ -1889,7 +1909,7 @@ impl ScannerState {
     pub(crate) fn reserve_native_text(&mut self, extra: i32) -> Result<(), crate::errors::Abort> {
         if extra >= NATIVE_TEXT_MAX - self.native_len {
             return Err(crate::errors::Abort::Overflow {
-                what: "native text size",
+                capacity: crate::errors::Capacity::NativeTextSize,
                 n: NATIVE_TEXT_MAX,
             });
         }

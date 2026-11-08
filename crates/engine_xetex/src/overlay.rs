@@ -5,6 +5,7 @@
 //! borrow first notes the node's words in the journal.
 
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::fonts::Side;
 use crate::math::MathStyle;
 use bytemuck::{Pod, Zeroable};
@@ -154,7 +155,7 @@ impl MemState {
         let [dst, src] = self
             .data
             .get_disjoint_mut([dst_words, src_words])
-            .map_err(|_| crate::errors::Abort::Confusion("entries"))?;
+            .or_confusion("entries")?;
         let dst: &mut [u8] = bytemuck::cast_slice_mut(dst);
         let src: &[u8] = bytemuck::cast_slice(src);
         Ok((
@@ -512,7 +513,7 @@ impl MathLayout {
     /// The node's code. Every writer stores a [`MathCode`], so another value is a broken invariant.
     #[inline]
     pub fn code(&self) -> Result<MathCode, Abort> {
-        self.subtype.get().ok_or(Abort::Confusion("math code"))
+        self.subtype.get().or_confusion("math code")
     }
 }
 

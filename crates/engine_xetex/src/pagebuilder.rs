@@ -6,6 +6,7 @@ use crate::consts::{
     MAX_DIMEN, MAX_HALFWORD, PAGE_INS_NODE_SIZE, VMODE,
 };
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::helpers::badness;
 use crate::input::TokenType;
 use crate::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
@@ -54,7 +55,7 @@ fn freeze_page_specs(st: &mut EngineState, contents: PageContents) {
 
 /// The box register of an insertion class, which `\insert` limits to 0..254.
 fn ins_box(box_number: u16) -> Result<u8, Abort> {
-    u8::try_from(box_number).map_err(|_| Abort::Confusion("insertion box"))
+    u8::try_from(box_number).or_confusion("insertion box")
 }
 
 fn ensure_vbox(st: &mut EngineState, n: u8) -> Result<(), Abort> {
@@ -552,7 +553,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
     while let Some(idx) = CONTRIB_HEAD.link(&st.mem).as_idx() {
         let p = MemPtr::from_idx(idx);
         let node_type = i32::from(st.mem.type_code(idx));
-        let node = st.mem.classify(idx).map_err(|_| Abort::Confusion("page"))?;
+        let node = st.mem.classify(idx).or_confusion("page")?;
         if let Some(spec) = st.shipout.last_glue {
             st.mem.delete_glue_ref(spec);
         }

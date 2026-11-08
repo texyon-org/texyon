@@ -5,6 +5,7 @@ use crate::consts::{
     ETEX_PENALTIES_PAR_INTER_LINE_PENALTIES, ETEX_PENALTIES_PAR_WIDOW_PENALTIES, ETEX_PEN_BASE,
 };
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
 use crate::node::{AnyNode, BoxNode, GlueKind, KernSubtype, MathNode, NodePtr};
@@ -54,7 +55,7 @@ impl LinebreakState {
                 let mut temp_ptr = *lr_ptr;
                 let mut r = q;
                 loop {
-                    let code = mem.lr_code(temp_ptr).ok_or(Abort::Confusion("LR"))?;
+                    let code = mem.lr_code(temp_ptr).or_confusion("LR")?;
                     let s = mem.new_math(Scaled::ZERO, code.as_begin())?;
                     mem[s].link = r;
                     r = s.ptr();
@@ -163,7 +164,7 @@ impl LinebreakState {
 
             r = *lr_ptr;
             while !r.is_null() {
-                let code = mem.lr_code(r).ok_or(Abort::Confusion("LR"))?;
+                let code = mem.lr_code(r).or_confusion("LR")?;
                 let m = mem.new_math(Scaled::ZERO, code)?;
                 s.set_link(mem, m.ptr());
                 s = m.ptr();
@@ -390,7 +391,7 @@ pub(super) fn post_line_break(
     let mut brk = st
         .linebreak
         .reverse_best_breaks(best)
-        .ok_or(Abort::Confusion("line breaking"))?;
+        .or_confusion("line breaking")?;
 
     let mut cur_line = st.input.cur_list.prev_graf.wrapping_add(1);
     let last_line = loop {

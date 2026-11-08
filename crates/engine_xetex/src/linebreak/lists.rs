@@ -182,7 +182,7 @@ impl BreakLists {
 
     /// A new entry before `link`.
     pub(crate) fn push(&mut self, link: EntryId, entry: Entry) -> Result<EntryId, Abort> {
-        let id = EntryId(u32::try_from(self.entries.len()).map_err(|_| Abort::NodeOverflow)?);
+        let id = EntryId(u32::try_from(self.entries.len()).map_err(|_| Abort::NODE_OVERFLOW)?);
         self.entries.push(Linked { link, entry });
         Ok(id)
     }
@@ -208,7 +208,7 @@ impl BreakLists {
     }
 
     pub(crate) fn push_passive(&mut self, passive: Passive) -> Result<PassiveId, Abort> {
-        let id = PassiveId(u32::try_from(self.passives.len()).map_err(|_| Abort::NodeOverflow)?);
+        let id = PassiveId(u32::try_from(self.passives.len()).map_err(|_| Abort::NODE_OVERFLOW)?);
         self.passives.push(passive);
         Ok(id)
     }

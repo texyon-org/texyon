@@ -731,7 +731,7 @@ pub(crate) fn more_name(st: &mut EngineState, c: u32) -> Result<bool, Abort> {
     }
     let (units, n) = crate::utf8::utf16_units(c);
     if st.strings.pool_ptr.index() + n > st.strings.pool_size.index() {
-        return Err(Abort::PoolOverflow);
+        return Err(st.strings.pool_overflow());
     }
     st.strings.append_units(&units[..n]);
     if c == u32::from(b'/') {
@@ -745,7 +745,7 @@ pub(crate) fn more_name(st: &mut EngineState, c: u32) -> Result<bool, Abort> {
 
 pub(crate) fn end_name(st: &mut EngineState) -> Result<(), Abort> {
     if st.strings.str_ptr.offset(3) > st.strings.max_strings {
-        return Err(Abort::StringOverflow);
+        return Err(st.strings.string_overflow());
     }
 
     let area_delimiter = st.scanner.area_delimiter;
@@ -1111,7 +1111,9 @@ pub(crate) fn start_input(
     let mode = st.eqtb.int_par(IntPar::XetexDefaultInputMode);
     let encoding = st.eqtb.int_par(IntPar::XetexDefaultInputEncoding);
     let Some(file) = u_open_in(st, format, mode, encoding)? else {
-        return Err(Abort::CannotOpenInput);
+        return Err(Abort::CannotOpenInput {
+            name: st.input.name_of_file_bytes().into(),
+        });
     };
     st.input.input_file[idx as usize] = crate::state::InputSlot::Open(file);
 

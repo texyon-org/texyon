@@ -5,6 +5,7 @@ use crate::consts::{
     AWFUL_BAD, EJECT_PENALTY, INF_BAD, INF_PENALTY, MAX_DIMEN, MAX_HALFWORD, NULL_FONT,
 };
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::mem::TEMP_HEAD;
 use crate::node::{
     AnyNode, BoxNode, CharNode, DiscNode, GlueNode, GlueSpecNode, KernSubtype, NodePtr,
@@ -102,7 +103,7 @@ impl LinebreakState {
                 best = Some(a);
             }
         }
-        let mut best = best.ok_or(Abort::Confusion("line breaking"))?;
+        let mut best = best.or_confusion("line breaking")?;
         self.best_line = best.line_number;
 
         let looseness = eqtb.int_par(IntPar::Looseness);
@@ -462,7 +463,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                             st.linebreak.disc_width += st
                                 .mem
                                 .disc_node_width(&mut st.fonts, s)
-                                .map_err(|_| Abort::Confusion("disc3"))?;
+                                .or_confusion("disc3")?;
                             s = s.link(&st.mem);
                         }
                         st.scanner.active_width[1] += st.linebreak.disc_width;
@@ -476,7 +477,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                         st.scanner.active_width[1] += st
                             .mem
                             .disc_node_width(&mut st.fonts, s)
-                            .map_err(|_| Abort::Confusion("disc4"))?;
+                            .or_confusion("disc4")?;
                         s = s.link(&st.mem);
                     }
 
@@ -986,7 +987,7 @@ impl LinebreakState {
                 for (width, delta) in self.cur_active_width.iter_mut().zip(pw) {
                     *width -= delta;
                 }
-                let before = prev_prev_r.ok_or(Abort::Confusion("line breaking"))?;
+                let before = prev_prev_r.or_confusion("line breaking")?;
                 lists.set_link(before, EntryId::LAST_ACTIVE);
                 *prev_r = before;
             } else if let Entry::Delta(rw) = lists.get(r) {

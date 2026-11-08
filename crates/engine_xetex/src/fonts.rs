@@ -427,7 +427,7 @@ pub(crate) fn new_native_character(
     let src = if let Some(map) = st.fonts.font_mapping[f].clone() {
         let (units, n) = crate::utf8::utf16_units(c);
         if st.strings.pool_ptr + n as i32 > st.strings.pool_size {
-            return Err(Abort::PoolOverflow);
+            return Err(st.strings.pool_overflow());
         }
         st.strings.append_units(&units[..n]);
         let len = st.fonts.apply_mapping(&map, st.strings.cur_string());
@@ -1044,7 +1044,7 @@ pub(crate) fn load_native_font(
     };
 
     if st.strings.pool_ptr + st.input.name_of_file.len() as i32 > st.strings.pool_size {
-        return Err(Abort::PoolOverflow);
+        return Err(st.strings.pool_overflow());
     }
     for &b in &st.input.name_of_file {
         st.strings.append_char(u16::from(b));

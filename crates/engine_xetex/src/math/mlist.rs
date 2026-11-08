@@ -7,6 +7,7 @@ use crate::consts::{
     SUB_MLIST, TEXT_SIZE,
 };
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::fonts::{CharInfo, CharTag, AAT_FONT_FLAG, OTGR_FONT_FLAG, SPACE_CODE, X_HEIGHT_CODE};
 use crate::mem::{TEMP_HEAD, TEX_NULL, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
@@ -1284,7 +1285,7 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                         if st.mem[f].noad_type == NodeType::RightNoad
                             && r_type == NodeType::BinNoad.as_raw()
                         {
-                            let r = r.ok_or(Abort::Confusion("mlist1"))?;
+                            let r = r.or_confusion("mlist1")?;
                             st.mem[r].noad_type = NodeType::OrdNoad.into();
                         }
                         break 'reswitch FirstPass::DoneWithNoad(qn);
@@ -1307,7 +1308,7 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                         }
                         Some(NodeType::RelNoad | NodeType::CloseNoad | NodeType::PunctNoad) => {
                             if r_type == NodeType::BinNoad.as_raw() {
-                                let r = r.ok_or(Abort::Confusion("mlist1"))?;
+                                let r = r.or_confusion("mlist1")?;
                                 st.mem[r].noad_type = NodeType::OrdNoad.into();
                             }
                             break 'reswitch FirstPass::ProcessNucleus(n);
@@ -1409,7 +1410,7 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
 
     let mut p = TEMP_HEAD;
     if r_type == NodeType::BinNoad.as_raw() {
-        let r = r.ok_or(Abort::Confusion("mlist1"))?;
+        let r = r.or_confusion("mlist1")?;
         st.mem[r].noad_type = NodeType::OrdNoad.into();
     }
     p.set_link(&mut st.mem, MemPtr::NULL);

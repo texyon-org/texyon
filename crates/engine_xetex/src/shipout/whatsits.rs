@@ -33,7 +33,7 @@ fn special_out(
     crate::output::show_token_list(st, tokens, crate::token::TokenList::NULL, avail);
     st.shipout.selector = old_setting;
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
-        return Err(Abort::PoolOverflow);
+        return Err(st.strings.pool_overflow());
     }
     dvi_special_from_cur_string(st)?;
     if late {
@@ -235,7 +235,9 @@ fn out_write_stream(
     crate::io::pack_file_name(st, n, a, e);
     let handle = output_open(st.input.name_of_file_bytes(), false);
     if handle == INVALID_HANDLE {
-        return Err(Abort::CannotOpenOutput);
+        return Err(Abort::CannotOpenOutput {
+            name: st.input.name_of_file_bytes().into(),
+        });
     }
     st.shipout.write_file[stream] = handle;
     st.shipout.write_open[stream] = true;
@@ -265,11 +267,15 @@ pub(crate) fn ensure_write_stream_open(
         return Ok(());
     }
     let Some(name) = &st.shipout.write_name[stream] else {
-        return Err(Abort::CannotOpenOutput);
+        return Err(Abort::CannotOpenOutput {
+            name: Box::default(),
+        });
     };
     let handle = output_open(name, false);
     if handle == INVALID_HANDLE {
-        return Err(Abort::CannotOpenOutput);
+        return Err(Abort::CannotOpenOutput {
+            name: name.as_slice().into(),
+        });
     }
     for &code_unit in &st.shipout.write_prefix[stream] {
         crate::bridge::output_putc(handle, code_unit as u8);

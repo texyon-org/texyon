@@ -6,6 +6,7 @@ use crate::consts::{
 };
 use crate::dvi::{Axis, MoveReg};
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::ext::apply_tfm_font_mapping;
 use crate::glyph_arena::FixedPoint;
 use crate::mem::LIG_TRICK;
@@ -251,7 +252,9 @@ fn ship_page(st: &mut crate::state::EngineState, page: NodePtr<BoxNode>) -> Resu
         crate::io::pack_job_name(st, crate::engine::output_file_extension(st))?;
         st.shipout.dvi.file = output_open(st.input.name_of_file_bytes(), false);
         if st.shipout.dvi.file == INVALID_HANDLE {
-            return Err(Abort::CannotOpenOutput);
+            return Err(Abort::CannotOpenOutput {
+                name: st.input.name_of_file_bytes().into(),
+            });
         }
         st.shipout.output_file_name = crate::io::make_name_string(st)?;
     }
@@ -485,7 +488,7 @@ impl MemState {
             text_len,
         } = run;
         if strings.pool_ptr + text_len > strings.pool_size {
-            return Err(Abort::PoolOverflow);
+            return Err(strings.pool_overflow());
         }
 
         let g_order = self[this_box].glue_order;
@@ -894,11 +897,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
             (p, prev_p) = chars_out(st, p, prev_p)?;
             continue;
         }
-        match st
-            .mem
-            .classify(p)
-            .map_err(|_| Abort::Confusion("hlistout"))?
-        {
+        match st.mem.classify(p).or_confusion("hlistout")? {
             AnyNode::Box(b) => hlist_box_out(st, b, base_line)?,
             AnyNode::Rule(rule) => {
                 st.shipout.rule_ht = st.mem[rule].height.to_scaled();
@@ -971,7 +970,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
                 let edge = style.as_edge();
                 st.shipout.cur_h += st.mem[edge].width;
                 left_edge = st.shipout.cur_h + st.mem[edge].edge_dist;
-                st.scanner.cur_dir = st.mem[edge].dir.get().ok_or(Abort::Confusion("LR"))?;
+                st.scanner.cur_dir = st.mem[edge].dir.get().or_confusion("LR")?;
             }
             _ => {}
         }
@@ -1077,11 +1076,7 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
         if st.mem.is_char_node(p) {
             return Err(Abort::Confusion("vlistout"));
         }
-        match st
-            .mem
-            .classify(p)
-            .map_err(|_| Abort::Confusion("vlistout"))?
-        {
+        match st.mem.classify(p).or_confusion("vlistout")? {
             AnyNode::Box(b) => vlist_box_out(st, b, left_edge, upwards)?,
             AnyNode::Rule(rule) => {
                 st.shipout.rule_ht = st.mem[rule].height.to_scaled();
@@ -1465,7 +1460,7 @@ impl MemState {
             if t.is_none() && m == MIN_HALFWORD && n == MIN_HALFWORD {
                 return Ok(l);
             }
-            let code = self.lr_code(scanner.lr_ptr).ok_or(Abort::Confusion("LR"))?;
+            let code = self.lr_code(scanner.lr_ptr).or_confusion("LR")?;
             p = self.new_math(Scaled::ZERO, code)?.ptr();
             scanner.lr_problems += 10000;
         }

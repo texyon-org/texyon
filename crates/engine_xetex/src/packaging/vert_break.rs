@@ -2,6 +2,7 @@
 
 use crate::codes::{BoxCode, MarkCode, ValueLevel};
 use crate::consts::{BOX_NODE_SIZE, EJECT_PENALTY, INF_BAD, INF_PENALTY, MAX_DIMEN, MAX_HALFWORD};
+use crate::errors::OrConfusion;
 use crate::errors::{Abort, IgnoredError};
 use crate::mem::TEMP_HEAD;
 use crate::node::{
@@ -124,9 +125,7 @@ impl MemState {
             });
         }
 
-        let node = self
-            .classify(cursor.p)
-            .map_err(|_| Abort::Confusion("vertbreak"))?;
+        let node = self.classify(cursor.p).or_confusion("vertbreak")?;
         cursor.breakable = node.precedes_break();
         match node {
             AnyNode::Box(b) => {
@@ -439,9 +438,7 @@ impl MemState {
             self[state.v].list_ptr = MemPtr::NULL;
         } else {
             loop {
-                if let AnyNode::Mark(mark) =
-                    self.classify(p).map_err(|_| Abort::Confusion("vsplit"))?
-                {
+                if let AnyNode::Mark(mark) = self.classify(p).or_confusion("vsplit")? {
                     self.collect_split_mark(scanner, mark)?;
                 }
                 if p.link(self) == q {
@@ -632,7 +629,7 @@ impl MemState {
         let upwards = eqtb.int_par(IntPar::XetexUpwards) > 0;
 
         while !p.is_null() {
-            let node = self.classify(p).map_err(|_| Abort::Confusion("pruning"))?;
+            let node = self.classify(p).or_confusion("pruning")?;
             let top = match node {
                 AnyNode::Box(b) if upwards => self[b].depth,
                 AnyNode::Box(b) => self[b].height,

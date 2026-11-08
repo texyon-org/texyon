@@ -292,7 +292,7 @@ impl HyphState {
             if l == 0 {
                 if self.trie_op_ptr == TRIE_OP_SIZE {
                     return Err(Abort::Overflow {
-                        what: "pattern memory ops",
+                        capacity: crate::errors::Capacity::PatternMemoryOps,
                         n: TRIE_OP_SIZE,
                     });
                 }
@@ -300,7 +300,7 @@ impl HyphState {
                 let used = &mut self.trie_used[usize::from(lang)];
                 if *used == TrieOp::MAX.0 {
                     return Err(Abort::Overflow {
-                        what: "pattern memory ops per language",
+                        capacity: crate::errors::Capacity::PatternMemoryOpsPerLanguage,
                         n: i32::from(TrieOp::MAX.0 - TrieOp::NONE.0),
                     });
                 }
@@ -387,7 +387,7 @@ impl HyphState {
             if self.trie_max < top {
                 if self.trie_size as usize <= top.0 {
                     return Err(Abort::Overflow {
-                        what: "pattern memory",
+                        capacity: crate::errors::Capacity::PatternMemory,
                         n: self.trie_size,
                     });
                 }
@@ -589,7 +589,7 @@ impl HyphState {
     ) -> Result<(), Abort> {
         if self.trie_ptr == self.trie_size {
             return Err(Abort::Overflow {
-                what: "pattern memory",
+                capacity: crate::errors::Capacity::PatternMemory,
                 n: self.trie_size,
             });
         }
@@ -886,7 +886,7 @@ fn store_hyph_exception(st: &mut EngineState, mut n: usize, p: MemPtr) -> Result
     n += 1;
     st.hyph.hc[n] = i32::from(st.hyph.cur_lang);
     if st.strings.pool_ptr + n as i32 > st.strings.pool_size {
-        return Err(Abort::PoolOverflow);
+        return Err(st.strings.pool_overflow());
     }
 
     let mut h = st.hyph.exception_hash(n);
@@ -906,7 +906,7 @@ fn store_hyph_exception(st: &mut EngineState, mut n: usize, p: MemPtr) -> Result
 
     if hyph.hyph_count == hyph.hyph_size || hyph.hyph_next == 0 {
         return Err(Abort::Overflow {
-            what: "exception dictionary",
+            capacity: crate::errors::Capacity::ExceptionDictionary,
             n: hyph.hyph_size,
         });
     }

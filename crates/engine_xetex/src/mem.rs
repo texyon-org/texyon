@@ -4,6 +4,7 @@
 pub(crate) use crate::consts::TEX_NULL;
 use crate::consts::{GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP};
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::fonts::Side;
 use crate::mem_types::ListStateRecord;
 use crate::node::{
@@ -337,7 +338,7 @@ impl MemState {
                 continue 'restart;
             }
 
-            return Err(Abort::NodeOverflow);
+            return Err(Abort::NODE_OVERFLOW);
         };
 
         r.set_link(self, MemPtr::NULL);
@@ -561,10 +562,9 @@ impl MemState {
 // --- the semantic nest ---
 
 pub(crate) fn push_nest(st: &mut crate::state::EngineState) -> Result<(), Abort> {
-    st.input
-        .nest
-        .push(st.input.cur_list)
-        .map_err(|_| Abort::NestOverflow)?;
+    st.input.nest.push(st.input.cur_list).map_err(|_| {
+        Abort::overflow(crate::errors::Capacity::SemanticNest, st.input.nest.size())
+    })?;
     let h = st.mem.get_avail()?;
     let cl = &mut st.input.cur_list;
     cl.head = h;
@@ -578,7 +578,7 @@ pub(crate) fn push_nest(st: &mut crate::state::EngineState) -> Result<(), Abort>
 impl MemState {
     pub fn pop_nest(&mut self, input: &mut crate::state::InputClusterState) -> Result<(), Abort> {
         self.free_avail(input.cur_list.head);
-        input.cur_list = input.nest.pop().ok_or(Abort::Confusion("pop_nest"))?;
+        input.cur_list = input.nest.pop().or_confusion("pop_nest")?;
         Ok(())
     }
 }

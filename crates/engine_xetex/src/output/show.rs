@@ -162,7 +162,7 @@ pub(crate) fn issue_message(st: &mut EngineState, err: bool) -> Result<(), Abort
     st.shipout.selector = old_setting;
     st.mem.flush_token_list(st.scanner.def_ref);
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
-        return Err(Abort::PoolOverflow);
+        return Err(st.strings.pool_overflow());
     }
     let s = st.strings.make_string()?;
     if !err {

@@ -10,6 +10,7 @@ use crate::consts::{
     FROZEN_PRIMITIVE, HMODE, MMODE, NULL_CS, NULL_FONT, SINGLE_BASE, TOO_BIG_USV, VMODE,
 };
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::fonts::{Side, AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::{back_input, begin_token_list, TokenType, TOKEN_LIST};
 use crate::mem::{BACKUP_HEAD, GARBAGE, TEMP_HEAD_TOKS, ZERO_GLUE};
@@ -40,7 +41,7 @@ fn ins_temp_head_list(st: &mut EngineState, tail: TokenList) -> Result<(), Abort
 }
 
 fn pop_cond_node(st: &mut EngineState) -> Result<(), Abort> {
-    let p = st.scanner.cond_ptr.ok_or(Abort::Confusion("if"))?;
+    let p = st.scanner.cond_ptr.or_confusion("if")?;
     (st.scanner.cur_if, st.scanner.if_line, st.scanner.if_limit) = st.mem[p].saved_state();
     st.scanner.cond_ptr = p.next(&st.mem);
     p.free(&mut st.mem);
@@ -780,7 +781,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.expand_depth_count += 1;
     if st.scanner.expand_depth_count >= st.scanner.expand_depth {
         return Err(Abort::Overflow {
-            what: "expansion depth",
+            capacity: crate::errors::Capacity::ExpansionDepth,
             n: st.scanner.expand_depth,
         });
     }
@@ -1294,7 +1295,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
             let stack = &mut st.input.param_stack;
             stack
                 .push_all(&params[..n as usize])
-                .map_err(|_| stack.overflow("parameter stack size"))?;
+                .map_err(|_| stack.overflow(crate::errors::Capacity::ParameterStack))?;
         }
     }
 

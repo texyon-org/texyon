@@ -7,6 +7,7 @@ use crate::consts::{
     BOX_BASE, BOX_NODE_SIZE, HMODE, IGNORE_DEPTH, MARGIN_KERN_NODE_SIZE, MMODE, SUB_BOX, VMODE,
 };
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::input::TokenType;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD};
 use crate::node::{AnyNode, BoxOrRule, GlueKind, MathCode, SaLeaf};
@@ -234,7 +235,7 @@ fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
             let g = append_glue(st, s)?;
             let kind = LeaderCode::from_raw(box_context - LEADER_FLAG + LeaderCode::ALeaders.raw())
                 .and_then(LeaderCode::glue_leaders)
-                .ok_or(Abort::Confusion("leaders"))?;
+                .or_confusion("leaders")?;
             st.mem[g].subtype = GlueKind::Leaders(kind).into();
             st.mem[g].leader_ptr = cb.ptr();
         } else {

@@ -12,6 +12,7 @@ use crate::consts::{
     TEX_INFINITY, TOKS_BASE, TOO_BIG_USV, VMODE,
 };
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::fonts::read_font_info;
 use crate::hyphenation::{new_hyph_exceptions, new_patterns};
 use crate::mem::ZERO_GLUE;
@@ -168,7 +169,7 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         crate::output::print(st, StrNumber::single_char(u - ACTIVE_BASE));
         st.shipout.selector = old_setting;
         if st.strings.pool_ptr + 1 > st.strings.pool_size {
-            return Err(Abort::PoolOverflow);
+            return Err(st.strings.pool_overflow());
         }
         st.strings.make_string()?
     };
@@ -297,11 +298,8 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         let p = match cmd {
             Some(Command::Register(RegisterRef::Scanned(level))) => level,
             Some(Command::Register(RegisterRef::Sparse(sa))) => {
-                let level = st.mem[sa]
-                    .sa_type()
-                    .get()
-                    .ok_or(Abort::Confusion("sa_type"))?;
-                let leaf = sa.leaf(&st.mem).ok_or(Abort::Confusion("sa_type"))?;
+                let level = st.mem[sa].sa_type().get().or_confusion("sa_type")?;
+                let leaf = sa.leaf(&st.mem).or_confusion("sa_type")?;
                 break 'found (RegisterLoc::Sparse(leaf), level);
             }
             _ => return Err(Abort::Confusion("register")),
@@ -311,7 +309,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             let sa = st.mem.create_sa_element(&mut st.scanner, p, n)?;
             break 'found (RegisterLoc::Sparse(sa), p);
         }
-        let base = p.register_base().ok_or(Abort::Confusion("register"))?;
+        let base = p.register_base().or_confusion("register")?;
         (RegisterLoc::Eqtb(base + n), p)
     };
 

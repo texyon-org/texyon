@@ -8,6 +8,7 @@ use crate::consts::{
     MMODE, NOAD_SIZE, NULL_FLAG, PAR_SHAPE_LOC, SUB_BOX, SUB_MLIST, TEX_NULL, VMODE,
 };
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::fonts::{
     EXTRA_SPACE_CODE, SLANT_CODE, SPACE_CODE, SPACE_SHRINK_CODE, SPACE_STRETCH_CODE, X_HEIGHT_CODE,
 };
@@ -407,8 +408,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             if n < 255 {
                 let ins = NodePtr::<InsNode>::alloc(&mut st.mem)?;
                 st.input.cur_list.tail_append(&mut st.mem, ins.ptr());
-                st.mem[ins].box_number =
-                    u16::try_from(n).map_err(|_| Abort::Confusion("insert"))?;
+                st.mem[ins].box_number = u16::try_from(n).or_confusion("insert")?;
                 let height = st.mem[p].height + st.mem[p].depth;
                 st.mem[ins].height = height;
                 let list = st.mem[p].list_ptr;

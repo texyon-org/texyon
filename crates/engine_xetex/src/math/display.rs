@@ -3,6 +3,7 @@
 use crate::cmd::Cmd;
 use crate::consts::{BOX_NODE_SIZE, HMODE, INF_PENALTY, MAX_DIMEN, MMODE, SCRIPT_SIZE, TEXT_SIZE};
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::fonts::QUAD_CODE;
 use crate::input::TokenType;
 use crate::mem::{ADJUST_HEAD, GARBAGE, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
@@ -555,10 +556,8 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                         }
                         // An EDGE_NODE, which shares type 14 with STYLE_NODE.
                         Ok(AnyNode::Style(edge)) => {
-                            st.scanner.cur_dir = st.mem[edge.as_edge()]
-                                .dir
-                                .get()
-                                .ok_or(Abort::Confusion("LR"))?;
+                            st.scanner.cur_dir =
+                                st.mem[edge.as_edge()].dir.get().or_confusion("LR")?;
                             (st.mem[edge.as_edge()].width, false)
                         }
                         Ok(AnyNode::Glue(g)) => {

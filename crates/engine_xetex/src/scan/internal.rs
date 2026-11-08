@@ -11,6 +11,7 @@ use crate::consts::{
     ACTIVE_MATH_CHAR, CHAR_CLASS_LIMIT, DEL_CODE_BASE, MATH_CODE_BASE, MAX_DIMEN, NULL_FONT,
     PAR_SHAPE_LOC, SF_CODE_BASE, VMODE,
 };
+use crate::errors::OrConfusion;
 use crate::errors::{mu_error, Abort};
 use crate::ext::{
     aat_font_get, aat_font_get_1, aat_font_get_2, aat_font_get_named, aat_font_get_named_1,
@@ -319,11 +320,8 @@ fn fetch_register(st: &mut EngineState, r: RegisterRef) -> Result<CurVal, Abort>
     let level = match r {
         RegisterRef::Scanned(level) => level,
         RegisterRef::Sparse(sa) => {
-            let level = st.mem[sa]
-                .sa_type()
-                .get()
-                .ok_or(Abort::Confusion("sa_type"))?;
-            let leaf = sa.leaf(&st.mem).ok_or(Abort::Confusion("sa_type"))?;
+            let level = st.mem[sa].sa_type().get().or_confusion("sa_type")?;
+            let leaf = sa.leaf(&st.mem).or_confusion("sa_type")?;
             return CurVal::from_word(level, sa_register_word(st, leaf)?);
         }
     };
@@ -334,7 +332,7 @@ fn fetch_register(st: &mut EngineState, r: RegisterRef) -> Result<CurVal, Abort>
             Some(leaf) => sa_register_word(st, leaf)?,
         }
     } else {
-        let base = level.register_base().ok_or(Abort::Confusion("register"))?;
+        let base = level.register_base().or_confusion("register")?;
         st.eqtb.equiv(base + n)
     };
     CurVal::from_word(level, word)
@@ -963,7 +961,7 @@ pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<Fon
             loop {
                 if st.fonts.fmem_ptr == st.fonts.font_mem_size {
                     return Err(Abort::Overflow {
-                        what: "font memory",
+                        capacity: crate::errors::Capacity::FontMemory,
                         n: st.fonts.font_mem_size.raw(),
                     });
                 }

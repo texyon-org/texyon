@@ -28,11 +28,8 @@ impl<T: Copy + Default> TexStack<T> {
     }
 
     /// TeX's overflow error for this stack, reporting its size.
-    pub(crate) fn overflow(&self, what: &'static str) -> crate::errors::Abort {
-        crate::errors::Abort::Overflow {
-            what,
-            n: i32::try_from(self.size()).unwrap_or(i32::MAX),
-        }
+    pub(crate) fn overflow(&self, capacity: crate::errors::Capacity) -> crate::errors::Abort {
+        crate::errors::Abort::overflow(capacity, self.size())
     }
 
     /// The most entries the stack holds.

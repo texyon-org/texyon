@@ -7,6 +7,7 @@ use crate::consts::{
     FROZEN_RELAX, MAX_DIMEN, MAX_HALFWORD, NULL_CS, NUMBER_MATH_FAMILIES, SINGLE_BASE,
     TEX_INFINITY,
 };
+use crate::errors::OrConfusion;
 use crate::errors::{mu_error, Abort};
 use crate::fonts::{QUAD_CODE, X_HEIGHT_CODE};
 use crate::input::back_input;
@@ -779,7 +780,7 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
     st.scanner.expand_depth_count += 1;
     if st.scanner.expand_depth_count >= st.scanner.expand_depth {
         return Err(Abort::Overflow {
-            what: "expansion depth",
+            capacity: crate::errors::Capacity::ExpansionDepth,
             n: st.scanner.expand_depth,
         });
     }
@@ -956,7 +957,7 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
             n = st.mem[q].n;
             s = (st.mem[q].state / 4) as i16;
             r = (st.mem[q].state % 4) as i16;
-            l = st.mem[q].level.get().ok_or(Abort::Confusion("expr"))?;
+            l = st.mem[q].level.get().or_confusion("expr")?;
             p = st.mem[q].link;
             q.free(&mut st.mem);
             scan_factor = false;

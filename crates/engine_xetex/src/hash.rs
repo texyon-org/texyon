@@ -41,7 +41,7 @@ impl EqtbState {
         strings: &mut StringsState,
         name: &[i32],
     ) -> Result<EqtbPtr, Abort> {
-        let l = i32::try_from(name.len()).map_err(|_| Abort::PoolOverflow)?;
+        let l = i32::try_from(name.len()).map_err(|_| strings.pool_overflow())?;
         let mut h: i32 = 0;
         for &c in name {
             h = h + h + c;
@@ -85,7 +85,7 @@ impl EqtbState {
                             loop {
                                 if self.hash_used == HASH_BASE {
                                     return Err(Abort::Overflow {
-                                        what: "hash size",
+                                        capacity: crate::errors::Capacity::HashSize,
                                         n: HASH_SIZE + self.hash_extra,
                                     });
                                 }
@@ -100,7 +100,7 @@ impl EqtbState {
                     }
 
                     if strings.pool_ptr + utf16_len > strings.pool_size {
-                        return Err(Abort::PoolOverflow);
+                        return Err(strings.pool_overflow());
                     }
 
                     let d = strings.cur_length();
@@ -183,7 +183,7 @@ impl EqtbState {
                         loop {
                             if self.prim_used == PRIM_BASE {
                                 return Err(Abort::Overflow {
-                                    what: "primitive size",
+                                    capacity: crate::errors::Capacity::PrimitiveSize,
                                     n: PRIM_SIZE,
                                 });
                             }

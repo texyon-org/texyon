@@ -81,10 +81,7 @@ pub(crate) fn insert_special(st: &mut EngineState, text: &str) -> Result<(), Abo
     let start_pool = st.strings.pool_ptr;
     let text = text.as_bytes();
     if st.strings.pool_ptr + text.len() as i32 >= st.strings.pool_size {
-        return Err(Abort::Overflow {
-            what: "string pool overflow",
-            n: 0,
-        });
+        return Err(st.strings.pool_overflow());
     }
     for &b in text {
         st.strings.append_char(u16::from(b));

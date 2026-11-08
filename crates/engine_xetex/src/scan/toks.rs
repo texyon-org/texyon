@@ -32,7 +32,7 @@ impl MemState {
         cat: Option<Cmd>,
     ) -> Result<TokenList, Abort> {
         if strings.pool_ptr + 1 > strings.pool_size {
-            return Err(Abort::PoolOverflow);
+            return Err(strings.pool_overflow());
         }
 
         let mut p = TEMP_HEAD_TOKS;
@@ -449,7 +449,7 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
     st.mem.flush_list(head);
 
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
-        return Err(Abort::PoolOverflow);
+        return Err(st.strings.pool_overflow());
     }
     let s = st.strings.make_string()?;
     st.strings.str_pool[st.strings.pool_ptr.index()] = u16::from(b' ');
