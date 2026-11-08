@@ -599,10 +599,14 @@ pub(crate) fn read_font_info(
         let (parse, scale_side_effect) = st
             .fonts
             .read_font_info_tfm(&st.eqtb, tfm_file, nom, aire, s);
-        if let Some((remainder, overflowed)) = scale_side_effect {
-            st.errors.tex_remainder = remainder;
-            if overflowed {
-                st.errors.arith_error = true;
+        if let Some(scaling) = scale_side_effect {
+            st.errors.tex_remainder = scaling.remainder;
+            if scaling.too_big {
+                font_error_start(st, u, nom, aire, s);
+                print(st, " scaled to 2048pt or higher");
+                capture_to_diagnostic(st, None);
+                st.errors.help(&["I will ignore the scaling factor."]);
+                crate::errors::error(st)?;
             }
         }
         match parse {
@@ -670,9 +674,17 @@ enum TfmParse {
     OutOfMemory,
 }
 
+/// What scaling a TFM font by `scaled` left behind for `read_font_info`.
+struct TfmScaling {
+    /// `xn_over_d`'s remainder, which TeX leaves in `remainder`.
+    remainder: i32,
+    /// The size reached 2048pt, so the design size was kept.
+    too_big: bool,
+}
+
 impl FontState {
     /// Read the opened TFM file into the tables of the next font slot. Also returns
-    /// the (remainder, overflow) side effect of size scaling for the caller to apply.
+    /// the side effect of size scaling for the caller to apply.
     fn read_font_info_tfm(
         &mut self,
         eqtb: &EqtbState,
@@ -680,8 +692,8 @@ impl FontState {
         nom: StrNumber,
         aire: StrNumber,
         s: Scaled,
-    ) -> (TfmParse, Option<(i32, bool)>) {
-        let mut scale_side_effect: Option<(i32, bool)> = None;
+    ) -> (TfmParse, Option<TfmScaling>) {
+        let mut scale_side_effect: Option<TfmScaling> = None;
         macro_rules! bad {
             () => {
                 return (TfmParse::Bad, scale_side_effect)
@@ -768,9 +780,14 @@ impl FontState {
             if s >= Scaled::ZERO {
                 z = s.raw();
             } else {
-                let (q, rem, overflowed) = crate::scaled_math::xn_over_d_parts(z, -s.raw(), 1000);
-                z = q;
-                scale_side_effect = Some((rem, overflowed));
+                let (q, remainder, overflowed) =
+                    crate::scaled_math::xn_over_d_parts(z, -s.raw(), 1000);
+                // tex.ch keeps the design size rather than overflow at 2048pt (2^27 sp).
+                let too_big = overflowed || q >= 0o1_000_000_000;
+                if !too_big {
+                    z = q;
+                }
+                scale_side_effect = Some(TfmScaling { remainder, too_big });
             }
         }
         self.font_size[f] = Scaled::from_raw(z);

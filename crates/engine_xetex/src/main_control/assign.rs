@@ -221,7 +221,9 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         if s > Scaled::ZERO {
             s == st.fonts.font_size[f]
         } else {
-            st.fonts.font_size[f] == st.errors.xn_over_d(st.fonts.font_dsize[f], -s.raw(), 1000)
+            st.errors.arith_error = false;
+            let scaled = st.errors.xn_over_d(st.fonts.font_dsize[f], -s.raw(), 1000);
+            st.fonts.font_size[f] == scaled && !st.errors.arith_error
         }
     };
     let f = 'search: {

@@ -1,0 +1,12 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\a=xbig scaled 2047 \message{\fontname\a}
+\font\b=xbig scaled 2048 \message{\fontname\b}
+\font\c=xbig scaled 3000 \message{\fontname\c}
+\font\d=xbig scaled 3000 \message{\fontname\d}
+\font\e=xbig scaled 20000 \message{\fontname\e}
+\font\f=xbig scaled 20000 \message{\fontname\f}
+\showthe\fontdimen6\a \showthe\fontdimen6\c \showthe\fontdimen6\e
+\ifx\c\d\message{same}\else\message{different}\fi
+\ifx\e\f\message{same}\else\message{different}\fi
+\setbox0\hbox{\c a\e a}\showbox0
+\bye
