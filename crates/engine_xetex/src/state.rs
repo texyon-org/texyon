@@ -1121,8 +1121,6 @@ pub(crate) struct ScannerState {
     pub after_token: crate::token::Token,
     pub cur_order: crate::units::GlueOrder,
     pub cur_f: FontId,
-    pub cur_c: i32,
-    pub cur_i: crate::fonts::CharInfo,
     pub set_box_allowed: bool,
     pub sa_root: SaRoots,
     pub empty: crate::mem_types::B32x2,

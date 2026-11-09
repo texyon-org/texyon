@@ -457,10 +457,10 @@ fn first_script_glyph(
         let saved_math_style = st.scanner.cur_style;
         st.scanner.cur_style = this_math_style;
         set_cur_size_and_mu(st);
-        fetch(st, script_head)?;
+        let fetched = fetch(st, script_head)?;
 
-        let cur_f_after_fetch = st.scanner.cur_f;
-        let cur_c_after_fetch = st.scanner.cur_c;
+        let cur_f_after_fetch = fetched.f;
+        let cur_c_after_fetch = fetched.c;
         if st.fonts.font_is_ot_math(cur_f_after_fetch) {
             let script_c = crate::fonts::new_native_character(
                 st,

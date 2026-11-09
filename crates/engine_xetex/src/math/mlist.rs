@@ -194,8 +194,16 @@ pub(super) fn set_cur_size_and_mu(st: &mut EngineState) {
     st.scanner.cur_mu = st.errors.x_over_n(mq, 18);
 }
 
-enum FetchOutcome {
-    Ok,
+/// What `fetch` found for a math character: its font, code and `char_info`,
+/// which is null when the character is missing or the font is native.
+#[derive(Copy, Clone)]
+pub(super) struct Fetched {
+    pub f: FontId,
+    pub c: i32,
+    pub i: CharInfo,
+}
+
+enum FetchError {
     UndefinedFont { size: i32, fam: i32, c: i32 },
     CharMissing { f: FontId, c: i32 },
 }
@@ -207,46 +215,44 @@ impl MemState {
         eqtb: &EqtbState,
         scanner: &mut ScannerState,
         a: NodePtr<MathField>,
-    ) -> FetchOutcome {
+    ) -> (Fetched, Option<FetchError>) {
         let size = scanner.cur_size;
         let fam = self[a].fam();
-        scanner.cur_f = eqtb.math_font(fam + size);
-        scanner.cur_c = self[a].full_char();
+        let f = eqtb.math_font(fam + size);
+        scanner.cur_f = f;
+        let c = self[a].full_char();
+        let mut fetched = Fetched {
+            f,
+            c,
+            i: CharInfo::NULL,
+        };
 
-        if scanner.cur_f == NULL_FONT {
-            let c = scanner.cur_c;
-            scanner.cur_i = CharInfo::NULL;
+        if f == NULL_FONT {
             self[a].math_type = EMPTY;
-            return FetchOutcome::UndefinedFont { size, fam, c };
+            return (fetched, Some(FetchError::UndefinedFont { size, fam, c }));
         }
 
-        let area = fonts.font_area[scanner.cur_f];
-        if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
-            scanner.cur_i = CharInfo::NULL;
-        } else {
-            if scanner.cur_c >= i32::from(fonts.font_bc[scanner.cur_f])
-                && scanner.cur_c <= i32::from(fonts.font_ec[scanner.cur_f])
-            {
-                scanner.cur_i = fonts.char_info(scanner.cur_f, scanner.cur_c);
-            } else {
-                scanner.cur_i = CharInfo::NULL;
+        let area = fonts.font_area[f];
+        if area != AAT_FONT_FLAG && area != OTGR_FONT_FLAG {
+            if c >= i32::from(fonts.font_bc[f]) && c <= i32::from(fonts.font_ec[f]) {
+                fetched.i = fonts.char_info(f, c);
             }
-            if !scanner.cur_i.exists() {
-                let f = scanner.cur_f;
-                let c = scanner.cur_c;
+            if !fetched.i.exists() {
                 self[a].math_type = EMPTY;
-                scanner.cur_i = CharInfo::NULL;
-                return FetchOutcome::CharMissing { f, c };
+                fetched.i = CharInfo::NULL;
+                return (fetched, Some(FetchError::CharMissing { f, c }));
             }
         }
-        FetchOutcome::Ok
+        (fetched, None)
     }
 }
 
-pub(super) fn fetch(st: &mut EngineState, a: NodePtr<MathField>) -> Result<(), Abort> {
-    match st.mem.fetch(&st.fonts, &st.eqtb, &mut st.scanner, a) {
-        FetchOutcome::Ok => Ok(()),
-        FetchOutcome::UndefinedFont { size, fam, c } => crate::errors::error(
+/// Look up math character `a`, reporting a missing font or character. Also sets `cur_f`.
+pub(super) fn fetch(st: &mut EngineState, a: NodePtr<MathField>) -> Result<Fetched, Abort> {
+    let (fetched, error) = st.mem.fetch(&st.fonts, &st.eqtb, &mut st.scanner, a);
+    match error {
+        None => {}
+        Some(FetchError::UndefinedFont { size, fam, c }) => crate::errors::error(
             st,
             (
                 crate::output::FamFont(size),
@@ -262,9 +268,10 @@ pub(super) fn fetch(st: &mut EngineState, a: NodePtr<MathField>) -> Result<(), A
                 r"plain TeX doesn't allow \it or \sl in subscripts. Proceed,",
                 "and I'll try to forget that I needed that character.",
             ],
-        ),
-        FetchOutcome::CharMissing { f, c } => crate::output::char_warning(st, f, c),
+        )?,
+        Some(FetchError::CharMissing { f, c }) => crate::output::char_warning(st, f, c)?,
     }
+    Ok(fetched)
 }
 
 impl MemState {
@@ -557,20 +564,18 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
     }
 
     if st.mem[q.nucleus()].math_type == MATH_CHAR {
-        fetch(st, q.nucleus())?;
+        let Fetched { f, mut i, .. } = fetch(st, q.nucleus())?;
 
-        let f = st.scanner.cur_f;
         if !st.fonts.font_uses_opentype(f) {
-            if st.scanner.cur_style < MathStyle::TEXT && st.scanner.cur_i.tag() == CharTag::List {
-                let c = st.scanner.cur_i.remainder();
+            if st.scanner.cur_style < MathStyle::TEXT && i.tag() == CharTag::List {
+                let c = i.remainder();
                 let i_info = st.fonts.char_info(f, i32::from(c));
                 if i_info.exists() {
-                    st.scanner.cur_c = i32::from(c);
-                    st.scanner.cur_i = i_info;
+                    i = i_info;
                     st.mem[q.nucleus()].set_character(c);
                 }
             }
-            delta = st.fonts.char_italic(f, st.scanner.cur_i);
+            delta = st.fonts.char_italic(f, i);
         }
 
         let x = clean_box(st, q.nucleus(), st.scanner.cur_style)?;
@@ -712,19 +717,21 @@ enum MakeOrdStep {
 }
 
 impl MemState {
+    /// Apply the first ligature or kern between `q`'s character, fetched as
+    /// `fetched`, and the character of the next noad `p`.
     fn make_ord_body(
         &mut self,
         fonts: &FontState,
-        scanner: &mut ScannerState,
+        fetched: Fetched,
         q: NodePtr<Noad>,
         p: NodePtr<Noad>,
     ) -> Result<MakeOrdStep, Abort> {
-        scanner.cur_c = i32::from(self[p.nucleus()].character());
-        let (mut a, mut step) = fonts.lig_kern_start(scanner.cur_f, scanner.cur_i);
+        let next_c = i32::from(self[p.nucleus()].character());
+        let (mut a, mut step) = fonts.lig_kern_start(fetched.f, fetched.i);
         loop {
-            if step.matches(crate::fonts::LigChar::from_raw(scanner.cur_c)) {
+            if step.matches(crate::fonts::LigChar::from_raw(next_c)) {
                 if step.is_kern() {
-                    let kern_width = fonts.char_kern(scanner.cur_f, step);
+                    let kern_width = fonts.char_kern(fetched.f, step);
                     let p_kern = self.new_kern(kern_width)?;
                     self[p_kern].link = self[q].link;
                     self[q].link = p_kern.ptr();
@@ -812,15 +819,12 @@ fn make_ord(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
         }
 
         st.mem[q.nucleus()].math_type = MATH_TEXT_CHAR;
-        fetch(st, q.nucleus())?;
-        if st.scanner.cur_i.tag() != CharTag::Lig {
+        let fetched = fetch(st, q.nucleus())?;
+        if fetched.i.tag() != CharTag::Lig {
             return Ok(());
         }
 
-        match st
-            .mem
-            .make_ord_body(&st.fonts, &mut st.scanner, q, p_node)?
-        {
+        match st.mem.make_ord_body(&st.fonts, fetched, q, p_node)? {
             MakeOrdStep::Return => return Ok(()),
             MakeOrdStep::Restart => continue 'restart,
         }
@@ -829,9 +833,9 @@ fn make_ord(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
 
 fn make_math_accent(st: &mut EngineState, q: NodePtr<AccentNoad>) -> Result<(), Abort> {
     let n = q.as_noad();
-    fetch(st, q.accent_chr())?;
-    let f = st.scanner.cur_f;
-    let mut c = st.scanner.cur_c;
+    let accent = fetch(st, q.accent_chr())?;
+    let f = accent.f;
+    let mut c = accent.c;
     let area = st.fonts.font_area[f];
     let kind = st.mem[q].kind().get();
     let bottom_accent = kind.is_some_and(MathAccentKind::is_bottom);
@@ -844,13 +848,13 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<AccentNoad>) -> Result<(), 
             s = compute_ot_math_accent_pos(st, q)?;
         }
         x = clean_box(st, n.nucleus(), st.scanner.cur_style.cramped())?;
-    } else if st.scanner.cur_i.exists() {
-        let mut acc_i = st.scanner.cur_i;
+    } else if accent.i.exists() {
+        let mut acc_i = accent.i;
         if st.mem[n.nucleus()].math_type == MATH_CHAR {
-            fetch(st, n.nucleus())?;
-            if st.scanner.cur_i.tag() == CharTag::Lig {
-                let cur_f = st.scanner.cur_f;
-                let (mut a, mut step) = st.fonts.lig_kern_start(cur_f, st.scanner.cur_i);
+            let nucleus = fetch(st, n.nucleus())?;
+            if nucleus.i.tag() == CharTag::Lig {
+                let cur_f = nucleus.f;
+                let (mut a, mut step) = st.fonts.lig_kern_start(cur_f, nucleus.i);
                 let skew_char = st.fonts.skew_char[cur_f];
                 s = loop {
                     if i32::from(step.next_char()) == skew_char {
@@ -1152,11 +1156,11 @@ fn mlist_advance(st: &mut EngineState, qn: NodePtr<AnyNoad>, style: MathStyle) -
 fn mlist_nucleus(st: &mut EngineState, qn: NodePtr<Noad>, mut delta: Scaled) -> Result<(), Abort> {
     let p = match st.mem[qn.nucleus()].math_type {
         MATH_CHAR | MATH_TEXT_CHAR => {
-            fetch(st, qn.nucleus())?;
-            let cur_f = st.scanner.cur_f;
+            let fetched = fetch(st, qn.nucleus())?;
+            let cur_f = fetched.f;
             let area = st.fonts.font_area[cur_f];
             let p = if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
-                let z = crate::fonts::new_native_character(st, cur_f, st.scanner.cur_c as u32)?;
+                let z = crate::fonts::new_native_character(st, cur_f, fetched.c as u32)?;
                 let glyph =
                     NodePtr::<GlyphNode>::alloc_whatsit(&mut st.mem, WhatsitSubtype::Glyph)?;
                 let z_glyph = st.mem.get_native_glyph(z, 0);
@@ -1174,9 +1178,9 @@ fn mlist_nucleus(st: &mut EngineState, qn: NodePtr<Noad>, mut delta: Scaled) -> 
                     delta = Scaled::ZERO;
                 }
                 glyph.ptr()
-            } else if st.scanner.cur_i.exists() {
-                delta = st.fonts.char_italic(cur_f, st.scanner.cur_i);
-                let cc = st.scanner.cur_c as u16;
+            } else if fetched.i.exists() {
+                delta = st.fonts.char_italic(cur_f, fetched.i);
+                let cc = fetched.c as u16;
                 let p = crate::main_control::new_character(st, cur_f, cc)?;
                 let p = p.map_or(MemPtr::NULL, crate::main_control::NewChar::ptr);
                 if st.mem[qn.nucleus()].math_type == MATH_TEXT_CHAR
@@ -1600,9 +1604,7 @@ fn compute_ot_math_accent_pos(
     loop {
         match st.mem[p.as_noad().nucleus()].math_type {
             MATH_CHAR => {
-                fetch(st, p.as_noad().nucleus())?;
-                let f = st.scanner.cur_f;
-                let c = st.scanner.cur_c;
+                let Fetched { f, c, .. } = fetch(st, p.as_noad().nucleus())?;
                 let q = crate::fonts::new_native_character(st, f, c as u32)?;
                 let g = st.mem.get_native_glyph(q, 0);
                 return Ok(st.fonts.get_ot_math_accent_pos(f, i32::from(g)));
