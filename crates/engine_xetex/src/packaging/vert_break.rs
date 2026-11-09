@@ -45,6 +45,8 @@ struct VertBreakCursor {
     finish_glue_after_shrinkage: Option<NodePtr<GlueNode>>,
     /// Height, stretch and shrink of the material so far, as in WEB's `active_height`.
     active_height: crate::linebreak::Widths,
+    /// The natural height plus depth of the material before `best_place`.
+    best_height_plus_depth: Scaled,
 }
 
 enum VertBreakStep {
@@ -82,6 +84,7 @@ impl VertBreakCursor {
             prev_dp: Scaled::ZERO,
             finish_glue_after_shrinkage: None,
             active_height: [Scaled::ZERO; 7],
+            best_height_plus_depth: Scaled::ZERO,
         }
     }
 }
@@ -175,7 +178,6 @@ impl MemState {
 
     fn vert_break_resume(
         &mut self,
-        scanner: &mut ScannerState,
         cursor: &mut VertBreakCursor,
         h: Scaled,
         d: Scaled,
@@ -221,7 +223,7 @@ impl MemState {
                         if b <= cursor.least_cost {
                             cursor.best_place = cursor.p;
                             cursor.least_cost = b;
-                            scanner.best_height_plus_depth =
+                            cursor.best_height_plus_depth =
                                 cursor.active_height[1] + cursor.prev_dp;
                         }
                         if b == MAX_HALFWORD || pi <= EJECT_PENALTY {
@@ -288,20 +290,20 @@ impl MemState {
     }
 }
 
-/// The best place to break the vlist `p` for a height `h` with maximum depth `d`.
+/// The best place to break the vlist `p` for a height `h` with maximum depth `d`,
+/// and the natural height plus depth of the material before it.
 pub(crate) fn vert_break(
     st: &mut EngineState,
     p: MemPtr,
     h: Scaled,
     d: Scaled,
-) -> Result<MemPtr, Abort> {
+) -> Result<(MemPtr, Scaled), Abort> {
     let mut cursor = VertBreakCursor::start(p);
     loop {
-        match st
-            .mem
-            .vert_break_resume(&mut st.scanner, &mut cursor, h, d)?
-        {
-            VertBreakStep::Done(best_place) => return Ok(best_place),
+        match st.mem.vert_break_resume(&mut cursor, h, d)? {
+            VertBreakStep::Done(best_place) => {
+                return Ok((best_place, cursor.best_height_plus_depth))
+            }
             VertBreakStep::InfiniteShrinkage { glue, spec } => {
                 print_vert_break_infinite_shrinkage_error(st)?;
                 st.mem.repair_vert_break_infinite_shrinkage(glue, spec)?;
@@ -487,7 +489,7 @@ impl MemState {
         shipout: &mut ShipoutState,
         state: &mut VsplitState,
     ) -> Result<VsplitStep, Abort> {
-        match self.vert_break_resume(scanner, &mut state.vert_break, state.h, state.split_max_d)? {
+        match self.vert_break_resume(&mut state.vert_break, state.h, state.split_max_d)? {
             VertBreakStep::Done(q) => {
                 let outcome = self.finish_vsplit_after_break(eqtb, scanner, shipout, state, q)?;
                 Ok(VsplitStep::Done(outcome))

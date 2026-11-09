@@ -512,14 +512,14 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
     if w > room {
         w = room;
     }
-    let q = crate::packaging::vert_break(st, st.mem[ins].ins_ptr, w, st.mem[ins].depth)?;
-    let height = st.mem[rec].height + st.scanner.best_height_plus_depth;
+    let (q, mut best_height_plus_depth) =
+        crate::packaging::vert_break(st, st.mem[ins].ins_ptr, w, st.mem[ins].depth)?;
+    let height = st.mem[rec].height + best_height_plus_depth;
     st.mem[rec].height = height;
     if count != 1000 {
-        st.scanner.best_height_plus_depth =
-            scale_by_count(st, st.scanner.best_height_plus_depth, count);
+        best_height_plus_depth = scale_by_count(st, best_height_plus_depth, count);
     }
-    st.shipout.page_so_far[PAGE_GOAL] -= st.scanner.best_height_plus_depth;
+    st.shipout.page_so_far[PAGE_GOAL] -= best_height_plus_depth;
     st.mem[rec].set_split_up(true);
     st.mem[rec].broken_ptr = q;
     st.mem[rec].broken_ins = p;

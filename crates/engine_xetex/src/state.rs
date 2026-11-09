@@ -1125,7 +1125,6 @@ pub(crate) struct ScannerState {
     pub cur_c: i32,
     pub cur_i: crate::fonts::CharInfo,
     pub set_box_allowed: bool,
-    pub best_height_plus_depth: Scaled,
     pub lr_ptr: crate::units::MemPtr,
     pub lr_problems: i32,
     pub cur_dir: crate::units::Dir,
