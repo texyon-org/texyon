@@ -13,8 +13,19 @@ use crate::params::{GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, MemState};
 use crate::units::{MemPtr, Scaled};
 
-use super::lists::PassiveId;
+use super::lists::{ActiveEntry, PassiveId};
 use super::Breaker;
+
+/// Where `post_line_break` is in the paragraph.
+struct PostLines {
+    cur_line: i32,
+    /// One more than the paragraph's last line number.
+    best_line: i32,
+    /// The LR stack carried from line to line.
+    lr_ptr: MemPtr,
+    /// Whether a display follows the paragraph.
+    display: bool,
+}
 
 struct PostLineHpack {
     /// The break that ends this line.
@@ -32,10 +43,11 @@ impl Breaker {
     fn post_line_break_prefix(
         &mut self,
         st: &mut EngineState,
-        lr_ptr: &mut MemPtr,
-        cur_line: i32,
+        lines: &mut PostLines,
         brk: PassiveId,
     ) -> Result<PostLineHpack, Abort> {
+        let cur_line = lines.cur_line;
+        let lr_ptr = &mut lines.lr_ptr;
         let EngineState {
             errors,
             mem,
@@ -263,11 +275,13 @@ impl Breaker {
         &self,
         st: &mut EngineState,
         just_box: NodePtr<BoxNode>,
+        lines: &mut PostLines,
         hpack: PostLineHpack,
-        d: bool,
-        lr_ptr: &mut MemPtr,
-        cur_line: &mut i32,
     ) -> Result<Option<PassiveId>, Abort> {
+        let best_line = lines.best_line;
+        let d = lines.display;
+        let lr_ptr = &mut lines.lr_ptr;
+        let cur_line = &mut lines.cur_line;
         let EngineState {
             mem,
             scanner,
@@ -292,7 +306,7 @@ impl Breaker {
         }
         scanner.adjust_tail = MemPtr::NULL;
 
-        if cur_line.wrapping_add(1) != self.best_line {
+        if cur_line.wrapping_add(1) != best_line {
             let mut pen = mem
                 .etex_penalty(eqtb, ETEX_PENALTIES_PAR_INTER_LINE_PENALTIES, *cur_line)
                 .unwrap_or_else(|| eqtb.int_par(IntPar::InterLinePenalty));
@@ -320,10 +334,10 @@ impl Breaker {
             match mem.etex_penalty(
                 eqtb,
                 widow_array,
-                self.best_line.wrapping_sub(*cur_line).wrapping_sub(1),
+                best_line.wrapping_sub(*cur_line).wrapping_sub(1),
             ) {
                 Some(p) => pen = pen.wrapping_add(p),
-                None if cur_line.wrapping_add(2) == self.best_line => {
+                None if cur_line.wrapping_add(2) == best_line => {
                     pen = pen.wrapping_add(eqtb.int_par(widow_penalty))
                 }
                 None => {}
@@ -384,20 +398,25 @@ impl Breaker {
 }
 
 /// Break the paragraph into lines along the breakpoints ending at `best` and
-/// append them, returning the last line's box.
+/// append them, returning the last line's box. `display` says a display follows.
 pub(super) fn post_line_break(
     st: &mut EngineState,
     lb: &mut Breaker,
-    best: Option<PassiveId>,
-    d: bool,
+    best: &ActiveEntry,
+    display: bool,
 ) -> Result<NodePtr<BoxNode>, Abort> {
-    let mut lr_ptr = st.input.cur_list.e_tex_aux;
+    let mut brk = lb
+        .reverse_best_breaks(best.break_node)
+        .or_confusion("line breaking")?;
 
-    let mut brk = lb.reverse_best_breaks(best).or_confusion("line breaking")?;
-
-    let mut cur_line = st.input.cur_list.prev_graf.wrapping_add(1);
+    let mut lines = PostLines {
+        cur_line: st.input.cur_list.prev_graf.wrapping_add(1),
+        best_line: best.line_number,
+        lr_ptr: st.input.cur_list.e_tex_aux,
+        display,
+    };
     let last_line = loop {
-        let hpack = lb.post_line_break_prefix(st, &mut lr_ptr, cur_line, brk)?;
+        let hpack = lb.post_line_break_prefix(st, &mut lines, brk)?;
 
         let spec = if hpack.semantic_pagination {
             PackSpec::NATURAL
@@ -406,18 +425,17 @@ pub(super) fn post_line_break(
         };
         let just_box = crate::packaging::hpack(st, hpack.q, spec)?;
 
-        match lb.post_line_break_suffix(st, just_box, hpack, d, &mut lr_ptr, &mut cur_line) {
-            Ok(None) => break just_box,
-            Ok(Some(next)) => brk = next,
-            Err(e) => return Err(e),
+        match lb.post_line_break_suffix(st, just_box, &mut lines, hpack)? {
+            None => break just_box,
+            Some(next) => brk = next,
         }
     };
 
-    if cur_line != lb.best_line || !TEMP_HEAD.link(&st.mem).is_null() {
+    if lines.cur_line != lines.best_line || !TEMP_HEAD.link(&st.mem).is_null() {
         return Err(Abort::Confusion("line breaking"));
     }
 
-    st.input.cur_list.prev_graf = lb.best_line.wrapping_sub(1);
-    st.input.cur_list.e_tex_aux = lr_ptr;
+    st.input.cur_list.prev_graf = lines.best_line.wrapping_sub(1);
+    st.input.cur_list.e_tex_aux = lines.lr_ptr;
     Ok(last_line)
 }

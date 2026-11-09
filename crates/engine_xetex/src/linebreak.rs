@@ -45,15 +45,11 @@ struct Breaker {
     second_width: Scaled,
     first_indent: Scaled,
     second_indent: Scaled,
-    /// The line number of the chosen breakpoint, once there is one.
-    best_line: i32,
     active_width: Widths,
     cur_active_width: Widths,
     background: Widths,
-    break_width: Widths,
     best_place: [Option<PassiveId>; 4],
     best_pl_line: [i32; 4],
-    disc_width: Scaled,
     final_pass: bool,
     threshold: i32,
     minimal_demerits: [i32; 4],
@@ -64,6 +60,13 @@ struct Breaker {
     best_pl_short: [Scaled; 4],
     best_pl_glue: [Scaled; 4],
     no_shrink_error_yet: bool,
+}
+
+/// A hyphenated break at a discretionary, with the width of its pre-break text.
+#[derive(Copy, Clone)]
+struct DiscBreak {
+    node: NodePtr<DiscNode>,
+    width: Scaled,
 }
 
 #[inline]
@@ -122,7 +125,7 @@ impl Breaker {
         Ok(())
     }
 
-    /// Pick the best active entry and set `best_line`. `None` when the result
+    /// Pick the best active entry. `None` when the result
     /// misses `\looseness` and another pass is due.
     fn choose_best_break(&mut self, eqtb: &EqtbState) -> Result<Option<ActiveEntry>, Abort> {
         if self.lists.is_empty() {
@@ -138,7 +141,7 @@ impl Breaker {
             }
         }
         let mut best = best.or_confusion("line breaking")?;
-        self.best_line = best.line_number;
+        let best_line = best.line_number;
 
         let looseness = eqtb.int_par(IntPar::Looseness);
         if looseness == 0 {
@@ -147,7 +150,7 @@ impl Breaker {
 
         let mut actual_looseness = 0;
         for a in self.lists.actives() {
-            let line_diff = a.line_number.wrapping_sub(self.best_line);
+            let line_diff = a.line_number.wrapping_sub(best_line);
             if (line_diff < actual_looseness && looseness <= line_diff)
                 || (line_diff > actual_looseness && looseness >= line_diff)
             {
@@ -160,7 +163,6 @@ impl Breaker {
             }
         }
 
-        self.best_line = best.line_number;
         Ok((actual_looseness == looseness || self.final_pass).then_some(best))
     }
 
@@ -472,23 +474,28 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                 }
                 AnyNode::Disc(d) => {
                     let pre_break = st.mem[d].pre_break;
-                    lb.disc_width = Scaled::ZERO;
                     if pre_break.is_null() {
                         let pi = st.eqtb.int_par(IntPar::ExHyphenPenalty);
-                        lb.try_break(st, pi, BreakType::Hyphenated, Some(d))?;
+                        let disc = DiscBreak {
+                            node: d,
+                            width: Scaled::ZERO,
+                        };
+                        lb.try_break(st, pi, BreakType::Hyphenated, Some(disc))?;
                     } else {
+                        let mut width = Scaled::ZERO;
                         let mut s = pre_break;
                         while !s.is_null() {
-                            lb.disc_width += st
+                            width += st
                                 .mem
                                 .disc_node_width(&mut st.fonts, s)
                                 .or_confusion("disc3")?;
                             s = s.link(&st.mem);
                         }
-                        lb.active_width[1] += lb.disc_width;
+                        lb.active_width[1] += width;
                         let pi = st.eqtb.int_par(IntPar::HyphenPenalty);
-                        lb.try_break(st, pi, BreakType::Hyphenated, Some(d))?;
-                        lb.active_width[1] -= lb.disc_width;
+                        let disc = DiscBreak { node: d, width };
+                        lb.try_break(st, pi, BreakType::Hyphenated, Some(disc))?;
+                        lb.active_width[1] -= width;
                     }
 
                     let mut s = st.mem[d].link;
@@ -545,7 +552,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
 
     lb.finish_last_line_fit(&mut st.mem, &best, last_line_fill)?;
 
-    let last_line = post_line_break(st, &mut lb, best.break_node, d)?;
+    let last_line = post_line_break(st, &mut lb, &best, d)?;
 
     st.scanner.pack_begin_line = 0;
     Ok(last_line)
@@ -583,36 +590,40 @@ fn stretch_badness(shortfall: Scaled, stretch: Scaled) -> (i32, Fitness) {
 }
 
 impl Breaker {
-    /// Set `break_width` to the width of the line material after a break at
-    /// `cur_p`, which is `disc` for a hyphenated break.
+    /// The width of the line material after a break at `cur_p`, which is `disc`
+    /// for a hyphenated break.
     fn compute_break_width(
-        &mut self,
+        &self,
         mem: &MemState,
         fonts: &mut FontState,
-        disc: Option<NodePtr<DiscNode>>,
-    ) -> Result<(), Abort> {
-        self.break_width[1..].copy_from_slice(&self.background[1..]);
+        disc: Option<DiscBreak>,
+    ) -> Result<Widths, Abort> {
+        let mut break_width = self.background;
         let mut s = self.cur_p;
 
-        if let Some(cur_disc) = disc {
+        if let Some(DiscBreak {
+            node: cur_disc,
+            width: disc_width,
+        }) = disc
+        {
             let mut v = cur_disc.ptr();
             s = mem[cur_disc].post_break;
 
             for _ in 0..mem[cur_disc].replace_count {
                 v = v.link(mem);
-                self.break_width[1] -= mem.disc_node_width(fonts, v).map_err(|whatsit| {
+                break_width[1] -= mem.disc_node_width(fonts, v).map_err(|whatsit| {
                     Abort::Confusion(if whatsit { "disc1a" } else { "disc1" })
                 })?;
             }
 
             while !s.is_null() {
-                self.break_width[1] += mem.disc_node_width(fonts, s).map_err(|whatsit| {
+                break_width[1] += mem.disc_node_width(fonts, s).map_err(|whatsit| {
                     Abort::Confusion(if whatsit { "disc2a" } else { "disc2" })
                 })?;
                 s = s.link(mem);
             }
 
-            self.break_width[1] += self.disc_width;
+            break_width[1] += disc_width;
             if mem[cur_disc].post_break.is_null() {
                 s = v.link(mem);
             }
@@ -622,20 +633,20 @@ impl Breaker {
             match mem.classify(s) {
                 Ok(AnyNode::Glue(g)) => {
                     let spec = mem[g].glue_ptr;
-                    self.break_width[1] -= mem[spec].width;
-                    self.break_width[2 + mem[spec].stretch_order.index()] -= mem[spec].stretch;
-                    self.break_width[6] -= mem[spec].shrink;
+                    break_width[1] -= mem[spec].width;
+                    break_width[2 + mem[spec].stretch_order.index()] -= mem[spec].stretch;
+                    break_width[6] -= mem[spec].shrink;
                 }
                 Ok(AnyNode::Penalty(_)) => {}
-                Ok(AnyNode::Math(m)) => self.break_width[1] -= mem[m].width,
+                Ok(AnyNode::Math(m)) => break_width[1] -= mem[m].width,
                 Ok(AnyNode::Kern(k)) if mem[k].subtype == KernSubtype::Explicit => {
-                    self.break_width[1] -= mem[k].width;
+                    break_width[1] -= mem[k].width;
                 }
                 _ => break,
             }
             s = s.link(mem);
         }
-        Ok(())
+        Ok(break_width)
     }
 }
 
@@ -645,12 +656,12 @@ impl Breaker {
     fn insert_new_active_nodes(
         &mut self,
         eqtb: &EqtbState,
+        bw: &Widths,
         r: EntryId,
         prev_r: &mut EntryId,
         prev_prev_r: &mut Option<EntryId>,
         break_type: BreakType,
     ) -> Result<(), Abort> {
-        let bw = self.break_width;
         let caw = self.cur_active_width;
         if let Entry::Delta(old) = self.lists.get_mut(*prev_r) {
             *old = widths(|k| old[k] - caw[k] + bw[k]);
@@ -720,7 +731,7 @@ impl Breaker {
         st: &mut EngineState,
         mut pi: i32,
         break_type: BreakType,
-        disc: Option<NodePtr<DiscNode>>,
+        disc: Option<DiscBreak>,
     ) -> Result<(), Abort> {
         let EngineState {
             mem,
@@ -741,7 +752,7 @@ impl Breaker {
             pi = EJECT_PENALTY;
         }
 
-        let mut no_break_yet = true;
+        let mut break_width = None;
         let mut prev_r = EntryId::ACTIVE_LIST;
         let mut prev_prev_r = None;
         let mut old_l = 0;
@@ -770,12 +781,13 @@ impl Breaker {
                 if self.minimum_demerits < AWFUL_BAD
                     && (old_l != self.easy_line || r == EntryId::LAST_ACTIVE)
                 {
-                    if no_break_yet {
-                        no_break_yet = false;
-                        self.compute_break_width(mem, fonts, disc)?;
-                    }
+                    let bw = match break_width {
+                        Some(bw) => bw,
+                        None => *break_width.insert(self.compute_break_width(mem, fonts, disc)?),
+                    };
                     self.insert_new_active_nodes(
                         eqtb,
+                        &bw,
                         r,
                         &mut prev_r,
                         &mut prev_prev_r,
@@ -819,7 +831,13 @@ impl Breaker {
                 shortfall = line_width - caw[1];
                 if eqtb.int_par(IntPar::XetexProtrudeChars) > 1 {
                     shortfall += self
-                        .total_pw(errors, mem, fonts, r_active.break_node, disc)
+                        .total_pw(
+                            errors,
+                            mem,
+                            fonts,
+                            r_active.break_node,
+                            disc.map(|d| d.node),
+                        )
                         .ok_or(Abort::PdfError(&["total_pw", "hlist stack failure"]))?;
                 }
             }
