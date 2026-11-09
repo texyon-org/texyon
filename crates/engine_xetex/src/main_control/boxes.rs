@@ -11,6 +11,7 @@ use crate::errors::OrConfusion;
 use crate::input::TokenType;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD};
 use crate::node::{AnyNode, BoxOrRule, GlueKind, MathCode, SaLeaf};
+use crate::packaging::{AdjustTails, PackOrigin};
 use crate::params::{DimenPar, IntPar, TokPar};
 use crate::scan::fetch_box;
 use crate::state::{EngineState, GroupCode, MemState};
@@ -113,7 +114,7 @@ pub(super) fn scan_box(st: &mut EngineState, box_context: i32) -> Result<(), Abo
         && (st.scanner.cur_cmd == Cmd::Hrule || st.scanner.cur_cmd == Cmd::Vrule)
     {
         st.scanner.cur_box = Some(BoxOrRule::Rule(crate::scan::scan_rule_spec(st)?));
-        box_end(st, box_context)
+        box_end(st, box_context, None)
     } else {
         crate::errors::back_error(
             st,
@@ -127,7 +128,8 @@ pub(super) fn scan_box(st: &mut EngineState, box_context: i32) -> Result<(), Abo
     }
 }
 
-pub(super) fn package(st: &mut EngineState, vtop: bool) -> Result<(), Abort> {
+/// Package the box closed by `group`, an `\hbox`, `\vbox` or `\vtop` group.
+pub(super) fn package(st: &mut EngineState, group: GroupCode) -> Result<(), Abort> {
     let d = st.eqtb.dimen_par(DimenPar::BoxMaxDepth);
     let u = st.eqtb.int_par(IntPar::XetexUpwards);
     crate::save::unsave(st)?;
@@ -136,13 +138,15 @@ pub(super) fn package(st: &mut EngineState, vtop: bool) -> Result<(), Abort> {
     let v = st.eqtb.int_par(IntPar::XetexUpwards);
     st.eqtb.set_int_par(IntPar::XetexUpwards, u);
     let list = st.input.cur_list.head.link(&st.mem);
+    let mut adjust = (group == GroupCode::AdjustedHbox).then_some(AdjustTails::HEADS);
     if st.input.cur_list.mode == INNER_HMODE {
-        let b = crate::packaging::hpack(st, list, spec)?;
+        let b =
+            crate::packaging::hpack_with(st, list, spec, PackOrigin::Here, adjust.as_mut())?.r_box;
         st.scanner.cur_box = Some(BoxOrRule::Box(b));
     } else {
         let b = crate::packaging::vpackage(st, list, spec, d)?;
         st.scanner.cur_box = Some(BoxOrRule::Box(b));
-        if vtop {
+        if group == GroupCode::Vtop {
             let h = match st.mem[b].list_ptr.as_idx().map(|p| st.mem.classify(p)) {
                 Some(Ok(AnyNode::Box(first))) => st.mem[first].height,
                 Some(Ok(AnyNode::Rule(first))) => st.mem[first].height.to_scaled(),
@@ -156,10 +160,16 @@ pub(super) fn package(st: &mut EngineState, vtop: bool) -> Result<(), Abort> {
     st.eqtb.set_int_par(IntPar::XetexUpwards, v);
     st.mem.pop_nest(&mut st.input)?;
     let box_context = st.save_stack.saved(0);
-    box_end(st, box_context)
+    box_end(st, box_context, adjust)
 }
 
-fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
+/// Put the current box where `box_context` says, with the material `hpack`
+/// moved out of it to `adjust` placed around it in a vertical list.
+fn box_end(
+    st: &mut EngineState,
+    box_context: i32,
+    adjust: Option<AdjustTails>,
+) -> Result<(), Abort> {
     if box_context < BOX_FLAG {
         let b = match st.scanner.cur_box {
             None => return Ok(()),
@@ -168,20 +178,14 @@ fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
         };
         st.mem[b].shift_amount = Scaled::from_raw(box_context);
         if st.input.cur_list.mode.abs() == VMODE {
-            if !st.scanner.pre_adjust_tail.is_null() {
-                if st.scanner.pre_adjust_tail != PRE_ADJUST_HEAD {
-                    append_list(st, PRE_ADJUST_HEAD, st.scanner.pre_adjust_tail);
-                }
-                st.scanner.pre_adjust_tail = MemPtr::NULL;
+            if let Some(adjust) = adjust.filter(|a| a.pre != PRE_ADJUST_HEAD) {
+                append_list(st, PRE_ADJUST_HEAD, adjust.pre);
             }
             st.input
                 .cur_list
                 .append_to_vlist(&mut st.mem, &st.eqtb, b)?;
-            if !st.scanner.adjust_tail.is_null() {
-                if st.scanner.adjust_tail != ADJUST_HEAD {
-                    append_list(st, ADJUST_HEAD, st.scanner.adjust_tail);
-                }
-                st.scanner.adjust_tail = MemPtr::NULL;
+            if let Some(adjust) = adjust.filter(|a| a.post != ADJUST_HEAD) {
+                append_list(st, ADJUST_HEAD, adjust.post);
             }
             if st.input.cur_list.mode > 0 {
                 crate::pagebuilder::build_page(st)?;
@@ -413,5 +417,5 @@ pub(super) fn begin_box(
             return Ok(());
         }
     }
-    box_end(st, box_context)
+    box_end(st, box_context, None)
 }

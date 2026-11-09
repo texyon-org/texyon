@@ -14,8 +14,7 @@ use crate::fonts::{
 };
 use crate::input::{TokenType, TOKEN_LIST};
 use crate::mem::{
-    ADJUST_HEAD, CONTRIB_HEAD, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, PAGE_HEAD, PRE_ADJUST_HEAD,
-    SS_GLUE, TEMP_HEAD_TOKS, ZERO_GLUE,
+    CONTRIB_HEAD, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, PAGE_HEAD, SS_GLUE, TEMP_HEAD_TOKS, ZERO_GLUE,
 };
 use crate::mem_types::ListStateRecord;
 use crate::node::{
@@ -364,7 +363,8 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             return Ok(());
         }
     }
-    match st.save_stack.cur_group {
+    let group = st.save_stack.cur_group;
+    match group {
         GroupCode::Simple => crate::save::unsave(st)?,
         GroupCode::BottomLevel => {
             crate::errors::error(
@@ -379,19 +379,14 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
         GroupCode::SemiSimple | GroupCode::MathShift | GroupCode::MathLeft => {
             crate::errors::extra_right_brace(st)?;
         }
-        GroupCode::Hbox => package(st, false)?,
-        GroupCode::AdjustedHbox => {
-            st.scanner.adjust_tail = ADJUST_HEAD;
-            st.scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
-            package(st, false)?;
-        }
+        GroupCode::Hbox | GroupCode::AdjustedHbox => package(st, group)?,
         GroupCode::Vbox => {
             end_graf(st)?;
-            package(st, false)?;
+            package(st, group)?;
         }
         GroupCode::Vtop => {
             end_graf(st)?;
-            package(st, true)?;
+            package(st, group)?;
         }
         GroupCode::Insert => {
             end_graf(st)?;

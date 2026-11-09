@@ -363,10 +363,7 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.shipout.dvi.last_bop = -1;
     st.shipout.doing_leaders = false;
     st.shipout.dead_cycles = 0;
-    st.scanner.adjust_tail = MemPtr::NULL;
     st.shipout.last_badness = 0;
-    st.scanner.pre_adjust_tail = MemPtr::NULL;
-    st.scanner.pack_begin_line = 0;
     st.scanner.empty.s1 = EMPTY;
     st.scanner.empty.s0 = TEX_NULL;
     st.scanner.align_ptr = None;

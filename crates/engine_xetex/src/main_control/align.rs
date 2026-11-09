@@ -14,7 +14,7 @@ use crate::node::{
     link_of, AlignColumn, AlignRecord, AlignStackNode, AnyNode, BoxLr, GlueKind, GlueNode, NodePtr,
     RuleDimen, SpanNode, UnsetNode, RUNNING,
 };
-use crate::packaging::PackSpec;
+use crate::packaging::{AdjustTails, PackOrigin, PackSpec};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::state::{EngineState, GroupCode, MemState};
 use crate::token::{Token, TokenList};
@@ -138,12 +138,12 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     let spec = st.save_stack.pop_spec()?;
-    st.scanner.pack_begin_line = -st.input.cur_list.mode_line;
+    let origin = PackOrigin::from_begin_line(-st.input.cur_list.mode_line);
     let head = ALIGN_HEAD.link(&st.mem);
     let p = if st.input.cur_list.mode == INNER_VMODE {
         let rule_save = st.eqtb.dimen_par(DimenPar::OverfullRule);
         st.eqtb.set_dimen_par(DimenPar::OverfullRule, Scaled::ZERO);
-        let packed = crate::packaging::hpack(st, head, spec)?;
+        let packed = crate::packaging::hpack_with(st, head, spec, origin, None)?.r_box;
         st.eqtb.set_dimen_par(DimenPar::OverfullRule, rule_save);
         packed
     } else {
@@ -151,14 +151,13 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
             mem[q].height = mem[q].width;
             mem[q].width = Scaled::ZERO;
         });
-        let packed = crate::packaging::vpackage(st, head, spec, MAX_DIMEN)?;
+        let packed = crate::packaging::vpackage_with(st, head, spec, MAX_DIMEN, origin)?.r_box;
         st.mem.for_each_preamble_column(|mem, q| {
             mem[q].width = mem[q].height;
             mem[q].height = Scaled::ZERO;
         });
         packed
     };
-    st.scanner.pack_begin_line = 0;
 
     let mut s = st.input.cur_list.head;
     let mut q = s.link(&st.mem);
@@ -659,19 +658,32 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
         st.save_stack
             .new_save_level(GroupCode::Align, st.mem.line)?;
         let head = st.input.cur_list.head.link(&st.mem);
-        let (u, w) = if st.input.cur_list.mode == INNER_HMODE {
-            st.scanner.adjust_tail = st.scanner.cur_tail;
-            st.scanner.pre_adjust_tail = st.scanner.cur_pre_tail;
-            let u = crate::packaging::hpack(st, head, PackSpec::NATURAL)?;
-            st.scanner.cur_tail = st.scanner.adjust_tail;
-            st.scanner.adjust_tail = MemPtr::NULL;
-            st.scanner.cur_pre_tail = st.scanner.pre_adjust_tail;
-            st.scanner.pre_adjust_tail = MemPtr::NULL;
-            (u, st.mem[u].width)
+        let (packed, w) = if st.input.cur_list.mode == INNER_HMODE {
+            let mut adjust = AdjustTails {
+                post: st.scanner.cur_tail,
+                pre: st.scanner.cur_pre_tail,
+            };
+            let packed = crate::packaging::hpack_with(
+                st,
+                head,
+                PackSpec::NATURAL,
+                PackOrigin::Here,
+                Some(&mut adjust),
+            )?;
+            st.scanner.cur_tail = adjust.post;
+            st.scanner.cur_pre_tail = adjust.pre;
+            (packed, st.mem[packed.r_box].width)
         } else {
-            let u = crate::packaging::vpackage(st, head, PackSpec::NATURAL, Scaled::ZERO)?;
-            (u, st.mem[u].height)
+            let packed = crate::packaging::vpackage_with(
+                st,
+                head,
+                PackSpec::NATURAL,
+                Scaled::ZERO,
+                PackOrigin::Here,
+            )?;
+            (packed, st.mem[packed.r_box].height)
         };
+        let u = packed.r_box;
         let mut n: i32 = 0;
         if st.scanner.cur_span != st.scanner.cur_align {
             let mut q = st.scanner.cur_span;
@@ -704,12 +716,12 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
         }
         let u = u.into_unset(&mut st.mem);
         st.mem[u].span_count = u16::try_from(n).or_confusion("span")?;
-        let o = st.scanner.total_stretch.max_order();
+        let o = packed.stretch.max_order();
         st.mem[u].glue_order = o.into();
-        st.mem[u].glue_stretch = st.scanner.total_stretch[o];
-        let o = st.scanner.total_shrink.max_order();
+        st.mem[u].glue_stretch = packed.stretch[o];
+        let o = packed.shrink.max_order();
         st.mem[u].glue_sign = o.into();
-        st.mem[u].glue_shrink = st.scanner.total_shrink[o];
+        st.mem[u].glue_shrink = packed.shrink[o];
         st.mem.pop_nest(&mut st.input)?;
         st.input.cur_list.tail_append(&mut st.mem, u.ptr());
         let spec = st.mem[cur_align.tab_skip(&st.mem)].glue_ptr;

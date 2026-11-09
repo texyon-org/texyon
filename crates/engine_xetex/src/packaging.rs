@@ -4,14 +4,14 @@
 use crate::consts::{IGNORE_DEPTH, NULL_FONT, SMALL_NODE_SIZE};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
-use crate::mem::GARBAGE;
+use crate::mem::{ADJUST_HEAD, GARBAGE, PRE_ADJUST_HEAD};
 use crate::mem_types::ListStateRecord;
 use crate::node::{
     AdjustPlacement, AnyNode, BoxLr, BoxNode, CharNode, KernSubtype, MathCode, NativeWordNode,
     NodePtr, RuleDimen, WhatsitVariant,
 };
 use crate::params::{DimenPar, GluePar, IntPar};
-use crate::state::{EngineState, EqtbState, FontState, MemState, ScannerState, ShipoutState};
+use crate::state::{EngineState, EqtbState, FontState, MemState, ShipoutState};
 use crate::units::{GlueOrder, GlueSign, MemPtr, NodeType, OrderTotals, Orientation, Scaled};
 
 mod copy;
@@ -111,6 +111,61 @@ pub(crate) enum PackDiag {
 struct PackOutcome {
     r_box: NodePtr<BoxNode>,
     diags: [Option<PackDiag>; 2],
+    stretch: OrderTotals,
+    shrink: OrderTotals,
+}
+
+/// A packed box with the glue totals of its list.
+#[derive(Copy, Clone)]
+pub(crate) struct Packed {
+    pub r_box: NodePtr<BoxNode>,
+    pub stretch: OrderTotals,
+    pub shrink: OrderTotals,
+}
+
+/// The tails of the lists `hpack` moves `\vadjust`, `\insert` and `\mark` material to.
+#[derive(Copy, Clone)]
+pub(crate) struct AdjustTails {
+    pub post: MemPtr,
+    pub pre: MemPtr,
+}
+
+impl AdjustTails {
+    /// Empty lists at `ADJUST_HEAD` and `PRE_ADJUST_HEAD`.
+    pub(crate) const HEADS: Self = Self {
+        post: ADJUST_HEAD,
+        pre: PRE_ADJUST_HEAD,
+    };
+}
+
+/// Where the packed material began, named in over/underfull box messages.
+/// The variant picks the message, so an alignment can yield `Paragraph`.
+#[derive(Copy, Clone)]
+pub(crate) enum PackOrigin {
+    Here,
+    Paragraph(i32),
+    Alignment(i32),
+}
+
+impl PackOrigin {
+    /// From WEB's `pack_begin_line`: positive for a paragraph, negative for an alignment.
+    pub(crate) fn from_begin_line(line: i32) -> Self {
+        match line.signum() {
+            1 => Self::Paragraph(line),
+            -1 => Self::Alignment(-line),
+            _ => Self::Here,
+        }
+    }
+}
+
+impl PackOutcome {
+    fn packed(&self) -> Packed {
+        Packed {
+            r_box: self.r_box,
+            stretch: self.stretch,
+            shrink: self.shrink,
+        }
+    }
 }
 
 impl MemState {
@@ -234,16 +289,22 @@ impl MemState {
         Ok((q, merged))
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn hpack(
         &mut self,
         eqtb: &EqtbState,
         fonts: &mut FontState,
-        scanner: &mut ScannerState,
         shipout: &mut ShipoutState,
         list: MemPtr,
         spec: PackSpec,
+        adjust: Option<&mut AdjustTails>,
     ) -> Result<PackOutcome, Abort> {
+        let mut no_adjust = AdjustTails {
+            post: MemPtr::NULL,
+            pre: MemPtr::NULL,
+        };
+        let tails = adjust.unwrap_or(&mut no_adjust);
+        let mut lr_ptr = MemPtr::NULL;
+        let mut lr_problems = 0;
         shipout.last_badness = 0;
         let r_node = NodePtr::<BoxNode>::alloc(self)?;
         self[r_node].set_lr(BoxLr::Normal);
@@ -254,13 +315,13 @@ impl MemState {
         let mut h = Scaled::ZERO;
         let mut d = Scaled::ZERO;
         let mut x = Scaled::ZERO;
-        scanner.total_stretch = OrderTotals::ZERO;
-        scanner.total_shrink = OrderTotals::ZERO;
+        let mut total_stretch = OrderTotals::ZERO;
+        let mut total_shrink = OrderTotals::ZERO;
         let mut diags = [None, None];
         let texxet = eqtb.int_par(IntPar::Texxet) > 0;
 
         if texxet {
-            self.push_lr(&mut scanner.lr_ptr, MathCode::Before)?;
+            self.push_lr(&mut lr_ptr, MathCode::Before)?;
         }
 
         let mut p = list;
@@ -297,13 +358,13 @@ impl MemState {
                     d = d.max(self[u].depth);
                 }
                 Ok(AnyNode::Adjust(adjust)) => {
-                    if !scanner.adjust_tail.is_null() || !scanner.pre_adjust_tail.is_null() {
+                    if !tails.post.is_null() || !tails.pre.is_null() {
                         q = self.predecessor(q, p);
                         let adjust_list = self[adjust].adjust_ptr;
                         let tail = if self[adjust].placement == AdjustPlacement::Pre {
-                            &mut scanner.pre_adjust_tail
+                            &mut tails.pre
                         } else {
-                            &mut scanner.adjust_tail
+                            &mut tails.post
                         };
                         if tail.is_null() {
                             return Err(Abort::Confusion("pre vadjust"));
@@ -317,10 +378,10 @@ impl MemState {
                     }
                 }
                 Ok(AnyNode::Ins(_) | AnyNode::Mark(_)) => {
-                    if !scanner.adjust_tail.is_null() || !scanner.pre_adjust_tail.is_null() {
+                    if !tails.post.is_null() || !tails.pre.is_null() {
                         q = self.predecessor(q, p);
-                        scanner.adjust_tail.set_link(self, p);
-                        scanner.adjust_tail = p;
+                        tails.post.set_link(self, p);
+                        tails.post = p;
                         p = p.link(self);
                         q.set_link(self, p);
                         p = q;
@@ -348,8 +409,8 @@ impl MemState {
                 Ok(AnyNode::Glue(glue)) => {
                     let spec = self[glue].glue_ptr;
                     x += self[spec].width;
-                    scanner.total_stretch[self[spec].stretch_order] += self[spec].stretch;
-                    scanner.total_shrink[self[spec].shrink_order] += self[spec].shrink;
+                    total_stretch[self[spec].stretch_order] += self[spec].stretch;
+                    total_shrink[self[spec].shrink_order] += self[spec].shrink;
                     if self[glue].leaders().is_some() {
                         let leader = self[glue].leader_ptr;
                         let (leader_h, leader_d) = match self.classify(leader) {
@@ -377,15 +438,15 @@ impl MemState {
                     if texxet {
                         let code = self[math].code()?;
                         if code.is_end() {
-                            if self.lr_code(scanner.lr_ptr) == Some(code.lr_end()) {
-                                self.pop_lr(&mut scanner.lr_ptr);
+                            if self.lr_code(lr_ptr) == Some(code.lr_end()) {
+                                self.pop_lr(&mut lr_ptr);
                             } else {
-                                scanner.lr_problems += 1;
+                                lr_problems += 1;
                                 let kern = math.into_kern(self);
                                 self[kern].subtype = KernSubtype::Explicit.into();
                             }
                         } else {
-                            self.push_lr(&mut scanner.lr_ptr, code.lr_end())?;
+                            self.push_lr(&mut lr_ptr, code.lr_end())?;
                         }
                     }
                 }
@@ -404,11 +465,11 @@ impl MemState {
             p = p.link(self);
         }
 
-        if !scanner.adjust_tail.is_null() {
-            scanner.adjust_tail.set_link(self, MemPtr::NULL);
+        if !tails.post.is_null() {
+            tails.post.set_link(self, MemPtr::NULL);
         }
-        if !scanner.pre_adjust_tail.is_null() {
-            scanner.pre_adjust_tail.set_link(self, MemPtr::NULL);
+        if !tails.pre.is_null() {
+            tails.pre.set_link(self, MemPtr::NULL);
         }
         self[r_node].height = h;
         self[r_node].depth = d;
@@ -425,11 +486,10 @@ impl MemState {
                 r_node,
                 GlueSign::Stretching,
                 f64::from(x.raw()),
-                &scanner.total_stretch,
+                &total_stretch,
             );
             if o == GlueOrder::Normal && has_list {
-                shipout.last_badness =
-                    crate::helpers::badness(x, scanner.total_stretch[GlueOrder::Normal]);
+                shipout.last_badness = crate::helpers::badness(x, total_stretch[GlueOrder::Normal]);
                 if shipout.last_badness > eqtb.int_par(IntPar::Hbadness) {
                     push_slot(
                         &mut diags,
@@ -445,12 +505,12 @@ impl MemState {
                 r_node,
                 GlueSign::Shrinking,
                 f64::from((-x).raw()),
-                &scanner.total_shrink,
+                &total_shrink,
             );
-            if scanner.total_shrink[o] < (-x) && o == GlueOrder::Normal && has_list {
+            if total_shrink[o] < (-x) && o == GlueOrder::Normal && has_list {
                 shipout.last_badness = 1_000_000;
                 self[r_node].glue_set = 1.0;
-                let excess = (-x) - scanner.total_shrink[GlueOrder::Normal];
+                let excess = (-x) - total_shrink[GlueOrder::Normal];
                 let hfuzz = eqtb.dimen_par(DimenPar::Hfuzz);
                 if excess > hfuzz || eqtb.int_par(IntPar::Hbadness) < 100 {
                     let overfull_rule = eqtb.dimen_par(DimenPar::OverfullRule);
@@ -463,8 +523,7 @@ impl MemState {
                     push_slot(&mut diags, PackDiag::HOverfull { excess });
                 }
             } else if o == GlueOrder::Normal && has_list {
-                shipout.last_badness =
-                    crate::helpers::badness(-x, scanner.total_shrink[GlueOrder::Normal]);
+                shipout.last_badness = crate::helpers::badness(-x, total_shrink[GlueOrder::Normal]);
                 if shipout.last_badness > eqtb.int_par(IntPar::Hbadness) {
                     push_slot(
                         &mut diags,
@@ -477,32 +536,31 @@ impl MemState {
         }
 
         if texxet {
-            if self.lr_code(scanner.lr_ptr) != Some(MathCode::Before) {
+            if self.lr_code(lr_ptr) != Some(MathCode::Before) {
                 q = self.list_tail(q);
                 loop {
-                    let code = self.lr_code(scanner.lr_ptr).or_confusion("LR")?;
+                    let code = self.lr_code(lr_ptr).or_confusion("LR")?;
                     let math = self.new_math(Scaled::ZERO, code)?;
                     q.set_link(self, math.ptr());
                     q = math.ptr();
-                    scanner.lr_problems += 10000;
-                    self.pop_lr(&mut scanner.lr_ptr);
-                    if self.lr_code(scanner.lr_ptr) == Some(MathCode::Before) {
+                    lr_problems += 10000;
+                    self.pop_lr(&mut lr_ptr);
+                    if self.lr_code(lr_ptr) == Some(MathCode::Before) {
                         break;
                     }
                 }
             }
-            if scanner.lr_problems > 0 {
+            if lr_problems > 0 {
                 push_slot(
                     &mut diags,
                     PackDiag::LrProblem {
-                        missing: scanner.lr_problems / 10000,
-                        extra: scanner.lr_problems % 10000,
+                        missing: lr_problems / 10000,
+                        extra: lr_problems % 10000,
                     },
                 );
-                scanner.lr_problems = 0;
             }
-            self.pop_lr(&mut scanner.lr_ptr);
-            if !scanner.lr_ptr.is_null() {
+            self.pop_lr(&mut lr_ptr);
+            if !lr_ptr.is_null() {
                 return Err(Abort::Confusion("LR1"));
             }
         }
@@ -510,11 +568,18 @@ impl MemState {
         Ok(PackOutcome {
             r_box: r_node,
             diags,
+            stretch: total_stretch,
+            shrink: total_shrink,
         })
     }
 }
 
-pub(crate) fn print_hpack_diag(st: &mut EngineState, box_ptr: NodePtr<BoxNode>, diag: PackDiag) {
+fn print_hpack_diag(
+    st: &mut EngineState,
+    box_ptr: NodePtr<BoxNode>,
+    diag: PackDiag,
+    origin: PackOrigin,
+) {
     use crate::output::{print, print_int, print_ln, print_nl, print_scaled};
     print_ln(st);
     crate::diagnostic::begin_warning(st);
@@ -548,27 +613,20 @@ pub(crate) fn print_hpack_diag(st: &mut EngineState, box_ptr: NodePtr<BoxNode>, 
             unreachable!("vpack diagnostic passed to hpack printer")
         }
     }
-    print_hpack_common_ending(st, box_ptr);
+    print_hpack_common_ending(st, box_ptr, origin);
 }
 
-fn print_hpack_common_ending(st: &mut EngineState, box_ptr: NodePtr<BoxNode>) {
+fn print_hpack_common_ending(st: &mut EngineState, box_ptr: NodePtr<BoxNode>, origin: PackOrigin) {
     use crate::output::{
         begin_diagnostic, end_diagnostic, print, print_int, print_ln, short_display, show_box,
     };
     if st.shipout.output_active {
         print(st, ") has occurred while \\output is active");
     } else {
-        let pack_begin_line = st.scanner.pack_begin_line;
-        if pack_begin_line != 0 {
-            if pack_begin_line > 0 {
-                print(st, ") in paragraph at lines ");
-            } else {
-                print(st, ") in alignment at lines ");
-            }
-            print_int(st, pack_begin_line.abs());
-            print(st, "--");
-        } else {
-            print(st, ") detected at line ");
+        match origin {
+            PackOrigin::Here => print(st, ") detected at line "),
+            PackOrigin::Paragraph(line) => print(st, (") in paragraph at lines ", line, "--")),
+            PackOrigin::Alignment(line) => print(st, (") in alignment at lines ", line, "--")),
         }
         print_int(st, st.mem.line);
     }
@@ -589,26 +647,30 @@ pub(crate) fn hpack(
     list: MemPtr,
     spec: PackSpec,
 ) -> Result<NodePtr<BoxNode>, Abort> {
-    let outcome = st.mem.hpack(
-        &st.eqtb,
-        &mut st.fonts,
-        &mut st.scanner,
-        &mut st.shipout,
-        list,
-        spec,
-    )?;
+    Ok(hpack_with(st, list, spec, PackOrigin::Here, None)?.r_box)
+}
+
+/// `hpack` for material from `origin`, moving adjustments to `adjust` if given.
+pub(crate) fn hpack_with(
+    st: &mut EngineState,
+    list: MemPtr,
+    spec: PackSpec,
+    origin: PackOrigin,
+    adjust: Option<&mut AdjustTails>,
+) -> Result<Packed, Abort> {
+    let outcome = st
+        .mem
+        .hpack(&st.eqtb, &mut st.fonts, &mut st.shipout, list, spec, adjust)?;
     for diag in outcome.diags.into_iter().flatten() {
-        print_hpack_diag(st, outcome.r_box, diag);
+        print_hpack_diag(st, outcome.r_box, diag, origin);
     }
-    Ok(outcome.r_box)
+    Ok(outcome.packed())
 }
 
 impl MemState {
-    #[allow(clippy::too_many_arguments)]
     fn vpackage(
         &mut self,
         eqtb: &EqtbState,
-        scanner: &mut ScannerState,
         shipout: &mut ShipoutState,
         list: MemPtr,
         spec: PackSpec,
@@ -625,8 +687,8 @@ impl MemState {
         let mut w = Scaled::ZERO;
         let mut d = Scaled::ZERO;
         let mut x = Scaled::ZERO;
-        scanner.total_stretch = OrderTotals::ZERO;
-        scanner.total_shrink = OrderTotals::ZERO;
+        let mut total_stretch = OrderTotals::ZERO;
+        let mut total_shrink = OrderTotals::ZERO;
         let mut diags = [None, None];
 
         let mut p = list;
@@ -663,8 +725,8 @@ impl MemState {
                     d = Scaled::ZERO;
                     let spec = self[glue].glue_ptr;
                     x += self[spec].width;
-                    scanner.total_stretch[self[spec].stretch_order] += self[spec].stretch;
-                    scanner.total_shrink[self[spec].shrink_order] += self[spec].shrink;
+                    total_stretch[self[spec].stretch_order] += self[spec].stretch;
+                    total_shrink[self[spec].shrink_order] += self[spec].shrink;
                     if self[glue].leaders().is_some() {
                         let leader = self[glue].leader_ptr;
                         let leader_w = match self.classify(leader) {
@@ -704,11 +766,10 @@ impl MemState {
                 r_node,
                 GlueSign::Stretching,
                 f64::from(x.raw()),
-                &scanner.total_stretch,
+                &total_stretch,
             );
             if o == GlueOrder::Normal && has_list {
-                shipout.last_badness =
-                    crate::helpers::badness(x, scanner.total_stretch[GlueOrder::Normal]);
+                shipout.last_badness = crate::helpers::badness(x, total_stretch[GlueOrder::Normal]);
                 if shipout.last_badness > eqtb.int_par(IntPar::Vbadness) {
                     push_slot(
                         &mut diags,
@@ -724,19 +785,18 @@ impl MemState {
                 r_node,
                 GlueSign::Shrinking,
                 (-i64::from(x.raw())) as f64,
-                &scanner.total_shrink,
+                &total_shrink,
             );
-            if scanner.total_shrink[o] < (-x) && o == GlueOrder::Normal && has_list {
+            if total_shrink[o] < (-x) && o == GlueOrder::Normal && has_list {
                 shipout.last_badness = 1_000_000;
                 self[r_node].glue_set = 1.0;
-                let excess = (-x) - scanner.total_shrink[GlueOrder::Normal];
+                let excess = (-x) - total_shrink[GlueOrder::Normal];
                 if excess > eqtb.dimen_par(DimenPar::Vfuzz) || eqtb.int_par(IntPar::Vbadness) < 100
                 {
                     push_slot(&mut diags, PackDiag::VOverfull { excess });
                 }
             } else if o == GlueOrder::Normal && has_list {
-                shipout.last_badness =
-                    crate::helpers::badness(-x, scanner.total_shrink[GlueOrder::Normal]);
+                shipout.last_badness = crate::helpers::badness(-x, total_shrink[GlueOrder::Normal]);
                 if shipout.last_badness > eqtb.int_par(IntPar::Vbadness) {
                     push_slot(
                         &mut diags,
@@ -751,11 +811,18 @@ impl MemState {
         Ok(PackOutcome {
             r_box: r_node,
             diags,
+            stretch: total_stretch,
+            shrink: total_shrink,
         })
     }
 }
 
-pub(crate) fn print_vpack_diag(st: &mut EngineState, box_ptr: NodePtr<BoxNode>, diag: PackDiag) {
+pub(crate) fn print_vpack_diag(
+    st: &mut EngineState,
+    box_ptr: NodePtr<BoxNode>,
+    diag: PackDiag,
+    origin: PackOrigin,
+) {
     use crate::output::{print, print_int, print_ln, print_nl, print_scaled};
     print_ln(st);
     crate::diagnostic::begin_warning(st);
@@ -785,21 +852,20 @@ pub(crate) fn print_vpack_diag(st: &mut EngineState, box_ptr: NodePtr<BoxNode>, 
             unreachable!("hpack diagnostic passed to vpack printer")
         }
     }
-    print_vpack_common_ending(st, box_ptr);
+    print_vpack_common_ending(st, box_ptr, origin);
 }
 
-fn print_vpack_common_ending(st: &mut EngineState, box_ptr: NodePtr<BoxNode>) {
+fn print_vpack_common_ending(st: &mut EngineState, box_ptr: NodePtr<BoxNode>, origin: PackOrigin) {
     use crate::output::{begin_diagnostic, end_diagnostic, print, print_int, print_ln, show_box};
     if st.shipout.output_active {
         print(st, ") has occurred while \\output is active");
     } else {
-        let pack_begin_line = st.scanner.pack_begin_line;
-        if pack_begin_line != 0 {
-            print(st, ") in alignment at lines ");
-            print_int(st, pack_begin_line.abs());
-            print(st, "--");
-        } else {
-            print(st, ") detected at line ");
+        match origin {
+            PackOrigin::Here => print(st, ") detected at line "),
+            // WEB's vpack names an alignment for any nonzero `pack_begin_line`.
+            PackOrigin::Paragraph(line) | PackOrigin::Alignment(line) => {
+                print(st, (") in alignment at lines ", line, "--"))
+            }
         }
         print_int(st, st.mem.line);
         print_ln(st);
@@ -817,13 +883,22 @@ pub(crate) fn vpackage(
     spec: PackSpec,
     l: Scaled,
 ) -> Result<NodePtr<BoxNode>, Abort> {
-    let outcome = st
-        .mem
-        .vpackage(&st.eqtb, &mut st.scanner, &mut st.shipout, list, spec, l)?;
+    Ok(vpackage_with(st, list, spec, l, PackOrigin::Here)?.r_box)
+}
+
+/// `vpackage` for material from `origin`.
+pub(crate) fn vpackage_with(
+    st: &mut EngineState,
+    list: MemPtr,
+    spec: PackSpec,
+    l: Scaled,
+    origin: PackOrigin,
+) -> Result<Packed, Abort> {
+    let outcome = st.mem.vpackage(&st.eqtb, &mut st.shipout, list, spec, l)?;
     for diag in outcome.diags.into_iter().flatten() {
-        print_vpack_diag(st, outcome.r_box, diag);
+        print_vpack_diag(st, outcome.r_box, diag, origin);
     }
-    Ok(outcome.r_box)
+    Ok(outcome.packed())
 }
 
 #[cfg(test)]

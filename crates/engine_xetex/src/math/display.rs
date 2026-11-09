@@ -8,7 +8,7 @@ use crate::fonts::QUAD_CODE;
 use crate::input::TokenType;
 use crate::mem::{ADJUST_HEAD, GARBAGE, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::node::{AnyNode, BoxLr, BoxNode, GlueNode, MathCode, NodePtr};
-use crate::packaging::PackSpec;
+use crate::packaging::{AdjustTails, PackOrigin, PackSpec};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::state::{EngineState, EqtbState, FontState, GroupCode, MemState};
 use crate::units::{Dir, GlueOrder, GlueSign, MemPtr, NodeType, Scaled};
@@ -298,14 +298,18 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.mlist_penalties = false;
     mlist_to_hlist(st)?;
     let mut p = TEMP_HEAD.link(&st.mem);
-    st.scanner.adjust_tail = ADJUST_HEAD;
-    st.scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
-    let mut b = crate::packaging::hpack(st, p, PackSpec::NATURAL)?;
+    let mut adjust = AdjustTails::HEADS;
+    let packed = crate::packaging::hpack_with(
+        st,
+        p,
+        PackSpec::NATURAL,
+        PackOrigin::Here,
+        Some(&mut adjust),
+    )?;
+    let mut b = packed.r_box;
     p = st.mem[b].list_ptr;
-    let t = st.scanner.adjust_tail;
-    st.scanner.adjust_tail = MemPtr::NULL;
-    let pre_t = st.scanner.pre_adjust_tail;
-    st.scanner.pre_adjust_tail = MemPtr::NULL;
+    let t = adjust.post;
+    let pre_t = adjust.pre;
     let mut w = st.mem[b].width;
     let z = st.eqtb.dimen_par(DimenPar::DisplayWidth);
     let mut s = st.eqtb.dimen_par(DimenPar::DisplayIndent);
@@ -325,10 +329,10 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     }
     if w + q > z {
         if e != Scaled::ZERO
-            && (w - st.scanner.total_shrink[GlueOrder::Normal] + q <= z
-                || st.scanner.total_shrink[GlueOrder::Fil] != Scaled::ZERO
-                || st.scanner.total_shrink[GlueOrder::Fill] != Scaled::ZERO
-                || st.scanner.total_shrink[GlueOrder::Filll] != Scaled::ZERO)
+            && (w - packed.shrink[GlueOrder::Normal] + q <= z
+                || packed.shrink[GlueOrder::Fil] != Scaled::ZERO
+                || packed.shrink[GlueOrder::Fill] != Scaled::ZERO
+                || packed.shrink[GlueOrder::Filll] != Scaled::ZERO)
         {
             st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
             b = crate::packaging::hpack(st, p, PackSpec::Exactly(z - q))?;

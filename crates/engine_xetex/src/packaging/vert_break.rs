@@ -14,7 +14,7 @@ use crate::state::{EngineState, EqtbState, MemState, ScannerState, ShipoutState}
 use crate::token::TokenList;
 use crate::units::{GlueOrder, MemPtr, Scaled};
 
-use super::{print_vpack_diag, PackOutcome, PackSpec};
+use super::{print_vpack_diag, PackOrigin, PackOutcome, PackSpec};
 
 /// What `do_marks` does to each mark class.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -461,7 +461,7 @@ impl MemState {
 
         self.free_node(state.v.ptr(), BOX_NODE_SIZE);
         if !q.is_null() {
-            let packed = self.vpackage(eqtb, scanner, shipout, q, PackSpec::NATURAL, MAX_DIMEN)?;
+            let packed = self.vpackage(eqtb, shipout, q, PackSpec::NATURAL, MAX_DIMEN)?;
             q = packed.r_box.ptr();
             push_slot(&mut packages, packed);
         }
@@ -469,7 +469,6 @@ impl MemState {
 
         let packed = self.vpackage(
             eqtb,
-            scanner,
             shipout,
             p,
             PackSpec::Exactly(state.h),
@@ -519,7 +518,7 @@ fn print_vsplit_needs_vbox_error(st: &mut EngineState) -> Result<(), Abort> {
 fn print_vsplit_packages(st: &mut EngineState, outcome: VsplitOutcome) {
     for package in outcome.packages.into_iter().flatten() {
         for diag in package.diags.into_iter().flatten() {
-            print_vpack_diag(st, package.r_box, diag);
+            print_vpack_diag(st, package.r_box, diag, PackOrigin::Here);
         }
     }
 }

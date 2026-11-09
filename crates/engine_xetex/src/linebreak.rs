@@ -11,6 +11,7 @@ use crate::node::{
     AnyNode, BoxNode, CharNode, DiscNode, GlueNode, GlueSpecNode, KernSubtype, NodePtr,
     WhatsitVariant,
 };
+use crate::packaging::PackOrigin;
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, ErrorState, FontState, MemState};
 use crate::units::{FontId, GlueOrder, MemPtr, Scaled};
@@ -261,7 +262,7 @@ impl MemState {
 
 /// Break the current paragraph into lines, returning the last line's box.
 pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNode>, Abort> {
-    st.scanner.pack_begin_line = st.input.cur_list.mode_line;
+    let origin = PackOrigin::from_begin_line(st.input.cur_list.mode_line);
     let first = st.input.cur_list.head.link(&st.mem);
     TEMP_HEAD.set_link(&mut st.mem, first);
 
@@ -552,9 +553,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
 
     lb.finish_last_line_fit(&mut st.mem, &best, last_line_fill)?;
 
-    let last_line = post_line_break(st, &mut lb, &best, d)?;
-
-    st.scanner.pack_begin_line = 0;
+    let last_line = post_line_break(st, &mut lb, &best, d, origin)?;
     Ok(last_line)
 }
 

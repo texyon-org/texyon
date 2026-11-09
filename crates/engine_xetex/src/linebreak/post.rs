@@ -8,7 +8,7 @@ use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::node::{AnyNode, BoxNode, GlueKind, KernSubtype, MathNode, NodePtr};
-use crate::packaging::PackSpec;
+use crate::packaging::{AdjustTails, PackOrigin, PackSpec};
 use crate::params::{GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, MemState};
 use crate::units::{MemPtr, Scaled};
@@ -25,6 +25,8 @@ struct PostLines {
     lr_ptr: MemPtr,
     /// Whether a display follows the paragraph.
     display: bool,
+    /// Where the paragraph began, for over/underfull line messages.
+    origin: PackOrigin,
 }
 
 struct PostLineHpack {
@@ -51,7 +53,6 @@ impl Breaker {
         let EngineState {
             errors,
             mem,
-            scanner,
             eqtb,
             fonts,
             config,
@@ -214,9 +215,6 @@ impl Breaker {
             (self.first_width, self.first_indent)
         };
 
-        scanner.adjust_tail = ADJUST_HEAD;
-        scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
-
         Ok(PostLineHpack {
             brk,
             q,
@@ -277,34 +275,29 @@ impl Breaker {
         just_box: NodePtr<BoxNode>,
         lines: &mut PostLines,
         hpack: PostLineHpack,
+        adjust: AdjustTails,
     ) -> Result<Option<PassiveId>, Abort> {
         let best_line = lines.best_line;
         let d = lines.display;
         let lr_ptr = &mut lines.lr_ptr;
         let cur_line = &mut lines.cur_line;
         let EngineState {
-            mem,
-            scanner,
-            eqtb,
-            input,
-            ..
+            mem, eqtb, input, ..
         } = st;
         let list = &mut input.cur_list;
         mem[just_box].shift_amount = hpack.cur_indent;
 
-        if scanner.pre_adjust_tail != PRE_ADJUST_HEAD {
+        if adjust.pre != PRE_ADJUST_HEAD {
             list.tail.set_link(mem, PRE_ADJUST_HEAD.link(mem));
-            list.tail = scanner.pre_adjust_tail;
+            list.tail = adjust.pre;
         }
-        scanner.pre_adjust_tail = MemPtr::NULL;
 
         list.append_to_vlist(mem, eqtb, just_box)?;
 
-        if scanner.adjust_tail != ADJUST_HEAD {
+        if adjust.post != ADJUST_HEAD {
             list.tail.set_link(mem, ADJUST_HEAD.link(mem));
-            list.tail = scanner.adjust_tail;
+            list.tail = adjust.post;
         }
-        scanner.adjust_tail = MemPtr::NULL;
 
         if cur_line.wrapping_add(1) != best_line {
             let mut pen = mem
@@ -404,6 +397,7 @@ pub(super) fn post_line_break(
     lb: &mut Breaker,
     best: &ActiveEntry,
     display: bool,
+    origin: PackOrigin,
 ) -> Result<NodePtr<BoxNode>, Abort> {
     let mut brk = lb
         .reverse_best_breaks(best.break_node)
@@ -414,6 +408,7 @@ pub(super) fn post_line_break(
         best_line: best.line_number,
         lr_ptr: st.input.cur_list.e_tex_aux,
         display,
+        origin,
     };
     let last_line = loop {
         let hpack = lb.post_line_break_prefix(st, &mut lines, brk)?;
@@ -423,9 +418,11 @@ pub(super) fn post_line_break(
         } else {
             PackSpec::Exactly(hpack.cur_width)
         };
-        let just_box = crate::packaging::hpack(st, hpack.q, spec)?;
+        let mut adjust = AdjustTails::HEADS;
+        let just_box =
+            crate::packaging::hpack_with(st, hpack.q, spec, lines.origin, Some(&mut adjust))?.r_box;
 
-        match lb.post_line_break_suffix(st, just_box, &mut lines, hpack)? {
+        match lb.post_line_break_suffix(st, just_box, &mut lines, hpack, adjust)? {
             None => break just_box,
             Some(next) => brk = next,
         }
