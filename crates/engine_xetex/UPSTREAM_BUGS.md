@@ -117,3 +117,18 @@ entry names a later TeX Live version.
   One cost: unquoted `DejaVuSans.ttf` no longer finds the installed `DejaVuSans`, as quoted
   `"DejaVuSans.ttf"` already did not. Listed in `tests/upstream/known.tsv`, tests
   `an_unquoted_native_font_keeps_its_name_as_written` and `an_unquoted_native_font_loads_its_mapping`.
+
+## 9. A wrapped `\prevgraf` reuses the previous paragraph's hanging indent
+
+- **Where:** `line_break`, `@<Get ready to start line breaking@>`, and its readers in `try_break`
+  and `post_line_break`.
+- **Bug:** `first_width` and `first_indent` are set only when `\hangindent` is nonzero. They are
+  read for lines numbered at most `last_special_line`, which is 0 without a hanging indent, so
+  normally never. A `\prevgraf` near 2^31 wraps the line numbers negative, and then every line
+  takes `first_width` and `first_indent` as the last hanging paragraph left them.
+- **Repro:** after `\hangindent=20pt \hangafter=-5` on one paragraph, a paragraph with
+  `\noindent\prevgraf=2147483647` and `\hsize=40pt` is set 20pt wide and shifted 20pt by TeX Live
+  2025 xetex. Probe `par-wrapped_prevgraf_stale_hang`.
+- **Fix:** set `first_width:=hsize` and `first_indent:=0` when `hang_indent=0`.
+- **TeXyoN:** that fix, so the paragraph keeps the full `\hsize`. Listed in
+  `tests/upstream/known.tsv`, test `a_wrapped_prevgraf_without_hanging_indent_keeps_the_full_measure`.

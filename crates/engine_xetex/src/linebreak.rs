@@ -328,6 +328,9 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
         let hsize = st.eqtb.dimen_par(DimenPar::Hsize);
         if hang_indent == Scaled::ZERO {
             lb.last_special_line = 0;
+            // A line number wrapped negative by a huge \prevgraf still reads these.
+            lb.first_width = hsize;
+            lb.first_indent = Scaled::ZERO;
             lb.second_width = hsize;
             lb.second_indent = Scaled::ZERO;
         } else {

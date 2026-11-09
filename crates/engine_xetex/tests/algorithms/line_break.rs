@@ -294,3 +294,19 @@ fn a_right_to_left_display_is_a_dlist() {
         .\glue(\belowdisplayshortskip) 0.0",
     );
 }
+
+#[test]
+fn a_wrapped_prevgraf_without_hanging_indent_keeps_the_full_measure() {
+    let r = paragraph(
+        r"\setbox0\vbox{\hangindent=20pt \hangafter=-5 \w\par
+          \noindent\prevgraf=2147483647 \w\w\w\par}\showbox0",
+    );
+    assert_lines(
+        &rows(&r.boxes()[0]),
+        r"
+        \hbox(5.0+0.0)x20.0, glue set 10.0fil, shifted 20.0
+        \hbox(5.0+0.0)x40.0
+        \hbox(5.0+0.0)x40.0
+        \hbox(5.0+0.0)x40.0, glue set 30.0fil",
+    );
+}
