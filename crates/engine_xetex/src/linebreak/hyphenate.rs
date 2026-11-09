@@ -13,6 +13,7 @@ use crate::state::{EngineState, EqtbState, FontState, MemState};
 use crate::units::{FontId, FontInfoIdx, MemPtr, Scaled, StrNumber};
 
 use super::odd;
+use super::prehyph::Word;
 
 impl MemState {
     /// The Unicode scalar at UTF-16 offset `i` of `w`'s text.
@@ -370,12 +371,13 @@ fn wrap_lig(st: &mut EngineState, rt: bool) -> Result<MemPtr, Abort> {
 /// discretionaries.
 fn hyphenate_native_word(
     st: &mut EngineState,
+    word: &Word,
     ha: NodePtr<NativeWordNode>,
     hn: usize,
 ) -> Result<(), Abort> {
     let hf = st.hyph.hf;
     let hyf_char = st.hyph.hyf_char;
-    let mut s = st.mem.predecessor(st.linebreak.cur_p, ha.ptr());
+    let mut s = st.mem.predecessor(word.start, ha.ptr());
 
     st.hyph.hyphen_passed = 0;
     for j in st.hyph.l_hyf as usize..=hn - st.hyph.r_hyf as usize {
@@ -396,7 +398,6 @@ fn hyphenate_native_word(
     }
 
     let hn = st.mem[ha].length;
-    st.linebreak.hn = hn;
     let hp = st.hyph.hyphen_passed;
     let q = st
         .mem
@@ -413,9 +414,10 @@ fn hyphenate_native_word(
 /// the word's node when it is a native word.
 pub(super) fn hyphenate(
     st: &mut EngineState,
+    word: &Word,
     native_ha: Option<NodePtr<NativeWordNode>>,
 ) -> Result<(), Abort> {
-    let hn = usize::from(st.linebreak.hn);
+    let hn = usize::from(word.hn);
     st.hyph.hyf[..=hn].fill(0);
 
     st.hyph.hc[hn + 1] = i32::from(st.hyph.cur_lang);
@@ -437,7 +439,7 @@ pub(super) fn hyphenate(
                 st.hyph.hyf[s.info(&st.mem) as usize] = 1;
                 s = s.link(&st.mem);
             }
-            return insert_hyphens(st, hn, native_ha);
+            return insert_hyphens(st, word, hn, native_ha);
         }
 
         let Some(next) = st.hyph.hyph_chain_next(h) else {
@@ -474,7 +476,7 @@ pub(super) fn hyphenate(
         }
     }
 
-    insert_hyphens(st, hn, native_ha)
+    insert_hyphens(st, word, hn, native_ha)
 }
 
 impl MemState {
@@ -505,6 +507,7 @@ impl MemState {
 /// every odd `hyf` position.
 fn insert_hyphens(
     st: &mut EngineState,
+    word: &Word,
     hn: usize,
     native_ha: Option<NodePtr<NativeWordNode>>,
 ) -> Result<(), Abort> {
@@ -518,11 +521,11 @@ fn insert_hyphens(
     }
 
     if let Some(ha) = native_ha {
-        return hyphenate_native_word(st, ha, hn);
+        return hyphenate_native_word(st, word, ha, hn);
     }
 
-    let hb = st.linebreak.hb;
-    let ha = st.linebreak.ha;
+    let hb = word.hb;
+    let ha = word.ha;
     let q_final = hb.link(&st.mem);
     hb.set_link(&mut st.mem, MemPtr::NULL);
     let r = ha.link(&st.mem);
@@ -542,7 +545,7 @@ fn insert_hyphens(
             st.hyph.init_list = ha;
             st.hyph.init_lig = false;
             st.hyph.hu[0] = LigChar::of(st.mem[ha_ch].character);
-            (st.mem.predecessor(st.linebreak.cur_p, ha), 0)
+            (st.mem.predecessor(word.start, ha), 0)
         }
     } else if let Ok(AnyNode::Ligature(ha_lig)) = st.mem.classify(ha) {
         if st.mem[ha_lig].font != st.hyph.hf {
@@ -557,7 +560,7 @@ fn insert_hyphens(
                 st.hyph.init_lig = false;
             }
             st.mem.free_node(ha, SMALL_NODE_SIZE);
-            (st.mem.predecessor(st.linebreak.cur_p, ha), 0)
+            (st.mem.predecessor(word.start, ha), 0)
         }
     } else if !st.mem.is_char_node(r)
         && matches!(

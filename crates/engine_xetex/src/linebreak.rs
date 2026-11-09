@@ -12,10 +12,7 @@ use crate::node::{
     WhatsitVariant,
 };
 use crate::params::{DimenPar, GluePar, IntPar};
-use crate::state::{
-    ConfigState, EngineState, EqtbState, ErrorState, FontState, LinebreakState, MemState,
-    ScannerState,
-};
+use crate::state::{EngineState, EqtbState, ErrorState, FontState, MemState};
 use crate::units::{FontId, GlueOrder, MemPtr, Scaled};
 
 mod hyphenate;
@@ -25,11 +22,49 @@ mod post;
 mod prehyph;
 mod protrusion;
 
-use self::lists::{widths, ActiveEntry, BreakType, Entry, EntryId, Fitness, Passive};
-pub(crate) use self::lists::{BreakLists, PassiveId};
+pub(crate) use self::lists::Widths;
+use self::lists::{
+    widths, ActiveEntry, BreakLists, BreakType, Entry, EntryId, Fitness, Passive, PassiveId,
+};
 pub(crate) use self::locale::do_locale_linebreaks;
 use self::post::post_line_break;
 use self::prehyph::{set_language, try_hyphenate};
+
+/// The line breaker's state for one paragraph.
+#[derive(Default)]
+struct Breaker {
+    /// The active list and passive breaks.
+    lists: BreakLists,
+    /// Scratch for the protrusion searches through nested hlists.
+    hlist_stack: Vec<MemPtr>,
+    first_p: MemPtr,
+    global_prev_p: MemPtr,
+    cur_p: MemPtr,
+    last_special_line: i32,
+    first_width: Scaled,
+    second_width: Scaled,
+    first_indent: Scaled,
+    second_indent: Scaled,
+    /// The line number of the chosen breakpoint, once there is one.
+    best_line: i32,
+    active_width: Widths,
+    cur_active_width: Widths,
+    background: Widths,
+    break_width: Widths,
+    best_place: [Option<PassiveId>; 4],
+    best_pl_line: [i32; 4],
+    disc_width: Scaled,
+    final_pass: bool,
+    threshold: i32,
+    minimal_demerits: [i32; 4],
+    minimum_demerits: i32,
+    easy_line: i32,
+    do_last_line_fit: bool,
+    fill_width: [Scaled; 3],
+    best_pl_short: [Scaled; 4],
+    best_pl_glue: [Scaled; 4],
+    no_shrink_error_yet: bool,
+}
 
 #[inline]
 fn odd(v: u8) -> bool {
@@ -65,11 +100,10 @@ impl MemState {
     }
 }
 
-impl LinebreakState {
+impl Breaker {
     fn start_linebreak_pass(
         &mut self,
         mem: &MemState,
-        scanner: &mut ScannerState,
         errors: &mut ErrorState,
         prev_graf: i32,
     ) -> Result<(), Abort> {
@@ -80,7 +114,7 @@ impl LinebreakState {
         )?;
         self.lists.set_link(EntryId::ACTIVE_LIST, q);
 
-        scanner.active_width[1..].copy_from_slice(&self.background[1..]);
+        self.active_width[1..].copy_from_slice(&self.background[1..]);
         errors.font_in_short_display = NULL_FONT;
         self.cur_p = TEMP_HEAD.link(mem);
         self.global_prev_p = self.cur_p;
@@ -157,59 +191,46 @@ impl LinebreakState {
     }
 }
 
-/// Make `spec`'s shrink finite, reporting it on the paragraph's first offence.
-fn finite_shrink(
-    st: &mut EngineState,
-    spec: NodePtr<GlueSpecNode>,
-) -> Result<NodePtr<GlueSpecNode>, Abort> {
-    if st.errors.no_shrink_error_yet {
-        st.errors.no_shrink_error_yet = false;
-        crate::errors::error(
-            st,
-            "Infinite glue shrinkage found in a paragraph",
-            &[
-                "The paragraph just ended includes some glue that has",
-                r"infinite shrinkability, e.g., `\hskip 0pt minus 1fil'.",
-                "Such glue doesn't belong there---it allows a paragraph",
-                "of any length to fit on one line. But it's safe to proceed,",
-                "since the offensive shrinkability has been made finite.",
-            ],
-        )?;
+impl Breaker {
+    /// Make `spec`'s shrink finite, reporting it on the paragraph's first offence.
+    fn finite_shrink(
+        &mut self,
+        st: &mut EngineState,
+        spec: NodePtr<GlueSpecNode>,
+    ) -> Result<NodePtr<GlueSpecNode>, Abort> {
+        if self.no_shrink_error_yet {
+            self.no_shrink_error_yet = false;
+            crate::errors::error(
+                st,
+                "Infinite glue shrinkage found in a paragraph",
+                &[
+                    "The paragraph just ended includes some glue that has",
+                    r"infinite shrinkability, e.g., `\hskip 0pt minus 1fil'.",
+                    "Such glue doesn't belong there---it allows a paragraph",
+                    "of any length to fit on one line. But it's safe to proceed,",
+                    "since the offensive shrinkability has been made finite.",
+                ],
+            )?;
+        }
+        st.mem.finite_shrink(spec)
     }
-    st.mem.finite_shrink(spec)
-}
 
-#[inline]
-fn line_break_try_break(
-    st: &mut EngineState,
-    pi: i32,
-    break_type: BreakType,
-    disc: Option<NodePtr<DiscNode>>,
-) -> Result<(), Abort> {
-    let s = &mut *st;
-    s.linebreak.try_break(
-        &s.mem,
-        &mut s.scanner,
-        &s.eqtb,
-        &mut s.fonts,
-        &s.config,
-        &mut s.errors,
-        pi,
-        break_type,
-        disc,
-    )
-}
-
-/// TeX's `kern_break`: a kern or math node followed by glue is a legal breakpoint.
-#[inline]
-fn kern_break(st: &mut EngineState, next: MemPtr, auto_breaking: bool) -> Result<(), Abort> {
-    if !st.mem.is_char_node(next)
-        && auto_breaking
-        && matches!(st.mem.classify(next), Ok(AnyNode::Glue(_)))
-    {
-        line_break_try_break(st, 0, BreakType::Unhyphenated, None)?;
+    /// TeX's `kern_break`: a kern or math node followed by glue is a legal breakpoint.
+    #[inline]
+    fn kern_break(
+        &mut self,
+        st: &mut EngineState,
+        next: MemPtr,
+        auto_breaking: bool,
+    ) -> Result<(), Abort> {
+        if !st.mem.is_char_node(next)
+            && auto_breaking
+            && matches!(st.mem.classify(next), Ok(AnyNode::Glue(_)))
+        {
+            self.try_break(st, 0, BreakType::Unhyphenated, None)?;
+        }
+        Ok(())
     }
-    Ok(())
 }
 
 impl MemState {
@@ -272,17 +293,20 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
         .cur_list
         .tail
         .set_link(&mut st.mem, last_line_fill.ptr());
-    st.hyph.init_l_hyf = st.input.cur_list.prev_graf / 0x0040_0000;
-    st.hyph.init_r_hyf = (st.input.cur_list.prev_graf / 65_536) % 64;
+    let init_l_hyf = st.input.cur_list.prev_graf / 0x0040_0000;
+    let init_r_hyf = (st.input.cur_list.prev_graf / 65_536) % 64;
     let init_cur_lang = (st.input.cur_list.prev_graf % 65_536) as u8;
 
     st.mem.pop_nest(&mut st.input)?;
-    st.errors.no_shrink_error_yet = true;
+    let mut lb = Breaker {
+        no_shrink_error_yet: true,
+        ..Breaker::default()
+    };
 
     for n in [GluePar::LeftSkip, GluePar::RightSkip] {
         let spec = st.eqtb.glue_par(n);
         if st.mem.has_infinite_shrink(spec) {
-            let spec = finite_shrink(st, spec)?;
+            let spec = lb.finite_shrink(st, spec)?;
             st.eqtb.set_glue_par(n, spec);
         }
     }
@@ -290,17 +314,15 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
     let left_skip = st.eqtb.glue_par(GluePar::LeftSkip);
     let right_skip = st.eqtb.glue_par(GluePar::RightSkip);
     let mem = &st.mem;
-    let background = &mut st.linebreak.background;
+    let background = &mut lb.background;
     background[1] = mem[left_skip].width + mem[right_skip].width;
     background[2..=5].fill(Scaled::ZERO);
     background[2 + mem[left_skip].stretch_order.index()] = mem[left_skip].stretch;
     background[2 + mem[right_skip].stretch_order.index()] += mem[right_skip].stretch;
     background[6] = mem[left_skip].shrink + mem[right_skip].shrink;
 
-    st.linebreak.do_last_line_fit = false;
     if st.eqtb.int_par(IntPar::LastLineFit) > 0 {
         let spec = st.mem[last_line_fill].glue_ptr;
-        let lb = &mut st.linebreak;
         if st.mem[spec].stretch > Scaled::ZERO
             && st.mem[spec].stretch_order > GlueOrder::Normal
             && lb.background[3..=5] == [Scaled::ZERO; 3]
@@ -312,11 +334,10 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
         }
     }
 
-    st.linebreak.minimum_demerits = AWFUL_BAD;
-    st.linebreak.minimal_demerits = [AWFUL_BAD; 4];
+    lb.minimum_demerits = AWFUL_BAD;
+    lb.minimal_demerits = [AWFUL_BAD; 4];
 
     let par_shape = st.eqtb.par_shape();
-    let lb = &mut st.linebreak;
     if let Some(shape) = par_shape {
         let lines = st.mem[shape].lines;
         let last = shape.line(&st.mem, lines);
@@ -368,45 +389,40 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
     }
 
     let best = loop {
-        st.linebreak.threshold = st.linebreak.threshold.min(INF_BAD);
+        lb.threshold = lb.threshold.min(INF_BAD);
 
         if second_pass {
             if st.hyph.trie_not_ready {
                 st.hyph.init_trie()?;
             }
             st.hyph.cur_lang = init_cur_lang;
-            st.hyph.l_hyf = st.hyph.init_l_hyf;
-            st.hyph.r_hyf = st.hyph.init_r_hyf;
+            st.hyph.l_hyf = init_l_hyf;
+            st.hyph.r_hyf = init_r_hyf;
             st.hyph.set_hyph_index();
         }
 
-        st.linebreak.start_linebreak_pass(
-            &st.mem,
-            &mut st.scanner,
-            &mut st.errors,
-            st.input.cur_list.prev_graf,
-        )?;
+        lb.start_linebreak_pass(&st.mem, &mut st.errors, st.input.cur_list.prev_graf)?;
         let mut auto_breaking = true;
         // Whether glue after the previous node is a legal breakpoint.
         let mut prev_breakable = false;
 
-        while !st.linebreak.cur_p.is_null() && !st.linebreak.lists.is_empty() {
-            let mut cur = st.linebreak.cur_p;
+        while !lb.cur_p.is_null() && !lb.lists.is_empty() {
+            let mut cur = lb.cur_p;
 
             if st.mem.is_char_node(cur) {
                 prev_breakable = true;
-                st.linebreak.global_prev_p = cur;
+                lb.global_prev_p = cur;
                 loop {
                     let ch = NodePtr::<CharNode>::at(cur);
                     let f = st.mem[ch].font;
                     let c = st.mem[ch].character;
-                    st.scanner.active_width[1] += st.fonts.effective_char_width(f, c);
+                    lb.active_width[1] += st.fonts.effective_char_width(f, c);
                     cur = cur.link(&st.mem);
                     if !st.mem.is_char_node(cur) {
                         break;
                     }
                 }
-                st.linebreak.cur_p = cur;
+                lb.cur_p = cur;
             }
 
             let Ok(node) = st.mem.classify(cur) else {
@@ -414,26 +430,26 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
             };
             match node {
                 AnyNode::Box(_) | AnyNode::Rule(_) => {
-                    st.scanner.active_width[1] += node.hlist_width(&st.mem);
+                    lb.active_width[1] += node.hlist_width(&st.mem);
                 }
                 AnyNode::Whatsit(w) => {
                     if let Some(WhatsitVariant::Language(language)) = w.variant(&st.mem) {
                         set_language(st, language);
                     } else if let Some(sized) = w.sized(&st.mem) {
-                        st.scanner.active_width[1] += st.mem[sized].width;
+                        lb.active_width[1] += st.mem[sized].width;
                     }
                 }
                 AnyNode::Glue(cur_glue) => {
                     if auto_breaking && prev_breakable {
-                        line_break_try_break(st, 0, BreakType::Unhyphenated, None)?;
+                        lb.try_break(st, 0, BreakType::Unhyphenated, None)?;
                     }
 
                     let mut spec = st.mem[cur_glue].glue_ptr;
                     if st.mem.has_infinite_shrink(spec) {
-                        spec = finite_shrink(st, spec)?;
+                        spec = lb.finite_shrink(st, spec)?;
                         st.mem[cur_glue].glue_ptr = spec;
                     }
-                    let aw = &mut st.scanner.active_width;
+                    let aw = &mut lb.active_width;
                     aw[1] += st.mem[spec].width;
                     aw[2 + st.mem[spec].stretch_order.index()] += st.mem[spec].stretch;
                     aw[6] += st.mem[spec].shrink;
@@ -444,40 +460,40 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                 }
                 AnyNode::Kern(k) => {
                     if st.mem[k].subtype == KernSubtype::Explicit {
-                        kern_break(st, st.mem[k].link, auto_breaking)?;
+                        lb.kern_break(st, st.mem[k].link, auto_breaking)?;
                     }
-                    st.scanner.active_width[1] += st.mem[k].width;
+                    lb.active_width[1] += st.mem[k].width;
                 }
                 AnyNode::Ligature(lig) => {
                     let f = st.mem[lig].font;
                     st.fonts.xtx_ligature_present = true;
                     let c = st.mem[lig].character;
-                    st.scanner.active_width[1] += st.fonts.effective_char_width(f, c);
+                    lb.active_width[1] += st.fonts.effective_char_width(f, c);
                 }
                 AnyNode::Disc(d) => {
                     let pre_break = st.mem[d].pre_break;
-                    st.linebreak.disc_width = Scaled::ZERO;
+                    lb.disc_width = Scaled::ZERO;
                     if pre_break.is_null() {
                         let pi = st.eqtb.int_par(IntPar::ExHyphenPenalty);
-                        line_break_try_break(st, pi, BreakType::Hyphenated, Some(d))?;
+                        lb.try_break(st, pi, BreakType::Hyphenated, Some(d))?;
                     } else {
                         let mut s = pre_break;
                         while !s.is_null() {
-                            st.linebreak.disc_width += st
+                            lb.disc_width += st
                                 .mem
                                 .disc_node_width(&mut st.fonts, s)
                                 .or_confusion("disc3")?;
                             s = s.link(&st.mem);
                         }
-                        st.scanner.active_width[1] += st.linebreak.disc_width;
+                        lb.active_width[1] += lb.disc_width;
                         let pi = st.eqtb.int_par(IntPar::HyphenPenalty);
-                        line_break_try_break(st, pi, BreakType::Hyphenated, Some(d))?;
-                        st.scanner.active_width[1] -= st.linebreak.disc_width;
+                        lb.try_break(st, pi, BreakType::Hyphenated, Some(d))?;
+                        lb.active_width[1] -= lb.disc_width;
                     }
 
                     let mut s = st.mem[d].link;
                     for _ in 0..st.mem[d].replace_count {
-                        st.scanner.active_width[1] += st
+                        lb.active_width[1] += st
                             .mem
                             .disc_node_width(&mut st.fonts, s)
                             .or_confusion("disc4")?;
@@ -485,8 +501,8 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                     }
 
                     prev_breakable = true;
-                    st.linebreak.global_prev_p = cur;
-                    st.linebreak.cur_p = s;
+                    lb.global_prev_p = cur;
+                    lb.cur_p = s;
                     continue;
                 }
                 AnyNode::Math(m) => {
@@ -494,11 +510,11 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                     if !code.is_lr() {
                         auto_breaking = code.is_end();
                     }
-                    kern_break(st, st.mem[m].link, auto_breaking)?;
-                    st.scanner.active_width[1] += st.mem[m].width;
+                    lb.kern_break(st, st.mem[m].link, auto_breaking)?;
+                    lb.active_width[1] += st.mem[m].width;
                 }
                 AnyNode::Penalty(pen) => {
-                    line_break_try_break(st, st.mem[pen].penalty, BreakType::Unhyphenated, None)?;
+                    lb.try_break(st, st.mem[pen].penalty, BreakType::Unhyphenated, None)?;
                 }
                 AnyNode::Mark(_) | AnyNode::Ins(_) | AnyNode::Adjust(_) => {}
                 _ => return Err(Abort::Confusion("paragraph")),
@@ -506,33 +522,30 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
 
             prev_breakable = node.precedes_break()
                 || matches!(node, AnyNode::Kern(k) if st.mem[k].subtype != KernSubtype::Explicit);
-            st.linebreak.global_prev_p = cur;
-            st.linebreak.cur_p = cur.link(&st.mem);
+            lb.global_prev_p = cur;
+            lb.cur_p = cur.link(&st.mem);
         }
 
-        if st.linebreak.cur_p.is_null() {
-            line_break_try_break(st, EJECT_PENALTY, BreakType::Hyphenated, None)?;
-            if let Some(best) = st.linebreak.choose_best_break(&st.eqtb)? {
+        if lb.cur_p.is_null() {
+            lb.try_break(st, EJECT_PENALTY, BreakType::Hyphenated, None)?;
+            if let Some(best) = lb.choose_best_break(&st.eqtb)? {
                 break best;
             }
         }
 
         if !second_pass {
-            st.linebreak.threshold = st.eqtb.int_par(IntPar::Tolerance);
+            lb.threshold = st.eqtb.int_par(IntPar::Tolerance);
             second_pass = true;
-            st.linebreak.final_pass = st.eqtb.dimen_par(DimenPar::EmergencyStretch) <= Scaled::ZERO;
+            lb.final_pass = st.eqtb.dimen_par(DimenPar::EmergencyStretch) <= Scaled::ZERO;
         } else {
-            st.linebreak.background[2] += st.eqtb.dimen_par(DimenPar::EmergencyStretch);
-            st.linebreak.final_pass = true;
+            lb.background[2] += st.eqtb.dimen_par(DimenPar::EmergencyStretch);
+            lb.final_pass = true;
         }
     };
 
-    st.linebreak
-        .finish_last_line_fit(&mut st.mem, &best, last_line_fill)?;
+    lb.finish_last_line_fit(&mut st.mem, &best, last_line_fill)?;
 
-    let last_line = post_line_break(st, best.break_node, d)?;
-
-    st.linebreak.lists.clear();
+    let last_line = post_line_break(st, &mut lb, best.break_node, d)?;
 
     st.scanner.pack_begin_line = 0;
     Ok(last_line)
@@ -569,70 +582,68 @@ fn stretch_badness(shortfall: Scaled, stretch: Scaled) -> (i32, Fitness) {
     }
 }
 
-impl MemState {
+impl Breaker {
     /// Set `break_width` to the width of the line material after a break at
     /// `cur_p`, which is `disc` for a hyphenated break.
     fn compute_break_width(
-        &self,
+        &mut self,
+        mem: &MemState,
         fonts: &mut FontState,
-        linebreak: &mut LinebreakState,
         disc: Option<NodePtr<DiscNode>>,
     ) -> Result<(), Abort> {
-        linebreak.break_width[1..].copy_from_slice(&linebreak.background[1..]);
-        let mut s = linebreak.cur_p;
+        self.break_width[1..].copy_from_slice(&self.background[1..]);
+        let mut s = self.cur_p;
 
         if let Some(cur_disc) = disc {
             let mut v = cur_disc.ptr();
-            s = self[cur_disc].post_break;
+            s = mem[cur_disc].post_break;
 
-            for _ in 0..self[cur_disc].replace_count {
-                v = v.link(self);
-                linebreak.break_width[1] -= self.disc_node_width(fonts, v).map_err(|whatsit| {
+            for _ in 0..mem[cur_disc].replace_count {
+                v = v.link(mem);
+                self.break_width[1] -= mem.disc_node_width(fonts, v).map_err(|whatsit| {
                     Abort::Confusion(if whatsit { "disc1a" } else { "disc1" })
                 })?;
             }
 
             while !s.is_null() {
-                linebreak.break_width[1] += self.disc_node_width(fonts, s).map_err(|whatsit| {
+                self.break_width[1] += mem.disc_node_width(fonts, s).map_err(|whatsit| {
                     Abort::Confusion(if whatsit { "disc2a" } else { "disc2" })
                 })?;
-                s = s.link(self);
+                s = s.link(mem);
             }
 
-            linebreak.break_width[1] += linebreak.disc_width;
-            if self[cur_disc].post_break.is_null() {
-                s = v.link(self);
+            self.break_width[1] += self.disc_width;
+            if mem[cur_disc].post_break.is_null() {
+                s = v.link(mem);
             }
         }
 
-        while !s.is_null() && !self.is_char_node(s) {
-            match self.classify(s) {
+        while !s.is_null() && !mem.is_char_node(s) {
+            match mem.classify(s) {
                 Ok(AnyNode::Glue(g)) => {
-                    let spec = self[g].glue_ptr;
-                    linebreak.break_width[1] -= self[spec].width;
-                    linebreak.break_width[2 + self[spec].stretch_order.index()] -=
-                        self[spec].stretch;
-                    linebreak.break_width[6] -= self[spec].shrink;
+                    let spec = mem[g].glue_ptr;
+                    self.break_width[1] -= mem[spec].width;
+                    self.break_width[2 + mem[spec].stretch_order.index()] -= mem[spec].stretch;
+                    self.break_width[6] -= mem[spec].shrink;
                 }
                 Ok(AnyNode::Penalty(_)) => {}
-                Ok(AnyNode::Math(m)) => linebreak.break_width[1] -= self[m].width,
-                Ok(AnyNode::Kern(k)) if self[k].subtype == KernSubtype::Explicit => {
-                    linebreak.break_width[1] -= self[k].width;
+                Ok(AnyNode::Math(m)) => self.break_width[1] -= mem[m].width,
+                Ok(AnyNode::Kern(k)) if mem[k].subtype == KernSubtype::Explicit => {
+                    self.break_width[1] -= mem[k].width;
                 }
                 _ => break,
             }
-            s = s.link(self);
+            s = s.link(mem);
         }
         Ok(())
     }
 }
 
-impl LinebreakState {
+impl Breaker {
     /// Record the feasible breaks found so far as new active entries before `r`, with
     /// delta entries around them (TeX's "insert new active nodes").
     fn insert_new_active_nodes(
         &mut self,
-        scanner: &mut ScannerState,
         eqtb: &EqtbState,
         r: EntryId,
         prev_r: &mut EntryId,
@@ -644,7 +655,7 @@ impl LinebreakState {
         if let Entry::Delta(old) = self.lists.get_mut(*prev_r) {
             *old = widths(|k| old[k] - caw[k] + bw[k]);
         } else if *prev_r == EntryId::ACTIVE_LIST {
-            scanner.active_width[1..].copy_from_slice(&bw[1..]);
+            self.active_width[1..].copy_from_slice(&bw[1..]);
         } else {
             let q = self
                 .lists
@@ -704,19 +715,21 @@ impl LinebreakState {
     }
 
     /// Consider a break at `cur_p` with penalty `pi`, updating the active list.
-    #[allow(clippy::too_many_arguments)]
     fn try_break(
         &mut self,
-        mem: &MemState,
-        scanner: &mut ScannerState,
-        eqtb: &EqtbState,
-        fonts: &mut FontState,
-        config: &ConfigState,
-        errors: &mut ErrorState,
+        st: &mut EngineState,
         mut pi: i32,
         break_type: BreakType,
         disc: Option<NodePtr<DiscNode>>,
     ) -> Result<(), Abort> {
+        let EngineState {
+            mem,
+            eqtb,
+            fonts,
+            config,
+            errors,
+            ..
+        } = st;
         if config.semantic_pagination_enabled && !self.cur_p.is_null() {
             return Ok(());
         }
@@ -735,7 +748,7 @@ impl LinebreakState {
         let mut line_width = Scaled::ZERO;
         let mut g = Scaled::ZERO;
 
-        self.cur_active_width[1..].copy_from_slice(&scanner.active_width[1..]);
+        self.cur_active_width[1..].copy_from_slice(&self.active_width[1..]);
 
         loop {
             let r = self.lists.link(prev_r);
@@ -759,10 +772,9 @@ impl LinebreakState {
                 {
                     if no_break_yet {
                         no_break_yet = false;
-                        mem.compute_break_width(fonts, self, disc)?;
+                        self.compute_break_width(mem, fonts, disc)?;
                     }
                     self.insert_new_active_nodes(
-                        scanner,
                         eqtb,
                         r,
                         &mut prev_r,
@@ -900,7 +912,7 @@ impl LinebreakState {
                 {
                     artificial_demerits = true;
                 } else if b > self.threshold {
-                    self.deactivate_node(scanner, r, &mut prev_r, &mut prev_prev_r)?;
+                    self.deactivate_node(r, &mut prev_r, &mut prev_prev_r)?;
                     continue;
                 }
                 false
@@ -959,7 +971,7 @@ impl LinebreakState {
             }
 
             if !node_r_stays_active {
-                self.deactivate_node(scanner, r, &mut prev_r, &mut prev_prev_r)?;
+                self.deactivate_node(r, &mut prev_r, &mut prev_prev_r)?;
             }
         }
     }
@@ -967,7 +979,6 @@ impl LinebreakState {
     /// Unlink the active entry `r`, merging the delta entries around it.
     fn deactivate_node(
         &mut self,
-        scanner: &mut ScannerState,
         r: EntryId,
         prev_r: &mut EntryId,
         prev_prev_r: &mut Option<EntryId>,
@@ -978,10 +989,10 @@ impl LinebreakState {
         if *prev_r == EntryId::ACTIVE_LIST {
             let r = lists.link(EntryId::ACTIVE_LIST);
             if let Entry::Delta(w) = lists.get(r) {
-                for (width, delta) in scanner.active_width.iter_mut().zip(w) {
+                for (width, delta) in self.active_width.iter_mut().zip(w) {
                     *width += delta;
                 }
-                self.cur_active_width[1..].copy_from_slice(&scanner.active_width[1..]);
+                self.cur_active_width[1..].copy_from_slice(&self.active_width[1..]);
                 lists.set_link(EntryId::ACTIVE_LIST, lists.link(r));
             }
         } else if let Entry::Delta(pw) = lists.get(*prev_r) {

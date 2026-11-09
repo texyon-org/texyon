@@ -4,33 +4,22 @@ use crate::errors::Abort;
 use crate::fonts::{Side, QUAD_CODE};
 use crate::mem::{TEMP_HEAD, ZERO_GLUE};
 use crate::node::{AnyNode, BoxNode, DiscNode, KernSubtype, NodePtr, WhatsitVariant};
-use crate::state::{ErrorState, FontState, LinebreakState, MemState};
+use crate::state::{ErrorState, FontState, MemState};
 use crate::units::{FontId, MemPtr, Scaled};
 
 use super::lists::PassiveId;
+use super::Breaker;
 
-const MAX_HLIST_STACK: i16 = 512;
+/// The last index the hlist stack may push to, as in WEB.
+const MAX_HLIST_STACK: usize = 512;
 
-impl LinebreakState {
+impl Breaker {
     fn push_node(&mut self, p: MemPtr) -> bool {
-        let level = self.hlist_stack_level;
-        if level > MAX_HLIST_STACK {
+        if self.hlist_stack.len() > MAX_HLIST_STACK {
             return false;
         }
-
-        self.hlist_stack[level as usize] = p;
-        self.hlist_stack_level = level + 1;
+        self.hlist_stack.push(p);
         true
-    }
-
-    fn pop_node(&mut self) -> Option<MemPtr> {
-        let level = self.hlist_stack_level - 1;
-        self.hlist_stack_level = level;
-        if level < 0 {
-            return None;
-        }
-
-        Some(self.hlist_stack[level as usize])
     }
 
     /// Total protrusion of the line from `break_node` (the paragraph start for
@@ -51,7 +40,7 @@ impl LinebreakState {
         let r = mem.prev_rightmost(self.global_prev_p, self.cur_p);
         let r = match p_disc {
             Some(d) if !mem[d].pre_break.is_null() => mem.list_tail(mem[d].pre_break),
-            _ => mem.find_protchar_right(self, l, r)?,
+            _ => self.find_protchar_right(mem, l, r)?,
         };
 
         let l_disc = if l.is_null() {
@@ -68,9 +57,9 @@ impl LinebreakState {
                         l = l.link(mem);
                     }
                 }
-                mem.find_protchar_left(self, l, true)?
+                self.find_protchar_left(mem, l, true)?
             }
-            None => mem.find_protchar_left(self, l, true)?,
+            None => self.find_protchar_left(mem, l, true)?,
         };
 
         Some(
@@ -146,8 +135,8 @@ impl LinebreakState {
         } else {
             let head = TEMP_HEAD.link(mem);
             let ptmp = mem.prev_rightmost(head, q);
-            let p = mem
-                .find_protchar_right(self, head, ptmp)
+            let p = self
+                .find_protchar_right(mem, head, ptmp)
                 .ok_or(Abort::PdfError(&[
                     "insert_right_margin_kern",
                     "hlist stack failure",
@@ -173,8 +162,8 @@ impl LinebreakState {
         fonts: &FontState,
         q: MemPtr,
     ) -> Result<MemPtr, Abort> {
-        let p = mem
-            .find_protchar_left(self, q, false)
+        let p = self
+            .find_protchar_left(mem, q, false)
             .ok_or(Abort::PdfError(&[
                 "insert_right_margin_kern",
                 "hlist stack failure",
@@ -245,42 +234,39 @@ impl MemState {
             _ => false,
         }
     }
+}
 
-    fn find_protchar_left(
-        &self,
-        linebreak: &mut LinebreakState,
-        mut l: MemPtr,
-        d: bool,
-    ) -> Option<MemPtr> {
-        if self.is_empty_box(l) {
-            l = l.link(self);
+impl Breaker {
+    fn find_protchar_left(&mut self, mem: &MemState, mut l: MemPtr, d: bool) -> Option<MemPtr> {
+        if mem.is_empty_box(l) {
+            l = l.link(mem);
         } else if d {
-            while !l.link(self).is_null() && !self.is_non_discardable(l) {
-                l = l.link(self);
+            while !l.link(mem).is_null() && !mem.is_non_discardable(l) {
+                l = l.link(mem);
             }
         }
 
-        linebreak.hlist_stack_level = 0;
+        self.hlist_stack.clear();
         let mut run = true;
         loop {
             let t = l;
             if run {
-                while let Some(list) = self.nonempty_hlist(l) {
-                    if !linebreak.push_node(l) {
+                while let Some(list) = mem.nonempty_hlist(l) {
+                    if !self.push_node(l) {
                         return None;
                     }
                     l = list;
                 }
             }
 
-            while run && self.ignorable_protrusion_node(l) {
-                while l.link(self).is_null() && linebreak.hlist_stack_level > 0 {
-                    l = linebreak.pop_node()?;
+            while run && mem.ignorable_protrusion_node(l) {
+                while l.link(mem).is_null() && !self.hlist_stack.is_empty() {
+                    l = self.hlist_stack.pop()?;
                 }
 
-                if !l.link(self).is_null() {
-                    l = l.link(self);
-                } else if linebreak.hlist_stack_level == 0 {
+                if !l.link(mem).is_null() {
+                    l = l.link(mem);
+                } else if self.hlist_stack.is_empty() {
                     run = false;
                 }
             }
@@ -292,8 +278,8 @@ impl MemState {
     }
 
     fn find_protchar_right(
-        &self,
-        linebreak: &mut LinebreakState,
+        &mut self,
+        mem: &MemState,
         mut l: MemPtr,
         mut r: MemPtr,
     ) -> Option<MemPtr> {
@@ -301,29 +287,29 @@ impl MemState {
             return Some(MemPtr::NULL);
         }
 
-        linebreak.hlist_stack_level = 0;
+        self.hlist_stack.clear();
         let mut run = true;
         loop {
             let t = r;
             if run {
-                while let Some(list) = self.nonempty_hlist(r) {
-                    if !linebreak.push_node(l) || !linebreak.push_node(r) {
+                while let Some(list) = mem.nonempty_hlist(r) {
+                    if !self.push_node(l) || !self.push_node(r) {
                         return None;
                     }
                     l = list;
-                    r = self.list_tail(l);
+                    r = mem.list_tail(l);
                 }
             }
 
-            while run && self.ignorable_protrusion_node(r) {
-                while r == l && linebreak.hlist_stack_level > 0 {
-                    r = linebreak.pop_node()?;
-                    l = linebreak.pop_node()?;
+            while run && mem.ignorable_protrusion_node(r) {
+                while r == l && !self.hlist_stack.is_empty() {
+                    r = self.hlist_stack.pop()?;
+                    l = self.hlist_stack.pop()?;
                 }
 
                 if r != l && !r.is_null() {
-                    r = self.prev_rightmost(l, r);
-                } else if r == l && linebreak.hlist_stack_level == 0 {
+                    r = mem.prev_rightmost(l, r);
+                } else if r == l && self.hlist_stack.is_empty() {
                     run = false;
                 }
             }

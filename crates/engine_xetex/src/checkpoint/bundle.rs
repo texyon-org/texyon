@@ -9,8 +9,8 @@ use crate::mem_types::{ListStateRecord, MemoryWord};
 use crate::stack::TexStack;
 use crate::state::{
     ConfigState, EngineState, EqtbState, ErrorState, FontEngineHandle, FontMappingHandle,
-    FontState, GroupCode, HyphState, InputClusterState, InputState, LinebreakState, MainLoopState,
-    MemState, SaveStackState, ScannerState, ShipoutState, StringsState, SynctexCtxt, TexmfState,
+    FontState, GroupCode, HyphState, InputClusterState, InputState, MainLoopState, MemState,
+    SaveStackState, ScannerState, ShipoutState, StringsState, SynctexCtxt, TexmfState,
 };
 use crate::sync_index::PreviewSyncIndex;
 use crate::units::{
@@ -49,8 +49,6 @@ pub(crate) struct EngineBundle {
     dvi: DviWriter,
     scanner: ScannerState,
     native_text: Vec<u16>,
-    linebreak: LinebreakState,
-    hlist_stack: Vec<MemPtr>,
     texmf: TexmfState,
     synctex: SynctexCtxt,
     mainloop: MainLoopState,
@@ -74,8 +72,6 @@ impl EngineBundle {
         let dvi = take(&mut shipout.dvi).into_checkpoint();
         let mut scanner = st.scanner.clone();
         let native_text = take(&mut scanner.native_text);
-        let mut linebreak = st.linebreak.clone();
-        let hlist_stack = take(&mut linebreak.hlist_stack);
         Self {
             config: st.config,
             errors: st.errors.clone(),
@@ -83,8 +79,6 @@ impl EngineBundle {
             dvi,
             scanner,
             native_text,
-            linebreak,
-            hlist_stack,
             texmf: st.texmf.clone(),
             synctex: st.synctex.clone(),
             mainloop: st.mainloop.clone(),
@@ -117,13 +111,6 @@ impl EngineBundle {
         };
         st.scanner.native_text.clone_from(&self.native_text);
 
-        let hlist_stack = take(&mut st.linebreak.hlist_stack);
-        st.linebreak = LinebreakState {
-            hlist_stack,
-            ..self.linebreak.clone()
-        };
-        st.linebreak.hlist_stack.clone_from(&self.hlist_stack);
-
         st.texmf.clone_from(&self.texmf);
         st.synctex.clone_from(&self.synctex);
         st.mainloop.clone_from(&self.mainloop);
@@ -152,7 +139,6 @@ impl EngineBundle {
                 .map(vec_bytes)
                 .sum::<usize>()
             + vec_bytes(&self.native_text)
-            + vec_bytes(&self.hlist_stack)
             + self
                 .synctex
                 .preview_index
@@ -787,8 +773,6 @@ struct HyphBundle {
     hyf_char: LigChar,
     l_hyf: i32,
     r_hyf: i32,
-    init_l_hyf: i32,
-    init_r_hyf: i32,
     hyf_bchar: LigChar,
     hc: Vec<i32>,
     hu: Vec<LigChar>,
@@ -826,8 +810,6 @@ impl HyphBundle {
             hyf_char: src.hyf_char,
             l_hyf: src.l_hyf,
             r_hyf: src.r_hyf,
-            init_l_hyf: src.init_l_hyf,
-            init_r_hyf: src.init_r_hyf,
             hyf_bchar: src.hyf_bchar,
             hc: src.hc.clone(),
             hu: src.hu.clone(),
@@ -860,8 +842,6 @@ impl HyphBundle {
         dst.hyf_char = self.hyf_char;
         dst.l_hyf = self.l_hyf;
         dst.r_hyf = self.r_hyf;
-        dst.init_l_hyf = self.init_l_hyf;
-        dst.init_r_hyf = self.init_r_hyf;
         dst.hyf_bchar = self.hyf_bchar;
         dst.hc.clone_from(&self.hc);
         dst.hu.clone_from(&self.hu);

@@ -22,7 +22,6 @@ pub(crate) struct EngineState {
     pub strings: StringsState,
     pub hyph: HyphState,
     pub fonts: FontState,
-    pub linebreak: LinebreakState,
     pub texmf: TexmfState,
     pub synctex: SynctexCtxt,
     pub mainloop: MainLoopState,
@@ -1131,7 +1130,6 @@ pub(crate) struct ScannerState {
     pub cur_i: crate::fonts::CharInfo,
     pub pack_begin_line: i32,
     pub set_box_allowed: bool,
-    pub active_width: [Scaled; 7],
     pub best_height_plus_depth: Scaled,
     pub lr_ptr: crate::units::MemPtr,
     pub lr_problems: i32,
@@ -1547,7 +1545,6 @@ pub(crate) struct ErrorState {
     pub first_count: i32,
     pub deletions_allowed: bool,
     pub random_seed: i32,
-    pub no_shrink_error_yet: bool,
     /// Set once `--halt-on-error` has started to stop the run.
     pub halting_on_error: bool,
     pub font_in_short_display: FontId,
@@ -1581,7 +1578,6 @@ impl Default for ErrorState {
             first_count: 0,
             deletions_allowed: false,
             random_seed: 0,
-            no_shrink_error_yet: false,
             halting_on_error: false,
             font_in_short_display: crate::consts::NULL_FONT,
             depth_threshold: 0,
@@ -1670,80 +1666,6 @@ impl StringsState {
     }
 }
 
-/// The line breaker's per-paragraph scratch.
-#[derive(Clone)]
-pub(crate) struct LinebreakState {
-    pub hlist_stack: Vec<crate::units::MemPtr>,
-    pub hlist_stack_level: i16,
-    pub first_p: crate::units::MemPtr,
-    pub global_prev_p: crate::units::MemPtr,
-    pub cur_p: crate::units::MemPtr,
-    pub last_special_line: i32,
-    pub first_width: Scaled,
-    pub second_width: Scaled,
-    pub first_indent: Scaled,
-    pub second_indent: Scaled,
-    /// The active node of the chosen breakpoint, once there is one.
-    pub best_line: i32,
-    pub hn: u16,
-    pub ha: crate::units::MemPtr,
-    pub hb: crate::units::MemPtr,
-    /// The active list and passive breaks, empty outside `line_break`.
-    pub lists: crate::linebreak::BreakLists,
-    pub cur_active_width: [Scaled; 7],
-    pub background: [Scaled; 7],
-    pub break_width: [Scaled; 7],
-    pub best_place: [Option<crate::linebreak::PassiveId>; 4],
-    pub best_pl_line: [i32; 4],
-    pub disc_width: Scaled,
-    pub final_pass: bool,
-    pub threshold: i32,
-    pub minimal_demerits: [i32; 4],
-    pub minimum_demerits: i32,
-    pub easy_line: i32,
-    pub do_last_line_fit: bool,
-    pub fill_width: [Scaled; 3],
-    pub best_pl_short: [Scaled; 4],
-    pub best_pl_glue: [Scaled; 4],
-}
-
-impl Default for LinebreakState {
-    fn default() -> Self {
-        Self {
-            hlist_stack: vec![crate::units::MemPtr::default(); 513],
-            hlist_stack_level: 0,
-            first_p: crate::units::MemPtr::default(),
-            global_prev_p: crate::units::MemPtr::default(),
-            cur_p: crate::units::MemPtr::default(),
-            last_special_line: 0,
-            first_width: Scaled::ZERO,
-            second_width: Scaled::ZERO,
-            first_indent: Scaled::ZERO,
-            second_indent: Scaled::ZERO,
-            best_line: 0,
-            hn: 0,
-            ha: crate::units::MemPtr::default(),
-            hb: crate::units::MemPtr::default(),
-            lists: crate::linebreak::BreakLists::default(),
-            cur_active_width: [Scaled::ZERO; 7],
-            background: [Scaled::ZERO; 7],
-            break_width: [Scaled::ZERO; 7],
-            best_place: [None; 4],
-            best_pl_line: [0; 4],
-            disc_width: Scaled::ZERO,
-            final_pass: false,
-            threshold: 0,
-            minimal_demerits: [0; 4],
-            minimum_demerits: 0,
-            easy_line: 0,
-            do_last_line_fit: false,
-            fill_width: [Scaled::ZERO; 3],
-            best_pl_short: [Scaled::ZERO; 4],
-            best_pl_glue: [Scaled::ZERO; 4],
-        }
-    }
-}
-
 pub(crate) struct HyphState {
     /// Generation of the rarely-mutated trie and exception tables.
     pub tables_gen: u64,
@@ -1770,8 +1692,6 @@ pub(crate) struct HyphState {
     pub hyf_char: crate::fonts::LigChar,
     pub l_hyf: i32,
     pub r_hyf: i32,
-    pub init_l_hyf: i32,
-    pub init_r_hyf: i32,
     pub hyf_bchar: crate::fonts::LigChar,
     pub hc: Vec<i32>,
     /// The word's characters, with boundary sentinels at the ends.
@@ -1826,8 +1746,6 @@ impl Default for HyphState {
             hyf_char: crate::fonts::LigChar::NONE,
             l_hyf: 0,
             r_hyf: 0,
-            init_l_hyf: 0,
-            init_r_hyf: 0,
             hyf_bchar: crate::fonts::LigChar::NONE,
             hc: vec![0; 4099],
             hu: vec![crate::fonts::LigChar::NONE; 4097],

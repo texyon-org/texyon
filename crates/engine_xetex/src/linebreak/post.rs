@@ -7,17 +7,14 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
-use crate::mem_types::ListStateRecord;
 use crate::node::{AnyNode, BoxNode, GlueKind, KernSubtype, MathNode, NodePtr};
 use crate::packaging::PackSpec;
 use crate::params::{GluePar, IntPar};
-use crate::state::{
-    ConfigState, EngineState, EqtbState, ErrorState, FontState, LinebreakState, MemState,
-    ScannerState,
-};
+use crate::state::{EngineState, EqtbState, MemState};
 use crate::units::{MemPtr, Scaled};
 
 use super::lists::PassiveId;
+use super::Breaker;
 
 struct PostLineHpack {
     /// The break that ends this line.
@@ -30,21 +27,24 @@ struct PostLineHpack {
     post_disc_break: bool,
 }
 
-impl LinebreakState {
+impl Breaker {
     /// Break off the next line of the paragraph after `TEMP_HEAD`, ready for `hpack`.
-    #[allow(clippy::too_many_arguments)]
     fn post_line_break_prefix(
         &mut self,
-        errors: &mut ErrorState,
-        mem: &mut MemState,
-        scanner: &mut ScannerState,
-        eqtb: &EqtbState,
-        fonts: &FontState,
-        config: &ConfigState,
+        st: &mut EngineState,
         lr_ptr: &mut MemPtr,
         cur_line: i32,
         brk: PassiveId,
     ) -> Result<PostLineHpack, Abort> {
+        let EngineState {
+            errors,
+            mem,
+            scanner,
+            eqtb,
+            fonts,
+            config,
+            ..
+        } = st;
         let texxet = eqtb.int_par(IntPar::Texxet) > 0;
         let protrude = eqtb.int_par(IntPar::XetexProtrudeChars) > 0;
         let cur_break = self.lists.passive(brk).cur_break;
@@ -217,7 +217,7 @@ impl LinebreakState {
     }
 }
 
-impl LinebreakState {
+impl Breaker {
     /// Reverse the chain of breaks ending at `last`, returning the first line's break.
     fn reverse_best_breaks(&mut self, last: Option<PassiveId>) -> Option<PassiveId> {
         let mut q = last;
@@ -256,39 +256,43 @@ impl MemState {
     }
 }
 
-impl ListStateRecord {
+impl Breaker {
     /// Append the packed line and the interline penalty, then prune discardable
     /// nodes from the start of the next line. Returns the next line's break, if any.
-    #[allow(clippy::too_many_arguments)]
     fn post_line_break_suffix(
-        &mut self,
-        mem: &mut MemState,
-        scanner: &mut ScannerState,
-        linebreak: &mut LinebreakState,
-        eqtb: &EqtbState,
+        &self,
+        st: &mut EngineState,
         just_box: NodePtr<BoxNode>,
         hpack: PostLineHpack,
         d: bool,
         lr_ptr: &mut MemPtr,
         cur_line: &mut i32,
     ) -> Result<Option<PassiveId>, Abort> {
+        let EngineState {
+            mem,
+            scanner,
+            eqtb,
+            input,
+            ..
+        } = st;
+        let list = &mut input.cur_list;
         mem[just_box].shift_amount = hpack.cur_indent;
 
         if scanner.pre_adjust_tail != PRE_ADJUST_HEAD {
-            self.tail.set_link(mem, PRE_ADJUST_HEAD.link(mem));
-            self.tail = scanner.pre_adjust_tail;
+            list.tail.set_link(mem, PRE_ADJUST_HEAD.link(mem));
+            list.tail = scanner.pre_adjust_tail;
         }
         scanner.pre_adjust_tail = MemPtr::NULL;
 
-        self.append_to_vlist(mem, eqtb, just_box)?;
+        list.append_to_vlist(mem, eqtb, just_box)?;
 
         if scanner.adjust_tail != ADJUST_HEAD {
-            self.tail.set_link(mem, ADJUST_HEAD.link(mem));
-            self.tail = scanner.adjust_tail;
+            list.tail.set_link(mem, ADJUST_HEAD.link(mem));
+            list.tail = scanner.adjust_tail;
         }
         scanner.adjust_tail = MemPtr::NULL;
 
-        if cur_line.wrapping_add(1) != linebreak.best_line {
+        if cur_line.wrapping_add(1) != self.best_line {
             let mut pen = mem
                 .etex_penalty(eqtb, ETEX_PENALTIES_PAR_INTER_LINE_PENALTIES, *cur_line)
                 .unwrap_or_else(|| eqtb.int_par(IntPar::InterLinePenalty));
@@ -296,10 +300,10 @@ impl ListStateRecord {
             match mem.etex_penalty(
                 eqtb,
                 ETEX_PENALTIES_PAR_CLUB_PENALTIES,
-                cur_line.wrapping_sub(self.prev_graf),
+                cur_line.wrapping_sub(list.prev_graf),
             ) {
                 Some(p) => pen = pen.wrapping_add(p),
-                None if *cur_line == self.prev_graf.wrapping_add(1) => {
+                None if *cur_line == list.prev_graf.wrapping_add(1) => {
                     pen = pen.wrapping_add(eqtb.int_par(IntPar::ClubPenalty))
                 }
                 None => {}
@@ -316,10 +320,10 @@ impl ListStateRecord {
             match mem.etex_penalty(
                 eqtb,
                 widow_array,
-                linebreak.best_line.wrapping_sub(*cur_line).wrapping_sub(1),
+                self.best_line.wrapping_sub(*cur_line).wrapping_sub(1),
             ) {
                 Some(p) => pen = pen.wrapping_add(p),
-                None if cur_line.wrapping_add(2) == linebreak.best_line => {
+                None if cur_line.wrapping_add(2) == self.best_line => {
                     pen = pen.wrapping_add(eqtb.int_par(widow_penalty))
                 }
                 None => {}
@@ -331,16 +335,16 @@ impl ListStateRecord {
 
             if pen != 0 {
                 let r = mem.new_penalty(pen)?;
-                self.tail_append(mem, r.ptr());
+                list.tail_append(mem, r.ptr());
             }
         }
 
         *cur_line = cur_line.wrapping_add(1);
-        let next = linebreak.lists.passive(hpack.brk).next_break;
+        let next = self.lists.passive(hpack.brk).next_break;
 
         if let Some(next) = next.filter(|_| !hpack.post_disc_break) {
             let texxet = eqtb.int_par(IntPar::Texxet) > 0;
-            let cur_break = linebreak.lists.passive(next).cur_break;
+            let cur_break = self.lists.passive(next).cur_break;
             let mut r = TEMP_HEAD;
             let mut q;
             loop {
@@ -383,29 +387,17 @@ impl ListStateRecord {
 /// append them, returning the last line's box.
 pub(super) fn post_line_break(
     st: &mut EngineState,
+    lb: &mut Breaker,
     best: Option<PassiveId>,
     d: bool,
 ) -> Result<NodePtr<BoxNode>, Abort> {
     let mut lr_ptr = st.input.cur_list.e_tex_aux;
 
-    let mut brk = st
-        .linebreak
-        .reverse_best_breaks(best)
-        .or_confusion("line breaking")?;
+    let mut brk = lb.reverse_best_breaks(best).or_confusion("line breaking")?;
 
     let mut cur_line = st.input.cur_list.prev_graf.wrapping_add(1);
     let last_line = loop {
-        let hpack = st.linebreak.post_line_break_prefix(
-            &mut st.errors,
-            &mut st.mem,
-            &mut st.scanner,
-            &st.eqtb,
-            &st.fonts,
-            &st.config,
-            &mut lr_ptr,
-            cur_line,
-            brk,
-        )?;
+        let hpack = lb.post_line_break_prefix(st, &mut lr_ptr, cur_line, brk)?;
 
         let spec = if hpack.semantic_pagination {
             PackSpec::NATURAL
@@ -414,28 +406,18 @@ pub(super) fn post_line_break(
         };
         let just_box = crate::packaging::hpack(st, hpack.q, spec)?;
 
-        match st.input.cur_list.post_line_break_suffix(
-            &mut st.mem,
-            &mut st.scanner,
-            &mut st.linebreak,
-            &st.eqtb,
-            just_box,
-            hpack,
-            d,
-            &mut lr_ptr,
-            &mut cur_line,
-        ) {
+        match lb.post_line_break_suffix(st, just_box, hpack, d, &mut lr_ptr, &mut cur_line) {
             Ok(None) => break just_box,
             Ok(Some(next)) => brk = next,
             Err(e) => return Err(e),
         }
     };
 
-    if cur_line != st.linebreak.best_line || !TEMP_HEAD.link(&st.mem).is_null() {
+    if cur_line != lb.best_line || !TEMP_HEAD.link(&st.mem).is_null() {
         return Err(Abort::Confusion("line breaking"));
     }
 
-    st.input.cur_list.prev_graf = st.linebreak.best_line.wrapping_sub(1);
+    st.input.cur_list.prev_graf = lb.best_line.wrapping_sub(1);
     st.input.cur_list.e_tex_aux = lr_ptr;
     Ok(last_line)
 }

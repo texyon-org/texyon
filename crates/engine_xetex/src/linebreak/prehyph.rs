@@ -12,6 +12,17 @@ use crate::units::MemPtr;
 
 use super::hyphenate::{hyphenate, split_native_word};
 
+/// A word found for hyphenation, its letters in `hu`/`hc[1..=hn]`.
+pub(super) struct Word {
+    /// The glue node before the word, where the search for its predecessor starts.
+    pub start: MemPtr,
+    /// The node before the word's first letter.
+    pub ha: MemPtr,
+    /// The word's last node.
+    pub hb: MemPtr,
+    pub hn: u16,
+}
+
 /// Switch hyphenation to the language of a `\language` whatsit.
 pub(super) fn set_language(st: &mut EngineState, w: NodePtr<LanguageNode>) {
     let language = st.mem[w];
@@ -147,42 +158,47 @@ pub(super) fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), Abo
     if st.hyph.hyf_char.raw() < 0 || !st.hyph.hyf_char.is_char() {
         return Ok(());
     }
-    st.linebreak.ha = prev_s;
+    let mut word = Word {
+        start: cur,
+        ha: prev_s,
+        hb: MemPtr::NULL,
+        hn: 0,
+    };
     if st.hyph.l_hyf + st.hyph.r_hyf > max_len {
         return Ok(());
     }
 
-    let native_ha = match st.mem.as_native_word(st.linebreak.ha) {
+    let native_ha = match st.mem.as_native_word(word.ha) {
         Some(ha) => {
             let Some(end) = st.mem.find_word_end(st.mem[ha].link, false) else {
                 return Ok(());
             };
             s = end;
-            Some(collect_native_word(st, ha, max_len)?)
+            Some(collect_native_word(st, &mut word, ha, max_len)?)
         }
         None => {
-            s = collect_word(st, s, max_len);
+            s = collect_word(st, &mut word, s, max_len);
             None
         }
     };
 
-    if i32::from(st.linebreak.hn) < st.hyph.l_hyf + st.hyph.r_hyf
-        || st.mem.find_word_end(s, true).is_none()
+    if i32::from(word.hn) < st.hyph.l_hyf + st.hyph.r_hyf || st.mem.find_word_end(s, true).is_none()
     {
         return Ok(());
     }
 
-    hyphenate(st, native_ha)
+    hyphenate(st, &word, native_ha)
 }
 
 /// Collect the letters of the native word `ha` into `hu`/`hc`, splitting it
 /// where the hyphenatable part begins or ends. Returns the word's final node.
 fn collect_native_word(
     st: &mut EngineState,
+    word: &mut Word,
     mut ha: NodePtr<NativeWordNode>,
     max_len: i32,
 ) -> Result<NodePtr<NativeWordNode>, Abort> {
-    st.linebreak.hn = 0;
+    word.hn = 0;
     'restart: loop {
         let len = usize::from(st.mem[ha].length);
         let mut l = 0;
@@ -192,26 +208,26 @@ fn collect_native_word(
             st.hyph.hc[0] = hc0;
 
             if hc0 == 0 {
-                if st.linebreak.hn > 0 {
+                if word.hn > 0 {
                     split_native_word(st, ha, l)?;
                     return Ok(ha);
                 }
-            } else if st.linebreak.hn == 0 && l > 0 {
+            } else if word.hn == 0 && l > 0 {
                 ha = split_native_word(st, ha, l)?;
-                st.linebreak.ha = ha.ptr();
+                word.ha = ha.ptr();
                 continue 'restart;
-            } else if i32::from(st.linebreak.hn) == max_len {
+            } else if i32::from(word.hn) == max_len {
                 return Ok(ha);
             } else {
-                st.linebreak.hn += 1;
-                let hn = usize::from(st.linebreak.hn);
+                word.hn += 1;
+                let hn = usize::from(word.hn);
                 if c < 65_536 {
                     st.hyph.hu[hn] = LigChar::from_raw(c);
                     st.hyph.hc[hn] = hc0;
                 } else {
                     st.hyph.hu[hn] = LigChar::from_raw((c - 65_536) / 1024 + 0xD800);
                     st.hyph.hc[hn] = (hc0 - 65_536) / 1024 + 0xD800;
-                    st.linebreak.hn += 1;
+                    word.hn += 1;
                     st.hyph.hu[hn + 1] = LigChar::from_raw(c % 1024 + 0xDC00);
                     st.hyph.hc[hn + 1] = hc0 % 1024 + 0xDC00;
                     l += 1;
@@ -226,8 +242,8 @@ fn collect_native_word(
 
 /// Collect the letters of the word starting at `s` into `hu`/`hc`, setting
 /// `hb` and `hyf_bchar`. Returns the node after the collected letters.
-fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
-    st.linebreak.hn = 0;
+fn collect_word(st: &mut EngineState, word: &mut Word, mut s: MemPtr, max_len: i32) -> MemPtr {
+    word.hn = 0;
     loop {
         if let Some(ch) = st.mem.as_char(s) {
             if st.mem[ch].font != st.hyph.hf {
@@ -237,12 +253,12 @@ fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
             st.hyph.hyf_bchar = LigChar::from_raw(c);
             let hc0 = st.hyph.hyph_code(&st.eqtb, c);
             st.hyph.hc[0] = hc0;
-            if hc0 == 0 || hc0 > st.hyph.max_hyph_char || i32::from(st.linebreak.hn) == max_len {
+            if hc0 == 0 || hc0 > st.hyph.max_hyph_char || i32::from(word.hn) == max_len {
                 return s;
             }
-            st.linebreak.hb = s;
-            st.linebreak.hn += 1;
-            let hn = usize::from(st.linebreak.hn);
+            word.hb = s;
+            word.hn += 1;
+            let hn = usize::from(word.hn);
             st.hyph.hu[hn] = LigChar::from_raw(c);
             st.hyph.hc[hn] = hc0;
             st.hyph.hyf_bchar = LigChar::NONE;
@@ -252,7 +268,7 @@ fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
                     if st.mem[lig].font != st.hyph.hf {
                         return s;
                     }
-                    let mut j = st.linebreak.hn;
+                    let mut j = word.hn;
                     let mut q = st.mem[lig].lig_ptr;
                     if q.raw() > TEX_NULL {
                         st.hyph.hyf_bchar =
@@ -270,8 +286,8 @@ fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
                         st.hyph.hc[usize::from(j)] = hc0;
                         q = q.link(&st.mem);
                     }
-                    st.linebreak.hb = s;
-                    st.linebreak.hn = j;
+                    word.hb = s;
+                    word.hn = j;
                     st.hyph.hyf_bchar = if st.mem[lig].boundary.has_right() {
                         st.fonts.font_bchar[st.hyph.hf]
                     } else {
@@ -279,7 +295,7 @@ fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
                     };
                 }
                 Ok(AnyNode::Kern(k)) if st.mem[k].subtype == KernSubtype::Normal => {
-                    st.linebreak.hb = s;
+                    word.hb = s;
                     st.hyph.hyf_bchar = st.fonts.font_bchar[st.hyph.hf];
                 }
                 _ => return s,

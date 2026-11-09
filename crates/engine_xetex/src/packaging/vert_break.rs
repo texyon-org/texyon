@@ -43,6 +43,8 @@ struct VertBreakCursor {
     best_place: MemPtr,
     prev_dp: Scaled,
     finish_glue_after_shrinkage: Option<NodePtr<GlueNode>>,
+    /// Height, stretch and shrink of the material so far, as in WEB's `active_height`.
+    active_height: crate::linebreak::Widths,
 }
 
 enum VertBreakStep {
@@ -68,11 +70,9 @@ enum VertBreakUpdateSource {
     Glue(NodePtr<GlueNode>),
 }
 
-impl ScannerState {
-    fn start_vert_break(&mut self, p: MemPtr) -> VertBreakCursor {
-        self.active_width[1..].fill(Scaled::ZERO);
-
-        VertBreakCursor {
+impl VertBreakCursor {
+    fn start(p: MemPtr) -> Self {
+        Self {
             p,
             prev_p: p,
             breakable: false,
@@ -81,19 +81,15 @@ impl ScannerState {
             best_place: MemPtr::NULL,
             prev_dp: Scaled::ZERO,
             finish_glue_after_shrinkage: None,
+            active_height: [Scaled::ZERO; 7],
         }
     }
 }
 
 impl MemState {
-    fn advance_vert_break(
-        &self,
-        scanner: &mut ScannerState,
-        cursor: &mut VertBreakCursor,
-        d: Scaled,
-    ) {
+    fn advance_vert_break(&self, cursor: &mut VertBreakCursor, d: Scaled) {
         if cursor.prev_dp > d {
-            scanner.active_width[1] += cursor.prev_dp - d;
+            cursor.active_height[1] += cursor.prev_dp - d;
             cursor.prev_dp = d;
         }
         cursor.prev_p = cursor.p;
@@ -103,19 +99,17 @@ impl MemState {
 
     fn finish_vert_break_updated_height(
         &self,
-        scanner: &mut ScannerState,
         cursor: &mut VertBreakCursor,
         width: Scaled,
         d: Scaled,
     ) {
-        scanner.active_width[1] += cursor.prev_dp + width;
+        cursor.active_height[1] += cursor.prev_dp + width;
         cursor.prev_dp = Scaled::ZERO;
-        self.advance_vert_break(scanner, cursor, d);
+        self.advance_vert_break(cursor, d);
     }
 
     fn classify_vert_break_next(
         &self,
-        scanner: &mut ScannerState,
         cursor: &mut VertBreakCursor,
     ) -> Result<VertBreakNext, Abort> {
         if cursor.p.is_null() {
@@ -129,18 +123,18 @@ impl MemState {
         cursor.breakable = node.precedes_break();
         match node {
             AnyNode::Box(b) => {
-                scanner.active_width[1] += cursor.prev_dp + self[b].height;
+                cursor.active_height[1] += cursor.prev_dp + self[b].height;
                 cursor.prev_dp = self[b].depth;
                 Ok(VertBreakNext::NotFound)
             }
             AnyNode::Rule(rule) => {
-                scanner.active_width[1] += cursor.prev_dp + self[rule].height.to_scaled();
+                cursor.active_height[1] += cursor.prev_dp + self[rule].height.to_scaled();
                 cursor.prev_dp = self[rule].depth.to_scaled();
                 Ok(VertBreakNext::NotFound)
             }
             AnyNode::Whatsit(w) => {
                 if let Some(WhatsitVariant::Pic(pic)) = w.variant(self) {
-                    scanner.active_width[1] += cursor.prev_dp + self[pic].height;
+                    cursor.active_height[1] += cursor.prev_dp + self[pic].height;
                     cursor.prev_dp = self[pic].depth;
                 }
                 Ok(VertBreakNext::NotFound)
@@ -189,16 +183,16 @@ impl MemState {
         loop {
             if let Some(glue) = cursor.finish_glue_after_shrinkage.take() {
                 let spec = self[glue].glue_ptr;
-                self.finish_vert_break_updated_height(scanner, cursor, self[spec].width, d);
+                self.finish_vert_break_updated_height(cursor, self[spec].width, d);
                 continue;
             }
 
-            let update_source = match self.classify_vert_break_next(scanner, cursor)? {
+            let update_source = match self.classify_vert_break_next(cursor)? {
                 VertBreakNext::NotFound => None,
                 VertBreakNext::UpdateHeights(source) => Some(source),
                 VertBreakNext::CheckPi { pi, update_after } => {
                     if pi < INF_PENALTY {
-                        let aw = &scanner.active_width;
+                        let aw = &cursor.active_height;
                         let b = if aw[1] < h {
                             if aw[3] != Scaled::ZERO
                                 || aw[4] != Scaled::ZERO
@@ -228,7 +222,7 @@ impl MemState {
                             cursor.best_place = cursor.p;
                             cursor.least_cost = b;
                             scanner.best_height_plus_depth =
-                                scanner.active_width[1] + cursor.prev_dp;
+                                cursor.active_height[1] + cursor.prev_dp;
                         }
                         if b == MAX_HALFWORD || pi <= EJECT_PENALTY {
                             return Ok(VertBreakStep::Done(cursor.best_place));
@@ -240,22 +234,22 @@ impl MemState {
 
             match update_source {
                 Some(VertBreakUpdateSource::Kern(kern)) => {
-                    self.finish_vert_break_updated_height(scanner, cursor, self[kern].width, d);
+                    self.finish_vert_break_updated_height(cursor, self[kern].width, d);
                 }
                 Some(VertBreakUpdateSource::Glue(glue)) => {
                     let spec = self[glue].glue_ptr;
-                    scanner.active_width[2 + self[spec].stretch_order.index()] +=
+                    cursor.active_height[2 + self[spec].stretch_order.index()] +=
                         self[spec].stretch;
-                    scanner.active_width[6] += self[spec].shrink;
+                    cursor.active_height[6] += self[spec].shrink;
                     if self[spec].shrink_order != GlueOrder::Normal
                         && self[spec].shrink != Scaled::ZERO
                     {
                         cursor.finish_glue_after_shrinkage = Some(glue);
                         return Ok(VertBreakStep::InfiniteShrinkage { glue, spec });
                     }
-                    self.finish_vert_break_updated_height(scanner, cursor, self[spec].width, d);
+                    self.finish_vert_break_updated_height(cursor, self[spec].width, d);
                 }
-                None => self.advance_vert_break(scanner, cursor, d),
+                None => self.advance_vert_break(cursor, d),
             }
         }
     }
@@ -301,7 +295,7 @@ pub(crate) fn vert_break(
     h: Scaled,
     d: Scaled,
 ) -> Result<MemPtr, Abort> {
-    let mut cursor = st.scanner.start_vert_break(p);
+    let mut cursor = VertBreakCursor::start(p);
     loop {
         match st
             .mem
@@ -388,7 +382,7 @@ fn start_vsplit(st: &mut EngineState, n: i32, h: Scaled) -> Result<VsplitStart, 
         h,
         v,
         split_max_d: st.eqtb.dimen_par(DimenPar::SplitMaxDepth),
-        vert_break: st.scanner.start_vert_break(st.mem[v].list_ptr),
+        vert_break: VertBreakCursor::start(st.mem[v].list_ptr),
     }))
 }
 
