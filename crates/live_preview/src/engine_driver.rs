@@ -8,7 +8,8 @@ use std::{
 
 use texyon_bridge_core::{CoreBridgeLauncher, MinimalDriver};
 use texyon_engine_xetex::{
-    EngineCancellation, EngineFrame, EnginePreviewConfig, IncrementalXeTeXSession, PageRange,
+    Diagnostic as EngineDiagnostic, EngineCancellation, EngineFrame, EnginePreviewConfig,
+    IncrementalXeTeXSession, PageRange,
 };
 use texyon_errors::{anyhow::bail, Result};
 #[cfg(feature = "native")]
@@ -182,6 +183,8 @@ pub struct ResidentXeTeX {
     // Session-lifetime, since tail continuations and fence replays re-read
     // files an earlier operation wrote (beamer's `\jobname.vrb`).
     output: MemoryIo,
+    /// What the whole document reported, kept in step with the transcript.
+    diagnostics: Vec<EngineDiagnostic>,
 }
 
 impl ResidentXeTeX {
@@ -194,6 +197,7 @@ impl ResidentXeTeX {
             opened: false,
             output_name: None,
             output: MemoryIo::new(true),
+            diagnostics: Vec::new(),
         }
     }
 
@@ -292,6 +296,12 @@ impl ResidentXeTeX {
         output_name: &str,
         previous: Option<Vec<u8>>,
     ) {
+        match frame.diagnostics_resumed_at {
+            Some(at) => self.diagnostics.truncate(at),
+            None => self.diagnostics.clear(),
+        }
+        self.diagnostics.extend_from_slice(&frame.diagnostics);
+
         let (Some(resumed_at), Some(mut previous)) = (frame.log_resumed_at, previous) else {
             return;
         };
@@ -317,6 +327,11 @@ impl ResidentXeTeX {
             .get(output_name)
             .ok_or_else(|| ResidentEngineError::MissingOutput(output_name.to_owned()))?;
         Ok(Some(Arc::from(file.data.as_slice())))
+    }
+
+    /// What the document reported, as of the latest operation.
+    pub fn diagnostics(&self) -> &[EngineDiagnostic] {
+        &self.diagnostics
     }
 
     /// A file an engine operation wrote this session, such as the transcript.

@@ -5,8 +5,8 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use texyon::engines::tex::{
-    EngineCancellation, EnginePreviewConfig, IncrementalXeTeXSession, SourceSnapshot, SyncIndex,
-    SyncRect, TexEngine, TexOutcome,
+    Diagnostic, DiagnosticKind, EngineCancellation, EnginePreviewConfig, IncrementalXeTeXSession,
+    SourceSnapshot, SyncIndex, SyncRect, TexEngine, TexOutcome,
 };
 use texyon::io::testing::SingleInputFileIo;
 use texyon::io::{IoProvider, IoStack, MemoryIo};
@@ -1086,6 +1086,91 @@ fn resident_transcript(
     let log = runner.written_file("main.log").expect("no transcript");
     runner.finish().unwrap();
     log
+}
+
+/// What a resident run of `text`, then `edit` if given, reported for the whole document.
+fn resident_diagnostics(
+    root: &std::path::Path,
+    text: &str,
+    edit: Option<&str>,
+) -> (Vec<Diagnostic>, Option<usize>) {
+    let mut sources = SourceSet::initialize(
+        DocumentRoot::new(root).unwrap(),
+        "main.tex",
+        text.to_owned(),
+        vec![],
+        ProtocolLimits::default(),
+    )
+    .unwrap();
+    let support = ResidentEngineSupport::Fixture {
+        format_path: util::ensure_plain_format().unwrap(),
+        assets_dir: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets"),
+    };
+    let cancellation = EngineCancellation::new();
+    let mut runner = ResidentXeTeX::new(support, EnginePreviewConfig::new("plain.fmt"));
+    let mut resumed_at = runner
+        .compile(sources.snapshot(), None, &cancellation)
+        .unwrap()
+        .frame
+        .diagnostics_resumed_at;
+    if let Some(edit) = edit {
+        sources.replace(None, edit.to_owned()).unwrap();
+        resumed_at = runner
+            .compile(sources.snapshot(), None, &cancellation)
+            .unwrap()
+            .frame
+            .diagnostics_resumed_at;
+    }
+    let diagnostics = runner.diagnostics().to_vec();
+    runner.finish().unwrap();
+    (diagnostics, resumed_at)
+}
+
+#[test]
+fn a_resumed_run_keeps_every_diagnostic() {
+    let _serial = session_test_lock();
+    util::set_test_root();
+    let mut original = String::from(
+        "\\hsize=220pt\n\\message{Package demo Warning: early}\nAn \\undefined error\\par\n\
+         {\\tracingmacros=2 \\def\\m{x}\\m}\n",
+    );
+    for index in 0..2400 {
+        if index == 2100 {
+            original.push_str("ORIGINAL \\late\\par\n");
+        } else {
+            original.push_str(&format!(
+                "line {index} has enough words for typesetting\\par\n"
+            ));
+        }
+    }
+    original.push_str("\\bye\n");
+    let edited = original.replace("ORIGINAL \\late", "EDITED \\later");
+    let temp = tempfile::tempdir().unwrap();
+
+    let (resumed, resumed_at) = resident_diagnostics(temp.path(), &original, Some(&edited));
+    let (fresh, _) = resident_diagnostics(temp.path(), &edited, None);
+    assert!(resumed_at.is_some_and(|at| at > 0), "{resumed_at:?}");
+    assert_eq!(resumed, fresh);
+
+    let errors: Vec<(&str, Option<u32>)> = fresh
+        .iter()
+        .filter(|d| d.kind == DiagnosticKind::Error)
+        .map(|d| (d.message.as_str(), d.line))
+        .collect();
+    assert_eq!(
+        errors,
+        [
+            ("Undefined control sequence", Some(3)),
+            ("Undefined control sequence", Some(2105)),
+        ]
+    );
+    let written: Vec<&str> = fresh
+        .iter()
+        .filter(|d| d.kind == DiagnosticKind::Written)
+        .map(|d| d.message.as_str())
+        .collect();
+    assert_eq!(written, ["Package demo Warning: early"]);
+    assert!(fresh.iter().all(|d| !d.message.contains("->x")));
 }
 
 #[test]

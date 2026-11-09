@@ -32,6 +32,10 @@ export interface Diagnostic {
   line: number | null;
   /** What it said. */
   message: string;
+  /** TeX's help text, one entry per line of the transcript. */
+  help: string[];
+  /** Who issued it when it named itself, such as `hyperref` or `LaTeX Font`. */
+  source: string | null;
 }
 
 /** One diagnostic from the engine. */

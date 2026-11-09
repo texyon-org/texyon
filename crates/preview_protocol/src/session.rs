@@ -144,6 +144,12 @@ pub struct Diagnostic {
     pub line: Option<usize>,
     /// What it said, with the transcript's wrapping undone.
     pub message: String,
+    /// TeX's help text, one entry per line.
+    #[serde(default)]
+    pub help: Vec<String>,
+    /// Who issued it when it named itself, such as `hyperref` or `LaTeX Font`.
+    #[serde(default)]
+    pub source: Option<String>,
 }
 
 /// A source line.

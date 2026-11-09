@@ -595,10 +595,7 @@ impl<P: ResourceProvider + 'static, B: Backend + 'static, H: SessionHost> Previe
             .engine()
             .written_file(&self.log_name)
             .unwrap_or_default();
-        let diagnostics = diagnostics::parse(
-            &String::from_utf8_lossy(&log),
-            Some(self.primary_name.as_str()),
-        );
+        let diagnostics = diagnostics::from_engine(self.processor.engine().diagnostics());
 
         let (outcome, aborted) = match run {
             WorkerRun::Complete(Some(published)) => (outcome(published.tex_outcome), None),

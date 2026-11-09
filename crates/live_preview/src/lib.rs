@@ -23,7 +23,7 @@ mod test_support;
 pub use assembler::{
     AssembledDocument, DocumentAssembler, DocumentFragment, XdvAssemblyError, XdvFileType,
 };
-pub use diagnostics::{parse as parse_diagnostics, Diagnostic, Severity, WRAP_WIDTH};
+pub use diagnostics::{from_engine as diagnostics_from_engine, Diagnostic, Severity};
 pub use dispatch::{handle, Payload};
 pub use engine_driver::{
     EngineSupport, ResidentEngineError, ResidentEngineOutput, ResidentEngineSupport, ResidentXeTeX,

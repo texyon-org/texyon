@@ -142,12 +142,15 @@ class PreviewSession {
       // Classes and packages come from the bundle, not from the project.
       if (!fs.existsSync(file)) continue;
       const line = Math.max(0, (found.line || 1) - 1);
+      // TeX wraps its help at a fixed width, so it reads as one paragraph.
+      const help = (found.help || []).join(" ").trim();
       const entry = new vscode.Diagnostic(
         new vscode.Range(line, 0, line, Number.MAX_SAFE_INTEGER),
-        found.message,
+        help ? `${found.message}\n\n${help}` : found.message,
         found.severity === "error" ? vscode.DiagnosticSeverity.Error : vscode.DiagnosticSeverity.Warning
       );
       entry.source = "TeXyoN";
+      if (found.source) entry.code = found.source;
       if (!byFile.has(file)) byFile.set(file, []);
       byFile.get(file).push(entry);
     }
