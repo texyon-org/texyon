@@ -16,10 +16,9 @@ use crate::node::{
     KernSubtype, LeaderKind, MathCode, MathNode, MovementNode, NativeWordNode, NodePtr, RuleNode,
     WhatsitSubtype, WhatsitVariant, RUNNING,
 };
+use crate::packaging::LrState;
 use crate::params::{DimenPar, IntPar};
-use crate::state::{
-    EqtbState, FontState, MemState, ScannerState, Selector, ShipoutState, StringsState,
-};
+use crate::state::{EqtbState, FontState, MemState, Selector, ShipoutState, StringsState};
 use crate::units::{Dir, FontId, GlueOrder, GlueSign, MemPtr, Scaled, StrNumber};
 
 mod whatsits;
@@ -127,6 +126,7 @@ pub(crate) fn ship_out(
     st: &mut crate::state::EngineState,
     page: NodePtr<BoxNode>,
 ) -> Result<(), Abort> {
+    let mut lr = LrState::START;
     let p = page.ptr();
     let mag = st.eqtb.int_par(IntPar::Mag);
     let job_name = st.strings.texstring_bytes(st.strings.job_name);
@@ -191,22 +191,21 @@ pub(crate) fn ship_out(
             crate::output::end_diagnostic(st, true);
         }
     } else {
-        ship_page(st, page)?;
+        ship_page(st, &mut lr, page)?;
     }
 
-    if st.scanner.lr_problems > 0 {
+    if lr.problems > 0 {
         crate::output::print_ln(st);
         crate::output::print_nl(st, "\\endL or \\endR problem (");
-        crate::output::print_int(st, st.scanner.lr_problems / 10000);
+        crate::output::print_int(st, lr.problems / 10000);
         crate::output::print(st, " missing, ");
-        crate::output::print_int(st, st.scanner.lr_problems % 10000);
+        crate::output::print_int(st, lr.problems % 10000);
         crate::output::print(st, " extra");
-        st.scanner.lr_problems = 0;
         crate::output::print_char(st, b')');
         crate::output::print_ln(st);
     }
 
-    if !st.scanner.lr_ptr.is_null() || st.scanner.cur_dir != Dir::Ltr {
+    if !lr.ptr.is_null() || lr.dir != Dir::Ltr {
         return Err(Abort::Confusion("LR3"));
     }
     if st.eqtb.int_par(IntPar::TracingOutput) <= 0 {
@@ -219,7 +218,11 @@ pub(crate) fn ship_out(
     Ok(())
 }
 
-fn ship_page(st: &mut crate::state::EngineState, page: NodePtr<BoxNode>) -> Result<(), Abort> {
+fn ship_page(
+    st: &mut crate::state::EngineState,
+    lr: &mut LrState,
+    page: NodePtr<BoxNode>,
+) -> Result<(), Abort> {
     let (height, depth, width) = (st.mem[page].height, st.mem[page].depth, st.mem[page].width);
     let h_offset = st.eqtb.dimen_par(DimenPar::HOffset);
     let v_offset = st.eqtb.dimen_par(DimenPar::VOffset);
@@ -292,9 +295,9 @@ fn ship_page(st: &mut crate::state::EngineState, page: NodePtr<BoxNode>) -> Resu
 
     st.shipout.cur_v = height + v_offset;
     if st.mem[page].is_vlist() {
-        vlist_out(st, page)?;
+        vlist_out(st, lr, page)?;
     } else {
-        hlist_out(st, page)?;
+        hlist_out(st, lr, page)?;
     }
 
     st.shipout.dvi.eop(st.scanner.logical_clock)?;
@@ -600,8 +603,8 @@ impl MemState {
     }
 
     /// The LR stack top matches the end code of `code`.
-    fn lr_matches(&self, scanner: &ScannerState, code: MathCode) -> bool {
-        self.lr_code(scanner.lr_ptr) == Some(code.lr_end())
+    fn lr_matches(&self, lr: &LrState, code: MathCode) -> bool {
+        self.lr_code(lr.ptr) == Some(code.lr_end())
     }
 
     fn pop_dvi_level(&mut self, shipout: &mut ShipoutState, save_loc: i32) -> Result<(), Abort> {
@@ -610,22 +613,27 @@ impl MemState {
     }
 }
 
-fn ship_box(st: &mut crate::state::EngineState, b: NodePtr<BoxNode>) -> Result<(), Abort> {
+fn ship_box(
+    st: &mut crate::state::EngineState,
+    lr: &mut LrState,
+    b: NodePtr<BoxNode>,
+) -> Result<(), Abort> {
     if st.mem[b].is_vlist() {
-        vlist_out(st, b)
+        vlist_out(st, lr, b)
     } else {
-        hlist_out(st, b)
+        hlist_out(st, lr, b)
     }
 }
 
 /// Ship one copy of a leader box with `doing_leaders` set.
 fn ship_leader_box(
     st: &mut crate::state::EngineState,
+    lr: &mut LrState,
     leader: NodePtr<BoxNode>,
 ) -> Result<(), Abort> {
     let outer_doing_leaders = st.shipout.doing_leaders;
     st.shipout.doing_leaders = true;
-    ship_box(st, leader)?;
+    ship_box(st, lr, leader)?;
     st.shipout.doing_leaders = outer_doing_leaders;
     Ok(())
 }
@@ -660,6 +668,7 @@ fn hlist_rule_out(
 
 fn vlist_rule_out(
     st: &mut crate::state::EngineState,
+    lr: &mut LrState,
     this_box: NodePtr<BoxNode>,
     left_edge: Scaled,
     upwards: bool,
@@ -670,7 +679,7 @@ fn vlist_rule_out(
     st.shipout.rule_ht += st.shipout.rule_dp;
     st.shipout.move_past_vlist_rule(upwards);
     if st.shipout.rule_ht > Scaled::ZERO && st.shipout.rule_wd > Scaled::ZERO {
-        if st.scanner.cur_dir == Dir::Rtl {
+        if lr.dir == Dir::Rtl {
             st.shipout.cur_h -= st.shipout.rule_wd;
         }
         synch_h(st)?;
@@ -696,6 +705,7 @@ impl ShipoutState {
 /// Move right past glue `glue` or output its leaders.
 fn hlist_glue_out(
     st: &mut crate::state::EngineState,
+    lr: &mut LrState,
     this_box: NodePtr<BoxNode>,
     base_line: Scaled,
     left_edge: Scaled,
@@ -720,7 +730,7 @@ fn hlist_glue_out(
         let leader_wd = st.mem[leader].width;
         if leader_wd > Scaled::ZERO && st.shipout.rule_wd > Scaled::ZERO {
             st.shipout.rule_wd += LEADER_SLOP;
-            if st.scanner.cur_dir == Dir::Rtl {
+            if lr.dir == Dir::Rtl {
                 st.shipout.cur_h -= LEADER_SLOP;
             }
             let edge = st.shipout.cur_h + st.shipout.rule_wd;
@@ -733,12 +743,12 @@ fn hlist_glue_out(
                     st.shipout.cur_h += leader_wd;
                 }
             } else {
-                let (lq, lr) = leader_count_and_rest(st.shipout.rule_wd, leader_wd);
+                let (lq, rest) = leader_count_and_rest(st.shipout.rule_wd, leader_wd);
                 if kind == LeaderKind::Centered {
-                    st.shipout.cur_h += lr / 2;
+                    st.shipout.cur_h += rest / 2;
                 } else {
-                    lx = lr / (lq + 1);
-                    st.shipout.cur_h += (lr - lx * (lq - 1)) / 2;
+                    lx = rest / (lq + 1);
+                    st.shipout.cur_h += (rest - lx * (lq - 1)) / 2;
                 }
             }
 
@@ -747,16 +757,16 @@ fn hlist_glue_out(
                 synch_v(st)?;
                 synch_h(st)?;
                 let (save_h, _) = with_saved_dvi_pos(st, |st| {
-                    if st.scanner.cur_dir == Dir::Rtl {
+                    if lr.dir == Dir::Rtl {
                         st.shipout.cur_h += leader_wd;
                     }
-                    ship_leader_box(st, leader)
+                    ship_leader_box(st, lr, leader)
                 })?;
                 st.shipout.cur_v = base_line;
                 st.shipout.cur_h = save_h + leader_wd + lx;
             }
 
-            st.shipout.cur_h = if st.scanner.cur_dir == Dir::Rtl {
+            st.shipout.cur_h = if lr.dir == Dir::Rtl {
                 edge
             } else {
                 edge - LEADER_SLOP
@@ -844,7 +854,11 @@ fn chars_out(
     Ok((p, prev_p))
 }
 
-fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> Result<(), Abort> {
+fn hlist_out(
+    st: &mut crate::state::EngineState,
+    lr: &mut LrState,
+    this_box: NodePtr<BoxNode>,
+) -> Result<(), Abort> {
     st.mem.temp_ptr = this_box.ptr();
     let mut rounding = GlueRounding::new(&st.mem, this_box);
     if st.eqtb.int_par(IntPar::XetexInterwordSpaceShaping) > 1 {
@@ -857,31 +871,27 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
     let save_loc = st.shipout.dvi.enter_level()?;
     let base_line = st.shipout.cur_v;
     let mut prev_p = this_box.list_head();
-    st.mem.push_lr(&mut st.scanner.lr_ptr, MathCode::Before)?;
+    st.mem.push_lr(&mut lr.ptr, MathCode::Before)?;
 
     if st.mem[this_box].lr() == BoxLr::Dlist {
-        if st.scanner.cur_dir == Dir::Rtl {
-            st.scanner.cur_dir = Dir::Ltr;
+        if lr.dir == Dir::Rtl {
+            lr.dir = Dir::Ltr;
             st.shipout.cur_h -= st.mem[this_box].width;
         } else {
             st.mem[this_box].set_lr(BoxLr::Normal);
         }
     }
 
-    if st.scanner.cur_dir == Dir::Rtl && st.mem[this_box].lr() != BoxLr::Reversed {
+    if lr.dir == Dir::Rtl && st.mem[this_box].lr() != BoxLr::Reversed {
         let save_h = st.shipout.cur_h;
         st.mem.temp_ptr = p;
         let kern = st.mem.new_kern(Scaled::ZERO)?;
         st.mem[kern].sync_tag = 0;
         prev_p.set_link(&mut st.mem, kern.ptr());
         st.shipout.cur_h = Scaled::ZERO;
-        let reversed = st.mem.reverse(
-            &mut st.shipout,
-            &mut st.scanner,
-            &mut st.fonts,
-            None,
-            &mut rounding,
-        )?;
+        let reversed = st
+            .mem
+            .reverse(&mut st.shipout, lr, &mut st.fonts, None, &mut rounding)?;
         st.mem[kern].link = reversed;
         st.mem[kern].width = -st.shipout.cur_h;
         st.shipout.cur_h = save_h;
@@ -898,7 +908,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
             continue;
         }
         match st.mem.classify(p).or_confusion("hlistout")? {
-            AnyNode::Box(b) => hlist_box_out(st, b, base_line)?,
+            AnyNode::Box(b) => hlist_box_out(st, lr, b, base_line)?,
             AnyNode::Rule(rule) => {
                 st.shipout.rule_ht = st.mem[rule].height.to_scaled();
                 st.shipout.rule_dp = st.mem[rule].depth.to_scaled();
@@ -923,7 +933,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
                 _ => out_what(st, whatsit)?,
             },
             AnyNode::Glue(glue) => {
-                hlist_glue_out(st, this_box, base_line, left_edge, glue, &mut rounding)?
+                hlist_glue_out(st, lr, this_box, base_line, left_edge, glue, &mut rounding)?
             }
             AnyNode::MarginKern(kern) => st.shipout.cur_h += st.mem[kern].width,
             AnyNode::Kern(kern) => {
@@ -935,16 +945,17 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
                 let math_width = st.mem[math].width;
                 let code = st.mem[math].code()?;
                 if code.is_end() {
-                    if st.mem.lr_matches(&st.scanner, code) {
-                        st.mem.pop_lr(&mut st.scanner.lr_ptr);
+                    if st.mem.lr_matches(lr, code) {
+                        st.mem.pop_lr(&mut lr.ptr);
                     } else if code.is_lr() {
-                        st.scanner.lr_problems += 1;
+                        lr.problems += 1;
                     }
                 } else {
-                    st.mem.push_lr(&mut st.scanner.lr_ptr, code.lr_end())?;
-                    if code.dir() != st.scanner.cur_dir {
+                    st.mem.push_lr(&mut lr.ptr, code.lr_end())?;
+                    if code.dir() != lr.dir {
                         let edge = reverse_segment(
                             st,
+                            lr,
                             math,
                             prev_p,
                             left_edge,
@@ -970,7 +981,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
                 let edge = style.as_edge();
                 st.shipout.cur_h += st.mem[edge].width;
                 left_edge = st.shipout.cur_h + st.mem[edge].edge_dist;
-                st.scanner.cur_dir = st.mem[edge].dir.get().or_confusion("LR")?;
+                lr.dir = st.mem[edge].dir.get().or_confusion("LR")?;
             }
             _ => {}
         }
@@ -980,25 +991,22 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
 
     crate::synctex::synctex_tsilh(st, this_box);
 
-    while st.mem.lr_code(st.scanner.lr_ptr) != Some(MathCode::Before) {
-        if st
-            .mem
-            .lr_code(st.scanner.lr_ptr)
-            .is_some_and(MathCode::is_lr)
-        {
-            st.scanner.lr_problems += 10000;
+    while st.mem.lr_code(lr.ptr) != Some(MathCode::Before) {
+        if st.mem.lr_code(lr.ptr).is_some_and(MathCode::is_lr) {
+            lr.problems += 10000;
         }
-        st.mem.pop_lr(&mut st.scanner.lr_ptr);
+        st.mem.pop_lr(&mut lr.ptr);
     }
-    st.mem.pop_lr(&mut st.scanner.lr_ptr);
+    st.mem.pop_lr(&mut lr.ptr);
     if st.mem[this_box].lr() == BoxLr::Dlist {
-        st.scanner.cur_dir = Dir::Rtl;
+        lr.dir = Dir::Rtl;
     }
     st.mem.pop_dvi_level(&mut st.shipout, save_loc)
 }
 
 fn hlist_box_out(
     st: &mut crate::state::EngineState,
+    lr: &mut LrState,
     b: NodePtr<BoxNode>,
     base_line: Scaled,
 ) -> Result<(), Abort> {
@@ -1013,10 +1021,10 @@ fn hlist_box_out(
     }
     st.shipout.cur_v = base_line + st.mem[b].shift_amount;
     let edge = st.shipout.cur_h + st.mem[b].width;
-    if st.scanner.cur_dir == Dir::Rtl {
+    if lr.dir == Dir::Rtl {
         st.shipout.cur_h = edge;
     }
-    with_saved_dvi_pos(st, |st| ship_box(st, b))?;
+    with_saved_dvi_pos(st, |st| ship_box(st, lr, b))?;
     st.shipout.cur_h = edge;
     st.shipout.cur_v = base_line;
     Ok(())
@@ -1026,6 +1034,7 @@ fn hlist_box_out(
 /// edge node that the caller dispatches next.
 fn reverse_segment(
     st: &mut crate::state::EngineState,
+    lr: &mut LrState,
     math: NodePtr<MathNode>,
     prev_p: MemPtr,
     left_edge: Scaled,
@@ -1036,28 +1045,26 @@ fn reverse_segment(
     st.mem.temp_ptr = st.mem[math].link;
     st.shipout.rule_wd = math_width;
     st.mem.free_node(math.ptr(), MEDIUM_NODE_SIZE);
-    st.scanner.cur_dir = st.scanner.cur_dir.reversed();
-    let edge = st.mem.new_edge(st.scanner.cur_dir, st.shipout.rule_wd)?;
+    lr.dir = lr.dir.reversed();
+    let edge = st.mem.new_edge(lr.dir, st.shipout.rule_wd)?;
     prev_p.set_link(&mut st.mem, edge.ptr());
     st.shipout.cur_h = st.shipout.cur_h - left_edge + st.shipout.rule_wd;
-    let end = st
+    let end = st.mem.new_edge(lr.dir.reversed(), Scaled::ZERO)?;
+    let reversed = st
         .mem
-        .new_edge(st.scanner.cur_dir.reversed(), Scaled::ZERO)?;
-    let reversed = st.mem.reverse(
-        &mut st.shipout,
-        &mut st.scanner,
-        &mut st.fonts,
-        Some(end),
-        rounding,
-    )?;
+        .reverse(&mut st.shipout, lr, &mut st.fonts, Some(end), rounding)?;
     st.mem[edge].link = reversed;
     st.mem[edge].edge_dist = st.shipout.cur_h;
-    st.scanner.cur_dir = st.scanner.cur_dir.reversed();
+    lr.dir = lr.dir.reversed();
     st.shipout.cur_h = save_h;
     Ok(edge)
 }
 
-fn vlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> Result<(), Abort> {
+fn vlist_out(
+    st: &mut crate::state::EngineState,
+    lr: &mut LrState,
+    this_box: NodePtr<BoxNode>,
+) -> Result<(), Abort> {
     st.mem.temp_ptr = this_box.ptr();
     let mut rounding = GlueRounding::new(&st.mem, this_box);
     let mut p = st.mem[this_box].list_ptr;
@@ -1077,12 +1084,12 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
             return Err(Abort::Confusion("vlistout"));
         }
         match st.mem.classify(p).or_confusion("vlistout")? {
-            AnyNode::Box(b) => vlist_box_out(st, b, left_edge, upwards)?,
+            AnyNode::Box(b) => vlist_box_out(st, lr, b, left_edge, upwards)?,
             AnyNode::Rule(rule) => {
                 st.shipout.rule_ht = st.mem[rule].height.to_scaled();
                 st.shipout.rule_dp = st.mem[rule].depth.to_scaled();
                 st.shipout.rule_wd = st.mem[rule].width.to_scaled();
-                vlist_rule_out(st, this_box, left_edge, upwards)?;
+                vlist_rule_out(st, lr, this_box, left_edge, upwards)?;
             }
             AnyNode::Whatsit(whatsit) => match whatsit.variant(&st.mem) {
                 Some(WhatsitVariant::Glyph(glyph)) => {
@@ -1115,10 +1122,10 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
                         Leader::Rule(rule) => {
                             st.shipout.rule_wd = st.mem[rule].width.to_scaled();
                             st.shipout.rule_dp = Scaled::ZERO;
-                            vlist_rule_out(st, this_box, left_edge, upwards)?;
+                            vlist_rule_out(st, lr, this_box, left_edge, upwards)?;
                         }
                         Leader::Box(leader) => {
-                            vlist_leaders_out(st, leader, kind, left_edge, top_edge, upwards)?
+                            vlist_leaders_out(st, lr, leader, kind, left_edge, top_edge, upwards)?
                         }
                     }
                 } else {
@@ -1143,6 +1150,7 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: NodePtr<BoxNode>) -> 
 
 fn vlist_box_out(
     st: &mut crate::state::EngineState,
+    lr: &mut LrState,
     b: NodePtr<BoxNode>,
     left_edge: Scaled,
     upwards: bool,
@@ -1168,12 +1176,12 @@ fn vlist_box_out(
     }
     synch_v(st)?;
     let shift = st.mem[b].shift_amount;
-    st.shipout.cur_h = if st.scanner.cur_dir == Dir::Rtl {
+    st.shipout.cur_h = if lr.dir == Dir::Rtl {
         left_edge - shift
     } else {
         left_edge + shift
     };
-    let (_, save_v) = with_saved_dvi_pos(st, |st| ship_box(st, b))?;
+    let (_, save_v) = with_saved_dvi_pos(st, |st| ship_box(st, lr, b))?;
     st.shipout.cur_v = if upwards {
         save_v - st.mem[b].height
     } else {
@@ -1198,6 +1206,7 @@ fn with_saved_dvi_pos(
 
 fn vlist_leaders_out(
     st: &mut crate::state::EngineState,
+    lr: &mut LrState,
     leader: NodePtr<BoxNode>,
     kind: LeaderKind,
     left_edge: Scaled,
@@ -1220,18 +1229,18 @@ fn vlist_leaders_out(
             st.shipout.cur_v += leader_ht;
         }
     } else {
-        let (lq, lr) = leader_count_and_rest(st.shipout.rule_ht, leader_ht);
+        let (lq, rest) = leader_count_and_rest(st.shipout.rule_ht, leader_ht);
         if kind == LeaderKind::Centered {
-            st.shipout.cur_v += lr / 2;
+            st.shipout.cur_v += rest / 2;
         } else {
-            lx = lr / (lq + 1);
-            st.shipout.cur_v += (lr - lx * (lq - 1)) / 2;
+            lx = rest / (lq + 1);
+            st.shipout.cur_v += (rest - lx * (lq - 1)) / 2;
         }
     }
 
     while st.shipout.cur_v + leader_ht <= edge {
         let shift = st.mem[leader].shift_amount;
-        st.shipout.cur_h = if st.scanner.cur_dir == Dir::Rtl {
+        st.shipout.cur_h = if lr.dir == Dir::Rtl {
             left_edge - shift
         } else {
             left_edge + shift
@@ -1239,7 +1248,7 @@ fn vlist_leaders_out(
         synch_h(st)?;
         st.shipout.cur_v += st.mem[leader].height;
         synch_v(st)?;
-        let (_, save_v) = with_saved_dvi_pos(st, |st| ship_leader_box(st, leader))?;
+        let (_, save_v) = with_saved_dvi_pos(st, |st| ship_leader_box(st, lr, leader))?;
         st.shipout.cur_h = left_edge;
         st.shipout.cur_v = save_v - st.mem[leader].height + leader_ht + lx;
     }
@@ -1344,7 +1353,7 @@ impl MemState {
     fn reverse(
         &mut self,
         shipout: &mut ShipoutState,
-        scanner: &mut ScannerState,
+        lr: &mut LrState,
         fonts: &mut FontState,
         t: Option<NodePtr<EdgeNode>>,
         rounding: &mut GlueRounding,
@@ -1409,12 +1418,12 @@ impl MemState {
                         shipout.rule_wd = self[math].width;
                         let code = self[math].code()?;
                         if code.is_end() {
-                            if !self.lr_matches(scanner, code) {
+                            if !self.lr_matches(lr, code) {
                                 math.into_kern(self);
                                 now_kern = true;
-                                scanner.lr_problems += 1;
+                                lr.problems += 1;
                             } else {
-                                self.pop_lr(&mut scanner.lr_ptr);
+                                self.pop_lr(&mut lr.ptr);
                                 if n > MIN_HALFWORD {
                                     n -= 1;
                                     self[math].subtype = code.as_begin().into();
@@ -1434,8 +1443,8 @@ impl MemState {
                                 }
                             }
                         } else {
-                            self.push_lr(&mut scanner.lr_ptr, code.lr_end())?;
-                            if n > MIN_HALFWORD || code.dir() != scanner.cur_dir {
+                            self.push_lr(&mut lr.ptr, code.lr_end())?;
+                            if n > MIN_HALFWORD || code.dir() != lr.dir {
                                 n += 1;
                                 self[math].subtype = code.as_end().into();
                             } else {
@@ -1464,9 +1473,9 @@ impl MemState {
             if t.is_none() && m == MIN_HALFWORD && n == MIN_HALFWORD {
                 return Ok(l);
             }
-            let code = self.lr_code(scanner.lr_ptr).or_confusion("LR")?;
+            let code = self.lr_code(lr.ptr).or_confusion("LR")?;
             p = self.new_math(Scaled::ZERO, code)?.ptr();
-            scanner.lr_problems += 10000;
+            lr.problems += 10000;
         }
     }
 

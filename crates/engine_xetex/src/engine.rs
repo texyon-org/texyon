@@ -402,9 +402,6 @@ fn initialize_more_variables(st: &mut EngineState) {
 
     st.shipout.write_open = [false; 18];
 
-    st.scanner.lr_ptr = MemPtr::NULL;
-    st.scanner.lr_problems = 0;
-    st.scanner.cur_dir = crate::units::Dir::Ltr;
     st.input.pseudo_files = MemPtr::NULL;
     st.scanner.sa_root.set(ValueLevel::Mark, None);
     st.scanner.sa_chain = None;
