@@ -457,7 +457,12 @@ pub fn synctex_math(st: &mut EngineState, p: NodePtr<MathNode>) {
 
 /// The one polymorphic entry: `hlist_out` may have retyped a glue node to a
 /// kern in place before this call, so the node is classified here.
-pub fn synctex_horizontal_rule_or_glue(st: &mut EngineState, p: MemPtr) {
+/// Record rule or glue `p` as shipped, with `rule` the resolved size of a rule.
+pub fn synctex_horizontal_rule_or_glue(
+    st: &mut EngineState,
+    p: MemPtr,
+    rule: Option<crate::shipout::RuleDims>,
+) {
     let node = st.mem.classify(p);
     let (tag, line) = match node {
         Ok(AnyNode::Rule(r)) => (st.mem[r].sync_tag, st.mem[r].sync_line),
@@ -475,21 +480,16 @@ pub fn synctex_horizontal_rule_or_glue(st: &mut EngineState, p: MemPtr) {
         return;
     }
     enter_node(st, p, tag, line);
-    let shipout = &st.shipout;
     let synctex = &mut st.synctex;
-    match node {
-        Ok(AnyNode::Rule(_)) => synctex.record_node(
+    match (node, rule) {
+        (Ok(AnyNode::Rule(_)), Some(rule)) => synctex.record_node(
             'r',
             tag,
             line,
-            &[
-                shipout.rule_wd.raw(),
-                shipout.rule_ht.raw(),
-                shipout.rule_dp.raw(),
-            ],
+            &[rule.wd.raw(), rule.ht.raw(), rule.dp.raw()],
         ),
-        Ok(AnyNode::Glue(_)) => synctex.record_node('g', tag, line, &[]),
-        Ok(AnyNode::Kern(k)) => synctex.record_kern(&st.mem, k),
+        (Ok(AnyNode::Glue(_)), _) => synctex.record_node('g', tag, line, &[]),
+        (Ok(AnyNode::Kern(k)), _) => synctex.record_kern(&st.mem, k),
         _ => {}
     }
 }

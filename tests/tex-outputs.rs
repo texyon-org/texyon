@@ -426,6 +426,11 @@ fn synctex_leading_kern() {
 }
 
 #[test]
+fn synctex_rule() {
+    TestCase::new("synctex_rule").check_synctex(true).go()
+}
+
+#[test]
 fn unicode_file_name() {
     TestCase::new("hallöchen 🐨 welt 🌍.tex")
         .expect(Ok(TexOutcome::Warnings))

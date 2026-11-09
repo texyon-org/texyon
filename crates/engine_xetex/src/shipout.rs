@@ -638,68 +638,94 @@ fn ship_leader_box(
     Ok(())
 }
 
+/// The size of a rule being shipped (WEB's `rule_ht`, `rule_dp`, `rule_wd`).
+/// `RUNNING` takes that dimension from the enclosing box.
+#[derive(Copy, Clone)]
+pub(crate) struct RuleDims {
+    pub ht: Scaled,
+    pub dp: Scaled,
+    pub wd: Scaled,
+}
+
+impl RuleDims {
+    fn of(mem: &MemState, rule: NodePtr<RuleNode>) -> Self {
+        Self {
+            ht: mem[rule].height.to_scaled(),
+            dp: mem[rule].depth.to_scaled(),
+            wd: mem[rule].width.to_scaled(),
+        }
+    }
+}
+
+/// Ship `rule` (node `p`, a rule or rule leaders) in an hlist.
 fn hlist_rule_out(
     st: &mut crate::state::EngineState,
     this_box: NodePtr<BoxNode>,
     base_line: Scaled,
     p: MemPtr,
+    mut rule: RuleDims,
 ) -> Result<(), Abort> {
-    if st.shipout.rule_ht == RUNNING {
-        st.shipout.rule_ht = st.mem[this_box].height;
+    if rule.ht == RUNNING {
+        rule.ht = st.mem[this_box].height;
     }
-    if st.shipout.rule_dp == RUNNING {
-        st.shipout.rule_dp = st.mem[this_box].depth;
+    if rule.dp == RUNNING {
+        rule.dp = st.mem[this_box].depth;
     }
-    st.shipout.rule_ht += st.shipout.rule_dp;
-    if st.shipout.rule_ht > Scaled::ZERO && st.shipout.rule_wd > Scaled::ZERO {
+    rule.ht += rule.dp;
+    if rule.ht > Scaled::ZERO && rule.wd > Scaled::ZERO {
         synch_h(st)?;
-        st.shipout.cur_v = base_line + st.shipout.rule_dp;
+        st.shipout.cur_v = base_line + rule.dp;
         synch_v(st)?;
-        st.shipout
-            .dvi
-            .set_rule(st.shipout.rule_ht, st.shipout.rule_wd)?;
+        st.shipout.dvi.set_rule(rule.ht, rule.wd)?;
         st.shipout.cur_v = base_line;
-        st.shipout.dvi_h += st.shipout.rule_wd;
+        st.shipout.dvi_h += rule.wd;
     }
-    st.shipout.cur_h += st.shipout.rule_wd;
-    crate::synctex::synctex_horizontal_rule_or_glue(st, p);
+    st.shipout.cur_h += rule.wd;
+    crate::synctex::synctex_horizontal_rule_or_glue(st, p, Some(rule));
     Ok(())
 }
 
+/// Ship `rule` (a rule or rule leaders) in a vlist.
 fn vlist_rule_out(
     st: &mut crate::state::EngineState,
     lr: &mut LrState,
     this_box: NodePtr<BoxNode>,
     left_edge: Scaled,
     upwards: bool,
+    mut rule: RuleDims,
 ) -> Result<(), Abort> {
-    if st.shipout.rule_wd == RUNNING {
-        st.shipout.rule_wd = st.mem[this_box].width;
+    if rule.wd == RUNNING {
+        rule.wd = st.mem[this_box].width;
     }
-    st.shipout.rule_ht += st.shipout.rule_dp;
-    st.shipout.move_past_vlist_rule(upwards);
-    if st.shipout.rule_ht > Scaled::ZERO && st.shipout.rule_wd > Scaled::ZERO {
+    rule.ht += rule.dp;
+    st.shipout.move_past_vlist_rule(upwards, rule.ht);
+    if rule.ht > Scaled::ZERO && rule.wd > Scaled::ZERO {
         if lr.dir == Dir::Rtl {
-            st.shipout.cur_h -= st.shipout.rule_wd;
+            st.shipout.cur_h -= rule.wd;
         }
         synch_h(st)?;
         synch_v(st)?;
-        st.shipout
-            .dvi
-            .put_rule(st.shipout.rule_ht, st.shipout.rule_wd)?;
+        st.shipout.dvi.put_rule(rule.ht, rule.wd)?;
         st.shipout.cur_h = left_edge;
     }
     Ok(())
 }
 
 impl ShipoutState {
-    fn move_past_vlist_rule(&mut self, upwards: bool) {
+    fn move_past_vlist_rule(&mut self, upwards: bool, height: Scaled) {
         if upwards {
-            self.cur_v -= self.rule_ht;
+            self.cur_v -= height;
         } else {
-            self.cur_v += self.rule_ht;
+            self.cur_v += height;
         }
     }
+}
+
+/// Box leaders filling `size` along a list.
+struct BoxLeaders {
+    leader: NodePtr<BoxNode>,
+    kind: LeaderKind,
+    size: Scaled,
 }
 
 /// Move right past glue `glue` or output its leaders.
@@ -713,27 +739,29 @@ fn hlist_glue_out(
     rounding: &mut GlueRounding,
 ) -> Result<(), Abort> {
     let spec = st.mem[glue].glue_ptr;
-    st.shipout.rule_wd = rounding.width(&st.mem, spec);
+    let mut wd = rounding.width(&st.mem, spec);
     if rounding.is_set(&st.mem, spec) {
-        st.mem.freeze_set_glue(glue, spec, st.shipout.rule_wd)?;
+        st.mem.freeze_set_glue(glue, spec, wd)?;
     }
 
     if let Some(kind) = st.mem[glue].leaders() {
         let leader = match st.mem.leader_of(glue) {
             Leader::Rule(rule) => {
-                st.shipout.rule_ht = st.mem[rule].height.to_scaled();
-                st.shipout.rule_dp = st.mem[rule].depth.to_scaled();
-                return hlist_rule_out(st, this_box, base_line, glue.ptr());
+                let rule = RuleDims {
+                    wd,
+                    ..RuleDims::of(&st.mem, rule)
+                };
+                return hlist_rule_out(st, this_box, base_line, glue.ptr(), rule);
             }
             Leader::Box(leader) => leader,
         };
         let leader_wd = st.mem[leader].width;
-        if leader_wd > Scaled::ZERO && st.shipout.rule_wd > Scaled::ZERO {
-            st.shipout.rule_wd += LEADER_SLOP;
+        if leader_wd > Scaled::ZERO && wd > Scaled::ZERO {
+            wd += LEADER_SLOP;
             if lr.dir == Dir::Rtl {
                 st.shipout.cur_h -= LEADER_SLOP;
             }
-            let edge = st.shipout.cur_h + st.shipout.rule_wd;
+            let edge = st.shipout.cur_h + wd;
             let mut lx = Scaled::ZERO;
             if kind == LeaderKind::Aligned {
                 let save_h = st.shipout.cur_h;
@@ -743,7 +771,7 @@ fn hlist_glue_out(
                     st.shipout.cur_h += leader_wd;
                 }
             } else {
-                let (lq, rest) = leader_count_and_rest(st.shipout.rule_wd, leader_wd);
+                let (lq, rest) = leader_count_and_rest(wd, leader_wd);
                 if kind == LeaderKind::Centered {
                     st.shipout.cur_h += rest / 2;
                 } else {
@@ -775,8 +803,8 @@ fn hlist_glue_out(
         }
     }
 
-    st.shipout.cur_h += st.shipout.rule_wd;
-    crate::synctex::synctex_horizontal_rule_or_glue(st, glue.ptr());
+    st.shipout.cur_h += wd;
+    crate::synctex::synctex_horizontal_rule_or_glue(st, glue.ptr(), None);
     Ok(())
 }
 
@@ -910,10 +938,8 @@ fn hlist_out(
         match st.mem.classify(p).or_confusion("hlistout")? {
             AnyNode::Box(b) => hlist_box_out(st, lr, b, base_line)?,
             AnyNode::Rule(rule) => {
-                st.shipout.rule_ht = st.mem[rule].height.to_scaled();
-                st.shipout.rule_dp = st.mem[rule].depth.to_scaled();
-                st.shipout.rule_wd = st.mem[rule].width.to_scaled();
-                hlist_rule_out(st, this_box, base_line, rule.ptr())?;
+                let dims = RuleDims::of(&st.mem, rule);
+                hlist_rule_out(st, this_box, base_line, rule.ptr(), dims)?;
             }
             AnyNode::Whatsit(whatsit) => match whatsit.variant(&st.mem) {
                 Some(WhatsitVariant::NativeWord(word)) => {
@@ -1043,12 +1069,11 @@ fn reverse_segment(
 ) -> Result<NodePtr<EdgeNode>, Abort> {
     let save_h = st.shipout.cur_h;
     st.mem.temp_ptr = st.mem[math].link;
-    st.shipout.rule_wd = math_width;
     st.mem.free_node(math.ptr(), MEDIUM_NODE_SIZE);
     lr.dir = lr.dir.reversed();
-    let edge = st.mem.new_edge(lr.dir, st.shipout.rule_wd)?;
+    let edge = st.mem.new_edge(lr.dir, math_width)?;
     prev_p.set_link(&mut st.mem, edge.ptr());
-    st.shipout.cur_h = st.shipout.cur_h - left_edge + st.shipout.rule_wd;
+    st.shipout.cur_h = st.shipout.cur_h - left_edge + math_width;
     let end = st.mem.new_edge(lr.dir.reversed(), Scaled::ZERO)?;
     let reversed = st
         .mem
@@ -1086,10 +1111,8 @@ fn vlist_out(
         match st.mem.classify(p).or_confusion("vlistout")? {
             AnyNode::Box(b) => vlist_box_out(st, lr, b, left_edge, upwards)?,
             AnyNode::Rule(rule) => {
-                st.shipout.rule_ht = st.mem[rule].height.to_scaled();
-                st.shipout.rule_dp = st.mem[rule].depth.to_scaled();
-                st.shipout.rule_wd = st.mem[rule].width.to_scaled();
-                vlist_rule_out(st, lr, this_box, left_edge, upwards)?;
+                let dims = RuleDims::of(&st.mem, rule);
+                vlist_rule_out(st, lr, this_box, left_edge, upwards, dims)?;
             }
             AnyNode::Whatsit(whatsit) => match whatsit.variant(&st.mem) {
                 Some(WhatsitVariant::Glyph(glyph)) => {
@@ -1116,20 +1139,28 @@ fn vlist_out(
             },
             AnyNode::Glue(glue) => {
                 let spec = st.mem[glue].glue_ptr;
-                st.shipout.rule_ht = rounding.width(&st.mem, spec);
+                let ht = rounding.width(&st.mem, spec);
                 if let Some(kind) = st.mem[glue].leaders() {
                     match st.mem.leader_of(glue) {
                         Leader::Rule(rule) => {
-                            st.shipout.rule_wd = st.mem[rule].width.to_scaled();
-                            st.shipout.rule_dp = Scaled::ZERO;
-                            vlist_rule_out(st, lr, this_box, left_edge, upwards)?;
+                            let dims = RuleDims {
+                                ht,
+                                dp: Scaled::ZERO,
+                                wd: st.mem[rule].width.to_scaled(),
+                            };
+                            vlist_rule_out(st, lr, this_box, left_edge, upwards, dims)?;
                         }
                         Leader::Box(leader) => {
-                            vlist_leaders_out(st, lr, leader, kind, left_edge, top_edge, upwards)?
+                            let leaders = BoxLeaders {
+                                leader,
+                                kind,
+                                size: ht,
+                            };
+                            vlist_leaders_out(st, lr, leaders, left_edge, top_edge, upwards)?
                         }
                     }
                 } else {
-                    st.shipout.move_past_vlist_rule(upwards);
+                    st.shipout.move_past_vlist_rule(upwards, ht);
                 }
             }
             AnyNode::Kern(kern) => {
@@ -1207,19 +1238,19 @@ fn with_saved_dvi_pos(
 fn vlist_leaders_out(
     st: &mut crate::state::EngineState,
     lr: &mut LrState,
-    leader: NodePtr<BoxNode>,
-    kind: LeaderKind,
+    leaders: BoxLeaders,
     left_edge: Scaled,
     top_edge: Scaled,
     upwards: bool,
 ) -> Result<(), Abort> {
+    let BoxLeaders { leader, kind, size } = leaders;
     let leader_ht = st.mem[leader].height + st.mem[leader].depth;
-    if leader_ht <= Scaled::ZERO || st.shipout.rule_ht <= Scaled::ZERO {
-        st.shipout.move_past_vlist_rule(upwards);
+    if leader_ht <= Scaled::ZERO || size <= Scaled::ZERO {
+        st.shipout.move_past_vlist_rule(upwards, size);
         return Ok(());
     }
-    st.shipout.rule_ht += LEADER_SLOP;
-    let edge = st.shipout.cur_v + st.shipout.rule_ht;
+    let size = size + LEADER_SLOP;
+    let edge = st.shipout.cur_v + size;
     let mut lx = Scaled::ZERO;
     if kind == LeaderKind::Aligned {
         let save_v = st.shipout.cur_v;
@@ -1229,7 +1260,7 @@ fn vlist_leaders_out(
             st.shipout.cur_v += leader_ht;
         }
     } else {
-        let (lq, rest) = leader_count_and_rest(st.shipout.rule_ht, leader_ht);
+        let (lq, rest) = leader_count_and_rest(size, leader_ht);
         if kind == LeaderKind::Centered {
             st.shipout.cur_v += rest / 2;
         } else {
@@ -1381,26 +1412,27 @@ impl MemState {
                 let q = p.link(self);
                 let mut add_width = true;
                 let mut now_kern = false;
+                let mut wd = Scaled::ZERO;
                 match self.classify(p) {
                     Ok(node @ (AnyNode::Box(_) | AnyNode::Rule(_))) => {
-                        shipout.rule_wd = node.hlist_width(self);
+                        wd = node.hlist_width(self);
                     }
                     Ok(AnyNode::Kern(kern)) => {
-                        shipout.rule_wd = self[kern].width;
+                        wd = self[kern].width;
                         now_kern = true;
                     }
                     Ok(AnyNode::Whatsit(w)) => {
                         if let Some(sized) = w.sized(self) {
-                            shipout.rule_wd = self[sized].width;
+                            wd = self[sized].width;
                         } else {
                             add_width = false;
                         }
                     }
                     Ok(AnyNode::Glue(glue)) => {
                         let spec = self[glue].glue_ptr;
-                        shipout.rule_wd = rounding.width(self, spec);
+                        wd = rounding.width(self, spec);
                         if rounding.is_set(self, spec) {
-                            self.freeze_set_glue(glue, spec, shipout.rule_wd)?;
+                            self.freeze_set_glue(glue, spec, wd)?;
                             now_kern = self[glue].leaders().is_none();
                         }
                     }
@@ -1415,7 +1447,7 @@ impl MemState {
                         continue;
                     }
                     Ok(AnyNode::Math(math)) => {
-                        shipout.rule_wd = self[math].width;
+                        wd = self[math].width;
                         let code = self[math].code()?;
                         if code.is_end() {
                             if !self.lr_matches(lr, code) {
@@ -1436,8 +1468,8 @@ impl MemState {
                                         self.free_node(math.ptr(), MEDIUM_NODE_SIZE);
                                         let t = t.expect("a segment reversal ends at its edge");
                                         self[t].link = q;
-                                        self[t].width = shipout.rule_wd;
-                                        self[t].edge_dist = -shipout.cur_h - shipout.rule_wd;
+                                        self[t].width = wd;
+                                        self[t].edge_dist = -shipout.cur_h - wd;
                                         return Ok(l);
                                     }
                                 }
@@ -1459,10 +1491,10 @@ impl MemState {
                 }
 
                 if add_width {
-                    shipout.cur_h += shipout.rule_wd;
+                    shipout.cur_h += wd;
                 }
                 p.set_link(self, l);
-                if now_kern && (shipout.rule_wd == Scaled::ZERO || l.is_null()) {
+                if now_kern && (wd == Scaled::ZERO || l.is_null()) {
                     self.free_node(p, MEDIUM_NODE_SIZE);
                     p = l;
                 }
