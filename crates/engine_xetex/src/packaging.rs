@@ -12,7 +12,7 @@ use crate::node::{
 };
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, FontState, MemState, ShipoutState};
-use crate::units::{GlueOrder, GlueSign, MemPtr, NodeType, OrderTotals, Orientation, Scaled};
+use crate::units::{Dir, GlueOrder, GlueSign, MemPtr, NodeType, OrderTotals, Orientation, Scaled};
 
 mod copy;
 mod vert_break;
@@ -135,6 +135,23 @@ impl AdjustTails {
     pub(crate) const HEADS: Self = Self {
         post: ADJUST_HEAD,
         pre: PRE_ADJUST_HEAD,
+    };
+}
+
+/// One pass over an hlist for TeX--XeT: the LR stack, WEB's `LR_problems`
+/// count of unmatched math nodes, and the current direction.
+pub(crate) struct LrState {
+    pub ptr: MemPtr,
+    pub problems: i32,
+    pub dir: Dir,
+}
+
+impl LrState {
+    /// An empty stack, no problems, left to right.
+    pub(crate) const START: Self = Self {
+        ptr: MemPtr::NULL,
+        problems: 0,
+        dir: Dir::Ltr,
     };
 }
 

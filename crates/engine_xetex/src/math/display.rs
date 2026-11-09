@@ -8,7 +8,7 @@ use crate::fonts::QUAD_CODE;
 use crate::input::TokenType;
 use crate::mem::{ADJUST_HEAD, GARBAGE, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::node::{AnyNode, BoxLr, BoxNode, GlueNode, MathCode, NodePtr};
-use crate::packaging::{AdjustTails, PackOrigin, PackSpec};
+use crate::packaging::{AdjustTails, LrState, PackOrigin, PackSpec};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::state::{EngineState, EqtbState, FontState, GroupCode, MemState};
 use crate::units::{Dir, GlueOrder, GlueSign, MemPtr, NodeType, Scaled};
@@ -489,6 +489,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
             let mut v = st.mem[jb].shift_amount;
             x = pre_display_direction(st);
 
+            let mut lr = LrState::START;
             let mut p;
             if x >= 0 {
                 p = st.mem[jb].list_ptr;
@@ -500,7 +501,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                 let end = st.mem.new_math(Scaled::ZERO, MathCode::EndL)?.ptr();
                 let list = st.mem[jb].list_ptr;
                 st.mem.just_copy(list, begin, end)?;
-                st.scanner.cur_dir = Dir::Rtl;
+                lr.dir = Dir::Rtl;
                 p = begin;
             }
 
@@ -509,7 +510,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
 
             let texxet = st.eqtb.int_par(IntPar::Texxet) > 0;
             if texxet {
-                st.mem.push_lr(&mut st.scanner.lr_ptr, MathCode::Before)?;
+                st.mem.push_lr(&mut lr.ptr, MathCode::Before)?;
             }
 
             'outer: while !p.is_null() {
@@ -539,16 +540,16 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                             let code = st.mem[m].code()?;
                             if texxet {
                                 if code.is_end() {
-                                    if st.mem.lr_code(st.scanner.lr_ptr) == Some(code.lr_end()) {
-                                        st.mem.pop_lr(&mut st.scanner.lr_ptr);
+                                    if st.mem.lr_code(lr.ptr) == Some(code.lr_end()) {
+                                        st.mem.pop_lr(&mut lr.ptr);
                                     } else if code.is_lr() {
                                         w = MAX_DIMEN;
                                         break 'outer;
                                     }
                                 } else {
-                                    st.mem.push_lr(&mut st.scanner.lr_ptr, code.lr_end())?;
-                                    if code.dir() != st.scanner.cur_dir {
-                                        st.mem.just_reverse(&mut st.scanner, p)?;
+                                    st.mem.push_lr(&mut lr.ptr, code.lr_end())?;
+                                    if code.dir() != lr.dir {
+                                        st.mem.just_reverse(&mut lr, p)?;
                                         p = TEMP_HEAD;
                                     }
                                 }
@@ -560,8 +561,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                         }
                         // An EDGE_NODE, which shares type 14 with STYLE_NODE.
                         Ok(AnyNode::Style(edge)) => {
-                            st.scanner.cur_dir =
-                                st.mem[edge.as_edge()].dir.get().or_confusion("LR")?;
+                            lr.dir = st.mem[edge.as_edge()].dir.get().or_confusion("LR")?;
                             (st.mem[edge.as_edge()].width, false)
                         }
                         Ok(AnyNode::Glue(g)) => {
@@ -608,16 +608,14 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
             }
 
             if texxet {
-                while !st.scanner.lr_ptr.is_null() {
-                    st.mem.pop_lr(&mut st.scanner.lr_ptr);
+                while !lr.ptr.is_null() {
+                    st.mem.pop_lr(&mut lr.ptr);
                 }
-                if st.scanner.lr_problems != 0 {
+                if lr.problems != 0 {
                     w = MAX_DIMEN;
-                    st.scanner.lr_problems = 0;
                 }
             }
 
-            st.scanner.cur_dir = Dir::Ltr;
             let temp_head = TEMP_HEAD.link(&st.mem);
             st.mem.flush_node_list(temp_head)?;
         }

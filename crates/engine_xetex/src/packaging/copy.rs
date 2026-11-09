@@ -11,7 +11,9 @@ use crate::node::{
     AnyNode, BoxNode, DiscNode, FixedNode, GlueNode, LanguageNode, NoadVariant, NodeKind, NodePtr,
     OpenNode, WhatsitNode, WhatsitVariant, WriteNode,
 };
-use crate::state::{MemState, ScannerState};
+use crate::state::MemState;
+
+use super::LrState;
 use crate::units::{MemIdx, MemPtr, Scaled};
 
 const SYNCTEX_FIELD_SIZE: i32 = 1;
@@ -155,7 +157,7 @@ impl MemState {
     }
 
     /// Reverse the hlist after `p` for TeX--XeT, leaving the result after `TEMP_HEAD`.
-    pub fn just_reverse(&mut self, scanner: &mut ScannerState, p: MemPtr) -> Result<(), Abort> {
+    pub(crate) fn just_reverse(&mut self, lr: &mut LrState, p: MemPtr) -> Result<(), Abort> {
         let mut m = MIN_HALFWORD;
         let mut n = MIN_HALFWORD;
 
@@ -169,9 +171,9 @@ impl MemState {
             q
         };
 
-        let t = self.new_edge(scanner.cur_dir, Scaled::ZERO)?;
+        let t = self.new_edge(lr.dir, Scaled::ZERO)?;
         let mut l = t.ptr();
-        scanner.cur_dir = scanner.cur_dir.reversed();
+        lr.dir = lr.dir.reversed();
 
         'done: {
             while !q.is_null() {
@@ -194,11 +196,11 @@ impl MemState {
                 if let Ok(AnyNode::Math(math)) = self.classify(p) {
                     let code = self[math].code()?;
                     if code.is_end() {
-                        if self.lr_code(scanner.lr_ptr) != Some(code.lr_end()) {
+                        if self.lr_code(lr.ptr) != Some(code.lr_end()) {
                             math.into_kern(self);
-                            scanner.lr_problems += 1;
+                            lr.problems += 1;
                         } else {
-                            self.pop_lr(&mut scanner.lr_ptr);
+                            self.pop_lr(&mut lr.ptr);
 
                             if n > MIN_HALFWORD {
                                 n -= 1;
@@ -214,9 +216,9 @@ impl MemState {
                             }
                         }
                     } else {
-                        self.push_lr(&mut scanner.lr_ptr, code.lr_end())?;
+                        self.push_lr(&mut lr.ptr, code.lr_end())?;
 
-                        if n > MIN_HALFWORD || code.dir() != scanner.cur_dir {
+                        if n > MIN_HALFWORD || code.dir() != lr.dir {
                             n += 1;
                             self[math].subtype = code.as_end().into();
                         } else {
