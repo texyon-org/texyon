@@ -176,12 +176,8 @@ pub(super) fn clean_box(
 /// Runs `mlist_to_hlist` on `mlist` at style `s` without penalties and returns
 /// the resulting list, restoring the current style.
 fn sublist_to_hlist(st: &mut EngineState, mlist: MemPtr, s: MathStyle) -> Result<MemPtr, Abort> {
-    st.scanner.cur_mlist = mlist;
     let save_style = st.scanner.cur_style;
-    st.scanner.cur_style = s;
-    st.scanner.mlist_penalties = false;
-    mlist_to_hlist(st)?;
-    let q = TEMP_HEAD.link(&st.mem);
+    let q = mlist_to_hlist(st, mlist, s, false)?;
     st.scanner.cur_style = save_style;
     set_cur_size_and_mu(st);
     Ok(q)
@@ -1244,10 +1240,16 @@ fn check_noad_dimensions(
     Ok(())
 }
 
-pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
-    let mlist = st.scanner.cur_mlist;
-    let penalties = st.scanner.mlist_penalties;
-    let style = st.scanner.cur_style;
+/// Convert `mlist` at `style` to an hlist, with line-break penalties after
+/// binary and relation atoms if `penalties`. Returns the hlist, which starts
+/// after `TEMP_HEAD`, and leaves `cur_style` where the list ended.
+pub(super) fn mlist_to_hlist(
+    st: &mut EngineState,
+    mlist: MemPtr,
+    style: MathStyle,
+    penalties: bool,
+) -> Result<MemPtr, Abort> {
+    st.scanner.cur_style = style;
     let mut q = mlist;
     let mut r: Option<NodePtr<AnyNoad>> = None;
     let mut r_type = NodeType::OpNoad.as_raw();
@@ -1555,7 +1557,7 @@ pub(super) fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
         st.mem.free_node(q, s);
         q = nq;
     }
-    Ok(())
+    Ok(TEMP_HEAD.link(&st.mem))
 }
 
 impl MemState {

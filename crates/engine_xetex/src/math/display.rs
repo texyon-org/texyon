@@ -243,11 +243,8 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     let a;
     if i32::from(st.input.cur_list.mode) == -m {
         check_display_end(st)?;
-        st.scanner.cur_mlist = p;
-        st.scanner.cur_style = MathStyle::TEXT;
-        st.scanner.mlist_penalties = false;
-        mlist_to_hlist(st)?;
-        let eqno = crate::packaging::hpack(st, TEMP_HEAD.link(&st.mem), PackSpec::NATURAL)?;
+        let hlist = mlist_to_hlist(st, p, MathStyle::TEXT, false)?;
+        let eqno = crate::packaging::hpack(st, hlist, PackSpec::NATURAL)?;
         st.mem[eqno].set_lr(BoxLr::Dlist);
         a = Some(eqno);
         crate::save::unsave(st)?;
@@ -268,11 +265,8 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
         let math_surround = st.eqtb.dimen_par(DimenPar::MathSurround);
         let node = st.mem.new_math(math_surround, MathCode::Before)?;
         st.input.cur_list.tail_append(&mut st.mem, node.ptr());
-        st.scanner.cur_mlist = p;
-        st.scanner.cur_style = MathStyle::TEXT;
-        st.scanner.mlist_penalties = st.input.cur_list.mode > 0;
-        mlist_to_hlist(st)?;
-        let hlist = TEMP_HEAD.link(&st.mem);
+        let penalties = st.input.cur_list.mode > 0;
+        let hlist = mlist_to_hlist(st, p, MathStyle::TEXT, penalties)?;
         let cl = &mut st.input.cur_list;
         cl.tail.set_link(&mut st.mem, hlist);
         while !cl.tail.link(&st.mem).is_null() {
@@ -293,11 +287,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     if a.is_none() {
         check_display_end(st)?;
     }
-    st.scanner.cur_mlist = p;
-    st.scanner.cur_style = MathStyle::DISPLAY;
-    st.scanner.mlist_penalties = false;
-    mlist_to_hlist(st)?;
-    let mut p = TEMP_HEAD.link(&st.mem);
+    let mut p = mlist_to_hlist(st, p, MathStyle::DISPLAY, false)?;
     let mut adjust = AdjustTails::HEADS;
     let packed = crate::packaging::hpack_with(
         st,
