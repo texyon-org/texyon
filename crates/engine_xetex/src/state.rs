@@ -70,7 +70,8 @@ pub(crate) struct SynctexCtxt {
     pub file: usize,
     pub root_name: Option<Vec<u8>>,
     pub count: i32,
-    pub node: crate::units::MemPtr,
+    /// The node of the current context, `None` before the first.
+    pub node: Option<crate::units::MemPtr>,
     /// A kern whose record waits for the context to change. When set it equals
     /// `node`, so flush sites record it before reassigning `node`.
     pub deferred_kern: Option<crate::node::NodePtr<crate::node::KernNode>>,
@@ -94,7 +95,7 @@ impl Default for SynctexCtxt {
             file: 0, // INVALID_HANDLE
             root_name: None,
             count: 0,
-            node: crate::units::MemPtr::default(),
+            node: None,
             deferred_kern: None,
             tag: 0,
             line: 0,
@@ -1721,7 +1722,7 @@ impl Default for HyphState {
             is_hyph: false,
             hf: crate::consts::NULL_FONT,
             max_hyph_char: 0,
-            init_list: crate::units::MemPtr::default(),
+            init_list: crate::units::MemPtr::NULL,
             init_lig: false,
             init_lft: false,
             hyphen_passed: 0,

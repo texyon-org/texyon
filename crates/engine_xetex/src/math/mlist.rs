@@ -908,7 +908,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<AccentNoad>) -> Result<(), 
         mem[base.supscr()] = mem[n.supscr()];
         mem[base.subscr()] = mem[n.subscr()];
         for script in [n.supscr(), n.subscr()] {
-            mem[script].set_info(MemPtr::default());
+            mem[script].set_info(MemPtr::from_raw(0));
             mem[script].math_type = EMPTY;
         }
         mem[n.nucleus()].math_type = SUB_MLIST;

@@ -50,17 +50,7 @@ impl MemIdx {
 
 /// A TeX pointer: an arena index or `TEX_NULL` (which is not zero).
 #[derive(
-    Copy,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Debug,
-    Hash,
-    Default,
-    bytemuck::Pod,
-    bytemuck::Zeroable,
+    Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, bytemuck::Pod, bytemuck::Zeroable,
 )]
 #[repr(transparent)]
 pub struct MemPtr(i32);
@@ -148,6 +138,14 @@ impl MemAddr for MemIdx {
     #[inline]
     fn addr(self) -> i32 {
         self.0
+    }
+}
+
+/// No node. Not the zero bit pattern `Zeroable` gives, which is `MEM_BOT`.
+impl Default for MemPtr {
+    #[inline]
+    fn default() -> Self {
+        Self::NULL
     }
 }
 

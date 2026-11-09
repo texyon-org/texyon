@@ -239,7 +239,7 @@ pub fn synctex_init_command(st: &mut EngineState) {
     synctex.file = INVALID_HANDLE;
     synctex.root_name = None;
     synctex.count = 0;
-    synctex.node = MemPtr::default();
+    synctex.node = None;
     synctex.deferred_kern = None;
     synctex.tag = 0;
     synctex.line = 0;
@@ -351,7 +351,7 @@ fn synctex_active(st: &EngineState) -> bool {
 /// Make `node` the current SyncTeX context at the current position.
 fn enter_node(st: &mut EngineState, node: MemPtr, tag: i32, line: i32) {
     let synctex = &mut st.synctex;
-    synctex.node = node;
+    synctex.node = Some(node);
     synctex.tag = tag;
     synctex.line = line;
     synctex.curh = st.shipout.synctex_curh();
@@ -428,7 +428,7 @@ fn flush_deferred_kern(st: &mut EngineState) {
 
 impl SynctexCtxt {
     fn context_changed(&self, tag: i32, line: i32) -> bool {
-        self.node.raw() == 0 || tag != self.tag || line != self.line
+        self.node.is_none() || tag != self.tag || line != self.line
     }
 }
 
@@ -504,8 +504,8 @@ pub fn synctex_kern(st: &mut EngineState, p: NodePtr<KernNode>, this_box: NodePt
         flush_deferred_kern(st);
     }
     let synctex = &mut st.synctex;
-    let first_in_list = synctex.node == this_box.ptr();
-    synctex.node = p.ptr();
+    let first_in_list = synctex.node == Some(this_box.ptr());
+    synctex.node = Some(p.ptr());
     synctex.tag = tag;
     synctex.line = line;
     // The first kern of an hlist, and any kern in an unchanged context, is deferred.

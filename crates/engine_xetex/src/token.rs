@@ -135,9 +135,17 @@ const RIGHT_BRACE_LIMIT: i32 = Token::new(Cmd::MathShift, 0).0;
 
 /// A pointer into a token list: its reference-count head, one of its token
 /// nodes, or null.
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(transparent)]
 pub(crate) struct TokenList(MemPtr);
+
+/// The null list. Not the zero bit pattern `Zeroable` gives.
+impl Default for TokenList {
+    #[inline]
+    fn default() -> Self {
+        Self::NULL
+    }
+}
 
 impl TokenList {
     pub(crate) const NULL: TokenList = TokenList(MemPtr::NULL);
