@@ -30,6 +30,15 @@ const SCRIPT_SCRIPT_SIZE: i32 = 512;
 pub(crate) struct MathStyle(u16);
 
 impl MathStyle {
+    /// The font size of this style: `TEXT_SIZE`, `SCRIPT_SIZE` or `SCRIPT_SCRIPT_SIZE`.
+    pub(crate) fn size(self) -> i32 {
+        if self < Self::SCRIPT {
+            crate::consts::TEXT_SIZE
+        } else {
+            crate::consts::SCRIPT_SIZE * ((i32::from(self.raw()) - 2) / 2)
+        }
+    }
+
     pub(crate) const DISPLAY: MathStyle = MathStyle(0);
     pub(crate) const TEXT: MathStyle = MathStyle(2);
     pub(crate) const SCRIPT: MathStyle = MathStyle(4);

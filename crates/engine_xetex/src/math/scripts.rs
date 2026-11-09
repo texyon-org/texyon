@@ -11,7 +11,7 @@ use crate::params::DimenPar;
 use crate::state::{EngineState, MemState};
 use crate::units::{FontId, MemPtr, NodeType, Scaled};
 
-use super::mlist::{clean_box, fetch, set_cur_size_and_mu};
+use super::mlist::{clean_box, fetch};
 use super::{MathStyle, SCRIPT_SCRIPT_SIZE};
 
 const SUBSCRIPTTOPMAX: i32 = 9;
@@ -108,18 +108,19 @@ fn clean_script_box(
     clean_style: MathStyle,
     saved_font: FontId,
     adjustment: ScriptBoxAdjustment,
+    style: MathStyle,
 ) -> Result<ScriptBoxPrep, Abort> {
     let node = clean_box(st, script_field, clean_style)?;
     let shift = match adjustment {
-        ScriptBoxAdjustment::Sub1 => st.fonts.sub1(&st.eqtb, st.scanner.cur_size),
-        ScriptBoxAdjustment::Sub2 => st.fonts.sub2(&st.eqtb, st.scanner.cur_size),
+        ScriptBoxAdjustment::Sub1 => st.fonts.sub1(&st.eqtb, style.size()),
+        ScriptBoxAdjustment::Sub2 => st.fonts.sub2(&st.eqtb, style.size()),
         ScriptBoxAdjustment::Superscript => {
-            if st.scanner.cur_style.is_cramped() {
-                st.fonts.sup3(&st.eqtb, st.scanner.cur_size)
-            } else if st.scanner.cur_style < MathStyle::TEXT {
-                st.fonts.sup1(&st.eqtb, st.scanner.cur_size)
+            if style.is_cramped() {
+                st.fonts.sup3(&st.eqtb, style.size())
+            } else if style < MathStyle::TEXT {
+                st.fonts.sup1(&st.eqtb, style.size())
             } else {
-                st.fonts.sup2(&st.eqtb, st.scanner.cur_size)
+                st.fonts.sup2(&st.eqtb, style.size())
             }
         }
     };
@@ -137,7 +138,11 @@ struct ScriptShifts {
     down: Scaled,
 }
 
-fn initial_script_shifts(st: &mut EngineState, p: MemPtr) -> Result<ScriptShifts, Abort> {
+fn initial_script_shifts(
+    st: &mut EngineState,
+    p: MemPtr,
+    style: MathStyle,
+) -> Result<ScriptShifts, Abort> {
     if st.mem.is_char_node(p) || st.mem.glyph_whatsit(p).is_some() {
         Ok(ScriptShifts {
             up: Scaled::ZERO,
@@ -145,7 +150,7 @@ fn initial_script_shifts(st: &mut EngineState, p: MemPtr) -> Result<ScriptShifts
         })
     } else {
         let zb = crate::packaging::hpack(st, p, PackSpec::NATURAL)?;
-        let t = if st.scanner.cur_style < MathStyle::SCRIPT {
+        let t = if style < MathStyle::SCRIPT {
             SCRIPT_SIZE
         } else {
             SCRIPT_SCRIPT_SIZE
@@ -232,12 +237,13 @@ fn prepare_subscript(
     q: NodePtr<Noad>,
     adjustment: ScriptBoxAdjustment,
     shift_down: Scaled,
+    style: MathStyle,
 ) -> Result<PreparedScript, Abort> {
     let script_field = q.subscr();
-    let (glyph, font) = first_script_glyph(st, script_field)?;
+    let (glyph, font) = first_script_glyph(st, script_field, style)?;
     let save_f = st.scanner.cur_f;
-    let clean_style = st.scanner.cur_style.sub();
-    let prepared = clean_script_box(st, script_field, clean_style, save_f, adjustment)?;
+    let clean_style = style.sub();
+    let prepared = clean_script_box(st, script_field, clean_style, save_f, adjustment, style)?;
     Ok(PreparedScript {
         box_node: prepared.box_node,
         glyph,
@@ -251,17 +257,18 @@ fn finish_subscript_only(
     q: NodePtr<Noad>,
     p: MemPtr,
     shift_down: Scaled,
+    style: MathStyle,
 ) -> Result<(), Abort> {
     let PreparedScript {
         box_node: x,
         glyph: sub_g,
         font: sub_f,
         shift: shift_down,
-    } = prepare_subscript(st, q, ScriptBoxAdjustment::Sub1, shift_down)?;
+    } = prepare_subscript(st, q, ScriptBoxAdjustment::Sub1, shift_down, style)?;
 
     let cur_f = st.scanner.cur_f;
     let box_depth = st.mem[x].height;
-    let x_height = st.fonts.math_x_height(&st.eqtb, st.scanner.cur_size);
+    let x_height = st.fonts.math_x_height(&st.eqtb, style.size());
     let clr = if st.fonts.font_is_ot_math(cur_f) {
         box_depth - st.fonts.get_ot_math_constant(cur_f, SUBSCRIPTTOPMAX)
     } else {
@@ -280,22 +287,24 @@ fn prepare_superscript(
     st: &mut EngineState,
     q: NodePtr<Noad>,
     mut shift_up: Scaled,
+    style: MathStyle,
 ) -> Result<PreparedScript, Abort> {
-    let (glyph, font) = first_script_glyph(st, q.supscr())?;
+    let (glyph, font) = first_script_glyph(st, q.supscr(), style)?;
     let save_f = st.scanner.cur_f;
-    let clean_style = st.scanner.cur_style.sup();
+    let clean_style = style.sup();
     let prepared = clean_script_box(
         st,
         q.supscr(),
         clean_style,
         save_f,
         ScriptBoxAdjustment::Superscript,
+        style,
     )?;
     shift_up = shift_up.max(prepared.shift);
 
     let cur_f = st.scanner.cur_f;
     let box_height = st.mem[prepared.box_node].depth;
-    let x_height = st.fonts.math_x_height(&st.eqtb, st.scanner.cur_size);
+    let x_height = st.fonts.math_x_height(&st.eqtb, style.size());
     let clr = if st.fonts.font_is_ot_math(cur_f) {
         box_height + st.fonts.get_ot_math_constant(cur_f, SUPERSCRIPTBOTTOMMIN)
     } else {
@@ -317,6 +326,7 @@ fn finish_superscript_branch(
     superscript: PreparedScript,
     mut shift_down: Scaled,
     delta: Scaled,
+    style: MathStyle,
 ) -> Result<(), Abort> {
     let x = superscript.box_node;
     let shift_up = superscript.shift;
@@ -341,15 +351,13 @@ fn finish_superscript_branch(
         glyph: sub_g,
         font: sub_f,
         shift,
-    } = prepare_subscript(st, q, ScriptBoxAdjustment::Sub2, shift_down)?;
+    } = prepare_subscript(st, q, ScriptBoxAdjustment::Sub2, shift_down, style)?;
     shift_down = shift;
 
     let cur_f = st.scanner.cur_f;
     let x_height_node = st.mem[x].depth;
     let y_depth = st.mem[y].height;
-    let default_rule_thickness = st
-        .fonts
-        .default_rule_thickness(&st.eqtb, st.scanner.cur_size);
+    let default_rule_thickness = st.fonts.default_rule_thickness(&st.eqtb, style.size());
     let mut clr = if st.fonts.font_is_ot_math(cur_f) {
         st.fonts.get_ot_math_constant(cur_f, SUBSUPERSCRIPTGAPMIN)
             - ((shift_up - x_height_node) - (y_depth - shift_down))
@@ -362,7 +370,7 @@ fn finish_superscript_branch(
         shift_down += clr;
         let cur_f = st.scanner.cur_f;
         let x_height_node = st.mem[x].depth;
-        let x_height = st.fonts.math_x_height(&st.eqtb, st.scanner.cur_size);
+        let x_height = st.fonts.math_x_height(&st.eqtb, style.size());
         clr = if st.fonts.font_is_ot_math(cur_f) {
             st.fonts
                 .get_ot_math_constant(cur_f, SUPERSCRIPTBOTTOMMAXWITHSUBSCRIPT)
@@ -442,11 +450,12 @@ impl MemState {
 fn first_script_glyph(
     st: &mut EngineState,
     script_head: NodePtr<MathField>,
+    style: MathStyle,
 ) -> Result<(u16, FontId), Abort> {
     let mut script_g: u16 = 0;
     let mut script_f = NULL_FONT;
 
-    let initial_math_style = st.scanner.cur_style.sub();
+    let initial_math_style = style.sub();
     let (script_head, this_math_style) = st
         .mem
         .first_script_glyph_step(script_head, initial_math_style);
@@ -454,10 +463,7 @@ fn first_script_glyph(
 
     if let Some(script_head) = math_char {
         let save_f = st.scanner.cur_f;
-        let saved_math_style = st.scanner.cur_style;
-        st.scanner.cur_style = this_math_style;
-        set_cur_size_and_mu(st);
-        let fetched = fetch(st, script_head)?;
+        let fetched = fetch(st, script_head, this_math_style.size())?;
 
         let cur_f_after_fetch = fetched.f;
         let cur_c_after_fetch = fetched.c;
@@ -472,8 +478,6 @@ fn first_script_glyph(
         }
 
         st.scanner.cur_f = save_f;
-        st.scanner.cur_style = saved_math_style;
-        set_cur_size_and_mu(st);
     }
 
     Ok((script_g, script_f))
@@ -483,15 +487,16 @@ pub(super) fn make_scripts(
     st: &mut EngineState,
     q: NodePtr<Noad>,
     delta: Scaled,
+    style: MathStyle,
 ) -> Result<(), Abort> {
     let p = st.mem[q.any()].new_hlist;
-    let shifts = initial_script_shifts(st, p)?;
+    let shifts = initial_script_shifts(st, p, style)?;
 
     if st.mem[q.supscr()].math_type == EMPTY {
-        finish_subscript_only(st, q, p, shifts.down)?;
+        finish_subscript_only(st, q, p, shifts.down, style)?;
     } else {
-        let superscript = prepare_superscript(st, q, shifts.up)?;
-        finish_superscript_branch(st, q, p, superscript, shifts.down, delta)?;
+        let superscript = prepare_superscript(st, q, shifts.up, style)?;
+        finish_superscript_branch(st, q, p, superscript, shifts.down, delta, style)?;
     }
     Ok(())
 }
