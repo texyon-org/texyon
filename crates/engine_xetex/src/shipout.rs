@@ -249,14 +249,14 @@ fn ship_page(st: &mut crate::state::EngineState, page: NodePtr<BoxNode>) -> Resu
         if st.strings.job_name == StrNumber::NONE {
             crate::io::open_log_file(st)?;
         }
-        crate::io::pack_job_name(st, crate::engine::output_file_extension(st))?;
-        st.shipout.dvi.file = output_open(st.input.name_of_file_bytes(), false);
+        let path = crate::io::pack_job_name(st, crate::engine::output_file_extension(st))?;
+        st.shipout.dvi.file = output_open(&path, false);
         if st.shipout.dvi.file == INVALID_HANDLE {
             return Err(Abort::CannotOpenOutput {
-                name: st.input.name_of_file_bytes().into(),
+                name: path.as_slice().into(),
             });
         }
-        st.shipout.output_file_name = crate::io::make_name_string(st)?;
+        st.shipout.output_file_name = crate::io::make_name_string(st, &path)?;
     }
 
     if st.shipout.total_pages == 0 {

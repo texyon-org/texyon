@@ -386,7 +386,6 @@ impl FontState {
     pub(crate) fn release_linebreak_state(&mut self) {
         self.brk_iter = None;
         self.brk_locale_str_num = StrNumber::NONE;
-        self.saved_mapping_name = None;
     }
 
     /// The body of the XDV native font definition of `f`.

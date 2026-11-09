@@ -14,8 +14,8 @@ use super::cmd_chr::print_cmd_chr;
 use super::show::show_context;
 use super::{
     begin_diagnostic, end_diagnostic, note_warning_issued, print, print_code, print_esc,
-    print_group, print_hex, print_int, print_ln, print_name_of_file, print_nl, print_raw_bytes,
-    print_ucs_code, TexPrint,
+    print_group, print_hex, print_int, print_ln, print_nl, print_raw_bytes, print_ucs_code,
+    TexPrint,
 };
 
 /// Walks `base_ptr` down to the file at input level `level`, reporting whether it is a real file.
@@ -148,7 +148,12 @@ pub(crate) fn file_warning(st: &mut EngineState) {
     note_warning_issued(st);
 }
 
-pub(crate) fn font_feature_warning(st: &mut EngineState, feature: &[u8], setting: &[u8]) {
+pub(crate) fn font_feature_warning(
+    st: &mut EngineState,
+    feature: &[u8],
+    setting: &[u8],
+    font_name: &[u8],
+) {
     begin_diagnostic(st);
     crate::diagnostic::begin_warning(st);
     print_nl(st, "Unknown ");
@@ -160,13 +165,18 @@ pub(crate) fn font_feature_warning(st: &mut EngineState, feature: &[u8], setting
     print(st, "feature `");
     print_raw_bytes(st, feature);
     print(st, "' in font `");
-    print_name_of_file(st);
+    print_raw_bytes(st, font_name);
     print(st, "'.");
     crate::diagnostic::end_capture(st);
     end_diagnostic(st, false);
 }
 
-pub(crate) fn font_mapping_warning(st: &mut EngineState, mapping_name: &[u8], warning_type: i32) {
+pub(crate) fn font_mapping_warning(
+    st: &mut EngineState,
+    mapping_name: &[u8],
+    font_name: &[u8],
+    warning_type: i32,
+) {
     begin_diagnostic(st);
     // A loaded mapping is font tracing, not a problem.
     if warning_type == 0 {
@@ -177,7 +187,7 @@ pub(crate) fn font_mapping_warning(st: &mut EngineState, mapping_name: &[u8], wa
     }
     print_raw_bytes(st, mapping_name);
     print(st, "' for font `");
-    print_name_of_file(st);
+    print_raw_bytes(st, font_name);
     match warning_type {
         1 => print(st, "' not found."),
         2 => {

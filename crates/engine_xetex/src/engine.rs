@@ -1086,8 +1086,6 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     st.save_stack.data = Vec::new();
 
     let input = &mut st.input;
-    input.name_of_input_file = Vec::new();
-    input.abspath_of_input_file = Vec::new();
     input.nest.release();
     input.input_file = Vec::new();
     input.read_file = Default::default();
@@ -1095,7 +1093,6 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     input.param_stack.release();
     input.open_levels = Vec::new();
     input.buffer = crate::state::InputBuffer::default();
-    input.name_of_file = Vec::new();
 
     st.scanner.native_text = Vec::new();
     st.scanner.native_text_size = 0;

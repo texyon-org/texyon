@@ -203,10 +203,22 @@ fn icu_to_utf32(cnv: *mut libc::c_void, target: &mut [u8], source: &[u8]) -> (i3
     (len, err)
 }
 
-pub(crate) fn open_input_file(st: &mut EngineState, filefmt: FileFormat) -> usize {
+/// Where an opened input file was found.
+pub(crate) struct FoundInput {
+    /// The path plus the extension the bridge added, as TeX Live prints it.
+    pub name: Vec<u8>,
+    pub abspath: Vec<u8>,
+}
+
+/// Opens input `path`. `None` means it was not found.
+pub(crate) fn open_input_file(
+    st: &mut EngineState,
+    path: &[u8],
+    filefmt: FileFormat,
+) -> Option<(usize, FoundInput)> {
     let handle = if filefmt == FileFormat::TexyonPrimary {
         input_open_primary()
-    } else if st.input.name_of_file.first() == Some(&b'|') {
+    } else if path.first() == Some(&b'|') {
         crate::output::print_nl(st, "Warning: ");
         crate::diagnostic::begin_warning(st);
         crate::output::print(
@@ -214,42 +226,37 @@ pub(crate) fn open_input_file(st: &mut EngineState, filefmt: FileFormat) -> usiz
             "piped inputs from external commands are not implemented in Tectonic",
         );
         crate::diagnostic::end_capture(st);
-        return INVALID_HANDLE;
+        return None;
     } else {
-        input_open(st.input.name_of_file_bytes(), filefmt, false)
+        input_open(path, filefmt, false)
     };
 
     if handle == INVALID_HANDLE {
-        return INVALID_HANDLE;
+        return None;
     }
 
-    st.input.abspath_of_input_file = last_input_abspath();
-    let len = st.input.name_of_file_bytes().len();
-    st.input.name_of_file.truncate(len);
-    // TeX Live prints and reports the name the file was found under.
-    st.input.name_of_input_file = st.input.name_of_file.clone();
+    let mut name = path.to_vec();
     if filefmt != FileFormat::TexyonPrimary {
         if let Some(ext) = crate::bridge::last_input_extension() {
-            st.input.name_of_input_file.push(b'.');
-            st.input
-                .name_of_input_file
-                .extend_from_slice(ext.as_bytes());
+            name.push(b'.');
+            name.extend_from_slice(ext.as_bytes());
         }
     }
-    handle
+    let abspath = last_input_abspath();
+    Some((handle, FoundInput { name, abspath }))
 }
 
 /// Opens and configures an input file. `None` means the bridge open failed.
 pub(crate) fn u_open_in(
     st: &mut EngineState,
+    path: &[u8],
     filefmt: FileFormat,
     mut mode: i32,
     encoding_data: i32,
-) -> Result<Option<Box<UFile>>, Abort> {
-    let handle = open_input_file(st, filefmt);
-    if handle == INVALID_HANDLE {
+) -> Result<Option<(Box<UFile>, FoundInput)>, Abort> {
+    let Some((handle, found)) = open_input_file(st, path, filefmt) else {
         return Ok(None);
-    }
+    };
 
     let mut f = Box::new(UFile {
         handle,
@@ -284,7 +291,7 @@ pub(crate) fn u_open_in(
     }
 
     set_input_file_encoding(st, &mut f, mode, encoding_data)?;
-    Ok(Some(f))
+    Ok(Some((f, found)))
 }
 
 /// Sets the encoding mode, and the ICU converter if any, of an open file.
@@ -655,10 +662,19 @@ pub fn u_close(slot: crate::state::InputSlot) -> bool {
     false
 }
 
-/// Runs `name_of_file` back through the name scanner, giving the name of the file actually opened.
-fn rescan_opened_name(st: &mut EngineState) -> Result<FileName, Abort> {
-    let name16 = st.input.name_of_file16();
-    scan_whole_name(st, name16.into_iter().map(u32::from))
+/// Runs `path` back through the name scanner, giving the name of the file actually opened.
+fn rescan_opened_name(st: &mut EngineState, path: &[u8]) -> Result<FileName, Abort> {
+    scan_whole_name(st, utf16_units(path).into_iter().map(u32::from))
+}
+
+/// The UTF-16 units of UTF-8 `path`, as the pool stores a name.
+fn utf16_units(mut path: &[u8]) -> Vec<u16> {
+    let mut units = Vec::with_capacity(path.len());
+    while !path.is_empty() {
+        let (c, n) = crate::utf8::utf16_units(next_utf8_char(&mut path));
+        units.extend_from_slice(&c[..n]);
+    }
+    units
 }
 
 /// `\openin` and `\closein`.
@@ -678,13 +694,13 @@ pub(crate) fn open_or_close(st: &mut EngineState, open: bool) -> Result<(), Abor
     }
 
     crate::scan::scan_optional_equals(st)?;
-    scan_and_pack_name(st)?;
+    let path = scan_name_path(st)?;
 
     let mode = st.eqtb.int_par(IntPar::XetexDefaultInputMode);
     let encoding = st.eqtb.int_par(IntPar::XetexDefaultInputEncoding);
-    if let Some(file) = u_open_in(st, FileFormat::Tex, mode, encoding)? {
+    if let Some((file, _)) = u_open_in(st, &path, FileFormat::Tex, mode, encoding)? {
         st.input.read_file[n] = crate::state::InputSlot::Open(file);
-        rescan_opened_name(st)?;
+        rescan_opened_name(st, &path)?;
         st.input.read_open[n] = JUST_OPEN;
     }
 
@@ -697,6 +713,16 @@ pub(crate) struct FileName {
     pub name: StrNumber,
     pub area: StrNumber,
     pub ext: StrNumber,
+}
+
+impl FileName {
+    /// The name as one path: area, name, then extension.
+    pub(crate) fn path(self, strings: &crate::state::StringsState) -> Vec<u8> {
+        [self.area, self.name, self.ext]
+            .into_iter()
+            .flat_map(|part| strings.texstring_bytes(part))
+            .collect()
+    }
 }
 
 impl TexPrint for FileName {
@@ -838,15 +864,16 @@ fn scan_whole_name(
     Ok(scan.end_name(st)?.file)
 }
 
-pub(crate) fn make_name_string(st: &mut EngineState) -> Result<StrNumber, Abort> {
-    if st.strings.pool_ptr + st.input.name_of_file.len() as i32 > st.strings.pool_size
+/// `path` as a pool string, also run through the name scanner as WEB does.
+pub(crate) fn make_name_string(st: &mut EngineState, path: &[u8]) -> Result<StrNumber, Abort> {
+    if st.strings.pool_ptr + path.len() as i32 > st.strings.pool_size
         || st.strings.str_ptr == st.strings.max_strings
         || st.strings.cur_length() > 0
     {
         return Ok(StrNumber::from_raw(i32::from(b'?')));
     }
 
-    let name16 = st.input.name_of_file16();
+    let name16 = utf16_units(path);
     st.strings.append_units(&name16);
 
     let result = st.strings.make_string()?;
@@ -854,10 +881,15 @@ pub(crate) fn make_name_string(st: &mut EngineState) -> Result<StrNumber, Abort>
     Ok(result)
 }
 
-pub(crate) fn pack_job_name(st: &mut EngineState, s: &str) -> Result<(), Abort> {
+/// The job name with extension `s`. The extension becomes a pool string, as in WEB.
+pub(crate) fn pack_job_name(st: &mut EngineState, s: &str) -> Result<Vec<u8>, Abort> {
     let ext = st.strings.make_tex_string(s)?;
-    pack_file_name(st, st.strings.job_name, EMPTY_STRING, ext);
-    Ok(())
+    let file = FileName {
+        name: st.strings.job_name,
+        area: EMPTY_STRING,
+        ext,
+    };
+    Ok(file.path(&st.strings))
 }
 
 /// Opens the transcript and writes its banner.
@@ -867,9 +899,9 @@ pub(crate) fn open_log_file(st: &mut EngineState) -> Result<(), Abort> {
         st.strings.job_name = st.strings.make_tex_string("texput")?;
     }
 
-    pack_job_name(st, ".log")?;
+    let log_path = pack_job_name(st, ".log")?;
 
-    let handle = output_open(st.input.name_of_file_bytes(), false);
+    let handle = output_open(&log_path, false);
     if handle == INVALID_HANDLE {
         return Err(Abort::Internal("cannot open log file output"));
     }
@@ -877,7 +909,7 @@ pub(crate) fn open_log_file(st: &mut EngineState) -> Result<(), Abort> {
     st.shipout.log_bytes = 0;
     st.shipout.log_resumed_at = None;
 
-    st.strings.texmf_log_name = make_name_string(st)?;
+    st.strings.texmf_log_name = make_name_string(st, &log_path)?;
     st.shipout.selector = Selector::LogOnly;
     st.errors.log_opened = true;
 
@@ -908,8 +940,8 @@ pub(crate) fn reopen_resident_outputs(st: &mut EngineState) -> Result<(), Abort>
     st.shipout.dvi.file = INVALID_HANDLE;
 
     if st.errors.log_opened {
-        pack_job_name(st, ".log")?;
-        let handle = output_open(st.input.name_of_file_bytes(), false);
+        let log_path = pack_job_name(st, ".log")?;
+        let handle = output_open(&log_path, false);
         if handle == INVALID_HANDLE {
             return Err(Abort::Internal("cannot reopen log file output"));
         }
@@ -918,8 +950,8 @@ pub(crate) fn reopen_resident_outputs(st: &mut EngineState) -> Result<(), Abort>
     }
 
     if st.shipout.output_file_name != StrNumber::NONE {
-        pack_job_name(st, crate::engine::output_file_extension(st))?;
-        let handle = output_open(st.input.name_of_file_bytes(), false);
+        let dvi_path = pack_job_name(st, crate::engine::output_file_extension(st))?;
+        let handle = output_open(&dvi_path, false);
         if handle == INVALID_HANDLE {
             return Err(Abort::Internal("cannot reopen XDV file output"));
         }
@@ -927,15 +959,6 @@ pub(crate) fn reopen_resident_outputs(st: &mut EngineState) -> Result<(), Abort>
     }
 
     Ok(())
-}
-
-/// Builds `name_of_file` from area `a`, name `n` and extension `e`.
-pub(crate) fn pack_file_name(st: &mut EngineState, n: StrNumber, a: StrNumber, e: StrNumber) {
-    let name = &mut st.input.name_of_file;
-    name.clear();
-    for part in [a, n, e] {
-        name.extend_from_slice(&st.strings.texstring_bytes(part));
-    }
 }
 
 pub(crate) fn close_files_and_terminate(st: &mut EngineState) -> Result<(), Abort> {
@@ -978,11 +1001,9 @@ pub fn init_io(st: &mut EngineState) {
     st.input.first = first + 1;
 }
 
-pub(crate) fn scan_and_pack_name(st: &mut EngineState) -> Result<ScannedName, Abort> {
-    let scanned = scan_file_name(st)?;
-    let FileName { name, area, ext } = scanned.file;
-    pack_file_name(st, name, area, ext);
-    Ok(scanned)
+/// Scans a file name and returns it as one path.
+pub(crate) fn scan_name_path(st: &mut EngineState) -> Result<Vec<u8>, Abort> {
+    Ok(scan_file_name(st)?.file.path(&st.strings))
 }
 
 fn scan_file_name_braced(st: &mut EngineState) -> Result<NameScan, Abort> {
@@ -1091,27 +1112,26 @@ pub(crate) fn start_input(
         scan_file_name(st)?.file
     };
 
-    pack_file_name(st, scanned.name, scanned.area, scanned.ext);
+    let path = scanned.path(&st.strings);
     crate::input::begin_file_reading(st)?;
 
     let idx = i32::from(st.input.cur_input.index);
     let mode = st.eqtb.int_par(IntPar::XetexDefaultInputMode);
     let encoding = st.eqtb.int_par(IntPar::XetexDefaultInputEncoding);
-    let Some(file) = u_open_in(st, format, mode, encoding)? else {
+    let Some((file, found)) = u_open_in(st, &path, format, mode, encoding)? else {
         return Err(Abort::CannotOpenInput {
-            name: st.input.name_of_file_bytes().into(),
+            name: path.as_slice().into(),
         });
     };
     st.input.input_file[idx as usize] = crate::state::InputSlot::Open(file);
 
-    let opened = rescan_opened_name(st)?;
+    let opened = rescan_opened_name(st, &path)?;
 
-    let name = make_name_string(st)?;
+    let name = make_name_string(st, &path)?;
     st.input.cur_input.name = InputName::File(name);
     let in_open = st.input.in_open;
     st.input.open_levels[in_open].source_name = name;
-    let full_name = st.input.name_of_input_file.clone();
-    let full_name = st.strings.make_tex_string(full_name)?;
+    let full_name = st.strings.make_tex_string(&found.name)?;
     st.input.open_levels[in_open].full_source_name = full_name;
 
     if name == st.strings.str_ptr.prev() {
@@ -1158,7 +1178,7 @@ pub(crate) fn start_input(
 
     st.input.cur_input.state = NEW_LINE;
     let job_name = st.strings.texstring_bytes(st.strings.job_name);
-    crate::synctex::synctex_start_input(st, &job_name);
+    crate::synctex::synctex_start_input(st, &job_name, &found.abspath);
     st.mem.line = 1;
     input_slot_line(st, FileSlot::Input(idx as usize))?;
     st.input.cur_input.limit = st.input.last;

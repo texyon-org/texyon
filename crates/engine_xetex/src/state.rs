@@ -309,11 +309,6 @@ pub(crate) struct InputClusterState {
     pub max_buf_stack: BufPos,
     pub read_open: [u8; 17],
     pub read_file: [InputSlot; 16],
-    /// UTF-8, and cut short by a NUL between `check_for_tfm_font_mapping` and the open.
-    pub name_of_file: Vec<u8>,
-    /// Name of the most recently opened input file.
-    pub name_of_input_file: Vec<u8>,
-    pub abspath_of_input_file: Vec<u8>,
 }
 
 pub(crate) struct EqtbState {
@@ -1183,9 +1178,6 @@ pub(crate) struct FontState {
     /// into a font slot.
     pub loaded_font_mapping: Option<std::sync::Arc<FontMappingHandle>>,
     pub loaded_font_flags: i8,
-    /// TFM mapping name captured during filename parsing and consumed by the
-    /// subsequent font load.
-    pub saved_mapping_name: Option<Vec<u8>>,
     /// Per-engine ICU line-break cache and its string-pool locale key.
     pub brk_iter: Option<LinebreakHandle>,
     pub brk_locale_str_num: StrNumber,
@@ -1244,7 +1236,6 @@ impl Default for FontState {
         Self {
             loaded_font_mapping: None,
             loaded_font_flags: 0,
-            saved_mapping_name: None,
             brk_iter: None,
             brk_locale_str_num: StrNumber::from_raw(0),
             font_layout_engine: PerFont::default(),
@@ -1871,22 +1862,6 @@ impl InputClusterState {
     #[inline]
     pub(crate) fn buffer_in_use(&self) -> usize {
         (self.max_buf_stack.max(self.last).max(self.first) + 1).index()
-    }
-
-    /// `name_of_file` up to a font mapping cut.
-    pub(crate) fn name_of_file_bytes(&self) -> &[u8] {
-        let name = &self.name_of_file;
-        &name[..name.iter().position(|&b| b == 0).unwrap_or(name.len())]
-    }
-
-    pub(crate) fn name_of_file16(&self) -> Vec<u16> {
-        let mut s = &self.name_of_file[..];
-        let mut units = Vec::with_capacity(s.len());
-        while !s.is_empty() {
-            let (c, n) = crate::utf8::utf16_units(crate::utf8::next_utf8_char(&mut s));
-            units.extend_from_slice(&c[..n]);
-        }
-        units
     }
 }
 

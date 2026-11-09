@@ -277,7 +277,8 @@ pub fn synctex_terminate(st: &mut EngineState) {
     synctex.abort();
 }
 
-pub fn synctex_start_input(st: &mut EngineState, job_name: &[u8]) {
+/// Tags the input file just opened at absolute path `current_name`.
+pub fn synctex_start_input(st: &mut EngineState, job_name: &[u8], current_name: &[u8]) {
     let synctex = &mut st.synctex;
     if synctex.flags.off {
         return;
@@ -290,7 +291,6 @@ pub fn synctex_start_input(st: &mut EngineState, job_name: &[u8]) {
     let tag = synctex.synctex_tag_counter as i32;
     st.input.cur_input.synctex_tag = tag;
     st.mem.cur_synctex_tag = tag;
-    let current_name = &st.input.abspath_of_input_file;
     if let Some(index) = &mut synctex.preview_index {
         index.register_name(tag, String::from_utf8_lossy(current_name).into_owned());
     }
@@ -307,7 +307,7 @@ pub fn synctex_start_input(st: &mut EngineState, job_name: &[u8]) {
     if synctex.file != INVALID_HANDLE
         || synctex.synctex_dot_open(&st.eqtb, job_name) != INVALID_HANDLE
     {
-        synctex.record_input(tag, &st.input.abspath_of_input_file);
+        synctex.record_input(tag, current_name);
     }
 }
 

@@ -242,16 +242,16 @@ fn out_write_stream(
         area: open.area,
         ext,
     };
-    crate::io::pack_file_name(st, file.name, file.area, file.ext);
-    let handle = output_open(st.input.name_of_file_bytes(), false);
+    let path = file.path(&st.strings);
+    let handle = output_open(&path, false);
     if handle == INVALID_HANDLE {
         return Err(Abort::CannotOpenOutput {
-            name: st.input.name_of_file_bytes().into(),
+            name: path.as_slice().into(),
         });
     }
     st.shipout.write_file[stream] = handle;
     st.shipout.write_open[stream] = true;
-    st.shipout.write_name[stream] = Some(st.input.name_of_file.clone());
+    st.shipout.write_name[stream] = Some(path);
     st.shipout.write_prefix[stream].clear();
     if st.errors.log_opened {
         let old_setting = st.shipout.selector;

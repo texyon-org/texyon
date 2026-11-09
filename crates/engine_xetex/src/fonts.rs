@@ -5,10 +5,10 @@ use crate::consts::{
     DESIGN_SIZE, EMPTY_STRING, INVALID_HANDLE, NATIVE_NODE_SIZE, NULL_FONT, TOO_BIG_CHAR,
 };
 use crate::ext::{
-    aat_get_font_metrics, apply_tfm_font_mapping, find_native_font, load_tfm_font_mapping,
-    ot_get_font_metrics, NativeFontMetrics,
+    aat_get_font_metrics, apply_tfm_font_mapping, find_native_font, load_mapping_file,
+    ot_get_font_metrics, split_tfm_font_mapping, NativeFontMetrics,
 };
-use crate::io::{open_input_file, pack_file_name, FileName, ScannedName};
+use crate::io::{open_input_file, FileName, ScannedName};
 use crate::mem_types::B16x4;
 use crate::node::{NativeWordNode, NodePtr, WhatsitSubtype};
 use crate::output::{
@@ -549,7 +549,7 @@ pub(crate) fn read_font_info(
     let FileName {
         name: nom,
         area: aire,
-        ext,
+        ..
     } = name.file;
     let font = FontSpec::new(u, name, s);
     let mut name_too_long = false;
@@ -557,13 +557,19 @@ pub(crate) fn read_font_info(
     let mut g = NULL_FONT;
     let mut tfm_file = INVALID_HANDLE;
 
-    pack_file_name(st, nom, aire, ext);
+    // Native fonts get the name as written, TFM lookups a form without extension and mapping.
+    let path = name.file.path(&st.strings);
+    let tfm_path = FileName {
+        ext: EMPTY_STRING,
+        ..name.file
+    }
+    .path(&st.strings);
+    let (tfm_name, tfm_mapping) = split_tfm_font_mapping(&tfm_path);
 
     if st.eqtb.int_par(IntPar::XetexTracingFonts) > 0 {
         begin_diagnostic(st);
         print_nl(st, "Requested font \"");
-        let name = st.input.name_of_file_bytes().to_vec();
-        print(st, name.as_slice());
+        print(st, path.as_slice());
         print_char(st, b'"');
         if s < Scaled::ZERO {
             print(st, " scaled ");
@@ -586,7 +592,7 @@ pub(crate) fn read_font_info(
         }
 
         if name.quoted {
-            g = load_native_font(st, font)?;
+            g = load_native_font(st, font, &path)?;
             if g != NULL_FONT {
                 break 'read;
             }
@@ -597,20 +603,16 @@ pub(crate) fn read_font_info(
             bad!();
         }
 
-        pack_file_name(st, nom, aire, EMPTY_STRING);
-        st.fonts
-            .check_for_tfm_font_mapping(&mut st.input.name_of_file);
-
-        tfm_file = open_input_file(st, FileFormat::Tfm);
-        if tfm_file == INVALID_HANDLE {
+        let Some((file, _)) = open_input_file(st, tfm_name, FileFormat::Tfm) else {
             if !name.quoted {
-                g = load_native_font(st, font)?;
+                g = load_native_font(st, font, &path)?;
                 if g != NULL_FONT {
                     break 'read;
                 }
             }
             bad!();
-        }
+        };
+        tfm_file = file;
         file_opened = true;
 
         let (parse, scale_side_effect) = st
@@ -633,8 +635,10 @@ pub(crate) fn read_font_info(
             TfmParse::Bad => bad!(),
             TfmParse::Loaded(f) => {
                 g = f;
-                let mapping = load_tfm_font_mapping(st)?;
-                st.fonts.font_mapping[f] = mapping;
+                st.fonts.font_mapping[f] = match tfm_mapping {
+                    Some(mapping) => load_mapping_file(st, mapping, true, tfm_name)?,
+                    None => None,
+                };
             }
         }
     }
@@ -672,8 +676,7 @@ pub(crate) fn read_font_info(
         if g == NULL_FONT {
             print(st, "font not found, using \"nullfont\"");
         } else {
-            let name = st.input.name_of_file_bytes().to_vec();
-            print(st, name.as_slice());
+            print(st, tfm_name);
         }
         end_diagnostic(st, false);
     }
@@ -1015,11 +1018,10 @@ impl FontState {
     }
 }
 
-/// Load a native OpenType/Graphite font and set up its TeX font tables.
-fn load_native_font(st: &mut EngineState, font: FontSpec) -> Result<FontId, Abort> {
+/// Load native OpenType/Graphite font `name` and set up its TeX font tables.
+fn load_native_font(st: &mut EngineState, font: FontSpec, name: &[u8]) -> Result<FontId, Abort> {
     let s = font.size;
-    let name_of_file = st.input.name_of_file_bytes().to_vec();
-    let Some(font_engine) = find_native_font(st, &name_of_file, s)? else {
+    let Some((font_engine, full_name)) = find_native_font(st, name, s)? else {
         return Ok(NULL_FONT);
     };
 
@@ -1032,10 +1034,10 @@ fn load_native_font(st: &mut EngineState, font: FontSpec) -> Result<FontId, Abor
         loaded_font_design_size()
     };
 
-    if st.strings.pool_ptr + st.input.name_of_file.len() as i32 > st.strings.pool_size {
+    if st.strings.pool_ptr + full_name.len() as i32 > st.strings.pool_size {
         return Err(st.strings.pool_overflow());
     }
-    for &b in &st.input.name_of_file {
+    for &b in &full_name {
         st.strings.append_char(u16::from(b));
     }
     let full_name = st.strings.make_string()?;

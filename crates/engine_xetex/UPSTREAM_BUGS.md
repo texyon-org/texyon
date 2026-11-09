@@ -98,3 +98,22 @@ entry names a later TeX Live version.
   the upstream harness, whose formats leave the parameter at 0.
 - **Fix:** print the trace before `open_log_file`, or save `cur_name`/`cur_ext` around it.
 - **TeXyoN:** prints the input's own name, test `the_first_input_is_traced_by_its_own_name`.
+
+## 8. An unquoted native font is loaded under its TFM lookup name
+
+- **Where:** `read_font_info` and `check_for_tfm_font_mapping` (XeTeX_ext.c).
+- **Bug:** an unquoted name is tried as a TFM font first. For that lookup `name_of_file` is packed
+  without the extension, and `check_for_tfm_font_mapping` writes a NUL over `:mapping=`. When no
+  TFM exists, the native fallback reads that buffer. Everything after the last `.` is lost, so
+  `[lmroman12-regular.otf]:mapping=tex-text` loads `[lmroman12-regular` with no mapping and
+  `Font:letterspace=50.5` gets letterspace 50. A `:mapping=` is dropped too, and for a `[file]`
+  name `load_native_font` copies the buffer past the NUL into the font name.
+- **Repro:** `\font\x=[lmnoext]:mapping=tex-text` (an extensionless copy of an OpenType font) gives
+  `\fontname` `"[lmnoext]^^@mapping=tex-text"` with TeX Live 2025 xetex, and `a--b` keeps its
+  hyphens. Quoted, the same name gets the mapping. Probe `xetex-unquoted_native_font_name`.
+- **Fix:** pass the name as written to the native fallback and keep the TFM form for the TFM
+  lookup only.
+- **TeXyoN:** that fix. Unquoted and quoted names load the same native font when no TFM exists.
+  One cost: unquoted `DejaVuSans.ttf` no longer finds the installed `DejaVuSans`, as quoted
+  `"DejaVuSans.ttf"` already did not. Listed in `tests/upstream/known.tsv`, tests
+  `an_unquoted_native_font_keeps_its_name_as_written` and `an_unquoted_native_font_loads_its_mapping`.

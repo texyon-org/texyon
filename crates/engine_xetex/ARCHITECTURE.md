@@ -210,7 +210,7 @@ Crate and C boundaries:
   line breaking and bidi, with their disposal, plus the HarfBuzz tag and
   `with_c_str` helpers), `io.rs` (ICU input converters), `pic.rs` and
   `engine.rs` (pdf_io), `compat.rs` (Windows time calls). File names are
-  Rust bytes (`name_of_file`, `name_of_input_file`, the synctex and
+  Rust bytes (font and input paths, the synctex and
   source-special names) and become C strings only at those calls.
 - Raw pointers stay in those modules. Elsewhere `unsafe` is limited to
   plain-data byte views (`mem_types.rs`, `state.rs`, `format_io.rs`),

@@ -305,3 +305,27 @@ fn the_first_input_is_traced_by_its_own_name() {
     let r = run_on_format(r"\tracingstacklevels=1", r"\relax");
     assert_eq!(r.lines_starting("~INPUT"), ["~INPUT texput.tex"]);
 }
+
+#[test]
+fn an_unquoted_native_font_keeps_its_name_as_written() {
+    let r = run(r"\font\a=[lmroman12-regular.otf]:letterspace=50.5 at 10pt
+\font\b=[lmroman12-regular]:mapping=nosuchmap at 10pt
+\immediate\write-1{font: \fontname\a}
+\immediate\write-1{font: \fontname\b}");
+    assert_eq!(
+        r.lines_starting("font: "),
+        [
+            r#"font: "[lmroman12-regular.otf]:letterspace=50.5" at 10.0pt"#,
+            r#"font: "[lmroman12-regular]:mapping=nosuchmap" at 10.0pt"#,
+        ]
+    );
+}
+
+#[test]
+fn an_unquoted_native_font_loads_its_mapping() {
+    let r = run(r"\font\x=[lmroman12-regular.otf]:mapping=nosuchmap at 10pt");
+    assert_eq!(
+        r.lines_starting("Font mapping"),
+        ["Font mapping `nosuchmap.tec' for font `[lmroman12-regular.otf]:mapping=nosuchma"]
+    );
+}

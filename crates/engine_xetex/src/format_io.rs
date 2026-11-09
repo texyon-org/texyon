@@ -322,15 +322,15 @@ pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     st.strings.format_ident = st.strings.make_string()?;
-    crate::io::pack_job_name(st, ".fmt")?;
+    let path = crate::io::pack_job_name(st, ".fmt")?;
 
-    let handle = output_open(st.input.name_of_file_bytes(), false);
+    let handle = output_open(&path, false);
     if handle == INVALID_HANDLE {
         return Err(Abort::Internal("cannot open format output file"));
     }
 
     print_nl(st, "Beginning to dump on file ");
-    let name_string = crate::io::make_name_string(st)?;
+    let name_string = crate::io::make_name_string(st, &path)?;
     print(st, name_string);
 
     st.strings.flush_string();
@@ -355,9 +355,7 @@ pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
 pub fn load_fmt_file(st: &mut EngineState, dump_name: &str) -> Result<(), Abort> {
     let loc = st.input.cur_input.loc;
 
-    st.input.name_of_file = dump_name.as_bytes().to_vec();
-
-    let handle = input_open(st.input.name_of_file_bytes(), FileFormat::Format, false);
+    let handle = input_open(dump_name.as_bytes(), FileFormat::Format, false);
     if handle == INVALID_HANDLE {
         return Err(Abort::Internal("cannot open the format file"));
     }

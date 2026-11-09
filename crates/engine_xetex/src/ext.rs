@@ -10,7 +10,7 @@ use crate::fonts::OTGR_FONT_FLAG;
 use crate::io::{AUTO, ICUMAPPING, RAW, UTF16BE, UTF16LE, UTF8};
 use crate::layout::{hb_tag, FontMappingHandle};
 use crate::params::IntPar;
-use crate::state::{EngineState, ErrorState, FontEngineHandle, FontState};
+use crate::state::{EngineState, ErrorState, FontEngineHandle};
 use crate::units::{FontId, Scaled};
 use std::ffi::c_int;
 use std::sync::Arc;
@@ -145,7 +145,7 @@ fn read_rgb_a(s: &mut &[u8]) -> u32 {
     (rgb_value << 8) + if digits == 2 { alpha } else { 0xFF }
 }
 
-/// The input mode named `name_of_file`, with the ICU converter name string
+/// The input mode named `bytes`, with the ICU converter name string
 /// for `ICUMAPPING`.
 fn get_encoding_mode_and_info(st: &mut EngineState, bytes: &[u8]) -> Result<(c_int, i32), Abort> {
     for (name, mode) in [
@@ -237,12 +237,13 @@ fn read_feature_number(spec: &[u8]) -> Option<(u32, c_int)> {
     (i == spec.len()).then_some((f, v))
 }
 
-/// Load TECkit mapping `name` (plus `.tec`), mapping to bytes for TFM fonts or
-/// to UTF-16 for native ones.
-fn load_mapping_file(
+/// Load TECkit mapping `name` (plus `.tec`) for font `font_name`, mapping to
+/// bytes for TFM fonts or to UTF-16 for native ones.
+pub(crate) fn load_mapping_file(
     st: &mut EngineState,
     name: &[u8],
     byte_mapping: bool,
+    font_name: &[u8],
 ) -> Result<Option<Arc<FontMappingHandle>>, Abort> {
     let file_name = [name, b".tec"].concat();
     let name_len = file_name
@@ -253,7 +254,7 @@ fn load_mapping_file(
 
     let map = input_open(name, FileFormat::MiscFonts, false);
     if map == 0 {
-        crate::output::font_mapping_warning(st, name, 1);
+        crate::output::font_mapping_warning(st, name, font_name, 1);
         return Ok(None);
     }
 
@@ -274,47 +275,26 @@ fn load_mapping_file(
     let (cnv, _) = FontMappingHandle::new(Some(&mapping), map_forward, UTF16_NATIVE, target_form);
 
     match &cnv {
-        None => crate::output::font_mapping_warning(st, name, 2),
+        None => crate::output::font_mapping_warning(st, name, font_name, 2),
         Some(_) if st.eqtb.int_par(IntPar::XetexTracingFonts) > 1 => {
-            crate::output::font_mapping_warning(st, name, 0)
+            crate::output::font_mapping_warning(st, name, font_name, 0)
         }
         Some(_) => {}
     }
     Ok(cnv.map(Arc::new))
 }
 
-impl FontState {
-    /// Cut a `:mapping=` suffix off `name_of_file`, saving the mapping name.
-    pub(crate) fn check_for_tfm_font_mapping(&mut self, name_of_file: &mut [u8]) {
-        const KEY: &[u8] = b":mapping=";
-        self.saved_mapping_name = None;
-        let len = name_of_file
-            .iter()
-            .position(|&b| b == 0)
-            .unwrap_or(name_of_file.len());
-        let Some(at) = name_of_file[..len]
-            .windows(KEY.len())
-            .position(|w| w == KEY)
-        else {
-            return;
-        };
-        name_of_file[at] = 0;
-        // C's signed `char` also skips bytes 0x80 and up.
-        let value = &name_of_file[at + KEY.len()..len];
-        let start = value.iter().position(|&b| b as i8 > b' ' as i8);
-        if let Some(start) = start {
-            self.saved_mapping_name = Some(value[start..].to_vec());
-        }
-    }
-}
-
-pub(crate) fn load_tfm_font_mapping(
-    st: &mut EngineState,
-) -> Result<Option<Arc<FontMappingHandle>>, Abort> {
-    let Some(name) = st.fonts.saved_mapping_name.take() else {
-        return Ok(None);
+/// Split a TFM font name at a `:mapping=` suffix into the name to look up and
+/// the mapping, if one is named.
+pub(crate) fn split_tfm_font_mapping(path: &[u8]) -> (&[u8], Option<&[u8]>) {
+    const KEY: &[u8] = b":mapping=";
+    let Some(at) = path.windows(KEY.len()).position(|w| w == KEY) else {
+        return (path, None);
     };
-    load_mapping_file(st, &name, true)
+    let value = &path[at + KEY.len()..];
+    // C's signed `char` also skips bytes 0x80 and up.
+    let start = value.iter().position(|&b| b as i8 > b' ' as i8);
+    (&path[..at], start.map(|start| &value[start..]))
 }
 
 pub(crate) fn apply_tfm_font_mapping(cnv: &FontMappingHandle, c: c_int) -> c_int {
@@ -340,6 +320,7 @@ struct CommonFeatures {
 /// whether it was well formed.
 fn read_common_feature(
     st: &mut EngineState,
+    font_name: &[u8],
     feat: &[u8],
     start: usize,
     end: usize,
@@ -350,7 +331,8 @@ fn read_common_feature(
         let Ok(value) = value else {
             return Ok(Some(false));
         };
-        st.fonts.loaded_font_mapping = load_mapping_file(st, &feat[start + value..end], false)?;
+        st.fonts.loaded_font_mapping =
+            load_mapping_file(st, &feat[start + value..end], false, font_name)?;
         return Ok(Some(true));
     }
 
@@ -388,12 +370,13 @@ fn read_common_feature(
 }
 
 /// Build the OpenType/Graphite layout engine for `font` with the options in
-/// the feature string `feat`.
+/// the feature string `feat`. Warnings name the font `font_name`.
 fn load_ot_font(
     st: &mut EngineState,
     mut font: Font,
     scaled_size: Scaled,
     feat: Option<&[u8]>,
+    font_name: &[u8],
 ) -> Result<Option<FontEngineHandle>, Abort> {
     let mut script = HB_TAG_NONE;
     let mut language: Option<&[u8]> = None;
@@ -460,7 +443,8 @@ fn load_ot_font(
                     shapers.push(&feat[cp1 + value..cp2]);
                     break 'option Some(true);
                 }
-                if let Some(valid) = read_common_feature(st, feat, cp1, cp2, &mut opts)? {
+                if let Some(valid) = read_common_feature(st, font_name, feat, cp1, cp2, &mut opts)?
+                {
                     break 'option Some(valid);
                 }
                 if let Some(probe) = &probe {
@@ -504,7 +488,7 @@ fn load_ot_font(
             };
 
             if parsed != Some(true) {
-                crate::output::font_feature_warning(st, spec, &[]);
+                crate::output::font_feature_warning(st, spec, &[], font_name);
             }
             cp1 = cp2;
         }
@@ -592,12 +576,13 @@ impl ErrorState {
 }
 
 /// Look up native font `name` (a `[file]` path or an installed font name with
-/// `/variant` and `:features`) and build its layout engine.
+/// `/variant` and `:features`) and build its layout engine. Also returns the
+/// font's full name: `name` for a file, the installed font's name otherwise.
 pub(crate) fn find_native_font(
     st: &mut EngineState,
     name: &[u8],
     mut scaled_size: Scaled,
-) -> Result<Option<FontEngineHandle>, Abort> {
+) -> Result<Option<(FontEngineHandle, Vec<u8>)>, Abort> {
     let mut rval = None;
 
     st.fonts.loaded_font_mapping = None;
@@ -629,7 +614,8 @@ pub(crate) fn find_native_font(
                 }
             }
 
-            rval = load_ot_font(st, font, scaled_size, feat_string.as_deref())?;
+            rval = load_ot_font(st, font, scaled_size, feat_string.as_deref(), name)?
+                .map(|engine| (engine, name.to_vec()));
             if rval.is_some() && st.eqtb.int_par(IntPar::XetexTracingFonts) > 0 {
                 crate::output::begin_diagnostic(st);
                 crate::output::print_nl(st, b' ');
@@ -659,15 +645,15 @@ pub(crate) fn find_native_font(
             let mut full_name = FontManager::with_font_manager(|mgr| {
                 mgr.get_full_name(&font_ref).to_bytes().to_vec()
             });
-            st.input.name_of_file.clone_from(&full_name);
 
             if scaled_size < Scaled::ZERO {
                 let font = font_from_platform(&font_ref, scaled_size);
                 scaled_size = st.errors.scale_by_design_size(font, scaled_size);
             }
 
+            let mut engine = None;
             if let Some(font) = font_from_platform(&font_ref, scaled_size) {
-                rval = load_ot_font(st, font, scaled_size, feat_string.as_deref())?;
+                engine = load_ot_font(st, font, scaled_size, feat_string.as_deref(), &full_name)?;
             }
 
             if let Some(var) = var_string.as_deref().filter(|v| !v.is_empty()) {
@@ -678,7 +664,7 @@ pub(crate) fn find_native_font(
                 full_name.push(b':');
                 full_name.extend_from_slice(feat);
             }
-            st.input.name_of_file = full_name;
+            rval = engine.map(|engine| (engine, full_name));
         }
     }
 
@@ -869,30 +855,26 @@ pub(crate) fn gr_print_font_name(
     }
 }
 
-pub(crate) fn gr_font_get_named(
-    st: &EngineState,
-    what: LastItemCode,
-    engine: &FontEngineHandle,
-) -> i32 {
+pub(crate) fn gr_font_get_named(what: LastItemCode, engine: &FontEngineHandle, name: &[u8]) -> i32 {
     if what != LastItemCode::XetexFindFeatureByName {
         return -1;
     }
     engine
-        .find_graphite_feature_named(&st.input.name_of_file)
+        .find_graphite_feature_named(name)
         .map_or(-1, |id| id as i32)
 }
 
 pub(crate) fn gr_font_get_named_1(
-    st: &EngineState,
     what: LastItemCode,
     engine: &FontEngineHandle,
     param: i32,
+    name: &[u8],
 ) -> i32 {
     if what != LastItemCode::XetexFindSelectorByName {
         return -1;
     }
     engine
-        .find_graphite_feature_setting_named(param as u32, &st.input.name_of_file)
+        .find_graphite_feature_setting_named(param as u32, name)
         .map_or(-1, i32::from)
 }
 

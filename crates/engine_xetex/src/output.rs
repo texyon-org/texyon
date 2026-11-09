@@ -1034,11 +1034,6 @@ pub(crate) fn print_font_name_and_size(st: &mut EngineState, f: FontId) {
     }
 }
 
-fn print_name_of_file(st: &mut EngineState) {
-    let name = st.input.name_of_file_bytes().to_vec();
-    print_raw_bytes(st, &name);
-}
-
 /// Prints `bytes` with `print_raw_char`, one column each.
 pub(crate) fn print_raw_bytes(st: &mut EngineState, bytes: &[u8]) {
     for &b in bytes {

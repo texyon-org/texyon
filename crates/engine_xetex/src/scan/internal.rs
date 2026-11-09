@@ -415,7 +415,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<i32, Abo
         LastItemCode::XetexFindVariationByName => {
             let (f, _, fa) = scan_font_engine(st)?;
             if fa == AAT_FONT_FLAG {
-                crate::io::scan_and_pack_name(st)?;
+                crate::io::scan_file_name(st)?;
                 aat_font_get_named(m)
             } else {
                 font_query_error(st, m, f, "; not an AAT font")?;
@@ -425,11 +425,11 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<i32, Abo
         LastItemCode::XetexFindFeatureByName => {
             let (f, engine, fa) = scan_font_engine(st)?;
             if fa == AAT_FONT_FLAG {
-                crate::io::scan_and_pack_name(st)?;
+                crate::io::scan_file_name(st)?;
                 aat_font_get_named(m)
             } else if let Some(engine) = graphite_engine(&engine) {
-                crate::io::scan_and_pack_name(st)?;
-                gr_font_get_named(st, m, engine)
+                let name = crate::io::scan_name_path(st)?;
+                gr_font_get_named(m, engine, &name)
             } else {
                 font_query_error(st, m, f, "; not an AAT or Graphite font")?;
                 -1
@@ -439,12 +439,12 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<i32, Abo
             let (f, engine, fa) = scan_font_engine(st)?;
             if fa == AAT_FONT_FLAG {
                 let k = scan_int(st)?;
-                crate::io::scan_and_pack_name(st)?;
+                crate::io::scan_file_name(st)?;
                 aat_font_get_named_1(m, k)
             } else if let Some(engine) = graphite_engine(&engine) {
                 let k = scan_int(st)?;
-                crate::io::scan_and_pack_name(st)?;
-                gr_font_get_named_1(st, m, engine, k)
+                let name = crate::io::scan_name_path(st)?;
+                gr_font_get_named_1(m, engine, k, &name)
             } else {
                 font_query_error(st, m, f, "; not an AAT or Graphite font")?;
                 -1
@@ -504,9 +504,8 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<i32, Abo
         LastItemCode::XetexGlyphIndex => {
             let f = st.eqtb.cur_font();
             if st.fonts.is_native_font(f) {
-                crate::io::scan_and_pack_name(st)?;
-                let name = st.input.name_of_file_bytes();
-                st.fonts.map_glyph_to_index(f, name)?
+                let name = crate::io::scan_name_path(st)?;
+                st.fonts.map_glyph_to_index(f, &name)?
             } else {
                 font_query_error(st, m, f, "; not a native platform font")?;
                 0
@@ -538,8 +537,8 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<i32, Abo
         LastItemCode::PdfLastXPos => st.shipout.pdf_last_x_pos,
         LastItemCode::PdfLastYPos => st.shipout.pdf_last_y_pos,
         LastItemCode::XetexPdfPageCount => {
-            crate::io::scan_and_pack_name(st)?;
-            crate::pic::count_pdf_file_pages_named(st.input.name_of_file_bytes())?
+            let name = crate::io::scan_name_path(st)?;
+            crate::pic::count_pdf_file_pages_named(&name)?
         }
         LastItemCode::CurrentGroupLevel => i32::from(st.save_stack.cur_level) - 1,
         LastItemCode::CurrentGroupType => st.save_stack.cur_group as i32,
@@ -997,9 +996,8 @@ pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<Fon
 
 pub(crate) fn scan_glyph_number(st: &mut EngineState, f: FontId) -> Result<i32, Abort> {
     let v = if scan_keyword(st, "/")? {
-        crate::io::scan_and_pack_name(st)?;
-        let name = st.input.name_of_file_bytes();
-        st.fonts.map_glyph_to_index(f, name)?
+        let name = crate::io::scan_name_path(st)?;
+        st.fonts.map_glyph_to_index(f, &name)?
     } else if scan_keyword(st, "u")? {
         let c = scan_char_num(st)?;
         st.fonts.map_char_to_glyph(f, c)?

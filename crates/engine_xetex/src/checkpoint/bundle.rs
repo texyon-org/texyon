@@ -438,9 +438,6 @@ struct InputBundle {
     last: BufPos,
     max_buf_stack: BufPos,
     read_open: [u8; 17],
-    name_of_file: Vec<u8>,
-    name_of_input_file: Vec<u8>,
-    abspath_of_input_file: Vec<u8>,
 }
 
 /// The live part of a [`TexStack`], with its depth and high-water mark.
@@ -498,9 +495,6 @@ impl InputBundle {
             last: src.last,
             max_buf_stack: src.max_buf_stack,
             read_open: src.read_open,
-            name_of_file: src.name_of_file.clone(),
-            name_of_input_file: src.name_of_input_file.clone(),
-            abspath_of_input_file: src.abspath_of_input_file.clone(),
         }
     }
 
@@ -523,10 +517,6 @@ impl InputBundle {
         dst.last = self.last;
         dst.max_buf_stack = self.max_buf_stack;
         dst.read_open = self.read_open;
-        dst.name_of_file.clone_from(&self.name_of_file);
-        dst.name_of_input_file.clone_from(&self.name_of_input_file);
-        dst.abspath_of_input_file
-            .clone_from(&self.abspath_of_input_file);
     }
 
     fn allocated_bytes(&self) -> usize {
@@ -535,7 +525,6 @@ impl InputBundle {
             + vec_bytes(&self.param_stack.slots)
             + vec_bytes(&self.nest.slots)
             + vec_bytes(&self.open_levels)
-            + vec_bytes(&self.name_of_file)
     }
 }
 
@@ -596,7 +585,6 @@ font_arrays! {
 struct FontBundle {
     loaded_font_mapping: Option<Arc<FontMappingHandle>>,
     loaded_font_flags: i8,
-    saved_mapping_name: Option<Vec<u8>>,
     loaded_font_letter_space: Scaled,
     xtx_ligature_present: bool,
     gave_char_warning_help: bool,
@@ -617,7 +605,6 @@ impl FontBundle {
         let FontState {
             loaded_font_mapping,
             loaded_font_flags,
-            saved_mapping_name,
             brk_iter: _,
             brk_locale_str_num: _,
             font_layout_engine,
@@ -667,7 +654,6 @@ impl FontBundle {
         Self {
             loaded_font_mapping: loaded_font_mapping.clone(),
             loaded_font_flags: *loaded_font_flags,
-            saved_mapping_name: saved_mapping_name.clone(),
             loaded_font_letter_space: *loaded_font_letter_space,
             xtx_ligature_present: *xtx_ligature_present,
             gave_char_warning_help: *gave_char_warning_help,
@@ -702,7 +688,6 @@ impl FontBundle {
         dst.loaded_font_mapping
             .clone_from(&self.loaded_font_mapping);
         dst.loaded_font_flags = self.loaded_font_flags;
-        dst.saved_mapping_name.clone_from(&self.saved_mapping_name);
         dst.loaded_font_letter_space = self.loaded_font_letter_space;
         dst.xtx_ligature_present = self.xtx_ligature_present;
         dst.gave_char_warning_help = self.gave_char_warning_help;

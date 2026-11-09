@@ -286,8 +286,7 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
         }
 
         ExtensionCode::InputEncoding => {
-            crate::io::scan_and_pack_name(st)?;
-            let name = st.input.name_of_file_bytes().to_vec();
+            let name = crate::io::scan_name_path(st)?;
             let (enc_mode, info) = get_encoding_mode_and_info(st, &name)?;
             if enc_mode == AUTO {
                 crate::errors::error(
@@ -309,8 +308,7 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
         }
 
         ExtensionCode::DefaultEncoding => {
-            crate::io::scan_and_pack_name(st)?;
-            let name = st.input.name_of_file_bytes().to_vec();
+            let name = crate::io::scan_name_path(st)?;
             let (enc_mode, info) = get_encoding_mode_and_info(st, &name)?;
             st.eqtb.set_int_par(IntPar::XetexDefaultInputMode, enc_mode);
             st.eqtb.set_int_par(IntPar::XetexDefaultInputEncoding, info);
