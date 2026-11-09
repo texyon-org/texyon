@@ -196,20 +196,6 @@ impl<T: TexPrint> TexPrint for Nl<T> {
     }
 }
 
-/// A file name from its parts, quoted when it needs to be.
-#[derive(Copy, Clone)]
-pub(crate) struct FileName {
-    pub name: StrNumber,
-    pub area: StrNumber,
-    pub ext: StrNumber,
-}
-
-impl TexPrint for FileName {
-    fn print_to(&self, st: &mut EngineState) {
-        print_file_name(st, self.name, self.area, self.ext);
-    }
-}
-
 /// The family font command of a math size: `\textfont`, `\scriptfont` or `\scriptscriptfont`.
 #[derive(Copy, Clone)]
 pub(crate) struct FamFont(pub i32);

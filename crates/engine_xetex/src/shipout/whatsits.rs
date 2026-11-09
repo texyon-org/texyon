@@ -232,14 +232,17 @@ fn out_write_stream(
     }
 
     let open = st.mem[open];
-    st.scanner.cur_name = open.name;
-    st.scanner.cur_area = open.area;
-    st.scanner.cur_ext = open.ext;
-    if st.strings.length(st.scanner.cur_ext) == 0 {
-        st.scanner.cur_ext = st.strings.make_tex_string(".tex")?;
-    }
-    let (n, a, e) = (st.scanner.cur_name, st.scanner.cur_area, st.scanner.cur_ext);
-    crate::io::pack_file_name(st, n, a, e);
+    let ext = if st.strings.length(open.ext) == 0 {
+        st.strings.make_tex_string(".tex")?
+    } else {
+        open.ext
+    };
+    let file = crate::io::FileName {
+        name: open.name,
+        area: open.area,
+        ext,
+    };
+    crate::io::pack_file_name(st, file.name, file.area, file.ext);
     let handle = output_open(st.input.name_of_file_bytes(), false);
     if handle == INVALID_HANDLE {
         return Err(Abort::CannotOpenOutput {
@@ -255,9 +258,7 @@ fn out_write_stream(
         st.shipout.selector = st.eqtb.log_selector();
         crate::output::print_nl(st, "\\openout");
         crate::output::print_int(st, j);
-        crate::output::print(st, " = `");
-        crate::output::print_file_name(st, n, a, e);
-        crate::output::print(st, "'.");
+        crate::output::print(st, (" = `", file, "'."));
         crate::output::print_nl(st, "");
         crate::output::print_ln(st);
         st.shipout.selector = old_setting;

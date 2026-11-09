@@ -1082,15 +1082,7 @@ impl SaRoots {
 pub(crate) struct ScannerState {
     /// Monotonic token-fetch clock used to order checkpoint fences.
     pub logical_clock: u64,
-    pub cur_name: StrNumber,
-    pub cur_area: StrNumber,
-    pub cur_ext: StrNumber,
-    pub area_delimiter: i32,
-    pub ext_delimiter: i32,
-    pub quoted_filename: bool,
-    pub file_name_quote_char: u16,
     pub name_in_progress: bool,
-    pub stop_at_space: bool,
     pub cur_align: crate::units::MemPtr,
     pub cur_span: crate::units::MemPtr,
     pub cur_loop: crate::units::MemPtr,

@@ -4,6 +4,7 @@
 use crate::consts::{BIGGEST_USV, CLOSED, EMPTY_STRING, INVALID_HANDLE, JUST_OPEN};
 use crate::input::NEW_LINE;
 use crate::layout::FontMappingHandle;
+use crate::output::TexPrint;
 use crate::params::IntPar;
 use crate::state::{EngineState, InputName, Selector};
 use crate::units::{BufPos, StrNumber};
@@ -654,22 +655,10 @@ pub fn u_close(slot: crate::state::InputSlot) -> bool {
     false
 }
 
-/// Runs `name_of_file` back through the name scanner so that `cur_name`,
-/// `cur_area` and `cur_ext` describe the file actually opened.
-fn rescan_opened_name(st: &mut EngineState) -> Result<(), Abort> {
+/// Runs `name_of_file` back through the name scanner, giving the name of the file actually opened.
+fn rescan_opened_name(st: &mut EngineState) -> Result<FileName, Abort> {
     let name16 = st.input.name_of_file16();
-    st.scanner.name_in_progress = true;
-    begin_name(st);
-    st.scanner.stop_at_space = false;
-    for c in name16 {
-        if !more_name(st, u32::from(c))? {
-            break;
-        }
-    }
-    st.scanner.stop_at_space = true;
-    end_name(st)?;
-    st.scanner.name_in_progress = false;
-    Ok(())
+    scan_whole_name(st, name16.into_iter().map(u32::from))
 }
 
 /// `\openin` and `\closein`.
@@ -702,99 +691,151 @@ pub(crate) fn open_or_close(st: &mut EngineState, open: bool) -> Result<(), Abor
     Ok(())
 }
 
-pub(crate) fn begin_name(st: &mut EngineState) {
-    st.scanner.area_delimiter = 0;
-    st.scanner.ext_delimiter = 0;
-    st.scanner.quoted_filename = false;
-    st.scanner.file_name_quote_char = 0;
+/// A file name from its parts, quoted when it needs to be.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct FileName {
+    pub name: StrNumber,
+    pub area: StrNumber,
+    pub ext: StrNumber,
 }
 
-/// Adds code point `c` to the file name being scanned, `false` at its end.
-pub(crate) fn more_name(st: &mut EngineState, c: u32) -> Result<bool, Abort> {
-    let stop = st.scanner.stop_at_space;
-    let q = st.scanner.file_name_quote_char;
-    if stop && q == 0 && c == u32::from(b' ') {
-        return Ok(false);
+impl TexPrint for FileName {
+    fn print_to(&self, st: &mut EngineState) {
+        crate::output::print_file_name(st, self.name, self.area, self.ext);
     }
-    if stop && q != 0 && c == u32::from(q) {
-        st.scanner.file_name_quote_char = 0;
-        return Ok(true);
-    }
-    if stop && q == 0 {
-        for quote in *b"\"'" {
-            if c == u32::from(quote) {
-                st.scanner.file_name_quote_char = u16::from(quote);
-                st.scanner.quoted_filename = true;
-                return Ok(true);
-            }
-        }
-    }
-    let (units, n) = crate::utf8::utf16_units(c);
-    if st.strings.pool_ptr.index() + n > st.strings.pool_size.index() {
-        return Err(st.strings.pool_overflow());
-    }
-    st.strings.append_units(&units[..n]);
-    if c == u32::from(b'/') {
-        st.scanner.area_delimiter = st.strings.cur_length();
-        st.scanner.ext_delimiter = 0;
-    } else if c == u32::from(b'.') {
-        st.scanner.ext_delimiter = st.strings.cur_length();
-    }
-    Ok(true)
 }
 
-pub(crate) fn end_name(st: &mut EngineState) -> Result<(), Abort> {
-    if st.strings.str_ptr.offset(3) > st.strings.max_strings {
-        return Err(st.strings.string_overflow());
-    }
+/// A file name scanned from the input, with how it was quoted.
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct ScannedName {
+    pub file: FileName,
+    /// Whether a quote appeared, which makes a font name try installed fonts first.
+    pub quoted: bool,
+    /// A quote still open at the end of the name.
+    pub open_quote: Option<u8>,
+}
 
-    let area_delimiter = st.scanner.area_delimiter;
-    if area_delimiter == 0 {
-        st.scanner.cur_area = EMPTY_STRING;
-    } else {
-        let strings = &mut st.strings;
-        st.scanner.cur_area = strings.str_ptr;
-        let start = strings.cur_string_start();
-        strings.str_start[strings.str_ptr.next().slot()] = start + area_delimiter;
-        strings.str_ptr = strings.str_ptr.next();
-        let temp_str = strings.search_string(st.scanner.cur_area);
-        if temp_str > StrNumber::NONE {
-            st.scanner.cur_area = temp_str;
-            let base = strings.str_start[strings.str_ptr.slot()];
-            strings.str_ptr = strings.str_ptr.prev();
-            for j in base.until(strings.pool_ptr) {
-                strings.str_pool[(j - area_delimiter).index()] = strings.str_pool[j.index()];
-            }
-            strings.pool_ptr -= area_delimiter;
+/// One file name being scanned into the string pool.
+struct NameScan {
+    area_delimiter: i32,
+    ext_delimiter: i32,
+    quoted: bool,
+    quote: Option<u8>,
+    /// Whether an unquoted space ends the name.
+    stop_at_space: bool,
+}
+
+impl NameScan {
+    fn begin_name(stop_at_space: bool) -> Self {
+        Self {
+            area_delimiter: 0,
+            ext_delimiter: 0,
+            quoted: false,
+            quote: None,
+            stop_at_space,
         }
     }
 
-    if st.scanner.ext_delimiter == 0 {
-        st.scanner.cur_ext = EMPTY_STRING;
-        st.scanner.cur_name = st.strings.slow_make_string()?;
-    } else {
-        let strings = &mut st.strings;
-        let shift = st.scanner.ext_delimiter - area_delimiter - 1;
-        st.scanner.cur_name = strings.str_ptr;
-        let start = strings.cur_string_start();
-        strings.str_start[strings.str_ptr.next().slot()] = start + shift;
-        strings.str_ptr = strings.str_ptr.next();
-
-        st.scanner.cur_ext = strings.make_string()?;
-        strings.str_ptr = strings.str_ptr.prev();
-        let temp_str = strings.search_string(st.scanner.cur_name);
-        if temp_str > StrNumber::NONE {
-            st.scanner.cur_name = temp_str;
-            let base = strings.str_start[strings.str_ptr.slot()];
-            strings.str_ptr = strings.str_ptr.prev();
-            for j in base.until(strings.pool_ptr) {
-                strings.str_pool[(j - shift).index()] = strings.str_pool[j.index()];
+    /// Adds code point `c` to the name, `false` at its end.
+    fn more_name(&mut self, st: &mut EngineState, c: u32) -> Result<bool, Abort> {
+        if self.stop_at_space {
+            match self.quote {
+                None if c == u32::from(b' ') => return Ok(false),
+                Some(q) if c == u32::from(q) => {
+                    self.quote = None;
+                    return Ok(true);
+                }
+                None => {
+                    if let Some(q) = b"\"'".iter().copied().find(|&q| c == u32::from(q)) {
+                        self.quote = Some(q);
+                        self.quoted = true;
+                        return Ok(true);
+                    }
+                }
+                Some(_) => {}
             }
-            strings.pool_ptr -= shift;
         }
-        st.scanner.cur_ext = strings.slow_make_string()?;
+        let (units, n) = crate::utf8::utf16_units(c);
+        if st.strings.pool_ptr.index() + n > st.strings.pool_size.index() {
+            return Err(st.strings.pool_overflow());
+        }
+        st.strings.append_units(&units[..n]);
+        if c == u32::from(b'/') {
+            self.area_delimiter = st.strings.cur_length();
+            self.ext_delimiter = 0;
+        } else if c == u32::from(b'.') {
+            self.ext_delimiter = st.strings.cur_length();
+        }
+        Ok(true)
     }
-    Ok(())
+
+    fn end_name(self, st: &mut EngineState) -> Result<ScannedName, Abort> {
+        if st.strings.str_ptr.offset(3) > st.strings.max_strings {
+            return Err(st.strings.string_overflow());
+        }
+
+        let area_delimiter = self.area_delimiter;
+        let mut area = EMPTY_STRING;
+        if area_delimiter != 0 {
+            let strings = &mut st.strings;
+            area = strings.str_ptr;
+            let start = strings.cur_string_start();
+            strings.str_start[strings.str_ptr.next().slot()] = start + area_delimiter;
+            strings.str_ptr = strings.str_ptr.next();
+            let temp_str = strings.search_string(area);
+            if temp_str > StrNumber::NONE {
+                area = temp_str;
+                let base = strings.str_start[strings.str_ptr.slot()];
+                strings.str_ptr = strings.str_ptr.prev();
+                for j in base.until(strings.pool_ptr) {
+                    strings.str_pool[(j - area_delimiter).index()] = strings.str_pool[j.index()];
+                }
+                strings.pool_ptr -= area_delimiter;
+            }
+        }
+
+        let (name, ext) = if self.ext_delimiter == 0 {
+            (st.strings.slow_make_string()?, EMPTY_STRING)
+        } else {
+            let strings = &mut st.strings;
+            let shift = self.ext_delimiter - area_delimiter - 1;
+            let mut name = strings.str_ptr;
+            let start = strings.cur_string_start();
+            strings.str_start[strings.str_ptr.next().slot()] = start + shift;
+            strings.str_ptr = strings.str_ptr.next();
+
+            strings.make_string()?;
+            strings.str_ptr = strings.str_ptr.prev();
+            let temp_str = strings.search_string(name);
+            if temp_str > StrNumber::NONE {
+                name = temp_str;
+                let base = strings.str_start[strings.str_ptr.slot()];
+                strings.str_ptr = strings.str_ptr.prev();
+                for j in base.until(strings.pool_ptr) {
+                    strings.str_pool[(j - shift).index()] = strings.str_pool[j.index()];
+                }
+                strings.pool_ptr -= shift;
+            }
+            (name, strings.slow_make_string()?)
+        };
+        Ok(ScannedName {
+            file: FileName { name, area, ext },
+            quoted: self.quoted,
+            open_quote: self.quote,
+        })
+    }
+}
+
+/// Scans a whole name that is not delimited by spaces.
+fn scan_whole_name(
+    st: &mut EngineState,
+    chars: impl IntoIterator<Item = u32>,
+) -> Result<FileName, Abort> {
+    let mut scan = NameScan::begin_name(false);
+    for c in chars {
+        scan.more_name(st, c)?;
+    }
+    Ok(scan.end_name(st)?.file)
 }
 
 pub(crate) fn make_name_string(st: &mut EngineState) -> Result<StrNumber, Abort> {
@@ -809,39 +850,13 @@ pub(crate) fn make_name_string(st: &mut EngineState) -> Result<StrNumber, Abort>
     st.strings.append_units(&name16);
 
     let result = st.strings.make_string()?;
-    let save_area_delimiter = st.scanner.area_delimiter;
-    let save_ext_delimiter = st.scanner.ext_delimiter;
-    let save_name_in_progress = st.scanner.name_in_progress;
-    let save_stop_at_space = st.scanner.stop_at_space;
-
-    st.scanner.name_in_progress = true;
-    begin_name(st);
-    st.scanner.stop_at_space = false;
-
-    for c in name16 {
-        if !more_name(st, u32::from(c))? {
-            break;
-        }
-    }
-
-    st.scanner.stop_at_space = save_stop_at_space;
-    end_name(st)?;
-    st.scanner.name_in_progress = save_name_in_progress;
-    st.scanner.area_delimiter = save_area_delimiter;
-    st.scanner.ext_delimiter = save_ext_delimiter;
+    scan_whole_name(st, name16.into_iter().map(u32::from))?;
     Ok(result)
 }
 
 pub(crate) fn pack_job_name(st: &mut EngineState, s: &str) -> Result<(), Abort> {
-    st.scanner.cur_area = EMPTY_STRING;
-    st.scanner.cur_ext = st.strings.make_tex_string(s)?;
-    st.scanner.cur_name = st.strings.job_name;
-    pack_file_name(
-        st,
-        st.scanner.cur_name,
-        st.scanner.cur_area,
-        st.scanner.cur_ext,
-    );
+    let ext = st.strings.make_tex_string(s)?;
+    pack_file_name(st, st.strings.job_name, EMPTY_STRING, ext);
     Ok(())
 }
 
@@ -963,22 +978,17 @@ pub fn init_io(st: &mut EngineState) {
     st.input.first = first + 1;
 }
 
-pub(crate) fn scan_and_pack_name(st: &mut EngineState) -> Result<(), Abort> {
-    scan_file_name(st)?;
-    pack_file_name(
-        st,
-        st.scanner.cur_name,
-        st.scanner.cur_area,
-        st.scanner.cur_ext,
-    );
-    Ok(())
+pub(crate) fn scan_and_pack_name(st: &mut EngineState) -> Result<ScannedName, Abort> {
+    let scanned = scan_file_name(st)?;
+    let FileName { name, area, ext } = scanned.file;
+    pack_file_name(st, name, area, ext);
+    Ok(scanned)
 }
 
-pub(crate) fn scan_file_name_braced(st: &mut EngineState) -> Result<(), Abort> {
+fn scan_file_name_braced(st: &mut EngineState) -> Result<NameScan, Abort> {
     let save_scanner_status = st.scanner.scanner_status;
     let save_def_ref = st.scanner.def_ref;
     let save_cur_cs = st.scanner.cur_cs;
-    let save_stop_at_space = st.scanner.stop_at_space;
 
     st.scanner.cur_cs = st.scanner.warning_index;
     crate::scan::scan_toks(st, false, true)?;
@@ -996,17 +1006,15 @@ pub(crate) fn scan_file_name_braced(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.cur_cs = save_cur_cs;
     st.scanner.scanner_status = save_scanner_status;
 
-    st.scanner.stop_at_space = false;
-    begin_name(st);
+    let mut scan = NameScan::begin_name(false);
     for i in st.strings.str_range(s) {
         let c = st.strings.str_pool[i];
-        more_name(st, u32::from(c))?;
+        scan.more_name(st, u32::from(c))?;
     }
-    st.scanner.stop_at_space = save_stop_at_space;
-    Ok(())
+    Ok(scan)
 }
 
-pub(crate) fn scan_file_name(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn scan_file_name(st: &mut EngineState) -> Result<ScannedName, Abort> {
     let save_warning_index = st.scanner.warning_index;
     st.scanner.warning_index = st.scanner.cur_cs;
 
@@ -1019,11 +1027,11 @@ pub(crate) fn scan_file_name(st: &mut EngineState) -> Result<(), Abort> {
 
     crate::input::back_input(st)?;
 
-    if st.scanner.cur_cmd == Cmd::LeftBrace {
-        scan_file_name_braced(st)?;
+    let scan = if st.scanner.cur_cmd == Cmd::LeftBrace {
+        scan_file_name_braced(st)?
     } else {
         st.scanner.name_in_progress = true;
-        begin_name(st);
+        let mut scan = NameScan::begin_name(true);
 
         loop {
             crate::scan::get_x_token(st)?;
@@ -1046,18 +1054,19 @@ pub(crate) fn scan_file_name(st: &mut EngineState) -> Result<(), Abort> {
                 }
             };
 
-            if !more_name(st, c)? {
+            if !scan.more_name(st, c)? {
                 break;
             }
 
             crate::scan::get_x_token(st)?;
         }
-    }
+        scan
+    };
 
-    end_name(st)?;
+    let scanned = scan.end_name(st)?;
     st.scanner.name_in_progress = false;
     st.scanner.warning_index = save_warning_index;
-    Ok(())
+    Ok(scanned)
 }
 
 /// `\input`, or the primary input when `primary_input_name` is given.
@@ -1071,40 +1080,18 @@ pub(crate) fn start_input(
         FileFormat::TexyonPrimary
     };
 
-    if let Some(name) = primary_input_name {
-        st.scanner.name_in_progress = true;
-        begin_name(st);
-        st.scanner.stop_at_space = false;
-
+    let scanned = if let Some(name) = primary_input_name {
         let mut name = name.as_bytes();
         if st.strings.pool_ptr + name.len() as i32 * 2 >= st.strings.pool_size {
             return Err(Abort::Internal("string pool overflow"));
         }
-
-        while !name.is_empty() {
-            let rval = next_utf8_char(&mut name);
-            st.strings.push_utf16(rval);
-            if rval == u32::from(b'/') {
-                st.scanner.area_delimiter = st.strings.cur_length();
-                st.scanner.ext_delimiter = 0;
-            } else if rval == u32::from(b'.') {
-                st.scanner.ext_delimiter = st.strings.cur_length();
-            }
-        }
-
-        st.scanner.stop_at_space = true;
-        end_name(st)?;
-        st.scanner.name_in_progress = false;
+        let chars = std::iter::from_fn(|| (!name.is_empty()).then(|| next_utf8_char(&mut name)));
+        scan_whole_name(st, chars)?
     } else {
-        scan_file_name(st)?;
-    }
+        scan_file_name(st)?.file
+    };
 
-    pack_file_name(
-        st,
-        st.scanner.cur_name,
-        st.scanner.cur_area,
-        st.scanner.cur_ext,
-    );
+    pack_file_name(st, scanned.name, scanned.area, scanned.ext);
     crate::input::begin_file_reading(st)?;
 
     let idx = i32::from(st.input.cur_input.index);
@@ -1117,7 +1104,7 @@ pub(crate) fn start_input(
     };
     st.input.input_file[idx as usize] = crate::state::InputSlot::Open(file);
 
-    rescan_opened_name(st)?;
+    let opened = rescan_opened_name(st)?;
 
     let name = make_name_string(st)?;
     st.input.cur_input.name = InputName::File(name);
@@ -1136,7 +1123,7 @@ pub(crate) fn start_input(
     }
 
     if st.strings.job_name == StrNumber::NONE {
-        st.strings.job_name = st.scanner.cur_name;
+        st.strings.job_name = opened.name;
         open_log_file(st)?;
     }
 
@@ -1164,8 +1151,7 @@ pub(crate) fn start_input(
             crate::output::print_char(st, b'~');
         }
         crate::output::print(st, "INPUT ");
-        crate::output::print(st, st.scanner.cur_name);
-        crate::output::print(st, st.scanner.cur_ext);
+        crate::output::print(st, (opened.name, opened.ext));
         crate::output::print_ln(st);
         crate::output::end_diagnostic(st, false);
     }

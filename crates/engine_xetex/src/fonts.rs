@@ -8,12 +8,12 @@ use crate::ext::{
     aat_get_font_metrics, apply_tfm_font_mapping, find_native_font, load_tfm_font_mapping,
     ot_get_font_metrics, NativeFontMetrics,
 };
-use crate::io::{open_input_file, pack_file_name};
+use crate::io::{open_input_file, pack_file_name, FileName, ScannedName};
 use crate::mem_types::B16x4;
 use crate::node::{NativeWordNode, NodePtr, WhatsitSubtype};
 use crate::output::{
     begin_diagnostic, char_warning, end_diagnostic, print, print_char, print_int, print_nl,
-    print_scaled, CsName, FileName, TexPrint,
+    print_scaled, CsName, TexPrint,
 };
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, FontState, MemState};
@@ -507,20 +507,16 @@ fn read_scaled_word(handle: usize, z: i32, beta: i32, alpha: i32) -> Option<Scal
 struct FontSpec {
     cs: EqtbPtr,
     file: FileName,
-    quote: u16,
+    quote: Option<u8>,
     size: Scaled,
 }
 
 impl FontSpec {
-    fn new(st: &EngineState, cs: EqtbPtr, name: StrNumber, area: StrNumber, size: Scaled) -> Self {
+    fn new(cs: EqtbPtr, name: &ScannedName, size: Scaled) -> Self {
         Self {
             cs,
-            file: FileName {
-                name,
-                area,
-                ext: st.scanner.cur_ext,
-            },
-            quote: st.scanner.file_name_quote_char,
+            file: name.file,
+            quote: name.open_quote,
             size,
         }
     }
@@ -529,12 +525,12 @@ impl FontSpec {
 impl TexPrint for FontSpec {
     fn print_to(&self, st: &mut EngineState) {
         print(st, ("Font ", CsName(self.cs), '='));
-        if self.quote != 0 {
-            print_char(st, self.quote);
+        if let Some(q) = self.quote {
+            print_char(st, q);
         }
         print(st, self.file);
-        if self.quote != 0 {
-            print_char(st, self.quote);
+        if let Some(q) = self.quote {
+            print_char(st, q);
         }
         if self.size >= Scaled::ZERO {
             print(st, (" at ", self.size, "pt"));
@@ -547,16 +543,21 @@ impl TexPrint for FontSpec {
 pub(crate) fn read_font_info(
     st: &mut EngineState,
     u: EqtbPtr,
-    nom: StrNumber,
-    aire: StrNumber,
+    name: &ScannedName,
     s: Scaled,
 ) -> Result<FontId, Abort> {
+    let FileName {
+        name: nom,
+        area: aire,
+        ext,
+    } = name.file;
+    let font = FontSpec::new(u, name, s);
     let mut name_too_long = false;
     let mut file_opened = false;
     let mut g = NULL_FONT;
     let mut tfm_file = INVALID_HANDLE;
 
-    pack_file_name(st, nom, aire, st.scanner.cur_ext);
+    pack_file_name(st, nom, aire, ext);
 
     if st.eqtb.int_par(IntPar::XetexTracingFonts) > 0 {
         begin_diagnostic(st);
@@ -584,8 +585,8 @@ pub(crate) fn read_font_info(
             }};
         }
 
-        if st.scanner.quoted_filename {
-            g = load_native_font(st, u, nom, aire, s)?;
+        if name.quoted {
+            g = load_native_font(st, font)?;
             if g != NULL_FONT {
                 break 'read;
             }
@@ -602,8 +603,8 @@ pub(crate) fn read_font_info(
 
         tfm_file = open_input_file(st, FileFormat::Tfm);
         if tfm_file == INVALID_HANDLE {
-            if !st.scanner.quoted_filename {
-                g = load_native_font(st, u, nom, aire, s)?;
+            if !name.quoted {
+                g = load_native_font(st, font)?;
                 if g != NULL_FONT {
                     break 'read;
                 }
@@ -618,7 +619,6 @@ pub(crate) fn read_font_info(
         if let Some(scaling) = scale_side_effect {
             st.errors.tex_remainder = scaling.remainder;
             if scaling.too_big {
-                let font = FontSpec::new(st, u, nom, aire, s);
                 crate::errors::error(
                     st,
                     (font, " scaled to 2048pt or higher"),
@@ -640,7 +640,6 @@ pub(crate) fn read_font_info(
     }
 
     if bad_tfm && st.eqtb.int_par(IntPar::SuppressFontnotfoundError) == 0 {
-        let font = FontSpec::new(st, u, nom, aire, s);
         let reason = if file_opened {
             " not loadable: Bad metric (TFM) file"
         } else if name_too_long {
@@ -1017,13 +1016,8 @@ impl FontState {
 }
 
 /// Load a native OpenType/Graphite font and set up its TeX font tables.
-pub(crate) fn load_native_font(
-    st: &mut EngineState,
-    u: EqtbPtr,
-    nom: StrNumber,
-    aire: StrNumber,
-    s: Scaled,
-) -> Result<FontId, Abort> {
+fn load_native_font(st: &mut EngineState, font: FontSpec) -> Result<FontId, Abort> {
+    let s = font.size;
     let name_of_file = st.input.name_of_file_bytes().to_vec();
     let Some(font_engine) = find_native_font(st, &name_of_file, s)? else {
         return Ok(NULL_FONT);
@@ -1068,7 +1062,6 @@ pub(crate) fn load_native_font(
     if st.fonts.font_ptr == st.fonts.font_max
         || st.fonts.fmem_ptr + num_font_dimens > st.fonts.font_mem_size
     {
-        let font = FontSpec::new(st, u, nom, aire, s);
         crate::errors::error(
             st,
             (font, " not loaded: Not enough room left"),

@@ -70,3 +70,31 @@ entry names a later TeX Live version.
 - **TeXyoN:** the first fix (`Cmd::MAX_PREFIXED_COMMAND`). A prefix gets "You can't use a prefix
   with", and `do_assignments` stops at `\partokenname`, which then runs as usual. Test
   `partokenname_takes_no_prefix_and_ends_assignments`, listed in `tests/upstream/known.tsv`.
+
+## 6. A file name scanned inside another command replaces the outer name
+
+- **Where:** `new_font` (`@<Scan the font size specification@>`) and `load_picture`, with any
+  primitive that calls `scan_file_name` during expansion: `\XeTeXpdfpagecount`,
+  `\XeTeXglyphindex`, `\XeTeXfindfeaturebyname` and the other AAT/Graphite name lookups.
+- **Bug:** the scanned name lives in the globals `cur_name`, `cur_area`, `cur_ext` (and
+  `name_of_file`). `new_font` scans the font name, then scans the size, which may expand one of
+  those primitives. Its own `scan_file_name` overwrites the globals, and `new_font` then looks up
+  and loads that name. `name_in_progress` only blocks `\input`. `load_picture` reads
+  `name_of_file` after scanning `page`, so `\XeTeXpdffile "b.pdf" page \XeTeXpdfpagecount "c.pdf"`
+  includes `c.pdf`.
+- **Repro:** `\font\x=cmr10 at \XeTeXpdfpagecount "cmr5" pt \message{\fontname\x}` prints
+  `cmr5 at 10.0pt` with TeX Live 2025 xetex. Probe `xetex-nested_name_in_font_size`.
+- **Fix:** save the scanned name in locals before scanning further, as `new_font` already does
+  for `u` and `t`.
+- **TeXyoN:** each scan returns its own name, so the font is `cmr10` and the picture `b.pdf`.
+  Listed in `tests/upstream/known.tsv`, test `a_name_scanned_inside_a_font_size_keeps_the_font_name`.
+
+## 7. `\tracingstacklevels` traces the first input file as the log file
+
+- **Where:** `start_input`, TeX Live's `\tracingstacklevels` change (`print("INPUT ")`).
+- **Bug:** for the file that sets `job_name`, `open_log_file` runs first. It packs `<job>.log` and
+  rescans it through `cur_name`/`cur_ext`, so the trace after it prints `~INPUT <job>.log`.
+- **Repro:** dump a format with `\tracingstacklevels=1`, then run any file on it. Not reachable in
+  the upstream harness, whose formats leave the parameter at 0.
+- **Fix:** print the trace before `open_log_file`, or save `cur_name`/`cur_ext` around it.
+- **TeXyoN:** prints the input's own name, test `the_first_input_is_traced_by_its_own_name`.

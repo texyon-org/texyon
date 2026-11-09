@@ -129,11 +129,11 @@ fn io_whatsit(st: &mut EngineState, code: ExtensionCode) -> Result<NodePtr<Whats
             let w = append_whatsit::<OpenNode>(st, WhatsitSubtype::Open)?;
             st.mem[w].stream = scan_write_stream(st, true)?;
             crate::scan::scan_optional_equals(st)?;
-            crate::io::scan_file_name(st)?;
+            let file = crate::io::scan_file_name(st)?.file;
             let open = &mut st.mem[w];
-            open.name = st.scanner.cur_name;
-            open.area = st.scanner.cur_area;
-            open.ext = st.scanner.cur_ext;
+            open.name = file.name;
+            open.area = file.area;
+            open.ext = file.ext;
             w.whatsit()
         }
         ExtensionCode::Write => {
@@ -317,11 +317,11 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
         }
 
         ExtensionCode::LinebreakLocale => {
-            crate::io::scan_file_name(st)?;
-            let locale = if st.strings.length(st.scanner.cur_name) == 0 {
+            let name = crate::io::scan_file_name(st)?.file.name;
+            let locale = if st.strings.length(name) == 0 {
                 StrNumber::NONE
             } else {
-                st.scanner.cur_name
+                name
             };
             st.eqtb
                 .set_int_par(IntPar::XetexLinebreakLocale, locale.raw());

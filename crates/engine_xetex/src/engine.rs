@@ -414,7 +414,6 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.scanner.sa_level = LEVEL_ZERO;
     st.scanner.disc_ptr[BoxCode::LastBox as usize] = MemPtr::NULL;
     st.scanner.disc_ptr[BoxCode::Vsplit as usize] = MemPtr::NULL;
-    st.scanner.stop_at_space = true;
 }
 
 fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumber) {

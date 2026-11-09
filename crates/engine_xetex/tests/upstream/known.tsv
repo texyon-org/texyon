@@ -5,3 +5,4 @@ cov-layout-nativeword_tracing_fonts	\XeTeXtracingfonts prints the full kpathsea 
 mainloop-interchartoks_tfm	upstream accepts class 4096 in \XeTeXinterchartoks and indexes past the sparse-array node, TeXyoN rejects it with "Bad character class" as the help text promises
 etex-ifcsname_astral_undefined	upstream \ifcsname reads eqtb[single_base+c] past null_cs for one character above U+FFFF, TeXyoN looks it up in the hash like \csname (UPSTREAM_BUGS.md 4)
 errors-partokenname_prefix	upstream reaches confusion("prefix") when \partokenname follows a prefix or \accent, TeXyoN gives the prefix error or ends the assignments (UPSTREAM_BUGS.md 5)
+xetex-nested_name_in_font_size	upstream lets \XeTeXpdfpagecount in a \font size overwrite cur_name and loads the font named there, TeXyoN keeps the name the \font scanned (UPSTREAM_BUGS.md 6)

@@ -177,7 +177,8 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     let global = a >= 4;
     define(st, global, u, Cmd::SetFont, FONT_BASE)?;
     crate::scan::scan_optional_equals(st)?;
-    crate::io::scan_file_name(st)?;
+    let scanned = crate::io::scan_file_name(st)?;
+    let file = scanned.file;
     st.scanner.name_in_progress = true;
     let s = if crate::scan::scan_keyword(st, "at")? {
         let size = crate::scan::scan_dimen(st, false, false)?;
@@ -227,20 +228,15 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     };
     let f = 'search: {
         for f in st.fonts.font_ptr.loaded() {
-            let area_matches = (st.strings.length(st.scanner.cur_area) == 0
-                && st.fonts.is_native_font(f))
-                || st
-                    .strings
-                    .str_eq_str(st.fonts.font_area[f], st.scanner.cur_area);
-            if st
-                .strings
-                .str_eq_str(st.fonts.font_name[f], st.scanner.cur_name)
+            let area_matches = (st.strings.length(file.area) == 0 && st.fonts.is_native_font(f))
+                || st.strings.str_eq_str(st.fonts.font_area[f], file.area);
+            if st.strings.str_eq_str(st.fonts.font_name[f], file.name)
                 && area_matches
                 && size_matches(st, f)
             {
                 break 'search f;
             }
-            for part in [st.scanner.cur_area, st.scanner.cur_name, st.scanner.cur_ext] {
+            for part in [file.area, file.name, file.ext] {
                 st.strings.append_str(part)?;
             }
             let full_name = st.strings.make_string()?;
@@ -250,7 +246,7 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
                 break 'search f;
             }
         }
-        read_font_info(st, u, st.scanner.cur_name, st.scanner.cur_area, s)?
+        read_font_info(st, u, &scanned, s)?
     };
 
     define(st, global, u, Cmd::SetFont, f.raw())?;

@@ -385,7 +385,7 @@ fn scan_scale_factor(st: &mut EngineState) -> Result<f64, Abort> {
 }
 
 pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abort> {
-    crate::io::scan_and_pack_name(st)?;
+    let file = crate::io::scan_and_pack_name(st)?.file;
 
     let mut pdf_box_type = None;
     let mut page = 0;
@@ -514,11 +514,6 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
         let stored = path.len();
         path.copy_from_slice(&pic_path[..stored]);
     } else {
-        let file = crate::output::FileName {
-            name: st.scanner.cur_name,
-            area: st.scanner.cur_area,
-            ext: st.scanner.cur_ext,
-        };
         let reason = if result == FILE_NOT_FOUND {
             "the file was not found."
         } else {

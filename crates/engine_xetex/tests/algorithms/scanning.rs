@@ -1,6 +1,6 @@
 //! The scanners: numbers, units, glue and e-TeX expressions.
 
-use crate::{run, show_the};
+use crate::{run, run_on_format, show_the};
 
 #[test]
 fn units_convert_to_points_as_tex_rounds_them() {
@@ -291,4 +291,17 @@ fn an_active_par_token_survives_the_format() {
     let run = crate::run_on_format(setup, "\n\\showthe\\count1");
     assert_eq!(run.errors(), Vec::<&str>::new());
     assert_eq!(run.shown(), ["1"]);
+}
+
+#[test]
+fn a_name_scanned_inside_a_font_size_keeps_the_font_name() {
+    let r = run(r#"\font\x=cmr10 at \XeTeXpdfpagecount "cmr5" pt
+\immediate\write-1{font: \fontname\x}"#);
+    assert_eq!(r.lines_starting("font: "), ["font: cmr10"]);
+}
+
+#[test]
+fn the_first_input_is_traced_by_its_own_name() {
+    let r = run_on_format(r"\tracingstacklevels=1", r"\relax");
+    assert_eq!(r.lines_starting("~INPUT"), ["~INPUT texput.tex"]);
 }
