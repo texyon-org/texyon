@@ -31,6 +31,7 @@ mod codes;
 mod command;
 mod compat;
 mod consts;
+mod diagnostic;
 mod dvi;
 mod engine;
 mod errors;
@@ -80,6 +81,7 @@ mod units;
 mod utf8;
 
 pub use cancellation::EngineCancellation;
+pub use diagnostic::{Diagnostic, DiagnosticKind};
 pub use page_manifest::PageExecution;
 pub use replay::source::{
     SourceError, SourceIdentity, SourcePath, SourceRevision, SourceSnapshot, SourceUpdate,

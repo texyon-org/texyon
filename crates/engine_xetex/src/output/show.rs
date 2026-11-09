@@ -19,14 +19,13 @@ use super::cmd_chr::{print_cmd_chr, print_meaning};
 use super::show_box::{show_box, show_node_list};
 use super::warnings::{leave_group_boundary, print_if_line};
 use super::{
-    begin_diagnostic, capture_to_diagnostic, diagnostic_begin_capture_warning_here, end_diagnostic,
-    print, print_char, print_cs, print_error_prefix, print_esc, print_group, print_int, print_ln,
-    print_mode, print_nl, print_raw_char, print_scaled, sprint_cs, token_show,
+    begin_diagnostic, end_diagnostic, print, print_char, print_cs, print_error_prefix, print_esc,
+    print_group, print_int, print_ln, print_mode, print_nl, print_raw_char, print_scaled,
+    sprint_cs, token_show,
 };
 
 pub(crate) fn show_cur_cmd_chr(st: &mut EngineState) {
     begin_diagnostic(st);
-    diagnostic_begin_capture_warning_here(st);
     print_nl(st, b'{');
     if st.input.cur_list.mode != st.scanner.shown_mode {
         print_mode(st, i32::from(st.input.cur_list.mode));
@@ -56,7 +55,6 @@ pub(crate) fn show_cur_cmd_chr(st: &mut EngineState) {
         print_if_line(st, l);
     }
     print_char(st, b'}');
-    capture_to_diagnostic(st, None);
     end_diagnostic(st, false);
 }
 
@@ -172,11 +170,12 @@ pub(crate) fn issue_message(st: &mut EngineState, err: bool) -> Result<(), Abort
         } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
             print_char(st, b' ');
         }
+        crate::diagnostic::begin_capture(st, crate::diagnostic::DiagnosticKind::Written);
         print(st, s);
+        crate::diagnostic::end_capture(st);
         output_flush(st.shipout.rust_stdout);
     } else {
         let help: &[&'static str] = if !st.eqtb.tok_par(TokPar::ErrHelp).is_null() {
-            st.errors.use_err_help = true;
             &[]
         } else if st.errors.long_help_seen {
             &[r"(That was another \errmessage.)"]
@@ -191,9 +190,7 @@ pub(crate) fn issue_message(st: &mut EngineState, err: bool) -> Result<(), Abort
                 "and deduce the truth by order and method.",
             ]
         };
-        let outcome = crate::errors::error(st, s, help);
-        st.errors.use_err_help = false;
-        outcome?;
+        crate::errors::errmessage(st, s, help)?;
     }
     st.strings.flush_string();
     Ok(())
@@ -409,8 +406,6 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
 }
 
 pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), Abort> {
-    diagnostic_begin_capture_warning_here(st);
-
     match code {
         ShowCode::Lists => {
             show_to_stream(st)?;
@@ -498,7 +493,6 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
         code,
         ShowCode::Lists | ShowCode::Box | ShowCode::Groups | ShowCode::Ifs
     ) {
-        capture_to_diagnostic(st, None);
         end_diagnostic(st, true);
         print_error_prefix(st);
         print(st, "OK");
@@ -511,7 +505,6 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
         }
     }
 
-    capture_to_diagnostic(st, None);
     if st.shipout.selector < Selector::NoPrint {
         print_ln(st);
         st.shipout.selector = if st.errors.interaction == InteractionMode::Batch {

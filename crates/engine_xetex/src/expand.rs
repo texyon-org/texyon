@@ -16,8 +16,8 @@ use crate::input::{back_input, begin_token_list, TokenType, TOKEN_LIST};
 use crate::mem::{BACKUP_HEAD, GARBAGE, TEMP_HEAD_TOKS, ZERO_GLUE};
 use crate::node::{link_of, AnyNode, CondNode, GlueKind, KernSubtype, NodePtr, SaLeaf};
 use crate::output::{
-    begin_diagnostic, capture_to_diagnostic, diagnostic_begin_capture_warning_here, end_diagnostic,
-    print, print_char, print_int, print_scaled, show_cur_cmd_chr, sprint_cs,
+    begin_diagnostic, end_diagnostic, print, print_char, print_int, print_scaled, show_cur_cmd_chr,
+    sprint_cs,
 };
 use crate::params::{GluePar, IntPar};
 use crate::scan::{
@@ -138,9 +138,7 @@ fn scan_cs_name_tokens(st: &mut EngineState) -> Result<(TokenList, TokenList), A
 
 fn trace_diagnostic(st: &mut EngineState, text: &str) {
     begin_diagnostic(st);
-    diagnostic_begin_capture_warning_here(st);
     print(st, text);
-    capture_to_diagnostic(st, None);
     end_diagnostic(st, false);
 }
 
@@ -320,11 +318,9 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
             let mut n = scan_int(st)?;
             if st.eqtb.int_par(IntPar::TracingCommands) > 1 {
                 begin_diagnostic(st);
-                diagnostic_begin_capture_warning_here(st);
                 print(st, "{case ");
                 print_int(st, n);
                 print_char(st, b'}');
-                capture_to_diagnostic(st, None);
                 end_diagnostic(st, false);
             }
             while n != 0 {
@@ -1026,7 +1022,6 @@ fn extra_right_brace_in_argument(st: &mut EngineState) -> Result<(), Abort> {
 #[cold]
 fn trace_macro_call(st: &mut EngineState, ref_count: TokenList) {
     begin_diagnostic(st);
-    diagnostic_begin_capture_warning_here(st);
     let stack_levels = st.eqtb.int_par(IntPar::TracingStackLevels);
     if stack_levels > 0 {
         if st.input.input_depth() < stack_levels {
@@ -1047,7 +1042,6 @@ fn trace_macro_call(st: &mut EngineState, ref_count: TokenList) {
         crate::output::print_cs(st, st.scanner.warning_index);
         crate::output::token_show(st, ref_count);
     }
-    capture_to_diagnostic(st, None);
     end_diagnostic(st, false);
 }
 
@@ -1056,12 +1050,10 @@ fn trace_macro_param(st: &mut EngineState, match_chr: i32, n: i32, list: TokenLi
     let stack_levels = st.eqtb.int_par(IntPar::TracingStackLevels);
     if stack_levels == 0 || st.input.input_depth() < stack_levels {
         begin_diagnostic(st);
-        diagnostic_begin_capture_warning_here(st);
         crate::output::print_nl(st, StrNumber::single_char(match_chr));
         print_int(st, n);
         print(st, "<-");
         crate::output::show_token_list(st, list, TokenList::NULL, 1000);
-        capture_to_diagnostic(st, None);
         end_diagnostic(st, false);
     }
 }

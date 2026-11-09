@@ -734,13 +734,11 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
                     &["Discretionary lists must contain only boxes and kerns."],
                 )?;
                 crate::output::begin_diagnostic(st);
-                crate::output::diagnostic_begin_capture_warning_here(st);
                 crate::output::print_nl(
                     st,
                     "The following discretionary sublist has been deleted:",
                 );
                 crate::output::show_box(st, p);
-                crate::output::capture_to_diagnostic(st, None);
                 crate::output::end_diagnostic(st, true);
                 st.mem.flush_node_list(p)?;
                 q.set_link(&mut st.mem, MemPtr::NULL);

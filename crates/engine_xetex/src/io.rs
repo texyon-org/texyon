@@ -207,12 +207,12 @@ pub(crate) fn open_input_file(st: &mut EngineState, filefmt: FileFormat) -> usiz
         input_open_primary()
     } else if st.input.name_of_file.first() == Some(&b'|') {
         crate::output::print_nl(st, "Warning: ");
-        crate::output::diagnostic_begin_capture_warning_here(st);
+        crate::diagnostic::begin_warning(st);
         crate::output::print(
             st,
             "piped inputs from external commands are not implemented in Tectonic",
         );
-        crate::output::capture_to_diagnostic(st, None);
+        crate::diagnostic::end_capture(st);
         return INVALID_HANDLE;
     } else {
         input_open(st.input.name_of_file_bytes(), filefmt, false)
@@ -887,7 +887,7 @@ pub(crate) fn open_log_file(st: &mut EngineState) -> Result<(), Abort> {
 /// Checkpoints keep the logical output state, but bridge handles and
 /// diagnostic pointers are valid only for the operation that created them.
 pub(crate) fn reopen_resident_outputs(st: &mut EngineState) -> Result<(), Abort> {
-    st.shipout.current_diagnostic = None;
+    st.diagnostics.resume_after(st.shipout.diagnostics_issued);
     st.shipout.write_file = [INVALID_HANDLE; 16];
     st.shipout.log_file = INVALID_HANDLE;
     st.shipout.dvi.file = INVALID_HANDLE;
@@ -1153,7 +1153,6 @@ pub(crate) fn start_input(
     let tracing_stack_levels = st.eqtb.int_par(IntPar::TracingStackLevels);
     if tracing_stack_levels > 0 {
         crate::output::begin_diagnostic(st);
-        crate::output::diagnostic_begin_capture_warning_here(st);
         crate::output::print_ln(st);
         crate::output::print_char(st, b'~');
         let v = st.input.input_depth() - 1;
@@ -1168,7 +1167,6 @@ pub(crate) fn start_input(
         crate::output::print(st, st.scanner.cur_name);
         crate::output::print(st, st.scanner.cur_ext);
         crate::output::print_ln(st);
-        crate::output::capture_to_diagnostic(st, None);
         crate::output::end_diagnostic(st, false);
     }
 

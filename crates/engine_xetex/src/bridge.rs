@@ -210,13 +210,6 @@ pub(crate) fn diag_append(diag: &mut Diagnostic, text: &str) {
     }
 }
 
-/// Appends one output byte as C did: alone, lossily decoded, nothing for NUL.
-pub(crate) fn diag_append_byte(diag: &mut Diagnostic, byte: u8) {
-    if byte != 0 {
-        diag.append(&String::from_utf8_lossy(&[byte]));
-    }
-}
-
 /// Reports `diag` to the driver.
 pub(crate) fn diag_finish(diag: Diagnostic) {
     with_bridge(|es| es.finish_diagnostic(diag));

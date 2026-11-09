@@ -1,11 +1,14 @@
 //! Basic printing: numbers, strings, control sequences and the diagnostic sink.
 
-use crate::bridge::{diag_append, diag_append_byte, diag_finish, output_putc, Diagnostic};
+use crate::bridge::output_putc;
 use crate::cmd::Cmd;
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_USV, EQTB_SIZE, HASH_BASE, HISTORY_SPOTLESS,
     HISTORY_WARNING_ISSUED, NULL_CS, SCRIPT_SIZE, SINGLE_BASE, TEXT_SIZE, TOO_BIG_CHAR,
     UNDEFINED_CONTROL_SEQUENCE,
+};
+use crate::diagnostic::{
+    begin_capture, begin_warning, current_file_line, end_capture, DiagnosticKind,
 };
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::node::Stored;
@@ -348,9 +351,7 @@ pub(crate) fn print_scaled(st: &mut EngineState, s: Scaled) {
 }
 
 fn warn_char(st: &mut EngineState, c: i32) {
-    if let Some(diag) = &mut st.shipout.current_diagnostic {
-        diag_append_byte(diag, c as u8);
-    }
+    st.diagnostics.mirror(c as u8);
 }
 
 /// Write one transcript byte, counting it so a resumed run can continue the transcript.
@@ -559,68 +560,12 @@ fn print_current_string(st: &mut EngineState) {
     }
 }
 
-/// Reports the diagnostic being captured and captures into `diagnostic` from now on.
-pub(crate) fn capture_to_diagnostic(st: &mut EngineState, diagnostic: Option<Diagnostic>) {
-    if let Some(cur) = std::mem::replace(&mut st.shipout.current_diagnostic, diagnostic) {
-        diag_finish(cur);
-    }
-}
-
-/// Appends `text` to the diagnostic being captured.
-pub(crate) fn append_to_diagnostic(st: &mut EngineState, text: &str) {
-    if let Some(diag) = &mut st.shipout.current_diagnostic {
-        diag_append(diag, text);
-    }
-}
-
-/// The innermost input level that is a real file, with its current line.
-fn current_file_line(st: &EngineState) -> Option<(StrNumber, i32)> {
-    let mut level = st.input.in_open;
-    while level > 0 && st.input.open_levels[level].full_source_name == StrNumber::NONE {
-        level -= 1;
-    }
-    if level == 0 {
-        return None;
-    }
-    let line = if level == st.input.in_open {
-        st.mem.line
-    } else {
-        st.input.open_levels[level + 1].outer_line
-    };
-    Some((st.input.open_levels[level].full_source_name, line))
-}
-
-fn diagnostic_print_file_line(st: &EngineState, diagnostic: &mut Diagnostic) {
-    let Some((name, line)) = current_file_line(st) else {
-        diag_append(diagnostic, "!");
-        return;
-    };
-    let name = st.strings.texstring_bytes(name);
-    let name = String::from_utf8_lossy(&name);
-    diag_append(diagnostic, &format!("{name}:{line}: "));
-}
-
-pub(crate) fn diagnostic_begin_capture_warning_here(st: &mut EngineState) {
-    let mut warning = Diagnostic::warning();
-    diagnostic_print_file_line(st, &mut warning);
-    capture_to_diagnostic(st, Some(warning));
-}
-
-/// Starts an error with `message`, capturing what follows into its diagnostic.
-pub(crate) fn error_here_with_diagnostic(st: &mut EngineState, message: &str) {
-    let mut error = Diagnostic::error();
-    diagnostic_print_file_line(st, &mut error);
-    diag_append(&mut error, message);
+/// TeX's `print_err`: prints `message` after the error prefix, capturing it as
+/// a `kind` diagnostic that the caller reports.
+pub(crate) fn print_err(st: &mut EngineState, kind: DiagnosticKind, message: impl TexPrint) {
     print_error_prefix(st);
+    begin_capture(st, kind);
     print(st, message);
-    capture_to_diagnostic(st, Some(error));
-}
-
-/// TeX's `print_err`: starts an error with `message` and closes its diagnostic.
-pub(crate) fn print_err(st: &mut EngineState, message: impl TexPrint) {
-    error_here_with_diagnostic(st, "");
-    print(st, message);
-    capture_to_diagnostic(st, None);
 }
 
 /// TeX Live's `print_ignored_err`: an error that `\ignoreprimitiveerror` turns into a warning.
@@ -630,10 +575,10 @@ pub(crate) fn print_ignored_err(st: &mut EngineState, message: &str) {
     } else {
         print_nl(st, "");
     }
-    diagnostic_begin_capture_warning_here(st);
+    begin_warning(st);
     print(st, "ignored error: ");
     print(st, message);
-    capture_to_diagnostic(st, None);
+    end_capture(st);
 }
 
 /// Starts an error line with `! ` or, in file:line:error style, the source position.

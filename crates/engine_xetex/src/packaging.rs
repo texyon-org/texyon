@@ -515,11 +515,9 @@ impl MemState {
 }
 
 pub(crate) fn print_hpack_diag(st: &mut EngineState, box_ptr: NodePtr<BoxNode>, diag: PackDiag) {
-    use crate::output::{
-        diagnostic_begin_capture_warning_here, print, print_int, print_ln, print_nl, print_scaled,
-    };
+    use crate::output::{print, print_int, print_ln, print_nl, print_scaled};
     print_ln(st);
-    diagnostic_begin_capture_warning_here(st);
+    crate::diagnostic::begin_warning(st);
     match diag {
         PackDiag::HUnderfull { badness, loose } => {
             if loose {
@@ -555,8 +553,7 @@ pub(crate) fn print_hpack_diag(st: &mut EngineState, box_ptr: NodePtr<BoxNode>, 
 
 fn print_hpack_common_ending(st: &mut EngineState, box_ptr: NodePtr<BoxNode>) {
     use crate::output::{
-        begin_diagnostic, capture_to_diagnostic, end_diagnostic, print, print_int, print_ln,
-        short_display, show_box,
+        begin_diagnostic, end_diagnostic, print, print_int, print_ln, short_display, show_box,
     };
     if st.shipout.output_active {
         print(st, ") has occurred while \\output is active");
@@ -575,7 +572,7 @@ fn print_hpack_common_ending(st: &mut EngineState, box_ptr: NodePtr<BoxNode>) {
         }
         print_int(st, st.mem.line);
     }
-    capture_to_diagnostic(st, None);
+    crate::diagnostic::end_capture(st);
     print_ln(st);
     st.errors.font_in_short_display = NULL_FONT;
     let list = st.mem[box_ptr].list_ptr;
@@ -759,11 +756,9 @@ impl MemState {
 }
 
 pub(crate) fn print_vpack_diag(st: &mut EngineState, box_ptr: NodePtr<BoxNode>, diag: PackDiag) {
-    use crate::output::{
-        diagnostic_begin_capture_warning_here, print, print_int, print_ln, print_nl, print_scaled,
-    };
+    use crate::output::{print, print_int, print_ln, print_nl, print_scaled};
     print_ln(st);
-    diagnostic_begin_capture_warning_here(st);
+    crate::diagnostic::begin_warning(st);
     match diag {
         PackDiag::VUnderfull { badness, loose } => {
             if loose {
@@ -794,10 +789,7 @@ pub(crate) fn print_vpack_diag(st: &mut EngineState, box_ptr: NodePtr<BoxNode>, 
 }
 
 fn print_vpack_common_ending(st: &mut EngineState, box_ptr: NodePtr<BoxNode>) {
-    use crate::output::{
-        begin_diagnostic, capture_to_diagnostic, end_diagnostic, print, print_int, print_ln,
-        show_box,
-    };
+    use crate::output::{begin_diagnostic, end_diagnostic, print, print_int, print_ln, show_box};
     if st.shipout.output_active {
         print(st, ") has occurred while \\output is active");
     } else {
@@ -812,7 +804,7 @@ fn print_vpack_common_ending(st: &mut EngineState, box_ptr: NodePtr<BoxNode>) {
         print_int(st, st.mem.line);
         print_ln(st);
     }
-    capture_to_diagnostic(st, None);
+    crate::diagnostic::end_capture(st);
     begin_diagnostic(st);
     show_box(st, box_ptr.ptr());
     end_diagnostic(st, true);

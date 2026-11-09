@@ -97,19 +97,28 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WriteNode>) -> R
 
     let old_setting = st.shipout.selector;
     let j = st.mem[write].stream;
-    if j == 18 {
+    let to_transcript = if j == 18 {
         st.shipout.selector = Selector::NewString;
+        false
     } else if st.shipout.write_open[j as usize] {
         ensure_write_stream_open(st, j as usize)?;
         st.shipout.selector = Selector::File(j as u8);
+        false
     } else {
         if j == 17 && st.shipout.selector == Selector::TermAndLog {
             st.shipout.selector = Selector::LogOnly;
         }
         crate::output::print_nl(st, "");
+        true
+    };
+    if to_transcript {
+        crate::diagnostic::begin_capture(st, crate::diagnostic::DiagnosticKind::Written);
     }
     let def_ref = st.scanner.def_ref;
     crate::output::token_show(st, def_ref);
+    if to_transcript {
+        crate::diagnostic::end_capture(st);
+    }
     crate::output::print_ln(st);
     st.mem.flush_token_list(def_ref);
 
@@ -120,7 +129,6 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WriteNode>) -> R
         }
         // Tectonic leaves shell-escape warnings to the driver when it is enabled.
         if !st.config.shell_escape_enabled {
-            crate::output::diagnostic_begin_capture_warning_here(st);
             crate::output::print_nl(st, "runsystem(");
             let base = st.strings.cur_string_start();
             for k in base.until(st.strings.pool_ptr) {
@@ -132,7 +140,6 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WriteNode>) -> R
             crate::output::print(st, ")...");
             crate::output::print(st, "disabled");
             crate::output::print_char(st, b'.');
-            crate::output::capture_to_diagnostic(st, None);
             crate::output::print_nl(st, "");
             crate::output::print_ln(st);
         } else {

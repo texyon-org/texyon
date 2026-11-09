@@ -2,11 +2,11 @@ use crate::bridge::{output_flush, set_error_message};
 use crate::cmd::Cmd;
 use crate::codes::ScannerStatus;
 use crate::consts::{HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, MEM_TOP};
+use crate::diagnostic::{begin_capture, emit, emit_fatal, take_capture, DiagnosticKind};
 use crate::output::{
-    append_to_diagnostic, begin_diagnostic, capture_to_diagnostic,
-    diagnostic_begin_capture_warning_here, end_diagnostic, error_here_with_diagnostic, print,
-    print_char, print_err, print_int, print_ln, print_nl, show_box, show_context, show_token_list,
-    token_show, CmdChr, InMode, TexPrint,
+    begin_diagnostic, end_diagnostic, print, print_char, print_err, print_error_prefix, print_int,
+    print_ln, print_nl, show_box, show_context, show_token_list, token_show, CmdChr, InMode,
+    TexPrint,
 };
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, EqtbState, ErrorState, InteractionMode, Selector};
@@ -17,6 +17,14 @@ impl ErrorState {
     pub(crate) fn help(&mut self, lines: &[&'static str]) {
         self.help_lines[..lines.len()].copy_from_slice(lines);
         self.help_len = lines.len() as u8;
+    }
+
+    /// The help text set for the next error, one entry per line.
+    fn help_text(&self) -> Vec<String> {
+        self.help_lines[..usize::from(self.help_len)]
+            .iter()
+            .map(|line| (*line).to_owned())
+            .collect()
     }
 }
 
@@ -33,11 +41,15 @@ fn pre_error_message(st: &mut EngineState) {
     if st.errors.interaction == InteractionMode::Batch {
         st.shipout.selector = st.shipout.selector.without_terminal();
     }
-    error_here_with_diagnostic(st, "");
+    print_error_prefix(st);
+    begin_capture(st, DiagnosticKind::Fatal);
 }
 
 fn post_error_message(st: &mut EngineState, need_to_print_it: bool) {
-    capture_to_diagnostic(st, None);
+    let help = st.errors.help_text();
+    if let Some(diagnostic) = take_capture(st, help) {
+        emit(st, diagnostic);
+    }
     if st.errors.interaction == InteractionMode::ErrorStop {
         st.errors.interaction = InteractionMode::Scroll;
     }
@@ -265,10 +277,10 @@ impl Abort {
     fn fatal_report(st: &mut EngineState, s: &'static str) {
         pre_error_message(st);
         print(st, "Emergency stop");
-        // WEB prints the reason as help, after the context, but the diagnostic needs it.
-        append_to_diagnostic(st, "\n");
-        append_to_diagnostic(st, s);
         st.errors.help(&[s]);
+        if let Some(diagnostic) = take_capture(st, st.errors.help_text()) {
+            emit_fatal(st, diagnostic);
+        }
         post_error_message(st, true);
         set_error_message(s);
     }
@@ -314,7 +326,7 @@ impl Abort {
             }
             Abort::Fatal(s) => Self::fatal_report(st, s),
             Abort::DumpInGroup => {
-                print_err(st, "You can't dump inside a group");
+                print_err(st, DiagnosticKind::Fatal, "You can't dump inside a group");
                 st.errors.help(&[r"`{...\dump}' is a no-no."]);
                 post_error_message(st, true);
                 set_error_message("\\dump inside a group");
@@ -374,15 +386,63 @@ pub(crate) fn give_err_help(st: &mut EngineState) {
     token_show(st, st.eqtb.tok_par(TokPar::ErrHelp));
 }
 
+/// Print `message` as an error and report it with `help`.
+fn report_error(st: &mut EngineState, message: impl TexPrint, help: &[&'static str]) {
+    print_err(st, DiagnosticKind::Error, message);
+    st.errors.help(help);
+    if let Some(diagnostic) = take_capture(st, st.errors.help_text()) {
+        emit(st, diagnostic);
+    }
+}
+
 /// Report a recoverable error and carry on (`print_err`, `help`, `error`).
 pub(crate) fn error(
     st: &mut EngineState,
     message: impl TexPrint,
     help: &[&'static str],
 ) -> Result<(), Abort> {
-    print_err(st, message);
-    st.errors.help(help);
+    report_error(st, message, help);
     finish_error(st)
+}
+
+/// `\errmessage`: an error whose help is `\errhelp` when that is set, else `fallback`.
+/// `fallback` is unused when `\errhelp` is set.
+pub(crate) fn errmessage(
+    st: &mut EngineState,
+    message: StrNumber,
+    fallback: &[&'static str],
+) -> Result<(), Abort> {
+    let err_help = st.eqtb.tok_par(TokPar::ErrHelp);
+    if err_help.is_null() {
+        return error(st, message, fallback);
+    }
+    let help = err_help_text(st, err_help);
+    print_err(st, DiagnosticKind::Error, message);
+    if let Some(diagnostic) = take_capture(st, help) {
+        emit(st, diagnostic);
+    }
+    st.errors.use_err_help = true;
+    let outcome = finish_error(st);
+    st.errors.use_err_help = false;
+    outcome
+}
+
+/// The lines `\errhelp` shows, as the transcript prints them.
+fn err_help_text(st: &mut EngineState, list: crate::token::TokenList) -> Vec<String> {
+    let old_setting = st.shipout.selector;
+    st.shipout.selector = Selector::NewString;
+    let start = st.strings.cur_string_start();
+    token_show(st, list);
+    st.shipout.selector = old_setting;
+    let units: Vec<u16> = start
+        .until(st.strings.pool_ptr)
+        .map(|k| st.strings.str_pool[k.index()])
+        .collect();
+    st.strings.discard_cur_string();
+    String::from_utf16_lossy(&units)
+        .lines()
+        .map(str::to_owned)
+        .collect()
 }
 
 /// [`error`], first putting the current token back to be read again.
@@ -391,8 +451,7 @@ pub(crate) fn back_error(
     message: impl TexPrint,
     help: &[&'static str],
 ) -> Result<(), Abort> {
-    print_err(st, message);
-    st.errors.help(help);
+    report_error(st, message, help);
     crate::input::back_input(st)?;
     finish_error(st)
 }
@@ -403,8 +462,7 @@ pub(crate) fn ins_error(
     message: impl TexPrint,
     help: &[&'static str],
 ) -> Result<(), Abort> {
-    print_err(st, message);
-    st.errors.help(help);
+    report_error(st, message, help);
     crate::input::back_input(st)?;
     st.input
         .cur_input
@@ -485,10 +543,8 @@ pub(crate) fn box_error(
     let box_val = st.eqtb.box_reg(i32::from(n));
     error(st, message, help)?;
     begin_diagnostic(st);
-    diagnostic_begin_capture_warning_here(st);
     print_nl(st, "The following box has been deleted:");
     show_box(st, box_val);
-    capture_to_diagnostic(st, None);
     end_diagnostic(st, true);
     st.mem.flush_node_list(box_val)?;
     st.eqtb

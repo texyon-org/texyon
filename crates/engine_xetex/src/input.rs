@@ -284,11 +284,9 @@ pub(crate) fn begin_token_list(
     st.input.cur_input.set_token_loc(list.link(&st.mem));
     if st.eqtb.int_par(IntPar::TracingMacros) > 1 {
         use crate::output::{
-            begin_diagnostic, capture_to_diagnostic, diagnostic_begin_capture_warning_here,
-            end_diagnostic, print, print_cmd_chr, print_esc, print_nl, token_show,
+            begin_diagnostic, end_diagnostic, print, print_cmd_chr, print_esc, print_nl, token_show,
         };
         begin_diagnostic(st);
-        diagnostic_begin_capture_warning_here(st);
         print_nl(st, "");
         match t {
             TokenType::Mark => print_esc(st, "mark"),
@@ -301,7 +299,6 @@ pub(crate) fn begin_token_list(
         }
         print(st, "->");
         token_show(st, list);
-        capture_to_diagnostic(st, None);
         end_diagnostic(st, false);
     }
     Ok(())

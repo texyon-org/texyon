@@ -12,9 +12,8 @@ use crate::io::{open_input_file, pack_file_name};
 use crate::mem_types::B16x4;
 use crate::node::{NativeWordNode, NodePtr, WhatsitSubtype};
 use crate::output::{
-    begin_diagnostic, capture_to_diagnostic, char_warning, diagnostic_begin_capture_warning_here,
-    end_diagnostic, print, print_char, print_int, print_nl, print_scaled, CsName, FileName,
-    TexPrint,
+    begin_diagnostic, char_warning, end_diagnostic, print, print_char, print_int, print_nl,
+    print_scaled, CsName, FileName, TexPrint,
 };
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, FontState, MemState};
@@ -561,7 +560,6 @@ pub(crate) fn read_font_info(
 
     if st.eqtb.int_par(IntPar::XetexTracingFonts) > 0 {
         begin_diagnostic(st);
-        diagnostic_begin_capture_warning_here(st);
         print_nl(st, "Requested font \"");
         let name = st.input.name_of_file_bytes().to_vec();
         print(st, name.as_slice());
@@ -574,7 +572,6 @@ pub(crate) fn read_font_info(
             print_scaled(st, s);
             print(st, "pt");
         }
-        capture_to_diagnostic(st, None);
         end_diagnostic(st, false);
     }
 
@@ -672,7 +669,6 @@ pub(crate) fn read_font_info(
 
     if st.eqtb.int_par(IntPar::XetexTracingFonts) > 0 && (g == NULL_FONT || file_opened) {
         begin_diagnostic(st);
-        diagnostic_begin_capture_warning_here(st);
         print_nl(st, " -> ");
         if g == NULL_FONT {
             print(st, "font not found, using \"nullfont\"");
@@ -680,7 +676,6 @@ pub(crate) fn read_font_info(
             let name = st.input.name_of_file_bytes().to_vec();
             print(st, name.as_slice());
         }
-        capture_to_diagnostic(st, None);
         end_diagnostic(st, false);
     }
 

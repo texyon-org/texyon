@@ -319,6 +319,11 @@ pub struct EngineFrame {
     /// Transcript bytes of the previous operation this one's `.log` continues,
     /// since a resumed run writes only what it executed.
     pub log_resumed_at: Option<u64>,
+    /// What this operation reported, in order.
+    pub diagnostics: Vec<crate::Diagnostic>,
+    /// Diagnostics of the previous operation that come before this one's,
+    /// since a resumed run reports only what it executed.
+    pub diagnostics_resumed_at: Option<usize>,
 }
 
 /// One initialized XeTeX state repeatedly replayed from rung zero.
@@ -751,6 +756,8 @@ impl IncrementalXeTeXSession {
             checkpoint_rungs_rejected: checkpoint_activity.rejected,
             tail_pending: false,
             log_resumed_at: self.state.shipout.log_resumed_at,
+            diagnostics: self.state.diagnostics.take(),
+            diagnostics_resumed_at: self.state.diagnostics.resumed_at,
         };
         let (history, splice_at, tail_pending) = match result {
             OperationResult::Complete { history, splice_at } => (history, splice_at, false),
@@ -879,6 +886,7 @@ fn run_document(
         state.shipout.dvi.manifest.begin_operation();
     }
     state.shipout.log_resumed_at = None;
+    state.diagnostics.begin_operation();
     let execution = match splice {
         Some(splice) => {
             crate::engine::resume_resident_document(state, splice.resume_pending_command)

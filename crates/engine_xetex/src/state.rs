@@ -28,6 +28,8 @@ pub(crate) struct EngineState {
     pub mainloop: MainLoopState,
     /// Not checkpointed.
     pub pgfmath: crate::pgfmath::Diagnostics,
+    /// Not checkpointed: a restore keeps the operation's list.
+    pub diagnostics: crate::diagnostic::DiagnosticsState,
 }
 
 /// Scratch registers of `main_control`'s character and ligature loop.
@@ -1406,7 +1408,8 @@ pub(crate) struct ShipoutState {
     /// Where this operation's transcript continues the previous one, if it
     /// resumed. Operation-scoped, so checkpoint restores keep it.
     pub log_resumed_at: Option<u64>,
-    pub current_diagnostic: Option<crate::bridge::Diagnostic>,
+    /// Diagnostics reported so far, captured with every checkpoint.
+    pub diagnostics_issued: usize,
     pub best_page_break: crate::units::MemPtr,
     pub best_size: Scaled,
     pub least_page_cost: i32,

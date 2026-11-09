@@ -1270,7 +1270,11 @@ pub(crate) fn finalize_dvi_file(st: &mut crate::state::EngineState) -> Result<()
     }
 
     if st.shipout.total_pages == 0 {
-        crate::output::print_nl(st, "No pages of output.");
+        crate::output::print_nl(st, "");
+        crate::diagnostic::begin_warning(st);
+        crate::output::print(st, "No pages of output");
+        crate::diagnostic::end_capture(st);
+        crate::output::print_char(st, b'.');
         return Ok(());
     }
     // The DVI grew too big and the message was already printed.
