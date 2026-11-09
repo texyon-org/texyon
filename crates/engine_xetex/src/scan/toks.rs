@@ -118,7 +118,10 @@ pub(crate) fn read_toks(
 
     loop {
         crate::input::begin_file_reading(st)?;
-        st.input.cur_input.name = (m + 1) as i32;
+        st.input.cur_input.name = match u8::try_from(m) {
+            Ok(stream) if stream < 16 => crate::state::InputName::Read(stream),
+            _ => crate::state::InputName::ReadTerminal,
+        };
 
         if st.input.read_open[m] == CLOSED {
             return Err(Abort::Internal("terminal input forbidden"));
@@ -507,12 +510,12 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
         } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
             crate::output::print_char(st, b' ');
         }
-        st.input.cur_input.name = 19;
+        st.input.cur_input.name = crate::state::InputName::Pseudo { traced: true };
         print(st, "( ");
         st.input.open_parens += 1;
         output_flush(st.shipout.rust_stdout);
     } else {
-        st.input.cur_input.name = 18;
+        st.input.cur_input.name = crate::state::InputName::Pseudo { traced: false };
         st.input.cur_input.synctex_tag = 0;
         st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;
     }

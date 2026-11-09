@@ -11,7 +11,7 @@ use crate::mem::{CONTRIB_HEAD, GARBAGE, PAGE_HEAD, PAGE_INS_HEAD, TEMP_HEAD};
 use crate::node::{AnyNode, NodePtr, PageInsNode};
 use crate::packaging::PackSpec;
 use crate::params::{IntPar, TokPar};
-use crate::state::{EngineState, GroupCode, InteractionMode, Selector};
+use crate::state::{EngineState, GroupCode, InputName, InteractionMode, Selector};
 use crate::token::TokenList;
 use crate::units::{NodeType, Scaled};
 
@@ -696,7 +696,9 @@ pub(crate) fn show_context(st: &mut EngineState) {
         st.input.cur_input = st.input.input_stack[st.input.base_ptr];
         st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;
         let ci = st.input.cur_input;
-        if ci.state != TOKEN_LIST && (ci.name > 19 || st.input.base_ptr == 0) {
+        if ci.state != TOKEN_LIST
+            && (matches!(ci.name, InputName::File(_)) || st.input.base_ptr == 0)
+        {
             bottom_line = true;
         }
         let error_context_lines = st.eqtb.int_par(IntPar::ErrorContextLines);
@@ -713,31 +715,21 @@ pub(crate) fn show_context(st: &mut EngineState) {
                 let old_setting = st.shipout.selector;
                 let l;
                 if ci.state != TOKEN_LIST {
-                    if ci.name <= 17 {
-                        if ci.name == 0 {
-                            if st.input.base_ptr == 0 {
-                                print_nl(st, "<*>");
+                    match ci.name {
+                        InputName::Terminal if st.input.base_ptr == 0 => print_nl(st, "<*>"),
+                        InputName::Terminal => print_nl(st, "<insert> "),
+                        InputName::Read(n) => print(st, (super::Nl("<read "), i32::from(n), '>')),
+                        InputName::ReadTerminal => print_nl(st, "<read *>"),
+                        _ => {
+                            print_nl(st, "l.");
+                            if usize::from(ci.index) == st.input.in_open {
+                                print_int(st, st.mem.line);
                             } else {
-                                print_nl(st, "<insert> ");
+                                print_int(
+                                    st,
+                                    st.input.open_levels[usize::from(ci.index) + 1].outer_line,
+                                );
                             }
-                        } else {
-                            print_nl(st, "<read ");
-                            if ci.name == 17 {
-                                print_char(st, b'*');
-                            } else {
-                                print_int(st, ci.name - 1);
-                            }
-                            print_char(st, b'>');
-                        }
-                    } else {
-                        print_nl(st, "l.");
-                        if usize::from(ci.index) == st.input.in_open {
-                            print_int(st, st.mem.line);
-                        } else {
-                            print_int(
-                                st,
-                                st.input.open_levels[usize::from(ci.index) + 1].outer_line,
-                            );
                         }
                     }
                     print_char(st, b' ');
@@ -758,7 +750,9 @@ pub(crate) fn show_context(st: &mut EngineState) {
                     match ci.token_type() {
                         TokenType::Macro => {
                             print_ln(st);
-                            print_cs(st, ci.macro_name());
+                            if let InputName::Macro(cs) = ci.name {
+                                print_cs(st, cs);
+                            }
                         }
                         t => print_nl(st, t.label(ci.token_loc())),
                     }

@@ -24,7 +24,7 @@ use crate::scan::{
     copy_delimited_tokens, copy_group_tokens, fetch_box, get_next, get_token, get_x_non_blank,
     get_x_token, scan_int, store_new_token,
 };
-use crate::state::{EngineState, MacroParam, MemState, Selector};
+use crate::state::{EngineState, InputName, MacroParam, MemState, Selector};
 use crate::token::{Token, TokenList};
 use crate::units::{BufPos, EqtbPtr, FontId, MemPtr, Scaled, StrNumber};
 
@@ -1276,7 +1276,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
         }
 
         begin_token_list(st, ref_count, TokenType::Macro)?;
-        st.input.cur_input.set_macro_name(st.scanner.warning_index);
+        st.input.cur_input.name = InputName::Macro(st.scanner.warning_index);
         st.input.cur_input.set_token_loc(r.link(&st.mem));
 
         if n > 0 {

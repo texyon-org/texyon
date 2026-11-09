@@ -8,7 +8,7 @@ use crate::errors::OrConfusion;
 use crate::io::u_close;
 use crate::node::{link_of, NodePtr, PseudoLineNode};
 use crate::params::{IntPar, TokPar};
-use crate::state::{EngineState, InputClusterState, InputState, MemState};
+use crate::state::{EngineState, InputClusterState, InputName, InputState, MemState};
 use crate::token::{Token, TokenList};
 use crate::units::StrNumber;
 
@@ -196,7 +196,7 @@ pub(crate) fn begin_file_reading(st: &mut EngineState) -> Result<(), Abort> {
     };
     st.input.cur_input.start = st.input.first;
     st.input.cur_input.state = MID_LINE;
-    st.input.cur_input.name = 0;
+    st.input.cur_input.name = InputName::Terminal;
     st.input.cur_input.synctex_tag = 0;
     st.mem.cur_synctex_tag = 0;
     Ok(())
@@ -206,8 +206,8 @@ pub(crate) fn end_file_reading(st: &mut EngineState) -> Result<(), Abort> {
     st.input.first = st.input.cur_input.start;
     st.mem.line = st.input.open_levels[usize::from(st.input.cur_input.index)].outer_line;
     match st.input.cur_input.name {
-        18 | 19 => st.mem.pseudo_close(&mut st.input),
-        name if name > 17 => {
+        InputName::Pseudo { .. } => st.mem.pseudo_close(&mut st.input),
+        InputName::File(_) => {
             let idx = st.input.cur_input.index as usize;
             let slot = std::mem::take(&mut st.input.input_file[idx]);
             if u_close(slot) {

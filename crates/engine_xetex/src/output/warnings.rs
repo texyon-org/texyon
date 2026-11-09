@@ -25,7 +25,7 @@ fn level_is_file(st: &mut EngineState, level: usize) -> bool {
     {
         st.input.base_ptr -= 1;
     }
-    st.input.input_stack[st.input.base_ptr].name > 17
+    st.input.input_stack[st.input.base_ptr].name.reads_lines()
 }
 
 pub(crate) fn group_warning(st: &mut EngineState) {
@@ -194,7 +194,7 @@ pub(crate) fn bad_utf8_warning(st: &mut EngineState) {
     begin_diagnostic(st);
     crate::diagnostic::begin_warning(st);
     print_nl(st, "Invalid UTF-8 byte or sequence");
-    if st.input.cur_input.name == 0 {
+    if st.input.cur_input.name == crate::state::InputName::Terminal {
         print(st, " in terminal input");
     } else {
         print(st, " at line ");

@@ -183,8 +183,38 @@ pub(crate) struct InputState {
     pub start: BufPos,
     pub loc: BufPos,
     pub limit: BufPos,
-    pub name: i32,
+    pub name: InputName,
     pub synctex_tag: i32,
+}
+
+/// What an input level reads from, WEB's overloaded `name` field.
+#[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
+pub(crate) enum InputName {
+    /// The terminal, or an `\insert`ed line above the bottom level.
+    #[default]
+    Terminal,
+    /// `\read` from stream 0 to 15.
+    Read(u8),
+    /// `\read` from the terminal.
+    ReadTerminal,
+    /// A `\scantokens` pseudo file, `traced` when `\tracingscantokens` showed it like a file.
+    Pseudo { traced: bool },
+    /// A file opened by `\input`, by the name it was found under.
+    File(StrNumber),
+    /// A macro's token list: the control sequence being expanded.
+    Macro(EqtbPtr),
+}
+
+impl InputName {
+    /// Whether lines come from a file or pseudo file, WEB's `name>17`.
+    pub(crate) fn reads_lines(self) -> bool {
+        matches!(self, Self::Pseudo { .. } | Self::File(_))
+    }
+
+    /// Whether the level prints parentheses around its input, WEB's `name>=19`.
+    pub(crate) fn shows_parens(self) -> bool {
+        matches!(self, Self::Pseudo { traced: true } | Self::File(_))
+    }
 }
 
 impl InputClusterState {
@@ -213,17 +243,6 @@ impl InputState {
     #[inline]
     pub(crate) fn set_param_start(&mut self, n: usize) {
         self.limit = BufPos::from_raw(i32::try_from(n).unwrap_or(i32::MAX));
-    }
-
-    /// `name` of a macro level: the control sequence being expanded.
-    #[inline]
-    pub(crate) fn macro_name(&self) -> EqtbPtr {
-        EqtbPtr::from_raw(self.name)
-    }
-
-    #[inline]
-    pub(crate) fn set_macro_name(&mut self, cs: EqtbPtr) {
-        self.name = cs.raw();
     }
 }
 

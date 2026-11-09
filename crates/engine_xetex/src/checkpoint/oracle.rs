@@ -1,7 +1,7 @@
 //! Named state digests used only to verify checkpoint restoration.
 
 use crate::mem_types::{B32x2, ListStateRecord, MemoryWord};
-use crate::state::{EngineState, InputState};
+use crate::state::{EngineState, InputName, InputState};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ComponentDigest {
@@ -271,8 +271,21 @@ fn digest_input_state(h: &mut Fnv, input: &InputState) {
     h.i32(input.start.raw());
     h.i32(input.loc.raw());
     h.i32(input.limit.raw());
-    h.i32(input.name);
+    digest_input_name(h, input.name);
     h.i32(input.synctex_tag);
+}
+
+fn digest_input_name(h: &mut Fnv, name: InputName) {
+    let (kind, value) = match name {
+        InputName::Terminal => (0, 0),
+        InputName::Read(n) => (1, i32::from(n)),
+        InputName::ReadTerminal => (2, 0),
+        InputName::Pseudo { traced } => (3, i32::from(traced)),
+        InputName::File(s) => (4, s.raw()),
+        InputName::Macro(cs) => (5, cs.raw()),
+    };
+    h.i32(kind);
+    h.i32(value);
 }
 
 fn digest_list(h: &mut Fnv, list: &ListStateRecord) {

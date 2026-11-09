@@ -893,7 +893,7 @@ pub(crate) fn initialize_engine(
     st.input.cur_input.start = BufPos::from_raw(1);
     st.input.cur_input.index = 0;
     st.mem.line = 0;
-    st.input.cur_input.name = 0;
+    st.input.cur_input.name = crate::state::InputName::Terminal;
     st.input.force_eof = false;
     st.scanner.align_state = 1_000_000;
 

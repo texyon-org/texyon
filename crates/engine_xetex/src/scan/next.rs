@@ -13,7 +13,7 @@ use crate::input::{begin_token_list, TokenType, MID_LINE, NEW_LINE, SKIP_BLANKS,
 use crate::mem::OMIT_TEMPLATE;
 use crate::node::{AlignRecord, NodePtr};
 use crate::params::{IntPar, TokPar};
-use crate::state::{EngineState, InputClusterState, MemState, Selector};
+use crate::state::{EngineState, InputClusterState, InputName, MemState, Selector};
 use crate::token::{Token, TokenList};
 use crate::units::BufPos;
 
@@ -62,7 +62,9 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
 
     if !st.scanner.cur_cs.is_none() {
         let ci = st.input.cur_input;
-        if ci.state == TOKEN_LIST || ci.name < 1 || ci.name > 17 {
+        if ci.state == TOKEN_LIST
+            || !matches!(ci.name, InputName::Read(_) | InputName::ReadTerminal)
+        {
             let p = st.mem.get_avail_token()?;
             p.set_token(&mut st.mem, Token::from_cs(st.scanner.cur_cs));
             begin_token_list(st, p, TokenType::BackedUp)?;
@@ -469,12 +471,12 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
 
                 st.input.cur_input.state = NEW_LINE;
 
-                if st.input.cur_input.name > 17 {
+                if st.input.cur_input.name.reads_lines() {
                     st.mem.line += 1;
                     st.input.first = st.input.cur_input.start;
 
                     if !st.input.force_eof {
-                        let got_line = if st.input.cur_input.name <= 19 {
+                        let got_line = if let InputName::Pseudo { .. } = st.input.cur_input.name {
                             crate::input::pseudo_input(st)?
                         } else {
                             let slot =
@@ -504,7 +506,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                         {
                             crate::output::file_warning(st);
                         }
-                        if st.input.cur_input.name >= 19 {
+                        if st.input.cur_input.name.shows_parens() {
                             crate::output::print_char(st, b')');
                             st.input.open_parens -= 1;
                             output_flush(st.shipout.rust_stdout);
@@ -517,7 +519,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
 
                     finish_line(st);
                 } else {
-                    if st.input.cur_input.name != 0 {
+                    if st.input.cur_input.name != InputName::Terminal {
                         st.scanner.cur_cmd = Cmd::Relax;
                         st.scanner.cur_chr = 0;
                         return Ok(());

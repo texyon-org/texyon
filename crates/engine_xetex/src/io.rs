@@ -5,7 +5,7 @@ use crate::consts::{BIGGEST_USV, CLOSED, EMPTY_STRING, INVALID_HANDLE, JUST_OPEN
 use crate::input::NEW_LINE;
 use crate::layout::FontMappingHandle;
 use crate::params::IntPar;
-use crate::state::{EngineState, Selector};
+use crate::state::{EngineState, InputName, Selector};
 use crate::units::{BufPos, StrNumber};
 use crate::utf8::next_utf8_char;
 use texyon_bridge_core::EOF;
@@ -1120,17 +1120,17 @@ pub(crate) fn start_input(
     rescan_opened_name(st)?;
 
     let name = make_name_string(st)?;
-    st.input.cur_input.name = name.raw();
+    st.input.cur_input.name = InputName::File(name);
     let in_open = st.input.in_open;
     st.input.open_levels[in_open].source_name = name;
     let full_name = st.input.name_of_input_file.clone();
     let full_name = st.strings.make_tex_string(full_name)?;
     st.input.open_levels[in_open].full_source_name = full_name;
 
-    if st.input.cur_input.name == st.strings.str_ptr.prev().raw() {
+    if name == st.strings.str_ptr.prev() {
         let temp_str = st.strings.search_string(name);
         if temp_str > StrNumber::NONE {
-            st.input.cur_input.name = temp_str.raw();
+            st.input.cur_input.name = InputName::File(temp_str);
             st.strings.flush_string();
         }
     }
