@@ -931,6 +931,10 @@ pub enum NodeType {
     LeftNoad = 30,
     RightNoad = 31,
     MarginKern = 40,
+    /// A character node, which TeX told apart by its address in hi-mem.
+    Char = 41,
+    /// The head of a list being built, which is never part of a list.
+    Head = 42,
 }
 
 /// A type code outside the node types, as in the 32..=39 gap.
@@ -975,6 +979,8 @@ impl NodeType {
             30 => LeftNoad,
             31 => RightNoad,
             40 => MarginKern,
+            41 => Char,
+            42 => Head,
             other => return Err(InvalidNodeType(other)),
         })
     }
@@ -1201,6 +1207,8 @@ mod tests {
             (LeftNoad, 30),
             (RightNoad, 31),
             (MarginKern, 40),
+            (Char, 41),
+            (Head, 42),
         ];
         for (nt, code) in all {
             assert_eq!(nt.as_raw(), code);
@@ -1210,7 +1218,7 @@ mod tests {
 
     #[test]
     fn nodetype_from_raw_rejects_invalid() {
-        for raw in [32u16, 35, 39, 41, 42, 43, 44, 100, u16::MAX] {
+        for raw in [32u16, 35, 39, 43, 44, 100, u16::MAX] {
             assert_eq!(NodeType::from_raw(raw), Err(InvalidNodeType(raw)));
         }
     }

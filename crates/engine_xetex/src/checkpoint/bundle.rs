@@ -165,12 +165,8 @@ impl EngineBundle {
 
 struct MemBundle {
     lo_mem_max: MemPtr,
-    hi_mem_min: MemPtr,
-    avail: MemPtr,
-    mem_end: MemPtr,
     rover: MemPtr,
     var_used: i32,
-    dyn_used: i32,
     line: i32,
     cur_synctex_tag: i32,
     temp_ptr: MemPtr,
@@ -186,24 +182,16 @@ impl MemBundle {
             tokens,
             journal: _,
             lo_mem_max,
-            hi_mem_min,
-            avail,
-            mem_end,
             rover,
             var_used,
-            dyn_used,
             line,
             cur_synctex_tag,
             temp_ptr,
         } = src;
         Self {
             lo_mem_max: *lo_mem_max,
-            hi_mem_min: *hi_mem_min,
-            avail: *avail,
-            mem_end: *mem_end,
             rover: *rover,
             var_used: *var_used,
-            dyn_used: *dyn_used,
             line: *line,
             cur_synctex_tag: *cur_synctex_tag,
             temp_ptr: *temp_ptr,
@@ -214,12 +202,8 @@ impl MemBundle {
 
     fn restore(&self, dst: &mut MemState) {
         dst.lo_mem_max = self.lo_mem_max;
-        dst.hi_mem_min = self.hi_mem_min;
-        dst.avail = self.avail;
-        dst.mem_end = self.mem_end;
         dst.rover = self.rover;
         dst.var_used = self.var_used;
-        dst.dyn_used = self.dyn_used;
         dst.line = self.line;
         dst.cur_synctex_tag = self.cur_synctex_tag;
         dst.temp_ptr = self.temp_ptr;

@@ -96,12 +96,8 @@ fn digest_mem(st: &EngineState) -> u64 {
     let mem = &st.mem;
     h.i32s(&[
         mem.lo_mem_max.raw(),
-        mem.hi_mem_min.raw(),
-        mem.avail.raw(),
-        mem.mem_end.raw(),
         mem.rover.raw(),
         mem.var_used,
-        mem.dyn_used,
         mem.line,
         mem.cur_synctex_tag,
         mem.temp_ptr.raw(),

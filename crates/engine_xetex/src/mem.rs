@@ -9,14 +9,16 @@ use crate::fonts::Side;
 use crate::mem_types::ListStateRecord;
 use crate::node::{
     BoxLr, BoxNode, CharNode, ChoiceNode, DiscNode, FixedNode, FreeBlock, GlueKind, GlueNode,
-    GlueSpecNode, KernNode, KernSubtype, LigBoundary, LigItem, LigatureNode, MarginKernNode,
-    MathCode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode, SpanNode, Stored,
-    StoredCode, StyleNode, WhatsitKind, WhatsitSubtype,
+    GlueSpecNode, HeadNode, HyphPosNode, KernNode, KernSubtype, LigBoundary, LigItem, LigatureNode,
+    ListRecord, LrNode, MarginKernNode, MathCode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen,
+    RuleNode, SpanNode, StyleNode, WhatsitKind, WhatsitSubtype,
 };
 use crate::overlay::LigatureLayout;
 use crate::params::GluePar;
 use crate::state::{EqtbState, MemState};
-use crate::units::{FontId, GlueOrder, GlueSign, MemAddr, MemIdx, MemPtr, Orientation, Scaled};
+use crate::units::{
+    FontId, GlueOrder, GlueSign, MemAddr, MemIdx, MemPtr, NodeType, Orientation, Scaled,
+};
 
 pub(crate) const ZERO_GLUE: NodePtr<GlueSpecNode> = static_spec(0);
 pub(crate) const FIL_GLUE: NodePtr<GlueSpecNode> = static_spec(1);
@@ -43,11 +45,11 @@ pub(crate) const ALIGN_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 8);
 pub(crate) const END_SPAN: NodePtr<SpanNode> =
     NodePtr::from_idx_unchecked(MemIdx::from_raw(MEM_TOP - 9));
 pub(crate) const NULL_LIST: MemPtr = MemPtr::from_raw(MEM_TOP - 11);
-pub(crate) const LIG_TRICK: MemPtr = MemPtr::from_raw(MEM_TOP - 12);
-pub(crate) const GARBAGE: MemPtr = LIG_TRICK;
+/// The scratch char node of TeX's lig trick, two words.
+pub(crate) const LIG_TRICK: MemPtr = MemPtr::from_raw(MEM_TOP - 7);
+pub(crate) const GARBAGE: MemPtr = MemPtr::from_raw(MEM_TOP - 12);
 pub(crate) const PRE_ADJUST_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 14);
 pub(crate) const HI_MEM_STAT_MIN: i32 = MEM_TOP - 14;
-pub(crate) const HI_MEM_STAT_USAGE: i32 = 15;
 
 impl ListStateRecord {
     /// A `size`-word whatsit appended to the current list.
@@ -74,52 +76,15 @@ impl ListStateRecord {
     }
 }
 
-// --- the one-word free list ---
+// --- lists ---
 
 impl MemState {
-    /// TeX's `get_avail`.
-    #[inline(always)]
-    pub fn get_avail(&mut self) -> Result<MemPtr, Abort> {
-        let p = self.avail;
-        if !p.is_null() {
-            self.avail = p.link(self);
-            p.set_link(self, MemPtr::NULL);
-            Ok(p)
-        } else {
-            self.get_avail_grow()
+    /// Frees the list `p` of `K` records, all of one size.
+    pub(crate) fn flush_records<K: ListRecord + FixedNode>(&mut self, mut p: MemPtr) {
+        while let Some(r) = NodePtr::<K>::from_ptr(p) {
+            p = r.ptr().link(self);
+            r.free(self);
         }
-    }
-
-    #[cold]
-    fn get_avail_grow(&mut self) -> Result<MemPtr, Abort> {
-        let p = if self.mem_end < MemPtr::from_raw(MEM_TOP) {
-            self.mem_end += 1;
-            self.mem_end
-        } else {
-            self.hi_mem_min -= 1;
-            if self.lo_mem_max >= self.hi_mem_min {
-                return Err(Abort::AvailOverflow);
-            }
-            self.hi_mem_min
-        };
-        p.set_link(self, MemPtr::NULL);
-        Ok(p)
-    }
-
-    /// Returns the one-word node `p` to the free list.
-    #[inline]
-    pub fn free_avail(&mut self, p: MemPtr) {
-        p.set_link(self, self.avail);
-        self.avail = p;
-    }
-
-    /// Returns the one-word list `p` to the free list.
-    pub fn flush_list(&mut self, p: MemPtr) {
-        if p.is_null() {
-            return;
-        }
-        self.list_tail(p).set_link(self, self.avail);
-        self.avail = p;
     }
 
     /// The last node of the non-empty list starting at `p`.
@@ -167,29 +132,36 @@ impl MemState {
         p
     }
 
-    /// Whether `p` lies in the one-word region, where every node is a character.
+    /// Whether the non-null node `p` is a character node.
     #[inline]
     pub fn is_char_node(&self, p: impl MemAddr) -> bool {
-        p.addr() >= self.hi_mem_min.raw()
+        let p = p.addr();
+        p != TEX_NULL && self.type_code(MemPtr::from_raw(p)) == NodeType::Char.as_raw()
+    }
+
+    /// A hyphen position `n` linked in front of the positions `rest`.
+    pub(crate) fn new_hyph_pos(&mut self, n: usize, rest: MemPtr) -> Result<MemPtr, Abort> {
+        let p = NodePtr::<HyphPosNode>::alloc(self)?;
+        self[p].pos = i32::try_from(n).or_confusion("hyphen position")?;
+        self[p].link = rest;
+        Ok(p.ptr())
     }
 
     /// TeX's `push_LR`.
     #[inline]
     pub(crate) fn push_lr(&mut self, lr_ptr: &mut MemPtr, code: MathCode) -> Result<(), Abort> {
-        let t = self.get_avail()?;
-        self.temp_ptr = t;
-        t.set_info(self, i32::from(Stored::from(code).raw()));
-        t.set_link(self, *lr_ptr);
-        *lr_ptr = t;
+        let t = NodePtr::<LrNode>::alloc(self)?;
+        self.temp_ptr = t.ptr();
+        self[t].code = code.into();
+        self[t].link = *lr_ptr;
+        *lr_ptr = t.ptr();
         Ok(())
     }
 
     /// The code in LR stack entry `p`, `None` for anything else.
     #[inline]
     pub(crate) fn lr_code(&self, p: MemPtr) -> Option<MathCode> {
-        u16::try_from(p.info(self))
-            .ok()
-            .and_then(MathCode::from_u16)
+        NodePtr::<LrNode>::from_ptr(p).and_then(|t| self[t].code.get())
     }
 
     /// TeX's `pop_LR`.
@@ -198,7 +170,9 @@ impl MemState {
         let t = *lr_ptr;
         self.temp_ptr = t;
         *lr_ptr = t.link(self);
-        self.free_avail(t);
+        if let Some(t) = NodePtr::<LrNode>::from_ptr(t) {
+            t.free(self);
+        }
     }
 
     // --- the variable-size free list ---
@@ -250,12 +224,13 @@ impl MemState {
             }
 
             let max_halfword = MemPtr::from_raw(MAX_HALFWORD);
-            if self.lo_mem_max + 2 < self.hi_mem_min && self.lo_mem_max + 2 <= max_halfword {
-                // Grow lo-mem by a new free block below `hi_mem_min`.
-                let t = if self.hi_mem_min - self.lo_mem_max >= 1998 {
+            let limit = MemPtr::from_raw(HI_MEM_STAT_MIN);
+            if self.lo_mem_max + 2 < limit && self.lo_mem_max + 2 <= max_halfword {
+                // Grow lo-mem by a new free block below the fixed heads.
+                let t = if limit - self.lo_mem_max >= 1998 {
                     self.lo_mem_max + 1000
                 } else {
-                    self.lo_mem_max + 1 + (self.hi_mem_min - self.lo_mem_max) / 2
+                    self.lo_mem_max + 1 + (limit - self.lo_mem_max) / 2
                 };
                 let t = t.min(max_halfword);
 
@@ -337,7 +312,8 @@ impl MemState {
     /// A character node for `c` in font `f`.
     #[inline]
     pub fn new_char(&mut self, f: FontId, c: u16) -> Result<NodePtr<CharNode>, Abort> {
-        let p = NodePtr::<CharNode>::at(self.get_avail()?);
+        let p = NodePtr::<CharNode>::alloc(self)?;
+        self[p].link = MemPtr::NULL;
         self[p].font = f;
         self[p].character = c;
         Ok(p)
@@ -352,8 +328,8 @@ impl MemState {
             link,
             ..
         } = self[lig];
+        self.set_header(LIG_TRICK, NodeType::Char, character);
         self[scratch].font = font;
-        self[scratch].character = character;
         self[scratch].link = link;
         LIG_TRICK
     }
@@ -518,7 +494,7 @@ pub(crate) fn push_nest(st: &mut crate::state::EngineState) -> Result<(), Abort>
     st.input.nest.push(st.input.cur_list).map_err(|_| {
         Abort::overflow(crate::errors::Capacity::SemanticNest, st.input.nest.size())
     })?;
-    let h = st.mem.get_avail()?;
+    let h = NodePtr::<HeadNode>::alloc(&mut st.mem)?.ptr();
     let cl = &mut st.input.cur_list;
     cl.head = h;
     cl.tail = h;
@@ -530,7 +506,7 @@ pub(crate) fn push_nest(st: &mut crate::state::EngineState) -> Result<(), Abort>
 
 impl MemState {
     pub fn pop_nest(&mut self, input: &mut crate::state::InputClusterState) -> Result<(), Abort> {
-        self.free_avail(input.cur_list.head);
+        NodePtr::<HeadNode>::at(input.cur_list.head).free(self);
         input.cur_list = input.nest.pop().or_confusion("pop_nest")?;
         Ok(())
     }

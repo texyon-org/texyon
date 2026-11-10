@@ -5,9 +5,12 @@ use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::{CharTag, LigChar};
 use crate::hyphenation::TrieOp;
-use crate::main_control::LigStack;
+use crate::main_control::{LigStack, NewChar};
 use crate::mem::HOLD_HEAD;
-use crate::node::{AnyNode, CharNode, DiscNode, LigBoundary, LigItem, NativeWordNode, NodePtr};
+use crate::node::{
+    AnyNode, CharNode, DiscNode, HyphPosNode, LigBoundary, LigItem, NativeWordNode, NodePtr,
+};
+use crate::overlay::HyphPosLayout;
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, FontState, MemState};
 use crate::units::{FontId, FontInfoIdx, MemPtr, Scaled, StrNumber};
@@ -434,10 +437,11 @@ pub(super) fn hyphenate(
                 .zip(&st.hyph.hc[1..=hn + 1])
                 .all(|(&u, &c)| i32::from(u) == c)
         {
-            let mut s = st.hyph.hyph_list[h];
-            while !s.is_null() {
-                st.hyph.hyf[s.info(&st.mem) as usize] = 1;
-                s = s.link(&st.mem);
+            let mut s = NodePtr::<HyphPosNode>::from_ptr(st.hyph.hyph_list[h]);
+            while let Some(pos) = s {
+                let HyphPosLayout { pos, link, .. } = st.mem[pos];
+                st.hyph.hyf[usize::try_from(pos).or_confusion("hyphen position")?] = 1;
+                s = NodePtr::from_ptr(link);
             }
             return insert_hyphens(st, word, hn, native_ha);
         }
@@ -613,7 +617,10 @@ fn insert_hyphens(
                     i += 1;
                     saved_c = st.hyph.hu[i];
                     st.hyph.hu[i] = st.hyph.hyf_char;
-                    st.mem.free_avail(node.ptr());
+                    match node {
+                        NewChar::Char(c) => c.free(&mut st.mem),
+                        NewChar::Native(_) => return Err(Abort::Confusion("hyphen char")),
+                    }
                 }
 
                 while l <= i {
@@ -688,6 +695,6 @@ fn insert_hyphens(
     }
 
     s.set_link(&mut st.mem, q_final);
-    st.mem.flush_list(st.hyph.init_list);
+    st.mem.flush_records::<CharNode>(st.hyph.init_list);
     Ok(())
 }

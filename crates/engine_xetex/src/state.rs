@@ -664,12 +664,8 @@ pub(crate) struct MemState {
     pub tokens: crate::token::TokenStore,
     pub journal: crate::journal::WordJournal<crate::mem_types::MemoryWord>,
     pub lo_mem_max: crate::units::MemPtr,
-    pub hi_mem_min: crate::units::MemPtr,
-    pub avail: crate::units::MemPtr,
-    pub mem_end: crate::units::MemPtr,
     pub rover: crate::units::MemPtr,
     pub var_used: i32,
-    pub dyn_used: i32,
     /// TeX's `line`, kept here because `get_node` stamps it into new nodes.
     pub line: i32,
     pub cur_synctex_tag: i32,

@@ -676,12 +676,14 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: LastItemCode) -> Result<Scaled
 fn fetch_last_node_item(st: &EngineState, code: LastItemCode) -> CurVal {
     let head = st.input.cur_list.head;
     let mode = st.input.cur_list.mode;
+    // The list head is no node, as TeX's hi-mem head counted as a character.
+    let item = |tx| (tx != head && !st.mem.is_char_node(tx)).then(|| st.mem.classify(tx));
     let mut tx = st.input.cur_list.tail;
-    let mut node = (!st.mem.is_char_node(tx)).then(|| st.mem.classify(tx));
+    let mut node = item(tx);
     if let Some(Ok(AnyNode::Math(math))) = node {
         if st.mem[math].subtype == MathCode::EndM {
             tx = st.mem.predecessor(head, tx);
-            node = (!st.mem.is_char_node(tx)).then(|| st.mem.classify(tx));
+            node = item(tx);
         }
     }
     let node = node.filter(|_| mode != 0);

@@ -670,7 +670,7 @@ pub(super) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
         };
         if !exists {
             crate::output::char_warning(st, main_f, st.scanner.cur_chr)?;
-            st.mem.free_avail(lig_stack_ptr(st));
+            NodePtr::<CharNode>::at(lig_stack_ptr(st)).free(&mut st.mem);
             return Ok(true);
         }
         let top = lig_stack_ptr(st);

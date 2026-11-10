@@ -12,9 +12,9 @@ use crate::glyph_arena::FixedPoint;
 use crate::mem::LIG_TRICK;
 use crate::node::Stored;
 use crate::node::{
-    link_of, AnyNode, BoxLr, BoxNode, EdgeNode, GlueKind, GlueNode, GlueSpecNode, GlyphNode,
-    KernSubtype, LeaderKind, MathCode, MathNode, MovementNode, NativeWordNode, NodePtr, RuleNode,
-    WhatsitSubtype, WhatsitVariant, RUNNING,
+    link_of, AnyNode, BoxLr, BoxNode, CharNode, EdgeNode, GlueKind, GlueNode, GlueSpecNode,
+    GlyphNode, KernSubtype, LeaderKind, MathCode, MathNode, MovementNode, NativeWordNode, NodePtr,
+    RuleNode, WhatsitSubtype, WhatsitVariant, RUNNING,
 };
 use crate::packaging::LrState;
 use crate::params::{DimenPar, IntPar};
@@ -1434,7 +1434,7 @@ impl MemState {
                         }
                     }
                     Ok(AnyNode::Ligature(ligature)) => {
-                        self.flush_list(self[ligature].lig_ptr);
+                        self.flush_records::<CharNode>(self[ligature].lig_ptr);
                         self.temp_ptr = ligature.ptr();
                         let (f, ch) = (self[ligature].font, self[ligature].character);
                         let c = self.new_char(f, ch)?.ptr();

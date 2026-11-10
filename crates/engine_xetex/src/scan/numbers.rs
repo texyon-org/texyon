@@ -482,7 +482,7 @@ fn scan_dimen_from(
                 if decimal && st.scanner.cur_tok == POINT_TOKEN {
                     // Up to 17 digits are kept, most recent first, in a temporary list.
                     let mut k: usize = 0;
-                    let mut digits = MemPtr::NULL;
+                    let mut dig = [0u8; 17];
                     get_token(st)?;
                     loop {
                         get_x_token(st)?;
@@ -490,19 +490,9 @@ fn scan_dimen_from(
                             break;
                         };
                         if k < 17 {
-                            let q = st.mem.get_avail()?;
-                            q.set_link(&mut st.mem, digits);
-                            q.set_info(&mut st.mem, d);
-                            digits = q;
+                            dig[k] = u8::try_from(d).or_confusion("digit")?;
                             k += 1;
                         }
-                    }
-                    let mut dig = [0u8; 17];
-                    for i in (0..k).rev() {
-                        dig[i] = digits.info(&st.mem) as u8;
-                        let next = digits.link(&st.mem);
-                        st.mem.free_avail(digits);
-                        digits = next;
                     }
                     f = round_decimals(&dig[..k]);
                     if st.scanner.cur_cmd != Cmd::Spacer {

@@ -644,21 +644,21 @@ mod tests {
 
     #[derive(Clone, Copy)]
     struct Bundle {
-        mem_end: MemPtr,
+        lo_mem_max: MemPtr,
         fmem_ptr: crate::units::FontInfoIdx,
         tokens: crate::token::TokenStoreMarks,
     }
 
     fn bundle(st: &EngineState) -> Bundle {
         Bundle {
-            mem_end: st.mem.mem_end,
+            lo_mem_max: st.mem.lo_mem_max,
             fmem_ptr: st.fonts.fmem_ptr,
             tokens: st.mem.tokens.marks(),
         }
     }
 
     fn restore(st: &mut EngineState, bundle: &Bundle) {
-        st.mem.mem_end = bundle.mem_end;
+        st.mem.lo_mem_max = bundle.lo_mem_max;
         st.fonts.fmem_ptr = bundle.fmem_ptr;
         st.mem.tokens.restore_marks(bundle.tokens);
     }
@@ -684,7 +684,7 @@ mod tests {
 
         st.mem.set_b32s1(MemPtr::MEM_BOT, 10);
         st.eqtb.set_equiv(crate::units::EqtbPtr::from_raw(1), 11);
-        st.mem.mem_end = MemPtr::from_raw(12);
+        st.mem.lo_mem_max = MemPtr::from_raw(12);
         let rung = bundle(&st);
         ladder.push(&mut st, rung, 1, true, false);
 
@@ -696,14 +696,14 @@ mod tests {
         ladder.push(&mut st, rung, 2, true, false);
 
         st.mem.set_b32s1(MemPtr::from_raw(3), 30); // open epoch after the newest rung
-        st.mem.mem_end = MemPtr::from_raw(31);
+        st.mem.lo_mem_max = MemPtr::from_raw(31);
         ladder.rewind_to(&mut st, 1, restore);
 
         assert_eq!(value(st.mem.data[0]), 10);
         assert_eq!(value(st.mem.data[2]), 0);
         assert_eq!(value(st.mem.data[3]), 0);
         assert_eq!(value(st.eqtb.data[1]), 11);
-        assert_eq!(st.mem.mem_end, MemPtr::from_raw(12));
+        assert_eq!(st.mem.lo_mem_max, MemPtr::from_raw(12));
         assert_eq!(st.fonts.fmem_ptr, crate::units::FontInfoIdx::from_raw(0));
         assert_eq!(ladder.len(), 2);
     }
@@ -800,16 +800,16 @@ mod tests {
         let mut ladder = CheckpointLadder::from_engine(&st, strings_base);
 
         st.scanner.logical_clock = 10;
-        st.mem.mem_end = MemPtr::from_raw(20);
+        st.mem.lo_mem_max = MemPtr::from_raw(20);
         st.mem.set_b32s1(MemPtr::MEM_BOT, 30);
         ladder.push_engine(&mut st, strings_base, true, true);
         st.scanner.logical_clock = 40;
-        st.mem.mem_end = MemPtr::from_raw(50);
+        st.mem.lo_mem_max = MemPtr::from_raw(50);
         st.mem.set_b32s1(MemPtr::MEM_BOT, 60);
 
         ladder.rewind_engine(&mut st, 1);
         assert_eq!(st.scanner.logical_clock, 10);
-        assert_eq!(st.mem.mem_end, MemPtr::from_raw(20));
+        assert_eq!(st.mem.lo_mem_max, MemPtr::from_raw(20));
         assert_eq!(value(st.mem.data[0]), 30);
         assert!(ladder.accounted_bytes() > 0);
     }

@@ -8,9 +8,10 @@ use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::mem::TEMP_HEAD;
 use crate::node::{
-    AnyNode, BoxNode, DiscNode, FixedNode, GlueNode, LanguageNode, NoadVariant, NodeKind, NodePtr,
-    OpenNode, WhatsitNode, WhatsitVariant, WriteNode,
+    AnyNode, BoxNode, CharNode, DiscNode, FixedNode, GlueNode, HeadNode, LanguageNode, NoadVariant,
+    NodeKind, NodePtr, OpenNode, WhatsitNode, WhatsitVariant, WriteNode,
 };
+use crate::overlay::CharLayout;
 use crate::state::MemState;
 
 use super::LrState;
@@ -112,9 +113,11 @@ impl MemState {
     /// after `h` and ending them with `t`.
     pub fn just_copy(&mut self, mut p: MemPtr, mut h: MemPtr, t: MemPtr) -> Result<(), Abort> {
         while !p.is_null() {
-            let copy = if self.is_char_node(p) {
-                let r = self.get_avail()?;
-                Some((r, 1))
+            let copy = if let Some(ch) = self.as_char(p) {
+                let CharLayout {
+                    font, character, ..
+                } = self[ch];
+                Some((self.new_char(font, character)?.ptr(), 0))
             } else {
                 match self.classify(p).ok() {
                     Some(AnyNode::Box(b)) => Some((self.copy_box_shell(b, MemPtr::NULL)?.ptr(), 0)),
@@ -235,13 +238,14 @@ impl MemState {
     pub fn flush_node_list(&mut self, mut p: MemPtr) -> Result<(), Abort> {
         while !p.is_null() {
             let q = p.link(self);
-            if self.is_char_node(p) {
-                self.free_avail(p);
+            if let Some(ch) = self.as_char(p) {
+                ch.free(self);
                 p = q;
                 continue;
             }
 
             let size = match self.classify(p).or_confusion("flushing")? {
+                AnyNode::Char(_) => CharNode::SIZE,
                 AnyNode::Box(b) => {
                     self.flush_node_list(self[b].list_ptr)?;
                     BOX_NODE_SIZE
@@ -336,11 +340,14 @@ impl MemState {
     }
 
     fn copy_list(&mut self, mut p: MemPtr) -> Result<MemPtr, Abort> {
-        let h = self.get_avail()?;
-        let mut q = h;
+        let h = NodePtr::<HeadNode>::alloc(self)?;
+        let mut q = h.ptr();
         while !p.is_null() {
-            let (r, words) = if self.is_char_node(p) {
-                (self.get_avail()?, 1)
+            let (r, words) = if let Some(ch) = self.as_char(p) {
+                let CharLayout {
+                    font, character, ..
+                } = self[ch];
+                (self.new_char(font, character)?.ptr(), 0)
             } else {
                 self.copy_node(p)?
             };
@@ -350,8 +357,8 @@ impl MemState {
             p = p.link(self);
         }
         q.set_link(self, MemPtr::NULL);
-        let result = h.link(self);
-        self.free_avail(h);
+        let result = self[h].link;
+        h.free(self);
         Ok(result)
     }
 

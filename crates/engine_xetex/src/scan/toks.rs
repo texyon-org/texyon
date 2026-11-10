@@ -7,7 +7,7 @@ use crate::consts::{ACTIVE_BASE, CLOSED, JUST_OPEN, NORMAL, TEX_NULL};
 use crate::errors::Abort;
 use crate::expand::expand;
 use crate::input::NEW_LINE;
-use crate::node::{NodePtr, PseudoLineNode};
+use crate::node::{NodePtr, PseudoFileNode, PseudoLineNode};
 use crate::output::{print, print_int};
 use crate::overlay::PseudoWord;
 use crate::params::IntPar;
@@ -458,8 +458,9 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
     st.strings.str_pool[st.strings.pool_ptr.index()] = u16::from(b' ');
     let mut l = st.strings.str_start(s);
     let nl = st.eqtb.int_par(IntPar::NewLineChar) as u16;
-    let file = st.mem.get_avail()?;
-    let mut last_line = file;
+    let file = NodePtr::<PseudoFileNode>::alloc(&mut st.mem)?;
+    st.mem[file].lines = None.into();
+    let mut last_line: Option<NodePtr<PseudoLineNode>> = None;
 
     // Each line becomes a node of words holding four characters each.
     while l < st.strings.pool_ptr {
@@ -469,9 +470,13 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
         }
         let size = ((l - m + 7) / 4).max(2);
         let line = NodePtr::<PseudoLineNode>::at(st.mem.get_node(size)?);
-        last_line.set_link(&mut st.mem, line.ptr());
-        last_line = line.ptr();
+        match last_line {
+            None => st.mem[file].lines = line.into(),
+            Some(prev) => st.mem[prev].link = line.into(),
+        }
+        last_line = Some(line);
         st.mem[line].size = size;
+        st.mem[line].link = None.into();
         let mut k = m;
         if let Some((last, full)) = st.mem.entries_mut(line).split_last_mut() {
             for word in full {
@@ -492,10 +497,8 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
         }
     }
 
-    let lines = file.link(&st.mem);
-    file.set_info(&mut st.mem, lines.raw());
-    file.set_link(&mut st.mem, st.input.pseudo_files);
-    st.input.pseudo_files = file;
+    st.mem[file].link = st.input.pseudo_files;
+    st.input.pseudo_files = file.ptr();
     st.strings.flush_str(s);
 
     crate::input::begin_file_reading(st)?;

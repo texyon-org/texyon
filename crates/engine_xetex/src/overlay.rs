@@ -16,13 +16,13 @@ use crate::node::{
     AccentNoad, AdjustNode, AdjustPlacement, AlignRecord, AlignStackNode, AnyNoad, BoxLr, BoxNode,
     CharNode, ChoiceNode, CondNode, DelimiterField, DiscNode, EdgeNode, ExprNode, FenceNoad,
     FenceSubtype, FixedNode, FractionNoad, FreeBlock, GlueKind, GlueNode, GlueSpecNode, GlyphNode,
-    InsNode, KernNode, KernSubtype, LanguageNode, LeaderKind, LigBoundary, LigItem, LigatureNode,
-    Link, MarginKernNode, MarkNode, MathAccentKind, MathCode, MathField, MathNode, MovementNode,
-    NativeWordNode, Noad, NodeKind, NodePtr, OpenNode, PageInsNode, ParShapeNode, PenaltiesNode,
-    PenaltyNode, PicNode, PseudoLineNode, RadicalNoad, RuleNode, SaChild, SaElement, SaIndexNode,
-    SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved, SaSavedPointer, SaSavedWord, SaWordNode,
-    SizedWhatsit, SpanNode, Stored, StoredDimen, StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype,
-    WriteNode,
+    HeadNode, HyphPosNode, InsNode, KernNode, KernSubtype, LanguageNode, LeaderKind, LigBoundary,
+    LigItem, LigatureNode, Link, LrNode, MarginKernNode, MarkNode, MathAccentKind, MathCode,
+    MathField, MathNode, MovementNode, NativeWordNode, Noad, NodeKind, NodePtr, OpenNode,
+    PageInsNode, ParShapeNode, PenaltiesNode, PenaltyNode, PicNode, PseudoFileNode, PseudoLineNode,
+    RadicalNoad, RuleNode, SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode,
+    SaSaved, SaSavedPointer, SaSavedWord, SaWordNode, SizedWhatsit, SpanNode, Stored, StoredDimen,
+    StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype, WriteNode,
 };
 use crate::state::MemState;
 use crate::token::TokenList;
@@ -1291,18 +1291,67 @@ pub struct UnsetLayout {
 
 overlay!(UnsetNode => UnsetLayout);
 
-/// A one-word character node in the upper part of `mem`.
+/// A character node: the character in the subtype, then its font.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct CharLayout {
     pub character: u16,
-    pub font: FontId,
+    _type: u16,
     pub link: MemPtr,
+    pub font: FontId,
+    _unused1: u16,
+    _unused2: i32,
 }
 
-overlay!(CharNode => CharLayout, 1);
+overlay!(CharNode => CharLayout);
 
-/// A ligature. Its +1 word is laid out like a character node, see `char_word`.
+/// The head of a list under construction. Only its link is used.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct HeadLayout {
+    _subtype: u16,
+    _type: u16,
+    pub link: MemPtr,
+    _unused: [i32; 2],
+}
+
+overlay!(HeadNode => HeadLayout);
+
+/// An open `\scantokens` pseudo file: its unread lines and the next file.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct PseudoFileLayout {
+    pub lines: Link<PseudoLineNode>,
+    pub link: MemPtr,
+    _unused: [i32; 2],
+}
+
+overlay!(PseudoFileNode => PseudoFileLayout);
+
+/// One hyphen position of a `\hyphenation` exception, in a list from the last position.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct HyphPosLayout {
+    pub pos: i32,
+    pub link: MemPtr,
+    _unused: [i32; 2],
+}
+
+overlay!(HyphPosNode => HyphPosLayout);
+
+/// An entry of the TeX--XeT LR stack.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct LrLayout {
+    pub code: Stored<MathCode>,
+    _unused1: u16,
+    pub link: MemPtr,
+    _unused2: [i32; 2],
+}
+
+overlay!(LrNode => LrLayout);
+
+/// A ligature, with the character and font it shows.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct LigatureLayout {
@@ -1555,11 +1604,11 @@ mod tests {
     fn char_fields_land_on_their_word() {
         let mut mem = arena();
         let at = MemIdx::from_raw;
-        let c: NodePtr<CharNode> = NodePtr::from_idx_unchecked(at(15));
+        let c: NodePtr<CharNode> = NodePtr::from_idx_unchecked(at(14));
         let ch = &mut mem[c];
         (ch.character, ch.font, ch.link) = (65, FontId::new(3), MemPtr::from_raw(9));
-        assert_eq!((mem.b16s0(at(15)), mem.b16s1(at(15))), (65, 3));
-        assert_eq!(mem.b32s1(at(15)), 9);
+        assert_eq!((mem.b16s0(at(14)), mem.b32s1(at(14))), (65, 9));
+        assert_eq!(mem.b16s0(at(15)), 3);
     }
 
     #[test]

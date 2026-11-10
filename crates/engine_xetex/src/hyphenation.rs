@@ -813,10 +813,7 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
                 Cmd::Letter | Cmd::OtherChar | Cmd::CharGiven => {
                     if st.scanner.cur_chr == i32::from(b'-') {
                         if n < max_word_len(&st.eqtb) {
-                            let q = st.mem.get_avail()?;
-                            q.set_link(&mut st.mem, p);
-                            q.set_info(&mut st.mem, n as i32);
-                            p = q;
+                            p = st.mem.new_hyph_pos(n, p)?;
                         }
                     } else {
                         st.hyph.hc[0] = st.hyph.hyph_code(&st.eqtb, st.scanner.cur_chr);

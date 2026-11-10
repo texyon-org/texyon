@@ -11,8 +11,8 @@ use crate::input::{TokenType, TOKEN_LIST};
 use crate::mem::{ALIGN_HEAD, END_SPAN, HOLD_HEAD, ZERO_GLUE};
 use crate::node::Stored;
 use crate::node::{
-    link_of, AlignColumn, AlignRecord, AlignStackNode, AnyNode, BoxLr, GlueKind, GlueNode, NodePtr,
-    RuleDimen, SpanNode, UnsetNode, RUNNING,
+    link_of, AlignColumn, AlignRecord, AlignStackNode, AnyNode, BoxLr, GlueKind, GlueNode,
+    HeadNode, NodePtr, RuleDimen, SpanNode, UnsetNode, RUNNING,
 };
 use crate::packaging::{AdjustTails, PackOrigin, PackSpec};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
@@ -559,15 +559,15 @@ fn push_alignment(st: &mut EngineState) -> Result<(), Abort> {
     mem[p].cur_pre_head = sc.cur_pre_head;
     mem[p].cur_pre_tail = sc.cur_pre_tail;
     st.scanner.align_ptr = Some(p);
-    st.scanner.cur_head = st.mem.get_avail()?;
-    st.scanner.cur_pre_head = st.mem.get_avail()?;
+    st.scanner.cur_head = NodePtr::<HeadNode>::alloc(&mut st.mem)?.ptr();
+    st.scanner.cur_pre_head = NodePtr::<HeadNode>::alloc(&mut st.mem)?.ptr();
     Ok(())
 }
 
 fn pop_alignment(st: &mut EngineState) -> Result<(), Abort> {
     let p = st.scanner.align_ptr.or_confusion("align")?;
-    st.mem.free_avail(st.scanner.cur_head);
-    st.mem.free_avail(st.scanner.cur_pre_head);
+    NodePtr::<HeadNode>::at(st.scanner.cur_head).free(&mut st.mem);
+    NodePtr::<HeadNode>::at(st.scanner.cur_pre_head).free(&mut st.mem);
     let (mem, sc) = (&mut st.mem, &mut st.scanner);
     sc.cur_tail = mem[p].cur_tail;
     sc.cur_head = mem[p].cur_head;

@@ -19,7 +19,7 @@ use crate::fonts::LigChar;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::hash::{hash_slot, HASH_PRIME};
 use crate::hyphenation::{TrieOp, TriePtr, BIGGEST_LANG, HYPH_PRIME, TRIE_OP_SIZE};
-use crate::mem::{CONTRIB_HEAD, HI_MEM_STAT_MIN, HI_MEM_STAT_USAGE, PAGE_HEAD};
+use crate::mem::{CONTRIB_HEAD, HI_MEM_STAT_MIN, PAGE_HEAD};
 use crate::mem_types::{B16x4, B32x2, MemoryWord};
 use crate::node::{link_of, FreeBlock, NodePtr};
 use crate::output::{print, print_char, print_int, print_ln, print_nl};
@@ -492,7 +492,7 @@ fn dynamic_memory<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), A
         st.mem.sort_avail();
     }
     let mem = &mut st.mem;
-    s.ptr_in(&mut mem.lo_mem_max, 1019, MEM_TOP - HI_MEM_STAT_USAGE)?;
+    s.ptr_in(&mut mem.lo_mem_max, 1019, HI_MEM_STAT_MIN - 1)?;
     s.ptr_in(&mut mem.rover, 20, mem.lo_mem_max.raw())?;
     let lo_mem_max = mem.lo_mem_max;
 
@@ -525,31 +525,14 @@ fn dynamic_memory<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), A
     words += lo_mem_max + 1 - p;
     var_used += lo_mem_max - p;
 
-    s.ptr_in(&mut mem.hi_mem_min, lo_mem_max.raw() + 1, HI_MEM_STAT_MIN)?;
-    s.ptr_in(&mut mem.avail, MIN_HALFWORD, MEM_TOP)?;
-    if S::LOADING {
-        mem.mem_end = MemPtr::from_raw(MEM_TOP);
-    }
-    let (hi_mem_min, mem_end) = (mem.hi_mem_min, mem.mem_end);
-    s.items(span(
-        &mut mem.data,
-        hi_mem_min.raw(),
-        mem_end + 1 - hi_mem_min,
-    ))?;
-    words += mem_end + 1 - hi_mem_min;
+    let heads = MEM_TOP + 1 - HI_MEM_STAT_MIN;
+    s.items(span(&mut mem.data, HI_MEM_STAT_MIN, heads))?;
+    words += heads;
 
     if !S::LOADING {
-        let mut dyn_used = mem_end + 1 - hi_mem_min;
-        let mut p = mem.avail;
-        while !p.is_null() {
-            dyn_used -= 1;
-            p = p.link(mem);
-        }
         mem.var_used = var_used;
-        mem.dyn_used = dyn_used;
     }
     s.int(&mut mem.var_used)?;
-    s.int(&mut mem.dyn_used)?;
     token_lists(s, &mut mem.tokens)?;
 
     if !S::LOADING {
@@ -557,8 +540,6 @@ fn dynamic_memory<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), A
         print_int(st, words);
         print(st, " memory locations dumped; current usage is ");
         print_int(st, st.mem.var_used);
-        print_char(st, b'&');
-        print_int(st, st.mem.dyn_used);
     }
     Ok(())
 }

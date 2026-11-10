@@ -17,8 +17,8 @@ use crate::mem::{CONTRIB_HEAD, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, PAGE_HEAD, SS_
 use crate::mem_types::ListStateRecord;
 use crate::node::{
     AdjustNode, AdjustPlacement, AnyNode, CharNode, DiscNode, GlueKind, GlueNode, GlueSpecNode,
-    InsNode, KernSubtype, LanguageNode, MarkNode, MathField, NativeWordNode, NoadVariant, NodePtr,
-    WhatsitSubtype, WhatsitVariant,
+    InsNode, KernSubtype, LanguageNode, LrNode, MarkNode, MathField, NativeWordNode, NoadVariant,
+    NodePtr, WhatsitSubtype, WhatsitVariant,
 };
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
@@ -52,7 +52,7 @@ pub(super) fn end_graf(st: &mut EngineState) -> Result<(), Abort> {
     }
     let lr_save = st.input.cur_list.e_tex_aux;
     if !lr_save.is_null() {
-        st.mem.flush_list(lr_save);
+        st.mem.flush_records::<LrNode>(lr_save);
         st.input.cur_list.e_tex_aux = MemPtr::NULL;
     }
     normal_paragraph(st)?;

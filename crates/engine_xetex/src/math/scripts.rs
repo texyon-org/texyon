@@ -417,7 +417,9 @@ impl MemState {
         let mut script_ptr = self[script].info();
         let mut found = None;
         let mut style = initial_math_style;
-        while script_ptr >= MemPtr::MEM_BOT && script_ptr <= self.mem_end {
+        while script_ptr >= MemPtr::MEM_BOT
+            && script_ptr <= MemPtr::from_raw(crate::consts::MEM_TOP)
+        {
             let node = self.classify(script_ptr);
             script_ptr = match node {
                 Ok(AnyNode::Kern(_) | AnyNode::Glue(_)) => script_ptr.link(self),

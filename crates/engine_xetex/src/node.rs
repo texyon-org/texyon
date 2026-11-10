@@ -749,8 +749,16 @@ node_kinds! {
     MovementNode;
     /// An entry of the conditional stack, saving the enclosing `\if`.
     CondNode;
-    /// A one-word character node. A ligature's +1 word has the same layout.
-    CharNode;
+    /// A character in a font.
+    CharNode = Char, CHAR_NODE_SIZE;
+    /// The head of a list under construction, from `push_nest`, `copy_list` or an alignment.
+    HeadNode = Head, CHAR_NODE_SIZE;
+    /// An entry of the TeX--XeT LR stack.
+    LrNode;
+    /// An open `\scantokens` pseudo file.
+    PseudoFileNode;
+    /// A hyphen position of a `\hyphenation` exception.
+    HyphPosNode;
     /// An alignment preamble column: a null box holding the column's
     /// templates, natural width and span list.
     AlignRecord;
@@ -808,6 +816,18 @@ impl FixedNode for SaSavedPointer {
     const SIZE: i32 = SaPointerNode::SIZE;
     const TYPE: Option<NodeType> = None;
 }
+impl FixedNode for HyphPosNode {
+    const SIZE: i32 = 2;
+    const TYPE: Option<NodeType> = None;
+}
+impl FixedNode for PseudoFileNode {
+    const SIZE: i32 = 2;
+    const TYPE: Option<NodeType> = None;
+}
+impl FixedNode for LrNode {
+    const SIZE: i32 = 2;
+    const TYPE: Option<NodeType> = None;
+}
 impl FixedNode for CondNode {
     const SIZE: i32 = 2;
     const TYPE: Option<NodeType> = None;
@@ -842,6 +862,7 @@ impl FixedNode for ExprNode {
 }
 
 const MOVEMENT_NODE_SIZE: i32 = 3;
+const CHAR_NODE_SIZE: i32 = 2;
 
 // --- shared layouts ---
 
@@ -855,7 +876,8 @@ macro_rules! impl_traits {
 impl_traits!(HasLink: BoxNode, RuleNode, InsNode, MarkNode, AdjustNode, LigatureNode, DiscNode,
     WhatsitNode, MathNode, GlueNode, KernNode, PenaltyNode, UnsetNode, StyleNode, ChoiceNode,
     EdgeNode, Noad, RadicalNoad, AccentNoad, FractionNoad, FenceNoad, AnyNoad, MarginKernNode, SaIndexNode, SaElement, SaWordNode, SaPointerNode, SaMarkClassNode,
-    SaSaved, SaSavedWord, SaSavedPointer, PageInsNode, MovementNode, CondNode, CharNode, AlignRecord, AlignStackNode, ExprNode, PseudoLineNode,
+    SaSaved, SaSavedWord, SaSavedPointer, PageInsNode, MovementNode, CondNode, CharNode, HeadNode,
+    LrNode, AlignRecord, AlignStackNode, ExprNode, PseudoLineNode,
     LigItem);
 
 /// A record kept only on its own list, which therefore proves its kind.
@@ -863,7 +885,7 @@ pub trait ListRecord: NodeKind {}
 
 impl_traits!(ListRecord: SaIndexNode, SaElement, SaWordNode, SaPointerNode, SaMarkClassNode,
     SaSaved, SaSavedWord, SaSavedPointer, PageInsNode, MovementNode,
-    LigItem, CondNode, CharNode, AlignRecord, SpanNode, AlignStackNode, ParShapeNode, PenaltiesNode,
+    LigItem, CondNode, CharNode, HeadNode, LrNode, PseudoFileNode, HyphPosNode, AlignRecord, SpanNode, AlignStackNode, ParShapeNode, PenaltiesNode,
     ExprNode, PseudoLineNode, MathField, DelimiterField, FreeBlock);
 
 impl<K: ListRecord> NodePtr<K> {
@@ -1045,6 +1067,7 @@ pub enum AnyNode {
     /// Any noad, refine with [`NodePtr::<AnyNoad>::variant`].
     Noad(NodePtr<AnyNoad>),
     MarginKern(NodePtr<MarginKernNode>),
+    Char(NodePtr<CharNode>),
 }
 
 impl AnyNode {
@@ -1068,6 +1091,7 @@ impl AnyNode {
             AnyNode::Choice(p) => p.idx(),
             AnyNode::Noad(p) => p.idx(),
             AnyNode::MarginKern(p) => p.idx(),
+            AnyNode::Char(p) => p.idx(),
         }
     }
 
@@ -1160,13 +1184,15 @@ impl MemState {
             | RadicalNoad | FractionNoad | UnderNoad | OverNoad | AccentNoad | VcenterNoad
             | LeftNoad | RightNoad => AnyNode::Noad(NodePtr::from_idx_unchecked(p)),
             MarginKern => AnyNode::MarginKern(NodePtr::from_idx_unchecked(p)),
+            Char => AnyNode::Char(NodePtr::from_idx_unchecked(p)),
+            Head => return Err(InvalidNodeType(Head.as_raw())),
         })
     }
 
     /// Classifies `p` unless it is null or a character.
     #[inline]
     pub fn classify_non_char(&self, p: MemPtr) -> Option<AnyNode> {
-        if p.is_null() || p >= self.hi_mem_min {
+        if p.is_null() || self.is_char_node(p) {
             return None;
         }
         self.classify(p).ok()
@@ -1225,7 +1251,7 @@ impl MemState {
     /// `p` as a character node, if it lies in the one-word region.
     #[inline]
     pub fn as_char(&self, p: MemPtr) -> Option<NodePtr<CharNode>> {
-        (p >= self.hi_mem_min).then(|| NodePtr::at(p))
+        self.is_char_node(p).then(|| NodePtr::at(p))
     }
 }
 
@@ -1824,8 +1850,7 @@ mod tests {
 
     fn fresh_mem(n: usize) -> MemState {
         MemState {
-            data: vec![Default::default(); n],
-            hi_mem_min: MemPtr::from_raw(1_000_000),
+            data: crate::mem_types::zeroed_vec(n),
             ..Default::default()
         }
     }
@@ -1988,11 +2013,10 @@ mod tests {
 
     /// An arena whose free list is the single block `[10, 30)`.
     fn arena_with_free_block() -> MemState {
-        let mut mem = fresh_mem(64);
+        let mut mem = fresh_mem(crate::mem::MEM_WORDS);
         let rover = 10;
         mem.rover = MemPtr::from_raw(rover);
         mem.lo_mem_max = MemPtr::from_raw(30);
-        mem.hi_mem_min = MemPtr::from_raw(60);
         mem.set_b32s0(MemPtr::from_raw(rover), 20);
         mem.set_b32s1(MemPtr::from_raw(rover), MAX_HALFWORD);
         mem.set_b32s1(MemPtr::from_raw(rover + 1), rover);

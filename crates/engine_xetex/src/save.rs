@@ -686,7 +686,6 @@ mod tests {
         let rover = MemPtr::from_raw(10);
         mem.rover = rover;
         mem.lo_mem_max = MemPtr::from_raw(250);
-        mem.hi_mem_min = MemPtr::from_raw(280);
         mem.set_b32s0(rover, 240);
         mem.set_b32s1(rover, MAX_HALFWORD);
         mem.set_b32s1(rover + 1, rover.raw());

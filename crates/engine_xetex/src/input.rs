@@ -6,7 +6,8 @@ use crate::consts::FROZEN_RELAX;
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::io::u_close;
-use crate::node::{link_of, NodePtr, PseudoLineNode};
+use crate::node::{NodePtr, PseudoFileNode};
+use crate::overlay::PseudoFileLayout;
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, InputClusterState, InputName, InputState, MemState};
 use crate::token::{Token, TokenList};
@@ -159,11 +160,11 @@ pub(crate) fn back_input(st: &mut EngineState) -> Result<(), Abort> {
 
 impl MemState {
     pub(crate) fn pseudo_close(&mut self, input: &mut InputClusterState) {
-        let file = input.pseudo_files;
-        let next_file = file.link(self);
-        let mut line = NodePtr::<PseudoLineNode>::from_ptr(file.info_ptr(self));
-        self.free_avail(file);
-        input.pseudo_files = next_file;
+        let file = NodePtr::<PseudoFileNode>::at(input.pseudo_files);
+        let PseudoFileLayout { lines, link, .. } = self[file];
+        file.free(self);
+        input.pseudo_files = link;
+        let mut line = lines.get();
         while let Some(l) = line {
             let header = self[l];
             line = header.link.get();
@@ -223,12 +224,12 @@ pub(crate) fn end_file_reading(st: &mut EngineState) -> Result<(), Abort> {
 
 pub(crate) fn pseudo_input(st: &mut EngineState) -> Result<bool, Abort> {
     st.input.last = st.input.first;
-    let files = st.input.pseudo_files;
-    let Some(line) = NodePtr::<PseudoLineNode>::from_ptr(files.info_ptr(&st.mem)) else {
+    let file = NodePtr::<PseudoFileNode>::at(st.input.pseudo_files);
+    let Some(line) = st.mem[file].lines.get() else {
         return Ok(false);
     };
     let header = st.mem[line];
-    files.set_info(&mut st.mem, link_of(header.link.get()).raw());
+    st.mem[file].lines = header.link;
     let size = header.size;
     if 4 * size - 3 >= st.input.buf_size - st.input.last {
         st.input.cur_input.loc = st.input.first;

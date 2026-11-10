@@ -23,8 +23,8 @@ use crate::hyphenation::{HYPH_PRIME, TRIE_OP_SIZE};
 use crate::input::{NEW_LINE, TOKEN_LIST};
 use crate::io::init_io;
 use crate::mem::{
-    CONTRIB_HEAD, END_SPAN, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, HI_MEM_STAT_MIN, HI_MEM_STAT_USAGE,
-    NULL_LIST, PAGE_HEAD, PAGE_INS_HEAD, SS_GLUE, ZERO_GLUE,
+    CONTRIB_HEAD, END_SPAN, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, HI_MEM_STAT_MIN, NULL_LIST,
+    PAGE_HEAD, PAGE_INS_HEAD, SS_GLUE, ZERO_GLUE,
 };
 use crate::mem_types::zeroed_vec;
 use crate::node::{FreeBlock, NodePtr, PageInsNode};
@@ -437,11 +437,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     mem[page_ins].set_split_up(true);
     mem[page_ins].link = PAGE_INS_HEAD;
     mem.set_header(PAGE_HEAD, NodeType::Glue, NORMAL);
-    mem.avail = MemPtr::NULL;
-    mem.mem_end = MemPtr::from_raw(MEM_TOP);
-    mem.hi_mem_min = MemPtr::from_raw(HI_MEM_STAT_MIN);
     mem.var_used = 20;
-    mem.dyn_used = HI_MEM_STAT_USAGE;
 
     let eqtb = &mut st.eqtb;
     eqtb.set_eq(
