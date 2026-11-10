@@ -16,8 +16,8 @@ pub(crate) use bundle::{EngineBundle, StringWatermark};
 
 #[derive(Clone)]
 struct EngineDelta {
-    mem: WordDelta,
-    eqtb: WordDelta,
+    mem: WordDelta<MemoryWord>,
+    eqtb: WordDelta<MemoryWord>,
     xeq: PlainDelta<u16>,
     hash: PlainDelta<B32x2>,
     prim: PlainDelta<B32x2>,

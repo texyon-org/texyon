@@ -660,7 +660,7 @@ pub(crate) struct MemState {
     pub data: Vec<crate::mem_types::MemoryWord>,
     /// Owned shaped-glyph payloads referenced by handles in native nodes.
     pub glyph_blobs: crate::glyph_arena::GlyphBlobArena,
-    pub journal: crate::journal::WordJournal,
+    pub journal: crate::journal::WordJournal<crate::mem_types::MemoryWord>,
     pub lo_mem_max: crate::units::MemPtr,
     pub hi_mem_min: crate::units::MemPtr,
     pub avail: crate::units::MemPtr,

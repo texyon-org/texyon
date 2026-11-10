@@ -4,40 +4,66 @@
 //! first pre-image of each touched word in an epoch. [`PlainTrail`] records
 //! every write for smaller, colder arrays and relies on reverse replay.
 
+use bytemuck::Pod;
+
 use crate::mem_types::MemoryWord;
 
 /// A pre-image: word `idx` held `old` before the epoch touched it.
 #[derive(Clone, Copy)]
 #[repr(C, packed(4))]
-struct Preimage {
+struct Preimage<T: Copy> {
     idx: u32,
-    old: MemoryWord,
+    old: T,
 }
 
-const _: () = assert!(std::mem::size_of::<Preimage>() == 12);
+const _: () = assert!(std::mem::size_of::<Preimage<MemoryWord>>() == 12);
 
-#[derive(Default)]
-pub(crate) struct WordJournal {
+/// The first-touch journal of one flat array of `T` words.
+///
+/// Words at or past the epoch's `base` did not exist when it began, so they need no pre-image.
+pub(crate) struct WordJournal<T: Copy> {
     armed: bool,
+    base: usize,
     touched: Vec<u64>,
-    entries: Vec<Preimage>,
+    entries: Vec<Preimage<T>>,
 }
 
-impl WordJournal {
+impl<T: Copy> Default for WordJournal<T> {
+    fn default() -> Self {
+        Self {
+            armed: false,
+            base: 0,
+            touched: Vec::new(),
+            entries: Vec::new(),
+        }
+    }
+}
+
+impl<T: Pod> WordJournal<T> {
     #[inline(always)]
     pub(crate) fn armed(&self) -> bool {
         self.armed
     }
 
-    pub(crate) fn arm(&mut self, arena_len: usize) {
+    /// Starts journaling the first `base` words.
+    pub(crate) fn arm(&mut self, base: usize) {
         assert!(
-            u32::try_from(arena_len).is_ok(),
+            u32::try_from(base).is_ok(),
             "journal arena exceeds u32 indices"
         );
         self.touched.clear();
-        self.touched.resize(arena_len.div_ceil(64), 0);
         self.entries.clear();
         self.armed = true;
+        self.rebase(base);
+    }
+
+    /// Moves the epoch's base, the length the array had when the epoch began.
+    pub(crate) fn rebase(&mut self, base: usize) {
+        self.base = base;
+        let len = base.div_ceil(64);
+        if self.touched.len() < len {
+            self.touched.resize(len, 0);
+        }
     }
 
     pub(crate) fn disarm(&mut self) {
@@ -45,8 +71,11 @@ impl WordJournal {
     }
 
     #[inline]
-    pub(crate) fn note(&mut self, index: usize, old: MemoryWord) {
+    pub(crate) fn note(&mut self, index: usize, old: T) {
         debug_assert!(self.armed);
+        if index >= self.base {
+            return;
+        }
         let bit = 1u64 << (index & 63);
         let word = &mut self.touched[index >> 6];
         if *word & bit == 0 {
@@ -61,10 +90,10 @@ impl WordJournal {
     /// Notes every word of a node. One mask test settles the usual case, where
     /// all of them are already noted, at any node size.
     #[inline]
-    pub(crate) fn note_run(&mut self, start: usize, words: &[MemoryWord]) {
+    pub(crate) fn note_run(&mut self, start: usize, words: &[T]) {
         debug_assert!(self.armed);
         let shift = start & 63;
-        if shift + words.len() <= 64 {
+        if shift + words.len() <= 64 && start + words.len() <= self.base {
             let mask = (u64::MAX >> ((64 - words.len()) & 63)) << shift;
             if self.touched[start >> 6] & mask == mask {
                 return;
@@ -74,7 +103,7 @@ impl WordJournal {
     }
 
     #[inline(never)]
-    fn note_each(&mut self, start: usize, words: &[MemoryWord]) {
+    fn note_each(&mut self, start: usize, words: &[T]) {
         for (index, &old) in (start..).zip(words) {
             self.note(index, old);
         }
@@ -82,20 +111,20 @@ impl WordJournal {
 
     /// Closes the epoch. A word back at its pre-image needs no restoring, so it
     /// is dropped, which also undoes the cost of noting a node's unwritten words.
-    pub(crate) fn seal(&mut self, data: &[MemoryWord]) -> WordDelta {
+    pub(crate) fn seal(&mut self, data: &[T]) -> WordDelta<T> {
         for e in &self.entries {
             self.touched[e.idx as usize >> 6] = 0;
         }
         self.entries.retain(|e| {
             let old = e.old;
-            bytemuck::cast::<_, u64>(data[e.idx as usize]) != bytemuck::cast::<_, u64>(old)
+            bytemuck::bytes_of(&data[e.idx as usize]) != bytemuck::bytes_of(&old)
         });
         WordDelta {
             entries: std::mem::take(&mut self.entries),
         }
     }
 
-    pub(crate) fn snapshot(&self) -> WordDelta {
+    pub(crate) fn snapshot(&self) -> WordDelta<T> {
         WordDelta {
             entries: self.entries.clone(),
         }
@@ -108,20 +137,28 @@ impl WordJournal {
 }
 
 /// The pre-images of one epoch, at most one per word.
-#[derive(Clone, Default)]
-pub(crate) struct WordDelta {
-    entries: Vec<Preimage>,
+#[derive(Clone)]
+pub(crate) struct WordDelta<T: Copy> {
+    entries: Vec<Preimage<T>>,
 }
 
-impl WordDelta {
-    pub(crate) fn apply_to(&self, data: &mut [MemoryWord]) {
+impl<T: Copy> Default for WordDelta<T> {
+    fn default() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+}
+
+impl<T: Copy> WordDelta<T> {
+    pub(crate) fn apply_to(&self, data: &mut [T]) {
         for e in self.entries.iter().rev() {
             data[e.idx as usize] = e.old;
         }
     }
 
     /// `older` restores further back in time, so its pre-image wins on overlap.
-    pub(crate) fn compose_with_older(&mut self, mut older: WordDelta) {
+    pub(crate) fn compose_with_older(&mut self, mut older: WordDelta<T>) {
         // Each delta holds a word at most once, so reordering is harmless.
         older.entries.sort_unstable_by_key(|e| e.idx);
         let known = older.entries.len();
@@ -137,7 +174,7 @@ impl WordDelta {
     }
 
     pub(crate) fn allocated_bytes(&self) -> usize {
-        self.entries.capacity() * std::mem::size_of::<Preimage>()
+        self.entries.capacity() * std::mem::size_of::<Preimage<T>>()
     }
 
     pub(crate) fn compact(&mut self) {
@@ -289,7 +326,7 @@ fn first_sighting(seen: &mut Vec<u64>, index: u32) -> bool {
 
 #[derive(Default)]
 pub(crate) struct EqtbJournal {
-    pub(crate) words: WordJournal,
+    pub(crate) words: WordJournal<MemoryWord>,
     pub(crate) xeq: PlainTrail<u16>,
     pub(crate) hash: PlainTrail<crate::mem_types::B32x2>,
     pub(crate) prim: PlainTrail<crate::mem_types::B32x2>,
@@ -342,9 +379,34 @@ mod tests {
     }
 
     #[test]
+    fn word_journal_skips_words_past_the_epoch_base() {
+        let mut data = vec![word(0); 4];
+        let mut journal = WordJournal::<MemoryWord>::default();
+        journal.arm(data.len());
+        data.resize(100, word(0));
+        journal.note(70, data[70]);
+        data[70] = word(5);
+        journal.note(2, data[2]);
+        data[2] = word(6);
+        assert_eq!(journal.open_len(), 1);
+
+        let delta = journal.seal(&data);
+        journal.rebase(data.len());
+        journal.note(70, data[70]);
+        data[70] = word(7);
+        assert_eq!(journal.open_len(), 1);
+
+        delta.apply_to(&mut data);
+        assert_eq!(bits(data[2]), bits(word(0)));
+        assert_eq!(bits(data[70]), bits(word(7)));
+        journal.seal(&data).apply_to(&mut data);
+        assert_eq!(bits(data[70]), bits(word(5)));
+    }
+
+    #[test]
     fn word_journal_records_only_the_first_touch() {
         let mut data = vec![word(0); 160];
-        let mut journal = WordJournal::default();
+        let mut journal = WordJournal::<MemoryWord>::default();
         journal.arm(data.len());
         for value in 1..=3 {
             journal.note(7, data[7]);
@@ -364,7 +426,7 @@ mod tests {
     #[test]
     fn sealing_drops_words_back_at_their_preimage() {
         let mut data = vec![word(0); 4];
-        let mut journal = WordJournal::default();
+        let mut journal = WordJournal::<MemoryWord>::default();
         journal.arm(data.len());
         journal.note_run(0, &data[..3]);
         data[1] = word(1);
@@ -380,7 +442,7 @@ mod tests {
     #[test]
     fn note_run_saves_each_word_once_across_a_bitmap_boundary() {
         let data: Vec<_> = (0..128).map(word).collect();
-        let mut journal = WordJournal::default();
+        let mut journal = WordJournal::<MemoryWord>::default();
         journal.arm(data.len());
         journal.note(62, data[62]);
         journal.note(63, data[63]);
@@ -393,7 +455,7 @@ mod tests {
     #[test]
     fn note_run_saves_the_unnoted_words_of_a_partly_noted_node() {
         let data: Vec<_> = (0..16).map(word).collect();
-        let mut journal = WordJournal::default();
+        let mut journal = WordJournal::<MemoryWord>::default();
         journal.arm(data.len());
         journal.note(5, data[5]);
         journal.note_run(4, &data[4..6]);
@@ -405,7 +467,7 @@ mod tests {
     #[test]
     fn sealing_starts_a_fresh_touch_epoch() {
         let mut data = vec![word(0); 64];
-        let mut journal = WordJournal::default();
+        let mut journal = WordJournal::<MemoryWord>::default();
         journal.arm(data.len());
         journal.note(3, data[3]);
         data[3] = word(1);
@@ -440,7 +502,7 @@ mod tests {
     #[test]
     fn word_delta_composition_keeps_the_older_preimage() {
         let mut data = vec![word(0); 3];
-        let mut journal = WordJournal::default();
+        let mut journal = WordJournal::<MemoryWord>::default();
         journal.arm(data.len());
         journal.note(0, data[0]);
         data[0] = word(1);
