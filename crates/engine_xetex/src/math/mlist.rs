@@ -136,10 +136,10 @@ pub(super) fn clean_box(
         MATH_CHAR => {
             let noad = st.mem.new_noad()?;
             st.mem[noad.nucleus()] = st.mem[p];
-            sublist_to_hlist(st, noad.ptr(), s)?
+            mlist_to_hlist(st, noad.ptr(), s, false)?
         }
         SUB_BOX => st.mem[p].info(),
-        SUB_MLIST => sublist_to_hlist(st, st.mem[p].info(), s)?,
+        SUB_MLIST => mlist_to_hlist(st, st.mem[p].info(), s, false)?,
         _ => st.mem.new_null_box()?.ptr(),
     };
 
@@ -171,12 +171,6 @@ pub(super) fn clean_box(
         }
     }
     Ok(x_box)
-}
-
-/// Runs `mlist_to_hlist` on `mlist` at style `s` without penalties and returns
-/// the resulting list, restoring the current style.
-fn sublist_to_hlist(st: &mut EngineState, mlist: MemPtr, s: MathStyle) -> Result<MemPtr, Abort> {
-    mlist_to_hlist(st, mlist, s, false)
 }
 
 /// The math unit at `style`: an eighteenth of the quad of family 2.
@@ -1210,7 +1204,7 @@ fn mlist_nucleus(
         SUB_BOX => st.mem[qn.nucleus()].info(),
         SUB_MLIST => {
             let mlist = st.mem[qn.nucleus()].info();
-            let list = sublist_to_hlist(st, mlist, style)?;
+            let list = mlist_to_hlist(st, mlist, style, false)?;
             crate::packaging::hpack(st, list, PackSpec::NATURAL)?.ptr()
         }
         _ => return Err(Abort::Confusion("mlist2")),
@@ -1250,9 +1244,9 @@ fn check_noad_dimensions(
     Ok(())
 }
 
-/// Convert `mlist` at `style` to an hlist, with line-break penalties after
-/// binary and relation atoms if `penalties`. Returns the hlist, which starts
-/// after `TEMP_HEAD`, and leaves `cur_style` where the list ended.
+/// Convert `mlist`, starting at `start_style`, to an hlist, with line-break
+/// penalties after binary and relation atoms if `penalties`. Returns the
+/// hlist, which starts after `TEMP_HEAD`.
 pub(super) fn mlist_to_hlist(
     st: &mut EngineState,
     mlist: MemPtr,
@@ -1375,9 +1369,9 @@ pub(super) fn mlist_to_hlist(
                 }
                 Ok(AnyNode::Glue(glue)) => {
                     let subtype = st.mem[glue].subtype;
-                    let mu = math_mu(st, style);
                     let x = st.mem[glue].glue_ptr;
                     if subtype == GlueKind::Mu {
+                        let mu = math_mu(st, style);
                         let y = math_glue(st, x, mu)?;
                         st.mem.delete_glue_ref(x);
                         st.mem[glue].glue_ptr = y;
