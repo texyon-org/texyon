@@ -20,8 +20,7 @@ mod vert_break;
 use self::vert_break::push_slot;
 pub(crate) use self::vert_break::{vert_break, vsplit, MarksAction};
 
-/// The word of a box whose link field is its `list_ptr`.
-const LIST_OFFSET: i32 = 5;
+use crate::node::LIST_HEAD as LIST_OFFSET;
 
 /// The size `hpack` and `vpack` aim for: exactly some size, or the natural size plus some.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -199,10 +198,10 @@ impl MemState {
         self[r].glue_order = o.into();
         self[r].glue_sign = sign.into();
         if totals[o] != Scaled::ZERO {
-            self[r].glue_set = excess / f64::from(totals[o].raw());
+            self[r].glue_set = crate::overlay::GlueRatio::new(excess / f64::from(totals[o].raw()));
         } else {
             self[r].glue_sign = GlueSign::Normal.into();
-            self[r].glue_set = 0.0;
+            self[r].glue_set = crate::overlay::GlueRatio::new(0.0);
         }
         o
     }
@@ -211,7 +210,7 @@ impl MemState {
         let node = &mut self[r];
         node.glue_sign = GlueSign::Normal.into();
         node.glue_order = GlueOrder::Normal.into();
-        node.glue_set = 0.0;
+        node.glue_set = crate::overlay::GlueRatio::new(0.0);
     }
 
     /// `replace_count(q)` if `type(q)=disc_node`, read like TeX does even when
@@ -518,7 +517,7 @@ impl MemState {
             );
             if total_shrink[o] < (-x) && o == GlueOrder::Normal && has_list {
                 shipout.last_badness = 1_000_000;
-                self[r_node].glue_set = 1.0;
+                self[r_node].glue_set = crate::overlay::GlueRatio::new(1.0);
                 let excess = (-x) - total_shrink[GlueOrder::Normal];
                 let hfuzz = eqtb.dimen_par(DimenPar::Hfuzz);
                 if excess > hfuzz || eqtb.int_par(IntPar::Hbadness) < 100 {
@@ -798,7 +797,7 @@ impl MemState {
             );
             if total_shrink[o] < (-x) && o == GlueOrder::Normal && has_list {
                 shipout.last_badness = 1_000_000;
-                self[r_node].glue_set = 1.0;
+                self[r_node].glue_set = crate::overlay::GlueRatio::new(1.0);
                 let excess = (-x) - total_shrink[GlueOrder::Normal];
                 if excess > eqtb.dimen_par(DimenPar::Vfuzz) || eqtb.int_par(IntPar::Vbadness) < 100
                 {

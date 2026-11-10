@@ -544,7 +544,8 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
                     n.free(&mut st.mem);
                 }
                 NoadVariant::Accent(a)
-                    if save_loc.idx().raw() == st.input.cur_list.tail.raw() + 1
+                    if save_loc.idx().raw()
+                        == st.input.cur_list.tail.raw() + crate::node::NUCLEUS
                         && matches!(
                             st.mem.classify(st.input.cur_list.tail),
                             Ok(AnyNode::Noad(t)) if st.mem[t].noad_type == NodeType::OrdNoad

@@ -346,7 +346,7 @@ fn show_box_node(st: &mut EngineState, b: NodePtr<BoxNode>) {
     print_scaled(st, st.mem[b].depth);
     print(st, ")x");
     print_scaled(st, st.mem[b].width);
-    let g = st.mem[b].glue_set;
+    let g = st.mem[b].glue_set.get();
     let glue_sign = st.mem[b].glue_sign;
     if g != 0.0 && glue_sign != GlueSign::Normal {
         print(st, ", glue set ");

@@ -182,11 +182,11 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                 let (order, sign, set) = (
                     st.mem[p].glue_order,
                     st.mem[p].glue_sign,
-                    st.mem[p].glue_set,
+                    st.mem[p].glue_set.get(),
                 );
                 st.mem[row].glue_order = order;
                 st.mem[row].glue_sign = sign;
-                st.mem[row].glue_set = set;
+                st.mem[row].glue_set = crate::overlay::GlueRatio::new(set);
                 st.mem[row].shift_amount = o;
 
                 let mut r = st.mem[row].list_ptr.link(&st.mem);
@@ -215,14 +215,14 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                                 if st.mem[spec].stretch_order == st.mem[p].glue_order =>
                             {
                                 t += Scaled::round(
-                                    st.mem[p].glue_set * f64::from(st.mem[spec].stretch),
+                                    st.mem[p].glue_set.get() * f64::from(st.mem[spec].stretch),
                                 );
                             }
                             Some(GlueSign::Shrinking)
                                 if st.mem[spec].shrink_order == st.mem[p].glue_order =>
                             {
                                 t -= Scaled::round(
-                                    st.mem[p].glue_set * f64::from(st.mem[spec].shrink),
+                                    st.mem[p].glue_set.get() * f64::from(st.mem[spec].shrink),
                                 );
                             }
                             _ => {}
@@ -263,7 +263,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                     let (b, (sign, order, set)) = col;
                     st.mem[b].glue_sign = sign.into();
                     st.mem[b].glue_order = order;
-                    st.mem[b].glue_set = set;
+                    st.mem[b].glue_set = crate::overlay::GlueRatio::new(set);
                     st.mem[b].shift_amount = Scaled::ZERO;
                     if u != HOLD_HEAD {
                         let (rest, spanned) = (r.link(&st.mem), HOLD_HEAD.link(&st.mem));

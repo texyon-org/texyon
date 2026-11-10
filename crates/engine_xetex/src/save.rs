@@ -675,12 +675,11 @@ mod tests {
             data: crate::mem_types::zeroed_vec(crate::mem::RESERVED_WORDS),
             ..Default::default()
         };
-        for size in (1..).take(crate::mem::FREE_CLASSES - 1) {
+        for size in (2..=crate::consts::INDEX_NODE_SIZE).step_by(2) {
             for _ in 0..4 {
                 let p = mem.get_node(size).unwrap();
                 for k in 0..size {
                     mem.set_b32s0(p + k, 7);
-                    mem.set_b32s1(p + k, 7);
                 }
                 mem.free_node(p, size);
             }

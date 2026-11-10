@@ -256,7 +256,7 @@ pub(super) fn build_opentype_assembly(
         st.mem[b].glue_order = GlueOrder::Normal.into();
         st.mem[b].glue_sign = GlueSign::Stretching.into();
         let ratio = f64::from(o) / f64::from(str);
-        st.mem[b].glue_set = ratio;
+        st.mem[b].glue_set = crate::overlay::GlueRatio::new(ratio);
         let set_dim = nat + Scaled::round(f64::from(str) * ratio);
         if horiz {
             st.mem[b].width = set_dim;

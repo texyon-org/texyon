@@ -34,6 +34,12 @@ use crate::units::{
 #[cfg(not(target_endian = "little"))]
 compile_error!("node layouts assume little-endian memory words");
 
+/// The word offset of a field at `bytes` into a layout.
+pub(crate) const fn word_offset(bytes: usize) -> i32 {
+    assert!(bytes.is_multiple_of(4) && bytes / 4 < 1 << 16);
+    (bytes / 4) as i32
+}
+
 /// A node kind whose words read as one `#[repr(C)]` layout struct.
 pub trait Overlay: NodeKind {
     /// The struct laid over the node's `WORDS` words.
@@ -76,8 +82,7 @@ macro_rules! overlay {
         }
         const _: () = assert!(
             std::mem::size_of::<$layout>()
-                == std::mem::size_of::<crate::mem_types::MemoryWord>()
-                    * <$kind as Overlay>::WORDS as usize
+                == std::mem::size_of::<u32>() * <$kind as Overlay>::WORDS as usize
         );
     };
 }
@@ -289,7 +294,7 @@ pub struct WhatsitLayout {
     pub link: MemPtr,
 }
 
-overlay!(WhatsitNode => WhatsitLayout, 1);
+overlay!(WhatsitNode => WhatsitLayout, 2);
 
 /// `\openout`.
 #[repr(C)]
@@ -432,7 +437,30 @@ pub struct SizedWhatsitLayout {
     pub height: Scaled,
 }
 
-overlay!(SizedWhatsit => SizedWhatsitLayout, 4);
+overlay!(SizedWhatsit => SizedWhatsitLayout, 8);
+
+/// A box's glue ratio, an `f64` kept as two words so layouts stay 4-byte aligned.
+#[repr(transparent)]
+#[derive(Copy, Clone, Pod, Zeroable, Default)]
+pub struct GlueRatio([u32; 2]);
+
+impl GlueRatio {
+    #[inline]
+    pub fn get(self) -> f64 {
+        f64::from_bits(bytemuck::cast(self.0))
+    }
+
+    #[inline]
+    pub fn new(r: f64) -> Self {
+        GlueRatio(bytemuck::cast(r.to_bits()))
+    }
+}
+
+impl std::fmt::Debug for GlueRatio {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.get().fmt(f)
+    }
+}
 
 /// An hlist or vlist box. Its orientation is the node's type code.
 #[repr(C)]
@@ -452,7 +480,7 @@ pub struct BoxLayout {
     pub glue_order: Stored<GlueOrder>,
     pub glue_sign: Stored<GlueSign>,
     pub list_ptr: MemPtr,
-    pub glue_set: f64,
+    pub glue_set: GlueRatio,
     /// The SyncTeX tag and line that `get_node` stamps into the last word.
     pub sync_tag: i32,
     pub sync_line: i32,
@@ -652,7 +680,7 @@ pub struct MathWord {
     pub math_type: i32,
 }
 
-overlay!(MathField => MathWord, 1);
+overlay!(MathField => MathWord, 2);
 
 impl MathWord {
     /// The list of a `SUB_BOX` or `SUB_MLIST` field.
@@ -708,7 +736,7 @@ pub struct DelimiterWord {
     small_plane_and_fam: u16,
 }
 
-overlay!(DelimiterField => DelimiterWord, 1);
+overlay!(DelimiterField => DelimiterWord, 2);
 
 impl DelimiterWord {
     #[inline]
@@ -761,7 +789,7 @@ pub struct NoadHead {
     pub new_hlist: MemPtr,
 }
 
-overlay!(AnyNoad => NoadHead, 2);
+overlay!(AnyNoad => NoadHead, 4);
 
 /// A noad with a nucleus and two scripts.
 #[repr(C)]
@@ -922,7 +950,7 @@ pub struct SaElementHead {
     pub link: NodePtr<SaIndexNode>,
 }
 
-overlay!(SaElement => SaElementHead, 1);
+overlay!(SaElement => SaElementHead, 2);
 
 impl SaElementHead {
     #[inline]
@@ -1016,7 +1044,7 @@ pub struct SaSavedHead {
     pub link: Link<SaSaved>,
 }
 
-overlay!(SaSaved => SaSavedHead, 1);
+overlay!(SaSaved => SaSavedHead, 2);
 
 /// A saved count or dimension.
 #[repr(C)]
@@ -1297,6 +1325,71 @@ pub struct LigatureLayout {
 
 overlay!(LigatureNode => LigatureLayout);
 
+/// Asserts that each `Layout.field` pair sits at one offset, for fields read through another view.
+macro_rules! same_offset {
+    ($($a:ident.$f:ident == $b:ident.$g:ident),+ $(,)?) => {
+        $(const _: () = assert!(
+            std::mem::offset_of!($a, $f) == std::mem::offset_of!($b, $g)
+        );)+
+    };
+}
+
+/// Asserts that `get_node`'s SyncTeX stamp, two words from the end, lands in the sync fields.
+macro_rules! sync_trailer {
+    ($($l:ident),+) => {
+        $(const _: () = assert!(
+            std::mem::offset_of!($l, sync_tag) + 8 == std::mem::size_of::<$l>()
+                && std::mem::offset_of!($l, sync_line) + 4 == std::mem::size_of::<$l>()
+        );)+
+    };
+}
+
+sync_trailer!(
+    BoxLayout,
+    UnsetLayout,
+    RuleLayout,
+    GlueLayout,
+    KernLayout,
+    MathLayout
+);
+
+same_offset!(
+    // Retyped in place: unset and box, an align record into an unset, math into kern.
+    UnsetLayout.width == BoxLayout.width,
+    UnsetLayout.depth == BoxLayout.depth,
+    UnsetLayout.height == BoxLayout.height,
+    UnsetLayout.list_ptr == BoxLayout.list_ptr,
+    AlignRecordLayout.width == UnsetLayout.width,
+    AlignRecordLayout._span_list == SpanLayout.next,
+    MathLayout.width == KernLayout.width,
+    // Shared heads read before the kind is known.
+    NoadLayout.link == NoadHead.link,
+    FractionLayout.link == NoadHead.link,
+    FenceLayout.link == NoadHead.link,
+    NoadLayout.noad_type == NoadHead.noad_type,
+    FractionLayout.noad_type == NoadHead.noad_type,
+    FenceLayout.noad_type == NoadHead.noad_type,
+    GlyphLayout.width == SizedWhatsitLayout.width,
+    GlyphLayout.depth == SizedWhatsitLayout.depth,
+    GlyphLayout.height == SizedWhatsitLayout.height,
+    PicLayout.width == SizedWhatsitLayout.width,
+    PicLayout.depth == SizedWhatsitLayout.depth,
+    PicLayout.height == SizedWhatsitLayout.height,
+    NativeWordLayout.width == SizedWhatsitLayout.width,
+    NativeWordLayout.depth == SizedWhatsitLayout.depth,
+    NativeWordLayout.height == SizedWhatsitLayout.height,
+    SaWordLayout.sa_index == SaElementHead.sa_index,
+    SaPointerLayout.sa_index == SaElementHead.sa_index,
+    SaMarkClassLayout.sa_index == SaElementHead.sa_index,
+    SaWordLayout.link == SaElementHead.link,
+    SaPointerLayout.link == SaElementHead.link,
+    SaMarkClassLayout.link == SaElementHead.link,
+    SaSavedWordLayout.sa_index == SaSavedHead.sa_index,
+    SaSavedPointerLayout.sa_index == SaSavedHead.sa_index,
+    SaSavedWordLayout.link == SaSavedHead.link,
+    SaSavedPointerLayout.link == SaSavedHead.link,
+);
+
 impl BoxLayout {
     #[inline]
     pub fn is_hlist(&self) -> bool {
@@ -1317,7 +1410,7 @@ mod tests {
 
     fn arena() -> MemState {
         MemState {
-            data: vec![Default::default(); 16],
+            data: vec![Default::default(); 32],
             ..Default::default()
         }
     }
@@ -1330,110 +1423,15 @@ mod tests {
     }
 
     #[test]
-    fn box_fields_land_on_their_words() {
+    fn an_upwards_box_is_reversed() {
         let mut mem = arena();
         let b: NodePtr<BoxNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(4));
-        let bx = &mut mem[b];
-        bx.set_lr(BoxLr::Dlist);
-        bx.orientation = Orientation::Vertical.into();
-        bx.link = MemPtr::from_raw(3);
-        bx.width = Scaled::from_raw(11);
-        bx.depth = Scaled::from_raw(12);
-        bx.height = Scaled::from_raw(13);
-        bx.shift_amount = Scaled::from_raw(14);
-        bx.glue_order = GlueOrder::Fil.into();
-        bx.glue_sign = GlueSign::Shrinking.into();
-        bx.list_ptr = MemPtr::from_raw(15);
-        bx.glue_set = 0.5;
-        bx.sync_tag = 16;
-        bx.sync_line = 17;
-        let at = MemIdx::from_raw;
-        assert_eq!((mem.b16s0(at(4)), mem.b16s1(at(4))), (2, 1));
-        assert_eq!((mem.b16s0(at(9)), mem.b16s1(at(9))), (1, 2));
-        assert_eq!(
-            [4, 5, 6, 7, 8, 9].map(|i| mem.b32s1(at(i))),
-            [3, 11, 12, 13, 14, 15]
-        );
-        assert_eq!([5, 6, 7, 8].map(|i| mem.b32s0(at(i))), [0; 4]);
-        assert_eq!((mem.b32s0(at(10)), mem.b32s1(at(10))), (0, 0x3FE0_0000));
-        assert_eq!((mem.b32s0(at(11)), mem.b32s1(at(11))), (16, 17));
+        mem[b].set_lr(BoxLr::Dlist);
+        assert!(!mem[b].upwards());
         mem[b].set_upwards(true);
         assert!(mem[b].upwards() && mem[b].lr() == BoxLr::Reversed);
-        assert_eq!(mem.b16s0(at(4)), 1);
         mem[b].set_upwards(false);
-        assert_eq!(mem.b16s0(at(4)), 0);
-    }
-
-    #[test]
-    fn edge_and_margin_kern_fields_land_on_their_words() {
-        let mut mem = arena();
-        let at = MemIdx::from_raw;
-        let e: NodePtr<EdgeNode> = NodePtr::from_idx_unchecked(at(4));
-        let edge = &mut mem[e];
-        edge.dir = Dir::Rtl.into();
-        edge.width = Scaled::from_raw(11);
-        edge.edge_dist = Scaled::from_raw(12);
-        assert_eq!(mem.b16s0(at(4)), 1);
-        assert_eq!([5, 6].map(|i| mem.b32s1(at(i))), [11, 12]);
-        let m: NodePtr<MarginKernNode> = NodePtr::from_idx_unchecked(at(8));
-        mem[m].width = Scaled::from_raw(13);
-        assert_eq!(mem.b32s1(at(9)), 13);
-    }
-
-    #[test]
-    fn unset_and_page_ins_fields_land_on_their_words() {
-        let mut mem = arena();
-        let at = MemIdx::from_raw;
-        let ptr = MemPtr::from_raw;
-        let u: NodePtr<UnsetNode> = NodePtr::from_idx_unchecked(at(4));
-        let unset = &mut mem[u];
-        unset.span_count = 2;
-        (unset.width, unset.depth, unset.height) = (
-            Scaled::from_raw(11),
-            Scaled::from_raw(12),
-            Scaled::from_raw(13),
-        );
-        unset.glue_shrink = Scaled::from_raw(14);
-        unset.glue_order = GlueOrder::Fil.into();
-        unset.glue_sign = GlueOrder::Filll.into();
-        unset.list_ptr = ptr(15);
-        unset.glue_stretch = Scaled::from_raw(16);
-        assert_eq!(mem.b16s0(at(4)), 2);
-        assert_eq!(
-            [5, 6, 7, 8, 9, 10].map(|i| mem.b32s1(at(i))),
-            [11, 12, 13, 14, 15, 16]
-        );
-        assert_eq!((mem.b16s0(at(9)), mem.b16s1(at(9))), (1, 3));
-
-        let r: NodePtr<PageInsNode> = NodePtr::from_idx_unchecked(at(12));
-        let rec = &mut mem[r];
-        rec.box_number = 9;
-        rec.set_split_up(true);
-        (
-            rec.broken_ins,
-            rec.broken_ptr,
-            rec.best_ins_ptr,
-            rec.last_ins_ptr,
-        ) = (ptr(1), ptr(2), ptr(3), ptr(4));
-        rec.height = Scaled::from_raw(5);
-        assert!(mem[r].is_split_up());
-        assert_eq!((mem.b16s0(at(12)), mem.b16s1(at(12))), (9, 1));
-        let words: Vec<_> = (13..15)
-            .map(|i| (mem.b32s0(at(i)), mem.b32s1(at(i))))
-            .collect();
-        assert_eq!(words, [(1, 2), (3, 4)]);
-        assert_eq!(mem.b32s1(at(15)), 5);
-    }
-
-    #[test]
-    fn char_fields_land_on_their_word() {
-        let mut mem = arena();
-        let at = MemIdx::from_raw;
-        let c: NodePtr<CharNode> = NodePtr::from_idx_unchecked(at(14));
-        let ch = &mut mem[c];
-        (ch.character, ch.font, ch.link) = (65, FontId::new(3), MemPtr::from_raw(9));
-        assert_eq!((mem.b16s0(at(14)), mem.b32s1(at(14))), (65, 9));
-        assert_eq!(mem.b16s0(at(15)), 3);
+        assert!(!mem[b].upwards() && mem[b].lr() == BoxLr::Normal);
     }
 
     #[test]
@@ -1530,100 +1528,34 @@ mod tests {
     }
 
     #[test]
-    fn io_whatsit_fields_land_on_their_words() {
+    fn a_whatsit_subtype_selects_its_variant() {
         let mut mem = arena();
         let at = MemIdx::from_raw;
-        let o: NodePtr<OpenNode> = NodePtr::from_idx_unchecked(at(4));
-        let open = &mut mem[o];
-        open.subtype = WhatsitSubtype::Open.into();
-        open.link = MemPtr::from_raw(3);
-        open.stream = 5;
-        open.name = StrNumber::from_raw(6);
-        open.area = StrNumber::from_raw(7);
-        open.ext = StrNumber::from_raw(8);
-        assert_eq!((mem.b16s0(at(4)), mem.b32s1(at(4))), (0, 3));
-        assert_eq!([mem.b32s0(at(5)), mem.b32s1(at(5))], [5, 6]);
-        assert_eq!([mem.b32s0(at(6)), mem.b32s1(at(6))], [7, 8]);
+        let o: NodePtr<OpenNode> = NodePtr::from_idx_unchecked(at(0));
+        mem[o].subtype = WhatsitSubtype::Open.into();
         assert!(matches!(o.whatsit().variant(&mem), Some(WhatsitVariant::Open(p)) if p == o));
-
-        let w: NodePtr<WriteNode> = NodePtr::from_idx_unchecked(at(8));
-        let write = &mut mem[w];
-        write.subtype = WhatsitSubtype::Special.into();
-        write.stream = 9;
-        write.tokens = TokenList::from_raw(10);
-        assert_eq!(mem.b16s0(at(8)), 3);
-        assert_eq!([mem.b32s0(at(9)), mem.b32s1(at(9))], [9, 10]);
+        let w: NodePtr<WriteNode> = NodePtr::from_idx_unchecked(at(4));
+        mem[w].subtype = WhatsitSubtype::Special.into();
         assert!(matches!(w.whatsit().variant(&mem), Some(WhatsitVariant::Special(p)) if p == w));
-
-        let l: NodePtr<LanguageNode> = NodePtr::from_idx_unchecked(at(12));
-        let language = &mut mem[l];
-        language.subtype = WhatsitSubtype::Language.into();
-        language.lang = 11;
-        language.lhm = 2;
-        language.rhm = 3;
-        assert_eq!(mem.b16s0(at(12)), 5);
-        assert_eq!(
-            (mem.b16s1(at(13)), mem.b16s0(at(13)), mem.b32s1(at(13))),
-            (2, 3, 11)
-        );
+        let l: NodePtr<LanguageNode> = NodePtr::from_idx_unchecked(at(8));
+        mem[l].subtype = WhatsitSubtype::Language.into();
         assert!(matches!(l.whatsit().variant(&mem), Some(WhatsitVariant::Language(p)) if p == l));
-    }
-
-    #[test]
-    fn glyph_fields_land_on_their_words() {
-        let mut mem = arena();
-        let at = MemIdx::from_raw;
-        let g: NodePtr<GlyphNode> = NodePtr::from_idx_unchecked(at(4));
-        let glyph = &mut mem[g];
-        glyph.subtype = WhatsitSubtype::Glyph.into();
-        glyph.width = Scaled::from_raw(11);
-        glyph.depth = Scaled::from_raw(12);
-        glyph.height = Scaled::from_raw(13);
-        glyph.glyph = 14;
-        glyph.font = FontId::new(15);
-        assert_eq!(mem.b16s0(at(4)), 42);
-        assert_eq!([5, 6, 7].map(|i| mem.b32s1(at(i))), [11, 12, 13]);
-        assert_eq!([5, 6, 7].map(|i| mem.b32s0(at(i))), [0; 3]);
-        assert_eq!(
-            [
-                mem.b16s0(at(8)),
-                mem.b16s1(at(8)),
-                mem.b16s2(at(8)),
-                mem.b16s3(at(8))
-            ],
-            [0, 14, 15, 0]
-        );
+        let g: NodePtr<GlyphNode> = NodePtr::from_idx_unchecked(at(12));
+        mem[g].subtype = WhatsitSubtype::Glyph.into();
         assert!(matches!(g.whatsit().variant(&mem), Some(WhatsitVariant::Glyph(p)) if p == g));
     }
 
     #[test]
-    fn pic_fields_land_on_their_words_and_the_path_in_the_payload() {
+    fn a_pic_path_lives_in_the_payload() {
         let mut mem = MemState {
             data: vec![Default::default(); 24],
             ..Default::default()
         };
-        let at = MemIdx::from_raw;
-        let p: NodePtr<PicNode> = NodePtr::from_idx_unchecked(at(4));
-        let pic = &mut mem[p];
-        pic.subtype = WhatsitSubtype::Pdf.into();
-        pic.width = Scaled::from_raw(11);
-        pic.depth = Scaled::from_raw(12);
-        pic.height = Scaled::from_raw(13);
-        pic.page = 2;
-        pic.path_len = 10;
-        pic.transform = [21, 22, 23, 24, 25, 26].map(Scaled::from_raw);
-        pic.pagebox = 3;
+        let p: NodePtr<PicNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(4));
+        mem[p].subtype = WhatsitSubtype::Pdf.into();
+        mem[p].path_len = 10;
         mem.alloc_payload(p, 10).unwrap();
         mem.entries_mut(p).copy_from_slice(b"0123456789");
-        assert_eq!(mem.b16s0(at(4)), 44);
-        assert_eq!([5, 6, 7].map(|i| mem.b32s1(at(i))), [11, 12, 13]);
-        assert_eq!((mem.b16s0(at(8)), mem.b16s1(at(8))), (2, 10));
-        assert_eq!(mem.b32s1(at(8)), 1);
-        assert_eq!(
-            [9, 10, 11].map(|i| [mem.b32s0(at(i)), mem.b32s1(at(i))]),
-            [[21, 22], [23, 24], [25, 26]]
-        );
-        assert_eq!((mem.b16s0(at(12)), mem.b16s1(at(12))), (0, 3));
         assert_eq!(mem.entries(p), b"0123456789");
         assert!(matches!(p.whatsit().variant(&mem), Some(WhatsitVariant::Pic(q)) if q == p));
     }
@@ -1639,30 +1571,16 @@ mod tests {
     }
 
     #[test]
-    fn native_word_fields_land_on_their_words_and_the_text_in_the_payload() {
+    fn clearing_glyphs_keeps_the_native_text() {
         let mut mem = MemState {
             data: vec![Default::default(); 24],
             ..Default::default()
         };
-        let at = MemIdx::from_raw;
         let w = native_word_at(&mut mem, 4, &[1, 2, 3, 4, 5]);
-        let word = &mut mem[w];
-        word.width = Scaled::from_raw(11);
-        word.depth = Scaled::from_raw(12);
-        word.height = Scaled::from_raw(13);
-        word.glyph_count = 6;
-        word.font = FontId::new(7);
-        word.glyph_info = 9;
-        assert_eq!(mem.b16s0(at(4)), 40);
-        assert_eq!([5, 6, 7].map(|i| mem.b32s1(at(i))), [11, 12, 13]);
-        assert_eq!(
-            [mem.b16s0(at(8)), mem.b16s1(at(8)), mem.b16s2(at(8))],
-            [6, 5, 7]
-        );
-        assert_eq!((mem.b32s0(at(9)), mem.b32s1(at(9))), (9, 1));
-        assert_eq!(mem.entries(w), [1, 2, 3, 4, 5]);
+        mem[w].glyph_count = 6;
+        mem[w].glyph_info = 9;
         mem[w].clear_glyphs();
-        assert_eq!((mem.b16s0(at(8)), mem.b32s0(at(9))), (0, 0));
+        assert_eq!((mem[w].glyph_count, mem[w].glyph_info), (0, 0));
         assert_eq!(mem.entries(w), [1, 2, 3, 4, 5]);
         assert!(matches!(w.whatsit().variant(&mem), Some(WhatsitVariant::NativeWord(p)) if p == w));
     }

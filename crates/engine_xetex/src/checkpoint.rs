@@ -18,7 +18,7 @@ pub(crate) use bundle::{EngineBundle, StringWatermark};
 
 #[derive(Clone)]
 struct EngineDelta {
-    mem: WordDelta<MemoryWord>,
+    mem: WordDelta<u32>,
     tokens: WordDelta<TokNode>,
     glue: WordDelta<GlueSpec>,
     eqtb: WordDelta<MemoryWord>,
@@ -677,7 +677,7 @@ mod tests {
 
     fn state() -> EngineState {
         let mut st = EngineState::default();
-        st.mem.data = crate::mem_types::zeroed_vec(4);
+        st.mem.data = crate::mem_types::zeroed_vec(8);
         st.eqtb.data = crate::mem_types::zeroed_vec(4);
         st.eqtb.hash = vec![B32x2 { s0: 0, s1: 0 }; 1];
         st.fonts.font_info = crate::mem_types::zeroed_vec(4);
@@ -707,9 +707,9 @@ mod tests {
         st.mem.free.0[2] = MemPtr::from_raw(31);
         ladder.rewind_to(&mut st, 1, restore);
 
-        assert_eq!(value(st.mem.data[0]), 10);
-        assert_eq!(value(st.mem.data[2]), 0);
-        assert_eq!(value(st.mem.data[3]), 0);
+        assert_eq!(st.mem.b32s1(MemPtr::from_raw(0)), 10);
+        assert_eq!(st.mem.b32s1(MemPtr::from_raw(2)), 0);
+        assert_eq!(st.mem.b32s1(MemPtr::from_raw(3)), 0);
         assert_eq!(value(st.eqtb.data[1]), 11);
         assert_eq!(st.mem.free.0[2], MemPtr::from_raw(12));
         assert_eq!(st.fonts.fmem_ptr, crate::units::FontInfoIdx::from_raw(0));
@@ -765,8 +765,8 @@ mod tests {
         assert!(ladder.decimate(1));
         assert_eq!(ladder.len(), 2);
         ladder.rewind_to(&mut st, 0, restore);
-        assert_eq!(value(st.mem.data[0]), 0);
-        assert_eq!(value(st.mem.data[1]), 0);
+        assert_eq!(st.mem.b32s1(MemPtr::from_raw(0)), 0);
+        assert_eq!(st.mem.b32s1(MemPtr::from_raw(1)), 0);
     }
 
     #[test]
@@ -818,7 +818,7 @@ mod tests {
         ladder.rewind_engine(&mut st, 1);
         assert_eq!(st.scanner.logical_clock, 10);
         assert_eq!(st.mem.free.0[2], MemPtr::from_raw(20));
-        assert_eq!(value(st.mem.data[0]), 30);
+        assert_eq!(st.mem.b32s1(MemPtr::from_raw(0)), 30);
         assert!(ladder.accounted_bytes() > 0);
     }
 
@@ -884,7 +884,7 @@ mod tests {
         assert!(matches!(admitted, RungAdmission::Admitted { .. }));
         st.mem.set_b32s1(MemPtr::from_raw(0), 8);
         ladder.rewind_engine(&mut st, 0);
-        assert_eq!(value(st.mem.data[0]), 0);
+        assert_eq!(st.mem.b32s1(MemPtr::from_raw(0)), 0);
     }
 
     #[test]
@@ -976,7 +976,7 @@ mod tests {
         let strings_base = StringWatermark::capture(&st);
         let mut ladder = CheckpointLadder::from_engine_verified(&st, strings_base);
 
-        st.mem.data[0].b32.s1 = 99;
+        st.mem.data[1] = 99;
         ladder.push_engine(&mut st, strings_base, false, false);
         let mismatch = ladder
             .rewind_engine_checked(&mut st, 0)
@@ -998,7 +998,7 @@ mod tests {
         }
         assert!(ladder.decimate(2));
         ladder.verify_all_rewinds(&mut st).unwrap();
-        assert_eq!(value(st.mem.data[0]), 0);
+        assert_eq!(st.mem.b32s1(MemPtr::from_raw(0)), 0);
     }
 
     #[test]

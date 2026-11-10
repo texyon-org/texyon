@@ -653,7 +653,8 @@ impl EqtbState {
 /// so the pointer-returning accessors stay valid.
 #[derive(Default)]
 pub(crate) struct MemState {
-    pub data: Vec<crate::mem_types::MemoryWord>,
+    /// The node arena, in 32-bit words.
+    pub data: Vec<u32>,
     /// Owned shaped-glyph payloads referenced by handles in native nodes.
     pub glyph_blobs: crate::glyph_arena::GlyphBlobArena,
     /// The token lists, a store of their own.
@@ -662,7 +663,7 @@ pub(crate) struct MemState {
     pub glue: crate::glue_store::GlueStore,
     /// The entries of array nodes: native text, picture paths, shapes and pseudo-file lines.
     pub payloads: crate::payload::PayloadStore,
-    pub journal: crate::journal::WordJournal<crate::mem_types::MemoryWord>,
+    pub journal: crate::journal::WordJournal<u32>,
     /// The free list of each node size.
     pub free: crate::mem::FreeLists,
     /// TeX's `line`, kept here because `get_node` stamps it into new nodes.
@@ -680,77 +681,71 @@ impl MemState {
     }
 
     #[inline]
-    pub(crate) fn b32s0(&self, p: impl crate::units::MemAddr) -> i32 {
-        self.data[p.addr() as usize].b32().s0
+    fn at(p: impl crate::units::MemAddr) -> usize {
+        p.addr() as usize
     }
 
+    /// The first half of the eight-byte field pair at `p`.
+    #[inline]
+    pub(crate) fn b32s0(&self, p: impl crate::units::MemAddr) -> i32 {
+        self.data[Self::at(p)].cast_signed()
+    }
+
+    /// The second half of the eight-byte field pair at `p`.
     #[inline]
     pub(crate) fn b32s1(&self, p: impl crate::units::MemAddr) -> i32 {
-        self.data[p.addr() as usize].b32().s1
+        self.data[Self::at(p) + 1].cast_signed()
     }
 
     #[inline]
     pub(crate) fn b16s0(&self, p: impl crate::units::MemAddr) -> u16 {
-        self.data[p.addr() as usize].b16().s0
+        bytemuck::cast::<u32, [u16; 2]>(self.data[Self::at(p)])[0]
     }
 
     #[inline]
     pub(crate) fn b16s1(&self, p: impl crate::units::MemAddr) -> u16 {
-        self.data[p.addr() as usize].b16().s1
+        bytemuck::cast::<u32, [u16; 2]>(self.data[Self::at(p)])[1]
     }
 
-    #[cfg(test)]
-    pub(crate) fn b16s2(&self, p: impl crate::units::MemAddr) -> u16 {
-        self.data[p.addr() as usize].b16().s2
+    /// Copies the `n` words at `src` to `dst`, last first.
+    pub(crate) fn copy_run(
+        &mut self,
+        dst: crate::units::MemPtr,
+        src: crate::units::MemPtr,
+        n: i32,
+    ) {
+        for w in (0..n).rev() {
+            let v = self.data[Self::at(src + w)];
+            self.set(Self::at(dst + w), v);
+        }
     }
 
-    #[cfg(test)]
-    pub(crate) fn b16s3(&self, p: impl crate::units::MemAddr) -> u16 {
-        self.data[p.addr() as usize].b16().s3
+    #[inline]
+    fn set(&mut self, index: usize, v: u32) {
+        self.note(index);
+        self.data[index] = v;
     }
 
     #[inline]
     pub(crate) fn set_b32s0(&mut self, p: impl crate::units::MemAddr, v: i32) {
-        let index = p.addr() as usize;
-        self.note(index);
-        self.data[index].b32.s0 = v;
+        self.set(Self::at(p), v.cast_unsigned());
     }
 
     #[inline]
     pub(crate) fn set_b32s1(&mut self, p: impl crate::units::MemAddr, v: i32) {
-        let index = p.addr() as usize;
-        self.note(index);
-        self.data[index].b32.s1 = v;
+        self.set(Self::at(p) + 1, v.cast_unsigned());
     }
 
     #[inline]
     pub(crate) fn set_b16s0(&mut self, p: impl crate::units::MemAddr, v: u16) {
-        let index = p.addr() as usize;
-        self.note(index);
-        self.data[index].b16.s0 = v;
+        let i = Self::at(p);
+        self.set(i, (self.data[i] & 0xFFFF_0000) | u32::from(v));
     }
 
     #[inline]
     pub(crate) fn set_b16s1(&mut self, p: impl crate::units::MemAddr, v: u16) {
-        let index = p.addr() as usize;
-        self.note(index);
-        self.data[index].b16.s1 = v;
-    }
-
-    #[inline]
-    pub(crate) fn word(&self, p: impl crate::units::MemAddr) -> crate::mem_types::MemoryWord {
-        self.data[p.addr() as usize]
-    }
-
-    #[inline]
-    pub(crate) fn set_word(
-        &mut self,
-        p: impl crate::units::MemAddr,
-        w: crate::mem_types::MemoryWord,
-    ) {
-        let index = p.addr() as usize;
-        self.note(index);
-        self.data[index] = w;
+        let i = Self::at(p);
+        self.set(i, (self.data[i] & 0xFFFF) | u32::from(v) << 16);
     }
 }
 

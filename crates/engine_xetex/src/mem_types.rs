@@ -72,6 +72,8 @@ pub(crate) unsafe trait ZeroWord: Copy {}
 unsafe impl ZeroWord for MemoryWord {}
 // SAFETY: both fields are i32.
 unsafe impl ZeroWord for B32x2 {}
+// SAFETY: every bit pattern is a valid u32.
+unsafe impl ZeroWord for u32 {}
 
 /// A `Vec` of `len` zeroed words that leaves untouched pages unmapped.
 ///

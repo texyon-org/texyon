@@ -1,6 +1,6 @@
 //! Owned shaped-glyph payloads for native-word nodes.
 //!
-//! A native node stores a one-based handle in `mem[p + 5].b32.s0`. Zero means
+//! A native node stores a one-based handle in its `glyph_info` field. Zero means
 //! no shaped glyphs. Each node owns one arena slot, while copied nodes may
 //! share the immutable payload through `Arc` until one is mutated.
 

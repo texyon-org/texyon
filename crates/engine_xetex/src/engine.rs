@@ -366,7 +366,6 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     let empty = MemPtr::NULL.raw();
     for k in (0..).take(crate::mem::RESERVED_WORDS) {
         mem.set_b32s0(MemPtr::from_raw(k), empty);
-        mem.set_b32s1(MemPtr::from_raw(k), empty);
     }
 
     OMIT_TEMPLATE.set_token(&mut mem.tokens, Token::from_cs(FROZEN_END_TEMPLATE));

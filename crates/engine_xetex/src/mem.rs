@@ -7,7 +7,7 @@ use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::Side;
 use crate::glue_store::GlueSpecId;
-use crate::mem_types::{ListStateRecord, MemoryWord};
+use crate::mem_types::ListStateRecord;
 use crate::node::{
     BoxLr, BoxNode, CharNode, ChoiceNode, DiscNode, FixedNode, GlueKind, GlueNode, HeadNode,
     HyphPosNode, KernNode, KernSubtype, LigBoundary, LigItem, LigatureNode, ListRecord, LrNode,
@@ -25,8 +25,8 @@ pub(crate) use crate::glue_store::{FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, SS_GLUE, Z
 
 /// One more than the largest node size, so a node size indexes its free list.
 pub(crate) const FREE_CLASSES: usize = INDEX_NODE_SIZE as usize + 1;
-/// `mem` may grow to this many words, half of `MAIN_MEMORY_WORDS` in 32-bit units.
-const MAX_MEM_WORDS: usize = 1 << 24;
+/// `mem` may grow to this many words, half of `MAIN_MEMORY_WORDS`.
+const MAX_MEM_WORDS: usize = 1 << 25;
 
 /// The free list of each node size, by size.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -40,21 +40,21 @@ impl Default for FreeLists {
 
 // The fixed nodes at the start of `mem`, each as large as the layout it is read as.
 pub(crate) const PAGE_INS_HEAD: MemPtr = MemPtr::from_raw(0);
-pub(crate) const CONTRIB_HEAD: MemPtr = MemPtr::from_raw(4);
-pub(crate) const PAGE_HEAD: MemPtr = MemPtr::from_raw(6);
-pub(crate) const TEMP_HEAD: MemPtr = MemPtr::from_raw(9);
-pub(crate) const HOLD_HEAD: MemPtr = MemPtr::from_raw(11);
-pub(crate) const ADJUST_HEAD: MemPtr = MemPtr::from_raw(13);
-pub(crate) const ALIGN_HEAD: MemPtr = MemPtr::from_raw(15);
+pub(crate) const CONTRIB_HEAD: MemPtr = MemPtr::from_raw(8);
+pub(crate) const PAGE_HEAD: MemPtr = MemPtr::from_raw(12);
+pub(crate) const TEMP_HEAD: MemPtr = MemPtr::from_raw(18);
+pub(crate) const HOLD_HEAD: MemPtr = MemPtr::from_raw(22);
+pub(crate) const ADJUST_HEAD: MemPtr = MemPtr::from_raw(26);
+pub(crate) const ALIGN_HEAD: MemPtr = MemPtr::from_raw(30);
 // SAFETY: the fixed span node ends every span list.
-pub(crate) const END_SPAN: NodePtr<SpanNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(17));
-pub(crate) const NULL_LIST: MemPtr = MemPtr::from_raw(19);
+pub(crate) const END_SPAN: NodePtr<SpanNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(34));
+pub(crate) const NULL_LIST: MemPtr = MemPtr::from_raw(38);
 /// The scratch char node of TeX's lig trick.
-pub(crate) const LIG_TRICK: MemPtr = MemPtr::from_raw(21);
-pub(crate) const GARBAGE: MemPtr = MemPtr::from_raw(23);
-pub(crate) const PRE_ADJUST_HEAD: MemPtr = MemPtr::from_raw(25);
+pub(crate) const LIG_TRICK: MemPtr = MemPtr::from_raw(42);
+pub(crate) const GARBAGE: MemPtr = MemPtr::from_raw(46);
+pub(crate) const PRE_ADJUST_HEAD: MemPtr = MemPtr::from_raw(50);
 /// The words the fixed nodes take, where allocation starts.
-pub(crate) const RESERVED_WORDS: usize = 27;
+pub(crate) const RESERVED_WORDS: usize = 54;
 
 impl ListStateRecord {
     /// A fixed-layout whatsit appended to the current list.
@@ -189,7 +189,7 @@ impl MemState {
                 return Err(Abort::NODE_OVERFLOW);
             }
             let r = i32::try_from(start).map_err(|_| Abort::NODE_OVERFLOW)?;
-            self.data.resize(end, MemoryWord::default());
+            self.data.resize(end, 0);
             MemPtr::from_raw(r)
         } else {
             self.free.0[class] = head.link(self);
@@ -197,8 +197,8 @@ impl MemState {
         };
         r.set_link(self, MemPtr::NULL);
         if s >= MEDIUM_NODE_SIZE {
-            self.set_b32s0(r + s - 1, self.cur_synctex_tag);
-            self.set_b32s1(r + s - 1, self.line);
+            self.set_b32s0(r + s - 2, self.cur_synctex_tag);
+            self.set_b32s1(r + s - 2, self.line);
         }
         Ok(r)
     }
@@ -235,7 +235,7 @@ impl MemState {
         node.list_ptr = MemPtr::NULL;
         node.glue_sign = GlueSign::Normal.into();
         node.glue_order = GlueOrder::Normal.into();
-        node.glue_set = 0.0;
+        node.glue_set = crate::overlay::GlueRatio::new(0.0);
         Ok(p)
     }
 

@@ -581,7 +581,7 @@ mod tests {
     #[test]
     fn mem_setters_capture_preimages() {
         let mut mem = crate::state::MemState {
-            data: vec![word(0); 4],
+            data: vec![0; 4],
             ..Default::default()
         };
         mem.journal.arm(mem.data.len());
@@ -589,11 +589,12 @@ mod tests {
         mem.set_b32s1(MemPtr::from_raw(0), 10);
         mem.set_b16s0(MemPtr::from_raw(0), 11);
         mem.set_b32s0(MemPtr::from_raw(2), 12);
+        assert_eq!(mem.data, [11, 10, 12, 0]);
 
         let delta = mem.journal.seal(&mem.data);
-        assert_eq!(delta.len(), 2);
+        assert_eq!(delta.len(), 3);
         delta.apply_to(&mut mem.data);
-        assert!(mem.data.iter().all(|value| bits(*value) == 0));
+        assert_eq!(mem.data, [0; 4]);
     }
 
     #[test]

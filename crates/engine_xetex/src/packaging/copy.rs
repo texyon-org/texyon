@@ -18,7 +18,7 @@ use crate::state::MemState;
 use super::LrState;
 use crate::units::{MemIdx, MemPtr, Scaled};
 
-const SYNCTEX_FIELD_SIZE: i32 = 1;
+const SYNCTEX_FIELD_SIZE: i32 = 2;
 
 /// `r` typed like `src`, whose header word `r` has just received.
 #[inline]
@@ -53,9 +53,7 @@ impl MemState {
     /// Copy the first `words` words of node `src` to node `dst`.
     #[inline]
     fn copy_words(&mut self, dst: MemPtr, src: MemPtr, words: i32) {
-        for w in (0..words).rev() {
-            self.set_word(dst + w, self.word(src + w));
-        }
+        self.copy_run(dst, src, words);
     }
 
     fn copy_box_shell(

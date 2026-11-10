@@ -341,7 +341,7 @@ impl GlueRounding {
         GlueRounding {
             order: mem[this_box].glue_order,
             sign: mem[this_box].glue_sign,
-            set: mem[this_box].glue_set,
+            set: mem[this_box].glue_set.get(),
             cur_g: Scaled::ZERO,
             cur_glue: 0.0,
         }
@@ -514,12 +514,12 @@ impl MemState {
                     match g_sign.get() {
                         Some(GlueSign::Stretching) if self[spec].stretch_order == g_order => {
                             width += Scaled::round(
-                                self[this_box].glue_set * f64::from(self[spec].stretch.raw()),
+                                self[this_box].glue_set.get() * f64::from(self[spec].stretch.raw()),
                             );
                         }
                         Some(GlueSign::Shrinking) if self[spec].shrink_order == g_order => {
                             width -= Scaled::round(
-                                self[this_box].glue_set * f64::from(self[spec].shrink.raw()),
+                                self[this_box].glue_set.get() * f64::from(self[spec].shrink.raw()),
                             );
                         }
                         _ => {}

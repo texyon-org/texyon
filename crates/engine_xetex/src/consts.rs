@@ -53,25 +53,26 @@ pub const MMODE: i16 = HMODE + Cmd::MAX_COMMAND as i16 + 1;
 pub const LEVEL_ZERO: u16 = 0;
 pub const LEVEL_ONE: u16 = 1;
 
-pub const SMALL_NODE_SIZE: i32 = 2;
-pub const MEDIUM_NODE_SIZE: i32 = 3;
-pub const RULE_NODE_SIZE: i32 = 5;
-pub const BOX_NODE_SIZE: i32 = 8;
-pub const INS_NODE_SIZE: i32 = 5;
-pub const PAGE_INS_NODE_SIZE: i32 = 4;
-pub const MARGIN_KERN_NODE_SIZE: i32 = 3;
-pub const GLYPH_NODE_SIZE: i32 = 5;
-pub const NATIVE_NODE_SIZE: i32 = 6;
-pub const OPEN_NODE_SIZE: i32 = 3;
-pub const WRITE_NODE_SIZE: i32 = 2;
-pub const PIC_NODE_SIZE: i32 = 9;
-pub const INDEX_NODE_SIZE: i32 = 33;
-pub const MARK_CLASS_NODE_SIZE: i32 = 4;
-pub const STYLE_NODE_SIZE: i32 = 3;
-pub const NOAD_SIZE: i32 = 4;
-pub const ACCENT_NOAD_SIZE: i32 = 5;
-pub const RADICAL_NOAD_SIZE: i32 = 5;
-pub const FRACTION_NOAD_SIZE: i32 = 6;
+/// Node sizes, in 32-bit words.
+pub const SMALL_NODE_SIZE: i32 = 4;
+pub const MEDIUM_NODE_SIZE: i32 = 6;
+pub const RULE_NODE_SIZE: i32 = 10;
+pub const BOX_NODE_SIZE: i32 = 16;
+pub const INS_NODE_SIZE: i32 = 10;
+pub const PAGE_INS_NODE_SIZE: i32 = 8;
+pub const MARGIN_KERN_NODE_SIZE: i32 = 6;
+pub const GLYPH_NODE_SIZE: i32 = 10;
+pub const NATIVE_NODE_SIZE: i32 = 12;
+pub const OPEN_NODE_SIZE: i32 = 6;
+pub const WRITE_NODE_SIZE: i32 = 4;
+pub const PIC_NODE_SIZE: i32 = 18;
+pub const INDEX_NODE_SIZE: i32 = 66;
+pub const MARK_CLASS_NODE_SIZE: i32 = 8;
+pub const STYLE_NODE_SIZE: i32 = 6;
+pub const NOAD_SIZE: i32 = 8;
+pub const ACCENT_NOAD_SIZE: i32 = 10;
+pub const RADICAL_NOAD_SIZE: i32 = 10;
+pub const FRACTION_NOAD_SIZE: i32 = 12;
 
 // Node subtypes.
 pub const NORMAL: u16 = 0;

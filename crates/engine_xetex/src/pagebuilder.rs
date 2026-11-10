@@ -10,7 +10,9 @@ use crate::errors::OrConfusion;
 use crate::helpers::badness;
 use crate::input::TokenType;
 use crate::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
-use crate::node::{AnyNode, FixedNode, InsNode, NodePtr, PageInsNode, SaLeaf, WhatsitVariant};
+use crate::node::{
+    AnyNode, FixedNode, InsNode, NodePtr, PageInsNode, SaLeaf, WhatsitVariant, LIST_HEAD,
+};
 use crate::packaging::{MarksAction, PackSpec};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::scan::fetch_box;
@@ -222,8 +224,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
                     let b = st.mem.new_null_box()?;
                     st.eqtb.set_box_reg(i32::from(n), b.ptr());
                 }
-                // The box's `list_ptr` word serves as the head link of its list.
-                let mut p = st.eqtb.box_reg(i32::from(n)) + 5;
+                let mut p = st.eqtb.box_reg(i32::from(n)) + LIST_HEAD;
                 while !p.link(&st.mem).is_null() {
                     p = p.link(&st.mem);
                 }

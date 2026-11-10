@@ -109,7 +109,7 @@ fn digest_mem(st: &EngineState) -> u64 {
             .iter(),
     );
     for &word in &mem.data {
-        h.word(memory_word(word));
+        h.word(u64::from(word));
     }
     for slot in mem.payloads.slots() {
         match slot {
