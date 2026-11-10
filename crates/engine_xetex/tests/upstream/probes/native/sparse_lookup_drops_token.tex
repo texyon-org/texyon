@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 10pt
+\count200=5 \count300=5
+\setbox0\hbox{\lb abc\ifnum\count200=5 \fi\message{[A]}}\showbox0
+\setbox0\hbox{\lb abc\ifnum\count300=5 \fi\message{[B]}}\showbox0
+\bye

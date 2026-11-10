@@ -337,3 +337,11 @@ fn a_register_value_takes_no_decimal_fraction() {
     assert_eq!(r.errors(), ["Illegal unit of measure (pt inserted)."]);
     assert_eq!(r.shown(), ["3.0pt"]);
 }
+
+#[test]
+fn a_sparse_register_lookup_after_a_native_word_drops_no_token() {
+    let r = run(r"\font\x=[lmroman12-regular.otf] \count300=5
+\setbox0\hbox{\x abc\ifnum\count300=5 \fi\message{[kept]}}");
+    assert_eq!(r.errors(), [""; 0]);
+    assert!(r.log.contains("[kept]"));
+}

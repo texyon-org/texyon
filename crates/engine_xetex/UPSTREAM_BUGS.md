@@ -161,3 +161,19 @@ entry names a later TeX Live version.
 - **Fix:** set `radix:=0` after `scan_something_internal` in `scan_int`.
 - **TeXyoN:** that fix, so all three give the error. Listed in `tests/upstream/known.tsv`, test
   `a_register_value_takes_no_decimal_fraction`.
+
+## 12. A sparse register lookup after a native word drops the next token
+
+- **Where:** the end of `collect_native` in the main loop, `if cur_ptr<>null then goto big_switch
+  else goto reswitch`, with `check_for_inter_char_toks` and `check_for_post_char_toks`.
+- **Bug:** `cur_ptr` is meant to say that inter-character tokens were inserted and the current
+  token was backed up. It is the shared result of `find_sa_element`, so it is also non-null when
+  the expansion that ended the word looked up any register above 255, and when a class pair has
+  a record whose token list is empty. In both cases nothing was backed up, and `goto big_switch`
+  fetches a new token over the current one.
+- **Repro:** in a native font, `\count300=5 abc\ifnum\count300=5 \fi\message{[B]}` typesets
+  `[B]` in TeX Live 2025 xetex. With `\count200` the message is written. Probe
+  `native-sparse_lookup_drops_token`.
+- **Fix:** go to `big_switch` only when the token list was actually inserted, with a local flag.
+- **TeXyoN:** that fix. Listed in `tests/upstream/known.tsv`, test
+  `a_sparse_register_lookup_after_a_native_word_drops_no_token`.

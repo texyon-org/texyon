@@ -19,8 +19,7 @@ fn inter_char_tokens_enabled(st: &EngineState) -> bool {
     st.eqtb.int_par(IntPar::XetexInterCharTokens) > 0
 }
 
-/// The `\XeTeXinterchartoks` list for class pair `n`, if set. Leaves the
-/// pair's trie record, possibly null, in `cur_ptr`.
+/// The `\XeTeXinterchartoks` list for class pair `n`, if set.
 fn inter_char_toks(st: &mut EngineState, n: i32) -> Option<TokenList> {
     let SaLeaf::Pointer(p) = st
         .mem
@@ -91,8 +90,8 @@ fn note_char_class(st: &mut EngineState, sc: i32) {
     }
 }
 
-/// TeX's `adjust_space_factor` for `cur_chr`. Also resets `cur_ptr` and
-/// records and returns the character's space class.
+/// TeX's `adjust_space_factor` for `cur_chr`. Also records and returns the
+/// character's space class.
 #[inline(always)]
 fn adjust_space_factor(st: &mut EngineState) -> i32 {
     let sf_code = st.eqtb.sf_code(st.scanner.cur_chr);
@@ -108,7 +107,6 @@ fn adjust_space_factor(st: &mut EngineState) -> i32 {
     } else {
         st.input.cur_list.set_space_factor(s);
     }
-    st.scanner.cur_ptr = MemPtr::NULL;
     st.mainloop.space_class = sf_code / 65536;
     st.mainloop.space_class
 }
@@ -206,7 +204,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
     st.mainloop.main_f = mf;
     st.scanner.native_len = 0;
 
-    loop {
+    let inserted_toks = loop {
         let sc = adjust_space_factor(st);
         let was_boundary = st.mainloop.prev_class == CHAR_CLASS_LIMIT - 1;
         if insert_inter_char_toks_before(st, sc)? {
@@ -214,7 +212,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
                 return Ok(true);
             }
             st.mainloop.prev_class = CHAR_CLASS_LIMIT - 1;
-            break;
+            break true;
         }
         note_char_class(st, sc);
 
@@ -247,9 +245,8 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
             st.scanner.cur_chr = crate::scan::scan_usv_num(st)?;
             continue;
         }
-        insert_boundary_inter_char_toks(st)?;
-        break;
-    }
+        break insert_boundary_inter_char_toks(st)?;
+    };
 
     if let Some(mapping) = st.fonts.font_mapping[mf].clone() {
         let text = &st.scanner.native_text[..st.scanner.native_len as usize];
@@ -371,7 +368,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
     if st.eqtb.int_par(IntPar::XetexInterwordSpaceShaping) > 0 {
         shape_interword_space(st, mf)?;
     }
-    Ok(!st.scanner.cur_ptr.is_null())
+    Ok(inserted_toks)
 }
 
 /// Kerns the interword glue before the current word by what the font's shaping
