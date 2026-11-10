@@ -132,3 +132,17 @@ entry names a later TeX Live version.
 - **Fix:** set `first_width:=hsize` and `first_indent:=0` when `hang_indent=0`.
 - **TeXyoN:** that fix, so the paragraph keeps the full `\hsize`. Listed in
   `tests/upstream/known.tsv`, test `a_wrapped_prevgraf_without_hanging_indent_keeps_the_full_measure`.
+
+## 10. A dimension scanned during another dimension's units clears its overflow
+
+- **Where:** `scan_dimen`, which starts with `arith_error:=false` and ends by testing it.
+- **Bug:** `arith_error` is global and `scan_dimen` is not reentrant. After `true` has scaled the
+  number, the unit keywords are scanned with expansion. An `\ifdim` expanded there runs
+  `scan_dimen` again, which clears the flag the outer call has already set. `scan_expr` saves
+  and restores the flag for this reason, `scan_dimen` does not.
+- **Repro:** with `\mag=1`, `\dimen0=3000000 true sp` gives "Dimension too large", and
+  `\dimen0=3000000 true\ifdim0pt=0pt \fi sp` gives no error and `1.39697pt` in TeX Live 2025
+  xetex. Probe `limits-nested_dimen_overflow`.
+- **Fix:** save `arith_error` on entry to `scan_dimen` and restore it on exit, as `scan_expr` does.
+- **TeXyoN:** each dimension keeps its own overflow, so both report "Dimension too large". Listed in
+  `tests/upstream/known.tsv`, test `a_dimension_scanned_inside_another_keeps_the_outer_overflow`.

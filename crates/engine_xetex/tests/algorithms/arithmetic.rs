@@ -42,3 +42,11 @@ fn random_numbers_accept_the_most_negative_integer() {
     );
     assert_eq!(shown, ["-2147483648", "-2147483647"]);
 }
+
+#[test]
+fn a_dimension_scanned_inside_another_keeps_the_outer_overflow() {
+    let r = run(r"\mag=1 \dimen1=3000000 true\ifdim0pt=0pt \fi sp
+          \showthe\dimen1");
+    assert_eq!(r.errors(), ["Dimension too large."]);
+    assert_eq!(r.shown(), ["16383.99998pt"]);
+}

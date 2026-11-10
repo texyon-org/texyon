@@ -422,6 +422,7 @@ fn scan_dimen_from(
     let mut negative = false;
     let mut v: i32;
 
+    let outer_arith_error = st.errors.arith_error;
     st.errors.arith_error = false;
     st.scanner.cur_order = GlueOrder::Normal;
 
@@ -648,8 +649,8 @@ fn scan_dimen_from(
             ],
         )?;
         v = MAX_HALFWORD;
-        st.errors.arith_error = false;
     }
+    st.errors.arith_error = outer_arith_error;
     if negative {
         v = v.wrapping_neg();
     }

@@ -9,3 +9,4 @@ xetex-nested_name_in_font_size	upstream lets \XeTeXpdfpagecount in a \font size 
 xetex-unquoted_native_font_name	upstream gives an unquoted native font its TFM lookup name, without extension and mapping, TeXyoN gives it the name as written (UPSTREAM_BUGS.md 8)
 par-wrapped_prevgraf_stale_hang	upstream lays out a paragraph whose \prevgraf wraps the line numbers with the previous paragraph's hanging indent, TeXyoN with the full \hsize (UPSTREAM_BUGS.md 9)
 limits-wrap_misc	upstream sets the lines of a paragraph whose \prevgraf wraps the line numbers to the stale first_width (0pt here) and reports them overfull, TeXyoN uses \hsize (UPSTREAM_BUGS.md 9)
+limits-nested_dimen_overflow	upstream loses a dimension's overflow when an expansion inside its units scans another dimension, TeXyoN reports "Dimension too large" (UPSTREAM_BUGS.md 10)
