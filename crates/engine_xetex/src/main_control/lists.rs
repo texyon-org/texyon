@@ -595,7 +595,7 @@ pub(super) fn append_kern(st: &mut EngineState, mu: bool) -> Result<(), Abort> {
     } else {
         KernSubtype::Explicit
     };
-    let d = crate::scan::scan_dimen(st, mu, false)?;
+    let d = crate::scan::scan_dimen(st, mu)?;
     let p = st.mem.new_kern(d)?;
     st.mem[p].subtype = s.into();
     st.input.cur_list.tail_append(&mut st.mem, p.ptr());

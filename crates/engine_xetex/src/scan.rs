@@ -32,10 +32,10 @@ pub(crate) use self::next::{
     get_x_non_blank_non_relax, get_x_or_protected, get_x_token, pass_text, x_token,
 };
 pub(crate) use self::numbers::{
-    scan_char_class, scan_char_class_not_ignored, scan_char_num, scan_delimiter_int, scan_dimen,
-    scan_eight_bit_int, scan_fifteen_bit_int, scan_four_bit_int, scan_four_bit_int_or_18,
-    scan_glue, scan_int, scan_math_class_int, scan_math_fam_int, scan_register_num, scan_usv_num,
-    scan_xetex_math_char_int, xetex_scan_dimen,
+    scan_char_class, scan_char_class_not_ignored, scan_char_num, scan_decimal, scan_delimiter_int,
+    scan_dimen, scan_eight_bit_int, scan_fifteen_bit_int, scan_four_bit_int,
+    scan_four_bit_int_or_18, scan_glue, scan_int, scan_math_class_int, scan_math_fam_int,
+    scan_register_num, scan_usv_num, scan_xetex_math_char_int,
 };
 pub(crate) use self::toks::{
     compare_strings, finish_line, pseudo_start, read_toks, scan_pdf_ext_toks, scan_toks,
@@ -87,9 +87,9 @@ pub(crate) fn scan_spec(
         0
     };
     let spec = if scan_keyword(st, "to")? {
-        PackSpec::Exactly(scan_dimen(st, false, false)?)
+        PackSpec::Exactly(scan_dimen(st, false)?)
     } else if scan_keyword(st, "spread")? {
-        PackSpec::Additional(scan_dimen(st, false, false)?)
+        PackSpec::Additional(scan_dimen(st, false)?)
     } else {
         PackSpec::NATURAL
     };
@@ -122,13 +122,13 @@ pub(crate) fn scan_rule_spec(st: &mut EngineState) -> Result<NodePtr<RuleNode>, 
     }
     loop {
         if scan_keyword(st, "width")? {
-            let d = xetex_scan_dimen(st, false, false, true)?;
+            let d = scan_dimen(st, false)?;
             st.mem[r].width = RuleDimen::from_raw(d.raw()).into();
         } else if scan_keyword(st, "height")? {
-            let d = xetex_scan_dimen(st, false, false, true)?;
+            let d = scan_dimen(st, false)?;
             st.mem[r].height = RuleDimen::from_raw(d.raw()).into();
         } else if scan_keyword(st, "depth")? {
-            let d = xetex_scan_dimen(st, false, false, true)?;
+            let d = scan_dimen(st, false)?;
             st.mem[r].depth = RuleDimen::from_raw(d.raw()).into();
         } else {
             break;

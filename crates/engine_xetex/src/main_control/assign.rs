@@ -51,7 +51,7 @@ fn alter_aux(st: &mut EngineState, code: AuxCode) -> Result<(), Abort> {
     }
     crate::scan::scan_optional_equals(st)?;
     if code == AuxCode::PrevDepth {
-        let d = crate::scan::scan_dimen(st, false, false)?;
+        let d = crate::scan::scan_dimen(st, false)?;
         st.input.cur_list.set_prev_depth(d);
         return Ok(());
     }
@@ -90,7 +90,7 @@ fn alter_prev_graf(st: &mut EngineState) -> Result<(), Abort> {
 
 fn alter_page_so_far(st: &mut EngineState, code: PageDimenCode) -> Result<(), Abort> {
     crate::scan::scan_optional_equals(st)?;
-    let d = crate::scan::scan_dimen(st, false, false)?;
+    let d = crate::scan::scan_dimen(st, false)?;
     st.shipout.page_so_far[code.index()] = d;
     Ok(())
 }
@@ -122,7 +122,7 @@ fn alter_box_dimen(st: &mut EngineState, code: BoxDimenCode) -> Result<(), Abort
     let n = crate::scan::scan_register_num(st)?;
     let b = fetch_box(st, n);
     crate::scan::scan_optional_equals(st)?;
-    let d = crate::scan::scan_dimen(st, false, false)?;
+    let d = crate::scan::scan_dimen(st, false)?;
     if let Some(b) = b {
         let v = d;
         match code {
@@ -182,7 +182,7 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     let file = scanned.file;
     st.scanner.name_in_progress = true;
     let s = if crate::scan::scan_keyword(st, "at")? {
-        let size = crate::scan::scan_dimen(st, false, false)?;
+        let size = crate::scan::scan_dimen(st, false)?;
         if size <= Scaled::ZERO || size >= Scaled::from_raw(0x800_0000) {
             crate::errors::error(
                 st,
@@ -329,7 +329,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             let v = if p == ValueLevel::Int {
                 crate::scan::scan_int(st)?
             } else {
-                crate::scan::scan_dimen(st, false, false)?.raw()
+                crate::scan::scan_dimen(st, false)?.raw()
             };
             RegisterValue::Word(if q == Cmd::Advance {
                 v.wrapping_add(w)
@@ -713,7 +713,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
         }
         Command::AssignDimen(p) => {
             crate::scan::scan_optional_equals(st)?;
-            let d = crate::scan::scan_dimen(st, false, false)?;
+            let d = crate::scan::scan_dimen(st, false)?;
             word_define(st, a >= 4, p, d.raw())?;
         }
         cmd @ (Command::AssignGlue(p) | Command::AssignMuGlue(p)) => {
@@ -784,7 +784,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
         Command::AssignFontDimen => {
             let k = crate::scan::find_font_dimen(st, true)?;
             crate::scan::scan_optional_equals(st)?;
-            let d = crate::scan::scan_dimen(st, false, false)?;
+            let d = crate::scan::scan_dimen(st, false)?;
             st.fonts.set_font_info_sc(k, d);
         }
         Command::AssignFontInt(code) => {
@@ -1076,9 +1076,9 @@ fn set_shape(st: &mut EngineState, global: bool, q: EqtbPtr) -> Result<(), Abort
         let shape = NodePtr::<ParShapeNode>::at(p);
         st.mem[shape].lines = n;
         for line in 0..st.mem.entries(shape).len() {
-            let indent = crate::scan::scan_dimen(st, false, false)?;
+            let indent = crate::scan::scan_dimen(st, false)?;
             st.mem.entries_mut(shape)[line].indent = indent;
-            let width = crate::scan::scan_dimen(st, false, false)?;
+            let width = crate::scan::scan_dimen(st, false)?;
             st.mem.entries_mut(shape)[line].width = width;
         }
         p

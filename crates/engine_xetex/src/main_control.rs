@@ -334,7 +334,7 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
         (_, Command::RightBrace(_)) => handle_right_brace(st)?,
         (VMODE, Command::Hmove { left: negate })
         | (HMODE | MMODE, Command::Vmove { raise: negate }) => {
-            let d = crate::scan::scan_dimen(st, false, false)?;
+            let d = crate::scan::scan_dimen(st, false)?;
             let shift = if negate { -d } else { d };
             scan_box(st, shift.raw())?;
         }

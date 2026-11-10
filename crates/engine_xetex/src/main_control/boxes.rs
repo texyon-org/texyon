@@ -382,7 +382,7 @@ pub(super) fn begin_box(
                     ],
                 )?;
             }
-            let d = crate::scan::scan_dimen(st, false, false)?;
+            let d = crate::scan::scan_dimen(st, false)?;
             st.scanner.cur_box = crate::packaging::vsplit(st, n, d)?.map(BoxOrRule::Box);
         }
         BoxCode::Vtop | BoxCode::Vbox | BoxCode::Hbox => {

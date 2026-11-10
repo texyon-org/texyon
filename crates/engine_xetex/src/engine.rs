@@ -333,8 +333,6 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.scanner.expand_depth_count = 0;
     st.scanner.is_in_csname = false;
     st.scanner.cur_mark = CurMarks::NULL;
-    st.scanner.radix = 0;
-    st.scanner.cur_order = GlueOrder::Normal;
 
     st.input.read_open = [CLOSED; 17];
 

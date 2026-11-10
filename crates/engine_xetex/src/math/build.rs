@@ -364,7 +364,7 @@ pub(crate) fn math_fraction(st: &mut EngineState, code: AboveCode) -> Result<(),
         }
 
         if kind == AboveCode::Above {
-            crate::scan::scan_dimen(st, false, false)?;
+            crate::scan::scan_dimen(st, false)?;
         }
 
         crate::errors::error(
@@ -388,7 +388,7 @@ pub(crate) fn math_fraction(st: &mut EngineState, code: AboveCode) -> Result<(),
             AboveCode::Over => st.mem[aux].thickness = DEFAULT_CODE,
             AboveCode::Atop => st.mem[aux].thickness = Scaled::ZERO,
             _ => {
-                let d = crate::scan::scan_dimen(st, false, false)?;
+                let d = crate::scan::scan_dimen(st, false)?;
                 st.mem[aux].thickness = d;
             }
         }

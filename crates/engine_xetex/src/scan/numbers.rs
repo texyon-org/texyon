@@ -259,9 +259,14 @@ pub(super) fn get_primitive_token(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 pub(crate) fn scan_int(st: &mut EngineState) -> Result<i32, Abort> {
+    Ok(scan_int_decimal(st)?.0)
+}
+
+/// `scan_int` that also returns whether the integer was a decimal constant.
+fn scan_int_decimal(st: &mut EngineState) -> Result<(i32, bool), Abort> {
     let mut ok_so_far = true;
     let mut v: i32;
-    st.scanner.radix = 0;
+    let mut decimal = false;
     let negative = scan_signs(st)?;
 
     loop {
@@ -305,7 +310,6 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<i32, Abort> {
                 CurVal::Int(n) => n,
                 _ => return Err(Abort::Confusion("scan_int")),
             };
-            st.scanner.radix = 0;
         } else {
             let (radix, m) = if st.scanner.cur_tok == OCTAL_TOKEN {
                 get_x_token(st)?;
@@ -316,7 +320,7 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<i32, Abort> {
             } else {
                 (10, 0x0CCC_CCCC)
             };
-            st.scanner.radix = radix as u8;
+            decimal = radix == 10;
             let mut vacuous = true;
             v = 0;
             loop {
@@ -369,21 +373,23 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<i32, Abort> {
     if negative {
         v = v.wrapping_neg();
     }
-    Ok(v)
+    Ok((v, decimal))
 }
 
-pub(crate) fn scan_dimen(st: &mut EngineState, mu: bool, inf: bool) -> Result<Scaled, Abort> {
-    scan_dimen_from(st, mu, inf, None, true)
+/// Scans a dimension, in math units if `mu`.
+pub(crate) fn scan_dimen(st: &mut EngineState, mu: bool) -> Result<Scaled, Abort> {
+    Ok(scan_dimen_from(st, mu, false, None, true)?.0)
 }
 
-/// Scans a dimension, or a bare number when `requires_units` is false.
-pub(crate) fn xetex_scan_dimen(
-    st: &mut EngineState,
-    mu: bool,
-    inf: bool,
-    requires_units: bool,
-) -> Result<Scaled, Abort> {
-    scan_dimen_from(st, mu, inf, None, requires_units)
+/// Scans a number with an optional fraction and no unit, as XeTeX's
+/// `xetex_scan_dimen` does for an angle.
+pub(crate) fn scan_decimal(st: &mut EngineState) -> Result<Scaled, Abort> {
+    Ok(scan_dimen_from(st, false, false, None, false)?.0)
+}
+
+/// Scans the amount after `plus` or `minus`, which may be `fil`, `fill` or `filll`.
+fn scan_stretch(st: &mut EngineState, mu: bool) -> Result<(Scaled, GlueOrder), Abort> {
+    scan_dimen_from(st, mu, true, None, true)
 }
 
 /// A glue spec pointer held in a raw word.
@@ -416,20 +422,21 @@ fn attach_unit(integer: i32, fraction: i32, v: Scaled) -> Overflowing<Scaled> {
     whole
 }
 
-/// Scans a dimension. `shortcut` is an integer already scanned, which then only needs units.
+/// Scans a dimension and its glue order, which `inf` allows to be infinite.
+/// `shortcut` is an integer already scanned, which then only needs units.
 fn scan_dimen_from(
     st: &mut EngineState,
     mu: bool,
     inf: bool,
     shortcut: Option<i32>,
     requires_units: bool,
-) -> Result<Scaled, Abort> {
+) -> Result<(Scaled, GlueOrder), Abort> {
     let mut f: i32 = 0;
     let mut negative = false;
     let mut v: i32;
 
     let mut overflowed = false;
-    st.scanner.cur_order = GlueOrder::Normal;
+    let mut order = GlueOrder::Normal;
 
     'attach_sign: {
         if let Some(n) = shortcut {
@@ -462,17 +469,17 @@ fn scan_dimen_from(
                 if st.scanner.cur_tok == CONTINENTAL_POINT_TOKEN {
                     st.scanner.cur_tok = POINT_TOKEN;
                 }
+                let decimal;
                 if st.scanner.cur_tok != POINT_TOKEN {
-                    v = scan_int(st)?;
+                    (v, decimal) = scan_int_decimal(st)?;
                 } else {
-                    st.scanner.radix = 10;
-                    v = 0;
+                    (v, decimal) = (0, true);
                 }
                 if st.scanner.cur_tok == CONTINENTAL_POINT_TOKEN {
                     st.scanner.cur_tok = POINT_TOKEN;
                 }
 
-                if st.scanner.radix == 10 && st.scanner.cur_tok == POINT_TOKEN {
+                if decimal && st.scanner.cur_tok == POINT_TOKEN {
                     // Up to 17 digits are kept, most recent first, in a temporary list.
                     let mut k: usize = 0;
                     let mut digits = MemPtr::NULL;
@@ -513,10 +520,10 @@ fn scan_dimen_from(
         if requires_units {
             let apply_fraction = 'units: {
                 if inf && scan_keyword(st, "fil")? {
-                    st.scanner.cur_order = GlueOrder::Fil;
+                    order = GlueOrder::Fil;
                     while scan_keyword(st, "l")? {
-                        match st.scanner.cur_order.next() {
-                            Some(next) => st.scanner.cur_order = next,
+                        match order.next() {
+                            Some(next) => order = next,
                             None => {
                                 crate::errors::error(
                                     st,
@@ -659,7 +666,7 @@ fn scan_dimen_from(
     if negative {
         v = v.wrapping_neg();
     }
-    Ok(Scaled::from_raw(v))
+    Ok((Scaled::from_raw(v), order))
 }
 
 /// Makes `v.f` a scaled value in `v`. Returns whether it is too large for one.
@@ -688,7 +695,7 @@ pub(crate) fn scan_glue(
                 return Ok(spec);
             }
             match val {
-                CurVal::Int(n) => scan_dimen_from(st, mu, false, Some(n), true)?,
+                CurVal::Int(n) => scan_dimen_from(st, mu, false, Some(n), true)?.0,
                 _ => {
                     if level == ValueLevel::Mu {
                         mu_error(st)?;
@@ -698,7 +705,7 @@ pub(crate) fn scan_glue(
             }
         } else {
             back_input(st)?;
-            let d = scan_dimen(st, mu, false)?;
+            let d = scan_dimen(st, mu)?;
             if negative {
                 -d
             } else {
@@ -710,14 +717,14 @@ pub(crate) fn scan_glue(
     st.mem[gs].width = width;
 
     if scan_keyword(st, "plus")? {
-        let d = scan_dimen(st, mu, true)?;
-        st.mem[gs].stretch = d;
-        st.mem[gs].stretch_order = (st.scanner.cur_order).into();
+        let (stretch, order) = scan_stretch(st, mu)?;
+        st.mem[gs].stretch = stretch;
+        st.mem[gs].stretch_order = order.into();
     }
     if scan_keyword(st, "minus")? {
-        let d = scan_dimen(st, mu, true)?;
-        st.mem[gs].shrink = d;
-        st.mem[gs].shrink_order = (st.scanner.cur_order).into();
+        let (shrink, order) = scan_stretch(st, mu)?;
+        st.mem[gs].shrink = shrink;
+        st.mem[gs].shrink_order = order.into();
     }
 
     Ok(gs)
@@ -832,7 +839,7 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
                 back_input(st)?;
                 f = match o {
                     ValueLevel::Int => scan_int(st)?,
-                    ValueLevel::Dimen => scan_dimen(st, false, false)?.raw(),
+                    ValueLevel::Dimen => scan_dimen(st, false)?.raw(),
                     ValueLevel::Glue => scan_normal_glue(st)?.ptr().raw(),
                     _ => scan_mu_glue(st)?.ptr().raw(),
                 };

@@ -365,7 +365,7 @@ impl Placement {
 
 /// Scan an image dimension, reporting and ignoring non-positive values.
 fn scan_image_size(st: &mut EngineState) -> Result<Option<f64>, Abort> {
-    let d = crate::scan::scan_dimen(st, false, false)?;
+    let d = crate::scan::scan_dimen(st, false)?;
     if d > Scaled::ZERO {
         return Ok(Some(fix2d(d)));
     }
@@ -454,7 +454,7 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
                 y_size_req = size;
             }
         } else if crate::scan::scan_keyword(st, "rotated")? {
-            let angle = crate::scan::xetex_scan_dimen(st, false, false, false)?;
+            let angle = crate::scan::scan_decimal(st)?;
             if !no_size_req {
                 placement.scale_to(x_size_req, y_size_req);
                 x_size_req = 0.0;
