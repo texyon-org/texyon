@@ -4,8 +4,8 @@ use crate::cmd::Cmd;
 use crate::codes::{BoxCode, SkipCode, ValueLevel};
 use crate::command::Command;
 use crate::consts::{
-    BIGGEST_CHAR, BOX_NODE_SIZE, EMPTY, ETEX_PEN_BASE, FROZEN_CR, HMODE, IGNORE_DEPTH, MAX_DIMEN,
-    MMODE, NOAD_SIZE, NULL_FLAG, PAR_SHAPE_LOC, SUB_BOX, SUB_MLIST, TEX_NULL, VMODE,
+    BIGGEST_CHAR, EMPTY, ETEX_PEN_BASE, FROZEN_CR, HMODE, IGNORE_DEPTH, MAX_DIMEN, MMODE,
+    NULL_FLAG, PAR_SHAPE_LOC, SUB_BOX, SUB_MLIST, TEX_NULL, VMODE,
 };
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
@@ -17,9 +17,9 @@ use crate::input::{TokenType, TOKEN_LIST};
 use crate::mem::{CONTRIB_HEAD, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, PAGE_HEAD, SS_GLUE, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
 use crate::node::{
-    AdjustNode, AdjustPlacement, AnyNode, CharNode, DiscNode, GlueKind, GlueNode, InsNode,
-    KernSubtype, LanguageNode, LrNode, MarkNode, MathField, NativeWordNode, NoadVariant, NodePtr,
-    WhatsitSubtype, WhatsitVariant,
+    AdjustNode, AdjustPlacement, AnyNode, CharNode, DiscNode, FixedNode, GlueKind, GlueNode,
+    InsNode, KernSubtype, LanguageNode, LrNode, MarkNode, MathField, NativeWordNode, Noad,
+    NoadVariant, NodePtr, WhatsitSubtype, WhatsitVariant,
 };
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
@@ -413,7 +413,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
                 st.mem[adj].adjust_ptr = list;
                 st.mem.delete_glue_ref(split_top_skip);
             }
-            st.mem.free_node(p.ptr(), BOX_NODE_SIZE);
+            p.free(&mut st.mem);
             if st.input.nest.is_empty() {
                 crate::pagebuilder::build_page(st)?;
             }
@@ -541,7 +541,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
                         && st.mem[n].supscr.math_type == EMPTY =>
                 {
                     st.mem[save_loc] = st.mem[n].nucleus;
-                    st.mem.free_node(n.ptr(), NOAD_SIZE);
+                    n.free(&mut st.mem);
                 }
                 NoadVariant::Accent(a)
                     if save_loc.idx().raw() == st.input.cur_list.tail.raw() + 1
@@ -555,7 +555,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
                         q = q.link(&st.mem);
                     }
                     q.set_link(&mut st.mem, a.ptr());
-                    st.mem.free_node(st.input.cur_list.tail, NOAD_SIZE);
+                    st.mem.free_node(st.input.cur_list.tail, Noad::SIZE);
                     st.input.cur_list.tail = a.ptr();
                 }
                 _ => {}

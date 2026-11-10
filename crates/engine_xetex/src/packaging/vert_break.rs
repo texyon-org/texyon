@@ -1,14 +1,14 @@
 //! Breaking vertical lists: `vert_break`, `vsplit`, `prune_page_top` and `do_marks`.
 
 use crate::codes::{BoxCode, MarkCode, ValueLevel};
-use crate::consts::{BOX_NODE_SIZE, EJECT_PENALTY, INF_BAD, INF_PENALTY, MAX_DIMEN, MAX_HALFWORD};
+use crate::consts::{EJECT_PENALTY, INF_BAD, INF_PENALTY, MAX_DIMEN, MAX_HALFWORD};
 use crate::errors::OrConfusion;
 use crate::errors::{Abort, IgnoredError};
 use crate::glue_store::GlueSpecId;
 use crate::mem::TEMP_HEAD;
 use crate::node::{
-    AnyNode, BoxNode, FixedNode, GlueNode, KernNode, MarkNode, NodePtr, SaIndexNode, SaLeaf,
-    SaMarkClassNode, WhatsitVariant,
+    AnyNode, BoxNode, GlueNode, KernNode, MarkNode, NodePtr, SaIndexNode, SaLeaf, SaMarkClassNode,
+    WhatsitVariant,
 };
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, MemState, ScannerState, ShipoutState};
@@ -464,7 +464,7 @@ impl MemState {
         let save_discards = eqtb.int_par(IntPar::SavingVdiscards) > 0;
         let mut q = self.prune_page_top(scanner, eqtb, q, save_discards)?;
 
-        self.free_node(state.v.ptr(), BOX_NODE_SIZE);
+        state.v.free(self);
         if !q.is_null() {
             let packed = self.vpackage(eqtb, shipout, q, PackSpec::NATURAL, MAX_DIMEN)?;
             q = packed.r_box.ptr();
@@ -672,7 +672,7 @@ impl MemState {
             }
         }
         if self[q].used == 0 {
-            self.free_node(q.ptr(), SaIndexNode::SIZE);
+            q.free(self);
             return true;
         }
         false
@@ -728,7 +728,7 @@ impl MemState {
 
         if self[node].mark(MarkCode::Bot).is_null() && self[node].mark(MarkCode::SplitBot).is_null()
         {
-            self.free_node(node.ptr(), SaMarkClassNode::SIZE);
+            node.free(self);
             return true;
         }
         false

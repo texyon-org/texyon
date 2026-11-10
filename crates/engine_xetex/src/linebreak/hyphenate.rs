@@ -1,6 +1,6 @@
 //! Post-hyphenation: `hyphenate`, `reconstitute` and native-word hyphens.
 
-use crate::consts::{SMALL_NODE_SIZE, TEX_NULL};
+use crate::consts::TEX_NULL;
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::{CharTag, LigChar};
@@ -8,7 +8,8 @@ use crate::hyphenation::TrieOp;
 use crate::main_control::{LigStack, NewChar};
 use crate::mem::HOLD_HEAD;
 use crate::node::{
-    AnyNode, CharNode, DiscNode, HyphPosNode, LigBoundary, LigItem, NativeWordNode, NodePtr,
+    AnyNode, CharNode, DiscNode, FixedNode, HyphPosNode, LigBoundary, LigItem, LigatureNode,
+    NativeWordNode, NodePtr,
 };
 use crate::overlay::HyphPosLayout;
 use crate::params::IntPar;
@@ -150,7 +151,7 @@ fn pop_lig_stack(
         *j += 1;
     }
     st.mainloop.lig_stack = st.mem.lig_stack_at(item.ptr().link(&st.mem));
-    st.mem.free_node(item.ptr(), SMALL_NODE_SIZE);
+    item.free(&mut st.mem);
     match st.mainloop.lig_stack {
         None => *cur_rh = update_right(st, *j, n, bchar, hchar),
         Some(top) => st.mainloop.cur_r = top.character(&st.mem),
@@ -563,7 +564,7 @@ fn insert_hyphens(
                 st.hyph.hu[0] = LigChar::from_raw(st.hyph.max_hyph_char);
                 st.hyph.init_lig = false;
             }
-            st.mem.free_node(ha, SMALL_NODE_SIZE);
+            st.mem.free_node(ha, LigatureNode::SIZE);
             (st.mem.predecessor(word.start, ha), 0)
         }
     } else if !st.mem.is_char_node(r)

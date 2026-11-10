@@ -2,9 +2,8 @@
 
 use crate::codes::LimitCode;
 use crate::consts::{
-    BOX_NODE_SIZE, EMPTY, GLYPH_NODE_SIZE, INFINITE_DIMEN, INF_PENALTY, MATH_CHAR, MATH_TEXT_CHAR,
-    MAX_DIMEN, MEDIUM_NODE_SIZE, NOAD_SIZE, NULL_FONT, STYLE_NODE_SIZE, SUB_BOX, SUB_MLIST,
-    TEXT_SIZE,
+    EMPTY, INFINITE_DIMEN, INF_PENALTY, MATH_CHAR, MATH_TEXT_CHAR, MAX_DIMEN, NOAD_SIZE, NULL_FONT,
+    STYLE_NODE_SIZE, SUB_BOX, SUB_MLIST, TEXT_SIZE,
 };
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
@@ -13,9 +12,9 @@ use crate::glue_store::GlueSpecId;
 use crate::mem::{TEMP_HEAD, TEX_NULL, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
 use crate::node::{
-    AccentNoad, AnyNoad, AnyNode, BoxNode, ChoiceNode, FenceNoad, FractionNoad, GlueKind, GlueNode,
-    GlyphNode, KernNode, KernSubtype, MathAccentKind, MathField, Noad, NoadVariant, NodePtr,
-    RadicalNoad, RuleDimen, RuleNode, WhatsitSubtype, WhatsitVariant,
+    AccentNoad, AnyNoad, AnyNode, BoxNode, ChoiceNode, FenceNoad, FixedNode, FractionNoad,
+    GlueKind, GlueNode, GlyphNode, KernNode, KernSubtype, MathAccentKind, MathField, Noad,
+    NoadVariant, NodePtr, RadicalNoad, RuleDimen, RuleNode, WhatsitSubtype, WhatsitVariant,
 };
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar};
@@ -160,7 +159,7 @@ pub(super) fn clean_box(
                 && !st.mem.is_char_node(r)
                 && matches!(st.mem.classify(r_idx), Ok(AnyNode::Kern(_)))
             {
-                st.mem.free_node(r, MEDIUM_NODE_SIZE);
+                st.mem.free_node(r, KernNode::SIZE);
                 head.set_link(&mut st.mem, MemPtr::NULL);
             }
         }
@@ -595,7 +594,7 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<S
                         if h2 < Scaled::ZERO {
                             if let Some(assembly) = st.fonts.get_ot_assembly(cur_f, c_glyph, false)
                             {
-                                st.mem.free_node(glyph.ptr(), GLYPH_NODE_SIZE);
+                                glyph.free(&mut st.mem);
                                 let b = build_opentype_assembly(st, cur_f, &assembly, h1, false)?;
                                 st.mem[x].list_ptr = b.ptr();
                                 delta = Scaled::ZERO;
@@ -661,7 +660,7 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<S
         st.scanner.cur_f = save_f;
 
         if mem[q.supscr()].math_type == EMPTY {
-            mem.free_node(x.ptr(), BOX_NODE_SIZE);
+            x.free(mem);
             mem[v].list_ptr = y.ptr();
         } else {
             let shift_up = (bos3 - mem[x].depth).max(bos1);
@@ -676,7 +675,7 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<S
         }
 
         if mem[q.subscr()].math_type == EMPTY {
-            mem.free_node(z.ptr(), BOX_NODE_SIZE);
+            z.free(mem);
         } else {
             let shift_down = (bos4 - mem[z].height).max(bos2);
             let p = mem.new_kern(shift_down)?;
@@ -746,7 +745,7 @@ impl MemState {
                         self[q.nucleus()].set_character(step.lig_char());
                         self[q.subscr()] = self[p.subscr()];
                         self[q.supscr()] = self[p.supscr()];
-                        self.free_node(p.ptr(), NOAD_SIZE);
+                        p.free(self);
                     }
                 }
                 if op > 3 {
@@ -938,7 +937,7 @@ fn make_math_accent(
             }
             if w2 < Scaled::ZERO {
                 if let Some(assembly) = st.fonts.get_ot_assembly(f, c_glyph, true) {
-                    st.mem.free_node(glyph.ptr(), GLYPH_NODE_SIZE);
+                    glyph.free(&mut st.mem);
                     let b = build_opentype_assembly(st, f, &assembly, w, true)?;
                     st.mem[y].list_ptr = b.ptr();
                     assembly_box = Some(b);
@@ -1089,7 +1088,7 @@ impl MemState {
     fn mlist_track_box(&mut self, z: NodePtr<BoxNode>, max_h: &mut Scaled, max_d: &mut Scaled) {
         *max_h = (*max_h).max(self[z].height);
         *max_d = (*max_d).max(self[z].depth);
-        self.free_node(z.ptr(), BOX_NODE_SIZE);
+        z.free(self);
     }
 
     fn mlist_cond_math_glue(

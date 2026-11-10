@@ -888,7 +888,8 @@ pub fn link_of<K: NodeKind>(p: Option<NodePtr<K>>) -> MemPtr {
     p.map_or(MemPtr::NULL, NodePtr::ptr)
 }
 
-impl<K: ListRecord + FixedNode> NodePtr<K> {
+impl<K: FixedNode> NodePtr<K> {
+    /// Returns the node to the free list of its kind's size.
     #[inline]
     pub fn free(self, mem: &mut MemState) {
         mem.free_node(self.ptr(), K::SIZE);

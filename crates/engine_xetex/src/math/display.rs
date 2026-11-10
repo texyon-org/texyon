@@ -1,7 +1,7 @@
 //! Entering and leaving math mode: `init_math`, `after_math` and displays.
 
 use crate::cmd::Cmd;
-use crate::consts::{BOX_NODE_SIZE, HMODE, INF_PENALTY, MAX_DIMEN, MMODE, SCRIPT_SIZE, TEXT_SIZE};
+use crate::consts::{HMODE, INF_PENALTY, MAX_DIMEN, MMODE, SCRIPT_SIZE, TEXT_SIZE};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::QUAD_CODE;
@@ -123,7 +123,7 @@ fn app_display(
         q = p;
     } else {
         let mut r = st.mem[orig].list_ptr;
-        st.mem.free_node(orig.ptr(), BOX_NODE_SIZE);
+        orig.free(&mut st.mem);
         if r.is_null() {
             return Err(Abort::Confusion("LR4"));
         }
@@ -334,12 +334,12 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
                 || packed.shrink[GlueOrder::Fill] != Scaled::ZERO
                 || packed.shrink[GlueOrder::Filll] != Scaled::ZERO)
         {
-            st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
+            b.free(&mut st.mem);
             b = crate::packaging::hpack(st, p, PackSpec::Exactly(z - q))?;
         } else {
             e = Scaled::ZERO;
             if w > z {
-                st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
+                b.free(&mut st.mem);
                 b = crate::packaging::hpack(st, p, PackSpec::Exactly(z))?;
             }
         }

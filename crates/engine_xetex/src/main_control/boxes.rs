@@ -3,14 +3,14 @@
 use crate::cmd::Cmd;
 use crate::codes::{BoxCode, LeaderCode, ValueLevel};
 use crate::command::Command;
-use crate::consts::{
-    BOX_BASE, BOX_NODE_SIZE, HMODE, IGNORE_DEPTH, MARGIN_KERN_NODE_SIZE, MMODE, SUB_BOX, VMODE,
-};
+use crate::consts::{BOX_BASE, HMODE, IGNORE_DEPTH, MMODE, SUB_BOX, VMODE};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::input::TokenType;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD};
-use crate::node::{AnyNode, BoxNode, BoxOrRule, GlueKind, MathCode, NodePtr, SaLeaf};
+use crate::node::{
+    AnyNode, BoxNode, BoxOrRule, FixedNode, GlueKind, MarginKernNode, MathCode, NodePtr, SaLeaf,
+};
 use crate::packaging::{AdjustTails, PackOrigin};
 use crate::params::{DimenPar, IntPar, TokPar};
 use crate::scan::fetch_box;
@@ -56,7 +56,7 @@ pub(super) fn unpackage(st: &mut EngineState, c: BoxCode) -> Result<(), Abort> {
             st.input.cur_list.tail.set_link(&mut st.mem, list);
             st.mem
                 .change_box(&mut st.scanner, &mut st.eqtb, n, MemPtr::NULL)?;
-            st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
+            b.free(&mut st.mem);
         }
     }
 
@@ -68,7 +68,7 @@ pub(super) fn unpackage(st: &mut EngineState, c: BoxCode) -> Result<(), Abort> {
         if !st.mem.is_char_node(r) && matches!(st.mem.classify(r), Ok(AnyNode::MarginKern(_))) {
             let next = r.link(&st.mem);
             st.input.cur_list.tail.set_link(&mut st.mem, next);
-            st.mem.free_node(r, MARGIN_KERN_NODE_SIZE);
+            st.mem.free_node(r, MarginKernNode::SIZE);
         } else {
             st.input.cur_list.tail = r;
         }

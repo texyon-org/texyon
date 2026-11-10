@@ -1,8 +1,6 @@
 //! Attaching subscripts and superscripts (`make_scripts`).
 
-use crate::consts::{
-    BOX_NODE_SIZE, EMPTY, MATH_CHAR, MAX_DIMEN, NULL_FONT, SCRIPT_SIZE, SUB_MLIST,
-};
+use crate::consts::{EMPTY, MATH_CHAR, MAX_DIMEN, NULL_FONT, SCRIPT_SIZE, SUB_MLIST};
 use crate::errors::Abort;
 use crate::node::{AnyNode, BoxNode, MathField, Noad, NoadVariant, NodePtr};
 use crate::ot_math::ScriptKind;
@@ -159,7 +157,7 @@ fn initial_script_shifts(
             up: st.mem[zb].height - st.fonts.sup_drop(&st.eqtb, t),
             down: st.mem[zb].depth + st.fonts.sub_drop(&st.eqtb, t),
         };
-        st.mem.free_node(zb.ptr(), BOX_NODE_SIZE);
+        zb.free(&mut st.mem);
         Ok(shifts)
     }
 }

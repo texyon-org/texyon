@@ -8,7 +8,7 @@ use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::mem::TEMP_HEAD;
 use crate::node::{
-    AnyNode, BoxNode, CharNode, DiscNode, FixedNode, GlueNode, HeadNode, LanguageNode,
+    AnyNode, BoxNode, CharNode, DiscNode, FixedNode, GlueNode, HeadNode, LanguageNode, MathNode,
     NativeWordNode, NoadVariant, NodeKind, NodePtr, OpenNode, PicNode, WhatsitNode, WhatsitVariant,
     WriteNode,
 };
@@ -211,7 +211,7 @@ impl MemState {
                             } else {
                                 self[t].width = self[math].width;
                                 self[t].link = q;
-                                self.free_node(p, MEDIUM_NODE_SIZE);
+                                self.free_node(p, MathNode::SIZE);
                                 break 'done;
                             }
                         }

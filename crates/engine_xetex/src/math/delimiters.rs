@@ -1,6 +1,6 @@
 //! Boxes for math characters and delimiters: `char_box`, `var_delimiter`, `rebox`.
 
-use crate::consts::{BOX_NODE_SIZE, NULL_FONT, SCRIPT_SIZE};
+use crate::consts::{NULL_FONT, SCRIPT_SIZE};
 use crate::errors::Abort;
 use crate::fonts::{CharInfo, CharTag, AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::mem::SS_GLUE;
@@ -173,7 +173,7 @@ pub(super) fn rebox(
         }
     }
     let mem = &mut st.mem;
-    mem.free_node(b.ptr(), BOX_NODE_SIZE);
+    b.free(mem);
     let g = mem.new_glue(SS_GLUE)?;
     mem[g].link = p;
     while !p.link(mem).is_null() {

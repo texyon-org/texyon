@@ -1,9 +1,7 @@
 //! Shipping boxes out to the XDV file.
 
 use crate::bridge::{output_close, output_flush, output_open};
-use crate::consts::{
-    INVALID_HANDLE, MAX_DIMEN, MEDIUM_NODE_SIZE, MIN_HALFWORD, NULL_FONT, SMALL_NODE_SIZE,
-};
+use crate::consts::{INVALID_HANDLE, MAX_DIMEN, MIN_HALFWORD, NULL_FONT};
 use crate::dvi::{Axis, MoveReg};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
@@ -13,9 +11,9 @@ use crate::glyph_arena::FixedPoint;
 use crate::mem::LIG_TRICK;
 use crate::node::Stored;
 use crate::node::{
-    AnyNode, BoxLr, BoxNode, CharNode, EdgeNode, GlueKind, GlueNode, GlyphNode, KernSubtype,
-    LeaderKind, MathCode, MathNode, NativeWordNode, NodePtr, RuleNode, WhatsitSubtype,
-    WhatsitVariant, RUNNING,
+    AnyNode, BoxLr, BoxNode, CharNode, EdgeNode, FixedNode, GlueKind, GlueNode, GlyphNode,
+    KernNode, KernSubtype, LeaderKind, MathCode, MathNode, NativeWordNode, NodePtr, RuleNode,
+    WhatsitSubtype, WhatsitVariant, RUNNING,
 };
 use crate::packaging::LrState;
 use crate::params::{DimenPar, IntPar};
@@ -1067,7 +1065,7 @@ fn reverse_segment(
 ) -> Result<NodePtr<EdgeNode>, Abort> {
     let save_h = st.shipout.cur_h;
     st.mem.temp_ptr = st.mem[math].link;
-    st.mem.free_node(math.ptr(), MEDIUM_NODE_SIZE);
+    math.free(&mut st.mem);
     lr.dir = lr.dir.reversed();
     let edge = st.mem.new_edge(lr.dir, math_width)?;
     prev_p.set_link(&mut st.mem, edge.ptr());
@@ -1510,7 +1508,7 @@ impl MemState {
                         let (f, ch) = (self[ligature].font, self[ligature].character);
                         let c = self.new_char(f, ch)?.ptr();
                         c.set_link(self, q);
-                        self.free_node(ligature.ptr(), SMALL_NODE_SIZE);
+                        ligature.free(self);
                         p = c;
                         continue;
                     }
@@ -1533,7 +1531,7 @@ impl MemState {
                                     if m > MIN_HALFWORD {
                                         m -= 1;
                                     } else {
-                                        self.free_node(math.ptr(), MEDIUM_NODE_SIZE);
+                                        math.free(self);
                                         let t = t.expect("a segment reversal ends at its edge");
                                         self[t].link = q;
                                         self[t].width = wd;
@@ -1563,7 +1561,7 @@ impl MemState {
                 }
                 p.set_link(self, l);
                 if now_kern && (wd == Scaled::ZERO || l.is_null()) {
-                    self.free_node(p, MEDIUM_NODE_SIZE);
+                    self.free_node(p, KernNode::SIZE);
                     p = l;
                 }
                 l = p;

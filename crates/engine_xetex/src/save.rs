@@ -267,7 +267,7 @@ impl MemState {
                 return Ok(());
             }
             let (up_slot, up) = (n.sa_index % 64, n.link);
-            self.free_node(parent.ptr(), SaIndexNode::SIZE);
+            parent.free(self);
             match up.get() {
                 Some(up) => (slot, parent) = (usize::from(up_slot), up),
                 None => {
@@ -443,7 +443,7 @@ fn sa_restore(st: &mut EngineState) -> Result<(), Abort> {
                     n.sa_lev = saved.sa_lev;
                 }
                 st.mem.delete_sa_ref(&mut st.scanner, p.element())?;
-                st.mem.free_node(c.ptr(), SaSavedWord::SIZE);
+                c.free(&mut st.mem);
             }
             SaSavedEntry::Pointer(c) => {
                 let saved = st.mem[c];
@@ -462,7 +462,7 @@ fn sa_restore(st: &mut EngineState) -> Result<(), Abort> {
                     st.mem.flush_node_list(list)?;
                 }
                 st.mem.delete_sa_ref(&mut st.scanner, p.element())?;
-                st.mem.free_node(c.ptr(), SaSavedPointer::SIZE);
+                c.free(&mut st.mem);
             }
         }
         st.scanner.sa_chain = next;

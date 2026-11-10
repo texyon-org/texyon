@@ -1,7 +1,7 @@
 //! Box packing (`hpack`, `vpackage`), vertical breaking (`vert_break`,
 //! `vsplit`, `prune_page_top`, `do_marks`) and node-list copying and freeing.
 
-use crate::consts::{IGNORE_DEPTH, NULL_FONT, SMALL_NODE_SIZE};
+use crate::consts::{IGNORE_DEPTH, NULL_FONT};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD};
@@ -389,7 +389,7 @@ impl MemState {
                         tail.set_link(self, adjust_list);
                         *tail = self.list_tail(*tail);
                         p = self[adjust].link;
-                        self.free_node(adjust.ptr(), SMALL_NODE_SIZE);
+                        adjust.free(self);
                         q.set_link(self, p);
                         p = q;
                     }

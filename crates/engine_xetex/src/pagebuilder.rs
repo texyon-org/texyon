@@ -2,15 +2,15 @@
 
 use crate::codes::{BoxCode, MarkCode, ValueLevel};
 use crate::consts::{
-    AWFUL_BAD, BOX_NODE_SIZE, EJECT_PENALTY, IGNORE_DEPTH, INF_BAD, INF_PENALTY, INS_NODE_SIZE,
-    MAX_DIMEN, MAX_HALFWORD, PAGE_INS_NODE_SIZE, VMODE,
+    AWFUL_BAD, EJECT_PENALTY, IGNORE_DEPTH, INF_BAD, INF_PENALTY, MAX_DIMEN, MAX_HALFWORD,
+    PAGE_INS_NODE_SIZE, VMODE,
 };
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::helpers::badness;
 use crate::input::TokenType;
 use crate::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
-use crate::node::{AnyNode, InsNode, NodePtr, PageInsNode, SaLeaf, WhatsitVariant};
+use crate::node::{AnyNode, FixedNode, InsNode, NodePtr, PageInsNode, SaLeaf, WhatsitVariant};
 use crate::packaging::{MarksAction, PackSpec};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::scan::fetch_box;
@@ -147,7 +147,7 @@ fn place_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Re
             let tmp = crate::packaging::vpackage(st, pruned, PackSpec::NATURAL, MAX_DIMEN)?;
             let size = st.mem[tmp].height + st.mem[tmp].depth;
             st.mem[ins].height = size;
-            st.mem.free_node(tmp.ptr(), BOX_NODE_SIZE);
+            tmp.free(&mut st.mem);
             wait = true;
         }
     }
@@ -155,7 +155,7 @@ fn place_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Re
     let n = ins_box(st.mem[rec].box_number)?;
     let b = fetch_box(st, i32::from(n)).expect("insertion box made in fire_up");
     let list = st.mem[b].list_ptr;
-    st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
+    b.free(&mut st.mem);
     let packed = crate::packaging::vpackage(st, list, PackSpec::NATURAL, MAX_DIMEN)?;
     st.eqtb.set_box_reg(i32::from(n), packed.ptr());
     Ok(wait)
@@ -251,7 +251,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
                 } else {
                     let split_top = st.mem[ins].split_top_ptr;
                     st.mem.delete_glue_ref(split_top);
-                    st.mem.free_node(p, INS_NODE_SIZE);
+                    ins.free(&mut st.mem);
                 }
             }
             Ok(AnyNode::Mark(mark)) => {
@@ -310,7 +310,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     let mut r = PAGE_INS_HEAD.link(&st.mem);
     while r != PAGE_INS_HEAD {
         let next = r.link(&st.mem);
-        st.mem.free_node(r, PAGE_INS_NODE_SIZE);
+        st.mem.free_node(r, PageInsNode::SIZE);
         r = next;
     }
     PAGE_INS_HEAD.set_link(&mut st.mem, PAGE_INS_HEAD);
