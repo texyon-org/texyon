@@ -96,7 +96,6 @@ pub(crate) fn main_control_append_normal_space(st: &mut EngineState) -> Result<(
     }
     let glue = if st.eqtb.glue_par(GluePar::SpaceSkip) == ZERO_GLUE {
         let spec = font_space_glue(st)?;
-        st.mainloop.main_p = spec.ptr();
         st.mem.new_glue(spec)?
     } else {
         st.mem.new_param_glue(&st.eqtb, GluePar::SpaceSkip)?

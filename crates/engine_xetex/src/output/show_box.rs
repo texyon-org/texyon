@@ -213,7 +213,7 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
                     print(st, ", natural size ");
                     print_scaled(st, st.mem[node].height);
                     print(st, "; split(");
-                    print_spec(st, st.mem[node].split_top_ptr.ptr(), None);
+                    print_spec(st, st.mem[node].split_top_ptr, None);
                     print_char(st, b',');
                     print_scaled(st, st.mem[node].depth);
                     print(st, "); float cost ");
@@ -454,7 +454,7 @@ fn show_glue(st: &mut EngineState, node: NodePtr<crate::node::GlueNode>) {
             LeaderKind::Expanded => print_char(st, b'x'),
         }
         print(st, "leaders ");
-        print_spec(st, st.mem[node].glue_ptr.ptr(), None);
+        print_spec(st, st.mem[node].glue_ptr, None);
         node_list_display(st, b'.', st.mem[node].leader_ptr);
         return;
     }
@@ -480,7 +480,7 @@ fn show_glue(st: &mut EngineState, node: NodePtr<crate::node::GlueNode>) {
     if kind != GlueKind::CondMath {
         print_char(st, b' ');
         let unit = (kind == GlueKind::Mu).then_some("mu");
-        print_spec(st, st.mem[node].glue_ptr.ptr(), unit);
+        print_spec(st, st.mem[node].glue_ptr, unit);
     }
 }
 

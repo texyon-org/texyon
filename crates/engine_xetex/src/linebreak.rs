@@ -6,10 +6,10 @@ use crate::consts::{
 };
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
+use crate::glue_store::GlueSpecId;
 use crate::mem::TEMP_HEAD;
 use crate::node::{
-    AnyNode, BoxNode, CharNode, DiscNode, GlueNode, GlueSpecNode, KernSubtype, NodePtr,
-    WhatsitVariant,
+    AnyNode, BoxNode, CharNode, DiscNode, GlueNode, KernSubtype, NodePtr, WhatsitVariant,
 };
 use crate::packaging::PackOrigin;
 use crate::params::{DimenPar, GluePar, IntPar};
@@ -87,17 +87,14 @@ impl FontState {
 
 impl MemState {
     #[inline]
-    fn has_infinite_shrink(&self, spec: NodePtr<GlueSpecNode>) -> bool {
+    fn has_infinite_shrink(&self, spec: GlueSpecId) -> bool {
         self[spec].shrink_order != GlueOrder::Normal && self[spec].shrink != Scaled::ZERO
     }
 }
 
 impl MemState {
     /// A copy of `spec` with finite shrink, releasing `spec`.
-    pub(crate) fn finite_shrink(
-        &mut self,
-        spec: NodePtr<GlueSpecNode>,
-    ) -> Result<NodePtr<GlueSpecNode>, Abort> {
+    pub(crate) fn finite_shrink(&mut self, spec: GlueSpecId) -> Result<GlueSpecId, Abort> {
         let q = self.new_spec(spec)?;
         self[q].shrink_order = GlueOrder::Normal.into();
         self.delete_glue_ref(spec);
@@ -200,8 +197,8 @@ impl Breaker {
     fn finite_shrink(
         &mut self,
         st: &mut EngineState,
-        spec: NodePtr<GlueSpecNode>,
-    ) -> Result<NodePtr<GlueSpecNode>, Abort> {
+        spec: GlueSpecId,
+    ) -> Result<GlueSpecId, Abort> {
         if self.no_shrink_error_yet {
             self.no_shrink_error_yet = false;
             crate::errors::error(

@@ -56,7 +56,6 @@ pub const LEVEL_ONE: u16 = 1;
 
 pub const SMALL_NODE_SIZE: i32 = 2;
 pub const MEDIUM_NODE_SIZE: i32 = 3;
-pub const GLUE_SPEC_SIZE: i32 = 4;
 pub const RULE_NODE_SIZE: i32 = 5;
 pub const BOX_NODE_SIZE: i32 = 8;
 pub const INS_NODE_SIZE: i32 = 5;

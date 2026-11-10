@@ -17,11 +17,13 @@ use crate::engine::{POOL_FREE, STRINGS_FREE};
 use crate::errors::Abort;
 use crate::fonts::LigChar;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
+use crate::glue_store::GlueSpecId;
+use crate::glue_store::{GlueSpec, GlueStore, STATIC_SPECS};
 use crate::hash::{hash_slot, HASH_PRIME};
 use crate::hyphenation::{TrieOp, TriePtr, BIGGEST_LANG, HYPH_PRIME, TRIE_OP_SIZE};
 use crate::mem::{CONTRIB_HEAD, HI_MEM_STAT_MIN, PAGE_HEAD};
 use crate::mem_types::{B16x4, B32x2, MemoryWord};
-use crate::node::{link_of, FreeBlock, NodePtr};
+use crate::node::{FreeBlock, NodePtr};
 use crate::output::{print, print_char, print_int, print_ln, print_nl};
 use crate::params::IntPar;
 use crate::payload::PayloadStore;
@@ -119,6 +121,24 @@ impl FmtItem for MemoryWord {
         MemoryWord {
             b32: B32x2::get(bytes),
         }
+    }
+}
+
+impl FmtItem for GlueSpec {
+    const SIZE: usize = 20;
+    #[inline]
+    fn put(self, out: &mut Vec<u8>) {
+        for w in bytemuck::cast::<_, [u32; 5]>(self) {
+            w.put(out);
+        }
+    }
+    #[inline]
+    fn get(bytes: &[u8]) -> Self {
+        let mut words = [0u32; 5];
+        for (w, chunk) in words.iter_mut().zip(bytes.chunks_exact(4)) {
+            *w = u32::get(chunk);
+        }
+        bytemuck::cast(words)
     }
 }
 
@@ -535,6 +555,7 @@ fn dynamic_memory<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), A
     }
     s.int(&mut mem.var_used)?;
     token_lists(s, &mut mem.tokens)?;
+    glue_specs(s, &mut mem.glue)?;
     payloads(s, &mut mem.payloads)?;
 
     if !S::LOADING {
@@ -572,6 +593,23 @@ fn payloads<S: FmtStream>(s: &mut S, store: &mut PayloadStore) -> Result<(), Abo
         store.load(slots);
     }
     Ok(())
+}
+
+fn glue_specs<S: FmtStream>(s: &mut S, glue: &mut GlueStore) -> Result<(), Abort> {
+    let marks = glue.marks();
+    let too_big = || Abort::Internal("glue store exceeds the format's limit");
+    let mut len = i32::try_from(marks.len).map_err(|_| too_big())?;
+    let mut free = marks.free;
+    let fixed = i32::try_from(STATIC_SPECS).map_err(|_| too_big())?;
+    s.int_in(&mut len, fixed, i32::MAX)?;
+    s.int(&mut free)?;
+    if S::LOADING && free != TEX_NULL && !(fixed..len).contains(&free) {
+        return Err(bad_fmt());
+    }
+    if S::LOADING {
+        glue.reset_for_load(usize::try_from(len).map_err(|_| bad_fmt())?, free);
+    }
+    s.items(glue.specs_mut())
 }
 
 fn token_lists<S: FmtStream>(s: &mut S, toks: &mut TokenStore) -> Result<(), Abort> {
@@ -743,7 +781,6 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
 
 fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
     let max_str = st.strings.str_ptr;
-    let lo_mem_max = st.mem.lo_mem_max;
     let fonts = &mut st.fonts;
     s.size(
         &mut fonts.fmem_ptr,
@@ -803,10 +840,20 @@ fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort>
     s.items(fonts_of(&mut fonts.exten_base, last))?;
     s.items(fonts_of(&mut fonts.param_base, last))?;
     let glue = fonts_of(&mut fonts.font_glue, last);
-    let mut links: Vec<MemPtr> = glue.iter().map(|&g| link_of(g)).collect();
-    s.items_in(&mut links, MemPtr::from_raw(MIN_HALFWORD), lo_mem_max)?;
+    let mut links: Vec<i32> = glue
+        .iter()
+        .map(|g| g.map_or(TEX_NULL, GlueSpecId::raw))
+        .collect();
+    s.items(&mut links)?;
+    if S::LOADING
+        && links
+            .iter()
+            .any(|&p| p != TEX_NULL && !st.mem.glue.contains(p))
+    {
+        return Err(bad_fmt());
+    }
     for (g, &p) in glue.iter_mut().zip(&links) {
-        *g = NodePtr::from_spec_link(p);
+        *g = GlueSpecId::from_link(p);
     }
     s.items_in(
         fonts_of(&mut fonts.bchar_label, last),

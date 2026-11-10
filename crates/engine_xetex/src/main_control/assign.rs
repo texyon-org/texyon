@@ -14,11 +14,11 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::read_font_info;
+use crate::glue_store::GlueSpecId;
 use crate::hyphenation::{new_hyph_exceptions, new_patterns};
 use crate::mem::ZERO_GLUE;
 use crate::node::{
-    GlueSpecNode, NodePtr, ParShapeNode, PenaltiesNode, SaElement, SaLeaf, SaPointerNode,
-    SaWordNode,
+    NodePtr, ParShapeNode, PenaltiesNode, SaElement, SaLeaf, SaPointerNode, SaWordNode,
 };
 use crate::params::{IntPar, TokPar};
 use crate::scaled_math::{mult_and_add, x_over_n, xn_over_d};
@@ -135,7 +135,7 @@ fn alter_box_dimen(st: &mut EngineState, code: BoxDimenCode) -> Result<(), Abort
 }
 
 /// `spec`, or the shared `zero_glue` in its place when it is all zero.
-fn trap_zero_glue(st: &mut EngineState, spec: NodePtr<GlueSpecNode>) -> NodePtr<GlueSpecNode> {
+fn trap_zero_glue(st: &mut EngineState, spec: GlueSpecId) -> GlueSpecId {
     let mem = &mut st.mem;
     if mem[spec].width == Scaled::ZERO
         && mem[spec].stretch == Scaled::ZERO
@@ -341,7 +341,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             if q == Cmd::Advance {
                 let sum = st.mem.new_spec(g)?;
                 st.mem.delete_glue_ref(g);
-                let old = NodePtr::<GlueSpecNode>::from_glue_ptr(s);
+                let old = GlueSpecId::from_raw(s.raw());
                 let width = st.mem[sum].width + st.mem[old].width;
                 st.mem[sum].width = width;
                 if st.mem[sum].stretch == Scaled::ZERO {
@@ -394,7 +394,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             };
             RegisterValue::Word(scale(w, max_answer))
         } else {
-            let old = NodePtr::<GlueSpecNode>::from_glue_ptr(s);
+            let old = GlueSpecId::from_raw(s.raw());
             let r = st.mem.new_spec(old)?;
             let (width, stretch, shrink) =
                 (st.mem[old].width, st.mem[old].stretch, st.mem[old].shrink);
@@ -430,7 +430,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             RegisterLoc::Eqtb(l) => word_define(st, global, l, v)?,
         },
         RegisterValue::Glue(g) => {
-            let g = trap_zero_glue(st, g).ptr();
+            let g = MemPtr::from_raw(trap_zero_glue(st, g).raw());
             match l {
                 RegisterLoc::Sparse(SaLeaf::Pointer(p)) => sa_define(st, global, p, g)?,
                 RegisterLoc::Sparse(_) => return Err(Abort::Confusion("register")),
@@ -445,7 +445,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
 #[derive(Clone, Copy)]
 enum RegisterValue {
     Word(i32),
-    Glue(NodePtr<GlueSpecNode>),
+    Glue(GlueSpecId),
 }
 
 pub(super) fn do_assignments(st: &mut EngineState) -> Result<(), Abort> {
@@ -727,7 +727,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             crate::scan::scan_optional_equals(st)?;
             let g = crate::scan::scan_glue(st, level)?;
             let g = trap_zero_glue(st, g);
-            define(st, a >= 4, p, Cmd::GlueRef, g.ptr().raw())?;
+            define(st, a >= 4, p, Cmd::GlueRef, g.raw())?;
         }
         Command::XetexDefCode(base) => xetex_def_code(st, a >= 4, base)?,
         Command::DefCode(base) => def_code(st, a >= 4, base)?,

@@ -12,13 +12,14 @@ use crate::errors::OrConfusion;
 use crate::fonts::{
     EXTRA_SPACE_CODE, SLANT_CODE, SPACE_CODE, SPACE_SHRINK_CODE, SPACE_STRETCH_CODE, X_HEIGHT_CODE,
 };
+use crate::glue_store::GlueSpecId;
 use crate::input::{TokenType, TOKEN_LIST};
 use crate::mem::{CONTRIB_HEAD, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, PAGE_HEAD, SS_GLUE, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
 use crate::node::{
-    AdjustNode, AdjustPlacement, AnyNode, CharNode, DiscNode, GlueKind, GlueNode, GlueSpecNode,
-    InsNode, KernSubtype, LanguageNode, LrNode, MarkNode, MathField, NativeWordNode, NoadVariant,
-    NodePtr, WhatsitSubtype, WhatsitVariant,
+    AdjustNode, AdjustPlacement, AnyNode, CharNode, DiscNode, GlueKind, GlueNode, InsNode,
+    KernSubtype, LanguageNode, LrNode, MarkNode, MathField, NativeWordNode, NoadVariant, NodePtr,
+    WhatsitSubtype, WhatsitVariant,
 };
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
@@ -236,9 +237,7 @@ pub(super) fn app_space(st: &mut EngineState) -> Result<(), Abort> {
         } else {
             font_space_glue(st)?
         };
-        st.mainloop.main_p = base.ptr();
         let spec = st.mem.new_spec(base)?;
-        st.mainloop.main_p = spec.ptr();
         if space_factor >= 2000 {
             let cf = st.eqtb.cur_font();
             let extra = st.fonts.param(cf, EXTRA_SPACE_CODE);
@@ -257,7 +256,7 @@ pub(super) fn app_space(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 /// The current font's interword glue spec, built from its parameters on first use.
-pub(super) fn font_space_glue(st: &mut EngineState) -> Result<NodePtr<GlueSpecNode>, Abort> {
+pub(super) fn font_space_glue(st: &mut EngineState) -> Result<GlueSpecId, Abort> {
     let cf = st.eqtb.cur_font();
     if let Some(glue) = st.fonts.font_glue[cf] {
         return Ok(glue);

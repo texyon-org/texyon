@@ -20,9 +20,10 @@ use crate::ext::{
 };
 use crate::fonts::Side;
 use crate::fonts::{AAT_FONT_FLAG, SPACE_CODE, SPACE_SHRINK_CODE};
+use crate::glue_store::GlueSpecId;
 use crate::input::back_input;
 use crate::mem::ZERO_GLUE;
-use crate::node::{AnyNode, GlueKind, GlueSpecNode, MathCode, NodePtr, SaLeaf};
+use crate::node::{AnyNode, GlueKind, MathCode, SaLeaf};
 use crate::params::TokPar;
 use crate::state::{EngineState, FontEngineHandle};
 use crate::token::TokenList;
@@ -57,8 +58,8 @@ fn missing_number_error(st: &mut EngineState) -> Result<(), Abort> {
 pub(crate) enum CurVal {
     Int(i32),
     Dimen(Scaled),
-    Glue(NodePtr<GlueSpecNode>),
-    Mu(NodePtr<GlueSpecNode>),
+    Glue(GlueSpecId),
+    Mu(GlueSpecId),
     /// A font identifier, as the control sequence that names it.
     Ident(EqtbPtr),
     Tok(TokenList),
@@ -102,7 +103,7 @@ impl CurVal {
     }
 
     /// The glue spec of a glue or mu glue value.
-    pub(crate) fn glue(self) -> Option<NodePtr<GlueSpecNode>> {
+    pub(crate) fn glue(self) -> Option<GlueSpecId> {
         match self {
             CurVal::Glue(spec) | CurVal::Mu(spec) => Some(spec),
             _ => None,
@@ -169,10 +170,7 @@ pub(crate) fn sa_token_list(st: &EngineState, sa: Option<SaLeaf>) -> TokenList {
 }
 
 /// A new spec holding `old` with all three components negated.
-fn negated_glue(
-    st: &mut EngineState,
-    old: NodePtr<GlueSpecNode>,
-) -> Result<NodePtr<GlueSpecNode>, Abort> {
+fn negated_glue(st: &mut EngineState, old: GlueSpecId) -> Result<GlueSpecId, Abort> {
     let spec = st.mem.new_spec(old)?;
     map_glue(st, spec, |x| -x);
     Ok(spec)

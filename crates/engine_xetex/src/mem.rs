@@ -2,16 +2,17 @@
 //! heads, and TeX's node constructors.
 
 pub(crate) use crate::consts::TEX_NULL;
-use crate::consts::{GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP};
+use crate::consts::{MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::Side;
+use crate::glue_store::GlueSpecId;
 use crate::mem_types::ListStateRecord;
 use crate::node::{
     BoxLr, BoxNode, CharNode, ChoiceNode, DiscNode, FixedNode, FreeBlock, GlueKind, GlueNode,
-    GlueSpecNode, HeadNode, HyphPosNode, KernNode, KernSubtype, LigBoundary, LigItem, LigatureNode,
-    ListRecord, LrNode, MarginKernNode, MathCode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen,
-    RuleNode, SpanNode, StyleNode, WhatsitKind, WhatsitSubtype,
+    HeadNode, HyphPosNode, KernNode, KernSubtype, LigBoundary, LigItem, LigatureNode, ListRecord,
+    LrNode, MarginKernNode, MathCode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode,
+    SpanNode, StyleNode, WhatsitKind, WhatsitSubtype,
 };
 use crate::overlay::LigatureLayout;
 use crate::params::GluePar;
@@ -20,16 +21,7 @@ use crate::units::{
     FontId, GlueOrder, GlueSign, MemAddr, MemIdx, MemPtr, NodeType, Orientation, Scaled,
 };
 
-pub(crate) const ZERO_GLUE: NodePtr<GlueSpecNode> = static_spec(0);
-pub(crate) const FIL_GLUE: NodePtr<GlueSpecNode> = static_spec(1);
-pub(crate) const FILL_GLUE: NodePtr<GlueSpecNode> = static_spec(2);
-pub(crate) const SS_GLUE: NodePtr<GlueSpecNode> = static_spec(3);
-pub(crate) const FIL_NEG_GLUE: NodePtr<GlueSpecNode> = static_spec(4);
-
-/// The `k`th of the glue specs that INITEX builds at the bottom of `mem`.
-const fn static_spec(k: i32) -> NodePtr<GlueSpecNode> {
-    NodePtr::from_idx_unchecked(MemIdx::from_raw(k * GLUE_SPEC_SIZE))
-}
+pub(crate) use crate::glue_store::{FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, SS_GLUE, ZERO_GLUE};
 
 /// The arena length: `MEM_TOP` and the words below it, then layout slack.
 pub(crate) const MEM_WORDS: usize = (MEM_TOP + crate::overlay::MAX_LAYOUT_WORDS) as usize;
@@ -361,8 +353,8 @@ impl MemState {
     }
 
     /// An unshared copy of the glue spec `src`.
-    pub fn new_spec(&mut self, src: NodePtr<GlueSpecNode>) -> Result<NodePtr<GlueSpecNode>, Abort> {
-        let q = NodePtr::<GlueSpecNode>::alloc(self)?;
+    pub fn new_spec(&mut self, src: GlueSpecId) -> Result<GlueSpecId, Abort> {
+        let q = self.glue.alloc()?;
         let from = self[src];
         let node = &mut self[q];
         node.stretch_order = from.stretch_order;
@@ -390,7 +382,7 @@ impl MemState {
     }
 
     /// Glue sharing the spec `q`.
-    pub fn new_glue(&mut self, q: NodePtr<GlueSpecNode>) -> Result<NodePtr<GlueNode>, Abort> {
+    pub fn new_glue(&mut self, q: GlueSpecId) -> Result<NodePtr<GlueNode>, Abort> {
         let p = NodePtr::<GlueNode>::alloc(self)?;
         let node = &mut self[p];
         node.subtype = GlueKind::Normal.into();
@@ -400,14 +392,13 @@ impl MemState {
         Ok(p)
     }
 
-    /// Glue for parameter `n` with a private copy of its spec, left in `temp_ptr`.
+    /// Glue for parameter `n` with a private copy of its spec.
     pub fn new_skip_param(
         &mut self,
         eqtb: &EqtbState,
         n: GluePar,
     ) -> Result<NodePtr<GlueNode>, Abort> {
         let s = self.new_spec(eqtb.glue_par(n))?;
-        self.temp_ptr = s.ptr();
         let p = self.new_glue(s)?;
         self[s].ref_count = TEX_NULL;
         self[p].subtype = GlueKind::Param(n).into();
@@ -462,14 +453,14 @@ impl MemState {
     }
 
     #[inline]
-    pub fn add_glue_ref(&mut self, spec: NodePtr<GlueSpecNode>) {
+    pub fn add_glue_ref(&mut self, spec: GlueSpecId) {
         self[spec].ref_count += 1;
     }
 
     /// Drops a reference to `spec`, freeing it with the last one.
-    pub fn delete_glue_ref(&mut self, spec: NodePtr<GlueSpecNode>) {
+    pub fn delete_glue_ref(&mut self, spec: GlueSpecId) {
         if self[spec].ref_count == TEX_NULL {
-            self.free_node(spec.ptr(), GLUE_SPEC_SIZE);
+            self.glue.free(spec);
         } else {
             self[spec].ref_count -= 1;
         }

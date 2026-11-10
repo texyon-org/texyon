@@ -9,12 +9,13 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::{CharInfo, CharTag, AAT_FONT_FLAG, OTGR_FONT_FLAG, SPACE_CODE, X_HEIGHT_CODE};
+use crate::glue_store::GlueSpecId;
 use crate::mem::{TEMP_HEAD, TEX_NULL, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
 use crate::node::{
     AccentNoad, AnyNoad, AnyNode, BoxNode, ChoiceNode, FenceNoad, FractionNoad, GlueKind, GlueNode,
-    GlueSpecNode, GlyphNode, KernNode, KernSubtype, MathAccentKind, MathField, Noad, NoadVariant,
-    NodePtr, RadicalNoad, RuleDimen, RuleNode, WhatsitSubtype, WhatsitVariant,
+    GlyphNode, KernNode, KernSubtype, MathAccentKind, MathField, Noad, NoadVariant, NodePtr,
+    RadicalNoad, RuleDimen, RuleNode, WhatsitSubtype, WhatsitVariant,
 };
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar};
@@ -75,11 +76,7 @@ fn mu_mult((n, f): (i32, i32), v: Scaled) -> Scaled {
     mult_and_add(n, v, xnd, MAX_DIMEN).value
 }
 
-fn math_glue(
-    st: &mut EngineState,
-    spec: NodePtr<GlueSpecNode>,
-    m: Scaled,
-) -> Result<NodePtr<GlueSpecNode>, Abort> {
+fn math_glue(st: &mut EngineState, spec: GlueSpecId, m: Scaled) -> Result<GlueSpecId, Abort> {
     let mu = mu_parts(m);
     let stretch_order = st.mem[spec].stretch_order;
     let shrink_order = st.mem[spec].shrink_order;
@@ -93,7 +90,7 @@ fn math_glue(
         shrink = mu_mult(mu, shrink);
     }
 
-    let p = NodePtr::<GlueSpecNode>::alloc(&mut st.mem)?;
+    let p = st.mem.glue.alloc()?;
     let node = &mut st.mem[p];
     node.width = width;
     node.stretch_order = stretch_order;

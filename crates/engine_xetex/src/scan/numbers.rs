@@ -10,8 +10,8 @@ use crate::consts::{
 use crate::errors::OrConfusion;
 use crate::errors::{mu_error, Abort};
 use crate::fonts::{QUAD_CODE, X_HEIGHT_CODE};
+use crate::glue_store::GlueSpecId;
 use crate::input::back_input;
-use crate::node::{GlueSpecNode, NodePtr};
 use crate::params::IntPar;
 use crate::scaled_math::{add_or_sub, fract, mult_and_add, quotient, xn_over_d, Overflowing};
 use crate::state::EngineState;
@@ -403,12 +403,12 @@ fn scan_stretch(st: &mut EngineState, mu: bool) -> Result<(Scaled, GlueOrder), A
 }
 
 /// A glue spec pointer held in a raw word.
-pub(super) fn glue_spec(p: i32) -> NodePtr<GlueSpecNode> {
-    NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(p))
+pub(super) fn glue_spec(p: i32) -> GlueSpecId {
+    GlueSpecId::from_raw(MemPtr::from_raw(p).raw())
 }
 
 /// The width of a scanned glue value, releasing the glue.
-fn release_to_width(st: &mut EngineState, spec: NodePtr<GlueSpecNode>) -> Scaled {
+fn release_to_width(st: &mut EngineState, spec: GlueSpecId) -> Scaled {
     let width = st.mem[spec].width;
     st.mem.delete_glue_ref(spec);
     width
@@ -678,10 +678,7 @@ fn attach_fraction(v: &mut i32, f: i32) -> bool {
     false
 }
 
-pub(crate) fn scan_glue(
-    st: &mut EngineState,
-    level: ValueLevel,
-) -> Result<NodePtr<GlueSpecNode>, Abort> {
+pub(crate) fn scan_glue(st: &mut EngineState, level: ValueLevel) -> Result<GlueSpecId, Abort> {
     let mu = level == ValueLevel::Mu;
     let negative = scan_signs(st)?;
 
@@ -729,16 +726,16 @@ pub(crate) fn scan_glue(
 
     Ok(gs)
 }
-pub(super) fn scan_normal_glue(st: &mut EngineState) -> Result<NodePtr<GlueSpecNode>, Abort> {
+pub(super) fn scan_normal_glue(st: &mut EngineState) -> Result<GlueSpecId, Abort> {
     scan_glue(st, ValueLevel::Glue)
 }
-pub(super) fn scan_mu_glue(st: &mut EngineState) -> Result<NodePtr<GlueSpecNode>, Abort> {
+pub(super) fn scan_mu_glue(st: &mut EngineState) -> Result<GlueSpecId, Abort> {
     scan_glue(st, ValueLevel::Mu)
 }
 /// Applies `op` to the width, stretch and shrink of `spec`, in that order.
 pub(super) fn map_glue(
     st: &mut EngineState,
-    spec: NodePtr<GlueSpecNode>,
+    spec: GlueSpecId,
     mut op: impl FnMut(Scaled) -> Scaled,
 ) {
     let node = &mut st.mem[spec];
@@ -747,7 +744,7 @@ pub(super) fn map_glue(
     node.shrink = op(node.shrink);
 }
 
-fn normalize_glue_orders(st: &mut EngineState, spec: NodePtr<GlueSpecNode>) {
+fn normalize_glue_orders(st: &mut EngineState, spec: GlueSpecId) {
     if st.mem[spec].stretch == Scaled::ZERO {
         st.mem[spec].stretch_order = GlueOrder::Normal.into();
     }
@@ -758,13 +755,7 @@ fn normalize_glue_orders(st: &mut EngineState, spec: NodePtr<GlueSpecNode>) {
 
 /// Adds (or subtracts) glue `t` to glue `e` and releases `t`. Raises
 /// `overflowed` if a component overflows.
-fn add_glue(
-    st: &mut EngineState,
-    e: NodePtr<GlueSpecNode>,
-    t: NodePtr<GlueSpecNode>,
-    sub: bool,
-    overflowed: &mut bool,
-) {
+fn add_glue(st: &mut EngineState, e: GlueSpecId, t: GlueSpecId, sub: bool, overflowed: &mut bool) {
     let mem = &mut st.mem;
     let width = add_or_sub(mem[e].width, mem[t].width, MAX_DIMEN, sub).track(overflowed);
     mem[e].width = width;
@@ -832,8 +823,8 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
                 f = match o {
                     ValueLevel::Int => scan_int(st)?,
                     ValueLevel::Dimen => scan_dimen(st, false)?.raw(),
-                    ValueLevel::Glue => scan_normal_glue(st)?.ptr().raw(),
-                    _ => scan_mu_glue(st)?.ptr().raw(),
+                    ValueLevel::Glue => scan_normal_glue(st)?.raw(),
+                    _ => scan_mu_glue(st)?.raw(),
                 };
             }
             scan_factor = true;
@@ -883,7 +874,7 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
                 {
                     b = true;
                     st.mem.delete_glue_ref(glue_spec(f));
-                    f = st.mem.new_spec(crate::mem::ZERO_GLUE)?.ptr().raw();
+                    f = st.mem.new_spec(crate::mem::ZERO_GLUE)?.raw();
                 }
             }
 
@@ -891,7 +882,7 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
                 EXPR_NONE => {
                     if l >= ValueLevel::Glue && o != EXPR_NONE {
                         let term = st.mem.new_spec(glue_spec(f))?;
-                        t = term.ptr().raw();
+                        t = term.raw();
                         st.mem.delete_glue_ref(glue_spec(f));
                         normalize_glue_orders(st, term);
                     } else {

@@ -277,7 +277,7 @@ pub(crate) fn the_toks(st: &mut EngineState, code: TheCode) -> Result<TokenList,
             }
             CurVal::Glue(spec) | CurVal::Mu(spec) => {
                 let unit = if let CurVal::Mu(_) = val { "mu" } else { "pt" };
-                crate::output::print_spec(st, spec.ptr(), Some(unit));
+                crate::output::print_spec(st, spec, Some(unit));
                 st.mem.delete_glue_ref(spec);
             }
             CurVal::Ident(_) | CurVal::Tok(_) => {}

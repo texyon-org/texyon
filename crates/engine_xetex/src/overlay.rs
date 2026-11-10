@@ -7,6 +7,7 @@
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::Side;
+use crate::glue_store::GlueSpecId;
 use crate::math::MathStyle;
 use bytemuck::{Pod, Zeroable};
 
@@ -15,9 +16,9 @@ use crate::consts::{EMPTY, NORMAL};
 use crate::node::{
     AccentNoad, AdjustNode, AdjustPlacement, AlignRecord, AnyNoad, BoxLr, BoxNode, CharNode,
     ChoiceNode, DelimiterField, DiscNode, EdgeNode, FenceNoad, FenceSubtype, FixedNode,
-    FractionNoad, FreeBlock, GlueKind, GlueNode, GlueSpecNode, GlyphNode, HeadNode, HyphPosNode,
-    InsNode, KernNode, KernSubtype, LanguageNode, LeaderKind, LigBoundary, LigItem, LigatureNode,
-    Link, LrNode, MarginKernNode, MarkNode, MathAccentKind, MathCode, MathField, MathNode,
+    FractionNoad, FreeBlock, GlueKind, GlueNode, GlyphNode, HeadNode, HyphPosNode, InsNode,
+    KernNode, KernSubtype, LanguageNode, LeaderKind, LigBoundary, LigItem, LigatureNode, Link,
+    LrNode, MarginKernNode, MarkNode, MathAccentKind, MathCode, MathField, MathNode,
     NativeWordNode, Noad, NodeKind, NodePtr, OpenNode, PageInsNode, ParShapeNode, PenaltiesNode,
     PenaltyNode, PicNode, PseudoFileNode, PseudoLineNode, RadicalNoad, RuleNode, SaChild,
     SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved, SaSavedPointer,
@@ -438,25 +439,6 @@ pub struct SizedWhatsitLayout {
 }
 
 overlay!(SizedWhatsit => SizedWhatsitLayout, 4);
-
-/// A glue specification. Its first word holds the fill orders and a reference
-/// count in place of a type code and link.
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct GlueSpec {
-    pub shrink_order: Stored<GlueOrder>,
-    pub stretch_order: Stored<GlueOrder>,
-    /// The reference count, `TEX_NULL` for a single reference.
-    pub ref_count: i32,
-    _unused1: i32,
-    pub width: Scaled,
-    _unused2: i32,
-    pub stretch: Scaled,
-    _unused3: i32,
-    pub shrink: Scaled,
-}
-
-overlay!(GlueSpecNode => GlueSpec);
 
 /// An hlist or vlist box. Its orientation is the node's type code.
 #[repr(C)]
@@ -1146,7 +1128,7 @@ pub struct GlueLayout {
     pub subtype: Stored<GlueKind>,
     _type: u16,
     pub link: MemPtr,
-    pub glue_ptr: NodePtr<GlueSpecNode>,
+    pub glue_ptr: GlueSpecId,
     /// The leader box or rule, null for plain glue.
     pub leader_ptr: MemPtr,
     pub sync_tag: i32,
@@ -1181,7 +1163,7 @@ pub struct InsLayout {
     pub height: Scaled,
     pub ins_ptr: MemPtr,
     /// The `\splittopskip` glue spec.
-    pub split_top_ptr: NodePtr<GlueSpecNode>,
+    pub split_top_ptr: GlueSpecId,
 }
 
 overlay!(InsNode => InsLayout);
@@ -1371,10 +1353,6 @@ mod tests {
         }
     }
 
-    fn spec_at(idx: i32) -> NodePtr<GlueSpecNode> {
-        NodePtr::from_idx_unchecked(MemIdx::from_raw(idx))
-    }
-
     #[test]
     fn a_negative_index_selects_no_words() {
         let mem = arena();
@@ -1392,24 +1370,6 @@ mod tests {
             NodePtr::from_idx_unchecked(MemIdx::new(crate::mem::PAGE_INS_HEAD));
         mem[top].link = MemPtr::from_raw(5);
         assert_eq!(mem.b32s1(crate::mem::PAGE_INS_HEAD), 5);
-    }
-
-    #[test]
-    fn glue_spec_fields_land_on_their_words() {
-        let mut mem = arena();
-        let s = spec_at(4);
-        let spec = &mut mem[s];
-        spec.shrink_order = GlueOrder::Fil.into();
-        spec.stretch_order = GlueOrder::Fill.into();
-        spec.ref_count = 7;
-        spec.width = Scaled::from_raw(11);
-        spec.stretch = Scaled::from_raw(12);
-        spec.shrink = Scaled::from_raw(13);
-        let at = MemIdx::from_raw;
-        assert_eq!((mem.b16s0(at(4)), mem.b16s1(at(4))), (1, 2));
-        assert_eq!([4, 5, 6, 7].map(|i| mem.b32s1(at(i))), [7, 11, 12, 13]);
-        assert_eq!([3, 5, 6, 7, 8].map(|i| mem.b32s0(at(i))), [0; 5]);
-        assert_eq!((mem.b32s1(at(3)), mem.b32s1(at(8))), (0, 0));
     }
 
     #[test]
@@ -1539,20 +1499,36 @@ mod tests {
     #[test]
     fn a_mutable_borrow_journals_every_word_of_the_node() {
         let mut mem = arena();
-        let s = spec_at(4);
-        mem[s].shrink = Scaled::from_raw(5);
+        let k: NodePtr<KernNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(4));
+        mem[k].sync_line = 5;
         mem.journal.arm(16);
-        let spec = &mut mem[s];
-        spec.ref_count = 1;
-        spec.width = Scaled::from_raw(2);
-        spec.stretch = Scaled::from_raw(3);
-        spec.shrink = Scaled::from_raw(4);
+        let kern = &mut mem[k];
+        kern.link = MemPtr::from_raw(1);
+        kern.width = Scaled::from_raw(2);
+        kern.sync_tag = 3;
+        kern.sync_line = 4;
         let delta = mem.journal.seal(&mem.data);
         delta.apply_to(&mut mem.data);
-        let spec = mem[s];
+        let kern = mem[k];
         assert_eq!(
-            (spec.ref_count, spec.width, spec.stretch, spec.shrink),
-            (0, Scaled::ZERO, Scaled::ZERO, Scaled::from_raw(5))
+            (kern.link, kern.width, kern.sync_tag, kern.sync_line),
+            (MemPtr::from_raw(0), Scaled::ZERO, 0, 5)
+        );
+    }
+
+    #[test]
+    fn glue_specs_are_journaled_in_their_store() {
+        let mut mem = arena();
+        let s = mem.glue.alloc().unwrap();
+        mem[s].shrink = Scaled::from_raw(5);
+        mem.glue.journal.arm(mem.glue.specs().len());
+        mem[s].width = Scaled::from_raw(2);
+        mem[s].shrink = Scaled::from_raw(4);
+        let delta = mem.glue.seal_journal();
+        delta.apply_to(mem.glue.specs_mut());
+        assert_eq!(
+            (mem[s].width, mem[s].shrink),
+            (Scaled::ZERO, Scaled::from_raw(5))
         );
     }
 

@@ -8,12 +8,13 @@ use crate::dvi::{Axis, MoveReg};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::ext::apply_tfm_font_mapping;
+use crate::glue_store::GlueSpecId;
 use crate::glyph_arena::FixedPoint;
 use crate::mem::LIG_TRICK;
 use crate::node::Stored;
 use crate::node::{
-    AnyNode, BoxLr, BoxNode, CharNode, EdgeNode, GlueKind, GlueNode, GlueSpecNode, GlyphNode,
-    KernSubtype, LeaderKind, MathCode, MathNode, NativeWordNode, NodePtr, RuleNode, WhatsitSubtype,
+    AnyNode, BoxLr, BoxNode, CharNode, EdgeNode, GlueKind, GlueNode, GlyphNode, KernSubtype,
+    LeaderKind, MathCode, MathNode, NativeWordNode, NodePtr, RuleNode, WhatsitSubtype,
     WhatsitVariant, RUNNING,
 };
 use crate::packaging::LrState;
@@ -349,7 +350,7 @@ impl GlueRounding {
     }
 
     /// Whether the box stretches or shrinks `spec`'s component.
-    fn is_set(&self, mem: &MemState, spec: NodePtr<GlueSpecNode>) -> bool {
+    fn is_set(&self, mem: &MemState, spec: GlueSpecId) -> bool {
         match self.sign.get() {
             Some(GlueSign::Stretching) => mem[spec].stretch_order == self.order,
             Some(GlueSign::Shrinking) => mem[spec].shrink_order == self.order,
@@ -358,7 +359,7 @@ impl GlueRounding {
     }
 
     /// The rounded width of `spec` as set in this box.
-    fn width(&mut self, mem: &MemState, spec: NodePtr<GlueSpecNode>) -> Scaled {
+    fn width(&mut self, mem: &MemState, spec: GlueSpecId) -> Scaled {
         let width = mem[spec].width - self.cur_g;
         if self.is_set(mem, spec) {
             if self.sign == GlueSign::Stretching {
@@ -575,14 +576,14 @@ impl MemState {
     fn freeze_set_glue(
         &mut self,
         glue: NodePtr<GlueNode>,
-        spec: NodePtr<GlueSpecNode>,
+        spec: GlueSpecId,
         w: Scaled,
     ) -> Result<(), Abort> {
         self.delete_glue_ref(spec);
         if self[glue].leaders().is_none() {
             glue.into_kern(self, w);
         } else {
-            let rigid = NodePtr::<GlueSpecNode>::alloc(self)?;
+            let rigid = self.glue.alloc()?;
             let node = &mut self[rigid];
             node.stretch_order = GlueOrder::Rigid.into();
             node.shrink_order = GlueOrder::Rigid.into();

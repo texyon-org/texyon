@@ -4,10 +4,11 @@ use crate::codes::{BoxCode, MarkCode, ValueLevel};
 use crate::consts::{BOX_NODE_SIZE, EJECT_PENALTY, INF_BAD, INF_PENALTY, MAX_DIMEN, MAX_HALFWORD};
 use crate::errors::OrConfusion;
 use crate::errors::{Abort, IgnoredError};
+use crate::glue_store::GlueSpecId;
 use crate::mem::TEMP_HEAD;
 use crate::node::{
-    AnyNode, BoxNode, FixedNode, GlueNode, GlueSpecNode, KernNode, MarkNode, NodePtr, SaIndexNode,
-    SaLeaf, SaMarkClassNode, WhatsitVariant,
+    AnyNode, BoxNode, FixedNode, GlueNode, KernNode, MarkNode, NodePtr, SaIndexNode, SaLeaf,
+    SaMarkClassNode, WhatsitVariant,
 };
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, MemState, ScannerState, ShipoutState};
@@ -53,7 +54,7 @@ enum VertBreakStep {
     Done(MemPtr),
     InfiniteShrinkage {
         glue: NodePtr<GlueNode>,
-        spec: NodePtr<GlueSpecNode>,
+        spec: GlueSpecId,
     },
 }
 
@@ -282,7 +283,7 @@ impl MemState {
     fn repair_vert_break_infinite_shrinkage(
         &mut self,
         glue: NodePtr<GlueNode>,
-        spec: NodePtr<GlueSpecNode>,
+        spec: GlueSpecId,
     ) -> Result<(), Abort> {
         let spec = self.finite_shrink(spec)?;
         self[glue].glue_ptr = spec;
@@ -337,7 +338,7 @@ enum VsplitStep {
     Done(VsplitOutcome),
     InfiniteShrinkage {
         glue: NodePtr<GlueNode>,
-        spec: NodePtr<GlueSpecNode>,
+        spec: GlueSpecId,
     },
 }
 

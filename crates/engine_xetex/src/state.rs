@@ -3,6 +3,7 @@
 use crate::cmd::Cmd;
 use crate::codes::{FiOrElseCode, ValueLevel};
 use crate::errors::OrConfusion;
+use crate::glue_store::GlueSpecId;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::units::{
     BufPos, EqtbPtr, FontId, FontInfoIdx, PoolPos, PrimNum, SavePtr, Scaled, StrNumber,
@@ -35,7 +36,6 @@ pub(crate) struct EngineState {
 /// Scratch registers of `main_control`'s character and ligature loop.
 #[derive(Default, Clone)]
 pub(crate) struct MainLoopState {
-    pub main_p: crate::units::MemPtr,
     pub main_f: FontId,
     pub main_h: i32,
     pub main_pp: crate::units::MemPtr,
@@ -548,8 +548,8 @@ impl EqtbState {
         self.set_equiv(crate::consts::BOX_BASE + n, p.raw());
     }
     #[inline]
-    pub(crate) fn skip(&self, n: i32) -> crate::node::NodePtr<crate::node::GlueSpecNode> {
-        crate::node::NodePtr::from_glue_ptr(self.equiv_ptr(crate::consts::SKIP_BASE + n))
+    pub(crate) fn skip(&self, n: i32) -> crate::glue_store::GlueSpecId {
+        GlueSpecId::from_raw(self.equiv_ptr(crate::consts::SKIP_BASE + n).raw())
     }
     #[inline]
     pub(crate) fn dimen(&self, n: i32) -> Scaled {
@@ -625,17 +625,13 @@ impl EqtbState {
     }
     /// The spec of glue parameter `n`, never null.
     #[inline]
-    pub fn glue_par(&self, n: GluePar) -> crate::node::NodePtr<crate::node::GlueSpecNode> {
-        crate::node::NodePtr::from_glue_ptr(self.equiv_ptr(n.loc()))
+    pub fn glue_par(&self, n: GluePar) -> crate::glue_store::GlueSpecId {
+        crate::glue_store::GlueSpecId::from_raw(self.equiv(n.loc()))
     }
 
     #[inline]
-    pub fn set_glue_par(
-        &mut self,
-        n: GluePar,
-        spec: crate::node::NodePtr<crate::node::GlueSpecNode>,
-    ) {
-        self.set_b32s1(n.loc(), spec.ptr().raw());
+    pub fn set_glue_par(&mut self, n: GluePar, spec: crate::glue_store::GlueSpecId) {
+        self.set_b32s1(n.loc(), spec.raw());
     }
 
     #[inline]
@@ -662,6 +658,8 @@ pub(crate) struct MemState {
     pub glyph_blobs: crate::glyph_arena::GlyphBlobArena,
     /// The token lists, a store of their own.
     pub tokens: crate::token::TokenStore,
+    /// The glue specifications.
+    pub glue: crate::glue_store::GlueStore,
     /// The entries of array nodes: native text, picture paths, shapes and pseudo-file lines.
     pub payloads: crate::payload::PayloadStore,
     pub journal: crate::journal::WordJournal<crate::mem_types::MemoryWord>,
@@ -1188,7 +1186,7 @@ pub(crate) struct FontState {
     pub font_bchar: PerFont<crate::fonts::LigChar>,
     pub font_false_bchar: PerFont<crate::fonts::LigChar>,
     /// The interword glue built from the font's parameters, once a space needs it.
-    pub font_glue: PerFont<Option<crate::node::NodePtr<crate::node::GlueSpecNode>>>,
+    pub font_glue: PerFont<Option<crate::glue_store::GlueSpecId>>,
     pub font_used: PerFont<bool>,
     pub char_base: PerFont<FontInfoIdx>,
     pub width_base: PerFont<FontInfoIdx>,
@@ -1369,7 +1367,7 @@ pub(crate) struct ShipoutState {
     pub last_badness: i32,
     pub page_contents: PageContents,
     pub page_so_far: [Scaled; 8],
-    pub last_glue: Option<crate::node::NodePtr<crate::node::GlueSpecNode>>,
+    pub last_glue: Option<crate::glue_store::GlueSpecId>,
     pub last_penalty: i32,
     pub last_kern: Scaled,
     pub last_node_type: i32,

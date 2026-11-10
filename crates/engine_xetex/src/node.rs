@@ -11,10 +11,10 @@ use crate::params::GluePar;
 use std::marker::PhantomData;
 
 use crate::consts::{
-    ACCENT_NOAD_SIZE, BOX_NODE_SIZE, FRACTION_NOAD_SIZE, GLUE_SPEC_SIZE, GLYPH_NODE_SIZE,
-    INDEX_NODE_SIZE, INS_NODE_SIZE, MARGIN_KERN_NODE_SIZE, MARK_CLASS_NODE_SIZE, MEDIUM_NODE_SIZE,
-    NATIVE_NODE_SIZE, NOAD_SIZE, NULL_FLAG, OPEN_NODE_SIZE, PAGE_INS_NODE_SIZE, PIC_NODE_SIZE,
-    RADICAL_NOAD_SIZE, RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE, WRITE_NODE_SIZE,
+    ACCENT_NOAD_SIZE, BOX_NODE_SIZE, FRACTION_NOAD_SIZE, GLYPH_NODE_SIZE, INDEX_NODE_SIZE,
+    INS_NODE_SIZE, MARGIN_KERN_NODE_SIZE, MARK_CLASS_NODE_SIZE, MEDIUM_NODE_SIZE, NATIVE_NODE_SIZE,
+    NOAD_SIZE, NULL_FLAG, OPEN_NODE_SIZE, PAGE_INS_NODE_SIZE, PIC_NODE_SIZE, RADICAL_NOAD_SIZE,
+    RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE, WRITE_NODE_SIZE,
 };
 use crate::errors::Abort;
 use crate::state::MemState;
@@ -722,9 +722,6 @@ node_kinds! {
     /// An alignment box before its column widths are known. Words +4..+6 hold
     /// the accumulated shrink, span count and stretch instead of box glue.
     UnsetNode;
-    /// A glue specification, reached only through a glue pointer. Its header
-    /// word holds the reference count and fill orders, not a type code.
-    GlueSpecNode;
     /// An entry of the ligature reconstitution stack.
     LigItem;
     /// An eTeX sparse-array index node: 64 children, two per word.
@@ -778,10 +775,6 @@ node_kinds! {
     FreeBlock;
 }
 
-impl FixedNode for GlueSpecNode {
-    const SIZE: i32 = GLUE_SPEC_SIZE;
-    const TYPE: Option<NodeType> = None;
-}
 impl FixedNode for LigItem {
     const SIZE: i32 = SMALL_NODE_SIZE;
     const TYPE: Option<NodeType> = None;
@@ -1419,21 +1412,6 @@ impl NodePtr<GlueNode> {
     }
 }
 
-impl NodePtr<GlueSpecNode> {
-    /// The spec at `p`, `None` when the pointer is null.
-    #[inline]
-    pub fn from_spec_link(p: MemPtr) -> Option<NodePtr<GlueSpecNode>> {
-        p.as_idx().map(NodePtr::from_idx_unchecked)
-    }
-
-    /// The spec a glue pointer references. Glue pointers are never null.
-    #[inline]
-    pub fn from_glue_ptr(p: MemPtr) -> NodePtr<GlueSpecNode> {
-        let idx = p.as_idx().expect("null glue spec");
-        NodePtr::from_idx_unchecked(idx)
-    }
-}
-
 // --- page-builder nodes ---
 
 impl NodePtr<UnsetNode> {
@@ -2026,7 +2004,7 @@ mod tests {
     #[test]
     fn handles_are_zero_cost() {
         assert_eq!(size_of::<NodePtr<BoxNode>>(), size_of::<i32>());
-        assert_eq!(size_of::<NodePtr<GlueSpecNode>>(), size_of::<i32>());
+        assert_eq!(size_of::<crate::glue_store::GlueSpecId>(), size_of::<i32>());
         assert_eq!(size_of::<NodePtr<Noad>>(), size_of::<i32>());
     }
 
@@ -2084,7 +2062,7 @@ mod tests {
     #[test]
     fn stored_codes_keep_bits_outside_their_code_set() {
         let mut mem = arena_with_free_block();
-        let s = NodePtr::<GlueSpecNode>::alloc(&mut mem).unwrap();
+        let s = mem.glue.alloc().unwrap();
         mem[s].stretch_order = Stored::from_raw(7);
         mem[s].shrink_order = GlueOrder::Fill.into();
         let stretch = mem[s].stretch_order;
@@ -2099,7 +2077,7 @@ mod tests {
     #[test]
     fn headerless_records_alloc_without_stamping() {
         let mut mem = arena_with_free_block();
-        let spec = NodePtr::<GlueSpecNode>::alloc(&mut mem).unwrap();
+        let spec = mem.glue.alloc().unwrap();
         mem[spec].width = Scaled::from_raw(0x1234);
         assert_eq!(mem[spec].width, Scaled::from_raw(0x1234));
         let item = NodePtr::<LigItem>::alloc(&mut mem).unwrap();
@@ -2240,7 +2218,7 @@ mod tests {
 
         let ins: NodePtr<InsNode> = at(&mut mem, 100, Some(NodeType::Ins));
         mem[ins].ins_ptr = MemPtr::from_raw(55);
-        mem[ins].split_top_ptr = NodePtr::from_glue_ptr(MemPtr::from_raw(66));
+        mem[ins].split_top_ptr = crate::glue_store::GlueSpecId::from_raw(66);
         assert_eq!(mem.b32s0(MemPtr::from_raw(104)), 55);
         assert_eq!(mem.b32s1(MemPtr::from_raw(104)), 66);
     }
@@ -2412,26 +2390,21 @@ mod tests {
         let mut mem = fresh_mem(200);
         let g: NodePtr<GlueNode> = at(&mut mem, 100, Some(NodeType::Glue));
         mem[g].subtype = GlueKind::Param(GluePar::LeftSkip).into();
-        mem[g].glue_ptr = NodePtr::from_glue_ptr(MemPtr::from_raw(150));
+        let s = mem.glue.alloc().unwrap();
+        mem[g].glue_ptr = s;
         mem[g].leader_ptr = MemPtr::from_raw(160);
         assert_eq!(mem.b16s0(MemPtr::from_raw(100)), 8);
-        assert_eq!(mem.b32s0(MemPtr::from_raw(101)), 150);
+        assert_eq!(mem.b32s0(MemPtr::from_raw(101)), s.raw());
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 160);
-        assert_eq!(mem[g].glue_ptr.idx(), MemIdx::from_raw(150));
 
-        let s: NodePtr<GlueSpecNode> = at(&mut mem, 150, None);
         mem[s].ref_count = 42;
         mem[s].stretch_order = GlueOrder::Fill.into();
         mem[s].shrink_order = GlueOrder::Fil.into();
         mem[s].width = Scaled::from_raw(0x4444);
         mem[s].stretch = Scaled::from_raw(0x5555);
         mem[s].shrink = Scaled::from_raw(0x6666);
-        assert_eq!(mem.b32s1(MemPtr::from_raw(150)), 42);
-        assert_eq!(mem.b16s1(MemPtr::from_raw(150)), 2);
-        assert_eq!(mem.b16s0(MemPtr::from_raw(150)), 1);
-        assert_eq!(mem.b32s1(MemPtr::from_raw(151)), 0x4444);
-        assert_eq!(mem.b32s1(MemPtr::from_raw(152)), 0x5555);
-        assert_eq!(mem.b32s1(MemPtr::from_raw(153)), 0x6666);
+        let words: [u32; 5] = bytemuck::cast(mem[s]);
+        assert_eq!(words, [1 | 2 << 16, 42, 0x4444, 0x5555, 0x6666]);
     }
 
     #[test]

@@ -11,10 +11,10 @@ use crate::diagnostic::{
     begin_capture, begin_warning, current_file_line, end_capture, DiagnosticKind,
 };
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
+use crate::glue_store::GlueSpecId;
 use crate::node::Stored;
 use crate::node::{
-    CharNode, DelimiterField, GlueSpecNode, MathField, NativeWordNode, NodePtr, RuleDimen,
-    SaElement,
+    CharNode, DelimiterField, MathField, NativeWordNode, NodePtr, RuleDimen, SaElement,
 };
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, GroupCode, Selector};
@@ -834,11 +834,8 @@ pub(crate) fn token_show(st: &mut EngineState, p: TokenList) {
     }
 }
 
-pub(crate) fn print_spec(st: &mut EngineState, p: impl crate::units::MemAddr, s: Option<&str>) {
-    let p = MemPtr::from_raw(p.addr());
-    let spec = (MemPtr::MEM_BOT..st.mem.lo_mem_max)
-        .contains(&p)
-        .then(|| NodePtr::<GlueSpecNode>::from_glue_ptr(p));
+pub(crate) fn print_spec(st: &mut EngineState, p: GlueSpecId, s: Option<&str>) {
+    let spec = st.mem.glue.contains(p.raw()).then_some(p);
     let Some(gs) = spec else {
         print_char(st, b'*');
         return;

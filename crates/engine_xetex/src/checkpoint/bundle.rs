@@ -173,6 +173,7 @@ struct MemBundle {
     glyph_blobs: crate::glyph_arena::GlyphBlobArena,
     payloads: crate::payload::PayloadStore,
     tokens: crate::token::TokenStoreMarks,
+    glue: crate::glue_store::GlueStoreMarks,
 }
 
 impl MemBundle {
@@ -181,6 +182,7 @@ impl MemBundle {
             data: _,
             glyph_blobs,
             tokens,
+            glue,
             payloads,
             journal: _,
             lo_mem_max,
@@ -200,6 +202,7 @@ impl MemBundle {
             glyph_blobs: glyph_blobs.clone(),
             payloads: payloads.clone(),
             tokens: tokens.marks(),
+            glue: glue.marks(),
         }
     }
 
@@ -213,6 +216,7 @@ impl MemBundle {
         dst.glyph_blobs.restore_from(&self.glyph_blobs);
         dst.payloads.restore_from(&self.payloads);
         dst.tokens.restore_marks(self.tokens);
+        dst.glue.restore_marks(self.glue);
     }
 
     fn allocated_bytes(&self) -> usize {
@@ -548,7 +552,7 @@ font_arrays! {
     bchar_label: FontInfoIdx,
     font_bchar: LigChar,
     font_false_bchar: LigChar,
-    font_glue: Option<crate::node::NodePtr<crate::node::GlueSpecNode>>,
+    font_glue: Option<crate::glue_store::GlueSpecId>,
     font_used: bool,
     char_base: FontInfoIdx,
     width_base: FontInfoIdx,

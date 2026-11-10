@@ -40,6 +40,7 @@ mod expand;
 mod ext;
 mod fonts;
 mod format_io;
+mod glue_store;
 mod glyph_arena;
 mod hash;
 mod helpers;

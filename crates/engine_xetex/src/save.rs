@@ -6,6 +6,7 @@ use crate::consts::{
 };
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
+use crate::glue_store::GlueSpecId;
 use crate::mem::ZERO_GLUE;
 use crate::mem_types::MemoryWord;
 use crate::node::{
@@ -210,7 +211,7 @@ impl MemState {
             Cmd::Call | Cmd::LongCall | Cmd::OuterCall | Cmd::LongOuterCall => {
                 self.tokens.delete_ref(TokenList::from_raw(equiv))
             }
-            Cmd::GlueRef => self.delete_glue_ref(crate::node::NodePtr::from_glue_ptr(ptr)),
+            Cmd::GlueRef => self.delete_glue_ref(GlueSpecId::from_raw(ptr.raw())),
             Cmd::ShapeRef => self.free_shape_ref(ptr),
             Cmd::BoxRef => self.flush_node_list(ptr)?,
             Cmd::ToksRegister | Cmd::Register if !(0..=19).contains(&equiv) => {
@@ -244,7 +245,7 @@ impl MemState {
                     return Ok(());
                 }
                 if n.sa_index < MU_VAL_LIMIT {
-                    if n.sa_ptr != ZERO_GLUE.ptr() {
+                    if n.sa_ptr.raw() != ZERO_GLUE.raw() {
                         return Ok(());
                     }
                     self.delete_glue_ref(ZERO_GLUE);
@@ -322,7 +323,7 @@ impl MemState {
     /// must flush.
     pub(crate) fn sa_destroy(&mut self, sa_index: u16, value: MemPtr) -> Option<MemPtr> {
         if sa_index < MU_VAL_LIMIT {
-            self.delete_glue_ref(crate::node::NodePtr::from_glue_ptr(value));
+            self.delete_glue_ref(GlueSpecId::from_raw(value.raw()));
         } else if !value.is_null() {
             if sa_index < BOX_VAL_LIMIT {
                 return Some(value);
@@ -604,7 +605,7 @@ impl MemState {
             let p = NodePtr::<SaPointerNode>::alloc(self)?;
             let value = if t <= ValueLevel::Mu {
                 self.add_glue_ref(ZERO_GLUE);
-                ZERO_GLUE.ptr()
+                MemPtr::from_raw(ZERO_GLUE.raw())
             } else {
                 MemPtr::NULL
             };

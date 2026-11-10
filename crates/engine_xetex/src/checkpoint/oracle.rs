@@ -116,6 +116,15 @@ fn digest_mem(st: &EngineState) -> u64 {
             }
         }
     }
+    let glue = mem.glue.marks();
+    h.word(glue.len as u64);
+    h.i32(glue.free);
+    for &spec in mem.glue.specs() {
+        let words: [u32; 5] = bytemuck::cast(spec);
+        for w in words {
+            h.word(u64::from(w));
+        }
+    }
     let marks = mem.tokens.marks();
     h.word(marks.len as u64);
     h.i32(marks.avail.raw());
@@ -246,7 +255,7 @@ fn digest_fonts(st: &EngineState) -> u64 {
     hash_values!(font_bchar.raw());
     hash_values!(font_false_bchar.raw());
     for &glue in fonts.font_glue.as_slice().iter().take(font_count) {
-        h.i32(crate::node::link_of(glue).raw());
+        h.i32(glue.map_or(crate::consts::TEX_NULL, crate::glue_store::GlueSpecId::raw));
     }
     hash_values!(font_used);
     hash_values!(char_base.raw());
