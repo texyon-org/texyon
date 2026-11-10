@@ -641,8 +641,7 @@ impl MemState {
     ) -> Result<NodePtr<K>, Abort> {
         let p = self.get_node(size)?;
         if let Some(ty) = ty {
-            self.set_b16s1(p, ty.as_raw());
-            self.set_b16s0(p, 0);
+            self.set_header(p, ty, 0);
         }
         Ok(NodePtr::from_idx_unchecked(MemIdx::new(p)))
     }
@@ -1115,6 +1114,14 @@ impl AnyNode {
 }
 
 impl MemState {
+    /// Stamps the type and subtype of the node header at `p`.
+    #[inline]
+    pub fn set_header(&mut self, p: impl MemAddr, ty: NodeType, subtype: u16) {
+        let p = MemIdx::new(p);
+        self.set_b16s1(p, ty.as_raw());
+        self.set_b16s0(p, subtype);
+    }
+
     /// The raw type code, for `\lastnodetype` arithmetic and diagnostics.
     #[inline]
     pub fn type_code(&self, p: impl MemAddr) -> u16 {

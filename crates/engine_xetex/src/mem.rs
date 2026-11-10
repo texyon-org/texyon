@@ -42,7 +42,6 @@ pub(crate) const HOLD_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 4);
 pub(crate) const TEMP_HEAD_TOKS: TokenList = TokenList::from_ptr(TEMP_HEAD);
 pub(crate) const HOLD_HEAD_TOKS: TokenList = TokenList::from_ptr(HOLD_HEAD);
 pub(crate) const ADJUST_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 5);
-pub(crate) const ACTIVE_LIST: MemPtr = MemPtr::from_raw(MEM_TOP - 7);
 pub(crate) const ALIGN_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 8);
 // SAFETY: the static word at `MEM_TOP - 9` ends every span list.
 pub(crate) const END_SPAN: NodePtr<SpanNode> =
