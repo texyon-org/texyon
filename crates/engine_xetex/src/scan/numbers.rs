@@ -11,7 +11,7 @@ use crate::errors::OrConfusion;
 use crate::errors::{mu_error, Abort};
 use crate::fonts::{QUAD_CODE, X_HEIGHT_CODE};
 use crate::input::back_input;
-use crate::node::{ExprNode, GlueSpecNode, NodePtr};
+use crate::node::{GlueSpecNode, NodePtr};
 use crate::params::IntPar;
 use crate::scaled_math::{add_or_sub, fract, mult_and_add, quotient, xn_over_d, Overflowing};
 use crate::state::EngineState;
@@ -32,6 +32,16 @@ const CONTINENTAL_POINT_TOKEN: Token = Token::other(b',');
 const POINT_TOKEN: Token = Token::other(b'.');
 const ALPHA_TOKEN: Token = Token::other(b'`');
 const FROZEN_PRIM_TOKEN: Token = Token::from_cs(FROZEN_PRIMITIVE);
+
+/// A suspended level of expression scanning, resumed at its closing parenthesis.
+struct ExprLevel {
+    l: ValueLevel,
+    s: i16,
+    r: i16,
+    e: i32,
+    t: i32,
+    n: i32,
+}
 
 const EXPR_NONE: i16 = 0;
 const EXPR_ADD: i16 = 1;
@@ -782,7 +792,7 @@ fn add_glue(
 /// Scans an `\numexpr`-style expression whose result has level `l`.
 pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVal, Abort> {
     let mut b = false;
-    let mut p = MemPtr::NULL;
+    let mut stack: Vec<ExprLevel> = Vec::new();
 
     st.scanner.expand_depth_count += 1;
     if st.scanner.expand_depth_count >= st.scanner.expand_depth {
@@ -814,15 +824,7 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
                 let o = if s == EXPR_NONE { l } else { ValueLevel::Int };
                 get_x_non_blank(st)?;
                 if st.scanner.cur_tok == Token::other(b'(') {
-                    let q = NodePtr::<ExprNode>::alloc(&mut st.mem)?;
-                    let node = &mut st.mem[q];
-                    node.link = p;
-                    node.level = l.into();
-                    node.state = (4 * s + r) as u16;
-                    node.e = e;
-                    node.t = t;
-                    node.n = n;
-                    p = q.ptr();
+                    stack.push(ExprLevel { l, s, r, e, t, n });
                     l = o;
                     continue 'restart;
                 }
@@ -850,7 +852,7 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
                 EXPR_NONE
             };
             if o == EXPR_NONE {
-                if p.is_null() {
+                if stack.is_empty() {
                     if st.scanner.cur_cmd != Cmd::Relax {
                         back_input(st)?;
                     }
@@ -954,19 +956,11 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
             if o != EXPR_NONE {
                 continue;
             }
-            if p.is_null() {
+            let Some(outer) = stack.pop() else {
                 break 'restart;
-            }
+            };
             f = e;
-            let q = NodePtr::<ExprNode>::at(p);
-            e = st.mem[q].e;
-            t = st.mem[q].t;
-            n = st.mem[q].n;
-            s = (st.mem[q].state / 4) as i16;
-            r = (st.mem[q].state % 4) as i16;
-            l = st.mem[q].level.get().or_confusion("expr")?;
-            p = st.mem[q].link;
-            q.free(&mut st.mem);
+            ExprLevel { l, s, r, e, t, n } = outer;
             scan_factor = false;
         }
     }

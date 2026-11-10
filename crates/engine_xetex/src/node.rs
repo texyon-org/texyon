@@ -776,8 +776,6 @@ node_kinds! {
     ParShapeNode;
     /// An e-TeX penalty array: the entry count, the entries in the payload.
     PenaltiesNode;
-    /// A suspended level of `\numexpr`-style expression scanning.
-    ExprNode;
     /// A line of a `\scantokens` pseudo file, four characters per payload entry.
     PseudoLineNode;
     /// A block on the variable-size free list, marked by an empty link word.
@@ -864,10 +862,6 @@ impl FixedNode for AlignStackNode {
     const SIZE: i32 = 6;
     const TYPE: Option<NodeType> = None;
 }
-impl FixedNode for ExprNode {
-    const SIZE: i32 = 4;
-    const TYPE: Option<NodeType> = None;
-}
 
 const MOVEMENT_NODE_SIZE: i32 = 3;
 const CHAR_NODE_SIZE: i32 = 2;
@@ -885,7 +879,7 @@ impl_traits!(HasLink: BoxNode, RuleNode, InsNode, MarkNode, AdjustNode, Ligature
     WhatsitNode, MathNode, GlueNode, KernNode, PenaltyNode, UnsetNode, StyleNode, ChoiceNode,
     EdgeNode, Noad, RadicalNoad, AccentNoad, FractionNoad, FenceNoad, AnyNoad, MarginKernNode, SaIndexNode, SaElement, SaWordNode, SaPointerNode, SaMarkClassNode,
     SaSaved, SaSavedWord, SaSavedPointer, PageInsNode, MovementNode, CharNode, HeadNode,
-    LrNode, AlignRecord, AlignStackNode, ExprNode, PseudoLineNode,
+    LrNode, AlignRecord, AlignStackNode, PseudoLineNode,
     LigItem);
 
 /// A record kept only on its own list, which therefore proves its kind.
@@ -894,7 +888,7 @@ pub trait ListRecord: NodeKind {}
 impl_traits!(ListRecord: SaIndexNode, SaElement, SaWordNode, SaPointerNode, SaMarkClassNode,
     SaSaved, SaSavedWord, SaSavedPointer, PageInsNode, MovementNode,
     LigItem, CharNode, HeadNode, LrNode, PseudoFileNode, HyphPosNode, AlignRecord, SpanNode, AlignStackNode, ParShapeNode, PenaltiesNode,
-    ExprNode, PseudoLineNode, MathField, DelimiterField, FreeBlock);
+    PseudoLineNode, MathField, DelimiterField, FreeBlock);
 
 impl<K: ListRecord> NodePtr<K> {
     /// The record at `p`, a non-null link of a list of `K` records.

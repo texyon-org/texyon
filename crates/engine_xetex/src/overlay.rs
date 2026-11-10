@@ -14,13 +14,13 @@ use crate::codes::{LimitCode, MarkCode, ValueLevel};
 use crate::consts::{EMPTY, NORMAL};
 use crate::node::{
     AccentNoad, AdjustNode, AdjustPlacement, AlignRecord, AlignStackNode, AnyNoad, BoxLr, BoxNode,
-    CharNode, ChoiceNode, DelimiterField, DiscNode, EdgeNode, ExprNode, FenceNoad, FenceSubtype,
-    FixedNode, FractionNoad, FreeBlock, GlueKind, GlueNode, GlueSpecNode, GlyphNode, HeadNode,
-    HyphPosNode, InsNode, KernNode, KernSubtype, LanguageNode, LeaderKind, LigBoundary, LigItem,
-    LigatureNode, Link, LrNode, MarginKernNode, MarkNode, MathAccentKind, MathCode, MathField,
-    MathNode, MovementNode, NativeWordNode, Noad, NodeKind, NodePtr, OpenNode, PageInsNode,
-    ParShapeNode, PenaltiesNode, PenaltyNode, PicNode, PseudoFileNode, PseudoLineNode, RadicalNoad,
-    RuleNode, SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved,
+    CharNode, ChoiceNode, DelimiterField, DiscNode, EdgeNode, FenceNoad, FenceSubtype, FixedNode,
+    FractionNoad, FreeBlock, GlueKind, GlueNode, GlueSpecNode, GlyphNode, HeadNode, HyphPosNode,
+    InsNode, KernNode, KernSubtype, LanguageNode, LeaderKind, LigBoundary, LigItem, LigatureNode,
+    Link, LrNode, MarginKernNode, MarkNode, MathAccentKind, MathCode, MathField, MathNode,
+    MovementNode, NativeWordNode, Noad, NodeKind, NodePtr, OpenNode, PageInsNode, ParShapeNode,
+    PenaltiesNode, PenaltyNode, PicNode, PseudoFileNode, PseudoLineNode, RadicalNoad, RuleNode,
+    SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved,
     SaSavedPointer, SaSavedWord, SaWordNode, SizedWhatsit, SpanNode, Stored, StoredDimen,
     StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype, WriteNode,
 };
@@ -1143,23 +1143,6 @@ pub struct AlignStackLayout {
 
 overlay!(AlignStackNode => AlignStackLayout);
 
-/// A suspended level of `\numexpr`-style expression scanning.
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct ExprLayout {
-    pub state: u16,
-    pub level: Stored<ValueLevel>,
-    pub link: MemPtr,
-    _unused1: i32,
-    pub e: i32,
-    _unused2: i32,
-    pub t: i32,
-    _unused3: i32,
-    pub n: i32,
-}
-
-overlay!(ExprNode => ExprLayout);
-
 /// An entry of the ligature reconstitution stack.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
@@ -1521,14 +1504,6 @@ mod tests {
         let mut mem = arena();
         let at = MemIdx::from_raw;
         let ptr = MemPtr::from_raw;
-
-        let e: NodePtr<ExprNode> = NodePtr::from_idx_unchecked(at(4));
-        let expr = &mut mem[e];
-        expr.state = 2;
-        expr.level = ValueLevel::Mu.into();
-        (expr.e, expr.t, expr.n) = (21, 22, 23);
-        assert_eq!((mem.b16s0(at(4)), mem.b16s1(at(4))), (2, 3));
-        assert_eq!([5, 6, 7].map(|i| mem.b32s1(at(i))), [21, 22, 23]);
 
         let m: NodePtr<MovementNode> = NodePtr::from_idx_unchecked(at(8));
         let mv = &mut mem[m];
