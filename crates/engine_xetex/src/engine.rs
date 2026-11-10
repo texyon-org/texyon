@@ -1066,6 +1066,7 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     st.eqtb.hash = Vec::new();
     st.mem.data = Vec::new();
     st.mem.glyph_blobs.clear();
+    st.mem.payloads.clear();
 
     st.strings.str_start = Vec::new();
     st.strings.str_pool = Vec::new();

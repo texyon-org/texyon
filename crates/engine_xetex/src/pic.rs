@@ -3,7 +3,7 @@
 use libc::{c_char, c_double, c_int, c_uint};
 
 use crate::bridge::{input_open, FileFormat};
-use crate::consts::{INVALID_HANDLE, PIC_NODE_SIZE};
+use crate::consts::INVALID_HANDLE;
 use crate::errors::Abort;
 use crate::ext::{d2fix, fix2d};
 use crate::layout::with_c_str;
@@ -489,18 +489,15 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
     ));
 
     if result == 0 {
-        let word_bytes = std::mem::size_of::<crate::mem_types::MemoryWord>();
-        let extra_words = pic_path.len().div_ceil(word_bytes) as i32;
         let subtype = if is_pdf {
             WhatsitSubtype::Pdf
         } else {
             WhatsitSubtype::Pic
         };
-        let pic = st.input.cur_list.new_whatsit::<PicNode>(
-            &mut st.mem,
-            subtype,
-            PIC_NODE_SIZE + extra_words,
-        )?;
+        let pic = st
+            .input
+            .cur_list
+            .append_whatsit::<PicNode>(&mut st.mem, subtype)?;
         let t = &placement.t;
         let node = &mut st.mem[pic];
         node.path_len = pic_path.len() as u16;
@@ -510,6 +507,8 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
         node.height = d2fix(ymax - ymin);
         node.depth = Scaled::ZERO;
         node.transform = [t.a, t.b, t.c, t.d, t.x, t.y].map(d2fix);
+        st.mem
+            .alloc_payload(pic, usize::from(st.mem[pic].path_len))?;
         let path = st.mem.entries_mut(pic);
         let stored = path.len();
         path.copy_from_slice(&pic_path[..stored]);

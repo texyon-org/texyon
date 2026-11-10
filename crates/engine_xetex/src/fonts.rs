@@ -1,9 +1,7 @@
 //! Font loading: the TFM reader, native (OpenType/Graphite) font loading, native
 //! character nodes and the TFM `char_info` accessors.
 
-use crate::consts::{
-    DESIGN_SIZE, EMPTY_STRING, INVALID_HANDLE, NATIVE_NODE_SIZE, NULL_FONT, TOO_BIG_CHAR,
-};
+use crate::consts::{DESIGN_SIZE, EMPTY_STRING, INVALID_HANDLE, NULL_FONT, TOO_BIG_CHAR};
 use crate::ext::{
     aat_get_font_metrics, apply_tfm_font_mapping, find_native_font, load_mapping_file,
     ot_get_font_metrics, split_tfm_font_mapping, NativeFontMetrics,
@@ -21,6 +19,7 @@ use crate::units::{EqtbPtr, FontId, FontInfoIdx, Scaled, StrNumber};
 
 use crate::bridge::{input_getc, FileFormat};
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 
 use crate::ext::loaded_font_design_size;
 use std::collections::BTreeMap;
@@ -359,13 +358,12 @@ impl MemState {
         n: i32,
         subtype: WhatsitSubtype,
     ) -> Result<NodePtr<NativeWordNode>, Abort> {
-        let size = NATIVE_NODE_SIZE + (n * 2 + 7) / 8;
-        let w = NodePtr::<NativeWordNode>::alloc_sized(self, size, subtype)?;
+        let w = NodePtr::<NativeWordNode>::alloc_whatsit(self, subtype)?;
         let word = &mut self[w];
-        word.size = size as u16;
         word.font = f;
-        word.length = n as u16;
+        word.length = u16::try_from(n).or_confusion("native word length")?;
         word.clear_glyphs();
+        self.alloc_payload(w, usize::from(self[w].length))?;
         Ok(w)
     }
 

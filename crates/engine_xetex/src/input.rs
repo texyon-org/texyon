@@ -168,7 +168,8 @@ impl MemState {
         while let Some(l) = line {
             let header = self[l];
             line = header.link.get();
-            self.free_node(l.ptr(), header.size);
+            self.release_payload(l);
+            l.free(self);
         }
     }
 }
@@ -249,7 +250,8 @@ pub(crate) fn pseudo_input(st: &mut EngineState) -> Result<bool, Abort> {
     while st.input.last > st.input.first && st.input.buffer[st.input.last - 1] == i32::from(b' ') {
         st.input.last -= 1;
     }
-    st.mem.free_node(line.ptr(), size);
+    st.mem.release_payload(line);
+    line.free(&mut st.mem);
     Ok(true)
 }
 

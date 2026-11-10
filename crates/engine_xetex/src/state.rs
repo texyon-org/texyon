@@ -662,6 +662,8 @@ pub(crate) struct MemState {
     pub glyph_blobs: crate::glyph_arena::GlyphBlobArena,
     /// The token lists, a store of their own.
     pub tokens: crate::token::TokenStore,
+    /// The entries of array nodes: native text, picture paths, shapes and pseudo-file lines.
+    pub payloads: crate::payload::PayloadStore,
     pub journal: crate::journal::WordJournal<crate::mem_types::MemoryWord>,
     pub lo_mem_max: crate::units::MemPtr,
     pub rover: crate::units::MemPtr,

@@ -211,12 +211,7 @@ impl MemState {
                 self.tokens.delete_ref(TokenList::from_raw(equiv))
             }
             Cmd::GlueRef => self.delete_glue_ref(crate::node::NodePtr::from_glue_ptr(ptr)),
-            Cmd::ShapeRef => {
-                if !ptr.is_null() {
-                    let size = 2 * ptr.info(self) + 1;
-                    self.free_node(ptr, size);
-                }
-            }
+            Cmd::ShapeRef => self.free_shape_ref(ptr),
             Cmd::BoxRef => self.flush_node_list(ptr)?,
             Cmd::ToksRegister | Cmd::Register if !(0..=19).contains(&equiv) => {
                 self.delete_sa_ref(scanner, NodePtr::at(ptr))?;

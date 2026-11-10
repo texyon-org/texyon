@@ -3,14 +3,15 @@
 use crate::cmd::Cmd;
 use crate::codes::ExtensionCode;
 use crate::command::Command;
-use crate::consts::{FROZEN_SPECIAL, HMODE, MMODE, SMALL_NODE_SIZE, VMODE};
+use crate::consts::{FROZEN_SPECIAL, HMODE, MMODE, VMODE};
 use crate::errors::Abort;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::TokenType;
 use crate::io::AUTO;
 use crate::main_control::new_graf;
 use crate::node::{
-    GlyphNode, LanguageNode, NodePtr, OpenNode, WhatsitKind, WhatsitNode, WhatsitSubtype, WriteNode,
+    GlyphNode, LanguageNode, NodePtr, OpenNode, SavePosNode, WhatsitKind, WhatsitNode,
+    WhatsitSubtype, WriteNode,
 };
 use crate::params::IntPar;
 use crate::pic::load_picture;
@@ -214,11 +215,9 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
         }
 
         ExtensionCode::PdfSavePos => {
-            st.input.cur_list.new_whatsit::<WhatsitNode>(
-                &mut st.mem,
-                WhatsitSubtype::PdfSavePos,
-                SMALL_NODE_SIZE,
-            )?;
+            st.input
+                .cur_list
+                .append_whatsit::<SavePosNode>(&mut st.mem, WhatsitSubtype::PdfSavePos)?;
         }
 
         ExtensionCode::ResetTimer => {

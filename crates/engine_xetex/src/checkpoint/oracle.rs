@@ -105,6 +105,17 @@ fn digest_mem(st: &EngineState) -> u64 {
     for &word in &mem.data {
         h.word(memory_word(word));
     }
+    for slot in mem.payloads.slots() {
+        match slot {
+            None => h.word(u64::MAX),
+            Some(words) => {
+                h.word(words.len() as u64);
+                for &w in words {
+                    h.word(u64::from(w));
+                }
+            }
+        }
+    }
     let marks = mem.tokens.marks();
     h.word(marks.len as u64);
     h.i32(marks.avail.raw());

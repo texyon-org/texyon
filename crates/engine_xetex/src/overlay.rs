@@ -24,6 +24,7 @@ use crate::node::{
     SaSaved, SaSavedPointer, SaSavedWord, SaWordNode, SizedWhatsit, SpanNode, Stored, StoredDimen,
     StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype, WriteNode,
 };
+use crate::payload::PayloadId;
 use crate::state::MemState;
 use crate::token::TokenList;
 use crate::units::{
@@ -86,29 +87,37 @@ macro_rules! overlay {
     };
 }
 
-/// A node kind laid out as its header `Layout` followed by equal entries, as
-/// many as its header says. Entries may be smaller than a word.
+/// A node kind with a fixed header `Layout` and equal entries, as many as the header says,
+/// kept in its payload. Entries may be smaller than a word.
 pub trait ArrayOverlay: Overlay {
     /// The struct laid over each entry.
     type Entry: Pod;
     /// The number of entries, read from the header.
     fn len(header: &Self::Layout) -> i32;
+    fn payload(header: &Self::Layout) -> PayloadId;
+    fn set_payload(header: &mut Self::Layout, id: PayloadId);
 }
 
 /// Declares the entry layout of an array node kind, whose header is its
-/// `overlay!` layout.
+/// `overlay!` layout and holds the payload handle in `$field`.
 macro_rules! array_overlay {
-    ($kind:ty => $entry:ty, |$header:ident| $len:expr) => {
+    ($kind:ty => $entry:ty, $field:ident, |$header:ident| $len:expr) => {
         impl ArrayOverlay for $kind {
             type Entry = $entry;
             #[inline]
             fn len($header: &<$kind as Overlay>::Layout) -> i32 {
                 $len
             }
+            #[inline]
+            fn payload(header: &<$kind as Overlay>::Layout) -> PayloadId {
+                header.$field
+            }
+            #[inline]
+            fn set_payload(header: &mut <$kind as Overlay>::Layout, id: PayloadId) {
+                header.$field = id;
+            }
         }
-        const _: () = assert!(
-            std::mem::align_of::<$entry>() <= std::mem::align_of::<crate::mem_types::MemoryWord>()
-        );
+        const _: () = assert!(std::mem::align_of::<$entry>() <= std::mem::align_of::<u32>());
     };
 }
 
@@ -119,62 +128,83 @@ pub type EntriesMutAnd<'a, K, L> = (
 );
 
 impl MemState {
-    /// The words holding `p`'s entries, and the entries' length in bytes.
+    /// The byte length of `p`'s entries.
     #[inline]
-    fn entry_words<K: ArrayOverlay>(&self, p: NodePtr<K>) -> (std::ops::Range<usize>, usize) {
-        let first = (p.idx() + K::WORDS).words(0).start;
+    fn entry_bytes<K: ArrayOverlay>(&self, p: NodePtr<K>) -> usize {
         let len = usize::try_from(K::len(&self[p])).unwrap_or(0);
-        let bytes = len.saturating_mul(std::mem::size_of::<K::Entry>());
-        let words = bytes.div_ceil(std::mem::size_of::<crate::mem_types::MemoryWord>());
-        (first..first.saturating_add(words), bytes)
+        len.saturating_mul(std::mem::size_of::<K::Entry>())
     }
 
-    /// The entries that follow an array node's header.
+    /// Gives the fresh array node `p` a zeroed payload for `entries` entries.
+    pub fn alloc_payload<K: ArrayOverlay>(
+        &mut self,
+        p: NodePtr<K>,
+        entries: usize,
+    ) -> Result<(), crate::errors::Abort> {
+        let bytes = entries.saturating_mul(std::mem::size_of::<K::Entry>());
+        let id = self
+            .payloads
+            .insert(bytes.div_ceil(std::mem::size_of::<u32>()))?;
+        K::set_payload(&mut self[p], id);
+        Ok(())
+    }
+
+    /// Gives the copy `dst` of array node `src` its own handle on the payload.
+    pub fn share_payload<K: ArrayOverlay>(
+        &mut self,
+        dst: NodePtr<K>,
+        src: NodePtr<K>,
+    ) -> Result<(), crate::errors::Abort> {
+        let id = self.payloads.share(K::payload(&self[src]))?;
+        K::set_payload(&mut self[dst], id);
+        Ok(())
+    }
+
+    /// Drops the payload of array node `p`.
+    pub fn release_payload<K: ArrayOverlay>(&mut self, p: NodePtr<K>) {
+        let id = K::payload(&self[p]);
+        self.payloads.release(id);
+        K::set_payload(&mut self[p], PayloadId::NONE);
+    }
+
+    /// The entries of an array node.
     #[inline]
     pub fn entries<K: ArrayOverlay>(&self, p: NodePtr<K>) -> &[K::Entry] {
-        let (words, bytes) = self.entry_words(p);
-        let words: &[u8] = bytemuck::cast_slice(&self.data[words]);
-        bytemuck::cast_slice(&words[..bytes])
+        let bytes = self.entry_bytes(p);
+        let words: &[u8] = bytemuck::cast_slice(self.payloads.get(K::payload(&self[p])));
+        bytemuck::cast_slice(words.get(..bytes).unwrap_or(&[]))
     }
 
-    /// The entries of `dst`, noted in the journal, beside those of another
-    /// node `src`. A confusion when the two overlap.
+    /// The entries of `dst`, writable, beside those of another node `src`. A confusion when
+    /// both share one payload.
     #[inline]
     pub fn entries_mut_and<K: ArrayOverlay, L: ArrayOverlay>(
         &mut self,
         dst: NodePtr<K>,
         src: NodePtr<L>,
     ) -> Result<EntriesMutAnd<'_, K, L>, crate::errors::Abort> {
-        let (dst_words, dst_bytes) = self.entry_words(dst);
-        let (src_words, src_bytes) = self.entry_words(src);
-        if self.journal.armed() {
-            if let Some(words) = self.data.get(dst_words.clone()) {
-                self.journal.note_run(dst_words.start, words);
-            }
-        }
-        let [dst, src] = self
-            .data
-            .get_disjoint_mut([dst_words, src_words])
+        let (dst_bytes, src_bytes) = (self.entry_bytes(dst), self.entry_bytes(src));
+        let (dst_id, src_id) = (K::payload(&self[dst]), L::payload(&self[src]));
+        let (dst, src) = self
+            .payloads
+            .get_mut_and(dst_id, src_id)
             .or_confusion("entries")?;
         let dst: &mut [u8] = bytemuck::cast_slice_mut(dst);
         let src: &[u8] = bytemuck::cast_slice(src);
         Ok((
-            bytemuck::cast_slice_mut(&mut dst[..dst_bytes]),
-            bytemuck::cast_slice(&src[..src_bytes]),
+            bytemuck::cast_slice_mut(dst.get_mut(..dst_bytes).or_confusion("entries")?),
+            bytemuck::cast_slice(src.get(..src_bytes).or_confusion("entries")?),
         ))
     }
 
-    /// The entries that follow an array node's header, noted in the journal.
+    /// The entries of an array node, writable.
     #[inline]
     pub fn entries_mut<K: ArrayOverlay>(&mut self, p: NodePtr<K>) -> &mut [K::Entry] {
-        let (words, bytes) = self.entry_words(p);
-        let start = words.start;
-        let words = &mut self.data[words];
-        if self.journal.armed() {
-            self.journal.note_run(start, words);
-        }
-        let words: &mut [u8] = bytemuck::cast_slice_mut(words);
-        bytemuck::cast_slice_mut(&mut words[..bytes])
+        let bytes = self.entry_bytes(p);
+        let id = K::payload(&self[p]);
+        let words: &mut [u8] = bytemuck::cast_slice_mut(self.payloads.get_mut(id));
+        let len = bytes.min(words.len());
+        bytemuck::cast_slice_mut(&mut words[..len])
     }
 }
 
@@ -183,29 +213,28 @@ impl MemState {
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct ParShapeHeader {
     pub lines: i32,
-    _link: i32,
+    pub payload: PayloadId,
+    _unused: [i32; 2],
 }
 
 /// One line of a `\parshape` array.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct ParShapeLine {
-    _unused0: i32,
     pub indent: Scaled,
-    _unused1: i32,
     pub width: Scaled,
 }
 
-overlay!(ParShapeNode => ParShapeHeader, 1);
-array_overlay!(ParShapeNode => ParShapeLine, |h| h.lines);
+overlay!(ParShapeNode => ParShapeHeader);
+array_overlay!(ParShapeNode => ParShapeLine, payload, |h| h.lines);
 
 /// The header of an e-TeX penalty array.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct PenaltiesHeader {
-    /// Half the node size, rounded down, as for a `\parshape` array.
+    /// Half the entry count, rounded up, as e-TeX's node size was.
     pub half_size: i32,
-    _link: i32,
+    pub payload: PayloadId,
     _unused: i32,
     pub count: i32,
 }
@@ -214,19 +243,21 @@ pub struct PenaltiesHeader {
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct PenaltyEntry {
-    _unused: i32,
     pub value: i32,
 }
 
-overlay!(PenaltiesNode => PenaltiesHeader, 2);
-array_overlay!(PenaltiesNode => PenaltyEntry, |h| 2 * h.half_size - 1);
+overlay!(PenaltiesNode => PenaltiesHeader);
+array_overlay!(PenaltiesNode => PenaltyEntry, payload, |h| 2 * h.half_size - 1);
 
 /// The header of a `\scantokens` pseudo-file line.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct PseudoLineHeader {
+    /// One more than the line's words of four characters, as e-TeX's node size was.
     pub size: i32,
     pub link: Link<PseudoLineNode>,
+    pub payload: PayloadId,
+    _unused: i32,
 }
 
 /// Four characters of a pseudo-file line, stored last first.
@@ -251,8 +282,8 @@ impl PseudoWord {
     }
 }
 
-overlay!(PseudoLineNode => PseudoLineHeader, 1);
-array_overlay!(PseudoLineNode => PseudoWord, |h| h.size - 1);
+overlay!(PseudoLineNode => PseudoLineHeader);
+array_overlay!(PseudoLineNode => PseudoWord, payload, |h| h.size - 1);
 
 /// Any whatsit: its subtype and link.
 #[repr(C)]
@@ -344,7 +375,7 @@ pub struct PicLayout {
     pub height: Scaled,
     pub page: u16,
     pub path_len: u16,
-    _unused4: [u16; 2],
+    pub path: PayloadId,
     /// `[a, b, c, d, x, y]`.
     pub transform: [Scaled; 6],
     _unused5: u16,
@@ -352,8 +383,8 @@ pub struct PicLayout {
     _unused6: i32,
 }
 
-overlay!(PicNode => PicLayout, crate::consts::PIC_NODE_SIZE);
-array_overlay!(PicNode => u8, |h| i32::from(h.path_len));
+overlay!(PicNode => PicLayout);
+array_overlay!(PicNode => u8, path, |h| i32::from(h.path_len));
 
 /// A native word. Its UTF-16 text follows the header, and its shaped glyphs
 /// live in `mem.glyph_blobs` under `glyph_info`.
@@ -373,11 +404,10 @@ pub struct NativeWordLayout {
     /// The text length in UTF-16 units.
     pub length: u16,
     pub font: FontId,
-    /// The node size in words.
-    pub size: u16,
+    _unused4: u16,
     /// One-based shaped-glyph arena handle, zero when unshaped.
     pub glyph_info: i32,
-    _unused4: i32,
+    pub text: PayloadId,
 }
 
 impl NativeWordLayout {
@@ -386,12 +416,11 @@ impl NativeWordLayout {
     pub fn clear_glyphs(&mut self) {
         self.glyph_count = 0;
         self.glyph_info = 0;
-        self._unused4 = 0;
     }
 }
 
-overlay!(NativeWordNode => NativeWordLayout, crate::consts::NATIVE_NODE_SIZE);
-array_overlay!(NativeWordNode => u16, |h| i32::from(h.length));
+overlay!(NativeWordNode => NativeWordLayout);
+array_overlay!(NativeWordNode => u16, text, |h| i32::from(h.length));
 
 /// The dimensions a native word, glyph and picture share.
 #[repr(C)]
@@ -1653,64 +1682,55 @@ mod tests {
     }
 
     #[test]
-    fn par_shape_lines_land_on_their_words() {
+    fn par_shape_lines_live_in_the_payload() {
         let mut mem = arena();
         let s = shape_at(4);
         mem[s].lines = 2;
+        mem.alloc_payload(s, 2).unwrap();
         let lines = mem.entries_mut(s);
         assert_eq!(lines.len(), 2);
         lines[0].indent = Scaled::from_raw(11);
         lines[0].width = Scaled::from_raw(12);
         lines[1].indent = Scaled::from_raw(13);
         lines[1].width = Scaled::from_raw(14);
-        let at = MemIdx::from_raw;
-        assert_eq!(mem.b32s0(at(4)), 2);
-        assert_eq!([5, 6, 7, 8].map(|i| mem.b32s1(at(i))), [11, 12, 13, 14]);
-        assert_eq!([3, 4, 9].map(|i| mem.b32s1(at(i))), [0; 3]);
-        assert_eq!([5, 6, 7, 8, 9].map(|i| mem.b32s0(at(i))), [0; 5]);
+        assert_eq!(mem.b32s0(MemIdx::from_raw(4)), 2);
+        assert_eq!(mem.payloads.get(mem[s].payload), [11, 12, 13, 14]);
         assert_eq!(s.line(&mem, 2).width, Scaled::from_raw(14));
     }
 
     #[test]
-    fn penalties_land_on_their_words() {
+    fn penalties_live_in_the_payload() {
         let mut mem = arena();
         let p: NodePtr<PenaltiesNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(4));
         let header = &mut mem[p];
         header.half_size = 2;
         header.count = 2;
+        mem.alloc_payload(p, 3).unwrap();
         let entries = mem.entries_mut(p);
         assert_eq!(entries.len(), 3);
         entries[0].value = 11;
         entries[1].value = 12;
-        let at = MemIdx::from_raw;
-        assert_eq!((mem.b32s0(at(4)), mem.b32s1(at(5))), (2, 2));
-        assert_eq!([6, 7, 8, 9].map(|i| mem.b32s1(at(i))), [11, 12, 0, 0]);
-        assert_eq!([4, 5, 6, 7, 8].map(|i| mem.b32s0(at(i))), [2, 0, 0, 0, 0]);
+        assert_eq!(mem.payloads.get(mem[p].payload), [11, 12, 0]);
         assert_eq!([0, 1, 2].map(|k| p.penalty(&mem, k)), [2, 11, 12]);
     }
 
     #[test]
-    fn pseudo_lines_land_on_their_words() {
+    fn pseudo_lines_live_in_the_payload() {
         let mut mem = arena();
         let p: NodePtr<PseudoLineNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(4));
         let header = &mut mem[p];
         header.size = 3;
         header.link = Some(NodePtr::from_idx_unchecked(MemIdx::from_raw(9))).into();
+        mem.alloc_payload(p, 2).unwrap();
         let words = mem.entries_mut(p);
         assert_eq!(words.len(), 2);
         words[1] = PseudoWord::new([1, 2, 3, 4]);
         let at = MemIdx::from_raw;
         assert_eq!((mem.b32s0(at(4)), mem.b32s1(at(4))), (3, 9));
         assert_eq!(
-            [
-                mem.b16s3(at(6)),
-                mem.b16s2(at(6)),
-                mem.b16s1(at(6)),
-                mem.b16s0(at(6))
-            ],
-            [1, 2, 3, 4]
+            mem.payloads.get(mem[p].payload),
+            [0, 0, 4 | 3 << 16, 2 | 1 << 16]
         );
-        assert_eq!((mem.b32s0(at(5)), mem.b32s1(at(5))), (0, 0));
         assert_eq!(mem.entries(p)[1].chars(), [1, 2, 3, 4]);
     }
 
@@ -1782,7 +1802,7 @@ mod tests {
     }
 
     #[test]
-    fn pic_fields_and_path_land_on_their_words() {
+    fn pic_fields_land_on_their_words_and_the_path_in_the_payload() {
         let mut mem = MemState {
             data: vec![Default::default(); 24],
             ..Default::default()
@@ -1798,18 +1818,18 @@ mod tests {
         pic.path_len = 10;
         pic.transform = [21, 22, 23, 24, 25, 26].map(Scaled::from_raw);
         pic.pagebox = 3;
+        mem.alloc_payload(p, 10).unwrap();
         mem.entries_mut(p).copy_from_slice(b"0123456789");
         assert_eq!(mem.b16s0(at(4)), 44);
         assert_eq!([5, 6, 7].map(|i| mem.b32s1(at(i))), [11, 12, 13]);
         assert_eq!((mem.b16s0(at(8)), mem.b16s1(at(8))), (2, 10));
+        assert_eq!(mem.b32s1(at(8)), 1);
         assert_eq!(
             [9, 10, 11].map(|i| [mem.b32s0(at(i)), mem.b32s1(at(i))]),
             [[21, 22], [23, 24], [25, 26]]
         );
         assert_eq!((mem.b16s0(at(12)), mem.b16s1(at(12))), (0, 3));
-        assert_eq!(mem.b16s0(at(13)), u16::from_le_bytes(*b"01"));
-        assert_eq!(mem.b16s0(at(14)), u16::from_le_bytes(*b"89"));
-        assert_eq!(mem.b16s1(at(14)), 0);
+        assert_eq!(mem.entries(p), b"0123456789");
         assert!(matches!(p.whatsit().variant(&mem), Some(WhatsitVariant::Pic(q)) if q == p));
     }
 
@@ -1818,12 +1838,13 @@ mod tests {
         let word = &mut mem[w];
         word.subtype = WhatsitSubtype::NativeWord.into();
         word.length = text.len() as u16;
+        mem.alloc_payload(w, text.len()).unwrap();
         mem.entries_mut(w).copy_from_slice(text);
         w
     }
 
     #[test]
-    fn native_word_fields_and_text_land_on_their_words() {
+    fn native_word_fields_land_on_their_words_and_the_text_in_the_payload() {
         let mut mem = MemState {
             data: vec![Default::default(); 24],
             ..Default::default()
@@ -1836,54 +1857,52 @@ mod tests {
         word.height = Scaled::from_raw(13);
         word.glyph_count = 6;
         word.font = FontId::new(7);
-        word.size = 8;
         word.glyph_info = 9;
         assert_eq!(mem.b16s0(at(4)), 40);
         assert_eq!([5, 6, 7].map(|i| mem.b32s1(at(i))), [11, 12, 13]);
         assert_eq!(
-            [
-                mem.b16s0(at(8)),
-                mem.b16s1(at(8)),
-                mem.b16s2(at(8)),
-                mem.b16s3(at(8))
-            ],
-            [6, 5, 7, 8]
+            [mem.b16s0(at(8)), mem.b16s1(at(8)), mem.b16s2(at(8))],
+            [6, 5, 7]
         );
-        assert_eq!((mem.b32s0(at(9)), mem.b32s1(at(9))), (9, 0));
-        assert_eq!(
-            [
-                mem.b16s0(at(10)),
-                mem.b16s1(at(10)),
-                mem.b16s2(at(10)),
-                mem.b16s3(at(10))
-            ],
-            [1, 2, 3, 4]
-        );
-        assert_eq!((mem.b16s0(at(11)), mem.b16s1(at(11))), (5, 0));
+        assert_eq!((mem.b32s0(at(9)), mem.b32s1(at(9))), (9, 1));
+        assert_eq!(mem.entries(w), [1, 2, 3, 4, 5]);
         mem[w].clear_glyphs();
         assert_eq!((mem.b16s0(at(8)), mem.b32s0(at(9))), (0, 0));
+        assert_eq!(mem.entries(w), [1, 2, 3, 4, 5]);
         assert!(matches!(w.whatsit().variant(&mem), Some(WhatsitVariant::NativeWord(p)) if p == w));
     }
 
     #[test]
-    fn entries_of_two_nodes_copy_and_journal_the_destination() {
+    fn entries_of_two_nodes_copy_into_the_destination() {
         let mut mem = MemState {
             data: vec![Default::default(); 24],
             ..Default::default()
         };
         let src = native_word_at(&mut mem, 2, &[1, 2, 3]);
         let dst = native_word_at(&mut mem, 10, &[0; 5]);
-        mem.journal.arm(24);
         let Ok((to, from)) = mem.entries_mut_and(dst, src) else {
-            panic!("two separate nodes overlap");
+            panic!("two separate payloads overlap");
         };
         to[1..4].copy_from_slice(from);
         assert_eq!(mem.entries(dst), [0, 1, 2, 3, 0]);
-        let delta = mem.journal.seal(&mem.data);
-        delta.apply_to(&mut mem.data);
-        assert_eq!(mem.entries(dst), [0; 5]);
         assert_eq!(mem.entries(src), [1, 2, 3]);
         assert!(mem.entries_mut_and(dst, dst).is_err());
+    }
+
+    #[test]
+    fn a_copied_node_writes_its_own_payload() {
+        let mut mem = arena();
+        let (s, copy) = (shape_at(2), shape_at(4));
+        mem[s].lines = 1;
+        mem.alloc_payload(s, 1).unwrap();
+        mem.entries_mut(s)[0].width = Scaled::from_raw(5);
+        mem[copy] = mem[s];
+        mem.share_payload(copy, s).unwrap();
+        mem.entries_mut(copy)[0].width = Scaled::from_raw(6);
+        assert_eq!(mem.entries(s)[0].width, Scaled::from_raw(5));
+        assert_eq!(mem.entries(copy)[0].width, Scaled::from_raw(6));
+        mem.release_payload(s);
+        assert_eq!(mem.entries(copy)[0].width, Scaled::from_raw(6));
     }
 
     #[test]
@@ -1921,17 +1940,17 @@ mod tests {
     }
 
     #[test]
-    fn mutable_entries_journal_every_entry_word() {
+    fn a_checkpoint_keeps_the_payload_it_saw() {
         let mut mem = arena();
         let s = shape_at(4);
         mem[s].lines = 2;
+        mem.alloc_payload(s, 2).unwrap();
         mem.entries_mut(s)[1].width = Scaled::from_raw(5);
-        mem.journal.arm(16);
+        let saved = mem.payloads.clone();
         let lines = mem.entries_mut(s);
         lines[0].indent = Scaled::from_raw(1);
         lines[1].width = Scaled::from_raw(2);
-        let delta = mem.journal.seal(&mem.data);
-        delta.apply_to(&mut mem.data);
+        mem.payloads.restore_from(&saved);
         let lines = mem.entries(s);
         assert_eq!(
             (lines[0].indent, lines[1].width),

@@ -52,18 +52,6 @@ pub(crate) const PRE_ADJUST_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 14);
 pub(crate) const HI_MEM_STAT_MIN: i32 = MEM_TOP - 14;
 
 impl ListStateRecord {
-    /// A `size`-word whatsit appended to the current list.
-    pub fn new_whatsit<K: WhatsitKind>(
-        &mut self,
-        mem: &mut MemState,
-        subtype: WhatsitSubtype,
-        size: i32,
-    ) -> Result<NodePtr<K>, Abort> {
-        let p = NodePtr::<K>::alloc_sized(mem, size, subtype)?;
-        self.tail_append(mem, p.ptr());
-        Ok(p)
-    }
-
     /// A fixed-layout whatsit appended to the current list.
     pub fn append_whatsit<K: WhatsitKind + FixedNode>(
         &mut self,

@@ -5,6 +5,7 @@ use crate::cmd::Cmd;
 use crate::codes::{ScannerStatus, TheCode, ValueLevel};
 use crate::consts::{ACTIVE_BASE, CLOSED, JUST_OPEN, NORMAL, TEX_NULL};
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::expand::expand;
 use crate::input::NEW_LINE;
 use crate::node::{NodePtr, PseudoFileNode, PseudoLineNode};
@@ -469,7 +470,7 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
             l += 1;
         }
         let size = ((l - m + 7) / 4).max(2);
-        let line = NodePtr::<PseudoLineNode>::at(st.mem.get_node(size)?);
+        let line = NodePtr::<PseudoLineNode>::alloc(&mut st.mem)?;
         match last_line {
             None => st.mem[file].lines = line.into(),
             Some(prev) => st.mem[prev].link = line.into(),
@@ -477,6 +478,8 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
         last_line = Some(line);
         st.mem[line].size = size;
         st.mem[line].link = None.into();
+        st.mem
+            .alloc_payload(line, usize::try_from(size - 1).or_confusion("pseudo line")?)?;
         let mut k = m;
         if let Some((last, full)) = st.mem.entries_mut(line).split_last_mut() {
             for word in full {

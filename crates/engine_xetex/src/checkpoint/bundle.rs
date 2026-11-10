@@ -171,6 +171,7 @@ struct MemBundle {
     cur_synctex_tag: i32,
     temp_ptr: MemPtr,
     glyph_blobs: crate::glyph_arena::GlyphBlobArena,
+    payloads: crate::payload::PayloadStore,
     tokens: crate::token::TokenStoreMarks,
 }
 
@@ -180,6 +181,7 @@ impl MemBundle {
             data: _,
             glyph_blobs,
             tokens,
+            payloads,
             journal: _,
             lo_mem_max,
             rover,
@@ -196,6 +198,7 @@ impl MemBundle {
             cur_synctex_tag: *cur_synctex_tag,
             temp_ptr: *temp_ptr,
             glyph_blobs: glyph_blobs.clone(),
+            payloads: payloads.clone(),
             tokens: tokens.marks(),
         }
     }
@@ -208,11 +211,12 @@ impl MemBundle {
         dst.cur_synctex_tag = self.cur_synctex_tag;
         dst.temp_ptr = self.temp_ptr;
         dst.glyph_blobs.restore_from(&self.glyph_blobs);
+        dst.payloads.restore_from(&self.payloads);
         dst.tokens.restore_marks(self.tokens);
     }
 
     fn allocated_bytes(&self) -> usize {
-        self.glyph_blobs.allocated_bytes()
+        self.glyph_blobs.allocated_bytes() + self.payloads.allocated_bytes()
     }
 }
 

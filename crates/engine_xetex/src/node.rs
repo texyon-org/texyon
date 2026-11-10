@@ -13,8 +13,8 @@ use std::marker::PhantomData;
 use crate::consts::{
     ACCENT_NOAD_SIZE, BOX_NODE_SIZE, FRACTION_NOAD_SIZE, GLUE_SPEC_SIZE, GLYPH_NODE_SIZE,
     INDEX_NODE_SIZE, INS_NODE_SIZE, MARGIN_KERN_NODE_SIZE, MARK_CLASS_NODE_SIZE, MEDIUM_NODE_SIZE,
-    NOAD_SIZE, NULL_FLAG, OPEN_NODE_SIZE, PAGE_INS_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE,
-    SMALL_NODE_SIZE, STYLE_NODE_SIZE, WRITE_NODE_SIZE,
+    NATIVE_NODE_SIZE, NOAD_SIZE, NULL_FLAG, OPEN_NODE_SIZE, PAGE_INS_NODE_SIZE, PIC_NODE_SIZE,
+    RADICAL_NOAD_SIZE, RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE, WRITE_NODE_SIZE,
 };
 use crate::errors::Abort;
 use crate::state::MemState;
@@ -711,10 +711,12 @@ node_kinds! {
     LanguageNode = Whatsit, SMALL_NODE_SIZE;
     /// One glyph of a native font, by glyph id.
     GlyphNode = Whatsit, GLYPH_NODE_SIZE;
-    /// A `\XeTeXpicfile` or `\XeTeXpdffile` image, its path stored inline.
-    PicNode;
-    /// A run of text in one native font, stored inline as UTF-16.
-    NativeWordNode;
+    /// A `\pdfsavepos` mark, nothing but its header.
+    SavePosNode = Whatsit, SMALL_NODE_SIZE;
+    /// A `\XeTeXpicfile` or `\XeTeXpdffile` image, its path in the payload.
+    PicNode = Whatsit, PIC_NODE_SIZE;
+    /// A run of text in one native font, the UTF-16 text in the payload.
+    NativeWordNode = Whatsit, NATIVE_NODE_SIZE;
     /// A native word, glyph or picture, through the dimensions they share.
     SizedWhatsit;
     /// An alignment box before its column widths are known. Words +4..+6 hold
@@ -772,13 +774,13 @@ node_kinds! {
     MathField;
     /// A noad's delimiter word, holding a small and a large variant.
     DelimiterField;
-    /// A `\parshape` array: the line count, then an indent and width per line.
+    /// A `\parshape` array: the line count, an indent and width per line in the payload.
     ParShapeNode;
-    /// An e-TeX penalty array: the entry count at +1, then the entries.
+    /// An e-TeX penalty array: the entry count, the entries in the payload.
     PenaltiesNode;
     /// A suspended level of `\numexpr`-style expression scanning.
     ExprNode;
-    /// A line of a `\scantokens` pseudo file: its size, then four characters per word.
+    /// A line of a `\scantokens` pseudo file, four characters per payload entry.
     PseudoLineNode;
     /// A block on the variable-size free list, marked by an empty link word.
     FreeBlock;
@@ -814,6 +816,18 @@ impl FixedNode for SaSavedWord {
 }
 impl FixedNode for SaSavedPointer {
     const SIZE: i32 = SaPointerNode::SIZE;
+    const TYPE: Option<NodeType> = None;
+}
+impl FixedNode for ParShapeNode {
+    const SIZE: i32 = 2;
+    const TYPE: Option<NodeType> = None;
+}
+impl FixedNode for PenaltiesNode {
+    const SIZE: i32 = 2;
+    const TYPE: Option<NodeType> = None;
+}
+impl FixedNode for PseudoLineNode {
+    const SIZE: i32 = 2;
     const TYPE: Option<NodeType> = None;
 }
 impl FixedNode for HyphPosNode {
@@ -1521,6 +1535,23 @@ impl NodePtr<AlignRecord> {
     }
 }
 
+const _: () = assert!(
+    std::mem::offset_of!(crate::overlay::ParShapeHeader, payload)
+        == std::mem::offset_of!(crate::overlay::PenaltiesHeader, payload)
+        && ParShapeNode::SIZE == PenaltiesNode::SIZE
+);
+
+impl MemState {
+    /// Frees the `\parshape` or e-TeX penalty array `p` an eqtb shape entry holds. Both keep their
+    /// payload handle at one offset, so the shape view frees either.
+    pub(crate) fn free_shape_ref(&mut self, p: MemPtr) {
+        if let Some(shape) = NodePtr::<ParShapeNode>::from_ptr(p) {
+            self.release_payload(shape);
+            shape.free(self);
+        }
+    }
+}
+
 impl NodePtr<ParShapeNode> {
     /// Line `k`, counting from 1. Panics outside the shape.
     #[inline]
@@ -1628,21 +1659,9 @@ impl StoredCode for WhatsitSubtype {
 pub trait WhatsitKind: NodeKind {}
 
 impl_traits!(WhatsitKind: WhatsitNode, OpenNode, WriteNode, LanguageNode, GlyphNode, PicNode,
-    NativeWordNode);
+    NativeWordNode, SavePosNode);
 
 impl<K: WhatsitKind> NodePtr<K> {
-    /// A fresh `size`-word whatsit of the given subtype, other fields uninitialised.
-    #[inline]
-    pub fn alloc_sized(
-        mem: &mut MemState,
-        size: i32,
-        subtype: WhatsitSubtype,
-    ) -> Result<Self, Abort> {
-        let p: Self = mem.alloc_node(size, Some(NodeType::Whatsit))?;
-        mem[p.whatsit()].subtype = subtype.into();
-        Ok(p)
-    }
-
     /// The whatsit as any whatsit, for its header.
     #[inline]
     pub fn whatsit(self) -> NodePtr<WhatsitNode> {
@@ -1654,7 +1673,9 @@ impl<K: WhatsitKind + FixedNode> NodePtr<K> {
     /// A fresh whatsit of the given subtype, other fields uninitialised.
     #[inline]
     pub fn alloc_whatsit(mem: &mut MemState, subtype: WhatsitSubtype) -> Result<Self, Abort> {
-        Self::alloc_sized(mem, K::SIZE, subtype)
+        let p = Self::alloc(mem)?;
+        mem[p.whatsit()].subtype = subtype.into();
+        Ok(p)
     }
 }
 
@@ -1712,6 +1733,8 @@ impl NodePtr<WhatsitNode> {
 }
 
 impl NodePtr<NativeWordNode> {
+    const SIZE_OF_KIND: i32 = NativeWordNode::SIZE;
+
     /// Drops the shaped-glyph payload of a native word.
     pub fn release_native_glyphs(self, mem: &mut MemState) {
         let handle = mem[self].glyph_info;
@@ -1735,7 +1758,8 @@ impl NodePtr<NativeWordNode> {
     /// Frees a native word together with its shaped glyphs.
     pub fn free_native(self, mem: &mut MemState) {
         self.release_native_glyphs(mem);
-        mem.free_node(self.ptr(), i32::from(mem[self].size));
+        mem.release_payload(self);
+        mem.free_node(self.ptr(), Self::SIZE_OF_KIND);
     }
 }
 

@@ -2,14 +2,15 @@
 
 use crate::consts::{
     BOX_NODE_SIZE, GLYPH_NODE_SIZE, INS_NODE_SIZE, MARGIN_KERN_NODE_SIZE, MEDIUM_NODE_SIZE,
-    MIN_HALFWORD, PIC_NODE_SIZE, RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE, SUB_BOX,
+    MIN_HALFWORD, RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE, SUB_BOX,
 };
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::mem::TEMP_HEAD;
 use crate::node::{
-    AnyNode, BoxNode, CharNode, DiscNode, FixedNode, GlueNode, HeadNode, LanguageNode, NoadVariant,
-    NodeKind, NodePtr, OpenNode, WhatsitNode, WhatsitVariant, WriteNode,
+    AnyNode, BoxNode, CharNode, DiscNode, FixedNode, GlueNode, HeadNode, LanguageNode,
+    NativeWordNode, NoadVariant, NodeKind, NodePtr, OpenNode, PicNode, WhatsitNode, WhatsitVariant,
+    WriteNode,
 };
 use crate::overlay::CharLayout;
 use crate::state::MemState;
@@ -18,7 +19,6 @@ use super::LrState;
 use crate::units::{MemIdx, MemPtr, Scaled};
 
 const SYNCTEX_FIELD_SIZE: i32 = 1;
-const MEMORY_WORD_SIZE: i32 = 8;
 
 /// `r` typed like `src`, whose header word `r` has just received.
 #[inline]
@@ -44,12 +44,9 @@ impl MemState {
             | WhatsitVariant::LateSpecial(_) => WriteNode::SIZE,
             WhatsitVariant::Language(_) => LanguageNode::SIZE,
             WhatsitVariant::SavePos => SMALL_NODE_SIZE,
-            WhatsitVariant::NativeWord(word) => i32::from(self[word].size),
+            WhatsitVariant::NativeWord(_) => NativeWordNode::SIZE,
             WhatsitVariant::Glyph(_) => GLYPH_NODE_SIZE,
-            WhatsitVariant::Pic(pic) => {
-                PIC_NODE_SIZE
-                    + (i32::from(self[pic].path_len) + MEMORY_WORD_SIZE - 1) / MEMORY_WORD_SIZE
-            }
+            WhatsitVariant::Pic(_) => PicNode::SIZE,
         })
     }
 
@@ -94,6 +91,12 @@ impl MemState {
                 let copy = copied_node(word, r);
                 self[copy].clear_glyphs();
                 copy.share_native_glyphs(self, word);
+                self.share_payload(copy, word)?;
+                Ok((r, 0))
+            }
+            Some(WhatsitVariant::Pic(pic)) => {
+                self.copy_words(r, pic.ptr(), size);
+                self.share_payload(copied_node(pic, r), pic)?;
                 Ok((r, 0))
             }
             Some(
@@ -270,7 +273,11 @@ impl MemState {
                         ) => {
                             self.tokens.delete_ref(self[p].tokens);
                         }
-                        Some(WhatsitVariant::NativeWord(word)) => word.release_native_glyphs(self),
+                        Some(WhatsitVariant::NativeWord(word)) => {
+                            word.release_native_glyphs(self);
+                            self.release_payload(word);
+                        }
+                        Some(WhatsitVariant::Pic(pic)) => self.release_payload(pic),
                         _ => {}
                     }
                     size
