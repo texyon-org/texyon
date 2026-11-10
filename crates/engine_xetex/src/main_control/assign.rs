@@ -21,6 +21,7 @@ use crate::node::{
     SaWordNode,
 };
 use crate::params::{IntPar, TokPar};
+use crate::scaled_math::{mult_and_add, x_over_n, xn_over_d};
 use crate::scan::fetch_box;
 use crate::state::{EngineState, InteractionMode, MemState, Selector};
 use crate::token::{Token, TokenList};
@@ -221,9 +222,8 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         if s > Scaled::ZERO {
             s == st.fonts.font_size[f]
         } else {
-            st.errors.arith_error = false;
-            let scaled = st.errors.xn_over_d(st.fonts.font_dsize[f], -s.raw(), 1000);
-            st.fonts.font_size[f] == scaled && !st.errors.arith_error
+            let scaled = xn_over_d(st.fonts.font_dsize[f], -s.raw(), 1000);
+            st.fonts.font_size[f] == scaled.quotient && !scaled.overflowed
         }
     };
     let f = 'search: {
@@ -322,7 +322,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     } else {
         crate::scan::scan_keyword(st, "by")?;
     }
-    st.errors.arith_error = false;
+    let mut overflowed = false;
 
     let value = if q < Cmd::Multiply {
         if p < ValueLevel::Glue {
@@ -377,11 +377,13 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         }
     } else {
         let n = crate::scan::scan_int(st)?;
-        let scale = |errors: &mut crate::state::ErrorState, x: i32, max_answer: i32| {
+        let mut scale = |x: i32, max_answer: i32| {
             if q == Cmd::Multiply {
-                errors.mult_and_add(x, n, 0, max_answer)
+                mult_and_add(x, n, 0, max_answer).track(&mut overflowed)
             } else {
-                errors.x_over_n(x, n)
+                let divided = x_over_n(x, n);
+                overflowed |= divided.overflowed;
+                divided.quotient
             }
         };
         if p < ValueLevel::Glue {
@@ -390,23 +392,23 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             } else {
                 MAX_HALFWORD
             };
-            RegisterValue::Word(scale(&mut st.errors, w, max_answer))
+            RegisterValue::Word(scale(w, max_answer))
         } else {
             let old = NodePtr::<GlueSpecNode>::from_glue_ptr(s);
             let r = st.mem.new_spec(old)?;
             let (width, stretch, shrink) =
                 (st.mem[old].width, st.mem[old].stretch, st.mem[old].shrink);
-            let v = scale(&mut st.errors, width.raw(), MAX_HALFWORD);
+            let v = scale(width.raw(), MAX_HALFWORD);
             st.mem[r].width = Scaled::from_raw(v);
-            let v = scale(&mut st.errors, stretch.raw(), MAX_HALFWORD);
+            let v = scale(stretch.raw(), MAX_HALFWORD);
             st.mem[r].stretch = Scaled::from_raw(v);
-            let v = scale(&mut st.errors, shrink.raw(), MAX_HALFWORD);
+            let v = scale(shrink.raw(), MAX_HALFWORD);
             st.mem[r].shrink = Scaled::from_raw(v);
             RegisterValue::Glue(r)
         }
     };
 
-    if st.errors.arith_error {
+    if overflowed {
         if let RegisterValue::Glue(g) = value {
             st.mem.delete_glue_ref(g);
         }

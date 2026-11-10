@@ -615,18 +615,15 @@ pub(crate) fn read_font_info(
         tfm_file = file;
         file_opened = true;
 
-        let (parse, scale_side_effect) = st
+        let (parse, too_big) = st
             .fonts
             .read_font_info_tfm(&st.eqtb, tfm_file, nom, aire, s);
-        if let Some(scaling) = scale_side_effect {
-            st.errors.tex_remainder = scaling.remainder;
-            if scaling.too_big {
-                crate::errors::error(
-                    st,
-                    (font, " scaled to 2048pt or higher"),
-                    &["I will ignore the scaling factor."],
-                )?;
-            }
+        if too_big {
+            crate::errors::error(
+                st,
+                (font, " scaled to 2048pt or higher"),
+                &["I will ignore the scaling factor."],
+            )?;
         }
         match parse {
             TfmParse::OutOfMemory => {
@@ -690,17 +687,9 @@ enum TfmParse {
     OutOfMemory,
 }
 
-/// What scaling a TFM font by `scaled` left behind for `read_font_info`.
-struct TfmScaling {
-    /// `xn_over_d`'s remainder, which TeX leaves in `remainder`.
-    remainder: i32,
-    /// The size reached 2048pt, so the design size was kept.
-    too_big: bool,
-}
-
 impl FontState {
     /// Read the opened TFM file into the tables of the next font slot. Also returns
-    /// the side effect of size scaling for the caller to apply.
+    /// whether a `scaled` size reached 2048pt, so the design size was kept.
     fn read_font_info_tfm(
         &mut self,
         eqtb: &EqtbState,
@@ -708,11 +697,11 @@ impl FontState {
         nom: StrNumber,
         aire: StrNumber,
         s: Scaled,
-    ) -> (TfmParse, Option<TfmScaling>) {
-        let mut scale_side_effect: Option<TfmScaling> = None;
+    ) -> (TfmParse, bool) {
+        let mut too_big = false;
         macro_rules! bad {
             () => {
-                return (TfmParse::Bad, scale_side_effect)
+                return (TfmParse::Bad, too_big)
             };
         }
         macro_rules! read {
@@ -757,7 +746,7 @@ impl FontState {
         }
 
         if self.font_ptr == self.font_max || self.fmem_ptr + lf > self.font_mem_size {
-            return (TfmParse::OutOfMemory, None);
+            return (TfmParse::OutOfMemory, false);
         }
 
         let f = self.font_ptr.next();
@@ -796,14 +785,12 @@ impl FontState {
             if s >= Scaled::ZERO {
                 z = s.raw();
             } else {
-                let (q, remainder, overflowed) =
-                    crate::scaled_math::xn_over_d_parts(z, -s.raw(), 1000);
+                let scaled = crate::scaled_math::xn_over_d(z, -s.raw(), 1000);
                 // tex.ch keeps the design size rather than overflow at 2048pt (2^27 sp).
-                let too_big = overflowed || q >= 0o1_000_000_000;
+                too_big = scaled.overflowed || scaled.quotient >= 0o1_000_000_000;
                 if !too_big {
-                    z = q;
+                    z = scaled.quotient;
                 }
-                scale_side_effect = Some(TfmScaling { remainder, too_big });
             }
         }
         self.font_size[f] = Scaled::from_raw(z);
@@ -969,7 +956,7 @@ impl FontState {
         self.param_base[f] -= 1;
         self.fmem_ptr += lf;
         self.font_ptr = f;
-        (TfmParse::Loaded(f), scale_side_effect)
+        (TfmParse::Loaded(f), too_big)
     }
 
     /// Set up the tables of a new native font slot. Returns the slot and the
@@ -1028,8 +1015,7 @@ fn load_native_font(st: &mut EngineState, font: FontSpec, name: &[u8]) -> Result
     let actual_size = if s >= Scaled::ZERO {
         s
     } else if s != DESIGN_SIZE {
-        st.errors
-            .xn_over_d(loaded_font_design_size(), -s.raw(), 1000)
+        crate::scaled_math::xn_over_d(loaded_font_design_size(), -s.raw(), 1000).quotient
     } else {
         loaded_font_design_size()
     };

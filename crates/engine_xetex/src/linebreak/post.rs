@@ -51,7 +51,6 @@ impl Breaker {
         let cur_line = lines.cur_line;
         let lr_ptr = &mut lines.lr_ptr;
         let EngineState {
-            errors,
             mem,
             eqtb,
             fonts,
@@ -157,7 +156,7 @@ impl Breaker {
         }
 
         if protrude {
-            q = self.insert_right_margin_kern(errors, mem, fonts, q, pre_break_tail)?;
+            q = self.insert_right_margin_kern(mem, fonts, q, pre_break_tail)?;
         }
 
         if !glue_break {
@@ -192,7 +191,7 @@ impl Breaker {
         TEMP_HEAD.set_link(mem, r);
 
         if protrude {
-            q = self.insert_left_margin_kern(errors, mem, fonts, q)?;
+            q = self.insert_left_margin_kern(mem, fonts, q)?;
         }
 
         if eqtb.glue_par(GluePar::LeftSkip) != ZERO_GLUE {

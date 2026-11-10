@@ -10,7 +10,7 @@ use crate::fonts::OTGR_FONT_FLAG;
 use crate::io::{AUTO, ICUMAPPING, RAW, UTF16BE, UTF16LE, UTF8};
 use crate::layout::{hb_tag, FontMappingHandle};
 use crate::params::IntPar;
-use crate::state::{EngineState, ErrorState, FontEngineHandle};
+use crate::state::{EngineState, FontEngineHandle};
 use crate::units::{FontId, Scaled};
 use std::ffi::c_int;
 use std::sync::Arc;
@@ -560,18 +560,16 @@ fn font_from_platform(font_ref: &PlatformFontRef, point_size: Scaled) -> Option<
     with_bridge(|io| Font::from_platform(font_ref.clone(), point_size.raw(), io))
 }
 
-impl ErrorState {
-    /// Resolve a negative (`scaled`) font size against `font`'s design size.
-    fn scale_by_design_size(&mut self, font: Option<Font>, scaled_size: Scaled) -> Scaled {
-        let Some(font) = font else {
-            return scaled_size;
-        };
-        let dsize = d2fix(font.design_size());
-        if scaled_size == DESIGN_SIZE {
-            dsize
-        } else {
-            self.xn_over_d(dsize, -scaled_size.raw(), 1000)
-        }
+/// Resolve a negative (`scaled`) font size against `font`'s design size.
+fn scale_by_design_size(font: Option<Font>, scaled_size: Scaled) -> Scaled {
+    let Some(font) = font else {
+        return scaled_size;
+    };
+    let dsize = d2fix(font.design_size());
+    if scaled_size == DESIGN_SIZE {
+        dsize
+    } else {
+        crate::scaled_math::xn_over_d(dsize, -scaled_size.raw(), 1000).quotient
     }
 }
 
@@ -598,7 +596,7 @@ pub(crate) fn find_native_font(
         let path = &name_string[1..];
         if scaled_size < Scaled::ZERO {
             let font = font_from_file(path, split.index, Scaled::UNITY * 10);
-            scaled_size = st.errors.scale_by_design_size(font, scaled_size);
+            scaled_size = scale_by_design_size(font, scaled_size);
         }
         if let Some(font) = font_from_file(path, split.index, scaled_size) {
             set_loaded_font_design_size(d2fix(font.design_size()));
@@ -648,7 +646,7 @@ pub(crate) fn find_native_font(
 
             if scaled_size < Scaled::ZERO {
                 let font = font_from_platform(&font_ref, scaled_size);
-                scaled_size = st.errors.scale_by_design_size(font, scaled_size);
+                scaled_size = scale_by_design_size(font, scaled_size);
             }
 
             let mut engine = None;

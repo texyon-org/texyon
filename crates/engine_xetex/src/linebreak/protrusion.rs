@@ -4,7 +4,7 @@ use crate::errors::Abort;
 use crate::fonts::{Side, QUAD_CODE};
 use crate::mem::{TEMP_HEAD, ZERO_GLUE};
 use crate::node::{AnyNode, BoxNode, DiscNode, KernSubtype, NodePtr, WhatsitVariant};
-use crate::state::{ErrorState, FontState, MemState};
+use crate::state::{FontState, MemState};
 use crate::units::{FontId, MemPtr, Scaled};
 
 use super::lists::PassiveId;
@@ -26,7 +26,6 @@ impl Breaker {
     /// `None`) to `cur_p`, which is `p_disc` for a hyphenated break.
     pub(super) fn total_pw(
         &mut self,
-        errors: &mut ErrorState,
         mem: &MemState,
         fonts: &FontState,
         break_node: Option<PassiveId>,
@@ -62,24 +61,14 @@ impl Breaker {
             None => self.find_protchar_left(mem, l, true)?,
         };
 
-        Some(
-            self.char_pw(errors, mem, fonts, l, Side::Left)
-                + self.char_pw(errors, mem, fonts, r, Side::Right),
-        )
+        Some(self.char_pw(mem, fonts, l, Side::Left) + self.char_pw(mem, fonts, r, Side::Right))
     }
 
     /// The protrusion (`\lpcode`/`\rpcode` scaled to the font quad) of `p`.
-    fn char_pw(
-        &self,
-        errors: &mut ErrorState,
-        mem: &MemState,
-        fonts: &FontState,
-        p: MemPtr,
-        side: Side,
-    ) -> Scaled {
-        fn protrusion(errors: &mut ErrorState, fonts: &FontState, f: FontId, cp: i32) -> Scaled {
+    fn char_pw(&self, mem: &MemState, fonts: &FontState, p: MemPtr, side: Side) -> Scaled {
+        fn protrusion(fonts: &FontState, f: FontId, cp: i32) -> Scaled {
             let quad = fonts.param(f, QUAD_CODE);
-            errors.round_xn_over_d(quad, cp, 1000)
+            crate::scaled_math::round_xn_over_d(quad, cp, 1000)
         }
 
         if p.is_null() {
@@ -99,12 +88,12 @@ impl Breaker {
                         let cp = mem
                             .native_word_edge_glyph(w, side)
                             .map_or(0, |g| fonts.cp_codes.get(f, side, u32::from(g)));
-                        return protrusion(errors, fonts, f, cp);
+                        return protrusion(fonts, f, cp);
                     }
                     Some(WhatsitVariant::Glyph(glyph)) => {
                         let glyph = mem[glyph];
                         let cp = fonts.cp_codes.get(glyph.font, side, u32::from(glyph.glyph));
-                        return protrusion(errors, fonts, glyph.font, cp);
+                        return protrusion(fonts, glyph.font, cp);
                     }
                     _ => return Scaled::ZERO,
                 },
@@ -117,14 +106,13 @@ impl Breaker {
         if cp == 0 {
             return Scaled::ZERO;
         }
-        protrusion(errors, fonts, f, cp)
+        protrusion(fonts, f, cp)
     }
 
     /// Insert the right margin kern of the line ending at `q`, which is the last
     /// node of a discretionary's pre-break list when `pre_break_tail` is set.
     pub(super) fn insert_right_margin_kern(
         &mut self,
-        errors: &mut ErrorState,
         mem: &mut MemState,
         fonts: &FontState,
         q: MemPtr,
@@ -144,7 +132,7 @@ impl Breaker {
             (p, ptmp)
         };
 
-        let w = self.char_pw(errors, mem, fonts, p, Side::Right);
+        let w = self.char_pw(mem, fonts, p, Side::Right);
         if w == Scaled::ZERO {
             return Ok(q);
         }
@@ -157,7 +145,6 @@ impl Breaker {
 
     pub(super) fn insert_left_margin_kern(
         &mut self,
-        errors: &mut ErrorState,
         mem: &mut MemState,
         fonts: &FontState,
         q: MemPtr,
@@ -169,7 +156,7 @@ impl Breaker {
                 "hlist stack failure",
             ]))?;
 
-        let w = self.char_pw(errors, mem, fonts, p, Side::Left);
+        let w = self.char_pw(mem, fonts, p, Side::Left);
         if w == Scaled::ZERO {
             return Ok(q);
         }

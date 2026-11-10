@@ -13,6 +13,7 @@ use crate::node::{
 };
 use crate::packaging::PackOrigin;
 use crate::params::{DimenPar, GluePar, IntPar};
+use crate::scaled_math::fract;
 use crate::state::{EngineState, EqtbState, ErrorState, FontState, MemState};
 use crate::units::{FontId, GlueOrder, MemPtr, Scaled};
 
@@ -737,7 +738,6 @@ impl Breaker {
             eqtb,
             fonts,
             config,
-            errors,
             ..
         } = st;
         if config.semantic_pagination_enabled && !self.cur_p.is_null() {
@@ -830,13 +830,7 @@ impl Breaker {
                 shortfall = line_width - caw[1];
                 if eqtb.int_par(IntPar::XetexProtrudeChars) > 1 {
                     shortfall += self
-                        .total_pw(
-                            errors,
-                            mem,
-                            fonts,
-                            r_active.break_node,
-                            disc.map(|d| d.node),
-                        )
+                        .total_pw(mem, fonts, r_active.break_node, disc.map(|d| d.node))
                         .ok_or(Abort::PdfError(&["total_pw", "hlist stack failure"]))?;
                 }
             }
@@ -861,18 +855,14 @@ impl Breaker {
                         };
 
                         if g > Scaled::ZERO {
-                            errors.arith_error = false;
-                            g = errors.fract(
-                                g,
-                                r_active.shortfall.raw(),
-                                r_active.glue.raw(),
-                                MAX_DIMEN,
-                            );
+                            let mut overflowed = false;
+                            g = fract(g, r_active.shortfall.raw(), r_active.glue.raw(), MAX_DIMEN)
+                                .track(&mut overflowed);
                             let last_line_fit = eqtb.int_par(IntPar::LastLineFit);
                             if last_line_fit < 1000 {
-                                g = errors.fract(g, last_line_fit, 1000, MAX_DIMEN);
+                                g = fract(g, last_line_fit, 1000, MAX_DIMEN).track(&mut overflowed);
                             }
-                            if errors.arith_error {
+                            if overflowed {
                                 g = if r_active.shortfall > Scaled::ZERO {
                                     MAX_DIMEN
                                 } else {

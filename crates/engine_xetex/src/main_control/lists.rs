@@ -24,6 +24,7 @@ use crate::node::{
 };
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
+use crate::scaled_math::xn_over_d;
 use crate::state::{EngineState, GroupCode, MemState};
 use crate::token::Token;
 use crate::units::{FontId, MemIdx, MemPtr, NodeType, Scaled};
@@ -227,7 +228,6 @@ pub(super) fn begin_insert_or_adjust(st: &mut EngineState) -> Result<(), Abort> 
 pub(super) fn app_space(st: &mut EngineState) -> Result<(), Abort> {
     let space_factor = st.input.cur_list.space_factor();
     let q;
-    let mut side_effects = None;
     if space_factor >= 2000 && st.eqtb.glue_par(GluePar::XspaceSkip) != ZERO_GLUE {
         q = st.mem.new_param_glue(&st.eqtb, GluePar::XspaceSkip)?.ptr();
     } else {
@@ -246,23 +246,14 @@ pub(super) fn app_space(st: &mut EngineState) -> Result<(), Abort> {
             let width = st.mem[spec].width + extra;
             st.mem[spec].width = width;
         }
-        let (stretch, _, stretch_overflow) =
-            crate::scaled_math::xn_over_d_parts(st.mem[spec].stretch, space_factor, 1000);
+        let stretch = xn_over_d(st.mem[spec].stretch, space_factor, 1000).quotient;
         st.mem[spec].stretch = stretch;
-        let (shrink, remainder, shrink_overflow) =
-            crate::scaled_math::xn_over_d_parts(st.mem[spec].shrink, 1000, space_factor);
+        let shrink = xn_over_d(st.mem[spec].shrink, 1000, space_factor).quotient;
         st.mem[spec].shrink = shrink;
-        side_effects = Some((remainder, stretch_overflow || shrink_overflow));
         q = st.mem.new_glue(spec)?.ptr();
         st.mem[spec].ref_count = TEX_NULL;
     }
     st.input.cur_list.tail_append(&mut st.mem, q);
-    if let Some((remainder, overflowed)) = side_effects {
-        if overflowed {
-            st.errors.arith_error = true;
-        }
-        st.errors.tex_remainder = remainder;
-    }
     Ok(())
 }
 

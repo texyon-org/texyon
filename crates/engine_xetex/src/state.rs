@@ -1504,8 +1504,6 @@ impl Selector {
 
 #[derive(Clone)]
 pub(crate) struct ErrorState {
-    pub arith_error: bool,
-    pub tex_remainder: i32,
     pub dig: [u8; 23],
     pub randoms: [i32; 55],
     pub j_random: u8,
@@ -1537,8 +1535,6 @@ pub(crate) struct ErrorState {
 impl Default for ErrorState {
     fn default() -> Self {
         Self {
-            arith_error: false,
-            tex_remainder: 0,
             dig: [0; 23],
             randoms: [0; 55],
             j_random: 0,

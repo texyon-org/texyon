@@ -579,7 +579,7 @@ fn show_page_so_far(st: &mut EngineState) {
                 let adds = if count == 1000 {
                     height
                 } else {
-                    st.errors.x_over_n(height, 1000) * count
+                    crate::scaled_math::x_over_n(height, 1000).quotient * count
                 };
                 print_scaled(st, adds);
                 if st.mem[ins].is_split_up() {

@@ -174,7 +174,7 @@ fn negated_glue(
     old: NodePtr<GlueSpecNode>,
 ) -> Result<NodePtr<GlueSpecNode>, Abort> {
     let spec = st.mem.new_spec(old)?;
-    map_glue(st, spec, |_, x| -x);
+    map_glue(st, spec, |x| -x);
     Ok(spec)
 }
 

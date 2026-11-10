@@ -418,11 +418,11 @@ impl ShipoutState {
 }
 
 /// Scales `x` by the insertion magnification `count`, in thousandths.
-fn scale_by_count(st: &mut EngineState, x: Scaled, count: i32) -> Scaled {
+fn scale_by_count(x: Scaled, count: i32) -> Scaled {
     if count == 1000 {
         x
     } else {
-        st.errors.x_over_n(x, 1000) * count
+        crate::scaled_math::x_over_n(x, 1000).quotient * count
     }
 }
 
@@ -454,7 +454,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         st.mem[rec].best_ins_ptr = MemPtr::NULL;
         let skip = st.eqtb.skip(i32::from(n));
         let count = st.eqtb.count(i32::from(n));
-        let h = scale_by_count(st, height, count);
+        let h = scale_by_count(height, count);
         st.shipout.page_so_far[PAGE_GOAL] -= h + st.mem[skip].width;
         let order = st.mem[skip].stretch_order.index();
         st.shipout.page_so_far[2 + order] += st.mem[skip].stretch;
@@ -489,7 +489,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
     let delta = so_far[PAGE_GOAL] - so_far[PAGE_TOTAL] - so_far[PAGE_DEPTH] + so_far[PAGE_SHRINK];
     let count = st.eqtb.count(i32::from(n));
     let ins_height = st.mem[ins].height;
-    let h = scale_by_count(st, ins_height, count);
+    let h = scale_by_count(ins_height, count);
     let max_height = st.eqtb.dimen(i32::from(n));
     if (h <= Scaled::ZERO || h <= delta) && ins_height + st.mem[rec].height <= max_height {
         st.shipout.page_so_far[PAGE_GOAL] -= h;
@@ -505,7 +505,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         if count == 1000 {
             w
         } else {
-            st.errors.x_over_n(w, count) * 1000
+            crate::scaled_math::x_over_n(w, count).quotient * 1000
         }
     };
     let room = max_height - st.mem[rec].height;
@@ -517,7 +517,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
     let height = st.mem[rec].height + best_height_plus_depth;
     st.mem[rec].height = height;
     if count != 1000 {
-        best_height_plus_depth = scale_by_count(st, best_height_plus_depth, count);
+        best_height_plus_depth = scale_by_count(best_height_plus_depth, count);
     }
     st.shipout.page_so_far[PAGE_GOAL] -= best_height_plus_depth;
     st.mem[rec].set_split_up(true);

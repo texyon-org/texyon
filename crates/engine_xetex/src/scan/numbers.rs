@@ -13,6 +13,7 @@ use crate::fonts::{QUAD_CODE, X_HEIGHT_CODE};
 use crate::input::back_input;
 use crate::node::{ExprNode, GlueSpecNode, NodePtr};
 use crate::params::IntPar;
+use crate::scaled_math::{add_or_sub, fract, mult_and_add, quotient, xn_over_d, Overflowing};
 use crate::state::EngineState;
 use crate::token::Token;
 use crate::units::{GlueOrder, MemPtr, Scaled};
@@ -396,18 +397,22 @@ fn release_to_width(st: &mut EngineState, spec: NodePtr<GlueSpecNode>) -> Scaled
     width
 }
 
-/// Scales `v` and the fraction `f` by `num / denom`.
-fn scale_dimen(st: &mut EngineState, v: &mut i32, f: &mut i32, num: i32, denom: i32) {
-    *v = st.errors.xn_over_d(*v, num, denom);
-    *f = (num * *f + 65536 * st.errors.tex_remainder) / denom;
+/// Scales `v` and the fraction `f` by `num / denom`. Returns whether that overflowed.
+fn scale_dimen(v: &mut i32, f: &mut i32, num: i32, denom: i32) -> bool {
+    let scaled = xn_over_d(*v, num, denom);
+    *v = scaled.quotient;
+    *f = (num * *f + 65536 * scaled.remainder) / denom;
     *v += *f / 65536;
     *f %= 65536;
+    scaled.overflowed
 }
 
 /// `integer.fraction` times the unit `v`.
-fn attach_unit(st: &mut EngineState, integer: i32, fraction: i32, v: Scaled) -> Scaled {
-    let fraction_part = st.errors.xn_over_d(v, fraction, 65536);
-    st.errors.mult_and_add(integer, v, fraction_part, MAX_DIMEN)
+fn attach_unit(integer: i32, fraction: i32, v: Scaled) -> Overflowing<Scaled> {
+    let fraction_part = xn_over_d(v, fraction, 65536);
+    let mut whole = mult_and_add(integer, v, fraction_part.quotient, MAX_DIMEN);
+    whole.overflowed |= fraction_part.overflowed;
+    whole
 }
 
 /// Scans a dimension. `shortcut` is an integer already scanned, which then only needs units.
@@ -422,8 +427,7 @@ fn scan_dimen_from(
     let mut negative = false;
     let mut v: i32;
 
-    let outer_arith_error = st.errors.arith_error;
-    st.errors.arith_error = false;
+    let mut overflowed = false;
     st.scanner.cur_order = GlueOrder::Normal;
 
     'attach_sign: {
@@ -542,7 +546,7 @@ fn scan_dimen_from(
                     } else {
                         scan_something_internal(st, ValueLevel::Dimen, false)?.scaled()?
                     };
-                    v = attach_unit(st, integer, f, unit).raw();
+                    v = attach_unit(integer, f, unit).track(&mut overflowed).raw();
                     break 'attach_sign;
                 }
 
@@ -560,7 +564,7 @@ fn scan_dimen_from(
                         let font = st.eqtb.cur_font();
                         let unit = st.fonts.param(font, code);
                         scan_optional_space(st)?;
-                        v = attach_unit(st, integer, f, unit).raw();
+                        v = attach_unit(integer, f, unit).track(&mut overflowed).raw();
                         break 'attach_sign;
                     }
                 }
@@ -587,7 +591,7 @@ fn scan_dimen_from(
                     crate::save::prepare_mag(st)?;
                     let mag = st.eqtb.int_par(IntPar::Mag);
                     if mag != 1000 {
-                        scale_dimen(st, &mut v, &mut f, 1000, mag);
+                        overflowed |= scale_dimen(&mut v, &mut f, 1000, mag);
                     }
                 }
 
@@ -626,20 +630,20 @@ fn scan_dimen_from(
                     )?;
                     break 'units true;
                 };
-                scale_dimen(st, &mut v, &mut f, num, denom);
+                overflowed |= scale_dimen(&mut v, &mut f, num, denom);
                 true
             };
 
             if apply_fraction {
-                attach_fraction(st, &mut v, f);
+                overflowed |= attach_fraction(&mut v, f);
             }
             scan_optional_space(st)?;
         } else {
-            attach_fraction(st, &mut v, f);
+            overflowed |= attach_fraction(&mut v, f);
         }
     }
 
-    if st.errors.arith_error || v.wrapping_abs() >= 0x4000_0000 {
+    if overflowed || v.wrapping_abs() >= 0x4000_0000 {
         crate::errors::error(
             st,
             "Dimension too large",
@@ -650,19 +654,19 @@ fn scan_dimen_from(
         )?;
         v = MAX_HALFWORD;
     }
-    st.errors.arith_error = outer_arith_error;
     if negative {
         v = v.wrapping_neg();
     }
     Ok(Scaled::from_raw(v))
 }
 
-fn attach_fraction(st: &mut EngineState, v: &mut i32, f: i32) {
+/// Makes `v.f` a scaled value in `v`. Returns whether it is too large for one.
+fn attach_fraction(v: &mut i32, f: i32) -> bool {
     if *v >= 16384 {
-        st.errors.arith_error = true;
-    } else {
-        *v = v.wrapping_mul(65536).wrapping_add(f);
+        return true;
     }
+    *v = v.wrapping_mul(65536).wrapping_add(f);
+    false
 }
 
 pub(crate) fn scan_glue(
@@ -726,14 +730,12 @@ pub(super) fn scan_mu_glue(st: &mut EngineState) -> Result<NodePtr<GlueSpecNode>
 pub(super) fn map_glue(
     st: &mut EngineState,
     spec: NodePtr<GlueSpecNode>,
-    mut op: impl FnMut(&mut crate::state::ErrorState, Scaled) -> Scaled,
+    mut op: impl FnMut(Scaled) -> Scaled,
 ) {
-    let width = op(&mut st.errors, st.mem[spec].width);
-    st.mem[spec].width = width;
-    let stretch = op(&mut st.errors, st.mem[spec].stretch);
-    st.mem[spec].stretch = stretch;
-    let shrink = op(&mut st.errors, st.mem[spec].shrink);
-    st.mem[spec].shrink = shrink;
+    let node = &mut st.mem[spec];
+    node.width = op(node.width);
+    node.stretch = op(node.stretch);
+    node.shrink = op(node.shrink);
 }
 
 fn normalize_glue_orders(st: &mut EngineState, spec: NodePtr<GlueSpecNode>) {
@@ -745,16 +747,22 @@ fn normalize_glue_orders(st: &mut EngineState, spec: NodePtr<GlueSpecNode>) {
     }
 }
 
-/// Adds (or subtracts) glue `t` to glue `e` and releases `t`.
-fn add_glue(st: &mut EngineState, e: NodePtr<GlueSpecNode>, t: NodePtr<GlueSpecNode>, sub: bool) {
+/// Adds (or subtracts) glue `t` to glue `e` and releases `t`. Raises
+/// `overflowed` if a component overflows.
+fn add_glue(
+    st: &mut EngineState,
+    e: NodePtr<GlueSpecNode>,
+    t: NodePtr<GlueSpecNode>,
+    sub: bool,
+    overflowed: &mut bool,
+) {
     let mem = &mut st.mem;
-    let errors = &mut st.errors;
-    let width = errors.add_or_sub(mem[e].width, mem[t].width, MAX_DIMEN, sub);
+    let width = add_or_sub(mem[e].width, mem[t].width, MAX_DIMEN, sub).track(overflowed);
     mem[e].width = width;
     let (e_order, t_order, t_stretch) =
         (mem[e].stretch_order, mem[t].stretch_order, mem[t].stretch);
     if e_order == t_order {
-        let stretch = errors.add_or_sub(mem[e].stretch, t_stretch, MAX_DIMEN, sub);
+        let stretch = add_or_sub(mem[e].stretch, t_stretch, MAX_DIMEN, sub).track(overflowed);
         mem[e].stretch = stretch;
     } else if e_order < t_order && t_stretch != Scaled::ZERO {
         mem[e].stretch = t_stretch;
@@ -762,7 +770,7 @@ fn add_glue(st: &mut EngineState, e: NodePtr<GlueSpecNode>, t: NodePtr<GlueSpecN
     }
     let (e_order, t_order, t_shrink) = (mem[e].shrink_order, mem[t].shrink_order, mem[t].shrink);
     if e_order == t_order {
-        let shrink = errors.add_or_sub(mem[e].shrink, t_shrink, MAX_DIMEN, sub);
+        let shrink = add_or_sub(mem[e].shrink, t_shrink, MAX_DIMEN, sub).track(overflowed);
         mem[e].shrink = shrink;
     } else if e_order < t_order && t_shrink != Scaled::ZERO {
         mem[e].shrink = t_shrink;
@@ -774,7 +782,6 @@ fn add_glue(st: &mut EngineState, e: NodePtr<GlueSpecNode>, t: NodePtr<GlueSpecN
 
 /// Scans an `\numexpr`-style expression whose result has level `l`.
 pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVal, Abort> {
-    let a = st.errors.arith_error;
     let mut b = false;
     let mut p = MemPtr::NULL;
 
@@ -857,15 +864,14 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
                 }
             }
 
-            st.errors.arith_error = b;
             if l == ValueLevel::Int || s > EXPR_SUB {
                 if !(-TEX_INFINITY..=TEX_INFINITY).contains(&f) {
-                    st.errors.arith_error = true;
+                    b = true;
                     f = 0;
                 }
             } else if l == ValueLevel::Dimen {
                 if f.abs() > MAX_HALFWORD {
-                    st.errors.arith_error = true;
+                    b = true;
                     f = 0;
                 }
             } else {
@@ -874,7 +880,7 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
                     || st.mem[spec].stretch.abs() > MAX_DIMEN
                     || st.mem[spec].shrink.abs() > MAX_DIMEN
                 {
-                    st.errors.arith_error = true;
+                    b = true;
                     st.mem.delete_glue_ref(glue_spec(f));
                     f = st.mem.new_spec(crate::mem::ZERO_GLUE)?.ptr().raw();
                 }
@@ -896,33 +902,35 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
                         n = f;
                         o = EXPR_SCALE;
                     } else if l == ValueLevel::Int {
-                        t = st.errors.mult_and_add(t, f, 0, TEX_INFINITY);
+                        t = mult_and_add(t, f, 0, TEX_INFINITY).track(&mut b);
                     } else if l == ValueLevel::Dimen {
-                        t = st.errors.mult_and_add(t, f, 0, MAX_HALFWORD);
+                        t = mult_and_add(t, f, 0, MAX_HALFWORD).track(&mut b);
                     } else {
                         // TeX's `nx_plus_y` here takes the component as its integer factor.
-                        map_glue(st, glue_spec(t), |errors, x| {
-                            Scaled::from_raw(errors.mult_and_add(x.raw(), f, 0, MAX_HALFWORD))
+                        map_glue(st, glue_spec(t), |x| {
+                            Scaled::from_raw(
+                                mult_and_add(x.raw(), f, 0, MAX_HALFWORD).track(&mut b),
+                            )
                         });
                     }
                 }
                 EXPR_DIV => {
                     if l < ValueLevel::Glue {
-                        t = st.errors.quotient(t, f);
+                        t = quotient(t, f).track(&mut b);
                     } else {
-                        map_glue(st, glue_spec(t), |errors, x| {
-                            Scaled::from_raw(errors.quotient(x.raw(), f))
+                        map_glue(st, glue_spec(t), |x| {
+                            Scaled::from_raw(quotient(x.raw(), f).track(&mut b))
                         });
                     }
                 }
                 EXPR_SCALE => {
                     if l == ValueLevel::Int {
-                        t = st.errors.fract(t, n, f, TEX_INFINITY);
+                        t = fract(t, n, f, TEX_INFINITY).track(&mut b);
                     } else if l == ValueLevel::Dimen {
-                        t = st.errors.fract(t, n, f, MAX_HALFWORD);
+                        t = fract(t, n, f, MAX_HALFWORD).track(&mut b);
                     } else {
-                        map_glue(st, glue_spec(t), |errors, x| {
-                            errors.fract(x, n, f, MAX_DIMEN)
+                        map_glue(st, glue_spec(t), |x| {
+                            fract(x, n, f, MAX_DIMEN).track(&mut b)
                         });
                     }
                 }
@@ -936,15 +944,14 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
                 if r == EXPR_NONE {
                     e = t;
                 } else if l == ValueLevel::Int {
-                    e = st.errors.add_or_sub(e, t, TEX_INFINITY, r == EXPR_SUB);
+                    e = add_or_sub(e, t, TEX_INFINITY, r == EXPR_SUB).track(&mut b);
                 } else if l == ValueLevel::Dimen {
-                    e = st.errors.add_or_sub(e, t, MAX_HALFWORD, r == EXPR_SUB);
+                    e = add_or_sub(e, t, MAX_HALFWORD, r == EXPR_SUB).track(&mut b);
                 } else {
-                    add_glue(st, glue_spec(e), glue_spec(t), r == EXPR_SUB);
+                    add_glue(st, glue_spec(e), glue_spec(t), r == EXPR_SUB, &mut b);
                 }
                 r = o;
             }
-            b = st.errors.arith_error;
             if o != EXPR_NONE {
                 continue;
             }
@@ -986,6 +993,5 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
             e = 0;
         }
     }
-    st.errors.arith_error = a;
     CurVal::from_word(l, e)
 }

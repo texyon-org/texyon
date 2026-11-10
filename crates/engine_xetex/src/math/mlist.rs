@@ -18,7 +18,8 @@ use crate::node::{
 };
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar};
-use crate::state::{EngineState, EqtbState, ErrorState, FontState, MemState, ScannerState};
+use crate::scaled_math::{mult_and_add, x_over_n, xn_over_d};
+use crate::state::{EngineState, EqtbState, FontState, MemState, ScannerState};
 use crate::units::{FontId, GlueOrder, MemPtr, NodeType, Scaled};
 
 use super::delimiters::{build_opentype_assembly, rebox, var_delimiter};
@@ -59,22 +60,19 @@ impl MemState {
     }
 }
 
-impl ErrorState {
-    /// The integer and fractional parts of the mu factor `m`, as `math_glue` splits it.
-    fn mu_parts(&mut self, m: Scaled) -> (i32, i32) {
-        let mut n = self.x_over_n(m.raw(), 65_536);
-        let mut f = self.tex_remainder;
-        if f < 0 {
-            n -= 1;
-            f += 65_536;
-        }
-        (n, f)
+/// The integer and fractional parts of the mu factor `m`, as `math_glue` splits it.
+fn mu_parts(m: Scaled) -> (i32, i32) {
+    let split = x_over_n(m.raw(), 65_536);
+    if split.remainder < 0 {
+        (split.quotient - 1, split.remainder + 65_536)
+    } else {
+        (split.quotient, split.remainder)
     }
+}
 
-    fn mu_mult(&mut self, (n, f): (i32, i32), v: Scaled) -> Scaled {
-        let xnd = self.xn_over_d(v, f, 65_536);
-        self.mult_and_add(n, v, xnd, MAX_DIMEN)
-    }
+fn mu_mult((n, f): (i32, i32), v: Scaled) -> Scaled {
+    let xnd = xn_over_d(v, f, 65_536).quotient;
+    mult_and_add(n, v, xnd, MAX_DIMEN).value
 }
 
 fn math_glue(
@@ -82,17 +80,17 @@ fn math_glue(
     spec: NodePtr<GlueSpecNode>,
     m: Scaled,
 ) -> Result<NodePtr<GlueSpecNode>, Abort> {
-    let mu = st.errors.mu_parts(m);
+    let mu = mu_parts(m);
     let stretch_order = st.mem[spec].stretch_order;
     let shrink_order = st.mem[spec].shrink_order;
-    let width = st.errors.mu_mult(mu, st.mem[spec].width);
+    let width = mu_mult(mu, st.mem[spec].width);
     let mut stretch = st.mem[spec].stretch;
     if stretch_order == GlueOrder::Normal {
-        stretch = st.errors.mu_mult(mu, stretch);
+        stretch = mu_mult(mu, stretch);
     }
     let mut shrink = st.mem[spec].shrink;
     if shrink_order == GlueOrder::Normal {
-        shrink = st.errors.mu_mult(mu, shrink);
+        shrink = mu_mult(mu, shrink);
     }
 
     let p = NodePtr::<GlueSpecNode>::alloc(&mut st.mem)?;
@@ -107,8 +105,8 @@ fn math_glue(
 
 fn math_kern(st: &mut EngineState, p: NodePtr<KernNode>, m: Scaled) {
     if st.mem[p].subtype == KernSubtype::MuGlue {
-        let mu = st.errors.mu_parts(m);
-        let width = st.errors.mu_mult(mu, st.mem[p].width);
+        let mu = mu_parts(m);
+        let width = mu_mult(mu, st.mem[p].width);
         st.mem[p].width = width;
         st.mem[p].subtype = KernSubtype::Explicit.into();
     }
@@ -176,7 +174,7 @@ pub(super) fn clean_box(
 /// The math unit at `style`: an eighteenth of the quad of family 2.
 pub(super) fn math_mu(st: &mut EngineState, style: MathStyle) -> Scaled {
     let mq = st.fonts.math_quad(&st.eqtb, style.size());
-    st.errors.x_over_n(mq, 18)
+    x_over_n(mq, 18).quotient
 }
 
 /// What `fetch` found for a math character: its font, code and `char_info`,
