@@ -646,18 +646,21 @@ mod tests {
     struct Bundle {
         mem_end: MemPtr,
         fmem_ptr: crate::units::FontInfoIdx,
+        tokens: crate::token::TokenStoreMarks,
     }
 
     fn bundle(st: &EngineState) -> Bundle {
         Bundle {
             mem_end: st.mem.mem_end,
             fmem_ptr: st.fonts.fmem_ptr,
+            tokens: st.mem.tokens.marks(),
         }
     }
 
     fn restore(st: &mut EngineState, bundle: &Bundle) {
         st.mem.mem_end = bundle.mem_end;
         st.fonts.fmem_ptr = bundle.fmem_ptr;
+        st.mem.tokens.restore_marks(bundle.tokens);
     }
 
     fn value(word: MemoryWord) -> i32 {
@@ -703,6 +706,40 @@ mod tests {
         assert_eq!(st.mem.mem_end, MemPtr::from_raw(12));
         assert_eq!(st.fonts.fmem_ptr, crate::units::FontInfoIdx::from_raw(0));
         assert_eq!(ladder.len(), 2);
+    }
+
+    #[test]
+    fn rewind_restores_the_token_store_across_growth() {
+        use crate::token::{Token, TokenList, TEMP_HEAD_TOKS};
+        let mut st = state();
+        let mut ladder = CheckpointLadder::new(bundle(&st), 0);
+
+        let a = st.mem.tokens.get_avail().unwrap();
+        a.set_token(&mut st.mem.tokens, Token(5));
+        TEMP_HEAD_TOKS.set_link(&mut st.mem.tokens, a);
+        let rung = bundle(&st);
+        ladder.push(&mut st, rung, 1, true, false);
+
+        let b = st.mem.tokens.get_avail().unwrap();
+        b.set_token(&mut st.mem.tokens, Token(7));
+        a.set_link(&mut st.mem.tokens, b);
+        a.set_token(&mut st.mem.tokens, Token(9));
+        let rung = bundle(&st);
+        ladder.push(&mut st, rung, 2, true, false);
+
+        let c = st.mem.tokens.get_avail().unwrap();
+        c.set_token(&mut st.mem.tokens, Token(11));
+        st.mem.tokens.free_avail(b);
+        ladder.rewind_to(&mut st, 1, restore);
+
+        let toks = &st.mem.tokens;
+        assert_eq!(toks.nodes().len(), crate::token::FIXED_HEADS + 1);
+        assert_eq!(TEMP_HEAD_TOKS.link(toks), a);
+        assert_eq!((a.token(toks), a.link(toks)), (Token(5), TokenList::NULL));
+        assert_eq!(toks.marks().avail, TokenList::NULL);
+        let d = st.mem.tokens.get_avail().unwrap();
+        assert_eq!(d.token(&st.mem.tokens), Token(0));
+        assert_eq!(st.mem.tokens.nodes().len(), crate::token::FIXED_HEADS + 2);
     }
 
     #[test]
