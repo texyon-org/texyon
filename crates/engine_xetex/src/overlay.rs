@@ -215,7 +215,8 @@ impl MemState {
 pub struct ParShapeHeader {
     pub lines: i32,
     pub payload: PayloadId,
-    _unused: [i32; 2],
+    /// Pads the node to the size of a penalty array, which is freed through this view.
+    _unused: i32,
 }
 
 /// One line of a `\parshape` array.
@@ -236,7 +237,6 @@ pub struct PenaltiesHeader {
     /// Half the entry count, rounded up, as e-TeX's node size was.
     pub half_size: i32,
     pub payload: PayloadId,
-    _unused: i32,
     pub count: i32,
 }
 
@@ -258,7 +258,6 @@ pub struct PseudoLineHeader {
     pub size: i32,
     pub link: Link<PseudoLineNode>,
     pub payload: PayloadId,
-    _unused: i32,
 }
 
 /// Four characters of a pseudo-file line, stored last first.
@@ -1133,7 +1132,6 @@ pub struct LigItemLayout {
     pub character: u16,
     _unused0: u16,
     pub link: MemPtr,
-    _unused1: i32,
     pub component: MemPtr,
 }
 
@@ -1274,7 +1272,6 @@ pub struct CharLayout {
     pub link: MemPtr,
     pub font: FontId,
     _unused1: u16,
-    _unused2: i32,
 }
 
 overlay!(CharNode => CharLayout);
@@ -1286,7 +1283,6 @@ pub struct HeadLayout {
     _subtype: u16,
     _type: u16,
     pub link: MemPtr,
-    _unused: [i32; 2],
 }
 
 overlay!(HeadNode => HeadLayout);
@@ -1297,7 +1293,6 @@ overlay!(HeadNode => HeadLayout);
 pub struct PseudoFileLayout {
     pub lines: Link<PseudoLineNode>,
     pub link: MemPtr,
-    _unused: [i32; 2],
 }
 
 overlay!(PseudoFileNode => PseudoFileLayout);
@@ -1308,7 +1303,6 @@ overlay!(PseudoFileNode => PseudoFileLayout);
 pub struct HyphPosLayout {
     pub pos: i32,
     pub link: MemPtr,
-    _unused: [i32; 2],
 }
 
 overlay!(HyphPosNode => HyphPosLayout);
@@ -1320,7 +1314,6 @@ pub struct LrLayout {
     pub code: Stored<MathCode>,
     _unused1: u16,
     pub link: MemPtr,
-    _unused2: [i32; 2],
 }
 
 overlay!(LrNode => LrLayout);
@@ -1359,6 +1352,66 @@ macro_rules! sync_trailer {
     };
 }
 
+same_offset!(
+    // The header every list node is read through before its kind is known.
+    WhatsitLayout._type == NodeHeader.ty,
+    WhatsitLayout.link == NodeHeader.link,
+    OpenLayout._type == NodeHeader.ty,
+    OpenLayout.link == NodeHeader.link,
+    WriteLayout._type == NodeHeader.ty,
+    WriteLayout.link == NodeHeader.link,
+    LanguageLayout._type == NodeHeader.ty,
+    LanguageLayout.link == NodeHeader.link,
+    GlyphLayout._type == NodeHeader.ty,
+    GlyphLayout.link == NodeHeader.link,
+    PicLayout._type == NodeHeader.ty,
+    PicLayout.link == NodeHeader.link,
+    NativeWordLayout._type == NodeHeader.ty,
+    NativeWordLayout.link == NodeHeader.link,
+    SizedWhatsitLayout._type == NodeHeader.ty,
+    SizedWhatsitLayout.link == NodeHeader.link,
+    KernLayout._type == NodeHeader.ty,
+    KernLayout.link == NodeHeader.link,
+    MathLayout._type == NodeHeader.ty,
+    MathLayout.link == NodeHeader.link,
+    MarginKernLayout._type == NodeHeader.ty,
+    MarginKernLayout.link == NodeHeader.link,
+    PenaltyLayout._type == NodeHeader.ty,
+    PenaltyLayout.link == NodeHeader.link,
+    AdjustLayout._type == NodeHeader.ty,
+    AdjustLayout.link == NodeHeader.link,
+    DiscLayout._type == NodeHeader.ty,
+    DiscLayout.link == NodeHeader.link,
+    ChoiceLayout._type == NodeHeader.ty,
+    ChoiceLayout.link == NodeHeader.link,
+    StyleLayout._type == NodeHeader.ty,
+    StyleLayout.link == NodeHeader.link,
+    EdgeLayout._type == NodeHeader.ty,
+    EdgeLayout.link == NodeHeader.link,
+    MarkLayout._type == NodeHeader.ty,
+    MarkLayout.link == NodeHeader.link,
+    RuleLayout._type == NodeHeader.ty,
+    RuleLayout.link == NodeHeader.link,
+    GlueLayout._type == NodeHeader.ty,
+    GlueLayout.link == NodeHeader.link,
+    InsLayout._type == NodeHeader.ty,
+    InsLayout.link == NodeHeader.link,
+    UnsetLayout._type == NodeHeader.ty,
+    UnsetLayout.link == NodeHeader.link,
+    CharLayout._type == NodeHeader.ty,
+    CharLayout.link == NodeHeader.link,
+    HeadLayout._type == NodeHeader.ty,
+    HeadLayout.link == NodeHeader.link,
+    LigatureLayout._type == NodeHeader.ty,
+    LigatureLayout.link == NodeHeader.link,
+    BoxLayout.orientation == NodeHeader.ty,
+    BoxLayout.link == NodeHeader.link,
+    NoadHead.noad_type == NodeHeader.ty,
+    NoadHead.link == NodeHeader.link,
+    PageInsLayout.split_up == NodeHeader.ty,
+    PageInsLayout.link == NodeHeader.link,
+);
+
 sync_trailer!(
     BoxLayout,
     UnsetLayout,
@@ -1377,6 +1430,7 @@ same_offset!(
     UnsetLayout.list_ptr == BoxLayout.list_ptr,
     AlignRecordLayout.width == UnsetLayout.width,
     AlignRecordLayout._span_list == SpanLayout.next,
+    AlignRecordLayout.width == SpanLayout.width,
     MathLayout.width == KernLayout.width,
     // Shared heads read before the kind is known.
     NoadLayout.link == NoadHead.link,
