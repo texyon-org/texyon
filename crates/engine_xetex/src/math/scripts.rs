@@ -2,7 +2,7 @@
 
 use crate::consts::{EMPTY, MATH_CHAR, MAX_DIMEN, NULL_FONT, SCRIPT_SIZE, SUB_MLIST};
 use crate::errors::Abort;
-use crate::node::{AnyNode, BoxNode, MathField, Noad, NoadVariant, NodePtr};
+use crate::node::{AnyNode, BoxNode, MathSlot, Noad, NoadVariant, NodePtr};
 use crate::ot_math::ScriptKind;
 use crate::packaging::PackSpec;
 use crate::params::DimenPar;
@@ -102,13 +102,13 @@ struct ScriptBoxPrep {
 
 fn clean_script_box(
     st: &mut EngineState,
-    script_field: NodePtr<MathField>,
+    script_field: MathSlot,
     clean_style: MathStyle,
     saved_font: FontId,
     adjustment: ScriptBoxAdjustment,
     style: MathStyle,
 ) -> Result<ScriptBoxPrep, Abort> {
-    let node = clean_box(st, script_field, clean_style)?;
+    let node = clean_box(st, st.mem[script_field], clean_style)?;
     let shift = match adjustment {
         ScriptBoxAdjustment::Sub1 => st.fonts.sub1(&st.eqtb, style.size()),
         ScriptBoxAdjustment::Sub2 => st.fonts.sub2(&st.eqtb, style.size()),
@@ -192,7 +192,7 @@ fn finish_subsup_stack(st: &mut EngineState, input: SubSupStackInput) -> Result<
     p = attachment.p;
     sub_kern = attachment.kern;
     if attachment.is_ot_math {
-        let sub_empty = st.mem[input.q.subscr()].math_type == EMPTY;
+        let sub_empty = st.mem[input.q].subscr.math_type == EMPTY;
         if sub_empty {
             let attachment = maybe_attach_script_kern(
                 st,
@@ -237,7 +237,7 @@ fn prepare_subscript(
     shift_down: Scaled,
     style: MathStyle,
 ) -> Result<PreparedScript, Abort> {
-    let script_field = q.subscr();
+    let script_field = MathSlot::Subscr(q);
     let (glyph, font) = first_script_glyph(st, script_field, style)?;
     let save_f = st.scanner.cur_f;
     let clean_style = style.sub();
@@ -287,12 +287,12 @@ fn prepare_superscript(
     mut shift_up: Scaled,
     style: MathStyle,
 ) -> Result<PreparedScript, Abort> {
-    let (glyph, font) = first_script_glyph(st, q.supscr(), style)?;
+    let (glyph, font) = first_script_glyph(st, MathSlot::Supscr(q), style)?;
     let save_f = st.scanner.cur_f;
     let clean_style = style.sup();
     let prepared = clean_script_box(
         st,
-        q.supscr(),
+        MathSlot::Supscr(q),
         clean_style,
         save_f,
         ScriptBoxAdjustment::Superscript,
@@ -328,7 +328,7 @@ fn finish_superscript_branch(
 ) -> Result<(), Abort> {
     let x = superscript.box_node;
     let shift_up = superscript.shift;
-    let sub_empty = st.mem[q.subscr()].math_type == EMPTY;
+    let sub_empty = st.mem[q].subscr.math_type == EMPTY;
     if sub_empty {
         let _ = maybe_attach_script_kern(
             st,
@@ -406,9 +406,9 @@ impl MemState {
     /// glyph, tracking style changes on the way. Returns the field and its style.
     fn first_script_glyph_step(
         &self,
-        script: NodePtr<MathField>,
+        script: MathSlot,
         initial_math_style: MathStyle,
-    ) -> (Option<NodePtr<MathField>>, MathStyle) {
+    ) -> (Option<MathSlot>, MathStyle) {
         if self[script].math_type != SUB_MLIST {
             return (Some(script), initial_math_style);
         }
@@ -433,7 +433,7 @@ impl MemState {
                 Ok(AnyNode::Noad(any)) => {
                     if let NoadVariant::Noad(n) = any.variant(self) {
                         if self[n].noad_type <= NodeType::PunctNoad {
-                            found = Some(n.nucleus());
+                            found = Some(MathSlot::Nucleus(n));
                         }
                     }
                     MemPtr::NULL
@@ -447,7 +447,7 @@ impl MemState {
 
 fn first_script_glyph(
     st: &mut EngineState,
-    script_head: NodePtr<MathField>,
+    script_head: MathSlot,
     style: MathStyle,
 ) -> Result<(u16, FontId), Abort> {
     let mut script_g: u16 = 0;
@@ -490,7 +490,7 @@ pub(super) fn make_scripts(
     let p = st.mem[q.any()].new_hlist;
     let shifts = initial_script_shifts(st, p, style)?;
 
-    if st.mem[q.supscr()].math_type == EMPTY {
+    if st.mem[q].supscr.math_type == EMPTY {
         finish_subscript_only(st, q, p, shifts.down, style)?;
     } else {
         let superscript = prepare_superscript(st, q, shifts.up, style)?;

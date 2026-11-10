@@ -15,15 +15,14 @@ use crate::codes::{LimitCode, MarkCode, ValueLevel};
 use crate::consts::{EMPTY, NORMAL};
 use crate::node::{
     AccentNoad, AdjustNode, AdjustPlacement, AlignRecord, AnyHeader, AnyNoad, BoxLr, BoxNode,
-    CharNode, ChoiceNode, DelimiterField, DiscNode, EdgeNode, FenceNoad, FenceSubtype,
-    FractionNoad, GlueKind, GlueNode, GlyphNode, HeadNode, HyphPosNode, InsNode, KernNode,
-    KernSubtype, LanguageNode, LeaderKind, LigBoundary, LigItem, LigatureNode, Link, LrNode,
-    MarginKernNode, MarkNode, MathAccentKind, MathCode, MathField, MathNode, NativeWordNode, Noad,
-    NodeKind, NodePtr, OpenNode, PageInsNode, ParShapeNode, PenaltiesNode, PenaltyNode, PicNode,
-    PseudoFileNode, PseudoLineNode, RadicalNoad, RuleNode, SaChild, SaElement, SaIndexNode, SaLeaf,
-    SaMarkClassNode, SaPointerNode, SaSaved, SaSavedPointer, SaSavedWord, SaWordNode, SavePosNode,
-    SizedWhatsit, SpanNode, Stored, StoredDimen, StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype,
-    WriteNode,
+    CharNode, ChoiceNode, DiscNode, EdgeNode, FenceNoad, FenceSubtype, FractionNoad, GlueKind,
+    GlueNode, GlyphNode, HeadNode, HyphPosNode, InsNode, KernNode, KernSubtype, LanguageNode,
+    LeaderKind, LigBoundary, LigItem, LigatureNode, Link, LrNode, MarginKernNode, MarkNode,
+    MathAccentKind, MathCode, MathNode, NativeWordNode, Noad, NodeKind, NodePtr, OpenNode,
+    PageInsNode, ParShapeNode, PenaltiesNode, PenaltyNode, PicNode, PseudoFileNode, PseudoLineNode,
+    RadicalNoad, RuleNode, SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode,
+    SaSaved, SaSavedPointer, SaSavedWord, SaWordNode, SavePosNode, SizedWhatsit, SpanNode, Stored,
+    StoredDimen, StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype, WriteNode,
 };
 use crate::payload::PayloadId;
 use crate::state::MemState;
@@ -671,8 +670,6 @@ pub struct MathWord {
     pub math_type: i32,
 }
 
-overlay!(MathField => MathWord, 2);
-
 impl MathWord {
     /// The list of a `SUB_BOX` or `SUB_MLIST` field.
     #[inline]
@@ -726,8 +723,6 @@ pub struct DelimiterWord {
     small_char: u16,
     small_plane_and_fam: u16,
 }
-
-overlay!(DelimiterField => DelimiterWord, 2);
 
 impl DelimiterWord {
     #[inline]

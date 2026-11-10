@@ -13,9 +13,8 @@ use crate::diagnostic::{
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::glue_store::GlueSpecId;
 use crate::node::Stored;
-use crate::node::{
-    CharNode, DelimiterField, MathField, NativeWordNode, NodePtr, RuleDimen, SaElement,
-};
+use crate::node::{CharNode, NativeWordNode, NodePtr, RuleDimen, SaElement};
+use crate::overlay::{DelimiterWord, MathWord};
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, GroupCode, Selector};
 use crate::token::TokenList;
@@ -895,16 +894,16 @@ fn print_code(st: &mut EngineState, c: i32) {
     }
 }
 
-fn print_fam_and_char(st: &mut EngineState, p: NodePtr<MathField>) {
+fn print_fam_and_char(st: &mut EngineState, p: MathWord) {
     print_esc(st, "fam");
-    print_int(st, st.mem[p].fam());
+    print_int(st, p.fam());
     print_char(st, b' ');
-    print_code(st, st.mem[p].full_char());
+    print_code(st, p.full_char());
 }
 
-fn print_delimiter(st: &mut EngineState, p: NodePtr<DelimiterField>) {
-    let (small_fam, small_char) = st.mem[p].small();
-    let (large_fam, large_char) = st.mem[p].large();
+fn print_delimiter(st: &mut EngineState, p: DelimiterWord) {
+    let (small_fam, small_char) = p.small();
+    let (large_fam, large_char) = p.large();
     let a = ((i64::from(small_fam) * 256 + i64::from(small_char)) * 4096
         + i64::from(large_fam) * 256
         + i64::from(large_char)) as i32;

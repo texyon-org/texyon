@@ -10,12 +10,12 @@ use crate::command::Command;
 use crate::consts::{EMPTY, MATH_CHAR, NUMBER_MATH_FAMILIES, SUB_MLIST};
 use crate::errors::Abort;
 use crate::input::TokenType;
-use crate::mem::GARBAGE;
 use crate::mem_types::ListStateRecord;
 use crate::node::{
-    AccentNoad, ChoiceNode, DelimiterField, FenceNoad, FenceSubtype, FractionNoad, MathAccentKind,
-    MathField, Noad, NoadVariant, NodePtr, RadicalNoad,
+    AccentNoad, ChoiceNode, FenceNoad, FenceSubtype, FractionNoad, MathAccentKind, MathSlot, Noad,
+    NoadVariant, NodePtr, RadicalNoad,
 };
+use crate::overlay::DelimiterWord;
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, EqtbState, GroupCode, MemState, SaveStackState};
 use crate::units::{EqtbPtr, MemIdx, MemPtr, NodeType, Scaled};
@@ -29,12 +29,11 @@ fn scan_extended_delimiter(st: &mut EngineState) -> Result<i32, Abort> {
     Ok(0x4000_0000 + fam * 0x20_0000 + c)
 }
 
-/// Scans a delimiter into `p`, after `\radical` or `\Uradical` when `radical` is given.
+/// Scans a delimiter, after `\radical` or `\Uradical` when `radical` is given.
 fn scan_delimiter(
     st: &mut EngineState,
-    p: NodePtr<DelimiterField>,
     radical: Option<RadicalCode>,
-) -> Result<(), Abort> {
+) -> Result<DelimiterWord, Abort> {
     let mut v = if let Some(radical) = radical {
         if radical == RadicalCode::Uradical {
             scan_extended_delimiter(st)?
@@ -78,15 +77,16 @@ fn scan_delimiter(
         v = 0;
     }
 
+    let mut d = <DelimiterWord as bytemuck::Zeroable>::zeroed();
     if v >= 0x4000_0000 {
         let plane_and_fam = ((v % 0x20_0000) / 0x1_0000) * 0x100 + (v / 0x20_0000) % 0x100;
-        st.mem[p].set_small(plane_and_fam as u16, (v % 0x1_0000) as u16);
-        st.mem[p].set_large(0, 0);
+        d.set_small(plane_and_fam as u16, (v % 0x1_0000) as u16);
+        d.set_large(0, 0);
     } else {
-        st.mem[p].set_small(((v / 0x10_0000) % 16) as u16, ((v / 0x1000) % 0x100) as u16);
-        st.mem[p].set_large(((v / 0x100) % 16) as u16, (v % 0x100) as u16);
+        d.set_small(((v / 0x10_0000) % 16) as u16, ((v / 0x1000) % 0x100) as u16);
+        d.set_large(((v / 0x100) % 16) as u16, (v % 0x100) as u16);
     }
-    Ok(())
+    Ok(d)
 }
 
 pub(super) fn define_word(st: &mut EngineState, loc: EqtbPtr, val: i32) -> Result<(), Abort> {
@@ -150,8 +150,8 @@ impl ListStateRecord {
 
 pub(crate) fn math_radical(st: &mut EngineState, code: RadicalCode) -> Result<(), Abort> {
     let tail = st.input.cur_list.append_radical_noad(&mut st.mem)?;
-    scan_delimiter(st, tail.left_delimiter(), Some(code))?;
-    crate::scan::scan_math(st, tail.as_noad().nucleus())
+    st.mem[tail].left_delimiter = scan_delimiter(st, Some(code))?;
+    crate::scan::scan_math(st, MathSlot::Nucleus(tail.as_noad()))
 }
 
 impl ListStateRecord {
@@ -264,9 +264,15 @@ impl ListStateRecord {
         &mut self,
         mem: &mut MemState,
         cmd: Cmd,
-    ) -> Result<(NodePtr<MathField>, Option<ScriptDuplication>), Abort> {
+    ) -> Result<(MathSlot, Option<ScriptDuplication>), Abort> {
         let sup = cmd == Cmd::SupMark;
-        let script = |n: NodePtr<Noad>| if sup { n.supscr() } else { n.subscr() };
+        let script = |n: NodePtr<Noad>| {
+            if sup {
+                MathSlot::Supscr(n)
+            } else {
+                MathSlot::Subscr(n)
+            }
+        };
         let mut t = EMPTY;
         let mut p = None;
 
@@ -277,9 +283,11 @@ impl ListStateRecord {
                     NoadVariant::Noad(n) => Some(script(n)),
                     NoadVariant::Radical(r) => Some(script(r.as_noad())),
                     NoadVariant::Accent(a) => Some(script(a.as_noad())),
-                    NoadVariant::Fraction(f) => {
-                        Some(if sup { f.numerator() } else { f.denominator() })
-                    }
+                    NoadVariant::Fraction(f) => Some(if sup {
+                        MathSlot::Numerator(f)
+                    } else {
+                        MathSlot::Denominator(f)
+                    }),
                     NoadVariant::Fence(_) => None,
                 };
                 if let Some(field) = field {
@@ -359,8 +367,8 @@ pub(crate) fn math_fraction(st: &mut EngineState, code: AboveCode) -> Result<(),
 
     if st.input.cur_list.incompleat_noad().is_some() {
         if delimited {
-            scan_delimiter(st, NodePtr::at(GARBAGE), None)?;
-            scan_delimiter(st, NodePtr::at(GARBAGE), None)?;
+            scan_delimiter(st, None)?;
+            scan_delimiter(st, None)?;
         }
 
         if kind == AboveCode::Above {
@@ -380,8 +388,8 @@ pub(crate) fn math_fraction(st: &mut EngineState, code: AboveCode) -> Result<(),
         let aux = st.input.cur_list.start_fraction_noad(&mut st.mem)?;
 
         if delimited {
-            scan_delimiter(st, aux.left_delimiter(), None)?;
-            scan_delimiter(st, aux.right_delimiter(), None)?;
+            st.mem[aux].left_delimiter = scan_delimiter(st, None)?;
+            st.mem[aux].right_delimiter = scan_delimiter(st, None)?;
         }
 
         match kind {
@@ -414,17 +422,22 @@ impl MemState {
         tail: NodePtr<AccentNoad>,
         value: i32,
     ) {
-        self[tail.accent_chr()].set_character((value % 65536) as u16);
+        self[tail].accent_chr.set_character((value % 65536) as u16);
         let intpar_cur_fam = eqtb.int_par(IntPar::CurFam);
         if crate::scan::math_class(value) == 7
             && (0..NUMBER_MATH_FAMILIES).contains(&intpar_cur_fam)
         {
-            self[tail.accent_chr()].set_plane_and_fam(intpar_cur_fam as u16);
+            self[tail]
+                .accent_chr
+                .set_plane_and_fam(intpar_cur_fam as u16);
         } else {
-            self[tail.accent_chr()].set_plane_and_fam(crate::scan::math_fam(value) as u16);
+            self[tail]
+                .accent_chr
+                .set_plane_and_fam(crate::scan::math_fam(value) as u16);
         }
-        let current_fam = self[tail.accent_chr()].plane_and_fam();
-        self[tail.accent_chr()]
+        let current_fam = self[tail].accent_chr.plane_and_fam();
+        self[tail]
+            .accent_chr
             .set_plane_and_fam(current_fam + (crate::scan::math_char(value) / 65536) as u16 * 256);
     }
 }
@@ -453,7 +466,7 @@ impl MemState {
 pub(crate) fn math_left_right(st: &mut EngineState, code: LeftRightCode) -> Result<(), Abort> {
     if code != LeftRightCode::Left && st.save_stack.cur_group != GroupCode::MathLeft {
         if st.save_stack.cur_group == GroupCode::MathShift {
-            scan_delimiter(st, NodePtr::at(GARBAGE), None)?;
+            scan_delimiter(st, None)?;
             let (name, help) = if code == LeftRightCode::Middle {
                 (
                     "middle",
@@ -471,7 +484,7 @@ pub(crate) fn math_left_right(st: &mut EngineState, code: LeftRightCode) -> Resu
         }
     } else {
         let p = st.mem.new_fence(code)?;
-        scan_delimiter(st, p.delimiter(), None)?;
+        st.mem[p].delimiter = scan_delimiter(st, None)?;
         let q = if code == LeftRightCode::Left {
             p.ptr()
         } else {
@@ -532,5 +545,5 @@ pub(crate) fn math_ac(st: &mut EngineState, code: Option<MathAccentCode>) -> Res
         crate::scan::math_code_from_tex(crate::scan::scan_fifteen_bit_int(st)?)
     };
     st.mem.finish_accent_math_field(&st.eqtb, tail, value);
-    crate::scan::scan_math(st, tail.as_noad().nucleus())
+    crate::scan::scan_math(st, MathSlot::Nucleus(tail.as_noad()))
 }

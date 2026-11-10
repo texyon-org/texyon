@@ -18,7 +18,7 @@ use crate::mem::{CONTRIB_HEAD, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, PAGE_HEAD, SS_
 use crate::mem_types::ListStateRecord;
 use crate::node::{
     AdjustNode, AdjustPlacement, AnyNode, CharNode, DiscNode, FixedNode, GlueKind, GlueNode,
-    InsNode, KernSubtype, LanguageNode, LrNode, MarkNode, MathField, NativeWordNode, Noad,
+    InsNode, KernSubtype, LanguageNode, LrNode, MarkNode, MathSlot, NativeWordNode, Noad,
     NoadVariant, NodePtr, WhatsitSubtype, WhatsitVariant,
 };
 use crate::packaging::PackSpec;
@@ -122,8 +122,8 @@ pub(super) fn indent_in_hmode(st: &mut EngineState, indent: bool) -> Result<(), 
         b.ptr()
     } else {
         let q = st.mem.new_noad()?;
-        st.mem[q.nucleus()].math_type = SUB_BOX;
-        st.mem[q.nucleus()].set_info(b.ptr());
+        st.mem[q].nucleus.math_type = SUB_BOX;
+        st.mem[q].nucleus.set_info(b.ptr());
         q.ptr()
     };
     st.input.cur_list.tail_append(&mut st.mem, p);
@@ -517,14 +517,15 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             let noad = st.mem.new_noad()?;
             st.input.cur_list.tail_append(&mut st.mem, noad.ptr());
             st.mem[noad].noad_type = NodeType::VcenterNoad.into();
-            st.mem[noad.nucleus()].math_type = SUB_BOX;
-            st.mem[noad.nucleus()].set_info(p.ptr());
+            st.mem[noad].nucleus.math_type = SUB_BOX;
+            st.mem[noad].nucleus.set_info(p.ptr());
         }
         GroupCode::MathChoice => crate::math::build_choices(st)?,
         GroupCode::Math => {
             crate::save::unsave(st)?;
             st.save_stack.save_ptr -= 1;
-            let save_loc = NodePtr::<MathField>::at(MemPtr::from_raw(st.save_stack.saved(0)));
+            let save_loc =
+                MathSlot::from_saved(st.save_stack.saved(0)).or_confusion("math group")?;
             st.mem[save_loc].math_type = SUB_MLIST;
             let p = crate::math::fin_mlist(st, MemPtr::NULL)?;
             st.mem[save_loc].set_info(p);
@@ -544,8 +545,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
                     n.free(&mut st.mem);
                 }
                 NoadVariant::Accent(a)
-                    if save_loc.idx().raw()
-                        == st.input.cur_list.tail.raw() + crate::node::NUCLEUS
+                    if matches!(save_loc, MathSlot::Nucleus(n) if n.ptr() == st.input.cur_list.tail)
                         && matches!(
                             st.mem.classify(st.input.cur_list.tail),
                             Ok(AnyNode::Noad(t)) if st.mem[t].noad_type == NodeType::OrdNoad

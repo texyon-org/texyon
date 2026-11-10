@@ -154,7 +154,7 @@ fn append_noad(st: &mut EngineState, kind: Option<NodeType>) -> Result<(), Abort
         Some(t) => st.mem[n].noad_type = t.into(),
         None => crate::input::back_input(st)?,
     }
-    crate::scan::scan_math(st, n.nucleus())?;
+    crate::scan::scan_math(st, crate::node::MathSlot::Nucleus(n))?;
     Ok(())
 }
 

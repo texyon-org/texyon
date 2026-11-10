@@ -13,10 +13,11 @@ use crate::mem::{TEMP_HEAD, TEX_NULL, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
 use crate::node::{
     AccentNoad, AnyNoad, AnyNode, BoxNode, ChoiceNode, FenceNoad, FixedNode, FractionNoad,
-    GlueKind, GlueNode, GlyphNode, KernNode, KernSubtype, MathAccentKind, MathField, Noad,
+    GlueKind, GlueNode, GlyphNode, KernNode, KernSubtype, MathAccentKind, MathSlot, Noad,
     NoadVariant, NodePtr, RadicalNoad, RuleDimen, RuleNode, StyleNode, WhatsitSubtype,
     WhatsitVariant,
 };
+use crate::overlay::MathWord;
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::scaled_math::{mult_and_add, x_over_n, xn_over_d};
@@ -124,17 +125,17 @@ impl ListStateRecord {
 
 pub(super) fn clean_box(
     st: &mut EngineState,
-    p: NodePtr<MathField>,
+    p: MathWord,
     s: MathStyle,
 ) -> Result<NodePtr<BoxNode>, Abort> {
-    let q = match st.mem[p].math_type {
+    let q = match p.math_type {
         MATH_CHAR => {
             let noad = st.mem.new_noad()?;
-            st.mem[noad.nucleus()] = st.mem[p];
+            st.mem[noad].nucleus = p;
             mlist_to_hlist(st, noad.ptr(), s, false)?
         }
-        SUB_BOX => st.mem[p].info(),
-        SUB_MLIST => mlist_to_hlist(st, st.mem[p].info(), s, false)?,
+        SUB_BOX => p.info(),
+        SUB_MLIST => mlist_to_hlist(st, p.info(), s, false)?,
         _ => st.mem.new_null_box()?.ptr(),
     };
 
@@ -194,7 +195,7 @@ impl MemState {
         fonts: &FontState,
         eqtb: &EqtbState,
         scanner: &mut ScannerState,
-        a: NodePtr<MathField>,
+        a: MathSlot,
         size: i32,
     ) -> (Fetched, Option<FetchError>) {
         let fam = self[a].fam();
@@ -228,11 +229,7 @@ impl MemState {
 }
 
 /// Look up math character `a`, reporting a missing font or character. Also sets `cur_f`.
-pub(super) fn fetch(
-    st: &mut EngineState,
-    a: NodePtr<MathField>,
-    size: i32,
-) -> Result<Fetched, Abort> {
+pub(super) fn fetch(st: &mut EngineState, a: MathSlot, size: i32) -> Result<Fetched, Abort> {
     let (fetched, error) = st.mem.fetch(&st.fonts, &st.eqtb, &mut st.scanner, a, size);
     match error {
         None => {}
@@ -260,13 +257,13 @@ pub(super) fn fetch(
 
 impl MemState {
     fn set_nucleus_box(&mut self, q: NodePtr<Noad>, b: NodePtr<BoxNode>) {
-        self[q.nucleus()].set_info(b.ptr());
-        self[q.nucleus()].math_type = SUB_BOX;
+        self[q].nucleus.set_info(b.ptr());
+        self[q].nucleus.math_type = SUB_BOX;
     }
 }
 
 fn make_over(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<(), Abort> {
-    let x = clean_box(st, q.nucleus(), style.cramped())?;
+    let x = clean_box(st, st.mem[q].nucleus, style.cramped())?;
     let rule_thickness = st.fonts.default_rule_thickness(&st.eqtb, style.size());
     let p = st.mem.overbar(x, rule_thickness * 3, rule_thickness)?;
     let x = crate::packaging::vpackage(st, p, PackSpec::NATURAL, MAX_DIMEN)?;
@@ -275,7 +272,7 @@ fn make_over(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result
 }
 
 fn make_under(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<(), Abort> {
-    let x = clean_box(st, q.nucleus(), style)?;
+    let x = clean_box(st, st.mem[q].nucleus, style)?;
     let rule_thickness = st.fonts.default_rule_thickness(&st.eqtb, style.size());
     let kern = st.mem.new_kern(rule_thickness * 3)?;
     st.mem[x].link = kern.ptr();
@@ -295,7 +292,7 @@ fn make_vcenter(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Res
     let axis_height = st.fonts.axis_height(&st.eqtb, style.size());
     let mem = &mut st.mem;
     let Ok(Some(v)) = mem
-        .classify_box(mem[q.nucleus()].info())
+        .classify_box(mem[q].nucleus.info())
         .map(|b| b.filter(|&b| mem[b].is_vlist()))
     else {
         return Err(Abort::Confusion("vcenter"));
@@ -313,7 +310,7 @@ fn make_radical(
 ) -> Result<(), Abort> {
     let f = st
         .eqtb
-        .math_font(st.mem[q.left_delimiter()].small().0 + style.size());
+        .math_font(st.mem[q].left_delimiter.small().0 + style.size());
     let is_ot_math = st.fonts.font_is_ot_math(f);
     let rule_thickness = if is_ot_math {
         st.fonts.get_ot_math_constant(f, RADICALRULETHICKNESS)
@@ -322,7 +319,7 @@ fn make_radical(
     };
 
     let clean_style = style.cramped();
-    let x = clean_box(st, q.as_noad().nucleus(), clean_style)?;
+    let x = clean_box(st, st.mem[q].base.nucleus, clean_style)?;
     let cur_size = style.size();
     let mut clr = if is_ot_math {
         if style < MathStyle::TEXT {
@@ -338,7 +335,7 @@ fn make_radical(
     };
 
     let delimiter_height = st.mem[x].height + st.mem[x].depth + clr + rule_thickness;
-    let y = var_delimiter(st, q.left_delimiter(), cur_size, delimiter_height)?;
+    let y = var_delimiter(st, st.mem[q].left_delimiter, cur_size, delimiter_height)?;
     let mem = &mut st.mem;
     if is_ot_math {
         mem[y].depth = mem[y].depth + mem[y].height - rule_thickness;
@@ -419,8 +416,8 @@ fn make_fraction(
         st.mem[q].thickness = drt;
     }
 
-    let mut x = clean_box(st, q.numerator(), style.num())?;
-    let mut z = clean_box(st, q.denominator(), style.denom())?;
+    let mut x = clean_box(st, st.mem[q].numerator, style.num())?;
+    let mut z = clean_box(st, st.mem[q].denominator, style.denom())?;
 
     if st.mem[x].width < st.mem[z].width {
         let w = st.mem[z].width;
@@ -529,8 +526,8 @@ fn make_fraction(
         st.fonts.delim2(&st.eqtb, cur_size)
     };
 
-    let left_delim = var_delimiter(st, q.left_delimiter(), cur_size, delimiter_size)?;
-    let right_delim = var_delimiter(st, q.right_delimiter(), cur_size, delimiter_size)?;
+    let left_delim = var_delimiter(st, st.mem[q].left_delimiter, cur_size, delimiter_size)?;
+    let right_delim = var_delimiter(st, st.mem[q].right_delimiter, cur_size, delimiter_size)?;
     st.mem[left_delim].link = v.ptr();
     st.mem[v].link = right_delim.ptr();
     let hbox = crate::packaging::hpack(st, left_delim.ptr(), PackSpec::NATURAL)?;
@@ -546,8 +543,8 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<S
         st.mem[q].set_limits(LimitCode::Limits);
     }
 
-    if st.mem[q.nucleus()].math_type == MATH_CHAR {
-        let Fetched { f, mut i, .. } = fetch(st, q.nucleus(), style.size())?;
+    if st.mem[q].nucleus.math_type == MATH_CHAR {
+        let Fetched { f, mut i, .. } = fetch(st, MathSlot::Nucleus(q), style.size())?;
 
         if !st.fonts.font_uses_opentype(f) {
             if style < MathStyle::TEXT && i.tag() == CharTag::List {
@@ -555,13 +552,13 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<S
                 let i_info = st.fonts.char_info(f, i32::from(c));
                 if i_info.exists() {
                     i = i_info;
-                    st.mem[q.nucleus()].set_character(c);
+                    st.mem[q].nucleus.set_character(c);
                 }
             }
             delta = st.fonts.char_italic(f, i);
         }
 
-        let x = clean_box(st, q.nucleus(), style)?;
+        let x = clean_box(st, st.mem[q].nucleus, style)?;
 
         let cur_f = st.scanner.cur_f;
         if st.fonts.font_is_ot_math(cur_f) {
@@ -622,7 +619,7 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<S
 
         let axis_height = st.fonts.axis_height(&st.eqtb, style.size());
         let mem = &mut st.mem;
-        if mem[q.subscr()].math_type != EMPTY && mem[q].limits() != LimitCode::Limits {
+        if mem[q].subscr.math_type != EMPTY && mem[q].limits() != LimitCode::Limits {
             mem[x].width -= delta;
         }
         let shift = (mem[x].height - mem[x].depth).half() - axis_height;
@@ -633,9 +630,9 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<S
     let save_f = st.scanner.cur_f;
     if st.mem[q].limits() == LimitCode::Limits {
         let cs = style;
-        let x = clean_box(st, q.supscr(), cs.sup())?;
-        let y = clean_box(st, q.nucleus(), cs)?;
-        let z = clean_box(st, q.subscr(), cs.sub())?;
+        let x = clean_box(st, st.mem[q].supscr, cs.sup())?;
+        let y = clean_box(st, st.mem[q].nucleus, cs)?;
+        let z = clean_box(st, st.mem[q].subscr, cs.sub())?;
 
         let v = st.mem.new_null_vbox()?;
         let w = st.mem[y].width.max(st.mem[x].width).max(st.mem[z].width);
@@ -660,7 +657,7 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<S
         mem[v].depth = mem[y].depth;
         st.scanner.cur_f = save_f;
 
-        if mem[q.supscr()].math_type == EMPTY {
+        if mem[q].supscr.math_type == EMPTY {
             x.free(mem);
             mem[v].list_ptr = y.ptr();
         } else {
@@ -675,7 +672,7 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<S
             mem[v].height = height;
         }
 
-        if mem[q.subscr()].math_type == EMPTY {
+        if mem[q].subscr.math_type == EMPTY {
             z.free(mem);
         } else {
             let shift_down = (bos4 - mem[z].height).max(bos2);
@@ -709,7 +706,7 @@ impl MemState {
         q: NodePtr<Noad>,
         p: NodePtr<Noad>,
     ) -> Result<MakeOrdStep, Abort> {
-        let next_c = i32::from(self[p.nucleus()].character());
+        let next_c = i32::from(self[p].nucleus.character());
         let (mut a, mut step) = fonts.lig_kern_start(fetched.f, fetched.i);
         loop {
             if step.matches(crate::fonts::LigChar::from_raw(next_c)) {
@@ -723,36 +720,36 @@ impl MemState {
                 let op = step.lig_op();
                 match op {
                     1 | 5 => {
-                        self[q.nucleus()].set_character(step.lig_char());
+                        self[q].nucleus.set_character(step.lig_char());
                     }
                     2 | 6 => {
-                        self[p.nucleus()].set_character(step.lig_char());
+                        self[p].nucleus.set_character(step.lig_char());
                     }
                     3 | 7 | 11 => {
                         let r = self.new_noad()?;
-                        self[r.nucleus()].set_character(step.lig_char());
-                        let fam = self[q.nucleus()].plane_and_fam() % 256;
-                        self[r.nucleus()].set_plane_and_fam(fam);
+                        self[r].nucleus.set_character(step.lig_char());
+                        let fam = self[q].nucleus.plane_and_fam() % 256;
+                        self[r].nucleus.set_plane_and_fam(fam);
                         self[q].link = r.ptr();
                         self[r].link = p.ptr();
                         if op < 11 {
-                            self[r.nucleus()].math_type = MATH_CHAR;
+                            self[r].nucleus.math_type = MATH_CHAR;
                         } else {
-                            self[r.nucleus()].math_type = MATH_TEXT_CHAR;
+                            self[r].nucleus.math_type = MATH_TEXT_CHAR;
                         }
                     }
                     _ => {
                         self[q].link = self[p].link;
-                        self[q.nucleus()].set_character(step.lig_char());
-                        self[q.subscr()] = self[p.subscr()];
-                        self[q.supscr()] = self[p.supscr()];
+                        self[q].nucleus.set_character(step.lig_char());
+                        self[q].subscr = self[p].subscr;
+                        self[q].supscr = self[p].supscr;
                         p.free(self);
                     }
                 }
                 if op > 3 {
                     return Ok(MakeOrdStep::Return);
                 }
-                self[q.nucleus()].math_type = MATH_CHAR;
+                self[q].nucleus.math_type = MATH_CHAR;
                 return Ok(MakeOrdStep::Restart);
             }
             if step.is_last() {
@@ -766,13 +763,13 @@ impl MemState {
 
 fn make_ord(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<(), Abort> {
     'restart: loop {
-        if st.mem[q.subscr()].math_type != EMPTY {
+        if st.mem[q].subscr.math_type != EMPTY {
             return Ok(());
         }
-        if st.mem[q.supscr()].math_type != EMPTY {
+        if st.mem[q].supscr.math_type != EMPTY {
             return Ok(());
         }
-        if st.mem[q.nucleus()].math_type != MATH_CHAR {
+        if st.mem[q].nucleus.math_type != MATH_CHAR {
             return Ok(());
         }
         let p = st.mem[q].link;
@@ -792,17 +789,15 @@ fn make_ord(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<
             }
             _ => return Ok(()),
         };
-        if st.mem[p_node.nucleus()].math_type != MATH_CHAR {
+        if st.mem[p_node].nucleus.math_type != MATH_CHAR {
             return Ok(());
         }
-        if st.mem[p_node.nucleus()].plane_and_fam() % 256
-            != st.mem[q.nucleus()].plane_and_fam() % 256
-        {
+        if st.mem[p_node].nucleus.plane_and_fam() % 256 != st.mem[q].nucleus.plane_and_fam() % 256 {
             return Ok(());
         }
 
-        st.mem[q.nucleus()].math_type = MATH_TEXT_CHAR;
-        let fetched = fetch(st, q.nucleus(), style.size())?;
+        st.mem[q].nucleus.math_type = MATH_TEXT_CHAR;
+        let fetched = fetch(st, MathSlot::Nucleus(q), style.size())?;
         if fetched.i.tag() != CharTag::Lig {
             return Ok(());
         }
@@ -820,7 +815,7 @@ fn make_math_accent(
     style: MathStyle,
 ) -> Result<(), Abort> {
     let n = q.as_noad();
-    let accent = fetch(st, q.accent_chr(), style.size())?;
+    let accent = fetch(st, MathSlot::AccentChr(q), style.size())?;
     let f = accent.f;
     let mut c = accent.c;
     let area = st.fonts.font_area[f];
@@ -834,11 +829,11 @@ fn make_math_accent(
         if !bottom_accent {
             s = compute_ot_math_accent_pos(st, q, style)?;
         }
-        x = clean_box(st, n.nucleus(), style.cramped())?;
+        x = clean_box(st, st.mem[n].nucleus, style.cramped())?;
     } else if accent.i.exists() {
         let mut acc_i = accent.i;
-        if st.mem[n.nucleus()].math_type == MATH_CHAR {
-            let nucleus = fetch(st, n.nucleus(), style.size())?;
+        if st.mem[n].nucleus.math_type == MATH_CHAR {
+            let nucleus = fetch(st, MathSlot::Nucleus(n), style.size())?;
             if nucleus.i.tag() == CharTag::Lig {
                 let cur_f = nucleus.f;
                 let (mut a, mut step) = st.fonts.lig_kern_start(cur_f, nucleus.i);
@@ -858,7 +853,7 @@ fn make_math_accent(
                 };
             }
         }
-        x = clean_box(st, n.nucleus(), style.cramped())?;
+        x = clean_box(st, st.mem[n].nucleus, style.cramped())?;
         let w = st.mem[x].width;
         while acc_i.tag() == CharTag::List {
             let larger = i32::from(acc_i.remainder());
@@ -885,22 +880,22 @@ fn make_math_accent(
         h.min(st.fonts.param(f, X_HEIGHT_CODE))
     };
 
-    if (st.mem[n.supscr()].math_type != EMPTY || st.mem[n.subscr()].math_type != EMPTY)
-        && st.mem[n.nucleus()].math_type == MATH_CHAR
+    if (st.mem[n].supscr.math_type != EMPTY || st.mem[n].subscr.math_type != EMPTY)
+        && st.mem[n].nucleus.math_type == MATH_CHAR
     {
         st.mem.flush_node_list(x.ptr())?;
         let base = st.mem.new_noad()?;
         let mem = &mut st.mem;
-        mem[base.nucleus()] = mem[n.nucleus()];
-        mem[base.supscr()] = mem[n.supscr()];
-        mem[base.subscr()] = mem[n.subscr()];
-        for script in [n.supscr(), n.subscr()] {
+        mem[base].nucleus = mem[n].nucleus;
+        mem[base].supscr = mem[n].supscr;
+        mem[base].subscr = mem[n].subscr;
+        for script in [MathSlot::Supscr(n), MathSlot::Subscr(n)] {
             mem[script].set_info(MemPtr::from_raw(0));
             mem[script].math_type = EMPTY;
         }
-        mem[n.nucleus()].math_type = SUB_MLIST;
-        mem[n.nucleus()].set_info(base.ptr());
-        x = clean_box(st, n.nucleus(), style)?;
+        mem[n].nucleus.math_type = SUB_MLIST;
+        mem[n].nucleus.set_info(base.ptr());
+        x = clean_box(st, st.mem[n].nucleus, style)?;
         delta += st.mem[x].height - h;
         h = st.mem[x].height;
     }
@@ -1026,7 +1021,7 @@ fn make_left_right(
     let delta2 = max_d + axis_height;
     let delta1 = (max_h + max_d - delta2).max(delta2);
     let delta = ((delta1 / 500) * delimiter_factor).max(delta1 + delta1 - delimiter_shortfall);
-    let delimiter = var_delimiter(st, q.delimiter(), size, delta)?;
+    let delimiter = var_delimiter(st, st.mem[q].delimiter, size, delta)?;
     st.mem[q.any()].new_hlist = delimiter.ptr();
     Ok(if st.mem[q].noad_type == NodeType::LeftNoad {
         NodeType::OpenNoad
@@ -1150,9 +1145,9 @@ fn mlist_nucleus(
     mut delta: Scaled,
     style: MathStyle,
 ) -> Result<(), Abort> {
-    let p = match st.mem[qn.nucleus()].math_type {
+    let p = match st.mem[qn].nucleus.math_type {
         MATH_CHAR | MATH_TEXT_CHAR => {
-            let fetched = fetch(st, qn.nucleus(), style.size())?;
+            let fetched = fetch(st, MathSlot::Nucleus(qn), style.size())?;
             let cur_f = fetched.f;
             let area = st.fonts.font_area[cur_f];
             let p = if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
@@ -1168,7 +1163,7 @@ fn mlist_nucleus(
                 delta = st
                     .fonts
                     .get_ot_math_ital_corr(cur_f, i32::from(st.mem[glyph].glyph));
-                if st.mem[qn.nucleus()].math_type == MATH_TEXT_CHAR
+                if st.mem[qn].nucleus.math_type == MATH_TEXT_CHAR
                     && !st.fonts.font_is_ot_math(cur_f)
                 {
                     delta = Scaled::ZERO;
@@ -1179,7 +1174,7 @@ fn mlist_nucleus(
                 let cc = fetched.c as u16;
                 let p = crate::main_control::new_character(st, cur_f, cc)?;
                 let p = p.map_or(MemPtr::NULL, crate::main_control::NewChar::ptr);
-                if st.mem[qn.nucleus()].math_type == MATH_TEXT_CHAR
+                if st.mem[qn].nucleus.math_type == MATH_TEXT_CHAR
                     && st.fonts.param(cur_f, SPACE_CODE) != Scaled::ZERO
                 {
                     delta = Scaled::ZERO;
@@ -1188,7 +1183,7 @@ fn mlist_nucleus(
             } else {
                 MemPtr::NULL
             };
-            if !p.is_null() && st.mem[qn.subscr()].math_type == EMPTY && delta != Scaled::ZERO {
+            if !p.is_null() && st.mem[qn].subscr.math_type == EMPTY && delta != Scaled::ZERO {
                 let k = st.mem.new_kern(delta)?;
                 p.set_link(&mut st.mem, k.ptr());
                 delta = Scaled::ZERO;
@@ -1196,17 +1191,16 @@ fn mlist_nucleus(
             p
         }
         EMPTY => MemPtr::NULL,
-        SUB_BOX => st.mem[qn.nucleus()].info(),
+        SUB_BOX => st.mem[qn].nucleus.info(),
         SUB_MLIST => {
-            let mlist = st.mem[qn.nucleus()].info();
+            let mlist = st.mem[qn].nucleus.info();
             let list = mlist_to_hlist(st, mlist, style, false)?;
             crate::packaging::hpack(st, list, PackSpec::NATURAL)?.ptr()
         }
         _ => return Err(Abort::Confusion("mlist2")),
     };
     st.mem[qn.any()].new_hlist = p;
-    let need_scripts =
-        st.mem[qn.subscr()].math_type != EMPTY || st.mem[qn.supscr()].math_type != EMPTY;
+    let need_scripts = st.mem[qn].subscr.math_type != EMPTY || st.mem[qn].supscr.math_type != EMPTY;
     if need_scripts {
         make_scripts(st, qn, delta, style)?;
     }
@@ -1592,15 +1586,15 @@ fn compute_ot_math_accent_pos(
     style: MathStyle,
 ) -> Result<Scaled, Abort> {
     loop {
-        match st.mem[p.as_noad().nucleus()].math_type {
+        match st.mem[p].base.nucleus.math_type {
             MATH_CHAR => {
-                let Fetched { f, c, .. } = fetch(st, p.as_noad().nucleus(), style.size())?;
+                let Fetched { f, c, .. } = fetch(st, MathSlot::Nucleus(p.as_noad()), style.size())?;
                 let q = crate::fonts::new_native_character(st, f, c as u32)?;
                 let g = st.mem.get_native_glyph(q, 0);
                 return Ok(st.fonts.get_ot_math_accent_pos(f, i32::from(g)));
             }
             SUB_MLIST => {
-                let r = st.mem[p.as_noad().nucleus()].info();
+                let r = st.mem[p].base.nucleus.info();
                 match r.as_idx().map(|ri| st.mem.classify_noad(ri)) {
                     Some(Ok(Some(rn))) => match rn.variant(&st.mem) {
                         NoadVariant::Accent(a) => p = a,

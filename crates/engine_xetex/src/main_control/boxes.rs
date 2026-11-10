@@ -193,8 +193,8 @@ fn box_end(
                 b.ptr()
             } else {
                 let noad = st.mem.new_noad()?;
-                st.mem[noad.nucleus()].math_type = SUB_BOX;
-                st.mem[noad.nucleus()].set_info(b.ptr());
+                st.mem[noad].nucleus.math_type = SUB_BOX;
+                st.mem[noad].nucleus.set_info(b.ptr());
                 noad.ptr()
             };
             st.input.cur_list.tail_append(&mut st.mem, node);

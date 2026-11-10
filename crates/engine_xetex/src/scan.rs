@@ -9,7 +9,7 @@ use crate::consts::{
 };
 use crate::errors::Abort;
 use crate::input::{back_input, begin_token_list, TokenType};
-use crate::node::{BoxNode, MathField, NodePtr, RuleDimen, RuleNode, SaLeaf, Stored};
+use crate::node::{BoxNode, MathSlot, NodePtr, RuleDimen, RuleNode, SaLeaf, Stored};
 use crate::packaging::PackSpec;
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, GroupCode, MemState, ScannerState};
@@ -194,8 +194,8 @@ pub(crate) fn scan_umath_code(st: &mut EngineState) -> Result<i32, Abort> {
     Ok(class + family + scan_usv_num(st)?)
 }
 
-/// Scans one math field into the nucleus-like field `p`.
-pub(crate) fn scan_math(st: &mut EngineState, p: NodePtr<MathField>) -> Result<(), Abort> {
+/// Scans one math field into `p`, or opens a math group that fills it when it ends.
+pub(crate) fn scan_math(st: &mut EngineState, p: MathSlot) -> Result<(), Abort> {
     let c: i32;
     'main: loop {
         get_x_non_blank_non_relax(st)?;
@@ -224,7 +224,7 @@ pub(crate) fn scan_math(st: &mut EngineState, p: NodePtr<MathField>) -> Result<(
                 _ => {
                     back_input(st)?;
                     scan_left_brace(st)?;
-                    st.save_stack.set_saved(0, p.idx().raw());
+                    st.save_stack.set_saved(0, p.to_saved());
                     st.save_stack.save_ptr += 1;
                     crate::main_control::push_math(st, GroupCode::Math)?;
                     return Ok(());
@@ -253,22 +253,22 @@ pub(crate) fn set_math_char(st: &mut EngineState, c: i32) -> Result<(), Abort> {
         back_input(st)?;
     } else {
         let nd = st.mem.new_noad()?;
-        st.mem[nd.nucleus()].math_type = MATH_CHAR;
+        st.mem[nd].nucleus.math_type = MATH_CHAR;
         let ch = math_char(c);
-        st.mem[nd.nucleus()].set_character((ch % 65536) as u16);
-        st.mem[nd.nucleus()].set_plane_and_fam(math_fam(c) as u16);
+        st.mem[nd].nucleus.set_character((ch % 65536) as u16);
+        st.mem[nd].nucleus.set_plane_and_fam(math_fam(c) as u16);
         if math_class(c) == 7 {
             let cf = st.eqtb.int_par(IntPar::CurFam);
             if (0..NUMBER_MATH_FAMILIES).contains(&cf) {
-                st.mem[nd.nucleus()].set_plane_and_fam(cf as u16);
+                st.mem[nd].nucleus.set_plane_and_fam(cf as u16);
             }
             st.mem[nd].noad_type = NodeType::OrdNoad.into();
         } else {
             st.mem[nd].noad_type =
                 Stored::from_raw(NodeType::OrdNoad.as_raw() + math_class(c) as u16);
         }
-        let fam = st.mem[nd.nucleus()].plane_and_fam() + (ch / 65536) as u16 * 256;
-        st.mem[nd.nucleus()].set_plane_and_fam(fam);
+        let fam = st.mem[nd].nucleus.plane_and_fam() + (ch / 65536) as u16 * 256;
+        st.mem[nd].nucleus.set_plane_and_fam(fam);
         st.input.cur_list.tail_append(&mut st.mem, nd.ptr());
     }
     Ok(())

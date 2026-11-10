@@ -777,11 +777,6 @@ node_kinds! {
     /// An entry of a column's span list, ended by `END_SPAN`. The list head is
     /// the align record itself, which shares the `info` and `width` words.
     SpanNode;
-    /// A noad's nucleus, script or accent character word: its math type,
-    /// then a character and family or a sub-list.
-    MathField;
-    /// A noad's delimiter word, holding a small and a large variant.
-    DelimiterField;
     /// A `\parshape` array: the line count, an indent and width per line in the payload.
     ParShapeNode;
     /// An e-TeX penalty array: the entry count, the entries in the payload.
@@ -866,7 +861,7 @@ pub trait ListRecord: NodeKind {}
 impl_traits!(ListRecord: SaIndexNode, SaElement, SaWordNode, SaPointerNode, SaMarkClassNode,
     SaSaved, SaSavedWord, SaSavedPointer, PageInsNode,
     LigItem, CharNode, HeadNode, LrNode, PseudoFileNode, HyphPosNode, AlignRecord, SpanNode, ParShapeNode, PenaltiesNode,
-    PseudoLineNode, MathField, DelimiterField);
+    PseudoLineNode);
 
 impl<K: ListRecord> NodePtr<K> {
     /// The record at `p`, a non-null link of a list of `K` records.
@@ -1326,43 +1321,17 @@ impl NodePtr<AnyNoad> {
     }
 }
 
-/// The word offset of a layout field.
-macro_rules! field {
-    ($layout:ident, $field:ident) => {
-        crate::overlay::word_offset(std::mem::offset_of!(crate::overlay::$layout, $field))
-    };
-}
-
-/// A noad's nucleus field, in words from the noad.
-pub(crate) const NUCLEUS: i32 = field!(NoadLayout, nucleus);
-
 /// The pseudo-node at a box whose `link` is the box's `list_ptr`, in words from the box.
-pub(crate) const LIST_HEAD: i32 = field!(BoxLayout, list_ptr) - field!(WhatsitLayout, link);
-
-impl NodePtr<Noad> {
-    #[inline]
-    pub fn nucleus(self) -> NodePtr<MathField> {
-        NodePtr::at(self.idx + field!(NoadLayout, nucleus))
-    }
-    #[inline]
-    pub fn supscr(self) -> NodePtr<MathField> {
-        NodePtr::at(self.idx + field!(NoadLayout, supscr))
-    }
-    #[inline]
-    pub fn subscr(self) -> NodePtr<MathField> {
-        NodePtr::at(self.idx + field!(NoadLayout, subscr))
-    }
-}
+pub(crate) const LIST_HEAD: i32 = crate::overlay::word_offset(
+    std::mem::offset_of!(crate::overlay::BoxLayout, list_ptr)
+        - std::mem::offset_of!(crate::overlay::WhatsitLayout, link),
+);
 
 impl NodePtr<RadicalNoad> {
     /// The radical's nucleus and scripts, laid out as a plain noad.
     #[inline]
     pub fn as_noad(self) -> NodePtr<Noad> {
         NodePtr::from_idx_unchecked(self.idx)
-    }
-    #[inline]
-    pub fn left_delimiter(self) -> NodePtr<DelimiterField> {
-        NodePtr::at(self.idx + field!(RadicalLayout, left_delimiter))
     }
 }
 
@@ -1372,43 +1341,80 @@ impl NodePtr<AccentNoad> {
     pub fn as_noad(self) -> NodePtr<Noad> {
         NodePtr::from_idx_unchecked(self.idx)
     }
-    #[inline]
-    pub fn accent_chr(self) -> NodePtr<MathField> {
-        NodePtr::at(self.idx + field!(AccentLayout, accent_chr))
+}
+
+/// A math field of a noad that something writes into: the target of `scan_math`,
+/// which a math group fills when it ends, or a character `fetch` may find missing.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum MathSlot {
+    Nucleus(NodePtr<Noad>),
+    Supscr(NodePtr<Noad>),
+    Subscr(NodePtr<Noad>),
+    /// A fraction's numerator, where WEB's `supscr` lands on a fraction.
+    Numerator(NodePtr<FractionNoad>),
+    /// A fraction's denominator, where WEB's `subscr` lands on a fraction.
+    Denominator(NodePtr<FractionNoad>),
+    AccentChr(NodePtr<AccentNoad>),
+}
+
+impl MathSlot {
+    const KINDS: i32 = 8;
+
+    /// The slot as one save stack word.
+    pub fn to_saved(self) -> i32 {
+        let (p, kind) = match self {
+            MathSlot::Nucleus(n) => (n.idx, 0),
+            MathSlot::Supscr(n) => (n.idx, 1),
+            MathSlot::Subscr(n) => (n.idx, 2),
+            MathSlot::Numerator(f) => (f.idx, 3),
+            MathSlot::Denominator(f) => (f.idx, 4),
+            MathSlot::AccentChr(a) => (a.idx, 5),
+        };
+        p.raw() * Self::KINDS + kind
+    }
+
+    /// The slot a save stack word from [`MathSlot::to_saved`] holds.
+    pub fn from_saved(v: i32) -> Option<Self> {
+        let p = MemIdx::from_raw(v.div_euclid(Self::KINDS));
+        Some(match v.rem_euclid(Self::KINDS) {
+            0 => MathSlot::Nucleus(NodePtr::from_idx_unchecked(p)),
+            1 => MathSlot::Supscr(NodePtr::from_idx_unchecked(p)),
+            2 => MathSlot::Subscr(NodePtr::from_idx_unchecked(p)),
+            3 => MathSlot::Numerator(NodePtr::from_idx_unchecked(p)),
+            4 => MathSlot::Denominator(NodePtr::from_idx_unchecked(p)),
+            5 => MathSlot::AccentChr(NodePtr::from_idx_unchecked(p)),
+            _ => return None,
+        })
     }
 }
 
-impl NodePtr<FractionNoad> {
+impl std::ops::Index<MathSlot> for MemState {
+    type Output = crate::overlay::MathWord;
+
     #[inline]
-    pub fn numerator(self) -> NodePtr<MathField> {
-        NodePtr::at(self.idx + field!(FractionLayout, numerator))
-    }
-    #[inline]
-    pub fn denominator(self) -> NodePtr<MathField> {
-        NodePtr::at(self.idx + field!(FractionLayout, denominator))
-    }
-    #[inline]
-    pub fn left_delimiter(self) -> NodePtr<DelimiterField> {
-        NodePtr::at(self.idx + field!(FractionLayout, left_delimiter))
-    }
-    #[inline]
-    pub fn right_delimiter(self) -> NodePtr<DelimiterField> {
-        NodePtr::at(self.idx + field!(FractionLayout, right_delimiter))
+    fn index(&self, s: MathSlot) -> &crate::overlay::MathWord {
+        match s {
+            MathSlot::Nucleus(n) => &self[n].nucleus,
+            MathSlot::Supscr(n) => &self[n].supscr,
+            MathSlot::Subscr(n) => &self[n].subscr,
+            MathSlot::Numerator(f) => &self[f].numerator,
+            MathSlot::Denominator(f) => &self[f].denominator,
+            MathSlot::AccentChr(a) => &self[a].accent_chr,
+        }
     }
 }
 
-impl NodePtr<FenceNoad> {
+impl std::ops::IndexMut<MathSlot> for MemState {
     #[inline]
-    pub fn delimiter(self) -> NodePtr<DelimiterField> {
-        NodePtr::at(self.idx + field!(FenceLayout, delimiter))
-    }
-    #[inline]
-    pub fn supscr(self) -> NodePtr<MathField> {
-        NodePtr::at(self.idx + field!(FenceLayout, supscr))
-    }
-    #[inline]
-    pub fn subscr(self) -> NodePtr<MathField> {
-        NodePtr::at(self.idx + field!(FenceLayout, subscr))
+    fn index_mut(&mut self, s: MathSlot) -> &mut crate::overlay::MathWord {
+        match s {
+            MathSlot::Nucleus(n) => &mut self[n].nucleus,
+            MathSlot::Supscr(n) => &mut self[n].supscr,
+            MathSlot::Subscr(n) => &mut self[n].subscr,
+            MathSlot::Numerator(f) => &mut self[f].numerator,
+            MathSlot::Denominator(f) => &mut self[f].denominator,
+            MathSlot::AccentChr(a) => &mut self[a].accent_chr,
+        }
     }
 }
 
@@ -2260,66 +2266,59 @@ mod tests {
     }
 
     #[test]
-    fn noad_field_views_read_the_layout_fields() {
+    fn math_slots_reach_their_fields_and_survive_the_save_stack() {
         let mut mem = fresh_mem(200);
         let n: NodePtr<Noad> = at(&mut mem, 100, Some(NodeType::OrdNoad));
-        mem[n].supscr.math_type = 2;
-        mem[n].subscr.math_type = 3;
-        assert_eq!(mem[n.supscr()].math_type, 2);
-        assert_eq!(mem[n.subscr()].math_type, 3);
-        assert_eq!(mem[n.any()].noad_type.get(), Some(NodeType::OrdNoad));
-
-        let a: NodePtr<AccentNoad> = at(&mut mem, 100, Some(NodeType::AccentNoad));
-        mem[a].accent_chr.set_character(48);
-        assert_eq!(mem[a.accent_chr()].character(), 48);
-        assert_eq!(a.as_noad().nucleus().idx(), n.nucleus().idx());
-
-        let r: NodePtr<RadicalNoad> = at(&mut mem, 100, Some(NodeType::RadicalNoad));
-        mem[r].left_delimiter.set_small(3, 4);
-        assert_eq!(mem[r.left_delimiter()].small(), (3, 4));
-        assert_eq!(r.as_noad().subscr().idx(), n.subscr().idx());
-
-        let f: NodePtr<FractionNoad> = at(&mut mem, 100, Some(NodeType::FractionNoad));
-        let b = &mut mem[f];
-        b.numerator.math_type = 6;
-        b.denominator.math_type = 7;
-        b.right_delimiter.set_small(1 + 256, 7);
-        b.right_delimiter.set_large(2, 9);
-        assert_eq!(mem[f.right_delimiter()].small(), (1, 7 + 65_536));
-        assert_eq!(mem[f.right_delimiter()].large(), (2, 9));
-        assert_eq!(mem[f.numerator()].math_type, 6);
-        assert_eq!(mem[f.denominator()].math_type, 7);
-
-        let e: NodePtr<FenceNoad> = at(&mut mem, 100, Some(NodeType::RightNoad));
-        mem[e].delimiter.set_large(2, 9);
-        mem[e].subscr.math_type = 5;
-        assert_eq!(mem[e.delimiter()].large(), (2, 9));
-        assert_eq!(mem[e.subscr()].math_type, 5);
+        let f: NodePtr<FractionNoad> = at(&mut mem, 120, Some(NodeType::FractionNoad));
+        let a: NodePtr<AccentNoad> = at(&mut mem, 140, Some(NodeType::AccentNoad));
+        let slots = [
+            MathSlot::Nucleus(n),
+            MathSlot::Supscr(n),
+            MathSlot::Subscr(n),
+            MathSlot::Numerator(f),
+            MathSlot::Denominator(f),
+            MathSlot::AccentChr(a),
+        ];
+        for (k, slot) in (1..).zip(slots) {
+            mem[slot].math_type = k;
+            assert_eq!(MathSlot::from_saved(slot.to_saved()), Some(slot));
+        }
+        assert_eq!(
+            [mem[n].nucleus, mem[n].supscr, mem[n].subscr].map(|w| w.math_type),
+            [1, 2, 3]
+        );
+        assert_eq!(
+            [mem[f].numerator, mem[f].denominator].map(|w| w.math_type),
+            [4, 5]
+        );
+        assert_eq!(mem[a].accent_chr.math_type, 6);
+        assert_eq!(
+            mem[a.as_noad()].nucleus.math_type,
+            mem[a].base.nucleus.math_type
+        );
     }
 
     #[test]
     fn math_and_delimiter_fields_pack_their_codes() {
-        let mut mem = fresh_mem(200);
-        let w = MemPtr::from_raw(100);
-        let f: NodePtr<MathField> = NodePtr::at(w);
-        mem[f].math_type = 3;
-        mem[f].set_character(0x1234);
-        mem[f].set_plane_and_fam(0x0205);
-        assert_eq!(mem[f].fam(), 5);
-        assert_eq!(mem[f].full_char(), 0x2_1234);
-        mem[f].set_info(MemPtr::from_raw(0x0012_3456));
-        assert_eq!(mem[f].info(), MemPtr::from_raw(0x0012_3456));
-        mem[f].set_info(MemPtr::NULL);
-        assert_eq!(mem[f].info(), MemPtr::NULL);
-        assert_eq!(mem[f].math_type, 3);
+        let mut f = <crate::overlay::MathWord as bytemuck::Zeroable>::zeroed();
+        f.math_type = 3;
+        f.set_character(0x1234);
+        f.set_plane_and_fam(0x0205);
+        assert_eq!(f.fam(), 5);
+        assert_eq!(f.full_char(), 0x2_1234);
+        f.set_info(MemPtr::from_raw(0x0012_3456));
+        assert_eq!(f.info(), MemPtr::from_raw(0x0012_3456));
+        f.set_info(MemPtr::NULL);
+        assert_eq!(f.info(), MemPtr::NULL);
+        assert_eq!(f.math_type, 3);
 
-        let d: NodePtr<DelimiterField> = NodePtr::at(w);
-        mem[d].set_small(0x0103, 0x41);
-        mem[d].set_large(0x0204, 0x42);
-        assert_eq!(mem[d].small(), (3, 0x1_0041));
-        assert_eq!(mem[d].large(), (4, 0x2_0042));
-        assert!(!mem[d].is_null());
-        mem[d].clear();
-        assert!(mem[d].is_null());
+        let mut d = <crate::overlay::DelimiterWord as bytemuck::Zeroable>::zeroed();
+        d.set_small(0x0103, 0x41);
+        d.set_large(0x0204, 0x42);
+        assert_eq!(d.small(), (3, 0x1_0041));
+        assert_eq!(d.large(), (4, 0x2_0042));
+        assert!(!d.is_null());
+        d.clear();
+        assert!(d.is_null());
     }
 }

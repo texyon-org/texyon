@@ -8,12 +8,12 @@ use crate::fonts::Side;
 use crate::glue_store::GlueSpecId;
 use crate::mem_types::ListStateRecord;
 use crate::node::{
-    BoxLr, BoxNode, CharNode, ChoiceNode, DelimiterField, DiscNode, FixedNode, GlueKind, GlueNode,
-    HeadNode, HyphPosNode, KernNode, KernSubtype, LigBoundary, LigItem, LigatureNode, ListRecord,
-    LrNode, MarginKernNode, MathCode, MathNode, Noad, NodePtr, PageInsNode, PenaltyNode, RuleDimen,
+    BoxLr, BoxNode, CharNode, ChoiceNode, DiscNode, FixedNode, GlueKind, GlueNode, HeadNode,
+    HyphPosNode, KernNode, KernSubtype, LigBoundary, LigItem, LigatureNode, ListRecord, LrNode,
+    MarginKernNode, MathCode, MathNode, Noad, NodePtr, PageInsNode, PenaltyNode, RuleDimen,
     RuleNode, SaIndexNode, SpanNode, StyleNode, WhatsitKind, WhatsitSubtype,
 };
-use crate::overlay::{LigatureLayout, Overlay};
+use crate::overlay::LigatureLayout;
 use crate::params::GluePar;
 use crate::state::{EqtbState, MemState};
 use crate::units::{
@@ -57,9 +57,7 @@ pub(crate) const END_SPAN: NodePtr<SpanNode> =
 pub(crate) const NULL_LIST: MemPtr = after(END_SPAN_AT, SpanNode::SIZE);
 /// The scratch char node of TeX's lig trick.
 pub(crate) const LIG_TRICK: MemPtr = after(NULL_LIST, HeadNode::SIZE);
-/// Where delimiters scanned only to be dropped are stored.
-pub(crate) const GARBAGE: MemPtr = after(LIG_TRICK, CharNode::SIZE);
-pub(crate) const PRE_ADJUST_HEAD: MemPtr = after(GARBAGE, <DelimiterField as Overlay>::WORDS);
+pub(crate) const PRE_ADJUST_HEAD: MemPtr = after(LIG_TRICK, CharNode::SIZE);
 /// The words the fixed nodes take, where allocation starts.
 pub(crate) const RESERVED_WORDS: usize =
     after(PRE_ADJUST_HEAD, HeadNode::SIZE).raw().cast_unsigned() as usize;

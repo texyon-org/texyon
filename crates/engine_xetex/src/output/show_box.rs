@@ -7,9 +7,10 @@ use crate::math::DEFAULT_CODE;
 use crate::mem::ZERO_GLUE;
 use crate::node::{
     AdjustPlacement, AnyNoad, AnyNode, BoxLr, BoxNode, CharNode, FenceSubtype, GlueKind,
-    KernSubtype, LeaderKind, MathCode, MathField, NoadVariant, NodePtr, WhatsitNode,
-    WhatsitSubtype, WhatsitVariant,
+    KernSubtype, LeaderKind, MathCode, NoadVariant, NodePtr, WhatsitNode, WhatsitSubtype,
+    WhatsitVariant,
 };
+use crate::overlay::MathWord;
 use crate::params::IntPar;
 use crate::state::EngineState;
 use crate::units::{GlueSign, MemPtr, NodeType, Scaled};
@@ -116,29 +117,28 @@ fn node_list_display(st: &mut EngineState, c: u8, list: MemPtr) {
 }
 
 /// Shows the noad field at `p`, marked with `c` in the indentation string.
-fn print_subsidiary_data(st: &mut EngineState, p: NodePtr<MathField>, c: u8) {
+fn print_subsidiary_data(st: &mut EngineState, p: MathWord, c: u8) {
     if st.strings.cur_length() >= st.errors.depth_threshold {
-        if st.mem[p].math_type != EMPTY {
+        if p.math_type != EMPTY {
             print(st, " []");
         }
         return;
     }
     st.strings.append_char(u16::from(c));
-    st.mem.temp_ptr = p.ptr();
-    match st.mem[p].math_type {
+    match p.math_type {
         MATH_CHAR => {
             print_ln(st);
             print_current_string(st);
             print_fam_and_char(st, p);
         }
-        SUB_BOX => show_node_list(st, st.mem[p].info()),
+        SUB_BOX => show_node_list(st, p.info()),
         SUB_MLIST => {
-            if st.mem[p].info().is_null() {
+            if p.info().is_null() {
                 print_ln(st);
                 print_current_string(st);
                 print(st, "{}");
             } else {
-                show_node_list(st, st.mem[p].info());
+                show_node_list(st, p.info());
             }
         }
         _ => {}
@@ -487,24 +487,22 @@ fn show_noad(st: &mut EngineState, any: NodePtr<AnyNoad>) {
     let n = match any.variant(&st.mem) {
         NoadVariant::Fraction(f) => {
             print_esc(st, "fraction, thickness ");
-            let thickness = st.mem[f].thickness;
-            if thickness == DEFAULT_CODE {
+            let frac = st.mem[f];
+            if frac.thickness == DEFAULT_CODE {
                 print(st, "= default");
             } else {
-                print_scaled(st, thickness);
+                print_scaled(st, frac.thickness);
             }
-            let left = f.left_delimiter();
-            if !st.mem[left].is_null() {
+            if !frac.left_delimiter.is_null() {
                 print(st, ", left-delimiter ");
-                print_delimiter(st, left);
+                print_delimiter(st, frac.left_delimiter);
             }
-            let right = f.right_delimiter();
-            if !st.mem[right].is_null() {
+            if !frac.right_delimiter.is_null() {
                 print(st, ", right-delimiter ");
-                print_delimiter(st, right);
+                print_delimiter(st, frac.right_delimiter);
             }
-            print_subsidiary_data(st, f.numerator(), b'\\');
-            print_subsidiary_data(st, f.denominator(), b'/');
+            print_subsidiary_data(st, frac.numerator, b'\\');
+            print_subsidiary_data(st, frac.denominator, b'/');
             return;
         }
         NoadVariant::Fence(f) => {
@@ -516,19 +514,20 @@ fn show_noad(st: &mut EngineState, any: NodePtr<AnyNoad>) {
                 "middle"
             };
             print_esc(st, name);
-            print_delimiter(st, f.delimiter());
-            print_subsidiary_data(st, f.supscr(), b'^');
-            print_subsidiary_data(st, f.subscr(), b'_');
+            let fence = st.mem[f];
+            print_delimiter(st, fence.delimiter);
+            print_subsidiary_data(st, fence.supscr, b'^');
+            print_subsidiary_data(st, fence.subscr, b'_');
             return;
         }
         NoadVariant::Radical(r) => {
             print_esc(st, "radical");
-            print_delimiter(st, r.left_delimiter());
+            print_delimiter(st, st.mem[r].left_delimiter);
             r.as_noad()
         }
         NoadVariant::Accent(a) => {
             print_esc(st, "accent");
-            print_fam_and_char(st, a.accent_chr());
+            print_fam_and_char(st, st.mem[a].accent_chr);
             a.as_noad()
         }
         NoadVariant::Noad(n) => {
@@ -562,7 +561,8 @@ fn show_noad(st: &mut EngineState, any: NodePtr<AnyNoad>) {
         };
         print_esc(st, name);
     }
-    print_subsidiary_data(st, n.nucleus(), b'.');
-    print_subsidiary_data(st, n.supscr(), b'^');
-    print_subsidiary_data(st, n.subscr(), b'_');
+    let noad = st.mem[n];
+    print_subsidiary_data(st, noad.nucleus, b'.');
+    print_subsidiary_data(st, noad.supscr, b'^');
+    print_subsidiary_data(st, noad.subscr, b'_');
 }

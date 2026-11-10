@@ -4,10 +4,9 @@ use crate::consts::{NULL_FONT, SCRIPT_SIZE};
 use crate::errors::Abort;
 use crate::fonts::{CharInfo, CharTag, AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::mem::SS_GLUE;
-use crate::node::{
-    AnyNode, BoxNode, DelimiterField, GlyphNode, NativeWordNode, NodePtr, WhatsitSubtype,
-};
+use crate::node::{AnyNode, BoxNode, GlyphNode, NativeWordNode, NodePtr, WhatsitSubtype};
 use crate::ot_math::GlyphAssembly;
+use crate::overlay::DelimiterWord;
 use crate::packaging::PackSpec;
 use crate::params::DimenPar;
 use crate::state::{EngineState, FontState, MemState};
@@ -335,7 +334,7 @@ impl MemState {
 
 pub(super) fn var_delimiter(
     st: &mut EngineState,
-    d: NodePtr<DelimiterField>,
+    d: DelimiterWord,
     s: i32,
     v: Scaled,
 ) -> Result<NodePtr<BoxNode>, Abort> {
@@ -345,7 +344,7 @@ pub(super) fn var_delimiter(
     let mut w = Scaled::ZERO;
     let mut q = CharInfo::NULL;
     let mut large_attempt = false;
-    let (mut z, mut x) = st.mem[d].small();
+    let (mut z, mut x) = d.small();
     'found: {
         loop {
             if z != 0 || x != 0 {
@@ -421,7 +420,7 @@ pub(super) fn var_delimiter(
                 break 'found;
             }
             large_attempt = true;
-            (z, x) = st.mem[d].large();
+            (z, x) = d.large();
         }
     }
     let b = if f == NULL_FONT {
