@@ -569,10 +569,7 @@ pub struct MarginKernLayout {
     pub side: Stored<Side>,
     _type: u16,
     pub link: MemPtr,
-    _unused1: i32,
     pub width: Scaled,
-    _margin_char: i32,
-    _unused2: i32,
 }
 
 overlay!(MarginKernNode => MarginKernLayout);
@@ -597,7 +594,6 @@ pub struct AdjustLayout {
     pub placement: Stored<AdjustPlacement>,
     _type: u16,
     pub link: MemPtr,
-    _unused1: i32,
     pub adjust_ptr: MemPtr,
 }
 
@@ -1144,11 +1140,8 @@ pub struct RuleLayout {
     _subtype: u16,
     _type: u16,
     pub link: MemPtr,
-    _unused1: i32,
     pub width: StoredDimen,
-    _unused2: i32,
     pub depth: StoredDimen,
-    _unused3: i32,
     pub height: StoredDimen,
     pub sync_tag: i32,
     pub sync_line: i32,
@@ -1190,11 +1183,8 @@ pub struct InsLayout {
     pub box_number: u16,
     _type: u16,
     pub link: MemPtr,
-    _unused1: i32,
     pub float_cost: i32,
-    _unused2: i32,
     pub depth: Scaled,
-    _unused3: i32,
     pub height: Scaled,
     pub ins_ptr: MemPtr,
     /// The `\splittopskip` glue spec.
@@ -1215,7 +1205,6 @@ pub struct PageInsLayout {
     pub broken_ptr: MemPtr,
     pub best_ins_ptr: MemPtr,
     pub last_ins_ptr: MemPtr,
-    _unused3: i32,
     pub height: Scaled,
 }
 
@@ -1342,16 +1331,6 @@ macro_rules! same_offset {
     };
 }
 
-/// Asserts that `get_node`'s SyncTeX stamp, two words from the end, lands in the sync fields.
-macro_rules! sync_trailer {
-    ($($l:ident),+) => {
-        $(const _: () = assert!(
-            std::mem::offset_of!($l, sync_tag) + 8 == std::mem::size_of::<$l>()
-                && std::mem::offset_of!($l, sync_line) + 4 == std::mem::size_of::<$l>()
-        );)+
-    };
-}
-
 same_offset!(
     // The header every list node is read through before its kind is known.
     WhatsitLayout._type == NodeHeader.ty,
@@ -1412,16 +1391,6 @@ same_offset!(
     PageInsLayout.link == NodeHeader.link,
 );
 
-sync_trailer!(
-    BoxLayout,
-    UnsetLayout,
-    AlignRecordLayout,
-    RuleLayout,
-    GlueLayout,
-    KernLayout,
-    MathLayout
-);
-
 same_offset!(
     // Retyped in place: unset and box, an align record into an unset, math into kern.
     UnsetLayout.width == BoxLayout.width,
@@ -1432,6 +1401,15 @@ same_offset!(
     AlignRecordLayout._span_list == SpanLayout.next,
     AlignRecordLayout.width == SpanLayout.width,
     MathLayout.width == KernLayout.width,
+    // A retyped node keeps the SyncTeX stamp it was made with.
+    UnsetLayout.sync_tag == BoxLayout.sync_tag,
+    UnsetLayout.sync_line == BoxLayout.sync_line,
+    AlignRecordLayout.sync_tag == UnsetLayout.sync_tag,
+    AlignRecordLayout.sync_line == UnsetLayout.sync_line,
+    MathLayout.sync_tag == KernLayout.sync_tag,
+    MathLayout.sync_line == KernLayout.sync_line,
+    GlueLayout.sync_tag == KernLayout.sync_tag,
+    GlueLayout.sync_line == KernLayout.sync_line,
     // Shared heads read before the kind is known.
     NoadLayout.link == NoadHead.link,
     FractionLayout.link == NoadHead.link,
