@@ -358,11 +358,8 @@ pub struct GlyphLayout {
     pub subtype: Stored<WhatsitSubtype>,
     _type: u16,
     pub link: MemPtr,
-    _unused1: i32,
     pub width: Scaled,
-    _unused2: i32,
     pub depth: Scaled,
-    _unused3: i32,
     pub height: Scaled,
     _glyph_count: u16,
     pub glyph: u16,
@@ -379,11 +376,8 @@ pub struct PicLayout {
     pub subtype: Stored<WhatsitSubtype>,
     _type: u16,
     pub link: MemPtr,
-    _unused1: i32,
     pub width: Scaled,
-    _unused2: i32,
     pub depth: Scaled,
-    _unused3: i32,
     pub height: Scaled,
     pub page: u16,
     pub path_len: u16,
@@ -392,7 +386,6 @@ pub struct PicLayout {
     pub transform: [Scaled; 6],
     _unused5: u16,
     pub pagebox: u16,
-    _unused6: i32,
 }
 
 overlay!(PicNode => PicLayout);
@@ -406,11 +399,8 @@ pub struct NativeWordLayout {
     pub subtype: Stored<WhatsitSubtype>,
     _type: u16,
     pub link: MemPtr,
-    _unused1: i32,
     pub width: Scaled,
-    _unused2: i32,
     pub depth: Scaled,
-    _unused3: i32,
     pub height: Scaled,
     pub glyph_count: u16,
     /// The text length in UTF-16 units.
@@ -441,15 +431,12 @@ pub struct SizedWhatsitLayout {
     pub subtype: Stored<WhatsitSubtype>,
     _type: u16,
     pub link: MemPtr,
-    _unused1: i32,
     pub width: Scaled,
-    _unused2: i32,
     pub depth: Scaled,
-    _unused3: i32,
     pub height: Scaled,
 }
 
-overlay!(SizedWhatsit => SizedWhatsitLayout, 8);
+overlay!(SizedWhatsit => SizedWhatsitLayout, 5);
 
 /// A box's glue ratio, an `f64` kept as two words so layouts stay 4-byte aligned.
 #[repr(transparent)]
@@ -1449,6 +1436,7 @@ impl BoxLayout {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::node::FixedNode;
     use crate::node::WhatsitVariant;
     use crate::units::MemIdx;
 
@@ -1633,7 +1621,7 @@ mod tests {
             ..Default::default()
         };
         let src = native_word_at(&mut mem, 2, &[1, 2, 3]);
-        let dst = native_word_at(&mut mem, 10, &[0; 5]);
+        let dst = native_word_at(&mut mem, 2 + NativeWordNode::SIZE, &[0; 5]);
         let Ok((to, from)) = mem.entries_mut_and(dst, src) else {
             panic!("two separate payloads overlap");
         };
@@ -1668,7 +1656,7 @@ mod tests {
         let at = MemIdx::from_raw;
         let w = native_word_at(&mut mem, 2, &[]);
         mem[w].depth = Scaled::from_raw(5);
-        let g: NodePtr<GlyphNode> = NodePtr::from_idx_unchecked(at(10));
+        let g: NodePtr<GlyphNode> = NodePtr::from_idx_unchecked(at(2 + NativeWordNode::SIZE));
         mem[g].subtype = WhatsitSubtype::Glyph.into();
         mem[g].height = Scaled::from_raw(6);
         let sized = |mem: &MemState, p: NodePtr<WhatsitNode>| p.sized(mem).map(|s| mem[s]);
