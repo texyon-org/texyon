@@ -481,13 +481,9 @@ pub struct BoxLayout {
     subtype: u16,
     pub orientation: Stored<Orientation>,
     pub link: MemPtr,
-    _unused1: i32,
     pub width: Scaled,
-    _unused2: i32,
     pub depth: Scaled,
-    _unused3: i32,
     pub height: Scaled,
-    _unused4: i32,
     pub shift_amount: Scaled,
     pub glue_order: Stored<GlueOrder>,
     pub glue_sign: Stored<GlueSign>,
@@ -1091,7 +1087,6 @@ pub struct SpanLayout {
     pub next: NodePtr<SpanNode>,
     /// Columns spanned beyond the first. `END_SPAN` holds a larger sentinel.
     pub span_count: i32,
-    _unused1: i32,
     pub width: Scaled,
 }
 
@@ -1105,16 +1100,13 @@ pub struct AlignRecordLayout {
     /// The head of the span list, read through `span_head`.
     _span_list: i32,
     pub link: MemPtr,
-    _unused1: i32,
     pub width: Scaled,
-    _unused2: i32,
     pub v_part: TokenList,
-    _unused3: i32,
     pub u_part: TokenList,
-    _unused4: [i32; 2],
+    _unused1: i32,
     /// The command that ended the current entry of this column.
     pub extra_info: i32,
-    _unused5: [i32; 3],
+    _unused2: [i32; 3],
     pub sync_tag: i32,
     pub sync_line: i32,
 }
@@ -1231,13 +1223,9 @@ pub struct UnsetLayout {
     pub span_count: u16,
     _type: u16,
     pub link: MemPtr,
-    _unused1: i32,
     pub width: Scaled,
-    _unused2: i32,
     pub depth: Scaled,
-    _unused3: i32,
     pub height: Scaled,
-    _unused4: i32,
     pub glue_shrink: Scaled,
     /// The stretch order.
     pub glue_order: Stored<GlueOrder>,
@@ -1400,6 +1388,14 @@ same_offset!(
     AlignRecordLayout.width == UnsetLayout.width,
     AlignRecordLayout._span_list == SpanLayout.next,
     AlignRecordLayout.width == SpanLayout.width,
+    // `into_unset` clears the unset fields an align record keeps its parts in.
+    AlignRecordLayout.v_part == UnsetLayout.depth,
+    AlignRecordLayout.u_part == UnsetLayout.height,
+    AlignRecordLayout.extra_info == UnsetLayout.glue_order,
+    // An unset's glue totals sit where the box's shift and glue ratio do.
+    UnsetLayout.glue_shrink == BoxLayout.shift_amount,
+    UnsetLayout.glue_order == BoxLayout.glue_order,
+    UnsetLayout.glue_sign == BoxLayout.glue_sign,
     MathLayout.width == KernLayout.width,
     // A retyped node keeps the SyncTeX stamp it was made with.
     UnsetLayout.sync_tag == BoxLayout.sync_tag,
