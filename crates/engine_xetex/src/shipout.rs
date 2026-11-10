@@ -954,7 +954,7 @@ fn hlist_out(
                     st.shipout.cur_h = edge;
                     st.shipout.cur_v = base_line;
                 }
-                Some(WhatsitVariant::SavePos) => st.shipout.pdf_save_pos(),
+                Some(WhatsitVariant::SavePos(_)) => st.shipout.pdf_save_pos(),
                 _ => out_what(st, whatsit)?,
             },
             AnyNode::Glue(glue) => {
@@ -1130,7 +1130,7 @@ fn vlist_out(
                     st.shipout.cur_v = save_v + st.mem[pic].depth;
                     st.shipout.cur_h = left_edge;
                 }
-                Some(WhatsitVariant::SavePos) => st.shipout.pdf_save_pos(),
+                Some(WhatsitVariant::SavePos(_)) => st.shipout.pdf_save_pos(),
                 _ => out_what(st, whatsit)?,
             },
             AnyNode::Glue(glue) => {

@@ -2,19 +2,18 @@
 //! heads, and TeX's node constructors.
 
 pub(crate) use crate::consts::TEX_NULL;
-use crate::consts::{INDEX_NODE_SIZE, MEDIUM_NODE_SIZE};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::Side;
 use crate::glue_store::GlueSpecId;
 use crate::mem_types::ListStateRecord;
 use crate::node::{
-    BoxLr, BoxNode, CharNode, ChoiceNode, DiscNode, FixedNode, GlueKind, GlueNode, HeadNode,
-    HyphPosNode, KernNode, KernSubtype, LigBoundary, LigItem, LigatureNode, ListRecord, LrNode,
-    MarginKernNode, MathCode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode, SpanNode,
-    StyleNode, WhatsitKind, WhatsitSubtype,
+    BoxLr, BoxNode, CharNode, ChoiceNode, DelimiterField, DiscNode, FixedNode, GlueKind, GlueNode,
+    HeadNode, HyphPosNode, KernNode, KernSubtype, LigBoundary, LigItem, LigatureNode, ListRecord,
+    LrNode, MarginKernNode, MathCode, MathNode, Noad, NodePtr, PageInsNode, PenaltyNode, RuleDimen,
+    RuleNode, SaIndexNode, SpanNode, StyleNode, WhatsitKind, WhatsitSubtype,
 };
-use crate::overlay::LigatureLayout;
+use crate::overlay::{LigatureLayout, Overlay};
 use crate::params::GluePar;
 use crate::state::{EqtbState, MemState};
 use crate::units::{
@@ -24,7 +23,7 @@ use crate::units::{
 pub(crate) use crate::glue_store::{FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, SS_GLUE, ZERO_GLUE};
 
 /// One more than the largest node size, so a node size indexes its free list.
-pub(crate) const FREE_CLASSES: usize = INDEX_NODE_SIZE as usize + 1;
+pub(crate) const FREE_CLASSES: usize = SaIndexNode::SIZE as usize + 1;
 /// `mem` may grow to this many words, half of `MAIN_MEMORY_WORDS`.
 const MAX_MEM_WORDS: usize = 1 << 25;
 
@@ -38,23 +37,32 @@ impl Default for FreeLists {
     }
 }
 
+/// The fixed node after `p`, which takes `words`.
+const fn after(p: MemPtr, words: i32) -> MemPtr {
+    MemPtr::from_raw(p.raw() + words)
+}
+
 // The fixed nodes at the start of `mem`, each as large as the layout it is read as.
 pub(crate) const PAGE_INS_HEAD: MemPtr = MemPtr::from_raw(0);
-pub(crate) const CONTRIB_HEAD: MemPtr = MemPtr::from_raw(8);
-pub(crate) const PAGE_HEAD: MemPtr = MemPtr::from_raw(12);
-pub(crate) const TEMP_HEAD: MemPtr = MemPtr::from_raw(18);
-pub(crate) const HOLD_HEAD: MemPtr = MemPtr::from_raw(22);
-pub(crate) const ADJUST_HEAD: MemPtr = MemPtr::from_raw(26);
-pub(crate) const ALIGN_HEAD: MemPtr = MemPtr::from_raw(30);
+pub(crate) const CONTRIB_HEAD: MemPtr = after(PAGE_INS_HEAD, PageInsNode::SIZE);
+pub(crate) const PAGE_HEAD: MemPtr = after(CONTRIB_HEAD, HeadNode::SIZE);
+pub(crate) const TEMP_HEAD: MemPtr = after(PAGE_HEAD, GlueNode::SIZE);
+pub(crate) const HOLD_HEAD: MemPtr = after(TEMP_HEAD, HeadNode::SIZE);
+pub(crate) const ADJUST_HEAD: MemPtr = after(HOLD_HEAD, HeadNode::SIZE);
+pub(crate) const ALIGN_HEAD: MemPtr = after(ADJUST_HEAD, HeadNode::SIZE);
+const END_SPAN_AT: MemPtr = after(ALIGN_HEAD, HeadNode::SIZE);
 // SAFETY: the fixed span node ends every span list.
-pub(crate) const END_SPAN: NodePtr<SpanNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(34));
-pub(crate) const NULL_LIST: MemPtr = MemPtr::from_raw(38);
+pub(crate) const END_SPAN: NodePtr<SpanNode> =
+    NodePtr::from_idx_unchecked(MemIdx::from_raw(END_SPAN_AT.raw()));
+pub(crate) const NULL_LIST: MemPtr = after(END_SPAN_AT, SpanNode::SIZE);
 /// The scratch char node of TeX's lig trick.
-pub(crate) const LIG_TRICK: MemPtr = MemPtr::from_raw(42);
-pub(crate) const GARBAGE: MemPtr = MemPtr::from_raw(46);
-pub(crate) const PRE_ADJUST_HEAD: MemPtr = MemPtr::from_raw(50);
+pub(crate) const LIG_TRICK: MemPtr = after(NULL_LIST, HeadNode::SIZE);
+/// Where delimiters scanned only to be dropped are stored.
+pub(crate) const GARBAGE: MemPtr = after(LIG_TRICK, CharNode::SIZE);
+pub(crate) const PRE_ADJUST_HEAD: MemPtr = after(GARBAGE, <DelimiterField as Overlay>::WORDS);
 /// The words the fixed nodes take, where allocation starts.
-pub(crate) const RESERVED_WORDS: usize = 54;
+pub(crate) const RESERVED_WORDS: usize =
+    after(PRE_ADJUST_HEAD, HeadNode::SIZE).raw().cast_unsigned() as usize;
 
 impl ListStateRecord {
     /// A fixed-layout whatsit appended to the current list.
@@ -196,10 +204,6 @@ impl MemState {
             head
         };
         r.set_link(self, MemPtr::NULL);
-        if s >= MEDIUM_NODE_SIZE {
-            self.set_b32s0(r + s - 2, self.cur_synctex_tag);
-            self.set_b32s1(r + s - 2, self.line);
-        }
         Ok(r)
     }
 

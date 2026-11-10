@@ -673,79 +673,26 @@ pub(crate) struct MemState {
 }
 
 impl MemState {
-    #[inline(always)]
-    fn note(&mut self, index: usize) {
+    /// Sets every word of the fixed nodes to null, before the journal is armed.
+    pub(crate) fn clear_fixed_nodes(&mut self) {
+        debug_assert!(!self.journal.armed());
+        let null = crate::units::MemPtr::NULL.raw().cast_unsigned();
+        self.data[..crate::mem::RESERVED_WORDS].fill(null);
+    }
+
+    /// The raw word at `index`.
+    #[cfg(test)]
+    pub(crate) fn word(&self, index: usize) -> i32 {
+        self.data[index].cast_signed()
+    }
+
+    /// Sets the raw word at `index`, journaled.
+    #[cfg(test)]
+    pub(crate) fn set_word(&mut self, index: usize, v: i32) {
         if self.journal.armed() {
             self.journal.note(index, self.data[index]);
         }
-    }
-
-    #[inline]
-    fn at(p: impl crate::units::MemAddr) -> usize {
-        p.addr() as usize
-    }
-
-    /// The first half of the eight-byte field pair at `p`.
-    #[inline]
-    pub(crate) fn b32s0(&self, p: impl crate::units::MemAddr) -> i32 {
-        self.data[Self::at(p)].cast_signed()
-    }
-
-    /// The second half of the eight-byte field pair at `p`.
-    #[inline]
-    pub(crate) fn b32s1(&self, p: impl crate::units::MemAddr) -> i32 {
-        self.data[Self::at(p) + 1].cast_signed()
-    }
-
-    #[inline]
-    pub(crate) fn b16s0(&self, p: impl crate::units::MemAddr) -> u16 {
-        bytemuck::cast::<u32, [u16; 2]>(self.data[Self::at(p)])[0]
-    }
-
-    #[inline]
-    pub(crate) fn b16s1(&self, p: impl crate::units::MemAddr) -> u16 {
-        bytemuck::cast::<u32, [u16; 2]>(self.data[Self::at(p)])[1]
-    }
-
-    /// Copies the `n` words at `src` to `dst`, last first.
-    pub(crate) fn copy_run(
-        &mut self,
-        dst: crate::units::MemPtr,
-        src: crate::units::MemPtr,
-        n: i32,
-    ) {
-        for w in (0..n).rev() {
-            let v = self.data[Self::at(src + w)];
-            self.set(Self::at(dst + w), v);
-        }
-    }
-
-    #[inline]
-    fn set(&mut self, index: usize, v: u32) {
-        self.note(index);
-        self.data[index] = v;
-    }
-
-    #[inline]
-    pub(crate) fn set_b32s0(&mut self, p: impl crate::units::MemAddr, v: i32) {
-        self.set(Self::at(p), v.cast_unsigned());
-    }
-
-    #[inline]
-    pub(crate) fn set_b32s1(&mut self, p: impl crate::units::MemAddr, v: i32) {
-        self.set(Self::at(p) + 1, v.cast_unsigned());
-    }
-
-    #[inline]
-    pub(crate) fn set_b16s0(&mut self, p: impl crate::units::MemAddr, v: u16) {
-        let i = Self::at(p);
-        self.set(i, (self.data[i] & 0xFFFF_0000) | u32::from(v));
-    }
-
-    #[inline]
-    pub(crate) fn set_b16s1(&mut self, p: impl crate::units::MemAddr, v: u16) {
-        let i = Self::at(p);
-        self.set(i, (self.data[i] & 0xFFFF) | u32::from(v) << 16);
+        self.data[index] = v.cast_unsigned();
     }
 }
 

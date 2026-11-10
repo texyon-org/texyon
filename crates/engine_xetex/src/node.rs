@@ -10,12 +10,7 @@ use crate::math::MathStyle;
 use crate::params::GluePar;
 use std::marker::PhantomData;
 
-use crate::consts::{
-    ACCENT_NOAD_SIZE, BOX_NODE_SIZE, FRACTION_NOAD_SIZE, GLYPH_NODE_SIZE, INDEX_NODE_SIZE,
-    INS_NODE_SIZE, MARGIN_KERN_NODE_SIZE, MARK_CLASS_NODE_SIZE, MEDIUM_NODE_SIZE, NATIVE_NODE_SIZE,
-    NOAD_SIZE, NULL_FLAG, OPEN_NODE_SIZE, PAGE_INS_NODE_SIZE, PIC_NODE_SIZE, RADICAL_NOAD_SIZE,
-    RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE, WRITE_NODE_SIZE,
-};
+use crate::consts::NULL_FLAG;
 use crate::errors::Abort;
 use crate::state::MemState;
 use crate::units::{
@@ -626,10 +621,28 @@ const _: () = assert!(
 );
 
 /// A kind with a fixed allocation size and header type code.
-pub trait FixedNode: NodeKind {
-    const SIZE: i32;
+pub trait FixedNode: crate::overlay::Overlay + Sized {
+    /// The node's size in words, its layout's.
+    const SIZE: i32 = <Self as crate::overlay::Overlay>::WORDS;
     /// The `NODE_type` stamped at allocation, `None` for headerless records.
     const TYPE: Option<NodeType>;
+
+    /// Fills what every new node of the kind starts with, after its header.
+    #[inline]
+    fn init(_mem: &mut MemState, _p: NodePtr<Self>) {}
+}
+
+/// Stamps the SyncTeX tag and line into the kind's sync fields.
+macro_rules! init_sync {
+    () => {
+        #[inline]
+        fn init(mem: &mut MemState, p: NodePtr<Self>) {
+            let (tag, line) = (mem.cur_synctex_tag, mem.line);
+            let node = &mut mem[p];
+            node.sync_tag = tag;
+            node.sync_line = line;
+        }
+    };
 }
 
 impl MemState {
@@ -651,19 +664,21 @@ impl<K: FixedNode> NodePtr<K> {
     /// Carves a fresh node with its type stamped and its fields uninitialised.
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Result<Self, Abort> {
-        mem.alloc_node(K::SIZE, K::TYPE)
+        let p = mem.alloc_node(K::SIZE, K::TYPE)?;
+        K::init(mem, p);
+        Ok(p)
     }
 }
 
 macro_rules! node_kinds {
-    ($($(#[$m:meta])* $kind:ident $(= $ty:ident, $size:expr)?;)*) => {$(
+    ($($(#[$m:meta])* $kind:ident $(= $ty:ident $($synced:ident)?)?;)*) => {$(
         $(#[$m])*
         pub enum $kind {}
         impl NodeKind for $kind {}
         $(
             impl FixedNode for $kind {
-                const SIZE: i32 = $size;
                 const TYPE: Option<NodeType> = Some(NodeType::$ty);
+                $($synced!();)?
             }
         )?
     )*};
@@ -671,52 +686,54 @@ macro_rules! node_kinds {
 
 node_kinds! {
     /// An hlist or vlist box. `alloc` makes an hlist.
-    BoxNode = HList, BOX_NODE_SIZE;
-    RuleNode = Rule, RULE_NODE_SIZE;
-    InsNode = Ins, INS_NODE_SIZE;
-    MarkNode = Mark, SMALL_NODE_SIZE;
+    BoxNode = HList init_sync;
+    RuleNode = Rule init_sync;
+    InsNode = Ins;
+    MarkNode = Mark;
     /// A `\vadjust` list.
-    AdjustNode = Adjust, SMALL_NODE_SIZE;
-    LigatureNode = Ligature, SMALL_NODE_SIZE;
-    DiscNode = Disc, SMALL_NODE_SIZE;
-    MathNode = Math, MEDIUM_NODE_SIZE;
-    GlueNode = Glue, MEDIUM_NODE_SIZE;
-    KernNode = Kern, MEDIUM_NODE_SIZE;
-    PenaltyNode = Penalty, MEDIUM_NODE_SIZE;
-    StyleNode = Style, STYLE_NODE_SIZE;
-    ChoiceNode = Choice, STYLE_NODE_SIZE;
+    AdjustNode = Adjust;
+    LigatureNode = Ligature;
+    DiscNode = Disc;
+    MathNode = Math init_sync;
+    GlueNode = Glue init_sync;
+    KernNode = Kern init_sync;
+    PenaltyNode = Penalty;
+    StyleNode = Style;
+    ChoiceNode = Choice;
     /// An LR edge in a shipped list. XeTeX aliases its type code to style.
-    EdgeNode = Style, STYLE_NODE_SIZE;
+    EdgeNode = Style;
     /// A noad with a nucleus and two scripts: ord through inner, overline,
     /// underline and vcenter. `alloc` makes an ordinary one.
-    Noad = OrdNoad, NOAD_SIZE;
+    Noad = OrdNoad;
     /// A radical: a noad, then its delimiter.
-    RadicalNoad = RadicalNoad, RADICAL_NOAD_SIZE;
+    RadicalNoad = RadicalNoad;
     /// A math accent: a noad, then its accent character.
-    AccentNoad = AccentNoad, ACCENT_NOAD_SIZE;
+    AccentNoad = AccentNoad;
     /// A generalized fraction.
-    FractionNoad = FractionNoad, FRACTION_NOAD_SIZE;
+    FractionNoad = FractionNoad;
     /// A `\left`, `\middle` or `\right` delimiter. `alloc` makes a left one.
-    FenceNoad = LeftNoad, NOAD_SIZE;
+    FenceNoad = LeftNoad;
     /// Any noad, through the words every noad shares.
     AnyNoad;
-    MarginKernNode = MarginKern, MARGIN_KERN_NODE_SIZE;
+    MarginKernNode = MarginKern;
     /// Any whatsit, through its header. [`NodePtr::variant`] gives its layout.
     WhatsitNode;
+    /// Any list node, through the header every list node shares.
+    AnyHeader;
     /// `\openout`: a stream and a file name.
-    OpenNode = Whatsit, OPEN_NODE_SIZE;
+    OpenNode = Whatsit;
     /// `\write`, `\closeout` or `\special`: a stream and a token list.
-    WriteNode = Whatsit, WRITE_NODE_SIZE;
+    WriteNode = Whatsit;
     /// A language change: the language and its hyphenation minima.
-    LanguageNode = Whatsit, SMALL_NODE_SIZE;
+    LanguageNode = Whatsit;
     /// One glyph of a native font, by glyph id.
-    GlyphNode = Whatsit, GLYPH_NODE_SIZE;
+    GlyphNode = Whatsit;
     /// A `\pdfsavepos` mark, nothing but its header.
-    SavePosNode = Whatsit, SMALL_NODE_SIZE;
+    SavePosNode = Whatsit;
     /// A `\XeTeXpicfile` or `\XeTeXpdffile` image, its path in the payload.
-    PicNode = Whatsit, PIC_NODE_SIZE;
+    PicNode = Whatsit;
     /// A run of text in one native font, the UTF-16 text in the payload.
-    NativeWordNode = Whatsit, NATIVE_NODE_SIZE;
+    NativeWordNode = Whatsit;
     /// A native word, glyph or picture, through the dimensions they share.
     SizedWhatsit;
     /// An alignment box before its column widths are known. Words +4..+6 hold
@@ -745,9 +762,9 @@ node_kinds! {
     /// `inserting` or `split_up`, its subtype the insertion's box number.
     PageInsNode;
     /// A character in a font.
-    CharNode = Char, CHAR_NODE_SIZE;
+    CharNode = Char;
     /// The head of a list under construction, from `push_nest`, `copy_list` or an alignment.
-    HeadNode = Head, CHAR_NODE_SIZE;
+    HeadNode = Head;
     /// An entry of the TeX--XeT LR stack.
     LrNode;
     /// An open `\scantokens` pseudo file.
@@ -774,75 +791,58 @@ node_kinds! {
 }
 
 impl FixedNode for LigItem {
-    const SIZE: i32 = SMALL_NODE_SIZE;
     const TYPE: Option<NodeType> = None;
 }
 impl FixedNode for SaIndexNode {
-    const SIZE: i32 = INDEX_NODE_SIZE;
     const TYPE: Option<NodeType> = None;
 }
 impl FixedNode for SaWordNode {
-    const SIZE: i32 = 6;
     const TYPE: Option<NodeType> = None;
 }
 impl FixedNode for SaPointerNode {
-    const SIZE: i32 = 4;
     const TYPE: Option<NodeType> = None;
 }
 impl FixedNode for SaMarkClassNode {
-    const SIZE: i32 = MARK_CLASS_NODE_SIZE;
     const TYPE: Option<NodeType> = None;
 }
 impl FixedNode for SaSavedWord {
-    const SIZE: i32 = SaWordNode::SIZE;
     const TYPE: Option<NodeType> = None;
 }
 impl FixedNode for SaSavedPointer {
-    const SIZE: i32 = SaPointerNode::SIZE;
     const TYPE: Option<NodeType> = None;
 }
 impl FixedNode for ParShapeNode {
-    const SIZE: i32 = 4;
     const TYPE: Option<NodeType> = None;
 }
 impl FixedNode for PenaltiesNode {
-    const SIZE: i32 = 4;
     const TYPE: Option<NodeType> = None;
 }
 impl FixedNode for PseudoLineNode {
-    const SIZE: i32 = 4;
     const TYPE: Option<NodeType> = None;
 }
 impl FixedNode for HyphPosNode {
-    const SIZE: i32 = 4;
     const TYPE: Option<NodeType> = None;
 }
 impl FixedNode for PseudoFileNode {
-    const SIZE: i32 = 4;
     const TYPE: Option<NodeType> = None;
 }
 impl FixedNode for LrNode {
-    const SIZE: i32 = 4;
     const TYPE: Option<NodeType> = None;
 }
 impl FixedNode for SpanNode {
-    const SIZE: i32 = 4;
     const TYPE: Option<NodeType> = None;
 }
 impl FixedNode for AlignRecord {
-    const SIZE: i32 = BOX_NODE_SIZE;
     const TYPE: Option<NodeType> = Some(NodeType::HList);
+    init_sync!();
 }
 impl FixedNode for UnsetNode {
-    const SIZE: i32 = BOX_NODE_SIZE;
     const TYPE: Option<NodeType> = Some(NodeType::Unset);
+    init_sync!();
 }
 impl FixedNode for PageInsNode {
-    const SIZE: i32 = PAGE_INS_NODE_SIZE;
     const TYPE: Option<NodeType> = None;
 }
-
-const CHAR_NODE_SIZE: i32 = 4;
 
 // --- shared layouts ---
 
@@ -896,24 +896,20 @@ impl<K: FixedNode> NodePtr<K> {
     }
 }
 
+/// The header of the list node at `p`.
+#[inline]
+fn header(p: impl MemAddr) -> NodePtr<AnyHeader> {
+    NodePtr::from_idx_unchecked(MemIdx::new(p))
+}
+
 impl MemPtr {
     #[inline]
     pub fn link(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self))
+        mem[header(self)].link
     }
     #[inline]
     pub fn set_link(self, mem: &mut MemState, q: MemPtr) {
-        mem.set_b32s1(self, q.raw());
-    }
-    /// Knuth's `info`, the payload half of a one-word node.
-    #[inline]
-    pub fn info(self, mem: &MemState) -> i32 {
-        mem.b32s0(self)
-    }
-    /// `info` of a node whose payload is a pointer.
-    #[inline]
-    pub fn info_ptr(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(self.info(mem))
+        mem[header(self)].link = q;
     }
 }
 
@@ -932,10 +928,21 @@ impl NodePtr<BoxNode> {
     }
 }
 
+// A node retyped in place is freed by its new type, so both kinds have one size.
+const _: () = assert!(
+    UnsetNode::SIZE == BoxNode::SIZE
+        && AlignRecord::SIZE == UnsetNode::SIZE
+        && MathNode::SIZE == KernNode::SIZE
+        && GlueNode::SIZE == KernNode::SIZE
+        && GlueNode::SIZE == PenaltyNode::SIZE
+        && ChoiceNode::SIZE == StyleNode::SIZE
+        && EdgeNode::SIZE == StyleNode::SIZE
+);
+
 /// Stamps a new type code and rewraps the handle.
 #[inline]
 fn retype<K: NodeKind, L: NodeKind>(p: NodePtr<K>, mem: &mut MemState, ty: NodeType) -> NodePtr<L> {
-    mem.set_b16s1(p.idx, ty.as_raw());
+    mem[header(p.idx)].ty = ty.as_raw();
     NodePtr::from_idx_unchecked(p.idx)
 }
 
@@ -1110,21 +1117,21 @@ impl MemState {
     /// Stamps the type and subtype of the node header at `p`.
     #[inline]
     pub fn set_header(&mut self, p: impl MemAddr, ty: NodeType, subtype: u16) {
-        let p = MemIdx::new(p);
-        self.set_b16s1(p, ty.as_raw());
-        self.set_b16s0(p, subtype);
+        let h = &mut self[header(p)];
+        h.ty = ty.as_raw();
+        h.subtype = subtype;
     }
 
     /// The raw type code, for `\lastnodetype` arithmetic and diagnostics.
     #[inline]
     pub fn type_code(&self, p: impl MemAddr) -> u16 {
-        self.b16s1(MemIdx::new(p))
+        self[header(p)].ty
     }
 
     /// The checked `NODE_type` of the non-null lo-mem node `p`.
     #[inline]
     pub fn node_type(&self, p: impl MemAddr) -> Result<NodeType, InvalidNodeType> {
-        NodeType::from_raw(self.b16s1(MemIdx::new(p)))
+        NodeType::from_raw(self[header(p)].ty)
     }
 
     /// Classifies the non-null lo-mem node `p`. `Err` for an invalid type code.
@@ -1641,7 +1648,7 @@ pub enum WhatsitVariant {
     Special(NodePtr<WriteNode>),
     LateSpecial(NodePtr<WriteNode>),
     Language(NodePtr<LanguageNode>),
-    SavePos,
+    SavePos(NodePtr<SavePosNode>),
     NativeWord(NodePtr<NativeWordNode>),
     Glyph(NodePtr<GlyphNode>),
     Pic(NodePtr<PicNode>),
@@ -1660,7 +1667,7 @@ impl NodePtr<WhatsitNode> {
             S::Special => WhatsitVariant::Special(NodePtr::from_idx_unchecked(p)),
             S::LateSpecial => WhatsitVariant::LateSpecial(NodePtr::from_idx_unchecked(p)),
             S::Language => WhatsitVariant::Language(NodePtr::from_idx_unchecked(p)),
-            S::PdfSavePos => WhatsitVariant::SavePos,
+            S::PdfSavePos => WhatsitVariant::SavePos(NodePtr::from_idx_unchecked(p)),
             S::NativeWord | S::NativeWordAt => {
                 WhatsitVariant::NativeWord(NodePtr::from_idx_unchecked(p))
             }
@@ -1681,7 +1688,7 @@ impl NodePtr<WhatsitNode> {
 
     #[inline]
     pub fn whatsit_subtype(self, mem: &MemState) -> Option<WhatsitSubtype> {
-        WhatsitSubtype::from_raw(mem.b16s0(self.idx))
+        WhatsitSubtype::from_raw(mem[header(self.idx)].subtype)
     }
 }
 
@@ -1979,12 +1986,12 @@ mod tests {
     fn alloc_zeroes_the_subtype_with_the_type() {
         let mut mem = arena_with_free_block();
         let old = NodePtr::<PenaltyNode>::alloc(&mut mem).unwrap();
-        mem.set_b16s0(old.idx(), 0xBEEF);
-        mem.free_node(old.ptr(), MEDIUM_NODE_SIZE);
+        mem[header(old.idx())].subtype = 0xBEEF;
+        old.free(&mut mem);
         let p = NodePtr::<PenaltyNode>::alloc(&mut mem).unwrap();
         assert_eq!(p, old);
-        assert_eq!(mem.b16s0(p.idx()), 0);
-        assert_eq!(mem.b16s1(p.idx()), NodeType::Penalty.as_raw());
+        assert_eq!(mem[header(p.idx())].subtype, 0);
+        assert_eq!(mem.node_type(p.ptr()), Ok(NodeType::Penalty));
     }
 
     #[test]
@@ -2010,7 +2017,7 @@ mod tests {
 
     fn at<K: NodeKind>(mem: &mut MemState, p: i32, ty: Option<NodeType>) -> NodePtr<K> {
         if let Some(ty) = ty {
-            mem.set_b16s1(MemPtr::from_raw(p), ty.as_raw());
+            mem[header(MemPtr::from_raw(p))].ty = ty.as_raw();
         }
         NodePtr::from_idx_unchecked(MemIdx::new(MemPtr::from_raw(p)))
     }
@@ -2089,14 +2096,12 @@ mod tests {
     }
 
     #[test]
-    fn get_node_stamps_the_sync_fields() {
+    fn alloc_stamps_the_sync_fields_of_synced_kinds() {
         let mut mem = arena_with_free_block();
         (mem.cur_synctex_tag, mem.line) = (42, 7);
-        let b: NodePtr<BoxNode> =
-            NodePtr::from_idx_unchecked(MemIdx::new(mem.get_node(BOX_NODE_SIZE).unwrap()));
+        let b = NodePtr::<BoxNode>::alloc(&mut mem).unwrap();
         assert_eq!((mem[b].sync_tag, mem[b].sync_line), (42, 7));
-        let k: NodePtr<KernNode> =
-            NodePtr::from_idx_unchecked(MemIdx::new(mem.get_node(MEDIUM_NODE_SIZE).unwrap()));
+        let k = NodePtr::<KernNode>::alloc(&mut mem).unwrap();
         assert_eq!((mem[k].sync_tag, mem[k].sync_line), (42, 7));
     }
 
@@ -2120,9 +2125,9 @@ mod tests {
             (170, NodeType::Unset),
         ];
         for (p, ty) in cases {
-            mem.set_b16s1(MemPtr::from_raw(p), ty.as_raw());
+            mem[header(MemPtr::from_raw(p))].ty = ty.as_raw();
         }
-        mem.set_b16s1(MemPtr::from_raw(180), 35);
+        mem[header(MemPtr::from_raw(180))].ty = 35;
         let c = |p| mem.classify(MemPtr::from_raw(p));
         use AnyNode::*;
         assert!(matches!(c(40), Ok(Box(b)) if mem[b].is_hlist()));

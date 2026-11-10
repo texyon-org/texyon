@@ -17,7 +17,7 @@ use crate::token::TEMP_HEAD_TOKS;
 use crate::units::{NodeType, Scaled};
 
 use super::cmd_chr::{print_cmd_chr, print_meaning};
-use super::show_box::{show_box, show_node_list};
+use super::show_box::show_box;
 use super::warnings::{leave_group_boundary, print_if_line};
 use super::{
     begin_diagnostic, end_diagnostic, print, print_char, print_cs, print_error_prefix, print_esc,
@@ -141,11 +141,6 @@ fn print_totals(st: &mut EngineState) {
         print(st, " minus ");
         print_scaled(st, st.shipout.page_so_far[6]);
     }
-}
-
-pub(super) fn show_info(st: &mut EngineState) {
-    let p = st.mem.temp_ptr.info_ptr(&st.mem);
-    show_node_list(st, p);
 }
 
 pub(crate) fn issue_message(st: &mut EngineState, err: bool) -> Result<(), Abort> {

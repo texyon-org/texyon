@@ -2,8 +2,7 @@
 
 use crate::codes::{BoxCode, MarkCode, ValueLevel};
 use crate::consts::{
-    AWFUL_BAD, EJECT_PENALTY, IGNORE_DEPTH, INF_BAD, INF_PENALTY, MAX_DIMEN, MAX_HALFWORD,
-    PAGE_INS_NODE_SIZE, VMODE,
+    AWFUL_BAD, EJECT_PENALTY, IGNORE_DEPTH, INF_BAD, INF_PENALTY, MAX_DIMEN, MAX_HALFWORD, VMODE,
 };
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
@@ -433,7 +432,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         r = r.link(&st.mem);
     }
     if st.mem[page_ins(r)].box_number != u16::from(n) {
-        let q = st.mem.get_node(PAGE_INS_NODE_SIZE)?;
+        let q = NodePtr::<PageInsNode>::alloc(&mut st.mem)?.ptr();
         let next = r.link(&st.mem);
         q.set_link(&mut st.mem, next);
         r.set_link(&mut st.mem, q);

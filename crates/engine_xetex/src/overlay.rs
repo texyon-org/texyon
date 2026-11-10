@@ -14,15 +14,16 @@ use bytemuck::{Pod, Zeroable};
 use crate::codes::{LimitCode, MarkCode, ValueLevel};
 use crate::consts::{EMPTY, NORMAL};
 use crate::node::{
-    AccentNoad, AdjustNode, AdjustPlacement, AlignRecord, AnyNoad, BoxLr, BoxNode, CharNode,
-    ChoiceNode, DelimiterField, DiscNode, EdgeNode, FenceNoad, FenceSubtype, FixedNode,
+    AccentNoad, AdjustNode, AdjustPlacement, AlignRecord, AnyHeader, AnyNoad, BoxLr, BoxNode,
+    CharNode, ChoiceNode, DelimiterField, DiscNode, EdgeNode, FenceNoad, FenceSubtype,
     FractionNoad, GlueKind, GlueNode, GlyphNode, HeadNode, HyphPosNode, InsNode, KernNode,
     KernSubtype, LanguageNode, LeaderKind, LigBoundary, LigItem, LigatureNode, Link, LrNode,
     MarginKernNode, MarkNode, MathAccentKind, MathCode, MathField, MathNode, NativeWordNode, Noad,
     NodeKind, NodePtr, OpenNode, PageInsNode, ParShapeNode, PenaltiesNode, PenaltyNode, PicNode,
     PseudoFileNode, PseudoLineNode, RadicalNoad, RuleNode, SaChild, SaElement, SaIndexNode, SaLeaf,
-    SaMarkClassNode, SaPointerNode, SaSaved, SaSavedPointer, SaSavedWord, SaWordNode, SizedWhatsit,
-    SpanNode, Stored, StoredDimen, StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype, WriteNode,
+    SaMarkClassNode, SaPointerNode, SaSaved, SaSavedPointer, SaSavedWord, SaWordNode, SavePosNode,
+    SizedWhatsit, SpanNode, Stored, StoredDimen, StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype,
+    WriteNode,
 };
 use crate::payload::PayloadId;
 use crate::state::MemState;
@@ -69,11 +70,11 @@ impl<K: Overlay> std::ops::IndexMut<NodePtr<K>> for MemState {
     }
 }
 
-/// Declares the layout of a node kind and checks it covers the node exactly.
-/// The word count defaults to the kind's allocation size.
+/// Declares the layout of a node kind. The word count defaults to the layout's size,
+/// which is also the size of a fixed node of the kind.
 macro_rules! overlay {
     ($kind:ty => $layout:ty) => {
-        overlay!($kind => $layout, <$kind as FixedNode>::SIZE);
+        overlay!($kind => $layout, word_offset(std::mem::size_of::<$layout>()));
     };
     ($kind:ty => $layout:ty, $words:expr) => {
         impl Overlay for $kind {
@@ -285,6 +286,17 @@ impl PseudoWord {
 overlay!(PseudoLineNode => PseudoLineHeader);
 array_overlay!(PseudoLineNode => PseudoWord, payload, |h| h.size - 1);
 
+/// The words every list node starts with, read before its kind is known.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct NodeHeader {
+    pub subtype: u16,
+    pub ty: u16,
+    pub link: MemPtr,
+}
+
+overlay!(AnyHeader => NodeHeader, 2);
+
 /// Any whatsit: its subtype and link.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
@@ -295,6 +307,7 @@ pub struct WhatsitLayout {
 }
 
 overlay!(WhatsitNode => WhatsitLayout, 2);
+overlay!(SavePosNode => WhatsitLayout);
 
 /// `\openout`.
 #[repr(C)]
@@ -1106,7 +1119,9 @@ pub struct AlignRecordLayout {
     _unused4: [i32; 2],
     /// The command that ended the current entry of this column.
     pub extra_info: i32,
-    _unused5: [i32; 5],
+    _unused5: [i32; 3],
+    pub sync_tag: i32,
+    pub sync_line: i32,
 }
 
 overlay!(AlignRecord => AlignRecordLayout);
@@ -1347,6 +1362,7 @@ macro_rules! sync_trailer {
 sync_trailer!(
     BoxLayout,
     UnsetLayout,
+    AlignRecordLayout,
     RuleLayout,
     GlueLayout,
     KernLayout,
@@ -1486,7 +1502,6 @@ mod tests {
         lines[0].width = Scaled::from_raw(12);
         lines[1].indent = Scaled::from_raw(13);
         lines[1].width = Scaled::from_raw(14);
-        assert_eq!(mem.b32s0(MemIdx::from_raw(4)), 2);
         assert_eq!(mem.payloads.get(mem[s].payload), [11, 12, 13, 14]);
         assert_eq!(s.line(&mem, 2).width, Scaled::from_raw(14));
     }
@@ -1518,8 +1533,6 @@ mod tests {
         let words = mem.entries_mut(p);
         assert_eq!(words.len(), 2);
         words[1] = PseudoWord::new([1, 2, 3, 4]);
-        let at = MemIdx::from_raw;
-        assert_eq!((mem.b32s0(at(4)), mem.b32s1(at(4))), (3, 9));
         assert_eq!(
             mem.payloads.get(mem[p].payload),
             [0, 0, 4 | 3 << 16, 2 | 1 << 16]

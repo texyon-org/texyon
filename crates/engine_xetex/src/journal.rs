@@ -367,7 +367,6 @@ pub(crate) fn disarm(st: &mut crate::state::EngineState) {
 mod tests {
     use super::*;
     use crate::mem_types::B32x2;
-    use crate::units::MemPtr;
 
     fn word(value: i32) -> MemoryWord {
         MemoryWord {
@@ -586,10 +585,11 @@ mod tests {
         };
         mem.journal.arm(mem.data.len());
 
-        mem.set_b32s1(MemPtr::from_raw(0), 10);
-        mem.set_b16s0(MemPtr::from_raw(0), 11);
-        mem.set_b32s0(MemPtr::from_raw(2), 12);
-        assert_eq!(mem.data, [11, 10, 12, 0]);
+        mem.set_word(1, 10);
+        mem.set_word(0, 11);
+        mem.set_word(2, 12);
+        mem.set_word(0, 13);
+        assert_eq!(mem.data, [13, 10, 12, 0]);
 
         let delta = mem.journal.seal(&mem.data);
         assert_eq!(delta.len(), 3);

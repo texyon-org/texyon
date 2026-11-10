@@ -14,7 +14,6 @@ use crate::params::IntPar;
 use crate::state::EngineState;
 use crate::units::{GlueSign, MemPtr, NodeType, Scaled};
 
-use super::show::show_info;
 use super::{
     print, print_char, print_current_string, print_delimiter, print_esc, print_fam_and_char,
     print_file_name, print_font_and_char, print_font_char, print_glue, print_int, print_ln,
@@ -132,14 +131,14 @@ fn print_subsidiary_data(st: &mut EngineState, p: NodePtr<MathField>, c: u8) {
             print_current_string(st);
             print_fam_and_char(st, p);
         }
-        SUB_BOX => show_info(st),
+        SUB_BOX => show_node_list(st, st.mem[p].info()),
         SUB_MLIST => {
             if st.mem[p].info().is_null() {
                 print_ln(st);
                 print_current_string(st);
                 print(st, "{}");
             } else {
-                show_info(st);
+                show_node_list(st, st.mem[p].info());
             }
         }
         _ => {}
@@ -414,7 +413,7 @@ fn show_whatsit(st: &mut EngineState, node: NodePtr<WhatsitNode>) {
             print_int(st, i32::from(language.rhm));
             print_char(st, b')');
         }
-        Some(WhatsitVariant::SavePos) => print_esc(st, "pdfsavepos"),
+        Some(WhatsitVariant::SavePos(_)) => print_esc(st, "pdfsavepos"),
         Some(WhatsitVariant::NativeWord(word)) => {
             print_font(st, st.mem[word].font);
             print_char(st, b' ');

@@ -2,8 +2,8 @@
 
 use crate::codes::LimitCode;
 use crate::consts::{
-    EMPTY, INFINITE_DIMEN, INF_PENALTY, MATH_CHAR, MATH_TEXT_CHAR, MAX_DIMEN, NOAD_SIZE, NULL_FONT,
-    STYLE_NODE_SIZE, SUB_BOX, SUB_MLIST, TEXT_SIZE,
+    EMPTY, INFINITE_DIMEN, INF_PENALTY, MATH_CHAR, MATH_TEXT_CHAR, MAX_DIMEN, NULL_FONT, SUB_BOX,
+    SUB_MLIST, TEXT_SIZE,
 };
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
@@ -14,7 +14,8 @@ use crate::mem_types::ListStateRecord;
 use crate::node::{
     AccentNoad, AnyNoad, AnyNode, BoxNode, ChoiceNode, FenceNoad, FixedNode, FractionNoad,
     GlueKind, GlueNode, GlyphNode, KernNode, KernSubtype, MathAccentKind, MathField, Noad,
-    NoadVariant, NodePtr, RadicalNoad, RuleDimen, RuleNode, WhatsitSubtype, WhatsitVariant,
+    NoadVariant, NodePtr, RadicalNoad, RuleDimen, RuleNode, StyleNode, WhatsitSubtype,
+    WhatsitVariant,
 };
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar};
@@ -1423,7 +1424,7 @@ pub(super) fn mlist_to_hlist(
 
     while !q.is_null() {
         let mut t = NodeType::OrdNoad.as_raw();
-        let mut s = NOAD_SIZE;
+        let mut s = Noad::SIZE;
         let mut pen = INF_PENALTY;
         let step = match st.mem.classify(q) {
             Ok(AnyNode::Noad(qn)) => {
@@ -1465,7 +1466,7 @@ pub(super) fn mlist_to_hlist(
             }
             Ok(AnyNode::Style(sn)) => {
                 style = st.mem[sn].style;
-                s = STYLE_NODE_SIZE;
+                s = StyleNode::SIZE;
                 SecondPass::StyleNode
             }
             Ok(

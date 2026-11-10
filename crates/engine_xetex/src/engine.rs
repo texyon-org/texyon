@@ -363,10 +363,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     mem[FIL_NEG_GLUE].stretch = -Scaled::UNITY;
     mem[FIL_NEG_GLUE].stretch_order = GlueOrder::Fil.into();
 
-    let empty = MemPtr::NULL.raw();
-    for k in (0..).take(crate::mem::RESERVED_WORDS) {
-        mem.set_b32s0(MemPtr::from_raw(k), empty);
-    }
+    mem.clear_fixed_nodes();
 
     OMIT_TEMPLATE.set_token(&mut mem.tokens, Token::from_cs(FROZEN_END_TEMPLATE));
     mem[END_SPAN].span_count = i32::from(u16::MAX) + 1;
