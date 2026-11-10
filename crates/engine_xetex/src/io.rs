@@ -1016,13 +1016,13 @@ fn scan_file_name_braced(st: &mut EngineState) -> Result<NameScan, Abort> {
 
     st.shipout.old_setting = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
-    let arg = st.scanner.def_ref.link(&st.mem);
+    let arg = st.scanner.def_ref.link(&st.mem.tokens);
     let l = st.strings.pool_size - st.strings.pool_ptr;
     crate::output::show_token_list(st, arg, crate::token::TokenList::NULL, l);
     st.shipout.selector = st.shipout.old_setting;
 
     let s = st.strings.make_string()?;
-    st.mem.delete_token_ref(st.scanner.def_ref);
+    st.mem.tokens.delete_ref(st.scanner.def_ref);
     st.scanner.def_ref = save_def_ref;
     st.scanner.cur_cs = save_cur_cs;
     st.scanner.scanner_status = save_scanner_status;

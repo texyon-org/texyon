@@ -9,11 +9,11 @@ use crate::consts::{
 };
 use crate::errors::Abort;
 use crate::input::{back_input, begin_token_list, TokenType};
-use crate::mem::BACKUP_HEAD;
 use crate::node::{BoxNode, MathField, NodePtr, RuleDimen, RuleNode, SaLeaf, Stored};
 use crate::packaging::PackSpec;
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, GroupCode, MemState, ScannerState};
+use crate::token::BACKUP_HEAD;
 use crate::token::{Token, TokenList};
 use crate::units::{MemPtr, NodeType, Scaled};
 
@@ -358,7 +358,7 @@ pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, 
     let keyword = keyword.as_bytes();
     let save_cur_cs = st.scanner.cur_cs;
     let mut p = BACKUP_HEAD;
-    p.set_link(&mut st.mem, TokenList::NULL);
+    p.set_link(&mut st.mem.tokens, TokenList::NULL);
     let mut i = 0;
     while i < keyword.len() {
         get_x_token(st)?;
@@ -371,7 +371,7 @@ pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, 
         } else if st.scanner.cur_cmd != Cmd::Spacer || p != BACKUP_HEAD {
             back_input(st)?;
             if p != BACKUP_HEAD {
-                begin_token_list(st, BACKUP_HEAD.link(&st.mem), TokenType::BackedUp)?;
+                begin_token_list(st, BACKUP_HEAD.link(&st.mem.tokens), TokenType::BackedUp)?;
             }
             if keyword.len() == 1 {
                 st.scanner.cur_cs = save_cur_cs;
@@ -379,8 +379,8 @@ pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, 
             return Ok(false);
         }
     }
-    let matched = BACKUP_HEAD.link(&st.mem);
-    st.mem.flush_token_list_with_tail(matched, p);
+    let matched = BACKUP_HEAD.link(&st.mem.tokens);
+    st.mem.tokens.flush_list_with_tail(matched, p);
     Ok(true)
 }
 

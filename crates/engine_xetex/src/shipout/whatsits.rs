@@ -28,7 +28,7 @@ fn special_out(
         st.mem[special].tokens
     };
     st.shipout.selector = Selector::NewString;
-    let tokens = list.link(&st.mem);
+    let tokens = list.link(&st.mem.tokens);
     let avail = st.strings.pool_size - st.strings.pool_ptr;
     crate::output::show_token_list(st, tokens, crate::token::TokenList::NULL, avail);
     st.shipout.selector = old_setting;
@@ -37,7 +37,7 @@ fn special_out(
     }
     dvi_special_from_cur_string(st)?;
     if late {
-        st.mem.flush_token_list(list);
+        st.mem.tokens.flush_list(list);
     }
     st.shipout.doing_special = false;
     Ok(())
@@ -56,15 +56,15 @@ impl EqtbState {
 
 /// Expands `tokens` as `\write` does, leaving the result in `def_ref`.
 fn expand_write_tokens(st: &mut crate::state::EngineState, tokens: TokenList) -> Result<(), Abort> {
-    let q = st.mem.get_avail_token()?;
-    q.set_token(&mut st.mem, Token::right_brace(b'}'));
-    let r = st.mem.get_avail_token()?;
-    q.set_link(&mut st.mem, r);
-    r.set_token(&mut st.mem, Token::from_cs(END_WRITE));
+    let q = st.mem.tokens.get_avail()?;
+    q.set_token(&mut st.mem.tokens, Token::right_brace(b'}'));
+    let r = st.mem.tokens.get_avail()?;
+    q.set_link(&mut st.mem.tokens, r);
+    r.set_token(&mut st.mem.tokens, Token::from_cs(END_WRITE));
     crate::input::begin_token_list(st, q, TokenType::Inserted)?;
     crate::input::begin_token_list(st, tokens, TokenType::Write)?;
-    let q = st.mem.get_avail_token()?;
-    q.set_token(&mut st.mem, Token::left_brace(b'{'));
+    let q = st.mem.tokens.get_avail()?;
+    q.set_token(&mut st.mem.tokens, Token::left_brace(b'{'));
     crate::input::begin_token_list(st, q, TokenType::Inserted)?;
 
     let old_mode = st.input.cur_list.mode;
@@ -120,7 +120,7 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WriteNode>) -> R
         crate::diagnostic::end_capture(st);
     }
     crate::output::print_ln(st);
-    st.mem.flush_token_list(def_ref);
+    st.mem.tokens.flush_list(def_ref);
 
     if j == 18 {
         st.shipout.selector = st.eqtb.log_selector();

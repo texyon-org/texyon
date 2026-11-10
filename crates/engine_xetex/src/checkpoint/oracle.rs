@@ -109,6 +109,12 @@ fn digest_mem(st: &EngineState) -> u64 {
     for &word in &mem.data {
         h.word(memory_word(word));
     }
+    let marks = mem.tokens.marks();
+    h.word(marks.len as u64);
+    h.i32(marks.avail.raw());
+    for &node in mem.tokens.nodes() {
+        h.word(bytemuck::cast::<_, u64>(node));
+    }
     for slot in mem.glyph_blobs.slots() {
         match slot {
             None => h.word(0),
@@ -334,7 +340,7 @@ fn digest_input(st: &EngineState) -> u64 {
     }
     digest_list(&mut h, &input.cur_list);
     for p in input.param_stack.entries() {
-        h.i32(p.list.ptr().raw());
+        h.i32(p.list.raw());
     }
     for level in &input.open_levels {
         h.i32s(&[

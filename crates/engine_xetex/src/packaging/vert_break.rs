@@ -354,9 +354,10 @@ impl MemState {
         }
 
         if !scanner.cur_mark[MarkCode::SplitFirst].is_null() {
-            self.delete_token_ref(scanner.cur_mark[MarkCode::SplitFirst]);
+            self.tokens
+                .delete_ref(scanner.cur_mark[MarkCode::SplitFirst]);
             scanner.cur_mark[MarkCode::SplitFirst] = TokenList::NULL;
-            self.delete_token_ref(scanner.cur_mark[MarkCode::SplitBot]);
+            self.tokens.delete_ref(scanner.cur_mark[MarkCode::SplitBot]);
             scanner.cur_mark[MarkCode::SplitBot] = TokenList::NULL;
         }
 
@@ -404,20 +405,21 @@ impl MemState {
             };
             if self[m].mark(MarkCode::SplitFirst).is_null() {
                 self[m].set_mark(MarkCode::SplitFirst, mark_ptr);
-                self.add_token_ref(mark_ptr);
+                self.tokens.add_ref(mark_ptr);
             } else {
-                self.delete_token_ref(self[m].mark(MarkCode::SplitBot));
+                self.tokens.delete_ref(self[m].mark(MarkCode::SplitBot));
             }
             self[m].set_mark(MarkCode::SplitBot, mark_ptr);
-            self.add_token_ref(mark_ptr);
+            self.tokens.add_ref(mark_ptr);
         } else if scanner.cur_mark[MarkCode::SplitFirst].is_null() {
             scanner.cur_mark[MarkCode::SplitFirst] = mark_ptr;
             scanner.cur_mark[MarkCode::SplitBot] = mark_ptr;
-            mark_ptr.set_ref_count(self, mark_ptr.ref_count(self) + 2);
+            let refs = mark_ptr.ref_count(&self.tokens) + 2;
+            mark_ptr.set_ref_count(&mut self.tokens, refs);
         } else {
-            self.delete_token_ref(scanner.cur_mark[MarkCode::SplitBot]);
+            self.tokens.delete_ref(scanner.cur_mark[MarkCode::SplitBot]);
             scanner.cur_mark[MarkCode::SplitBot] = mark_ptr;
-            self.add_token_ref(mark_ptr);
+            self.tokens.add_ref(mark_ptr);
         }
         Ok(())
     }
@@ -680,25 +682,26 @@ impl MemState {
         match a {
             MarksAction::VsplitInit => {
                 if !self[node].mark(MarkCode::SplitFirst).is_null() {
-                    self.delete_token_ref(self[node].mark(MarkCode::SplitFirst));
+                    self.tokens
+                        .delete_ref(self[node].mark(MarkCode::SplitFirst));
                     self[node].set_mark(MarkCode::SplitFirst, TokenList::NULL);
-                    self.delete_token_ref(self[node].mark(MarkCode::SplitBot));
+                    self.tokens.delete_ref(self[node].mark(MarkCode::SplitBot));
                     self[node].set_mark(MarkCode::SplitBot, TokenList::NULL);
                 }
             }
             MarksAction::FireUpInit => {
                 if !self[node].mark(MarkCode::Bot).is_null() {
                     if !self[node].mark(MarkCode::Top).is_null() {
-                        self.delete_token_ref(self[node].mark(MarkCode::Top));
+                        self.tokens.delete_ref(self[node].mark(MarkCode::Top));
                     }
-                    self.delete_token_ref(self[node].mark(MarkCode::First));
+                    self.tokens.delete_ref(self[node].mark(MarkCode::First));
                     self[node].set_mark(MarkCode::First, TokenList::NULL);
                     let bot = self[node].mark(MarkCode::Bot);
-                    if bot.link(self).is_null() {
-                        self.delete_token_ref(bot);
+                    if bot.link(&self.tokens).is_null() {
+                        self.tokens.delete_ref(bot);
                         self[node].set_mark(MarkCode::Bot, TokenList::NULL);
                     } else {
-                        self.add_token_ref(bot);
+                        self.tokens.add_ref(bot);
                     }
                     let bot = self[node].mark(MarkCode::Bot);
                     self[node].set_mark(MarkCode::Top, bot);
@@ -708,14 +711,14 @@ impl MemState {
                 let top = self[node].mark(MarkCode::Top);
                 if !top.is_null() && self[node].mark(MarkCode::First).is_null() {
                     self[node].set_mark(MarkCode::First, top);
-                    self.add_token_ref(top);
+                    self.tokens.add_ref(top);
                 }
             }
             MarksAction::DestroyMarks => {
                 for mark in MarkCode::ALL {
                     let text = self[node].mark(mark);
                     if !text.is_null() {
-                        self.delete_token_ref(text);
+                        self.tokens.delete_ref(text);
                         self[node].set_mark(mark, TokenList::NULL);
                     }
                 }

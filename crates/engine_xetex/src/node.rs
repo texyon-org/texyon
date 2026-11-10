@@ -2212,7 +2212,7 @@ mod tests {
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), -10000);
 
         let mark: NodePtr<MarkNode> = at(&mut mem, 100, Some(NodeType::Mark));
-        mem[mark].mark_ptr = TokenList::from_ptr(MemPtr::from_raw(77));
+        mem[mark].mark_ptr = TokenList::from_raw(77);
         mem[mark].mark_class = 3;
         assert_eq!(mem.b32s1(MemPtr::from_raw(101)), 77);
         assert_eq!(mem.b32s0(MemPtr::from_raw(101)), 3);
@@ -2263,8 +2263,8 @@ mod tests {
         assert_eq!(NodePtr::<GlueNode>::tab_skip_after(&mem, head).ptr(), g1);
         assert!(rec.next_column(&mem).is_none());
 
-        mem[rec].v_part = TokenList::from_ptr(MemPtr::from_raw(0x22));
-        mem[rec].u_part = TokenList::from_ptr(MemPtr::from_raw(0x33));
+        mem[rec].v_part = TokenList::from_raw(0x22);
+        mem[rec].u_part = TokenList::from_raw(0x33);
         mem[rec].extra_info = 0x55;
         let head = rec.span_head();
         mem[head].next = NodePtr::at(MemPtr::from_raw(40));
@@ -2364,14 +2364,14 @@ mod tests {
         mem[p].sa_index = 64 * 5;
         mem[p].sa_ptr = w(77);
         assert_eq!(mem.b32s1(w(151)), 77);
-        assert_eq!(mem[p].toks(), TokenList::from_ptr(w(77)));
+        assert_eq!(mem[p].toks(), TokenList::from_raw(w(77).raw()));
         assert_eq!(leaf.leaf(&mem), Some(SaLeaf::Pointer(p)));
 
         let m: NodePtr<SaMarkClassNode> = at(&mut mem, 150, None);
         mem[m].sa_index = 64 * 7;
         for (k, code) in MarkCode::ALL.into_iter().enumerate() {
             let k = i32::try_from(k).unwrap();
-            mem[m].set_mark(code, TokenList::from_ptr(w(10 + k)));
+            mem[m].set_mark(code, TokenList::from_raw(w(10 + k).raw()));
         }
         assert_eq!([mem.b32s0(w(151)), mem.b32s1(w(151))], [10, 11]);
         assert_eq!([mem.b32s0(w(152)), mem.b32s1(w(152))], [12, 13]);

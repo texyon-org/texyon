@@ -970,7 +970,7 @@ impl SaPointerLayout {
     /// The value of a token-list register.
     #[inline]
     pub fn toks(&self) -> TokenList {
-        TokenList::from_ptr(self.sa_ptr)
+        TokenList::from_raw(self.sa_ptr.raw())
     }
 }
 
@@ -1686,7 +1686,7 @@ mod tests {
         let write = &mut mem[w];
         write.subtype = WhatsitSubtype::Special.into();
         write.stream = 9;
-        write.tokens = TokenList::from_ptr(MemPtr::from_raw(10));
+        write.tokens = TokenList::from_raw(10);
         assert_eq!(mem.b16s0(at(8)), 3);
         assert_eq!([mem.b32s0(at(9)), mem.b32s1(at(9))], [9, 10]);
         assert!(matches!(w.whatsit().variant(&mem), Some(WhatsitVariant::Special(p)) if p == w));

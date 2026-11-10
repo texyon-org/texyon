@@ -8,6 +8,7 @@ use crate::mem_types::{B32x2, MemoryWord};
 use crate::replay::fence::ReplayFence;
 use crate::replay::source::SourceSnapshot;
 use crate::state::EngineState;
+use crate::token::TokNode;
 
 mod bundle;
 mod oracle;
@@ -17,6 +18,7 @@ pub(crate) use bundle::{EngineBundle, StringWatermark};
 #[derive(Clone)]
 struct EngineDelta {
     mem: WordDelta<MemoryWord>,
+    tokens: WordDelta<TokNode>,
     eqtb: WordDelta<MemoryWord>,
     xeq: PlainDelta<u16>,
     hash: PlainDelta<B32x2>,
@@ -34,6 +36,7 @@ impl EngineDelta {
     fn take_open(st: &mut EngineState) -> Self {
         let delta = Self {
             mem: st.mem.journal.seal(&st.mem.data),
+            tokens: st.mem.tokens.seal_journal(),
             eqtb: st.eqtb.journal.words.seal(&st.eqtb.data),
             xeq: st.eqtb.journal.xeq.seal(),
             hash: st.eqtb.journal.hash.seal(),
@@ -47,6 +50,7 @@ impl EngineDelta {
     fn snapshot_open(st: &EngineState) -> Self {
         Self {
             mem: st.mem.journal.snapshot(),
+            tokens: st.mem.tokens.journal.snapshot(),
             eqtb: st.eqtb.journal.words.snapshot(),
             xeq: st.eqtb.journal.xeq.snapshot(),
             hash: st.eqtb.journal.hash.snapshot(),
@@ -57,6 +61,7 @@ impl EngineDelta {
 
     fn apply(&self, st: &mut EngineState) {
         self.mem.apply_to(&mut st.mem.data);
+        self.tokens.apply_to(st.mem.tokens.nodes_mut());
         self.eqtb.apply_to(&mut st.eqtb.data);
         self.xeq.apply_to(&mut st.eqtb.xeq_level);
         self.hash.apply_to(&mut st.eqtb.hash);
@@ -66,6 +71,7 @@ impl EngineDelta {
 
     fn compose_with_older(&mut self, older: EngineDelta) {
         self.mem.compose_with_older(older.mem);
+        self.tokens.compose_with_older(older.tokens);
         self.eqtb.compose_with_older(older.eqtb);
         self.xeq.compose_with_older(older.xeq);
         self.hash.compose_with_older(older.hash);
@@ -76,6 +82,7 @@ impl EngineDelta {
 
     fn compact(&mut self) {
         self.mem.compact();
+        self.tokens.compact();
         self.eqtb.compact();
         self.xeq.compact();
         self.hash.compact();
@@ -85,6 +92,7 @@ impl EngineDelta {
 
     fn allocated_bytes(&self) -> usize {
         self.mem.allocated_bytes()
+            + self.tokens.allocated_bytes()
             + self.eqtb.allocated_bytes()
             + self.xeq.allocated_bytes()
             + self.hash.allocated_bytes()

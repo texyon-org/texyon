@@ -100,7 +100,7 @@ impl MemState {
                 | WhatsitVariant::Special(p)
                 | WhatsitVariant::LateSpecial(p),
             ) => {
-                self.add_token_ref(self[p].tokens);
+                self.tokens.add_ref(self[p].tokens);
                 Ok((r, size))
             }
             Some(WhatsitVariant::SavePos) => Ok((r, 1)),
@@ -264,7 +264,7 @@ impl MemState {
                             | WhatsitVariant::Special(p)
                             | WhatsitVariant::LateSpecial(p),
                         ) => {
-                            self.delete_token_ref(self[p].tokens);
+                            self.tokens.delete_ref(self[p].tokens);
                         }
                         Some(WhatsitVariant::NativeWord(word)) => word.release_native_glyphs(self),
                         _ => {}
@@ -283,7 +283,7 @@ impl MemState {
                     SMALL_NODE_SIZE
                 }
                 AnyNode::Mark(mark) => {
-                    self.delete_token_ref(self[mark].mark_ptr);
+                    self.tokens.delete_ref(self[mark].mark_ptr);
                     SMALL_NODE_SIZE
                 }
                 AnyNode::Disc(disc) => {
@@ -415,7 +415,7 @@ impl MemState {
             }
             AnyNode::Mark(mark) => {
                 let r = self.get_node(SMALL_NODE_SIZE)?;
-                self.add_token_ref(self[mark].mark_ptr);
+                self.tokens.add_ref(self[mark].mark_ptr);
                 (r, SMALL_NODE_SIZE)
             }
             AnyNode::Adjust(adjust) => {

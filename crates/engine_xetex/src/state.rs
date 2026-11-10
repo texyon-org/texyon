@@ -247,29 +247,29 @@ impl InputState {
     }
 }
 
-/// `start` and `loc` of a token-list level, which point into `mem`.
+/// `start` and `loc` of a token-list level, which point into the token store.
 impl InputState {
     #[inline]
     pub(crate) fn token_start(&self) -> crate::token::TokenList {
-        crate::token::TokenList::from_ptr(crate::units::MemPtr::from_raw(self.start.raw()))
+        crate::token::TokenList::from_raw(self.start.raw())
     }
     #[inline]
     pub(crate) fn token_loc(&self) -> crate::token::TokenList {
-        crate::token::TokenList::from_ptr(crate::units::MemPtr::from_raw(self.loc.raw()))
+        crate::token::TokenList::from_raw(self.loc.raw())
     }
     #[inline]
     pub(crate) fn set_token_loc(&mut self, p: crate::token::TokenList) {
-        self.loc = BufPos::from_raw(p.ptr().raw());
+        self.loc = BufPos::from_raw(p.raw());
     }
     #[inline]
     pub(crate) fn set_token_start(&mut self, p: crate::token::TokenList) {
-        self.start = BufPos::from_raw(p.ptr().raw());
+        self.start = BufPos::from_raw(p.raw());
     }
     /// Starts reading the token list `p` from its first node.
     #[inline]
     pub(crate) fn set_token_list(&mut self, p: crate::token::TokenList) {
-        self.start = BufPos::from_raw(p.ptr().raw());
-        self.loc = BufPos::from_raw(p.ptr().raw());
+        self.start = BufPos::from_raw(p.raw());
+        self.loc = BufPos::from_raw(p.raw());
     }
 }
 
@@ -489,7 +489,7 @@ impl EqtbState {
     /// `equiv(p)` of a macro or token-list entry.
     #[inline]
     pub(crate) fn equiv_tokens(&self, p: EqtbPtr) -> crate::token::TokenList {
-        crate::token::TokenList::from_ptr(self.equiv_ptr(p))
+        crate::token::TokenList::from_raw(self.equiv(p))
     }
     #[inline]
     pub(crate) fn set_equiv(&mut self, p: EqtbPtr, v: i32) {
@@ -660,6 +660,8 @@ pub(crate) struct MemState {
     pub data: Vec<crate::mem_types::MemoryWord>,
     /// Owned shaped-glyph payloads referenced by handles in native nodes.
     pub glyph_blobs: crate::glyph_arena::GlyphBlobArena,
+    /// The token lists, a store of their own.
+    pub tokens: crate::token::TokenStore,
     pub journal: crate::journal::WordJournal<crate::mem_types::MemoryWord>,
     pub lo_mem_max: crate::units::MemPtr,
     pub hi_mem_min: crate::units::MemPtr,
@@ -1765,7 +1767,7 @@ impl ScannerState {
     /// `cur_chr` as the macro a call command carries.
     #[inline]
     pub(crate) fn cur_chr_tokens(&self) -> crate::token::TokenList {
-        crate::token::TokenList::from_ptr(self.cur_chr_ptr())
+        crate::token::TokenList::from_raw(self.cur_chr)
     }
 
     /// `cur_chr` as the pointer a macro or register command carries.

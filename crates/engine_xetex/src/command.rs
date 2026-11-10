@@ -438,7 +438,7 @@ impl Command {
                 marks: chr >= MarkCode::MARKS,
             },
             Cmd::Call | Cmd::LongCall | Cmd::OuterCall | Cmd::LongOuterCall => Command::Call {
-                body: TokenList::from_ptr(MemPtr::from_raw(chr)),
+                body: TokenList::from_raw(chr),
                 long: cmd.is_long_call(),
                 outer: cmd.is_outer_call(),
             },

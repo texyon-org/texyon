@@ -7,12 +7,13 @@ use crate::consts::{HMODE, IGNORE_DEPTH, MMODE, VMODE};
 use crate::errors::{finish_error, Abort};
 use crate::input::{TokenType, TOKEN_LIST};
 use crate::main_control::{BOX_FLAG, GLOBAL_BOX_FLAG, LEADER_FLAG, SHIP_OUT_FLAG};
-use crate::mem::{CONTRIB_HEAD, GARBAGE, PAGE_HEAD, PAGE_INS_HEAD, TEMP_HEAD};
+use crate::mem::{CONTRIB_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
 use crate::node::{AnyNode, NodePtr, PageInsNode};
 use crate::packaging::PackSpec;
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, GroupCode, InputName, InteractionMode, Selector};
 use crate::token::TokenList;
+use crate::token::TEMP_HEAD_TOKS;
 use crate::units::{NodeType, Scaled};
 
 use super::cmd_chr::{print_cmd_chr, print_meaning};
@@ -74,11 +75,11 @@ pub(crate) fn show_token_list(st: &mut EngineState, mut p: TokenList, q: TokenLi
         if p == q {
             set_trick_count(st);
         }
-        if p.ptr() < st.mem.hi_mem_min || p.ptr() > st.mem.mem_end {
+        if !st.mem.tokens.contains(p) {
             print_esc(st, "CLOBBERED.");
             return;
         }
-        let w = p.token(&st.mem);
+        let w = p.token(&st.mem.tokens);
         if w.is_cs() {
             print_cs(st, w.cs());
         } else if w.0 < 0 {
@@ -124,7 +125,7 @@ pub(crate) fn show_token_list(st: &mut EngineState, mut p: TokenList, q: TokenLi
                 _ => print_esc(st, "BAD."),
             }
         }
-        p = p.link(&st.mem);
+        p = p.link(&st.mem.tokens);
     }
     if !p.is_null() {
         print_esc(st, "ETC.");
@@ -152,13 +153,12 @@ pub(super) fn show_info(st: &mut EngineState) {
 }
 
 pub(crate) fn issue_message(st: &mut EngineState, err: bool) -> Result<(), Abort> {
-    let toks = crate::scan::scan_toks(st, false, true)?;
-    GARBAGE.set_link(&mut st.mem, toks.ptr());
+    crate::scan::scan_toks(st, false, true)?;
     let old_setting = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
     token_show(st, st.scanner.def_ref);
     st.shipout.selector = old_setting;
-    st.mem.flush_token_list(st.scanner.def_ref);
+    st.mem.tokens.flush_list(st.scanner.def_ref);
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
         return Err(st.strings.pool_overflow());
     }
@@ -483,9 +483,9 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
             crate::scan::the_toks(st, the)?;
             show_to_stream(st)?;
             print_nl(st, "> ");
-            token_show(st, crate::mem::TEMP_HEAD_TOKS);
-            let list = TEMP_HEAD.link(&st.mem);
-            st.mem.flush_list(list);
+            token_show(st, TEMP_HEAD_TOKS);
+            let list = TEMP_HEAD_TOKS.link(&st.mem.tokens);
+            st.mem.tokens.flush_list(list);
         }
     }
 
@@ -760,7 +760,7 @@ pub(crate) fn show_context(st: &mut EngineState) {
                     if ci.token_type() < TokenType::Macro {
                         show_token_list(st, ci.token_start(), ci.token_loc(), 100_000);
                     } else {
-                        let list = ci.token_start().link(&st.mem);
+                        let list = ci.token_start().link(&st.mem.tokens);
                         show_token_list(st, list, ci.token_loc(), 100_000);
                     }
                 }

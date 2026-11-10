@@ -71,21 +71,21 @@ fn begin_every(st: &mut EngineState, par: TokPar, kind: TokenType) -> Result<(),
 
 pub(crate) fn shift_case(st: &mut EngineState, b: EqtbPtr) -> Result<(), Abort> {
     crate::scan::scan_toks(st, false, false)?;
-    let mut p = st.scanner.def_ref.link(&st.mem);
+    let mut p = st.scanner.def_ref.link(&st.mem.tokens);
     while !p.is_null() {
-        let t = p.token(&st.mem);
+        let t = p.token(&st.mem.tokens);
         if t < Token::from_cs(SINGLE_BASE) {
             let c = t.chr();
             let mapped = st.eqtb.equiv(b + c);
             if mapped != 0 {
-                p.set_token(&mut st.mem, Token(t.0 - c + mapped));
+                p.set_token(&mut st.mem.tokens, Token(t.0 - c + mapped));
             }
         }
-        p = p.link(&st.mem);
+        p = p.link(&st.mem.tokens);
     }
     let def_ref = st.scanner.def_ref;
-    crate::input::begin_token_list(st, def_ref.link(&st.mem), TokenType::BackedUp)?;
-    st.mem.free_avail(def_ref.ptr());
+    crate::input::begin_token_list(st, def_ref.link(&st.mem.tokens), TokenType::BackedUp)?;
+    st.mem.tokens.free_avail(def_ref);
     Ok(())
 }
 

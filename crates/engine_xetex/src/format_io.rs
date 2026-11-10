@@ -25,7 +25,7 @@ use crate::node::{link_of, FreeBlock, NodePtr};
 use crate::output::{print, print_char, print_int, print_ln, print_nl};
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, InteractionMode, PerFont, Selector};
-use crate::token::Token;
+use crate::token::{TokNode, Token, TokenList, TokenStore, FIXED_HEADS};
 use crate::units::{EqtbPtr, FontId, FontInfoIdx, MemPtr, PoolPos, SavePtr, Scaled, StrNumber};
 
 const FORMAT_HEADER_MAGIC: i32 = 0x5454_4E43;
@@ -118,6 +118,18 @@ impl FmtItem for MemoryWord {
         MemoryWord {
             b32: B32x2::get(bytes),
         }
+    }
+}
+
+impl FmtItem for TokNode {
+    const SIZE: usize = 8;
+    #[inline]
+    fn put(self, out: &mut Vec<u8>) {
+        bytemuck::cast::<_, B32x2>(self).put(out);
+    }
+    #[inline]
+    fn get(bytes: &[u8]) -> Self {
+        bytemuck::cast(B32x2::get(bytes))
     }
 }
 
@@ -538,6 +550,7 @@ fn dynamic_memory<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), A
     }
     s.int(&mut mem.var_used)?;
     s.int(&mut mem.dyn_used)?;
+    token_lists(s, &mut mem.tokens)?;
 
     if !S::LOADING {
         print_ln(st);
@@ -548,6 +561,24 @@ fn dynamic_memory<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), A
         print_int(st, st.mem.dyn_used);
     }
     Ok(())
+}
+
+fn token_lists<S: FmtStream>(s: &mut S, toks: &mut TokenStore) -> Result<(), Abort> {
+    let marks = toks.marks();
+    let too_big = || Abort::Internal("token store exceeds the format's limit");
+    let mut len = i32::try_from(marks.len).map_err(|_| too_big())?;
+    let mut avail = marks.avail.raw();
+    let fixed = i32::try_from(FIXED_HEADS).map_err(|_| too_big())?;
+    s.int_in(&mut len, fixed, i32::MAX)?;
+    s.int(&mut avail)?;
+    if S::LOADING && avail != TEX_NULL && !(fixed..len).contains(&avail) {
+        return Err(bad_fmt());
+    }
+    if S::LOADING {
+        let len = usize::try_from(len).map_err(|_| bad_fmt())?;
+        toks.reset_for_load(len, TokenList::from_raw(avail));
+    }
+    s.items(toks.nodes_mut())
 }
 
 /// Dumps `eqtb[k..=last]` as alternating runs of distinct words and of

@@ -554,10 +554,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
         Cmd::Call | Cmd::LongCall | Cmd::OuterCall | Cmd::LongOuterCall => {
             // Bit 0 is long, bit 1 outer, bit 2 protected.
             let mut n = i32::from(cmd.is_long_call()) + 2 * i32::from(cmd.is_outer_call());
-            if st
-                .mem
-                .is_protected_macro(TokenList::from_ptr(MemPtr::from_raw(chr_code)))
-            {
+            if st.mem.is_protected_macro(TokenList::from_raw(chr_code)) {
                 n += 4;
             }
             if n / 4 % 2 != 0 {

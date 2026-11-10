@@ -26,7 +26,7 @@ use crate::node::{AnyNode, GlueKind, GlueSpecNode, MathCode, NodePtr, SaLeaf};
 use crate::params::TokPar;
 use crate::state::{EngineState, FontEngineHandle};
 use crate::token::TokenList;
-use crate::units::{EqtbPtr, FontId, FontInfoIdx, MemPtr, NodeType, Scaled, StrNumber};
+use crate::units::{EqtbPtr, FontId, FontInfoIdx, NodeType, Scaled, StrNumber};
 use std::rc::Rc;
 
 use super::next::get_x_non_blank;
@@ -85,7 +85,7 @@ impl CurVal {
             ValueLevel::Glue => CurVal::Glue(glue_spec(w)),
             ValueLevel::Mu => CurVal::Mu(glue_spec(w)),
             ValueLevel::Ident => CurVal::Ident(EqtbPtr::from_raw(w)),
-            ValueLevel::Tok => CurVal::Tok(TokenList::from_ptr(MemPtr::from_raw(w))),
+            ValueLevel::Tok => CurVal::Tok(TokenList::from_raw(w)),
             ValueLevel::InterChar | ValueLevel::Mark => {
                 return Err(Abort::Confusion("cur_val_level"))
             }

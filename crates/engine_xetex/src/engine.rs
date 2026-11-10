@@ -24,7 +24,7 @@ use crate::input::{NEW_LINE, TOKEN_LIST};
 use crate::io::init_io;
 use crate::mem::{
     CONTRIB_HEAD, END_SPAN, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, HI_MEM_STAT_MIN, HI_MEM_STAT_USAGE,
-    NULL_LIST, OMIT_TEMPLATE, PAGE_HEAD, PAGE_INS_HEAD, SS_GLUE, ZERO_GLUE,
+    NULL_LIST, PAGE_HEAD, PAGE_INS_HEAD, SS_GLUE, ZERO_GLUE,
 };
 use crate::mem_types::zeroed_vec;
 use crate::node::{FreeBlock, NodePtr, PageInsNode};
@@ -37,6 +37,7 @@ use crate::state::{
     PerFont, Selector,
 };
 use crate::token::Token;
+use crate::token::OMIT_TEMPLATE;
 use crate::units::{
     BufPos, EqtbPtr, FontId, FontInfoIdx, GlueOrder, MemPtr, NodeType, PoolPos, PrimNum, SavePtr,
     Scaled, StrNumber,
@@ -260,7 +261,7 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
     for mark_code in MarkCode::ALL {
         let mark = st.scanner.cur_mark[mark_code];
         if !mark.is_null() {
-            st.mem.delete_token_ref(mark);
+            st.mem.tokens.delete_ref(mark);
         }
     }
 
@@ -429,7 +430,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
         mem.set_word(MemPtr::from_raw(k), template);
     }
 
-    OMIT_TEMPLATE.set_token(mem, Token::from_cs(FROZEN_END_TEMPLATE));
+    OMIT_TEMPLATE.set_token(&mut mem.tokens, Token::from_cs(FROZEN_END_TEMPLATE));
     mem[END_SPAN].span_count = i32::from(u16::MAX) + 1;
     let page_ins = NodePtr::<PageInsNode>::at(PAGE_INS_HEAD);
     mem[page_ins].box_number = 255;

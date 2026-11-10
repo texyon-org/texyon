@@ -114,14 +114,14 @@ pub(crate) fn end_token_list(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
         TokenType::BackedUp | TokenType::BackedUpChar | TokenType::Inserted => {
-            st.mem.flush_token_list(ci.token_start());
+            st.mem.tokens.flush_list(ci.token_start());
         }
         t => {
-            st.mem.delete_token_ref(ci.token_start());
+            st.mem.tokens.delete_ref(ci.token_start());
             if t == TokenType::Macro {
                 while st.input.param_stack.len() > ci.param_start() {
                     if let Some(param) = st.input.param_stack.pop() {
-                        st.mem.flush_token_list_with_tail(param.list, param.tail);
+                        st.mem.tokens.flush_list_with_tail(param.list, param.tail);
                     }
                 }
             } else if t == TokenType::Output && !st.shipout.output_can_end {
@@ -141,8 +141,8 @@ pub(crate) fn back_input(st: &mut EngineState) -> Result<(), Abort> {
     {
         end_token_list(st)?;
     }
-    let p = st.mem.get_avail_token()?;
-    p.set_token(&mut st.mem, st.scanner.cur_tok);
+    let p = st.mem.tokens.get_avail()?;
+    p.set_token(&mut st.mem.tokens, st.scanner.cur_tok);
     if st.scanner.cur_tok.is_brace() {
         if st.scanner.cur_tok.is_left_brace() {
             st.scanner.align_state -= 1;
@@ -274,14 +274,14 @@ pub(crate) fn begin_token_list(
         st.input.cur_input.set_token_loc(list);
         return Ok(());
     }
-    st.mem.add_token_ref(list);
+    st.mem.tokens.add_ref(list);
     if t == TokenType::Macro {
         st.input
             .cur_input
             .set_param_start(st.input.param_stack.len());
         return Ok(());
     }
-    st.input.cur_input.set_token_loc(list.link(&st.mem));
+    st.input.cur_input.set_token_loc(list.link(&st.mem.tokens));
     if st.eqtb.int_par(IntPar::TracingMacros) > 1 {
         use crate::output::{
             begin_diagnostic, end_diagnostic, print, print_cmd_chr, print_esc, print_nl, token_show,

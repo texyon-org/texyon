@@ -208,7 +208,7 @@ impl MemState {
         let ptr = MemPtr::from_raw(equiv);
         match eq_type {
             Cmd::Call | Cmd::LongCall | Cmd::OuterCall | Cmd::LongOuterCall => {
-                self.delete_token_ref(TokenList::from_ptr(ptr))
+                self.tokens.delete_ref(TokenList::from_raw(equiv))
             }
             Cmd::GlueRef => self.delete_glue_ref(crate::node::NodePtr::from_glue_ptr(ptr)),
             Cmd::ShapeRef => {
@@ -332,7 +332,7 @@ impl MemState {
             if sa_index < BOX_VAL_LIMIT {
                 return Some(value);
             }
-            self.delete_token_ref(TokenList::from_ptr(value));
+            self.tokens.delete_ref(TokenList::from_raw(value.raw()));
         }
         None
     }
@@ -491,9 +491,9 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
                 let t = st.scanner.cur_tok;
                 st.scanner.cur_tok = Token(st.save_stack.save_index(sp));
                 if a {
-                    let pn = st.mem.get_avail_token()?;
-                    pn.set_token(&mut st.mem, st.scanner.cur_tok);
-                    pn.set_link(&mut st.mem, st.input.cur_input.token_loc());
+                    let pn = st.mem.tokens.get_avail()?;
+                    pn.set_token(&mut st.mem.tokens, st.scanner.cur_tok);
+                    pn.set_link(&mut st.mem.tokens, st.input.cur_input.token_loc());
                     st.input.cur_input.set_token_list(pn);
                     if st.scanner.cur_tok.is_brace() {
                         if st.scanner.cur_tok.is_left_brace() {

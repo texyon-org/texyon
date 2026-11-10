@@ -13,9 +13,7 @@ use crate::fonts::{
     EXTRA_SPACE_CODE, SLANT_CODE, SPACE_CODE, SPACE_SHRINK_CODE, SPACE_STRETCH_CODE, X_HEIGHT_CODE,
 };
 use crate::input::{TokenType, TOKEN_LIST};
-use crate::mem::{
-    CONTRIB_HEAD, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, PAGE_HEAD, SS_GLUE, TEMP_HEAD_TOKS, ZERO_GLUE,
-};
+use crate::mem::{CONTRIB_HEAD, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, PAGE_HEAD, SS_GLUE, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
 use crate::node::{
     AdjustNode, AdjustPlacement, AnyNode, CharNode, DiscNode, GlueKind, GlueNode, GlueSpecNode,
@@ -27,6 +25,7 @@ use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::scaled_math::xn_over_d;
 use crate::state::{EngineState, GroupCode, MemState};
 use crate::token::Token;
+use crate::token::TEMP_HEAD_TOKS;
 use crate::units::{FontId, MemIdx, MemPtr, NodeType, Scaled};
 
 use super::align::align_peek;
@@ -651,12 +650,12 @@ pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
     let insertion = crate::state::Insertion(st.save_stack.cur_group.closer());
     let mut tail = TEMP_HEAD_TOKS;
     for token in insertion.tokens() {
-        let q = st.mem.get_avail_token()?;
-        tail.set_link(&mut st.mem, q);
-        q.set_token(&mut st.mem, token);
+        let q = st.mem.tokens.get_avail()?;
+        tail.set_link(&mut st.mem.tokens, q);
+        q.set_token(&mut st.mem.tokens, token);
         tail = q;
     }
-    crate::input::begin_token_list(st, TEMP_HEAD_TOKS.link(&st.mem), TokenType::Inserted)?;
+    crate::input::begin_token_list(st, TEMP_HEAD_TOKS.link(&st.mem.tokens), TokenType::Inserted)?;
     crate::errors::error(
         st,
         ("Missing ", insertion, " inserted"),

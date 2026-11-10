@@ -555,15 +555,15 @@ pub(crate) fn box_error(
 pub(crate) fn runaway(st: &mut EngineState) {
     let (msg, p) = match st.scanner.scanner_status {
         ScannerStatus::Defining => ("Runaway definition", st.scanner.def_ref),
-        ScannerStatus::Matching => ("Runaway argument", crate::mem::TEMP_HEAD_TOKS),
-        ScannerStatus::Aligning => ("Runaway preamble", crate::mem::HOLD_HEAD_TOKS),
+        ScannerStatus::Matching => ("Runaway argument", crate::token::TEMP_HEAD_TOKS),
+        ScannerStatus::Aligning => ("Runaway preamble", crate::token::HOLD_HEAD_TOKS),
         ScannerStatus::Absorbing => ("Runaway text", st.scanner.def_ref),
         _ => return,
     };
     print_nl(st, msg);
     print_char(st, b'?');
     print_ln(st);
-    let head = p.link(&st.mem);
+    let head = p.link(&st.mem.tokens);
     let l = st.errors.error_line - 10;
     show_token_list(st, head, crate::token::TokenList::NULL, l);
 }

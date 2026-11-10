@@ -347,8 +347,8 @@ fn cs_name(st: &EngineState, cs: EqtbPtr) -> Option<String> {
 fn list_tokens(st: &EngineState, mut p: TokenList) -> Vec<Token> {
     let mut out = Vec::new();
     while !p.is_null() {
-        out.push(p.token(&st.mem));
-        p = p.link(&st.mem);
+        out.push(p.token(&st.mem.tokens));
+        p = p.link(&st.mem.tokens);
     }
     out
 }
@@ -357,11 +357,11 @@ fn macro_tokens(st: &EngineState, cs: EqtbPtr) -> Option<Vec<Token>> {
     if !matches!(st.eqtb.eq_type(cs), Cmd::Call | Cmd::LongCall) {
         return None;
     }
-    let first = st.eqtb.equiv_tokens(cs).link(&st.mem);
-    if first.is_null() || first.token(&st.mem) != Token::END_MATCH {
+    let first = st.eqtb.equiv_tokens(cs).link(&st.mem.tokens);
+    if first.is_null() || first.token(&st.mem.tokens) != Token::END_MATCH {
         return None;
     }
-    Some(list_tokens(st, first.link(&st.mem)))
+    Some(list_tokens(st, first.link(&st.mem.tokens)))
 }
 
 fn macro_text(st: &EngineState, cs: EqtbPtr) -> Option<Vec<u8>> {
@@ -556,17 +556,17 @@ fn selected_font(st: &mut EngineState, known: &KnownCs) -> Option<eval::Font> {
 
 /// Letters get catcode 11 like the `Y` and `e` of `\pgfmathfloatcreate`.
 fn result_macro(st: &mut EngineState, text: &[u8]) -> Result<TokenList, Abort> {
-    let head = st.mem.get_avail_token()?;
-    head.set_ref_count(&mut st.mem, TEX_NULL);
+    let head = st.mem.tokens.get_avail()?;
+    head.set_ref_count(&mut st.mem.tokens, TEX_NULL);
     let mut tail = head;
-    st.mem.store_new_token(&mut tail, Token::END_MATCH)?;
+    st.mem.tokens.store_new_token(&mut tail, Token::END_MATCH)?;
     for &b in text {
         let tok = if b.is_ascii_alphabetic() {
             Token::letter(b)
         } else {
             Token::other(b)
         };
-        st.mem.store_new_token(&mut tail, tok)?;
+        st.mem.tokens.store_new_token(&mut tail, tok)?;
     }
     Ok(head)
 }
@@ -575,7 +575,7 @@ fn commit(st: &mut EngineState, known: &KnownCs, answer: &Answer) -> Result<(), 
     let body = match answer {
         Answer::Expression => {
             let shared = st.eqtb.equiv_tokens(known.expression());
-            st.mem.add_token_ref(shared);
+            st.mem.tokens.add_ref(shared);
             shared
         }
         Answer::Parsed(outcome) => {
@@ -596,7 +596,7 @@ fn commit(st: &mut EngineState, known: &KnownCs, answer: &Answer) -> Result<(), 
         &mut st.scanner,
         known.result(),
         Cmd::Call,
-        body.ptr().raw(),
+        body.raw(),
     )
 }
 
@@ -916,7 +916,7 @@ pub(crate) fn native_macro(st: &mut EngineState, kind: Native, args: &[TokenList
                         &mut st.scanner,
                         cs,
                         Cmd::Call,
-                        body.ptr().raw(),
+                        body.raw(),
                     )?;
                 }
                 Effect::Comparison(value) => {

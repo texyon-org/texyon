@@ -85,26 +85,26 @@ fn update_marks(st: &mut EngineState, class: i32, mark_ptr: TokenList) -> Result
         };
         if st.mem[m].mark(MarkCode::First).is_null() {
             st.mem[m].set_mark(MarkCode::First, mark_ptr);
-            st.mem.add_token_ref(mark_ptr);
+            st.mem.tokens.add_ref(mark_ptr);
         }
         let bot = st.mem[m].mark(MarkCode::Bot);
         if !bot.is_null() {
-            st.mem.delete_token_ref(bot);
+            st.mem.tokens.delete_ref(bot);
         }
         st.mem[m].set_mark(MarkCode::Bot, mark_ptr);
-        st.mem.add_token_ref(mark_ptr);
+        st.mem.tokens.add_ref(mark_ptr);
         return Ok(());
     }
     let marks = &mut st.scanner.cur_mark;
     if marks[MarkCode::First].is_null() {
         marks[MarkCode::First] = mark_ptr;
-        st.mem.add_token_ref(mark_ptr);
+        st.mem.tokens.add_ref(mark_ptr);
     }
     if !marks[MarkCode::Bot].is_null() {
-        st.mem.delete_token_ref(marks[MarkCode::Bot]);
+        st.mem.tokens.delete_ref(marks[MarkCode::Bot]);
     }
     marks[MarkCode::Bot] = mark_ptr;
-    st.mem.add_token_ref(mark_ptr);
+    st.mem.tokens.add_ref(mark_ptr);
     Ok(())
 }
 
@@ -182,12 +182,13 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     }
     if !st.scanner.cur_mark[MarkCode::Bot].is_null() {
         if !st.scanner.cur_mark[MarkCode::Top].is_null() {
-            st.mem.delete_token_ref(st.scanner.cur_mark[MarkCode::Top]);
+            st.mem.tokens.delete_ref(st.scanner.cur_mark[MarkCode::Top]);
         }
         st.scanner.cur_mark[MarkCode::Top] = st.scanner.cur_mark[MarkCode::Bot];
-        st.mem.add_token_ref(st.scanner.cur_mark[MarkCode::Top]);
+        st.mem.tokens.add_ref(st.scanner.cur_mark[MarkCode::Top]);
         st.mem
-            .delete_token_ref(st.scanner.cur_mark[MarkCode::First]);
+            .tokens
+            .delete_ref(st.scanner.cur_mark[MarkCode::First]);
         st.scanner.cur_mark[MarkCode::First] = TokenList::NULL;
     }
 
@@ -322,7 +323,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     let marks = &mut st.scanner.cur_mark;
     if !marks[MarkCode::Top].is_null() && marks[MarkCode::First].is_null() {
         marks[MarkCode::First] = marks[MarkCode::Top];
-        st.mem.add_token_ref(marks[MarkCode::Top]);
+        st.mem.tokens.add_ref(marks[MarkCode::Top]);
     }
 
     let output_routine = st.eqtb.tok_par(TokPar::OutputRoutine);
