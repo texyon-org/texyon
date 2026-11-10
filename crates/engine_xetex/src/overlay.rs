@@ -859,7 +859,6 @@ pub struct FractionLayout {
     _subtype: u16,
     pub noad_type: Stored<NodeType>,
     pub link: MemPtr,
-    _unused1: i32,
     /// The rule thickness, `DEFAULT_CODE` for the font's.
     pub thickness: Scaled,
     pub numerator: MathWord,
@@ -967,7 +966,6 @@ pub struct SaWordLayout {
     pub sa_ref: i32,
     /// The register number.
     pub sa_num: i32,
-    _unused1: i32,
     /// The count, or the dimension's raw value.
     pub sa_int: i32,
 }
@@ -1046,8 +1044,6 @@ pub struct SaSavedWordLayout {
     pub link: Link<SaSaved>,
     /// The register the entry restores.
     pub sa_loc: NodePtr<SaWordNode>,
-    _unused1: i32,
-    _unused2: i32,
     pub sa_int: i32,
 }
 
