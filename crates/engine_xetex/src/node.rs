@@ -747,8 +747,6 @@ node_kinds! {
     /// A record on the page builder's insertion ring. Its type code is
     /// `inserting` or `split_up`, its subtype the insertion's box number.
     PageInsNode;
-    /// A shipout `down_ptr`/`right_ptr` movement record.
-    MovementNode;
     /// A character in a font.
     CharNode = Char, CHAR_NODE_SIZE;
     /// The head of a list under construction, from `push_nest`, `copy_list` or an alignment.
@@ -836,10 +834,6 @@ impl FixedNode for LrNode {
     const SIZE: i32 = 2;
     const TYPE: Option<NodeType> = None;
 }
-impl FixedNode for MovementNode {
-    const SIZE: i32 = MOVEMENT_NODE_SIZE;
-    const TYPE: Option<NodeType> = None;
-}
 impl FixedNode for SpanNode {
     const SIZE: i32 = 2;
     const TYPE: Option<NodeType> = None;
@@ -857,7 +851,6 @@ impl FixedNode for PageInsNode {
     const TYPE: Option<NodeType> = None;
 }
 
-const MOVEMENT_NODE_SIZE: i32 = 3;
 const CHAR_NODE_SIZE: i32 = 2;
 
 // --- shared layouts ---
@@ -872,7 +865,7 @@ macro_rules! impl_traits {
 impl_traits!(HasLink: BoxNode, RuleNode, InsNode, MarkNode, AdjustNode, LigatureNode, DiscNode,
     WhatsitNode, MathNode, GlueNode, KernNode, PenaltyNode, UnsetNode, StyleNode, ChoiceNode,
     EdgeNode, Noad, RadicalNoad, AccentNoad, FractionNoad, FenceNoad, AnyNoad, MarginKernNode, SaIndexNode, SaElement, SaWordNode, SaPointerNode, SaMarkClassNode,
-    SaSaved, SaSavedWord, SaSavedPointer, PageInsNode, MovementNode, CharNode, HeadNode,
+    SaSaved, SaSavedWord, SaSavedPointer, PageInsNode, CharNode, HeadNode,
     LrNode, AlignRecord, PseudoLineNode,
     LigItem);
 
@@ -880,7 +873,7 @@ impl_traits!(HasLink: BoxNode, RuleNode, InsNode, MarkNode, AdjustNode, Ligature
 pub trait ListRecord: NodeKind {}
 
 impl_traits!(ListRecord: SaIndexNode, SaElement, SaWordNode, SaPointerNode, SaMarkClassNode,
-    SaSaved, SaSavedWord, SaSavedPointer, PageInsNode, MovementNode,
+    SaSaved, SaSavedWord, SaSavedPointer, PageInsNode,
     LigItem, CharNode, HeadNode, LrNode, PseudoFileNode, HyphPosNode, AlignRecord, SpanNode, ParShapeNode, PenaltiesNode,
     PseudoLineNode, MathField, DelimiterField, FreeBlock);
 
@@ -895,14 +888,6 @@ impl<K: ListRecord> NodePtr<K> {
     #[inline]
     pub fn from_ptr(p: MemPtr) -> Option<Self> {
         (!p.is_null()).then(|| Self::at(p))
-    }
-}
-
-impl<K: ListRecord + HasLink> NodePtr<K> {
-    /// The next record on the list, `None` at its end.
-    #[inline]
-    pub fn next(self, mem: &MemState) -> Option<Self> {
-        Self::from_ptr(self.ptr().link(mem))
     }
 }
 

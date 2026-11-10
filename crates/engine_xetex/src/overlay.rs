@@ -18,11 +18,11 @@ use crate::node::{
     FractionNoad, FreeBlock, GlueKind, GlueNode, GlueSpecNode, GlyphNode, HeadNode, HyphPosNode,
     InsNode, KernNode, KernSubtype, LanguageNode, LeaderKind, LigBoundary, LigItem, LigatureNode,
     Link, LrNode, MarginKernNode, MarkNode, MathAccentKind, MathCode, MathField, MathNode,
-    MovementNode, NativeWordNode, Noad, NodeKind, NodePtr, OpenNode, PageInsNode, ParShapeNode,
-    PenaltiesNode, PenaltyNode, PicNode, PseudoFileNode, PseudoLineNode, RadicalNoad, RuleNode,
-    SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved,
-    SaSavedPointer, SaSavedWord, SaWordNode, SizedWhatsit, SpanNode, Stored, StoredDimen,
-    StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype, WriteNode,
+    NativeWordNode, Noad, NodeKind, NodePtr, OpenNode, PageInsNode, ParShapeNode, PenaltiesNode,
+    PenaltyNode, PicNode, PseudoFileNode, PseudoLineNode, RadicalNoad, RuleNode, SaChild,
+    SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved, SaSavedPointer,
+    SaSavedWord, SaWordNode, SizedWhatsit, SpanNode, Stored, StoredDimen, StyleNode, UnsetNode,
+    WhatsitNode, WhatsitSubtype, WriteNode,
 };
 use crate::payload::PayloadId;
 use crate::state::MemState;
@@ -1072,22 +1072,6 @@ pub struct SaSavedPointerLayout {
 
 overlay!(SaSavedPointer => SaSavedPointerLayout);
 
-/// A shipout `down_ptr`/`right_ptr` movement record.
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct MovementLayout {
-    /// Whether the movement may be reused, and as which command.
-    pub state: i32,
-    pub link: MemPtr,
-    _unused1: i32,
-    pub distance: Scaled,
-    _unused2: i32,
-    /// The DVI offset where the movement was emitted.
-    pub location: i32,
-}
-
-overlay!(MovementNode => MovementLayout);
-
 /// An entry of a column's span list, ended by `END_SPAN`.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
@@ -1477,19 +1461,6 @@ mod tests {
         let m: NodePtr<MarginKernNode> = NodePtr::from_idx_unchecked(at(8));
         mem[m].width = Scaled::from_raw(13);
         assert_eq!(mem.b32s1(at(9)), 13);
-    }
-
-    #[test]
-    fn stack_record_fields_land_on_their_words() {
-        let mut mem = arena();
-        let at = MemIdx::from_raw;
-        let ptr = MemPtr::from_raw;
-
-        let m: NodePtr<MovementNode> = NodePtr::from_idx_unchecked(at(8));
-        let mv = &mut mem[m];
-        (mv.state, mv.link, mv.distance, mv.location) = (5, ptr(6), Scaled::from_raw(31), 32);
-        assert_eq!((mem.b32s0(at(8)), mem.b32s1(at(8))), (5, 6));
-        assert_eq!((mem.b32s1(at(9)), mem.b32s1(at(10))), (31, 32));
     }
 
     #[test]

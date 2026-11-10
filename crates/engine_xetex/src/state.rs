@@ -1410,8 +1410,10 @@ pub(crate) struct ShipoutState {
     pub cur_v_offset: Scaled,
     pub write_loc: crate::units::EqtbPtr,
     pub output_file_name: StrNumber,
-    pub down_ptr: Option<crate::node::NodePtr<crate::node::MovementNode>>,
-    pub right_ptr: Option<crate::node::NodePtr<crate::node::MovementNode>>,
+    /// The vertical and horizontal DVI movements of the page so far, TeX's `down_ptr` and
+    /// `right_ptr` lists, the latest last.
+    pub down_moves: Vec<crate::shipout::Movement>,
+    pub right_moves: Vec<crate::shipout::Movement>,
     pub dvi_h: Scaled,
     pub dvi_v: Scaled,
     pub dvi_f: FontId,

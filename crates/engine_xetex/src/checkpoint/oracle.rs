@@ -413,6 +413,12 @@ fn digest_scanner(st: &EngineState) -> u64 {
             a.cur_pre_tail.raw(),
         ]);
     }
+    for moves in [&st.shipout.down_moves, &st.shipout.right_moves] {
+        h.word(moves.len() as u64);
+        for m in moves {
+            h.i32s(&[m.state, m.distance.raw(), m.location]);
+        }
+    }
     h.finish()
 }
 

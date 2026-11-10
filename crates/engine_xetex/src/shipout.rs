@@ -12,9 +12,9 @@ use crate::glyph_arena::FixedPoint;
 use crate::mem::LIG_TRICK;
 use crate::node::Stored;
 use crate::node::{
-    link_of, AnyNode, BoxLr, BoxNode, CharNode, EdgeNode, GlueKind, GlueNode, GlueSpecNode,
-    GlyphNode, KernSubtype, LeaderKind, MathCode, MathNode, MovementNode, NativeWordNode, NodePtr,
-    RuleNode, WhatsitSubtype, WhatsitVariant, RUNNING,
+    AnyNode, BoxLr, BoxNode, CharNode, EdgeNode, GlueKind, GlueNode, GlueSpecNode, GlyphNode,
+    KernSubtype, LeaderKind, MathCode, MathNode, NativeWordNode, NodePtr, RuleNode, WhatsitSubtype,
+    WhatsitVariant, RUNNING,
 };
 use crate::packaging::LrState;
 use crate::params::{DimenPar, IntPar};
@@ -67,7 +67,7 @@ impl MemState {
 fn synch_h(st: &mut crate::state::EngineState) -> Result<(), Abort> {
     if st.shipout.cur_h != st.shipout.dvi_h {
         let delta = st.shipout.cur_h - st.shipout.dvi_h;
-        st.mem.movement(&mut st.shipout, delta, Axis::Right)?;
+        st.shipout.movement(delta, Axis::Right)?;
         st.shipout.dvi_h = st.shipout.cur_h;
     }
     Ok(())
@@ -76,7 +76,7 @@ fn synch_h(st: &mut crate::state::EngineState) -> Result<(), Abort> {
 fn synch_v(st: &mut crate::state::EngineState) -> Result<(), Abort> {
     if st.shipout.cur_v != st.shipout.dvi_v {
         let delta = st.shipout.cur_v - st.shipout.dvi_v;
-        st.mem.movement(&mut st.shipout, delta, Axis::Down)?;
+        st.shipout.movement(delta, Axis::Down)?;
         st.shipout.dvi_v = st.shipout.cur_v;
     }
     Ok(())
@@ -111,8 +111,8 @@ pub fn initialize_shipout_variables(st: &mut crate::state::EngineState) {
     let s = &mut st.shipout;
     s.output_file_name = StrNumber::NONE;
     s.dvi.init();
-    s.down_ptr = None;
-    s.right_ptr = None;
+    s.down_moves.clear();
+    s.right_moves.clear();
 }
 
 /// Emit the current string (the tail of the pool) as a DVI special and drop it.
@@ -608,7 +608,7 @@ impl MemState {
     }
 
     fn pop_dvi_level(&mut self, shipout: &mut ShipoutState, save_loc: i32) -> Result<(), Abort> {
-        self.prune_movements(shipout, save_loc);
+        shipout.prune_movements(save_loc);
         shipout.dvi.leave_level(save_loc)
     }
 }
@@ -1284,19 +1284,89 @@ fn vlist_leaders_out(
     Ok(())
 }
 
-impl MemState {
-    fn prune_movements(&mut self, shipout: &mut ShipoutState, l: i32) {
-        self.prune_movement_list(&mut shipout.down_ptr, l);
-        self.prune_movement_list(&mut shipout.right_ptr, l);
+/// A DVI movement already emitted, which a later one of the same distance may reuse.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(crate) struct Movement {
+    /// Whether the movement may be reused, and as which command.
+    pub state: i32,
+    pub distance: Scaled,
+    /// The DVI offset where the movement was emitted.
+    pub location: i32,
+}
+
+impl ShipoutState {
+    /// TeX's `movement`: emits a move by `w`, through a register when an earlier move allows.
+    fn movement(&mut self, w: Scaled, axis: Axis) -> Result<(), Abort> {
+        let location = self.dvi.pos();
+        let moves = match axis {
+            Axis::Down => &mut self.down_moves,
+            Axis::Right => &mut self.right_moves,
+        };
+        let top = moves.len();
+        moves.push(Movement {
+            state: MOV_NONE_SEEN,
+            distance: w,
+            location,
+        });
+
+        let mut mstate = MOV_NONE_SEEN;
+        let found = 'search: {
+            for i in (0..top).rev() {
+                let node = moves[i];
+                if node.distance != w {
+                    match mstate + node.state {
+                        1 => mstate = MOV_Y_SEEN,
+                        2 => mstate = MOV_Z_SEEN,
+                        8 | 13 => break 'search None,
+                        _ => {}
+                    }
+                    continue;
+                }
+                let (reg, here) = match mstate + node.state {
+                    // NONE_SEEN or Z_SEEN meeting YZ_OK or Y_OK
+                    3 | 4 | 15 | 16 => (MoveReg::Y, MOV_Y_HERE),
+                    // NONE_SEEN meeting Z_OK, Y_SEEN meeting YZ_OK or Z_OK
+                    5 | 9 | 11 => (MoveReg::Z, MOV_Z_HERE),
+                    // a y or z that is already here
+                    1 | 2 | 8 | 13 => break 'search Some(i),
+                    _ => continue,
+                };
+                if !self.dvi.set_reg_at(node.location, reg) {
+                    break 'search None;
+                }
+                moves[i].state = here;
+                break 'search Some(i);
+            }
+            None
+        };
+
+        let Some(found) = found else {
+            moves[top].state = MOV_YZ_OK;
+            return self.dvi.movement(axis, w);
+        };
+
+        moves[top].state = moves[found].state;
+        let (reg, yz_becomes, fixed_from) = if moves[top].state == MOV_Y_HERE {
+            (MoveReg::Y, MOV_Z_OK, MOV_Y_OK)
+        } else {
+            (MoveReg::Z, MOV_Y_OK, MOV_Z_OK)
+        };
+        for m in &mut moves[found + 1..top] {
+            if m.state == MOV_YZ_OK {
+                m.state = yz_becomes;
+            } else if m.state == fixed_from {
+                m.state = MOV_D_FIXED;
+            }
+        }
+        self.dvi.movement_by_reg(axis, reg)
     }
 
-    fn prune_movement_list(&mut self, head: &mut Option<NodePtr<MovementNode>>, l: i32) {
-        while let Some(p) = *head {
-            if self[p].location < l {
-                return;
+    /// Forgets the movements emitted at or after DVI offset `l`.
+    fn prune_movements(&mut self, l: i32) {
+        for moves in [&mut self.down_moves, &mut self.right_moves] {
+            while moves.last().is_some_and(|m| m.location >= l) {
+                moves.pop();
             }
-            *head = p.next(self);
-            p.free(self);
         }
     }
 }
@@ -1507,71 +1577,24 @@ impl MemState {
             lr.problems += 10000;
         }
     }
+}
 
-    fn movement(&mut self, shipout: &mut ShipoutState, w: Scaled, axis: Axis) -> Result<(), Abort> {
-        let mut q = NodePtr::<MovementNode>::alloc(self)?;
-        self[q].distance = w;
-        self[q].location = shipout.dvi.pos();
-        let head = match axis {
-            Axis::Down => &mut shipout.down_ptr,
-            Axis::Right => &mut shipout.right_ptr,
-        };
-        self[q].link = link_of(*head);
-        *head = Some(q);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-        let mut p = q.next(self);
-        let mut mstate = MOV_NONE_SEEN;
-        let found = 'search: {
-            while let Some(node) = p {
-                p = node.next(self);
-                if self[node].distance != w {
-                    match mstate + self[node].state {
-                        1 => mstate = MOV_Y_SEEN,
-                        2 => mstate = MOV_Z_SEEN,
-                        8 | 13 => break 'search None,
-                        _ => {}
-                    }
-                    continue;
-                }
-                let (reg, here) = match mstate + self[node].state {
-                    // NONE_SEEN or Z_SEEN meeting YZ_OK or Y_OK
-                    3 | 4 | 15 | 16 => (MoveReg::Y, MOV_Y_HERE),
-                    // NONE_SEEN meeting Z_OK, Y_SEEN meeting YZ_OK or Z_OK
-                    5 | 9 | 11 => (MoveReg::Z, MOV_Z_HERE),
-                    // a y or z that is already here
-                    1 | 2 | 8 | 13 => break 'search Some(node),
-                    _ => continue,
-                };
-                if !shipout.dvi.set_reg_at(self[node].location, reg) {
-                    break 'search None;
-                }
-                self[node].state = here;
-                break 'search Some(node);
-            }
-            None
-        };
-
-        let Some(found) = found else {
-            self[q].state = MOV_YZ_OK;
-            return shipout.dvi.movement(axis, w);
-        };
-
-        self[q].state = self[found].state;
-        let (reg, yz_becomes, fixed_from) = if self[q].state == MOV_Y_HERE {
-            (MoveReg::Y, MOV_Z_OK, MOV_Y_OK)
-        } else {
-            (MoveReg::Z, MOV_Y_OK, MOV_Z_OK)
-        };
-        while self[q].link != found.ptr() {
-            q = NodePtr::<MovementNode>::from_ptr(self[q].link)
-                .expect("found movement record is linked from the new record");
-            let state = self[q].state;
-            if state == MOV_YZ_OK {
-                self[q].state = yz_becomes;
-            } else if state == fixed_from {
-                self[q].state = MOV_D_FIXED;
-            }
+    #[test]
+    fn a_repeated_movement_reuses_a_register() {
+        let mut s = ShipoutState::default();
+        s.dvi.init();
+        for w in [5, 7, 5] {
+            s.movement(Scaled::from_raw(w), Axis::Down).unwrap();
         }
-        shipout.dvi.movement_by_reg(axis, reg)
+        // down1 5 became y1 5, down1 7 stays, the repeat is y0.
+        assert_eq!(&s.dvi.digest_view().1[..5], [162, 5, 157, 7, 161]);
+        let states: Vec<i32> = s.down_moves.iter().map(|m| m.state).collect();
+        assert_eq!(states, [MOV_Y_HERE, MOV_Z_OK, MOV_Y_HERE]);
+        s.prune_movements(2);
+        assert_eq!(s.down_moves.len(), 1);
     }
 }
