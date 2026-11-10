@@ -10,3 +10,4 @@ xetex-unquoted_native_font_name	upstream gives an unquoted native font its TFM l
 par-wrapped_prevgraf_stale_hang	upstream lays out a paragraph whose \prevgraf wraps the line numbers with the previous paragraph's hanging indent, TeXyoN with the full \hsize (UPSTREAM_BUGS.md 9)
 limits-wrap_misc	upstream sets the lines of a paragraph whose \prevgraf wraps the line numbers to the stale first_width (0pt here) and reports them overfull, TeXyoN uses \hsize (UPSTREAM_BUGS.md 9)
 limits-nested_dimen_overflow	upstream loses a dimension's overflow when an expansion inside its units scans another dimension, TeXyoN reports "Dimension too large" (UPSTREAM_BUGS.md 10)
+prim-primitive_register_fraction	upstream reads a decimal fraction after \primitive\count5 because radix still holds the 10 of the register number, TeXyoN gives a register value no radix (UPSTREAM_BUGS.md 11)

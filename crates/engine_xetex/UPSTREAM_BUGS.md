@@ -146,3 +146,18 @@ entry names a later TeX Live version.
 - **Fix:** save `arith_error` on entry to `scan_dimen` and restore it on exit, as `scan_expr` does.
 - **TeXyoN:** each dimension keeps its own overflow, so both report "Dimension too large". Listed in
   `tests/upstream/known.tsv`, test `a_dimension_scanned_inside_another_keeps_the_outer_overflow`.
+
+## 11. A register reached through `\primitive` takes a decimal fraction
+
+- **Where:** `scan_int`, `@<Reset |cur_tok| for unexpandable primitives, goto restart@>`, and
+  `scan_dimen`'s test `(radix=10) and (cur_tok=point_token)`.
+- **Bug:** `scan_int` sets `radix:=0` once, before `restart`. When `\primitive` leads to an
+  internal quantity, `scan_something_internal` scans the register number with a nested
+  `scan_int`, which leaves its own `radix` behind. `scan_dimen` then sees `radix=10` and reads a
+  following `.5` as the fraction of the register's value.
+- **Repro:** with `\count5=3`, `\dimen0=\primitive\count5.5pt` gives `3.5pt` in TeX Live 2025
+  xetex. `\dimen0=\count5.5pt` and `\dimen0=\primitive\count"5.5pt` give "Illegal unit of
+  measure" and `3.0pt`. Probe `prim-primitive_register_fraction`.
+- **Fix:** set `radix:=0` after `scan_something_internal` in `scan_int`.
+- **TeXyoN:** that fix, so all three give the error. Listed in `tests/upstream/known.tsv`, test
+  `a_register_value_takes_no_decimal_fraction`.

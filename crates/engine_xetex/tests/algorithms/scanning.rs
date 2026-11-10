@@ -329,3 +329,11 @@ fn an_unquoted_native_font_loads_its_mapping() {
         ["Font mapping `nosuchmap.tec' for font `[lmroman12-regular.otf]:mapping=nosuchma"]
     );
 }
+
+#[test]
+fn a_register_value_takes_no_decimal_fraction() {
+    let r = run(r"\count5=3 \dimen1=\primitive\count5.5pt
+\showthe\dimen1");
+    assert_eq!(r.errors(), ["Illegal unit of measure (pt inserted)."]);
+    assert_eq!(r.shown(), ["3.0pt"]);
+}

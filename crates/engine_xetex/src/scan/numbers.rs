@@ -305,6 +305,7 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<i32, Abort> {
                 CurVal::Int(n) => n,
                 _ => return Err(Abort::Confusion("scan_int")),
             };
+            st.scanner.radix = 0;
         } else {
             let (radix, m) = if st.scanner.cur_tok == OCTAL_TOKEN {
                 get_x_token(st)?;
