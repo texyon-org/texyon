@@ -5,6 +5,7 @@ use crate::codes::{
     ConvertCode, FiOrElseCode, IfCode, InputCode, ScannerStatus, TheCode, ValueLevel,
 };
 use crate::command::Command;
+use crate::cond_stack::CondId;
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_USV, END_WRITE, FROZEN_DONT_EXPAND, FROZEN_ENDV,
     FROZEN_PRIMITIVE, HMODE, MMODE, NULL_CS, NULL_FONT, SINGLE_BASE, TOO_BIG_USV, VMODE,
@@ -14,7 +15,7 @@ use crate::errors::OrConfusion;
 use crate::fonts::{Side, AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::{back_input, begin_token_list, TokenType, TOKEN_LIST};
 use crate::mem::ZERO_GLUE;
-use crate::node::{link_of, AnyNode, CondNode, GlueKind, KernSubtype, NodePtr, SaLeaf};
+use crate::node::{AnyNode, GlueKind, KernSubtype, SaLeaf};
 use crate::output::{
     begin_diagnostic, end_diagnostic, print, print_char, print_int, print_scaled, show_cur_cmd_chr,
     sprint_cs,
@@ -41,15 +42,14 @@ fn ins_temp_head_list(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 fn pop_cond_node(st: &mut EngineState) -> Result<(), Abort> {
-    let p = st.scanner.cond_ptr.or_confusion("if")?;
-    (st.scanner.cur_if, st.scanner.if_line, st.scanner.if_limit) = st.mem[p].saved_state();
-    st.scanner.cond_ptr = p.next(&st.mem);
-    p.free(&mut st.mem);
+    let p = st.scanner.conds.pop().or_confusion("if")?;
+    (st.scanner.cur_if, st.scanner.if_line, st.scanner.if_limit) =
+        (p.cur_if, p.if_line, p.if_limit);
     Ok(())
 }
 
 fn pop_fi(st: &mut EngineState) -> Result<(), Abort> {
-    if st.input.open_levels[st.input.in_open].cond == st.scanner.cond_ptr {
+    if st.input.open_levels[st.input.in_open].cond == st.scanner.conds.top() {
         crate::output::if_warning(st);
     }
     pop_cond_node(st)
@@ -142,25 +142,13 @@ fn trace_diagnostic(st: &mut EngineState, text: &str) {
     end_diagnostic(st, false);
 }
 
-fn change_if_limit(
-    st: &mut EngineState,
-    l: FiOrElseCode,
-    p: Option<NodePtr<CondNode>>,
-) -> Result<(), Abort> {
-    if p == st.scanner.cond_ptr {
+fn change_if_limit(st: &mut EngineState, l: FiOrElseCode, p: CondId) -> Result<(), Abort> {
+    if st.scanner.conds.top() == Some(p) {
         st.scanner.if_limit = l.into();
         return Ok(());
     }
-    let mut q = st.scanner.cond_ptr;
-    while let Some(cond) = q {
-        let next = cond.next(&st.mem);
-        if next == p {
-            st.mem[cond].if_limit = l.into();
-            return Ok(());
-        }
-        q = next;
-    }
-    Err(Abort::Confusion("if"))
+    st.scanner.conds.above_mut(p).or_confusion("if")?.if_limit = l.into();
+    Ok(())
 }
 
 fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result<(), Abort> {
@@ -168,18 +156,13 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
         show_cur_cmd_chr(st);
     }
 
-    let cond_node = NodePtr::<CondNode>::alloc(&mut st.mem)?;
-    let node = &mut st.mem[cond_node];
-    node.link = link_of(st.scanner.cond_ptr);
-    node.if_limit = st.scanner.if_limit;
-    node.cur_if = st.scanner.cur_if as u16;
-    node.if_line = st.scanner.if_line;
-    st.scanner.cond_ptr = Some(cond_node);
+    let save_cond_ptr =
+        st.scanner
+            .conds
+            .push(st.scanner.cur_if, st.scanner.if_limit, st.scanner.if_line);
     st.scanner.cur_if = (this_if.raw() + if is_unless { IfCode::UNLESS } else { 0 }) as i16;
     st.scanner.if_limit = FiOrElseCode::If.into();
     st.scanner.if_line = st.mem.line;
-
-    let save_cond_ptr = st.scanner.cond_ptr;
 
     let mut b = match this_if {
         IfCode::Char | IfCode::Cat => {
@@ -325,7 +308,7 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
             }
             while n != 0 {
                 crate::scan::pass_text(st)?;
-                if st.scanner.cond_ptr == save_cond_ptr {
+                if st.scanner.conds.top() == Some(save_cond_ptr) {
                     if st.scanner.fi_or_else() != Some(FiOrElseCode::Or) {
                         skipped_branch_end(st)?;
                         return Ok(());
@@ -364,7 +347,7 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
 
     loop {
         crate::scan::pass_text(st)?;
-        if st.scanner.cond_ptr == save_cond_ptr {
+        if st.scanner.conds.top() == Some(save_cond_ptr) {
             if st.scanner.fi_or_else() != Some(FiOrElseCode::Or) {
                 skipped_branch_end(st)?;
                 return Ok(());

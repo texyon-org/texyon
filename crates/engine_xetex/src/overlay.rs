@@ -10,18 +10,18 @@ use crate::fonts::Side;
 use crate::math::MathStyle;
 use bytemuck::{Pod, Zeroable};
 
-use crate::codes::{FiOrElseCode, LimitCode, MarkCode, ValueLevel};
+use crate::codes::{LimitCode, MarkCode, ValueLevel};
 use crate::consts::{EMPTY, NORMAL};
 use crate::node::{
     AccentNoad, AdjustNode, AdjustPlacement, AlignRecord, AlignStackNode, AnyNoad, BoxLr, BoxNode,
-    CharNode, ChoiceNode, CondNode, DelimiterField, DiscNode, EdgeNode, ExprNode, FenceNoad,
-    FenceSubtype, FixedNode, FractionNoad, FreeBlock, GlueKind, GlueNode, GlueSpecNode, GlyphNode,
-    HeadNode, HyphPosNode, InsNode, KernNode, KernSubtype, LanguageNode, LeaderKind, LigBoundary,
-    LigItem, LigatureNode, Link, LrNode, MarginKernNode, MarkNode, MathAccentKind, MathCode,
-    MathField, MathNode, MovementNode, NativeWordNode, Noad, NodeKind, NodePtr, OpenNode,
-    PageInsNode, ParShapeNode, PenaltiesNode, PenaltyNode, PicNode, PseudoFileNode, PseudoLineNode,
-    RadicalNoad, RuleNode, SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode,
-    SaSaved, SaSavedPointer, SaSavedWord, SaWordNode, SizedWhatsit, SpanNode, Stored, StoredDimen,
+    CharNode, ChoiceNode, DelimiterField, DiscNode, EdgeNode, ExprNode, FenceNoad, FenceSubtype,
+    FixedNode, FractionNoad, FreeBlock, GlueKind, GlueNode, GlueSpecNode, GlyphNode, HeadNode,
+    HyphPosNode, InsNode, KernNode, KernSubtype, LanguageNode, LeaderKind, LigBoundary, LigItem,
+    LigatureNode, Link, LrNode, MarginKernNode, MarkNode, MathAccentKind, MathCode, MathField,
+    MathNode, MovementNode, NativeWordNode, Noad, NodeKind, NodePtr, OpenNode, PageInsNode,
+    ParShapeNode, PenaltiesNode, PenaltyNode, PicNode, PseudoFileNode, PseudoLineNode, RadicalNoad,
+    RuleNode, SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved,
+    SaSavedPointer, SaSavedWord, SaWordNode, SizedWhatsit, SpanNode, Stored, StoredDimen,
     StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype, WriteNode,
 };
 use crate::payload::PayloadId;
@@ -1072,27 +1072,6 @@ pub struct SaSavedPointerLayout {
 
 overlay!(SaSavedPointer => SaSavedPointerLayout);
 
-/// An entry of the conditional stack, saving the enclosing `\if`.
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct CondLayout {
-    pub cur_if: u16,
-    pub if_limit: Stored<FiOrElseCode>,
-    pub link: MemPtr,
-    _unused1: i32,
-    pub if_line: i32,
-}
-
-overlay!(CondNode => CondLayout);
-
-impl CondLayout {
-    /// The saved `(cur_if, if_line, if_limit)`.
-    #[inline]
-    pub fn saved_state(&self) -> (i16, i32, Stored<FiOrElseCode>) {
-        (self.cur_if as i16, self.if_line, self.if_limit)
-    }
-}
-
 /// A shipout `down_ptr`/`right_ptr` movement record.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
@@ -1542,15 +1521,6 @@ mod tests {
         let mut mem = arena();
         let at = MemIdx::from_raw;
         let ptr = MemPtr::from_raw;
-
-        let c: NodePtr<CondNode> = NodePtr::from_idx_unchecked(at(2));
-        let cond = &mut mem[c];
-        cond.cur_if = 7;
-        cond.if_limit = FiOrElseCode::Else.into();
-        cond.link = ptr(9);
-        cond.if_line = 11;
-        assert_eq!((mem.b16s0(at(2)), mem.b16s1(at(2))), (7, 3));
-        assert_eq!((mem.b32s1(at(2)), mem.b32s1(at(3))), (9, 11));
 
         let e: NodePtr<ExprNode> = NodePtr::from_idx_unchecked(at(4));
         let expr = &mut mem[e];

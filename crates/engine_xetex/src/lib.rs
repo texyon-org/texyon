@@ -30,6 +30,7 @@ mod cmd;
 mod codes;
 mod command;
 mod compat;
+mod cond_stack;
 mod consts;
 mod diagnostic;
 mod dvi;

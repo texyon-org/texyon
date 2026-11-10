@@ -502,7 +502,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                         let in_open = st.input.in_open;
                         if st.eqtb.int_par(IntPar::TracingNesting) > 0
                             && (st.input.open_levels[in_open].grp != st.save_stack.cur_boundary
-                                || st.input.open_levels[in_open].cond != st.scanner.cond_ptr)
+                                || st.input.open_levels[in_open].cond != st.scanner.conds.top())
                         {
                             crate::output::file_warning(st);
                         }

@@ -60,11 +60,11 @@ pub(crate) fn if_warning(st: &mut EngineState) {
     st.input.input_stack.park(st.input.cur_input);
     let mut i = st.input.in_open;
     let mut w = false;
-    while st.input.open_levels[i].cond == st.scanner.cond_ptr {
+    while st.input.open_levels[i].cond == st.scanner.conds.top() {
         if st.eqtb.int_par(IntPar::TracingNesting) > 0 && level_is_file(st, i) {
             w = true;
         }
-        st.input.open_levels[i].cond = st.scanner.cond_ptr.and_then(|c| c.next(&st.mem));
+        st.input.open_levels[i].cond = st.scanner.conds.below_top();
         i -= 1;
     }
     if w {
@@ -115,11 +115,14 @@ pub(crate) fn file_warning(st: &mut EngineState) {
     st.save_stack.cur_level = saved_level;
     st.save_stack.cur_group = saved_group;
 
-    let saved_cond = st.scanner.cond_ptr;
     let saved_limit = st.scanner.if_limit;
     let saved_if = st.scanner.cur_if;
     let saved_line = st.scanner.if_line;
-    while st.input.open_levels[st.input.in_open].cond != st.scanner.cond_ptr {
+    let opened_in = st.input.open_levels[st.input.in_open].cond;
+    let saved: Vec<_> = st.scanner.conds.iter_from_top().copied().collect();
+    let mut outer = saved.iter();
+    let mut cur = st.scanner.conds.top();
+    while opened_in != cur {
         print_nl(st, "Warning: ");
         crate::diagnostic::begin_warning(st);
         print(st, "end of file when ");
@@ -130,13 +133,13 @@ pub(crate) fn file_warning(st: &mut EngineState) {
         print_if_line(st, st.scanner.if_line);
         print(st, " is incomplete");
         crate::diagnostic::end_capture(st);
-        let Some(cond) = st.scanner.cond_ptr else {
+        let Some(cond) = outer.next() else {
             break;
         };
-        (st.scanner.cur_if, st.scanner.if_line, st.scanner.if_limit) = st.mem[cond].saved_state();
-        st.scanner.cond_ptr = cond.next(&st.mem);
+        (st.scanner.cur_if, st.scanner.if_line, st.scanner.if_limit) =
+            (cond.cur_if, cond.if_line, cond.if_limit);
+        cur = outer.as_slice().first().map(|c| c.id);
     }
-    st.scanner.cond_ptr = saved_cond;
     st.scanner.if_limit = saved_limit;
     st.scanner.cur_if = saved_if;
     st.scanner.if_line = saved_line;

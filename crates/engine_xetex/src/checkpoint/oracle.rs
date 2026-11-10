@@ -350,10 +350,10 @@ fn digest_input(st: &EngineState) -> u64 {
         h.i32(p.list.raw());
     }
     for level in &input.open_levels {
+        h.word(level.cond.map_or(u64::MAX, |c| u64::from(c.raw())));
         h.i32s(&[
             level.outer_line,
             level.grp.raw(),
-            crate::node::link_of(level.cond).raw(),
             level.source_name.raw(),
             level.full_source_name.raw(),
         ]);
@@ -368,7 +368,8 @@ fn digest_scanner(st: &EngineState) -> u64 {
     for value in [
         scanner.logical_clock as i64,
         i64::from(scanner.align_state),
-        i64::from(crate::node::link_of(scanner.cond_ptr).raw()),
+        i64::try_from(scanner.conds.depth()).unwrap_or(i64::MAX),
+        i64::from(scanner.conds.next_id()),
         i64::from(scanner.cur_cs.raw()),
         i64::from(i32::from(scanner.cur_cmd)),
         i64::from(scanner.cur_chr),
@@ -390,6 +391,14 @@ fn digest_scanner(st: &EngineState) -> u64 {
     }
     for &value in buf {
         h.word(u64::from(value));
+    }
+    for cond in scanner.conds.iter_from_top() {
+        h.word(u64::from(cond.id.raw()));
+        h.i32s(&[
+            i32::from(cond.cur_if),
+            i32::from(cond.if_limit.raw()),
+            cond.if_line,
+        ]);
     }
     h.finish()
 }

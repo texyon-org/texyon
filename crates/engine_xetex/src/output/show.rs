@@ -45,11 +45,7 @@ pub(crate) fn show_cur_cmd_chr(st: &mut EngineState) {
         } else {
             (1, st.mem.line)
         };
-        let mut p = st.scanner.cond_ptr;
-        while let Some(cond) = p {
-            n += 1;
-            p = cond.next(&st.mem);
-        }
+        n += i32::try_from(st.scanner.conds.depth()).unwrap_or(i32::MAX);
         print(st, "(level ");
         print_int(st, n);
         print_char(st, b')');
@@ -445,21 +441,16 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
             begin_diagnostic(st);
             print_nl(st, "");
             print_ln(st);
-            if st.scanner.cond_ptr.is_none() {
+            if st.scanner.conds.top().is_none() {
                 print_nl(st, "### ");
                 print(st, "no active conditionals");
             } else {
-                let mut n = 0;
-                let mut p = st.scanner.cond_ptr;
-                while let Some(cond) = p {
-                    n += 1;
-                    p = cond.next(&st.mem);
-                }
-                let mut p = st.scanner.cond_ptr;
+                let saved: Vec<_> = st.scanner.conds.iter_from_top().copied().collect();
+                let mut n = i32::try_from(saved.len()).unwrap_or(i32::MAX);
                 let mut t = st.scanner.cur_if;
                 let mut l = st.scanner.if_line;
                 let mut m = st.scanner.if_limit;
-                while let Some(cond) = p {
+                for cond in &saved {
                     print_nl(st, "### level ");
                     print_int(st, n);
                     print(st, ": ");
@@ -469,8 +460,7 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
                     }
                     print_if_line(st, l);
                     n -= 1;
-                    (t, l, m) = st.mem[cond].saved_state();
-                    p = cond.next(&st.mem);
+                    (t, l, m) = (cond.cur_if, cond.if_line, cond.if_limit);
                 }
             }
         }

@@ -542,17 +542,9 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<i32, Abo
         }
         LastItemCode::CurrentGroupLevel => i32::from(st.save_stack.cur_level) - 1,
         LastItemCode::CurrentGroupType => st.save_stack.cur_group as i32,
-        LastItemCode::CurrentIfLevel => {
-            let mut q = st.scanner.cond_ptr;
-            let mut depth = 0;
-            while let Some(cond) = q {
-                depth += 1;
-                q = cond.next(&st.mem);
-            }
-            depth
-        }
+        LastItemCode::CurrentIfLevel => i32::try_from(st.scanner.conds.depth()).unwrap_or(i32::MAX),
         LastItemCode::CurrentIfType => {
-            if st.scanner.cond_ptr.is_none() {
+            if st.scanner.conds.top().is_none() {
                 0
             } else if i32::from(st.scanner.cur_if) < IfCode::UNLESS {
                 i32::from(st.scanner.cur_if) + 1

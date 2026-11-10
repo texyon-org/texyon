@@ -191,7 +191,7 @@ pub(crate) fn begin_file_reading(st: &mut EngineState) -> Result<(), Abort> {
     st.input.open_levels[idx] = crate::state::OpenLevel {
         outer_line: st.mem.line,
         grp: st.save_stack.cur_boundary,
-        cond: st.scanner.cond_ptr,
+        cond: st.scanner.conds.top(),
         source_name: StrNumber::NONE,
         full_source_name: StrNumber::NONE,
         eof_seen: false,

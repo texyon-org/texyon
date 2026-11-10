@@ -222,7 +222,7 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
         crate::output::show_save_groups(st);
     }
 
-    while let Some(cond) = st.scanner.cond_ptr {
+    while let Some(cond) = st.scanner.conds.pop() {
         crate::output::print_nl(st, b'(');
         crate::output::print_esc(st, "end occurred ");
         crate::output::print(st, "when ");
@@ -233,11 +233,8 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
             crate::output::print_int(st, if_line);
         }
         crate::output::print(st, " was incomplete)");
-        st.scanner.if_line = st.mem[cond].if_line;
-        st.scanner.cur_if = st.mem[cond].cur_if as i16;
-        st.mem.temp_ptr = cond.ptr();
-        st.scanner.cond_ptr = cond.next(&st.mem);
-        cond.free(&mut st.mem);
+        st.scanner.if_line = cond.if_line;
+        st.scanner.cur_if = cond.cur_if;
     }
 
     if st.errors.history != HISTORY_SPOTLESS
@@ -334,7 +331,7 @@ fn initialize_more_variables(st: &mut EngineState) {
 
     st.input.read_open = [CLOSED; 17];
 
-    st.scanner.cond_ptr = None;
+    st.scanner.conds = crate::cond_stack::CondStack::default();
     st.scanner.if_limit = FiOrElseCode::Normal.into();
     st.scanner.cur_if = 0;
     st.scanner.if_line = 0;

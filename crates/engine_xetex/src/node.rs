@@ -749,8 +749,6 @@ node_kinds! {
     PageInsNode;
     /// A shipout `down_ptr`/`right_ptr` movement record.
     MovementNode;
-    /// An entry of the conditional stack, saving the enclosing `\if`.
-    CondNode;
     /// A character in a font.
     CharNode = Char, CHAR_NODE_SIZE;
     /// The head of a list under construction, from `push_nest`, `copy_list` or an alignment.
@@ -842,10 +840,6 @@ impl FixedNode for LrNode {
     const SIZE: i32 = 2;
     const TYPE: Option<NodeType> = None;
 }
-impl FixedNode for CondNode {
-    const SIZE: i32 = 2;
-    const TYPE: Option<NodeType> = None;
-}
 impl FixedNode for MovementNode {
     const SIZE: i32 = MOVEMENT_NODE_SIZE;
     const TYPE: Option<NodeType> = None;
@@ -890,7 +884,7 @@ macro_rules! impl_traits {
 impl_traits!(HasLink: BoxNode, RuleNode, InsNode, MarkNode, AdjustNode, LigatureNode, DiscNode,
     WhatsitNode, MathNode, GlueNode, KernNode, PenaltyNode, UnsetNode, StyleNode, ChoiceNode,
     EdgeNode, Noad, RadicalNoad, AccentNoad, FractionNoad, FenceNoad, AnyNoad, MarginKernNode, SaIndexNode, SaElement, SaWordNode, SaPointerNode, SaMarkClassNode,
-    SaSaved, SaSavedWord, SaSavedPointer, PageInsNode, MovementNode, CondNode, CharNode, HeadNode,
+    SaSaved, SaSavedWord, SaSavedPointer, PageInsNode, MovementNode, CharNode, HeadNode,
     LrNode, AlignRecord, AlignStackNode, ExprNode, PseudoLineNode,
     LigItem);
 
@@ -899,7 +893,7 @@ pub trait ListRecord: NodeKind {}
 
 impl_traits!(ListRecord: SaIndexNode, SaElement, SaWordNode, SaPointerNode, SaMarkClassNode,
     SaSaved, SaSavedWord, SaSavedPointer, PageInsNode, MovementNode,
-    LigItem, CondNode, CharNode, HeadNode, LrNode, PseudoFileNode, HyphPosNode, AlignRecord, SpanNode, AlignStackNode, ParShapeNode, PenaltiesNode,
+    LigItem, CharNode, HeadNode, LrNode, PseudoFileNode, HyphPosNode, AlignRecord, SpanNode, AlignStackNode, ParShapeNode, PenaltiesNode,
     ExprNode, PseudoLineNode, MathField, DelimiterField, FreeBlock);
 
 impl<K: ListRecord> NodePtr<K> {
