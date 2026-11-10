@@ -863,7 +863,7 @@ fn shorthand_def(st: &mut EngineState, global: bool, n: ShorthandDefCode) -> Res
                 } else {
                     Cmd::Register
                 };
-                (t, st.scanner.cur_ptr.raw())
+                (t, sa.element().ptr().raw())
             } else {
                 let (t, base) = match n {
                     ShorthandDefCode::Count => (Cmd::AssignInt, COUNT_BASE),
@@ -915,7 +915,7 @@ fn assign_toks(st: &mut EngineState, global: bool, cmd: Command) -> Result<(), A
             Some(if n < 256 {
                 st.eqtb.toks(n)
             } else {
-                let sa = st.mem.find_sa_element(&mut st.scanner, ValueLevel::Tok, n);
+                let sa = st.mem.find_sa_element(&st.scanner, ValueLevel::Tok, n);
                 crate::scan::sa_token_list(st, sa)
             })
         }
@@ -924,7 +924,7 @@ fn assign_toks(st: &mut EngineState, global: bool, cmd: Command) -> Result<(), A
             let n = scan_inter_char_pair(st)?;
             let sa = st
                 .mem
-                .find_sa_element(&mut st.scanner, ValueLevel::InterChar, n);
+                .find_sa_element(&st.scanner, ValueLevel::InterChar, n);
             Some(crate::scan::sa_token_list(st, sa))
         }
         Some(Command::AssignToks(loc)) => Some(st.eqtb.equiv_tokens(loc)),

@@ -6,8 +6,8 @@ use crate::errors::OrConfusion;
 use crate::errors::{Abort, IgnoredError};
 use crate::mem::TEMP_HEAD;
 use crate::node::{
-    link_of, AnyNode, BoxNode, FixedNode, GlueNode, GlueSpecNode, KernNode, MarkNode, NodePtr,
-    SaIndexNode, SaLeaf, SaMarkClassNode, WhatsitVariant,
+    AnyNode, BoxNode, FixedNode, GlueNode, GlueSpecNode, KernNode, MarkNode, NodePtr, SaIndexNode,
+    SaLeaf, SaMarkClassNode, WhatsitVariant,
 };
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, MemState, ScannerState, ShipoutState};
@@ -348,7 +348,7 @@ impl MemState {
         scanner.disc_ptr[BoxCode::Vsplit as usize] = MemPtr::NULL;
 
         if let Some(root) = scanner.sa_root.get(ValueLevel::Mark) {
-            if self.do_marks(scanner, MarksAction::VsplitInit, 0, root) {
+            if self.do_marks(MarksAction::VsplitInit, 0, root) {
                 scanner.sa_root.set(ValueLevel::Mark, None);
             }
         }
@@ -650,24 +650,15 @@ impl MemState {
 
     /// Apply mark action `a` to the mark-class tree below index node `q` at
     /// level `l`. Returns whether `q` was freed.
-    pub fn do_marks(
-        &mut self,
-        scanner: &mut ScannerState,
-        a: MarksAction,
-        l: i16,
-        q: NodePtr<SaIndexNode>,
-    ) -> bool {
+    pub fn do_marks(&mut self, a: MarksAction, l: i16, q: NodePtr<SaIndexNode>) -> bool {
         // XeTeX widened index nodes to 64 children but its do_marks still visits 16.
         for i in 0..16 {
             let freed = if l < 3 {
                 let child = self[q].child_index(i);
-                scanner.cur_ptr = link_of(child);
-                child.is_some_and(|c| self.do_marks(scanner, a, l + 1, c))
+                child.is_some_and(|c| self.do_marks(a, l + 1, c))
             } else {
-                let child = self[q].child_leaf(i, ValueLevel::Mark);
-                scanner.cur_ptr = link_of(child.map(SaLeaf::element));
-                match child {
-                    Some(SaLeaf::MarkClass(m)) => self.do_mark_class(scanner, a, m),
+                match self[q].child_leaf(i, ValueLevel::Mark) {
+                    Some(SaLeaf::MarkClass(m)) => self.do_mark_class(a, m),
                     _ => false,
                 }
             };
@@ -685,12 +676,7 @@ impl MemState {
     }
 
     /// Apply mark action `a` to mark class `node`. Returns whether it was freed.
-    fn do_mark_class(
-        &mut self,
-        scanner: &mut ScannerState,
-        a: MarksAction,
-        node: NodePtr<SaMarkClassNode>,
-    ) -> bool {
+    fn do_mark_class(&mut self, a: MarksAction, node: NodePtr<SaMarkClassNode>) -> bool {
         match a {
             MarksAction::VsplitInit => {
                 if !self[node].mark(MarkCode::SplitFirst).is_null() {
@@ -727,9 +713,9 @@ impl MemState {
             }
             MarksAction::DestroyMarks => {
                 for mark in MarkCode::ALL {
-                    scanner.cur_ptr = self[node].mark(mark).ptr();
-                    if !scanner.cur_ptr.is_null() {
-                        self.delete_token_ref(TokenList::from_ptr(scanner.cur_ptr));
+                    let text = self[node].mark(mark);
+                    if !text.is_null() {
+                        self.delete_token_ref(text);
                         self[node].set_mark(mark, TokenList::NULL);
                     }
                 }

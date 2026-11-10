@@ -265,10 +265,7 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     if let Some(marks) = st.scanner.sa_root.get(ValueLevel::Mark) {
-        if st
-            .mem
-            .do_marks(&mut st.scanner, MarksAction::DestroyMarks, 0, marks)
-        {
+        if st.mem.do_marks(MarksAction::DestroyMarks, 0, marks) {
             st.scanner.sa_root.set(ValueLevel::Mark, None);
         }
     }

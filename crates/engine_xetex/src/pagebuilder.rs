@@ -176,10 +176,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
         .geq_word_define(IntPar::OutputPenalty.loc(), output_penalty);
 
     if let Some(root) = st.scanner.sa_root.get(ValueLevel::Mark) {
-        if st
-            .mem
-            .do_marks(&mut st.scanner, MarksAction::FireUpInit, 0, root)
-        {
+        if st.mem.do_marks(MarksAction::FireUpInit, 0, root) {
             st.scanner.sa_root.set(ValueLevel::Mark, None);
         }
     }
@@ -318,10 +315,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     PAGE_INS_HEAD.set_link(&mut st.mem, PAGE_INS_HEAD);
 
     if let Some(root) = st.scanner.sa_root.get(ValueLevel::Mark) {
-        if st
-            .mem
-            .do_marks(&mut st.scanner, MarksAction::FireUpDone, 0, root)
-        {
+        if st.mem.do_marks(MarksAction::FireUpDone, 0, root) {
             st.scanner.sa_root.set(ValueLevel::Mark, None);
         }
     }

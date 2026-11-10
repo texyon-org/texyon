@@ -804,15 +804,16 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                 } else {
                     0
                 };
-                if n == 0 {
-                    st.scanner.cur_ptr = st.scanner.cur_mark[mark].ptr();
-                } else if let Some(SaLeaf::MarkClass(m)) =
-                    st.mem.find_sa_element(&mut st.scanner, ValueLevel::Mark, n)
-                {
-                    st.scanner.cur_ptr = st.mem[m].mark(mark).ptr();
-                }
-                if !st.scanner.cur_ptr.is_null() {
-                    begin_token_list(st, TokenList::from_ptr(st.scanner.cur_ptr), TokenType::Mark)?;
+                let text = if n == 0 {
+                    st.scanner.cur_mark[mark]
+                } else {
+                    match st.mem.find_sa_element(&st.scanner, ValueLevel::Mark, n) {
+                        Some(SaLeaf::MarkClass(m)) => st.mem[m].mark(mark),
+                        _ => TokenList::NULL,
+                    }
+                };
+                if !text.is_null() {
+                    begin_token_list(st, text, TokenType::Mark)?;
                 }
             }
             Command::ExpandAfter { unless } => {

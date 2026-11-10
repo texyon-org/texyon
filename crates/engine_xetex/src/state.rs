@@ -1111,7 +1111,6 @@ pub(crate) struct ScannerState {
     pub cur_chr: i32,
     pub cur_cs: crate::units::EqtbPtr,
     pub cur_tok: crate::token::Token,
-    pub cur_ptr: crate::units::MemPtr,
     pub cur_mark: CurMarks,
     pub disc_ptr: [crate::units::MemPtr; 4],
     pub cur_box: Option<crate::node::BoxOrRule>,

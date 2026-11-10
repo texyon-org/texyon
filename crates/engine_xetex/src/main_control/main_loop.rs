@@ -23,7 +23,7 @@ fn inter_char_tokens_enabled(st: &EngineState) -> bool {
 fn inter_char_toks(st: &mut EngineState, n: i32) -> Option<TokenList> {
     let SaLeaf::Pointer(p) = st
         .mem
-        .find_sa_element(&mut st.scanner, ValueLevel::InterChar, n)?
+        .find_sa_element(&st.scanner, ValueLevel::InterChar, n)?
     else {
         return None;
     };

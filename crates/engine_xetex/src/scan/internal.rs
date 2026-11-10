@@ -157,7 +157,7 @@ impl CurVal {
 
 /// The sparse-array element of type `t` for register `n`, if it exists.
 pub(super) fn find_sa(st: &mut EngineState, t: ValueLevel, n: i32) -> Option<SaLeaf> {
-    st.mem.find_sa_element(&mut st.scanner, t, n)
+    st.mem.find_sa_element(&st.scanner, t, n)
 }
 
 /// The token list held by sparse register `sa`, null when unset.

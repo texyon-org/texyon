@@ -558,15 +558,13 @@ fn sa_levels(n: i32) -> Option<[u16; 4]> {
 }
 
 impl MemState {
-    /// Allocates an index node below `parent`, also leaving it in `cur_ptr`.
+    /// Allocates an index node below `parent`.
     fn new_index(
         &mut self,
-        scanner: &mut ScannerState,
         sa_index: u16,
         parent: Option<NodePtr<SaIndexNode>>,
     ) -> Result<NodePtr<SaIndexNode>, Abort> {
         let p = NodePtr::<SaIndexNode>::alloc(self)?;
-        scanner.cur_ptr = p.ptr();
         let n = &mut self[p];
         n.sa_index = sa_index;
         n.used = 0;
@@ -585,7 +583,6 @@ impl MemState {
     /// element for type `t` and register `n`.
     fn sa_alloc_chain(
         &mut self,
-        scanner: &mut ScannerState,
         t: ValueLevel,
         n: i32,
         mut q: NodePtr<SaIndexNode>,
@@ -593,7 +590,7 @@ impl MemState {
     ) -> Result<SaLeaf, Abort> {
         let (&leaf_i, index_levels) = levels.split_last().or_confusion("sa")?;
         for &i in index_levels {
-            let p = self.new_index(scanner, i, Some(q))?;
+            let p = self.new_index(i, Some(q))?;
             self.add_sa_child(q, i, p);
             q = p;
         }
@@ -622,7 +619,6 @@ impl MemState {
             SaLeaf::Pointer(p)
         };
         let e = leaf.element();
-        scanner.cur_ptr = e.ptr();
         let h = &mut self[e];
         h.sa_index = 64 * u16::from(t as u8) + leaf_i;
         h.sa_lev = LEVEL_ONE;
@@ -632,15 +628,9 @@ impl MemState {
     }
 
     /// TeX's `find_sa_element` without creation: the element for type `t`,
-    /// register `n`, if any, also left in `cur_ptr`.
-    pub fn find_sa_element(
-        &self,
-        scanner: &mut ScannerState,
-        t: ValueLevel,
-        n: i32,
-    ) -> Option<SaLeaf> {
+    /// register `n`, if any.
+    pub fn find_sa_element(&self, scanner: &ScannerState, t: ValueLevel, n: i32) -> Option<SaLeaf> {
         let found = self.sa_lookup(scanner.sa_root.get(t), n);
-        scanner.cur_ptr = link_of(found);
         found.map(|e| SaLeaf::of_type(t, e.idx()))
     }
 
@@ -653,8 +643,7 @@ impl MemState {
         self[q].child_element(usize::from(d4))
     }
 
-    /// TeX's `find_sa_element` with creation, also leaving the element in
-    /// `cur_ptr`.
+    /// TeX's `find_sa_element` with creation.
     pub fn create_sa_element(
         &mut self,
         scanner: &mut ScannerState,
@@ -663,22 +652,19 @@ impl MemState {
     ) -> Result<SaLeaf, Abort> {
         let levels = sa_levels(n).or_confusion("sa")?;
         let Some(mut q) = scanner.sa_root.get(t) else {
-            let root = self.new_index(scanner, u16::from(t as u8), None)?;
+            let root = self.new_index(u16::from(t as u8), None)?;
             scanner.sa_root.set(t, Some(root));
-            return self.sa_alloc_chain(scanner, t, n, root, &levels);
+            return self.sa_alloc_chain(t, n, root, &levels);
         };
         for k in 0..3 {
             match self[q].child_index(usize::from(levels[k])) {
                 Some(child) => q = child,
-                None => return self.sa_alloc_chain(scanner, t, n, q, &levels[k..]),
+                None => return self.sa_alloc_chain(t, n, q, &levels[k..]),
             }
         }
         match self[q].child_element(usize::from(levels[3])) {
-            Some(e) => {
-                scanner.cur_ptr = e.ptr();
-                Ok(SaLeaf::of_type(t, e.idx()))
-            }
-            None => self.sa_alloc_chain(scanner, t, n, q, &levels[3..]),
+            Some(e) => Ok(SaLeaf::of_type(t, e.idx())),
+            None => self.sa_alloc_chain(t, n, q, &levels[3..]),
         }
     }
 }
