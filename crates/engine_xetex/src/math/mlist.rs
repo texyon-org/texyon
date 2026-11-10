@@ -1582,10 +1582,8 @@ impl MemState {
         } else {
             self[p].link = self[b].list_ptr;
             self[b].list_ptr = p.ptr();
-            // XeTeX reads box height and width off the glue node here.
-            let glue = p.ptr();
-            self[b].height = Scaled::from_raw(self.b32s1(glue + 3));
-            self[b].width = Scaled::from_raw(self.b32s1(glue + 1));
+            // XeTeX's `width(b):=width(p)` reads the glue's null leader pointer (upstream bug 13).
+            self[b].width = Scaled::from_raw(TEX_NULL);
         }
         Ok(())
     }

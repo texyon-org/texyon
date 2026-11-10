@@ -177,3 +177,15 @@ entry names a later TeX Live version.
 - **Fix:** go to `big_switch` only when the token list was actually inserted, with a local flag.
 - **TeXyoN:** that fix. Listed in `tests/upstream/known.tsv`, test
   `a_sparse_register_lookup_after_a_native_word_drops_no_token`.
+
+## 13. A vertical OpenType assembly takes its width from a glue node
+
+- **Where:** `stack_glue_into_box`, line 16993, `height(b):=height(p); width(b):=width(p)` on the new glue node `p`.
+- **Bug:** `height` and `width` are box fields. On a glue node `width(p)` is the leader pointer, which is
+  null (`min_halfword`), and `height(p)` reads the word after the node. The height is harmless, since the
+  next glyph's `stack_glyph_into_box` overwrites it. The width is not: it resets the running maximum, so
+  the assembled box gets the widest part since the last connector glue instead of the widest part overall.
+- **Repro:** none yet. Needs a vertical assembly whose parts differ in width, such as a tall brace in an
+  OpenType math font.
+- **Fix:** leave `width(b)` alone, so it stays the maximum over all parts.
+- **TeXyoN:** follows TeX Live (`width(b)` set to null). Not reported yet.

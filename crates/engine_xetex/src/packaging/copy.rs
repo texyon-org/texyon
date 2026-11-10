@@ -65,9 +65,8 @@ impl MemState {
         src: NodePtr<BoxNode>,
         list: MemPtr,
     ) -> Result<NodePtr<BoxNode>, Abort> {
-        let r = self.get_node(BOX_NODE_SIZE)?;
-        self.copy_words(r, src.ptr(), BOX_NODE_SIZE);
-        let r = copied_node(src, r);
+        let r = copied_node(src, self.get_node(BOX_NODE_SIZE)?);
+        self[r] = self[src];
         self[r].list_ptr = list;
         Ok(r)
     }
@@ -75,13 +74,9 @@ impl MemState {
     /// A copy of glue node `p` sharing its spec. The leader pointer is left to the caller.
     fn copy_glue_shell(&mut self, p: NodePtr<GlueNode>) -> Result<NodePtr<GlueNode>, Abort> {
         let spec = self[p].glue_ptr;
-        let r = self.get_node(MEDIUM_NODE_SIZE)?;
+        let r = copied_node(p, self.get_node(MEDIUM_NODE_SIZE)?);
         self.add_glue_ref(spec);
-        let sync = MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE;
-        self.set_word(r, self.word(p.ptr()));
-        self.set_word(r + sync, self.word(p.ptr() + sync));
-        let r = copied_node(p, r);
-        self[r].glue_ptr = spec;
+        self[r] = self[p];
         Ok(r)
     }
 
@@ -127,9 +122,8 @@ impl MemState {
                         Some((self.get_node(RULE_NODE_SIZE)?, RULE_NODE_SIZE))
                     }
                     Some(AnyNode::Ligature(lig)) => {
-                        let r = self.get_avail()?;
-                        self.set_word(r, self.word(lig.ptr() + 1));
-                        Some((r, 0))
+                        let (f, c) = (self[lig].font, self[lig].character);
+                        Some((self.new_char(f, c)?.ptr(), 0))
                     }
                     Some(AnyNode::Kern(_) | AnyNode::Math(_)) => {
                         Some((self.get_node(MEDIUM_NODE_SIZE)?, MEDIUM_NODE_SIZE))
@@ -371,11 +365,11 @@ impl MemState {
                 (self.copy_box_shell(b, list)?.ptr(), 0)
             }
             AnyNode::Unset(u) => {
-                let r = self.get_node(BOX_NODE_SIZE)?;
-                self.copy_words(r, p, BOX_NODE_SIZE);
+                let r = copied_node(u, self.get_node(BOX_NODE_SIZE)?);
+                self[r] = self[u];
                 let list = self.copy_list(self[u].list_ptr)?;
-                self[copied_node(u, r)].list_ptr = list;
-                (r, 0)
+                self[r].list_ptr = list;
+                (r.ptr(), 0)
             }
             AnyNode::Rule(_) => (
                 self.get_node(RULE_NODE_SIZE)?,

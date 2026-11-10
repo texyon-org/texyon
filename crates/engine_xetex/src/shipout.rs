@@ -996,10 +996,7 @@ fn hlist_out(
                 st.shipout.cur_h += math_width;
             }
             AnyNode::Ligature(ligature) => {
-                st.mem.set_word(LIG_TRICK, st.mem.word(ligature.idx() + 1));
-                let next = st.mem[ligature].link;
-                p = LIG_TRICK;
-                p.set_link(&mut st.mem, next);
+                p = st.mem.lig_trick(ligature);
                 st.fonts.xtx_ligature_present = true;
                 continue;
             }
@@ -1439,8 +1436,8 @@ impl MemState {
                     Ok(AnyNode::Ligature(ligature)) => {
                         self.flush_list(self[ligature].lig_ptr);
                         self.temp_ptr = ligature.ptr();
-                        let c = self.get_avail()?;
-                        self.set_word(c, self.word(ligature.idx() + 1));
+                        let (f, ch) = (self[ligature].font, self[ligature].character);
+                        let c = self.new_char(f, ch)?.ptr();
                         c.set_link(self, q);
                         self.free_node(ligature.ptr(), SMALL_NODE_SIZE);
                         p = c;

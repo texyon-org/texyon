@@ -1222,14 +1222,6 @@ impl MemState {
     }
 }
 
-impl NodePtr<LigatureNode> {
-    /// The font and character word, laid out like a character node.
-    #[inline]
-    pub fn char_word(self) -> NodePtr<CharNode> {
-        NodePtr::at(self.idx + 1)
-    }
-}
-
 // --- math, glue, kern, penalty ---
 
 impl NodePtr<MathNode> {

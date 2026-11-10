@@ -4,11 +4,11 @@
 use crate::consts::{IGNORE_DEPTH, NULL_FONT, SMALL_NODE_SIZE};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
-use crate::mem::{ADJUST_HEAD, GARBAGE, PRE_ADJUST_HEAD};
+use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD};
 use crate::mem_types::ListStateRecord;
 use crate::node::{
-    AdjustPlacement, AnyNode, BoxLr, BoxNode, CharNode, KernSubtype, MathCode, NativeWordNode,
-    NodePtr, RuleDimen, WhatsitVariant,
+    AdjustPlacement, AnyNode, BoxLr, BoxNode, KernSubtype, MathCode, NativeWordNode, NodePtr,
+    RuleDimen, WhatsitVariant,
 };
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, FontState, MemState, ShipoutState};
@@ -435,10 +435,7 @@ impl MemState {
                             Ok(AnyNode::Rule(rule)) => {
                                 (self[rule].height.to_scaled(), self[rule].depth.to_scaled())
                             }
-                            _ => (
-                                Scaled::from_raw(self.b32s1(leader + 3)),
-                                Scaled::from_raw(self.b32s1(leader + 2)),
-                            ),
+                            _ => return Err(Abort::Confusion("leader box")),
                         };
                         h = h.max(leader_h);
                         d = d.max(leader_d);
@@ -468,12 +465,7 @@ impl MemState {
                     }
                 }
                 Ok(AnyNode::Ligature(lig)) => {
-                    // Measure the ligature as its character through the scratch char node.
-                    let scratch = NodePtr::<CharNode>::at(GARBAGE);
-                    self[scratch].font = self[lig].font;
-                    self[scratch].character = self[lig].character;
-                    GARBAGE.set_link(self, self[lig].link);
-                    p = GARBAGE;
+                    p = self.lig_trick(lig);
                     fonts.xtx_ligature_present = true;
                     continue 'outer;
                 }
@@ -749,7 +741,7 @@ impl MemState {
                         let leader_w = match self.classify(leader) {
                             Ok(AnyNode::Box(b)) => self[b].width,
                             Ok(AnyNode::Rule(rule)) => self[rule].width.to_scaled(),
-                            _ => Scaled::from_raw(self.b32s1(leader + 1)),
+                            _ => return Err(Abort::Confusion("leader box")),
                         };
                         w = w.max(leader_w);
                     }

@@ -784,9 +784,8 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 /// The italic correction of character `ch`.
-fn char_italic(st: &mut EngineState, ch: NodePtr<CharNode>) -> Scaled {
-    let f = st.mem[ch].font;
-    let c = st.fonts.effective_char(f, st.mem[ch].character);
+fn char_italic(st: &mut EngineState, f: FontId, character: u16) -> Scaled {
+    let c = st.fonts.effective_char(f, character);
     let info = st.fonts.char_info(f, c);
     st.fonts.char_italic(f, info)
 }
@@ -797,10 +796,10 @@ pub(super) fn append_italic_correction(st: &mut EngineState) -> Result<(), Abort
         return Ok(());
     }
     let italic = if let Some(ch) = st.mem.as_char(tail) {
-        char_italic(st, ch)
+        char_italic(st, st.mem[ch].font, st.mem[ch].character)
     } else {
         match st.mem.classify(tail) {
-            Ok(AnyNode::Ligature(lig)) => char_italic(st, lig.char_word()),
+            Ok(AnyNode::Ligature(lig)) => char_italic(st, st.mem[lig].font, st.mem[lig].character),
             Ok(AnyNode::Whatsit(w)) => match w.variant(&st.mem) {
                 Some(WhatsitVariant::NativeWord(word)) => {
                     st.fonts.get_native_italic_correction(&st.mem, word)

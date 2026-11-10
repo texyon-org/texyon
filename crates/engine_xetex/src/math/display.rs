@@ -6,7 +6,7 @@ use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::QUAD_CODE;
 use crate::input::TokenType;
-use crate::mem::{ADJUST_HEAD, GARBAGE, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
+use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::node::{AnyNode, BoxLr, BoxNode, GlueNode, MathCode, NodePtr};
 use crate::packaging::{AdjustTails, LrState, PackOrigin, PackSpec};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
@@ -67,6 +67,16 @@ impl MemState {
         self[dst].width = w - self[src].width;
         self[dst].stretch = -self[src].stretch;
         self[dst].shrink = -self[src].shrink;
+    }
+
+    /// Sets the width of `p`, an end of the display's kern frame that is not glue.
+    fn set_kern_or_math_width(&mut self, p: MemPtr, w: Scaled) -> Result<(), Abort> {
+        match self.classify(p) {
+            Ok(AnyNode::Kern(k)) => self[k].width = w,
+            Ok(AnyNode::Math(m)) => self[m].width = w,
+            _ => return Err(Abort::Confusion("app_display")),
+        }
+        Ok(())
     }
 }
 
@@ -151,7 +161,7 @@ fn app_display(
         st.mem.set_display_skip(skip, tg, e);
         u.set_link(&mut st.mem, t);
     } else {
-        st.mem.set_b32s1(t + 1, e.raw());
+        st.mem.set_kern_or_math_width(t, e)?;
         t.set_link(&mut st.mem, u);
         q.set_link(&mut st.mem, t);
     }
@@ -164,7 +174,7 @@ fn app_display(
         st.mem.set_display_skip(skip, rg, d);
         r.set_link(&mut st.mem, u);
     } else {
-        st.mem.set_b32s1(r + 1, d.raw());
+        st.mem.set_kern_or_math_width(r, d)?;
         r.set_link(&mut st.mem, p);
         u.set_link(&mut st.mem, r);
         match copy {
@@ -516,10 +526,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                             (node.hlist_width(&st.mem), true)
                         }
                         Ok(AnyNode::Ligature(lig)) => {
-                            st.mem.set_word(GARBAGE, st.mem.word(lig.char_word().idx()));
-                            let next = st.mem[lig].link;
-                            GARBAGE.set_link(&mut st.mem, next);
-                            p = GARBAGE;
+                            p = st.mem.lig_trick(lig);
                             st.fonts.xtx_ligature_present = true;
                             continue 'reswitch;
                         }

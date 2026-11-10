@@ -13,6 +13,7 @@ use crate::node::{
     MathCode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode, SpanNode, Stored,
     StoredCode, StyleNode, WhatsitKind, WhatsitSubtype,
 };
+use crate::overlay::LigatureLayout;
 use crate::params::GluePar;
 use crate::state::{EqtbState, MemState};
 use crate::token::TokenList;
@@ -49,7 +50,7 @@ pub(crate) const END_SPAN: NodePtr<SpanNode> =
 pub(crate) const OMIT_TEMPLATE: TokenList = TokenList::from_ptr(MemPtr::from_raw(MEM_TOP - 10));
 pub(crate) const NULL_LIST: MemPtr = MemPtr::from_raw(MEM_TOP - 11);
 pub(crate) const LIG_TRICK: MemPtr = MemPtr::from_raw(MEM_TOP - 12);
-pub(crate) const GARBAGE: MemPtr = MemPtr::from_raw(MEM_TOP - 12);
+pub(crate) const GARBAGE: MemPtr = LIG_TRICK;
 pub(crate) const BACKUP_HEAD: TokenList = TokenList::from_ptr(MemPtr::from_raw(MEM_TOP - 13));
 pub(crate) const PRE_ADJUST_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 14);
 pub(crate) const HI_MEM_STAT_MIN: i32 = MEM_TOP - 14;
@@ -406,6 +407,21 @@ impl MemState {
         Ok(p)
     }
 
+    /// TeX's lig trick: the scratch char node holding `lig`'s character, linked to what follows `lig`.
+    pub fn lig_trick(&mut self, lig: NodePtr<LigatureNode>) -> MemPtr {
+        let scratch = NodePtr::<CharNode>::at(LIG_TRICK);
+        let LigatureLayout {
+            font,
+            character,
+            link,
+            ..
+        } = self[lig];
+        self[scratch].font = font;
+        self[scratch].character = character;
+        self[scratch].link = link;
+        LIG_TRICK
+    }
+
     pub fn new_ligature(
         &mut self,
         f: FontId,
@@ -447,9 +463,10 @@ impl MemState {
     /// An unshared copy of the glue spec `src`.
     pub fn new_spec(&mut self, src: NodePtr<GlueSpecNode>) -> Result<NodePtr<GlueSpecNode>, Abort> {
         let q = NodePtr::<GlueSpecNode>::alloc(self)?;
-        self.set_word(q.idx(), self.word(src.idx()));
         let from = self[src];
         let node = &mut self[q];
+        node.stretch_order = from.stretch_order;
+        node.shrink_order = from.shrink_order;
         node.ref_count = TEX_NULL;
         node.width = from.width;
         node.stretch = from.stretch;
