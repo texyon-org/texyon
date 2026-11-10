@@ -1003,8 +1003,7 @@ impl From<RuleDimen> for StoredDimen {
     }
 }
 
-/// What `\box`, `\hrule` and friends leave in `cur_box`: a rule only where
-/// leaders accept one.
+/// What `\leaders` repeats: a box or a rule.
 #[derive(Copy, Clone, Debug)]
 pub enum BoxOrRule {
     Box(NodePtr<BoxNode>),

@@ -10,7 +10,7 @@ use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::input::TokenType;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD};
-use crate::node::{AnyNode, BoxOrRule, GlueKind, MathCode, SaLeaf};
+use crate::node::{AnyNode, BoxNode, BoxOrRule, GlueKind, MathCode, NodePtr, SaLeaf};
 use crate::packaging::{AdjustTails, PackOrigin};
 use crate::params::{DimenPar, IntPar, TokPar};
 use crate::scan::fetch_box;
@@ -113,8 +113,8 @@ pub(super) fn scan_box(st: &mut EngineState, box_context: i32) -> Result<(), Abo
     } else if box_context >= LEADER_FLAG
         && (st.scanner.cur_cmd == Cmd::Hrule || st.scanner.cur_cmd == Cmd::Vrule)
     {
-        st.scanner.cur_box = Some(BoxOrRule::Rule(crate::scan::scan_rule_spec(st)?));
-        box_end(st, box_context, None)
+        let rule = crate::scan::scan_rule_spec(st)?;
+        leaders_end(st, box_context, BoxOrRule::Rule(rule))
     } else {
         crate::errors::back_error(
             st,
@@ -139,13 +139,10 @@ pub(super) fn package(st: &mut EngineState, group: GroupCode) -> Result<(), Abor
     st.eqtb.set_int_par(IntPar::XetexUpwards, u);
     let list = st.input.cur_list.head.link(&st.mem);
     let mut adjust = (group == GroupCode::AdjustedHbox).then_some(AdjustTails::HEADS);
-    if st.input.cur_list.mode == INNER_HMODE {
-        let b =
-            crate::packaging::hpack_with(st, list, spec, PackOrigin::Here, adjust.as_mut())?.r_box;
-        st.scanner.cur_box = Some(BoxOrRule::Box(b));
+    let b = if st.input.cur_list.mode == INNER_HMODE {
+        crate::packaging::hpack_with(st, list, spec, PackOrigin::Here, adjust.as_mut())?.r_box
     } else {
         let b = crate::packaging::vpackage(st, list, spec, d)?;
-        st.scanner.cur_box = Some(BoxOrRule::Box(b));
         if group == GroupCode::Vtop {
             let h = match st.mem[b].list_ptr.as_idx().map(|p| st.mem.classify(p)) {
                 Some(Ok(AnyNode::Box(first))) => st.mem[first].height,
@@ -156,25 +153,25 @@ pub(super) fn package(st: &mut EngineState, group: GroupCode) -> Result<(), Abor
             st.mem[b].depth = depth;
             st.mem[b].height = h;
         }
-    }
+        b
+    };
     st.eqtb.set_int_par(IntPar::XetexUpwards, v);
     st.mem.pop_nest(&mut st.input)?;
     let box_context = st.save_stack.saved(0);
-    box_end(st, box_context, adjust)
+    box_end(st, box_context, Some(b), adjust)
 }
 
-/// Put the current box where `box_context` says, with the material `hpack`
-/// moved out of it to `adjust` placed around it in a vertical list.
+/// Put `cur_box`, possibly void, where `box_context` says, with the material
+/// `hpack` moved out of it to `adjust` placed around it in a vertical list.
 fn box_end(
     st: &mut EngineState,
     box_context: i32,
+    cur_box: Option<NodePtr<BoxNode>>,
     adjust: Option<AdjustTails>,
 ) -> Result<(), Abort> {
     if box_context < BOX_FLAG {
-        let b = match st.scanner.cur_box {
-            None => return Ok(()),
-            Some(BoxOrRule::Box(b)) => b,
-            Some(BoxOrRule::Rule(_)) => unreachable!("only leaders take a rule"),
+        let Some(b) = cur_box else {
+            return Ok(());
         };
         st.mem[b].shift_amount = Scaled::from_raw(box_context);
         if st.input.cur_list.mode.abs() == VMODE {
@@ -208,7 +205,7 @@ fn box_end(
         } else {
             (box_context - GLOBAL_BOX_FLAG, true)
         };
-        let cb = st.scanner.cur_box.map_or(MemPtr::NULL, |b| b.ptr());
+        let cb = cur_box.map_or(MemPtr::NULL, |b| b.ptr());
         if n < 256 {
             define(st, global, BOX_BASE + n, Cmd::BoxRef, cb.raw())?;
         } else {
@@ -220,40 +217,43 @@ fn box_end(
             };
             sa_define(st, global, p, cb)?;
         }
-    } else if let Some(cb) = st.scanner.cur_box {
+    } else if let Some(b) = cur_box {
         if box_context == SHIP_OUT_FLAG {
-            let BoxOrRule::Box(b) = cb else {
-                unreachable!("only leaders take a rule");
-            };
             crate::shipout::ship_out(st, b)?;
-            return Ok(());
-        }
-        crate::scan::get_x_non_blank_non_relax(st)?;
-        let vertical = st.input.cur_list.mode.abs() == VMODE;
-        let skip = match st.scanner.try_command() {
-            Some(Command::Hskip(s)) if !vertical => Some(s),
-            Some(Command::Vskip(s)) if vertical => Some(s),
-            _ => None,
-        };
-        if let Some(s) = skip {
-            let g = append_glue(st, s)?;
-            let kind = LeaderCode::from_raw(box_context - LEADER_FLAG + LeaderCode::ALeaders.raw())
-                .and_then(LeaderCode::glue_leaders)
-                .or_confusion("leaders")?;
-            st.mem[g].subtype = GlueKind::Leaders(kind).into();
-            st.mem[g].leader_ptr = cb.ptr();
         } else {
-            crate::errors::back_error(
-                st,
-                "Leaders not followed by proper glue",
-                &[
-                    r"You should say `\leaders <box or rule><hskip or vskip>'.",
-                    "I found the <box or rule>, but there's no suitable",
-                    "<hskip or vskip>, so I'm ignoring these leaders.",
-                ],
-            )?;
-            st.mem.flush_node_list(cb.ptr())?;
+            leaders_end(st, box_context, BoxOrRule::Box(b))?;
         }
+    }
+    Ok(())
+}
+
+/// Make `content` the leaders of the glue that follows, for a leaders `box_context`.
+fn leaders_end(st: &mut EngineState, box_context: i32, content: BoxOrRule) -> Result<(), Abort> {
+    crate::scan::get_x_non_blank_non_relax(st)?;
+    let vertical = st.input.cur_list.mode.abs() == VMODE;
+    let skip = match st.scanner.try_command() {
+        Some(Command::Hskip(s)) if !vertical => Some(s),
+        Some(Command::Vskip(s)) if vertical => Some(s),
+        _ => None,
+    };
+    if let Some(s) = skip {
+        let g = append_glue(st, s)?;
+        let kind = LeaderCode::from_raw(box_context - LEADER_FLAG + LeaderCode::ALeaders.raw())
+            .and_then(LeaderCode::glue_leaders)
+            .or_confusion("leaders")?;
+        st.mem[g].subtype = GlueKind::Leaders(kind).into();
+        st.mem[g].leader_ptr = content.ptr();
+    } else {
+        crate::errors::back_error(
+            st,
+            "Leaders not followed by proper glue",
+            &[
+                r"You should say `\leaders <box or rule><hskip or vskip>'.",
+                "I found the <box or rule>, but there's no suitable",
+                "<hskip or vskip>, so I'm ignoring these leaders.",
+            ],
+        )?;
+        st.mem.flush_node_list(content.ptr())?;
     }
     Ok(())
 }
@@ -325,22 +325,23 @@ pub(super) fn begin_box(
     box_context: i32,
     code: BoxCode,
 ) -> Result<(), Abort> {
-    match code {
+    let cur_box = match code {
         BoxCode::Box => {
             let n = crate::scan::scan_register_num(st)?;
-            st.scanner.cur_box = fetch_box(st, n).map(BoxOrRule::Box);
+            let b = fetch_box(st, n);
             st.mem
                 .change_box(&mut st.scanner, &mut st.eqtb, n, MemPtr::NULL)?;
+            b
         }
         BoxCode::Copy => {
             let n = crate::scan::scan_register_num(st)?;
-            st.scanner.cur_box = match fetch_box(st, n) {
-                Some(b) => Some(BoxOrRule::Box(st.mem.copy_box(b)?)),
+            match fetch_box(st, n) {
+                Some(b) => Some(st.mem.copy_box(b)?),
                 None => None,
-            };
+            }
         }
         BoxCode::LastBox => {
-            st.scanner.cur_box = None;
+            let mut last = None;
             if st.input.cur_list.mode.abs() == MMODE {
                 crate::errors::error(
                     st,
@@ -363,12 +364,13 @@ pub(super) fn begin_box(
                 if !st.mem.is_char_node(tx) {
                     if let Ok(Some(b)) = st.mem.classify_box(tx) {
                         if unlink_effective_tail(st, tx)? {
-                            st.scanner.cur_box = Some(BoxOrRule::Box(b));
+                            last = Some(b);
                             st.mem[b].shift_amount = Scaled::ZERO;
                         }
                     }
                 }
             }
+            last
         }
         BoxCode::Vsplit => {
             let n = crate::scan::scan_register_num(st)?;
@@ -383,7 +385,7 @@ pub(super) fn begin_box(
                 )?;
             }
             let d = crate::scan::scan_dimen(st, false)?;
-            st.scanner.cur_box = crate::packaging::vsplit(st, n, d)?.map(BoxOrRule::Box);
+            crate::packaging::vsplit(st, n, d)?
         }
         BoxCode::Vtop | BoxCode::Vbox | BoxCode::Hbox => {
             st.save_stack.set_saved(0, box_context);
@@ -416,6 +418,6 @@ pub(super) fn begin_box(
             }
             return Ok(());
         }
-    }
-    box_end(st, box_context, None)
+    };
+    box_end(st, box_context, cur_box, None)
 }

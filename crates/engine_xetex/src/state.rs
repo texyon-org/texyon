@@ -1113,7 +1113,6 @@ pub(crate) struct ScannerState {
     pub cur_tok: crate::token::Token,
     pub cur_mark: CurMarks,
     pub disc_ptr: [crate::units::MemPtr; 4],
-    pub cur_box: Option<crate::node::BoxOrRule>,
     pub after_token: crate::token::Token,
     pub cur_f: FontId,
     pub set_box_allowed: bool,
