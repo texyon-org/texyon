@@ -345,7 +345,7 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.shipout.last_badness = 0;
     st.scanner.empty.s1 = EMPTY;
     st.scanner.empty.s0 = TEX_NULL;
-    st.scanner.align_ptr = None;
+    st.scanner.align_stack.clear();
     st.scanner.cur_align = MemPtr::NULL;
     st.scanner.cur_span = MemPtr::NULL;
     st.scanner.cur_loop = MemPtr::NULL;

@@ -765,8 +765,6 @@ node_kinds! {
     /// An entry of a column's span list, ended by `END_SPAN`. The list head is
     /// the align record itself, which shares the `info` and `width` words.
     SpanNode;
-    /// A saved outer alignment on the `align_ptr` stack.
-    AlignStackNode;
     /// A noad's nucleus, script or accent character word: its math type,
     /// then a character and family or a sub-list.
     MathField;
@@ -858,10 +856,6 @@ impl FixedNode for PageInsNode {
     const SIZE: i32 = PAGE_INS_NODE_SIZE;
     const TYPE: Option<NodeType> = None;
 }
-impl FixedNode for AlignStackNode {
-    const SIZE: i32 = 6;
-    const TYPE: Option<NodeType> = None;
-}
 
 const MOVEMENT_NODE_SIZE: i32 = 3;
 const CHAR_NODE_SIZE: i32 = 2;
@@ -879,7 +873,7 @@ impl_traits!(HasLink: BoxNode, RuleNode, InsNode, MarkNode, AdjustNode, Ligature
     WhatsitNode, MathNode, GlueNode, KernNode, PenaltyNode, UnsetNode, StyleNode, ChoiceNode,
     EdgeNode, Noad, RadicalNoad, AccentNoad, FractionNoad, FenceNoad, AnyNoad, MarginKernNode, SaIndexNode, SaElement, SaWordNode, SaPointerNode, SaMarkClassNode,
     SaSaved, SaSavedWord, SaSavedPointer, PageInsNode, MovementNode, CharNode, HeadNode,
-    LrNode, AlignRecord, AlignStackNode, PseudoLineNode,
+    LrNode, AlignRecord, PseudoLineNode,
     LigItem);
 
 /// A record kept only on its own list, which therefore proves its kind.
@@ -887,7 +881,7 @@ pub trait ListRecord: NodeKind {}
 
 impl_traits!(ListRecord: SaIndexNode, SaElement, SaWordNode, SaPointerNode, SaMarkClassNode,
     SaSaved, SaSavedWord, SaSavedPointer, PageInsNode, MovementNode,
-    LigItem, CharNode, HeadNode, LrNode, PseudoFileNode, HyphPosNode, AlignRecord, SpanNode, AlignStackNode, ParShapeNode, PenaltiesNode,
+    LigItem, CharNode, HeadNode, LrNode, PseudoFileNode, HyphPosNode, AlignRecord, SpanNode, ParShapeNode, PenaltiesNode,
     PseudoLineNode, MathField, DelimiterField, FreeBlock);
 
 impl<K: ListRecord> NodePtr<K> {

@@ -13,8 +13,8 @@ use bytemuck::{Pod, Zeroable};
 use crate::codes::{LimitCode, MarkCode, ValueLevel};
 use crate::consts::{EMPTY, NORMAL};
 use crate::node::{
-    AccentNoad, AdjustNode, AdjustPlacement, AlignRecord, AlignStackNode, AnyNoad, BoxLr, BoxNode,
-    CharNode, ChoiceNode, DelimiterField, DiscNode, EdgeNode, FenceNoad, FenceSubtype, FixedNode,
+    AccentNoad, AdjustNode, AdjustPlacement, AlignRecord, AnyNoad, BoxLr, BoxNode, CharNode,
+    ChoiceNode, DelimiterField, DiscNode, EdgeNode, FenceNoad, FenceSubtype, FixedNode,
     FractionNoad, FreeBlock, GlueKind, GlueNode, GlueSpecNode, GlyphNode, HeadNode, HyphPosNode,
     InsNode, KernNode, KernSubtype, LanguageNode, LeaderKind, LigBoundary, LigItem, LigatureNode,
     Link, LrNode, MarginKernNode, MarkNode, MathAccentKind, MathCode, MathField, MathNode,
@@ -1123,26 +1123,6 @@ pub struct AlignRecordLayout {
 
 overlay!(AlignRecord => AlignRecordLayout);
 
-/// A saved outer alignment on the `align_ptr` stack.
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct AlignStackLayout {
-    pub cur_align: MemPtr,
-    pub link: MemPtr,
-    pub preamble: MemPtr,
-    pub cur_span: MemPtr,
-    _unused1: i32,
-    pub cur_loop: MemPtr,
-    _unused2: i32,
-    pub align_state: i32,
-    pub cur_head: MemPtr,
-    pub cur_tail: MemPtr,
-    pub cur_pre_head: MemPtr,
-    pub cur_pre_tail: MemPtr,
-}
-
-overlay!(AlignStackNode => AlignStackLayout);
-
 /// An entry of the ligature reconstitution stack.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
@@ -1510,23 +1490,6 @@ mod tests {
         (mv.state, mv.link, mv.distance, mv.location) = (5, ptr(6), Scaled::from_raw(31), 32);
         assert_eq!((mem.b32s0(at(8)), mem.b32s1(at(8))), (5, 6));
         assert_eq!((mem.b32s1(at(9)), mem.b32s1(at(10))), (31, 32));
-    }
-
-    #[test]
-    fn align_stack_fields_land_on_their_words() {
-        let mut mem = arena();
-        let at = MemIdx::from_raw;
-        let ptr = MemPtr::from_raw;
-        let a: NodePtr<AlignStackNode> = NodePtr::from_idx_unchecked(at(4));
-        let s = &mut mem[a];
-        (s.cur_align, s.link, s.preamble, s.cur_span) = (ptr(1), ptr(2), ptr(3), ptr(4));
-        (s.cur_loop, s.align_state) = (ptr(5), 6);
-        (s.cur_head, s.cur_tail, s.cur_pre_head, s.cur_pre_tail) =
-            (ptr(7), ptr(8), ptr(9), ptr(10));
-        let words: Vec<_> = (4..10)
-            .map(|i| (mem.b32s0(at(i)), mem.b32s1(at(i))))
-            .collect();
-        assert_eq!(words, [(1, 2), (3, 4), (0, 5), (0, 6), (7, 8), (9, 10)]);
     }
 
     #[test]

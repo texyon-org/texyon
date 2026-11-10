@@ -19,6 +19,7 @@ use crate::units::NodeType;
 use crate::units::{EqtbPtr, MemPtr, Scaled};
 
 mod align;
+pub(crate) use align::SavedAlign;
 mod assign;
 mod boxes;
 mod lists;

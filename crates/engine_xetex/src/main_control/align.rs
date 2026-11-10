@@ -11,8 +11,8 @@ use crate::input::{TokenType, TOKEN_LIST};
 use crate::mem::{ALIGN_HEAD, END_SPAN, HOLD_HEAD, ZERO_GLUE};
 use crate::node::Stored;
 use crate::node::{
-    link_of, AlignColumn, AlignRecord, AlignStackNode, AnyNode, BoxLr, GlueKind, GlueNode,
-    HeadNode, NodePtr, RuleDimen, SpanNode, UnsetNode, RUNNING,
+    AlignColumn, AlignRecord, AnyNode, BoxLr, GlueKind, GlueNode, HeadNode, NodePtr, RuleDimen,
+    SpanNode, UnsetNode, RUNNING,
 };
 use crate::packaging::{AdjustTails, PackOrigin, PackSpec};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
@@ -545,41 +545,53 @@ fn init_col(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
+/// The state of an enclosing alignment, saved while an inner one runs.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(crate) struct SavedAlign {
+    pub cur_align: MemPtr,
+    pub preamble: MemPtr,
+    pub cur_span: MemPtr,
+    pub cur_loop: MemPtr,
+    pub align_state: i32,
+    pub cur_head: MemPtr,
+    pub cur_tail: MemPtr,
+    pub cur_pre_head: MemPtr,
+    pub cur_pre_tail: MemPtr,
+}
+
 fn push_alignment(st: &mut EngineState) -> Result<(), Abort> {
-    let p = NodePtr::<AlignStackNode>::alloc(&mut st.mem)?;
-    let (mem, sc) = (&mut st.mem, &st.scanner);
-    mem[p].link = link_of(sc.align_ptr);
-    mem[p].cur_align = sc.cur_align;
-    mem[p].preamble = ALIGN_HEAD.link(mem);
-    mem[p].cur_span = sc.cur_span;
-    mem[p].cur_loop = sc.cur_loop;
-    mem[p].align_state = sc.align_state;
-    mem[p].cur_head = sc.cur_head;
-    mem[p].cur_tail = sc.cur_tail;
-    mem[p].cur_pre_head = sc.cur_pre_head;
-    mem[p].cur_pre_tail = sc.cur_pre_tail;
-    st.scanner.align_ptr = Some(p);
+    let sc = &st.scanner;
+    let saved = SavedAlign {
+        cur_align: sc.cur_align,
+        preamble: ALIGN_HEAD.link(&st.mem),
+        cur_span: sc.cur_span,
+        cur_loop: sc.cur_loop,
+        align_state: sc.align_state,
+        cur_head: sc.cur_head,
+        cur_tail: sc.cur_tail,
+        cur_pre_head: sc.cur_pre_head,
+        cur_pre_tail: sc.cur_pre_tail,
+    };
+    st.scanner.align_stack.push(saved);
     st.scanner.cur_head = NodePtr::<HeadNode>::alloc(&mut st.mem)?.ptr();
     st.scanner.cur_pre_head = NodePtr::<HeadNode>::alloc(&mut st.mem)?.ptr();
     Ok(())
 }
 
 fn pop_alignment(st: &mut EngineState) -> Result<(), Abort> {
-    let p = st.scanner.align_ptr.or_confusion("align")?;
+    let p = st.scanner.align_stack.pop().or_confusion("align")?;
     NodePtr::<HeadNode>::at(st.scanner.cur_head).free(&mut st.mem);
     NodePtr::<HeadNode>::at(st.scanner.cur_pre_head).free(&mut st.mem);
-    let (mem, sc) = (&mut st.mem, &mut st.scanner);
-    sc.cur_tail = mem[p].cur_tail;
-    sc.cur_head = mem[p].cur_head;
-    sc.cur_pre_tail = mem[p].cur_pre_tail;
-    sc.cur_pre_head = mem[p].cur_pre_head;
-    sc.align_state = mem[p].align_state;
-    sc.cur_loop = mem[p].cur_loop;
-    sc.cur_span = mem[p].cur_span;
-    ALIGN_HEAD.set_link(mem, mem[p].preamble);
-    sc.cur_align = mem[p].cur_align;
-    sc.align_ptr = p.next(mem);
-    p.free(mem);
+    let sc = &mut st.scanner;
+    sc.cur_tail = p.cur_tail;
+    sc.cur_head = p.cur_head;
+    sc.cur_pre_tail = p.cur_pre_tail;
+    sc.cur_pre_head = p.cur_pre_head;
+    sc.align_state = p.align_state;
+    sc.cur_loop = p.cur_loop;
+    sc.cur_span = p.cur_span;
+    ALIGN_HEAD.set_link(&mut st.mem, p.preamble);
+    st.scanner.cur_align = p.cur_align;
     Ok(())
 }
 

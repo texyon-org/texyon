@@ -1082,7 +1082,8 @@ pub(crate) struct ScannerState {
     pub cur_align: crate::units::MemPtr,
     pub cur_span: crate::units::MemPtr,
     pub cur_loop: crate::units::MemPtr,
-    pub align_ptr: Option<crate::node::NodePtr<crate::node::AlignStackNode>>,
+    /// The enclosing alignments, TeX's `align_ptr` list.
+    pub align_stack: Vec<crate::main_control::SavedAlign>,
     pub cur_head: crate::units::MemPtr,
     pub cur_tail: crate::units::MemPtr,
     pub cur_pre_head: crate::units::MemPtr,

@@ -400,6 +400,19 @@ fn digest_scanner(st: &EngineState) -> u64 {
             cond.if_line,
         ]);
     }
+    for a in &scanner.align_stack {
+        h.i32s(&[
+            a.cur_align.raw(),
+            a.preamble.raw(),
+            a.cur_span.raw(),
+            a.cur_loop.raw(),
+            a.align_state,
+            a.cur_head.raw(),
+            a.cur_tail.raw(),
+            a.cur_pre_head.raw(),
+            a.cur_pre_tail.raw(),
+        ]);
+    }
     h.finish()
 }
 
