@@ -12,3 +12,4 @@ limits-wrap_misc	upstream sets the lines of a paragraph whose \prevgraf wraps th
 limits-nested_dimen_overflow	upstream loses a dimension's overflow when an expansion inside its units scans another dimension, TeXyoN reports "Dimension too large" (UPSTREAM_BUGS.md 10)
 prim-primitive_register_fraction	upstream reads a decimal fraction after \primitive\count5 because radix still holds the 10 of the register number, TeXyoN gives a register value no radix (UPSTREAM_BUGS.md 11)
 native-sparse_lookup_drops_token	upstream drops the token after a native word when its expansion looked up a register above 255, because collect_native tests the shared cur_ptr, TeXyoN keeps it (UPSTREAM_BUGS.md 12)
+etex-interchartoks	TeXyoN keeps tokens apart from nodes and caps memory at 64M words, so a runaway insertion loop overflows main memory at a later token and reports a larger size

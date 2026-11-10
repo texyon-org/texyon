@@ -31,6 +31,9 @@ pub const INF_PENALTY: i32 = INF_BAD;
 pub const EJECT_PENALTY: i32 = -INF_PENALTY;
 pub const AWFUL_BAD: i32 = MAX_HALFWORD;
 pub const MEM_TOP: i32 = 4_999_999;
+/// The cap on dynamic memory in 32-bit words, reported as `main memory size`. It stops runaway
+/// documents long before a browser tab runs out, and is about 6.7 times TeX Live's.
+pub const MAIN_MEMORY_WORDS: i32 = 1 << 26;
 pub const FONT_BASE: i32 = 0;
 pub const NULL_FONT: crate::units::FontId = crate::units::FontId::new(0);
 /// The `\font` size that means the design size, `scaled 1000`.

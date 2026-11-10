@@ -1,7 +1,7 @@
 use crate::bridge::{output_flush, set_error_message};
 use crate::cmd::Cmd;
 use crate::codes::ScannerStatus;
-use crate::consts::{HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, MEM_TOP};
+use crate::consts::{HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, MAIN_MEMORY_WORDS};
 use crate::diagnostic::{begin_capture, emit, emit_fatal, take_capture, DiagnosticKind};
 use crate::output::{
     begin_diagnostic, end_diagnostic, print, print_char, print_err, print_error_prefix, print_int,
@@ -230,7 +230,7 @@ impl Abort {
     /// `get_node` ran out of main memory.
     pub(crate) const NODE_OVERFLOW: Abort = Abort::Overflow {
         capacity: Capacity::MainMemory,
-        n: MEM_TOP + 1,
+        n: MAIN_MEMORY_WORDS,
     };
 
     /// `capacity`, whose size is a `usize`, ran out.
@@ -304,7 +304,7 @@ impl Abort {
             Abort::Overflow { capacity, n } => Self::overflow_report(st, capacity.name(), n),
             Abort::AvailOverflow => {
                 runaway(st);
-                Self::overflow_report(st, Capacity::MainMemory.name(), MEM_TOP + 1);
+                Self::overflow_report(st, Capacity::MainMemory.name(), MAIN_MEMORY_WORDS);
             }
             Abort::Confusion(s) => {
                 pre_error_message(st);

@@ -232,6 +232,8 @@ pub(crate) const OMIT_TEMPLATE: TokenList = TokenList(2);
 /// Where `scan_keyword` keeps the tokens it backs up.
 pub(crate) const BACKUP_HEAD: TokenList = TokenList(3);
 pub(crate) const FIXED_HEADS: usize = 4;
+/// Half of `MAIN_MEMORY_WORDS` in two-word token nodes, until nodes and tokens share one budget.
+const MAX_TOKEN_NODES: usize = 1 << 24;
 
 /// The token lists, kept apart from `mem`. Nodes are one word each and freed to `avail`.
 pub(crate) struct TokenStore {
@@ -322,6 +324,9 @@ impl TokenStore {
 
     #[cold]
     fn grow(&mut self) -> Result<TokenList, Abort> {
+        if self.data.len() >= MAX_TOKEN_NODES {
+            return Err(Abort::AvailOverflow);
+        }
         let p = i32::try_from(self.data.len()).map_err(|_| Abort::AvailOverflow)?;
         self.data.push(TokNode::FRESH);
         Ok(TokenList(p))
