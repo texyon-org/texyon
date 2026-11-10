@@ -663,9 +663,8 @@ pub(crate) struct MemState {
     /// The entries of array nodes: native text, picture paths, shapes and pseudo-file lines.
     pub payloads: crate::payload::PayloadStore,
     pub journal: crate::journal::WordJournal<crate::mem_types::MemoryWord>,
-    pub lo_mem_max: crate::units::MemPtr,
-    pub rover: crate::units::MemPtr,
-    pub var_used: i32,
+    /// The free list of each node size.
+    pub free: crate::mem::FreeLists,
     /// TeX's `line`, kept here because `get_node` stamps it into new nodes.
     pub line: i32,
     pub cur_synctex_tag: i32,

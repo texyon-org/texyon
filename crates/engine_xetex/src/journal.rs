@@ -586,8 +586,8 @@ mod tests {
         };
         mem.journal.arm(mem.data.len());
 
-        mem.set_b32s1(MemPtr::MEM_BOT, 10);
-        mem.set_b16s0(MemPtr::MEM_BOT, 11);
+        mem.set_b32s1(MemPtr::from_raw(0), 10);
+        mem.set_b16s0(MemPtr::from_raw(0), 11);
         mem.set_b32s0(MemPtr::from_raw(2), 12);
 
         let delta = mem.journal.seal(&mem.data);

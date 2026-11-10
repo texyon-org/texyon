@@ -668,25 +668,23 @@ impl MemState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::consts::MAX_HALFWORD;
 
-    /// An arena whose free list is one block of leftover words, none `TEX_NULL`.
+    /// An arena whose free lists hold nodes of leftover words, none `TEX_NULL`.
     fn arena() -> (MemState, ScannerState) {
         let mut mem = MemState {
-            data: crate::mem_types::zeroed_vec(300),
+            data: crate::mem_types::zeroed_vec(crate::mem::RESERVED_WORDS),
             ..Default::default()
         };
-        for k in 0..300 {
-            mem.set_b32s0(MemPtr::from_raw(k), 7);
+        for size in (1..).take(crate::mem::FREE_CLASSES - 1) {
+            for _ in 0..4 {
+                let p = mem.get_node(size).unwrap();
+                for k in 0..size {
+                    mem.set_b32s0(p + k, 7);
+                    mem.set_b32s1(p + k, 7);
+                }
+                mem.free_node(p, size);
+            }
         }
-        let rover = MemPtr::from_raw(10);
-        mem.rover = rover;
-        mem.lo_mem_max = MemPtr::from_raw(250);
-        mem.set_b32s0(rover, 240);
-        mem.set_b32s1(rover, MAX_HALFWORD);
-        mem.set_b32s1(rover + 1, rover.raw());
-        mem.set_b32s0(rover + 1, rover.raw());
-        mem.set_b32s1(mem.lo_mem_max, 0);
 
         let mut scanner = ScannerState::default();
         scanner.sa_root.registers_mut().fill(MemPtr::NULL);

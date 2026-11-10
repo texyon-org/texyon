@@ -141,7 +141,7 @@ impl MemAddr for MemIdx {
     }
 }
 
-/// No node. Not the zero bit pattern `Zeroable` gives, which is `MEM_BOT`.
+/// No node. Not the zero bit pattern `Zeroable` gives, which is the first fixed node.
 impl Default for MemPtr {
     #[inline]
     fn default() -> Self {
@@ -151,8 +151,6 @@ impl Default for MemPtr {
 
 impl MemPtr {
     pub const NULL: MemPtr = MemPtr(TEX_NULL);
-    /// The lowest arena address, TeX's `mem_bot`.
-    pub const MEM_BOT: MemPtr = MemPtr(0);
 
     #[inline]
     pub fn from_idx(idx: MemIdx) -> MemPtr {
@@ -1159,8 +1157,8 @@ mod tests {
         assert_ne!(MemPtr::NULL.0, 0);
         assert!(MemPtr::NULL.is_null());
         assert!(MemPtr::NULL.as_idx().is_none());
-        assert!(!MemPtr::MEM_BOT.is_null());
-        assert_eq!(MemPtr::MEM_BOT.as_idx(), Some(MemIdx(0)));
+        assert!(!MemPtr(0).is_null());
+        assert_eq!(MemPtr(0).as_idx(), Some(MemIdx(0)));
     }
 
     #[test]

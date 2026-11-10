@@ -11,8 +11,8 @@ use crate::consts::{
     FROZEN_END_TEMPLATE, FROZEN_PRIMITIVE, FROZEN_PROTECTION, GLUE_BASE, HASH_BASE,
     HISTORY_FATAL_ERROR, HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, IGNORE_DEPTH, INT_BASE,
     LC_CODE_BASE, LEVEL_ONE, LEVEL_ZERO, LOCAL_BASE, MATH_CODE_BASE, MATH_FONT_BASE, MAX_FONT_MAX,
-    MAX_HALFWORD, MEM_TOP, NORMAL, NULL_FONT, NUMBER_MATH_FAMILIES, NUMBER_USVS, PAR_SHAPE_LOC,
-    PRIM_SIZE, SF_CODE_BASE, SINGLE_BASE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE,
+    MAX_HALFWORD, NORMAL, NULL_FONT, NUMBER_MATH_FAMILIES, NUMBER_USVS, PAR_SHAPE_LOC, PRIM_SIZE,
+    SF_CODE_BASE, SINGLE_BASE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE,
     UNDEFINED_CONTROL_SEQUENCE, VMODE,
 };
 use crate::errors::Abort;
@@ -23,18 +23,18 @@ use crate::hyphenation::{HYPH_PRIME, TRIE_OP_SIZE};
 use crate::input::{NEW_LINE, TOKEN_LIST};
 use crate::io::init_io;
 use crate::mem::{
-    CONTRIB_HEAD, END_SPAN, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, HI_MEM_STAT_MIN, NULL_LIST,
-    PAGE_HEAD, PAGE_INS_HEAD, SS_GLUE, ZERO_GLUE,
+    CONTRIB_HEAD, END_SPAN, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, NULL_LIST, PAGE_HEAD, PAGE_INS_HEAD,
+    SS_GLUE, ZERO_GLUE,
 };
 use crate::mem_types::zeroed_vec;
-use crate::node::{FreeBlock, NodePtr, PageInsNode};
+use crate::node::{NodePtr, PageInsNode};
 use crate::packaging::MarksAction;
 use crate::params::{IntPar, TokPar};
 use crate::scan::{set_class, set_family};
 use crate::stack::TexStack;
 use crate::state::{
-    ConfigState, CurMarks, EngineState, EqtbState, FontState, GroupCode, InteractionMode, MemState,
-    PerFont, Selector,
+    ConfigState, CurMarks, EngineState, EqtbState, FontState, GroupCode, InteractionMode, PerFont,
+    Selector,
 };
 use crate::token::Token;
 use crate::token::OMIT_TEMPLATE;
@@ -42,9 +42,6 @@ use crate::units::{
     BufPos, EqtbPtr, FontId, FontInfoIdx, GlueOrder, MemPtr, NodeType, PoolPos, PrimNum, SavePtr,
     Scaled, StrNumber,
 };
-
-/// A `get_node` request this large merges every free block into the rover list.
-const GET_NODE_HEAD_SENTINEL: i32 = 0x4000_0000;
 
 pub(crate) const POOL_FREE: i32 = 47_500;
 pub(crate) const STRINGS_FREE: i32 = 100;
@@ -60,14 +57,12 @@ const PARAM_SIZE: usize = 10_000;
 const STACK_SIZE: usize = 5_000;
 
 const _: () = assert!(
-    MEM_TOP >= 1100
-        && HASH_PRIME <= HASH_SIZE
+    HASH_PRIME <= HASH_SIZE
         && TEX_NULL <= 0
         && MAX_FONT_MAX >= TEX_NULL
         && MAX_FONT_MAX <= MAX_HALFWORD
         && HASH_OFFSET >= 0
         && HASH_OFFSET <= HASH_BASE.raw()
-        && 2 * MAX_HALFWORD >= MEM_TOP
 );
 
 // These touch only process-global C state and take no pointers.
@@ -96,49 +91,6 @@ pub(crate) fn get_strings_started(st: &mut EngineState) -> Result<(), Abort> {
         return Err(Abort::Internal("must increase pool_size"));
     }
     Ok(())
-}
-
-impl MemState {
-    /// TeX's `sort_avail`: orders the variable-size free list by address.
-    pub(crate) fn sort_avail(&mut self) {
-        let block = NodePtr::<FreeBlock>::at;
-        let end = MemPtr::from_raw(MAX_HALFWORD);
-        let _ = self.get_node(GET_NODE_HEAD_SENTINEL);
-        let old_rover = self.rover;
-        let mut p = self[block(old_rover)].rlink;
-        self[block(old_rover)].rlink = end;
-
-        while p != old_rover {
-            let rover = self.rover;
-            if p < rover {
-                let q = p;
-                p = self[block(q)].rlink;
-                self[block(q)].rlink = rover;
-                self.rover = q;
-            } else {
-                let mut q = rover;
-                while self[block(q)].rlink < p {
-                    q = self[block(q)].rlink;
-                }
-                let r = self[block(p)].rlink;
-                let after_q = self[block(q)].rlink;
-                self[block(p)].rlink = after_q;
-                self[block(q)].rlink = p;
-                p = r;
-            }
-        }
-
-        let rover = self.rover;
-        p = rover;
-        while self[block(p)].rlink != end {
-            let next = self[block(p)].rlink;
-            self[block(next)].llink = p;
-            p = next;
-        }
-
-        self[block(p)].rlink = rover;
-        self[block(rover)].llink = p;
-    }
 }
 
 impl EqtbState {
@@ -411,20 +363,10 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     mem[FIL_NEG_GLUE].stretch = -Scaled::UNITY;
     mem[FIL_NEG_GLUE].stretch_order = GlueOrder::Fil.into();
 
-    mem.rover = MemPtr::from_raw(20);
-    let rover = NodePtr::<FreeBlock>::at(mem.rover);
-    mem[rover].mark_empty();
-    mem[rover].node_size = 1000;
-    mem[rover].llink = mem.rover;
-    mem[rover].rlink = mem.rover;
-    mem.lo_mem_max = mem.rover + 1000;
-    let end = mem.lo_mem_max;
-    end.set_link(mem, MemPtr::NULL);
-    end.set_info(mem, TEX_NULL);
-
-    let template = mem.word(end);
-    for k in HI_MEM_STAT_MIN..=MEM_TOP {
-        mem.set_word(MemPtr::from_raw(k), template);
+    let empty = MemPtr::NULL.raw();
+    for k in (0..).take(crate::mem::RESERVED_WORDS) {
+        mem.set_b32s0(MemPtr::from_raw(k), empty);
+        mem.set_b32s1(MemPtr::from_raw(k), empty);
     }
 
     OMIT_TEMPLATE.set_token(&mut mem.tokens, Token::from_cs(FROZEN_END_TEMPLATE));
@@ -434,7 +376,6 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     mem[page_ins].set_split_up(true);
     mem[page_ins].link = PAGE_INS_HEAD;
     mem.set_header(PAGE_HEAD, NodeType::Glue, NORMAL);
-    mem.var_used = 20;
 
     let eqtb = &mut st.eqtb;
     eqtb.set_eq(
@@ -754,7 +695,8 @@ pub(crate) fn initialize_engine(
     st.hyph.hyph_link = vec![0; hyph_words];
 
     if st.config.in_initex_mode {
-        st.mem.data = zeroed_vec(crate::mem::MEM_WORDS);
+        st.mem.data = zeroed_vec(crate::mem::RESERVED_WORDS);
+        st.mem.free = crate::mem::FreeLists::default();
 
         st.eqtb.eqtb_top = EQTB_SIZE + st.eqtb.hash_extra;
         st.eqtb.hash_top = if st.eqtb.hash_extra == 0 {

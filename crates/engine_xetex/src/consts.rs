@@ -30,7 +30,6 @@ pub const INF_BAD: i32 = 10_000;
 pub const INF_PENALTY: i32 = INF_BAD;
 pub const EJECT_PENALTY: i32 = -INF_PENALTY;
 pub const AWFUL_BAD: i32 = MAX_HALFWORD;
-pub const MEM_TOP: i32 = 4_999_999;
 /// The cap on dynamic memory in 32-bit words, reported as `main memory size`. It stops runaway
 /// documents long before a browser tab runs out, and is about 6.7 times TeX Live's.
 pub const MAIN_MEMORY_WORDS: i32 = 1 << 26;

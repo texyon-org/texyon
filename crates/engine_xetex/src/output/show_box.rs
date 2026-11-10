@@ -39,7 +39,7 @@ pub(crate) fn show_box(st: &mut EngineState, p: MemPtr) {
 pub(crate) fn short_display(st: &mut EngineState, mut p: MemPtr) {
     while p.raw() > 0 {
         if st.mem.is_char_node(p) {
-            if p <= MemPtr::from_raw(crate::consts::MEM_TOP) {
+            if st.mem.contains(p) {
                 let ch = NodePtr::<CharNode>::at(p);
                 let font = st.mem[ch].font;
                 if font != st.errors.font_in_short_display {
@@ -158,7 +158,7 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
     while p.raw() > 0 {
         print_ln(st);
         print_current_string(st);
-        if p > MemPtr::from_raw(crate::consts::MEM_TOP) {
+        if !st.mem.contains(p) {
             print(st, "Bad link, display aborted.");
             return;
         }

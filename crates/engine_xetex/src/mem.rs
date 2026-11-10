@@ -2,17 +2,17 @@
 //! heads, and TeX's node constructors.
 
 pub(crate) use crate::consts::TEX_NULL;
-use crate::consts::{MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP};
+use crate::consts::{INDEX_NODE_SIZE, MEDIUM_NODE_SIZE};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::Side;
 use crate::glue_store::GlueSpecId;
-use crate::mem_types::ListStateRecord;
+use crate::mem_types::{ListStateRecord, MemoryWord};
 use crate::node::{
-    BoxLr, BoxNode, CharNode, ChoiceNode, DiscNode, FixedNode, FreeBlock, GlueKind, GlueNode,
-    HeadNode, HyphPosNode, KernNode, KernSubtype, LigBoundary, LigItem, LigatureNode, ListRecord,
-    LrNode, MarginKernNode, MathCode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode,
-    SpanNode, StyleNode, WhatsitKind, WhatsitSubtype,
+    BoxLr, BoxNode, CharNode, ChoiceNode, DiscNode, FixedNode, GlueKind, GlueNode, HeadNode,
+    HyphPosNode, KernNode, KernSubtype, LigBoundary, LigItem, LigatureNode, ListRecord, LrNode,
+    MarginKernNode, MathCode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode, SpanNode,
+    StyleNode, WhatsitKind, WhatsitSubtype,
 };
 use crate::overlay::LigatureLayout;
 use crate::params::GluePar;
@@ -23,25 +23,38 @@ use crate::units::{
 
 pub(crate) use crate::glue_store::{FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, SS_GLUE, ZERO_GLUE};
 
-/// The arena length: `MEM_TOP` and the words below it, then layout slack.
-pub(crate) const MEM_WORDS: usize = (MEM_TOP + crate::overlay::MAX_LAYOUT_WORDS) as usize;
+/// One more than the largest node size, so a node size indexes its free list.
+pub(crate) const FREE_CLASSES: usize = INDEX_NODE_SIZE as usize + 1;
+/// `mem` may grow to this many words, half of `MAIN_MEMORY_WORDS` in 32-bit units.
+const MAX_MEM_WORDS: usize = 1 << 24;
 
-pub(crate) const PAGE_INS_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP);
-pub(crate) const CONTRIB_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 1);
-pub(crate) const PAGE_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 2);
-pub(crate) const TEMP_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 3);
-pub(crate) const HOLD_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 4);
-pub(crate) const ADJUST_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 5);
-pub(crate) const ALIGN_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 8);
-// SAFETY: the static word at `MEM_TOP - 9` ends every span list.
-pub(crate) const END_SPAN: NodePtr<SpanNode> =
-    NodePtr::from_idx_unchecked(MemIdx::from_raw(MEM_TOP - 9));
-pub(crate) const NULL_LIST: MemPtr = MemPtr::from_raw(MEM_TOP - 11);
-/// The scratch char node of TeX's lig trick, two words.
-pub(crate) const LIG_TRICK: MemPtr = MemPtr::from_raw(MEM_TOP - 7);
-pub(crate) const GARBAGE: MemPtr = MemPtr::from_raw(MEM_TOP - 12);
-pub(crate) const PRE_ADJUST_HEAD: MemPtr = MemPtr::from_raw(MEM_TOP - 14);
-pub(crate) const HI_MEM_STAT_MIN: i32 = MEM_TOP - 14;
+/// The free list of each node size, by size.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(crate) struct FreeLists(pub(crate) [MemPtr; FREE_CLASSES]);
+
+impl Default for FreeLists {
+    fn default() -> Self {
+        FreeLists([MemPtr::NULL; FREE_CLASSES])
+    }
+}
+
+// The fixed nodes at the start of `mem`, each as large as the layout it is read as.
+pub(crate) const PAGE_INS_HEAD: MemPtr = MemPtr::from_raw(0);
+pub(crate) const CONTRIB_HEAD: MemPtr = MemPtr::from_raw(4);
+pub(crate) const PAGE_HEAD: MemPtr = MemPtr::from_raw(6);
+pub(crate) const TEMP_HEAD: MemPtr = MemPtr::from_raw(9);
+pub(crate) const HOLD_HEAD: MemPtr = MemPtr::from_raw(11);
+pub(crate) const ADJUST_HEAD: MemPtr = MemPtr::from_raw(13);
+pub(crate) const ALIGN_HEAD: MemPtr = MemPtr::from_raw(15);
+// SAFETY: the fixed span node ends every span list.
+pub(crate) const END_SPAN: NodePtr<SpanNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(17));
+pub(crate) const NULL_LIST: MemPtr = MemPtr::from_raw(19);
+/// The scratch char node of TeX's lig trick.
+pub(crate) const LIG_TRICK: MemPtr = MemPtr::from_raw(21);
+pub(crate) const GARBAGE: MemPtr = MemPtr::from_raw(23);
+pub(crate) const PRE_ADJUST_HEAD: MemPtr = MemPtr::from_raw(25);
+/// The words the fixed nodes take, where allocation starts.
+pub(crate) const RESERVED_WORDS: usize = 27;
 
 impl ListStateRecord {
     /// A fixed-layout whatsit appended to the current list.
@@ -155,84 +168,33 @@ impl MemState {
         }
     }
 
-    // --- the variable-size free list ---
+    // --- the node allocator ---
 
-    /// TeX's `get_node`. The request `0x4000_0000` is `sort_avail`'s probe
-    /// and yields `MAX_HALFWORD`.
+    /// Whether `p` points into the allocated part of `mem`, for printing a possibly clobbered list.
+    pub(crate) fn contains(&self, p: MemPtr) -> bool {
+        usize::try_from(p.raw()).is_ok_and(|i| i < self.data.len())
+    }
+
+    /// TeX's `get_node`: a node of `s` words, from its size's free list or fresh from the end.
     pub fn get_node(&mut self, s: i32) -> Result<MemPtr, Abort> {
-        let block = NodePtr::<FreeBlock>::at;
-        let r = 'restart: loop {
-            let mut p = self.rover;
-            loop {
-                // Merge the free blocks that follow `p`.
-                let mut q = p + self[block(p)].node_size;
-                while self[block(q)].is_empty() {
-                    let t = self[block(q)].rlink;
-                    if q == self.rover {
-                        self.rover = t;
-                    }
-                    let q_left = self[block(q)].llink;
-                    self[block(t)].llink = q_left;
-                    self[block(q_left)].rlink = t;
-                    q += self[block(q)].node_size;
-                }
-
-                let r = q - s;
-                if r > p + 1 {
-                    self[block(p)].node_size = r - p;
-                    self.rover = p;
-                    break 'restart r;
-                }
-                if r == p && self[block(p)].rlink != p {
-                    let new_rover = self[block(p)].rlink;
-                    let t = self[block(p)].llink;
-                    self.rover = new_rover;
-                    self[block(new_rover)].llink = t;
-                    self[block(t)].rlink = new_rover;
-                    break 'restart r;
-                }
-
-                self[block(p)].node_size = q - p;
-                p = self[block(p)].rlink;
-                if p == self.rover {
-                    break;
-                }
+        let class = usize::try_from(s)
+            .ok()
+            .filter(|c| (1..FREE_CLASSES).contains(c))
+            .or_confusion("node size")?;
+        let head = self.free.0[class];
+        let r = if head.is_null() {
+            let start = self.data.len();
+            let end = start + class;
+            if end > MAX_MEM_WORDS {
+                return Err(Abort::NODE_OVERFLOW);
             }
-
-            if s == 0x4000_0000 {
-                return Ok(MemPtr::from_raw(MAX_HALFWORD));
-            }
-
-            let max_halfword = MemPtr::from_raw(MAX_HALFWORD);
-            let limit = MemPtr::from_raw(HI_MEM_STAT_MIN);
-            if self.lo_mem_max + 2 < limit && self.lo_mem_max + 2 <= max_halfword {
-                // Grow lo-mem by a new free block below the fixed heads.
-                let t = if limit - self.lo_mem_max >= 1998 {
-                    self.lo_mem_max + 1000
-                } else {
-                    self.lo_mem_max + 1 + (limit - self.lo_mem_max) / 2
-                };
-                let t = t.min(max_halfword);
-
-                let rover = self.rover;
-                let left_neighbor = self[block(rover)].llink;
-                let q = self.lo_mem_max;
-                self[block(left_neighbor)].rlink = q;
-                self[block(rover)].llink = q;
-                self[block(q)].rlink = rover;
-                self[block(q)].llink = left_neighbor;
-                self[block(q)].mark_empty();
-                self[block(q)].node_size = t - self.lo_mem_max;
-                self.lo_mem_max = t;
-                t.set_link(self, MemPtr::NULL);
-                t.set_info(self, TEX_NULL);
-                self.rover = q;
-                continue 'restart;
-            }
-
-            return Err(Abort::NODE_OVERFLOW);
+            let r = i32::try_from(start).map_err(|_| Abort::NODE_OVERFLOW)?;
+            self.data.resize(end, MemoryWord::default());
+            MemPtr::from_raw(r)
+        } else {
+            self.free.0[class] = head.link(self);
+            head
         };
-
         r.set_link(self, MemPtr::NULL);
         if s >= MEDIUM_NODE_SIZE {
             self.set_b32s0(r + s - 1, self.cur_synctex_tag);
@@ -241,18 +203,16 @@ impl MemState {
         Ok(r)
     }
 
-    /// Returns the `s`-word node `p` to the variable-size free list.
+    /// Returns the `s`-word node `p` to its size's free list.
     pub fn free_node(&mut self, p: MemPtr, s: i32) {
-        let block = NodePtr::<FreeBlock>::at;
-        let rover = self.rover;
-        let q = self[block(rover)].llink;
-        let freed = &mut self[block(p)];
-        freed.node_size = s;
-        freed.mark_empty();
-        freed.llink = q;
-        freed.rlink = rover;
-        self[block(rover)].llink = p;
-        self[block(q)].rlink = p;
+        let class = usize::try_from(s)
+            .ok()
+            .filter(|c| (1..FREE_CLASSES).contains(c));
+        debug_assert!(class.is_some(), "freeing a node of size {s}");
+        if let Some(class) = class {
+            p.set_link(self, self.free.0[class]);
+            self.free.0[class] = p;
+        }
     }
 
     // --- node constructors ---

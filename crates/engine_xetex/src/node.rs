@@ -771,8 +771,6 @@ node_kinds! {
     PenaltiesNode;
     /// A line of a `\scantokens` pseudo file, four characters per payload entry.
     PseudoLineNode;
-    /// A block on the variable-size free list, marked by an empty link word.
-    FreeBlock;
 }
 
 impl FixedNode for LigItem {
@@ -868,7 +866,7 @@ pub trait ListRecord: NodeKind {}
 impl_traits!(ListRecord: SaIndexNode, SaElement, SaWordNode, SaPointerNode, SaMarkClassNode,
     SaSaved, SaSavedWord, SaSavedPointer, PageInsNode,
     LigItem, CharNode, HeadNode, LrNode, PseudoFileNode, HyphPosNode, AlignRecord, SpanNode, ParShapeNode, PenaltiesNode,
-    PseudoLineNode, MathField, DelimiterField, FreeBlock);
+    PseudoLineNode, MathField, DelimiterField);
 
 impl<K: ListRecord> NodePtr<K> {
     /// The record at `p`, a non-null link of a list of `K` records.
@@ -915,10 +913,6 @@ impl MemPtr {
     #[inline]
     pub fn info_ptr(self, mem: &MemState) -> MemPtr {
         MemPtr::from_raw(self.info(mem))
-    }
-    #[inline]
-    pub fn set_info(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s0(self, v);
     }
 }
 
@@ -1812,7 +1806,6 @@ impl NodePtr<SaSavedPointer> {
 mod tests {
     use super::*;
     use crate::codes::LimitCode;
-    use crate::consts::MAX_HALFWORD;
     use crate::token::TokenList;
     use crate::units::FontId;
     use std::mem::size_of;
@@ -1972,26 +1965,34 @@ mod tests {
     #[test]
     fn alloc_zeroes_the_subtype_with_the_type() {
         let mut mem = arena_with_free_block();
-        for i in 20..30 {
-            mem.set_b16s0(MemPtr::from_raw(i), 0xBEEF);
-        }
+        let old = NodePtr::<PenaltyNode>::alloc(&mut mem).unwrap();
+        mem.set_b16s0(old.idx(), 0xBEEF);
+        mem.free_node(old.ptr(), MEDIUM_NODE_SIZE);
         let p = NodePtr::<PenaltyNode>::alloc(&mut mem).unwrap();
+        assert_eq!(p, old);
         assert_eq!(mem.b16s0(p.idx()), 0);
         assert_eq!(mem.b16s1(p.idx()), NodeType::Penalty.as_raw());
     }
 
-    /// An arena whose free list is the single block `[10, 30)`.
+    #[test]
+    fn freed_nodes_return_to_the_list_of_their_size() {
+        let mut mem = arena_with_free_block();
+        let start = crate::mem::RESERVED_WORDS as i32;
+        let a = mem.get_node(3).unwrap();
+        let b = mem.get_node(3).unwrap();
+        let c = mem.get_node(2).unwrap();
+        assert_eq!([a, b, c].map(MemPtr::raw), [start, start + 3, start + 6]);
+        mem.free_node(a, 3);
+        mem.free_node(b, 3);
+        assert_eq!(mem.get_node(2).unwrap().raw(), start + 8);
+        assert_eq!(mem.get_node(3).unwrap(), b);
+        assert_eq!(mem.get_node(3).unwrap(), a);
+        assert_eq!(mem.data.len(), crate::mem::RESERVED_WORDS + 10);
+    }
+
+    /// An arena with only the fixed nodes, which grows as nodes are taken.
     fn arena_with_free_block() -> MemState {
-        let mut mem = fresh_mem(crate::mem::MEM_WORDS);
-        let rover = 10;
-        mem.rover = MemPtr::from_raw(rover);
-        mem.lo_mem_max = MemPtr::from_raw(30);
-        mem.set_b32s0(MemPtr::from_raw(rover), 20);
-        mem.set_b32s1(MemPtr::from_raw(rover), MAX_HALFWORD);
-        mem.set_b32s1(MemPtr::from_raw(rover + 1), rover);
-        mem.set_b32s0(MemPtr::from_raw(rover + 1), rover);
-        mem.set_b32s1(MemPtr::from_raw(30), 0);
-        mem
+        fresh_mem(crate::mem::RESERVED_WORDS)
     }
 
     fn at<K: NodeKind>(mem: &mut MemState, p: i32, ty: Option<NodeType>) -> NodePtr<K> {

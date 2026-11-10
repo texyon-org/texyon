@@ -954,7 +954,7 @@ fn print_font_char(st: &mut EngineState, font: FontId, c: u16) {
 }
 
 fn print_font_and_char(st: &mut EngineState, p: MemPtr) {
-    if p > MemPtr::from_raw(crate::consts::MEM_TOP) {
+    if !st.mem.contains(p) {
         print_esc(st, "CLOBBERED.");
     } else {
         let ch = NodePtr::<CharNode>::at(p);

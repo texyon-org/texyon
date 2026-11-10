@@ -16,14 +16,13 @@ use crate::consts::{EMPTY, NORMAL};
 use crate::node::{
     AccentNoad, AdjustNode, AdjustPlacement, AlignRecord, AnyNoad, BoxLr, BoxNode, CharNode,
     ChoiceNode, DelimiterField, DiscNode, EdgeNode, FenceNoad, FenceSubtype, FixedNode,
-    FractionNoad, FreeBlock, GlueKind, GlueNode, GlyphNode, HeadNode, HyphPosNode, InsNode,
-    KernNode, KernSubtype, LanguageNode, LeaderKind, LigBoundary, LigItem, LigatureNode, Link,
-    LrNode, MarginKernNode, MarkNode, MathAccentKind, MathCode, MathField, MathNode,
-    NativeWordNode, Noad, NodeKind, NodePtr, OpenNode, PageInsNode, ParShapeNode, PenaltiesNode,
-    PenaltyNode, PicNode, PseudoFileNode, PseudoLineNode, RadicalNoad, RuleNode, SaChild,
-    SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSaved, SaSavedPointer,
-    SaSavedWord, SaWordNode, SizedWhatsit, SpanNode, Stored, StoredDimen, StyleNode, UnsetNode,
-    WhatsitNode, WhatsitSubtype, WriteNode,
+    FractionNoad, GlueKind, GlueNode, GlyphNode, HeadNode, HyphPosNode, InsNode, KernNode,
+    KernSubtype, LanguageNode, LeaderKind, LigBoundary, LigItem, LigatureNode, Link, LrNode,
+    MarginKernNode, MarkNode, MathAccentKind, MathCode, MathField, MathNode, NativeWordNode, Noad,
+    NodeKind, NodePtr, OpenNode, PageInsNode, ParShapeNode, PenaltiesNode, PenaltyNode, PicNode,
+    PseudoFileNode, PseudoLineNode, RadicalNoad, RuleNode, SaChild, SaElement, SaIndexNode, SaLeaf,
+    SaMarkClassNode, SaPointerNode, SaSaved, SaSavedPointer, SaSavedWord, SaWordNode, SizedWhatsit,
+    SpanNode, Stored, StoredDimen, StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype, WriteNode,
 };
 use crate::payload::PayloadId;
 use crate::state::MemState;
@@ -64,10 +63,6 @@ impl<K: Overlay> std::ops::IndexMut<NodePtr<K>> for MemState {
     }
 }
 
-/// The most words a layout covers. `mem` keeps all but one of them as slack
-/// past `MEM_TOP`, so a layout read at a list head near the top stays in bounds.
-pub(crate) const MAX_LAYOUT_WORDS: i32 = crate::consts::INDEX_NODE_SIZE;
-
 /// Declares the layout of a node kind and checks it covers the node exactly.
 /// The word count defaults to the kind's allocation size.
 macro_rules! overlay {
@@ -79,7 +74,6 @@ macro_rules! overlay {
             type Layout = $layout;
             const WORDS: i32 = $words;
         }
-        const _: () = assert!(<$kind as Overlay>::WORDS <= MAX_LAYOUT_WORDS);
         const _: () = assert!(
             std::mem::size_of::<$layout>()
                 == std::mem::size_of::<crate::mem_types::MemoryWord>()
@@ -1303,31 +1297,6 @@ pub struct LigatureLayout {
 
 overlay!(LigatureNode => LigatureLayout);
 
-/// The first two words of a block on the variable-size free list.
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct FreeBlockLayout {
-    pub node_size: i32,
-    /// `MAX_HALFWORD` marks the block as free.
-    empty_flag: i32,
-    pub llink: MemPtr,
-    pub rlink: MemPtr,
-}
-
-overlay!(FreeBlock => FreeBlockLayout, 2);
-
-impl FreeBlockLayout {
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.empty_flag == crate::consts::MAX_HALFWORD
-    }
-
-    #[inline]
-    pub fn mark_empty(&mut self) {
-        self.empty_flag = crate::consts::MAX_HALFWORD;
-    }
-}
-
 impl BoxLayout {
     #[inline]
     pub fn is_hlist(&self) -> bool {
@@ -1358,18 +1327,6 @@ mod tests {
         let mem = arena();
         assert!(mem.data.get(MemIdx::from_raw(-1).words(2)).is_none());
         assert_eq!(MemIdx::from_raw(3).words(2), 3..5);
-    }
-
-    #[test]
-    fn the_largest_layout_fits_at_the_top_of_mem() {
-        let mut mem = MemState {
-            data: crate::mem_types::zeroed_vec(crate::mem::MEM_WORDS),
-            ..Default::default()
-        };
-        let top: NodePtr<BoxNode> =
-            NodePtr::from_idx_unchecked(MemIdx::new(crate::mem::PAGE_INS_HEAD));
-        mem[top].link = MemPtr::from_raw(5);
-        assert_eq!(mem.b32s1(crate::mem::PAGE_INS_HEAD), 5);
     }
 
     #[test]
@@ -1477,23 +1434,6 @@ mod tests {
         (ch.character, ch.font, ch.link) = (65, FontId::new(3), MemPtr::from_raw(9));
         assert_eq!((mem.b16s0(at(14)), mem.b32s1(at(14))), (65, 9));
         assert_eq!(mem.b16s0(at(15)), 3);
-    }
-
-    #[test]
-    fn free_block_fields_land_on_their_words() {
-        let mut mem = arena();
-        let at = MemIdx::from_raw;
-        let b: NodePtr<FreeBlock> = NodePtr::from_idx_unchecked(at(6));
-        let block = &mut mem[b];
-        block.node_size = 40;
-        block.mark_empty();
-        (block.llink, block.rlink) = (MemPtr::from_raw(2), MemPtr::from_raw(3));
-        assert!(mem[b].is_empty());
-        assert_eq!(
-            (mem.b32s0(at(6)), mem.b32s1(at(6))),
-            (40, crate::consts::MAX_HALFWORD)
-        );
-        assert_eq!((mem.b32s0(at(7)), mem.b32s1(at(7))), (2, 3));
     }
 
     #[test]

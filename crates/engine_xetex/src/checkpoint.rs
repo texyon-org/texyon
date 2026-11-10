@@ -652,21 +652,21 @@ mod tests {
 
     #[derive(Clone, Copy)]
     struct Bundle {
-        lo_mem_max: MemPtr,
+        free_pairs: MemPtr,
         fmem_ptr: crate::units::FontInfoIdx,
         tokens: crate::token::TokenStoreMarks,
     }
 
     fn bundle(st: &EngineState) -> Bundle {
         Bundle {
-            lo_mem_max: st.mem.lo_mem_max,
+            free_pairs: st.mem.free.0[2],
             fmem_ptr: st.fonts.fmem_ptr,
             tokens: st.mem.tokens.marks(),
         }
     }
 
     fn restore(st: &mut EngineState, bundle: &Bundle) {
-        st.mem.lo_mem_max = bundle.lo_mem_max;
+        st.mem.free.0[2] = bundle.free_pairs;
         st.fonts.fmem_ptr = bundle.fmem_ptr;
         st.mem.tokens.restore_marks(bundle.tokens);
     }
@@ -690,13 +690,13 @@ mod tests {
         let mut st = state();
         let mut ladder = CheckpointLadder::new(bundle(&st), 0);
 
-        st.mem.set_b32s1(MemPtr::MEM_BOT, 10);
+        st.mem.set_b32s1(MemPtr::from_raw(0), 10);
         st.eqtb.set_equiv(crate::units::EqtbPtr::from_raw(1), 11);
-        st.mem.lo_mem_max = MemPtr::from_raw(12);
+        st.mem.free.0[2] = MemPtr::from_raw(12);
         let rung = bundle(&st);
         ladder.push(&mut st, rung, 1, true, false);
 
-        st.mem.set_b32s1(MemPtr::MEM_BOT, 20);
+        st.mem.set_b32s1(MemPtr::from_raw(0), 20);
         st.mem.set_b32s1(MemPtr::from_raw(2), 21);
         st.eqtb.set_equiv(crate::units::EqtbPtr::from_raw(1), 22);
         st.fonts.fmem_ptr = crate::units::FontInfoIdx::from_raw(2);
@@ -704,14 +704,14 @@ mod tests {
         ladder.push(&mut st, rung, 2, true, false);
 
         st.mem.set_b32s1(MemPtr::from_raw(3), 30); // open epoch after the newest rung
-        st.mem.lo_mem_max = MemPtr::from_raw(31);
+        st.mem.free.0[2] = MemPtr::from_raw(31);
         ladder.rewind_to(&mut st, 1, restore);
 
         assert_eq!(value(st.mem.data[0]), 10);
         assert_eq!(value(st.mem.data[2]), 0);
         assert_eq!(value(st.mem.data[3]), 0);
         assert_eq!(value(st.eqtb.data[1]), 11);
-        assert_eq!(st.mem.lo_mem_max, MemPtr::from_raw(12));
+        assert_eq!(st.mem.free.0[2], MemPtr::from_raw(12));
         assert_eq!(st.fonts.fmem_ptr, crate::units::FontInfoIdx::from_raw(0));
         assert_eq!(ladder.len(), 2);
     }
@@ -754,10 +754,10 @@ mod tests {
     fn decimation_preserves_rewind_truth() {
         let mut st = state();
         let mut ladder = CheckpointLadder::new(bundle(&st), 0);
-        st.mem.set_b32s1(MemPtr::MEM_BOT, 1);
+        st.mem.set_b32s1(MemPtr::from_raw(0), 1);
         let rung = bundle(&st);
         ladder.push(&mut st, rung, 1, false, false);
-        st.mem.set_b32s1(MemPtr::MEM_BOT, 2);
+        st.mem.set_b32s1(MemPtr::from_raw(0), 2);
         st.mem.set_b32s1(MemPtr::from_raw(1), 2);
         let rung = bundle(&st);
         ladder.push(&mut st, rung, 2, false, false);
@@ -786,10 +786,10 @@ mod tests {
     fn protected_and_edge_rungs_cannot_be_decimated() {
         let mut st = state();
         let mut ladder = CheckpointLadder::new(bundle(&st), 0);
-        st.mem.set_b32s1(MemPtr::MEM_BOT, 1);
+        st.mem.set_b32s1(MemPtr::from_raw(0), 1);
         let rung = bundle(&st);
         ladder.push(&mut st, rung, 1, false, true);
-        st.mem.set_b32s1(MemPtr::MEM_BOT, 2);
+        st.mem.set_b32s1(MemPtr::from_raw(0), 2);
         let rung = bundle(&st);
         ladder.push(&mut st, rung, 2, false, false);
         assert!(!ladder.decimate(0));
@@ -808,16 +808,16 @@ mod tests {
         let mut ladder = CheckpointLadder::from_engine(&st, strings_base);
 
         st.scanner.logical_clock = 10;
-        st.mem.lo_mem_max = MemPtr::from_raw(20);
-        st.mem.set_b32s1(MemPtr::MEM_BOT, 30);
+        st.mem.free.0[2] = MemPtr::from_raw(20);
+        st.mem.set_b32s1(MemPtr::from_raw(0), 30);
         ladder.push_engine(&mut st, strings_base, true, true);
         st.scanner.logical_clock = 40;
-        st.mem.lo_mem_max = MemPtr::from_raw(50);
-        st.mem.set_b32s1(MemPtr::MEM_BOT, 60);
+        st.mem.free.0[2] = MemPtr::from_raw(50);
+        st.mem.set_b32s1(MemPtr::from_raw(0), 60);
 
         ladder.rewind_engine(&mut st, 1);
         assert_eq!(st.scanner.logical_clock, 10);
-        assert_eq!(st.mem.lo_mem_max, MemPtr::from_raw(20));
+        assert_eq!(st.mem.free.0[2], MemPtr::from_raw(20));
         assert_eq!(value(st.mem.data[0]), 30);
         assert!(ladder.accounted_bytes() > 0);
     }
@@ -853,7 +853,7 @@ mod tests {
         let strings_base = StringWatermark::capture(&st);
         let mut ladder = CheckpointLadder::from_engine(&st, strings_base);
         let minimum = ladder.accounted_bytes();
-        st.mem.set_b32s1(MemPtr::MEM_BOT, 7);
+        st.mem.set_b32s1(MemPtr::from_raw(0), 7);
         let rejected = ladder.admit_engine_rung(
             &mut st,
             strings_base,
@@ -882,7 +882,7 @@ mod tests {
             },
         );
         assert!(matches!(admitted, RungAdmission::Admitted { .. }));
-        st.mem.set_b32s1(MemPtr::MEM_BOT, 8);
+        st.mem.set_b32s1(MemPtr::from_raw(0), 8);
         ladder.rewind_engine(&mut st, 0);
         assert_eq!(value(st.mem.data[0]), 0);
     }
@@ -914,7 +914,7 @@ mod tests {
         };
         for clock in 2..10 {
             st.scanner.logical_clock = clock;
-            st.mem.set_b32s1(MemPtr::MEM_BOT, clock as i32);
+            st.mem.set_b32s1(MemPtr::from_raw(0), clock as i32);
             let admission = ladder.admit_engine_rung(&mut st, strings_base, true, true, budget);
             assert!(matches!(admission, RungAdmission::Admitted { .. }));
             assert!(ladder.accounted_bytes() <= budget.hard_bytes);
@@ -935,7 +935,7 @@ mod tests {
         };
         for clock in 1..=4 {
             st.scanner.logical_clock = clock;
-            st.mem.set_b32s1(MemPtr::MEM_BOT, clock as i32);
+            st.mem.set_b32s1(MemPtr::from_raw(0), clock as i32);
             ladder.admit_engine_rung(&mut st, strings_base, true, false, unlimited);
         }
         let horizon = ladder.len() - 1;
@@ -954,7 +954,7 @@ mod tests {
         };
         for clock in 100..120 {
             st.scanner.logical_clock = clock;
-            st.mem.set_b32s1(MemPtr::MEM_BOT, clock as i32);
+            st.mem.set_b32s1(MemPtr::from_raw(0), clock as i32);
             let admission = ladder.admit_engine_rung(&mut st, strings_base, true, false, budget);
             assert!(matches!(admission, RungAdmission::Admitted { .. }));
         }
@@ -993,7 +993,7 @@ mod tests {
         let mut ladder = CheckpointLadder::from_engine_verified(&st, strings_base);
         for clock in 1..=4 {
             st.scanner.logical_clock = clock;
-            st.mem.set_b32s1(MemPtr::MEM_BOT, clock as i32);
+            st.mem.set_b32s1(MemPtr::from_raw(0), clock as i32);
             ladder.push_engine(&mut st, strings_base, false, false);
         }
         assert!(ladder.decimate(2));
@@ -1004,7 +1004,7 @@ mod tests {
     #[test]
     fn prefix_detour_and_rewind_reproduce_state_and_output() {
         fn run_prefix(st: &mut EngineState, value: i32) {
-            st.mem.set_b32s1(MemPtr::MEM_BOT, value);
+            st.mem.set_b32s1(MemPtr::from_raw(0), value);
             st.shipout.dvi.init();
             for b in value.to_le_bytes() {
                 st.shipout.dvi.set_char(u16::from(b)).unwrap();

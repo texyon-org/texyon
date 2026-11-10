@@ -10,8 +10,7 @@ use crate::cmd::Cmd;
 use crate::consts::{
     ACTIVE_BASE, CAT_CODE_BASE, CUR_FONT_LOC, EMPTY_STRING, EQTB_SIZE, FONT_BASE,
     FROZEN_CONTROL_SEQUENCE, HASH_BASE, INT_BASE, INVALID_HANDLE, MAX_FONT_MAX, MAX_HALFWORD,
-    MEM_TOP, MIN_HALFWORD, NULL_FONT, PRIM_SIZE, TEX_NULL, TOO_BIG_CHAR,
-    UNDEFINED_CONTROL_SEQUENCE,
+    MIN_HALFWORD, NULL_FONT, PRIM_SIZE, TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::engine::{POOL_FREE, STRINGS_FREE};
 use crate::errors::Abort;
@@ -21,9 +20,8 @@ use crate::glue_store::GlueSpecId;
 use crate::glue_store::{GlueSpec, GlueStore, STATIC_SPECS};
 use crate::hash::{hash_slot, HASH_PRIME};
 use crate::hyphenation::{TrieOp, TriePtr, BIGGEST_LANG, HYPH_PRIME, TRIE_OP_SIZE};
-use crate::mem::{CONTRIB_HEAD, HI_MEM_STAT_MIN, PAGE_HEAD};
+use crate::mem::{CONTRIB_HEAD, PAGE_HEAD, RESERVED_WORDS};
 use crate::mem_types::{B16x4, B32x2, MemoryWord};
-use crate::node::{FreeBlock, NodePtr};
 use crate::output::{print, print_char, print_int, print_ln, print_nl};
 use crate::params::IntPar;
 use crate::payload::PayloadStore;
@@ -453,12 +451,10 @@ fn header<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
         st.scanner.max_reg_num = 32_767;
     }
 
-    s.constant(MEM_TOP)?;
     if S::LOADING {
         st.input.cur_list.head = CONTRIB_HEAD;
         st.input.cur_list.tail = CONTRIB_HEAD;
         st.shipout.page_tail = PAGE_HEAD;
-        st.mem.data = crate::mem_types::zeroed_vec(crate::mem::MEM_WORDS);
     }
 
     s.constant(EQTB_SIZE.raw())?;
@@ -509,51 +505,22 @@ fn string_pool<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abor
 }
 
 fn dynamic_memory<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
-    if !S::LOADING {
-        st.mem.sort_avail();
-    }
     let mem = &mut st.mem;
-    s.ptr_in(&mut mem.lo_mem_max, 1019, HI_MEM_STAT_MIN - 1)?;
-    s.ptr_in(&mut mem.rover, 20, mem.lo_mem_max.raw())?;
-    let lo_mem_max = mem.lo_mem_max;
-
+    let too_big = || Abort::Internal("mem exceeds the format's limit");
+    let mut words = i32::try_from(mem.data.len()).map_err(|_| too_big())?;
+    let reserved = i32::try_from(RESERVED_WORDS).map_err(|_| too_big())?;
+    s.int_in(&mut words, reserved, i32::MAX)?;
+    let last = MemPtr::from_raw(words - 1);
+    s.items_in(&mut mem.free.0, MemPtr::from_raw(MIN_HALFWORD), last)?;
     s.items_in(
         st.scanner.sa_root.registers_mut(),
         MemPtr::from_raw(MIN_HALFWORD),
-        lo_mem_max,
+        last,
     )?;
-
-    let mut words = 0;
-    let mut var_used = 0;
-    let mut p = MemPtr::MEM_BOT;
-    let mut q = mem.rover;
-    loop {
-        s.items(span(&mut mem.data, p.raw(), q + 2 - p))?;
-        words += q + 2 - p;
-        var_used += q - p;
-        let block = NodePtr::<FreeBlock>::at(q);
-        p = q + mem[block].node_size;
-        let next = mem[block].rlink;
-        if S::LOADING && (p > lo_mem_max || (q >= next && next != mem.rover)) {
-            return Err(bad_fmt());
-        }
-        q = next;
-        if q == mem.rover {
-            break;
-        }
+    if S::LOADING {
+        mem.data = crate::mem_types::zeroed_vec(usize::try_from(words).map_err(|_| bad_fmt())?);
     }
-    s.items(span(&mut mem.data, p.raw(), lo_mem_max + 1 - p))?;
-    words += lo_mem_max + 1 - p;
-    var_used += lo_mem_max - p;
-
-    let heads = MEM_TOP + 1 - HI_MEM_STAT_MIN;
-    s.items(span(&mut mem.data, HI_MEM_STAT_MIN, heads))?;
-    words += heads;
-
-    if !S::LOADING {
-        mem.var_used = var_used;
-    }
-    s.int(&mut mem.var_used)?;
+    s.items(&mut mem.data)?;
     token_lists(s, &mut mem.tokens)?;
     glue_specs(s, &mut mem.glue)?;
     payloads(s, &mut mem.payloads)?;
@@ -561,8 +528,7 @@ fn dynamic_memory<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), A
     if !S::LOADING {
         print_ln(st);
         print_int(st, words);
-        print(st, " memory locations dumped; current usage is ");
-        print_int(st, st.mem.var_used);
+        print(st, " memory locations dumped");
     }
     Ok(())
 }

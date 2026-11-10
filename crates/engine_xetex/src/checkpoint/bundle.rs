@@ -164,9 +164,8 @@ impl EngineBundle {
 }
 
 struct MemBundle {
-    lo_mem_max: MemPtr,
-    rover: MemPtr,
-    var_used: i32,
+    words: usize,
+    free: crate::mem::FreeLists,
     line: i32,
     cur_synctex_tag: i32,
     temp_ptr: MemPtr,
@@ -179,23 +178,20 @@ struct MemBundle {
 impl MemBundle {
     fn capture(src: &MemState) -> Self {
         let MemState {
-            data: _,
+            data,
             glyph_blobs,
             tokens,
             glue,
             payloads,
             journal: _,
-            lo_mem_max,
-            rover,
-            var_used,
+            free,
             line,
             cur_synctex_tag,
             temp_ptr,
         } = src;
         Self {
-            lo_mem_max: *lo_mem_max,
-            rover: *rover,
-            var_used: *var_used,
+            words: data.len(),
+            free: *free,
             line: *line,
             cur_synctex_tag: *cur_synctex_tag,
             temp_ptr: *temp_ptr,
@@ -207,9 +203,11 @@ impl MemBundle {
     }
 
     fn restore(&self, dst: &mut MemState) {
-        dst.lo_mem_max = self.lo_mem_max;
-        dst.rover = self.rover;
-        dst.var_used = self.var_used;
+        dst.data.resize(self.words, Default::default());
+        dst.free = self.free;
+        if dst.journal.armed() {
+            dst.journal.rebase(self.words);
+        }
         dst.line = self.line;
         dst.cur_synctex_tag = self.cur_synctex_tag;
         dst.temp_ptr = self.temp_ptr;
@@ -937,6 +935,24 @@ mod tests {
             st.input.input_file.last(),
             Some(crate::state::InputSlot::Terminal)
         ));
+    }
+
+    #[test]
+    fn mem_restore_drops_grown_words_and_restores_free_lists() {
+        let mut st = state();
+        st.mem.data = crate::mem_types::zeroed_vec(crate::mem::RESERVED_WORDS);
+        let kept = st.mem.get_node(3).unwrap();
+        st.mem.free_node(kept, 3);
+        let bundle = MemBundle::capture(&st.mem);
+
+        let reused = st.mem.get_node(3).unwrap();
+        let grown = st.mem.get_node(5).unwrap();
+        assert_eq!(reused, kept);
+        bundle.restore(&mut st.mem);
+
+        assert_eq!(st.mem.data.len(), crate::mem::RESERVED_WORDS + 3);
+        assert_eq!(st.mem.free.0[3], kept);
+        assert_eq!(st.mem.get_node(5).unwrap(), grown);
     }
 
     #[test]

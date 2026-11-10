@@ -95,13 +95,19 @@ fn digest_mem(st: &EngineState) -> u64 {
     let mut h = Fnv::new();
     let mem = &st.mem;
     h.i32s(&[
-        mem.lo_mem_max.raw(),
-        mem.rover.raw(),
-        mem.var_used,
+        i32::try_from(mem.data.len()).unwrap_or(i32::MAX),
         mem.line,
         mem.cur_synctex_tag,
         mem.temp_ptr.raw(),
     ]);
+    h.i32s(
+        mem.free
+            .0
+            .iter()
+            .map(|p| p.raw())
+            .collect::<Vec<_>>()
+            .iter(),
+    );
     for &word in &mem.data {
         h.word(memory_word(word));
     }
