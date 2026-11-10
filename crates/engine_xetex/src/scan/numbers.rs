@@ -20,7 +20,7 @@ use crate::units::{GlueOrder, MemPtr, Scaled};
 
 use super::internal::{scan_something_internal, CurVal};
 use super::next::{get_token, get_x_non_blank, get_x_token};
-use super::{math_char, scan_keyword};
+use super::{math_char, round_decimals, scan_keyword};
 
 const MINUS_TOKEN: Token = Token::other(b'-');
 const PLUS_TOKEN: Token = Token::other(b'+');
@@ -473,7 +473,7 @@ fn scan_dimen_from(
 
                 if st.scanner.radix == 10 && st.scanner.cur_tok == POINT_TOKEN {
                     // Up to 17 digits are kept, most recent first, in a temporary list.
-                    let mut k: i32 = 0;
+                    let mut k: usize = 0;
                     let mut digits = MemPtr::NULL;
                     get_token(st)?;
                     loop {
@@ -489,13 +489,14 @@ fn scan_dimen_from(
                             k += 1;
                         }
                     }
-                    for i in (0..k as usize).rev() {
-                        st.errors.dig[i] = digits.info(&st.mem) as u8;
+                    let mut dig = [0u8; 17];
+                    for i in (0..k).rev() {
+                        dig[i] = digits.info(&st.mem) as u8;
                         let next = digits.link(&st.mem);
                         st.mem.free_avail(digits);
                         digits = next;
                     }
-                    f = st.errors.round_decimals(k);
+                    f = round_decimals(&dig[..k]);
                     if st.scanner.cur_cmd != Cmd::Spacer {
                         back_input(st)?;
                     }

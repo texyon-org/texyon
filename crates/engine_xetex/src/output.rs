@@ -36,68 +36,38 @@ pub(crate) use self::warnings::{
     group_warning, if_warning,
 };
 
-fn print_the_digs(st: &mut EngineState, mut k: u8) {
-    while k > 0 {
-        k -= 1;
-        let d = i32::from(st.errors.dig[k as usize]);
-        if d < 10 {
-            print_char(st, i32::from(b'0') + d);
-        } else {
-            print_char(st, i32::from(b'A') - 10 + d);
-        }
-    }
-}
-
-/// Stores the base-`radix` digits of nonnegative `n` into `dig[k..]`, returning the new length.
-fn store_digits(st: &mut EngineState, mut n: i32, radix: i32, mut k: u8) -> u8 {
+/// Prints `n` in base `radix` with at least `min_digits` digits.
+fn print_digits(st: &mut EngineState, mut n: u32, radix: u32, min_digits: usize) {
+    let mut dig = [0u8; 10];
+    let mut k = 0;
     loop {
-        st.errors.dig[k as usize] = (n % radix) as u8;
+        dig[k] = (n % radix) as u8;
         n /= radix;
         k += 1;
         if n == 0 {
-            return k;
+            break;
         }
+    }
+    for &d in dig[..k.max(min_digits)].iter().rev() {
+        print_char(st, if d < 10 { b'0' + d } else { b'A' - 10 + d });
     }
 }
 
-pub(crate) fn print_int(st: &mut EngineState, mut n: i32) {
-    let mut k: u8 = 0;
+pub(crate) fn print_int(st: &mut EngineState, n: i32) {
     if n < 0 {
         print_char(st, b'-');
-        if n > -100_000_000 {
-            n = -n;
-        } else {
-            // Peel off the last digit so negating cannot overflow.
-            let m_val = -1 - n;
-            n = m_val / 10;
-            let m = (m_val % 10) + 1;
-            k = 1;
-            if m < 10 {
-                st.errors.dig[0] = m as u8;
-            } else {
-                st.errors.dig[0] = 0;
-                n += 1;
-            }
-        }
     }
-    let k = store_digits(st, n, 10, k);
-    print_the_digs(st, k);
+    print_digits(st, n.unsigned_abs(), 10, 0);
 }
 
 pub(crate) fn print_hex(st: &mut EngineState, n: i32) {
     print_char(st, b'"');
-    let k = store_digits(st, n, 16, 0);
-    print_the_digs(st, k);
+    print_digits(st, n.unsigned_abs(), 16, 0);
 }
 
 pub(crate) fn print_ucs_code(st: &mut EngineState, n: i32) {
     print(st, "U+");
-    let mut k = store_digits(st, n, 16, 0);
-    while k < 4 {
-        st.errors.dig[k as usize] = 0;
-        k += 1;
-    }
-    print_the_digs(st, k);
+    print_digits(st, n.unsigned_abs(), 16, 4);
 }
 
 /// A value TeX prints, following `\escapechar`, `\newlinechar` and the selector.

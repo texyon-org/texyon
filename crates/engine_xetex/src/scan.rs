@@ -13,7 +13,7 @@ use crate::mem::BACKUP_HEAD;
 use crate::node::{BoxNode, MathField, NodePtr, RuleDimen, RuleNode, SaLeaf, Stored};
 use crate::packaging::PackSpec;
 use crate::params::IntPar;
-use crate::state::{EngineState, EqtbState, ErrorState, GroupCode, MemState, ScannerState};
+use crate::state::{EngineState, EqtbState, GroupCode, MemState, ScannerState};
 use crate::token::{Token, TokenList};
 use crate::units::{MemPtr, NodeType, Scaled};
 
@@ -103,14 +103,13 @@ pub(crate) fn scan_spec(
     Ok(())
 }
 
-impl ErrorState {
-    fn round_decimals(&self, k: i32) -> i32 {
-        let a = self.dig[..k as usize]
-            .iter()
-            .rev()
-            .fold(0, |a, &d| (a + i32::from(d) * 0x2_0000) / 10);
-        (a + 1) / 2
-    }
+/// The scaled fraction `.d0 d1 ...` for decimal `digits`, rounded.
+fn round_decimals(digits: &[u8]) -> i32 {
+    let a = digits
+        .iter()
+        .rev()
+        .fold(0, |a, &d| (a + i32::from(d) * 0x2_0000) / 10);
+    (a + 1) / 2
 }
 
 pub(crate) fn scan_rule_spec(st: &mut EngineState) -> Result<NodePtr<RuleNode>, Abort> {
