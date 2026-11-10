@@ -350,7 +350,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<i32, Abo
                 st.shipout.get_microinterval()
             }
         }
-        LastItemCode::RandomSeed => st.errors.random_seed,
+        LastItemCode::RandomSeed => st.random.seed,
         LastItemCode::PdfShellEscape => i32::from(st.config.shell_escape_enabled),
         LastItemCode::EtexVersion => ETEX_VERSION,
         LastItemCode::XetexVersion => XETEX_VERSION,

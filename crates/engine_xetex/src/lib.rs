@@ -64,6 +64,7 @@ mod params;
 mod pgfmath;
 mod pic;
 mod primitives;
+mod random;
 mod replay;
 mod save;
 mod scaled_math;

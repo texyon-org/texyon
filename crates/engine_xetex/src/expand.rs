@@ -716,11 +716,11 @@ fn conv_toks(st: &mut EngineState, c: ConvertCode) -> Result<(), Abort> {
             }
         }
         ConvertCode::UniformDeviate => {
-            let v = st.errors.unif_rand(num);
+            let v = st.random.unif_rand(num);
             print_int(st, v);
         }
         ConvertCode::NormalDeviate => {
-            let v = crate::scaled_math::norm_rand(st);
+            let v = st.random.norm_rand();
             print_int(st, v);
         }
         ConvertCode::Uchar | ConvertCode::Ucharcat => print_char(st, num),

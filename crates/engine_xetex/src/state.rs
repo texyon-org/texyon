@@ -13,6 +13,7 @@ pub(crate) struct EngineState {
     pub config: ConfigState,
     pub cancellation: crate::cancellation::CancellationState,
     pub errors: ErrorState,
+    pub random: crate::random::Random,
     pub shipout: ShipoutState,
     pub scanner: ScannerState,
     pub save_stack: SaveStackState,
@@ -1504,12 +1505,8 @@ impl Selector {
 
 #[derive(Clone)]
 pub(crate) struct ErrorState {
-    pub randoms: [i32; 55],
-    pub j_random: u8,
     pub help_lines: [&'static str; 6],
     pub help_len: u8,
-    pub two_to_the: [i32; 31],
-    pub spec_log: [i32; 29],
     pub interaction: InteractionMode,
     pub history: i32,
     pub error_count: i8,
@@ -1523,7 +1520,6 @@ pub(crate) struct ErrorState {
     pub trick_count: i32,
     pub first_count: i32,
     pub deletions_allowed: bool,
-    pub random_seed: i32,
     /// Set once `--halt-on-error` has started to stop the run.
     pub halting_on_error: bool,
     pub font_in_short_display: FontId,
@@ -1534,12 +1530,8 @@ pub(crate) struct ErrorState {
 impl Default for ErrorState {
     fn default() -> Self {
         Self {
-            randoms: [0; 55],
-            j_random: 0,
             help_lines: [""; 6],
             help_len: 0,
-            two_to_the: [0; 31],
-            spec_log: [0; 29],
             interaction: InteractionMode::Batch,
             history: 0,
             error_count: 0,
@@ -1553,7 +1545,6 @@ impl Default for ErrorState {
             trick_count: 0,
             first_count: 0,
             deletions_allowed: false,
-            random_seed: 0,
             halting_on_error: false,
             font_in_short_display: crate::consts::NULL_FONT,
             depth_threshold: 0,

@@ -297,20 +297,6 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.errors.help(&[]);
     st.errors.use_err_help = false;
 
-    st.errors.two_to_the[0] = 1;
-    for k in 1..=30usize {
-        st.errors.two_to_the[k] = 2 * st.errors.two_to_the[k - 1];
-    }
-
-    st.errors.spec_log[1..=13].copy_from_slice(&[
-        93_032_640, 38_612_034, 17_922_280, 8_662_214, 4_261_238, 2_113_709, 1_052_693, 525_315,
-        262_400, 131_136, 65_552, 32_772, 16_385,
-    ]);
-    for k in 14..=27usize {
-        st.errors.spec_log[k] = st.errors.two_to_the[27 - k];
-    }
-    st.errors.spec_log[28] = 1;
-
     st.input.nest.reset();
     st.input.cur_list.mode = VMODE;
     st.input.cur_list.head = CONTRIB_HEAD;
@@ -965,14 +951,12 @@ pub(crate) fn initialize_engine(
 
     st.fonts.font_used = PerFont::filled(st.fonts.font_max.index() + 1, false);
 
-    st.errors.random_seed = initial_random_seed(
+    st.random.reseed(initial_random_seed(
         st.config.deterministic_mode,
         build_date,
         st.shipout.epochseconds,
         st.shipout.microseconds,
-    );
-    let random_seed = st.errors.random_seed;
-    st.errors.init_randoms(random_seed);
+    ));
 
     st.shipout.selector = if st.errors.interaction == InteractionMode::Batch {
         Selector::NoPrint

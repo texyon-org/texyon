@@ -45,6 +45,7 @@ impl StringWatermark {
 pub(crate) struct EngineBundle {
     config: ConfigState,
     errors: ErrorState,
+    random: crate::random::Random,
     shipout: ShipoutState,
     dvi: DviWriter,
     scanner: ScannerState,
@@ -75,6 +76,7 @@ impl EngineBundle {
         Self {
             config: st.config,
             errors: st.errors.clone(),
+            random: st.random.clone(),
             shipout,
             dvi,
             scanner,
@@ -95,6 +97,7 @@ impl EngineBundle {
     pub(crate) fn restore(&self, st: &mut EngineState) {
         st.config = self.config;
         st.errors.clone_from(&self.errors);
+        st.random.clone_from(&self.random);
 
         let mut dvi = take(&mut st.shipout.dvi);
         // Operation-scoped, so a rewind after an abort still says where its transcript began.

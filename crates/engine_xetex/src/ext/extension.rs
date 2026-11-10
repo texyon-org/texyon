@@ -229,9 +229,8 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
         }
 
         ExtensionCode::SetRandomSeed => {
-            st.errors.random_seed = scan_int(st)?.wrapping_abs();
-            let random_seed = st.errors.random_seed;
-            st.errors.init_randoms(random_seed);
+            let seed = scan_int(st)?.wrapping_abs();
+            st.random.reseed(seed);
         }
 
         ExtensionCode::PicFile | ExtensionCode::PdfFile => {
