@@ -98,6 +98,7 @@ impl FmtItem for MemPtr {
 }
 
 newtype_item!(
+    GlueSpecId,
     Scaled,
     StrNumber,
     EqtbPtr,
@@ -717,6 +718,7 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
     }
     runs(s, eqtb.ints.values_mut())?;
     runs(s, eqtb.dimens.values_mut())?;
+    runs(s, eqtb.glue.values_mut())?;
     let mut extra = cs_words(eqtb, UNDEFINED_CONTROL_SEQUENCE + 1, extra_top);
     s.items(&mut extra)?;
     if S::LOADING {

@@ -112,15 +112,6 @@ code_enum! {
 impl ValueLevel {
     /// `box_val`, the sparse-array type of box registers.
     pub(crate) const BOX: ValueLevel = ValueLevel::Ident;
-
-    /// Where glue registers 0..=255 of this type live in `eqtb`.
-    pub(crate) const fn register_base(self) -> Option<crate::units::EqtbPtr> {
-        match self {
-            ValueLevel::Glue => Some(crate::consts::SKIP_BASE),
-            ValueLevel::Mu => Some(crate::consts::MU_SKIP_BASE),
-            _ => None,
-        }
-    }
 }
 
 code_enum! {

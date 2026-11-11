@@ -11,6 +11,7 @@ use crate::consts::{
     ACTIVE_MATH_CHAR, CHAR_CLASS_LIMIT, DEL_CODE_BASE, MATH_CODE_BASE, MAX_DIMEN, NULL_FONT,
     PAR_SHAPE_LOC, SF_CODE_BASE, VMODE,
 };
+use crate::eqtb::GlueLoc;
 use crate::errors::OrConfusion;
 use crate::errors::{mu_error, Abort};
 use crate::ext::{
@@ -340,10 +341,9 @@ fn fetch_register(st: &mut EngineState, r: RegisterRef) -> Result<CurVal, Abort>
     Ok(match level {
         ValueLevel::Int => CurVal::Int(st.eqtb.count(r)),
         ValueLevel::Dimen => CurVal::Dimen(st.eqtb.dimen(r)),
-        _ => {
-            let base = level.register_base().or_confusion("register")?;
-            CurVal::from_word(level, st.eqtb.equiv(base + n))?
-        }
+        ValueLevel::Glue => CurVal::Glue(st.eqtb.skip(r)),
+        ValueLevel::Mu => CurVal::Mu(st.eqtb.glue.get(GlueLoc::mu_skip(r))),
+        _ => return Err(Abort::Confusion("register")),
     })
 }
 
@@ -774,8 +774,8 @@ pub(super) fn scan_something_internal(
             | Command::DefFont) => fetch_token_list(st, cmd, level)?,
             Command::AssignInt(loc) => CurVal::Int(st.eqtb.ints.get(loc)),
             Command::AssignDimen(loc) => CurVal::Dimen(st.eqtb.dimens.get(loc)),
-            Command::AssignGlue(loc) => CurVal::Glue(glue_spec(st.eqtb.equiv(loc))),
-            Command::AssignMuGlue(loc) => CurVal::Mu(glue_spec(st.eqtb.equiv(loc))),
+            Command::AssignGlue(loc) => CurVal::Glue(st.eqtb.glue.get(loc)),
+            Command::AssignMuGlue(loc) => CurVal::Mu(st.eqtb.glue.get(loc)),
             Command::SetAux(code) => {
                 if st.input.cur_list.mode.abs() != code.mode() {
                     crate::errors::error(

@@ -325,6 +325,7 @@ pub(crate) struct EqtbState {
     pub data: Vec<crate::mem_types::MemoryWord>,
     pub ints: crate::eqtb::Table<crate::eqtb::IntLoc, i32>,
     pub dimens: crate::eqtb::Table<crate::eqtb::DimenLoc, Scaled>,
+    pub glue: crate::eqtb::Table<crate::eqtb::GlueLoc, GlueSpecId>,
     pub prim: Vec<crate::mem_types::B32x2>,
     pub xeq_level: Vec<u16>,
     /// The `next` and `text` of each control sequence from `HASH_BASE` on.
@@ -349,6 +350,7 @@ impl Default for EqtbState {
             data: Vec::new(),
             ints: Default::default(),
             dimens: Default::default(),
+            glue: Default::default(),
             // PRIM_SIZE + 1 = 2101.
             prim: vec![crate::mem_types::B32x2 { s0: 0, s1: 0 }; 2101],
             xeq_level: vec![0u16; crate::consts::XEQ_LEVEL_SIZE],
@@ -373,6 +375,7 @@ impl EqtbState {
         self.data = crate::mem_types::zeroed_vec(data_slot(EQTB_SIZE) + 1);
         self.ints = crate::eqtb::Table::new(crate::eqtb::IntLoc::LEN, 0);
         self.dimens = crate::eqtb::Table::new(crate::eqtb::DimenLoc::LEN, Scaled::ZERO);
+        self.glue = crate::eqtb::Table::new(crate::eqtb::GlueLoc::LEN, crate::mem::ZERO_GLUE);
     }
 
     /// An entry of the glue, token, box and code regions.
@@ -626,8 +629,8 @@ impl EqtbState {
         self.set_equiv(crate::consts::BOX_BASE + n, p.raw());
     }
     #[inline]
-    pub(crate) fn skip(&self, n: i32) -> crate::glue_store::GlueSpecId {
-        GlueSpecId::from_raw(self.equiv_ptr(crate::consts::SKIP_BASE + n).raw())
+    pub(crate) fn skip(&self, n: u8) -> crate::glue_store::GlueSpecId {
+        self.glue.get(crate::eqtb::GlueLoc::skip(n))
     }
     #[inline]
     pub(crate) fn dimen(&self, n: u8) -> Scaled {
@@ -706,12 +709,12 @@ impl EqtbState {
     /// The spec of glue parameter `n`, never null.
     #[inline]
     pub fn glue_par(&self, n: GluePar) -> crate::glue_store::GlueSpecId {
-        crate::glue_store::GlueSpecId::from_raw(self.equiv(n.loc()))
+        self.glue.get(n.loc())
     }
 
     #[inline]
     pub fn set_glue_par(&mut self, n: GluePar, spec: crate::glue_store::GlueSpecId) {
-        self.set_b32s1(n.loc(), spec.raw());
+        self.glue.set_value(n.loc(), spec);
     }
 
     #[inline]
@@ -902,6 +905,7 @@ pub(crate) enum Restore {
     },
     Int(crate::eqtb::Old<crate::eqtb::IntLoc>),
     Dimen(crate::eqtb::Old<crate::eqtb::DimenLoc>),
+    Glue(crate::eqtb::Old<crate::eqtb::GlueLoc>),
 }
 
 /// What a construction keeps on the save stack below its group.

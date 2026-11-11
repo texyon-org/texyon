@@ -195,13 +195,7 @@ fn digest_eqtb(st: &EngineState) -> u64 {
     for &word in &eqtb.data {
         h.word(memory_word(word));
     }
-    h.i32s(eqtb.ints.values());
-    for v in eqtb.dimens.values() {
-        h.i32(v.raw());
-    }
-    for &l in eqtb.ints.levels().iter().chain(eqtb.dimens.levels()) {
-        h.word(u64::from(l));
-    }
+    eqtb.hash_tables(&mut h);
     for &value in &eqtb.xeq_level {
         h.word(u64::from(value));
     }
@@ -283,6 +277,9 @@ fn digest_save_entry(h: &mut Fnv, entry: &SaveEntry) {
         }
         SaveEntry::Restore(Restore::Dimen(o)) => {
             h.i32s(&[8, o.loc.raw(), o.value.raw(), i32::from(o.level)]);
+        }
+        SaveEntry::Restore(Restore::Glue(o)) => {
+            h.i32s(&[9, o.loc.raw(), o.value.raw(), i32::from(o.level)]);
         }
         SaveEntry::InsertToken(t) => h.i32s(&[4, t.0]),
         SaveEntry::RestoreSa { chain, level } => {

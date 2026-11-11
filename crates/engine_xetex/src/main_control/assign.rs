@@ -12,10 +12,10 @@ use crate::command::{Command, RegisterRef};
 use crate::consts::NULL_FONT;
 use crate::consts::{
     ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_USV, CAT_CODE_BASE, CHAR_CLASS_LIMIT, CUR_FONT_LOC,
-    DEL_CODE_BASE, DESIGN_SIZE, HASH_BASE, MATH_CODE_BASE, MAX_HALFWORD, MU_SKIP_BASE, NULL_CS,
-    PAR_SHAPE_LOC, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, TEX_INFINITY, TOKS_BASE, VMODE,
+    DEL_CODE_BASE, DESIGN_SIZE, HASH_BASE, MATH_CODE_BASE, MAX_HALFWORD, NULL_CS, PAR_SHAPE_LOC,
+    SF_CODE_BASE, SINGLE_BASE, TEX_INFINITY, TOKS_BASE, VMODE,
 };
-use crate::eqtb::{self, DimenLoc, IntLoc};
+use crate::eqtb::{self, DimenLoc, GlueLoc, IntLoc};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::read_font_info;
@@ -275,10 +275,10 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
                     break 'found (RegisterLoc::Dimen(loc), ValueLevel::Dimen)
                 }
                 Command::AssignGlue(loc) => {
-                    break 'found (RegisterLoc::Eqtb(loc), ValueLevel::Glue)
+                    break 'found (RegisterLoc::Glue(loc), ValueLevel::Glue)
                 }
                 Command::AssignMuGlue(loc) => {
-                    break 'found (RegisterLoc::Eqtb(loc), ValueLevel::Mu)
+                    break 'found (RegisterLoc::Glue(loc), ValueLevel::Mu)
                 }
                 _ => {}
             }
@@ -314,17 +314,21 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         let l = match p {
             ValueLevel::Int => RegisterLoc::Int(IntLoc::count(r)),
             ValueLevel::Dimen => RegisterLoc::Dimen(DimenLoc::dimen(r)),
-            _ => RegisterLoc::Eqtb(p.register_base().or_confusion("register")? + n),
+            ValueLevel::Glue => RegisterLoc::Glue(GlueLoc::skip(r)),
+            ValueLevel::Mu => RegisterLoc::Glue(GlueLoc::mu_skip(r)),
+            _ => return Err(Abort::Confusion("register")),
         };
         (l, p)
     };
 
     let (w, s) = match (p < ValueLevel::Glue, l) {
-        (true, RegisterLoc::Sparse(SaLeaf::Word(w))) => (st.mem[w].sa_int, None),
-        (true, RegisterLoc::Int(l)) => (st.eqtb.ints.get(l), None),
-        (true, RegisterLoc::Dimen(l)) => (st.eqtb.dimens.get(l).raw(), None),
-        (false, RegisterLoc::Sparse(SaLeaf::Pointer(p))) => (0, st.mem[p].sa_ptr),
-        (false, RegisterLoc::Eqtb(l)) => (0, st.eqtb.equiv_ptr(l)),
+        (true, RegisterLoc::Sparse(SaLeaf::Word(w))) => (st.mem[w].sa_int, ZERO_GLUE),
+        (true, RegisterLoc::Int(l)) => (st.eqtb.ints.get(l), ZERO_GLUE),
+        (true, RegisterLoc::Dimen(l)) => (st.eqtb.dimens.get(l).raw(), ZERO_GLUE),
+        (false, RegisterLoc::Sparse(SaLeaf::Pointer(p))) => {
+            (0, GlueSpecId::from_raw(st.mem[p].sa_ptr.raw()))
+        }
+        (false, RegisterLoc::Glue(l)) => (0, st.eqtb.glue.get(l)),
         _ => return Err(Abort::Confusion("register")),
     };
 
@@ -352,7 +356,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             if q == Cmd::Advance {
                 let sum = st.mem.new_spec(g)?;
                 st.mem.delete_glue_ref(g);
-                let old = GlueSpecId::from_raw(s.raw());
+                let old = s;
                 let width = st.mem[sum].width + st.mem[old].width;
                 st.mem[sum].width = width;
                 if st.mem[sum].stretch == Scaled::ZERO {
@@ -405,7 +409,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             };
             RegisterValue::Word(scale(w, max_answer))
         } else {
-            let old = GlueSpecId::from_raw(s.raw());
+            let old = s;
             let r = st.mem.new_spec(old)?;
             let (width, stretch, shrink) =
                 (st.mem[old].width, st.mem[old].stretch, st.mem[old].shrink);
@@ -445,7 +449,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             let g = MemIdx::from_raw(trap_zero_glue(st, g).raw());
             match l {
                 RegisterLoc::Sparse(SaLeaf::Pointer(p)) => sa_define(st, global, p, g)?,
-                RegisterLoc::Eqtb(l) => define(st, global, l, Cmd::GlueRef, g.raw())?,
+                RegisterLoc::Glue(l) => eqtb::define(st, global, l, GlueSpecId::from_raw(g.raw()))?,
                 _ => return Err(Abort::Confusion("register")),
             }
         }
@@ -571,6 +575,7 @@ fn scan_inter_char_pair(st: &mut EngineState) -> Result<i32, Abort> {
 enum RegisterLoc {
     Int(IntLoc),
     Dimen(DimenLoc),
+    Glue(GlueLoc),
     Eqtb(EqtbPtr),
     Sparse(SaLeaf),
 }
@@ -585,9 +590,10 @@ fn define_toks(
         RegisterLoc::Sparse(SaLeaf::Pointer(p)) => {
             sa_define(st, global, p, MemIdx::from_raw(list.raw()))
         }
-        RegisterLoc::Sparse(_) | RegisterLoc::Int(_) | RegisterLoc::Dimen(_) => {
-            Err(Abort::Confusion("toks"))
-        }
+        RegisterLoc::Sparse(_)
+        | RegisterLoc::Int(_)
+        | RegisterLoc::Dimen(_)
+        | RegisterLoc::Glue(_) => Err(Abort::Confusion("toks")),
         RegisterLoc::Eqtb(p) => {
             let t = if list.is_null() {
                 Cmd::UndefinedCs
@@ -755,7 +761,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             crate::scan::scan_optional_equals(st)?;
             let g = crate::scan::scan_glue(st, level)?;
             let g = trap_zero_glue(st, g);
-            define(st, a >= 4, p, Cmd::GlueRef, g.raw())?;
+            eqtb::define(st, a >= 4, p, g)?;
         }
         Command::XetexDefCode(base) => xetex_def_code(st, a >= 4, base)?,
         Command::DefCode(base) => def_code(st, a >= 4, base)?,
@@ -896,8 +902,8 @@ fn shorthand_def(st: &mut EngineState, global: bool, n: ShorthandDefCode) -> Res
                 match n {
                     ShorthandDefCode::Count => Command::AssignInt(IntLoc::count(r)),
                     ShorthandDefCode::Dimen => Command::AssignDimen(DimenLoc::dimen(r)),
-                    ShorthandDefCode::Skip => Command::AssignGlue(SKIP_BASE + reg),
-                    ShorthandDefCode::MuSkip => Command::AssignMuGlue(MU_SKIP_BASE + reg),
+                    ShorthandDefCode::Skip => Command::AssignGlue(GlueLoc::skip(r)),
+                    ShorthandDefCode::MuSkip => Command::AssignMuGlue(GlueLoc::mu_skip(r)),
                     ShorthandDefCode::Toks => Command::AssignToks(TOKS_BASE + reg),
                     _ => return Ok(()),
                 }

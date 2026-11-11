@@ -8,11 +8,10 @@ use crate::codes::{
     ValignCode, ValueLevel,
 };
 use crate::consts::{
-    DEL_CODE_BASE, ETEX_PEN_BASE, GLUE_BASE, LC_CODE_BASE, LOCAL_BASE, MATH_CODE_BASE,
-    MATH_FONT_BASE, MU_SKIP_BASE, PAR_SHAPE_LOC, SF_CODE_BASE, SKIP_BASE, TOKS_BASE, UC_CODE_BASE,
-    VMODE,
+    DEL_CODE_BASE, ETEX_PEN_BASE, LC_CODE_BASE, LOCAL_BASE, MATH_CODE_BASE, MATH_FONT_BASE,
+    PAR_SHAPE_LOC, SF_CODE_BASE, TOKS_BASE, UC_CODE_BASE, VMODE,
 };
-use crate::eqtb::{DimenLoc, DimenSlot, IntLoc, IntSlot};
+use crate::eqtb::{DimenLoc, DimenSlot, GlueLoc, GlueSlot, IntLoc, IntSlot};
 use crate::main_control::{CR_CODE, LP_CODE_BASE, RP_CODE_BASE, SPAN_CODE};
 use crate::math::{ABOVE_CODE, ATOP_CODE, DELIMITED_CODE, OVER_CODE};
 use crate::node::{NodePtr, SaElement};
@@ -64,15 +63,17 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
         Cmd::Letter => char_cmd(st, "the letter "),
         Cmd::OtherChar => char_cmd(st, "the character "),
         Cmd::AssignGlue | Cmd::AssignMuGlue => {
-            let chr_code = EqtbPtr::from_raw(chr_code);
-            if chr_code < SKIP_BASE {
-                print_skip_param(st, chr_code - GLUE_BASE);
-            } else if chr_code < MU_SKIP_BASE {
-                print_esc(st, "skip");
-                print_int(st, chr_code - SKIP_BASE);
-            } else {
-                print_esc(st, "muskip");
-                print_int(st, chr_code - MU_SKIP_BASE);
+            match GlueLoc::from_raw(chr_code).map(GlueLoc::get) {
+                Some(GlueSlot::Skip(n)) => {
+                    print_esc(st, "skip");
+                    print_int(st, i32::from(n));
+                }
+                Some(GlueSlot::MuSkip(n)) => {
+                    print_esc(st, "muskip");
+                    print_int(st, i32::from(n));
+                }
+                Some(GlueSlot::Par(n)) => print_skip_param(st, i32::from(n)),
+                None => print_skip_param(st, chr_code),
             }
         }
         Cmd::AssignToks => {

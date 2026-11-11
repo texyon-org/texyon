@@ -7,7 +7,7 @@ use crate::node::Stored;
 use crate::units::{GlueOrder, Scaled};
 
 /// A glue specification in the [`GlueStore`]. Glue pointers are never null.
-#[derive(Copy, Clone, PartialEq, Eq, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(transparent)]
 pub struct GlueSpecId(i32);
 

@@ -20,7 +20,7 @@ use crate::state::{EngineState, GroupCode, MemState};
 use crate::token::{Token, TokenList};
 use crate::units::{GlueOrder, GlueSign, MemPtr, Orientation, Scaled};
 
-use super::assign::{define, do_assignments};
+use super::assign::do_assignments;
 use super::lists::{end_graf, normal_paragraph, off_save};
 use super::{append_list, begin_every, CR_CODE, INNER_HMODE, INNER_VMODE, SPAN_CODE};
 
@@ -503,7 +503,7 @@ fn get_preamble_token(st: &mut EngineState) -> Result<(), Abort> {
         crate::scan::scan_optional_equals(st)?;
         let g = crate::scan::scan_glue(st, ValueLevel::Glue)?;
         let global = st.eqtb.int_par(IntPar::GlobalDefs) > 0;
-        define(st, global, GluePar::TabSkip.loc(), Cmd::GlueRef, g.raw())?;
+        crate::eqtb::define(st, global, GluePar::TabSkip.loc(), g)?;
     }
 }
 

@@ -593,6 +593,7 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
             }
             SaveEntry::Restore(Restore::Int(old)) => crate::eqtb::restore(st, old)?,
             SaveEntry::Restore(Restore::Dimen(old)) => crate::eqtb::restore(st, old)?,
+            SaveEntry::Restore(Restore::Glue(old)) => crate::eqtb::restore(st, old)?,
             SaveEntry::Restore(Restore::Word { loc, old, level }) => {
                 if !(INT_BASE..=EQTB_SIZE).contains(&loc) {
                     if st.eqtb.eq_level(loc) == LEVEL_ONE {

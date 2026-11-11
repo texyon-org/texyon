@@ -452,7 +452,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         let node = &mut st.mem[rec];
         node.height = height;
         node.best_ins_ptr = None;
-        let skip = st.eqtb.skip(i32::from(n));
+        let skip = st.eqtb.skip(n);
         let count = st.eqtb.count(n);
         let h = scale_by_count(height, count);
         st.shipout.page_so_far[PAGE_GOAL] -= h + st.mem[skip].width;

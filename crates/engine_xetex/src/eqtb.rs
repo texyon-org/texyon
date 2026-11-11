@@ -4,8 +4,9 @@ use std::marker::PhantomData;
 
 use crate::consts::LEVEL_ONE;
 use crate::errors::Abort;
+use crate::glue_store::GlueSpecId;
 use crate::journal::{JournalWord, WordDelta, WordJournal};
-use crate::params::{DimenPar, IntPar};
+use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{
     EngineState, EqtbState, MemState, Restore, SaveEntry, SaveStackState, ScannerState,
 };
@@ -180,59 +181,69 @@ impl<T: JournalWord> TableDelta<T> {
     }
 }
 
-/// Every table's delta.
-#[derive(Default, Clone)]
-pub(crate) struct TablesDelta {
-    ints: TableDelta<i32>,
-    dimens: TableDelta<Scaled>,
+/// Declares the tables once: their deltas and the journal calls that cover all of them.
+macro_rules! tables {
+    ($($name:ident: $t:ty),* $(,)?) => {
+        /// Every table's delta.
+        #[derive(Default, Clone)]
+        pub(crate) struct TablesDelta {
+            $($name: TableDelta<$t>,)*
+        }
+
+        impl TablesDelta {
+            pub(crate) fn apply_to(&self, eqtb: &mut EqtbState) {
+                $(self.$name.apply_to(&mut eqtb.$name);)*
+            }
+
+            pub(crate) fn compose_with_older(&mut self, older: TablesDelta) {
+                $(self.$name.compose_with_older(older.$name);)*
+            }
+
+            pub(crate) fn allocated_bytes(&self) -> usize {
+                0 $(+ self.$name.allocated_bytes())*
+            }
+
+            pub(crate) fn compact(&mut self) {
+                $(self.$name.compact();)*
+            }
+        }
+
+        impl EqtbState {
+            pub(crate) fn arm_tables(&mut self) {
+                $(self.$name.arm();)*
+            }
+
+            pub(crate) fn disarm_tables(&mut self) {
+                $(self.$name.disarm();)*
+            }
+
+            pub(crate) fn seal_tables(&mut self) -> TablesDelta {
+                TablesDelta {
+                    $($name: self.$name.seal(),)*
+                }
+            }
+
+            pub(crate) fn snapshot_tables(&self) -> TablesDelta {
+                TablesDelta {
+                    $($name: self.$name.snapshot(),)*
+                }
+            }
+
+            /// Feeds every table's values and levels to `h`, for the checkpoint oracle.
+            pub(crate) fn hash_tables(&self, h: &mut impl std::hash::Hasher) {
+                use std::hash::Hash;
+                $(
+                    self.$name.values().hash(h);
+                    self.$name.levels().hash(h);
+                )*
+            }
+        }
+    };
 }
 
-impl TablesDelta {
-    pub(crate) fn apply_to(&self, eqtb: &mut EqtbState) {
-        self.ints.apply_to(&mut eqtb.ints);
-        self.dimens.apply_to(&mut eqtb.dimens);
-    }
-
-    pub(crate) fn compose_with_older(&mut self, older: TablesDelta) {
-        self.ints.compose_with_older(older.ints);
-        self.dimens.compose_with_older(older.dimens);
-    }
-
-    pub(crate) fn allocated_bytes(&self) -> usize {
-        self.ints.allocated_bytes() + self.dimens.allocated_bytes()
-    }
-
-    pub(crate) fn compact(&mut self) {
-        self.ints.compact();
-        self.dimens.compact();
-    }
-}
+tables!(ints: i32, dimens: Scaled, glue: GlueSpecId);
 
 impl EqtbState {
-    pub(crate) fn arm_tables(&mut self) {
-        self.ints.arm();
-        self.dimens.arm();
-    }
-
-    pub(crate) fn disarm_tables(&mut self) {
-        self.ints.disarm();
-        self.dimens.disarm();
-    }
-
-    pub(crate) fn seal_tables(&mut self) -> TablesDelta {
-        TablesDelta {
-            ints: self.ints.seal(),
-            dimens: self.dimens.seal(),
-        }
-    }
-
-    pub(crate) fn snapshot_tables(&self) -> TablesDelta {
-        TablesDelta {
-            ints: self.ints.snapshot(),
-            dimens: self.dimens.snapshot(),
-        }
-    }
-
     /// Gives `loc` the value `v`, globally or in the current group.
     pub(crate) fn define<L: EqLoc>(
         &mut self,
@@ -307,41 +318,75 @@ impl SaveStackState {
     }
 }
 
-/// A location in the integer table: an integer parameter or a `\count` register.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub(crate) struct IntLoc(u16);
+/// Declares a location type: an index into one table below `LEN`.
+macro_rules! eq_loc {
+    ($(#[$doc:meta])* $loc:ident, $len:expr, $value:ty, $table:ident, $restore:ident) => {
+        $(#[$doc])*
+        #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+        pub(crate) struct $loc(u16);
+
+        impl $loc {
+            /// Locations in the table.
+            pub(crate) const LEN: usize = $len;
+
+            pub(crate) const fn raw(self) -> i32 {
+                self.0 as i32
+            }
+
+            pub(crate) fn from_raw(raw: i32) -> Option<$loc> {
+                u16::try_from(raw)
+                    .ok()
+                    .filter(|&r| usize::from(r) < Self::LEN)
+                    .map($loc)
+            }
+        }
+
+        impl EqLoc for $loc {
+            type Value = $value;
+            #[inline(always)]
+            fn index(self) -> usize {
+                usize::from(self.0)
+            }
+            #[inline(always)]
+            fn table(eqtb: &EqtbState) -> &Table<Self, $value> {
+                &eqtb.$table
+            }
+            #[inline(always)]
+            fn table_mut(eqtb: &mut EqtbState) -> &mut Table<Self, $value> {
+                &mut eqtb.$table
+            }
+            fn restore(old: Old<Self>) -> Restore {
+                Restore::$restore(old)
+            }
+        }
+    };
+}
+
+const INT_PARS: u16 = IntPar::COUNT as u16;
+const DIMEN_PARS: u16 = DimenPar::COUNT as u16;
+const GLUE_PARS: u16 = GluePar::COUNT as u16;
+
+eq_loc!(
+    /// A location in the integer table: an integer parameter or a `\count` register.
+    IntLoc, INT_PARS as usize + 256, i32, ints, Int
+);
 
 impl IntLoc {
-    const COUNTS: u16 = IntPar::COUNT as u16;
-    /// Locations in the table.
-    pub(crate) const LEN: usize = Self::COUNTS as usize + 256;
-
     pub(crate) const fn par(p: IntPar) -> IntLoc {
         IntLoc(p as u16)
     }
 
     /// `\count n`.
     pub(crate) const fn count(n: u8) -> IntLoc {
-        IntLoc(Self::COUNTS + n as u16)
+        IntLoc(INT_PARS + n as u16)
     }
 
     /// The parameter or register this location is.
     pub(crate) fn get(self) -> IntSlot {
-        match self.0.checked_sub(Self::COUNTS) {
+        match self.0.checked_sub(INT_PARS) {
             Some(n) => IntSlot::Count(n),
             None => IntSlot::Par(self.0),
         }
-    }
-
-    pub(crate) const fn raw(self) -> i32 {
-        self.0 as i32
-    }
-
-    pub(crate) fn from_raw(raw: i32) -> Option<IntLoc> {
-        u16::try_from(raw)
-            .ok()
-            .filter(|&r| usize::from(r) < Self::LEN)
-            .map(IntLoc)
     }
 }
 
@@ -352,60 +397,27 @@ pub(crate) enum IntSlot {
     Count(u16),
 }
 
-impl EqLoc for IntLoc {
-    type Value = i32;
-    #[inline(always)]
-    fn index(self) -> usize {
-        usize::from(self.0)
-    }
-    #[inline(always)]
-    fn table(eqtb: &EqtbState) -> &Table<Self, i32> {
-        &eqtb.ints
-    }
-    #[inline(always)]
-    fn table_mut(eqtb: &mut EqtbState) -> &mut Table<Self, i32> {
-        &mut eqtb.ints
-    }
-    fn restore(old: Old<Self>) -> Restore {
-        Restore::Int(old)
-    }
-}
-
-/// A location in the dimension table: a dimension parameter or a `\dimen` register.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub(crate) struct DimenLoc(u16);
+eq_loc!(
+    /// A location in the dimension table: a dimension parameter or a `\dimen` register.
+    DimenLoc, DIMEN_PARS as usize + 256, Scaled, dimens, Dimen
+);
 
 impl DimenLoc {
-    const DIMENS: u16 = DimenPar::COUNT as u16;
-    /// Locations in the table.
-    pub(crate) const LEN: usize = Self::DIMENS as usize + 256;
-
     pub(crate) const fn par(p: DimenPar) -> DimenLoc {
         DimenLoc(p as u16)
     }
 
     /// `\dimen n`.
     pub(crate) const fn dimen(n: u8) -> DimenLoc {
-        DimenLoc(Self::DIMENS + n as u16)
+        DimenLoc(DIMEN_PARS + n as u16)
     }
 
     /// The parameter or register this location is.
     pub(crate) fn get(self) -> DimenSlot {
-        match self.0.checked_sub(Self::DIMENS) {
+        match self.0.checked_sub(DIMEN_PARS) {
             Some(n) => DimenSlot::Dimen(n),
             None => DimenSlot::Par(self.0),
         }
-    }
-
-    pub(crate) const fn raw(self) -> i32 {
-        self.0 as i32
-    }
-
-    pub(crate) fn from_raw(raw: i32) -> Option<DimenLoc> {
-        u16::try_from(raw)
-            .ok()
-            .filter(|&r| usize::from(r) < Self::LEN)
-            .map(DimenLoc)
     }
 }
 
@@ -416,23 +428,50 @@ pub(crate) enum DimenSlot {
     Dimen(u16),
 }
 
-impl EqLoc for DimenLoc {
-    type Value = Scaled;
-    #[inline(always)]
-    fn index(self) -> usize {
-        usize::from(self.0)
+impl EqValue for GlueSpecId {
+    #[inline]
+    fn destroy(self, mem: &mut MemState, _scanner: &mut ScannerState) -> Result<(), Abort> {
+        mem.delete_glue_ref(self);
+        Ok(())
     }
-    #[inline(always)]
-    fn table(eqtb: &EqtbState) -> &Table<Self, Scaled> {
-        &eqtb.dimens
+}
+
+eq_loc!(
+    /// A location in the glue table: a glue parameter, a `\skip` or a `\muskip` register.
+    GlueLoc, GLUE_PARS as usize + 512, GlueSpecId, glue, Glue
+);
+
+impl GlueLoc {
+    pub(crate) const fn par(p: GluePar) -> GlueLoc {
+        GlueLoc(p as u16)
     }
-    #[inline(always)]
-    fn table_mut(eqtb: &mut EqtbState) -> &mut Table<Self, Scaled> {
-        &mut eqtb.dimens
+
+    /// `\skip n`.
+    pub(crate) const fn skip(n: u8) -> GlueLoc {
+        GlueLoc(GLUE_PARS + n as u16)
     }
-    fn restore(old: Old<Self>) -> Restore {
-        Restore::Dimen(old)
+
+    /// `\muskip n`.
+    pub(crate) const fn mu_skip(n: u8) -> GlueLoc {
+        GlueLoc(GLUE_PARS + 256 + n as u16)
     }
+
+    /// The parameter or register this location is.
+    pub(crate) fn get(self) -> GlueSlot {
+        match self.0.checked_sub(GLUE_PARS) {
+            None => GlueSlot::Par(self.0),
+            Some(n) if n < 256 => GlueSlot::Skip(n),
+            Some(n) => GlueSlot::MuSkip(n - 256),
+        }
+    }
+}
+
+/// What a [`GlueLoc`] names.
+pub(crate) enum GlueSlot {
+    /// The parameter numbered as in [`GluePar`].
+    Par(u16),
+    Skip(u16),
+    MuSkip(u16),
 }
 
 #[cfg(test)]

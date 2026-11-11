@@ -2,8 +2,8 @@
 //! `glue_par`, numbered as offsets from their region base.
 
 use crate::codes::code_enum;
-use crate::consts::{GLUE_BASE, LOCAL_BASE};
-use crate::eqtb::{DimenLoc, IntLoc};
+use crate::consts::LOCAL_BASE;
+use crate::eqtb::{DimenLoc, GlueLoc, IntLoc};
 use crate::units::EqtbPtr;
 
 code_enum! {
@@ -315,10 +315,13 @@ impl GluePar {
         }
     }
 
-    /// The `eqtb` location.
+    /// How many there are.
+    pub(crate) const COUNT: u8 = GluePar::ThickMuSkip as u8 + 1;
+
+    /// The location in the glue table.
     #[inline]
-    pub(crate) const fn loc(self) -> EqtbPtr {
-        GLUE_BASE.plus(self as i32)
+    pub(crate) const fn loc(self) -> GlueLoc {
+        GlueLoc::par(self)
     }
 }
 
