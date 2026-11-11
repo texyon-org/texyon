@@ -545,20 +545,6 @@ impl EqtbState {
     }
 
     #[inline]
-    fn b16s1(&self, p: EqtbPtr) -> u16 {
-        self.data[data_slot(p)].b16().s1
-    }
-
-    /// The command code of control-sequence entry `p`.
-    #[inline]
-    pub(crate) fn eq_type(&self, p: EqtbPtr) -> Cmd {
-        Cmd::from_stored(self.b16s1(p))
-    }
-    #[inline]
-    pub(crate) fn set_eq_type(&mut self, p: EqtbPtr, t: Cmd) {
-        self.set_b16s1(p, t.into());
-    }
-    #[inline]
     pub(crate) fn eq_level(&self, p: EqtbPtr) -> u16 {
         self.b16s0(p)
     }
@@ -664,13 +650,6 @@ impl EqtbState {
     #[inline]
     pub(crate) fn del_code(&self, c: i32) -> i32 {
         self.equiv(crate::consts::DEL_CODE_BASE + c)
-    }
-
-    #[inline]
-    fn set_b16s1(&mut self, p: EqtbPtr, v: u16) {
-        let index = data_slot(p);
-        self.note(index);
-        self.data[index].b16.s1 = v;
     }
 
     #[inline]

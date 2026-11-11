@@ -698,6 +698,8 @@ mod tests {
 
     const CS: crate::units::CsId = crate::units::CsId::from_raw(2);
 
+    const COUNT1: crate::eqtb::IntLoc = crate::eqtb::IntLoc::count(1);
+
     fn state() -> EngineState {
         let mut st = EngineState::default();
         st.mem.data = crate::mem_types::zeroed_vec(8);
@@ -706,6 +708,7 @@ mod tests {
         st.eqtb.meanings = vec![Command::UndefinedCs; 4];
         st.eqtb.cs_levels = vec![0; 4];
         st.fonts.font_info = crate::mem_types::zeroed_vec(4);
+        st.eqtb.ints = crate::eqtb::Table::new(crate::eqtb::IntLoc::LEN, 0);
         crate::journal::arm(&mut st);
         st
     }
@@ -717,6 +720,7 @@ mod tests {
 
         st.mem.set_word(1, 10);
         st.eqtb.set_equiv(crate::consts::GLUE_BASE + 1, 11);
+        st.eqtb.ints.set(COUNT1, 13, 2);
         st.eqtb.set_meaning(CS, Command::Halign, 2);
         st.mem.free.0[2] = crate::units::MemIdx::from_raw(12);
         let rung = bundle(&st);
@@ -725,6 +729,7 @@ mod tests {
         st.mem.set_word(1, 20);
         st.mem.set_word(3, 21);
         st.eqtb.set_equiv(crate::consts::GLUE_BASE + 1, 22);
+        st.eqtb.ints.set(COUNT1, 23, 3);
         st.eqtb.set_meaning(CS, Command::Vrule, 3);
         st.fonts.fmem_ptr = crate::units::FontInfoIdx::from_raw(2);
         let rung = bundle(&st);
@@ -738,6 +743,10 @@ mod tests {
         assert_eq!(st.mem.word(3), 0);
         assert_eq!(st.mem.word(4), 0);
         assert_eq!(value(st.eqtb.data[1]), 11);
+        assert_eq!(
+            (st.eqtb.ints.get(COUNT1), st.eqtb.ints.level(COUNT1)),
+            (13, 2)
+        );
         assert_eq!(
             (st.eqtb.meaning(CS), st.eqtb.cs_level(CS)),
             (Command::Halign, 2)

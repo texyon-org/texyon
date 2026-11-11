@@ -476,18 +476,13 @@ pub(super) fn do_assignments(st: &mut EngineState) -> Result<(), Abort> {
     }
 }
 
-pub(super) fn define(
-    st: &mut EngineState,
-    global: bool,
-    p: EqtbPtr,
-    t: Cmd,
-    e: i32,
-) -> Result<(), Abort> {
+/// Sets code table entry `p`.
+fn define_code(st: &mut EngineState, global: bool, p: EqtbPtr, e: i32) -> Result<(), Abort> {
     if global {
-        st.eqtb.geq_define(&mut st.mem, &mut st.scanner, p, t, e)
+        st.eqtb.geq_define_code(p, e);
+        Ok(())
     } else {
-        st.eqtb
-            .eq_define(&mut st.save_stack, &mut st.mem, &mut st.scanner, p, t, e)
+        st.eqtb.eq_define_code(&mut st.save_stack, p, e)
     }
 }
 
@@ -991,15 +986,15 @@ fn xetex_def_code(st: &mut EngineState, global: bool, chr: EqtbPtr) -> Result<()
         crate::scan::scan_optional_equals(st)?;
         let class = crate::scan::scan_char_class(st)?;
         let v = class.wrapping_mul(65536).wrapping_add(sf);
-        define(st, global, p, Cmd::Data, v)?;
+        define_code(st, global, p, v)?;
     } else if chr == MATH_CODE_BASE {
         crate::scan::scan_optional_equals(st)?;
         let c = crate::scan::scan_xetex_math_char_int(st)?;
-        define(st, global, p, Cmd::Data, c)?;
+        define_code(st, global, p, c)?;
     } else if chr == MATH_CODE_BASE + 1 {
         crate::scan::scan_optional_equals(st)?;
         let v = crate::scan::scan_umath_code(st)?;
-        define(st, global, p, Cmd::Data, v)?;
+        define_code(st, global, p, v)?;
     } else if chr == DEL_CODE_BASE {
         crate::scan::scan_optional_equals(st)?;
         let v = crate::scan::scan_int(st)?;
@@ -1054,14 +1049,14 @@ fn def_code(st: &mut EngineState, global: bool, chr: EqtbPtr) -> Result<(), Abor
         } else {
             v
         };
-        define(st, global, p, Cmd::Data, v)?;
+        define_code(st, global, p, v)?;
     } else if p < DEL_CODE_BASE {
         v = if v == 32768 {
             ACTIVE_MATH_CHAR
         } else {
             crate::scan::math_code_from_tex(v)
         };
-        define(st, global, p, Cmd::Data, v)?;
+        define_code(st, global, p, v)?;
     } else {
         word_define(st, global, p, v)?;
     }

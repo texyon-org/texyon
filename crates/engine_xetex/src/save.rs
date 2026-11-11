@@ -10,7 +10,6 @@ use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::glue_store::GlueSpecId;
 use crate::mem::ZERO_GLUE;
-use crate::mem_types::MemoryWord;
 use crate::node::{
     NodePtr, SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSavedEntry,
     SaSavedPointer, SaSavedWord, SaWordNode, View,
@@ -209,42 +208,28 @@ pub(crate) fn prepare_mag(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 impl EqtbState {
-    pub(crate) fn eq_define(
+    /// Sets code table entry `p` in the current group.
+    pub(crate) fn eq_define_code(
         &mut self,
         save_stack: &mut SaveStackState,
-        mem: &mut MemState,
-        scanner: &mut ScannerState,
         p: EqtbPtr,
-        t: Cmd,
         e: i32,
     ) -> Result<(), Abort> {
-        if self.eq_type(p) == t && self.equiv(p) == e {
-            return mem.eq_destroy(scanner, self.word(p));
+        if self.equiv(p) == e {
+            return Ok(());
         }
-        if self.eq_level(p) == save_stack.cur_level {
-            mem.eq_destroy(scanner, self.word(p))?;
-        } else if save_stack.cur_level > LEVEL_ONE {
+        if self.eq_level(p) != save_stack.cur_level && save_stack.cur_level > LEVEL_ONE {
             save_stack.eq_save(self, p, self.eq_level(p))?;
         }
         self.set_eq_level(p, save_stack.cur_level);
-        self.set_eq_type(p, t);
         self.set_equiv(p, e);
         Ok(())
     }
 
-    pub(crate) fn geq_define(
-        &mut self,
-        mem: &mut MemState,
-        scanner: &mut ScannerState,
-        p: EqtbPtr,
-        t: Cmd,
-        e: i32,
-    ) -> Result<(), Abort> {
-        mem.eq_destroy(scanner, self.word(p))?;
+    /// Sets code table entry `p` globally.
+    pub(crate) fn geq_define_code(&mut self, p: EqtbPtr, e: i32) {
         self.set_eq_level(p, LEVEL_ONE);
-        self.set_eq_type(p, t);
         self.set_equiv(p, e);
-        Ok(())
     }
 }
 
@@ -275,32 +260,6 @@ impl MemState {
         };
         if let Some(sa) = sparse {
             self.delete_sa_ref(scanner, sa)?;
-        }
-        Ok(())
-    }
-
-    /// Frees the heap resource an `eqtb` entry owns.
-    pub(crate) fn eq_destroy(
-        &mut self,
-        scanner: &mut ScannerState,
-        w: MemoryWord,
-    ) -> Result<(), Abort> {
-        let (eq_type, equiv) = (w.b16().s1, w.b32().s1);
-        let Some(eq_type) = Cmd::from_raw(i32::from(eq_type)) else {
-            return Ok(());
-        };
-        let ptr = MemIdx::from_raw(equiv);
-        match eq_type {
-            Cmd::Call | Cmd::LongCall | Cmd::OuterCall | Cmd::LongOuterCall => {
-                self.tokens.delete_ref(TokenList::from_raw(equiv))
-            }
-            Cmd::GlueRef => self.delete_glue_ref(GlueSpecId::from_raw(ptr.raw())),
-            Cmd::ShapeRef => self.free_shape_ref(ptr),
-            Cmd::BoxRef => self.flush_node_list(ptr)?,
-            Cmd::ToksRegister | Cmd::Register if !(0..=19).contains(&equiv) => {
-                self.delete_sa_ref(scanner, NodePtr::at(ptr.or_confusion("sa")?))?;
-            }
-            _ => {}
         }
         Ok(())
     }
@@ -600,10 +559,7 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
             SaveEntry::Restore(Restore::Font(old)) => crate::eqtb::restore(st, old)?,
             SaveEntry::Restore(Restore::Word { loc, old, level }) => {
                 if !(INT_BASE..=EQTB_SIZE).contains(&loc) {
-                    if st.eqtb.eq_level(loc) == LEVEL_ONE {
-                        st.mem.eq_destroy(&mut st.scanner, old)?;
-                    } else {
-                        st.mem.eq_destroy(&mut st.scanner, st.eqtb.word(loc))?;
+                    if st.eqtb.eq_level(loc) != LEVEL_ONE {
                         st.eqtb.set_word(loc, old);
                     }
                 } else if st.eqtb.xeq_level_at(loc) != LEVEL_ONE {

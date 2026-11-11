@@ -127,9 +127,6 @@ code_enum! {
         LongOuterCall = 117,
         EndTemplate = 118,
         DontExpand = 119,
-        GlueRef = 120,
-        ShapeRef = 121,
-        BoxRef = 122,
         Data = 123,
     }
 }

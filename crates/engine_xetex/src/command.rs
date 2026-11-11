@@ -825,7 +825,7 @@ impl Command {
                 cmd.is_long_call(),
                 cmd.is_outer_call(),
             ),
-            Cmd::GlueRef | Cmd::ShapeRef | Cmd::BoxRef | Cmd::Data => return None,
+            Cmd::Data => return None,
             _ => return None,
         })
     }
@@ -993,8 +993,7 @@ mod tests {
             99,
         ];
         let mut checked = 0;
-        for raw in 0..=123 {
-            let cmd = Cmd::from_raw(raw).unwrap();
+        for cmd in (0..=123).filter_map(Cmd::from_raw) {
             let chrs = PRIMITIVES.iter().map(|p| p.chr).chain(extra);
             for chr in chrs {
                 if let Some(c) = Command::decode(cmd, chr) {

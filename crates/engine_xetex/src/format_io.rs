@@ -8,9 +8,10 @@
 use crate::bridge::{input_open, input_read, output_close, output_open, output_write, FileFormat};
 use crate::command::Command;
 use crate::consts::{
-    ACTIVE_BASE, DEL_CODE_BASE, EMPTY_STRING, EQTB_SIZE, FONT_BASE, FROZEN_CONTROL_SEQUENCE,
-    HASH_BASE, INT_BASE, INVALID_HANDLE, MAX_FONT_MAX, MAX_HALFWORD, MIN_HALFWORD, NULL_FONT,
-    NUMBER_USVS, PRIM_SIZE, TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
+    ACTIVE_BASE, CAT_CODE_BASE, DEL_CODE_BASE, EMPTY_STRING, EQTB_SIZE, FONT_BASE,
+    FROZEN_CONTROL_SEQUENCE, HASH_BASE, INT_BASE, INVALID_HANDLE, MAX_FONT_MAX, MAX_HALFWORD,
+    MIN_HALFWORD, NULL_FONT, NUMBER_USVS, PRIM_SIZE, TEX_NULL, TOO_BIG_CHAR,
+    UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::engine::{POOL_FREE, STRINGS_FREE};
 use crate::errors::Abort;
@@ -740,6 +741,7 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
     let extra_top = UNDEFINED_CONTROL_SEQUENCE + eqtb.hash_high;
     let mut words = cs_words(eqtb, ACTIVE_BASE, UNDEFINED_CONTROL_SEQUENCE);
     let (entries, del_codes) = eqtb.data.split_at_mut(crate::state::data_slot(INT_BASE));
+    let entries = &mut entries[crate::state::data_slot(CAT_CODE_BASE)..];
     let del_codes = &mut del_codes
         [crate::state::data_slot(DEL_CODE_BASE) - crate::state::data_slot(INT_BASE)..]
         [..NUMBER_USVS as usize];
