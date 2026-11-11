@@ -10,7 +10,7 @@ use crate::mem_types::ListStateRecord;
 use crate::stack::TexStack;
 use crate::state::{
     ConfigState, EngineState, EqtbState, ErrorState, FontEngineHandle, FontMappingHandle,
-    FontState, GroupCode, HyphState, InputClusterState, InputState, MainLoopState, MemState,
+    FontState, GroupCode, HyphState, InputClusterState, InputState, InterCharState, MemState,
     SaveEntry, SaveStackState, ScannerState, ShipoutState, StringsState, SynctexCtxt, TexmfState,
 };
 use crate::sync_index::PreviewSyncIndex;
@@ -51,7 +51,7 @@ pub(crate) struct EngineBundle {
     native_text: Vec<u16>,
     texmf: TexmfState,
     synctex: SynctexCtxt,
-    mainloop: MainLoopState,
+    interchar: InterCharState,
     mem: MemBundle,
     eqtb: EqtbBundle,
     strings: StringsBundle,
@@ -82,7 +82,7 @@ impl EngineBundle {
             native_text,
             texmf: st.texmf.clone(),
             synctex: st.synctex.clone(),
-            mainloop: st.mainloop.clone(),
+            interchar: st.interchar.clone(),
             mem: MemBundle::capture(&st.mem),
             eqtb: EqtbBundle::capture(&st.eqtb),
             strings: StringsBundle::capture(&st.strings, strings_base),
@@ -115,7 +115,7 @@ impl EngineBundle {
 
         st.texmf.clone_from(&self.texmf);
         st.synctex.clone_from(&self.synctex);
-        st.mainloop.clone_from(&self.mainloop);
+        st.interchar.clone_from(&self.interchar);
         self.mem.restore(&mut st.mem);
         self.eqtb.restore(&mut st.eqtb);
         self.strings.restore(&mut st.strings);
@@ -751,7 +751,6 @@ hyph_tables! {
 
 struct HyphBundle {
     tables_gen: u64,
-    is_hyph: bool,
     hf: FontId,
     max_hyph_char: i32,
     init_list: MemPtr,
@@ -788,7 +787,6 @@ impl HyphBundle {
         };
         Self {
             tables_gen: src.tables_gen,
-            is_hyph: src.is_hyph,
             hf: src.hf,
             max_hyph_char: src.max_hyph_char,
             init_list: src.init_list,
@@ -820,7 +818,6 @@ impl HyphBundle {
 
     fn restore(&self, dst: &mut HyphState) {
         dst.tables_gen = self.tables_gen;
-        dst.is_hyph = self.is_hyph;
         dst.hf = self.hf;
         dst.max_hyph_char = self.max_hyph_char;
         dst.init_list = self.init_list;

@@ -25,36 +25,21 @@ pub(crate) struct EngineState {
     pub fonts: FontState,
     pub texmf: TexmfState,
     pub synctex: SynctexCtxt,
-    pub mainloop: MainLoopState,
+    pub interchar: InterCharState,
     /// Not checkpointed.
     pub pgfmath: crate::pgfmath::Diagnostics,
     /// Not checkpointed: a restore keeps the operation's list.
     pub diagnostics: crate::diagnostic::DiagnosticsState,
 }
 
-/// Scratch registers of `main_control`'s character and ligature loop.
+/// XeTeX's inter-character class registers. The big switch reads them
+/// between runs of the main loop.
 #[derive(Default, Clone)]
-pub(crate) struct MainLoopState {
-    /// The character the main loop is at, TeX's `cur_chr` there.
-    pub chr: i32,
-    pub main_f: FontId,
-    pub main_h: i32,
-    pub main_pp: crate::units::MemPtr,
-    pub main_ppp: crate::units::MemPtr,
-    pub bchar: crate::fonts::LigChar,
-    pub false_bchar: crate::fonts::LigChar,
-    /// Inter-character space class of the current / previous char.
+pub(crate) struct InterCharState {
+    /// The class of the last character the main loop classed.
     pub space_class: i32,
+    /// The class before it, the boundary class when tokens were just inserted.
     pub prev_class: i32,
-    pub cur_l: crate::fonts::LigChar,
-    pub cur_r: crate::fonts::LigChar,
-    pub cur_q: crate::units::MemPtr,
-    pub lig_stack: Option<crate::main_control::LigStack>,
-    pub ligature_present: bool,
-    pub lft_hit: bool,
-    pub rt_hit: bool,
-    pub cancel_boundary: bool,
-    pub ins_disc: bool,
 }
 
 #[derive(Default, Clone)]
@@ -1024,7 +1009,6 @@ pub(crate) struct ScannerState {
     pub native_text: Vec<u16>,
     pub native_text_size: i32,
     pub native_len: i32,
-    pub save_native_len: i32,
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
@@ -1537,7 +1521,6 @@ impl StringsState {
 pub(crate) struct HyphState {
     /// Generation of the rarely-mutated trie and exception tables.
     pub tables_gen: u64,
-    pub is_hyph: bool,
     pub hf: FontId,
     pub max_hyph_char: i32,
     pub init_list: crate::units::MemPtr,
@@ -1592,7 +1575,6 @@ impl Default for HyphState {
     fn default() -> Self {
         Self {
             tables_gen: 0,
-            is_hyph: false,
             hf: crate::consts::NULL_FONT,
             max_hyph_char: 0,
             init_list: None,

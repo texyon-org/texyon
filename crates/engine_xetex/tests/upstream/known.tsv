@@ -16,3 +16,6 @@ etex-interchartoks	TeXyoN keeps tokens apart from nodes and caps memory at 64M w
 limits-math_mem_overflow	TeXyoN caps main memory at 64M words instead of 5M, so the same overflow reports a larger main memory size
 cov-control-showgroups_more	upstream \showgroups prints the \vadjust pre flag as the insert number, TeXyoN prints the insert or \vadjust as written
 etex-showgroups_all	upstream \showgroups prints the \vadjust pre flag as the insert number, TeXyoN prints the insert or \vadjust as written
+mainloop-interchar_after_ligature	upstream leaves the main loop without wrapup when inter-character tokens follow a TFM ligature, losing it and making the next character a ligature, TeXyoN ends the word (UPSTREAM_BUGS.md 15)
+mainloop-interchartoks_loops	upstream skips the right boundary of a TFM word when inter-character tokens follow it, TeXyoN ends the word as for any other token, so the boundary kern applies (UPSTREAM_BUGS.md 15)
+mainloop-noboundary_native	upstream keeps \noboundary set across a native-font character and cancels a later TFM left boundary, TeXyoN applies it to the next character only (UPSTREAM_BUGS.md 16)

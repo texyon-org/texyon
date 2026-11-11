@@ -201,3 +201,32 @@ entry names a later TeX Live version.
 - **Fix:** read the number from `saved(-3)` and the flag from `saved(-2)`.
 - **TeXyoN:** prints `\insert100{`, `\vadjust{` and `\vadjust pre{` (`output/show.rs`). Listed in
   `tests/upstream/known.tsv`, test `showgroups_names_inserts_and_vadjusts`. Not reported yet.
+
+## 15. Inter-character tokens after a TFM ligature lose the ligature
+
+- **Where:** `main_loop_lookahead+1`, line 24713, `check_for_inter_char_toks(big_switch)`.
+- **Bug:** when the lookahead character gets inter-character tokens, the main loop jumps to
+  `big_switch` without `wrapup`. A ligature that was pending is never packed, so its characters stay
+  as plain char nodes, and `ligature_present` stays true. The next run of the main loop packs its
+  first character as a one-character ligature. The right boundary of the word is skipped as well.
+- **Repro:** `\XeTeXinterchartokenstate=1 \XeTeXcharclass`a=1 \XeTeXinterchartoks 0 1={\relax}`,
+  then `\hbox{fia}` in `cmr10` gives `f`, `i`, `a (ligature a)`. Confirmed against TeX Live 2025 xetex.
+- **Fix:** end the word there as for any non-character token (`cur_r:=bchar; lig_stack:=null; goto
+  main_lig_loop`), and go to `big_switch` instead of `reswitch` once the word is wrapped up.
+- **TeXyoN:** ends the word, so `fia` gives `fi (ligature)`, `a`, and the boundary ligatures and kerns
+  of the font apply (`main_control/main_loop.rs`). The ligature flags are per run. Listed in
+  `tests/upstream/known.tsv`, probe `mainloop-interchar_after_ligature`, test
+  `inter_char_tokens_end_the_word_before_them`. Not reported yet.
+
+## 16. `\noboundary` before a native-font character cancels a later left boundary
+
+- **Where:** `main_loop`, line 24613. `cancel_boundary` is set at line 24190 and cleared only here,
+  after the `collect_native` branch has been taken for a native font.
+- **Bug:** `\noboundary` before a character of an AAT or OpenType font leaves `cancel_boundary` set.
+  It then cancels the left boundary of the next word in a TFM font, however far away.
+- **Repro:** with a TFM font `\xa` that has a left boundary ligature for `k` and a native font
+  `\nat`, `\hbox{\nat \noboundary a\xa klm}` leaves `k` plain. Confirmed against TeX Live 2025 xetex.
+- **Fix:** clear `cancel_boundary` before the `collect_native` branch.
+- **TeXyoN:** `\noboundary` applies to the character right after it and nothing else
+  (`main_control.rs`). Listed in `tests/upstream/known.tsv`, probe `mainloop-noboundary_native`. Not
+  reported yet.

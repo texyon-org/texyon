@@ -124,6 +124,30 @@ fn the_main_loop_builds_ligatures_and_kerns() {
 }
 
 #[test]
+fn inter_char_tokens_end_the_word_before_them() {
+    let r = run(
+        r"\font\rm=cmr10 \rm \XeTeXinterchartokenstate=1 \XeTeXcharclass`a=1
+                  \XeTeXinterchartoks 0 1={\relax}\setbox0\hbox{fia}\showbox0",
+    );
+    assert_lines(
+        &r.boxes()[0],
+        r"
+        \hbox(6.94444+0.0)x10.55559
+        .\rm ^^L (ligature fi)
+        .\rm a",
+    );
+}
+
+#[test]
+fn boundary_inter_char_tokens_keep_the_token_after_them() {
+    let r = run(
+        r"\font\rm=cmr10 \rm \XeTeXinterchartokenstate=1 \XeTeXcharclass`a=1
+                  \XeTeXinterchartoks 1 4095={\show}\setbox0\hbox{a{b}}",
+    );
+    assert_eq!(r.lines_starting("> "), ["> begin-group character {."]);
+}
+
+#[test]
 fn box_shifts_follow_the_direction_of_each_command() {
     let r = run(r"\setbox1\hbox{}
                   \setbox0\vbox{\moveleft 2pt\copy1 \moveright 3pt\copy1}

@@ -298,11 +298,6 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.shipout.output_active = false;
     st.shipout.output_can_end = false;
     st.shipout.insert_penalties = 0;
-    st.mainloop.ligature_present = false;
-    st.mainloop.cancel_boundary = false;
-    st.mainloop.lft_hit = false;
-    st.mainloop.rt_hit = false;
-    st.mainloop.ins_disc = false;
     st.scanner.after_token = Token::ZERO;
     st.errors.long_help_seen = false;
     st.strings.format_ident = StrNumber::NONE;
@@ -914,7 +909,6 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     st.scanner.native_text = Vec::new();
     st.scanner.native_text_size = 0;
     st.scanner.native_len = 0;
-    st.scanner.save_native_len = 0;
 
     st.eqtb.release_tables();
     st.eqtb.hash = Vec::new();

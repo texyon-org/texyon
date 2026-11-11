@@ -27,7 +27,6 @@ mod assign;
 mod boxes;
 mod lists;
 mod main_loop;
-pub(crate) use main_loop::LigStack;
 
 use self::align::{align_error, do_endv, init_align, no_align_error, omit_error};
 use self::assign::prefixed_command;
@@ -209,13 +208,15 @@ enum Next {
     BigSwitch,
     /// `reswitch`: act on the current token again.
     Reswitch,
+    /// `reswitch` on the character that `\noboundary` came before.
+    ReswitchNoBoundary,
     /// `\end` or `\dump` finished the job.
     Stop,
 }
 
 /// Acts on the current command in the current mode, TeX's `abs(mode)+cur_cmd` case.
 #[inline]
-fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
+fn dispatch_command(st: &mut EngineState, cancel_boundary: bool) -> Result<Next, Abort> {
     if st.eqtb.int_par(IntPar::TracingCommands) > 0 {
         crate::output::show_cur_cmd_chr(st);
     }
@@ -224,11 +225,11 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
     if mode == HMODE {
         match cmd {
             Cmd::Letter | Cmd::OtherChar | Cmd::CharGiven | Cmd::CharNum => {
-                st.mainloop.chr = match st.scanner.cur.char_code() {
+                let chr = match st.scanner.cur.char_code() {
                     Some(c) => c,
                     None => crate::scan::scan_usv_num(st)?,
                 };
-                return Ok(if main_control_main_loop(st)? {
+                return Ok(if main_control_main_loop(st, chr, cancel_boundary)? {
                     Next::BigSwitch
                 } else {
                     Next::Reswitch
@@ -236,13 +237,16 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
             }
             Cmd::NoBoundary => {
                 crate::scan::get_x_token(st)?;
-                if matches!(
-                    st.scanner.cur.cmd(),
-                    Cmd::Letter | Cmd::OtherChar | Cmd::CharGiven | Cmd::CharNum
-                ) {
-                    st.mainloop.cancel_boundary = true;
-                }
-                return Ok(Next::Reswitch);
+                return Ok(
+                    if matches!(
+                        st.scanner.cur.cmd(),
+                        Cmd::Letter | Cmd::OtherChar | Cmd::CharGiven | Cmd::CharNum
+                    ) {
+                        Next::ReswitchNoBoundary
+                    } else {
+                        Next::Reswitch
+                    },
+                );
             }
             _ => {}
         }
@@ -520,10 +524,12 @@ fn main_control_from(
         if resident && crate::session::capture_command_fence(st) {
             return Err(Abort::Horizoned);
         }
+        let mut cancel_boundary = false;
         loop {
-            match dispatch_command(st)? {
+            match dispatch_command(st, cancel_boundary)? {
                 Next::BigSwitch => break,
-                Next::Reswitch => {}
+                Next::Reswitch => cancel_boundary = false,
+                Next::ReswitchNoBoundary => cancel_boundary = true,
                 Next::Stop => return Ok(()),
             }
         }

@@ -4,14 +4,14 @@ use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::{CharTag, LigChar};
 use crate::hyphenation::TrieOp;
-use crate::main_control::{LigStack, NewChar};
+use crate::main_control::NewChar;
 use crate::mem::HOLD_HEAD;
 use crate::node::{
     AnyNode, CharNode, DiscNode, HyphPosNode, LigBoundary, LigItem, LigatureNode, NativeWordNode,
     NodePtr, View,
 };
 use crate::params::IntPar;
-use crate::state::{EngineState, EqtbState, FontState, MemState};
+use crate::state::{EngineState, EqtbState, FontState, HyphState, MemState};
 use crate::units::MemIdx;
 use crate::units::{FontId, FontInfoIdx, MemPtr, Scaled, StrNumber};
 
@@ -96,15 +96,6 @@ pub(super) fn split_native_word(
     Ok(tail)
 }
 
-/// The top of `mainloop.lig_stack` as a lig item, which is all `reconstitute` pushes.
-#[inline]
-fn top_item(st: &EngineState) -> Option<NodePtr<LigItem>> {
-    match st.mainloop.lig_stack? {
-        LigStack::Item(item) => Some(item),
-        LigStack::Char(c) => Some(NodePtr::at(c)),
-    }
-}
-
 impl MemState {
     /// A fresh char node of font `f` holding `c`, linked after `t`.
     fn append_char(&mut self, t: MemIdx, f: FontId, c: u16) -> Result<MemIdx, Abort> {
@@ -114,46 +105,58 @@ impl MemState {
     }
 }
 
-/// Load `cur_r` for position `j` and return the hyphen char still to be tried there.
-fn update_right(
-    st: &mut EngineState,
+/// The registers of one `reconstitute` run.
+struct Reconstitution {
+    /// The position in `hu` being rebuilt, and the last one.
     j: usize,
     n: usize,
     bchar: LigChar,
     hchar: LigChar,
-) -> LigChar {
-    st.mainloop.cur_r = if j < n { st.hyph.hu[j + 1] } else { bchar };
-    if odd(st.hyph.hyf[j]) {
-        hchar
-    } else {
-        LigChar::NONE
-    }
+    /// The hyphen char still to be tried at `j`.
+    cur_rh: LigChar,
+    cur_l: LigChar,
+    cur_r: LigChar,
+    /// The node the pending ligature's characters follow.
+    cur_q: MemIdx,
+    /// The last node built.
+    t: MemIdx,
+    lig_stack: Option<NodePtr<LigItem>>,
+    ligature_present: bool,
+    lft_hit: bool,
+    rt_hit: bool,
 }
 
-/// Pop the top lig item, appending its char node after `t`, and load the next `cur_r`.
-#[allow(clippy::too_many_arguments)]
-fn pop_lig_stack(
-    st: &mut EngineState,
-    t: &mut MemIdx,
-    j: &mut usize,
-    n: usize,
-    bchar: LigChar,
-    hchar: LigChar,
-    cur_rh: &mut LigChar,
-) {
-    let Some(item) = top_item(st) else {
-        return;
-    };
-    if let Some(component) = st.mem[item].component {
-        t.set_link(&mut st.mem, Some(component));
-        *t = component;
-        *j += 1;
+impl Reconstitution {
+    /// Loads `cur_r` and the hyphen char still to be tried for position `j`.
+    fn load_right(&mut self, hyph: &HyphState) {
+        self.cur_r = if self.j < self.n {
+            hyph.hu[self.j + 1]
+        } else {
+            self.bchar
+        };
+        self.cur_rh = if odd(hyph.hyf[self.j]) {
+            self.hchar
+        } else {
+            LigChar::NONE
+        };
     }
-    st.mainloop.lig_stack = st.mem.lig_stack_at(item.idx().link(&st.mem));
-    item.free(&mut st.mem);
-    match st.mainloop.lig_stack {
-        None => *cur_rh = update_right(st, *j, n, bchar, hchar),
-        Some(top) => st.mainloop.cur_r = top.character(&st.mem),
+
+    /// Pops the top lig item, appending its char node after `t`, and loads the next `cur_r`.
+    fn pop_lig_stack(&mut self, mem: &mut MemState, hyph: &HyphState) {
+        let Some(item) = self.lig_stack else {
+            return;
+        };
+        if let Some(component) = mem[item].component {
+            self.t.set_link(mem, Some(component));
+            self.t = component;
+            self.j += 1;
+        }
+        self.lig_stack = NodePtr::from_ptr(item.idx().link(mem));
+        item.free(mem);
+        match self.lig_stack {
+            None => self.load_right(hyph),
+            Some(top) => self.cur_r = LigChar::of(mem[top].character),
+        }
     }
 }
 
@@ -161,136 +164,139 @@ fn pop_lig_stack(
 /// the index of the last character consumed.
 fn reconstitute(
     st: &mut EngineState,
-    mut j: usize,
+    j: usize,
     n: usize,
-    mut bchar: LigChar,
-    mut hchar: LigChar,
+    bchar: LigChar,
+    hchar: LigChar,
 ) -> Result<usize, Abort> {
     st.hyph.hyphen_passed = 0;
-    let mut t = HOLD_HEAD;
     let mut w = Scaled::ZERO;
     HOLD_HEAD.set_link(&mut st.mem, None);
-    st.mainloop.cur_l = st.hyph.hu[j];
-    st.mainloop.cur_q = Some(t);
+    let mut r = Reconstitution {
+        j,
+        n,
+        bchar,
+        hchar,
+        cur_rh: LigChar::NONE,
+        cur_l: st.hyph.hu[j],
+        cur_r: LigChar::NONE,
+        cur_q: HOLD_HEAD,
+        t: HOLD_HEAD,
+        lig_stack: None,
+        ligature_present: false,
+        lft_hit: false,
+        rt_hit: false,
+    };
 
     if j == 0 {
-        st.mainloop.ligature_present = st.hyph.init_lig;
+        r.ligature_present = st.hyph.init_lig;
         let mut p = st.hyph.init_list;
-        if st.mainloop.ligature_present {
-            st.mainloop.lft_hit = st.hyph.init_lft;
+        if r.ligature_present {
+            r.lft_hit = st.hyph.init_lft;
         }
         while let Some(q) = p {
             let c = st.mem[NodePtr::<CharNode>::at(q)].character;
-            t = st.mem.append_char(t, st.hyph.hf, c)?;
+            r.t = st.mem.append_char(r.t, st.hyph.hf, c)?;
             p = q.link(&st.mem);
         }
-    } else if st.mainloop.cur_l.is_char() {
-        t = st
-            .mem
-            .append_char(t, st.hyph.hf, st.mainloop.cur_l.code())?;
+    } else if r.cur_l.is_char() {
+        r.t = st.mem.append_char(r.t, st.hyph.hf, r.cur_l.code())?;
     }
 
-    st.mainloop.lig_stack = None;
-    let mut cur_rh = update_right(st, j, n, bchar, hchar);
+    r.load_right(&st.hyph);
 
     loop {
         'continue_: loop {
-            let (mut k, mut q) = if st.mainloop.cur_l == LigChar::NONE {
+            let (mut k, mut q) = if r.cur_l == LigChar::NONE {
                 let k = st.fonts.bchar_label[st.hyph.hf];
                 if k == FontInfoIdx::NON_ADDRESS {
                     break 'continue_;
                 }
                 (k, st.fonts.lig_kern_step(k))
             } else {
-                let info = st
-                    .fonts
-                    .effective_char_info(st.hyph.hf, st.mainloop.cur_l.code());
+                let info = st.fonts.effective_char_info(st.hyph.hf, r.cur_l.code());
                 if info.tag() != CharTag::Lig {
                     break 'continue_;
                 }
                 st.fonts.lig_kern_start(st.hyph.hf, info)
             };
 
-            let mut test_char = if cur_rh.is_char() {
-                cur_rh
+            let mut test_char = if r.cur_rh.is_char() {
+                r.cur_rh
             } else {
-                st.mainloop.cur_r
+                r.cur_r
             };
 
             loop {
                 if q.matches(test_char) {
-                    if cur_rh.is_char() {
-                        st.hyph.hyphen_passed = j;
-                        hchar = LigChar::NONE;
-                        cur_rh = LigChar::NONE;
+                    if r.cur_rh.is_char() {
+                        st.hyph.hyphen_passed = r.j;
+                        r.hchar = LigChar::NONE;
+                        r.cur_rh = LigChar::NONE;
                         continue 'continue_;
                     }
 
-                    if hchar.is_char() && odd(st.hyph.hyf[j]) {
-                        st.hyph.hyphen_passed = j;
-                        hchar = LigChar::NONE;
+                    if r.hchar.is_char() && odd(st.hyph.hyf[r.j]) {
+                        st.hyph.hyphen_passed = r.j;
+                        r.hchar = LigChar::NONE;
                     }
 
                     if !q.is_kern() {
-                        if st.mainloop.cur_l == LigChar::NONE {
-                            st.mainloop.lft_hit = true;
+                        if r.cur_l == LigChar::NONE {
+                            r.lft_hit = true;
                         }
-                        if j == n && st.mainloop.lig_stack.is_none() {
-                            st.mainloop.rt_hit = true;
+                        if r.j == r.n && r.lig_stack.is_none() {
+                            r.rt_hit = true;
                         }
 
                         match q.lig_op() {
                             1 | 5 => {
-                                st.mainloop.cur_l = LigChar::of(q.lig_char());
-                                st.mainloop.ligature_present = true;
+                                r.cur_l = LigChar::of(q.lig_char());
+                                r.ligature_present = true;
                             }
                             2 | 6 => {
-                                st.mainloop.cur_r = LigChar::of(q.lig_char());
-                                if let Some(top) = top_item(st) {
-                                    st.mem[top].character = st.mainloop.cur_r.code();
+                                r.cur_r = LigChar::of(q.lig_char());
+                                if let Some(top) = r.lig_stack {
+                                    st.mem[top].character = r.cur_r.code();
                                 } else {
-                                    let item = st.mem.new_lig_item(st.mainloop.cur_r.code())?;
-                                    st.mainloop.lig_stack = Some(LigStack::Item(item));
-                                    if j == n {
-                                        bchar = LigChar::NONE;
+                                    let item = st.mem.new_lig_item(r.cur_r.code())?;
+                                    r.lig_stack = Some(item);
+                                    if r.j == r.n {
+                                        r.bchar = LigChar::NONE;
                                     } else {
                                         let p = st
                                             .mem
-                                            .new_char(st.hyph.hf, st.hyph.hu[j + 1].code())?;
+                                            .new_char(st.hyph.hf, st.hyph.hu[r.j + 1].code())?;
                                         st.mem[item].component = p.ptr();
                                     }
                                 }
                             }
                             3 => {
-                                st.mainloop.cur_r = LigChar::of(q.lig_char());
-                                let below = st.mainloop.lig_stack.map(LigStack::idx);
-                                let item = st.mem.new_lig_item(st.mainloop.cur_r.code())?;
-                                st.mainloop.lig_stack = Some(LigStack::Item(item));
+                                r.cur_r = LigChar::of(q.lig_char());
+                                let below = r.lig_stack.map(NodePtr::idx);
+                                let item = st.mem.new_lig_item(r.cur_r.code())?;
+                                r.lig_stack = Some(item);
                                 item.idx().set_link(&mut st.mem, below);
                             }
                             7 | 11 => {
-                                if st.mainloop.ligature_present {
-                                    t = wrap_lig(st, false)?;
+                                if r.ligature_present {
+                                    wrap_lig(st, &mut r, false)?;
                                 }
-                                st.mainloop.cur_q = Some(t);
-                                st.mainloop.cur_l = LigChar::of(q.lig_char());
-                                st.mainloop.ligature_present = true;
+                                r.cur_q = r.t;
+                                r.cur_l = LigChar::of(q.lig_char());
+                                r.ligature_present = true;
                             }
                             _ => {
-                                st.mainloop.cur_l = LigChar::of(q.lig_char());
-                                st.mainloop.ligature_present = true;
-                                if st.mainloop.lig_stack.is_some() {
-                                    pop_lig_stack(st, &mut t, &mut j, n, bchar, hchar, &mut cur_rh);
-                                } else if j == n {
+                                r.cur_l = LigChar::of(q.lig_char());
+                                r.ligature_present = true;
+                                if r.lig_stack.is_some() {
+                                    r.pop_lig_stack(&mut st.mem, &st.hyph);
+                                } else if r.j == r.n {
                                     break 'continue_;
                                 } else {
-                                    t = st.mem.append_char(
-                                        t,
-                                        st.hyph.hf,
-                                        st.mainloop.cur_r.code(),
-                                    )?;
-                                    j += 1;
-                                    cur_rh = update_right(st, j, n, bchar, hchar);
+                                    r.t = st.mem.append_char(r.t, st.hyph.hf, r.cur_r.code())?;
+                                    r.j += 1;
+                                    r.load_right(&st.hyph);
                                 }
                             }
                         }
@@ -306,68 +312,68 @@ fn reconstitute(
                 }
 
                 if q.is_last() {
-                    if cur_rh == LigChar::NONE {
+                    if r.cur_rh == LigChar::NONE {
                         break 'continue_;
                     }
-                    cur_rh = LigChar::NONE;
+                    r.cur_rh = LigChar::NONE;
                     continue 'continue_;
                 }
 
                 k = q.next_index(k);
                 q = st.fonts.lig_kern_step(k);
-                test_char = if cur_rh.is_char() {
-                    cur_rh
+                test_char = if r.cur_rh.is_char() {
+                    r.cur_rh
                 } else {
-                    st.mainloop.cur_r
+                    r.cur_r
                 };
             }
         }
 
-        if st.mainloop.ligature_present {
-            t = wrap_lig(st, true)?;
+        if r.ligature_present {
+            wrap_lig(st, &mut r, true)?;
         }
 
         if w != Scaled::ZERO {
             let kern = st.mem.new_kern(w)?;
-            t.set_link(&mut st.mem, kern.ptr());
-            t = kern.idx();
+            r.t.set_link(&mut st.mem, kern.ptr());
+            r.t = kern.idx();
             w = Scaled::ZERO;
             st.mem[kern].sync.tag = 0;
         }
 
-        if let Some(top) = st.mainloop.lig_stack {
-            st.mainloop.cur_q = Some(t);
-            st.mainloop.cur_l = top.character(&st.mem);
-            st.mainloop.ligature_present = true;
-            pop_lig_stack(st, &mut t, &mut j, n, bchar, hchar, &mut cur_rh);
+        if let Some(top) = r.lig_stack {
+            r.cur_q = r.t;
+            r.cur_l = LigChar::of(st.mem[top].character);
+            r.ligature_present = true;
+            r.pop_lig_stack(&mut st.mem, &st.hyph);
             continue;
         }
 
-        return Ok(j);
+        return Ok(r.j);
     }
 }
 
-/// Replace the chars after `cur_q` by a ligature of `cur_l`, returning it.
+/// Replaces the chars after `cur_q` by a ligature of `cur_l`, which becomes `t`.
 /// `rt` also records a right boundary hit when the lig stack is empty.
-fn wrap_lig(st: &mut EngineState, rt: bool) -> Result<MemIdx, Abort> {
-    let cur_q = st.mainloop.cur_q.or_confusion("reconstitute")?;
-    let components = cur_q.link(&st.mem);
+fn wrap_lig(st: &mut EngineState, r: &mut Reconstitution, rt: bool) -> Result<(), Abort> {
+    let components = r.cur_q.link(&st.mem);
     let lig = st
         .mem
-        .new_ligature(st.hyph.hf, st.mainloop.cur_l.code(), components)?;
+        .new_ligature(st.hyph.hf, r.cur_l.code(), components)?;
     let mut boundary = LigBoundary::None;
-    if st.mainloop.lft_hit {
+    if r.lft_hit {
         boundary = LigBoundary::Left;
-        st.mainloop.lft_hit = false;
+        r.lft_hit = false;
     }
-    if rt && st.mainloop.rt_hit && st.mainloop.lig_stack.is_none() {
+    if rt && r.rt_hit && r.lig_stack.is_none() {
         boundary = boundary.with_right();
-        st.mainloop.rt_hit = false;
+        r.rt_hit = false;
     }
     st.mem[lig].boundary = boundary.into();
-    cur_q.set_link(&mut st.mem, lig.ptr());
-    st.mainloop.ligature_present = false;
-    Ok(lig.idx())
+    r.cur_q.set_link(&mut st.mem, lig.ptr());
+    r.ligature_present = false;
+    r.t = lig.idx();
+    Ok(())
 }
 
 /// Hyphenate the native word `ha` by splitting it into fragments separated by

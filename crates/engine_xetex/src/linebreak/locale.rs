@@ -71,8 +71,12 @@ fn open_linebreak_iterator(
 
 /// Append `native_text[s..s + len]` as native words, split at the locale's
 /// line-break opportunities when `\XeTeXlinebreaklocale` is set.
-pub(crate) fn do_locale_linebreaks(st: &mut EngineState, s: i32, len: i32) -> Result<(), Abort> {
-    let main_f = st.mainloop.main_f;
+pub(crate) fn do_locale_linebreaks(
+    st: &mut EngineState,
+    main_f: FontId,
+    s: i32,
+    len: i32,
+) -> Result<(), Abort> {
     let text = st.scanner.native_text[s as usize..(s + len) as usize].to_vec();
 
     let locale = StrNumber::from_raw(st.eqtb.int_par(IntPar::XetexLinebreakLocale));
