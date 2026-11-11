@@ -18,7 +18,7 @@ use crate::pic::load_picture;
 use crate::scan::{get_x_token, scan_int};
 use crate::state::EngineState;
 use crate::token::{Token, TokenList};
-use crate::units::{MemPtr, StrNumber};
+use crate::units::StrNumber;
 
 use super::get_encoding_mode_and_info;
 
@@ -174,9 +174,9 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
                 let p = st.input.cur_list.tail;
                 let w = io_whatsit(st, io_code)?;
                 crate::shipout::out_what(st, w)?;
-                st.mem.flush_node_list(st.input.cur_list.tail)?;
+                st.mem.flush_node_list(Some(st.input.cur_list.tail))?;
                 st.input.cur_list.tail = p;
-                p.set_link(&mut st.mem, MemPtr::NULL);
+                p.set_link(&mut st.mem, None);
             } else {
                 crate::input::back_input(st)?;
             }

@@ -18,6 +18,7 @@ use crate::node::{
 use crate::packaging::LrState;
 use crate::params::{DimenPar, IntPar};
 use crate::state::{EqtbState, FontState, MemState, Selector, ShipoutState, StringsState};
+use crate::units::MemIdx;
 use crate::units::{Dir, FontId, GlueOrder, GlueSign, MemPtr, Scaled, StrNumber};
 
 mod whatsits;
@@ -204,7 +205,7 @@ pub(crate) fn ship_out(
         crate::output::print_ln(st);
     }
 
-    if !lr.ptr.is_null() || lr.dir != Dir::Ltr {
+    if !lr.ptr.is_none() || lr.dir != Dir::Ltr {
         return Err(Abort::Confusion("LR3"));
     }
     if st.eqtb.int_par(IntPar::TracingOutput) <= 0 {
@@ -409,9 +410,10 @@ impl MemState {
         let mut prev_p = this_box.list_head();
         let mut p = self[this_box].list_ptr;
 
-        while !p.is_null() {
+        while let Some(here) = p {
+            let mut here = here;
             let first = self.as_native_word(p).filter(|&r| {
-                fonts.font_letter_space[self[r].font] == Scaled::ZERO && !p.link(self).is_null()
+                fonts.font_letter_space[self[r].font] == Scaled::ZERO && here.link(self).is_some()
             });
             if let Some(r) = first {
                 let font = self[r].font;
@@ -437,7 +439,7 @@ impl MemState {
                                 q = self[glue].link;
                             }
                             if self.is_space_adjustment(q) {
-                                q = self.skip_interword_fillers(q.link(self));
+                                q = self.skip_interword_fillers(q.and_then(|k| k.link(self)));
                                 if let Some(w) = same_font_word(self, q) {
                                     last = w;
                                     text_len += 1 + i32::from(self[w].length);
@@ -464,11 +466,12 @@ impl MemState {
                         last,
                         text_len,
                     };
-                    p = self.merge_native_word_run(strings, fonts, eqtb, this_box, prev_p, run)?;
+                    here =
+                        self.merge_native_word_run(strings, fonts, eqtb, this_box, prev_p, run)?;
                 }
             }
-            prev_p = p;
-            p = p.link(self);
+            prev_p = here;
+            p = here.link(self);
         }
         Ok(())
     }
@@ -481,9 +484,9 @@ impl MemState {
         fonts: &FontState,
         eqtb: &EqtbState,
         this_box: NodePtr<BoxNode>,
-        prev_p: MemPtr,
+        prev_p: MemIdx,
         run: NativeWordRun,
-    ) -> Result<MemPtr, Abort> {
+    ) -> Result<MemIdx, Abort> {
         let NativeWordRun {
             first,
             last,
@@ -496,7 +499,7 @@ impl MemState {
         let g_order = self[this_box].glue_order;
         let g_sign = self[this_box].glue_sign;
         let mut width = Scaled::ZERO;
-        let mut q = first.ptr();
+        let mut q = first.idx();
         loop {
             match self.classify(q) {
                 Ok(AnyNode::Whatsit(w)) => {
@@ -528,10 +531,10 @@ impl MemState {
                 Ok(AnyNode::Kern(kern)) => width += self[kern].width,
                 _ => {}
             }
-            if q == last.ptr() {
+            if q == last.idx() {
                 break;
             }
-            q = q.link(self);
+            q = q.link(self).or_confusion("native word run")?;
         }
 
         let nlen = strings.cur_length();
@@ -545,23 +548,23 @@ impl MemState {
 
         prev_p.set_link(self, word.ptr());
         self[word].link = self[last].link;
-        self[last].link = MemPtr::NULL;
+        self[last].link = None;
 
-        let mut tail = word.ptr();
-        let mut prev_p = first.ptr();
+        let mut tail = word.idx();
+        let mut prev_p = first.idx();
         let mut p = self[first].link;
-        while !p.is_null() {
+        while let Some(here) = p {
             if self
                 .classify_non_char(p)
                 .is_some_and(|n| n.is_interword_filler(self))
             {
-                prev_p.set_link(self, p.link(self));
-                p.set_link(self, tail.link(self));
+                prev_p.set_link(self, here.link(self));
+                here.set_link(self, tail.link(self));
                 tail.set_link(self, p);
-                tail = p;
+                tail = here;
             }
-            prev_p = p;
-            p = p.link(self);
+            prev_p = here;
+            p = here.link(self);
         }
 
         self.flush_node_list(first.ptr())?;
@@ -594,9 +597,9 @@ impl MemState {
     }
 
     fn leader_of(&self, glue: NodePtr<GlueNode>) -> Leader {
-        match self.classify(self[glue].leader_ptr) {
-            Ok(AnyNode::Rule(rule)) => Leader::Rule(rule),
-            Ok(AnyNode::Box(b)) => Leader::Box(b),
+        match self[glue].leader_ptr.map(|l| self.classify(l)) {
+            Some(Ok(AnyNode::Rule(rule))) => Leader::Rule(rule),
+            Some(Ok(AnyNode::Box(b))) => Leader::Box(b),
             other => unreachable!("leaders must be a rule or a box, found {other:?}"),
         }
     }
@@ -661,7 +664,7 @@ fn hlist_rule_out(
     st: &mut crate::state::EngineState,
     this_box: NodePtr<BoxNode>,
     base_line: Scaled,
-    p: MemPtr,
+    p: MemIdx,
     mut rule: RuleDims,
 ) -> Result<(), Abort> {
     if rule.ht == RUNNING {
@@ -750,7 +753,7 @@ fn hlist_glue_out(
                     wd,
                     ..RuleDims::of(&st.mem, rule)
                 };
-                return hlist_rule_out(st, this_box, base_line, glue.ptr(), rule);
+                return hlist_rule_out(st, this_box, base_line, glue.idx(), rule);
             }
             Leader::Box(leader) => leader,
         };
@@ -803,7 +806,7 @@ fn hlist_glue_out(
     }
 
     st.shipout.cur_h += wd;
-    crate::synctex::synctex_horizontal_rule_or_glue(st, glue.ptr(), None);
+    crate::synctex::synctex_horizontal_rule_or_glue(st, glue, None);
     Ok(())
 }
 
@@ -856,14 +859,14 @@ impl ShipoutState {
 fn chars_out(
     st: &mut crate::state::EngineState,
     mut p: MemPtr,
-    mut prev_p: MemPtr,
-) -> Result<(MemPtr, MemPtr), Abort> {
+    mut prev_p: MemIdx,
+) -> Result<(MemPtr, MemIdx), Abort> {
     synch_h(st)?;
     synch_v(st)?;
     while let Some(ch) = st.mem.as_char(p) {
         let f = st.mem[ch].font;
         let mut c = st.mem[ch].character;
-        if p != LIG_TRICK {
+        if ch.idx() != LIG_TRICK {
             if let Some(mapping) = st.fonts.font_mapping[f].as_deref() {
                 c = apply_tfm_font_mapping(mapping, c as libc::c_int) as u16;
             }
@@ -873,8 +876,8 @@ fn chars_out(
             st.shipout.dvi.set_char(c)?;
             st.shipout.cur_h += st.fonts.font_character_width(f, i32::from(c));
         }
-        prev_p = prev_p.link(&st.mem);
-        p = p.link(&st.mem);
+        prev_p = prev_p.link(&st.mem).or_confusion("hlistout")?;
+        p = ch.idx().link(&st.mem);
     }
     crate::synctex::synctex_current(st);
     st.shipout.dvi_h = st.shipout.cur_h;
@@ -930,16 +933,16 @@ fn hlist_out(
     let mut left_edge = st.shipout.cur_h;
     crate::synctex::synctex_hlist(st, this_box);
 
-    while !p.is_null() {
-        if st.mem.is_char_node(p) {
+    while let Some(here) = p {
+        if st.mem.is_char_node(here) {
             (p, prev_p) = chars_out(st, p, prev_p)?;
             continue;
         }
-        match st.mem.classify(p).or_confusion("hlistout")? {
+        match st.mem.classify(here).or_confusion("hlistout")? {
             AnyNode::Box(b) => hlist_box_out(st, lr, b, base_line)?,
             AnyNode::Rule(rule) => {
                 let dims = RuleDims::of(&st.mem, rule);
-                hlist_rule_out(st, this_box, base_line, rule.ptr(), dims)?;
+                hlist_rule_out(st, this_box, base_line, rule.idx(), dims)?;
             }
             AnyNode::Whatsit(whatsit) => match whatsit.variant(&st.mem) {
                 Some(WhatsitVariant::NativeWord(word)) => {
@@ -996,7 +999,7 @@ fn hlist_out(
                 st.shipout.cur_h += math_width;
             }
             AnyNode::Ligature(ligature) => {
-                p = st.mem.lig_trick(ligature);
+                p = Some(st.mem.lig_trick(ligature));
                 st.fonts.xtx_ligature_present = true;
                 continue;
             }
@@ -1008,8 +1011,8 @@ fn hlist_out(
             }
             _ => {}
         }
-        prev_p = p;
-        p = p.link(&st.mem);
+        prev_p = here;
+        p = here.link(&st.mem);
     }
 
     crate::synctex::synctex_tsilh(st, this_box);
@@ -1033,7 +1036,7 @@ fn hlist_box_out(
     b: NodePtr<BoxNode>,
     base_line: Scaled,
 ) -> Result<(), Abort> {
-    if st.mem[b].list_ptr.is_null() {
+    if st.mem[b].list_ptr.is_none() {
         if st.mem[b].is_vlist() {
             crate::synctex::synctex_void_vlist(st, b);
         } else {
@@ -1059,7 +1062,7 @@ fn reverse_segment(
     st: &mut crate::state::EngineState,
     lr: &mut LrState,
     math: NodePtr<MathNode>,
-    prev_p: MemPtr,
+    prev_p: MemIdx,
     left_edge: Scaled,
     math_width: Scaled,
     rounding: &mut GlueRounding,
@@ -1102,11 +1105,11 @@ fn vlist_out(
     }
     let top_edge = st.shipout.cur_v;
 
-    while !p.is_null() {
-        if st.mem.is_char_node(p) {
+    while let Some(here) = p {
+        if st.mem.is_char_node(here) {
             return Err(Abort::Confusion("vlistout"));
         }
-        match st.mem.classify(p).or_confusion("vlistout")? {
+        match st.mem.classify(here).or_confusion("vlistout")? {
             AnyNode::Box(b) => vlist_box_out(st, lr, b, left_edge, upwards)?,
             AnyNode::Rule(rule) => {
                 let dims = RuleDims::of(&st.mem, rule);
@@ -1170,7 +1173,7 @@ fn vlist_out(
             }
             _ => {}
         }
-        p = p.link(&st.mem);
+        p = here.link(&st.mem);
     }
 
     crate::synctex::synctex_tsilv(st, this_box);
@@ -1190,7 +1193,7 @@ fn vlist_box_out(
     } else {
         st.shipout.cur_v += height;
     }
-    if st.mem[b].list_ptr.is_null() {
+    if st.mem[b].list_ptr.is_none() {
         if st.mem[b].is_vlist() {
             crate::synctex::synctex_void_vlist(st, b);
         } else {
@@ -1457,31 +1460,31 @@ impl MemState {
         t: Option<NodePtr<EdgeNode>>,
         rounding: &mut GlueRounding,
     ) -> Result<MemPtr, Abort> {
-        let mut l = t.map_or(MemPtr::NULL, |t| t.ptr());
+        let mut l = t.map(NodePtr::idx);
         let mut p = self.temp_ptr;
         let mut m = MIN_HALFWORD;
         let mut n = MIN_HALFWORD;
 
         loop {
-            while !p.is_null() {
-                if self.is_char_node(p) {
+            while let Some(here) = p {
+                if self.is_char_node(here) {
                     while let Some(ch) = self.as_char(p) {
                         let f = self[ch].font;
                         let c = fonts.effective_char(f, self[ch].character);
                         shipout.cur_h += fonts.font_character_width(f, c);
-                        let q = p.link(self);
-                        p.set_link(self, l);
+                        let q = ch.idx().link(self);
+                        ch.idx().set_link(self, l);
                         l = p;
                         p = q;
                     }
                     continue;
                 }
 
-                let q = p.link(self);
+                let q = here.link(self);
                 let mut add_width = true;
                 let mut now_kern = false;
                 let mut wd = Scaled::ZERO;
-                match self.classify(p) {
+                match self.classify(here) {
                     Ok(node @ (AnyNode::Box(_) | AnyNode::Rule(_))) => {
                         wd = node.hlist_width(self);
                     }
@@ -1508,10 +1511,10 @@ impl MemState {
                         self.flush_records::<CharNode>(self[ligature].lig_ptr);
                         self.temp_ptr = ligature.ptr();
                         let (f, ch) = (self[ligature].font, self[ligature].character);
-                        let c = self.new_char(f, ch)?.ptr();
-                        c.set_link(self, q);
+                        let c = self.new_char(f, ch)?;
+                        c.idx().set_link(self, q);
                         ligature.free(self);
-                        p = c;
+                        p = c.ptr();
                         continue;
                     }
                     Ok(AnyNode::Math(math)) => {
@@ -1562,12 +1565,12 @@ impl MemState {
                 if add_width {
                     shipout.cur_h += wd;
                 }
-                p.set_link(self, l);
-                if now_kern && (wd == Scaled::ZERO || l.is_null()) {
-                    self.free_node(p, KernNode::SIZE);
-                    p = l;
+                here.set_link(self, l);
+                if now_kern && (wd == Scaled::ZERO || l.is_none()) {
+                    self.free_node(here, KernNode::SIZE);
+                } else {
+                    l = p;
                 }
-                l = p;
                 p = q;
             }
 

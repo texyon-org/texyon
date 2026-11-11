@@ -513,7 +513,7 @@ fn register_item(st: &EngineState, cs: CsId) -> Result<Item, &'static str> {
         Command::AssignDimen(loc) => Ok(Item::Dimen(st.eqtb.int_at(loc))),
         Command::AssignInt(loc) => Ok(Item::Count(st.eqtb.int_at(loc))),
         Command::Register(r) => {
-            let RegisterRef::Sparse(sa) = r.get() else {
+            let Ok(RegisterRef::Sparse(sa)) = r.get() else {
                 return Err("unsupported control sequence");
             };
             match (sa.word(&st.mem), st.mem[sa].sa_type().get()) {

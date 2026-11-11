@@ -15,9 +15,9 @@ use crate::node::{
 use crate::packaging::{MarksAction, PackSpec};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::scan::fetch_box;
-use crate::state::{EngineState, GroupCode, PageContents, ShipoutState};
+use crate::state::{EngineState, GroupCode, MemState, PageContents, ShipoutState};
 use crate::token::TokenList;
-use crate::units::{GlueOrder, MemPtr, Scaled};
+use crate::units::{GlueOrder, MemIdx, MemPtr, Scaled};
 
 // Indices into `page_so_far`, whose entries 2 to 5 hold the stretch of each order.
 const PAGE_GOAL: usize = 0;
@@ -32,12 +32,24 @@ pub fn initialize_pagebuilder_variables(st: &mut EngineState) {
 }
 
 /// A record on the `page_ins_head` ring.
-fn page_ins(p: MemPtr) -> NodePtr<PageInsNode> {
+fn page_ins(p: MemIdx) -> NodePtr<PageInsNode> {
     NodePtr::at(p)
 }
 
+/// The record after `r` on the `page_ins_head` ring, which has no end.
+fn ring_next(mem: &MemState, r: MemIdx) -> Result<MemIdx, Abort> {
+    r.link(mem).or_confusion("page_ins_head")
+}
+
+impl ShipoutState {
+    /// The last node on the current page, `PAGE_HEAD` when it is empty.
+    fn page_tail(&self) -> Result<MemIdx, Abort> {
+        self.page_tail.or_confusion("page_tail")
+    }
+}
+
 /// TeX's `contrib_tail`, the tail of the outermost vertical list.
-fn set_contrib_tail(st: &mut EngineState, tail: MemPtr) {
+fn set_contrib_tail(st: &mut EngineState, tail: MemIdx) {
     if st.input.nest.is_empty() {
         st.input.cur_list.tail = tail;
     } else {
@@ -112,39 +124,34 @@ fn update_marks(st: &mut EngineState, class: i32, mark_ptr: TokenList) -> Result
 /// Moves insertion `ins` at `p` into its box when it made it onto the page.
 /// Returns whether it has to wait for the next page.
 fn place_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Result<bool, Abort> {
-    let mut r = PAGE_INS_HEAD.link(&st.mem);
+    let mut r = ring_next(&st.mem, PAGE_INS_HEAD)?;
     while st.mem[page_ins(r)].box_number != st.mem[ins].box_number {
-        r = r.link(&st.mem);
+        r = ring_next(&st.mem, r)?;
     }
     let rec = page_ins(r);
-    if st.mem[rec].best_ins_ptr.is_null() {
+    if st.mem[rec].best_ins_ptr.is_none() {
         return Ok(true);
     }
-    let mut s = st.mem[rec].last_ins_ptr;
+    let mut s = st.mem[rec].last_ins_ptr.or_confusion("insert")?;
     let list = st.mem[ins].ins_ptr;
     s.set_link(&mut st.mem, list);
     if st.mem[rec].best_ins_ptr != p {
-        while !s.link(&st.mem).is_null() {
-            s = s.link(&st.mem);
-        }
-        st.mem[rec].last_ins_ptr = s;
+        st.mem[rec].last_ins_ptr = Some(st.mem.list_tail(s));
         return Ok(false);
     }
 
     let mut wait = false;
     let broken_ptr = st.mem[rec].broken_ptr;
-    if st.mem[rec].is_split_up() && st.mem[rec].broken_ins == p && !broken_ptr.is_null() {
-        while s.link(&st.mem) != broken_ptr {
-            s = s.link(&st.mem);
-        }
-        s.set_link(&mut st.mem, MemPtr::NULL);
+    if st.mem[rec].is_split_up() && st.mem[rec].broken_ins == p && !broken_ptr.is_none() {
+        s = st.mem.predecessor(s, broken_ptr)?;
+        s.set_link(&mut st.mem, None);
         st.eqtb
             .set_glue_par(GluePar::SplitTopSkip, st.mem[ins].split_top_ptr);
         let pruned = st
             .mem
             .prune_page_top(&mut st.scanner, &st.eqtb, broken_ptr, false)?;
         st.mem[ins].ins_ptr = pruned;
-        if !pruned.is_null() {
+        if !pruned.is_none() {
             let tmp = crate::packaging::vpackage(st, pruned, PackSpec::NATURAL, MAX_DIMEN)?;
             let size = st.mem[tmp].height + st.mem[tmp].depth;
             st.mem[ins].height = size;
@@ -152,7 +159,7 @@ fn place_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Re
             wait = true;
         }
     }
-    st.mem[rec].best_ins_ptr = MemPtr::NULL;
+    st.mem[rec].best_ins_ptr = None;
     let n = ins_box(st.mem[rec].box_number)?;
     let b = fetch_box(st, i32::from(n)).expect("insertion box made in fire_up");
     let list = st.mem[b].list_ptr;
@@ -165,7 +172,7 @@ fn place_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Re
 /// TeX's `fire_up`: puts the best page into `\box255` and runs the output routine.
 fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     let best = st.shipout.best_page_break;
-    let output_penalty = match best.as_idx().map(|b| st.mem.classify(b)) {
+    let output_penalty = match best.map(|b| st.mem.classify(b)) {
         Some(Ok(AnyNode::Penalty(pen))) => {
             let v = st.mem[pen].penalty;
             st.mem[pen].penalty = INF_PENALTY;
@@ -194,9 +201,9 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     }
 
     if c == best {
-        st.shipout.best_page_break = MemPtr::NULL;
+        st.shipout.best_page_break = None;
     }
-    if !st.eqtb.box_reg(255).is_null() {
+    if !st.eqtb.box_reg(255).is_none() {
         crate::errors::box_error(
             st,
             255,
@@ -213,40 +220,38 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     let process_inserts =
         st.eqtb.int_par(IntPar::HoldingInserts) <= 0 && !st.config.semantic_pagination_enabled;
     if process_inserts {
-        let mut r = PAGE_INS_HEAD.link(&st.mem);
+        let mut r = ring_next(&st.mem, PAGE_INS_HEAD)?;
         while r != PAGE_INS_HEAD {
             let rec = page_ins(r);
-            if !st.mem[rec].best_ins_ptr.is_null() {
+            if !st.mem[rec].best_ins_ptr.is_none() {
                 let n = ins_box(st.mem[rec].box_number)?;
                 ensure_vbox(st, n)?;
-                if st.eqtb.box_reg(i32::from(n)).is_null() {
+                if st.eqtb.box_reg(i32::from(n)).is_none() {
                     let b = st.mem.new_null_box()?;
                     st.eqtb.set_box_reg(i32::from(n), b.ptr());
                 }
-                let mut p = st.eqtb.box_reg(i32::from(n)) + LIST_HEAD;
-                while !p.link(&st.mem).is_null() {
-                    p = p.link(&st.mem);
-                }
-                st.mem[rec].last_ins_ptr = p;
+                let b = st.eqtb.box_reg(i32::from(n)).or_confusion("insert box")?;
+                st.mem[rec].last_ins_ptr = Some(st.mem.list_tail(b.offset(LIST_HEAD)));
             }
-            r = r.link(&st.mem);
+            r = ring_next(&st.mem, r)?;
         }
     }
 
     let mut hold_tail = HOLD_HEAD;
-    hold_tail.set_link(&mut st.mem, MemPtr::NULL);
+    hold_tail.set_link(&mut st.mem, None);
     let mut prev_p = PAGE_HEAD;
     let mut p = prev_p.link(&st.mem);
     while p != st.shipout.best_page_break {
-        match st.mem.classify(p) {
+        let here = p.or_confusion("fire_up")?;
+        match st.mem.classify(here) {
             Ok(AnyNode::Ins(ins)) if process_inserts => {
                 let wait = place_insertion(st, ins, p)?;
                 let next = st.mem[ins].link;
                 prev_p.set_link(&mut st.mem, next);
-                st.mem[ins].link = MemPtr::NULL;
+                st.mem[ins].link = None;
                 if wait {
                     hold_tail.set_link(&mut st.mem, p);
-                    hold_tail = p;
+                    hold_tail = here;
                     st.shipout.insert_penalties += 1;
                 } else {
                     let split_top = st.mem[ins].split_top_ptr;
@@ -256,23 +261,24 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
             }
             Ok(AnyNode::Mark(mark)) => {
                 update_marks(st, st.mem[mark].mark_class, st.mem[mark].mark_ptr)?;
-                prev_p = p;
+                prev_p = here;
             }
-            _ => prev_p = p,
+            _ => prev_p = here,
         }
         p = prev_p.link(&st.mem);
     }
     st.eqtb
         .set_glue_par(GluePar::SplitTopSkip, save_split_top_skip);
 
-    if !p.is_null() {
-        if CONTRIB_HEAD.link(&st.mem).is_null() {
-            set_contrib_tail(st, st.shipout.page_tail);
+    if !p.is_none() {
+        let page_tail = st.shipout.page_tail()?;
+        if CONTRIB_HEAD.link(&st.mem).is_none() {
+            set_contrib_tail(st, page_tail);
         }
         let contrib = CONTRIB_HEAD.link(&st.mem);
-        st.shipout.page_tail.set_link(&mut st.mem, contrib);
+        page_tail.set_link(&mut st.mem, contrib);
         CONTRIB_HEAD.set_link(&mut st.mem, p);
-        prev_p.set_link(&mut st.mem, MemPtr::NULL);
+        prev_p.set_link(&mut st.mem, None);
     }
 
     let save_vbadness = st.eqtb.int_par(IntPar::Vbadness);
@@ -293,8 +299,8 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     }
 
     st.shipout.page_contents = PageContents::Empty;
-    st.shipout.page_tail = PAGE_HEAD;
-    PAGE_HEAD.set_link(&mut st.mem, MemPtr::NULL);
+    st.shipout.page_tail = Some(PAGE_HEAD);
+    PAGE_HEAD.set_link(&mut st.mem, None);
     st.shipout.last_glue = None;
     st.shipout.last_penalty = 0;
     st.shipout.last_kern = Scaled::ZERO;
@@ -304,16 +310,16 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     if hold_tail != HOLD_HEAD {
         let held = HOLD_HEAD.link(&st.mem);
         PAGE_HEAD.set_link(&mut st.mem, held);
-        st.shipout.page_tail = hold_tail;
+        st.shipout.page_tail = Some(hold_tail);
     }
 
-    let mut r = PAGE_INS_HEAD.link(&st.mem);
+    let mut r = ring_next(&st.mem, PAGE_INS_HEAD)?;
     while r != PAGE_INS_HEAD {
-        let next = r.link(&st.mem);
+        let next = ring_next(&st.mem, r)?;
         st.mem.free_node(r, PageInsNode::SIZE);
         r = next;
     }
-    PAGE_INS_HEAD.set_link(&mut st.mem, PAGE_INS_HEAD);
+    PAGE_INS_HEAD.set_link(&mut st.mem, Some(PAGE_INS_HEAD));
 
     if let Some(root) = st.scanner.sa_root.get(ValueLevel::Mark) {
         if st.mem.do_marks(MarksAction::FireUpDone, 0, root) {
@@ -357,23 +363,24 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
         )?;
     }
 
-    if !PAGE_HEAD.link(&st.mem).is_null() {
+    if !PAGE_HEAD.link(&st.mem).is_none() {
         let contrib = CONTRIB_HEAD.link(&st.mem);
-        if contrib.is_null() {
-            set_contrib_tail(st, st.shipout.page_tail);
+        let page_tail = st.shipout.page_tail()?;
+        if contrib.is_none() {
+            set_contrib_tail(st, page_tail);
         } else {
-            st.shipout.page_tail.set_link(&mut st.mem, contrib);
+            page_tail.set_link(&mut st.mem, contrib);
         }
         let held = PAGE_HEAD.link(&st.mem);
         CONTRIB_HEAD.set_link(&mut st.mem, held);
-        PAGE_HEAD.set_link(&mut st.mem, MemPtr::NULL);
-        st.shipout.page_tail = PAGE_HEAD;
+        PAGE_HEAD.set_link(&mut st.mem, None);
+        st.shipout.page_tail = Some(PAGE_HEAD);
     }
     let discards = st.scanner.disc_ptr[BoxCode::LastBox as usize];
     st.mem.flush_node_list(discards)?;
-    st.scanner.disc_ptr[BoxCode::LastBox as usize] = MemPtr::NULL;
+    st.scanner.disc_ptr[BoxCode::LastBox as usize] = None;
     crate::shipout::ship_out(st, page)?;
-    st.eqtb.set_box_reg(255, MemPtr::NULL);
+    st.eqtb.set_box_reg(255, None);
     Ok(())
 }
 
@@ -428,14 +435,14 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
     }
     let n = ins_box(st.mem[ins].box_number)?;
     let mut r = PAGE_INS_HEAD;
-    while u16::from(n) >= st.mem[page_ins(r.link(&st.mem))].box_number {
-        r = r.link(&st.mem);
+    while u16::from(n) >= st.mem[page_ins(ring_next(&st.mem, r)?)].box_number {
+        r = ring_next(&st.mem, r)?;
     }
     if st.mem[page_ins(r)].box_number != u16::from(n) {
-        let q = NodePtr::<PageInsNode>::alloc(&mut st.mem)?.ptr();
+        let q = NodePtr::<PageInsNode>::alloc(&mut st.mem)?.idx();
         let next = r.link(&st.mem);
         q.set_link(&mut st.mem, next);
-        r.set_link(&mut st.mem, q);
+        r.set_link(&mut st.mem, Some(q));
         r = q;
         let rec = page_ins(r);
         st.mem[rec].box_number = u16::from(n);
@@ -447,7 +454,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         };
         let node = &mut st.mem[rec];
         node.height = height;
-        node.best_ins_ptr = MemPtr::NULL;
+        node.best_ins_ptr = None;
         let skip = st.eqtb.skip(i32::from(n));
         let count = st.eqtb.count(i32::from(n));
         let h = scale_by_count(height, count);
@@ -520,9 +527,9 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
     node.set_split_up(true);
     node.broken_ptr = q;
     node.broken_ins = p;
-    if q.is_null() {
+    if q.is_none() {
         st.shipout.insert_penalties = st.shipout.insert_penalties.wrapping_add(EJECT_PENALTY);
-    } else if let Ok(AnyNode::Penalty(pen)) = st.mem.classify(q) {
+    } else if let Some(Ok(AnyNode::Penalty(pen))) = q.map(|q| st.mem.classify(q)) {
         st.shipout.insert_penalties = st
             .shipout
             .insert_penalties
@@ -544,11 +551,11 @@ enum PageStep {
 }
 
 pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
-    if CONTRIB_HEAD.link(&st.mem).is_null() || st.shipout.output_active {
+    if CONTRIB_HEAD.link(&st.mem).is_none() || st.shipout.output_active {
         return Ok(());
     }
-    while let Some(idx) = CONTRIB_HEAD.link(&st.mem).as_idx() {
-        let p = MemPtr::from_idx(idx);
+    while let Some(idx) = CONTRIB_HEAD.link(&st.mem) {
+        let p = Some(idx);
         let node_type = i32::from(st.mem.type_code(idx));
         let node = st.mem.classify(idx).or_confusion("page")?;
         if let Some(spec) = st.shipout.last_glue {
@@ -603,7 +610,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
             }
             AnyNode::Glue(_) if below_box => PageStep::Discard,
             AnyNode::Glue(_) => {
-                let tail = st.mem.classify(st.shipout.page_tail);
+                let tail = st.mem.classify(st.shipout.page_tail()?);
                 if tail.is_ok_and(AnyNode::precedes_break) {
                     PageStep::Break(0)
                 } else {
@@ -612,10 +619,9 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
             }
             AnyNode::Kern(_) if below_box => PageStep::Discard,
             AnyNode::Kern(kern) => {
-                let next = st.mem[kern].link;
-                if next.is_null() {
+                let Some(next) = st.mem[kern].link else {
                     return Ok(());
-                }
+                };
                 if matches!(st.mem.classify(next), Ok(AnyNode::Glue(_))) {
                     PageStep::Break(0)
                 } else {
@@ -652,12 +658,12 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
                         st.shipout.best_page_break = p;
                         st.shipout.best_size = st.shipout.page_so_far[PAGE_GOAL];
                         st.shipout.least_page_cost = c;
-                        let mut r = PAGE_INS_HEAD.link(&st.mem);
+                        let mut r = ring_next(&st.mem, PAGE_INS_HEAD)?;
                         while r != PAGE_INS_HEAD {
                             let rec = page_ins(r);
                             let last = st.mem[rec].last_ins_ptr;
                             st.mem[rec].best_ins_ptr = last;
-                            r = r.link(&st.mem);
+                            r = ring_next(&st.mem, r)?;
                         }
                     }
                     if c == AWFUL_BAD || pi <= EJECT_PENALTY {
@@ -686,21 +692,22 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
                 };
                 st.shipout.page_so_far[PAGE_TOTAL] += st.shipout.page_so_far[PAGE_DEPTH] + width;
                 st.shipout.page_so_far[PAGE_DEPTH] = Scaled::ZERO;
-                contribute(st, p);
+                contribute(st, idx)?;
             }
-            PageStep::Contribute => contribute(st, p),
+            PageStep::Contribute => contribute(st, idx)?,
             PageStep::Discard => {
-                let next = p.link(&st.mem);
+                let next = idx.link(&st.mem);
                 CONTRIB_HEAD.set_link(&mut st.mem, next);
-                p.set_link(&mut st.mem, MemPtr::NULL);
+                idx.set_link(&mut st.mem, None);
                 if st.eqtb.int_par(IntPar::SavingVdiscards) <= 0 {
                     st.mem.flush_node_list(p)?;
                 } else {
                     let discards = &mut st.scanner.disc_ptr;
-                    if discards[BoxCode::LastBox as usize].is_null() {
+                    if discards[BoxCode::LastBox as usize].is_none() {
                         discards[BoxCode::LastBox as usize] = p;
                     } else {
-                        discards[BoxCode::Copy as usize].set_link(&mut st.mem, p);
+                        let last = discards[BoxCode::Copy as usize].or_confusion("discards")?;
+                        last.set_link(&mut st.mem, p);
                     }
                     discards[BoxCode::Copy as usize] = p;
                 }
@@ -743,15 +750,16 @@ fn page_glue_width(
 }
 
 /// Moves `p` from the contribution list to the current page.
-fn contribute(st: &mut EngineState, p: MemPtr) {
+fn contribute(st: &mut EngineState, p: MemIdx) -> Result<(), Abort> {
     let so_far = &mut st.shipout.page_so_far;
     if so_far[PAGE_DEPTH] > st.shipout.page_max_depth {
         so_far[PAGE_TOTAL] += so_far[PAGE_DEPTH] - st.shipout.page_max_depth;
         so_far[PAGE_DEPTH] = st.shipout.page_max_depth;
     }
-    st.shipout.page_tail.set_link(&mut st.mem, p);
-    st.shipout.page_tail = p;
+    st.shipout.page_tail()?.set_link(&mut st.mem, Some(p));
+    st.shipout.page_tail = Some(p);
     let next = p.link(&st.mem);
     CONTRIB_HEAD.set_link(&mut st.mem, next);
-    p.set_link(&mut st.mem, MemPtr::NULL);
+    p.set_link(&mut st.mem, None);
+    Ok(())
 }

@@ -15,6 +15,7 @@ use crate::packaging::PackOrigin;
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::scaled_math::fract;
 use crate::state::{EngineState, EqtbState, ErrorState, FontState, MemState};
+use crate::units::MemIdx;
 use crate::units::{FontId, GlueOrder, MemPtr, Scaled};
 
 mod hyphenate;
@@ -225,10 +226,7 @@ impl Breaker {
         next: MemPtr,
         auto_breaking: bool,
     ) -> Result<(), Abort> {
-        if !st.mem.is_char_node(next)
-            && auto_breaking
-            && matches!(st.mem.classify(next), Ok(AnyNode::Glue(_)))
-        {
+        if auto_breaking && matches!(st.mem.classify_non_char(next), Some(AnyNode::Glue(_))) {
             self.try_break(st, 0, BreakType::Unhyphenated, None)?;
         }
         Ok(())
@@ -239,8 +237,8 @@ impl MemState {
     /// The width of a node in a discretionary's list. `Err(true)` for a whatsit
     /// without dimensions, `Err(false)` for any other node that cannot occur there.
     #[inline]
-    fn disc_node_width(&self, fonts: &mut FontState, p: MemPtr) -> Result<Scaled, bool> {
-        if let Some(ch) = self.as_char(p) {
+    fn disc_node_width(&self, fonts: &mut FontState, p: MemIdx) -> Result<Scaled, bool> {
+        if let Some(ch) = self.as_char(Some(p)) {
             return Ok(fonts.effective_char_width(self[ch].font, self[ch].character));
         }
 
@@ -266,18 +264,15 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
     TEMP_HEAD.set_link(&mut st.mem, first);
 
     let tail = st.input.cur_list.tail;
-    let tail_glue = if st.mem.is_char_node(tail) {
-        None
-    } else if let Ok(AnyNode::Glue(g)) = st.mem.classify(tail) {
-        Some(g)
-    } else {
-        None
+    let tail_glue = match st.mem.classify_non_char(Some(tail)) {
+        Some(AnyNode::Glue(g)) => Some(g),
+        _ => None,
     };
     match tail_glue {
         None => {
             let p = st.mem.new_penalty(INF_PENALTY)?;
             tail.set_link(&mut st.mem, p.ptr());
-            st.input.cur_list.tail = p.ptr();
+            st.input.cur_list.tail = p.idx();
         }
         Some(tail_glue) => {
             // The trailing glue becomes the infinite penalty in place.
@@ -408,23 +403,21 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
         // Whether glue after the previous node is a legal breakpoint.
         let mut prev_breakable = false;
 
-        while !lb.cur_p.is_null() && !lb.lists.is_empty() {
-            let mut cur = lb.cur_p;
-
+        while let Some(mut cur) = lb.cur_p.filter(|_| !lb.lists.is_empty()) {
             if st.mem.is_char_node(cur) {
                 prev_breakable = true;
-                lb.global_prev_p = cur;
+                lb.global_prev_p = Some(cur);
                 loop {
                     let ch = NodePtr::<CharNode>::at(cur);
                     let f = st.mem[ch].font;
                     let c = st.mem[ch].character;
                     lb.active_width[1] += st.fonts.effective_char_width(f, c);
-                    cur = cur.link(&st.mem);
+                    cur = cur.link(&st.mem).or_confusion("paragraph")?;
                     if !st.mem.is_char_node(cur) {
                         break;
                     }
                 }
-                lb.cur_p = cur;
+                lb.cur_p = Some(cur);
             }
 
             let Ok(node) = st.mem.classify(cur) else {
@@ -474,7 +467,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                 }
                 AnyNode::Disc(d) => {
                     let pre_break = st.mem[d].pre_break;
-                    if pre_break.is_null() {
+                    if pre_break.is_none() {
                         let pi = st.eqtb.int_par(IntPar::ExHyphenPenalty);
                         let disc = DiscBreak {
                             node: d,
@@ -484,12 +477,12 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                     } else {
                         let mut width = Scaled::ZERO;
                         let mut s = pre_break;
-                        while !s.is_null() {
+                        while let Some(x) = s {
                             width += st
                                 .mem
-                                .disc_node_width(&mut st.fonts, s)
+                                .disc_node_width(&mut st.fonts, x)
                                 .or_confusion("disc3")?;
-                            s = s.link(&st.mem);
+                            s = x.link(&st.mem);
                         }
                         lb.active_width[1] += width;
                         let pi = st.eqtb.int_par(IntPar::HyphenPenalty);
@@ -500,15 +493,16 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
 
                     let mut s = st.mem[d].link;
                     for _ in 0..st.mem[d].replace_count {
+                        let x = s.or_confusion("disc4")?;
                         lb.active_width[1] += st
                             .mem
-                            .disc_node_width(&mut st.fonts, s)
+                            .disc_node_width(&mut st.fonts, x)
                             .or_confusion("disc4")?;
-                        s = s.link(&st.mem);
+                        s = x.link(&st.mem);
                     }
 
                     prev_breakable = true;
-                    lb.global_prev_p = cur;
+                    lb.global_prev_p = Some(cur);
                     lb.cur_p = s;
                     continue;
                 }
@@ -529,11 +523,11 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
 
             prev_breakable = node.precedes_break()
                 || matches!(node, AnyNode::Kern(k) if st.mem[k].subtype != KernSubtype::Explicit);
-            lb.global_prev_p = cur;
+            lb.global_prev_p = Some(cur);
             lb.cur_p = cur.link(&st.mem);
         }
 
-        if lb.cur_p.is_null() {
+        if lb.cur_p.is_none() {
             lb.try_break(st, EJECT_PENALTY, BreakType::Hyphenated, None)?;
             if let Some(best) = lb.choose_best_break(&st.eqtb)? {
                 break best;
@@ -604,31 +598,31 @@ impl Breaker {
             width: disc_width,
         }) = disc
         {
-            let mut v = cur_disc.ptr();
+            let mut v = cur_disc.idx();
             s = mem[cur_disc].post_break;
 
             for _ in 0..mem[cur_disc].replace_count {
-                v = v.link(mem);
+                v = v.link(mem).or_confusion("disc1")?;
                 break_width[1] -= mem.disc_node_width(fonts, v).map_err(|whatsit| {
                     Abort::Confusion(if whatsit { "disc1a" } else { "disc1" })
                 })?;
             }
 
-            while !s.is_null() {
-                break_width[1] += mem.disc_node_width(fonts, s).map_err(|whatsit| {
+            while let Some(x) = s {
+                break_width[1] += mem.disc_node_width(fonts, x).map_err(|whatsit| {
                     Abort::Confusion(if whatsit { "disc2a" } else { "disc2" })
                 })?;
-                s = s.link(mem);
+                s = x.link(mem);
             }
 
             break_width[1] += disc_width;
-            if mem[cur_disc].post_break.is_null() {
+            if mem[cur_disc].post_break.is_none() {
                 s = v.link(mem);
             }
         }
 
-        while !s.is_null() && !mem.is_char_node(s) {
-            match mem.classify(s) {
+        while let Some(x) = s.filter(|&x| !mem.is_char_node(x)) {
+            match mem.classify(x) {
                 Ok(AnyNode::Glue(g)) => {
                     let spec = mem[g].glue_ptr;
                     break_width[1] -= mem[spec].width;
@@ -642,7 +636,7 @@ impl Breaker {
                 }
                 _ => break,
             }
-            s = s.link(mem);
+            s = x.link(mem);
         }
         Ok(break_width)
     }
@@ -738,7 +732,7 @@ impl Breaker {
             config,
             ..
         } = st;
-        if config.semantic_pagination_enabled && !self.cur_p.is_null() {
+        if config.semantic_pagination_enabled && !self.cur_p.is_none() {
             return Ok(());
         }
 
@@ -841,7 +835,7 @@ impl Breaker {
             if shortfall > Scaled::ZERO {
                 if caw[3] != Scaled::ZERO || caw[4] != Scaled::ZERO || caw[5] != Scaled::ZERO {
                     if self.do_last_line_fit
-                        && self.cur_p.is_null()
+                        && self.cur_p.is_none()
                         && r_active.shortfall != Scaled::ZERO
                         && r_active.glue > Scaled::ZERO
                         && caw[3..6] == self.fill_width
@@ -899,7 +893,7 @@ impl Breaker {
             }
 
             if self.do_last_line_fit && !last_line_fit_found {
-                if self.cur_p.is_null() {
+                if self.cur_p.is_none() {
                     shortfall = Scaled::ZERO;
                 }
                 g = match shortfall.signum() {
@@ -948,7 +942,7 @@ impl Breaker {
                 if break_type == BreakType::Hyphenated
                     && r_active.break_type == BreakType::Hyphenated
                 {
-                    d = d.wrapping_add(if self.cur_p.is_null() {
+                    d = d.wrapping_add(if self.cur_p.is_none() {
                         eqtb.int_par(IntPar::FinalHyphenDemerits)
                     } else {
                         eqtb.int_par(IntPar::DoubleHyphenDemerits)

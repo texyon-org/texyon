@@ -1,10 +1,12 @@
 //! Character protrusion: margin kerns and the protruding chars at line ends.
 
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::fonts::{Side, QUAD_CODE};
 use crate::mem::{TEMP_HEAD, ZERO_GLUE};
 use crate::node::{AnyNode, BoxNode, DiscNode, KernSubtype, NodePtr, WhatsitVariant};
 use crate::state::{FontState, MemState};
+use crate::units::MemIdx;
 use crate::units::{FontId, MemPtr, Scaled};
 
 use super::lists::PassiveId;
@@ -37,23 +39,19 @@ impl Breaker {
         };
 
         let r = mem.prev_rightmost(self.global_prev_p, self.cur_p);
-        let r = match p_disc {
-            Some(d) if !mem[d].pre_break.is_null() => mem.list_tail(mem[d].pre_break),
-            _ => self.find_protchar_right(mem, l, r)?,
+        let r = match p_disc.and_then(|d| mem[d].pre_break) {
+            Some(pre) => Some(mem.list_tail(pre)),
+            None => self.find_protchar_right(mem, l, r)?,
         };
 
-        let l_disc = if l.is_null() {
-            None
-        } else {
-            mem.classify_disc(l).ok().flatten()
-        };
+        let l_disc = l.and_then(|l| mem.classify_disc(l).ok().flatten());
         l = match l_disc {
-            Some(d) if !mem[d].post_break.is_null() => mem[d].post_break,
+            Some(d) if !mem[d].post_break.is_none() => mem[d].post_break,
             Some(d) => {
                 l = mem[d].link;
                 for _ in 0..mem[d].replace_count {
-                    if !l.link(mem).is_null() {
-                        l = l.link(mem);
+                    if let Some(next) = l.and_then(|x| x.link(mem)) {
+                        l = Some(next);
                     }
                 }
                 self.find_protchar_left(mem, l, true)?
@@ -71,14 +69,14 @@ impl Breaker {
             crate::scaled_math::round_xn_over_d(quad, cp, 1000)
         }
 
-        if p.is_null() {
+        let Some(p_idx) = p else {
             return Scaled::ZERO;
-        }
+        };
 
         let (f, c) = if let Some(ch) = mem.as_char(p) {
             (mem[ch].font, mem[ch].character)
         } else {
-            match mem.classify(p) {
+            match mem.classify(p_idx) {
                 Ok(AnyNode::Whatsit(w)) => match w.variant(mem) {
                     Some(WhatsitVariant::NativeWord(w)) => {
                         if mem[w].glyph_info == 0 {
@@ -115,14 +113,14 @@ impl Breaker {
         &mut self,
         mem: &mut MemState,
         fonts: &FontState,
-        q: MemPtr,
+        q: MemIdx,
         pre_break_tail: bool,
-    ) -> Result<MemPtr, Abort> {
+    ) -> Result<MemIdx, Abort> {
         let (p, ptmp) = if pre_break_tail {
-            (q, q)
+            (Some(q), Some(q))
         } else {
             let head = TEMP_HEAD.link(mem);
-            let ptmp = mem.prev_rightmost(head, q);
+            let ptmp = mem.prev_rightmost(head, Some(q));
             let p = self
                 .find_protchar_right(mem, head, ptmp)
                 .ok_or(Abort::PdfError(&[
@@ -137,10 +135,11 @@ impl Breaker {
             return Ok(q);
         }
 
+        let ptmp = ptmp.or_confusion("insert_right_margin_kern")?;
         let k = mem.new_margin_kern(-w, Side::Right)?;
         mem[k].link = ptmp.link(mem);
         ptmp.set_link(mem, k.ptr());
-        Ok(if ptmp == q { q.link(mem) } else { q })
+        Ok(if ptmp == q { k.idx() } else { q })
     }
 
     pub(super) fn insert_left_margin_kern(
@@ -171,7 +170,9 @@ impl MemState {
     /// Whether `p` is a char node or a node that glue may break after.
     #[inline]
     fn is_non_discardable(&self, p: MemPtr) -> bool {
-        self.is_char_node(p) || self.classify(p).is_ok_and(|n| n.precedes_break())
+        p.is_some_and(|p| {
+            self.is_char_node(p) || self.classify(p).is_ok_and(|n| n.precedes_break())
+        })
     }
 
     #[inline]
@@ -180,36 +181,34 @@ impl MemState {
             && self[b].width == Scaled::ZERO
             && self[b].height == Scaled::ZERO
             && self[b].depth == Scaled::ZERO
-            && self[b].list_ptr.is_null()
+            && self[b].list_ptr.is_none()
     }
 
     #[inline]
     fn is_empty_box(&self, p: MemPtr) -> bool {
-        matches!(self.classify_box(p), Ok(Some(b)) if self.is_empty_hlist(b))
+        matches!(p.map(|p| self.classify_box(p)), Some(Ok(Some(b))) if self.is_empty_hlist(b))
     }
 
     /// The list of `p` if `p` is an hlist with a nonempty list.
     #[inline]
-    fn nonempty_hlist(&self, p: MemPtr) -> Option<MemPtr> {
-        match self.classify_box(p) {
-            Ok(Some(b)) if self[b].is_hlist() => {
-                Some(self[b].list_ptr).filter(|list| !list.is_null())
-            }
+    fn nonempty_hlist(&self, p: MemPtr) -> Option<MemIdx> {
+        match p.map(|p| self.classify_box(p)) {
+            Some(Ok(Some(b))) if self[b].is_hlist() => self[b].list_ptr,
             _ => None,
         }
     }
 
     fn ignorable_protrusion_node(&self, p: MemPtr) -> bool {
-        if self.is_char_node(p) {
+        let Some(p) = p.filter(|&p| !self.is_char_node(p)) else {
             return false;
-        }
+        };
         match self.classify(p) {
             Ok(AnyNode::Ins(_) | AnyNode::Mark(_) | AnyNode::Adjust(_) | AnyNode::Penalty(_)) => {
                 true
             }
             Ok(AnyNode::Disc(d)) => {
-                self[d].pre_break.is_null()
-                    && self[d].post_break.is_null()
+                self[d].pre_break.is_none()
+                    && self[d].post_break.is_none()
                     && self[d].replace_count == 0
             }
             Ok(AnyNode::Math(m)) => self[m].width == Scaled::ZERO,
@@ -226,10 +225,12 @@ impl MemState {
 impl Breaker {
     fn find_protchar_left(&mut self, mem: &MemState, mut l: MemPtr, d: bool) -> Option<MemPtr> {
         if mem.is_empty_box(l) {
-            l = l.link(mem);
+            l = l.and_then(|x| x.link(mem));
         } else if d {
-            while !l.link(mem).is_null() && !mem.is_non_discardable(l) {
-                l = l.link(mem);
+            while let Some(x) =
+                l.filter(|&x| x.link(mem).is_some() && !mem.is_non_discardable(Some(x)))
+            {
+                l = x.link(mem);
             }
         }
 
@@ -242,17 +243,17 @@ impl Breaker {
                     if !self.push_node(l) {
                         return None;
                     }
-                    l = list;
+                    l = Some(list);
                 }
             }
 
             while run && mem.ignorable_protrusion_node(l) {
-                while l.link(mem).is_null() && !self.hlist_stack.is_empty() {
+                while l.is_some_and(|x| x.link(mem).is_none()) && !self.hlist_stack.is_empty() {
                     l = self.hlist_stack.pop()?;
                 }
 
-                if !l.link(mem).is_null() {
-                    l = l.link(mem);
+                if let Some(next) = l.and_then(|x| x.link(mem)) {
+                    l = Some(next);
                 } else if self.hlist_stack.is_empty() {
                     run = false;
                 }
@@ -270,8 +271,8 @@ impl Breaker {
         mut l: MemPtr,
         mut r: MemPtr,
     ) -> Option<MemPtr> {
-        if r.is_null() {
-            return Some(MemPtr::NULL);
+        if r.is_none() {
+            return Some(None);
         }
 
         self.hlist_stack.clear();
@@ -283,8 +284,8 @@ impl Breaker {
                     if !self.push_node(l) || !self.push_node(r) {
                         return None;
                     }
-                    l = list;
-                    r = mem.list_tail(l);
+                    l = Some(list);
+                    r = Some(mem.list_tail(list));
                 }
             }
 
@@ -294,7 +295,7 @@ impl Breaker {
                     l = self.hlist_stack.pop()?;
                 }
 
-                if r != l && !r.is_null() {
+                if r != l && !r.is_none() {
                     r = mem.prev_rightmost(l, r);
                 } else if r == l && self.hlist_stack.is_empty() {
                     run = false;

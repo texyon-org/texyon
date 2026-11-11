@@ -31,6 +31,8 @@ use crate::scan::fetch_box;
 use crate::state::{EngineState, InteractionMode, MemState, Selector};
 use crate::token::{Token, TokenList};
 use crate::units::CsId;
+use crate::units::MemIdx;
+use crate::units::RawPtr;
 use crate::units::{EqtbPtr, FontId, GlueOrder, MemPtr, Scaled, StrNumber};
 
 use crate::fonts::Side;
@@ -296,7 +298,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         let Command::Register(r) = st.scanner.cur else {
             return Err(Abort::Confusion("register"));
         };
-        let p = match r.get() {
+        let p = match r.get()? {
             RegisterRef::Scanned(level) => level,
             RegisterRef::Sparse(sa) => {
                 let level = st.mem[sa].sa_type().get().or_confusion("sa_type")?;
@@ -314,8 +316,8 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     };
 
     let (w, s) = match (p < ValueLevel::Glue, l) {
-        (true, RegisterLoc::Sparse(SaLeaf::Word(w))) => (st.mem[w].sa_int, MemPtr::NULL),
-        (true, RegisterLoc::Eqtb(l)) => (st.eqtb.equiv(l), MemPtr::NULL),
+        (true, RegisterLoc::Sparse(SaLeaf::Word(w))) => (st.mem[w].sa_int, None),
+        (true, RegisterLoc::Eqtb(l)) => (st.eqtb.equiv(l), None),
         (false, RegisterLoc::Sparse(SaLeaf::Pointer(p))) => (0, st.mem[p].sa_ptr),
         (_, RegisterLoc::Sparse(_)) => return Err(Abort::Confusion("register")),
         (false, RegisterLoc::Eqtb(l)) => (0, st.eqtb.equiv_ptr(l)),
@@ -434,7 +436,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             RegisterLoc::Eqtb(l) => word_define(st, global, l, v)?,
         },
         RegisterValue::Glue(g) => {
-            let g = MemPtr::from_raw(trap_zero_glue(st, g).raw());
+            let g = MemIdx::from_raw(trap_zero_glue(st, g).raw());
             match l {
                 RegisterLoc::Sparse(SaLeaf::Pointer(p)) => sa_define(st, global, p, g)?,
                 RegisterLoc::Sparse(_) => return Err(Abort::Confusion("register")),
@@ -573,7 +575,7 @@ fn define_toks(
 ) -> Result<(), Abort> {
     match target {
         RegisterLoc::Sparse(SaLeaf::Pointer(p)) => {
-            sa_define(st, global, p, MemPtr::from_raw(list.raw()))
+            sa_define(st, global, p, MemIdx::from_raw(list.raw()))
         }
         RegisterLoc::Sparse(_) => Err(Abort::Confusion("toks")),
         RegisterLoc::Eqtb(p) => {
@@ -681,8 +683,8 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             }
             let m = st.scanner.cur;
             let sparse = match m {
-                Command::ToksRegister(r) => r.get().map(|sa| NodePtr::at(sa.ptr())),
-                Command::Register(r) => match r.get() {
+                Command::ToksRegister(r) => r.get().map(NodePtr::at),
+                Command::Register(r) => match r.get()? {
                     RegisterRef::Sparse(sa) => Some(sa),
                     RegisterRef::Scanned(_) => None,
                 },
@@ -1063,7 +1065,7 @@ fn set_shape(st: &mut EngineState, global: bool, q: EqtbPtr) -> Result<(), Abort
     crate::scan::scan_optional_equals(st)?;
     let n = crate::scan::scan_int(st)?;
     let p = if n <= 0 {
-        MemPtr::NULL
+        None
     } else if q > PAR_SHAPE_LOC {
         let words = n / 2 + 1;
         let penalties = NodePtr::<PenaltiesNode>::alloc(&mut st.mem)?;

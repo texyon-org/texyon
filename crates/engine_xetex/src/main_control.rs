@@ -7,6 +7,7 @@ use crate::codes::{LeaderCode, ScannerStatus};
 use crate::command::Command;
 use crate::consts::{HMODE, IGNORE_DEPTH, MMODE, SINGLE_BASE, VMODE};
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::ext::do_extension;
 use crate::input::TokenType;
 use crate::math::{after_math, init_math};
@@ -57,10 +58,11 @@ pub(crate) const GLOBAL_BOX_FLAG: i32 = 0x4000_8000;
 pub(crate) const SHIP_OUT_FLAG: i32 = 0x4001_0000;
 pub(crate) const LEADER_FLAG: i32 = 0x4001_0001;
 
-fn append_list(st: &mut EngineState, head: MemPtr, tail: MemPtr) {
-    let first = head.link(&st.mem);
+fn append_list(st: &mut EngineState, head: MemPtr, tail: MemPtr) -> Result<(), Abort> {
+    let first = head.or_confusion("append_list")?.link(&st.mem);
     st.input.cur_list.tail.set_link(&mut st.mem, first);
-    st.input.cur_list.tail = tail;
+    st.input.cur_list.tail = tail.or_confusion("append_list")?;
+    Ok(())
 }
 
 fn begin_every(st: &mut EngineState, par: TokPar, kind: TokenType) -> Result<(), Abort> {
@@ -98,14 +100,14 @@ pub(crate) fn main_control_append_normal_space(st: &mut EngineState) -> Result<(
         st.mem.new_param_glue(&st.eqtb, GluePar::SpaceSkip)?
     };
     st.mem.temp_ptr = glue.ptr();
-    st.input.cur_list.tail_append(&mut st.mem, glue.ptr());
+    st.input.cur_list.tail_append(&mut st.mem, glue);
     Ok(())
 }
 
 fn append_rule(st: &mut EngineState) -> Result<(), Abort> {
     let mode = st.input.cur_list.mode.abs();
     let rule = crate::scan::scan_rule_spec(st)?;
-    st.input.cur_list.tail_append(&mut st.mem, rule.ptr());
+    st.input.cur_list.tail_append(&mut st.mem, rule);
     if mode == VMODE {
         st.input.cur_list.set_prev_depth(IGNORE_DEPTH);
     } else if mode == HMODE {
@@ -126,7 +128,7 @@ fn valign_or_lr(st: &mut EngineState, code: ValignCode) -> Result<(), Abort> {
     )?;
     if enabled {
         let m = st.mem.new_math(Scaled::ZERO, math_code)?;
-        st.input.cur_list.tail_append(&mut st.mem, m.ptr());
+        st.input.cur_list.tail_append(&mut st.mem, m);
     }
     Ok(())
 }
@@ -146,7 +148,7 @@ fn in_math_shift_group(
 /// Appends a noad of type `kind` (an ordinary one for `{`, put back) and scans its nucleus.
 fn append_noad(st: &mut EngineState, kind: Option<NodeType>) -> Result<(), Abort> {
     let n = st.mem.new_noad()?;
-    st.input.cur_list.tail_append(&mut st.mem, n.ptr());
+    st.input.cur_list.tail_append(&mut st.mem, n);
     match kind {
         Some(t) => st.mem[n].noad_type = t.into(),
         None => crate::input::back_input(st)?,
@@ -393,7 +395,7 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
         (HMODE, Command::ItalCorr) => append_italic_correction(st)?,
         (MMODE, Command::ItalCorr) => {
             let k = st.mem.new_kern(Scaled::ZERO)?;
-            st.input.cur_list.tail_append(&mut st.mem, k.ptr());
+            st.input.cur_list.tail_append(&mut st.mem, k);
         }
         (HMODE | MMODE, Command::Discretionary { hyphen }) => append_discretionary(st, hyphen)?,
         (HMODE, Command::Accent) => make_accent(st)?,
@@ -449,11 +451,11 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
         (MMODE, Command::Vcenter) => math_vcenter(st)?,
         (MMODE, Command::MathStyle(style)) => {
             let s = st.mem.new_style(style)?;
-            st.input.cur_list.tail_append(&mut st.mem, s.ptr());
+            st.input.cur_list.tail_append(&mut st.mem, s);
         }
         (MMODE, Command::NonScript) => {
             let g = st.mem.new_glue(ZERO_GLUE)?;
-            st.input.cur_list.tail_append(&mut st.mem, g.ptr());
+            st.input.cur_list.tail_append(&mut st.mem, g);
             st.mem[g].subtype = GlueKind::CondMath.into();
         }
         (MMODE, Command::MathChoice) => crate::math::append_choices(st)?,

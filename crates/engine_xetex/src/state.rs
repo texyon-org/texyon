@@ -5,6 +5,7 @@ use crate::codes::{FiOrElseCode, ValueLevel};
 use crate::errors::OrConfusion;
 use crate::glue_store::GlueSpecId;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
+use crate::units::RawPtr;
 use crate::units::{
     BufPos, CsId, EqtbPtr, FontId, FontInfoIdx, PoolPos, PrimNum, SavePtr, Scaled, StrNumber,
 };
@@ -74,7 +75,7 @@ pub(crate) struct SynctexCtxt {
     pub root_name: Option<Vec<u8>>,
     pub count: i32,
     /// The node of the current context, `None` before the first.
-    pub node: Option<crate::units::MemPtr>,
+    pub node: crate::units::MemPtr,
     /// A kern whose record waits for the context to change. When set it equals
     /// `node`, so flush sites record it before reassigning `node`.
     pub deferred_kern: Option<crate::node::NodePtr<crate::node::KernNode>>,
@@ -556,7 +557,7 @@ impl EqtbState {
     /// `equiv(p)` of an entry that holds a pointer.
     #[inline]
     pub(crate) fn equiv_ptr(&self, p: EqtbPtr) -> crate::units::MemPtr {
-        crate::units::MemPtr::from_raw(self.equiv(p))
+        crate::units::MemIdx::from_raw(self.equiv(p))
     }
     /// `equiv(p)` of a macro or token-list entry.
     #[inline]
@@ -973,7 +974,7 @@ impl SaveStackState {
     /// `save_index(k)` of an entry that saved a pointer.
     #[inline]
     pub(crate) fn save_index_ptr(&self, k: SavePtr) -> crate::units::MemPtr {
-        crate::units::MemPtr::from_raw(self.save_index(k))
+        crate::units::MemIdx::from_raw(self.save_index(k))
     }
     /// Writes a restore entry at `save_ptr`.
     #[inline]
@@ -1036,9 +1037,7 @@ impl SaRoots {
         &self,
         t: ValueLevel,
     ) -> Option<crate::node::NodePtr<crate::node::SaIndexNode>> {
-        self.0[t as usize]
-            .as_idx()
-            .map(crate::node::NodePtr::from_idx_unchecked)
+        self.0[t as usize].map(crate::node::NodePtr::from_idx_unchecked)
     }
 
     #[inline]
@@ -1671,7 +1670,7 @@ impl Default for HyphState {
             is_hyph: false,
             hf: crate::consts::NULL_FONT,
             max_hyph_char: 0,
-            init_list: crate::units::MemPtr::NULL,
+            init_list: None,
             init_lig: false,
             init_lft: false,
             hyphen_passed: 0,

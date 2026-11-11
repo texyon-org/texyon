@@ -164,18 +164,20 @@ pub(crate) fn back_input(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 impl MemState {
-    pub(crate) fn pseudo_close(&mut self, input: &mut InputClusterState) {
-        let file = NodePtr::<PseudoFileNode>::at(input.pseudo_files);
+    pub(crate) fn pseudo_close(&mut self, input: &mut InputClusterState) -> Result<(), Abort> {
+        let file =
+            NodePtr::<PseudoFileNode>::from_ptr(input.pseudo_files).or_confusion("pseudo file")?;
         let PseudoFileNode { lines, link, .. } = self[file];
         file.free(self);
         input.pseudo_files = link;
-        let mut line = lines.get();
+        let mut line = lines;
         while let Some(l) = line {
             let header = self[l];
-            line = header.link.get();
+            line = header.link;
             self.release_payload(l);
             l.free(self);
         }
+        Ok(())
     }
 }
 
@@ -213,7 +215,7 @@ pub(crate) fn end_file_reading(st: &mut EngineState) -> Result<(), Abort> {
     st.input.first = st.input.cur_input.start;
     st.mem.line = st.input.open_levels[usize::from(st.input.cur_input.index)].outer_line;
     match st.input.cur_input.name {
-        InputName::Pseudo { .. } => st.mem.pseudo_close(&mut st.input),
+        InputName::Pseudo { .. } => st.mem.pseudo_close(&mut st.input)?,
         InputName::File(_) => {
             let idx = st.input.cur_input.index as usize;
             let slot = std::mem::take(&mut st.input.input_file[idx]);
@@ -230,8 +232,9 @@ pub(crate) fn end_file_reading(st: &mut EngineState) -> Result<(), Abort> {
 
 pub(crate) fn pseudo_input(st: &mut EngineState) -> Result<bool, Abort> {
     st.input.last = st.input.first;
-    let file = NodePtr::<PseudoFileNode>::at(st.input.pseudo_files);
-    let Some(line) = st.mem[file].lines.get() else {
+    let file =
+        NodePtr::<PseudoFileNode>::from_ptr(st.input.pseudo_files).or_confusion("pseudo file")?;
+    let Some(line) = st.mem[file].lines else {
         return Ok(false);
     };
     let header = st.mem[line];

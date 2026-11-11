@@ -22,6 +22,7 @@ use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::scaled_math::{mult_and_add, x_over_n, xn_over_d};
 use crate::state::{EngineState, EqtbState, FontState, MemState, ScannerState};
+use crate::units::MemIdx;
 use crate::units::{FontId, GlueOrder, MemPtr, NodeType, Scaled};
 
 use super::delimiters::{build_opentype_assembly, rebox, var_delimiter};
@@ -117,7 +118,7 @@ impl ListStateRecord {
         if let Some(n) = self.incompleat_noad() {
             mem.flush_node_list(n.ptr())?;
         }
-        self.head.set_link(mem, MemPtr::NULL);
+        self.head.set_link(mem, None);
         self.tail = self.head;
         self.set_incompleat_noad(None);
         Ok(())
@@ -140,8 +141,8 @@ pub(super) fn clean_box(
         _ => st.mem.new_null_box()?.ptr(),
     };
 
-    let lone_box = match q.as_idx() {
-        Some(idx) if !st.mem.is_char_node(q) && q.link(&st.mem).is_null() => {
+    let lone_box = match q {
+        Some(idx) if !st.mem.is_char_node(idx) && idx.link(&st.mem).is_none() => {
             match st.mem.classify_box(idx) {
                 Ok(Some(b)) if st.mem[b].shift_amount == Scaled::ZERO => Some(b),
                 _ => None,
@@ -155,15 +156,14 @@ pub(super) fn clean_box(
     };
 
     let head = st.mem[x_box].list_ptr;
-    if st.mem.is_char_node(head) {
-        let r = head.link(&st.mem);
-        if let Some(r_idx) = r.as_idx() {
-            if r.link(&st.mem).is_null()
-                && !st.mem.is_char_node(r)
-                && matches!(st.mem.classify(r_idx), Ok(AnyNode::Kern(_)))
+    if let Some(h) = st.mem.as_char(head) {
+        let r = h.idx().link(&st.mem);
+        if let Some(r_idx) = r {
+            if r_idx.link(&st.mem).is_none()
+                && matches!(st.mem.classify_non_char(r), Some(AnyNode::Kern(_)))
             {
-                st.mem.free_node(r, KernNode::SIZE);
-                head.set_link(&mut st.mem, MemPtr::NULL);
+                st.mem.free_node(r_idx, KernNode::SIZE);
+                h.idx().set_link(&mut st.mem, None);
             }
         }
     }
@@ -294,11 +294,9 @@ fn make_under(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Resul
 fn make_vcenter(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<(), Abort> {
     let axis_height = st.fonts.axis_height(&st.eqtb, style.size());
     let mem = &mut st.mem;
-    let Ok(Some(v)) = mem
-        .classify_box(mem[q].nucleus.info())
-        .map(|b| b.filter(|&b| mem[b].is_vlist()))
-    else {
-        return Err(Abort::Confusion("vcenter"));
+    let v = match mem[q].nucleus.info().map(|i| mem.classify_box(i)) {
+        Some(Ok(Some(b))) if mem[b].is_vlist() => b,
+        _ => return Err(Abort::Confusion("vcenter")),
     };
     let delta = mem[v].height + mem[v].depth;
     let node = &mut mem[v];
@@ -785,7 +783,7 @@ fn make_ord(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<
             return Ok(());
         }
         let p = st.mem[q].link;
-        let Some(p) = p.as_idx() else {
+        let Some(p) = p else {
             return Ok(());
         };
         let p_node = match st
@@ -904,7 +902,7 @@ fn make_math_accent(
         node.supscr = src.supscr;
         node.subscr = src.subscr;
         for script in [MathSlot::Supscr(n), MathSlot::Subscr(n)] {
-            mem[script].set_info(MemPtr::from_raw(0));
+            mem[script].set_info(MemIdx::from_raw(0));
             mem[script].math_type = EMPTY;
         }
         mem[n].nucleus.math_type = SUB_MLIST;
@@ -1055,38 +1053,35 @@ impl MemState {
         let kept = match cur_style.level() {
             0 => {
                 let p = self[choice].display_mlist;
-                self[choice].display_mlist = MemPtr::NULL;
+                self[choice].display_mlist = None;
                 p
             }
             1 => {
                 let p = self[choice].text_mlist;
-                self[choice].text_mlist = MemPtr::NULL;
+                self[choice].text_mlist = None;
                 p
             }
             2 => {
                 let p = self[choice].script_mlist;
-                self[choice].script_mlist = MemPtr::NULL;
+                self[choice].script_mlist = None;
                 p
             }
             3 => {
                 let p = self[choice].script_script_mlist;
-                self[choice].script_script_mlist = MemPtr::NULL;
+                self[choice].script_script_mlist = None;
                 p
             }
-            _ => MemPtr::NULL,
+            _ => None,
         };
         self.flush_node_list(self[choice].display_mlist)?;
         self.flush_node_list(self[choice].text_mlist)?;
         self.flush_node_list(self[choice].script_mlist)?;
         self.flush_node_list(self[choice].script_script_mlist)?;
         let style = choice.into_style(self, cur_style);
-        if !kept.is_null() {
+        if let Some(k) = kept {
             let z = self[style].link;
             self[style].link = kept;
-            let mut p = kept;
-            while !p.link(self).is_null() {
-                p = p.link(self);
-            }
+            let p = self.list_tail(k);
             p.set_link(self, z);
         }
         Ok(())
@@ -1113,26 +1108,26 @@ impl MemState {
         }
 
         let p = self[glue].link;
-        let Some(p_idx) = p.as_idx() else {
+        let Some(p_idx) = p else {
             return Ok(());
         };
         if matches!(
             self.classify(p_idx),
             Ok(AnyNode::Glue(_) | AnyNode::Kern(_))
         ) {
-            self[glue].link = p.link(self);
-            p.set_link(self, MemPtr::NULL);
+            self[glue].link = p_idx.link(self);
+            p_idx.set_link(self, None);
             self.flush_node_list(p)?;
         }
         Ok(())
     }
 
     /// Moves `node` onto the output list after `tail`, returning it and its old successor.
-    fn mlist_move_output_node(&mut self, tail: MemPtr, node: AnyNode) -> (MemPtr, MemPtr) {
-        let q = MemPtr::from_idx(node.idx());
-        tail.set_link(self, q);
+    fn mlist_move_output_node(&mut self, tail: MemIdx, node: AnyNode) -> (MemIdx, MemPtr) {
+        let q = node.idx();
+        tail.set_link(self, Some(q));
         let next = q.link(self);
-        q.set_link(self, MemPtr::NULL);
+        q.set_link(self, None);
         (q, next)
     }
 }
@@ -1189,7 +1184,7 @@ fn mlist_nucleus(
                 delta = st.fonts.char_italic(cur_f, fetched.i);
                 let cc = fetched.c as u16;
                 let p = crate::main_control::new_character(st, cur_f, cc)?;
-                let p = p.map_or(MemPtr::NULL, crate::main_control::NewChar::ptr);
+                let p = p.and_then(crate::main_control::NewChar::ptr);
                 if st.mem[qn].nucleus.math_type == MATH_TEXT_CHAR
                     && st.fonts.param(cur_f, SPACE_CODE) != Scaled::ZERO
                 {
@@ -1197,16 +1192,18 @@ fn mlist_nucleus(
                 }
                 p
             } else {
-                MemPtr::NULL
+                None
             };
-            if !p.is_null() && st.mem[qn].subscr.math_type == EMPTY && delta != Scaled::ZERO {
-                let k = st.mem.new_kern(delta)?;
-                p.set_link(&mut st.mem, k.ptr());
-                delta = Scaled::ZERO;
+            if let Some(pk) = p {
+                if st.mem[qn].subscr.math_type == EMPTY && delta != Scaled::ZERO {
+                    let k = st.mem.new_kern(delta)?;
+                    pk.set_link(&mut st.mem, k.ptr());
+                    delta = Scaled::ZERO;
+                }
             }
             p
         }
-        EMPTY => MemPtr::NULL,
+        EMPTY => None,
         SUB_BOX => st.mem[qn].nucleus.info(),
         SUB_MLIST => {
             let mlist = st.mem[qn].nucleus.info();
@@ -1272,11 +1269,11 @@ pub(super) fn mlist_to_hlist(
         DoneWithNode,
     }
 
-    while !q.is_null() {
+    while let Some(here) = q {
         let mut delta;
         let action = 'reswitch: loop {
             delta = Scaled::ZERO;
-            match st.mem.classify(q) {
+            match st.mem.classify(here) {
                 Ok(AnyNode::Noad(qn)) => match qn.variant(&st.mem) {
                     NoadVariant::Fraction(f) => {
                         make_fraction(st, f, style)?;
@@ -1399,7 +1396,7 @@ pub(super) fn mlist_to_hlist(
 
         let qn = match action {
             FirstPass::DoneWithNode => {
-                q = q.link(&st.mem);
+                q = here.link(&st.mem);
                 continue;
             }
             FirstPass::DoneWithNoad(qn) => qn,
@@ -1422,7 +1419,7 @@ pub(super) fn mlist_to_hlist(
         let r = r.or_confusion("mlist1")?;
         st.mem[r].noad_type = NodeType::OrdNoad.into();
     }
-    p.set_link(&mut st.mem, MemPtr::NULL);
+    p.set_link(&mut st.mem, None);
     q = mlist;
     r_type = 0;
     style = start_style;
@@ -1433,11 +1430,11 @@ pub(super) fn mlist_to_hlist(
         Moved,
     }
 
-    while !q.is_null() {
+    while let Some(here) = q {
         let mut t = NodeType::OrdNoad.to_u16();
         let mut s = Noad::SIZE;
         let mut pen = INF_PENALTY;
-        let step = match st.mem.classify(q) {
+        let step = match st.mem.classify(here) {
             Ok(AnyNode::Noad(qn)) => {
                 let variant = qn.variant(&st.mem);
                 s = variant.size();
@@ -1526,29 +1523,24 @@ pub(super) fn mlist_to_hlist(
                     st.mem[y].ref_count = TEX_NULL;
                     p.set_link(&mut st.mem, z.ptr());
                     st.mem[z].subtype = GlueKind::Param(x).into();
-                    p = z.ptr();
+                    p = z.idx();
                 }
             }
 
-            let head = st.mem[qn].new_hlist;
-            if !head.is_null() {
-                p.set_link(&mut st.mem, head);
-                let mut tail = head;
-                while !tail.link(&st.mem).is_null() {
-                    tail = tail.link(&st.mem);
-                }
-                p = tail;
+            if let Some(head) = st.mem[qn].new_hlist {
+                p.set_link(&mut st.mem, Some(head));
+                p = st.mem.list_tail(head);
             }
 
             if penalties && pen < INF_PENALTY {
-                if let Some(next) = st.mem[qn].link.as_idx() {
+                if let Some(next) = st.mem[qn].link {
                     if !matches!(
                         st.mem.node_type(next),
                         Ok(NodeType::Penalty | NodeType::RelNoad)
                     ) {
                         let z = st.mem.new_penalty(pen)?;
                         p.set_link(&mut st.mem, z.ptr());
-                        p = z.ptr();
+                        p = z.idx();
                     }
                 }
             }
@@ -1559,8 +1551,8 @@ pub(super) fn mlist_to_hlist(
             r_type = t;
         }
 
-        let nq = q.link(&st.mem);
-        st.mem.free_node(q, s);
+        let nq = here.link(&st.mem);
+        st.mem.free_node(here, s);
         q = nq;
     }
     Ok(TEMP_HEAD.link(&st.mem))
@@ -1579,14 +1571,9 @@ impl MemState {
         node.stretch = max - min;
         let p = self.new_glue(spec)?;
         if self[b].is_hlist() {
-            let mut q = self[b].list_ptr;
-            if q.is_null() {
-                self[b].list_ptr = p.ptr();
-            } else {
-                while !q.link(self).is_null() {
-                    q = q.link(self);
-                }
-                q.set_link(self, p.ptr());
+            match self[b].list_ptr {
+                None => self[b].list_ptr = p.ptr(),
+                Some(q) => self.list_tail(q).set_link(self, p.ptr()),
             }
         } else {
             self[p].link = self[b].list_ptr;
@@ -1613,7 +1600,7 @@ fn compute_ot_math_accent_pos(
             }
             SUB_MLIST => {
                 let r = st.mem[p].base.nucleus.info();
-                match r.as_idx().map(|ri| st.mem.classify_noad(ri)) {
+                match r.map(|ri| st.mem.classify_noad(ri)) {
                     Some(Ok(Some(rn))) => match rn.variant(&st.mem) {
                         NoadVariant::Accent(a) => p = a,
                         _ => return Ok(INFINITE_DIMEN),

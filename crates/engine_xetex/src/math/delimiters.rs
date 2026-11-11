@@ -2,6 +2,7 @@
 
 use crate::consts::{NULL_FONT, SCRIPT_SIZE};
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::fonts::{CharInfo, CharTag, AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::mem::SS_GLUE;
 use crate::node::DelimiterWord;
@@ -111,20 +112,16 @@ fn stack_glyph_into_box(
     let p = new_measured_glyph(st, f, g)?;
     let mem = &mut st.mem;
     if mem[b].is_hlist() {
-        let mut q = mem[b].list_ptr;
-        if q.is_null() {
-            mem[b].list_ptr = p.ptr();
-        } else {
-            while !q.link(mem).is_null() {
-                q = q.link(mem);
-            }
-            q.set_link(mem, p.ptr());
+        if let Some(first) = mem[b].list_ptr {
+            mem.list_tail(first).set_link(mem, p.ptr());
             if mem[b].height < mem[p].height {
                 mem[b].height = mem[p].height;
             }
             if mem[b].depth < mem[p].depth {
                 mem[b].depth = mem[p].depth;
             }
+        } else {
+            mem[b].list_ptr = p.ptr();
         }
     } else {
         mem[p].link = mem[b].list_ptr;
@@ -156,16 +153,20 @@ pub(super) fn rebox(
     w: Scaled,
 ) -> Result<NodePtr<BoxNode>, Abort> {
     let mut b = b;
-    if st.mem[b].width != w && !st.mem[b].list_ptr.is_null() && st.mem[b].is_vlist() {
+    if st.mem[b].width != w && !st.mem[b].list_ptr.is_none() && st.mem[b].is_vlist() {
         b = crate::packaging::hpack(st, b.ptr(), PackSpec::NATURAL)?;
     }
-    if st.mem[b].width == w || st.mem[b].list_ptr.is_null() {
+    if st.mem[b].width == w || st.mem[b].list_ptr.is_none() {
         st.mem[b].width = w;
         return Ok(b);
     }
 
-    let mut p = st.mem[b].list_ptr;
-    if let Some(ch) = st.mem.as_char(p).filter(|_| p.link(&st.mem).is_null()) {
+    let first = st.mem[b].list_ptr.or_confusion("rebox")?;
+    if let Some(ch) = st
+        .mem
+        .as_char(Some(first))
+        .filter(|_| first.link(&st.mem).is_none())
+    {
         let f = st.mem[ch].font;
         let c = st.fonts.effective_char(f, st.mem[ch].character);
         let q = st.fonts.char_info(f, c);
@@ -173,18 +174,16 @@ pub(super) fn rebox(
         let bw = st.mem[b].width;
         if v != bw {
             let k = st.mem.new_kern(bw - v)?;
-            p.set_link(&mut st.mem, k.ptr());
+            first.set_link(&mut st.mem, k.ptr());
         }
     }
     let mem = &mut st.mem;
     b.free(mem);
     let g = mem.new_glue(SS_GLUE)?;
-    mem[g].link = p;
-    while !p.link(mem).is_null() {
-        p = p.link(mem);
-    }
+    mem[g].link = Some(first);
+    let last = mem.list_tail(first);
     let tail_glue = mem.new_glue(SS_GLUE)?;
-    p.set_link(mem, tail_glue.ptr());
+    last.set_link(mem, tail_glue.ptr());
     crate::packaging::hpack(st, g.ptr(), PackSpec::Exactly(w))
 }
 
@@ -234,8 +233,8 @@ pub(super) fn build_opentype_assembly(
     let mut p = st.mem[b].list_ptr;
     let mut nat = Scaled::ZERO;
     let mut str = Scaled::ZERO;
-    while !p.is_null() {
-        match st.mem.classify(p) {
+    while let Some(here) = p {
+        match st.mem.classify(here) {
             Ok(AnyNode::Whatsit(pw)) => {
                 if let Some(sized) = pw.dims(&st.mem) {
                     if horiz {
@@ -252,7 +251,7 @@ pub(super) fn build_opentype_assembly(
             }
             _ => {}
         }
-        p = p.link(&st.mem);
+        p = here.link(&st.mem);
     }
     if s > nat && str > Scaled::ZERO {
         let o = (s - nat).min(str);

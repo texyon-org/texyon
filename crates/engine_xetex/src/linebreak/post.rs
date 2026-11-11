@@ -63,7 +63,7 @@ impl Breaker {
 
         if texxet {
             let mut q = TEMP_HEAD.link(mem);
-            if !lr_ptr.is_null() {
+            if !lr_ptr.is_none() {
                 let mut temp_ptr = *lr_ptr;
                 let mut r = q;
                 loop {
@@ -71,8 +71,8 @@ impl Breaker {
                     let s = mem.new_math(Scaled::ZERO, code.as_begin())?;
                     mem[s].link = r;
                     r = s.ptr();
-                    temp_ptr = temp_ptr.link(mem);
-                    if temp_ptr.is_null() {
+                    temp_ptr = temp_ptr.and_then(|t| t.link(mem));
+                    if temp_ptr.is_none() {
                         break;
                     }
                 }
@@ -80,25 +80,25 @@ impl Breaker {
             }
 
             while q != cur_break {
-                if !mem.is_char_node(q) {
-                    if let Ok(AnyNode::Math(m)) = mem.classify(q) {
-                        mem.update_lr_stack(m, lr_ptr)?;
-                    }
+                let here = q.or_confusion("post_line_break")?;
+                if let Some(AnyNode::Math(m)) = mem.classify_non_char(q) {
+                    mem.update_lr_stack(m, lr_ptr)?;
                 }
-                q = q.link(mem);
+                q = here.link(mem);
             }
         }
 
-        let mut q = cur_break;
         let mut disc_break = false;
         let mut post_disc_break = false;
         let mut glue_break = false;
         let mut pre_break_tail = false;
 
-        if q.is_null() {
-            q = mem.list_tail(TEMP_HEAD);
-        } else {
-            match mem.classify(q) {
+        let mut q = match cur_break {
+            None => mem.list_tail(TEMP_HEAD),
+            Some(cb) => cb,
+        };
+        if let Some(cb) = cur_break {
+            match mem.classify(cb) {
                 Ok(AnyNode::Glue(g)) => {
                     let old_spec = mem[g].glue_ptr;
                     mem.delete_glue_ref(old_spec);
@@ -115,30 +115,28 @@ impl Breaker {
                     if t == 0 {
                         r = mem[d].link;
                     } else {
-                        r = q;
+                        let mut last = cb;
                         for _ in 1..t {
-                            r = r.link(mem);
+                            last = last.link(mem).or_confusion("disc")?;
                         }
-                        let s = r.link(mem);
+                        let s = last.link(mem).or_confusion("disc")?;
                         r = s.link(mem);
-                        s.set_link(mem, MemPtr::NULL);
+                        s.set_link(mem, None);
                         mem.flush_node_list(mem[d].link)?;
                         mem[d].replace_count = 0;
                     }
 
-                    let post_break = mem[d].post_break;
-                    if !post_break.is_null() {
+                    if let Some(post_break) = mem[d].post_break {
                         mem.list_tail(post_break).set_link(mem, r);
-                        r = post_break;
-                        mem[d].post_break = MemPtr::NULL;
+                        r = Some(post_break);
+                        mem[d].post_break = None;
                         post_disc_break = true;
                     }
 
-                    let pre_break = mem[d].pre_break;
-                    if !pre_break.is_null() {
-                        mem[d].link = pre_break;
+                    if let Some(pre_break) = mem[d].pre_break {
+                        mem[d].link = Some(pre_break);
                         q = mem.list_tail(pre_break);
-                        mem[d].pre_break = MemPtr::NULL;
+                        mem[d].pre_break = None;
                         pre_break_tail = true;
                     }
 
@@ -164,31 +162,25 @@ impl Breaker {
             let r = mem.new_param_glue(eqtb, GluePar::RightSkip)?;
             mem[r].link = q.link(mem);
             q.set_link(mem, r.ptr());
-            q = r.ptr();
+            q = r.idx();
         }
 
-        if texxet && !lr_ptr.is_null() {
-            let mut s = TEMP_HEAD;
-            let mut r = s.link(mem);
-            while r != q {
-                s = r;
-                r = s.link(mem);
-            }
-
-            r = *lr_ptr;
-            while !r.is_null() {
+        if texxet && !lr_ptr.is_none() {
+            let mut s = mem.predecessor(TEMP_HEAD, Some(q))?;
+            let mut r = *lr_ptr;
+            while let Some(entry) = r {
                 let code = mem.lr_code(r).or_confusion("LR")?;
                 let m = mem.new_math(Scaled::ZERO, code)?;
                 s.set_link(mem, m.ptr());
-                s = m.ptr();
-                r = r.link(mem);
+                s = m.idx();
+                r = entry.link(mem);
             }
-            s.set_link(mem, q);
+            s.set_link(mem, Some(q));
         }
 
         let r = q.link(mem);
-        q.set_link(mem, MemPtr::NULL);
-        q = TEMP_HEAD.link(mem);
+        q.set_link(mem, None);
+        let mut q = TEMP_HEAD.link(mem);
         TEMP_HEAD.set_link(mem, r);
 
         if protrude {
@@ -247,7 +239,7 @@ impl MemState {
         let code = self[q].code()?;
         let end_lr = code.lr_end();
         if code.is_end() {
-            if !lr_ptr.is_null() && self.lr_code(*lr_ptr) == Some(end_lr) {
+            if !lr_ptr.is_none() && self.lr_code(*lr_ptr) == Some(end_lr) {
                 self.pop_lr(lr_ptr);
             }
             Ok(())
@@ -287,16 +279,16 @@ impl Breaker {
         let list = &mut input.cur_list;
         mem[just_box].shift_amount = hpack.cur_indent;
 
-        if adjust.pre != PRE_ADJUST_HEAD {
+        if adjust.pre != Some(PRE_ADJUST_HEAD) {
             list.tail.set_link(mem, PRE_ADJUST_HEAD.link(mem));
-            list.tail = adjust.pre;
+            list.tail = adjust.pre.or_confusion("pre_adjust_tail")?;
         }
 
         list.append_to_vlist(mem, eqtb, just_box)?;
 
-        if adjust.post != ADJUST_HEAD {
+        if adjust.post != Some(ADJUST_HEAD) {
             list.tail.set_link(mem, ADJUST_HEAD.link(mem));
-            list.tail = adjust.post;
+            list.tail = adjust.post.or_confusion("adjust_tail")?;
         }
 
         if cur_line.wrapping_add(1) != best_line {
@@ -342,7 +334,7 @@ impl Breaker {
 
             if pen != 0 {
                 let r = mem.new_penalty(pen)?;
-                list.tail_append(mem, r.ptr());
+                list.tail_append(mem, r);
             }
         }
 
@@ -356,10 +348,14 @@ impl Breaker {
             let mut q;
             loop {
                 q = r.link(mem);
-                if q == cur_break || mem.is_char_node(q) {
+                if q == cur_break {
                     break;
                 }
-                let node = mem.classify(q);
+                let here = q.or_confusion("post_line_break")?;
+                if mem.is_char_node(here) {
+                    break;
+                }
+                let node = mem.classify(here);
                 match node {
                     Ok(node) if node.precedes_break() => break,
                     Ok(AnyNode::Kern(k))
@@ -371,7 +367,7 @@ impl Breaker {
                     _ => {}
                 }
 
-                r = q;
+                r = here;
                 if texxet {
                     if let Ok(AnyNode::Math(m)) = node {
                         mem.update_lr_stack(m, lr_ptr)?;
@@ -380,7 +376,7 @@ impl Breaker {
             }
 
             if r != TEMP_HEAD {
-                r.set_link(mem, MemPtr::NULL);
+                r.set_link(mem, None);
                 mem.flush_node_list(TEMP_HEAD.link(mem))?;
                 TEMP_HEAD.set_link(mem, q);
             }
@@ -428,7 +424,7 @@ pub(super) fn post_line_break(
         }
     };
 
-    if lines.cur_line != lines.best_line || !TEMP_HEAD.link(&st.mem).is_null() {
+    if lines.cur_line != lines.best_line || !TEMP_HEAD.link(&st.mem).is_none() {
         return Err(Abort::Confusion("line breaking"));
     }
 

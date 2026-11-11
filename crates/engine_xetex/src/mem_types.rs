@@ -97,11 +97,11 @@ pub(crate) fn zeroed_vec<T: ZeroWord>(len: usize) -> Vec<T> {
 
 /// One level of TeX's semantic nest (`list_state_record`).
 #[repr(C)]
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone)]
 pub struct ListStateRecord {
     pub mode: i16,
-    pub head: crate::units::MemPtr,
-    pub tail: crate::units::MemPtr,
+    pub head: crate::units::MemIdx,
+    pub tail: crate::units::MemIdx,
     pub e_tex_aux: crate::units::MemPtr,
     pub prev_graf: i32,
     pub mode_line: i32,
@@ -109,6 +109,21 @@ pub struct ListStateRecord {
 }
 
 const _: () = assert!(size_of::<ListStateRecord>() == 32);
+
+/// The outer vertical list, empty.
+impl Default for ListStateRecord {
+    fn default() -> Self {
+        Self {
+            mode: 0,
+            head: crate::mem::CONTRIB_HEAD,
+            tail: crate::mem::CONTRIB_HEAD,
+            e_tex_aux: None,
+            prev_graf: 0,
+            mode_line: 0,
+            aux: MemoryWord::default(),
+        }
+    }
+}
 
 impl ListStateRecord {
     /// `prev_depth`, the aux word of vertical modes.
@@ -141,7 +156,7 @@ impl ListStateRecord {
     /// `incompleat_noad`, math mode's pending fraction.
     #[inline]
     pub fn incompleat_noad(&self) -> Option<crate::node::NodePtr<crate::node::FractionNoad>> {
-        let p = crate::units::MemPtr::from_raw(self.aux_s1()).as_idx()?;
+        let p = crate::units::MemIdx::from_raw(self.aux_s1())?;
         // SAFETY: math mode only stores a fraction noad here.
         Some(crate::node::NodePtr::from_idx_unchecked(p))
     }
@@ -171,8 +186,9 @@ impl ListStateRecord {
 
     /// Links `p` after the tail and makes it the new tail.
     #[inline]
-    pub fn tail_append(&mut self, mem: &mut crate::state::MemState, p: crate::units::MemPtr) {
-        self.tail.set_link(mem, p);
+    pub fn tail_append(&mut self, mem: &mut crate::state::MemState, p: impl crate::units::MemAddr) {
+        let p = p.addr();
+        self.tail.set_link(mem, Some(p));
         self.tail = p;
     }
 }

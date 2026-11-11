@@ -28,6 +28,7 @@ use crate::params::TokPar;
 use crate::state::{EngineState, FontEngineHandle};
 use crate::token::TokenList;
 use crate::units::CsId;
+use crate::units::RawPtr;
 use crate::units::{EqtbPtr, FontId, FontInfoIdx, NodeType, Scaled, StrNumber};
 use std::rc::Rc;
 
@@ -668,7 +669,7 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: LastItemCode) -> Result<Scaled
 }
 
 /// `\lastpenalty`, `\lastkern`, `\lastskip` and `\lastnodetype`.
-fn fetch_last_node_item(st: &EngineState, code: LastItemCode) -> CurVal {
+fn fetch_last_node_item(st: &EngineState, code: LastItemCode) -> Result<CurVal, Abort> {
     let head = st.input.cur_list.head;
     let mode = st.input.cur_list.mode;
     // The list head is no node, as TeX's hi-mem head counted as a character.
@@ -677,13 +678,13 @@ fn fetch_last_node_item(st: &EngineState, code: LastItemCode) -> CurVal {
     let mut node = item(tx);
     if let Some(Ok(AnyNode::Math(math))) = node {
         if st.mem[math].subtype == MathCode::EndM {
-            tx = st.mem.predecessor(head, tx);
+            tx = st.mem.predecessor(head, Some(tx))?;
             node = item(tx);
         }
     }
     let node = node.filter(|_| mode != 0);
     let at_page_head = node.is_none() && mode == VMODE && tx == head;
-    match code {
+    Ok(match code {
         LastItemCode::LastNodeType => CurVal::Int(if node.is_some() {
             let node_type = st.mem.type_code(tx);
             if node_type <= NodeType::Unset.to_u16() {
@@ -716,7 +717,7 @@ fn fetch_last_node_item(st: &EngineState, code: LastItemCode) -> CurVal {
             None if at_page_head => CurVal::Glue(st.shipout.last_glue.unwrap_or(ZERO_GLUE)),
             _ => CurVal::Glue(ZERO_GLUE),
         },
-    }
+    })
 }
 
 /// The value of an `\numexpr`-style or glue conversion `last_item`, coerced to at most `level`.
@@ -863,10 +864,10 @@ pub(super) fn scan_something_internal(
                 } as u32;
                 CurVal::Int(st.fonts.cp_codes.get(f, side, c))
             }
-            Command::Register(r) => fetch_register(st, r.get())?,
+            Command::Register(r) => fetch_register(st, r.get()?)?,
             Command::LastItem(code) => {
                 if code < LastItemCode::InputLineNo {
-                    fetch_last_node_item(st, code)
+                    fetch_last_node_item(st, code)?
                 } else if code < LastItemCode::XetexGlyphBounds {
                     CurVal::Int(fetch_last_item_int(st, code)?)
                 } else if code < LastItemCode::MuToGlue {

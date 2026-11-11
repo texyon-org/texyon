@@ -2,8 +2,9 @@
 
 use crate::cmd::Cmd;
 use crate::codes::ValueLevel;
-use crate::consts::{CHAR_CLASS_LIMIT, HMODE, TEX_NULL};
+use crate::consts::{CHAR_CLASS_LIMIT, HMODE};
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::ext::append_src_special;
 use crate::fonts::{CharInfo, CharTag, LigChar, LigKernStep, SPACE_CODE};
 use crate::input::{TokenType, TOKEN_LIST};
@@ -13,6 +14,7 @@ use crate::node::{
 use crate::params::IntPar;
 use crate::state::{EngineState, MemState};
 use crate::token::{Token, TokenList};
+use crate::units::MemIdx;
 use crate::units::{FontId, FontInfoIdx, MemPtr};
 
 fn inter_char_tokens_enabled(st: &EngineState) -> bool {
@@ -136,35 +138,34 @@ fn advance_past_hyphen(st: &mut EngineState, start: i32, len: i32) {
 }
 
 /// Points `main_ppp` at the node before `main_pp`, skipping discretionary replacement lists.
-fn find_main_ppp(st: &mut EngineState) {
+fn find_main_ppp(st: &mut EngineState) -> Result<(), Abort> {
     let pp = st.mainloop.main_pp;
     let mut ppp = st.input.cur_list.head;
-    while ppp != pp && ppp.link(&st.mem) != pp {
+    while Some(ppp) != pp && ppp.link(&st.mem) != pp {
         if !st.mem.is_char_node(ppp) {
             if let Ok(AnyNode::Disc(disc)) = st.mem.classify(ppp) {
                 for _ in 0..st.mem[disc].replace_count {
-                    ppp = ppp.link(&st.mem);
+                    ppp = ppp.link(&st.mem).or_confusion("main_ppp")?;
                 }
             }
         }
-        if ppp != pp {
-            ppp = ppp.link(&st.mem);
+        if Some(ppp) != pp {
+            ppp = ppp.link(&st.mem).or_confusion("main_ppp")?;
         }
     }
-    st.mainloop.main_ppp = ppp;
+    st.mainloop.main_ppp = Some(ppp);
+    Ok(())
 }
 
 /// The native word `main_pp` if new text in font `f` can extend it.
 fn extendable_native_word(st: &EngineState, f: FontId) -> Option<NodePtr<NativeWordNode>> {
     let (pp, ppp) = (st.mainloop.main_pp, st.mainloop.main_ppp);
-    if pp.is_null() {
-        return None;
-    }
     let word = st.mem.as_native_word(pp)?;
     let extendable = st.mem[word].font == f
         && ppp != pp
-        && !st.mem.is_char_node(ppp)
-        && !matches!(st.mem.classify(ppp), Ok(AnyNode::Disc(_)));
+        && ppp.is_some_and(|q| {
+            !st.mem.is_char_node(q) && !matches!(st.mem.classify(q), Ok(AnyNode::Disc(_)))
+        });
     extendable.then_some(word)
 }
 
@@ -281,8 +282,8 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
     }
 
     let len = st.scanner.native_len;
-    st.mainloop.main_pp = st.input.cur_list.tail;
-    find_main_ppp(st);
+    st.mainloop.main_pp = Some(st.input.cur_list.tail);
+    find_main_ppp(st)?;
     if st.input.cur_list.mode == HMODE {
         let mut start = 0;
         let mut remaining = len;
@@ -309,13 +310,12 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
                 st.mainloop.main_h = 0;
                 advance_past_hyphen(st, start, remaining);
                 let next = st.mem[word].link;
-                st.mainloop.main_ppp.set_link(&mut st.mem, next);
-                st.mem[word].link = MemPtr::NULL;
+                let ppp = st.mainloop.main_ppp.or_confusion("main_ppp")?;
+                ppp.set_link(&mut st.mem, next);
+                st.mem[word].link = None;
                 st.mem.flush_node_list(word.ptr())?;
-                st.mainloop.main_pp = st.input.cur_list.tail;
-                while st.mainloop.main_ppp.link(&st.mem) != st.mainloop.main_pp {
-                    st.mainloop.main_ppp = st.mainloop.main_ppp.link(&st.mem);
-                }
+                st.mainloop.main_pp = Some(st.input.cur_list.tail);
+                st.mainloop.main_ppp = Some(st.mem.predecessor(ppp, st.mainloop.main_pp)?);
             } else {
                 crate::linebreak::do_locale_linebreaks(st, start, st.mainloop.main_h)?;
                 start += st.mainloop.main_h;
@@ -325,22 +325,22 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
             }
             if remaining > 0 || st.hyph.is_hyph {
                 let disc = st.mem.new_disc()?;
-                st.input.cur_list.tail_append(&mut st.mem, disc.ptr());
-                st.mainloop.main_pp = st.input.cur_list.tail;
+                st.input.cur_list.tail_append(&mut st.mem, disc);
+                st.mainloop.main_pp = Some(st.input.cur_list.tail);
             }
             if remaining == 0 {
                 break;
             }
         }
     } else {
-        let pp = st.mainloop.main_pp;
+        let pp = st.mainloop.main_pp.or_confusion("main_pp")?;
         let old = extendable_native_word(st, mf);
         let old_len = old.map_or(0, |w| st.mem[w].length);
         let node = st
             .mem
             .new_native_word_node(&st.eqtb, mf, len + i32::from(old_len))?;
         pp.set_link(&mut st.mem, node.ptr());
-        st.input.cur_list.tail = node.ptr();
+        st.input.cur_list.tail = node.idx();
         if let Some(word) = old {
             st.mem.copy_native_text_into(node, 0, word)?;
         }
@@ -353,14 +353,12 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
         st.fonts.measure_native_node(&mut st.mem, node, metrics)?;
         if let Some(word) = old {
             let mut prev = st.input.cur_list.head;
-            if prev != word.ptr() {
-                while prev.link(&st.mem) != word.ptr() {
-                    prev = prev.link(&st.mem);
-                }
+            if prev != word.idx() {
+                prev = st.mem.predecessor(prev, word.ptr())?;
             }
             let next = st.mem[word].link;
             prev.set_link(&mut st.mem, next);
-            st.mem[word].link = MemPtr::NULL;
+            st.mem[word].link = None;
             st.mem.flush_node_list(word.ptr())?;
         }
     }
@@ -378,25 +376,20 @@ fn shape_interword_space(st: &mut EngineState, mf: FontId) -> Result<(), Abort> 
     let mut p = st.input.cur_list.head;
     let mut prev_word = None;
     while p != tail {
-        if !p.is_null() {
-            prev_word = st.mem.as_native_word(p).or(prev_word);
-        }
-        p = p.link(&st.mem);
+        prev_word = st.mem.as_native_word(Some(p)).or(prev_word);
+        p = p.link(&st.mem).or_confusion("interword space")?;
     }
     let Some(prev_word) = prev_word.filter(|&w| st.mem[w].font == mf) else {
         return Ok(());
     };
     let glue = st.mem.skip_interword_fillers(st.mem[prev_word].link);
-    if st.mem.is_char_node(glue) {
-        return Ok(());
-    }
-    let Ok(AnyNode::Glue(glue)) = st.mem.classify(glue) else {
+    let Some(AnyNode::Glue(glue)) = st.mem.classify_non_char(glue) else {
         return Ok(());
     };
-    if st.mem.skip_interword_fillers(st.mem[glue].link) != tail {
+    if st.mem.skip_interword_fillers(st.mem[glue].link) != Some(tail) {
         return Ok(());
     }
-    let Some(tail_word) = st.mem.as_native_word(tail) else {
+    let Some(tail_word) = st.mem.as_native_word(Some(tail)) else {
         return Ok(());
     };
     let prev_len = usize::from(st.mem[prev_word].length);
@@ -434,10 +427,10 @@ pub(crate) enum LigStack {
 
 impl LigStack {
     #[inline]
-    pub(crate) fn ptr(self) -> MemPtr {
+    pub(crate) fn idx(self) -> MemIdx {
         match self {
-            LigStack::Char(c) => c.ptr(),
-            LigStack::Item(i) => i.ptr(),
+            LigStack::Char(c) => c.idx(),
+            LigStack::Item(i) => i.idx(),
         }
     }
 
@@ -455,20 +448,19 @@ impl MemState {
     /// The ligature stack entry at link `p`, `None` when the stack ends there.
     #[inline]
     pub(crate) fn lig_stack_at(&self, p: MemPtr) -> Option<LigStack> {
-        if p.is_null() {
-            None
-        } else if self.is_char_node(p) {
-            Some(LigStack::Char(NodePtr::at(p)))
+        let p = p?;
+        Some(if self.is_char_node(p) {
+            LigStack::Char(NodePtr::at(p))
         } else {
-            Some(LigStack::Item(NodePtr::at(p)))
-        }
+            LigStack::Item(NodePtr::at(p))
+        })
     }
 }
 
 /// The link value of the ligature stack top, null when empty.
 #[inline]
 fn lig_stack_ptr(st: &EngineState) -> MemPtr {
-    st.mainloop.lig_stack.map_or(MemPtr::NULL, LigStack::ptr)
+    st.mainloop.lig_stack.map(LigStack::idx)
 }
 
 /// The character on top of `lig_stack`, a char node or a lig item alike.
@@ -509,14 +501,15 @@ fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), Abort> {
         return Ok(());
     }
     let main_f = st.mainloop.main_f;
-    if !st.mainloop.cur_q.link(&st.mem).is_null()
+    let cur_q = st.mainloop.cur_q.or_confusion("wrapup")?;
+    if !cur_q.link(&st.mem).is_none()
         && i32::from(st.mem[NodePtr::<CharNode>::at(st.input.cur_list.tail)].character)
             == st.fonts.hyphen_char[main_f]
     {
         st.mainloop.ins_disc = true;
     }
     if st.mainloop.ligature_present {
-        let lig_list = st.mainloop.cur_q.link(&st.mem);
+        let lig_list = cur_q.link(&st.mem);
         let lig = st
             .mem
             .new_ligature(main_f, st.mainloop.cur_l.code(), lig_list)?;
@@ -530,15 +523,15 @@ fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), Abort> {
             st.mainloop.rt_hit = false;
         }
         st.mem[lig].boundary = boundary.into();
-        st.mainloop.cur_q.set_link(&mut st.mem, lig.ptr());
-        st.input.cur_list.tail = lig.ptr();
+        cur_q.set_link(&mut st.mem, lig.ptr());
+        st.input.cur_list.tail = lig.idx();
         st.mainloop.ligature_present = false;
     }
     if st.mainloop.ins_disc {
         st.mainloop.ins_disc = false;
         if st.input.cur_list.mode > 0 {
             let disc = st.mem.new_disc()?;
-            st.input.cur_list.tail_append(&mut st.mem, disc.ptr());
+            st.input.cur_list.tail_append(&mut st.mem, disc);
         }
     }
     Ok(())
@@ -582,7 +575,7 @@ pub(super) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
     st.mainloop.cur_l = LigChar::from_raw(st.mainloop.chr);
     let ls = st.mem.new_char(mf, st.mainloop.cur_l.code())?;
     st.mainloop.lig_stack = Some(LigStack::Char(ls));
-    st.mainloop.cur_q = st.input.cur_list.tail;
+    st.mainloop.cur_q = Some(st.input.cur_list.tail);
 
     let bchar_label = if st.mainloop.cancel_boundary {
         st.mainloop.cancel_boundary = false;
@@ -626,21 +619,21 @@ pub(super) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
                 if st.mainloop.lig_stack.is_none() {
                     return Ok(false);
                 }
-                st.mainloop.cur_q = st.input.cur_list.tail;
+                st.mainloop.cur_q = Some(st.input.cur_list.tail);
                 st.mainloop.cur_l = lig_stack_char(st);
             }
 
             if let Some(LigStack::Item(item)) = st.mainloop.lig_stack {
                 let lig_ptr = st.mem[item].component;
-                if lig_ptr.raw() > TEX_NULL {
-                    st.input.cur_list.tail_append(&mut st.mem, lig_ptr);
+                if let Some(component) = lig_ptr {
+                    st.input.cur_list.tail_append(&mut st.mem, component);
                 }
                 st.mainloop.lig_stack = st.mem.lig_stack_at(st.mem[item].link);
                 item.free(&mut st.mem);
                 main_i = cur_l_info(st);
                 st.mainloop.ligature_present = true;
                 if st.mainloop.lig_stack.is_none() {
-                    if lig_ptr.raw() > TEX_NULL {
+                    if lig_ptr.is_some() {
                         if !lookahead(st)? {
                             return Ok(true);
                         }
@@ -670,10 +663,11 @@ pub(super) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
         };
         if !exists {
             crate::output::char_warning(st, main_f, st.mainloop.chr)?;
-            NodePtr::<CharNode>::at(lig_stack_ptr(st)).free(&mut st.mem);
+            let top = lig_stack_ptr(st).or_confusion("lig_stack")?;
+            NodePtr::<CharNode>::at(top).free(&mut st.mem);
             return Ok(true);
         }
-        let top = lig_stack_ptr(st);
+        let top = lig_stack_ptr(st).or_confusion("lig_stack")?;
         st.input.cur_list.tail_append(&mut st.mem, top);
         if !lookahead(st)? {
             return Ok(true);
@@ -704,7 +698,7 @@ fn lig_kern_program(
             let main_f = st.mainloop.main_f;
             let kern = st.fonts.char_kern(main_f, step);
             let kern = st.mem.new_kern(kern)?;
-            st.input.cur_list.tail_append(&mut st.mem, kern.ptr());
+            st.input.cur_list.tail_append(&mut st.mem, kern);
             return Ok(LigExit::Move);
         }
         if st.mainloop.cur_l == LigChar::NONE {
@@ -741,11 +735,11 @@ fn lig_kern_program(
                 let prev = lig_stack_ptr(st);
                 let item = st.mem.new_lig_item(st.mainloop.cur_r.code())?;
                 st.mainloop.lig_stack = Some(LigStack::Item(item));
-                item.ptr().set_link(&mut st.mem, prev);
+                item.idx().set_link(&mut st.mem, prev);
             }
             7 | 11 => {
                 wrapup(st, false)?;
-                st.mainloop.cur_q = st.input.cur_list.tail;
+                st.mainloop.cur_q = Some(st.input.cur_list.tail);
                 st.mainloop.cur_l = LigChar::of(step.lig_char());
                 *main_i = cur_l_info(st);
                 st.mainloop.ligature_present = true;

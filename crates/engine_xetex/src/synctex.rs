@@ -1,6 +1,7 @@
 /* Copyright (c) 2008-2017 jerome DOT laurens AT u-bourgogne DOT fr, MIT License. */
 
 use crate::params::IntPar;
+use crate::units::MemAddr;
 use std::fmt::Write as _;
 
 use crate::bridge::{issue_error, issue_warning, output_close, output_open, output_write};
@@ -9,7 +10,6 @@ use crate::node::{AnyNode, BoxNode, KernNode, MathNode, NodePtr};
 use crate::shipout::ONE_INCH;
 use crate::state::{EngineState, EqtbState, ShipoutState, SynctexCtxt};
 use crate::sync_index::RecordKind;
-use crate::units::MemPtr;
 
 const SYNCTEX_VERSION: i32 = 1;
 /// The pseudo file of a resident compile, which only feeds the preview index.
@@ -349,9 +349,9 @@ fn synctex_active(st: &EngineState) -> bool {
 }
 
 /// Make `node` the current SyncTeX context at the current position.
-fn enter_node(st: &mut EngineState, node: MemPtr, tag: i32, line: i32) {
+fn enter_node(st: &mut EngineState, node: impl MemAddr, tag: i32, line: i32) {
     let synctex = &mut st.synctex;
-    synctex.node = Some(node);
+    synctex.node = Some(node.addr());
     synctex.tag = tag;
     synctex.line = line;
     synctex.curh = st.shipout.synctex_curh();
@@ -361,7 +361,7 @@ fn enter_node(st: &mut EngineState, node: MemPtr, tag: i32, line: i32) {
 
 fn enter_box(st: &mut EngineState, b: NodePtr<BoxNode>) {
     let (tag, line) = (st.mem[b].sync.tag, st.mem[b].sync.line);
-    enter_node(st, b.ptr(), tag, line);
+    enter_node(st, b, tag, line);
 }
 
 pub fn synctex_vlist(st: &mut EngineState, this_box: NodePtr<BoxNode>) {
@@ -438,7 +438,7 @@ pub fn synctex_void_hlist(st: &mut EngineState, p: NodePtr<BoxNode>) {
         return;
     }
     flush_deferred_kern(st);
-    enter_node(st, p.ptr(), tag, line);
+    enter_node(st, p, tag, line);
     st.synctex.record_box(&st.mem, 'h', p);
 }
 
@@ -451,7 +451,7 @@ pub fn synctex_math(st: &mut EngineState, p: NodePtr<MathNode>) {
     if st.synctex.context_changed(tag, line) {
         flush_deferred_kern(st);
     }
-    enter_node(st, p.ptr(), tag, line);
+    enter_node(st, p, tag, line);
     st.synctex.record_node('$', tag, line, &[]);
 }
 
@@ -460,9 +460,10 @@ pub fn synctex_math(st: &mut EngineState, p: NodePtr<MathNode>) {
 /// Record rule or glue `p` as shipped, with `rule` the resolved size of a rule.
 pub fn synctex_horizontal_rule_or_glue(
     st: &mut EngineState,
-    p: MemPtr,
+    p: impl MemAddr,
     rule: Option<crate::shipout::RuleDims>,
 ) {
+    let p = p.addr();
     let node = st.mem.classify(p);
     let (tag, line) = match node {
         Ok(AnyNode::Rule(r)) => (st.mem[r].sync.tag, st.mem[r].sync.line),
@@ -504,8 +505,8 @@ pub fn synctex_kern(st: &mut EngineState, p: NodePtr<KernNode>, this_box: NodePt
         flush_deferred_kern(st);
     }
     let synctex = &mut st.synctex;
-    let first_in_list = synctex.node == Some(this_box.ptr());
-    synctex.node = Some(p.ptr());
+    let first_in_list = synctex.node == this_box.ptr();
+    synctex.node = p.ptr();
     synctex.tag = tag;
     synctex.line = line;
     // The first kern of an hlist, and any kern in an unchanged context, is deferred.

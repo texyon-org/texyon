@@ -428,7 +428,7 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
     let mut l = st.strings.str_start(s);
     let nl = st.eqtb.int_par(IntPar::NewLineChar) as u16;
     let file = NodePtr::<PseudoFileNode>::alloc(&mut st.mem)?;
-    st.mem[file].lines = None.into();
+    st.mem[file].lines = None;
     let mut last_line: Option<NodePtr<PseudoLineNode>> = None;
 
     // Each line becomes a node of words holding four characters each.
@@ -446,7 +446,7 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
         last_line = Some(line);
         let node = &mut st.mem[line];
         node.size = size;
-        node.link = None.into();
+        node.link = None;
         st.mem
             .alloc_payload(line, usize::try_from(size - 1).or_confusion("pseudo line")?)?;
         let mut k = m;

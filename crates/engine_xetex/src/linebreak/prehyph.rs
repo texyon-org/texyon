@@ -1,13 +1,14 @@
 //! Pre-hyphenation: finding the words `hyphenate` should try.
 
-use crate::consts::TEX_NULL;
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::fonts::LigChar;
 use crate::node::{
     AnyNode, CharNode, KernSubtype, LanguageNode, MathCode, NativeWordNode, NodePtr, WhatsitVariant,
 };
 use crate::params::IntPar;
 use crate::state::{EngineState, MemState};
+use crate::units::MemIdx;
 use crate::units::MemPtr;
 
 use super::hyphenate::{hyphenate, split_native_word};
@@ -37,8 +38,9 @@ impl MemState {
     /// `None` if a node there forbids hyphenation. `math_ok` lets a math node end it.
     fn find_word_end(&self, mut s: MemPtr, math_ok: bool) -> Option<MemPtr> {
         loop {
-            if !self.is_char_node(s) {
-                match self.classify(s) {
+            let here = s?;
+            if !self.is_char_node(here) {
+                match self.classify(here) {
                     Ok(AnyNode::Ligature(_)) => {}
                     Ok(AnyNode::Kern(k)) => {
                         if self[k].subtype != KernSubtype::Normal {
@@ -63,47 +65,48 @@ impl MemState {
                     _ => return None,
                 }
             }
-            s = s.link(self);
+            s = here.link(self);
         }
     }
 }
 
 /// Try to hyphenate the word following the glue node `cur`.
-pub(super) fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), Abort> {
+pub(super) fn try_hyphenate(st: &mut EngineState, cur: MemIdx) -> Result<(), Abort> {
     let max_len = st.eqtb.max_hyphenatable_length();
     let uc_hyph = st.eqtb.int_par(IntPar::UcHyph) > 0;
     let mut prev_s = cur;
     let mut s = prev_s.link(&st.mem);
-    if s.is_null() {
-        return Ok(());
-    }
 
     // Skip to the first letter, setting `hf`.
     loop {
+        let Some(here) = s else {
+            return Ok(());
+        };
         let c;
         if let Some(ch) = st.mem.as_char(s) {
             c = i32::from(st.mem[ch].character);
             st.hyph.hf = st.mem[ch].font;
         } else {
-            match st.mem.classify(s) {
-                Ok(AnyNode::Ligature(lig)) if !st.mem[lig].lig_ptr.is_null() => {
-                    let first = NodePtr::<CharNode>::at(st.mem[lig].lig_ptr);
+            match st.mem.classify(here) {
+                Ok(AnyNode::Ligature(lig)) if !st.mem[lig].lig_ptr.is_none() => {
+                    let first = NodePtr::<CharNode>::from_ptr(st.mem[lig].lig_ptr)
+                        .or_confusion("ligature")?;
                     c = i32::from(st.mem[first].character);
                     st.hyph.hf = st.mem[first].font;
                 }
                 Ok(AnyNode::Ligature(_)) => {
-                    prev_s = s;
-                    s = prev_s.link(&st.mem);
+                    prev_s = here;
+                    s = here.link(&st.mem);
                     continue;
                 }
                 Ok(AnyNode::Kern(k)) if st.mem[k].subtype == KernSubtype::Normal => {
-                    prev_s = s;
-                    s = prev_s.link(&st.mem);
+                    prev_s = here;
+                    s = here.link(&st.mem);
                     continue;
                 }
                 Ok(AnyNode::Math(m)) if st.mem[m].subtype.get().is_some_and(MathCode::is_lr) => {
-                    prev_s = s;
-                    s = prev_s.link(&st.mem);
+                    prev_s = here;
+                    s = here.link(&st.mem);
                     continue;
                 }
                 Ok(AnyNode::Whatsit(w)) => {
@@ -115,7 +118,7 @@ pub(super) fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), Abo
                             let c = st.mem.get_native_usv(word, l);
                             if st.eqtb.lc_code(c) != 0 {
                                 st.hyph.hf = st.mem[word].font;
-                                prev_s = s;
+                                prev_s = here;
                                 if st.eqtb.lc_code(c) == c || uc_hyph {
                                     break;
                                 }
@@ -134,8 +137,8 @@ pub(super) fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), Abo
                     if let Some(WhatsitVariant::Language(language)) = variant {
                         set_language(st, language);
                     }
-                    prev_s = s;
-                    s = prev_s.link(&st.mem);
+                    prev_s = here;
+                    s = here.link(&st.mem);
                     continue;
                 }
                 _ => return Ok(()),
@@ -150,8 +153,8 @@ pub(super) fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), Abo
             return Ok(());
         }
 
-        prev_s = s;
-        s = prev_s.link(&st.mem);
+        prev_s = here;
+        s = here.link(&st.mem);
     }
 
     st.hyph.hyf_char = LigChar::from_raw(st.fonts.hyphen_char[st.hyph.hf]);
@@ -159,9 +162,9 @@ pub(super) fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), Abo
         return Ok(());
     }
     let mut word = Word {
-        start: cur,
-        ha: prev_s,
-        hb: MemPtr::NULL,
+        start: Some(cur),
+        ha: Some(prev_s),
+        hb: None,
         hn: 0,
     };
     if st.hyph.l_hyf + st.hyph.r_hyf > max_len {
@@ -245,6 +248,9 @@ fn collect_native_word(
 fn collect_word(st: &mut EngineState, word: &mut Word, mut s: MemPtr, max_len: i32) -> MemPtr {
     word.hn = 0;
     loop {
+        let Some(here) = s else {
+            return s;
+        };
         if let Some(ch) = st.mem.as_char(s) {
             if st.mem[ch].font != st.hyph.hf {
                 return s;
@@ -263,19 +269,19 @@ fn collect_word(st: &mut EngineState, word: &mut Word, mut s: MemPtr, max_len: i
             st.hyph.hc[hn] = hc0;
             st.hyph.hyf_bchar = LigChar::NONE;
         } else {
-            match st.mem.classify(s) {
+            match st.mem.classify(here) {
                 Ok(AnyNode::Ligature(lig)) => {
                     if st.mem[lig].font != st.hyph.hf {
                         return s;
                     }
                     let mut j = word.hn;
                     let mut q = st.mem[lig].lig_ptr;
-                    if q.raw() > TEX_NULL {
+                    if let Some(first) = q {
                         st.hyph.hyf_bchar =
-                            LigChar::of(st.mem[NodePtr::<CharNode>::at(q)].character);
+                            LigChar::of(st.mem[NodePtr::<CharNode>::at(first)].character);
                     }
-                    while q.raw() > TEX_NULL {
-                        let c = i32::from(st.mem[NodePtr::<CharNode>::at(q)].character);
+                    while let Some(qi) = q {
+                        let c = i32::from(st.mem[NodePtr::<CharNode>::at(qi)].character);
                         let hc0 = st.hyph.hyph_code(&st.eqtb, c);
                         st.hyph.hc[0] = hc0;
                         if hc0 == 0 || hc0 > st.hyph.max_hyph_char || i32::from(j) == max_len {
@@ -284,7 +290,7 @@ fn collect_word(st: &mut EngineState, word: &mut Word, mut s: MemPtr, max_len: i
                         j += 1;
                         st.hyph.hu[usize::from(j)] = LigChar::from_raw(c);
                         st.hyph.hc[usize::from(j)] = hc0;
-                        q = q.link(&st.mem);
+                        q = qi.link(&st.mem);
                     }
                     word.hb = s;
                     word.hn = j;
@@ -301,6 +307,6 @@ fn collect_word(st: &mut EngineState, word: &mut Word, mut s: MemPtr, max_len: i
                 _ => return s,
             }
         }
-        s = s.link(&st.mem);
+        s = here.link(&st.mem);
     }
 }

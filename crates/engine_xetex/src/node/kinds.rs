@@ -8,10 +8,12 @@ use crate::errors::OrConfusion;
 use crate::fonts::Side;
 use crate::glue_store::GlueSpecId;
 use crate::math::MathStyle;
+use crate::units::MemIdx;
+use crate::units::RawPtr;
 use bytemuck::{Pod, Zeroable};
 
 use super::{
-    AdjustPlacement, BoxLr, FenceSubtype, GlueKind, KernSubtype, LeaderKind, LigBoundary, Link,
+    AdjustPlacement, BoxLr, FenceSubtype, GlueKind, KernSubtype, LeaderKind, LigBoundary,
     MathAccentKind, MathCode, Node, NodePtr, SaChild, SaLeaf, Stored, StoredDimen, View,
     WhatsitSubtype,
 };
@@ -250,7 +252,7 @@ impl ArrayNode for PenaltiesNode {
 pub struct PseudoLineNode {
     /// One more than the line's words of four characters, as e-TeX's node size was.
     pub size: i32,
-    pub link: Link<PseudoLineNode>,
+    pub link: Option<NodePtr<PseudoLineNode>>,
     pub payload: PayloadId,
 }
 
@@ -815,7 +817,7 @@ impl MathWord {
     /// The list of a `SUB_BOX` or `SUB_MLIST` field.
     #[inline]
     pub fn info(&self) -> MemPtr {
-        MemPtr::from_raw(bytemuck::cast([self.character, self.plane_and_fam]))
+        MemIdx::from_raw(bytemuck::cast([self.character, self.plane_and_fam]))
     }
     #[inline]
     pub fn set_info(&mut self, p: MemPtr) {
@@ -850,7 +852,7 @@ impl MathWord {
     #[inline]
     pub fn clear(&mut self) {
         self.math_type = EMPTY;
-        self.set_info(MemPtr::NULL);
+        self.set_info(None);
     }
 }
 
@@ -940,7 +942,7 @@ impl Noad {
     #[inline]
     pub fn clear_fields(&mut self) {
         self.subtype = NORMAL;
-        self.new_hlist = MemPtr::NULL;
+        self.new_hlist = None;
         self.nucleus.clear();
         self.supscr.clear();
         self.subscr.clear();
@@ -1050,7 +1052,7 @@ pub struct SaIndexNode {
     pub used: u16,
     /// The node's slot in its parent, or the tree's type at the root.
     pub sa_index: u16,
-    pub link: Link<SaIndexNode>,
+    pub link: Option<NodePtr<SaIndexNode>>,
     /// Index nodes above the last level, elements on it.
     children: [MemPtr; 64],
 }
@@ -1065,12 +1067,12 @@ impl SaIndexNode {
     /// Child `i` of a node above the last index level.
     #[inline]
     pub fn child_index(&self, i: usize) -> Option<NodePtr<SaIndexNode>> {
-        self.children[i].as_idx().map(NodePtr::from_idx_unchecked)
+        self.children[i].map(NodePtr::from_idx_unchecked)
     }
     /// Child `i` of a node on the last index level.
     #[inline]
     pub fn child_element(&self, i: usize) -> Option<NodePtr<SaElement>> {
-        self.children[i].as_idx().map(NodePtr::from_idx_unchecked)
+        self.children[i].map(NodePtr::from_idx_unchecked)
     }
     /// Child `i` of a node on the last index level of the tree for type `t`,
     /// whose elements all have the kind `t` gives.
@@ -1084,11 +1086,11 @@ impl SaIndexNode {
     }
     #[inline]
     pub fn clear_child(&mut self, i: usize) {
-        self.children[i] = MemPtr::NULL;
+        self.children[i] = None;
     }
     #[inline]
     pub fn clear_children(&mut self) {
-        self.children = [MemPtr::NULL; 64];
+        self.children = [None; 64];
     }
 }
 
@@ -1099,7 +1101,7 @@ pub struct SaElement {
     pub sa_lev: u16,
     /// The type times 64 plus the slot in the parent.
     pub sa_index: u16,
-    pub link: NodePtr<SaIndexNode>,
+    pub link: Option<NodePtr<SaIndexNode>>,
 }
 
 impl View for SaElement {}
@@ -1123,7 +1125,7 @@ pub struct SaWordNode {
     /// The grouping level of the value.
     pub sa_lev: u16,
     pub sa_index: u16,
-    pub link: NodePtr<SaIndexNode>,
+    pub link: Option<NodePtr<SaIndexNode>>,
     /// References beyond the tree, `TEX_NULL` for none.
     pub sa_ref: i32,
     /// The register number.
@@ -1145,7 +1147,7 @@ pub struct SaPointerNode {
     /// The grouping level of the value.
     pub sa_lev: u16,
     pub sa_index: u16,
-    pub link: NodePtr<SaIndexNode>,
+    pub link: Option<NodePtr<SaIndexNode>>,
     /// References beyond the tree, `TEX_NULL` for none.
     pub sa_ref: i32,
     /// A glue spec, box or token list by the element's type.
@@ -1172,7 +1174,7 @@ impl SaPointerNode {
 pub struct SaMarkClassNode {
     pub sa_lev: u16,
     pub sa_index: u16,
-    pub link: NodePtr<SaIndexNode>,
+    pub link: Option<NodePtr<SaIndexNode>>,
     marks: [TokenList; 6],
 }
 
@@ -1204,7 +1206,7 @@ pub struct SaSaved {
     /// The saved grouping level.
     pub sa_lev: u16,
     pub sa_index: u16,
-    pub link: Link<SaSaved>,
+    pub link: Option<NodePtr<SaSaved>>,
 }
 
 impl View for SaSaved {}
@@ -1215,9 +1217,9 @@ impl View for SaSaved {}
 pub struct SaSavedWord {
     pub sa_lev: u16,
     pub sa_index: u16,
-    pub link: Link<SaSaved>,
+    pub link: Option<NodePtr<SaSaved>>,
     /// The register the entry restores.
-    pub sa_loc: NodePtr<SaWordNode>,
+    pub sa_loc: Option<NodePtr<SaWordNode>>,
     pub sa_int: i32,
 }
 
@@ -1233,9 +1235,9 @@ impl Node for SaSavedWord {
 pub struct SaSavedPointer {
     pub sa_lev: u16,
     pub sa_index: u16,
-    pub link: Link<SaSaved>,
+    pub link: Option<NodePtr<SaSaved>>,
     /// The register the entry restores.
-    pub sa_loc: NodePtr<SaPointerNode>,
+    pub sa_loc: Option<NodePtr<SaPointerNode>>,
     pub sa_ptr: MemPtr,
 }
 
@@ -1249,7 +1251,7 @@ impl Node for SaSavedPointer {
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct SpanNode {
-    pub next: NodePtr<SpanNode>,
+    pub next: Option<NodePtr<SpanNode>>,
     /// Columns spanned beyond the first. `END_SPAN` holds a larger sentinel.
     pub span_count: i32,
     pub width: Scaled,
@@ -1489,7 +1491,7 @@ impl Node for HeadNode {
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct PseudoFileNode {
-    pub lines: Link<PseudoLineNode>,
+    pub lines: Option<NodePtr<PseudoLineNode>>,
     pub link: MemPtr,
 }
 
@@ -1686,16 +1688,9 @@ mod tests {
     }
 
     #[test]
-    fn a_negative_index_selects_no_words() {
-        let mem = arena();
-        assert!(mem.data.get(MemIdx::from_raw(-1).words(2)).is_none());
-        assert_eq!(MemIdx::from_raw(3).words(2), 3..5);
-    }
-
-    #[test]
     fn an_upwards_box_is_reversed() {
         let mut mem = arena();
-        let b: NodePtr<BoxNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(4));
+        let b: NodePtr<BoxNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(4).unwrap());
         mem[b].set_lr(BoxLr::Dlist);
         assert!(!mem[b].upwards());
         mem[b].set_upwards(true);
@@ -1707,11 +1702,11 @@ mod tests {
     #[test]
     fn a_mutable_borrow_journals_every_word_of_the_node() {
         let mut mem = arena();
-        let k: NodePtr<KernNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(4));
+        let k: NodePtr<KernNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(4).unwrap());
         mem[k].sync.line = 5;
         mem.journal.arm(16);
         let kern = &mut mem[k];
-        kern.link = MemPtr::from_raw(1);
+        kern.link = MemIdx::from_raw(1);
         kern.width = Scaled::from_raw(2);
         kern.sync.tag = 3;
         kern.sync.line = 4;
@@ -1720,7 +1715,7 @@ mod tests {
         let kern = mem[k];
         assert_eq!(
             (kern.link, kern.width, kern.sync.tag, kern.sync.line),
-            (MemPtr::from_raw(0), Scaled::ZERO, 0, 5)
+            (MemIdx::from_raw(0), Scaled::ZERO, 0, 5)
         );
     }
 
@@ -1741,7 +1736,7 @@ mod tests {
     }
 
     fn shape_at(idx: i32) -> NodePtr<ParShapeNode> {
-        NodePtr::from_idx_unchecked(MemIdx::from_raw(idx))
+        NodePtr::from_idx_unchecked(MemIdx::from_raw(idx).unwrap())
     }
 
     #[test]
@@ -1763,7 +1758,7 @@ mod tests {
     #[test]
     fn penalties_live_in_the_payload() {
         let mut mem = arena();
-        let p: NodePtr<PenaltiesNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(4));
+        let p: NodePtr<PenaltiesNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(4).unwrap());
         let header = &mut mem[p];
         header.half_size = 2;
         header.count = 2;
@@ -1779,10 +1774,10 @@ mod tests {
     #[test]
     fn pseudo_lines_live_in_the_payload() {
         let mut mem = arena();
-        let p: NodePtr<PseudoLineNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(4));
+        let p: NodePtr<PseudoLineNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(4).unwrap());
         let header = &mut mem[p];
         header.size = 3;
-        header.link = Some(NodePtr::from_idx_unchecked(MemIdx::from_raw(9))).into();
+        header.link = Some(NodePtr::from_idx_unchecked(MemIdx::from_raw(9).unwrap()));
         mem.alloc_payload(p, 2).unwrap();
         let words = mem.entries_mut(p);
         assert_eq!(words.len(), 2);
@@ -1798,16 +1793,16 @@ mod tests {
     fn a_whatsit_subtype_selects_its_variant() {
         let mut mem = arena();
         let at = MemIdx::from_raw;
-        let o: NodePtr<OpenNode> = NodePtr::from_idx_unchecked(at(0));
+        let o: NodePtr<OpenNode> = NodePtr::from_idx_unchecked(at(1).unwrap());
         mem[o].subtype = WhatsitSubtype::Open.into();
         assert!(matches!(o.whatsit().variant(&mem), Some(WhatsitVariant::Open(p)) if p == o));
-        let w: NodePtr<WriteNode> = NodePtr::from_idx_unchecked(at(4));
+        let w: NodePtr<WriteNode> = NodePtr::from_idx_unchecked(at(5).unwrap());
         mem[w].subtype = WhatsitSubtype::Special.into();
         assert!(matches!(w.whatsit().variant(&mem), Some(WhatsitVariant::Special(p)) if p == w));
-        let l: NodePtr<LanguageNode> = NodePtr::from_idx_unchecked(at(8));
+        let l: NodePtr<LanguageNode> = NodePtr::from_idx_unchecked(at(9).unwrap());
         mem[l].subtype = WhatsitSubtype::Language.into();
         assert!(matches!(l.whatsit().variant(&mem), Some(WhatsitVariant::Language(p)) if p == l));
-        let g: NodePtr<GlyphNode> = NodePtr::from_idx_unchecked(at(12));
+        let g: NodePtr<GlyphNode> = NodePtr::from_idx_unchecked(at(13).unwrap());
         mem[g].subtype = WhatsitSubtype::Glyph.into();
         assert!(matches!(g.whatsit().variant(&mem), Some(WhatsitVariant::Glyph(p)) if p == g));
     }
@@ -1818,7 +1813,7 @@ mod tests {
             data: vec![Default::default(); 24],
             ..Default::default()
         };
-        let p: NodePtr<PicNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(4));
+        let p: NodePtr<PicNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(4).unwrap());
         mem[p].subtype = WhatsitSubtype::Pdf.into();
         mem[p].path_len = 10;
         mem.alloc_payload(p, 10).unwrap();
@@ -1828,7 +1823,8 @@ mod tests {
     }
 
     fn native_word_at(mem: &mut MemState, idx: i32, text: &[u16]) -> NodePtr<NativeWordNode> {
-        let w: NodePtr<NativeWordNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(idx));
+        let w: NodePtr<NativeWordNode> =
+            NodePtr::from_idx_unchecked(MemIdx::from_raw(idx).unwrap());
         let word = &mut mem[w];
         word.subtype = WhatsitSubtype::NativeWord.into();
         word.length = text.len() as u16;
@@ -1899,14 +1895,15 @@ mod tests {
             Scaled::from_raw(3),
         );
         let g_at = 2 + NativeWordNode::SIZE;
-        let g: NodePtr<GlyphNode> = NodePtr::from_idx_unchecked(at(g_at));
+        let g: NodePtr<GlyphNode> = NodePtr::from_idx_unchecked(at(g_at).unwrap());
         mem[g].subtype = WhatsitSubtype::Glyph.into();
         (mem[g].width, mem[g].depth, mem[g].height) = (
             Scaled::from_raw(4),
             Scaled::from_raw(5),
             Scaled::from_raw(6),
         );
-        let l: NodePtr<LanguageNode> = NodePtr::from_idx_unchecked(at(g_at + GlyphNode::SIZE));
+        let l: NodePtr<LanguageNode> =
+            NodePtr::from_idx_unchecked(at(g_at + GlyphNode::SIZE).unwrap());
         mem[l].subtype = WhatsitSubtype::Language.into();
         let dims = |width, depth, height| Dims {
             width: Scaled::from_raw(width),

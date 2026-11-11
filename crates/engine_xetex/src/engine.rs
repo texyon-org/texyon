@@ -40,8 +40,8 @@ use crate::token::Token;
 use crate::token::TokenList;
 use crate::units::CsId;
 use crate::units::{
-    BufPos, EqtbPtr, FontId, FontInfoIdx, GlueOrder, MemPtr, NodeType, PoolPos, PrimNum, SavePtr,
-    Scaled, StrNumber,
+    BufPos, EqtbPtr, FontId, FontInfoIdx, GlueOrder, NodeType, PoolPos, PrimNum, SavePtr, Scaled,
+    StrNumber,
 };
 
 pub(crate) const POOL_FREE: i32 = 47_500;
@@ -247,13 +247,13 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.input.cur_list.mode = VMODE;
     st.input.cur_list.head = CONTRIB_HEAD;
     st.input.cur_list.tail = CONTRIB_HEAD;
-    st.input.cur_list.e_tex_aux = MemPtr::NULL;
+    st.input.cur_list.e_tex_aux = None;
     st.input.cur_list.set_prev_depth(IGNORE_DEPTH);
     st.input.cur_list.mode_line = 0;
     st.input.cur_list.prev_graf = 0;
     st.scanner.shown_mode = 0;
     st.shipout.page_contents = crate::state::PageContents::Empty;
-    st.shipout.page_tail = PAGE_HEAD;
+    st.shipout.page_tail = Some(PAGE_HEAD);
     st.shipout.last_glue = None;
     st.shipout.last_penalty = 0;
     st.shipout.last_kern = Scaled::ZERO;
@@ -297,19 +297,19 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.scanner.empty.s1 = EMPTY;
     st.scanner.empty.s0 = TEX_NULL;
     st.scanner.align_stack.clear();
-    st.scanner.cur_align = MemPtr::NULL;
-    st.scanner.cur_span = MemPtr::NULL;
-    st.scanner.cur_loop = MemPtr::NULL;
-    st.scanner.cur_head = MemPtr::NULL;
-    st.scanner.cur_tail = MemPtr::NULL;
-    st.scanner.cur_pre_head = MemPtr::NULL;
-    st.scanner.cur_pre_tail = MemPtr::NULL;
+    st.scanner.cur_align = None;
+    st.scanner.cur_span = None;
+    st.scanner.cur_loop = None;
+    st.scanner.cur_head = None;
+    st.scanner.cur_tail = None;
+    st.scanner.cur_pre_head = None;
+    st.scanner.cur_pre_tail = None;
     st.scanner.cur_f = NULL_FONT;
     st.hyph.max_hyph_char = TOO_BIG_LANG;
 
     let hyph_len = st.hyph.hyph_size as usize + 1;
     st.hyph.hyph_word[..hyph_len].fill(StrNumber::NONE);
-    st.hyph.hyph_list[..hyph_len].fill(MemPtr::NULL);
+    st.hyph.hyph_list[..hyph_len].fill(None);
     st.hyph.hyph_link[..hyph_len].fill(0);
 
     st.hyph.hyph_count = 0;
@@ -332,12 +332,12 @@ fn initialize_more_variables(st: &mut EngineState) {
 
     st.shipout.write_open = [false; 18];
 
-    st.input.pseudo_files = MemPtr::NULL;
+    st.input.pseudo_files = None;
     st.scanner.sa_root.set(ValueLevel::Mark, None);
     st.scanner.sa_chain = None;
     st.scanner.sa_level = LEVEL_ZERO;
-    st.scanner.disc_ptr[BoxCode::LastBox as usize] = MemPtr::NULL;
-    st.scanner.disc_ptr[BoxCode::Vsplit as usize] = MemPtr::NULL;
+    st.scanner.disc_ptr[BoxCode::LastBox as usize] = None;
+    st.scanner.disc_ptr[BoxCode::Vsplit as usize] = None;
 }
 
 fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumber) {
@@ -372,7 +372,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     let page_ins = NodePtr::<PageInsNode>::at(PAGE_INS_HEAD);
     mem[page_ins].box_number = 255;
     mem[page_ins].set_split_up(true);
-    mem[page_ins].link = PAGE_INS_HEAD;
+    mem[page_ins].link = Some(PAGE_INS_HEAD);
     mem.set_header(PAGE_HEAD, NodeType::Glue, NORMAL);
 
     let eqtb = &mut st.eqtb;
@@ -486,7 +486,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     st.strings.format_ident = format_ident;
 
     st.scanner.max_reg_num = 32767;
-    st.scanner.sa_root.registers_mut().fill(MemPtr::NULL);
+    st.scanner.sa_root.registers_mut().fill(None);
 
     st.eqtb.set_int_par(IntPar::XetexHyphenatableLength, 63);
 }
@@ -684,7 +684,7 @@ pub(crate) fn initialize_engine(
     st.input.open_levels = vec![crate::state::OpenLevel::default(); in_open_words];
     st.input.param_stack = TexStack::with_size(PARAM_SIZE);
     st.hyph.hyph_word = vec![StrNumber::NONE; hyph_words];
-    st.hyph.hyph_list = vec![MemPtr::NULL; hyph_words];
+    st.hyph.hyph_list = vec![None; hyph_words];
     st.hyph.hyph_link = vec![0; hyph_words];
 
     if st.config.in_initex_mode {

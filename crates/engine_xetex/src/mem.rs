@@ -15,6 +15,7 @@ use crate::node::{
 };
 use crate::params::GluePar;
 use crate::state::{EqtbState, MemState};
+use crate::units::RawPtr;
 use crate::units::{
     FontId, GlueOrder, GlueSign, MemAddr, MemIdx, MemPtr, NodeType, Orientation, Scaled,
 };
@@ -32,33 +33,32 @@ pub(crate) struct FreeLists(pub(crate) [MemPtr; FREE_CLASSES]);
 
 impl Default for FreeLists {
     fn default() -> Self {
-        FreeLists([MemPtr::NULL; FREE_CLASSES])
+        FreeLists([None; FREE_CLASSES])
     }
 }
 
 /// The fixed node after `p`, which takes `words`.
-const fn after(p: MemPtr, words: i32) -> MemPtr {
-    MemPtr::from_raw(p.raw() + words)
+const fn after(p: MemIdx, words: i32) -> MemIdx {
+    p.offset(words.cast_unsigned())
 }
 
 // The fixed nodes after the unused word 0, each as large as the layout it is read as.
-pub(crate) const PAGE_INS_HEAD: MemPtr = MemPtr::from_raw(1);
-pub(crate) const CONTRIB_HEAD: MemPtr = after(PAGE_INS_HEAD, PageInsNode::SIZE);
-pub(crate) const PAGE_HEAD: MemPtr = after(CONTRIB_HEAD, HeadNode::SIZE);
-pub(crate) const TEMP_HEAD: MemPtr = after(PAGE_HEAD, GlueNode::SIZE);
-pub(crate) const HOLD_HEAD: MemPtr = after(TEMP_HEAD, HeadNode::SIZE);
-pub(crate) const ADJUST_HEAD: MemPtr = after(HOLD_HEAD, HeadNode::SIZE);
-pub(crate) const ALIGN_HEAD: MemPtr = after(ADJUST_HEAD, HeadNode::SIZE);
-const END_SPAN_AT: MemPtr = after(ALIGN_HEAD, HeadNode::SIZE);
+pub(crate) const PAGE_INS_HEAD: MemIdx = MemIdx::FIRST;
+pub(crate) const CONTRIB_HEAD: MemIdx = after(PAGE_INS_HEAD, PageInsNode::SIZE);
+pub(crate) const PAGE_HEAD: MemIdx = after(CONTRIB_HEAD, HeadNode::SIZE);
+pub(crate) const TEMP_HEAD: MemIdx = after(PAGE_HEAD, GlueNode::SIZE);
+pub(crate) const HOLD_HEAD: MemIdx = after(TEMP_HEAD, HeadNode::SIZE);
+pub(crate) const ADJUST_HEAD: MemIdx = after(HOLD_HEAD, HeadNode::SIZE);
+pub(crate) const ALIGN_HEAD: MemIdx = after(ADJUST_HEAD, HeadNode::SIZE);
+const END_SPAN_AT: MemIdx = after(ALIGN_HEAD, HeadNode::SIZE);
 // SAFETY: the fixed span node ends every span list.
-pub(crate) const END_SPAN: NodePtr<SpanNode> =
-    NodePtr::from_idx_unchecked(MemIdx::from_raw(END_SPAN_AT.raw()));
-pub(crate) const NULL_LIST: MemPtr = after(END_SPAN_AT, SpanNode::SIZE);
+pub(crate) const END_SPAN: NodePtr<SpanNode> = NodePtr::from_idx_unchecked(END_SPAN_AT);
+pub(crate) const NULL_LIST: MemIdx = after(END_SPAN_AT, SpanNode::SIZE);
 /// The scratch char node of TeX's lig trick.
-pub(crate) const LIG_TRICK: MemPtr = after(NULL_LIST, HeadNode::SIZE);
-pub(crate) const PRE_ADJUST_HEAD: MemPtr = after(LIG_TRICK, CharNode::SIZE);
+pub(crate) const LIG_TRICK: MemIdx = after(NULL_LIST, HeadNode::SIZE);
+pub(crate) const PRE_ADJUST_HEAD: MemIdx = after(LIG_TRICK, CharNode::SIZE);
 /// The fixed nodes laid out as a [`HeadNode`].
-pub(crate) const FIXED_HEADS: [MemPtr; 7] = [
+pub(crate) const FIXED_HEADS: [MemIdx; 7] = [
     CONTRIB_HEAD,
     TEMP_HEAD,
     HOLD_HEAD,
@@ -79,7 +79,7 @@ impl ListStateRecord {
         subtype: WhatsitSubtype,
     ) -> Result<NodePtr<K>, Abort> {
         let p = NodePtr::<K>::alloc_whatsit(mem, subtype)?;
-        self.tail_append(mem, p.ptr());
+        self.tail_append(mem, p);
         Ok(p)
     }
 }
@@ -90,61 +90,54 @@ impl MemState {
     /// Frees the list `p` of `K` records, all of one size.
     pub(crate) fn flush_records<K: ListRecord + Node>(&mut self, mut p: MemPtr) {
         while let Some(r) = NodePtr::<K>::from_ptr(p) {
-            p = r.ptr().link(self);
+            p = r.idx().link(self);
             r.free(self);
         }
     }
 
-    /// The last node of the non-empty list starting at `p`.
+    /// The last node of the list starting at `p`.
     #[inline]
-    pub(crate) fn list_tail(&self, mut p: MemPtr) -> MemPtr {
-        while !p.link(self).is_null() {
-            p = p.link(self);
+    pub(crate) fn list_tail(&self, mut p: MemIdx) -> MemIdx {
+        while let Some(q) = p.link(self) {
+            p = q;
         }
         p
     }
 
     /// The node whose link is `target`, searching forward from `p`.
     #[inline]
-    pub(crate) fn predecessor(&self, mut p: MemPtr, target: MemPtr) -> MemPtr {
+    pub(crate) fn predecessor(&self, mut p: MemIdx, target: MemPtr) -> Result<MemIdx, Abort> {
         while p.link(self) != target {
-            p = p.link(self);
+            p = p.link(self).or_confusion("predecessor")?;
         }
-        p
+        Ok(p)
     }
 
     /// The node whose link is `e`, searching forward from `s`, or null if the
     /// list ends first.
     pub fn prev_rightmost(&self, s: MemPtr, e: MemPtr) -> MemPtr {
-        let mut p = s;
-        if p.is_null() {
-            return MemPtr::NULL;
-        }
+        let mut p = s?;
         while p.link(self) != e {
-            p = p.link(self);
-            if p.is_null() {
-                return MemPtr::NULL;
-            }
+            p = p.link(self)?;
         }
-        p
+        Some(p)
     }
 
     /// Skips the nodes that may sit between the words of an interword space.
     pub(crate) fn skip_interword_fillers(&self, mut p: MemPtr) -> MemPtr {
-        while self
-            .classify_non_char(p)
-            .is_some_and(|n| n.is_interword_filler(self))
-        {
-            p = p.link(self);
+        while let Some(q) = p.filter(|&q| {
+            self.classify_non_char(Some(q))
+                .is_some_and(|n| n.is_interword_filler(self))
+        }) {
+            p = q.link(self);
         }
         p
     }
 
-    /// Whether the non-null node `p` is a character node.
+    /// Whether the node `p` is a character node.
     #[inline]
     pub fn is_char_node(&self, p: impl MemAddr) -> bool {
-        let p = p.addr();
-        p != TEX_NULL && self.type_code(MemPtr::from_raw(p)) == NodeType::Char.to_u16()
+        self.type_code(p) == NodeType::Char.to_u16()
     }
 
     /// A hyphen position `n` linked in front of the positions `rest`.
@@ -180,8 +173,8 @@ impl MemState {
     pub(crate) fn pop_lr(&mut self, lr_ptr: &mut MemPtr) {
         let t = *lr_ptr;
         self.temp_ptr = t;
-        *lr_ptr = t.link(self);
         if let Some(t) = NodePtr::<LrNode>::from_ptr(t) {
+            *lr_ptr = t.idx().link(self);
             t.free(self);
         }
     }
@@ -194,13 +187,15 @@ impl MemState {
     }
 
     /// TeX's `get_node`: a node of `s` words, from its size's free list or fresh from the end.
-    pub fn get_node(&mut self, s: i32) -> Result<MemPtr, Abort> {
+    pub fn get_node(&mut self, s: i32) -> Result<MemIdx, Abort> {
         let class = usize::try_from(s)
             .ok()
             .filter(|c| (1..FREE_CLASSES).contains(c))
             .or_confusion("node size")?;
-        let head = self.free.0[class];
-        let r = if head.is_null() {
+        let r = if let Some(head) = self.free.0[class] {
+            self.free.0[class] = head.link(self);
+            head
+        } else {
             let start = self.data.len();
             let end = start + class;
             if end > MAX_MEM_WORDS {
@@ -208,24 +203,21 @@ impl MemState {
             }
             let r = i32::try_from(start).map_err(|_| Abort::NODE_OVERFLOW)?;
             self.data.resize(end, 0);
-            MemPtr::from_raw(r)
-        } else {
-            self.free.0[class] = head.link(self);
-            head
+            MemIdx::from_raw(r).or_confusion("fresh node")?
         };
-        r.set_link(self, MemPtr::NULL);
+        r.set_link(self, None);
         Ok(r)
     }
 
     /// Returns the `s`-word node `p` to its size's free list.
-    pub fn free_node(&mut self, p: MemPtr, s: i32) {
+    pub fn free_node(&mut self, p: MemIdx, s: i32) {
         let class = usize::try_from(s)
             .ok()
             .filter(|c| (1..FREE_CLASSES).contains(c));
         debug_assert!(class.is_some(), "freeing a node of size {s}");
         if let Some(class) = class {
             p.set_link(self, self.free.0[class]);
-            self.free.0[class] = p;
+            self.free.0[class] = Some(p);
         }
     }
 
@@ -246,7 +238,7 @@ impl MemState {
         node.depth = Scaled::ZERO;
         node.height = Scaled::ZERO;
         node.shift_amount = Scaled::ZERO;
-        node.list_ptr = MemPtr::NULL;
+        node.list_ptr = None;
         node.glue_sign = GlueSign::Normal.into();
         node.glue_order = GlueOrder::Normal.into();
         node.glue_set = crate::node::GlueRatio::new(0.0);
@@ -268,14 +260,14 @@ impl MemState {
     pub fn new_char(&mut self, f: FontId, c: u16) -> Result<NodePtr<CharNode>, Abort> {
         let p = NodePtr::<CharNode>::alloc(self)?;
         let node = &mut self[p];
-        node.link = MemPtr::NULL;
+        node.link = None;
         node.font = f;
         node.character = c;
         Ok(p)
     }
 
     /// TeX's lig trick: the scratch char node holding `lig`'s character, linked to what follows `lig`.
-    pub fn lig_trick(&mut self, lig: NodePtr<LigatureNode>) -> MemPtr {
+    pub fn lig_trick(&mut self, lig: NodePtr<LigatureNode>) -> MemIdx {
         let scratch = NodePtr::<CharNode>::at(LIG_TRICK);
         let LigatureNode {
             font,
@@ -309,7 +301,7 @@ impl MemState {
         let p = NodePtr::<LigItem>::alloc(self)?;
         let node = &mut self[p];
         node.character = c;
-        node.component = MemPtr::NULL;
+        node.component = None;
         Ok(p)
     }
 
@@ -317,8 +309,8 @@ impl MemState {
         let p = NodePtr::<DiscNode>::alloc(self)?;
         let node = &mut self[p];
         node.replace_count = 0;
-        node.pre_break = MemPtr::NULL;
-        node.post_break = MemPtr::NULL;
+        node.pre_break = None;
+        node.post_break = None;
         Ok(p)
     }
 
@@ -354,7 +346,7 @@ impl MemState {
         let spec = eqtb.glue_par(n);
         let node = &mut self[p];
         node.subtype = GlueKind::Param(n).into();
-        node.leader_ptr = MemPtr::NULL;
+        node.leader_ptr = None;
         node.glue_ptr = spec;
         self.add_glue_ref(spec);
         Ok(p)
@@ -365,7 +357,7 @@ impl MemState {
         let p = NodePtr::<GlueNode>::alloc(self)?;
         let node = &mut self[p];
         node.subtype = GlueKind::Normal.into();
-        node.leader_ptr = MemPtr::NULL;
+        node.leader_ptr = None;
         node.glue_ptr = q;
         self.add_glue_ref(q);
         Ok(p)
@@ -415,10 +407,10 @@ impl MemState {
     pub fn new_choice(&mut self) -> Result<NodePtr<ChoiceNode>, Abort> {
         let p = NodePtr::<ChoiceNode>::alloc(self)?;
         let node = &mut self[p];
-        node.display_mlist = MemPtr::NULL;
-        node.text_mlist = MemPtr::NULL;
-        node.script_mlist = MemPtr::NULL;
-        node.script_script_mlist = MemPtr::NULL;
+        node.display_mlist = None;
+        node.text_mlist = None;
+        node.script_mlist = None;
+        node.script_script_mlist = None;
         Ok(p)
     }
 
@@ -455,13 +447,13 @@ pub(crate) fn push_nest(st: &mut crate::state::EngineState) -> Result<(), Abort>
     st.input.nest.push(st.input.cur_list).map_err(|_| {
         Abort::overflow(crate::errors::Capacity::SemanticNest, st.input.nest.size())
     })?;
-    let h = NodePtr::<HeadNode>::alloc(&mut st.mem)?.ptr();
+    let h = NodePtr::<HeadNode>::alloc(&mut st.mem)?.idx();
     let cl = &mut st.input.cur_list;
     cl.head = h;
     cl.tail = h;
     cl.prev_graf = 0;
     cl.mode_line = st.mem.line;
-    cl.e_tex_aux = MemPtr::NULL;
+    cl.e_tex_aux = None;
     Ok(())
 }
 

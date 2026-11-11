@@ -366,7 +366,7 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
             }
             GroupCode::MathLeft => {
                 let delim = st.input.nest.stale_slot(p + 1).e_tex_aux;
-                if st.mem.node_type(delim) == Ok(NodeType::LeftNoad) {
+                if delim.is_some_and(|d| st.mem.node_type(d) == Ok(NodeType::LeftNoad)) {
                     print_esc(st, "left");
                 } else {
                     print_esc(st, "middle");
@@ -581,7 +581,7 @@ fn show_to_stream(st: &mut EngineState) -> Result<(), Abort> {
 
 /// The outer vertical list part of `show_activities`: the current page and its insertions.
 fn show_page_so_far(st: &mut EngineState) {
-    if st.shipout.page_tail != PAGE_HEAD {
+    if st.shipout.page_tail != Some(PAGE_HEAD) {
         print_nl(st, "### current page:");
         if st.shipout.output_active {
             print(st, " (held over for next output)");
@@ -593,8 +593,8 @@ fn show_page_so_far(st: &mut EngineState) {
             print_nl(st, " goal height ");
             print_scaled(st, st.shipout.page_so_far[0]);
             let mut r = PAGE_INS_HEAD.link(&st.mem);
-            while r != PAGE_INS_HEAD {
-                let ins = NodePtr::<PageInsNode>::at(r);
+            while let Some(here) = r.filter(|&x| x != PAGE_INS_HEAD) {
+                let ins = NodePtr::<PageInsNode>::at(here);
                 print_ln(st);
                 print_esc(st, "insert");
                 let box_num = st.mem[ins].box_number;
@@ -612,14 +612,14 @@ fn show_page_so_far(st: &mut EngineState) {
                     let broken_ins = st.mem[ins].broken_ins;
                     let mut q = PAGE_HEAD;
                     let mut t = 0;
-                    loop {
-                        q = q.link(&st.mem);
+                    while let Some(next) = q.link(&st.mem) {
+                        q = next;
                         if let Ok(AnyNode::Ins(node)) = st.mem.classify(q) {
                             if st.mem[node].box_number == box_num {
                                 t += 1;
                             }
                         }
-                        if q == broken_ins {
+                        if Some(q) == broken_ins {
                             break;
                         }
                     }
@@ -627,11 +627,11 @@ fn show_page_so_far(st: &mut EngineState) {
                     print_int(st, t);
                     print(st, " might split");
                 }
-                r = r.link(&st.mem);
+                r = here.link(&st.mem);
             }
         }
     }
-    if !CONTRIB_HEAD.link(&st.mem).is_null() {
+    if !CONTRIB_HEAD.link(&st.mem).is_none() {
         print_nl(st, "### recent contributions:");
     }
 }

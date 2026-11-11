@@ -722,9 +722,9 @@ fn print_sa_num(st: &mut EngineState, q: NodePtr<SaElement>) {
         Some(w) => Some(mem[w].sa_num),
         None => {
             let q1 = mem[q].link;
-            let q2 = mem[q1].link.get();
-            let q3 = q2.and_then(|q2| mem[q2].link.get());
-            q2.zip(q3).map(|(q2, q3)| {
+            let q2 = q1.and_then(|q1| mem[q1].link);
+            let q3 = q2.and_then(|q2| mem[q2].link);
+            q1.zip(q2).zip(q3).map(|((q1, q2), q3)| {
                 let digit = |i: u16| i32::from(i);
                 digit(mem[q].sa_index) % 64
                     + 64 * digit(mem[q1].sa_index)
@@ -954,11 +954,12 @@ fn print_font_char(st: &mut EngineState, font: FontId, c: u16) {
 }
 
 fn print_font_and_char(st: &mut EngineState, p: MemPtr) {
-    if !st.mem.contains(p) {
-        print_esc(st, "CLOBBERED.");
-    } else {
-        let ch = NodePtr::<CharNode>::at(p);
-        print_font_char(st, st.mem[ch].font, st.mem[ch].character);
+    match p.filter(|&q| st.mem.contains(Some(q))) {
+        None => print_esc(st, "CLOBBERED."),
+        Some(q) => {
+            let ch = NodePtr::<CharNode>::at(q);
+            print_font_char(st, st.mem[ch].font, st.mem[ch].character);
+        }
     }
 }
 

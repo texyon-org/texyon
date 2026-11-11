@@ -117,7 +117,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
         let next = q.next_column(&st.mem);
         if st.mem[q].width == RUNNING {
             st.mem[q].width = Scaled::ZERO;
-            let glue = q.tab_skip(&st.mem);
+            let glue = q.tab_skip(&st.mem)?;
             let spec = st.mem[glue].glue_ptr;
             if spec != ZERO_GLUE {
                 st.mem.add_glue_ref(ZERO_GLUE);
@@ -126,8 +126,8 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
         if let Some(next) = next {
-            if st.mem[q.span_head()].next != END_SPAN {
-                st.mem.merge_spans(q, next);
+            if st.mem[q.span_head()].next != Some(END_SPAN) {
+                st.mem.merge_spans(q, next)?;
             }
         }
         q.into_unset(&mut st.mem);
@@ -158,7 +158,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
 
     let mut s = st.input.cur_list.head;
     let mut q = s.link(&st.mem);
-    while !q.is_null() {
+    while let Some(mut cur) = q {
         match st.mem.classify_non_char(q) {
             Some(AnyNode::Unset(row)) => {
                 let row = if st.input.cur_list.mode == INNER_VMODE {
@@ -186,13 +186,14 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                 node.glue_set = crate::node::GlueRatio::new(set);
                 node.shift_amount = o;
 
-                let mut r = st.mem[row].list_ptr.link(&st.mem);
-                let mut proto_column =
-                    NodePtr::<UnsetNode>::after_tab_skip(&st.mem, st.mem[p].list_ptr);
+                let mut r = st.mem[row].list_ptr.or_confusion("align")?.link(&st.mem);
+                let first_proto = st.mem[p].list_ptr.or_confusion("align")?;
+                let mut proto_column = NodePtr::<UnsetNode>::after_tab_skip(&st.mem, first_proto);
                 loop {
-                    let (Ok(AnyNode::Unset(col)), Some(mut proto)) =
-                        (st.mem.classify(r), proto_column)
-                    else {
+                    let (Some(mut cell), Some(mut proto)) = (r, proto_column) else {
+                        return Err(Abort::Confusion("align"));
+                    };
+                    let Ok(AnyNode::Unset(col)) = st.mem.classify(cell) else {
                         return Err(Abort::Confusion("align"));
                     };
                     let n = st.mem[col].span_count;
@@ -201,10 +202,10 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                     let mut u = HOLD_HEAD;
                     st.mem[col].span_count = 0;
                     for _ in 0..n {
-                        let spec = st.mem[proto.tab_skip(&st.mem)].glue_ptr;
+                        let spec = st.mem[proto.tab_skip(&st.mem)?].glue_ptr;
                         let g = st.mem.new_glue(spec)?;
                         u.set_link(&mut st.mem, g.ptr());
-                        u = g.ptr();
+                        u = g.idx();
                         st.mem[g].subtype = GlueKind::Param(GluePar::TabSkip).into();
                         t += st.mem[spec].width;
                         match st.mem[p].glue_sign.get() {
@@ -230,7 +231,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                         proto = spanned;
                         let nb = st.mem.new_null_box()?;
                         u.set_link(&mut st.mem, nb.ptr());
-                        u = nb.ptr();
+                        u = nb.idx();
                         let span_w = st.mem[proto].width;
                         t += span_w;
                         if st.input.cur_list.mode == INNER_VMODE {
@@ -265,14 +266,14 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                     node.glue_set = crate::node::GlueRatio::new(set);
                     node.shift_amount = Scaled::ZERO;
                     if u != HOLD_HEAD {
-                        let (rest, spanned) = (r.link(&st.mem), HOLD_HEAD.link(&st.mem));
+                        let (rest, spanned) = (cell.link(&st.mem), HOLD_HEAD.link(&st.mem));
                         u.set_link(&mut st.mem, rest);
-                        r.set_link(&mut st.mem, spanned);
-                        r = u;
+                        cell.set_link(&mut st.mem, spanned);
+                        cell = u;
                     }
-                    r = r.link(&st.mem).link(&st.mem);
+                    r = cell.link(&st.mem).or_confusion("align")?.link(&st.mem);
                     proto_column = proto.next_column(&st.mem);
-                    if r.is_null() {
+                    if r.is_none() {
                         break;
                     }
                 }
@@ -290,19 +291,19 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                 }
                 if o != Scaled::ZERO {
                     let next = st.mem[rule].link;
-                    st.mem[rule].link = MemPtr::NULL;
+                    st.mem[rule].link = None;
                     let boxed = crate::packaging::hpack(st, rule.ptr(), PackSpec::NATURAL)?;
                     let node = &mut st.mem[boxed];
                     node.shift_amount = o;
                     node.link = next;
                     s.set_link(&mut st.mem, boxed.ptr());
-                    q = boxed.ptr();
+                    cur = boxed.idx();
                 }
             }
             _ => {}
         }
-        s = q;
-        q = q.link(&st.mem);
+        s = cur;
+        q = cur.link(&st.mem);
     }
 
     st.mem.flush_node_list(p.ptr())?;
@@ -332,25 +333,25 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
         st.mem.pop_nest(&mut st.input)?;
         let pre_penalty = st.eqtb.int_par(IntPar::PreDisplayPenalty);
         let pen = st.mem.new_penalty(pre_penalty)?;
-        st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
+        st.input.cur_list.tail_append(&mut st.mem, pen);
         let above = st.mem.new_param_glue(&st.eqtb, GluePar::AboveDisplaySkip)?;
-        st.input.cur_list.tail_append(&mut st.mem, above.ptr());
+        st.input.cur_list.tail_append(&mut st.mem, above);
         st.input.cur_list.tail.set_link(&mut st.mem, rows);
-        if !rows.is_null() {
+        if !rows.is_none() {
             st.input.cur_list.tail = rows_tail;
         }
         let post_penalty = st.eqtb.int_par(IntPar::PostDisplayPenalty);
         let pen = st.mem.new_penalty(post_penalty)?;
-        st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
+        st.input.cur_list.tail_append(&mut st.mem, pen);
         let below = st.mem.new_param_glue(&st.eqtb, GluePar::BelowDisplaySkip)?;
-        st.input.cur_list.tail_append(&mut st.mem, below.ptr());
+        st.input.cur_list.tail_append(&mut st.mem, below);
         st.input.cur_list.set_aux_s1(aux_save_s1);
         crate::math::resume_after_display(st)?;
     } else {
         st.input.cur_list.set_aux_s0(aux_save_s0);
         st.input.cur_list.set_aux_s1(aux_save_s1);
         st.input.cur_list.tail.set_link(&mut st.mem, rows);
-        if !rows.is_null() {
+        if !rows.is_none() {
             st.input.cur_list.tail = rows_tail;
         }
         if st.input.cur_list.mode == VMODE {
@@ -362,7 +363,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
 
 impl MemState {
     fn first_column<K: AlignColumn>(&self) -> Option<NodePtr<K>> {
-        NodePtr::after_tab_skip(self, ALIGN_HEAD.link(self))
+        NodePtr::after_tab_skip(self, ALIGN_HEAD.link(self)?)
     }
 
     fn for_each_preamble_column(&mut self, mut f: impl FnMut(&mut MemState, NodePtr<UnsetNode>)) {
@@ -374,26 +375,30 @@ impl MemState {
     }
 
     /// Folds column `q`'s span widths, less its own width and tabskip, into `next`'s.
-    fn merge_spans(&mut self, q: NodePtr<AlignRecord>, next: NodePtr<AlignRecord>) {
-        let t = self[q].width + self[self[q.tab_skip(self)].glue_ptr].width;
-        let mut r = self[q.span_head()].next;
+    fn merge_spans(
+        &mut self,
+        q: NodePtr<AlignRecord>,
+        next: NodePtr<AlignRecord>,
+    ) -> Result<(), Abort> {
+        let t = self[q].width + self[self[q.tab_skip(self)?].glue_ptr].width;
+        let mut r = self.span_next(q.span_head())?;
         let mut s = END_SPAN;
-        self[s].next = next.span_head();
+        self[s].next = Some(next.span_head());
         let mut n = 1;
         loop {
             self[r].width -= t;
-            let u = self[r].next;
+            let u = self.span_next(r)?;
             while self[r].span_count > n {
-                s = self[s].next;
-                n = self[self[s].next].span_count + 1;
+                s = self.span_next(s)?;
+                n = self[self.span_next(s)?].span_count + 1;
             }
             if self[r].span_count < n {
                 self[r].next = self[s].next;
-                self[s].next = r;
+                self[s].next = Some(r);
                 self[r].span_count -= 1;
                 s = r;
             } else {
-                let merged = self[s].next;
+                let merged = self.span_next(s)?;
                 if self[r].width > self[merged].width {
                     self[merged].width = self[r].width;
                 }
@@ -404,6 +409,12 @@ impl MemState {
                 break;
             }
         }
+        Ok(())
+    }
+
+    /// The span node after `s`, which does not end its span list.
+    fn span_next(&self, s: NodePtr<SpanNode>) -> Result<NodePtr<SpanNode>, Abort> {
+        self[s].next.or_confusion("span list")
     }
 
     /// The glue setting of unset node `col`, of natural size `natural`, when set to size `t`.
@@ -516,10 +527,10 @@ fn init_row(st: &mut EngineState) -> Result<(), Abort> {
     } else {
         st.input.cur_list.set_aux_s1(0);
     }
-    let tab_skip = NodePtr::<GlueNode>::tab_skip_after(&st.mem, ALIGN_HEAD);
+    let tab_skip = NodePtr::<GlueNode>::tab_skip_after(&st.mem, ALIGN_HEAD)?;
     let spec = st.mem[tab_skip].glue_ptr;
     let glue = st.mem.new_glue(spec)?;
-    st.input.cur_list.tail_append(&mut st.mem, glue.ptr());
+    st.input.cur_list.tail_append(&mut st.mem, glue);
     st.mem[glue].subtype = GlueKind::Param(GluePar::TabSkip).into();
     st.scanner.cur_align = st.mem[tab_skip].link;
     st.scanner.cur_tail = st.scanner.cur_head;
@@ -528,7 +539,7 @@ fn init_row(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 fn init_col(st: &mut EngineState) -> Result<(), Abort> {
-    let column = NodePtr::<AlignRecord>::at(st.scanner.cur_align);
+    let column = NodePtr::<AlignRecord>::from_ptr(st.scanner.cur_align).or_confusion("align")?;
     st.mem[column].extra_info = i32::from(st.scanner.cur.cmd());
     if st.scanner.cur.cmd() == Cmd::Omit {
         st.scanner.align_state = 0;
@@ -574,8 +585,11 @@ fn push_alignment(st: &mut EngineState) -> Result<(), Abort> {
 
 fn pop_alignment(st: &mut EngineState) -> Result<(), Abort> {
     let p = st.scanner.align_stack.pop().or_confusion("align")?;
-    NodePtr::<HeadNode>::at(st.scanner.cur_head).free(&mut st.mem);
-    NodePtr::<HeadNode>::at(st.scanner.cur_pre_head).free(&mut st.mem);
+    for head in [st.scanner.cur_head, st.scanner.cur_pre_head] {
+        NodePtr::<HeadNode>::from_ptr(head)
+            .or_confusion("align")?
+            .free(&mut st.mem);
+    }
     let sc = &mut st.scanner;
     sc.cur_tail = p.cur_tail;
     sc.cur_head = p.cur_head;
@@ -604,40 +618,35 @@ impl MemState {
     fn new_align_record(&mut self) -> Result<NodePtr<AlignRecord>, Abort> {
         let nb = self.new_null_box()?;
         let column = NodePtr::<AlignRecord>::at(nb.idx());
-        self[column.span_head()].next = END_SPAN;
+        self[column.span_head()].next = Some(END_SPAN);
         self[column].width = RUNNING;
         Ok(column)
     }
 }
 
 fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
-    if st.scanner.cur_align.is_null() {
-        return Err(Abort::Confusion("endv"));
-    }
-    let cur_align = NodePtr::<AlignRecord>::at(st.scanner.cur_align);
-    let q = st.mem[cur_align].link;
-    if q.is_null() {
-        return Err(Abort::Confusion("endv"));
-    }
+    let cur_align = NodePtr::<AlignRecord>::from_ptr(st.scanner.cur_align).or_confusion("endv")?;
+    let q = st.mem[cur_align].link.or_confusion("endv")?;
     if st.scanner.align_state < 500_000 {
         return Err(Abort::Fatal(
             "(interwoven alignment preambles are not allowed)",
         ));
     }
     let mut p = q.link(&st.mem);
-    if p.is_null() && st.mem[cur_align].extra_info < CR_CODE {
-        if !st.scanner.cur_loop.is_null() {
+    if p.is_none() && st.mem[cur_align].extra_info < CR_CODE {
+        if let Some(cur_loop) = st.scanner.cur_loop {
             let column = st.mem.new_align_record()?;
             q.set_link(&mut st.mem, column.ptr());
             p = column.ptr();
-            let template = NodePtr::<AlignRecord>::at(st.scanner.cur_loop.link(&st.mem));
+            let template =
+                NodePtr::<AlignRecord>::from_ptr(cur_loop.link(&st.mem)).or_confusion("align")?;
             let u_template = st.mem[template].u_part;
             let u_part = st.mem.copy_token_list(u_template)?;
             st.mem[column].u_part = u_part;
             let v_template = st.mem[template].v_part;
             let v_part = st.mem.copy_token_list(v_template)?;
             st.mem[column].v_part = v_part;
-            let tab_skip = template.tab_skip(&st.mem);
+            let tab_skip = template.tab_skip(&st.mem)?;
             st.scanner.cur_loop = tab_skip.ptr();
             let spec = st.mem[tab_skip].glue_ptr;
             let g = st.mem.new_glue(spec)?;
@@ -695,7 +704,8 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
             let mut q = st.scanner.cur_span;
             loop {
                 n += 1;
-                q = q.link(&st.mem).link(&st.mem);
+                let glue = q.or_confusion("span")?.link(&st.mem);
+                q = glue.or_confusion("span")?.link(&st.mem);
                 if q == st.scanner.cur_align {
                     break;
                 }
@@ -703,17 +713,19 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
             if n > i32::from(u16::MAX) {
                 return Err(Abort::Confusion("too many spans"));
             }
-            let mut q = NodePtr::<AlignRecord>::at(st.scanner.cur_span).span_head();
-            while st.mem[st.mem[q].next].span_count < n {
-                q = st.mem[q].next;
+            let mut q = NodePtr::<AlignRecord>::from_ptr(st.scanner.cur_span)
+                .or_confusion("span")?
+                .span_head();
+            while st.mem[st.mem.span_next(q)?].span_count < n {
+                q = st.mem.span_next(q)?;
             }
-            let next = st.mem[q].next;
+            let next = st.mem.span_next(q)?;
             if st.mem[next].span_count > n {
                 let s = NodePtr::<SpanNode>::alloc(&mut st.mem)?;
                 let node = &mut st.mem[s];
-                node.next = next;
+                node.next = Some(next);
                 node.span_count = n;
-                st.mem[q].next = s;
+                st.mem[q].next = Some(s);
                 st.mem[s].width = w;
             } else if st.mem[next].width < w {
                 st.mem[next].width = w;
@@ -730,10 +742,10 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
         st.mem[u].glue_sign = o.into();
         st.mem[u].glue_shrink = packed.shrink[o];
         st.mem.pop_nest(&mut st.input)?;
-        st.input.cur_list.tail_append(&mut st.mem, u.ptr());
-        let spec = st.mem[cur_align.tab_skip(&st.mem)].glue_ptr;
+        st.input.cur_list.tail_append(&mut st.mem, u);
+        let spec = st.mem[cur_align.tab_skip(&st.mem)?].glue_ptr;
         let g = st.mem.new_glue(spec)?;
-        st.input.cur_list.tail_append(&mut st.mem, g.ptr());
+        st.input.cur_list.tail_append(&mut st.mem, g);
         st.mem[g].subtype = GlueKind::Param(GluePar::TabSkip).into();
         if st.mem[cur_align].extra_info >= CR_CODE {
             return Ok(true);
@@ -753,19 +765,19 @@ fn fin_row(st: &mut EngineState) -> Result<(), Abort> {
         let row = crate::packaging::hpack(st, head, PackSpec::NATURAL)?;
         st.mem.pop_nest(&mut st.input)?;
         if st.scanner.cur_pre_head != st.scanner.cur_pre_tail {
-            append_list(st, st.scanner.cur_pre_head, st.scanner.cur_pre_tail);
+            append_list(st, st.scanner.cur_pre_head, st.scanner.cur_pre_tail)?;
         }
         st.input
             .cur_list
             .append_to_vlist(&mut st.mem, &st.eqtb, row)?;
         if st.scanner.cur_head != st.scanner.cur_tail {
-            append_list(st, st.scanner.cur_head, st.scanner.cur_tail);
+            append_list(st, st.scanner.cur_head, st.scanner.cur_tail)?;
         }
         row
     } else {
         let row = crate::packaging::vpackage(st, head, PackSpec::NATURAL, MAX_DIMEN)?;
         st.mem.pop_nest(&mut st.input)?;
-        st.input.cur_list.tail_append(&mut st.mem, row.ptr());
+        st.input.cur_list.tail_append(&mut st.mem, row);
         st.input.cur_list.set_aux_s0(1000);
         row
     };
@@ -806,16 +818,17 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     crate::scan::scan_spec(st, GroupCode::Align, false)?;
-    ALIGN_HEAD.set_link(&mut st.mem, MemPtr::NULL);
-    st.scanner.cur_align = ALIGN_HEAD;
-    st.scanner.cur_loop = MemPtr::NULL;
+    ALIGN_HEAD.set_link(&mut st.mem, None);
+    st.scanner.cur_align = Some(ALIGN_HEAD);
+    st.scanner.cur_loop = None;
     st.scanner.scanner_status = ScannerStatus::Aligning;
     st.scanner.warning_index = save_cs_ptr;
     st.scanner.align_state = -1_000_000;
 
     loop {
         let g = st.mem.new_param_glue(&st.eqtb, GluePar::TabSkip)?.ptr();
-        st.scanner.cur_align.set_link(&mut st.mem, g);
+        let last = st.scanner.cur_align.or_confusion("align")?;
+        last.set_link(&mut st.mem, g);
         st.scanner.cur_align = g;
         if st.scanner.cur.cmd() == Cmd::CarRet {
             break;
@@ -831,7 +844,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
             if (Cmd::TabMark..=Cmd::CarRet).contains(&st.scanner.cur.cmd())
                 && st.scanner.align_state == -1_000_000
             {
-                if empty && st.scanner.cur_loop.is_null() && st.scanner.cur.cmd() == Cmd::TabMark {
+                if empty && st.scanner.cur_loop.is_none() && st.scanner.cur.cmd() == Cmd::TabMark {
                     st.scanner.cur_loop = st.scanner.cur_align;
                 } else {
                     crate::errors::back_error(
@@ -851,7 +864,8 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
         }
 
         let column = st.mem.new_align_record()?;
-        st.scanner.cur_align.set_link(&mut st.mem, column.ptr());
+        let last = st.scanner.cur_align.or_confusion("align")?;
+        last.set_link(&mut st.mem, column.ptr());
         st.scanner.cur_align = column.ptr();
         st.mem[column].u_part = st.mem.tokens.finish(u_part)?;
 

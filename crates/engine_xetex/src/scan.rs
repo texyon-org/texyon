@@ -274,7 +274,7 @@ pub(crate) fn set_math_char(st: &mut EngineState, active: i32, c: i32) -> Result
         }
         let fam = st.mem[nd].nucleus.plane_and_fam() + (ch / 65536) as u16 * 256;
         st.mem[nd].nucleus.set_plane_and_fam(fam);
-        st.input.cur_list.tail_append(&mut st.mem, nd.ptr());
+        st.input.cur_list.tail_append(&mut st.mem, nd);
     }
     Ok(())
 }
@@ -311,7 +311,7 @@ pub(crate) fn fetch_box(st: &mut EngineState, n: i32) -> Option<NodePtr<BoxNode>
             SaLeaf::Word(_) | SaLeaf::MarkClass(_) => return None,
         }
     };
-    st.mem.classify_box(contents.as_idx()?).ok().flatten()
+    st.mem.classify_box(contents?).ok().flatten()
 }
 
 impl MemState {

@@ -546,8 +546,7 @@ pub(crate) fn box_error(
     show_box(st, box_val);
     end_diagnostic(st, true);
     st.mem.flush_node_list(box_val)?;
-    st.eqtb
-        .set_box_reg(i32::from(n), crate::units::MemPtr::NULL);
+    st.eqtb.set_box_reg(i32::from(n), None);
     Ok(())
 }
 

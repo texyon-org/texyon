@@ -280,18 +280,21 @@ mod tests {
         let mut lists = BreakLists::default();
         let p = lists
             .push_passive(Passive {
-                cur_break: MemPtr::from_raw(10),
+                cur_break: crate::units::MemIdx::from_raw(10),
                 next_break: None,
             })
             .unwrap();
         let q = lists
             .push_passive(Passive {
-                cur_break: MemPtr::from_raw(20),
+                cur_break: crate::units::MemIdx::from_raw(20),
                 next_break: Some(p),
             })
             .unwrap();
         assert_eq!(lists.passive(q).next_break, Some(p));
-        assert_eq!(lists.passive(p).cur_break, MemPtr::from_raw(10));
+        assert_eq!(
+            lists.passive(p).cur_break,
+            crate::units::MemIdx::from_raw(10)
+        );
         lists.passive_mut(p).next_break = Some(q);
         assert_eq!(lists.passive(p).next_break, Some(q));
     }

@@ -7,7 +7,6 @@ use crate::command::RelaxCode;
 use crate::command::Usv;
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_USV, END_WRITE, FROZEN_CR, FROZEN_ENDV, FROZEN_FI, NULL_CS, SINGLE_BASE,
-    TEX_NULL,
 };
 use crate::errors::{Abort, OrConfusion};
 use crate::expand::{expand, macro_call};
@@ -588,13 +587,14 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
             && st.scanner.align_state == 0
         {
             if st.scanner.scanner_status == ScannerStatus::Aligning
-                || st.scanner.cur_align.raw() == TEX_NULL
+                || st.scanner.cur_align.is_none()
             {
                 return Err(Abort::Fatal(
                     "(interwoven alignment preambles are not allowed)",
                 ));
             }
-            let column = NodePtr::<AlignRecord>::at(st.scanner.cur_align);
+            let column =
+                NodePtr::<AlignRecord>::from_ptr(st.scanner.cur_align).or_confusion("align")?;
             let saved_cmd = st.mem[column].extra_info;
             st.mem[column].extra_info = st.scanner.cur.encode().1;
             let template = if Cmd::from_stored(saved_cmd) == Cmd::Omit {

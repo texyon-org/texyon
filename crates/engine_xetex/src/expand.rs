@@ -441,8 +441,8 @@ impl MemState {
         match node {
             AnyNode::Ins(_) | AnyNode::Mark(_) | AnyNode::Adjust(_) | AnyNode::Penalty(_) => true,
             AnyNode::Disc(d) => {
-                self[d].pre_break.is_null()
-                    && self[d].post_break.is_null()
+                self[d].pre_break.is_none()
+                    && self[d].post_break.is_none()
                     && self[d].replace_count == 0
             }
             AnyNode::Math(m) => self[m].width == Scaled::ZERO,
@@ -456,7 +456,7 @@ impl MemState {
                 self[h].width == Scaled::ZERO
                     && self[h].height == Scaled::ZERO
                     && self[h].depth == Scaled::ZERO
-                    && self[h].list_ptr.is_null()
+                    && self[h].list_ptr.is_none()
             }
             _ => false,
         }
@@ -473,10 +473,10 @@ fn print_margin_kern(
     next: impl Fn(&crate::state::MemState, MemPtr) -> MemPtr,
 ) {
     let width = loop {
-        if p.is_null() || st.mem.is_char_node(p) {
+        let Some(here) = p.filter(|&x| !st.mem.is_char_node(x)) else {
             break None;
-        }
-        match st.mem.classify(p) {
+        };
+        match st.mem.classify(here) {
             Ok(node) if st.mem.is_margin_kern_filler(node, par_skip) => p = next(&st.mem, p),
             Ok(AnyNode::MarginKern(mk)) if st.mem[mk].side == side => break Some(st.mem[mk].width),
             _ => break None,
@@ -495,7 +495,7 @@ fn conv_toks(st: &mut EngineState, c: ConvertCode) -> Result<(), Abort> {
     let mut arg1: i32 = 0;
     let mut arg2: i32 = 0;
     let mut num: i32 = 0;
-    let mut margin_list = MemPtr::NULL;
+    let mut margin_list = None;
 
     match c {
         ConvertCode::Number | ConvertCode::RomanNumeral | ConvertCode::UniformDeviate => {
@@ -659,10 +659,10 @@ fn conv_toks(st: &mut EngineState, c: ConvertCode) -> Result<(), Abort> {
             let list = margin_list;
             if c == ConvertCode::LeftMarginKern {
                 print_margin_kern(st, list, Side::Left, GluePar::LeftSkip, |mem, p| {
-                    p.link(mem)
+                    p.and_then(|x| x.link(mem))
                 });
             } else {
-                let last = st.mem.prev_rightmost(list, MemPtr::NULL);
+                let last = st.mem.prev_rightmost(list, None);
                 print_margin_kern(st, last, Side::Right, GluePar::RightSkip, move |mem, p| {
                     mem.prev_rightmost(list, p)
                 });

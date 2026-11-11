@@ -1,174 +1,93 @@
 //! Zero-cost scalar newtypes: arena indices and pointers, scaled lengths,
 //! font numbers, and the node-type and glue-sign codes.
 
-use crate::consts::TEX_NULL;
+use std::num::NonZeroU32;
 
-/// A valid, non-null index into the `mem` arena.
-#[derive(
-    Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, bytemuck::Pod, bytemuck::Zeroable,
-)]
+/// A non-null index into the `mem` arena. Word 0 is never a node, so a null
+/// pointer is the zero word of an `Option<MemIdx>`.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 #[repr(transparent)]
-pub struct MemIdx(i32);
+pub struct MemIdx(NonZeroU32);
+
+// SAFETY: `MemIdx` is transparent over `NonZeroU32`, so `None` is the zero word.
+unsafe impl bytemuck::ZeroableInOption for MemIdx {}
+// SAFETY: as above, and every non-zero word is a valid `MemIdx`.
+unsafe impl bytemuck::PodInOption for MemIdx {}
+
+/// A TeX pointer: a `mem` index, `None` for null.
+pub type MemPtr = Option<MemIdx>;
 
 impl MemIdx {
-    /// The value from its raw form in a memory word, file or FFI call.
+    /// The pointer a raw memory word, file or FFI value holds, `None` for null.
     #[inline(always)]
-    pub const fn from_raw(raw: i32) -> MemIdx {
-        MemIdx(raw)
+    pub const fn from_raw(raw: i32) -> MemPtr {
+        if raw < 0 {
+            return None;
+        }
+        match NonZeroU32::new(raw.cast_unsigned()) {
+            Some(n) => Some(MemIdx(n)),
+            None => None,
+        }
     }
 
     /// The raw form for a memory word, file or FFI call.
     #[inline(always)]
     pub const fn raw(self) -> i32 {
-        self.0
+        self.0.get().cast_signed()
     }
-}
 
-impl MemIdx {
     /// The `len` words starting here, as a range of `mem` indices.
     #[inline]
     pub fn words(self, len: i32) -> std::ops::Range<usize> {
-        // A negative start becomes an index past any arena, so slicing rejects it.
-        // Staying in i32 range lets the compiler fold a constant-length slice check.
+        // An index past any arena, so slicing rejects it. Staying in i32 range
+        // lets the compiler fold a constant-length slice check.
         const PAST_ANY_ARENA: usize = 0x7FFF_FFFF;
-        let start = usize::try_from(self.0).unwrap_or(PAST_ANY_ARENA);
+        let start = usize::try_from(self.0.get()).unwrap_or(PAST_ANY_ARENA);
         start..start + usize::try_from(len).unwrap_or(0)
     }
 
-    #[inline]
-    pub fn new(idx: impl MemAddr) -> MemIdx {
-        let idx = idx.addr();
-        debug_assert!(idx != TEX_NULL, "MemIdx must not hold TEX_NULL");
-        MemIdx(idx)
-    }
+    /// The first word after the unused word 0.
+    pub const FIRST: MemIdx = MemIdx(NonZeroU32::MIN);
 
+    /// The word `delta` words on from here, within the same node.
     #[inline]
-    pub fn offset(self, delta: i32) -> MemIdx {
-        MemIdx(self.0 + delta)
+    pub const fn offset(self, delta: u32) -> MemIdx {
+        MemIdx(self.0.saturating_add(delta))
     }
 }
 
-/// A TeX pointer: an arena index or `TEX_NULL`, which is 0.
-#[derive(
-    Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, bytemuck::Pod, bytemuck::Zeroable,
-)]
-#[repr(transparent)]
-pub struct MemPtr(i32);
+/// Anything that names a non-null `mem` address.
+pub trait MemAddr {
+    /// The address.
+    fn addr(self) -> MemIdx;
+}
 
-impl MemPtr {
-    /// The value from its raw form in a memory word, file or FFI call.
+impl MemAddr for MemIdx {
     #[inline(always)]
-    pub const fn from_raw(raw: i32) -> MemPtr {
-        MemPtr(raw)
+    fn addr(self) -> MemIdx {
+        self
     }
+}
 
+/// The raw word form of a pointer, 0 for null.
+pub trait RawPtr {
     /// The raw form for a memory word, file or FFI call.
+    fn raw(self) -> i32;
+}
+
+impl RawPtr for MemPtr {
     #[inline(always)]
-    pub const fn raw(self) -> i32 {
-        self.0
-    }
-}
-
-impl std::ops::Add<i32> for MemIdx {
-    type Output = MemIdx;
-    #[inline]
-    fn add(self, rhs: i32) -> MemIdx {
-        self.offset(rhs)
-    }
-}
-
-impl std::ops::Sub<i32> for MemIdx {
-    type Output = MemIdx;
-    #[inline]
-    fn sub(self, rhs: i32) -> MemIdx {
-        self.offset(-rhs)
+    fn raw(self) -> i32 {
+        self.map_or(0, MemIdx::raw)
     }
 }
 
 /// The number of words from `rhs` to `self`.
-impl std::ops::Sub for MemPtr {
+impl std::ops::Sub for MemIdx {
     type Output = i32;
     #[inline]
-    fn sub(self, rhs: MemPtr) -> i32 {
-        self.0 - rhs.0
-    }
-}
-
-impl std::ops::Sub<i32> for MemPtr {
-    type Output = MemPtr;
-    #[inline]
-    fn sub(self, rhs: i32) -> MemPtr {
-        MemPtr(self.0 - rhs)
-    }
-}
-
-impl std::ops::AddAssign<i32> for MemPtr {
-    #[inline]
-    fn add_assign(&mut self, rhs: i32) {
-        self.0 += rhs;
-    }
-}
-
-impl std::ops::SubAssign<i32> for MemPtr {
-    #[inline]
-    fn sub_assign(&mut self, rhs: i32) {
-        self.0 -= rhs;
-    }
-}
-
-impl std::ops::Add<i32> for MemPtr {
-    type Output = MemPtr;
-    #[inline]
-    fn add(self, rhs: i32) -> MemPtr {
-        MemPtr(self.0 + rhs)
-    }
-}
-
-/// Anything the raw word accessors accept as an arena address.
-pub trait MemAddr {
-    fn addr(self) -> i32;
-}
-impl MemAddr for MemPtr {
-    #[inline]
-    fn addr(self) -> i32 {
-        self.0
-    }
-}
-impl MemAddr for MemIdx {
-    #[inline]
-    fn addr(self) -> i32 {
-        self.0
-    }
-}
-
-/// No node. Not the zero bit pattern `Zeroable` gives, which is the first fixed node.
-impl Default for MemPtr {
-    #[inline]
-    fn default() -> Self {
-        Self::NULL
-    }
-}
-
-impl MemPtr {
-    pub const NULL: MemPtr = MemPtr(TEX_NULL);
-
-    #[inline]
-    pub fn from_idx(idx: MemIdx) -> MemPtr {
-        MemPtr(idx.0)
-    }
-
-    #[inline]
-    pub fn is_null(self) -> bool {
-        self == Self::NULL
-    }
-
-    #[inline]
-    pub fn as_idx(self) -> Option<MemIdx> {
-        if self.is_null() {
-            None
-        } else {
-            Some(MemIdx(self.0))
-        }
+    fn sub(self, rhs: MemIdx) -> i32 {
+        self.raw() - rhs.raw()
     }
 }
 
@@ -1172,17 +1091,20 @@ mod tests {
     }
 
     #[test]
-    fn memptr_null_is_zero() {
-        assert_eq!(MemPtr::NULL.0, 0);
-        assert!(MemPtr::NULL.as_idx().is_none());
-        assert_eq!(MemPtr(1).as_idx(), Some(MemIdx(1)));
+    fn null_is_the_zero_word() {
+        assert_eq!(MemIdx::from_raw(0), None);
+        assert_eq!(MemIdx::from_raw(-1), None);
+        assert_eq!(MemIdx::from_raw(7).map(MemIdx::raw), Some(7));
+        assert_eq!(None::<MemIdx>.raw(), 0);
+        assert_eq!(bytemuck::cast::<u32, MemPtr>(0), None);
+        assert_eq!(bytemuck::cast::<u32, MemPtr>(9).raw(), 9);
     }
 
     #[test]
     fn memidx_offset_walks_node_fields() {
-        let p = MemIdx::new(MemPtr::from_raw(100));
-        assert_eq!(p.offset(1), MemIdx(101));
-        assert_eq!(p.offset(5).0 as usize, 105);
+        let p = MemIdx::from_raw(100).unwrap();
+        assert_eq!(p.offset(1).raw(), 101);
+        assert_eq!(p.offset(5).words(1), 105..106);
     }
 
     #[test]

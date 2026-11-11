@@ -26,6 +26,7 @@ use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::scaled_math::xn_over_d;
 use crate::state::{EngineState, GroupCode, MemState};
 use crate::token::Token;
+use crate::units::MemAddr;
 use crate::units::{FontId, MemIdx, MemPtr, NodeType, Scaled};
 
 use super::align::align_peek;
@@ -51,9 +52,9 @@ pub(super) fn end_graf(st: &mut EngineState) -> Result<(), Abort> {
         crate::linebreak::line_break(st, false)?;
     }
     let lr_save = st.input.cur_list.e_tex_aux;
-    if !lr_save.is_null() {
+    if !lr_save.is_none() {
         st.mem.flush_records::<LrNode>(lr_save);
-        st.input.cur_list.e_tex_aux = MemPtr::NULL;
+        st.input.cur_list.e_tex_aux = None;
     }
     normal_paragraph(st)?;
     st.errors.error_count = 0;
@@ -63,7 +64,7 @@ pub(super) fn end_graf(st: &mut EngineState) -> Result<(), Abort> {
 pub(super) fn append_penalty(st: &mut EngineState) -> Result<(), Abort> {
     let n = crate::scan::scan_int(st)?;
     let p = st.mem.new_penalty(n)?;
-    st.input.cur_list.tail_append(&mut st.mem, p.ptr());
+    st.input.cur_list.tail_append(&mut st.mem, p);
     if st.input.cur_list.mode == VMODE {
         crate::pagebuilder::build_page(st)?;
     }
@@ -92,7 +93,7 @@ pub(super) fn its_all_over(st: &mut EngineState) -> Result<bool, Abort> {
     if !crate::errors::privileged(st)? {
         return Ok(false);
     }
-    if st.shipout.page_tail == PAGE_HEAD
+    if st.shipout.page_tail == Some(PAGE_HEAD)
         && st.input.cur_list.head == st.input.cur_list.tail
         && st.shipout.dead_cycles == 0
     {
@@ -100,12 +101,12 @@ pub(super) fn its_all_over(st: &mut EngineState) -> Result<bool, Abort> {
     }
     crate::input::back_input(st)?;
     let b = st.mem.new_null_box()?;
-    st.input.cur_list.tail_append(&mut st.mem, b.ptr());
+    st.input.cur_list.tail_append(&mut st.mem, b);
     st.mem[b].width = st.eqtb.dimen_par(DimenPar::Hsize);
     let g = st.mem.new_glue(FILL_GLUE)?;
-    st.input.cur_list.tail_append(&mut st.mem, g.ptr());
+    st.input.cur_list.tail_append(&mut st.mem, g);
     let p = st.mem.new_penalty(NULL_FLAG)?;
-    st.input.cur_list.tail_append(&mut st.mem, p.ptr());
+    st.input.cur_list.tail_append(&mut st.mem, p);
     crate::pagebuilder::build_page(st)?;
     Ok(false)
 }
@@ -118,12 +119,12 @@ pub(super) fn indent_in_hmode(st: &mut EngineState, indent: bool) -> Result<(), 
     st.mem[b].width = st.eqtb.dimen_par(DimenPar::ParIndent);
     let p = if st.input.cur_list.mode.abs() == HMODE {
         st.input.cur_list.set_space_factor(1000);
-        b.ptr()
+        b.idx()
     } else {
         let q = st.mem.new_noad()?;
         st.mem[q].nucleus.math_type = SUB_BOX;
         st.mem[q].nucleus.set_info(b.ptr());
-        q.ptr()
+        q.idx()
     };
     st.input.cur_list.tail_append(&mut st.mem, p);
     Ok(())
@@ -228,7 +229,7 @@ pub(super) fn app_space(st: &mut EngineState) -> Result<(), Abort> {
     let space_factor = st.input.cur_list.space_factor();
     let q;
     if space_factor >= 2000 && st.eqtb.glue_par(GluePar::XspaceSkip) != ZERO_GLUE {
-        q = st.mem.new_param_glue(&st.eqtb, GluePar::XspaceSkip)?.ptr();
+        q = st.mem.new_param_glue(&st.eqtb, GluePar::XspaceSkip)?.idx();
     } else {
         let space_skip = st.eqtb.glue_par(GluePar::SpaceSkip);
         let base = if space_skip != ZERO_GLUE {
@@ -247,7 +248,7 @@ pub(super) fn app_space(st: &mut EngineState) -> Result<(), Abort> {
         st.mem[spec].stretch = stretch;
         let shrink = xn_over_d(st.mem[spec].shrink, 1000, space_factor).quotient;
         st.mem[spec].shrink = shrink;
-        q = st.mem.new_glue(spec)?.ptr();
+        q = st.mem.new_glue(spec)?.idx();
         st.mem[spec].ref_count = TEX_NULL;
     }
     st.input.cur_list.tail_append(&mut st.mem, q);
@@ -287,7 +288,7 @@ pub(crate) fn new_graf(st: &mut EngineState, indented: bool) -> Result<(), Abort
     st.input.cur_list.prev_graf = 0;
     if st.input.cur_list.mode == VMODE || st.input.cur_list.head != st.input.cur_list.tail {
         let g = st.mem.new_param_glue(&st.eqtb, GluePar::ParSkip)?;
-        st.input.cur_list.tail_append(&mut st.mem, g.ptr());
+        st.input.cur_list.tail_append(&mut st.mem, g);
     }
     crate::mem::push_nest(st)?;
     st.input.cur_list.mode = HMODE;
@@ -297,7 +298,7 @@ pub(crate) fn new_graf(st: &mut EngineState, indented: bool) -> Result<(), Abort
 
     if indented {
         let b = st.mem.new_null_box()?;
-        st.input.cur_list.tail = b.ptr();
+        st.input.cur_list.tail = b.idx();
         st.input.cur_list.head.set_link(&mut st.mem, b.ptr());
         st.mem[b].width = st.eqtb.dimen_par(DimenPar::ParIndent);
         if st.shipout.insert_src_special_every_par {
@@ -320,9 +321,15 @@ pub(crate) enum NewChar {
 
 impl NewChar {
     pub(crate) fn ptr(self) -> MemPtr {
+        Some(self.addr())
+    }
+}
+
+impl MemAddr for NewChar {
+    fn addr(self) -> MemIdx {
         match self {
-            NewChar::Char(c) => c.ptr(),
-            NewChar::Native(w) => w.ptr(),
+            NewChar::Char(c) => c.idx(),
+            NewChar::Native(w) => w.idx(),
         }
     }
 }
@@ -391,7 +398,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             let n = st.save_stack.saved(0);
             if n < 255 {
                 let ins = NodePtr::<InsNode>::alloc(&mut st.mem)?;
-                st.input.cur_list.tail_append(&mut st.mem, ins.ptr());
+                st.input.cur_list.tail_append(&mut st.mem, ins);
                 st.mem[ins].box_number = u16::try_from(n).or_confusion("insert")?;
                 let height = st.mem[p].height + st.mem[p].depth;
                 st.mem[ins].height = height;
@@ -403,7 +410,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
                 node.float_cost = f;
             } else {
                 let adj = NodePtr::<AdjustNode>::alloc(&mut st.mem)?;
-                st.input.cur_list.tail_append(&mut st.mem, adj.ptr());
+                st.input.cur_list.tail_append(&mut st.mem, adj);
                 st.mem[adj].placement = if st.save_stack.saved(1) != 0 {
                     AdjustPlacement::Pre
                 } else {
@@ -453,7 +460,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             st.shipout.output_active = false;
             st.shipout.insert_penalties = 0;
 
-            if !st.eqtb.box_reg(255).is_null() {
+            if !st.eqtb.box_reg(255).is_none() {
                 crate::errors::box_error(
                     st,
                     255,
@@ -472,24 +479,26 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
 
             if st.input.cur_list.tail != st.input.cur_list.head {
                 let first = st.input.cur_list.head.link(&st.mem);
-                st.shipout.page_tail.set_link(&mut st.mem, first);
-                st.shipout.page_tail = st.input.cur_list.tail;
+                let page_tail = st.shipout.page_tail.or_confusion("page_tail")?;
+                page_tail.set_link(&mut st.mem, first);
+                st.shipout.page_tail = Some(st.input.cur_list.tail);
             }
-            if !PAGE_HEAD.link(&st.mem).is_null() {
-                if CONTRIB_HEAD.link(&st.mem).is_null() {
-                    st.input.nest[0].tail = st.shipout.page_tail;
+            if !PAGE_HEAD.link(&st.mem).is_none() {
+                let page_tail = st.shipout.page_tail.or_confusion("page_tail")?;
+                if CONTRIB_HEAD.link(&st.mem).is_none() {
+                    st.input.nest[0].tail = page_tail;
                 }
                 let contrib = CONTRIB_HEAD.link(&st.mem);
-                st.shipout.page_tail.set_link(&mut st.mem, contrib);
+                page_tail.set_link(&mut st.mem, contrib);
                 let page = PAGE_HEAD.link(&st.mem);
                 CONTRIB_HEAD.set_link(&mut st.mem, page);
-                PAGE_HEAD.set_link(&mut st.mem, MemPtr::NULL);
-                st.shipout.page_tail = PAGE_HEAD;
+                PAGE_HEAD.set_link(&mut st.mem, None);
+                st.shipout.page_tail = Some(PAGE_HEAD);
             }
 
             let last_box = st.scanner.disc_ptr[BoxCode::LastBox as usize];
             st.mem.flush_node_list(last_box)?;
-            st.scanner.disc_ptr[BoxCode::LastBox as usize] = MemPtr::NULL;
+            st.scanner.disc_ptr[BoxCode::LastBox as usize] = None;
             st.mem.pop_nest(&mut st.input)?;
             crate::pagebuilder::build_page(st)?;
         }
@@ -516,7 +525,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             let p = crate::packaging::vpackage(st, head, spec, MAX_DIMEN)?;
             st.mem.pop_nest(&mut st.input)?;
             let noad = st.mem.new_noad()?;
-            st.input.cur_list.tail_append(&mut st.mem, noad.ptr());
+            st.input.cur_list.tail_append(&mut st.mem, noad);
             let node = &mut st.mem[noad];
             node.noad_type = NodeType::VcenterNoad.into();
             node.nucleus.math_type = SUB_BOX;
@@ -529,11 +538,11 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             let save_loc =
                 MathSlot::from_saved(st.save_stack.saved(0)).or_confusion("math group")?;
             st.mem[save_loc].math_type = SUB_MLIST;
-            let p = crate::math::fin_mlist(st, MemPtr::NULL)?;
+            let p = crate::math::fin_mlist(st, None)?;
             st.mem[save_loc].set_info(p);
-            if p.is_null() || !p.link(&st.mem).is_null() {
+            let Some(p) = p.filter(|p| p.link(&st.mem).is_none()) else {
                 return Ok(());
-            }
+            };
             let Ok(AnyNode::Noad(noad)) = st.mem.classify(p) else {
                 return Ok(());
             };
@@ -547,19 +556,17 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
                     n.free(&mut st.mem);
                 }
                 NoadVariant::Accent(a)
-                    if matches!(save_loc, MathSlot::Nucleus(n) if n.ptr() == st.input.cur_list.tail)
+                    if matches!(save_loc, MathSlot::Nucleus(n) if n.idx() == st.input.cur_list.tail)
                         && matches!(
                             st.mem.classify(st.input.cur_list.tail),
                             Ok(AnyNode::Noad(t)) if st.mem[t].noad_type == NodeType::OrdNoad
                         ) =>
                 {
-                    let mut q = st.input.cur_list.head;
-                    while q.link(&st.mem) != st.input.cur_list.tail {
-                        q = q.link(&st.mem);
-                    }
+                    let tail = st.input.cur_list.tail;
+                    let q = st.mem.predecessor(st.input.cur_list.head, Some(tail))?;
                     q.set_link(&mut st.mem, a.ptr());
-                    st.mem.free_node(st.input.cur_list.tail, Noad::SIZE);
-                    st.input.cur_list.tail = a.ptr();
+                    st.mem.free_node(tail, Noad::SIZE);
+                    st.input.cur_list.tail = a.idx();
                 }
                 _ => {}
             }
@@ -578,7 +585,7 @@ pub(super) fn append_glue(st: &mut EngineState, s: SkipCode) -> Result<NodePtr<G
         SkipCode::Mskip => crate::scan::scan_glue(st, ValueLevel::Mu)?,
     };
     let g = st.mem.new_glue(spec)?;
-    st.input.cur_list.tail_append(&mut st.mem, g.ptr());
+    st.input.cur_list.tail_append(&mut st.mem, g);
     if matches!(s, SkipCode::Skip | SkipCode::Mskip) {
         let spec = st.mem[g].glue_ptr;
         let refs = st.mem[spec].ref_count;
@@ -599,7 +606,7 @@ pub(super) fn append_kern(st: &mut EngineState, mu: bool) -> Result<(), Abort> {
     let d = crate::scan::scan_dimen(st, mu)?;
     let p = st.mem.new_kern(d)?;
     st.mem[p].subtype = s.into();
-    st.input.cur_list.tail_append(&mut st.mem, p.ptr());
+    st.input.cur_list.tail_append(&mut st.mem, p);
     Ok(())
 }
 
@@ -614,7 +621,7 @@ pub(super) fn make_mark(st: &mut EngineState, marks: bool) -> Result<(), Abort> 
     let node = &mut st.mem[mark];
     node.mark_class = c;
     node.mark_ptr = st.scanner.def_ref;
-    st.input.cur_list.tail_append(&mut st.mem, mark.ptr());
+    st.input.cur_list.tail_append(&mut st.mem, mark);
     Ok(())
 }
 
@@ -678,13 +685,13 @@ fn begin_disc_group(st: &mut EngineState) -> Result<(), Abort> {
 
 pub(super) fn append_discretionary(st: &mut EngineState, hyphen: bool) -> Result<(), Abort> {
     let d = st.mem.new_disc()?;
-    st.input.cur_list.tail_append(&mut st.mem, d.ptr());
+    st.input.cur_list.tail_append(&mut st.mem, d);
     if hyphen {
         let f = st.eqtb.cur_font();
         let c = st.fonts.hyphen_char[f];
         if (0..=BIGGEST_CHAR).contains(&c) {
             let ch = new_character(st, f, c as u16)?;
-            st.mem[d].pre_break = ch.map_or(MemPtr::NULL, NewChar::ptr);
+            st.mem[d].pre_break = ch.map(|c| c.addr());
         }
         return Ok(());
     }
@@ -699,9 +706,9 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
     let mut q = head;
     let mut p = q.link(&st.mem);
     let mut n: i32 = 0;
-    while !p.is_null() {
-        if !st.mem.is_char_node(p) {
-            let allowed = match st.mem.classify(p) {
+    while let Some(here) = p {
+        if !st.mem.is_char_node(here) {
+            let allowed = match st.mem.classify(here) {
                 Ok(
                     AnyNode::Box(_) | AnyNode::Rule(_) | AnyNode::Kern(_) | AnyNode::Ligature(_),
                 ) => true,
@@ -724,11 +731,11 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
                 crate::output::show_box(st, p);
                 crate::output::end_diagnostic(st, true);
                 st.mem.flush_node_list(p)?;
-                q.set_link(&mut st.mem, MemPtr::NULL);
+                q.set_link(&mut st.mem, None);
                 break;
             }
         }
-        q = p;
+        q = here;
         p = q.link(&st.mem);
         n += 1;
     }
@@ -736,7 +743,7 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
     p = head.link(&st.mem);
     st.mem.pop_nest(&mut st.input)?;
     // SAFETY: `append_discretionary` left the disc node as the enclosing list's tail.
-    let disc = NodePtr::<DiscNode>::from_idx_unchecked(MemIdx::new(st.input.cur_list.tail));
+    let disc = NodePtr::<DiscNode>::from_idx_unchecked(st.input.cur_list.tail);
     let part = st.save_stack.saved(-1);
     match part {
         0 => st.mem[disc].pre_break = p,
@@ -792,7 +799,7 @@ pub(super) fn append_italic_correction(st: &mut EngineState) -> Result<(), Abort
     if tail == st.input.cur_list.head {
         return Ok(());
     }
-    let italic = if let Some(ch) = st.mem.as_char(tail) {
+    let italic = if let Some(ch) = st.mem.as_char(Some(tail)) {
         char_italic(st, st.mem[ch].font, st.mem[ch].character)
     } else {
         match st.mem.classify(tail) {
@@ -810,7 +817,7 @@ pub(super) fn append_italic_correction(st: &mut EngineState) -> Result<(), Abort
         }
     };
     let kern = st.mem.new_kern(italic)?;
-    st.input.cur_list.tail_append(&mut st.mem, kern.ptr());
+    st.input.cur_list.tail_append(&mut st.mem, kern);
     st.mem[kern].subtype = KernSubtype::Explicit.into();
     Ok(())
 }
@@ -857,7 +864,7 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
         }
     };
     let Some(q) = q else {
-        st.input.cur_list.tail_append(&mut st.mem, p.ptr());
+        st.input.cur_list.tail_append(&mut st.mem, p);
         st.input.cur_list.set_space_factor(1000);
         return Ok(());
     };
@@ -878,11 +885,11 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
         }
     };
     let accent = if h == x {
-        p.ptr()
+        p.addr()
     } else {
         let b = crate::packaging::hpack(st, p.ptr(), PackSpec::NATURAL)?;
         st.mem[b].shift_amount = x - h;
-        b.ptr()
+        b.idx()
     };
     let delta = if st.fonts.is_native_font(f) && a == Scaled::ZERO {
         f64::from(w - lsb + rsb) / 2.0
@@ -893,12 +900,12 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
     let r = st.mem.new_kern(delta)?;
     st.mem[r].subtype = KernSubtype::AccKern.into();
     st.input.cur_list.tail.set_link(&mut st.mem, r.ptr());
-    st.mem[r].link = accent;
+    st.mem[r].link = Some(accent);
     let back = st.mem.new_kern(-a - delta)?;
-    st.input.cur_list.tail = back.ptr();
+    st.input.cur_list.tail = back.idx();
     st.mem[back].subtype = KernSubtype::AccKern.into();
     accent.set_link(&mut st.mem, back.ptr());
-    st.input.cur_list.tail_append(&mut st.mem, q.ptr());
+    st.input.cur_list.tail_append(&mut st.mem, q);
     st.input.cur_list.set_space_factor(1000);
     Ok(())
 }

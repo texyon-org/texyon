@@ -711,7 +711,7 @@ mod tests {
         st.mem.set_word(1, 10);
         st.eqtb.set_equiv(crate::consts::GLUE_BASE + 1, 11);
         st.eqtb.set_meaning(CS, Command::Halign, 2);
-        st.mem.free.0[2] = MemPtr::from_raw(12);
+        st.mem.free.0[2] = crate::units::MemIdx::from_raw(12);
         let rung = bundle(&st);
         ladder.push(&mut st, rung, 1, true, false);
 
@@ -724,7 +724,7 @@ mod tests {
         ladder.push(&mut st, rung, 2, true, false);
 
         st.mem.set_word(4, 30); // open epoch after the newest rung
-        st.mem.free.0[2] = MemPtr::from_raw(31);
+        st.mem.free.0[2] = crate::units::MemIdx::from_raw(31);
         ladder.rewind_to(&mut st, 1, restore);
 
         assert_eq!(st.mem.word(1), 10);
@@ -735,7 +735,7 @@ mod tests {
             (st.eqtb.meaning(CS), st.eqtb.cs_level(CS)),
             (Command::Halign, 2)
         );
-        assert_eq!(st.mem.free.0[2], MemPtr::from_raw(12));
+        assert_eq!(st.mem.free.0[2], crate::units::MemIdx::from_raw(12));
         assert_eq!(st.fonts.fmem_ptr, crate::units::FontInfoIdx::from_raw(0));
         assert_eq!(ladder.len(), 2);
     }
@@ -826,16 +826,16 @@ mod tests {
         let mut ladder = CheckpointLadder::from_engine(&st, strings_base);
 
         st.scanner.logical_clock = 10;
-        st.mem.free.0[2] = MemPtr::from_raw(20);
+        st.mem.free.0[2] = crate::units::MemIdx::from_raw(20);
         st.mem.set_word(1, 30);
         ladder.push_engine(&mut st, strings_base, true, true);
         st.scanner.logical_clock = 40;
-        st.mem.free.0[2] = MemPtr::from_raw(50);
+        st.mem.free.0[2] = crate::units::MemIdx::from_raw(50);
         st.mem.set_word(1, 60);
 
         ladder.rewind_engine(&mut st, 1);
         assert_eq!(st.scanner.logical_clock, 10);
-        assert_eq!(st.mem.free.0[2], MemPtr::from_raw(20));
+        assert_eq!(st.mem.free.0[2], crate::units::MemIdx::from_raw(20));
         assert_eq!(st.mem.word(1), 30);
         assert!(ladder.accounted_bytes() > 0);
     }

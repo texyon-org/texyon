@@ -19,15 +19,9 @@ const SUPERSCRIPTBOTTOMMAXWITHSUBSCRIPT: i32 = 16;
 
 impl MemState {
     fn append_to_new_hlist(&mut self, q: NodePtr<Noad>, node: MemPtr) {
-        let head = self[q.any()].new_hlist;
-        if head.is_null() {
-            self[q.any()].new_hlist = node;
-        } else {
-            let mut tail = head;
-            while !tail.link(self).is_null() {
-                tail = tail.link(self);
-            }
-            tail.set_link(self, node);
+        match self[q.any()].new_hlist {
+            None => self[q.any()].new_hlist = node,
+            Some(head) => self.list_tail(head).set_link(self, node),
         }
     }
 }
@@ -141,7 +135,7 @@ fn initial_script_shifts(
     p: MemPtr,
     style: MathStyle,
 ) -> Result<ScriptShifts, Abort> {
-    if st.mem.is_char_node(p) || st.mem.glyph_whatsit(p).is_some() {
+    if st.mem.as_char(p).is_some() || st.mem.glyph_whatsit(p).is_some() {
         Ok(ScriptShifts {
             up: Scaled::ZERO,
             down: Scaled::ZERO,
@@ -415,13 +409,13 @@ impl MemState {
         let mut script_ptr = self[script].info();
         let mut found = None;
         let mut style = initial_math_style;
-        while self.contains(script_ptr) {
-            let node = self.classify(script_ptr);
+        while let Some(here) = script_ptr.filter(|&p| self.contains(Some(p))) {
+            let node = self.classify(here);
             script_ptr = match node {
-                Ok(AnyNode::Kern(_) | AnyNode::Glue(_)) => script_ptr.link(self),
+                Ok(AnyNode::Kern(_) | AnyNode::Glue(_)) => here.link(self),
                 Ok(AnyNode::Style(sn)) => {
                     style = self[sn].style;
-                    script_ptr.link(self)
+                    here.link(self)
                 }
                 Ok(AnyNode::Choice(cn)) => match style.level() {
                     0 => self[cn].display_mlist,
@@ -436,9 +430,9 @@ impl MemState {
                             found = Some(MathSlot::Nucleus(n));
                         }
                     }
-                    MemPtr::NULL
+                    None
                 }
-                _ => MemPtr::NULL,
+                _ => None,
             };
         }
         (found, style)

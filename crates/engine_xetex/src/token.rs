@@ -138,17 +138,9 @@ const LEFT_BRACE_LIMIT: i32 = Token::new(Cmd::RightBrace, 0).0;
 const RIGHT_BRACE_LIMIT: i32 = Token::new(Cmd::MathShift, 0).0;
 
 /// A token list: an index into the store's list table. Null for no list.
-#[derive(Copy, Clone, PartialEq, Eq, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(transparent)]
 pub(crate) struct TokenList(i32);
-
-/// The null list. Not the zero bit pattern `Zeroable` gives.
-impl Default for TokenList {
-    #[inline]
-    fn default() -> Self {
-        Self::NULL
-    }
-}
 
 impl TokenList {
     pub(crate) const NULL: TokenList = TokenList(TEX_NULL);

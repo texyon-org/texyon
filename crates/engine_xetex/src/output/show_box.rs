@@ -1,7 +1,7 @@
 //! Displaying boxes: `show_box`, `short_display` and `show_node_list`.
 
 use crate::codes::LimitCode;
-use crate::consts::{EMPTY, MATH_CHAR, SUB_BOX, SUB_MLIST, TEX_NULL};
+use crate::consts::{EMPTY, MATH_CHAR, SUB_BOX, SUB_MLIST};
 use crate::fonts::Side;
 use crate::math::DEFAULT_CODE;
 use crate::mem::ZERO_GLUE;
@@ -37,10 +37,10 @@ pub(crate) fn show_box(st: &mut EngineState, p: MemPtr) {
 }
 
 pub(crate) fn short_display(st: &mut EngineState, mut p: MemPtr) {
-    while p.raw() > 0 {
-        if st.mem.is_char_node(p) {
+    while let Some(mut here) = p {
+        if st.mem.is_char_node(here) {
             if st.mem.contains(p) {
-                let ch = NodePtr::<CharNode>::at(p);
+                let ch = NodePtr::<CharNode>::at(here);
                 let font = st.mem[ch].font;
                 if font != st.errors.font_in_short_display {
                     if font > st.fonts.font_max {
@@ -57,7 +57,7 @@ pub(crate) fn short_display(st: &mut EngineState, mut p: MemPtr) {
                 );
             }
         } else {
-            match st.mem.classify(p) {
+            match st.mem.classify(here) {
                 Ok(
                     AnyNode::Box(_)
                     | AnyNode::Ins(_)
@@ -97,15 +97,15 @@ pub(crate) fn short_display(st: &mut EngineState, mut p: MemPtr) {
                     short_display(st, st.mem[d].pre_break);
                     short_display(st, st.mem[d].post_break);
                     for _ in 0..st.mem[d].replace_count {
-                        if !p.link(&st.mem).is_null() {
-                            p = p.link(&st.mem);
+                        if let Some(next) = here.link(&st.mem) {
+                            here = next;
                         }
                     }
                 }
                 _ => {}
             }
         }
-        p = p.link(&st.mem);
+        p = here.link(&st.mem);
     }
 }
 
@@ -133,7 +133,7 @@ fn print_subsidiary_data(st: &mut EngineState, p: MathWord, c: u8) {
         }
         SUB_BOX => show_node_list(st, p.info()),
         SUB_MLIST => {
-            if p.info().is_null() {
+            if p.info().is_none() {
                 print_ln(st);
                 print_current_string(st);
                 print(st, "{}");
@@ -148,13 +148,13 @@ fn print_subsidiary_data(st: &mut EngineState, p: MathWord, c: u8) {
 
 pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
     if st.strings.cur_length() > st.errors.depth_threshold {
-        if p.raw() > TEX_NULL {
+        if p.is_some() {
             print(st, " []");
         }
         return;
     }
     let mut n = 0;
-    while p.raw() > 0 {
+    while let Some(here) = p {
         print_ln(st);
         print_current_string(st);
         if !st.mem.contains(p) {
@@ -166,10 +166,10 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
             print(st, "etc.");
             return;
         }
-        if st.mem.is_char_node(p) {
+        if st.mem.is_char_node(here) {
             print_font_and_char(st, p);
         } else {
-            match st.mem.classify(p) {
+            match st.mem.classify(here) {
                 Ok(AnyNode::Char(_)) => print_font_and_char(st, p),
                 Ok(AnyNode::Box(b)) => show_box_node(st, b),
                 Ok(AnyNode::Unset(node)) => {
@@ -332,7 +332,7 @@ pub(super) fn show_node_list(st: &mut EngineState, mut p: MemPtr) {
                 Err(_) => print(st, "Unknown node type!"),
             }
         }
-        p = p.link(&st.mem);
+        p = here.link(&st.mem);
     }
 }
 

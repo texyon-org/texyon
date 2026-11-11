@@ -18,7 +18,8 @@ use crate::node::{NodePtr, SaElement};
 use crate::params::TokPar;
 use crate::state::{EngineState, InteractionMode};
 use crate::token::TokenList;
-use crate::units::{EqtbPtr, FontId, MemPtr, NodeType};
+use crate::units::MemIdx;
+use crate::units::{EqtbPtr, FontId, NodeType};
 
 use super::{
     print, print_char, print_code, print_esc, print_font_select, print_hex, print_int,
@@ -197,7 +198,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
         Cmd::ToksRegister => {
             print_esc(st, "toks");
             if chr_code != 0 {
-                if let Some(q) = NodePtr::<SaElement>::from_ptr(MemPtr::from_raw(chr_code)) {
+                if let Some(q) = NodePtr::<SaElement>::from_ptr(MemIdx::from_raw(chr_code)) {
                     print_sa_num(st, q);
                 }
             }
@@ -226,7 +227,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
             let sa = if (0..=19).contains(&chr_code) {
                 None
             } else {
-                NodePtr::<SaElement>::from_ptr(MemPtr::from_raw(chr_code))
+                NodePtr::<SaElement>::from_ptr(MemIdx::from_raw(chr_code))
             };
             let level = sa.map_or(ValueLevel::from_raw(chr_code), |q| {
                 st.mem[q].sa_type().get()

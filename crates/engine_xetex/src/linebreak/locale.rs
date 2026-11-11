@@ -11,7 +11,7 @@ fn append_native_word(st: &mut EngineState, f: FontId, text: &[u16]) -> Result<(
     let w = st
         .mem
         .new_native_word_node(&st.eqtb, f, text.len() as i32)?;
-    st.input.cur_list.tail_append(&mut st.mem, w.ptr());
+    st.input.cur_list.tail_append(&mut st.mem, w);
     if !text.is_empty() {
         st.mem.entries_mut(w).copy_from_slice(text);
     }
@@ -111,13 +111,13 @@ pub(crate) fn do_locale_linebreaks(st: &mut EngineState, s: i32, len: i32) -> Re
                 if prev_offs != 0 {
                     if use_penalty {
                         let node = st.mem.new_penalty(penalty)?;
-                        st.input.cur_list.tail_append(&mut st.mem, node.ptr());
+                        st.input.cur_list.tail_append(&mut st.mem, node);
                     }
                     if use_skip {
                         let node = st
                             .mem
                             .new_param_glue(&st.eqtb, GluePar::XetexLinebreakSkip)?;
-                        st.input.cur_list.tail_append(&mut st.mem, node.ptr());
+                        st.input.cur_list.tail_append(&mut st.mem, node);
                     }
                 }
                 append_native_word(st, main_f, &text[prev_offs as usize..offs as usize])?;

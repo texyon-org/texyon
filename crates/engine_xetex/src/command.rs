@@ -8,6 +8,7 @@ use crate::codes::{
     RadicalCode, ShorthandDefCode, ShowCode, SkipCode, TheCode, ValignCode, ValueLevel,
 };
 use crate::consts::{BIGGEST_USV, TEX_NULL, TOO_BIG_USV};
+use crate::errors::{Abort, OrConfusion};
 use crate::main_control::{CR_CODE, CR_CR_CODE, SPAN_CODE};
 use crate::math::MathStyle;
 use crate::mem::NULL_LIST;
@@ -15,7 +16,9 @@ use crate::node::{NodePtr, SaElement, SaPointerNode};
 use crate::scan::NO_EXPAND_FLAG;
 use crate::state::InteractionMode;
 use crate::token::{Token, TokenList};
-use crate::units::{EqtbPtr, FontId, MemPtr, NodeType};
+use crate::units::MemIdx;
+use crate::units::RawPtr;
+use crate::units::{EqtbPtr, FontId, NodeType};
 
 /// A Unicode scalar value carried by a character command.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -64,11 +67,13 @@ impl RegisterCode {
     }
 
     #[inline]
-    pub(crate) fn get(self) -> RegisterRef {
-        match ValueLevel::from_raw(self.0) {
+    pub(crate) fn get(self) -> Result<RegisterRef, Abort> {
+        Ok(match ValueLevel::from_raw(self.0) {
             Some(level) => RegisterRef::Scanned(level),
-            None => RegisterRef::Sparse(NodePtr::at(MemPtr::from_raw(self.0))),
-        }
+            None => RegisterRef::Sparse(NodePtr::at(
+                MemIdx::from_raw(self.0).or_confusion("register")?,
+            )),
+        })
     }
 }
 
@@ -97,7 +102,7 @@ impl ToksRef {
     /// The bound register, `None` for `\toks`.
     #[inline]
     pub(crate) fn get(self) -> Option<NodePtr<SaPointerNode>> {
-        (self.0 != 0).then(|| NodePtr::at(MemPtr::from_raw(self.0)))
+        MemIdx::from_raw(self.0).map(NodePtr::at)
     }
 }
 

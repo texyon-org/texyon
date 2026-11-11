@@ -28,6 +28,8 @@ use crate::payload::PayloadStore;
 use crate::state::{EngineState, EqtbState, InteractionMode, PerFont, Selector};
 use crate::token::{ListSlot, Token, TokenStore};
 use crate::units::CsId;
+use crate::units::MemIdx;
+use crate::units::RawPtr;
 use crate::units::{EqtbPtr, FontId, FontInfoIdx, MemPtr, PoolPos, SavePtr, Scaled, StrNumber};
 
 const FORMAT_HEADER_MAGIC: i32 = 0x5454_4E43;
@@ -82,9 +84,20 @@ macro_rules! newtype_item {
     )*};
 }
 
+impl FmtItem for MemPtr {
+    const SIZE: usize = 4;
+    #[inline]
+    fn put(self, out: &mut Vec<u8>) {
+        self.raw().put(out);
+    }
+    #[inline]
+    fn get(bytes: &[u8]) -> Self {
+        MemIdx::from_raw(i32::get(bytes))
+    }
+}
+
 newtype_item!(
     Scaled,
-    MemPtr,
     StrNumber,
     EqtbPtr,
     CsId,
@@ -233,8 +246,8 @@ trait FmtStream {
     fn ptr_in(&mut self, v: &mut MemPtr, low: i32, high: i32) -> Result<(), Abort> {
         self.items_in(
             std::slice::from_mut(v),
-            MemPtr::from_raw(low),
-            MemPtr::from_raw(high),
+            MemIdx::from_raw(low),
+            MemIdx::from_raw(high),
         )
     }
 
@@ -380,8 +393,8 @@ pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     print_nl(st, "");
     print(st, st.strings.format_ident);
 
-    while st.input.pseudo_files.raw() != TEX_NULL {
-        st.mem.pseudo_close(&mut st.input);
+    while st.input.pseudo_files.is_some() {
+        st.mem.pseudo_close(&mut st.input)?;
     }
 
     let mut dump = Dump {
@@ -454,7 +467,7 @@ fn header<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
     if S::LOADING {
         st.input.cur_list.head = CONTRIB_HEAD;
         st.input.cur_list.tail = CONTRIB_HEAD;
-        st.shipout.page_tail = PAGE_HEAD;
+        st.shipout.page_tail = Some(PAGE_HEAD);
     }
 
     s.constant(EQTB_SIZE.raw())?;
@@ -510,9 +523,9 @@ fn dynamic_memory<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), A
     let mut words = i32::try_from(mem.data.len()).map_err(|_| too_big())?;
     let reserved = i32::try_from(RESERVED_WORDS).map_err(|_| too_big())?;
     s.int_in(&mut words, reserved, i32::MAX)?;
-    let last = MemPtr::from_raw(words - 1);
-    s.items_in(&mut mem.free.0, MemPtr::NULL, last)?;
-    s.items_in(st.scanner.sa_root.registers_mut(), MemPtr::NULL, last)?;
+    let last = MemIdx::from_raw(words - 1);
+    s.items_in(&mut mem.free.0, None, last)?;
+    s.items_in(st.scanner.sa_root.registers_mut(), None, last)?;
     if S::LOADING {
         mem.data = crate::mem_types::zeroed_vec(usize::try_from(words).map_err(|_| bad_fmt())?);
     }

@@ -13,6 +13,7 @@ use crate::node::{
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, MemState, ScannerState, ShipoutState};
 use crate::token::TokenList;
+use crate::units::MemIdx;
 use crate::units::{GlueOrder, MemPtr, Scaled};
 
 use super::{print_vpack_diag, PackOrigin, PackOutcome, PackSpec};
@@ -81,7 +82,7 @@ impl VertBreakCursor {
             breakable: false,
             prev_breakable: false,
             least_cost: MAX_HALFWORD,
-            best_place: MemPtr::NULL,
+            best_place: None,
             prev_dp: Scaled::ZERO,
             finish_glue_after_shrinkage: None,
             active_height: [Scaled::ZERO; 7],
@@ -98,7 +99,7 @@ impl MemState {
         }
         cursor.prev_p = cursor.p;
         cursor.prev_breakable = cursor.breakable;
-        cursor.p = cursor.prev_p.link(self);
+        cursor.p = cursor.p.and_then(|p| p.link(self));
     }
 
     fn finish_vert_break_updated_height(
@@ -116,14 +117,14 @@ impl MemState {
         &self,
         cursor: &mut VertBreakCursor,
     ) -> Result<VertBreakNext, Abort> {
-        if cursor.p.is_null() {
+        let Some(p) = cursor.p else {
             return Ok(VertBreakNext::CheckPi {
                 pi: EJECT_PENALTY,
                 update_after: None,
             });
-        }
+        };
 
-        let node = self.classify(cursor.p).or_confusion("vertbreak")?;
+        let node = self.classify(p).or_confusion("vertbreak")?;
         cursor.breakable = node.precedes_break();
         match node {
             AnyNode::Box(b) => {
@@ -157,7 +158,7 @@ impl MemState {
             }
             AnyNode::Kern(kern) => {
                 let next = self[kern].link;
-                if !next.is_null() && matches!(self.classify(next), Ok(AnyNode::Glue(_))) {
+                if next.is_some_and(|n| matches!(self.classify(n), Ok(AnyNode::Glue(_)))) {
                     Ok(VertBreakNext::CheckPi {
                         pi: 0,
                         update_after: Some(VertBreakUpdateSource::Kern(kern)),
@@ -346,7 +347,7 @@ impl MemState {
     /// The contents of box register `n`, leaving `n` in `cur_val`.
     fn reset_vsplit_marks(&mut self, scanner: &mut ScannerState) -> Result<(), Abort> {
         self.flush_node_list(scanner.disc_ptr[BoxCode::Vsplit as usize])?;
-        scanner.disc_ptr[BoxCode::Vsplit as usize] = MemPtr::NULL;
+        scanner.disc_ptr[BoxCode::Vsplit as usize] = None;
 
         if let Some(root) = scanner.sa_root.get(ValueLevel::Mark) {
             if self.do_marks(MarksAction::VsplitInit, 0, root) {
@@ -434,17 +435,18 @@ impl MemState {
     ) -> Result<MemPtr, Abort> {
         let mut p = self[state.v].list_ptr;
         if p == q {
-            self[state.v].list_ptr = MemPtr::NULL;
+            self[state.v].list_ptr = None;
         } else {
             loop {
-                if let AnyNode::Mark(mark) = self.classify(p).or_confusion("vsplit")? {
+                let here = p.or_confusion("vsplit")?;
+                if let AnyNode::Mark(mark) = self.classify(here).or_confusion("vsplit")? {
                     self.collect_split_mark(scanner, mark)?;
                 }
-                if p.link(self) == q {
-                    p.set_link(self, MemPtr::NULL);
+                if here.link(self) == q {
+                    here.set_link(self, None);
                     break;
                 }
-                p = p.link(self);
+                p = here.link(self);
             }
         }
 
@@ -465,7 +467,7 @@ impl MemState {
         let mut q = self.prune_page_top(scanner, eqtb, q, save_discards)?;
 
         state.v.free(self);
-        if !q.is_null() {
+        if !q.is_none() {
             let packed = self.vpackage(eqtb, shipout, q, PackSpec::NATURAL, MAX_DIMEN)?;
             q = packed.r_box.ptr();
             push_slot(&mut packages, packed);
@@ -569,7 +571,7 @@ impl MemState {
     fn insert_split_top_skip_before(
         &mut self,
         eqtb: &EqtbState,
-        prev_p: MemPtr,
+        prev_p: MemIdx,
         p: MemPtr,
         top: Scaled,
     ) -> Result<(), Abort> {
@@ -591,23 +593,23 @@ impl MemState {
     fn prune_discard_node(
         &mut self,
         scanner: &mut ScannerState,
-        prev_p: MemPtr,
+        prev_p: MemIdx,
         r: &mut MemPtr,
-        node: MemPtr,
+        node: MemIdx,
         save_discards: bool,
     ) -> Result<MemPtr, Abort> {
         let q = node.link(self);
-        node.set_link(self, MemPtr::NULL);
+        node.set_link(self, None);
         prev_p.set_link(self, q);
         if save_discards {
-            if scanner.disc_ptr[BoxCode::Vsplit as usize].is_null() {
-                scanner.disc_ptr[BoxCode::Vsplit as usize] = node;
+            if scanner.disc_ptr[BoxCode::Vsplit as usize].is_none() {
+                scanner.disc_ptr[BoxCode::Vsplit as usize] = Some(node);
             } else {
-                r.set_link(self, node);
+                r.or_confusion("discards")?.set_link(self, Some(node));
             }
-            *r = node;
+            *r = Some(node);
         } else {
-            self.flush_node_list(node)?;
+            self.flush_node_list(Some(node))?;
         }
         Ok(q)
     }
@@ -622,30 +624,30 @@ impl MemState {
         s: bool,
     ) -> Result<MemPtr, Abort> {
         let mut prev_p = TEMP_HEAD;
-        let mut r = MemPtr::NULL;
+        let mut r = None;
         TEMP_HEAD.set_link(self, p);
         let upwards = eqtb.int_par(IntPar::XetexUpwards) > 0;
 
-        while !p.is_null() {
-            let node = self.classify(p).or_confusion("pruning")?;
+        while let Some(here) = p {
+            let node = self.classify(here).or_confusion("pruning")?;
             let top = match node {
                 AnyNode::Box(b) if upwards => self[b].depth,
                 AnyNode::Box(b) => self[b].height,
                 AnyNode::Rule(rule) if upwards => self[rule].depth.to_scaled(),
                 AnyNode::Rule(rule) => self[rule].height.to_scaled(),
                 AnyNode::Whatsit(_) | AnyNode::Mark(_) | AnyNode::Ins(_) => {
-                    prev_p = p;
-                    p = prev_p.link(self);
+                    prev_p = here;
+                    p = here.link(self);
                     continue;
                 }
                 AnyNode::Glue(_) | AnyNode::Kern(_) | AnyNode::Penalty(_) => {
-                    p = self.prune_discard_node(scanner, prev_p, &mut r, p, s)?;
+                    p = self.prune_discard_node(scanner, prev_p, &mut r, here, s)?;
                     continue;
                 }
                 _ => return Err(Abort::Confusion("pruning")),
             };
             self.insert_split_top_skip_before(eqtb, prev_p, p, top)?;
-            p = MemPtr::NULL;
+            p = None;
         }
 
         Ok(TEMP_HEAD.link(self))

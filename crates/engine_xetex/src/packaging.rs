@@ -12,6 +12,7 @@ use crate::node::{
 };
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, FontState, MemState, ShipoutState};
+use crate::units::MemIdx;
 use crate::units::{Dir, GlueOrder, GlueSign, MemPtr, NodeType, OrderTotals, Orientation, Scaled};
 
 mod copy;
@@ -19,8 +20,6 @@ mod vert_break;
 
 use self::vert_break::push_slot;
 pub(crate) use self::vert_break::{vert_break, vsplit, MarksAction};
-
-use crate::node::LIST_HEAD as LIST_OFFSET;
 
 /// The size `hpack` and `vpack` aim for: exactly some size, or the natural size plus some.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -83,9 +82,9 @@ impl ListStateRecord {
                 mem[spec].width = d;
                 p
             };
-            self.tail_append(mem, p.ptr());
+            self.tail_append(mem, p);
         }
-        self.tail_append(mem, b.ptr());
+        self.tail_append(mem, b);
         self.set_prev_depth(if upwards { mem[b].height } else { mem[b].depth });
         Ok(())
     }
@@ -132,8 +131,8 @@ pub(crate) struct AdjustTails {
 impl AdjustTails {
     /// Empty lists at `ADJUST_HEAD` and `PRE_ADJUST_HEAD`.
     pub(crate) const HEADS: Self = Self {
-        post: ADJUST_HEAD,
-        pre: PRE_ADJUST_HEAD,
+        post: Some(ADJUST_HEAD),
+        pre: Some(PRE_ADJUST_HEAD),
     };
 }
 
@@ -148,7 +147,7 @@ pub(crate) struct LrState {
 impl LrState {
     /// An empty stack, no problems, left to right.
     pub(crate) const START: Self = Self {
-        ptr: MemPtr::NULL,
+        ptr: None,
         problems: 0,
         dir: Dir::Ltr,
     };
@@ -234,29 +233,29 @@ impl MemState {
         eqtb: &EqtbState,
         fonts: &FontState,
         r_node: NodePtr<BoxNode>,
-        mut q: MemPtr,
+        mut q: MemIdx,
         w: NodePtr<NativeWordNode>,
-    ) -> Result<(MemPtr, NodePtr<NativeWordNode>), Abort> {
-        let p = w.ptr();
+    ) -> Result<(MemIdx, NodePtr<NativeWordNode>), Abort> {
+        let p = w.idx();
         let font = self[w].font;
         let same_font =
             |mem: &MemState, p: MemPtr| mem.as_native_word(p).filter(|&w| mem[w].font == font);
 
-        let mut k = if q != r_node.ptr() + LIST_OFFSET {
-            self.disc_replace_count(q).unwrap_or(0)
+        let mut k = if q != r_node.list_head() {
+            self.disc_replace_count(Some(q)).unwrap_or(0)
         } else {
             0
         };
-        while q.link(self) != p {
+        while q.link(self) != Some(p) {
             k -= 1;
-            q = q.link(self);
-            if let Some(count) = self.disc_replace_count(q) {
+            q = q.link(self).or_confusion("native word")?;
+            if let Some(count) = self.disc_replace_count(Some(q)) {
                 k = count;
             }
         }
 
         let mut pp = p.link(self);
-        while k <= 0 && !pp.is_null() && !self.is_char_node(pp) {
+        while k <= 0 && pp.is_some_and(|x| !self.is_char_node(x)) {
             if let Some(next) = same_font(self, pp) {
                 pp = self[next].link;
             } else if let Some(next) = self
@@ -273,35 +272,36 @@ impl MemState {
         }
 
         let mut total_chars: i32 = 0;
-        let mut s = p;
+        let mut s = Some(p);
         while s != pp {
+            let here = s.or_confusion("native word")?;
             if let Some(sw) = self.as_native_word(s) {
                 total_chars += i32::from(self[sw].length);
             }
-            s = s.link(self);
+            s = here.link(self);
         }
 
         let merged = self.new_native_word_node(eqtb, font, total_chars)?;
         self[merged].subtype = self[w].subtype;
         q.set_link(self, merged.ptr());
-        let last = self.predecessor(p, pp);
+        let last = self.predecessor(p, pp)?;
         self[merged].link = last.link(self);
-        last.set_link(self, MemPtr::NULL);
+        last.set_link(self, None);
 
         let mut at = 0;
         let mut s = p;
         loop {
-            if let Some(sw) = self.as_native_word(s) {
+            if let Some(sw) = self.as_native_word(Some(s)) {
                 let (to, from) = self.entries_mut_and(merged, sw)?;
                 to[at..at + from.len()].copy_from_slice(from);
                 at += from.len();
             }
-            if s.link(self).is_null() {
+            let Some(next) = s.link(self) else {
                 break;
-            }
-            s = s.link(self);
+            };
+            s = next;
         }
-        self.flush_node_list(p)?;
+        self.flush_node_list(Some(p))?;
         self.set_native_metrics(eqtb, fonts, merged)?;
         Ok((q, merged))
     }
@@ -316,11 +316,11 @@ impl MemState {
         adjust: Option<&mut AdjustTails>,
     ) -> Result<PackOutcome, Abort> {
         let mut no_adjust = AdjustTails {
-            post: MemPtr::NULL,
-            pre: MemPtr::NULL,
+            post: None,
+            pre: None,
         };
         let tails = adjust.unwrap_or(&mut no_adjust);
-        let mut lr_ptr = MemPtr::NULL;
+        let mut lr_ptr = None;
         let mut lr_problems = 0;
         shipout.last_badness = 0;
         let r_node = NodePtr::<BoxNode>::alloc(self)?;
@@ -329,7 +329,7 @@ impl MemState {
         node.shift_amount = Scaled::ZERO;
         node.list_ptr = list;
         // `q` trails `p`, starting at the word whose link is the list pointer.
-        let mut q = r_node.ptr() + LIST_OFFSET;
+        let mut q = r_node.list_head();
         let mut h = Scaled::ZERO;
         let mut d = Scaled::ZERO;
         let mut x = Scaled::ZERO;
@@ -343,7 +343,7 @@ impl MemState {
         }
 
         let mut p = list;
-        'outer: while !p.is_null() {
+        'outer: while p.is_some() {
             while let Some(ch) = self.as_char(p) {
                 let f = self[ch].font;
                 let c = fonts.effective_char(f, self[ch].character);
@@ -351,14 +351,14 @@ impl MemState {
                 x += fonts.char_width(f, info);
                 h = h.max(fonts.char_height(f, info));
                 d = d.max(fonts.char_depth(f, info));
-                p = p.link(self);
+                p = ch.idx().link(self);
             }
 
-            if p.is_null() {
+            let Some(mut here) = p else {
                 break;
-            }
+            };
 
-            match self.classify(p) {
+            match self.classify(here) {
                 Ok(AnyNode::Box(b)) => {
                     let s = self[b].shift_amount;
                     x += self[b].width;
@@ -376,33 +376,31 @@ impl MemState {
                     d = d.max(self[u].depth);
                 }
                 Ok(AnyNode::Adjust(adjust)) => {
-                    if !tails.post.is_null() || !tails.pre.is_null() {
-                        q = self.predecessor(q, p);
+                    if !tails.post.is_none() || !tails.pre.is_none() {
+                        q = self.predecessor(q, p)?;
                         let adjust_list = self[adjust].adjust_ptr;
                         let tail = if self[adjust].placement == AdjustPlacement::Pre {
                             &mut tails.pre
                         } else {
                             &mut tails.post
                         };
-                        if tail.is_null() {
-                            return Err(Abort::Confusion("pre vadjust"));
-                        }
-                        tail.set_link(self, adjust_list);
-                        *tail = self.list_tail(*tail);
-                        p = self[adjust].link;
+                        let t = tail.or_confusion("pre vadjust")?;
+                        t.set_link(self, adjust_list);
+                        *tail = Some(self.list_tail(t));
+                        let next = self[adjust].link;
                         adjust.free(self);
-                        q.set_link(self, p);
-                        p = q;
+                        q.set_link(self, next);
+                        here = q;
                     }
                 }
                 Ok(AnyNode::Ins(_) | AnyNode::Mark(_)) => {
-                    if !tails.post.is_null() || !tails.pre.is_null() {
-                        q = self.predecessor(q, p);
-                        tails.post.set_link(self, p);
+                    if !tails.post.is_none() || !tails.pre.is_none() {
+                        q = self.predecessor(q, p)?;
+                        tails.post.or_confusion("adjust")?.set_link(self, p);
                         tails.post = p;
-                        p = p.link(self);
-                        q.set_link(self, p);
-                        p = q;
+                        let next = here.link(self);
+                        q.set_link(self, next);
+                        here = q;
                     }
                 }
                 Ok(AnyNode::Whatsit(w)) => match w.variant(self) {
@@ -410,7 +408,7 @@ impl MemState {
                         let (new_q, native) =
                             self.merge_native_words(eqtb, fonts, r_node, q, word)?;
                         q = new_q;
-                        p = native.ptr();
+                        here = native.idx();
                         h = h.max(self[native].height);
                         d = d.max(self[native].depth);
                         x += self[native].width;
@@ -430,9 +428,9 @@ impl MemState {
                     total_shrink[self[spec].shrink_order] += self[spec].shrink;
                     if self[glue].leaders().is_some() {
                         let leader = self[glue].leader_ptr;
-                        let (leader_h, leader_d) = match self.classify(leader) {
-                            Ok(AnyNode::Box(b)) => (self[b].height, self[b].depth),
-                            Ok(AnyNode::Rule(rule)) => {
+                        let (leader_h, leader_d) = match leader.map(|l| self.classify(l)) {
+                            Some(Ok(AnyNode::Box(b))) => (self[b].height, self[b].depth),
+                            Some(Ok(AnyNode::Rule(rule))) => {
                                 (self[rule].height.to_scaled(), self[rule].depth.to_scaled())
                             }
                             _ => return Err(Abort::Confusion("leader box")),
@@ -465,20 +463,20 @@ impl MemState {
                     }
                 }
                 Ok(AnyNode::Ligature(lig)) => {
-                    p = self.lig_trick(lig);
+                    p = Some(self.lig_trick(lig));
                     fonts.xtx_ligature_present = true;
                     continue 'outer;
                 }
                 _ => {}
             }
-            p = p.link(self);
+            p = here.link(self);
         }
 
-        if !tails.post.is_null() {
-            tails.post.set_link(self, MemPtr::NULL);
+        if let Some(post) = tails.post {
+            post.set_link(self, None);
         }
-        if !tails.pre.is_null() {
-            tails.pre.set_link(self, MemPtr::NULL);
+        if let Some(pre) = tails.pre {
+            pre.set_link(self, None);
         }
         let w = spec.target(x);
         let node = &mut self[r_node];
@@ -487,7 +485,7 @@ impl MemState {
         node.width = w;
         x = w - x;
 
-        let has_list = !self[r_node].list_ptr.is_null();
+        let has_list = !self[r_node].list_ptr.is_none();
         if x == Scaled::ZERO {
             self.clear_box_glue(r_node);
         } else if x > Scaled::ZERO {
@@ -551,7 +549,7 @@ impl MemState {
                     let code = self.lr_code(lr_ptr).or_confusion("LR")?;
                     let math = self.new_math(Scaled::ZERO, code)?;
                     q.set_link(self, math.ptr());
-                    q = math.ptr();
+                    q = math.idx();
                     lr_problems += 10000;
                     self.pop_lr(&mut lr_ptr);
                     if self.lr_code(lr_ptr) == Some(MathCode::Before) {
@@ -569,7 +567,7 @@ impl MemState {
                 );
             }
             self.pop_lr(&mut lr_ptr);
-            if !lr_ptr.is_null() {
+            if !lr_ptr.is_none() {
                 return Err(Abort::Confusion("LR1"));
             }
         }
@@ -702,11 +700,11 @@ impl MemState {
         let mut diags = [None, None];
 
         let mut p = list;
-        while !p.is_null() {
-            if self.is_char_node(p) {
+        while let Some(here) = p {
+            if self.is_char_node(here) {
                 return Err(Abort::Confusion("vpack"));
             }
-            match self.classify(p) {
+            match self.classify(here) {
                 Ok(AnyNode::Box(b)) => {
                     x += d + self[b].height;
                     d = self[b].depth;
@@ -739,9 +737,9 @@ impl MemState {
                     total_shrink[self[spec].shrink_order] += self[spec].shrink;
                     if self[glue].leaders().is_some() {
                         let leader = self[glue].leader_ptr;
-                        let leader_w = match self.classify(leader) {
-                            Ok(AnyNode::Box(b)) => self[b].width,
-                            Ok(AnyNode::Rule(rule)) => self[rule].width.to_scaled(),
+                        let leader_w = match leader.map(|l| self.classify(l)) {
+                            Some(Ok(AnyNode::Box(b))) => self[b].width,
+                            Some(Ok(AnyNode::Rule(rule))) => self[rule].width.to_scaled(),
                             _ => return Err(Abort::Confusion("leader box")),
                         };
                         w = w.max(leader_w);
@@ -753,7 +751,7 @@ impl MemState {
                 }
                 _ => {}
             }
-            p = p.link(self);
+            p = here.link(self);
         }
 
         self[r_node].width = w;
@@ -768,7 +766,7 @@ impl MemState {
         self[r_node].height = h;
         x = h - x;
 
-        let has_list = !self[r_node].list_ptr.is_null();
+        let has_list = !self[r_node].list_ptr.is_none();
         if x == Scaled::ZERO {
             self.clear_box_glue(r_node);
         } else if x > Scaled::ZERO {

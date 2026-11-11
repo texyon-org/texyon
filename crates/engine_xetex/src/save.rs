@@ -21,6 +21,8 @@ use crate::state::{
 };
 use crate::token::{Token, TokenList};
 use crate::units::CsId;
+use crate::units::MemIdx;
+use crate::units::RawPtr;
 use crate::units::{EqtbPtr, MemPtr};
 
 pub(crate) const DIMEN_VAL_LIMIT: u16 = 128;
@@ -263,8 +265,8 @@ impl MemState {
             return Ok(());
         }
         let sparse = match m {
-            Command::ToksRegister(r) => r.get().map(|sa| NodePtr::at(sa.ptr())),
-            Command::Register(r) => match r.get() {
+            Command::ToksRegister(r) => r.get().map(NodePtr::at),
+            Command::Register(r) => match r.get()? {
                 RegisterRef::Sparse(sa) => Some(sa),
                 RegisterRef::Scanned(_) => None,
             },
@@ -286,7 +288,7 @@ impl MemState {
         let Some(eq_type) = Cmd::from_raw(i32::from(eq_type)) else {
             return Ok(());
         };
-        let ptr = MemPtr::from_raw(equiv);
+        let ptr = MemIdx::from_raw(equiv);
         match eq_type {
             Cmd::Call | Cmd::LongCall | Cmd::OuterCall | Cmd::LongOuterCall => {
                 self.tokens.delete_ref(TokenList::from_raw(equiv))
@@ -295,7 +297,7 @@ impl MemState {
             Cmd::ShapeRef => self.free_shape_ref(ptr),
             Cmd::BoxRef => self.flush_node_list(ptr)?,
             Cmd::ToksRegister | Cmd::Register if !(0..=19).contains(&equiv) => {
-                self.delete_sa_ref(scanner, NodePtr::at(ptr))?;
+                self.delete_sa_ref(scanner, NodePtr::at(ptr.or_confusion("sa")?))?;
             }
             _ => {}
         }
@@ -329,7 +331,7 @@ impl MemState {
                         return Ok(());
                     }
                     self.delete_glue_ref(ZERO_GLUE);
-                } else if !n.sa_ptr.is_null() {
+                } else if !n.sa_ptr.is_none() {
                     return Ok(());
                 }
                 SaPointerNode::SIZE
@@ -337,8 +339,8 @@ impl MemState {
             SaLeaf::MarkClass(_) => return Err(Abort::Confusion("sa")),
         };
         let mut slot = self[q].slot();
-        let mut parent = self[q].link;
-        self.free_node(q.ptr(), size);
+        let mut parent = self[q].link.or_confusion("sa")?;
+        self.free_node(q.idx(), size);
         loop {
             let n = &mut self[parent];
             n.clear_child(slot);
@@ -348,7 +350,7 @@ impl MemState {
             }
             let (up_slot, up) = (n.sa_index % 64, n.link);
             parent.free(self);
-            match up.get() {
+            match up {
                 Some(up) => (slot, parent) = (usize::from(up_slot), up),
                 None => {
                     let root_type = ValueLevel::from_raw(i32::from(up_slot)).or_confusion("sa")?;
@@ -371,8 +373,8 @@ impl MemState {
         let e = &mut self[q];
         e.sa_lev = reg.sa_lev;
         e.sa_index = reg.sa_index;
-        e.link = scanner.sa_chain.into();
-        e.sa_loc = p;
+        e.link = scanner.sa_chain;
+        e.sa_loc = Some(p);
         e.sa_int = reg.sa_int;
         scanner.sa_chain = Some(q.saved());
         self[p].sa_ref += 1;
@@ -391,8 +393,8 @@ impl MemState {
         let e = &mut self[q];
         e.sa_lev = reg.sa_lev;
         e.sa_index = reg.sa_index;
-        e.link = scanner.sa_chain.into();
-        e.sa_loc = p;
+        e.link = scanner.sa_chain;
+        e.sa_loc = Some(p);
         e.sa_ptr = reg.sa_ptr;
         scanner.sa_chain = Some(q.saved());
         self[p].sa_ref += 1;
@@ -404,7 +406,7 @@ impl MemState {
     pub(crate) fn sa_destroy(&mut self, sa_index: u16, value: MemPtr) -> Option<MemPtr> {
         if sa_index < MU_VAL_LIMIT {
             self.delete_glue_ref(GlueSpecId::from_raw(value.raw()));
-        } else if !value.is_null() {
+        } else if !value.is_none() {
             if sa_index < BOX_VAL_LIMIT {
                 return Some(value);
             }
@@ -512,11 +514,11 @@ pub(crate) fn finish_sa_mutation(
 
 fn sa_restore(st: &mut EngineState) -> Result<(), Abort> {
     while let Some(chain) = st.scanner.sa_chain {
-        let next = st.mem[chain].link.get();
+        let next = st.mem[chain].link;
         match chain.entry(&st.mem) {
             SaSavedEntry::Word(c) => {
                 let saved = st.mem[c];
-                let p = saved.sa_loc;
+                let p = saved.sa_loc.or_confusion("sa")?;
                 if st.mem[p].sa_lev != LEVEL_ONE {
                     let n = &mut st.mem[p];
                     n.sa_int = saved.sa_int;
@@ -527,7 +529,7 @@ fn sa_restore(st: &mut EngineState) -> Result<(), Abort> {
             }
             SaSavedEntry::Pointer(c) => {
                 let saved = st.mem[c];
-                let p = saved.sa_loc;
+                let p = saved.sa_loc.or_confusion("sa")?;
                 let reg = st.mem[p];
                 let flush_list = if reg.sa_lev == LEVEL_ONE {
                     st.mem.sa_destroy(saved.sa_index, saved.sa_ptr)
@@ -661,7 +663,7 @@ impl MemState {
         let n = &mut self[p];
         n.sa_index = sa_index;
         n.used = 0;
-        n.link = parent.into();
+        n.link = parent;
         n.clear_children();
         Ok(p)
     }
@@ -702,9 +704,9 @@ impl MemState {
             let p = NodePtr::<SaPointerNode>::alloc(self)?;
             let value = if t <= ValueLevel::Mu {
                 self.add_glue_ref(ZERO_GLUE);
-                MemPtr::from_raw(ZERO_GLUE.raw())
+                MemIdx::from_raw(ZERO_GLUE.raw())
             } else {
-                MemPtr::NULL
+                None
             };
             let r = &mut self[p];
             r.sa_ptr = value;
@@ -715,7 +717,7 @@ impl MemState {
         let h = &mut self[e];
         h.sa_index = 64 * u16::from(t as u8) + leaf_i;
         h.sa_lev = LEVEL_ONE;
-        h.link = q;
+        h.link = Some(q);
         self.add_sa_child(q, leaf_i, e);
         Ok(leaf)
     }
@@ -776,14 +778,14 @@ mod tests {
             for _ in 0..4 {
                 let p = mem.get_node(size).unwrap();
                 for k in 0..size {
-                    mem.set_word(usize::try_from((p + k).raw()).unwrap(), 7);
+                    mem.set_word(p.words(k + 1).end - 1, 7);
                 }
                 mem.free_node(p, size);
             }
         }
 
         let mut scanner = ScannerState::default();
-        scanner.sa_root.registers_mut().fill(MemPtr::NULL);
+        scanner.sa_root.registers_mut().fill(None);
         (mem, scanner)
     }
 

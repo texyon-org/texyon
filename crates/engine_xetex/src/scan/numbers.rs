@@ -19,7 +19,9 @@ use crate::scaled_math::{add_or_sub, fract, mult_and_add, quotient, xn_over_d, O
 use crate::scan::Command;
 use crate::state::EngineState;
 use crate::token::Token;
-use crate::units::{GlueOrder, MemPtr, Scaled};
+use crate::units::MemIdx;
+use crate::units::RawPtr;
+use crate::units::{GlueOrder, Scaled};
 
 use super::internal::{scan_something_internal, CurVal};
 use super::next::{get_token, get_x_non_blank, get_x_token};
@@ -406,7 +408,7 @@ fn scan_stretch(st: &mut EngineState, mu: bool) -> Result<(Scaled, GlueOrder), A
 
 /// A glue spec pointer held in a raw word.
 pub(super) fn glue_spec(p: i32) -> GlueSpecId {
-    GlueSpecId::from_raw(MemPtr::from_raw(p).raw())
+    GlueSpecId::from_raw(MemIdx::from_raw(p).raw())
 }
 
 /// The width of a scanned glue value, releasing the glue.

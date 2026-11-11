@@ -10,7 +10,7 @@ use crate::params::GluePar;
 use std::marker::PhantomData;
 
 use crate::consts::NULL_FLAG;
-use crate::errors::Abort;
+use crate::errors::{Abort, OrConfusion};
 mod kinds;
 
 use crate::state::MemState;
@@ -47,10 +47,16 @@ impl<K: View> PartialEq for NodePtr<K> {
     }
 }
 impl<K: View> Eq for NodePtr<K> {}
-// SAFETY: a `MemIdx` and a zero-sized marker, valid at all-zero bits.
-unsafe impl<K: View + 'static> bytemuck::Zeroable for NodePtr<K> {}
-// SAFETY: a `MemIdx` and a zero-sized marker, so no padding and any bits are valid.
-unsafe impl<K: View + 'static> bytemuck::Pod for NodePtr<K> {}
+// SAFETY: transparent over a `MemIdx`, so `None` is the zero word.
+unsafe impl<K: View + 'static> bytemuck::ZeroableInOption for NodePtr<K> {}
+// SAFETY: as above, and every non-zero word is a valid `MemIdx`.
+unsafe impl<K: View + 'static> bytemuck::PodInOption for NodePtr<K> {}
+impl<K: View> MemAddr for NodePtr<K> {
+    #[inline(always)]
+    fn addr(self) -> MemIdx {
+        self.idx
+    }
+}
 impl<K: View> std::fmt::Debug for NodePtr<K> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "NodePtr({})", self.idx.raw())
@@ -79,58 +85,7 @@ impl<K: View> NodePtr<K> {
     /// The node's address as an untyped link value.
     #[inline]
     pub fn ptr(self) -> MemPtr {
-        MemPtr::from_idx(self.idx)
-    }
-}
-
-/// A nullable pointer to a `K` as a node stores it: the raw half-word,
-/// `TEX_NULL` for none.
-#[repr(transparent)]
-pub struct Link<K: View>(MemPtr, PhantomData<fn() -> K>);
-
-impl<K: View> Copy for Link<K> {}
-impl<K: View> Clone for Link<K> {
-    #[inline]
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-impl<K: View> PartialEq for Link<K> {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-impl<K: View> Eq for Link<K> {}
-// SAFETY: a `MemPtr` and a zero-sized marker, valid at all-zero bits.
-unsafe impl<K: View + 'static> bytemuck::Zeroable for Link<K> {}
-// SAFETY: a `MemPtr` and a zero-sized marker, so no padding and any bits are valid.
-unsafe impl<K: View + 'static> bytemuck::Pod for Link<K> {}
-impl<K: View> std::fmt::Debug for Link<K> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Link({})", self.0.raw())
-    }
-}
-
-impl<K: View> Link<K> {
-    /// The node, `None` for a null link.
-    #[inline]
-    pub fn get(self) -> Option<NodePtr<K>> {
-        self.0.as_idx().map(NodePtr::from_idx_unchecked)
-    }
-}
-
-impl<K: View> From<Option<NodePtr<K>>> for Link<K> {
-    #[inline]
-    fn from(p: Option<NodePtr<K>>) -> Self {
-        Link(link_of(p), PhantomData)
-    }
-}
-
-impl<K: View> From<NodePtr<K>> for Link<K> {
-    #[inline]
-    fn from(p: NodePtr<K>) -> Self {
-        Link(p.ptr(), PhantomData)
+        Some(self.idx)
     }
 }
 
@@ -529,7 +484,7 @@ impl MemState {
         if let Some(ty) = ty {
             self.set_header(p, ty, 0);
         }
-        Ok(NodePtr::from_idx_unchecked(MemIdx::new(p)))
+        Ok(NodePtr::from_idx_unchecked(p))
     }
 }
 
@@ -614,38 +569,38 @@ impl ListRecord for PseudoLineNode {}
 impl<K: ListRecord> NodePtr<K> {
     /// The record at `p`, a non-null link of a list of `K` records.
     #[inline]
-    pub fn at(p: impl crate::units::MemAddr) -> Self {
-        NodePtr::from_idx_unchecked(MemIdx::new(p))
+    pub fn at(p: impl MemAddr) -> Self {
+        NodePtr::from_idx_unchecked(p.addr())
     }
 
     /// The record at `p`, `None` when the link is null.
     #[inline]
     pub fn from_ptr(p: MemPtr) -> Option<Self> {
-        (!p.is_null()).then(|| Self::at(p))
+        p.map(Self::at)
     }
 }
 
 /// The link value of an optional node, null for `None`.
 #[inline]
 pub fn link_of<K: View>(p: Option<NodePtr<K>>) -> MemPtr {
-    p.map_or(MemPtr::NULL, NodePtr::ptr)
+    p.map(NodePtr::idx)
 }
 
 impl<K: Node> NodePtr<K> {
     /// Returns the node to the free list of its kind's size.
     #[inline]
     pub fn free(self, mem: &mut MemState) {
-        mem.free_node(self.ptr(), K::SIZE);
+        mem.free_node(self.idx(), K::SIZE);
     }
 }
 
 /// The header of the list node at `p`.
 #[inline]
 fn header(p: impl MemAddr) -> NodePtr<NodeHeader> {
-    NodePtr::from_idx_unchecked(MemIdx::new(p))
+    NodePtr::from_idx_unchecked(p.addr())
 }
 
-impl MemPtr {
+impl MemIdx {
     #[inline]
     pub fn link(self, mem: &MemState) -> MemPtr {
         mem[header(self)].link
@@ -666,8 +621,8 @@ impl NodePtr<BoxNode> {
 
     /// The pseudo-node whose `link` is `list_ptr`, for splicing at the list head.
     #[inline]
-    pub fn list_head(self) -> MemPtr {
-        MemPtr::from_idx(self.idx.offset(LIST_HEAD))
+    pub fn list_head(self) -> MemIdx {
+        self.idx.offset(LIST_HEAD)
     }
 }
 
@@ -881,7 +836,7 @@ impl MemState {
     #[inline]
     pub fn classify(&self, p: impl MemAddr) -> Result<AnyNode, InvalidNodeType> {
         use NodeType::*;
-        let p = MemIdx::new(p);
+        let p = p.addr();
         // SAFETY (every arm): the type code just read from `p` proves its kind.
         Ok(match self.node_type(p)? {
             HList | VList => AnyNode::Box(NodePtr::from_idx_unchecked(p)),
@@ -911,7 +866,8 @@ impl MemState {
     /// Classifies `p` unless it is null or a character.
     #[inline]
     pub fn classify_non_char(&self, p: MemPtr) -> Option<AnyNode> {
-        if p.is_null() || self.is_char_node(p) {
+        let p = p?;
+        if self.is_char_node(p) {
             return None;
         }
         self.classify(p).ok()
@@ -970,7 +926,7 @@ impl MemState {
     /// `p` as a character node, if it lies in the one-word region.
     #[inline]
     pub fn as_char(&self, p: MemPtr) -> Option<NodePtr<CharNode>> {
-        self.is_char_node(p).then(|| NodePtr::at(p))
+        p.filter(|&p| self.is_char_node(p)).map(NodePtr::at)
     }
 }
 
@@ -1074,10 +1030,11 @@ impl NodePtr<AnyNoad> {
 }
 
 /// The pseudo-node at a box whose `link` is the box's `list_ptr`, in words from the box.
-pub(crate) const LIST_HEAD: i32 = crate::node::word_offset(
+pub(crate) const LIST_HEAD: u32 = crate::node::word_offset(
     std::mem::offset_of!(crate::node::BoxNode, list_ptr)
         - std::mem::offset_of!(crate::node::WhatsitNode, link),
-);
+)
+.cast_unsigned();
 
 impl NodePtr<RadicalNoad> {
     /// The radical's nucleus and scripts, laid out as a plain noad.
@@ -1127,7 +1084,7 @@ impl MathSlot {
 
     /// The slot a save stack word from [`MathSlot::to_saved`] holds.
     pub fn from_saved(v: i32) -> Option<Self> {
-        let p = MemIdx::from_raw(v.div_euclid(Self::KINDS));
+        let p = MemIdx::from_raw(v.div_euclid(Self::KINDS))?;
         Some(match v.rem_euclid(Self::KINDS) {
             0 => MathSlot::Nucleus(NodePtr::from_idx_unchecked(p)),
             1 => MathSlot::Supscr(NodePtr::from_idx_unchecked(p)),
@@ -1206,29 +1163,31 @@ impl AlignColumn for UnsetNode {}
 impl<K: AlignColumn> NodePtr<K> {
     /// The column after tabskip glue `g`, `None` at the end of the list.
     #[inline]
-    pub fn after_tab_skip(mem: &MemState, g: MemPtr) -> Option<Self> {
+    pub fn after_tab_skip(mem: &MemState, g: impl MemAddr) -> Option<Self> {
         // SAFETY: tabskip glue is followed by a column or ends the list.
-        g.link(mem)
-            .as_idx()
-            .map(|idx| NodePtr::from_idx_unchecked(idx))
+        g.addr().link(mem).map(NodePtr::from_idx_unchecked)
     }
 
     #[inline]
-    pub fn tab_skip(self, mem: &MemState) -> NodePtr<GlueNode> {
-        NodePtr::tab_skip_after(mem, self.ptr())
+    pub fn tab_skip(self, mem: &MemState) -> Result<NodePtr<GlueNode>, Abort> {
+        NodePtr::tab_skip_after(mem, self)
     }
 
     #[inline]
     pub fn next_column(self, mem: &MemState) -> Option<Self> {
-        Self::after_tab_skip(mem, self.ptr().link(mem))
+        Self::after_tab_skip(mem, self.idx().link(mem)?)
     }
 }
 
 impl NodePtr<GlueNode> {
     /// The tabskip glue linked from `ALIGN_HEAD` or an alignment column `p`.
     #[inline]
-    pub fn tab_skip_after(mem: &MemState, p: MemPtr) -> Self {
-        NodePtr::from_idx_unchecked(MemIdx::new(p.link(mem)))
+    pub fn tab_skip_after(mem: &MemState, p: impl MemAddr) -> Result<Self, Abort> {
+        // SAFETY: tabskip glue follows the align head and every column.
+        p.addr()
+            .link(mem)
+            .map(NodePtr::from_idx_unchecked)
+            .or_confusion("tabskip glue")
     }
 }
 
@@ -1450,7 +1409,7 @@ impl NodePtr<NativeWordNode> {
     pub fn free_native(self, mem: &mut MemState) {
         self.release_native_glyphs(mem);
         mem.release_payload(self);
-        mem.free_node(self.ptr(), Self::SIZE_OF_KIND);
+        mem.free_node(self.idx(), Self::SIZE_OF_KIND);
     }
 }
 
@@ -1731,7 +1690,7 @@ mod tests {
         let p = NodePtr::<PenaltyNode>::alloc(&mut mem).unwrap();
         assert_eq!(p, old);
         assert_eq!(mem[header(p.idx())].subtype, 0);
-        assert_eq!(mem.node_type(p.ptr()), Ok(NodeType::Penalty));
+        assert_eq!(mem.node_type(p), Ok(NodeType::Penalty));
     }
 
     #[test]
@@ -1741,7 +1700,7 @@ mod tests {
         let a = mem.get_node(3).unwrap();
         let b = mem.get_node(3).unwrap();
         let c = mem.get_node(2).unwrap();
-        assert_eq!([a, b, c].map(MemPtr::raw), [start, start + 3, start + 6]);
+        assert_eq!([a, b, c].map(MemIdx::raw), [start, start + 3, start + 6]);
         mem.free_node(a, 3);
         mem.free_node(b, 3);
         assert_eq!(mem.get_node(2).unwrap().raw(), start + 8);
@@ -1757,9 +1716,9 @@ mod tests {
 
     fn at<K: View>(mem: &mut MemState, p: i32, ty: Option<NodeType>) -> NodePtr<K> {
         if let Some(ty) = ty {
-            mem[header(MemPtr::from_raw(p))].ty = ty.to_u16();
+            mem[header(MemIdx::from_raw(p).unwrap())].ty = ty.to_u16();
         }
-        NodePtr::from_idx_unchecked(MemIdx::new(MemPtr::from_raw(p)))
+        NodePtr::from_idx_unchecked(MemIdx::from_raw(p).unwrap())
     }
 
     #[test]
@@ -1865,10 +1824,10 @@ mod tests {
             (170, NodeType::Unset),
         ];
         for (p, ty) in cases {
-            mem[header(MemPtr::from_raw(p))].ty = ty.to_u16();
+            mem[header(MemIdx::from_raw(p).unwrap())].ty = ty.to_u16();
         }
-        mem[header(MemPtr::from_raw(180))].ty = 35;
-        let c = |p| mem.classify(MemPtr::from_raw(p));
+        mem[header(MemIdx::from_raw(180).unwrap())].ty = 35;
+        let c = |p| mem.classify(MemIdx::from_raw(p).unwrap());
         use AnyNode::*;
         assert!(matches!(c(40), Ok(Box(b)) if mem[b].is_hlist()));
         assert!(matches!(c(50), Ok(Box(b)) if mem[b].is_vlist()));
@@ -1888,11 +1847,14 @@ mod tests {
         assert_eq!(c(40).unwrap().idx().raw(), 40);
 
         assert!(matches!(
-            mem.classify_box(MemPtr::from_raw(50)),
+            mem.classify_box(MemIdx::from_raw(50).unwrap()),
             Ok(Some(b)) if mem[b].is_vlist()
         ));
-        assert!(matches!(mem.classify_box(MemPtr::from_raw(70)), Ok(None)));
-        assert!(mem.classify_box(MemPtr::from_raw(180)).is_err());
+        assert!(matches!(
+            mem.classify_box(MemIdx::from_raw(70).unwrap()),
+            Ok(None)
+        ));
+        assert!(mem.classify_box(MemIdx::from_raw(180).unwrap()).is_err());
     }
 
     #[test]
@@ -1913,31 +1875,32 @@ mod tests {
     #[test]
     fn alignment_records_walk_the_preamble_and_become_unset() {
         let mut mem = fresh_mem(200);
-        let (head, g1, col, g2) = (
-            MemPtr::from_raw(10),
-            MemPtr::from_raw(20),
-            MemPtr::from_raw(100),
-            MemPtr::from_raw(30),
-        );
-        head.set_link(&mut mem, g1);
-        g1.set_link(&mut mem, col);
-        col.set_link(&mut mem, g2);
-        g2.set_link(&mut mem, MemPtr::NULL);
+        let idx = |raw| MemIdx::from_raw(raw).unwrap();
+        let (head, g1, col, g2) = (idx(10), idx(20), idx(100), idx(30));
+        head.set_link(&mut mem, Some(g1));
+        g1.set_link(&mut mem, Some(col));
+        col.set_link(&mut mem, Some(g2));
+        g2.set_link(&mut mem, None);
         let rec = NodePtr::<AlignRecord>::after_tab_skip(&mem, g1).unwrap();
-        assert_eq!(rec.ptr(), col);
-        assert_eq!(rec.tab_skip(&mem).ptr(), g2);
-        assert_eq!(NodePtr::<GlueNode>::tab_skip_after(&mem, head).ptr(), g1);
+        assert_eq!(rec.idx(), col);
+        assert_eq!(rec.tab_skip(&mem).unwrap().idx(), g2);
+        assert_eq!(
+            NodePtr::<GlueNode>::tab_skip_after(&mem, head)
+                .unwrap()
+                .idx(),
+            g1
+        );
         assert!(rec.next_column(&mem).is_none());
 
         mem[rec].width = Scaled::from_raw(0x44);
         mem[rec].v_part = TokenList::from_raw(0x22);
         mem[rec].u_part = TokenList::from_raw(0x33);
         mem[rec].extra_info = 0x55;
-        mem[rec.span_head()].next = NodePtr::at(MemPtr::from_raw(40));
+        mem[rec.span_head()].next = Some(NodePtr::at(MemIdx::from_raw(40).unwrap()));
 
         let u = rec.into_unset(&mut mem);
         let unset = mem[u];
-        assert_eq!(unset.link, g2);
+        assert_eq!(unset.link, Some(g2));
         assert_eq!(unset.width, Scaled::from_raw(0x44));
         assert_eq!(unset.span_count, 0);
         assert_eq!((unset.height, unset.depth), (Scaled::ZERO, Scaled::ZERO));
@@ -1954,7 +1917,7 @@ mod tests {
     #[test]
     fn sparse_array_records_read_through_their_heads() {
         use crate::codes::{MarkCode, ValueLevel};
-        let w = |p: i32| MemPtr::from_raw(p);
+        let w = |p: i32| MemIdx::from_raw(p);
         let mut mem = fresh_mem(200);
         let q: NodePtr<SaIndexNode> = at(&mut mem, 100, None);
         let leaf: NodePtr<SaElement> = at(&mut mem, 150, None);
@@ -1967,10 +1930,10 @@ mod tests {
 
         let c: NodePtr<SaWordNode> = at(&mut mem, 150, None);
         mem[c].sa_index = 64 + 9;
-        mem[c].link = q;
+        mem[c].link = Some(q);
         assert_eq!(mem[leaf].sa_type(), ValueLevel::Dimen);
         assert_eq!(mem[leaf].slot(), 9);
-        assert_eq!(mem[leaf].link, q);
+        assert_eq!(mem[leaf].link, Some(q));
         assert_eq!(leaf.leaf(&mem), Some(SaLeaf::Word(c)));
 
         let p: NodePtr<SaPointerNode> = at(&mut mem, 150, None);
@@ -2040,10 +2003,10 @@ mod tests {
         f.set_plane_and_fam(0x0205);
         assert_eq!(f.fam(), 5);
         assert_eq!(f.full_char(), 0x2_1234);
-        f.set_info(MemPtr::from_raw(0x0012_3456));
-        assert_eq!(f.info(), MemPtr::from_raw(0x0012_3456));
-        f.set_info(MemPtr::NULL);
-        assert_eq!(f.info(), MemPtr::NULL);
+        f.set_info(MemIdx::from_raw(0x0012_3456));
+        assert_eq!(f.info(), MemIdx::from_raw(0x0012_3456));
+        f.set_info(None);
+        assert_eq!(f.info(), None);
         assert_eq!(f.math_type, 3);
 
         let mut d = <crate::node::DelimiterWord as bytemuck::Zeroable>::zeroed();

@@ -948,7 +948,7 @@ mod tests {
         bundle.restore(&mut st.mem);
 
         assert_eq!(st.mem.data.len(), crate::mem::RESERVED_WORDS + 3);
-        assert_eq!(st.mem.free.0[3], kept);
+        assert_eq!(st.mem.free.0[3], Some(kept));
         assert_eq!(st.mem.get_node(5).unwrap(), grown);
     }
 

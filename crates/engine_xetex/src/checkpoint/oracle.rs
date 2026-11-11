@@ -2,6 +2,7 @@
 
 use crate::mem_types::{B32x2, ListStateRecord, MemoryWord};
 use crate::state::{EngineState, InputName, InputState};
+use crate::units::RawPtr;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ComponentDigest {

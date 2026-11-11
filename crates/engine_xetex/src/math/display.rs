@@ -11,7 +11,8 @@ use crate::node::{AnyNode, BoxLr, BoxNode, GlueNode, MathCode, NodePtr};
 use crate::packaging::{AdjustTails, LrState, PackOrigin, PackSpec};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::state::{EngineState, EqtbState, FontState, GroupCode, MemState};
-use crate::units::{Dir, GlueOrder, GlueSign, MemPtr, NodeType, Scaled};
+use crate::units::MemIdx;
+use crate::units::{Dir, GlueOrder, GlueSign, NodeType, Scaled};
 
 use super::build::{define_word, fin_mlist};
 use super::mlist::mlist_to_hlist;
@@ -72,7 +73,7 @@ impl MemState {
     }
 
     /// Sets the width of `p`, an end of the display's kern frame that is not glue.
-    fn set_kern_or_math_width(&mut self, p: MemPtr, w: Scaled) -> Result<(), Abort> {
+    fn set_kern_or_math_width(&mut self, p: MemIdx, w: Scaled) -> Result<(), Abort> {
         match self.classify(p) {
             Ok(AnyNode::Kern(k)) => self[k].width = w,
             Ok(AnyNode::Math(m)) => self[m].width = w,
@@ -122,70 +123,69 @@ fn app_display(
 
     let (p, q);
     if st.mem[orig].lr() == BoxLr::Dlist {
-        p = orig.ptr();
+        p = orig.idx();
         q = p;
     } else {
-        let mut r = st.mem[orig].list_ptr;
+        let list = st.mem[orig].list_ptr;
         orig.free(&mut st.mem);
-        if r.is_null() {
-            return Err(Abort::Confusion("LR4"));
-        }
+        let first = list.or_confusion("LR4")?;
         if x > 0 {
-            p = r;
-            q = st.mem.list_tail(r);
+            p = first;
+            q = st.mem.list_tail(first);
         } else {
-            let mut rev = MemPtr::NULL;
-            q = r;
-            while !r.is_null() {
-                let t = r.link(&st.mem);
-                r.set_link(&mut st.mem, rev);
+            let mut rev = None;
+            let mut r = list;
+            q = first;
+            while let Some(here) = r {
+                let t = here.link(&st.mem);
+                here.set_link(&mut st.mem, rev);
                 rev = r;
                 r = t;
             }
-            p = rev;
+            p = rev.or_confusion("LR4")?;
         }
     }
 
     let (r, t) = match copy {
         None => (
-            st.mem.new_kern(Scaled::ZERO)?.ptr(),
-            st.mem.new_kern(Scaled::ZERO)?.ptr(),
+            st.mem.new_kern(Scaled::ZERO)?.idx(),
+            st.mem.new_kern(Scaled::ZERO)?.idx(),
         ),
         Some(bc) => {
-            let r = st.mem[bc].list_ptr;
-            (r, r.link(&st.mem))
+            let r = st.mem[bc].list_ptr.or_confusion("app_display")?;
+            (r, r.link(&st.mem).or_confusion("app_display")?)
         }
     };
-    let u = st.mem.new_math(Scaled::ZERO, MathCode::EndM)?.ptr();
+    let u = st.mem.new_math(Scaled::ZERO, MathCode::EndM)?.idx();
     if let Ok(AnyNode::Glue(tg)) = st.mem.classify(t) {
         let skip = st.mem.new_skip_param(&st.eqtb, GluePar::RightSkip)?;
         q.set_link(&mut st.mem, skip.ptr());
-        st.mem[skip].link = u;
+        st.mem[skip].link = Some(u);
         st.mem.set_display_skip(skip, tg, e);
-        u.set_link(&mut st.mem, t);
+        u.set_link(&mut st.mem, Some(t));
     } else {
         st.mem.set_kern_or_math_width(t, e)?;
-        t.set_link(&mut st.mem, u);
-        q.set_link(&mut st.mem, t);
+        t.set_link(&mut st.mem, Some(u));
+        q.set_link(&mut st.mem, Some(t));
     }
 
-    let u = st.mem.new_math(Scaled::ZERO, MathCode::BeginM)?.ptr();
+    let u = st.mem.new_math(Scaled::ZERO, MathCode::BeginM)?.idx();
     if let Ok(AnyNode::Glue(rg)) = st.mem.classify(r) {
         let skip = st.mem.new_skip_param(&st.eqtb, GluePar::LeftSkip)?;
         u.set_link(&mut st.mem, skip.ptr());
-        st.mem[skip].link = p;
+        st.mem[skip].link = Some(p);
         st.mem.set_display_skip(skip, rg, d);
-        r.set_link(&mut st.mem, u);
+        r.set_link(&mut st.mem, Some(u));
     } else {
         st.mem.set_kern_or_math_width(r, d)?;
-        r.set_link(&mut st.mem, p);
-        u.set_link(&mut st.mem, r);
+        r.set_link(&mut st.mem, Some(p));
+        u.set_link(&mut st.mem, Some(r));
         match copy {
             None => {
-                b = crate::packaging::hpack(st, u, PackSpec::NATURAL)?;
+                b = crate::packaging::hpack(st, Some(u), PackSpec::NATURAL)?;
                 st.mem[b].shift_amount = s;
             }
-            Some(bc) => st.mem[bc].list_ptr = u,
+            Some(bc) => st.mem[bc].list_ptr = Some(u),
         }
     }
     crate::packaging::append_to_vlist(st, b)?;
@@ -242,7 +242,7 @@ fn pre_display_box(st: &EngineState) -> Option<NodePtr<BoxNode>> {
     if st.input.cur_list.mode != MMODE {
         return None;
     }
-    let j = st.input.cur_list.e_tex_aux.as_idx()?;
+    let j = st.input.cur_list.e_tex_aux?;
     st.mem.classify_box(j).ok().flatten()
 }
 
@@ -251,7 +251,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     let mut danger = check_math_fonts(st)?;
     let mut m = i32::from(st.input.cur_list.mode);
     let mut l = false;
-    let mut p = fin_mlist(st, MemPtr::NULL)?;
+    let mut p = fin_mlist(st, None)?;
 
     let a;
     if i32::from(st.input.cur_list.mode) == -m {
@@ -269,7 +269,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
         j = pre_display_box(st);
         danger = check_math_fonts(st)?;
         m = i32::from(st.input.cur_list.mode);
-        p = fin_mlist(st, MemPtr::NULL)?;
+        p = fin_mlist(st, None)?;
     } else {
         a = None;
     }
@@ -277,16 +277,14 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     if m < 0 {
         let math_surround = st.eqtb.dimen_par(DimenPar::MathSurround);
         let node = st.mem.new_math(math_surround, MathCode::Before)?;
-        st.input.cur_list.tail_append(&mut st.mem, node.ptr());
+        st.input.cur_list.tail_append(&mut st.mem, node);
         let penalties = st.input.cur_list.mode > 0;
         let hlist = mlist_to_hlist(st, p, MathStyle::TEXT, penalties)?;
         let cl = &mut st.input.cur_list;
         cl.tail.set_link(&mut st.mem, hlist);
-        while !cl.tail.link(&st.mem).is_null() {
-            cl.tail = cl.tail.link(&st.mem);
-        }
+        cl.tail = st.mem.list_tail(cl.tail);
         let node = st.mem.new_math(math_surround, MathCode::After)?;
-        st.input.cur_list.tail_append(&mut st.mem, node.ptr());
+        st.input.cur_list.tail_append(&mut st.mem, node);
         st.input.cur_list.set_space_factor(1000);
 
         if st.config.semantic_pagination_enabled {
@@ -352,8 +350,8 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     let mut d = (z - w).half();
     if e > Scaled::ZERO && d < e * 2 {
         d = (z - w - e).half();
-        if let Some(first) = p.as_idx() {
-            if !st.mem.is_char_node(p) && st.mem.node_type(first) == Ok(NodeType::Glue) {
+        if let Some(first) = p {
+            if !st.mem.is_char_node(first) && st.mem.node_type(first) == Ok(NodeType::Glue) {
                 d = Scaled::ZERO;
             }
         }
@@ -362,7 +360,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     let pen = st
         .mem
         .new_penalty(st.eqtb.int_par(IntPar::PreDisplayPenalty))?;
-    st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
+    st.input.cur_list.tail_append(&mut st.mem, pen);
 
     let pre_display_size = st.eqtb.dimen_par(DimenPar::PreDisplaySize);
     let (g1, mut g2) = if d + s <= pre_display_size || l {
@@ -377,10 +375,10 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     if let Some(eqno) = a.filter(|_| l && e == Scaled::ZERO) {
         app_display(st, j, eqno, Scaled::ZERO)?;
         let pen = st.mem.new_penalty(INF_PENALTY)?;
-        st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
+        st.input.cur_list.tail_append(&mut st.mem, pen);
     } else {
         let glue = st.mem.new_param_glue(&st.eqtb, g1)?;
-        st.input.cur_list.tail_append(&mut st.mem, glue.ptr());
+        st.input.cur_list.tail_append(&mut st.mem, glue);
     }
 
     if let Some(eqno) = a.filter(|_| e != Scaled::ZERO) {
@@ -401,32 +399,32 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
 
     if let Some(eqno) = a.filter(|_| e == Scaled::ZERO && !l) {
         let pen = st.mem.new_penalty(INF_PENALTY)?;
-        st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
+        st.input.cur_list.tail_append(&mut st.mem, pen);
         let a_width = st.mem[eqno].width;
         app_display(st, j, eqno, z - a_width)?;
         g2 = None;
     }
 
     let cl = &mut st.input.cur_list;
-    if t != ADJUST_HEAD {
+    if t != Some(ADJUST_HEAD) {
         let adjusts = ADJUST_HEAD.link(&st.mem);
         cl.tail.set_link(&mut st.mem, adjusts);
-        cl.tail = t;
+        cl.tail = t.or_confusion("adjust_tail")?;
     }
-    if pre_t != PRE_ADJUST_HEAD {
+    if pre_t != Some(PRE_ADJUST_HEAD) {
         let pre_adjusts = PRE_ADJUST_HEAD.link(&st.mem);
         cl.tail.set_link(&mut st.mem, pre_adjusts);
-        cl.tail = pre_t;
+        cl.tail = pre_t.or_confusion("pre_adjust_tail")?;
     }
 
     let pen = st
         .mem
         .new_penalty(st.eqtb.int_par(IntPar::PostDisplayPenalty))?;
-    st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
+    st.input.cur_list.tail_append(&mut st.mem, pen);
 
     if let Some(g2) = g2 {
         let glue = st.mem.new_param_glue(&st.eqtb, g2)?;
-        st.input.cur_list.tail_append(&mut st.mem, glue.ptr());
+        st.input.cur_list.tail_append(&mut st.mem, glue);
     }
 
     if let Some(j) = j {
@@ -443,7 +441,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
 /// TeX's `\predisplaydirection` for the paragraph just ended.
 fn pre_display_direction(st: &EngineState) -> i32 {
     let aux = st.input.cur_list.e_tex_aux;
-    if aux.is_null() {
+    if aux.is_none() {
         0
     } else if st.mem.lr_code(aux).map(MathCode::dir) == Some(Dir::Rtl) {
         -1
@@ -453,11 +451,11 @@ fn pre_display_direction(st: &EngineState) -> i32 {
 }
 
 /// A kern, or the parameter glue when that skip is nonzero.
-fn side_skip(st: &mut EngineState, param: GluePar) -> Result<MemPtr, Abort> {
+fn side_skip(st: &mut EngineState, param: GluePar) -> Result<MemIdx, Abort> {
     if st.eqtb.glue_par(param) == ZERO_GLUE {
-        st.mem.new_kern(Scaled::ZERO).map(|k| k.ptr())
+        st.mem.new_kern(Scaled::ZERO).map(|k| k.idx())
     } else {
-        st.mem.new_param_glue(&st.eqtb, param).map(|g| g.ptr())
+        st.mem.new_param_glue(&st.eqtb, param).map(|g| g.idx())
     }
 }
 
@@ -465,7 +463,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
     crate::scan::get_token(st)?;
 
     if st.scanner.cur.cmd() == Cmd::MathShift && st.input.cur_list.mode > 0 {
-        let mut j = MemPtr::NULL;
+        let mut j = None;
         let mut w = -MAX_DIMEN;
         let x;
 
@@ -477,7 +475,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
 
             let right = side_skip(st, GluePar::RightSkip)?;
             let left = side_skip(st, GluePar::LeftSkip)?;
-            left.set_link(&mut st.mem, right);
+            left.set_link(&mut st.mem, Some(right));
 
             let jbox = st.mem.new_null_box()?;
             j = jbox.ptr();
@@ -486,7 +484,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
             let node = &mut mem[jbox];
             node.width = src.width;
             node.shift_amount = src.shift_amount;
-            node.list_ptr = left;
+            node.list_ptr = Some(left);
             node.glue_order = src.glue_order;
             node.glue_sign = src.glue_sign;
             node.glue_set = src.glue_set;
@@ -498,16 +496,16 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
             let mut p;
             if x >= 0 {
                 p = st.mem[jb].list_ptr;
-                TEMP_HEAD.set_link(&mut st.mem, MemPtr::NULL);
+                TEMP_HEAD.set_link(&mut st.mem, None);
             } else {
                 v = -v - st.mem[jb].width;
-                let begin = st.mem.new_math(Scaled::ZERO, MathCode::BeginL)?.ptr();
-                TEMP_HEAD.set_link(&mut st.mem, begin);
+                let begin = st.mem.new_math(Scaled::ZERO, MathCode::BeginL)?.idx();
+                TEMP_HEAD.set_link(&mut st.mem, Some(begin));
                 let end = st.mem.new_math(Scaled::ZERO, MathCode::EndL)?.ptr();
                 let list = st.mem[jb].list_ptr;
                 st.mem.just_copy(list, begin, end)?;
                 lr.dir = Dir::Rtl;
-                p = begin;
+                p = Some(begin);
             }
 
             let cur_font = st.eqtb.cur_font();
@@ -518,20 +516,20 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                 st.mem.push_lr(&mut lr.ptr, MathCode::Before)?;
             }
 
-            'outer: while !p.is_null() {
+            'outer: while let Some(mut here) = p {
                 let (d, found) = 'reswitch: loop {
-                    if let Some(ch) = st.mem.as_char(p) {
+                    if let Some(ch) = st.mem.as_char(Some(here)) {
                         let f = st.mem[ch].font;
                         let c = st.fonts.effective_char(f, st.mem[ch].character);
                         let d = st.fonts.char_width(f, st.fonts.char_info(f, c));
                         break (d, true);
                     }
-                    break match st.mem.classify(p) {
+                    break match st.mem.classify(here) {
                         Ok(node @ (AnyNode::Box(_) | AnyNode::Rule(_))) => {
                             (node.hlist_width(&st.mem), true)
                         }
                         Ok(AnyNode::Ligature(lig)) => {
-                            p = st.mem.lig_trick(lig);
+                            here = st.mem.lig_trick(lig);
                             st.fonts.xtx_ligature_present = true;
                             continue 'reswitch;
                         }
@@ -551,8 +549,8 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                                 } else {
                                     st.mem.push_lr(&mut lr.ptr, code.lr_end())?;
                                     if code.dir() != lr.dir {
-                                        st.mem.just_reverse(&mut lr, p)?;
-                                        p = TEMP_HEAD;
+                                        st.mem.just_reverse(&mut lr, here)?;
+                                        here = TEMP_HEAD;
                                     }
                                 }
                             } else if code.is_lr() {
@@ -606,11 +604,11 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                     v += d;
                 }
 
-                p = p.link(&st.mem);
+                p = here.link(&st.mem);
             }
 
             if texxet {
-                while !lr.ptr.is_null() {
+                while !lr.ptr.is_none() {
                     st.mem.pop_lr(&mut lr.ptr);
                 }
                 if lr.problems != 0 {

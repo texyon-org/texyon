@@ -806,7 +806,7 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     let mut n = 0;
-    let mut p = MemPtr::NULL;
+    let mut p = None;
 
     loop {
         crate::scan::get_x_token(st)?;
@@ -864,7 +864,7 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
                     }
 
                     n = 0;
-                    p = MemPtr::NULL;
+                    p = None;
                     break;
                 }
                 _ => {
