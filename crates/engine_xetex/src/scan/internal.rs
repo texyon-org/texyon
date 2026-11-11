@@ -7,11 +7,8 @@ use crate::codes::PageDimenCode;
 use crate::codes::{BoxDimenCode, FiOrElseCode, IfCode, LastItemCode, PageIntCode, ValueLevel};
 use crate::command::Command;
 use crate::command::RegisterRef;
-use crate::consts::{
-    ACTIVE_MATH_CHAR, CHAR_CLASS_LIMIT, DEL_CODE_BASE, MATH_CODE_BASE, MAX_DIMEN, NULL_FONT,
-    SF_CODE_BASE, VMODE,
-};
-use crate::eqtb::{GlueLoc, ShapeLoc};
+use crate::consts::{ACTIVE_MATH_CHAR, CHAR_CLASS_LIMIT, MAX_DIMEN, NULL_FONT, VMODE};
+use crate::eqtb::{CodeTable, GlueLoc, ShapeLoc, XetexCode};
 use crate::errors::OrConfusion;
 use crate::errors::{mu_error, Abort};
 use crate::ext::{
@@ -30,7 +27,7 @@ use crate::state::{EngineState, FontEngineHandle};
 use crate::token::TokenList;
 use crate::units::CsId;
 use crate::units::RawPtr;
-use crate::units::{EqtbPtr, FontId, FontInfoIdx, NodeType, Scaled, StrNumber};
+use crate::units::{FontId, FontInfoIdx, NodeType, Scaled, StrNumber};
 use std::rc::Rc;
 
 use super::next::get_x_non_blank;
@@ -206,67 +203,64 @@ fn font_query_error(
     crate::errors::not_font_error_common(st, Cmd::LastItem, m.raw(), f, msg)
 }
 
-fn fetch_def_code(st: &mut EngineState, m: EqtbPtr) -> Result<i32, Abort> {
+fn fetch_def_code(st: &mut EngineState, m: CodeTable) -> Result<i32, Abort> {
     let n = scan_usv_num(st)?;
-    Ok(if m == MATH_CODE_BASE {
-        let mut code = st.eqtb.math_code(n);
-        if math_char(code) == ACTIVE_MATH_CHAR {
-            code = 0x8000;
-        } else if math_class(code) > 7 || math_fam(code) > 15 || math_char(code) > 255 {
-            bad_int_error(
-                st,
-                "Extended mathchar used as mathchar",
-                code,
-                "A mathchar number must be between 0 and \"7FFF.",
-                "I changed this one to zero.",
-            )?;
-            code = 0;
-        }
-        math_class(code) * 0x1000 + math_fam(code) * 0x100 + math_char(code)
-    } else if m == DEL_CODE_BASE {
-        let code = st.eqtb.del_code(n);
-        if code >= 0x4000_0000 {
-            crate::errors::error(
-                st,
-                "Extended delcode used as delcode",
-                &[
-                    "A delimiter code must be between 0 and \"7FFFFFF.",
+    Ok(match m {
+        CodeTable::Math => {
+            let mut code = st.eqtb.math_code(n);
+            if math_char(code) == ACTIVE_MATH_CHAR {
+                code = 0x8000;
+            } else if math_class(code) > 7 || math_fam(code) > 15 || math_char(code) > 255 {
+                bad_int_error(
+                    st,
+                    "Extended mathchar used as mathchar",
+                    code,
+                    "A mathchar number must be between 0 and \"7FFF.",
                     "I changed this one to zero.",
-                ],
-            )?;
-            0
-        } else {
-            code
+                )?;
+                code = 0;
+            }
+            math_class(code) * 0x1000 + math_fam(code) * 0x100 + math_char(code)
         }
-    } else if m < SF_CODE_BASE {
-        st.eqtb.equiv(m + n)
-    } else if m < MATH_CODE_BASE {
-        st.eqtb.equiv(m + n) % 65536
-    } else {
-        st.eqtb.equiv(m + n)
+        CodeTable::Del => {
+            let code = st.eqtb.del_code(n);
+            if code >= 0x4000_0000 {
+                crate::errors::error(
+                    st,
+                    "Extended delcode used as delcode",
+                    &[
+                        "A delimiter code must be between 0 and \"7FFFFFF.",
+                        "I changed this one to zero.",
+                    ],
+                )?;
+                0
+            } else {
+                code
+            }
+        }
+        CodeTable::Cat => st.eqtb.cat_code(n).raw(),
+        CodeTable::Lc => st.eqtb.lc_code(n),
+        CodeTable::Uc => st.eqtb.uc_code(n),
+        CodeTable::Sf => st.eqtb.sf_code(n) % 65536,
     })
 }
 
-fn fetch_xetex_def_code(st: &mut EngineState, m: EqtbPtr) -> Result<i32, Abort> {
+fn fetch_xetex_def_code(st: &mut EngineState, m: XetexCode) -> Result<i32, Abort> {
     let n = scan_usv_num(st)?;
-    let (err, help1, help0) = if m == SF_CODE_BASE {
-        return Ok(st.eqtb.sf_code(n) / 65536);
-    } else if m == MATH_CODE_BASE {
-        return Ok(st.eqtb.math_code(n));
-    } else if m == MATH_CODE_BASE + 1 {
-        (
+    let (err, help1, help0) = match m {
+        XetexCode::CharClass => return Ok(st.eqtb.sf_code(n) / 65536),
+        XetexCode::MathCodeNum => return Ok(st.eqtb.math_code(n)),
+        XetexCode::DelCodeNum => return Ok(st.eqtb.del_code(n)),
+        XetexCode::MathCode => (
             "Can't use \\Umathcode as a number (try \\Umathcodenum)",
             r"\Umathcode is for setting a mathcode from separate values;",
             r"use \Umathcodenum to access them as single values.",
-        )
-    } else if m == DEL_CODE_BASE {
-        return Ok(st.eqtb.del_code(n));
-    } else {
-        (
+        ),
+        XetexCode::DelCode => (
             "Can't use \\Udelcode as a number (try \\Udelcodenum)",
             r"\Udelcode is for setting a delcode from separate values;",
             r"use \Udelcodenum to access them as single values.",
-        )
+        ),
     };
     crate::errors::error(st, err, &[help1, help0])?;
     Ok(0)

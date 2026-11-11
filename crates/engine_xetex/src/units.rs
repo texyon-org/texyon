@@ -321,81 +321,6 @@ impl std::ops::Sub for CsId {
     }
 }
 
-/// A location in `eqtb` past the control sequences: a glue, token, box, code,
-/// integer or dimension entry.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
-#[repr(transparent)]
-pub struct EqtbPtr(i32);
-
-impl EqtbPtr {
-    /// The value from its raw form in a memory word, file or FFI call.
-    #[inline(always)]
-    pub const fn from_raw(raw: i32) -> EqtbPtr {
-        EqtbPtr(raw)
-    }
-
-    /// The raw form for a memory word, file or FFI call.
-    #[inline(always)]
-    pub const fn raw(self) -> i32 {
-        self.0
-    }
-
-    /// The location `n` entries past `self`, usable in constants.
-    #[inline(always)]
-    pub const fn plus(self, n: i32) -> EqtbPtr {
-        EqtbPtr(self.0 + n)
-    }
-
-    /// The locations from `self` up to but not including `end`.
-    pub fn until(self, end: EqtbPtr) -> impl DoubleEndedIterator<Item = EqtbPtr> {
-        (self.0..end.0).map(EqtbPtr)
-    }
-
-    /// The locations from `self` up to and including `end`.
-    pub fn through(self, end: EqtbPtr) -> impl DoubleEndedIterator<Item = EqtbPtr> {
-        (self.0..=end.0).map(EqtbPtr)
-    }
-}
-
-impl std::ops::Add<i32> for EqtbPtr {
-    type Output = EqtbPtr;
-    #[inline(always)]
-    fn add(self, rhs: i32) -> EqtbPtr {
-        EqtbPtr(self.0 + rhs)
-    }
-}
-
-impl std::ops::Sub<i32> for EqtbPtr {
-    type Output = EqtbPtr;
-    #[inline(always)]
-    fn sub(self, rhs: i32) -> EqtbPtr {
-        EqtbPtr(self.0 - rhs)
-    }
-}
-
-impl std::ops::AddAssign<i32> for EqtbPtr {
-    #[inline(always)]
-    fn add_assign(&mut self, rhs: i32) {
-        self.0 += rhs;
-    }
-}
-
-impl std::ops::SubAssign<i32> for EqtbPtr {
-    #[inline(always)]
-    fn sub_assign(&mut self, rhs: i32) {
-        self.0 -= rhs;
-    }
-}
-
-/// The number of entries from `rhs` to `self`.
-impl std::ops::Sub for EqtbPtr {
-    type Output = i32;
-    #[inline(always)]
-    fn sub(self, rhs: EqtbPtr) -> i32 {
-        self.0 - rhs.0
-    }
-}
-
 /// A position in the input `buffer`. It can sit one before a line, as an empty
 /// line's `limit` does.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
@@ -890,7 +815,6 @@ impl std::ops::Sub for StrNumber {
 crate::codes::code_enum! {
     /// A node's type code. Delta nodes reuse the rule code and edge nodes the
     /// style code, their list context tells them apart.
-    #[derive(Hash)]
     pub enum NodeType: u16 {
         HList = 0,
         VList = 1,

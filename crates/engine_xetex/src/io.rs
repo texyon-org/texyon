@@ -408,7 +408,7 @@ fn input_line_with(
     f: &mut UFile,
     scratch: &mut LineScratch,
 ) -> Result<libc::c_int, Abort> {
-    let norm = if st.eqtb.data.is_empty() {
+    let norm = if st.eqtb.ints.values().is_empty() {
         0
     } else {
         st.eqtb.int_par(IntPar::XetexInputNormalization)

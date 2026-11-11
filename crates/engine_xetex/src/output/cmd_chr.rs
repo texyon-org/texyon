@@ -7,11 +7,10 @@ use crate::codes::{
     MathCharNumCode, PageIntCode, RadicalCode, ShorthandDefCode, ShowCode, SkipCode, TheCode,
     ValignCode, ValueLevel,
 };
-use crate::consts::{
-    DEL_CODE_BASE, LC_CODE_BASE, MATH_CODE_BASE, SF_CODE_BASE, UC_CODE_BASE, VMODE,
-};
+use crate::consts::VMODE;
 use crate::eqtb::{
-    DimenLoc, DimenSlot, FontLoc, GlueLoc, GlueSlot, IntLoc, IntSlot, ShapeLoc, ToksLoc, ToksSlot,
+    CaseTable, CodeTable, DimenLoc, DimenSlot, FontLoc, GlueLoc, GlueSlot, IntLoc, IntSlot,
+    ShapeLoc, ToksLoc, ToksSlot, XetexCode,
 };
 use crate::main_control::{CR_CODE, LP_CODE_BASE, RP_CODE_BASE, SPAN_CODE};
 use crate::math::{ABOVE_CODE, ATOP_CODE, DELIMITED_CODE, OVER_CODE};
@@ -20,7 +19,7 @@ use crate::params::TokPar;
 use crate::state::{EngineState, InteractionMode};
 use crate::token::TokenList;
 use crate::units::MemIdx;
-use crate::units::{EqtbPtr, FontId, NodeType};
+use crate::units::{FontId, NodeType};
 
 use super::{
     print, print_char, print_code, print_esc, print_font_select, print_hex, print_int,
@@ -473,29 +472,14 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
             print_hex(st, crate::scan::math_fam(chr_code));
             print_hex(st, crate::scan::math_char(chr_code));
         }
-        Cmd::DefCode => {
-            let chr_code = EqtbPtr::from_raw(chr_code);
-            let name = match chr_code {
-                LC_CODE_BASE => "lccode",
-                UC_CODE_BASE => "uccode",
-                SF_CODE_BASE => "sfcode",
-                MATH_CODE_BASE => "mathcode",
-                DEL_CODE_BASE => "delcode",
-                _ => "catcode",
-            };
-            print_esc(st, name);
-        }
-        Cmd::XetexDefCode => {
-            let chr_code = EqtbPtr::from_raw(chr_code);
-            let name = match chr_code {
-                SF_CODE_BASE => "XeTeXcharclass",
-                MATH_CODE_BASE => "Umathcodenum",
-                x if x == MATH_CODE_BASE + 1 => "Umathcode",
-                DEL_CODE_BASE => "Udelcodenum",
-                _ => "Udelcode",
-            };
-            print_esc(st, name);
-        }
+        Cmd::DefCode => print_esc(
+            st,
+            CodeTable::from_raw(chr_code).map_or("catcode", CodeTable::name),
+        ),
+        Cmd::XetexDefCode => print_esc(
+            st,
+            XetexCode::from_raw(chr_code).map_or("Udelcode", XetexCode::name),
+        ),
         Cmd::DefFamily => print_size(
             st,
             FontLoc::from_raw(chr_code).map_or(chr_code - 1, FontLoc::math_offset),
@@ -546,11 +530,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
         ),
         Cmd::CaseShift => print_esc(
             st,
-            if EqtbPtr::from_raw(chr_code) == LC_CODE_BASE {
-                "lowercase"
-            } else {
-                "uppercase"
-            },
+            CaseTable::from_raw(chr_code).map_or("uppercase", CaseTable::name),
         ),
         Cmd::Xray => print_esc(
             st,

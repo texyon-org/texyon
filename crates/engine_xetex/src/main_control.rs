@@ -6,6 +6,7 @@ use crate::codes::ValignCode;
 use crate::codes::{LeaderCode, ScannerStatus};
 use crate::command::Command;
 use crate::consts::{HMODE, IGNORE_DEPTH, MMODE, SINGLE_BASE, VMODE};
+use crate::eqtb::CaseTable;
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::ext::do_extension;
@@ -18,7 +19,7 @@ use crate::state::{EngineState, GroupCode};
 use crate::token::Token;
 use crate::units::CsId;
 use crate::units::NodeType;
-use crate::units::{EqtbPtr, MemPtr, Scaled};
+use crate::units::{MemPtr, Scaled};
 
 mod align;
 pub(crate) use align::SavedAlign;
@@ -73,13 +74,16 @@ fn begin_every(st: &mut EngineState, par: TokPar, kind: TokenType) -> Result<(),
     Ok(())
 }
 
-pub(crate) fn shift_case(st: &mut EngineState, b: EqtbPtr) -> Result<(), Abort> {
+pub(crate) fn shift_case(st: &mut EngineState, b: CaseTable) -> Result<(), Abort> {
     let list = crate::scan::scan_toks(st, false, false)?;
     let eqtb = &st.eqtb;
     st.mem.tokens.map_tokens(list, |t| {
         if t < Token::from_cs(SINGLE_BASE) {
             let c = t.chr();
-            let mapped = eqtb.equiv(b + c);
+            let mapped = match b {
+                CaseTable::Lower => eqtb.lc_code(c),
+                CaseTable::Upper => eqtb.uc_code(c),
+            };
             if mapped != 0 {
                 return Token(t.0 - c + mapped);
             }

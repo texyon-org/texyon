@@ -8,9 +8,8 @@
 use crate::bridge::{input_open, input_read, output_close, output_open, output_write, FileFormat};
 use crate::command::Command;
 use crate::consts::{
-    ACTIVE_BASE, CAT_CODE_BASE, DEL_CODE_BASE, EMPTY_STRING, EQTB_SIZE, FONT_BASE,
-    FROZEN_CONTROL_SEQUENCE, HASH_BASE, INT_BASE, INVALID_HANDLE, MAX_FONT_MAX, MAX_HALFWORD,
-    MIN_HALFWORD, NULL_FONT, NUMBER_USVS, PRIM_SIZE, TEX_NULL, TOO_BIG_CHAR,
+    ACTIVE_BASE, EMPTY_STRING, FONT_BASE, FROZEN_CONTROL_SEQUENCE, HASH_BASE, INVALID_HANDLE,
+    MAX_FONT_MAX, MAX_HALFWORD, MIN_HALFWORD, NULL_FONT, PRIM_SIZE, TEX_NULL, TOO_BIG_CHAR,
     UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::engine::{POOL_FREE, STRINGS_FREE};
@@ -31,7 +30,7 @@ use crate::token::{ListSlot, Token, TokenList, TokenStore};
 use crate::units::CsId;
 use crate::units::MemIdx;
 use crate::units::RawPtr;
-use crate::units::{EqtbPtr, FontId, FontInfoIdx, MemPtr, PoolPos, SavePtr, Scaled, StrNumber};
+use crate::units::{FontId, FontInfoIdx, MemPtr, PoolPos, SavePtr, Scaled, StrNumber};
 
 const FORMAT_HEADER_MAGIC: i32 = 0x5454_4E43;
 const FORMAT_FOOTER_MAGIC: i32 = 0x0000_029A;
@@ -83,6 +82,18 @@ macro_rules! newtype_item {
             }
         }
     )*};
+}
+
+impl FmtItem for crate::cmd::Cmd {
+    const SIZE: usize = 1;
+    #[inline]
+    fn put(self, out: &mut Vec<u8>) {
+        out.push(self.raw().to_le_bytes()[0]);
+    }
+    #[inline]
+    fn get(bytes: &[u8]) -> Self {
+        crate::cmd::Cmd::from_catcode_bits(i32::from(bytes[0]))
+    }
 }
 
 impl FmtItem for FontId {
@@ -138,7 +149,6 @@ newtype_item!(
     TokenList,
     Scaled,
     StrNumber,
-    EqtbPtr,
     CsId,
     PoolPos,
     FontInfoIdx,
@@ -460,7 +470,7 @@ pub fn load_fmt_file(st: &mut EngineState, dump_name: &str) -> Result<(), Abort>
         st.fonts.font_info = Vec::new();
         st.strings.str_pool = Vec::new();
         st.strings.str_start = Vec::new();
-        st.eqtb.data = Vec::new();
+        st.eqtb.release_tables();
         st.eqtb.hash = Vec::new();
         st.mem.data = Vec::new();
     }
@@ -509,7 +519,7 @@ fn header<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
         st.shipout.page_tail = Some(PAGE_HEAD);
     }
 
-    s.constant(EQTB_SIZE.raw())?;
+    s.constant(UNDEFINED_CONTROL_SEQUENCE.raw())?;
     s.constant(HASH_PRIME)?;
     s.constant(HYPH_PRIME)
 }
@@ -737,23 +747,19 @@ fn set_cs_words(eqtb: &mut EqtbState, from: CsId, words: &[MemoryWord]) -> Resul
 fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
     let eqtb = &mut st.eqtb;
     let same_entry = |a: &MemoryWord, b: &MemoryWord| a.b32() == b.b32();
-    let same_int = |a: &MemoryWord, b: &MemoryWord| a.b32().s1 == b.b32().s1;
     let extra_top = UNDEFINED_CONTROL_SEQUENCE + eqtb.hash_high;
     let mut words = cs_words(eqtb, ACTIVE_BASE, UNDEFINED_CONTROL_SEQUENCE);
-    let (entries, del_codes) = eqtb.data.split_at_mut(crate::state::data_slot(INT_BASE));
-    let entries = &mut entries[crate::state::data_slot(CAT_CODE_BASE)..];
-    let del_codes = &mut del_codes
-        [crate::state::data_slot(DEL_CODE_BASE) - crate::state::data_slot(INT_BASE)..]
-        [..NUMBER_USVS as usize];
     if S::LOADING {
         undump_runs(s, &mut words)?;
-        undump_runs(s, entries)?;
-        undump_runs(s, del_codes)?;
     } else {
         dump_runs(s, &mut words, same_entry)?;
-        dump_runs(s, entries, same_entry)?;
-        dump_runs(s, del_codes, same_int)?;
     }
+    runs(s, eqtb.cat_codes.values_mut())?;
+    runs(s, eqtb.lc_codes.values_mut())?;
+    runs(s, eqtb.uc_codes.values_mut())?;
+    runs(s, eqtb.sf_codes.values_mut())?;
+    runs(s, eqtb.math_codes.values_mut())?;
+    runs(s, eqtb.del_codes.values_mut())?;
     runs(s, eqtb.ints.values_mut())?;
     runs(s, eqtb.dimens.values_mut())?;
     runs(s, eqtb.glue.values_mut())?;

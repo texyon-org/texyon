@@ -1,7 +1,7 @@
 //! Shared compile-time constants for the XeTeX engine, mirroring the WEB `@d` definitions.
 
 use crate::cmd::Cmd;
-use crate::units::{CsId, EqtbPtr};
+use crate::units::CsId;
 
 pub const BIGGEST_CHAR: i32 = 0xFFFF;
 pub const TOO_BIG_CHAR: i32 = 65_536;
@@ -91,29 +91,6 @@ pub const FROZEN_NULL_FONT: CsId = PRIM_EQTB_BASE.plus(PRIM_SIZE);
 pub const FONT_ID_BASE: CsId = FROZEN_NULL_FONT.plus(-FONT_BASE);
 pub const UNDEFINED_CONTROL_SEQUENCE: CsId = FROZEN_NULL_FONT.plus(MAX_FONT_MAX + 1);
 
-pub const GLUE_BASE: EqtbPtr = EqtbPtr::from_raw(UNDEFINED_CONTROL_SEQUENCE.raw() + 1);
-pub const SKIP_BASE: EqtbPtr = GLUE_BASE.plus(19);
-pub const MU_SKIP_BASE: EqtbPtr = SKIP_BASE.plus(256);
-pub const LOCAL_BASE: EqtbPtr = MU_SKIP_BASE.plus(256);
-pub const TOKS_BASE: EqtbPtr = LOCAL_BASE.plus(13);
-pub const ETEX_PEN_BASE: EqtbPtr = TOKS_BASE.plus(256);
-pub const BOX_BASE: EqtbPtr = ETEX_PEN_BASE.plus(4);
-pub const CUR_FONT_LOC: EqtbPtr = BOX_BASE.plus(256);
-pub const MATH_FONT_BASE: EqtbPtr = CUR_FONT_LOC.plus(1);
-pub const CAT_CODE_BASE: EqtbPtr = MATH_FONT_BASE.plus(3 * NUMBER_MATH_FAMILIES);
-pub const LC_CODE_BASE: EqtbPtr = CAT_CODE_BASE.plus(NUMBER_USVS);
-pub const UC_CODE_BASE: EqtbPtr = LC_CODE_BASE.plus(NUMBER_USVS);
-pub const SF_CODE_BASE: EqtbPtr = UC_CODE_BASE.plus(NUMBER_USVS);
-pub const MATH_CODE_BASE: EqtbPtr = SF_CODE_BASE.plus(NUMBER_USVS);
-pub const INT_BASE: EqtbPtr = MATH_CODE_BASE.plus(NUMBER_USVS);
-pub const COUNT_BASE: EqtbPtr = INT_BASE.plus(86);
-pub const DEL_CODE_BASE: EqtbPtr = COUNT_BASE.plus(256);
-pub const DIMEN_BASE: EqtbPtr = DEL_CODE_BASE.plus(NUMBER_USVS);
-pub const SCALED_BASE: EqtbPtr = DIMEN_BASE.plus(23);
-pub const EQTB_SIZE: EqtbPtr = SCALED_BASE.plus(255);
-/// Entries in `xeq_level`, one per location from `INT_BASE` to `EQTB_SIZE`.
-pub const XEQ_LEVEL_SIZE: usize = (EQTB_SIZE.raw() - INT_BASE.raw() + 1) as usize;
-
 const _: () = {
     assert!(FONT_BASE == 0 && NULL_FONT.get() == 0);
     assert!(HMODE == 105 && MMODE == 209);
@@ -123,25 +100,4 @@ const _: () = {
     assert!(PRIM_EQTB_BASE.raw() == 1_194_662);
     assert!(FROZEN_NULL_FONT.raw() == 1_196_762);
     assert!(UNDEFINED_CONTROL_SEQUENCE.raw() == 1_205_763);
-    assert!(GLUE_BASE.raw() == 1_205_764);
-    assert!(SKIP_BASE.raw() == 1_205_783);
-    assert!(MU_SKIP_BASE.raw() == 1_206_039);
-    assert!(LOCAL_BASE.raw() == 1_206_295);
-    assert!(TOKS_BASE.raw() == 1_206_308);
-    assert!(ETEX_PEN_BASE.raw() == 1_206_564);
-    assert!(BOX_BASE.raw() == 1_206_568);
-    assert!(CUR_FONT_LOC.raw() == 1_206_824);
-    assert!(MATH_FONT_BASE.raw() == 1_206_825);
-    assert!(CAT_CODE_BASE.raw() == 1_207_593);
-    assert!(LC_CODE_BASE.raw() == 2_321_705);
-    assert!(UC_CODE_BASE.raw() == 3_435_817);
-    assert!(SF_CODE_BASE.raw() == 4_549_929);
-    assert!(MATH_CODE_BASE.raw() == 5_664_041);
-    assert!(INT_BASE.raw() == 6_778_153);
-    assert!(COUNT_BASE.raw() == 6_778_239);
-    assert!(DEL_CODE_BASE.raw() == 6_778_495);
-    assert!(DIMEN_BASE.raw() == 7_892_607);
-    assert!(SCALED_BASE.raw() == 7_892_630);
-    assert!(EQTB_SIZE.raw() == 7_892_885);
-    assert!(XEQ_LEVEL_SIZE == 1_114_733);
 };

@@ -8,7 +8,9 @@ use crate::codes::{
     RadicalCode, ShorthandDefCode, ShowCode, SkipCode, TheCode, ValignCode, ValueLevel,
 };
 use crate::consts::{BIGGEST_USV, TEX_NULL, TOO_BIG_USV};
-use crate::eqtb::{DimenLoc, FontLoc, GlueLoc, IntLoc, ShapeLoc, ToksLoc};
+use crate::eqtb::{
+    CaseTable, CodeTable, DimenLoc, FontLoc, GlueLoc, IntLoc, ShapeLoc, ToksLoc, XetexCode,
+};
 use crate::errors::{Abort, OrConfusion};
 use crate::main_control::{CR_CODE, CR_CR_CODE, SPAN_CODE};
 use crate::math::MathStyle;
@@ -19,7 +21,7 @@ use crate::state::InteractionMode;
 use crate::token::{Token, TokenList};
 use crate::units::MemIdx;
 use crate::units::RawPtr;
-use crate::units::{EqtbPtr, FontId, NodeType};
+use crate::units::{FontId, NodeType};
 
 /// A Unicode scalar value carried by a character command.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -228,7 +230,7 @@ pub(crate) enum Command {
     NonScript = Cmd::NonScript as u8,
     Vcenter = Cmd::Vcenter as u8,
     /// `\lowercase` or `\uppercase`, by the code table they use.
-    CaseShift(EqtbPtr) = Cmd::CaseShift as u8,
+    CaseShift(CaseTable) = Cmd::CaseShift as u8,
     /// `\message` or `\errmessage`.
     Message {
         err: bool,
@@ -265,8 +267,8 @@ pub(crate) enum Command {
     SetBoxDimen(BoxDimenCode) = Cmd::SetBoxDimen as u8,
     SetShape(ShapeLoc) = Cmd::SetShape as u8,
     /// `\catcode` and friends, by the table base.
-    DefCode(EqtbPtr) = Cmd::DefCode as u8,
-    XetexDefCode(EqtbPtr) = Cmd::XetexDefCode as u8,
+    DefCode(CodeTable) = Cmd::DefCode as u8,
+    XetexDefCode(XetexCode) = Cmd::XetexDefCode as u8,
     /// `\textfont` and friends, by the table base.
     DefFamily(FontLoc) = Cmd::DefFamily as u8,
     SetFont(FontId) = Cmd::SetFont as u8,
@@ -601,9 +603,9 @@ impl Command {
             Command::LimitSwitch(code) => code.raw(),
             Command::Above(code) => code.raw(),
             Command::MathStyle(style) => i32::from(style.raw()),
-            Command::CaseShift(loc) | Command::DefCode(loc) | Command::XetexDefCode(loc) => {
-                loc.raw()
-            }
+            Command::CaseShift(t) => t.raw(),
+            Command::DefCode(t) => t.raw(),
+            Command::XetexDefCode(c) => c.raw(),
             Command::DefFamily(loc) => loc.raw(),
             Command::AssignInt(loc) => loc.raw(),
             Command::SetShape(loc) => loc.raw(),
@@ -686,7 +688,6 @@ impl Command {
             _ => None,
         };
         let usv = Usv::new(chr);
-        let loc = EqtbPtr::from_raw(chr);
         let node_type = || {
             u16::try_from(chr)
                 .ok()
@@ -760,7 +761,7 @@ impl Command {
                 s @ (0 | 2 | 4 | 6) => Command::MathStyle(MathStyle::from_raw(s)),
                 _ => return None,
             },
-            Cmd::CaseShift => Command::CaseShift(loc),
+            Cmd::CaseShift => Command::CaseShift(CaseTable::from_raw(chr)?),
             Cmd::Message => Command::Message { err: flag(1)? },
             Cmd::Extension => Command::Extension(ExtensionCode::from_raw(chr)?),
             Cmd::InStream => Command::InStream { open: flag(1)? },
@@ -781,8 +782,8 @@ impl Command {
             Cmd::SetPageInt => Command::SetPageInt(PageIntCode::from_raw(chr)?),
             Cmd::SetBoxDimen => Command::SetBoxDimen(BoxDimenCode::from_raw(chr)?),
             Cmd::SetShape => Command::SetShape(ShapeLoc::from_raw(chr)?),
-            Cmd::DefCode => Command::DefCode(loc),
-            Cmd::XetexDefCode => Command::XetexDefCode(loc),
+            Cmd::DefCode => Command::DefCode(CodeTable::from_raw(chr)?),
+            Cmd::XetexDefCode => Command::XetexDefCode(XetexCode::from_raw(chr)?),
             Cmd::DefFamily => Command::DefFamily(FontLoc::from_raw(chr)?),
             Cmd::SetFont => Command::SetFont(FontId::try_from(chr).ok()?),
             Cmd::Register => match ValueLevel::from_raw(chr) {

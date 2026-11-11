@@ -33,7 +33,7 @@ macro_rules! code_enum {
         }
     ) => {
         $(#[$meta])*
-        #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+        #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
         #[repr($repr)]
         $vis enum $name {
             $($(#[$vmeta])* $var = $val),+

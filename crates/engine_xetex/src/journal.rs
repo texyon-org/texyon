@@ -51,6 +51,13 @@ impl<T: Pod> JournalWord for T {
     }
 }
 
+impl JournalWord for crate::cmd::Cmd {
+    #[inline]
+    fn same(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
 impl JournalWord for crate::command::Command {
     #[inline]
     fn same(&self, other: &Self) -> bool {
@@ -348,8 +355,6 @@ fn first_sighting(seen: &mut Vec<u64>, index: u32) -> bool {
 pub(crate) struct EqtbJournal {
     pub(crate) meanings: WordJournal<crate::command::Command>,
     pub(crate) cs_levels: WordJournal<u16>,
-    pub(crate) words: WordJournal<MemoryWord>,
-    pub(crate) xeq: PlainTrail<u16>,
     pub(crate) hash: PlainTrail<crate::mem_types::B32x2>,
     pub(crate) prim: PlainTrail<crate::mem_types::B32x2>,
 }
@@ -358,8 +363,6 @@ impl EqtbJournal {
     fn disarm(&mut self) {
         self.meanings.disarm();
         self.cs_levels.disarm();
-        self.words.disarm();
-        self.xeq.disarm();
         self.hash.disarm();
         self.prim.disarm();
     }
@@ -371,8 +374,6 @@ pub(crate) fn arm(st: &mut crate::state::EngineState) {
     st.mem.glue.journal.arm(st.mem.glue.specs().len());
     st.eqtb.journal.meanings.arm(st.eqtb.meanings.len());
     st.eqtb.journal.cs_levels.arm(st.eqtb.cs_levels.len());
-    st.eqtb.journal.words.arm(st.eqtb.data.len());
-    st.eqtb.journal.xeq.arm();
     st.eqtb.journal.hash.arm();
     st.eqtb.journal.prim.arm();
     st.eqtb.arm_tables();
@@ -629,26 +630,21 @@ mod tests {
         use crate::command::Command;
         let cs = crate::consts::HASH_BASE;
         let mut eqtb = crate::state::EqtbState {
-            data: vec![word(0); 2],
             hash: vec![B32x2 { s0: 0, s1: 0 }; 1],
             meanings: vec![Command::UndefinedCs; cs.index() + 1],
             cs_levels: vec![0; cs.index() + 1],
             ..Default::default()
         };
-        eqtb.journal.words.arm(eqtb.data.len());
         eqtb.journal.hash.arm();
         eqtb.journal.meanings.arm(eqtb.meanings.len());
         eqtb.journal.cs_levels.arm(eqtb.cs_levels.len());
-        eqtb.set_equiv(crate::consts::GLUE_BASE + 1, 5);
         eqtb.set_text(cs, crate::units::StrNumber::from_raw(6));
         eqtb.set_meaning(cs, Command::Halign, 3);
-        eqtb.journal.words.seal(&eqtb.data).apply_to(&mut eqtb.data);
         eqtb.journal.hash.seal().apply_to(&mut eqtb.hash);
         let meanings = eqtb.journal.meanings.seal(&eqtb.meanings);
         meanings.apply_to(&mut eqtb.meanings);
         let levels = eqtb.journal.cs_levels.seal(&eqtb.cs_levels);
         levels.apply_to(&mut eqtb.cs_levels);
-        assert_eq!(bits(eqtb.data[1]), 0);
         assert_eq!(eqtb.hash[0].s1, 0);
         assert_eq!(
             (eqtb.meaning(cs), eqtb.cs_level(cs)),

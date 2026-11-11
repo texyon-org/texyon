@@ -6,14 +6,14 @@ use crate::cmd::Cmd;
 use crate::codes::{BoxCode, FiOrElseCode, MarkCode, ScannerStatus, ValueLevel};
 use crate::command::Command;
 use crate::consts::{
-    BIGGEST_CHAR, BIGGEST_LANG, CAT_CODE_BASE, CLOSED, CS_TOKEN_FLAG, DEL_CODE_BASE, EMPTY,
-    EMPTY_STRING, END_WRITE, EQTB_SIZE, FONT_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_DONT_EXPAND,
-    FROZEN_ENDV, FROZEN_END_TEMPLATE, FROZEN_PRIMITIVE, FROZEN_PROTECTION, HISTORY_FATAL_ERROR,
-    HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, IGNORE_DEPTH, INT_BASE, LC_CODE_BASE, LEVEL_ONE,
-    LEVEL_ZERO, MATH_CODE_BASE, MAX_FONT_MAX, MAX_HALFWORD, NORMAL, NULL_FONT, NUMBER_USVS,
-    PRIM_SIZE, SF_CODE_BASE, SINGLE_BASE, TEX_NULL, TOO_BIG_CHAR, UC_CODE_BASE,
+    BIGGEST_CHAR, BIGGEST_LANG, CLOSED, CS_TOKEN_FLAG, EMPTY, EMPTY_STRING, END_WRITE, FONT_BASE,
+    FROZEN_CONTROL_SEQUENCE, FROZEN_DONT_EXPAND, FROZEN_ENDV, FROZEN_END_TEMPLATE,
+    FROZEN_PRIMITIVE, FROZEN_PROTECTION, HISTORY_FATAL_ERROR, HISTORY_SPOTLESS,
+    HISTORY_WARNING_ISSUED, IGNORE_DEPTH, LEVEL_ONE, LEVEL_ZERO, MAX_FONT_MAX, MAX_HALFWORD,
+    NORMAL, NULL_FONT, NUMBER_USVS, PRIM_SIZE, SINGLE_BASE, TEX_NULL, TOO_BIG_CHAR,
     UNDEFINED_CONTROL_SEQUENCE, VMODE,
 };
+use crate::eqtb::{CatLoc, DelLoc, LcLoc, MathLoc, SfLoc, UcLoc};
 use crate::errors::Abort;
 use crate::format_io::load_fmt_file;
 use crate::hash::{HASH_PRIME, HASH_SIZE};
@@ -32,15 +32,13 @@ use crate::params::IntPar;
 use crate::scan::{set_class, set_family};
 use crate::stack::TexStack;
 use crate::state::{
-    ConfigState, CurMarks, EngineState, EqtbState, FontState, GroupCode, InteractionMode, PerFont,
-    Selector,
+    ConfigState, CurMarks, EngineState, FontState, GroupCode, InteractionMode, PerFont, Selector,
 };
 use crate::token::Token;
 use crate::token::TokenList;
 use crate::units::CsId;
 use crate::units::{
-    BufPos, EqtbPtr, FontId, FontInfoIdx, GlueOrder, NodeType, PoolPos, PrimNum, SavePtr, Scaled,
-    StrNumber,
+    BufPos, FontId, FontInfoIdx, GlueOrder, NodeType, PoolPos, PrimNum, SavePtr, Scaled, StrNumber,
 };
 
 pub(crate) const POOL_FREE: i32 = 47_500;
@@ -85,19 +83,6 @@ pub(crate) fn get_strings_started(st: &mut EngineState) -> Result<(), Abort> {
         return Err(Abort::Internal("must increase pool_size"));
     }
     Ok(())
-}
-
-impl EqtbState {
-    /// Sets `eqtb[from..to]` to `w`.
-    pub(crate) fn fill(&mut self, from: EqtbPtr, to: EqtbPtr, w: crate::mem_types::MemoryWord) {
-        for p in from.until(to) {
-            self.set_word(p, w);
-        }
-    }
-
-    pub(crate) fn set_eq(&mut self, p: EqtbPtr, eq_type: Cmd, equiv: i32, level: u16) {
-        self.set_word(p, EqtbState::entry(eq_type, equiv, level));
-    }
 }
 
 /// Defines primitive `ident` and returns its control sequence.
@@ -256,10 +241,6 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.shipout.last_node_type = -1;
     st.shipout.page_so_far[7] = Scaled::ZERO;
 
-    for k in INT_BASE.through(EQTB_SIZE) {
-        st.eqtb.set_xeq_level_at(k, LEVEL_ONE);
-    }
-
     st.eqtb.no_new_control_sequence = true;
     for k in PrimNum::all() {
         st.eqtb.set_prim_next(k, PrimNum::UNDEFINED);
@@ -378,44 +359,38 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     let zero_glue_refs = st.mem[ZERO_GLUE].ref_count + 531;
     st.mem[ZERO_GLUE].ref_count = zero_glue_refs;
 
-    eqtb.set_eq(CAT_CODE_BASE, Cmd::Data, 0, LEVEL_ONE);
-    let cat_code_entry = eqtb.word(CAT_CODE_BASE);
-    eqtb.fill(CAT_CODE_BASE + 1, INT_BASE, cat_code_entry);
-
     for k in 0..NUMBER_USVS {
-        eqtb.set_equiv(CAT_CODE_BASE + k, Cmd::OtherChar.into());
-        eqtb.set_equiv(MATH_CODE_BASE + k, k);
-        eqtb.set_equiv(SF_CODE_BASE + k, 1000);
+        eqtb.cat_codes.set_value(CatLoc::of(k), Cmd::OtherChar);
+        eqtb.math_codes.set_value(MathLoc::of(k), k);
+        eqtb.sf_codes.set_value(SfLoc::of(k), 1000);
     }
 
-    eqtb.set_equiv(CAT_CODE_BASE + 13, Cmd::CarRet.into());
-    eqtb.set_equiv(CAT_CODE_BASE + 32, Cmd::Spacer.into());
-    eqtb.set_equiv(CAT_CODE_BASE + 92, Cmd::ESCAPE.into());
-    eqtb.set_equiv(CAT_CODE_BASE + 37, Cmd::COMMENT.into());
-    eqtb.set_equiv(CAT_CODE_BASE + 127, Cmd::INVALID_CHAR.into());
-    eqtb.set_equiv(CAT_CODE_BASE, Cmd::IGNORE.into());
+    for (c, cat) in [
+        (13, Cmd::CarRet),
+        (32, Cmd::Spacer),
+        (92, Cmd::ESCAPE),
+        (37, Cmd::COMMENT),
+        (127, Cmd::INVALID_CHAR),
+        (0, Cmd::IGNORE),
+    ] {
+        eqtb.cat_codes.set_value(CatLoc::of(c), cat);
+    }
 
     for k in (i32::from(b'0'))..=(i32::from(b'9')) {
-        eqtb.set_equiv(MATH_CODE_BASE + k, k + set_class(VAR_FAM_CLASS));
+        eqtb.math_codes
+            .set_value(MathLoc::of(k), k + set_class(VAR_FAM_CLASS));
     }
 
     for k in (i32::from(b'A'))..=(i32::from(b'Z')) {
         let lower = k + 32;
-        eqtb.set_equiv(CAT_CODE_BASE + k, Cmd::Letter.into());
-        eqtb.set_equiv(CAT_CODE_BASE + lower, Cmd::Letter.into());
-        eqtb.set_equiv(
-            MATH_CODE_BASE + k,
-            k + set_family(1) + set_class(VAR_FAM_CLASS),
-        );
-        eqtb.set_equiv(
-            MATH_CODE_BASE + lower,
-            lower + set_family(1) + set_class(VAR_FAM_CLASS),
-        );
-        eqtb.set_equiv(LC_CODE_BASE + k, lower);
-        eqtb.set_equiv(LC_CODE_BASE + lower, lower);
-        eqtb.set_equiv(UC_CODE_BASE + k, k);
-        eqtb.set_equiv(UC_CODE_BASE + lower, k);
-        eqtb.set_equiv(SF_CODE_BASE + k, 999);
+        for c in [k, lower] {
+            eqtb.cat_codes.set_value(CatLoc::of(c), Cmd::Letter);
+            let math = c + set_family(1) + set_class(VAR_FAM_CLASS);
+            eqtb.math_codes.set_value(MathLoc::of(c), math);
+            eqtb.lc_codes.set_value(LcLoc::of(c), lower);
+            eqtb.uc_codes.set_value(UcLoc::of(c), k);
+        }
+        eqtb.sf_codes.set_value(SfLoc::of(k), 999);
     }
 
     eqtb.set_int_par(IntPar::Mag, 1000);
@@ -425,10 +400,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     eqtb.set_int_par(IntPar::EscapeChar, i32::from(b'\\'));
     eqtb.set_int_par(IntPar::EndLineChar, i32::from(b'\r'));
 
-    for k in 0..NUMBER_USVS {
-        eqtb.set_int_at(DEL_CODE_BASE + k, -1);
-    }
-    eqtb.set_int_at(DEL_CODE_BASE + i32::from(b'.'), 0);
+    eqtb.del_codes.set_value(DelLoc::of(i32::from(b'.')), 0);
     eqtb.set_int_par(IntPar::ShowStream, -1);
 
     eqtb.prim_used = PrimNum::from_raw(PRIM_SIZE);
@@ -945,7 +917,7 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     st.scanner.native_len = 0;
     st.scanner.save_native_len = 0;
 
-    st.eqtb.data = Vec::new();
+    st.eqtb.release_tables();
     st.eqtb.hash = Vec::new();
     st.mem.data = Vec::new();
     st.mem.glyph_blobs.clear();

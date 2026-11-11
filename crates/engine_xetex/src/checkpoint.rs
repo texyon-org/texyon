@@ -22,9 +22,7 @@ struct EngineDelta {
     glue: WordDelta<GlueSpec>,
     meanings: WordDelta<crate::command::Command>,
     cs_levels: WordDelta<u16>,
-    eqtb: WordDelta<MemoryWord>,
     tables: crate::eqtb::TablesDelta,
-    xeq: PlainDelta<u16>,
     hash: PlainDelta<B32x2>,
     prim: PlainDelta<B32x2>,
     font_info: PlainDelta<MemoryWord>,
@@ -44,9 +42,7 @@ impl EngineDelta {
             glue: st.mem.glue.seal_journal(),
             meanings: st.eqtb.journal.meanings.seal(&st.eqtb.meanings),
             cs_levels: st.eqtb.journal.cs_levels.seal(&st.eqtb.cs_levels),
-            eqtb: st.eqtb.journal.words.seal(&st.eqtb.data),
             tables: st.eqtb.seal_tables(),
-            xeq: st.eqtb.journal.xeq.seal(),
             hash: st.eqtb.journal.hash.seal(),
             prim: st.eqtb.journal.prim.seal(),
             font_info: st.fonts.font_info_journal.seal(),
@@ -62,9 +58,7 @@ impl EngineDelta {
             glue: st.mem.glue.journal.snapshot(),
             meanings: st.eqtb.journal.meanings.snapshot(),
             cs_levels: st.eqtb.journal.cs_levels.snapshot(),
-            eqtb: st.eqtb.journal.words.snapshot(),
             tables: st.eqtb.snapshot_tables(),
-            xeq: st.eqtb.journal.xeq.snapshot(),
             hash: st.eqtb.journal.hash.snapshot(),
             prim: st.eqtb.journal.prim.snapshot(),
             font_info: st.fonts.font_info_journal.snapshot(),
@@ -77,9 +71,7 @@ impl EngineDelta {
         self.glue.apply_to(st.mem.glue.specs_mut());
         self.meanings.apply_to(&mut st.eqtb.meanings);
         self.cs_levels.apply_to(&mut st.eqtb.cs_levels);
-        self.eqtb.apply_to(&mut st.eqtb.data);
         self.tables.apply_to(&mut st.eqtb);
-        self.xeq.apply_to(&mut st.eqtb.xeq_level);
         self.hash.apply_to(&mut st.eqtb.hash);
         self.prim.apply_to(&mut st.eqtb.prim);
         self.font_info.apply_to(&mut st.fonts.font_info);
@@ -91,9 +83,7 @@ impl EngineDelta {
         self.glue.compose_with_older(older.glue);
         self.meanings.compose_with_older(older.meanings);
         self.cs_levels.compose_with_older(older.cs_levels);
-        self.eqtb.compose_with_older(older.eqtb);
         self.tables.compose_with_older(older.tables);
-        self.xeq.compose_with_older(older.xeq);
         self.hash.compose_with_older(older.hash);
         self.prim.compose_with_older(older.prim);
         self.font_info.compose_with_older(older.font_info);
@@ -106,9 +96,7 @@ impl EngineDelta {
         self.glue.compact();
         self.meanings.compact();
         self.cs_levels.compact();
-        self.eqtb.compact();
         self.tables.compact();
-        self.xeq.compact();
         self.hash.compact();
         self.prim.compact();
         self.font_info.compact();
@@ -120,9 +108,7 @@ impl EngineDelta {
             + self.glue.allocated_bytes()
             + self.meanings.allocated_bytes()
             + self.cs_levels.allocated_bytes()
-            + self.eqtb.allocated_bytes()
             + self.tables.allocated_bytes()
-            + self.xeq.allocated_bytes()
             + self.hash.allocated_bytes()
             + self.prim.allocated_bytes()
             + self.font_info.allocated_bytes()
@@ -692,10 +678,6 @@ mod tests {
         st.mem.tokens.restore_marks(bundle.tokens);
     }
 
-    fn value(word: MemoryWord) -> i32 {
-        word.b32().s1
-    }
-
     const CS: crate::units::CsId = crate::units::CsId::from_raw(2);
 
     const COUNT1: crate::eqtb::IntLoc = crate::eqtb::IntLoc::count(1);
@@ -703,7 +685,6 @@ mod tests {
     fn state() -> EngineState {
         let mut st = EngineState::default();
         st.mem.data = crate::mem_types::zeroed_vec(8);
-        st.eqtb.data = crate::mem_types::zeroed_vec(4);
         st.eqtb.hash = vec![B32x2 { s0: 0, s1: 0 }; 1];
         st.eqtb.meanings = vec![Command::UndefinedCs; 4];
         st.eqtb.cs_levels = vec![0; 4];
@@ -719,7 +700,6 @@ mod tests {
         let mut ladder = CheckpointLadder::new(bundle(&st), 0);
 
         st.mem.set_word(1, 10);
-        st.eqtb.set_equiv(crate::consts::GLUE_BASE + 1, 11);
         st.eqtb.ints.set(COUNT1, 13, 2);
         st.eqtb.set_meaning(CS, Command::Halign, 2);
         st.mem.free.0[2] = crate::units::MemIdx::from_raw(12);
@@ -728,7 +708,6 @@ mod tests {
 
         st.mem.set_word(1, 20);
         st.mem.set_word(3, 21);
-        st.eqtb.set_equiv(crate::consts::GLUE_BASE + 1, 22);
         st.eqtb.ints.set(COUNT1, 23, 3);
         st.eqtb.set_meaning(CS, Command::Vrule, 3);
         st.fonts.fmem_ptr = crate::units::FontInfoIdx::from_raw(2);
@@ -742,7 +721,6 @@ mod tests {
         assert_eq!(st.mem.word(1), 10);
         assert_eq!(st.mem.word(3), 0);
         assert_eq!(st.mem.word(4), 0);
-        assert_eq!(value(st.eqtb.data[1]), 11);
         assert_eq!(
             (st.eqtb.ints.get(COUNT1), st.eqtb.ints.level(COUNT1)),
             (13, 2)

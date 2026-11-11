@@ -28,7 +28,7 @@ use std::rc::Rc;
 
 crate::codes::code_enum! {
     /// The edge of a line a character protrudes into.
-    #[derive(PartialOrd, Ord, Hash)]
+    #[derive(PartialOrd, Ord)]
     pub(crate) enum Side: u16 {
         Left = 0,
         Right = 1,

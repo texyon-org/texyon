@@ -11,11 +11,13 @@ use crate::command::Usv;
 use crate::command::{Command, RegisterRef};
 use crate::consts::NULL_FONT;
 use crate::consts::{
-    ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_USV, CAT_CODE_BASE, CHAR_CLASS_LIMIT, DEL_CODE_BASE,
-    DESIGN_SIZE, HASH_BASE, MATH_CODE_BASE, MAX_HALFWORD, NULL_CS, SF_CODE_BASE, SINGLE_BASE,
-    TEX_INFINITY, VMODE,
+    ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, DESIGN_SIZE, HASH_BASE,
+    MAX_HALFWORD, NULL_CS, SINGLE_BASE, TEX_INFINITY, VMODE,
 };
-use crate::eqtb::{self, DimenLoc, FontLoc, GlueLoc, IntLoc, ShapeLoc, ShapeRef, ToksLoc};
+use crate::eqtb::{
+    self, CatLoc, CodeTable, DelLoc, DimenLoc, FontLoc, GlueLoc, IntLoc, LcLoc, MathLoc, SfLoc,
+    ShapeLoc, ShapeRef, ToksLoc, UcLoc, XetexCode,
+};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::read_font_info;
@@ -33,7 +35,7 @@ use crate::token::{Token, TokenList};
 use crate::units::CsId;
 use crate::units::MemIdx;
 use crate::units::RawPtr;
-use crate::units::{EqtbPtr, FontId, GlueOrder, MemPtr, Scaled, StrNumber};
+use crate::units::{FontId, GlueOrder, MemPtr, Scaled, StrNumber};
 
 use crate::fonts::Side;
 
@@ -476,16 +478,6 @@ pub(super) fn do_assignments(st: &mut EngineState) -> Result<(), Abort> {
     }
 }
 
-/// Sets code table entry `p`.
-fn define_code(st: &mut EngineState, global: bool, p: EqtbPtr, e: i32) -> Result<(), Abort> {
-    if global {
-        st.eqtb.geq_define_code(p, e);
-        Ok(())
-    } else {
-        st.eqtb.eq_define_code(&mut st.save_stack, p, e)
-    }
-}
-
 /// Gives control sequence `cs` the meaning `m`.
 pub(super) fn define_cs(
     st: &mut EngineState,
@@ -498,20 +490,6 @@ pub(super) fn define_cs(
     } else {
         st.eqtb
             .eq_define_cs(&mut st.save_stack, &mut st.mem, &mut st.scanner, cs, m)
-    }
-}
-
-pub(super) fn word_define(
-    st: &mut EngineState,
-    global: bool,
-    p: EqtbPtr,
-    w: i32,
-) -> Result<(), Abort> {
-    if global {
-        st.eqtb.geq_word_define(p, w);
-        Ok(())
-    } else {
-        st.eqtb.eq_word_define(&mut st.save_stack, p, w)
     }
 }
 
@@ -973,66 +951,62 @@ fn assign_toks(st: &mut EngineState, global: bool, cmd: Command) -> Result<(), A
     define_toks(st, global, target, def_ref)
 }
 
-fn xetex_def_code(st: &mut EngineState, global: bool, chr: EqtbPtr) -> Result<(), Abort> {
-    let base = if chr == SF_CODE_BASE || chr == MATH_CODE_BASE || chr == DEL_CODE_BASE {
-        chr
-    } else {
-        chr - 1
-    };
+fn xetex_def_code(st: &mut EngineState, global: bool, code: XetexCode) -> Result<(), Abort> {
     let c = crate::scan::scan_usv_num(st)?;
-    let p = base + c;
-    if chr == SF_CODE_BASE {
-        let sf = st.eqtb.sf_code(c) % 65536;
-        crate::scan::scan_optional_equals(st)?;
-        let class = crate::scan::scan_char_class(st)?;
-        let v = class.wrapping_mul(65536).wrapping_add(sf);
-        define_code(st, global, p, v)?;
-    } else if chr == MATH_CODE_BASE {
-        crate::scan::scan_optional_equals(st)?;
-        let c = crate::scan::scan_xetex_math_char_int(st)?;
-        define_code(st, global, p, c)?;
-    } else if chr == MATH_CODE_BASE + 1 {
-        crate::scan::scan_optional_equals(st)?;
-        let v = crate::scan::scan_umath_code(st)?;
-        define_code(st, global, p, v)?;
-    } else if chr == DEL_CODE_BASE {
-        crate::scan::scan_optional_equals(st)?;
-        let v = crate::scan::scan_int(st)?;
-        word_define(st, global, p, v)?;
-    } else {
-        crate::scan::scan_optional_equals(st)?;
-        // Extended delimiter code flag.
-        let mut n: i32 = 0x4000_0000;
-        let fam = crate::scan::scan_math_fam_int(st)?;
-        n = n.wrapping_add(fam.wrapping_mul(0x20_0000));
-        let c = crate::scan::scan_usv_num(st)?;
-        n = n.wrapping_add(c);
-        word_define(st, global, p, n)?;
+    match code {
+        XetexCode::CharClass => {
+            let sf = st.eqtb.sf_code(c) % 65536;
+            crate::scan::scan_optional_equals(st)?;
+            let class = crate::scan::scan_char_class(st)?;
+            let v = class.wrapping_mul(65536).wrapping_add(sf);
+            eqtb::define(st, global, SfLoc::of(c), v)?;
+        }
+        XetexCode::MathCodeNum => {
+            crate::scan::scan_optional_equals(st)?;
+            let v = crate::scan::scan_xetex_math_char_int(st)?;
+            eqtb::define(st, global, MathLoc::of(c), v)?;
+        }
+        XetexCode::MathCode => {
+            crate::scan::scan_optional_equals(st)?;
+            let v = crate::scan::scan_umath_code(st)?;
+            eqtb::define(st, global, MathLoc::of(c), v)?;
+        }
+        XetexCode::DelCodeNum => {
+            crate::scan::scan_optional_equals(st)?;
+            let v = crate::scan::scan_int(st)?;
+            eqtb::define(st, global, DelLoc::of(c), v)?;
+        }
+        XetexCode::DelCode => {
+            crate::scan::scan_optional_equals(st)?;
+            // Extended delimiter code flag.
+            let mut n: i32 = 0x4000_0000;
+            let fam = crate::scan::scan_math_fam_int(st)?;
+            n = n.wrapping_add(fam.wrapping_mul(0x20_0000));
+            let d = crate::scan::scan_usv_num(st)?;
+            n = n.wrapping_add(d);
+            eqtb::define(st, global, DelLoc::of(c), n)?;
+        }
     }
     Ok(())
 }
 
-fn def_code(st: &mut EngineState, global: bool, chr: EqtbPtr) -> Result<(), Abort> {
-    let max = if chr == CAT_CODE_BASE {
-        Cmd::MAX_CHAR_CODE.into()
-    } else if chr == MATH_CODE_BASE {
-        0x8000
-    } else if chr == SF_CODE_BASE {
-        0x7FFF
-    } else if chr == DEL_CODE_BASE {
-        0xFF_FFFF
-    } else {
-        BIGGEST_USV
+fn def_code(st: &mut EngineState, global: bool, table: CodeTable) -> Result<(), Abort> {
+    let max = match table {
+        CodeTable::Cat => Cmd::MAX_CHAR_CODE.into(),
+        CodeTable::Math => 0x8000,
+        CodeTable::Sf => 0x7FFF,
+        CodeTable::Del => 0xFF_FFFF,
+        CodeTable::Lc | CodeTable::Uc => BIGGEST_USV,
     };
     let c = crate::scan::scan_usv_num(st)?;
-    let p = chr + c;
     crate::scan::scan_optional_equals(st)?;
     let mut v = crate::scan::scan_int(st)?;
-    if (v < 0 && p < DEL_CODE_BASE) || v > max {
-        let bound = if p < DEL_CODE_BASE {
-            "), should be in the range 0.."
-        } else {
+    let del = table == CodeTable::Del;
+    if (v < 0 && !del) || v > max {
+        let bound = if del {
             "), should be at most "
+        } else {
+            "), should be in the range 0.."
         };
         crate::errors::error(
             st,
@@ -1041,26 +1015,26 @@ fn def_code(st: &mut EngineState, global: bool, chr: EqtbPtr) -> Result<(), Abor
         )?;
         v = 0;
     }
-    if p < MATH_CODE_BASE {
-        let v = if p >= SF_CODE_BASE {
-            (st.eqtb.int_at(p) / 65536)
+    match table {
+        CodeTable::Cat => eqtb::define(st, global, CatLoc::of(c), Cmd::from_catcode_bits(v)),
+        CodeTable::Lc => eqtb::define(st, global, LcLoc::of(c), v),
+        CodeTable::Uc => eqtb::define(st, global, UcLoc::of(c), v),
+        CodeTable::Sf => {
+            let v = (st.eqtb.sf_code(c) / 65536)
                 .wrapping_mul(65536)
-                .wrapping_add(v)
-        } else {
-            v
-        };
-        define_code(st, global, p, v)?;
-    } else if p < DEL_CODE_BASE {
-        v = if v == 32768 {
-            ACTIVE_MATH_CHAR
-        } else {
-            crate::scan::math_code_from_tex(v)
-        };
-        define_code(st, global, p, v)?;
-    } else {
-        word_define(st, global, p, v)?;
+                .wrapping_add(v);
+            eqtb::define(st, global, SfLoc::of(c), v)
+        }
+        CodeTable::Math => {
+            let v = if v == 32768 {
+                ACTIVE_MATH_CHAR
+            } else {
+                crate::scan::math_code_from_tex(v)
+            };
+            eqtb::define(st, global, MathLoc::of(c), v)
+        }
+        CodeTable::Del => eqtb::define(st, global, DelLoc::of(c), v),
     }
-    Ok(())
 }
 
 fn set_shape(st: &mut EngineState, global: bool, q: ShapeLoc) -> Result<(), Abort> {

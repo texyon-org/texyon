@@ -5,7 +5,7 @@ use crate::codes::{FiOrElseCode, ValueLevel};
 use crate::glue_store::GlueSpecId;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::units::{
-    BufPos, CsId, EqtbPtr, FontId, FontInfoIdx, PoolPos, PrimNum, SavePtr, Scaled, StrNumber,
+    BufPos, CsId, FontId, FontInfoIdx, PoolPos, PrimNum, SavePtr, Scaled, StrNumber,
 };
 
 #[derive(Default)]
@@ -320,18 +320,21 @@ pub(crate) struct EqtbState {
     pub meanings: Vec<crate::command::Command>,
     /// The level each meaning was defined at.
     pub cs_levels: Vec<u16>,
-    /// The entries from `GLUE_BASE` on.
-    pub data: Vec<crate::mem_types::MemoryWord>,
     pub ints: crate::eqtb::Table<crate::eqtb::IntLoc, i32>,
     pub dimens: crate::eqtb::Table<crate::eqtb::DimenLoc, Scaled>,
     pub glue: crate::eqtb::Table<crate::eqtb::GlueLoc, GlueSpecId>,
     pub toks: crate::eqtb::Table<crate::eqtb::ToksLoc, crate::token::TokenList>,
     pub shapes: crate::eqtb::Table<crate::eqtb::ShapeLoc, crate::eqtb::ShapeRef>,
     pub fonts: crate::eqtb::Table<crate::eqtb::FontLoc, FontId>,
+    pub cat_codes: crate::eqtb::Table<crate::eqtb::CatLoc, Cmd>,
+    pub lc_codes: crate::eqtb::Table<crate::eqtb::LcLoc, i32>,
+    pub uc_codes: crate::eqtb::Table<crate::eqtb::UcLoc, i32>,
+    pub sf_codes: crate::eqtb::Table<crate::eqtb::SfLoc, i32>,
+    pub math_codes: crate::eqtb::Table<crate::eqtb::MathLoc, i32>,
+    pub del_codes: crate::eqtb::Table<crate::eqtb::DelLoc, i32>,
     pub boxes:
         crate::eqtb::Table<crate::eqtb::BoxLoc, Option<crate::node::NodePtr<crate::node::BoxNode>>>,
     pub prim: Vec<crate::mem_types::B32x2>,
-    pub xeq_level: Vec<u16>,
     /// The `next` and `text` of each control sequence from `HASH_BASE` on.
     pub hash: Vec<crate::mem_types::B32x2>,
     pub hash_extra: i32,
@@ -351,7 +354,6 @@ impl Default for EqtbState {
             cs_count: 0,
             meanings: Vec::new(),
             cs_levels: Vec::new(),
-            data: Vec::new(),
             ints: Default::default(),
             dimens: Default::default(),
             glue: Default::default(),
@@ -359,9 +361,14 @@ impl Default for EqtbState {
             shapes: Default::default(),
             boxes: Default::default(),
             fonts: Default::default(),
+            cat_codes: Default::default(),
+            lc_codes: Default::default(),
+            uc_codes: Default::default(),
+            sf_codes: Default::default(),
+            math_codes: Default::default(),
+            del_codes: Default::default(),
             // PRIM_SIZE + 1 = 2101.
             prim: vec![crate::mem_types::B32x2 { s0: 0, s1: 0 }; 2101],
-            xeq_level: vec![0u16; crate::consts::XEQ_LEVEL_SIZE],
             hash: Vec::new(),
             hash_extra: 0,
             cs_top: CsId::NONE,
@@ -374,13 +381,12 @@ impl Default for EqtbState {
 impl EqtbState {
     /// Sizes the tables for `hash_extra` extra names, every control sequence undefined.
     pub(crate) fn alloc_tables(&mut self) {
-        use crate::consts::{EQTB_SIZE, UNDEFINED_CONTROL_SEQUENCE};
+        use crate::consts::UNDEFINED_CONTROL_SEQUENCE;
         self.cs_top = UNDEFINED_CONTROL_SEQUENCE + self.hash_extra;
         let cs = self.cs_top.index() + 1;
         self.meanings = vec![crate::command::Command::UndefinedCs; cs];
         self.cs_levels = vec![crate::consts::LEVEL_ZERO; cs];
         self.hash = crate::mem_types::zeroed_vec(crate::hash::hash_slot(self.cs_top) + 1);
-        self.data = crate::mem_types::zeroed_vec(data_slot(EQTB_SIZE) + 1);
         self.ints = crate::eqtb::Table::new(crate::eqtb::IntLoc::LEN, 0);
         self.dimens = crate::eqtb::Table::new(crate::eqtb::DimenLoc::LEN, Scaled::ZERO);
         self.glue = crate::eqtb::Table::new(crate::eqtb::GlueLoc::LEN, crate::mem::ZERO_GLUE);
@@ -390,6 +396,13 @@ impl EqtbState {
             crate::eqtb::Table::new(crate::eqtb::ShapeLoc::LEN, crate::eqtb::ShapeRef::NONE);
         self.boxes = crate::eqtb::Table::new(crate::eqtb::BoxLoc::LEN, None);
         self.fonts = crate::eqtb::Table::new(crate::eqtb::FontLoc::LEN, crate::consts::NULL_FONT);
+        let usvs = crate::consts::NUMBER_USVS as usize;
+        self.cat_codes = crate::eqtb::Table::new(usvs, Cmd::ESCAPE);
+        self.lc_codes = crate::eqtb::Table::new(usvs, 0);
+        self.uc_codes = crate::eqtb::Table::new(usvs, 0);
+        self.sf_codes = crate::eqtb::Table::new(usvs, 0);
+        self.math_codes = crate::eqtb::Table::new(usvs, 0);
+        self.del_codes = crate::eqtb::Table::new(usvs, -1);
     }
 
     /// An entry of the glue, token, box and code regions.
@@ -418,20 +431,7 @@ impl EqtbState {
     }
 }
 
-/// The index of `p` in `EqtbState::data`.
-#[inline(always)]
-pub(crate) fn data_slot(p: EqtbPtr) -> usize {
-    usize::try_from(p - crate::consts::GLUE_BASE).unwrap_or(usize::MAX)
-}
-
 impl EqtbState {
-    #[inline(always)]
-    fn note(&mut self, index: usize) {
-        if self.journal.words.armed() {
-            self.journal.words.note(index, self.data[index]);
-        }
-    }
-
     /// The meaning of control sequence `cs`.
     #[inline(always)]
     pub(crate) fn meaning(&self, cs: CsId) -> crate::command::Command {
@@ -454,25 +454,6 @@ impl EqtbState {
         }
         self.meanings[i] = m;
         self.cs_levels[i] = level;
-    }
-
-    #[inline]
-    fn b32s1(&self, p: EqtbPtr) -> i32 {
-        self.data[data_slot(p)].b32().s1
-    }
-
-    #[inline]
-    fn set_b32s1(&mut self, p: EqtbPtr, v: i32) {
-        let index = data_slot(p);
-        self.note(index);
-        self.data[index].b32.s1 = v;
-    }
-
-    #[inline]
-    pub fn set_word(&mut self, p: EqtbPtr, value: crate::mem_types::MemoryWord) {
-        let index = data_slot(p);
-        self.note(index);
-        self.data[index] = value;
     }
 
     #[inline]
@@ -539,38 +520,6 @@ impl EqtbState {
         self.prim[index].s1 = s.map_or(0, |s| s.raw() + 1);
     }
 
-    #[inline]
-    pub fn word(&self, p: EqtbPtr) -> crate::mem_types::MemoryWord {
-        self.data[data_slot(p)]
-    }
-
-    #[inline]
-    pub(crate) fn eq_level(&self, p: EqtbPtr) -> u16 {
-        self.b16s0(p)
-    }
-    #[inline]
-    pub(crate) fn set_eq_level(&mut self, p: EqtbPtr, l: u16) {
-        self.set_b16s0(p, l);
-    }
-    #[inline]
-    pub(crate) fn equiv(&self, p: EqtbPtr) -> i32 {
-        self.b32s1(p)
-    }
-    #[inline]
-    pub(crate) fn set_equiv(&mut self, p: EqtbPtr, v: i32) {
-        self.set_b32s1(p, v);
-    }
-
-    /// `eqtb[p].int`, a word in the integer or dimension regions.
-    #[inline]
-    pub(crate) fn int_at(&self, p: EqtbPtr) -> i32 {
-        self.b32s1(p)
-    }
-    #[inline]
-    pub(crate) fn set_int_at(&mut self, p: EqtbPtr, v: i32) {
-        self.set_b32s1(p, v);
-    }
-
     /// The control sequence text that identifies font `f`.
     #[inline]
     pub(crate) fn font_id_text(&self, f: FontId) -> StrNumber {
@@ -631,37 +580,29 @@ impl EqtbState {
     pub(crate) fn math_font(&self, n: i32) -> FontId {
         self.fonts.get(crate::eqtb::FontLoc::math(n))
     }
-    #[inline]
+    #[inline(always)]
     pub(crate) fn cat_code(&self, c: i32) -> Cmd {
-        Cmd::from_catcode_bits(self.equiv(crate::consts::CAT_CODE_BASE + c))
+        self.cat_codes.get(crate::eqtb::CatLoc::of(c))
     }
     #[inline]
     pub(crate) fn lc_code(&self, c: i32) -> i32 {
-        self.equiv(crate::consts::LC_CODE_BASE + c)
+        self.lc_codes.get(crate::eqtb::LcLoc::of(c))
+    }
+    #[inline]
+    pub(crate) fn uc_code(&self, c: i32) -> i32 {
+        self.uc_codes.get(crate::eqtb::UcLoc::of(c))
     }
     #[inline]
     pub(crate) fn sf_code(&self, c: i32) -> i32 {
-        self.equiv(crate::consts::SF_CODE_BASE + c)
+        self.sf_codes.get(crate::eqtb::SfLoc::of(c))
     }
     #[inline]
     pub(crate) fn math_code(&self, c: i32) -> i32 {
-        self.equiv(crate::consts::MATH_CODE_BASE + c)
+        self.math_codes.get(crate::eqtb::MathLoc::of(c))
     }
     #[inline]
     pub(crate) fn del_code(&self, c: i32) -> i32 {
-        self.equiv(crate::consts::DEL_CODE_BASE + c)
-    }
-
-    #[inline]
-    fn b16s0(&self, p: EqtbPtr) -> u16 {
-        self.data[data_slot(p)].b16().s0
-    }
-
-    #[inline]
-    fn set_b16s0(&mut self, p: EqtbPtr, v: u16) {
-        let index = data_slot(p);
-        self.note(index);
-        self.data[index].b16.s0 = v;
+        self.del_codes.get(crate::eqtb::DelLoc::of(c))
     }
 
     #[inline]
@@ -691,20 +632,6 @@ impl EqtbState {
     #[inline]
     pub fn set_glue_par(&mut self, n: GluePar, spec: crate::glue_store::GlueSpecId) {
         self.glue.set_value(n.loc(), spec);
-    }
-
-    #[inline]
-    pub fn xeq_level_at(&self, p: EqtbPtr) -> u16 {
-        self.xeq_level[(p - crate::consts::INT_BASE) as usize]
-    }
-
-    #[inline]
-    pub fn set_xeq_level_at(&mut self, p: EqtbPtr, v: u16) {
-        let index = (p - crate::consts::INT_BASE) as usize;
-        if self.journal.xeq.armed() {
-            self.journal.xeq.note(index, self.xeq_level[index]);
-        }
-        self.xeq_level[index] = v;
     }
 }
 
@@ -874,11 +801,6 @@ pub(crate) enum Restore {
     },
     /// A control sequence that was undefined at level zero.
     CsUndefined(CsId),
-    Word {
-        loc: EqtbPtr,
-        old: crate::mem_types::MemoryWord,
-        level: u16,
-    },
     Int(crate::eqtb::Old<crate::eqtb::IntLoc>),
     Dimen(crate::eqtb::Old<crate::eqtb::DimenLoc>),
     Glue(crate::eqtb::Old<crate::eqtb::GlueLoc>),
@@ -886,6 +808,12 @@ pub(crate) enum Restore {
     Shape(crate::eqtb::Old<crate::eqtb::ShapeLoc>),
     Box(crate::eqtb::Old<crate::eqtb::BoxLoc>),
     Font(crate::eqtb::Old<crate::eqtb::FontLoc>),
+    Cat(crate::eqtb::Old<crate::eqtb::CatLoc>),
+    Lc(crate::eqtb::Old<crate::eqtb::LcLoc>),
+    Uc(crate::eqtb::Old<crate::eqtb::UcLoc>),
+    Sf(crate::eqtb::Old<crate::eqtb::SfLoc>),
+    Math(crate::eqtb::Old<crate::eqtb::MathLoc>),
+    Del(crate::eqtb::Old<crate::eqtb::DelLoc>),
 }
 
 /// What a construction keeps on the save stack below its group.

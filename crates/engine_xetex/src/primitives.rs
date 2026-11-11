@@ -9,11 +9,10 @@ use crate::codes::{
     RadicalCode, ShorthandDefCode, ShowCode, SkipCode, TheCode, ValignCode,
 };
 use crate::consts::{
-    CAT_CODE_BASE, DEL_CODE_BASE, FROZEN_CR, FROZEN_END_GROUP, FROZEN_FI, FROZEN_NULL_FONT,
-    FROZEN_RELAX, FROZEN_RIGHT, FROZEN_SPECIAL, LC_CODE_BASE, MATH_CODE_BASE, NUMBER_USVS,
-    SF_CODE_BASE, UC_CODE_BASE,
+    FROZEN_CR, FROZEN_END_GROUP, FROZEN_FI, FROZEN_NULL_FONT, FROZEN_RELAX, FROZEN_RIGHT,
+    FROZEN_SPECIAL, NUMBER_USVS,
 };
-use crate::eqtb::{FontLoc, ShapeLoc};
+use crate::eqtb::{CaseTable, CodeTable, FontLoc, ShapeLoc, XetexCode};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 
 /// Extra setup `initialize_primitives` runs after defining a primitive.
@@ -52,6 +51,14 @@ const fn int_par(n: IntPar) -> PrimitiveDef {
 
 const fn dimen_par(n: DimenPar) -> PrimitiveDef {
     p(n.name(), Cmd::AssignDimen, n.loc().raw())
+}
+
+const fn code_table(t: CodeTable) -> PrimitiveDef {
+    p(t.name(), Cmd::DefCode, t.raw())
+}
+
+const fn xetex_code(name: &'static str, c: XetexCode) -> PrimitiveDef {
+    p(name, Cmd::XetexDefCode, c.raw())
 }
 
 const fn shape(loc: ShapeLoc) -> PrimitiveDef {
@@ -217,8 +224,8 @@ pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
     p("mathchoice", Cmd::MathChoice, 0),
     p("nonscript", Cmd::NonScript, 0),
     p("vcenter", Cmd::Vcenter, 0),
-    p("lowercase", Cmd::CaseShift, LC_CODE_BASE.raw()),
-    p("uppercase", Cmd::CaseShift, UC_CODE_BASE.raw()),
+    p("lowercase", Cmd::CaseShift, CaseTable::Lower.raw()),
+    p("uppercase", Cmd::CaseShift, CaseTable::Upper.raw()),
     p("message", Cmd::Message, 0),
     p("errmessage", Cmd::Message, 1),
     code!(Cmd::Extension, ExtensionCode::Open),
@@ -333,29 +340,21 @@ pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
     code!(Cmd::SetBoxDimen, BoxDimenCode::Width),
     code!(Cmd::SetBoxDimen, BoxDimenCode::Depth),
     code!(Cmd::SetBoxDimen, BoxDimenCode::Height),
-    p("catcode", Cmd::DefCode, CAT_CODE_BASE.raw()),
-    p("lccode", Cmd::DefCode, LC_CODE_BASE.raw()),
-    p("uccode", Cmd::DefCode, UC_CODE_BASE.raw()),
-    p("sfcode", Cmd::DefCode, SF_CODE_BASE.raw()),
-    p("mathcode", Cmd::DefCode, MATH_CODE_BASE.raw()),
-    p("delcode", Cmd::DefCode, DEL_CODE_BASE.raw()),
-    p("XeTeXcharclass", Cmd::XetexDefCode, SF_CODE_BASE.raw()),
-    p("Umathcodenum", Cmd::XetexDefCode, MATH_CODE_BASE.raw()),
-    p("XeTeXmathcodenum", Cmd::XetexDefCode, MATH_CODE_BASE.raw()),
-    p("Umathcode", Cmd::XetexDefCode, MATH_CODE_BASE.plus(1).raw()),
-    p(
-        "XeTeXmathcode",
-        Cmd::XetexDefCode,
-        MATH_CODE_BASE.plus(1).raw(),
-    ),
-    p("Udelcodenum", Cmd::XetexDefCode, DEL_CODE_BASE.raw()),
-    p("XeTeXdelcodenum", Cmd::XetexDefCode, DEL_CODE_BASE.raw()),
-    p("Udelcode", Cmd::XetexDefCode, DEL_CODE_BASE.plus(1).raw()),
-    p(
-        "XeTeXdelcode",
-        Cmd::XetexDefCode,
-        DEL_CODE_BASE.plus(1).raw(),
-    ),
+    code_table(CodeTable::Cat),
+    code_table(CodeTable::Lc),
+    code_table(CodeTable::Uc),
+    code_table(CodeTable::Sf),
+    code_table(CodeTable::Math),
+    code_table(CodeTable::Del),
+    xetex_code("XeTeXcharclass", XetexCode::CharClass),
+    xetex_code("Umathcodenum", XetexCode::MathCodeNum),
+    xetex_code("XeTeXmathcodenum", XetexCode::MathCodeNum),
+    xetex_code("Umathcode", XetexCode::MathCode),
+    xetex_code("XeTeXmathcode", XetexCode::MathCode),
+    xetex_code("Udelcodenum", XetexCode::DelCodeNum),
+    xetex_code("XeTeXdelcodenum", XetexCode::DelCodeNum),
+    xetex_code("Udelcode", XetexCode::DelCode),
+    xetex_code("XeTeXdelcode", XetexCode::DelCode),
     p("textfont", Cmd::DefFamily, FontLoc::TEXT.raw()),
     p("scriptfont", Cmd::DefFamily, FontLoc::SCRIPT.raw()),
     p(

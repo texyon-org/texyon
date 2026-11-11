@@ -192,13 +192,7 @@ fn digest_eqtb(st: &EngineState) -> u64 {
         eqtb.cs_top.raw(),
     ]);
     h.word(u64::from(eqtb.no_new_control_sequence));
-    for &word in &eqtb.data {
-        h.word(memory_word(word));
-    }
     eqtb.hash_tables(&mut h);
-    for &value in &eqtb.xeq_level {
-        h.word(u64::from(value));
-    }
     for value in eqtb.hash.iter().chain(&eqtb.prim) {
         h.i32(value.s0);
         h.i32(value.s1);
@@ -268,9 +262,23 @@ fn digest_save_entry(h: &mut Fnv, entry: &SaveEntry) {
             ]);
         }
         SaveEntry::Restore(Restore::CsUndefined(cs)) => h.i32s(&[2, cs.raw()]),
-        SaveEntry::Restore(Restore::Word { loc, old, level }) => {
-            h.i32s(&[3, loc.raw(), i32::from(level)]);
-            h.word(memory_word(old));
+        SaveEntry::Restore(Restore::Cat(o)) => {
+            h.i32s(&[14, o.loc.raw(), o.value.raw(), i32::from(o.level)]);
+        }
+        SaveEntry::Restore(Restore::Lc(o)) => {
+            h.i32s(&[15, o.loc.raw(), o.value, i32::from(o.level)])
+        }
+        SaveEntry::Restore(Restore::Uc(o)) => {
+            h.i32s(&[16, o.loc.raw(), o.value, i32::from(o.level)])
+        }
+        SaveEntry::Restore(Restore::Sf(o)) => {
+            h.i32s(&[17, o.loc.raw(), o.value, i32::from(o.level)])
+        }
+        SaveEntry::Restore(Restore::Math(o)) => {
+            h.i32s(&[18, o.loc.raw(), o.value, i32::from(o.level)]);
+        }
+        SaveEntry::Restore(Restore::Del(o)) => {
+            h.i32s(&[19, o.loc.raw(), o.value, i32::from(o.level)])
         }
         SaveEntry::Restore(Restore::Int(o)) => {
             h.i32s(&[7, o.loc.raw(), o.value, i32::from(o.level)]);

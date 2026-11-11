@@ -2,6 +2,7 @@
 
 use std::marker::PhantomData;
 
+use crate::cmd::Cmd;
 use crate::codes::code_enum;
 use crate::consts::LEVEL_ONE;
 use crate::errors::Abort;
@@ -26,6 +27,7 @@ pub(crate) trait EqValue: JournalWord + PartialEq {
 
 impl EqValue for i32 {}
 impl EqValue for FontId {}
+impl EqValue for Cmd {}
 impl EqValue for Scaled {}
 
 /// A location in one of the tables.
@@ -217,6 +219,11 @@ macro_rules! tables {
                 $(self.$name.arm();)*
             }
 
+            /// Frees every table, as at the end of a run.
+            pub(crate) fn release_tables(&mut self) {
+                $(self.$name = Table::default();)*
+            }
+
             pub(crate) fn disarm_tables(&mut self) {
                 $(self.$name.disarm();)*
             }
@@ -253,6 +260,12 @@ tables!(
     shapes: ShapeRef,
     boxes: Option<NodePtr<BoxNode>>,
     fonts: FontId,
+    cat_codes: Cmd,
+    lc_codes: i32,
+    uc_codes: i32,
+    sf_codes: i32,
+    math_codes: i32,
+    del_codes: i32,
 );
 
 impl EqtbState {
@@ -666,6 +679,103 @@ impl FontLoc {
     /// The size and family offset past `\textfont0`, as `print_size` takes it.
     pub(crate) fn math_offset(self) -> i32 {
         i32::from(self.0) - 1
+    }
+}
+
+/// Declares the location type of one per-character code table.
+macro_rules! code_loc {
+    ($(#[$doc:meta])* $loc:ident, $value:ty, $table:ident, $restore:ident) => {
+        $(#[$doc])*
+        #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+        pub(crate) struct $loc(u32);
+
+        impl $loc {
+            /// The entry of character `c`, out of range for anything but a USV.
+            #[inline(always)]
+            pub(crate) fn of(c: i32) -> $loc {
+                $loc(u32::try_from(c).unwrap_or(u32::MAX))
+            }
+
+            pub(crate) fn raw(self) -> i32 {
+                i32::try_from(self.0).unwrap_or(-1)
+            }
+        }
+
+        impl EqLoc for $loc {
+            type Value = $value;
+            #[inline(always)]
+            fn index(self) -> usize {
+                usize::try_from(self.0).unwrap_or(usize::MAX)
+            }
+            #[inline(always)]
+            fn table(eqtb: &EqtbState) -> &Table<Self, $value> {
+                &eqtb.$table
+            }
+            #[inline(always)]
+            fn table_mut(eqtb: &mut EqtbState) -> &mut Table<Self, $value> {
+                &mut eqtb.$table
+            }
+            fn restore(old: Old<Self>) -> Restore {
+                Restore::$restore(old)
+            }
+        }
+    };
+}
+
+code_loc!(
+    /// A `\catcode` entry.
+    CatLoc, Cmd, cat_codes, Cat
+);
+code_loc!(
+    /// An `\lccode` entry.
+    LcLoc, i32, lc_codes, Lc
+);
+code_loc!(
+    /// A `\uccode` entry.
+    UcLoc, i32, uc_codes, Uc
+);
+code_loc!(
+    /// An `\sfcode` entry: the space factor, and XeTeX's character class times 65536.
+    SfLoc, i32, sf_codes, Sf
+);
+code_loc!(
+    /// A `\mathcode` entry, in XeTeX's encoding.
+    MathLoc, i32, math_codes, Math
+);
+code_loc!(
+    /// A `\delcode` entry.
+    DelLoc, i32, del_codes, Del
+);
+
+code_enum! {
+    /// The table a `\catcode`-like primitive sets.
+    pub(crate) enum CodeTable: u8 {
+        Cat = 0 => "catcode",
+        Lc = 1 => "lccode",
+        Uc = 2 => "uccode",
+        Sf = 3 => "sfcode",
+        Math = 4 => "mathcode",
+        Del = 5 => "delcode",
+    }
+}
+
+code_enum! {
+    /// What a XeTeX code primitive sets: a character class, or a math or delimiter code
+    /// as one number or in parts.
+    pub(crate) enum XetexCode: u8 {
+        CharClass = 0 => "XeTeXcharclass",
+        MathCodeNum = 1 => "Umathcodenum",
+        MathCode = 2 => "Umathcode",
+        DelCodeNum = 3 => "Udelcodenum",
+        DelCode = 4 => "Udelcode",
+    }
+}
+
+code_enum! {
+    /// The table `\lowercase` or `\uppercase` maps through.
+    pub(crate) enum CaseTable: u8 {
+        Lower = 0 => "lowercase",
+        Upper = 1 => "uppercase",
     }
 }
 

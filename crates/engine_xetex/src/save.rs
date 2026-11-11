@@ -1,11 +1,8 @@
 //! The save stack, `eqtb` definitions, and the sparse-array register trie.
-use crate::cmd::Cmd;
 use crate::codes::ValueLevel;
 use crate::command::Command;
 use crate::command::RegisterRef;
-use crate::consts::{
-    EQTB_SIZE, INT_BASE, LEVEL_ONE, LEVEL_ZERO, TEX_NULL, UNDEFINED_CONTROL_SEQUENCE,
-};
+use crate::consts::{LEVEL_ONE, LEVEL_ZERO, TEX_NULL, UNDEFINED_CONTROL_SEQUENCE};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::glue_store::GlueSpecId;
@@ -21,38 +18,14 @@ use crate::state::{
 use crate::token::{Token, TokenList};
 use crate::units::CsId;
 use crate::units::MemIdx;
+use crate::units::MemPtr;
 use crate::units::RawPtr;
-use crate::units::{EqtbPtr, MemPtr};
 
 pub(crate) const DIMEN_VAL_LIMIT: u16 = 128;
 pub(crate) const MU_VAL_LIMIT: u16 = 256;
 pub(crate) const BOX_VAL_LIMIT: u16 = 320;
 
 impl EqtbState {
-    /// Sets a delimiter code in the current group.
-    pub(crate) fn eq_word_define(
-        &mut self,
-        save_stack: &mut SaveStackState,
-        p: EqtbPtr,
-        w: i32,
-    ) -> Result<(), Abort> {
-        if self.int_at(p) == w {
-            return Ok(());
-        }
-        let l = self.xeq_level_at(p);
-        if l != save_stack.cur_level {
-            save_stack.eq_save(self, p, l)?;
-            self.set_xeq_level_at(p, save_stack.cur_level);
-        }
-        self.set_int_at(p, w);
-        Ok(())
-    }
-
-    pub(crate) fn geq_word_define(&mut self, p: EqtbPtr, w: i32) {
-        self.set_int_at(p, w);
-        self.set_xeq_level_at(p, LEVEL_ONE);
-    }
-
     /// Gives `cs` the meaning `m` in the current group.
     pub(crate) fn eq_define_cs(
         &mut self,
@@ -119,22 +92,6 @@ impl SaveStackState {
         self.cur_group = c;
         self.cur_level += 1;
         self.save_ptr += 1;
-        Ok(())
-    }
-
-    pub(crate) fn eq_save(&mut self, eqtb: &EqtbState, p: EqtbPtr, l: u16) -> Result<(), Abort> {
-        if self.save_stack_full() {
-            return Err(self.overflow());
-        }
-        self.push(SaveEntry::Restore(Restore::Word {
-            loc: p,
-            old: if l == LEVEL_ZERO {
-                EqtbState::entry(Cmd::UndefinedCs, TEX_NULL, LEVEL_ZERO)
-            } else {
-                eqtb.word(p)
-            },
-            level: l,
-        }));
         Ok(())
     }
 
@@ -205,32 +162,6 @@ pub(crate) fn prepare_mag(st: &mut EngineState) -> Result<(), Abort> {
     }
     st.scanner.mag_set = st.eqtb.int_par(IntPar::Mag);
     Ok(())
-}
-
-impl EqtbState {
-    /// Sets code table entry `p` in the current group.
-    pub(crate) fn eq_define_code(
-        &mut self,
-        save_stack: &mut SaveStackState,
-        p: EqtbPtr,
-        e: i32,
-    ) -> Result<(), Abort> {
-        if self.equiv(p) == e {
-            return Ok(());
-        }
-        if self.eq_level(p) != save_stack.cur_level && save_stack.cur_level > LEVEL_ONE {
-            save_stack.eq_save(self, p, self.eq_level(p))?;
-        }
-        self.set_eq_level(p, save_stack.cur_level);
-        self.set_equiv(p, e);
-        Ok(())
-    }
-
-    /// Sets code table entry `p` globally.
-    pub(crate) fn geq_define_code(&mut self, p: EqtbPtr, e: i32) {
-        self.set_eq_level(p, LEVEL_ONE);
-        self.set_equiv(p, e);
-    }
 }
 
 /// Deferred flush work from an `sa_def`/`sa_w_def`-family mutation.
@@ -557,16 +488,12 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
             SaveEntry::Restore(Restore::Shape(old)) => crate::eqtb::restore(st, old)?,
             SaveEntry::Restore(Restore::Box(old)) => crate::eqtb::restore(st, old)?,
             SaveEntry::Restore(Restore::Font(old)) => crate::eqtb::restore(st, old)?,
-            SaveEntry::Restore(Restore::Word { loc, old, level }) => {
-                if !(INT_BASE..=EQTB_SIZE).contains(&loc) {
-                    if st.eqtb.eq_level(loc) != LEVEL_ONE {
-                        st.eqtb.set_word(loc, old);
-                    }
-                } else if st.eqtb.xeq_level_at(loc) != LEVEL_ONE {
-                    st.eqtb.set_word(loc, old);
-                    st.eqtb.set_xeq_level_at(loc, level);
-                }
-            }
+            SaveEntry::Restore(Restore::Cat(old)) => crate::eqtb::restore(st, old)?,
+            SaveEntry::Restore(Restore::Lc(old)) => crate::eqtb::restore(st, old)?,
+            SaveEntry::Restore(Restore::Uc(old)) => crate::eqtb::restore(st, old)?,
+            SaveEntry::Restore(Restore::Sf(old)) => crate::eqtb::restore(st, old)?,
+            SaveEntry::Restore(Restore::Math(old)) => crate::eqtb::restore(st, old)?,
+            SaveEntry::Restore(Restore::Del(old)) => crate::eqtb::restore(st, old)?,
         }
     }
     if st.input.open_levels[st.input.in_open].grp == st.save_stack.cur_boundary {
