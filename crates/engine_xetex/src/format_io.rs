@@ -27,7 +27,7 @@ use crate::output::{print, print_char, print_int, print_ln, print_nl};
 use crate::params::IntPar;
 use crate::payload::PayloadStore;
 use crate::state::{EngineState, EqtbState, InteractionMode, PerFont, Selector};
-use crate::token::{ListSlot, Token, TokenStore};
+use crate::token::{ListSlot, Token, TokenList, TokenStore};
 use crate::units::CsId;
 use crate::units::MemIdx;
 use crate::units::RawPtr;
@@ -99,6 +99,7 @@ impl FmtItem for MemPtr {
 
 newtype_item!(
     GlueSpecId,
+    TokenList,
     Scaled,
     StrNumber,
     EqtbPtr,
@@ -719,6 +720,7 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
     runs(s, eqtb.ints.values_mut())?;
     runs(s, eqtb.dimens.values_mut())?;
     runs(s, eqtb.glue.values_mut())?;
+    runs(s, eqtb.toks.values_mut())?;
     let mut extra = cs_words(eqtb, UNDEFINED_CONTROL_SEQUENCE + 1, extra_top);
     s.items(&mut extra)?;
     if S::LOADING {

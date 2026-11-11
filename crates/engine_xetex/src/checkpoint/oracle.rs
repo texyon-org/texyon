@@ -281,6 +281,9 @@ fn digest_save_entry(h: &mut Fnv, entry: &SaveEntry) {
         SaveEntry::Restore(Restore::Glue(o)) => {
             h.i32s(&[9, o.loc.raw(), o.value.raw(), i32::from(o.level)]);
         }
+        SaveEntry::Restore(Restore::Toks(o)) => {
+            h.i32s(&[10, o.loc.raw(), o.value.raw(), i32::from(o.level)]);
+        }
         SaveEntry::InsertToken(t) => h.i32s(&[4, t.0]),
         SaveEntry::RestoreSa { chain, level } => {
             h.i32s(&[5, crate::node::link_of(chain).raw(), i32::from(level)]);

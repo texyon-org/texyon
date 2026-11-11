@@ -8,7 +8,7 @@ use crate::codes::{
     RadicalCode, ShorthandDefCode, ShowCode, SkipCode, TheCode, ValignCode, ValueLevel,
 };
 use crate::consts::{BIGGEST_USV, TEX_NULL, TOO_BIG_USV};
-use crate::eqtb::{DimenLoc, GlueLoc, IntLoc};
+use crate::eqtb::{DimenLoc, GlueLoc, IntLoc, ToksLoc};
 use crate::errors::{Abort, OrConfusion};
 use crate::main_control::{CR_CODE, CR_CR_CODE, SPAN_CODE};
 use crate::math::MathStyle;
@@ -251,7 +251,7 @@ pub(crate) enum Command {
     LastItem(LastItemCode) = Cmd::LastItem as u8,
     /// `\toks`, or a token register `\toksdef` bound to a name.
     ToksRegister(ToksRef) = Cmd::ToksRegister as u8,
-    AssignToks(EqtbPtr) = Cmd::AssignToks as u8,
+    AssignToks(ToksLoc) = Cmd::AssignToks as u8,
     AssignInt(IntLoc) = Cmd::AssignInt as u8,
     AssignDimen(DimenLoc) = Cmd::AssignDimen as u8,
     AssignGlue(GlueLoc) = Cmd::AssignGlue as u8,
@@ -602,12 +602,12 @@ impl Command {
             Command::Above(code) => code.raw(),
             Command::MathStyle(style) => i32::from(style.raw()),
             Command::CaseShift(loc)
-            | Command::AssignToks(loc)
             | Command::SetShape(loc)
             | Command::DefCode(loc)
             | Command::XetexDefCode(loc)
             | Command::DefFamily(loc) => loc.raw(),
             Command::AssignInt(loc) => loc.raw(),
+            Command::AssignToks(loc) => loc.raw(),
             Command::AssignGlue(loc) | Command::AssignMuGlue(loc) => loc.raw(),
             Command::AssignDimen(loc) => loc.raw(),
             Command::Extension(code) => code.raw(),
@@ -770,7 +770,7 @@ impl Command {
             Cmd::XetexMathGiven => Command::XetexMathGiven(chr),
             Cmd::LastItem => Command::LastItem(LastItemCode::from_raw(chr)?),
             Cmd::ToksRegister => Command::ToksRegister(ToksRef(chr)),
-            Cmd::AssignToks => Command::AssignToks(loc),
+            Cmd::AssignToks => Command::AssignToks(ToksLoc::from_raw(chr)?),
             Cmd::AssignInt => Command::AssignInt(IntLoc::from_raw(chr)?),
             Cmd::AssignDimen => Command::AssignDimen(DimenLoc::from_raw(chr)?),
             Cmd::AssignGlue => Command::AssignGlue(GlueLoc::from_raw(chr)?),

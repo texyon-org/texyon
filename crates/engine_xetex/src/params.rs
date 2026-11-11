@@ -2,9 +2,7 @@
 //! `glue_par`, numbered as offsets from their region base.
 
 use crate::codes::code_enum;
-use crate::consts::LOCAL_BASE;
-use crate::eqtb::{DimenLoc, GlueLoc, IntLoc};
-use crate::units::EqtbPtr;
+use crate::eqtb::{DimenLoc, GlueLoc, IntLoc, ToksLoc};
 
 code_enum! {
     pub(crate) enum IntPar: u8 {
@@ -344,9 +342,12 @@ code_enum! {
 }
 
 impl TokPar {
-    /// The `eqtb` location.
+    /// How many there are.
+    pub(crate) const COUNT: u8 = TokPar::TectonicCoda as u8;
+
+    /// The location in the token list table.
     #[inline]
-    pub(crate) const fn loc(self) -> EqtbPtr {
-        LOCAL_BASE.plus(self as i32)
+    pub(crate) const fn loc(self) -> ToksLoc {
+        ToksLoc::par(self)
     }
 }

@@ -330,7 +330,8 @@ pub(crate) fn begin_token_list(
             _ => print_cmd_chr(
                 st,
                 Cmd::AssignToks,
-                (TokPar::OutputRoutine.loc() + (t.raw() - TokenType::Output.raw())).raw(),
+                TokPar::from_raw(t.raw() - TokenType::Output.raw() + TokPar::OutputRoutine.raw())
+                    .map_or(-1, |p| p.loc().raw()),
             ),
         }
         print(st, "->");

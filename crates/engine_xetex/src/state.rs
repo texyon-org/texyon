@@ -326,6 +326,7 @@ pub(crate) struct EqtbState {
     pub ints: crate::eqtb::Table<crate::eqtb::IntLoc, i32>,
     pub dimens: crate::eqtb::Table<crate::eqtb::DimenLoc, Scaled>,
     pub glue: crate::eqtb::Table<crate::eqtb::GlueLoc, GlueSpecId>,
+    pub toks: crate::eqtb::Table<crate::eqtb::ToksLoc, crate::token::TokenList>,
     pub prim: Vec<crate::mem_types::B32x2>,
     pub xeq_level: Vec<u16>,
     /// The `next` and `text` of each control sequence from `HASH_BASE` on.
@@ -351,6 +352,7 @@ impl Default for EqtbState {
             ints: Default::default(),
             dimens: Default::default(),
             glue: Default::default(),
+            toks: Default::default(),
             // PRIM_SIZE + 1 = 2101.
             prim: vec![crate::mem_types::B32x2 { s0: 0, s1: 0 }; 2101],
             xeq_level: vec![0u16; crate::consts::XEQ_LEVEL_SIZE],
@@ -376,6 +378,8 @@ impl EqtbState {
         self.ints = crate::eqtb::Table::new(crate::eqtb::IntLoc::LEN, 0);
         self.dimens = crate::eqtb::Table::new(crate::eqtb::DimenLoc::LEN, Scaled::ZERO);
         self.glue = crate::eqtb::Table::new(crate::eqtb::GlueLoc::LEN, crate::mem::ZERO_GLUE);
+        self.toks =
+            crate::eqtb::Table::new(crate::eqtb::ToksLoc::LEN, crate::token::TokenList::NULL);
     }
 
     /// An entry of the glue, token, box and code regions.
@@ -567,11 +571,6 @@ impl EqtbState {
     pub(crate) fn equiv_ptr(&self, p: EqtbPtr) -> crate::units::MemPtr {
         crate::units::MemIdx::from_raw(self.equiv(p))
     }
-    /// `equiv(p)` of a macro or token-list entry.
-    #[inline]
-    pub(crate) fn equiv_tokens(&self, p: EqtbPtr) -> crate::token::TokenList {
-        crate::token::TokenList::from_raw(self.equiv(p))
-    }
     #[inline]
     pub(crate) fn set_equiv(&mut self, p: EqtbPtr, v: i32) {
         self.set_b32s1(p, v);
@@ -606,7 +605,7 @@ impl EqtbState {
     }
     #[inline]
     pub(crate) fn tok_par(&self, n: TokPar) -> crate::token::TokenList {
-        self.equiv_tokens(n.loc())
+        self.toks.get(n.loc())
     }
     #[inline]
     pub(crate) fn par_shape(&self) -> Option<crate::node::NodePtr<crate::node::ParShapeNode>> {
@@ -637,8 +636,8 @@ impl EqtbState {
         self.dimens.get(crate::eqtb::DimenLoc::dimen(n))
     }
     #[inline]
-    pub(crate) fn toks(&self, n: i32) -> crate::token::TokenList {
-        self.equiv_tokens(crate::consts::TOKS_BASE + n)
+    pub(crate) fn toks(&self, n: u8) -> crate::token::TokenList {
+        self.toks.get(crate::eqtb::ToksLoc::register(n))
     }
     #[inline]
     pub(crate) fn count(&self, n: u8) -> i32 {
@@ -906,6 +905,7 @@ pub(crate) enum Restore {
     Int(crate::eqtb::Old<crate::eqtb::IntLoc>),
     Dimen(crate::eqtb::Old<crate::eqtb::DimenLoc>),
     Glue(crate::eqtb::Old<crate::eqtb::GlueLoc>),
+    Toks(crate::eqtb::Old<crate::eqtb::ToksLoc>),
 }
 
 /// What a construction keeps on the save stack below its group.

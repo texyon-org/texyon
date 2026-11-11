@@ -8,10 +8,10 @@ use crate::codes::{
     ValignCode, ValueLevel,
 };
 use crate::consts::{
-    DEL_CODE_BASE, ETEX_PEN_BASE, LC_CODE_BASE, LOCAL_BASE, MATH_CODE_BASE, MATH_FONT_BASE,
-    PAR_SHAPE_LOC, SF_CODE_BASE, TOKS_BASE, UC_CODE_BASE, VMODE,
+    DEL_CODE_BASE, ETEX_PEN_BASE, LC_CODE_BASE, MATH_CODE_BASE, MATH_FONT_BASE, PAR_SHAPE_LOC,
+    SF_CODE_BASE, UC_CODE_BASE, VMODE,
 };
-use crate::eqtb::{DimenLoc, DimenSlot, GlueLoc, GlueSlot, IntLoc, IntSlot};
+use crate::eqtb::{DimenLoc, DimenSlot, GlueLoc, GlueSlot, IntLoc, IntSlot, ToksLoc, ToksSlot};
 use crate::main_control::{CR_CODE, LP_CODE_BASE, RP_CODE_BASE, SPAN_CODE};
 use crate::math::{ABOVE_CODE, ATOP_CODE, DELIMITED_CODE, OVER_CODE};
 use crate::node::{NodePtr, SaElement};
@@ -76,16 +76,19 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
                 None => print_skip_param(st, chr_code),
             }
         }
-        Cmd::AssignToks => {
-            let chr_code = EqtbPtr::from_raw(chr_code);
-            if chr_code >= TOKS_BASE {
+        Cmd::AssignToks => match ToksLoc::from_raw(chr_code).map(ToksLoc::get) {
+            Some(ToksSlot::Register(n)) => {
                 print_esc(st, "toks");
-                print_int(st, chr_code - TOKS_BASE);
-            } else {
-                let par = TokPar::from_raw(chr_code - LOCAL_BASE).unwrap_or(TokPar::ErrHelp);
-                print_esc(st, par.name());
+                print_int(st, i32::from(n));
             }
-        }
+            par => {
+                let par = match par {
+                    Some(ToksSlot::Par(n)) => TokPar::from_raw(i32::from(n)),
+                    _ => None,
+                };
+                print_esc(st, par.unwrap_or(TokPar::ErrHelp).name());
+            }
+        },
         Cmd::AssignInt => match IntLoc::from_raw(chr_code).map(IntLoc::get) {
             Some(IntSlot::Count(n)) => {
                 print_esc(st, "count");

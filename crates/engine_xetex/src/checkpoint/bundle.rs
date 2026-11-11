@@ -246,6 +246,7 @@ impl EqtbBundle {
             ints: _,
             dimens: _,
             glue: _,
+            toks: _,
             prim: _,
             xeq_level: _,
             hash: _,

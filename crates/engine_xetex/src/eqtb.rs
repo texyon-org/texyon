@@ -6,10 +6,11 @@ use crate::consts::LEVEL_ONE;
 use crate::errors::Abort;
 use crate::glue_store::GlueSpecId;
 use crate::journal::{JournalWord, WordDelta, WordJournal};
-use crate::params::{DimenPar, GluePar, IntPar};
+use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::state::{
     EngineState, EqtbState, MemState, Restore, SaveEntry, SaveStackState, ScannerState,
 };
+use crate::token::TokenList;
 use crate::units::Scaled;
 
 /// A value an `eqtb` table holds.
@@ -241,7 +242,7 @@ macro_rules! tables {
     };
 }
 
-tables!(ints: i32, dimens: Scaled, glue: GlueSpecId);
+tables!(ints: i32, dimens: Scaled, glue: GlueSpecId, toks: TokenList);
 
 impl EqtbState {
     /// Gives `loc` the value `v`, globally or in the current group.
@@ -365,6 +366,7 @@ macro_rules! eq_loc {
 const INT_PARS: u16 = IntPar::COUNT as u16;
 const DIMEN_PARS: u16 = DimenPar::COUNT as u16;
 const GLUE_PARS: u16 = GluePar::COUNT as u16;
+const TOK_PARS: u16 = TokPar::COUNT as u16;
 
 eq_loc!(
     /// A location in the integer table: an integer parameter or a `\count` register.
@@ -472,6 +474,45 @@ pub(crate) enum GlueSlot {
     Par(u16),
     Skip(u16),
     MuSkip(u16),
+}
+
+impl EqValue for TokenList {
+    #[inline]
+    fn destroy(self, mem: &mut MemState, _scanner: &mut ScannerState) -> Result<(), Abort> {
+        mem.tokens.delete_ref(self);
+        Ok(())
+    }
+}
+
+eq_loc!(
+    /// A location in the token list table: a token list parameter or a `\toks` register.
+    ToksLoc, TOK_PARS as usize + 256, TokenList, toks, Toks
+);
+
+impl ToksLoc {
+    pub(crate) const fn par(p: TokPar) -> ToksLoc {
+        ToksLoc(p as u16 - TokPar::OutputRoutine as u16)
+    }
+
+    /// `\toks n`.
+    pub(crate) const fn register(n: u8) -> ToksLoc {
+        ToksLoc(TOK_PARS + n as u16)
+    }
+
+    /// The parameter or register this location is.
+    pub(crate) fn get(self) -> ToksSlot {
+        match self.0.checked_sub(TOK_PARS) {
+            Some(n) => ToksSlot::Register(n),
+            None => ToksSlot::Par(self.0 + TokPar::OutputRoutine as u16),
+        }
+    }
+}
+
+/// What a [`ToksLoc`] names.
+pub(crate) enum ToksSlot {
+    /// The parameter numbered as in [`TokPar`].
+    Par(u16),
+    Register(u16),
 }
 
 #[cfg(test)]

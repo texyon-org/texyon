@@ -13,9 +13,9 @@ use crate::consts::NULL_FONT;
 use crate::consts::{
     ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_USV, CAT_CODE_BASE, CHAR_CLASS_LIMIT, CUR_FONT_LOC,
     DEL_CODE_BASE, DESIGN_SIZE, HASH_BASE, MATH_CODE_BASE, MAX_HALFWORD, NULL_CS, PAR_SHAPE_LOC,
-    SF_CODE_BASE, SINGLE_BASE, TEX_INFINITY, TOKS_BASE, VMODE,
+    SF_CODE_BASE, SINGLE_BASE, TEX_INFINITY, VMODE,
 };
-use crate::eqtb::{self, DimenLoc, GlueLoc, IntLoc};
+use crate::eqtb::{self, DimenLoc, GlueLoc, IntLoc, ToksLoc};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::read_font_info;
@@ -576,7 +576,7 @@ enum RegisterLoc {
     Int(IntLoc),
     Dimen(DimenLoc),
     Glue(GlueLoc),
-    Eqtb(EqtbPtr),
+    Toks(ToksLoc),
     Sparse(SaLeaf),
 }
 
@@ -590,18 +590,8 @@ fn define_toks(
         RegisterLoc::Sparse(SaLeaf::Pointer(p)) => {
             sa_define(st, global, p, MemIdx::from_raw(list.raw()))
         }
-        RegisterLoc::Sparse(_)
-        | RegisterLoc::Int(_)
-        | RegisterLoc::Dimen(_)
-        | RegisterLoc::Glue(_) => Err(Abort::Confusion("toks")),
-        RegisterLoc::Eqtb(p) => {
-            let t = if list.is_null() {
-                Cmd::UndefinedCs
-            } else {
-                Cmd::Call
-            };
-            define(st, global, p, t, list.raw())
-        }
+        RegisterLoc::Toks(p) => eqtb::define(st, global, p, list),
+        _ => Err(Abort::Confusion("toks")),
     }
 }
 
@@ -904,7 +894,7 @@ fn shorthand_def(st: &mut EngineState, global: bool, n: ShorthandDefCode) -> Res
                     ShorthandDefCode::Dimen => Command::AssignDimen(DimenLoc::dimen(r)),
                     ShorthandDefCode::Skip => Command::AssignGlue(GlueLoc::skip(r)),
                     ShorthandDefCode::MuSkip => Command::AssignMuGlue(GlueLoc::mu_skip(r)),
-                    ShorthandDefCode::Toks => Command::AssignToks(TOKS_BASE + reg),
+                    ShorthandDefCode::Toks => Command::AssignToks(ToksLoc::register(r)),
                     _ => return Ok(()),
                 }
             }
@@ -919,13 +909,13 @@ fn assign_toks(st: &mut EngineState, global: bool, cmd: Command) -> Result<(), A
     let target = match cmd {
         Command::ToksRegister(r) if r.get().is_none() => {
             let n = crate::scan::scan_register_num(st)?;
-            if n > 255 {
+            if let Ok(r) = u8::try_from(n) {
+                RegisterLoc::Toks(ToksLoc::register(r))
+            } else {
                 let sa = st
                     .mem
                     .create_sa_element(&mut st.scanner, ValueLevel::Tok, n)?;
                 RegisterLoc::Sparse(sa)
-            } else {
-                RegisterLoc::Eqtb(TOKS_BASE + n)
             }
         }
         Command::ToksRegister(r) => match r.get() {
@@ -939,7 +929,7 @@ fn assign_toks(st: &mut EngineState, global: bool, cmd: Command) -> Result<(), A
                 .create_sa_element(&mut st.scanner, ValueLevel::InterChar, n)?;
             RegisterLoc::Sparse(sa)
         }
-        Command::AssignToks(loc) => RegisterLoc::Eqtb(loc),
+        Command::AssignToks(loc) => RegisterLoc::Toks(loc),
         _ => return Err(Abort::Confusion("assign_toks")),
     };
     crate::scan::scan_optional_equals(st)?;
@@ -948,8 +938,8 @@ fn assign_toks(st: &mut EngineState, global: bool, cmd: Command) -> Result<(), A
     let source = match st.scanner.cur {
         Command::ToksRegister(r) if r.get().is_none() => {
             let n = crate::scan::scan_register_num(st)?;
-            Some(if n < 256 {
-                st.eqtb.toks(n)
+            Some(if let Ok(r) = u8::try_from(n) {
+                st.eqtb.toks(r)
             } else {
                 let sa = st.mem.find_sa_element(&st.scanner, ValueLevel::Tok, n);
                 crate::scan::sa_token_list(st, sa)
@@ -963,7 +953,7 @@ fn assign_toks(st: &mut EngineState, global: bool, cmd: Command) -> Result<(), A
                 .find_sa_element(&st.scanner, ValueLevel::InterChar, n);
             Some(crate::scan::sa_token_list(st, sa))
         }
-        Command::AssignToks(loc) => Some(st.eqtb.equiv_tokens(loc)),
+        Command::AssignToks(loc) => Some(st.eqtb.toks.get(loc)),
         _ => None,
     };
     if let Some(list) = source {
@@ -981,7 +971,7 @@ fn assign_toks(st: &mut EngineState, global: bool, cmd: Command) -> Result<(), A
         st.mem.tokens.flush(def_ref);
         return Ok(());
     }
-    if target == RegisterLoc::Eqtb(TokPar::OutputRoutine.loc()) {
+    if target == RegisterLoc::Toks(TokPar::OutputRoutine.loc()) {
         st.mem.tokens.append(def_ref, Token::right_brace(b'}'))?;
         st.mem.tokens.prepend(def_ref, Token::left_brace(b'{'))?;
     }

@@ -13,7 +13,7 @@ use crate::consts::{
     HISTORY_WARNING_ISSUED, IGNORE_DEPTH, INT_BASE, LC_CODE_BASE, LEVEL_ONE, LEVEL_ZERO,
     MATH_CODE_BASE, MATH_FONT_BASE, MAX_FONT_MAX, MAX_HALFWORD, NORMAL, NULL_FONT,
     NUMBER_MATH_FAMILIES, NUMBER_USVS, PAR_SHAPE_LOC, PRIM_SIZE, SF_CODE_BASE, SINGLE_BASE,
-    TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, VMODE,
+    TEX_NULL, TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, VMODE,
 };
 use crate::errors::Abort;
 use crate::format_io::load_fmt_file;
@@ -29,7 +29,7 @@ use crate::mem::{
 use crate::mem_types::zeroed_vec;
 use crate::node::{NodePtr, PageInsNode};
 use crate::packaging::MarksAction;
-use crate::params::{IntPar, TokPar};
+use crate::params::IntPar;
 use crate::scan::{set_class, set_family};
 use crate::stack::TexStack;
 use crate::state::{
@@ -378,7 +378,6 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     let eqtb = &mut st.eqtb;
     eqtb.meanings.fill(Command::UndefinedCs);
     eqtb.cs_levels.fill(LEVEL_ZERO);
-    let undefined_entry = EqtbState::entry(Cmd::UndefinedCs, TEX_NULL, LEVEL_ZERO);
 
     let zero_glue_refs = st.mem[ZERO_GLUE].ref_count + 531;
     st.mem[ZERO_GLUE].ref_count = zero_glue_refs;
@@ -390,9 +389,6 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
         ETEX_PEN_BASE + NUM_ETEX_PENALTIES,
         par_shape_entry,
     );
-
-    let toks_end = TOKS_BASE + NUMBER_REGS;
-    eqtb.fill(TokPar::OutputRoutine.loc(), toks_end, undefined_entry);
 
     eqtb.set_eq(BOX_BASE, Cmd::BoxRef, TEX_NULL, LEVEL_ONE);
     let box_base_entry = eqtb.word(BOX_BASE);

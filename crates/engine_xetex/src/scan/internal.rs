@@ -284,8 +284,8 @@ fn fetch_token_list(
     Ok(match cmd {
         Command::ToksRegister(r) if r.get().is_none() => {
             let n = scan_register_num(st)?;
-            CurVal::Tok(if n < 256 {
-                st.eqtb.toks(n)
+            CurVal::Tok(if let Ok(r) = u8::try_from(n) {
+                st.eqtb.toks(r)
             } else {
                 let sa = find_sa(st, ValueLevel::Tok, n);
                 sa_token_list(st, sa)
@@ -302,7 +302,7 @@ fn fetch_token_list(
             let sa = find_sa(st, ValueLevel::InterChar, n);
             CurVal::Tok(sa_token_list(st, sa))
         }
-        Command::AssignToks(loc) => CurVal::Tok(st.eqtb.equiv_tokens(loc)),
+        Command::AssignToks(loc) => CurVal::Tok(st.eqtb.toks.get(loc)),
         _ => {
             back_input(st)?;
             let f = scan_font_ident(st)?;
