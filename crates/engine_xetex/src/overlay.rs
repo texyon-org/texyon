@@ -21,8 +21,8 @@ use crate::node::{
     MathAccentKind, MathCode, MathNode, NativeWordNode, Noad, NodeKind, NodePtr, OpenNode,
     PageInsNode, ParShapeNode, PenaltiesNode, PenaltyNode, PicNode, PseudoFileNode, PseudoLineNode,
     RadicalNoad, RuleNode, SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode,
-    SaSaved, SaSavedPointer, SaSavedWord, SaWordNode, SavePosNode, SizedWhatsit, SpanNode, Stored,
-    StoredDimen, StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype, WriteNode,
+    SaSaved, SaSavedPointer, SaSavedWord, SaWordNode, SavePosNode, SpanNode, Stored, StoredDimen,
+    StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype, WriteNode,
 };
 use crate::payload::PayloadId;
 use crate::state::MemState;
@@ -423,19 +423,13 @@ impl NativeWordLayout {
 overlay!(NativeWordNode => NativeWordLayout);
 array_overlay!(NativeWordNode => u16, text, |h| i32::from(h.length));
 
-/// The dimensions a native word, glyph and picture share.
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct SizedWhatsitLayout {
-    pub subtype: Stored<WhatsitSubtype>,
-    _type: u16,
-    pub link: MemPtr,
+/// The box dimensions of a native word, glyph or picture.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct Dims {
     pub width: Scaled,
     pub depth: Scaled,
     pub height: Scaled,
 }
-
-overlay!(SizedWhatsit => SizedWhatsitLayout, 5);
 
 /// A box's glue ratio, an `f64` kept as two words so layouts stay 4-byte aligned.
 #[repr(transparent)]
@@ -763,19 +757,17 @@ impl DelimiterWord {
     }
 }
 
-/// The words every noad shares: the header, then a payload word whose upper
-/// half holds the translated hlist once `mlist_to_hlist` has converted the noad.
+/// The words every noad starts with: the header, then the hlist `mlist_to_hlist` translates it to.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct NoadHead {
     _subtype: u16,
     pub noad_type: Stored<NodeType>,
     pub link: MemPtr,
-    _payload: i32,
     pub new_hlist: MemPtr,
 }
 
-overlay!(AnyNoad => NoadHead, 4);
+overlay!(AnyNoad => NoadHead);
 
 /// A noad with a nucleus and two scripts.
 #[repr(C)]
@@ -784,6 +776,7 @@ pub struct NoadLayout {
     subtype: u16,
     pub noad_type: Stored<NodeType>,
     pub link: MemPtr,
+    pub new_hlist: MemPtr,
     pub nucleus: MathWord,
     pub supscr: MathWord,
     pub subscr: MathWord,
@@ -796,6 +789,7 @@ impl NoadLayout {
     #[inline]
     pub fn clear_fields(&mut self) {
         self.subtype = NORMAL;
+        self.new_hlist = MemPtr::NULL;
         self.nucleus.clear();
         self.supscr.clear();
         self.subscr.clear();
@@ -854,6 +848,7 @@ pub struct FractionLayout {
     _subtype: u16,
     pub noad_type: Stored<NodeType>,
     pub link: MemPtr,
+    pub new_hlist: MemPtr,
     /// The rule thickness, `DEFAULT_CODE` for the font's.
     pub thickness: Scaled,
     pub numerator: MathWord,
@@ -872,6 +867,7 @@ pub struct FenceLayout {
     pub subtype: Stored<FenceSubtype>,
     pub noad_type: Stored<NodeType>,
     pub link: MemPtr,
+    pub new_hlist: MemPtr,
     pub delimiter: DelimiterWord,
     pub supscr: MathWord,
     pub subscr: MathWord,
@@ -1313,8 +1309,6 @@ same_offset!(
     PicLayout.link == NodeHeader.link,
     NativeWordLayout._type == NodeHeader.ty,
     NativeWordLayout.link == NodeHeader.link,
-    SizedWhatsitLayout._type == NodeHeader.ty,
-    SizedWhatsitLayout.link == NodeHeader.link,
     KernLayout._type == NodeHeader.ty,
     KernLayout.link == NodeHeader.link,
     MathLayout._type == NodeHeader.ty,
@@ -1386,20 +1380,14 @@ same_offset!(
     GlueLayout.sync_line == KernLayout.sync_line,
     // Shared heads read before the kind is known.
     NoadLayout.link == NoadHead.link,
+    NoadLayout.new_hlist == NoadHead.new_hlist,
+    FractionLayout.new_hlist == NoadHead.new_hlist,
+    FenceLayout.new_hlist == NoadHead.new_hlist,
     FractionLayout.link == NoadHead.link,
     FenceLayout.link == NoadHead.link,
     NoadLayout.noad_type == NoadHead.noad_type,
     FractionLayout.noad_type == NoadHead.noad_type,
     FenceLayout.noad_type == NoadHead.noad_type,
-    GlyphLayout.width == SizedWhatsitLayout.width,
-    GlyphLayout.depth == SizedWhatsitLayout.depth,
-    GlyphLayout.height == SizedWhatsitLayout.height,
-    PicLayout.width == SizedWhatsitLayout.width,
-    PicLayout.depth == SizedWhatsitLayout.depth,
-    PicLayout.height == SizedWhatsitLayout.height,
-    NativeWordLayout.width == SizedWhatsitLayout.width,
-    NativeWordLayout.depth == SizedWhatsitLayout.depth,
-    NativeWordLayout.height == SizedWhatsitLayout.height,
     SaWordLayout.sa_index == SaElementHead.sa_index,
     SaPointerLayout.sa_index == SaElementHead.sa_index,
     SaMarkClassLayout.sa_index == SaElementHead.sa_index,
@@ -1639,29 +1627,36 @@ mod tests {
     }
 
     #[test]
-    fn sized_whatsits_share_their_dimension_words() {
+    fn native_words_and_glyphs_have_dims_and_other_whatsits_none() {
         let mut mem = MemState {
-            data: vec![Default::default(); 24],
+            data: vec![Default::default(); 32],
             ..Default::default()
         };
         let at = MemIdx::from_raw;
         let w = native_word_at(&mut mem, 2, &[]);
-        mem[w].depth = Scaled::from_raw(5);
-        let g: NodePtr<GlyphNode> = NodePtr::from_idx_unchecked(at(2 + NativeWordNode::SIZE));
+        (mem[w].width, mem[w].depth, mem[w].height) = (
+            Scaled::from_raw(1),
+            Scaled::from_raw(2),
+            Scaled::from_raw(3),
+        );
+        let g_at = 2 + NativeWordNode::SIZE;
+        let g: NodePtr<GlyphNode> = NodePtr::from_idx_unchecked(at(g_at));
         mem[g].subtype = WhatsitSubtype::Glyph.into();
-        mem[g].height = Scaled::from_raw(6);
-        let sized = |mem: &MemState, p: NodePtr<WhatsitNode>| p.sized(mem).map(|s| mem[s]);
-        assert_eq!(
-            sized(&mem, w.whatsit()).map(|s| s.depth),
-            Some(Scaled::from_raw(5))
+        (mem[g].width, mem[g].depth, mem[g].height) = (
+            Scaled::from_raw(4),
+            Scaled::from_raw(5),
+            Scaled::from_raw(6),
         );
-        assert_eq!(
-            sized(&mem, g.whatsit()).map(|s| s.height),
-            Some(Scaled::from_raw(6))
-        );
-        let l: NodePtr<LanguageNode> = NodePtr::from_idx_unchecked(at(16));
+        let l: NodePtr<LanguageNode> = NodePtr::from_idx_unchecked(at(g_at + GlyphNode::SIZE));
         mem[l].subtype = WhatsitSubtype::Language.into();
-        assert!(l.whatsit().sized(&mem).is_none());
+        let dims = |width, depth, height| Dims {
+            width: Scaled::from_raw(width),
+            depth: Scaled::from_raw(depth),
+            height: Scaled::from_raw(height),
+        };
+        assert_eq!(w.whatsit().dims(&mem), Some(dims(1, 2, 3)));
+        assert_eq!(g.whatsit().dims(&mem), Some(dims(4, 5, 6)));
+        assert_eq!(l.whatsit().dims(&mem), None);
     }
 
     #[test]

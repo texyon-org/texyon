@@ -342,6 +342,7 @@ impl ListStateRecord {
         self.set_incompleat_noad(Some(fraction));
         let list = self.head.link(mem);
         let f = &mut mem[fraction];
+        f.new_hlist = MemPtr::NULL;
         f.numerator.math_type = SUB_MLIST;
         f.numerator.set_info(list);
         f.denominator.clear();
@@ -448,6 +449,7 @@ impl MemState {
         let p = NodePtr::<FenceNoad>::alloc(self)?;
         let n = &mut self[p];
         n.subtype = FenceSubtype::Normal.into();
+        n.new_hlist = MemPtr::NULL;
         n.delimiter.clear();
         n.supscr.clear();
         n.subscr.clear();

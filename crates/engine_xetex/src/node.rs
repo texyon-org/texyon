@@ -734,8 +734,6 @@ node_kinds! {
     PicNode = Whatsit;
     /// A run of text in one native font, the UTF-16 text in the payload.
     NativeWordNode = Whatsit;
-    /// A native word, glyph or picture, through the dimensions they share.
-    SizedWhatsit;
     /// An alignment box before its column widths are known. Words +4..+6 hold
     /// the accumulated shrink, span count and stretch instead of box glue.
     UnsetNode;
@@ -1102,7 +1100,7 @@ impl AnyNode {
             AnyNode::Rule(p) => mem[p].width.to_scaled(),
             AnyNode::Kern(p) => mem[p].width,
             AnyNode::Math(p) => mem[p].width,
-            AnyNode::Whatsit(p) => p.sized(mem).map_or(Scaled::ZERO, |s| mem[s].width),
+            AnyNode::Whatsit(p) => p.dims(mem).map_or(Scaled::ZERO, |d| d.width),
             _ => Scaled::ZERO,
         }
     }
@@ -1578,17 +1576,6 @@ impl WhatsitSubtype {
         })
     }
 
-    pub fn has_dimensions(self) -> bool {
-        matches!(
-            self,
-            WhatsitSubtype::NativeWord
-                | WhatsitSubtype::NativeWordAt
-                | WhatsitSubtype::Glyph
-                | WhatsitSubtype::Pic
-                | WhatsitSubtype::Pdf
-        )
-    }
-
     pub fn is_native_word(self) -> bool {
         matches!(
             self,
@@ -1684,12 +1671,18 @@ impl NodePtr<WhatsitNode> {
 
     /// The whatsit's dimensions, for a native word, glyph or picture.
     #[inline]
-    pub fn sized(self, mem: &MemState) -> Option<NodePtr<SizedWhatsit>> {
-        mem[self]
-            .subtype
-            .get()?
-            .has_dimensions()
-            .then_some(NodePtr::from_idx_unchecked(self.idx))
+    pub fn dims(self, mem: &MemState) -> Option<crate::overlay::Dims> {
+        let dims = |width, depth, height| crate::overlay::Dims {
+            width,
+            depth,
+            height,
+        };
+        match self.variant(mem)? {
+            WhatsitVariant::NativeWord(w) => Some(dims(mem[w].width, mem[w].depth, mem[w].height)),
+            WhatsitVariant::Glyph(g) => Some(dims(mem[g].width, mem[g].depth, mem[g].height)),
+            WhatsitVariant::Pic(p) => Some(dims(mem[p].width, mem[p].depth, mem[p].height)),
+            _ => None,
+        }
     }
 
     #[inline]

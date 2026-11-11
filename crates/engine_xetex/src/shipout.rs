@@ -1488,8 +1488,8 @@ impl MemState {
                         now_kern = true;
                     }
                     Ok(AnyNode::Whatsit(w)) => {
-                        if let Some(sized) = w.sized(self) {
-                            wd = self[sized].width;
+                        if let Some(dims) = w.dims(self) {
+                            wd = dims.width;
                         } else {
                             add_width = false;
                         }

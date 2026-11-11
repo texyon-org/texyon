@@ -414,8 +414,7 @@ impl MemState {
                         x += self[native].width;
                     }
                     _ => {
-                        if let Some(sized) = w.sized(self) {
-                            let sized = self[sized];
+                        if let Some(sized) = w.dims(self) {
                             h = h.max(sized.height);
                             d = d.max(sized.depth);
                             x += sized.width;

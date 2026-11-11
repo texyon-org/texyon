@@ -252,7 +252,7 @@ impl MemState {
             Ok(node @ (AnyNode::Box(_) | AnyNode::Rule(_) | AnyNode::Kern(_))) => {
                 Ok(node.hlist_width(self))
             }
-            Ok(AnyNode::Whatsit(w)) => w.sized(self).map(|s| self[s].width).ok_or(true),
+            Ok(AnyNode::Whatsit(w)) => w.dims(self).map(|d| d.width).ok_or(true),
             _ => Err(false),
         }
     }
@@ -436,8 +436,8 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNod
                 AnyNode::Whatsit(w) => {
                     if let Some(WhatsitVariant::Language(language)) = w.variant(&st.mem) {
                         set_language(st, language);
-                    } else if let Some(sized) = w.sized(&st.mem) {
-                        lb.active_width[1] += st.mem[sized].width;
+                    } else if let Some(dims) = w.dims(&st.mem) {
+                        lb.active_width[1] += dims.width;
                     }
                 }
                 AnyNode::Glue(cur_glue) => {

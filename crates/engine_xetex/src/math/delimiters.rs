@@ -232,8 +232,7 @@ pub(super) fn build_opentype_assembly(
     while !p.is_null() {
         match st.mem.classify(p) {
             Ok(AnyNode::Whatsit(pw)) => {
-                if let Some(sized) = pw.sized(&st.mem) {
-                    let sized = st.mem[sized];
+                if let Some(sized) = pw.dims(&st.mem) {
                     if horiz {
                         nat += sized.width;
                     } else {

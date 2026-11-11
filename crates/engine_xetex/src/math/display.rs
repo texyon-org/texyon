@@ -581,8 +581,8 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                             }
                             (st.mem[spec].width, st.mem[g].leaders().is_some())
                         }
-                        Ok(AnyNode::Whatsit(wn)) => match wn.sized(&st.mem) {
-                            Some(sized) => (st.mem[sized].width, true),
+                        Ok(AnyNode::Whatsit(wn)) => match wn.dims(&st.mem) {
+                            Some(dims) => (dims.width, true),
                             None => (Scaled::ZERO, false),
                         },
                         _ => (Scaled::ZERO, false),
