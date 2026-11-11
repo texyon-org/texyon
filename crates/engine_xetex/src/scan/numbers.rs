@@ -13,6 +13,7 @@ use crate::errors::{mu_error, Abort};
 use crate::fonts::{QUAD_CODE, X_HEIGHT_CODE};
 use crate::glue_store::GlueSpecId;
 use crate::input::back_input;
+use crate::mem::ZERO_GLUE;
 use crate::params::IntPar;
 use crate::scaled_math::{add_or_sub, fract, mult_and_add, quotient, xn_over_d, Overflowing};
 use crate::scan::Command;
@@ -713,7 +714,7 @@ pub(crate) fn scan_glue(st: &mut EngineState, level: ValueLevel) -> Result<GlueS
             }
         };
 
-    let gs = st.mem.new_spec(crate::mem::ZERO_GLUE)?;
+    let gs = st.mem.new_spec(ZERO_GLUE)?;
     st.mem[gs].width = width;
 
     if scan_keyword(st, "plus")? {
@@ -877,7 +878,7 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
                 {
                     b = true;
                     st.mem.delete_glue_ref(glue_spec(f));
-                    f = st.mem.new_spec(crate::mem::ZERO_GLUE)?.raw();
+                    f = st.mem.new_spec(ZERO_GLUE)?.raw();
                 }
             }
 
@@ -972,10 +973,9 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
         )?;
         if l >= ValueLevel::Glue {
             st.mem.delete_glue_ref(glue_spec(e));
-            e = 0;
-            let zero_glue = glue_spec(e);
-            let refs = st.mem[zero_glue].ref_count;
-            st.mem[zero_glue].ref_count = refs + 1;
+            e = ZERO_GLUE.raw();
+            let refs = st.mem[ZERO_GLUE].ref_count;
+            st.mem[ZERO_GLUE].ref_count = refs + 1;
         } else {
             e = 0;
         }

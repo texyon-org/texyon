@@ -330,6 +330,7 @@ fn fetch_register(st: &mut EngineState, r: RegisterRef) -> Result<CurVal, Abort>
     let n = scan_register_num(st)?;
     let word = if n > 255 {
         match find_sa(st, level, n) {
+            None if level >= ValueLevel::Glue => ZERO_GLUE.raw(),
             None => 0,
             Some(leaf) => sa_register_word(st, leaf)?,
         }
