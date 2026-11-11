@@ -167,7 +167,11 @@ impl TokenList {
     /// The list's index in the table, `None` for the null list.
     #[inline(always)]
     fn slot(self) -> Option<usize> {
-        usize::try_from(self.0).ok().filter(|&i| i != 0)
+        if self.0 > 0 {
+            usize::try_from(self.0).ok()
+        } else {
+            None
+        }
     }
 }
 
