@@ -353,8 +353,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     mem.set_header(PAGE_HEAD, NodeType::Glue, NORMAL);
 
     let eqtb = &mut st.eqtb;
-    eqtb.meanings.fill(Command::UndefinedCs);
-    eqtb.cs_levels.fill(LEVEL_ZERO);
+    eqtb.meanings.fill(Command::UndefinedCs, LEVEL_ZERO);
 
     let zero_glue_refs = st.mem[ZERO_GLUE].ref_count + 531;
     st.mem[ZERO_GLUE].ref_count = zero_glue_refs;

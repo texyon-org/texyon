@@ -571,19 +571,12 @@ fn commit(st: &mut EngineState, known: &KnownCs, answer: &Answer) -> Result<(), 
         Answer::Parsed(outcome) => {
             if outcome.units {
                 let m = st.eqtb.meaning(known.if_true());
-                st.eqtb
-                    .geq_define_cs(&mut st.mem, &mut st.scanner, known.units_declared(), m)?;
+                crate::eqtb::define(st, true, known.units_declared(), m)?;
             }
             result_macro(st, &outcome.result)?
         }
     };
-    st.eqtb.eq_define_cs(
-        &mut st.save_stack,
-        &mut st.mem,
-        &mut st.scanner,
-        known.result(),
-        Command::Call(body),
-    )
+    crate::eqtb::define(st, false, known.result(), Command::Call(body))
 }
 
 fn compare(st: &EngineState, known: &KnownCs, stats: &mut Stats, pending: &Pending, number: bool) {
@@ -899,13 +892,7 @@ pub(crate) fn native_macro(st: &mut EngineState, kind: Native, args: &[TokenList
             match effect {
                 Effect::Define { cs, text } => {
                     let body = result_macro(st, &text)?;
-                    st.eqtb.eq_define_cs(
-                        &mut st.save_stack,
-                        &mut st.mem,
-                        &mut st.scanner,
-                        cs,
-                        Command::Call(body),
-                    )?;
+                    crate::eqtb::define(st, false, cs, Command::Call(body))?;
                 }
                 Effect::Comparison(value) => {
                     let source = if value {
@@ -915,8 +902,7 @@ pub(crate) fn native_macro(st: &mut EngineState, kind: Native, args: &[TokenList
                     };
                     let m = st.eqtb.meaning(source);
                     let flag = known.comparison().expect("comparison");
-                    st.eqtb
-                        .geq_define_cs(&mut st.mem, &mut st.scanner, flag, m)?;
+                    crate::eqtb::define(st, true, flag, m)?;
                 }
             }
         }

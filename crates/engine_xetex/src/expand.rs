@@ -845,13 +845,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                 st.mem.tokens.flush(name);
                 let cs = st.scanner.cur_cs;
                 if st.eqtb.meaning(cs).cmd() == Cmd::UndefinedCs {
-                    let _ = st.eqtb.eq_define_cs(
-                        &mut st.save_stack,
-                        &mut st.mem,
-                        &mut st.scanner,
-                        cs,
-                        Command::Relax(RelaxCode::Primitive),
-                    );
+                    crate::eqtb::define(st, false, cs, Command::Relax(RelaxCode::Primitive))?;
                 }
                 st.scanner.cur_tok = Token::from_cs(st.scanner.cur_cs);
                 back_input(st)?;

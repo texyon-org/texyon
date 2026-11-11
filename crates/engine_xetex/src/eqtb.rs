@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 
 use crate::cmd::Cmd;
 use crate::codes::code_enum;
+use crate::command::Command;
 use crate::consts::LEVEL_ONE;
 use crate::errors::Abort;
 use crate::glue_store::GlueSpecId;
@@ -14,7 +15,7 @@ use crate::state::{
     EngineState, EqtbState, MemState, Restore, SaveEntry, SaveStackState, ScannerState,
 };
 use crate::token::TokenList;
-use crate::units::{FontId, MemPtr, Scaled};
+use crate::units::{CsId, FontId, MemPtr, Scaled};
 
 /// A value an `eqtb` table holds.
 pub(crate) trait EqValue: JournalWord + PartialEq {
@@ -28,6 +29,32 @@ pub(crate) trait EqValue: JournalWord + PartialEq {
 impl EqValue for i32 {}
 impl EqValue for FontId {}
 impl EqValue for Cmd {}
+
+impl EqValue for Command {
+    #[inline]
+    fn destroy(self, mem: &mut MemState, scanner: &mut ScannerState) -> Result<(), Abort> {
+        mem.destroy_meaning(scanner, self)
+    }
+}
+
+impl EqLoc for CsId {
+    type Value = Command;
+    #[inline(always)]
+    fn index(self) -> usize {
+        CsId::index(self)
+    }
+    #[inline(always)]
+    fn table(eqtb: &EqtbState) -> &Table<Self, Command> {
+        &eqtb.meanings
+    }
+    #[inline(always)]
+    fn table_mut(eqtb: &mut EqtbState) -> &mut Table<Self, Command> {
+        &mut eqtb.meanings
+    }
+    fn restore(old: Old<Self>) -> Restore {
+        Restore::Cs(old)
+    }
+}
 impl EqValue for Scaled {}
 
 /// A location in one of the tables.
@@ -72,10 +99,27 @@ impl<I, T: Copy> Default for Table<I, T> {
 impl<I: EqLoc<Value = T>, T: EqValue> Table<I, T> {
     /// `len` locations holding `value` at level one.
     pub(crate) fn new(len: usize, value: T) -> Self {
+        Self::at_level(len, value, LEVEL_ONE)
+    }
+
+    /// `len` locations holding `value` at `level`.
+    pub(crate) fn at_level(len: usize, value: T, level: u16) -> Self {
         Self {
             values: vec![value; len],
-            levels: vec![LEVEL_ONE; len],
+            levels: vec![level; len],
             ..Self::default()
+        }
+    }
+
+    /// Sets every location to `value` at `level`.
+    pub(crate) fn fill(&mut self, value: T, level: u16) {
+        for k in 0..self.values.len() {
+            if self.values_journal.armed() {
+                self.values_journal.note(k, self.values[k]);
+                self.levels_journal.note(k, self.levels[k]);
+            }
+            self.values[k] = value;
+            self.levels[k] = level;
         }
     }
 
@@ -253,6 +297,7 @@ macro_rules! tables {
 }
 
 tables!(
+    meanings: Command,
     ints: i32,
     dimens: Scaled,
     glue: GlueSpecId,

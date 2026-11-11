@@ -353,16 +353,12 @@ fn first_sighting(seen: &mut Vec<u64>, index: u32) -> bool {
 
 #[derive(Default)]
 pub(crate) struct EqtbJournal {
-    pub(crate) meanings: WordJournal<crate::command::Command>,
-    pub(crate) cs_levels: WordJournal<u16>,
     pub(crate) hash: PlainTrail<crate::mem_types::B32x2>,
     pub(crate) prim: PlainTrail<crate::mem_types::B32x2>,
 }
 
 impl EqtbJournal {
     fn disarm(&mut self) {
-        self.meanings.disarm();
-        self.cs_levels.disarm();
         self.hash.disarm();
         self.prim.disarm();
     }
@@ -372,8 +368,6 @@ pub(crate) fn arm(st: &mut crate::state::EngineState) {
     st.mem.journal.arm(st.mem.data.len());
     st.mem.tokens.arm_journal();
     st.mem.glue.journal.arm(st.mem.glue.specs().len());
-    st.eqtb.journal.meanings.arm(st.eqtb.meanings.len());
-    st.eqtb.journal.cs_levels.arm(st.eqtb.cs_levels.len());
     st.eqtb.journal.hash.arm();
     st.eqtb.journal.prim.arm();
     st.eqtb.arm_tables();
@@ -631,20 +625,15 @@ mod tests {
         let cs = crate::consts::HASH_BASE;
         let mut eqtb = crate::state::EqtbState {
             hash: vec![B32x2 { s0: 0, s1: 0 }; 1],
-            meanings: vec![Command::UndefinedCs; cs.index() + 1],
-            cs_levels: vec![0; cs.index() + 1],
+            meanings: crate::eqtb::Table::at_level(cs.index() + 1, Command::UndefinedCs, 0),
             ..Default::default()
         };
         eqtb.journal.hash.arm();
-        eqtb.journal.meanings.arm(eqtb.meanings.len());
-        eqtb.journal.cs_levels.arm(eqtb.cs_levels.len());
+        eqtb.arm_tables();
         eqtb.set_text(cs, crate::units::StrNumber::from_raw(6));
         eqtb.set_meaning(cs, Command::Halign, 3);
         eqtb.journal.hash.seal().apply_to(&mut eqtb.hash);
-        let meanings = eqtb.journal.meanings.seal(&eqtb.meanings);
-        meanings.apply_to(&mut eqtb.meanings);
-        let levels = eqtb.journal.cs_levels.seal(&eqtb.cs_levels);
-        levels.apply_to(&mut eqtb.cs_levels);
+        eqtb.seal_tables().apply_to(&mut eqtb);
         assert_eq!(eqtb.hash[0].s1, 0);
         assert_eq!(
             (eqtb.meaning(cs), eqtb.cs_level(cs)),

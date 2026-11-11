@@ -332,6 +332,12 @@ pub(crate) enum Command {
     DontExpand = Cmd::DontExpand as u8,
 }
 
+impl std::hash::Hash for Command {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.encode().hash(state);
+    }
+}
+
 impl crate::state::ScannerState {
     /// The code of the current `\fi`, `\else` or `\or`, `None` for any other command.
     #[inline]

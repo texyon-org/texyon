@@ -936,7 +936,7 @@ fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort>
 
 /// Rejects a format whose eqtb names a font it does not load.
 fn check_font_words(eqtb: &EqtbState, font_ptr: FontId) -> Result<(), Abort> {
-    let meanings_ok = eqtb.meanings.iter().all(|m| match m {
+    let meanings_ok = eqtb.meanings.values().iter().all(|m| match m {
         Command::SetFont(f) => *f <= font_ptr,
         _ => true,
     });

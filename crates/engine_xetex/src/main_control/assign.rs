@@ -32,7 +32,6 @@ use crate::scaled_math::{mult_and_add, x_over_n, xn_over_d};
 use crate::scan::fetch_box;
 use crate::state::{EngineState, InteractionMode, MemState, Selector};
 use crate::token::{Token, TokenList};
-use crate::units::CsId;
 use crate::units::MemIdx;
 use crate::units::RawPtr;
 use crate::units::{FontId, GlueOrder, MemPtr, Scaled, StrNumber};
@@ -186,7 +185,7 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     };
 
     let global = a >= 4;
-    define_cs(st, global, u, Command::SetFont(NULL_FONT))?;
+    eqtb::define(st, global, u, Command::SetFont(NULL_FONT))?;
     crate::scan::scan_optional_equals(st)?;
     let scanned = crate::io::scan_file_name(st)?;
     let file = scanned.file;
@@ -259,7 +258,7 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         read_font_info(st, u, &scanned, s)?
     };
 
-    define_cs(st, global, u, Command::SetFont(f))?;
+    eqtb::define(st, global, u, Command::SetFont(f))?;
     let (m, level) = (st.eqtb.meaning(u), st.eqtb.cs_level(u));
     st.eqtb.set_meaning(f.id_loc(), m, level);
     st.eqtb.set_text(f.id_loc(), t);
@@ -478,21 +477,6 @@ pub(super) fn do_assignments(st: &mut EngineState) -> Result<(), Abort> {
     }
 }
 
-/// Gives control sequence `cs` the meaning `m`.
-pub(super) fn define_cs(
-    st: &mut EngineState,
-    global: bool,
-    cs: CsId,
-    m: Command,
-) -> Result<(), Abort> {
-    if global {
-        st.eqtb.geq_define_cs(&mut st.mem, &mut st.scanner, cs, m)
-    } else {
-        st.eqtb
-            .eq_define_cs(&mut st.save_stack, &mut st.mem, &mut st.scanner, cs, m)
-    }
-}
-
 pub(super) fn sa_define(
     st: &mut EngineState,
     global: bool,
@@ -634,7 +618,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                     .prepend(st.scanner.def_ref, Token::PROTECTED)?;
             }
             let m = Command::call(st.scanner.def_ref, a % 2 == 1, a % 4 >= 2);
-            define_cs(st, a >= 4, p, m)?;
+            eqtb::define(st, a >= 4, p, m)?;
         }
         Command::Let { future } => {
             crate::scan::get_r_token(st)?;
@@ -674,7 +658,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             } else if let Some(sa) = sparse {
                 st.mem.add_sa_ref(sa)?;
             }
-            define_cs(st, a >= 4, p, m)?;
+            eqtb::define(st, a >= 4, p, m)?;
         }
         Command::ShorthandDef(code) => {
             if code == ShorthandDefCode::CharSub {
@@ -702,7 +686,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             crate::scan::get_r_token(st)?;
             let p = st.scanner.cur_cs;
             let list = crate::scan::read_toks(st, n, p, line)?;
-            define_cs(st, a >= 4, p, Command::Call(list))?;
+            eqtb::define(st, a >= 4, p, Command::Call(list))?;
         }
         cmd @ (Command::ToksRegister(_) | Command::AssignToks(_)) => assign_toks(st, a >= 4, cmd)?,
         Command::AssignInt(p) => {
@@ -829,7 +813,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
 fn shorthand_def(st: &mut EngineState, global: bool, n: ShorthandDefCode) -> Result<(), Abort> {
     crate::scan::get_r_token(st)?;
     let p = st.scanner.cur_cs;
-    define_cs(st, global, p, Command::Relax(RelaxCode::Primitive))?;
+    eqtb::define(st, global, p, Command::Relax(RelaxCode::Primitive))?;
     crate::scan::scan_optional_equals(st)?;
     let m = match n {
         ShorthandDefCode::Char => {
@@ -873,7 +857,7 @@ fn shorthand_def(st: &mut EngineState, global: bool, n: ShorthandDefCode) -> Res
             }
         }
     };
-    define_cs(st, global, p, m)?;
+    eqtb::define(st, global, p, m)?;
     Ok(())
 }
 

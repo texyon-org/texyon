@@ -251,17 +251,16 @@ fn digest_save_entry(h: &mut Fnv, entry: &SaveEntry) {
                 line,
             ]);
         }
-        SaveEntry::Restore(Restore::Cs { cs, old, level }) => {
-            let (cmd, chr) = old.encode();
+        SaveEntry::Restore(Restore::Cs(o)) => {
+            let (cmd, chr) = o.value.encode();
             h.i32s(&[
                 1,
-                cs.raw(),
+                o.loc.raw(),
                 i32::from(u16::from(cmd)),
                 chr,
-                i32::from(level),
+                i32::from(o.level),
             ]);
         }
-        SaveEntry::Restore(Restore::CsUndefined(cs)) => h.i32s(&[2, cs.raw()]),
         SaveEntry::Restore(Restore::Cat(o)) => {
             h.i32s(&[14, o.loc.raw(), o.value.raw(), i32::from(o.level)]);
         }

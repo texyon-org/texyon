@@ -20,8 +20,6 @@ struct EngineDelta {
     mem: WordDelta<u32>,
     tokens: crate::token::TokenDelta,
     glue: WordDelta<GlueSpec>,
-    meanings: WordDelta<crate::command::Command>,
-    cs_levels: WordDelta<u16>,
     tables: crate::eqtb::TablesDelta,
     hash: PlainDelta<B32x2>,
     prim: PlainDelta<B32x2>,
@@ -40,8 +38,6 @@ impl EngineDelta {
             mem: st.mem.journal.seal(&st.mem.data),
             tokens: st.mem.tokens.seal_journal(),
             glue: st.mem.glue.seal_journal(),
-            meanings: st.eqtb.journal.meanings.seal(&st.eqtb.meanings),
-            cs_levels: st.eqtb.journal.cs_levels.seal(&st.eqtb.cs_levels),
             tables: st.eqtb.seal_tables(),
             hash: st.eqtb.journal.hash.seal(),
             prim: st.eqtb.journal.prim.seal(),
@@ -56,8 +52,6 @@ impl EngineDelta {
             mem: st.mem.journal.snapshot(),
             tokens: st.mem.tokens.snapshot_journal(),
             glue: st.mem.glue.journal.snapshot(),
-            meanings: st.eqtb.journal.meanings.snapshot(),
-            cs_levels: st.eqtb.journal.cs_levels.snapshot(),
             tables: st.eqtb.snapshot_tables(),
             hash: st.eqtb.journal.hash.snapshot(),
             prim: st.eqtb.journal.prim.snapshot(),
@@ -69,8 +63,6 @@ impl EngineDelta {
         self.mem.apply_to(&mut st.mem.data);
         st.mem.tokens.apply(&self.tokens);
         self.glue.apply_to(st.mem.glue.specs_mut());
-        self.meanings.apply_to(&mut st.eqtb.meanings);
-        self.cs_levels.apply_to(&mut st.eqtb.cs_levels);
         self.tables.apply_to(&mut st.eqtb);
         self.hash.apply_to(&mut st.eqtb.hash);
         self.prim.apply_to(&mut st.eqtb.prim);
@@ -81,8 +73,6 @@ impl EngineDelta {
         self.mem.compose_with_older(older.mem);
         self.tokens.compose_with_older(older.tokens);
         self.glue.compose_with_older(older.glue);
-        self.meanings.compose_with_older(older.meanings);
-        self.cs_levels.compose_with_older(older.cs_levels);
         self.tables.compose_with_older(older.tables);
         self.hash.compose_with_older(older.hash);
         self.prim.compose_with_older(older.prim);
@@ -94,8 +84,6 @@ impl EngineDelta {
         self.mem.compact();
         self.tokens.compact();
         self.glue.compact();
-        self.meanings.compact();
-        self.cs_levels.compact();
         self.tables.compact();
         self.hash.compact();
         self.prim.compact();
@@ -106,8 +94,6 @@ impl EngineDelta {
         self.mem.allocated_bytes()
             + self.tokens.allocated_bytes()
             + self.glue.allocated_bytes()
-            + self.meanings.allocated_bytes()
-            + self.cs_levels.allocated_bytes()
             + self.tables.allocated_bytes()
             + self.hash.allocated_bytes()
             + self.prim.allocated_bytes()
@@ -686,8 +672,7 @@ mod tests {
         let mut st = EngineState::default();
         st.mem.data = crate::mem_types::zeroed_vec(8);
         st.eqtb.hash = vec![B32x2 { s0: 0, s1: 0 }; 1];
-        st.eqtb.meanings = vec![Command::UndefinedCs; 4];
-        st.eqtb.cs_levels = vec![0; 4];
+        st.eqtb.meanings = crate::eqtb::Table::at_level(4, Command::UndefinedCs, 0);
         st.fonts.font_info = crate::mem_types::zeroed_vec(4);
         st.eqtb.ints = crate::eqtb::Table::new(crate::eqtb::IntLoc::LEN, 0);
         crate::journal::arm(&mut st);

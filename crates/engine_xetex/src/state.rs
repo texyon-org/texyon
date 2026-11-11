@@ -316,10 +316,8 @@ pub(crate) struct EqtbState {
     pub no_new_control_sequence: bool,
     pub prim_used: PrimNum,
     pub cs_count: i32,
-    /// The meaning of each control sequence.
-    pub meanings: Vec<crate::command::Command>,
-    /// The level each meaning was defined at.
-    pub cs_levels: Vec<u16>,
+    /// The meaning of each control sequence, and the level it was defined at.
+    pub meanings: crate::eqtb::Table<CsId, crate::command::Command>,
     pub ints: crate::eqtb::Table<crate::eqtb::IntLoc, i32>,
     pub dimens: crate::eqtb::Table<crate::eqtb::DimenLoc, Scaled>,
     pub glue: crate::eqtb::Table<crate::eqtb::GlueLoc, GlueSpecId>,
@@ -352,8 +350,7 @@ impl Default for EqtbState {
             no_new_control_sequence: false,
             prim_used: PrimNum::UNDEFINED,
             cs_count: 0,
-            meanings: Vec::new(),
-            cs_levels: Vec::new(),
+            meanings: Default::default(),
             ints: Default::default(),
             dimens: Default::default(),
             glue: Default::default(),
@@ -384,8 +381,11 @@ impl EqtbState {
         use crate::consts::UNDEFINED_CONTROL_SEQUENCE;
         self.cs_top = UNDEFINED_CONTROL_SEQUENCE + self.hash_extra;
         let cs = self.cs_top.index() + 1;
-        self.meanings = vec![crate::command::Command::UndefinedCs; cs];
-        self.cs_levels = vec![crate::consts::LEVEL_ZERO; cs];
+        self.meanings = crate::eqtb::Table::at_level(
+            cs,
+            crate::command::Command::UndefinedCs,
+            crate::consts::LEVEL_ZERO,
+        );
         self.hash = crate::mem_types::zeroed_vec(crate::hash::hash_slot(self.cs_top) + 1);
         self.ints = crate::eqtb::Table::new(crate::eqtb::IntLoc::LEN, 0);
         self.dimens = crate::eqtb::Table::new(crate::eqtb::DimenLoc::LEN, Scaled::ZERO);
@@ -435,25 +435,19 @@ impl EqtbState {
     /// The meaning of control sequence `cs`.
     #[inline(always)]
     pub(crate) fn meaning(&self, cs: CsId) -> crate::command::Command {
-        self.meanings[cs.index()]
+        self.meanings.get(cs)
     }
 
     /// The level `cs`'s meaning was defined at.
     #[inline]
     pub(crate) fn cs_level(&self, cs: CsId) -> u16 {
-        self.cs_levels[cs.index()]
+        self.meanings.level(cs)
     }
 
     /// Gives `cs` the meaning `m` at level `level`.
     #[inline]
     pub(crate) fn set_meaning(&mut self, cs: CsId, m: crate::command::Command, level: u16) {
-        let i = cs.index();
-        if self.journal.meanings.armed() {
-            self.journal.meanings.note(i, self.meanings[i]);
-            self.journal.cs_levels.note(i, self.cs_levels[i]);
-        }
-        self.meanings[i] = m;
-        self.cs_levels[i] = level;
+        self.meanings.set(cs, m, level);
     }
 
     #[inline]
@@ -794,13 +788,7 @@ pub(crate) enum SaveEntry {
 /// An old `eqtb` value, with the level it had.
 #[derive(Copy, Clone)]
 pub(crate) enum Restore {
-    Cs {
-        cs: CsId,
-        old: crate::command::Command,
-        level: u16,
-    },
-    /// A control sequence that was undefined at level zero.
-    CsUndefined(CsId),
+    Cs(crate::eqtb::Old<CsId>),
     Int(crate::eqtb::Old<crate::eqtb::IntLoc>),
     Dimen(crate::eqtb::Old<crate::eqtb::DimenLoc>),
     Glue(crate::eqtb::Old<crate::eqtb::GlueLoc>),

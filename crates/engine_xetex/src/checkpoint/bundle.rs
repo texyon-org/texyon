@@ -241,7 +241,6 @@ impl EqtbBundle {
             prim_used,
             cs_count,
             meanings: _,
-            cs_levels: _,
             ints: _,
             dimens: _,
             glue: _,

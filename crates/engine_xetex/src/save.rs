@@ -2,7 +2,7 @@
 use crate::codes::ValueLevel;
 use crate::command::Command;
 use crate::command::RegisterRef;
-use crate::consts::{LEVEL_ONE, LEVEL_ZERO, TEX_NULL, UNDEFINED_CONTROL_SEQUENCE};
+use crate::consts::{LEVEL_ONE, TEX_NULL};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::glue_store::GlueSpecId;
@@ -13,10 +13,9 @@ use crate::node::{
 };
 use crate::params::IntPar;
 use crate::state::{
-    EngineState, EqtbState, GroupCode, MemState, Restore, SaveEntry, SaveStackState, ScannerState,
+    EngineState, GroupCode, MemState, Restore, SaveEntry, SaveStackState, ScannerState,
 };
 use crate::token::{Token, TokenList};
-use crate::units::CsId;
 use crate::units::MemIdx;
 use crate::units::MemPtr;
 use crate::units::RawPtr;
@@ -24,44 +23,6 @@ use crate::units::RawPtr;
 pub(crate) const DIMEN_VAL_LIMIT: u16 = 128;
 pub(crate) const MU_VAL_LIMIT: u16 = 256;
 pub(crate) const BOX_VAL_LIMIT: u16 = 320;
-
-impl EqtbState {
-    /// Gives `cs` the meaning `m` in the current group.
-    pub(crate) fn eq_define_cs(
-        &mut self,
-        save_stack: &mut SaveStackState,
-        mem: &mut MemState,
-        scanner: &mut ScannerState,
-        cs: CsId,
-        m: Command,
-    ) -> Result<(), Abort> {
-        let old = self.meaning(cs);
-        if old == m {
-            return mem.destroy_meaning(scanner, old);
-        }
-        let level = self.cs_level(cs);
-        if level == save_stack.cur_level {
-            mem.destroy_meaning(scanner, old)?;
-        } else if save_stack.cur_level > LEVEL_ONE {
-            save_stack.eq_save_cs(self, cs, level)?;
-        }
-        self.set_meaning(cs, m, save_stack.cur_level);
-        Ok(())
-    }
-
-    /// Gives `cs` the meaning `m` globally.
-    pub(crate) fn geq_define_cs(
-        &mut self,
-        mem: &mut MemState,
-        scanner: &mut ScannerState,
-        cs: CsId,
-        m: Command,
-    ) -> Result<(), Abort> {
-        mem.destroy_meaning(scanner, self.meaning(cs))?;
-        self.set_meaning(cs, m, LEVEL_ONE);
-        Ok(())
-    }
-}
 
 impl SaveStackState {
     /// TeX's `check_full_save_stack`, true when no room is left.
@@ -92,23 +53,6 @@ impl SaveStackState {
         self.cur_group = c;
         self.cur_level += 1;
         self.save_ptr += 1;
-        Ok(())
-    }
-
-    /// Saves the meaning `cs` has at level `l`, to be restored when the group ends.
-    pub(crate) fn eq_save_cs(&mut self, eqtb: &EqtbState, cs: CsId, l: u16) -> Result<(), Abort> {
-        if self.save_stack_full() {
-            return Err(self.overflow());
-        }
-        self.push(SaveEntry::Restore(if l == LEVEL_ZERO {
-            Restore::CsUndefined(cs)
-        } else {
-            Restore::Cs {
-                cs,
-                old: eqtb.meaning(cs),
-                level: l,
-            }
-        }));
         Ok(())
     }
 
@@ -475,12 +419,7 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
                 st.scanner.sa_chain = chain;
                 st.scanner.sa_level = level;
             }
-            SaveEntry::Restore(Restore::Cs { cs, old, level }) => restore_cs(st, cs, old, level)?,
-            SaveEntry::Restore(Restore::CsUndefined(cs)) => {
-                let old = st.eqtb.meaning(UNDEFINED_CONTROL_SEQUENCE);
-                let level = st.eqtb.cs_level(UNDEFINED_CONTROL_SEQUENCE);
-                restore_cs(st, cs, old, level)?;
-            }
+            SaveEntry::Restore(Restore::Cs(old)) => crate::eqtb::restore(st, old)?,
             SaveEntry::Restore(Restore::Int(old)) => crate::eqtb::restore(st, old)?,
             SaveEntry::Restore(Restore::Dimen(old)) => crate::eqtb::restore(st, old)?,
             SaveEntry::Restore(Restore::Glue(old)) => crate::eqtb::restore(st, old)?,
@@ -503,18 +442,6 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
     let (group, below, _) = ss.boundary_at(ss.save_ptr).or_confusion("unsave")?;
     (ss.cur_group, ss.cur_boundary) = (group, below);
     Ok(())
-}
-
-/// Puts back the meaning `cs` had before the group, unless it was defined globally since.
-fn restore_cs(st: &mut EngineState, cs: CsId, old: Command, level: u16) -> Result<(), Abort> {
-    if st.eqtb.cs_level(cs) == LEVEL_ONE {
-        st.mem.destroy_meaning(&mut st.scanner, old)
-    } else {
-        st.mem
-            .destroy_meaning(&mut st.scanner, st.eqtb.meaning(cs))?;
-        st.eqtb.set_meaning(cs, old, level);
-        Ok(())
-    }
 }
 
 /// The four 6-bit trie slots of register `n`, from the root down.
