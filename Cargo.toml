@@ -178,3 +178,7 @@ x86_64-pc-windows-msvc = { triplet = "x64-windows-static-release", install = [
     "libmupdf",
 ] }
 
+
+[profile.release]
+# One unit keeps inlining in the engine hot loops stable across unrelated changes.
+codegen-units = 1
