@@ -153,7 +153,7 @@ impl Default for TokenList {
 impl TokenList {
     pub(crate) const NULL: TokenList = TokenList(TEX_NULL);
     /// The one-token list `\endtemplate` that ends an omitted template.
-    pub(crate) const OMIT_TEMPLATE: TokenList = TokenList(0);
+    pub(crate) const OMIT_TEMPLATE: TokenList = TokenList(1);
 
     /// The list from its raw form in an eqtb or save stack word, a node field or a format.
     #[inline(always)]
@@ -274,11 +274,15 @@ impl Default for TokenStore {
     fn default() -> Self {
         Self {
             tokens: vec![Token(0); RESERVED],
-            lists: vec![ListSlot {
-                start: 0,
-                len: 1,
-                refs: 1,
-            }],
+            // Slot 0 is unused, so no list is ever 0.
+            lists: vec![
+                ListSlot::zeroed(),
+                ListSlot {
+                    start: 0,
+                    len: 1,
+                    refs: 1,
+                },
+            ],
             free_runs: [NONE; N_CLASSES],
             free_lists: NONE,
             tokens_journal: WordJournal::default(),
@@ -506,7 +510,7 @@ impl TokenStore {
     /// Sets up [`TokenList::OMIT_TEMPLATE`] to hold `t`, before the journal is armed.
     pub(crate) fn init_omit_template(&mut self, t: Token) {
         self.tokens[0] = t;
-        self.lists[0] = ListSlot {
+        self.lists[1] = ListSlot {
             start: 0,
             len: 1,
             refs: 1,

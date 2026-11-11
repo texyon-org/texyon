@@ -584,7 +584,7 @@ fn token_lists<S: FmtStream>(s: &mut S, toks: &mut TokenStore) -> Result<(), Abo
     let mut tokens = i32::try_from(marks.tokens).map_err(|_| too_big())?;
     let mut lists = i32::try_from(marks.lists).map_err(|_| too_big())?;
     s.int_in(&mut tokens, 1, i32::MAX)?;
-    s.int_in(&mut lists, 1, i32::MAX)?;
+    s.int_in(&mut lists, 2, i32::MAX)?;
     s.items(&mut marks.free_runs)?;
     s.items(std::slice::from_mut(&mut marks.free_lists))?;
     if S::LOADING {

@@ -378,7 +378,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     eqtb.cs_levels.fill(LEVEL_ZERO);
     let undefined_entry = EqtbState::entry(Cmd::UndefinedCs, TEX_NULL, LEVEL_ZERO);
 
-    eqtb.set_eq(GLUE_BASE, Cmd::GlueRef, 0, LEVEL_ONE);
+    eqtb.set_eq(GLUE_BASE, Cmd::GlueRef, ZERO_GLUE.raw(), LEVEL_ONE);
     let glue_base_entry = eqtb.word(GLUE_BASE);
     eqtb.fill(GLUE_BASE + 1, LOCAL_BASE, glue_base_entry);
 

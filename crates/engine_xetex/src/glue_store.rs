@@ -49,12 +49,14 @@ pub struct GlueSpec {
     pub shrink: Scaled,
 }
 
-pub(crate) const ZERO_GLUE: GlueSpecId = GlueSpecId(0);
-pub(crate) const FIL_GLUE: GlueSpecId = GlueSpecId(1);
-pub(crate) const FILL_GLUE: GlueSpecId = GlueSpecId(2);
-pub(crate) const SS_GLUE: GlueSpecId = GlueSpecId(3);
-pub(crate) const FIL_NEG_GLUE: GlueSpecId = GlueSpecId(4);
-pub(crate) const STATIC_SPECS: usize = 5;
+// Slot 0 is unused, so no spec is ever 0.
+pub(crate) const ZERO_GLUE: GlueSpecId = GlueSpecId(1);
+pub(crate) const FIL_GLUE: GlueSpecId = GlueSpecId(2);
+pub(crate) const FILL_GLUE: GlueSpecId = GlueSpecId(3);
+pub(crate) const SS_GLUE: GlueSpecId = GlueSpecId(4);
+pub(crate) const FIL_NEG_GLUE: GlueSpecId = GlueSpecId(5);
+/// The unused slot 0 and the static specs.
+pub(crate) const STATIC_SPECS: usize = 6;
 /// Specs take five words, and get up to a tenth of main memory.
 const MAX_SPECS: usize = 1 << 22;
 
@@ -184,11 +186,11 @@ mod tests {
         let mut store = GlueStore::default();
         let a = store.alloc().unwrap();
         let b = store.alloc().unwrap();
-        assert_eq!((a.raw(), b.raw()), (5, 6));
+        assert_eq!((a.raw(), b.raw()), (6, 7));
         store.free(a);
         store.free(b);
         assert_eq!(store.alloc().unwrap(), b);
         assert_eq!(store.alloc().unwrap(), a);
-        assert_eq!(store.alloc().unwrap().raw(), 7);
+        assert_eq!(store.alloc().unwrap().raw(), 8);
     }
 }

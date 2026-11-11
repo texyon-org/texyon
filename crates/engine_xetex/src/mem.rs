@@ -41,8 +41,8 @@ const fn after(p: MemPtr, words: i32) -> MemPtr {
     MemPtr::from_raw(p.raw() + words)
 }
 
-// The fixed nodes at the start of `mem`, each as large as the layout it is read as.
-pub(crate) const PAGE_INS_HEAD: MemPtr = MemPtr::from_raw(0);
+// The fixed nodes after the unused word 0, each as large as the layout it is read as.
+pub(crate) const PAGE_INS_HEAD: MemPtr = MemPtr::from_raw(1);
 pub(crate) const CONTRIB_HEAD: MemPtr = after(PAGE_INS_HEAD, PageInsNode::SIZE);
 pub(crate) const PAGE_HEAD: MemPtr = after(CONTRIB_HEAD, HeadNode::SIZE);
 pub(crate) const TEMP_HEAD: MemPtr = after(PAGE_HEAD, GlueNode::SIZE);
