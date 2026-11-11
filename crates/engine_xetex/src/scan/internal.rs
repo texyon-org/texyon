@@ -921,7 +921,9 @@ pub(crate) fn scan_font_ident(st: &mut EngineState) -> Result<FontId, Abort> {
         Command::SetFont(f) => f,
         Command::DefFamily(m) => {
             let fam = scan_math_fam_int(st)?;
-            st.eqtb.font_equiv(m + fam)
+            st.eqtb
+                .fonts
+                .get(m.family(u8::try_from(fam).or_confusion("family")?))
         }
         _ => {
             crate::errors::back_error(

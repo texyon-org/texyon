@@ -327,6 +327,7 @@ pub(crate) struct EqtbState {
     pub glue: crate::eqtb::Table<crate::eqtb::GlueLoc, GlueSpecId>,
     pub toks: crate::eqtb::Table<crate::eqtb::ToksLoc, crate::token::TokenList>,
     pub shapes: crate::eqtb::Table<crate::eqtb::ShapeLoc, crate::eqtb::ShapeRef>,
+    pub fonts: crate::eqtb::Table<crate::eqtb::FontLoc, FontId>,
     pub boxes:
         crate::eqtb::Table<crate::eqtb::BoxLoc, Option<crate::node::NodePtr<crate::node::BoxNode>>>,
     pub prim: Vec<crate::mem_types::B32x2>,
@@ -357,6 +358,7 @@ impl Default for EqtbState {
             toks: Default::default(),
             shapes: Default::default(),
             boxes: Default::default(),
+            fonts: Default::default(),
             // PRIM_SIZE + 1 = 2101.
             prim: vec![crate::mem_types::B32x2 { s0: 0, s1: 0 }; 2101],
             xeq_level: vec![0u16; crate::consts::XEQ_LEVEL_SIZE],
@@ -387,6 +389,7 @@ impl EqtbState {
         self.shapes =
             crate::eqtb::Table::new(crate::eqtb::ShapeLoc::LEN, crate::eqtb::ShapeRef::NONE);
         self.boxes = crate::eqtb::Table::new(crate::eqtb::BoxLoc::LEN, None);
+        self.fonts = crate::eqtb::Table::new(crate::eqtb::FontLoc::LEN, crate::consts::NULL_FONT);
     }
 
     /// An entry of the glue, token, box and code regions.
@@ -546,12 +549,6 @@ impl EqtbState {
         self.data[data_slot(p)].b16().s1
     }
 
-    /// The low half of `equiv`.
-    #[inline]
-    fn b16s2(&self, p: EqtbPtr) -> u16 {
-        self.data[data_slot(p)].b16().s2
-    }
-
     /// The command code of control-sequence entry `p`.
     #[inline]
     pub(crate) fn eq_type(&self, p: EqtbPtr) -> Cmd {
@@ -596,15 +593,9 @@ impl EqtbState {
 
     #[inline]
     pub(crate) fn cur_font(&self) -> FontId {
-        self.font_equiv(crate::consts::CUR_FONT_LOC)
+        self.fonts.get(crate::eqtb::FontLoc::CUR)
     }
 
-    /// The font an eqtb entry holds, read from the equiv's low half. Fonts are
-    /// written as `FontId` and format load checks them, so the high half is zero.
-    #[inline]
-    pub(crate) fn font_equiv(&self, p: EqtbPtr) -> FontId {
-        FontId::new(self.b16s2(p))
-    }
     #[inline]
     pub(crate) fn tok_par(&self, n: TokPar) -> crate::token::TokenList {
         self.toks.get(n.loc())
@@ -652,7 +643,7 @@ impl EqtbState {
     }
     #[inline]
     pub(crate) fn math_font(&self, n: i32) -> FontId {
-        self.font_equiv(crate::consts::MATH_FONT_BASE + n)
+        self.fonts.get(crate::eqtb::FontLoc::math(n))
     }
     #[inline]
     pub(crate) fn cat_code(&self, c: i32) -> Cmd {
@@ -915,6 +906,7 @@ pub(crate) enum Restore {
     Toks(crate::eqtb::Old<crate::eqtb::ToksLoc>),
     Shape(crate::eqtb::Old<crate::eqtb::ShapeLoc>),
     Box(crate::eqtb::Old<crate::eqtb::BoxLoc>),
+    Font(crate::eqtb::Old<crate::eqtb::FontLoc>),
 }
 
 /// What a construction keeps on the save stack below its group.

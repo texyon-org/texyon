@@ -11,11 +11,11 @@ use crate::command::Usv;
 use crate::command::{Command, RegisterRef};
 use crate::consts::NULL_FONT;
 use crate::consts::{
-    ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_USV, CAT_CODE_BASE, CHAR_CLASS_LIMIT, CUR_FONT_LOC,
-    DEL_CODE_BASE, DESIGN_SIZE, HASH_BASE, MATH_CODE_BASE, MAX_HALFWORD, NULL_CS, SF_CODE_BASE,
-    SINGLE_BASE, TEX_INFINITY, VMODE,
+    ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_USV, CAT_CODE_BASE, CHAR_CLASS_LIMIT, DEL_CODE_BASE,
+    DESIGN_SIZE, HASH_BASE, MATH_CODE_BASE, MAX_HALFWORD, NULL_CS, SF_CODE_BASE, SINGLE_BASE,
+    TEX_INFINITY, VMODE,
 };
-use crate::eqtb::{self, DimenLoc, GlueLoc, IntLoc, ShapeLoc, ShapeRef, ToksLoc};
+use crate::eqtb::{self, DimenLoc, FontLoc, GlueLoc, IntLoc, ShapeLoc, ShapeRef, ToksLoc};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::read_font_info;
@@ -647,7 +647,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     match st.scanner.cur {
-        Command::SetFont(f) => define(st, a >= 4, CUR_FONT_LOC, Cmd::Data, f.raw())?,
+        Command::SetFont(f) => eqtb::define(st, a >= 4, FontLoc::CUR, f)?,
         Command::Def { global, expand } => {
             if global && a < 4 && st.eqtb.int_par(IntPar::GlobalDefs) >= 0 {
                 a += 4;
@@ -757,10 +757,10 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
         Command::DefCode(base) => def_code(st, a >= 4, base)?,
         Command::DefFamily(base) => {
             let fam = crate::scan::scan_math_fam_int(st)?;
-            let p = base + fam;
+            let p = base.family(u8::try_from(fam).or_confusion("family")?);
             crate::scan::scan_optional_equals(st)?;
             let f = crate::scan::scan_font_ident(st)?;
-            define(st, a >= 4, p, Cmd::Data, f.raw())?;
+            eqtb::define(st, a >= 4, p, f)?;
         }
         Command::Register(_) | Command::Advance | Command::Multiply | Command::Divide => {
             do_register_command(st, a as i16)?

@@ -8,10 +8,10 @@ use crate::codes::{
     ValignCode, ValueLevel,
 };
 use crate::consts::{
-    DEL_CODE_BASE, LC_CODE_BASE, MATH_CODE_BASE, MATH_FONT_BASE, SF_CODE_BASE, UC_CODE_BASE, VMODE,
+    DEL_CODE_BASE, LC_CODE_BASE, MATH_CODE_BASE, SF_CODE_BASE, UC_CODE_BASE, VMODE,
 };
 use crate::eqtb::{
-    DimenLoc, DimenSlot, GlueLoc, GlueSlot, IntLoc, IntSlot, ShapeLoc, ToksLoc, ToksSlot,
+    DimenLoc, DimenSlot, FontLoc, GlueLoc, GlueSlot, IntLoc, IntSlot, ShapeLoc, ToksLoc, ToksSlot,
 };
 use crate::main_control::{CR_CODE, LP_CODE_BASE, RP_CODE_BASE, SPAN_CODE};
 use crate::math::{ABOVE_CODE, ATOP_CODE, DELIMITED_CODE, OVER_CODE};
@@ -496,7 +496,10 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
             };
             print_esc(st, name);
         }
-        Cmd::DefFamily => print_size(st, EqtbPtr::from_raw(chr_code) - MATH_FONT_BASE),
+        Cmd::DefFamily => print_size(
+            st,
+            FontLoc::from_raw(chr_code).map_or(chr_code - 1, FontLoc::math_offset),
+        ),
         Cmd::HyphData => print_esc(
             st,
             if chr_code == 1 {

@@ -10,10 +10,10 @@ use crate::codes::{
 };
 use crate::consts::{
     CAT_CODE_BASE, DEL_CODE_BASE, FROZEN_CR, FROZEN_END_GROUP, FROZEN_FI, FROZEN_NULL_FONT,
-    FROZEN_RELAX, FROZEN_RIGHT, FROZEN_SPECIAL, LC_CODE_BASE, MATH_CODE_BASE, MATH_FONT_BASE,
-    NUMBER_USVS, SF_CODE_BASE, UC_CODE_BASE,
+    FROZEN_RELAX, FROZEN_RIGHT, FROZEN_SPECIAL, LC_CODE_BASE, MATH_CODE_BASE, NUMBER_USVS,
+    SF_CODE_BASE, UC_CODE_BASE,
 };
-use crate::eqtb::ShapeLoc;
+use crate::eqtb::{FontLoc, ShapeLoc};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 
 /// Extra setup `initialize_primitives` runs after defining a primitive.
@@ -356,12 +356,12 @@ pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
         Cmd::XetexDefCode,
         DEL_CODE_BASE.plus(1).raw(),
     ),
-    p("textfont", Cmd::DefFamily, MATH_FONT_BASE.raw()),
-    p("scriptfont", Cmd::DefFamily, MATH_FONT_BASE.plus(256).raw()),
+    p("textfont", Cmd::DefFamily, FontLoc::TEXT.raw()),
+    p("scriptfont", Cmd::DefFamily, FontLoc::SCRIPT.raw()),
     p(
         "scriptscriptfont",
         Cmd::DefFamily,
-        MATH_FONT_BASE.plus(512).raw(),
+        FontLoc::SCRIPT_SCRIPT.raw(),
     ),
     p("nullfont", Cmd::SetFont, 0).init(PrimInit::Frozen(FROZEN_NULL_FONT)),
     p("font", Cmd::DefFont, 0),

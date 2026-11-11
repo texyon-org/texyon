@@ -13,7 +13,7 @@ use crate::state::{
     EngineState, EqtbState, MemState, Restore, SaveEntry, SaveStackState, ScannerState,
 };
 use crate::token::TokenList;
-use crate::units::{MemPtr, Scaled};
+use crate::units::{FontId, MemPtr, Scaled};
 
 /// A value an `eqtb` table holds.
 pub(crate) trait EqValue: JournalWord + PartialEq {
@@ -25,6 +25,7 @@ pub(crate) trait EqValue: JournalWord + PartialEq {
 }
 
 impl EqValue for i32 {}
+impl EqValue for FontId {}
 impl EqValue for Scaled {}
 
 /// A location in one of the tables.
@@ -251,6 +252,7 @@ tables!(
     toks: TokenList,
     shapes: ShapeRef,
     boxes: Option<NodePtr<BoxNode>>,
+    fonts: FontId,
 );
 
 impl EqtbState {
@@ -633,6 +635,37 @@ impl EqLoc for BoxLoc {
     }
     fn restore(old: Old<Self>) -> Restore {
         Restore::Box(old)
+    }
+}
+
+eq_loc!(
+    /// A location in the font table: the current font or a math family font of some size.
+    FontLoc, 1 + 3 * 256, FontId, fonts, Font
+);
+
+impl FontLoc {
+    /// `\font`, the current font.
+    pub(crate) const CUR: FontLoc = FontLoc(0);
+    /// `\textfont0`, `\scriptfont0` and `\scriptscriptfont0`.
+    pub(crate) const TEXT: FontLoc = FontLoc(1);
+    pub(crate) const SCRIPT: FontLoc = FontLoc(1 + 256);
+    pub(crate) const SCRIPT_SCRIPT: FontLoc = FontLoc(1 + 512);
+
+    /// The math font `n` past `\textfont0`: a family plus `TEXT_SIZE`, `SCRIPT_SIZE` or
+    /// `SCRIPT_SCRIPT_SIZE`. Out of range for any other `n`.
+    #[inline]
+    pub(crate) fn math(n: i32) -> FontLoc {
+        FontLoc(u16::try_from(n + 1).unwrap_or(u16::MAX))
+    }
+
+    /// Family `fam` of the size this location starts.
+    pub(crate) fn family(self, fam: u8) -> FontLoc {
+        FontLoc(self.0 + u16::from(fam))
+    }
+
+    /// The size and family offset past `\textfont0`, as `print_size` takes it.
+    pub(crate) fn math_offset(self) -> i32 {
+        i32::from(self.0) - 1
     }
 }
 

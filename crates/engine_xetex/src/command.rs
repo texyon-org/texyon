@@ -8,7 +8,7 @@ use crate::codes::{
     RadicalCode, ShorthandDefCode, ShowCode, SkipCode, TheCode, ValignCode, ValueLevel,
 };
 use crate::consts::{BIGGEST_USV, TEX_NULL, TOO_BIG_USV};
-use crate::eqtb::{DimenLoc, GlueLoc, IntLoc, ShapeLoc, ToksLoc};
+use crate::eqtb::{DimenLoc, FontLoc, GlueLoc, IntLoc, ShapeLoc, ToksLoc};
 use crate::errors::{Abort, OrConfusion};
 use crate::main_control::{CR_CODE, CR_CR_CODE, SPAN_CODE};
 use crate::math::MathStyle;
@@ -268,7 +268,7 @@ pub(crate) enum Command {
     DefCode(EqtbPtr) = Cmd::DefCode as u8,
     XetexDefCode(EqtbPtr) = Cmd::XetexDefCode as u8,
     /// `\textfont` and friends, by the table base.
-    DefFamily(EqtbPtr) = Cmd::DefFamily as u8,
+    DefFamily(FontLoc) = Cmd::DefFamily as u8,
     SetFont(FontId) = Cmd::SetFont as u8,
     DefFont = Cmd::DefFont as u8,
     Register(RegisterCode) = Cmd::Register as u8,
@@ -601,10 +601,10 @@ impl Command {
             Command::LimitSwitch(code) => code.raw(),
             Command::Above(code) => code.raw(),
             Command::MathStyle(style) => i32::from(style.raw()),
-            Command::CaseShift(loc)
-            | Command::DefCode(loc)
-            | Command::XetexDefCode(loc)
-            | Command::DefFamily(loc) => loc.raw(),
+            Command::CaseShift(loc) | Command::DefCode(loc) | Command::XetexDefCode(loc) => {
+                loc.raw()
+            }
+            Command::DefFamily(loc) => loc.raw(),
             Command::AssignInt(loc) => loc.raw(),
             Command::SetShape(loc) => loc.raw(),
             Command::AssignToks(loc) => loc.raw(),
@@ -783,7 +783,7 @@ impl Command {
             Cmd::SetShape => Command::SetShape(ShapeLoc::from_raw(chr)?),
             Cmd::DefCode => Command::DefCode(loc),
             Cmd::XetexDefCode => Command::XetexDefCode(loc),
-            Cmd::DefFamily => Command::DefFamily(loc),
+            Cmd::DefFamily => Command::DefFamily(FontLoc::from_raw(chr)?),
             Cmd::SetFont => Command::SetFont(FontId::try_from(chr).ok()?),
             Cmd::Register => match ValueLevel::from_raw(chr) {
                 Some(level) if level > ValueLevel::Mu => return None,

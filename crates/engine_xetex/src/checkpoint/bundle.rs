@@ -249,6 +249,7 @@ impl EqtbBundle {
             toks: _,
             shapes: _,
             boxes: _,
+            fonts: _,
             prim: _,
             xeq_level: _,
             hash: _,

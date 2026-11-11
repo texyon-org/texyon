@@ -8,10 +8,9 @@
 use crate::bridge::{input_open, input_read, output_close, output_open, output_write, FileFormat};
 use crate::command::Command;
 use crate::consts::{
-    ACTIVE_BASE, CAT_CODE_BASE, CUR_FONT_LOC, DEL_CODE_BASE, EMPTY_STRING, EQTB_SIZE, FONT_BASE,
-    FROZEN_CONTROL_SEQUENCE, HASH_BASE, INT_BASE, INVALID_HANDLE, MAX_FONT_MAX, MAX_HALFWORD,
-    MIN_HALFWORD, NULL_FONT, NUMBER_USVS, PRIM_SIZE, TEX_NULL, TOO_BIG_CHAR,
-    UNDEFINED_CONTROL_SEQUENCE,
+    ACTIVE_BASE, DEL_CODE_BASE, EMPTY_STRING, EQTB_SIZE, FONT_BASE, FROZEN_CONTROL_SEQUENCE,
+    HASH_BASE, INT_BASE, INVALID_HANDLE, MAX_FONT_MAX, MAX_HALFWORD, MIN_HALFWORD, NULL_FONT,
+    NUMBER_USVS, PRIM_SIZE, TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::engine::{POOL_FREE, STRINGS_FREE};
 use crate::errors::Abort;
@@ -83,6 +82,18 @@ macro_rules! newtype_item {
             }
         }
     )*};
+}
+
+impl FmtItem for FontId {
+    const SIZE: usize = 2;
+    #[inline]
+    fn put(self, out: &mut Vec<u8>) {
+        self.get().put(out);
+    }
+    #[inline]
+    fn get(bytes: &[u8]) -> Self {
+        FontId::new(u16::get(bytes))
+    }
 }
 
 impl FmtItem for crate::eqtb::ShapeRef {
@@ -747,6 +758,7 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
     runs(s, eqtb.toks.values_mut())?;
     runs(s, eqtb.shapes.values_mut())?;
     runs(s, eqtb.boxes.values_mut())?;
+    runs(s, eqtb.fonts.values_mut())?;
     let mut extra = cs_words(eqtb, UNDEFINED_CONTROL_SEQUENCE + 1, extra_top);
     s.items(&mut extra)?;
     if S::LOADING {
@@ -916,12 +928,11 @@ fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort>
 
 /// Rejects a format whose eqtb names a font it does not load.
 fn check_font_words(eqtb: &EqtbState, font_ptr: FontId) -> Result<(), Abort> {
-    let loaded = |p| FontId::try_from(eqtb.equiv(p)).is_ok_and(|f| f <= font_ptr);
     let meanings_ok = eqtb.meanings.iter().all(|m| match m {
         Command::SetFont(f) => *f <= font_ptr,
         _ => true,
     });
-    if meanings_ok && CUR_FONT_LOC.until(CAT_CODE_BASE).all(loaded) {
+    if meanings_ok && eqtb.fonts.values().iter().all(|&f| f <= font_ptr) {
         Ok(())
     } else {
         Err(bad_fmt())
@@ -1137,6 +1148,7 @@ mod tests {
     use super::*;
     use crate::cmd::Cmd;
     use crate::consts::{FONT_ID_BASE, LEVEL_ONE};
+    use crate::eqtb::FontLoc;
     use crate::state::Selector;
 
     fn eqtb_with_fonts() -> EqtbState {
@@ -1146,21 +1158,12 @@ mod tests {
     }
 
     #[test]
-    fn font_words_read_back_through_their_low_half() {
-        let mut eqtb = eqtb_with_fonts();
-        eqtb.set_equiv(CUR_FONT_LOC, FontId::new(300).raw());
-        eqtb.set_equiv(CUR_FONT_LOC + 1, FontId::new(7).raw());
-        assert_eq!(eqtb.cur_font(), FontId::new(300));
-        assert_eq!(eqtb.math_font(0), FontId::new(7));
-    }
-
-    #[test]
     fn format_load_rejects_a_font_word_past_font_ptr() {
         let font_ptr = FontId::new(3);
         let mut eqtb = eqtb_with_fonts();
         let id = FONT_ID_BASE + 2;
         eqtb.set_meaning(id, Command::SetFont(FontId::new(3)), LEVEL_ONE);
-        eqtb.set_equiv(CUR_FONT_LOC + 5, 2);
+        eqtb.fonts.set_value(FontLoc::math(4), FontId::new(2));
         assert!(check_font_words(&eqtb, font_ptr).is_ok());
 
         eqtb.set_meaning(id, Command::SetFont(FontId::new(4)), LEVEL_ONE);
@@ -1168,7 +1171,7 @@ mod tests {
         let wide = EqtbState::entry(Cmd::SetFont, 0x1_0002, LEVEL_ONE);
         assert_eq!(EqtbState::from_cs_entry(wide), None);
         eqtb.set_meaning(id, Command::SetFont(FontId::new(3)), LEVEL_ONE);
-        eqtb.set_equiv(CUR_FONT_LOC + 5, 4);
+        eqtb.fonts.set_value(FontLoc::math(4), FontId::new(4));
         assert!(check_font_words(&eqtb, font_ptr).is_err());
     }
 
