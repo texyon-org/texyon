@@ -160,6 +160,11 @@ impl<I: EqLoc<Value = T>, T: EqValue> Table<I, T> {
         &mut self.values
     }
 
+    /// The levels, for the format.
+    pub(crate) fn levels_mut(&mut self) -> &mut [u16] {
+        &mut self.levels
+    }
+
     pub(crate) fn values(&self) -> &[T] {
         &self.values
     }

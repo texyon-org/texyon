@@ -46,7 +46,8 @@ fn bad_fmt() -> Abort {
 trait FmtItem: Copy {
     const SIZE: usize;
     fn put(self, out: &mut Vec<u8>);
-    fn get(bytes: &[u8]) -> Self;
+    /// The value `SIZE` bytes hold, `None` when they hold none.
+    fn get(bytes: &[u8]) -> Option<Self>;
 }
 
 macro_rules! int_item {
@@ -58,8 +59,8 @@ macro_rules! int_item {
                 out.extend_from_slice(&self.to_be_bytes());
             }
             #[inline]
-            fn get(bytes: &[u8]) -> Self {
-                <$t>::from_be_bytes(bytes.try_into().expect("SIZE bytes"))
+            fn get(bytes: &[u8]) -> Option<Self> {
+                bytes.try_into().ok().map(<$t>::from_be_bytes)
             }
         }
     )*};
@@ -76,8 +77,8 @@ macro_rules! newtype_item {
                 self.raw().put(out);
             }
             #[inline]
-            fn get(bytes: &[u8]) -> Self {
-                $t::from_raw(i32::get(bytes))
+            fn get(bytes: &[u8]) -> Option<Self> {
+                i32::get(bytes).map($t::from_raw)
             }
         }
     )*};
@@ -90,8 +91,26 @@ impl FmtItem for crate::cmd::Cmd {
         out.push(self.raw().to_le_bytes()[0]);
     }
     #[inline]
-    fn get(bytes: &[u8]) -> Self {
-        crate::cmd::Cmd::from_catcode_bits(i32::from(bytes[0]))
+    fn get(bytes: &[u8]) -> Option<Self> {
+        let &[code] = bytes else { return None };
+        Some(crate::cmd::Cmd::from_catcode_bits(i32::from(code)))
+    }
+}
+
+/// A meaning as TeX's `(cmd, chr)` pair.
+impl FmtItem for Command {
+    const SIZE: usize = 6;
+    #[inline]
+    fn put(self, out: &mut Vec<u8>) {
+        let (cmd, chr) = self.encode();
+        u16::from(cmd).put(out);
+        chr.put(out);
+    }
+    #[inline]
+    fn get(bytes: &[u8]) -> Option<Self> {
+        let (cmd, chr) = bytes.split_at_checked(2)?;
+        let cmd = crate::cmd::Cmd::from_raw(i32::from(u16::get(cmd)?))?;
+        Command::decode(cmd, i32::get(chr)?)
     }
 }
 
@@ -102,8 +121,8 @@ impl FmtItem for FontId {
         self.get().put(out);
     }
     #[inline]
-    fn get(bytes: &[u8]) -> Self {
-        FontId::new(u16::get(bytes))
+    fn get(bytes: &[u8]) -> Option<Self> {
+        u16::get(bytes).map(FontId::new)
     }
 }
 
@@ -114,8 +133,8 @@ impl FmtItem for crate::eqtb::ShapeRef {
         self.ptr().put(out);
     }
     #[inline]
-    fn get(bytes: &[u8]) -> Self {
-        crate::eqtb::ShapeRef::from_ptr(MemPtr::get(bytes))
+    fn get(bytes: &[u8]) -> Option<Self> {
+        MemPtr::get(bytes).map(crate::eqtb::ShapeRef::from_ptr)
     }
 }
 
@@ -126,8 +145,8 @@ impl<K: crate::node::View + 'static> FmtItem for Option<crate::node::NodePtr<K>>
         self.map(crate::node::NodePtr::idx).put(out);
     }
     #[inline]
-    fn get(bytes: &[u8]) -> Self {
-        MemPtr::get(bytes).map(crate::node::NodePtr::from_idx_unchecked)
+    fn get(bytes: &[u8]) -> Option<Self> {
+        MemPtr::get(bytes).map(|p| p.map(crate::node::NodePtr::from_idx_unchecked))
     }
 }
 
@@ -138,8 +157,8 @@ impl FmtItem for MemPtr {
         self.raw().put(out);
     }
     #[inline]
-    fn get(bytes: &[u8]) -> Self {
-        MemIdx::from_raw(i32::get(bytes))
+    fn get(bytes: &[u8]) -> Option<Self> {
+        i32::get(bytes).map(MemIdx::from_raw)
     }
 }
 
@@ -163,11 +182,12 @@ impl FmtItem for B32x2 {
         self.s0.put(out);
     }
     #[inline]
-    fn get(bytes: &[u8]) -> Self {
-        B32x2 {
-            s1: i32::get(&bytes[..4]),
-            s0: i32::get(&bytes[4..]),
-        }
+    fn get(bytes: &[u8]) -> Option<Self> {
+        let (s1, s0) = bytes.split_at_checked(4)?;
+        Some(B32x2 {
+            s1: i32::get(s1)?,
+            s0: i32::get(s0)?,
+        })
     }
 }
 
@@ -178,10 +198,8 @@ impl FmtItem for MemoryWord {
         self.b32().put(out);
     }
     #[inline]
-    fn get(bytes: &[u8]) -> Self {
-        MemoryWord {
-            b32: B32x2::get(bytes),
-        }
+    fn get(bytes: &[u8]) -> Option<Self> {
+        B32x2::get(bytes).map(|b32| MemoryWord { b32 })
     }
 }
 
@@ -194,12 +212,12 @@ impl FmtItem for GlueSpec {
         }
     }
     #[inline]
-    fn get(bytes: &[u8]) -> Self {
+    fn get(bytes: &[u8]) -> Option<Self> {
         let mut words = [0u32; 5];
         for (w, chunk) in words.iter_mut().zip(bytes.chunks_exact(4)) {
-            *w = u32::get(chunk);
+            *w = u32::get(chunk)?;
         }
-        bytemuck::cast(words)
+        Some(bytemuck::cast(words))
     }
 }
 
@@ -210,8 +228,8 @@ impl FmtItem for Token {
         self.0.put(out);
     }
     #[inline]
-    fn get(bytes: &[u8]) -> Self {
-        Token(i32::get(bytes))
+    fn get(bytes: &[u8]) -> Option<Self> {
+        i32::get(bytes).map(Token)
     }
 }
 
@@ -224,8 +242,12 @@ impl FmtItem for ListSlot {
         }
     }
     #[inline]
-    fn get(bytes: &[u8]) -> Self {
-        bytemuck::cast([0, 4, 8].map(|i| u32::get(&bytes[i..i + 4])))
+    fn get(bytes: &[u8]) -> Option<Self> {
+        let mut words = [0u32; 3];
+        for (w, chunk) in words.iter_mut().zip(bytes.chunks_exact(4)) {
+            *w = u32::get(chunk)?;
+        }
+        Some(bytemuck::cast(words))
     }
 }
 
@@ -238,13 +260,13 @@ impl FmtItem for B16x4 {
         }
     }
     #[inline]
-    fn get(bytes: &[u8]) -> Self {
-        B16x4 {
-            s3: u16::get(&bytes[0..2]),
-            s2: u16::get(&bytes[2..4]),
-            s1: u16::get(&bytes[4..6]),
-            s0: u16::get(&bytes[6..8]),
+    fn get(bytes: &[u8]) -> Option<Self> {
+        let mut quarters = [0u16; 4];
+        for (q, chunk) in quarters.iter_mut().zip(bytes.chunks_exact(2)) {
+            *q = u16::get(chunk)?;
         }
+        let [s3, s2, s1, s0] = quarters;
+        Some(B16x4 { s3, s2, s1, s0 })
     }
 }
 
@@ -258,8 +280,11 @@ impl FmtItem for [u8; 4] {
         }
     }
     #[inline]
-    fn get(bytes: &[u8]) -> Self {
-        [bytes[1], bytes[3], bytes[5], bytes[7]]
+    fn get(bytes: &[u8]) -> Option<Self> {
+        let &[_, a, _, b, _, c, _, d] = bytes else {
+            return None;
+        };
+        Some([a, b, c, d])
     }
 }
 
@@ -379,7 +404,7 @@ impl FmtStream for Undump {
                 return Err(Abort::Internal("could not read format file data"));
             }
             for (x, b) in chunk.iter_mut().zip(bytes.chunks(T::SIZE)) {
-                *x = T::get(b);
+                *x = T::get(b).ok_or_else(bad_fmt)?;
             }
         }
         Ok(())
@@ -697,33 +722,11 @@ fn runs<S: FmtStream, T: FmtItem + PartialEq>(s: &mut S, v: &mut [T]) -> Result<
     }
 }
 
-/// The meanings of `from..=to` in the format's word layout.
-fn cs_words(eqtb: &EqtbState, from: CsId, to: CsId) -> Vec<MemoryWord> {
-    from.through(to)
-        .map(|cs| EqtbState::cs_entry(eqtb.meaning(cs), eqtb.cs_level(cs)))
-        .collect()
-}
-
-/// Sets the meanings from `from` on to the words a format holds, rejecting any that is no meaning.
-fn set_cs_words(eqtb: &mut EqtbState, from: CsId, words: &[MemoryWord]) -> Result<(), Abort> {
-    let last = i32::try_from(words.len()).map_err(|_| bad_fmt())? - 1;
-    for (cs, &w) in from.through(from + last).zip(words) {
-        let (m, level) = EqtbState::from_cs_entry(w).ok_or_else(bad_fmt)?;
-        eqtb.set_meaning(cs, m, level);
-    }
-    Ok(())
-}
-
 fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
     let eqtb = &mut st.eqtb;
-    let same_entry = |a: &MemoryWord, b: &MemoryWord| a.b32() == b.b32();
-    let extra_top = UNDEFINED_CONTROL_SEQUENCE + eqtb.hash_high;
-    let mut words = cs_words(eqtb, ACTIVE_BASE, UNDEFINED_CONTROL_SEQUENCE);
-    if S::LOADING {
-        undump_runs(s, &mut words)?;
-    } else {
-        dump_runs(s, &mut words, same_entry)?;
-    }
+    let named = ACTIVE_BASE.index()..=(UNDEFINED_CONTROL_SEQUENCE + eqtb.hash_high).index();
+    runs(s, &mut eqtb.meanings.values_mut()[named.clone()])?;
+    runs(s, &mut eqtb.meanings.levels_mut()[named])?;
     runs(s, eqtb.cat_codes.values_mut())?;
     runs(s, eqtb.lc_codes.values_mut())?;
     runs(s, eqtb.uc_codes.values_mut())?;
@@ -737,12 +740,6 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
     runs(s, eqtb.shapes.values_mut())?;
     runs(s, eqtb.boxes.values_mut())?;
     runs(s, eqtb.fonts.values_mut())?;
-    let mut extra = cs_words(eqtb, UNDEFINED_CONTROL_SEQUENCE + 1, extra_top);
-    s.items(&mut extra)?;
-    if S::LOADING {
-        set_cs_words(eqtb, ACTIVE_BASE, &words)?;
-        set_cs_words(eqtb, UNDEFINED_CONTROL_SEQUENCE + 1, &extra)?;
-    }
 
     // \partokenname may name an active character or a control symbol.
     s.items_in(
@@ -1146,8 +1143,10 @@ mod tests {
 
         eqtb.set_meaning(id, Command::SetFont(FontId::new(4)), LEVEL_ONE);
         assert!(check_font_words(&eqtb, font_ptr).is_err());
-        let wide = EqtbState::entry(Cmd::SetFont, 0x1_0002, LEVEL_ONE);
-        assert_eq!(EqtbState::from_cs_entry(wide), None);
+        let mut wide = Vec::new();
+        u16::from(Cmd::SetFont).put(&mut wide);
+        0x1_0002_i32.put(&mut wide);
+        assert_eq!(Command::get(&wide), None);
         eqtb.set_meaning(id, Command::SetFont(FontId::new(3)), LEVEL_ONE);
         eqtb.fonts.set_value(FontLoc::math(4), FontId::new(4));
         assert!(check_font_words(&eqtb, font_ptr).is_err());
@@ -1173,7 +1172,7 @@ mod tests {
         fn items<T: FmtItem>(&mut self, v: &mut [T]) -> Result<(), Abort> {
             for x in v.iter_mut() {
                 let (head, rest) = self.0.split_at(T::SIZE);
-                *x = T::get(head);
+                *x = T::get(head).ok_or_else(bad_fmt)?;
                 self.0 = rest;
             }
             Ok(())

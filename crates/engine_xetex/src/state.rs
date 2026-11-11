@@ -389,31 +389,6 @@ impl EqtbState {
         self.math_codes = crate::eqtb::Table::new(usvs, 0);
         self.del_codes = crate::eqtb::Table::new(usvs, -1);
     }
-
-    /// An entry of the glue, token, box and code regions.
-    pub(crate) fn entry(eq_type: Cmd, equiv: i32, level: u16) -> crate::mem_types::MemoryWord {
-        let mut w = crate::mem_types::MemoryWord {
-            b32: crate::mem_types::B32x2 { s0: 0, s1: equiv },
-        };
-        w.b16.s0 = level;
-        w.b16.s1 = eq_type.into();
-        w
-    }
-
-    /// A meaning and its level in the word layout of formats and the save stack.
-    pub(crate) fn cs_entry(m: crate::command::Command, level: u16) -> crate::mem_types::MemoryWord {
-        let (cmd, chr) = m.encode();
-        EqtbState::entry(cmd, chr, level)
-    }
-
-    /// The meaning and level a [`cs_entry`](Self::cs_entry) word holds, `None` if it holds none.
-    pub(crate) fn from_cs_entry(
-        w: crate::mem_types::MemoryWord,
-    ) -> Option<(crate::command::Command, u16)> {
-        let b = w.b16();
-        let cmd = Cmd::from_raw(i32::from(b.s1))?;
-        Some((crate::command::Command::decode(cmd, w.b32().s1)?, b.s0))
-    }
 }
 
 impl EqtbState {
