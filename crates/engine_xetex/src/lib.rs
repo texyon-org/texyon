@@ -35,6 +35,7 @@ mod consts;
 mod diagnostic;
 mod dvi;
 mod engine;
+mod eqtb;
 mod errors;
 mod expand;
 mod ext;

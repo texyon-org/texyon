@@ -31,7 +31,7 @@ use crate::units::MemAddr;
 use crate::units::{FontId, MemIdx, MemPtr, NodeType, Scaled};
 
 use super::align::align_peek;
-use super::assign::{define, do_assignments, word_define};
+use super::assign::{define, do_assignments};
 use super::boxes::package;
 use super::{begin_every, INNER_HMODE, INNER_VMODE};
 
@@ -73,14 +73,14 @@ pub(super) fn append_penalty(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 pub(crate) fn normal_paragraph(st: &mut EngineState) -> Result<(), Abort> {
-    for (loc, value) in [
-        (IntPar::Looseness.loc(), 0),
-        (DimenPar::HangIndent.loc(), 0),
-        (IntPar::HangAfter.loc(), 1),
-    ] {
-        if st.eqtb.int_at(loc) != value {
-            word_define(st, false, loc, value)?;
-        }
+    if st.eqtb.int_par(IntPar::Looseness) != 0 {
+        crate::eqtb::define(st, false, IntPar::Looseness.loc(), 0)?;
+    }
+    if st.eqtb.dimen_par(DimenPar::HangIndent) != Scaled::ZERO {
+        crate::eqtb::define(st, false, DimenPar::HangIndent.loc(), Scaled::ZERO)?;
+    }
+    if st.eqtb.int_par(IntPar::HangAfter) != 1 {
+        crate::eqtb::define(st, false, IntPar::HangAfter.loc(), 1)?;
     }
     for loc in [PAR_SHAPE_LOC, ETEX_PEN_BASE] {
         if st.eqtb.equiv(loc) != TEX_NULL {
@@ -399,7 +399,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             if n < 255 {
                 let ins = NodePtr::<InsNode>::alloc(&mut st.mem)?;
                 st.input.cur_list.tail_append(&mut st.mem, ins);
-                st.mem[ins].box_number = u16::try_from(n).or_confusion("insert")?;
+                st.mem[ins].box_number = u8::try_from(n).or_confusion("insert")?;
                 let height = st.mem[p].height + st.mem[p].depth;
                 st.mem[ins].height = height;
                 let list = st.mem[p].list_ptr;

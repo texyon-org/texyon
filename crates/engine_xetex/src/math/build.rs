@@ -19,7 +19,7 @@ use crate::node::{
 use crate::params::{IntPar, TokPar};
 use crate::state::Saved;
 use crate::state::{EngineState, EqtbState, GroupCode, MemState, SaveStackState};
-use crate::units::{EqtbPtr, MemPtr, NodeType, Scaled};
+use crate::units::{MemPtr, NodeType, Scaled};
 
 use super::DEFAULT_CODE;
 
@@ -88,15 +88,11 @@ fn scan_delimiter(
     Ok(d)
 }
 
-pub(super) fn define_word(st: &mut EngineState, loc: EqtbPtr, val: i32) -> Result<(), Abort> {
-    st.eqtb.eq_word_define(&mut st.save_stack, loc, val)
-}
-
 pub(crate) fn start_eq_no(st: &mut EngineState, left: bool) -> Result<(), Abort> {
     st.save_stack.push_saved(Saved::EqNo { left });
 
     crate::main_control::push_math(st, GroupCode::MathShift)?;
-    define_word(st, IntPar::CurFam.loc(), -1)?;
+    crate::eqtb::define(st, false, IntPar::CurFam.loc(), -1)?;
     if st.shipout.insert_src_special_every_math {
         crate::ext::insert_src_special(st)?;
     }

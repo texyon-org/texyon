@@ -329,17 +329,22 @@ fn fetch_register(st: &mut EngineState, r: RegisterRef) -> Result<CurVal, Abort>
         }
     };
     let n = scan_register_num(st)?;
-    let word = if n > 255 {
-        match find_sa(st, level, n) {
+    let Ok(r) = u8::try_from(n) else {
+        let word = match find_sa(st, level, n) {
             None if level >= ValueLevel::Glue => ZERO_GLUE.raw(),
             None => 0,
             Some(leaf) => sa_register_word(st, leaf)?,
-        }
-    } else {
-        let base = level.register_base().or_confusion("register")?;
-        st.eqtb.equiv(base + n)
+        };
+        return CurVal::from_word(level, word);
     };
-    CurVal::from_word(level, word)
+    Ok(match level {
+        ValueLevel::Int => CurVal::Int(st.eqtb.count(r)),
+        ValueLevel::Dimen => CurVal::Dimen(st.eqtb.dimen(r)),
+        _ => {
+            let base = level.register_base().or_confusion("register")?;
+            CurVal::from_word(level, st.eqtb.equiv(base + n))?
+        }
+    })
 }
 
 /// Integer-valued `\lastnodetype`-style and XeTeX font queries.
@@ -767,8 +772,8 @@ pub(super) fn scan_something_internal(
             | Command::DefFamily(_)
             | Command::SetFont(_)
             | Command::DefFont) => fetch_token_list(st, cmd, level)?,
-            Command::AssignInt(loc) => CurVal::Int(st.eqtb.int_at(loc)),
-            Command::AssignDimen(loc) => CurVal::Dimen(Scaled::from_raw(st.eqtb.int_at(loc))),
+            Command::AssignInt(loc) => CurVal::Int(st.eqtb.ints.get(loc)),
+            Command::AssignDimen(loc) => CurVal::Dimen(st.eqtb.dimens.get(loc)),
             Command::AssignGlue(loc) => CurVal::Glue(glue_spec(st.eqtb.equiv(loc))),
             Command::AssignMuGlue(loc) => CurVal::Mu(glue_spec(st.eqtb.equiv(loc))),
             Command::SetAux(code) => {

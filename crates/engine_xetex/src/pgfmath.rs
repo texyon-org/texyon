@@ -510,8 +510,8 @@ fn register_item(st: &EngineState, cs: CsId) -> Result<Item, &'static str> {
         return Err("active or single-character control sequence");
     }
     match st.eqtb.meaning(cs) {
-        Command::AssignDimen(loc) => Ok(Item::Dimen(st.eqtb.int_at(loc))),
-        Command::AssignInt(loc) => Ok(Item::Count(st.eqtb.int_at(loc))),
+        Command::AssignDimen(loc) => Ok(Item::Dimen(st.eqtb.dimens.get(loc).raw())),
+        Command::AssignInt(loc) => Ok(Item::Count(st.eqtb.ints.get(loc))),
         Command::Register(r) => {
             let Ok(RegisterRef::Sparse(sa)) = r.get() else {
                 return Err("unsupported control sequence");

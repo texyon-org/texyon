@@ -375,6 +375,7 @@ pub(crate) fn arm(st: &mut crate::state::EngineState) {
     st.eqtb.journal.xeq.arm();
     st.eqtb.journal.hash.arm();
     st.eqtb.journal.prim.arm();
+    st.eqtb.arm_tables();
     st.fonts.font_info_journal.arm();
     st.fonts.fmem_epoch_base = st.fonts.fmem_ptr;
 }
@@ -384,6 +385,7 @@ pub(crate) fn disarm(st: &mut crate::state::EngineState) {
     st.mem.tokens.disarm_journal();
     st.mem.glue.journal.disarm();
     st.eqtb.journal.disarm();
+    st.eqtb.disarm_tables();
     st.fonts.font_info_journal.disarm();
     st.fonts.fmem_epoch_base = crate::units::FontInfoIdx::ZERO;
 }

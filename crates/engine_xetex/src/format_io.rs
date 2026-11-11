@@ -8,9 +8,10 @@
 use crate::bridge::{input_open, input_read, output_close, output_open, output_write, FileFormat};
 use crate::command::Command;
 use crate::consts::{
-    ACTIVE_BASE, CAT_CODE_BASE, CUR_FONT_LOC, EMPTY_STRING, EQTB_SIZE, FONT_BASE,
+    ACTIVE_BASE, CAT_CODE_BASE, CUR_FONT_LOC, DEL_CODE_BASE, EMPTY_STRING, EQTB_SIZE, FONT_BASE,
     FROZEN_CONTROL_SEQUENCE, HASH_BASE, INT_BASE, INVALID_HANDLE, MAX_FONT_MAX, MAX_HALFWORD,
-    MIN_HALFWORD, NULL_FONT, PRIM_SIZE, TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
+    MIN_HALFWORD, NULL_FONT, NUMBER_USVS, PRIM_SIZE, TEX_NULL, TOO_BIG_CHAR,
+    UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::engine::{POOL_FREE, STRINGS_FREE};
 use crate::errors::Abort;
@@ -610,11 +611,11 @@ fn token_lists<S: FmtStream>(s: &mut S, toks: &mut TokenStore) -> Result<(), Abo
     Ok(())
 }
 
-/// Dumps `v` as alternating runs of distinct words and of repeats of the preceding word.
-fn dump_runs<S: FmtStream>(
+/// Dumps `v` as alternating runs of distinct values and of repeats of the preceding value.
+fn dump_runs<S: FmtStream, T: FmtItem>(
     s: &mut S,
-    v: &mut [MemoryWord],
-    same: impl Fn(&MemoryWord, &MemoryWord) -> bool,
+    v: &mut [T],
+    same: impl Fn(&T, &T) -> bool,
 ) -> Result<(), Abort> {
     let count = |n: usize| i32::try_from(n).map_err(|_| Abort::Internal("eqtb run too long"));
     let last = v.len().saturating_sub(1);
@@ -645,7 +646,7 @@ fn dump_runs<S: FmtStream>(
 }
 
 /// Reads the runs [`dump_runs`] wrote into `v`, which they must fill exactly.
-fn undump_runs<S: FmtStream>(s: &mut S, v: &mut [MemoryWord]) -> Result<(), Abort> {
+fn undump_runs<S: FmtStream, T: FmtItem>(s: &mut S, v: &mut [T]) -> Result<(), Abort> {
     let mut k = 0;
     loop {
         let mut x = 0;
@@ -666,6 +667,15 @@ fn undump_runs<S: FmtStream>(s: &mut S, v: &mut [MemoryWord]) -> Result<(), Abor
         if k == v.len() {
             return Ok(());
         }
+    }
+}
+
+/// Dumps or loads the values of `v` as runs.
+fn runs<S: FmtStream, T: FmtItem + PartialEq>(s: &mut S, v: &mut [T]) -> Result<(), Abort> {
+    if S::LOADING {
+        undump_runs(s, v)
+    } else {
+        dump_runs(s, v, T::eq)
     }
 }
 
@@ -692,16 +702,21 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
     let same_int = |a: &MemoryWord, b: &MemoryWord| a.b32().s1 == b.b32().s1;
     let extra_top = UNDEFINED_CONTROL_SEQUENCE + eqtb.hash_high;
     let mut words = cs_words(eqtb, ACTIVE_BASE, UNDEFINED_CONTROL_SEQUENCE);
-    let (entries, ints) = eqtb.data.split_at_mut(crate::state::data_slot(INT_BASE));
+    let (entries, del_codes) = eqtb.data.split_at_mut(crate::state::data_slot(INT_BASE));
+    let del_codes = &mut del_codes
+        [crate::state::data_slot(DEL_CODE_BASE) - crate::state::data_slot(INT_BASE)..]
+        [..NUMBER_USVS as usize];
     if S::LOADING {
         undump_runs(s, &mut words)?;
         undump_runs(s, entries)?;
-        undump_runs(s, ints)?;
+        undump_runs(s, del_codes)?;
     } else {
         dump_runs(s, &mut words, same_entry)?;
         dump_runs(s, entries, same_entry)?;
-        dump_runs(s, ints, same_int)?;
+        dump_runs(s, del_codes, same_int)?;
     }
+    runs(s, eqtb.ints.values_mut())?;
+    runs(s, eqtb.dimens.values_mut())?;
     let mut extra = cs_words(eqtb, UNDEFINED_CONTROL_SEQUENCE + 1, extra_top);
     s.items(&mut extra)?;
     if S::LOADING {

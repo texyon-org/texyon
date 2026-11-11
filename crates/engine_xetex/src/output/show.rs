@@ -617,7 +617,7 @@ fn show_page_so_far(st: &mut EngineState) {
                 let box_num = st.mem[ins].box_number;
                 print_int(st, i32::from(box_num));
                 print(st, " adds ");
-                let count = st.eqtb.count(i32::from(box_num));
+                let count = st.eqtb.count(box_num);
                 let height = st.mem[ins].height;
                 let adds = if count == 1000 {
                     height

@@ -323,6 +323,8 @@ pub(crate) struct EqtbState {
     pub cs_levels: Vec<u16>,
     /// The entries from `GLUE_BASE` on.
     pub data: Vec<crate::mem_types::MemoryWord>,
+    pub ints: crate::eqtb::Table<crate::eqtb::IntLoc, i32>,
+    pub dimens: crate::eqtb::Table<crate::eqtb::DimenLoc, Scaled>,
     pub prim: Vec<crate::mem_types::B32x2>,
     pub xeq_level: Vec<u16>,
     /// The `next` and `text` of each control sequence from `HASH_BASE` on.
@@ -345,6 +347,8 @@ impl Default for EqtbState {
             meanings: Vec::new(),
             cs_levels: Vec::new(),
             data: Vec::new(),
+            ints: Default::default(),
+            dimens: Default::default(),
             // PRIM_SIZE + 1 = 2101.
             prim: vec![crate::mem_types::B32x2 { s0: 0, s1: 0 }; 2101],
             xeq_level: vec![0u16; crate::consts::XEQ_LEVEL_SIZE],
@@ -367,6 +371,8 @@ impl EqtbState {
         self.cs_levels = vec![crate::consts::LEVEL_ZERO; cs];
         self.hash = crate::mem_types::zeroed_vec(crate::hash::hash_slot(self.cs_top) + 1);
         self.data = crate::mem_types::zeroed_vec(data_slot(EQTB_SIZE) + 1);
+        self.ints = crate::eqtb::Table::new(crate::eqtb::IntLoc::LEN, 0);
+        self.dimens = crate::eqtb::Table::new(crate::eqtb::DimenLoc::LEN, Scaled::ZERO);
     }
 
     /// An entry of the glue, token, box and code regions.
@@ -624,16 +630,16 @@ impl EqtbState {
         GlueSpecId::from_raw(self.equiv_ptr(crate::consts::SKIP_BASE + n).raw())
     }
     #[inline]
-    pub(crate) fn dimen(&self, n: i32) -> Scaled {
-        Scaled::from_raw(self.int_at(crate::consts::SCALED_BASE + n))
+    pub(crate) fn dimen(&self, n: u8) -> Scaled {
+        self.dimens.get(crate::eqtb::DimenLoc::dimen(n))
     }
     #[inline]
     pub(crate) fn toks(&self, n: i32) -> crate::token::TokenList {
         self.equiv_tokens(crate::consts::TOKS_BASE + n)
     }
     #[inline]
-    pub(crate) fn count(&self, n: i32) -> i32 {
-        self.equiv(crate::consts::COUNT_BASE + n)
+    pub(crate) fn count(&self, n: u8) -> i32 {
+        self.ints.get(crate::eqtb::IntLoc::count(n))
     }
     #[inline]
     pub(crate) fn math_font(&self, n: i32) -> FontId {
@@ -681,19 +687,21 @@ impl EqtbState {
 
     #[inline]
     pub fn int_par(&self, n: IntPar) -> i32 {
-        self.b32s1(n.loc())
+        self.ints.get(n.loc())
     }
+    /// Sets `n`, keeping its level.
     #[inline]
     pub fn set_int_par(&mut self, n: IntPar, v: i32) {
-        self.set_b32s1(n.loc(), v);
+        self.ints.set_value(n.loc(), v);
     }
     #[inline]
     pub fn dimen_par(&self, n: DimenPar) -> Scaled {
-        Scaled::from_raw(self.b32s1(n.loc()))
+        self.dimens.get(n.loc())
     }
+    /// Sets `n`, keeping its level.
     #[inline]
     pub fn set_dimen_par(&mut self, n: DimenPar, v: Scaled) {
-        self.set_b32s1(n.loc(), v.raw());
+        self.dimens.set_value(n.loc(), v);
     }
     /// The spec of glue parameter `n`, never null.
     #[inline]
@@ -892,6 +900,8 @@ pub(crate) enum Restore {
         old: crate::mem_types::MemoryWord,
         level: u16,
     },
+    Int(crate::eqtb::Old<crate::eqtb::IntLoc>),
+    Dimen(crate::eqtb::Old<crate::eqtb::DimenLoc>),
 }
 
 /// What a construction keeps on the save stack below its group.

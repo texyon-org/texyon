@@ -11,11 +11,11 @@ use crate::command::Usv;
 use crate::command::{Command, RegisterRef};
 use crate::consts::NULL_FONT;
 use crate::consts::{
-    ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_USV, CAT_CODE_BASE, CHAR_CLASS_LIMIT, COUNT_BASE,
-    CUR_FONT_LOC, DEL_CODE_BASE, DESIGN_SIZE, HASH_BASE, MATH_CODE_BASE, MAX_HALFWORD,
-    MU_SKIP_BASE, NULL_CS, PAR_SHAPE_LOC, SCALED_BASE, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE,
-    TEX_INFINITY, TOKS_BASE, VMODE,
+    ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_USV, CAT_CODE_BASE, CHAR_CLASS_LIMIT, CUR_FONT_LOC,
+    DEL_CODE_BASE, DESIGN_SIZE, HASH_BASE, MATH_CODE_BASE, MAX_HALFWORD, MU_SKIP_BASE, NULL_CS,
+    PAR_SHAPE_LOC, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, TEX_INFINITY, TOKS_BASE, VMODE,
 };
+use crate::eqtb::{self, DimenLoc, IntLoc};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::read_font_info;
@@ -270,9 +270,9 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         if q != Cmd::Register {
             crate::scan::get_x_token(st)?;
             match st.scanner.cur {
-                Command::AssignInt(loc) => break 'found (RegisterLoc::Eqtb(loc), ValueLevel::Int),
+                Command::AssignInt(loc) => break 'found (RegisterLoc::Int(loc), ValueLevel::Int),
                 Command::AssignDimen(loc) => {
-                    break 'found (RegisterLoc::Eqtb(loc), ValueLevel::Dimen)
+                    break 'found (RegisterLoc::Dimen(loc), ValueLevel::Dimen)
                 }
                 Command::AssignGlue(loc) => {
                     break 'found (RegisterLoc::Eqtb(loc), ValueLevel::Glue)
@@ -307,20 +307,25 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             }
         };
         let n = crate::scan::scan_register_num(st)?;
-        if n > 255 {
+        let Ok(r) = u8::try_from(n) else {
             let sa = st.mem.create_sa_element(&mut st.scanner, p, n)?;
             break 'found (RegisterLoc::Sparse(sa), p);
-        }
-        let base = p.register_base().or_confusion("register")?;
-        (RegisterLoc::Eqtb(base + n), p)
+        };
+        let l = match p {
+            ValueLevel::Int => RegisterLoc::Int(IntLoc::count(r)),
+            ValueLevel::Dimen => RegisterLoc::Dimen(DimenLoc::dimen(r)),
+            _ => RegisterLoc::Eqtb(p.register_base().or_confusion("register")? + n),
+        };
+        (l, p)
     };
 
     let (w, s) = match (p < ValueLevel::Glue, l) {
         (true, RegisterLoc::Sparse(SaLeaf::Word(w))) => (st.mem[w].sa_int, None),
-        (true, RegisterLoc::Eqtb(l)) => (st.eqtb.equiv(l), None),
+        (true, RegisterLoc::Int(l)) => (st.eqtb.ints.get(l), None),
+        (true, RegisterLoc::Dimen(l)) => (st.eqtb.dimens.get(l).raw(), None),
         (false, RegisterLoc::Sparse(SaLeaf::Pointer(p))) => (0, st.mem[p].sa_ptr),
-        (_, RegisterLoc::Sparse(_)) => return Err(Abort::Confusion("register")),
         (false, RegisterLoc::Eqtb(l)) => (0, st.eqtb.equiv_ptr(l)),
+        _ => return Err(Abort::Confusion("register")),
     };
 
     if q == Cmd::Register {
@@ -432,15 +437,16 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     match value {
         RegisterValue::Word(v) => match l {
             RegisterLoc::Sparse(SaLeaf::Word(w)) => sa_word_define(st, global, w, v)?,
-            RegisterLoc::Sparse(_) => return Err(Abort::Confusion("register")),
-            RegisterLoc::Eqtb(l) => word_define(st, global, l, v)?,
+            RegisterLoc::Int(l) => eqtb::define(st, global, l, v)?,
+            RegisterLoc::Dimen(l) => eqtb::define(st, global, l, Scaled::from_raw(v))?,
+            _ => return Err(Abort::Confusion("register")),
         },
         RegisterValue::Glue(g) => {
             let g = MemIdx::from_raw(trap_zero_glue(st, g).raw());
             match l {
                 RegisterLoc::Sparse(SaLeaf::Pointer(p)) => sa_define(st, global, p, g)?,
-                RegisterLoc::Sparse(_) => return Err(Abort::Confusion("register")),
                 RegisterLoc::Eqtb(l) => define(st, global, l, Cmd::GlueRef, g.raw())?,
+                _ => return Err(Abort::Confusion("register")),
             }
         }
     }
@@ -563,6 +569,8 @@ fn scan_inter_char_pair(st: &mut EngineState) -> Result<i32, Abort> {
 /// Where a register assignment stores its value.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RegisterLoc {
+    Int(IntLoc),
+    Dimen(DimenLoc),
     Eqtb(EqtbPtr),
     Sparse(SaLeaf),
 }
@@ -577,7 +585,9 @@ fn define_toks(
         RegisterLoc::Sparse(SaLeaf::Pointer(p)) => {
             sa_define(st, global, p, MemIdx::from_raw(list.raw()))
         }
-        RegisterLoc::Sparse(_) => Err(Abort::Confusion("toks")),
+        RegisterLoc::Sparse(_) | RegisterLoc::Int(_) | RegisterLoc::Dimen(_) => {
+            Err(Abort::Confusion("toks"))
+        }
         RegisterLoc::Eqtb(p) => {
             let t = if list.is_null() {
                 Cmd::UndefinedCs
@@ -729,12 +739,12 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
         Command::AssignInt(p) => {
             crate::scan::scan_optional_equals(st)?;
             let n = crate::scan::scan_int(st)?;
-            word_define(st, a >= 4, p, n)?;
+            eqtb::define(st, a >= 4, p, n)?;
         }
         Command::AssignDimen(p) => {
             crate::scan::scan_optional_equals(st)?;
             let d = crate::scan::scan_dimen(st, false)?;
-            word_define(st, a >= 4, p, d.raw())?;
+            eqtb::define(st, a >= 4, p, d)?;
         }
         cmd @ (Command::AssignGlue(p) | Command::AssignMuGlue(p)) => {
             let level = if let Command::AssignMuGlue(_) = cmd {
@@ -882,9 +892,10 @@ fn shorthand_def(st: &mut EngineState, global: bool, n: ShorthandDefCode) -> Res
                     Command::Register(RegisterCode::new(RegisterRef::Sparse(sa.element())))
                 }
             } else {
+                let r = u8::try_from(reg).or_confusion("register")?;
                 match n {
-                    ShorthandDefCode::Count => Command::AssignInt(COUNT_BASE + reg),
-                    ShorthandDefCode::Dimen => Command::AssignDimen(SCALED_BASE + reg),
+                    ShorthandDefCode::Count => Command::AssignInt(IntLoc::count(r)),
+                    ShorthandDefCode::Dimen => Command::AssignDimen(DimenLoc::dimen(r)),
                     ShorthandDefCode::Skip => Command::AssignGlue(SKIP_BASE + reg),
                     ShorthandDefCode::MuSkip => Command::AssignMuGlue(MU_SKIP_BASE + reg),
                     ShorthandDefCode::Toks => Command::AssignToks(TOKS_BASE + reg),

@@ -243,6 +243,8 @@ impl EqtbBundle {
             meanings: _,
             cs_levels: _,
             data: _,
+            ints: _,
+            dimens: _,
             prim: _,
             xeq_level: _,
             hash: _,

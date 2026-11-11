@@ -7,7 +7,7 @@ use crate::codes::{BoxCode, FiOrElseCode, MarkCode, ScannerStatus, ValueLevel};
 use crate::command::Command;
 use crate::consts::{
     BIGGEST_CHAR, BIGGEST_LANG, BOX_BASE, CAT_CODE_BASE, CLOSED, CS_TOKEN_FLAG, CUR_FONT_LOC,
-    DEL_CODE_BASE, DIMEN_BASE, EMPTY, EMPTY_STRING, END_WRITE, EQTB_SIZE, ETEX_PEN_BASE, FONT_BASE,
+    DEL_CODE_BASE, EMPTY, EMPTY_STRING, END_WRITE, EQTB_SIZE, ETEX_PEN_BASE, FONT_BASE,
     FROZEN_CONTROL_SEQUENCE, FROZEN_DONT_EXPAND, FROZEN_ENDV, FROZEN_END_TEMPLATE,
     FROZEN_PRIMITIVE, FROZEN_PROTECTION, GLUE_BASE, HISTORY_FATAL_ERROR, HISTORY_SPOTLESS,
     HISTORY_WARNING_ISSUED, IGNORE_DEPTH, INT_BASE, LC_CODE_BASE, LEVEL_ONE, LEVEL_ZERO,
@@ -450,10 +450,6 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
         eqtb.set_equiv(SF_CODE_BASE + k, 999);
     }
 
-    for k in INT_BASE.until(DEL_CODE_BASE) {
-        eqtb.set_int_at(k, 0);
-    }
-
     eqtb.set_int_par(IntPar::Mag, 1000);
     eqtb.set_int_par(IntPar::Tolerance, 10000);
     eqtb.set_int_par(IntPar::HangAfter, 1);
@@ -466,10 +462,6 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     }
     eqtb.set_int_at(DEL_CODE_BASE + i32::from(b'.'), 0);
     eqtb.set_int_par(IntPar::ShowStream, -1);
-
-    for k in DIMEN_BASE.through(EQTB_SIZE) {
-        eqtb.set_int_at(k, 0);
-    }
 
     eqtb.prim_used = PrimNum::from_raw(PRIM_SIZE);
     eqtb.hash_used = FROZEN_CONTROL_SEQUENCE;

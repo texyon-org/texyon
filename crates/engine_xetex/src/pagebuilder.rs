@@ -2,7 +2,8 @@
 
 use crate::codes::{BoxCode, MarkCode, ValueLevel};
 use crate::consts::{
-    AWFUL_BAD, EJECT_PENALTY, IGNORE_DEPTH, INF_BAD, INF_PENALTY, MAX_DIMEN, MAX_HALFWORD, VMODE,
+    AWFUL_BAD, EJECT_PENALTY, IGNORE_DEPTH, INF_BAD, INF_PENALTY, LEVEL_ONE, MAX_DIMEN,
+    MAX_HALFWORD, VMODE,
 };
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
@@ -64,11 +65,6 @@ fn freeze_page_specs(st: &mut EngineState, contents: PageContents) {
     shipout.page_max_depth = st.eqtb.dimen_par(DimenPar::MaxDepth);
     shipout.page_so_far[PAGE_TOTAL..=PAGE_DEPTH].fill(Scaled::ZERO);
     shipout.least_page_cost = MAX_HALFWORD;
-}
-
-/// The box register of an insertion class, which `\insert` limits to 0..254.
-fn ins_box(box_number: u16) -> Result<u8, Abort> {
-    u8::try_from(box_number).or_confusion("insertion box")
 }
 
 fn ensure_vbox(st: &mut EngineState, n: u8) -> Result<(), Abort> {
@@ -160,7 +156,7 @@ fn place_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Re
         }
     }
     st.mem[rec].best_ins_ptr = None;
-    let n = ins_box(st.mem[rec].box_number)?;
+    let n = st.mem[rec].box_number;
     let b = fetch_box(st, i32::from(n)).expect("insertion box made in fire_up");
     let list = st.mem[b].list_ptr;
     b.free(&mut st.mem);
@@ -181,7 +177,8 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
         _ => INF_PENALTY,
     };
     st.eqtb
-        .geq_word_define(IntPar::OutputPenalty.loc(), output_penalty);
+        .ints
+        .set(IntPar::OutputPenalty.loc(), output_penalty, LEVEL_ONE);
 
     if let Some(root) = st.scanner.sa_root.get(ValueLevel::Mark) {
         if st.mem.do_marks(MarksAction::FireUpInit, 0, root) {
@@ -224,7 +221,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
         while r != PAGE_INS_HEAD {
             let rec = page_ins(r);
             if !st.mem[rec].best_ins_ptr.is_none() {
-                let n = ins_box(st.mem[rec].box_number)?;
+                let n = st.mem[rec].box_number;
                 ensure_vbox(st, n)?;
                 if st.eqtb.box_reg(i32::from(n)).is_none() {
                     let b = st.mem.new_null_box()?;
@@ -433,19 +430,19 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
     if st.shipout.page_contents == PageContents::Empty {
         freeze_page_specs(st, PageContents::InsertsOnly);
     }
-    let n = ins_box(st.mem[ins].box_number)?;
+    let n = st.mem[ins].box_number;
     let mut r = PAGE_INS_HEAD;
-    while u16::from(n) >= st.mem[page_ins(ring_next(&st.mem, r)?)].box_number {
+    while n >= st.mem[page_ins(ring_next(&st.mem, r)?)].box_number {
         r = ring_next(&st.mem, r)?;
     }
-    if st.mem[page_ins(r)].box_number != u16::from(n) {
+    if st.mem[page_ins(r)].box_number != n {
         let q = NodePtr::<PageInsNode>::alloc(&mut st.mem)?.idx();
         let next = r.link(&st.mem);
         q.set_link(&mut st.mem, next);
         r.set_link(&mut st.mem, Some(q));
         r = q;
         let rec = page_ins(r);
-        st.mem[rec].box_number = u16::from(n);
+        st.mem[rec].box_number = n;
         st.mem[rec].set_split_up(false);
         ensure_vbox(st, n)?;
         let height = match fetch_box(st, i32::from(n)) {
@@ -456,7 +453,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         node.height = height;
         node.best_ins_ptr = None;
         let skip = st.eqtb.skip(i32::from(n));
-        let count = st.eqtb.count(i32::from(n));
+        let count = st.eqtb.count(n);
         let h = scale_by_count(height, count);
         st.shipout.page_so_far[PAGE_GOAL] -= h + st.mem[skip].width;
         let order = st.mem[skip].stretch_order.index();
@@ -490,10 +487,10 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
     st.mem[rec].last_ins_ptr = p;
     let so_far = st.shipout.page_so_far;
     let delta = so_far[PAGE_GOAL] - so_far[PAGE_TOTAL] - so_far[PAGE_DEPTH] + so_far[PAGE_SHRINK];
-    let count = st.eqtb.count(i32::from(n));
+    let count = st.eqtb.count(n);
     let ins_height = st.mem[ins].height;
     let h = scale_by_count(ins_height, count);
-    let max_height = st.eqtb.dimen(i32::from(n));
+    let max_height = st.eqtb.dimen(n);
     if (h <= Scaled::ZERO || h <= delta) && ins_height + st.mem[rec].height <= max_height {
         st.shipout.page_so_far[PAGE_GOAL] -= h;
         let height = st.mem[rec].height + ins_height;

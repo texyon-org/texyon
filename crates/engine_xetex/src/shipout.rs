@@ -270,7 +270,7 @@ fn ship_page(
         st.shipout.dvi.end_preamble(mag, b"tectonic")?;
     }
 
-    let counts = std::array::from_fn(|k| st.eqtb.count(k as i32));
+    let counts = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(|k| st.eqtb.count(k));
     st.shipout.dvi.bop(counts)?;
 
     let old_setting = st.shipout.selector;

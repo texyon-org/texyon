@@ -30,6 +30,7 @@ pub(crate) const MU_VAL_LIMIT: u16 = 256;
 pub(crate) const BOX_VAL_LIMIT: u16 = 320;
 
 impl EqtbState {
+    /// Sets a delimiter code in the current group.
     pub(crate) fn eq_word_define(
         &mut self,
         save_stack: &mut SaveStackState,
@@ -92,7 +93,7 @@ impl EqtbState {
 
 impl SaveStackState {
     /// TeX's `check_full_save_stack`, true when no room is left.
-    fn save_stack_full(&mut self) -> bool {
+    pub(crate) fn save_stack_full(&mut self) -> bool {
         if self.save_ptr > self.max_save_stack {
             self.max_save_stack = self.save_ptr;
             return self.max_save_stack.index() + 7 > self.save_size;
@@ -187,7 +188,7 @@ pub(crate) fn prepare_mag(st: &mut EngineState) -> Result<(), Abort> {
                 "reverted to the magnification you used earlier on this run.",
             ],
         )?;
-        st.eqtb.geq_word_define(IntPar::Mag.loc(), mag_set);
+        st.eqtb.ints.set(IntPar::Mag.loc(), mag_set, LEVEL_ONE);
     }
     let mag = st.eqtb.int_par(IntPar::Mag);
     if mag <= 0 || mag > 32768 {
@@ -201,7 +202,7 @@ pub(crate) fn prepare_mag(st: &mut EngineState) -> Result<(), Abort> {
             ),
             &["The magnification ratio must be between 1 and 32768."],
         )?;
-        st.eqtb.geq_word_define(IntPar::Mag.loc(), 1000);
+        st.eqtb.ints.set(IntPar::Mag.loc(), 1000, LEVEL_ONE);
     }
     st.scanner.mag_set = st.eqtb.int_par(IntPar::Mag);
     Ok(())
@@ -590,6 +591,8 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
                 let level = st.eqtb.cs_level(UNDEFINED_CONTROL_SEQUENCE);
                 restore_cs(st, cs, old, level)?;
             }
+            SaveEntry::Restore(Restore::Int(old)) => crate::eqtb::restore(st, old)?,
+            SaveEntry::Restore(Restore::Dimen(old)) => crate::eqtb::restore(st, old)?,
             SaveEntry::Restore(Restore::Word { loc, old, level }) => {
                 if !(INT_BASE..=EQTB_SIZE).contains(&loc) {
                     if st.eqtb.eq_level(loc) == LEVEL_ONE {

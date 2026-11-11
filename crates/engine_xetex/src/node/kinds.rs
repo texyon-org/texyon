@@ -1371,7 +1371,8 @@ impl GlueNode {
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct InsNode {
-    pub box_number: u16,
+    pub box_number: u8,
+    _pad: u8,
     _type: u16,
     pub link: MemPtr,
     pub float_cost: i32,
@@ -1393,7 +1394,8 @@ impl Node for InsNode {
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct PageInsNode {
-    pub box_number: u16,
+    pub box_number: u8,
+    _pad: u8,
     split_up: u16,
     pub link: MemPtr,
     pub broken_ins: MemPtr,

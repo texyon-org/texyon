@@ -15,9 +15,10 @@ use crate::state::{EngineState, EqtbState, FontState, GroupCode, MemState};
 use crate::units::MemIdx;
 use crate::units::{Dir, GlueOrder, GlueSign, NodeType, Scaled};
 
-use super::build::{define_word, fin_mlist};
+use super::build::fin_mlist;
 use super::mlist::mlist_to_hlist;
 use super::{MathStyle, SCRIPT_SCRIPT_SIZE};
+use crate::eqtb::define;
 
 const TOTAL_MATHSY_PARAMS: i32 = 22;
 const TOTAL_MATHEX_PARAMS: i32 = 13;
@@ -655,12 +656,12 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
 
         crate::main_control::push_math(st, GroupCode::MathShift)?;
         st.input.cur_list.mode = MMODE;
-        define_word(st, IntPar::CurFam.loc(), -1)?;
-        define_word(st, DimenPar::PreDisplaySize.loc(), w.raw())?;
+        define(st, false, IntPar::CurFam.loc(), -1)?;
+        define(st, false, DimenPar::PreDisplaySize.loc(), w)?;
         st.input.cur_list.e_tex_aux = j;
-        define_word(st, IntPar::PreDisplayDirection.loc(), x)?;
-        define_word(st, DimenPar::DisplayWidth.loc(), l.raw())?;
-        define_word(st, DimenPar::DisplayIndent.loc(), s.raw())?;
+        define(st, false, IntPar::PreDisplayDirection.loc(), x)?;
+        define(st, false, DimenPar::DisplayWidth.loc(), l)?;
+        define(st, false, DimenPar::DisplayIndent.loc(), s)?;
 
         if st.config.semantic_pagination_enabled {
             crate::ext::insert_special(st, "tdux:cs dmath")?;
@@ -676,7 +677,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
     } else {
         crate::input::back_input(st)?;
         crate::main_control::push_math(st, GroupCode::MathShift)?;
-        define_word(st, IntPar::CurFam.loc(), -1)?;
+        define(st, false, IntPar::CurFam.loc(), -1)?;
         if st.shipout.insert_src_special_every_math {
             crate::ext::insert_src_special(st)?;
         }

@@ -23,6 +23,7 @@ struct EngineDelta {
     meanings: WordDelta<crate::command::Command>,
     cs_levels: WordDelta<u16>,
     eqtb: WordDelta<MemoryWord>,
+    tables: crate::eqtb::TablesDelta,
     xeq: PlainDelta<u16>,
     hash: PlainDelta<B32x2>,
     prim: PlainDelta<B32x2>,
@@ -44,6 +45,7 @@ impl EngineDelta {
             meanings: st.eqtb.journal.meanings.seal(&st.eqtb.meanings),
             cs_levels: st.eqtb.journal.cs_levels.seal(&st.eqtb.cs_levels),
             eqtb: st.eqtb.journal.words.seal(&st.eqtb.data),
+            tables: st.eqtb.seal_tables(),
             xeq: st.eqtb.journal.xeq.seal(),
             hash: st.eqtb.journal.hash.seal(),
             prim: st.eqtb.journal.prim.seal(),
@@ -61,6 +63,7 @@ impl EngineDelta {
             meanings: st.eqtb.journal.meanings.snapshot(),
             cs_levels: st.eqtb.journal.cs_levels.snapshot(),
             eqtb: st.eqtb.journal.words.snapshot(),
+            tables: st.eqtb.snapshot_tables(),
             xeq: st.eqtb.journal.xeq.snapshot(),
             hash: st.eqtb.journal.hash.snapshot(),
             prim: st.eqtb.journal.prim.snapshot(),
@@ -75,6 +78,7 @@ impl EngineDelta {
         self.meanings.apply_to(&mut st.eqtb.meanings);
         self.cs_levels.apply_to(&mut st.eqtb.cs_levels);
         self.eqtb.apply_to(&mut st.eqtb.data);
+        self.tables.apply_to(&mut st.eqtb);
         self.xeq.apply_to(&mut st.eqtb.xeq_level);
         self.hash.apply_to(&mut st.eqtb.hash);
         self.prim.apply_to(&mut st.eqtb.prim);
@@ -88,6 +92,7 @@ impl EngineDelta {
         self.meanings.compose_with_older(older.meanings);
         self.cs_levels.compose_with_older(older.cs_levels);
         self.eqtb.compose_with_older(older.eqtb);
+        self.tables.compose_with_older(older.tables);
         self.xeq.compose_with_older(older.xeq);
         self.hash.compose_with_older(older.hash);
         self.prim.compose_with_older(older.prim);
@@ -102,6 +107,7 @@ impl EngineDelta {
         self.meanings.compact();
         self.cs_levels.compact();
         self.eqtb.compact();
+        self.tables.compact();
         self.xeq.compact();
         self.hash.compact();
         self.prim.compact();
@@ -115,6 +121,7 @@ impl EngineDelta {
             + self.meanings.allocated_bytes()
             + self.cs_levels.allocated_bytes()
             + self.eqtb.allocated_bytes()
+            + self.tables.allocated_bytes()
             + self.xeq.allocated_bytes()
             + self.hash.allocated_bytes()
             + self.prim.allocated_bytes()

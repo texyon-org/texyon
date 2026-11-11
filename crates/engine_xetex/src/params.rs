@@ -2,7 +2,8 @@
 //! `glue_par`, numbered as offsets from their region base.
 
 use crate::codes::code_enum;
-use crate::consts::{DIMEN_BASE, GLUE_BASE, INT_BASE, LOCAL_BASE};
+use crate::consts::{GLUE_BASE, LOCAL_BASE};
+use crate::eqtb::{DimenLoc, IntLoc};
 use crate::units::EqtbPtr;
 
 code_enum! {
@@ -187,10 +188,13 @@ impl IntPar {
         })
     }
 
-    /// The `eqtb` location.
+    /// How many there are.
+    pub(crate) const COUNT: u8 = IntPar::PartokenContext as u8 + 1;
+
+    /// The location in the integer table.
     #[inline]
-    pub(crate) const fn loc(self) -> EqtbPtr {
-        INT_BASE.plus(self as i32)
+    pub(crate) const fn loc(self) -> IntLoc {
+        IntLoc::par(self)
     }
 }
 
@@ -251,10 +255,13 @@ impl DimenPar {
         }
     }
 
-    /// The `eqtb` location.
+    /// How many there are.
+    pub(crate) const COUNT: u8 = DimenPar::PdfPageHeight as u8 + 1;
+
+    /// The location in the dimension table.
     #[inline]
-    pub(crate) const fn loc(self) -> EqtbPtr {
-        DIMEN_BASE.plus(self as i32)
+    pub(crate) const fn loc(self) -> DimenLoc {
+        DimenLoc::par(self)
     }
 }
 
