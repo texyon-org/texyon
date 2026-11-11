@@ -140,23 +140,23 @@ const RIGHT_BRACE_LIMIT: i32 = Token::new(Cmd::MathShift, 0).0;
 /// nodes, or null. It indexes the [`TokenStore`], not `mem`.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(transparent)]
-pub(crate) struct TokenList(i32);
+pub(crate) struct TokPtr(i32);
 
 /// The null list. Not the zero bit pattern `Zeroable` gives.
-impl Default for TokenList {
+impl Default for TokPtr {
     #[inline]
     fn default() -> Self {
         Self::NULL
     }
 }
 
-impl TokenList {
-    pub(crate) const NULL: TokenList = TokenList(TEX_NULL);
+impl TokPtr {
+    pub(crate) const NULL: TokPtr = TokPtr(TEX_NULL);
 
     /// The list from its raw form in an eqtb or save stack word, a node field or a format.
     #[inline(always)]
-    pub(crate) const fn from_raw(raw: i32) -> TokenList {
-        TokenList(raw)
+    pub(crate) const fn from_raw(raw: i32) -> TokPtr {
+        TokPtr(raw)
     }
 
     /// The raw form for an eqtb or save stack word, a node field or a format.
@@ -176,12 +176,12 @@ impl TokenList {
     }
 
     #[inline(always)]
-    pub(crate) fn link(self, toks: &TokenStore) -> TokenList {
+    pub(crate) fn link(self, toks: &TokenStore) -> TokPtr {
         toks.data[self.slot()].link
     }
 
     #[inline(always)]
-    pub(crate) fn set_link(self, toks: &mut TokenStore, q: TokenList) {
+    pub(crate) fn set_link(self, toks: &mut TokenStore, q: TokPtr) {
         toks.node_mut(self).link = q;
     }
 
@@ -214,40 +214,40 @@ impl TokenList {
 #[repr(C)]
 pub(crate) struct TokNode {
     info: i32,
-    link: TokenList,
+    link: TokPtr,
 }
 
 impl TokNode {
     const FRESH: TokNode = TokNode {
         info: 0,
-        link: TokenList::NULL,
+        link: TokPtr::NULL,
     };
 }
 
-/// Scratch heads for building token lists.
-pub(crate) const TEMP_HEAD_TOKS: TokenList = TokenList(0);
-pub(crate) const HOLD_HEAD_TOKS: TokenList = TokenList(1);
-/// The one-token list `\endtemplate` that ends an omitted template.
-pub(crate) const OMIT_TEMPLATE: TokenList = TokenList(2);
-/// Where `scan_keyword` keeps the tokens it backs up.
-pub(crate) const BACKUP_HEAD: TokenList = TokenList(3);
-pub(crate) const FIXED_HEADS: usize = 4;
+/// The head and the token of the list `\endtemplate` that ends an omitted template.
+const OMIT_TEMPLATE_HEAD: TokPtr = TokPtr(0);
+const OMIT_TEMPLATE_TOKEN: TokPtr = TokPtr(1);
+/// The nodes of the fixed lists, at the start of the store.
+pub(crate) const FIXED_HEADS: usize = 2;
 /// Half of `MAIN_MEMORY_WORDS` in two-word token nodes, until nodes and tokens share one budget.
 const MAX_TOKEN_NODES: usize = 1 << 24;
 
 /// The token lists, kept apart from `mem`. Nodes are one word each and freed to `avail`.
 pub(crate) struct TokenStore {
     data: Vec<TokNode>,
-    avail: TokenList,
+    avail: TokPtr,
     pub(crate) journal: WordJournal<TokNode>,
+    /// The lists being built, innermost last: each head and tail.
+    builds: Vec<(TokPtr, TokPtr)>,
 }
 
 impl Default for TokenStore {
     fn default() -> Self {
         Self {
             data: vec![TokNode::FRESH; FIXED_HEADS],
-            avail: TokenList::NULL,
+            avail: TokPtr::NULL,
             journal: WordJournal::default(),
+            builds: Vec::new(),
         }
     }
 }
@@ -256,12 +256,12 @@ impl Default for TokenStore {
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) struct TokenStoreMarks {
     pub(crate) len: usize,
-    pub(crate) avail: TokenList,
+    pub(crate) avail: TokPtr,
 }
 
 impl TokenStore {
     #[inline(always)]
-    fn node_mut(&mut self, p: TokenList) -> &mut TokNode {
+    fn node_mut(&mut self, p: TokPtr) -> &mut TokNode {
         let i = p.slot();
         if self.journal.armed() {
             self.journal.note(i, self.data[i]);
@@ -284,11 +284,15 @@ impl TokenStore {
     }
 
     /// Whether `p` is a node of this store, for printing a possibly clobbered list.
-    pub(crate) fn contains(&self, p: TokenList) -> bool {
+    pub(crate) fn contains(&self, p: TokPtr) -> bool {
         usize::try_from(p.0).is_ok_and(|i| i < self.data.len())
     }
 
     pub(crate) fn marks(&self) -> TokenStoreMarks {
+        debug_assert!(
+            self.builds.is_empty(),
+            "checkpoint while a token list is built"
+        );
         TokenStoreMarks {
             len: self.data.len(),
             avail: self.avail,
@@ -297,6 +301,7 @@ impl TokenStore {
 
     /// Rewinds to `marks`, after the journal put back the words that existed then.
     pub(crate) fn restore_marks(&mut self, marks: TokenStoreMarks) {
+        self.builds.clear();
         self.data.truncate(marks.len);
         self.avail = marks.avail;
         if self.journal.armed() {
@@ -305,63 +310,53 @@ impl TokenStore {
     }
 
     /// Empties the store to `len` fresh nodes with free list `avail`, for a format load to fill.
-    pub(crate) fn reset_for_load(&mut self, len: usize, avail: TokenList) {
+    pub(crate) fn reset_for_load(&mut self, len: usize, avail: TokPtr) {
         self.data = vec![TokNode::FRESH; len];
         self.avail = avail;
     }
 
     /// TeX's `get_avail` for a token node.
     #[inline(always)]
-    pub(crate) fn get_avail(&mut self) -> Result<TokenList, Abort> {
+    fn get_avail(&mut self) -> Result<TokPtr, Abort> {
         let p = self.avail;
         if p.is_null() {
             return self.grow();
         }
         self.avail = p.link(self);
-        p.set_link(self, TokenList::NULL);
+        p.set_link(self, TokPtr::NULL);
         Ok(p)
     }
 
     #[cold]
-    fn grow(&mut self) -> Result<TokenList, Abort> {
+    fn grow(&mut self) -> Result<TokPtr, Abort> {
         if self.data.len() >= MAX_TOKEN_NODES {
             return Err(Abort::AvailOverflow);
         }
         let p = i32::try_from(self.data.len()).map_err(|_| Abort::AvailOverflow)?;
         self.data.push(TokNode::FRESH);
-        Ok(TokenList(p))
+        Ok(TokPtr(p))
     }
 
     /// Returns the one node `p` to the free list.
     #[inline]
-    pub(crate) fn free_avail(&mut self, p: TokenList) {
+    fn free_avail(&mut self, p: TokPtr) {
         p.set_link(self, self.avail);
         self.avail = p;
     }
 
     /// Returns the list `p` to the free list.
-    pub(crate) fn flush_list(&mut self, p: TokenList) {
+    fn flush_list(&mut self, p: TokPtr) {
         if p.is_null() {
             return;
         }
         let tail = self.list_tail(p);
-        self.flush_list_with_tail(p, tail);
-    }
-
-    /// `flush_list` for a list whose last node `tail` the caller already knows.
-    #[inline]
-    pub(crate) fn flush_list_with_tail(&mut self, p: TokenList, tail: TokenList) {
-        if p.is_null() {
-            return;
-        }
-        debug_assert_eq!(self.list_tail(p), tail);
         tail.set_link(self, self.avail);
         self.avail = p;
     }
 
     /// The last node of the non-empty list starting at `p`.
     #[inline]
-    pub(crate) fn list_tail(&self, mut p: TokenList) -> TokenList {
+    fn list_tail(&self, mut p: TokPtr) -> TokPtr {
         while !p.link(self).is_null() {
             p = p.link(self);
         }
@@ -370,11 +365,7 @@ impl TokenStore {
 
     /// TeX's `store_new_token`: appends `tok` after `tail` and makes it the tail.
     #[inline(always)]
-    pub(crate) fn store_new_token(
-        &mut self,
-        tail: &mut TokenList,
-        tok: Token,
-    ) -> Result<(), Abort> {
+    fn store_new_token(&mut self, tail: &mut TokPtr, tok: Token) -> Result<(), Abort> {
         let q = self.get_avail()?;
         tail.set_link(self, q);
         q.set_token(self, tok);
@@ -383,16 +374,275 @@ impl TokenStore {
     }
 
     #[inline]
-    pub(crate) fn add_ref(&mut self, p: TokenList) {
+    pub(crate) fn add_ref(&mut self, list: TokenList) {
+        let p = list.0;
         p.set_ref_count(self, p.ref_count(self) + 1);
     }
 
-    /// Drops a reference to token list `p`, freeing it with the last one.
-    pub(crate) fn delete_ref(&mut self, p: TokenList) {
+    /// Drops a reference to `list`, freeing it with the last one.
+    pub(crate) fn delete_ref(&mut self, list: TokenList) {
+        let p = list.0;
         if p.ref_count(self) == TEX_NULL {
             self.flush_list(p);
         } else {
             p.set_ref_count(self, p.ref_count(self) - 1);
         }
+    }
+}
+
+/// A token list: its tokens and a reference count. Null for no list.
+#[derive(Copy, Clone, PartialEq, Eq, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(transparent)]
+pub(crate) struct TokenList(TokPtr);
+
+/// The null list. Not the zero bit pattern `Zeroable` gives.
+impl Default for TokenList {
+    #[inline]
+    fn default() -> Self {
+        Self::NULL
+    }
+}
+
+impl TokenList {
+    pub(crate) const NULL: TokenList = TokenList(TokPtr::NULL);
+    /// The one-token list `\endtemplate` that ends an omitted template.
+    pub(crate) const OMIT_TEMPLATE: TokenList = TokenList(OMIT_TEMPLATE_HEAD);
+
+    /// The list from its raw form in an eqtb or save stack word, a node field or a format.
+    #[inline(always)]
+    pub(crate) const fn from_raw(raw: i32) -> TokenList {
+        TokenList(TokPtr::from_raw(raw))
+    }
+
+    /// The raw form for an eqtb or save stack word, a node field or a format.
+    #[inline(always)]
+    pub(crate) const fn raw(self) -> i32 {
+        self.0.raw()
+    }
+
+    #[inline(always)]
+    pub(crate) fn is_null(self) -> bool {
+        self.0.is_null()
+    }
+}
+
+/// Where a reader of a token list is: the next token, or the end.
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+pub(crate) struct TokCursor(TokPtr);
+
+impl TokCursor {
+    pub(crate) const END: TokCursor = TokCursor(TokPtr::NULL);
+
+    #[inline(always)]
+    pub(crate) fn is_end(self) -> bool {
+        self.0.is_null()
+    }
+
+    /// The position as a number, for checkpoint digests.
+    pub(crate) fn raw(self) -> i32 {
+        self.0.raw()
+    }
+}
+
+/// A token list being built. Builds nest and end innermost first.
+#[must_use]
+#[derive(Debug)]
+pub(crate) struct Build(usize);
+
+impl TokenStore {
+    /// A reader at the first token of `list`, at the end for the null list.
+    #[inline(always)]
+    pub(crate) fn cursor(&self, list: TokenList) -> TokCursor {
+        if list.is_null() {
+            TokCursor::END
+        } else {
+            TokCursor(list.0.link(self))
+        }
+    }
+
+    /// The token at `c`, `None` at the end.
+    #[inline(always)]
+    pub(crate) fn peek(&self, c: TokCursor) -> Option<Token> {
+        (!c.is_end()).then(|| c.0.token(self))
+    }
+
+    /// The position after the token at `c`, which must not be the end.
+    #[inline(always)]
+    pub(crate) fn next(&self, c: TokCursor) -> TokCursor {
+        TokCursor(c.0.link(self))
+    }
+
+    /// The token at `c`, moving `c` past it. `None` at the end.
+    #[inline(always)]
+    pub(crate) fn read(&self, c: &mut TokCursor) -> Option<Token> {
+        let t = self.peek(*c)?;
+        *c = self.next(*c);
+        Some(t)
+    }
+
+    /// The tokens of `list`.
+    pub(crate) fn iter(&self, list: TokenList) -> TokIter<'_> {
+        TokIter {
+            store: self,
+            at: self.cursor(list),
+        }
+    }
+
+    /// Whether `c` lies in the store, for printing a possibly clobbered list.
+    pub(crate) fn holds(&self, c: TokCursor) -> bool {
+        self.contains(c.0)
+    }
+
+    /// Whether `list` lies in the store, for printing a possibly clobbered list.
+    pub(crate) fn holds_list(&self, list: TokenList) -> bool {
+        self.contains(list.0)
+    }
+
+    pub(crate) fn is_empty(&self, list: TokenList) -> bool {
+        self.cursor(list).is_end()
+    }
+
+    /// Starts building a list.
+    pub(crate) fn begin(&mut self) -> Result<Build, Abort> {
+        let head = self.get_avail()?;
+        head.set_ref_count(self, TEX_NULL);
+        self.builds.push((head, head));
+        Ok(Build(self.builds.len() - 1))
+    }
+
+    #[inline(always)]
+    fn top(&self, b: &Build) -> usize {
+        debug_assert_eq!(b.0 + 1, self.builds.len(), "token list builds out of order");
+        b.0
+    }
+
+    /// Appends `t` to the list `b` builds.
+    #[inline(always)]
+    pub(crate) fn push(&mut self, b: &Build, t: Token) -> Result<(), Abort> {
+        let i = self.top(b);
+        let mut tail = self.builds[i].1;
+        self.store_new_token(&mut tail, t)?;
+        self.builds[i].1 = tail;
+        Ok(())
+    }
+
+    /// The last token pushed, `None` while the build is empty.
+    #[inline]
+    pub(crate) fn last_pushed(&self, b: &Build) -> Option<Token> {
+        let (head, tail) = self.builds[b.0];
+        (tail != head).then(|| tail.token(self))
+    }
+
+    /// Ends the build, giving the list with one reference. It may be empty.
+    pub(crate) fn finish(&mut self, b: Build) -> TokenList {
+        let i = self.top(&b);
+        let (head, _) = self.builds.swap_remove(i);
+        TokenList(head)
+    }
+
+    /// Moves the tokens of `list` to the end of the build, freeing `list`.
+    pub(crate) fn push_list(&mut self, b: &Build, list: TokenList) -> Result<(), Abort> {
+        let mut c = self.cursor(list);
+        while let Some(t) = self.read(&mut c) {
+            self.push(b, t)?;
+        }
+        self.flush(list);
+        Ok(())
+    }
+
+    /// What the innermost open build holds so far, for a runaway message.
+    pub(crate) fn innermost_built(&self) -> TokCursor {
+        self.builds
+            .last()
+            .map_or(TokCursor::END, |&(head, _)| TokCursor(head.link(self)))
+    }
+
+    /// Ends the build and frees what it built.
+    pub(crate) fn abandon(&mut self, b: Build) {
+        let i = self.top(&b);
+        let (head, _) = self.builds.swap_remove(i);
+        self.flush_list(head);
+    }
+
+    /// Drops the first and last token built, an argument's outer braces.
+    pub(crate) fn drop_first_last(&mut self, b: &Build) {
+        let i = self.top(b);
+        let head = self.builds[i].0;
+        let first = head.link(self);
+        let mut before_last = first;
+        while before_last.link(self) != self.builds[i].1 {
+            before_last = before_last.link(self);
+        }
+        let last = self.builds[i].1;
+        self.free_avail(last);
+        if before_last == first {
+            head.set_link(self, TokPtr::NULL);
+            self.builds[i].1 = head;
+        } else {
+            before_last.set_link(self, TokPtr::NULL);
+            head.set_link(self, first.link(self));
+            self.builds[i].1 = before_last;
+        }
+        self.free_avail(first);
+    }
+
+    /// Sets up [`TokenList::OMIT_TEMPLATE`] to hold `t`, before the journal is armed.
+    pub(crate) fn init_omit_template(&mut self, t: Token) {
+        OMIT_TEMPLATE_HEAD.set_ref_count(self, TEX_NULL);
+        OMIT_TEMPLATE_HEAD.set_link(self, OMIT_TEMPLATE_TOKEN);
+        OMIT_TEMPLATE_TOKEN.set_token(self, t);
+        OMIT_TEMPLATE_TOKEN.set_link(self, TokPtr::NULL);
+    }
+
+    /// A list of the one token `t`.
+    pub(crate) fn single(&mut self, t: Token) -> Result<TokenList, Abort> {
+        let b = self.begin()?;
+        self.push(&b, t)?;
+        Ok(self.finish(b))
+    }
+
+    /// Puts `t` in front of the fresh list `list`.
+    pub(crate) fn prepend(&mut self, list: TokenList, t: Token) -> Result<(), Abort> {
+        let q = self.get_avail()?;
+        q.set_token(self, t);
+        q.set_link(self, list.0.link(self));
+        list.0.set_link(self, q);
+        Ok(())
+    }
+
+    /// Puts `t` at the end of the fresh list `list`.
+    pub(crate) fn append(&mut self, list: TokenList, t: Token) -> Result<(), Abort> {
+        let mut tail = self.list_tail(list.0);
+        self.store_new_token(&mut tail, t)
+    }
+
+    /// Rewrites each token of the fresh list `list` with `f`.
+    pub(crate) fn map_tokens(&mut self, list: TokenList, mut f: impl FnMut(Token) -> Token) {
+        let mut p = list.0.link(self);
+        while !p.is_null() {
+            let t = f(p.token(self));
+            p.set_token(self, t);
+            p = p.link(self);
+        }
+    }
+
+    /// Frees `list` whatever its reference count.
+    pub(crate) fn flush(&mut self, list: TokenList) {
+        self.flush_list(list.0);
+    }
+}
+
+/// The tokens of a list, from [`TokenStore::iter`].
+pub(crate) struct TokIter<'a> {
+    store: &'a TokenStore,
+    at: TokCursor,
+}
+
+impl Iterator for TokIter<'_> {
+    type Item = Token;
+
+    #[inline]
+    fn next(&mut self) -> Option<Token> {
+        self.store.read(&mut self.at)
     }
 }

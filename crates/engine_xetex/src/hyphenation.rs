@@ -714,8 +714,8 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
             &["All patterns must be given before typesetting begins."],
         )?;
 
-        let _ = crate::scan::scan_toks(st, false, false)?;
-        st.mem.tokens.flush_list(st.scanner.def_ref);
+        let list = crate::scan::scan_toks(st, false, false)?;
+        st.mem.tokens.flush(list);
         return Ok(());
     }
 

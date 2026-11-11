@@ -17,7 +17,7 @@ use crate::node::{CharNode, NativeWordNode, NodePtr, RuleDimen, SaElement};
 use crate::node::{DelimiterWord, MathWord};
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, GroupCode, Selector};
-use crate::token::TokenList;
+use crate::token::{TokCursor, TokenList};
 use crate::units::{EqtbPtr, FontId, GlueOrder, MemPtr, PrimNum, Scaled, StrNumber};
 
 mod cmd_chr;
@@ -826,10 +826,10 @@ pub(crate) fn print_group(st: &mut EngineState, e: bool) {
     }
 }
 
-pub(crate) fn token_show(st: &mut EngineState, p: TokenList) {
-    if !p.is_null() {
-        let head = p.link(&st.mem.tokens);
-        show_token_list(st, head, TokenList::NULL, 10_000_000);
+pub(crate) fn token_show(st: &mut EngineState, list: TokenList) {
+    if !list.is_null() {
+        let from = st.mem.tokens.cursor(list);
+        show_token_list(st, from, TokCursor::END, 10_000_000);
     }
 }
 
@@ -961,14 +961,14 @@ fn print_font_and_char(st: &mut EngineState, p: MemPtr) {
     }
 }
 
-fn print_mark(st: &mut EngineState, p: TokenList) {
+fn print_mark(st: &mut EngineState, list: TokenList) {
     print_char(st, b'{');
-    if !st.mem.tokens.contains(p) {
+    if !st.mem.tokens.holds_list(list) {
         print_esc(st, "CLOBBERED.");
     } else {
-        let head = p.link(&st.mem.tokens);
+        let from = st.mem.tokens.cursor(list);
         let l = st.config.max_print_line - 10;
-        show_token_list(st, head, TokenList::NULL, l);
+        show_token_list(st, from, TokCursor::END, l);
     }
     print_char(st, b'}');
 }

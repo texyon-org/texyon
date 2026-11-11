@@ -170,7 +170,6 @@ pub(crate) struct OpenLevel {
 #[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
 pub(crate) struct MacroParam {
     pub list: crate::token::TokenList,
-    pub tail: crate::token::TokenList,
 }
 
 /// One level of TeX's input stack (`in_state_record`).
@@ -186,8 +185,8 @@ pub(crate) struct InputState {
     pub synctex_tag: i32,
     /// A token-list level's list, which it frees or drops a reference to when it ends.
     tok_start: crate::token::TokenList,
-    /// The next token a token-list level reads, null at its end.
-    tok_loc: crate::token::TokenList,
+    /// The next token a token-list level reads.
+    tok_loc: crate::token::TokCursor,
     /// Where a macro level's arguments start on the parameter stack.
     param_start: u32,
 }
@@ -258,22 +257,16 @@ impl InputState {
         self.tok_start
     }
     #[inline]
-    pub(crate) fn token_loc(&self) -> crate::token::TokenList {
+    pub(crate) fn token_loc(&self) -> crate::token::TokCursor {
         self.tok_loc
     }
     #[inline]
-    pub(crate) fn set_token_loc(&mut self, p: crate::token::TokenList) {
-        self.tok_loc = p;
+    pub(crate) fn set_token_loc(&mut self, c: crate::token::TokCursor) {
+        self.tok_loc = c;
     }
     #[inline]
-    pub(crate) fn set_token_start(&mut self, p: crate::token::TokenList) {
-        self.tok_start = p;
-    }
-    /// Starts reading the token list `p` from its first node.
-    #[inline]
-    pub(crate) fn set_token_list(&mut self, p: crate::token::TokenList) {
-        self.tok_start = p;
-        self.tok_loc = p;
+    pub(crate) fn set_token_start(&mut self, list: crate::token::TokenList) {
+        self.tok_start = list;
     }
 }
 

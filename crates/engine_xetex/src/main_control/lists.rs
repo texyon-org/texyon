@@ -26,7 +26,6 @@ use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::scaled_math::xn_over_d;
 use crate::state::{EngineState, GroupCode, MemState};
 use crate::token::Token;
-use crate::token::TEMP_HEAD_TOKS;
 use crate::units::{FontId, MemIdx, MemPtr, NodeType, Scaled};
 
 use super::align::align_peek;
@@ -420,13 +419,13 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
         }
         GroupCode::Output => {
             while st.input.cur_input.state == TOKEN_LIST
-                && st.input.cur_input.token_loc().is_null()
+                && st.input.cur_input.token_loc().is_end()
                 && st.input.cur_input.token_type() == TokenType::BackedUp
             {
                 crate::input::end_token_list(st)?;
             }
             if st.input.cur_input.state != TOKEN_LIST
-                || !st.input.cur_input.token_loc().is_null()
+                || !st.input.cur_input.token_loc().is_end()
                 || st.input.cur_input.token_type() != TokenType::Output
             {
                 crate::errors::error(
@@ -439,7 +438,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
                 )?;
                 loop {
                     crate::scan::get_token(st)?;
-                    if st.input.cur_input.token_loc().is_null() {
+                    if st.input.cur_input.token_loc().is_end() {
                         break;
                     }
                 }
@@ -648,14 +647,12 @@ pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
     }
     crate::input::back_input(st)?;
     let insertion = crate::state::Insertion(st.save_stack.cur_group.closer());
-    let mut tail = TEMP_HEAD_TOKS;
+    let list = st.mem.tokens.begin()?;
     for token in insertion.tokens() {
-        let q = st.mem.tokens.get_avail()?;
-        tail.set_link(&mut st.mem.tokens, q);
-        q.set_token(&mut st.mem.tokens, token);
-        tail = q;
+        st.mem.tokens.push(&list, token)?;
     }
-    crate::input::begin_token_list(st, TEMP_HEAD_TOKS.link(&st.mem.tokens), TokenType::Inserted)?;
+    let list = st.mem.tokens.finish(list);
+    crate::input::begin_token_list(st, list, TokenType::Inserted)?;
     crate::errors::error(
         st,
         ("Missing ", insertion, " inserted"),

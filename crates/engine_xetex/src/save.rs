@@ -487,10 +487,7 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
                 let t = st.scanner.cur_tok;
                 st.scanner.cur_tok = Token(st.save_stack.save_index(sp));
                 if a {
-                    let pn = st.mem.tokens.get_avail()?;
-                    pn.set_token(&mut st.mem.tokens, st.scanner.cur_tok);
-                    pn.set_link(&mut st.mem.tokens, st.input.cur_input.token_loc());
-                    st.input.cur_input.set_token_list(pn);
+                    crate::input::prepend_to_backed_up(st, st.scanner.cur_tok)?;
                     if st.scanner.cur_tok.is_brace() {
                         if st.scanner.cur_tok.is_left_brace() {
                             st.scanner.align_state -= 1;

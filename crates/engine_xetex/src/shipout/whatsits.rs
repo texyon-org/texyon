@@ -28,16 +28,16 @@ fn special_out(
         st.mem[special].tokens
     };
     st.shipout.selector = Selector::NewString;
-    let tokens = list.link(&st.mem.tokens);
+    let tokens = st.mem.tokens.cursor(list);
     let avail = st.strings.pool_size - st.strings.pool_ptr;
-    crate::output::show_token_list(st, tokens, crate::token::TokenList::NULL, avail);
+    crate::output::show_token_list(st, tokens, crate::token::TokCursor::END, avail);
     st.shipout.selector = old_setting;
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
         return Err(st.strings.pool_overflow());
     }
     dvi_special_from_cur_string(st)?;
     if late {
-        st.mem.tokens.flush_list(list);
+        st.mem.tokens.flush(list);
     }
     st.shipout.doing_special = false;
     Ok(())
@@ -56,16 +56,12 @@ impl EqtbState {
 
 /// Expands `tokens` as `\write` does, leaving the result in `def_ref`.
 fn expand_write_tokens(st: &mut crate::state::EngineState, tokens: TokenList) -> Result<(), Abort> {
-    let q = st.mem.tokens.get_avail()?;
-    q.set_token(&mut st.mem.tokens, Token::right_brace(b'}'));
-    let r = st.mem.tokens.get_avail()?;
-    q.set_link(&mut st.mem.tokens, r);
-    r.set_token(&mut st.mem.tokens, Token::from_cs(END_WRITE));
-    crate::input::begin_token_list(st, q, TokenType::Inserted)?;
+    let close = st.mem.tokens.single(Token::right_brace(b'}'))?;
+    st.mem.tokens.append(close, Token::from_cs(END_WRITE))?;
+    crate::input::begin_token_list(st, close, TokenType::Inserted)?;
     crate::input::begin_token_list(st, tokens, TokenType::Write)?;
-    let q = st.mem.tokens.get_avail()?;
-    q.set_token(&mut st.mem.tokens, Token::left_brace(b'{'));
-    crate::input::begin_token_list(st, q, TokenType::Inserted)?;
+    let open = st.mem.tokens.single(Token::left_brace(b'{'))?;
+    crate::input::begin_token_list(st, open, TokenType::Inserted)?;
 
     let old_mode = st.input.cur_list.mode;
     st.input.cur_list.mode = 0;
@@ -120,7 +116,7 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WriteNode>) -> R
         crate::diagnostic::end_capture(st);
     }
     crate::output::print_ln(st);
-    st.mem.tokens.flush_list(def_ref);
+    st.mem.tokens.flush(def_ref);
 
     if j == 18 {
         st.shipout.selector = st.eqtb.log_selector();

@@ -23,22 +23,17 @@ use crate::output::{
 use crate::params::{GluePar, IntPar};
 use crate::scan::{
     copy_delimited_tokens, copy_group_tokens, fetch_box, get_next, get_token, get_x_non_blank,
-    get_x_token, scan_int, store_new_token,
+    get_x_token, scan_int,
 };
 use crate::state::{EngineState, InputName, MacroParam, MemState, Selector};
-use crate::token::{Token, TokenList};
-use crate::token::{BACKUP_HEAD, TEMP_HEAD_TOKS};
+use crate::token::{Build, TokCursor, Token, TokenList};
 use crate::units::{BufPos, EqtbPtr, FontId, MemPtr, Scaled, StrNumber};
 
 fn ins_the_toks(st: &mut EngineState, code: TheCode) -> Result<(), Abort> {
-    crate::scan::the_toks(st, code)?;
-    ins_temp_head_list(st)
-}
-
-/// Inserts the list just built at `link(temp_head)`.
-fn ins_temp_head_list(st: &mut EngineState) -> Result<(), Abort> {
-    begin_token_list(st, TEMP_HEAD_TOKS.link(&st.mem.tokens), TokenType::Inserted)?;
-    Ok(())
+    let b = st.mem.tokens.begin()?;
+    crate::scan::the_toks(st, code, &b)?;
+    let list = st.mem.tokens.finish(b);
+    begin_token_list(st, list, TokenType::Inserted)
 }
 
 fn pop_cond_node(st: &mut EngineState) -> Result<(), Abort> {
@@ -93,26 +88,23 @@ fn get_token_unexpanded(st: &mut EngineState) -> Result<(), Abort> {
 /// Copies the character tokens of `list` into `buffer[first..]`, returning the end index.
 fn token_chars_to_buffer(st: &mut EngineState, list: TokenList) -> Result<BufPos, Abort> {
     let mut j = st.input.first;
-    let mut p = list;
-    while !p.is_null() {
+    let mut p = st.mem.tokens.cursor(list);
+    while let Some(t) = st.mem.tokens.read(&mut p) {
         if j >= st.input.max_buf_stack {
             st.input.max_buf_stack = j + 1;
             if st.input.max_buf_stack == st.input.buf_size {
                 return Err(st.input.buffer_overflow());
             }
         }
-        st.input.buffer[j] = p.token(&st.mem.tokens).chr();
+        st.input.buffer[j] = t.chr();
         j += 1;
-        p = p.link(&st.mem.tokens);
     }
     Ok(j)
 }
 
 /// Scans the tokens of a `\csname`-like name up to the terminating control sequence.
-/// Returns the head node and the last node of the scanned list.
-fn scan_cs_name_tokens(st: &mut EngineState) -> Result<(TokenList, TokenList), Abort> {
-    let head = st.mem.tokens.get_avail()?;
-    let mut tail = head;
+fn scan_cs_name_tokens(st: &mut EngineState) -> Result<TokenList, Abort> {
+    let b = st.mem.tokens.begin()?;
     let saved_in_csname = st.scanner.is_in_csname;
     st.scanner.is_in_csname = true;
     loop {
@@ -120,7 +112,7 @@ fn scan_cs_name_tokens(st: &mut EngineState) -> Result<(TokenList, TokenList), A
         if !st.scanner.cur_cs.is_none() {
             break;
         }
-        store_new_token(st, &mut tail, st.scanner.cur_tok)?;
+        st.mem.tokens.push(&b, st.scanner.cur_tok)?;
     }
     if st.scanner.cur_cmd != Cmd::EndCsName {
         crate::errors::back_error(
@@ -133,7 +125,7 @@ fn scan_cs_name_tokens(st: &mut EngineState) -> Result<(TokenList, TokenList), A
         )?;
     }
     st.scanner.is_in_csname = saved_in_csname;
-    Ok((head, tail))
+    Ok(st.mem.tokens.finish(b))
 }
 
 fn trace_diagnostic(st: &mut EngineState, text: &str) {
@@ -235,21 +227,8 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
             } else if st.scanner.cur_cmd < Cmd::Call {
                 st.scanner.cur_chr == q
             } else {
-                let mut p = st.scanner.cur_chr_tokens().link(&st.mem.tokens);
-                let mut q = st.eqtb.equiv_tokens(n).link(&st.mem.tokens);
-                if p == q {
-                    true
-                } else {
-                    while !p.is_null() && !q.is_null() {
-                        if p.token(&st.mem.tokens) != q.token(&st.mem.tokens) {
-                            p = TokenList::NULL;
-                        } else {
-                            p = p.link(&st.mem.tokens);
-                            q = q.link(&st.mem.tokens);
-                        }
-                    }
-                    p.is_null() && q.is_null()
-                }
+                let (p, q) = (st.scanner.cur_chr_tokens(), st.eqtb.equiv_tokens(n));
+                p == q || st.mem.tokens.iter(p).eq(st.mem.tokens.iter(q))
             };
             st.scanner.scanner_status = save_scanner_status;
             b
@@ -269,9 +248,9 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
             st.scanner.cur_cmd != Cmd::UndefinedCs
         }
         IfCode::CsName => {
-            let (head, tail) = scan_cs_name_tokens(st)?;
+            let name = scan_cs_name_tokens(st)?;
             let first = st.input.first;
-            let m = token_chars_to_buffer(st, head.link(&st.mem.tokens))?;
+            let m = token_chars_to_buffer(st, name)?;
             // Upstream keeps `single_base+c` here for c above U+FFFF and reads past `null_cs`.
             st.scanner.cur_cs = if m == first {
                 NULL_CS
@@ -281,7 +260,7 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
                 st.eqtb
                     .id_lookup(&mut st.strings, st.input.buffer.span(first, m))?
             };
-            st.mem.tokens.flush_list_with_tail(head, tail);
+            st.mem.tokens.flush(name);
             st.eqtb.eq_type(st.scanner.cur_cs) != Cmd::UndefinedCs
         }
         IfCode::InCsName => st.scanner.is_in_csname,
@@ -417,9 +396,9 @@ fn scan_text_to_string(st: &mut EngineState, saved: &SavedScan) -> Result<StrNum
     }
     let old_selector = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
-    let text = st.scanner.def_ref.link(&st.mem.tokens);
+    let text = st.mem.tokens.cursor(st.scanner.def_ref);
     let limit = st.strings.pool_size - st.strings.pool_ptr;
-    crate::output::show_token_list(st, text, TokenList::NULL, limit);
+    crate::output::show_token_list(st, text, TokCursor::END, limit);
     st.shipout.selector = old_selector;
     let s = st.strings.make_string()?;
     st.mem.tokens.delete_ref(st.scanner.def_ref);
@@ -434,9 +413,9 @@ fn ins_file_query_result(
     s: StrNumber,
     b: crate::units::PoolPos,
 ) -> Result<(), Abort> {
-    st.mem.str_toks_cat(&mut st.strings, b, None)?;
+    let list = str_list(st, b, None)?;
     st.strings.flush_str(s);
-    ins_temp_head_list(st)?;
+    begin_token_list(st, list, TokenType::Inserted)?;
     unseal_pending_str(st, saved);
     Ok(())
 }
@@ -535,10 +514,7 @@ fn conv_toks(st: &mut EngineState, c: ConvertCode) -> Result<(), Abort> {
             crate::scan::scan_pdf_ext_toks(st)?;
             st.scanner.warning_index = saved.warning_index;
             st.scanner.scanner_status = saved.status;
-            let def_ref = st.scanner.def_ref;
-            let list = def_ref.link(&st.mem.tokens);
-            begin_token_list(st, list, TokenType::Inserted)?;
-            st.mem.tokens.free_avail(st.scanner.def_ref);
+            begin_token_list(st, st.scanner.def_ref, TokenType::Inserted)?;
             st.scanner.def_ref = saved.def_ref;
             unseal_pending_str(st, &saved);
             return Ok(());
@@ -556,8 +532,8 @@ fn conv_toks(st: &mut EngineState, c: ConvertCode) -> Result<(), Abort> {
         ConvertCode::CreationDate => {
             let b = st.strings.pool_ptr;
             st.texmf.creation_date(&mut st.strings);
-            st.mem.str_toks_cat(&mut st.strings, b, None)?;
-            ins_temp_head_list(st)?;
+            let list = str_list(st, b, None)?;
+            begin_token_list(st, list, TokenType::Inserted)?;
         }
         ConvertCode::FileModDate => {
             let saved = save_scan(st)?;
@@ -730,8 +706,19 @@ fn conv_toks(st: &mut EngineState, c: ConvertCode) -> Result<(), Abort> {
     }
 
     st.shipout.selector = old_selector;
-    st.mem.str_toks_cat(&mut st.strings, b, cat)?;
-    ins_temp_head_list(st)
+    let list = str_list(st, b, cat)?;
+    begin_token_list(st, list, TokenType::Inserted)
+}
+
+/// `str_pool[b..pool_ptr]` as a list of its own, dropped from the pool.
+fn str_list(
+    st: &mut EngineState,
+    b: crate::units::PoolPos,
+    cat: Option<Cmd>,
+) -> Result<TokenList, Abort> {
+    let out = st.mem.tokens.begin()?;
+    st.mem.str_toks_cat(&mut st.strings, b, cat, &out)?;
+    Ok(st.mem.tokens.finish(out))
 }
 
 fn is_aat_or_graphite(st: &EngineState, f: FontId) -> bool {
@@ -747,15 +734,6 @@ fn not_font_error(st: &mut EngineState, c: ConvertCode, f: FontId, msg: &str) ->
     crate::errors::not_font_error_common(st, Cmd::Convert, c.raw(), f, msg)
 }
 
-/// Puts `token` in front of the backed-up token list on top of the input stack.
-fn prepend_to_backed_up(st: &mut EngineState, token: Token) -> Result<(), Abort> {
-    let p = st.mem.tokens.get_avail()?;
-    p.set_token(&mut st.mem.tokens, token);
-    p.set_link(&mut st.mem.tokens, st.input.cur_input.token_loc());
-    st.input.cur_input.set_token_list(p);
-    Ok(())
-}
-
 pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.expand_depth_count += 1;
     if st.scanner.expand_depth_count >= st.scanner.expand_depth {
@@ -764,8 +742,6 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
             n: st.scanner.expand_depth,
         });
     }
-
-    let backup_backup = BACKUP_HEAD.link(&st.mem.tokens);
 
     'reswitch: loop {
         if st.scanner.cur_cmd >= Cmd::Call {
@@ -839,7 +815,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     let t = st.scanner.cur_tok;
                     back_input(st)?;
                     if t.is_cs() && t != Token::from_cs(END_WRITE) {
-                        prepend_to_backed_up(st, Token::from_cs(FROZEN_DONT_EXPAND))?;
+                        crate::input::prepend_to_backed_up(st, Token::from_cs(FROZEN_DONT_EXPAND))?;
                     }
                 } else {
                     get_token_unexpanded(st)?;
@@ -854,14 +830,14 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                             continue 'reswitch;
                         }
                         back_input(st)?;
-                        prepend_to_backed_up(st, Token::from_cs(FROZEN_PRIMITIVE))?;
+                        crate::input::prepend_to_backed_up(st, Token::from_cs(FROZEN_PRIMITIVE))?;
                     }
                 }
             }
             Command::CsName => {
-                let (head, tail) = scan_cs_name_tokens(st)?;
+                let name = scan_cs_name_tokens(st)?;
                 let first = st.input.first;
-                let j = token_chars_to_buffer(st, head.link(&st.mem.tokens))?;
+                let j = token_chars_to_buffer(st, name)?;
                 st.scanner.cur_cs = if j > first + 1 || st.input.buffer[first] > 65535 {
                     st.eqtb.no_new_control_sequence = false;
                     let cs = st
@@ -874,7 +850,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                 } else {
                     SINGLE_BASE + st.input.buffer[first]
                 };
-                st.mem.tokens.flush_list_with_tail(head, tail);
+                st.mem.tokens.flush(name);
                 let cs = st.scanner.cur_cs;
                 if st.eqtb.eq_type(cs) == Cmd::UndefinedCs {
                     let _ = st.eqtb.eq_define(
@@ -938,7 +914,6 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
         break;
     }
 
-    BACKUP_HEAD.set_link(&mut st.mem.tokens, backup_backup);
     st.scanner.expand_depth_count -= 1;
     Ok(())
 }
@@ -947,8 +922,8 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
 #[cold]
 fn runaway_par_in_argument(
     st: &mut EngineState,
-    pstack: &mut [TokenList; 9],
-    n: i32,
+    pstack: &[TokenList],
+    arg: Build,
     unbalance: i32,
 ) -> Result<(), Abort> {
     if st.scanner.long_state == Cmd::Call {
@@ -967,10 +942,10 @@ fn runaway_par_in_argument(
             ],
         )?;
     }
-    pstack[n as usize] = TEMP_HEAD_TOKS.link(&st.mem.tokens);
+    st.mem.tokens.abandon(arg);
     st.scanner.align_state -= unbalance;
-    for &list in &pstack[..=n as usize] {
-        st.mem.tokens.flush_list(list);
+    for &list in pstack {
+        st.mem.tokens.flush(list);
     }
     Ok(())
 }
@@ -1026,14 +1001,15 @@ fn trace_macro_call(st: &mut EngineState, ref_count: TokenList) {
 }
 
 #[cold]
-fn trace_macro_param(st: &mut EngineState, match_chr: i32, n: i32, list: TokenList) {
+fn trace_macro_param(st: &mut EngineState, match_chr: i32, n: usize, list: TokenList) {
     let stack_levels = st.eqtb.int_par(IntPar::TracingStackLevels);
     if stack_levels == 0 || st.input.input_depth() < stack_levels {
         begin_diagnostic(st);
         crate::output::print_nl(st, StrNumber::single_char(match_chr));
-        print_int(st, n);
+        print_int(st, i32::try_from(n).unwrap_or(i32::MAX));
         print(st, "<-");
-        crate::output::show_token_list(st, list, TokenList::NULL, 1000);
+        let from = st.mem.tokens.cursor(list);
+        crate::output::show_token_list(st, from, TokCursor::END, 1000);
         end_diagnostic(st, false);
     }
 }
@@ -1052,54 +1028,52 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
     let save_scanner_status = st.scanner.scanner_status;
     let save_warning_index = st.scanner.warning_index;
     st.scanner.warning_index = st.scanner.cur_cs;
-    let ref_count = st.scanner.cur_chr_tokens();
-    let mut r = ref_count.link(&st.mem.tokens);
-    let mut n: i32 = 0;
+    let body = st.scanner.cur_chr_tokens();
+    let mut r = st.mem.tokens.cursor(body);
+    let mut n: usize = 0;
 
     if st.eqtb.int_par(IntPar::TracingMacros) > 0 {
-        trace_macro_call(st, ref_count);
+        trace_macro_call(st, body);
     }
 
-    if st.mem.is_protected_macro(ref_count) {
-        r = r.link(&st.mem.tokens);
+    if st.mem.is_protected_macro(body) {
+        r = st.mem.tokens.next(r);
     }
 
     let mut pstack = [TokenList::NULL; 9];
-    let mut ptail = [TokenList::NULL; 9];
     let mut match_chr: i32 = 0;
-    let mut rbrace_ptr = TokenList::NULL;
+    // A parameter text always ends with `END_MATCH`.
+    let tok = |st: &EngineState, c: TokCursor| st.mem.tokens.peek(c).unwrap_or(Token::END_MATCH);
 
     'exit: {
-        if r.token(&st.mem.tokens) != Token::END_MATCH {
+        if tok(st, r) != Token::END_MATCH {
             st.scanner.scanner_status = ScannerStatus::Matching;
             let mut unbalance: i32 = 0;
             st.scanner.long_state = st.eqtb.eq_type(st.scanner.cur_cs);
             st.scanner.long_state = st.scanner.long_state.without_outer();
 
             loop {
-                TEMP_HEAD_TOKS.set_link(&mut st.mem.tokens, TokenList::NULL);
-                let s: TokenList;
-                let mut p = TokenList::NULL;
+                let arg = st.mem.tokens.begin()?;
+                let s: Option<TokCursor>;
                 let mut m: i32 = 0;
-                let rt = r.token(&st.mem.tokens);
+                let rt = tok(st, r);
                 if rt >= Token::END_MATCH || rt < Token::match_(0) {
-                    s = TokenList::NULL;
+                    s = None;
                 } else {
                     match_chr = rt.chr();
-                    s = r.link(&st.mem.tokens);
-                    r = s;
-                    p = TEMP_HEAD_TOKS;
+                    r = st.mem.tokens.next(r);
+                    s = Some(r);
                 }
 
                 'continue_: loop {
-                    if s == r && !s.is_null() && !r.token(&st.mem.tokens).is_match() {
-                        copy_delimited_tokens(st, &mut p, &mut m, r.token(&st.mem.tokens))?;
+                    if s == Some(r) && !tok(st, r).is_match() {
+                        copy_delimited_tokens(st, &arg, &mut m, tok(st, r))?;
                     }
                     get_token(st)?;
 
-                    if st.scanner.cur_tok == r.token(&st.mem.tokens) {
-                        r = r.link(&st.mem.tokens);
-                        if r.token(&st.mem.tokens).is_match() {
+                    if st.scanner.cur_tok == tok(st, r) {
+                        r = st.mem.tokens.next(r);
+                        if tok(st, r).is_match() {
                             if st.scanner.cur_tok.is_left_brace() {
                                 st.scanner.align_state -= 1;
                             }
@@ -1108,8 +1082,8 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                         continue 'continue_;
                     }
 
-                    if s != r {
-                        if s.is_null() {
+                    if s != Some(r) {
+                        let Some(s) = s else {
                             crate::errors::error(
                                 st,
                                 (
@@ -1124,31 +1098,34 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                                     "followed by the required stuff, so I'm ignoring it.",
                                 ],
                             )?;
+                            st.mem.tokens.abandon(arg);
+                            for &list in &pstack[..n] {
+                                st.mem.tokens.flush(list);
+                            }
                             break 'exit;
-                        }
+                        };
                         // Contribute the partly matched delimiter to the argument.
                         let mut t = s;
                         loop {
-                            let tok = t.token(&st.mem.tokens);
-                            store_new_token(st, &mut p, tok)?;
+                            st.mem.tokens.push(&arg, tok(st, t))?;
                             m += 1;
-                            let mut u = t.link(&st.mem.tokens);
+                            let mut u = st.mem.tokens.next(t);
                             let mut v = s;
                             loop {
                                 if u == r {
-                                    if st.scanner.cur_tok != v.token(&st.mem.tokens) {
+                                    if st.scanner.cur_tok != tok(st, v) {
                                         break;
                                     }
-                                    r = v.link(&st.mem.tokens);
+                                    r = st.mem.tokens.next(v);
                                     continue 'continue_;
                                 }
-                                if u.token(&st.mem.tokens) != v.token(&st.mem.tokens) {
+                                if tok(st, u) != tok(st, v) {
                                     break;
                                 }
-                                u = u.link(&st.mem.tokens);
-                                v = v.link(&st.mem.tokens);
+                                u = st.mem.tokens.next(u);
+                                v = st.mem.tokens.next(v);
                             }
-                            t = t.link(&st.mem.tokens);
+                            t = st.mem.tokens.next(t);
                             if t == r {
                                 break;
                             }
@@ -1159,7 +1136,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                     if st.scanner.cur_tok == st.input.par_token
                         && st.scanner.long_state != Cmd::LongCall
                     {
-                        runaway_par_in_argument(st, &mut pstack, n, unbalance)?;
+                        runaway_par_in_argument(st, &pstack[..n], arg, unbalance)?;
                         break 'exit;
                     }
 
@@ -1170,8 +1147,8 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                         }
                         unbalance = 1;
                         loop {
-                            store_new_token(st, &mut p, st.scanner.cur_tok)?;
-                            if copy_group_tokens(st, &mut p, &mut unbalance, false)? {
+                            st.mem.tokens.push(&arg, st.scanner.cur_tok)?;
+                            if copy_group_tokens(st, &arg, &mut unbalance, false)? {
                                 break;
                             }
 
@@ -1180,7 +1157,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                             if st.scanner.cur_tok == st.input.par_token
                                 && st.scanner.long_state != Cmd::LongCall
                             {
-                                runaway_par_in_argument(st, &mut pstack, n, unbalance)?;
+                                runaway_par_in_argument(st, &pstack[..n], arg, unbalance)?;
                                 break 'exit;
                             }
 
@@ -1195,43 +1172,36 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                                 }
                             }
                         }
-                        rbrace_ptr = p;
-                        store_new_token(st, &mut p, st.scanner.cur_tok)?;
+                        st.mem.tokens.push(&arg, st.scanner.cur_tok)?;
                     } else {
-                        if st.scanner.cur_tok == Token::SPACE && r.token(&st.mem.tokens).is_match()
-                        {
+                        if st.scanner.cur_tok == Token::SPACE && tok(st, r).is_match() {
                             continue 'continue_;
                         }
-                        store_new_token(st, &mut p, st.scanner.cur_tok)?;
+                        st.mem.tokens.push(&arg, st.scanner.cur_tok)?;
                     }
 
                     m += 1;
-                    if !r.token(&st.mem.tokens).is_match() {
+                    if !tok(st, r).is_match() {
                         continue 'continue_;
                     }
                     break 'continue_;
                 }
 
-                if !s.is_null() {
-                    if m == 1 && p.token(&st.mem.tokens).is_brace() {
+                if s.is_some() {
+                    if m == 1 && st.mem.tokens.last_pushed(&arg).is_some_and(Token::is_brace) {
                         // Strip the braces around a single braced argument.
-                        rbrace_ptr.set_link(&mut st.mem.tokens, TokenList::NULL);
-                        st.mem.tokens.free_avail(p);
-                        p = TEMP_HEAD_TOKS.link(&st.mem.tokens);
-                        pstack[n as usize] = p.link(&st.mem.tokens);
-                        ptail[n as usize] = rbrace_ptr;
-                        st.mem.tokens.free_avail(p);
-                    } else {
-                        pstack[n as usize] = TEMP_HEAD_TOKS.link(&st.mem.tokens);
-                        ptail[n as usize] = p;
+                        st.mem.tokens.drop_first_last(&arg);
                     }
+                    pstack[n] = st.mem.tokens.finish(arg);
                     n += 1;
                     if st.eqtb.int_par(IntPar::TracingMacros) > 0 {
-                        trace_macro_param(st, match_chr, n, pstack[(n - 1) as usize]);
+                        trace_macro_param(st, match_chr, n, pstack[n - 1]);
                     }
+                } else {
+                    st.mem.tokens.abandon(arg);
                 }
 
-                if r.token(&st.mem.tokens) == Token::END_MATCH {
+                if tok(st, r) == Token::END_MATCH {
                     break;
                 }
             }
@@ -1239,9 +1209,9 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
 
         if n > 0 && st.config.pgfmath == crate::pgfmath::Mode::Native {
             if let Some(kind) = st.eqtb.pgfmath.native(st.scanner.warning_index) {
-                if crate::pgfmath::native_macro(st, kind, &pstack[..n as usize]) {
-                    for k in 0..n as usize {
-                        st.mem.tokens.flush_list_with_tail(pstack[k], ptail[k]);
+                if crate::pgfmath::native_macro(st, kind, &pstack[..n]) {
+                    for &list in &pstack[..n] {
+                        st.mem.tokens.flush(list);
                     }
                     break 'exit;
                 }
@@ -1249,25 +1219,22 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
         }
 
         while st.input.cur_input.state == TOKEN_LIST
-            && st.input.cur_input.token_loc().is_null()
+            && st.input.cur_input.token_loc().is_end()
             && st.input.cur_input.token_type() != TokenType::VTemplate
             && st.input.cur_input.token_type() != TokenType::Output
         {
             crate::input::end_token_list(st)?;
         }
 
-        begin_token_list(st, ref_count, TokenType::Macro)?;
+        begin_token_list(st, body, TokenType::Macro)?;
         st.input.cur_input.name = InputName::Macro(st.scanner.warning_index);
-        st.input.cur_input.set_token_loc(r.link(&st.mem.tokens));
+        st.input.cur_input.set_token_loc(st.mem.tokens.next(r));
 
         if n > 0 {
-            let params: [MacroParam; 9] = std::array::from_fn(|k| MacroParam {
-                list: pstack[k],
-                tail: ptail[k],
-            });
+            let params: [MacroParam; 9] = std::array::from_fn(|k| MacroParam { list: pstack[k] });
             let stack = &mut st.input.param_stack;
             stack
-                .push_all(&params[..n as usize])
+                .push_all(&params[..n])
                 .map_err(|_| stack.overflow(crate::errors::Capacity::ParameterStack))?;
         }
     }

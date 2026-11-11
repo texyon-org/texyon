@@ -718,36 +718,29 @@ mod tests {
 
     #[test]
     fn rewind_restores_the_token_store_across_growth() {
-        use crate::token::{Token, TokenList, TEMP_HEAD_TOKS};
+        use crate::token::Token;
         let mut st = state();
         let mut ladder = CheckpointLadder::new(bundle(&st), 0);
 
-        let a = st.mem.tokens.get_avail().unwrap();
-        a.set_token(&mut st.mem.tokens, Token(5));
-        TEMP_HEAD_TOKS.set_link(&mut st.mem.tokens, a);
+        let a = st.mem.tokens.single(Token(5)).unwrap();
+        let marks = st.mem.tokens.marks();
         let rung = bundle(&st);
         ladder.push(&mut st, rung, 1, true, false);
 
-        let b = st.mem.tokens.get_avail().unwrap();
-        b.set_token(&mut st.mem.tokens, Token(7));
-        a.set_link(&mut st.mem.tokens, b);
-        a.set_token(&mut st.mem.tokens, Token(9));
+        st.mem.tokens.append(a, Token(7)).unwrap();
+        st.mem.tokens.map_tokens(a, |_| Token(9));
         let rung = bundle(&st);
         ladder.push(&mut st, rung, 2, true, false);
 
-        let c = st.mem.tokens.get_avail().unwrap();
-        c.set_token(&mut st.mem.tokens, Token(11));
-        st.mem.tokens.free_avail(b);
+        let c = st.mem.tokens.single(Token(11)).unwrap();
+        st.mem.tokens.flush(c);
         ladder.rewind_to(&mut st, 1, restore);
 
-        let toks = &st.mem.tokens;
-        assert_eq!(toks.nodes().len(), crate::token::FIXED_HEADS + 1);
-        assert_eq!(TEMP_HEAD_TOKS.link(toks), a);
-        assert_eq!((a.token(toks), a.link(toks)), (Token(5), TokenList::NULL));
-        assert_eq!(toks.marks().avail, TokenList::NULL);
-        let d = st.mem.tokens.get_avail().unwrap();
-        assert_eq!(d.token(&st.mem.tokens), Token(0));
-        assert_eq!(st.mem.tokens.nodes().len(), crate::token::FIXED_HEADS + 2);
+        assert_eq!(st.mem.tokens.marks(), marks);
+        assert_eq!(st.mem.tokens.iter(a).collect::<Vec<_>>(), [Token(5)]);
+        let d = st.mem.tokens.single(Token(3)).unwrap();
+        assert_eq!(st.mem.tokens.iter(d).collect::<Vec<_>>(), [Token(3)]);
+        assert_eq!(st.mem.tokens.iter(a).collect::<Vec<_>>(), [Token(5)]);
     }
 
     #[test]

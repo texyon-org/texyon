@@ -3,7 +3,7 @@
 use crate::bridge::output_flush;
 use crate::cmd::Cmd;
 use crate::codes::{ScannerStatus, TheCode, ValueLevel};
-use crate::consts::{ACTIVE_BASE, CLOSED, JUST_OPEN, NORMAL, TEX_NULL};
+use crate::consts::{ACTIVE_BASE, CLOSED, JUST_OPEN, NORMAL};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::expand::expand;
@@ -13,8 +13,7 @@ use crate::node::{NodePtr, PseudoFileNode, PseudoLineNode};
 use crate::output::{print, print_int};
 use crate::params::IntPar;
 use crate::state::{EngineState, MemState, Selector};
-use crate::token::TEMP_HEAD_TOKS;
-use crate::token::{Token, TokenList};
+use crate::token::{Build, TokCursor, Token, TokenList};
 use crate::units::{BufPos, EqtbPtr, StrNumber};
 
 use super::internal::{scan_something_internal, CurVal};
@@ -25,19 +24,18 @@ use crate::command::Command;
 const ZERO_TOKEN: Token = Token::other(b'0');
 
 impl MemState {
-    /// Converts `str_pool[b..pool_ptr]` to a token list at `link(temp_head)` and returns its tail.
+    /// Appends `str_pool[b..pool_ptr]` to `out` as tokens and drops it from the pool.
     pub(crate) fn str_toks_cat(
         &mut self,
         strings: &mut crate::state::StringsState,
         b: crate::units::PoolPos,
         cat: Option<Cmd>,
-    ) -> Result<TokenList, Abort> {
+        out: &Build,
+    ) -> Result<(), Abort> {
         if strings.pool_ptr + 1 > strings.pool_size {
             return Err(strings.pool_overflow());
         }
 
-        let mut p = TEMP_HEAD_TOKS;
-        p.set_link(&mut self.tokens, TokenList::NULL);
         let mut k = b;
 
         while k < strings.pool_ptr {
@@ -63,15 +61,12 @@ impl MemState {
                 }
             };
 
-            let q = self.tokens.get_avail()?;
-            p.set_link(&mut self.tokens, q);
-            q.set_token(&mut self.tokens, t);
-            p = q;
+            self.tokens.push(out, t)?;
             k += 1;
         }
 
         strings.pool_ptr = b;
-        Ok(p)
+        Ok(())
     }
 }
 
@@ -105,9 +100,8 @@ pub(crate) fn read_toks(
 ) -> Result<TokenList, Abort> {
     st.scanner.scanner_status = ScannerStatus::Defining;
     st.scanner.warning_index = r;
-    let def_ref = new_def_ref(st)?;
-    let mut p = def_ref;
-    store_new_token(st, &mut p, Token::END_MATCH)?;
+    let b = st.mem.tokens.begin()?;
+    st.mem.tokens.push(&b, Token::END_MATCH)?;
 
     let m = if (0..=15).contains(&n) {
         n as usize
@@ -164,7 +158,7 @@ pub(crate) fn read_toks(
                 };
                 st.scanner.cur_chr = c;
                 st.scanner.cur_tok = tok;
-                store_new_token(st, &mut p, tok)?;
+                st.mem.tokens.push(&b, tok)?;
             }
         } else {
             loop {
@@ -182,7 +176,7 @@ pub(crate) fn read_toks(
                     st.scanner.align_state = 1_000_000;
                     break;
                 }
-                store_new_token(st, &mut p, st.scanner.cur_tok)?;
+                st.mem.tokens.push(&b, st.scanner.cur_tok)?;
             }
         }
         crate::input::end_file_reading(st)?;
@@ -194,10 +188,12 @@ pub(crate) fn read_toks(
 
     st.scanner.scanner_status = ScannerStatus::Normal;
     st.scanner.align_state = s;
-    Ok(def_ref)
+    let list = st.mem.tokens.finish(b);
+    st.scanner.def_ref = list;
+    Ok(list)
 }
 
-fn tokens_to_string(st: &mut EngineState, p: TokenList) -> Result<StrNumber, Abort> {
+fn tokens_to_string(st: &mut EngineState, list: TokenList) -> Result<StrNumber, Abort> {
     if st.shipout.selector == Selector::NewString {
         return Err(Abort::PdfError(&[
             "tokens",
@@ -206,65 +202,42 @@ fn tokens_to_string(st: &mut EngineState, p: TokenList) -> Result<StrNumber, Abo
     }
     st.shipout.old_setting = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
-    let arg = p.link(&st.mem.tokens);
+    let arg = st.mem.tokens.cursor(list);
     let l = st.strings.pool_size - st.strings.pool_ptr;
-    crate::output::show_token_list(st, arg, TokenList::NULL, l);
+    crate::output::show_token_list(st, arg, TokCursor::END, l);
     st.shipout.selector = st.shipout.old_setting;
     st.strings.make_string()
 }
 
-/// Appends `token` to the token list whose tail is `tail`.
-#[inline(always)]
-pub(crate) fn store_new_token(
-    st: &mut EngineState,
-    tail: &mut TokenList,
-    token: Token,
-) -> Result<(), Abort> {
-    st.mem.tokens.store_new_token(tail, token)
-}
-
-/// Starts a new reference-counted token list in `def_ref` and returns it.
-fn new_def_ref(st: &mut EngineState) -> Result<TokenList, Abort> {
-    let def_ref = st.mem.tokens.get_avail()?;
-    st.scanner.def_ref = def_ref;
-    def_ref.set_ref_count(&mut st.mem.tokens, TEX_NULL);
-    Ok(def_ref)
-}
-
-pub(crate) fn the_toks(st: &mut EngineState, code: TheCode) -> Result<TokenList, Abort> {
+/// Appends to `out` what `\the`, `\unexpanded` or `\detokenize` gives.
+pub(crate) fn the_toks(st: &mut EngineState, code: TheCode, out: &Build) -> Result<(), Abort> {
     if code != TheCode::The {
-        let tail = scan_general_text(st)?;
+        let text = scan_general_text(st)?;
         if code == TheCode::Unexpanded {
-            return Ok(tail);
+            return st.mem.tokens.push_list(out, text);
         }
         let old_setting = st.shipout.selector;
         st.shipout.selector = Selector::NewString;
         let b = st.strings.pool_ptr;
-        let p = st.mem.tokens.get_avail()?;
-        let list = TEMP_HEAD_TOKS.link(&st.mem.tokens);
-        p.set_link(&mut st.mem.tokens, list);
-        crate::output::token_show(st, p);
-        st.mem.tokens.flush_list(p);
+        crate::output::token_show(st, text);
+        st.mem.tokens.flush(text);
         st.shipout.selector = old_setting;
-        return st.mem.str_toks_cat(&mut st.strings, b, None);
+        return st.mem.str_toks_cat(&mut st.strings, b, None, out);
     }
     get_x_token(st)?;
     let val = scan_something_internal(st, ValueLevel::Tok, false)?;
     if let CurVal::Ident(_) | CurVal::Tok(_) = val {
-        let mut p = TEMP_HEAD_TOKS;
-        p.set_link(&mut st.mem.tokens, TokenList::NULL);
         match val {
-            CurVal::Ident(loc) => store_new_token(st, &mut p, Token::from_cs(loc))?,
-            CurVal::Tok(list) if !list.is_null() => {
-                let mut r = list.link(&st.mem.tokens);
-                while !r.is_null() {
-                    store_new_token(st, &mut p, r.token(&st.mem.tokens))?;
-                    r = r.link(&st.mem.tokens);
+            CurVal::Ident(loc) => st.mem.tokens.push(out, Token::from_cs(loc))?,
+            CurVal::Tok(list) => {
+                let mut c = st.mem.tokens.cursor(list);
+                while let Some(t) = st.mem.tokens.read(&mut c) {
+                    st.mem.tokens.push(out, t)?;
                 }
             }
             _ => {}
         }
-        Ok(p)
+        Ok(())
     } else {
         let old_setting = st.shipout.selector;
         st.shipout.selector = Selector::NewString;
@@ -283,9 +256,10 @@ pub(crate) fn the_toks(st: &mut EngineState, code: TheCode) -> Result<TokenList,
             CurVal::Ident(_) | CurVal::Tok(_) => {}
         }
         st.shipout.selector = old_setting;
-        st.mem.str_toks_cat(&mut st.strings, b, None)
+        st.mem.str_toks_cat(&mut st.strings, b, None, out)
     }
 }
+/// Scans a definition's parameter text and body, or a general text, into `def_ref`.
 pub(crate) fn scan_toks(
     st: &mut EngineState,
     macro_def: bool,
@@ -297,8 +271,7 @@ pub(crate) fn scan_toks(
         st.scanner.scanner_status = ScannerStatus::Absorbing;
     }
     st.scanner.warning_index = st.scanner.cur_cs;
-    let def_ref = new_def_ref(st)?;
-    let mut p = def_ref;
+    let b = st.mem.tokens.begin()?;
     let mut hash_brace = Token::ZERO;
     let mut t = ZERO_TOKEN;
 
@@ -314,8 +287,8 @@ pub(crate) fn scan_toks(
                     get_token(st)?;
                     if st.scanner.cur_tok.is_left_brace() {
                         hash_brace = st.scanner.cur_tok;
-                        store_new_token(st, &mut p, st.scanner.cur_tok)?;
-                        store_new_token(st, &mut p, Token::END_MATCH)?;
+                        st.mem.tokens.push(&b, st.scanner.cur_tok)?;
+                        st.mem.tokens.push(&b, Token::END_MATCH)?;
                         break true;
                     }
                     if t == Token::other(b'9') {
@@ -342,10 +315,10 @@ pub(crate) fn scan_toks(
                     }
                     st.scanner.cur_tok = s;
                 }
-                store_new_token(st, &mut p, st.scanner.cur_tok)?;
+                st.mem.tokens.push(&b, st.scanner.cur_tok)?;
             };
             if !ended_with_brace {
-                store_new_token(st, &mut p, Token::END_MATCH)?;
+                st.mem.tokens.push(&b, Token::END_MATCH)?;
                 if st.scanner.cur_cmd == Cmd::RightBrace {
                     st.scanner.align_state += 1;
                     crate::errors::error(
@@ -379,19 +352,14 @@ pub(crate) fn scan_toks(
                         break;
                     }
                     if let Some(Command::The(code)) = st.scanner.try_command() {
-                        let tail = the_toks(st, code)?;
-                        let list = TEMP_HEAD_TOKS.link(&st.mem.tokens);
-                        if !list.is_null() {
-                            p.set_link(&mut st.mem.tokens, list);
-                            p = tail;
-                        }
+                        the_toks(st, code, &b)?;
                     } else {
                         expand(st)?;
                     }
                 }
                 x_token(st)?;
             } else {
-                if super::next::copy_group_tokens(st, &mut p, &mut unbalance, macro_def)? {
+                if super::next::copy_group_tokens(st, &b, &mut unbalance, macro_def)? {
                     break 'found;
                 }
                 get_token(st)?;
@@ -433,24 +401,25 @@ pub(crate) fn scan_toks(
                     }
                 }
             }
-            store_new_token(st, &mut p, st.scanner.cur_tok)?;
+            st.mem.tokens.push(&b, st.scanner.cur_tok)?;
         }
     }
     st.scanner.scanner_status = ScannerStatus::Normal;
     if hash_brace != Token::ZERO {
-        store_new_token(st, &mut p, hash_brace)?;
+        st.mem.tokens.push(&b, hash_brace)?;
     }
-    Ok(p)
+    let list = st.mem.tokens.finish(b);
+    st.scanner.def_ref = list;
+    Ok(list)
 }
 
 pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
-    scan_general_text(st)?;
+    let text = scan_general_text(st)?;
     let old_setting = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
-    crate::output::token_show(st, TEMP_HEAD_TOKS);
+    crate::output::token_show(st, text);
     st.shipout.selector = old_setting;
-    let head = TEMP_HEAD_TOKS.link(&st.mem.tokens);
-    st.mem.tokens.flush_list(head);
+    st.mem.tokens.flush(text);
 
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
         return Err(st.strings.pool_overflow());
@@ -527,14 +496,13 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
     }
     Ok(())
 }
-/// Scans a balanced text into a list at `link(temp_head)` and returns its tail.
+/// Scans a balanced text into a list of its own.
 fn scan_general_text(st: &mut EngineState) -> Result<TokenList, Abort> {
     let saved_status = st.scanner.scanner_status;
     let saved_warning_index = st.scanner.warning_index;
-    let saved_def_ref = st.scanner.def_ref;
     st.scanner.scanner_status = ScannerStatus::Absorbing;
     st.scanner.warning_index = st.scanner.cur_cs;
-    let mut p = new_def_ref(st)?;
+    let b = st.mem.tokens.begin()?;
     scan_left_brace(st)?;
     let mut unbalance: i32 = 1;
     loop {
@@ -549,17 +517,11 @@ fn scan_general_text(st: &mut EngineState) -> Result<TokenList, Abort> {
                 }
             }
         }
-        store_new_token(st, &mut p, st.scanner.cur_tok)?;
+        st.mem.tokens.push(&b, st.scanner.cur_tok)?;
     }
-    let def_ref = st.scanner.def_ref;
-    let list = def_ref.link(&st.mem.tokens);
-    st.mem.tokens.free_avail(def_ref);
-    let tail = if list.is_null() { TEMP_HEAD_TOKS } else { p };
-    TEMP_HEAD_TOKS.set_link(&mut st.mem.tokens, list);
     st.scanner.scanner_status = saved_status;
     st.scanner.warning_index = saved_warning_index;
-    st.scanner.def_ref = saved_def_ref;
-    Ok(tail)
+    Ok(st.mem.tokens.finish(b))
 }
 
 pub(crate) fn scan_pdf_ext_toks(st: &mut EngineState) -> Result<(), Abort> {

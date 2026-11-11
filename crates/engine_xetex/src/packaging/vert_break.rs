@@ -415,8 +415,8 @@ impl MemState {
         } else if scanner.cur_mark[MarkCode::SplitFirst].is_null() {
             scanner.cur_mark[MarkCode::SplitFirst] = mark_ptr;
             scanner.cur_mark[MarkCode::SplitBot] = mark_ptr;
-            let refs = mark_ptr.ref_count(&self.tokens) + 2;
-            mark_ptr.set_ref_count(&mut self.tokens, refs);
+            self.tokens.add_ref(mark_ptr);
+            self.tokens.add_ref(mark_ptr);
         } else {
             self.tokens.delete_ref(scanner.cur_mark[MarkCode::SplitBot]);
             scanner.cur_mark[MarkCode::SplitBot] = mark_ptr;
@@ -698,7 +698,7 @@ impl MemState {
                     self.tokens.delete_ref(self[node].mark(MarkCode::First));
                     self[node].set_mark(MarkCode::First, TokenList::NULL);
                     let bot = self[node].mark(MarkCode::Bot);
-                    if bot.link(&self.tokens).is_null() {
+                    if self.tokens.is_empty(bot) {
                         self.tokens.delete_ref(bot);
                         self[node].set_mark(MarkCode::Bot, TokenList::NULL);
                     } else {

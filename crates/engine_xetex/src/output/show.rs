@@ -12,8 +12,7 @@ use crate::node::{AnyNode, NodePtr, PageInsNode};
 use crate::packaging::PackSpec;
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, GroupCode, InputName, InteractionMode, Selector};
-use crate::token::TokenList;
-use crate::token::TEMP_HEAD_TOKS;
+use crate::token::TokCursor;
 use crate::units::{NodeType, Scaled};
 
 use super::cmd_chr::{print_cmd_chr, print_meaning};
@@ -62,20 +61,22 @@ fn set_trick_count(st: &mut EngineState) {
     st.errors.trick_count = tc.max(st.errors.error_line);
 }
 
-/// Shows `p`, marking where `q` starts for `show_context`'s two-line display.
-pub(crate) fn show_token_list(st: &mut EngineState, mut p: TokenList, q: TokenList, l: i32) {
+/// Shows the tokens from `p`, marking where `q` starts for `show_context`'s two-line display.
+pub(crate) fn show_token_list(st: &mut EngineState, mut p: TokCursor, q: TokCursor, l: i32) {
     let mut match_chr = i32::from(b'#');
     let mut n = i32::from(b'0');
     st.errors.tally = 0;
-    while !p.is_null() && st.errors.tally < l {
+    while !p.is_end() && st.errors.tally < l {
         if p == q {
             set_trick_count(st);
         }
-        if !st.mem.tokens.contains(p) {
+        if !st.mem.tokens.holds(p) {
             print_esc(st, "CLOBBERED.");
             return;
         }
-        let w = p.token(&st.mem.tokens);
+        let Some(w) = st.mem.tokens.read(&mut p) else {
+            break;
+        };
         if w.is_cs() {
             print_cs(st, w.cs());
         } else if w.0 < 0 {
@@ -121,9 +122,8 @@ pub(crate) fn show_token_list(st: &mut EngineState, mut p: TokenList, q: TokenLi
                 _ => print_esc(st, "BAD."),
             }
         }
-        p = p.link(&st.mem.tokens);
     }
-    if !p.is_null() {
+    if !p.is_end() {
         print_esc(st, "ETC.");
     }
 }
@@ -144,12 +144,12 @@ fn print_totals(st: &mut EngineState) {
 }
 
 pub(crate) fn issue_message(st: &mut EngineState, err: bool) -> Result<(), Abort> {
-    crate::scan::scan_toks(st, false, true)?;
+    let text = crate::scan::scan_toks(st, false, true)?;
     let old_setting = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
-    token_show(st, st.scanner.def_ref);
+    token_show(st, text);
     st.shipout.selector = old_setting;
-    st.mem.tokens.flush_list(st.scanner.def_ref);
+    st.mem.tokens.flush(text);
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
         return Err(st.strings.pool_overflow());
     }
@@ -465,12 +465,13 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
             } else {
                 TheCode::The
             };
-            crate::scan::the_toks(st, the)?;
+            let list = st.mem.tokens.begin()?;
+            crate::scan::the_toks(st, the, &list)?;
+            let list = st.mem.tokens.finish(list);
             show_to_stream(st)?;
             print_nl(st, "> ");
-            token_show(st, TEMP_HEAD_TOKS);
-            let list = TEMP_HEAD_TOKS.link(&st.mem.tokens);
-            st.mem.tokens.flush_list(list);
+            token_show(st, list);
+            st.mem.tokens.flush(list);
         }
     }
 
@@ -694,7 +695,7 @@ pub(crate) fn show_context(st: &mut EngineState) {
             if st.input.base_ptr == st.input.input_stack.len()
                 || ci.state != TOKEN_LIST
                 || ci.token_type() != TokenType::BackedUp
-                || !ci.token_loc().is_null()
+                || !ci.token_loc().is_end()
             {
                 st.errors.tally = 0;
                 let old_setting = st.shipout.selector;
@@ -742,12 +743,8 @@ pub(crate) fn show_context(st: &mut EngineState) {
                         t => print_nl(st, t.label(ci.token_loc())),
                     }
                     l = begin_pseudoprint(st);
-                    if ci.token_type() < TokenType::Macro {
-                        show_token_list(st, ci.token_start(), ci.token_loc(), 100_000);
-                    } else {
-                        let list = ci.token_start().link(&st.mem.tokens);
-                        show_token_list(st, list, ci.token_loc(), 100_000);
-                    }
+                    let from = st.mem.tokens.cursor(ci.token_start());
+                    show_token_list(st, from, ci.token_loc(), 100_000);
                 }
                 st.shipout.selector = old_setting;
                 if st.errors.trick_count == 1_000_000 {

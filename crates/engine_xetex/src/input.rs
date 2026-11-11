@@ -42,11 +42,11 @@ code_enum! {
 
 impl TokenType {
     /// How `show_context` introduces a level of this type, except a macro.
-    pub(crate) fn label(self, loc: TokenList) -> &'static str {
+    pub(crate) fn label(self, loc: crate::token::TokCursor) -> &'static str {
         match self {
             TokenType::Parameter => "<argument> ",
             TokenType::UTemplate | TokenType::VTemplate => "<template> ",
-            TokenType::BackedUp | TokenType::BackedUpChar if loc.is_null() => "<recently read> ",
+            TokenType::BackedUp | TokenType::BackedUpChar if loc.is_end() => "<recently read> ",
             TokenType::BackedUp | TokenType::BackedUpChar => "<to be read again> ",
             TokenType::Inserted => "<inserted text> ",
             TokenType::Macro => unreachable!("a macro level shows its name"),
@@ -114,14 +114,14 @@ pub(crate) fn end_token_list(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
         TokenType::BackedUp | TokenType::BackedUpChar | TokenType::Inserted => {
-            st.mem.tokens.flush_list(ci.token_start());
+            st.mem.tokens.flush(ci.token_start());
         }
         t => {
             st.mem.tokens.delete_ref(ci.token_start());
             if t == TokenType::Macro {
                 while st.input.param_stack.len() > ci.param_start() {
                     if let Some(param) = st.input.param_stack.pop() {
-                        st.mem.tokens.flush_list_with_tail(param.list, param.tail);
+                        st.mem.tokens.flush(param.list);
                     }
                 }
             } else if t == TokenType::Output && !st.shipout.output_can_end {
@@ -135,14 +135,13 @@ pub(crate) fn end_token_list(st: &mut EngineState) -> Result<(), Abort> {
 
 pub(crate) fn back_input(st: &mut EngineState) -> Result<(), Abort> {
     while st.input.cur_input.state == TOKEN_LIST
-        && st.input.cur_input.token_loc().is_null()
+        && st.input.cur_input.token_loc().is_end()
         && st.input.cur_input.token_type() != TokenType::VTemplate
         && st.input.cur_input.token_type() != TokenType::Output
     {
         end_token_list(st)?;
     }
-    let p = st.mem.tokens.get_avail()?;
-    p.set_token(&mut st.mem.tokens, st.scanner.cur_tok);
+    let p = st.mem.tokens.single(st.scanner.cur_tok)?;
     if st.scanner.cur_tok.is_brace() {
         if st.scanner.cur_tok.is_left_brace() {
             st.scanner.align_state -= 1;
@@ -152,7 +151,8 @@ pub(crate) fn back_input(st: &mut EngineState) -> Result<(), Abort> {
     }
     push_input(st)?;
     st.input.cur_input.state = TOKEN_LIST;
-    st.input.cur_input.set_token_list(p);
+    st.input.cur_input.set_token_start(p);
+    st.input.cur_input.set_token_loc(st.mem.tokens.cursor(p));
     st.input.cur_input.set_token_type(TokenType::BackedUp);
     Ok(())
 }
@@ -254,6 +254,15 @@ pub(crate) fn pseudo_input(st: &mut EngineState) -> Result<bool, Abort> {
     Ok(true)
 }
 
+/// Puts `token` in front of the unread backed-up token list on top of the input stack.
+pub(crate) fn prepend_to_backed_up(st: &mut EngineState, token: Token) -> Result<(), Abort> {
+    let list = st.input.cur_input.token_start();
+    debug_assert_eq!(st.input.cur_input.token_loc(), st.mem.tokens.cursor(list));
+    st.mem.tokens.prepend(list, token)?;
+    st.input.cur_input.set_token_loc(st.mem.tokens.cursor(list));
+    Ok(())
+}
+
 pub(crate) fn insert_relax(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.cur_tok = Token::from_cs(st.scanner.cur_cs);
     back_input(st)?;
@@ -272,8 +281,8 @@ pub(crate) fn begin_token_list(
     st.input.cur_input.state = TOKEN_LIST;
     st.input.cur_input.set_token_start(list);
     st.input.cur_input.set_token_type(t);
+    st.input.cur_input.set_token_loc(st.mem.tokens.cursor(list));
     if t < TokenType::Macro {
-        st.input.cur_input.set_token_loc(list);
         return Ok(());
     }
     st.mem.tokens.add_ref(list);
@@ -283,7 +292,6 @@ pub(crate) fn begin_token_list(
             .set_param_start(st.input.param_stack.len());
         return Ok(());
     }
-    st.input.cur_input.set_token_loc(list.link(&st.mem.tokens));
     if st.eqtb.int_par(IntPar::TracingMacros) > 1 {
         use crate::output::{
             begin_diagnostic, end_diagnostic, print, print_cmd_chr, print_esc, print_nl, token_show,

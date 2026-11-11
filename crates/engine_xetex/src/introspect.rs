@@ -114,14 +114,19 @@ fn collect(st: &EngineState, slot: EqtbPtr, found: &mut Vec<DefinedCommand>) {
 fn describe_macro(st: &EngineState, body: crate::token::TokenList) -> (bool, u8) {
     let mut protected = false;
     let mut arity = 0u8;
-    let mut at = body.link(&st.mem.tokens);
+    if !st.mem.tokens.holds_list(body) {
+        return (protected, arity);
+    }
+    let mut at = st.mem.tokens.cursor(body);
 
     // Guards against following a corrupt list.
     for _ in 0..64 {
-        if !st.mem.tokens.contains(at) {
+        if !st.mem.tokens.holds(at) {
             break;
         }
-        let token = at.token(&st.mem.tokens);
+        let Some(token) = st.mem.tokens.read(&mut at) else {
+            break;
+        };
         if token == Token::PROTECTED {
             protected = true;
         } else if token >= Token::END_MATCH {
@@ -129,7 +134,6 @@ fn describe_macro(st: &EngineState, body: crate::token::TokenList) -> (bool, u8)
         } else if token.is_match() {
             arity = arity.saturating_add(1);
         }
-        at = at.link(&st.mem.tokens);
     }
 
     (protected, arity)

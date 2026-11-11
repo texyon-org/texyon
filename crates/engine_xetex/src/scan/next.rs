@@ -7,14 +7,13 @@ use crate::consts::{
     ACTIVE_BASE, BIGGEST_USV, END_WRITE, FROZEN_CR, FROZEN_ENDV, FROZEN_FI, NULL_CS, SINGLE_BASE,
     TEX_NULL,
 };
-use crate::errors::Abort;
+use crate::errors::{Abort, OrConfusion};
 use crate::expand::{expand, macro_call};
 use crate::input::{begin_token_list, TokenType, MID_LINE, NEW_LINE, SKIP_BLANKS, TOKEN_LIST};
 use crate::node::{AlignRecord, NodePtr};
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, InputClusterState, InputName, MemState, Selector};
-use crate::token::OMIT_TEMPLATE;
-use crate::token::{Token, TokenList};
+use crate::token::{Build, TokCursor, Token, TokenList};
 use crate::units::BufPos;
 
 use super::toks::finish_line;
@@ -23,8 +22,8 @@ use super::NO_EXPAND_FLAG;
 impl MemState {
     /// Whether the macro whose token list starts at `ref_count` is `\protected`.
     #[inline]
-    pub(crate) fn is_protected_macro(&self, ref_count: TokenList) -> bool {
-        ref_count.link(&self.tokens).token(&self.tokens) == Token::PROTECTED
+    pub(crate) fn is_protected_macro(&self, body: TokenList) -> bool {
+        self.tokens.peek(self.tokens.cursor(body)) == Some(Token::PROTECTED)
     }
 }
 
@@ -65,8 +64,7 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
         if ci.state == TOKEN_LIST
             || !matches!(ci.name, InputName::Read(_) | InputName::ReadTerminal)
         {
-            let p = st.mem.tokens.get_avail()?;
-            p.set_token(&mut st.mem.tokens, Token::from_cs(st.scanner.cur_cs));
+            let p = st.mem.tokens.single(Token::from_cs(st.scanner.cur_cs))?;
             begin_token_list(st, p, TokenType::BackedUp)?;
         }
         st.scanner.cur_cmd = Cmd::Spacer;
@@ -82,30 +80,23 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
             "Forbidden control sequence found"
         };
 
-        let p = st.mem.tokens.get_avail()?;
-        let mut inserted = p;
+        let closer = match st.scanner.scanner_status {
+            ScannerStatus::Matching => st.input.par_token,
+            _ => Token::right_brace(b'}'),
+        };
+        let inserted = st.mem.tokens.single(closer)?;
         let scanning = match st.scanner.scanner_status {
-            ScannerStatus::Defining => {
-                p.set_token(&mut st.mem.tokens, Token::right_brace(b'}'));
-                " while scanning definition"
-            }
+            ScannerStatus::Defining => " while scanning definition",
             ScannerStatus::Matching => {
-                p.set_token(&mut st.mem.tokens, st.input.par_token);
                 st.scanner.long_state = Cmd::OuterCall;
                 " while scanning use"
             }
             ScannerStatus::Aligning => {
-                p.set_token(&mut st.mem.tokens, Token::right_brace(b'}'));
-                inserted = st.mem.tokens.get_avail()?;
-                inserted.set_link(&mut st.mem.tokens, p);
-                inserted.set_token(&mut st.mem.tokens, Token::from_cs(FROZEN_CR));
+                st.mem.tokens.prepend(inserted, Token::from_cs(FROZEN_CR))?;
                 st.scanner.align_state = -1_000_000;
                 " while scanning preamble"
             }
-            ScannerStatus::Absorbing => {
-                p.set_token(&mut st.mem.tokens, Token::right_brace(b'}'));
-                " while scanning text"
-            }
+            ScannerStatus::Absorbing => " while scanning text",
             _ => "",
         };
 
@@ -211,8 +202,7 @@ impl InputClusterState {
 pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
     if st.input.cur_input.state == TOKEN_LIST {
         let p = st.input.cur_input.token_loc();
-        if !p.is_null() {
-            let t = p.token(&st.mem.tokens);
+        if let Some(t) = st.mem.tokens.peek(p) {
             let plain = if t.is_cs() {
                 let cmd = st.eqtb.eq_type(t.cs());
                 cmd < Cmd::OuterCall
@@ -223,7 +213,7 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
             };
             if plain {
                 st.scanner.logical_clock = st.scanner.logical_clock.wrapping_add(1);
-                st.input.cur_input.set_token_loc(p.link(&st.mem.tokens));
+                st.input.cur_input.set_token_loc(st.mem.tokens.next(p));
                 if t.is_cs() {
                     st.scanner.cur_cs = t.cs();
                     fetch_cs_meaning(st);
@@ -539,19 +529,18 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                     });
                 }
             }
-        } else if !st.input.cur_input.token_loc().is_null() {
+        } else if let Some(t) = st.mem.tokens.peek(st.input.cur_input.token_loc()) {
             let p = st.input.cur_input.token_loc();
-            let t = p.token(&st.mem.tokens);
-            st.input.cur_input.set_token_loc(p.link(&st.mem.tokens));
+            st.input.cur_input.set_token_loc(st.mem.tokens.next(p));
 
             if t.is_cs() {
                 st.scanner.cur_cs = t.cs();
                 fetch_cs_meaning(st);
                 if st.scanner.cur_cmd >= Cmd::OuterCall {
                     if st.scanner.cur_cmd == Cmd::DontExpand {
-                        st.scanner.cur_cs =
-                            st.input.cur_input.token_loc().token(&st.mem.tokens).cs();
-                        st.input.cur_input.set_token_loc(TokenList::NULL);
+                        let next = st.mem.tokens.peek(st.input.cur_input.token_loc());
+                        st.scanner.cur_cs = next.or_confusion("dont expand")?.cs();
+                        st.input.cur_input.set_token_loc(TokCursor::END);
                         fetch_cs_meaning(st);
                         if st.scanner.cur_cmd > Cmd::MAX_COMMAND {
                             st.scanner.cur_cmd = Cmd::Relax;
@@ -600,7 +589,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
             let saved_cmd = st.mem[column].extra_info;
             st.mem[column].extra_info = st.scanner.cur_chr;
             let template = if Cmd::from_stored(saved_cmd) == Cmd::Omit {
-                OMIT_TEMPLATE
+                TokenList::OMIT_TEMPLATE
             } else {
                 st.mem[column].v_part
             };
@@ -723,11 +712,11 @@ fn plain_list_token(st: &EngineState, t: Token, stop_at_mac_param: bool) -> bool
         || stop_at_mac_param && cmd == Cmd::MacParam)
 }
 
-/// Advances past the token at `q` as `get_next` would and returns the next node.
+/// Advances past the token at `q` as `get_next` would and returns the next position.
 #[inline(always)]
-fn consume_list_token(st: &mut EngineState, q: TokenList) -> TokenList {
+fn consume_list_token(st: &mut EngineState, q: TokCursor) -> TokCursor {
     st.scanner.logical_clock = st.scanner.logical_clock.wrapping_add(1);
-    let next = q.link(&st.mem.tokens);
+    let next = st.mem.tokens.next(q);
     st.input.cur_input.set_token_loc(next);
     next
 }
@@ -739,7 +728,7 @@ fn consume_list_token(st: &mut EngineState, q: TokenList) -> TokenList {
 #[inline(always)]
 pub(crate) fn copy_group_tokens(
     st: &mut EngineState,
-    p: &mut TokenList,
+    p: &Build,
     unbalance: &mut i32,
     stop_at_mac_param: bool,
 ) -> Result<bool, Abort> {
@@ -747,8 +736,7 @@ pub(crate) fn copy_group_tokens(
         return Ok(false);
     }
     let mut q = st.input.cur_input.token_loc();
-    while !q.is_null() {
-        let t = q.token(&st.mem.tokens);
+    while let Some(t) = st.mem.tokens.peek(q) {
         if t.is_brace() {
             if t.is_left_brace() {
                 st.scanner.align_state += 1;
@@ -768,7 +756,7 @@ pub(crate) fn copy_group_tokens(
         } else if !plain_list_token(st, t, stop_at_mac_param) {
             break;
         }
-        st.mem.tokens.store_new_token(p, t)?;
+        st.mem.tokens.push(p, t)?;
         q = consume_list_token(st, q);
     }
     Ok(false)
@@ -780,7 +768,7 @@ pub(crate) fn copy_group_tokens(
 #[inline]
 pub(crate) fn copy_delimited_tokens(
     st: &mut EngineState,
-    p: &mut TokenList,
+    p: &Build,
     m: &mut i32,
     delim: Token,
 ) -> Result<(), Abort> {
@@ -788,12 +776,11 @@ pub(crate) fn copy_delimited_tokens(
         return Ok(());
     }
     let mut q = st.input.cur_input.token_loc();
-    while !q.is_null() {
-        let t = q.token(&st.mem.tokens);
+    while let Some(t) = st.mem.tokens.peek(q) {
         if t == delim || t.is_brace() || !plain_list_token(st, t, false) {
             break;
         }
-        st.mem.tokens.store_new_token(p, t)?;
+        st.mem.tokens.push(p, t)?;
         *m += 1;
         q = consume_list_token(st, q);
     }

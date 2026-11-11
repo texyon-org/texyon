@@ -17,7 +17,6 @@ use crate::params::IntPar;
 use crate::pic::load_picture;
 use crate::scan::{get_x_token, scan_int};
 use crate::state::EngineState;
-use crate::token::TEMP_HEAD_TOKS;
 use crate::token::{Token, TokenList};
 use crate::units::{MemPtr, StrNumber};
 
@@ -41,17 +40,25 @@ pub(crate) fn append_src_special(st: &mut EngineState) -> Result<(), Abort> {
         .cur_list
         .append_whatsit::<WriteNode>(&mut st.mem, WhatsitSubtype::Special)?;
     st.mem[w].stream = 0;
-    let d = st.mem.tokens.get_avail()?;
-    st.scanner.def_ref = d;
-    d.set_ref_count(&mut st.mem.tokens, crate::mem::TEX_NULL);
     let b = crate::texmfmp::make_src_special(st, fname, st.mem.line)
         .map_err(|()| Abort::Internal("string pool overflow"))?;
-    st.mem.str_toks_cat(&mut st.strings, b, None)?;
-    let text = TEMP_HEAD_TOKS.link(&st.mem.tokens);
-    d.set_link(&mut st.mem.tokens, text);
+    let d = st.mem.tokens.begin()?;
+    st.mem.str_toks_cat(&mut st.strings, b, None, &d)?;
+    let d = st.mem.tokens.finish(d);
+    st.scanner.def_ref = d;
     st.mem[w].tokens = d;
     crate::texmfmp::remember_source_info(st, fname, st.mem.line);
     Ok(())
+}
+
+/// `\special{...}` around `str_pool[b..pool_ptr]`, which is dropped from the pool.
+fn special_list(st: &mut EngineState, b: crate::units::PoolPos) -> Result<TokenList, Abort> {
+    let out = st.mem.tokens.begin()?;
+    st.mem.tokens.push(&out, Token::from_cs(FROZEN_SPECIAL))?;
+    st.mem.tokens.push(&out, Token::left_brace(b'{'))?;
+    st.mem.str_toks_cat(&mut st.strings, b, None, &out)?;
+    st.mem.tokens.push(&out, Token::right_brace(b'}'))?;
+    Ok(st.mem.tokens.finish(out))
 }
 
 /// Insert `\special{src:...}` for the current source line into the input.
@@ -59,19 +66,9 @@ pub(crate) fn insert_src_special(st: &mut EngineState) -> Result<(), Abort> {
     let Some(fname) = new_source_position(st) else {
         return Ok(());
     };
-    let toklist = st.mem.tokens.get_avail()?;
-    toklist.set_token(&mut st.mem.tokens, Token::from_cs(FROZEN_SPECIAL));
-    let open = st.mem.tokens.get_avail()?;
-    toklist.set_link(&mut st.mem.tokens, open);
-    open.set_token(&mut st.mem.tokens, Token::left_brace(b'{'));
     let b = crate::texmfmp::make_src_special(st, fname, st.mem.line)
         .map_err(|()| Abort::Internal("string pool overflow"))?;
-    let text_tail = st.mem.str_toks_cat(&mut st.strings, b, None)?;
-    let text = TEMP_HEAD_TOKS.link(&st.mem.tokens);
-    open.set_link(&mut st.mem.tokens, text);
-    let close = st.mem.tokens.get_avail()?;
-    text_tail.set_link(&mut st.mem.tokens, close);
-    close.set_token(&mut st.mem.tokens, Token::right_brace(b'}'));
+    let toklist = special_list(st, b)?;
     crate::input::begin_token_list(st, toklist, TokenType::Inserted)?;
     crate::texmfmp::remember_source_info(st, fname, st.mem.line);
     Ok(())
@@ -88,17 +85,7 @@ pub(crate) fn insert_special(st: &mut EngineState, text: &str) -> Result<(), Abo
         st.strings.append_char(u16::from(b));
     }
 
-    let toklist = st.mem.tokens.get_avail()?;
-    toklist.set_token(&mut st.mem.tokens, Token::from_cs(FROZEN_SPECIAL));
-    let open = st.mem.tokens.get_avail()?;
-    open.set_token(&mut st.mem.tokens, Token::left_brace(b'{'));
-    toklist.set_link(&mut st.mem.tokens, open);
-    let text_tail = st.mem.str_toks_cat(&mut st.strings, start_pool, None)?;
-    let text = TEMP_HEAD_TOKS.link(&st.mem.tokens);
-    open.set_link(&mut st.mem.tokens, text);
-    let close = st.mem.tokens.get_avail()?;
-    close.set_token(&mut st.mem.tokens, Token::right_brace(b'}'));
-    text_tail.set_link(&mut st.mem.tokens, close);
+    let toklist = special_list(st, start_pool)?;
     crate::input::begin_token_list(st, toklist, TokenType::Inserted)?;
     Ok(())
 }

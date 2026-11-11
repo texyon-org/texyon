@@ -629,11 +629,9 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             let p = st.scanner.cur_cs;
             crate::scan::scan_toks(st, true, expand)?;
             if protected {
-                let q = st.mem.tokens.get_avail()?;
-                q.set_token(&mut st.mem.tokens, Token::PROTECTED);
-                let body = st.scanner.def_ref.link(&st.mem.tokens);
-                q.set_link(&mut st.mem.tokens, body);
-                st.scanner.def_ref.set_link(&mut st.mem.tokens, q);
+                st.mem
+                    .tokens
+                    .prepend(st.scanner.def_ref, Token::PROTECTED)?;
             }
             define(
                 st,
@@ -941,23 +939,15 @@ fn assign_toks(st: &mut EngineState, global: bool, cmd: Command) -> Result<(), A
 
     crate::input::back_input(st)?;
     st.scanner.cur_cs = cs;
-    let tail = crate::scan::scan_toks(st, false, false)?;
-    let def_ref = st.scanner.def_ref;
-    if def_ref.link(&st.mem.tokens).is_null() {
+    let def_ref = crate::scan::scan_toks(st, false, false)?;
+    if st.mem.tokens.is_empty(def_ref) {
         define_toks(st, global, target, TokenList::NULL)?;
-        st.mem.tokens.free_avail(def_ref);
+        st.mem.tokens.flush(def_ref);
         return Ok(());
     }
     if target == RegisterLoc::Eqtb(TokPar::OutputRoutine.loc()) {
-        let mut tail = tail;
-        st.mem
-            .tokens
-            .store_new_token(&mut tail, Token::right_brace(b'}'))?;
-        let q = st.mem.tokens.get_avail()?;
-        q.set_token(&mut st.mem.tokens, Token::left_brace(b'{'));
-        let body = def_ref.link(&st.mem.tokens);
-        q.set_link(&mut st.mem.tokens, body);
-        def_ref.set_link(&mut st.mem.tokens, q);
+        st.mem.tokens.append(def_ref, Token::right_brace(b'}'))?;
+        st.mem.tokens.prepend(def_ref, Token::left_brace(b'{'))?;
     }
     define_toks(st, global, target, def_ref)
 }

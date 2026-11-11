@@ -37,7 +37,6 @@ use crate::state::{
     Selector,
 };
 use crate::token::Token;
-use crate::token::OMIT_TEMPLATE;
 use crate::units::{
     BufPos, EqtbPtr, FontId, FontInfoIdx, GlueOrder, MemPtr, NodeType, PoolPos, PrimNum, SavePtr,
     Scaled, StrNumber,
@@ -365,7 +364,8 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
 
     mem.clear_fixed_nodes();
 
-    OMIT_TEMPLATE.set_token(&mut mem.tokens, Token::from_cs(FROZEN_END_TEMPLATE));
+    mem.tokens
+        .init_omit_template(Token::from_cs(FROZEN_END_TEMPLATE));
     mem[END_SPAN].span_count = i32::from(u16::MAX) + 1;
     let page_ins = NodePtr::<PageInsNode>::at(PAGE_INS_HEAD);
     mem[page_ins].box_number = 255;

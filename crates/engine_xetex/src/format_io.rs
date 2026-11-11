@@ -26,7 +26,7 @@ use crate::output::{print, print_char, print_int, print_ln, print_nl};
 use crate::params::IntPar;
 use crate::payload::PayloadStore;
 use crate::state::{EngineState, EqtbState, InteractionMode, PerFont, Selector};
-use crate::token::{TokNode, Token, TokenList, TokenStore, FIXED_HEADS};
+use crate::token::{TokNode, TokPtr, Token, TokenStore, FIXED_HEADS};
 use crate::units::{EqtbPtr, FontId, FontInfoIdx, MemPtr, PoolPos, SavePtr, Scaled, StrNumber};
 
 const FORMAT_HEADER_MAGIC: i32 = 0x5454_4E43;
@@ -591,7 +591,7 @@ fn token_lists<S: FmtStream>(s: &mut S, toks: &mut TokenStore) -> Result<(), Abo
     }
     if S::LOADING {
         let len = usize::try_from(len).map_err(|_| bad_fmt())?;
-        toks.reset_for_load(len, TokenList::from_raw(avail));
+        toks.reset_for_load(len, TokPtr::from_raw(avail));
     }
     s.items(toks.nodes_mut())
 }

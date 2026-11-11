@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use crate::cmd::Cmd;
 use crate::codes::ValueLevel;
-use crate::consts::{HASH_BASE, TEX_NULL};
+use crate::consts::HASH_BASE;
 use crate::errors::Abort;
 use crate::node::{NodePtr, SaElement};
 use crate::params::IntPar;
@@ -344,24 +344,15 @@ fn cs_name(st: &EngineState, cs: EqtbPtr) -> Option<String> {
     crate::introspect::read_string(st, text)
 }
 
-fn list_tokens(st: &EngineState, mut p: TokenList) -> Vec<Token> {
-    let mut out = Vec::new();
-    while !p.is_null() {
-        out.push(p.token(&st.mem.tokens));
-        p = p.link(&st.mem.tokens);
-    }
-    out
-}
-
 fn macro_tokens(st: &EngineState, cs: EqtbPtr) -> Option<Vec<Token>> {
     if !matches!(st.eqtb.eq_type(cs), Cmd::Call | Cmd::LongCall) {
         return None;
     }
-    let first = st.eqtb.equiv_tokens(cs).link(&st.mem.tokens);
-    if first.is_null() || first.token(&st.mem.tokens) != Token::END_MATCH {
+    let mut tokens = st.mem.tokens.iter(st.eqtb.equiv_tokens(cs));
+    if tokens.next() != Some(Token::END_MATCH) {
         return None;
     }
-    Some(list_tokens(st, first.link(&st.mem.tokens)))
+    Some(tokens.collect())
 }
 
 fn macro_text(st: &EngineState, cs: EqtbPtr) -> Option<Vec<u8>> {
@@ -556,19 +547,17 @@ fn selected_font(st: &mut EngineState, known: &KnownCs) -> Option<eval::Font> {
 
 /// Letters get catcode 11 like the `Y` and `e` of `\pgfmathfloatcreate`.
 fn result_macro(st: &mut EngineState, text: &[u8]) -> Result<TokenList, Abort> {
-    let head = st.mem.tokens.get_avail()?;
-    head.set_ref_count(&mut st.mem.tokens, TEX_NULL);
-    let mut tail = head;
-    st.mem.tokens.store_new_token(&mut tail, Token::END_MATCH)?;
+    let out = st.mem.tokens.begin()?;
+    st.mem.tokens.push(&out, Token::END_MATCH)?;
     for &b in text {
         let tok = if b.is_ascii_alphabetic() {
             Token::letter(b)
         } else {
             Token::other(b)
         };
-        st.mem.tokens.store_new_token(&mut tail, tok)?;
+        st.mem.tokens.push(&out, tok)?;
     }
-    Ok(head)
+    Ok(st.mem.tokens.finish(out))
 }
 
 fn commit(st: &mut EngineState, known: &KnownCs, answer: &Answer) -> Result<(), Abort> {
@@ -896,7 +885,10 @@ pub(crate) fn native_macro(st: &mut EngineState, kind: Native, args: &[TokenList
     if !known.complete() {
         return false;
     }
-    let args: Vec<Vec<Token>> = args.iter().map(|&p| list_tokens(st, p)).collect();
+    let args: Vec<Vec<Token>> = args
+        .iter()
+        .map(|&p| st.mem.tokens.iter(p).collect())
+        .collect();
     let Some(effects) = run_native(st, &known, kind, &args) else {
         *st.pgfmath
             .stats

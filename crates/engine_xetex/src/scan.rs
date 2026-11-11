@@ -13,8 +13,7 @@ use crate::node::{BoxNode, MathSlot, NodePtr, RuleDimen, RuleNode, SaLeaf, Store
 use crate::packaging::PackSpec;
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, GroupCode, MemState, ScannerState};
-use crate::token::BACKUP_HEAD;
-use crate::token::{Token, TokenList};
+use crate::token::Token;
 use crate::units::{MemPtr, NodeType, Scaled};
 
 mod internal;
@@ -38,8 +37,7 @@ pub(crate) use self::numbers::{
     scan_register_num, scan_usv_num, scan_xetex_math_char_int,
 };
 pub(crate) use self::toks::{
-    compare_strings, finish_line, pseudo_start, read_toks, scan_pdf_ext_toks, scan_toks,
-    store_new_token, the_toks,
+    compare_strings, finish_line, pseudo_start, read_toks, scan_pdf_ext_toks, scan_toks, the_toks,
 };
 
 pub(crate) const NO_EXPAND_FLAG: i32 = BIGGEST_USV + 2;
@@ -357,8 +355,7 @@ pub(crate) fn scan_delim_num(st: &mut EngineState, code: DelimNumCode) -> Result
 pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, Abort> {
     let keyword = keyword.as_bytes();
     let save_cur_cs = st.scanner.cur_cs;
-    let mut p = BACKUP_HEAD;
-    p.set_link(&mut st.mem.tokens, TokenList::NULL);
+    let backup = st.mem.tokens.begin()?;
     let mut i = 0;
     while i < keyword.len() {
         get_x_token(st)?;
@@ -366,12 +363,15 @@ pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, 
         if st.scanner.cur_cs.is_none()
             && (st.scanner.cur_chr == ch || st.scanner.cur_chr == ch - 32)
         {
-            store_new_token(st, &mut p, st.scanner.cur_tok)?;
+            st.mem.tokens.push(&backup, st.scanner.cur_tok)?;
             i += 1;
-        } else if st.scanner.cur_cmd != Cmd::Spacer || p != BACKUP_HEAD {
+        } else if st.scanner.cur_cmd != Cmd::Spacer || i > 0 {
             back_input(st)?;
-            if p != BACKUP_HEAD {
-                begin_token_list(st, BACKUP_HEAD.link(&st.mem.tokens), TokenType::BackedUp)?;
+            if i > 0 {
+                let matched = st.mem.tokens.finish(backup);
+                begin_token_list(st, matched, TokenType::BackedUp)?;
+            } else {
+                st.mem.tokens.abandon(backup);
             }
             if keyword.len() == 1 {
                 st.scanner.cur_cs = save_cur_cs;
@@ -379,8 +379,7 @@ pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, 
             return Ok(false);
         }
     }
-    let matched = BACKUP_HEAD.link(&st.mem.tokens);
-    st.mem.tokens.flush_list_with_tail(matched, p);
+    st.mem.tokens.abandon(backup);
     Ok(true)
 }
 
