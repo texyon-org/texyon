@@ -157,25 +157,10 @@ impl Cmd {
     /// `max_char_val` is below 16, and every code below 16 is a category.
     #[inline(always)]
     pub(crate) const fn from_catcode_bits(v: i32) -> Cmd {
-        const CATEGORIES: [Cmd; 16] = [
-            Cmd::Relax,
-            Cmd::LeftBrace,
-            Cmd::RightBrace,
-            Cmd::MathShift,
-            Cmd::TabMark,
-            Cmd::CarRet,
-            Cmd::MacParam,
-            Cmd::SupMark,
-            Cmd::SubMark,
-            Cmd::Endv,
-            Cmd::Spacer,
-            Cmd::Letter,
-            Cmd::OtherChar,
-            Cmd::ParEnd,
-            Cmd::Stop,
-            Cmd::DelimNum,
-        ];
-        CATEGORIES[(v & 0xF) as usize]
+        match Cmd::from_raw(v & 0xF) {
+            Some(cmd) => cmd,
+            None => Cmd::Relax,
+        }
     }
 
     /// A command read back from a memory word that holds one. Only the engine
