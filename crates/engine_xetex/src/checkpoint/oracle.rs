@@ -215,7 +215,7 @@ fn digest_save(st: &EngineState) -> u64 {
     h.i32(save.max_save_stack.raw());
     h.i32(depth(save.save_size));
     h.word(u64::from(save.cur_level));
-    h.word(u64::from(save.cur_group.as_raw()));
+    h.word(u64::from(save.cur_group.to_u16()));
     h.i32(save.cur_boundary.raw());
     for &word in save.data.iter().take(save.save_ptr.index()) {
         h.word(memory_word(word));

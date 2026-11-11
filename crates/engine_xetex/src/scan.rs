@@ -265,7 +265,7 @@ pub(crate) fn set_math_char(st: &mut EngineState, c: i32) -> Result<(), Abort> {
             st.mem[nd].noad_type = NodeType::OrdNoad.into();
         } else {
             st.mem[nd].noad_type =
-                Stored::from_raw(NodeType::OrdNoad.as_raw() + math_class(c) as u16);
+                Stored::from_raw(NodeType::OrdNoad.to_u16() + math_class(c) as u16);
         }
         let fam = st.mem[nd].nucleus.plane_and_fam() + (ch / 65536) as u16 * 256;
         st.mem[nd].nucleus.set_plane_and_fam(fam);

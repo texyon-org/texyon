@@ -65,7 +65,7 @@ impl SaveStackState {
         }
         self.set_saved(0, line);
         self.save_ptr += 1;
-        let (group, boundary) = (u16::from(self.cur_group.as_raw()), self.cur_boundary);
+        let (group, boundary) = (self.cur_group.to_u16(), self.cur_boundary);
         self.set_save_entry(SaveType::LevelBoundary, group, boundary.raw());
         if self.cur_level == u16::MAX {
             return Err(Abort::Overflow {

@@ -134,7 +134,7 @@ impl MemState {
     #[inline]
     pub fn is_char_node(&self, p: impl MemAddr) -> bool {
         let p = p.addr();
-        p != TEX_NULL && self.type_code(MemPtr::from_raw(p)) == NodeType::Char.as_raw()
+        p != TEX_NULL && self.type_code(MemPtr::from_raw(p)) == NodeType::Char.to_u16()
     }
 
     /// A hyphen position `n` linked in front of the positions `rest`.

@@ -169,7 +169,7 @@ pub(super) fn pic_out(
     crate::output::print(st, "page ");
     crate::output::print_int(st, i32::from(node.page));
     crate::output::print(st, b' ');
-    if let Some(label) = crate::pic::PageboxType::from_raw(node.pagebox).and_then(|pb| pb.label()) {
+    if let Some(label) = crate::pic::PageboxType::from_u16(node.pagebox).and_then(|pb| pb.label()) {
         crate::output::print(st, label);
     }
     crate::output::print(st, b'(');

@@ -1130,8 +1130,8 @@ fn mlist_advance(
 ) -> (u16, MemPtr) {
     let mut r_type = st.mem[qn].noad_type.raw();
     let next = st.mem[qn].link;
-    if r_type == NodeType::RightNoad.as_raw() {
-        r_type = NodeType::LeftNoad.as_raw();
+    if r_type == NodeType::RightNoad.to_u16() {
+        r_type = NodeType::LeftNoad.to_u16();
         *cur_style = start_style;
     }
     (r_type, next)
@@ -1244,7 +1244,7 @@ pub(super) fn mlist_to_hlist(
     let mut style = start_style;
     let mut q = mlist;
     let mut r: Option<NodePtr<AnyNoad>> = None;
-    let mut r_type = NodeType::OpNoad.as_raw();
+    let mut r_type = NodeType::OpNoad.to_u16();
     let mut max_h = Scaled::ZERO;
     let mut max_d = Scaled::ZERO;
 
@@ -1275,7 +1275,7 @@ pub(super) fn mlist_to_hlist(
                     }
                     NoadVariant::Fence(f) => {
                         if st.mem[f].noad_type == NodeType::RightNoad
-                            && r_type == NodeType::BinNoad.as_raw()
+                            && r_type == NodeType::BinNoad.to_u16()
                         {
                             let r = r.or_confusion("mlist1")?;
                             st.mem[r].noad_type = NodeType::OrdNoad.into();
@@ -1284,7 +1284,7 @@ pub(super) fn mlist_to_hlist(
                     }
                     NoadVariant::Noad(n) => match st.mem[n].noad_type.get() {
                         Some(NodeType::BinNoad) => {
-                            match NodeType::from_raw(r_type) {
+                            match NodeType::of_code(r_type) {
                                 Ok(NodeType::BinNoad)
                                 | Ok(NodeType::OpNoad)
                                 | Ok(NodeType::RelNoad)
@@ -1299,7 +1299,7 @@ pub(super) fn mlist_to_hlist(
                             break 'reswitch FirstPass::ProcessNucleus(n);
                         }
                         Some(NodeType::RelNoad | NodeType::CloseNoad | NodeType::PunctNoad) => {
-                            if r_type == NodeType::BinNoad.as_raw() {
+                            if r_type == NodeType::BinNoad.to_u16() {
                                 let r = r.or_confusion("mlist1")?;
                                 st.mem[r].noad_type = NodeType::OrdNoad.into();
                             }
@@ -1400,7 +1400,7 @@ pub(super) fn mlist_to_hlist(
     }
 
     let mut p = TEMP_HEAD;
-    if r_type == NodeType::BinNoad.as_raw() {
+    if r_type == NodeType::BinNoad.to_u16() {
         let r = r.or_confusion("mlist1")?;
         st.mem[r].noad_type = NodeType::OrdNoad.into();
     }
@@ -1416,7 +1416,7 @@ pub(super) fn mlist_to_hlist(
     }
 
     while !q.is_null() {
-        let mut t = NodeType::OrdNoad.as_raw();
+        let mut t = NodeType::OrdNoad.to_u16();
         let mut s = Noad::SIZE;
         let mut pen = INF_PENALTY;
         let step = match st.mem.classify(q) {
@@ -1431,13 +1431,13 @@ pub(super) fn mlist_to_hlist(
                             | NodeType::CloseNoad
                             | NodeType::PunctNoad
                             | NodeType::InnerNoad),
-                        ) => t = nt.as_raw(),
+                        ) => t = nt.to_u16(),
                         Some(NodeType::BinNoad) => {
-                            t = NodeType::BinNoad.as_raw();
+                            t = NodeType::BinNoad.to_u16();
                             pen = st.eqtb.int_par(IntPar::BinOpPenalty);
                         }
                         Some(NodeType::RelNoad) => {
-                            t = NodeType::RelNoad.as_raw();
+                            t = NodeType::RelNoad.to_u16();
                             pen = st.eqtb.int_par(IntPar::RelPenalty);
                         }
                         Some(
@@ -1452,7 +1452,7 @@ pub(super) fn mlist_to_hlist(
                     }
                     NoadVariant::Fence(f) => {
                         style = start_style;
-                        t = make_left_right(st, f, start_style, max_d, max_h)?.as_raw();
+                        t = make_left_right(st, f, start_style, max_d, max_h)?.to_u16();
                     }
                 }
                 SecondPass::Splice(qn)
@@ -1489,7 +1489,7 @@ pub(super) fn mlist_to_hlist(
 
         if let Some(qn) = qn {
             if r_type > 0 {
-                let ord = NodeType::OrdNoad.as_raw();
+                let ord = NodeType::OrdNoad.to_u16();
                 let spacing = MATH_SPACING[(r_type - ord) as usize][(t - ord) as usize];
                 let x = match spacing {
                     b'0' => None,
@@ -1536,7 +1536,7 @@ pub(super) fn mlist_to_hlist(
             }
 
             if st.mem[qn].noad_type == NodeType::RightNoad {
-                t = NodeType::OpenNoad.as_raw();
+                t = NodeType::OpenNoad.to_u16();
             }
             r_type = t;
         }

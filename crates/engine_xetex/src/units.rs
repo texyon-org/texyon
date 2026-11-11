@@ -653,30 +653,17 @@ impl std::ops::SubAssign<i32> for FontInfoIdx {
     }
 }
 
-/// A text direction, as TeX--XeT stores it in edge subtypes and math subtypes over `R_CODE`.
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
-pub enum Dir {
-    #[default]
-    Ltr = 0,
-    Rtl = 1,
+crate::codes::code_enum! {
+    /// A text direction, as TeX--XeT stores it in edge subtypes and math subtypes over `R_CODE`.
+    #[derive(Default)]
+    pub enum Dir: u16 {
+        #[default]
+        Ltr = 0,
+        Rtl = 1,
+    }
 }
 
 impl Dir {
-    /// The direction stored as `code`, `None` for any other value.
-    #[inline]
-    pub fn from_code(code: u16) -> Option<Dir> {
-        match code {
-            0 => Some(Dir::Ltr),
-            1 => Some(Dir::Rtl),
-            _ => None,
-        }
-    }
-
-    #[inline]
-    pub fn code(self) -> u16 {
-        self as u16
-    }
-
     #[inline]
     pub fn reversed(self) -> Dir {
         match self {
@@ -891,48 +878,49 @@ impl std::ops::Sub for StrNumber {
     }
 }
 
-/// A node's type code. Delta nodes reuse the rule code and edge nodes the
-/// style code, their list context tells them apart.
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
-#[repr(u16)]
-pub enum NodeType {
-    HList = 0,
-    VList = 1,
-    Rule = 2,
-    Ins = 3,
-    Mark = 4,
-    Adjust = 5,
-    Ligature = 6,
-    Disc = 7,
-    Whatsit = 8,
-    Math = 9,
-    Glue = 10,
-    Kern = 11,
-    Penalty = 12,
-    Unset = 13,
-    Style = 14,
-    Choice = 15,
-    OrdNoad = 16,
-    OpNoad = 17,
-    BinNoad = 18,
-    RelNoad = 19,
-    OpenNoad = 20,
-    CloseNoad = 21,
-    PunctNoad = 22,
-    InnerNoad = 23,
-    RadicalNoad = 24,
-    FractionNoad = 25,
-    UnderNoad = 26,
-    OverNoad = 27,
-    AccentNoad = 28,
-    VcenterNoad = 29,
-    LeftNoad = 30,
-    RightNoad = 31,
-    MarginKern = 40,
-    /// A character node, which TeX told apart by its address in hi-mem.
-    Char = 41,
-    /// The head of a list being built, which is never part of a list.
-    Head = 42,
+crate::codes::code_enum! {
+    /// A node's type code. Delta nodes reuse the rule code and edge nodes the
+    /// style code, their list context tells them apart.
+    #[derive(Hash)]
+    pub enum NodeType: u16 {
+        HList = 0,
+        VList = 1,
+        Rule = 2,
+        Ins = 3,
+        Mark = 4,
+        Adjust = 5,
+        Ligature = 6,
+        Disc = 7,
+        Whatsit = 8,
+        Math = 9,
+        Glue = 10,
+        Kern = 11,
+        Penalty = 12,
+        Unset = 13,
+        Style = 14,
+        Choice = 15,
+        OrdNoad = 16,
+        OpNoad = 17,
+        BinNoad = 18,
+        RelNoad = 19,
+        OpenNoad = 20,
+        CloseNoad = 21,
+        PunctNoad = 22,
+        InnerNoad = 23,
+        RadicalNoad = 24,
+        FractionNoad = 25,
+        UnderNoad = 26,
+        OverNoad = 27,
+        AccentNoad = 28,
+        VcenterNoad = 29,
+        LeftNoad = 30,
+        RightNoad = 31,
+        MarginKern = 40,
+        /// A character node, which TeX told apart by its address in hi-mem.
+        Char = 41,
+        /// The head of a list being built, which is never part of a list.
+        Head = 42,
+    }
 }
 
 /// A type code outside the node types, as in the 32..=39 gap.
@@ -940,70 +928,23 @@ pub enum NodeType {
 pub struct InvalidNodeType(pub u16);
 
 impl NodeType {
+    /// The node type with code `raw`, an error for a code outside the node types.
     #[inline]
-    pub fn from_raw(raw: u16) -> Result<NodeType, InvalidNodeType> {
-        use NodeType::*;
-        Ok(match raw {
-            0 => HList,
-            1 => VList,
-            2 => Rule,
-            3 => Ins,
-            4 => Mark,
-            5 => Adjust,
-            6 => Ligature,
-            7 => Disc,
-            8 => Whatsit,
-            9 => Math,
-            10 => Glue,
-            11 => Kern,
-            12 => Penalty,
-            13 => Unset,
-            14 => Style,
-            15 => Choice,
-            16 => OrdNoad,
-            17 => OpNoad,
-            18 => BinNoad,
-            19 => RelNoad,
-            20 => OpenNoad,
-            21 => CloseNoad,
-            22 => PunctNoad,
-            23 => InnerNoad,
-            24 => RadicalNoad,
-            25 => FractionNoad,
-            26 => UnderNoad,
-            27 => OverNoad,
-            28 => AccentNoad,
-            29 => VcenterNoad,
-            30 => LeftNoad,
-            31 => RightNoad,
-            40 => MarginKern,
-            41 => Char,
-            42 => Head,
-            other => return Err(InvalidNodeType(other)),
-        })
-    }
-
-    #[inline]
-    pub const fn as_raw(self) -> u16 {
-        self as u16
+    pub fn of_code(raw: u16) -> Result<NodeType, InvalidNodeType> {
+        NodeType::from_raw(i32::from(raw)).ok_or(InvalidNodeType(raw))
     }
 }
 
-/// Whether a box stacks its list horizontally (hlist) or vertically (vlist).
-/// The raw values are the box's `NODE_type` codes.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-#[repr(u16)]
-pub enum Orientation {
-    Horizontal = 0,
-    Vertical = 1,
+crate::codes::code_enum! {
+    /// Whether a box stacks its list horizontally (hlist) or vertically (vlist).
+    /// The raw values are the box's `NODE_type` codes.
+    pub enum Orientation: u16 {
+        Horizontal = 0,
+        Vertical = 1,
+    }
 }
 
 impl Orientation {
-    #[inline]
-    pub const fn as_raw(self) -> u16 {
-        self as u16
-    }
-
     /// The box type code with this orientation.
     #[inline]
     pub const fn node_type(self) -> NodeType {
@@ -1014,33 +955,29 @@ impl Orientation {
     }
 }
 
-/// Whether a box's glue is at natural size, stretched or shrunk.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-#[repr(u16)]
-pub enum GlueSign {
-    Normal = 0,
-    Stretching = 1,
-    Shrinking = 2,
-}
-
-impl GlueSign {
-    #[inline]
-    pub const fn as_raw(self) -> u16 {
-        self as u16
+crate::codes::code_enum! {
+    /// Whether a box's glue is at natural size, stretched or shrunk.
+    pub enum GlueSign: u16 {
+        Normal = 0,
+        Stretching = 1,
+        Shrinking = 2,
     }
 }
 
-/// The order of infinity of a stretch or shrink: finite, fil, fill or filll.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
-#[repr(u16)]
-pub enum GlueOrder {
-    #[default]
-    Normal = 0,
-    Fil = 1,
-    Fill = 2,
-    Filll = 3,
-    /// `filll + 1`, which matches no box's glue order, so the glue stays rigid.
-    Rigid = 4,
+impl GlueSign {}
+
+crate::codes::code_enum! {
+    /// The order of infinity of a stretch or shrink: finite, fil, fill or filll.
+    #[derive(PartialOrd, Ord, Default)]
+    pub enum GlueOrder: u16 {
+        #[default]
+        Normal = 0,
+        Fil = 1,
+        Fill = 2,
+        Filll = 3,
+        /// `filll + 1`, which matches no box's glue order, so the glue stays rigid.
+        Rigid = 4,
+    }
 }
 
 impl GlueOrder {
@@ -1051,11 +988,6 @@ impl GlueOrder {
         GlueOrder::Fill,
         GlueOrder::Filll,
     ];
-
-    #[inline]
-    pub const fn as_raw(self) -> u16 {
-        self as u16
-    }
 
     /// The next higher order, `None` above `filll`.
     #[inline]
@@ -1102,14 +1034,14 @@ impl std::ops::Index<GlueOrder> for OrderTotals {
     type Output = Scaled;
     #[inline(always)]
     fn index(&self, o: GlueOrder) -> &Scaled {
-        &self.0[usize::from(o.as_raw())]
+        &self.0[usize::from(o.to_u16())]
     }
 }
 
 impl std::ops::IndexMut<GlueOrder> for OrderTotals {
     #[inline(always)]
     fn index_mut(&mut self, o: GlueOrder) -> &mut Scaled {
-        &mut self.0[usize::from(o.as_raw())]
+        &mut self.0[usize::from(o.to_u16())]
     }
 }
 
@@ -1128,7 +1060,7 @@ mod tests {
             GlueOrder::Rigid,
         ] {
             assert_eq!(
-                <GlueOrder as crate::node::StoredCode>::from_u16(o.as_raw()),
+                <GlueOrder as crate::node::StoredCode>::from_u16(o.to_u16()),
                 Some(o)
             );
         }
@@ -1209,15 +1141,15 @@ mod tests {
             (Head, 42),
         ];
         for (nt, code) in all {
-            assert_eq!(nt.as_raw(), code);
-            assert_eq!(NodeType::from_raw(code), Ok(nt));
+            assert_eq!(nt.to_u16(), code);
+            assert_eq!(NodeType::of_code(code), Ok(nt));
         }
     }
 
     #[test]
     fn nodetype_from_raw_rejects_invalid() {
         for raw in [32u16, 35, 39, 43, 44, 100, u16::MAX] {
-            assert_eq!(NodeType::from_raw(raw), Err(InvalidNodeType(raw)));
+            assert_eq!(NodeType::of_code(raw), Err(InvalidNodeType(raw)));
         }
     }
 

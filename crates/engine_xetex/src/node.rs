@@ -5,7 +5,6 @@
 //! borrows the node as a `K` and a field access is one load or store.
 //! `mem.entries(p)` gives the text or array an [`ArrayNode`] keeps in its payload.
 
-use crate::fonts::Side;
 use crate::math::MathStyle;
 use crate::params::GluePar;
 use std::marker::PhantomData;
@@ -16,8 +15,7 @@ mod kinds;
 
 use crate::state::MemState;
 use crate::units::{
-    Dir, GlueOrder, GlueSign, InvalidNodeType, MemAddr, MemIdx, MemPtr, NodeType, Orientation,
-    Scaled,
+    Dir, GlueOrder, InvalidNodeType, MemAddr, MemIdx, MemPtr, NodeType, Orientation, Scaled,
 };
 pub use kinds::*;
 
@@ -252,37 +250,9 @@ impl<T: StoredCode> PartialOrd<T> for Stored<T> {
     }
 }
 
-/// A `u16` code set a node subfield stores, with its [`StoredCode`] impl.
-macro_rules! stored_code {
-    ($(#[$m:meta])* $vis:vis enum $name:ident {
-        $($(#[$vm:meta])* $v:ident = $n:literal),+ $(,)?
-    }) => {
-        $(#[$m])*
-        #[derive(Copy, Clone, PartialEq, Eq, Debug)]
-        #[repr(u16)]
-        $vis enum $name {
-            $($(#[$vm])* $v = $n),+
-        }
-
-        impl StoredCode for $name {
-            #[inline]
-            fn from_u16(raw: u16) -> Option<Self> {
-                match raw {
-                    $($n => Some($name::$v),)+
-                    _ => None,
-                }
-            }
-            #[inline]
-            fn to_u16(self) -> u16 {
-                self as u16
-            }
-        }
-    };
-}
-
-stored_code! {
+crate::codes::code_enum! {
     /// What made a kern, which decides where a line may break and how it shows.
-    pub enum KernSubtype {
+    pub enum KernSubtype: u16 {
         /// A font kern.
         Normal = 0,
         /// `\kern` or an italic correction.
@@ -296,9 +266,9 @@ stored_code! {
     }
 }
 
-stored_code! {
+crate::codes::code_enum! {
     /// Where a `\vadjust` list goes around the line that holds it.
-    pub enum AdjustPlacement {
+    pub enum AdjustPlacement: u16 {
         /// After the line.
         Post = 0,
         /// Before the line, `\vadjust pre`.
@@ -306,9 +276,9 @@ stored_code! {
     }
 }
 
-stored_code! {
+crate::codes::code_enum! {
     /// A math accent's placement, set by `\Umathaccent fixed`, `bottom` or `bottom fixed`.
-    pub enum MathAccentKind {
+    pub enum MathAccentKind: u16 {
         /// Above the nucleus, stretched to its width.
         Top = 0,
         /// Above, at the accent's own width.
@@ -332,9 +302,9 @@ impl MathAccentKind {
     }
 }
 
-stored_code! {
+crate::codes::code_enum! {
     /// A right noad's subtype, which tells `\middle` from `\right`.
-    pub enum FenceSubtype {
+    pub enum FenceSubtype: u16 {
         /// `\left` or `\right`.
         Normal = 0,
         /// `\middle`.
@@ -342,9 +312,9 @@ stored_code! {
     }
 }
 
-stored_code! {
+crate::codes::code_enum! {
     /// The implicit boundary characters a ligature absorbed, shown as `|` around it.
-    pub enum LigBoundary {
+    pub enum LigBoundary: u16 {
         /// None.
         None = 0,
         /// The right boundary character.
@@ -380,10 +350,10 @@ impl Stored<LigBoundary> {
     }
 }
 
-stored_code! {
+crate::codes::code_enum! {
     /// A math node's code: math-on/off, the `\beginM`/`\endM` pair around a display, or a
     /// TeX--XeT boundary. The LR stack holds these codes too.
-    pub enum MathCode {
+    pub enum MathCode: u16 {
         /// `\mathon`.
         Before = 0,
         /// `\mathoff`.
@@ -466,9 +436,9 @@ impl MathCode {
     }
 }
 
-stored_code! {
+crate::codes::code_enum! {
     /// How leaders repeat their box or rule.
-    pub enum LeaderKind {
+    pub enum LeaderKind: u16 {
         /// `\leaders`, aligned on the enclosing box.
         Aligned = 100,
         /// `\cleaders`, centred.
@@ -521,9 +491,9 @@ impl StoredCode for GlueKind {
     }
 }
 
-stored_code! {
+crate::codes::code_enum! {
     /// TeX--XeT's `box_lr` of an hlist.
-    pub enum BoxLr {
+    pub enum BoxLr: u16 {
         /// Not reversed yet.
         Normal = 0,
         /// Reversed for right-to-left output.
@@ -533,98 +503,9 @@ stored_code! {
     }
 }
 
-impl StoredCode for Side {
-    #[inline]
-    fn from_u16(raw: u16) -> Option<Self> {
-        match raw {
-            0 => Some(Side::Left),
-            1 => Some(Side::Right),
-            _ => None,
-        }
-    }
-    #[inline]
-    fn to_u16(self) -> u16 {
-        match self {
-            Side::Left => 0,
-            Side::Right => 1,
-        }
-    }
-}
-
-impl StoredCode for Dir {
-    #[inline]
-    fn from_u16(raw: u16) -> Option<Self> {
-        Dir::from_code(raw)
-    }
-    #[inline]
-    fn to_u16(self) -> u16 {
-        self.code()
-    }
-}
-
-impl StoredCode for GlueSign {
-    #[inline]
-    fn from_u16(raw: u16) -> Option<Self> {
-        match raw {
-            0 => Some(GlueSign::Normal),
-            1 => Some(GlueSign::Stretching),
-            2 => Some(GlueSign::Shrinking),
-            _ => None,
-        }
-    }
-    #[inline]
-    fn to_u16(self) -> u16 {
-        self.as_raw()
-    }
-}
-
-impl StoredCode for GlueOrder {
-    #[inline]
-    fn from_u16(raw: u16) -> Option<Self> {
-        match raw {
-            0 => Some(GlueOrder::Normal),
-            1 => Some(GlueOrder::Fil),
-            2 => Some(GlueOrder::Fill),
-            3 => Some(GlueOrder::Filll),
-            4 => Some(GlueOrder::Rigid),
-            _ => None,
-        }
-    }
-    #[inline]
-    fn to_u16(self) -> u16 {
-        self.as_raw()
-    }
-}
-
-impl StoredCode for NodeType {
-    #[inline]
-    fn from_u16(raw: u16) -> Option<Self> {
-        NodeType::from_raw(raw).ok()
-    }
-    #[inline]
-    fn to_u16(self) -> u16 {
-        self.as_raw()
-    }
-}
-
-impl StoredCode for Orientation {
-    #[inline]
-    fn from_u16(raw: u16) -> Option<Self> {
-        match raw {
-            0 => Some(Orientation::Horizontal),
-            1 => Some(Orientation::Vertical),
-            _ => None,
-        }
-    }
-    #[inline]
-    fn to_u16(self) -> u16 {
-        self.as_raw()
-    }
-}
-
 const _: () = assert!(
-    Orientation::Horizontal.node_type().as_raw() == Orientation::Horizontal.as_raw()
-        && Orientation::Vertical.node_type().as_raw() == Orientation::Vertical.as_raw()
+    Orientation::Horizontal.node_type().to_u16() == Orientation::Horizontal.to_u16()
+        && Orientation::Vertical.node_type().to_u16() == Orientation::Vertical.to_u16()
 );
 
 /// A view that is a whole node, allocated and freed by its size.
@@ -804,7 +685,7 @@ const _: () = assert!(
 /// Stamps a new type code and rewraps the handle.
 #[inline]
 fn retype<K: View, L: View>(p: NodePtr<K>, mem: &mut MemState, ty: NodeType) -> NodePtr<L> {
-    mem[header(p.idx)].ty = ty.as_raw();
+    mem[header(p.idx)].ty = ty.to_u16();
     NodePtr::from_idx_unchecked(p.idx)
 }
 
@@ -980,7 +861,7 @@ impl MemState {
     #[inline]
     pub fn set_header(&mut self, p: impl MemAddr, ty: NodeType, subtype: u16) {
         let h = &mut self[header(p)];
-        h.ty = ty.as_raw();
+        h.ty = ty.to_u16();
         h.subtype = subtype;
     }
 
@@ -993,7 +874,7 @@ impl MemState {
     /// The checked `NODE_type` of the non-null lo-mem node `p`.
     #[inline]
     pub fn node_type(&self, p: impl MemAddr) -> Result<NodeType, InvalidNodeType> {
-        NodeType::from_raw(self[header(p)].ty)
+        NodeType::of_code(self[header(p)].ty)
     }
 
     /// Classifies the non-null lo-mem node `p`. `Err` for an invalid type code.
@@ -1023,7 +904,7 @@ impl MemState {
             | LeftNoad | RightNoad => AnyNode::Noad(NodePtr::from_idx_unchecked(p)),
             MarginKern => AnyNode::MarginKern(NodePtr::from_idx_unchecked(p)),
             Char => AnyNode::Char(NodePtr::from_idx_unchecked(p)),
-            Head => return Err(InvalidNodeType(Head.as_raw())),
+            Head => return Err(InvalidNodeType(Head.to_u16())),
         })
     }
 
@@ -1412,44 +1293,26 @@ impl NodePtr<PenaltiesNode> {
 
 // --- whatsits ---
 
-/// The subtype of a whatsit node. Only `NativeWord`..`Pdf` carry dimensions.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-#[repr(u16)]
-pub enum WhatsitSubtype {
-    Open = 0,
-    Write = 1,
-    Close = 2,
-    Special = 3,
-    /// `\special shipout`, expanded when shipped out.
-    LateSpecial = 4,
-    Language = 5,
-    PdfSavePos = 23,
-    NativeWord = 40,
-    NativeWordAt = 41,
-    Glyph = 42,
-    Pic = 43,
-    Pdf = 44,
+crate::codes::code_enum! {
+    /// The subtype of a whatsit node. Only `NativeWord`..`Pdf` carry dimensions.
+    pub enum WhatsitSubtype: u16 {
+        Open = 0,
+        Write = 1,
+        Close = 2,
+        Special = 3,
+        /// `\special shipout`, expanded when shipped out.
+        LateSpecial = 4,
+        Language = 5,
+        PdfSavePos = 23,
+        NativeWord = 40,
+        NativeWordAt = 41,
+        Glyph = 42,
+        Pic = 43,
+        Pdf = 44,
+    }
 }
 
 impl WhatsitSubtype {
-    pub fn from_raw(v: u16) -> Option<WhatsitSubtype> {
-        Some(match v {
-            0 => WhatsitSubtype::Open,
-            1 => WhatsitSubtype::Write,
-            2 => WhatsitSubtype::Close,
-            3 => WhatsitSubtype::Special,
-            4 => WhatsitSubtype::LateSpecial,
-            5 => WhatsitSubtype::Language,
-            23 => WhatsitSubtype::PdfSavePos,
-            40 => WhatsitSubtype::NativeWord,
-            41 => WhatsitSubtype::NativeWordAt,
-            42 => WhatsitSubtype::Glyph,
-            43 => WhatsitSubtype::Pic,
-            44 => WhatsitSubtype::Pdf,
-            _ => return None,
-        })
-    }
-
     pub fn is_native_word(self) -> bool {
         matches!(
             self,
@@ -1468,17 +1331,6 @@ impl WhatsitSubtype {
                 | WhatsitSubtype::LateSpecial
                 | WhatsitSubtype::Language
         )
-    }
-}
-
-impl StoredCode for WhatsitSubtype {
-    #[inline]
-    fn from_u16(raw: u16) -> Option<Self> {
-        WhatsitSubtype::from_raw(raw)
-    }
-    #[inline]
-    fn to_u16(self) -> u16 {
-        self as u16
     }
 }
 
@@ -1567,7 +1419,7 @@ impl NodePtr<WhatsitNode> {
 
     #[inline]
     pub fn whatsit_subtype(self, mem: &MemState) -> Option<WhatsitSubtype> {
-        WhatsitSubtype::from_raw(mem[header(self.idx)].subtype)
+        WhatsitSubtype::from_u16(mem[header(self.idx)].subtype)
     }
 }
 
@@ -1864,7 +1716,10 @@ mod tests {
     #[test]
     fn box_and_margin_codes_keep_web_codes() {
         assert_web_codes(&[(BoxLr::Normal, 0), (BoxLr::Reversed, 1), (BoxLr::Dlist, 2)]);
-        assert_web_codes(&[(Side::Left, 0), (Side::Right, 1)]);
+        assert_web_codes(&[
+            (crate::fonts::Side::Left, 0),
+            (crate::fonts::Side::Right, 1),
+        ]);
     }
 
     #[test]
@@ -1902,7 +1757,7 @@ mod tests {
 
     fn at<K: View>(mem: &mut MemState, p: i32, ty: Option<NodeType>) -> NodePtr<K> {
         if let Some(ty) = ty {
-            mem[header(MemPtr::from_raw(p))].ty = ty.as_raw();
+            mem[header(MemPtr::from_raw(p))].ty = ty.to_u16();
         }
         NodePtr::from_idx_unchecked(MemIdx::new(MemPtr::from_raw(p)))
     }
@@ -2010,7 +1865,7 @@ mod tests {
             (170, NodeType::Unset),
         ];
         for (p, ty) in cases {
-            mem[header(MemPtr::from_raw(p))].ty = ty.as_raw();
+            mem[header(MemPtr::from_raw(p))].ty = ty.to_u16();
         }
         mem[header(MemPtr::from_raw(180))].ty = 35;
         let c = |p| mem.classify(MemPtr::from_raw(p));

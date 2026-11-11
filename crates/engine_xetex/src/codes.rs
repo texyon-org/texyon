@@ -1,13 +1,14 @@
 //! Enums for TeX's small numeric code sets: `chr_code` modifiers and the like.
 
-/// Declares a fieldless enum with explicit discriminants plus `from_raw`
-/// (a real `match`, so dispatch compiles to a jump table) and `raw`. With
+/// Declares a fieldless enum for one of TeX's numeric code sets, with
+/// `from_raw` (a real `match`, so dispatch compiles to a jump table), `raw`
+/// and the [`StoredCode`](crate::node::StoredCode) conversions. With
 /// `Variant = n => "name"` it also gets `name`, the primitive's name.
 macro_rules! code_enum {
     (
         $(#[$meta:meta])*
         $vis:vis enum $name:ident: $repr:ty {
-            $($(#[$vmeta:meta])* $var:ident = $val:expr => $prim:literal),+ $(,)?
+            $($(#[$vmeta:meta])* $var:ident = $val:literal => $prim:literal),+ $(,)?
         }
     ) => {
         code_enum! {
@@ -28,7 +29,7 @@ macro_rules! code_enum {
     (
         $(#[$meta:meta])*
         $vis:vis enum $name:ident: $repr:ty {
-            $($(#[$vmeta:meta])* $var:ident = $val:expr),+ $(,)?
+            $($(#[$vmeta:meta])* $var:ident = $val:literal),+ $(,)?
         }
     ) => {
         $(#[$meta])*
@@ -38,32 +39,52 @@ macro_rules! code_enum {
             $($(#[$vmeta])* $var = $val),+
         }
 
-        #[allow(dead_code)]
         impl $name {
             #[inline]
             pub(crate) const fn from_raw(v: i32) -> Option<Self> {
-                #![allow(non_upper_case_globals)]
-                $(const $var: i32 = $val;)+
                 match v {
-                    $($var => Some(Self::$var),)+
+                    $($val => Some(Self::$var),)+
                     _ => None,
                 }
             }
+        }
 
+        impl $name {
             #[inline]
             pub(crate) const fn raw(self) -> i32 {
                 self as i32
             }
         }
 
+        impl From<$name> for i32 {
+            #[inline]
+            fn from(code: $name) -> i32 {
+                code.raw()
+            }
+        }
+
+        impl $name {
+            /// The code a node field or save word stores as `raw`.
+            #[inline]
+            pub(crate) const fn from_u16(raw: u16) -> Option<Self> {
+                Self::from_raw(raw as i32)
+            }
+
+            /// The code as a node field or save word stores it.
+            #[inline]
+            pub(crate) const fn to_u16(self) -> u16 {
+                self as u16
+            }
+        }
+
         impl crate::node::StoredCode for $name {
             #[inline]
             fn from_u16(raw: u16) -> Option<Self> {
-                Self::from_raw(i32::from(raw))
+                $name::from_u16(raw)
             }
             #[inline]
             fn to_u16(self) -> u16 {
-                self as u16
+                $name::to_u16(self)
             }
         }
     };

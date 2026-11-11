@@ -25,11 +25,13 @@ use crate::ext::loaded_font_design_size;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-/// The edge of a line a character protrudes into.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
-pub(crate) enum Side {
-    Left,
-    Right,
+crate::codes::code_enum! {
+    /// The edge of a line a character protrudes into.
+    #[derive(PartialOrd, Ord, Hash)]
+    pub(crate) enum Side: u16 {
+        Left = 0,
+        Right = 1,
+    }
 }
 
 /// `\lpcode` and `\rpcode` values, keyed by font and character or glyph.

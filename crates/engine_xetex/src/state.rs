@@ -705,28 +705,29 @@ impl MemState {
     }
 }
 
-/// The kind of group on the save stack (`cur_group`).
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
-#[repr(u8)]
-pub(crate) enum GroupCode {
-    #[default]
-    BottomLevel = 0,
-    Simple = 1,
-    Hbox = 2,
-    AdjustedHbox = 3,
-    Vbox = 4,
-    Vtop = 5,
-    Align = 6,
-    NoAlign = 7,
-    Output = 8,
-    Math = 9,
-    Disc = 10,
-    Insert = 11,
-    Vcenter = 12,
-    MathChoice = 13,
-    SemiSimple = 14,
-    MathShift = 15,
-    MathLeft = 16,
+crate::codes::code_enum! {
+    /// The kind of group on the save stack (`cur_group`).
+    #[derive(Default)]
+    pub(crate) enum GroupCode: u8 {
+        #[default]
+        BottomLevel = 0,
+        Simple = 1,
+        Hbox = 2,
+        AdjustedHbox = 3,
+        Vbox = 4,
+        Vtop = 5,
+        Align = 6,
+        NoAlign = 7,
+        Output = 8,
+        Math = 9,
+        Disc = 10,
+        Insert = 11,
+        Vcenter = 12,
+        MathChoice = 13,
+        SemiSimple = 14,
+        MathShift = 15,
+        MathLeft = 16,
+    }
 }
 
 /// The command that closes a group `}` cannot close, as TeX names it.
@@ -787,61 +788,20 @@ impl GroupCode {
             _ => None,
         }
     }
+}
 
-    #[inline]
-    pub(crate) fn from_raw(v: u8) -> Option<GroupCode> {
-        Some(match v {
-            0 => GroupCode::BottomLevel,
-            1 => GroupCode::Simple,
-            2 => GroupCode::Hbox,
-            3 => GroupCode::AdjustedHbox,
-            4 => GroupCode::Vbox,
-            5 => GroupCode::Vtop,
-            6 => GroupCode::Align,
-            7 => GroupCode::NoAlign,
-            8 => GroupCode::Output,
-            9 => GroupCode::Math,
-            10 => GroupCode::Disc,
-            11 => GroupCode::Insert,
-            12 => GroupCode::Vcenter,
-            13 => GroupCode::MathChoice,
-            14 => GroupCode::SemiSimple,
-            15 => GroupCode::MathShift,
-            16 => GroupCode::MathLeft,
-            _ => return None,
-        })
-    }
-
-    #[inline]
-    pub(crate) fn as_raw(self) -> u8 {
-        self as u8
+crate::codes::code_enum! {
+    /// The kind of a save-stack entry.
+    pub(crate) enum SaveType: u16 {
+        RestoreOldValue = 0,
+        RestoreZero = 1,
+        InsertToken = 2,
+        LevelBoundary = 3,
+        RestoreSa = 4,
     }
 }
 
-/// The kind of a save-stack entry.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-#[repr(u16)]
-pub(crate) enum SaveType {
-    RestoreOldValue = 0,
-    RestoreZero = 1,
-    InsertToken = 2,
-    LevelBoundary = 3,
-    RestoreSa = 4,
-}
-
-impl SaveType {
-    #[inline]
-    pub(crate) fn from_raw(raw: u16) -> Option<SaveType> {
-        Some(match raw {
-            0 => SaveType::RestoreOldValue,
-            1 => SaveType::RestoreZero,
-            2 => SaveType::InsertToken,
-            3 => SaveType::LevelBoundary,
-            4 => SaveType::RestoreSa,
-            _ => return None,
-        })
-    }
-}
+impl SaveType {}
 
 #[derive(Default)]
 pub(crate) struct SaveStackState {
@@ -907,7 +867,7 @@ impl SaveStackState {
 
     #[inline]
     pub(crate) fn save_type(&self, k: SavePtr) -> Option<SaveType> {
-        SaveType::from_raw(self.b16s1(k))
+        SaveType::from_u16(self.b16s1(k))
     }
     #[inline]
     pub(crate) fn save_level(&self, k: SavePtr) -> u16 {
@@ -958,7 +918,7 @@ impl SaveStackState {
     /// The group and enclosing boundary saved by the level boundary at `k`.
     #[inline]
     pub(crate) fn boundary_at(&self, k: SavePtr) -> (GroupCode, SavePtr) {
-        let group = GroupCode::from_raw(self.b16s0(k) as u8).expect("valid group code");
+        let group = GroupCode::from_u16(self.b16s0(k)).expect("valid group code");
         (group, SavePtr::from_raw(self.b32s1(k)))
     }
 

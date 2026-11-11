@@ -196,13 +196,6 @@ impl From<Cmd> for u16 {
     }
 }
 
-impl From<Cmd> for i32 {
-    #[inline(always)]
-    fn from(cmd: Cmd) -> i32 {
-        cmd.raw()
-    }
-}
-
 impl Cmd {
     /// The macro call command for a `\long` and/or `\outer` definition.
     pub(crate) const fn call(long: bool, outer: bool) -> Cmd {

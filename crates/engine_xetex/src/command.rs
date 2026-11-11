@@ -273,7 +273,7 @@ impl Command {
         let node_type = || {
             u16::try_from(chr)
                 .ok()
-                .and_then(|t| NodeType::from_raw(t).ok())
+                .and_then(|t| NodeType::of_code(t).ok())
         };
         Some(match cmd {
             Cmd::Relax => Command::Relax {

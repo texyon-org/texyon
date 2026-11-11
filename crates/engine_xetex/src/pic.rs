@@ -91,33 +91,21 @@ const PIC_PROBE_OK: c_int = 0;
 /// The probe error for a missing file.
 const FILE_NOT_FOUND: c_int = -43;
 
-/// PDF page-box selector for `\XeTeXpdffile`, stored in the picture node and
-/// echoed by `pic_out`. `Unset` (no keyword) extracts the crop box but prints
-/// nothing. A non-PDF picture stores 0, the `None` of an `Option<PageboxType>`.
-#[derive(Copy, Clone, PartialEq, Eq)]
-#[repr(u16)]
-pub(crate) enum PageboxType {
-    Crop = 1,
-    Media = 2,
-    Bleed = 3,
-    Trim = 4,
-    Art = 5,
-    Unset = 6,
+crate::codes::code_enum! {
+    /// PDF page-box selector for `\XeTeXpdffile`, stored in the picture node and
+    /// echoed by `pic_out`. `Unset` (no keyword) extracts the crop box but prints
+    /// nothing. A non-PDF picture stores 0, the `None` of an `Option<PageboxType>`.
+    pub(crate) enum PageboxType: u16 {
+        Crop = 1,
+        Media = 2,
+        Bleed = 3,
+        Trim = 4,
+        Art = 5,
+        Unset = 6,
+    }
 }
 
 impl PageboxType {
-    pub(crate) fn from_raw(v: u16) -> Option<PageboxType> {
-        match v {
-            1 => Some(PageboxType::Crop),
-            2 => Some(PageboxType::Media),
-            3 => Some(PageboxType::Bleed),
-            4 => Some(PageboxType::Trim),
-            5 => Some(PageboxType::Art),
-            6 => Some(PageboxType::Unset),
-            _ => None,
-        }
-    }
-
     pub(crate) fn label(self) -> Option<&'static str> {
         match self {
             PageboxType::Crop => Some("pagebox cropbox "),

@@ -681,10 +681,10 @@ fn fetch_last_node_item(st: &EngineState, code: LastItemCode) -> CurVal {
     match code {
         LastItemCode::LastNodeType => CurVal::Int(if node.is_some() {
             let node_type = st.mem.type_code(tx);
-            if node_type <= NodeType::Unset.as_raw() {
+            if node_type <= NodeType::Unset.to_u16() {
                 i32::from(node_type) + 1
             } else {
-                i32::from(NodeType::Unset.as_raw()) + 2
+                i32::from(NodeType::Unset.to_u16()) + 2
             }
         } else if at_page_head {
             st.shipout.last_node_type
