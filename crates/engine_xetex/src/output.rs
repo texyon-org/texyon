@@ -816,7 +816,7 @@ pub(crate) fn print_group(st: &mut EngineState, e: bool) {
     print(st, " group (level ");
     print_int(st, i32::from(st.save_stack.cur_level));
     print_char(st, b')');
-    let line_at = st.save_stack.saved(-1);
+    let line_at = st.save_stack.boundary().map_or(0, |b| b.2);
     if line_at != 0 {
         if e {
             print(st, " entered at line ");

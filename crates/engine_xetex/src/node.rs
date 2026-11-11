@@ -47,6 +47,12 @@ impl<K: View> PartialEq for NodePtr<K> {
     }
 }
 impl<K: View> Eq for NodePtr<K> {}
+impl<K: View> std::hash::Hash for NodePtr<K> {
+    #[inline]
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.idx.hash(state);
+    }
+}
 // SAFETY: transparent over a `MemIdx`, so `None` is the zero word.
 unsafe impl<K: View + 'static> bytemuck::ZeroableInOption for NodePtr<K> {}
 // SAFETY: as above, and every non-zero word is a valid `MemIdx`.
@@ -1054,7 +1060,7 @@ impl NodePtr<AccentNoad> {
 
 /// A math field of a noad that something writes into: the target of `scan_math`,
 /// which a math group fills when it ends, or a character `fetch` may find missing.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub enum MathSlot {
     Nucleus(NodePtr<Noad>),
     Supscr(NodePtr<Noad>),
@@ -1064,37 +1070,6 @@ pub enum MathSlot {
     /// A fraction's denominator, where WEB's `subscr` lands on a fraction.
     Denominator(NodePtr<FractionNoad>),
     AccentChr(NodePtr<AccentNoad>),
-}
-
-impl MathSlot {
-    const KINDS: i32 = 8;
-
-    /// The slot as one save stack word.
-    pub fn to_saved(self) -> i32 {
-        let (p, kind) = match self {
-            MathSlot::Nucleus(n) => (n.idx, 0),
-            MathSlot::Supscr(n) => (n.idx, 1),
-            MathSlot::Subscr(n) => (n.idx, 2),
-            MathSlot::Numerator(f) => (f.idx, 3),
-            MathSlot::Denominator(f) => (f.idx, 4),
-            MathSlot::AccentChr(a) => (a.idx, 5),
-        };
-        p.raw() * Self::KINDS + kind
-    }
-
-    /// The slot a save stack word from [`MathSlot::to_saved`] holds.
-    pub fn from_saved(v: i32) -> Option<Self> {
-        let p = MemIdx::from_raw(v.div_euclid(Self::KINDS))?;
-        Some(match v.rem_euclid(Self::KINDS) {
-            0 => MathSlot::Nucleus(NodePtr::from_idx_unchecked(p)),
-            1 => MathSlot::Supscr(NodePtr::from_idx_unchecked(p)),
-            2 => MathSlot::Subscr(NodePtr::from_idx_unchecked(p)),
-            3 => MathSlot::Numerator(NodePtr::from_idx_unchecked(p)),
-            4 => MathSlot::Denominator(NodePtr::from_idx_unchecked(p)),
-            5 => MathSlot::AccentChr(NodePtr::from_idx_unchecked(p)),
-            _ => return None,
-        })
-    }
 }
 
 impl std::ops::Index<MathSlot> for MemState {
@@ -1963,7 +1938,7 @@ mod tests {
     }
 
     #[test]
-    fn math_slots_reach_their_fields_and_survive_the_save_stack() {
+    fn math_slots_reach_their_fields() {
         let mut mem = fresh_mem(200);
         let n: NodePtr<Noad> = at(&mut mem, 100, Some(NodeType::OrdNoad));
         let f: NodePtr<FractionNoad> = at(&mut mem, 120, Some(NodeType::FractionNoad));
@@ -1978,7 +1953,6 @@ mod tests {
         ];
         for (k, slot) in (1..).zip(slots) {
             mem[slot].math_type = k;
-            assert_eq!(MathSlot::from_saved(slot.to_saved()), Some(slot));
         }
         assert_eq!(
             [mem[n].nucleus, mem[n].supscr, mem[n].subscr].map(|w| w.math_type),

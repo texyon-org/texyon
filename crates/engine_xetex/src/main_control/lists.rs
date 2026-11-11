@@ -24,6 +24,7 @@ use crate::node::{
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::scaled_math::xn_over_d;
+use crate::state::Saved;
 use crate::state::{EngineState, GroupCode, MemState};
 use crate::token::Token;
 use crate::units::MemAddr;
@@ -210,10 +211,8 @@ pub(super) fn begin_insert_or_adjust(st: &mut EngineState) -> Result<(), Abort> 
             n => n,
         }
     };
-    st.save_stack.set_saved(0, n);
     let pre = st.scanner.cur.cmd() == Cmd::Vadjust && crate::scan::scan_keyword(st, "pre")?;
-    st.save_stack.set_saved(1, i32::from(pre));
-    st.save_stack.save_ptr += 2;
+    st.save_stack.push_saved(Saved::Insert { n, pre });
     st.save_stack
         .new_save_level(GroupCode::Insert, st.mem.line)?;
     crate::scan::scan_left_brace(st)?;
@@ -391,11 +390,12 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             let d = st.eqtb.dimen_par(DimenPar::SplitMaxDepth);
             let f = st.eqtb.int_par(IntPar::FloatingPenalty);
             crate::save::unsave(st)?;
-            st.save_stack.save_ptr -= 2;
+            let Some(Saved::Insert { n, pre }) = st.save_stack.pop_saved() else {
+                return Err(Abort::Confusion("insert"));
+            };
             let head = st.input.cur_list.head.link(&st.mem);
             let p = crate::packaging::vpackage(st, head, PackSpec::NATURAL, MAX_DIMEN)?;
             st.mem.pop_nest(&mut st.input)?;
-            let n = st.save_stack.saved(0);
             if n < 255 {
                 let ins = NodePtr::<InsNode>::alloc(&mut st.mem)?;
                 st.input.cur_list.tail_append(&mut st.mem, ins);
@@ -411,7 +411,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             } else {
                 let adj = NodePtr::<AdjustNode>::alloc(&mut st.mem)?;
                 st.input.cur_list.tail_append(&mut st.mem, adj);
-                st.mem[adj].placement = if st.save_stack.saved(1) != 0 {
+                st.mem[adj].placement = if pre {
                     AdjustPlacement::Pre
                 } else {
                     AdjustPlacement::Post
@@ -534,9 +534,9 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
         GroupCode::MathChoice => crate::math::build_choices(st)?,
         GroupCode::Math => {
             crate::save::unsave(st)?;
-            st.save_stack.save_ptr -= 1;
-            let save_loc =
-                MathSlot::from_saved(st.save_stack.saved(0)).or_confusion("math group")?;
+            let Some(Saved::MathGroup(save_loc)) = st.save_stack.pop_saved() else {
+                return Err(Abort::Confusion("math group"));
+            };
             st.mem[save_loc].math_type = SUB_MLIST;
             let p = crate::math::fin_mlist(st, None)?;
             st.mem[save_loc].set_info(p);
@@ -695,8 +695,7 @@ pub(super) fn append_discretionary(st: &mut EngineState, hyphen: bool) -> Result
         }
         return Ok(());
     }
-    st.save_stack.set_saved(0, 0);
-    st.save_stack.save_ptr += 1;
+    st.save_stack.push_saved(Saved::DiscPart(0));
     begin_disc_group(st)
 }
 
@@ -744,7 +743,10 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
     st.mem.pop_nest(&mut st.input)?;
     // SAFETY: `append_discretionary` left the disc node as the enclosing list's tail.
     let disc = NodePtr::<DiscNode>::from_idx_unchecked(st.input.cur_list.tail);
-    let part = st.save_stack.saved(-1);
+    let part = match st.save_stack.saved(-1) {
+        Some(Saved::DiscPart(part)) => part,
+        _ => return Err(Abort::Confusion("discretionary")),
+    };
     match part {
         0 => st.mem[disc].pre_break = p,
         1 => st.mem[disc].post_break = p,
@@ -783,7 +785,9 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
         }
         _ => {}
     }
-    st.save_stack.set_saved(-1, part + 1);
+    if let Some(Saved::DiscPart(part)) = st.save_stack.top_saved_mut() {
+        *part += 1;
+    }
     begin_disc_group(st)
 }
 

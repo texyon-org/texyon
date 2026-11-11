@@ -189,3 +189,15 @@ entry names a later TeX Live version.
   OpenType math font.
 - **Fix:** leave `width(b)` alone, so it stays the maximum over all parts.
 - **TeXyoN:** follows TeX Live (`width(b)` set to null). Not reported yet.
+
+## 14. `\showgroups` prints the `\vadjust pre` flag as the insert number
+
+- **Where:** `show_save_groups`, line 31525, `if saved(-2)=255 ... print_int(saved(-2))`.
+- **Bug:** e-TeX kept only the insert number below an insert group, so `saved(-2)` (above the line
+  word) was that number. XeTeX's `\vadjust pre` (line 25742) pushes a second word, the pre flag, on top
+  of it, and `show_save_groups` was not moved down. It reads the flag: `\vadjust` and `\insert100` show
+  as `\insert0`, `\vadjust pre` as `\insert1`.
+- **Repro:** `\insert100{\showgroups}` prints `(\insert0{)`. Confirmed against TeX Live 2025 xetex.
+- **Fix:** read the number from `saved(-3)` and the flag from `saved(-2)`.
+- **TeXyoN:** prints `\insert100{`, `\vadjust{` and `\vadjust pre{` (`output/show.rs`). Listed in
+  `tests/upstream/known.tsv`, test `showgroups_names_inserts_and_vadjusts`. Not reported yet.

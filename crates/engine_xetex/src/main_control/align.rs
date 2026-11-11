@@ -817,7 +817,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
         st.input.cur_list.mode = -st.input.cur_list.mode;
     }
 
-    crate::scan::scan_spec(st, GroupCode::Align, false)?;
+    crate::scan::scan_spec(st, GroupCode::Align, None)?;
     ALIGN_HEAD.set_link(&mut st.mem, None);
     st.scanner.cur_align = Some(ALIGN_HEAD);
     st.scanner.cur_loop = None;

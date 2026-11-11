@@ -15,6 +15,7 @@ use crate::input::{back_input, begin_token_list, TokenType};
 use crate::node::{BoxNode, MathSlot, NodePtr, RuleDimen, RuleNode, SaLeaf, Stored};
 use crate::packaging::PackSpec;
 use crate::params::IntPar;
+use crate::state::Saved;
 use crate::state::{EngineState, EqtbState, GroupCode, MemState, ScannerState};
 use crate::token::Token;
 use crate::units::{MemPtr, NodeType, Scaled};
@@ -80,13 +81,8 @@ pub(crate) fn scan_optional_equals(st: &mut EngineState) -> Result<(), Abort> {
 pub(crate) fn scan_spec(
     st: &mut EngineState,
     c: GroupCode,
-    three_codes: bool,
+    box_context: Option<i32>,
 ) -> Result<(), Abort> {
-    let s = if three_codes {
-        st.save_stack.saved(0)
-    } else {
-        0
-    };
     let spec = if scan_keyword(st, "to")? {
         PackSpec::Exactly(scan_dimen(st, false)?)
     } else if scan_keyword(st, "spread")? {
@@ -94,11 +90,10 @@ pub(crate) fn scan_spec(
     } else {
         PackSpec::NATURAL
     };
-    if three_codes {
-        st.save_stack.set_saved(0, s);
-        st.save_stack.save_ptr += 1;
+    if let Some(context) = box_context {
+        st.save_stack.push_saved(Saved::BoxContext(context));
     }
-    st.save_stack.push_spec(spec);
+    st.save_stack.push_saved(Saved::Spec(spec));
     st.save_stack.new_save_level(c, st.mem.line)?;
     scan_left_brace(st)?;
     Ok(())
@@ -227,8 +222,7 @@ pub(crate) fn scan_math(st: &mut EngineState, p: MathSlot) -> Result<(), Abort> 
                 _ => {
                     back_input(st)?;
                     scan_left_brace(st)?;
-                    st.save_stack.set_saved(0, p.to_saved());
-                    st.save_stack.save_ptr += 1;
+                    st.save_stack.push_saved(Saved::MathGroup(p));
                     crate::main_control::push_math(st, GroupCode::Math)?;
                     return Ok(());
                 }

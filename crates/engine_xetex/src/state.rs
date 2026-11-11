@@ -2,7 +2,6 @@
 
 use crate::cmd::Cmd;
 use crate::codes::{FiOrElseCode, ValueLevel};
-use crate::errors::OrConfusion;
 use crate::glue_store::GlueSpecId;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::units::RawPtr;
@@ -159,7 +158,7 @@ pub(crate) struct OpenLevel {
     /// The enclosing file's line when this one was opened.
     pub outer_line: i32,
     /// `cur_boundary` when the file was opened.
-    pub grp: crate::units::SavePtr,
+    pub grp: Option<crate::units::SavePtr>,
     /// `cond_ptr` when the file was opened.
     pub cond: Option<crate::cond_stack::CondId>,
     pub source_name: StrNumber,
@@ -856,22 +855,67 @@ impl GroupCode {
     }
 }
 
-crate::codes::code_enum! {
-    /// The kind of a save-stack entry.
-    pub(crate) enum SaveType: u16 {
-        RestoreOldValue = 0,
-        RestoreZero = 1,
-        InsertToken = 2,
-        LevelBoundary = 3,
-        RestoreSa = 4,
-        /// A control sequence's meaning, saved in the word below.
-        RestoreCs = 5,
-        /// A control sequence that was undefined at level zero.
-        RestoreCsZero = 6,
-    }
+/// One entry of the save stack.
+#[derive(Copy, Clone)]
+pub(crate) enum SaveEntry {
+    /// Where a group began: the enclosing group's code and boundary, and the line this one began on.
+    Boundary {
+        group: GroupCode,
+        below: Option<SavePtr>,
+        line: i32,
+    },
+    /// A value to put back when the group ends.
+    Restore(Restore),
+    /// A token `\aftergroup` inserts when the group ends.
+    InsertToken(crate::token::Token),
+    /// The sparse register chain and level that were current before this group saved one.
+    RestoreSa {
+        chain: Option<crate::node::NodePtr<crate::node::SaSaved>>,
+        level: u16,
+    },
+    /// Something a construction keeps until its group ends.
+    Saved(Saved),
 }
 
-impl SaveType {}
+/// An old `eqtb` value, with the level it had.
+#[derive(Copy, Clone)]
+pub(crate) enum Restore {
+    Cs {
+        cs: CsId,
+        old: crate::command::Command,
+        level: u16,
+    },
+    /// A control sequence that was undefined at level zero.
+    CsUndefined(CsId),
+    Word {
+        loc: EqtbPtr,
+        old: crate::mem_types::MemoryWord,
+        level: u16,
+    },
+}
+
+/// What a construction keeps on the save stack below its group.
+#[derive(Copy, Clone, Debug, PartialEq, Hash)]
+pub(crate) enum Saved {
+    /// Where a box goes when its group ends, `box_context`.
+    BoxContext(i32),
+    Spec(crate::packaging::PackSpec),
+    /// An `\insert` with its box number, or a `\vadjust` (number 255).
+    Insert {
+        n: i32,
+        pre: bool,
+    },
+    /// The noad field a math group fills.
+    MathGroup(crate::node::MathSlot),
+    /// An `\eqno` (false) or `\leqno` (true).
+    EqNo {
+        left: bool,
+    },
+    /// How many `\mathchoice` parts are done.
+    ChoicePart(u8),
+    /// How many `\discretionary` parts are done.
+    DiscPart(u8),
+}
 
 #[derive(Default)]
 pub(crate) struct SaveStackState {
@@ -880,8 +924,9 @@ pub(crate) struct SaveStackState {
     pub save_size: usize,
     pub cur_level: u16,
     pub cur_group: GroupCode,
-    pub cur_boundary: SavePtr,
-    pub data: Vec<crate::mem_types::MemoryWord>,
+    /// The current group's boundary entry, none at the bottom level.
+    pub cur_boundary: Option<SavePtr>,
+    pub data: Vec<SaveEntry>,
 }
 
 impl SaveStackState {
@@ -890,111 +935,83 @@ impl SaveStackState {
         crate::errors::Abort::overflow(crate::errors::Capacity::SaveSize, self.save_size)
     }
 
-    #[inline]
-    fn b32s1(&self, k: SavePtr) -> i32 {
-        self.data[k.index()].b32().s1
+    /// The stack of `size` free entries.
+    pub(crate) fn alloc(&mut self, size: usize) {
+        self.data = vec![SaveEntry::Saved(Saved::ChoicePart(0)); size];
     }
 
     #[inline]
-    fn set_b32s1(&mut self, k: SavePtr, v: i32) {
-        self.data[k.index()].b32.s1 = v;
-    }
-
-    #[inline]
-    fn set_b16s1(&mut self, k: SavePtr, v: u16) {
-        self.data[k.index()].b16.s1 = v;
-    }
-
-    #[inline]
-    fn set_b16s0(&mut self, k: SavePtr, v: u16) {
-        self.data[k.index()].b16.s0 = v;
-    }
-
-    #[inline]
-    pub(crate) fn set_word(&mut self, k: SavePtr, w: crate::mem_types::MemoryWord) {
-        self.data[k.index()] = w;
-    }
-
-    #[inline]
-    fn b16s1(&self, k: SavePtr) -> u16 {
-        self.data[k.index()].b16().s1
-    }
-
-    #[inline]
-    fn b16s0(&self, k: SavePtr) -> u16 {
-        self.data[k.index()].b16().s0
-    }
-
-    /// WEB's `saved(k)`, the word `k` entries above `save_ptr`.
-    #[inline]
-    pub(crate) fn saved(&self, k: i32) -> i32 {
-        self.b32s1(self.save_ptr + k)
-    }
-    #[inline]
-    pub(crate) fn set_saved(&mut self, k: i32, v: i32) {
-        self.set_b32s1(self.save_ptr + k, v);
-    }
-
-    #[inline]
-    pub(crate) fn save_type(&self, k: SavePtr) -> Option<SaveType> {
-        SaveType::from_u16(self.b16s1(k))
-    }
-    #[inline]
-    pub(crate) fn save_level(&self, k: SavePtr) -> u16 {
-        self.b16s0(k)
-    }
-    #[inline]
-    pub(crate) fn save_index(&self, k: SavePtr) -> i32 {
-        self.b32s1(k)
-    }
-    /// Pushes a box's size spec, to be read back after its group by [`pop_spec`](Self::pop_spec).
-    pub(crate) fn push_spec(&mut self, spec: crate::packaging::PackSpec) {
-        let (code, amount) = spec.to_words();
-        self.set_saved(0, code);
-        self.set_saved(1, amount);
-        self.save_ptr += 2;
-    }
-
-    /// Pops the size spec [`push_spec`](Self::push_spec) saved.
-    pub(crate) fn pop_spec(&mut self) -> Result<crate::packaging::PackSpec, crate::errors::Abort> {
-        self.save_ptr -= 2;
-        self.spec_at(0).or_confusion("pop_spec")
-    }
-
-    /// The size spec saved at `saved(k)` and `saved(k + 1)`.
-    pub(crate) fn spec_at(&self, k: i32) -> Option<crate::packaging::PackSpec> {
-        crate::packaging::PackSpec::from_words(self.saved(k), self.saved(k + 1))
-    }
-
-    /// `save_index(k)` of an entry that saved an `eqtb` location.
-    #[inline]
-    pub(crate) fn save_loc(&self, k: SavePtr) -> EqtbPtr {
-        EqtbPtr::from_raw(self.b32s1(k))
-    }
-    /// `save_index(k)` of an entry that saved a pointer.
-    #[inline]
-    pub(crate) fn save_index_ptr(&self, k: SavePtr) -> crate::units::MemPtr {
-        crate::units::MemIdx::from_raw(self.save_index(k))
-    }
-    /// Writes a restore entry at `save_ptr`.
-    #[inline]
-    pub(crate) fn set_save_entry(&mut self, kind: SaveType, level: u16, index: i32) {
-        let k = self.save_ptr;
-        self.set_b16s1(k, kind as u16);
-        self.set_b16s0(k, level);
-        self.set_b32s1(k, index);
-    }
-
-    /// The group and enclosing boundary saved by the level boundary at `k`.
-    #[inline]
-    pub(crate) fn boundary_at(&self, k: SavePtr) -> (GroupCode, SavePtr) {
-        let group = GroupCode::from_u16(self.b16s0(k)).expect("valid group code");
-        (group, SavePtr::from_raw(self.b32s1(k)))
-    }
-
-    #[inline]
-    pub(crate) fn word(&self, k: SavePtr) -> crate::mem_types::MemoryWord {
+    pub(crate) fn entry(&self, k: SavePtr) -> SaveEntry {
         self.data[k.index()]
+    }
+
+    /// Writes `e` at `save_ptr` and moves past it.
+    #[inline]
+    pub(crate) fn push(&mut self, e: SaveEntry) {
+        self.data[self.save_ptr.index()] = e;
+        self.save_ptr += 1;
+    }
+
+    /// Keeps `s` until the next group ends.
+    #[inline]
+    pub(crate) fn push_saved(&mut self, s: Saved) {
+        self.push(SaveEntry::Saved(s));
+    }
+
+    /// Pops what [`push_saved`](Self::push_saved) kept, `None` if the top holds something else.
+    pub(crate) fn pop_saved(&mut self) -> Option<Saved> {
+        self.save_ptr -= 1;
+        self.saved(0)
+    }
+
+    /// What a construction kept `k` entries above `save_ptr`.
+    #[inline]
+    pub(crate) fn saved(&self, k: i32) -> Option<Saved> {
+        match self.data.get((self.save_ptr + k).index())? {
+            SaveEntry::Saved(s) => Some(*s),
+            _ => None,
+        }
+    }
+
+    /// The entry just below `save_ptr`, to update a kept count in place.
+    #[inline]
+    pub(crate) fn top_saved_mut(&mut self) -> Option<&mut Saved> {
+        match self.data.get_mut((self.save_ptr - 1).index())? {
+            SaveEntry::Saved(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    /// Pops the size spec a box group kept.
+    pub(crate) fn pop_spec(&mut self) -> Result<crate::packaging::PackSpec, crate::errors::Abort> {
+        match self.pop_saved() {
+            Some(Saved::Spec(spec)) => Ok(spec),
+            _ => Err(crate::errors::Abort::Confusion("pop_spec")),
+        }
+    }
+
+    /// The enclosing group, its boundary, and the starting line kept by the boundary at `k`.
+    #[inline]
+    pub(crate) fn boundary_at(&self, k: SavePtr) -> Option<(GroupCode, Option<SavePtr>, i32)> {
+        match self.entry(k) {
+            SaveEntry::Boundary { group, below, line } => Some((group, below, line)),
+            _ => None,
+        }
+    }
+
+    /// What [`boundary_at`](Self::boundary_at) gives for the current group.
+    #[inline]
+    pub(crate) fn boundary(&self) -> Option<(GroupCode, Option<SavePtr>, i32)> {
+        self.boundary_at(self.cur_boundary?)
+    }
+
+    /// What the current group's construction kept `k` entries below its boundary.
+    #[inline]
+    pub(crate) fn kept(&self, k: i32) -> Option<Saved> {
+        match self.data.get((self.cur_boundary? - k).index())? {
+            SaveEntry::Saved(s) => Some(*s),
+            _ => None,
+        }
     }
 }
 

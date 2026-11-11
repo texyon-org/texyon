@@ -6,12 +6,12 @@ use std::sync::Arc;
 
 use crate::dvi::DviWriter;
 use crate::fonts::{LigChar, ProtrusionCodes};
-use crate::mem_types::{ListStateRecord, MemoryWord};
+use crate::mem_types::ListStateRecord;
 use crate::stack::TexStack;
 use crate::state::{
     ConfigState, EngineState, EqtbState, ErrorState, FontEngineHandle, FontMappingHandle,
     FontState, GroupCode, HyphState, InputClusterState, InputState, MainLoopState, MemState,
-    SaveStackState, ScannerState, ShipoutState, StringsState, SynctexCtxt, TexmfState,
+    SaveEntry, SaveStackState, ScannerState, ShipoutState, StringsState, SynctexCtxt, TexmfState,
 };
 use crate::sync_index::PreviewSyncIndex;
 use crate::units::{BufPos, FontId, FontInfoIdx, MemPtr, PoolPos, SavePtr, Scaled, StrNumber};
@@ -364,8 +364,8 @@ struct SaveBundle {
     save_size: usize,
     cur_level: u16,
     cur_group: GroupCode,
-    cur_boundary: SavePtr,
-    data: Vec<MemoryWord>,
+    cur_boundary: Option<SavePtr>,
+    data: Vec<SaveEntry>,
 }
 
 impl SaveBundle {
@@ -852,6 +852,7 @@ impl HyphBundle {
 mod tests {
     use super::*;
     use crate::glyph_arena::{FixedPoint, GlyphBlob};
+    use crate::state::Saved;
 
     fn state() -> EngineState {
         let mut st = EngineState::default();
@@ -861,7 +862,7 @@ mod tests {
         st.input.input_stack = TexStack::with_size(3);
         st.input.param_stack = TexStack::with_size(3);
         st.input.nest = TexStack::with_size(3);
-        st.save_stack.data = crate::mem_types::zeroed_vec(4);
+        st.save_stack.alloc(4);
         st
     }
 
@@ -878,8 +879,7 @@ mod tests {
         }
         st.strings.str_pool[0] = 11;
         st.strings.pool_ptr = crate::units::PoolPos::from_raw(1);
-        st.save_stack.save_ptr = SavePtr::from_raw(1);
-        st.save_stack.set_saved(-1, 12);
+        st.save_stack.push_saved(Saved::BoxContext(12));
         st.input.buffer.0[0] = 13;
         st.input.last = BufPos::from_raw(1);
         st.hyph.hc[0] = 14;
@@ -902,7 +902,7 @@ mod tests {
         st.shipout.dvi.manifest.begin_page(0);
         st.shipout.dvi.manifest.record_byte(139);
         st.strings.str_pool[0] = 110;
-        st.save_stack.set_saved(-1, 120);
+        st.save_stack.data[0] = SaveEntry::Saved(Saved::BoxContext(120));
         st.input.buffer.0[0] = 130;
         st.hyph.hc[0] = 140;
         st.mem.glyph_blobs.get_mut(glyph).locations[0].x = Scaled::from_raw(150);
@@ -921,7 +921,7 @@ mod tests {
         st.shipout.dvi.manifest.finish_page(8);
         assert_eq!(st.shipout.dvi.manifest.take_pages().len(), 1);
         assert_eq!(st.strings.str_pool[0], 11);
-        assert_eq!(st.save_stack.save_index(SavePtr::ZERO), 12);
+        assert_eq!(st.save_stack.saved(-1), Some(Saved::BoxContext(12)));
         assert_eq!(st.input.buffer.0[0], 13);
         assert_eq!(st.hyph.hc[0], 14);
         assert_eq!(

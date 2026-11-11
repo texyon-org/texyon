@@ -689,13 +689,7 @@ impl SavePtr {
     /// The bottom of the save stack.
     pub const ZERO: SavePtr = SavePtr(0);
 
-    /// The value from its raw form in a memory word.
-    #[inline(always)]
-    pub const fn from_raw(raw: i32) -> SavePtr {
-        SavePtr(raw)
-    }
-
-    /// The raw form for a memory word.
+    /// The position as a number.
     #[inline(always)]
     pub const fn raw(self) -> i32 {
         self.0
@@ -712,6 +706,14 @@ impl std::ops::Add<i32> for SavePtr {
     #[inline(always)]
     fn add(self, rhs: i32) -> SavePtr {
         SavePtr(self.0 + rhs)
+    }
+}
+
+impl std::ops::Sub<i32> for SavePtr {
+    type Output = SavePtr;
+    #[inline(always)]
+    fn sub(self, rhs: i32) -> SavePtr {
+        SavePtr(self.0 - rhs)
     }
 }
 

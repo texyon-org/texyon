@@ -10,6 +10,7 @@ use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::node::{AnyNode, BoxLr, BoxNode, GlueNode, MathCode, NodePtr};
 use crate::packaging::{AdjustTails, LrState, PackOrigin, PackSpec};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
+use crate::state::Saved;
 use crate::state::{EngineState, EqtbState, FontState, GroupCode, MemState};
 use crate::units::MemIdx;
 use crate::units::{Dir, GlueOrder, GlueSign, NodeType, Scaled};
@@ -261,9 +262,9 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
         st.mem[eqno].set_lr(BoxLr::Dlist);
         a = Some(eqno);
         crate::save::unsave(st)?;
-        st.save_stack.save_ptr -= 1;
-        if st.save_stack.saved(0) == 1 {
-            l = true;
+        match st.save_stack.pop_saved() {
+            Some(Saved::EqNo { left }) => l = left,
+            _ => return Err(Abort::Confusion("eqno")),
         }
 
         j = pre_display_box(st);

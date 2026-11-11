@@ -17,6 +17,7 @@ use crate::node::{
     NoadVariant, NodePtr, RadicalNoad,
 };
 use crate::params::{IntPar, TokPar};
+use crate::state::Saved;
 use crate::state::{EngineState, EqtbState, GroupCode, MemState, SaveStackState};
 use crate::units::{EqtbPtr, MemPtr, NodeType, Scaled};
 
@@ -92,8 +93,7 @@ pub(super) fn define_word(st: &mut EngineState, loc: EqtbPtr, val: i32) -> Resul
 }
 
 pub(crate) fn start_eq_no(st: &mut EngineState, left: bool) -> Result<(), Abort> {
-    st.save_stack.set_saved(0, i32::from(left));
-    st.save_stack.save_ptr += 1;
+    st.save_stack.push_saved(Saved::EqNo { left });
 
     crate::main_control::push_math(st, GroupCode::MathShift)?;
     define_word(st, IntPar::CurFam.loc(), -1)?;
@@ -160,8 +160,7 @@ impl ListStateRecord {
     ) -> Result<(), Abort> {
         let choice = mem.new_choice()?;
         self.tail_append(mem, choice);
-        save_stack.save_ptr += 1;
-        save_stack.set_saved(-1, 0);
+        save_stack.push_saved(Saved::ChoicePart(0));
         Ok(())
     }
 }
@@ -218,23 +217,24 @@ impl ListStateRecord {
         mem: &mut MemState,
         save_stack: &mut SaveStackState,
         p: MemPtr,
-    ) -> bool {
+    ) -> Result<bool, Abort> {
         // SAFETY: `append_choices` left the choice node as the enclosing list's tail.
         let tail = NodePtr::<ChoiceNode>::from_idx_unchecked(self.tail);
-        match save_stack.saved(-1) {
+        let Some(Saved::ChoicePart(part)) = save_stack.top_saved_mut() else {
+            return Err(Abort::Confusion("mathchoice"));
+        };
+        match *part {
             0 => mem[tail].display_mlist = p,
             1 => mem[tail].text_mlist = p,
             2 => mem[tail].script_mlist = p,
-            3 => {
+            _ => {
                 mem[tail].script_script_mlist = p;
                 save_stack.save_ptr -= 1;
-                return true;
+                return Ok(true);
             }
-            _ => {}
         }
-        let choice_state = save_stack.saved(-1);
-        save_stack.set_saved(-1, choice_state + 1);
-        false
+        *part += 1;
+        Ok(false)
     }
 }
 
@@ -245,7 +245,7 @@ pub(crate) fn build_choices(st: &mut crate::state::EngineState) -> Result<(), Ab
     let complete = st
         .input
         .cur_list
-        .build_choices_finish(&mut st.mem, &mut st.save_stack, p);
+        .build_choices_finish(&mut st.mem, &mut st.save_stack, p)?;
     if complete {
         return Ok(());
     }

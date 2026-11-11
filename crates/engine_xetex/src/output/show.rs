@@ -11,6 +11,7 @@ use crate::mem::{CONTRIB_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
 use crate::node::{AnyNode, NodePtr, PageInsNode};
 use crate::packaging::PackSpec;
 use crate::params::{IntPar, TokPar};
+use crate::state::Saved;
 use crate::state::{EngineState, GroupCode, InputName, InteractionMode, Selector};
 use crate::token::{TokCursor, Token};
 use crate::units::{NodeType, Scaled};
@@ -238,10 +239,9 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
 
     let mut p = st.input.nest.len();
     st.input.nest.park(st.input.cur_list);
-    let saved_ptr = st.save_stack.save_ptr;
+    let saved_boundary = st.save_stack.cur_boundary;
     let saved_level = st.save_stack.cur_level;
     let saved_group = st.save_stack.cur_group;
-    st.save_stack.save_ptr = st.save_stack.cur_boundary;
     st.save_stack.cur_level -= 1;
     let mut a: i8 = 1;
 
@@ -324,7 +324,10 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                 } else {
                     print_esc(st, "mathchoice");
                 }
-                let braces = st.save_stack.saved(-2);
+                let braces = match st.save_stack.kept(1) {
+                    Some(Saved::DiscPart(n) | Saved::ChoicePart(n)) => n,
+                    _ => 0,
+                };
                 for i in 1..=3 {
                     if i <= braces {
                         print(st, "{}");
@@ -333,9 +336,15 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                 Entry::Found2
             }
             GroupCode::Insert => {
-                let n = st.save_stack.saved(-2);
+                let (n, pre) = match st.save_stack.kept(1) {
+                    Some(Saved::Insert { n, pre }) => (n, pre),
+                    _ => (0, false),
+                };
                 if n == 255 {
                     print_esc(st, "vadjust");
+                    if pre {
+                        print(st, " pre");
+                    }
                 } else {
                     print_esc(st, "insert");
                     print_int(st, n);
@@ -355,10 +364,13 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                 if m == MMODE {
                     print_char(st, b'$');
                 } else if st.input.nest.stale_slot(p).mode == MMODE {
-                    print_cmd_chr(st, Cmd::EqNo, st.save_stack.saved(-2));
+                    let left = matches!(st.save_stack.kept(1), Some(Saved::EqNo { left: true }));
+                    print_cmd_chr(st, Cmd::EqNo, i32::from(left));
                     print_char(st, b')');
                     st.save_stack.cur_level -= 1;
-                    leave_group_boundary(st);
+                    if !leave_group_boundary(st) {
+                        break;
+                    }
                     continue;
                 }
                 print_char(st, b'$');
@@ -377,7 +389,10 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
         };
 
         if matches!(entry, Entry::BoxContext) {
-            let i = st.save_stack.saved(-4);
+            let i = match st.save_stack.kept(2) {
+                Some(Saved::BoxContext(i)) => i,
+                _ => 0,
+            };
             if i != 0 {
                 if i < BOX_FLAG {
                     let cmd = if st.input.nest.stale_slot(p).mode.abs() == VMODE {
@@ -409,10 +424,10 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
 
         if matches!(entry, Entry::BoxContext | Entry::Found1) {
             print_esc(st, s);
-            let (word, amount) = match st.save_stack.spec_at(-3) {
-                Some(PackSpec::Exactly(size)) => ("to", size),
-                Some(PackSpec::Additional(extra)) => ("spread", extra),
-                None => ("spread", Scaled::ZERO),
+            let (word, amount) = match st.save_stack.kept(1) {
+                Some(Saved::Spec(PackSpec::Exactly(size))) => ("to", size),
+                Some(Saved::Spec(PackSpec::Additional(extra))) => ("spread", extra),
+                _ => ("spread", Scaled::ZERO),
             };
             if amount != Scaled::ZERO {
                 print_char(st, b' ');
@@ -428,10 +443,12 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
 
         print_char(st, b')');
         st.save_stack.cur_level -= 1;
-        leave_group_boundary(st);
+        if !leave_group_boundary(st) {
+            break;
+        }
     }
 
-    st.save_stack.save_ptr = saved_ptr;
+    st.save_stack.cur_boundary = saved_boundary;
     st.save_stack.cur_level = saved_level;
     st.save_stack.cur_group = saved_group;
 }

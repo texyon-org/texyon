@@ -1,7 +1,7 @@
 //! Named state digests used only to verify checkpoint restoration.
 
 use crate::mem_types::{B32x2, ListStateRecord, MemoryWord};
-use crate::state::{EngineState, InputName, InputState};
+use crate::state::{EngineState, InputName, InputState, Restore, SaveEntry};
 use crate::units::RawPtr;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -83,6 +83,18 @@ impl Fnv {
     }
 
     fn finish(self) -> u64 {
+        self.0
+    }
+}
+
+impl std::hash::Hasher for Fnv {
+    fn write(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.word(u64::from(b));
+        }
+    }
+
+    fn finish(&self) -> u64 {
         self.0
     }
 }
@@ -226,11 +238,48 @@ fn digest_save(st: &EngineState) -> u64 {
     h.i32(depth(save.save_size));
     h.word(u64::from(save.cur_level));
     h.word(u64::from(save.cur_group.to_u16()));
-    h.i32(save.cur_boundary.raw());
-    for &word in save.data.iter().take(save.save_ptr.index()) {
-        h.word(memory_word(word));
+    h.i32(save.cur_boundary.map_or(-1, |b| b.raw()));
+    for entry in save.data.iter().take(save.save_ptr.index()) {
+        digest_save_entry(&mut h, entry);
     }
     h.finish()
+}
+
+fn digest_save_entry(h: &mut Fnv, entry: &SaveEntry) {
+    use std::hash::Hash;
+    match *entry {
+        SaveEntry::Boundary { group, below, line } => {
+            h.i32s(&[
+                0,
+                i32::from(group.to_u16()),
+                below.map_or(-1, |b| b.raw()),
+                line,
+            ]);
+        }
+        SaveEntry::Restore(Restore::Cs { cs, old, level }) => {
+            let (cmd, chr) = old.encode();
+            h.i32s(&[
+                1,
+                cs.raw(),
+                i32::from(u16::from(cmd)),
+                chr,
+                i32::from(level),
+            ]);
+        }
+        SaveEntry::Restore(Restore::CsUndefined(cs)) => h.i32s(&[2, cs.raw()]),
+        SaveEntry::Restore(Restore::Word { loc, old, level }) => {
+            h.i32s(&[3, loc.raw(), i32::from(level)]);
+            h.word(memory_word(old));
+        }
+        SaveEntry::InsertToken(t) => h.i32s(&[4, t.0]),
+        SaveEntry::RestoreSa { chain, level } => {
+            h.i32s(&[5, crate::node::link_of(chain).raw(), i32::from(level)]);
+        }
+        SaveEntry::Saved(s) => {
+            h.i32(6);
+            s.hash(h);
+        }
+    }
 }
 
 fn digest_fonts(st: &EngineState) -> u64 {
@@ -383,7 +432,7 @@ fn digest_input(st: &EngineState) -> u64 {
         h.word(level.cond.map_or(u64::MAX, |c| u64::from(c.raw())));
         h.i32s(&[
             level.outer_line,
-            level.grp.raw(),
+            level.grp.map_or(-1, |b| b.raw()),
             level.source_name.raw(),
             level.full_source_name.raw(),
         ]);

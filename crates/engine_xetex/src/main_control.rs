@@ -158,7 +158,7 @@ fn append_noad(st: &mut EngineState, kind: Option<NodeType>) -> Result<(), Abort
 }
 
 fn math_vcenter(st: &mut EngineState) -> Result<(), Abort> {
-    crate::scan::scan_spec(st, GroupCode::Vcenter, false)?;
+    crate::scan::scan_spec(st, GroupCode::Vcenter, None)?;
     normal_paragraph(st)?;
     crate::mem::push_nest(st)?;
     st.input.cur_list.mode = INNER_VMODE;

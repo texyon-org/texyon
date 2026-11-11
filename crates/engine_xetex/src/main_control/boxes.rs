@@ -14,6 +14,7 @@ use crate::node::{
 use crate::packaging::{AdjustTails, PackOrigin};
 use crate::params::{DimenPar, IntPar, TokPar};
 use crate::scan::fetch_box;
+use crate::state::Saved;
 use crate::state::{EngineState, GroupCode, MemState};
 use crate::units::MemIdx;
 use crate::units::RawPtr;
@@ -138,7 +139,9 @@ pub(super) fn package(st: &mut EngineState, group: GroupCode) -> Result<(), Abor
     let u = st.eqtb.int_par(IntPar::XetexUpwards);
     crate::save::unsave(st)?;
     let spec = st.save_stack.pop_spec()?;
-    st.save_stack.save_ptr -= 1;
+    let Some(Saved::BoxContext(box_context)) = st.save_stack.pop_saved() else {
+        return Err(Abort::Confusion("box_context"));
+    };
     let v = st.eqtb.int_par(IntPar::XetexUpwards);
     st.eqtb.set_int_par(IntPar::XetexUpwards, u);
     let list = st.input.cur_list.head.link(&st.mem);
@@ -162,7 +165,6 @@ pub(super) fn package(st: &mut EngineState, group: GroupCode) -> Result<(), Abor
     };
     st.eqtb.set_int_par(IntPar::XetexUpwards, v);
     st.mem.pop_nest(&mut st.input)?;
-    let box_context = st.save_stack.saved(0);
     box_end(st, box_context, Some(b), adjust)
 }
 
@@ -394,14 +396,13 @@ pub(super) fn begin_box(
             crate::packaging::vsplit(st, n, d)?
         }
         BoxCode::Vtop | BoxCode::Vbox | BoxCode::Hbox => {
-            st.save_stack.set_saved(0, box_context);
             let mode = if code == BoxCode::Hbox {
                 let group = if box_context < BOX_FLAG && st.input.cur_list.mode.abs() == VMODE {
                     GroupCode::AdjustedHbox
                 } else {
                     GroupCode::Hbox
                 };
-                crate::scan::scan_spec(st, group, true)?;
+                crate::scan::scan_spec(st, group, Some(box_context))?;
                 HMODE
             } else {
                 let group = if code == BoxCode::Vbox {
@@ -409,7 +410,7 @@ pub(super) fn begin_box(
                 } else {
                     GroupCode::Vtop
                 };
-                crate::scan::scan_spec(st, group, true)?;
+                crate::scan::scan_spec(st, group, Some(box_context))?;
                 normal_paragraph(st)?;
                 VMODE
             };

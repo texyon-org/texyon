@@ -12,12 +12,12 @@ use crate::glue_store::GlueSpecId;
 use crate::mem::ZERO_GLUE;
 use crate::mem_types::MemoryWord;
 use crate::node::{
-    link_of, NodePtr, SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode,
-    SaSavedEntry, SaSavedPointer, SaSavedWord, SaWordNode, View,
+    NodePtr, SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSavedEntry,
+    SaSavedPointer, SaSavedWord, SaWordNode, View,
 };
 use crate::params::IntPar;
 use crate::state::{
-    EngineState, EqtbState, GroupCode, MemState, SaveStackState, SaveType, ScannerState,
+    EngineState, EqtbState, GroupCode, MemState, Restore, SaveEntry, SaveStackState, ScannerState,
 };
 use crate::token::{Token, TokenList};
 use crate::units::CsId;
@@ -104,17 +104,18 @@ impl SaveStackState {
         if self.save_stack_full() {
             return Err(self.overflow());
         }
-        self.set_saved(0, line);
-        self.save_ptr += 1;
-        let (group, boundary) = (self.cur_group.to_u16(), self.cur_boundary);
-        self.set_save_entry(SaveType::LevelBoundary, group, boundary.raw());
+        self.data[self.save_ptr.index()] = SaveEntry::Boundary {
+            group: self.cur_group,
+            below: self.cur_boundary,
+            line,
+        };
         if self.cur_level == u16::MAX {
             return Err(Abort::Overflow {
                 capacity: crate::errors::Capacity::GroupingLevels,
                 n: i32::from(u16::MAX),
             });
         }
-        self.cur_boundary = self.save_ptr;
+        self.cur_boundary = Some(self.save_ptr);
         self.cur_group = c;
         self.cur_level += 1;
         self.save_ptr += 1;
@@ -125,15 +126,15 @@ impl SaveStackState {
         if self.save_stack_full() {
             return Err(self.overflow());
         }
-        let kind = if l == LEVEL_ZERO {
-            SaveType::RestoreZero
-        } else {
-            self.set_word(self.save_ptr, eqtb.word(p));
-            self.save_ptr += 1;
-            SaveType::RestoreOldValue
-        };
-        self.set_save_entry(kind, l, p.raw());
-        self.save_ptr += 1;
+        self.push(SaveEntry::Restore(Restore::Word {
+            loc: p,
+            old: if l == LEVEL_ZERO {
+                EqtbState::entry(Cmd::UndefinedCs, TEX_NULL, LEVEL_ZERO)
+            } else {
+                eqtb.word(p)
+            },
+            level: l,
+        }));
         Ok(())
     }
 
@@ -142,15 +143,15 @@ impl SaveStackState {
         if self.save_stack_full() {
             return Err(self.overflow());
         }
-        let kind = if l == LEVEL_ZERO {
-            SaveType::RestoreCsZero
+        self.push(SaveEntry::Restore(if l == LEVEL_ZERO {
+            Restore::CsUndefined(cs)
         } else {
-            self.set_word(self.save_ptr, EqtbState::cs_entry(eqtb.meaning(cs), l));
-            self.save_ptr += 1;
-            SaveType::RestoreCs
-        };
-        self.set_save_entry(kind, l, cs.raw());
-        self.save_ptr += 1;
+            Restore::Cs {
+                cs,
+                old: eqtb.meaning(cs),
+                level: l,
+            }
+        }));
         Ok(())
     }
 
@@ -159,8 +160,7 @@ impl SaveStackState {
             if self.save_stack_full() {
                 return Err(self.overflow());
             }
-            self.set_save_entry(SaveType::InsertToken, LEVEL_ZERO, t.0);
-            self.save_ptr += 1;
+            self.push(SaveEntry::InsertToken(t));
         }
         Ok(())
     }
@@ -488,12 +488,10 @@ fn start_sa_chain(
         if save_stack.save_stack_full() {
             return Err(save_stack.overflow());
         }
-        save_stack.set_save_entry(
-            SaveType::RestoreSa,
-            scanner.sa_level,
-            link_of(scanner.sa_chain).raw(),
-        );
-        save_stack.save_ptr += 1;
+        save_stack.push(SaveEntry::RestoreSa {
+            chain: scanner.sa_chain,
+            level: scanner.sa_level,
+        });
         scanner.sa_chain = None;
         scanner.sa_level = save_stack.cur_level;
     }
@@ -557,21 +555,19 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
         return Err(Abort::Confusion("curlevel"));
     }
     st.save_stack.cur_level -= 1;
-    let mut l: u16 = 0;
     let mut a = false;
     loop {
         st.save_stack.save_ptr -= 1;
-        let sp = st.save_stack.save_ptr;
-        let kind = st.save_stack.save_type(sp).or_confusion("save_type")?;
-        match kind {
-            SaveType::LevelBoundary => break,
-            SaveType::InsertToken => {
-                let t = st.scanner.cur_tok;
-                st.scanner.cur_tok = Token(st.save_stack.save_index(sp));
+        match st.save_stack.entry(st.save_stack.save_ptr) {
+            SaveEntry::Boundary { .. } => break,
+            SaveEntry::Saved(_) => return Err(Abort::Confusion("unsave")),
+            SaveEntry::InsertToken(t) => {
+                let cur = st.scanner.cur_tok;
+                st.scanner.cur_tok = t;
                 if a {
-                    crate::input::prepend_to_backed_up(st, st.scanner.cur_tok)?;
-                    if st.scanner.cur_tok.is_brace() {
-                        if st.scanner.cur_tok.is_left_brace() {
+                    crate::input::prepend_to_backed_up(st, t)?;
+                    if t.is_brace() {
+                        if t.is_left_brace() {
                             st.scanner.align_state -= 1;
                         } else {
                             st.scanner.align_state += 1;
@@ -581,53 +577,30 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
                     crate::input::back_input(st)?;
                     a = true;
                 }
-                st.scanner.cur_tok = t;
+                st.scanner.cur_tok = cur;
             }
-            SaveType::RestoreSa => {
+            SaveEntry::RestoreSa { chain, level } => {
                 sa_restore(st)?;
-                st.scanner.sa_chain = NodePtr::from_ptr(st.save_stack.save_index_ptr(sp));
-                st.scanner.sa_level = st.save_stack.save_level(st.save_stack.save_ptr);
+                st.scanner.sa_chain = chain;
+                st.scanner.sa_level = level;
             }
-            SaveType::RestoreCs | SaveType::RestoreCsZero => {
-                let cs = CsId::from_raw(st.save_stack.save_index(sp));
-                let (old, level) = if kind == SaveType::RestoreCs {
-                    st.save_stack.save_ptr -= 1;
-                    EqtbState::from_cs_entry(st.save_stack.word(st.save_stack.save_ptr))
-                        .or_confusion("saved meaning")?
-                } else {
-                    (
-                        st.eqtb.meaning(UNDEFINED_CONTROL_SEQUENCE),
-                        st.eqtb.cs_level(UNDEFINED_CONTROL_SEQUENCE),
-                    )
-                };
-                if st.eqtb.cs_level(cs) == LEVEL_ONE {
-                    st.mem.destroy_meaning(&mut st.scanner, old)?;
-                } else {
-                    st.mem
-                        .destroy_meaning(&mut st.scanner, st.eqtb.meaning(cs))?;
-                    st.eqtb.set_meaning(cs, old, level);
-                }
+            SaveEntry::Restore(Restore::Cs { cs, old, level }) => restore_cs(st, cs, old, level)?,
+            SaveEntry::Restore(Restore::CsUndefined(cs)) => {
+                let old = st.eqtb.meaning(UNDEFINED_CONTROL_SEQUENCE);
+                let level = st.eqtb.cs_level(UNDEFINED_CONTROL_SEQUENCE);
+                restore_cs(st, cs, old, level)?;
             }
-            SaveType::RestoreOldValue | SaveType::RestoreZero => {
-                let p = st.save_stack.save_loc(sp);
-                if kind == SaveType::RestoreOldValue {
-                    l = st.save_stack.save_level(sp);
-                    st.save_stack.save_ptr -= 1;
-                } else {
-                    let w = EqtbState::entry(Cmd::UndefinedCs, TEX_NULL, LEVEL_ZERO);
-                    st.save_stack.set_word(st.save_stack.save_ptr, w);
-                }
-                let saved = st.save_stack.word(st.save_stack.save_ptr);
-                if !(INT_BASE..=EQTB_SIZE).contains(&p) {
-                    if st.eqtb.eq_level(p) == LEVEL_ONE {
-                        st.mem.eq_destroy(&mut st.scanner, saved)?;
+            SaveEntry::Restore(Restore::Word { loc, old, level }) => {
+                if !(INT_BASE..=EQTB_SIZE).contains(&loc) {
+                    if st.eqtb.eq_level(loc) == LEVEL_ONE {
+                        st.mem.eq_destroy(&mut st.scanner, old)?;
                     } else {
-                        st.mem.eq_destroy(&mut st.scanner, st.eqtb.word(p))?;
-                        st.eqtb.set_word(p, saved);
+                        st.mem.eq_destroy(&mut st.scanner, st.eqtb.word(loc))?;
+                        st.eqtb.set_word(loc, old);
                     }
-                } else if st.eqtb.xeq_level_at(p) != LEVEL_ONE {
-                    st.eqtb.set_word(p, saved);
-                    st.eqtb.set_xeq_level_at(p, l);
+                } else if st.eqtb.xeq_level_at(loc) != LEVEL_ONE {
+                    st.eqtb.set_word(loc, old);
+                    st.eqtb.set_xeq_level_at(loc, level);
                 }
             }
         }
@@ -636,9 +609,21 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
         crate::output::group_warning(st);
     }
     let ss = &mut st.save_stack;
-    (ss.cur_group, ss.cur_boundary) = ss.boundary_at(ss.save_ptr);
-    ss.save_ptr -= 1;
+    let (group, below, _) = ss.boundary_at(ss.save_ptr).or_confusion("unsave")?;
+    (ss.cur_group, ss.cur_boundary) = (group, below);
     Ok(())
+}
+
+/// Puts back the meaning `cs` had before the group, unless it was defined globally since.
+fn restore_cs(st: &mut EngineState, cs: CsId, old: Command, level: u16) -> Result<(), Abort> {
+    if st.eqtb.cs_level(cs) == LEVEL_ONE {
+        st.mem.destroy_meaning(&mut st.scanner, old)
+    } else {
+        st.mem
+            .destroy_meaning(&mut st.scanner, st.eqtb.meaning(cs))?;
+        st.eqtb.set_meaning(cs, old, level);
+        Ok(())
+    }
 }
 
 /// The four 6-bit trie slots of register `n`, from the root down.

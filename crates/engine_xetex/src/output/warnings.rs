@@ -37,7 +37,9 @@ pub(crate) fn group_warning(st: &mut EngineState) {
         if st.eqtb.int_par(IntPar::TracingNesting) > 0 && level_is_file(st, i) {
             w = true;
         }
-        st.input.open_levels[i].grp = st.save_stack.boundary_at(st.save_stack.save_ptr).1;
+        if let Some((_, below, _)) = st.save_stack.boundary() {
+            st.input.open_levels[i].grp = below;
+        }
         i -= 1;
     }
     if w {
@@ -90,18 +92,21 @@ pub(super) fn print_if_line(st: &mut EngineState, line: i32) {
     }
 }
 
-/// Pops the save-stack group boundary at `save_ptr` into `cur_group`.
-pub(super) fn leave_group_boundary(st: &mut EngineState) {
+/// Steps from the current group boundary to the enclosing one, false if none.
+pub(super) fn leave_group_boundary(st: &mut EngineState) -> bool {
     let ss = &mut st.save_stack;
-    (ss.cur_group, ss.save_ptr) = ss.boundary_at(ss.save_ptr);
+    let Some((group, below, _)) = ss.boundary() else {
+        return false;
+    };
+    (ss.cur_group, ss.cur_boundary) = (group, below);
+    true
 }
 
 pub(crate) fn file_warning(st: &mut EngineState) {
-    let saved_ptr = st.save_stack.save_ptr;
+    let saved_boundary = st.save_stack.cur_boundary;
     let saved_level = st.save_stack.cur_level;
     let saved_group = st.save_stack.cur_group;
-    st.save_stack.save_ptr = st.save_stack.cur_boundary;
-    while st.input.open_levels[st.input.in_open].grp != st.save_stack.save_ptr {
+    while st.input.open_levels[st.input.in_open].grp != st.save_stack.cur_boundary {
         st.save_stack.cur_level -= 1;
         print_nl(st, "Warning: ");
         crate::diagnostic::begin_warning(st);
@@ -109,9 +114,11 @@ pub(crate) fn file_warning(st: &mut EngineState) {
         print_group(st, true);
         print(st, " is incomplete");
         crate::diagnostic::end_capture(st);
-        leave_group_boundary(st);
+        if !leave_group_boundary(st) {
+            break;
+        }
     }
-    st.save_stack.save_ptr = saved_ptr;
+    st.save_stack.cur_boundary = saved_boundary;
     st.save_stack.cur_level = saved_level;
     st.save_stack.cur_group = saved_group;
 

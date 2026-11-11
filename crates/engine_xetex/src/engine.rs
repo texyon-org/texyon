@@ -273,7 +273,7 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.save_stack.save_ptr = SavePtr::ZERO;
     st.save_stack.cur_level = LEVEL_ONE;
     st.save_stack.cur_group = GroupCode::BottomLevel;
-    st.save_stack.cur_boundary = SavePtr::ZERO;
+    st.save_stack.cur_boundary = None;
     st.save_stack.max_save_stack = SavePtr::ZERO;
     st.scanner.mag_set = 0;
     st.scanner.expand_depth_count = 0;
@@ -676,7 +676,7 @@ pub(crate) fn initialize_engine(
     let hyph_words = HYPH_SIZE as usize + 1;
     st.input.buffer = crate::state::InputBuffer(vec![0; st.input.buf_size.index() + 1]);
     st.input.nest = TexStack::with_size(NEST_SIZE);
-    st.save_stack.data = zeroed_vec(st.save_stack.save_size + 1);
+    st.save_stack.alloc(st.save_stack.save_size + 1);
     st.input.input_file = std::iter::repeat_with(|| crate::state::InputSlot::Empty)
         .take(in_open_words)
         .collect();

@@ -329,3 +329,18 @@ fn glue_shows_its_kind() {
         .\mathoff",
     );
 }
+
+#[test]
+fn showgroups_names_inserts_and_vadjusts() {
+    let r = run(
+        r"\setbox0\hbox{\vadjust{\showgroups}\vadjust pre{\showgroups}}
+\insert100{\showgroups}",
+    );
+    let shown: Vec<_> = r
+        .lines_starting("### insert")
+        .iter()
+        .filter_map(|l| l.split_once(" ("))
+        .map(|(_, rest)| rest.split_once(" (").map_or(rest, |(_, g)| g))
+        .collect();
+    assert_eq!(shown, [r"\vadjust{)", r"\vadjust pre{)", r"\insert100{)"]);
+}

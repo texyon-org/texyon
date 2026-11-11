@@ -22,7 +22,7 @@ use self::vert_break::push_slot;
 pub(crate) use self::vert_break::{vert_break, vsplit, MarksAction};
 
 /// The size `hpack` and `vpack` aim for: exactly some size, or the natural size plus some.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum PackSpec {
     Exactly(Scaled),
     Additional(Scaled),
@@ -38,23 +38,6 @@ impl PackSpec {
         match self {
             PackSpec::Exactly(size) => size,
             PackSpec::Additional(extra) => natural + extra,
-        }
-    }
-
-    /// WEB's `exactly`/`additional` code and the amount, as the save stack keeps them.
-    pub(crate) fn to_words(self) -> (i32, i32) {
-        match self {
-            PackSpec::Exactly(size) => (0, size.raw()),
-            PackSpec::Additional(extra) => (1, extra.raw()),
-        }
-    }
-
-    pub(crate) fn from_words(code: i32, amount: i32) -> Option<PackSpec> {
-        let amount = Scaled::from_raw(amount);
-        match code {
-            0 => Some(PackSpec::Exactly(amount)),
-            1 => Some(PackSpec::Additional(amount)),
-            _ => None,
         }
     }
 }
@@ -913,16 +896,6 @@ pub(crate) fn vpackage_with(
 mod pack_spec_tests {
     use super::PackSpec;
     use crate::units::Scaled;
-
-    #[test]
-    fn spec_round_trips_through_save_stack_words() {
-        let size = Scaled::from_raw(12_345);
-        for spec in [PackSpec::Exactly(size), PackSpec::Additional(size)] {
-            let (code, amount) = spec.to_words();
-            assert_eq!(PackSpec::from_words(code, amount), Some(spec));
-        }
-        assert_eq!(PackSpec::from_words(2, 0), None);
-    }
 
     #[test]
     fn target_adds_only_for_additional() {
