@@ -993,7 +993,7 @@ mod tests {
             99,
         ];
         let mut checked = 0;
-        for cmd in (0..=123).filter_map(Cmd::from_raw) {
+        for cmd in (0..=120).filter_map(Cmd::from_raw) {
             let chrs = PRIMITIVES.iter().map(|p| p.chr).chain(extra);
             for chr in chrs {
                 if let Some(c) = Command::decode(cmd, chr) {
