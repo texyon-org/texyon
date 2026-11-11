@@ -126,7 +126,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
         if let Some(next) = next {
-            if st.mem[q.span_head()].next != Some(END_SPAN) {
+            if st.mem[q].span_list != Some(END_SPAN) {
                 st.mem.merge_spans(q, next)?;
             }
         }
@@ -375,32 +375,42 @@ impl MemState {
     }
 
     /// Folds column `q`'s span widths, less its own width and tabskip, into `next`'s.
+    /// A width left spanning one column is `next`'s own width.
     fn merge_spans(
         &mut self,
         q: NodePtr<AlignRecord>,
         next: NodePtr<AlignRecord>,
     ) -> Result<(), Abort> {
         let t = self[q].width + self[self[q.tab_skip(self)?].glue_ptr].width;
-        let mut r = self.span_next(q.span_head())?;
-        let mut s = END_SPAN;
-        self[s].next = Some(next.span_head());
+        let mut r = self.span_next(SpanAt::Front(q))?;
+        // `None` while still before `next` itself, which counts as spanning one column.
+        let mut s: Option<SpanAt> = None;
         let mut n = 1;
         loop {
             self[r].width -= t;
-            let u = self.span_next(r)?;
+            let u = self.span_next(SpanAt::After(r))?;
             while self[r].span_count > n {
-                s = self.span_next(s)?;
-                n = self[self.span_next(s)?].span_count + 1;
+                let at = match s {
+                    None => SpanAt::Front(next),
+                    Some(at) => SpanAt::After(self.span_next(at)?),
+                };
+                s = Some(at);
+                n = self[self.span_next(at)?].span_count + 1;
             }
             if self[r].span_count < n {
-                self[r].next = self[s].next;
-                self[s].next = Some(r);
+                let at = s.or_confusion("span")?;
+                self[r].next = Some(self.span_next(at)?);
+                self.set_span_next(at, r);
                 self[r].span_count -= 1;
-                s = r;
+                s = Some(SpanAt::After(r));
             } else {
-                let merged = self.span_next(s)?;
-                if self[r].width > self[merged].width {
-                    self[merged].width = self[r].width;
+                let w = self[r].width;
+                match s {
+                    None => self[next].width = self[next].width.max(w),
+                    Some(at) => {
+                        let merged = self.span_next(at)?;
+                        self[merged].width = self[merged].width.max(w);
+                    }
                 }
                 r.free(self);
             }
@@ -412,9 +422,20 @@ impl MemState {
         Ok(())
     }
 
-    /// The span node after `s`, which does not end its span list.
-    fn span_next(&self, s: NodePtr<SpanNode>) -> Result<NodePtr<SpanNode>, Abort> {
-        self[s].next.or_confusion("span list")
+    /// The span node after `at`, which does not end its span list.
+    fn span_next(&self, at: SpanAt) -> Result<NodePtr<SpanNode>, Abort> {
+        match at {
+            SpanAt::Front(column) => self[column].span_list,
+            SpanAt::After(s) => self[s].next,
+        }
+        .or_confusion("span list")
+    }
+
+    fn set_span_next(&mut self, at: SpanAt, s: NodePtr<SpanNode>) {
+        match at {
+            SpanAt::Front(column) => self[column].span_list = Some(s),
+            SpanAt::After(p) => self[p].next = Some(s),
+        }
     }
 
     /// The glue setting of unset node `col`, of natural size `natural`, when set to size `t`.
@@ -618,10 +639,17 @@ impl MemState {
     fn new_align_record(&mut self) -> Result<NodePtr<AlignRecord>, Abort> {
         let nb = self.new_null_box()?;
         let column = NodePtr::<AlignRecord>::at(nb.idx());
-        self[column.span_head()].next = Some(END_SPAN);
+        self[column].span_list = Some(END_SPAN);
         self[column].width = RUNNING;
         Ok(column)
     }
+}
+
+/// A place in a column's span list: its front, or just after a span node.
+#[derive(Copy, Clone)]
+enum SpanAt {
+    Front(NodePtr<AlignRecord>),
+    After(NodePtr<SpanNode>),
 }
 
 fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
@@ -713,11 +741,11 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
             if n > i32::from(u16::MAX) {
                 return Err(Abort::Confusion("too many spans"));
             }
-            let mut q = NodePtr::<AlignRecord>::from_ptr(st.scanner.cur_span)
-                .or_confusion("span")?
-                .span_head();
+            let column =
+                NodePtr::<AlignRecord>::from_ptr(st.scanner.cur_span).or_confusion("span")?;
+            let mut q = SpanAt::Front(column);
             while st.mem[st.mem.span_next(q)?].span_count < n {
-                q = st.mem.span_next(q)?;
+                q = SpanAt::After(st.mem.span_next(q)?);
             }
             let next = st.mem.span_next(q)?;
             if st.mem[next].span_count > n {
@@ -725,7 +753,7 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
                 let node = &mut st.mem[s];
                 node.next = Some(next);
                 node.span_count = n;
-                st.mem[q].next = Some(s);
+                st.mem.set_span_next(q, s);
                 st.mem[s].width = w;
             } else if st.mem[next].width < w {
                 st.mem[next].width = w;

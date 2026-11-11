@@ -1167,12 +1167,6 @@ impl NodePtr<GlueNode> {
 }
 
 impl NodePtr<AlignRecord> {
-    /// The column viewed as the head of its span list.
-    #[inline]
-    pub fn span_head(self) -> NodePtr<SpanNode> {
-        NodePtr::at(self.idx)
-    }
-
     /// Turns the record into an empty unset box of its final width.
     pub fn into_unset(self, mem: &mut MemState) -> NodePtr<UnsetNode> {
         let u: NodePtr<UnsetNode> = retype(self, mem, NodeType::Unset);
@@ -1871,7 +1865,7 @@ mod tests {
         mem[rec].v_part = TokenList::from_raw(0x22);
         mem[rec].u_part = TokenList::from_raw(0x33);
         mem[rec].extra_info = 0x55;
-        mem[rec.span_head()].next = Some(NodePtr::at(MemIdx::from_raw(40).unwrap()));
+        mem[rec].span_list = Some(NodePtr::at(MemIdx::from_raw(40).unwrap()));
 
         let u = rec.into_unset(&mut mem);
         let unset = mem[u];

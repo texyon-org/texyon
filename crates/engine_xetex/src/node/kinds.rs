@@ -1268,8 +1268,8 @@ impl Node for SpanNode {
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct AlignRecord {
-    /// The head of the span list, read through `span_head`.
-    _span_list: i32,
+    /// The column's span list, sorted by span count and ended by `END_SPAN`.
+    pub span_list: Option<NodePtr<SpanNode>>,
     pub link: MemPtr,
     pub width: Scaled,
     pub v_part: TokenList,
@@ -1625,8 +1625,6 @@ same_offset!(
     UnsetNode.height == BoxNode.height,
     UnsetNode.list_ptr == BoxNode.list_ptr,
     AlignRecord.width == UnsetNode.width,
-    AlignRecord._span_list == SpanNode.next,
-    AlignRecord.width == SpanNode.width,
     // `into_unset` clears the unset fields an align record keeps its parts in.
     AlignRecord.v_part == UnsetNode.depth,
     AlignRecord.u_part == UnsetNode.height,
