@@ -27,6 +27,7 @@ use crate::node::{AnyNode, GlueKind, MathCode, SaLeaf};
 use crate::params::TokPar;
 use crate::state::{EngineState, FontEngineHandle};
 use crate::token::TokenList;
+use crate::units::CsId;
 use crate::units::{EqtbPtr, FontId, FontInfoIdx, NodeType, Scaled, StrNumber};
 use std::rc::Rc;
 
@@ -61,7 +62,7 @@ pub(crate) enum CurVal {
     Glue(GlueSpecId),
     Mu(GlueSpecId),
     /// A font identifier, as the control sequence that names it.
-    Ident(EqtbPtr),
+    Ident(CsId),
     Tok(TokenList),
 }
 
@@ -85,7 +86,7 @@ impl CurVal {
             ValueLevel::Dimen => CurVal::Dimen(Scaled::from_raw(w)),
             ValueLevel::Glue => CurVal::Glue(glue_spec(w)),
             ValueLevel::Mu => CurVal::Mu(glue_spec(w)),
-            ValueLevel::Ident => CurVal::Ident(EqtbPtr::from_raw(w)),
+            ValueLevel::Ident => CurVal::Ident(CsId::from_raw(w)),
             ValueLevel::Tok => CurVal::Tok(TokenList::from_raw(w)),
             ValueLevel::InterChar | ValueLevel::Mark => {
                 return Err(Abort::Confusion("cur_val_level"))
@@ -279,7 +280,7 @@ fn fetch_token_list(
         return Ok(CurVal::Dimen(Scaled::ZERO));
     }
     Ok(match cmd {
-        Command::ToksRegister(None) => {
+        Command::ToksRegister(r) if r.get().is_none() => {
             let n = scan_register_num(st)?;
             CurVal::Tok(if n < 256 {
                 st.eqtb.toks(n)
@@ -288,7 +289,10 @@ fn fetch_token_list(
                 sa_token_list(st, sa)
             })
         }
-        Command::ToksRegister(Some(sa)) => CurVal::Tok(st.mem[sa].toks()),
+        Command::ToksRegister(r) => match r.get() {
+            Some(sa) => CurVal::Tok(st.mem[sa].toks()),
+            None => return Err(Abort::Confusion("toks register")),
+        },
         Command::AssignToks(loc) if loc == TokPar::XetexInterCharToks.loc() => {
             let first = scan_char_class_not_ignored(st)?;
             let second = scan_char_class_not_ignored(st)?;
@@ -860,7 +864,7 @@ pub(super) fn scan_something_internal(
                 } as u32;
                 CurVal::Int(st.fonts.cp_codes.get(f, side, c))
             }
-            Some(Command::Register(r)) => fetch_register(st, r)?,
+            Some(Command::Register(r)) => fetch_register(st, r.get())?,
             Some(Command::LastItem(code)) => {
                 if code < LastItemCode::InputLineNo {
                     fetch_last_node_item(st, code)

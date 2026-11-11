@@ -3,9 +3,8 @@
 use crate::bridge::output_putc;
 use crate::cmd::Cmd;
 use crate::consts::{
-    ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_USV, EQTB_SIZE, HASH_BASE, HISTORY_SPOTLESS,
-    HISTORY_WARNING_ISSUED, NULL_CS, SCRIPT_SIZE, SINGLE_BASE, TEXT_SIZE, TOO_BIG_CHAR,
-    UNDEFINED_CONTROL_SEQUENCE,
+    ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_USV, HASH_BASE, HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED,
+    NULL_CS, SCRIPT_SIZE, SINGLE_BASE, TEXT_SIZE, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::diagnostic::{
     begin_capture, begin_warning, current_file_line, end_capture, DiagnosticKind,
@@ -18,7 +17,8 @@ use crate::node::{DelimiterWord, MathWord};
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, GroupCode, Selector};
 use crate::token::{TokCursor, TokenList};
-use crate::units::{EqtbPtr, FontId, GlueOrder, MemPtr, PrimNum, Scaled, StrNumber};
+use crate::units::CsId;
+use crate::units::{FontId, GlueOrder, MemPtr, PrimNum, Scaled, StrNumber};
 
 mod cmd_chr;
 mod show;
@@ -148,7 +148,7 @@ impl<T: TexPrint> TexPrint for Option<T> {
 
 /// A control sequence as written, as `sprint_cs` prints it.
 #[derive(Copy, Clone)]
-pub(crate) struct CsName(pub EqtbPtr);
+pub(crate) struct CsName(pub CsId);
 
 impl TexPrint for CsName {
     fn print_to(&self, st: &mut EngineState) {
@@ -646,14 +646,14 @@ pub(crate) fn print_file_name(st: &mut EngineState, n: StrNumber, a: StrNumber, 
 }
 
 /// The name string of a multi-letter control sequence at eqtb location `p`.
-fn cs_text(st: &EngineState, p: EqtbPtr) -> StrNumber {
+fn cs_text(st: &EngineState, p: CsId) -> StrNumber {
     match PrimNum::at_eqtb_loc(p) {
         Some(prim) => st.eqtb.prim_text(prim).unwrap_or(StrNumber::from_raw(-1)),
         None => st.eqtb.text(p),
     }
 }
 
-pub(crate) fn print_cs(st: &mut EngineState, p: EqtbPtr) {
+pub(crate) fn print_cs(st: &mut EngineState, p: CsId) {
     if p < HASH_BASE {
         if p >= SINGLE_BASE {
             if p == NULL_CS {
@@ -671,7 +671,7 @@ pub(crate) fn print_cs(st: &mut EngineState, p: EqtbPtr) {
         } else {
             print_char(st, p - ACTIVE_BASE);
         }
-    } else if (UNDEFINED_CONTROL_SEQUENCE..=EQTB_SIZE).contains(&p) || p > st.eqtb.eqtb_top {
+    } else if p == UNDEFINED_CONTROL_SEQUENCE || p > st.eqtb.cs_top {
         print_esc(st, "IMPOSSIBLE.");
     } else if st.eqtb.text(p) >= st.strings.str_ptr {
         print_esc(st, "NONEXISTENT.");
@@ -682,7 +682,7 @@ pub(crate) fn print_cs(st: &mut EngineState, p: EqtbPtr) {
 }
 
 /// Like [`print_cs`] but without the trailing space.
-pub(crate) fn sprint_cs(st: &mut EngineState, p: EqtbPtr) {
+pub(crate) fn sprint_cs(st: &mut EngineState, p: CsId) {
     if p >= HASH_BASE {
         print_esc(st, cs_text(st, p));
     } else if p < SINGLE_BASE {

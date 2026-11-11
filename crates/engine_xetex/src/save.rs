@@ -1,6 +1,8 @@
 //! The save stack, `eqtb` definitions, and the sparse-array register trie.
 use crate::cmd::Cmd;
 use crate::codes::ValueLevel;
+use crate::command::Command;
+use crate::command::RegisterRef;
 use crate::consts::{
     EQTB_SIZE, INT_BASE, LEVEL_ONE, LEVEL_ZERO, TEX_NULL, UNDEFINED_CONTROL_SEQUENCE,
 };
@@ -18,6 +20,7 @@ use crate::state::{
     EngineState, EqtbState, GroupCode, MemState, SaveStackState, SaveType, ScannerState,
 };
 use crate::token::{Token, TokenList};
+use crate::units::CsId;
 use crate::units::{EqtbPtr, MemPtr};
 
 pub(crate) const DIMEN_VAL_LIMIT: u16 = 128;
@@ -46,6 +49,42 @@ impl EqtbState {
     pub(crate) fn geq_word_define(&mut self, p: EqtbPtr, w: i32) {
         self.set_int_at(p, w);
         self.set_xeq_level_at(p, LEVEL_ONE);
+    }
+
+    /// Gives `cs` the meaning `m` in the current group.
+    pub(crate) fn eq_define_cs(
+        &mut self,
+        save_stack: &mut SaveStackState,
+        mem: &mut MemState,
+        scanner: &mut ScannerState,
+        cs: CsId,
+        m: Command,
+    ) -> Result<(), Abort> {
+        let old = self.meaning(cs);
+        if old == m {
+            return mem.destroy_meaning(scanner, old);
+        }
+        let level = self.cs_level(cs);
+        if level == save_stack.cur_level {
+            mem.destroy_meaning(scanner, old)?;
+        } else if save_stack.cur_level > LEVEL_ONE {
+            save_stack.eq_save_cs(self, cs, level)?;
+        }
+        self.set_meaning(cs, m, save_stack.cur_level);
+        Ok(())
+    }
+
+    /// Gives `cs` the meaning `m` globally.
+    pub(crate) fn geq_define_cs(
+        &mut self,
+        mem: &mut MemState,
+        scanner: &mut ScannerState,
+        cs: CsId,
+        m: Command,
+    ) -> Result<(), Abort> {
+        mem.destroy_meaning(scanner, self.meaning(cs))?;
+        self.set_meaning(cs, m, LEVEL_ONE);
+        Ok(())
     }
 }
 
@@ -92,6 +131,23 @@ impl SaveStackState {
             SaveType::RestoreOldValue
         };
         self.set_save_entry(kind, l, p.raw());
+        self.save_ptr += 1;
+        Ok(())
+    }
+
+    /// Saves the meaning `cs` has at level `l`, to be restored when the group ends.
+    pub(crate) fn eq_save_cs(&mut self, eqtb: &EqtbState, cs: CsId, l: u16) -> Result<(), Abort> {
+        if self.save_stack_full() {
+            return Err(self.overflow());
+        }
+        let kind = if l == LEVEL_ZERO {
+            SaveType::RestoreCsZero
+        } else {
+            self.set_word(self.save_ptr, EqtbState::cs_entry(eqtb.meaning(cs), l));
+            self.save_ptr += 1;
+            SaveType::RestoreCs
+        };
+        self.set_save_entry(kind, l, cs.raw());
         self.save_ptr += 1;
         Ok(())
     }
@@ -196,6 +252,30 @@ pub(crate) struct SaMutationResult {
 }
 
 impl MemState {
+    /// Drops what a control sequence's meaning holds: a macro's reference, or a sparse register's.
+    pub(crate) fn destroy_meaning(
+        &mut self,
+        scanner: &mut ScannerState,
+        m: Command,
+    ) -> Result<(), Abort> {
+        if let Some(body) = m.macro_body() {
+            self.tokens.delete_ref(body);
+            return Ok(());
+        }
+        let sparse = match m {
+            Command::ToksRegister(r) => r.get().map(|sa| NodePtr::at(sa.ptr())),
+            Command::Register(r) => match r.get() {
+                RegisterRef::Sparse(sa) => Some(sa),
+                RegisterRef::Scanned(_) => None,
+            },
+            _ => None,
+        };
+        if let Some(sa) = sparse {
+            self.delete_sa_ref(scanner, sa)?;
+        }
+        Ok(())
+    }
+
     /// Frees the heap resource an `eqtb` entry owns.
     pub(crate) fn eq_destroy(
         &mut self,
@@ -506,13 +586,33 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
                 st.scanner.sa_chain = NodePtr::from_ptr(st.save_stack.save_index_ptr(sp));
                 st.scanner.sa_level = st.save_stack.save_level(st.save_stack.save_ptr);
             }
+            SaveType::RestoreCs | SaveType::RestoreCsZero => {
+                let cs = CsId::from_raw(st.save_stack.save_index(sp));
+                let (old, level) = if kind == SaveType::RestoreCs {
+                    st.save_stack.save_ptr -= 1;
+                    EqtbState::from_cs_entry(st.save_stack.word(st.save_stack.save_ptr))
+                        .or_confusion("saved meaning")?
+                } else {
+                    (
+                        st.eqtb.meaning(UNDEFINED_CONTROL_SEQUENCE),
+                        st.eqtb.cs_level(UNDEFINED_CONTROL_SEQUENCE),
+                    )
+                };
+                if st.eqtb.cs_level(cs) == LEVEL_ONE {
+                    st.mem.destroy_meaning(&mut st.scanner, old)?;
+                } else {
+                    st.mem
+                        .destroy_meaning(&mut st.scanner, st.eqtb.meaning(cs))?;
+                    st.eqtb.set_meaning(cs, old, level);
+                }
+            }
             SaveType::RestoreOldValue | SaveType::RestoreZero => {
                 let p = st.save_stack.save_loc(sp);
                 if kind == SaveType::RestoreOldValue {
                     l = st.save_stack.save_level(sp);
                     st.save_stack.save_ptr -= 1;
                 } else {
-                    let w = st.eqtb.word(UNDEFINED_CONTROL_SEQUENCE);
+                    let w = EqtbState::entry(Cmd::UndefinedCs, TEX_NULL, LEVEL_ZERO);
                     st.save_stack.set_word(st.save_stack.save_ptr, w);
                 }
                 let saved = st.save_stack.word(st.save_stack.save_ptr);

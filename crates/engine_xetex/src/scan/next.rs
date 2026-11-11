@@ -15,6 +15,7 @@ use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, InputClusterState, InputName, MemState, Selector};
 use crate::token::{Build, TokCursor, Token, TokenList};
 use crate::units::BufPos;
+use crate::units::CsId;
 
 use super::toks::finish_line;
 use super::NO_EXPAND_FLAG;
@@ -76,7 +77,7 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
         let what = if st.scanner.cur_cs.is_none() {
             "File ended"
         } else {
-            st.scanner.cur_cs = crate::units::EqtbPtr::NONE;
+            st.scanner.cur_cs = CsId::NONE;
             "Forbidden control sequence found"
         };
 
@@ -120,7 +121,7 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
             st.scanner.skip_line,
         );
         let cause = if !st.scanner.cur_cs.is_none() {
-            st.scanner.cur_cs = crate::units::EqtbPtr::NONE;
+            st.scanner.cur_cs = CsId::NONE;
             "A forbidden control sequence occurred in skipped text."
         } else {
             "The file ended while I was skipping conditional text."
@@ -143,8 +144,8 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
 /// Sets `cur_cmd` and `cur_chr` to the meaning of `cur_cs`.
 #[inline(always)]
 pub(super) fn fetch_cs_meaning(st: &mut EngineState) {
-    st.scanner.cur_cmd = st.eqtb.eq_type(st.scanner.cur_cs);
-    st.scanner.cur_chr = st.eqtb.equiv(st.scanner.cur_cs);
+    st.scanner.cur_cmd = st.eqtb.meaning(st.scanner.cur_cs).cmd();
+    st.scanner.cur_chr = st.eqtb.meaning(st.scanner.cur_cs).encode().1;
 }
 
 #[inline(always)]
@@ -204,7 +205,7 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
         let p = st.input.cur_input.token_loc();
         if let Some(t) = st.mem.tokens.peek(p) {
             let plain = if t.is_cs() {
-                let cmd = st.eqtb.eq_type(t.cs());
+                let cmd = st.eqtb.meaning(t.cs()).cmd();
                 cmd < Cmd::OuterCall
                     && (!(Cmd::TabMark..=Cmd::CarRet).contains(&cmd) || st.scanner.align_state != 0)
             } else {
@@ -218,7 +219,7 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
                     st.scanner.cur_cs = t.cs();
                     fetch_cs_meaning(st);
                 } else {
-                    st.scanner.cur_cs = crate::units::EqtbPtr::NONE;
+                    st.scanner.cur_cs = CsId::NONE;
                     st.scanner.cur_cmd = t.cmd();
                     st.scanner.cur_chr = t.chr();
                     match st.scanner.cur_cmd {
@@ -240,7 +241,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.logical_clock = st.scanner.logical_clock.wrapping_add(1);
 
     'restart: loop {
-        st.scanner.cur_cs = crate::units::EqtbPtr::NONE;
+        st.scanner.cur_cs = CsId::NONE;
 
         if st.input.cur_input.state != TOKEN_LIST {
             'texswitch: loop {
@@ -695,7 +696,7 @@ pub(crate) fn get_token(st: &mut EngineState) -> Result<(), Abort> {
 #[inline(always)]
 fn plain_list_token(st: &EngineState, t: Token, stop_at_mac_param: bool) -> bool {
     let cmd = if t.is_cs() {
-        let cmd = st.eqtb.eq_type(t.cs());
+        let cmd = st.eqtb.meaning(t.cs()).cmd();
         if cmd >= Cmd::OuterCall
             || t == st.input.par_token && st.scanner.long_state != Cmd::LongCall
         {
@@ -746,7 +747,7 @@ pub(crate) fn copy_group_tokens(
                 *unbalance -= 1;
                 if *unbalance == 0 {
                     consume_list_token(st, q);
-                    st.scanner.cur_cs = crate::units::EqtbPtr::NONE;
+                    st.scanner.cur_cs = CsId::NONE;
                     st.scanner.cur_cmd = t.cmd();
                     st.scanner.cur_chr = t.chr();
                     st.scanner.cur_tok = t;

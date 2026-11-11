@@ -5,6 +5,7 @@ use crate::codes::{
     ConvertCode, FiOrElseCode, IfCode, InputCode, ScannerStatus, TheCode, ValueLevel,
 };
 use crate::command::Command;
+use crate::command::RelaxCode;
 use crate::cond_stack::CondId;
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_USV, END_WRITE, FROZEN_DONT_EXPAND, FROZEN_ENDV,
@@ -27,7 +28,8 @@ use crate::scan::{
 };
 use crate::state::{EngineState, InputName, MacroParam, MemState, Selector};
 use crate::token::{Build, TokCursor, Token, TokenList};
-use crate::units::{BufPos, EqtbPtr, FontId, MemPtr, Scaled, StrNumber};
+use crate::units::CsId;
+use crate::units::{BufPos, FontId, MemPtr, Scaled, StrNumber};
 
 fn ins_the_toks(st: &mut EngineState, code: TheCode) -> Result<(), Abort> {
     let b = st.mem.tokens.begin()?;
@@ -62,7 +64,7 @@ fn skipped_branch_end(st: &mut EngineState) -> Result<(), Abort> {
 
 fn get_x_token_or_active_char(st: &mut EngineState) -> Result<(), Abort> {
     get_x_token(st)?;
-    if st.scanner.try_command() == Some(Command::Relax { no_expand: true }) {
+    if st.scanner.try_command() == Some(Command::Relax(crate::command::RelaxCode::NoExpand)) {
         st.scanner.cur_cmd = Cmd::ACTIVE_CHAR;
         st.scanner.cur_chr = st.scanner.cur_tok.cs() - ACTIVE_BASE;
     }
@@ -227,7 +229,8 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
             } else if st.scanner.cur_cmd < Cmd::Call {
                 st.scanner.cur_chr == q
             } else {
-                let (p, q) = (st.scanner.cur_chr_tokens(), st.eqtb.equiv_tokens(n));
+                let q = st.eqtb.meaning(n).macro_body().unwrap_or(TokenList::NULL);
+                let p = st.scanner.cur_chr_tokens();
                 p == q || st.mem.tokens.iter(p).eq(st.mem.tokens.iter(q))
             };
             st.scanner.scanner_status = save_scanner_status;
@@ -261,7 +264,7 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
                     .id_lookup(&mut st.strings, st.input.buffer.span(first, m))?
             };
             st.mem.tokens.flush(name);
-            st.eqtb.eq_type(st.scanner.cur_cs) != Cmd::UndefinedCs
+            st.eqtb.meaning(st.scanner.cur_cs).cmd() != Cmd::UndefinedCs
         }
         IfCode::InCsName => st.scanner.is_in_csname,
         IfCode::FontChar => {
@@ -305,8 +308,8 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
             let m = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)?;
             st.scanner.cur_cmd != Cmd::UndefinedCs
                 && m.is_some_and(|m| {
-                    st.scanner.cur_cmd == st.eqtb.eq_type(m.eqtb_loc())
-                        && st.scanner.cur_chr == st.eqtb.equiv(m.eqtb_loc())
+                    st.scanner.cur_cmd == st.eqtb.meaning(m.eqtb_loc()).cmd()
+                        && st.scanner.cur_chr == st.eqtb.meaning(m.eqtb_loc()).encode().1
                 })
         }
     };
@@ -354,7 +357,7 @@ fn scan_int_or_dimen(st: &mut EngineState, this_if: IfCode) -> Result<i32, Abort
 /// Scanner state saved around a `conv_toks` primitive that reads a general text.
 struct SavedScan {
     status: ScannerStatus,
-    warning_index: EqtbPtr,
+    warning_index: CsId,
     def_ref: TokenList,
     pending_str: bool,
 }
@@ -821,12 +824,12 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     get_token_unexpanded(st)?;
                     let prim = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)?;
                     if let Some(prim) = prim {
-                        let cmd = st.eqtb.eq_type(prim.eqtb_loc());
+                        let cmd = st.eqtb.meaning(prim.eqtb_loc()).cmd();
                         if cmd > Cmd::MAX_COMMAND {
                             st.scanner.cur_cmd = cmd;
-                            st.scanner.cur_chr = st.eqtb.equiv(prim.eqtb_loc());
+                            st.scanner.cur_chr = st.eqtb.meaning(prim.eqtb_loc()).encode().1;
                             st.scanner.cur_tok = Token::new(st.scanner.cur_cmd, st.scanner.cur_chr);
-                            st.scanner.cur_cs = crate::units::EqtbPtr::NONE;
+                            st.scanner.cur_cs = CsId::NONE;
                             continue 'reswitch;
                         }
                         back_input(st)?;
@@ -852,14 +855,13 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                 };
                 st.mem.tokens.flush(name);
                 let cs = st.scanner.cur_cs;
-                if st.eqtb.eq_type(cs) == Cmd::UndefinedCs {
-                    let _ = st.eqtb.eq_define(
+                if st.eqtb.meaning(cs).cmd() == Cmd::UndefinedCs {
+                    let _ = st.eqtb.eq_define_cs(
                         &mut st.save_stack,
                         &mut st.mem,
                         &mut st.scanner,
                         cs,
-                        Cmd::Relax,
-                        TOO_BIG_USV,
+                        Command::Relax(RelaxCode::Primitive),
                     );
                 }
                 st.scanner.cur_tok = Token::from_cs(st.scanner.cur_cs);
@@ -1021,8 +1023,8 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
     {
         if let Some(cs) = crate::pgfmath::intercept(st) {
             st.scanner.cur_cs = cs;
-            st.scanner.cur_cmd = st.eqtb.eq_type(cs);
-            st.scanner.cur_chr = st.eqtb.equiv(cs);
+            st.scanner.cur_cmd = st.eqtb.meaning(cs).cmd();
+            st.scanner.cur_chr = st.eqtb.meaning(cs).encode().1;
         }
     }
     let save_scanner_status = st.scanner.scanner_status;
@@ -1049,7 +1051,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
         if tok(st, r) != Token::END_MATCH {
             st.scanner.scanner_status = ScannerStatus::Matching;
             let mut unbalance: i32 = 0;
-            st.scanner.long_state = st.eqtb.eq_type(st.scanner.cur_cs);
+            st.scanner.long_state = st.eqtb.meaning(st.scanner.cur_cs).cmd();
             st.scanner.long_state = st.scanner.long_state.without_outer();
 
             loop {

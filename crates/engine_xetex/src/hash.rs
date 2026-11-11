@@ -1,21 +1,18 @@
 //! Control-sequence hash table lookups.
 
-use crate::consts::{
-    BIGGEST_CHAR, EQTB_SIZE, HASH_BASE, PRIM_SIZE, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
-};
+use crate::consts::{BIGGEST_CHAR, HASH_BASE, PRIM_SIZE, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE};
 use crate::errors::Abort;
 use crate::state::{EqtbState, StringsState};
-use crate::units::{EqtbPtr, PrimNum, StrNumber};
+use crate::units::{CsId, PrimNum, StrNumber};
 
-pub(crate) const HASH_OFFSET: i32 = 514;
 pub(crate) const HASH_SIZE: i32 = 15000;
 pub(crate) const HASH_PRIME: i32 = 8501;
 const PRIM_PRIME: i32 = 1777;
 
 /// The index of control sequence `p` in the `hash` array.
 #[inline(always)]
-pub(crate) fn hash_slot(p: EqtbPtr) -> i32 {
-    p.raw() - HASH_OFFSET
+pub(crate) fn hash_slot(p: CsId) -> usize {
+    usize::try_from(p - HASH_BASE).unwrap_or(usize::MAX)
 }
 const PRIM_BASE: PrimNum = PrimNum::from_raw(1);
 
@@ -36,11 +33,7 @@ fn hash_mod_rare(h: i32) -> i32 {
 impl EqtbState {
     /// The control sequence named by the characters `name`, entered in the hash
     /// unless `no_new_control_sequence`.
-    pub fn id_lookup(
-        &mut self,
-        strings: &mut StringsState,
-        name: &[i32],
-    ) -> Result<EqtbPtr, Abort> {
+    pub fn id_lookup(&mut self, strings: &mut StringsState, name: &[i32]) -> Result<CsId, Abort> {
         let l = i32::try_from(name.len()).map_err(|_| strings.pool_overflow())?;
         let mut h: i32 = 0;
         for &c in name {
@@ -79,8 +72,8 @@ impl EqtbState {
                     if text > StrNumber::NONE {
                         if self.hash_high < self.hash_extra {
                             self.hash_high += 1;
-                            self.set_hash_s0(p, EQTB_SIZE + self.hash_high);
-                            p = EQTB_SIZE + self.hash_high;
+                            self.set_hash_s0(p, UNDEFINED_CONTROL_SEQUENCE + self.hash_high);
+                            p = UNDEFINED_CONTROL_SEQUENCE + self.hash_high;
                         } else {
                             loop {
                                 if self.hash_used == HASH_BASE {
@@ -208,7 +201,7 @@ impl EqtbState {
     pub(crate) fn prim_lookup_cs(
         &mut self,
         strings: &mut StringsState,
-        cs: EqtbPtr,
+        cs: CsId,
     ) -> Result<Option<PrimNum>, Abort> {
         let s = if cs < HASH_BASE {
             StrNumber::from_raw(cs - crate::consts::SINGLE_BASE)

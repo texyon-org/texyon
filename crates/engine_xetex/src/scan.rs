@@ -3,9 +3,10 @@
 use crate::cmd::Cmd;
 use crate::codes::{DelimNumCode, MathCharNumCode, ValueLevel};
 use crate::command::Command;
+use crate::consts::UNDEFINED_CONTROL_SEQUENCE;
 use crate::consts::{
-    ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_USV, EQTB_SIZE, FROZEN_CONTROL_SEQUENCE,
-    FROZEN_PROTECTION, MATH_CHAR, NUMBER_MATH_FAMILIES,
+    ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_USV, FROZEN_CONTROL_SEQUENCE, FROZEN_PROTECTION,
+    MATH_CHAR, NUMBER_MATH_FAMILIES,
 };
 use crate::errors::Abort;
 use crate::input::{back_input, begin_token_list, TokenType};
@@ -157,8 +158,9 @@ pub(crate) fn get_r_token(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
         if st.scanner.cur_cs.is_none()
-            || st.scanner.cur_cs > st.eqtb.eqtb_top
-            || (st.scanner.cur_cs > FROZEN_CONTROL_SEQUENCE && st.scanner.cur_cs <= EQTB_SIZE)
+            || st.scanner.cur_cs > st.eqtb.cs_top
+            || (st.scanner.cur_cs > FROZEN_CONTROL_SEQUENCE
+                && st.scanner.cur_cs <= UNDEFINED_CONTROL_SEQUENCE)
         {
             if st.scanner.cur_cs.is_none() {
                 back_input(st)?;

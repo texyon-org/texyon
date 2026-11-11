@@ -1,12 +1,15 @@
 //! Read-only listing of the control sequences the engine has defined, for
 //! editor completions. Safe to run between operations on a resident session.
 
+use crate::consts::UNDEFINED_CONTROL_SEQUENCE;
 use crate::token::Token;
-use crate::units::{EqtbPtr, StrNumber};
+use crate::token::TokenList;
+use crate::units::CsId;
+use crate::units::StrNumber;
 use std::collections::HashMap;
 
 use crate::cmd::Cmd;
-use crate::consts::{EQTB_SIZE, FROZEN_CONTROL_SEQUENCE, HASH_BASE};
+use crate::consts::{FROZEN_CONTROL_SEQUENCE, HASH_BASE};
 use crate::state::EngineState;
 
 /// What kind of thing a name is bound to.
@@ -41,7 +44,7 @@ pub(crate) fn defined_commands(st: &EngineState) -> Vec<DefinedCommand> {
         collect(st, slot, &mut found);
     }
     for offset in 1..=st.eqtb.hash_high {
-        collect(st, EQTB_SIZE + offset, &mut found);
+        collect(st, UNDEFINED_CONTROL_SEQUENCE + offset, &mut found);
     }
     resolve_wrappers(found)
 }
@@ -77,12 +80,12 @@ fn resolve_wrappers(found: Vec<DefinedCommand>) -> Vec<DefinedCommand> {
     resolved
 }
 
-fn collect(st: &EngineState, slot: EqtbPtr, found: &mut Vec<DefinedCommand>) {
+fn collect(st: &EngineState, slot: CsId, found: &mut Vec<DefinedCommand>) {
     let text = st.eqtb.text(slot);
     if text <= StrNumber::NONE || text >= st.strings.str_ptr {
         return;
     }
-    let meaning = st.eqtb.eq_type(slot);
+    let meaning = st.eqtb.meaning(slot).cmd();
     if meaning == Cmd::UndefinedCs {
         return;
     }
@@ -91,7 +94,12 @@ fn collect(st: &EngineState, slot: EqtbPtr, found: &mut Vec<DefinedCommand>) {
     };
 
     let (kind, arity) = if meaning >= Cmd::Call {
-        let (protected, arity) = describe_macro(st, st.eqtb.equiv_tokens(slot));
+        let body = st
+            .eqtb
+            .meaning(slot)
+            .macro_body()
+            .unwrap_or(TokenList::NULL);
+        let (protected, arity) = describe_macro(st, body);
         let kind = if protected {
             CommandKind::ProtectedMacro
         } else {

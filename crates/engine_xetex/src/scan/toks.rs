@@ -14,7 +14,8 @@ use crate::output::{print, print_int};
 use crate::params::IntPar;
 use crate::state::{EngineState, MemState, Selector};
 use crate::token::{Build, TokCursor, Token, TokenList};
-use crate::units::{BufPos, EqtbPtr, StrNumber};
+use crate::units::CsId;
+use crate::units::{BufPos, StrNumber};
 
 use super::internal::{scan_something_internal, CurVal};
 use super::next::{get_next, get_token, get_x_token, x_token};
@@ -95,7 +96,7 @@ fn close_read_file(st: &mut EngineState, m: usize) -> Result<(), Abort> {
 pub(crate) fn read_toks(
     st: &mut EngineState,
     n: i32,
-    r: EqtbPtr,
+    r: CsId,
     line: bool,
 ) -> Result<TokenList, Abort> {
     st.scanner.scanner_status = ScannerStatus::Defining;
@@ -343,7 +344,7 @@ pub(crate) fn scan_toks(
                     get_next(st)?;
                     if matches!(
                         st.scanner.try_command(),
-                        Some(Command::Call { body, .. }) if st.mem.is_protected_macro(body)
+                        Some(c) if c.macro_body().is_some_and(|b| st.mem.is_protected_macro(b))
                     ) {
                         st.scanner.cur_cmd = Cmd::Relax;
                         st.scanner.cur_chr = NO_EXPAND_FLAG;

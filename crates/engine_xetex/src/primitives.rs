@@ -22,7 +22,7 @@ pub(crate) enum PrimInit {
     Par,
     Write,
     /// Copy the definition to this frozen eqtb location.
-    Frozen(crate::units::EqtbPtr),
+    Frozen(crate::units::CsId),
 }
 
 #[derive(Copy, Clone)]

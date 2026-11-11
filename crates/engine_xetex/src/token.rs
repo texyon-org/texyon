@@ -5,7 +5,7 @@ use crate::cmd::Cmd;
 use crate::consts::{CS_TOKEN_FLAG, TEX_NULL};
 use crate::errors::Abort;
 use crate::journal::{WordDelta, WordJournal};
-use crate::units::EqtbPtr;
+use crate::units::CsId;
 use bytemuck::Zeroable;
 
 /// One more than the largest character code a token can carry.
@@ -36,7 +36,7 @@ impl Token {
 
     /// The token of control sequence `p`.
     #[inline(always)]
-    pub(crate) const fn from_cs(p: EqtbPtr) -> Token {
+    pub(crate) const fn from_cs(p: CsId) -> Token {
         Token(CS_TOKEN_FLAG + p.raw())
     }
 
@@ -89,8 +89,8 @@ impl Token {
 
     /// The control sequence of a [`Token::is_cs`] token.
     #[inline(always)]
-    pub(crate) const fn cs(self) -> EqtbPtr {
-        EqtbPtr::from_raw(self.0 - CS_TOKEN_FLAG)
+    pub(crate) const fn cs(self) -> CsId {
+        CsId::from_raw(self.0 - CS_TOKEN_FLAG)
     }
 
     /// The category of a character token.

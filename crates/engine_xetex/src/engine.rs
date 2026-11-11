@@ -4,27 +4,27 @@
 use crate::bridge::output_open_stdout;
 use crate::cmd::Cmd;
 use crate::codes::{BoxCode, FiOrElseCode, MarkCode, ScannerStatus, ValueLevel};
+use crate::command::Command;
 use crate::consts::{
-    ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_LANG, BOX_BASE, CAT_CODE_BASE, CLOSED, CS_TOKEN_FLAG,
-    CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, EMPTY, EMPTY_STRING, END_WRITE, EQTB_SIZE,
-    ETEX_PEN_BASE, FONT_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_DONT_EXPAND, FROZEN_ENDV,
-    FROZEN_END_TEMPLATE, FROZEN_PRIMITIVE, FROZEN_PROTECTION, GLUE_BASE, HASH_BASE,
-    HISTORY_FATAL_ERROR, HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, IGNORE_DEPTH, INT_BASE,
-    LC_CODE_BASE, LEVEL_ONE, LEVEL_ZERO, LOCAL_BASE, MATH_CODE_BASE, MATH_FONT_BASE, MAX_FONT_MAX,
-    MAX_HALFWORD, NORMAL, NULL_FONT, NUMBER_MATH_FAMILIES, NUMBER_USVS, PAR_SHAPE_LOC, PRIM_SIZE,
-    SF_CODE_BASE, SINGLE_BASE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE,
-    UNDEFINED_CONTROL_SEQUENCE, VMODE,
+    BIGGEST_CHAR, BIGGEST_LANG, BOX_BASE, CAT_CODE_BASE, CLOSED, CS_TOKEN_FLAG, CUR_FONT_LOC,
+    DEL_CODE_BASE, DIMEN_BASE, EMPTY, EMPTY_STRING, END_WRITE, EQTB_SIZE, ETEX_PEN_BASE, FONT_BASE,
+    FROZEN_CONTROL_SEQUENCE, FROZEN_DONT_EXPAND, FROZEN_ENDV, FROZEN_END_TEMPLATE,
+    FROZEN_PRIMITIVE, FROZEN_PROTECTION, GLUE_BASE, HISTORY_FATAL_ERROR, HISTORY_SPOTLESS,
+    HISTORY_WARNING_ISSUED, IGNORE_DEPTH, INT_BASE, LC_CODE_BASE, LEVEL_ONE, LEVEL_ZERO,
+    LOCAL_BASE, MATH_CODE_BASE, MATH_FONT_BASE, MAX_FONT_MAX, MAX_HALFWORD, NORMAL, NULL_FONT,
+    NUMBER_MATH_FAMILIES, NUMBER_USVS, PAR_SHAPE_LOC, PRIM_SIZE, SF_CODE_BASE, SINGLE_BASE,
+    TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, VMODE,
 };
 use crate::errors::Abort;
 use crate::format_io::load_fmt_file;
-use crate::hash::{HASH_OFFSET, HASH_PRIME, HASH_SIZE};
+use crate::hash::{HASH_PRIME, HASH_SIZE};
 use crate::helpers::OnDrop;
 use crate::hyphenation::{HYPH_PRIME, TRIE_OP_SIZE};
 use crate::input::{NEW_LINE, STACK_SIZE, TOKEN_LIST};
 use crate::io::init_io;
 use crate::mem::{
-    CONTRIB_HEAD, END_SPAN, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, NULL_LIST, PAGE_HEAD, PAGE_INS_HEAD,
-    SS_GLUE, ZERO_GLUE,
+    CONTRIB_HEAD, END_SPAN, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, PAGE_HEAD, PAGE_INS_HEAD, SS_GLUE,
+    ZERO_GLUE,
 };
 use crate::mem_types::zeroed_vec;
 use crate::node::{NodePtr, PageInsNode};
@@ -37,6 +37,8 @@ use crate::state::{
     Selector,
 };
 use crate::token::Token;
+use crate::token::TokenList;
+use crate::units::CsId;
 use crate::units::{
     BufPos, EqtbPtr, FontId, FontInfoIdx, GlueOrder, MemPtr, NodeType, PoolPos, PrimNum, SavePtr,
     Scaled, StrNumber,
@@ -59,8 +61,6 @@ const _: () = assert!(
         && TEX_NULL <= 0
         && MAX_FONT_MAX >= TEX_NULL
         && MAX_FONT_MAX <= MAX_HALFWORD
-        && HASH_OFFSET >= 0
-        && HASH_OFFSET <= HASH_BASE.raw()
 );
 
 // These touch only process-global C state and take no pointers.
@@ -94,18 +94,18 @@ pub(crate) fn get_strings_started(st: &mut EngineState) -> Result<(), Abort> {
 impl EqtbState {
     /// Sets `eqtb[from..to]` to `w`.
     pub(crate) fn fill(&mut self, from: EqtbPtr, to: EqtbPtr, w: crate::mem_types::MemoryWord) {
-        self.data[from.index()..to.index()].fill(w);
+        for p in from.until(to) {
+            self.set_word(p, w);
+        }
     }
 
     pub(crate) fn set_eq(&mut self, p: EqtbPtr, eq_type: Cmd, equiv: i32, level: u16) {
-        self.set_eq_type(p, eq_type);
-        self.set_equiv(p, equiv);
-        self.set_eq_level(p, level);
+        self.set_word(p, EqtbState::entry(eq_type, equiv, level));
     }
 }
 
 /// Defines primitive `ident` and returns its control sequence.
-fn primitive(st: &mut EngineState, ident: &str, c: Cmd, o: i32) -> Result<EqtbPtr, Abort> {
+fn primitive(st: &mut EngineState, ident: &str, c: Cmd, o: i32) -> Result<CsId, Abort> {
     let bytes = ident.as_bytes();
     let cs;
     let prim_val = if bytes.len() > 1 {
@@ -133,8 +133,9 @@ fn primitive(st: &mut EngineState, ident: &str, c: Cmd, o: i32) -> Result<EqtbPt
             .prim_lookup(&mut st.strings, StrNumber::from_raw(ch))?
     };
 
-    st.eqtb.set_eq(cs, c, o, LEVEL_ONE);
-    st.eqtb.set_eq(prim_val.eqtb_loc(), c, o, LEVEL_ONE);
+    let meaning = Command::decode(c, o).ok_or(Abort::Confusion("primitive"))?;
+    st.eqtb.set_meaning(cs, meaning, LEVEL_ONE);
+    st.eqtb.set_meaning(prim_val.eqtb_loc(), meaning, LEVEL_ONE);
     Ok(cs)
 }
 
@@ -373,14 +374,9 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     mem.set_header(PAGE_HEAD, NodeType::Glue, NORMAL);
 
     let eqtb = &mut st.eqtb;
-    eqtb.set_eq(
-        UNDEFINED_CONTROL_SEQUENCE,
-        Cmd::UndefinedCs,
-        TEX_NULL,
-        LEVEL_ZERO,
-    );
-    let undefined_entry = eqtb.word(UNDEFINED_CONTROL_SEQUENCE);
-    eqtb.fill(ACTIVE_BASE, eqtb.eqtb_top + 1, undefined_entry);
+    eqtb.meanings.fill(Command::UndefinedCs);
+    eqtb.cs_levels.fill(LEVEL_ZERO);
+    let undefined_entry = EqtbState::entry(Cmd::UndefinedCs, TEX_NULL, LEVEL_ZERO);
 
     eqtb.set_eq(GLUE_BASE, Cmd::GlueRef, 0, LEVEL_ONE);
     let glue_base_entry = eqtb.word(GLUE_BASE);
@@ -493,7 +489,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     st.eqtb.set_int_par(IntPar::XetexHyphenatableLength, 63);
 }
 
-fn set_frozen_text(st: &mut EngineState, p: EqtbPtr, text: &str) -> Result<(), Abort> {
+fn set_frozen_text(st: &mut EngineState, p: CsId, text: &str) -> Result<(), Abort> {
     let s = st.strings.make_tex_string(text)?;
     st.eqtb.set_text(p, s);
     Ok(())
@@ -518,35 +514,35 @@ fn initialize_primitives(st: &mut EngineState) -> Result<(), Abort> {
             }
             PrimInit::Frozen(frozen) => {
                 set_frozen_text(st, frozen, prim.name)?;
-                st.eqtb.data[frozen.index()] = st.eqtb.word(cs);
+                st.eqtb
+                    .set_meaning(frozen, st.eqtb.meaning(cs), st.eqtb.cs_level(cs));
             }
         }
     }
 
     set_frozen_text(st, FROZEN_END_TEMPLATE, "endtemplate")?;
-    st.eqtb.set_eq(
-        FROZEN_END_TEMPLATE,
-        Cmd::EndTemplate,
-        NULL_LIST.raw(),
-        LEVEL_ONE,
-    );
+    st.eqtb
+        .set_meaning(FROZEN_END_TEMPLATE, Command::EndTemplate, LEVEL_ONE);
 
     set_frozen_text(st, FROZEN_ENDV, "endtemplate")?;
-    st.eqtb
-        .set_eq(FROZEN_ENDV, Cmd::Endv, NULL_LIST.raw(), LEVEL_ONE);
+    st.eqtb.set_meaning(FROZEN_ENDV, Command::Endv, LEVEL_ONE);
 
     set_frozen_text(st, FROZEN_DONT_EXPAND, "notexpanded:")?;
-    st.eqtb.set_eq_type(FROZEN_DONT_EXPAND, Cmd::DontExpand);
+    st.eqtb
+        .set_meaning(FROZEN_DONT_EXPAND, Command::DontExpand, LEVEL_ZERO);
 
     set_frozen_text(st, FROZEN_PRIMITIVE, "primitive")?;
-    st.eqtb
-        .set_eq(FROZEN_PRIMITIVE, Cmd::IgnoreSpaces, 1, LEVEL_ONE);
+    st.eqtb.set_meaning(
+        FROZEN_PRIMITIVE,
+        Command::IgnoreSpaces { primitive: true },
+        LEVEL_ONE,
+    );
 
     set_frozen_text(st, FROZEN_PROTECTION, "inaccessible")?;
 
     set_frozen_text(st, END_WRITE, "endwrite")?;
     st.eqtb
-        .set_eq(END_WRITE, Cmd::OuterCall, TEX_NULL, LEVEL_ONE);
+        .set_meaning(END_WRITE, Command::OuterCall(TokenList::NULL), LEVEL_ONE);
 
     st.eqtb.no_new_control_sequence = true;
     Ok(())
@@ -693,16 +689,7 @@ pub(crate) fn initialize_engine(
         st.mem.data = zeroed_vec(crate::mem::RESERVED_WORDS);
         st.mem.free = crate::mem::FreeLists::default();
 
-        st.eqtb.eqtb_top = EQTB_SIZE + st.eqtb.hash_extra;
-        st.eqtb.hash_top = if st.eqtb.hash_extra == 0 {
-            UNDEFINED_CONTROL_SEQUENCE
-        } else {
-            st.eqtb.eqtb_top
-        };
-        st.eqtb.hash = zeroed_vec((1 + st.eqtb.hash_top.raw() - HASH_OFFSET) as usize);
-        st.eqtb.hash_used = st.eqtb.hash_top;
-
-        st.eqtb.data = zeroed_vec(st.eqtb.eqtb_top.index() + 1);
+        st.eqtb.alloc_tables();
         st.strings.str_start = vec![PoolPos::ZERO; st.strings.max_strings.slot() + 1];
         st.strings.str_pool = vec![0; st.strings.pool_size.index() + 1];
         st.fonts.font_info = zeroed_vec(st.fonts.font_mem_size.index() + 1);
@@ -730,7 +717,7 @@ pub(crate) fn initialize_engine(
     if st.input.buf_size.raw() > MAX_HALFWORD {
         bad = 18;
     }
-    if CS_TOKEN_FLAG + EQTB_SIZE.raw() + st.eqtb.hash_extra > MAX_HALFWORD {
+    if CS_TOKEN_FLAG + UNDEFINED_CONTROL_SEQUENCE.raw() + st.eqtb.hash_extra > MAX_HALFWORD {
         bad = 21;
     }
     if bad > 0 {
@@ -785,7 +772,7 @@ pub(crate) fn initialize_engine(
     st.fonts.gave_char_warning_help = false;
 
     st.scanner.scanner_status = ScannerStatus::Normal;
-    st.scanner.warning_index = EqtbPtr::NONE;
+    st.scanner.warning_index = CsId::NONE;
     st.input.first = BufPos::from_raw(1);
     st.input.cur_input.state = NEW_LINE;
     st.input.cur_input.start = BufPos::from_raw(1);

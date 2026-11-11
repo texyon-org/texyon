@@ -176,8 +176,7 @@ fn digest_eqtb(st: &EngineState) -> u64 {
         eqtb.prim_used.raw(),
         eqtb.cs_count,
         eqtb.hash_extra,
-        eqtb.eqtb_top.raw(),
-        eqtb.hash_top.raw(),
+        eqtb.cs_top.raw(),
     ]);
     h.word(u64::from(eqtb.no_new_control_sequence));
     for &word in &eqtb.data {

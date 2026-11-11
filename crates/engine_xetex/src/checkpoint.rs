@@ -20,6 +20,8 @@ struct EngineDelta {
     mem: WordDelta<u32>,
     tokens: crate::token::TokenDelta,
     glue: WordDelta<GlueSpec>,
+    meanings: WordDelta<crate::command::Command>,
+    cs_levels: WordDelta<u16>,
     eqtb: WordDelta<MemoryWord>,
     xeq: PlainDelta<u16>,
     hash: PlainDelta<B32x2>,
@@ -39,6 +41,8 @@ impl EngineDelta {
             mem: st.mem.journal.seal(&st.mem.data),
             tokens: st.mem.tokens.seal_journal(),
             glue: st.mem.glue.seal_journal(),
+            meanings: st.eqtb.journal.meanings.seal(&st.eqtb.meanings),
+            cs_levels: st.eqtb.journal.cs_levels.seal(&st.eqtb.cs_levels),
             eqtb: st.eqtb.journal.words.seal(&st.eqtb.data),
             xeq: st.eqtb.journal.xeq.seal(),
             hash: st.eqtb.journal.hash.seal(),
@@ -54,6 +58,8 @@ impl EngineDelta {
             mem: st.mem.journal.snapshot(),
             tokens: st.mem.tokens.snapshot_journal(),
             glue: st.mem.glue.journal.snapshot(),
+            meanings: st.eqtb.journal.meanings.snapshot(),
+            cs_levels: st.eqtb.journal.cs_levels.snapshot(),
             eqtb: st.eqtb.journal.words.snapshot(),
             xeq: st.eqtb.journal.xeq.snapshot(),
             hash: st.eqtb.journal.hash.snapshot(),
@@ -66,6 +72,8 @@ impl EngineDelta {
         self.mem.apply_to(&mut st.mem.data);
         st.mem.tokens.apply(&self.tokens);
         self.glue.apply_to(st.mem.glue.specs_mut());
+        self.meanings.apply_to(&mut st.eqtb.meanings);
+        self.cs_levels.apply_to(&mut st.eqtb.cs_levels);
         self.eqtb.apply_to(&mut st.eqtb.data);
         self.xeq.apply_to(&mut st.eqtb.xeq_level);
         self.hash.apply_to(&mut st.eqtb.hash);
@@ -77,6 +85,8 @@ impl EngineDelta {
         self.mem.compose_with_older(older.mem);
         self.tokens.compose_with_older(older.tokens);
         self.glue.compose_with_older(older.glue);
+        self.meanings.compose_with_older(older.meanings);
+        self.cs_levels.compose_with_older(older.cs_levels);
         self.eqtb.compose_with_older(older.eqtb);
         self.xeq.compose_with_older(older.xeq);
         self.hash.compose_with_older(older.hash);
@@ -89,6 +99,8 @@ impl EngineDelta {
         self.mem.compact();
         self.tokens.compact();
         self.glue.compact();
+        self.meanings.compact();
+        self.cs_levels.compact();
         self.eqtb.compact();
         self.xeq.compact();
         self.hash.compact();
@@ -100,6 +112,8 @@ impl EngineDelta {
         self.mem.allocated_bytes()
             + self.tokens.allocated_bytes()
             + self.glue.allocated_bytes()
+            + self.meanings.allocated_bytes()
+            + self.cs_levels.allocated_bytes()
             + self.eqtb.allocated_bytes()
             + self.xeq.allocated_bytes()
             + self.hash.allocated_bytes()
@@ -647,6 +661,7 @@ fn drop_planned_rung(plan: &mut Vec<PlannedRung>, index: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::command::Command;
     use crate::units::MemPtr;
 
     #[derive(Clone, Copy)]
@@ -674,11 +689,15 @@ mod tests {
         word.b32().s1
     }
 
+    const CS: crate::units::CsId = crate::units::CsId::from_raw(2);
+
     fn state() -> EngineState {
         let mut st = EngineState::default();
         st.mem.data = crate::mem_types::zeroed_vec(8);
         st.eqtb.data = crate::mem_types::zeroed_vec(4);
         st.eqtb.hash = vec![B32x2 { s0: 0, s1: 0 }; 1];
+        st.eqtb.meanings = vec![Command::UndefinedCs; 4];
+        st.eqtb.cs_levels = vec![0; 4];
         st.fonts.font_info = crate::mem_types::zeroed_vec(4);
         crate::journal::arm(&mut st);
         st
@@ -690,14 +709,16 @@ mod tests {
         let mut ladder = CheckpointLadder::new(bundle(&st), 0);
 
         st.mem.set_word(1, 10);
-        st.eqtb.set_equiv(crate::units::EqtbPtr::from_raw(1), 11);
+        st.eqtb.set_equiv(crate::consts::GLUE_BASE + 1, 11);
+        st.eqtb.set_meaning(CS, Command::Halign, 2);
         st.mem.free.0[2] = MemPtr::from_raw(12);
         let rung = bundle(&st);
         ladder.push(&mut st, rung, 1, true, false);
 
         st.mem.set_word(1, 20);
         st.mem.set_word(3, 21);
-        st.eqtb.set_equiv(crate::units::EqtbPtr::from_raw(1), 22);
+        st.eqtb.set_equiv(crate::consts::GLUE_BASE + 1, 22);
+        st.eqtb.set_meaning(CS, Command::Vrule, 3);
         st.fonts.fmem_ptr = crate::units::FontInfoIdx::from_raw(2);
         let rung = bundle(&st);
         ladder.push(&mut st, rung, 2, true, false);
@@ -710,6 +731,10 @@ mod tests {
         assert_eq!(st.mem.word(3), 0);
         assert_eq!(st.mem.word(4), 0);
         assert_eq!(value(st.eqtb.data[1]), 11);
+        assert_eq!(
+            (st.eqtb.meaning(CS), st.eqtb.cs_level(CS)),
+            (Command::Halign, 2)
+        );
         assert_eq!(st.mem.free.0[2], MemPtr::from_raw(12));
         assert_eq!(st.fonts.fmem_ptr, crate::units::FontInfoIdx::from_raw(0));
         assert_eq!(ladder.len(), 2);

@@ -3,7 +3,7 @@
 use crate::cmd::Cmd;
 use crate::codes::{ScannerStatus, ValueLevel};
 use crate::command::Command;
-use crate::command::TabMark;
+use crate::command::TabMarkCode;
 use crate::consts::{FROZEN_END_TEMPLATE, HMODE, IGNORE_DEPTH, MAX_DIMEN, MMODE, VMODE};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
@@ -477,7 +477,7 @@ fn get_x_non_blank_or_protected(st: &mut EngineState) -> Result<(), Abort> {
 fn get_preamble_token(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         crate::scan::get_token(st)?;
-        while st.scanner.try_command() == Some(Command::TabMark(TabMark::Span)) {
+        while st.scanner.try_command() == Some(Command::TabMark(TabMarkCode::SPAN)) {
             crate::scan::get_token(st)?;
             if st.scanner.cur_cmd > Cmd::MAX_COMMAND {
                 crate::expand::expand(st)?;

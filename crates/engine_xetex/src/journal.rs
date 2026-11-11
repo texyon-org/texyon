@@ -39,7 +39,26 @@ impl<T: Copy> Default for WordJournal<T> {
     }
 }
 
-impl<T: Pod> WordJournal<T> {
+/// A journaled word that `seal` can compare with its pre-image.
+pub(crate) trait JournalWord: Copy {
+    fn same(&self, other: &Self) -> bool;
+}
+
+impl<T: Pod> JournalWord for T {
+    #[inline]
+    fn same(&self, other: &Self) -> bool {
+        bytemuck::bytes_of(self) == bytemuck::bytes_of(other)
+    }
+}
+
+impl JournalWord for crate::command::Command {
+    #[inline]
+    fn same(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
+impl<T: JournalWord> WordJournal<T> {
     #[inline(always)]
     pub(crate) fn armed(&self) -> bool {
         self.armed
@@ -117,7 +136,7 @@ impl<T: Pod> WordJournal<T> {
         }
         self.entries.retain(|e| {
             let old = e.old;
-            bytemuck::bytes_of(&data[e.idx as usize]) != bytemuck::bytes_of(&old)
+            !data[e.idx as usize].same(&old)
         });
         self.rebase(data.len());
         WordDelta {
@@ -327,6 +346,8 @@ fn first_sighting(seen: &mut Vec<u64>, index: u32) -> bool {
 
 #[derive(Default)]
 pub(crate) struct EqtbJournal {
+    pub(crate) meanings: WordJournal<crate::command::Command>,
+    pub(crate) cs_levels: WordJournal<u16>,
     pub(crate) words: WordJournal<MemoryWord>,
     pub(crate) xeq: PlainTrail<u16>,
     pub(crate) hash: PlainTrail<crate::mem_types::B32x2>,
@@ -335,6 +356,8 @@ pub(crate) struct EqtbJournal {
 
 impl EqtbJournal {
     fn disarm(&mut self) {
+        self.meanings.disarm();
+        self.cs_levels.disarm();
         self.words.disarm();
         self.xeq.disarm();
         self.hash.disarm();
@@ -346,6 +369,8 @@ pub(crate) fn arm(st: &mut crate::state::EngineState) {
     st.mem.journal.arm(st.mem.data.len());
     st.mem.tokens.arm_journal();
     st.mem.glue.journal.arm(st.mem.glue.specs().len());
+    st.eqtb.journal.meanings.arm(st.eqtb.meanings.len());
+    st.eqtb.journal.cs_levels.arm(st.eqtb.cs_levels.len());
     st.eqtb.journal.words.arm(st.eqtb.data.len());
     st.eqtb.journal.xeq.arm();
     st.eqtb.journal.hash.arm();
@@ -599,22 +624,34 @@ mod tests {
 
     #[test]
     fn eqtb_and_font_setters_capture_preimages() {
+        use crate::command::Command;
+        let cs = crate::consts::HASH_BASE;
         let mut eqtb = crate::state::EqtbState {
             data: vec![word(0); 2],
             hash: vec![B32x2 { s0: 0, s1: 0 }; 1],
+            meanings: vec![Command::UndefinedCs; cs.index() + 1],
+            cs_levels: vec![0; cs.index() + 1],
             ..Default::default()
         };
         eqtb.journal.words.arm(eqtb.data.len());
         eqtb.journal.hash.arm();
-        eqtb.set_equiv(crate::units::EqtbPtr::from_raw(1), 5);
-        eqtb.set_text(
-            crate::units::EqtbPtr::from_raw(514),
-            crate::units::StrNumber::from_raw(6),
-        );
+        eqtb.journal.meanings.arm(eqtb.meanings.len());
+        eqtb.journal.cs_levels.arm(eqtb.cs_levels.len());
+        eqtb.set_equiv(crate::consts::GLUE_BASE + 1, 5);
+        eqtb.set_text(cs, crate::units::StrNumber::from_raw(6));
+        eqtb.set_meaning(cs, Command::Halign, 3);
         eqtb.journal.words.seal(&eqtb.data).apply_to(&mut eqtb.data);
         eqtb.journal.hash.seal().apply_to(&mut eqtb.hash);
+        let meanings = eqtb.journal.meanings.seal(&eqtb.meanings);
+        meanings.apply_to(&mut eqtb.meanings);
+        let levels = eqtb.journal.cs_levels.seal(&eqtb.cs_levels);
+        levels.apply_to(&mut eqtb.cs_levels);
         assert_eq!(bits(eqtb.data[1]), 0);
         assert_eq!(eqtb.hash[0].s1, 0);
+        assert_eq!(
+            (eqtb.meaning(cs), eqtb.cs_level(cs)),
+            (Command::UndefinedCs, 0)
+        );
 
         let mut fonts = crate::state::FontState {
             font_info: vec![word(0); 3],

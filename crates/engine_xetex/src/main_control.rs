@@ -15,6 +15,7 @@ use crate::node::GlueKind;
 use crate::params::{GluePar, IntPar, TokPar};
 use crate::state::{EngineState, GroupCode};
 use crate::token::Token;
+use crate::units::CsId;
 use crate::units::NodeType;
 use crate::units::{EqtbPtr, MemPtr, Scaled};
 
@@ -186,12 +187,12 @@ pub(crate) fn main_control_ignore_spaces(
 
         if let Some(prim) = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)? {
             let p = prim.eqtb_loc();
-            st.scanner.cur_cmd = st.eqtb.eq_type(p);
-            st.scanner.cur_chr = st.eqtb.equiv(p);
+            st.scanner.cur_cmd = st.eqtb.meaning(p).cmd();
+            st.scanner.cur_chr = st.eqtb.meaning(p).encode().1;
             st.scanner.cur_cs = p;
             st.scanner.cur_tok = Token::from_cs(p);
         } else {
-            st.scanner.cur_cs = EqtbPtr::NONE;
+            st.scanner.cur_cs = CsId::NONE;
         }
     }
     Ok(())

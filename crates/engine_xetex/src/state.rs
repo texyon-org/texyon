@@ -6,7 +6,7 @@ use crate::errors::OrConfusion;
 use crate::glue_store::GlueSpecId;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::units::{
-    BufPos, EqtbPtr, FontId, FontInfoIdx, PoolPos, PrimNum, SavePtr, Scaled, StrNumber,
+    BufPos, CsId, EqtbPtr, FontId, FontInfoIdx, PoolPos, PrimNum, SavePtr, Scaled, StrNumber,
 };
 
 #[derive(Default)]
@@ -206,7 +206,7 @@ pub(crate) enum InputName {
     /// A file opened by `\input`, by the name it was found under.
     File(StrNumber),
     /// A macro's token list: the control sequence being expanded.
-    Macro(EqtbPtr),
+    Macro(CsId),
 }
 
 impl InputName {
@@ -299,7 +299,7 @@ pub(crate) struct InputClusterState {
     pub max_in_open: usize,
     /// The level `show_context` and its relatives are looking at.
     pub base_ptr: usize,
-    pub par_loc: crate::units::EqtbPtr,
+    pub par_loc: CsId,
     pub par_token: crate::token::Token,
     pub force_eof: bool,
     pub first: BufPos,
@@ -310,18 +310,24 @@ pub(crate) struct InputClusterState {
 }
 
 pub(crate) struct EqtbState {
-    pub hash_used: EqtbPtr,
+    pub hash_used: CsId,
     pub hash_high: i32,
     pub no_new_control_sequence: bool,
     pub prim_used: PrimNum,
     pub cs_count: i32,
+    /// The meaning of each control sequence.
+    pub meanings: Vec<crate::command::Command>,
+    /// The level each meaning was defined at.
+    pub cs_levels: Vec<u16>,
+    /// The entries from `GLUE_BASE` on.
     pub data: Vec<crate::mem_types::MemoryWord>,
     pub prim: Vec<crate::mem_types::B32x2>,
     pub xeq_level: Vec<u16>,
+    /// The `next` and `text` of each control sequence from `HASH_BASE` on.
     pub hash: Vec<crate::mem_types::B32x2>,
     pub hash_extra: i32,
-    pub eqtb_top: crate::units::EqtbPtr,
-    pub hash_top: crate::units::EqtbPtr,
+    /// The last control sequence, past the extra hash entries.
+    pub cs_top: CsId,
     pub journal: crate::journal::EqtbJournal,
     pub pgfmath: crate::pgfmath::KnownCs,
 }
@@ -329,23 +335,68 @@ pub(crate) struct EqtbState {
 impl Default for EqtbState {
     fn default() -> Self {
         EqtbState {
-            hash_used: EqtbPtr::NONE,
+            hash_used: CsId::NONE,
             hash_high: 0,
             no_new_control_sequence: false,
             prim_used: PrimNum::UNDEFINED,
             cs_count: 0,
+            meanings: Vec::new(),
+            cs_levels: Vec::new(),
             data: Vec::new(),
             // PRIM_SIZE + 1 = 2101.
             prim: vec![crate::mem_types::B32x2 { s0: 0, s1: 0 }; 2101],
             xeq_level: vec![0u16; crate::consts::XEQ_LEVEL_SIZE],
             hash: Vec::new(),
             hash_extra: 0,
-            eqtb_top: EqtbPtr::NONE,
-            hash_top: EqtbPtr::NONE,
+            cs_top: CsId::NONE,
             journal: crate::journal::EqtbJournal::default(),
             pgfmath: crate::pgfmath::KnownCs::default(),
         }
     }
+}
+
+impl EqtbState {
+    /// Sizes the tables for `hash_extra` extra names, every control sequence undefined.
+    pub(crate) fn alloc_tables(&mut self) {
+        use crate::consts::{EQTB_SIZE, UNDEFINED_CONTROL_SEQUENCE};
+        self.cs_top = UNDEFINED_CONTROL_SEQUENCE + self.hash_extra;
+        let cs = self.cs_top.index() + 1;
+        self.meanings = vec![crate::command::Command::UndefinedCs; cs];
+        self.cs_levels = vec![crate::consts::LEVEL_ZERO; cs];
+        self.hash = crate::mem_types::zeroed_vec(crate::hash::hash_slot(self.cs_top) + 1);
+        self.data = crate::mem_types::zeroed_vec(data_slot(EQTB_SIZE) + 1);
+    }
+
+    /// An entry of the glue, token, box and code regions.
+    pub(crate) fn entry(eq_type: Cmd, equiv: i32, level: u16) -> crate::mem_types::MemoryWord {
+        let mut w = crate::mem_types::MemoryWord {
+            b32: crate::mem_types::B32x2 { s0: 0, s1: equiv },
+        };
+        w.b16.s0 = level;
+        w.b16.s1 = eq_type.into();
+        w
+    }
+
+    /// A meaning and its level in the word layout of formats and the save stack.
+    pub(crate) fn cs_entry(m: crate::command::Command, level: u16) -> crate::mem_types::MemoryWord {
+        let (cmd, chr) = m.encode();
+        EqtbState::entry(cmd, chr, level)
+    }
+
+    /// The meaning and level a [`cs_entry`](Self::cs_entry) word holds, `None` if it holds none.
+    pub(crate) fn from_cs_entry(
+        w: crate::mem_types::MemoryWord,
+    ) -> Option<(crate::command::Command, u16)> {
+        let b = w.b16();
+        let cmd = Cmd::from_raw(i32::from(b.s1))?;
+        Some((crate::command::Command::decode(cmd, w.b32().s1)?, b.s0))
+    }
+}
+
+/// The index of `p` in `EqtbState::data`.
+#[inline(always)]
+pub(crate) fn data_slot(p: EqtbPtr) -> usize {
+    usize::try_from(p - crate::consts::GLUE_BASE).unwrap_or(usize::MAX)
 }
 
 impl EqtbState {
@@ -356,48 +407,75 @@ impl EqtbState {
         }
     }
 
+    /// The meaning of control sequence `cs`.
+    #[inline(always)]
+    pub(crate) fn meaning(&self, cs: CsId) -> crate::command::Command {
+        self.meanings[cs.index()]
+    }
+
+    /// The level `cs`'s meaning was defined at.
+    #[inline]
+    pub(crate) fn cs_level(&self, cs: CsId) -> u16 {
+        self.cs_levels[cs.index()]
+    }
+
+    /// Gives `cs` the meaning `m` at level `level`.
+    #[inline]
+    pub(crate) fn set_meaning(&mut self, cs: CsId, m: crate::command::Command, level: u16) {
+        let i = cs.index();
+        if self.journal.meanings.armed() {
+            self.journal.meanings.note(i, self.meanings[i]);
+            self.journal.cs_levels.note(i, self.cs_levels[i]);
+        }
+        self.meanings[i] = m;
+        self.cs_levels[i] = level;
+    }
+
     #[inline]
     fn b32s1(&self, p: EqtbPtr) -> i32 {
-        self.data[p.index()].b32().s1
+        self.data[data_slot(p)].b32().s1
     }
 
     #[inline]
     fn set_b32s1(&mut self, p: EqtbPtr, v: i32) {
-        let index = p.index();
+        let index = data_slot(p);
         self.note(index);
         self.data[index].b32.s1 = v;
     }
 
     #[inline]
     pub fn set_word(&mut self, p: EqtbPtr, value: crate::mem_types::MemoryWord) {
-        let index = p.index();
+        let index = data_slot(p);
         self.note(index);
         self.data[index] = value;
     }
 
     #[inline]
-    pub fn hash_s0(&self, p: EqtbPtr) -> EqtbPtr {
-        EqtbPtr::from_raw(self.hash[crate::hash::hash_slot(p) as usize].s0)
+    pub fn hash_s0(&self, p: CsId) -> CsId {
+        CsId::from_raw(self.hash[crate::hash::hash_slot(p)].s0)
     }
 
     #[inline]
-    pub fn set_hash_s0(&mut self, p: EqtbPtr, v: EqtbPtr) {
-        let index = crate::hash::hash_slot(p) as usize;
+    pub fn set_hash_s0(&mut self, p: CsId, v: CsId) {
+        let index = crate::hash::hash_slot(p);
         if self.journal.hash.armed() {
             self.journal.hash.note(index, self.hash[index]);
         }
         self.hash[index].s0 = v.raw();
     }
 
-    /// The name of control sequence `p`, `text(p)`.
+    /// The name of control sequence `p`, `text(p)`, none below `HASH_BASE`.
     #[inline]
-    pub fn text(&self, p: EqtbPtr) -> StrNumber {
-        StrNumber::from_raw(self.hash[crate::hash::hash_slot(p) as usize].s1)
+    pub fn text(&self, p: CsId) -> StrNumber {
+        usize::try_from(p - crate::consts::HASH_BASE)
+            .ok()
+            .and_then(|i| self.hash.get(i))
+            .map_or(StrNumber::NONE, |h| StrNumber::from_raw(h.s1))
     }
 
     #[inline]
-    pub fn set_text(&mut self, p: EqtbPtr, s: StrNumber) {
-        let index = crate::hash::hash_slot(p) as usize;
+    pub fn set_text(&mut self, p: CsId, s: StrNumber) {
+        let index = crate::hash::hash_slot(p);
         if self.journal.hash.armed() {
             self.journal.hash.note(index, self.hash[index]);
         }
@@ -438,18 +516,18 @@ impl EqtbState {
 
     #[inline]
     pub fn word(&self, p: EqtbPtr) -> crate::mem_types::MemoryWord {
-        self.data[p.index()]
+        self.data[data_slot(p)]
     }
 
     #[inline]
     fn b16s1(&self, p: EqtbPtr) -> u16 {
-        self.data[p.index()].b16().s1
+        self.data[data_slot(p)].b16().s1
     }
 
     /// The low half of `equiv`.
     #[inline]
     fn b16s2(&self, p: EqtbPtr) -> u16 {
-        self.data[p.index()].b16().s2
+        self.data[data_slot(p)].b16().s2
     }
 
     /// The command code of control-sequence entry `p`.
@@ -477,11 +555,6 @@ impl EqtbState {
     #[inline]
     pub(crate) fn equiv_ptr(&self, p: EqtbPtr) -> crate::units::MemPtr {
         crate::units::MemPtr::from_raw(self.equiv(p))
-    }
-    /// `equiv(p)` of an entry that holds an `eqtb` location, as a `\countdef` does.
-    #[inline]
-    pub(crate) fn equiv_loc(&self, p: EqtbPtr) -> EqtbPtr {
-        EqtbPtr::from_raw(self.equiv(p))
     }
     /// `equiv(p)` of a macro or token-list entry.
     #[inline]
@@ -587,19 +660,19 @@ impl EqtbState {
 
     #[inline]
     fn set_b16s1(&mut self, p: EqtbPtr, v: u16) {
-        let index = p.index();
+        let index = data_slot(p);
         self.note(index);
         self.data[index].b16.s1 = v;
     }
 
     #[inline]
     fn b16s0(&self, p: EqtbPtr) -> u16 {
-        self.data[p.index()].b16().s0
+        self.data[data_slot(p)].b16().s0
     }
 
     #[inline]
     fn set_b16s0(&mut self, p: EqtbPtr, v: u16) {
-        let index = p.index();
+        let index = data_slot(p);
         self.note(index);
         self.data[index].b16.s0 = v;
     }
@@ -795,6 +868,10 @@ crate::codes::code_enum! {
         InsertToken = 2,
         LevelBoundary = 3,
         RestoreSa = 4,
+        /// A control sequence's meaning, saved in the word below.
+        RestoreCs = 5,
+        /// A control sequence that was undefined at level zero.
+        RestoreCsZero = 6,
     }
 }
 
@@ -1009,14 +1086,14 @@ pub(crate) struct ScannerState {
     pub is_in_csname: bool,
     pub used_tectonic_coda_tokens: bool,
     pub scanner_status: crate::codes::ScannerStatus,
-    pub warning_index: EqtbPtr,
+    pub warning_index: CsId,
     pub def_ref: crate::token::TokenList,
     pub long_state: Cmd,
     pub align_state: i32,
     pub expand_depth: i32,
     pub cur_cmd: Cmd,
     pub cur_chr: i32,
-    pub cur_cs: crate::units::EqtbPtr,
+    pub cur_cs: CsId,
     pub cur_tok: crate::token::Token,
     pub cur_mark: CurMarks,
     pub disc_ptr: [crate::units::MemPtr; 4],
@@ -1313,7 +1390,7 @@ pub(crate) struct ShipoutState {
     pub cur_page_height: Scaled,
     pub cur_h_offset: Scaled,
     pub cur_v_offset: Scaled,
-    pub write_loc: crate::units::EqtbPtr,
+    pub write_loc: CsId,
     pub output_file_name: StrNumber,
     /// The vertical and horizontal DVI movements of the page so far, TeX's `down_ptr` and
     /// `right_ptr` lists, the latest last.
@@ -1675,12 +1752,6 @@ impl ScannerState {
     #[inline]
     pub(crate) fn cur_chr_tokens(&self) -> crate::token::TokenList {
         crate::token::TokenList::from_raw(self.cur_chr)
-    }
-
-    /// `cur_chr` as the pointer a macro or register command carries.
-    #[inline]
-    pub(crate) fn cur_chr_ptr(&self) -> crate::units::MemPtr {
-        crate::units::MemPtr::from_raw(self.cur_chr)
     }
 
     /// Grows `native_text` until `extra` more units fit.

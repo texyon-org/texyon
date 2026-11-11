@@ -1,5 +1,6 @@
 //! Non-journaled state carried by a checkpoint rung.
 
+use crate::units::CsId;
 use std::mem::{size_of, take};
 use std::sync::Arc;
 
@@ -13,9 +14,7 @@ use crate::state::{
     SaveStackState, ScannerState, ShipoutState, StringsState, SynctexCtxt, TexmfState,
 };
 use crate::sync_index::PreviewSyncIndex;
-use crate::units::{
-    BufPos, EqtbPtr, FontId, FontInfoIdx, MemPtr, PoolPos, SavePtr, Scaled, StrNumber,
-};
+use crate::units::{BufPos, FontId, FontInfoIdx, MemPtr, PoolPos, SavePtr, Scaled, StrNumber};
 
 fn vec_bytes<T>(values: &Vec<T>) -> usize {
     values.capacity() * size_of::<T>()
@@ -223,14 +222,13 @@ impl MemBundle {
 }
 
 struct EqtbBundle {
-    hash_used: EqtbPtr,
+    hash_used: CsId,
     hash_high: i32,
     no_new_control_sequence: bool,
     prim_used: crate::units::PrimNum,
     cs_count: i32,
     hash_extra: i32,
-    eqtb_top: EqtbPtr,
-    hash_top: EqtbPtr,
+    cs_top: CsId,
     pgfmath: crate::pgfmath::KnownCs,
 }
 
@@ -242,13 +240,14 @@ impl EqtbBundle {
             no_new_control_sequence,
             prim_used,
             cs_count,
+            meanings: _,
+            cs_levels: _,
             data: _,
             prim: _,
             xeq_level: _,
             hash: _,
             hash_extra,
-            eqtb_top,
-            hash_top,
+            cs_top,
             journal: _,
             pgfmath,
         } = src;
@@ -259,8 +258,7 @@ impl EqtbBundle {
             prim_used: *prim_used,
             cs_count: *cs_count,
             hash_extra: *hash_extra,
-            eqtb_top: *eqtb_top,
-            hash_top: *hash_top,
+            cs_top: *cs_top,
             pgfmath: *pgfmath,
         }
     }
@@ -272,8 +270,7 @@ impl EqtbBundle {
         dst.prim_used = self.prim_used;
         dst.cs_count = self.cs_count;
         dst.hash_extra = self.hash_extra;
-        dst.eqtb_top = self.eqtb_top;
-        dst.hash_top = self.hash_top;
+        dst.cs_top = self.cs_top;
         dst.pgfmath = self.pgfmath;
     }
 }
@@ -414,7 +411,7 @@ struct InputBundle {
     in_open: usize,
     pseudo_files: MemPtr,
     base_ptr: usize,
-    par_loc: EqtbPtr,
+    par_loc: CsId,
     par_token: crate::token::Token,
     force_eof: bool,
     first: BufPos,

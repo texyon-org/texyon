@@ -301,16 +301,114 @@ impl std::iter::Sum for Scaled {
     }
 }
 
-/// A location in `eqtb`: a control sequence, or a glue, token, box, code,
+/// A control sequence: an active character, a single-character name, a
+/// hashed name, a frozen or primitive entry, a font identifier, or an extra
+/// hashed name past them.
+#[derive(
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Debug,
+    Hash,
+    Default,
+    bytemuck::Pod,
+    bytemuck::Zeroable,
+)]
+#[repr(transparent)]
+pub struct CsId(i32);
+
+impl CsId {
+    /// `cur_cs` of a character token.
+    pub const NONE: CsId = CsId(0);
+
+    /// The value from its raw form in a memory word, file or FFI call.
+    #[inline(always)]
+    pub const fn from_raw(raw: i32) -> CsId {
+        CsId(raw)
+    }
+
+    /// The raw form for a memory word, file or FFI call.
+    #[inline(always)]
+    pub const fn raw(self) -> i32 {
+        self.0
+    }
+
+    /// The location `n` entries past `self`, usable in constants.
+    #[inline(always)]
+    pub const fn plus(self, n: i32) -> CsId {
+        CsId(self.0 + n)
+    }
+
+    #[inline(always)]
+    pub fn index(self) -> usize {
+        self.0 as usize
+    }
+
+    #[inline(always)]
+    pub fn is_none(self) -> bool {
+        self.0 == 0
+    }
+
+    /// The control sequences from `self` up to but not including `end`.
+    pub fn until(self, end: CsId) -> impl DoubleEndedIterator<Item = CsId> {
+        (self.0..end.0).map(CsId)
+    }
+
+    /// The control sequences from `self` up to and including `end`.
+    pub fn through(self, end: CsId) -> impl DoubleEndedIterator<Item = CsId> {
+        (self.0..=end.0).map(CsId)
+    }
+}
+
+impl std::ops::Add<i32> for CsId {
+    type Output = CsId;
+    #[inline(always)]
+    fn add(self, rhs: i32) -> CsId {
+        CsId(self.0 + rhs)
+    }
+}
+
+impl std::ops::Sub<i32> for CsId {
+    type Output = CsId;
+    #[inline(always)]
+    fn sub(self, rhs: i32) -> CsId {
+        CsId(self.0 - rhs)
+    }
+}
+
+impl std::ops::AddAssign<i32> for CsId {
+    #[inline(always)]
+    fn add_assign(&mut self, rhs: i32) {
+        self.0 += rhs;
+    }
+}
+
+impl std::ops::SubAssign<i32> for CsId {
+    #[inline(always)]
+    fn sub_assign(&mut self, rhs: i32) {
+        self.0 -= rhs;
+    }
+}
+
+/// The number of entries from `rhs` to `self`.
+impl std::ops::Sub for CsId {
+    type Output = i32;
+    #[inline(always)]
+    fn sub(self, rhs: CsId) -> i32 {
+        self.0 - rhs.0
+    }
+}
+
+/// A location in `eqtb` past the control sequences: a glue, token, box, code,
 /// integer or dimension entry.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 #[repr(transparent)]
 pub struct EqtbPtr(i32);
 
 impl EqtbPtr {
-    /// `cur_cs` of a character token.
-    pub const NONE: EqtbPtr = EqtbPtr(0);
-
     /// The value from its raw form in a memory word, file or FFI call.
     #[inline(always)]
     pub const fn from_raw(raw: i32) -> EqtbPtr {
@@ -327,16 +425,6 @@ impl EqtbPtr {
     #[inline(always)]
     pub const fn plus(self, n: i32) -> EqtbPtr {
         EqtbPtr(self.0 + n)
-    }
-
-    #[inline(always)]
-    pub fn index(self) -> usize {
-        self.0 as usize
-    }
-
-    #[inline(always)]
-    pub fn is_none(self) -> bool {
-        self.0 == 0
     }
 
     /// The locations from `self` up to but not including `end`.
@@ -563,13 +651,13 @@ impl PrimNum {
 
     /// The frozen eqtb location holding this primitive's meaning.
     #[inline]
-    pub fn eqtb_loc(self) -> EqtbPtr {
+    pub fn eqtb_loc(self) -> CsId {
         crate::consts::PRIM_EQTB_BASE.plus(self.0)
     }
 
     /// The primitive whose meaning sits at frozen eqtb location `p`, if any.
     #[inline]
-    pub fn at_eqtb_loc(p: EqtbPtr) -> Option<PrimNum> {
+    pub fn at_eqtb_loc(p: CsId) -> Option<PrimNum> {
         (crate::consts::PRIM_EQTB_BASE..crate::consts::FROZEN_NULL_FONT)
             .contains(&p)
             .then(|| PrimNum(p - crate::consts::PRIM_EQTB_BASE))
@@ -767,7 +855,7 @@ impl FontId {
 
     /// The `eqtb` location of the font's identifier, `font_id_base + f`.
     #[inline]
-    pub fn id_loc(self) -> EqtbPtr {
+    pub fn id_loc(self) -> CsId {
         crate::consts::FONT_ID_BASE + self.raw()
     }
 

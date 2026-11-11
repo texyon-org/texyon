@@ -182,16 +182,6 @@ impl From<Cmd> for u16 {
 }
 
 impl Cmd {
-    /// The macro call command for a `\long` and/or `\outer` definition.
-    pub(crate) const fn call(long: bool, outer: bool) -> Cmd {
-        match (long, outer) {
-            (false, false) => Cmd::Call,
-            (true, false) => Cmd::LongCall,
-            (false, true) => Cmd::OuterCall,
-            (true, true) => Cmd::LongOuterCall,
-        }
-    }
-
     pub(crate) const fn is_long_call(self) -> bool {
         matches!(self, Cmd::LongCall | Cmd::LongOuterCall)
     }

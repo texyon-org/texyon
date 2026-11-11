@@ -2,17 +2,18 @@
 //! defines `\pgfmathresult` and is redirected to `\pgfmath@parse@end`, which takes
 //! the same argument. Results may differ from pgf's macros in the last digits.
 
+use crate::command::Command;
+use crate::command::RegisterRef;
 use std::collections::HashMap;
 
 use crate::cmd::Cmd;
 use crate::codes::ValueLevel;
 use crate::consts::HASH_BASE;
 use crate::errors::Abort;
-use crate::node::{NodePtr, SaElement};
 use crate::params::IntPar;
 use crate::state::EngineState;
 use crate::token::{Token, TokenList};
-use crate::units::{EqtbPtr, FontId, MemPtr};
+use crate::units::CsId;
 
 pub(crate) mod eval;
 
@@ -51,10 +52,10 @@ macro_rules! known_cs {
         const REQUIRED: usize = [$(Known::$req),*].len();
 
         impl KnownCs {
-            $(fn $req(&self) -> EqtbPtr {
+            $(fn $req(&self) -> CsId {
                 self.cs[Known::$req as usize]
             })*
-            $(fn $opt(&self) -> Option<EqtbPtr> {
+            $(fn $opt(&self) -> Option<CsId> {
                 Some(self.cs[Known::$opt as usize]).filter(|cs| !cs.is_none())
             })*
         }
@@ -95,15 +96,15 @@ known_cs! {
 /// not exist. On `EqtbState` and checkpointed with it, so it matches the hash.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct KnownCs {
-    cs: [EqtbPtr; KNOWN.len()],
-    natives: [EqtbPtr; NATIVES.len()],
+    cs: [CsId; KNOWN.len()],
+    natives: [CsId; NATIVES.len()],
 }
 
 impl Default for KnownCs {
     fn default() -> Self {
         KnownCs {
-            cs: [EqtbPtr::NONE; KNOWN.len()],
-            natives: [EqtbPtr::NONE; NATIVES.len()],
+            cs: [CsId::NONE; KNOWN.len()],
+            natives: [CsId::NONE; NATIVES.len()],
         }
     }
 }
@@ -114,7 +115,7 @@ fn same_name(name: &str, units: &[i32]) -> bool {
 
 impl KnownCs {
     /// Record `cs` if `name`, as UTF-32 units, is a known name.
-    pub(crate) fn note(&mut self, name: &[i32], cs: EqtbPtr) {
+    pub(crate) fn note(&mut self, name: &[i32], cs: CsId) {
         for (entry, known) in self.cs.iter_mut().zip(KNOWN) {
             if same_name(known, name) {
                 *entry = cs;
@@ -130,20 +131,20 @@ impl KnownCs {
     /// Look up every name, for a hash that did not go through `note`.
     pub(crate) fn resolve(st: &mut EngineState) {
         for (i, name) in KNOWN.iter().enumerate() {
-            st.eqtb.pgfmath.cs[i] = lookup(st, name).unwrap_or(EqtbPtr::NONE);
+            st.eqtb.pgfmath.cs[i] = lookup(st, name).unwrap_or(CsId::NONE);
         }
         for (i, (name, _)) in NATIVES.iter().enumerate() {
-            st.eqtb.pgfmath.natives[i] = lookup(st, name).unwrap_or(EqtbPtr::NONE);
+            st.eqtb.pgfmath.natives[i] = lookup(st, name).unwrap_or(CsId::NONE);
         }
     }
 
     #[inline(always)]
-    pub(crate) fn is_try(&self, cs: EqtbPtr) -> bool {
+    pub(crate) fn is_try(&self, cs: CsId) -> bool {
         !cs.is_none() && cs == self.try_hook()
     }
 
     #[inline(always)]
-    pub(crate) fn native(&self, cs: EqtbPtr) -> Option<Native> {
+    pub(crate) fn native(&self, cs: CsId) -> Option<Native> {
         let i = self.natives.iter().position(|&p| p == cs && !p.is_none())?;
         Some(NATIVES[i].1)
     }
@@ -153,7 +154,7 @@ impl KnownCs {
         self.cs[..REQUIRED].iter().all(|cs| !cs.is_none())
     }
 
-    fn nfss(&self) -> [EqtbPtr; 5] {
+    fn nfss(&self) -> [CsId; 5] {
         [
             self.f_encoding(),
             self.f_family(),
@@ -209,7 +210,7 @@ pub(crate) struct Diagnostics {
 /// Returns the control sequence `macro_call` should expand instead.
 #[cold]
 #[inline(never)]
-pub(crate) fn intercept(st: &mut EngineState) -> Option<EqtbPtr> {
+pub(crate) fn intercept(st: &mut EngineState) -> Option<CsId> {
     let mode = st.config.pgfmath;
     let known = st.eqtb.pgfmath;
     if !known.complete() {
@@ -218,9 +219,10 @@ pub(crate) fn intercept(st: &mut EngineState) -> Option<EqtbPtr> {
     let body = st.scanner.cur_chr;
     if mode == Mode::Check {
         if let Some(p) = st.pgfmath.pending.take() {
-            if body == st.eqtb.equiv(known.parse_end()) || body == st.eqtb.equiv(known.is_number())
+            if body == st.eqtb.meaning(known.parse_end()).encode().1
+                || body == st.eqtb.meaning(known.is_number()).encode().1
             {
-                let number = body == st.eqtb.equiv(known.is_number());
+                let number = body == st.eqtb.meaning(known.is_number()).encode().1;
                 let mut stats = std::mem::take(&mut st.pgfmath.stats);
                 compare(st, &known, &mut stats, &p, number);
                 st.pgfmath.stats = stats;
@@ -321,7 +323,7 @@ fn evaluate_parse(st: &mut EngineState, known: &KnownCs) -> Result<Answer, &'sta
         .inspect_err(|reason| trace(st, &tokens, reason))
 }
 
-fn lookup(st: &mut EngineState, name: &str) -> Option<EqtbPtr> {
+fn lookup(st: &mut EngineState, name: &str) -> Option<CsId> {
     let buffer: Vec<i32> = name.chars().map(|c| c as i32).collect();
     let saved = st.eqtb.no_new_control_sequence;
     st.eqtb.no_new_control_sequence = true;
@@ -333,7 +335,7 @@ fn lookup(st: &mut EngineState, name: &str) -> Option<EqtbPtr> {
     }
 }
 
-fn cs_name(st: &EngineState, cs: EqtbPtr) -> Option<String> {
+fn cs_name(st: &EngineState, cs: CsId) -> Option<String> {
     if cs < HASH_BASE {
         return None;
     }
@@ -344,23 +346,23 @@ fn cs_name(st: &EngineState, cs: EqtbPtr) -> Option<String> {
     crate::introspect::read_string(st, text)
 }
 
-fn macro_tokens(st: &EngineState, cs: EqtbPtr) -> Option<Vec<Token>> {
-    if !matches!(st.eqtb.eq_type(cs), Cmd::Call | Cmd::LongCall) {
+fn macro_tokens(st: &EngineState, cs: CsId) -> Option<Vec<Token>> {
+    let (Command::Call(body) | Command::LongCall(body)) = st.eqtb.meaning(cs) else {
         return None;
-    }
-    let mut tokens = st.mem.tokens.iter(st.eqtb.equiv_tokens(cs));
+    };
+    let mut tokens = st.mem.tokens.iter(body);
     if tokens.next() != Some(Token::END_MATCH) {
         return None;
     }
     Some(tokens.collect())
 }
 
-fn macro_text(st: &EngineState, cs: EqtbPtr) -> Option<Vec<u8>> {
+fn macro_text(st: &EngineState, cs: CsId) -> Option<Vec<u8>> {
     chars(&macro_tokens(st, cs)?)
 }
 
-fn same_meaning(st: &EngineState, a: EqtbPtr, b: EqtbPtr) -> bool {
-    st.eqtb.eq_type(a) == st.eqtb.eq_type(b) && st.eqtb.equiv(a) == st.eqtb.equiv(b)
+fn same_meaning(st: &EngineState, a: CsId, b: CsId) -> bool {
+    st.eqtb.meaning(a) == st.eqtb.meaning(b)
 }
 
 fn identifiers(items: &[(Item, bool)]) -> Vec<Vec<u8>> {
@@ -395,7 +397,7 @@ fn pseudo_constant(st: &mut EngineState, known: &KnownCs, name: &[u8]) -> Option
     }
     let function = lookup(st, &format!("pgfmath{name}@"))?;
     let body = macro_tokens(st, function)?;
-    let is = |t: &Token, cs: EqtbPtr| t.is_cs() && same_meaning(st, t.cs(), cs);
+    let is = |t: &Token, cs: CsId| t.is_cs() && same_meaning(st, t.cs(), cs);
     let result = |t: &Token| t.is_cs() && t.cs() == known.result();
     let char_is = |t: &Token, c: u8| !t.is_cs() && t.chr() == i32::from(c);
     let target = match body.as_slice() {
@@ -417,7 +419,7 @@ fn pseudo_constant(st: &mut EngineState, known: &KnownCs, name: &[u8]) -> Option
     expanded_text(st, target)
 }
 
-fn expanded_text(st: &EngineState, mut cs: EqtbPtr) -> Option<Vec<u8>> {
+fn expanded_text(st: &EngineState, mut cs: CsId) -> Option<Vec<u8>> {
     for _ in 0..8 {
         let tokens = macro_tokens(st, cs)?;
         match tokens.as_slice() {
@@ -428,7 +430,7 @@ fn expanded_text(st: &EngineState, mut cs: EqtbPtr) -> Option<Vec<u8>> {
     None
 }
 
-fn expression_tokens(st: &EngineState, expression: EqtbPtr) -> Result<Vec<Token>, &'static str> {
+fn expression_tokens(st: &EngineState, expression: CsId) -> Result<Vec<Token>, &'static str> {
     macro_tokens(st, expression).ok_or("expression is not a plain macro")
 }
 
@@ -505,16 +507,17 @@ fn expression_items(st: &EngineState, tokens: &[Token]) -> Result<Vec<(Item, boo
     Ok(items)
 }
 
-fn register_item(st: &EngineState, cs: EqtbPtr) -> Result<Item, &'static str> {
+fn register_item(st: &EngineState, cs: CsId) -> Result<Item, &'static str> {
     if cs < HASH_BASE {
         return Err("active or single-character control sequence");
     }
-    let m = st.eqtb.equiv(cs);
-    match st.eqtb.eq_type(cs) {
-        Cmd::AssignDimen => Ok(Item::Dimen(st.eqtb.int_at(st.eqtb.equiv_loc(cs)))),
-        Cmd::AssignInt => Ok(Item::Count(st.eqtb.int_at(st.eqtb.equiv_loc(cs)))),
-        Cmd::Register if ValueLevel::from_raw(m).is_none() => {
-            let sa = NodePtr::<SaElement>::at(MemPtr::from_raw(m));
+    match st.eqtb.meaning(cs) {
+        Command::AssignDimen(loc) => Ok(Item::Dimen(st.eqtb.int_at(loc))),
+        Command::AssignInt(loc) => Ok(Item::Count(st.eqtb.int_at(loc))),
+        Command::Register(r) => {
+            let RegisterRef::Sparse(sa) = r.get() else {
+                return Err("unsupported control sequence");
+            };
             match (sa.word(&st.mem), st.mem[sa].sa_type().get()) {
                 (Some(w), Some(ValueLevel::Int)) => Ok(Item::Count(st.mem[w].sa_int)),
                 (Some(w), Some(ValueLevel::Dimen)) => Ok(Item::Dimen(st.mem[w].sa_int)),
@@ -535,10 +538,9 @@ fn selected_font(st: &mut EngineState, known: &KnownCs) -> Option<eval::Font> {
         name.push_str(std::str::from_utf8(&macro_text(st, cs)?).ok()?);
     }
     let id = lookup(st, &name)?;
-    if st.eqtb.eq_type(id) != Cmd::SetFont {
+    let Command::SetFont(font) = st.eqtb.meaning(id) else {
         return None;
-    }
-    let font = FontId::try_from(st.eqtb.equiv(id)).ok()?;
+    };
     Some(eval::Font {
         quad: st.fonts.param(font, crate::fonts::QUAD_CODE).raw(),
         x_height: st.fonts.param(font, crate::fonts::X_HEIGHT_CODE).raw(),
@@ -563,29 +565,26 @@ fn result_macro(st: &mut EngineState, text: &[u8]) -> Result<TokenList, Abort> {
 fn commit(st: &mut EngineState, known: &KnownCs, answer: &Answer) -> Result<(), Abort> {
     let body = match answer {
         Answer::Expression => {
-            let shared = st.eqtb.equiv_tokens(known.expression());
+            let shared = st.eqtb.meaning(known.expression()).macro_body();
+            let shared = shared.ok_or(Abort::Confusion("pgfmath expression"))?;
             st.mem.tokens.add_ref(shared);
             shared
         }
         Answer::Parsed(outcome) => {
             if outcome.units {
-                let (t, e) = (
-                    st.eqtb.eq_type(known.if_true()),
-                    st.eqtb.equiv(known.if_true()),
-                );
+                let m = st.eqtb.meaning(known.if_true());
                 st.eqtb
-                    .geq_define(&mut st.mem, &mut st.scanner, known.units_declared(), t, e)?;
+                    .geq_define_cs(&mut st.mem, &mut st.scanner, known.units_declared(), m)?;
             }
             result_macro(st, &outcome.result)?
         }
     };
-    st.eqtb.eq_define(
+    st.eqtb.eq_define_cs(
         &mut st.save_stack,
         &mut st.mem,
         &mut st.scanner,
         known.result(),
-        Cmd::Call,
-        body.raw(),
+        Command::Call(body),
     )
 }
 
@@ -687,7 +686,7 @@ const NATIVES: &[(&str, Native)] = &[
 ];
 
 enum Effect {
-    Define { cs: EqtbPtr, text: Vec<u8> },
+    Define { cs: CsId, text: Vec<u8> },
     Comparison(bool),
 }
 
@@ -902,13 +901,12 @@ pub(crate) fn native_macro(st: &mut EngineState, kind: Native, args: &[TokenList
             match effect {
                 Effect::Define { cs, text } => {
                     let body = result_macro(st, &text)?;
-                    st.eqtb.eq_define(
+                    st.eqtb.eq_define_cs(
                         &mut st.save_stack,
                         &mut st.mem,
                         &mut st.scanner,
                         cs,
-                        Cmd::Call,
-                        body.raw(),
+                        Command::Call(body),
                     )?;
                 }
                 Effect::Comparison(value) => {
@@ -917,10 +915,10 @@ pub(crate) fn native_macro(st: &mut EngineState, kind: Native, args: &[TokenList
                     } else {
                         known.if_false()
                     };
-                    let (t, e) = (st.eqtb.eq_type(source), st.eqtb.equiv(source));
+                    let m = st.eqtb.meaning(source);
                     let flag = known.comparison().expect("comparison");
                     st.eqtb
-                        .geq_define(&mut st.mem, &mut st.scanner, flag, t, e)?;
+                        .geq_define_cs(&mut st.mem, &mut st.scanner, flag, m)?;
                 }
             }
         }

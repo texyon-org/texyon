@@ -255,8 +255,8 @@ fn scan_optional_space(st: &mut EngineState) -> Result<(), Abort> {
 pub(super) fn get_primitive_token(st: &mut EngineState) -> Result<(), Abort> {
     get_token(st)?;
     if let Some(p) = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)? {
-        st.scanner.cur_cmd = st.eqtb.eq_type(p.eqtb_loc());
-        st.scanner.cur_chr = st.eqtb.equiv(p.eqtb_loc());
+        st.scanner.cur_cmd = st.eqtb.meaning(p.eqtb_loc()).cmd();
+        st.scanner.cur_chr = st.eqtb.meaning(p.eqtb_loc()).encode().1;
         st.scanner.cur_cs = p.eqtb_loc();
         st.scanner.cur_tok = Token::from_cs(st.scanner.cur_cs);
     } else {

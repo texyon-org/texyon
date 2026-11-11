@@ -15,7 +15,8 @@ use crate::output::{
 };
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, FontState, MemState};
-use crate::units::{EqtbPtr, FontId, FontInfoIdx, Scaled, StrNumber};
+use crate::units::CsId;
+use crate::units::{FontId, FontInfoIdx, Scaled, StrNumber};
 
 use crate::bridge::{input_getc, FileFormat};
 use crate::errors::Abort;
@@ -505,14 +506,14 @@ fn read_scaled_word(handle: usize, z: i32, beta: i32, alpha: i32) -> Option<Scal
 /// "Font \cs=name at size", how a font loading error names the font.
 #[derive(Copy, Clone)]
 struct FontSpec {
-    cs: EqtbPtr,
+    cs: CsId,
     file: FileName,
     quote: Option<u8>,
     size: Scaled,
 }
 
 impl FontSpec {
-    fn new(cs: EqtbPtr, name: &ScannedName, size: Scaled) -> Self {
+    fn new(cs: CsId, name: &ScannedName, size: Scaled) -> Self {
         Self {
             cs,
             file: name.file,
@@ -542,7 +543,7 @@ impl TexPrint for FontSpec {
 
 pub(crate) fn read_font_info(
     st: &mut EngineState,
-    u: EqtbPtr,
+    u: CsId,
     name: &ScannedName,
     s: Scaled,
 ) -> Result<FontId, Abort> {
