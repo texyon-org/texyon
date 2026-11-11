@@ -261,9 +261,10 @@ pub(super) fn font_space_glue(st: &mut EngineState) -> Result<GlueSpecId, Abort>
         return Ok(glue);
     }
     let spec = st.mem.new_spec(ZERO_GLUE)?;
-    st.mem[spec].width = st.fonts.param(cf, SPACE_CODE);
-    st.mem[spec].stretch = st.fonts.param(cf, SPACE_STRETCH_CODE);
-    st.mem[spec].shrink = st.fonts.param(cf, SPACE_SHRINK_CODE);
+    let node = &mut st.mem[spec];
+    node.width = st.fonts.param(cf, SPACE_CODE);
+    node.stretch = st.fonts.param(cf, SPACE_STRETCH_CODE);
+    node.shrink = st.fonts.param(cf, SPACE_SHRINK_CODE);
     st.fonts.font_glue[cf] = Some(spec);
     Ok(spec)
 }
@@ -395,10 +396,11 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
                 let height = st.mem[p].height + st.mem[p].depth;
                 st.mem[ins].height = height;
                 let list = st.mem[p].list_ptr;
-                st.mem[ins].ins_ptr = list;
-                st.mem[ins].split_top_ptr = split_top_skip;
-                st.mem[ins].depth = d;
-                st.mem[ins].float_cost = f;
+                let node = &mut st.mem[ins];
+                node.ins_ptr = list;
+                node.split_top_ptr = split_top_skip;
+                node.depth = d;
+                node.float_cost = f;
             } else {
                 let adj = NodePtr::<AdjustNode>::alloc(&mut st.mem)?;
                 st.input.cur_list.tail_append(&mut st.mem, adj.ptr());
@@ -515,8 +517,9 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             st.mem.pop_nest(&mut st.input)?;
             let noad = st.mem.new_noad()?;
             st.input.cur_list.tail_append(&mut st.mem, noad.ptr());
-            st.mem[noad].noad_type = NodeType::VcenterNoad.into();
-            st.mem[noad].nucleus.math_type = SUB_BOX;
+            let node = &mut st.mem[noad];
+            node.noad_type = NodeType::VcenterNoad.into();
+            node.nucleus.math_type = SUB_BOX;
             st.mem[noad].nucleus.set_info(p.ptr());
         }
         GroupCode::MathChoice => crate::math::build_choices(st)?,
@@ -608,8 +611,9 @@ pub(super) fn make_mark(st: &mut EngineState, marks: bool) -> Result<(), Abort> 
     };
     crate::scan::scan_toks(st, false, true)?;
     let mark = NodePtr::<MarkNode>::alloc(&mut st.mem)?;
-    st.mem[mark].mark_class = c;
-    st.mem[mark].mark_ptr = st.scanner.def_ref;
+    let node = &mut st.mem[mark];
+    node.mark_class = c;
+    node.mark_ptr = st.scanner.def_ref;
     st.input.cur_list.tail_append(&mut st.mem, mark.ptr());
     Ok(())
 }

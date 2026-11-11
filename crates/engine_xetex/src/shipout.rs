@@ -919,8 +919,9 @@ fn hlist_out(
         let reversed = st
             .mem
             .reverse(&mut st.shipout, lr, &mut st.fonts, None, &mut rounding)?;
-        st.mem[kern].link = reversed;
-        st.mem[kern].width = -st.shipout.cur_h;
+        let node = &mut st.mem[kern];
+        node.link = reversed;
+        node.width = -st.shipout.cur_h;
         st.shipout.cur_h = save_h;
         st.mem[this_box].set_lr(BoxLr::Reversed);
         p = kern.ptr();
@@ -1074,8 +1075,9 @@ fn reverse_segment(
     let reversed = st
         .mem
         .reverse(&mut st.shipout, lr, &mut st.fonts, Some(end), rounding)?;
-    st.mem[edge].link = reversed;
-    st.mem[edge].edge_dist = st.shipout.cur_h;
+    let node = &mut st.mem[edge];
+    node.link = reversed;
+    node.edge_dist = st.shipout.cur_h;
     lr.dir = lr.dir.reversed();
     st.shipout.cur_h = save_h;
     Ok(edge)
@@ -1533,9 +1535,10 @@ impl MemState {
                                     } else {
                                         math.free(self);
                                         let t = t.expect("a segment reversal ends at its edge");
-                                        self[t].link = q;
-                                        self[t].width = wd;
-                                        self[t].edge_dist = -shipout.cur_h - wd;
+                                        let node = &mut self[t];
+                                        node.link = q;
+                                        node.width = wd;
+                                        node.edge_dist = -shipout.cur_h - wd;
                                         return Ok(l);
                                     }
                                 }

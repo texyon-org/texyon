@@ -28,10 +28,12 @@ impl MemState {
         p: NodePtr<NativeWordNode>,
     ) -> Result<NodePtr<BoxNode>, Abort> {
         let b = self.new_null_box()?;
-        self[b].height = self[p].height;
-        self[b].width = self[p].width;
-        self[b].depth = self[p].depth.max(Scaled::ZERO);
-        self[b].list_ptr = p.ptr();
+        let src = self[p];
+        let node = &mut self[b];
+        node.height = src.height;
+        node.width = src.width;
+        node.depth = src.depth.max(Scaled::ZERO);
+        node.list_ptr = p.ptr();
         Ok(b)
     }
 }
@@ -60,11 +62,12 @@ impl MemState {
         let depth = fonts.char_depth(f, q);
 
         let b = self.new_null_box()?;
-        self[b].width = width;
-        self[b].height = height;
-        self[b].depth = depth;
         let p = self.new_char(f, c)?;
-        self[b].list_ptr = p.ptr();
+        let node = &mut self[b];
+        node.width = width;
+        node.height = height;
+        node.depth = depth;
+        node.list_ptr = p.ptr();
         Ok(b)
     }
 
@@ -138,10 +141,12 @@ fn native_glyph_vbox(st: &mut EngineState, f: FontId, g: u16) -> Result<NodePtr<
     let b = st.mem.new_null_vbox()?;
     let p = new_measured_glyph(st, f, i32::from(g))?;
     let mem = &mut st.mem;
-    mem[b].list_ptr = p.ptr();
-    mem[b].width = mem[p].width;
-    mem[b].height = mem[p].height;
-    mem[b].depth = mem[p].depth;
+    let src = mem[p];
+    let node = &mut mem[b];
+    node.list_ptr = p.ptr();
+    node.width = src.width;
+    node.height = src.height;
+    node.depth = src.depth;
     Ok(b)
 }
 

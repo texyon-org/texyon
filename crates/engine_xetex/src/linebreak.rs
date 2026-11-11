@@ -185,8 +185,9 @@ impl Breaker {
         let spec = mem.new_spec(old_spec)?;
         mem.delete_glue_ref(old_spec);
 
-        mem[spec].width += best.shortfall - best.glue;
-        mem[spec].stretch = Scaled::ZERO;
+        let node = &mut mem[spec];
+        node.width += best.shortfall - best.glue;
+        node.stretch = Scaled::ZERO;
         mem[last_line_fill].glue_ptr = spec;
         Ok(())
     }

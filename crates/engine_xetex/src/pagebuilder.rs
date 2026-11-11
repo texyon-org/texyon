@@ -445,8 +445,9 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
             Some(b) => st.mem[b].height + st.mem[b].depth,
             None => Scaled::ZERO,
         };
-        st.mem[rec].height = height;
-        st.mem[rec].best_ins_ptr = MemPtr::NULL;
+        let node = &mut st.mem[rec];
+        node.height = height;
+        node.best_ins_ptr = MemPtr::NULL;
         let skip = st.eqtb.skip(i32::from(n));
         let count = st.eqtb.count(i32::from(n));
         let h = scale_by_count(height, count);
@@ -515,9 +516,10 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         best_height_plus_depth = scale_by_count(best_height_plus_depth, count);
     }
     st.shipout.page_so_far[PAGE_GOAL] -= best_height_plus_depth;
-    st.mem[rec].set_split_up(true);
-    st.mem[rec].broken_ptr = q;
-    st.mem[rec].broken_ins = p;
+    let node = &mut st.mem[rec];
+    node.set_split_up(true);
+    node.broken_ptr = q;
+    node.broken_ins = p;
     if q.is_null() {
         st.shipout.insert_penalties = st.shipout.insert_penalties.wrapping_add(EJECT_PENALTY);
     } else if let Ok(AnyNode::Penalty(pen)) = st.mem.classify(q) {

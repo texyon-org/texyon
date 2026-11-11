@@ -150,8 +150,9 @@ pub(super) fn package(st: &mut EngineState, group: GroupCode) -> Result<(), Abor
                 _ => Scaled::ZERO,
             };
             let depth = st.mem[b].depth - h + st.mem[b].height;
-            st.mem[b].depth = depth;
-            st.mem[b].height = h;
+            let node = &mut st.mem[b];
+            node.depth = depth;
+            node.height = h;
         }
         b
     };
@@ -241,8 +242,9 @@ fn leaders_end(st: &mut EngineState, box_context: i32, content: BoxOrRule) -> Re
         let kind = LeaderCode::from_raw(box_context - LEADER_FLAG + LeaderCode::ALeaders.raw())
             .and_then(LeaderCode::glue_leaders)
             .or_confusion("leaders")?;
-        st.mem[g].subtype = GlueKind::Leaders(kind).into();
-        st.mem[g].leader_ptr = content.ptr();
+        let node = &mut st.mem[g];
+        node.subtype = GlueKind::Leaders(kind).into();
+        node.leader_ptr = content.ptr();
     } else {
         crate::errors::back_error(
             st,

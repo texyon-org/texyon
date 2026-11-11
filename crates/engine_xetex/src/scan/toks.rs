@@ -445,8 +445,9 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
             Some(prev) => st.mem[prev].link = line.into(),
         }
         last_line = Some(line);
-        st.mem[line].size = size;
-        st.mem[line].link = None.into();
+        let node = &mut st.mem[line];
+        node.size = size;
+        node.link = None.into();
         st.mem
             .alloc_payload(line, usize::try_from(size - 1).or_confusion("pseudo line")?)?;
         let mut k = m;

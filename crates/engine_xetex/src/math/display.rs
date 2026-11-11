@@ -62,11 +62,13 @@ impl MemState {
     fn set_display_skip(&mut self, skip: NodePtr<GlueNode>, g: NodePtr<GlueNode>, w: Scaled) {
         let src = self[g].glue_ptr;
         let dst = self[skip].glue_ptr;
-        self[dst].stretch_order = self[src].stretch_order;
-        self[dst].shrink_order = self[src].shrink_order;
-        self[dst].width = w - self[src].width;
-        self[dst].stretch = -self[src].stretch;
-        self[dst].shrink = -self[src].shrink;
+        let from = self[src];
+        let node = &mut self[dst];
+        node.stretch_order = from.stretch_order;
+        node.shrink_order = from.shrink_order;
+        node.width = w - from.width;
+        node.stretch = -from.stretch;
+        node.shrink = -from.shrink;
     }
 
     /// Sets the width of `p`, an end of the display's kern frame that is not glue.
@@ -106,8 +108,9 @@ fn app_display(
     let copy = if let Some(j) = j {
         let bc = st.mem.copy_box(j)?;
         let (h, dp) = (st.mem[orig].height, st.mem[orig].depth);
-        st.mem[bc].height = h;
-        st.mem[bc].depth = dp;
+        let node = &mut st.mem[bc];
+        node.height = h;
+        node.depth = dp;
         let s2 = s - st.mem[bc].shift_amount;
         d += s2;
         e = e + st.mem[bc].width - z - s2;
@@ -479,12 +482,14 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
             let jbox = st.mem.new_null_box()?;
             j = jbox.ptr();
             let mem = &mut st.mem;
-            mem[jbox].width = mem[jb].width;
-            mem[jbox].shift_amount = mem[jb].shift_amount;
-            mem[jbox].list_ptr = left;
-            mem[jbox].glue_order = mem[jb].glue_order;
-            mem[jbox].glue_sign = mem[jb].glue_sign;
-            mem[jbox].glue_set = mem[jb].glue_set;
+            let src = mem[jb];
+            let node = &mut mem[jbox];
+            node.width = src.width;
+            node.shift_amount = src.shift_amount;
+            node.list_ptr = left;
+            node.glue_order = src.glue_order;
+            node.glue_sign = src.glue_sign;
+            node.glue_set = src.glue_set;
 
             let mut v = st.mem[jb].shift_amount;
             x = pre_display_direction(st);

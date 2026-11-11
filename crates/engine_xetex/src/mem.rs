@@ -140,8 +140,10 @@ impl MemState {
     /// A hyphen position `n` linked in front of the positions `rest`.
     pub(crate) fn new_hyph_pos(&mut self, n: usize, rest: MemPtr) -> Result<MemPtr, Abort> {
         let p = NodePtr::<HyphPosNode>::alloc(self)?;
-        self[p].pos = i32::try_from(n).or_confusion("hyphen position")?;
-        self[p].link = rest;
+        let pos = i32::try_from(n).or_confusion("hyphen position")?;
+        let node = &mut self[p];
+        node.pos = pos;
+        node.link = rest;
         Ok(p.ptr())
     }
 
@@ -150,8 +152,9 @@ impl MemState {
     pub(crate) fn push_lr(&mut self, lr_ptr: &mut MemPtr, code: MathCode) -> Result<(), Abort> {
         let t = NodePtr::<LrNode>::alloc(self)?;
         self.temp_ptr = t.ptr();
-        self[t].code = code.into();
-        self[t].link = *lr_ptr;
+        let node = &mut self[t];
+        node.code = code.into();
+        node.link = *lr_ptr;
         *lr_ptr = t.ptr();
         Ok(())
     }
@@ -254,9 +257,10 @@ impl MemState {
     #[inline]
     pub fn new_char(&mut self, f: FontId, c: u16) -> Result<NodePtr<CharNode>, Abort> {
         let p = NodePtr::<CharNode>::alloc(self)?;
-        self[p].link = MemPtr::NULL;
-        self[p].font = f;
-        self[p].character = c;
+        let node = &mut self[p];
+        node.link = MemPtr::NULL;
+        node.font = f;
+        node.character = c;
         Ok(p)
     }
 
@@ -270,8 +274,9 @@ impl MemState {
             ..
         } = self[lig];
         self.set_header(LIG_TRICK, NodeType::Char, character);
-        self[scratch].font = font;
-        self[scratch].link = link;
+        let node = &mut self[scratch];
+        node.font = font;
+        node.link = link;
         LIG_TRICK
     }
 
@@ -292,8 +297,9 @@ impl MemState {
 
     pub fn new_lig_item(&mut self, c: u16) -> Result<NodePtr<LigItem>, Abort> {
         let p = NodePtr::<LigItem>::alloc(self)?;
-        self[p].character = c;
-        self[p].component = MemPtr::NULL;
+        let node = &mut self[p];
+        node.character = c;
+        node.component = MemPtr::NULL;
         Ok(p)
     }
 
@@ -308,8 +314,9 @@ impl MemState {
 
     pub fn new_math(&mut self, w: Scaled, code: MathCode) -> Result<NodePtr<MathNode>, Abort> {
         let p = NodePtr::<MathNode>::alloc(self)?;
-        self[p].subtype = code.into();
-        self[p].width = w;
+        let node = &mut self[p];
+        node.subtype = code.into();
+        node.width = w;
         Ok(p)
     }
 
@@ -334,10 +341,11 @@ impl MemState {
         n: GluePar,
     ) -> Result<NodePtr<GlueNode>, Abort> {
         let p = NodePtr::<GlueNode>::alloc(self)?;
-        self[p].subtype = GlueKind::Param(n).into();
-        self[p].leader_ptr = MemPtr::NULL;
         let spec = eqtb.glue_par(n);
-        self[p].glue_ptr = spec;
+        let node = &mut self[p];
+        node.subtype = GlueKind::Param(n).into();
+        node.leader_ptr = MemPtr::NULL;
+        node.glue_ptr = spec;
         self.add_glue_ref(spec);
         Ok(p)
     }
@@ -368,8 +376,9 @@ impl MemState {
 
     pub fn new_kern(&mut self, w: Scaled) -> Result<NodePtr<KernNode>, Abort> {
         let p = NodePtr::<KernNode>::alloc(self)?;
-        self[p].subtype = KernSubtype::Normal.into();
-        self[p].width = w;
+        let node = &mut self[p];
+        node.subtype = KernSubtype::Normal.into();
+        node.width = w;
         Ok(p)
     }
 
@@ -387,8 +396,9 @@ impl MemState {
 
     pub fn new_style(&mut self, s: crate::math::MathStyle) -> Result<NodePtr<StyleNode>, Abort> {
         let p = NodePtr::<StyleNode>::alloc(self)?;
-        self[p].style = s;
-        self[p].clear_payload();
+        let node = &mut self[p];
+        node.style = s;
+        node.clear_payload();
         Ok(p)
     }
 
@@ -408,8 +418,9 @@ impl MemState {
         side: Side,
     ) -> Result<NodePtr<MarginKernNode>, Abort> {
         let k = NodePtr::<MarginKernNode>::alloc(self)?;
-        self[k].side = side.into();
-        self[k].width = w;
+        let node = &mut self[k];
+        node.side = side.into();
+        node.width = w;
         Ok(k)
     }
 

@@ -115,8 +115,9 @@ pub(crate) fn scan_rule_spec(st: &mut EngineState) -> Result<NodePtr<RuleNode>, 
     if st.scanner.cur_cmd == Cmd::Vrule {
         st.mem[r].width = RuleDimen::from_raw(DEFAULT_RULE).into();
     } else {
-        st.mem[r].height = RuleDimen::from_raw(DEFAULT_RULE).into();
-        st.mem[r].depth = RuleDimen::Set(Scaled::ZERO).into();
+        let node = &mut st.mem[r];
+        node.height = RuleDimen::from_raw(DEFAULT_RULE).into();
+        node.depth = RuleDimen::Set(Scaled::ZERO).into();
     }
     loop {
         if scan_keyword(st, "width")? {

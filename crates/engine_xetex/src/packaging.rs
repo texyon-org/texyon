@@ -195,13 +195,14 @@ impl MemState {
         totals: &OrderTotals,
     ) -> GlueOrder {
         let o = totals.max_order();
-        self[r].glue_order = o.into();
-        self[r].glue_sign = sign.into();
+        let node = &mut self[r];
+        node.glue_order = o.into();
         if totals[o] != Scaled::ZERO {
-            self[r].glue_set = crate::node::GlueRatio::new(excess / f64::from(totals[o].raw()));
+            node.glue_sign = sign.into();
+            node.glue_set = crate::node::GlueRatio::new(excess / f64::from(totals[o].raw()));
         } else {
-            self[r].glue_sign = GlueSign::Normal.into();
-            self[r].glue_set = crate::node::GlueRatio::new(0.0);
+            node.glue_sign = GlueSign::Normal.into();
+            node.glue_set = crate::node::GlueRatio::new(0.0);
         }
         o
     }
@@ -323,9 +324,10 @@ impl MemState {
         let mut lr_problems = 0;
         shipout.last_badness = 0;
         let r_node = NodePtr::<BoxNode>::alloc(self)?;
-        self[r_node].set_lr(BoxLr::Normal);
-        self[r_node].shift_amount = Scaled::ZERO;
-        self[r_node].list_ptr = list;
+        let node = &mut self[r_node];
+        node.set_lr(BoxLr::Normal);
+        node.shift_amount = Scaled::ZERO;
+        node.list_ptr = list;
         // `q` trails `p`, starting at the word whose link is the list pointer.
         let mut q = r_node.ptr() + LIST_OFFSET;
         let mut h = Scaled::ZERO;
@@ -478,11 +480,11 @@ impl MemState {
         if !tails.pre.is_null() {
             tails.pre.set_link(self, MemPtr::NULL);
         }
-        self[r_node].height = h;
-        self[r_node].depth = d;
-
         let w = spec.target(x);
-        self[r_node].width = w;
+        let node = &mut self[r_node];
+        node.height = h;
+        node.depth = d;
+        node.width = w;
         x = w - x;
 
         let has_list = !self[r_node].list_ptr.is_null();
@@ -685,11 +687,12 @@ impl MemState {
     ) -> Result<PackOutcome, Abort> {
         shipout.last_badness = 0;
         let r_node = NodePtr::<BoxNode>::alloc(self)?;
-        self[r_node].orientation = Orientation::Vertical.into();
         let upwards = eqtb.int_par(IntPar::XetexUpwards) > 0;
-        self[r_node].set_upwards(upwards);
-        self[r_node].shift_amount = Scaled::ZERO;
-        self[r_node].list_ptr = list;
+        let node = &mut self[r_node];
+        node.orientation = Orientation::Vertical.into();
+        node.set_upwards(upwards);
+        node.shift_amount = Scaled::ZERO;
+        node.list_ptr = list;
 
         let mut w = Scaled::ZERO;
         let mut d = Scaled::ZERO;

@@ -89,8 +89,9 @@ pub(super) fn split_native_word(
             .native_word_fragment(&st.eqtb, &st.fonts, st.hyph.hf, ha, start, len - start)?;
     let next = st.mem[ha].link;
     st.mem[tail].link = next;
-    st.mem[ha].link = tail.ptr();
-    st.mem[ha].length = start as u16;
+    let node = &mut st.mem[ha];
+    node.link = tail.ptr();
+    node.length = start as u16;
     st.mem.set_native_metrics(&st.eqtb, &st.fonts, ha)?;
     Ok(tail)
 }

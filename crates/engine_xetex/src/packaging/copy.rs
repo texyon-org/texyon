@@ -173,8 +173,10 @@ impl MemState {
                                 m -= 1;
                                 math.into_kern(self);
                             } else {
-                                self[t].width = self[math].width;
-                                self[t].link = q;
+                                let width = self[math].width;
+                                let node = &mut self[t];
+                                node.width = width;
+                                node.link = q;
                                 self.free_node(p, MathNode::SIZE);
                                 break 'done;
                             }

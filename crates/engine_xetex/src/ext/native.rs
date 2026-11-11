@@ -174,8 +174,8 @@ impl FontState {
                 0.0
             }
         };
-        mem[w].width = d2fix(width);
-        mem[w].glyph_count = shaped.gids.len() as u16;
+        let mut width = d2fix(width);
+        let stored_count = shaped.gids.len() as u16;
         drop(bidi);
 
         let letter_space = self.font_letter_space[f];
@@ -190,14 +190,13 @@ impl FontState {
             }
             if ls_delta != Scaled::ZERO {
                 ls_delta -= letter_space;
-                mem[w].width += ls_delta;
+                width += ls_delta;
             }
         }
 
-        let glyph_count = mem[w].glyph_count as usize;
-        if !use_glyph_metrics || glyph_count == 0 {
-            mem[w].height = self.native_height(f);
-            mem[w].depth = self.native_depth(f);
+        let glyph_count = usize::from(stored_count);
+        let (height, depth) = if !use_glyph_metrics || glyph_count == 0 {
+            (self.native_height(f), self.native_depth(f))
         } else {
             let mut y_min = 65536.0f32;
             let mut y_max = -65536.0f32;
@@ -213,9 +212,8 @@ impl FontState {
                     y_min = y - dp;
                 }
             }
-            mem[w].height = d2fix(f64::from(y_max));
-            mem[w].depth = -d2fix(f64::from(y_min));
-        }
+            (d2fix(f64::from(y_max)), -d2fix(f64::from(y_min)))
+        };
 
         let old_handle = mem[w].glyph_info;
         if old_handle != 0 {
@@ -231,7 +229,12 @@ impl FontState {
                 gids: shaped.gids,
             })
         };
-        mem[w].glyph_info = handle;
+        let node = &mut mem[w];
+        node.width = width;
+        node.glyph_count = stored_count;
+        node.height = height;
+        node.depth = depth;
+        node.glyph_info = handle;
         Ok(())
     }
 

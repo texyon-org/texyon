@@ -103,8 +103,9 @@ impl Breaker {
                     let old_spec = mem[g].glue_ptr;
                     mem.delete_glue_ref(old_spec);
                     let right_skip = eqtb.glue_par(GluePar::RightSkip);
-                    mem[g].glue_ptr = right_skip;
-                    mem[g].subtype = GlueKind::Param(GluePar::RightSkip).into();
+                    let node = &mut mem[g];
+                    node.glue_ptr = right_skip;
+                    node.subtype = GlueKind::Param(GluePar::RightSkip).into();
                     mem.add_glue_ref(right_skip);
                     glue_break = true;
                 }

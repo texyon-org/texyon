@@ -183,10 +183,11 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                     st.mem[p].glue_sign,
                     st.mem[p].glue_set.get(),
                 );
-                st.mem[row].glue_order = order;
-                st.mem[row].glue_sign = sign;
-                st.mem[row].glue_set = crate::node::GlueRatio::new(set);
-                st.mem[row].shift_amount = o;
+                let node = &mut st.mem[row];
+                node.glue_order = order;
+                node.glue_sign = sign;
+                node.glue_set = crate::node::GlueRatio::new(set);
+                node.shift_amount = o;
 
                 let mut r = st.mem[row].list_ptr.link(&st.mem);
                 let mut proto_column =
@@ -245,8 +246,9 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                     }
                     let col = if st.input.cur_list.mode == INNER_VMODE {
                         let (h, d) = (st.mem[row].height, st.mem[row].depth);
-                        st.mem[col].height = h;
-                        st.mem[col].depth = d;
+                        let node = &mut st.mem[col];
+                        node.height = h;
+                        node.depth = d;
                         let glue = st.mem.unset_glue(col, t, st.mem[col].width);
                         let b = col.into_box(&mut st.mem, Orientation::Horizontal);
                         st.mem[b].width = w;
@@ -260,10 +262,11 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                         (b, glue)
                     };
                     let (b, (sign, order, set)) = col;
-                    st.mem[b].glue_sign = sign.into();
-                    st.mem[b].glue_order = order;
-                    st.mem[b].glue_set = crate::node::GlueRatio::new(set);
-                    st.mem[b].shift_amount = Scaled::ZERO;
+                    let node = &mut st.mem[b];
+                    node.glue_sign = sign.into();
+                    node.glue_order = order;
+                    node.glue_set = crate::node::GlueRatio::new(set);
+                    node.shift_amount = Scaled::ZERO;
                     if u != HOLD_HEAD {
                         let (rest, spanned) = (r.link(&st.mem), HOLD_HEAD.link(&st.mem));
                         u.set_link(&mut st.mem, rest);
@@ -292,8 +295,9 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                     let next = st.mem[rule].link;
                     st.mem[rule].link = MemPtr::NULL;
                     let boxed = crate::packaging::hpack(st, rule.ptr(), PackSpec::NATURAL)?;
-                    st.mem[boxed].shift_amount = o;
-                    st.mem[boxed].link = next;
+                    let node = &mut st.mem[boxed];
+                    node.shift_amount = o;
+                    node.link = next;
                     s.set_link(&mut st.mem, boxed.ptr());
                     q = boxed.ptr();
                 }
@@ -709,8 +713,9 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
             let next = st.mem[q].next;
             if st.mem[next].span_count > n {
                 let s = NodePtr::<SpanNode>::alloc(&mut st.mem)?;
-                st.mem[s].next = next;
-                st.mem[s].span_count = n;
+                let node = &mut st.mem[s];
+                node.next = next;
+                node.span_count = n;
                 st.mem[q].next = s;
                 st.mem[s].width = w;
             } else if st.mem[next].width < w {

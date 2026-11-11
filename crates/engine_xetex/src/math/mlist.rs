@@ -104,8 +104,9 @@ fn math_kern(st: &mut EngineState, p: NodePtr<KernNode>, m: Scaled) {
     if st.mem[p].subtype == KernSubtype::MuGlue {
         let mu = mu_parts(m);
         let width = mu_mult(mu, st.mem[p].width);
-        st.mem[p].width = width;
-        st.mem[p].subtype = KernSubtype::Explicit.into();
+        let node = &mut st.mem[p];
+        node.width = width;
+        node.subtype = KernSubtype::Explicit.into();
     }
 }
 
@@ -281,8 +282,10 @@ fn make_under(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Resul
     let y = crate::packaging::vpackage(st, x.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
     let mem = &mut st.mem;
     let delta = mem[y].height + mem[y].depth + rule_thickness;
-    mem[y].height = mem[x].height;
-    mem[y].depth = delta - mem[y].height;
+    let height = mem[x].height;
+    let node = &mut mem[y];
+    node.height = height;
+    node.depth = delta - height;
     mem.set_nucleus_box(q, y);
     Ok(())
 }
@@ -297,8 +300,9 @@ fn make_vcenter(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Res
         return Err(Abort::Confusion("vcenter"));
     };
     let delta = mem[v].height + mem[v].depth;
-    mem[v].height = axis_height + delta.half();
-    mem[v].depth = delta - mem[v].height;
+    let node = &mut mem[v];
+    node.height = axis_height + delta.half();
+    node.depth = delta - node.height;
     Ok(())
 }
 
@@ -337,8 +341,9 @@ fn make_radical(
     let y = var_delimiter(st, st.mem[q].left_delimiter, cur_size, delimiter_height)?;
     let mem = &mut st.mem;
     if is_ot_math {
-        mem[y].depth = mem[y].depth + mem[y].height - rule_thickness;
-        mem[y].height = rule_thickness;
+        let node = &mut mem[y];
+        node.depth = node.depth + node.height - rule_thickness;
+        node.height = rule_thickness;
     }
     let delta = mem[y].depth - (mem[x].height + mem[x].depth + clr);
     if delta > Scaled::ZERO {
@@ -368,9 +373,11 @@ impl MemState {
         let vb = self.new_null_vbox()?;
         let xb = assembly.x;
         let zb = assembly.z;
-        self[vb].height = assembly.shift_up + self[xb].height;
-        self[vb].depth = self[zb].depth + assembly.shift_down;
-        self[vb].width = self[xb].width;
+        let (x, z_depth) = (self[xb], self[zb].depth);
+        let node = &mut self[vb];
+        node.height = assembly.shift_up + x.height;
+        node.depth = z_depth + assembly.shift_down;
+        node.width = x.width;
 
         let p: NodePtr<KernNode>;
         if assembly.rule_thickness == Scaled::ZERO {
@@ -610,9 +617,10 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<S
                         st.mem[glyph].depth,
                     )
                 };
-                st.mem[x].width = width;
-                st.mem[x].height = height;
-                st.mem[x].depth = depth;
+                let node = &mut st.mem[x];
+                node.width = width;
+                node.height = height;
+                node.depth = depth;
             }
         }
 
@@ -652,8 +660,10 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<S
         let half_delta = delta.half();
         mem[x].shift_amount = half_delta;
         mem[z].shift_amount = -half_delta;
-        mem[v].height = mem[y].height;
-        mem[v].depth = mem[y].depth;
+        let (height, depth) = (mem[y].height, mem[y].depth);
+        let node = &mut mem[v];
+        node.height = height;
+        node.depth = depth;
         st.scanner.cur_f = save_f;
 
         if mem[q].supscr.math_type == EMPTY {
@@ -738,10 +748,12 @@ impl MemState {
                         }
                     }
                     _ => {
-                        self[q].link = self[p].link;
-                        self[q].nucleus.set_character(step.lig_char());
-                        self[q].subscr = self[p].subscr;
-                        self[q].supscr = self[p].supscr;
+                        let src = self[p];
+                        let node = &mut self[q];
+                        node.link = src.link;
+                        node.nucleus.set_character(step.lig_char());
+                        node.subscr = src.subscr;
+                        node.supscr = src.supscr;
                         p.free(self);
                     }
                 }
@@ -885,9 +897,11 @@ fn make_math_accent(
         st.mem.flush_node_list(x.ptr())?;
         let base = st.mem.new_noad()?;
         let mem = &mut st.mem;
-        mem[base].nucleus = mem[n].nucleus;
-        mem[base].supscr = mem[n].supscr;
-        mem[base].subscr = mem[n].subscr;
+        let src = mem[n];
+        let node = &mut mem[base];
+        node.nucleus = src.nucleus;
+        node.supscr = src.supscr;
+        node.subscr = src.subscr;
         for script in [MathSlot::Supscr(n), MathSlot::Subscr(n)] {
             mem[script].set_info(MemPtr::from_raw(0));
             mem[script].math_type = EMPTY;
@@ -947,9 +961,10 @@ fn make_math_accent(
             Some(b) => (mem[b].width, mem[b].height, mem[b].depth),
             None => (mem[glyph].width, mem[glyph].height, mem[glyph].depth),
         };
-        mem[y].width = gw;
-        mem[y].height = gh;
-        mem[y].depth = gd;
+        let node = &mut mem[y];
+        node.width = gw;
+        node.height = gh;
+        node.depth = gd;
         if bottom_accent {
             if mem[y].height < Scaled::ZERO {
                 mem[y].height = Scaled::ZERO;
@@ -995,8 +1010,9 @@ fn make_math_accent(
         if mem[v].height < h {
             let kern = mem.new_kern(h - mem[v].height)?;
             mem[kern].link = mem[v].list_ptr;
-            mem[v].list_ptr = kern.ptr();
-            mem[v].height = h;
+            let node = &mut mem[v];
+            node.list_ptr = kern.ptr();
+            node.height = h;
         }
         v
     };
@@ -1362,8 +1378,9 @@ pub(super) fn mlist_to_hlist(
                         let mu = math_mu(st, style);
                         let y = math_glue(st, x, mu)?;
                         st.mem.delete_glue_ref(x);
-                        st.mem[glue].glue_ptr = y;
-                        st.mem[glue].subtype = GlueKind::Normal.into();
+                        let node = &mut st.mem[glue];
+                        node.glue_ptr = y;
+                        node.subtype = GlueKind::Normal.into();
                     } else if subtype == GlueKind::CondMath {
                         let cur_size = style.size();
                         st.mem.mlist_cond_math_glue(glue, cur_size)?;
@@ -1556,8 +1573,9 @@ impl MemState {
         max: Scaled,
     ) -> Result<(), Abort> {
         let spec = self.new_spec(ZERO_GLUE)?;
-        self[spec].width = min;
-        self[spec].stretch = max - min;
+        let node = &mut self[spec];
+        node.width = min;
+        node.stretch = max - min;
         let p = self.new_glue(spec)?;
         if self[b].is_hlist() {
             let mut q = self[b].list_ptr;
