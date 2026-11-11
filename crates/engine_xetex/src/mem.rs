@@ -54,9 +54,7 @@ const END_SPAN_AT: MemIdx = after(ALIGN_HEAD, HeadNode::SIZE);
 // SAFETY: the fixed span node ends every span list.
 pub(crate) const END_SPAN: NodePtr<SpanNode> = NodePtr::from_idx_unchecked(END_SPAN_AT);
 pub(crate) const NULL_LIST: MemIdx = after(END_SPAN_AT, SpanNode::SIZE);
-/// The scratch char node of TeX's lig trick.
-pub(crate) const LIG_TRICK: MemIdx = after(NULL_LIST, HeadNode::SIZE);
-pub(crate) const PRE_ADJUST_HEAD: MemIdx = after(LIG_TRICK, CharNode::SIZE);
+pub(crate) const PRE_ADJUST_HEAD: MemIdx = after(NULL_LIST, HeadNode::SIZE);
 /// The fixed nodes laid out as a [`HeadNode`].
 pub(crate) const FIXED_HEADS: [MemIdx; 7] = [
     CONTRIB_HEAD,
@@ -264,22 +262,6 @@ impl MemState {
         node.font = f;
         node.character = c;
         Ok(p)
-    }
-
-    /// TeX's lig trick: the scratch char node holding `lig`'s character, linked to what follows `lig`.
-    pub fn lig_trick(&mut self, lig: NodePtr<LigatureNode>) -> MemIdx {
-        let scratch = NodePtr::<CharNode>::at(LIG_TRICK);
-        let LigatureNode {
-            font,
-            character,
-            link,
-            ..
-        } = self[lig];
-        self.set_header(LIG_TRICK, NodeType::Char, character);
-        let node = &mut self[scratch];
-        node.font = font;
-        node.link = link;
-        LIG_TRICK
     }
 
     pub fn new_ligature(

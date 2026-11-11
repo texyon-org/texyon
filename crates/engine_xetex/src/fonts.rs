@@ -330,6 +330,17 @@ impl FontState {
         self.font_check[f]
     }
 
+    /// The width, height and depth of character `c` in font `f`.
+    pub(crate) fn char_box(&mut self, f: FontId, c: u16) -> (Scaled, Scaled, Scaled) {
+        let c = self.effective_char(f, c);
+        let info = self.char_info(f, c);
+        (
+            self.char_width(f, info),
+            self.char_height(f, info),
+            self.char_depth(f, info),
+        )
+    }
+
     pub fn effective_char(&mut self, f: FontId, c: u16) -> i32 {
         let mut c = c;
         if !self.xtx_ligature_present {

@@ -326,14 +326,12 @@ impl MemState {
         }
 
         let mut p = list;
-        'outer: while p.is_some() {
+        while p.is_some() {
             while let Some(ch) = self.as_char(p) {
-                let f = self[ch].font;
-                let c = fonts.effective_char(f, self[ch].character);
-                let info = fonts.char_info(f, c);
-                x += fonts.char_width(f, info);
-                h = h.max(fonts.char_height(f, info));
-                d = d.max(fonts.char_depth(f, info));
+                let (cw, ch_h, ch_d) = fonts.char_box(self[ch].font, self[ch].character);
+                x += cw;
+                h = h.max(ch_h);
+                d = d.max(ch_d);
                 p = ch.idx().link(self);
             }
 
@@ -446,9 +444,11 @@ impl MemState {
                     }
                 }
                 Ok(AnyNode::Ligature(lig)) => {
-                    p = Some(self.lig_trick(lig));
                     fonts.xtx_ligature_present = true;
-                    continue 'outer;
+                    let (cw, ch_h, ch_d) = fonts.char_box(self[lig].font, self[lig].character);
+                    x += cw;
+                    h = h.max(ch_h);
+                    d = d.max(ch_d);
                 }
                 _ => {}
             }

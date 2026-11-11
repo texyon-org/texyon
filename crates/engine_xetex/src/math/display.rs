@@ -519,79 +519,83 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
             }
 
             'outer: while let Some(mut here) = p {
-                let (d, found) = 'reswitch: loop {
-                    if let Some(ch) = st.mem.as_char(Some(here)) {
-                        let f = st.mem[ch].font;
-                        let c = st.fonts.effective_char(f, st.mem[ch].character);
-                        let d = st.fonts.char_width(f, st.fonts.char_info(f, c));
-                        break (d, true);
-                    }
-                    break match st.mem.classify(here) {
-                        Ok(node @ (AnyNode::Box(_) | AnyNode::Rule(_))) => {
-                            (node.hlist_width(&st.mem), true)
-                        }
-                        Ok(AnyNode::Ligature(lig)) => {
-                            here = st.mem.lig_trick(lig);
-                            st.fonts.xtx_ligature_present = true;
-                            continue 'reswitch;
-                        }
-                        Ok(AnyNode::Kern(k)) => (st.mem[k].width, false),
-                        Ok(AnyNode::MarginKern(k)) => (st.mem[k].width, false),
-                        Ok(AnyNode::Math(m)) => {
-                            let d = st.mem[m].width;
-                            let code = st.mem[m].code()?;
-                            if texxet {
-                                if code.is_end() {
-                                    if st.mem.lr_code(lr.ptr) == Some(code.lr_end()) {
-                                        st.mem.pop_lr(&mut lr.ptr);
-                                    } else if code.is_lr() {
-                                        w = MAX_DIMEN;
-                                        break 'outer;
-                                    }
-                                } else {
-                                    st.mem.push_lr(&mut lr.ptr, code.lr_end())?;
-                                    if code.dir() != lr.dir {
-                                        st.mem.just_reverse(&mut lr, here)?;
-                                        here = TEMP_HEAD;
-                                    }
-                                }
-                            } else if code.is_lr() {
-                                w = MAX_DIMEN;
-                                break 'outer;
+                let (d, found) = {
+                    let shown = match st.mem.as_char(Some(here)) {
+                        Some(ch) => Some((st.mem[ch].font, st.mem[ch].character)),
+                        None => match st.mem.classify(here) {
+                            Ok(AnyNode::Ligature(lig)) => {
+                                st.fonts.xtx_ligature_present = true;
+                                Some((st.mem[lig].font, st.mem[lig].character))
                             }
-                            (d, false)
-                        }
-                        // An EDGE_NODE, which shares type 14 with STYLE_NODE.
-                        Ok(AnyNode::Style(edge)) => {
-                            lr.dir = st.mem[edge.as_edge()].dir.get().or_confusion("LR")?;
-                            (st.mem[edge.as_edge()].width, false)
-                        }
-                        Ok(AnyNode::Glue(g)) => {
-                            let spec = st.mem[g].glue_ptr;
-                            let order = st.mem[jb].glue_order;
-                            match st.mem[jb].glue_sign.get() {
-                                Some(GlueSign::Stretching)
-                                    if order == st.mem[spec].stretch_order
-                                        && st.mem[spec].stretch != Scaled::ZERO =>
-                                {
-                                    v = MAX_DIMEN;
-                                }
-                                Some(GlueSign::Shrinking)
-                                    if order == st.mem[spec].shrink_order
-                                        && st.mem[spec].shrink != Scaled::ZERO =>
-                                {
-                                    v = MAX_DIMEN;
-                                }
-                                _ => {}
-                            }
-                            (st.mem[spec].width, st.mem[g].leaders().is_some())
-                        }
-                        Ok(AnyNode::Whatsit(wn)) => match wn.dims(&st.mem) {
-                            Some(dims) => (dims.width, true),
-                            None => (Scaled::ZERO, false),
+                            _ => None,
                         },
-                        _ => (Scaled::ZERO, false),
                     };
+                    if let Some((f, c)) = shown {
+                        let c = st.fonts.effective_char(f, c);
+                        (st.fonts.char_width(f, st.fonts.char_info(f, c)), true)
+                    } else {
+                        match st.mem.classify(here) {
+                            Ok(node @ (AnyNode::Box(_) | AnyNode::Rule(_))) => {
+                                (node.hlist_width(&st.mem), true)
+                            }
+                            Ok(AnyNode::Kern(k)) => (st.mem[k].width, false),
+                            Ok(AnyNode::MarginKern(k)) => (st.mem[k].width, false),
+                            Ok(AnyNode::Math(m)) => {
+                                let d = st.mem[m].width;
+                                let code = st.mem[m].code()?;
+                                if texxet {
+                                    if code.is_end() {
+                                        if st.mem.lr_code(lr.ptr) == Some(code.lr_end()) {
+                                            st.mem.pop_lr(&mut lr.ptr);
+                                        } else if code.is_lr() {
+                                            w = MAX_DIMEN;
+                                            break 'outer;
+                                        }
+                                    } else {
+                                        st.mem.push_lr(&mut lr.ptr, code.lr_end())?;
+                                        if code.dir() != lr.dir {
+                                            st.mem.just_reverse(&mut lr, here)?;
+                                            here = TEMP_HEAD;
+                                        }
+                                    }
+                                } else if code.is_lr() {
+                                    w = MAX_DIMEN;
+                                    break 'outer;
+                                }
+                                (d, false)
+                            }
+                            // An EDGE_NODE, which shares type 14 with STYLE_NODE.
+                            Ok(AnyNode::Style(edge)) => {
+                                lr.dir = st.mem[edge.as_edge()].dir.get().or_confusion("LR")?;
+                                (st.mem[edge.as_edge()].width, false)
+                            }
+                            Ok(AnyNode::Glue(g)) => {
+                                let spec = st.mem[g].glue_ptr;
+                                let order = st.mem[jb].glue_order;
+                                match st.mem[jb].glue_sign.get() {
+                                    Some(GlueSign::Stretching)
+                                        if order == st.mem[spec].stretch_order
+                                            && st.mem[spec].stretch != Scaled::ZERO =>
+                                    {
+                                        v = MAX_DIMEN;
+                                    }
+                                    Some(GlueSign::Shrinking)
+                                        if order == st.mem[spec].shrink_order
+                                            && st.mem[spec].shrink != Scaled::ZERO =>
+                                    {
+                                        v = MAX_DIMEN;
+                                    }
+                                    _ => {}
+                                }
+                                (st.mem[spec].width, st.mem[g].leaders().is_some())
+                            }
+                            Ok(AnyNode::Whatsit(wn)) => match wn.dims(&st.mem) {
+                                Some(dims) => (dims.width, true),
+                                None => (Scaled::ZERO, false),
+                            },
+                            _ => (Scaled::ZERO, false),
+                        }
+                    }
                 };
 
                 if found {

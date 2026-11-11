@@ -8,12 +8,11 @@ use crate::errors::OrConfusion;
 use crate::ext::apply_tfm_font_mapping;
 use crate::glue_store::GlueSpecId;
 use crate::glyph_arena::FixedPoint;
-use crate::mem::LIG_TRICK;
 use crate::node::Stored;
 use crate::node::{
     AnyNode, BoxLr, BoxNode, CharNode, EdgeNode, GlueKind, GlueNode, GlyphNode, KernNode,
-    KernSubtype, LeaderKind, MathCode, MathNode, NativeWordNode, NodePtr, RuleNode, View,
-    WhatsitSubtype, WhatsitVariant, RUNNING,
+    KernSubtype, LeaderKind, LigatureNode, MathCode, MathNode, NativeWordNode, NodePtr, RuleNode,
+    View, WhatsitSubtype, WhatsitVariant, RUNNING,
 };
 use crate::packaging::LrState;
 use crate::params::{DimenPar, IntPar};
@@ -854,19 +853,50 @@ impl ShipoutState {
     }
 }
 
-/// Output the characters starting at `p`, returning the first non-character
+/// A character to output: a char node's, or a ligature's, which TFM font mappings skip.
+struct OutChar {
+    font: FontId,
+    chr: u16,
+    ligature: bool,
+    next: MemPtr,
+}
+
+impl OutChar {
+    fn of_char(mem: &MemState, ch: NodePtr<CharNode>) -> OutChar {
+        let n = mem[ch];
+        OutChar {
+            font: n.font,
+            chr: n.character,
+            ligature: false,
+            next: n.link,
+        }
+    }
+
+    fn of_ligature(mem: &MemState, lig: NodePtr<LigatureNode>) -> OutChar {
+        let n = mem[lig];
+        OutChar {
+            font: n.font,
+            chr: n.character,
+            ligature: true,
+            next: n.link,
+        }
+    }
+}
+
+/// Output `first` and the char nodes that follow it, returning the first other
 /// node and the matching advance of `prev_p`.
 fn chars_out(
     st: &mut crate::state::EngineState,
-    mut p: MemPtr,
+    first: OutChar,
     mut prev_p: MemIdx,
 ) -> Result<(MemPtr, MemIdx), Abort> {
     synch_h(st)?;
     synch_v(st)?;
-    while let Some(ch) = st.mem.as_char(p) {
-        let f = st.mem[ch].font;
-        let mut c = st.mem[ch].character;
-        if ch.idx() != LIG_TRICK {
+    let mut cur = first;
+    loop {
+        let f = cur.font;
+        let mut c = cur.chr;
+        if !cur.ligature {
             if let Some(mapping) = st.fonts.font_mapping[f].as_deref() {
                 c = apply_tfm_font_mapping(mapping, c as libc::c_int) as u16;
             }
@@ -877,11 +907,14 @@ fn chars_out(
             st.shipout.cur_h += st.fonts.font_character_width(f, i32::from(c));
         }
         prev_p = prev_p.link(&st.mem).or_confusion("hlistout")?;
-        p = ch.idx().link(&st.mem);
+        match st.mem.as_char(cur.next) {
+            Some(ch) => cur = OutChar::of_char(&st.mem, ch),
+            None => break,
+        }
     }
     crate::synctex::synctex_current(st);
     st.shipout.dvi_h = st.shipout.cur_h;
-    Ok((p, prev_p))
+    Ok((cur.next, prev_p))
 }
 
 fn hlist_out(
@@ -896,7 +929,7 @@ fn hlist_out(
             .merge_justifiable_native_words(&mut st.strings, &st.fonts, &st.eqtb, this_box)?;
     }
 
-    // A raw cursor: it can be LIG_TRICK, and nodes get retyped in place.
+    // A raw cursor: nodes get retyped in place.
     let mut p = st.mem[this_box].list_ptr;
     let save_loc = st.shipout.dvi.enter_level()?;
     let base_line = st.shipout.cur_v;
@@ -934,8 +967,8 @@ fn hlist_out(
     crate::synctex::synctex_hlist(st, this_box);
 
     while let Some(here) = p {
-        if st.mem.is_char_node(here) {
-            (p, prev_p) = chars_out(st, p, prev_p)?;
+        if let Some(ch) = st.mem.as_char(p) {
+            (p, prev_p) = chars_out(st, OutChar::of_char(&st.mem, ch), prev_p)?;
             continue;
         }
         match st.mem.classify(here).or_confusion("hlistout")? {
@@ -999,8 +1032,9 @@ fn hlist_out(
                 st.shipout.cur_h += math_width;
             }
             AnyNode::Ligature(ligature) => {
-                p = Some(st.mem.lig_trick(ligature));
                 st.fonts.xtx_ligature_present = true;
+                let first = OutChar::of_ligature(&st.mem, ligature);
+                (p, prev_p) = chars_out(st, first, prev_p)?;
                 continue;
             }
             AnyNode::Style(style) => {
