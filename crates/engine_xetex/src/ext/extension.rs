@@ -44,7 +44,7 @@ pub(crate) fn append_src_special(st: &mut EngineState) -> Result<(), Abort> {
         .map_err(|()| Abort::Internal("string pool overflow"))?;
     let d = st.mem.tokens.begin()?;
     st.mem.str_toks_cat(&mut st.strings, b, None, &d)?;
-    let d = st.mem.tokens.finish(d);
+    let d = st.mem.tokens.finish(d)?;
     st.scanner.def_ref = d;
     st.mem[w].tokens = d;
     crate::texmfmp::remember_source_info(st, fname, st.mem.line);
@@ -58,7 +58,7 @@ fn special_list(st: &mut EngineState, b: crate::units::PoolPos) -> Result<TokenL
     st.mem.tokens.push(&out, Token::left_brace(b'{'))?;
     st.mem.str_toks_cat(&mut st.strings, b, None, &out)?;
     st.mem.tokens.push(&out, Token::right_brace(b'}'))?;
-    Ok(st.mem.tokens.finish(out))
+    st.mem.tokens.finish(out)
 }
 
 /// Insert `\special{src:...}` for the current source line into the input.

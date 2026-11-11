@@ -12,7 +12,7 @@ use crate::node::{AnyNode, NodePtr, PageInsNode};
 use crate::packaging::PackSpec;
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, GroupCode, InputName, InteractionMode, Selector};
-use crate::token::TokCursor;
+use crate::token::{TokCursor, Token};
 use crate::units::{NodeType, Scaled};
 
 use super::cmd_chr::{print_cmd_chr, print_meaning};
@@ -63,8 +63,7 @@ fn set_trick_count(st: &mut EngineState) {
 
 /// Shows the tokens from `p`, marking where `q` starts for `show_context`'s two-line display.
 pub(crate) fn show_token_list(st: &mut EngineState, mut p: TokCursor, q: TokCursor, l: i32) {
-    let mut match_chr = i32::from(b'#');
-    let mut n = i32::from(b'0');
+    let mut shown = ShownTokens::default();
     st.errors.tally = 0;
     while !p.is_end() && st.errors.tally < l {
         if p == q {
@@ -77,6 +76,48 @@ pub(crate) fn show_token_list(st: &mut EngineState, mut p: TokCursor, q: TokCurs
         let Some(w) = st.mem.tokens.read(&mut p) else {
             break;
         };
+        if !shown.show(st, w) {
+            return;
+        }
+    }
+    if !p.is_end() {
+        print_esc(st, "ETC.");
+    }
+}
+
+/// Shows `tokens`, which are not in a stored list.
+pub(crate) fn show_tokens(st: &mut EngineState, tokens: &[Token], l: i32) {
+    let mut shown = ShownTokens::default();
+    st.errors.tally = 0;
+    for &w in tokens {
+        if st.errors.tally >= l {
+            print_esc(st, "ETC.");
+            return;
+        }
+        if !shown.show(st, w) {
+            return;
+        }
+    }
+}
+
+/// What `show_token_list` keeps between tokens: the last match character and parameter number.
+struct ShownTokens {
+    match_chr: i32,
+    n: i32,
+}
+
+impl Default for ShownTokens {
+    fn default() -> Self {
+        Self {
+            match_chr: i32::from(b'#'),
+            n: i32::from(b'0'),
+        }
+    }
+}
+
+impl ShownTokens {
+    /// Shows `w`, false where `show_token_list` stops.
+    fn show(&mut self, st: &mut EngineState, w: Token) -> bool {
         if w.is_cs() {
             print_cs(st, w.cs());
         } else if w.0 < 0 {
@@ -98,20 +139,20 @@ pub(crate) fn show_token_list(st: &mut EngineState, mut p: TokCursor, q: TokCurs
                     print_char(st, c);
                 }
                 Cmd::OUT_PARAM => {
-                    print_char(st, match_chr);
+                    print_char(st, self.match_chr);
                     if c > 9 {
                         print_char(st, b'!');
-                        return;
+                        return false;
                     }
                     print_char(st, i32::from(b'0') + c);
                 }
                 Cmd::MATCH => {
-                    match_chr = c;
+                    self.match_chr = c;
                     print_char(st, c);
-                    n += 1;
-                    print_char(st, n);
-                    if n > i32::from(b'9') {
-                        return;
+                    self.n += 1;
+                    print_char(st, self.n);
+                    if self.n > i32::from(b'9') {
+                        return false;
                     }
                 }
                 Cmd::END_MATCH => {
@@ -122,9 +163,7 @@ pub(crate) fn show_token_list(st: &mut EngineState, mut p: TokCursor, q: TokCurs
                 _ => print_esc(st, "BAD."),
             }
         }
-    }
-    if !p.is_end() {
-        print_esc(st, "ETC.");
+        true
     }
 }
 
@@ -467,7 +506,7 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
             };
             let list = st.mem.tokens.begin()?;
             crate::scan::the_toks(st, the, &list)?;
-            let list = st.mem.tokens.finish(list);
+            let list = st.mem.tokens.finish(list)?;
             show_to_stream(st)?;
             print_nl(st, "> ");
             token_show(st, list);

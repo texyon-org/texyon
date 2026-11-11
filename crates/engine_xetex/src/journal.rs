@@ -344,7 +344,7 @@ impl EqtbJournal {
 
 pub(crate) fn arm(st: &mut crate::state::EngineState) {
     st.mem.journal.arm(st.mem.data.len());
-    st.mem.tokens.journal.arm(st.mem.tokens.nodes().len());
+    st.mem.tokens.arm_journal();
     st.mem.glue.journal.arm(st.mem.glue.specs().len());
     st.eqtb.journal.words.arm(st.eqtb.data.len());
     st.eqtb.journal.xeq.arm();
@@ -356,7 +356,7 @@ pub(crate) fn arm(st: &mut crate::state::EngineState) {
 
 pub(crate) fn disarm(st: &mut crate::state::EngineState) {
     st.mem.journal.disarm();
-    st.mem.tokens.journal.disarm();
+    st.mem.tokens.disarm_journal();
     st.mem.glue.journal.disarm();
     st.eqtb.journal.disarm();
     st.fonts.font_info_journal.disarm();

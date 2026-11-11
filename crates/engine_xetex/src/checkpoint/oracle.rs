@@ -132,10 +132,20 @@ fn digest_mem(st: &EngineState) -> u64 {
         }
     }
     let marks = mem.tokens.marks();
-    h.word(marks.len as u64);
-    h.i32(marks.avail.raw());
-    for &node in mem.tokens.nodes() {
-        h.word(bytemuck::cast::<_, u64>(node));
+    for free in marks.free_runs {
+        h.word(u64::from(free));
+    }
+    h.word(u64::from(marks.free_lists));
+    h.word(mem.tokens.tokens().len() as u64);
+    for &t in mem.tokens.tokens() {
+        h.i32(t.0);
+    }
+    h.word(mem.tokens.lists().len() as u64);
+    for &slot in mem.tokens.lists() {
+        let words: [u32; 3] = bytemuck::cast(slot);
+        for w in words {
+            h.word(u64::from(w));
+        }
     }
     for slot in mem.glyph_blobs.slots() {
         match slot {
@@ -300,7 +310,9 @@ fn digest_input_state(h: &mut Fnv, input: &InputState) {
     h.i32(input.loc.raw());
     h.i32(input.limit.raw());
     h.i32(input.token_start().raw());
-    h.i32(input.token_loc().raw());
+    let (pos, end) = input.token_loc().parts();
+    h.word(u64::from(pos));
+    h.word(u64::from(end));
     h.i32(i32::try_from(input.param_start()).unwrap_or(i32::MAX));
     digest_input_name(h, input.name);
     h.i32(input.synctex_tag);

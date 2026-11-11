@@ -188,7 +188,7 @@ pub(crate) fn read_toks(
 
     st.scanner.scanner_status = ScannerStatus::Normal;
     st.scanner.align_state = s;
-    let list = st.mem.tokens.finish(b);
+    let list = st.mem.tokens.finish(b)?;
     st.scanner.def_ref = list;
     Ok(list)
 }
@@ -408,7 +408,7 @@ pub(crate) fn scan_toks(
     if hash_brace != Token::ZERO {
         st.mem.tokens.push(&b, hash_brace)?;
     }
-    let list = st.mem.tokens.finish(b);
+    let list = st.mem.tokens.finish(b)?;
     st.scanner.def_ref = list;
     Ok(list)
 }
@@ -521,7 +521,7 @@ fn scan_general_text(st: &mut EngineState) -> Result<TokenList, Abort> {
     }
     st.scanner.scanner_status = saved_status;
     st.scanner.warning_index = saved_warning_index;
-    Ok(st.mem.tokens.finish(b))
+    st.mem.tokens.finish(b)
 }
 
 pub(crate) fn scan_pdf_ext_toks(st: &mut EngineState) -> Result<(), Abort> {

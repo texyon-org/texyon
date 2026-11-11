@@ -368,7 +368,7 @@ pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, 
         } else if st.scanner.cur_cmd != Cmd::Spacer || i > 0 {
             back_input(st)?;
             if i > 0 {
-                let matched = st.mem.tokens.finish(backup);
+                let matched = st.mem.tokens.finish(backup)?;
                 begin_token_list(st, matched, TokenType::BackedUp)?;
             } else {
                 st.mem.tokens.abandon(backup);

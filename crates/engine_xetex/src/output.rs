@@ -27,7 +27,8 @@ mod warnings;
 
 pub(crate) use self::cmd_chr::{print_cmd_chr, print_meaning, CmdChr};
 pub(crate) use self::show::{
-    issue_message, show_context, show_cur_cmd_chr, show_save_groups, show_token_list, show_whatever,
+    issue_message, show_context, show_cur_cmd_chr, show_save_groups, show_token_list, show_tokens,
+    show_whatever,
 };
 pub(crate) use self::show_box::{short_display, show_box};
 pub(crate) use self::warnings::{

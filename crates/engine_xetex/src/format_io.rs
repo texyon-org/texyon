@@ -26,7 +26,7 @@ use crate::output::{print, print_char, print_int, print_ln, print_nl};
 use crate::params::IntPar;
 use crate::payload::PayloadStore;
 use crate::state::{EngineState, EqtbState, InteractionMode, PerFont, Selector};
-use crate::token::{TokNode, TokPtr, Token, TokenStore, FIXED_HEADS};
+use crate::token::{ListSlot, Token, TokenStore};
 use crate::units::{EqtbPtr, FontId, FontInfoIdx, MemPtr, PoolPos, SavePtr, Scaled, StrNumber};
 
 const FORMAT_HEADER_MAGIC: i32 = 0x5454_4E43;
@@ -140,15 +140,29 @@ impl FmtItem for GlueSpec {
     }
 }
 
-impl FmtItem for TokNode {
-    const SIZE: usize = 8;
+impl FmtItem for Token {
+    const SIZE: usize = 4;
     #[inline]
     fn put(self, out: &mut Vec<u8>) {
-        bytemuck::cast::<_, B32x2>(self).put(out);
+        self.0.put(out);
     }
     #[inline]
     fn get(bytes: &[u8]) -> Self {
-        bytemuck::cast(B32x2::get(bytes))
+        Token(i32::get(bytes))
+    }
+}
+
+impl FmtItem for ListSlot {
+    const SIZE: usize = 12;
+    #[inline]
+    fn put(self, out: &mut Vec<u8>) {
+        for w in bytemuck::cast::<_, [u32; 3]>(self) {
+            w.put(out);
+        }
+    }
+    #[inline]
+    fn get(bytes: &[u8]) -> Self {
+        bytemuck::cast([0, 4, 8].map(|i| u32::get(&bytes[i..i + 4])))
     }
 }
 
@@ -579,21 +593,26 @@ fn glue_specs<S: FmtStream>(s: &mut S, glue: &mut GlueStore) -> Result<(), Abort
 }
 
 fn token_lists<S: FmtStream>(s: &mut S, toks: &mut TokenStore) -> Result<(), Abort> {
-    let marks = toks.marks();
+    let mut marks = toks.marks();
     let too_big = || Abort::Internal("token store exceeds the format's limit");
-    let mut len = i32::try_from(marks.len).map_err(|_| too_big())?;
-    let mut avail = marks.avail.raw();
-    let fixed = i32::try_from(FIXED_HEADS).map_err(|_| too_big())?;
-    s.int_in(&mut len, fixed, i32::MAX)?;
-    s.int(&mut avail)?;
-    if S::LOADING && avail != TEX_NULL && !(fixed..len).contains(&avail) {
+    let mut tokens = i32::try_from(marks.tokens).map_err(|_| too_big())?;
+    let mut lists = i32::try_from(marks.lists).map_err(|_| too_big())?;
+    s.int_in(&mut tokens, 1, i32::MAX)?;
+    s.int_in(&mut lists, 1, i32::MAX)?;
+    s.items(&mut marks.free_runs)?;
+    s.items(std::slice::from_mut(&mut marks.free_lists))?;
+    if S::LOADING {
+        marks.tokens = usize::try_from(tokens).map_err(|_| bad_fmt())?;
+        marks.lists = usize::try_from(lists).map_err(|_| bad_fmt())?;
+        toks.reset_for_load(marks);
+    }
+    let (tokens, lists) = toks.parts_mut();
+    s.items(tokens)?;
+    s.items(lists)?;
+    if S::LOADING && !toks.is_consistent() {
         return Err(bad_fmt());
     }
-    if S::LOADING {
-        let len = usize::try_from(len).map_err(|_| bad_fmt())?;
-        toks.reset_for_load(len, TokPtr::from_raw(avail));
-    }
-    s.items(toks.nodes_mut())
+    Ok(())
 }
 
 /// Dumps `eqtb[k..=last]` as alternating runs of distinct words and of

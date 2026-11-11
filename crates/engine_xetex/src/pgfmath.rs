@@ -557,7 +557,7 @@ fn result_macro(st: &mut EngineState, text: &[u8]) -> Result<TokenList, Abort> {
         };
         st.mem.tokens.push(&out, tok)?;
     }
-    Ok(st.mem.tokens.finish(out))
+    st.mem.tokens.finish(out)
 }
 
 fn commit(st: &mut EngineState, known: &KnownCs, answer: &Answer) -> Result<(), Abort> {

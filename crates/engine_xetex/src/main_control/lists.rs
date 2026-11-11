@@ -651,7 +651,7 @@ pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
     for token in insertion.tokens() {
         st.mem.tokens.push(&list, token)?;
     }
-    let list = st.mem.tokens.finish(list);
+    let list = st.mem.tokens.finish(list)?;
     crate::input::begin_token_list(st, list, TokenType::Inserted)?;
     crate::errors::error(
         st,

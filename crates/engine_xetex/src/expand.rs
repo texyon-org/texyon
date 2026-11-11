@@ -32,7 +32,7 @@ use crate::units::{BufPos, EqtbPtr, FontId, MemPtr, Scaled, StrNumber};
 fn ins_the_toks(st: &mut EngineState, code: TheCode) -> Result<(), Abort> {
     let b = st.mem.tokens.begin()?;
     crate::scan::the_toks(st, code, &b)?;
-    let list = st.mem.tokens.finish(b);
+    let list = st.mem.tokens.finish(b)?;
     begin_token_list(st, list, TokenType::Inserted)
 }
 
@@ -125,7 +125,7 @@ fn scan_cs_name_tokens(st: &mut EngineState) -> Result<TokenList, Abort> {
         )?;
     }
     st.scanner.is_in_csname = saved_in_csname;
-    Ok(st.mem.tokens.finish(b))
+    st.mem.tokens.finish(b)
 }
 
 fn trace_diagnostic(st: &mut EngineState, text: &str) {
@@ -718,7 +718,7 @@ fn str_list(
 ) -> Result<TokenList, Abort> {
     let out = st.mem.tokens.begin()?;
     st.mem.str_toks_cat(&mut st.strings, b, cat, &out)?;
-    Ok(st.mem.tokens.finish(out))
+    st.mem.tokens.finish(out)
 }
 
 fn is_aat_or_graphite(st: &EngineState, f: FontId) -> bool {
@@ -1192,7 +1192,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                         // Strip the braces around a single braced argument.
                         st.mem.tokens.drop_first_last(&arg);
                     }
-                    pstack[n] = st.mem.tokens.finish(arg);
+                    pstack[n] = st.mem.tokens.finish(arg)?;
                     n += 1;
                     if st.eqtb.int_par(IntPar::TracingMacros) > 0 {
                         trace_macro_param(st, match_chr, n, pstack[n - 1]);

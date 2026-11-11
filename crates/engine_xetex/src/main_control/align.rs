@@ -596,7 +596,7 @@ impl MemState {
         while let Some(t) = self.tokens.read(&mut c) {
             self.tokens.push(&copy, t)?;
         }
-        Ok(self.tokens.finish(copy))
+        self.tokens.finish(copy)
     }
 
     /// A fresh preamble column with an empty span list and no entries yet.
@@ -851,7 +851,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
         let column = st.mem.new_align_record()?;
         st.scanner.cur_align.set_link(&mut st.mem, column.ptr());
         st.scanner.cur_align = column.ptr();
-        st.mem[column].u_part = st.mem.tokens.finish(u_part);
+        st.mem[column].u_part = st.mem.tokens.finish(u_part)?;
 
         let v_part = st.mem.tokens.begin()?;
         loop {
@@ -878,7 +878,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
         st.mem
             .tokens
             .push(&v_part, Token::from_cs(FROZEN_END_TEMPLATE))?;
-        st.mem[column].v_part = st.mem.tokens.finish(v_part);
+        st.mem[column].v_part = st.mem.tokens.finish(v_part)?;
     }
 
     st.scanner.scanner_status = ScannerStatus::Normal;

@@ -5,8 +5,7 @@ use crate::consts::{HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, MAIN_MEMORY_WORDS
 use crate::diagnostic::{begin_capture, emit, emit_fatal, take_capture, DiagnosticKind};
 use crate::output::{
     begin_diagnostic, end_diagnostic, print, print_char, print_err, print_error_prefix, print_int,
-    print_ln, print_nl, show_box, show_context, show_token_list, token_show, CmdChr, InMode,
-    TexPrint,
+    print_ln, print_nl, show_box, show_context, token_show, CmdChr, InMode, TexPrint,
 };
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, EqtbState, ErrorState, InteractionMode, Selector};
@@ -566,5 +565,5 @@ pub(crate) fn runaway(st: &mut EngineState) {
     print_ln(st);
     let built = st.mem.tokens.innermost_built();
     let l = st.errors.error_line - 10;
-    show_token_list(st, built, crate::token::TokCursor::END, l);
+    crate::output::show_tokens(st, &built, l);
 }

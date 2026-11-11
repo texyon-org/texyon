@@ -9,7 +9,6 @@ use crate::mem_types::{B32x2, MemoryWord};
 use crate::replay::fence::ReplayFence;
 use crate::replay::source::SourceSnapshot;
 use crate::state::EngineState;
-use crate::token::TokNode;
 
 mod bundle;
 mod oracle;
@@ -19,7 +18,7 @@ pub(crate) use bundle::{EngineBundle, StringWatermark};
 #[derive(Clone)]
 struct EngineDelta {
     mem: WordDelta<u32>,
-    tokens: WordDelta<TokNode>,
+    tokens: crate::token::TokenDelta,
     glue: WordDelta<GlueSpec>,
     eqtb: WordDelta<MemoryWord>,
     xeq: PlainDelta<u16>,
@@ -53,7 +52,7 @@ impl EngineDelta {
     fn snapshot_open(st: &EngineState) -> Self {
         Self {
             mem: st.mem.journal.snapshot(),
-            tokens: st.mem.tokens.journal.snapshot(),
+            tokens: st.mem.tokens.snapshot_journal(),
             glue: st.mem.glue.journal.snapshot(),
             eqtb: st.eqtb.journal.words.snapshot(),
             xeq: st.eqtb.journal.xeq.snapshot(),
@@ -65,7 +64,7 @@ impl EngineDelta {
 
     fn apply(&self, st: &mut EngineState) {
         self.mem.apply_to(&mut st.mem.data);
-        self.tokens.apply_to(st.mem.tokens.nodes_mut());
+        st.mem.tokens.apply(&self.tokens);
         self.glue.apply_to(st.mem.glue.specs_mut());
         self.eqtb.apply_to(&mut st.eqtb.data);
         self.xeq.apply_to(&mut st.eqtb.xeq_level);
@@ -732,8 +731,9 @@ mod tests {
         let rung = bundle(&st);
         ladder.push(&mut st, rung, 2, true, false);
 
-        let c = st.mem.tokens.single(Token(11)).unwrap();
-        st.mem.tokens.flush(c);
+        st.mem.tokens.flush(a);
+        let reused = st.mem.tokens.single(Token(11)).unwrap();
+        assert_eq!(reused, a, "the freed run and entry are reused");
         ladder.rewind_to(&mut st, 1, restore);
 
         assert_eq!(st.mem.tokens.marks(), marks);
