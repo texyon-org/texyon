@@ -174,7 +174,7 @@ pub(crate) fn main_control_ignore_spaces(
     if !primitive {
         loop {
             crate::scan::get_x_token(st)?;
-            if st.scanner.cur_cmd != Cmd::Spacer {
+            if st.scanner.cur.cmd() != Cmd::Spacer {
                 break;
             }
         }
@@ -187,8 +187,7 @@ pub(crate) fn main_control_ignore_spaces(
 
         if let Some(prim) = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)? {
             let p = prim.eqtb_loc();
-            st.scanner.cur_cmd = st.eqtb.meaning(p).cmd();
-            st.scanner.cur_chr = st.eqtb.meaning(p).encode().1;
+            st.scanner.cur = st.eqtb.meaning(p);
             st.scanner.cur_cs = p;
             st.scanner.cur_tok = Token::from_cs(p);
         } else {
@@ -215,13 +214,14 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
         crate::output::show_cur_cmd_chr(st);
     }
     let mode = st.input.cur_list.mode.abs();
-    let cmd = st.scanner.cur_cmd;
+    let cmd = st.scanner.cur.cmd();
     if mode == HMODE {
         match cmd {
             Cmd::Letter | Cmd::OtherChar | Cmd::CharGiven | Cmd::CharNum => {
-                if cmd == Cmd::CharNum {
-                    st.scanner.cur_chr = crate::scan::scan_usv_num(st)?;
-                }
+                st.mainloop.chr = match st.scanner.cur.char_code() {
+                    Some(c) => c,
+                    None => crate::scan::scan_usv_num(st)?,
+                };
                 return Ok(if main_control_main_loop(st)? {
                     Next::BigSwitch
                 } else {
@@ -231,7 +231,7 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
             Cmd::NoBoundary => {
                 crate::scan::get_x_token(st)?;
                 if matches!(
-                    st.scanner.cur_cmd,
+                    st.scanner.cur.cmd(),
                     Cmd::Letter | Cmd::OtherChar | Cmd::CharGiven | Cmd::CharNum
                 ) {
                     st.mainloop.cancel_boundary = true;
@@ -245,7 +245,7 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
         }
     }
 
-    match (mode, st.scanner.command()?) {
+    match (mode, st.scanner.cur) {
         (HMODE, Command::Spacer(_)) => {
             if st.input.cur_list.space_factor() == 1000 {
                 main_control_append_normal_space(st)?;
@@ -422,23 +422,24 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
         }
         (MMODE, Command::LeftBrace(_)) => append_noad(st, None)?,
         (MMODE, Command::Letter(c) | Command::OtherChar(c) | Command::CharGiven(c)) => {
-            crate::scan::set_math_char(st, st.eqtb.math_code(c.raw()))?
+            crate::scan::set_math_char(st, c.raw(), st.eqtb.math_code(c.raw()))?
         }
         (MMODE, Command::CharNum) => {
-            st.scanner.cur_chr = crate::scan::scan_char_num(st)?;
-            crate::scan::set_math_char(st, st.eqtb.math_code(st.scanner.cur_chr))?;
+            let c = crate::scan::scan_char_num(st)?;
+            crate::scan::set_math_char(st, c, st.eqtb.math_code(c))?;
         }
         (MMODE, Command::MathCharNum(code)) => {
             let c = crate::scan::scan_math_char_num(st, code)?;
-            crate::scan::set_math_char(st, c)?;
+            crate::scan::set_math_char(st, st.scanner.cur.encode().1, c)?;
         }
         (MMODE, Command::MathGiven(code)) => {
-            crate::scan::set_math_char(st, crate::scan::math_code_from_tex(code))?
+            let c = crate::scan::math_code_from_tex(code);
+            crate::scan::set_math_char(st, code, c)?
         }
-        (MMODE, Command::XetexMathGiven(code)) => crate::scan::set_math_char(st, code)?,
+        (MMODE, Command::XetexMathGiven(code)) => crate::scan::set_math_char(st, code, code)?,
         (MMODE, Command::DelimNum(code)) => {
             let c = crate::scan::scan_delim_num(st, code)?;
-            crate::scan::set_math_char(st, c)?;
+            crate::scan::set_math_char(st, st.scanner.cur.encode().1, c)?;
         }
         (MMODE, Command::MathComp(t)) => append_noad(st, Some(t))?,
         (MMODE, Command::LimitSwitch(code)) => crate::math::math_limit_switch(st, code)?,

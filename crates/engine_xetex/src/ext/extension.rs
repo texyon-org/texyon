@@ -164,10 +164,10 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
 
         ExtensionCode::Immediate => {
             get_x_token(st)?;
-            let io_code = match st.scanner.try_command() {
-                Some(Command::Extension(
+            let io_code = match st.scanner.cur {
+                Command::Extension(
                     c @ (ExtensionCode::Open | ExtensionCode::Write | ExtensionCode::Close),
-                )) => Some(c),
+                ) => Some(c),
                 _ => None,
             };
             if let Some(io_code) = io_code {

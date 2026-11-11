@@ -62,13 +62,20 @@ fn skipped_branch_end(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-fn get_x_token_or_active_char(st: &mut EngineState) -> Result<(), Abort> {
+/// The next expanded token as `\if` and `\ifcat` compare it: TeX's `(cur_cmd, cur_chr)`,
+/// a `\noexpand`ed active character as itself and anything but a character as `\relax`.
+fn if_char_key(st: &mut EngineState) -> Result<(Cmd, i32), Abort> {
     get_x_token(st)?;
-    if st.scanner.try_command() == Some(Command::Relax(crate::command::RelaxCode::NoExpand)) {
-        st.scanner.cur_cmd = Cmd::ACTIVE_CHAR;
-        st.scanner.cur_chr = st.scanner.cur_tok.cs() - ACTIVE_BASE;
-    }
-    Ok(())
+    let (cmd, chr) = if st.scanner.cur == Command::Relax(RelaxCode::NoExpand) {
+        (Cmd::ACTIVE_CHAR, st.scanner.cur_tok.cs() - ACTIVE_BASE)
+    } else {
+        st.scanner.cur.encode()
+    };
+    Ok(if cmd > Cmd::ACTIVE_CHAR || chr > BIGGEST_USV {
+        (Cmd::Relax, TOO_BIG_USV)
+    } else {
+        (cmd, chr)
+    })
 }
 
 fn get_next_unexpanded(st: &mut EngineState) -> Result<(), Abort> {
@@ -116,7 +123,7 @@ fn scan_cs_name_tokens(st: &mut EngineState) -> Result<TokenList, Abort> {
         }
         st.mem.tokens.push(&b, st.scanner.cur_tok)?;
     }
-    if st.scanner.cur_cmd != Cmd::EndCsName {
+    if st.scanner.cur.cmd() != Cmd::EndCsName {
         crate::errors::back_error(
             st,
             ("Missing ", crate::output::Esc("endcsname"), " inserted"),
@@ -160,22 +167,12 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
 
     let mut b = match this_if {
         IfCode::Char | IfCode::Cat => {
-            get_x_token_or_active_char(st)?;
-            let (m, n) =
-                if st.scanner.cur_cmd > Cmd::ACTIVE_CHAR || st.scanner.cur_chr > BIGGEST_USV {
-                    (Cmd::Relax, TOO_BIG_USV)
-                } else {
-                    (st.scanner.cur_cmd, st.scanner.cur_chr)
-                };
-            get_x_token_or_active_char(st)?;
-            if st.scanner.cur_cmd > Cmd::ACTIVE_CHAR || st.scanner.cur_chr > BIGGEST_USV {
-                st.scanner.cur_cmd = Cmd::Relax;
-                st.scanner.cur_chr = TOO_BIG_USV;
-            }
+            let (m, n) = if_char_key(st)?;
+            let (cmd, chr) = if_char_key(st)?;
             if this_if == IfCode::Char {
-                n == st.scanner.cur_chr
+                n == chr
             } else {
-                m == st.scanner.cur_cmd
+                m == cmd
             }
         }
         IfCode::Num | IfCode::Dim => {
@@ -220,18 +217,15 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
             let save_scanner_status = st.scanner.scanner_status;
             st.scanner.scanner_status = ScannerStatus::Normal;
             get_next(st)?;
-            let n = st.scanner.cur_cs;
-            let p = st.scanner.cur_cmd;
-            let q = st.scanner.cur_chr;
+            let first = st.scanner.cur;
             get_next(st)?;
-            let b = if st.scanner.cur_cmd != p {
+            let second = st.scanner.cur;
+            let b = if first.cmd() != second.cmd() {
                 false
-            } else if st.scanner.cur_cmd < Cmd::Call {
-                st.scanner.cur_chr == q
-            } else {
-                let q = st.eqtb.meaning(n).macro_body().unwrap_or(TokenList::NULL);
-                let p = st.scanner.cur_chr_tokens();
+            } else if let (Some(p), Some(q)) = (second.macro_body(), first.macro_body()) {
                 p == q || st.mem.tokens.iter(p).eq(st.mem.tokens.iter(q))
+            } else {
+                first == second
             };
             st.scanner.scanner_status = save_scanner_status;
             b
@@ -248,7 +242,7 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
         IfCode::False => false,
         IfCode::Defined => {
             get_next_unexpanded(st)?;
-            st.scanner.cur_cmd != Cmd::UndefinedCs
+            st.scanner.cur.cmd() != Cmd::UndefinedCs
         }
         IfCode::CsName => {
             let name = scan_cs_name_tokens(st)?;
@@ -306,11 +300,8 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
         IfCode::Primitive => {
             get_next_unexpanded(st)?;
             let m = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)?;
-            st.scanner.cur_cmd != Cmd::UndefinedCs
-                && m.is_some_and(|m| {
-                    st.scanner.cur_cmd == st.eqtb.meaning(m.eqtb_loc()).cmd()
-                        && st.scanner.cur_chr == st.eqtb.meaning(m.eqtb_loc()).encode().1
-                })
+            st.scanner.cur.cmd() != Cmd::UndefinedCs
+                && m.is_some_and(|m| st.scanner.cur == st.eqtb.meaning(m.eqtb_loc()))
         }
     };
 
@@ -658,7 +649,7 @@ fn conv_toks(st: &mut EngineState, c: ConvertCode) -> Result<(), Abort> {
             if !st.scanner.cur_cs.is_none() {
                 sprint_cs(st, st.scanner.cur_cs);
             } else {
-                print_char(st, st.scanner.cur_chr);
+                print_char(st, st.scanner.cur_tok.chr());
             }
         }
         ConvertCode::Meaning => crate::output::print_meaning(st),
@@ -747,8 +738,8 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     'reswitch: loop {
-        if st.scanner.cur_cmd >= Cmd::Call {
-            if st.scanner.cur_cmd < Cmd::EndTemplate {
+        if st.scanner.cur.cmd() >= Cmd::Call {
+            if st.scanner.cur.cmd() < Cmd::EndTemplate {
                 macro_call(st)?;
             } else {
                 st.scanner.cur_tok = Token::from_cs(FROZEN_ENDV);
@@ -759,7 +750,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
         if st.eqtb.int_par(IntPar::TracingCommands) > 1 {
             show_cur_cmd_chr(st);
         }
-        match st.scanner.command()? {
+        match st.scanner.cur {
             Command::TopBotMark { code: mark, marks } => {
                 let n = if marks {
                     crate::scan::scan_register_num(st)?
@@ -783,7 +774,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     get_token(st)?;
                     let t = st.scanner.cur_tok;
                     get_token(st)?;
-                    if st.scanner.cur_cmd > Cmd::MAX_COMMAND {
+                    if st.scanner.cur.cmd() > Cmd::MAX_COMMAND {
                         expand(st)?;
                     } else {
                         back_input(st)?;
@@ -792,12 +783,11 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     back_input(st)?;
                 } else {
                     get_token(st)?;
-                    if matches!(
-                        st.scanner.try_command(),
-                        Some(Command::IfTest { code, .. }) if code != IfCode::Case
-                    ) {
-                        st.scanner.cur_chr += IfCode::UNLESS;
-                        continue 'reswitch;
+                    if let Command::IfTest { code, .. } = st.scanner.cur {
+                        if code != IfCode::Case {
+                            st.scanner.cur = Command::IfTest { code, unless: true };
+                            continue 'reswitch;
+                        }
                     }
                     crate::errors::back_error(
                         st,
@@ -805,7 +795,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                             "You can't use `",
                             crate::output::Esc("unless"),
                             "' before `",
-                            crate::output::CmdChr(st.scanner.cur_cmd, st.scanner.cur_chr),
+                            crate::output::CmdChr::of(st.scanner.cur),
                             '\'',
                         ),
                         &["Continue, and I'll forget that it ever happened."],
@@ -824,11 +814,10 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     get_token_unexpanded(st)?;
                     let prim = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)?;
                     if let Some(prim) = prim {
-                        let cmd = st.eqtb.meaning(prim.eqtb_loc()).cmd();
-                        if cmd > Cmd::MAX_COMMAND {
-                            st.scanner.cur_cmd = cmd;
-                            st.scanner.cur_chr = st.eqtb.meaning(prim.eqtb_loc()).encode().1;
-                            st.scanner.cur_tok = Token::new(st.scanner.cur_cmd, st.scanner.cur_chr);
+                        let m = st.eqtb.meaning(prim.eqtb_loc());
+                        if m.cmd() > Cmd::MAX_COMMAND {
+                            st.scanner.cur = m;
+                            st.scanner.cur_tok = m.char_token();
                             st.scanner.cur_cs = CsId::NONE;
                             continue 'reswitch;
                         }
@@ -1023,14 +1012,13 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
     {
         if let Some(cs) = crate::pgfmath::intercept(st) {
             st.scanner.cur_cs = cs;
-            st.scanner.cur_cmd = st.eqtb.meaning(cs).cmd();
-            st.scanner.cur_chr = st.eqtb.meaning(cs).encode().1;
+            st.scanner.cur = st.eqtb.meaning(cs);
         }
     }
     let save_scanner_status = st.scanner.scanner_status;
     let save_warning_index = st.scanner.warning_index;
     st.scanner.warning_index = st.scanner.cur_cs;
-    let body = st.scanner.cur_chr_tokens();
+    let body = st.scanner.cur.macro_body().or_confusion("macro_call")?;
     let mut r = st.mem.tokens.cursor(body);
     let mut n: usize = 0;
 

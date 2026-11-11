@@ -498,7 +498,7 @@ pub(crate) fn extra_right_brace(st: &mut EngineState) -> Result<(), Abort> {
 pub(crate) fn you_cant(st: &EngineState) -> impl TexPrint {
     (
         "You can't use `",
-        CmdChr(st.scanner.cur_cmd, st.scanner.cur_chr),
+        CmdChr::of(st.scanner.cur),
         InMode(i32::from(st.input.cur_list.mode)),
     )
 }

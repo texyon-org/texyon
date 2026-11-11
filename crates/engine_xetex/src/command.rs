@@ -1,4 +1,4 @@
-//! `Command`: a `(cur_cmd, cur_chr)` pair decoded into one typed value.
+//! `Command`: a meaning, TeX's `(cmd, chr)` pair as one typed value.
 
 use crate::cmd::Cmd;
 use crate::codes::{
@@ -14,7 +14,7 @@ use crate::mem::NULL_LIST;
 use crate::node::{NodePtr, SaElement, SaPointerNode};
 use crate::scan::NO_EXPAND_FLAG;
 use crate::state::InteractionMode;
-use crate::token::TokenList;
+use crate::token::{Token, TokenList};
 use crate::units::{EqtbPtr, FontId, MemPtr, NodeType};
 
 /// A Unicode scalar value carried by a character command.
@@ -22,6 +22,9 @@ use crate::units::{EqtbPtr, FontId, MemPtr, NodeType};
 pub(crate) struct Usv(i32);
 
 impl Usv {
+    pub(crate) const SPACE: Usv = Usv(b' ' as i32);
+    pub(crate) const LEFT_BRACE: Usv = Usv(b'{' as i32);
+
     /// `c` as a scalar value, `None` outside `0..=BIGGEST_USV`.
     #[inline]
     pub(crate) const fn new(c: i32) -> Option<Usv> {
@@ -325,14 +328,21 @@ impl crate::state::ScannerState {
     /// The code of the current `\fi`, `\else` or `\or`, `None` for any other command.
     #[inline]
     pub(crate) fn fi_or_else(&self) -> Option<FiOrElseCode> {
-        match self.try_command() {
-            Some(Command::FiOrElse(code)) => Some(code),
+        match self.cur {
+            Command::FiOrElse(code) => Some(code),
             _ => None,
         }
     }
 }
 
 const _: () = assert!(std::mem::size_of::<Command>() == 8);
+
+/// `cur_cmd = cur_chr = 0`, the meaning before any token is read.
+impl Default for Command {
+    fn default() -> Self {
+        Command::Relax(RelaxCode::Zero)
+    }
+}
 
 impl Command {
     /// The macro call of `body` for a `\long` and/or `\outer` definition.
@@ -354,6 +364,56 @@ impl Command {
             | Command::OuterCall(body)
             | Command::LongOuterCall(body) => Some(body),
             _ => None,
+        }
+    }
+
+    /// The command of a character token of category `cat`, `None` for a category
+    /// no token carries.
+    #[inline(always)]
+    pub(crate) fn from_char(cat: Cmd, chr: i32) -> Option<Command> {
+        let c = Usv::new(chr)?;
+        Some(match cat {
+            Cmd::LeftBrace => Command::LeftBrace(c),
+            Cmd::RightBrace => Command::RightBrace(c),
+            Cmd::MathShift => Command::MathShift(c),
+            Cmd::TabMark => Command::TabMark(TabMarkCode::char(c)),
+            Cmd::MacParam => Command::MacParam(c),
+            Cmd::SupMark => Command::SupMark(c),
+            Cmd::SubMark => Command::SubMark(c),
+            Cmd::Spacer => Command::Spacer(c),
+            Cmd::Letter => Command::Letter(c),
+            Cmd::OtherChar => Command::OtherChar(c),
+            _ => return None,
+        })
+    }
+
+    /// The character a letter, other character or `\chardef`'d command typesets.
+    #[inline(always)]
+    pub(crate) fn char_code(self) -> Option<i32> {
+        match self {
+            Command::Letter(c) | Command::OtherChar(c) | Command::CharGiven(c) => Some(c.raw()),
+            _ => None,
+        }
+    }
+
+    /// `cur_tok` for this command when no control sequence carries it, TeX's
+    /// `cur_cmd * max_char_val + cur_chr`.
+    #[inline(always)]
+    pub(crate) fn char_token(self) -> Token {
+        match self {
+            Command::LeftBrace(c)
+            | Command::RightBrace(c)
+            | Command::MathShift(c)
+            | Command::MacParam(c)
+            | Command::SupMark(c)
+            | Command::SubMark(c)
+            | Command::Spacer(c)
+            | Command::Letter(c)
+            | Command::OtherChar(c) => Token::new(self.cmd(), c.raw()),
+            _ => {
+                let (cmd, chr) = self.encode();
+                Token::new(cmd, chr)
+            }
         }
     }
 

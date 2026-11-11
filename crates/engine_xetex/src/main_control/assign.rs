@@ -263,33 +263,29 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
 }
 
 fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
-    let q = st.scanner.cur_cmd;
+    let q = st.scanner.cur.cmd();
     let (l, p) = 'found: {
-        let mut cmd = st.scanner.try_command();
         if q != Cmd::Register {
             crate::scan::get_x_token(st)?;
-            cmd = st.scanner.try_command();
-            match cmd {
-                Some(Command::AssignInt(loc)) => {
-                    break 'found (RegisterLoc::Eqtb(loc), ValueLevel::Int)
-                }
-                Some(Command::AssignDimen(loc)) => {
+            match st.scanner.cur {
+                Command::AssignInt(loc) => break 'found (RegisterLoc::Eqtb(loc), ValueLevel::Int),
+                Command::AssignDimen(loc) => {
                     break 'found (RegisterLoc::Eqtb(loc), ValueLevel::Dimen)
                 }
-                Some(Command::AssignGlue(loc)) => {
+                Command::AssignGlue(loc) => {
                     break 'found (RegisterLoc::Eqtb(loc), ValueLevel::Glue)
                 }
-                Some(Command::AssignMuGlue(loc)) => {
+                Command::AssignMuGlue(loc) => {
                     break 'found (RegisterLoc::Eqtb(loc), ValueLevel::Mu)
                 }
                 _ => {}
             }
-            if st.scanner.cur_cmd != Cmd::Register {
+            if st.scanner.cur.cmd() != Cmd::Register {
                 return crate::errors::error(
                     st,
                     (
                         "You can't use `",
-                        crate::output::CmdChr(st.scanner.cur_cmd, st.scanner.cur_chr),
+                        crate::output::CmdChr::of(st.scanner.cur),
                         "' after ",
                         crate::output::CmdChr(q, 0),
                     ),
@@ -297,17 +293,16 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
                 );
             }
         }
-        let p = match cmd.and_then(|c| match c {
-            Command::Register(r) => Some(r.get()),
-            _ => None,
-        }) {
-            Some(RegisterRef::Scanned(level)) => level,
-            Some(RegisterRef::Sparse(sa)) => {
+        let Command::Register(r) = st.scanner.cur else {
+            return Err(Abort::Confusion("register"));
+        };
+        let p = match r.get() {
+            RegisterRef::Scanned(level) => level,
+            RegisterRef::Sparse(sa) => {
                 let level = st.mem[sa].sa_type().get().or_confusion("sa_type")?;
                 let leaf = sa.leaf(&st.mem).or_confusion("sa_type")?;
                 break 'found (RegisterLoc::Sparse(leaf), level);
             }
-            _ => return Err(Abort::Confusion("register")),
         };
         let n = crate::scan::scan_register_num(st)?;
         if n > 255 {
@@ -460,7 +455,7 @@ enum RegisterValue {
 pub(super) fn do_assignments(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         crate::scan::get_x_non_blank_non_relax(st)?;
-        if !st.scanner.cur_cmd.is_prefixed() {
+        if !st.scanner.cur.cmd().is_prefixed() {
             return Ok(());
         }
         st.scanner.set_box_allowed = false;
@@ -594,17 +589,17 @@ fn define_toks(
 
 pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
     let mut a: i32 = 0;
-    while let Some(Command::Prefix(code)) = st.scanner.try_command() {
+    while let Command::Prefix(code) = st.scanner.cur {
         if (a / code.raw()) & 1 == 0 {
             a += code.raw();
         }
         crate::scan::get_x_non_blank_non_relax(st)?;
-        if !st.scanner.cur_cmd.is_prefixed() {
+        if !st.scanner.cur.cmd().is_prefixed() {
             return crate::errors::back_error(
                 st,
                 (
                     "You can't use a prefix with `",
-                    crate::output::CmdChr(st.scanner.cur_cmd, st.scanner.cur_chr),
+                    crate::output::CmdChr::of(st.scanner.cur),
                     '\'',
                 ),
                 &[r"I'll pretend you didn't say \long or \outer or \global or \protected."],
@@ -619,7 +614,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
     if protected {
         a -= 8;
     }
-    if st.scanner.cur_cmd != Cmd::Def && (a % 4 != 0 || protected) {
+    if st.scanner.cur.cmd() != Cmd::Def && (a % 4 != 0 || protected) {
         crate::errors::error(
             st,
             (
@@ -630,7 +625,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 "' or `",
                 crate::output::Esc("protected"),
                 "' with `",
-                crate::output::CmdChr(st.scanner.cur_cmd, st.scanner.cur_chr),
+                crate::output::CmdChr::of(st.scanner.cur),
                 '\'',
             ),
             &[r"I'll pretend you didn't say \long or \outer or \protected here."],
@@ -643,7 +638,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
         a += 4;
     }
 
-    match st.scanner.command()? {
+    match st.scanner.cur {
         Command::SetFont(f) => define(st, a >= 4, CUR_FONT_LOC, Cmd::Data, f.raw())?,
         Command::Def { global, expand } => {
             if global && a < 4 && st.eqtb.int_par(IntPar::GlobalDefs) >= 0 {
@@ -666,13 +661,13 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             if !future {
                 loop {
                     crate::scan::get_token(st)?;
-                    if st.scanner.cur_cmd != Cmd::Spacer {
+                    if st.scanner.cur.cmd() != Cmd::Spacer {
                         break;
                     }
                 }
                 if st.scanner.cur_tok == Token::other(b'=') {
                     crate::scan::get_token(st)?;
-                    if st.scanner.cur_cmd == Cmd::Spacer {
+                    if st.scanner.cur.cmd() == Cmd::Spacer {
                         crate::scan::get_token(st)?;
                     }
                 }
@@ -684,7 +679,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 st.scanner.cur_tok = q;
                 crate::input::back_input(st)?;
             }
-            let m = st.scanner.command()?;
+            let m = st.scanner.cur;
             let sparse = match m {
                 Command::ToksRegister(r) => r.get().map(|sa| NodePtr::at(sa.ptr())),
                 Command::Register(r) => match r.get() {
@@ -798,7 +793,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 crate::errors::error(st, "Patterns can be loaded only by INITEX", &[])?;
                 loop {
                     crate::scan::get_token(st)?;
-                    if st.scanner.cur_cmd == Cmd::RightBrace {
+                    if st.scanner.cur.cmd() == Cmd::RightBrace {
                         return Ok(());
                     }
                 }
@@ -931,8 +926,8 @@ fn assign_toks(st: &mut EngineState, global: bool, cmd: Command) -> Result<(), A
     crate::scan::scan_optional_equals(st)?;
     crate::scan::get_x_non_blank_non_relax(st)?;
 
-    let source = match st.scanner.try_command() {
-        Some(Command::ToksRegister(r)) if r.get().is_none() => {
+    let source = match st.scanner.cur {
+        Command::ToksRegister(r) if r.get().is_none() => {
             let n = crate::scan::scan_register_num(st)?;
             Some(if n < 256 {
                 st.eqtb.toks(n)
@@ -941,15 +936,15 @@ fn assign_toks(st: &mut EngineState, global: bool, cmd: Command) -> Result<(), A
                 crate::scan::sa_token_list(st, sa)
             })
         }
-        Some(Command::ToksRegister(r)) => r.get().map(|sa| st.mem[sa].toks()),
-        Some(Command::AssignToks(loc)) if loc == TokPar::XetexInterCharToks.loc() => {
+        Command::ToksRegister(r) => r.get().map(|sa| st.mem[sa].toks()),
+        Command::AssignToks(loc) if loc == TokPar::XetexInterCharToks.loc() => {
             let n = scan_inter_char_pair(st)?;
             let sa = st
                 .mem
                 .find_sa_element(&st.scanner, ValueLevel::InterChar, n);
             Some(crate::scan::sa_token_list(st, sa))
         }
-        Some(Command::AssignToks(loc)) => Some(st.eqtb.equiv_tokens(loc)),
+        Command::AssignToks(loc) => Some(st.eqtb.equiv_tokens(loc)),
         _ => None,
     };
     if let Some(list) = source {

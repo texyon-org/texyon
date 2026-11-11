@@ -46,10 +46,7 @@ pub(super) fn align_error(st: &mut EngineState) -> Result<(), Abort> {
         };
         crate::errors::error(
             st,
-            (
-                "Misplaced ",
-                crate::output::CmdChr(st.scanner.cur_cmd, st.scanner.cur_chr),
-            ),
+            ("Misplaced ", crate::output::CmdChr::of(st.scanner.cur)),
             help,
         )?;
     } else {
@@ -319,7 +316,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
 
     if st.input.cur_list.mode == MMODE {
         do_assignments(st)?;
-        if st.scanner.cur_cmd != Cmd::MathShift {
+        if st.scanner.cur.cmd() != Cmd::MathShift {
             crate::errors::back_error(
                 st,
                 "Missing $$ inserted",
@@ -445,7 +442,7 @@ pub(super) fn align_peek(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         st.scanner.align_state = 1_000_000;
         get_x_non_blank_or_protected(st)?;
-        match st.scanner.cur_cmd {
+        match st.scanner.cur.cmd() {
             Cmd::NoAlign => {
                 crate::scan::scan_left_brace(st)?;
                 st.save_stack
@@ -456,7 +453,7 @@ pub(super) fn align_peek(st: &mut EngineState) -> Result<(), Abort> {
                 return Ok(());
             }
             Cmd::RightBrace => return fin_align(st),
-            Cmd::CarRet if st.scanner.try_command() == Some(Command::CarRet { crcr: true }) => {}
+            Cmd::CarRet if st.scanner.cur == Command::CarRet { crcr: true } => {}
             _ => {
                 init_row(st)?;
                 return init_col(st);
@@ -468,7 +465,7 @@ pub(super) fn align_peek(st: &mut EngineState) -> Result<(), Abort> {
 fn get_x_non_blank_or_protected(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         crate::scan::get_x_or_protected(st)?;
-        if st.scanner.cur_cmd != Cmd::Spacer {
+        if st.scanner.cur.cmd() != Cmd::Spacer {
             return Ok(());
         }
     }
@@ -477,19 +474,19 @@ fn get_x_non_blank_or_protected(st: &mut EngineState) -> Result<(), Abort> {
 fn get_preamble_token(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         crate::scan::get_token(st)?;
-        while st.scanner.try_command() == Some(Command::TabMark(TabMarkCode::SPAN)) {
+        while st.scanner.cur == Command::TabMark(TabMarkCode::SPAN) {
             crate::scan::get_token(st)?;
-            if st.scanner.cur_cmd > Cmd::MAX_COMMAND {
+            if st.scanner.cur.cmd() > Cmd::MAX_COMMAND {
                 crate::expand::expand(st)?;
                 crate::scan::get_token(st)?;
             }
         }
-        if st.scanner.cur_cmd == Cmd::Endv {
+        if st.scanner.cur.cmd() == Cmd::Endv {
             return Err(Abort::Fatal(
                 "(interwoven alignment preambles are not allowed)",
             ));
         }
-        if st.scanner.try_command() != Some(Command::AssignGlue(GluePar::TabSkip.loc())) {
+        if st.scanner.cur != Command::AssignGlue(GluePar::TabSkip.loc()) {
             return Ok(());
         }
         crate::scan::scan_optional_equals(st)?;
@@ -532,8 +529,8 @@ fn init_row(st: &mut EngineState) -> Result<(), Abort> {
 
 fn init_col(st: &mut EngineState) -> Result<(), Abort> {
     let column = NodePtr::<AlignRecord>::at(st.scanner.cur_align);
-    st.mem[column].extra_info = i32::from(st.scanner.cur_cmd);
-    if st.scanner.cur_cmd == Cmd::Omit {
+    st.mem[column].extra_info = i32::from(st.scanner.cur.cmd());
+    if st.scanner.cur.cmd() == Cmd::Omit {
         st.scanner.align_state = 0;
     } else {
         crate::input::back_input(st)?;
@@ -820,21 +817,21 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
         let g = st.mem.new_param_glue(&st.eqtb, GluePar::TabSkip)?.ptr();
         st.scanner.cur_align.set_link(&mut st.mem, g);
         st.scanner.cur_align = g;
-        if st.scanner.cur_cmd == Cmd::CarRet {
+        if st.scanner.cur.cmd() == Cmd::CarRet {
             break;
         }
 
         let u_part = st.mem.tokens.begin()?;
         loop {
             get_preamble_token(st)?;
-            if st.scanner.cur_cmd == Cmd::MacParam {
+            if st.scanner.cur.cmd() == Cmd::MacParam {
                 break;
             }
             let empty = st.mem.tokens.last_pushed(&u_part).is_none();
-            if (Cmd::TabMark..=Cmd::CarRet).contains(&st.scanner.cur_cmd)
+            if (Cmd::TabMark..=Cmd::CarRet).contains(&st.scanner.cur.cmd())
                 && st.scanner.align_state == -1_000_000
             {
-                if empty && st.scanner.cur_loop.is_null() && st.scanner.cur_cmd == Cmd::TabMark {
+                if empty && st.scanner.cur_loop.is_null() && st.scanner.cur.cmd() == Cmd::TabMark {
                     st.scanner.cur_loop = st.scanner.cur_align;
                 } else {
                     crate::errors::back_error(
@@ -848,7 +845,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
                     )?;
                     break;
                 }
-            } else if st.scanner.cur_cmd != Cmd::Spacer || !empty {
+            } else if st.scanner.cur.cmd() != Cmd::Spacer || !empty {
                 st.mem.tokens.push(&u_part, st.scanner.cur_tok)?;
             }
         }
@@ -861,12 +858,12 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
         let v_part = st.mem.tokens.begin()?;
         loop {
             get_preamble_token(st)?;
-            if (Cmd::TabMark..=Cmd::CarRet).contains(&st.scanner.cur_cmd)
+            if (Cmd::TabMark..=Cmd::CarRet).contains(&st.scanner.cur.cmd())
                 && st.scanner.align_state == -1_000_000
             {
                 break;
             }
-            if st.scanner.cur_cmd == Cmd::MacParam {
+            if st.scanner.cur.cmd() == Cmd::MacParam {
                 crate::errors::error(
                     st,
                     "Only one # is allowed per tab",

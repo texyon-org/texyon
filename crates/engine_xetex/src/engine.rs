@@ -140,9 +140,9 @@ fn primitive(st: &mut EngineState, ident: &str, c: Cmd, o: i32) -> Result<CsId, 
 }
 
 pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
-    let c = st.scanner.cur_chr;
+    let dump = st.scanner.cur == Command::Stop { dump: true };
 
-    if c != 1 {
+    if !dump {
         st.eqtb.set_int_par(IntPar::NewLineChar, -1);
     }
 
@@ -198,7 +198,7 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
         st.shipout.selector = Selector::TermAndLog;
     }
 
-    if c != 1 {
+    if !dump {
         return Ok(());
     }
     if !st.config.in_initex_mode {

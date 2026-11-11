@@ -43,20 +43,18 @@ fn scan_delimiter(
     } else {
         loop {
             crate::scan::get_x_token(st)?;
-            if st.scanner.cur_cmd != Cmd::Spacer && st.scanner.cur_cmd != Cmd::Relax {
+            if st.scanner.cur.cmd() != Cmd::Spacer && st.scanner.cur.cmd() != Cmd::Relax {
                 break;
             }
         }
 
-        match st.scanner.try_command() {
-            Some(Command::Letter(c) | Command::OtherChar(c)) => st.eqtb.del_code(c.raw()),
-            Some(Command::DelimNum(DelimNumCode::Udelimiter)) => {
+        match st.scanner.cur {
+            Command::Letter(c) | Command::OtherChar(c) => st.eqtb.del_code(c.raw()),
+            Command::DelimNum(DelimNumCode::Udelimiter) => {
                 crate::scan::scan_math_class_int(st)?;
                 scan_extended_delimiter(st)?
             }
-            Some(Command::DelimNum(DelimNumCode::Delimiter)) => {
-                crate::scan::scan_delimiter_int(st)?
-            }
+            Command::DelimNum(DelimNumCode::Delimiter) => crate::scan::scan_delimiter_int(st)?,
             _ => -1,
         }
     };
@@ -318,7 +316,7 @@ impl ListStateRecord {
 }
 
 pub(crate) fn sub_sup(st: &mut EngineState) -> Result<(), Abort> {
-    let cmd = st.scanner.cur_cmd;
+    let cmd = st.scanner.cur.cmd();
     let (p, duplicate) = st.input.cur_list.prepare_sub_sup(&mut st.mem, cmd)?;
     if let Some(duplicate) = duplicate {
         let (message, help) = match duplicate {

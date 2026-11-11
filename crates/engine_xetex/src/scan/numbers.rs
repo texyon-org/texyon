@@ -2,6 +2,7 @@
 
 use crate::cmd::Cmd;
 use crate::codes::ValueLevel;
+use crate::command::RelaxCode;
 use crate::consts::{
     ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, FROZEN_PRIMITIVE,
     FROZEN_RELAX, MAX_DIMEN, MAX_HALFWORD, NULL_CS, NUMBER_MATH_FAMILIES, SINGLE_BASE,
@@ -14,6 +15,7 @@ use crate::glue_store::GlueSpecId;
 use crate::input::back_input;
 use crate::params::IntPar;
 use crate::scaled_math::{add_or_sub, fract, mult_and_add, quotient, xn_over_d, Overflowing};
+use crate::scan::Command;
 use crate::state::EngineState;
 use crate::token::Token;
 use crate::units::{GlueOrder, MemPtr, Scaled};
@@ -245,7 +247,7 @@ fn scan_signs(st: &mut EngineState) -> Result<bool, Abort> {
 /// Consumes one optional space after a constant.
 fn scan_optional_space(st: &mut EngineState) -> Result<(), Abort> {
     get_x_token(st)?;
-    if st.scanner.cur_cmd != Cmd::Spacer {
+    if st.scanner.cur.cmd() != Cmd::Spacer {
         back_input(st)?;
     }
     Ok(())
@@ -255,13 +257,11 @@ fn scan_optional_space(st: &mut EngineState) -> Result<(), Abort> {
 pub(super) fn get_primitive_token(st: &mut EngineState) -> Result<(), Abort> {
     get_token(st)?;
     if let Some(p) = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)? {
-        st.scanner.cur_cmd = st.eqtb.meaning(p.eqtb_loc()).cmd();
-        st.scanner.cur_chr = st.eqtb.meaning(p.eqtb_loc()).encode().1;
+        st.scanner.cur = st.eqtb.meaning(p.eqtb_loc());
         st.scanner.cur_cs = p.eqtb_loc();
         st.scanner.cur_tok = Token::from_cs(st.scanner.cur_cs);
     } else {
-        st.scanner.cur_cmd = Cmd::Relax;
-        st.scanner.cur_chr = 0;
+        st.scanner.cur = Command::Relax(RelaxCode::Zero);
         st.scanner.cur_tok = Token::from_cs(FROZEN_RELAX);
         st.scanner.cur_cs = FROZEN_RELAX;
     }
@@ -283,10 +283,10 @@ fn scan_int_decimal(st: &mut EngineState) -> Result<(i32, bool), Abort> {
         if st.scanner.cur_tok == ALPHA_TOKEN {
             get_token(st)?;
             if !st.scanner.cur_tok.is_cs() {
-                v = st.scanner.cur_chr;
-                if st.scanner.cur_cmd == Cmd::RightBrace {
+                v = st.scanner.cur_tok.chr();
+                if st.scanner.cur.cmd() == Cmd::RightBrace {
                     st.scanner.align_state += 1;
-                } else if st.scanner.cur_cmd < Cmd::RightBrace {
+                } else if st.scanner.cur.cmd() < Cmd::RightBrace {
                     st.scanner.align_state -= 1;
                 }
             } else if st.scanner.cur_tok < Token::from_cs(SINGLE_BASE) {
@@ -314,7 +314,8 @@ fn scan_int_decimal(st: &mut EngineState) -> Result<(i32, bool), Abort> {
         } else if st.scanner.cur_tok == FROZEN_PRIM_TOKEN {
             get_primitive_token(st)?;
             continue;
-        } else if st.scanner.cur_cmd >= Cmd::MIN_INTERNAL && st.scanner.cur_cmd <= Cmd::MAX_INTERNAL
+        } else if st.scanner.cur.cmd() >= Cmd::MIN_INTERNAL
+            && st.scanner.cur.cmd() <= Cmd::MAX_INTERNAL
         {
             v = match scan_something_internal(st, ValueLevel::Int, false)? {
                 CurVal::Int(n) => n,
@@ -373,7 +374,7 @@ fn scan_int_decimal(st: &mut EngineState) -> Result<(i32, bool), Abort> {
                         "look up `weird error' in the index to The TeXbook.)",
                     ],
                 )?;
-            } else if st.scanner.cur_cmd != Cmd::Spacer {
+            } else if st.scanner.cur.cmd() != Cmd::Spacer {
                 back_input(st)?;
             }
         }
@@ -454,7 +455,9 @@ fn scan_dimen_from(
         } else {
             negative = scan_signs(st)?;
 
-            if st.scanner.cur_cmd >= Cmd::MIN_INTERNAL && st.scanner.cur_cmd <= Cmd::MAX_INTERNAL {
+            if st.scanner.cur.cmd() >= Cmd::MIN_INTERNAL
+                && st.scanner.cur.cmd() <= Cmd::MAX_INTERNAL
+            {
                 if mu {
                     let val = scan_something_internal(st, ValueLevel::Mu, false)?;
                     v = match val.glue() {
@@ -505,7 +508,7 @@ fn scan_dimen_from(
                         }
                     }
                     f = round_decimals(&dig[..k]);
-                    if st.scanner.cur_cmd != Cmd::Spacer {
+                    if st.scanner.cur.cmd() != Cmd::Spacer {
                         back_input(st)?;
                     }
                 }
@@ -539,8 +542,8 @@ fn scan_dimen_from(
                 let integer = v;
                 get_x_non_blank(st)?;
 
-                if st.scanner.cur_cmd >= Cmd::MIN_INTERNAL
-                    && st.scanner.cur_cmd <= Cmd::MAX_INTERNAL
+                if st.scanner.cur.cmd() >= Cmd::MIN_INTERNAL
+                    && st.scanner.cur.cmd() <= Cmd::MAX_INTERNAL
                 {
                     let unit = if mu {
                         let val = scan_something_internal(st, ValueLevel::Mu, false)?;
@@ -683,7 +686,7 @@ pub(crate) fn scan_glue(st: &mut EngineState, level: ValueLevel) -> Result<GlueS
     let negative = scan_signs(st)?;
 
     let width =
-        if st.scanner.cur_cmd >= Cmd::MIN_INTERNAL && st.scanner.cur_cmd <= Cmd::MAX_INTERNAL {
+        if st.scanner.cur.cmd() >= Cmd::MIN_INTERNAL && st.scanner.cur.cmd() <= Cmd::MAX_INTERNAL {
             let val = scan_something_internal(st, level, negative)?;
             if let Some(spec) = val.glue() {
                 if val.level() != level {
@@ -844,7 +847,7 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
             };
             if o == EXPR_NONE {
                 if stack.is_empty() {
-                    if st.scanner.cur_cmd != Cmd::Relax {
+                    if st.scanner.cur.cmd() != Cmd::Relax {
                         back_input(st)?;
                     }
                 } else if st.scanner.cur_tok != Token::other(b')') {

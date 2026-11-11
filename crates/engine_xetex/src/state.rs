@@ -36,6 +36,8 @@ pub(crate) struct EngineState {
 /// Scratch registers of `main_control`'s character and ligature loop.
 #[derive(Default, Clone)]
 pub(crate) struct MainLoopState {
+    /// The character the main loop is at, TeX's `cur_chr` there.
+    pub chr: i32,
     pub main_f: FontId,
     pub main_h: i32,
     pub main_pp: crate::units::MemPtr,
@@ -1091,8 +1093,8 @@ pub(crate) struct ScannerState {
     pub long_state: Cmd,
     pub align_state: i32,
     pub expand_depth: i32,
-    pub cur_cmd: Cmd,
-    pub cur_chr: i32,
+    /// The meaning of the token `get_next` read last.
+    pub cur: crate::command::Command,
     pub cur_cs: CsId,
     pub cur_tok: crate::token::Token,
     pub cur_mark: CurMarks,
@@ -1736,24 +1738,6 @@ impl InputClusterState {
 pub(crate) const NATIVE_TEXT_MAX: i32 = 1 << 20;
 
 impl ScannerState {
-    /// `(cur_cmd, cur_chr)` decoded into one typed command.
-    #[inline]
-    pub(crate) fn command(&self) -> Result<crate::command::Command, crate::errors::Abort> {
-        self.try_command().or_confusion("cur_chr")
-    }
-
-    /// `(cur_cmd, cur_chr)` decoded, `None` for a token that is no command.
-    #[inline]
-    pub(crate) fn try_command(&self) -> Option<crate::command::Command> {
-        crate::command::Command::decode(self.cur_cmd, self.cur_chr)
-    }
-
-    /// `cur_chr` as the macro a call command carries.
-    #[inline]
-    pub(crate) fn cur_chr_tokens(&self) -> crate::token::TokenList {
-        crate::token::TokenList::from_raw(self.cur_chr)
-    }
-
     /// Grows `native_text` until `extra` more units fit.
     #[inline(always)]
     pub(crate) fn reserve_native_text(&mut self, extra: i32) -> Result<(), crate::errors::Abort> {

@@ -176,7 +176,7 @@ pub(super) fn head_for_vmode(st: &mut EngineState) -> Result<(), Abort> {
     if st.input.cur_list.mode >= 0 {
         return back_input_after_par_token(st);
     }
-    if st.scanner.cur_cmd != Cmd::Hrule {
+    if st.scanner.cur.cmd() != Cmd::Hrule {
         return off_save(st);
     }
     crate::errors::error(
@@ -194,7 +194,7 @@ pub(super) fn head_for_vmode(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 pub(super) fn begin_insert_or_adjust(st: &mut EngineState) -> Result<(), Abort> {
-    let n = if st.scanner.cur_cmd == Cmd::Vadjust {
+    let n = if st.scanner.cur.cmd() == Cmd::Vadjust {
         255
     } else {
         match crate::scan::scan_eight_bit_int(st)? {
@@ -210,7 +210,7 @@ pub(super) fn begin_insert_or_adjust(st: &mut EngineState) -> Result<(), Abort> 
         }
     };
     st.save_stack.set_saved(0, n);
-    let pre = st.scanner.cur_cmd == Cmd::Vadjust && crate::scan::scan_keyword(st, "pre")?;
+    let pre = st.scanner.cur.cmd() == Cmd::Vadjust && crate::scan::scan_keyword(st, "pre")?;
     st.save_stack.set_saved(1, i32::from(pre));
     st.save_stack.save_ptr += 2;
     st.save_stack
@@ -642,10 +642,7 @@ pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
     if st.save_stack.cur_group == GroupCode::BottomLevel {
         return crate::errors::error(
             st,
-            (
-                "Extra ",
-                crate::output::CmdChr(st.scanner.cur_cmd, st.scanner.cur_chr),
-            ),
+            ("Extra ", crate::output::CmdChr::of(st.scanner.cur)),
             &["Things are pretty mixed up, but I think the worst is over."],
         );
     }
@@ -845,12 +842,12 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
 
     do_assignments(st)?;
     let f = st.eqtb.cur_font();
-    let (q, qc) = match st.scanner.try_command() {
-        Some(Command::Letter(c) | Command::OtherChar(c) | Command::CharGiven(c)) => {
+    let (q, qc) = match st.scanner.cur {
+        Command::Letter(c) | Command::OtherChar(c) | Command::CharGiven(c) => {
             let qc = c.raw();
             (new_character(st, f, qc as u16)?, qc)
         }
-        Some(Command::CharNum) => {
+        Command::CharNum => {
             let qc = crate::scan::scan_char_num(st)?;
             (new_character(st, f, qc as u16)?, qc)
         }

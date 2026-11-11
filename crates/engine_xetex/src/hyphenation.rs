@@ -1,9 +1,12 @@
 //! Hyphenation patterns and exceptions, and the packed-trie builder.
 
 use crate::cmd::Cmd;
+use crate::command::Command;
+use crate::command::Usv;
 use crate::consts::BIGGEST_CHAR;
 pub(crate) use crate::consts::BIGGEST_LANG;
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, HyphState};
 use crate::units::{MemPtr, StrNumber};
@@ -728,9 +731,9 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
 
     loop {
         crate::scan::get_x_token(st)?;
-        match st.scanner.cur_cmd {
+        match st.scanner.cur.cmd() {
             Cmd::Letter | Cmd::OtherChar => {
-                let cur_chr = st.scanner.cur_chr;
+                let cur_chr = st.scanner.cur.char_code().or_confusion("pattern letter")?;
                 let digit = u8::try_from(cur_chr).ok().filter(u8::is_ascii_digit);
                 if let Some(d) = digit.filter(|_| !digit_sensed) {
                     if k < max_word_len(&st.eqtb) {
@@ -738,22 +741,23 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
                         digit_sensed = true;
                     }
                 } else {
-                    if cur_chr == i32::from(b'.') {
-                        st.scanner.cur_chr = 0;
+                    let code = if cur_chr == i32::from(b'.') {
+                        0
                     } else {
-                        st.scanner.cur_chr = st.eqtb.lc_code(cur_chr);
-                        if st.scanner.cur_chr == 0 {
+                        let code = st.eqtb.lc_code(cur_chr);
+                        if code == 0 {
                             crate::errors::error(st, "Nonletter", &[APPENDIX_H])?;
                         }
-                    }
+                        code
+                    };
 
-                    if st.scanner.cur_chr > st.hyph.max_hyph_char {
-                        st.hyph.max_hyph_char = st.scanner.cur_chr;
+                    if code > st.hyph.max_hyph_char {
+                        st.hyph.max_hyph_char = code;
                     }
 
                     if k < max_word_len(&st.eqtb) {
                         k += 1;
-                        st.hyph.hc[k] = st.scanner.cur_chr;
+                        st.hyph.hc[k] = code;
                         st.hyph.hyf[k] = 0;
                         digit_sensed = false;
                     }
@@ -768,7 +772,7 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
                     st.hyph.set_trie_o(q, op);
                 }
 
-                if st.scanner.cur_cmd == Cmd::RightBrace {
+                if st.scanner.cur.cmd() == Cmd::RightBrace {
                     break;
                 }
 
@@ -809,14 +813,19 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
 
         // reswitch: \char re-dispatches as Cmd::CharGiven
         loop {
-            match st.scanner.cur_cmd {
+            match st.scanner.cur.cmd() {
                 Cmd::Letter | Cmd::OtherChar | Cmd::CharGiven => {
-                    if st.scanner.cur_chr == i32::from(b'-') {
+                    let cur_chr = st
+                        .scanner
+                        .cur
+                        .char_code()
+                        .or_confusion("hyphenation letter")?;
+                    if cur_chr == i32::from(b'-') {
                         if n < max_word_len(&st.eqtb) {
                             p = st.mem.new_hyph_pos(n, p)?;
                         }
                     } else {
-                        st.hyph.hc[0] = st.hyph.hyph_code(&st.eqtb, st.scanner.cur_chr);
+                        st.hyph.hc[0] = st.hyph.hyph_code(&st.eqtb, cur_chr);
 
                         if st.hyph.hc[0] == 0 {
                             crate::errors::error(
@@ -842,15 +851,15 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
                     break;
                 }
                 Cmd::CharNum => {
-                    st.scanner.cur_chr = crate::scan::scan_char_num(st)?;
-                    st.scanner.cur_cmd = Cmd::CharGiven;
+                    let c = crate::scan::scan_char_num(st)?;
+                    st.scanner.cur = Command::CharGiven(Usv::new(c).or_confusion("char_num")?);
                 }
                 Cmd::Spacer | Cmd::RightBrace => {
                     if n > 1 {
                         store_hyph_exception(st, n, p)?;
                     }
 
-                    if st.scanner.cur_cmd == Cmd::RightBrace {
+                    if st.scanner.cur.cmd() == Cmd::RightBrace {
                         return Ok(());
                     }
 

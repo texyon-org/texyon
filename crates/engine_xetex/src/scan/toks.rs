@@ -3,6 +3,7 @@
 use crate::bridge::output_flush;
 use crate::cmd::Cmd;
 use crate::codes::{ScannerStatus, TheCode, ValueLevel};
+use crate::command::RelaxCode;
 use crate::consts::{ACTIVE_BASE, CLOSED, JUST_OPEN, NORMAL};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
@@ -19,7 +20,7 @@ use crate::units::{BufPos, StrNumber};
 
 use super::internal::{scan_something_internal, CurVal};
 use super::next::{get_next, get_token, get_x_token, x_token};
-use super::{scan_left_brace, NO_EXPAND_FLAG};
+use super::scan_left_brace;
 use crate::command::Command;
 
 const ZERO_TOKEN: Token = Token::other(b'0');
@@ -157,7 +158,6 @@ pub(crate) fn read_toks(
                 } else {
                     Token::new(Cmd::OtherChar, c)
                 };
-                st.scanner.cur_chr = c;
                 st.scanner.cur_tok = tok;
                 st.mem.tokens.push(&b, tok)?;
             }
@@ -283,8 +283,8 @@ pub(crate) fn scan_toks(
                 if st.scanner.cur_tok.is_brace() {
                     break false;
                 }
-                if st.scanner.cur_cmd == Cmd::MacParam {
-                    let s = Token::match_(st.scanner.cur_chr);
+                if let Command::MacParam(c) = st.scanner.cur {
+                    let s = Token::match_(c.raw());
                     get_token(st)?;
                     if st.scanner.cur_tok.is_left_brace() {
                         hash_brace = st.scanner.cur_tok;
@@ -320,7 +320,7 @@ pub(crate) fn scan_toks(
             };
             if !ended_with_brace {
                 st.mem.tokens.push(&b, Token::END_MATCH)?;
-                if st.scanner.cur_cmd == Cmd::RightBrace {
+                if st.scanner.cur.cmd() == Cmd::RightBrace {
                     st.scanner.align_state += 1;
                     crate::errors::error(
                         st,
@@ -342,17 +342,14 @@ pub(crate) fn scan_toks(
             if xpand {
                 loop {
                     get_next(st)?;
-                    if matches!(
-                        st.scanner.try_command(),
-                        Some(c) if c.macro_body().is_some_and(|b| st.mem.is_protected_macro(b))
-                    ) {
-                        st.scanner.cur_cmd = Cmd::Relax;
-                        st.scanner.cur_chr = NO_EXPAND_FLAG;
+                    let body = st.scanner.cur.macro_body();
+                    if body.is_some_and(|b| st.mem.is_protected_macro(b)) {
+                        st.scanner.cur = Command::Relax(RelaxCode::NoExpand);
                     }
-                    if st.scanner.cur_cmd <= Cmd::MAX_COMMAND {
+                    if st.scanner.cur.cmd() <= Cmd::MAX_COMMAND {
                         break;
                     }
-                    if let Some(Command::The(code)) = st.scanner.try_command() {
+                    if let Command::The(code) = st.scanner.cur {
                         the_toks(st, code, &b)?;
                     } else {
                         expand(st)?;
@@ -367,7 +364,7 @@ pub(crate) fn scan_toks(
             }
 
             if st.scanner.cur_tok.is_brace() {
-                if st.scanner.cur_cmd < Cmd::RightBrace {
+                if st.scanner.cur.cmd() < Cmd::RightBrace {
                     unbalance += 1;
                 } else {
                     unbalance -= 1;
@@ -375,14 +372,14 @@ pub(crate) fn scan_toks(
                         break 'found;
                     }
                 }
-            } else if st.scanner.cur_cmd == Cmd::MacParam && macro_def {
+            } else if st.scanner.cur.cmd() == Cmd::MacParam && macro_def {
                 let s = st.scanner.cur_tok;
                 if xpand {
                     get_x_token(st)?;
                 } else {
                     get_token(st)?;
                 }
-                if st.scanner.cur_cmd != Cmd::MacParam {
+                if st.scanner.cur.cmd() != Cmd::MacParam {
                     if st.scanner.cur_tok <= ZERO_TOKEN || st.scanner.cur_tok > t {
                         crate::errors::back_error(
                             st,
@@ -398,7 +395,8 @@ pub(crate) fn scan_toks(
                         )?;
                         st.scanner.cur_tok = s;
                     } else {
-                        st.scanner.cur_tok = Token::out_param(st.scanner.cur_chr - i32::from(b'0'));
+                        st.scanner.cur_tok =
+                            Token::out_param(st.scanner.cur_tok.chr() - i32::from(b'0'));
                     }
                 }
             }
@@ -510,7 +508,7 @@ fn scan_general_text(st: &mut EngineState) -> Result<TokenList, Abort> {
     loop {
         get_token(st)?;
         if st.scanner.cur_tok.is_brace() {
-            if st.scanner.cur_cmd < Cmd::RightBrace {
+            if st.scanner.cur.cmd() < Cmd::RightBrace {
                 unbalance += 1;
             } else {
                 unbalance -= 1;

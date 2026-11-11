@@ -46,10 +46,11 @@ pub(super) fn insert_boundary_inter_char_toks(st: &mut EngineState) -> Result<bo
         return Ok(false);
     };
     if st.scanner.cur_cs.is_none() {
-        if st.scanner.cur_cmd == Cmd::CharNum {
-            st.scanner.cur_cmd = Cmd::OtherChar;
-        }
-        st.scanner.cur_tok = Token::new(st.scanner.cur_cmd, st.scanner.cur_chr);
+        let cmd = match st.scanner.cur.cmd() {
+            Cmd::CharNum => Cmd::OtherChar,
+            cmd => cmd,
+        };
+        st.scanner.cur_tok = Token::new(cmd, st.mainloop.chr);
     } else {
         st.scanner.cur_tok = Token::from_cs(st.scanner.cur_cs);
     }
@@ -74,10 +75,11 @@ fn insert_inter_char_toks_before(st: &mut EngineState, sc: i32) -> Result<bool, 
     let Some(list) = inter_char_toks(st, prev * CHAR_CLASS_LIMIT + sc) else {
         return Ok(false);
     };
-    if st.scanner.cur_cmd != Cmd::Letter {
-        st.scanner.cur_cmd = Cmd::OtherChar;
-    }
-    st.scanner.cur_tok = Token::new(st.scanner.cur_cmd, st.scanner.cur_chr);
+    let cmd = match st.scanner.cur.cmd() {
+        Cmd::Letter => Cmd::Letter,
+        _ => Cmd::OtherChar,
+    };
+    st.scanner.cur_tok = Token::new(cmd, st.mainloop.chr);
     crate::input::back_input(st)?;
     st.input.cur_input.set_token_type(TokenType::BackedUpChar);
     crate::input::begin_token_list(st, list, TokenType::InterChar)?;
@@ -94,7 +96,7 @@ fn note_char_class(st: &mut EngineState, sc: i32) {
 /// character's space class.
 #[inline(always)]
 fn adjust_space_factor(st: &mut EngineState) -> i32 {
-    let sf_code = st.eqtb.sf_code(st.scanner.cur_chr);
+    let sf_code = st.eqtb.sf_code(st.mainloop.chr);
     let s = sf_code % 65536;
     if s == 1000 {
         st.input.cur_list.set_space_factor(1000);
@@ -109,10 +111,6 @@ fn adjust_space_factor(st: &mut EngineState) -> i32 {
     }
     st.mainloop.space_class = sf_code / 65536;
     st.mainloop.space_class
-}
-
-fn is_char_cmd(cmd: Cmd) -> bool {
-    matches!(cmd, Cmd::Letter | Cmd::OtherChar | Cmd::CharGiven)
 }
 
 #[inline]
@@ -216,7 +214,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
         }
         note_char_class(st, sc);
 
-        let ch = st.scanner.cur_chr;
+        let ch = st.mainloop.chr;
         if ch > 65535 {
             st.scanner.reserve_native_text(2)?;
             st.scanner
@@ -234,15 +232,17 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
         }
 
         crate::scan::get_next(st)?;
-        if is_char_cmd(st.scanner.cur_cmd) {
+        if let Some(c) = st.scanner.cur.char_code() {
+            st.mainloop.chr = c;
             continue;
         }
         crate::scan::x_token(st)?;
-        if is_char_cmd(st.scanner.cur_cmd) {
+        if let Some(c) = st.scanner.cur.char_code() {
+            st.mainloop.chr = c;
             continue;
         }
-        if st.scanner.cur_cmd == Cmd::CharNum {
-            st.scanner.cur_chr = crate::scan::scan_usv_num(st)?;
+        if st.scanner.cur.cmd() == Cmd::CharNum {
+            st.mainloop.chr = crate::scan::scan_usv_num(st)?;
             continue;
         }
         break insert_boundary_inter_char_toks(st)?;
@@ -579,7 +579,7 @@ pub(super) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
     {
         st.input.cur_list.fix_language(&mut st.mem, &st.eqtb)?;
     }
-    st.mainloop.cur_l = LigChar::from_raw(st.scanner.cur_chr);
+    st.mainloop.cur_l = LigChar::from_raw(st.mainloop.chr);
     let ls = st.mem.new_char(mf, st.mainloop.cur_l.code())?;
     st.mainloop.lig_stack = Some(LigStack::Char(ls));
     st.mainloop.cur_q = st.input.cur_list.tail;
@@ -655,7 +655,7 @@ pub(super) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
         }
 
         let main_f = st.mainloop.main_f;
-        let cur_chr = st.scanner.cur_chr as u16;
+        let cur_chr = st.mainloop.chr as u16;
         // Each call resets `xtx_ligature_present`, so the two bounds may see different codes.
         let exists = if st.fonts.effective_char(main_f, cur_chr)
             > i32::from(st.fonts.font_ec[main_f])
@@ -669,7 +669,7 @@ pub(super) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
             main_i.exists()
         };
         if !exists {
-            crate::output::char_warning(st, main_f, st.scanner.cur_chr)?;
+            crate::output::char_warning(st, main_f, st.mainloop.chr)?;
             NodePtr::<CharNode>::at(lig_stack_ptr(st)).free(&mut st.mem);
             return Ok(true);
         }
@@ -777,19 +777,21 @@ fn lig_kern_program(
 #[inline(always)]
 fn lookahead(st: &mut EngineState) -> Result<bool, Abort> {
     crate::scan::get_next(st)?;
-    if !is_char_cmd(st.scanner.cur_cmd) {
+    if st.scanner.cur.char_code().is_none() {
         crate::scan::x_token(st)?;
     }
-    if !is_char_cmd(st.scanner.cur_cmd) {
-        if st.scanner.cur_cmd != Cmd::CharNum {
-            if st.scanner.cur_cmd == Cmd::NoBoundary {
+    if let Some(c) = st.scanner.cur.char_code() {
+        st.mainloop.chr = c;
+    } else {
+        if st.scanner.cur.cmd() != Cmd::CharNum {
+            if st.scanner.cur.cmd() == Cmd::NoBoundary {
                 st.mainloop.bchar = LigChar::NONE;
             }
             st.mainloop.cur_r = st.mainloop.bchar;
             st.mainloop.lig_stack = None;
             return Ok(true);
         }
-        st.scanner.cur_chr = crate::scan::scan_char_num(st)?;
+        st.mainloop.chr = crate::scan::scan_char_num(st)?;
     }
 
     let sc = adjust_space_factor(st);
@@ -802,7 +804,7 @@ fn lookahead(st: &mut EngineState) -> Result<bool, Abort> {
     }
     note_char_class(st, sc);
 
-    let c = st.scanner.cur_chr;
+    let c = st.mainloop.chr;
     let ls = st.mem.new_char(st.mainloop.main_f, c as u16)?;
     st.mainloop.lig_stack = Some(LigStack::Char(ls));
     st.mainloop.cur_r = LigChar::from_raw(c);

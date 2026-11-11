@@ -108,10 +108,10 @@ pub(super) fn delete_last(st: &mut EngineState, t: NodeType) -> Result<(), Abort
 
 pub(super) fn scan_box(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
     crate::scan::get_x_non_blank_non_relax(st)?;
-    if let Some(Command::MakeBox(code)) = st.scanner.try_command() {
+    if let Command::MakeBox(code) = st.scanner.cur {
         begin_box(st, box_context, code)
     } else if box_context >= LEADER_FLAG
-        && (st.scanner.cur_cmd == Cmd::Hrule || st.scanner.cur_cmd == Cmd::Vrule)
+        && (st.scanner.cur.cmd() == Cmd::Hrule || st.scanner.cur.cmd() == Cmd::Vrule)
     {
         let rule = crate::scan::scan_rule_spec(st)?;
         leaders_end(st, box_context, BoxOrRule::Rule(rule))
@@ -232,9 +232,9 @@ fn box_end(
 fn leaders_end(st: &mut EngineState, box_context: i32, content: BoxOrRule) -> Result<(), Abort> {
     crate::scan::get_x_non_blank_non_relax(st)?;
     let vertical = st.input.cur_list.mode.abs() == VMODE;
-    let skip = match st.scanner.try_command() {
-        Some(Command::Hskip(s)) if !vertical => Some(s),
-        Some(Command::Vskip(s)) if vertical => Some(s),
+    let skip = match st.scanner.cur {
+        Command::Hskip(s) if !vertical => Some(s),
+        Command::Vskip(s) if vertical => Some(s),
         _ => None,
     };
     if let Some(s) = skip {

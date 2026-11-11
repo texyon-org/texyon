@@ -3,12 +3,14 @@
 use crate::cmd::Cmd;
 use crate::codes::{DelimNumCode, MathCharNumCode, ValueLevel};
 use crate::command::Command;
+use crate::command::Usv;
 use crate::consts::UNDEFINED_CONTROL_SEQUENCE;
 use crate::consts::{
     ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_USV, FROZEN_CONTROL_SEQUENCE, FROZEN_PROTECTION,
     MATH_CHAR, NUMBER_MATH_FAMILIES,
 };
 use crate::errors::Abort;
+use crate::errors::OrConfusion;
 use crate::input::{back_input, begin_token_list, TokenType};
 use crate::node::{BoxNode, MathSlot, NodePtr, RuleDimen, RuleNode, SaLeaf, Stored};
 use crate::packaging::PackSpec;
@@ -113,7 +115,7 @@ fn round_decimals(digits: &[u8]) -> i32 {
 
 pub(crate) fn scan_rule_spec(st: &mut EngineState) -> Result<NodePtr<RuleNode>, Abort> {
     let r = st.mem.new_rule()?;
-    if st.scanner.cur_cmd == Cmd::Vrule {
+    if st.scanner.cur.cmd() == Cmd::Vrule {
         st.mem[r].width = RuleDimen::from_raw(DEFAULT_RULE).into();
     } else {
         let node = &mut st.mem[r];
@@ -201,8 +203,8 @@ pub(crate) fn scan_math(st: &mut EngineState, p: MathSlot) -> Result<(), Abort> 
     'main: loop {
         get_x_non_blank_non_relax(st)?;
         c = loop {
-            break match st.scanner.try_command() {
-                Some(Command::Letter(ch) | Command::OtherChar(ch) | Command::CharGiven(ch)) => {
+            break match st.scanner.cur {
+                Command::Letter(ch) | Command::OtherChar(ch) | Command::CharGiven(ch) => {
                     let mc = st.eqtb.math_code(ch.raw());
                     if mc & 0x1FFFFF == ACTIVE_MATH_CHAR {
                         st.scanner.cur_cs = ACTIVE_BASE + ch.raw();
@@ -213,15 +215,15 @@ pub(crate) fn scan_math(st: &mut EngineState, p: MathSlot) -> Result<(), Abort> 
                     }
                     mc
                 }
-                Some(Command::CharNum) => {
-                    st.scanner.cur_chr = scan_char_num(st)?;
-                    st.scanner.cur_cmd = Cmd::CharGiven;
+                Command::CharNum => {
+                    let c = scan_char_num(st)?;
+                    st.scanner.cur = Command::CharGiven(Usv::new(c).or_confusion("char_num")?);
                     continue;
                 }
-                Some(Command::MathCharNum(code)) => scan_math_char_num(st, code)?,
-                Some(Command::MathGiven(code)) => math_code_from_tex(code),
-                Some(Command::XetexMathGiven(code)) => code,
-                Some(Command::DelimNum(code)) => scan_delim_num(st, code)?,
+                Command::MathCharNum(code) => scan_math_char_num(st, code)?,
+                Command::MathGiven(code) => math_code_from_tex(code),
+                Command::XetexMathGiven(code) => code,
+                Command::DelimNum(code) => scan_delim_num(st, code)?,
                 _ => {
                     back_input(st)?;
                     scan_left_brace(st)?;
@@ -246,9 +248,11 @@ pub(crate) fn scan_math(st: &mut EngineState, p: MathSlot) -> Result<(), Abort> 
     Ok(())
 }
 
-pub(crate) fn set_math_char(st: &mut EngineState, c: i32) -> Result<(), Abort> {
+/// Appends math character `c`, or expands active character `active` (TeX's `cur_chr`
+/// there) when `c` is `"8000`.
+pub(crate) fn set_math_char(st: &mut EngineState, active: i32, c: i32) -> Result<(), Abort> {
     if math_char(c) == ACTIVE_MATH_CHAR {
-        st.scanner.cur_cs = ACTIVE_BASE + st.scanner.cur_chr;
+        st.scanner.cur_cs = ACTIVE_BASE + active;
         fetch_cs_meaning(st);
         x_token(st)?;
         back_input(st)?;
@@ -364,11 +368,11 @@ pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, 
         get_x_token(st)?;
         let ch = i32::from(keyword[i]);
         if st.scanner.cur_cs.is_none()
-            && (st.scanner.cur_chr == ch || st.scanner.cur_chr == ch - 32)
+            && (st.scanner.cur_tok.chr() == ch || st.scanner.cur_tok.chr() == ch - 32)
         {
             st.mem.tokens.push(&backup, st.scanner.cur_tok)?;
             i += 1;
-        } else if st.scanner.cur_cmd != Cmd::Spacer || i > 0 {
+        } else if st.scanner.cur.cmd() != Cmd::Spacer || i > 0 {
             back_input(st)?;
             if i > 0 {
                 let matched = st.mem.tokens.finish(backup)?;
@@ -388,7 +392,7 @@ pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, 
 
 pub(crate) fn scan_left_brace(st: &mut EngineState) -> Result<(), Abort> {
     get_x_non_blank_non_relax(st)?;
-    if st.scanner.cur_cmd != Cmd::LeftBrace {
+    if st.scanner.cur.cmd() != Cmd::LeftBrace {
         crate::errors::back_error(
             st,
             "Missing { inserted",
@@ -400,8 +404,7 @@ pub(crate) fn scan_left_brace(st: &mut EngineState) -> Result<(), Abort> {
             ],
         )?;
         st.scanner.cur_tok = Token::left_brace(b'{');
-        st.scanner.cur_cmd = Cmd::LeftBrace;
-        st.scanner.cur_chr = i32::from(b'{');
+        st.scanner.cur = Command::LeftBrace(Usv::LEFT_BRACE);
         st.scanner.align_state += 1;
     }
     Ok(())

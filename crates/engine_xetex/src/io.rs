@@ -1041,14 +1041,14 @@ pub(crate) fn scan_file_name(st: &mut EngineState) -> Result<ScannedName, Abort>
 
     loop {
         crate::scan::get_x_token(st)?;
-        if st.scanner.cur_cmd != Cmd::Spacer && st.scanner.cur_cmd != Cmd::Relax {
+        if st.scanner.cur.cmd() != Cmd::Spacer && st.scanner.cur.cmd() != Cmd::Relax {
             break;
         }
     }
 
     crate::input::back_input(st)?;
 
-    let scan = if st.scanner.cur_cmd == Cmd::LeftBrace {
+    let scan = if st.scanner.cur.cmd() == Cmd::LeftBrace {
         scan_file_name_braced(st)?
     } else {
         st.scanner.name_in_progress = true;
@@ -1056,19 +1056,15 @@ pub(crate) fn scan_file_name(st: &mut EngineState) -> Result<ScannedName, Abort>
 
         loop {
             crate::scan::get_x_token(st)?;
-            if st.scanner.cur_cmd != Cmd::Spacer {
+            if st.scanner.cur.cmd() != Cmd::Spacer {
                 break;
             }
         }
 
         loop {
-            let c = match u32::try_from(st.scanner.cur_chr) {
-                Ok(c)
-                    if st.scanner.cur_cmd <= Cmd::OtherChar
-                        && st.scanner.cur_chr <= BIGGEST_USV =>
-                {
-                    c
-                }
+            let (cmd, chr) = st.scanner.cur.encode();
+            let c = match u32::try_from(chr) {
+                Ok(c) if cmd <= Cmd::OtherChar && chr <= BIGGEST_USV => c,
                 _ => {
                     crate::input::back_input(st)?;
                     break;

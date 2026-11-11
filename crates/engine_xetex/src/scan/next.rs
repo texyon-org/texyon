@@ -3,6 +3,8 @@
 use crate::bridge::output_flush;
 use crate::cmd::Cmd;
 use crate::codes::{FiOrElseCode, ScannerStatus};
+use crate::command::RelaxCode;
+use crate::command::Usv;
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_USV, END_WRITE, FROZEN_CR, FROZEN_ENDV, FROZEN_FI, NULL_CS, SINGLE_BASE,
     TEX_NULL,
@@ -12,13 +14,13 @@ use crate::expand::{expand, macro_call};
 use crate::input::{begin_token_list, TokenType, MID_LINE, NEW_LINE, SKIP_BLANKS, TOKEN_LIST};
 use crate::node::{AlignRecord, NodePtr};
 use crate::params::{IntPar, TokPar};
+use crate::scan::Command;
 use crate::state::{EngineState, InputClusterState, InputName, MemState, Selector};
 use crate::token::{Build, TokCursor, Token, TokenList};
 use crate::units::BufPos;
 use crate::units::CsId;
 
 use super::toks::finish_line;
-use super::NO_EXPAND_FLAG;
 
 impl MemState {
     /// Whether the macro whose token list starts at `ref_count` is `\protected`.
@@ -31,12 +33,16 @@ impl MemState {
 pub(crate) fn get_x_or_protected(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         get_token(st)?;
-        if st.scanner.cur_cmd <= Cmd::MAX_COMMAND {
+        if st.scanner.cur.cmd() <= Cmd::MAX_COMMAND {
             return Ok(());
         }
-        if st.scanner.cur_cmd >= Cmd::Call
-            && st.scanner.cur_cmd < Cmd::EndTemplate
-            && st.mem.is_protected_macro(st.scanner.cur_chr_tokens())
+        if st.scanner.cur.cmd() >= Cmd::Call
+            && st.scanner.cur.cmd() < Cmd::EndTemplate
+            && st
+                .scanner
+                .cur
+                .macro_body()
+                .is_some_and(|b| st.mem.is_protected_macro(b))
         {
             return Ok(());
         }
@@ -48,7 +54,7 @@ pub(crate) fn get_x_or_protected(st: &mut EngineState) -> Result<(), Abort> {
 pub(crate) fn get_x_non_blank_non_relax(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         get_x_token(st)?;
-        if st.scanner.cur_cmd != Cmd::Spacer && st.scanner.cur_cmd != Cmd::Relax {
+        if st.scanner.cur.cmd() != Cmd::Spacer && st.scanner.cur.cmd() != Cmd::Relax {
             return Ok(());
         }
     }
@@ -68,8 +74,7 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
             let p = st.mem.tokens.single(Token::from_cs(st.scanner.cur_cs))?;
             begin_token_list(st, p, TokenType::BackedUp)?;
         }
-        st.scanner.cur_cmd = Cmd::Spacer;
-        st.scanner.cur_chr = i32::from(b' ');
+        st.scanner.cur = Command::Spacer(Usv::SPACE);
     }
 
     let outcome = if st.scanner.scanner_status > ScannerStatus::Skipping {
@@ -141,11 +146,10 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
     outcome
 }
 
-/// Sets `cur_cmd` and `cur_chr` to the meaning of `cur_cs`.
+/// Sets `cur` to the meaning of `cur_cs`.
 #[inline(always)]
 pub(super) fn fetch_cs_meaning(st: &mut EngineState) {
-    st.scanner.cur_cmd = st.eqtb.meaning(st.scanner.cur_cs).cmd();
-    st.scanner.cur_chr = st.eqtb.meaning(st.scanner.cur_cs).encode().1;
+    st.scanner.cur = st.eqtb.meaning(st.scanner.cur_cs);
 }
 
 #[inline(always)]
@@ -220,9 +224,9 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
                     fetch_cs_meaning(st);
                 } else {
                     st.scanner.cur_cs = CsId::NONE;
-                    st.scanner.cur_cmd = t.cmd();
-                    st.scanner.cur_chr = t.chr();
-                    match st.scanner.cur_cmd {
+                    let cmd = t.cmd();
+                    st.scanner.cur = Command::from_char(cmd, t.chr()).or_confusion("token")?;
+                    match cmd {
                         Cmd::LeftBrace => st.scanner.align_state += 1,
                         Cmd::RightBrace => st.scanner.align_state -= 1,
                         _ => {}
@@ -247,21 +251,21 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
             'texswitch: loop {
                 if st.input.cur_input.loc <= st.input.cur_input.limit {
                     let loc = st.input.cur_input.loc;
-                    st.scanner.cur_chr = st.input.buffer[loc];
+                    let mut chr = st.input.buffer[loc];
                     st.input.cur_input.loc = loc + 1;
 
-                    if (0xD800..0xDC00).contains(&st.scanner.cur_chr)
+                    if (0xD800..0xDC00).contains(&chr)
                         && loc < st.input.cur_input.limit
                         && (0xDC00..0xE000).contains(&st.input.buffer[loc + 1])
                     {
                         let lower = st.input.buffer[loc + 1] - 0xDC00;
                         st.input.cur_input.loc = loc + 2;
-                        st.scanner.cur_chr = 65536 + (st.scanner.cur_chr - 0xD800) * 1024 + lower;
+                        chr = 65536 + (chr - 0xD800) * 1024 + lower;
                     }
 
                     'reswitch: loop {
-                        let cat = st.eqtb.cat_code(st.scanner.cur_chr);
-                        st.scanner.cur_cmd = cat;
+                        let mut cat = st.eqtb.cat_code(chr);
+                        let mut char_token = true;
 
                         // Dispatch on state + category (states 1, 17, 33, categories 0..=15).
                         match i32::from(st.input.cur_input.state) + i32::from(cat) {
@@ -340,18 +344,20 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                                         break 'start_cs;
                                     }
                                 }
+                                char_token = false;
                                 fetch_cs_meaning(st);
-                                if st.scanner.cur_cmd >= Cmd::OuterCall {
+                                if st.scanner.cur.cmd() >= Cmd::OuterCall {
                                     check_outer_validity(st)?;
                                 }
                             }
 
                             // Active character.
                             14 | 30 | 46 => {
-                                st.scanner.cur_cs = ACTIVE_BASE + st.scanner.cur_chr;
+                                st.scanner.cur_cs = ACTIVE_BASE + chr;
+                                char_token = false;
                                 fetch_cs_meaning(st);
                                 st.input.cur_input.state = MID_LINE;
-                                if st.scanner.cur_cmd >= Cmd::OuterCall {
+                                if st.scanner.cur.cmd() >= Cmd::OuterCall {
                                     check_outer_validity(st)?;
                                 }
                             }
@@ -361,11 +367,11 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                                 let loc = st.input.cur_input.loc;
                                 let limit = st.input.cur_input.limit;
                                 let buf = &st.input.buffer;
-                                if st.scanner.cur_chr == buf[loc] && loc < limit {
+                                if chr == buf[loc] && loc < limit {
                                     let mut sup_count: i32 = 2;
                                     while sup_count < 6
                                         && loc + 2 * sup_count - 2 <= limit
-                                        && st.scanner.cur_chr == buf[loc + sup_count - 1]
+                                        && chr == buf[loc + sup_count - 1]
                                     {
                                         sup_count += 1;
                                     }
@@ -375,17 +381,16 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                                         let new_chr =
                                             digits.fold(0, |v, i| 16 * v + hex_digit_value(buf[i]));
                                         if new_chr <= BIGGEST_USV {
-                                            st.scanner.cur_chr = new_chr;
+                                            chr = new_chr;
                                             st.input.cur_input.loc = loc + 2 * sup_count - 1;
                                             continue 'reswitch;
                                         }
-                                        st.scanner.cur_chr = buf[loc];
+                                        chr = buf[loc];
                                     } else {
                                         let c = buf[loc + 1];
                                         if c < 128 {
                                             st.input.cur_input.loc = loc + 2;
-                                            st.scanner.cur_chr =
-                                                if c < 64 { c + 64 } else { c - 64 };
+                                            chr = if c < 64 { c + 64 } else { c - 64 };
                                             continue 'reswitch;
                                         }
                                     }
@@ -411,14 +416,14 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                             // Space in mid-line.
                             11 => {
                                 st.input.cur_input.state = SKIP_BLANKS;
-                                st.scanner.cur_chr = i32::from(b' ');
+                                chr = i32::from(b' ');
                             }
 
                             // End of line in mid-line.
                             6 => {
                                 st.input.cur_input.loc = st.input.cur_input.limit + 1;
-                                st.scanner.cur_cmd = Cmd::Spacer;
-                                st.scanner.cur_chr = i32::from(b' ');
+                                cat = Cmd::Spacer;
+                                chr = i32::from(b' ');
                             }
 
                             // Comments, and end of line when skipping blanks.
@@ -431,8 +436,9 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                             38 => {
                                 st.input.cur_input.loc = st.input.cur_input.limit + 1;
                                 st.scanner.cur_cs = st.input.par_loc;
+                                char_token = false;
                                 fetch_cs_meaning(st);
-                                if st.scanner.cur_cmd >= Cmd::OuterCall {
+                                if st.scanner.cur.cmd() >= Cmd::OuterCall {
                                     check_outer_validity(st)?;
                                 }
                             }
@@ -454,6 +460,10 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                             }
 
                             _ => {}
+                        }
+                        if char_token {
+                            st.scanner.cur =
+                                Command::from_char(cat, chr).or_confusion("character category")?;
                         }
                         break 'reswitch;
                     }
@@ -511,8 +521,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                     finish_line(st);
                 } else {
                     if st.input.cur_input.name != InputName::Terminal {
-                        st.scanner.cur_cmd = Cmd::Relax;
-                        st.scanner.cur_chr = 0;
+                        st.scanner.cur = Command::Relax(RelaxCode::Zero);
                         return Ok(());
                     }
                     if !st.input.input_stack.is_empty() {
@@ -537,15 +546,14 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
             if t.is_cs() {
                 st.scanner.cur_cs = t.cs();
                 fetch_cs_meaning(st);
-                if st.scanner.cur_cmd >= Cmd::OuterCall {
-                    if st.scanner.cur_cmd == Cmd::DontExpand {
+                if st.scanner.cur.cmd() >= Cmd::OuterCall {
+                    if st.scanner.cur.cmd() == Cmd::DontExpand {
                         let next = st.mem.tokens.peek(st.input.cur_input.token_loc());
                         st.scanner.cur_cs = next.or_confusion("dont expand")?.cs();
                         st.input.cur_input.set_token_loc(TokCursor::END);
                         fetch_cs_meaning(st);
-                        if st.scanner.cur_cmd > Cmd::MAX_COMMAND {
-                            st.scanner.cur_cmd = Cmd::Relax;
-                            st.scanner.cur_chr = NO_EXPAND_FLAG;
+                        if st.scanner.cur.cmd() > Cmd::MAX_COMMAND {
+                            st.scanner.cur = Command::Relax(RelaxCode::NoExpand);
                         }
                     } else {
                         if st.scanner.cur_cs == END_WRITE && st.input.cur_list.mode == 0 {
@@ -555,17 +563,17 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                     }
                 }
             } else {
-                st.scanner.cur_cmd = t.cmd();
-                st.scanner.cur_chr = t.chr();
-                match st.scanner.cur_cmd {
+                let cmd = t.cmd();
+                if cmd == Cmd::OUT_PARAM {
+                    let k = st.input.cur_input.param_start() + t.chr() as usize - 1;
+                    let param = st.input.param_stack[k].list;
+                    begin_token_list(st, param, TokenType::Parameter)?;
+                    continue 'restart;
+                }
+                st.scanner.cur = Command::from_char(cmd, t.chr()).or_confusion("token")?;
+                match cmd {
                     Cmd::LeftBrace => st.scanner.align_state += 1,
                     Cmd::RightBrace => st.scanner.align_state -= 1,
-                    Cmd::OUT_PARAM => {
-                        let k = st.input.cur_input.param_start() + st.scanner.cur_chr as usize - 1;
-                        let param = st.input.param_stack[k].list;
-                        begin_token_list(st, param, TokenType::Parameter)?;
-                        continue 'restart;
-                    }
                     _ => {}
                 }
             }
@@ -575,8 +583,8 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
         }
 
         // An alignment entry ends at `&` or `\cr` when braces are balanced.
-        if st.scanner.cur_cmd <= Cmd::CarRet
-            && st.scanner.cur_cmd >= Cmd::TabMark
+        if st.scanner.cur.cmd() <= Cmd::CarRet
+            && st.scanner.cur.cmd() >= Cmd::TabMark
             && st.scanner.align_state == 0
         {
             if st.scanner.scanner_status == ScannerStatus::Aligning
@@ -588,14 +596,13 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
             }
             let column = NodePtr::<AlignRecord>::at(st.scanner.cur_align);
             let saved_cmd = st.mem[column].extra_info;
-            st.mem[column].extra_info = st.scanner.cur_chr;
+            st.mem[column].extra_info = st.scanner.cur.encode().1;
             let template = if Cmd::from_stored(saved_cmd) == Cmd::Omit {
                 TokenList::OMIT_TEMPLATE
             } else {
                 st.mem[column].v_part
             };
             begin_token_list(st, template, TokenType::VTemplate)?;
-            st.scanner.cur_cmd = Cmd::from_stored(saved_cmd);
             st.scanner.align_state = 1_000_000;
             continue 'restart;
         }
@@ -609,7 +616,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
 pub(crate) fn get_x_non_blank(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         get_x_token(st)?;
-        if st.scanner.cur_cmd != Cmd::Spacer {
+        if st.scanner.cur.cmd() != Cmd::Spacer {
             return Ok(());
         }
     }
@@ -618,14 +625,14 @@ pub(crate) fn get_x_non_blank(st: &mut EngineState) -> Result<(), Abort> {
 #[inline(always)]
 fn pack_cur_tok(st: &mut EngineState) {
     st.scanner.cur_tok = if st.scanner.cur_cs.is_none() {
-        Token::new(st.scanner.cur_cmd, st.scanner.cur_chr)
+        st.scanner.cur.char_token()
     } else {
         Token::from_cs(st.scanner.cur_cs)
     };
 }
 
 pub(crate) fn x_token(st: &mut EngineState) -> Result<(), Abort> {
-    while st.scanner.cur_cmd > Cmd::MAX_COMMAND {
+    while st.scanner.cur.cmd() > Cmd::MAX_COMMAND {
         expand(st)?;
         get_next(st)?;
     }
@@ -639,15 +646,15 @@ pub(crate) fn get_x_token(st: &mut EngineState) -> Result<(), Abort> {
             return Err(Abort::Cancelled);
         }
         get_next(st)?;
-        if st.scanner.cur_cmd <= Cmd::MAX_COMMAND {
+        if st.scanner.cur.cmd() <= Cmd::MAX_COMMAND {
             break;
         }
-        if st.scanner.cur_cmd >= Cmd::Call {
-            if st.scanner.cur_cmd < Cmd::EndTemplate {
+        if st.scanner.cur.cmd() >= Cmd::Call {
+            if st.scanner.cur.cmd() < Cmd::EndTemplate {
                 macro_call(st)?;
             } else {
                 st.scanner.cur_cs = FROZEN_ENDV;
-                st.scanner.cur_cmd = Cmd::Endv;
+                st.scanner.cur = Command::Endv;
                 break;
             }
         } else {
@@ -666,14 +673,14 @@ pub(crate) fn pass_text(st: &mut EngineState) -> Result<(), Abort> {
 
     loop {
         get_next(st)?;
-        if st.scanner.cur_cmd == Cmd::FiOrElse {
+        if st.scanner.cur.cmd() == Cmd::FiOrElse {
             if l == 0 {
                 break;
             }
             if st.scanner.fi_or_else() == Some(FiOrElseCode::Fi) {
                 l -= 1;
             }
-        } else if st.scanner.cur_cmd == Cmd::IfTest {
+        } else if st.scanner.cur.cmd() == Cmd::IfTest {
             l += 1;
         }
     }
@@ -748,8 +755,7 @@ pub(crate) fn copy_group_tokens(
                 if *unbalance == 0 {
                     consume_list_token(st, q);
                     st.scanner.cur_cs = CsId::NONE;
-                    st.scanner.cur_cmd = t.cmd();
-                    st.scanner.cur_chr = t.chr();
+                    st.scanner.cur = Command::from_char(t.cmd(), t.chr()).or_confusion("token")?;
                     st.scanner.cur_tok = t;
                     return Ok(true);
                 }

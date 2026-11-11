@@ -17,6 +17,7 @@ use crate::math::{ABOVE_CODE, ATOP_CODE, DELIMITED_CODE, OVER_CODE};
 use crate::node::{NodePtr, SaElement};
 use crate::params::TokPar;
 use crate::state::{EngineState, InteractionMode};
+use crate::token::TokenList;
 use crate::units::{EqtbPtr, FontId, MemPtr, NodeType};
 
 use super::{
@@ -28,6 +29,14 @@ use super::{
 /// A command with its modifier, printed as its primitive name.
 #[derive(Copy, Clone)]
 pub(crate) struct CmdChr(pub Cmd, pub i32);
+
+impl CmdChr {
+    /// The pair TeX prints `m` as.
+    pub(crate) fn of(m: crate::command::Command) -> CmdChr {
+        let (cmd, chr) = m.encode();
+        CmdChr(cmd, chr)
+    }
+}
 
 impl crate::output::TexPrint for CmdChr {
     fn print_to(&self, st: &mut EngineState) {
@@ -583,13 +592,12 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
 }
 
 pub(crate) fn print_meaning(st: &mut EngineState) {
-    let cmd = st.scanner.cur_cmd;
-    let chr = st.scanner.cur_chr;
+    let (cmd, chr) = st.scanner.cur.encode();
     print_cmd_chr(st, cmd, chr);
     if cmd >= Cmd::Call {
         print_char(st, b':');
         print_ln(st);
-        token_show(st, st.scanner.cur_chr_tokens());
+        token_show(st, TokenList::from_raw(chr));
     } else if cmd == Cmd::TopBotMark {
         if let Some(mark) = MarkCode::from_raw(chr) {
             print_char(st, b':');

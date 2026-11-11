@@ -34,7 +34,7 @@ pub(crate) fn resume_after_display(st: &mut EngineState) -> Result<(), Abort> {
     crate::main_control::start_paragraph_language(st);
 
     crate::scan::get_x_token(st)?;
-    if st.scanner.cur_cmd != Cmd::Spacer {
+    if st.scanner.cur.cmd() != Cmd::Spacer {
         crate::input::back_input(st)?;
     }
     if st.input.nest.len() == 1 {
@@ -224,7 +224,7 @@ fn check_math_fonts(st: &mut EngineState) -> Result<bool, Abort> {
 
 pub(crate) fn check_display_end(st: &mut EngineState) -> Result<(), Abort> {
     crate::scan::get_x_token(st)?;
-    if st.scanner.cur_cmd != Cmd::MathShift {
+    if st.scanner.cur.cmd() != Cmd::MathShift {
         crate::errors::back_error(
             st,
             "Display math should end with $$",
@@ -464,7 +464,7 @@ fn side_skip(st: &mut EngineState, param: GluePar) -> Result<MemPtr, Abort> {
 pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
     crate::scan::get_token(st)?;
 
-    if st.scanner.cur_cmd == Cmd::MathShift && st.input.cur_list.mode > 0 {
+    if st.scanner.cur.cmd() == Cmd::MathShift && st.input.cur_list.mode > 0 {
         let mut j = MemPtr::NULL;
         let mut w = -MAX_DIMEN;
         let x;

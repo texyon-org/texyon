@@ -216,13 +216,11 @@ pub(crate) fn intercept(st: &mut EngineState) -> Option<CsId> {
     if !known.complete() {
         return None;
     }
-    let body = st.scanner.cur_chr;
+    let body = st.scanner.cur.macro_body();
     if mode == Mode::Check {
         if let Some(p) = st.pgfmath.pending.take() {
-            if body == st.eqtb.meaning(known.parse_end()).encode().1
-                || body == st.eqtb.meaning(known.is_number()).encode().1
-            {
-                let number = body == st.eqtb.meaning(known.is_number()).encode().1;
+            let number = body == st.eqtb.meaning(known.is_number()).macro_body();
+            if number || body == st.eqtb.meaning(known.parse_end()).macro_body() {
                 let mut stats = std::mem::take(&mut st.pgfmath.stats);
                 compare(st, &known, &mut stats, &p, number);
                 st.pgfmath.stats = stats;

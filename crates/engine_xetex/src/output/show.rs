@@ -32,12 +32,13 @@ pub(crate) fn show_cur_cmd_chr(st: &mut EngineState) {
         print(st, ": ");
         st.scanner.shown_mode = st.input.cur_list.mode;
     }
-    print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
+    let (cmd, chr) = st.scanner.cur.encode();
+    print_cmd_chr(st, cmd, chr);
     if st.eqtb.int_par(IntPar::TracingIfs) > 0
-        && (Cmd::IfTest..=Cmd::FiOrElse).contains(&st.scanner.cur_cmd)
+        && (Cmd::IfTest..=Cmd::FiOrElse).contains(&st.scanner.cur.cmd())
     {
         print(st, ": ");
-        let (mut n, l) = if st.scanner.cur_cmd == Cmd::FiOrElse {
+        let (mut n, l) = if st.scanner.cur.cmd() == Cmd::FiOrElse {
             print_cmd_chr(st, Cmd::IfTest, i32::from(st.scanner.cur_if));
             print_char(st, b' ');
             (0, st.scanner.if_line)
