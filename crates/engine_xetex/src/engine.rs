@@ -20,7 +20,7 @@ use crate::format_io::load_fmt_file;
 use crate::hash::{HASH_OFFSET, HASH_PRIME, HASH_SIZE};
 use crate::helpers::OnDrop;
 use crate::hyphenation::{HYPH_PRIME, TRIE_OP_SIZE};
-use crate::input::{NEW_LINE, TOKEN_LIST};
+use crate::input::{NEW_LINE, STACK_SIZE, TOKEN_LIST};
 use crate::io::init_io;
 use crate::mem::{
     CONTRIB_HEAD, END_SPAN, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, NULL_LIST, PAGE_HEAD, PAGE_INS_HEAD,
@@ -53,7 +53,6 @@ const TOO_BIG_LANG: i32 = 256;
 const VAR_FAM_CLASS: i32 = 7;
 const NEST_SIZE: usize = 500;
 const PARAM_SIZE: usize = 10_000;
-const STACK_SIZE: usize = 5_000;
 
 const _: () = assert!(
     HASH_PRIME <= HASH_SIZE

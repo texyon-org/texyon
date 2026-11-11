@@ -250,6 +250,11 @@ fn class_for(len: u32) -> usize {
 /// Half of `MAIN_MEMORY_WORDS`, until nodes and tokens share one budget.
 const MAX_TOKENS: usize = 1 << 25;
 
+/// Tokens 1..=`STACK_SIZE` hold the token a backed-up level at that input stack depth reads.
+const BACKUP_SLOTS: usize = crate::input::STACK_SIZE;
+/// The tokens before the first run: [`TokenList::OMIT_TEMPLATE`] and the backup slots.
+const RESERVED: usize = 1 + BACKUP_SLOTS;
+
 /// The token lists, kept apart from `mem`: runs of tokens back to back, and a
 /// table of lists that says where each run is.
 pub(crate) struct TokenStore {
@@ -268,7 +273,7 @@ pub(crate) struct TokenStore {
 impl Default for TokenStore {
     fn default() -> Self {
         Self {
-            tokens: vec![Token(0)],
+            tokens: vec![Token(0); RESERVED],
             lists: vec![ListSlot {
                 start: 0,
                 len: 1,
@@ -429,7 +434,7 @@ impl TokenStore {
             .all(|(&head, cap)| head == NONE || in_tokens(head, cap));
         let lists_free_ok =
             self.free_lists == NONE || (self.free_lists as usize) < self.lists.len();
-        lists_ok && runs_ok && lists_free_ok
+        tokens >= RESERVED && lists_ok && runs_ok && lists_free_ok
     }
 
     /// The tokens and the list table, for a format load to fill.
@@ -517,6 +522,31 @@ impl TokenStore {
                 end: slot.start + slot.len,
             },
             None => TokCursor::END,
+        }
+    }
+
+    /// Puts `t` in the backup slot of input stack depth `depth` and gives a reader over it.
+    #[inline]
+    pub(crate) fn back_up(&mut self, depth: usize, t: Token) -> Result<TokCursor, Abort> {
+        let pos = u32::try_from(depth)
+            .ok()
+            .filter(|_| (1..=BACKUP_SLOTS).contains(&depth))
+            .ok_or(Abort::Confusion("backup slot"))?;
+        self.set_token(depth, t);
+        Ok(TokCursor { pos, end: pos + 1 })
+    }
+
+    /// Where a token-list level reading `list`, now at `loc`, began. A level
+    /// without a list reads a backup slot, the token before `loc.end`.
+    pub(crate) fn level_start(&self, list: TokenList, loc: TokCursor) -> TokCursor {
+        let slot = loc.end.wrapping_sub(1) as usize;
+        if list.is_null() && (1..=BACKUP_SLOTS).contains(&slot) {
+            TokCursor {
+                pos: loc.end - 1,
+                end: loc.end,
+            }
+        } else {
+            self.cursor(list)
         }
     }
 
@@ -849,6 +879,26 @@ mod tests {
             assert_eq!(tokens(&store, list), inside);
             assert_eq!(store.is_empty(list), inside.is_empty());
         }
+    }
+
+    #[test]
+    fn a_backup_slot_is_read_and_shown_as_a_one_token_level() {
+        let mut store = TokenStore::default();
+        let runs_from = store.tokens().len();
+        let mut at = store.back_up(7, Token(42)).unwrap();
+        let start = store.level_start(TokenList::NULL, at);
+        assert_eq!(store.read(&mut at), Some(Token(42)));
+        assert!(at.is_end());
+        assert_eq!(store.level_start(TokenList::NULL, at), start);
+        assert_eq!(store.read(&mut start.clone()), Some(Token(42)));
+        assert_eq!(
+            store.level_start(TokenList::NULL, TokCursor::END),
+            TokCursor::END
+        );
+        assert!(store.back_up(0, Token(1)).is_err());
+        assert!(store.back_up(BACKUP_SLOTS + 1, Token(1)).is_err());
+        let a = list_of(&mut store, &[1]);
+        assert_eq!(store.cursor(a).pos as usize, runs_from);
     }
 
     #[test]

@@ -80,6 +80,9 @@ impl InputState {
     }
 }
 
+/// The most input levels open at once.
+pub(crate) const STACK_SIZE: usize = 5_000;
+
 pub(crate) const TOKEN_LIST: u16 = 0;
 pub(crate) const MID_LINE: u16 = 1;
 pub(crate) const SKIP_BLANKS: u16 = 17;
@@ -141,7 +144,6 @@ pub(crate) fn back_input(st: &mut EngineState) -> Result<(), Abort> {
     {
         end_token_list(st)?;
     }
-    let p = st.mem.tokens.single(st.scanner.cur_tok)?;
     if st.scanner.cur_tok.is_brace() {
         if st.scanner.cur_tok.is_left_brace() {
             st.scanner.align_state -= 1;
@@ -150,9 +152,13 @@ pub(crate) fn back_input(st: &mut EngineState) -> Result<(), Abort> {
         }
     }
     push_input(st)?;
+    let at = st
+        .mem
+        .tokens
+        .back_up(st.input.input_stack.len(), st.scanner.cur_tok)?;
     st.input.cur_input.state = TOKEN_LIST;
-    st.input.cur_input.set_token_start(p);
-    st.input.cur_input.set_token_loc(st.mem.tokens.cursor(p));
+    st.input.cur_input.set_token_start(TokenList::NULL);
+    st.input.cur_input.set_token_loc(at);
     st.input.cur_input.set_token_type(TokenType::BackedUp);
     Ok(())
 }
@@ -256,9 +262,26 @@ pub(crate) fn pseudo_input(st: &mut EngineState) -> Result<bool, Abort> {
 
 /// Puts `token` in front of the unread backed-up token list on top of the input stack.
 pub(crate) fn prepend_to_backed_up(st: &mut EngineState, token: Token) -> Result<(), Abort> {
-    let list = st.input.cur_input.token_start();
-    debug_assert_eq!(st.input.cur_input.token_loc(), st.mem.tokens.cursor(list));
-    st.mem.tokens.prepend(list, token)?;
+    let ci = st.input.cur_input;
+    let mut list = ci.token_start();
+    debug_assert_eq!(
+        ci.token_loc(),
+        st.mem.tokens.level_start(list, ci.token_loc())
+    );
+    if list.is_null() {
+        let rest = st
+            .mem
+            .tokens
+            .peek(ci.token_loc())
+            .or_confusion("backup slot")?;
+        let b = st.mem.tokens.begin()?;
+        st.mem.tokens.push(&b, token)?;
+        st.mem.tokens.push(&b, rest)?;
+        list = st.mem.tokens.finish(b)?;
+        st.input.cur_input.set_token_start(list);
+    } else {
+        st.mem.tokens.prepend(list, token)?;
+    }
     st.input.cur_input.set_token_loc(st.mem.tokens.cursor(list));
     Ok(())
 }

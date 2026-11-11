@@ -782,7 +782,7 @@ pub(crate) fn show_context(st: &mut EngineState) {
                         t => print_nl(st, t.label(ci.token_loc())),
                     }
                     l = begin_pseudoprint(st);
-                    let from = st.mem.tokens.cursor(ci.token_start());
+                    let from = st.mem.tokens.level_start(ci.token_start(), ci.token_loc());
                     show_token_list(st, from, ci.token_loc(), 100_000);
                 }
                 st.shipout.selector = old_setting;
