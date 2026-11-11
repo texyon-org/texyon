@@ -10,9 +10,7 @@ use crate::errors::OrConfusion;
 use crate::helpers::badness;
 use crate::input::TokenType;
 use crate::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
-use crate::node::{
-    AnyNode, InsNode, NodePtr, PageInsNode, SaLeaf, View, WhatsitVariant, LIST_HEAD,
-};
+use crate::node::{AnyNode, InsNode, LinkSlot, NodePtr, PageInsNode, SaLeaf, View, WhatsitVariant};
 use crate::packaging::{MarksAction, PackSpec};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::scan::fetch_box;
@@ -119,7 +117,12 @@ fn update_marks(st: &mut EngineState, class: i32, mark_ptr: TokenList) -> Result
 
 /// Moves insertion `ins` at `p` into its box when it made it onto the page.
 /// Returns whether it has to wait for the next page.
-fn place_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Result<bool, Abort> {
+fn place_insertion(
+    st: &mut EngineState,
+    tails: &mut InsertTails,
+    ins: NodePtr<InsNode>,
+    p: MemPtr,
+) -> Result<bool, Abort> {
     let mut r = ring_next(&st.mem, PAGE_INS_HEAD)?;
     while st.mem[page_ins(r)].box_number != st.mem[ins].box_number {
         r = ring_next(&st.mem, r)?;
@@ -128,19 +131,21 @@ fn place_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Re
     if st.mem[rec].best_ins_ptr.is_none() {
         return Ok(true);
     }
-    let mut s = st.mem[rec].last_ins_ptr.or_confusion("insert")?;
+    let n = st.mem[rec].box_number;
+    let tail = &mut tails[usize::from(n)];
+    let mut s = tail.or_confusion("insert")?;
     let list = st.mem[ins].ins_ptr;
-    s.set_link(&mut st.mem, list);
+    s.set(&mut st.mem, list);
     if st.mem[rec].best_ins_ptr != p {
-        st.mem[rec].last_ins_ptr = Some(st.mem.list_tail(s));
+        *tail = Some(s.tail(&st.mem));
         return Ok(false);
     }
 
     let mut wait = false;
     let broken_ptr = st.mem[rec].broken_ptr;
     if st.mem[rec].is_split_up() && st.mem[rec].broken_ins == p && !broken_ptr.is_none() {
-        s = st.mem.predecessor(s, broken_ptr)?;
-        s.set_link(&mut st.mem, None);
+        s = s.before(&st.mem, broken_ptr)?;
+        s.set(&mut st.mem, None);
         st.eqtb
             .set_glue_par(GluePar::SplitTopSkip, st.mem[ins].split_top_ptr);
         let pruned = st
@@ -156,14 +161,16 @@ fn place_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Re
         }
     }
     st.mem[rec].best_ins_ptr = None;
-    let n = st.mem[rec].box_number;
-    let b = fetch_box(st, i32::from(n)).expect("insertion box made in fire_up");
+    let b = fetch_box(st, i32::from(n)).or_confusion("insertion box")?;
     let list = st.mem[b].list_ptr;
     b.free(&mut st.mem);
     let packed = crate::packaging::vpackage(st, list, PackSpec::NATURAL, MAX_DIMEN)?;
     st.eqtb.set_box_reg(n, Some(packed));
     Ok(wait)
 }
+
+/// Where `fire_up` appends each insertion class's material, by box number.
+type InsertTails = [Option<LinkSlot>; 256];
 
 /// TeX's `fire_up`: puts the best page into `\box255` and runs the output routine.
 fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
@@ -216,6 +223,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     let save_split_top_skip = st.eqtb.glue_par(GluePar::SplitTopSkip);
     let process_inserts =
         st.eqtb.int_par(IntPar::HoldingInserts) <= 0 && !st.config.semantic_pagination_enabled;
+    let mut tails: InsertTails = [None; 256];
     if process_inserts {
         let mut r = ring_next(&st.mem, PAGE_INS_HEAD)?;
         while r != PAGE_INS_HEAD {
@@ -231,7 +239,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
                         b
                     }
                 };
-                st.mem[rec].last_ins_ptr = Some(st.mem.list_tail(b.idx().offset(LIST_HEAD)));
+                tails[usize::from(n)] = Some(LinkSlot::List(b).tail(&st.mem));
             }
             r = ring_next(&st.mem, r)?;
         }
@@ -245,7 +253,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
         let here = p.or_confusion("fire_up")?;
         match st.mem.classify(here) {
             Ok(AnyNode::Ins(ins)) if process_inserts => {
-                let wait = place_insertion(st, ins, p)?;
+                let wait = place_insertion(st, &mut tails, ins, p)?;
                 let next = st.mem[ins].link;
                 prev_p.set_link(&mut st.mem, next);
                 st.mem[ins].link = None;

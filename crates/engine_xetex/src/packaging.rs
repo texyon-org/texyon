@@ -6,13 +6,13 @@ use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD};
 use crate::mem_types::ListStateRecord;
+use crate::node::LinkSlot;
 use crate::node::{
     AdjustPlacement, AnyNode, BoxLr, BoxNode, KernSubtype, MathCode, NativeWordNode, NodePtr,
     RuleDimen, WhatsitVariant,
 };
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, FontState, MemState, ShipoutState};
-use crate::units::MemIdx;
 use crate::units::{Dir, GlueOrder, GlueSign, MemPtr, NodeType, OrderTotals, Orientation, Scaled};
 
 mod copy;
@@ -215,24 +215,20 @@ impl MemState {
         &mut self,
         eqtb: &EqtbState,
         fonts: &FontState,
-        r_node: NodePtr<BoxNode>,
-        mut q: MemIdx,
+        mut q: LinkSlot,
         w: NodePtr<NativeWordNode>,
-    ) -> Result<(MemIdx, NodePtr<NativeWordNode>), Abort> {
+    ) -> Result<(LinkSlot, NodePtr<NativeWordNode>), Abort> {
         let p = w.idx();
         let font = self[w].font;
         let same_font =
             |mem: &MemState, p: MemPtr| mem.as_native_word(p).filter(|&w| mem[w].font == font);
 
-        let mut k = if q != r_node.list_head() {
-            self.disc_replace_count(Some(q)).unwrap_or(0)
-        } else {
-            0
-        };
-        while q.link(self) != Some(p) {
+        let mut k = self.disc_replace_count(q.node()).unwrap_or(0);
+        while q.get(self) != Some(p) {
             k -= 1;
-            q = q.link(self).or_confusion("native word")?;
-            if let Some(count) = self.disc_replace_count(Some(q)) {
+            let next = q.get(self).or_confusion("native word")?;
+            q = LinkSlot::Node(next);
+            if let Some(count) = self.disc_replace_count(Some(next)) {
                 k = count;
             }
         }
@@ -266,7 +262,7 @@ impl MemState {
 
         let merged = self.new_native_word_node(eqtb, font, total_chars)?;
         self[merged].subtype = self[w].subtype;
-        q.set_link(self, merged.ptr());
+        q.set(self, merged.ptr());
         let last = self.predecessor(p, pp)?;
         self[merged].link = last.link(self);
         last.set_link(self, None);
@@ -311,8 +307,8 @@ impl MemState {
         node.set_lr(BoxLr::Normal);
         node.shift_amount = Scaled::ZERO;
         node.list_ptr = list;
-        // `q` trails `p`, starting at the word whose link is the list pointer.
-        let mut q = r_node.list_head();
+        // `q` trails `p`, starting at the box's list pointer.
+        let mut q = LinkSlot::List(r_node);
         let mut h = Scaled::ZERO;
         let mut d = Scaled::ZERO;
         let mut x = Scaled::ZERO;
@@ -358,7 +354,7 @@ impl MemState {
                 }
                 Ok(AnyNode::Adjust(adjust)) => {
                     if !tails.post.is_none() || !tails.pre.is_none() {
-                        q = self.predecessor(q, p)?;
+                        q = q.before(self, p)?;
                         let adjust_list = self[adjust].adjust_ptr;
                         let tail = if self[adjust].placement == AdjustPlacement::Pre {
                             &mut tails.pre
@@ -370,24 +366,25 @@ impl MemState {
                         *tail = Some(self.list_tail(t));
                         let next = self[adjust].link;
                         adjust.free(self);
-                        q.set_link(self, next);
-                        here = q;
+                        q.set(self, next);
+                        p = next;
+                        continue;
                     }
                 }
                 Ok(AnyNode::Ins(_) | AnyNode::Mark(_)) => {
                     if !tails.post.is_none() || !tails.pre.is_none() {
-                        q = self.predecessor(q, p)?;
+                        q = q.before(self, p)?;
                         tails.post.or_confusion("adjust")?.set_link(self, p);
                         tails.post = p;
                         let next = here.link(self);
-                        q.set_link(self, next);
-                        here = q;
+                        q.set(self, next);
+                        p = next;
+                        continue;
                     }
                 }
                 Ok(AnyNode::Whatsit(w)) => match w.variant(self) {
                     Some(WhatsitVariant::NativeWord(word)) => {
-                        let (new_q, native) =
-                            self.merge_native_words(eqtb, fonts, r_node, q, word)?;
+                        let (new_q, native) = self.merge_native_words(eqtb, fonts, q, word)?;
                         q = new_q;
                         here = native.idx();
                         h = h.max(self[native].height);
@@ -505,9 +502,9 @@ impl MemState {
                 if excess > hfuzz || eqtb.int_par(IntPar::Hbadness) < 100 {
                     let overfull_rule = eqtb.dimen_par(DimenPar::OverfullRule);
                     if overfull_rule > Scaled::ZERO && excess > hfuzz {
-                        q = self.list_tail(q);
+                        q = q.tail(self);
                         let rule = self.new_rule()?;
-                        q.set_link(self, rule.ptr());
+                        q.set(self, rule.ptr());
                         self[rule].width = RuleDimen::Set(overfull_rule).into();
                     }
                     push_slot(&mut diags, PackDiag::HOverfull { excess });
@@ -527,12 +524,12 @@ impl MemState {
 
         if texxet {
             if self.lr_code(lr_ptr) != Some(MathCode::Before) {
-                q = self.list_tail(q);
+                q = q.tail(self);
                 loop {
                     let code = self.lr_code(lr_ptr).or_confusion("LR")?;
                     let math = self.new_math(Scaled::ZERO, code)?;
-                    q.set_link(self, math.ptr());
-                    q = math.idx();
+                    q.set(self, math.ptr());
+                    q = LinkSlot::Node(math.idx());
                     lr_problems += 10000;
                     self.pop_lr(&mut lr_ptr);
                     if self.lr_code(lr_ptr) == Some(MathCode::Before) {

@@ -8,6 +8,7 @@ use crate::errors::OrConfusion;
 use crate::ext::apply_tfm_font_mapping;
 use crate::glue_store::GlueSpecId;
 use crate::glyph_arena::FixedPoint;
+use crate::node::LinkSlot;
 use crate::node::Stored;
 use crate::node::{
     AnyNode, BoxLr, BoxNode, CharNode, EdgeNode, GlueKind, GlueNode, GlyphNode, KernNode,
@@ -406,7 +407,7 @@ impl MemState {
         eqtb: &EqtbState,
         this_box: NodePtr<BoxNode>,
     ) -> Result<(), Abort> {
-        let mut prev_p = this_box.list_head();
+        let mut prev_p = LinkSlot::List(this_box);
         let mut p = self[this_box].list_ptr;
 
         while let Some(here) = p {
@@ -469,7 +470,7 @@ impl MemState {
                         self.merge_native_word_run(strings, fonts, eqtb, this_box, prev_p, run)?;
                 }
             }
-            prev_p = here;
+            prev_p = LinkSlot::Node(here);
             p = here.link(self);
         }
         Ok(())
@@ -483,7 +484,7 @@ impl MemState {
         fonts: &FontState,
         eqtb: &EqtbState,
         this_box: NodePtr<BoxNode>,
-        prev_p: MemIdx,
+        prev_p: LinkSlot,
         run: NativeWordRun,
     ) -> Result<MemIdx, Abort> {
         let NativeWordRun {
@@ -545,7 +546,7 @@ impl MemState {
         self[word].width = width;
         fonts.store_justified_native_glyphs(self, word)?;
 
-        prev_p.set_link(self, word.ptr());
+        prev_p.set(self, word.ptr());
         self[word].link = self[last].link;
         self[last].link = None;
 
@@ -855,6 +856,7 @@ impl ShipoutState {
 
 /// A character to output: a char node's, or a ligature's, which TFM font mappings skip.
 struct OutChar {
+    node: MemIdx,
     font: FontId,
     chr: u16,
     ligature: bool,
@@ -865,6 +867,7 @@ impl OutChar {
     fn of_char(mem: &MemState, ch: NodePtr<CharNode>) -> OutChar {
         let n = mem[ch];
         OutChar {
+            node: ch.idx(),
             font: n.font,
             chr: n.character,
             ligature: false,
@@ -875,6 +878,7 @@ impl OutChar {
     fn of_ligature(mem: &MemState, lig: NodePtr<LigatureNode>) -> OutChar {
         let n = mem[lig];
         OutChar {
+            node: lig.idx(),
             font: n.font,
             chr: n.character,
             ligature: true,
@@ -884,12 +888,11 @@ impl OutChar {
 }
 
 /// Output `first` and the char nodes that follow it, returning the first other
-/// node and the matching advance of `prev_p`.
+/// node and the slot that points at it.
 fn chars_out(
     st: &mut crate::state::EngineState,
     first: OutChar,
-    mut prev_p: MemIdx,
-) -> Result<(MemPtr, MemIdx), Abort> {
+) -> Result<(MemPtr, LinkSlot), Abort> {
     synch_h(st)?;
     synch_v(st)?;
     let mut cur = first;
@@ -906,7 +909,6 @@ fn chars_out(
             st.shipout.dvi.set_char(c)?;
             st.shipout.cur_h += st.fonts.font_character_width(f, i32::from(c));
         }
-        prev_p = prev_p.link(&st.mem).or_confusion("hlistout")?;
         match st.mem.as_char(cur.next) {
             Some(ch) => cur = OutChar::of_char(&st.mem, ch),
             None => break,
@@ -914,7 +916,7 @@ fn chars_out(
     }
     crate::synctex::synctex_current(st);
     st.shipout.dvi_h = st.shipout.cur_h;
-    Ok((cur.next, prev_p))
+    Ok((cur.next, LinkSlot::Node(cur.node)))
 }
 
 fn hlist_out(
@@ -933,7 +935,7 @@ fn hlist_out(
     let mut p = st.mem[this_box].list_ptr;
     let save_loc = st.shipout.dvi.enter_level()?;
     let base_line = st.shipout.cur_v;
-    let mut prev_p = this_box.list_head();
+    let mut prev_p = LinkSlot::List(this_box);
     st.mem.push_lr(&mut lr.ptr, MathCode::Before)?;
 
     if st.mem[this_box].lr() == BoxLr::Dlist {
@@ -950,7 +952,7 @@ fn hlist_out(
         st.mem.temp_ptr = p;
         let kern = st.mem.new_kern(Scaled::ZERO)?;
         st.mem[kern].sync.tag = 0;
-        prev_p.set_link(&mut st.mem, kern.ptr());
+        prev_p.set(&mut st.mem, kern.ptr());
         st.shipout.cur_h = Scaled::ZERO;
         let reversed = st
             .mem
@@ -968,7 +970,7 @@ fn hlist_out(
 
     while let Some(here) = p {
         if let Some(ch) = st.mem.as_char(p) {
-            (p, prev_p) = chars_out(st, OutChar::of_char(&st.mem, ch), prev_p)?;
+            (p, prev_p) = chars_out(st, OutChar::of_char(&st.mem, ch))?;
             continue;
         }
         match st.mem.classify(here).or_confusion("hlistout")? {
@@ -1034,7 +1036,7 @@ fn hlist_out(
             AnyNode::Ligature(ligature) => {
                 st.fonts.xtx_ligature_present = true;
                 let first = OutChar::of_ligature(&st.mem, ligature);
-                (p, prev_p) = chars_out(st, first, prev_p)?;
+                (p, prev_p) = chars_out(st, first)?;
                 continue;
             }
             AnyNode::Style(style) => {
@@ -1045,7 +1047,7 @@ fn hlist_out(
             }
             _ => {}
         }
-        prev_p = here;
+        prev_p = LinkSlot::Node(here);
         p = here.link(&st.mem);
     }
 
@@ -1096,7 +1098,7 @@ fn reverse_segment(
     st: &mut crate::state::EngineState,
     lr: &mut LrState,
     math: NodePtr<MathNode>,
-    prev_p: MemIdx,
+    prev_p: LinkSlot,
     left_edge: Scaled,
     math_width: Scaled,
     rounding: &mut GlueRounding,
@@ -1106,7 +1108,7 @@ fn reverse_segment(
     math.free(&mut st.mem);
     lr.dir = lr.dir.reversed();
     let edge = st.mem.new_edge(lr.dir, math_width)?;
-    prev_p.set_link(&mut st.mem, edge.ptr());
+    prev_p.set(&mut st.mem, edge.ptr());
     st.shipout.cur_h = st.shipout.cur_h - left_edge + math_width;
     let end = st.mem.new_edge(lr.dir.reversed(), Scaled::ZERO)?;
     let reversed = st

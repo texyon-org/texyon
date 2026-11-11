@@ -624,11 +624,56 @@ impl NodePtr<BoxNode> {
     pub fn into_unset(self, mem: &mut MemState) -> NodePtr<UnsetNode> {
         retype(self, mem, NodeType::Unset)
     }
+}
 
-    /// The pseudo-node whose `link` is `list_ptr`, for splicing at the list head.
+/// A field holding a list pointer: a box's `list_ptr`, or a node's `link`.
+/// Cursors that splice a box's list trail its nodes with one of these.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum LinkSlot {
+    List(NodePtr<BoxNode>),
+    Node(MemIdx),
+}
+
+impl LinkSlot {
     #[inline]
-    pub fn list_head(self) -> MemIdx {
-        self.idx.offset(LIST_HEAD)
+    pub fn get(self, mem: &MemState) -> MemPtr {
+        match self {
+            LinkSlot::List(b) => mem[b].list_ptr,
+            LinkSlot::Node(p) => p.link(mem),
+        }
+    }
+
+    #[inline]
+    pub fn set(self, mem: &mut MemState, q: MemPtr) {
+        match self {
+            LinkSlot::List(b) => mem[b].list_ptr = q,
+            LinkSlot::Node(p) => p.set_link(mem, q),
+        }
+    }
+
+    /// The node this slot belongs to, `None` for a box's list.
+    #[inline]
+    pub fn node(self) -> Option<MemIdx> {
+        match self {
+            LinkSlot::List(_) => None,
+            LinkSlot::Node(p) => Some(p),
+        }
+    }
+
+    /// The last slot of the list, the one holding null.
+    pub fn tail(mut self, mem: &MemState) -> LinkSlot {
+        while let Some(q) = self.get(mem) {
+            self = LinkSlot::Node(q);
+        }
+        self
+    }
+
+    /// The slot holding `target`, searching forward from this one.
+    pub fn before(mut self, mem: &MemState, target: MemPtr) -> Result<LinkSlot, Abort> {
+        while self.get(mem) != target {
+            self = LinkSlot::Node(self.get(mem).or_confusion("predecessor")?);
+        }
+        Ok(self)
     }
 }
 
@@ -1034,13 +1079,6 @@ impl NodePtr<AnyNoad> {
         }
     }
 }
-
-/// The pseudo-node at a box whose `link` is the box's `list_ptr`, in words from the box.
-pub(crate) const LIST_HEAD: u32 = crate::node::word_offset(
-    std::mem::offset_of!(crate::node::BoxNode, list_ptr)
-        - std::mem::offset_of!(crate::node::WhatsitNode, link),
-)
-.cast_unsigned();
 
 impl NodePtr<RadicalNoad> {
     /// The radical's nucleus and scripts, laid out as a plain noad.
