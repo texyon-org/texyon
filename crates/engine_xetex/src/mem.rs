@@ -57,6 +57,16 @@ pub(crate) const NULL_LIST: MemPtr = after(END_SPAN_AT, SpanNode::SIZE);
 /// The scratch char node of TeX's lig trick.
 pub(crate) const LIG_TRICK: MemPtr = after(NULL_LIST, HeadNode::SIZE);
 pub(crate) const PRE_ADJUST_HEAD: MemPtr = after(LIG_TRICK, CharNode::SIZE);
+/// The fixed nodes laid out as a [`HeadNode`].
+pub(crate) const FIXED_HEADS: [MemPtr; 7] = [
+    CONTRIB_HEAD,
+    TEMP_HEAD,
+    HOLD_HEAD,
+    ADJUST_HEAD,
+    ALIGN_HEAD,
+    NULL_LIST,
+    PRE_ADJUST_HEAD,
+];
 /// The words the fixed nodes take, where allocation starts.
 pub(crate) const RESERVED_WORDS: usize =
     after(PRE_ADJUST_HEAD, HeadNode::SIZE).raw().cast_unsigned() as usize;
@@ -180,7 +190,7 @@ impl MemState {
 
     /// Whether `p` points into the allocated part of `mem`, for printing a possibly clobbered list.
     pub(crate) fn contains(&self, p: MemPtr) -> bool {
-        usize::try_from(p.raw()).is_ok_and(|i| i < self.data.len())
+        usize::try_from(p.raw()).is_ok_and(|i| (1..self.data.len()).contains(&i))
     }
 
     /// TeX's `get_node`: a node of `s` words, from its size's free list or fresh from the end.

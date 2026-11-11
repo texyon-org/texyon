@@ -754,13 +754,6 @@ impl MemState {
         }
     }
 
-    /// Sets every word of the fixed nodes to null, before the journal is armed.
-    pub(crate) fn clear_fixed_nodes(&mut self) {
-        debug_assert!(!self.journal.armed());
-        let null = crate::units::MemPtr::NULL.raw().cast_unsigned();
-        self.data[..crate::mem::RESERVED_WORDS].fill(null);
-    }
-
     /// The raw word at `index`.
     #[cfg(test)]
     pub(crate) fn word(&self, index: usize) -> i32 {

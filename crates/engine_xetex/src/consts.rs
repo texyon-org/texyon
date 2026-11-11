@@ -20,7 +20,7 @@ pub const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
 /// `max_dimen`, the largest legal dimension.
 pub const MAX_DIMEN: crate::units::Scaled = crate::units::Scaled::from_raw(0x3FFF_FFFF);
 pub const MIN_HALFWORD: i32 = -0x0FFF_FFFF;
-pub const TEX_NULL: i32 = MIN_HALFWORD;
+pub const TEX_NULL: i32 = 0;
 pub const NULL_FLAG: i32 = -0x4000_0000;
 pub const IGNORE_DEPTH: crate::units::Scaled = crate::units::Scaled::from_raw(-65_536_000);
 pub const TEX_INFINITY: i32 = 0x7FFF_FFFF;

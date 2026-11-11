@@ -511,12 +511,8 @@ fn dynamic_memory<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), A
     let reserved = i32::try_from(RESERVED_WORDS).map_err(|_| too_big())?;
     s.int_in(&mut words, reserved, i32::MAX)?;
     let last = MemPtr::from_raw(words - 1);
-    s.items_in(&mut mem.free.0, MemPtr::from_raw(MIN_HALFWORD), last)?;
-    s.items_in(
-        st.scanner.sa_root.registers_mut(),
-        MemPtr::from_raw(MIN_HALFWORD),
-        last,
-    )?;
+    s.items_in(&mut mem.free.0, MemPtr::NULL, last)?;
+    s.items_in(st.scanner.sa_root.registers_mut(), MemPtr::NULL, last)?;
     if S::LOADING {
         mem.data = crate::mem_types::zeroed_vec(usize::try_from(words).map_err(|_| bad_fmt())?);
     }
@@ -963,7 +959,7 @@ fn hyphenation_tables<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(
                 StrNumber::from_raw(0),
                 st.strings.str_ptr,
             )?;
-            s.ptr_in(&mut hyph.hyph_list[h], MIN_HALFWORD, MAX_HALFWORD)?;
+            s.ptr_in(&mut hyph.hyph_list[h], TEX_NULL, MAX_HALFWORD)?;
         }
 
         hyph.hyph_next = (j + 1).max(HYPH_PRIME);

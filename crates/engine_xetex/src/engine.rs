@@ -23,8 +23,8 @@ use crate::hyphenation::{HYPH_PRIME, TRIE_OP_SIZE};
 use crate::input::{NEW_LINE, STACK_SIZE, TOKEN_LIST};
 use crate::io::init_io;
 use crate::mem::{
-    CONTRIB_HEAD, END_SPAN, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, PAGE_HEAD, PAGE_INS_HEAD, SS_GLUE,
-    ZERO_GLUE,
+    CONTRIB_HEAD, END_SPAN, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, FIXED_HEADS, PAGE_HEAD,
+    PAGE_INS_HEAD, SS_GLUE, ZERO_GLUE,
 };
 use crate::mem_types::zeroed_vec;
 use crate::node::{NodePtr, PageInsNode};
@@ -362,7 +362,9 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     mem[FIL_NEG_GLUE].stretch = -Scaled::UNITY;
     mem[FIL_NEG_GLUE].stretch_order = GlueOrder::Fil.into();
 
-    mem.clear_fixed_nodes();
+    for head in FIXED_HEADS {
+        mem.set_header(head, NodeType::Head, 0);
+    }
 
     mem.tokens
         .init_omit_template(Token::from_cs(FROZEN_END_TEMPLATE));

@@ -48,7 +48,7 @@ impl MemIdx {
     }
 }
 
-/// A TeX pointer: an arena index or `TEX_NULL` (which is not zero).
+/// A TeX pointer: an arena index or `TEX_NULL`, which is 0.
 #[derive(
     Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, bytemuck::Pod, bytemuck::Zeroable,
 )]
@@ -1172,13 +1172,10 @@ mod tests {
     }
 
     #[test]
-    fn memptr_null_is_tex_null_not_zero() {
-        assert_eq!(MemPtr::NULL.0, TEX_NULL);
-        assert_ne!(MemPtr::NULL.0, 0);
-        assert!(MemPtr::NULL.is_null());
+    fn memptr_null_is_zero() {
+        assert_eq!(MemPtr::NULL.0, 0);
         assert!(MemPtr::NULL.as_idx().is_none());
-        assert!(!MemPtr(0).is_null());
-        assert_eq!(MemPtr(0).as_idx(), Some(MemIdx(0)));
+        assert_eq!(MemPtr(1).as_idx(), Some(MemIdx(1)));
     }
 
     #[test]

@@ -122,7 +122,7 @@ impl GlueStore {
 
     /// Whether `p` is a spec of this store, for printing a possibly clobbered pointer.
     pub(crate) fn contains(&self, raw: i32) -> bool {
-        usize::try_from(raw).is_ok_and(|i| i < self.data.len())
+        usize::try_from(raw).is_ok_and(|i| (1..self.data.len()).contains(&i))
     }
 
     pub(crate) fn specs(&self) -> &[GlueSpec] {
