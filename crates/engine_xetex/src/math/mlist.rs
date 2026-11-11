@@ -11,13 +11,12 @@ use crate::fonts::{CharInfo, CharTag, AAT_FONT_FLAG, OTGR_FONT_FLAG, SPACE_CODE,
 use crate::glue_store::GlueSpecId;
 use crate::mem::{TEMP_HEAD, TEX_NULL, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
+use crate::node::MathWord;
 use crate::node::{
-    AccentNoad, AnyNoad, AnyNode, BoxNode, ChoiceNode, FenceNoad, FixedNode, FractionNoad,
-    GlueKind, GlueNode, GlyphNode, KernNode, KernSubtype, MathAccentKind, MathSlot, Noad,
-    NoadVariant, NodePtr, RadicalNoad, RuleDimen, RuleNode, StyleNode, WhatsitSubtype,
-    WhatsitVariant,
+    AccentNoad, AnyNoad, AnyNode, BoxNode, ChoiceNode, FenceNoad, FractionNoad, GlueKind, GlueNode,
+    GlyphNode, KernNode, KernSubtype, MathAccentKind, MathSlot, Noad, NoadVariant, NodePtr,
+    RadicalNoad, RuleDimen, RuleNode, StyleNode, View, WhatsitSubtype, WhatsitVariant,
 };
-use crate::overlay::MathWord;
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::scaled_math::{mult_and_add, x_over_n, xn_over_d};

@@ -186,7 +186,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                 );
                 st.mem[row].glue_order = order;
                 st.mem[row].glue_sign = sign;
-                st.mem[row].glue_set = crate::overlay::GlueRatio::new(set);
+                st.mem[row].glue_set = crate::node::GlueRatio::new(set);
                 st.mem[row].shift_amount = o;
 
                 let mut r = st.mem[row].list_ptr.link(&st.mem);
@@ -263,7 +263,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                     let (b, (sign, order, set)) = col;
                     st.mem[b].glue_sign = sign.into();
                     st.mem[b].glue_order = order;
-                    st.mem[b].glue_set = crate::overlay::GlueRatio::new(set);
+                    st.mem[b].glue_set = crate::node::GlueRatio::new(set);
                     st.mem[b].shift_amount = Scaled::ZERO;
                     if u != HOLD_HEAD {
                         let (rest, spanned) = (r.link(&st.mem), HOLD_HEAD.link(&st.mem));

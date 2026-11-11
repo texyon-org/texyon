@@ -8,12 +8,11 @@ use crate::fonts::Side;
 use crate::glue_store::GlueSpecId;
 use crate::mem_types::ListStateRecord;
 use crate::node::{
-    BoxLr, BoxNode, CharNode, ChoiceNode, DiscNode, FixedNode, GlueKind, GlueNode, HeadNode,
-    HyphPosNode, KernNode, KernSubtype, LigBoundary, LigItem, LigatureNode, ListRecord, LrNode,
-    MarginKernNode, MathCode, MathNode, Noad, NodePtr, PageInsNode, PenaltyNode, RuleDimen,
-    RuleNode, SaIndexNode, SpanNode, StyleNode, WhatsitKind, WhatsitSubtype,
+    BoxLr, BoxNode, CharNode, ChoiceNode, DiscNode, GlueKind, GlueNode, HeadNode, HyphPosNode,
+    KernNode, KernSubtype, LigBoundary, LigItem, LigatureNode, ListRecord, LrNode, MarginKernNode,
+    MathCode, MathNode, Noad, Node, NodePtr, PageInsNode, PenaltyNode, RuleDimen, RuleNode,
+    SaIndexNode, SpanNode, StyleNode, View, WhatsitKind, WhatsitSubtype,
 };
-use crate::overlay::LigatureLayout;
 use crate::params::GluePar;
 use crate::state::{EqtbState, MemState};
 use crate::units::{
@@ -64,7 +63,7 @@ pub(crate) const RESERVED_WORDS: usize =
 
 impl ListStateRecord {
     /// A fixed-layout whatsit appended to the current list.
-    pub fn append_whatsit<K: WhatsitKind + FixedNode>(
+    pub fn append_whatsit<K: WhatsitKind + Node>(
         &mut self,
         mem: &mut MemState,
         subtype: WhatsitSubtype,
@@ -79,7 +78,7 @@ impl ListStateRecord {
 
 impl MemState {
     /// Frees the list `p` of `K` records, all of one size.
-    pub(crate) fn flush_records<K: ListRecord + FixedNode>(&mut self, mut p: MemPtr) {
+    pub(crate) fn flush_records<K: ListRecord + Node>(&mut self, mut p: MemPtr) {
         while let Some(r) = NodePtr::<K>::from_ptr(p) {
             p = r.ptr().link(self);
             r.free(self);
@@ -237,7 +236,7 @@ impl MemState {
         node.list_ptr = MemPtr::NULL;
         node.glue_sign = GlueSign::Normal.into();
         node.glue_order = GlueOrder::Normal.into();
-        node.glue_set = crate::overlay::GlueRatio::new(0.0);
+        node.glue_set = crate::node::GlueRatio::new(0.0);
         Ok(p)
     }
 
@@ -264,7 +263,7 @@ impl MemState {
     /// TeX's lig trick: the scratch char node holding `lig`'s character, linked to what follows `lig`.
     pub fn lig_trick(&mut self, lig: NodePtr<LigatureNode>) -> MemPtr {
         let scratch = NodePtr::<CharNode>::at(LIG_TRICK);
-        let LigatureLayout {
+        let LigatureNode {
             font,
             character,
             link,

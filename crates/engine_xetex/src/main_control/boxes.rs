@@ -9,7 +9,7 @@ use crate::errors::OrConfusion;
 use crate::input::TokenType;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD};
 use crate::node::{
-    AnyNode, BoxNode, BoxOrRule, FixedNode, GlueKind, MarginKernNode, MathCode, NodePtr, SaLeaf,
+    AnyNode, BoxNode, BoxOrRule, GlueKind, MarginKernNode, MathCode, NodePtr, SaLeaf, View,
 };
 use crate::packaging::{AdjustTails, PackOrigin};
 use crate::params::{DimenPar, IntPar, TokPar};

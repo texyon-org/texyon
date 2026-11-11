@@ -4,11 +4,11 @@ use crate::consts::{MIN_HALFWORD, SUB_BOX};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::mem::TEMP_HEAD;
+use crate::node::CharNode;
 use crate::node::{
-    AnyNode, BoxNode, DiscNode, FixedNode, GlueNode, HeadNode, MathNode, NoadVariant, NodeKind,
-    NodePtr, RuleNode, WhatsitNode, WhatsitVariant,
+    AnyNode, BoxNode, DiscNode, GlueNode, HeadNode, MathNode, NoadVariant, Node, NodePtr, RuleNode,
+    View, WhatsitNode, WhatsitVariant,
 };
-use crate::overlay::CharLayout;
 use crate::state::MemState;
 
 use super::LrState;
@@ -16,7 +16,7 @@ use crate::units::{MemIdx, MemPtr, Scaled};
 
 /// `r` typed like `src`, whose header word `r` has just received.
 #[inline]
-fn copied_node<K: NodeKind>(_src: NodePtr<K>, r: MemPtr) -> NodePtr<K> {
+fn copied_node<K: View>(_src: NodePtr<K>, r: MemPtr) -> NodePtr<K> {
     NodePtr::from_idx_unchecked(MemIdx::new(r))
 }
 
@@ -29,7 +29,7 @@ impl MemState {
     }
 
     /// A new node of `p`'s kind holding every field of `p`.
-    fn copy_of<K: FixedNode>(&mut self, p: NodePtr<K>) -> Result<NodePtr<K>, Abort> {
+    fn copy_of<K: Node>(&mut self, p: NodePtr<K>) -> Result<NodePtr<K>, Abort> {
         let r = NodePtr::<K>::alloc(self)?;
         self[r] = self[p];
         Ok(r)
@@ -85,7 +85,7 @@ impl MemState {
     pub fn just_copy(&mut self, mut p: MemPtr, mut h: MemPtr, t: MemPtr) -> Result<(), Abort> {
         while !p.is_null() {
             let copy = if let Some(ch) = self.as_char(p) {
-                let CharLayout {
+                let CharNode {
                     font, character, ..
                 } = self[ch];
                 Some(self.new_char(font, character)?.ptr())
@@ -328,7 +328,7 @@ impl MemState {
         let node = self.classify(p).or_confusion("copying")?;
         Ok(match node {
             AnyNode::Char(ch) => {
-                let CharLayout {
+                let CharNode {
                     font, character, ..
                 } = self[ch];
                 self.new_char(font, character)?.ptr()
@@ -346,9 +346,9 @@ impl MemState {
             AnyNode::Rule(rule) => {
                 // The copy keeps its own SyncTeX stamp.
                 let r = NodePtr::<RuleNode>::alloc(self)?;
-                let (sync_tag, sync_line) = (self[r].sync_tag, self[r].sync_line);
+                let (sync_tag, sync_line) = (self[r].sync.tag, self[r].sync.line);
                 self[r] = self[rule];
-                (self[r].sync_tag, self[r].sync_line) = (sync_tag, sync_line);
+                (self[r].sync.tag, self[r].sync.line) = (sync_tag, sync_line);
                 r.ptr()
             }
             AnyNode::Ins(ins) => {

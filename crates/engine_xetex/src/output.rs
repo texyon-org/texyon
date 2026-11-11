@@ -14,7 +14,7 @@ use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::glue_store::GlueSpecId;
 use crate::node::Stored;
 use crate::node::{CharNode, NativeWordNode, NodePtr, RuleDimen, SaElement};
-use crate::overlay::{DelimiterWord, MathWord};
+use crate::node::{DelimiterWord, MathWord};
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, GroupCode, Selector};
 use crate::token::TokenList;

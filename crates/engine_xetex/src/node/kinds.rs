@@ -1,8 +1,7 @@
-//! Typed views of fixed-size nodes, read and written as `mem[p].field`.
+//! The node kinds, each a struct laid over its words in `mem`.
 //!
-//! A layout struct lies over a node's words in the flat `mem` arena. Indexing
-//! `mem` with a [`NodePtr`] borrows the node as its layout, and a mutable
-//! borrow first notes the node's words in the journal.
+//! Indexing `mem` with a [`NodePtr`] borrows the node as its struct, and a
+//! mutable borrow first notes the node's words in the journal.
 
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
@@ -11,19 +10,13 @@ use crate::glue_store::GlueSpecId;
 use crate::math::MathStyle;
 use bytemuck::{Pod, Zeroable};
 
+use super::{
+    AdjustPlacement, BoxLr, FenceSubtype, GlueKind, KernSubtype, LeaderKind, LigBoundary, Link,
+    MathAccentKind, MathCode, Node, NodePtr, SaChild, SaLeaf, Stored, StoredDimen, View,
+    WhatsitSubtype,
+};
 use crate::codes::{LimitCode, MarkCode, ValueLevel};
 use crate::consts::{EMPTY, NORMAL};
-use crate::node::{
-    AccentNoad, AdjustNode, AdjustPlacement, AlignRecord, AnyHeader, AnyNoad, BoxLr, BoxNode,
-    CharNode, ChoiceNode, DiscNode, EdgeNode, FenceNoad, FenceSubtype, FractionNoad, GlueKind,
-    GlueNode, GlyphNode, HeadNode, HyphPosNode, InsNode, KernNode, KernSubtype, LanguageNode,
-    LeaderKind, LigBoundary, LigItem, LigatureNode, Link, LrNode, MarginKernNode, MarkNode,
-    MathAccentKind, MathCode, MathNode, NativeWordNode, Noad, NodeKind, NodePtr, OpenNode,
-    PageInsNode, ParShapeNode, PenaltiesNode, PenaltyNode, PicNode, PseudoFileNode, PseudoLineNode,
-    RadicalNoad, RuleNode, SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode,
-    SaSaved, SaSavedPointer, SaSavedWord, SaWordNode, SavePosNode, SpanNode, Stored, StoredDimen,
-    StyleNode, UnsetNode, WhatsitNode, WhatsitSubtype, WriteNode,
-};
 use crate::payload::PayloadId;
 use crate::state::MemState;
 use crate::token::TokenList;
@@ -31,35 +24,36 @@ use crate::units::{
     Dir, FontId, GlueOrder, GlueSign, MemPtr, NodeType, Orientation, Scaled, StrNumber,
 };
 
-#[cfg(not(target_endian = "little"))]
-compile_error!("node layouts assume little-endian memory words");
+/// Where SyncTeX places a node: the input tag and line it was made at.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable, PartialEq, Eq, Debug)]
+pub struct SyncStamp {
+    pub tag: i32,
+    pub line: i32,
+}
 
-/// The word offset of a field at `bytes` into a layout.
+#[cfg(not(target_endian = "little"))]
+compile_error!("node structs assume little-endian memory words");
+
+/// The words in `bytes`, for sizes and field offsets of node structs.
 pub(crate) const fn word_offset(bytes: usize) -> i32 {
     assert!(bytes.is_multiple_of(4) && bytes / 4 < 1 << 16);
     (bytes / 4) as i32
 }
 
-/// A node kind whose words read as one `#[repr(C)]` layout struct.
-pub trait Overlay: NodeKind {
-    /// The struct laid over the node's `WORDS` words.
-    type Layout: Pod;
-    const WORDS: i32;
-}
-
-impl<K: Overlay> std::ops::Index<NodePtr<K>> for MemState {
-    type Output = K::Layout;
+impl<K: View> std::ops::Index<NodePtr<K>> for MemState {
+    type Output = K;
 
     #[inline]
-    fn index(&self, p: NodePtr<K>) -> &K::Layout {
-        bytemuck::from_bytes(bytemuck::cast_slice(&self.data[p.idx().words(K::WORDS)]))
+    fn index(&self, p: NodePtr<K>) -> &K {
+        bytemuck::from_bytes(bytemuck::cast_slice(&self.data[p.idx().words(K::SIZE)]))
     }
 }
 
-impl<K: Overlay> std::ops::IndexMut<NodePtr<K>> for MemState {
+impl<K: View> std::ops::IndexMut<NodePtr<K>> for MemState {
     #[inline]
-    fn index_mut(&mut self, p: NodePtr<K>) -> &mut K::Layout {
-        let words = p.idx().words(K::WORDS);
+    fn index_mut(&mut self, p: NodePtr<K>) -> &mut K {
+        let words = p.idx().words(K::SIZE);
         let start = words.start;
         let node = &mut self.data[words];
         if self.journal.armed() {
@@ -69,74 +63,31 @@ impl<K: Overlay> std::ops::IndexMut<NodePtr<K>> for MemState {
     }
 }
 
-/// Declares the layout of a node kind. The word count defaults to the layout's size,
-/// which is also the size of a fixed node of the kind.
-macro_rules! overlay {
-    ($kind:ty => $layout:ty) => {
-        overlay!($kind => $layout, word_offset(std::mem::size_of::<$layout>()));
-    };
-    ($kind:ty => $layout:ty, $words:expr) => {
-        impl Overlay for $kind {
-            type Layout = $layout;
-            const WORDS: i32 = $words;
-        }
-        const _: () = assert!(
-            std::mem::size_of::<$layout>()
-                == std::mem::size_of::<u32>() * <$kind as Overlay>::WORDS as usize
-        );
-    };
-}
-
-/// A node kind with a fixed header `Layout` and equal entries, as many as the header says,
-/// kept in its payload. Entries may be smaller than a word.
-pub trait ArrayOverlay: Overlay {
-    /// The struct laid over each entry.
+/// A node whose header says how many entries of `Entry` its payload holds.
+/// Entries may be smaller than a word.
+pub trait ArrayNode: Node {
     type Entry: Pod;
-    /// The number of entries, read from the header.
-    fn len(header: &Self::Layout) -> i32;
-    fn payload(header: &Self::Layout) -> PayloadId;
-    fn set_payload(header: &mut Self::Layout, id: PayloadId);
+    /// The number of entries.
+    fn len(&self) -> i32;
+    fn payload(&self) -> PayloadId;
+    fn set_payload(&mut self, id: PayloadId);
 }
 
-/// Declares the entry layout of an array node kind, whose header is its
-/// `overlay!` layout and holds the payload handle in `$field`.
-macro_rules! array_overlay {
-    ($kind:ty => $entry:ty, $field:ident, |$header:ident| $len:expr) => {
-        impl ArrayOverlay for $kind {
-            type Entry = $entry;
-            #[inline]
-            fn len($header: &<$kind as Overlay>::Layout) -> i32 {
-                $len
-            }
-            #[inline]
-            fn payload(header: &<$kind as Overlay>::Layout) -> PayloadId {
-                header.$field
-            }
-            #[inline]
-            fn set_payload(header: &mut <$kind as Overlay>::Layout, id: PayloadId) {
-                header.$field = id;
-            }
-        }
-        const _: () = assert!(std::mem::align_of::<$entry>() <= std::mem::align_of::<u32>());
-    };
-}
-
-/// The entries of one array node, writable, beside those of another.
 pub type EntriesMutAnd<'a, K, L> = (
-    &'a mut [<K as ArrayOverlay>::Entry],
-    &'a [<L as ArrayOverlay>::Entry],
+    &'a mut [<K as ArrayNode>::Entry],
+    &'a [<L as ArrayNode>::Entry],
 );
 
 impl MemState {
     /// The byte length of `p`'s entries.
     #[inline]
-    fn entry_bytes<K: ArrayOverlay>(&self, p: NodePtr<K>) -> usize {
-        let len = usize::try_from(K::len(&self[p])).unwrap_or(0);
+    fn entry_bytes<K: ArrayNode>(&self, p: NodePtr<K>) -> usize {
+        let len = usize::try_from(self[p].len()).unwrap_or(0);
         len.saturating_mul(std::mem::size_of::<K::Entry>())
     }
 
     /// Gives the fresh array node `p` a zeroed payload for `entries` entries.
-    pub fn alloc_payload<K: ArrayOverlay>(
+    pub fn alloc_payload<K: ArrayNode>(
         &mut self,
         p: NodePtr<K>,
         entries: usize,
@@ -145,46 +96,46 @@ impl MemState {
         let id = self
             .payloads
             .insert(bytes.div_ceil(std::mem::size_of::<u32>()))?;
-        K::set_payload(&mut self[p], id);
+        self[p].set_payload(id);
         Ok(())
     }
 
     /// Gives the copy `dst` of array node `src` its own handle on the payload.
-    pub fn share_payload<K: ArrayOverlay>(
+    pub fn share_payload<K: ArrayNode>(
         &mut self,
         dst: NodePtr<K>,
         src: NodePtr<K>,
     ) -> Result<(), crate::errors::Abort> {
-        let id = self.payloads.share(K::payload(&self[src]))?;
-        K::set_payload(&mut self[dst], id);
+        let id = self.payloads.share(self[src].payload())?;
+        self[dst].set_payload(id);
         Ok(())
     }
 
     /// Drops the payload of array node `p`.
-    pub fn release_payload<K: ArrayOverlay>(&mut self, p: NodePtr<K>) {
-        let id = K::payload(&self[p]);
+    pub fn release_payload<K: ArrayNode>(&mut self, p: NodePtr<K>) {
+        let id = self[p].payload();
         self.payloads.release(id);
         K::set_payload(&mut self[p], PayloadId::NONE);
     }
 
     /// The entries of an array node.
     #[inline]
-    pub fn entries<K: ArrayOverlay>(&self, p: NodePtr<K>) -> &[K::Entry] {
+    pub fn entries<K: ArrayNode>(&self, p: NodePtr<K>) -> &[K::Entry] {
         let bytes = self.entry_bytes(p);
-        let words: &[u8] = bytemuck::cast_slice(self.payloads.get(K::payload(&self[p])));
+        let words: &[u8] = bytemuck::cast_slice(self.payloads.get(self[p].payload()));
         bytemuck::cast_slice(words.get(..bytes).unwrap_or(&[]))
     }
 
     /// The entries of `dst`, writable, beside those of another node `src`. A confusion when
     /// both share one payload.
     #[inline]
-    pub fn entries_mut_and<K: ArrayOverlay, L: ArrayOverlay>(
+    pub fn entries_mut_and<K: ArrayNode, L: ArrayNode>(
         &mut self,
         dst: NodePtr<K>,
         src: NodePtr<L>,
     ) -> Result<EntriesMutAnd<'_, K, L>, crate::errors::Abort> {
         let (dst_bytes, src_bytes) = (self.entry_bytes(dst), self.entry_bytes(src));
-        let (dst_id, src_id) = (K::payload(&self[dst]), L::payload(&self[src]));
+        let (dst_id, src_id) = (self[dst].payload(), self[src].payload());
         let (dst, src) = self
             .payloads
             .get_mut_and(dst_id, src_id)
@@ -199,9 +150,9 @@ impl MemState {
 
     /// The entries of an array node, writable.
     #[inline]
-    pub fn entries_mut<K: ArrayOverlay>(&mut self, p: NodePtr<K>) -> &mut [K::Entry] {
+    pub fn entries_mut<K: ArrayNode>(&mut self, p: NodePtr<K>) -> &mut [K::Entry] {
         let bytes = self.entry_bytes(p);
-        let id = K::payload(&self[p]);
+        let id = self[p].payload();
         let words: &mut [u8] = bytemuck::cast_slice_mut(self.payloads.get_mut(id));
         let len = bytes.min(words.len());
         bytemuck::cast_slice_mut(&mut words[..len])
@@ -211,7 +162,7 @@ impl MemState {
 /// The header of a `\parshape` array.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct ParShapeHeader {
+pub struct ParShapeNode {
     pub lines: i32,
     pub payload: PayloadId,
     /// Pads the node to the size of a penalty array, which is freed through this view.
@@ -226,13 +177,35 @@ pub struct ParShapeLine {
     pub width: Scaled,
 }
 
-overlay!(ParShapeNode => ParShapeHeader);
-array_overlay!(ParShapeNode => ParShapeLine, payload, |h| h.lines);
+impl View for ParShapeNode {}
+
+impl Node for ParShapeNode {
+    const TYPE: Option<NodeType> = None;
+}
+
+impl ArrayNode for ParShapeNode {
+    type Entry = ParShapeLine;
+
+    #[inline]
+    fn len(&self) -> i32 {
+        self.lines
+    }
+
+    #[inline]
+    fn payload(&self) -> PayloadId {
+        self.payload
+    }
+
+    #[inline]
+    fn set_payload(&mut self, id: PayloadId) {
+        self.payload = id;
+    }
+}
 
 /// The header of an e-TeX penalty array.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct PenaltiesHeader {
+pub struct PenaltiesNode {
     /// Half the entry count, rounded up, as e-TeX's node size was.
     pub half_size: i32,
     pub payload: PayloadId,
@@ -246,13 +219,35 @@ pub struct PenaltyEntry {
     pub value: i32,
 }
 
-overlay!(PenaltiesNode => PenaltiesHeader);
-array_overlay!(PenaltiesNode => PenaltyEntry, payload, |h| 2 * h.half_size - 1);
+impl View for PenaltiesNode {}
+
+impl Node for PenaltiesNode {
+    const TYPE: Option<NodeType> = None;
+}
+
+impl ArrayNode for PenaltiesNode {
+    type Entry = PenaltyEntry;
+
+    #[inline]
+    fn len(&self) -> i32 {
+        2 * self.half_size - 1
+    }
+
+    #[inline]
+    fn payload(&self) -> PayloadId {
+        self.payload
+    }
+
+    #[inline]
+    fn set_payload(&mut self, id: PayloadId) {
+        self.payload = id;
+    }
+}
 
 /// The header of a `\scantokens` pseudo-file line.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct PseudoLineHeader {
+pub struct PseudoLineNode {
     /// One more than the line's words of four characters, as e-TeX's node size was.
     pub size: i32,
     pub link: Link<PseudoLineNode>,
@@ -281,8 +276,30 @@ impl PseudoWord {
     }
 }
 
-overlay!(PseudoLineNode => PseudoLineHeader);
-array_overlay!(PseudoLineNode => PseudoWord, payload, |h| h.size - 1);
+impl View for PseudoLineNode {}
+
+impl Node for PseudoLineNode {
+    const TYPE: Option<NodeType> = None;
+}
+
+impl ArrayNode for PseudoLineNode {
+    type Entry = PseudoWord;
+
+    #[inline]
+    fn len(&self) -> i32 {
+        self.size - 1
+    }
+
+    #[inline]
+    fn payload(&self) -> PayloadId {
+        self.payload
+    }
+
+    #[inline]
+    fn set_payload(&mut self, id: PayloadId) {
+        self.payload = id;
+    }
+}
 
 /// The words every list node starts with, read before its kind is known.
 #[repr(C)]
@@ -293,24 +310,38 @@ pub struct NodeHeader {
     pub link: MemPtr,
 }
 
-overlay!(AnyHeader => NodeHeader, 2);
+impl View for NodeHeader {}
 
 /// Any whatsit: its subtype and link.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct WhatsitLayout {
+pub struct WhatsitNode {
     pub subtype: Stored<WhatsitSubtype>,
     _type: u16,
     pub link: MemPtr,
 }
 
-overlay!(WhatsitNode => WhatsitLayout, 2);
-overlay!(SavePosNode => WhatsitLayout);
+impl View for WhatsitNode {}
+
+/// A `\pdfsavepos` mark, nothing but its header.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct SavePosNode {
+    pub subtype: Stored<WhatsitSubtype>,
+    _type: u16,
+    pub link: MemPtr,
+}
+
+impl View for SavePosNode {}
+
+impl Node for SavePosNode {
+    const TYPE: Option<NodeType> = Some(NodeType::Whatsit);
+}
 
 /// `\openout`.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct OpenLayout {
+pub struct OpenNode {
     pub subtype: Stored<WhatsitSubtype>,
     _type: u16,
     pub link: MemPtr,
@@ -320,13 +351,17 @@ pub struct OpenLayout {
     pub ext: StrNumber,
 }
 
-overlay!(OpenNode => OpenLayout);
+impl View for OpenNode {}
+
+impl Node for OpenNode {
+    const TYPE: Option<NodeType> = Some(NodeType::Whatsit);
+}
 
 /// `\write`, `\closeout` or `\special`. A close has no tokens, a special
 /// no stream.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct WriteLayout {
+pub struct WriteNode {
     pub subtype: Stored<WhatsitSubtype>,
     _type: u16,
     pub link: MemPtr,
@@ -334,11 +369,16 @@ pub struct WriteLayout {
     pub tokens: TokenList,
 }
 
-overlay!(WriteNode => WriteLayout);
+impl View for WriteNode {}
 
+impl Node for WriteNode {
+    const TYPE: Option<NodeType> = Some(NodeType::Whatsit);
+}
+
+/// A language change: the language and its hyphenation minima.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct LanguageLayout {
+pub struct LanguageNode {
     pub subtype: Stored<WhatsitSubtype>,
     _type: u16,
     pub link: MemPtr,
@@ -347,13 +387,17 @@ pub struct LanguageLayout {
     pub lang: i32,
 }
 
-overlay!(LanguageNode => LanguageLayout);
+impl View for LanguageNode {}
+
+impl Node for LanguageNode {
+    const TYPE: Option<NodeType> = Some(NodeType::Whatsit);
+}
 
 /// A glyph of a native font. The glyph id sits where a native word keeps
 /// its length.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct GlyphLayout {
+pub struct GlyphNode {
     pub subtype: Stored<WhatsitSubtype>,
     _type: u16,
     pub link: MemPtr,
@@ -366,12 +410,16 @@ pub struct GlyphLayout {
     _size: u16,
 }
 
-overlay!(GlyphNode => GlyphLayout);
+impl View for GlyphNode {}
+
+impl Node for GlyphNode {
+    const TYPE: Option<NodeType> = Some(NodeType::Whatsit);
+}
 
 /// A picture. Its path bytes follow the header.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct PicLayout {
+pub struct PicNode {
     pub subtype: Stored<WhatsitSubtype>,
     _type: u16,
     pub link: MemPtr,
@@ -387,14 +435,36 @@ pub struct PicLayout {
     pub pagebox: u16,
 }
 
-overlay!(PicNode => PicLayout);
-array_overlay!(PicNode => u8, path, |h| i32::from(h.path_len));
+impl View for PicNode {}
+
+impl Node for PicNode {
+    const TYPE: Option<NodeType> = Some(NodeType::Whatsit);
+}
+
+impl ArrayNode for PicNode {
+    type Entry = u8;
+
+    #[inline]
+    fn len(&self) -> i32 {
+        i32::from(self.path_len)
+    }
+
+    #[inline]
+    fn payload(&self) -> PayloadId {
+        self.path
+    }
+
+    #[inline]
+    fn set_payload(&mut self, id: PayloadId) {
+        self.path = id;
+    }
+}
 
 /// A native word. Its UTF-16 text follows the header, and its shaped glyphs
 /// live in `mem.glyph_blobs` under `glyph_info`.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct NativeWordLayout {
+pub struct NativeWordNode {
     pub subtype: Stored<WhatsitSubtype>,
     _type: u16,
     pub link: MemPtr,
@@ -411,7 +481,7 @@ pub struct NativeWordLayout {
     pub text: PayloadId,
 }
 
-impl NativeWordLayout {
+impl NativeWordNode {
     /// Forgets the shaped glyphs, without releasing them.
     #[inline]
     pub fn clear_glyphs(&mut self) {
@@ -420,8 +490,30 @@ impl NativeWordLayout {
     }
 }
 
-overlay!(NativeWordNode => NativeWordLayout);
-array_overlay!(NativeWordNode => u16, text, |h| i32::from(h.length));
+impl View for NativeWordNode {}
+
+impl Node for NativeWordNode {
+    const TYPE: Option<NodeType> = Some(NodeType::Whatsit);
+}
+
+impl ArrayNode for NativeWordNode {
+    type Entry = u16;
+
+    #[inline]
+    fn len(&self) -> i32 {
+        i32::from(self.length)
+    }
+
+    #[inline]
+    fn payload(&self) -> PayloadId {
+        self.text
+    }
+
+    #[inline]
+    fn set_payload(&mut self, id: PayloadId) {
+        self.text = id;
+    }
+}
 
 /// The box dimensions of a native word, glyph or picture.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -431,7 +523,7 @@ pub struct Dims {
     pub height: Scaled,
 }
 
-/// A box's glue ratio, an `f64` kept as two words so layouts stay 4-byte aligned.
+/// A box's glue ratio, an `f64` kept as two words so node structs stay 4-byte aligned.
 #[repr(transparent)]
 #[derive(Copy, Clone, Pod, Zeroable, Default)]
 pub struct GlueRatio([u32; 2]);
@@ -457,7 +549,7 @@ impl std::fmt::Debug for GlueRatio {
 /// An hlist or vlist box. Its orientation is the node's type code.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct BoxLayout {
+pub struct BoxNode {
     subtype: u16,
     pub orientation: Stored<Orientation>,
     pub link: MemPtr,
@@ -469,14 +561,21 @@ pub struct BoxLayout {
     pub glue_sign: Stored<GlueSign>,
     pub list_ptr: MemPtr,
     pub glue_set: GlueRatio,
-    /// The SyncTeX tag and line that `get_node` stamps into the last word.
-    pub sync_tag: i32,
-    pub sync_line: i32,
+    pub sync: SyncStamp,
 }
 
-overlay!(BoxNode => BoxLayout);
+impl View for BoxNode {}
 
-impl BoxLayout {
+impl Node for BoxNode {
+    const TYPE: Option<NodeType> = Some(NodeType::HList);
+
+    #[inline]
+    fn init(mem: &mut MemState, p: NodePtr<Self>) {
+        mem[p].sync = mem.sync_stamp();
+    }
+}
+
+impl BoxNode {
     /// TeX--XeT's direction state of an hlist.
     #[inline]
     pub fn lr(&self) -> Stored<BoxLr> {
@@ -503,34 +602,50 @@ impl BoxLayout {
 /// A kern. Its subtype tells normal, explicit, accent and math kerns apart.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct KernLayout {
+pub struct KernNode {
     pub subtype: Stored<KernSubtype>,
     _type: u16,
     pub link: MemPtr,
     _unused1: i32,
     pub width: Scaled,
-    pub sync_tag: i32,
-    pub sync_line: i32,
+    pub sync: SyncStamp,
 }
 
-overlay!(KernNode => KernLayout);
+impl View for KernNode {}
+
+impl Node for KernNode {
+    const TYPE: Option<NodeType> = Some(NodeType::Kern);
+
+    #[inline]
+    fn init(mem: &mut MemState, p: NodePtr<Self>) {
+        mem[p].sync = mem.sync_stamp();
+    }
+}
 
 /// A math-on/off node, or a TeX--XeT LR boundary, by its subtype.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct MathLayout {
+pub struct MathNode {
     pub subtype: Stored<MathCode>,
     _type: u16,
     pub link: MemPtr,
     _unused1: i32,
     pub width: Scaled,
-    pub sync_tag: i32,
-    pub sync_line: i32,
+    pub sync: SyncStamp,
 }
 
-overlay!(MathNode => MathLayout);
+impl View for MathNode {}
 
-impl MathLayout {
+impl Node for MathNode {
+    const TYPE: Option<NodeType> = Some(NodeType::Math);
+
+    #[inline]
+    fn init(mem: &mut MemState, p: NodePtr<Self>) {
+        mem[p].sync = mem.sync_stamp();
+    }
+}
+
+impl MathNode {
     /// The node's code. Every writer stores a [`MathCode`], so another value is a broken invariant.
     #[inline]
     pub fn code(&self) -> Result<MathCode, Abort> {
@@ -541,18 +656,22 @@ impl MathLayout {
 /// A margin kern on the side it protrudes on.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct MarginKernLayout {
+pub struct MarginKernNode {
     pub side: Stored<Side>,
     _type: u16,
     pub link: MemPtr,
     pub width: Scaled,
 }
 
-overlay!(MarginKernNode => MarginKernLayout);
+impl View for MarginKernNode {}
+
+impl Node for MarginKernNode {
+    const TYPE: Option<NodeType> = Some(NodeType::MarginKern);
+}
 
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct PenaltyLayout {
+pub struct PenaltyNode {
     _subtype: u16,
     _type: u16,
     pub link: MemPtr,
@@ -561,24 +680,32 @@ pub struct PenaltyLayout {
     _unused2: [i32; 2],
 }
 
-overlay!(PenaltyNode => PenaltyLayout);
+impl View for PenaltyNode {}
+
+impl Node for PenaltyNode {
+    const TYPE: Option<NodeType> = Some(NodeType::Penalty);
+}
 
 /// A `\vadjust` list.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct AdjustLayout {
+pub struct AdjustNode {
     pub placement: Stored<AdjustPlacement>,
     _type: u16,
     pub link: MemPtr,
     pub adjust_ptr: MemPtr,
 }
 
-overlay!(AdjustNode => AdjustLayout);
+impl View for AdjustNode {}
+
+impl Node for AdjustNode {
+    const TYPE: Option<NodeType> = Some(NodeType::Adjust);
+}
 
 /// A discretionary.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct DiscLayout {
+pub struct DiscNode {
     pub replace_count: u16,
     _type: u16,
     pub link: MemPtr,
@@ -586,12 +713,16 @@ pub struct DiscLayout {
     pub post_break: MemPtr,
 }
 
-overlay!(DiscNode => DiscLayout);
+impl View for DiscNode {}
+
+impl Node for DiscNode {
+    const TYPE: Option<NodeType> = Some(NodeType::Disc);
+}
 
 /// A `\mathchoice` node with one mlist per style.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct ChoiceLayout {
+pub struct ChoiceNode {
     _subtype: u16,
     _type: u16,
     pub link: MemPtr,
@@ -601,12 +732,16 @@ pub struct ChoiceLayout {
     pub script_script_mlist: MemPtr,
 }
 
-overlay!(ChoiceNode => ChoiceLayout);
+impl View for ChoiceNode {}
+
+impl Node for ChoiceNode {
+    const TYPE: Option<NodeType> = Some(NodeType::Choice);
+}
 
 /// A style change in an mlist.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct StyleLayout {
+pub struct StyleNode {
     pub style: MathStyle,
     _type: u16,
     pub link: MemPtr,
@@ -616,9 +751,13 @@ pub struct StyleLayout {
     payload2: i32,
 }
 
-overlay!(StyleNode => StyleLayout);
+impl View for StyleNode {}
 
-impl StyleLayout {
+impl Node for StyleNode {
+    const TYPE: Option<NodeType> = Some(NodeType::Style);
+}
+
+impl StyleNode {
     /// Zeroes the two payload words, as `new_style` does.
     #[inline]
     pub fn clear_payload(&mut self) {
@@ -630,7 +769,7 @@ impl StyleLayout {
 /// An LR edge in a shipped list.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct EdgeLayout {
+pub struct EdgeNode {
     pub dir: Stored<Dir>,
     _type: u16,
     pub link: MemPtr,
@@ -640,11 +779,15 @@ pub struct EdgeLayout {
     pub edge_dist: Scaled,
 }
 
-overlay!(EdgeNode => EdgeLayout);
+impl View for EdgeNode {}
+
+impl Node for EdgeNode {
+    const TYPE: Option<NodeType> = Some(NodeType::Style);
+}
 
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct MarkLayout {
+pub struct MarkNode {
     _subtype: u16,
     _type: u16,
     pub link: MemPtr,
@@ -652,7 +795,11 @@ pub struct MarkLayout {
     pub mark_ptr: TokenList,
 }
 
-overlay!(MarkNode => MarkLayout);
+impl View for MarkNode {}
+
+impl Node for MarkNode {
+    const TYPE: Option<NodeType> = Some(NodeType::Mark);
+}
 
 /// A noad's nucleus, script or accent word: its math type, then either a
 /// character and family or a sub-list in the shared payload half.
@@ -760,19 +907,19 @@ impl DelimiterWord {
 /// The words every noad starts with: the header, then the hlist `mlist_to_hlist` translates it to.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct NoadHead {
+pub struct AnyNoad {
     _subtype: u16,
     pub noad_type: Stored<NodeType>,
     pub link: MemPtr,
     pub new_hlist: MemPtr,
 }
 
-overlay!(AnyNoad => NoadHead);
+impl View for AnyNoad {}
 
 /// A noad with a nucleus and two scripts.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct NoadLayout {
+pub struct Noad {
     subtype: u16,
     pub noad_type: Stored<NodeType>,
     pub link: MemPtr,
@@ -782,9 +929,13 @@ pub struct NoadLayout {
     pub subscr: MathWord,
 }
 
-overlay!(Noad => NoadLayout);
+impl View for Noad {}
 
-impl NoadLayout {
+impl Node for Noad {
+    const TYPE: Option<NodeType> = Some(NodeType::OrdNoad);
+}
+
+impl Noad {
     /// Empty fields and a normal subtype, as a new noad starts.
     #[inline]
     pub fn clear_fields(&mut self) {
@@ -810,23 +961,27 @@ impl NoadLayout {
 /// A radical: a noad, then its delimiter.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct RadicalLayout {
-    pub base: NoadLayout,
+pub struct RadicalNoad {
+    pub base: Noad,
     pub left_delimiter: DelimiterWord,
 }
 
-overlay!(RadicalNoad => RadicalLayout);
+impl View for RadicalNoad {}
+
+impl Node for RadicalNoad {
+    const TYPE: Option<NodeType> = Some(NodeType::RadicalNoad);
+}
 
 /// A math accent: a noad, then its accent character. The subtype marks
 /// fixed and bottom accents.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct AccentLayout {
-    pub base: NoadLayout,
+pub struct AccentNoad {
+    pub base: Noad,
     pub accent_chr: MathWord,
 }
 
-impl AccentLayout {
+impl AccentNoad {
     /// Where the accent goes and whether it stretches, kept in the noad's subtype.
     #[inline]
     pub fn kind(&self) -> Stored<MathAccentKind> {
@@ -839,12 +994,16 @@ impl AccentLayout {
     }
 }
 
-overlay!(AccentNoad => AccentLayout);
+impl View for AccentNoad {}
+
+impl Node for AccentNoad {
+    const TYPE: Option<NodeType> = Some(NodeType::AccentNoad);
+}
 
 /// A generalized fraction.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct FractionLayout {
+pub struct FractionNoad {
     _subtype: u16,
     pub noad_type: Stored<NodeType>,
     pub link: MemPtr,
@@ -857,13 +1016,17 @@ pub struct FractionLayout {
     pub right_delimiter: DelimiterWord,
 }
 
-overlay!(FractionNoad => FractionLayout);
+impl View for FractionNoad {}
+
+impl Node for FractionNoad {
+    const TYPE: Option<NodeType> = Some(NodeType::FractionNoad);
+}
 
 /// A `\left`, `\middle` or `\right` delimiter. A middle one is a right noad
 /// with a middle subtype. WEB leaves the script words empty but reads them.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct FenceLayout {
+pub struct FenceNoad {
     pub subtype: Stored<FenceSubtype>,
     pub noad_type: Stored<NodeType>,
     pub link: MemPtr,
@@ -873,12 +1036,16 @@ pub struct FenceLayout {
     pub subscr: MathWord,
 }
 
-overlay!(FenceNoad => FenceLayout);
+impl View for FenceNoad {}
+
+impl Node for FenceNoad {
+    const TYPE: Option<NodeType> = Some(NodeType::LeftNoad);
+}
 
 /// An eTeX sparse-array index node.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct SaIndexLayout {
+pub struct SaIndexNode {
     /// `sa_used`, the count of non-null children.
     pub used: u16,
     /// The node's slot in its parent, or the tree's type at the root.
@@ -888,9 +1055,13 @@ pub struct SaIndexLayout {
     children: [MemPtr; 64],
 }
 
-overlay!(SaIndexNode => SaIndexLayout);
+impl View for SaIndexNode {}
 
-impl SaIndexLayout {
+impl Node for SaIndexNode {
+    const TYPE: Option<NodeType> = None;
+}
+
+impl SaIndexNode {
     /// Child `i` of a node above the last index level.
     #[inline]
     pub fn child_index(&self, i: usize) -> Option<NodePtr<SaIndexNode>> {
@@ -902,7 +1073,7 @@ impl SaIndexLayout {
         self.children[i].as_idx().map(NodePtr::from_idx_unchecked)
     }
     /// Child `i` of a node on the last index level of the tree for type `t`,
-    /// whose elements all have the layout `t` gives.
+    /// whose elements all have the kind `t` gives.
     #[inline]
     pub fn child_leaf(&self, i: usize, t: ValueLevel) -> Option<SaLeaf> {
         self.child_element(i).map(|e| SaLeaf::of_type(t, e.idx()))
@@ -924,16 +1095,16 @@ impl SaIndexLayout {
 /// The header every sparse-array element shares.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct SaElementHead {
+pub struct SaElement {
     pub sa_lev: u16,
     /// The type times 64 plus the slot in the parent.
     pub sa_index: u16,
     pub link: NodePtr<SaIndexNode>,
 }
 
-overlay!(SaElement => SaElementHead, 2);
+impl View for SaElement {}
 
-impl SaElementHead {
+impl SaElement {
     #[inline]
     pub fn sa_type(&self) -> Stored<ValueLevel> {
         Stored::from_raw(self.sa_index / 64)
@@ -948,7 +1119,7 @@ impl SaElementHead {
 /// A count or dimension register.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct SaWordLayout {
+pub struct SaWordNode {
     /// The grouping level of the value.
     pub sa_lev: u16,
     pub sa_index: u16,
@@ -961,12 +1132,16 @@ pub struct SaWordLayout {
     pub sa_int: i32,
 }
 
-overlay!(SaWordNode => SaWordLayout);
+impl View for SaWordNode {}
+
+impl Node for SaWordNode {
+    const TYPE: Option<NodeType> = None;
+}
 
 /// A glue, muglue, box or token-list register.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct SaPointerLayout {
+pub struct SaPointerNode {
     /// The grouping level of the value.
     pub sa_lev: u16,
     pub sa_index: u16,
@@ -977,9 +1152,13 @@ pub struct SaPointerLayout {
     pub sa_ptr: MemPtr,
 }
 
-overlay!(SaPointerNode => SaPointerLayout);
+impl View for SaPointerNode {}
 
-impl SaPointerLayout {
+impl Node for SaPointerNode {
+    const TYPE: Option<NodeType> = None;
+}
+
+impl SaPointerNode {
     /// The value of a token-list register.
     #[inline]
     pub fn toks(&self) -> TokenList {
@@ -990,16 +1169,20 @@ impl SaPointerLayout {
 /// The marks of one mark class.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct SaMarkClassLayout {
+pub struct SaMarkClassNode {
     pub sa_lev: u16,
     pub sa_index: u16,
     pub link: NodePtr<SaIndexNode>,
     marks: [TokenList; 6],
 }
 
-overlay!(SaMarkClassNode => SaMarkClassLayout);
+impl View for SaMarkClassNode {}
 
-impl SaMarkClassLayout {
+impl Node for SaMarkClassNode {
+    const TYPE: Option<NodeType> = None;
+}
+
+impl SaMarkClassNode {
     #[inline]
     pub fn mark(&self, m: MarkCode) -> TokenList {
         self.marks[m as usize]
@@ -1017,19 +1200,19 @@ impl SaMarkClassLayout {
 /// The header every save-chain entry shares.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct SaSavedHead {
+pub struct SaSaved {
     /// The saved grouping level.
     pub sa_lev: u16,
     pub sa_index: u16,
     pub link: Link<SaSaved>,
 }
 
-overlay!(SaSaved => SaSavedHead, 2);
+impl View for SaSaved {}
 
 /// A saved count or dimension.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct SaSavedWordLayout {
+pub struct SaSavedWord {
     pub sa_lev: u16,
     pub sa_index: u16,
     pub link: Link<SaSaved>,
@@ -1038,12 +1221,16 @@ pub struct SaSavedWordLayout {
     pub sa_int: i32,
 }
 
-overlay!(SaSavedWord => SaSavedWordLayout);
+impl View for SaSavedWord {}
+
+impl Node for SaSavedWord {
+    const TYPE: Option<NodeType> = None;
+}
 
 /// A saved glue spec, box or token list.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct SaSavedPointerLayout {
+pub struct SaSavedPointer {
     pub sa_lev: u16,
     pub sa_index: u16,
     pub link: Link<SaSaved>,
@@ -1052,25 +1239,33 @@ pub struct SaSavedPointerLayout {
     pub sa_ptr: MemPtr,
 }
 
-overlay!(SaSavedPointer => SaSavedPointerLayout);
+impl View for SaSavedPointer {}
+
+impl Node for SaSavedPointer {
+    const TYPE: Option<NodeType> = None;
+}
 
 /// An entry of a column's span list, ended by `END_SPAN`.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct SpanLayout {
+pub struct SpanNode {
     pub next: NodePtr<SpanNode>,
     /// Columns spanned beyond the first. `END_SPAN` holds a larger sentinel.
     pub span_count: i32,
     pub width: Scaled,
 }
 
-overlay!(SpanNode => SpanLayout);
+impl View for SpanNode {}
+
+impl Node for SpanNode {
+    const TYPE: Option<NodeType> = None;
+}
 
 /// An alignment preamble column: a null box holding the column's templates,
 /// natural width and span list.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct AlignRecordLayout {
+pub struct AlignRecord {
     /// The head of the span list, read through `span_head`.
     _span_list: i32,
     pub link: MemPtr,
@@ -1081,57 +1276,85 @@ pub struct AlignRecordLayout {
     /// The command that ended the current entry of this column.
     pub extra_info: i32,
     _unused2: [i32; 3],
-    pub sync_tag: i32,
-    pub sync_line: i32,
+    pub sync: SyncStamp,
 }
 
-overlay!(AlignRecord => AlignRecordLayout);
+impl View for AlignRecord {}
+
+impl Node for AlignRecord {
+    const TYPE: Option<NodeType> = Some(NodeType::HList);
+
+    #[inline]
+    fn init(mem: &mut MemState, p: NodePtr<Self>) {
+        mem[p].sync = mem.sync_stamp();
+    }
+}
 
 /// An entry of the ligature reconstitution stack.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct LigItemLayout {
+pub struct LigItem {
     pub character: u16,
     _unused0: u16,
     pub link: MemPtr,
     pub component: MemPtr,
 }
 
-overlay!(LigItem => LigItemLayout);
+impl View for LigItem {}
+
+impl Node for LigItem {
+    const TYPE: Option<NodeType> = None;
+}
 
 /// A rule. A running dimension holds `NULL_FLAG`.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct RuleLayout {
+pub struct RuleNode {
     _subtype: u16,
     _type: u16,
     pub link: MemPtr,
     pub width: StoredDimen,
     pub depth: StoredDimen,
     pub height: StoredDimen,
-    pub sync_tag: i32,
-    pub sync_line: i32,
+    pub sync: SyncStamp,
 }
 
-overlay!(RuleNode => RuleLayout);
+impl View for RuleNode {}
+
+impl Node for RuleNode {
+    const TYPE: Option<NodeType> = Some(NodeType::Rule);
+
+    #[inline]
+    fn init(mem: &mut MemState, p: NodePtr<Self>) {
+        mem[p].sync = mem.sync_stamp();
+    }
+}
 
 /// A glue node. Its subtype is a glue parameter, a leader kind or a math code.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct GlueLayout {
+pub struct GlueNode {
     pub subtype: Stored<GlueKind>,
     _type: u16,
     pub link: MemPtr,
     pub glue_ptr: GlueSpecId,
     /// The leader box or rule, null for plain glue.
     pub leader_ptr: MemPtr,
-    pub sync_tag: i32,
-    pub sync_line: i32,
+    pub sync: SyncStamp,
 }
 
-overlay!(GlueNode => GlueLayout);
+impl View for GlueNode {}
 
-impl GlueLayout {
+impl Node for GlueNode {
+    const TYPE: Option<NodeType> = Some(NodeType::Glue);
+
+    #[inline]
+    fn init(mem: &mut MemState, p: NodePtr<Self>) {
+        mem[p].sync = mem.sync_stamp();
+    }
+}
+
+impl GlueNode {
     /// The leader kind, `None` for any other glue.
     #[inline]
     pub fn leaders(&self) -> Option<LeaderKind> {
@@ -1145,7 +1368,7 @@ impl GlueLayout {
 /// An insertion into the class of its box number.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct InsLayout {
+pub struct InsNode {
     pub box_number: u16,
     _type: u16,
     pub link: MemPtr,
@@ -1157,13 +1380,17 @@ pub struct InsLayout {
     pub split_top_ptr: GlueSpecId,
 }
 
-overlay!(InsNode => InsLayout);
+impl View for InsNode {}
+
+impl Node for InsNode {
+    const TYPE: Option<NodeType> = Some(NodeType::Ins);
+}
 
 /// A record on the page builder's insertion ring. Its type code is
 /// `inserting` or `split_up`, its subtype the insertion's box number.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct PageInsLayout {
+pub struct PageInsNode {
     pub box_number: u16,
     split_up: u16,
     pub link: MemPtr,
@@ -1174,9 +1401,13 @@ pub struct PageInsLayout {
     pub height: Scaled,
 }
 
-overlay!(PageInsNode => PageInsLayout);
+impl View for PageInsNode {}
 
-impl PageInsLayout {
+impl Node for PageInsNode {
+    const TYPE: Option<NodeType> = None;
+}
+
+impl PageInsNode {
     #[inline]
     pub fn is_split_up(&self) -> bool {
         self.split_up == 1
@@ -1188,11 +1419,11 @@ impl PageInsLayout {
     }
 }
 
-/// An alignment box before its column widths are known. It keeps the box
-/// layout but holds shrink and stretch in place of shift and glue setting.
+/// An alignment box before its column widths are known. It keeps the box's
+/// fields but holds shrink and stretch in place of shift and glue setting.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct UnsetLayout {
+pub struct UnsetNode {
     /// The number of columns spanned, less one.
     pub span_count: u16,
     _type: u16,
@@ -1208,16 +1439,24 @@ pub struct UnsetLayout {
     pub list_ptr: MemPtr,
     _unused6: i32,
     pub glue_stretch: Scaled,
-    pub sync_tag: i32,
-    pub sync_line: i32,
+    pub sync: SyncStamp,
 }
 
-overlay!(UnsetNode => UnsetLayout);
+impl View for UnsetNode {}
+
+impl Node for UnsetNode {
+    const TYPE: Option<NodeType> = Some(NodeType::Unset);
+
+    #[inline]
+    fn init(mem: &mut MemState, p: NodePtr<Self>) {
+        mem[p].sync = mem.sync_stamp();
+    }
+}
 
 /// A character node: the character in the subtype, then its font.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct CharLayout {
+pub struct CharNode {
     pub character: u16,
     _type: u16,
     pub link: MemPtr,
@@ -1225,54 +1464,74 @@ pub struct CharLayout {
     _unused1: u16,
 }
 
-overlay!(CharNode => CharLayout);
+impl View for CharNode {}
+
+impl Node for CharNode {
+    const TYPE: Option<NodeType> = Some(NodeType::Char);
+}
 
 /// The head of a list under construction. Only its link is used.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct HeadLayout {
+pub struct HeadNode {
     _subtype: u16,
     _type: u16,
     pub link: MemPtr,
 }
 
-overlay!(HeadNode => HeadLayout);
+impl View for HeadNode {}
+
+impl Node for HeadNode {
+    const TYPE: Option<NodeType> = Some(NodeType::Head);
+}
 
 /// An open `\scantokens` pseudo file: its unread lines and the next file.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct PseudoFileLayout {
+pub struct PseudoFileNode {
     pub lines: Link<PseudoLineNode>,
     pub link: MemPtr,
 }
 
-overlay!(PseudoFileNode => PseudoFileLayout);
+impl View for PseudoFileNode {}
+
+impl Node for PseudoFileNode {
+    const TYPE: Option<NodeType> = None;
+}
 
 /// One hyphen position of a `\hyphenation` exception, in a list from the last position.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct HyphPosLayout {
+pub struct HyphPosNode {
     pub pos: i32,
     pub link: MemPtr,
 }
 
-overlay!(HyphPosNode => HyphPosLayout);
+impl View for HyphPosNode {}
+
+impl Node for HyphPosNode {
+    const TYPE: Option<NodeType> = None;
+}
 
 /// An entry of the TeX--XeT LR stack.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct LrLayout {
+pub struct LrNode {
     pub code: Stored<MathCode>,
     _unused1: u16,
     pub link: MemPtr,
 }
 
-overlay!(LrNode => LrLayout);
+impl View for LrNode {}
+
+impl Node for LrNode {
+    const TYPE: Option<NodeType> = None;
+}
 
 /// A ligature, with the character and font it shows.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-pub struct LigatureLayout {
+pub struct LigatureNode {
     pub boundary: Stored<LigBoundary>,
     _type: u16,
     pub link: MemPtr,
@@ -1282,9 +1541,13 @@ pub struct LigatureLayout {
     pub lig_ptr: MemPtr,
 }
 
-overlay!(LigatureNode => LigatureLayout);
+impl View for LigatureNode {}
 
-/// Asserts that each `Layout.field` pair sits at one offset, for fields read through another view.
+impl Node for LigatureNode {
+    const TYPE: Option<NodeType> = Some(NodeType::Ligature);
+}
+
+/// Asserts that each `Kind.field` pair sits at one offset, for fields read through another kind.
 macro_rules! same_offset {
     ($($a:ident.$f:ident == $b:ident.$g:ident),+ $(,)?) => {
         $(const _: () = assert!(
@@ -1295,112 +1558,108 @@ macro_rules! same_offset {
 
 same_offset!(
     // The header every list node is read through before its kind is known.
-    WhatsitLayout._type == NodeHeader.ty,
-    WhatsitLayout.link == NodeHeader.link,
-    OpenLayout._type == NodeHeader.ty,
-    OpenLayout.link == NodeHeader.link,
-    WriteLayout._type == NodeHeader.ty,
-    WriteLayout.link == NodeHeader.link,
-    LanguageLayout._type == NodeHeader.ty,
-    LanguageLayout.link == NodeHeader.link,
-    GlyphLayout._type == NodeHeader.ty,
-    GlyphLayout.link == NodeHeader.link,
-    PicLayout._type == NodeHeader.ty,
-    PicLayout.link == NodeHeader.link,
-    NativeWordLayout._type == NodeHeader.ty,
-    NativeWordLayout.link == NodeHeader.link,
-    KernLayout._type == NodeHeader.ty,
-    KernLayout.link == NodeHeader.link,
-    MathLayout._type == NodeHeader.ty,
-    MathLayout.link == NodeHeader.link,
-    MarginKernLayout._type == NodeHeader.ty,
-    MarginKernLayout.link == NodeHeader.link,
-    PenaltyLayout._type == NodeHeader.ty,
-    PenaltyLayout.link == NodeHeader.link,
-    AdjustLayout._type == NodeHeader.ty,
-    AdjustLayout.link == NodeHeader.link,
-    DiscLayout._type == NodeHeader.ty,
-    DiscLayout.link == NodeHeader.link,
-    ChoiceLayout._type == NodeHeader.ty,
-    ChoiceLayout.link == NodeHeader.link,
-    StyleLayout._type == NodeHeader.ty,
-    StyleLayout.link == NodeHeader.link,
-    EdgeLayout._type == NodeHeader.ty,
-    EdgeLayout.link == NodeHeader.link,
-    MarkLayout._type == NodeHeader.ty,
-    MarkLayout.link == NodeHeader.link,
-    RuleLayout._type == NodeHeader.ty,
-    RuleLayout.link == NodeHeader.link,
-    GlueLayout._type == NodeHeader.ty,
-    GlueLayout.link == NodeHeader.link,
-    InsLayout._type == NodeHeader.ty,
-    InsLayout.link == NodeHeader.link,
-    UnsetLayout._type == NodeHeader.ty,
-    UnsetLayout.link == NodeHeader.link,
-    CharLayout._type == NodeHeader.ty,
-    CharLayout.link == NodeHeader.link,
-    HeadLayout._type == NodeHeader.ty,
-    HeadLayout.link == NodeHeader.link,
-    LigatureLayout._type == NodeHeader.ty,
-    LigatureLayout.link == NodeHeader.link,
-    BoxLayout.orientation == NodeHeader.ty,
-    BoxLayout.link == NodeHeader.link,
-    NoadHead.noad_type == NodeHeader.ty,
-    NoadHead.link == NodeHeader.link,
-    PageInsLayout.split_up == NodeHeader.ty,
-    PageInsLayout.link == NodeHeader.link,
+    WhatsitNode._type == NodeHeader.ty,
+    WhatsitNode.link == NodeHeader.link,
+    OpenNode._type == NodeHeader.ty,
+    OpenNode.link == NodeHeader.link,
+    WriteNode._type == NodeHeader.ty,
+    WriteNode.link == NodeHeader.link,
+    LanguageNode._type == NodeHeader.ty,
+    LanguageNode.link == NodeHeader.link,
+    GlyphNode._type == NodeHeader.ty,
+    GlyphNode.link == NodeHeader.link,
+    PicNode._type == NodeHeader.ty,
+    PicNode.link == NodeHeader.link,
+    NativeWordNode._type == NodeHeader.ty,
+    NativeWordNode.link == NodeHeader.link,
+    KernNode._type == NodeHeader.ty,
+    KernNode.link == NodeHeader.link,
+    MathNode._type == NodeHeader.ty,
+    MathNode.link == NodeHeader.link,
+    MarginKernNode._type == NodeHeader.ty,
+    MarginKernNode.link == NodeHeader.link,
+    PenaltyNode._type == NodeHeader.ty,
+    PenaltyNode.link == NodeHeader.link,
+    AdjustNode._type == NodeHeader.ty,
+    AdjustNode.link == NodeHeader.link,
+    DiscNode._type == NodeHeader.ty,
+    DiscNode.link == NodeHeader.link,
+    ChoiceNode._type == NodeHeader.ty,
+    ChoiceNode.link == NodeHeader.link,
+    StyleNode._type == NodeHeader.ty,
+    StyleNode.link == NodeHeader.link,
+    EdgeNode._type == NodeHeader.ty,
+    EdgeNode.link == NodeHeader.link,
+    MarkNode._type == NodeHeader.ty,
+    MarkNode.link == NodeHeader.link,
+    RuleNode._type == NodeHeader.ty,
+    RuleNode.link == NodeHeader.link,
+    GlueNode._type == NodeHeader.ty,
+    GlueNode.link == NodeHeader.link,
+    InsNode._type == NodeHeader.ty,
+    InsNode.link == NodeHeader.link,
+    UnsetNode._type == NodeHeader.ty,
+    UnsetNode.link == NodeHeader.link,
+    CharNode._type == NodeHeader.ty,
+    CharNode.link == NodeHeader.link,
+    HeadNode._type == NodeHeader.ty,
+    HeadNode.link == NodeHeader.link,
+    LigatureNode._type == NodeHeader.ty,
+    LigatureNode.link == NodeHeader.link,
+    BoxNode.orientation == NodeHeader.ty,
+    BoxNode.link == NodeHeader.link,
+    AnyNoad.noad_type == NodeHeader.ty,
+    AnyNoad.link == NodeHeader.link,
+    PageInsNode.split_up == NodeHeader.ty,
+    PageInsNode.link == NodeHeader.link,
 );
 
 same_offset!(
     // Retyped in place: unset and box, an align record into an unset, math into kern.
-    UnsetLayout.width == BoxLayout.width,
-    UnsetLayout.depth == BoxLayout.depth,
-    UnsetLayout.height == BoxLayout.height,
-    UnsetLayout.list_ptr == BoxLayout.list_ptr,
-    AlignRecordLayout.width == UnsetLayout.width,
-    AlignRecordLayout._span_list == SpanLayout.next,
-    AlignRecordLayout.width == SpanLayout.width,
+    UnsetNode.width == BoxNode.width,
+    UnsetNode.depth == BoxNode.depth,
+    UnsetNode.height == BoxNode.height,
+    UnsetNode.list_ptr == BoxNode.list_ptr,
+    AlignRecord.width == UnsetNode.width,
+    AlignRecord._span_list == SpanNode.next,
+    AlignRecord.width == SpanNode.width,
     // `into_unset` clears the unset fields an align record keeps its parts in.
-    AlignRecordLayout.v_part == UnsetLayout.depth,
-    AlignRecordLayout.u_part == UnsetLayout.height,
-    AlignRecordLayout.extra_info == UnsetLayout.glue_order,
+    AlignRecord.v_part == UnsetNode.depth,
+    AlignRecord.u_part == UnsetNode.height,
+    AlignRecord.extra_info == UnsetNode.glue_order,
     // An unset's glue totals sit where the box's shift and glue ratio do.
-    UnsetLayout.glue_shrink == BoxLayout.shift_amount,
-    UnsetLayout.glue_order == BoxLayout.glue_order,
-    UnsetLayout.glue_sign == BoxLayout.glue_sign,
-    MathLayout.width == KernLayout.width,
+    UnsetNode.glue_shrink == BoxNode.shift_amount,
+    UnsetNode.glue_order == BoxNode.glue_order,
+    UnsetNode.glue_sign == BoxNode.glue_sign,
+    MathNode.width == KernNode.width,
     // A retyped node keeps the SyncTeX stamp it was made with.
-    UnsetLayout.sync_tag == BoxLayout.sync_tag,
-    UnsetLayout.sync_line == BoxLayout.sync_line,
-    AlignRecordLayout.sync_tag == UnsetLayout.sync_tag,
-    AlignRecordLayout.sync_line == UnsetLayout.sync_line,
-    MathLayout.sync_tag == KernLayout.sync_tag,
-    MathLayout.sync_line == KernLayout.sync_line,
-    GlueLayout.sync_tag == KernLayout.sync_tag,
-    GlueLayout.sync_line == KernLayout.sync_line,
+    UnsetNode.sync == BoxNode.sync,
+    AlignRecord.sync == UnsetNode.sync,
+    MathNode.sync == KernNode.sync,
+    GlueNode.sync == KernNode.sync,
     // Shared heads read before the kind is known.
-    NoadLayout.link == NoadHead.link,
-    NoadLayout.new_hlist == NoadHead.new_hlist,
-    FractionLayout.new_hlist == NoadHead.new_hlist,
-    FenceLayout.new_hlist == NoadHead.new_hlist,
-    FractionLayout.link == NoadHead.link,
-    FenceLayout.link == NoadHead.link,
-    NoadLayout.noad_type == NoadHead.noad_type,
-    FractionLayout.noad_type == NoadHead.noad_type,
-    FenceLayout.noad_type == NoadHead.noad_type,
-    SaWordLayout.sa_index == SaElementHead.sa_index,
-    SaPointerLayout.sa_index == SaElementHead.sa_index,
-    SaMarkClassLayout.sa_index == SaElementHead.sa_index,
-    SaWordLayout.link == SaElementHead.link,
-    SaPointerLayout.link == SaElementHead.link,
-    SaMarkClassLayout.link == SaElementHead.link,
-    SaSavedWordLayout.sa_index == SaSavedHead.sa_index,
-    SaSavedPointerLayout.sa_index == SaSavedHead.sa_index,
-    SaSavedWordLayout.link == SaSavedHead.link,
-    SaSavedPointerLayout.link == SaSavedHead.link,
+    Noad.link == AnyNoad.link,
+    Noad.new_hlist == AnyNoad.new_hlist,
+    FractionNoad.new_hlist == AnyNoad.new_hlist,
+    FenceNoad.new_hlist == AnyNoad.new_hlist,
+    FractionNoad.link == AnyNoad.link,
+    FenceNoad.link == AnyNoad.link,
+    Noad.noad_type == AnyNoad.noad_type,
+    FractionNoad.noad_type == AnyNoad.noad_type,
+    FenceNoad.noad_type == AnyNoad.noad_type,
+    SaWordNode.sa_index == SaElement.sa_index,
+    SaPointerNode.sa_index == SaElement.sa_index,
+    SaMarkClassNode.sa_index == SaElement.sa_index,
+    SaWordNode.link == SaElement.link,
+    SaPointerNode.link == SaElement.link,
+    SaMarkClassNode.link == SaElement.link,
+    SaSavedWord.sa_index == SaSaved.sa_index,
+    SaSavedPointer.sa_index == SaSaved.sa_index,
+    SaSavedWord.link == SaSaved.link,
+    SaSavedPointer.link == SaSaved.link,
 );
 
-impl BoxLayout {
+impl BoxNode {
     #[inline]
     pub fn is_hlist(&self) -> bool {
         self.orientation == Orientation::Horizontal
@@ -1415,7 +1674,7 @@ impl BoxLayout {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::node::FixedNode;
+    use crate::node::View;
     use crate::node::WhatsitVariant;
     use crate::units::MemIdx;
 
@@ -1449,18 +1708,18 @@ mod tests {
     fn a_mutable_borrow_journals_every_word_of_the_node() {
         let mut mem = arena();
         let k: NodePtr<KernNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(4));
-        mem[k].sync_line = 5;
+        mem[k].sync.line = 5;
         mem.journal.arm(16);
         let kern = &mut mem[k];
         kern.link = MemPtr::from_raw(1);
         kern.width = Scaled::from_raw(2);
-        kern.sync_tag = 3;
-        kern.sync_line = 4;
+        kern.sync.tag = 3;
+        kern.sync.line = 4;
         let delta = mem.journal.seal(&mem.data);
         delta.apply_to(&mut mem.data);
         let kern = mem[k];
         assert_eq!(
-            (kern.link, kern.width, kern.sync_tag, kern.sync_line),
+            (kern.link, kern.width, kern.sync.tag, kern.sync.line),
             (MemPtr::from_raw(0), Scaled::ZERO, 0, 5)
         );
     }

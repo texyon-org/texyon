@@ -103,7 +103,7 @@ pub(crate) fn insert_special(st: &mut EngineState, text: &str) -> Result<(), Abo
     Ok(())
 }
 
-fn append_whatsit<K: WhatsitKind + crate::node::FixedNode>(
+fn append_whatsit<K: WhatsitKind + crate::node::Node>(
     st: &mut EngineState,
     subtype: WhatsitSubtype,
 ) -> Result<NodePtr<K>, Abort> {

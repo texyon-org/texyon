@@ -1,9 +1,9 @@
 //! Typed node handles over the flat `mem` arena.
 //!
-//! [`NodePtr<K>`] is a `Copy` index plus a compile-time kind marker, so a field
-//! access compiles to the same load/store as the raw `mem[p + k]` form. Every
-//! kind's layout lives in [`crate::overlay`] and indexes the arena:
-//! `mem[p].width`, `mem.entries(p)` for the text or array after a header.
+//! Every node kind is a `#[repr(C)]` struct in [`kinds`], laid over its words
+//! in `mem`. A [`NodePtr<K>`] is a `Copy` index typed by its kind, so `mem[p]`
+//! borrows the node as a `K` and a field access is one load or store.
+//! `mem.entries(p)` gives the text or array an [`ArrayNode`] keeps in its payload.
 
 use crate::fonts::Side;
 use crate::math::MathStyle;
@@ -12,47 +12,54 @@ use std::marker::PhantomData;
 
 use crate::consts::NULL_FLAG;
 use crate::errors::Abort;
+mod kinds;
+
 use crate::state::MemState;
 use crate::units::{
     Dir, GlueOrder, GlueSign, InvalidNodeType, MemAddr, MemIdx, MemPtr, NodeType, Orientation,
     Scaled,
 };
+pub use kinds::*;
 
 /// Marker for node kinds, implemented by the uninhabited kind enums below.
-pub trait NodeKind {}
+/// A struct laid over consecutive words of `mem`, read as `mem[p]` through a [`NodePtr`].
+pub trait View: bytemuck::Pod {
+    /// The struct's size in words.
+    const SIZE: i32 = crate::node::word_offset(std::mem::size_of::<Self>());
+}
 
 /// A typed handle to a node of kind `K` in the `mem` arena.
 #[repr(transparent)]
-pub struct NodePtr<K: NodeKind> {
+pub struct NodePtr<K: View> {
     idx: MemIdx,
     _kind: PhantomData<fn() -> K>,
 }
 
-impl<K: NodeKind> Copy for NodePtr<K> {}
-impl<K: NodeKind> Clone for NodePtr<K> {
+impl<K: View> Copy for NodePtr<K> {}
+impl<K: View> Clone for NodePtr<K> {
     #[inline]
     fn clone(&self) -> Self {
         *self
     }
 }
-impl<K: NodeKind> PartialEq for NodePtr<K> {
+impl<K: View> PartialEq for NodePtr<K> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.idx == other.idx
     }
 }
-impl<K: NodeKind> Eq for NodePtr<K> {}
+impl<K: View> Eq for NodePtr<K> {}
 // SAFETY: a `MemIdx` and a zero-sized marker, valid at all-zero bits.
-unsafe impl<K: NodeKind + 'static> bytemuck::Zeroable for NodePtr<K> {}
+unsafe impl<K: View + 'static> bytemuck::Zeroable for NodePtr<K> {}
 // SAFETY: a `MemIdx` and a zero-sized marker, so no padding and any bits are valid.
-unsafe impl<K: NodeKind + 'static> bytemuck::Pod for NodePtr<K> {}
-impl<K: NodeKind> std::fmt::Debug for NodePtr<K> {
+unsafe impl<K: View + 'static> bytemuck::Pod for NodePtr<K> {}
+impl<K: View> std::fmt::Debug for NodePtr<K> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "NodePtr({})", self.idx.raw())
     }
 }
 
-impl<K: NodeKind> NodePtr<K> {
+impl<K: View> NodePtr<K> {
     /// Wraps `idx` without checking that it holds a `K` node.
     ///
     /// # Safety
@@ -81,33 +88,33 @@ impl<K: NodeKind> NodePtr<K> {
 /// A nullable pointer to a `K` as a node stores it: the raw half-word,
 /// `TEX_NULL` for none.
 #[repr(transparent)]
-pub struct Link<K: NodeKind>(MemPtr, PhantomData<fn() -> K>);
+pub struct Link<K: View>(MemPtr, PhantomData<fn() -> K>);
 
-impl<K: NodeKind> Copy for Link<K> {}
-impl<K: NodeKind> Clone for Link<K> {
+impl<K: View> Copy for Link<K> {}
+impl<K: View> Clone for Link<K> {
     #[inline]
     fn clone(&self) -> Self {
         *self
     }
 }
-impl<K: NodeKind> PartialEq for Link<K> {
+impl<K: View> PartialEq for Link<K> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }
 }
-impl<K: NodeKind> Eq for Link<K> {}
+impl<K: View> Eq for Link<K> {}
 // SAFETY: a `MemPtr` and a zero-sized marker, valid at all-zero bits.
-unsafe impl<K: NodeKind + 'static> bytemuck::Zeroable for Link<K> {}
+unsafe impl<K: View + 'static> bytemuck::Zeroable for Link<K> {}
 // SAFETY: a `MemPtr` and a zero-sized marker, so no padding and any bits are valid.
-unsafe impl<K: NodeKind + 'static> bytemuck::Pod for Link<K> {}
-impl<K: NodeKind> std::fmt::Debug for Link<K> {
+unsafe impl<K: View + 'static> bytemuck::Pod for Link<K> {}
+impl<K: View> std::fmt::Debug for Link<K> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Link({})", self.0.raw())
     }
 }
 
-impl<K: NodeKind> Link<K> {
+impl<K: View> Link<K> {
     /// The node, `None` for a null link.
     #[inline]
     pub fn get(self) -> Option<NodePtr<K>> {
@@ -115,14 +122,14 @@ impl<K: NodeKind> Link<K> {
     }
 }
 
-impl<K: NodeKind> From<Option<NodePtr<K>>> for Link<K> {
+impl<K: View> From<Option<NodePtr<K>>> for Link<K> {
     #[inline]
     fn from(p: Option<NodePtr<K>>) -> Self {
         Link(link_of(p), PhantomData)
     }
 }
 
-impl<K: NodeKind> From<NodePtr<K>> for Link<K> {
+impl<K: View> From<NodePtr<K>> for Link<K> {
     #[inline]
     fn from(p: NodePtr<K>) -> Self {
         Link(p.ptr(), PhantomData)
@@ -620,10 +627,8 @@ const _: () = assert!(
         && Orientation::Vertical.node_type().as_raw() == Orientation::Vertical.as_raw()
 );
 
-/// A kind with a fixed allocation size and header type code.
-pub trait FixedNode: crate::overlay::Overlay + Sized {
-    /// The node's size in words, its layout's.
-    const SIZE: i32 = <Self as crate::overlay::Overlay>::WORDS;
+/// A view that is a whole node, allocated and freed by its size.
+pub trait Node: View {
     /// The `NODE_type` stamped at allocation, `None` for headerless records.
     const TYPE: Option<NodeType>;
 
@@ -632,22 +637,9 @@ pub trait FixedNode: crate::overlay::Overlay + Sized {
     fn init(_mem: &mut MemState, _p: NodePtr<Self>) {}
 }
 
-/// Stamps the SyncTeX tag and line into the kind's sync fields.
-macro_rules! init_sync {
-    () => {
-        #[inline]
-        fn init(mem: &mut MemState, p: NodePtr<Self>) {
-            let (tag, line) = (mem.cur_synctex_tag, mem.line);
-            let node = &mut mem[p];
-            node.sync_tag = tag;
-            node.sync_line = line;
-        }
-    };
-}
-
 impl MemState {
     #[inline]
-    fn alloc_node<K: NodeKind>(
+    fn alloc_node<K: View>(
         &mut self,
         size: i32,
         ty: Option<NodeType>,
@@ -660,7 +652,7 @@ impl MemState {
     }
 }
 
-impl<K: FixedNode> NodePtr<K> {
+impl<K: Node> NodePtr<K> {
     /// Carves a fresh node with its type stamped and its fields uninitialised.
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Result<Self, Abort> {
@@ -670,196 +662,73 @@ impl<K: FixedNode> NodePtr<K> {
     }
 }
 
-macro_rules! node_kinds {
-    ($($(#[$m:meta])* $kind:ident $(= $ty:ident $($synced:ident)?)?;)*) => {$(
-        $(#[$m])*
-        pub enum $kind {}
-        impl NodeKind for $kind {}
-        $(
-            impl FixedNode for $kind {
-                const TYPE: Option<NodeType> = Some(NodeType::$ty);
-                $($synced!();)?
-            }
-        )?
-    )*};
-}
+// --- groups of kinds ---
 
-node_kinds! {
-    /// An hlist or vlist box. `alloc` makes an hlist.
-    BoxNode = HList init_sync;
-    RuleNode = Rule init_sync;
-    InsNode = Ins;
-    MarkNode = Mark;
-    /// A `\vadjust` list.
-    AdjustNode = Adjust;
-    LigatureNode = Ligature;
-    DiscNode = Disc;
-    MathNode = Math init_sync;
-    GlueNode = Glue init_sync;
-    KernNode = Kern init_sync;
-    PenaltyNode = Penalty;
-    StyleNode = Style;
-    ChoiceNode = Choice;
-    /// An LR edge in a shipped list. XeTeX aliases its type code to style.
-    EdgeNode = Style;
-    /// A noad with a nucleus and two scripts: ord through inner, overline,
-    /// underline and vcenter. `alloc` makes an ordinary one.
-    Noad = OrdNoad;
-    /// A radical: a noad, then its delimiter.
-    RadicalNoad = RadicalNoad;
-    /// A math accent: a noad, then its accent character.
-    AccentNoad = AccentNoad;
-    /// A generalized fraction.
-    FractionNoad = FractionNoad;
-    /// A `\left`, `\middle` or `\right` delimiter. `alloc` makes a left one.
-    FenceNoad = LeftNoad;
-    /// Any noad, through the words every noad shares.
-    AnyNoad;
-    MarginKernNode = MarginKern;
-    /// Any whatsit, through its header. [`NodePtr::variant`] gives its layout.
-    WhatsitNode;
-    /// Any list node, through the header every list node shares.
-    AnyHeader;
-    /// `\openout`: a stream and a file name.
-    OpenNode = Whatsit;
-    /// `\write`, `\closeout` or `\special`: a stream and a token list.
-    WriteNode = Whatsit;
-    /// A language change: the language and its hyphenation minima.
-    LanguageNode = Whatsit;
-    /// One glyph of a native font, by glyph id.
-    GlyphNode = Whatsit;
-    /// A `\pdfsavepos` mark, nothing but its header.
-    SavePosNode = Whatsit;
-    /// A `\XeTeXpicfile` or `\XeTeXpdffile` image, its path in the payload.
-    PicNode = Whatsit;
-    /// A run of text in one native font, the UTF-16 text in the payload.
-    NativeWordNode = Whatsit;
-    /// An alignment box before its column widths are known. Words +4..+6 hold
-    /// the accumulated shrink, span count and stretch instead of box glue.
-    UnsetNode;
-    /// An entry of the ligature reconstitution stack.
-    LigItem;
-    /// An eTeX sparse-array index node: 64 children, two per word.
-    SaIndexNode;
-    /// A sparse-array element, the leaf below the last index level, read
-    /// through its header until its type picks the layout.
-    SaElement;
-    /// A count or dimension register element.
-    SaWordNode;
-    /// A glue, muglue, box or token-list register element.
-    SaPointerNode;
-    /// The marks of one mark class.
-    SaMarkClassNode;
-    /// An entry of the sparse-array save chain, read through its header.
-    SaSaved;
-    /// A saved count or dimension value.
-    SaSavedWord;
-    /// A saved pointer value.
-    SaSavedPointer;
-    /// A record on the page builder's insertion ring. Its type code is
-    /// `inserting` or `split_up`, its subtype the insertion's box number.
-    PageInsNode;
-    /// A character in a font.
-    CharNode = Char;
-    /// The head of a list under construction, from `push_nest`, `copy_list` or an alignment.
-    HeadNode = Head;
-    /// An entry of the TeX--XeT LR stack.
-    LrNode;
-    /// An open `\scantokens` pseudo file.
-    PseudoFileNode;
-    /// A hyphen position of a `\hyphenation` exception.
-    HyphPosNode;
-    /// An alignment preamble column: a null box holding the column's
-    /// templates, natural width and span list.
-    AlignRecord;
-    /// An entry of a column's span list, ended by `END_SPAN`. The list head is
-    /// the align record itself, which shares the `info` and `width` words.
-    SpanNode;
-    /// A `\parshape` array: the line count, an indent and width per line in the payload.
-    ParShapeNode;
-    /// An e-TeX penalty array: the entry count, the entries in the payload.
-    PenaltiesNode;
-    /// A line of a `\scantokens` pseudo file, four characters per payload entry.
-    PseudoLineNode;
-}
+/// A kind with a `link`, which generic list walks read through the node header.
+pub trait HasLink: View {}
 
-impl FixedNode for LigItem {
-    const TYPE: Option<NodeType> = None;
-}
-impl FixedNode for SaIndexNode {
-    const TYPE: Option<NodeType> = None;
-}
-impl FixedNode for SaWordNode {
-    const TYPE: Option<NodeType> = None;
-}
-impl FixedNode for SaPointerNode {
-    const TYPE: Option<NodeType> = None;
-}
-impl FixedNode for SaMarkClassNode {
-    const TYPE: Option<NodeType> = None;
-}
-impl FixedNode for SaSavedWord {
-    const TYPE: Option<NodeType> = None;
-}
-impl FixedNode for SaSavedPointer {
-    const TYPE: Option<NodeType> = None;
-}
-impl FixedNode for ParShapeNode {
-    const TYPE: Option<NodeType> = None;
-}
-impl FixedNode for PenaltiesNode {
-    const TYPE: Option<NodeType> = None;
-}
-impl FixedNode for PseudoLineNode {
-    const TYPE: Option<NodeType> = None;
-}
-impl FixedNode for HyphPosNode {
-    const TYPE: Option<NodeType> = None;
-}
-impl FixedNode for PseudoFileNode {
-    const TYPE: Option<NodeType> = None;
-}
-impl FixedNode for LrNode {
-    const TYPE: Option<NodeType> = None;
-}
-impl FixedNode for SpanNode {
-    const TYPE: Option<NodeType> = None;
-}
-impl FixedNode for AlignRecord {
-    const TYPE: Option<NodeType> = Some(NodeType::HList);
-    init_sync!();
-}
-impl FixedNode for UnsetNode {
-    const TYPE: Option<NodeType> = Some(NodeType::Unset);
-    init_sync!();
-}
-impl FixedNode for PageInsNode {
-    const TYPE: Option<NodeType> = None;
-}
-
-// --- shared layouts ---
-
-/// A `link` in word 0, which generic list walks read as an untyped word.
-pub trait HasLink: NodeKind {}
-
-macro_rules! impl_traits {
-    ($trait:ident: $($kind:ident),*) => {$(impl $trait for $kind {})*};
-}
-
-impl_traits!(HasLink: BoxNode, RuleNode, InsNode, MarkNode, AdjustNode, LigatureNode, DiscNode,
-    WhatsitNode, MathNode, GlueNode, KernNode, PenaltyNode, UnsetNode, StyleNode, ChoiceNode,
-    EdgeNode, Noad, RadicalNoad, AccentNoad, FractionNoad, FenceNoad, AnyNoad, MarginKernNode, SaIndexNode, SaElement, SaWordNode, SaPointerNode, SaMarkClassNode,
-    SaSaved, SaSavedWord, SaSavedPointer, PageInsNode, CharNode, HeadNode,
-    LrNode, AlignRecord, PseudoLineNode,
-    LigItem);
+impl HasLink for BoxNode {}
+impl HasLink for RuleNode {}
+impl HasLink for InsNode {}
+impl HasLink for MarkNode {}
+impl HasLink for AdjustNode {}
+impl HasLink for LigatureNode {}
+impl HasLink for DiscNode {}
+impl HasLink for WhatsitNode {}
+impl HasLink for MathNode {}
+impl HasLink for GlueNode {}
+impl HasLink for KernNode {}
+impl HasLink for PenaltyNode {}
+impl HasLink for UnsetNode {}
+impl HasLink for StyleNode {}
+impl HasLink for ChoiceNode {}
+impl HasLink for EdgeNode {}
+impl HasLink for Noad {}
+impl HasLink for RadicalNoad {}
+impl HasLink for AccentNoad {}
+impl HasLink for FractionNoad {}
+impl HasLink for FenceNoad {}
+impl HasLink for AnyNoad {}
+impl HasLink for MarginKernNode {}
+impl HasLink for SaIndexNode {}
+impl HasLink for SaElement {}
+impl HasLink for SaWordNode {}
+impl HasLink for SaPointerNode {}
+impl HasLink for SaMarkClassNode {}
+impl HasLink for SaSaved {}
+impl HasLink for SaSavedWord {}
+impl HasLink for SaSavedPointer {}
+impl HasLink for PageInsNode {}
+impl HasLink for CharNode {}
+impl HasLink for HeadNode {}
+impl HasLink for LrNode {}
+impl HasLink for AlignRecord {}
+impl HasLink for PseudoLineNode {}
+impl HasLink for LigItem {}
 
 /// A record kept only on its own list, which therefore proves its kind.
-pub trait ListRecord: NodeKind {}
+pub trait ListRecord: View {}
 
-impl_traits!(ListRecord: SaIndexNode, SaElement, SaWordNode, SaPointerNode, SaMarkClassNode,
-    SaSaved, SaSavedWord, SaSavedPointer, PageInsNode,
-    LigItem, CharNode, HeadNode, LrNode, PseudoFileNode, HyphPosNode, AlignRecord, SpanNode, ParShapeNode, PenaltiesNode,
-    PseudoLineNode);
+impl ListRecord for SaIndexNode {}
+impl ListRecord for SaElement {}
+impl ListRecord for SaWordNode {}
+impl ListRecord for SaPointerNode {}
+impl ListRecord for SaMarkClassNode {}
+impl ListRecord for SaSaved {}
+impl ListRecord for SaSavedWord {}
+impl ListRecord for SaSavedPointer {}
+impl ListRecord for PageInsNode {}
+impl ListRecord for LigItem {}
+impl ListRecord for CharNode {}
+impl ListRecord for HeadNode {}
+impl ListRecord for LrNode {}
+impl ListRecord for PseudoFileNode {}
+impl ListRecord for HyphPosNode {}
+impl ListRecord for AlignRecord {}
+impl ListRecord for SpanNode {}
+impl ListRecord for ParShapeNode {}
+impl ListRecord for PenaltiesNode {}
+impl ListRecord for PseudoLineNode {}
 
 impl<K: ListRecord> NodePtr<K> {
     /// The record at `p`, a non-null link of a list of `K` records.
@@ -877,11 +746,11 @@ impl<K: ListRecord> NodePtr<K> {
 
 /// The link value of an optional node, null for `None`.
 #[inline]
-pub fn link_of<K: NodeKind>(p: Option<NodePtr<K>>) -> MemPtr {
+pub fn link_of<K: View>(p: Option<NodePtr<K>>) -> MemPtr {
     p.map_or(MemPtr::NULL, NodePtr::ptr)
 }
 
-impl<K: FixedNode> NodePtr<K> {
+impl<K: Node> NodePtr<K> {
     /// Returns the node to the free list of its kind's size.
     #[inline]
     pub fn free(self, mem: &mut MemState) {
@@ -891,7 +760,7 @@ impl<K: FixedNode> NodePtr<K> {
 
 /// The header of the list node at `p`.
 #[inline]
-fn header(p: impl MemAddr) -> NodePtr<AnyHeader> {
+fn header(p: impl MemAddr) -> NodePtr<NodeHeader> {
     NodePtr::from_idx_unchecked(MemIdx::new(p))
 }
 
@@ -934,7 +803,7 @@ const _: () = assert!(
 
 /// Stamps a new type code and rewraps the handle.
 #[inline]
-fn retype<K: NodeKind, L: NodeKind>(p: NodePtr<K>, mem: &mut MemState, ty: NodeType) -> NodePtr<L> {
+fn retype<K: View, L: View>(p: NodePtr<K>, mem: &mut MemState, ty: NodeType) -> NodePtr<L> {
     mem[header(p.idx)].ty = ty.as_raw();
     NodePtr::from_idx_unchecked(p.idx)
 }
@@ -1247,17 +1116,21 @@ impl NodePtr<ChoiceNode> {
     #[inline]
     pub fn into_style(self, mem: &mut MemState, style: MathStyle) -> NodePtr<StyleNode> {
         let p: NodePtr<StyleNode> = retype(self, mem, NodeType::Style);
-        let layout = &mut mem[p];
-        layout.style = style;
-        layout.clear_payload();
+        let node = &mut mem[p];
+        node.style = style;
+        node.clear_payload();
         p
     }
 }
 
 /// A noad kind, which widens to [`AnyNoad`] for the words every noad shares.
-pub trait NoadKind: NodeKind {}
+pub trait NoadKind: View {}
 
-impl_traits!(NoadKind: Noad, RadicalNoad, AccentNoad, FractionNoad, FenceNoad);
+impl NoadKind for Noad {}
+impl NoadKind for RadicalNoad {}
+impl NoadKind for AccentNoad {}
+impl NoadKind for FractionNoad {}
+impl NoadKind for FenceNoad {}
 
 impl<K: NoadKind> NodePtr<K> {
     /// The noad as any noad, for its header and translated hlist.
@@ -1267,7 +1140,7 @@ impl<K: NoadKind> NodePtr<K> {
     }
 }
 
-/// A noad by its layout, read off its type code.
+/// A noad by its kind, read off its type code.
 #[derive(Copy, Clone, Debug)]
 pub enum NoadVariant {
     Noad(NodePtr<Noad>),
@@ -1303,7 +1176,7 @@ impl NoadVariant {
 }
 
 impl NodePtr<AnyNoad> {
-    /// The noad's layout, from its type code.
+    /// The noad's kind, from its type code.
     #[inline]
     pub fn variant(self, mem: &MemState) -> NoadVariant {
         let p = self.idx;
@@ -1320,9 +1193,9 @@ impl NodePtr<AnyNoad> {
 }
 
 /// The pseudo-node at a box whose `link` is the box's `list_ptr`, in words from the box.
-pub(crate) const LIST_HEAD: i32 = crate::overlay::word_offset(
-    std::mem::offset_of!(crate::overlay::BoxLayout, list_ptr)
-        - std::mem::offset_of!(crate::overlay::WhatsitLayout, link),
+pub(crate) const LIST_HEAD: i32 = crate::node::word_offset(
+    std::mem::offset_of!(crate::node::BoxNode, list_ptr)
+        - std::mem::offset_of!(crate::node::WhatsitNode, link),
 );
 
 impl NodePtr<RadicalNoad> {
@@ -1387,10 +1260,10 @@ impl MathSlot {
 }
 
 impl std::ops::Index<MathSlot> for MemState {
-    type Output = crate::overlay::MathWord;
+    type Output = crate::node::MathWord;
 
     #[inline]
-    fn index(&self, s: MathSlot) -> &crate::overlay::MathWord {
+    fn index(&self, s: MathSlot) -> &crate::node::MathWord {
         match s {
             MathSlot::Nucleus(n) => &self[n].nucleus,
             MathSlot::Supscr(n) => &self[n].supscr,
@@ -1404,7 +1277,7 @@ impl std::ops::Index<MathSlot> for MemState {
 
 impl std::ops::IndexMut<MathSlot> for MemState {
     #[inline]
-    fn index_mut(&mut self, s: MathSlot) -> &mut crate::overlay::MathWord {
+    fn index_mut(&mut self, s: MathSlot) -> &mut crate::node::MathWord {
         match s {
             MathSlot::Nucleus(n) => &mut self[n].nucleus,
             MathSlot::Supscr(n) => &mut self[n].supscr,
@@ -1446,7 +1319,8 @@ impl NodePtr<UnsetNode> {
 /// A column of an alignment preamble or row. Columns alternate with tabskip glue.
 pub trait AlignColumn: HasLink {}
 
-impl_traits!(AlignColumn: AlignRecord, UnsetNode);
+impl AlignColumn for AlignRecord {}
+impl AlignColumn for UnsetNode {}
 
 impl<K: AlignColumn> NodePtr<K> {
     /// The column after tabskip glue `g`, `None` at the end of the list.
@@ -1500,8 +1374,8 @@ impl NodePtr<AlignRecord> {
 }
 
 const _: () = assert!(
-    std::mem::offset_of!(crate::overlay::ParShapeHeader, payload)
-        == std::mem::offset_of!(crate::overlay::PenaltiesHeader, payload)
+    std::mem::offset_of!(crate::node::ParShapeNode, payload)
+        == std::mem::offset_of!(crate::node::PenaltiesNode, payload)
         && ParShapeNode::SIZE == PenaltiesNode::SIZE
 );
 
@@ -1519,7 +1393,7 @@ impl MemState {
 impl NodePtr<ParShapeNode> {
     /// Line `k`, counting from 1. Panics outside the shape.
     #[inline]
-    pub fn line(self, mem: &MemState, k: i32) -> crate::overlay::ParShapeLine {
+    pub fn line(self, mem: &MemState, k: i32) -> crate::node::ParShapeLine {
         mem.entries(self)[usize::try_from(k - 1).unwrap_or(usize::MAX)]
     }
 }
@@ -1609,10 +1483,16 @@ impl StoredCode for WhatsitSubtype {
 }
 
 /// A whatsit kind, which widens to [`WhatsitNode`].
-pub trait WhatsitKind: NodeKind {}
+pub trait WhatsitKind: View {}
 
-impl_traits!(WhatsitKind: WhatsitNode, OpenNode, WriteNode, LanguageNode, GlyphNode, PicNode,
-    NativeWordNode, SavePosNode);
+impl WhatsitKind for WhatsitNode {}
+impl WhatsitKind for OpenNode {}
+impl WhatsitKind for WriteNode {}
+impl WhatsitKind for LanguageNode {}
+impl WhatsitKind for GlyphNode {}
+impl WhatsitKind for PicNode {}
+impl WhatsitKind for NativeWordNode {}
+impl WhatsitKind for SavePosNode {}
 
 impl<K: WhatsitKind> NodePtr<K> {
     /// The whatsit as any whatsit, for its header.
@@ -1622,7 +1502,7 @@ impl<K: WhatsitKind> NodePtr<K> {
     }
 }
 
-impl<K: WhatsitKind + FixedNode> NodePtr<K> {
+impl<K: WhatsitKind + Node> NodePtr<K> {
     /// A fresh whatsit of the given subtype, other fields uninitialised.
     #[inline]
     pub fn alloc_whatsit(mem: &mut MemState, subtype: WhatsitSubtype) -> Result<Self, Abort> {
@@ -1632,7 +1512,7 @@ impl<K: WhatsitKind + FixedNode> NodePtr<K> {
     }
 }
 
-/// A whatsit by its layout, read off its subtype.
+/// A whatsit by its kind, read off its subtype.
 #[derive(Copy, Clone, Debug)]
 pub enum WhatsitVariant {
     Open(NodePtr<OpenNode>),
@@ -1648,7 +1528,7 @@ pub enum WhatsitVariant {
 }
 
 impl NodePtr<WhatsitNode> {
-    /// The whatsit's layout, from its subtype. `None` for an unknown subtype.
+    /// The whatsit's kind, from its subtype. `None` for an unknown subtype.
     #[inline]
     pub fn variant(self, mem: &MemState) -> Option<WhatsitVariant> {
         use WhatsitSubtype as S;
@@ -1671,8 +1551,8 @@ impl NodePtr<WhatsitNode> {
 
     /// The whatsit's dimensions, for a native word, glyph or picture.
     #[inline]
-    pub fn dims(self, mem: &MemState) -> Option<crate::overlay::Dims> {
-        let dims = |width, depth, height| crate::overlay::Dims {
+    pub fn dims(self, mem: &MemState) -> Option<crate::node::Dims> {
+        let dims = |width, depth, height| crate::node::Dims {
             width,
             depth,
             height,
@@ -1725,14 +1605,20 @@ impl NodePtr<NativeWordNode> {
 // --- eTeX sparse arrays ---
 
 /// A sparse-array kind that hangs in a tree slot.
-pub trait SaChild: NodeKind {}
+pub trait SaChild: View {}
 
-impl_traits!(SaChild: SaIndexNode, SaElement, SaWordNode, SaPointerNode, SaMarkClassNode);
+impl SaChild for SaIndexNode {}
+impl SaChild for SaElement {}
+impl SaChild for SaWordNode {}
+impl SaChild for SaPointerNode {}
+impl SaChild for SaMarkClassNode {}
 
 /// A sparse-array element kind, which widens to [`SaElement`].
-pub trait SaElementKind: NodeKind {}
+pub trait SaElementKind: View {}
 
-impl_traits!(SaElementKind: SaWordNode, SaPointerNode, SaMarkClassNode);
+impl SaElementKind for SaWordNode {}
+impl SaElementKind for SaPointerNode {}
+impl SaElementKind for SaMarkClassNode {}
 
 impl<K: SaElementKind> NodePtr<K> {
     /// The element as any element, for its header.
@@ -1742,7 +1628,7 @@ impl<K: SaElementKind> NodePtr<K> {
     }
 }
 
-/// A sparse-array element by its layout, read off its type.
+/// A sparse-array element by its kind, read off its type.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SaLeaf {
     Word(NodePtr<SaWordNode>),
@@ -1751,7 +1637,7 @@ pub enum SaLeaf {
 }
 
 impl SaLeaf {
-    /// The leaf layout of an element of type `t` at `idx`.
+    /// The leaf kind of an element of type `t` at `idx`.
     #[inline]
     pub fn of_type(t: crate::codes::ValueLevel, idx: MemIdx) -> SaLeaf {
         use crate::codes::ValueLevel;
@@ -1773,7 +1659,7 @@ impl SaLeaf {
 }
 
 impl NodePtr<SaElement> {
-    /// The element's layout, from the type in its header. `None` for a type
+    /// The element's kind, from the type in its header. `None` for a type
     /// outside the sparse-array set.
     #[inline]
     pub fn leaf(self, mem: &MemState) -> Option<SaLeaf> {
@@ -1789,7 +1675,7 @@ impl NodePtr<SaElement> {
     }
 }
 
-/// A save-chain entry by its layout.
+/// A save-chain entry by its kind.
 #[derive(Copy, Clone, Debug)]
 pub enum SaSavedEntry {
     Word(NodePtr<SaSavedWord>),
@@ -1797,7 +1683,7 @@ pub enum SaSavedEntry {
 }
 
 impl NodePtr<SaSaved> {
-    /// The entry's layout, from the type in its header.
+    /// The entry's kind, from the type in its header.
     #[inline]
     pub fn entry(self, mem: &MemState) -> SaSavedEntry {
         if mem[self].sa_index < crate::save::DIMEN_VAL_LIMIT {
@@ -2014,7 +1900,7 @@ mod tests {
         fresh_mem(crate::mem::RESERVED_WORDS)
     }
 
-    fn at<K: NodeKind>(mem: &mut MemState, p: i32, ty: Option<NodeType>) -> NodePtr<K> {
+    fn at<K: View>(mem: &mut MemState, p: i32, ty: Option<NodeType>) -> NodePtr<K> {
         if let Some(ty) = ty {
             mem[header(MemPtr::from_raw(p))].ty = ty.as_raw();
         }
@@ -2099,9 +1985,9 @@ mod tests {
         let mut mem = arena_with_free_block();
         (mem.cur_synctex_tag, mem.line) = (42, 7);
         let b = NodePtr::<BoxNode>::alloc(&mut mem).unwrap();
-        assert_eq!((mem[b].sync_tag, mem[b].sync_line), (42, 7));
+        assert_eq!((mem[b].sync.tag, mem[b].sync.line), (42, 7));
         let k = NodePtr::<KernNode>::alloc(&mut mem).unwrap();
-        assert_eq!((mem[k].sync_tag, mem[k].sync_line), (42, 7));
+        assert_eq!((mem[k].sync.tag, mem[k].sync.line), (42, 7));
     }
 
     #[test]
@@ -2293,7 +2179,7 @@ mod tests {
 
     #[test]
     fn math_and_delimiter_fields_pack_their_codes() {
-        let mut f = <crate::overlay::MathWord as bytemuck::Zeroable>::zeroed();
+        let mut f = <crate::node::MathWord as bytemuck::Zeroable>::zeroed();
         f.math_type = 3;
         f.set_character(0x1234);
         f.set_plane_and_fam(0x0205);
@@ -2305,7 +2191,7 @@ mod tests {
         assert_eq!(f.info(), MemPtr::NULL);
         assert_eq!(f.math_type, 3);
 
-        let mut d = <crate::overlay::DelimiterWord as bytemuck::Zeroable>::zeroed();
+        let mut d = <crate::node::DelimiterWord as bytemuck::Zeroable>::zeroed();
         d.set_small(0x0103, 0x41);
         d.set_large(0x0204, 0x42);
         assert_eq!(d.small(), (3, 0x1_0041));

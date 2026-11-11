@@ -7,7 +7,6 @@ use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::io::u_close;
 use crate::node::{NodePtr, PseudoFileNode};
-use crate::overlay::PseudoFileLayout;
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, InputClusterState, InputName, InputState, MemState};
 use crate::token::{Token, TokenList};
@@ -161,7 +160,7 @@ pub(crate) fn back_input(st: &mut EngineState) -> Result<(), Abort> {
 impl MemState {
     pub(crate) fn pseudo_close(&mut self, input: &mut InputClusterState) {
         let file = NodePtr::<PseudoFileNode>::at(input.pseudo_files);
-        let PseudoFileLayout { lines, link, .. } = self[file];
+        let PseudoFileNode { lines, link, .. } = self[file];
         file.free(self);
         input.pseudo_files = link;
         let mut line = lines.get();

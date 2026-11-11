@@ -8,10 +8,9 @@ use crate::hyphenation::TrieOp;
 use crate::main_control::{LigStack, NewChar};
 use crate::mem::HOLD_HEAD;
 use crate::node::{
-    AnyNode, CharNode, DiscNode, FixedNode, HyphPosNode, LigBoundary, LigItem, LigatureNode,
-    NativeWordNode, NodePtr,
+    AnyNode, CharNode, DiscNode, HyphPosNode, LigBoundary, LigItem, LigatureNode, NativeWordNode,
+    NodePtr, View,
 };
-use crate::overlay::HyphPosLayout;
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, FontState, MemState};
 use crate::units::{FontId, FontInfoIdx, MemPtr, Scaled, StrNumber};
@@ -334,7 +333,7 @@ fn reconstitute(
             t.set_link(&mut st.mem, kern.ptr());
             t = kern.ptr();
             w = Scaled::ZERO;
-            st.mem[kern].sync_tag = 0;
+            st.mem[kern].sync.tag = 0;
         }
 
         if let Some(top) = st.mainloop.lig_stack {
@@ -440,7 +439,7 @@ pub(super) fn hyphenate(
         {
             let mut s = NodePtr::<HyphPosNode>::from_ptr(st.hyph.hyph_list[h]);
             while let Some(pos) = s {
-                let HyphPosLayout { pos, link, .. } = st.mem[pos];
+                let HyphPosNode { pos, link, .. } = st.mem[pos];
                 st.hyph.hyf[usize::try_from(pos).or_confusion("hyphen position")?] = 1;
                 s = NodePtr::from_ptr(link);
             }

@@ -11,11 +11,11 @@ use crate::consts::{EMPTY, MATH_CHAR, NUMBER_MATH_FAMILIES, SUB_MLIST};
 use crate::errors::Abort;
 use crate::input::TokenType;
 use crate::mem_types::ListStateRecord;
+use crate::node::DelimiterWord;
 use crate::node::{
     AccentNoad, ChoiceNode, FenceNoad, FenceSubtype, FractionNoad, MathAccentKind, MathSlot, Noad,
     NoadVariant, NodePtr, RadicalNoad,
 };
-use crate::overlay::DelimiterWord;
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, EqtbState, GroupCode, MemState, SaveStackState};
 use crate::units::{EqtbPtr, MemIdx, MemPtr, NodeType, Scaled};

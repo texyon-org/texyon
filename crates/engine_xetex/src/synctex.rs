@@ -152,8 +152,8 @@ impl SynctexCtxt {
     fn record_box(&mut self, mem: &crate::state::MemState, kind: char, b: NodePtr<BoxNode>) {
         self.record_node(
             kind,
-            mem[b].sync_tag,
-            mem[b].sync_line,
+            mem[b].sync.tag,
+            mem[b].sync.line,
             &[mem[b].width.raw(), mem[b].height.raw(), mem[b].depth.raw()],
         );
     }
@@ -161,8 +161,8 @@ impl SynctexCtxt {
     fn record_kern(&mut self, mem: &crate::state::MemState, kern: NodePtr<KernNode>) {
         self.record_node(
             'k',
-            mem[kern].sync_tag,
-            mem[kern].sync_line,
+            mem[kern].sync.tag,
+            mem[kern].sync.line,
             &[mem[kern].width.raw()],
         );
     }
@@ -360,7 +360,7 @@ fn enter_node(st: &mut EngineState, node: MemPtr, tag: i32, line: i32) {
 }
 
 fn enter_box(st: &mut EngineState, b: NodePtr<BoxNode>) {
-    let (tag, line) = (st.mem[b].sync_tag, st.mem[b].sync_line);
+    let (tag, line) = (st.mem[b].sync.tag, st.mem[b].sync.line);
     enter_node(st, b.ptr(), tag, line);
 }
 
@@ -433,7 +433,7 @@ impl SynctexCtxt {
 }
 
 pub fn synctex_void_hlist(st: &mut EngineState, p: NodePtr<BoxNode>) {
-    let (tag, line) = (st.mem[p].sync_tag, st.mem[p].sync_line);
+    let (tag, line) = (st.mem[p].sync.tag, st.mem[p].sync.line);
     if synctex_ignored(st, tag, line) {
         return;
     }
@@ -446,7 +446,7 @@ pub fn synctex_math(st: &mut EngineState, p: NodePtr<MathNode>) {
     if !synctex_active(st) {
         return;
     }
-    let (tag, line) = (st.mem[p].sync_tag, st.mem[p].sync_line);
+    let (tag, line) = (st.mem[p].sync.tag, st.mem[p].sync.line);
     // A kern deferred in an unchanged context is dropped.
     if st.synctex.context_changed(tag, line) {
         flush_deferred_kern(st);
@@ -465,9 +465,9 @@ pub fn synctex_horizontal_rule_or_glue(
 ) {
     let node = st.mem.classify(p);
     let (tag, line) = match node {
-        Ok(AnyNode::Rule(r)) => (st.mem[r].sync_tag, st.mem[r].sync_line),
-        Ok(AnyNode::Glue(g)) => (st.mem[g].sync_tag, st.mem[g].sync_line),
-        Ok(AnyNode::Kern(k)) => (st.mem[k].sync_tag, st.mem[k].sync_line),
+        Ok(AnyNode::Rule(r)) => (st.mem[r].sync.tag, st.mem[r].sync.line),
+        Ok(AnyNode::Glue(g)) => (st.mem[g].sync.tag, st.mem[g].sync.line),
+        Ok(AnyNode::Kern(k)) => (st.mem[k].sync.tag, st.mem[k].sync.line),
         _ => {
             issue_error(&format!(
                 "unknown node type {} in SyncTeX",
@@ -495,7 +495,7 @@ pub fn synctex_horizontal_rule_or_glue(
 }
 
 pub fn synctex_kern(st: &mut EngineState, p: NodePtr<KernNode>, this_box: NodePtr<BoxNode>) {
-    let (tag, line) = (st.mem[p].sync_tag, st.mem[p].sync_line);
+    let (tag, line) = (st.mem[p].sync.tag, st.mem[p].sync.line);
     if synctex_ignored(st, tag, line) {
         return;
     }

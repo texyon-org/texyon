@@ -10,8 +10,8 @@ use crate::glue_store::GlueSpecId;
 use crate::mem::ZERO_GLUE;
 use crate::mem_types::MemoryWord;
 use crate::node::{
-    link_of, FixedNode, NodePtr, SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode,
-    SaPointerNode, SaSavedEntry, SaSavedPointer, SaSavedWord, SaWordNode,
+    link_of, NodePtr, SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode,
+    SaSavedEntry, SaSavedPointer, SaSavedWord, SaWordNode, View,
 };
 use crate::params::IntPar;
 use crate::state::{

@@ -673,6 +673,15 @@ pub(crate) struct MemState {
 }
 
 impl MemState {
+    /// The SyncTeX tag and line a node made now is stamped with.
+    #[inline]
+    pub(crate) fn sync_stamp(&self) -> crate::node::SyncStamp {
+        crate::node::SyncStamp {
+            tag: self.cur_synctex_tag,
+            line: self.line,
+        }
+    }
+
     /// Sets every word of the fixed nodes to null, before the journal is armed.
     pub(crate) fn clear_fixed_nodes(&mut self) {
         debug_assert!(!self.journal.armed());

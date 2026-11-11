@@ -4,9 +4,9 @@ use crate::consts::{NULL_FONT, SCRIPT_SIZE};
 use crate::errors::Abort;
 use crate::fonts::{CharInfo, CharTag, AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::mem::SS_GLUE;
+use crate::node::DelimiterWord;
 use crate::node::{AnyNode, BoxNode, GlyphNode, NativeWordNode, NodePtr, WhatsitSubtype};
 use crate::ot_math::GlyphAssembly;
-use crate::overlay::DelimiterWord;
 use crate::packaging::PackSpec;
 use crate::params::DimenPar;
 use crate::state::{EngineState, FontState, MemState};
@@ -254,7 +254,7 @@ pub(super) fn build_opentype_assembly(
         st.mem[b].glue_order = GlueOrder::Normal.into();
         st.mem[b].glue_sign = GlueSign::Stretching.into();
         let ratio = f64::from(o) / f64::from(str);
-        st.mem[b].glue_set = crate::overlay::GlueRatio::new(ratio);
+        st.mem[b].glue_set = crate::node::GlueRatio::new(ratio);
         let set_dim = nat + Scaled::round(f64::from(str) * ratio);
         if horiz {
             st.mem[b].width = set_dim;

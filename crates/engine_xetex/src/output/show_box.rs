@@ -5,12 +5,12 @@ use crate::consts::{EMPTY, MATH_CHAR, SUB_BOX, SUB_MLIST, TEX_NULL};
 use crate::fonts::Side;
 use crate::math::DEFAULT_CODE;
 use crate::mem::ZERO_GLUE;
+use crate::node::MathWord;
 use crate::node::{
     AdjustPlacement, AnyNoad, AnyNode, BoxLr, BoxNode, CharNode, FenceSubtype, GlueKind,
     KernSubtype, LeaderKind, MathCode, NoadVariant, NodePtr, WhatsitNode, WhatsitSubtype,
     WhatsitVariant,
 };
-use crate::overlay::MathWord;
 use crate::params::IntPar;
 use crate::state::EngineState;
 use crate::units::{GlueSign, MemPtr, NodeType, Scaled};

@@ -10,7 +10,7 @@ use crate::helpers::badness;
 use crate::input::TokenType;
 use crate::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
 use crate::node::{
-    AnyNode, FixedNode, InsNode, NodePtr, PageInsNode, SaLeaf, WhatsitVariant, LIST_HEAD,
+    AnyNode, InsNode, NodePtr, PageInsNode, SaLeaf, View, WhatsitVariant, LIST_HEAD,
 };
 use crate::packaging::{MarksAction, PackSpec};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};

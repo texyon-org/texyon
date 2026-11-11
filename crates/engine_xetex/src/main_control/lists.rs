@@ -17,9 +17,9 @@ use crate::input::{TokenType, TOKEN_LIST};
 use crate::mem::{CONTRIB_HEAD, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, PAGE_HEAD, SS_GLUE, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
 use crate::node::{
-    AdjustNode, AdjustPlacement, AnyNode, CharNode, DiscNode, FixedNode, GlueKind, GlueNode,
-    InsNode, KernSubtype, LanguageNode, LrNode, MarkNode, MathSlot, NativeWordNode, Noad,
-    NoadVariant, NodePtr, WhatsitSubtype, WhatsitVariant,
+    AdjustNode, AdjustPlacement, AnyNode, CharNode, DiscNode, GlueKind, GlueNode, InsNode,
+    KernSubtype, LanguageNode, LrNode, MarkNode, MathSlot, NativeWordNode, Noad, NoadVariant,
+    NodePtr, View, WhatsitSubtype, WhatsitVariant,
 };
 use crate::packaging::PackSpec;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};

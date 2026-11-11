@@ -11,8 +11,8 @@ use crate::glyph_arena::FixedPoint;
 use crate::mem::LIG_TRICK;
 use crate::node::Stored;
 use crate::node::{
-    AnyNode, BoxLr, BoxNode, CharNode, EdgeNode, FixedNode, GlueKind, GlueNode, GlyphNode,
-    KernNode, KernSubtype, LeaderKind, MathCode, MathNode, NativeWordNode, NodePtr, RuleNode,
+    AnyNode, BoxLr, BoxNode, CharNode, EdgeNode, GlueKind, GlueNode, GlyphNode, KernNode,
+    KernSubtype, LeaderKind, MathCode, MathNode, NativeWordNode, NodePtr, RuleNode, View,
     WhatsitSubtype, WhatsitVariant, RUNNING,
 };
 use crate::packaging::LrState;
@@ -913,7 +913,7 @@ fn hlist_out(
         let save_h = st.shipout.cur_h;
         st.mem.temp_ptr = p;
         let kern = st.mem.new_kern(Scaled::ZERO)?;
-        st.mem[kern].sync_tag = 0;
+        st.mem[kern].sync.tag = 0;
         prev_p.set_link(&mut st.mem, kern.ptr());
         st.shipout.cur_h = Scaled::ZERO;
         let reversed = st
