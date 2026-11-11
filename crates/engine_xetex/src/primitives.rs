@@ -9,10 +9,11 @@ use crate::codes::{
     RadicalCode, ShorthandDefCode, ShowCode, SkipCode, TheCode, ValignCode,
 };
 use crate::consts::{
-    CAT_CODE_BASE, DEL_CODE_BASE, ETEX_PEN_BASE, FROZEN_CR, FROZEN_END_GROUP, FROZEN_FI,
-    FROZEN_NULL_FONT, FROZEN_RELAX, FROZEN_RIGHT, FROZEN_SPECIAL, LC_CODE_BASE, MATH_CODE_BASE,
-    MATH_FONT_BASE, NUMBER_USVS, PAR_SHAPE_LOC, SF_CODE_BASE, UC_CODE_BASE,
+    CAT_CODE_BASE, DEL_CODE_BASE, FROZEN_CR, FROZEN_END_GROUP, FROZEN_FI, FROZEN_NULL_FONT,
+    FROZEN_RELAX, FROZEN_RIGHT, FROZEN_SPECIAL, LC_CODE_BASE, MATH_CODE_BASE, MATH_FONT_BASE,
+    NUMBER_USVS, SF_CODE_BASE, UC_CODE_BASE,
 };
+use crate::eqtb::ShapeLoc;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 
 /// Extra setup `initialize_primitives` runs after defining a primitive.
@@ -51,6 +52,10 @@ const fn int_par(n: IntPar) -> PrimitiveDef {
 
 const fn dimen_par(n: DimenPar) -> PrimitiveDef {
     p(n.name(), Cmd::AssignDimen, n.loc().raw())
+}
+
+const fn shape(loc: ShapeLoc) -> PrimitiveDef {
+    p(loc.name(), Cmd::SetShape, loc.raw())
 }
 
 const fn tok_par(n: TokPar) -> PrimitiveDef {
@@ -622,7 +627,7 @@ pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
     mu_glue_par(GluePar::ThinMuSkip),
     mu_glue_par(GluePar::MedMuSkip),
     mu_glue_par(GluePar::ThickMuSkip),
-    p("parshape", Cmd::SetShape, PAR_SHAPE_LOC.raw()),
+    shape(ShapeLoc::ParShape),
     tok_par(TokPar::OutputRoutine),
     tok_par(TokPar::EveryPar),
     tok_par(TokPar::EveryMath),
@@ -635,12 +640,8 @@ pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
     tok_par(TokPar::EveryEof),
     tok_par(TokPar::XetexInterCharToks),
     tok_par(TokPar::TectonicCoda),
-    p("interlinepenalties", Cmd::SetShape, ETEX_PEN_BASE.raw()),
-    p("clubpenalties", Cmd::SetShape, ETEX_PEN_BASE.plus(1).raw()),
-    p("widowpenalties", Cmd::SetShape, ETEX_PEN_BASE.plus(2).raw()),
-    p(
-        "displaywidowpenalties",
-        Cmd::SetShape,
-        ETEX_PEN_BASE.plus(3).raw(),
-    ),
+    shape(ShapeLoc::InterLinePenalties),
+    shape(ShapeLoc::ClubPenalties),
+    shape(ShapeLoc::WidowPenalties),
+    shape(ShapeLoc::DisplayWidowPenalties),
 ];

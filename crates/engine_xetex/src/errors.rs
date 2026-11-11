@@ -539,14 +539,14 @@ pub(crate) fn box_error(
     message: impl TexPrint,
     help: &[&'static str],
 ) -> Result<(), Abort> {
-    let box_val = st.eqtb.box_reg(i32::from(n));
+    let box_val = crate::node::link_of(st.eqtb.box_reg(n));
     error(st, message, help)?;
     begin_diagnostic(st);
     print_nl(st, "The following box has been deleted:");
     show_box(st, box_val);
     end_diagnostic(st, true);
     st.mem.flush_node_list(box_val)?;
-    st.eqtb.set_box_reg(i32::from(n), None);
+    st.eqtb.set_box_reg(n, None);
     Ok(())
 }
 

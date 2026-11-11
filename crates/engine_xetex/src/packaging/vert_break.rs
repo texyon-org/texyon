@@ -464,15 +464,16 @@ impl MemState {
         let mut packages = [None, None];
         let p = self.split_vlist_at_break(scanner, state, q)?;
         let save_discards = eqtb.int_par(IntPar::SavingVdiscards) > 0;
-        let mut q = self.prune_page_top(scanner, eqtb, q, save_discards)?;
+        let q = self.prune_page_top(scanner, eqtb, q, save_discards)?;
 
         state.v.free(self);
+        let mut rest = None;
         if !q.is_none() {
             let packed = self.vpackage(eqtb, shipout, q, PackSpec::NATURAL, MAX_DIMEN)?;
-            q = packed.r_box.ptr();
+            rest = Some(packed.r_box);
             push_slot(&mut packages, packed);
         }
-        self.change_box(scanner, eqtb, state.n, q)?;
+        self.change_box(scanner, eqtb, state.n, rest)?;
 
         let packed = self.vpackage(
             eqtb,

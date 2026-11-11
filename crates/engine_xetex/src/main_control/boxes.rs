@@ -3,7 +3,8 @@
 use crate::cmd::Cmd;
 use crate::codes::{BoxCode, LeaderCode, ValueLevel};
 use crate::command::Command;
-use crate::consts::{BOX_BASE, HMODE, IGNORE_DEPTH, MMODE, SUB_BOX, VMODE};
+use crate::consts::{HMODE, IGNORE_DEPTH, MMODE, SUB_BOX, VMODE};
+use crate::eqtb::BoxLoc;
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::input::TokenType;
@@ -17,10 +18,9 @@ use crate::scan::fetch_box;
 use crate::state::Saved;
 use crate::state::{EngineState, GroupCode, MemState};
 use crate::units::MemIdx;
-use crate::units::RawPtr;
 use crate::units::{NodeType, Scaled};
 
-use super::assign::{define, sa_define};
+use super::assign::sa_define;
 use super::lists::{append_glue, normal_paragraph};
 use super::{
     append_list, begin_every, BOX_FLAG, GLOBAL_BOX_FLAG, INNER_HMODE, LEADER_FLAG, SHIP_OUT_FLAG,
@@ -212,10 +212,10 @@ fn box_end(
         } else {
             (box_context - GLOBAL_BOX_FLAG, true)
         };
-        let cb = cur_box.map(NodePtr::idx);
-        if n < 256 {
-            define(st, global, BOX_BASE + n, Cmd::BoxRef, cb.raw())?;
+        if let Ok(r) = u8::try_from(n) {
+            crate::eqtb::define(st, global, BoxLoc::register(r), cur_box)?;
         } else {
+            let cb = cur_box.map(NodePtr::idx);
             let SaLeaf::Pointer(p) =
                 st.mem
                     .create_sa_element(&mut st.scanner, ValueLevel::BOX, n)?

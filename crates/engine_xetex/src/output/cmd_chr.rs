@@ -8,10 +8,11 @@ use crate::codes::{
     ValignCode, ValueLevel,
 };
 use crate::consts::{
-    DEL_CODE_BASE, ETEX_PEN_BASE, LC_CODE_BASE, MATH_CODE_BASE, MATH_FONT_BASE, PAR_SHAPE_LOC,
-    SF_CODE_BASE, UC_CODE_BASE, VMODE,
+    DEL_CODE_BASE, LC_CODE_BASE, MATH_CODE_BASE, MATH_FONT_BASE, SF_CODE_BASE, UC_CODE_BASE, VMODE,
 };
-use crate::eqtb::{DimenLoc, DimenSlot, GlueLoc, GlueSlot, IntLoc, IntSlot, ToksLoc, ToksSlot};
+use crate::eqtb::{
+    DimenLoc, DimenSlot, GlueLoc, GlueSlot, IntLoc, IntSlot, ShapeLoc, ToksLoc, ToksSlot,
+};
 use crate::main_control::{CR_CODE, LP_CODE_BASE, RP_CODE_BASE, SPAN_CODE};
 use crate::math::{ABOVE_CODE, ATOP_CODE, DELIMITED_CODE, OVER_CODE};
 use crate::node::{NodePtr, SaElement};
@@ -180,19 +181,9 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
         Cmd::SetBox => print_esc(st, "setbox"),
         Cmd::SetPrevGraf => print_esc(st, "prevgraf"),
         Cmd::SetShape => {
-            let chr_code = EqtbPtr::from_raw(chr_code);
-            let name = if chr_code == PAR_SHAPE_LOC {
-                "parshape"
-            } else {
-                match chr_code - ETEX_PEN_BASE {
-                    0 => "interlinepenalties",
-                    1 => "clubpenalties",
-                    2 => "widowpenalties",
-                    3 => "displaywidowpenalties",
-                    _ => return,
-                }
-            };
-            print_esc(st, name);
+            if let Some(loc) = ShapeLoc::from_raw(chr_code) {
+                print_esc(st, loc.name());
+            }
         }
         Cmd::The => print_esc(
             st,

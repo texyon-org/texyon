@@ -161,7 +161,7 @@ fn place_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Re
     let list = st.mem[b].list_ptr;
     b.free(&mut st.mem);
     let packed = crate::packaging::vpackage(st, list, PackSpec::NATURAL, MAX_DIMEN)?;
-    st.eqtb.set_box_reg(i32::from(n), packed.ptr());
+    st.eqtb.set_box_reg(n, Some(packed));
     Ok(wait)
 }
 
@@ -223,12 +223,15 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
             if !st.mem[rec].best_ins_ptr.is_none() {
                 let n = st.mem[rec].box_number;
                 ensure_vbox(st, n)?;
-                if st.eqtb.box_reg(i32::from(n)).is_none() {
-                    let b = st.mem.new_null_box()?;
-                    st.eqtb.set_box_reg(i32::from(n), b.ptr());
-                }
-                let b = st.eqtb.box_reg(i32::from(n)).or_confusion("insert box")?;
-                st.mem[rec].last_ins_ptr = Some(st.mem.list_tail(b.offset(LIST_HEAD)));
+                let b = match st.eqtb.box_reg(n) {
+                    Some(b) => b,
+                    None => {
+                        let b = st.mem.new_null_box()?;
+                        st.eqtb.set_box_reg(n, Some(b));
+                        b
+                    }
+                };
+                st.mem[rec].last_ins_ptr = Some(st.mem.list_tail(b.idx().offset(LIST_HEAD)));
             }
             r = ring_next(&st.mem, r)?;
         }
@@ -288,7 +291,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
         PackSpec::Exactly(st.shipout.best_size),
         st.shipout.page_max_depth,
     )?;
-    st.eqtb.set_box_reg(255, page.ptr());
+    st.eqtb.set_box_reg(255, Some(page));
     st.eqtb.set_int_par(IntPar::Vbadness, save_vbadness);
     st.eqtb.set_dimen_par(DimenPar::Vfuzz, save_vfuzz);
     if let Some(spec) = st.shipout.last_glue {

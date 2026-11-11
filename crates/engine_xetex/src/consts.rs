@@ -145,12 +145,3 @@ const _: () = {
     assert!(EQTB_SIZE.raw() == 7_892_885);
     assert!(XEQ_LEVEL_SIZE == 1_114_733);
 };
-
-/// `\parshape`, first in the local region.
-pub const PAR_SHAPE_LOC: EqtbPtr = LOCAL_BASE;
-
-// Offsets from `ETEX_PEN_BASE`.
-pub const ETEX_PENALTIES_PAR_INTER_LINE_PENALTIES: i32 = 0;
-pub const ETEX_PENALTIES_PAR_CLUB_PENALTIES: i32 = 1;
-pub const ETEX_PENALTIES_PAR_WIDOW_PENALTIES: i32 = 2;
-pub const ETEX_PENALTIES_PAR_DISPLAY_WIDOW_PENALTIES: i32 = 3;

@@ -12,10 +12,10 @@ use crate::command::{Command, RegisterRef};
 use crate::consts::NULL_FONT;
 use crate::consts::{
     ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_USV, CAT_CODE_BASE, CHAR_CLASS_LIMIT, CUR_FONT_LOC,
-    DEL_CODE_BASE, DESIGN_SIZE, HASH_BASE, MATH_CODE_BASE, MAX_HALFWORD, NULL_CS, PAR_SHAPE_LOC,
-    SF_CODE_BASE, SINGLE_BASE, TEX_INFINITY, VMODE,
+    DEL_CODE_BASE, DESIGN_SIZE, HASH_BASE, MATH_CODE_BASE, MAX_HALFWORD, NULL_CS, SF_CODE_BASE,
+    SINGLE_BASE, TEX_INFINITY, VMODE,
 };
-use crate::eqtb::{self, DimenLoc, GlueLoc, IntLoc, ToksLoc};
+use crate::eqtb::{self, DimenLoc, GlueLoc, IntLoc, ShapeLoc, ShapeRef, ToksLoc};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::read_font_info;
@@ -1068,12 +1068,12 @@ fn def_code(st: &mut EngineState, global: bool, chr: EqtbPtr) -> Result<(), Abor
     Ok(())
 }
 
-fn set_shape(st: &mut EngineState, global: bool, q: EqtbPtr) -> Result<(), Abort> {
+fn set_shape(st: &mut EngineState, global: bool, q: ShapeLoc) -> Result<(), Abort> {
     crate::scan::scan_optional_equals(st)?;
     let n = crate::scan::scan_int(st)?;
     let p = if n <= 0 {
-        None
-    } else if q > PAR_SHAPE_LOC {
+        ShapeRef::NONE
+    } else if q != ShapeLoc::ParShape {
         let words = n / 2 + 1;
         let penalties = NodePtr::<PenaltiesNode>::alloc(&mut st.mem)?;
         let header = &mut st.mem[penalties];
@@ -1081,7 +1081,6 @@ fn set_shape(st: &mut EngineState, global: bool, q: EqtbPtr) -> Result<(), Abort
         header.count = n;
         let entries = usize::try_from(2 * words - 1).or_confusion("penalties")?;
         st.mem.alloc_payload(penalties, entries)?;
-        let p = penalties.ptr();
         let slots = st.mem.entries(penalties).len();
         for (k, slot) in (1..).zip(0..slots) {
             let v = if k <= n {
@@ -1091,21 +1090,20 @@ fn set_shape(st: &mut EngineState, global: bool, q: EqtbPtr) -> Result<(), Abort
             };
             st.mem.entries_mut(penalties)[slot].value = v;
         }
-        p
+        ShapeRef::penalties(penalties)
     } else {
         let shape = NodePtr::<ParShapeNode>::alloc(&mut st.mem)?;
         st.mem[shape].lines = n;
         st.mem
             .alloc_payload(shape, usize::try_from(n).or_confusion("parshape")?)?;
-        let p = shape.ptr();
         for line in 0..st.mem.entries(shape).len() {
             let indent = crate::scan::scan_dimen(st, false)?;
             st.mem.entries_mut(shape)[line].indent = indent;
             let width = crate::scan::scan_dimen(st, false)?;
             st.mem.entries_mut(shape)[line].width = width;
         }
-        p
+        ShapeRef::par_shape(shape)
     };
-    define(st, global, q, Cmd::ShapeRef, p.raw())?;
+    eqtb::define(st, global, q, p)?;
     Ok(())
 }

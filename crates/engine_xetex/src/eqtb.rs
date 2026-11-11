@@ -2,16 +2,18 @@
 
 use std::marker::PhantomData;
 
+use crate::codes::code_enum;
 use crate::consts::LEVEL_ONE;
 use crate::errors::Abort;
 use crate::glue_store::GlueSpecId;
 use crate::journal::{JournalWord, WordDelta, WordJournal};
+use crate::node::{BoxNode, NodePtr, ParShapeNode, PenaltiesNode};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::state::{
     EngineState, EqtbState, MemState, Restore, SaveEntry, SaveStackState, ScannerState,
 };
 use crate::token::TokenList;
-use crate::units::Scaled;
+use crate::units::{MemPtr, Scaled};
 
 /// A value an `eqtb` table holds.
 pub(crate) trait EqValue: JournalWord + PartialEq {
@@ -242,7 +244,14 @@ macro_rules! tables {
     };
 }
 
-tables!(ints: i32, dimens: Scaled, glue: GlueSpecId, toks: TokenList);
+tables!(
+    ints: i32,
+    dimens: Scaled,
+    glue: GlueSpecId,
+    toks: TokenList,
+    shapes: ShapeRef,
+    boxes: Option<NodePtr<BoxNode>>,
+);
 
 impl EqtbState {
     /// Gives `loc` the value `v`, globally or in the current group.
@@ -513,6 +522,118 @@ pub(crate) enum ToksSlot {
     /// The parameter numbered as in [`TokPar`].
     Par(u16),
     Register(u16),
+}
+
+code_enum! {
+    /// A location in the shape table: `\parshape` or one of e-TeX's penalty arrays.
+    pub(crate) enum ShapeLoc: u8 {
+        ParShape = 0 => "parshape",
+        InterLinePenalties = 1 => "interlinepenalties",
+        ClubPenalties = 2 => "clubpenalties",
+        WidowPenalties = 3 => "widowpenalties",
+        DisplayWidowPenalties = 4 => "displaywidowpenalties",
+    }
+}
+
+impl ShapeLoc {
+    /// Locations in the table.
+    pub(crate) const LEN: usize = ShapeLoc::DisplayWidowPenalties as usize + 1;
+}
+
+impl EqLoc for ShapeLoc {
+    type Value = ShapeRef;
+    #[inline(always)]
+    fn index(self) -> usize {
+        self as usize
+    }
+    #[inline(always)]
+    fn table(eqtb: &EqtbState) -> &Table<Self, ShapeRef> {
+        &eqtb.shapes
+    }
+    #[inline(always)]
+    fn table_mut(eqtb: &mut EqtbState) -> &mut Table<Self, ShapeRef> {
+        &mut eqtb.shapes
+    }
+    fn restore(old: Old<Self>) -> Restore {
+        Restore::Shape(old)
+    }
+}
+
+/// A `\parshape` node or an e-TeX penalty array, as the shape table holds it.
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default, Hash, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(transparent)]
+pub(crate) struct ShapeRef(MemPtr);
+
+impl ShapeRef {
+    pub(crate) const NONE: ShapeRef = ShapeRef(None);
+
+    pub(crate) fn par_shape(p: NodePtr<ParShapeNode>) -> ShapeRef {
+        ShapeRef(Some(p.idx()))
+    }
+
+    pub(crate) fn penalties(p: NodePtr<PenaltiesNode>) -> ShapeRef {
+        ShapeRef(Some(p.idx()))
+    }
+
+    pub(crate) fn ptr(self) -> MemPtr {
+        self.0
+    }
+
+    /// The shape a format word holds.
+    pub(crate) fn from_ptr(p: MemPtr) -> ShapeRef {
+        ShapeRef(p)
+    }
+}
+
+impl EqValue for ShapeRef {
+    #[inline]
+    fn destroy(self, mem: &mut MemState, _scanner: &mut ScannerState) -> Result<(), Abort> {
+        mem.free_shape_ref(self.0);
+        Ok(())
+    }
+}
+
+impl EqValue for Option<NodePtr<BoxNode>> {
+    #[inline]
+    fn destroy(self, mem: &mut MemState, _scanner: &mut ScannerState) -> Result<(), Abort> {
+        mem.flush_node_list(self.map(NodePtr::idx))
+    }
+}
+
+/// A `\box` register.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(crate) struct BoxLoc(u8);
+
+impl BoxLoc {
+    /// Locations in the table.
+    pub(crate) const LEN: usize = 256;
+
+    pub(crate) const fn register(n: u8) -> BoxLoc {
+        BoxLoc(n)
+    }
+
+    pub(crate) const fn raw(self) -> i32 {
+        self.0 as i32
+    }
+}
+
+impl EqLoc for BoxLoc {
+    type Value = Option<NodePtr<BoxNode>>;
+    #[inline(always)]
+    fn index(self) -> usize {
+        usize::from(self.0)
+    }
+    #[inline(always)]
+    fn table(eqtb: &EqtbState) -> &Table<Self, Self::Value> {
+        &eqtb.boxes
+    }
+    #[inline(always)]
+    fn table_mut(eqtb: &mut EqtbState) -> &mut Table<Self, Self::Value> {
+        &mut eqtb.boxes
+    }
+    fn restore(old: Old<Self>) -> Restore {
+        Restore::Box(old)
+    }
 }
 
 #[cfg(test)]

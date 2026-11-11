@@ -9,9 +9,9 @@ use crate::command::Command;
 use crate::command::RegisterRef;
 use crate::consts::{
     ACTIVE_MATH_CHAR, CHAR_CLASS_LIMIT, DEL_CODE_BASE, MATH_CODE_BASE, MAX_DIMEN, NULL_FONT,
-    PAR_SHAPE_LOC, SF_CODE_BASE, VMODE,
+    SF_CODE_BASE, VMODE,
 };
-use crate::eqtb::GlueLoc;
+use crate::eqtb::{GlueLoc, ShapeLoc};
 use crate::errors::OrConfusion;
 use crate::errors::{mu_error, Abort};
 use crate::ext::{
@@ -826,7 +826,7 @@ pub(super) fn scan_something_internal(
                     st.shipout.page_so_far[code.index()]
                 },
             ),
-            Command::SetShape(m) => CurVal::Int(if m > PAR_SHAPE_LOC {
+            Command::SetShape(m) => CurVal::Int(if m != ShapeLoc::ParShape {
                 let n = scan_int(st)?;
                 match st.eqtb.penalties(m) {
                     Some(penalties) if n >= 0 => {

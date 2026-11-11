@@ -4,9 +4,10 @@ use crate::cmd::Cmd;
 use crate::codes::{BoxCode, SkipCode, ValueLevel};
 use crate::command::Command;
 use crate::consts::{
-    BIGGEST_CHAR, EMPTY, ETEX_PEN_BASE, FROZEN_CR, HMODE, IGNORE_DEPTH, MAX_DIMEN, MMODE,
-    NULL_FLAG, PAR_SHAPE_LOC, SUB_BOX, SUB_MLIST, TEX_NULL, VMODE,
+    BIGGEST_CHAR, EMPTY, FROZEN_CR, HMODE, IGNORE_DEPTH, MAX_DIMEN, MMODE, NULL_FLAG, SUB_BOX,
+    SUB_MLIST, TEX_NULL, VMODE,
 };
+use crate::eqtb::{ShapeLoc, ShapeRef};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::{
@@ -31,7 +32,7 @@ use crate::units::MemAddr;
 use crate::units::{FontId, MemIdx, MemPtr, NodeType, Scaled};
 
 use super::align::align_peek;
-use super::assign::{define, do_assignments};
+use super::assign::do_assignments;
 use super::boxes::package;
 use super::{begin_every, INNER_HMODE, INNER_VMODE};
 
@@ -82,9 +83,9 @@ pub(crate) fn normal_paragraph(st: &mut EngineState) -> Result<(), Abort> {
     if st.eqtb.int_par(IntPar::HangAfter) != 1 {
         crate::eqtb::define(st, false, IntPar::HangAfter.loc(), 1)?;
     }
-    for loc in [PAR_SHAPE_LOC, ETEX_PEN_BASE] {
-        if st.eqtb.equiv(loc) != TEX_NULL {
-            define(st, false, loc, Cmd::ShapeRef, TEX_NULL)?;
+    for loc in [ShapeLoc::ParShape, ShapeLoc::InterLinePenalties] {
+        if st.eqtb.shapes.get(loc) != ShapeRef::NONE {
+            crate::eqtb::define(st, false, loc, ShapeRef::NONE)?;
         }
     }
     Ok(())

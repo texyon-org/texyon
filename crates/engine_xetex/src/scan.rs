@@ -18,7 +18,7 @@ use crate::params::IntPar;
 use crate::state::Saved;
 use crate::state::{EngineState, EqtbState, GroupCode, MemState, ScannerState};
 use crate::token::Token;
-use crate::units::{MemPtr, NodeType, Scaled};
+use crate::units::{NodeType, Scaled};
 
 mod internal;
 mod next;
@@ -297,13 +297,12 @@ pub(crate) fn set_family(x: i32) -> i32 {
 
 /// The contents of box register `n`, or `None` if it is void.
 pub(crate) fn fetch_box(st: &mut EngineState, n: i32) -> Option<NodePtr<BoxNode>> {
-    let contents = if n < 256 {
-        st.eqtb.box_reg(n)
-    } else {
-        match find_sa(st, ValueLevel::BOX, n)? {
-            SaLeaf::Pointer(p) => st.mem[p].sa_ptr,
-            SaLeaf::Word(_) | SaLeaf::MarkClass(_) => return None,
-        }
+    if let Ok(r) = u8::try_from(n) {
+        return st.eqtb.box_reg(r);
+    }
+    let contents = match find_sa(st, ValueLevel::BOX, n)? {
+        SaLeaf::Pointer(p) => st.mem[p].sa_ptr,
+        SaLeaf::Word(_) | SaLeaf::MarkClass(_) => return None,
     };
     st.mem.classify_box(contents?).ok().flatten()
 }
@@ -315,12 +314,13 @@ impl MemState {
         scanner: &mut ScannerState,
         eqtb: &mut EqtbState,
         n: i32,
-        v: MemPtr,
+        v: Option<NodePtr<BoxNode>>,
     ) -> Result<(), Abort> {
-        if n < 256 {
-            eqtb.set_box_reg(n, v);
+        if let Ok(r) = u8::try_from(n) {
+            eqtb.set_box_reg(r, v);
             return Ok(());
         }
+        let v = crate::node::link_of(v);
         if let Some(SaLeaf::Pointer(p)) = self.find_sa_element(scanner, ValueLevel::BOX, n) {
             let r = &mut self[p];
             r.sa_ptr = v;

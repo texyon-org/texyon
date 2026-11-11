@@ -8,7 +8,7 @@ use crate::codes::{
     RadicalCode, ShorthandDefCode, ShowCode, SkipCode, TheCode, ValignCode, ValueLevel,
 };
 use crate::consts::{BIGGEST_USV, TEX_NULL, TOO_BIG_USV};
-use crate::eqtb::{DimenLoc, GlueLoc, IntLoc, ToksLoc};
+use crate::eqtb::{DimenLoc, GlueLoc, IntLoc, ShapeLoc, ToksLoc};
 use crate::errors::{Abort, OrConfusion};
 use crate::main_control::{CR_CODE, CR_CR_CODE, SPAN_CODE};
 use crate::math::MathStyle;
@@ -263,7 +263,7 @@ pub(crate) enum Command {
     SetPageDimen(PageDimenCode) = Cmd::SetPageDimen as u8,
     SetPageInt(PageIntCode) = Cmd::SetPageInt as u8,
     SetBoxDimen(BoxDimenCode) = Cmd::SetBoxDimen as u8,
-    SetShape(EqtbPtr) = Cmd::SetShape as u8,
+    SetShape(ShapeLoc) = Cmd::SetShape as u8,
     /// `\catcode` and friends, by the table base.
     DefCode(EqtbPtr) = Cmd::DefCode as u8,
     XetexDefCode(EqtbPtr) = Cmd::XetexDefCode as u8,
@@ -602,11 +602,11 @@ impl Command {
             Command::Above(code) => code.raw(),
             Command::MathStyle(style) => i32::from(style.raw()),
             Command::CaseShift(loc)
-            | Command::SetShape(loc)
             | Command::DefCode(loc)
             | Command::XetexDefCode(loc)
             | Command::DefFamily(loc) => loc.raw(),
             Command::AssignInt(loc) => loc.raw(),
+            Command::SetShape(loc) => loc.raw(),
             Command::AssignToks(loc) => loc.raw(),
             Command::AssignGlue(loc) | Command::AssignMuGlue(loc) => loc.raw(),
             Command::AssignDimen(loc) => loc.raw(),
@@ -780,7 +780,7 @@ impl Command {
             Cmd::SetPageDimen => Command::SetPageDimen(PageDimenCode::from_raw(chr)?),
             Cmd::SetPageInt => Command::SetPageInt(PageIntCode::from_raw(chr)?),
             Cmd::SetBoxDimen => Command::SetBoxDimen(BoxDimenCode::from_raw(chr)?),
-            Cmd::SetShape => Command::SetShape(loc),
+            Cmd::SetShape => Command::SetShape(ShapeLoc::from_raw(chr)?),
             Cmd::DefCode => Command::DefCode(loc),
             Cmd::XetexDefCode => Command::XetexDefCode(loc),
             Cmd::DefFamily => Command::DefFamily(loc),

@@ -85,6 +85,30 @@ macro_rules! newtype_item {
     )*};
 }
 
+impl FmtItem for crate::eqtb::ShapeRef {
+    const SIZE: usize = MemPtr::SIZE;
+    #[inline]
+    fn put(self, out: &mut Vec<u8>) {
+        self.ptr().put(out);
+    }
+    #[inline]
+    fn get(bytes: &[u8]) -> Self {
+        crate::eqtb::ShapeRef::from_ptr(MemPtr::get(bytes))
+    }
+}
+
+impl<K: crate::node::View + 'static> FmtItem for Option<crate::node::NodePtr<K>> {
+    const SIZE: usize = MemPtr::SIZE;
+    #[inline]
+    fn put(self, out: &mut Vec<u8>) {
+        self.map(crate::node::NodePtr::idx).put(out);
+    }
+    #[inline]
+    fn get(bytes: &[u8]) -> Self {
+        MemPtr::get(bytes).map(crate::node::NodePtr::from_idx_unchecked)
+    }
+}
+
 impl FmtItem for MemPtr {
     const SIZE: usize = 4;
     #[inline]
@@ -721,6 +745,8 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
     runs(s, eqtb.dimens.values_mut())?;
     runs(s, eqtb.glue.values_mut())?;
     runs(s, eqtb.toks.values_mut())?;
+    runs(s, eqtb.shapes.values_mut())?;
+    runs(s, eqtb.boxes.values_mut())?;
     let mut extra = cs_words(eqtb, UNDEFINED_CONTROL_SEQUENCE + 1, extra_top);
     s.items(&mut extra)?;
     if S::LOADING {

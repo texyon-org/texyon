@@ -4,7 +4,6 @@ use crate::cmd::Cmd;
 use crate::codes::{FiOrElseCode, ValueLevel};
 use crate::glue_store::GlueSpecId;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
-use crate::units::RawPtr;
 use crate::units::{
     BufPos, CsId, EqtbPtr, FontId, FontInfoIdx, PoolPos, PrimNum, SavePtr, Scaled, StrNumber,
 };
@@ -327,6 +326,9 @@ pub(crate) struct EqtbState {
     pub dimens: crate::eqtb::Table<crate::eqtb::DimenLoc, Scaled>,
     pub glue: crate::eqtb::Table<crate::eqtb::GlueLoc, GlueSpecId>,
     pub toks: crate::eqtb::Table<crate::eqtb::ToksLoc, crate::token::TokenList>,
+    pub shapes: crate::eqtb::Table<crate::eqtb::ShapeLoc, crate::eqtb::ShapeRef>,
+    pub boxes:
+        crate::eqtb::Table<crate::eqtb::BoxLoc, Option<crate::node::NodePtr<crate::node::BoxNode>>>,
     pub prim: Vec<crate::mem_types::B32x2>,
     pub xeq_level: Vec<u16>,
     /// The `next` and `text` of each control sequence from `HASH_BASE` on.
@@ -353,6 +355,8 @@ impl Default for EqtbState {
             dimens: Default::default(),
             glue: Default::default(),
             toks: Default::default(),
+            shapes: Default::default(),
+            boxes: Default::default(),
             // PRIM_SIZE + 1 = 2101.
             prim: vec![crate::mem_types::B32x2 { s0: 0, s1: 0 }; 2101],
             xeq_level: vec![0u16; crate::consts::XEQ_LEVEL_SIZE],
@@ -380,6 +384,9 @@ impl EqtbState {
         self.glue = crate::eqtb::Table::new(crate::eqtb::GlueLoc::LEN, crate::mem::ZERO_GLUE);
         self.toks =
             crate::eqtb::Table::new(crate::eqtb::ToksLoc::LEN, crate::token::TokenList::NULL);
+        self.shapes =
+            crate::eqtb::Table::new(crate::eqtb::ShapeLoc::LEN, crate::eqtb::ShapeRef::NONE);
+        self.boxes = crate::eqtb::Table::new(crate::eqtb::BoxLoc::LEN, None);
     }
 
     /// An entry of the glue, token, box and code regions.
@@ -566,11 +573,6 @@ impl EqtbState {
     pub(crate) fn equiv(&self, p: EqtbPtr) -> i32 {
         self.b32s1(p)
     }
-    /// `equiv(p)` of an entry that holds a pointer.
-    #[inline]
-    pub(crate) fn equiv_ptr(&self, p: EqtbPtr) -> crate::units::MemPtr {
-        crate::units::MemIdx::from_raw(self.equiv(p))
-    }
     #[inline]
     pub(crate) fn set_equiv(&mut self, p: EqtbPtr, v: i32) {
         self.set_b32s1(p, v);
@@ -609,23 +611,28 @@ impl EqtbState {
     }
     #[inline]
     pub(crate) fn par_shape(&self) -> Option<crate::node::NodePtr<crate::node::ParShapeNode>> {
-        crate::node::NodePtr::from_ptr(self.equiv_ptr(crate::consts::PAR_SHAPE_LOC))
+        crate::node::NodePtr::from_ptr(self.shapes.get(crate::eqtb::ShapeLoc::ParShape).ptr())
     }
-    /// The e-TeX penalty array held in `eqtb[loc]`.
+    /// The e-TeX penalty array held at `loc`.
     #[inline]
     pub(crate) fn penalties(
         &self,
-        loc: EqtbPtr,
+        loc: crate::eqtb::ShapeLoc,
     ) -> Option<crate::node::NodePtr<crate::node::PenaltiesNode>> {
-        crate::node::NodePtr::from_ptr(self.equiv_ptr(loc))
+        crate::node::NodePtr::from_ptr(self.shapes.get(loc).ptr())
     }
     #[inline]
-    pub(crate) fn box_reg(&self, n: i32) -> crate::units::MemPtr {
-        self.equiv_ptr(crate::consts::BOX_BASE + n)
+    pub(crate) fn box_reg(&self, n: u8) -> Option<crate::node::NodePtr<crate::node::BoxNode>> {
+        self.boxes.get(crate::eqtb::BoxLoc::register(n))
     }
     #[inline]
-    pub(crate) fn set_box_reg(&mut self, n: i32, p: crate::units::MemPtr) {
-        self.set_equiv(crate::consts::BOX_BASE + n, p.raw());
+    /// Sets box register `n` without saving, keeping its level.
+    pub(crate) fn set_box_reg(
+        &mut self,
+        n: u8,
+        b: Option<crate::node::NodePtr<crate::node::BoxNode>>,
+    ) {
+        self.boxes.set_value(crate::eqtb::BoxLoc::register(n), b);
     }
     #[inline]
     pub(crate) fn skip(&self, n: u8) -> crate::glue_store::GlueSpecId {
@@ -906,6 +913,8 @@ pub(crate) enum Restore {
     Dimen(crate::eqtb::Old<crate::eqtb::DimenLoc>),
     Glue(crate::eqtb::Old<crate::eqtb::GlueLoc>),
     Toks(crate::eqtb::Old<crate::eqtb::ToksLoc>),
+    Shape(crate::eqtb::Old<crate::eqtb::ShapeLoc>),
+    Box(crate::eqtb::Old<crate::eqtb::BoxLoc>),
 }
 
 /// What a construction keeps on the save stack below its group.

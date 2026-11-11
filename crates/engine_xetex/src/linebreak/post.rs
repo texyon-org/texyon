@@ -1,9 +1,6 @@
 //! Breaking a paragraph into lines, continued: `post_line_break`.
 
-use crate::consts::{
-    ETEX_PENALTIES_PAR_CLUB_PENALTIES, ETEX_PENALTIES_PAR_DISPLAY_WIDOW_PENALTIES,
-    ETEX_PENALTIES_PAR_INTER_LINE_PENALTIES, ETEX_PENALTIES_PAR_WIDOW_PENALTIES, ETEX_PEN_BASE,
-};
+use crate::eqtb::ShapeLoc;
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
@@ -250,8 +247,8 @@ impl MemState {
 
     /// Entry `n` (clamped to the last) of the eTeX penalty array `k`, if it is set.
     /// A line number wrapped negative by a huge `\prevgraf` also gets the last.
-    fn etex_penalty(&self, eqtb: &EqtbState, k: i32, n: i32) -> Option<i32> {
-        let penalties = eqtb.penalties(ETEX_PEN_BASE + k)?;
+    fn etex_penalty(&self, eqtb: &EqtbState, k: ShapeLoc, n: i32) -> Option<i32> {
+        let penalties = eqtb.penalties(k)?;
         let count = self[penalties].count;
         let n = if n > 0 { n.min(count) } else { count };
         Some(penalties.penalty(self, n))
@@ -293,12 +290,12 @@ impl Breaker {
 
         if cur_line.wrapping_add(1) != best_line {
             let mut pen = mem
-                .etex_penalty(eqtb, ETEX_PENALTIES_PAR_INTER_LINE_PENALTIES, *cur_line)
+                .etex_penalty(eqtb, ShapeLoc::InterLinePenalties, *cur_line)
                 .unwrap_or_else(|| eqtb.int_par(IntPar::InterLinePenalty));
 
             match mem.etex_penalty(
                 eqtb,
-                ETEX_PENALTIES_PAR_CLUB_PENALTIES,
+                ShapeLoc::ClubPenalties,
                 cur_line.wrapping_sub(list.prev_graf),
             ) {
                 Some(p) => pen = pen.wrapping_add(p),
@@ -309,12 +306,9 @@ impl Breaker {
             }
 
             let (widow_array, widow_penalty) = if d {
-                (
-                    ETEX_PENALTIES_PAR_DISPLAY_WIDOW_PENALTIES,
-                    IntPar::DisplayWidowPenalty,
-                )
+                (ShapeLoc::DisplayWidowPenalties, IntPar::DisplayWidowPenalty)
             } else {
-                (ETEX_PENALTIES_PAR_WIDOW_PENALTIES, IntPar::WidowPenalty)
+                (ShapeLoc::WidowPenalties, IntPar::WidowPenalty)
             };
             match mem.etex_penalty(
                 eqtb,
