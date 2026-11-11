@@ -3,7 +3,7 @@
 //! Every node kind is a `#[repr(C)]` struct in [`kinds`], laid over its words
 //! in `mem`. A [`NodePtr<K>`] is a `Copy` index typed by its kind, so `mem[p]`
 //! borrows the node as a `K` and a field access is one load or store.
-//! `mem.entries(p)` gives the text or array an [`ArrayNode`] keeps in its payload.
+//! `mem.entries(p)` gives the text or array an [`ArrayNode`] keeps after its struct.
 
 use crate::math::MathStyle;
 use crate::params::GluePar;
@@ -473,6 +473,8 @@ const _: () = assert!(
 pub trait Node: View {
     /// The `NODE_type` stamped at allocation, `None` for headerless records.
     const TYPE: Option<NodeType>;
+    /// Whether entries follow the struct, so the node is sized by `ArrayNode`.
+    const ARRAY: bool = false;
 
     /// Fills what every new node of the kind starts with, after its header.
     #[inline]
@@ -498,6 +500,7 @@ impl<K: Node> NodePtr<K> {
     /// Carves a fresh node with its type stamped and its fields uninitialised.
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Result<Self, Abort> {
+        const { assert!(!K::ARRAY) };
         let p = mem.alloc_node(K::SIZE, K::TYPE)?;
         K::init(mem, p);
         Ok(p)
@@ -596,6 +599,7 @@ impl<K: Node> NodePtr<K> {
     /// Returns the node to the free list of its kind's size.
     #[inline]
     pub fn free(self, mem: &mut MemState) {
+        const { assert!(!K::ARRAY) };
         mem.free_node(self.idx(), K::SIZE);
     }
 }
@@ -1220,19 +1224,15 @@ impl NodePtr<AlignRecord> {
     }
 }
 
-const _: () = assert!(
-    std::mem::offset_of!(crate::node::ParShapeNode, payload)
-        == std::mem::offset_of!(crate::node::PenaltiesNode, payload)
-        && ParShapeNode::SIZE == PenaltiesNode::SIZE
-);
+// Either array takes one word more than twice its first word.
+const _: () = assert!(ParShapeNode::SIZE == 1 && PenaltiesNode::SIZE == 2);
 
 impl MemState {
-    /// Frees the `\parshape` or e-TeX penalty array `p` an eqtb shape entry holds. Both keep their
-    /// payload handle at one offset, so the shape view frees either.
+    /// Frees the `\parshape` or e-TeX penalty array `p` an eqtb shape entry holds. The shape
+    /// view frees either, since both sizes follow from the first word alike.
     pub(crate) fn free_shape_ref(&mut self, p: MemPtr) {
         if let Some(shape) = NodePtr::<ParShapeNode>::from_ptr(p) {
-            self.release_payload(shape);
-            shape.free(self);
+            self.free_array(shape);
         }
     }
 }
@@ -1390,8 +1390,6 @@ impl NodePtr<WhatsitNode> {
 }
 
 impl NodePtr<NativeWordNode> {
-    const SIZE_OF_KIND: i32 = NativeWordNode::SIZE;
-
     /// Drops the shaped-glyph payload of a native word.
     pub fn release_native_glyphs(self, mem: &mut MemState) {
         let handle = mem[self].glyph_info;
@@ -1415,8 +1413,7 @@ impl NodePtr<NativeWordNode> {
     /// Frees a native word together with its shaped glyphs.
     pub fn free_native(self, mem: &mut MemState) {
         self.release_native_glyphs(mem);
-        mem.release_payload(self);
-        mem.free_node(self.idx(), Self::SIZE_OF_KIND);
+        mem.free_array(self);
     }
 }
 

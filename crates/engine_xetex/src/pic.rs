@@ -483,20 +483,18 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
             WhatsitSubtype::Pic
         };
         let pic = st
-            .input
-            .cur_list
-            .append_whatsit::<PicNode>(&mut st.mem, subtype)?;
+            .mem
+            .alloc_array::<PicNode>(usize::from(pic_path.len() as u16))?;
+        st.input.cur_list.tail_append(&mut st.mem, pic);
         let t = &placement.t;
         let node = &mut st.mem[pic];
-        node.path_len = pic_path.len() as u16;
+        node.subtype = subtype.into();
         node.page = page as u16;
         node.pagebox = pdf_box_type.map_or(0, |pb| pb as u16);
         node.width = d2fix(xmax - xmin);
         node.height = d2fix(ymax - ymin);
         node.depth = Scaled::ZERO;
         node.transform = [t.a, t.b, t.c, t.d, t.x, t.y].map(d2fix);
-        st.mem
-            .alloc_payload(pic, usize::from(st.mem[pic].path_len))?;
         let path = st.mem.entries_mut(pic);
         let stored = path.len();
         path.copy_from_slice(&pic_path[..stored]);

@@ -19,7 +19,6 @@ use super::{
 };
 use crate::codes::{LimitCode, MarkCode, ValueLevel};
 use crate::consts::{EMPTY, NORMAL};
-use crate::payload::PayloadId;
 use crate::state::MemState;
 use crate::token::TokenList;
 use crate::units::{
@@ -65,14 +64,27 @@ impl<K: View> std::ops::IndexMut<NodePtr<K>> for MemState {
     }
 }
 
-/// A node whose header says how many entries of `Entry` its payload holds.
+/// A node whose entries follow its struct in `mem`. Its header says how many.
 /// Entries may be smaller than a word.
 pub trait ArrayNode: Node {
     type Entry: Pod;
     /// The number of entries.
     fn len(&self) -> i32;
-    fn payload(&self) -> PayloadId;
-    fn set_payload(&mut self, id: PayloadId);
+    /// Records the entry count of a fresh node.
+    fn set_len(&mut self, entries: usize) -> Result<(), Abort>;
+    /// The words kept for the entries, which stay the node's even when `len` shrinks.
+    #[inline]
+    fn entry_words(&self) -> usize {
+        entry_words::<Self>(usize::try_from(self.len()).unwrap_or(0))
+    }
+}
+
+/// The words `entries` entries of `K` take.
+#[inline]
+fn entry_words<K: ArrayNode>(entries: usize) -> usize {
+    entries
+        .saturating_mul(std::mem::size_of::<K::Entry>())
+        .div_ceil(std::mem::size_of::<u32>())
 }
 
 pub type EntriesMutAnd<'a, K, L> = (
@@ -81,83 +93,93 @@ pub type EntriesMutAnd<'a, K, L> = (
 );
 
 impl MemState {
-    /// The byte length of `p`'s entries.
+    /// The words of `p`'s entries and how many bytes of them are in use.
     #[inline]
-    fn entry_bytes<K: ArrayNode>(&self, p: NodePtr<K>) -> usize {
+    fn entry_span<K: ArrayNode>(&self, p: NodePtr<K>) -> (std::ops::Range<usize>, usize) {
         let len = usize::try_from(self[p].len()).unwrap_or(0);
-        len.saturating_mul(std::mem::size_of::<K::Entry>())
+        let start = p.idx().words(K::SIZE).end;
+        (
+            start..start + entry_words::<K>(len),
+            len.saturating_mul(std::mem::size_of::<K::Entry>()),
+        )
     }
 
-    /// Gives the fresh array node `p` a zeroed payload for `entries` entries.
-    pub fn alloc_payload<K: ArrayNode>(
-        &mut self,
-        p: NodePtr<K>,
-        entries: usize,
-    ) -> Result<(), crate::errors::Abort> {
-        let bytes = entries.saturating_mul(std::mem::size_of::<K::Entry>());
-        let id = self
-            .payloads
-            .insert(bytes.div_ceil(std::mem::size_of::<u32>()))?;
-        self[p].set_payload(id);
-        Ok(())
+    /// A fresh array node with room for `entries` zeroed entries, its other fields unset.
+    pub fn alloc_array<K: ArrayNode>(&mut self, entries: usize) -> Result<NodePtr<K>, Abort> {
+        const { assert!(K::ARRAY) };
+        let head = usize::try_from(K::SIZE).or_confusion("node size")?;
+        let p = self.get_array_node(head.saturating_add(entry_words::<K>(entries)))?;
+        if let Some(ty) = K::TYPE {
+            self.set_header(p, ty, 0);
+        }
+        let p = NodePtr::from_idx_unchecked(p);
+        K::init(self, p);
+        self[p].set_len(entries)?;
+        self.entries_mut(p).fill(Zeroable::zeroed());
+        Ok(p)
     }
 
-    /// Gives the copy `dst` of array node `src` its own handle on the payload.
-    pub fn share_payload<K: ArrayNode>(
-        &mut self,
-        dst: NodePtr<K>,
-        src: NodePtr<K>,
-    ) -> Result<(), crate::errors::Abort> {
-        let id = self.payloads.share(self[src].payload())?;
-        self[dst].set_payload(id);
-        Ok(())
+    /// A new node holding every field and entry of array node `src`.
+    pub fn copy_array<K: ArrayNode>(&mut self, src: NodePtr<K>) -> Result<NodePtr<K>, Abort> {
+        let entries = usize::try_from(self[src].len()).unwrap_or(0);
+        let copy = self.alloc_array::<K>(entries)?;
+        self[copy] = self[src];
+        self[copy].set_len(entries)?;
+        let (to, from) = self.entries_mut_and(copy, src)?;
+        to.copy_from_slice(from);
+        Ok(copy)
     }
 
-    /// Drops the payload of array node `p`.
-    pub fn release_payload<K: ArrayNode>(&mut self, p: NodePtr<K>) {
-        let id = self[p].payload();
-        self.payloads.release(id);
-        K::set_payload(&mut self[p], PayloadId::NONE);
+    /// Returns array node `p` to the free list of its size.
+    pub fn free_array<K: ArrayNode>(&mut self, p: NodePtr<K>) {
+        let words = usize::try_from(K::SIZE).unwrap_or(0) + self[p].entry_words();
+        self.free_array_node(p.idx(), words);
     }
 
     /// The entries of an array node.
     #[inline]
     pub fn entries<K: ArrayNode>(&self, p: NodePtr<K>) -> &[K::Entry] {
-        let bytes = self.entry_bytes(p);
-        let words: &[u8] = bytemuck::cast_slice(self.payloads.get(self[p].payload()));
-        bytemuck::cast_slice(words.get(..bytes).unwrap_or(&[]))
+        let (words, bytes) = self.entry_span(p);
+        let words: &[u8] = bytemuck::cast_slice(&self.data[words]);
+        bytemuck::cast_slice(&words[..bytes])
     }
 
-    /// The entries of `dst`, writable, beside those of another node `src`. A confusion when
-    /// both share one payload.
+    /// The entries of `dst`, writable, beside those of another node `src`.
     #[inline]
     pub fn entries_mut_and<K: ArrayNode, L: ArrayNode>(
         &mut self,
         dst: NodePtr<K>,
         src: NodePtr<L>,
-    ) -> Result<EntriesMutAnd<'_, K, L>, crate::errors::Abort> {
-        let (dst_bytes, src_bytes) = (self.entry_bytes(dst), self.entry_bytes(src));
-        let (dst_id, src_id) = (self[dst].payload(), self[src].payload());
-        let (dst, src) = self
-            .payloads
-            .get_mut_and(dst_id, src_id)
+    ) -> Result<EntriesMutAnd<'_, K, L>, Abort> {
+        let (dst_words, dst_bytes) = self.entry_span(dst);
+        let (src_words, src_bytes) = self.entry_span(src);
+        if self.journal.armed() {
+            self.journal
+                .note_run(dst_words.start, &self.data[dst_words.clone()]);
+        }
+        let [dst, src] = self
+            .data
+            .get_disjoint_mut([dst_words, src_words])
             .or_confusion("entries")?;
         let dst: &mut [u8] = bytemuck::cast_slice_mut(dst);
         let src: &[u8] = bytemuck::cast_slice(src);
         Ok((
-            bytemuck::cast_slice_mut(dst.get_mut(..dst_bytes).or_confusion("entries")?),
-            bytemuck::cast_slice(src.get(..src_bytes).or_confusion("entries")?),
+            bytemuck::cast_slice_mut(&mut dst[..dst_bytes]),
+            bytemuck::cast_slice(&src[..src_bytes]),
         ))
     }
 
     /// The entries of an array node, writable.
     #[inline]
     pub fn entries_mut<K: ArrayNode>(&mut self, p: NodePtr<K>) -> &mut [K::Entry] {
-        let bytes = self.entry_bytes(p);
-        let id = self[p].payload();
-        let words: &mut [u8] = bytemuck::cast_slice_mut(self.payloads.get_mut(id));
-        let len = bytes.min(words.len());
-        bytemuck::cast_slice_mut(&mut words[..len])
+        let (words, bytes) = self.entry_span(p);
+        let start = words.start;
+        let words = &mut self.data[words];
+        if self.journal.armed() {
+            self.journal.note_run(start, words);
+        }
+        let words: &mut [u8] = bytemuck::cast_slice_mut(words);
+        bytemuck::cast_slice_mut(&mut words[..bytes])
     }
 }
 
@@ -166,9 +188,6 @@ impl MemState {
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct ParShapeNode {
     pub lines: i32,
-    pub payload: PayloadId,
-    /// Pads the node to the size of a penalty array, which is freed through this view.
-    _unused: i32,
 }
 
 /// One line of a `\parshape` array.
@@ -183,6 +202,7 @@ impl View for ParShapeNode {}
 
 impl Node for ParShapeNode {
     const TYPE: Option<NodeType> = None;
+    const ARRAY: bool = true;
 }
 
 impl ArrayNode for ParShapeNode {
@@ -194,13 +214,9 @@ impl ArrayNode for ParShapeNode {
     }
 
     #[inline]
-    fn payload(&self) -> PayloadId {
-        self.payload
-    }
-
-    #[inline]
-    fn set_payload(&mut self, id: PayloadId) {
-        self.payload = id;
+    fn set_len(&mut self, entries: usize) -> Result<(), Abort> {
+        self.lines = i32::try_from(entries).or_confusion("parshape")?;
+        Ok(())
     }
 }
 
@@ -210,7 +226,6 @@ impl ArrayNode for ParShapeNode {
 pub struct PenaltiesNode {
     /// Half the entry count, rounded up, as e-TeX's node size was.
     pub half_size: i32,
-    pub payload: PayloadId,
     pub count: i32,
 }
 
@@ -225,6 +240,7 @@ impl View for PenaltiesNode {}
 
 impl Node for PenaltiesNode {
     const TYPE: Option<NodeType> = None;
+    const ARRAY: bool = true;
 }
 
 impl ArrayNode for PenaltiesNode {
@@ -236,13 +252,9 @@ impl ArrayNode for PenaltiesNode {
     }
 
     #[inline]
-    fn payload(&self) -> PayloadId {
-        self.payload
-    }
-
-    #[inline]
-    fn set_payload(&mut self, id: PayloadId) {
-        self.payload = id;
+    fn set_len(&mut self, entries: usize) -> Result<(), Abort> {
+        self.half_size = i32::try_from(entries.div_ceil(2)).or_confusion("penalties")?;
+        Ok(())
     }
 }
 
@@ -253,7 +265,6 @@ pub struct PseudoLineNode {
     /// One more than the line's words of four characters, as e-TeX's node size was.
     pub size: i32,
     pub link: Option<NodePtr<PseudoLineNode>>,
-    pub payload: PayloadId,
 }
 
 /// Four characters of a pseudo-file line, stored last first.
@@ -282,6 +293,7 @@ impl View for PseudoLineNode {}
 
 impl Node for PseudoLineNode {
     const TYPE: Option<NodeType> = None;
+    const ARRAY: bool = true;
 }
 
 impl ArrayNode for PseudoLineNode {
@@ -293,13 +305,9 @@ impl ArrayNode for PseudoLineNode {
     }
 
     #[inline]
-    fn payload(&self) -> PayloadId {
-        self.payload
-    }
-
-    #[inline]
-    fn set_payload(&mut self, id: PayloadId) {
-        self.payload = id;
+    fn set_len(&mut self, entries: usize) -> Result<(), Abort> {
+        self.size = i32::try_from(entries + 1).or_confusion("pseudo line")?;
+        Ok(())
     }
 }
 
@@ -430,7 +438,6 @@ pub struct PicNode {
     pub height: Scaled,
     pub page: u16,
     pub path_len: u16,
-    pub path: PayloadId,
     /// `[a, b, c, d, x, y]`.
     pub transform: [Scaled; 6],
     _unused5: u16,
@@ -441,6 +448,7 @@ impl View for PicNode {}
 
 impl Node for PicNode {
     const TYPE: Option<NodeType> = Some(NodeType::Whatsit);
+    const ARRAY: bool = true;
 }
 
 impl ArrayNode for PicNode {
@@ -452,13 +460,9 @@ impl ArrayNode for PicNode {
     }
 
     #[inline]
-    fn payload(&self) -> PayloadId {
-        self.path
-    }
-
-    #[inline]
-    fn set_payload(&mut self, id: PayloadId) {
-        self.path = id;
+    fn set_len(&mut self, entries: usize) -> Result<(), Abort> {
+        self.path_len = u16::try_from(entries).or_confusion("picture path")?;
+        Ok(())
     }
 }
 
@@ -477,10 +481,10 @@ pub struct NativeWordNode {
     /// The text length in UTF-16 units.
     pub length: u16,
     pub font: FontId,
-    _unused4: u16,
+    /// The words kept for the text, which outlive a shortened `length`.
+    text_words: u16,
     /// One-based shaped-glyph arena handle, zero when unshaped.
     pub glyph_info: i32,
-    pub text: PayloadId,
 }
 
 impl NativeWordNode {
@@ -496,6 +500,7 @@ impl View for NativeWordNode {}
 
 impl Node for NativeWordNode {
     const TYPE: Option<NodeType> = Some(NodeType::Whatsit);
+    const ARRAY: bool = true;
 }
 
 impl ArrayNode for NativeWordNode {
@@ -507,13 +512,16 @@ impl ArrayNode for NativeWordNode {
     }
 
     #[inline]
-    fn payload(&self) -> PayloadId {
-        self.text
+    fn set_len(&mut self, entries: usize) -> Result<(), Abort> {
+        self.length = u16::try_from(entries).or_confusion("native word length")?;
+        self.text_words =
+            u16::try_from(entry_words::<Self>(entries)).or_confusion("native text")?;
+        Ok(())
     }
 
     #[inline]
-    fn set_payload(&mut self, id: PayloadId) {
-        self.text = id;
+    fn entry_words(&self) -> usize {
+        usize::from(self.text_words)
     }
 }
 
@@ -1735,58 +1743,89 @@ mod tests {
         );
     }
 
-    fn shape_at(idx: i32) -> NodePtr<ParShapeNode> {
-        NodePtr::from_idx_unchecked(MemIdx::from_raw(idx).unwrap())
+    /// The `n` words after the struct of `p`.
+    fn tail<K: View>(mem: &MemState, p: NodePtr<K>, n: usize) -> &[u32] {
+        let start = p.idx().words(K::SIZE).end;
+        &mem.data[start..start + n]
     }
 
     #[test]
-    fn par_shape_lines_live_in_the_payload() {
+    fn par_shape_lines_follow_the_header() {
         let mut mem = arena();
-        let s = shape_at(4);
-        mem[s].lines = 2;
-        mem.alloc_payload(s, 2).unwrap();
+        let s = mem.alloc_array::<ParShapeNode>(2).unwrap();
+        assert_eq!(mem[s].lines, 2);
         let lines = mem.entries_mut(s);
         assert_eq!(lines.len(), 2);
         lines[0].indent = Scaled::from_raw(11);
         lines[0].width = Scaled::from_raw(12);
         lines[1].indent = Scaled::from_raw(13);
         lines[1].width = Scaled::from_raw(14);
-        assert_eq!(mem.payloads.get(mem[s].payload), [11, 12, 13, 14]);
+        assert_eq!(tail(&mem, s, 4), [11, 12, 13, 14]);
         assert_eq!(s.line(&mem, 2).width, Scaled::from_raw(14));
     }
 
     #[test]
-    fn penalties_live_in_the_payload() {
+    fn penalties_follow_the_header() {
         let mut mem = arena();
-        let p: NodePtr<PenaltiesNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(4).unwrap());
-        let header = &mut mem[p];
-        header.half_size = 2;
-        header.count = 2;
-        mem.alloc_payload(p, 3).unwrap();
+        let p = mem.alloc_array::<PenaltiesNode>(3).unwrap();
+        assert_eq!(mem[p].half_size, 2);
+        mem[p].count = 2;
         let entries = mem.entries_mut(p);
         assert_eq!(entries.len(), 3);
         entries[0].value = 11;
         entries[1].value = 12;
-        assert_eq!(mem.payloads.get(mem[p].payload), [11, 12, 0]);
+        assert_eq!(tail(&mem, p, 3), [11, 12, 0]);
         assert_eq!([0, 1, 2].map(|k| p.penalty(&mem, k)), [2, 11, 12]);
     }
 
     #[test]
-    fn pseudo_lines_live_in_the_payload() {
+    fn pseudo_lines_follow_the_header() {
         let mut mem = arena();
-        let p: NodePtr<PseudoLineNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(4).unwrap());
-        let header = &mut mem[p];
-        header.size = 3;
-        header.link = Some(NodePtr::from_idx_unchecked(MemIdx::from_raw(9).unwrap()));
-        mem.alloc_payload(p, 2).unwrap();
+        let p = mem.alloc_array::<PseudoLineNode>(2).unwrap();
+        assert_eq!(mem[p].size, 3);
         let words = mem.entries_mut(p);
         assert_eq!(words.len(), 2);
         words[1] = PseudoWord::new([1, 2, 3, 4]);
-        assert_eq!(
-            mem.payloads.get(mem[p].payload),
-            [0, 0, 4 | 3 << 16, 2 | 1 << 16]
-        );
+        assert_eq!(tail(&mem, p, 4), [0, 0, 4 | 3 << 16, 2 | 1 << 16]);
         assert_eq!(mem.entries(p)[1].chars(), [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn a_shape_view_frees_a_penalty_array() {
+        let mut mem = arena();
+        let p = mem.alloc_array::<PenaltiesNode>(5).unwrap();
+        mem.free_shape_ref(Some(p.idx()));
+        let again = mem.alloc_array::<PenaltiesNode>(5).unwrap();
+        assert_eq!(again, p);
+        let len = mem.data.len();
+        mem.free_array(again);
+        let shape = mem.alloc_array::<ParShapeNode>(3).unwrap();
+        assert_eq!((shape.idx(), mem.data.len()), (p.idx(), len));
+    }
+
+    #[test]
+    fn a_reused_array_starts_zeroed() {
+        let mut mem = arena();
+        let s = mem.alloc_array::<ParShapeNode>(2).unwrap();
+        mem.entries_mut(s)[1].width = Scaled::from_raw(9);
+        mem.free_array(s);
+        let again = mem.alloc_array::<ParShapeNode>(2).unwrap();
+        assert_eq!(again, s);
+        assert_eq!(tail(&mem, again, 4), [0; 4]);
+    }
+
+    #[test]
+    fn large_arrays_share_the_free_list_of_their_rounded_size() {
+        let mut mem = arena();
+        let before = mem.data.len();
+        let s = mem.alloc_array::<ParShapeNode>(100).unwrap();
+        assert_eq!(mem.data.len() - before, 256);
+        mem.free_array(s);
+        let again = mem.alloc_array::<ParShapeNode>(120).unwrap();
+        assert_eq!((again, mem.data.len() - before), (s, 256));
+        let larger = mem.alloc_array::<ParShapeNode>(128).unwrap();
+        assert_eq!(mem.data.len() - before, 256 + 512);
+        assert_ne!(larger, again);
     }
 
     #[test]
@@ -1808,38 +1847,27 @@ mod tests {
     }
 
     #[test]
-    fn a_pic_path_lives_in_the_payload() {
-        let mut mem = MemState {
-            data: vec![Default::default(); 24],
-            ..Default::default()
-        };
-        let p: NodePtr<PicNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(4).unwrap());
+    fn a_pic_path_follows_the_header() {
+        let mut mem = arena();
+        let p = mem.alloc_array::<PicNode>(10).unwrap();
         mem[p].subtype = WhatsitSubtype::Pdf.into();
-        mem[p].path_len = 10;
-        mem.alloc_payload(p, 10).unwrap();
+        assert_eq!(mem[p].path_len, 10);
         mem.entries_mut(p).copy_from_slice(b"0123456789");
         assert_eq!(mem.entries(p), b"0123456789");
         assert!(matches!(p.whatsit().variant(&mem), Some(WhatsitVariant::Pic(q)) if q == p));
     }
 
-    fn native_word_at(mem: &mut MemState, idx: i32, text: &[u16]) -> NodePtr<NativeWordNode> {
-        let w: NodePtr<NativeWordNode> =
-            NodePtr::from_idx_unchecked(MemIdx::from_raw(idx).unwrap());
-        let word = &mut mem[w];
-        word.subtype = WhatsitSubtype::NativeWord.into();
-        word.length = text.len() as u16;
-        mem.alloc_payload(w, text.len()).unwrap();
+    fn native_word(mem: &mut MemState, text: &[u16]) -> NodePtr<NativeWordNode> {
+        let w = mem.alloc_array::<NativeWordNode>(text.len()).unwrap();
+        mem[w].subtype = WhatsitSubtype::NativeWord.into();
         mem.entries_mut(w).copy_from_slice(text);
         w
     }
 
     #[test]
     fn clearing_glyphs_keeps_the_native_text() {
-        let mut mem = MemState {
-            data: vec![Default::default(); 24],
-            ..Default::default()
-        };
-        let w = native_word_at(&mut mem, 4, &[1, 2, 3, 4, 5]);
+        let mut mem = arena();
+        let w = native_word(&mut mem, &[1, 2, 3, 4, 5]);
         mem[w].glyph_count = 6;
         mem[w].glyph_info = 9;
         mem[w].clear_glyphs();
@@ -1850,14 +1878,11 @@ mod tests {
 
     #[test]
     fn entries_of_two_nodes_copy_into_the_destination() {
-        let mut mem = MemState {
-            data: vec![Default::default(); 24],
-            ..Default::default()
-        };
-        let src = native_word_at(&mut mem, 2, &[1, 2, 3]);
-        let dst = native_word_at(&mut mem, 2 + NativeWordNode::SIZE, &[0; 5]);
+        let mut mem = arena();
+        let src = native_word(&mut mem, &[1, 2, 3]);
+        let dst = native_word(&mut mem, &[0; 5]);
         let Ok((to, from)) = mem.entries_mut_and(dst, src) else {
-            panic!("two separate payloads overlap");
+            panic!("two separate nodes overlap");
         };
         to[1..4].copy_from_slice(from);
         assert_eq!(mem.entries(dst), [0, 1, 2, 3, 0]);
@@ -1866,29 +1891,36 @@ mod tests {
     }
 
     #[test]
-    fn a_copied_node_writes_its_own_payload() {
+    fn a_copied_array_writes_its_own_entries() {
         let mut mem = arena();
-        let (s, copy) = (shape_at(2), shape_at(4));
-        mem[s].lines = 1;
-        mem.alloc_payload(s, 1).unwrap();
+        let s = mem.alloc_array::<ParShapeNode>(1).unwrap();
         mem.entries_mut(s)[0].width = Scaled::from_raw(5);
-        mem[copy] = mem[s];
-        mem.share_payload(copy, s).unwrap();
+        let copy = mem.copy_array(s).unwrap();
+        assert_eq!(mem.entries(copy)[0].width, Scaled::from_raw(5));
         mem.entries_mut(copy)[0].width = Scaled::from_raw(6);
         assert_eq!(mem.entries(s)[0].width, Scaled::from_raw(5));
-        assert_eq!(mem.entries(copy)[0].width, Scaled::from_raw(6));
-        mem.release_payload(s);
+        mem.free_array(s);
         assert_eq!(mem.entries(copy)[0].width, Scaled::from_raw(6));
     }
 
     #[test]
+    fn a_shortened_native_word_is_freed_and_copied_by_its_own_size() {
+        let mut mem = arena();
+        let w = native_word(&mut mem, &[1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        mem[w].length = 1;
+        let copy = mem.copy_array(w).unwrap();
+        assert_eq!(mem.entries(copy), [1]);
+        mem.free_array(copy);
+        assert_eq!(native_word(&mut mem, &[7, 7]), copy);
+        mem.free_array(w);
+        assert_eq!(native_word(&mut mem, &[0; 9]), w);
+    }
+
+    #[test]
     fn native_words_and_glyphs_have_dims_and_other_whatsits_none() {
-        let mut mem = MemState {
-            data: vec![Default::default(); 32],
-            ..Default::default()
-        };
+        let mut mem = arena();
         let at = MemIdx::from_raw;
-        let w = native_word_at(&mut mem, 2, &[]);
+        let w = native_word(&mut mem, &[]);
         (mem[w].width, mem[w].depth, mem[w].height) = (
             Scaled::from_raw(1),
             Scaled::from_raw(2),
@@ -1918,27 +1950,30 @@ mod tests {
     #[test]
     fn a_negative_size_leaves_no_entries() {
         let mut mem = arena();
-        let s = shape_at(4);
+        let s = mem.alloc_array::<ParShapeNode>(1).unwrap();
         mem[s].lines = -3;
         assert!(mem.entries(s).is_empty());
     }
 
     #[test]
-    fn a_checkpoint_keeps_the_payload_it_saw() {
+    fn a_checkpoint_restores_the_entries_it_saw() {
         let mut mem = arena();
-        let s = shape_at(4);
-        mem[s].lines = 2;
-        mem.alloc_payload(s, 2).unwrap();
+        let s = mem.alloc_array::<ParShapeNode>(2).unwrap();
+        let t = mem.alloc_array::<ParShapeNode>(1).unwrap();
         mem.entries_mut(s)[1].width = Scaled::from_raw(5);
-        let saved = mem.payloads.clone();
+        mem.journal.arm(mem.data.len());
         let lines = mem.entries_mut(s);
         lines[0].indent = Scaled::from_raw(1);
         lines[1].width = Scaled::from_raw(2);
-        mem.payloads.restore_from(&saved);
+        let (to, from) = mem.entries_mut_and(t, s).unwrap();
+        to[0].width = from[1].width;
+        assert_eq!(mem.entries(t)[0].width, Scaled::from_raw(2));
+        let delta = mem.journal.seal(&mem.data);
+        delta.apply_to(&mut mem.data);
         let lines = mem.entries(s);
         assert_eq!(
-            (lines[0].indent, lines[1].width),
-            (Scaled::ZERO, Scaled::from_raw(5))
+            (lines[0].indent, lines[1].width, mem.entries(t)[0].width),
+            (Scaled::ZERO, Scaled::from_raw(5), Scaled::ZERO)
         );
     }
 }

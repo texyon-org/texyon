@@ -372,12 +372,12 @@ impl MemState {
         n: i32,
         subtype: WhatsitSubtype,
     ) -> Result<NodePtr<NativeWordNode>, Abort> {
-        let w = NodePtr::<NativeWordNode>::alloc_whatsit(self, subtype)?;
+        let length = usize::try_from(n).or_confusion("native word length")?;
+        let w = self.alloc_array::<NativeWordNode>(length)?;
         let word = &mut self[w];
+        word.subtype = subtype.into();
         word.font = f;
-        word.length = u16::try_from(n).or_confusion("native word length")?;
         word.clear_glyphs();
-        self.alloc_payload(w, usize::from(self[w].length))?;
         Ok(w)
     }
 

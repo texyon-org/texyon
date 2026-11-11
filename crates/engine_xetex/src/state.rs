@@ -641,8 +641,6 @@ pub(crate) struct MemState {
     pub tokens: crate::token::TokenStore,
     /// The glue specifications.
     pub glue: crate::glue_store::GlueStore,
-    /// The entries of array nodes: native text, picture paths, shapes and pseudo-file lines.
-    pub payloads: crate::payload::PayloadStore,
     pub journal: crate::journal::WordJournal<u32>,
     /// The free list of each node size.
     pub free: crate::mem::FreeLists,

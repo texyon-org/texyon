@@ -24,7 +24,6 @@ use crate::mem::{CONTRIB_HEAD, PAGE_HEAD, RESERVED_WORDS};
 use crate::mem_types::{B16x4, B32x2, MemoryWord};
 use crate::output::{print, print_char, print_int, print_ln, print_nl};
 use crate::params::IntPar;
-use crate::payload::PayloadStore;
 use crate::state::{EngineState, EqtbState, InteractionMode, PerFont, Selector};
 use crate::token::{ListSlot, Token, TokenList, TokenStore};
 use crate::units::CsId;
@@ -581,40 +580,11 @@ fn dynamic_memory<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), A
     s.items(&mut mem.data)?;
     token_lists(s, &mut mem.tokens)?;
     glue_specs(s, &mut mem.glue)?;
-    payloads(s, &mut mem.payloads)?;
 
     if !S::LOADING {
         print_ln(st);
         print_int(st, words);
         print(st, " memory locations dumped");
-    }
-    Ok(())
-}
-
-/// The array node payloads, each as its length, `-1` for a free slot, then its words.
-fn payloads<S: FmtStream>(s: &mut S, store: &mut PayloadStore) -> Result<(), Abort> {
-    let too_big = || Abort::Internal("payload store exceeds the format's limit");
-    let mut slots: Vec<Option<Vec<u32>>> = store.slots().map(|w| w.map(<[u32]>::to_vec)).collect();
-    let mut n = i32::try_from(slots.len()).map_err(|_| too_big())?;
-    s.int_in(&mut n, 0, i32::MAX)?;
-    if S::LOADING {
-        slots = vec![None; usize::try_from(n).map_err(|_| bad_fmt())?];
-    }
-    for slot in &mut slots {
-        let mut len = match slot {
-            Some(words) => i32::try_from(words.len()).map_err(|_| too_big())?,
-            None => -1,
-        };
-        s.int_in(&mut len, -1, i32::MAX)?;
-        if S::LOADING {
-            *slot = usize::try_from(len).ok().map(|len| vec![0; len]);
-        }
-        if let Some(words) = slot {
-            s.items(words)?;
-        }
-    }
-    if S::LOADING {
-        store.load(slots);
     }
     Ok(())
 }

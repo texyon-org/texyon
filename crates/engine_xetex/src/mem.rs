@@ -22,10 +22,30 @@ use crate::units::{
 
 pub(crate) use crate::glue_store::{FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, SS_GLUE, ZERO_GLUE};
 
-/// One more than the largest node size, so a node size indexes its free list.
-pub(crate) const FREE_CLASSES: usize = SaIndexNode::SIZE as usize + 1;
+/// Sizes up to the largest fixed node have a free list each, indexed by the size.
+const EXACT_CLASSES: usize = SaIndexNode::SIZE as usize + 1;
 /// `mem` may grow to this many words, half of `MAIN_MEMORY_WORDS`.
 const MAX_MEM_WORDS: usize = 1 << 25;
+/// The smallest power of two a larger node is rounded up to.
+const FIRST_ROUNDED: u32 = EXACT_CLASSES.next_power_of_two().ilog2();
+/// The exact sizes, then one list per power of two up to `MAX_MEM_WORDS`.
+pub(crate) const FREE_CLASSES: usize =
+    EXACT_CLASSES + (MAX_MEM_WORDS.ilog2() - FIRST_ROUNDED) as usize + 1;
+
+/// The free list a node of `s` words is on and the words it really takes.
+#[inline]
+fn size_class(s: usize) -> Option<(usize, usize)> {
+    match s {
+        0 => None,
+        _ if s < EXACT_CLASSES => Some((s, s)),
+        _ if s <= MAX_MEM_WORDS => {
+            let words = s.next_power_of_two();
+            let class = EXACT_CLASSES + (words.ilog2() - FIRST_ROUNDED) as usize;
+            Some((class, words))
+        }
+        _ => None,
+    }
+}
 
 /// The free list of each node size, by size.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -185,17 +205,29 @@ impl MemState {
     }
 
     /// TeX's `get_node`: a node of `s` words, from its size's free list or fresh from the end.
+    #[inline]
     pub fn get_node(&mut self, s: i32) -> Result<MemIdx, Abort> {
         let class = usize::try_from(s)
             .ok()
-            .filter(|c| (1..FREE_CLASSES).contains(c))
+            .filter(|c| (1..EXACT_CLASSES).contains(c))
             .or_confusion("node size")?;
+        self.take_node(class, class)
+    }
+
+    /// A node of at least `s` words, for a kind whose entries follow its struct.
+    pub fn get_array_node(&mut self, s: usize) -> Result<MemIdx, Abort> {
+        let (class, words) = size_class(s).ok_or(Abort::NODE_OVERFLOW)?;
+        self.take_node(class, words)
+    }
+
+    #[inline]
+    fn take_node(&mut self, class: usize, words: usize) -> Result<MemIdx, Abort> {
         let r = if let Some(head) = self.free.0[class] {
             self.free.0[class] = head.link(self);
             head
         } else {
             let start = self.data.len();
-            let end = start + class;
+            let end = start + words;
             if end > MAX_MEM_WORDS {
                 return Err(Abort::NODE_OVERFLOW);
             }
@@ -208,15 +240,30 @@ impl MemState {
     }
 
     /// Returns the `s`-word node `p` to its size's free list.
+    #[inline]
     pub fn free_node(&mut self, p: MemIdx, s: i32) {
         let class = usize::try_from(s)
             .ok()
-            .filter(|c| (1..FREE_CLASSES).contains(c));
+            .filter(|c| (1..EXACT_CLASSES).contains(c));
         debug_assert!(class.is_some(), "freeing a node of size {s}");
         if let Some(class) = class {
-            p.set_link(self, self.free.0[class]);
-            self.free.0[class] = Some(p);
+            self.release_node(p, class);
         }
+    }
+
+    /// Returns a node from `get_array_node(s)` to its free list.
+    pub fn free_array_node(&mut self, p: MemIdx, s: usize) {
+        let class = size_class(s);
+        debug_assert!(class.is_some(), "freeing a node of size {s}");
+        if let Some((class, _)) = class {
+            self.release_node(p, class);
+        }
+    }
+
+    #[inline]
+    fn release_node(&mut self, p: MemIdx, class: usize) {
+        p.set_link(self, self.free.0[class]);
+        self.free.0[class] = Some(p);
     }
 
     // --- node constructors ---

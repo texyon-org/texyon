@@ -438,17 +438,14 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
             l += 1;
         }
         let size = ((l - m + 7) / 4).max(2);
-        let line = NodePtr::<PseudoLineNode>::alloc(&mut st.mem)?;
+        let words = usize::try_from(size - 1).or_confusion("pseudo line")?;
+        let line = st.mem.alloc_array::<PseudoLineNode>(words)?;
         match last_line {
             None => st.mem[file].lines = line.into(),
             Some(prev) => st.mem[prev].link = line.into(),
         }
         last_line = Some(line);
-        let node = &mut st.mem[line];
-        node.size = size;
-        node.link = None;
-        st.mem
-            .alloc_payload(line, usize::try_from(size - 1).or_confusion("pseudo line")?)?;
+        st.mem[line].link = None;
         let mut k = m;
         if let Some((last, full)) = st.mem.entries_mut(line).split_last_mut() {
             for word in full {

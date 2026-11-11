@@ -1028,12 +1028,9 @@ fn set_shape(st: &mut EngineState, global: bool, q: ShapeLoc) -> Result<(), Abor
         ShapeRef::NONE
     } else if q != ShapeLoc::ParShape {
         let words = n / 2 + 1;
-        let penalties = NodePtr::<PenaltiesNode>::alloc(&mut st.mem)?;
-        let header = &mut st.mem[penalties];
-        header.half_size = words;
-        header.count = n;
         let entries = usize::try_from(2 * words - 1).or_confusion("penalties")?;
-        st.mem.alloc_payload(penalties, entries)?;
+        let penalties = st.mem.alloc_array::<PenaltiesNode>(entries)?;
+        st.mem[penalties].count = n;
         let slots = st.mem.entries(penalties).len();
         for (k, slot) in (1..).zip(0..slots) {
             let v = if k <= n {
@@ -1045,10 +1042,8 @@ fn set_shape(st: &mut EngineState, global: bool, q: ShapeLoc) -> Result<(), Abor
         }
         ShapeRef::penalties(penalties)
     } else {
-        let shape = NodePtr::<ParShapeNode>::alloc(&mut st.mem)?;
-        st.mem[shape].lines = n;
-        st.mem
-            .alloc_payload(shape, usize::try_from(n).or_confusion("parshape")?)?;
+        let lines = usize::try_from(n).or_confusion("parshape")?;
+        let shape = st.mem.alloc_array::<ParShapeNode>(lines)?;
         for line in 0..st.mem.entries(shape).len() {
             let indent = crate::scan::scan_dimen(st, false)?;
             st.mem.entries_mut(shape)[line].indent = indent;

@@ -63,18 +63,13 @@ impl MemState {
             WhatsitVariant::Language(p) => self.copy_of(p)?.idx(),
             WhatsitVariant::SavePos(p) => self.copy_of(p)?.idx(),
             WhatsitVariant::NativeWord(word) => {
-                let copy = self.copy_of(word)?;
+                let copy = self.copy_array(word)?;
                 self[copy].clear_glyphs();
                 copy.share_native_glyphs(self, word);
-                self.share_payload(copy, word)?;
                 copy.idx()
             }
             WhatsitVariant::Glyph(p) => self.copy_of(p)?.idx(),
-            WhatsitVariant::Pic(pic) => {
-                let copy = self.copy_of(pic)?;
-                self.share_payload(copy, pic)?;
-                copy.idx()
-            }
+            WhatsitVariant::Pic(pic) => self.copy_array(pic)?.idx(),
         })
     }
 
@@ -228,15 +223,10 @@ impl MemState {
                     WhatsitVariant::Language(p) => p.free(self),
                     WhatsitVariant::SavePos(p) => p.free(self),
                     WhatsitVariant::NativeWord(word) => {
-                        word.release_native_glyphs(self);
-                        self.release_payload(word);
-                        word.free(self);
+                        word.free_native(self);
                     }
                     WhatsitVariant::Glyph(p) => p.free(self),
-                    WhatsitVariant::Pic(pic) => {
-                        self.release_payload(pic);
-                        pic.free(self);
-                    }
+                    WhatsitVariant::Pic(pic) => self.free_array(pic),
                 },
                 AnyNode::Glue(glue) => {
                     self.delete_glue_ref(self[glue].glue_ptr);
