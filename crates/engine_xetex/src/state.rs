@@ -178,14 +178,18 @@ pub(crate) struct MacroParam {
 pub(crate) struct InputState {
     pub state: u16,
     pub index: u16,
-    /// On token-list levels `start` and `loc` hold `mem` pointers, read through
-    /// [`token_start`](Self::token_start) and [`token_loc`](Self::token_loc), and
-    /// a macro level's `limit` is its [`param_start`](Self::param_start).
+    /// A text level's line in the buffer, unused on token-list levels.
     pub start: BufPos,
     pub loc: BufPos,
     pub limit: BufPos,
     pub name: InputName,
     pub synctex_tag: i32,
+    /// A token-list level's list, which it frees or drops a reference to when it ends.
+    tok_start: crate::token::TokenList,
+    /// The next token a token-list level reads, null at its end.
+    tok_loc: crate::token::TokenList,
+    /// Where a macro level's arguments start on the parameter stack.
+    param_start: u32,
 }
 
 /// What an input level reads from, WEB's overloaded `name` field.
@@ -238,12 +242,12 @@ impl InputState {
     /// `limit` of a macro level: where its parameters start on the parameter stack.
     #[inline]
     pub(crate) fn param_start(&self) -> usize {
-        usize::try_from(self.limit.raw()).unwrap_or(0)
+        usize::try_from(self.param_start).unwrap_or(usize::MAX)
     }
 
     #[inline]
     pub(crate) fn set_param_start(&mut self, n: usize) {
-        self.limit = BufPos::from_raw(i32::try_from(n).unwrap_or(i32::MAX));
+        self.param_start = u32::try_from(n).unwrap_or(u32::MAX);
     }
 }
 
@@ -251,25 +255,25 @@ impl InputState {
 impl InputState {
     #[inline]
     pub(crate) fn token_start(&self) -> crate::token::TokenList {
-        crate::token::TokenList::from_raw(self.start.raw())
+        self.tok_start
     }
     #[inline]
     pub(crate) fn token_loc(&self) -> crate::token::TokenList {
-        crate::token::TokenList::from_raw(self.loc.raw())
+        self.tok_loc
     }
     #[inline]
     pub(crate) fn set_token_loc(&mut self, p: crate::token::TokenList) {
-        self.loc = BufPos::from_raw(p.raw());
+        self.tok_loc = p;
     }
     #[inline]
     pub(crate) fn set_token_start(&mut self, p: crate::token::TokenList) {
-        self.start = BufPos::from_raw(p.raw());
+        self.tok_start = p;
     }
     /// Starts reading the token list `p` from its first node.
     #[inline]
     pub(crate) fn set_token_list(&mut self, p: crate::token::TokenList) {
-        self.start = BufPos::from_raw(p.raw());
-        self.loc = BufPos::from_raw(p.raw());
+        self.tok_start = p;
+        self.tok_loc = p;
     }
 }
 

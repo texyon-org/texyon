@@ -299,6 +299,9 @@ fn digest_input_state(h: &mut Fnv, input: &InputState) {
     h.i32(input.start.raw());
     h.i32(input.loc.raw());
     h.i32(input.limit.raw());
+    h.i32(input.token_start().raw());
+    h.i32(input.token_loc().raw());
+    h.i32(i32::try_from(input.param_start()).unwrap_or(i32::MAX));
     digest_input_name(h, input.name);
     h.i32(input.synctex_tag);
 }
