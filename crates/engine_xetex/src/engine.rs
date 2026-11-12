@@ -10,10 +10,10 @@ use crate::consts::{
     FROZEN_CONTROL_SEQUENCE, FROZEN_DONT_EXPAND, FROZEN_ENDV, FROZEN_END_TEMPLATE,
     FROZEN_PRIMITIVE, FROZEN_PROTECTION, HISTORY_FATAL_ERROR, HISTORY_SPOTLESS,
     HISTORY_WARNING_ISSUED, LEVEL_ONE, LEVEL_ZERO, MAX_FONT_MAX, MAX_HALFWORD, NORMAL, NULL_FONT,
-    NUMBER_USVS, PRIM_SIZE, SINGLE_BASE, TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
+    NUMBER_USVS, SINGLE_BASE, TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::eqtb::{CatLoc, DelLoc, LcLoc, MathLoc, SfLoc, UcLoc};
-use crate::errors::Abort;
+use crate::errors::{Abort, OrConfusion};
 use crate::format_io::load_fmt_file;
 use crate::hash::{HASH_PRIME, HASH_SIZE};
 use crate::helpers::OnDrop;
@@ -105,12 +105,15 @@ fn primitive(st: &mut EngineState, ident: &str, c: Cmd, o: i32) -> Result<CsId, 
             .id_lookup(&mut st.strings, st.input.buffer.span(first, first + len))?;
         st.strings.flush_string();
         st.eqtb.set_text(cs, s);
-        st.eqtb.prim_lookup(&mut st.strings, s)?
+        st.eqtb
+            .prim_lookup(&mut st.strings, s)?
+            .or_confusion("primitive")?
     } else {
         let ch = i32::from(bytes[0]);
         cs = SINGLE_BASE + ch;
         st.eqtb
             .prim_lookup(&mut st.strings, StrNumber::from_raw(ch))?
+            .or_confusion("primitive")?
     };
 
     let meaning = Command::decode(c, o).ok_or(Abort::Confusion("primitive"))?;
@@ -241,7 +244,7 @@ fn initialize_more_variables(st: &mut EngineState) {
 
     st.eqtb.no_new_control_sequence = true;
     for k in PrimNum::all() {
-        st.eqtb.set_prim_next(k, PrimNum::UNDEFINED);
+        st.eqtb.set_prim_next(k, None);
         st.eqtb.set_prim_text(k, None);
     }
 
@@ -395,7 +398,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     eqtb.del_codes.set_value(DelLoc::of(i32::from(b'.')), 0);
     eqtb.set_int_par(IntPar::ShowStream, -1);
 
-    eqtb.prim_used = PrimNum::from_raw(PRIM_SIZE);
+    eqtb.prim_used = PrimNum::LAST;
     eqtb.hash_used = FROZEN_CONTROL_SEQUENCE;
     eqtb.hash_high = 0;
     eqtb.cs_count = 0;
@@ -432,11 +435,11 @@ fn initialize_primitives(st: &mut EngineState) -> Result<(), Abort> {
         match prim.init {
             PrimInit::None => {}
             PrimInit::Par => {
-                st.input.par_loc = cs;
-                st.input.par_token = Token::from_cs(st.input.par_loc);
+                st.input.par_loc = Some(cs);
+                st.input.par_token = Token::from_cs(cs);
             }
             PrimInit::Write => {
-                st.shipout.write_loc = cs;
+                st.shipout.write_loc = Some(cs);
             }
             PrimInit::Frozen(frozen) => {
                 set_frozen_text(st, frozen, prim.name)?;
@@ -688,7 +691,7 @@ pub(crate) fn initialize_engine(
     st.fonts.gave_char_warning_help = false;
 
     st.scanner.scanner_status = ScannerStatus::Normal;
-    st.scanner.warning_index = CsId::NONE;
+    st.scanner.warning_index = None;
     st.input.first = BufPos::from_raw(1);
     st.input.cur_input.state = NEW_LINE;
     st.input.cur_input.start = BufPos::from_raw(1);

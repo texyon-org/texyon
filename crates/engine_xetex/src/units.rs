@@ -222,93 +222,76 @@ impl std::iter::Sum for Scaled {
 
 /// A control sequence: an active character, a single-character name, a
 /// hashed name, a frozen or primitive entry, a font identifier, or an extra
-/// hashed name past them.
-#[derive(
-    Copy,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Debug,
-    Hash,
-    Default,
-    bytemuck::Pod,
-    bytemuck::Zeroable,
-)]
+/// hashed name past them. TeX's 0, no control sequence, is `None`.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 #[repr(transparent)]
-pub struct CsId(i32);
+pub struct CsId(NonZeroU32);
+
+// SAFETY: `CsId` is transparent over `NonZeroU32`, so `None` is the zero word.
+unsafe impl bytemuck::ZeroableInOption for CsId {}
+// SAFETY: as above, and every non-zero word is a valid `CsId`.
+unsafe impl bytemuck::PodInOption for CsId {}
 
 impl CsId {
-    /// `cur_cs` of a character token.
-    pub const NONE: CsId = CsId(0);
+    /// `active_base`, the first control sequence.
+    pub const FIRST: CsId = CsId(NonZeroU32::MIN);
 
-    /// The value from its raw form in a memory word, file or FFI call.
+    /// The control sequence a raw word, file or FFI value holds, `None` for 0.
     #[inline(always)]
-    pub const fn from_raw(raw: i32) -> CsId {
-        CsId(raw)
+    pub const fn from_raw(raw: i32) -> Option<CsId> {
+        if raw < 0 {
+            return None;
+        }
+        match NonZeroU32::new(raw.cast_unsigned()) {
+            Some(n) => Some(CsId(n)),
+            None => None,
+        }
     }
 
     /// The raw form for a memory word, file or FFI call.
     #[inline(always)]
     pub const fn raw(self) -> i32 {
-        self.0
+        self.0.get().cast_signed()
     }
 
     /// The location `n` entries past `self`, usable in constants.
     #[inline(always)]
-    pub const fn plus(self, n: i32) -> CsId {
-        CsId(self.0 + n)
+    pub const fn plus(self, n: u32) -> CsId {
+        CsId(self.0.saturating_add(n))
     }
 
     #[inline(always)]
     pub fn index(self) -> usize {
-        self.0 as usize
-    }
-
-    #[inline(always)]
-    pub fn is_none(self) -> bool {
-        self.0 == 0
+        self.0.get() as usize
     }
 
     /// The control sequences from `self` up to but not including `end`.
     pub fn until(self, end: CsId) -> impl DoubleEndedIterator<Item = CsId> {
-        (self.0..end.0).map(CsId)
+        (self.0.get()..end.0.get())
+            .filter_map(NonZeroU32::new)
+            .map(CsId)
     }
 
     /// The control sequences from `self` up to and including `end`.
     pub fn through(self, end: CsId) -> impl DoubleEndedIterator<Item = CsId> {
-        (self.0..=end.0).map(CsId)
+        (self.0.get()..=end.0.get())
+            .filter_map(NonZeroU32::new)
+            .map(CsId)
+    }
+
+    /// The control sequence before `self`, `None` before `active_base`.
+    #[inline]
+    pub fn prev(self) -> Option<CsId> {
+        NonZeroU32::new(self.0.get() - 1).map(CsId)
     }
 }
 
+/// `n` entries on, for an offset such as a character code, never negative.
 impl std::ops::Add<i32> for CsId {
     type Output = CsId;
     #[inline(always)]
-    fn add(self, rhs: i32) -> CsId {
-        CsId(self.0 + rhs)
-    }
-}
-
-impl std::ops::Sub<i32> for CsId {
-    type Output = CsId;
-    #[inline(always)]
-    fn sub(self, rhs: i32) -> CsId {
-        CsId(self.0 - rhs)
-    }
-}
-
-impl std::ops::AddAssign<i32> for CsId {
-    #[inline(always)]
-    fn add_assign(&mut self, rhs: i32) {
-        self.0 += rhs;
-    }
-}
-
-impl std::ops::SubAssign<i32> for CsId {
-    #[inline(always)]
-    fn sub_assign(&mut self, rhs: i32) {
-        self.0 -= rhs;
+    fn add(self, n: i32) -> CsId {
+        self.plus(n.max(0).cast_unsigned())
     }
 }
 
@@ -317,7 +300,7 @@ impl std::ops::Sub for CsId {
     type Output = i32;
     #[inline(always)]
     fn sub(self, rhs: CsId) -> i32 {
-        self.0 - rhs.0
+        self.raw() - rhs.raw()
     }
 }
 
@@ -463,53 +446,66 @@ impl std::ops::SubAssign<i32> for PoolPos {
 }
 
 /// A primitive's slot in the `prim` table, which `\\primitive` looks names up in.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
+/// Slot 0 is TeX's end of a chain, `None` here.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 #[repr(transparent)]
-pub struct PrimNum(i32);
+pub struct PrimNum(NonZeroU32);
 
 impl PrimNum {
-    /// No primitive has this name.
-    pub const UNDEFINED: PrimNum = PrimNum(0);
+    pub const FIRST: PrimNum = PrimNum(NonZeroU32::MIN);
+    /// `prim_size`, the last slot.
+    pub const LAST: PrimNum = PrimNum::FIRST.plus(crate::consts::PRIM_SIZE.cast_unsigned() - 1);
 
-    /// The value from its raw form in a `prim` link.
+    /// The slot `n` past `self`.
     #[inline(always)]
-    pub const fn from_raw(raw: i32) -> PrimNum {
-        PrimNum(raw)
+    pub const fn plus(self, n: u32) -> PrimNum {
+        PrimNum(self.0.saturating_add(n))
+    }
+
+    #[inline(always)]
+    pub fn index(self) -> usize {
+        self.0.get() as usize
     }
 
     /// The raw form for a `prim` link.
     #[inline(always)]
     pub const fn raw(self) -> i32 {
-        self.0
+        self.0.get().cast_signed()
     }
 
+    /// The slot a raw `prim` link holds, `None` for 0.
     #[inline(always)]
-    pub fn index(self) -> usize {
-        self.0 as usize
+    pub fn from_raw(raw: i32) -> Option<PrimNum> {
+        NonZeroU32::new(u32::try_from(raw).ok()?).map(PrimNum)
     }
 
+    /// The slot before `self`, `None` before the first.
     #[inline]
-    pub fn prev(self) -> PrimNum {
-        PrimNum(self.0 - 1)
+    pub fn prev(self) -> Option<PrimNum> {
+        NonZeroU32::new(self.0.get() - 1).map(PrimNum)
     }
 
     /// The frozen eqtb location holding this primitive's meaning.
     #[inline]
     pub fn eqtb_loc(self) -> CsId {
-        crate::consts::PRIM_EQTB_BASE.plus(self.0)
+        crate::consts::PRIM_EQTB_BASE.plus(self.0.get())
     }
 
     /// The primitive whose meaning sits at frozen eqtb location `p`, if any.
     #[inline]
     pub fn at_eqtb_loc(p: CsId) -> Option<PrimNum> {
-        (crate::consts::PRIM_EQTB_BASE..crate::consts::FROZEN_NULL_FONT)
-            .contains(&p)
-            .then(|| PrimNum(p - crate::consts::PRIM_EQTB_BASE))
+        if !(crate::consts::PRIM_EQTB_BASE..crate::consts::FROZEN_NULL_FONT).contains(&p) {
+            return None;
+        }
+        let n = u32::try_from(p - crate::consts::PRIM_EQTB_BASE).ok()?;
+        NonZeroU32::new(n).map(PrimNum)
     }
 
     /// All slots of the `prim` table.
     pub fn all() -> impl Iterator<Item = PrimNum> {
-        (0..=crate::consts::PRIM_SIZE).map(PrimNum)
+        (1..=crate::consts::PRIM_SIZE.cast_unsigned())
+            .filter_map(NonZeroU32::new)
+            .map(PrimNum)
     }
 }
 

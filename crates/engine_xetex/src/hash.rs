@@ -1,7 +1,7 @@
 //! Control-sequence hash table lookups.
 
 use crate::consts::{BIGGEST_CHAR, HASH_BASE, PRIM_SIZE, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE};
-use crate::errors::Abort;
+use crate::errors::{Abort, OrConfusion};
 use crate::state::{EqtbState, StringsState};
 use crate::units::{CsId, PrimNum, StrNumber};
 
@@ -14,7 +14,6 @@ const PRIM_PRIME: i32 = 1777;
 pub(crate) fn hash_slot(p: CsId) -> usize {
     usize::try_from(p - HASH_BASE).unwrap_or(usize::MAX)
 }
-const PRIM_BASE: PrimNum = PrimNum::from_raw(1);
 
 impl StringsState {
     #[inline]
@@ -65,7 +64,7 @@ impl EqtbState {
                 return Ok(p);
             }
 
-            if self.hash_s0(p).is_none() {
+            let Some(next) = self.hash_s0(p) else {
                 if self.no_new_control_sequence {
                     p = UNDEFINED_CONTROL_SEQUENCE;
                 } else {
@@ -82,7 +81,7 @@ impl EqtbState {
                                         n: HASH_SIZE + self.hash_extra,
                                     });
                                 }
-                                self.hash_used -= 1;
+                                self.hash_used = self.hash_used.prev().or_confusion("hash_used")?;
                                 if self.text(self.hash_used) == StrNumber::NONE {
                                     break;
                                 }
@@ -120,9 +119,9 @@ impl EqtbState {
                     strings.pool_ptr += d;
                 }
                 return Ok(p);
-            }
+            };
 
-            p = self.hash_s0(p);
+            p = next;
         }
     }
 
@@ -130,14 +129,14 @@ impl EqtbState {
         &mut self,
         strings: &mut StringsState,
         s: StrNumber,
-    ) -> Result<PrimNum, Abort> {
+    ) -> Result<Option<PrimNum>, Abort> {
         let mut p;
         let l;
         if s.raw() <= BIGGEST_CHAR {
-            if s.raw() < 0 {
-                return Ok(PrimNum::UNDEFINED);
-            }
-            p = PrimNum::from_raw(s.raw() % PRIM_PRIME + 1);
+            let Ok(c) = u32::try_from(s.raw()) else {
+                return Ok(None);
+            };
+            p = PrimNum::FIRST.plus(c % PRIM_PRIME.cast_unsigned());
             l = 0;
         } else {
             let j = strings.str_start(s);
@@ -153,7 +152,7 @@ impl EqtbState {
                     h -= PRIM_PRIME;
                 }
             }
-            p = PrimNum::from_raw(h + 1);
+            p = PrimNum::FIRST.plus(h.cast_unsigned());
         }
 
         loop {
@@ -161,39 +160,38 @@ impl EqtbState {
             match text {
                 Some(name) if name.is_pool_string() => {
                     if strings.length(name) == l && strings.str_eq_str(name, s) {
-                        return Ok(p);
+                        return Ok(Some(p));
                     }
                 }
-                Some(name) if name == s => return Ok(p),
+                Some(name) if name == s => return Ok(Some(p)),
                 _ => {}
             }
 
-            if self.prim_next(p) == PrimNum::UNDEFINED {
+            let Some(next) = self.prim_next(p) else {
                 if self.no_new_control_sequence {
-                    p = PrimNum::UNDEFINED;
-                } else {
-                    if text.is_some() {
-                        loop {
-                            if self.prim_used == PRIM_BASE {
-                                return Err(Abort::Overflow {
-                                    capacity: crate::errors::Capacity::PrimitiveSize,
-                                    n: PRIM_SIZE,
-                                });
-                            }
-                            self.prim_used = self.prim_used.prev();
-                            if self.prim_text(self.prim_used).is_none() {
-                                break;
-                            }
-                        }
-                        self.set_prim_next(p, self.prim_used);
-                        p = self.prim_used;
-                    }
-                    self.set_prim_text(p, Some(s));
+                    return Ok(None);
                 }
-                return Ok(p);
-            }
+                if text.is_some() {
+                    loop {
+                        let Some(prev) = self.prim_used.prev() else {
+                            return Err(Abort::Overflow {
+                                capacity: crate::errors::Capacity::PrimitiveSize,
+                                n: PRIM_SIZE,
+                            });
+                        };
+                        self.prim_used = prev;
+                        if self.prim_text(self.prim_used).is_none() {
+                            break;
+                        }
+                    }
+                    self.set_prim_next(p, Some(self.prim_used));
+                    p = self.prim_used;
+                }
+                self.set_prim_text(p, Some(s));
+                return Ok(Some(p));
+            };
 
-            p = self.prim_next(p);
+            p = next;
         }
     }
 
@@ -201,15 +199,17 @@ impl EqtbState {
     pub(crate) fn prim_lookup_cs(
         &mut self,
         strings: &mut StringsState,
-        cs: CsId,
+        cs: Option<CsId>,
     ) -> Result<Option<PrimNum>, Abort> {
+        let Some(cs) = cs else {
+            return Ok(None);
+        };
         let s = if cs < HASH_BASE {
             StrNumber::from_raw(cs - crate::consts::SINGLE_BASE)
         } else {
             self.text(cs)
         };
-        let p = self.prim_lookup(strings, s)?;
-        Ok((p != PrimNum::UNDEFINED).then_some(p))
+        self.prim_lookup(strings, s)
     }
 }
 
@@ -220,7 +220,7 @@ mod tests {
 
     fn tables() -> (EqtbState, StringsState) {
         let eqtb = EqtbState {
-            prim_used: PrimNum::from_raw(PRIM_SIZE),
+            prim_used: PrimNum::LAST,
             ..EqtbState::default()
         };
         let strings = StringsState {
@@ -246,19 +246,16 @@ mod tests {
         let b = StrNumber::from_raw(97 + PRIM_PRIME);
         let first = eqtb.prim_lookup(&mut strings, a).expect("lookup");
         let second = eqtb.prim_lookup(&mut strings, b).expect("lookup");
-        assert_eq!(first, PrimNum::from_raw(98));
-        assert_eq!(second, PrimNum::from_raw(PRIM_SIZE - 1));
-        assert_eq!(eqtb.prim_next(first), second);
-        assert_eq!(eqtb.prim_text(second), Some(b));
+        assert_eq!(first, Some(PrimNum::FIRST.plus(97)));
+        assert_eq!(second, PrimNum::LAST.prev());
+        assert_eq!(eqtb.prim_next(first.expect("slot")), second);
+        assert_eq!(eqtb.prim_text(second.expect("slot")), Some(b));
         assert_eq!(eqtb.prim_lookup(&mut strings, b).expect("lookup"), second);
         assert_eq!(eqtb.prim_lookup(&mut strings, a).expect("lookup"), first);
 
         eqtb.no_new_control_sequence = true;
         let c = StrNumber::from_raw(97 + 2 * PRIM_PRIME);
-        assert_eq!(
-            eqtb.prim_lookup(&mut strings, c).expect("lookup"),
-            PrimNum::UNDEFINED
-        );
+        assert_eq!(eqtb.prim_lookup(&mut strings, c).expect("lookup"), None);
     }
 
     #[test]
@@ -272,9 +269,6 @@ mod tests {
         assert_eq!(eqtb.prim_lookup(&mut strings, again).expect("lookup"), p);
 
         eqtb.no_new_control_sequence = true;
-        assert_eq!(
-            eqtb.prim_lookup(&mut strings, ba).expect("lookup"),
-            PrimNum::UNDEFINED
-        );
+        assert_eq!(eqtb.prim_lookup(&mut strings, ba).expect("lookup"), None);
     }
 }

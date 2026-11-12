@@ -804,7 +804,7 @@ pub(crate) fn show_context(st: &mut EngineState) {
                         TokenType::Macro => {
                             print_ln(st);
                             if let InputName::Macro(cs) = ci.name {
-                                print_cs(st, cs);
+                                print_cs(st, Some(cs));
                             }
                         }
                         t => print_nl(st, t.label(ci.token_loc())),

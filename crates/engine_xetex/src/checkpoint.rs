@@ -654,7 +654,7 @@ mod tests {
         st.mem.tokens.restore_marks(bundle.tokens);
     }
 
-    const CS: crate::units::CsId = crate::units::CsId::from_raw(2);
+    const CS: crate::units::CsId = crate::units::CsId::FIRST.plus(1);
 
     const COUNT1: crate::eqtb::IntLoc = crate::eqtb::IntLoc::count(1);
 

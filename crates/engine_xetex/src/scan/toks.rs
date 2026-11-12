@@ -101,7 +101,7 @@ pub(crate) fn read_toks(
     line: bool,
 ) -> Result<TokenList, Abort> {
     st.scanner.scanner_status = ScannerStatus::Defining;
-    st.scanner.warning_index = r;
+    st.scanner.warning_index = Some(r);
     let b = st.mem.tokens.begin()?;
     st.mem.tokens.push(&b, Token::END_MATCH)?;
 

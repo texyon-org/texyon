@@ -18,7 +18,7 @@ use crate::params::IntPar;
 use crate::state::Saved;
 use crate::state::{EngineState, EqtbState, GroupCode, MemState, ScannerState};
 use crate::token::Token;
-use crate::units::{NodeType, Scaled};
+use crate::units::{CsId, NodeType, Scaled};
 
 mod internal;
 mod next;
@@ -146,7 +146,7 @@ pub(crate) fn eTeX_enabled(st: &mut EngineState, b: bool, j: Cmd, k: i32) -> Res
     Ok(b)
 }
 
-pub(crate) fn get_r_token(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn get_r_token(st: &mut EngineState) -> Result<CsId, Abort> {
     loop {
         loop {
             get_token(st)?;
@@ -154,29 +154,28 @@ pub(crate) fn get_r_token(st: &mut EngineState) -> Result<(), Abort> {
                 break;
             }
         }
-        if st.scanner.cur_cs.is_none()
-            || st.scanner.cur_cs > st.eqtb.cs_top
-            || (st.scanner.cur_cs > FROZEN_CONTROL_SEQUENCE
-                && st.scanner.cur_cs <= UNDEFINED_CONTROL_SEQUENCE)
-        {
-            if st.scanner.cur_cs.is_none() {
-                back_input(st)?;
-            }
-            st.scanner.cur_tok = Token::from_cs(FROZEN_PROTECTION);
-            crate::errors::ins_error(
-                st,
-                "Missing control sequence inserted",
-                &[
-                    r"Please don't say `\def cs{...}', say `\def\cs{...}'.",
-                    "I've inserted an inaccessible control sequence so that your",
-                    "definition will be completed without mixing me up too badly.",
-                    "You can recover graciously from this error, if you're",
-                    "careful; see exercise 27.2 in The TeXbook.",
-                ],
-            )?;
-        } else {
-            return Ok(());
+        let cs_top = st.eqtb.cs_top;
+        let redefinable = st.scanner.cur_cs.filter(|&cs| {
+            cs <= cs_top && !(cs > FROZEN_CONTROL_SEQUENCE && cs <= UNDEFINED_CONTROL_SEQUENCE)
+        });
+        if let Some(cs) = redefinable {
+            return Ok(cs);
         }
+        if st.scanner.cur_cs.is_none() {
+            back_input(st)?;
+        }
+        st.scanner.cur_tok = Token::from_cs(FROZEN_PROTECTION);
+        crate::errors::ins_error(
+            st,
+            "Missing control sequence inserted",
+            &[
+                r"Please don't say `\def cs{...}', say `\def\cs{...}'.",
+                "I've inserted an inaccessible control sequence so that your",
+                "definition will be completed without mixing me up too badly.",
+                "You can recover graciously from this error, if you're",
+                "careful; see exercise 27.2 in The TeXbook.",
+            ],
+        )?;
     }
 }
 
@@ -202,8 +201,7 @@ pub(crate) fn scan_math(st: &mut EngineState, p: MathSlot) -> Result<(), Abort> 
                 Command::Letter(ch) | Command::OtherChar(ch) | Command::CharGiven(ch) => {
                     let mc = st.eqtb.math_code(ch.raw());
                     if mc & 0x1FFFFF == ACTIVE_MATH_CHAR {
-                        st.scanner.cur_cs = ACTIVE_BASE + ch.raw();
-                        fetch_cs_meaning(st);
+                        fetch_cs_meaning(st, ACTIVE_BASE + ch.raw());
                         x_token(st)?;
                         back_input(st)?;
                         continue 'main;
@@ -246,8 +244,7 @@ pub(crate) fn scan_math(st: &mut EngineState, p: MathSlot) -> Result<(), Abort> 
 /// there) when `c` is `"8000`.
 pub(crate) fn set_math_char(st: &mut EngineState, active: i32, c: i32) -> Result<(), Abort> {
     if math_char(c) == ACTIVE_MATH_CHAR {
-        st.scanner.cur_cs = ACTIVE_BASE + active;
-        fetch_cs_meaning(st);
+        fetch_cs_meaning(st, ACTIVE_BASE + active);
         x_token(st)?;
         back_input(st)?;
     } else {

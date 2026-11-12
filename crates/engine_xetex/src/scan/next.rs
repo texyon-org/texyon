@@ -65,12 +65,12 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
     }
     st.errors.deletions_allowed = false;
 
-    if !st.scanner.cur_cs.is_none() {
+    if let Some(cs) = st.scanner.cur_cs {
         let ci = st.input.cur_input;
         if ci.state == TOKEN_LIST
             || !matches!(ci.name, InputName::Read(_) | InputName::ReadTerminal)
         {
-            let p = st.mem.tokens.single(Token::from_cs(st.scanner.cur_cs))?;
+            let p = st.mem.tokens.single(Token::from_cs(cs))?;
             begin_token_list(st, p, TokenType::BackedUp)?;
         }
         st.scanner.cur = Command::Spacer(Usv::SPACE);
@@ -81,7 +81,7 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
         let what = if st.scanner.cur_cs.is_none() {
             "File ended"
         } else {
-            st.scanner.cur_cs = CsId::NONE;
+            st.scanner.cur_cs = None;
             "Forbidden control sequence found"
         };
 
@@ -124,8 +124,8 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
             "; all text was ignored after line ",
             st.scanner.skip_line,
         );
-        let cause = if !st.scanner.cur_cs.is_none() {
-            st.scanner.cur_cs = CsId::NONE;
+        let cause = if st.scanner.cur_cs.is_some() {
+            st.scanner.cur_cs = None;
             "A forbidden control sequence occurred in skipped text."
         } else {
             "The file ended while I was skipping conditional text."
@@ -145,10 +145,11 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
     outcome
 }
 
-/// Sets `cur` to the meaning of `cur_cs`.
+/// Makes `cs` the current control sequence, with its meaning in `cur`.
 #[inline(always)]
-pub(super) fn fetch_cs_meaning(st: &mut EngineState) {
-    st.scanner.cur = st.eqtb.meaning(st.scanner.cur_cs);
+pub(super) fn fetch_cs_meaning(st: &mut EngineState, cs: CsId) {
+    st.scanner.cur_cs = Some(cs);
+    st.scanner.cur = st.eqtb.meaning(cs);
 }
 
 #[inline(always)]
@@ -207,8 +208,8 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
     if st.input.cur_input.state == TOKEN_LIST {
         let p = st.input.cur_input.token_loc();
         if let Some(t) = st.mem.tokens.peek(p) {
-            let plain = if t.is_cs() {
-                let cmd = st.eqtb.meaning(t.cs()).cmd();
+            let plain = if let Some(cs) = t.cs() {
+                let cmd = st.eqtb.meaning(cs).cmd();
                 cmd < Cmd::OuterCall
                     && (!(Cmd::TabMark..=Cmd::CarRet).contains(&cmd) || st.scanner.align_state != 0)
             } else {
@@ -218,11 +219,10 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
             if plain {
                 st.scanner.logical_clock = st.scanner.logical_clock.wrapping_add(1);
                 st.input.cur_input.set_token_loc(st.mem.tokens.next(p));
-                if t.is_cs() {
-                    st.scanner.cur_cs = t.cs();
-                    fetch_cs_meaning(st);
+                if let Some(cs) = t.cs() {
+                    fetch_cs_meaning(st, cs);
                 } else {
-                    st.scanner.cur_cs = CsId::NONE;
+                    st.scanner.cur_cs = None;
                     let cmd = t.cmd();
                     st.scanner.cur = Command::from_char(cmd, t.chr()).or_confusion("token")?;
                     match cmd {
@@ -244,7 +244,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.logical_clock = st.scanner.logical_clock.wrapping_add(1);
 
     'restart: loop {
-        st.scanner.cur_cs = CsId::NONE;
+        st.scanner.cur_cs = None;
 
         if st.input.cur_input.state != TOKEN_LIST {
             'texswitch: loop {
@@ -273,8 +273,8 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
 
                             // Escape: scan a control sequence name.
                             1 | 17 | 33 => {
-                                if st.input.cur_input.loc > st.input.cur_input.limit {
-                                    st.scanner.cur_cs = NULL_CS;
+                                let cs = if st.input.cur_input.loc > st.input.cur_input.limit {
+                                    NULL_CS
                                 } else {
                                     'start_cs: loop {
                                         let start = st.input.cur_input.loc;
@@ -315,12 +315,12 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                                             }
                                             if k > st.input.cur_input.loc + 1 {
                                                 let loc = st.input.cur_input.loc;
-                                                st.scanner.cur_cs = st.eqtb.id_lookup(
+                                                let cs = st.eqtb.id_lookup(
                                                     &mut st.strings,
                                                     st.input.buffer.span(loc, k),
                                                 )?;
                                                 st.input.cur_input.loc = k;
-                                                break 'start_cs;
+                                                break 'start_cs cs;
                                             }
                                         } else if first_cat == Cmd::SupMark
                                             && st.input.buffer[k] == first_chr
@@ -331,20 +331,20 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                                         }
 
                                         let loc = st.input.cur_input.loc;
-                                        if st.input.buffer[loc] > 65535 {
-                                            st.scanner.cur_cs = st.eqtb.id_lookup(
+                                        let cs = if st.input.buffer[loc] > 65535 {
+                                            st.eqtb.id_lookup(
                                                 &mut st.strings,
                                                 st.input.buffer.span(loc, loc + 1),
-                                            )?;
+                                            )?
                                         } else {
-                                            st.scanner.cur_cs = SINGLE_BASE + st.input.buffer[loc];
-                                        }
+                                            SINGLE_BASE + st.input.buffer[loc]
+                                        };
                                         st.input.cur_input.loc = loc + 1;
-                                        break 'start_cs;
+                                        break 'start_cs cs;
                                     }
-                                }
+                                };
                                 char_token = false;
-                                fetch_cs_meaning(st);
+                                fetch_cs_meaning(st, cs);
                                 if st.scanner.cur.cmd() >= Cmd::OuterCall {
                                     check_outer_validity(st)?;
                                 }
@@ -352,9 +352,8 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
 
                             // Active character.
                             14 | 30 | 46 => {
-                                st.scanner.cur_cs = ACTIVE_BASE + chr;
                                 char_token = false;
-                                fetch_cs_meaning(st);
+                                fetch_cs_meaning(st, ACTIVE_BASE + chr);
                                 st.input.cur_input.state = MID_LINE;
                                 if st.scanner.cur.cmd() >= Cmd::OuterCall {
                                     check_outer_validity(st)?;
@@ -434,9 +433,9 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                             // End of an empty line: `\par`.
                             38 => {
                                 st.input.cur_input.loc = st.input.cur_input.limit + 1;
-                                st.scanner.cur_cs = st.input.par_loc;
                                 char_token = false;
-                                fetch_cs_meaning(st);
+                                let par = st.input.par_loc.or_confusion("par_loc")?;
+                                fetch_cs_meaning(st, par);
                                 if st.scanner.cur.cmd() >= Cmd::OuterCall {
                                     check_outer_validity(st)?;
                                 }
@@ -542,20 +541,19 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
             let p = st.input.cur_input.token_loc();
             st.input.cur_input.set_token_loc(st.mem.tokens.next(p));
 
-            if t.is_cs() {
-                st.scanner.cur_cs = t.cs();
-                fetch_cs_meaning(st);
+            if let Some(cs) = t.cs() {
+                fetch_cs_meaning(st, cs);
                 if st.scanner.cur.cmd() >= Cmd::OuterCall {
                     if st.scanner.cur.cmd() == Cmd::DontExpand {
                         let next = st.mem.tokens.peek(st.input.cur_input.token_loc());
-                        st.scanner.cur_cs = next.or_confusion("dont expand")?.cs();
+                        let cs = next.and_then(Token::cs).or_confusion("dont expand")?;
                         st.input.cur_input.set_token_loc(TokCursor::END);
-                        fetch_cs_meaning(st);
+                        fetch_cs_meaning(st, cs);
                         if st.scanner.cur.cmd() > Cmd::MAX_COMMAND {
                             st.scanner.cur = Command::Relax(RelaxCode::NoExpand);
                         }
                     } else {
-                        if st.scanner.cur_cs == END_WRITE
+                        if st.scanner.cur_cs == Some(END_WRITE)
                             && matches!(st.input.cur_list.mode, crate::mode::Mode::None)
                         {
                             return Err(Abort::Fatal("Unbalanced write command"));
@@ -626,10 +624,9 @@ pub(crate) fn get_x_non_blank(st: &mut EngineState) -> Result<(), Abort> {
 
 #[inline(always)]
 fn pack_cur_tok(st: &mut EngineState) {
-    st.scanner.cur_tok = if st.scanner.cur_cs.is_none() {
-        st.scanner.cur.char_token()
-    } else {
-        Token::from_cs(st.scanner.cur_cs)
+    st.scanner.cur_tok = match st.scanner.cur_cs {
+        None => st.scanner.cur.char_token(),
+        Some(cs) => Token::from_cs(cs),
     };
 }
 
@@ -655,7 +652,7 @@ pub(crate) fn get_x_token(st: &mut EngineState) -> Result<(), Abort> {
             if st.scanner.cur.cmd() < Cmd::EndTemplate {
                 macro_call(st)?;
             } else {
-                st.scanner.cur_cs = FROZEN_ENDV;
+                st.scanner.cur_cs = Some(FROZEN_ENDV);
                 st.scanner.cur = Command::Endv;
                 break;
             }
@@ -704,8 +701,8 @@ pub(crate) fn get_token(st: &mut EngineState) -> Result<(), Abort> {
 /// beyond brace counting, and `t` is not a parameter character if `stop_at_mac_param`.
 #[inline(always)]
 fn plain_list_token(st: &EngineState, t: Token, stop_at_mac_param: bool) -> bool {
-    let cmd = if t.is_cs() {
-        let cmd = st.eqtb.meaning(t.cs()).cmd();
+    let cmd = if let Some(cs) = t.cs() {
+        let cmd = st.eqtb.meaning(cs).cmd();
         if cmd >= Cmd::OuterCall
             || t == st.input.par_token && st.scanner.long_state != Cmd::LongCall
         {
@@ -756,7 +753,7 @@ pub(crate) fn copy_group_tokens(
                 *unbalance -= 1;
                 if *unbalance == 0 {
                     consume_list_token(st, q);
-                    st.scanner.cur_cs = CsId::NONE;
+                    st.scanner.cur_cs = None;
                     st.scanner.cur = Command::from_char(t.cmd(), t.chr()).or_confusion("token")?;
                     st.scanner.cur_tok = t;
                     return Ok(true);

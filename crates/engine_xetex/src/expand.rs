@@ -67,7 +67,8 @@ fn skipped_branch_end(st: &mut EngineState) -> Result<(), Abort> {
 fn if_char_key(st: &mut EngineState) -> Result<(Cmd, i32), Abort> {
     get_x_token(st)?;
     let (cmd, chr) = if st.scanner.cur == Command::Relax(RelaxCode::NoExpand) {
-        (Cmd::ACTIVE_CHAR, st.scanner.cur_tok.cs() - ACTIVE_BASE)
+        let cs = st.scanner.cur_tok.cs().or_confusion("noexpand")?;
+        (Cmd::ACTIVE_CHAR, cs - ACTIVE_BASE)
     } else {
         st.scanner.cur.encode()
     };
@@ -249,7 +250,7 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
             let first = st.input.first;
             let m = token_chars_to_buffer(st, name)?;
             // Upstream keeps `single_base+c` here for c above U+FFFF and reads past `null_cs`.
-            st.scanner.cur_cs = if m == first {
+            let cs = if m == first {
                 NULL_CS
             } else if m == first + 1 && st.input.buffer[first] <= BIGGEST_CHAR {
                 SINGLE_BASE + st.input.buffer[first]
@@ -257,8 +258,9 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
                 st.eqtb
                     .id_lookup(&mut st.strings, st.input.buffer.span(first, m))?
             };
+            st.scanner.cur_cs = Some(cs);
             st.mem.tokens.flush(name);
-            st.eqtb.meaning(st.scanner.cur_cs).cmd() != Cmd::UndefinedCs
+            st.eqtb.meaning(cs).cmd() != Cmd::UndefinedCs
         }
         IfCode::InCsName => st.scanner.is_in_csname,
         IfCode::FontChar => {
@@ -348,7 +350,7 @@ fn scan_int_or_dimen(st: &mut EngineState, this_if: IfCode) -> Result<i32, Abort
 /// Scanner state saved around a `conv_toks` primitive that reads a general text.
 struct SavedScan {
     status: ScannerStatus,
-    warning_index: CsId,
+    warning_index: Option<CsId>,
     def_ref: TokenList,
     pending_str: bool,
 }
@@ -818,7 +820,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                         if m.cmd() > Cmd::MAX_COMMAND {
                             st.scanner.cur = m;
                             st.scanner.cur_tok = m.char_token();
-                            st.scanner.cur_cs = CsId::NONE;
+                            st.scanner.cur_cs = None;
                             continue 'reswitch;
                         }
                         back_input(st)?;
@@ -830,7 +832,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                 let name = scan_cs_name_tokens(st)?;
                 let first = st.input.first;
                 let j = token_chars_to_buffer(st, name)?;
-                st.scanner.cur_cs = if j > first + 1 || st.input.buffer[first] > 65535 {
+                let cs = if j > first + 1 || st.input.buffer[first] > 65535 {
                     st.eqtb.no_new_control_sequence = false;
                     let cs = st
                         .eqtb
@@ -842,12 +844,12 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                 } else {
                     SINGLE_BASE + st.input.buffer[first]
                 };
+                st.scanner.cur_cs = Some(cs);
                 st.mem.tokens.flush(name);
-                let cs = st.scanner.cur_cs;
                 if st.eqtb.meaning(cs).cmd() == Cmd::UndefinedCs {
                     crate::eqtb::define(st, false, cs, Command::Relax(RelaxCode::Primitive))?;
                 }
-                st.scanner.cur_tok = Token::from_cs(st.scanner.cur_cs);
+                st.scanner.cur_tok = Token::from_cs(cs);
                 back_input(st)?;
             }
             Command::Convert(code) => conv_toks(st, code)?,
@@ -1002,16 +1004,20 @@ fn trace_macro_param(st: &mut EngineState, match_chr: i32, n: usize, list: Token
 pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
     if st.config.pgfmath == crate::pgfmath::Mode::Check
         || st.config.pgfmath == crate::pgfmath::Mode::Native
-            && st.eqtb.pgfmath.is_try(st.scanner.cur_cs)
+            && st
+                .scanner
+                .cur_cs
+                .is_some_and(|cs| st.eqtb.pgfmath.is_try(cs))
     {
         if let Some(cs) = crate::pgfmath::intercept(st) {
-            st.scanner.cur_cs = cs;
+            st.scanner.cur_cs = Some(cs);
             st.scanner.cur = st.eqtb.meaning(cs);
         }
     }
+    let name = st.scanner.cur_cs.or_confusion("macro_call")?;
     let save_scanner_status = st.scanner.scanner_status;
     let save_warning_index = st.scanner.warning_index;
-    st.scanner.warning_index = st.scanner.cur_cs;
+    st.scanner.warning_index = Some(name);
     let body = st.scanner.cur.macro_body().or_confusion("macro_call")?;
     let mut r = st.mem.tokens.cursor(body);
     let mut n: usize = 0;
@@ -1033,7 +1039,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
         if tok(st, r) != Token::END_MATCH {
             st.scanner.scanner_status = ScannerStatus::Matching;
             let mut unbalance: i32 = 0;
-            st.scanner.long_state = st.eqtb.meaning(st.scanner.cur_cs).cmd();
+            st.scanner.long_state = st.eqtb.meaning(name).cmd();
             st.scanner.long_state = st.scanner.long_state.without_outer();
 
             loop {
@@ -1192,7 +1198,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
         }
 
         if n > 0 && st.config.pgfmath == crate::pgfmath::Mode::Native {
-            if let Some(kind) = st.eqtb.pgfmath.native(st.scanner.warning_index) {
+            if let Some(kind) = st.eqtb.pgfmath.native(name) {
                 if crate::pgfmath::native_macro(st, kind, &pstack[..n]) {
                     for &list in &pstack[..n] {
                         st.mem.tokens.flush(list);
@@ -1211,7 +1217,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
         }
 
         begin_token_list(st, body, TokenType::Macro)?;
-        st.input.cur_input.name = InputName::Macro(st.scanner.warning_index);
+        st.input.cur_input.name = InputName::Macro(name);
         st.input.cur_input.set_token_loc(st.mem.tokens.next(r));
 
         if n > 0 {

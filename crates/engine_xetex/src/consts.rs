@@ -63,11 +63,11 @@ pub const SCRIPT_SIZE: i32 = 256;
 pub const NUMBER_MATH_FAMILIES: i32 = 256;
 
 // The eqtb regions.
-pub const ACTIVE_BASE: CsId = CsId::from_raw(1);
-pub const SINGLE_BASE: CsId = ACTIVE_BASE.plus(NUMBER_USVS);
-pub const NULL_CS: CsId = SINGLE_BASE.plus(TOO_BIG_CHAR);
+pub const ACTIVE_BASE: CsId = CsId::FIRST;
+pub const SINGLE_BASE: CsId = ACTIVE_BASE.plus(NUMBER_USVS.cast_unsigned());
+pub const NULL_CS: CsId = SINGLE_BASE.plus(TOO_BIG_CHAR.cast_unsigned());
 pub const HASH_BASE: CsId = NULL_CS.plus(1);
-pub const FROZEN_CONTROL_SEQUENCE: CsId = HASH_BASE.plus(crate::hash::HASH_SIZE);
+pub const FROZEN_CONTROL_SEQUENCE: CsId = HASH_BASE.plus(crate::hash::HASH_SIZE.cast_unsigned());
 
 pub const FROZEN_PROTECTION: CsId = FROZEN_CONTROL_SEQUENCE;
 pub const FROZEN_CR: CsId = FROZEN_CONTROL_SEQUENCE.plus(1);
@@ -83,9 +83,11 @@ pub const FROZEN_SPECIAL: CsId = FROZEN_CONTROL_SEQUENCE.plus(10);
 pub const FROZEN_PRIMITIVE: CsId = FROZEN_CONTROL_SEQUENCE.plus(11);
 pub const PRIM_EQTB_BASE: CsId = FROZEN_PRIMITIVE.plus(1);
 pub const PRIM_SIZE: i32 = 2100;
-pub const FROZEN_NULL_FONT: CsId = PRIM_EQTB_BASE.plus(PRIM_SIZE);
-pub const FONT_ID_BASE: CsId = FROZEN_NULL_FONT.plus(-FONT_BASE);
-pub const UNDEFINED_CONTROL_SEQUENCE: CsId = FROZEN_NULL_FONT.plus(MAX_FONT_MAX + 1);
+pub const FROZEN_NULL_FONT: CsId = PRIM_EQTB_BASE.plus(PRIM_SIZE.cast_unsigned());
+// `font_base` is 0, asserted below.
+pub const FONT_ID_BASE: CsId = FROZEN_NULL_FONT;
+pub const UNDEFINED_CONTROL_SEQUENCE: CsId =
+    FROZEN_NULL_FONT.plus((MAX_FONT_MAX + 1).cast_unsigned());
 
 const _: () = {
     assert!(FONT_BASE == 0 && NULL_FONT.get() == 0);

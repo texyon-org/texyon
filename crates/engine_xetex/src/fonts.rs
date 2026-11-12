@@ -354,7 +354,7 @@ impl FontSpec {
 
 impl TexPrint for FontSpec {
     fn print_to(&self, st: &mut EngineState) {
-        print(st, ("Font ", CsName(self.cs), '='));
+        print(st, ("Font ", CsName(Some(self.cs)), '='));
         if let Some(q) = self.quote {
             print_char(st, q);
         }

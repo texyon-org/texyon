@@ -417,7 +417,7 @@ struct InputBundle {
     in_open: usize,
     pseudo_files: MemPtr,
     base_ptr: usize,
-    par_loc: CsId,
+    par_loc: Option<CsId>,
     par_token: crate::token::Token,
     force_eof: bool,
     first: BufPos,

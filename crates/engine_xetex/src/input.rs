@@ -288,7 +288,7 @@ pub(crate) fn prepend_to_backed_up(st: &mut EngineState, token: Token) -> Result
 }
 
 pub(crate) fn insert_relax(st: &mut EngineState) -> Result<(), Abort> {
-    st.scanner.cur_tok = Token::from_cs(st.scanner.cur_cs);
+    st.scanner.cur_tok = Token::from_cs(st.scanner.cur_cs.or_confusion("insert_relax")?);
     back_input(st)?;
     st.scanner.cur_tok = Token::from_cs(FROZEN_RELAX);
     back_input(st)?;

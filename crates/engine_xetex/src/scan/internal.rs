@@ -86,7 +86,7 @@ impl CurVal {
             ValueLevel::Dimen => CurVal::Dimen(Scaled::from_raw(w)),
             ValueLevel::Glue => CurVal::Glue(glue_spec(w)),
             ValueLevel::Mu => CurVal::Mu(glue_spec(w)),
-            ValueLevel::Ident => CurVal::Ident(CsId::from_raw(w)),
+            ValueLevel::Ident => CurVal::Ident(CsId::from_raw(w).or_confusion("ident")?),
             ValueLevel::Tok => CurVal::Tok(TokenList::from_raw(w)),
             ValueLevel::InterChar | ValueLevel::Mark => {
                 return Err(Abort::Confusion("cur_val_level"))

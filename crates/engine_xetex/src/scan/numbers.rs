@@ -261,12 +261,12 @@ pub(super) fn get_primitive_token(st: &mut EngineState) -> Result<(), Abort> {
     get_token(st)?;
     if let Some(p) = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)? {
         st.scanner.cur = st.eqtb.meaning(p.eqtb_loc());
-        st.scanner.cur_cs = p.eqtb_loc();
-        st.scanner.cur_tok = Token::from_cs(st.scanner.cur_cs);
+        st.scanner.cur_cs = Some(p.eqtb_loc());
+        st.scanner.cur_tok = Token::from_cs(p.eqtb_loc());
     } else {
         st.scanner.cur = Command::Relax(RelaxCode::Zero);
         st.scanner.cur_tok = Token::from_cs(FROZEN_RELAX);
-        st.scanner.cur_cs = FROZEN_RELAX;
+        st.scanner.cur_cs = Some(FROZEN_RELAX);
     }
     Ok(())
 }
@@ -285,21 +285,21 @@ fn scan_int_decimal(st: &mut EngineState) -> Result<(i32, bool), Abort> {
     loop {
         if st.scanner.cur_tok == ALPHA_TOKEN {
             get_token(st)?;
-            if !st.scanner.cur_tok.is_cs() {
+            if let Some(cs) = st.scanner.cur_tok.cs() {
+                v = if cs < SINGLE_BASE {
+                    cs - ACTIVE_BASE
+                } else if cs < NULL_CS {
+                    cs - SINGLE_BASE
+                } else {
+                    st.strings.astral_char(st.eqtb.text(cs))
+                };
+            } else {
                 v = st.scanner.cur_tok.chr();
                 if st.scanner.cur.cmd() == Cmd::RightBrace {
                     st.scanner.align_state += 1;
                 } else if st.scanner.cur.cmd() < Cmd::RightBrace {
                     st.scanner.align_state -= 1;
                 }
-            } else if st.scanner.cur_tok < Token::from_cs(SINGLE_BASE) {
-                v = st.scanner.cur_tok.cs() - ACTIVE_BASE;
-            } else if st.scanner.cur_tok < Token::from_cs(NULL_CS) {
-                v = st.scanner.cur_tok.cs() - SINGLE_BASE;
-            } else {
-                v = st
-                    .strings
-                    .astral_char(st.eqtb.text(st.scanner.cur_tok.cs()));
             }
             if v > BIGGEST_USV {
                 v = i32::from(b'0');

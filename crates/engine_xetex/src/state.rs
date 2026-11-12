@@ -283,7 +283,7 @@ pub(crate) struct InputClusterState {
     pub max_in_open: usize,
     /// The level `show_context` and its relatives are looking at.
     pub base_ptr: usize,
-    pub par_loc: CsId,
+    pub par_loc: Option<CsId>,
     pub par_token: crate::token::Token,
     pub force_eof: bool,
     pub first: BufPos,
@@ -328,10 +328,10 @@ pub(crate) struct EqtbState {
 impl Default for EqtbState {
     fn default() -> Self {
         EqtbState {
-            hash_used: CsId::NONE,
+            hash_used: crate::consts::FROZEN_CONTROL_SEQUENCE,
             hash_high: 0,
             no_new_control_sequence: false,
-            prim_used: PrimNum::UNDEFINED,
+            prim_used: PrimNum::LAST,
             cs_count: 0,
             meanings: Default::default(),
             ints: Default::default(),
@@ -351,7 +351,7 @@ impl Default for EqtbState {
             prim: vec![crate::mem_types::B32x2 { s0: 0, s1: 0 }; 2101],
             hash: Vec::new(),
             hash_extra: 0,
-            cs_top: CsId::NONE,
+            cs_top: crate::consts::UNDEFINED_CONTROL_SEQUENCE,
             journal: crate::journal::EqtbJournal::default(),
             pgfmath: crate::pgfmath::KnownCs::default(),
         }
@@ -409,7 +409,7 @@ impl EqtbState {
     }
 
     #[inline]
-    pub fn hash_s0(&self, p: CsId) -> CsId {
+    pub fn hash_s0(&self, p: CsId) -> Option<CsId> {
         CsId::from_raw(self.hash[crate::hash::hash_slot(p)].s0)
     }
 
@@ -442,17 +442,17 @@ impl EqtbState {
 
     /// The next slot in `p`'s hash chain.
     #[inline]
-    pub fn prim_next(&self, p: PrimNum) -> PrimNum {
+    pub fn prim_next(&self, p: PrimNum) -> Option<PrimNum> {
         PrimNum::from_raw(self.prim[p.index()].s0)
     }
 
     #[inline]
-    pub fn set_prim_next(&mut self, p: PrimNum, next: PrimNum) {
+    pub fn set_prim_next(&mut self, p: PrimNum, next: Option<PrimNum>) {
         let index = p.index();
         if self.journal.prim.armed() {
             self.journal.prim.note(index, self.prim[index]);
         }
-        self.prim[index].s0 = next.raw();
+        self.prim[index].s0 = next.map_or(0, PrimNum::raw);
     }
 
     /// The name of the primitive in slot `p`, if the slot is used.
@@ -963,14 +963,14 @@ pub(crate) struct ScannerState {
     pub is_in_csname: bool,
     pub used_tectonic_coda_tokens: bool,
     pub scanner_status: crate::codes::ScannerStatus,
-    pub warning_index: CsId,
+    pub warning_index: Option<CsId>,
     pub def_ref: crate::token::TokenList,
     pub long_state: Cmd,
     pub align_state: i32,
     pub expand_depth: i32,
     /// The meaning of the token `get_next` read last.
     pub cur: crate::command::Command,
-    pub cur_cs: CsId,
+    pub cur_cs: Option<CsId>,
     pub cur_tok: crate::token::Token,
     pub cur_mark: CurMarks,
     pub disc_ptr: [crate::units::MemPtr; 4],
@@ -1220,7 +1220,7 @@ pub(crate) struct ShipoutState {
     pub cur_page_height: Scaled,
     pub cur_h_offset: Scaled,
     pub cur_v_offset: Scaled,
-    pub write_loc: CsId,
+    pub write_loc: Option<CsId>,
     pub output_file_name: StrNumber,
     /// The vertical and horizontal DVI movements of the page so far, TeX's `down_ptr` and
     /// `right_ptr` lists, the latest last.

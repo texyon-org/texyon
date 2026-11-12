@@ -50,10 +50,9 @@ pub(super) fn insert_boundary_inter_char_toks(st: &mut EngineState) -> Result<bo
     let Some(list) = inter_char_toks(st, sc * CHAR_CLASS_LIMIT + CHAR_CLASS_LIMIT - 1) else {
         return Ok(false);
     };
-    st.scanner.cur_tok = if st.scanner.cur_cs.is_none() {
-        st.scanner.cur.char_token()
-    } else {
-        Token::from_cs(st.scanner.cur_cs)
+    st.scanner.cur_tok = match st.scanner.cur_cs {
+        None => st.scanner.cur.char_token(),
+        Some(cs) => Token::from_cs(cs),
     };
     crate::input::back_input(st)?;
     crate::input::begin_token_list(st, list, TokenType::InterChar)?;

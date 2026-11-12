@@ -148,7 +148,7 @@ impl<T: TexPrint> TexPrint for Option<T> {
 
 /// A control sequence as written, as `sprint_cs` prints it.
 #[derive(Copy, Clone)]
-pub(crate) struct CsName(pub CsId);
+pub(crate) struct CsName(pub Option<CsId>);
 
 impl TexPrint for CsName {
     fn print_to(&self, st: &mut EngineState) {
@@ -653,7 +653,11 @@ fn cs_text(st: &EngineState, p: CsId) -> StrNumber {
     }
 }
 
-pub(crate) fn print_cs(st: &mut EngineState, p: CsId) {
+/// Prints `\IMPOSSIBLE.` for no control sequence, as TeX does for 0.
+pub(crate) fn print_cs(st: &mut EngineState, p: Option<CsId>) {
+    let Some(p) = p else {
+        return print_esc(st, "IMPOSSIBLE.");
+    };
     if p < HASH_BASE {
         if p >= SINGLE_BASE {
             if p == NULL_CS {
@@ -666,8 +670,6 @@ pub(crate) fn print_cs(st: &mut EngineState, p: CsId) {
                     print_char(st, b' ');
                 }
             }
-        } else if p < ACTIVE_BASE {
-            print_esc(st, "IMPOSSIBLE.");
         } else {
             print_char(st, p - ACTIVE_BASE);
         }
@@ -682,7 +684,10 @@ pub(crate) fn print_cs(st: &mut EngineState, p: CsId) {
 }
 
 /// Like [`print_cs`] but without the trailing space.
-pub(crate) fn sprint_cs(st: &mut EngineState, p: CsId) {
+pub(crate) fn sprint_cs(st: &mut EngineState, p: Option<CsId>) {
+    let Some(p) = p else {
+        return print_esc(st, "IMPOSSIBLE.");
+    };
     if p >= HASH_BASE {
         print_esc(st, cs_text(st, p));
     } else if p < SINGLE_BASE {

@@ -4,7 +4,7 @@ use crate::mem_types::ListStateRecord;
 use crate::mode::Mode;
 use crate::node::NodePtr;
 use crate::state::{EngineState, InputName, InputState, Restore, SaveEntry};
-use crate::units::RawPtr;
+use crate::units::{CsId, RawPtr};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ComponentDigest {
@@ -429,7 +429,7 @@ fn digest_input(st: &EngineState) -> u64 {
         depth(input.input_stack.len()),
         depth(input.input_stack.max_len()),
         depth(input.base_ptr),
-        input.par_loc.raw(),
+        input.par_loc.map_or(0, CsId::raw),
         input.par_token.0,
         depth(input.param_stack.len()),
         depth(input.param_stack.max_len()),
@@ -471,7 +471,7 @@ fn digest_scanner(st: &EngineState) -> u64 {
         i64::from(scanner.align_state),
         i64::try_from(scanner.conds.depth()).unwrap_or(i64::MAX),
         i64::from(scanner.conds.next_id()),
-        i64::from(scanner.cur_cs.raw()),
+        i64::from(scanner.cur_cs.map_or(0, CsId::raw)),
         i64::from(i32::from(scanner.cur.encode().0)),
         i64::from(scanner.cur.encode().1),
         i64::from(scanner.cur_tok.0),

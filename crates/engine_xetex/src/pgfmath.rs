@@ -51,12 +51,12 @@ macro_rules! known_cs {
         const KNOWN: &[&str] = &[$($req_name,)* $($opt_name,)*];
         const REQUIRED: usize = [$(Known::$req),*].len();
 
-        impl KnownCs {
+        impl Complete {
             $(fn $req(&self) -> CsId {
-                self.cs[Known::$req as usize]
+                self.required[Known::$req as usize]
             })*
             $(fn $opt(&self) -> Option<CsId> {
-                Some(self.cs[Known::$opt as usize]).filter(|cs| !cs.is_none())
+                self.optional[Known::$opt as usize - REQUIRED]
             })*
         }
     };
@@ -92,19 +92,19 @@ known_cs! {
     }
 }
 
-/// The control sequences of [`KNOWN`] and [`NATIVES`], zero while a name does
+/// The control sequences of [`KNOWN`] and [`NATIVES`], `None` while a name does
 /// not exist. On `EqtbState` and checkpointed with it, so it matches the hash.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct KnownCs {
-    cs: [CsId; KNOWN.len()],
-    natives: [CsId; NATIVES.len()],
+    cs: [Option<CsId>; KNOWN.len()],
+    natives: [Option<CsId>; NATIVES.len()],
 }
 
 impl Default for KnownCs {
     fn default() -> Self {
         KnownCs {
-            cs: [CsId::NONE; KNOWN.len()],
-            natives: [CsId::NONE; NATIVES.len()],
+            cs: [None; KNOWN.len()],
+            natives: [None; NATIVES.len()],
         }
     }
 }
@@ -118,12 +118,12 @@ impl KnownCs {
     pub(crate) fn note(&mut self, name: &[i32], cs: CsId) {
         for (entry, known) in self.cs.iter_mut().zip(KNOWN) {
             if same_name(known, name) {
-                *entry = cs;
+                *entry = Some(cs);
             }
         }
         for (entry, (known, _)) in self.natives.iter_mut().zip(NATIVES) {
             if same_name(known, name) {
-                *entry = cs;
+                *entry = Some(cs);
             }
         }
     }
@@ -131,29 +131,44 @@ impl KnownCs {
     /// Look up every name, for a hash that did not go through `note`.
     pub(crate) fn resolve(st: &mut EngineState) {
         for (i, name) in KNOWN.iter().enumerate() {
-            st.eqtb.pgfmath.cs[i] = lookup(st, name).unwrap_or(CsId::NONE);
+            st.eqtb.pgfmath.cs[i] = lookup(st, name);
         }
         for (i, (name, _)) in NATIVES.iter().enumerate() {
-            st.eqtb.pgfmath.natives[i] = lookup(st, name).unwrap_or(CsId::NONE);
+            st.eqtb.pgfmath.natives[i] = lookup(st, name);
         }
     }
 
     #[inline(always)]
     pub(crate) fn is_try(&self, cs: CsId) -> bool {
-        !cs.is_none() && cs == self.try_hook()
+        self.cs[Known::try_hook as usize] == Some(cs)
     }
 
     #[inline(always)]
     pub(crate) fn native(&self, cs: CsId) -> Option<Native> {
-        let i = self.natives.iter().position(|&p| p == cs && !p.is_none())?;
+        let i = self.natives.iter().position(|&p| p == Some(cs))?;
         Some(NATIVES[i].1)
     }
 
-    /// Whether every required name exists. The FPU's names load later.
-    fn complete(&self) -> bool {
-        self.cs[..REQUIRED].iter().all(|cs| !cs.is_none())
+    /// The names, once every required one exists. The FPU's names load later.
+    fn complete(&self) -> Option<Complete> {
+        let mut required = [CsId::FIRST; REQUIRED];
+        for (slot, cs) in required.iter_mut().zip(&self.cs) {
+            *slot = (*cs)?;
+        }
+        let mut optional = [None; KNOWN.len() - REQUIRED];
+        optional.copy_from_slice(&self.cs[REQUIRED..]);
+        Some(Complete { required, optional })
     }
+}
 
+/// [`KnownCs`] with every required name defined.
+#[derive(Clone, Copy)]
+struct Complete {
+    required: [CsId; REQUIRED],
+    optional: [Option<CsId>; KNOWN.len() - REQUIRED],
+}
+
+impl Complete {
     fn nfss(&self) -> [CsId; 5] {
         [
             self.f_encoding(),
@@ -212,10 +227,7 @@ pub(crate) struct Diagnostics {
 #[inline(never)]
 pub(crate) fn intercept(st: &mut EngineState) -> Option<CsId> {
     let mode = st.config.pgfmath;
-    let known = st.eqtb.pgfmath;
-    if !known.complete() {
-        return None;
-    }
+    let known = st.eqtb.pgfmath.complete()?;
     let body = st.scanner.cur.macro_body();
     if mode == Mode::Check {
         if let Some(p) = st.pgfmath.pending.take() {
@@ -229,7 +241,7 @@ pub(crate) fn intercept(st: &mut EngineState) -> Option<CsId> {
             st.pgfmath.pending = Some(p);
         }
     }
-    if !st.eqtb.pgfmath.is_try(st.scanner.cur_cs) {
+    if st.scanner.cur_cs != Some(known.try_hook()) {
         return None;
     }
     let outcome = evaluate_parse(st, &known);
@@ -267,7 +279,7 @@ pub(crate) fn intercept(st: &mut EngineState) -> Option<CsId> {
     }
 }
 
-fn evaluate_parse(st: &mut EngineState, known: &KnownCs) -> Result<Answer, &'static str> {
+fn evaluate_parse(st: &mut EngineState, known: &Complete) -> Result<Answer, &'static str> {
     if TRACING.iter().any(|&p| st.eqtb.int_par(p) > 0) || st.eqtb.int_par(IntPar::GlobalDefs) != 0 {
         return Err("tracing or globaldefs");
     }
@@ -387,7 +399,7 @@ fn identifiers(items: &[(Item, bool)]) -> Vec<Vec<u8>> {
     out
 }
 
-fn pseudo_constant(st: &mut EngineState, known: &KnownCs, name: &[u8]) -> Option<Vec<u8>> {
+fn pseudo_constant(st: &mut EngineState, known: &Complete, name: &[u8]) -> Option<Vec<u8>> {
     let name = std::str::from_utf8(name).ok()?;
     let arity = lookup(st, &format!("pgfmath@operation@{name}@arity"))?;
     if macro_text(st, arity).as_deref() != Some(b"0") {
@@ -395,22 +407,16 @@ fn pseudo_constant(st: &mut EngineState, known: &KnownCs, name: &[u8]) -> Option
     }
     let function = lookup(st, &format!("pgfmath{name}@"))?;
     let body = macro_tokens(st, function)?;
-    let is = |t: &Token, cs: CsId| t.is_cs() && same_meaning(st, t.cs(), cs);
-    let result = |t: &Token| t.is_cs() && t.cs() == known.result();
+    let is = |t: &Token, cs: CsId| t.cs().is_some_and(|t| same_meaning(st, t, cs));
+    let result = |t: &Token| t.cs() == Some(known.result());
     let char_is = |t: &Token, c: u8| !t.is_cs() && t.chr() == i32::from(c);
     let target = match body.as_slice() {
-        [l, r, eq, t] if is(l, known.let_()) && result(r) && char_is(eq, b'=') && t.is_cs() => {
-            t.cs()
-        }
-        [l, r, t] if is(l, known.let_()) && result(r) && t.is_cs() => t.cs(),
+        [l, r, eq, t] if is(l, known.let_()) && result(r) && char_is(eq, b'=') => t.cs()?,
+        [l, r, t] if is(l, known.let_()) && result(r) => t.cs()?,
         [d, r, open, t, close]
-            if is(d, known.edef())
-                && result(r)
-                && char_is(open, b'{')
-                && t.is_cs()
-                && char_is(close, b'}') =>
+            if is(d, known.edef()) && result(r) && char_is(open, b'{') && char_is(close, b'}') =>
         {
-            t.cs()
+            t.cs()?
         }
         _ => return None,
     };
@@ -421,7 +427,7 @@ fn expanded_text(st: &EngineState, mut cs: CsId) -> Option<Vec<u8>> {
     for _ in 0..8 {
         let tokens = macro_tokens(st, cs)?;
         match tokens.as_slice() {
-            [t] if t.is_cs() => cs = t.cs(),
+            [t] if t.is_cs() => cs = t.cs()?,
             _ => return macro_text(st, cs),
         }
     }
@@ -474,8 +480,8 @@ fn expression_items(st: &EngineState, tokens: &[Token]) -> Result<Vec<(Item, boo
     let mut items = Vec::with_capacity(body.len());
     let mut space = false;
     for &tok in body {
-        if tok.is_cs() {
-            items.push((register_item(st, tok.cs())?, space));
+        if let Some(cs) = tok.cs() {
+            items.push((register_item(st, cs)?, space));
             space = false;
             continue;
         }
@@ -527,7 +533,7 @@ fn register_item(st: &EngineState, cs: CsId) -> Result<Item, &'static str> {
 }
 
 /// `None` when `\selectfont` would load the font, which only the macros can do.
-fn selected_font(st: &mut EngineState, known: &KnownCs) -> Option<eval::Font> {
+fn selected_font(st: &mut EngineState, known: &Complete) -> Option<eval::Font> {
     let mut name = String::new();
     for (i, &cs) in known.nfss().iter().enumerate() {
         if i > 0 {
@@ -560,7 +566,7 @@ fn result_macro(st: &mut EngineState, text: &[u8]) -> Result<TokenList, Abort> {
     st.mem.tokens.finish(out)
 }
 
-fn commit(st: &mut EngineState, known: &KnownCs, answer: &Answer) -> Result<(), Abort> {
+fn commit(st: &mut EngineState, known: &Complete, answer: &Answer) -> Result<(), Abort> {
     let body = match answer {
         Answer::Expression => {
             let shared = st.eqtb.meaning(known.expression()).macro_body();
@@ -579,7 +585,7 @@ fn commit(st: &mut EngineState, known: &KnownCs, answer: &Answer) -> Result<(), 
     crate::eqtb::define(st, false, known.result(), Command::Call(body))
 }
 
-fn compare(st: &EngineState, known: &KnownCs, stats: &mut Stats, pending: &Pending, number: bool) {
+fn compare(st: &EngineState, known: &Complete, stats: &mut Stats, pending: &Pending, number: bool) {
     stats.checked += 1;
     let (ours, units) = match &pending.answer {
         Answer::Expression => {
@@ -629,11 +635,9 @@ fn compare(st: &EngineState, known: &KnownCs, stats: &mut Stats, pending: &Pendi
 fn describe(st: &EngineState, tokens: &[Token]) -> String {
     let mut text = String::new();
     for tok in tokens {
-        if tok.is_cs() {
+        if let Some(cs) = tok.cs() {
             text.push('\\');
-            text.push_str(
-                &cs_name(st, tok.cs()).unwrap_or_else(|| format!("<{}>", tok.cs().raw())),
-            );
+            text.push_str(&cs_name(st, cs).unwrap_or_else(|| format!("<{}>", cs.raw())));
             text.push(' ');
         } else {
             text.push(char::from_u32(tok.chr() as u32).unwrap_or('?'));
@@ -697,8 +701,8 @@ fn expand_full(st: &EngineState, tokens: &[Token], depth: u32) -> Option<Vec<u8>
     }
     let mut out = Vec::new();
     for t in tokens {
-        if t.is_cs() {
-            out.extend(expand_full(st, &macro_tokens(st, t.cs())?, depth + 1)?);
+        if let Some(cs) = t.cs() {
+            out.extend(expand_full(st, &macro_tokens(st, cs)?, depth + 1)?);
         } else {
             out.extend(chars(std::slice::from_ref(t))?);
         }
@@ -709,7 +713,7 @@ fn expand_full(st: &EngineState, tokens: &[Token], depth: u32) -> Option<Vec<u8>
 fn expand_once(st: &EngineState, tokens: &[Token]) -> Option<Vec<u8>> {
     match tokens.split_first() {
         Some((first, rest)) if first.is_cs() => {
-            let mut all = macro_tokens(st, first.cs())?;
+            let mut all = macro_tokens(st, first.cs()?)?;
             all.extend_from_slice(rest);
             chars(&all)
         }
@@ -797,7 +801,7 @@ fn parse_float_input(text: &[u8]) -> Option<f64> {
 
 fn run_native(
     st: &EngineState,
-    known: &KnownCs,
+    known: &Complete,
     kind: Native,
     args: &[Vec<Token>],
 ) -> Option<Vec<Effect>> {
@@ -853,8 +857,8 @@ fn run_native(
             let text = expand_once(st, a)?;
             let (flags, _, _) = split_float(&text)?;
             match target.as_slice() {
-                [t] if t.is_cs() && t.cs() >= HASH_BASE => vec![Effect::Define {
-                    cs: t.cs(),
+                [t] if t.cs().is_some_and(|cs| cs >= HASH_BASE) => vec![Effect::Define {
+                    cs: t.cs()?,
                     text: vec![flags],
                 }],
                 _ => return None,
@@ -871,10 +875,9 @@ pub(crate) fn native_macro(st: &mut EngineState, kind: Native, args: &[TokenList
     if TRACING.iter().any(|&p| st.eqtb.int_par(p) > 0) || st.eqtb.int_par(IntPar::GlobalDefs) != 0 {
         return false;
     }
-    let known = st.eqtb.pgfmath;
-    if !known.complete() {
+    let Some(known) = st.eqtb.pgfmath.complete() else {
         return false;
-    }
+    };
     let args: Vec<Vec<Token>> = args
         .iter()
         .map(|&p| st.mem.tokens.iter(p).collect())

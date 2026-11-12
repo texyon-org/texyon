@@ -166,7 +166,33 @@ impl FmtItem for MemPtr {
     }
 }
 
-newtype_item!(GlueSpecId, TokenList, Scaled, StrNumber, CsId, PoolPos, TriePtr, LigChar);
+newtype_item!(GlueSpecId, TokenList, Scaled, StrNumber, PoolPos, TriePtr, LigChar);
+
+impl FmtItem for CsId {
+    const SIZE: usize = 4;
+    #[inline]
+    fn put(self, out: &mut Vec<u8>) {
+        self.raw().put(out);
+    }
+    #[inline]
+    fn get(bytes: &[u8]) -> Option<Self> {
+        CsId::from_raw(i32::get(bytes)?)
+    }
+}
+
+/// A control sequence or none, stored as TeX's 0.
+impl FmtItem for Option<CsId> {
+    const SIZE: usize = 4;
+    #[inline]
+    fn put(self, out: &mut Vec<u8>) {
+        self.map_or(0, CsId::raw).put(out);
+    }
+    #[inline]
+    fn get(bytes: &[u8]) -> Option<Self> {
+        let raw = i32::get(bytes)?;
+        (raw >= 0).then(|| CsId::from_raw(raw))
+    }
+}
 
 impl FmtItem for B32x2 {
     const SIZE: usize = 8;
@@ -852,16 +878,16 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
     // \partokenname may name an active character or a control symbol.
     s.items_in(
         std::slice::from_mut(&mut st.input.par_loc),
-        ACTIVE_BASE,
-        UNDEFINED_CONTROL_SEQUENCE + eqtb.hash_high,
+        Some(ACTIVE_BASE),
+        Some(UNDEFINED_CONTROL_SEQUENCE + eqtb.hash_high),
     )?;
     if S::LOADING {
-        st.input.par_token = Token::from_cs(st.input.par_loc);
+        st.input.par_token = Token::from_cs(st.input.par_loc.ok_or_else(bad_fmt)?);
     }
     s.items_in(
         std::slice::from_mut(&mut st.shipout.write_loc),
-        HASH_BASE,
-        eqtb.cs_top,
+        Some(HASH_BASE),
+        Some(eqtb.cs_top),
     )?;
 
     s.items(&mut eqtb.prim[..=PRIM_SIZE as usize])?;
@@ -873,18 +899,18 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
     )?;
     let hash_used = eqtb.hash_used;
     if S::LOADING {
-        let mut p = HASH_BASE - 1;
+        let mut lowest = HASH_BASE;
         loop {
-            let mut next = CsId::NONE;
-            s.items_in(std::slice::from_mut(&mut next), p + 1, hash_used)?;
-            p = next;
+            let mut p = lowest;
+            s.items_in(std::slice::from_mut(&mut p), lowest, hash_used)?;
             s.items(std::slice::from_mut(&mut eqtb.hash[hash_slot(p)]))?;
             if p == hash_used {
                 break;
             }
+            lowest = p + 1;
         }
     } else {
-        eqtb.cs_count = (FROZEN_CONTROL_SEQUENCE - 1) - hash_used + eqtb.hash_high;
+        eqtb.cs_count = (FROZEN_CONTROL_SEQUENCE - hash_used) - 1 + eqtb.hash_high;
         for mut p in HASH_BASE.through(hash_used) {
             let entry = &mut eqtb.hash[hash_slot(p)];
             if entry.s1 != 0 {

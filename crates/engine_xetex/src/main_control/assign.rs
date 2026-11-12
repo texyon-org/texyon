@@ -160,8 +160,7 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     if st.strings.job_name == StrNumber::NONE {
         crate::io::open_log_file(st)?;
     }
-    crate::scan::get_r_token(st)?;
-    let u = st.scanner.cur_cs;
+    let u = crate::scan::get_r_token(st)?;
     let t = if u >= HASH_BASE {
         st.eqtb.text(u)
     } else if u >= SINGLE_BASE {
@@ -607,8 +606,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             if global && a < 4 && st.eqtb.int_par(IntPar::GlobalDefs) >= 0 {
                 a += 4;
             }
-            crate::scan::get_r_token(st)?;
-            let p = st.scanner.cur_cs;
+            let p = crate::scan::get_r_token(st)?;
             crate::scan::scan_toks(st, true, expand)?;
             if protected {
                 st.mem
@@ -619,8 +617,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             eqtb::define(st, a >= 4, p, m)?;
         }
         Command::Let { future } => {
-            crate::scan::get_r_token(st)?;
-            let p = st.scanner.cur_cs;
+            let p = crate::scan::get_r_token(st)?;
             if !future {
                 loop {
                     crate::scan::get_token(st)?;
@@ -681,8 +678,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                     ],
                 )?;
             }
-            crate::scan::get_r_token(st)?;
-            let p = st.scanner.cur_cs;
+            let p = crate::scan::get_r_token(st)?;
             let list = crate::scan::read_toks(st, n, p, line)?;
             eqtb::define(st, a >= 4, p, Command::Call(list))?;
         }
@@ -813,8 +809,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 fn shorthand_def(st: &mut EngineState, global: bool, n: ShorthandDefCode) -> Result<(), Abort> {
-    crate::scan::get_r_token(st)?;
-    let p = st.scanner.cur_cs;
+    let p = crate::scan::get_r_token(st)?;
     eqtb::define(st, global, p, Command::Relax(RelaxCode::Primitive))?;
     crate::scan::scan_optional_equals(st)?;
     let m = match n {
