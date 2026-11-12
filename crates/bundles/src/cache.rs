@@ -92,14 +92,20 @@ pub struct BundleCache<'this, T> {
 
     // The hash of the bundle we're caching.
     bundle_hash: DigestData,
+
+    /// Where `bundle_hash` is saved between runs.
+    hash_file: PathBuf,
+
+    /// Whether the backend was confirmed to still serve `bundle_hash` in this process.
+    remote_checked: bool,
 }
 
 impl<'this, T: FileIndex<'this>> BundleCache<'this, T> {
     /// Make a new filesystem-backed cache from `bundle`.
     ///
-    /// This method will fail if we can't connect to the bundle AND
-    /// we don't already have it in our cache.
-    /// Other than that, this method does not require network access.
+    /// This method only needs network access when the bundle's hash isn't
+    /// cached yet. Otherwise the backend is checked lazily, right before the
+    /// first download.
     pub fn new(
         mut bundle: Box<dyn CachableBundle<'this, T>>,
         only_cached: bool,
@@ -114,56 +120,34 @@ impl<'this, T: FileIndex<'this>> BundleCache<'this, T> {
         let hash_dir = ensure_dir!(inline, &cache_root.join("hashes"));
         let hash_file = hash_dir.join(app_dirs::app_dirs2::sanitized(&bundle.get_location()));
 
-        let saved_hash = {
-            if !hash_file.exists() {
-                None
-            } else {
-                match File::open(&hash_file) {
-                    Err(e) => return Err(e.into()),
-                    Ok(f) => {
-                        let mut digest_text = String::with_capacity(digest::DIGEST_LEN);
-                        f.take(digest::DIGEST_LEN as u64)
-                            .read_to_string(&mut digest_text)
-                            .with_context(|| {
-                                format!("while reading hash from {hash_file:?} in cache")
-                            })?;
-                        Some(
-                            DigestData::from_str(&digest_text)
-                                .with_context(|| format!("while parsing hash `{digest_text}`"))?,
-                        )
-                    }
-                }
-            }
+        let saved_hash = if hash_file.exists() {
+            let mut digest_text = String::with_capacity(digest::DIGEST_LEN);
+            File::open(&hash_file)?
+                .take(digest::DIGEST_LEN as u64)
+                .read_to_string(&mut digest_text)
+                .with_context(|| format!("while reading hash from {hash_file:?} in cache"))?;
+            Some(
+                DigestData::from_str(&digest_text)
+                    .with_context(|| format!("while parsing hash `{digest_text}`"))?,
+            )
+        } else {
+            None
         };
 
-        let live_hash = bundle.get_digest();
-
-        // Check remote bundle digest
-        let bundle_hash: DigestData = match (saved_hash, live_hash) {
-            (None, Err(e)) => {
-                bail!("this bundle isn't cached, and we couldn't get it from the internet. Error: {e}");
+        let (bundle_hash, remote_checked) = match saved_hash {
+            Some(saved) => (saved, false),
+            None => {
+                let live = match bundle.get_digest() {
+                    Ok(live) => live,
+                    Err(e) => bail!(
+                        "this bundle isn't cached, and we couldn't get it from the internet. Error: {e}"
+                    ),
+                };
+                file_create_write(&hash_file, |f| writeln!(f, "{live}")).with_context(|| {
+                    format!("while writing bundle hash to {hash_file:?} in cache")
+                })?;
+                (live, true)
             }
-            (Some(s), Ok(l)) => {
-                if s != l {
-                    // Silently update hash in cache.
-                    // We don't need to delete anything, since data is indexed by hash.
-                    // TODO: show a warning
-                    file_create_write(&hash_file, |f| writeln!(f, "{}", &l.to_string()))
-                        .with_context(|| {
-                            format!("while updating bundle hash in {hash_file:?} in cache")
-                        })?;
-                    l
-                } else {
-                    l
-                }
-            }
-            (None, Ok(l)) => {
-                file_create_write(&hash_file, |f| writeln!(f, "{}", &l.to_string())).with_context(
-                    || format!("while writing bundle hash to {hash_file:?} in cache"),
-                )?;
-                l
-            }
-            (Some(h), Err(_)) => h, // Bundle is offline, but we're ok.
         };
 
         let bundle = BundleCache {
@@ -171,6 +155,8 @@ impl<'this, T: FileIndex<'this>> BundleCache<'this, T> {
             bundle,
             cache_root,
             bundle_hash,
+            hash_file,
+            remote_checked,
         };
 
         // Right now, files are stored in
@@ -206,6 +192,29 @@ impl<'this, T: FileIndex<'this>> BundleCache<'this, T> {
         out
     }
 
+    /// Fails if the backend no longer serves the cached bundle, since the
+    /// cached index would then point at the wrong bytes of the new one.
+    fn ensure_remote_matches(&mut self) -> Result<()> {
+        if self.remote_checked {
+            return Ok(());
+        }
+        let live = self
+            .bundle
+            .get_digest()
+            .context("while checking the bundle for changes")?;
+        if live != self.bundle_hash {
+            let hash_file = &self.hash_file;
+            file_create_write(hash_file, |f| writeln!(f, "{live}"))
+                .with_context(|| format!("while updating bundle hash in {hash_file:?} in cache"))?;
+            bail!(
+                "the bundle at {} changed since it was cached, run again to use the new version",
+                self.bundle.get_location()
+            );
+        }
+        self.remote_checked = true;
+        Ok(())
+    }
+
     fn ensure_index(&mut self) -> Result<()> {
         let target = self
             .cache_root
@@ -230,7 +239,7 @@ impl<'this, T: FileIndex<'this>> BundleCache<'this, T> {
                 .initialize_index(&mut file)
                 .with_context(|| format!("while inititalizing index using cached {target:?}"))?;
         } else {
-            // Download index
+            self.ensure_remote_matches()?;
 
             // We first download to a temporary file, rename to target
             // Makes sure that parallel runs of tectonic don't break the index
@@ -309,7 +318,10 @@ impl<'this, T: FileIndex<'this>> BundleCache<'this, T> {
             return OpenResult::NotAvailable;
         }
 
-        // Get the file.
+        if let Err(e) = self.ensure_remote_matches() {
+            return OpenResult::Err(e);
+        }
+
         let mut handle = match self.bundle.open_fileinfo(&info, status) {
             OpenResult::Ok(c) => c,
             OpenResult::Err(e) => return OpenResult::Err(e),
@@ -367,5 +379,150 @@ impl<'this, T: FileIndex<'this>> Bundle for BundleCache<'this, T> {
 
     fn all_files(&self) -> Vec<String> {
         self.bundle.all_files()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ttb::{TTBFileIndex, TTBFileInfo};
+    use std::{cell::Cell, io::Cursor, rc::Rc};
+    use texyon_status_base::NoopStatusBackend;
+
+    const INDEX: &str = "[DEFAULTSEARCH]\nMAIN\n[SEARCH:MAIN]\n/\n[FILELIST]\n0 1 1 nohash a.tex\n0 1 1 nohash b.tex\n0 1 1 nohash c.tex\n";
+    const URL: &str = "https://example.invalid/test.ttb";
+
+    struct MockBundle {
+        digest: DigestData,
+        digest_calls: Rc<Cell<usize>>,
+        index: TTBFileIndex,
+    }
+
+    impl IoProvider for MockBundle {}
+
+    impl Bundle for MockBundle {
+        fn get_digest(&mut self) -> Result<DigestData> {
+            self.digest_calls.set(self.digest_calls.get() + 1);
+            Ok(self.digest)
+        }
+
+        fn all_files(&self) -> Vec<String> {
+            Vec::new()
+        }
+    }
+
+    impl CachableBundle<'static, TTBFileIndex> for MockBundle {
+        fn initialize_index(&mut self, source: &mut dyn Read) -> Result<()> {
+            self.index.initialize(source)
+        }
+
+        fn get_index_reader(&mut self) -> Result<Box<dyn Read>> {
+            Ok(Box::new(Cursor::new(INDEX.as_bytes().to_vec())))
+        }
+
+        fn index(&mut self) -> &mut TTBFileIndex {
+            &mut self.index
+        }
+
+        fn open_fileinfo(
+            &mut self,
+            info: &TTBFileInfo,
+            _status: &mut dyn StatusBackend,
+        ) -> OpenResult<InputHandle> {
+            OpenResult::Ok(InputHandle::new_read_only(
+                info.path.clone(),
+                Cursor::new(info.path.as_bytes().to_vec()),
+                InputOrigin::Other,
+            ))
+        }
+
+        fn search(&mut self, name: &str) -> Option<TTBFileInfo> {
+            self.index.search(name)
+        }
+
+        fn get_location(&mut self) -> String {
+            URL.to_owned()
+        }
+    }
+
+    fn other_digest() -> DigestData {
+        DigestData::from_str(&"11".repeat(digest::DIGEST_LEN / 2)).expect("valid hex")
+    }
+
+    fn open(
+        root: &Path,
+        digest: DigestData,
+    ) -> (BundleCache<'static, TTBFileIndex>, Rc<Cell<usize>>) {
+        let calls = Rc::new(Cell::new(0));
+        let bundle = MockBundle {
+            digest,
+            digest_calls: calls.clone(),
+            index: TTBFileIndex::default(),
+        };
+        let cache =
+            BundleCache::new(Box::new(bundle), false, Some(root.to_owned())).expect("cache opens");
+        (cache, calls)
+    }
+
+    fn read(cache: &mut BundleCache<'static, TTBFileIndex>, name: &str) -> Result<String> {
+        match cache.input_open_name(name, &mut NoopStatusBackend::default()) {
+            OpenResult::Ok(mut h) => {
+                let mut text = String::new();
+                h.read_to_string(&mut text)?;
+                Ok(text)
+            }
+            OpenResult::NotAvailable => bail!("{name} not available"),
+            OpenResult::Err(e) => Err(e),
+        }
+    }
+
+    #[test]
+    fn cached_bundle_opens_without_asking_the_backend() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (mut cache, calls) = open(dir.path(), DigestData::of_nothing());
+        assert_eq!(read(&mut cache, "a.tex").expect("read"), "a.tex");
+        assert_eq!(calls.get(), 1);
+
+        let (mut cache, calls) = open(dir.path(), DigestData::of_nothing());
+        assert_eq!(read(&mut cache, "a.tex").expect("read"), "a.tex");
+        assert_eq!(
+            cache.get_digest().expect("digest"),
+            DigestData::of_nothing()
+        );
+        assert_eq!(calls.get(), 0);
+    }
+
+    #[test]
+    fn first_download_checks_the_backend_once() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (mut cache, _) = open(dir.path(), DigestData::of_nothing());
+        read(&mut cache, "a.tex").expect("read");
+
+        let (mut cache, calls) = open(dir.path(), DigestData::of_nothing());
+        assert_eq!(read(&mut cache, "b.tex").expect("read"), "b.tex");
+        assert_eq!(read(&mut cache, "c.tex").expect("read"), "c.tex");
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn changed_bundle_fails_the_download_and_saves_the_new_hash() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (mut cache, _) = open(dir.path(), DigestData::of_nothing());
+        read(&mut cache, "a.tex").expect("read");
+
+        let (mut cache, _) = open(dir.path(), other_digest());
+        assert_eq!(read(&mut cache, "a.tex").expect("read"), "a.tex");
+        let err = read(&mut cache, "b.tex").expect_err("bundle changed");
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "the bundle at {URL} changed since it was cached, run again to use the new version"
+            )
+        );
+
+        let (mut cache, calls) = open(dir.path(), other_digest());
+        assert_eq!(cache.get_digest().expect("digest"), other_digest());
+        assert_eq!(read(&mut cache, "b.tex").expect("read"), "b.tex");
+        assert_eq!(calls.get(), 1);
     }
 }

@@ -35,3 +35,6 @@ geturl-reqwest = ["texyon_geturl/reqwest"]
 geturl-wasm-fetch = ["texyon_geturl/wasm-fetch"]
 native-tls-vendored = ["texyon_geturl/native-tls-vendored"]
 
+
+[dev-dependencies]
+tempfile = "^3.1"
