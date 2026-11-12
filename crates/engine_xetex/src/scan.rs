@@ -43,7 +43,7 @@ pub(crate) use self::toks::{
 };
 
 pub(crate) const NO_EXPAND_FLAG: i32 = BIGGEST_USV + 2;
-const DEFAULT_RULE: i32 = 26214;
+const DEFAULT_RULE: Scaled = Scaled::from_raw(26214);
 
 const HYPHENATABLE_LENGTH_LIMIT: i32 = 4095;
 
@@ -109,22 +109,22 @@ fn round_decimals(digits: &[u8]) -> i32 {
 pub(crate) fn scan_rule_spec(st: &mut EngineState) -> Result<NodePtr<RuleNode>, Abort> {
     let r = st.mem.new_rule()?;
     if st.scanner.cur.cmd() == Cmd::Vrule {
-        st.mem[r].width = RuleDimen::from_raw(DEFAULT_RULE).into();
+        st.mem[r].width = RuleDimen::Set(DEFAULT_RULE).into();
     } else {
         let node = &mut st.mem[r];
-        node.height = RuleDimen::from_raw(DEFAULT_RULE).into();
+        node.height = RuleDimen::Set(DEFAULT_RULE).into();
         node.depth = RuleDimen::Set(Scaled::ZERO).into();
     }
     loop {
         if scan_keyword(st, "width")? {
             let d = scan_dimen(st, false)?;
-            st.mem[r].width = RuleDimen::from_raw(d.raw()).into();
+            st.mem[r].width = RuleDimen::Set(d).into();
         } else if scan_keyword(st, "height")? {
             let d = scan_dimen(st, false)?;
-            st.mem[r].height = RuleDimen::from_raw(d.raw()).into();
+            st.mem[r].height = RuleDimen::Set(d).into();
         } else if scan_keyword(st, "depth")? {
             let d = scan_dimen(st, false)?;
-            st.mem[r].depth = RuleDimen::from_raw(d.raw()).into();
+            st.mem[r].depth = RuleDimen::Set(d).into();
         } else {
             break;
         }

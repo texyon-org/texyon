@@ -1284,37 +1284,40 @@ impl Selector {
         }
     }
 
-    const fn from_raw(v: u8) -> Selector {
-        match v {
-            0..=15 => Selector::File(v),
-            16 => Selector::NoPrint,
-            17 => Selector::TermOnly,
-            18 => Selector::LogOnly,
-            19 => Selector::TermAndLog,
-            20 => Selector::Pseudo,
-            21 => Selector::NewString,
-            _ => panic!("selector out of range"),
-        }
-    }
-
     /// TeX's `selector - 1`: `TermAndLog` to `LogOnly`, `TermOnly` to `NoPrint`.
     pub(crate) const fn without_terminal(self) -> Selector {
-        Selector::from_raw(self.raw() - 1)
+        match self {
+            Selector::TermAndLog => Selector::LogOnly,
+            Selector::TermOnly => Selector::NoPrint,
+            other => other,
+        }
     }
 
     /// TeX's `selector + 1`, undoing [`Selector::without_terminal`].
     pub(crate) const fn with_terminal(self) -> Selector {
-        Selector::from_raw(self.raw() + 1)
+        match self {
+            Selector::LogOnly => Selector::TermAndLog,
+            Selector::NoPrint => Selector::TermOnly,
+            other => other,
+        }
     }
 
     /// TeX's `selector + 2`: `NoPrint` to `LogOnly`, `TermOnly` to `TermAndLog`.
     pub(crate) const fn with_log(self) -> Selector {
-        Selector::from_raw(self.raw() + 2)
+        match self {
+            Selector::NoPrint => Selector::LogOnly,
+            Selector::TermOnly => Selector::TermAndLog,
+            other => other,
+        }
     }
 
     /// TeX's `selector - 2`, undoing [`Selector::with_log`].
     pub(crate) const fn without_log(self) -> Selector {
-        Selector::from_raw(self.raw() - 2)
+        match self {
+            Selector::LogOnly => Selector::NoPrint,
+            Selector::TermAndLog => Selector::TermOnly,
+            other => other,
+        }
     }
 }
 

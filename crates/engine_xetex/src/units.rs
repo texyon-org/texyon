@@ -193,6 +193,14 @@ impl std::ops::Div<i32> for Scaled {
     }
 }
 
+impl std::ops::Rem<i32> for Scaled {
+    type Output = Scaled;
+    #[inline(always)]
+    fn rem(self, rhs: i32) -> Scaled {
+        Scaled(self.0 % rhs)
+    }
+}
+
 impl std::ops::AddAssign for Scaled {
     #[inline(always)]
     fn add_assign(&mut self, rhs: Scaled) {

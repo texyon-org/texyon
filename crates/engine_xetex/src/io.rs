@@ -870,7 +870,7 @@ pub(crate) fn make_name_string(st: &mut EngineState, path: &[u8]) -> Result<StrN
         || st.strings.str_ptr == st.strings.max_strings
         || st.strings.cur_length() > 0
     {
-        return Ok(StrNumber::from_raw(i32::from(b'?')));
+        return Ok(StrNumber::single_char(i32::from(b'?')));
     }
 
     let name16 = utf16_units(path);

@@ -44,10 +44,7 @@ const LEADER_SLOP: Scaled = Scaled::from_raw(10);
 
 /// How many leader boxes of size `size` fit in `total`, and the leftover space.
 fn leader_count_and_rest(total: Scaled, size: Scaled) -> (i32, Scaled) {
-    (
-        total.raw() / size.raw(),
-        Scaled::from_raw(total.raw() % size.raw()),
-    )
+    (total.raw() / size.raw(), total % size.raw())
 }
 
 pub(crate) const ONE_INCH: Scaled = Scaled::from_raw(4_736_287);

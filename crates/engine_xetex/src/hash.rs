@@ -225,7 +225,7 @@ impl EqtbState {
         };
         let s = match cs.kind() {
             CsKind::Active(_) => return Ok(None),
-            CsKind::Single(c) => StrNumber::from_raw(i32::from(c)),
+            CsKind::Single(c) => StrNumber::single_char(i32::from(c)),
             // WEB looks up the string after the single characters, as `null_cs - single_base`.
             CsKind::Null => StrNumber::from_raw(TOO_BIG_CHAR),
             _ => self.text(cs),

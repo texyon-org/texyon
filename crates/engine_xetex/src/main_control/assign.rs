@@ -163,7 +163,7 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     let u = crate::scan::get_r_token(st)?;
     let t = match u.kind() {
         CsKind::Null => st.strings.make_tex_string("FONT")?,
-        CsKind::Single(c) => StrNumber::from_raw(i32::from(c)),
+        CsKind::Single(c) => StrNumber::single_char(i32::from(c)),
         CsKind::Active(c) => {
             let old_setting = st.shipout.selector;
             st.shipout.selector = Selector::NewString;

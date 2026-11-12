@@ -109,7 +109,7 @@ fn primitive(st: &mut EngineState, ident: &str, c: Cmd, o: i32) -> Result<CsId, 
     } else {
         cs = CsId::single(u16::from(bytes[0]));
         st.eqtb
-            .prim_lookup(&mut st.strings, StrNumber::from_raw(i32::from(bytes[0])))?
+            .prim_lookup(&mut st.strings, StrNumber::single_char(i32::from(bytes[0])))?
             .or_confusion("primitive")?
     };
 
