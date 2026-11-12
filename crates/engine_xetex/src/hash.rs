@@ -5,6 +5,28 @@ use crate::errors::{Abort, OrConfusion};
 use crate::state::{EqtbState, StringsState};
 use crate::units::{CsId, PrimNum, StrNumber};
 
+/// A multi-letter control sequence's slot in the hash table.
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
+#[repr(C)]
+pub(crate) struct HashEntry {
+    /// The next slot in the chain of names with the same hash.
+    pub next: Option<CsId>,
+    /// The name, `StrNumber::NONE` while the slot is free.
+    pub text: StrNumber,
+}
+
+// SAFETY: `None` and `StrNumber(0)` are both all-zero bits.
+unsafe impl crate::mem_types::ZeroWord for HashEntry {}
+
+/// A slot of the `\primitive` lookup table.
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
+pub(crate) struct PrimEntry {
+    /// The next slot in the chain of names with the same hash.
+    pub next: Option<PrimNum>,
+    /// The primitive's name, `None` while the slot is free.
+    pub text: Option<StrNumber>,
+}
+
 pub(crate) const HASH_SIZE: i32 = 15000;
 pub(crate) const HASH_PRIME: i32 = 8501;
 const PRIM_PRIME: i32 = 1777;
@@ -64,14 +86,14 @@ impl EqtbState {
                 return Ok(p);
             }
 
-            let Some(next) = self.hash_s0(p) else {
+            let Some(next) = self.hash_next(p) else {
                 if self.no_new_control_sequence {
                     p = UNDEFINED_CONTROL_SEQUENCE;
                 } else {
                     if text > StrNumber::NONE {
                         if self.hash_high < self.hash_extra {
                             self.hash_high += 1;
-                            self.set_hash_s0(p, UNDEFINED_CONTROL_SEQUENCE + self.hash_high);
+                            self.set_hash_next(p, UNDEFINED_CONTROL_SEQUENCE + self.hash_high);
                             p = UNDEFINED_CONTROL_SEQUENCE + self.hash_high;
                         } else {
                             loop {
@@ -86,7 +108,7 @@ impl EqtbState {
                                     break;
                                 }
                             }
-                            self.set_hash_s0(p, self.hash_used);
+                            self.set_hash_next(p, self.hash_used);
                             p = self.hash_used;
                         }
                     }

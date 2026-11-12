@@ -6,7 +6,7 @@ use crate::cmd::Cmd;
 use crate::codes::{BoxCode, FiOrElseCode, MarkCode, ScannerStatus, ValueLevel};
 use crate::command::Command;
 use crate::consts::{
-    BIGGEST_CHAR, BIGGEST_LANG, CLOSED, CS_TOKEN_FLAG, EMPTY, EMPTY_STRING, END_WRITE, FONT_BASE,
+    BIGGEST_CHAR, BIGGEST_LANG, CLOSED, CS_TOKEN_FLAG, EMPTY_STRING, END_WRITE, FONT_BASE,
     FROZEN_CONTROL_SEQUENCE, FROZEN_DONT_EXPAND, FROZEN_ENDV, FROZEN_END_TEMPLATE,
     FROZEN_PRIMITIVE, FROZEN_PROTECTION, HISTORY_FATAL_ERROR, HISTORY_SPOTLESS,
     HISTORY_WARNING_ISSUED, LEVEL_ONE, LEVEL_ZERO, MAX_FONT_MAX, MAX_HALFWORD, NORMAL, NULL_FONT,
@@ -272,8 +272,6 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.shipout.doing_leaders = false;
     st.shipout.dead_cycles = 0;
     st.shipout.last_badness = 0;
-    st.scanner.empty.s1 = EMPTY;
-    st.scanner.empty.s0 = TEX_NULL;
     st.scanner.align_stack.clear();
     st.scanner.cur_align = None;
     st.scanner.cur_span = None;

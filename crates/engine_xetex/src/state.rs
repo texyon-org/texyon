@@ -315,9 +315,9 @@ pub(crate) struct EqtbState {
     pub del_codes: crate::eqtb::Table<crate::eqtb::DelLoc, i32>,
     pub boxes:
         crate::eqtb::Table<crate::eqtb::BoxLoc, Option<crate::node::NodePtr<crate::node::BoxNode>>>,
-    pub prim: Vec<crate::mem_types::B32x2>,
+    pub prim: Vec<crate::hash::PrimEntry>,
     /// The `next` and `text` of each control sequence from `HASH_BASE` on.
-    pub hash: Vec<crate::mem_types::B32x2>,
+    pub hash: Vec<crate::hash::HashEntry>,
     pub hash_extra: i32,
     /// The last control sequence, past the extra hash entries.
     pub cs_top: CsId,
@@ -348,7 +348,7 @@ impl Default for EqtbState {
             math_codes: Default::default(),
             del_codes: Default::default(),
             // PRIM_SIZE + 1 = 2101.
-            prim: vec![crate::mem_types::B32x2 { s0: 0, s1: 0 }; 2101],
+            prim: vec![crate::hash::PrimEntry::default(); 2101],
             hash: Vec::new(),
             hash_extra: 0,
             cs_top: crate::consts::UNDEFINED_CONTROL_SEQUENCE,
@@ -409,17 +409,17 @@ impl EqtbState {
     }
 
     #[inline]
-    pub fn hash_s0(&self, p: CsId) -> Option<CsId> {
-        CsId::from_raw(self.hash[crate::hash::hash_slot(p)].s0)
+    pub(crate) fn hash_next(&self, p: CsId) -> Option<CsId> {
+        self.hash[crate::hash::hash_slot(p)].next
     }
 
     #[inline]
-    pub fn set_hash_s0(&mut self, p: CsId, v: CsId) {
+    pub(crate) fn set_hash_next(&mut self, p: CsId, next: CsId) {
         let index = crate::hash::hash_slot(p);
         if self.journal.hash.armed() {
             self.journal.hash.note(index, self.hash[index]);
         }
-        self.hash[index].s0 = v.raw();
+        self.hash[index].next = Some(next);
     }
 
     /// The name of control sequence `p`, `text(p)`, none below `HASH_BASE`.
@@ -428,7 +428,7 @@ impl EqtbState {
         usize::try_from(p - crate::consts::HASH_BASE)
             .ok()
             .and_then(|i| self.hash.get(i))
-            .map_or(StrNumber::NONE, |h| StrNumber::from_raw(h.s1))
+            .map_or(StrNumber::NONE, |h| h.text)
     }
 
     #[inline]
@@ -437,13 +437,13 @@ impl EqtbState {
         if self.journal.hash.armed() {
             self.journal.hash.note(index, self.hash[index]);
         }
-        self.hash[index].s1 = s.raw();
+        self.hash[index].text = s;
     }
 
     /// The next slot in `p`'s hash chain.
     #[inline]
     pub fn prim_next(&self, p: PrimNum) -> Option<PrimNum> {
-        PrimNum::from_raw(self.prim[p.index()].s0)
+        self.prim[p.index()].next
     }
 
     #[inline]
@@ -452,15 +452,13 @@ impl EqtbState {
         if self.journal.prim.armed() {
             self.journal.prim.note(index, self.prim[index]);
         }
-        self.prim[index].s0 = next.map_or(0, PrimNum::raw);
+        self.prim[index].next = next;
     }
 
     /// The name of the primitive in slot `p`, if the slot is used.
     #[inline]
     pub fn prim_text(&self, p: PrimNum) -> Option<StrNumber> {
-        // Stored one past the string number so that 0 means unused.
-        let raw = self.prim[p.index()].s1;
-        (raw != 0).then(|| StrNumber::from_raw(raw - 1))
+        self.prim[p.index()].text
     }
 
     #[inline]
@@ -469,7 +467,7 @@ impl EqtbState {
         if self.journal.prim.armed() {
             self.journal.prim.note(index, self.prim[index]);
         }
-        self.prim[index].s1 = s.map_or(0, |s| s.raw() + 1);
+        self.prim[index].text = s;
     }
 
     /// The control sequence text that identifies font `f`.
@@ -978,7 +976,6 @@ pub(crate) struct ScannerState {
     pub cur_f: FontId,
     pub set_box_allowed: bool,
     pub sa_root: SaRoots,
-    pub empty: crate::mem_types::B32x2,
     pub native_text: Vec<u16>,
     pub native_text_size: i32,
     pub native_len: i32,

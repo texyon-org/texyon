@@ -5,7 +5,6 @@ use std::collections::HashSet;
 
 use crate::glue_store::GlueSpec;
 use crate::journal::{PlainDelta, WordDelta};
-use crate::mem_types::B32x2;
 use crate::replay::fence::ReplayFence;
 use crate::replay::source::SourceSnapshot;
 use crate::state::EngineState;
@@ -21,8 +20,8 @@ struct EngineDelta {
     tokens: crate::token::TokenDelta,
     glue: WordDelta<GlueSpec>,
     tables: crate::eqtb::TablesDelta,
-    hash: PlainDelta<B32x2>,
-    prim: PlainDelta<B32x2>,
+    hash: PlainDelta<crate::hash::HashEntry>,
+    prim: PlainDelta<crate::hash::PrimEntry>,
 }
 
 impl EngineDelta {
@@ -661,7 +660,7 @@ mod tests {
     fn state() -> EngineState {
         let mut st = EngineState::default();
         st.mem.data = crate::mem_types::zeroed_vec(8);
-        st.eqtb.hash = vec![B32x2 { s0: 0, s1: 0 }; 1];
+        st.eqtb.hash = vec![crate::hash::HashEntry::default(); 1];
         st.eqtb.meanings = crate::eqtb::Table::at_level(4, Command::UndefinedCs, 0);
         st.eqtb.ints = crate::eqtb::Table::new(crate::eqtb::IntLoc::LEN, 0);
         crate::journal::arm(&mut st);

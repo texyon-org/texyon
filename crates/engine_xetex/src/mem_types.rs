@@ -5,23 +5,11 @@ use std::mem::size_of;
 use crate::errors::Abort;
 use crate::mode::Mode;
 
-/// Two 32-bit halves, `s0` at the lower address.
-#[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct B32x2 {
-    pub s0: i32,
-    pub s1: i32,
-}
-
-const _: () = assert!(size_of::<B32x2>() == 8);
-
 /// Word types whose all-zero bit pattern is a valid value.
 ///
 /// # Safety
 /// Every field of an implementor must be valid at all-zero bits.
 pub(crate) unsafe trait ZeroWord: Copy {}
-// SAFETY: both fields are i32.
-unsafe impl ZeroWord for B32x2 {}
 // SAFETY: every bit pattern is a valid u32.
 unsafe impl ZeroWord for u32 {}
 

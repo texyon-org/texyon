@@ -19,9 +19,9 @@ use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::glue_store::GlueSpecId;
 use crate::glue_store::{GlueSpec, GlueStore, STATIC_SPECS};
 use crate::hash::{hash_slot, HASH_PRIME};
+use crate::hash::{HashEntry, PrimEntry};
 use crate::hyphenation::{TrieOp, TriePtr, BIGGEST_LANG, HYPH_PRIME, TRIE_OP_SIZE};
 use crate::mem::{CONTRIB_HEAD, PAGE_HEAD, RESERVED_WORDS};
-use crate::mem_types::B32x2;
 use crate::output::{print, print_char, print_int, print_ln, print_nl};
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, InteractionMode, PerFont, Selector};
@@ -33,7 +33,7 @@ use crate::token::{ListSlot, Token, TokenList, TokenStore};
 use crate::units::CsId;
 use crate::units::MemIdx;
 use crate::units::RawPtr;
-use crate::units::{FontId, MemPtr, PoolPos, SavePtr, Scaled, StrNumber};
+use crate::units::{FontId, MemPtr, PoolPos, PrimNum, SavePtr, Scaled, StrNumber};
 
 const FORMAT_HEADER_MAGIC: i32 = 0x5454_4E43;
 const FORMAT_FOOTER_MAGIC: i32 = 0x0000_029A;
@@ -194,19 +194,44 @@ impl FmtItem for Option<CsId> {
     }
 }
 
-impl FmtItem for B32x2 {
+/// A hash slot: its name, then the next slot in its chain (0 for none).
+impl FmtItem for HashEntry {
     const SIZE: usize = 8;
     #[inline]
     fn put(self, out: &mut Vec<u8>) {
-        self.s1.put(out);
-        self.s0.put(out);
+        self.text.put(out);
+        self.next.put(out);
     }
     #[inline]
     fn get(bytes: &[u8]) -> Option<Self> {
-        let (s1, s0) = bytes.split_at_checked(4)?;
-        Some(B32x2 {
-            s1: i32::get(s1)?,
-            s0: i32::get(s0)?,
+        let (text, next) = bytes.split_at_checked(4)?;
+        Some(HashEntry {
+            text: StrNumber::get(text)?,
+            next: Option::<CsId>::get(next)?,
+        })
+    }
+}
+
+/// A primitive slot: the next slot in its chain (0 for none), then its name (-1 for none).
+impl FmtItem for PrimEntry {
+    const SIZE: usize = 8;
+    #[inline]
+    fn put(self, out: &mut Vec<u8>) {
+        self.next.map_or(0, PrimNum::raw).put(out);
+        self.text.map_or(-1, StrNumber::raw).put(out);
+    }
+    #[inline]
+    fn get(bytes: &[u8]) -> Option<Self> {
+        let (next, text) = bytes.split_at_checked(4)?;
+        let next = i32::get(next)?;
+        let text = i32::get(text)?;
+        Some(PrimEntry {
+            next: if next == 0 {
+                None
+            } else {
+                Some(PrimNum::from_raw(next)?)
+            },
+            text: (text >= 0).then_some(StrNumber::from_raw(text)),
         })
     }
 }
@@ -913,7 +938,7 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
         eqtb.cs_count = (FROZEN_CONTROL_SEQUENCE - hash_used) - 1 + eqtb.hash_high;
         for mut p in HASH_BASE.through(hash_used) {
             let entry = &mut eqtb.hash[hash_slot(p)];
-            if entry.s1 != 0 {
+            if entry.text != StrNumber::NONE {
                 s.items(std::slice::from_mut(&mut p))?;
                 s.items(std::slice::from_mut(entry))?;
                 eqtb.cs_count += 1;

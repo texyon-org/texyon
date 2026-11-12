@@ -179,10 +179,8 @@ fn digest_eqtb(st: &EngineState) -> u64 {
     ]);
     h.word(u64::from(eqtb.no_new_control_sequence));
     eqtb.hash_tables(&mut h);
-    for value in eqtb.hash.iter().chain(&eqtb.prim) {
-        h.i32(value.s0);
-        h.i32(value.s1);
-    }
+    std::hash::Hash::hash(&eqtb.hash, &mut h);
+    std::hash::Hash::hash(&eqtb.prim, &mut h);
     h.finish()
 }
 

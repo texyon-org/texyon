@@ -14,7 +14,7 @@ struct Preimage<T: Copy> {
     old: T,
 }
 
-const _: () = assert!(std::mem::size_of::<Preimage<crate::mem_types::B32x2>>() == 12);
+const _: () = assert!(std::mem::size_of::<Preimage<u64>>() == 12);
 
 /// The first-touch journal of one flat array of `T` words.
 ///
@@ -351,8 +351,8 @@ fn first_sighting(seen: &mut Vec<u64>, index: u32) -> bool {
 
 #[derive(Default)]
 pub(crate) struct EqtbJournal {
-    pub(crate) hash: PlainTrail<crate::mem_types::B32x2>,
-    pub(crate) prim: PlainTrail<crate::mem_types::B32x2>,
+    pub(crate) hash: PlainTrail<crate::hash::HashEntry>,
+    pub(crate) prim: PlainTrail<crate::hash::PrimEntry>,
 }
 
 impl EqtbJournal {
@@ -382,19 +382,15 @@ pub(crate) fn disarm(st: &mut crate::state::EngineState) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mem_types::B32x2;
-
-    fn word(value: i32) -> B32x2 {
-        B32x2 {
-            s0: value,
-            s1: value,
-        }
+    fn word(value: i32) -> u64 {
+        let half = u64::from(value.cast_unsigned());
+        half | half << 32
     }
 
     #[test]
     fn word_journal_skips_words_past_the_epoch_base() {
         let mut data = vec![word(0); 4];
-        let mut journal = WordJournal::<B32x2>::default();
+        let mut journal = WordJournal::<u64>::default();
         journal.arm(data.len());
         data.resize(100, word(0));
         journal.note(70, data[70]);
@@ -419,7 +415,7 @@ mod tests {
     #[test]
     fn word_journal_records_only_the_first_touch() {
         let mut data = vec![word(0); 160];
-        let mut journal = WordJournal::<B32x2>::default();
+        let mut journal = WordJournal::<u64>::default();
         journal.arm(data.len());
         for value in 1..=3 {
             journal.note(7, data[7]);
@@ -439,7 +435,7 @@ mod tests {
     #[test]
     fn sealing_drops_words_back_at_their_preimage() {
         let mut data = vec![word(0); 4];
-        let mut journal = WordJournal::<B32x2>::default();
+        let mut journal = WordJournal::<u64>::default();
         journal.arm(data.len());
         journal.note_run(0, &data[..3]);
         data[1] = word(1);
@@ -455,7 +451,7 @@ mod tests {
     #[test]
     fn note_run_saves_each_word_once_across_a_bitmap_boundary() {
         let data: Vec<_> = (0..128).map(word).collect();
-        let mut journal = WordJournal::<B32x2>::default();
+        let mut journal = WordJournal::<u64>::default();
         journal.arm(data.len());
         journal.note(62, data[62]);
         journal.note(63, data[63]);
@@ -468,7 +464,7 @@ mod tests {
     #[test]
     fn note_run_saves_the_unnoted_words_of_a_partly_noted_node() {
         let data: Vec<_> = (0..16).map(word).collect();
-        let mut journal = WordJournal::<B32x2>::default();
+        let mut journal = WordJournal::<u64>::default();
         journal.arm(data.len());
         journal.note(5, data[5]);
         journal.note_run(4, &data[4..6]);
@@ -480,7 +476,7 @@ mod tests {
     #[test]
     fn sealing_starts_a_fresh_touch_epoch() {
         let mut data = vec![word(0); 64];
-        let mut journal = WordJournal::<B32x2>::default();
+        let mut journal = WordJournal::<u64>::default();
         journal.arm(data.len());
         journal.note(3, data[3]);
         data[3] = word(1);
@@ -515,7 +511,7 @@ mod tests {
     #[test]
     fn word_delta_composition_keeps_the_older_preimage() {
         let mut data = vec![word(0); 3];
-        let mut journal = WordJournal::<B32x2>::default();
+        let mut journal = WordJournal::<u64>::default();
         journal.arm(data.len());
         journal.note(0, data[0]);
         data[0] = word(1);
@@ -604,11 +600,11 @@ mod tests {
     }
 
     #[test]
-    fn eqtb_and_font_setters_capture_preimages() {
+    fn eqtb_setters_capture_preimages() {
         use crate::command::Command;
         let cs = crate::consts::HASH_BASE;
         let mut eqtb = crate::state::EqtbState {
-            hash: vec![B32x2 { s0: 0, s1: 0 }; 1],
+            hash: vec![crate::hash::HashEntry::default(); 1],
             meanings: crate::eqtb::Table::at_level(cs.index() + 1, Command::UndefinedCs, 0),
             ..Default::default()
         };
@@ -618,7 +614,7 @@ mod tests {
         eqtb.set_meaning(cs, Command::Halign, 3);
         eqtb.journal.hash.seal().apply_to(&mut eqtb.hash);
         eqtb.seal_tables().apply_to(&mut eqtb);
-        assert_eq!(eqtb.hash[0].s1, 0);
+        assert_eq!(eqtb.hash[0].text, crate::units::StrNumber::NONE);
         assert_eq!(
             (eqtb.meaning(cs), eqtb.cs_level(cs)),
             (Command::UndefinedCs, 0)

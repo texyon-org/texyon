@@ -36,8 +36,11 @@ State and memory:
   ordered like the raw value, so brace and parameter tests stay range checks
   (`is_left_brace()`, `is_brace()`, `is_match()`). `cur_tok`, `par_token`,
   `after_token` and token list nodes hold it. `Token::ZERO` is TeX's 0.
-- `units.rs`: `MemIdx`/`MemPtr` (null is `TEX_NULL`, not zero), `Scaled`,
-  `FontId`, `StrNumber`, `NodeType`, `GlueSign`. `mem_types.rs` holds the
+- `units.rs`: `MemIdx`, `CsId` and `PrimNum` wrap `NonZeroU32`, so TeX's
+  null or 0 is `None` (`MemPtr` is `Option<MemIdx>`, `cur_cs` is
+  `Option<CsId>`), and `Scaled`, `FontId`, `StrNumber`, `NodeType`,
+  `GlueSign`. The hash and primitive tables hold `HashEntry` and `PrimEntry`
+  (`hash.rs`). `mem_types.rs` holds the
   arena word records and `ListStateRecord`, whose `Mode` (`mode.rs`) carries
   the registers of its list (`prev_depth`, `space_factor` and `clang`,
   `incompleat_noad`).
