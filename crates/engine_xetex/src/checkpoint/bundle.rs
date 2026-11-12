@@ -842,7 +842,11 @@ impl HyphBundle {
 mod tests {
     use super::*;
     use crate::glyph_arena::{FixedPoint, GlyphBlob};
+    use crate::main_control::BoxContext;
     use crate::state::Saved;
+    use crate::units::Scaled;
+
+    const BOX_12: BoxContext = BoxContext::Shift(Scaled::from_raw(12));
 
     fn state() -> EngineState {
         let mut st = EngineState::default();
@@ -869,7 +873,7 @@ mod tests {
         }
         st.strings.str_pool[0] = 11;
         st.strings.pool_ptr = crate::units::PoolPos::from_raw(1);
-        st.save_stack.push_saved(Saved::BoxContext(12));
+        st.save_stack.push_saved(Saved::BoxContext(BOX_12));
         st.input.buffer.0[0] = 13;
         st.input.last = BufPos::from_raw(1);
         st.hyph.hc[0] = 14;
@@ -892,7 +896,8 @@ mod tests {
         st.shipout.dvi.manifest.begin_page(0);
         st.shipout.dvi.manifest.record_byte(139);
         st.strings.str_pool[0] = 110;
-        st.save_stack.data[0] = SaveEntry::Saved(Saved::BoxContext(120));
+        st.save_stack.data[0] =
+            SaveEntry::Saved(Saved::BoxContext(BoxContext::Shift(Scaled::from_raw(120))));
         st.input.buffer.0[0] = 130;
         st.hyph.hc[0] = 140;
         st.mem.glyph_blobs.get_mut(glyph).locations[0].x = Scaled::from_raw(150);
@@ -911,7 +916,7 @@ mod tests {
         st.shipout.dvi.manifest.finish_page(8);
         assert_eq!(st.shipout.dvi.manifest.take_pages().len(), 1);
         assert_eq!(st.strings.str_pool[0], 11);
-        assert_eq!(st.save_stack.saved(-1), Some(Saved::BoxContext(12)));
+        assert_eq!(st.save_stack.saved(-1), Some(Saved::BoxContext(BOX_12)));
         assert_eq!(st.input.buffer.0[0], 13);
         assert_eq!(st.hyph.hc[0], 14);
         assert_eq!(

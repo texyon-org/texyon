@@ -7,7 +7,7 @@ use crate::command::Command;
 use crate::consts::IGNORE_DEPTH;
 use crate::errors::{finish_error, Abort};
 use crate::input::{TokenType, TOKEN_LIST};
-use crate::main_control::{BOX_FLAG, GLOBAL_BOX_FLAG, LEADER_FLAG, SHIP_OUT_FLAG};
+use crate::main_control::BoxContext;
 use crate::mem::{CONTRIB_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
 use crate::mode::{Mode, ModeName};
 use crate::node::{AnyNode, NodePtr, PageInsNode};
@@ -392,36 +392,33 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
         };
 
         if matches!(entry, Entry::BoxContext) {
-            let i = match st.save_stack.kept(2) {
-                Some(Saved::BoxContext(i)) => i,
-                _ => 0,
-            };
-            if i != 0 {
-                if i < BOX_FLAG {
+            match st.save_stack.kept(2) {
+                Some(Saved::BoxContext(BoxContext::Shift(d))) if d != Scaled::ZERO => {
+                    let negative = d < Scaled::ZERO;
                     let command = if st.input.nest.stale_slot(p).mode.is_vertical() {
-                        Command::Hmove { left: i < 0 }
+                        Command::Hmove { left: negative }
                     } else {
-                        Command::Vmove { raise: i < 0 }
+                        Command::Vmove { raise: negative }
                     };
                     print_command(st, command);
-                    print_scaled(st, Scaled::from_raw(i.abs()));
+                    print_scaled(st, d.abs());
                     print(st, "pt");
-                } else if i < SHIP_OUT_FLAG {
-                    let mut box_num = i;
-                    if box_num >= GLOBAL_BOX_FLAG {
+                }
+                Some(Saved::BoxContext(BoxContext::SetBox { register, global })) => {
+                    if global {
                         print_esc(st, "global");
-                        box_num -= GLOBAL_BOX_FLAG - BOX_FLAG;
                     }
                     print_esc(st, "setbox");
-                    print_int(st, box_num - BOX_FLAG);
+                    print_int(st, i32::from(register));
                     print_char(st, b'=');
-                } else {
-                    if let Some(code) =
-                        LeaderCode::from_raw(i - LEADER_FLAG + LeaderCode::ALeaders.raw())
-                    {
-                        print_command(st, Command::LeaderShip(code));
-                    }
                 }
+                Some(Saved::BoxContext(BoxContext::ShipOut)) => {
+                    print_command(st, Command::LeaderShip(LeaderCode::Shipout));
+                }
+                Some(Saved::BoxContext(BoxContext::Leaders(kind))) => {
+                    print_command(st, Command::LeaderShip(LeaderCode::of_leaders(kind)));
+                }
+                _ => {}
             }
         }
 

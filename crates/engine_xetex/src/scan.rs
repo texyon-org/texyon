@@ -79,7 +79,7 @@ pub(crate) fn scan_optional_equals(st: &mut EngineState) -> Result<(), Abort> {
 pub(crate) fn scan_spec(
     st: &mut EngineState,
     c: GroupCode,
-    box_context: Option<i32>,
+    box_context: Option<crate::main_control::BoxContext>,
 ) -> Result<(), Abort> {
     let spec = if scan_keyword(st, "to")? {
         PackSpec::Exactly(scan_dimen(st, false)?)

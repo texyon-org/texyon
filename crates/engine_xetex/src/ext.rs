@@ -4,8 +4,8 @@
 
 use crate::bridge::{input_get_size, input_open, input_read, with_bridge, FileFormat};
 use crate::codes::{ConvertCode, LastItemCode};
-use crate::consts::DESIGN_SIZE;
 use crate::errors::Abort;
+use crate::fonts::FontSize;
 use crate::fonts::OTGR_FONT_FLAG;
 use crate::io::{AUTO, ICUMAPPING, RAW, UTF16BE, UTF16LE, UTF8};
 use crate::layout::{hb_tag, FontMappingHandle};
@@ -560,16 +560,16 @@ fn font_from_platform(font_ref: &PlatformFontRef, point_size: Scaled) -> Option<
     with_bridge(|io| Font::from_platform(font_ref.clone(), point_size.raw(), io))
 }
 
-/// Resolve a negative (`scaled`) font size against `font`'s design size.
-fn scale_by_design_size(font: Option<Font>, scaled_size: Scaled) -> Scaled {
+/// The point size to load at, `size` resolved against `font`'s design size.
+/// Without a font it stays in TeX's raw form, which the loaders also read.
+fn point_size(font: Option<Font>, size: FontSize) -> Scaled {
     let Some(font) = font else {
-        return scaled_size;
+        return size.raw();
     };
     let dsize = d2fix(font.design_size());
-    if scaled_size == DESIGN_SIZE {
-        dsize
-    } else {
-        crate::scaled_math::xn_over_d(dsize, -scaled_size.raw(), 1000).quotient
+    match size {
+        FontSize::DESIGN => dsize,
+        _ => size.of_design(dsize).quotient,
     }
 }
 
@@ -579,7 +579,7 @@ fn scale_by_design_size(font: Option<Font>, scaled_size: Scaled) -> Scaled {
 pub(crate) fn find_native_font(
     st: &mut EngineState,
     name: &[u8],
-    mut scaled_size: Scaled,
+    size: FontSize,
 ) -> Result<Option<(FontEngineHandle, Vec<u8>)>, Abort> {
     let mut rval = None;
 
@@ -594,10 +594,12 @@ pub(crate) fn find_native_font(
 
     if at(name_string, 0) == b'[' {
         let path = &name_string[1..];
-        if scaled_size < Scaled::ZERO {
-            let font = font_from_file(path, split.index, Scaled::UNITY * 10);
-            scaled_size = scale_by_design_size(font, scaled_size);
-        }
+        let scaled_size = match size {
+            FontSize::At(s) => s,
+            FontSize::Scaled(_) => {
+                point_size(font_from_file(path, split.index, Scaled::UNITY * 10), size)
+            }
+        };
         if let Some(font) = font_from_file(path, split.index, scaled_size) {
             set_loaded_font_design_size(d2fix(font.design_size()));
 
@@ -625,7 +627,7 @@ pub(crate) fn find_native_font(
     } else {
         let found = with_bridge(|io| {
             FontManager::with_font_manager(|mgr| {
-                mgr.find_font(name_string, var_string.as_mut(), fix2d(scaled_size), io)
+                mgr.find_font(name_string, var_string.as_mut(), fix2d(size.raw()), io)
             })
         });
         if let Some(font_ref) = found {
@@ -644,10 +646,10 @@ pub(crate) fn find_native_font(
                 mgr.get_full_name(&font_ref).to_bytes().to_vec()
             });
 
-            if scaled_size < Scaled::ZERO {
-                let font = font_from_platform(&font_ref, scaled_size);
-                scaled_size = scale_by_design_size(font, scaled_size);
-            }
+            let scaled_size = match size {
+                FontSize::At(s) => s,
+                FontSize::Scaled(_) => point_size(font_from_platform(&font_ref, size.raw()), size),
+            };
 
             let mut engine = None;
             if let Some(font) = font_from_platform(&font_ref, scaled_size) {

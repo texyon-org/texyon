@@ -10,9 +10,7 @@ use crate::command::ToksRef;
 use crate::command::Usv;
 use crate::command::{Command, RegisterRef};
 use crate::consts::NULL_FONT;
-use crate::consts::{
-    ACTIVE_MATH_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, DESIGN_SIZE, MAX_HALFWORD, TEX_INFINITY,
-};
+use crate::consts::{ACTIVE_MATH_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, MAX_HALFWORD, TEX_INFINITY};
 use crate::cs::{CsId, CsKind};
 use crate::eqtb::{
     self, CatLoc, CodeTable, DelLoc, DimenLoc, FontLoc, GlueLoc, IntLoc, LcLoc, MathLoc, SfLoc,
@@ -21,6 +19,7 @@ use crate::eqtb::{
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::read_font_info;
+use crate::fonts::FontSize;
 use crate::glue_store::GlueSpecId;
 use crate::hyphenation::{new_hyph_exceptions, new_patterns};
 use crate::mem::ZERO_GLUE;
@@ -28,7 +27,7 @@ use crate::node::{
     NodePtr, ParShapeNode, PenaltiesNode, SaElement, SaLeaf, SaPointerNode, SaWordNode,
 };
 use crate::params::{IntPar, TokPar};
-use crate::scaled_math::{mult_and_add, x_over_n, xn_over_d};
+use crate::scaled_math::{mult_and_add, x_over_n};
 use crate::scan::fetch_box;
 use crate::state::{EngineState, InteractionMode, MemState, Selector};
 use crate::token::{Token, TokenList};
@@ -39,7 +38,7 @@ use crate::units::{FontId, GlueOrder, MemPtr, Scaled, StrNumber};
 use crate::fonts::Side;
 
 use super::boxes::scan_box;
-use super::{BOX_FLAG, GLOBAL_BOX_FLAG};
+use super::BoxContext;
 
 fn new_interaction(st: &mut EngineState, mode: InteractionMode) {
     crate::output::print_ln(st);
@@ -195,9 +194,9 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
                     "less than 2048pt, so I've changed what you said to 10pt.",
                 ],
             )?;
-            Scaled::UNITY * 10
+            FontSize::At(Scaled::UNITY * 10)
         } else {
-            size
+            FontSize::At(size)
         }
     } else if crate::scan::scan_keyword(st, "scaled")? {
         let mag = crate::scan::scan_int(st)?;
@@ -212,22 +211,18 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
                 ),
                 &["The magnification ratio must be between 1 and 32768."],
             )?;
-            DESIGN_SIZE
+            FontSize::DESIGN
         } else {
-            Scaled::from_raw(-mag)
+            FontSize::Scaled(mag)
         }
     } else {
-        DESIGN_SIZE
+        FontSize::DESIGN
     };
     st.scanner.name_in_progress = false;
 
     let size_matches = |st: &mut EngineState, f: FontId| -> bool {
-        if s > Scaled::ZERO {
-            s == st.fonts.font_size[f]
-        } else {
-            let scaled = xn_over_d(st.fonts.font_dsize[f], -s.raw(), 1000);
-            st.fonts.font_size[f] == scaled.quotient && !scaled.overflowed
-        }
+        let scaled = s.of_design(st.fonts.font_dsize[f]);
+        st.fonts.font_size[f] == scaled.quotient && !scaled.overflowed
     };
     let f = 'search: {
         for f in st.fonts.font_ptr.loaded() {
@@ -707,14 +702,13 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
         }
         Command::SetBox => {
             let n = crate::scan::scan_register_num(st)?;
-            let n = if a >= 4 {
-                GLOBAL_BOX_FLAG + n
-            } else {
-                BOX_FLAG + n
+            let context = BoxContext::SetBox {
+                register: u16::try_from(n).or_confusion("box register")?,
+                global: a >= 4,
             };
             crate::scan::scan_optional_equals(st)?;
             if st.scanner.set_box_allowed {
-                scan_box(st, n)?;
+                scan_box(st, context)?;
             } else {
                 crate::errors::error(
                     st,

@@ -16,7 +16,7 @@ use crate::math::{after_math, init_math};
 use crate::mem::ZERO_GLUE;
 use crate::mode::ListKind::{Horizontal, Math, Vertical};
 use crate::mode::{Mode, ModeName};
-use crate::node::GlueKind;
+use crate::node::{GlueKind, LeaderKind};
 use crate::params::{GluePar, IntPar, TokPar};
 use crate::state::{EngineState, GroupCode};
 use crate::token::{Token, TokenKind};
@@ -52,10 +52,28 @@ pub(crate) const SPAN_CODE: i32 = 1_114_113;
 pub(crate) const CR_CODE: i32 = 1_114_114;
 pub(crate) const CR_CR_CODE: i32 = 1_114_115;
 
-pub(crate) const BOX_FLAG: i32 = 0x4000_0000;
-pub(crate) const GLOBAL_BOX_FLAG: i32 = 0x4000_8000;
-pub(crate) const SHIP_OUT_FLAG: i32 = 0x4001_0000;
-pub(crate) const LEADER_FLAG: i32 = 0x4001_0001;
+/// Where a box goes once it is made, TeX's `box_context`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum BoxContext {
+    /// Onto the current list, shifted by `\raise` and friends or by zero.
+    Shift(Scaled),
+    /// Into a box register, by `\setbox`.
+    SetBox { register: u16, global: bool },
+    /// Out to the page, by `\shipout`.
+    ShipOut,
+    /// Into the leaders of the glue that follows.
+    Leaders(LeaderKind),
+}
+
+impl BoxContext {
+    /// The context of `\shipout` or a leaders primitive.
+    pub(crate) fn leader_ship(code: LeaderCode) -> BoxContext {
+        match code.glue_leaders() {
+            Some(kind) => BoxContext::Leaders(kind),
+            None => BoxContext::ShipOut,
+        }
+    }
+}
 
 fn append_list(st: &mut EngineState, head: MemPtr, tail: MemPtr) -> Result<(), Abort> {
     let first = head.or_confusion("append_list")?.link(&st.mem);
@@ -343,12 +361,10 @@ fn dispatch_command(st: &mut EngineState, cancel_boundary: bool) -> Result<Next,
         | (Horizontal | Math, Command::Vmove { raise: negate }) => {
             let d = crate::scan::scan_dimen(st, false)?;
             let shift = if negate { -d } else { d };
-            scan_box(st, shift.raw())?;
+            scan_box(st, BoxContext::Shift(shift))?;
         }
-        (_, Command::LeaderShip(code)) => {
-            scan_box(st, LEADER_FLAG - LeaderCode::ALeaders.raw() + code.raw())?
-        }
-        (_, Command::MakeBox(code)) => begin_box(st, 0, code)?,
+        (_, Command::LeaderShip(code)) => scan_box(st, BoxContext::leader_ship(code))?,
+        (_, Command::MakeBox(code)) => begin_box(st, BoxContext::Shift(Scaled::ZERO), code)?,
         (Vertical, Command::StartPar { indent }) => new_graf(st, indent)?,
         (
             Vertical,

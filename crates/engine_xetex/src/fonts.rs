@@ -1,7 +1,7 @@
 //! Font loading: the TFM reader, native (OpenType/Graphite) font loading, native
 //! character nodes and the TFM `char_info` accessors.
 
-use crate::consts::{DESIGN_SIZE, EMPTY_STRING, INVALID_HANDLE, NULL_FONT, TOO_BIG_CHAR};
+use crate::consts::{EMPTY_STRING, INVALID_HANDLE, NULL_FONT, TOO_BIG_CHAR};
 use crate::cs::CsId;
 use crate::ext::{
     aat_get_font_metrics, apply_tfm_font_mapping, find_native_font, load_mapping_file,
@@ -332,17 +332,51 @@ pub(crate) fn new_native_character(
     Ok(w)
 }
 
+/// The size `\font` asks for.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(crate) enum FontSize {
+    /// `at` this size.
+    At(Scaled),
+    /// `scaled` by this many thousandths of the design size.
+    Scaled(i32),
+}
+
+impl FontSize {
+    /// The design size, which is also `scaled 1000`.
+    pub(crate) const DESIGN: FontSize = FontSize::Scaled(1000);
+
+    /// The size for a font designed at `design`.
+    pub(crate) fn of_design(self, design: Scaled) -> crate::scaled_math::Divided<Scaled, i32> {
+        match self {
+            FontSize::At(s) => crate::scaled_math::Divided {
+                quotient: s,
+                remainder: 0,
+                overflowed: false,
+            },
+            FontSize::Scaled(m) => crate::scaled_math::xn_over_d(design, m, 1000),
+        }
+    }
+
+    /// TeX's encoding, a negative ratio for `scaled`, which the font manager reads.
+    pub(crate) fn raw(self) -> Scaled {
+        match self {
+            FontSize::At(s) => s,
+            FontSize::Scaled(m) => Scaled::from_raw(-m),
+        }
+    }
+}
+
 /// "Font \cs=name at size", how a font loading error names the font.
 #[derive(Copy, Clone)]
 struct FontSpec {
     cs: CsId,
     file: FileName,
     quote: Option<u8>,
-    size: Scaled,
+    size: FontSize,
 }
 
 impl FontSpec {
-    fn new(cs: CsId, name: &ScannedName, size: Scaled) -> Self {
+    fn new(cs: CsId, name: &ScannedName, size: FontSize) -> Self {
         Self {
             cs,
             file: name.file,
@@ -362,10 +396,10 @@ impl TexPrint for FontSpec {
         if let Some(q) = self.quote {
             print_char(st, q);
         }
-        if self.size >= Scaled::ZERO {
-            print(st, (" at ", self.size, "pt"));
-        } else if self.size != DESIGN_SIZE {
-            print(st, (" scaled ", -self.size.raw()));
+        match self.size {
+            FontSize::At(s) => print(st, (" at ", s, "pt")),
+            FontSize::DESIGN => {}
+            FontSize::Scaled(m) => print(st, (" scaled ", m)),
         }
     }
 }
@@ -374,7 +408,7 @@ pub(crate) fn read_font_info(
     st: &mut EngineState,
     u: CsId,
     name: &ScannedName,
-    s: Scaled,
+    s: FontSize,
 ) -> Result<FontId, Abort> {
     let FileName {
         name: nom,
@@ -401,13 +435,16 @@ pub(crate) fn read_font_info(
         print_nl(st, "Requested font \"");
         print(st, path.as_slice());
         print_char(st, b'"');
-        if s < Scaled::ZERO {
-            print(st, " scaled ");
-            print_int(st, -s.raw());
-        } else {
-            print(st, " at ");
-            print_scaled(st, s);
-            print(st, "pt");
+        match s {
+            FontSize::Scaled(m) => {
+                print(st, " scaled ");
+                print_int(st, m);
+            }
+            FontSize::At(s) => {
+                print(st, " at ");
+                print_scaled(st, s);
+                print(st, "pt");
+            }
         }
         end_diagnostic(st, false);
     }
@@ -594,12 +631,9 @@ fn load_native_font(st: &mut EngineState, font: FontSpec, name: &[u8]) -> Result
         return Ok(NULL_FONT);
     };
 
-    let actual_size = if s >= Scaled::ZERO {
-        s
-    } else if s != DESIGN_SIZE {
-        crate::scaled_math::xn_over_d(loaded_font_design_size(), -s.raw(), 1000).quotient
-    } else {
-        loaded_font_design_size()
+    let actual_size = match s {
+        FontSize::DESIGN => loaded_font_design_size(),
+        _ => s.of_design(loaded_font_design_size()).quotient,
     };
 
     if st.strings.pool_ptr + full_name.len() as i32 > st.strings.pool_size {

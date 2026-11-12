@@ -511,6 +511,16 @@ impl LeaderCode {
             LeaderCode::XLeaders => Some(LeaderKind::Expanded),
         }
     }
+
+    /// The primitive that makes leaders of `kind`.
+    pub(crate) fn of_leaders(kind: crate::node::LeaderKind) -> LeaderCode {
+        use crate::node::LeaderKind;
+        match kind {
+            LeaderKind::Aligned => LeaderCode::ALeaders,
+            LeaderKind::Centered => LeaderCode::CLeaders,
+            LeaderKind::Expanded => LeaderCode::XLeaders,
+        }
+    }
 }
 
 code_enum! {

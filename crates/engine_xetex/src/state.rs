@@ -768,7 +768,7 @@ pub(crate) enum Restore {
 #[derive(Copy, Clone, Debug, PartialEq, Hash)]
 pub(crate) enum Saved {
     /// Where a box goes when its group ends, `box_context`.
-    BoxContext(i32),
+    BoxContext(crate::main_control::BoxContext),
     Spec(crate::packaging::PackSpec),
     /// An `\insert` with its box number, or a `\vadjust` (number 255).
     Insert {
