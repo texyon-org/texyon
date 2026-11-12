@@ -268,7 +268,7 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
             if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
                 st.fonts.map_char_to_glyph(f, c)? > 0
             } else if i32::from(st.fonts.font_bc[f]) <= c && i32::from(st.fonts.font_ec[f]) >= c {
-                st.fonts.effective_char_info(f, c as u16).exists()
+                st.fonts.effective_char_info(f, c as u16).is_some()
             } else {
                 false
             }

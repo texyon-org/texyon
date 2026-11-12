@@ -763,10 +763,14 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
         Command::AssignFontDimen => {
-            let k = crate::scan::find_font_dimen(st, true)?;
+            let dimen = crate::scan::find_font_dimen(st, true)?;
             crate::scan::scan_optional_equals(st)?;
             let d = crate::scan::scan_dimen(st, false)?;
-            st.fonts.set_font_info_sc(k, d);
+            if let Some((f, n)) = dimen {
+                if !st.fonts.params[f].set(n, d) {
+                    return Err(Abort::Confusion("font dimen"));
+                }
+            }
         }
         Command::AssignFontInt(code) => {
             let f = crate::scan::scan_font_ident(st)?;

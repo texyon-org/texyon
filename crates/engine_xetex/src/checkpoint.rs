@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use crate::glue_store::GlueSpec;
 use crate::journal::{PlainDelta, WordDelta};
-use crate::mem_types::{B32x2, MemoryWord};
+use crate::mem_types::B32x2;
 use crate::replay::fence::ReplayFence;
 use crate::replay::source::SourceSnapshot;
 use crate::state::EngineState;
@@ -23,7 +23,6 @@ struct EngineDelta {
     tables: crate::eqtb::TablesDelta,
     hash: PlainDelta<B32x2>,
     prim: PlainDelta<B32x2>,
-    font_info: PlainDelta<MemoryWord>,
 }
 
 impl EngineDelta {
@@ -34,17 +33,14 @@ impl EngineDelta {
     }
 
     fn take_open(st: &mut EngineState) -> Self {
-        let delta = Self {
+        Self {
             mem: st.mem.journal.seal(&st.mem.data),
             tokens: st.mem.tokens.seal_journal(),
             glue: st.mem.glue.seal_journal(),
             tables: st.eqtb.seal_tables(),
             hash: st.eqtb.journal.hash.seal(),
             prim: st.eqtb.journal.prim.seal(),
-            font_info: st.fonts.font_info_journal.seal(),
-        };
-        st.fonts.fmem_epoch_base = st.fonts.fmem_ptr;
-        delta
+        }
     }
 
     fn snapshot_open(st: &EngineState) -> Self {
@@ -55,7 +51,6 @@ impl EngineDelta {
             tables: st.eqtb.snapshot_tables(),
             hash: st.eqtb.journal.hash.snapshot(),
             prim: st.eqtb.journal.prim.snapshot(),
-            font_info: st.fonts.font_info_journal.snapshot(),
         }
     }
 
@@ -66,7 +61,6 @@ impl EngineDelta {
         self.tables.apply_to(&mut st.eqtb);
         self.hash.apply_to(&mut st.eqtb.hash);
         self.prim.apply_to(&mut st.eqtb.prim);
-        self.font_info.apply_to(&mut st.fonts.font_info);
     }
 
     fn compose_with_older(&mut self, older: EngineDelta) {
@@ -76,7 +70,6 @@ impl EngineDelta {
         self.tables.compose_with_older(older.tables);
         self.hash.compose_with_older(older.hash);
         self.prim.compose_with_older(older.prim);
-        self.font_info.compose_with_older(older.font_info);
         self.compact();
     }
 
@@ -87,7 +80,6 @@ impl EngineDelta {
         self.tables.compact();
         self.hash.compact();
         self.prim.compact();
-        self.font_info.compact();
     }
 
     fn allocated_bytes(&self) -> usize {
@@ -97,7 +89,6 @@ impl EngineDelta {
             + self.tables.allocated_bytes()
             + self.hash.allocated_bytes()
             + self.prim.allocated_bytes()
-            + self.font_info.allocated_bytes()
     }
 }
 
@@ -228,7 +219,6 @@ impl<B> CheckpointLadder<B> {
         }
         restore(st, &self.rungs[target].bundle);
         self.rungs.truncate(target + 1);
-        st.fonts.fmem_epoch_base = st.fonts.fmem_ptr;
     }
 
     /// Remove an interior rung. Its successor absorbs the older undo delta
@@ -646,7 +636,7 @@ mod tests {
     #[derive(Clone, Copy)]
     struct Bundle {
         free_pairs: MemPtr,
-        fmem_ptr: crate::units::FontInfoIdx,
+        fmem_ptr: i32,
         tokens: crate::token::TokenStoreMarks,
     }
 
@@ -673,7 +663,6 @@ mod tests {
         st.mem.data = crate::mem_types::zeroed_vec(8);
         st.eqtb.hash = vec![B32x2 { s0: 0, s1: 0 }; 1];
         st.eqtb.meanings = crate::eqtb::Table::at_level(4, Command::UndefinedCs, 0);
-        st.fonts.font_info = crate::mem_types::zeroed_vec(4);
         st.eqtb.ints = crate::eqtb::Table::new(crate::eqtb::IntLoc::LEN, 0);
         crate::journal::arm(&mut st);
         st
@@ -695,7 +684,7 @@ mod tests {
         st.mem.set_word(3, 21);
         st.eqtb.ints.set(COUNT1, 23, 3);
         st.eqtb.set_meaning(CS, Command::Vrule, 3);
-        st.fonts.fmem_ptr = crate::units::FontInfoIdx::from_raw(2);
+        st.fonts.fmem_ptr = 2;
         let rung = bundle(&st);
         ladder.push(&mut st, rung, 2, true, false);
 
@@ -715,7 +704,7 @@ mod tests {
             (Command::Halign, 2)
         );
         assert_eq!(st.mem.free.0[2], crate::units::MemIdx::from_raw(12));
-        assert_eq!(st.fonts.fmem_ptr, crate::units::FontInfoIdx::from_raw(0));
+        assert_eq!(st.fonts.fmem_ptr, 0);
         assert_eq!(ladder.len(), 2);
     }
 

@@ -2,7 +2,7 @@
 
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
-use crate::fonts::{CharTag, LigChar};
+use crate::fonts::{CharTag, LigChar, LigKernAction, LigOp};
 use crate::hyphenation::TrieOp;
 use crate::main_control::NewChar;
 use crate::mem::HOLD_HEAD;
@@ -13,7 +13,7 @@ use crate::node::{
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, FontState, HyphState, MemState};
 use crate::units::MemIdx;
-use crate::units::{FontId, FontInfoIdx, MemPtr, Scaled, StrNumber};
+use crate::units::{FontId, MemPtr, Scaled, StrNumber};
 
 use super::odd;
 use super::prehyph::Word;
@@ -207,18 +207,18 @@ fn reconstitute(
 
     loop {
         'continue_: loop {
+            let hf = st.hyph.hf;
             let (mut k, mut q) = if r.cur_l == LigChar::NONE {
-                let k = st.fonts.bchar_label[st.hyph.hf];
-                if k == FontInfoIdx::NON_ADDRESS {
+                let Some(k) = st.fonts.bchar_label(hf) else {
                     break 'continue_;
-                }
-                (k, st.fonts.lig_kern_step(k))
+                };
+                (k, st.fonts.lig_kern_step(hf, k)?)
             } else {
-                let info = st.fonts.effective_char_info(st.hyph.hf, r.cur_l.code());
-                if info.tag() != CharTag::Lig {
+                let info = st.fonts.effective_char_info(hf, r.cur_l.code());
+                let Some(CharTag::Lig(start)) = info.map(|i| i.tag) else {
                     break 'continue_;
-                }
-                st.fonts.lig_kern_start(st.hyph.hf, info)
+                };
+                st.fonts.lig_kern_start(hf, start)?
             };
 
             let mut test_char = if r.cur_rh.is_char() {
@@ -228,7 +228,7 @@ fn reconstitute(
             };
 
             loop {
-                if q.matches(test_char) {
+                if let Some(action) = q.action_for(test_char) {
                     if r.cur_rh.is_char() {
                         st.hyph.hyphen_passed = r.j;
                         r.hchar = LigChar::NONE;
@@ -241,86 +241,89 @@ fn reconstitute(
                         r.hchar = LigChar::NONE;
                     }
 
-                    if !q.is_kern() {
-                        if r.cur_l == LigChar::NONE {
-                            r.lft_hit = true;
-                        }
-                        if r.j == r.n && r.lig_stack.is_none() {
-                            r.rt_hit = true;
-                        }
-
-                        match q.lig_op() {
-                            1 | 5 => {
-                                r.cur_l = LigChar::of(q.lig_char());
-                                r.ligature_present = true;
-                            }
-                            2 | 6 => {
-                                r.cur_r = LigChar::of(q.lig_char());
-                                if let Some(top) = r.lig_stack {
-                                    st.mem[top].character = r.cur_r.code();
-                                } else {
-                                    let item = st.mem.new_lig_item(r.cur_r.code())?;
-                                    r.lig_stack = Some(item);
-                                    if r.j == r.n {
-                                        r.bchar = LigChar::NONE;
-                                    } else {
-                                        let p = st
-                                            .mem
-                                            .new_char(st.hyph.hf, st.hyph.hu[r.j + 1].code())?;
-                                        st.mem[item].component = p.ptr();
-                                    }
-                                }
-                            }
-                            3 => {
-                                r.cur_r = LigChar::of(q.lig_char());
-                                let below = r.lig_stack.map(NodePtr::idx);
-                                let item = st.mem.new_lig_item(r.cur_r.code())?;
-                                r.lig_stack = Some(item);
-                                item.idx().set_link(&mut st.mem, below);
-                            }
-                            7 | 11 => {
-                                if r.ligature_present {
-                                    wrap_lig(st, &mut r, false)?;
-                                }
-                                r.cur_q = r.t;
-                                r.cur_l = LigChar::of(q.lig_char());
-                                r.ligature_present = true;
-                            }
-                            _ => {
-                                r.cur_l = LigChar::of(q.lig_char());
-                                r.ligature_present = true;
-                                if r.lig_stack.is_some() {
-                                    r.pop_lig_stack(&mut st.mem, &st.hyph);
-                                } else if r.j == r.n {
-                                    break 'continue_;
-                                } else {
-                                    r.t = st.mem.append_char(r.t, st.hyph.hf, r.cur_r.code())?;
-                                    r.j += 1;
-                                    r.load_right(&st.hyph);
-                                }
-                            }
-                        }
-
-                        if q.lig_op() > 4 && q.lig_op() != 7 {
+                    let (op, lig_char) = match action {
+                        LigKernAction::Kern(kern) => {
+                            w = kern;
                             break 'continue_;
                         }
-                        continue 'continue_;
+                        LigKernAction::Lig { op, char } => (op, LigChar::of(char)),
+                    };
+                    if r.cur_l == LigChar::NONE {
+                        r.lft_hit = true;
+                    }
+                    if r.j == r.n && r.lig_stack.is_none() {
+                        r.rt_hit = true;
                     }
 
-                    w = st.fonts.char_kern(st.hyph.hf, q);
-                    break 'continue_;
+                    match op {
+                        LigOp::KeepRight | LigOp::KeepRightSkip => {
+                            r.cur_l = lig_char;
+                            r.ligature_present = true;
+                        }
+                        LigOp::KeepLeft | LigOp::KeepLeftSkip => {
+                            r.cur_r = lig_char;
+                            if let Some(top) = r.lig_stack {
+                                st.mem[top].character = r.cur_r.code();
+                            } else {
+                                let item = st.mem.new_lig_item(r.cur_r.code())?;
+                                r.lig_stack = Some(item);
+                                if r.j == r.n {
+                                    r.bchar = LigChar::NONE;
+                                } else {
+                                    let p =
+                                        st.mem.new_char(st.hyph.hf, st.hyph.hu[r.j + 1].code())?;
+                                    st.mem[item].component = p.ptr();
+                                }
+                            }
+                        }
+                        LigOp::KeepBoth => {
+                            r.cur_r = lig_char;
+                            let below = r.lig_stack.map(NodePtr::idx);
+                            let item = st.mem.new_lig_item(r.cur_r.code())?;
+                            r.lig_stack = Some(item);
+                            item.idx().set_link(&mut st.mem, below);
+                        }
+                        LigOp::KeepBothSkip | LigOp::KeepBothSkip2 => {
+                            if r.ligature_present {
+                                wrap_lig(st, &mut r, false)?;
+                            }
+                            r.cur_q = r.t;
+                            r.cur_l = lig_char;
+                            r.ligature_present = true;
+                        }
+                        LigOp::Replace => {
+                            r.cur_l = lig_char;
+                            r.ligature_present = true;
+                            if r.lig_stack.is_some() {
+                                r.pop_lig_stack(&mut st.mem, &st.hyph);
+                            } else if r.j == r.n {
+                                break 'continue_;
+                            } else {
+                                r.t = st.mem.append_char(r.t, st.hyph.hf, r.cur_r.code())?;
+                                r.j += 1;
+                                r.load_right(&st.hyph);
+                            }
+                        }
+                    }
+
+                    if matches!(
+                        op,
+                        LigOp::KeepRightSkip | LigOp::KeepLeftSkip | LigOp::KeepBothSkip2
+                    ) {
+                        break 'continue_;
+                    }
+                    continue 'continue_;
                 }
 
-                if q.is_last() {
+                let Some(next) = q.next(k) else {
                     if r.cur_rh == LigChar::NONE {
                         break 'continue_;
                     }
                     r.cur_rh = LigChar::NONE;
                     continue 'continue_;
-                }
-
-                k = q.next_index(k);
-                q = st.fonts.lig_kern_step(k);
+                };
+                k = next;
+                q = st.fonts.lig_kern_step(hf, k)?;
                 test_char = if r.cur_rh.is_char() {
                     r.cur_rh
                 } else {
@@ -642,7 +645,7 @@ fn insert_hyphens(
                 st.mem[disc].post_break = None;
                 let mut c_loc = 0;
                 let mut c = LigChar::NONE;
-                if st.fonts.bchar_label[st.hyph.hf] != FontInfoIdx::NON_ADDRESS {
+                if st.fonts.bchar_label(st.hyph.hf).is_some() {
                     l -= 1;
                     c = st.hyph.hu[l];
                     c_loc = l;

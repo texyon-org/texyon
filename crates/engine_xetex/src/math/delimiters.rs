@@ -11,6 +11,7 @@ use crate::ot_math::GlyphAssembly;
 use crate::packaging::PackSpec;
 use crate::params::DimenPar;
 use crate::state::{EngineState, FontState, MemState};
+use crate::tfm::ExtIdx;
 use crate::units::{FontId, GlueOrder, GlueSign, Scaled};
 
 impl FontState {
@@ -57,10 +58,10 @@ impl MemState {
         c: u16,
     ) -> Result<NodePtr<BoxNode>, Abort> {
         let c_eff = fonts.effective_char(f, c);
-        let q = fonts.char_info(f, c_eff);
-        let width = fonts.char_width(f, q) + fonts.char_italic(f, q);
-        let height = fonts.char_height(f, q);
-        let depth = fonts.char_depth(f, q);
+        let q = fonts.char_metrics(f, c_eff);
+        let width = q.width + q.italic;
+        let height = q.height;
+        let depth = q.depth;
 
         let b = self.new_null_box()?;
         let p = self.new_char(f, c)?;
@@ -84,8 +85,8 @@ impl MemState {
 impl FontState {
     fn height_plus_depth(&mut self, f: FontId, c: u16) -> Scaled {
         let c = self.effective_char(f, c);
-        let q = self.char_info(f, c);
-        self.char_height(f, q) + self.char_depth(f, q)
+        let q = self.char_metrics(f, c);
+        q.height + q.depth
     }
 }
 
@@ -169,8 +170,7 @@ pub(super) fn rebox(
     {
         let f = st.mem[ch].font;
         let c = st.fonts.effective_char(f, st.mem[ch].character);
-        let q = st.fonts.char_info(f, c);
-        let v = st.fonts.char_width(f, q);
+        let v = st.fonts.char_metrics(f, c).width;
         let bw = st.mem[b].width;
         if v != bw {
             let k = st.mem.new_kern(bw - v)?;
@@ -278,25 +278,25 @@ impl MemState {
         &mut self,
         fonts: &mut FontState,
         f: FontId,
-        q: CharInfo,
+        e: ExtIdx,
         v: Scaled,
     ) -> Result<NodePtr<BoxNode>, Abort> {
         let vb = self.new_null_vbox()?;
-        let r = fonts.ext_recipe(f, q);
+        let r = fonts.ext_recipe(f, e)?;
         let u = fonts.height_plus_depth(f, r.rep);
         let effective_c = fonts.effective_char(f, r.rep);
-        let qq = fonts.char_info(f, effective_c);
-        let box_width = fonts.char_width(f, qq) + fonts.char_italic(f, qq);
+        let qq = fonts.char_metrics(f, effective_c);
+        let box_width = qq.width + qq.italic;
         self[vb].width = box_width;
         let mut w = Scaled::ZERO;
-        if r.bot != 0 {
-            w += fonts.height_plus_depth(f, r.bot);
+        if let Some(piece) = r.bot {
+            w += fonts.height_plus_depth(f, piece);
         }
-        if r.mid != 0 {
-            w += fonts.height_plus_depth(f, r.mid);
+        if let Some(piece) = r.mid {
+            w += fonts.height_plus_depth(f, piece);
         }
-        if r.top != 0 {
-            w += fonts.height_plus_depth(f, r.top);
+        if let Some(piece) = r.top {
+            w += fonts.height_plus_depth(f, piece);
         }
 
         let mut n: i32 = 0;
@@ -304,29 +304,29 @@ impl MemState {
             while w < v {
                 w += u;
                 n += 1;
-                if r.mid != 0 {
+                if r.mid.is_some() {
                     w += u;
                 }
             }
         }
-        if r.bot != 0 {
-            let p = self.char_box_tfm(fonts, f, r.bot)?;
+        if let Some(piece) = r.bot {
+            let p = self.char_box_tfm(fonts, f, piece)?;
             self.stack_into_box(vb, p);
         }
         for _ in 1..=n {
             let p = self.char_box_tfm(fonts, f, r.rep)?;
             self.stack_into_box(vb, p);
         }
-        if r.mid != 0 {
-            let p = self.char_box_tfm(fonts, f, r.mid)?;
+        if let Some(piece) = r.mid {
+            let p = self.char_box_tfm(fonts, f, piece)?;
             self.stack_into_box(vb, p);
             for _ in 1..=n {
                 let p = self.char_box_tfm(fonts, f, r.rep)?;
                 self.stack_into_box(vb, p);
             }
         }
-        if r.top != 0 {
-            let p = self.char_box_tfm(fonts, f, r.top)?;
+        if let Some(piece) = r.top {
+            let p = self.char_box_tfm(fonts, f, piece)?;
             self.stack_into_box(vb, p);
         }
         let height = self[vb].height;
@@ -388,16 +388,17 @@ pub(super) fn var_delimiter(
                             let mut y = x as u16;
                             if y >= fonts.font_bc[g] && y <= fonts.font_ec[g] {
                                 loop {
-                                    q = fonts.char_info(g, i32::from(y));
-                                    if !q.exists() {
+                                    let Some(info) = fonts.char_info(g, i32::from(y)) else {
+                                        q = CharInfo::NULL;
                                         break;
-                                    }
-                                    if q.tag() == CharTag::Ext {
+                                    };
+                                    q = info;
+                                    if let CharTag::Ext(_) = q.tag {
                                         f = g;
                                         c = y;
                                         break 'found;
                                     }
-                                    let u = fonts.char_height(g, q) + fonts.char_depth(g, q);
+                                    let u = q.height + q.depth;
                                     if u > w {
                                         f = g;
                                         c = y;
@@ -406,10 +407,10 @@ pub(super) fn var_delimiter(
                                             break 'found;
                                         }
                                     }
-                                    if q.tag() != CharTag::List {
+                                    let CharTag::List(larger) = q.tag else {
                                         break;
-                                    }
-                                    y = q.remainder();
+                                    };
+                                    y = larger;
                                 }
                             }
                         }
@@ -432,8 +433,8 @@ pub(super) fn var_delimiter(
         st.mem[b].width = width;
         b
     } else if !st.fonts.font_uses_opentype(f) {
-        if q.tag() == CharTag::Ext {
-            st.mem.build_ext_delimiter_box(&mut st.fonts, f, q, v)?
+        if let CharTag::Ext(e) = q.tag {
+            st.mem.build_ext_delimiter_box(&mut st.fonts, f, e, v)?
         } else {
             char_box(st, f, i32::from(c))?
         }

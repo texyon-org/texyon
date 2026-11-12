@@ -80,6 +80,7 @@ mod string_pool;
 mod sync_index;
 mod synctex;
 mod texmfmp;
+mod tfm;
 mod token;
 mod units;
 mod utf8;

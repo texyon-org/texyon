@@ -28,7 +28,7 @@ use crate::state::{EngineState, FontEngineHandle};
 use crate::token::TokenList;
 use crate::units::CsId;
 use crate::units::RawPtr;
-use crate::units::{FontId, FontInfoIdx, NodeType, Scaled, StrNumber};
+use crate::units::{FontId, NodeType, Scaled, StrNumber};
 use std::rc::Rc;
 
 use super::next::get_x_non_blank;
@@ -617,13 +617,12 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: LastItemCode) -> Result<Scaled
                 }?
             } else if i32::from(st.fonts.font_bc[f]) <= c && i32::from(st.fonts.font_ec[f]) >= c {
                 let ec = st.fonts.effective_char(f, c as u16);
-                let info = st.fonts.char_info(f, ec);
-                let fonts = &st.fonts;
+                let info = st.fonts.char_metrics(f, ec);
                 match m {
-                    LastItemCode::FontCharWd => fonts.char_width(f, info),
-                    LastItemCode::FontCharHt => fonts.char_height(f, info),
-                    LastItemCode::FontCharDp => fonts.char_depth(f, info),
-                    _ => fonts.char_italic(f, info),
+                    LastItemCode::FontCharWd => info.width,
+                    LastItemCode::FontCharHt => info.height,
+                    LastItemCode::FontCharDp => info.depth,
+                    _ => info.italic,
                 }
             } else {
                 Scaled::ZERO
@@ -845,9 +844,8 @@ pub(super) fn scan_something_internal(
             Command::CharGiven(c) => CurVal::Int(c.raw()),
             Command::MathGiven(code) | Command::XetexMathGiven(code) => CurVal::Int(code),
             Command::AssignFontDimen => {
-                let k = find_font_dimen(st, false)?;
-                st.fonts.set_font_info_sc(st.fonts.fmem_ptr, Scaled::ZERO);
-                CurVal::Dimen(st.fonts.font_info_sc(k))
+                let dimen = find_font_dimen(st, false)?;
+                CurVal::Dimen(dimen.map_or(Scaled::ZERO, |(f, n)| st.fonts.param(f, n)))
             }
             Command::AssignFontInt(code) => {
                 let f = scan_font_ident(st)?;
@@ -935,52 +933,50 @@ pub(crate) fn scan_font_ident(st: &mut EngineState) -> Result<FontId, Abort> {
     Ok(f)
 }
 
-/// The `font_info` index of the `\fontdimen` being scanned.
-pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<FontInfoIdx, Abort> {
+/// The font and parameter number of the `\fontdimen` being scanned, `None`
+/// (after an error) when the font has no such parameter.
+pub(crate) fn find_font_dimen(
+    st: &mut EngineState,
+    writing: bool,
+) -> Result<Option<(FontId, i32)>, Abort> {
     let n = scan_int(st)?;
     let f = scan_font_ident(st)?;
 
-    let k = if n <= 0 {
-        st.fonts.fmem_ptr
-    } else {
+    let found = n > 0 && {
         if writing && (SPACE_CODE..=SPACE_SHRINK_CODE).contains(&n) {
             if let Some(glue) = st.fonts.font_glue[f].take() {
                 st.mem.delete_glue_ref(glue);
             }
         }
 
-        if n <= st.fonts.font_params[f] {
-            st.fonts.param_base[f] + n
+        if n <= st.fonts.param_count(f) {
+            true
         } else if f < st.fonts.font_ptr {
-            st.fonts.fmem_ptr
+            false
         } else {
-            // Only the most recently loaded font can grow its parameter area.
-            loop {
+            // Only the most recently loaded font can grow its parameters, as in WEB.
+            while st.fonts.param_count(f) < n {
                 if st.fonts.fmem_ptr == st.fonts.font_mem_size {
                     return Err(Abort::Overflow {
                         capacity: crate::errors::Capacity::FontMemory,
-                        n: st.fonts.font_mem_size.raw(),
+                        n: st.fonts.font_mem_size,
                     });
                 }
-                st.fonts.set_font_info_sc(st.fonts.fmem_ptr, Scaled::ZERO);
+                st.fonts.params[f].grow();
                 st.fonts.fmem_ptr += 1;
-                st.fonts.font_params[f] += 1;
-                if n == st.fonts.font_params[f] {
-                    break;
-                }
             }
-            st.fonts.fmem_ptr - 1
+            true
         }
     };
 
-    if k == st.fonts.fmem_ptr {
+    if !found {
         crate::errors::error(
             st,
             (
                 "Font ",
                 crate::output::Esc(st.eqtb.font_id_text(f)),
                 " has only ",
-                st.fonts.font_params[f],
+                st.fonts.param_count(f),
                 " fontdimen parameters",
             ),
             &[
@@ -989,7 +985,7 @@ pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<Fon
             ],
         )?;
     }
-    Ok(k)
+    Ok(found.then_some((f, n)))
 }
 
 pub(crate) fn scan_glyph_number(st: &mut EngineState, f: FontId) -> Result<i32, Abort> {

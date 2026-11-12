@@ -1,6 +1,6 @@
 //! Named state digests used only to verify checkpoint restoration.
 
-use crate::mem_types::{B32x2, ListStateRecord, MemoryWord};
+use crate::mem_types::ListStateRecord;
 use crate::mode::Mode;
 use crate::node::NodePtr;
 use crate::state::{EngineState, InputName, InputState, Restore, SaveEntry};
@@ -99,11 +99,6 @@ impl std::hash::Hasher for Fnv {
     fn finish(&self) -> u64 {
         self.0
     }
-}
-
-fn memory_word(word: MemoryWord) -> u64 {
-    let B32x2 { s0, s1 } = word.b32();
-    u64::from(s0 as u32) | u64::from(s1 as u32) << 32
 }
 
 fn digest_mem(st: &EngineState) -> u64 {
@@ -310,16 +305,13 @@ fn digest_fonts(st: &EngineState) -> u64 {
         i32::from(fonts.loaded_font_flags),
         fonts.loaded_font_letter_space.raw(),
         fonts.native_font_type_flag.raw(),
-        fonts.font_mem_size.raw(),
+        fonts.font_mem_size,
         fonts.font_max.raw(),
-        fonts.fmem_ptr.raw(),
+        fonts.fmem_ptr,
         fonts.font_ptr.raw(),
     ]);
     h.word(u64::from(fonts.xtx_ligature_present));
     h.word(u64::from(fonts.gave_char_warning_help));
-    for &word in fonts.font_info.iter().take(fonts.fmem_ptr.index()) {
-        h.word(memory_word(word));
-    }
     let font_count = (fonts.font_ptr.raw() + 1).max(0) as usize;
     macro_rules! hash_values {
         ($field:ident $(.$raw:ident())?) => {
@@ -332,27 +324,22 @@ fn digest_fonts(st: &EngineState) -> u64 {
     hash_values!(font_letter_space.raw());
     hash_values!(font_size.raw());
     hash_values!(font_dsize.raw());
-    hash_values!(font_params);
     hash_values!(font_name.raw());
     hash_values!(font_area.raw());
     hash_values!(font_bc);
     hash_values!(font_ec);
-    hash_values!(bchar_label.raw());
     hash_values!(font_bchar.raw());
     hash_values!(font_false_bchar.raw());
     for &glue in fonts.font_glue.as_slice().iter().take(font_count) {
         h.i32(glue.map_or(crate::consts::TEX_NULL, crate::glue_store::GlueSpecId::raw));
     }
     hash_values!(font_used);
-    hash_values!(char_base.raw());
-    hash_values!(width_base.raw());
-    hash_values!(height_base.raw());
-    hash_values!(depth_base.raw());
-    hash_values!(italic_base.raw());
-    hash_values!(lig_kern_base.raw());
-    hash_values!(kern_base.raw());
-    hash_values!(exten_base.raw());
-    hash_values!(param_base.raw());
+    for metrics in fonts.metrics.as_slice().iter().take(font_count) {
+        std::hash::Hash::hash(metrics, &mut h);
+    }
+    for params in fonts.params.as_slice().iter().take(font_count) {
+        std::hash::Hash::hash(params, &mut h);
+    }
     hash_values!(hyphen_char);
     hash_values!(skew_char);
     for value in fonts.font_check.as_slice().iter().take(font_count) {

@@ -7,7 +7,6 @@ use crate::ext::{
     ot_get_font_metrics, split_tfm_font_mapping, NativeFontMetrics,
 };
 use crate::io::{open_input_file, FileName, ScannedName};
-use crate::mem_types::B16x4;
 use crate::node::{NativeWordNode, NodePtr, WhatsitSubtype};
 use crate::output::{
     begin_diagnostic, char_warning, end_diagnostic, print, print_char, print_int, print_nl,
@@ -15,10 +14,11 @@ use crate::output::{
 };
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, FontState, MemState};
+use crate::tfm::{ExtIdx, FontMetrics, FontParams, TfmError, TfmMetrics};
 use crate::units::CsId;
-use crate::units::{FontId, FontInfoIdx, Scaled, StrNumber};
+use crate::units::{FontId, Scaled, StrNumber};
 
-use crate::bridge::{input_getc, FileFormat};
+use crate::bridge::FileFormat;
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 
@@ -56,7 +56,6 @@ impl ProtrusionCodes {
     }
 }
 
-const EOF: i32 = -1;
 /// The `font_area` of an AAT font, which no real area string can equal.
 pub(crate) const AAT_FONT_FLAG: StrNumber = StrNumber::from_raw(0xFFFF);
 /// The `font_area` of an OpenType or Graphite font.
@@ -69,126 +68,9 @@ pub(crate) const X_HEIGHT_CODE: i32 = 5;
 pub(crate) const QUAD_CODE: i32 = 6;
 pub(crate) const EXTRA_SPACE_CODE: i32 = 7;
 
-/// What a character's `remainder` means.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub(crate) enum CharTag {
-    None,
-    /// The remainder starts a lig/kern program.
-    Lig,
-    /// The remainder is the next larger character.
-    List,
-    /// The remainder indexes an extensible recipe.
-    Ext,
-}
-
-/// A TFM `char_info` word.
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
-pub(crate) struct CharInfo(B16x4);
-
-impl CharInfo {
-    /// TeX's `null_character`.
-    pub(crate) const NULL: CharInfo = CharInfo(B16x4 {
-        s0: 0,
-        s1: 0,
-        s2: 0,
-        s3: 0,
-    });
-
-    #[inline]
-    pub(crate) fn exists(self) -> bool {
-        self.0.s3 > 0
-    }
-
-    #[inline]
-    fn width_index(self) -> i32 {
-        i32::from(self.0.s3)
-    }
-
-    #[inline]
-    fn height_index(self) -> i32 {
-        i32::from(self.0.s2) / 16
-    }
-
-    #[inline]
-    fn depth_index(self) -> i32 {
-        i32::from(self.0.s2) % 16
-    }
-
-    #[inline]
-    fn italic_index(self) -> i32 {
-        i32::from(self.0.s1) / 4
-    }
-
-    #[inline]
-    pub(crate) fn tag(self) -> CharTag {
-        match self.0.s1 % 4 {
-            0 => CharTag::None,
-            1 => CharTag::Lig,
-            2 => CharTag::List,
-            _ => CharTag::Ext,
-        }
-    }
-
-    #[inline]
-    pub(crate) fn remainder(self) -> u16 {
-        self.0.s0
-    }
-}
-
-/// One lig/kern instruction.
-#[derive(Copy, Clone, Debug)]
-pub(crate) struct LigKernStep(B16x4);
-
-impl LigKernStep {
-    const STOP_FLAG: u16 = 128;
-    const KERN_FLAG: u16 = 128;
-
-    /// This is the last instruction for the character.
-    #[inline]
-    pub(crate) fn is_last(self) -> bool {
-        self.0.s3 >= Self::STOP_FLAG
-    }
-
-    /// A first instruction that only points to the real program.
-    #[inline]
-    pub(crate) fn is_redirect(self) -> bool {
-        self.0.s3 > Self::STOP_FLAG
-    }
-
-    #[inline]
-    pub(crate) fn next_char(self) -> u16 {
-        self.0.s2
-    }
-
-    /// The instruction applies to next character `c`.
-    #[inline]
-    pub(crate) fn matches(self, c: LigChar) -> bool {
-        i32::from(self.next_char()) == c.0 && !self.is_redirect()
-    }
-
-    #[inline]
-    pub(crate) fn is_kern(self) -> bool {
-        self.0.s1 >= Self::KERN_FLAG
-    }
-
-    /// The ligature operation (`=:`, `|=:|>`, ...) as TeX numbers it.
-    #[inline]
-    pub(crate) fn lig_op(self) -> u16 {
-        self.0.s1
-    }
-
-    /// The character a ligature instruction inserts.
-    #[inline]
-    pub(crate) fn lig_char(self) -> u16 {
-        self.0.s0
-    }
-
-    /// The index of the next instruction for the character, from this one's `k`.
-    #[inline]
-    pub(crate) fn next_index(self, k: FontInfoIdx) -> FontInfoIdx {
-        k + i32::from(self.0.s3) + 1
-    }
-}
+pub(crate) use crate::tfm::{
+    CharInfo, CharTag, ExtRecipe, LigKernAction, LigKernIdx, LigKernStep, LigOp,
+};
 
 /// A character in a lig/kern program, or `NONE` (WEB's `non_char`) for a boundary.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
@@ -227,102 +109,84 @@ impl LigChar {
     }
 }
 
-/// An extensible recipe: the character of each piece, 0 for none.
-#[derive(Copy, Clone, Debug)]
-pub(crate) struct ExtRecipe {
-    pub top: u16,
-    pub mid: u16,
-    pub bot: u16,
-    pub rep: u16,
-}
-
 impl FontState {
     pub(crate) fn is_native_font(&self, f: FontId) -> bool {
         let area = self.font_area[f];
         area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG
     }
 
-    /// A native font's ascent, which it keeps in `height_base`.
+    /// A native font's ascent.
     pub(crate) fn native_height(&self, f: FontId) -> Scaled {
-        Scaled::from_raw(self.height_base[f].raw())
+        match self.metrics[f] {
+            FontMetrics::Native { ascent, .. } => ascent,
+            FontMetrics::Tfm(_) => Scaled::ZERO,
+        }
     }
 
-    /// A native font's descent, which it keeps in `depth_base`.
+    /// A native font's descent, as a positive depth.
     pub(crate) fn native_depth(&self, f: FontId) -> Scaled {
-        Scaled::from_raw(self.depth_base[f].raw())
+        match self.metrics[f] {
+            FontMetrics::Native { descent, .. } => -descent,
+            FontMetrics::Tfm(_) => Scaled::ZERO,
+        }
     }
 
-    fn set_native_extent(&mut self, f: FontId, ascent: Scaled, descent: Scaled) {
-        self.height_base[f] = FontInfoIdx::from_raw(ascent.raw());
-        self.depth_base[f] = FontInfoIdx::from_raw(-descent.raw());
-    }
-
+    /// The metrics of TFM font `f`, `None` for a native font.
     #[inline]
-    pub(crate) fn char_info(&self, f: FontId, c: i32) -> CharInfo {
-        CharInfo(self.font_info_b16(self.char_base[f] + c))
+    fn tfm(&self, f: FontId) -> Option<&TfmMetrics> {
+        match &self.metrics[f] {
+            FontMetrics::Tfm(m) => Some(m),
+            FontMetrics::Native { .. } => None,
+        }
+    }
+
+    /// Character `c` of TFM font `f`, `None` when the font does not have it.
+    #[inline]
+    pub(crate) fn char_info(&self, f: FontId, c: i32) -> Option<CharInfo> {
+        self.tfm(f)?.char_info(c)
+    }
+
+    /// Character `c`, with no dimensions when the font does not have it.
+    #[inline]
+    pub(crate) fn char_metrics(&self, f: FontId, c: i32) -> CharInfo {
+        self.char_info(f, c).unwrap_or(CharInfo::NULL)
     }
 
     /// `c` is in the font's range and exists.
     #[inline]
     pub(crate) fn char_exists(&self, f: FontId, c: i32) -> bool {
-        (i32::from(self.font_bc[f])..=i32::from(self.font_ec[f])).contains(&c)
-            && self.char_info(f, c).exists()
+        self.char_info(f, c).is_some()
     }
 
     #[inline]
-    pub(crate) fn char_width(&self, f: FontId, i: CharInfo) -> Scaled {
-        self.font_info_sc(self.width_base[f] + i.width_index())
+    pub(crate) fn lig_kern_step(&self, f: FontId, k: LigKernIdx) -> Result<LigKernStep, Abort> {
+        self.tfm(f)
+            .and_then(|m| m.lig_kern_step(k))
+            .or_confusion("lig/kern step")
     }
 
+    /// The index and first step of the lig/kern program at `k`, following a redirect.
     #[inline]
-    pub(crate) fn char_italic(&self, f: FontId, i: CharInfo) -> Scaled {
-        self.font_info_sc(self.italic_base[f] + i.italic_index())
+    pub(crate) fn lig_kern_start(
+        &self,
+        f: FontId,
+        k: LigKernIdx,
+    ) -> Result<(LigKernIdx, LigKernStep), Abort> {
+        self.tfm(f)
+            .and_then(|m| m.lig_kern_start(k))
+            .or_confusion("lig/kern start")
     }
 
+    /// The program of a left boundary, `None` when the font has none.
     #[inline]
-    pub(crate) fn char_height(&self, f: FontId, i: CharInfo) -> Scaled {
-        self.font_info_sc(self.height_base[f] + i.height_index())
+    pub(crate) fn bchar_label(&self, f: FontId) -> Option<LigKernIdx> {
+        self.tfm(f)?.bchar_label()
     }
 
-    #[inline]
-    pub(crate) fn char_depth(&self, f: FontId, i: CharInfo) -> Scaled {
-        self.font_info_sc(self.depth_base[f] + i.depth_index())
-    }
-
-    /// The lig/kern instruction at `font_info` index `k`.
-    #[inline]
-    pub(crate) fn lig_kern_step(&self, k: FontInfoIdx) -> LigKernStep {
-        LigKernStep(self.font_info_b16(k))
-    }
-
-    /// The index and first instruction of the lig/kern program of `i`, which
-    /// is tagged `Lig`.
-    #[inline]
-    pub(crate) fn lig_kern_start(&self, f: FontId, i: CharInfo) -> (FontInfoIdx, LigKernStep) {
-        let k = self.lig_kern_base[f] + i32::from(i.remainder());
-        let step = self.lig_kern_step(k);
-        if !step.is_redirect() {
-            return (k, step);
-        }
-        let k = self.lig_kern_base[f] + 256 * i32::from(step.0.s1) + i32::from(step.0.s0);
-        (k, self.lig_kern_step(k))
-    }
-
-    /// The amount of kern instruction `step`.
-    #[inline]
-    pub(crate) fn char_kern(&self, f: FontId, step: LigKernStep) -> Scaled {
-        self.font_info_sc(self.kern_base[f] + 256 * i32::from(step.0.s1) + i32::from(step.0.s0))
-    }
-
-    /// The extensible recipe of `i`, which is tagged `Ext`.
-    pub(crate) fn ext_recipe(&self, f: FontId, i: CharInfo) -> ExtRecipe {
-        let w = self.font_info_b16(self.exten_base[f] + i32::from(i.remainder()));
-        ExtRecipe {
-            top: w.s3,
-            mid: w.s2,
-            bot: w.s1,
-            rep: w.s0,
-        }
+    pub(crate) fn ext_recipe(&self, f: FontId, e: ExtIdx) -> Result<ExtRecipe, Abort> {
+        self.tfm(f)
+            .and_then(|m| m.ext_recipe(e))
+            .or_confusion("extensible recipe")
     }
 
     /// A TFM font's check sum, in file byte order.
@@ -333,12 +197,8 @@ impl FontState {
     /// The width, height and depth of character `c` in font `f`.
     pub(crate) fn char_box(&mut self, f: FontId, c: u16) -> (Scaled, Scaled, Scaled) {
         let c = self.effective_char(f, c);
-        let info = self.char_info(f, c);
-        (
-            self.char_width(f, info),
-            self.char_height(f, info),
-            self.char_depth(f, info),
-        )
+        let info = self.char_info(f, c).unwrap_or(CharInfo::NULL);
+        (info.width, info.height, info.depth)
     }
 
     pub fn effective_char(&mut self, f: FontId, c: u16) -> i32 {
@@ -352,7 +212,7 @@ impl FontState {
         i32::from(c)
     }
 
-    pub fn effective_char_info(&mut self, f: FontId, c: u16) -> CharInfo {
+    pub(crate) fn effective_char_info(&mut self, f: FontId, c: u16) -> Option<CharInfo> {
         let c = self.effective_char(f, c);
         self.char_info(f, c)
     }
@@ -472,48 +332,6 @@ pub(crate) fn new_native_character(
     Ok(w)
 }
 
-fn tfm_getc(handle: usize) -> i32 {
-    input_getc(handle) as i32
-}
-
-/// The next four TFM bytes, or `None` at end of file.
-fn read_tfm_bytes(handle: usize) -> Option<[i32; 4]> {
-    let bytes = [
-        tfm_getc(handle),
-        tfm_getc(handle),
-        tfm_getc(handle),
-        tfm_getc(handle),
-    ];
-    (!bytes.contains(&EOF)).then_some(bytes)
-}
-
-fn four_quarters([a, b, c, d]: [i32; 4]) -> B16x4 {
-    B16x4 {
-        s0: d as u16,
-        s1: c as u16,
-        s2: b as u16,
-        s3: a as u16,
-    }
-}
-
-fn read_fifteen(handle: usize) -> Option<i32> {
-    let x = tfm_getc(handle);
-    if x > 127 || x == EOF {
-        return None;
-    }
-    Some(x * 256 + tfm_getc(handle))
-}
-
-fn read_scaled_word(handle: usize, z: i32, beta: i32, alpha: i32) -> Option<Scaled> {
-    let [a, b, c, d] = read_tfm_bytes(handle)?;
-    let sw = (((((d * z) / 256) + c * z) / 256) + b * z) / beta;
-    match a {
-        0 => Some(Scaled::from_raw(sw)),
-        255 => Some(Scaled::from_raw(sw - alpha)),
-        _ => None,
-    }
-}
-
 /// "Font \cs=name at size", how a font loading error names the font.
 #[derive(Copy, Clone)]
 struct FontSpec {
@@ -627,9 +445,12 @@ pub(crate) fn read_font_info(
         tfm_file = file;
         file_opened = true;
 
-        let (parse, too_big) = st
-            .fonts
-            .read_font_info_tfm(&st.eqtb, tfm_file, nom, aire, s);
+        let mut too_big = false;
+        let fonts = &st.fonts;
+        let room = |words: i32| {
+            fonts.font_ptr != fonts.font_max && fonts.fmem_ptr + words <= fonts.font_mem_size
+        };
+        let parse = crate::tfm::read_tfm(tfm_file, s, room, &mut too_big);
         if too_big {
             crate::errors::error(
                 st,
@@ -638,11 +459,12 @@ pub(crate) fn read_font_info(
             )?;
         }
         match parse {
-            TfmParse::OutOfMemory => {
+            Err(TfmError::OutOfMemory) => {
                 return Err(Abort::Internal("not enough memory to load another font"))
             }
-            TfmParse::Bad => bad!(),
-            TfmParse::Loaded(f) => {
+            Err(TfmError::Bad) => bad!(),
+            Ok(tfm) => {
+                let f = st.fonts.install_tfm(&st.eqtb, tfm, nom, aire);
                 g = f;
                 st.fonts.font_mapping[f] = match tfm_mapping {
                     Some(mapping) => load_mapping_file(st, mapping, true, tfm_name)?,
@@ -693,282 +515,33 @@ pub(crate) fn read_font_info(
     Ok(g)
 }
 
-enum TfmParse {
-    Loaded(FontId),
-    Bad,
-    OutOfMemory,
-}
-
 impl FontState {
-    /// Read the opened TFM file into the tables of the next font slot. Also returns
-    /// whether a `scaled` size reached 2048pt, so the design size was kept.
-    fn read_font_info_tfm(
+    /// Fills the next font slot with `tfm`.
+    fn install_tfm(
         &mut self,
         eqtb: &EqtbState,
-        tfm_file: usize,
+        tfm: crate::tfm::Tfm,
         nom: StrNumber,
         aire: StrNumber,
-        s: Scaled,
-    ) -> (TfmParse, bool) {
-        let mut too_big = false;
-        macro_rules! bad {
-            () => {
-                return (TfmParse::Bad, too_big)
-            };
-        }
-        macro_rules! read {
-            ($e:expr) => {
-                match $e {
-                    Some(v) => v,
-                    None => bad!(),
-                }
-            };
-        }
-
-        let mut lf = read!(read_fifteen(tfm_file));
-        let mut lh = read!(read_fifteen(tfm_file));
-        let mut bc = read!(read_fifteen(tfm_file));
-        let mut ec = read!(read_fifteen(tfm_file));
-        if bc > ec + 1 || ec > 255 {
-            bad!();
-        }
-        if bc > 255 {
-            bc = 1;
-            ec = 0;
-        }
-        let nw = read!(read_fifteen(tfm_file));
-        let nh = read!(read_fifteen(tfm_file));
-        let nd = read!(read_fifteen(tfm_file));
-        let ni = read!(read_fifteen(tfm_file));
-        let nl = read!(read_fifteen(tfm_file));
-        let nk = read!(read_fifteen(tfm_file));
-        let ne = read!(read_fifteen(tfm_file));
-        let np = read!(read_fifteen(tfm_file));
-
-        if lf != 6 + lh + (ec - bc + 1) + nw + nh + nd + ni + nl + nk + ne + np {
-            bad!();
-        }
-        if nw == 0 || nh == 0 || nd == 0 || ni == 0 {
-            bad!();
-        }
-
-        lf = lf - 6 - lh;
-        if np < 7 {
-            lf = lf + 7 - np;
-        }
-
-        if self.font_ptr == self.font_max || self.fmem_ptr + lf > self.font_mem_size {
-            return (TfmParse::OutOfMemory, false);
-        }
-
+    ) -> FontId {
         let f = self.font_ptr.next();
-        self.char_base[f] = self.fmem_ptr - bc;
-        self.width_base[f] = self.char_base[f] + ec + 1;
-        self.height_base[f] = self.width_base[f] + nw;
-        self.depth_base[f] = self.height_base[f] + nh;
-        self.italic_base[f] = self.depth_base[f] + nd;
-        self.lig_kern_base[f] = self.italic_base[f] + ni;
-        self.kern_base[f] = self.lig_kern_base[f] + nl - 256 * 128;
-        self.exten_base[f] = self.kern_base[f] + 256 * 128 + nk;
-        self.param_base[f] = self.exten_base[f] + ne;
-
-        if lh < 2 {
-            bad!();
-        }
-
-        self.font_check[f] = read!(read_tfm_bytes(tfm_file)).map(|b| b as u8);
-
-        let mut z = read!(read_fifteen(tfm_file));
-        z = z * 256 + tfm_getc(tfm_file);
-        z = (z * 16) + (tfm_getc(tfm_file) / 16);
-        if z < 65_536 {
-            bad!();
-        }
-
-        while lh > 2 {
-            for _ in 0..4 {
-                tfm_getc(tfm_file);
-            }
-            lh -= 1;
-        }
-
-        self.font_dsize[f] = Scaled::from_raw(z);
-        if s != DESIGN_SIZE {
-            if s >= Scaled::ZERO {
-                z = s.raw();
-            } else {
-                let scaled = crate::scaled_math::xn_over_d(z, -s.raw(), 1000);
-                // tex.ch keeps the design size rather than overflow at 2048pt (2^27 sp).
-                too_big = scaled.overflowed || scaled.quotient >= 0o1_000_000_000;
-                if !too_big {
-                    z = scaled.quotient;
-                }
-            }
-        }
-        self.font_size[f] = Scaled::from_raw(z);
-
-        let char_exists =
-            |fonts: &FontState, ch: i32| (bc..=ec).contains(&ch) && fonts.char_info(f, ch).exists();
-
-        for k in self.fmem_ptr.until(self.width_base[f]) {
-            let bytes = read!(read_tfm_bytes(tfm_file));
-            let [a, b, c, d] = bytes;
-            self.set_font_info_b16(k, four_quarters(bytes));
-
-            if a >= nw || b / 16 >= nh || b % 16 >= nd || c / 4 >= ni {
-                bad!();
-            }
-            match c % 4 {
-                1 if d >= nl => bad!(),
-                3 if d >= ne => bad!(),
-                2 => {
-                    if d < bc || d > ec {
-                        bad!();
-                    }
-                    // A charlist must not cycle back to the current character.
-                    let current = (k - self.fmem_ptr) + bc;
-                    let mut dd = d;
-                    while dd < current {
-                        let qw = self.char_info(f, dd);
-                        if qw.tag() != CharTag::List {
-                            break;
-                        }
-                        dd = i32::from(qw.remainder());
-                    }
-                    if dd == current {
-                        bad!();
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        let mut alpha = 16;
-        while z >= 0x800000 {
-            z /= 2;
-            alpha += alpha;
-        }
-        let beta = 256 / alpha;
-        alpha *= z;
-
-        for k in self.width_base[f].until(self.lig_kern_base[f]) {
-            let sw = read!(read_scaled_word(tfm_file, z, beta, alpha));
-            self.set_font_info_sc(k, sw);
-        }
-
-        if self.font_info_sc(self.width_base[f]) != Scaled::ZERO
-            || self.font_info_sc(self.height_base[f]) != Scaled::ZERO
-            || self.font_info_sc(self.depth_base[f]) != Scaled::ZERO
-            || self.font_info_sc(self.italic_base[f]) != Scaled::ZERO
-        {
-            bad!();
-        }
-
-        let mut bch_label = 32_767;
-        let mut bchar = 256;
-
-        if nl > 0 {
-            let lig_kern_base = self.lig_kern_base[f];
-            let lig_kern_end = self.kern_base[f] + 256 * 128;
-            for k in lig_kern_base.until(lig_kern_end) {
-                let bytes = read!(read_tfm_bytes(tfm_file));
-                let [a, b, c, d] = bytes;
-                self.set_font_info_b16(k, four_quarters(bytes));
-
-                if a > 128 {
-                    if 256 * c + d >= nl {
-                        bad!();
-                    }
-                    if a == 255 && k == lig_kern_base {
-                        bchar = b;
-                    }
-                } else {
-                    if b != bchar && !char_exists(self, b) {
-                        bad!();
-                    }
-                    if c < 128 {
-                        if !char_exists(self, d) {
-                            bad!();
-                        }
-                    } else if 256 * (c - 128) + d >= nk {
-                        bad!();
-                    }
-                    if a < 128 && k - lig_kern_base + a + 1 >= nl {
-                        bad!();
-                    }
-                }
-
-                if k == lig_kern_end - 1 && a == 255 {
-                    bch_label = 256 * c + d;
-                }
-            }
-        }
-
-        for k in (self.kern_base[f] + 256 * 128).until(self.exten_base[f]) {
-            let sw = read!(read_scaled_word(tfm_file, z, beta, alpha));
-            self.set_font_info_sc(k, sw);
-        }
-
-        for k in self.exten_base[f].until(self.param_base[f]) {
-            let bytes = read!(read_tfm_bytes(tfm_file));
-            let [a, b, c, d] = bytes;
-            self.set_font_info_b16(k, four_quarters(bytes));
-
-            for ch in [a, b, c] {
-                if ch != 0 && !char_exists(self, ch) {
-                    bad!();
-                }
-            }
-            if !char_exists(self, d) {
-                bad!();
-            }
-        }
-
-        for k in 1..=np {
-            let sw = if k == 1 {
-                // The slant is an unscaled fix_word.
-                let mut sw = tfm_getc(tfm_file);
-                if sw == EOF {
-                    bad!();
-                }
-                if sw > 127 {
-                    sw -= 256;
-                }
-                sw = sw * 256 + tfm_getc(tfm_file);
-                sw = sw * 256 + tfm_getc(tfm_file);
-                Scaled::from_raw((sw * 16) + (tfm_getc(tfm_file) / 16))
-            } else {
-                read!(read_scaled_word(tfm_file, z, beta, alpha))
-            };
-            self.set_font_info_sc(self.param_base[f] + k - 1, sw);
-        }
-        for k in np + 1..=7 {
-            self.set_font_info_sc(self.param_base[f] + k - 1, Scaled::ZERO);
-        }
-
-        self.font_params[f] = np.max(7);
+        self.metrics[f] = FontMetrics::Tfm(Rc::new(tfm.metrics));
+        self.params[f] = FontParams::new(tfm.params);
+        self.font_check[f] = tfm.check;
+        self.font_dsize[f] = tfm.design_size;
+        self.font_size[f] = tfm.size;
         self.hyphen_char[f] = eqtb.int_par(IntPar::DefaultHyphenChar);
         self.skew_char[f] = eqtb.int_par(IntPar::DefaultSkewChar);
-        if bch_label < nl {
-            self.bchar_label[f] = self.lig_kern_base[f] + bch_label;
-        } else {
-            self.bchar_label[f] = FontInfoIdx::NON_ADDRESS;
-        }
-        self.font_bchar[f] = LigChar(bchar);
-        self.font_false_bchar[f] = LigChar(bchar);
-        if bchar <= ec && bchar >= bc && self.char_info(f, bchar).exists() {
-            self.font_false_bchar[f] = LigChar::NONE;
-        }
-
+        self.font_bchar[f] = tfm.bchar;
+        self.font_false_bchar[f] = tfm.false_bchar;
         self.font_name[f] = nom;
         self.font_area[f] = aire;
-        self.font_bc[f] = bc as u16;
-        self.font_ec[f] = ec as u16;
+        self.font_bc[f] = tfm.bc;
+        self.font_ec[f] = tfm.ec;
         self.font_glue[f] = None;
-        self.param_base[f] -= 1;
-        self.fmem_ptr += lf;
+        self.fmem_ptr += tfm.words;
         self.font_ptr = f;
-        (TfmParse::Loaded(f), too_big)
+        f
     }
 
     /// Set up the tables of a new native font slot. Returns the slot and the
@@ -979,7 +552,7 @@ impl FontState {
         font_engine: crate::state::FontEngineHandle,
         full_name: StrNumber,
         actual_size: Scaled,
-        num_font_dimens: i32,
+        num_font_dimens: usize,
     ) -> (FontId, NativeFontMetrics) {
         self.font_ptr = self.font_ptr.next();
         let font_ptr = self.font_ptr;
@@ -996,24 +569,21 @@ impl FontState {
             ot_get_font_metrics(&font_engine)
         };
 
-        self.set_native_extent(font_ptr, metrics.ascent, metrics.descent);
-        self.font_params[font_ptr] = num_font_dimens;
+        self.metrics[font_ptr] = FontMetrics::Native {
+            ascent: metrics.ascent,
+            descent: metrics.descent,
+        };
+        self.params[font_ptr] = FontParams::new(vec![Scaled::ZERO; num_font_dimens]);
         self.font_bc[font_ptr] = 0;
         self.font_ec[font_ptr] = 65_535;
         self.font_used[font_ptr] = false;
         self.hyphen_char[font_ptr] = eqtb.int_par(IntPar::DefaultHyphenChar);
         self.skew_char[font_ptr] = eqtb.int_par(IntPar::DefaultSkewChar);
-        self.param_base[font_ptr] = self.fmem_ptr - 1;
         self.font_layout_engine[font_ptr] = Some(std::rc::Rc::new(font_engine));
         self.font_mapping[font_ptr] = None;
         self.font_letter_space[font_ptr] = self.loaded_font_letter_space;
 
         (font_ptr, metrics)
-    }
-
-    fn push_font_info(&mut self, v: Scaled) {
-        self.set_font_info_sc(self.fmem_ptr, v);
-        self.fmem_ptr += 1;
     }
 }
 
@@ -1051,16 +621,16 @@ fn load_native_font(st: &mut EngineState, font: FontSpec, name: &[u8]) -> Result
         }
     }
 
-    let num_font_dimens = if st.fonts.native_font_type_flag == OTGR_FONT_FLAG
+    let num_font_dimens: usize = if st.fonts.native_font_type_flag == OTGR_FONT_FLAG
         && font_engine.is_opentype_math_font()
     {
         65
     } else {
         8
     };
+    let words = i32::try_from(num_font_dimens).or_confusion("font dimens")?;
 
-    if st.fonts.font_ptr == st.fonts.font_max
-        || st.fonts.fmem_ptr + num_font_dimens > st.fonts.font_mem_size
+    if st.fonts.font_ptr == st.fonts.font_max || st.fonts.fmem_ptr + words > st.fonts.font_mem_size
     {
         crate::errors::error(
             st,
@@ -1088,7 +658,7 @@ fn load_native_font(st: &mut EngineState, font: FontSpec, name: &[u8]) -> Result
     space.free_native(&mut st.mem);
 
     let size = st.fonts.font_size[font_ptr];
-    for v in [
+    let mut params = vec![
         metrics.slant,
         space_width,
         space_width / 2,
@@ -1097,17 +667,15 @@ fn load_native_font(st: &mut EngineState, font: FontSpec, name: &[u8]) -> Result
         size,
         space_width / 3,
         metrics.cap_height,
-    ] {
-        st.fonts.push_font_info(v);
-    }
-
+    ];
     if num_font_dimens == 65 {
-        st.fonts.push_font_info(Scaled::from_raw(num_font_dimens));
+        params.push(Scaled::from_raw(65));
         for k in 0..=55 {
-            let v = st.fonts.get_ot_math_constant(font_ptr, k);
-            st.fonts.push_font_info(v);
+            params.push(st.fonts.get_ot_math_constant(font_ptr, k));
         }
     }
+    st.fonts.params[font_ptr] = FontParams::new(params);
+    st.fonts.fmem_ptr += words;
 
     let staged_mapping = st.fonts.loaded_font_mapping.take();
     st.fonts.font_mapping[font_ptr] = staged_mapping;

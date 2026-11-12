@@ -81,8 +81,7 @@ impl FontState {
     #[inline]
     fn effective_char_width(&mut self, f: FontId, c: u16) -> Scaled {
         let ec = self.effective_char(f, c);
-        let info = self.char_info(f, ec);
-        self.char_width(f, info)
+        self.char_metrics(f, ec).width
     }
 }
 

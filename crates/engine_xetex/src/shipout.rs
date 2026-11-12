@@ -380,8 +380,7 @@ enum Leader {
 
 impl FontState {
     fn font_character_width(&self, f: FontId, c: i32) -> Scaled {
-        let info = self.char_info(f, c);
-        self.char_width(f, info)
+        self.char_metrics(f, c).width
     }
 }
 

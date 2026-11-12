@@ -9,7 +9,7 @@ use crate::bridge::{input_open, input_read, output_close, output_open, output_wr
 use crate::command::Command;
 use crate::consts::{
     ACTIVE_BASE, EMPTY_STRING, FONT_BASE, FROZEN_CONTROL_SEQUENCE, HASH_BASE, INVALID_HANDLE,
-    MAX_FONT_MAX, MAX_HALFWORD, MIN_HALFWORD, NULL_FONT, PRIM_SIZE, TEX_NULL, TOO_BIG_CHAR,
+    MAX_FONT_MAX, MAX_HALFWORD, NULL_FONT, PRIM_SIZE, TEX_NULL, TOO_BIG_CHAR,
     UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::engine::{POOL_FREE, STRINGS_FREE};
@@ -25,11 +25,15 @@ use crate::mem_types::{B16x4, B32x2, MemoryWord};
 use crate::output::{print, print_char, print_int, print_ln, print_nl};
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, InteractionMode, PerFont, Selector};
+use crate::tfm::{
+    CharInfo, CharTag, ExtIdx, ExtRecipe, FontMetrics, FontParams, LigKernAction, LigKernIdx,
+    LigKernStep, LigOp, TfmMetrics,
+};
 use crate::token::{ListSlot, Token, TokenList, TokenStore};
 use crate::units::CsId;
 use crate::units::MemIdx;
 use crate::units::RawPtr;
-use crate::units::{FontId, FontInfoIdx, MemPtr, PoolPos, SavePtr, Scaled, StrNumber};
+use crate::units::{FontId, MemPtr, PoolPos, SavePtr, Scaled, StrNumber};
 
 const FORMAT_HEADER_MAGIC: i32 = 0x5454_4E43;
 const FORMAT_FOOTER_MAGIC: i32 = 0x0000_029A;
@@ -162,17 +166,7 @@ impl FmtItem for MemPtr {
     }
 }
 
-newtype_item!(
-    GlueSpecId,
-    TokenList,
-    Scaled,
-    StrNumber,
-    CsId,
-    PoolPos,
-    FontInfoIdx,
-    TriePtr,
-    LigChar
-);
+newtype_item!(GlueSpecId, TokenList, Scaled, StrNumber, CsId, PoolPos, TriePtr, LigChar);
 
 impl FmtItem for B32x2 {
     const SIZE: usize = 8;
@@ -267,6 +261,152 @@ impl FmtItem for B16x4 {
         }
         let [s3, s2, s1, s0] = quarters;
         Some(B16x4 { s3, s2, s1, s0 })
+    }
+}
+
+/// Fixed-width items stored as `N` 32-bit words.
+fn put_words<const N: usize>(words: [i32; N], out: &mut Vec<u8>) {
+    for w in words {
+        w.put(out);
+    }
+}
+
+fn get_words<const N: usize>(bytes: &[u8]) -> Option<[i32; N]> {
+    let mut words = [0; N];
+    for (w, chunk) in words.iter_mut().zip(bytes.chunks_exact(4)) {
+        *w = i32::get(chunk)?;
+    }
+    Some(words)
+}
+
+/// A TFM character: tag kind (-1 for a missing character), remainder and dimensions.
+impl FmtItem for Option<CharInfo> {
+    const SIZE: usize = 24;
+    fn put(self, out: &mut Vec<u8>) {
+        let Some(ci) = self else {
+            return put_words([-1, 0, 0, 0, 0, 0], out);
+        };
+        let (kind, rem) = match ci.tag {
+            CharTag::None => (0, 0),
+            CharTag::Lig(k) => (1, i32::from(k.raw())),
+            CharTag::List(c) => (2, i32::from(c)),
+            CharTag::Ext(e) => (3, i32::from(e.raw())),
+        };
+        put_words(
+            [
+                kind,
+                rem,
+                ci.width.raw(),
+                ci.height.raw(),
+                ci.depth.raw(),
+                ci.italic.raw(),
+            ],
+            out,
+        );
+    }
+    fn get(bytes: &[u8]) -> Option<Self> {
+        let [kind, rem, width, height, depth, italic] = get_words(bytes)?;
+        let tag = match kind {
+            -1 => return Some(None),
+            0 => CharTag::None,
+            1 => CharTag::Lig(LigKernIdx::from_raw(u16::try_from(rem).ok()?)),
+            2 => CharTag::List(u16::try_from(rem).ok()?),
+            3 => CharTag::Ext(ExtIdx::from_raw(u8::try_from(rem).ok()?)),
+            _ => return None,
+        };
+        Some(Some(CharInfo {
+            width: Scaled::from_raw(width),
+            height: Scaled::from_raw(height),
+            depth: Scaled::from_raw(depth),
+            italic: Scaled::from_raw(italic),
+            tag,
+        }))
+    }
+}
+
+/// A lig/kern step: kind (jump, kern, ligature), then its fields, -1 for no skip.
+impl FmtItem for LigKernStep {
+    const SIZE: usize = 20;
+    fn put(self, out: &mut Vec<u8>) {
+        let words = match self {
+            LigKernStep::Jump(k) => [0, i32::from(k.raw()), 0, 0, 0],
+            LigKernStep::Rule {
+                next_char,
+                skip,
+                action,
+            } => {
+                let skip = skip.map_or(-1, i32::from);
+                match action {
+                    LigKernAction::Kern(w) => [1, i32::from(next_char), skip, w.raw(), 0],
+                    LigKernAction::Lig { op, char } => [
+                        2,
+                        i32::from(next_char),
+                        skip,
+                        i32::from(op.byte()),
+                        i32::from(char),
+                    ],
+                }
+            }
+        };
+        put_words(words, out);
+    }
+    fn get(bytes: &[u8]) -> Option<Self> {
+        let [kind, a, b, c, d] = get_words(bytes)?;
+        if kind == 0 {
+            return Some(LigKernStep::Jump(LigKernIdx::from_raw(
+                u16::try_from(a).ok()?,
+            )));
+        }
+        let action = match kind {
+            1 => LigKernAction::Kern(Scaled::from_raw(c)),
+            2 => LigKernAction::Lig {
+                op: LigOp::from_byte(u8::try_from(c).ok()?)?,
+                char: u16::try_from(d).ok()?,
+            },
+            _ => return None,
+        };
+        Some(LigKernStep::Rule {
+            next_char: u16::try_from(a).ok()?,
+            skip: if b == -1 {
+                None
+            } else {
+                Some(u8::try_from(b).ok()?)
+            },
+            action,
+        })
+    }
+}
+
+/// An extensible recipe, -1 for a missing piece.
+impl FmtItem for ExtRecipe {
+    const SIZE: usize = 16;
+    fn put(self, out: &mut Vec<u8>) {
+        let piece = |p: Option<u16>| p.map_or(-1, i32::from);
+        put_words(
+            [
+                piece(self.top),
+                piece(self.mid),
+                piece(self.bot),
+                i32::from(self.rep),
+            ],
+            out,
+        );
+    }
+    fn get(bytes: &[u8]) -> Option<Self> {
+        let [top, mid, bot, rep] = get_words(bytes)?;
+        let piece = |p: i32| -> Option<Option<u16>> {
+            if p == -1 {
+                Some(None)
+            } else {
+                u16::try_from(p).ok().map(Some)
+            }
+        };
+        Some(ExtRecipe {
+            top: piece(top)?,
+            mid: piece(mid)?,
+            bot: piece(bot)?,
+            rep: u16::try_from(rep).ok()?,
+        })
     }
 }
 
@@ -491,7 +631,6 @@ pub fn load_fmt_file(st: &mut EngineState, dump_name: &str) -> Result<(), Abort>
     st.input.cur_input.loc = loc;
 
     if st.config.in_initex_mode {
-        st.fonts.font_info = Vec::new();
         st.strings.str_pool = Vec::new();
         st.strings.str_start = Vec::new();
         st.eqtb.release_tables();
@@ -806,15 +945,13 @@ fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort>
     let fonts = &mut st.fonts;
     s.size(
         &mut fonts.fmem_ptr,
-        FontInfoIdx::from_raw(7),
-        FontInfoIdx::from_raw(SUP_FONT_MEM_SIZE),
+        7,
+        SUP_FONT_MEM_SIZE,
         "must increase font_mem_size",
     )?;
     if S::LOADING {
         fonts.font_mem_size = fonts.font_mem_size.max(fonts.fmem_ptr);
-        fonts.font_info = crate::mem_types::zeroed_vec(fonts.font_mem_size.index() + 1);
     }
-    s.items(span(&mut fonts.font_info, 0, fonts.fmem_ptr.raw()))?;
 
     let mut font_ptr = fonts.font_ptr.raw();
     s.size(
@@ -829,15 +966,9 @@ fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort>
     }
 
     let last = fonts.font_ptr;
-    let max_font_index = fonts.fmem_ptr - 1;
     s.items(fonts_of(&mut fonts.font_check, last))?;
     s.items(fonts_of(&mut fonts.font_size, last))?;
     s.items(fonts_of(&mut fonts.font_dsize, last))?;
-    s.items_in(
-        fonts_of(&mut fonts.font_params, last),
-        MIN_HALFWORD,
-        MAX_HALFWORD,
-    )?;
     s.items(fonts_of(&mut fonts.hyphen_char, last))?;
     s.items(fonts_of(&mut fonts.skew_char, last))?;
     s.items_in(
@@ -852,15 +983,12 @@ fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort>
     )?;
     s.items(fonts_of(&mut fonts.font_bc, last))?;
     s.items(fonts_of(&mut fonts.font_ec, last))?;
-    s.items(fonts_of(&mut fonts.char_base, last))?;
-    s.items(fonts_of(&mut fonts.width_base, last))?;
-    s.items(fonts_of(&mut fonts.height_base, last))?;
-    s.items(fonts_of(&mut fonts.depth_base, last))?;
-    s.items(fonts_of(&mut fonts.italic_base, last))?;
-    s.items(fonts_of(&mut fonts.lig_kern_base, last))?;
-    s.items(fonts_of(&mut fonts.kern_base, last))?;
-    s.items(fonts_of(&mut fonts.exten_base, last))?;
-    s.items(fonts_of(&mut fonts.param_base, last))?;
+    for (metrics, params) in fonts_of(&mut fonts.metrics, last)
+        .iter_mut()
+        .zip(fonts_of(&mut fonts.params, last))
+    {
+        font_metrics(s, metrics, params)?;
+    }
     let glue = fonts_of(&mut fonts.font_glue, last);
     let mut links: Vec<i32> = glue
         .iter()
@@ -878,11 +1006,6 @@ fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort>
         *g = GlueSpecId::from_link(p);
     }
     s.items_in(
-        fonts_of(&mut fonts.bchar_label, last),
-        FontInfoIdx::ZERO,
-        max_font_index,
-    )?;
-    s.items_in(
         fonts_of(&mut fonts.font_bchar, last),
         LigChar::of(0),
         LigChar::NONE,
@@ -897,6 +1020,76 @@ fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort>
         check_font_words(&st.eqtb, st.fonts.font_ptr)?;
     } else {
         print_dumped_fonts(st)?;
+    }
+    Ok(())
+}
+
+/// A count of items followed by the items.
+fn counted_items<S: FmtStream, T: FmtItem>(
+    s: &mut S,
+    v: &mut Vec<T>,
+    max: i32,
+    fill: T,
+) -> Result<(), Abort> {
+    let mut n = i32::try_from(v.len()).map_err(|_| bad_fmt())?;
+    s.int_in(&mut n, 0, max)?;
+    if S::LOADING {
+        *v = vec![fill; usize::try_from(n).map_err(|_| bad_fmt())?];
+    }
+    s.items(v)
+}
+
+/// One font's metrics and parameters.
+fn font_metrics<S: FmtStream>(
+    s: &mut S,
+    metrics: &mut FontMetrics,
+    params: &mut FontParams,
+) -> Result<(), Abort> {
+    let mut native = i32::from(matches!(metrics, FontMetrics::Native { .. }));
+    s.int_in(&mut native, 0, 1)?;
+    if native == 1 {
+        let mut extent = match *metrics {
+            FontMetrics::Native { ascent, descent } => [ascent, descent],
+            FontMetrics::Tfm(_) => [Scaled::ZERO; 2],
+        };
+        s.items(&mut extent)?;
+        if S::LOADING {
+            let [ascent, descent] = extent;
+            *metrics = FontMetrics::Native { ascent, descent };
+        }
+    } else {
+        let tfm = match metrics {
+            FontMetrics::Tfm(m) => std::rc::Rc::clone(m),
+            FontMetrics::Native { .. } => std::rc::Rc::default(),
+        };
+        let mut bc = tfm.bc();
+        s.items(std::slice::from_mut(&mut bc))?;
+        let mut chars = tfm.chars().to_vec();
+        counted_items(s, &mut chars, 256, None)?;
+        let mut lig_kern = tfm.lig_kern().to_vec();
+        let jump = LigKernStep::Jump(LigKernIdx::from_raw(0));
+        counted_items(s, &mut lig_kern, 32_767, jump)?;
+        let mut exten = tfm.exten().to_vec();
+        let empty = ExtRecipe {
+            top: None,
+            mid: None,
+            bot: None,
+            rep: 0,
+        };
+        counted_items(s, &mut exten, 256, empty)?;
+        let mut label = tfm.bchar_label().map_or(-1, |k| i32::from(k.raw()));
+        s.int_in(&mut label, -1, 32_767)?;
+        if S::LOADING {
+            let label = u16::try_from(label).ok().map(LigKernIdx::from_raw);
+            let tfm = TfmMetrics::new(bc, chars.into(), lig_kern.into(), exten.into(), label)
+                .ok_or_else(bad_fmt)?;
+            *metrics = FontMetrics::Tfm(std::rc::Rc::new(tfm));
+        }
+    }
+    let mut values = params.as_slice().to_vec();
+    counted_items(s, &mut values, SUP_FONT_MEM_SIZE, Scaled::ZERO)?;
+    if S::LOADING {
+        *params = FontParams::new(values);
     }
     Ok(())
 }
@@ -950,7 +1143,7 @@ fn print_dumped_fonts(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     print_ln(st);
-    print_int(st, st.fonts.fmem_ptr.raw() - 7);
+    print_int(st, st.fonts.fmem_ptr - 7);
     print(st, " words of font info for ");
     print_int(st, font_ptr.raw());
     if font_ptr.raw() != FONT_BASE + 1 {
@@ -1185,8 +1378,7 @@ mod tests {
         st.eqtb.alloc_tables();
         st.strings.str_start = vec![crate::units::PoolPos::ZERO; 4];
         st.fonts.font_max = FontId::new(1);
-        st.fonts.fmem_ptr = FontInfoIdx::from_raw(7);
-        st.fonts.font_info = crate::mem_types::zeroed_vec(8);
+        st.fonts.fmem_ptr = 7;
         st.fonts.alloc_font_arrays();
         st
     }
@@ -1204,5 +1396,98 @@ mod tests {
         font_info(&mut SliceUndump(&dump.0), &mut dst).expect("load");
         assert_eq!(dst.fonts.font_ptr, NULL_FONT);
         assert_eq!(dst.fonts.font_size[NULL_FONT], Scaled::from_raw(12));
+    }
+
+    #[test]
+    fn font_metrics_round_trip() {
+        use crate::tfm::{CharInfo, CharTag, ExtIdx, ExtRecipe, LigKernAction, LigKernIdx};
+        use crate::tfm::{LigKernStep, LigOp};
+        let pt = |v: i32| Scaled::from_raw(v * 65_536);
+        let ci = |tag| CharInfo {
+            width: pt(5),
+            height: pt(7),
+            depth: pt(1),
+            italic: pt(2),
+            tag,
+        };
+        let metrics = TfmMetrics::new(
+            65,
+            vec![
+                Some(ci(CharTag::Lig(LigKernIdx::from_raw(0)))),
+                None,
+                Some(ci(CharTag::List(65))),
+                Some(ci(CharTag::Ext(ExtIdx::from_raw(0)))),
+            ]
+            .into(),
+            vec![
+                LigKernStep::Rule {
+                    next_char: 66,
+                    skip: Some(0),
+                    action: LigKernAction::Kern(pt(-1)),
+                },
+                LigKernStep::Rule {
+                    next_char: 67,
+                    skip: None,
+                    action: LigKernAction::Lig {
+                        op: LigOp::KeepBothSkip2,
+                        char: 68,
+                    },
+                },
+                LigKernStep::Jump(LigKernIdx::from_raw(1)),
+            ]
+            .into(),
+            vec![ExtRecipe {
+                top: Some(65),
+                mid: None,
+                bot: Some(67),
+                rep: 68,
+            }]
+            .into(),
+            Some(LigKernIdx::from_raw(2)),
+        )
+        .expect("consistent metrics");
+        let metrics = FontMetrics::Tfm(std::rc::Rc::new(metrics));
+        let params = FontParams::new(vec![pt(3), Scaled::ZERO, pt(-4)]);
+
+        let mut src = font_state();
+        src.fonts.font_ptr = NULL_FONT;
+        src.fonts.metrics[NULL_FONT] = metrics.clone();
+        src.fonts.params[NULL_FONT] = params.clone();
+        let mut dump = VecDump::default();
+        font_info(&mut dump, &mut src).expect("dump");
+
+        let mut dst = font_state();
+        font_info(&mut SliceUndump(&dump.0), &mut dst).expect("load");
+        assert_eq!(dst.fonts.metrics[NULL_FONT], metrics);
+        assert_eq!(dst.fonts.params[NULL_FONT], params);
+    }
+
+    #[test]
+    fn inconsistent_metrics_are_rejected() {
+        use crate::tfm::{CharInfo, CharTag, LigKernIdx};
+        let dangling = CharInfo {
+            tag: CharTag::Lig(LigKernIdx::from_raw(0)),
+            ..CharInfo::NULL
+        };
+        let metrics = TfmMetrics::new(
+            0,
+            vec![Some(dangling)].into(),
+            Box::new([]),
+            Box::new([]),
+            None,
+        );
+        assert_eq!(metrics, None);
+        let cycle = CharInfo {
+            tag: CharTag::List(0),
+            ..CharInfo::NULL
+        };
+        let metrics = TfmMetrics::new(
+            0,
+            vec![Some(cycle)].into(),
+            Box::new([]),
+            Box::new([]),
+            None,
+        );
+        assert_eq!(metrics, None);
     }
 }

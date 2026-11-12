@@ -14,7 +14,7 @@ use crate::state::{
     SaveEntry, SaveStackState, ScannerState, ShipoutState, StringsState, SynctexCtxt, TexmfState,
 };
 use crate::sync_index::PreviewSyncIndex;
-use crate::units::{BufPos, FontId, FontInfoIdx, MemPtr, PoolPos, SavePtr, Scaled, StrNumber};
+use crate::units::{BufPos, FontId, MemPtr, PoolPos, SavePtr, Scaled, StrNumber};
 
 fn vec_bytes<T>(values: &Vec<T>) -> usize {
     values.capacity() * size_of::<T>()
@@ -545,25 +545,14 @@ font_arrays! {
     font_check: [u8; 4],
     font_size: Scaled,
     font_dsize: Scaled,
-    font_params: i32,
     font_name: StrNumber,
     font_area: StrNumber,
     font_bc: u16,
     font_ec: u16,
-    bchar_label: FontInfoIdx,
     font_bchar: LigChar,
     font_false_bchar: LigChar,
     font_glue: Option<crate::glue_store::GlueSpecId>,
     font_used: bool,
-    char_base: FontInfoIdx,
-    width_base: FontInfoIdx,
-    height_base: FontInfoIdx,
-    depth_base: FontInfoIdx,
-    italic_base: FontInfoIdx,
-    lig_kern_base: FontInfoIdx,
-    kern_base: FontInfoIdx,
-    exten_base: FontInfoIdx,
-    param_base: FontInfoIdx,
     hyphen_char: i32,
     skew_char: i32,
 }
@@ -575,12 +564,14 @@ struct FontBundle {
     xtx_ligature_present: bool,
     gave_char_warning_help: bool,
     native_font_type_flag: StrNumber,
-    font_mem_size: FontInfoIdx,
+    font_mem_size: i32,
     font_max: FontId,
-    fmem_ptr: FontInfoIdx,
+    fmem_ptr: i32,
     font_ptr: FontId,
     arrays: FontArrays,
     engines: Vec<Option<std::rc::Rc<FontEngineHandle>>>,
+    metrics: Vec<crate::tfm::FontMetrics>,
+    params: Vec<crate::tfm::FontParams>,
     mappings: Vec<Option<Arc<FontMappingHandle>>>,
     mapped_text: Vec<u16>,
     cp_codes: ProtrusionCodes,
@@ -608,30 +599,18 @@ impl FontBundle {
             font_check: _,
             font_size: _,
             font_dsize: _,
-            font_params: _,
             font_name: _,
             font_area: _,
             font_bc: _,
             font_ec: _,
-            bchar_label: _,
             font_bchar: _,
             font_false_bchar: _,
             font_glue: _,
             font_used: _,
-            char_base: _,
-            width_base: _,
-            height_base: _,
-            depth_base: _,
-            italic_base: _,
-            lig_kern_base: _,
-            kern_base: _,
-            exten_base: _,
-            param_base: _,
             hyphen_char: _,
             skew_char: _,
-            font_info: _,
-            font_info_journal: _,
-            fmem_epoch_base: _,
+            metrics,
+            params,
             mapped_text,
             cp_codes,
             glyph_bboxes: _,
@@ -650,6 +629,8 @@ impl FontBundle {
             font_ptr: *font_ptr,
             arrays: FontArrays::capture(src, count),
             engines: live_prefix(font_layout_engine.as_slice(), count),
+            metrics: live_prefix(metrics.as_slice(), count),
+            params: live_prefix(params.as_slice(), count),
             mappings: live_prefix(font_mapping.as_slice(), count),
             mapped_text: mapped_text.clone(),
             cp_codes: cp_codes.clone(),
@@ -660,9 +641,13 @@ impl FontBundle {
         for f in (self.font_ptr.get() + 1..=dst.font_ptr.get()).map(FontId::new) {
             dst.font_layout_engine[f] = None;
             dst.font_mapping[f] = None;
+            dst.metrics[f] = crate::tfm::FontMetrics::default();
+            dst.params[f] = crate::tfm::FontParams::default();
         }
         dst.font_layout_engine.as_mut_slice()[..self.engines.len()].clone_from_slice(&self.engines);
         dst.font_mapping.as_mut_slice()[..self.mappings.len()].clone_from_slice(&self.mappings);
+        dst.metrics.as_mut_slice()[..self.metrics.len()].clone_from_slice(&self.metrics);
+        dst.params.as_mut_slice()[..self.params.len()].clone_from_slice(&self.params);
         // The ICU iterator points into transient text and is rebuilt lazily.
         dst.release_linebreak_state();
         // Slots reused after the checkpoint may have emitted font definitions
@@ -694,6 +679,8 @@ impl FontBundle {
     fn allocated_bytes(&self) -> usize {
         self.arrays.allocated_bytes()
             + vec_bytes(&self.engines)
+            + vec_bytes(&self.metrics)
+            + vec_bytes(&self.params)
             + vec_bytes(&self.mappings)
             + vec_bytes(&self.mapped_text)
     }
@@ -960,6 +947,8 @@ mod tests {
         let mut fonts = FontState {
             font_layout_engine: crate::state::PerFont::filled(4, None),
             font_mapping: crate::state::PerFont::filled(4, None),
+            metrics: crate::state::PerFont::filled(4, crate::tfm::FontMetrics::default()),
+            params: crate::state::PerFont::filled(4, crate::tfm::FontParams::default()),
             font_used: crate::state::PerFont::filled(4, false),
             font_ptr: FontId::new(1),
             ..Default::default()
@@ -983,6 +972,8 @@ mod tests {
         let mut fonts = FontState {
             font_layout_engine: crate::state::PerFont::filled(4, None),
             font_mapping: crate::state::PerFont::filled(4, None),
+            metrics: crate::state::PerFont::filled(4, crate::tfm::FontMetrics::default()),
+            params: crate::state::PerFont::filled(4, crate::tfm::FontParams::default()),
             font_used: crate::state::PerFont::filled(4, false),
             font_ptr: FontId::new(1),
             ..Default::default()

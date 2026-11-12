@@ -371,8 +371,6 @@ pub(crate) fn arm(st: &mut crate::state::EngineState) {
     st.eqtb.journal.hash.arm();
     st.eqtb.journal.prim.arm();
     st.eqtb.arm_tables();
-    st.fonts.font_info_journal.arm();
-    st.fonts.fmem_epoch_base = st.fonts.fmem_ptr;
 }
 
 pub(crate) fn disarm(st: &mut crate::state::EngineState) {
@@ -381,8 +379,6 @@ pub(crate) fn disarm(st: &mut crate::state::EngineState) {
     st.mem.glue.journal.disarm();
     st.eqtb.journal.disarm();
     st.eqtb.disarm_tables();
-    st.fonts.font_info_journal.disarm();
-    st.fonts.fmem_epoch_base = crate::units::FontInfoIdx::ZERO;
 }
 
 #[cfg(test)]
@@ -639,26 +635,5 @@ mod tests {
             (eqtb.meaning(cs), eqtb.cs_level(cs)),
             (Command::UndefinedCs, 0)
         );
-
-        let mut fonts = crate::state::FontState {
-            font_info: vec![word(0); 3],
-            fmem_ptr: crate::units::FontInfoIdx::from_raw(2),
-            fmem_epoch_base: crate::units::FontInfoIdx::from_raw(2),
-            ..Default::default()
-        };
-        fonts.font_info_journal.arm();
-        fonts.set_font_info_sc(
-            crate::units::FontInfoIdx::from_raw(1),
-            crate::units::Scaled::from_raw(7),
-        );
-        fonts.set_font_info_sc(
-            crate::units::FontInfoIdx::from_raw(2),
-            crate::units::Scaled::from_raw(8),
-        ); // append region: dead after scalar rewind
-        let delta = fonts.font_info_journal.seal();
-        assert_eq!(delta.len(), 1);
-        delta.apply_to(&mut fonts.font_info);
-        assert_eq!(bits(fonts.font_info[1]), 0);
-        assert_ne!(bits(fonts.font_info[2]), 0);
     }
 }

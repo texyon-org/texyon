@@ -50,13 +50,13 @@ impl FontState {
     #[inline]
     fn sym_font_ok(&self, eqtb: &EqtbState, size: i32) -> bool {
         let f = eqtb.math_font(2 + size);
-        self.font_params[f] >= TOTAL_MATHSY_PARAMS || self.font_is_ot_math(f)
+        self.param_count(f) >= TOTAL_MATHSY_PARAMS || self.font_is_ot_math(f)
     }
 
     #[inline]
     fn ext_font_ok(&self, eqtb: &EqtbState, size: i32) -> bool {
         let f = eqtb.math_font(3 + size);
-        self.font_params[f] >= TOTAL_MATHEX_PARAMS || self.font_is_ot_math(f)
+        self.param_count(f) >= TOTAL_MATHEX_PARAMS || self.font_is_ot_math(f)
     }
 }
 
@@ -532,7 +532,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                     };
                     if let Some((f, c)) = shown {
                         let c = st.fonts.effective_char(f, c);
-                        (st.fonts.char_width(f, st.fonts.char_info(f, c)), true)
+                        (st.fonts.char_metrics(f, c).width, true)
                     } else {
                         match st.mem.classify(here) {
                             Ok(node @ (AnyNode::Box(_) | AnyNode::Rule(_))) => {

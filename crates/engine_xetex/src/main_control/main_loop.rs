@@ -6,7 +6,9 @@ use crate::consts::CHAR_CLASS_LIMIT;
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::ext::append_src_special;
-use crate::fonts::{CharInfo, CharTag, LigChar, LigKernStep, SPACE_CODE};
+use crate::fonts::{
+    CharInfo, CharTag, LigChar, LigKernAction, LigKernIdx, LigKernStep, LigOp, SPACE_CODE,
+};
 use crate::input::{TokenType, TOKEN_LIST};
 use crate::mode::Mode;
 use crate::node::{
@@ -16,7 +18,7 @@ use crate::params::IntPar;
 use crate::state::{EngineState, MemState};
 use crate::token::{Token, TokenList};
 use crate::units::MemIdx;
-use crate::units::{FontId, FontInfoIdx, MemPtr};
+use crate::units::{FontId, MemPtr};
 
 fn inter_char_tokens_enabled(st: &EngineState) -> bool {
     st.eqtb.int_par(IntPar::XetexInterCharTokens) > 0
@@ -516,7 +518,7 @@ enum Resume {
     /// `main_lig_loop`.
     LigLoop,
     /// `main_lig_loop+1` at lig/kern program index `k`.
-    LigProgram(FontInfoIdx),
+    LigProgram(LigKernIdx),
     /// `main_loop_move+2`.
     Move2,
 }
@@ -556,7 +558,7 @@ fn wrapup(st: &mut EngineState, lk: &mut LigKern, rt_hit: bool) -> Result<(), Ab
 }
 
 #[inline(always)]
-fn cur_l_info(st: &mut EngineState, lk: &LigKern) -> CharInfo {
+fn cur_l_info(st: &mut EngineState, lk: &LigKern) -> Option<CharInfo> {
     let c = st.fonts.effective_char(lk.font, lk.cur_l.code());
     st.fonts.char_info(lk.font, c)
 }
@@ -610,33 +612,33 @@ pub(super) fn main_control_main_loop(
     };
 
     let bchar_label = if cancel_boundary {
-        FontInfoIdx::NON_ADDRESS
+        None
     } else {
-        st.fonts.bchar_label[mf]
+        st.fonts.bchar_label(mf)
     };
-    let mut resume = if bchar_label != FontInfoIdx::NON_ADDRESS {
+    let mut resume = if let Some(label) = bchar_label {
         lk.cur_r = lk.cur_l;
         lk.cur_l = LigChar::NONE;
-        Resume::LigProgram(bchar_label)
+        Resume::LigProgram(label)
     } else {
         Resume::Move2
     };
-    let mut main_i = CharInfo::NULL;
+    let mut main_i = None;
 
     loop {
         let exit = match std::mem::replace(&mut resume, Resume::LigLoop) {
             Resume::Move2 => None,
             Resume::LigProgram(k) => {
-                let step = st.fonts.lig_kern_step(k);
+                let step = st.fonts.lig_kern_step(lk.font, k)?;
                 Some(lig_kern_program(st, &mut lk, k, step, &mut main_i)?)
             }
-            Resume::LigLoop if main_i.tag() != CharTag::Lig || lk.cur_r == LigChar::NONE => {
-                Some(LigExit::Wrapup)
-            }
-            Resume::LigLoop => {
-                let (k, step) = st.fonts.lig_kern_start(lk.font, main_i);
-                Some(lig_kern_program(st, &mut lk, k, step, &mut main_i)?)
-            }
+            Resume::LigLoop => match main_i.map(|i| i.tag) {
+                Some(CharTag::Lig(start)) if lk.cur_r != LigChar::NONE => {
+                    let (k, step) = st.fonts.lig_kern_start(lk.font, start)?;
+                    Some(lig_kern_program(st, &mut lk, k, step, &mut main_i)?)
+                }
+                _ => Some(LigExit::Wrapup),
+            },
         };
         if let Some(exit) = exit {
             match exit {
@@ -683,7 +685,7 @@ pub(super) fn main_control_main_loop(
             false
         } else {
             main_i = st.fonts.effective_char_info(lk.font, lk.cur_l.code());
-            main_i.exists()
+            main_i.is_some()
         };
         let node = lk.lookahead_node()?;
         if !exists {
@@ -702,40 +704,41 @@ pub(super) fn main_control_main_loop(
 fn lig_kern_program(
     st: &mut EngineState,
     lk: &mut LigKern,
-    mut k: FontInfoIdx,
+    mut k: LigKernIdx,
     mut step: LigKernStep,
-    main_i: &mut CharInfo,
+    main_i: &mut Option<CharInfo>,
 ) -> Result<LigExit, Abort> {
     loop {
-        if !step.matches(lk.cur_r) {
-            if step.is_last() {
+        let Some(action) = step.action_for(lk.cur_r) else {
+            let Some(next) = step.next(k) else {
                 return Ok(LigExit::Wrapup);
-            }
-            k = step.next_index(k);
-            step = st.fonts.lig_kern_step(k);
+            };
+            k = next;
+            step = st.fonts.lig_kern_step(lk.font, k)?;
             continue;
-        }
-        if step.is_kern() {
-            wrapup(st, lk, true)?;
-            let kern = st.fonts.char_kern(lk.font, step);
-            let kern = st.mem.new_kern(kern)?;
-            st.input.cur_list.tail_append(&mut st.mem, kern);
-            return Ok(LigExit::Move);
-        }
+        };
+        let (op, lig_char) = match action {
+            LigKernAction::Kern(width) => {
+                wrapup(st, lk, true)?;
+                let kern = st.mem.new_kern(width)?;
+                st.input.cur_list.tail_append(&mut st.mem, kern);
+                return Ok(LigExit::Move);
+            }
+            LigKernAction::Lig { op, char } => (op, LigChar::of(char)),
+        };
         if lk.cur_l == LigChar::NONE {
             lk.lft_hit = true;
         } else if lk.lig_stack.is_none() {
             lk.rt_hit = true;
         }
-        let op = step.lig_op();
         match op {
-            1 | 5 => {
-                lk.cur_l = LigChar::of(step.lig_char());
+            LigOp::KeepRight | LigOp::KeepRightSkip => {
+                lk.cur_l = lig_char;
                 *main_i = cur_l_info(st, lk);
                 lk.ligature_present = true;
             }
-            2 | 6 => {
-                lk.cur_r = LigChar::of(step.lig_char());
+            LigOp::KeepLeft | LigOp::KeepLeftSkip => {
+                lk.cur_r = lig_char;
                 let c = lk.cur_r.code();
                 match lk.lig_stack {
                     None => {
@@ -751,22 +754,22 @@ fn lig_kern_program(
                     Some(LigStack::Item(item)) => st.mem[item].character = c,
                 }
             }
-            3 => {
-                lk.cur_r = LigChar::of(step.lig_char());
+            LigOp::KeepBoth => {
+                lk.cur_r = lig_char;
                 let below = lk.lig_stack.map(LigStack::idx);
                 let item = st.mem.new_lig_item(lk.cur_r.code())?;
                 lk.lig_stack = Some(LigStack::Item(item));
                 item.idx().set_link(&mut st.mem, below);
             }
-            7 | 11 => {
+            LigOp::KeepBothSkip | LigOp::KeepBothSkip2 => {
                 wrapup(st, lk, false)?;
                 lk.cur_q = st.input.cur_list.tail;
-                lk.cur_l = LigChar::of(step.lig_char());
+                lk.cur_l = lig_char;
                 *main_i = cur_l_info(st, lk);
                 lk.ligature_present = true;
             }
-            _ => {
-                lk.cur_l = LigChar::of(step.lig_char());
+            LigOp::Replace => {
+                lk.cur_l = lig_char;
                 lk.ligature_present = true;
                 return Ok(if lk.lig_stack.is_none() {
                     LigExit::Wrapup
@@ -775,14 +778,20 @@ fn lig_kern_program(
                 });
             }
         }
-        if op > 4 && op != 7 {
+        if matches!(
+            op,
+            LigOp::KeepRightSkip | LigOp::KeepLeftSkip | LigOp::KeepBothSkip2
+        ) {
             return Ok(LigExit::Wrapup);
         }
         if lk.cur_l.is_char() {
             return Ok(LigExit::Restart);
         }
-        k = st.fonts.bchar_label[lk.font];
-        step = st.fonts.lig_kern_step(k);
+        k = st
+            .fonts
+            .bchar_label(lk.font)
+            .or_confusion("boundary program")?;
+        step = st.fonts.lig_kern_step(lk.font, k)?;
     }
 }
 

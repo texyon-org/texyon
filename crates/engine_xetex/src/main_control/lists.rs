@@ -795,8 +795,7 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
 /// The italic correction of character `ch`.
 fn char_italic(st: &mut EngineState, f: FontId, character: u16) -> Scaled {
     let c = st.fonts.effective_char(f, character);
-    let info = st.fonts.char_info(f, c);
-    st.fonts.char_italic(f, info)
+    st.fonts.char_metrics(f, c).italic
 }
 
 pub(super) fn append_italic_correction(st: &mut EngineState) -> Result<(), Abort> {
@@ -847,8 +846,7 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
         }
         NewChar::Char(ch) => {
             let c = st.fonts.effective_char(f, st.mem[ch].character);
-            let info = st.fonts.char_info(f, c);
-            st.fonts.char_width(f, info)
+            st.fonts.char_metrics(f, c).width
         }
     };
 
@@ -882,10 +880,8 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
         }
         NewChar::Char(ch) => {
             let c = st.fonts.effective_char(f, st.mem[ch].character);
-            let info = st.fonts.char_info(f, c);
-            let w = st.fonts.char_width(f, info);
-            let h = st.fonts.char_height(f, info);
-            (w, h)
+            let info = st.fonts.char_metrics(f, c);
+            (info.width, info.height)
         }
     };
     let accent = if h == x {

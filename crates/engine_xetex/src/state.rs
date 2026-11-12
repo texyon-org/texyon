@@ -4,9 +4,7 @@ use crate::cmd::Cmd;
 use crate::codes::{FiOrElseCode, ValueLevel};
 use crate::glue_store::GlueSpecId;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
-use crate::units::{
-    BufPos, CsId, FontId, FontInfoIdx, PoolPos, PrimNum, SavePtr, Scaled, StrNumber,
-};
+use crate::units::{BufPos, CsId, FontId, PoolPos, PrimNum, SavePtr, Scaled, StrNumber};
 
 #[derive(Default)]
 pub(crate) struct EngineState {
@@ -1029,42 +1027,31 @@ pub(crate) struct FontState {
     pub xtx_ligature_present: bool,
     pub gave_char_warning_help: bool,
     pub native_font_type_flag: StrNumber,
-    /// The end of `font_info`.
-    pub font_mem_size: FontInfoIdx,
+    /// The limit on `fmem_ptr`.
+    pub font_mem_size: i32,
     pub font_max: FontId,
-    pub fmem_ptr: FontInfoIdx,
+    /// The `font_info` words TeX would use for the loaded fonts, counted for
+    /// `font_mem_size` and the statistics.
+    pub fmem_ptr: i32,
     pub font_ptr: FontId,
     pub font_flags: PerFont<i8>,
     pub font_letter_space: PerFont<Scaled>,
     pub font_check: PerFont<[u8; 4]>,
     pub font_size: PerFont<Scaled>,
     pub font_dsize: PerFont<Scaled>,
-    pub font_params: PerFont<i32>,
     pub font_name: PerFont<StrNumber>,
     pub font_area: PerFont<StrNumber>,
     pub font_bc: PerFont<u16>,
     pub font_ec: PerFont<u16>,
-    pub bchar_label: PerFont<FontInfoIdx>,
     pub font_bchar: PerFont<crate::fonts::LigChar>,
     pub font_false_bchar: PerFont<crate::fonts::LigChar>,
     /// The interword glue built from the font's parameters, once a space needs it.
     pub font_glue: PerFont<Option<crate::glue_store::GlueSpecId>>,
     pub font_used: PerFont<bool>,
-    pub char_base: PerFont<FontInfoIdx>,
-    pub width_base: PerFont<FontInfoIdx>,
-    pub height_base: PerFont<FontInfoIdx>,
-    pub depth_base: PerFont<FontInfoIdx>,
-    pub italic_base: PerFont<FontInfoIdx>,
-    pub lig_kern_base: PerFont<FontInfoIdx>,
-    pub kern_base: PerFont<FontInfoIdx>,
-    pub exten_base: PerFont<FontInfoIdx>,
-    pub param_base: PerFont<FontInfoIdx>,
     pub hyphen_char: PerFont<i32>,
     pub skew_char: PerFont<i32>,
-    pub font_info: Vec<crate::mem_types::MemoryWord>,
-    pub font_info_journal: crate::journal::PlainTrail<crate::mem_types::MemoryWord>,
-    /// Font-memory high-water mark at the start of the open journal epoch.
-    pub fmem_epoch_base: FontInfoIdx,
+    pub metrics: PerFont<crate::tfm::FontMetrics>,
+    pub params: PerFont<crate::tfm::FontParams>,
     pub mapped_text: Vec<u16>,
     pub cp_codes: crate::fonts::ProtrusionCodes,
     /// Glyph bounds in TeX points, valid for the fonts through `font_ptr`.
@@ -1086,39 +1073,27 @@ impl Default for FontState {
             xtx_ligature_present: false,
             gave_char_warning_help: false,
             native_font_type_flag: StrNumber::NONE,
-            font_mem_size: FontInfoIdx::ZERO,
+            font_mem_size: 0,
             font_max: crate::consts::NULL_FONT,
-            fmem_ptr: FontInfoIdx::ZERO,
+            fmem_ptr: 0,
             font_ptr: crate::consts::NULL_FONT,
             font_flags: PerFont::default(),
             font_letter_space: PerFont::default(),
             font_check: PerFont::default(),
             font_size: PerFont::default(),
             font_dsize: PerFont::default(),
-            font_params: PerFont::default(),
             font_name: PerFont::default(),
             font_area: PerFont::default(),
             font_bc: PerFont::default(),
             font_ec: PerFont::default(),
-            bchar_label: PerFont::default(),
             font_bchar: PerFont::default(),
             font_false_bchar: PerFont::default(),
             font_glue: PerFont::default(),
             font_used: PerFont::default(),
-            char_base: PerFont::default(),
-            width_base: PerFont::default(),
-            height_base: PerFont::default(),
-            depth_base: PerFont::default(),
-            italic_base: PerFont::default(),
-            lig_kern_base: PerFont::default(),
-            kern_base: PerFont::default(),
-            exten_base: PerFont::default(),
-            param_base: PerFont::default(),
             hyphen_char: PerFont::default(),
             skew_char: PerFont::default(),
-            font_info: Vec::new(),
-            font_info_journal: crate::journal::PlainTrail::default(),
-            fmem_epoch_base: FontInfoIdx::ZERO,
+            metrics: PerFont::default(),
+            params: PerFont::default(),
             mapped_text: Vec::new(),
             cp_codes: crate::fonts::ProtrusionCodes::default(),
             glyph_bboxes: std::cell::RefCell::default(),
@@ -1127,39 +1102,16 @@ impl Default for FontState {
 }
 
 impl FontState {
-    #[inline]
-    pub(crate) fn font_info_b16(&self, k: FontInfoIdx) -> crate::mem_types::B16x4 {
-        self.font_info[k.index()].b16()
-    }
-
-    /// `font_info[k].sc`.
-    #[inline]
-    pub(crate) fn font_info_sc(&self, k: FontInfoIdx) -> Scaled {
-        Scaled::from_raw(self.font_info[k.index()].b32().s1)
-    }
-
-    /// Font parameter `n` of font `f`.
+    /// Font parameter `n` of font `f`, zero when the font has no such parameter.
     #[inline]
     pub(crate) fn param(&self, f: FontId, n: i32) -> Scaled {
-        self.font_info_sc(self.param_base[f] + n)
+        self.params[f].get(n).unwrap_or(Scaled::ZERO)
     }
 
+    /// TeX's `font_params`.
     #[inline]
-    pub(crate) fn set_font_info_b16(&mut self, k: FontInfoIdx, v: crate::mem_types::B16x4) {
-        let index = k.index();
-        if self.font_info_journal.armed() && k < self.fmem_epoch_base {
-            self.font_info_journal.note(index, self.font_info[index]);
-        }
-        self.font_info[index].b16 = v;
-    }
-
-    #[inline]
-    pub(crate) fn set_font_info_sc(&mut self, k: FontInfoIdx, v: Scaled) {
-        let index = k.index();
-        if self.font_info_journal.armed() && k < self.fmem_epoch_base {
-            self.font_info_journal.note(index, self.font_info[index]);
-        }
-        self.font_info[index].b32.s1 = v.raw();
+    pub(crate) fn param_count(&self, f: FontId) -> i32 {
+        self.params[f].count()
     }
 }
 

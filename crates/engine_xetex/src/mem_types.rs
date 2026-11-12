@@ -43,12 +43,6 @@ impl MemoryWord {
         // SAFETY: every field is 8 bytes of plain data, so any bits read as any field.
         unsafe { self.b32 }
     }
-
-    #[inline]
-    pub fn b16(self) -> B16x4 {
-        // SAFETY: as in `b32`.
-        unsafe { self.b16 }
-    }
 }
 
 impl Default for MemoryWord {

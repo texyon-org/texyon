@@ -8,7 +8,10 @@ use crate::consts::{
 };
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
-use crate::fonts::{CharInfo, CharTag, AAT_FONT_FLAG, OTGR_FONT_FLAG, SPACE_CODE, X_HEIGHT_CODE};
+use crate::fonts::{
+    CharInfo, CharTag, LigChar, LigKernAction, LigKernIdx, LigOp, AAT_FONT_FLAG, OTGR_FONT_FLAG,
+    SPACE_CODE, X_HEIGHT_CODE,
+};
 use crate::glue_store::GlueSpecId;
 use crate::mem::{TEMP_HEAD, TEX_NULL, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
@@ -181,7 +184,8 @@ pub(super) fn math_mu(st: &mut EngineState, style: MathStyle) -> Scaled {
 pub(super) struct Fetched {
     pub f: FontId,
     pub c: i32,
-    pub i: CharInfo,
+    /// The character of a TFM font, `None` for a native font or a missing character.
+    pub i: Option<CharInfo>,
 }
 
 enum FetchError {
@@ -202,11 +206,7 @@ impl MemState {
         let f = eqtb.math_font(fam + size);
         scanner.cur_f = f;
         let c = self[a].full_char();
-        let mut fetched = Fetched {
-            f,
-            c,
-            i: CharInfo::NULL,
-        };
+        let mut fetched = Fetched { f, c, i: None };
 
         if f == NULL_FONT {
             self[a].math_type = EMPTY;
@@ -218,9 +218,8 @@ impl MemState {
             if c >= i32::from(fonts.font_bc[f]) && c <= i32::from(fonts.font_ec[f]) {
                 fetched.i = fonts.char_info(f, c);
             }
-            if !fetched.i.exists() {
+            if fetched.i.is_none() {
                 self[a].math_type = EMPTY;
-                fetched.i = CharInfo::NULL;
                 return (fetched, Some(FetchError::CharMissing { f, c }));
             }
         }
@@ -551,15 +550,17 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<S
         let Fetched { f, mut i, .. } = fetch(st, MathSlot::Nucleus(q), style.size())?;
 
         if !st.fonts.font_uses_opentype(f) {
-            if style < MathStyle::TEXT && i.tag() == CharTag::List {
-                let c = i.remainder();
-                let i_info = st.fonts.char_info(f, i32::from(c));
-                if i_info.exists() {
-                    i = i_info;
+            if let Some(CharInfo {
+                tag: CharTag::List(c),
+                ..
+            }) = i.filter(|_| style < MathStyle::TEXT)
+            {
+                if let Some(larger) = st.fonts.char_info(f, i32::from(c)) {
+                    i = Some(larger);
                     st.mem[q].nucleus.set_character(c);
                 }
             }
-            delta = st.fonts.char_italic(f, i);
+            delta = i.map_or(Scaled::ZERO, |i| i.italic);
         }
 
         let x = clean_box(st, st.mem[q].nucleus, style)?;
@@ -709,63 +710,68 @@ impl MemState {
     fn make_ord_body(
         &mut self,
         fonts: &FontState,
-        fetched: Fetched,
+        f: FontId,
+        start: LigKernIdx,
         q: NodePtr<Noad>,
         p: NodePtr<Noad>,
     ) -> Result<MakeOrdStep, Abort> {
-        let next_c = i32::from(self[p].nucleus.character());
-        let (mut a, mut step) = fonts.lig_kern_start(fetched.f, fetched.i);
+        let next_c = LigChar::of(self[p].nucleus.character());
+        let (mut a, mut step) = fonts.lig_kern_start(f, start)?;
         loop {
-            if step.matches(crate::fonts::LigChar::from_raw(next_c)) {
-                if step.is_kern() {
-                    let kern_width = fonts.char_kern(fetched.f, step);
+            match step.action_for(next_c) {
+                Some(LigKernAction::Kern(kern_width)) => {
                     let p_kern = self.new_kern(kern_width)?;
                     self[p_kern].link = self[q].link;
                     self[q].link = p_kern.ptr();
                     return Ok(MakeOrdStep::Return);
                 }
-                let op = step.lig_op();
-                match op {
-                    1 | 5 => {
-                        self[q].nucleus.set_character(step.lig_char());
-                    }
-                    2 | 6 => {
-                        self[p].nucleus.set_character(step.lig_char());
-                    }
-                    3 | 7 | 11 => {
-                        let r = self.new_noad()?;
-                        self[r].nucleus.set_character(step.lig_char());
-                        let fam = self[q].nucleus.plane_and_fam() % 256;
-                        self[r].nucleus.set_plane_and_fam(fam);
-                        self[q].link = r.ptr();
-                        self[r].link = p.ptr();
-                        if op < 11 {
-                            self[r].nucleus.math_type = MATH_CHAR;
-                        } else {
-                            self[r].nucleus.math_type = MATH_TEXT_CHAR;
+                Some(LigKernAction::Lig { op, char }) => {
+                    match op {
+                        LigOp::KeepRight | LigOp::KeepRightSkip => {
+                            self[q].nucleus.set_character(char);
+                        }
+                        LigOp::KeepLeft | LigOp::KeepLeftSkip => {
+                            self[p].nucleus.set_character(char);
+                        }
+                        LigOp::KeepBoth | LigOp::KeepBothSkip | LigOp::KeepBothSkip2 => {
+                            let r = self.new_noad()?;
+                            self[r].nucleus.set_character(char);
+                            let fam = self[q].nucleus.plane_and_fam() % 256;
+                            self[r].nucleus.set_plane_and_fam(fam);
+                            self[q].link = r.ptr();
+                            self[r].link = p.ptr();
+                            self[r].nucleus.math_type = if op == LigOp::KeepBothSkip2 {
+                                MATH_TEXT_CHAR
+                            } else {
+                                MATH_CHAR
+                            };
+                        }
+                        LigOp::Replace => {
+                            let src = self[p];
+                            let node = &mut self[q];
+                            node.link = src.link;
+                            node.nucleus.set_character(char);
+                            node.subscr = src.subscr;
+                            node.supscr = src.supscr;
+                            p.free(self);
                         }
                     }
-                    _ => {
-                        let src = self[p];
-                        let node = &mut self[q];
-                        node.link = src.link;
-                        node.nucleus.set_character(step.lig_char());
-                        node.subscr = src.subscr;
-                        node.supscr = src.supscr;
-                        p.free(self);
+                    if !matches!(
+                        op,
+                        LigOp::Replace | LigOp::KeepRight | LigOp::KeepLeft | LigOp::KeepBoth
+                    ) {
+                        return Ok(MakeOrdStep::Return);
                     }
+                    self[q].nucleus.math_type = MATH_CHAR;
+                    return Ok(MakeOrdStep::Restart);
                 }
-                if op > 3 {
-                    return Ok(MakeOrdStep::Return);
-                }
-                self[q].nucleus.math_type = MATH_CHAR;
-                return Ok(MakeOrdStep::Restart);
+                None => {}
             }
-            if step.is_last() {
+            let Some(next) = step.next(a) else {
                 return Ok(MakeOrdStep::Return);
-            }
-            a = step.next_index(a);
-            step = fonts.lig_kern_step(a);
+            };
+            a = next;
+            step = fonts.lig_kern_step(f, a)?;
         }
     }
 }
@@ -807,11 +813,14 @@ fn make_ord(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<
 
         st.mem[q].nucleus.math_type = MATH_TEXT_CHAR;
         let fetched = fetch(st, MathSlot::Nucleus(q), style.size())?;
-        if fetched.i.tag() != CharTag::Lig {
+        let Some(CharTag::Lig(start)) = fetched.i.map(|i| i.tag) else {
             return Ok(());
-        }
+        };
 
-        match st.mem.make_ord_body(&st.fonts, fetched, q, p_node)? {
+        match st
+            .mem
+            .make_ord_body(&st.fonts, fetched.f, start, q, p_node)?
+        {
             MakeOrdStep::Return => return Ok(()),
             MakeOrdStep::Restart => continue 'restart,
         }
@@ -839,36 +848,34 @@ fn make_math_accent(
             s = compute_ot_math_accent_pos(st, q, style)?;
         }
         x = clean_box(st, st.mem[n].nucleus, style.cramped())?;
-    } else if accent.i.exists() {
-        let mut acc_i = accent.i;
+    } else if let Some(mut acc_i) = accent.i {
         if st.mem[n].nucleus.math_type == MATH_CHAR {
             let nucleus = fetch(st, MathSlot::Nucleus(n), style.size())?;
-            if nucleus.i.tag() == CharTag::Lig {
+            if let Some(CharTag::Lig(start)) = nucleus.i.map(|i| i.tag) {
                 let cur_f = nucleus.f;
-                let (mut a, mut step) = st.fonts.lig_kern_start(cur_f, nucleus.i);
-                let skew_char = st.fonts.skew_char[cur_f];
+                let (mut a, mut step) = st.fonts.lig_kern_start(cur_f, start)?;
+                let skew_char = LigChar::from_raw(st.fonts.skew_char[cur_f]);
                 s = loop {
-                    if i32::from(step.next_char()) == skew_char {
-                        if step.is_kern() && !step.is_redirect() {
-                            break st.fonts.char_kern(cur_f, step);
-                        }
-                        break Scaled::ZERO;
+                    match step.action_for(skew_char) {
+                        Some(LigKernAction::Kern(kern)) => break kern,
+                        Some(LigKernAction::Lig { .. }) => break Scaled::ZERO,
+                        None => {}
                     }
-                    if step.is_last() {
+                    let Some(next) = step.next(a) else {
                         break Scaled::ZERO;
-                    }
-                    a = step.next_index(a);
-                    step = st.fonts.lig_kern_step(a);
+                    };
+                    a = next;
+                    step = st.fonts.lig_kern_step(cur_f, a)?;
                 };
             }
         }
         x = clean_box(st, st.mem[n].nucleus, style.cramped())?;
         let w = st.mem[x].width;
-        while acc_i.tag() == CharTag::List {
-            let larger = i32::from(acc_i.remainder());
-            acc_i = st.fonts.char_info(f, larger);
-            if !acc_i.exists() || st.fonts.char_width(f, acc_i) > w {
-                break;
+        while let CharTag::List(larger) = acc_i.tag {
+            let larger = i32::from(larger);
+            match st.fonts.char_info(f, larger) {
+                Some(info) if info.width <= w => acc_i = info,
+                _ => break,
             }
             c = larger;
         }
@@ -1179,8 +1186,8 @@ fn mlist_nucleus(
                     delta = Scaled::ZERO;
                 }
                 glyph.ptr()
-            } else if fetched.i.exists() {
-                delta = st.fonts.char_italic(cur_f, fetched.i);
+            } else if let Some(i) = fetched.i {
+                delta = i.italic;
                 let cc = fetched.c as u16;
                 let p = crate::main_control::new_character(st, cur_f, cc)?;
                 let p = p.and_then(crate::main_control::NewChar::ptr);

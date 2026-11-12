@@ -37,7 +37,7 @@ use crate::token::Token;
 use crate::token::TokenList;
 use crate::units::CsId;
 use crate::units::{
-    BufPos, FontId, FontInfoIdx, GlueOrder, NodeType, PoolPos, PrimNum, SavePtr, Scaled, StrNumber,
+    BufPos, FontId, GlueOrder, NodeType, PoolPos, PrimNum, SavePtr, Scaled, StrNumber,
 };
 
 pub(crate) const POOL_FREE: i32 = 47_500;
@@ -539,26 +539,17 @@ impl FontState {
         self.font_check = PerFont::filled(len, [0; 4]);
         self.font_size = PerFont::filled(len, Scaled::ZERO);
         self.font_dsize = PerFont::filled(len, Scaled::ZERO);
-        self.font_params = PerFont::filled(len, 0);
         self.font_name = PerFont::filled(len, StrNumber::NONE);
         self.font_area = PerFont::filled(len, StrNumber::NONE);
         self.font_bc = PerFont::filled(len, 0);
         self.font_ec = PerFont::filled(len, 0);
-        self.bchar_label = PerFont::filled(len, FontInfoIdx::ZERO);
         self.font_bchar = PerFont::filled(len, crate::fonts::LigChar::of(0));
         self.font_false_bchar = PerFont::filled(len, crate::fonts::LigChar::of(0));
         self.font_glue = PerFont::filled(len, None);
         self.hyphen_char = PerFont::filled(len, 0);
         self.skew_char = PerFont::filled(len, 0);
-        self.char_base = PerFont::filled(len, FontInfoIdx::ZERO);
-        self.width_base = PerFont::filled(len, FontInfoIdx::ZERO);
-        self.height_base = PerFont::filled(len, FontInfoIdx::ZERO);
-        self.depth_base = PerFont::filled(len, FontInfoIdx::ZERO);
-        self.italic_base = PerFont::filled(len, FontInfoIdx::ZERO);
-        self.lig_kern_base = PerFont::filled(len, FontInfoIdx::ZERO);
-        self.kern_base = PerFont::filled(len, FontInfoIdx::ZERO);
-        self.exten_base = PerFont::filled(len, FontInfoIdx::ZERO);
-        self.param_base = PerFont::filled(len, FontInfoIdx::ZERO);
+        self.metrics = PerFont::filled(len, crate::tfm::FontMetrics::default());
+        self.params = PerFont::filled(len, crate::tfm::FontParams::default());
     }
 }
 
@@ -580,7 +571,7 @@ pub(crate) fn initialize_engine(
     st.strings.pool_size = PoolPos::from_raw(6_250_000);
     st.strings.string_vacancies = 90_000;
     st.strings.max_strings = StrNumber::from_raw(565_536);
-    st.fonts.font_mem_size = FontInfoIdx::from_raw(8_000_000);
+    st.fonts.font_mem_size = 8_000_000;
     st.fonts.font_max = FontId::new(9_000);
     st.hyph.trie_size = 1_000_000;
     st.hyph.hyph_size = HYPH_SIZE;
@@ -618,7 +609,6 @@ pub(crate) fn initialize_engine(
         st.eqtb.alloc_tables();
         st.strings.str_start = vec![PoolPos::ZERO; st.strings.max_strings.slot() + 1];
         st.strings.str_pool = vec![0; st.strings.pool_size.index() + 1];
-        st.fonts.font_info = zeroed_vec(st.fonts.font_mem_size.index() + 1);
     }
 
     st.errors.history = HISTORY_FATAL_ERROR;
@@ -763,22 +753,18 @@ pub(crate) fn initialize_engine(
         let fonts = &mut st.fonts;
         let f = NULL_FONT;
         fonts.font_ptr = NULL_FONT;
-        fonts.fmem_ptr = FontInfoIdx::from_raw(7);
+        fonts.fmem_ptr = 7;
         fonts.font_name[f] = nullfont_name;
         fonts.font_area[f] = EMPTY_STRING;
         fonts.hyphen_char[f] = i32::from(b'-');
         fonts.skew_char[f] = -1;
-        fonts.bchar_label[f] = FontInfoIdx::NON_ADDRESS;
         fonts.font_bchar[f] = crate::fonts::LigChar::NONE;
         fonts.font_false_bchar[f] = crate::fonts::LigChar::NONE;
         fonts.font_bc[f] = 1;
         fonts.font_ec[f] = 0;
         fonts.font_glue[f] = None;
-        fonts.font_params[f] = 7;
-        fonts.param_base[f] = FontInfoIdx::from_raw(-1);
-        for word in &mut fonts.font_info[..7] {
-            word.b32.s1 = 0;
-        }
+        fonts.metrics[f] = crate::tfm::FontMetrics::default();
+        fonts.params[f] = crate::tfm::FontParams::new(vec![Scaled::ZERO; 7]);
     }
 
     st.fonts.font_used = PerFont::filled(st.fonts.font_max.index() + 1, false);
@@ -920,32 +906,22 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     fonts.font_check = PerFont::default();
     fonts.font_size = PerFont::default();
     fonts.font_dsize = PerFont::default();
-    fonts.font_params = PerFont::default();
     fonts.font_name = PerFont::default();
     fonts.font_area = PerFont::default();
     fonts.font_bc = PerFont::default();
     fonts.font_ec = PerFont::default();
-    fonts.bchar_label = PerFont::default();
     fonts.font_bchar = PerFont::default();
     fonts.font_false_bchar = PerFont::default();
     fonts.font_glue = PerFont::default();
     fonts.font_used = PerFont::default();
-    fonts.font_info = Vec::new();
     fonts.font_layout_engine = PerFont::default();
     fonts.font_mapping = PerFont::default();
     fonts.font_flags = PerFont::default();
     fonts.font_letter_space = PerFont::default();
     fonts.hyphen_char = PerFont::default();
     fonts.skew_char = PerFont::default();
-    fonts.char_base = PerFont::default();
-    fonts.width_base = PerFont::default();
-    fonts.height_base = PerFont::default();
-    fonts.depth_base = PerFont::default();
-    fonts.italic_base = PerFont::default();
-    fonts.lig_kern_base = PerFont::default();
-    fonts.kern_base = PerFont::default();
-    fonts.exten_base = PerFont::default();
-    fonts.param_base = PerFont::default();
+    fonts.metrics = PerFont::default();
+    fonts.params = PerFont::default();
     fonts.mapped_text = Vec::new();
 
     let hyph = &mut st.hyph;
