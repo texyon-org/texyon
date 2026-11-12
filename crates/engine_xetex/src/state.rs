@@ -1,7 +1,7 @@
 //! Rust-owned engine state.
 
 use crate::cmd::Cmd;
-use crate::codes::{FiOrElseCode, ValueLevel};
+use crate::codes::FiOrElseCode;
 use crate::cs::{CsId, Frozen};
 use crate::glue_store::GlueSpecId;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
@@ -316,6 +316,8 @@ pub(crate) struct EqtbState {
     pub sf_codes: crate::eqtb::Table<crate::eqtb::SfLoc, i32>,
     pub math_codes: crate::eqtb::Table<crate::eqtb::MathLoc, i32>,
     pub del_codes: crate::eqtb::Table<crate::eqtb::DelLoc, i32>,
+    /// `\XeTeXinterchartoks`, by class pair.
+    pub inter_char: crate::eqtb::SparseTable<crate::eqtb::InterCharPair, crate::token::TokenList>,
     pub boxes:
         crate::eqtb::Table<crate::eqtb::BoxLoc, Option<crate::node::NodePtr<crate::node::BoxNode>>>,
     pub prim: Vec<crate::hash::PrimEntry>,
@@ -337,6 +339,7 @@ impl Default for EqtbState {
             prim_used: PrimNum::LAST,
             cs_count: 0,
             meanings: Default::default(),
+            inter_char: Default::default(),
             ints: Default::default(),
             dimens: Default::default(),
             glue: Default::default(),
@@ -373,6 +376,7 @@ impl EqtbState {
         );
         self.hash = crate::mem_types::zeroed_vec(self.cs_top.hash_index().map_or(0, |i| i + 1));
         self.ints = crate::eqtb::Table::new(crate::eqtb::IntLoc::LEN, 0);
+        self.inter_char.clear();
         self.dimens = crate::eqtb::Table::new(crate::eqtb::DimenLoc::LEN, Scaled::ZERO);
         self.glue = crate::eqtb::Table::new(crate::eqtb::GlueLoc::LEN, crate::mem::ZERO_GLUE);
         self.toks =
@@ -743,11 +747,6 @@ pub(crate) enum SaveEntry {
     Restore(Restore),
     /// A token `\aftergroup` inserts when the group ends.
     InsertToken(crate::token::Token),
-    /// The sparse register chain and level that were current before this group saved one.
-    RestoreSa {
-        chain: Option<crate::node::NodePtr<crate::node::SaSaved>>,
-        level: u16,
-    },
     /// Something a construction keeps until its group ends.
     Saved(Saved),
 }
@@ -769,6 +768,7 @@ pub(crate) enum Restore {
     Sf(crate::eqtb::Old<crate::eqtb::SfLoc>),
     Math(crate::eqtb::Old<crate::eqtb::MathLoc>),
     Del(crate::eqtb::Old<crate::eqtb::DelLoc>),
+    InterChar(crate::eqtb::Old<crate::eqtb::InterCharPair>),
 }
 
 /// What a construction keeps on the save stack below its group.
@@ -944,35 +944,6 @@ impl MarkClasses {
     }
 }
 
-/// `sa_root`, the sparse-array trees of registers and mark classes by type.
-#[derive(Default, Clone, Copy)]
-pub(crate) struct SaRoots([crate::units::MemPtr; 8]);
-
-impl SaRoots {
-    /// The register trees, `int_val..=inter_char_val`, which formats keep.
-    pub(crate) fn registers_mut(&mut self) -> &mut [crate::units::MemPtr] {
-        &mut self.0[ValueLevel::Int as usize..=ValueLevel::InterChar as usize]
-    }
-
-    /// The root index node of the tree for type `t`.
-    #[inline]
-    pub(crate) fn get(
-        &self,
-        t: ValueLevel,
-    ) -> Option<crate::node::NodePtr<crate::node::SaIndexNode>> {
-        self.0[t as usize].map(crate::node::NodePtr::from_idx_unchecked)
-    }
-
-    #[inline]
-    pub(crate) fn set(
-        &mut self,
-        t: ValueLevel,
-        root: Option<crate::node::NodePtr<crate::node::SaIndexNode>>,
-    ) {
-        self.0[t as usize] = crate::node::link_of(root);
-    }
-}
-
 #[derive(Default, Clone)]
 pub(crate) struct ScannerState {
     /// Monotonic token-fetch clock used to order checkpoint fences.
@@ -990,8 +961,6 @@ pub(crate) struct ScannerState {
     pub shown_mode: crate::mode::ModeName,
     pub mag_set: i32,
     pub expand_depth_count: i32,
-    pub sa_chain: Option<crate::node::NodePtr<crate::node::SaSaved>>,
-    pub sa_level: u16,
     pub max_reg_num: i32,
     /// The innermost incomplete conditional, `None` outside any.
     /// The conditional stack, TeX's `cond_ptr` list.
@@ -1018,7 +987,6 @@ pub(crate) struct ScannerState {
     pub after_token: crate::token::Token,
     pub cur_f: FontId,
     pub set_box_allowed: bool,
-    pub sa_root: SaRoots,
     pub native_text: Vec<u16>,
     pub native_text_size: i32,
     pub native_len: i32,

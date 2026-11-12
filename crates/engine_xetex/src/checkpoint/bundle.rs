@@ -226,6 +226,7 @@ struct EqtbBundle {
     hash_extra: u32,
     cs_top: CsId,
     pgfmath: crate::pgfmath::KnownCs,
+    inter_char: crate::eqtb::SparseTable<crate::eqtb::InterCharPair, crate::token::TokenList>,
 }
 
 impl EqtbBundle {
@@ -250,6 +251,7 @@ impl EqtbBundle {
             sf_codes: _,
             math_codes: _,
             del_codes: _,
+            inter_char,
             prim: _,
             hash: _,
             hash_extra,
@@ -266,6 +268,7 @@ impl EqtbBundle {
             hash_extra: *hash_extra,
             cs_top: *cs_top,
             pgfmath: *pgfmath,
+            inter_char: inter_char.clone(),
         }
     }
 
@@ -278,6 +281,7 @@ impl EqtbBundle {
         dst.hash_extra = self.hash_extra;
         dst.cs_top = self.cs_top;
         dst.pgfmath = self.pgfmath;
+        dst.inter_char.clone_from(&self.inter_char);
     }
 }
 

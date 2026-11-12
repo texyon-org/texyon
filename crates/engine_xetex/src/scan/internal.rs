@@ -5,8 +5,9 @@ use crate::codes::FontIntCode;
 use crate::codes::PageDimenCode;
 use crate::codes::{BoxDimenCode, FiOrElseCode, LastItemCode, PageIntCode, ValueLevel};
 use crate::command::Command;
-use crate::consts::{ACTIVE_MATH_CHAR, CHAR_CLASS_LIMIT, MAX_DIMEN, NULL_FONT};
+use crate::consts::{ACTIVE_MATH_CHAR, MAX_DIMEN, NULL_FONT};
 use crate::cs::CsId;
+use crate::eqtb::EqStore;
 use crate::eqtb::{CodeTable, GlueLoc, ShapeLoc, XetexCode};
 use crate::errors::OrConfusion;
 use crate::errors::{mu_error, Abort};
@@ -21,7 +22,7 @@ use crate::glue_store::GlueSpecId;
 use crate::input::back_input;
 use crate::mem::ZERO_GLUE;
 use crate::mode::{Mode, ModeName};
-use crate::node::{AnyNode, GlueKind, MathCode, SaLeaf};
+use crate::node::{AnyNode, GlueKind, MathCode};
 use crate::params::TokPar;
 use crate::state::{EngineState, FontEngineHandle};
 use crate::token::TokenList;
@@ -30,9 +31,8 @@ use std::rc::Rc;
 
 use super::next::get_x_non_blank;
 use super::numbers::{
-    bad_int_error, get_primitive_token, glue_spec, map_glue, scan_char_class_not_ignored,
-    scan_char_num, scan_expr, scan_int, scan_math_fam_int, scan_mu_glue, scan_normal_glue,
-    scan_register_num, scan_usv_num,
+    bad_int_error, get_primitive_token, glue_spec, map_glue, scan_char_num, scan_expr, scan_int,
+    scan_math_fam_int, scan_mu_glue, scan_normal_glue, scan_register_num, scan_usv_num,
 };
 use super::{fetch_box, math_char, math_class, math_fam, scan_keyword};
 
@@ -85,9 +85,6 @@ impl CurVal {
             ValueLevel::Mu => CurVal::Mu(glue_spec(w)),
             ValueLevel::Ident => CurVal::Ident(CsId::from_raw(w).or_confusion("ident")?),
             ValueLevel::Tok => CurVal::Tok(TokenList::from_raw(w)),
-            ValueLevel::InterChar | ValueLevel::Mark => {
-                return Err(Abort::Confusion("cur_val_level"))
-            }
         })
     }
 
@@ -151,19 +148,6 @@ impl CurVal {
             CurVal::Mu(spec) => CurVal::Mu(negated_glue(st, spec)?),
             CurVal::Ident(_) | CurVal::Tok(_) => return Err(Abort::Confusion("cur_val_level")),
         })
-    }
-}
-
-/// The sparse-array element of type `t` for register `n`, if it exists.
-pub(super) fn find_sa(st: &mut EngineState, t: ValueLevel, n: i32) -> Option<SaLeaf> {
-    st.mem.find_sa_element(&st.scanner, t, n)
-}
-
-/// The token list held by sparse register `sa`, null when unset.
-pub(crate) fn sa_token_list(st: &EngineState, sa: Option<SaLeaf>) -> TokenList {
-    match sa {
-        Some(SaLeaf::Pointer(p)) => st.mem[p].toks(),
-        _ => TokenList::NULL,
     }
 }
 
@@ -279,11 +263,8 @@ fn fetch_token_list(
             CurVal::Tok(st.eqtb.toks(n))
         }
         Command::AssignToks(loc) if loc == TokPar::XetexInterCharToks.loc() => {
-            let first = scan_char_class_not_ignored(st)?;
-            let second = scan_char_class_not_ignored(st)?;
-            let n = first * CHAR_CLASS_LIMIT + second;
-            let sa = find_sa(st, ValueLevel::InterChar, n);
-            CurVal::Tok(sa_token_list(st, sa))
+            let pair = crate::main_control::scan_inter_char_pair(st)?;
+            CurVal::Tok(st.eqtb.inter_char.get(pair))
         }
         Command::AssignToks(loc) => CurVal::Tok(st.eqtb.toks.get(loc)),
         _ => {

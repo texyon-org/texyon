@@ -11,7 +11,7 @@ use crate::node::{
     BoxLr, BoxNode, CharNode, ChoiceNode, DiscNode, GlueKind, GlueNode, HeadNode, HyphPosNode,
     KernNode, KernSubtype, LigBoundary, LigItem, LigatureNode, ListRecord, LrNode, MarginKernNode,
     MathCode, MathNode, Noad, Node, NodePtr, PageInsNode, PenaltyNode, RuleDimen, RuleNode,
-    SaIndexNode, SpanNode, StyleNode, View, WhatsitKind, WhatsitSubtype,
+    SpanNode, StyleNode, View, WhatsitKind, WhatsitSubtype,
 };
 use crate::params::GluePar;
 use crate::state::{EqtbState, MemState};
@@ -22,8 +22,9 @@ use crate::units::{
 
 pub(crate) use crate::glue_store::{FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, SS_GLUE, ZERO_GLUE};
 
-/// Sizes up to the largest fixed node have a free list each, indexed by the size.
-const EXACT_CLASSES: usize = SaIndexNode::SIZE as usize + 1;
+/// Sizes below this have a free list each, indexed by the size. It covers every
+/// fixed node and the variable ones up to e-TeX's old 66-word sparse index node.
+const EXACT_CLASSES: usize = 67;
 /// `mem` may grow to this many words, half of `MAIN_MEMORY_WORDS`.
 const MAX_MEM_WORDS: usize = 1 << 25;
 /// The smallest power of two a larger node is rounded up to.

@@ -93,8 +93,7 @@ macro_rules! code_enum {
 pub(crate) use code_enum;
 
 code_enum! {
-    /// The type of a scanned value (`cur_val_level`), ordered as TeX compares
-    /// them. `Int`..`Mark` also name the sparse-array register types.
+    /// The type of a scanned value (`cur_val_level`), ordered as TeX compares them.
     #[derive(PartialOrd, Ord, Default)]
     pub(crate) enum ValueLevel: u8 {
         #[default]
@@ -104,8 +103,6 @@ code_enum! {
         Mu = 3,
         Ident = 4,
         Tok = 5,
-        InterChar = 6,
-        Mark = 7,
     }
 }
 

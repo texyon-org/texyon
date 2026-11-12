@@ -1,8 +1,8 @@
 //! The character main loop: ligatures, kerns, native words, interchar tokens.
 
 use crate::cmd::Cmd;
-use crate::codes::ValueLevel;
 use crate::consts::CHAR_CLASS_LIMIT;
+use crate::eqtb::{EqStore, InterCharPair};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::ext::append_src_special;
@@ -11,9 +11,7 @@ use crate::fonts::{
 };
 use crate::input::{TokenType, TOKEN_LIST};
 use crate::mode::Mode;
-use crate::node::{
-    AnyNode, CharNode, KernSubtype, LigBoundary, LigItem, NativeWordNode, NodePtr, SaLeaf,
-};
+use crate::node::{AnyNode, CharNode, KernSubtype, LigBoundary, LigItem, NativeWordNode, NodePtr};
 use crate::params::IntPar;
 use crate::state::{EngineState, MemState};
 use crate::token::{Token, TokenList};
@@ -25,14 +23,9 @@ fn inter_char_tokens_enabled(st: &EngineState) -> bool {
 }
 
 /// The `\XeTeXinterchartoks` list for class pair `n`, if set.
-fn inter_char_toks(st: &mut EngineState, n: i32) -> Option<TokenList> {
-    let SaLeaf::Pointer(p) = st
-        .mem
-        .find_sa_element(&st.scanner, ValueLevel::InterChar, n)?
-    else {
-        return None;
-    };
-    let list = st.mem[p].toks();
+fn inter_char_toks(st: &EngineState, first: i32, second: i32) -> Option<TokenList> {
+    let pair = InterCharPair::new(first, second)?;
+    let list = st.eqtb.inter_char.get(pair);
     (!list.is_null()).then_some(list)
 }
 
@@ -47,7 +40,7 @@ pub(super) fn insert_boundary_inter_char_toks(st: &mut EngineState) -> Result<bo
         return Ok(false);
     }
     st.interchar.prev_class = CHAR_CLASS_LIMIT - 1;
-    let Some(list) = inter_char_toks(st, sc * CHAR_CLASS_LIMIT + CHAR_CLASS_LIMIT - 1) else {
+    let Some(list) = inter_char_toks(st, sc, CHAR_CLASS_LIMIT - 1) else {
         return Ok(false);
     };
     st.scanner.cur_tok = match st.scanner.cur_cs {
@@ -72,7 +65,7 @@ fn insert_inter_char_toks_before(st: &mut EngineState, sc: i32, chr: i32) -> Res
     {
         return Ok(false);
     }
-    let Some(list) = inter_char_toks(st, prev * CHAR_CLASS_LIMIT + sc) else {
+    let Some(list) = inter_char_toks(st, prev, sc) else {
         return Ok(false);
     };
     let cmd = match st.scanner.cur.cmd() {

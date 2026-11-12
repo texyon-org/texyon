@@ -760,7 +760,6 @@ fn dynamic_memory<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), A
     s.int_in(&mut words, reserved, i32::MAX)?;
     let last = MemIdx::from_raw(words - 1);
     s.items_in(&mut mem.free.0, None, last)?;
-    s.items_in(st.scanner.sa_root.registers_mut(), None, last)?;
     if S::LOADING {
         mem.data = crate::mem_types::zeroed_vec(usize::try_from(words).map_err(|_| bad_fmt())?);
     }
@@ -884,6 +883,34 @@ fn runs<S: FmtStream, T: FmtItem + PartialEq>(s: &mut S, v: &mut [T]) -> Result<
     }
 }
 
+/// The `\XeTeXinterchartoks` lists: a count, then each pair's classes and list.
+fn inter_char_toks<S: FmtStream>(s: &mut S, eqtb: &mut EqtbState) -> Result<(), Abort> {
+    use crate::eqtb::{EqStore, InterCharPair};
+    let mut entries: Vec<([i32; 2], TokenList)> = eqtb
+        .inter_char
+        .entries()
+        .map(|(pair, list, _)| (pair.classes(), list))
+        .collect();
+    let mut n = i32::try_from(entries.len()).map_err(|_| bad_fmt())?;
+    s.int_in(&mut n, 0, i32::MAX)?;
+    if S::LOADING {
+        let n = usize::try_from(n).map_err(|_| bad_fmt())?;
+        entries = vec![([0; 2], TokenList::NULL); n];
+    }
+    for (classes, list) in &mut entries {
+        s.items(classes)?;
+        s.items(std::slice::from_mut(list))?;
+    }
+    if S::LOADING {
+        eqtb.inter_char.clear();
+        for ([first, second], list) in entries {
+            let pair = InterCharPair::new(first, second).ok_or_else(bad_fmt)?;
+            eqtb.inter_char.set(pair, list, crate::consts::LEVEL_ONE);
+        }
+    }
+    Ok(())
+}
+
 fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
     let eqtb = &mut st.eqtb;
     let named = CsId::FIRST.index()..=CsId::top(eqtb.hash_high).index();
@@ -902,6 +929,7 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
     runs(s, eqtb.shapes.values_mut())?;
     runs(s, eqtb.boxes.values_mut())?;
     runs(s, eqtb.fonts.values_mut())?;
+    inter_char_toks(s, eqtb)?;
 
     // \partokenname may name an active character or a control symbol.
     s.items_in(

@@ -42,12 +42,13 @@ impl EqLoc for CsId {
     fn index(self) -> usize {
         CsId::index(self)
     }
+    type Store = Table<Self, Command>;
     #[inline(always)]
-    fn table(eqtb: &EqtbState) -> &Table<Self, Command> {
+    fn table(eqtb: &EqtbState) -> &Self::Store {
         &eqtb.meanings
     }
     #[inline(always)]
-    fn table_mut(eqtb: &mut EqtbState) -> &mut Table<Self, Command> {
+    fn table_mut(eqtb: &mut EqtbState) -> &mut Self::Store {
         &mut eqtb.meanings
     }
     fn restore(old: Old<Self>) -> Restore {
@@ -59,11 +60,78 @@ impl EqValue for Scaled {}
 /// A location in one of the tables.
 pub(crate) trait EqLoc: Copy {
     type Value: EqValue;
+    type Store: EqStore<Self, Self::Value>;
     fn index(self) -> usize;
-    fn table(eqtb: &EqtbState) -> &Table<Self, Self::Value>;
-    fn table_mut(eqtb: &mut EqtbState) -> &mut Table<Self, Self::Value>;
+    fn table(eqtb: &EqtbState) -> &Self::Store;
+    fn table_mut(eqtb: &mut EqtbState) -> &mut Self::Store;
     /// The save stack entry that puts `old` back.
     fn restore(old: Old<Self>) -> Restore;
+}
+
+/// Where a location type keeps its values and levels.
+pub(crate) trait EqStore<L, T> {
+    fn get(&self, loc: L) -> T;
+    fn level(&self, loc: L) -> u16;
+    fn set(&mut self, loc: L, value: T, level: u16);
+}
+
+impl<I: EqLoc<Value = T>, T: EqValue> EqStore<I, T> for Table<I, T> {
+    #[inline(always)]
+    fn get(&self, loc: I) -> T {
+        Table::get(self, loc)
+    }
+    #[inline(always)]
+    fn level(&self, loc: I) -> u16 {
+        Table::level(self, loc)
+    }
+    #[inline(always)]
+    fn set(&mut self, loc: I, value: T, level: u16) {
+        Table::set(self, loc, value, level);
+    }
+}
+
+/// A table for a huge, mostly default location space: it stores only the
+/// locations that differ from `V::default()` at level one.
+#[derive(Clone)]
+pub(crate) struct SparseTable<K, V> {
+    entries: std::collections::BTreeMap<K, (V, u16)>,
+}
+
+impl<K, V> Default for SparseTable<K, V> {
+    fn default() -> Self {
+        Self {
+            entries: std::collections::BTreeMap::new(),
+        }
+    }
+}
+
+impl<K: Ord + Copy, V: Copy + Default + PartialEq> SparseTable<K, V> {
+    /// The stored entries in key order, for the format and the oracle.
+    pub(crate) fn entries(&self) -> impl Iterator<Item = (K, V, u16)> + '_ {
+        self.entries.iter().map(|(&k, &(v, level))| (k, v, level))
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.entries.clear();
+    }
+}
+
+impl<K: Ord + Copy, V: Copy + Default + PartialEq> EqStore<K, V> for SparseTable<K, V> {
+    #[inline]
+    fn get(&self, loc: K) -> V {
+        self.entries.get(&loc).map_or_else(V::default, |e| e.0)
+    }
+    #[inline]
+    fn level(&self, loc: K) -> u16 {
+        self.entries.get(&loc).map_or(LEVEL_ONE, |e| e.1)
+    }
+    fn set(&mut self, loc: K, value: V, level: u16) {
+        if value == V::default() && level == LEVEL_ONE {
+            self.entries.remove(&loc);
+        } else {
+            self.entries.insert(loc, (value, level));
+        }
+    }
 }
 
 /// The value a location held before a group changed it, and its level.
@@ -270,6 +338,7 @@ macro_rules! tables {
             /// Frees every table, as at the end of a run.
             pub(crate) fn release_tables(&mut self) {
                 $(self.$name = Table::default();)*
+                self.inter_char.clear();
             }
 
             pub(crate) fn disarm_tables(&mut self) {
@@ -295,6 +364,9 @@ macro_rules! tables {
                     self.$name.values().hash(h);
                     self.$name.levels().hash(h);
                 )*
+                for (pair, list, level) in self.inter_char.entries() {
+                    (pair, list, level).hash(h);
+                }
             }
         }
     };
@@ -385,6 +457,52 @@ impl SaveStackState {
     }
 }
 
+/// A `\XeTeXinterchartoks` location: the classes before and after a boundary.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+pub(crate) struct InterCharPair {
+    first: u16,
+    second: u16,
+}
+
+impl InterCharPair {
+    /// The pair of classes `first` and `second`, `None` unless both are below `CHAR_CLASS_LIMIT`.
+    pub(crate) fn new(first: i32, second: i32) -> Option<InterCharPair> {
+        let class = |c: i32| {
+            u16::try_from(c)
+                .ok()
+                .filter(|&c| i32::from(c) < crate::consts::CHAR_CLASS_LIMIT)
+        };
+        Some(InterCharPair {
+            first: class(first)?,
+            second: class(second)?,
+        })
+    }
+
+    /// The two classes, for the format.
+    pub(crate) fn classes(self) -> [i32; 2] {
+        [i32::from(self.first), i32::from(self.second)]
+    }
+}
+
+impl EqLoc for InterCharPair {
+    type Value = TokenList;
+    type Store = SparseTable<Self, TokenList>;
+    fn index(self) -> usize {
+        usize::from(self.first) * 4096 + usize::from(self.second)
+    }
+    #[inline(always)]
+    fn table(eqtb: &EqtbState) -> &Self::Store {
+        &eqtb.inter_char
+    }
+    #[inline(always)]
+    fn table_mut(eqtb: &mut EqtbState) -> &mut Self::Store {
+        &mut eqtb.inter_char
+    }
+    fn restore(old: Old<Self>) -> Restore {
+        Restore::InterChar(old)
+    }
+}
+
 /// A register number: `\count`, `\dimen`, `\skip`, `\muskip`, `\toks` or `\box` 0 to 32767.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 pub(crate) struct Register(u16);
@@ -452,12 +570,13 @@ macro_rules! eq_loc {
             fn index(self) -> usize {
                 usize::try_from(self.0).unwrap_or(usize::MAX)
             }
+            type Store = Table<Self, $value>;
             #[inline(always)]
-            fn table(eqtb: &EqtbState) -> &Table<Self, $value> {
+            fn table(eqtb: &EqtbState) -> &Self::Store {
                 &eqtb.$table
             }
             #[inline(always)]
-            fn table_mut(eqtb: &mut EqtbState) -> &mut Table<Self, $value> {
+            fn table_mut(eqtb: &mut EqtbState) -> &mut Self::Store {
                 &mut eqtb.$table
             }
             fn restore(old: Old<Self>) -> Restore {
@@ -652,12 +771,13 @@ impl EqLoc for ShapeLoc {
     fn index(self) -> usize {
         self as usize
     }
+    type Store = Table<Self, ShapeRef>;
     #[inline(always)]
-    fn table(eqtb: &EqtbState) -> &Table<Self, ShapeRef> {
+    fn table(eqtb: &EqtbState) -> &Self::Store {
         &eqtb.shapes
     }
     #[inline(always)]
-    fn table_mut(eqtb: &mut EqtbState) -> &mut Table<Self, ShapeRef> {
+    fn table_mut(eqtb: &mut EqtbState) -> &mut Self::Store {
         &mut eqtb.shapes
     }
     fn restore(old: Old<Self>) -> Restore {
@@ -729,12 +849,13 @@ impl EqLoc for BoxLoc {
     fn index(self) -> usize {
         usize::from(self.0 .0)
     }
+    type Store = Table<Self, Self::Value>;
     #[inline(always)]
-    fn table(eqtb: &EqtbState) -> &Table<Self, Self::Value> {
+    fn table(eqtb: &EqtbState) -> &Self::Store {
         &eqtb.boxes
     }
     #[inline(always)]
-    fn table_mut(eqtb: &mut EqtbState) -> &mut Table<Self, Self::Value> {
+    fn table_mut(eqtb: &mut EqtbState) -> &mut Self::Store {
         &mut eqtb.boxes
     }
     fn restore(old: Old<Self>) -> Restore {
@@ -798,12 +919,13 @@ macro_rules! code_loc {
             fn index(self) -> usize {
                 usize::try_from(self.0).unwrap_or(usize::MAX)
             }
+            type Store = Table<Self, $value>;
             #[inline(always)]
-            fn table(eqtb: &EqtbState) -> &Table<Self, $value> {
+            fn table(eqtb: &EqtbState) -> &Self::Store {
                 &eqtb.$table
             }
             #[inline(always)]
-            fn table_mut(eqtb: &mut EqtbState) -> &mut Table<Self, $value> {
+            fn table_mut(eqtb: &mut EqtbState) -> &mut Self::Store {
                 &mut eqtb.$table
             }
             fn restore(old: Old<Self>) -> Restore {

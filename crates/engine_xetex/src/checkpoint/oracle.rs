@@ -264,6 +264,10 @@ fn digest_save_entry(h: &mut Fnv, entry: &SaveEntry) {
         SaveEntry::Restore(Restore::Del(o)) => {
             h.i32s(&[19, o.loc.raw(), o.value, i32::from(o.level)])
         }
+        SaveEntry::Restore(Restore::InterChar(o)) => {
+            let [first, second] = o.loc.classes();
+            h.i32s(&[20, first, second, o.value.raw(), i32::from(o.level)]);
+        }
         SaveEntry::Restore(Restore::Int(o)) => {
             h.i32s(&[7, o.loc.raw(), o.value, i32::from(o.level)]);
         }
@@ -287,9 +291,6 @@ fn digest_save_entry(h: &mut Fnv, entry: &SaveEntry) {
             h.i32s(&[13, o.loc.raw(), o.value.raw(), i32::from(o.level)]);
         }
         SaveEntry::InsertToken(t) => h.i32s(&[4, t.0]),
-        SaveEntry::RestoreSa { chain, level } => {
-            h.i32s(&[5, crate::node::link_of(chain).raw(), i32::from(level)]);
-        }
         SaveEntry::Saved(s) => {
             h.i32(6);
             s.hash(h);

@@ -24,9 +24,7 @@ mod next;
 mod numbers;
 mod toks;
 
-pub(crate) use self::internal::{
-    find_font_dimen, sa_token_list, scan_font_ident, scan_glyph_number,
-};
+pub(crate) use self::internal::{find_font_dimen, scan_font_ident, scan_glyph_number};
 use self::next::fetch_cs_meaning;
 pub(crate) use self::next::{
     copy_delimited_tokens, copy_group_tokens, get_next, get_token, get_x_non_blank,

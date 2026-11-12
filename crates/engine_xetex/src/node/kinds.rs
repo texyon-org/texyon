@@ -14,9 +14,9 @@ use bytemuck::{Pod, Zeroable};
 
 use super::{
     AdjustPlacement, BoxLr, FenceSubtype, GlueKind, KernSubtype, LeaderKind, LigBoundary,
-    MathAccentKind, MathCode, Node, NodePtr, SaChild, Stored, StoredDimen, View, WhatsitSubtype,
+    MathAccentKind, MathCode, Node, NodePtr, Stored, StoredDimen, View, WhatsitSubtype,
 };
-use crate::codes::{LimitCode, ValueLevel};
+use crate::codes::LimitCode;
 use crate::consts::{EMPTY, NORMAL};
 use crate::state::MemState;
 use crate::token::TokenList;
@@ -1051,188 +1051,6 @@ impl Node for FenceNoad {
     const TYPE: Option<NodeType> = Some(NodeType::LeftNoad);
 }
 
-/// An eTeX sparse-array index node.
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct SaIndexNode {
-    /// `sa_used`, the count of non-null children.
-    pub used: u16,
-    /// The node's slot in its parent, or the tree's type at the root.
-    pub sa_index: u16,
-    pub link: Option<NodePtr<SaIndexNode>>,
-    /// Index nodes above the last level, elements on it.
-    children: [MemPtr; 64],
-}
-
-impl View for SaIndexNode {}
-
-impl Node for SaIndexNode {
-    const TYPE: Option<NodeType> = None;
-}
-
-impl SaIndexNode {
-    /// Child `i` of a node above the last index level.
-    #[inline]
-    pub fn child_index(&self, i: usize) -> Option<NodePtr<SaIndexNode>> {
-        self.children[i].map(NodePtr::from_idx_unchecked)
-    }
-    /// Child `i` of a node on the last index level.
-    #[inline]
-    pub fn child_element(&self, i: usize) -> Option<NodePtr<SaElement>> {
-        self.children[i].map(NodePtr::from_idx_unchecked)
-    }
-    #[inline]
-    pub fn set_child<K: SaChild>(&mut self, i: usize, p: Option<NodePtr<K>>) {
-        self.children[i] = crate::node::link_of(p);
-    }
-    #[inline]
-    pub fn clear_child(&mut self, i: usize) {
-        self.children[i] = None;
-    }
-    #[inline]
-    pub fn clear_children(&mut self) {
-        self.children = [None; 64];
-    }
-}
-
-/// The header every sparse-array element shares.
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct SaElement {
-    pub sa_lev: u16,
-    /// The type times 64 plus the slot in the parent.
-    pub sa_index: u16,
-    pub link: Option<NodePtr<SaIndexNode>>,
-}
-
-impl View for SaElement {}
-
-impl SaElement {
-    #[inline]
-    pub fn sa_type(&self) -> Stored<ValueLevel> {
-        Stored::from_raw(self.sa_index / 64)
-    }
-    /// The element's slot in its parent.
-    #[inline]
-    pub fn slot(&self) -> usize {
-        usize::from(self.sa_index % 64)
-    }
-}
-
-/// A count or dimension register.
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct SaWordNode {
-    /// The grouping level of the value.
-    pub sa_lev: u16,
-    pub sa_index: u16,
-    pub link: Option<NodePtr<SaIndexNode>>,
-    /// References beyond the tree, `TEX_NULL` for none.
-    pub sa_ref: i32,
-    /// The register number.
-    pub sa_num: i32,
-    /// The count, or the dimension's raw value.
-    pub sa_int: i32,
-}
-
-impl View for SaWordNode {}
-
-impl Node for SaWordNode {
-    const TYPE: Option<NodeType> = None;
-}
-
-/// A glue, muglue, box or token-list register.
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct SaPointerNode {
-    /// The grouping level of the value.
-    pub sa_lev: u16,
-    pub sa_index: u16,
-    pub link: Option<NodePtr<SaIndexNode>>,
-    /// References beyond the tree, `TEX_NULL` for none.
-    pub sa_ref: i32,
-    /// A glue spec, box or token list by the element's type.
-    pub sa_ptr: MemPtr,
-}
-
-impl View for SaPointerNode {}
-
-impl Node for SaPointerNode {
-    const TYPE: Option<NodeType> = None;
-}
-
-impl SaPointerNode {
-    /// The value of a token-list register.
-    #[inline]
-    pub fn toks(&self) -> TokenList {
-        TokenList::from_raw(self.sa_ptr.raw())
-    }
-}
-
-/// The marks of one mark class.
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct SaMarkClassNode {
-    pub sa_lev: u16,
-    pub sa_index: u16,
-    pub link: Option<NodePtr<SaIndexNode>>,
-    marks: [TokenList; 6],
-}
-
-impl View for SaMarkClassNode {}
-
-impl Node for SaMarkClassNode {
-    const TYPE: Option<NodeType> = None;
-}
-
-/// The header every save-chain entry shares.
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct SaSaved {
-    /// The saved grouping level.
-    pub sa_lev: u16,
-    pub sa_index: u16,
-    pub link: Option<NodePtr<SaSaved>>,
-}
-
-impl View for SaSaved {}
-
-/// A saved count or dimension.
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct SaSavedWord {
-    pub sa_lev: u16,
-    pub sa_index: u16,
-    pub link: Option<NodePtr<SaSaved>>,
-    /// The register the entry restores.
-    pub sa_loc: Option<NodePtr<SaWordNode>>,
-    pub sa_int: i32,
-}
-
-impl View for SaSavedWord {}
-
-impl Node for SaSavedWord {
-    const TYPE: Option<NodeType> = None;
-}
-
-/// A saved glue spec, box or token list.
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct SaSavedPointer {
-    pub sa_lev: u16,
-    pub sa_index: u16,
-    pub link: Option<NodePtr<SaSaved>>,
-    /// The register the entry restores.
-    pub sa_loc: Option<NodePtr<SaPointerNode>>,
-    pub sa_ptr: MemPtr,
-}
-
-impl View for SaSavedPointer {}
-
-impl Node for SaSavedPointer {
-    const TYPE: Option<NodeType> = None;
-}
-
 /// An entry of a column's span list, ended by `END_SPAN`.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
@@ -1635,16 +1453,6 @@ same_offset!(
     Noad.noad_type == AnyNoad.noad_type,
     FractionNoad.noad_type == AnyNoad.noad_type,
     FenceNoad.noad_type == AnyNoad.noad_type,
-    SaWordNode.sa_index == SaElement.sa_index,
-    SaPointerNode.sa_index == SaElement.sa_index,
-    SaMarkClassNode.sa_index == SaElement.sa_index,
-    SaWordNode.link == SaElement.link,
-    SaPointerNode.link == SaElement.link,
-    SaMarkClassNode.link == SaElement.link,
-    SaSavedWord.sa_index == SaSaved.sa_index,
-    SaSavedPointer.sa_index == SaSaved.sa_index,
-    SaSavedWord.link == SaSaved.link,
-    SaSavedPointer.link == SaSaved.link,
 );
 
 impl BoxNode {

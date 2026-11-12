@@ -535,14 +535,6 @@ impl HasLink for FractionNoad {}
 impl HasLink for FenceNoad {}
 impl HasLink for AnyNoad {}
 impl HasLink for MarginKernNode {}
-impl HasLink for SaIndexNode {}
-impl HasLink for SaElement {}
-impl HasLink for SaWordNode {}
-impl HasLink for SaPointerNode {}
-impl HasLink for SaMarkClassNode {}
-impl HasLink for SaSaved {}
-impl HasLink for SaSavedWord {}
-impl HasLink for SaSavedPointer {}
 impl HasLink for PageInsNode {}
 impl HasLink for CharNode {}
 impl HasLink for HeadNode {}
@@ -554,14 +546,6 @@ impl HasLink for LigItem {}
 /// A record kept only on its own list, which therefore proves its kind.
 pub trait ListRecord: View {}
 
-impl ListRecord for SaIndexNode {}
-impl ListRecord for SaElement {}
-impl ListRecord for SaWordNode {}
-impl ListRecord for SaPointerNode {}
-impl ListRecord for SaMarkClassNode {}
-impl ListRecord for SaSaved {}
-impl ListRecord for SaSavedWord {}
-impl ListRecord for SaSavedPointer {}
 impl ListRecord for PageInsNode {}
 impl ListRecord for LigItem {}
 impl ListRecord for CharNode {}
@@ -1417,97 +1401,6 @@ impl NodePtr<NativeWordNode> {
     }
 }
 
-// --- eTeX sparse arrays ---
-
-/// A sparse-array kind that hangs in a tree slot.
-pub trait SaChild: View {}
-
-impl SaChild for SaIndexNode {}
-impl SaChild for SaElement {}
-impl SaChild for SaWordNode {}
-impl SaChild for SaPointerNode {}
-impl SaChild for SaMarkClassNode {}
-
-/// A sparse-array element kind, which widens to [`SaElement`].
-pub trait SaElementKind: View {}
-
-impl SaElementKind for SaWordNode {}
-impl SaElementKind for SaPointerNode {}
-impl SaElementKind for SaMarkClassNode {}
-
-impl<K: SaElementKind> NodePtr<K> {
-    /// The element as any element, for its header.
-    #[inline]
-    pub fn element(self) -> NodePtr<SaElement> {
-        NodePtr::from_idx_unchecked(self.idx)
-    }
-}
-
-/// A sparse-array element by its kind, read off its type.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum SaLeaf {
-    Word(NodePtr<SaWordNode>),
-    Pointer(NodePtr<SaPointerNode>),
-    MarkClass(NodePtr<SaMarkClassNode>),
-}
-
-impl SaLeaf {
-    /// The leaf kind of an element of type `t` at `idx`.
-    #[inline]
-    pub fn of_type(t: crate::codes::ValueLevel, idx: MemIdx) -> SaLeaf {
-        use crate::codes::ValueLevel;
-        match t {
-            ValueLevel::Int | ValueLevel::Dimen => SaLeaf::Word(NodePtr::from_idx_unchecked(idx)),
-            ValueLevel::Mark => SaLeaf::MarkClass(NodePtr::from_idx_unchecked(idx)),
-            _ => SaLeaf::Pointer(NodePtr::from_idx_unchecked(idx)),
-        }
-    }
-
-    #[inline]
-    pub fn element(self) -> NodePtr<SaElement> {
-        match self {
-            SaLeaf::Word(p) => p.element(),
-            SaLeaf::Pointer(p) => p.element(),
-            SaLeaf::MarkClass(p) => p.element(),
-        }
-    }
-}
-
-impl NodePtr<SaElement> {
-    /// The element's kind, from the type in its header. `None` for a type
-    /// outside the sparse-array set.
-    #[inline]
-    pub fn leaf(self, mem: &MemState) -> Option<SaLeaf> {
-        Some(SaLeaf::of_type(mem[self].sa_type().get()?, self.idx))
-    }
-}
-
-/// A save-chain entry by its kind.
-#[derive(Copy, Clone, Debug)]
-pub enum SaSavedEntry {
-    Word(NodePtr<SaSavedWord>),
-    Pointer(NodePtr<SaSavedPointer>),
-}
-
-impl NodePtr<SaSaved> {
-    /// The entry's kind, from the type in its header.
-    #[inline]
-    pub fn entry(self, mem: &MemState) -> SaSavedEntry {
-        if mem[self].sa_index < crate::save::DIMEN_VAL_LIMIT {
-            SaSavedEntry::Word(NodePtr::from_idx_unchecked(self.idx))
-        } else {
-            SaSavedEntry::Pointer(NodePtr::from_idx_unchecked(self.idx))
-        }
-    }
-}
-
-impl NodePtr<SaSavedPointer> {
-    #[inline]
-    pub fn saved(self) -> NodePtr<SaSaved> {
-        NodePtr::from_idx_unchecked(self.idx)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1901,39 +1794,6 @@ mod tests {
             (unset.glue_order.get(), unset.glue_sign.get()),
             (Some(GlueOrder::Normal), Some(GlueOrder::Normal))
         );
-    }
-
-    #[test]
-    fn sparse_array_records_read_through_their_heads() {
-        use crate::codes::ValueLevel;
-        let w = |p: i32| MemIdx::from_raw(p);
-        let mut mem = fresh_mem(200);
-        let q: NodePtr<SaIndexNode> = at(&mut mem, 100, None);
-        let leaf: NodePtr<SaElement> = at(&mut mem, 150, None);
-        mem[q].set_child(1, Some(q));
-        mem[q].set_child(63, Some(leaf));
-        assert_eq!(mem[q].child_index(1), Some(q));
-        assert_eq!(mem[q].child_element(63), Some(leaf));
-        mem[q].clear_child(63);
-        assert_eq!(mem[q].child_element(63), None);
-
-        let c: NodePtr<SaWordNode> = at(&mut mem, 150, None);
-        mem[c].sa_index = 64 + 9;
-        mem[c].link = Some(q);
-        assert_eq!(mem[leaf].sa_type(), ValueLevel::Dimen);
-        assert_eq!(mem[leaf].slot(), 9);
-        assert_eq!(mem[leaf].link, Some(q));
-        assert_eq!(leaf.leaf(&mem), Some(SaLeaf::Word(c)));
-
-        let p: NodePtr<SaPointerNode> = at(&mut mem, 150, None);
-        mem[p].sa_index = 64 * 5;
-        mem[p].sa_ptr = w(77);
-        assert_eq!(mem[p].toks(), TokenList::from_raw(77));
-        assert_eq!(leaf.leaf(&mem), Some(SaLeaf::Pointer(p)));
-
-        let s: NodePtr<SaSavedPointer> = at(&mut mem, 160, None);
-        mem[s].sa_index = 64 * 2;
-        assert!(matches!(s.saved().entry(&mem), SaSavedEntry::Pointer(e) if e == s));
     }
 
     #[test]

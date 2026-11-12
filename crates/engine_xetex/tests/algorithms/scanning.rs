@@ -291,6 +291,18 @@ fn registers_above_255_take_arithmetic_and_compare_by_number() {
 }
 
 #[test]
+fn interchartoks_survive_the_format_and_follow_groups() {
+    let r = run_on_format(
+        r"\XeTeXinterchartoks 1 2 {a}",
+        r"\showthe\XeTeXinterchartoks 1 2
+          {\XeTeXinterchartoks 1 2 {b}\showthe\XeTeXinterchartoks 1 2
+           \global\XeTeXinterchartoks 3 4 {g}}
+          \showthe\XeTeXinterchartoks 1 2 \showthe\XeTeXinterchartoks 3 4",
+    );
+    assert_eq!(r.lines_starting("> "), ["> a.", "> b.", "> a.", "> g."]);
+}
+
+#[test]
 fn interchartoks_classes_stop_below_the_ignored_class() {
     let r = run(
         r"\XeTeXinterchartoks 4095 0 {x}\XeTeXinterchartoks 4096 0 {y}

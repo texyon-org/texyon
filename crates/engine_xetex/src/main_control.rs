@@ -32,6 +32,7 @@ mod main_loop;
 
 use self::align::{align_error, do_endv, init_align, no_align_error, omit_error};
 use self::assign::prefixed_command;
+pub(crate) use self::assign::scan_inter_char_pair;
 use self::boxes::{begin_box, delete_last, scan_box, unpackage};
 use self::lists::{
     app_space, append_discretionary, append_glue, append_italic_correction, append_kern,

@@ -301,8 +301,6 @@ fn initialize_more_variables(st: &mut EngineState) {
 
     st.input.pseudo_files = None;
     st.scanner.mark_classes.clear();
-    st.scanner.sa_chain = None;
-    st.scanner.sa_level = LEVEL_ZERO;
     st.scanner.disc_ptr[BoxCode::LastBox as usize] = None;
     st.scanner.disc_ptr[BoxCode::Vsplit as usize] = None;
 }
@@ -409,7 +407,6 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     st.strings.format_ident = format_ident;
 
     st.scanner.max_reg_num = 32767;
-    st.scanner.sa_root.registers_mut().fill(None);
 
     st.eqtb.set_int_par(IntPar::XetexHyphenatableLength, 63);
 }

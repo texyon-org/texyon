@@ -8,12 +8,13 @@ use crate::command::Command;
 use crate::command::RelaxCode;
 use crate::command::Usv;
 use crate::consts::NULL_FONT;
-use crate::consts::{ACTIVE_MATH_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, MAX_HALFWORD, TEX_INFINITY};
+use crate::consts::{ACTIVE_MATH_CHAR, BIGGEST_USV, MAX_HALFWORD, TEX_INFINITY};
 use crate::cs::{CsId, CsKind};
 use crate::eqtb::{
     self, CatLoc, CodeTable, DelLoc, DimenLoc, FontLoc, GlueLoc, IntLoc, LcLoc, MathLoc, SfLoc,
     ShapeLoc, ShapeRef, ToksLoc, UcLoc, XetexCode,
 };
+use crate::eqtb::{EqStore, InterCharPair};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::read_font_info;
@@ -21,14 +22,13 @@ use crate::fonts::FontSize;
 use crate::glue_store::GlueSpecId;
 use crate::hyphenation::{new_hyph_exceptions, new_patterns};
 use crate::mem::ZERO_GLUE;
-use crate::node::{NodePtr, ParShapeNode, PenaltiesNode, SaLeaf, SaPointerNode};
+use crate::node::{ParShapeNode, PenaltiesNode};
 use crate::params::{IntPar, TokPar};
 use crate::scaled_math::{mult_and_add, x_over_n};
 use crate::scan::fetch_box;
 use crate::state::{EngineState, InteractionMode, Selector};
 use crate::token::{Token, TokenList};
-use crate::units::MemIdx;
-use crate::units::{FontId, GlueOrder, MemPtr, Scaled, StrNumber};
+use crate::units::{FontId, GlueOrder, Scaled, StrNumber};
 
 use crate::fonts::Side;
 
@@ -439,30 +439,13 @@ pub(super) fn do_assignments(st: &mut EngineState) -> Result<(), Abort> {
     }
 }
 
-pub(super) fn sa_define(
-    st: &mut EngineState,
-    global: bool,
-    p: NodePtr<SaPointerNode>,
-    e: MemPtr,
-) -> Result<(), Abort> {
-    let result = if global {
-        st.mem.gsa_def(p, e)
-    } else {
-        st.mem.sa_def(&mut st.scanner, &mut st.save_stack, p, e)?
-    };
-    crate::save::finish_sa_mutation(st, p.element(), result)?;
-    Ok(())
-}
-
-/// The `sa_ptr` of a sparse-array record, or null without one.
-/// Scans a pair of character classes into its `\XeTeXinterchartoks` index.
-fn scan_inter_char_pair(st: &mut EngineState) -> Result<i32, Abort> {
+/// Scans a pair of character classes, a `\XeTeXinterchartoks` location.
+pub(crate) fn scan_inter_char_pair(st: &mut EngineState) -> Result<InterCharPair, Abort> {
     let first = crate::scan::scan_char_class_not_ignored(st)?;
     let second = crate::scan::scan_char_class_not_ignored(st)?;
-    Ok(first * CHAR_CLASS_LIMIT + second)
+    InterCharPair::new(first, second).or_confusion("char class")
 }
 
-/// Defines token list register `p`, a sparse-array entry if `e`, as `list`.
 /// Where a register assignment stores its value.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RegisterLoc {
@@ -470,7 +453,7 @@ enum RegisterLoc {
     Dimen(DimenLoc),
     Glue(GlueLoc),
     Toks(ToksLoc),
-    Sparse(SaLeaf),
+    InterChar(InterCharPair),
 }
 
 fn define_toks(
@@ -480,10 +463,8 @@ fn define_toks(
     list: TokenList,
 ) -> Result<(), Abort> {
     match target {
-        RegisterLoc::Sparse(SaLeaf::Pointer(p)) => {
-            sa_define(st, global, p, MemIdx::from_raw(list.raw()))
-        }
         RegisterLoc::Toks(p) => eqtb::define(st, global, p, list),
+        RegisterLoc::InterChar(p) => eqtb::define(st, global, p, list),
         _ => Err(Abort::Confusion("toks")),
     }
 }
@@ -771,11 +752,7 @@ fn assign_toks(st: &mut EngineState, global: bool, cmd: Command) -> Result<(), A
             RegisterLoc::Toks(ToksLoc::register(crate::scan::scan_register_num(st)?))
         }
         Command::AssignToks(loc) if loc == TokPar::XetexInterCharToks.loc() => {
-            let n = scan_inter_char_pair(st)?;
-            let sa = st
-                .mem
-                .create_sa_element(&mut st.scanner, ValueLevel::InterChar, n)?;
-            RegisterLoc::Sparse(sa)
+            RegisterLoc::InterChar(scan_inter_char_pair(st)?)
         }
         Command::AssignToks(loc) => RegisterLoc::Toks(loc),
         _ => return Err(Abort::Confusion("assign_toks")),
@@ -789,11 +766,8 @@ fn assign_toks(st: &mut EngineState, global: bool, cmd: Command) -> Result<(), A
             Some(st.eqtb.toks(n))
         }
         Command::AssignToks(loc) if loc == TokPar::XetexInterCharToks.loc() => {
-            let n = scan_inter_char_pair(st)?;
-            let sa = st
-                .mem
-                .find_sa_element(&st.scanner, ValueLevel::InterChar, n);
-            Some(crate::scan::sa_token_list(st, sa))
+            let pair = scan_inter_char_pair(st)?;
+            Some(st.eqtb.inter_char.get(pair))
         }
         Command::AssignToks(loc) => Some(st.eqtb.toks.get(loc)),
         _ => None,
