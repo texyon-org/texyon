@@ -178,7 +178,7 @@ impl TexPrint for FamFont {
 
 /// `' in <mode>`, closing a `You can't use` message.
 #[derive(Copy, Clone)]
-pub(crate) struct InMode(pub i32);
+pub(crate) struct InMode(pub crate::mode::ModeName);
 
 impl TexPrint for InMode {
     fn print_to(&self, st: &mut EngineState) {
@@ -759,34 +759,13 @@ fn note_warning_issued(st: &mut EngineState) {
     }
 }
 
-fn mode_name(m: i32) -> Option<&'static str> {
-    let group = i32::from(Cmd::MAX_COMMAND) + 1;
-    match m.signum() {
-        0 => Some("no mode"),
-        1 => ["vertical mode", "horizontal mode", "display math mode"]
-            .get((m / group) as usize)
-            .copied(),
-        _ => [
-            "internal vertical mode",
-            "restricted horizontal mode",
-            "math mode",
-        ]
-        .get((-m / group) as usize)
-        .copied(),
-    }
+pub(crate) fn print_mode(st: &mut EngineState, m: crate::mode::ModeName) {
+    print(st, m.as_str());
 }
 
-pub(crate) fn print_mode(st: &mut EngineState, m: i32) {
-    if let Some(name) = mode_name(m) {
-        print(st, name);
-    }
-}
-
-pub(crate) fn print_in_mode(st: &mut EngineState, m: i32) {
-    if let Some(name) = mode_name(m) {
-        print(st, "' in ");
-        print(st, name);
-    }
+pub(crate) fn print_in_mode(st: &mut EngineState, m: crate::mode::ModeName) {
+    print(st, "' in ");
+    print(st, m.as_str());
 }
 
 pub(crate) fn print_group(st: &mut EngineState, e: bool) {

@@ -3,12 +3,13 @@
 use crate::cmd::Cmd;
 use crate::codes::{BoxCode, LeaderCode, ValueLevel};
 use crate::command::Command;
-use crate::consts::{HMODE, IGNORE_DEPTH, MMODE, SUB_BOX, VMODE};
+use crate::consts::SUB_BOX;
 use crate::eqtb::BoxLoc;
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::input::TokenType;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD};
+use crate::mode::{Mode, ModeName};
 use crate::node::{
     AnyNode, BoxNode, BoxOrRule, GlueKind, MarginKernNode, MathCode, NodePtr, SaLeaf, View,
 };
@@ -22,9 +23,7 @@ use crate::units::{NodeType, Scaled};
 
 use super::assign::sa_define;
 use super::lists::{append_glue, normal_paragraph};
-use super::{
-    append_list, begin_every, BOX_FLAG, GLOBAL_BOX_FLAG, INNER_HMODE, LEADER_FLAG, SHIP_OUT_FLAG,
-};
+use super::{append_list, begin_every, BOX_FLAG, GLOBAL_BOX_FLAG, LEADER_FLAG, SHIP_OUT_FLAG};
 
 pub(super) fn unpackage(st: &mut EngineState, c: BoxCode) -> Result<(), Abort> {
     if matches!(c, BoxCode::LastBox | BoxCode::Vsplit) {
@@ -36,10 +35,10 @@ pub(super) fn unpackage(st: &mut EngineState, c: BoxCode) -> Result<(), Abort> {
         let Some(b) = fetch_box(st, n) else {
             return Ok(());
         };
-        let mode = st.input.cur_list.mode.abs();
-        if mode == MMODE
-            || (mode == VMODE && !st.mem[b].is_vlist())
-            || (mode == HMODE && !st.mem[b].is_hlist())
+        let mode = st.input.cur_list.mode;
+        if mode.is_math()
+            || (mode.is_vertical() && !st.mem[b].is_vlist())
+            || (mode.is_horizontal() && !st.mem[b].is_hlist())
         {
             return crate::errors::error(
                 st,
@@ -81,7 +80,9 @@ pub(super) fn unpackage(st: &mut EngineState, c: BoxCode) -> Result<(), Abort> {
 }
 
 pub(super) fn delete_last(st: &mut EngineState, t: NodeType) -> Result<(), Abort> {
-    if st.input.cur_list.mode == VMODE && st.input.cur_list.tail == st.input.cur_list.head {
+    if st.input.cur_list.mode.name() == ModeName::Vertical
+        && st.input.cur_list.tail == st.input.cur_list.head
+    {
         if t != NodeType::Glue || st.shipout.last_glue.is_some() {
             let remedy = if t == NodeType::Kern {
                 r"Try `I\kern-\lastkern' instead."
@@ -146,7 +147,7 @@ pub(super) fn package(st: &mut EngineState, group: GroupCode) -> Result<(), Abor
     st.eqtb.set_int_par(IntPar::XetexUpwards, u);
     let list = st.input.cur_list.head.link(&st.mem);
     let mut adjust = (group == GroupCode::AdjustedHbox).then_some(AdjustTails::HEADS);
-    let b = if st.input.cur_list.mode == INNER_HMODE {
+    let b = if st.input.cur_list.mode.name() == ModeName::RestrictedHorizontal {
         crate::packaging::hpack_with(st, list, spec, PackOrigin::Here, adjust.as_mut())?.r_box
     } else {
         let b = crate::packaging::vpackage(st, list, spec, d)?;
@@ -181,7 +182,7 @@ fn box_end(
             return Ok(());
         };
         st.mem[b].shift_amount = Scaled::from_raw(box_context);
-        if st.input.cur_list.mode.abs() == VMODE {
+        if st.input.cur_list.mode.is_vertical() {
             if let Some(adjust) = adjust.filter(|a| a.pre != Some(PRE_ADJUST_HEAD)) {
                 append_list(st, Some(PRE_ADJUST_HEAD), adjust.pre)?;
             }
@@ -191,12 +192,12 @@ fn box_end(
             if let Some(adjust) = adjust.filter(|a| a.post != Some(ADJUST_HEAD)) {
                 append_list(st, Some(ADJUST_HEAD), adjust.post)?;
             }
-            if st.input.cur_list.mode > 0 {
+            if st.input.cur_list.mode.is_outer() {
                 crate::pagebuilder::build_page(st)?;
             }
         } else {
-            let node = if st.input.cur_list.mode.abs() == HMODE {
-                st.input.cur_list.set_space_factor(1000);
+            let node = if let Mode::Horizontal { space_factor, .. } = &mut st.input.cur_list.mode {
+                *space_factor = 1000;
                 b.idx()
             } else {
                 let noad = st.mem.new_noad()?;
@@ -237,7 +238,7 @@ fn box_end(
 /// Make `content` the leaders of the glue that follows, for a leaders `box_context`.
 fn leaders_end(st: &mut EngineState, box_context: i32, content: BoxOrRule) -> Result<(), Abort> {
     crate::scan::get_x_non_blank_non_relax(st)?;
-    let vertical = st.input.cur_list.mode.abs() == VMODE;
+    let vertical = st.input.cur_list.mode.is_vertical();
     let skip = match st.scanner.cur {
         Command::Hskip(s) if !vertical => Some(s),
         Command::Vskip(s) if vertical => Some(s),
@@ -350,13 +351,13 @@ pub(super) fn begin_box(
         }
         BoxCode::LastBox => {
             let mut last = None;
-            if st.input.cur_list.mode.abs() == MMODE {
+            if st.input.cur_list.mode.is_math() {
                 crate::errors::error(
                     st,
                     crate::errors::you_cant(st),
                     &[r"Sorry; this \lastbox will be void."],
                 )?;
-            } else if st.input.cur_list.mode == VMODE
+            } else if st.input.cur_list.mode.name() == ModeName::Vertical
                 && st.input.cur_list.head == st.input.cur_list.tail
             {
                 crate::errors::error(
@@ -396,14 +397,14 @@ pub(super) fn begin_box(
             crate::packaging::vsplit(st, n, d)?
         }
         BoxCode::Vtop | BoxCode::Vbox | BoxCode::Hbox => {
-            let mode = if code == BoxCode::Hbox {
-                let group = if box_context < BOX_FLAG && st.input.cur_list.mode.abs() == VMODE {
+            let horizontal = code == BoxCode::Hbox;
+            if horizontal {
+                let group = if box_context < BOX_FLAG && st.input.cur_list.mode.is_vertical() {
                     GroupCode::AdjustedHbox
                 } else {
                     GroupCode::Hbox
                 };
                 crate::scan::scan_spec(st, group, Some(box_context))?;
-                HMODE
             } else {
                 let group = if code == BoxCode::Vbox {
                     GroupCode::Vbox
@@ -412,16 +413,14 @@ pub(super) fn begin_box(
                 };
                 crate::scan::scan_spec(st, group, Some(box_context))?;
                 normal_paragraph(st)?;
-                VMODE
-            };
+            }
             crate::mem::push_nest(st)?;
-            st.input.cur_list.mode = -mode;
-            if mode == VMODE {
-                st.input.cur_list.set_prev_depth(IGNORE_DEPTH);
-                begin_every(st, TokPar::EveryVbox, TokenType::EveryVbox)?;
-            } else {
-                st.input.cur_list.set_space_factor(1000);
+            if horizontal {
+                st.input.cur_list.mode = Mode::horizontal(true);
                 begin_every(st, TokPar::EveryHbox, TokenType::EveryHbox)?;
+            } else {
+                st.input.cur_list.mode = Mode::vertical(true);
+                begin_every(st, TokPar::EveryVbox, TokenType::EveryVbox)?;
             }
             return Ok(());
         }

@@ -7,7 +7,6 @@ use crate::codes::{
     MathCharNumCode, PageIntCode, RadicalCode, ShorthandDefCode, ShowCode, SkipCode, TheCode,
     ValignCode, ValueLevel,
 };
-use crate::consts::VMODE;
 use crate::eqtb::{
     CaseTable, CodeTable, DimenLoc, DimenSlot, FontLoc, GlueLoc, GlueSlot, IntLoc, IntSlot,
     ShapeLoc, ToksLoc, ToksSlot, XetexCode,
@@ -238,7 +237,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
         }
         Cmd::SetAux => print_esc(
             st,
-            if chr_code == i32::from(VMODE) {
+            if chr_code == crate::codes::AuxCode::PrevDepth.raw() {
                 "prevdepth"
             } else {
                 "spacefactor"

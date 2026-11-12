@@ -4,7 +4,7 @@ use crate::cmd::Cmd;
 use crate::codes::{ScannerStatus, ValueLevel};
 use crate::command::Command;
 use crate::command::TabMarkCode;
-use crate::consts::{FROZEN_END_TEMPLATE, HMODE, IGNORE_DEPTH, MAX_DIMEN, MMODE, VMODE};
+use crate::consts::{FROZEN_END_TEMPLATE, IGNORE_DEPTH, MAX_DIMEN};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::input::{TokenType, TOKEN_LIST};
@@ -22,7 +22,8 @@ use crate::units::{GlueOrder, GlueSign, MemPtr, Orientation, Scaled};
 
 use super::assign::do_assignments;
 use super::lists::{end_graf, normal_paragraph, off_save};
-use super::{append_list, begin_every, CR_CODE, INNER_HMODE, INNER_VMODE, SPAN_CODE};
+use super::{append_list, begin_every, CR_CODE, SPAN_CODE};
+use crate::mode::{Mode, ModeName};
 
 pub(super) fn align_error(st: &mut EngineState) -> Result<(), Abort> {
     if st.scanner.align_state.abs() > 2 {
@@ -102,7 +103,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
     }
     crate::save::unsave(st)?;
 
-    let in_display = st.input.nest[st.input.nest.len() - 1].mode == MMODE;
+    let in_display = st.input.nest[st.input.nest.len() - 1].mode.name() == ModeName::DisplayMath;
     let o = if in_display {
         st.eqtb.dimen_par(DimenPar::DisplayIndent)
     } else {
@@ -137,7 +138,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
     let spec = st.save_stack.pop_spec()?;
     let origin = PackOrigin::from_begin_line(-st.input.cur_list.mode_line);
     let head = ALIGN_HEAD.link(&st.mem);
-    let p = if st.input.cur_list.mode == INNER_VMODE {
+    let p = if st.input.cur_list.mode.name() == ModeName::InternalVertical {
         let rule_save = st.eqtb.dimen_par(DimenPar::OverfullRule);
         st.eqtb.set_dimen_par(DimenPar::OverfullRule, Scaled::ZERO);
         let packed = crate::packaging::hpack_with(st, head, spec, origin, None)?.r_box;
@@ -161,7 +162,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
     while let Some(mut cur) = q {
         match st.mem.classify_non_char(q) {
             Some(AnyNode::Unset(row)) => {
-                let row = if st.input.cur_list.mode == INNER_VMODE {
+                let row = if st.input.cur_list.mode.name() == ModeName::InternalVertical {
                     let b = row.into_box(&mut st.mem, Orientation::Horizontal);
                     let width = st.mem[p].width;
                     st.mem[b].width = width;
@@ -234,7 +235,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                         u = nb.idx();
                         let span_w = st.mem[proto].width;
                         t += span_w;
-                        if st.input.cur_list.mode == INNER_VMODE {
+                        if st.input.cur_list.mode.name() == ModeName::InternalVertical {
                             st.mem[nb].width = span_w;
                         } else {
                             let nb = &mut st.mem[nb];
@@ -242,7 +243,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                             nb.height = span_w;
                         }
                     }
-                    let col = if st.input.cur_list.mode == INNER_VMODE {
+                    let col = if st.input.cur_list.mode.name() == ModeName::InternalVertical {
                         let (h, d) = (st.mem[row].height, st.mem[row].depth);
                         let node = &mut st.mem[col];
                         node.height = h;
@@ -309,13 +310,12 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
     st.mem.flush_node_list(p.ptr())?;
     pop_alignment(st)?;
 
-    let aux_save_s0 = st.input.cur_list.aux_s0();
-    let aux_save_s1 = st.input.cur_list.aux_s1();
+    let aux_save = st.input.cur_list.mode;
     let rows = st.input.cur_list.head.link(&st.mem);
     let rows_tail = st.input.cur_list.tail;
     st.mem.pop_nest(&mut st.input)?;
 
-    if st.input.cur_list.mode == MMODE {
+    if st.input.cur_list.mode.name() == ModeName::DisplayMath {
         do_assignments(st)?;
         if st.scanner.cur.cmd() != Cmd::MathShift {
             crate::errors::back_error(
@@ -345,16 +345,41 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
         st.input.cur_list.tail_append(&mut st.mem, pen);
         let below = st.mem.new_param_glue(&st.eqtb, GluePar::BelowDisplaySkip)?;
         st.input.cur_list.tail_append(&mut st.mem, below);
-        st.input.cur_list.set_aux_s1(aux_save_s1);
+        let Mode::Vertical { prev_depth, .. } = aux_save else {
+            return Err(Abort::Confusion("align aux"));
+        };
+        st.input.cur_list.set_prev_depth(prev_depth)?;
         crate::math::resume_after_display(st)?;
     } else {
-        st.input.cur_list.set_aux_s0(aux_save_s0);
-        st.input.cur_list.set_aux_s1(aux_save_s1);
+        match (&mut st.input.cur_list.mode, aux_save) {
+            (
+                Mode::Vertical { prev_depth, .. },
+                Mode::Vertical {
+                    prev_depth: saved, ..
+                },
+            ) => *prev_depth = saved,
+            (
+                Mode::Horizontal {
+                    space_factor,
+                    clang,
+                    ..
+                },
+                Mode::Horizontal {
+                    space_factor: saved_factor,
+                    clang: saved_clang,
+                    ..
+                },
+            ) => {
+                *space_factor = saved_factor;
+                *clang = saved_clang;
+            }
+            _ => return Err(Abort::Confusion("align aux")),
+        }
         st.input.cur_list.tail.set_link(&mut st.mem, rows);
         if !rows.is_none() {
             st.input.cur_list.tail = rows_tail;
         }
-        if st.input.cur_list.mode == VMODE {
+        if st.input.cur_list.mode.name() == ModeName::Vertical {
             crate::pagebuilder::build_page(st)?;
         }
     }
@@ -479,7 +504,7 @@ pub(super) fn align_peek(st: &mut EngineState) -> Result<(), Abort> {
                 crate::scan::scan_left_brace(st)?;
                 st.save_stack
                     .new_save_level(GroupCode::NoAlign, st.mem.line)?;
-                if st.input.cur_list.mode == INNER_VMODE {
+                if st.input.cur_list.mode.name() == ModeName::InternalVertical {
                     normal_paragraph(st)?;
                 }
                 return Ok(());
@@ -530,10 +555,10 @@ fn get_preamble_token(st: &mut EngineState) -> Result<(), Abort> {
 
 fn init_span(st: &mut EngineState, p: MemPtr) -> Result<(), Abort> {
     crate::mem::push_nest(st)?;
-    if st.input.cur_list.mode == INNER_HMODE {
-        st.input.cur_list.set_aux_s0(1000);
+    if let Mode::Horizontal { space_factor, .. } = &mut st.input.cur_list.mode {
+        *space_factor = 1000;
     } else {
-        st.input.cur_list.set_prev_depth(IGNORE_DEPTH);
+        st.input.cur_list.set_prev_depth(IGNORE_DEPTH)?;
         normal_paragraph(st)?;
     }
     st.scanner.cur_span = p;
@@ -542,12 +567,18 @@ fn init_span(st: &mut EngineState, p: MemPtr) -> Result<(), Abort> {
 
 fn init_row(st: &mut EngineState) -> Result<(), Abort> {
     crate::mem::push_nest(st)?;
-    st.input.cur_list.mode = -HMODE - VMODE - st.input.cur_list.mode;
-    if st.input.cur_list.mode == INNER_HMODE {
-        st.input.cur_list.set_aux_s0(0);
-    } else {
-        st.input.cur_list.set_aux_s1(0);
-    }
+    st.input.cur_list.mode = match st.input.cur_list.mode {
+        Mode::Vertical { .. } => Mode::Horizontal {
+            inner: true,
+            space_factor: 0,
+            clang: 0,
+        },
+        Mode::Horizontal { .. } => Mode::Vertical {
+            inner: true,
+            prev_depth: Scaled::ZERO,
+        },
+        Mode::Math { .. } | Mode::None => return Err(Abort::Confusion("align row")),
+    };
     let tab_skip = NodePtr::<GlueNode>::tab_skip_after(&st.mem, ALIGN_HEAD)?;
     let spec = st.mem[tab_skip].glue_ptr;
     let glue = st.mem.new_glue(spec)?;
@@ -701,7 +732,7 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
         st.save_stack
             .new_save_level(GroupCode::Align, st.mem.line)?;
         let head = st.input.cur_list.head.link(&st.mem);
-        let (packed, w) = if st.input.cur_list.mode == INNER_HMODE {
+        let (packed, w) = if st.input.cur_list.mode.name() == ModeName::RestrictedHorizontal {
             let mut adjust = AdjustTails {
                 post: st.scanner.cur_tail,
                 pre: st.scanner.cur_pre_tail,
@@ -789,7 +820,7 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
 
 fn fin_row(st: &mut EngineState) -> Result<(), Abort> {
     let head = st.input.cur_list.head.link(&st.mem);
-    let p = if st.input.cur_list.mode == INNER_HMODE {
+    let p = if st.input.cur_list.mode.name() == ModeName::RestrictedHorizontal {
         let row = crate::packaging::hpack(st, head, PackSpec::NATURAL)?;
         st.mem.pop_nest(&mut st.input)?;
         if st.scanner.cur_pre_head != st.scanner.cur_pre_tail {
@@ -806,7 +837,7 @@ fn fin_row(st: &mut EngineState) -> Result<(), Abort> {
         let row = crate::packaging::vpackage(st, head, PackSpec::NATURAL, MAX_DIMEN)?;
         st.mem.pop_nest(&mut st.input)?;
         st.input.cur_list.tail_append(&mut st.mem, row);
-        st.input.cur_list.set_aux_s0(1000);
+        st.input.cur_list.set_space_factor(1000)?;
         row
     };
     let unset = p.into_unset(&mut st.mem);
@@ -820,30 +851,34 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
     push_alignment(st)?;
     st.scanner.align_state = -1_000_000;
 
-    if st.input.cur_list.mode == MMODE
-        && (st.input.cur_list.tail != st.input.cur_list.head
-            || st.input.cur_list.incompleat_noad().is_some())
+    if let Mode::Math {
+        inner: false,
+        incompleat_noad,
+    } = st.input.cur_list.mode
     {
-        crate::errors::error(
-            st,
-            ("Improper ", crate::output::Esc("halign"), " inside $$'s"),
-            &[
-                r"Displays can use special alignments (like \eqalignno)",
-                "only if nothing but the alignment itself is between $$'s.",
-                "So I've deleted the formulas that preceded this alignment.",
-            ],
-        )?;
-        st.input.cur_list.flush_math(&mut st.mem)?;
+        if st.input.cur_list.tail != st.input.cur_list.head || incompleat_noad.is_some() {
+            crate::errors::error(
+                st,
+                ("Improper ", crate::output::Esc("halign"), " inside $$'s"),
+                &[
+                    r"Displays can use special alignments (like \eqalignno)",
+                    "only if nothing but the alignment itself is between $$'s.",
+                    "So I've deleted the formulas that preceded this alignment.",
+                ],
+            )?;
+            st.input.cur_list.flush_math(&mut st.mem)?;
+        }
     }
 
     crate::mem::push_nest(st)?;
-    if st.input.cur_list.mode == MMODE {
-        st.input.cur_list.mode = INNER_VMODE;
-        let prev_depth = st.input.nest[st.input.nest.len() - 2].prev_depth();
-        st.input.cur_list.set_prev_depth(prev_depth);
-    } else if st.input.cur_list.mode > 0 {
-        st.input.cur_list.mode = -st.input.cur_list.mode;
-    }
+    st.input.cur_list.mode = if st.input.cur_list.mode.name() == ModeName::DisplayMath {
+        Mode::Vertical {
+            inner: true,
+            prev_depth: st.input.nest[st.input.nest.len() - 2].prev_depth()?,
+        }
+    } else {
+        st.input.cur_list.mode.inner()
+    };
 
     crate::scan::scan_spec(st, GroupCode::Align, None)?;
     ALIGN_HEAD.set_link(&mut st.mem, None);

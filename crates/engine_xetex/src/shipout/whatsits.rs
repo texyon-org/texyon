@@ -64,7 +64,7 @@ fn expand_write_tokens(st: &mut crate::state::EngineState, tokens: TokenList) ->
     crate::input::begin_token_list(st, open, TokenType::Inserted)?;
 
     let old_mode = st.input.cur_list.mode;
-    st.input.cur_list.mode = 0;
+    st.input.cur_list.mode = crate::mode::Mode::None;
     st.scanner.cur_cs = st.shipout.write_loc;
     crate::scan::scan_toks(st, false, true)?;
     st.input.cur_list.mode = old_mode;

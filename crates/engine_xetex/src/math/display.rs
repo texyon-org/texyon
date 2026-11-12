@@ -1,12 +1,13 @@
 //! Entering and leaving math mode: `init_math`, `after_math` and displays.
 
 use crate::cmd::Cmd;
-use crate::consts::{HMODE, INF_PENALTY, MAX_DIMEN, MMODE, SCRIPT_SIZE, TEXT_SIZE};
+use crate::consts::{INF_PENALTY, MAX_DIMEN, SCRIPT_SIZE, TEXT_SIZE};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::QUAD_CODE;
 use crate::input::TokenType;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
+use crate::mode::{Mode, ModeName};
 use crate::node::{AnyNode, BoxLr, BoxNode, GlueNode, MathCode, NodePtr};
 use crate::packaging::{AdjustTails, LrState, PackOrigin, PackSpec};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
@@ -31,10 +32,9 @@ pub(crate) fn resume_after_display(st: &mut EngineState) -> Result<(), Abort> {
     crate::save::unsave(st)?;
     st.input.cur_list.prev_graf = st.input.cur_list.prev_graf.wrapping_add(3);
     crate::mem::push_nest(st)?;
-    st.input.cur_list.mode = HMODE;
-    st.input.cur_list.set_space_factor(1000);
+    st.input.cur_list.mode = Mode::horizontal(false);
 
-    crate::main_control::start_paragraph_language(st);
+    crate::main_control::start_paragraph_language(st)?;
 
     crate::scan::get_x_token(st)?;
     if st.scanner.cur.cmd() != Cmd::Spacer {
@@ -241,7 +241,7 @@ pub(crate) fn check_display_end(st: &mut EngineState) -> Result<(), Abort> {
 
 /// The box `init_math` saved for the paragraph line before a display, if any.
 fn pre_display_box(st: &EngineState) -> Option<NodePtr<BoxNode>> {
-    if st.input.cur_list.mode != MMODE {
+    if st.input.cur_list.mode.name() != ModeName::DisplayMath {
         return None;
     }
     let j = st.input.cur_list.e_tex_aux?;
@@ -251,12 +251,12 @@ fn pre_display_box(st: &EngineState) -> Option<NodePtr<BoxNode>> {
 pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     let mut j = pre_display_box(st);
     let mut danger = check_math_fonts(st)?;
-    let mut m = i32::from(st.input.cur_list.mode);
+    let mut inline = st.input.cur_list.mode.is_inner();
     let mut l = false;
     let mut p = fin_mlist(st, None)?;
 
     let a;
-    if i32::from(st.input.cur_list.mode) == -m {
+    if inline && st.input.cur_list.mode.name() == ModeName::DisplayMath {
         check_display_end(st)?;
         let hlist = mlist_to_hlist(st, p, MathStyle::TEXT, false)?;
         let eqno = crate::packaging::hpack(st, hlist, PackSpec::NATURAL)?;
@@ -270,24 +270,24 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
 
         j = pre_display_box(st);
         danger = check_math_fonts(st)?;
-        m = i32::from(st.input.cur_list.mode);
+        inline = st.input.cur_list.mode.is_inner();
         p = fin_mlist(st, None)?;
     } else {
         a = None;
     }
 
-    if m < 0 {
+    if inline {
         let math_surround = st.eqtb.dimen_par(DimenPar::MathSurround);
         let node = st.mem.new_math(math_surround, MathCode::Before)?;
         st.input.cur_list.tail_append(&mut st.mem, node);
-        let penalties = st.input.cur_list.mode > 0;
+        let penalties = st.input.cur_list.mode.is_outer();
         let hlist = mlist_to_hlist(st, p, MathStyle::TEXT, penalties)?;
         let cl = &mut st.input.cur_list;
         cl.tail.set_link(&mut st.mem, hlist);
         cl.tail = st.mem.list_tail(cl.tail);
         let node = st.mem.new_math(math_surround, MathCode::After)?;
         st.input.cur_list.tail_append(&mut st.mem, node);
-        st.input.cur_list.set_space_factor(1000);
+        st.input.cur_list.set_space_factor(1000)?;
 
         if st.config.semantic_pagination_enabled {
             crate::ext::insert_special(st, "tdux:ce math")?;
@@ -464,7 +464,7 @@ fn side_skip(st: &mut EngineState, param: GluePar) -> Result<MemIdx, Abort> {
 pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
     crate::scan::get_token(st)?;
 
-    if st.scanner.cur.cmd() == Cmd::MathShift && st.input.cur_list.mode > 0 {
+    if st.scanner.cur.cmd() == Cmd::MathShift && st.input.cur_list.mode.is_outer() {
         let mut j = None;
         let mut w = -MAX_DIMEN;
         let x;
@@ -659,7 +659,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
         }
 
         crate::main_control::push_math(st, GroupCode::MathShift)?;
-        st.input.cur_list.mode = MMODE;
+        st.input.cur_list.mode = Mode::math(false);
         define(st, false, IntPar::CurFam.loc(), -1)?;
         define(st, false, DimenPar::PreDisplaySize.loc(), w)?;
         st.input.cur_list.e_tex_aux = j;

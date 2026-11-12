@@ -56,6 +56,7 @@ mod main_control;
 mod math;
 mod mem;
 mod mem_types;
+mod mode;
 mod node;
 mod ot_math;
 mod output;

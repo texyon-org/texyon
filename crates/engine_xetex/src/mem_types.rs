@@ -2,6 +2,9 @@
 
 use std::mem::size_of;
 
+use crate::errors::Abort;
+use crate::mode::Mode;
+
 /// Two 32-bit halves, `s0` at the lower address.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -96,92 +99,105 @@ pub(crate) fn zeroed_vec<T: ZeroWord>(len: usize) -> Vec<T> {
 }
 
 /// One level of TeX's semantic nest (`list_state_record`).
-#[repr(C)]
 #[derive(Copy, Clone)]
 pub struct ListStateRecord {
-    pub mode: i16,
+    pub mode: Mode,
     pub head: crate::units::MemIdx,
     pub tail: crate::units::MemIdx,
     pub e_tex_aux: crate::units::MemPtr,
     pub prev_graf: i32,
     pub mode_line: i32,
-    pub aux: MemoryWord,
 }
 
 const _: () = assert!(size_of::<ListStateRecord>() == 32);
 
-/// The outer vertical list, empty.
+/// No list, as before INITEX sets up the page.
 impl Default for ListStateRecord {
     fn default() -> Self {
         Self {
-            mode: 0,
+            mode: Mode::None,
             head: crate::mem::CONTRIB_HEAD,
             tail: crate::mem::CONTRIB_HEAD,
             e_tex_aux: None,
             prev_graf: 0,
             mode_line: 0,
-            aux: MemoryWord::default(),
         }
     }
 }
 
 impl ListStateRecord {
-    /// `prev_depth`, the aux word of vertical modes.
+    /// `prev_depth` of the vertical list being built.
     #[inline]
-    pub fn prev_depth(&self) -> crate::units::Scaled {
-        crate::units::Scaled::from_raw(self.aux_s1())
+    pub fn prev_depth(&self) -> Result<crate::units::Scaled, Abort> {
+        match self.mode {
+            Mode::Vertical { prev_depth, .. } => Ok(prev_depth),
+            _ => Err(Abort::Confusion("prev depth")),
+        }
     }
     #[inline]
-    pub fn set_prev_depth(&mut self, d: crate::units::Scaled) {
-        self.set_aux_s1(d.raw());
+    pub fn set_prev_depth(&mut self, d: crate::units::Scaled) -> Result<(), Abort> {
+        match &mut self.mode {
+            Mode::Vertical { prev_depth, .. } => *prev_depth = d,
+            _ => return Err(Abort::Confusion("prev depth")),
+        }
+        Ok(())
     }
-    /// `space_factor`, the aux word of horizontal modes.
+    /// `space_factor` of the horizontal list being built.
     #[inline]
-    pub fn space_factor(&self) -> i32 {
-        self.aux_s0()
-    }
-    #[inline]
-    pub fn set_space_factor(&mut self, f: i32) {
-        self.set_aux_s0(f);
-    }
-    /// `clang`, the current language of horizontal modes.
-    #[inline]
-    pub fn clang(&self) -> i32 {
-        self.aux_s1()
+    pub fn space_factor(&self) -> Result<i32, Abort> {
+        match self.mode {
+            Mode::Horizontal { space_factor, .. } => Ok(space_factor),
+            _ => Err(Abort::Confusion("space factor")),
+        }
     }
     #[inline]
-    pub fn set_clang(&mut self, l: i32) {
-        self.set_aux_s1(l);
+    pub fn set_space_factor(&mut self, f: i32) -> Result<(), Abort> {
+        match &mut self.mode {
+            Mode::Horizontal { space_factor, .. } => *space_factor = f,
+            _ => return Err(Abort::Confusion("space factor")),
+        }
+        Ok(())
     }
-    /// `incompleat_noad`, math mode's pending fraction.
+    /// `clang`, the current language of the horizontal list being built.
     #[inline]
-    pub fn incompleat_noad(&self) -> Option<crate::node::NodePtr<crate::node::FractionNoad>> {
-        let p = crate::units::MemIdx::from_raw(self.aux_s1())?;
-        // SAFETY: math mode only stores a fraction noad here.
-        Some(crate::node::NodePtr::from_idx_unchecked(p))
+    pub fn clang(&self) -> Result<i32, Abort> {
+        match self.mode {
+            Mode::Horizontal { clang, .. } => Ok(clang),
+            _ => Err(Abort::Confusion("clang")),
+        }
+    }
+    #[inline]
+    pub fn set_clang(&mut self, l: i32) -> Result<(), Abort> {
+        match &mut self.mode {
+            Mode::Horizontal { clang, .. } => *clang = l,
+            _ => return Err(Abort::Confusion("clang")),
+        }
+        Ok(())
+    }
+    /// `incompleat_noad`, the pending fraction of the math list being built.
+    #[inline]
+    pub fn incompleat_noad(
+        &self,
+    ) -> Result<Option<crate::node::NodePtr<crate::node::FractionNoad>>, Abort> {
+        match self.mode {
+            Mode::Math {
+                incompleat_noad, ..
+            } => Ok(incompleat_noad),
+            _ => Err(Abort::Confusion("incompleat noad")),
+        }
     }
     #[inline]
     pub fn set_incompleat_noad(
         &mut self,
         n: Option<crate::node::NodePtr<crate::node::FractionNoad>>,
-    ) {
-        self.set_aux_s1(n.map_or(crate::consts::TEX_NULL, |n| n.idx().raw()));
-    }
-    #[inline]
-    pub fn aux_s0(&self) -> i32 {
-        self.aux.b32().s0
-    }
-    #[inline]
-    pub fn aux_s1(&self) -> i32 {
-        self.aux.b32().s1
-    }
-    #[inline]
-    pub fn set_aux_s0(&mut self, v: i32) {
-        self.aux.b32.s0 = v;
-    }
-    #[inline]
-    pub fn set_aux_s1(&mut self, v: i32) {
-        self.aux.b32.s1 = v;
+    ) -> Result<(), Abort> {
+        match &mut self.mode {
+            Mode::Math {
+                incompleat_noad, ..
+            } => *incompleat_noad = n,
+            _ => return Err(Abort::Confusion("incompleat noad")),
+        }
+        Ok(())
     }
 
     /// Links `p` after the tail and makes it the new tail.

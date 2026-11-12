@@ -1,6 +1,8 @@
 //! Named state digests used only to verify checkpoint restoration.
 
 use crate::mem_types::{B32x2, ListStateRecord, MemoryWord};
+use crate::mode::Mode;
+use crate::node::NodePtr;
 use crate::state::{EngineState, InputName, InputState, Restore, SaveEntry};
 use crate::units::RawPtr;
 
@@ -400,13 +402,27 @@ fn digest_input_name(h: &mut Fnv, name: InputName) {
 }
 
 fn digest_list(h: &mut Fnv, list: &ListStateRecord) {
-    h.i32(list.mode.into());
+    h.i32(list.mode.name() as i32);
+    match list.mode {
+        Mode::Vertical { prev_depth, .. } => h.i32(prev_depth.raw()),
+        Mode::Horizontal {
+            space_factor,
+            clang,
+            ..
+        } => {
+            h.i32(space_factor);
+            h.i32(clang);
+        }
+        Mode::Math {
+            incompleat_noad, ..
+        } => h.i32(incompleat_noad.map(NodePtr::idx).raw()),
+        Mode::None => {}
+    }
     h.i32(list.head.raw());
     h.i32(list.tail.raw());
     h.i32(list.e_tex_aux.raw());
     h.i32(list.prev_graf);
     h.i32(list.mode_line);
-    h.word(memory_word(list.aux));
 }
 
 /// A stack depth as the digest's `i32` words.

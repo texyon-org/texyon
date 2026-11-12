@@ -9,9 +9,8 @@ use crate::consts::{
     BIGGEST_CHAR, BIGGEST_LANG, CLOSED, CS_TOKEN_FLAG, EMPTY, EMPTY_STRING, END_WRITE, FONT_BASE,
     FROZEN_CONTROL_SEQUENCE, FROZEN_DONT_EXPAND, FROZEN_ENDV, FROZEN_END_TEMPLATE,
     FROZEN_PRIMITIVE, FROZEN_PROTECTION, HISTORY_FATAL_ERROR, HISTORY_SPOTLESS,
-    HISTORY_WARNING_ISSUED, IGNORE_DEPTH, LEVEL_ONE, LEVEL_ZERO, MAX_FONT_MAX, MAX_HALFWORD,
-    NORMAL, NULL_FONT, NUMBER_USVS, PRIM_SIZE, SINGLE_BASE, TEX_NULL, TOO_BIG_CHAR,
-    UNDEFINED_CONTROL_SEQUENCE, VMODE,
+    HISTORY_WARNING_ISSUED, LEVEL_ONE, LEVEL_ZERO, MAX_FONT_MAX, MAX_HALFWORD, NORMAL, NULL_FONT,
+    NUMBER_USVS, PRIM_SIZE, SINGLE_BASE, TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::eqtb::{CatLoc, DelLoc, LcLoc, MathLoc, SfLoc, UcLoc};
 use crate::errors::Abort;
@@ -225,14 +224,13 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.errors.use_err_help = false;
 
     st.input.nest.reset();
-    st.input.cur_list.mode = VMODE;
+    st.input.cur_list.mode = crate::mode::Mode::vertical(false);
     st.input.cur_list.head = CONTRIB_HEAD;
     st.input.cur_list.tail = CONTRIB_HEAD;
     st.input.cur_list.e_tex_aux = None;
-    st.input.cur_list.set_prev_depth(IGNORE_DEPTH);
     st.input.cur_list.mode_line = 0;
     st.input.cur_list.prev_graf = 0;
-    st.scanner.shown_mode = 0;
+    st.scanner.shown_mode = crate::mode::ModeName::NoMode;
     st.shipout.page_contents = crate::state::PageContents::Empty;
     st.shipout.page_tail = Some(PAGE_HEAD);
     st.shipout.last_glue = None;

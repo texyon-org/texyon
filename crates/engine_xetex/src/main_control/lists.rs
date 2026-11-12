@@ -4,8 +4,7 @@ use crate::cmd::Cmd;
 use crate::codes::{BoxCode, SkipCode, ValueLevel};
 use crate::command::Command;
 use crate::consts::{
-    BIGGEST_CHAR, EMPTY, FROZEN_CR, HMODE, IGNORE_DEPTH, MAX_DIMEN, MMODE, NULL_FLAG, SUB_BOX,
-    SUB_MLIST, TEX_NULL, VMODE,
+    BIGGEST_CHAR, EMPTY, FROZEN_CR, MAX_DIMEN, NULL_FLAG, SUB_BOX, SUB_MLIST, TEX_NULL,
 };
 use crate::eqtb::{ShapeLoc, ShapeRef};
 use crate::errors::Abort;
@@ -33,19 +32,19 @@ use crate::units::{FontId, MemIdx, MemPtr, NodeType, Scaled};
 
 use super::align::align_peek;
 use super::assign::do_assignments;
+use super::begin_every;
 use super::boxes::package;
-use super::{begin_every, INNER_HMODE, INNER_VMODE};
+use crate::mode::{Mode, ModeName};
 
 pub(crate) fn push_math(st: &mut EngineState, c: GroupCode) -> Result<(), Abort> {
     crate::mem::push_nest(st)?;
-    st.input.cur_list.mode = -MMODE;
-    st.input.cur_list.set_incompleat_noad(None);
+    st.input.cur_list.mode = Mode::math(true);
     st.save_stack.new_save_level(c, st.mem.line)?;
     Ok(())
 }
 
 pub(super) fn end_graf(st: &mut EngineState) -> Result<(), Abort> {
-    if st.input.cur_list.mode != HMODE {
+    if !st.input.cur_list.mode.is_paragraph() {
         return Ok(());
     }
     if st.input.cur_list.head == st.input.cur_list.tail {
@@ -67,7 +66,7 @@ pub(super) fn append_penalty(st: &mut EngineState) -> Result<(), Abort> {
     let n = crate::scan::scan_int(st)?;
     let p = st.mem.new_penalty(n)?;
     st.input.cur_list.tail_append(&mut st.mem, p);
-    if st.input.cur_list.mode == VMODE {
+    if st.input.cur_list.mode.name() == ModeName::Vertical {
         crate::pagebuilder::build_page(st)?;
     }
     Ok(())
@@ -119,8 +118,8 @@ pub(super) fn indent_in_hmode(st: &mut EngineState, indent: bool) -> Result<(), 
     }
     let b = st.mem.new_null_box()?;
     st.mem[b].width = st.eqtb.dimen_par(DimenPar::ParIndent);
-    let p = if st.input.cur_list.mode.abs() == HMODE {
-        st.input.cur_list.set_space_factor(1000);
+    let p = if let Mode::Horizontal { space_factor, .. } = &mut st.input.cur_list.mode {
+        *space_factor = 1000;
         b.idx()
     } else {
         let q = st.mem.new_noad()?;
@@ -167,7 +166,8 @@ pub(super) fn insert_par_token_before(
     st: &mut EngineState,
     context: ParTokenContext,
 ) -> Result<bool, Abort> {
-    if st.eqtb.int_par(IntPar::PartokenContext) < context as i32 || st.input.cur_list.mode != HMODE
+    if st.eqtb.int_par(IntPar::PartokenContext) < context as i32
+        || !st.input.cur_list.mode.is_paragraph()
     {
         return Ok(false);
     }
@@ -176,7 +176,7 @@ pub(super) fn insert_par_token_before(
 }
 
 pub(super) fn head_for_vmode(st: &mut EngineState) -> Result<(), Abort> {
-    if st.input.cur_list.mode >= 0 {
+    if !st.input.cur_list.mode.is_inner() {
         return back_input_after_par_token(st);
     }
     if st.scanner.cur.cmd() != Cmd::Hrule {
@@ -219,14 +219,13 @@ pub(super) fn begin_insert_or_adjust(st: &mut EngineState) -> Result<(), Abort> 
     crate::scan::scan_left_brace(st)?;
     normal_paragraph(st)?;
     crate::mem::push_nest(st)?;
-    st.input.cur_list.mode = INNER_VMODE;
-    st.input.cur_list.set_prev_depth(IGNORE_DEPTH);
+    st.input.cur_list.mode = Mode::vertical(true);
     Ok(())
 }
 
 /// Appends interword glue for the current space factor.
 pub(super) fn app_space(st: &mut EngineState) -> Result<(), Abort> {
-    let space_factor = st.input.cur_list.space_factor();
+    let space_factor = st.input.cur_list.space_factor()?;
     let q;
     if space_factor >= 2000 && st.eqtb.glue_par(GluePar::XspaceSkip) != ZERO_GLUE {
         q = st.mem.new_param_glue(&st.eqtb, GluePar::XspaceSkip)?.idx();
@@ -271,10 +270,10 @@ pub(super) fn font_space_glue(st: &mut EngineState) -> Result<GlueSpecId, Abort>
 }
 
 /// Sets `cur_lang` and the list's language and hyphen minima for a new paragraph.
-pub(crate) fn start_paragraph_language(st: &mut EngineState) {
+pub(crate) fn start_paragraph_language(st: &mut EngineState) -> Result<(), Abort> {
     let l = crate::helpers::norm_lang(st.eqtb.int_par(IntPar::Language));
     st.hyph.cur_lang = l;
-    st.input.cur_list.set_clang(i32::from(l));
+    st.input.cur_list.set_clang(i32::from(l))?;
     let lhm = i32::from(crate::helpers::norm_min(
         st.eqtb.int_par(IntPar::LeftHyphenMin),
     ));
@@ -282,19 +281,21 @@ pub(crate) fn start_paragraph_language(st: &mut EngineState) {
         st.eqtb.int_par(IntPar::RightHyphenMin),
     ));
     st.input.cur_list.prev_graf = (lhm * 64 + rhm) * 65536 + i32::from(l);
+    Ok(())
 }
 
 pub(crate) fn new_graf(st: &mut EngineState, indented: bool) -> Result<(), Abort> {
     st.input.cur_list.prev_graf = 0;
-    if st.input.cur_list.mode == VMODE || st.input.cur_list.head != st.input.cur_list.tail {
+    if st.input.cur_list.mode.name() == ModeName::Vertical
+        || st.input.cur_list.head != st.input.cur_list.tail
+    {
         let g = st.mem.new_param_glue(&st.eqtb, GluePar::ParSkip)?;
         st.input.cur_list.tail_append(&mut st.mem, g);
     }
     crate::mem::push_nest(st)?;
-    st.input.cur_list.mode = HMODE;
-    st.input.cur_list.set_space_factor(1000);
+    st.input.cur_list.mode = Mode::horizontal(false);
 
-    start_paragraph_language(st);
+    start_paragraph_language(st)?;
 
     if indented {
         let b = st.mem.new_null_box()?;
@@ -633,11 +634,11 @@ impl ListStateRecord {
         eqtb: &crate::state::EqtbState,
     ) -> Result<(), Abort> {
         let l = i32::from(crate::helpers::norm_lang(eqtb.int_par(IntPar::Language)));
-        if l == self.clang() {
+        if l == self.clang()? {
             return Ok(());
         }
         let w = self.append_whatsit::<LanguageNode>(mem, WhatsitSubtype::Language)?;
-        self.set_clang(l);
+        self.set_clang(l)?;
         let language = &mut mem[w];
         language.lang = l;
         language.lhm = crate::helpers::norm_min(eqtb.int_par(IntPar::LeftHyphenMin)) as u16;
@@ -679,8 +680,7 @@ fn begin_disc_group(st: &mut EngineState) -> Result<(), Abort> {
     st.save_stack.new_save_level(GroupCode::Disc, st.mem.line)?;
     crate::scan::scan_left_brace(st)?;
     crate::mem::push_nest(st)?;
-    st.input.cur_list.mode = INNER_HMODE;
-    st.input.cur_list.set_space_factor(1000);
+    st.input.cur_list.mode = Mode::horizontal(true);
     Ok(())
 }
 
@@ -752,7 +752,7 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
         0 => st.mem[disc].pre_break = p,
         1 => st.mem[disc].post_break = p,
         2 => {
-            if n > 0 && st.input.cur_list.mode.abs() == MMODE {
+            if n > 0 && st.input.cur_list.mode.is_math() {
                 st.mem.flush_node_list(p)?;
                 n = 0;
                 crate::errors::error(
@@ -870,8 +870,7 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
     };
     let Some(q) = q else {
         st.input.cur_list.tail_append(&mut st.mem, p);
-        st.input.cur_list.set_space_factor(1000);
-        return Ok(());
+        return st.input.cur_list.set_space_factor(1000);
     };
 
     let t = f64::from(st.fonts.param(f, SLANT_CODE)) / 65536.0;
@@ -911,6 +910,5 @@ pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
     st.mem[back].subtype = KernSubtype::AccKern.into();
     accent.set_link(&mut st.mem, back.ptr());
     st.input.cur_list.tail_append(&mut st.mem, q);
-    st.input.cur_list.set_space_factor(1000);
-    Ok(())
+    st.input.cur_list.set_space_factor(1000)
 }

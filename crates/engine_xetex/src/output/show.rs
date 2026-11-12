@@ -3,11 +3,12 @@
 use crate::bridge::output_flush;
 use crate::cmd::Cmd;
 use crate::codes::{FiOrElseCode, LeaderCode, ShowCode, TheCode};
-use crate::consts::{HMODE, IGNORE_DEPTH, MMODE, VMODE};
+use crate::consts::IGNORE_DEPTH;
 use crate::errors::{finish_error, Abort};
 use crate::input::{TokenType, TOKEN_LIST};
 use crate::main_control::{BOX_FLAG, GLOBAL_BOX_FLAG, LEADER_FLAG, SHIP_OUT_FLAG};
 use crate::mem::{CONTRIB_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
+use crate::mode::{Mode, ModeName};
 use crate::node::{AnyNode, NodePtr, PageInsNode};
 use crate::packaging::PackSpec;
 use crate::params::{IntPar, TokPar};
@@ -28,10 +29,11 @@ use super::{
 pub(crate) fn show_cur_cmd_chr(st: &mut EngineState) {
     begin_diagnostic(st);
     print_nl(st, b'{');
-    if st.input.cur_list.mode != st.scanner.shown_mode {
-        print_mode(st, i32::from(st.input.cur_list.mode));
+    let mode = st.input.cur_list.mode.name();
+    if mode != st.scanner.shown_mode {
+        print_mode(st, mode);
         print(st, ": ");
-        st.scanner.shown_mode = st.input.cur_list.mode;
+        st.scanner.shown_mode = mode;
     }
     let (cmd, chr) = st.scanner.cur.encode();
     print_cmd_chr(st, cmd, chr);
@@ -258,12 +260,12 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
         // Find the enclosing non-paragraph mode, leaving `p` just below it.
         // A simple group steps `p` up, so it can pass the parked slot as in WEB.
         let m = loop {
-            let cur_m = st.input.nest.stale_slot(p).mode;
+            let cur_m = st.input.nest.stale_slot(p).mode.name();
             if p == 0 {
-                break VMODE;
+                break ModeName::Vertical;
             }
             p -= 1;
-            if cur_m != HMODE {
+            if cur_m != ModeName::Horizontal {
                 break cur_m;
             }
         };
@@ -289,7 +291,11 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                 Entry::BoxContext
             }
             GroupCode::Align if a == 0 => {
-                s = if m == -VMODE { "halign" } else { "valign" };
+                s = if m == ModeName::InternalVertical {
+                    "halign"
+                } else {
+                    "valign"
+                };
                 a = 1;
                 Entry::Found1
             }
@@ -361,9 +367,9 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                 Entry::Found
             }
             GroupCode::MathShift => {
-                if m == MMODE {
+                if m == ModeName::DisplayMath {
                     print_char(st, b'$');
-                } else if st.input.nest.stale_slot(p).mode == MMODE {
+                } else if st.input.nest.stale_slot(p).mode.name() == ModeName::DisplayMath {
                     let left = matches!(st.save_stack.kept(1), Some(Saved::EqNo { left: true }));
                     print_cmd_chr(st, Cmd::EqNo, i32::from(left));
                     print_char(st, b')');
@@ -395,7 +401,7 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
             };
             if i != 0 {
                 if i < BOX_FLAG {
-                    let cmd = if st.input.nest.stale_slot(p).mode.abs() == VMODE {
+                    let cmd = if st.input.nest.stale_slot(p).mode.is_vertical() {
                         Cmd::Hmove
                     } else {
                         Cmd::Vmove
@@ -659,12 +665,11 @@ fn show_activities(st: &mut EngineState) {
     print_ln(st);
     for p in (0..=st.input.nest.len()).rev() {
         let nest = st.input.nest[p];
-        let m = nest.mode;
         print_nl(st, "### ");
-        print_mode(st, i32::from(m));
+        print_mode(st, nest.mode.name());
         print(st, " entered at line ");
         print_int(st, nest.mode_line.abs());
-        if m == HMODE && nest.prev_graf != 0x83_0000 {
+        if nest.mode.is_paragraph() && nest.prev_graf != 0x83_0000 {
             let pg = nest.prev_graf;
             print(st, " (language");
             print_int(st, pg % 65536);
@@ -682,10 +687,9 @@ fn show_activities(st: &mut EngineState) {
         }
         show_box(st, nest.head.link(&st.mem));
 
-        match i32::from(m.abs()) / (i32::from(Cmd::MAX_COMMAND) + 1) {
-            0 => {
+        match nest.mode {
+            Mode::Vertical { prev_depth, .. } => {
                 print_nl(st, "prevdepth ");
-                let prev_depth = nest.prev_depth();
                 if prev_depth <= IGNORE_DEPTH {
                     print(st, "ignored");
                 } else {
@@ -701,21 +705,27 @@ fn show_activities(st: &mut EngineState) {
                     }
                 }
             }
-            1 => {
+            Mode::Horizontal {
+                inner,
+                space_factor,
+                clang,
+            } => {
                 print_nl(st, "spacefactor ");
-                print_int(st, nest.space_factor());
-                if m > 0 && nest.clang() > 0 {
+                print_int(st, space_factor);
+                if !inner && clang > 0 {
                     print(st, ", current language ");
-                    print_int(st, nest.clang());
+                    print_int(st, clang);
                 }
             }
-            2 => {
-                if let Some(n) = nest.incompleat_noad() {
+            Mode::Math {
+                incompleat_noad, ..
+            } => {
+                if let Some(n) = incompleat_noad {
                     print(st, "this will begin denominator of:");
                     show_box(st, n.ptr());
                 }
             }
-            _ => {}
+            Mode::None => {}
         }
     }
 }

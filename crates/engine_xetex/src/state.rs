@@ -949,7 +949,7 @@ pub(crate) struct ScannerState {
     pub cur_tail: crate::units::MemPtr,
     pub cur_pre_head: crate::units::MemPtr,
     pub cur_pre_tail: crate::units::MemPtr,
-    pub shown_mode: i16,
+    pub shown_mode: crate::mode::ModeName,
     pub mag_set: i32,
     pub expand_depth_count: i32,
     pub sa_chain: Option<crate::node::NodePtr<crate::node::SaSaved>>,

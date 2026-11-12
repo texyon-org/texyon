@@ -173,7 +173,7 @@ pub(crate) fn append_choices(st: &mut EngineState) -> Result<(), Abort> {
 impl ListStateRecord {
     fn fin_mlist(&mut self, mem: &mut MemState, p: MemPtr) -> Result<MemPtr, Abort> {
         let q;
-        if let Some(aux_noad) = self.incompleat_noad() {
+        if let Some(aux_noad) = self.incompleat_noad()? {
             let list = self.head.link(mem);
             let d = &mut mem[aux_noad].denominator;
             d.math_type = SUB_MLIST;
@@ -335,7 +335,7 @@ pub(crate) fn sub_sup(st: &mut EngineState) -> Result<(), Abort> {
 impl ListStateRecord {
     fn start_fraction_noad(&mut self, mem: &mut MemState) -> Result<NodePtr<FractionNoad>, Abort> {
         let fraction = NodePtr::<FractionNoad>::alloc(mem)?;
-        self.set_incompleat_noad(Some(fraction));
+        self.set_incompleat_noad(Some(fraction))?;
         let list = self.head.link(mem);
         let f = &mut mem[fraction];
         f.new_hlist = None;
@@ -362,7 +362,7 @@ pub(crate) fn math_fraction(st: &mut EngineState, code: AboveCode) -> Result<(),
         AboveCode::Atop | AboveCode::AtopWithDelims => AboveCode::Atop,
     };
 
-    if st.input.cur_list.incompleat_noad().is_some() {
+    if st.input.cur_list.incompleat_noad()?.is_some() {
         if delimited {
             scan_delimiter(st, None)?;
             scan_delimiter(st, None)?;

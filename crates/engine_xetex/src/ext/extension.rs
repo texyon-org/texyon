@@ -3,7 +3,7 @@
 use crate::cmd::Cmd;
 use crate::codes::ExtensionCode;
 use crate::command::Command;
-use crate::consts::{FROZEN_SPECIAL, HMODE, MMODE, VMODE};
+use crate::consts::FROZEN_SPECIAL;
 use crate::errors::Abort;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::TokenType;
@@ -143,7 +143,7 @@ fn io_whatsit(st: &mut EngineState, code: ExtensionCode) -> Result<NodePtr<Whats
 }
 
 pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<(), Abort> {
-    let mode = st.input.cur_list.mode.abs();
+    let mode = st.input.cur_list.mode;
     match code {
         ExtensionCode::Open | ExtensionCode::Write | ExtensionCode::Close => {
             io_whatsit(st, code)?;
@@ -183,7 +183,7 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
         }
 
         ExtensionCode::SetLanguage => {
-            if mode != HMODE {
+            if !mode.is_horizontal() {
                 crate::errors::report_illegal_case(st)?;
             } else {
                 let w = append_whatsit::<LanguageNode>(st, WhatsitSubtype::Language)?;
@@ -191,7 +191,7 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
                     n @ 1..=255 => n,
                     _ => 0,
                 };
-                st.input.cur_list.set_clang(lang);
+                st.input.cur_list.set_clang(lang)?;
                 let lhm = crate::helpers::norm_min(st.eqtb.int_par(IntPar::LeftHyphenMin));
                 let rhm = crate::helpers::norm_min(st.eqtb.int_par(IntPar::RightHyphenMin));
                 let language = &mut st.mem[w];
@@ -220,7 +220,7 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
         }
 
         ExtensionCode::PicFile | ExtensionCode::PdfFile => {
-            if mode == MMODE {
+            if mode.is_math() {
                 crate::errors::report_illegal_case(st)?;
             } else {
                 load_picture(st, code == ExtensionCode::PdfFile)?;
@@ -228,10 +228,10 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
         }
 
         ExtensionCode::Glyph => {
-            if mode == VMODE {
+            if mode.is_vertical() {
                 crate::input::back_input(st)?;
                 new_graf(st, true)?;
-            } else if mode == MMODE {
+            } else if mode.is_math() {
                 crate::errors::report_illegal_case(st)?;
             } else {
                 let cur_font = st.eqtb.cur_font();

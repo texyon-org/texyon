@@ -115,13 +115,12 @@ fn math_kern(st: &mut EngineState, p: NodePtr<KernNode>, m: Scaled) {
 impl ListStateRecord {
     pub fn flush_math(&mut self, mem: &mut MemState) -> Result<(), Abort> {
         mem.flush_node_list(self.head.link(mem))?;
-        if let Some(n) = self.incompleat_noad() {
+        if let Some(n) = self.incompleat_noad()? {
             mem.flush_node_list(n.ptr())?;
         }
         self.head.set_link(mem, None);
         self.tail = self.head;
-        self.set_incompleat_noad(None);
-        Ok(())
+        self.set_incompleat_noad(None)
     }
 }
 

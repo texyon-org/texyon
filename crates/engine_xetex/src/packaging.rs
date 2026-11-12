@@ -51,7 +51,7 @@ impl ListStateRecord {
         b: NodePtr<BoxNode>,
     ) -> Result<(), Abort> {
         let upwards = eqtb.int_par(IntPar::XetexUpwards) > 0;
-        let prev_depth = self.prev_depth();
+        let prev_depth = self.prev_depth()?;
         if prev_depth > IGNORE_DEPTH {
             let baseline_skip = eqtb.glue_par(GluePar::BaselineSkip);
             let d = mem[baseline_skip].width
@@ -68,8 +68,7 @@ impl ListStateRecord {
             self.tail_append(mem, p);
         }
         self.tail_append(mem, b);
-        self.set_prev_depth(if upwards { mem[b].height } else { mem[b].depth });
-        Ok(())
+        self.set_prev_depth(if upwards { mem[b].height } else { mem[b].depth })
     }
 }
 

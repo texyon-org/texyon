@@ -9,7 +9,7 @@ use crate::command::RelaxCode;
 use crate::cond_stack::CondId;
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_USV, END_WRITE, FROZEN_DONT_EXPAND, FROZEN_ENDV,
-    FROZEN_PRIMITIVE, HMODE, MMODE, NULL_CS, NULL_FONT, SINGLE_BASE, TOO_BIG_USV, VMODE,
+    FROZEN_PRIMITIVE, NULL_CS, NULL_FONT, SINGLE_BASE, TOO_BIG_USV,
 };
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
@@ -200,10 +200,10 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
             }
         }
         IfCode::Odd => scan_int(st)? % 2 != 0,
-        IfCode::VMode => st.input.cur_list.mode.abs() == VMODE,
-        IfCode::HMode => st.input.cur_list.mode.abs() == HMODE,
-        IfCode::MMode => st.input.cur_list.mode.abs() == MMODE,
-        IfCode::Inner => st.input.cur_list.mode < 0,
+        IfCode::VMode => st.input.cur_list.mode.is_vertical(),
+        IfCode::HMode => st.input.cur_list.mode.is_horizontal(),
+        IfCode::MMode => st.input.cur_list.mode.is_math(),
+        IfCode::Inner => st.input.cur_list.mode.is_inner(),
         IfCode::Void | IfCode::HBox | IfCode::VBox => {
             let n = crate::scan::scan_register_num(st)?;
             let contents = fetch_box(st, n);

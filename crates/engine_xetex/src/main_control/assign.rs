@@ -12,7 +12,7 @@ use crate::command::{Command, RegisterRef};
 use crate::consts::NULL_FONT;
 use crate::consts::{
     ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, DESIGN_SIZE, HASH_BASE,
-    MAX_HALFWORD, NULL_CS, SINGLE_BASE, TEX_INFINITY, VMODE,
+    MAX_HALFWORD, NULL_CS, SINGLE_BASE, TEX_INFINITY,
 };
 use crate::eqtb::{
     self, CatLoc, CodeTable, DelLoc, DimenLoc, FontLoc, GlueLoc, IntLoc, LcLoc, MathLoc, SfLoc,
@@ -55,14 +55,13 @@ fn new_interaction(st: &mut EngineState, mode: InteractionMode) {
 }
 
 fn alter_aux(st: &mut EngineState, code: AuxCode) -> Result<(), Abort> {
-    if code.mode() != st.input.cur_list.mode.abs() {
+    if st.input.cur_list.mode.kind() != Some(code.kind()) {
         return crate::errors::report_illegal_case(st);
     }
     crate::scan::scan_optional_equals(st)?;
     if code == AuxCode::PrevDepth {
         let d = crate::scan::scan_dimen(st, false)?;
-        st.input.cur_list.set_prev_depth(d);
-        return Ok(());
+        return st.input.cur_list.set_prev_depth(d);
     }
     let n = crate::scan::scan_int(st)?;
     if n <= 0 || n > 32767 {
@@ -72,15 +71,14 @@ fn alter_aux(st: &mut EngineState, code: AuxCode) -> Result<(), Abort> {
             &["I allow only values in the range 1..32767 here."],
         );
     }
-    st.input.cur_list.set_space_factor(n);
-    Ok(())
+    st.input.cur_list.set_space_factor(n)
 }
 
 fn alter_prev_graf(st: &mut EngineState) -> Result<(), Abort> {
     let np = st.input.nest.len();
     st.input.nest[np] = st.input.cur_list;
     let mut p = np;
-    while st.input.nest[p].mode.abs() != VMODE {
+    while !st.input.nest[p].mode.is_vertical() {
         p -= 1;
     }
     crate::scan::scan_optional_equals(st)?;

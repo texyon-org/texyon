@@ -1,6 +1,5 @@
 //! Shared compile-time constants for the XeTeX engine, mirroring the WEB `@d` definitions.
 
-use crate::cmd::Cmd;
 use crate::units::CsId;
 
 pub const BIGGEST_CHAR: i32 = 0xFFFF;
@@ -47,9 +46,6 @@ pub const HISTORY_FATAL_ERROR: i32 = 3;
 pub const JUST_OPEN: u8 = 1;
 pub const CLOSED: u8 = 2;
 
-pub const VMODE: i16 = 1;
-pub const HMODE: i16 = VMODE + Cmd::MAX_COMMAND as i16 + 1;
-pub const MMODE: i16 = HMODE + Cmd::MAX_COMMAND as i16 + 1;
 pub const LEVEL_ZERO: u16 = 0;
 pub const LEVEL_ONE: u16 = 1;
 
@@ -93,7 +89,6 @@ pub const UNDEFINED_CONTROL_SEQUENCE: CsId = FROZEN_NULL_FONT.plus(MAX_FONT_MAX 
 
 const _: () = {
     assert!(FONT_BASE == 0 && NULL_FONT.get() == 0);
-    assert!(HMODE == 105 && MMODE == 209);
     assert!(SINGLE_BASE.raw() == 1_114_113);
     assert!(NULL_CS.raw() == 1_179_649);
     assert!(HASH_BASE.raw() == 1_179_650);

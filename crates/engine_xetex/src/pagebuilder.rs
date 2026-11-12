@@ -2,8 +2,7 @@
 
 use crate::codes::{BoxCode, MarkCode, ValueLevel};
 use crate::consts::{
-    AWFUL_BAD, EJECT_PENALTY, IGNORE_DEPTH, INF_BAD, INF_PENALTY, LEVEL_ONE, MAX_DIMEN,
-    MAX_HALFWORD, VMODE,
+    AWFUL_BAD, EJECT_PENALTY, INF_BAD, INF_PENALTY, LEVEL_ONE, MAX_DIMEN, MAX_HALFWORD,
 };
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
@@ -346,8 +345,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
             st.shipout.output_active = true;
             st.shipout.dead_cycles += 1;
             crate::mem::push_nest(st)?;
-            st.input.cur_list.mode = -VMODE;
-            st.input.cur_list.set_prev_depth(IGNORE_DEPTH);
+            st.input.cur_list.mode = crate::mode::Mode::vertical(true);
             st.input.cur_list.mode_line = -st.mem.line;
             crate::input::begin_token_list(st, output_routine, TokenType::Output)?;
             st.save_stack

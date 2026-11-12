@@ -555,7 +555,9 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                             st.scanner.cur = Command::Relax(RelaxCode::NoExpand);
                         }
                     } else {
-                        if st.scanner.cur_cs == END_WRITE && st.input.cur_list.mode == 0 {
+                        if st.scanner.cur_cs == END_WRITE
+                            && matches!(st.input.cur_list.mode, crate::mode::Mode::None)
+                        {
                             return Err(Abort::Fatal("Unbalanced write command"));
                         }
                         check_outer_validity(st)?;

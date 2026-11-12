@@ -7,7 +7,7 @@ use crate::codes::PageDimenCode;
 use crate::codes::{BoxDimenCode, FiOrElseCode, IfCode, LastItemCode, PageIntCode, ValueLevel};
 use crate::command::Command;
 use crate::command::RegisterRef;
-use crate::consts::{ACTIVE_MATH_CHAR, CHAR_CLASS_LIMIT, MAX_DIMEN, NULL_FONT, VMODE};
+use crate::consts::{ACTIVE_MATH_CHAR, CHAR_CLASS_LIMIT, MAX_DIMEN, NULL_FONT};
 use crate::eqtb::{CodeTable, GlueLoc, ShapeLoc, XetexCode};
 use crate::errors::OrConfusion;
 use crate::errors::{mu_error, Abort};
@@ -21,6 +21,7 @@ use crate::fonts::{AAT_FONT_FLAG, SPACE_CODE, SPACE_SHRINK_CODE};
 use crate::glue_store::GlueSpecId;
 use crate::input::back_input;
 use crate::mem::ZERO_GLUE;
+use crate::mode::{Mode, ModeName};
 use crate::node::{AnyNode, GlueKind, MathCode, SaLeaf};
 use crate::params::TokPar;
 use crate::state::{EngineState, FontEngineHandle};
@@ -670,7 +671,7 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: LastItemCode) -> Result<Scaled
 /// `\lastpenalty`, `\lastkern`, `\lastskip` and `\lastnodetype`.
 fn fetch_last_node_item(st: &EngineState, code: LastItemCode) -> Result<CurVal, Abort> {
     let head = st.input.cur_list.head;
-    let mode = st.input.cur_list.mode;
+    let mode = st.input.cur_list.mode.name();
     // The list head is no node, as TeX's hi-mem head counted as a character.
     let item = |tx| (tx != head && !st.mem.is_char_node(tx)).then(|| st.mem.classify(tx));
     let mut tx = st.input.cur_list.tail;
@@ -681,8 +682,8 @@ fn fetch_last_node_item(st: &EngineState, code: LastItemCode) -> Result<CurVal, 
             node = item(tx);
         }
     }
-    let node = node.filter(|_| mode != 0);
-    let at_page_head = node.is_none() && mode == VMODE && tx == head;
+    let node = node.filter(|_| mode != ModeName::NoMode);
+    let at_page_head = node.is_none() && mode == ModeName::Vertical && tx == head;
     Ok(match code {
         LastItemCode::LastNodeType => CurVal::Int(if node.is_some() {
             let node_type = st.mem.type_code(tx);
@@ -693,7 +694,7 @@ fn fetch_last_node_item(st: &EngineState, code: LastItemCode) -> Result<CurVal, 
             }
         } else if at_page_head {
             st.shipout.last_node_type
-        } else if tx == head || mode == 0 {
+        } else if tx == head || mode == ModeName::NoMode {
             -1
         } else {
             0
@@ -771,7 +772,7 @@ pub(super) fn scan_something_internal(
             Command::AssignGlue(loc) => CurVal::Glue(st.eqtb.glue.get(loc)),
             Command::AssignMuGlue(loc) => CurVal::Mu(st.eqtb.glue.get(loc)),
             Command::SetAux(code) => {
-                if st.input.cur_list.mode.abs() != code.mode() {
+                if st.input.cur_list.mode.kind() != Some(code.kind()) {
                     crate::errors::error(
                         st,
                         ("Improper ", crate::output::CmdChr(Cmd::SetAux, code.raw())),
@@ -784,19 +785,19 @@ pub(super) fn scan_something_internal(
                     )?;
                     zero
                 } else if code == AuxCode::PrevDepth {
-                    CurVal::Dimen(st.input.cur_list.prev_depth())
+                    CurVal::Dimen(st.input.cur_list.prev_depth()?)
                 } else {
-                    CurVal::Int(st.input.cur_list.space_factor())
+                    CurVal::Int(st.input.cur_list.space_factor()?)
                 }
             }
             Command::SetPrevGraf => {
-                if st.input.cur_list.mode == 0 {
+                if matches!(st.input.cur_list.mode, Mode::None) {
                     CurVal::Int(0)
                 } else {
                     let np = st.input.nest.len();
                     st.input.nest[np] = st.input.cur_list;
                     let mut p = np;
-                    while st.input.nest[p].mode.abs() != VMODE {
+                    while !st.input.nest[p].mode.is_vertical() {
                         p -= 1;
                     }
                     CurVal::Int(st.input.nest[p].prev_graf)

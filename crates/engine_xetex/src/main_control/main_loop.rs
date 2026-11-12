@@ -2,12 +2,13 @@
 
 use crate::cmd::Cmd;
 use crate::codes::ValueLevel;
-use crate::consts::{CHAR_CLASS_LIMIT, HMODE};
+use crate::consts::CHAR_CLASS_LIMIT;
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::ext::append_src_special;
 use crate::fonts::{CharInfo, CharTag, LigChar, LigKernStep, SPACE_CODE};
 use crate::input::{TokenType, TOKEN_LIST};
+use crate::mode::Mode;
 use crate::node::{
     AnyNode, CharNode, KernSubtype, LigBoundary, LigItem, NativeWordNode, NodePtr, SaLeaf,
 };
@@ -93,22 +94,25 @@ fn note_char_class(st: &mut EngineState, sc: i32) {
 /// TeX's `adjust_space_factor` for `chr`. Also records and returns the
 /// character's space class.
 #[inline(always)]
-fn adjust_space_factor(st: &mut EngineState, chr: i32) -> i32 {
+fn adjust_space_factor(st: &mut EngineState, chr: i32) -> Result<i32, Abort> {
     let sf_code = st.eqtb.sf_code(chr);
     let s = sf_code % 65536;
+    let Mode::Horizontal { space_factor, .. } = &mut st.input.cur_list.mode else {
+        return Err(Abort::Confusion("space factor"));
+    };
     if s == 1000 {
-        st.input.cur_list.set_space_factor(1000);
+        *space_factor = 1000;
     } else if s < 1000 {
         if s > 0 {
-            st.input.cur_list.set_space_factor(s);
+            *space_factor = s;
         }
-    } else if st.input.cur_list.space_factor() < 1000 {
-        st.input.cur_list.set_space_factor(1000);
+    } else if *space_factor < 1000 {
+        *space_factor = 1000;
     } else {
-        st.input.cur_list.set_space_factor(s);
+        *space_factor = s;
     }
     st.interchar.space_class = sf_code / 65536;
-    st.interchar.space_class
+    Ok(st.interchar.space_class)
 }
 
 #[inline]
@@ -195,7 +199,8 @@ fn use_glyph_metrics(st: &EngineState) -> bool {
 /// The main loop for an AAT or OpenType font: collects the run of characters
 /// starting with `chr` into native word nodes. Returns whether to go to `big_switch`.
 fn main_loop_native(st: &mut EngineState, mf: FontId, mut chr: i32) -> Result<bool, Abort> {
-    if st.input.cur_list.mode > 0 && st.eqtb.int_par(IntPar::Language) != st.input.cur_list.clang()
+    if st.input.cur_list.mode.is_outer()
+        && st.eqtb.int_par(IntPar::Language) != st.input.cur_list.clang()?
     {
         st.input.cur_list.fix_language(&mut st.mem, &st.eqtb)?;
     }
@@ -205,7 +210,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId, mut chr: i32) -> Result<bo
     st.scanner.native_len = 0;
 
     let inserted_toks = loop {
-        let sc = adjust_space_factor(st, chr);
+        let sc = adjust_space_factor(st, chr)?;
         let was_boundary = st.interchar.prev_class == CHAR_CLASS_LIMIT - 1;
         if insert_inter_char_toks_before(st, sc, chr)? {
             if was_boundary {
@@ -283,7 +288,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId, mut chr: i32) -> Result<bo
     let len = st.scanner.native_len;
     let mut pp = st.input.cur_list.tail;
     let mut ppp = node_before(st, pp)?;
-    if st.input.cur_list.mode == HMODE {
+    if st.input.cur_list.mode.is_paragraph() {
         let mut start = 0;
         let mut remaining = len;
         loop {
@@ -543,7 +548,7 @@ fn wrapup(st: &mut EngineState, lk: &mut LigKern, rt_hit: bool) -> Result<(), Ab
         st.input.cur_list.tail = lig.idx();
         lk.ligature_present = false;
     }
-    if ins_disc && st.input.cur_list.mode > 0 {
+    if ins_disc && st.input.cur_list.mode.is_outer() {
         let disc = st.mem.new_disc()?;
         st.input.cur_list.tail_append(&mut st.mem, disc);
     }
@@ -564,7 +569,7 @@ pub(super) fn main_control_main_loop(
     cancel_boundary: bool,
 ) -> Result<bool, Abort> {
     if st.input.cur_list.head == st.input.cur_list.tail
-        && st.input.cur_list.mode > 0
+        && st.input.cur_list.mode.is_outer()
         && st.shipout.insert_src_special_auto
     {
         append_src_special(st)?;
@@ -576,13 +581,14 @@ pub(super) fn main_control_main_loop(
         return main_loop_native(st, mf, chr);
     }
 
-    let sc = adjust_space_factor(st, chr);
+    let sc = adjust_space_factor(st, chr)?;
     if insert_inter_char_toks_before(st, sc, chr)? {
         return Ok(true);
     }
     note_char_class(st, sc);
 
-    if st.input.cur_list.mode > 0 && st.eqtb.int_par(IntPar::Language) != st.input.cur_list.clang()
+    if st.input.cur_list.mode.is_outer()
+        && st.eqtb.int_par(IntPar::Language) != st.input.cur_list.clang()?
     {
         st.input.cur_list.fix_language(&mut st.mem, &st.eqtb)?;
     }
@@ -802,7 +808,7 @@ fn lookahead(st: &mut EngineState, lk: &mut LigKern) -> Result<(), Abort> {
         lk.chr = crate::scan::scan_char_num(st)?;
     }
 
-    let sc = adjust_space_factor(st, lk.chr);
+    let sc = adjust_space_factor(st, lk.chr)?;
     let was_boundary = st.interchar.prev_class == CHAR_CLASS_LIMIT - 1;
     if insert_inter_char_toks_before(st, sc, lk.chr)? {
         if !was_boundary {

@@ -499,7 +499,7 @@ pub(crate) fn you_cant(st: &EngineState) -> impl TexPrint {
     (
         "You can't use `",
         CmdChr::of(st.scanner.cur),
-        InMode(i32::from(st.input.cur_list.mode)),
+        InMode(st.input.cur_list.mode.name()),
     )
 }
 
@@ -517,7 +517,7 @@ pub(crate) fn report_illegal_case(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 pub(crate) fn privileged(st: &mut EngineState) -> Result<bool, Abort> {
-    if st.input.cur_list.mode > 0 {
+    if st.input.cur_list.mode.is_outer() {
         return Ok(true);
     }
     report_illegal_case(st)?;

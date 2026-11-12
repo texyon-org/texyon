@@ -286,11 +286,6 @@ code_enum! {
     }
 }
 
-const _: () = {
-    assert!(BoxCode::Vbox.raw() == BoxCode::Vtop.raw() + crate::consts::VMODE as i32);
-    assert!(BoxCode::Hbox.raw() == BoxCode::Vtop.raw() + crate::consts::HMODE as i32);
-};
-
 code_enum! {
     /// The `chr_code` of `\hfil`..`\hskip`, their vertical twins and `\mskip`.
     pub(crate) enum SkipCode: u8 {
@@ -564,7 +559,8 @@ code_enum! {
 }
 
 code_enum! {
-    /// The `chr_code` of `\prevdepth` and `\spacefactor`: the mode they belong to.
+    /// The `chr_code` of `\prevdepth` and `\spacefactor`.
+    // WEB's vmode and hmode, kept as the chr codes.
     pub(crate) enum AuxCode: u8 {
         PrevDepth = 1 => "prevdepth",
         SpaceFactor = 105 => "spacefactor",
@@ -572,9 +568,12 @@ code_enum! {
 }
 
 impl AuxCode {
-    /// The mode in which the quantity exists.
-    pub(crate) const fn mode(self) -> i16 {
-        self as i16
+    /// The kind of list that keeps the quantity.
+    pub(crate) const fn kind(self) -> crate::mode::ListKind {
+        match self {
+            AuxCode::PrevDepth => crate::mode::ListKind::Vertical,
+            AuxCode::SpaceFactor => crate::mode::ListKind::Horizontal,
+        }
     }
 }
 
@@ -610,8 +609,6 @@ code_enum! {
 }
 
 const _: () = {
-    assert!(AuxCode::PrevDepth.mode() == crate::consts::VMODE);
-    assert!(AuxCode::SpaceFactor.mode() == crate::consts::HMODE);
     assert!(LeftRightCode::Left.raw() == crate::units::NodeType::LeftNoad as i32);
     assert!(LeftRightCode::Right.raw() == crate::units::NodeType::RightNoad as i32);
     assert!(FontIntCode::LpCode.raw() == crate::main_control::LP_CODE_BASE);
