@@ -545,7 +545,7 @@ fn insert_hyphens(
     let bchar = st.hyph.hyf_bchar;
 
     let found2 = |st: &mut EngineState| {
-        st.hyph.hu[0] = LigChar::from_raw(st.hyph.max_hyph_char);
+        st.hyph.hu[0] = LigChar::NONE;
         st.hyph.init_lig = false;
         st.hyph.init_list = None;
         (ha, 0)
@@ -568,7 +568,7 @@ fn insert_hyphens(
             st.hyph.init_lft = st.mem[ha_lig].boundary.has_left();
             st.hyph.hu[0] = LigChar::of(st.mem[ha_lig].character);
             if st.hyph.init_list.is_none() && st.hyph.init_lft {
-                st.hyph.hu[0] = LigChar::from_raw(st.hyph.max_hyph_char);
+                st.hyph.hu[0] = LigChar::NONE;
                 st.hyph.init_lig = false;
             }
             st.mem.free_node(ha, LigatureNode::SIZE);
@@ -649,7 +649,7 @@ fn insert_hyphens(
                     l -= 1;
                     c = st.hyph.hu[l];
                     c_loc = l;
-                    st.hyph.hu[l] = LigChar::from_raw(st.hyph.max_hyph_char);
+                    st.hyph.hu[l] = LigChar::NONE;
                 }
 
                 while l < j {

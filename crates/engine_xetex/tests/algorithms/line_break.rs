@@ -1,6 +1,6 @@
 //! `line_break`: feasible breakpoints, demerits and the paragraph shape.
 //!
-//! The "words" are 10pt rules, so the tests need no fonts.
+//! Most "words" are 10pt rules, so most tests need no fonts.
 
 use crate::{assert_lines, rows, run, MATH_FONTS};
 
@@ -308,5 +308,37 @@ fn a_wrapped_prevgraf_without_hanging_indent_keeps_the_full_measure() {
         \hbox(5.0+0.0)x40.0
         \hbox(5.0+0.0)x40.0
         \hbox(5.0+0.0)x40.0, glue set 30.0fil",
+    );
+}
+
+#[test]
+fn left_boundary_after_a_hyphen_is_no_character() {
+    let r = run(
+        r"\font\xb=xbound \xb \hyphenchar\xb=`- \lefthyphenmin1 \righthyphenmin1
+          \hyphenation{a-a} \hsize1pt \tolerance10000 \parindent0pt \hfuzz\maxdimen
+          \hbadness10000 \setbox0\vbox{\noindent a aa\par}\showbox0",
+    );
+    assert_lines(
+        &r.boxes()[0],
+        r"
+        \vbox(20.99995+0.0)x1.0
+        .\hbox(6.99998+0.0)x1.0
+        ..\kern1.99998
+        ..\xb a
+        ..\glue(\rightskip) 0.0
+        .\glue(\lineskip) 0.0
+        .\hbox(6.99998+0.0)x1.0
+        ..\kern1.99998
+        ..\xb a
+        ..\discretionary
+        ..\xb -
+        ..\glue(\rightskip) 0.0
+        .\glue(\lineskip) 0.0
+        .\hbox(6.99998+0.0)x1.0
+        ..\kern1.99998
+        ..\xb a
+        ..\penalty 10000
+        ..\glue(\parfillskip) 0.0
+        ..\glue(\rightskip) 0.0",
     );
 }

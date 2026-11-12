@@ -230,3 +230,21 @@ entry names a later TeX Live version.
 - **TeXyoN:** `\noboundary` applies to the character right after it and nothing else
   (`main_control.rs`). Listed in `tests/upstream/known.tsv`, probe `mainloop-noboundary_native`. Not
   reported yet.
+
+## 17. Hyphenation marks the left boundary with a real character code
+
+- **Where:** `hyphenate`, lines 21729, 21741 and 22113. They set `hu[0]` or `hu[l]` to
+  `max_hyph_char` where `tex.web` sets 256, its `non_char`. `reconstitute` (lines 21915-21931)
+  still tests `cur_l=non_char`, and XeTeX's `non_char` is `too_big_char` (line 12853).
+- **Bug:** when the font has a left boundary program, the marker no longer reads as the boundary.
+  `reconstitute` takes it for character `max_hyph_char`: it appends a character node with that code
+  and reads `char_info` for it, past `font_ec`, so whatever `font_info` word lies there acts as its
+  lig/kern start. The boundary ligatures and kerns of the font are lost.
+- **Repro:** a TFM font with `(LABEL BOUNDARYCHAR) (KRN C a R 0.2)`, `\hyphenation{a-a}` and a
+  narrow `\hsize`. The line after the hyphen starts with a bogus character instead of the 0.2 kern.
+  Confirmed against TeX Live 2025 xetex in probe `hyph-bigtable_hyph` and the `hyph-recon_*` probes.
+  Knuth's `tex` gives the boxes TeXyoN gives on all of them.
+- **Fix:** set the marker to `non_char`, as `tex.web` does with 256.
+- **TeXyoN:** writes `non_char` (`linebreak/hyphenate.rs`), so the boundary program runs and no
+  character is added. Listed in `tests/upstream/known.tsv` (18 hyphenation probes), test
+  `left_boundary_after_a_hyphen_is_no_character`. Not reported yet.
