@@ -1,10 +1,9 @@
 //! Internal quantities: `scan_something_internal` and the font queries behind it.
 
-use crate::cmd::Cmd;
 use crate::codes::AuxCode;
 use crate::codes::FontIntCode;
 use crate::codes::PageDimenCode;
-use crate::codes::{BoxDimenCode, FiOrElseCode, IfCode, LastItemCode, PageIntCode, ValueLevel};
+use crate::codes::{BoxDimenCode, FiOrElseCode, LastItemCode, PageIntCode, ValueLevel};
 use crate::command::Command;
 use crate::command::RegisterRef;
 use crate::consts::{ACTIVE_MATH_CHAR, CHAR_CLASS_LIMIT, MAX_DIMEN, NULL_FONT};
@@ -201,7 +200,7 @@ fn font_query_error(
     f: FontId,
     msg: &str,
 ) -> Result<(), Abort> {
-    crate::errors::not_font_error_common(st, Cmd::LastItem, m.raw(), f, msg)
+    crate::errors::not_font_error_common(st, Command::LastItem(m), f, msg)
 }
 
 fn fetch_def_code(st: &mut EngineState, m: CodeTable) -> Result<i32, Abort> {
@@ -550,10 +549,10 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<i32, Abo
         LastItemCode::CurrentIfType => {
             if st.scanner.conds.top().is_none() {
                 0
-            } else if i32::from(st.scanner.cur_if) < IfCode::UNLESS {
-                i32::from(st.scanner.cur_if) + 1
+            } else if st.scanner.cur_if.unless {
+                -(st.scanner.cur_if.code.raw() + 1)
             } else {
-                -(i32::from(st.scanner.cur_if) - 31)
+                st.scanner.cur_if.code.raw() + 1
             }
         }
         LastItemCode::CurrentIfBranch => match st.scanner.if_limit.get() {
@@ -774,7 +773,7 @@ pub(super) fn scan_something_internal(
                 if st.input.cur_list.mode.kind() != Some(code.kind()) {
                     crate::errors::error(
                         st,
-                        ("Improper ", crate::output::CmdChr(Cmd::SetAux, code.raw())),
+                        ("Improper ", Command::SetAux(code)),
                         &[
                             r"You can refer to \spacefactor only in horizontal mode;",
                             r"you can refer to \prevdepth only in vertical mode; and",
@@ -883,7 +882,7 @@ pub(super) fn scan_something_internal(
                     st,
                     (
                         "You can't use `",
-                        crate::output::CmdChr::of(st.scanner.cur),
+                        st.scanner.cur,
                         "' after ",
                         crate::output::Esc("the"),
                     ),

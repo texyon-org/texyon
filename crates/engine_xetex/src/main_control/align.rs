@@ -46,11 +46,7 @@ pub(super) fn align_error(st: &mut EngineState) -> Result<(), Abort> {
                 "might try typing `S' now just to see what is salvageable.",
             ]
         };
-        crate::errors::error(
-            st,
-            ("Misplaced ", crate::output::CmdChr::of(st.scanner.cur)),
-            help,
-        )?;
+        crate::errors::error(st, ("Misplaced ", st.scanner.cur), help)?;
     } else {
         crate::input::back_input(st)?;
         let message = if st.scanner.align_state < 0 {

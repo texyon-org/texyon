@@ -133,11 +133,11 @@ pub(crate) fn scan_rule_spec(st: &mut EngineState) -> Result<NodePtr<RuleNode>, 
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn eTeX_enabled(st: &mut EngineState, b: bool, j: Cmd, k: i32) -> Result<bool, Abort> {
+pub(crate) fn eTeX_enabled(st: &mut EngineState, b: bool, j: Command) -> Result<bool, Abort> {
     if !b {
         crate::errors::error(
             st,
-            ("Improper ", crate::output::CmdChr(j, k)),
+            ("Improper ", j),
             &["Sorry, this optional e-TeX feature has been disabled."],
         )?;
     }

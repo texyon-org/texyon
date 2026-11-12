@@ -1,6 +1,7 @@
 //! TeX's conditional stack, the `cond_ptr` list of saved `\if` states.
 
 use crate::codes::FiOrElseCode;
+use crate::codes::IfTest;
 use crate::node::Stored;
 
 /// One conditional on the stack. TeX tells them apart by node address, so each gets its own id.
@@ -18,7 +19,7 @@ impl CondId {
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) struct SavedCond {
     pub id: CondId,
-    pub cur_if: i16,
+    pub cur_if: IfTest,
     pub if_limit: Stored<FiOrElseCode>,
     pub if_line: i32,
 }
@@ -48,7 +49,7 @@ impl CondStack {
     /// Saves the enclosing state as a new innermost conditional and returns its id.
     pub(crate) fn push(
         &mut self,
-        cur_if: i16,
+        cur_if: IfTest,
         if_limit: Stored<FiOrElseCode>,
         if_line: i32,
     ) -> CondId {
@@ -91,9 +92,9 @@ mod tests {
     #[test]
     fn ids_stay_distinct_after_a_pop() {
         let mut s = CondStack::default();
-        let a = s.push(1, FiOrElseCode::If.into(), 10);
+        let a = s.push(IfTest::default(), FiOrElseCode::If.into(), 10);
         s.pop();
-        let b = s.push(2, FiOrElseCode::If.into(), 20);
+        let b = s.push(IfTest::default(), FiOrElseCode::If.into(), 20);
         assert_ne!(a, b);
         assert_eq!((s.top(), s.below_top(), s.depth()), (Some(b), None, 1));
     }
@@ -101,8 +102,8 @@ mod tests {
     #[test]
     fn the_entry_above_holds_the_saved_limit() {
         let mut s = CondStack::default();
-        let a = s.push(1, FiOrElseCode::If.into(), 10);
-        let b = s.push(2, FiOrElseCode::Fi.into(), 20);
+        let a = s.push(IfTest::default(), FiOrElseCode::If.into(), 10);
+        let b = s.push(IfTest::default(), FiOrElseCode::Fi.into(), 20);
         assert_eq!(s.above_mut(a).map(|c| c.id), Some(b));
         assert!(s.above_mut(b).is_none());
         assert_eq!(s.below_top(), Some(a));

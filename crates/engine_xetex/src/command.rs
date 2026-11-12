@@ -1,6 +1,7 @@
 //! `Command`: a meaning, TeX's `(cmd, chr)` pair as one typed value.
 
 use crate::cmd::Cmd;
+use crate::codes::IfTest;
 use crate::codes::{
     AboveCode, AuxCode, BoxCode, BoxDimenCode, ConvertCode, DelimNumCode, ExtensionCode,
     FiOrElseCode, FontIntCode, IfCode, InputCode, LastItemCode, LeaderCode, LeftRightCode,
@@ -98,6 +99,15 @@ impl TabMarkCode {
     pub(crate) const fn char(c: Usv) -> TabMarkCode {
         TabMarkCode(c.raw())
     }
+
+    /// The tab character, `None` for `\span`.
+    pub(crate) const fn get(self) -> Option<Usv> {
+        if self.0 == SPAN_CODE {
+            None
+        } else {
+            Some(Usv(self.0))
+        }
+    }
 }
 
 /// The token register a `\toks`-style command names, in four bytes: zero for
@@ -114,6 +124,11 @@ impl ToksRef {
     #[inline]
     pub(crate) fn get(self) -> Option<NodePtr<SaPointerNode>> {
         MemIdx::from_raw(self.0).map(NodePtr::at)
+    }
+
+    /// The bound register's sparse-array element, `None` for `\toks`.
+    pub(crate) fn element(self) -> Option<NodePtr<SaElement>> {
+        NodePtr::from_ptr(MemIdx::from_raw(self.0))
     }
 }
 
@@ -318,10 +333,7 @@ pub(crate) enum Command {
         primitive: bool,
     } = Cmd::NoExpand as u8,
     Input(InputCode) = Cmd::Input as u8,
-    IfTest {
-        code: IfCode,
-        unless: bool,
-    } = Cmd::IfTest as u8,
+    IfTest(IfTest) = Cmd::IfTest as u8,
     FiOrElse(FiOrElseCode) = Cmd::FiOrElse as u8,
     CsName = Cmd::CsName as u8,
     Convert(ConvertCode) = Cmd::Convert as u8,
@@ -551,7 +563,7 @@ impl Command {
             Command::ExpandAfter { .. } => Cmd::ExpandAfter,
             Command::NoExpand { .. } => Cmd::NoExpand,
             Command::Input(..) => Cmd::Input,
-            Command::IfTest { .. } => Cmd::IfTest,
+            Command::IfTest(_) => Cmd::IfTest,
             Command::FiOrElse(..) => Cmd::FiOrElse,
             Command::CsName => Cmd::CsName,
             Command::Convert(..) => Cmd::Convert,
@@ -643,7 +655,7 @@ impl Command {
             Command::Def { global, expand } => i32::from(global) + 2 * i32::from(expand),
             Command::SetInteraction(mode) => mode as i32,
             Command::Input(code) => code.raw(),
-            Command::IfTest { code, unless } => code.raw() + flag(unless, IfCode::UNLESS),
+            Command::IfTest(test) => test.raw(),
             Command::FiOrElse(code) => code.raw(),
             Command::Convert(code) => code.raw(),
             Command::The(code) => code.raw(),
@@ -823,10 +835,7 @@ impl Command {
             },
             Cmd::Input => Command::Input(InputCode::from_raw(chr)?),
             Cmd::IfTest if !(0..2 * IfCode::UNLESS).contains(&chr) => return None,
-            Cmd::IfTest => {
-                let (code, unless) = IfCode::decode(chr)?;
-                Command::IfTest { code, unless }
-            }
+            Cmd::IfTest => Command::IfTest(IfTest::decode(chr)?),
             Cmd::FiOrElse => Command::FiOrElse(FiOrElseCode::from_raw(chr)?),
             Cmd::Convert => Command::Convert(ConvertCode::from_raw(chr)?),
             Cmd::The => Command::The(TheCode::from_raw(chr)?),
@@ -962,10 +971,10 @@ mod tests {
             (
                 Cmd::IfTest,
                 IfCode::UNLESS + 2,
-                Command::IfTest {
+                Command::IfTest(IfTest {
                     code: IfCode::Num,
                     unless: true,
-                },
+                }),
             ),
             (
                 Cmd::Relax,

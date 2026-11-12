@@ -495,7 +495,7 @@ fn digest_scanner(st: &EngineState) -> u64 {
     for cond in scanner.conds.iter_from_top() {
         h.word(u64::from(cond.id.raw()));
         h.i32s(&[
-            i32::from(cond.cur_if),
+            cond.cur_if.raw(),
             i32::from(cond.if_limit.raw()),
             cond.if_line,
         ]);

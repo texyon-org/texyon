@@ -260,7 +260,8 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
 }
 
 fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
-    let q = st.scanner.cur.cmd();
+    let op = st.scanner.cur;
+    let q = op.cmd();
     let (l, p) = 'found: {
         if q != Cmd::Register {
             crate::scan::get_x_token(st)?;
@@ -280,12 +281,7 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             if st.scanner.cur.cmd() != Cmd::Register {
                 return crate::errors::error(
                     st,
-                    (
-                        "You can't use `",
-                        crate::output::CmdChr::of(st.scanner.cur),
-                        "' after ",
-                        crate::output::CmdChr(q, 0),
-                    ),
+                    ("You can't use `", st.scanner.cur, "' after ", op),
                     &["I'm forgetting what you said and not changing anything."],
                 );
             }
@@ -556,11 +552,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
         if !st.scanner.cur.cmd().is_prefixed() {
             return crate::errors::back_error(
                 st,
-                (
-                    "You can't use a prefix with `",
-                    crate::output::CmdChr::of(st.scanner.cur),
-                    '\'',
-                ),
+                ("You can't use a prefix with `", st.scanner.cur, '\''),
                 &[r"I'll pretend you didn't say \long or \outer or \global or \protected."],
             );
         }
@@ -584,7 +576,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 "' or `",
                 crate::output::Esc("protected"),
                 "' with `",
-                crate::output::CmdChr::of(st.scanner.cur),
+                st.scanner.cur,
                 '\'',
             ),
             &[r"I'll pretend you didn't say \long or \outer or \protected here."],

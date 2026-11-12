@@ -218,7 +218,9 @@ code_enum! {
 code_enum! {
     /// The `chr_code` of `\if`, `\ifx` and the other `if_test` primitives,
     /// without the `\unless` offset.
+    #[derive(Default)]
     pub(crate) enum IfCode: u8 {
+        #[default]
         Char = 0 => "if",
         Cat = 1 => "ifcat",
         Num = 2 => "ifnum",
@@ -247,14 +249,32 @@ code_enum! {
 impl IfCode {
     /// Added to the `chr_code` of an `\if` preceded by `\unless`.
     pub(crate) const UNLESS: i32 = 32;
+}
 
-    /// Splits an `if_test` `chr_code` into its test and whether it is negated.
+/// An `\if` test and whether `\unless` negates it, TeX's `cur_if`.
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+pub(crate) struct IfTest {
+    pub code: IfCode,
+    pub unless: bool,
+}
+
+impl IfTest {
+    /// The test from an `if_test` `chr_code`, `None` when it names none.
     #[inline]
-    pub(crate) const fn decode(chr: i32) -> Option<(IfCode, bool)> {
+    pub(crate) const fn decode(chr: i32) -> Option<IfTest> {
         match IfCode::from_raw(chr % IfCode::UNLESS) {
-            Some(code) => Some((code, chr >= IfCode::UNLESS)),
+            Some(code) => Some(IfTest {
+                code,
+                unless: chr >= IfCode::UNLESS,
+            }),
             None => None,
         }
+    }
+
+    /// The `chr_code` form, for the format file and the oracle digest.
+    #[inline]
+    pub(crate) const fn raw(self) -> i32 {
+        self.code.raw() + if self.unless { IfCode::UNLESS } else { 0 }
     }
 }
 

@@ -650,7 +650,7 @@ pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
     if st.save_stack.cur_group == GroupCode::BottomLevel {
         return crate::errors::error(
             st,
-            ("Extra ", crate::output::CmdChr::of(st.scanner.cur)),
+            ("Extra ", st.scanner.cur),
             &["Things are pretty mixed up, but I think the worst is over."],
         );
     }

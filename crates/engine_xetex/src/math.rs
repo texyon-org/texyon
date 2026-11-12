@@ -17,10 +17,6 @@ pub(crate) use self::build::{
 };
 pub(crate) use self::display::{after_math, check_display_end, init_math, resume_after_display};
 
-pub(crate) const DELIMITED_CODE: i32 = 3;
-pub(crate) const ABOVE_CODE: i32 = 0;
-pub(crate) const OVER_CODE: i32 = 1;
-pub(crate) const ATOP_CODE: i32 = 2;
 pub(crate) const DEFAULT_CODE: Scaled = Scaled::from_raw(0x4000_0000);
 
 const SCRIPT_SCRIPT_SIZE: i32 = 512;

@@ -1,24 +1,11 @@
-//! Symbolic printing of commands: `print_cmd_chr` and `print_meaning`.
+//! Symbolic printing of commands: `print_command` and `print_meaning`.
 
-use crate::cmd::Cmd;
-use crate::codes::{
-    BoxCode, BoxDimenCode, ConvertCode, DelimNumCode, ExtensionCode, FiOrElseCode, IfCode,
-    InputCode, LastItemCode, LeaderCode, LeftRightCode, LimitCode, MarkCode, MathAccentCode,
-    MathCharNumCode, PageIntCode, RadicalCode, ShorthandDefCode, ShowCode, SkipCode, TheCode,
-    ValignCode, ValueLevel,
-};
-use crate::eqtb::{
-    CaseTable, CodeTable, DimenLoc, DimenSlot, FontLoc, GlueLoc, GlueSlot, IntLoc, IntSlot,
-    ShapeLoc, ToksLoc, ToksSlot, XetexCode,
-};
-use crate::main_control::{CR_CODE, LP_CODE_BASE, RP_CODE_BASE, SPAN_CODE};
-use crate::math::{ABOVE_CODE, ATOP_CODE, DELIMITED_CODE, OVER_CODE};
-use crate::node::{NodePtr, SaElement};
+use crate::codes::{BoxCode, FiOrElseCode, LimitCode, SkipCode, ValueLevel};
+use crate::command::{Command, RegisterRef};
+use crate::eqtb::{DimenSlot, GlueSlot, IntSlot, ToksSlot};
 use crate::params::TokPar;
 use crate::state::{EngineState, InteractionMode};
-use crate::token::TokenList;
-use crate::units::MemIdx;
-use crate::units::{FontId, NodeType};
+use crate::units::NodeType;
 
 use super::{
     print, print_char, print_code, print_esc, print_font_select, print_hex, print_int,
@@ -26,204 +13,143 @@ use super::{
     print_style, token_show,
 };
 
-/// A command with its modifier, printed as its primitive name.
-#[derive(Copy, Clone)]
-pub(crate) struct CmdChr(pub Cmd, pub i32);
-
-impl CmdChr {
-    /// The pair TeX prints `m` as.
-    pub(crate) fn of(m: crate::command::Command) -> CmdChr {
-        let (cmd, chr) = m.encode();
-        CmdChr(cmd, chr)
-    }
-}
-
-impl crate::output::TexPrint for CmdChr {
+impl crate::output::TexPrint for Command {
     fn print_to(&self, st: &mut EngineState) {
-        print_cmd_chr(st, self.0, self.1);
+        print_command(st, *self);
     }
 }
 
-pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
-    let char_cmd = |st: &mut EngineState, s: &str| {
+/// Prints `c` as its primitive name, or describes a character command.
+pub(crate) fn print_command(st: &mut EngineState, c: Command) {
+    let char_cmd = |st: &mut EngineState, s: &str, c: crate::command::Usv| {
         print(st, s);
-        print_code(st, chr_code);
+        print_code(st, c.raw());
+    };
+    let esc_if = |st: &mut EngineState, on: bool, yes: &str, no: &str| {
+        print_esc(st, if on { yes } else { no });
     };
 
-    match cmd {
-        Cmd::LeftBrace => char_cmd(st, "begin-group character "),
-        Cmd::RightBrace => char_cmd(st, "end-group character "),
-        Cmd::MathShift => char_cmd(st, "math shift character "),
-        Cmd::MacParam => char_cmd(st, "macro parameter character "),
-        Cmd::SupMark => char_cmd(st, "superscript character "),
-        Cmd::SubMark => char_cmd(st, "subscript character "),
-        Cmd::Endv => print(st, "end of alignment template"),
-        Cmd::Spacer => char_cmd(st, "blank space "),
-        Cmd::Letter => char_cmd(st, "the letter "),
-        Cmd::OtherChar => char_cmd(st, "the character "),
-        Cmd::AssignGlue | Cmd::AssignMuGlue => {
-            match GlueLoc::from_raw(chr_code).map(GlueLoc::get) {
-                Some(GlueSlot::Skip(n)) => {
-                    print_esc(st, "skip");
-                    print_int(st, i32::from(n));
-                }
-                Some(GlueSlot::MuSkip(n)) => {
-                    print_esc(st, "muskip");
-                    print_int(st, i32::from(n));
-                }
-                Some(GlueSlot::Par(n)) => print_skip_param(st, i32::from(n)),
-                None => print_skip_param(st, chr_code),
+    match c {
+        Command::LeftBrace(c) => char_cmd(st, "begin-group character ", c),
+        Command::RightBrace(c) => char_cmd(st, "end-group character ", c),
+        Command::MathShift(c) => char_cmd(st, "math shift character ", c),
+        Command::MacParam(c) => char_cmd(st, "macro parameter character ", c),
+        Command::SupMark(c) => char_cmd(st, "superscript character ", c),
+        Command::SubMark(c) => char_cmd(st, "subscript character ", c),
+        Command::Endv => print(st, "end of alignment template"),
+        Command::Spacer(c) => char_cmd(st, "blank space ", c),
+        Command::Letter(c) => char_cmd(st, "the letter ", c),
+        Command::OtherChar(c) => char_cmd(st, "the character ", c),
+        Command::TabMark(t) => match t.get() {
+            Some(c) => char_cmd(st, "alignment tab character ", c),
+            None => print_esc(st, "span"),
+        },
+        Command::AssignGlue(loc) | Command::AssignMuGlue(loc) => match loc.get() {
+            GlueSlot::Skip(n) => {
+                print_esc(st, "skip");
+                print_int(st, i32::from(n));
             }
-        }
-        Cmd::AssignToks => match ToksLoc::from_raw(chr_code).map(ToksLoc::get) {
-            Some(ToksSlot::Register(n)) => {
+            GlueSlot::MuSkip(n) => {
+                print_esc(st, "muskip");
+                print_int(st, i32::from(n));
+            }
+            GlueSlot::Par(n) => print_skip_param(st, i32::from(n)),
+        },
+        Command::AssignToks(loc) => match loc.get() {
+            ToksSlot::Register(n) => {
                 print_esc(st, "toks");
                 print_int(st, i32::from(n));
             }
-            par => {
-                let par = match par {
-                    Some(ToksSlot::Par(n)) => TokPar::from_raw(i32::from(n)),
-                    _ => None,
-                };
-                print_esc(st, par.unwrap_or(TokPar::ErrHelp).name());
+            ToksSlot::Par(n) => {
+                let par = TokPar::from_raw(i32::from(n)).unwrap_or(TokPar::ErrHelp);
+                print_esc(st, par.name());
             }
         },
-        Cmd::AssignInt => match IntLoc::from_raw(chr_code).map(IntLoc::get) {
-            Some(IntSlot::Count(n)) => {
+        Command::AssignInt(loc) => match loc.get() {
+            IntSlot::Count(n) => {
                 print_esc(st, "count");
                 print_int(st, i32::from(n));
             }
-            Some(IntSlot::Par(n)) => print_param(st, i32::from(n)),
-            None => print_param(st, chr_code),
+            IntSlot::Par(n) => print_param(st, i32::from(n)),
         },
-        Cmd::AssignDimen => match DimenLoc::from_raw(chr_code).map(DimenLoc::get) {
-            Some(DimenSlot::Dimen(n)) => {
+        Command::AssignDimen(loc) => match loc.get() {
+            DimenSlot::Dimen(n) => {
                 print_esc(st, "dimen");
                 print_int(st, i32::from(n));
             }
-            Some(DimenSlot::Par(n)) => print_length_param(st, i32::from(n)),
-            None => print_length_param(st, chr_code),
+            DimenSlot::Par(n) => print_length_param(st, i32::from(n)),
         },
-        Cmd::Accent => print_esc(st, "accent"),
-        Cmd::Advance => print_esc(st, "advance"),
-        Cmd::AfterAssignment => print_esc(st, "afterassignment"),
-        Cmd::AfterGroup => print_esc(st, "aftergroup"),
-        Cmd::AssignFontDimen => print_esc(st, "fontdimen"),
-        Cmd::BeginGroup => print_esc(st, "begingroup"),
-        Cmd::BreakPenalty => print_esc(st, "penalty"),
-        Cmd::CharNum => print_esc(st, "char"),
-        Cmd::CsName => print_esc(st, "csname"),
-        Cmd::DefFont => print_esc(st, "font"),
-        Cmd::DelimNum => print_esc(
-            st,
-            DelimNumCode::from_raw(chr_code).map_or("delimiter", DelimNumCode::name),
-        ),
-        Cmd::Divide => print_esc(st, "divide"),
-        Cmd::EndCsName => print_esc(st, "endcsname"),
-        Cmd::EndGroup => print_esc(st, "endgroup"),
-        Cmd::ExSpace => print_esc(st, b' '),
-        Cmd::ExpandAfter => print_esc(
-            st,
-            if chr_code == 0 {
-                "expandafter"
-            } else {
-                "unless"
-            },
-        ),
-        Cmd::Halign => print_esc(st, "halign"),
-        Cmd::Hrule => print_esc(st, "hrule"),
-        Cmd::IgnoreSpaces => print_esc(
-            st,
-            if chr_code == 0 {
-                "ignorespaces"
-            } else {
-                "primitive"
-            },
-        ),
-        Cmd::Insert => print_esc(st, "insert"),
-        Cmd::ItalCorr => print_esc(st, b'/'),
-        Cmd::Mark => {
+        Command::Accent => print_esc(st, "accent"),
+        Command::Advance => print_esc(st, "advance"),
+        Command::AfterAssignment => print_esc(st, "afterassignment"),
+        Command::AfterGroup => print_esc(st, "aftergroup"),
+        Command::AssignFontDimen => print_esc(st, "fontdimen"),
+        Command::BeginGroup => print_esc(st, "begingroup"),
+        Command::BreakPenalty => print_esc(st, "penalty"),
+        Command::CharNum => print_esc(st, "char"),
+        Command::CsName => print_esc(st, "csname"),
+        Command::DefFont => print_esc(st, "font"),
+        Command::DelimNum(code) => print_esc(st, code.name()),
+        Command::Divide => print_esc(st, "divide"),
+        Command::EndCsName => print_esc(st, "endcsname"),
+        Command::EndGroup => print_esc(st, "endgroup"),
+        Command::ExSpace => print_esc(st, b' '),
+        Command::ExpandAfter { unless } => esc_if(st, unless, "unless", "expandafter"),
+        Command::Halign => print_esc(st, "halign"),
+        Command::Hrule => print_esc(st, "hrule"),
+        Command::IgnoreSpaces { primitive } => {
+            esc_if(st, primitive, "primitive", "ignorespaces");
+        }
+        Command::Insert => print_esc(st, "insert"),
+        Command::ItalCorr => print_esc(st, b'/'),
+        Command::Mark { marks } => {
             print_esc(st, "mark");
-            if chr_code > 0 {
+            if marks {
                 print_char(st, b's');
             }
         }
-        Cmd::MathAccent => print_esc(
-            st,
-            MathAccentCode::from_raw(chr_code).map_or("mathaccent", MathAccentCode::name),
-        ),
-        Cmd::MathCharNum => print_esc(
-            st,
-            MathCharNumCode::from_raw(chr_code).map_or("mathchar", MathCharNumCode::name),
-        ),
-        Cmd::MathChoice => print_esc(st, "mathchoice"),
-        Cmd::Multiply => print_esc(st, "multiply"),
-        Cmd::NoAlign => print_esc(st, "noalign"),
-        Cmd::NoBoundary => print_esc(st, "noboundary"),
-        Cmd::NoExpand => print_esc(
-            st,
-            if chr_code == 0 {
-                "noexpand"
-            } else {
-                "primitive"
-            },
-        ),
-        Cmd::NonScript => print_esc(st, "nonscript"),
-        Cmd::Omit => print_esc(st, "omit"),
-        Cmd::Radical => print_esc(
-            st,
-            RadicalCode::from_raw(chr_code).map_or("radical", RadicalCode::name),
-        ),
-        Cmd::ReadToCs => print_esc(st, if chr_code == 0 { "read" } else { "readline" }),
-        Cmd::Relax => print_esc(st, "relax"),
-        Cmd::SetBox => print_esc(st, "setbox"),
-        Cmd::SetPrevGraf => print_esc(st, "prevgraf"),
-        Cmd::SetShape => {
-            if let Some(loc) = ShapeLoc::from_raw(chr_code) {
-                print_esc(st, loc.name());
-            }
-        }
-        Cmd::The => print_esc(
-            st,
-            TheCode::from_raw(chr_code).map_or("detokenize", TheCode::name),
-        ),
-        Cmd::ToksRegister => {
+        Command::MathAccent(code) => print_esc(st, code.name()),
+        Command::MathCharNum(code) => print_esc(st, code.name()),
+        Command::MathChoice => print_esc(st, "mathchoice"),
+        Command::Multiply => print_esc(st, "multiply"),
+        Command::NoAlign => print_esc(st, "noalign"),
+        Command::NoBoundary => print_esc(st, "noboundary"),
+        Command::NoExpand { primitive } => esc_if(st, primitive, "primitive", "noexpand"),
+        Command::NonScript => print_esc(st, "nonscript"),
+        Command::Omit => print_esc(st, "omit"),
+        Command::Radical(code) => print_esc(st, code.name()),
+        Command::ReadToCs { line } => esc_if(st, line, "readline", "read"),
+        Command::Relax(_) => print_esc(st, "relax"),
+        Command::SetBox => print_esc(st, "setbox"),
+        Command::SetPrevGraf => print_esc(st, "prevgraf"),
+        Command::SetShape(loc) => print_esc(st, loc.name()),
+        Command::The(code) => print_esc(st, code.name()),
+        Command::ToksRegister(r) => {
             print_esc(st, "toks");
-            if chr_code != 0 {
-                if let Some(q) = NodePtr::<SaElement>::from_ptr(MemIdx::from_raw(chr_code)) {
-                    print_sa_num(st, q);
-                }
+            if let Some(q) = r.element() {
+                print_sa_num(st, q);
             }
         }
-        Cmd::Vadjust => print_esc(st, "vadjust"),
-        Cmd::Valign => print_esc(
-            st,
-            ValignCode::from_raw(chr_code).map_or("endR", ValignCode::name),
-        ),
-        Cmd::Vcenter => print_esc(st, "vcenter"),
-        Cmd::Vrule => print_esc(st, "vrule"),
-        Cmd::PartokenName => print_esc(st, "partokenname"),
-        Cmd::ParEnd => print_esc(st, "par"),
-        Cmd::Input => print_esc(
-            st,
-            InputCode::from_raw(chr_code).map_or("endinput", InputCode::name),
-        ),
-        Cmd::TopBotMark => {
-            let mark = MarkCode::from_raw(chr_code % MarkCode::MARKS).unwrap_or(MarkCode::Top);
-            print_esc(st, mark.name());
-            if chr_code >= MarkCode::MARKS {
+        Command::Vadjust => print_esc(st, "vadjust"),
+        Command::Valign(code) => print_esc(st, code.name()),
+        Command::Vcenter => print_esc(st, "vcenter"),
+        Command::Vrule => print_esc(st, "vrule"),
+        Command::PartokenName => print_esc(st, "partokenname"),
+        Command::ParEnd => print_esc(st, "par"),
+        Command::Input(code) => print_esc(st, code.name()),
+        Command::TopBotMark { code, marks } => {
+            print_esc(st, code.name());
+            if marks {
                 print_char(st, b's');
             }
         }
-        Cmd::Register => {
-            let sa = if (0..=19).contains(&chr_code) {
-                None
-            } else {
-                NodePtr::<SaElement>::from_ptr(MemIdx::from_raw(chr_code))
+        Command::Register(r) => {
+            let r = r.get();
+            let level = match r {
+                Ok(RegisterRef::Scanned(level)) => Some(level),
+                Ok(RegisterRef::Sparse(q)) => st.mem[q].sa_type().get(),
+                Err(_) => None,
             };
-            let level = sa.map_or(ValueLevel::from_raw(chr_code), |q| {
-                st.mem[q].sa_type().get()
-            });
             let name = match level {
                 Some(ValueLevel::Int) => "count",
                 Some(ValueLevel::Dimen) => "dimen",
@@ -231,355 +157,257 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: Cmd, chr_code: i32) {
                 _ => "muskip",
             };
             print_esc(st, name);
-            if let Some(q) = sa {
+            if let Ok(RegisterRef::Sparse(q)) = r {
                 print_sa_num(st, q);
             }
         }
-        Cmd::SetAux => print_esc(
-            st,
-            if chr_code == crate::codes::AuxCode::PrevDepth.raw() {
-                "prevdepth"
-            } else {
-                "spacefactor"
-            },
-        ),
-        Cmd::SetPageInt => print_esc(
-            st,
-            PageIntCode::from_raw(chr_code).map_or("insertpenalties", PageIntCode::name),
-        ),
-        Cmd::SetBoxDimen => print_esc(
-            st,
-            match BoxDimenCode::from_raw(chr_code) {
-                Some(BoxDimenCode::Width) => "wd",
-                Some(BoxDimenCode::Height) => "ht",
-                _ => "dp",
-            },
-        ),
-        Cmd::LastItem => print_esc(
-            st,
-            LastItemCode::from_raw(chr_code).map_or("badness", LastItemCode::name),
-        ),
-        Cmd::Convert => print_esc(
-            st,
-            ConvertCode::from_raw(chr_code).map_or("jobname", ConvertCode::name),
-        ),
-        Cmd::IfTest => {
-            if chr_code >= IfCode::UNLESS {
+        Command::SetAux(code) => print_esc(st, code.name()),
+        Command::SetPageInt(code) => print_esc(st, code.name()),
+        Command::SetBoxDimen(code) => print_esc(st, code.name()),
+        Command::LastItem(code) => print_esc(st, code.name()),
+        Command::Convert(code) => print_esc(st, code.name()),
+        Command::IfTest(test) => {
+            if test.unless {
                 print_esc(st, "unless");
             }
-            let name = IfCode::from_raw(chr_code % IfCode::UNLESS).map_or("if", IfCode::name);
-            print_esc(st, name);
+            print_esc(st, test.code.name());
         }
-        Cmd::FiOrElse => {
-            let name = if chr_code == FiOrElseCode::Fi.raw() {
-                "fi"
-            } else if chr_code == FiOrElseCode::Or.raw() {
-                "or"
-            } else {
-                "else"
-            };
-            print_esc(st, name);
-        }
-        Cmd::TabMark => {
-            if chr_code == SPAN_CODE {
-                print_esc(st, "span");
-            } else {
-                char_cmd(st, "alignment tab character ");
-            }
-        }
-        Cmd::CarRet => print_esc(st, if chr_code == CR_CODE { "cr" } else { "crcr" }),
-        Cmd::SetPageDimen => {
-            let name = match chr_code {
-                0 => "pagegoal",
-                1 => "pagetotal",
-                2 => "pagestretch",
-                3 => "pagefilstretch",
-                4 => "pagefillstretch",
-                5 => "pagefilllstretch",
-                6 => "pageshrink",
-                _ => "pagedepth",
-            };
-            print_esc(st, name);
-        }
-        Cmd::Stop => print_esc(st, if chr_code == 1 { "dump" } else { "end" }),
-        Cmd::Hskip => print_esc(
+        Command::FiOrElse(code) => print_esc(
             st,
-            match SkipCode::from_raw(chr_code) {
-                Some(SkipCode::Skip) => "hskip",
-                Some(SkipCode::Fil) => "hfil",
-                Some(SkipCode::Fill) => "hfill",
-                Some(SkipCode::Ss) => "hss",
-                _ => "hfilneg",
+            match code {
+                FiOrElseCode::Fi => "fi",
+                FiOrElseCode::Or => "or",
+                _ => "else",
             },
         ),
-        Cmd::Vskip => print_esc(
+        Command::CarRet { crcr } => esc_if(st, crcr, "crcr", "cr"),
+        Command::SetPageDimen(code) => print_esc(st, code.name()),
+        Command::Stop { dump } => esc_if(st, dump, "dump", "end"),
+        Command::Hskip(code) => print_esc(
             st,
-            match SkipCode::from_raw(chr_code) {
-                Some(SkipCode::Skip) => "vskip",
-                Some(SkipCode::Fil) => "vfil",
-                Some(SkipCode::Fill) => "vfill",
-                Some(SkipCode::Ss) => "vss",
-                _ => "vfilneg",
+            match code {
+                SkipCode::Skip => "hskip",
+                SkipCode::Fil => "hfil",
+                SkipCode::Fill => "hfill",
+                SkipCode::Ss => "hss",
+                SkipCode::FilNeg | SkipCode::Mskip => "hfilneg",
             },
         ),
-        Cmd::Mskip => print_esc(st, "mskip"),
-        Cmd::Kern => print_esc(st, "kern"),
-        Cmd::Mkern => print_esc(st, "mkern"),
-        Cmd::Hmove => print_esc(
+        Command::Vskip(code) => print_esc(
             st,
-            if chr_code == 1 {
-                "moveleft"
-            } else {
-                "moveright"
+            match code {
+                SkipCode::Skip => "vskip",
+                SkipCode::Fil => "vfil",
+                SkipCode::Fill => "vfill",
+                SkipCode::Ss => "vss",
+                SkipCode::FilNeg | SkipCode::Mskip => "vfilneg",
             },
         ),
-        Cmd::Vmove => print_esc(st, if chr_code == 1 { "raise" } else { "lower" }),
-        Cmd::MakeBox => print_esc(
+        Command::Mskip => print_esc(st, "mskip"),
+        Command::Kern => print_esc(st, "kern"),
+        Command::Mkern => print_esc(st, "mkern"),
+        Command::Hmove { left } => esc_if(st, left, "moveleft", "moveright"),
+        Command::Vmove { raise } => esc_if(st, raise, "raise", "lower"),
+        Command::MakeBox(code) => print_esc(st, code.name()),
+        Command::LeaderShip(code) => print_esc(st, code.name()),
+        Command::StartPar { indent } => esc_if(st, indent, "indent", "noindent"),
+        Command::RemoveItem(t) => print_esc(
             st,
-            BoxCode::from_raw(chr_code).map_or("hbox", BoxCode::name),
-        ),
-        Cmd::LeaderShip => {
-            print_esc(
-                st,
-                LeaderCode::from_raw(chr_code).map_or("shipout", LeaderCode::name),
-            );
-        }
-        Cmd::StartPar => print_esc(st, if chr_code == 0 { "noindent" } else { "indent" }),
-        Cmd::RemoveItem => {
-            let name = if chr_code == NodeType::Glue as i32 {
-                "unskip"
-            } else if chr_code == NodeType::Kern as i32 {
-                "unkern"
-            } else {
-                "unpenalty"
-            };
-            print_esc(st, name);
-        }
-        Cmd::UnHbox => print_esc(
-            st,
-            if chr_code == BoxCode::Copy.raw() {
-                "unhcopy"
-            } else {
-                "unhbox"
+            match t {
+                NodeType::Glue => "unskip",
+                NodeType::Kern => "unkern",
+                _ => "unpenalty",
             },
         ),
-        Cmd::UnVbox => print_esc(
+        Command::UnHbox(code) => esc_if(st, code == BoxCode::Copy, "unhcopy", "unhbox"),
+        Command::UnVbox(code) => print_esc(
             st,
-            match BoxCode::from_raw(chr_code) {
-                Some(BoxCode::Copy) => "unvcopy",
-                Some(BoxCode::LastBox) => "pagediscards",
-                Some(BoxCode::Vsplit) => "splitdiscards",
+            match code {
+                BoxCode::Copy => "unvcopy",
+                BoxCode::LastBox => "pagediscards",
+                BoxCode::Vsplit => "splitdiscards",
                 _ => "unvbox",
             },
         ),
-        Cmd::Discretionary => {
-            if chr_code == 1 {
+        Command::Discretionary { hyphen } => {
+            if hyphen {
                 print_esc(st, b'-');
             } else {
                 print_esc(st, "discretionary");
             }
         }
-        Cmd::EqNo => print_esc(st, if chr_code == 1 { "leqno" } else { "eqno" }),
-        Cmd::MathComp => {
-            const ORD_NOAD: i32 = NodeType::OrdNoad as i32;
-            const OP_NOAD: i32 = NodeType::OpNoad as i32;
-            const BIN_NOAD: i32 = NodeType::BinNoad as i32;
-            const REL_NOAD: i32 = NodeType::RelNoad as i32;
-            const OPEN_NOAD: i32 = NodeType::OpenNoad as i32;
-            const CLOSE_NOAD: i32 = NodeType::CloseNoad as i32;
-            const PUNCT_NOAD: i32 = NodeType::PunctNoad as i32;
-            const INNER_NOAD: i32 = NodeType::InnerNoad as i32;
-            const UNDER_NOAD: i32 = NodeType::UnderNoad as i32;
-            let name = match chr_code {
-                ORD_NOAD => "mathord",
-                OP_NOAD => "mathop",
-                BIN_NOAD => "mathbin",
-                REL_NOAD => "mathrel",
-                OPEN_NOAD => "mathopen",
-                CLOSE_NOAD => "mathclose",
-                PUNCT_NOAD => "mathpunct",
-                INNER_NOAD => "mathinner",
-                UNDER_NOAD => "underline",
+        Command::EqNo { left } => esc_if(st, left, "leqno", "eqno"),
+        Command::MathComp(t) => print_esc(
+            st,
+            match t {
+                NodeType::OrdNoad => "mathord",
+                NodeType::OpNoad => "mathop",
+                NodeType::BinNoad => "mathbin",
+                NodeType::RelNoad => "mathrel",
+                NodeType::OpenNoad => "mathopen",
+                NodeType::CloseNoad => "mathclose",
+                NodeType::PunctNoad => "mathpunct",
+                NodeType::InnerNoad => "mathinner",
+                NodeType::UnderNoad => "underline",
                 _ => "overline",
-            };
-            print_esc(st, name);
-        }
-        Cmd::LimitSwitch => print_esc(
-            st,
-            match LimitCode::from_raw(chr_code) {
-                Some(LimitCode::Limits) => "limits",
-                Some(LimitCode::NoLimits) => "nolimits",
-                _ => "displaylimits",
             },
         ),
-        Cmd::MathStyle => print_style(st, chr_code),
-        Cmd::Above => {
-            let name = match chr_code {
-                OVER_CODE => "over",
-                ATOP_CODE => "atop",
-                x if x == DELIMITED_CODE + ABOVE_CODE => "abovewithdelims",
-                x if x == DELIMITED_CODE + OVER_CODE => "overwithdelims",
-                x if x == DELIMITED_CODE + ATOP_CODE => "atopwithdelims",
-                _ => "above",
-            };
-            print_esc(st, name);
-        }
-        Cmd::LeftRight => {
-            let name = if chr_code == NodeType::LeftNoad as i32 {
-                "left"
-            } else if chr_code == LeftRightCode::Middle.raw() {
-                "middle"
-            } else {
-                "right"
-            };
-            print_esc(st, name);
-        }
-        Cmd::Prefix => print_esc(
+        Command::LimitSwitch(code) => print_esc(
             st,
-            match chr_code {
-                1 => "long",
-                2 => "outer",
-                8 => "protected",
-                _ => "global",
+            match code {
+                LimitCode::Limits => "limits",
+                LimitCode::NoLimits => "nolimits",
+                LimitCode::Normal => "displaylimits",
             },
         ),
-        Cmd::Def => print_esc(
+        Command::MathStyle(style) => print_style(st, i32::from(style.raw())),
+        Command::Above(code) => print_esc(st, code.name()),
+        Command::LeftRight(code) => print_esc(st, code.name()),
+        Command::Prefix(code) => print_esc(st, code.name()),
+        Command::Def { global, expand } => print_esc(
             st,
-            match chr_code {
-                0 => "def",
-                1 => "gdef",
-                2 => "edef",
-                _ => "xdef",
+            match (expand, global) {
+                (false, false) => "def",
+                (false, true) => "gdef",
+                (true, false) => "edef",
+                (true, true) => "xdef",
             },
         ),
-        Cmd::Let => print_esc(st, if chr_code != 0 { "futurelet" } else { "let" }),
-        Cmd::ShorthandDef => print_esc(
-            st,
-            ShorthandDefCode::from_raw(chr_code).map_or("toksdef", ShorthandDefCode::name),
-        ),
-        Cmd::CharGiven => {
+        Command::Let { future } => esc_if(st, future, "futurelet", "let"),
+        Command::ShorthandDef(code) => print_esc(st, code.name()),
+        Command::CharGiven(c) => {
             print_esc(st, "char");
-            print_hex(st, chr_code);
+            print_hex(st, c.raw());
         }
-        Cmd::MathGiven => {
+        Command::MathGiven(v) => {
             print_esc(st, "mathchar");
-            print_hex(st, chr_code);
+            print_hex(st, v);
         }
-        Cmd::XetexMathGiven => {
+        Command::XetexMathGiven(v) => {
             print_esc(st, "Umathchar");
-            print_hex(st, crate::scan::math_class(chr_code));
-            print_hex(st, crate::scan::math_fam(chr_code));
-            print_hex(st, crate::scan::math_char(chr_code));
+            print_hex(st, crate::scan::math_class(v));
+            print_hex(st, crate::scan::math_fam(v));
+            print_hex(st, crate::scan::math_char(v));
         }
-        Cmd::DefCode => print_esc(
+        Command::DefCode(table) => print_esc(st, table.name()),
+        Command::XetexDefCode(code) => print_esc(st, code.name()),
+        Command::DefFamily(loc) => print_size(st, loc.math_offset()),
+        Command::HyphData { patterns } => esc_if(st, patterns, "patterns", "hyphenation"),
+        Command::AssignFontInt(code) => print_esc(st, code.name()),
+        Command::SetFont(f) => print_font_select(st, f),
+        Command::SetInteraction(mode) => print_esc(
             st,
-            CodeTable::from_raw(chr_code).map_or("catcode", CodeTable::name),
-        ),
-        Cmd::XetexDefCode => print_esc(
-            st,
-            XetexCode::from_raw(chr_code).map_or("Udelcode", XetexCode::name),
-        ),
-        Cmd::DefFamily => print_size(
-            st,
-            FontLoc::from_raw(chr_code).map_or(chr_code - 1, FontLoc::math_offset),
-        ),
-        Cmd::HyphData => print_esc(
-            st,
-            if chr_code == 1 {
-                "patterns"
-            } else {
-                "hyphenation"
+            match mode {
+                InteractionMode::Batch => "batchmode",
+                InteractionMode::Nonstop => "nonstopmode",
+                InteractionMode::Scroll => "scrollmode",
+                InteractionMode::ErrorStop => "errorstopmode",
             },
         ),
-        Cmd::AssignFontInt => {
-            let name = match chr_code {
-                0 => "hyphenchar",
-                1 => "skewchar",
-                LP_CODE_BASE => "lpcode",
-                RP_CODE_BASE => "rpcode",
-                _ => return,
-            };
-            print_esc(st, name);
-        }
-        Cmd::SetFont => {
-            if let Ok(f) = FontId::try_from(chr_code) {
-                print_font_select(st, f);
-            }
-        }
-        Cmd::SetInteraction => {
-            const BATCH: i32 = InteractionMode::Batch as i32;
-            const NONSTOP: i32 = InteractionMode::Nonstop as i32;
-            const SCROLL: i32 = InteractionMode::Scroll as i32;
-            let name = match chr_code {
-                BATCH => "batchmode",
-                NONSTOP => "nonstopmode",
-                SCROLL => "scrollmode",
-                _ => "errorstopmode",
-            };
-            print_esc(st, name);
-        }
-        Cmd::InStream => print_esc(st, if chr_code == 0 { "closein" } else { "openin" }),
-        Cmd::Message => print_esc(
-            st,
-            if chr_code == 0 {
-                "message"
-            } else {
-                "errmessage"
-            },
-        ),
-        Cmd::CaseShift => print_esc(
-            st,
-            CaseTable::from_raw(chr_code).map_or("uppercase", CaseTable::name),
-        ),
-        Cmd::Xray => print_esc(
-            st,
-            ShowCode::from_raw(chr_code).map_or("show", ShowCode::name),
-        ),
-        Cmd::UndefinedCs => print(st, "undefined"),
-        Cmd::Call | Cmd::LongCall | Cmd::OuterCall | Cmd::LongOuterCall => {
-            // Bit 0 is long, bit 1 outer, bit 2 protected.
-            let mut n = i32::from(cmd.is_long_call()) + 2 * i32::from(cmd.is_outer_call());
-            if st
-                .mem
-                .is_protected_macro(crate::token::TokenList::from_raw(chr_code))
-            {
-                n += 4;
-            }
-            if n / 4 % 2 != 0 {
+        Command::InStream { open } => esc_if(st, open, "openin", "closein"),
+        Command::Message { err } => esc_if(st, err, "errmessage", "message"),
+        Command::CaseShift(table) => print_esc(st, table.name()),
+        Command::Xray(code) => print_esc(st, code.name()),
+        Command::UndefinedCs => print(st, "undefined"),
+        Command::Call(body)
+        | Command::LongCall(body)
+        | Command::OuterCall(body)
+        | Command::LongOuterCall(body) => {
+            let cmd = c.cmd();
+            let mut prefixed = false;
+            if st.mem.is_protected_macro(body) {
                 print_esc(st, "protected");
+                prefixed = true;
             }
-            if n % 2 != 0 {
+            if cmd.is_long_call() {
                 print_esc(st, "long");
+                prefixed = true;
             }
-            if n / 2 % 2 != 0 {
+            if cmd.is_outer_call() {
                 print_esc(st, "outer");
+                prefixed = true;
             }
-            if n > 0 {
+            if prefixed {
                 print_char(st, b' ');
             }
             print(st, "macro");
         }
-        Cmd::EndTemplate => print_esc(st, "outer endtemplate"),
-        Cmd::Extension => match ExtensionCode::from_raw(chr_code) {
-            Some(code) => print_esc(st, code.name()),
-            None => print(st, "[unknown extension!]"),
-        },
-        _ => print(st, "[unknown command code!]"),
+        Command::EndTemplate => print_esc(st, "outer endtemplate"),
+        Command::Extension(code) => print_esc(st, code.name()),
+        Command::DontExpand => print(st, "[unknown command code!]"),
     }
 }
 
+/// `\meaning` of the current command: its name, and a macro's or mark's text.
 pub(crate) fn print_meaning(st: &mut EngineState) {
-    let (cmd, chr) = st.scanner.cur.encode();
-    print_cmd_chr(st, cmd, chr);
-    if cmd >= Cmd::Call {
-        print_char(st, b':');
-        print_ln(st);
-        token_show(st, TokenList::from_raw(chr));
-    } else if cmd == Cmd::TopBotMark {
-        if let Some(mark) = MarkCode::from_raw(chr) {
-            print_char(st, b':');
-            print_ln(st);
-            token_show(st, st.scanner.cur_mark[mark]);
+    let cur = st.scanner.cur;
+    print_command(st, cur);
+    let list = match cur {
+        Command::Call(body)
+        | Command::LongCall(body)
+        | Command::OuterCall(body)
+        | Command::LongOuterCall(body) => body,
+        Command::TopBotMark { code, marks: false } => st.scanner.cur_mark[code],
+        _ => return,
+    };
+    print_char(st, b':');
+    print_ln(st);
+    token_show(st, list);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::params::IntPar;
+    use crate::primitives::PRIMITIVES;
+    use crate::state::Selector;
+    use crate::units::PoolPos;
+
+    fn printed(st: &mut EngineState, c: Command) -> String {
+        let start = st.strings.pool_ptr;
+        print_command(st, c);
+        let text = String::from_utf16_lossy(
+            &st.strings.str_pool[start.index()..st.strings.pool_ptr.index()],
+        );
+        st.strings.pool_ptr = start;
+        text
+    }
+
+    #[test]
+    fn every_primitive_prints_as_its_name() {
+        let mut st = EngineState::default();
+        st.eqtb.ints = crate::eqtb::Table::new(crate::eqtb::IntLoc::LEN, 0);
+        st.strings.str_pool = vec![0; 256];
+        st.strings.pool_size = PoolPos::from_raw(256);
+        st.eqtb.set_int_par(IntPar::EscapeChar, i32::from(b'\\'));
+        st.shipout.selector = Selector::NewString;
+        let mut wrong = Vec::new();
+        for p in PRIMITIVES {
+            // A font prints through its identifier and `\/` through its pool
+            // string, neither of which this bare state has.
+            let Some(c) = Command::decode(p.cmd, p.chr)
+                .filter(|c| !matches!(c, Command::SetFont(_)) && p.name.len() > 1)
+            else {
+                continue;
+            };
+            let got = printed(&mut st, c);
+            if got != format!("\\{}", p.name) {
+                wrong.push(format!("{} -> {got}", p.name));
+            }
         }
+        let aliases = [
+            "XeTeXdelimiter -> \\Udelimiter",
+            "XeTeXmathcharnum -> \\Umathcharnum",
+            "XeTeXmathchar -> \\Umathchar",
+            "XeTeXmathaccent -> \\Umathaccent",
+            "XeTeXradical -> \\Uradical",
+            "XeTeXmathcodenum -> \\Umathcodenum",
+            "XeTeXmathcode -> \\Umathcode",
+            "XeTeXdelcodenum -> \\Udelcodenum",
+            "XeTeXdelcode -> \\Udelcode",
+            "XeTeXmathcharnumdef -> \\Umathcharnumdef",
+            "XeTeXmathchardef -> \\Umathchardef",
+        ];
+        assert_eq!(wrong, aliases);
     }
 }

@@ -1,6 +1,7 @@
 //! Expansion: `expand`, `macro_call`, conditionals and `conv_toks`.
 
 use crate::cmd::Cmd;
+use crate::codes::IfTest;
 use crate::codes::{
     ConvertCode, FiOrElseCode, IfCode, InputCode, ScannerStatus, TheCode, ValueLevel,
 };
@@ -157,7 +158,11 @@ fn change_if_limit(st: &mut EngineState, l: FiOrElseCode, p: CondId) -> Result<(
     Ok(())
 }
 
-fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result<(), Abort> {
+fn conditional(st: &mut EngineState, test: IfTest) -> Result<(), Abort> {
+    let IfTest {
+        code: this_if,
+        unless: is_unless,
+    } = test;
     if st.eqtb.int_par(IntPar::TracingIfs) > 0 && st.eqtb.int_par(IntPar::TracingCommands) <= 1 {
         show_cur_cmd_chr(st);
     }
@@ -166,7 +171,7 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
         st.scanner
             .conds
             .push(st.scanner.cur_if, st.scanner.if_limit, st.scanner.if_line);
-    st.scanner.cur_if = (this_if.raw() + if is_unless { IfCode::UNLESS } else { 0 }) as i16;
+    st.scanner.cur_if = test;
     st.scanner.if_limit = FiOrElseCode::If.into();
     st.scanner.if_line = st.mem.line;
 
@@ -192,7 +197,10 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
                         st,
                         (
                             "Missing = inserted for ",
-                            crate::output::CmdChr(Cmd::IfTest, this_if.raw()),
+                            Command::IfTest(IfTest {
+                                code: this_if,
+                                unless: false,
+                            }),
                         ),
                         &["I was expecting to see `<', `=', or `>'. Didn't."],
                     )?;
@@ -727,7 +735,7 @@ fn is_aat_or_graphite(st: &EngineState, f: FontId) -> bool {
 }
 
 fn not_font_error(st: &mut EngineState, c: ConvertCode, f: FontId, msg: &str) -> Result<(), Abort> {
-    crate::errors::not_font_error_common(st, Cmd::Convert, c.raw(), f, msg)
+    crate::errors::not_font_error_common(st, Command::Convert(c), f, msg)
 }
 
 pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
@@ -785,9 +793,9 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     back_input(st)?;
                 } else {
                     get_token(st)?;
-                    if let Command::IfTest { code, .. } = st.scanner.cur {
+                    if let Command::IfTest(IfTest { code, .. }) = st.scanner.cur {
                         if code != IfCode::Case {
-                            st.scanner.cur = Command::IfTest { code, unless: true };
+                            st.scanner.cur = Command::IfTest(IfTest { code, unless: true });
                             continue 'reswitch;
                         }
                     }
@@ -797,7 +805,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                             "You can't use `",
                             crate::output::Esc("unless"),
                             "' before `",
-                            crate::output::CmdChr::of(st.scanner.cur),
+                            st.scanner.cur,
                             '\'',
                         ),
                         &["Continue, and I'll forget that it ever happened."],
@@ -860,7 +868,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
             }
             Command::Convert(code) => conv_toks(st, code)?,
             Command::The(code) => ins_the_toks(st, code)?,
-            Command::IfTest { code, unless } => conditional(st, code, unless)?,
+            Command::IfTest(test) => conditional(st, test)?,
             Command::FiOrElse(code) => {
                 if st.eqtb.int_par(IntPar::TracingIfs) > 0
                     && st.eqtb.int_par(IntPar::TracingCommands) <= 1
@@ -873,7 +881,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     } else {
                         crate::errors::error(
                             st,
-                            ("Extra ", crate::output::CmdChr(Cmd::FiOrElse, code.raw())),
+                            ("Extra ", Command::FiOrElse(code)),
                             &[r"I'm ignoring this; it doesn't match any \if."],
                         )?;
                     }

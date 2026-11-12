@@ -1,7 +1,7 @@
 //! Input stack: token-list and file levels.
 
-use crate::cmd::Cmd;
 use crate::codes::code_enum;
+use crate::command::Command;
 use crate::cs::Frozen;
 
 use crate::errors::Abort;
@@ -42,6 +42,25 @@ code_enum! {
 }
 
 impl TokenType {
+    /// The token parameter a level of this type runs, as `\tracingmacros` names it.
+    /// WEB counts from `output_text`, which leaves the coda without one.
+    pub(crate) const fn tok_par(self) -> Option<TokPar> {
+        match self {
+            TokenType::Output => Some(TokPar::OutputRoutine),
+            TokenType::EveryPar => Some(TokPar::EveryPar),
+            TokenType::EveryMath => Some(TokPar::EveryMath),
+            TokenType::EveryDisplay => Some(TokPar::EveryDisplay),
+            TokenType::EveryHbox => Some(TokPar::EveryHbox),
+            TokenType::EveryVbox => Some(TokPar::EveryVbox),
+            TokenType::EveryJob => Some(TokPar::EveryJob),
+            TokenType::EveryCr => Some(TokPar::EveryCr),
+            TokenType::Mark => Some(TokPar::ErrHelp),
+            TokenType::EveryEof => Some(TokPar::EveryEof),
+            TokenType::InterChar => Some(TokPar::XetexInterCharToks),
+            _ => None,
+        }
+    }
+
     /// How `show_context` introduces a level of this type, except a macro.
     pub(crate) fn label(self, loc: crate::token::TokCursor) -> &'static str {
         match self {
@@ -319,19 +338,17 @@ pub(crate) fn begin_token_list(
     }
     if st.eqtb.int_par(IntPar::TracingMacros) > 1 {
         use crate::output::{
-            begin_diagnostic, end_diagnostic, print, print_cmd_chr, print_esc, print_nl, token_show,
+            begin_diagnostic, end_diagnostic, print, print_command, print_esc, print_nl, token_show,
         };
         begin_diagnostic(st);
         print_nl(st, "");
         match t {
             TokenType::Mark => print_esc(st, "mark"),
             TokenType::Write => print_esc(st, "write"),
-            _ => print_cmd_chr(
-                st,
-                Cmd::AssignToks,
-                TokPar::from_raw(t.raw() - TokenType::Output.raw() + TokPar::OutputRoutine.raw())
-                    .map_or(-1, |p| p.loc().raw()),
-            ),
+            _ => match t.tok_par() {
+                Some(par) => print_command(st, Command::AssignToks(par.loc())),
+                None => print_esc(st, TokPar::ErrHelp.name()),
+            },
         }
         print(st, "->");
         token_show(st, list);

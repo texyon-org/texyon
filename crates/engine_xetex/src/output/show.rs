@@ -3,6 +3,7 @@
 use crate::bridge::output_flush;
 use crate::cmd::Cmd;
 use crate::codes::{FiOrElseCode, LeaderCode, ShowCode, TheCode};
+use crate::command::Command;
 use crate::consts::IGNORE_DEPTH;
 use crate::errors::{finish_error, Abort};
 use crate::input::{TokenType, TOKEN_LIST};
@@ -17,7 +18,7 @@ use crate::state::{EngineState, GroupCode, InputName, InteractionMode, Selector}
 use crate::token::{TokCursor, Token, TokenKind};
 use crate::units::{NodeType, Scaled};
 
-use super::cmd_chr::{print_cmd_chr, print_meaning};
+use super::cmd_chr::{print_command, print_meaning};
 use super::show_box::show_box;
 use super::warnings::{leave_group_boundary, print_if_line};
 use super::{
@@ -35,14 +36,13 @@ pub(crate) fn show_cur_cmd_chr(st: &mut EngineState) {
         print(st, ": ");
         st.scanner.shown_mode = mode;
     }
-    let (cmd, chr) = st.scanner.cur.encode();
-    print_cmd_chr(st, cmd, chr);
+    print_command(st, st.scanner.cur);
     if st.eqtb.int_par(IntPar::TracingIfs) > 0
         && (Cmd::IfTest..=Cmd::FiOrElse).contains(&st.scanner.cur.cmd())
     {
         print(st, ": ");
         let (mut n, l) = if st.scanner.cur.cmd() == Cmd::FiOrElse {
-            print_cmd_chr(st, Cmd::IfTest, i32::from(st.scanner.cur_if));
+            print_command(st, Command::IfTest(st.scanner.cur_if));
             print_char(st, b' ');
             (0, st.scanner.if_line)
         } else {
@@ -368,7 +368,7 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                     print_char(st, b'$');
                 } else if st.input.nest.stale_slot(p).mode.name() == ModeName::DisplayMath {
                     let left = matches!(st.save_stack.kept(1), Some(Saved::EqNo { left: true }));
-                    print_cmd_chr(st, Cmd::EqNo, i32::from(left));
+                    print_command(st, Command::EqNo { left });
                     print_char(st, b')');
                     st.save_stack.cur_level -= 1;
                     if !leave_group_boundary(st) {
@@ -398,12 +398,12 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
             };
             if i != 0 {
                 if i < BOX_FLAG {
-                    let cmd = if st.input.nest.stale_slot(p).mode.is_vertical() {
-                        Cmd::Hmove
+                    let command = if st.input.nest.stale_slot(p).mode.is_vertical() {
+                        Command::Hmove { left: i < 0 }
                     } else {
-                        Cmd::Vmove
+                        Command::Vmove { raise: i < 0 }
                     };
-                    print_cmd_chr(st, cmd, if i > 0 { 0 } else { 1 });
+                    print_command(st, command);
                     print_scaled(st, Scaled::from_raw(i.abs()));
                     print(st, "pt");
                 } else if i < SHIP_OUT_FLAG {
@@ -416,11 +416,11 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                     print_int(st, box_num - BOX_FLAG);
                     print_char(st, b'=');
                 } else {
-                    print_cmd_chr(
-                        st,
-                        Cmd::LeaderShip,
-                        i - LEADER_FLAG + LeaderCode::ALeaders.raw(),
-                    );
+                    if let Some(code) =
+                        LeaderCode::from_raw(i - LEADER_FLAG + LeaderCode::ALeaders.raw())
+                    {
+                        print_command(st, Command::LeaderShip(code));
+                    }
                 }
             }
         }
@@ -509,7 +509,7 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
                     print_nl(st, "### level ");
                     print_int(st, n);
                     print(st, ": ");
-                    print_cmd_chr(st, Cmd::IfTest, i32::from(t));
+                    print_command(st, Command::IfTest(t));
                     if m == FiOrElseCode::Fi {
                         print_esc(st, "else");
                     }

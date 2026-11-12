@@ -1,6 +1,5 @@
 //! Extensions: `\openout`, `\write`, `\closeout`, `\special`, pictures and source specials.
 
-use crate::cmd::Cmd;
 use crate::codes::ExtensionCode;
 use crate::command::Command;
 use crate::cs::Frozen;
@@ -242,8 +241,7 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
                 if area != AAT_FONT_FLAG && area != OTGR_FONT_FLAG {
                     return crate::errors::not_font_error_common(
                         st,
-                        Cmd::Extension,
-                        ExtensionCode::Glyph.raw(),
+                        Command::Extension(ExtensionCode::Glyph),
                         cur_font,
                         "; not a native platform font",
                     );

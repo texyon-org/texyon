@@ -961,7 +961,7 @@ pub(crate) struct ScannerState {
     /// The conditional stack, TeX's `cond_ptr` list.
     pub conds: crate::cond_stack::CondStack,
     pub if_limit: crate::node::Stored<FiOrElseCode>,
-    pub cur_if: i16,
+    pub cur_if: crate::codes::IfTest,
     pub if_line: i32,
     pub skip_line: i32,
     pub is_in_csname: bool,

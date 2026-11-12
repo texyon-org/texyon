@@ -128,8 +128,7 @@ fn valign_or_lr(st: &mut EngineState, code: ValignCode) -> Result<(), Abort> {
     let enabled = crate::scan::eTeX_enabled(
         st,
         st.eqtb.int_par(IntPar::Texxet) > 0,
-        Cmd::Valign,
-        code.raw(),
+        Command::Valign(code),
     )?;
     if enabled {
         let m = st.mem.new_math(Scaled::ZERO, math_code)?;

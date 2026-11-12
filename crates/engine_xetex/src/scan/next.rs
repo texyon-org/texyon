@@ -120,7 +120,7 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
     } else {
         let message = (
             "Incomplete ",
-            crate::output::CmdChr(Cmd::IfTest, i32::from(st.scanner.cur_if)),
+            Command::IfTest(st.scanner.cur_if),
             "; all text was ignored after line ",
             st.scanner.skip_line,
         );

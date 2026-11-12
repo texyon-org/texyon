@@ -3,6 +3,7 @@
 
 use crate::bridge::output_open_stdout;
 use crate::cmd::Cmd;
+use crate::codes::IfTest;
 use crate::codes::{BoxCode, FiOrElseCode, MarkCode, ScannerStatus, ValueLevel};
 use crate::command::Command;
 use crate::consts::{
@@ -158,7 +159,7 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
         crate::output::print_nl(st, b'(');
         crate::output::print_esc(st, "end occurred ");
         crate::output::print(st, "when ");
-        crate::output::print_cmd_chr(st, Cmd::IfTest, i32::from(st.scanner.cur_if));
+        crate::output::print_command(st, Command::IfTest(st.scanner.cur_if));
         let if_line = st.scanner.if_line;
         if if_line != 0 {
             crate::output::print(st, " on line ");
@@ -260,7 +261,7 @@ fn initialize_more_variables(st: &mut EngineState) {
 
     st.scanner.conds = crate::cond_stack::CondStack::default();
     st.scanner.if_limit = FiOrElseCode::Normal.into();
-    st.scanner.cur_if = 0;
+    st.scanner.cur_if = IfTest::default();
     st.scanner.if_line = 0;
     st.shipout.total_pages = 0;
     st.shipout.max_v = Scaled::ZERO;
