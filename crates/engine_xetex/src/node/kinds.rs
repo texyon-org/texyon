@@ -14,10 +14,9 @@ use bytemuck::{Pod, Zeroable};
 
 use super::{
     AdjustPlacement, BoxLr, FenceSubtype, GlueKind, KernSubtype, LeaderKind, LigBoundary,
-    MathAccentKind, MathCode, Node, NodePtr, SaChild, SaLeaf, Stored, StoredDimen, View,
-    WhatsitSubtype,
+    MathAccentKind, MathCode, Node, NodePtr, SaChild, Stored, StoredDimen, View, WhatsitSubtype,
 };
-use crate::codes::{LimitCode, MarkCode, ValueLevel};
+use crate::codes::{LimitCode, ValueLevel};
 use crate::consts::{EMPTY, NORMAL};
 use crate::state::MemState;
 use crate::token::TokenList;
@@ -1082,12 +1081,6 @@ impl SaIndexNode {
     pub fn child_element(&self, i: usize) -> Option<NodePtr<SaElement>> {
         self.children[i].map(NodePtr::from_idx_unchecked)
     }
-    /// Child `i` of a node on the last index level of the tree for type `t`,
-    /// whose elements all have the kind `t` gives.
-    #[inline]
-    pub fn child_leaf(&self, i: usize, t: ValueLevel) -> Option<SaLeaf> {
-        self.child_element(i).map(|e| SaLeaf::of_type(t, e.idx()))
-    }
     #[inline]
     pub fn set_child<K: SaChild>(&mut self, i: usize, p: Option<NodePtr<K>>) {
         self.children[i] = crate::node::link_of(p);
@@ -1190,21 +1183,6 @@ impl View for SaMarkClassNode {}
 
 impl Node for SaMarkClassNode {
     const TYPE: Option<NodeType> = None;
-}
-
-impl SaMarkClassNode {
-    #[inline]
-    pub fn mark(&self, m: MarkCode) -> TokenList {
-        self.marks[m as usize]
-    }
-    #[inline]
-    pub fn set_mark(&mut self, m: MarkCode, v: TokenList) {
-        self.marks[m as usize] = v;
-    }
-    #[inline]
-    pub fn clear_marks(&mut self) {
-        self.marks = [TokenList::NULL; 6];
-    }
 }
 
 /// The header every save-chain entry shares.

@@ -1,16 +1,15 @@
 //! Breaking vertical lists: `vert_break`, `vsplit`, `prune_page_top` and `do_marks`.
 
-use crate::codes::{BoxCode, MarkCode, ValueLevel};
+use crate::codes::{BoxCode, MarkCode};
 use crate::consts::{EJECT_PENALTY, INF_BAD, INF_PENALTY, MAX_DIMEN, MAX_HALFWORD};
+use crate::eqtb::Register;
 use crate::errors::OrConfusion;
 use crate::errors::{Abort, IgnoredError};
 use crate::glue_store::GlueSpecId;
 use crate::mem::TEMP_HEAD;
-use crate::node::{
-    AnyNode, BoxNode, GlueNode, KernNode, MarkNode, NodePtr, SaIndexNode, SaLeaf, SaMarkClassNode,
-    WhatsitVariant,
-};
+use crate::node::{AnyNode, BoxNode, GlueNode, KernNode, MarkNode, NodePtr, WhatsitVariant};
 use crate::params::{DimenPar, GluePar, IntPar};
+use crate::state::{CurMarks, MarkClasses};
 use crate::state::{EngineState, EqtbState, MemState, ScannerState, ShipoutState};
 use crate::token::TokenList;
 use crate::units::MemIdx;
@@ -349,11 +348,7 @@ impl MemState {
         self.flush_node_list(scanner.disc_ptr[BoxCode::Vsplit as usize])?;
         scanner.disc_ptr[BoxCode::Vsplit as usize] = None;
 
-        if let Some(root) = scanner.sa_root.get(ValueLevel::Mark) {
-            if self.do_marks(MarksAction::VsplitInit, 0, root) {
-                scanner.sa_root.set(ValueLevel::Mark, None);
-            }
-        }
+        self.do_marks(&mut scanner.mark_classes, MarksAction::VsplitInit);
 
         if !scanner.cur_mark[MarkCode::SplitFirst].is_null() {
             self.tokens
@@ -404,18 +399,15 @@ impl MemState {
         let mark_class = self[mark].mark_class;
         let mark_ptr = self[mark].mark_ptr;
         if mark_class != 0 {
-            let SaLeaf::MarkClass(m) =
-                self.create_sa_element(scanner, ValueLevel::Mark, mark_class)?
-            else {
-                return Err(Abort::Confusion("marks"));
-            };
-            if self[m].mark(MarkCode::SplitFirst).is_null() {
-                self[m].set_mark(MarkCode::SplitFirst, mark_ptr);
+            let class = Register::new(mark_class).or_confusion("marks")?;
+            let m = scanner.mark_classes.entry(class);
+            if m[MarkCode::SplitFirst].is_null() {
+                m[MarkCode::SplitFirst] = mark_ptr;
                 self.tokens.add_ref(mark_ptr);
             } else {
-                self.tokens.delete_ref(self[m].mark(MarkCode::SplitBot));
+                self.tokens.delete_ref(m[MarkCode::SplitBot]);
             }
-            self[m].set_mark(MarkCode::SplitBot, mark_ptr);
+            m[MarkCode::SplitBot] = mark_ptr;
             self.tokens.add_ref(mark_ptr);
         } else if scanner.cur_mark[MarkCode::SplitFirst].is_null() {
             scanner.cur_mark[MarkCode::SplitFirst] = mark_ptr;
@@ -658,86 +650,56 @@ impl MemState {
         Ok(TEMP_HEAD.link(self))
     }
 
-    /// Apply mark action `a` to the mark-class tree below index node `q` at
-    /// level `l`. Returns whether `q` was freed.
-    pub fn do_marks(&mut self, a: MarksAction, l: i16, q: NodePtr<SaIndexNode>) -> bool {
-        // Upstream visits only 16 of the 64 children (UPSTREAM_BUGS.md 2).
-        for i in 0..64 {
-            let freed = if l < 3 {
-                let child = self[q].child_index(i);
-                child.is_some_and(|c| self.do_marks(a, l + 1, c))
-            } else {
-                match self[q].child_leaf(i, ValueLevel::Mark) {
-                    Some(SaLeaf::MarkClass(m)) => self.do_mark_class(a, m),
-                    _ => false,
-                }
-            };
-            if freed {
-                let n = &mut self[q];
-                n.clear_child(i);
-                n.used -= 1;
-            }
-        }
-        if self[q].used == 0 {
-            q.free(self);
-            return true;
-        }
-        false
+    /// Applies mark action `a` to every mark class above 0, in ascending order,
+    /// dropping the classes left without a bottom or split bottom mark.
+    pub fn do_marks(&mut self, classes: &mut MarkClasses, a: MarksAction) {
+        classes.retain(|marks| self.do_mark_class(a, marks));
     }
 
-    /// Apply mark action `a` to mark class `node`. Returns whether it was freed.
-    fn do_mark_class(&mut self, a: MarksAction, node: NodePtr<SaMarkClassNode>) -> bool {
+    /// Applies mark action `a` to one class's `marks`. Returns whether it keeps any.
+    fn do_mark_class(&mut self, a: MarksAction, marks: &mut CurMarks) -> bool {
         match a {
             MarksAction::VsplitInit => {
-                if !self[node].mark(MarkCode::SplitFirst).is_null() {
-                    self.tokens
-                        .delete_ref(self[node].mark(MarkCode::SplitFirst));
-                    self[node].set_mark(MarkCode::SplitFirst, TokenList::NULL);
-                    self.tokens.delete_ref(self[node].mark(MarkCode::SplitBot));
-                    self[node].set_mark(MarkCode::SplitBot, TokenList::NULL);
+                if !marks[MarkCode::SplitFirst].is_null() {
+                    self.tokens.delete_ref(marks[MarkCode::SplitFirst]);
+                    marks[MarkCode::SplitFirst] = TokenList::NULL;
+                    self.tokens.delete_ref(marks[MarkCode::SplitBot]);
+                    marks[MarkCode::SplitBot] = TokenList::NULL;
                 }
             }
             MarksAction::FireUpInit => {
-                if !self[node].mark(MarkCode::Bot).is_null() {
-                    if !self[node].mark(MarkCode::Top).is_null() {
-                        self.tokens.delete_ref(self[node].mark(MarkCode::Top));
+                if !marks[MarkCode::Bot].is_null() {
+                    if !marks[MarkCode::Top].is_null() {
+                        self.tokens.delete_ref(marks[MarkCode::Top]);
                     }
-                    self.tokens.delete_ref(self[node].mark(MarkCode::First));
-                    self[node].set_mark(MarkCode::First, TokenList::NULL);
-                    let bot = self[node].mark(MarkCode::Bot);
+                    self.tokens.delete_ref(marks[MarkCode::First]);
+                    marks[MarkCode::First] = TokenList::NULL;
+                    let bot = marks[MarkCode::Bot];
                     if self.tokens.is_empty(bot) {
                         self.tokens.delete_ref(bot);
-                        self[node].set_mark(MarkCode::Bot, TokenList::NULL);
+                        marks[MarkCode::Bot] = TokenList::NULL;
                     } else {
                         self.tokens.add_ref(bot);
                     }
-                    let bot = self[node].mark(MarkCode::Bot);
-                    self[node].set_mark(MarkCode::Top, bot);
+                    marks[MarkCode::Top] = marks[MarkCode::Bot];
                 }
             }
             MarksAction::FireUpDone => {
-                let top = self[node].mark(MarkCode::Top);
-                if !top.is_null() && self[node].mark(MarkCode::First).is_null() {
-                    self[node].set_mark(MarkCode::First, top);
+                let top = marks[MarkCode::Top];
+                if !top.is_null() && marks[MarkCode::First].is_null() {
+                    marks[MarkCode::First] = top;
                     self.tokens.add_ref(top);
                 }
             }
             MarksAction::DestroyMarks => {
                 for mark in MarkCode::ALL {
-                    let text = self[node].mark(mark);
-                    if !text.is_null() {
-                        self.tokens.delete_ref(text);
-                        self[node].set_mark(mark, TokenList::NULL);
+                    if !marks[mark].is_null() {
+                        self.tokens.delete_ref(marks[mark]);
+                        marks[mark] = TokenList::NULL;
                     }
                 }
             }
         }
-
-        if self[node].mark(MarkCode::Bot).is_null() && self[node].mark(MarkCode::SplitBot).is_null()
-        {
-            node.free(self);
-            return true;
-        }
-        false
+        !(marks[MarkCode::Bot].is_null() && marks[MarkCode::SplitBot].is_null())
     }
 }

@@ -915,6 +915,35 @@ impl std::ops::IndexMut<crate::codes::MarkCode> for CurMarks {
     }
 }
 
+/// The marks of the `\marks` classes above 0, class 0 being `cur_mark`.
+#[derive(Default, Clone)]
+pub(crate) struct MarkClasses(std::collections::BTreeMap<crate::eqtb::Register, CurMarks>);
+
+impl MarkClasses {
+    /// The marks of `class`, all null when it has none.
+    pub(crate) fn get(&self, class: crate::eqtb::Register) -> CurMarks {
+        self.0.get(&class).copied().unwrap_or(CurMarks::NULL)
+    }
+
+    /// The marks of `class`, created null.
+    pub(crate) fn entry(&mut self, class: crate::eqtb::Register) -> &mut CurMarks {
+        self.0.entry(class).or_insert(CurMarks::NULL)
+    }
+
+    /// Keeps the classes `keep` returns true for, in ascending order.
+    pub(crate) fn retain(&mut self, mut keep: impl FnMut(&mut CurMarks) -> bool) {
+        self.0.retain(|_, marks| keep(marks));
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.0.clear();
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (crate::eqtb::Register, &CurMarks)> {
+        self.0.iter().map(|(&class, marks)| (class, marks))
+    }
+}
+
 /// `sa_root`, the sparse-array trees of registers and mark classes by type.
 #[derive(Default, Clone, Copy)]
 pub(crate) struct SaRoots([crate::units::MemPtr; 8]);
@@ -984,6 +1013,7 @@ pub(crate) struct ScannerState {
     pub cur_cs: Option<CsId>,
     pub cur_tok: crate::token::Token,
     pub cur_mark: CurMarks,
+    pub mark_classes: MarkClasses,
     pub disc_ptr: [crate::units::MemPtr; 4],
     pub after_token: crate::token::Token,
     pub cur_f: FontId,

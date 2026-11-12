@@ -7,8 +7,8 @@ use crate::errors::OrConfusion;
 use crate::glue_store::GlueSpecId;
 use crate::mem::ZERO_GLUE;
 use crate::node::{
-    NodePtr, SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSavedEntry,
-    SaSavedPointer, SaWordNode, View,
+    NodePtr, SaChild, SaElement, SaIndexNode, SaLeaf, SaPointerNode, SaSavedEntry, SaSavedPointer,
+    SaWordNode, View,
 };
 use crate::params::IntPar;
 use crate::state::{
@@ -427,11 +427,7 @@ impl MemState {
             self.add_sa_child(q, i, p);
             q = p;
         }
-        let leaf = if t == ValueLevel::Mark {
-            let m = NodePtr::<SaMarkClassNode>::alloc(self)?;
-            self[m].clear_marks();
-            SaLeaf::MarkClass(m)
-        } else if t <= ValueLevel::Dimen {
+        let leaf = if t <= ValueLevel::Dimen {
             let w = NodePtr::<SaWordNode>::alloc(self)?;
             let r = &mut self[w];
             r.sa_int = 0;

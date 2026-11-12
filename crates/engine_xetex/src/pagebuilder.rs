@@ -1,6 +1,6 @@
 //! The page builder: `build_page` and `fire_up`.
 
-use crate::codes::{BoxCode, MarkCode, ValueLevel};
+use crate::codes::{BoxCode, MarkCode};
 use crate::consts::{
     AWFUL_BAD, EJECT_PENALTY, INF_BAD, INF_PENALTY, LEVEL_ONE, MAX_DIMEN, MAX_HALFWORD,
 };
@@ -10,7 +10,7 @@ use crate::errors::OrConfusion;
 use crate::helpers::badness;
 use crate::input::TokenType;
 use crate::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
-use crate::node::{AnyNode, InsNode, LinkSlot, NodePtr, PageInsNode, SaLeaf, View, WhatsitVariant};
+use crate::node::{AnyNode, InsNode, LinkSlot, NodePtr, PageInsNode, View, WhatsitVariant};
 use crate::packaging::{MarksAction, PackSpec};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::scan::fetch_box;
@@ -84,21 +84,16 @@ fn ensure_vbox(st: &mut EngineState, n: u8) -> Result<(), Abort> {
 /// Records the new mark `mark_ptr` as the first and bottom mark of class `class`.
 fn update_marks(st: &mut EngineState, class: i32, mark_ptr: TokenList) -> Result<(), Abort> {
     if class != 0 {
-        let SaLeaf::MarkClass(m) =
-            st.mem
-                .create_sa_element(&mut st.scanner, ValueLevel::Mark, class)?
-        else {
-            return Err(Abort::Confusion("marks"));
-        };
-        if st.mem[m].mark(MarkCode::First).is_null() {
-            st.mem[m].set_mark(MarkCode::First, mark_ptr);
+        let class = Register::new(class).or_confusion("marks")?;
+        let m = st.scanner.mark_classes.entry(class);
+        if m[MarkCode::First].is_null() {
+            m[MarkCode::First] = mark_ptr;
             st.mem.tokens.add_ref(mark_ptr);
         }
-        let bot = st.mem[m].mark(MarkCode::Bot);
-        if !bot.is_null() {
-            st.mem.tokens.delete_ref(bot);
+        if !m[MarkCode::Bot].is_null() {
+            st.mem.tokens.delete_ref(m[MarkCode::Bot]);
         }
-        st.mem[m].set_mark(MarkCode::Bot, mark_ptr);
+        m[MarkCode::Bot] = mark_ptr;
         st.mem.tokens.add_ref(mark_ptr);
         return Ok(());
     }
@@ -187,11 +182,8 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
         .ints
         .set(IntPar::OutputPenalty.loc(), output_penalty, LEVEL_ONE);
 
-    if let Some(root) = st.scanner.sa_root.get(ValueLevel::Mark) {
-        if st.mem.do_marks(MarksAction::FireUpInit, 0, root) {
-            st.scanner.sa_root.set(ValueLevel::Mark, None);
-        }
-    }
+    st.mem
+        .do_marks(&mut st.scanner.mark_classes, MarksAction::FireUpInit);
     if !st.scanner.cur_mark[MarkCode::Bot].is_null() {
         if !st.scanner.cur_mark[MarkCode::Top].is_null() {
             st.mem.tokens.delete_ref(st.scanner.cur_mark[MarkCode::Top]);
@@ -329,11 +321,8 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     }
     PAGE_INS_HEAD.set_link(&mut st.mem, Some(PAGE_INS_HEAD));
 
-    if let Some(root) = st.scanner.sa_root.get(ValueLevel::Mark) {
-        if st.mem.do_marks(MarksAction::FireUpDone, 0, root) {
-            st.scanner.sa_root.set(ValueLevel::Mark, None);
-        }
-    }
+    st.mem
+        .do_marks(&mut st.scanner.mark_classes, MarksAction::FireUpDone);
     let marks = &mut st.scanner.cur_mark;
     if !marks[MarkCode::Top].is_null() && marks[MarkCode::First].is_null() {
         marks[MarkCode::First] = marks[MarkCode::Top];

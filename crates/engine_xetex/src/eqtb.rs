@@ -401,6 +401,10 @@ impl Register {
             .map(Register)
     }
 
+    pub(crate) const fn get(self) -> u16 {
+        self.0
+    }
+
     /// Register `n` below 256.
     pub(crate) const fn of(n: u8) -> Register {
         Register(n as u16)

@@ -1905,7 +1905,7 @@ mod tests {
 
     #[test]
     fn sparse_array_records_read_through_their_heads() {
-        use crate::codes::{MarkCode, ValueLevel};
+        use crate::codes::ValueLevel;
         let w = |p: i32| MemIdx::from_raw(p);
         let mut mem = fresh_mem(200);
         let q: NodePtr<SaIndexNode> = at(&mut mem, 100, None);
@@ -1930,18 +1930,6 @@ mod tests {
         mem[p].sa_ptr = w(77);
         assert_eq!(mem[p].toks(), TokenList::from_raw(77));
         assert_eq!(leaf.leaf(&mem), Some(SaLeaf::Pointer(p)));
-
-        let m: NodePtr<SaMarkClassNode> = at(&mut mem, 150, None);
-        mem[m].sa_index = 64 * 7;
-        for (k, code) in MarkCode::ALL.into_iter().enumerate() {
-            let k = i32::try_from(k).unwrap();
-            mem[m].set_mark(code, TokenList::from_raw(10 + k));
-        }
-        for (k, code) in MarkCode::ALL.into_iter().enumerate() {
-            let k = i32::try_from(k).unwrap();
-            assert_eq!(mem[m].mark(code), TokenList::from_raw(10 + k));
-        }
-        assert_eq!(leaf.leaf(&mem), Some(SaLeaf::MarkClass(m)));
 
         let s: NodePtr<SaSavedPointer> = at(&mut mem, 160, None);
         mem[s].sa_index = 64 * 2;

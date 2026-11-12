@@ -2,9 +2,7 @@
 
 use crate::cmd::Cmd;
 use crate::codes::IfTest;
-use crate::codes::{
-    ConvertCode, FiOrElseCode, IfCode, InputCode, ScannerStatus, TheCode, ValueLevel,
-};
+use crate::codes::{ConvertCode, FiOrElseCode, IfCode, InputCode, ScannerStatus, TheCode};
 use crate::command::Command;
 use crate::command::RelaxCode;
 use crate::cond_stack::CondId;
@@ -15,7 +13,7 @@ use crate::errors::OrConfusion;
 use crate::fonts::{Side, AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::{back_input, begin_token_list, TokenType, TOKEN_LIST};
 use crate::mem::ZERO_GLUE;
-use crate::node::{AnyNode, GlueKind, KernSubtype, SaLeaf};
+use crate::node::{AnyNode, GlueKind, KernSubtype};
 use crate::output::{
     begin_diagnostic, end_diagnostic, print, print_char, print_int, print_scaled, show_cur_cmd_chr,
     sprint_cs,
@@ -762,18 +760,15 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
         }
         match st.scanner.cur {
             Command::TopBotMark { code: mark, marks } => {
-                let n = if marks {
-                    i32::from(crate::scan::scan_register_num(st)?)
+                let class = if marks {
+                    crate::scan::scan_register_num(st)?
                 } else {
-                    0
+                    crate::eqtb::Register::of(0)
                 };
-                let text = if n == 0 {
+                let text = if class == crate::eqtb::Register::of(0) {
                     st.scanner.cur_mark[mark]
                 } else {
-                    match st.mem.find_sa_element(&st.scanner, ValueLevel::Mark, n) {
-                        Some(SaLeaf::MarkClass(m)) => st.mem[m].mark(mark),
-                        _ => TokenList::NULL,
-                    }
+                    st.scanner.mark_classes.get(class)[mark]
                 };
                 if !text.is_null() {
                     begin_token_list(st, text, TokenType::Mark)?;

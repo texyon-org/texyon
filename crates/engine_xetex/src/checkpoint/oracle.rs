@@ -492,6 +492,14 @@ fn digest_scanner(st: &EngineState) -> u64 {
     for &value in buf {
         h.word(u64::from(value));
     }
+    let classes = std::iter::once((crate::eqtb::Register::of(0), &scanner.cur_mark))
+        .chain(scanner.mark_classes.iter());
+    for (class, marks) in classes {
+        h.word(u64::from(class.get()));
+        for code in crate::codes::MarkCode::ALL {
+            h.i32s(&[marks[code].raw()]);
+        }
+    }
     for cond in scanner.conds.iter_from_top() {
         h.word(u64::from(cond.id.raw()));
         h.i32s(&[

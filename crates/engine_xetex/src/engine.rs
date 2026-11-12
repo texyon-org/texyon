@@ -4,7 +4,7 @@
 use crate::bridge::output_open_stdout;
 use crate::cmd::Cmd;
 use crate::codes::IfTest;
-use crate::codes::{BoxCode, FiOrElseCode, MarkCode, ScannerStatus, ValueLevel};
+use crate::codes::{BoxCode, FiOrElseCode, MarkCode, ScannerStatus};
 use crate::command::Command;
 use crate::consts::{
     BIGGEST_CHAR, BIGGEST_LANG, CLOSED, EMPTY_STRING, FONT_BASE, HISTORY_FATAL_ERROR,
@@ -195,11 +195,8 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
         }
     }
 
-    if let Some(marks) = st.scanner.sa_root.get(ValueLevel::Mark) {
-        if st.mem.do_marks(MarksAction::DestroyMarks, 0, marks) {
-            st.scanner.sa_root.set(ValueLevel::Mark, None);
-        }
-    }
+    st.mem
+        .do_marks(&mut st.scanner.mark_classes, MarksAction::DestroyMarks);
 
     for box_code in BoxCode::LastBox as usize..=BoxCode::Vsplit as usize {
         st.mem.flush_node_list(st.scanner.disc_ptr[box_code])?;
@@ -303,7 +300,7 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.shipout.write_open = [false; 18];
 
     st.input.pseudo_files = None;
-    st.scanner.sa_root.set(ValueLevel::Mark, None);
+    st.scanner.mark_classes.clear();
     st.scanner.sa_chain = None;
     st.scanner.sa_level = LEVEL_ZERO;
     st.scanner.disc_ptr[BoxCode::LastBox as usize] = None;
