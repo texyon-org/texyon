@@ -235,11 +235,16 @@ impl CsId {
         }
     }
 
-    /// A name `\def` and friends may give a new meaning.
+    /// A name `\def` and friends may give a new meaning. WEB's test starts past
+    /// `frozen_control_sequence`, so the inserted `\inaccessible` is one.
     pub fn is_redefinable(self) -> bool {
         matches!(
             self.kind(),
-            CsKind::Active(_) | CsKind::Single(_) | CsKind::Null | CsKind::Named(_)
+            CsKind::Active(_)
+                | CsKind::Single(_)
+                | CsKind::Null
+                | CsKind::Named(_)
+                | CsKind::Frozen(Frozen::Protection)
         )
     }
 
@@ -286,6 +291,13 @@ impl CsId {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inaccessible_is_redefinable_and_other_frozen_names_are_not() {
+        assert!(Frozen::Protection.cs().is_redefinable());
+        assert!(!Frozen::Relax.cs().is_redefinable());
+        assert!(!Frozen::Fi.cs().is_redefinable());
+    }
 
     #[test]
     fn regions_keep_webs_numbers() {
