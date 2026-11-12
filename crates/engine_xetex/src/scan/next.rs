@@ -14,7 +14,7 @@ use crate::node::{AlignRecord, NodePtr};
 use crate::params::{IntPar, TokPar};
 use crate::scan::Command;
 use crate::state::{EngineState, InputClusterState, InputName, MemState, Selector};
-use crate::token::{Build, TokCursor, Token, TokenList};
+use crate::token::{Build, TokCursor, Token, TokenKind, TokenList};
 use crate::units::BufPos;
 
 use super::toks::finish_line;
@@ -208,28 +208,31 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
     if st.input.cur_input.state == TOKEN_LIST {
         let p = st.input.cur_input.token_loc();
         if let Some(t) = st.mem.tokens.peek(p) {
-            let t_cs = t.cs();
-            let plain = if let Some(cs) = t_cs {
-                let cmd = st.eqtb.meaning(cs).cmd();
-                cmd < Cmd::OuterCall
-                    && (!(Cmd::TabMark..=Cmd::CarRet).contains(&cmd) || st.scanner.align_state != 0)
-            } else {
-                let cmd = t.cmd();
-                cmd != Cmd::OUT_PARAM && (cmd != Cmd::TabMark || st.scanner.align_state != 0)
+            let kind = t.kind();
+            let plain = match kind {
+                TokenKind::Cs(cs) => {
+                    let cmd = st.eqtb.meaning(cs).cmd();
+                    cmd < Cmd::OuterCall
+                        && (!(Cmd::TabMark..=Cmd::CarRet).contains(&cmd)
+                            || st.scanner.align_state != 0)
+                }
+                TokenKind::Char(cmd, _) => {
+                    cmd != Cmd::OUT_PARAM && (cmd != Cmd::TabMark || st.scanner.align_state != 0)
+                }
             };
             if plain {
                 st.scanner.logical_clock = st.scanner.logical_clock.wrapping_add(1);
                 st.input.cur_input.set_token_loc(st.mem.tokens.next(p));
-                if let Some(cs) = t_cs {
-                    fetch_cs_meaning(st, cs);
-                } else {
-                    st.scanner.cur_cs = None;
-                    let cmd = t.cmd();
-                    st.scanner.cur = Command::from_char(cmd, t.chr()).or_confusion("token")?;
-                    match cmd {
-                        Cmd::LeftBrace => st.scanner.align_state += 1,
-                        Cmd::RightBrace => st.scanner.align_state -= 1,
-                        _ => {}
+                match kind {
+                    TokenKind::Cs(cs) => fetch_cs_meaning(st, cs),
+                    TokenKind::Char(cmd, chr) => {
+                        st.scanner.cur_cs = None;
+                        st.scanner.cur = Command::from_char(cmd, chr).or_confusion("token")?;
+                        match cmd {
+                            Cmd::LeftBrace => st.scanner.align_state += 1,
+                            Cmd::RightBrace => st.scanner.align_state -= 1,
+                            _ => {}
+                        }
                     }
                 }
                 return Ok(());
@@ -542,39 +545,41 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
             let p = st.input.cur_input.token_loc();
             st.input.cur_input.set_token_loc(st.mem.tokens.next(p));
 
-            if let Some(cs) = t.cs() {
-                fetch_cs_meaning(st, cs);
-                if st.scanner.cur.cmd() >= Cmd::OuterCall {
-                    if st.scanner.cur.cmd() == Cmd::DontExpand {
-                        let next = st.mem.tokens.peek(st.input.cur_input.token_loc());
-                        let cs = next.and_then(Token::cs).or_confusion("dont expand")?;
-                        st.input.cur_input.set_token_loc(TokCursor::END);
-                        fetch_cs_meaning(st, cs);
-                        if st.scanner.cur.cmd() > Cmd::MAX_COMMAND {
-                            st.scanner.cur = Command::Relax(RelaxCode::NoExpand);
+            match t.kind() {
+                TokenKind::Cs(cs) => {
+                    fetch_cs_meaning(st, cs);
+                    if st.scanner.cur.cmd() >= Cmd::OuterCall {
+                        if st.scanner.cur.cmd() == Cmd::DontExpand {
+                            let next = st.mem.tokens.peek(st.input.cur_input.token_loc());
+                            let cs = next.and_then(Token::cs).or_confusion("dont expand")?;
+                            st.input.cur_input.set_token_loc(TokCursor::END);
+                            fetch_cs_meaning(st, cs);
+                            if st.scanner.cur.cmd() > Cmd::MAX_COMMAND {
+                                st.scanner.cur = Command::Relax(RelaxCode::NoExpand);
+                            }
+                        } else {
+                            if st.scanner.cur_cs == Some(Frozen::EndWrite.cs())
+                                && matches!(st.input.cur_list.mode, crate::mode::Mode::None)
+                            {
+                                return Err(Abort::Fatal("Unbalanced write command"));
+                            }
+                            check_outer_validity(st)?;
                         }
-                    } else {
-                        if st.scanner.cur_cs == Some(Frozen::EndWrite.cs())
-                            && matches!(st.input.cur_list.mode, crate::mode::Mode::None)
-                        {
-                            return Err(Abort::Fatal("Unbalanced write command"));
-                        }
-                        check_outer_validity(st)?;
                     }
                 }
-            } else {
-                let cmd = t.cmd();
-                if cmd == Cmd::OUT_PARAM {
-                    let k = st.input.cur_input.param_start() + t.chr() as usize - 1;
-                    let param = st.input.param_stack[k].list;
-                    begin_token_list(st, param, TokenType::Parameter)?;
-                    continue 'restart;
-                }
-                st.scanner.cur = Command::from_char(cmd, t.chr()).or_confusion("token")?;
-                match cmd {
-                    Cmd::LeftBrace => st.scanner.align_state += 1,
-                    Cmd::RightBrace => st.scanner.align_state -= 1,
-                    _ => {}
+                TokenKind::Char(cmd, chr) => {
+                    if cmd == Cmd::OUT_PARAM {
+                        let k = st.input.cur_input.param_start() + chr as usize - 1;
+                        let param = st.input.param_stack[k].list;
+                        begin_token_list(st, param, TokenType::Parameter)?;
+                        continue 'restart;
+                    }
+                    st.scanner.cur = Command::from_char(cmd, chr).or_confusion("token")?;
+                    match cmd {
+                        Cmd::LeftBrace => st.scanner.align_state += 1,
+                        Cmd::RightBrace => st.scanner.align_state -= 1,
+                        _ => {}
+                    }
                 }
             }
         } else {
@@ -702,19 +707,18 @@ pub(crate) fn get_token(st: &mut EngineState) -> Result<(), Abort> {
 /// beyond brace counting, and `t` is not a parameter character if `stop_at_mac_param`.
 #[inline(always)]
 fn plain_list_token(st: &EngineState, t: Token, stop_at_mac_param: bool) -> bool {
-    let cmd = if let Some(cs) = t.cs() {
-        let cmd = st.eqtb.meaning(cs).cmd();
-        if cmd >= Cmd::OuterCall
-            || t == st.input.par_token && st.scanner.long_state != Cmd::LongCall
-        {
-            return false;
+    let cmd = match t.kind() {
+        TokenKind::Cs(cs) => {
+            let cmd = st.eqtb.meaning(cs).cmd();
+            if cmd >= Cmd::OuterCall
+                || t == st.input.par_token && st.scanner.long_state != Cmd::LongCall
+            {
+                return false;
+            }
+            cmd
         }
-        cmd
-    } else {
-        if t.cmd() == Cmd::OUT_PARAM {
-            return false;
-        }
-        t.cmd()
+        TokenKind::Char(Cmd::OUT_PARAM, _) => return false,
+        TokenKind::Char(cmd, _) => cmd,
     };
     !((cmd == Cmd::TabMark || cmd == Cmd::CarRet) && st.scanner.align_state == 0
         || stop_at_mac_param && cmd == Cmd::MacParam)
@@ -755,7 +759,10 @@ pub(crate) fn copy_group_tokens(
                 if *unbalance == 0 {
                     consume_list_token(st, q);
                     st.scanner.cur_cs = None;
-                    st.scanner.cur = Command::from_char(t.cmd(), t.chr()).or_confusion("token")?;
+                    st.scanner.cur = t
+                        .char()
+                        .and_then(|(cmd, chr)| Command::from_char(cmd, chr))
+                        .or_confusion("token")?;
                     st.scanner.cur_tok = t;
                     return Ok(true);
                 }

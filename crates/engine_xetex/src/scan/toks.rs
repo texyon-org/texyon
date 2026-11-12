@@ -23,8 +23,6 @@ use super::next::{get_next, get_token, get_x_token, x_token};
 use super::scan_left_brace;
 use crate::command::Command;
 
-const ZERO_TOKEN: Token = Token::other(b'0');
-
 impl MemState {
     /// Appends `str_pool[b..pool_ptr]` to `out` as tokens and drops it from the pool.
     pub(crate) fn str_toks_cat(
@@ -276,7 +274,7 @@ pub(crate) fn scan_toks(
     st.scanner.warning_index = st.scanner.cur_cs;
     let b = st.mem.tokens.begin()?;
     let mut hash_brace = Token::ZERO;
-    let mut t = ZERO_TOKEN;
+    let mut params: u8 = 0;
 
     'found: {
         if macro_def {
@@ -294,7 +292,7 @@ pub(crate) fn scan_toks(
                         st.mem.tokens.push(&b, Token::END_MATCH)?;
                         break true;
                     }
-                    if t == Token::other(b'9') {
+                    if params == 9 {
                         crate::errors::error(
                             st,
                             "You already have nine parameters",
@@ -305,8 +303,8 @@ pub(crate) fn scan_toks(
                         )?;
                         continue;
                     }
-                    t = Token(t.0 + 1);
-                    if st.scanner.cur_tok != t {
+                    params += 1;
+                    if st.scanner.cur_tok != Token::other(b'0' + params) {
                         crate::errors::back_error(
                             st,
                             "Parameters must be numbered consecutively",
@@ -382,7 +380,13 @@ pub(crate) fn scan_toks(
                     get_token(st)?;
                 }
                 if st.scanner.cur.cmd() != Cmd::MacParam {
-                    if st.scanner.cur_tok <= ZERO_TOKEN || st.scanner.cur_tok > t {
+                    let n = match st.scanner.cur_tok.char() {
+                        Some((Cmd::OtherChar, c)) => c - i32::from(b'0'),
+                        _ => 0,
+                    };
+                    if (1..=i32::from(params)).contains(&n) {
+                        st.scanner.cur_tok = Token::out_param(n);
+                    } else {
                         crate::errors::back_error(
                             st,
                             (
@@ -396,9 +400,6 @@ pub(crate) fn scan_toks(
                             ],
                         )?;
                         st.scanner.cur_tok = s;
-                    } else {
-                        st.scanner.cur_tok =
-                            Token::out_param(st.scanner.cur_tok.chr() - i32::from(b'0'));
                     }
                 }
             }

@@ -9,7 +9,7 @@ use crate::journal::{WordDelta, WordJournal};
 use bytemuck::Zeroable;
 
 /// One more than the largest character code a token can carry.
-pub(crate) const MAX_CHAR_VAL: i32 = 0x20_0000;
+const MAX_CHAR_VAL: i32 = 0x20_0000;
 /// Control sequence tokens count up from here, past every character token.
 const CS_TOKEN_FLAG: i32 = 0x1FF_FFFF;
 
@@ -20,6 +20,14 @@ const CS_TOKEN_FLAG: i32 = 0x1FF_FFFF;
 )]
 #[repr(transparent)]
 pub(crate) struct Token(pub(crate) i32);
+
+/// A token taken apart.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(crate) enum TokenKind {
+    Cs(CsId),
+    /// A character with its category, or a parameter or match marker in a macro.
+    Char(Cmd, i32),
+}
 
 impl Token {
     /// `cur_cmd = cur_chr = 0`: the end of a `\read` line, or no pending
@@ -101,15 +109,33 @@ impl Token {
         CsId::from_raw(self.0 - CS_TOKEN_FLAG)
     }
 
-    /// The category of a character token.
+    /// The category and character code of a character token, `None` for a
+    /// control sequence token.
     #[inline(always)]
-    pub(crate) const fn cmd(self) -> Cmd {
+    pub(crate) const fn char(self) -> Option<(Cmd, i32)> {
+        if self.is_cs() {
+            None
+        } else {
+            Some((self.cmd(), self.chr()))
+        }
+    }
+
+    /// What the token is.
+    #[inline(always)]
+    pub(crate) const fn kind(self) -> TokenKind {
+        match self.cs() {
+            Some(cs) => TokenKind::Cs(cs),
+            None => TokenKind::Char(self.cmd(), self.chr()),
+        }
+    }
+
+    #[inline(always)]
+    const fn cmd(self) -> Cmd {
         Cmd::from_catcode_bits(self.0 / MAX_CHAR_VAL)
     }
 
-    /// The character code of a character token.
     #[inline(always)]
-    pub(crate) const fn chr(self) -> i32 {
+    const fn chr(self) -> i32 {
         self.0 % MAX_CHAR_VAL
     }
 

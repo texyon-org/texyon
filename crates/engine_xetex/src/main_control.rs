@@ -19,7 +19,7 @@ use crate::mode::{Mode, ModeName};
 use crate::node::GlueKind;
 use crate::params::{GluePar, IntPar, TokPar};
 use crate::state::{EngineState, GroupCode};
-use crate::token::Token;
+use crate::token::{Token, TokenKind};
 use crate::units::NodeType;
 use crate::units::{MemPtr, Scaled};
 
@@ -79,12 +79,12 @@ pub(crate) fn shift_case(st: &mut EngineState, b: CaseTable) -> Result<(), Abort
         CaseTable::Lower => eqtb.lc_code(c),
         CaseTable::Upper => eqtb.uc_code(c),
     };
-    st.mem.tokens.map_tokens(list, |t| match t.cs() {
-        None => match map(t.chr()) {
+    st.mem.tokens.map_tokens(list, |t| match t.kind() {
+        TokenKind::Char(cmd, c) => match map(c) {
             0 => t,
-            mapped => Token::new(t.cmd(), mapped),
+            mapped => Token::new(cmd, mapped),
         },
-        Some(cs) => match cs.kind() {
+        TokenKind::Cs(cs) => match cs.kind() {
             CsKind::Active(c) => match map(c.raw()) {
                 0 => t,
                 mapped => CsId::of_active(mapped).map_or(t, Token::from_cs),

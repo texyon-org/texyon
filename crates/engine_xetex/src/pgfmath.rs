@@ -13,7 +13,7 @@ use crate::codes::ValueLevel;
 use crate::errors::Abort;
 use crate::params::IntPar;
 use crate::state::EngineState;
-use crate::token::{Token, TokenList};
+use crate::token::{Token, TokenKind, TokenList};
 
 pub(crate) mod eval;
 
@@ -301,7 +301,10 @@ fn evaluate_parse(st: &mut EngineState, known: &Complete) -> Result<Answer, &'st
         if !float_numbers {
             return Ok(Answer::Expression);
         }
-        let text: Option<Vec<u8>> = tokens.iter().map(|t| u8::try_from(t.chr()).ok()).collect();
+        let text: Option<Vec<u8>> = tokens
+            .iter()
+            .map(|t| t.char().and_then(|(_, c)| u8::try_from(c).ok()))
+            .collect();
         return match text.as_deref().and_then(eval::parse_number) {
             Some(v) if v.is_finite() => Ok(Answer::Parsed(eval::Outcome {
                 result: eval::float(v),
@@ -409,7 +412,7 @@ fn pseudo_constant(st: &mut EngineState, known: &Complete, name: &[u8]) -> Optio
     let body = macro_tokens(st, function)?;
     let is = |t: &Token, cs: CsId| t.cs().is_some_and(|t| same_meaning(st, t, cs));
     let result = |t: &Token| t.cs() == Some(known.result());
-    let char_is = |t: &Token, c: u8| !t.is_cs() && t.chr() == i32::from(c);
+    let char_is = |t: &Token, c: u8| t.char().is_some_and(|(_, chr)| chr == i32::from(c));
     let target = match body.as_slice() {
         [l, r, eq, t] if is(l, known.let_()) && result(r) && char_is(eq, b'=') => t.cs()?,
         [l, r, t] if is(l, known.let_()) && result(r) => t.cs()?,
@@ -439,11 +442,9 @@ fn expression_tokens(st: &EngineState, expression: CsId) -> Result<Vec<Token>, &
 }
 
 fn is_number(tokens: &[Token]) -> bool {
-    tokens.iter().all(|t| {
-        !t.is_cs()
-            && !matches!(t.cmd(), Cmd::LeftBrace | Cmd::RightBrace | Cmd::Spacer)
-            && (t.chr() == i32::from(b'.')
-                || (i32::from(b'0')..=i32::from(b'9')).contains(&t.chr()))
+    tokens.iter().all(|t| match t.char() {
+        Some((Cmd::LeftBrace | Cmd::RightBrace | Cmd::Spacer, _)) | None => false,
+        Some((_, c)) => c == i32::from(b'.') || (i32::from(b'0')..=i32::from(b'9')).contains(&c),
     })
 }
 
@@ -452,17 +453,14 @@ fn expression_items(st: &EngineState, tokens: &[Token]) -> Result<Vec<(Item, boo
     // pgf strips a lone outer brace group.
     while body
         .first()
-        .is_some_and(|t| !t.is_cs() && t.cmd() == Cmd::LeftBrace)
+        .is_some_and(|t| matches!(t.char(), Some((Cmd::LeftBrace, _))))
     {
         let mut depth = 0;
         let mut close = None;
         for (i, t) in body.iter().enumerate() {
-            if t.is_cs() {
-                continue;
-            }
-            match t.cmd() {
-                Cmd::LeftBrace => depth += 1,
-                Cmd::RightBrace => {
+            match t.char() {
+                Some((Cmd::LeftBrace, _)) => depth += 1,
+                Some((Cmd::RightBrace, _)) => {
                     depth -= 1;
                     if depth == 0 {
                         close = Some(i);
@@ -480,12 +478,14 @@ fn expression_items(st: &EngineState, tokens: &[Token]) -> Result<Vec<(Item, boo
     let mut items = Vec::with_capacity(body.len());
     let mut space = false;
     for &tok in body {
-        if let Some(cs) = tok.cs() {
-            items.push((register_item(st, cs)?, space));
-            space = false;
-            continue;
-        }
-        let (cmd, chr) = (tok.cmd(), tok.chr());
+        let (cmd, chr) = match tok.kind() {
+            TokenKind::Cs(cs) => {
+                items.push((register_item(st, cs)?, space));
+                space = false;
+                continue;
+            }
+            TokenKind::Char(cmd, chr) => (cmd, chr),
+        };
         match cmd {
             Cmd::Spacer => space = true,
             Cmd::Letter
@@ -635,12 +635,20 @@ fn compare(st: &EngineState, known: &Complete, stats: &mut Stats, pending: &Pend
 fn describe(st: &EngineState, tokens: &[Token]) -> String {
     let mut text = String::new();
     for tok in tokens {
-        if let Some(cs) = tok.cs() {
-            text.push('\\');
-            text.push_str(&cs_name(st, cs).unwrap_or_else(|| format!("<{}>", cs.raw())));
-            text.push(' ');
-        } else {
-            text.push(char::from_u32(tok.chr() as u32).unwrap_or('?'));
+        match tok.kind() {
+            TokenKind::Cs(cs) => {
+                text.push('\\');
+                text.push_str(&cs_name(st, cs).unwrap_or_else(|| format!("<{}>", cs.raw())));
+                text.push(' ');
+            }
+            TokenKind::Char(_, c) => {
+                text.push(
+                    u32::try_from(c)
+                        .ok()
+                        .and_then(char::from_u32)
+                        .unwrap_or('?'),
+                );
+            }
         }
     }
     text
@@ -688,9 +696,9 @@ enum Effect {
 fn chars(tokens: &[Token]) -> Option<Vec<u8>> {
     tokens
         .iter()
-        .map(|t| {
-            (!t.is_cs() && t.chr() < 128 && !matches!(t.cmd(), Cmd::LeftBrace | Cmd::RightBrace))
-                .then_some(t.chr() as u8)
+        .map(|t| match t.char() {
+            Some((Cmd::LeftBrace | Cmd::RightBrace, _)) | None => None,
+            Some((_, c)) => u8::try_from(c).ok().filter(u8::is_ascii),
         })
         .collect()
 }

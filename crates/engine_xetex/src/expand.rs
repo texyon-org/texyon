@@ -25,8 +25,9 @@ use crate::scan::{
     get_x_token, scan_int,
 };
 use crate::state::{EngineState, InputName, MacroParam, MemState, Selector};
-use crate::token::{Build, TokCursor, Token, TokenList};
+use crate::token::{Build, TokCursor, Token, TokenKind, TokenList};
 use crate::units::{BufPos, FontId, MemPtr, Scaled, StrNumber};
+use std::cmp::Ordering;
 
 fn ins_the_toks(st: &mut EngineState, code: TheCode) -> Result<(), Abort> {
     let b = st.mem.tokens.begin()?;
@@ -108,7 +109,8 @@ fn token_chars_to_buffer(st: &mut EngineState, list: TokenList) -> Result<BufPos
                 return Err(st.input.buffer_overflow());
             }
         }
-        st.input.buffer[j] = t.chr();
+        let (_, c) = t.char().or_confusion("cs name")?;
+        st.input.buffer[j] = c;
         j += 1;
     }
     Ok(j)
@@ -181,10 +183,11 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
         IfCode::Num | IfCode::Dim => {
             let n = scan_int_or_dimen(st, this_if)?;
             get_x_non_blank(st)?;
-            let relation =
-                if (Token::other(b'<')..=Token::other(b'>')).contains(&st.scanner.cur_tok) {
-                    st.scanner.cur_tok.chr() as u8
-                } else {
+            let relation = match st.scanner.cur_tok.char() {
+                Some((Cmd::OtherChar, c)) if (i32::from(b'<')..=i32::from(b'>')).contains(&c) => {
+                    c.cmp(&i32::from(b'='))
+                }
+                _ => {
                     crate::errors::back_error(
                         st,
                         (
@@ -193,14 +196,11 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
                         ),
                         &["I was expecting to see `<', `=', or `>'. Didn't."],
                     )?;
-                    b'='
-                };
+                    Ordering::Equal
+                }
+            };
             let cv = scan_int_or_dimen(st, this_if)?;
-            match relation {
-                b'<' => n < cv,
-                b'=' => n == cv,
-                _ => n > cv,
-            }
+            n.cmp(&cv) == relation
         }
         IfCode::Odd => scan_int(st)? % 2 != 0,
         IfCode::VMode => st.input.cur_list.mode.is_vertical(),
@@ -650,13 +650,10 @@ fn conv_toks(st: &mut EngineState, c: ConvertCode) -> Result<(), Abort> {
     match c {
         ConvertCode::Number | ConvertCode::Strcmp => print_int(st, num),
         ConvertCode::RomanNumeral => crate::output::print_roman_int(st, num),
-        ConvertCode::String => {
-            if !st.scanner.cur_cs.is_none() {
-                sprint_cs(st, st.scanner.cur_cs);
-            } else {
-                print_char(st, st.scanner.cur_tok.chr());
-            }
-        }
+        ConvertCode::String => match st.scanner.cur_tok.kind() {
+            TokenKind::Cs(cs) => sprint_cs(st, Some(cs)),
+            TokenKind::Char(_, c) => print_char(st, c),
+        },
         ConvertCode::Meaning => crate::output::print_meaning(st),
         ConvertCode::FontName => crate::output::print_font_name_and_size(st, fnt),
         ConvertCode::EtexRevision => print(st, ".6"),
@@ -1056,12 +1053,12 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                 let s: Option<TokCursor>;
                 let mut m: i32 = 0;
                 let rt = tok(st, r);
-                if rt >= Token::END_MATCH || rt < Token::match_(0) {
-                    s = None;
-                } else {
-                    match_chr = rt.chr();
+                if let Some((Cmd::MATCH, c)) = rt.char() {
+                    match_chr = c;
                     r = st.mem.tokens.next(r);
                     s = Some(r);
+                } else {
+                    s = None;
                 }
 
                 'continue_: loop {

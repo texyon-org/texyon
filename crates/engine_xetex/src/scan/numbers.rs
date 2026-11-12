@@ -18,7 +18,7 @@ use crate::params::IntPar;
 use crate::scaled_math::{add_or_sub, fract, mult_and_add, quotient, xn_over_d, Overflowing};
 use crate::scan::Command;
 use crate::state::EngineState;
-use crate::token::Token;
+use crate::token::{Token, TokenKind};
 use crate::units::MemIdx;
 use crate::units::RawPtr;
 use crate::units::{GlueOrder, Scaled};
@@ -285,18 +285,21 @@ fn scan_int_decimal(st: &mut EngineState) -> Result<(i32, bool), Abort> {
     loop {
         if st.scanner.cur_tok == ALPHA_TOKEN {
             get_token(st)?;
-            if let Some(cs) = st.scanner.cur_tok.cs() {
-                v = match cs.kind() {
-                    CsKind::Active(c) => c.raw(),
-                    CsKind::Single(c) => i32::from(c),
-                    _ => st.strings.astral_char(st.eqtb.text(cs)),
-                };
-            } else {
-                v = st.scanner.cur_tok.chr();
-                if st.scanner.cur.cmd() == Cmd::RightBrace {
-                    st.scanner.align_state += 1;
-                } else if st.scanner.cur.cmd() < Cmd::RightBrace {
-                    st.scanner.align_state -= 1;
+            match st.scanner.cur_tok.kind() {
+                TokenKind::Cs(cs) => {
+                    v = match cs.kind() {
+                        CsKind::Active(c) => c.raw(),
+                        CsKind::Single(c) => i32::from(c),
+                        _ => st.strings.astral_char(st.eqtb.text(cs)),
+                    };
+                }
+                TokenKind::Char(cmd, c) => {
+                    v = c;
+                    if cmd == Cmd::RightBrace {
+                        st.scanner.align_state += 1;
+                    } else if cmd < Cmd::RightBrace {
+                        st.scanner.align_state -= 1;
+                    }
                 }
             }
             if v > BIGGEST_USV {

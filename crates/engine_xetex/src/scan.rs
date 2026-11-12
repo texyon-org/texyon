@@ -358,9 +358,7 @@ pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, 
     while i < keyword.len() {
         get_x_token(st)?;
         let ch = i32::from(keyword[i]);
-        if st.scanner.cur_cs.is_none()
-            && (st.scanner.cur_tok.chr() == ch || st.scanner.cur_tok.chr() == ch - 32)
-        {
+        if matches!(st.scanner.cur_tok.char(), Some((_, c)) if c == ch || c == ch - 32) {
             st.mem.tokens.push(&backup, st.scanner.cur_tok)?;
             i += 1;
         } else if st.scanner.cur.cmd() != Cmd::Spacer || i > 0 {

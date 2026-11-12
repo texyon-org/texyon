@@ -14,7 +14,7 @@ use crate::packaging::PackSpec;
 use crate::params::{IntPar, TokPar};
 use crate::state::Saved;
 use crate::state::{EngineState, GroupCode, InputName, InteractionMode, Selector};
-use crate::token::{TokCursor, Token};
+use crate::token::{TokCursor, Token, TokenKind};
 use crate::units::{NodeType, Scaled};
 
 use super::cmd_chr::{print_cmd_chr, print_meaning};
@@ -122,13 +122,10 @@ impl Default for ShownTokens {
 impl ShownTokens {
     /// Shows `w`, false where `show_token_list` stops.
     fn show(&mut self, st: &mut EngineState, w: Token) -> bool {
-        if w.is_cs() {
-            print_cs(st, w.cs());
-        } else if w.0 < 0 {
-            print_esc(st, "BAD.");
-        } else {
-            let c = w.chr();
-            match w.cmd() {
+        match w.kind() {
+            TokenKind::Cs(cs) => print_cs(st, Some(cs)),
+            _ if w.0 < 0 => print_esc(st, "BAD."),
+            TokenKind::Char(cmd, c) => match cmd {
                 Cmd::LeftBrace
                 | Cmd::RightBrace
                 | Cmd::MathShift
@@ -165,7 +162,7 @@ impl ShownTokens {
                     }
                 }
                 _ => print_esc(st, "BAD."),
-            }
+            },
         }
         true
     }
