@@ -28,8 +28,7 @@ entry names a later TeX Live version.
 - **Repro:** `\marks20{B}` on page 1, then `\topmarks20` on page 2 is still empty. Confirmed
   against TeX Live 2025 xetex.
 - **Fix:** `for i:=0 to 63 do`.
-- **TeXyoN:** keeps the upstream behaviour, test `mark_classes_carry_over_like_xetex`. Flip it
-  together with upstream.
+- **TeXyoN:** visits all 64 (fixed 2026-11-12), test `every_mark_class_carries_over`.
 
 ## 3. Interword space shaping assumes the list tail is a native word (needs a repro)
 

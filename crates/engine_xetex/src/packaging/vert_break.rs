@@ -657,8 +657,8 @@ impl MemState {
     /// Apply mark action `a` to the mark-class tree below index node `q` at
     /// level `l`. Returns whether `q` was freed.
     pub fn do_marks(&mut self, a: MarksAction, l: i16, q: NodePtr<SaIndexNode>) -> bool {
-        // XeTeX widened index nodes to 64 children but its do_marks still visits 16.
-        for i in 0..16 {
+        // Upstream visits only 16 of the 64 children (UPSTREAM_BUGS.md 2).
+        for i in 0..64 {
             let freed = if l < 3 {
                 let child = self[q].child_index(i);
                 child.is_some_and(|c| self.do_marks(a, l + 1, c))

@@ -38,3 +38,4 @@ hyph-recon_u	upstream emits a bogus max_hyph_char node for the left boundary of 
 hyph-recon_w	upstream emits a bogus max_hyph_char node for the left boundary of a reconstituted word and loses the boundary program, TeXyoN matches Knuth TeX here (UPSTREAM_BUGS.md 17)
 hyph-recon_y	upstream emits a bogus max_hyph_char node for the left boundary of a reconstituted word and loses the boundary program, TeXyoN matches Knuth TeX here (UPSTREAM_BUGS.md 17)
 hyph-word_end_contexts	upstream emits a bogus max_hyph_char node for the left boundary of a reconstituted word and loses the boundary program, TeXyoN matches Knuth TeX here (UPSTREAM_BUGS.md 17)
+limits-many_marks	upstream do_marks visits 16 of the 64 slots of each sparse-array index node, so classes 100 and 32767 never carry over, TeXyoN visits all of them (UPSTREAM_BUGS.md 2)
