@@ -1,47 +1,17 @@
 # Bundle URL overrides Test
 
-This is a simple test program used by the integration tests to test the [`texyon_bundles::get_fallback_bundle_url`] function with different compile-time environment variable overrides.
+A test program for [`texyon_bundles::get_fallback_bundle_url`] under different compile-time environment variables.
 
-## Purpose
-
-The `get_fallback_bundle_url` function reads compile-time environment variables
-- `$TEXYON_BUNDLE_LOCKED`, and
-- `$TEXYON_BUNDLE_PREFIX`
-
-via Rust's `option_env!` macro. Since these values are baked in at compile time, the only way to properly test different override scenarios is to compile separate instances of a test program with different environment variables set.
+`get_fallback_bundle_url` reads `$TEXYON_BUNDLE_LOCKED` through Rust's `option_env!` macro. The value is baked in at compile time, so each override scenario needs its own build of this program.
 
 ## Usage
 
-This test program is invoked by the integration tests with different environment variable overrides:
-
 ```bash
-# Test default behavior with format version 32
-cargo run -- 32
+# The built-in default bundle
+cargo run
 
-# Test with locked bundle
-TEXYON_BUNDLE_LOCKED="https://example.com/bundle.tar" cargo run -- 32
-
-# Test with custom prefix
-TEXYON_BUNDLE_PREFIX="https://custom.mirror.com" cargo run -- 31
+# A locked bundle
+TEXYON_BUNDLE_LOCKED="https://example.com/bundle.tar" cargo run
 ```
 
-## Arguments
-
-- First argument: Format version number (required)
-
-## Output
-
-The program outputs the URL returned by `get_fallback_bundle_url()` to stdout.
-
-## Environment Variables Tested
-
-- `TEXYON_BUNDLE_LOCKED`: When set to a non-empty value, this URL is returned regardless of format version
-- `TEXYON_BUNDLE_PREFIX`: hard codes a custom prefix for bundle URLs
-
-## Integration with Tests
-
-This test program is used by [`../bundle_env_overrides.rs`](../bundle_env_overrides.rs) to verify bundle override behavior:
-1. Locked bundle behavior (same URL for all format versions)
-2. Custom prefix behavior
-3. Format version transitions (v < 32 vs v >= 32)
-4. Environment variable precedence (locked takes priority over prefix)
+The program prints the URL returned by `get_fallback_bundle_url()` to stdout. It is used by [`../bundle_env_overrides.rs`](../bundle_env_overrides.rs).

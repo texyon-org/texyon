@@ -327,6 +327,6 @@ deliberate fix toward upstream.
   from TeX Live's `xetex -ini` on the same input. Fonts come from
   `tests/assets`. INITEX has no `\tracingparagraphs` or `\tracingpages`
   output here (no `stat` code), so tests show boxes and values instead.
-- `FORMAT_SERIAL` (`lib.rs`) is also the bundle URL version
-  (`texyon_bundles::get_fallback_bundle_url`). Never bump it for format
-  content fixes.
+- `FORMAT_SERIAL` (`lib.rs`) only versions dumped formats. The default
+  bundle URL is fixed in `texyon_bundles::get_fallback_bundle_url`. The
+  goldens corpus pins its own TL2022 bundle in `corpus.sh`.

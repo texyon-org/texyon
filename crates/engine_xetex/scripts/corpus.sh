@@ -19,7 +19,8 @@
 #   scope = all (default) | docs | lvt | tier1 | tier1-real | tier2
 #
 # Determinism (both engines): SOURCE_DATE_EPOCH=0, LC_ALL=C, TZ=UTC,
-# -Z deterministic-mode, one process per input.
+# -Z deterministic-mode, one process per input, and the TL2022 bundle the
+# goldens were blessed against (CORPUS_BUNDLE).
 set -uo pipefail
 
 MODE="${1:-check}"
@@ -46,6 +47,7 @@ fi
 [ -x "$BIN" ] || { echo "engine binary not executable: $BIN"; exit 2; }
 
 run_env() { SOURCE_DATE_EPOCH=0 LC_ALL=C TZ=UTC "$@"; }
+BUNDLE="${CORPUS_BUNDLE:-https://relay.fullyjustified.net/default_bundle_v33.tar}"
 
 # normalize a .log: drop the engine banner, any Tectonic notes, and the
 # (run-specific) absolute work path. Everything else must match.
@@ -82,7 +84,7 @@ do_docs() {
     if [ "$tier" = tier1 ]; then main="$CORPUS/$rel"; else main="$CACHE/$rel"; fi
     [ -f "$main" ] || { echo "  MISS $id ($main)"; continue; }
     wd="$WORK/doc/$id"; mkdir -p "$wd"
-    run_env "$BIN" -X compile --outfmt xdv --keep-logs --untrusted \
+    run_env "$BIN" -X compile --bundle "$BUNDLE" --outfmt xdv --keep-logs --untrusted \
       -Z deterministic-mode -o "$wd" "$main" >"$wd/run.txt" 2>&1
     xdv="$(ls "$wd"/*.xdv 2>/dev/null | head -1)"
     if [ -z "$xdv" ]; then echo "  NOXDV $id"; continue; fi
@@ -100,7 +102,7 @@ do_lvt() {
     f="$CACHE/latex-tests/base/$rel.lvt"
     [ -f "$f" ] || { echo "  MISS $rel"; continue; }
     stem="$(basename "$rel")"; wd="$WORK/lvt/$stem"; mkdir -p "$wd"; cp "$f" "$wd/$stem.tex"
-    run_env "$BIN" -X compile --keep-logs -Z deterministic-mode \
+    run_env "$BIN" -X compile --bundle "$BUNDLE" --keep-logs -Z deterministic-mode \
       -Z continue-on-errors -Z search-path="$SUP" -o "$wd" "$wd/$stem.tex" >"$wd/run.txt" 2>&1
     log="$wd/$stem.log"
     [ -f "$log" ] || { echo "  NOLOG $rel"; continue; }

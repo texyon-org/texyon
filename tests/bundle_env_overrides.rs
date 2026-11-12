@@ -4,13 +4,12 @@ use std::env;
 use std::path::PathBuf;
 use std::process::Command;
 
-const PRE_FORMAT_VERSION: u32 = 31;
-const TEST_FORMAT_VERSION: u32 = 32;
+const DEFAULT_BUNDLE_URL: &str =
+    "https://s3.de-1.yendric.be/uploads/01a0117b-2294-7203-bb52-edb7070f93fb/texlive2026.ttb";
 const TEST_BUNDLE_LOCKED: &str = "https://example.com/locked_bundle.tar";
-const TEST_BUNDLE_PREFIX: &str = "https://custom.example.com";
 
 /// Runs the test project and gets the output
-fn run_test_program(format_version: u32, env_vars: &[(&str, &str)]) -> String {
+fn run_test_program(env_vars: &[(&str, &str)]) -> String {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let test_dir = PathBuf::from(&manifest_dir)
         .join("tests")
@@ -22,9 +21,8 @@ fn run_test_program(format_version: u32, env_vars: &[(&str, &str)]) -> String {
         .arg("--quiet")
         .arg("--target")
         .arg(target_platform)
-        .arg("--")
-        .arg(format_version.to_string())
-        .current_dir(&test_dir);
+        .current_dir(&test_dir)
+        .env_remove("TEXYON_BUNDLE_LOCKED");
 
     for (key, value) in env_vars {
         cmd.env(key, value);
@@ -40,56 +38,22 @@ fn run_test_program(format_version: u32, env_vars: &[(&str, &str)]) -> String {
 }
 
 #[test]
+fn test_bundle_default() {
+    assert_eq!(run_test_program(&[]), DEFAULT_BUNDLE_URL);
+}
+
+#[test]
 fn test_bundle_locked() {
-    let url_locked = run_test_program(
-        PRE_FORMAT_VERSION,
-        &[("TEXYON_BUNDLE_LOCKED", TEST_BUNDLE_LOCKED)],
-    );
-    let url_locked_versioned = run_test_program(
-        TEST_FORMAT_VERSION,
-        &[("TEXYON_BUNDLE_LOCKED", TEST_BUNDLE_LOCKED)],
-    );
-
-    assert_eq!(url_locked, TEST_BUNDLE_LOCKED);
-    assert_eq!(url_locked_versioned, TEST_BUNDLE_LOCKED);
-}
-
-#[test]
-fn test_bundle_prefix() {
-    let url_prefixed = run_test_program(
-        PRE_FORMAT_VERSION,
-        &[
-            ("TEXYON_BUNDLE_PREFIX", TEST_BUNDLE_PREFIX),
-            ("TEXYON_BUNDLE_LOCKED", ""),
-            // ^ locked url should be ignored if empty
-        ],
-    );
-    let url_prefixed_versioned = run_test_program(
-        TEST_FORMAT_VERSION,
-        &[
-            ("TEXYON_BUNDLE_PREFIX", TEST_BUNDLE_PREFIX),
-            ("TEXYON_BUNDLE_LOCKED", ""),
-        ],
-    );
-
     assert_eq!(
-        url_prefixed,
-        format!("{TEST_BUNDLE_PREFIX}/default_bundle.tar")
-    );
-    assert_eq!(
-        url_prefixed_versioned,
-        format!("{TEST_BUNDLE_PREFIX}/default_bundle_v{TEST_FORMAT_VERSION}.tar")
+        run_test_program(&[("TEXYON_BUNDLE_LOCKED", TEST_BUNDLE_LOCKED)]),
+        TEST_BUNDLE_LOCKED
     );
 }
 
 #[test]
-fn test_precedence_locked_over_prefix() {
-    let url_both_env_set = run_test_program(
-        TEST_FORMAT_VERSION,
-        &[
-            ("TEXYON_BUNDLE_LOCKED", TEST_BUNDLE_LOCKED),
-            ("TEXYON_BUNDLE_PREFIX", TEST_BUNDLE_PREFIX),
-        ],
+fn test_bundle_locked_empty_is_ignored() {
+    assert_eq!(
+        run_test_program(&[("TEXYON_BUNDLE_LOCKED", "")]),
+        DEFAULT_BUNDLE_URL
     );
-    assert_eq!(url_both_env_set, TEST_BUNDLE_LOCKED);
 }

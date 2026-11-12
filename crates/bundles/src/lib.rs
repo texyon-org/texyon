@@ -35,8 +35,9 @@ use ttb_fs::TTBFsBundle;
 use ttb_net::TTBNetBundle;
 use zip::ZipBundle;
 
-/// The current hardcoded default prefix for tectonic's bundle.
-const TEXYON_BUNDLE_PREFIX_DEFAULT: &str = "https://relay.fullyjustified.net";
+/// The TeX Live 2026 bundle the web editor also serves.
+const DEFAULT_BUNDLE_URL: &str =
+    "https://s3.de-1.yendric.be/uploads/01a0117b-2294-7203-bb52-edb7070f93fb/texlive2026.ttb";
 
 // How many times network bundles should retry
 // a download, and how long they should wait
@@ -253,56 +254,25 @@ pub fn detect_bundle(
 
 /// Get the URL of the default bundle.
 ///
-/// This is a mostly-hardcoded URL of a default bundle that will provide some
-/// "sensible" set of TeX support files. The higher-level `tectonic` crate
-/// provides a configuration mechanism to allow the user to override this
-/// setting, so you should use that if you are in a position to do so.
-///
-/// The URL depends on the format version supported by the engine, since that
-/// roughly corresponds to a TeXLive version, and the engine and TeXLive files
-/// are fairly closely coupled.
-///
-/// The hardcoded default can be overridden at compile time by setting either:
-/// - `${TEXYON_BUNDLE_PREFIX}`, which would lead to a URL in the form of
-///   `${TEXYON_BUNDLE_PREFIX}/default_bundle_v${FORMAT_VERSION}.tar`, or
-/// - `${TEXYON_BUNDLE_LOCKED}`, which can be used to pin the default bundle
-///   to a specific "snapshot" if specified. This would be useful for
-///   reproducible builds.
-///
-/// The URL template used in this function will be embedded in the binaries that
-/// you create, which may be used for years into the future, so it needs to be
-/// durable and reliable. We used `archive.org` for a while, but it had
-/// low-level reliability problems and was blocked in China. We now use a custom
-/// webservice.
-pub fn get_fallback_bundle_url(format_version: u32) -> String {
-    let bundle_locked = option_env!("TEXYON_BUNDLE_LOCKED").unwrap_or("");
-    let bundle_prefix = option_env!("TEXYON_BUNDLE_PREFIX").unwrap_or(TEXYON_BUNDLE_PREFIX_DEFAULT);
-
-    // Simply return the locked url when it is specified:
-    if !bundle_locked.is_empty() {
-        return bundle_locked.to_owned();
-    }
-
-    // Format version 32 (TeXLive 2021) was when we introduced versioning to the
-    // URL.
-    if format_version < 32 {
-        format!("{bundle_prefix}/default_bundle.tar")
-    } else {
-        format!("{bundle_prefix}/default_bundle_v{format_version}.tar")
+/// Setting `${TEXYON_BUNDLE_LOCKED}` at compile time replaces it, for example
+/// to pin a mirror or a snapshot for reproducible builds. The higher-level
+/// `texyon` crate lets the user override this setting at runtime, so prefer
+/// that if you are in a position to use it.
+pub fn get_fallback_bundle_url() -> String {
+    match option_env!("TEXYON_BUNDLE_LOCKED") {
+        Some(locked) if !locked.is_empty() => locked.to_owned(),
+        _ => DEFAULT_BUNDLE_URL.to_owned(),
     }
 }
 
 /// Open the fallback bundle.
 ///
-/// This is essentially the default Tectonic bundle, but the higher-level
-/// `tectonic` crate provides a configuration mechanism to allow the user to
-/// override the bundle URL setting, and that should be preferred if you’re in a
+/// The higher-level `texyon` crate provides a configuration mechanism to
+/// override the bundle URL, and that should be preferred if you are in a
 /// position to use it.
-pub fn get_fallback_bundle(format_version: u32, only_cached: bool) -> Result<Box<dyn Bundle>> {
-    let url = get_fallback_bundle_url(format_version);
-    let bundle = detect_bundle(url, only_cached, None)?;
-    if bundle.is_none() {
-        bail!("could not open default bundle")
+pub fn get_fallback_bundle(only_cached: bool) -> Result<Box<dyn Bundle>> {
+    match detect_bundle(get_fallback_bundle_url(), only_cached, None)? {
+        Some(bundle) => Ok(bundle),
+        None => bail!("could not open default bundle"),
     }
-    Ok(bundle.unwrap())
 }

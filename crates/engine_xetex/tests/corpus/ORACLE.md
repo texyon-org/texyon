@@ -23,8 +23,9 @@ This file is the provenance record for the parity corpus (see
 
 ## Bundle pin
 
-- **Prefix:** `https://relay.fullyjustified.net` (default,
-  `crates/bundles/src/lib.rs:39`).
+- **URL:** `https://relay.fullyjustified.net/default_bundle_v33.tar`,
+  passed as `--bundle` by `corpus.sh` (override with `CORPUS_BUNDLE`). The
+  native default bundle is TL2026 and does not match these goldens.
 - **Resolved bundle:** `https://data1.fullyjustified.net/tlextras-2022.0r0.tar`
 - **Content index SHA-256:**
   `6ffe055852f8faf66c0acbe1a7fb27f87b869a90bad1204f3bf4d9683f597c7c`

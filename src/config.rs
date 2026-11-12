@@ -156,7 +156,7 @@ impl PersistentConfig {
 
 impl Default for PersistentConfig {
     fn default() -> Self {
-        let url = texyon_bundles::get_fallback_bundle_url(texyon_engine_xetex::FORMAT_SERIAL);
+        let url = texyon_bundles::get_fallback_bundle_url();
 
         PersistentConfig {
             default_bundles: vec![BundleInfo { url }],
