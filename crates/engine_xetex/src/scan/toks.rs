@@ -4,7 +4,8 @@ use crate::bridge::output_flush;
 use crate::cmd::Cmd;
 use crate::codes::{ScannerStatus, TheCode, ValueLevel};
 use crate::command::RelaxCode;
-use crate::consts::{ACTIVE_BASE, CLOSED, JUST_OPEN, NORMAL};
+use crate::consts::{CLOSED, JUST_OPEN, NORMAL};
+use crate::cs::CsId;
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::expand::expand;
@@ -15,7 +16,6 @@ use crate::output::{print, print_int};
 use crate::params::IntPar;
 use crate::state::{EngineState, MemState, Selector};
 use crate::token::{Build, TokCursor, Token, TokenList};
-use crate::units::CsId;
 use crate::units::{BufPos, StrNumber};
 
 use super::internal::{scan_something_internal, CurVal};
@@ -58,7 +58,9 @@ impl MemState {
 
                 match cat {
                     None => Token::new(Cmd::OtherChar, c),
-                    Some(Cmd::ACTIVE_CHAR) => Token::from_cs(ACTIVE_BASE + c),
+                    Some(Cmd::ACTIVE_CHAR) => {
+                        Token::from_cs(CsId::of_active(c).or_confusion("active char")?)
+                    }
                     Some(cat) => Token::new(cat, c),
                 }
             };

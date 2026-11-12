@@ -7,10 +7,8 @@ use crate::codes::{
 use crate::command::Command;
 use crate::command::RelaxCode;
 use crate::cond_stack::CondId;
-use crate::consts::{
-    ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_USV, END_WRITE, FROZEN_DONT_EXPAND, FROZEN_ENDV,
-    FROZEN_PRIMITIVE, NULL_CS, NULL_FONT, SINGLE_BASE, TOO_BIG_USV,
-};
+use crate::consts::{BIGGEST_USV, NULL_FONT, TOO_BIG_USV};
+use crate::cs::{CsId, CsKind, Frozen};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::{Side, AAT_FONT_FLAG, OTGR_FONT_FLAG};
@@ -28,7 +26,6 @@ use crate::scan::{
 };
 use crate::state::{EngineState, InputName, MacroParam, MemState, Selector};
 use crate::token::{Build, TokCursor, Token, TokenList};
-use crate::units::CsId;
 use crate::units::{BufPos, FontId, MemPtr, Scaled, StrNumber};
 
 fn ins_the_toks(st: &mut EngineState, code: TheCode) -> Result<(), Abort> {
@@ -68,7 +65,12 @@ fn if_char_key(st: &mut EngineState) -> Result<(Cmd, i32), Abort> {
     get_x_token(st)?;
     let (cmd, chr) = if st.scanner.cur == Command::Relax(RelaxCode::NoExpand) {
         let cs = st.scanner.cur_tok.cs().or_confusion("noexpand")?;
-        (Cmd::ACTIVE_CHAR, cs - ACTIVE_BASE)
+        // Any other control sequence becomes a code past the scalar values, so `\relax`.
+        let chr = match cs.kind() {
+            CsKind::Active(c) => c.raw(),
+            _ => TOO_BIG_USV,
+        };
+        (Cmd::ACTIVE_CHAR, chr)
     } else {
         st.scanner.cur.encode()
     };
@@ -250,10 +252,11 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
             let first = st.input.first;
             let m = token_chars_to_buffer(st, name)?;
             // Upstream keeps `single_base+c` here for c above U+FFFF and reads past `null_cs`.
+            let single = CsId::of_char(st.input.buffer[first]).filter(|_| m == first + 1);
             let cs = if m == first {
-                NULL_CS
-            } else if m == first + 1 && st.input.buffer[first] <= BIGGEST_CHAR {
-                SINGLE_BASE + st.input.buffer[first]
+                CsId::NULL
+            } else if let Some(cs) = single {
+                cs
             } else {
                 st.eqtb
                     .id_lookup(&mut st.strings, st.input.buffer.span(first, m))?
@@ -303,7 +306,7 @@ fn conditional(st: &mut EngineState, this_if: IfCode, is_unless: bool) -> Result
             get_next_unexpanded(st)?;
             let m = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)?;
             st.scanner.cur.cmd() != Cmd::UndefinedCs
-                && m.is_some_and(|m| st.scanner.cur == st.eqtb.meaning(m.eqtb_loc()))
+                && m.is_some_and(|m| st.scanner.cur == st.eqtb.meaning(CsId::primitive(m)))
         }
     };
 
@@ -744,7 +747,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
             if st.scanner.cur.cmd() < Cmd::EndTemplate {
                 macro_call(st)?;
             } else {
-                st.scanner.cur_tok = Token::from_cs(FROZEN_ENDV);
+                st.scanner.cur_tok = Token::from_cs(Frozen::Endv.cs());
                 back_input(st)?;
             }
             break;
@@ -809,14 +812,17 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     get_token_unexpanded(st)?;
                     let t = st.scanner.cur_tok;
                     back_input(st)?;
-                    if t.is_cs() && t != Token::from_cs(END_WRITE) {
-                        crate::input::prepend_to_backed_up(st, Token::from_cs(FROZEN_DONT_EXPAND))?;
+                    if t.is_cs() && t != Token::from_cs(Frozen::EndWrite.cs()) {
+                        crate::input::prepend_to_backed_up(
+                            st,
+                            Token::from_cs(Frozen::DontExpand.cs()),
+                        )?;
                     }
                 } else {
                     get_token_unexpanded(st)?;
                     let prim = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)?;
                     if let Some(prim) = prim {
-                        let m = st.eqtb.meaning(prim.eqtb_loc());
+                        let m = st.eqtb.meaning(CsId::primitive(prim));
                         if m.cmd() > Cmd::MAX_COMMAND {
                             st.scanner.cur = m;
                             st.scanner.cur_tok = m.char_token();
@@ -824,7 +830,10 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                             continue 'reswitch;
                         }
                         back_input(st)?;
-                        crate::input::prepend_to_backed_up(st, Token::from_cs(FROZEN_PRIMITIVE))?;
+                        crate::input::prepend_to_backed_up(
+                            st,
+                            Token::from_cs(Frozen::Primitive.cs()),
+                        )?;
                     }
                 }
             }
@@ -832,17 +841,17 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                 let name = scan_cs_name_tokens(st)?;
                 let first = st.input.first;
                 let j = token_chars_to_buffer(st, name)?;
-                let cs = if j > first + 1 || st.input.buffer[first] > 65535 {
-                    st.eqtb.no_new_control_sequence = false;
-                    let cs = st
-                        .eqtb
-                        .id_lookup(&mut st.strings, st.input.buffer.span(first, j))?;
-                    st.eqtb.no_new_control_sequence = true;
-                    cs
-                } else if j == first {
-                    NULL_CS
-                } else {
-                    SINGLE_BASE + st.input.buffer[first]
+                let cs = match CsId::of_char(st.input.buffer[first]) {
+                    Some(_) if j == first => CsId::NULL,
+                    Some(single) if j == first + 1 => single,
+                    _ => {
+                        st.eqtb.no_new_control_sequence = false;
+                        let cs = st
+                            .eqtb
+                            .id_lookup(&mut st.strings, st.input.buffer.span(first, j))?;
+                        st.eqtb.no_new_control_sequence = true;
+                        cs
+                    }
                 };
                 st.scanner.cur_cs = Some(cs);
                 st.mem.tokens.flush(name);

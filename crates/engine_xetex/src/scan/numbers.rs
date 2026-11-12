@@ -4,10 +4,10 @@ use crate::cmd::Cmd;
 use crate::codes::ValueLevel;
 use crate::command::RelaxCode;
 use crate::consts::{
-    ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, FROZEN_PRIMITIVE,
-    FROZEN_RELAX, MAX_DIMEN, MAX_HALFWORD, NULL_CS, NUMBER_MATH_FAMILIES, SINGLE_BASE,
-    TEX_INFINITY,
+    ACTIVE_MATH_CHAR, BIGGEST_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, MAX_DIMEN, MAX_HALFWORD,
+    NUMBER_MATH_FAMILIES, TEX_INFINITY,
 };
+use crate::cs::{CsId, CsKind, Frozen};
 use crate::errors::OrConfusion;
 use crate::errors::{mu_error, Abort};
 use crate::fonts::{QUAD_CODE, X_HEIGHT_CODE};
@@ -36,7 +36,7 @@ const OCTAL_TOKEN: Token = Token::other(b'\'');
 const CONTINENTAL_POINT_TOKEN: Token = Token::other(b',');
 const POINT_TOKEN: Token = Token::other(b'.');
 const ALPHA_TOKEN: Token = Token::other(b'`');
-const FROZEN_PRIM_TOKEN: Token = Token::from_cs(FROZEN_PRIMITIVE);
+const FROZEN_PRIM_TOKEN: Token = Token::from_cs(Frozen::Primitive.cs());
 
 /// A suspended level of expression scanning, resumed at its closing parenthesis.
 struct ExprLevel {
@@ -260,13 +260,13 @@ fn scan_optional_space(st: &mut EngineState) -> Result<(), Abort> {
 pub(super) fn get_primitive_token(st: &mut EngineState) -> Result<(), Abort> {
     get_token(st)?;
     if let Some(p) = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)? {
-        st.scanner.cur = st.eqtb.meaning(p.eqtb_loc());
-        st.scanner.cur_cs = Some(p.eqtb_loc());
-        st.scanner.cur_tok = Token::from_cs(p.eqtb_loc());
+        st.scanner.cur = st.eqtb.meaning(CsId::primitive(p));
+        st.scanner.cur_cs = Some(CsId::primitive(p));
+        st.scanner.cur_tok = Token::from_cs(CsId::primitive(p));
     } else {
         st.scanner.cur = Command::Relax(RelaxCode::Zero);
-        st.scanner.cur_tok = Token::from_cs(FROZEN_RELAX);
-        st.scanner.cur_cs = Some(FROZEN_RELAX);
+        st.scanner.cur_tok = Token::from_cs(Frozen::Relax.cs());
+        st.scanner.cur_cs = Some(Frozen::Relax.cs());
     }
     Ok(())
 }
@@ -286,12 +286,10 @@ fn scan_int_decimal(st: &mut EngineState) -> Result<(i32, bool), Abort> {
         if st.scanner.cur_tok == ALPHA_TOKEN {
             get_token(st)?;
             if let Some(cs) = st.scanner.cur_tok.cs() {
-                v = if cs < SINGLE_BASE {
-                    cs - ACTIVE_BASE
-                } else if cs < NULL_CS {
-                    cs - SINGLE_BASE
-                } else {
-                    st.strings.astral_char(st.eqtb.text(cs))
+                v = match cs.kind() {
+                    CsKind::Active(c) => c.raw(),
+                    CsKind::Single(c) => i32::from(c),
+                    _ => st.strings.astral_char(st.eqtb.text(cs)),
                 };
             } else {
                 v = st.scanner.cur_tok.chr();

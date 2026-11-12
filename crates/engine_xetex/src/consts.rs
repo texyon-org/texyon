@@ -1,7 +1,5 @@
 //! Shared compile-time constants for the XeTeX engine, mirroring the WEB `@d` definitions.
 
-use crate::units::CsId;
-
 pub const BIGGEST_CHAR: i32 = 0xFFFF;
 pub const TOO_BIG_CHAR: i32 = 65_536;
 /// Pool string 65536 marks the start of the pool, so the empty string is the one after it.
@@ -13,7 +11,6 @@ pub const TOO_BIG_USV: i32 = BIGGEST_USV + 1;
 pub const ACTIVE_MATH_CHAR: i32 = 0x1F_FFFF;
 pub const BIGGEST_LANG: i32 = 255;
 pub const CHAR_CLASS_LIMIT: i32 = 4096;
-pub const CS_TOKEN_FLAG: i32 = 0x1FF_FFFF;
 
 pub const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
 /// `max_dimen`, the largest legal dimension.
@@ -62,39 +59,8 @@ pub const TEXT_SIZE: i32 = 0;
 pub const SCRIPT_SIZE: i32 = 256;
 pub const NUMBER_MATH_FAMILIES: i32 = 256;
 
-// The eqtb regions.
-pub const ACTIVE_BASE: CsId = CsId::FIRST;
-pub const SINGLE_BASE: CsId = ACTIVE_BASE.plus(NUMBER_USVS.cast_unsigned());
-pub const NULL_CS: CsId = SINGLE_BASE.plus(TOO_BIG_CHAR.cast_unsigned());
-pub const HASH_BASE: CsId = NULL_CS.plus(1);
-pub const FROZEN_CONTROL_SEQUENCE: CsId = HASH_BASE.plus(crate::hash::HASH_SIZE.cast_unsigned());
-
-pub const FROZEN_PROTECTION: CsId = FROZEN_CONTROL_SEQUENCE;
-pub const FROZEN_CR: CsId = FROZEN_CONTROL_SEQUENCE.plus(1);
-pub const FROZEN_END_GROUP: CsId = FROZEN_CONTROL_SEQUENCE.plus(2);
-pub const FROZEN_RIGHT: CsId = FROZEN_CONTROL_SEQUENCE.plus(3);
-pub const FROZEN_FI: CsId = FROZEN_CONTROL_SEQUENCE.plus(4);
-pub const FROZEN_END_TEMPLATE: CsId = FROZEN_CONTROL_SEQUENCE.plus(5);
-pub const FROZEN_ENDV: CsId = FROZEN_CONTROL_SEQUENCE.plus(6);
-pub const FROZEN_RELAX: CsId = FROZEN_CONTROL_SEQUENCE.plus(7);
-pub const END_WRITE: CsId = FROZEN_CONTROL_SEQUENCE.plus(8);
-pub const FROZEN_DONT_EXPAND: CsId = FROZEN_CONTROL_SEQUENCE.plus(9);
-pub const FROZEN_SPECIAL: CsId = FROZEN_CONTROL_SEQUENCE.plus(10);
-pub const FROZEN_PRIMITIVE: CsId = FROZEN_CONTROL_SEQUENCE.plus(11);
-pub const PRIM_EQTB_BASE: CsId = FROZEN_PRIMITIVE.plus(1);
 pub const PRIM_SIZE: i32 = 2100;
-pub const FROZEN_NULL_FONT: CsId = PRIM_EQTB_BASE.plus(PRIM_SIZE.cast_unsigned());
-// `font_base` is 0, asserted below.
-pub const FONT_ID_BASE: CsId = FROZEN_NULL_FONT;
-pub const UNDEFINED_CONTROL_SEQUENCE: CsId =
-    FROZEN_NULL_FONT.plus((MAX_FONT_MAX + 1).cast_unsigned());
 
 const _: () = {
     assert!(FONT_BASE == 0 && NULL_FONT.get() == 0);
-    assert!(SINGLE_BASE.raw() == 1_114_113);
-    assert!(NULL_CS.raw() == 1_179_649);
-    assert!(HASH_BASE.raw() == 1_179_650);
-    assert!(PRIM_EQTB_BASE.raw() == 1_194_662);
-    assert!(FROZEN_NULL_FONT.raw() == 1_196_762);
-    assert!(UNDEFINED_CONTROL_SEQUENCE.raw() == 1_205_763);
 };

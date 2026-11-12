@@ -2,9 +2,10 @@
 
 use crate::cmd::Cmd;
 use crate::codes::{FiOrElseCode, ValueLevel};
+use crate::cs::{CsId, Frozen};
 use crate::glue_store::GlueSpecId;
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
-use crate::units::{BufPos, CsId, FontId, PoolPos, PrimNum, SavePtr, Scaled, StrNumber};
+use crate::units::{BufPos, FontId, PoolPos, PrimNum, SavePtr, Scaled, StrNumber};
 
 #[derive(Default)]
 pub(crate) struct EngineState {
@@ -294,8 +295,10 @@ pub(crate) struct InputClusterState {
 }
 
 pub(crate) struct EqtbState {
-    pub hash_used: CsId,
-    pub hash_high: i32,
+    /// The lowest bucket handed out to a colliding name so far.
+    pub hash_used: crate::cs::NameSlot,
+    /// The extra names in use.
+    pub hash_high: u32,
     pub no_new_control_sequence: bool,
     pub prim_used: PrimNum,
     pub cs_count: i32,
@@ -316,9 +319,9 @@ pub(crate) struct EqtbState {
     pub boxes:
         crate::eqtb::Table<crate::eqtb::BoxLoc, Option<crate::node::NodePtr<crate::node::BoxNode>>>,
     pub prim: Vec<crate::hash::PrimEntry>,
-    /// The `next` and `text` of each control sequence from `HASH_BASE` on.
+    /// The `next` and `text` of each control sequence from the first hash bucket on.
     pub hash: Vec<crate::hash::HashEntry>,
-    pub hash_extra: i32,
+    pub hash_extra: u32,
     /// The last control sequence, past the extra hash entries.
     pub cs_top: CsId,
     pub journal: crate::journal::EqtbJournal,
@@ -328,7 +331,7 @@ pub(crate) struct EqtbState {
 impl Default for EqtbState {
     fn default() -> Self {
         EqtbState {
-            hash_used: crate::consts::FROZEN_CONTROL_SEQUENCE,
+            hash_used: crate::cs::NameSlot::BUCKETS_END,
             hash_high: 0,
             no_new_control_sequence: false,
             prim_used: PrimNum::LAST,
@@ -351,7 +354,7 @@ impl Default for EqtbState {
             prim: vec![crate::hash::PrimEntry::default(); 2101],
             hash: Vec::new(),
             hash_extra: 0,
-            cs_top: crate::consts::UNDEFINED_CONTROL_SEQUENCE,
+            cs_top: CsId::UNDEFINED,
             journal: crate::journal::EqtbJournal::default(),
             pgfmath: crate::pgfmath::KnownCs::default(),
         }
@@ -361,15 +364,14 @@ impl Default for EqtbState {
 impl EqtbState {
     /// Sizes the tables for `hash_extra` extra names, every control sequence undefined.
     pub(crate) fn alloc_tables(&mut self) {
-        use crate::consts::UNDEFINED_CONTROL_SEQUENCE;
-        self.cs_top = UNDEFINED_CONTROL_SEQUENCE + self.hash_extra;
+        self.cs_top = CsId::top(self.hash_extra);
         let cs = self.cs_top.index() + 1;
         self.meanings = crate::eqtb::Table::at_level(
             cs,
             crate::command::Command::UndefinedCs,
             crate::consts::LEVEL_ZERO,
         );
-        self.hash = crate::mem_types::zeroed_vec(crate::hash::hash_slot(self.cs_top) + 1);
+        self.hash = crate::mem_types::zeroed_vec(self.cs_top.hash_index().map_or(0, |i| i + 1));
         self.ints = crate::eqtb::Table::new(crate::eqtb::IntLoc::LEN, 0);
         self.dimens = crate::eqtb::Table::new(crate::eqtb::DimenLoc::LEN, Scaled::ZERO);
         self.glue = crate::eqtb::Table::new(crate::eqtb::GlueLoc::LEN, crate::mem::ZERO_GLUE);
@@ -410,30 +412,35 @@ impl EqtbState {
 
     #[inline]
     pub(crate) fn hash_next(&self, p: CsId) -> Option<CsId> {
-        self.hash[crate::hash::hash_slot(p)].next
+        p.hash_index()
+            .and_then(|i| self.hash.get(i))
+            .and_then(|h| h.next)
     }
 
     #[inline]
     pub(crate) fn set_hash_next(&mut self, p: CsId, next: CsId) {
-        let index = crate::hash::hash_slot(p);
+        let Some(index) = p.hash_index() else {
+            return;
+        };
         if self.journal.hash.armed() {
             self.journal.hash.note(index, self.hash[index]);
         }
         self.hash[index].next = Some(next);
     }
 
-    /// The name of control sequence `p`, `text(p)`, none below `HASH_BASE`.
+    /// The name of control sequence `p`, `text(p)`, none below the first hash bucket.
     #[inline]
     pub fn text(&self, p: CsId) -> StrNumber {
-        usize::try_from(p - crate::consts::HASH_BASE)
-            .ok()
+        p.hash_index()
             .and_then(|i| self.hash.get(i))
             .map_or(StrNumber::NONE, |h| h.text)
     }
 
     #[inline]
     pub fn set_text(&mut self, p: CsId, s: StrNumber) {
-        let index = crate::hash::hash_slot(p);
+        let Some(index) = p.hash_index() else {
+            return;
+        };
         if self.journal.hash.armed() {
             self.journal.hash.note(index, self.hash[index]);
         }
@@ -473,7 +480,7 @@ impl EqtbState {
     /// The control sequence text that identifies font `f`.
     #[inline]
     pub(crate) fn font_id_text(&self, f: FontId) -> StrNumber {
-        self.text(f.id_loc())
+        self.text(CsId::font_id(f))
     }
 
     #[inline]
@@ -683,12 +690,11 @@ pub(crate) struct Insertion(pub Option<Closer>);
 impl Insertion {
     /// The inserted tokens, in reading order.
     pub(crate) fn tokens(self) -> Vec<crate::token::Token> {
-        use crate::consts::{FROZEN_END_GROUP, FROZEN_RIGHT};
         use crate::token::Token;
         match self.0 {
-            Some(Closer::EndGroup) => vec![Token::from_cs(FROZEN_END_GROUP)],
+            Some(Closer::EndGroup) => vec![Token::from_cs(Frozen::EndGroup.cs())],
             Some(Closer::MathShift) => vec![Token::math_shift(b'$')],
-            Some(Closer::Right) => vec![Token::from_cs(FROZEN_RIGHT), Token::other(b'.')],
+            Some(Closer::Right) => vec![Token::from_cs(Frozen::Right.cs()), Token::other(b'.')],
             None => vec![Token::right_brace(b'}')],
         }
     }

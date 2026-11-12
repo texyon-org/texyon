@@ -1,9 +1,10 @@
 //! Control-sequence hash table lookups.
 
-use crate::consts::{BIGGEST_CHAR, HASH_BASE, PRIM_SIZE, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE};
-use crate::errors::{Abort, OrConfusion};
+use crate::consts::{BIGGEST_CHAR, PRIM_SIZE, TOO_BIG_CHAR};
+use crate::cs::{CsId, CsKind, NameSlot};
+use crate::errors::Abort;
 use crate::state::{EqtbState, StringsState};
-use crate::units::{CsId, PrimNum, StrNumber};
+use crate::units::{PrimNum, StrNumber};
 
 /// A multi-letter control sequence's slot in the hash table.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
@@ -30,12 +31,6 @@ pub(crate) struct PrimEntry {
 pub(crate) const HASH_SIZE: i32 = 15000;
 pub(crate) const HASH_PRIME: i32 = 8501;
 const PRIM_PRIME: i32 = 1777;
-
-/// The index of control sequence `p` in the `hash` array.
-#[inline(always)]
-pub(crate) fn hash_slot(p: CsId) -> usize {
-    usize::try_from(p - HASH_BASE).unwrap_or(usize::MAX)
-}
 
 impl StringsState {
     #[inline]
@@ -71,7 +66,7 @@ impl EqtbState {
             }
         }
 
-        let mut p = HASH_BASE + h;
+        let mut p = NameSlot::bucket(h.cast_unsigned()).cs();
 
         let utf16_len = name
             .iter()
@@ -88,28 +83,30 @@ impl EqtbState {
 
             let Some(next) = self.hash_next(p) else {
                 if self.no_new_control_sequence {
-                    p = UNDEFINED_CONTROL_SEQUENCE;
+                    p = CsId::UNDEFINED;
                 } else {
                     if text > StrNumber::NONE {
                         if self.hash_high < self.hash_extra {
                             self.hash_high += 1;
-                            self.set_hash_next(p, UNDEFINED_CONTROL_SEQUENCE + self.hash_high);
-                            p = UNDEFINED_CONTROL_SEQUENCE + self.hash_high;
+                            let extra = NameSlot::extra(self.hash_high).cs();
+                            self.set_hash_next(p, extra);
+                            p = extra;
                         } else {
                             loop {
-                                if self.hash_used == HASH_BASE {
+                                let Some(prev) = self.hash_used.prev_bucket() else {
                                     return Err(Abort::Overflow {
                                         capacity: crate::errors::Capacity::HashSize,
-                                        n: HASH_SIZE + self.hash_extra,
+                                        n: HASH_SIZE.saturating_add_unsigned(self.hash_extra),
                                     });
-                                }
-                                self.hash_used = self.hash_used.prev().or_confusion("hash_used")?;
-                                if self.text(self.hash_used) == StrNumber::NONE {
+                                };
+                                self.hash_used = prev;
+                                if self.text(prev.cs()) == StrNumber::NONE {
                                     break;
                                 }
                             }
-                            self.set_hash_next(p, self.hash_used);
-                            p = self.hash_used;
+                            let free = self.hash_used.cs();
+                            self.set_hash_next(p, free);
+                            p = free;
                         }
                     }
 
@@ -226,10 +223,12 @@ impl EqtbState {
         let Some(cs) = cs else {
             return Ok(None);
         };
-        let s = if cs < HASH_BASE {
-            StrNumber::from_raw(cs - crate::consts::SINGLE_BASE)
-        } else {
-            self.text(cs)
+        let s = match cs.kind() {
+            CsKind::Active(_) => return Ok(None),
+            CsKind::Single(c) => StrNumber::from_raw(i32::from(c)),
+            // WEB looks up the string after the single characters, as `null_cs - single_base`.
+            CsKind::Null => StrNumber::from_raw(TOO_BIG_CHAR),
+            _ => self.text(cs),
         };
         self.prim_lookup(strings, s)
     }

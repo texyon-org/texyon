@@ -6,12 +6,11 @@ use crate::cmd::Cmd;
 use crate::codes::{BoxCode, FiOrElseCode, MarkCode, ScannerStatus, ValueLevel};
 use crate::command::Command;
 use crate::consts::{
-    BIGGEST_CHAR, BIGGEST_LANG, CLOSED, CS_TOKEN_FLAG, EMPTY_STRING, END_WRITE, FONT_BASE,
-    FROZEN_CONTROL_SEQUENCE, FROZEN_DONT_EXPAND, FROZEN_ENDV, FROZEN_END_TEMPLATE,
-    FROZEN_PRIMITIVE, FROZEN_PROTECTION, HISTORY_FATAL_ERROR, HISTORY_SPOTLESS,
-    HISTORY_WARNING_ISSUED, LEVEL_ONE, LEVEL_ZERO, MAX_FONT_MAX, MAX_HALFWORD, NORMAL, NULL_FONT,
-    NUMBER_USVS, SINGLE_BASE, TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
+    BIGGEST_CHAR, BIGGEST_LANG, CLOSED, EMPTY_STRING, FONT_BASE, HISTORY_FATAL_ERROR,
+    HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, LEVEL_ONE, LEVEL_ZERO, MAX_FONT_MAX, MAX_HALFWORD,
+    NORMAL, NULL_FONT, NUMBER_USVS, TEX_NULL, TOO_BIG_CHAR,
 };
+use crate::cs::{CsId, Frozen};
 use crate::eqtb::{CatLoc, DelLoc, LcLoc, MathLoc, SfLoc, UcLoc};
 use crate::errors::{Abort, OrConfusion};
 use crate::format_io::load_fmt_file;
@@ -35,7 +34,6 @@ use crate::state::{
 };
 use crate::token::Token;
 use crate::token::TokenList;
-use crate::units::CsId;
 use crate::units::{
     BufPos, FontId, GlueOrder, NodeType, PoolPos, PrimNum, SavePtr, Scaled, StrNumber,
 };
@@ -109,16 +107,16 @@ fn primitive(st: &mut EngineState, ident: &str, c: Cmd, o: i32) -> Result<CsId, 
             .prim_lookup(&mut st.strings, s)?
             .or_confusion("primitive")?
     } else {
-        let ch = i32::from(bytes[0]);
-        cs = SINGLE_BASE + ch;
+        cs = CsId::single(u16::from(bytes[0]));
         st.eqtb
-            .prim_lookup(&mut st.strings, StrNumber::from_raw(ch))?
+            .prim_lookup(&mut st.strings, StrNumber::from_raw(i32::from(bytes[0])))?
             .or_confusion("primitive")?
     };
 
     let meaning = Command::decode(c, o).ok_or(Abort::Confusion("primitive"))?;
     st.eqtb.set_meaning(cs, meaning, LEVEL_ONE);
-    st.eqtb.set_meaning(prim_val.eqtb_loc(), meaning, LEVEL_ONE);
+    st.eqtb
+        .set_meaning(CsId::primitive(prim_val), meaning, LEVEL_ONE);
     Ok(cs)
 }
 
@@ -338,7 +336,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     }
 
     mem.tokens
-        .init_omit_template(Token::from_cs(FROZEN_END_TEMPLATE));
+        .init_omit_template(Token::from_cs(Frozen::EndTemplate.cs()));
     mem[END_SPAN].span_count = i32::from(u16::MAX) + 1;
     let page_ins = NodePtr::<PageInsNode>::at(PAGE_INS_HEAD);
     mem[page_ins].box_number = 255;
@@ -397,7 +395,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     eqtb.set_int_par(IntPar::ShowStream, -1);
 
     eqtb.prim_used = PrimNum::LAST;
-    eqtb.hash_used = FROZEN_CONTROL_SEQUENCE;
+    eqtb.hash_used = crate::cs::NameSlot::BUCKETS_END;
     eqtb.hash_high = 0;
     eqtb.cs_count = 0;
 
@@ -447,29 +445,33 @@ fn initialize_primitives(st: &mut EngineState) -> Result<(), Abort> {
         }
     }
 
-    set_frozen_text(st, FROZEN_END_TEMPLATE, "endtemplate")?;
+    set_frozen_text(st, Frozen::EndTemplate.cs(), "endtemplate")?;
     st.eqtb
-        .set_meaning(FROZEN_END_TEMPLATE, Command::EndTemplate, LEVEL_ONE);
+        .set_meaning(Frozen::EndTemplate.cs(), Command::EndTemplate, LEVEL_ONE);
 
-    set_frozen_text(st, FROZEN_ENDV, "endtemplate")?;
-    st.eqtb.set_meaning(FROZEN_ENDV, Command::Endv, LEVEL_ONE);
-
-    set_frozen_text(st, FROZEN_DONT_EXPAND, "notexpanded:")?;
+    set_frozen_text(st, Frozen::Endv.cs(), "endtemplate")?;
     st.eqtb
-        .set_meaning(FROZEN_DONT_EXPAND, Command::DontExpand, LEVEL_ZERO);
+        .set_meaning(Frozen::Endv.cs(), Command::Endv, LEVEL_ONE);
 
-    set_frozen_text(st, FROZEN_PRIMITIVE, "primitive")?;
+    set_frozen_text(st, Frozen::DontExpand.cs(), "notexpanded:")?;
+    st.eqtb
+        .set_meaning(Frozen::DontExpand.cs(), Command::DontExpand, LEVEL_ZERO);
+
+    set_frozen_text(st, Frozen::Primitive.cs(), "primitive")?;
     st.eqtb.set_meaning(
-        FROZEN_PRIMITIVE,
+        Frozen::Primitive.cs(),
         Command::IgnoreSpaces { primitive: true },
         LEVEL_ONE,
     );
 
-    set_frozen_text(st, FROZEN_PROTECTION, "inaccessible")?;
+    set_frozen_text(st, Frozen::Protection.cs(), "inaccessible")?;
 
-    set_frozen_text(st, END_WRITE, "endwrite")?;
-    st.eqtb
-        .set_meaning(END_WRITE, Command::OuterCall(TokenList::NULL), LEVEL_ONE);
+    set_frozen_text(st, Frozen::EndWrite.cs(), "endwrite")?;
+    st.eqtb.set_meaning(
+        Frozen::EndWrite.cs(),
+        Command::OuterCall(TokenList::NULL),
+        LEVEL_ONE,
+    );
 
     st.eqtb.no_new_control_sequence = true;
     Ok(())
@@ -634,7 +636,7 @@ pub(crate) fn initialize_engine(
     if st.input.buf_size.raw() > MAX_HALFWORD {
         bad = 18;
     }
-    if CS_TOKEN_FLAG + UNDEFINED_CONTROL_SEQUENCE.raw() + st.eqtb.hash_extra > MAX_HALFWORD {
+    if !Token::can_name(CsId::top(st.eqtb.hash_extra)) {
         bad = 21;
     }
     if bad > 0 {

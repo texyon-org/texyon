@@ -2,14 +2,16 @@
 //! for a control sequence.
 
 use crate::cmd::Cmd;
-use crate::consts::{CS_TOKEN_FLAG, TEX_NULL};
+use crate::consts::{MAX_HALFWORD, TEX_NULL};
+use crate::cs::CsId;
 use crate::errors::Abort;
 use crate::journal::{WordDelta, WordJournal};
-use crate::units::CsId;
 use bytemuck::Zeroable;
 
 /// One more than the largest character code a token can carry.
 pub(crate) const MAX_CHAR_VAL: i32 = 0x20_0000;
+/// Control sequence tokens count up from here, past every character token.
+const CS_TOKEN_FLAG: i32 = 0x1FF_FFFF;
 
 /// A token as stored in token lists and `cur_tok`. Ordered like its raw value,
 /// so brace and parameter tests are range checks as in TeX.
@@ -85,6 +87,11 @@ impl Token {
     #[inline(always)]
     pub(crate) const fn is_cs(self) -> bool {
         self.0 >= CS_TOKEN_FLAG
+    }
+
+    /// Whether a token can name every control sequence up to `top`.
+    pub(crate) fn can_name(top: CsId) -> bool {
+        i64::from(CS_TOKEN_FLAG) + i64::from(top.raw()) <= i64::from(MAX_HALFWORD)
     }
 
     /// The control sequence of the token, `None` for a character token.

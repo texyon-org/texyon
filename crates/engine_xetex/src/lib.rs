@@ -32,6 +32,7 @@ mod command;
 mod compat;
 mod cond_stack;
 mod consts;
+mod cs;
 mod diagnostic;
 mod dvi;
 mod engine;

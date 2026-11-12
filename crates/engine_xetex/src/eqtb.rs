@@ -6,6 +6,7 @@ use crate::cmd::Cmd;
 use crate::codes::code_enum;
 use crate::command::Command;
 use crate::consts::LEVEL_ONE;
+use crate::cs::CsId;
 use crate::errors::Abort;
 use crate::glue_store::GlueSpecId;
 use crate::journal::{JournalWord, WordDelta, WordJournal};
@@ -15,7 +16,7 @@ use crate::state::{
     EngineState, EqtbState, MemState, Restore, SaveEntry, SaveStackState, ScannerState,
 };
 use crate::token::TokenList;
-use crate::units::{CsId, FontId, MemPtr, Scaled};
+use crate::units::{FontId, MemPtr, Scaled};
 
 /// A value an `eqtb` table holds.
 pub(crate) trait EqValue: JournalWord + PartialEq {

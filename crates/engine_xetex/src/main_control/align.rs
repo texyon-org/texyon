@@ -4,7 +4,8 @@ use crate::cmd::Cmd;
 use crate::codes::{ScannerStatus, ValueLevel};
 use crate::command::Command;
 use crate::command::TabMarkCode;
-use crate::consts::{FROZEN_END_TEMPLATE, IGNORE_DEPTH, MAX_DIMEN};
+use crate::consts::{IGNORE_DEPTH, MAX_DIMEN};
+use crate::cs::Frozen;
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::input::{TokenType, TOKEN_LIST};
@@ -956,7 +957,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
         }
         st.mem
             .tokens
-            .push(&v_part, Token::from_cs(FROZEN_END_TEMPLATE))?;
+            .push(&v_part, Token::from_cs(Frozen::EndTemplate.cs()))?;
         st.mem[column].v_part = st.mem.tokens.finish(v_part)?;
     }
 

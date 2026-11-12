@@ -1,7 +1,8 @@
 //! Shipping whatsits: `\special`, `\write`, the `\openout` streams and pictures.
 
 use crate::bridge::{output_close, output_open, shell_escape};
-use crate::consts::{END_WRITE, INVALID_HANDLE};
+use crate::consts::INVALID_HANDLE;
+use crate::cs::Frozen;
 use crate::errors::Abort;
 use crate::input::TokenType;
 use crate::node::{NodePtr, OpenNode, PicNode, WhatsitNode, WhatsitVariant, WriteNode};
@@ -57,7 +58,9 @@ impl EqtbState {
 /// Expands `tokens` as `\write` does, leaving the result in `def_ref`.
 fn expand_write_tokens(st: &mut crate::state::EngineState, tokens: TokenList) -> Result<(), Abort> {
     let close = st.mem.tokens.single(Token::right_brace(b'}'))?;
-    st.mem.tokens.append(close, Token::from_cs(END_WRITE))?;
+    st.mem
+        .tokens
+        .append(close, Token::from_cs(Frozen::EndWrite.cs()))?;
     crate::input::begin_token_list(st, close, TokenType::Inserted)?;
     crate::input::begin_token_list(st, tokens, TokenType::Write)?;
     let open = st.mem.tokens.single(Token::left_brace(b'{'))?;
@@ -69,7 +72,7 @@ fn expand_write_tokens(st: &mut crate::state::EngineState, tokens: TokenList) ->
     crate::scan::scan_toks(st, false, true)?;
     st.input.cur_list.mode = old_mode;
     crate::scan::get_token(st)?;
-    if st.scanner.cur_tok != Token::from_cs(END_WRITE) {
+    if st.scanner.cur_tok != Token::from_cs(Frozen::EndWrite.cs()) {
         crate::errors::error(
             st,
             "Unbalanced write command",
@@ -80,7 +83,7 @@ fn expand_write_tokens(st: &mut crate::state::EngineState, tokens: TokenList) ->
         )?;
         loop {
             crate::scan::get_token(st)?;
-            if st.scanner.cur_tok == Token::from_cs(END_WRITE) {
+            if st.scanner.cur_tok == Token::from_cs(Frozen::EndWrite.cs()) {
                 break;
             }
         }

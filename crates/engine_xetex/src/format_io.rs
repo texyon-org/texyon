@@ -8,17 +8,17 @@
 use crate::bridge::{input_open, input_read, output_close, output_open, output_write, FileFormat};
 use crate::command::Command;
 use crate::consts::{
-    ACTIVE_BASE, EMPTY_STRING, FONT_BASE, FROZEN_CONTROL_SEQUENCE, HASH_BASE, INVALID_HANDLE,
-    MAX_FONT_MAX, MAX_HALFWORD, NULL_FONT, PRIM_SIZE, TEX_NULL, TOO_BIG_CHAR,
-    UNDEFINED_CONTROL_SEQUENCE,
+    EMPTY_STRING, FONT_BASE, INVALID_HANDLE, MAX_FONT_MAX, MAX_HALFWORD, NULL_FONT, PRIM_SIZE,
+    TEX_NULL, TOO_BIG_CHAR,
 };
+use crate::cs::{CsId, NameSlot};
 use crate::engine::{POOL_FREE, STRINGS_FREE};
 use crate::errors::Abort;
 use crate::fonts::LigChar;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::glue_store::GlueSpecId;
 use crate::glue_store::{GlueSpec, GlueStore, STATIC_SPECS};
-use crate::hash::{hash_slot, HASH_PRIME};
+use crate::hash::HASH_PRIME;
 use crate::hash::{HashEntry, PrimEntry};
 use crate::hyphenation::{TrieOp, TriePtr, BIGGEST_LANG, HYPH_PRIME, TRIE_OP_SIZE};
 use crate::mem::{CONTRIB_HEAD, PAGE_HEAD, RESERVED_WORDS};
@@ -30,7 +30,6 @@ use crate::tfm::{
     LigKernStep, LigOp, TfmMetrics,
 };
 use crate::token::{ListSlot, Token, TokenList, TokenStore};
-use crate::units::CsId;
 use crate::units::MemIdx;
 use crate::units::RawPtr;
 use crate::units::{FontId, MemPtr, PoolPos, PrimNum, SavePtr, Scaled, StrNumber};
@@ -688,7 +687,11 @@ fn header<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
     }
 
     let eqtb = &mut st.eqtb;
-    s.int_in(&mut eqtb.hash_high, 0, SUP_HASH_EXTRA)?;
+    s.items_in(
+        std::slice::from_mut(&mut eqtb.hash_high),
+        0,
+        SUP_HASH_EXTRA.cast_unsigned(),
+    )?;
     if S::LOADING {
         eqtb.hash_extra = eqtb.hash_extra.max(eqtb.hash_high);
         eqtb.alloc_tables();
@@ -702,7 +705,7 @@ fn header<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
         st.shipout.page_tail = Some(PAGE_HEAD);
     }
 
-    s.constant(UNDEFINED_CONTROL_SEQUENCE.raw())?;
+    s.constant(CsId::UNDEFINED.raw())?;
     s.constant(HASH_PRIME)?;
     s.constant(HYPH_PRIME)
 }
@@ -883,7 +886,7 @@ fn runs<S: FmtStream, T: FmtItem + PartialEq>(s: &mut S, v: &mut [T]) -> Result<
 
 fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
     let eqtb = &mut st.eqtb;
-    let named = ACTIVE_BASE.index()..=(UNDEFINED_CONTROL_SEQUENCE + eqtb.hash_high).index();
+    let named = CsId::FIRST.index()..=CsId::top(eqtb.hash_high).index();
     runs(s, &mut eqtb.meanings.values_mut()[named.clone()])?;
     runs(s, &mut eqtb.meanings.levels_mut()[named])?;
     runs(s, eqtb.cat_codes.values_mut())?;
@@ -903,53 +906,59 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
     // \partokenname may name an active character or a control symbol.
     s.items_in(
         std::slice::from_mut(&mut st.input.par_loc),
-        Some(ACTIVE_BASE),
-        Some(UNDEFINED_CONTROL_SEQUENCE + eqtb.hash_high),
+        Some(CsId::FIRST),
+        Some(CsId::top(eqtb.hash_high)),
     )?;
     if S::LOADING {
         st.input.par_token = Token::from_cs(st.input.par_loc.ok_or_else(bad_fmt)?);
     }
     s.items_in(
         std::slice::from_mut(&mut st.shipout.write_loc),
-        Some(HASH_BASE),
+        Some(NameSlot::bucket(0).cs()),
         Some(eqtb.cs_top),
     )?;
 
     s.items(&mut eqtb.prim[..=PRIM_SIZE as usize])?;
 
+    // The buckets from 0 through `hash_used` go entry by entry, as WEB dumps
+    // them. A bucket's slot number is its index in `hash`, and one past the last
+    // bucket is the first frozen control sequence, which WEB's loop includes.
+    let mut used = eqtb.hash_used.raw();
     s.items_in(
-        std::slice::from_mut(&mut eqtb.hash_used),
-        HASH_BASE,
-        FROZEN_CONTROL_SEQUENCE,
+        std::slice::from_mut(&mut used),
+        0,
+        NameSlot::BUCKETS_END.raw(),
     )?;
-    let hash_used = eqtb.hash_used;
+    eqtb.hash_used = NameSlot::from_raw(used);
+    let used = used as usize;
     if S::LOADING {
-        let mut lowest = HASH_BASE;
+        let mut lowest = 0;
         loop {
-            let mut p = lowest;
-            s.items_in(std::slice::from_mut(&mut p), lowest, hash_used)?;
-            s.items(std::slice::from_mut(&mut eqtb.hash[hash_slot(p)]))?;
-            if p == hash_used {
+            let mut p: u32 = lowest;
+            s.items_in(std::slice::from_mut(&mut p), lowest, used as u32)?;
+            s.items(std::slice::from_mut(&mut eqtb.hash[p as usize]))?;
+            if p as usize == used {
                 break;
             }
             lowest = p + 1;
         }
     } else {
-        eqtb.cs_count = (FROZEN_CONTROL_SEQUENCE - hash_used) - 1 + eqtb.hash_high;
-        for mut p in HASH_BASE.through(hash_used) {
-            let entry = &mut eqtb.hash[hash_slot(p)];
+        eqtb.cs_count = NameSlot::BUCKETS_END.raw().cast_signed() - (used as i32) - 1
+            + eqtb.hash_high.cast_signed();
+        for p in 0..=used {
+            let entry = &mut eqtb.hash[p];
             if entry.text != StrNumber::NONE {
-                s.items(std::slice::from_mut(&mut p))?;
+                s.items(std::slice::from_mut(&mut (p as u32)))?;
                 s.items(std::slice::from_mut(entry))?;
                 eqtb.cs_count += 1;
             }
         }
     }
 
-    s.items(&mut eqtb.hash[hash_slot(hash_used + 1)..hash_slot(UNDEFINED_CONTROL_SEQUENCE)])?;
-    let extra = hash_slot(UNDEFINED_CONTROL_SEQUENCE + 1);
-    let extra_end = hash_slot(UNDEFINED_CONTROL_SEQUENCE + eqtb.hash_high + 1);
-    s.items(&mut eqtb.hash[extra..extra_end])?;
+    let undefined = CsId::UNDEFINED.hash_index().ok_or_else(bad_fmt)?;
+    s.items(&mut eqtb.hash[used + 1..undefined])?;
+    let extras = eqtb.hash_high as usize;
+    s.items(&mut eqtb.hash[undefined + 1..=undefined + extras])?;
     s.int(&mut eqtb.cs_count)?;
 
     if !S::LOADING {
@@ -1335,7 +1344,7 @@ fn hyphenation_tables<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(
 mod tests {
     use super::*;
     use crate::cmd::Cmd;
-    use crate::consts::{FONT_ID_BASE, LEVEL_ONE};
+    use crate::consts::LEVEL_ONE;
     use crate::eqtb::FontLoc;
     use crate::state::Selector;
 
@@ -1349,7 +1358,7 @@ mod tests {
     fn format_load_rejects_a_font_word_past_font_ptr() {
         let font_ptr = FontId::new(3);
         let mut eqtb = eqtb_with_fonts();
-        let id = FONT_ID_BASE + 2;
+        let id = CsId::font_id(FontId::new(2));
         eqtb.set_meaning(id, Command::SetFont(FontId::new(3)), LEVEL_ONE);
         eqtb.fonts.set_value(FontLoc::math(4), FontId::new(2));
         assert!(check_font_words(&eqtb, font_ptr).is_ok());

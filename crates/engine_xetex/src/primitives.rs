@@ -8,10 +8,8 @@ use crate::codes::{
     LimitCode, MarkCode, MathAccentCode, MathCharNumCode, PageDimenCode, PageIntCode, PrefixCode,
     RadicalCode, ShorthandDefCode, ShowCode, SkipCode, TheCode, ValignCode,
 };
-use crate::consts::{
-    FROZEN_CR, FROZEN_END_GROUP, FROZEN_FI, FROZEN_NULL_FONT, FROZEN_RELAX, FROZEN_RIGHT,
-    FROZEN_SPECIAL, NUMBER_USVS,
-};
+use crate::consts::NUMBER_USVS;
+use crate::cs::{CsId, Frozen};
 use crate::eqtb::{CaseTable, CodeTable, FontLoc, ShapeLoc, XetexCode};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 
@@ -22,7 +20,7 @@ pub(crate) enum PrimInit {
     Par,
     Write,
     /// Copy the definition to this frozen eqtb location.
-    Frozen(crate::units::CsId),
+    Frozen(crate::cs::CsId),
 }
 
 #[derive(Copy, Clone)]
@@ -91,9 +89,9 @@ impl PrimitiveDef {
 }
 
 pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
-    p("relax", Cmd::Relax, NUMBER_USVS).init(PrimInit::Frozen(FROZEN_RELAX)),
+    p("relax", Cmd::Relax, NUMBER_USVS).init(PrimInit::Frozen(Frozen::Relax.cs())),
     p("span", Cmd::TabMark, NUMBER_USVS + 1),
-    p("cr", Cmd::CarRet, NUMBER_USVS + 2).init(PrimInit::Frozen(FROZEN_CR)),
+    p("cr", Cmd::CarRet, NUMBER_USVS + 2).init(PrimInit::Frozen(Frozen::Cr.cs())),
     p("crcr", Cmd::CarRet, NUMBER_USVS + 3),
     p("par", Cmd::ParEnd, NUMBER_USVS).init(PrimInit::Par),
     p("end", Cmd::Stop, 0),
@@ -197,7 +195,7 @@ pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
     p("leqno", Cmd::EqNo, 1),
     code!(Cmd::LeftRight, LeftRightCode::Middle),
     code!(Cmd::LeftRight, LeftRightCode::Left),
-    code!(Cmd::LeftRight, LeftRightCode::Right).init(PrimInit::Frozen(FROZEN_RIGHT)),
+    code!(Cmd::LeftRight, LeftRightCode::Right).init(PrimInit::Frozen(Frozen::Right.cs())),
     p("mathord", Cmd::MathComp, 16),
     p("mathop", Cmd::MathComp, 17),
     p("mathbin", Cmd::MathComp, 18),
@@ -231,7 +229,7 @@ pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
     code!(Cmd::Extension, ExtensionCode::Open),
     code!(Cmd::Extension, ExtensionCode::Write).init(PrimInit::Write),
     code!(Cmd::Extension, ExtensionCode::Close),
-    code!(Cmd::Extension, ExtensionCode::Special).init(PrimInit::Frozen(FROZEN_SPECIAL)),
+    code!(Cmd::Extension, ExtensionCode::Special).init(PrimInit::Frozen(Frozen::Special.cs())),
     code!(Cmd::Extension, ExtensionCode::Immediate),
     code!(Cmd::Extension, ExtensionCode::SetLanguage),
     code!(Cmd::Extension, ExtensionCode::PdfSavePos),
@@ -246,7 +244,7 @@ pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
     p("closein", Cmd::InStream, 0),
     p("openin", Cmd::InStream, 1),
     p("begingroup", Cmd::BeginGroup, 0),
-    p("endgroup", Cmd::EndGroup, 0).init(PrimInit::Frozen(FROZEN_END_GROUP)),
+    p("endgroup", Cmd::EndGroup, 0).init(PrimInit::Frozen(Frozen::EndGroup.cs())),
     p("omit", Cmd::Omit, 0),
     p(" ", Cmd::ExSpace, 0),
     p("noboundary", Cmd::NoBoundary, 0),
@@ -362,7 +360,7 @@ pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
         Cmd::DefFamily,
         FontLoc::SCRIPT_SCRIPT.raw(),
     ),
-    p("nullfont", Cmd::SetFont, 0).init(PrimInit::Frozen(FROZEN_NULL_FONT)),
+    p("nullfont", Cmd::SetFont, 0).init(PrimInit::Frozen(CsId::font_id(crate::consts::NULL_FONT))),
     p("font", Cmd::DefFont, 0),
     p("count", Cmd::Register, 0),
     p("dimen", Cmd::Register, 1),
@@ -438,7 +436,7 @@ pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
     code!(Cmd::IfTest, IfCode::FontChar),
     code!(Cmd::IfTest, IfCode::InCsName),
     code!(Cmd::IfTest, IfCode::Primitive),
-    p("fi", Cmd::FiOrElse, FiOrElseCode::Fi.raw()).init(PrimInit::Frozen(FROZEN_FI)),
+    p("fi", Cmd::FiOrElse, FiOrElseCode::Fi.raw()).init(PrimInit::Frozen(Frozen::Fi.cs())),
     p("else", Cmd::FiOrElse, FiOrElseCode::Else.raw()),
     p("or", Cmd::FiOrElse, FiOrElseCode::Or.raw()),
     p("csname", Cmd::CsName, 0),

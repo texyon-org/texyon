@@ -3,9 +3,8 @@
 use crate::cmd::Cmd;
 use crate::codes::{BoxCode, SkipCode, ValueLevel};
 use crate::command::Command;
-use crate::consts::{
-    BIGGEST_CHAR, EMPTY, FROZEN_CR, MAX_DIMEN, NULL_FLAG, SUB_BOX, SUB_MLIST, TEX_NULL,
-};
+use crate::consts::{BIGGEST_CHAR, EMPTY, MAX_DIMEN, NULL_FLAG, SUB_BOX, SUB_MLIST, TEX_NULL};
+use crate::cs::Frozen;
 use crate::eqtb::{ShapeLoc, ShapeRef};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
@@ -507,7 +506,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
         GroupCode::Disc => build_discretionary(st)?,
         GroupCode::Align => {
             crate::input::back_input(st)?;
-            st.scanner.cur_tok = Token::from_cs(FROZEN_CR);
+            st.scanner.cur_tok = Token::from_cs(Frozen::Cr.cs());
             crate::errors::ins_error(
                 st,
                 ("Missing ", crate::output::Esc("cr"), " inserted"),

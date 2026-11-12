@@ -41,6 +41,14 @@ impl Usv {
         }
     }
 
+    /// The `n`th scalar value, for a table that holds exactly one entry per value.
+    /// An `n` past the last value stands for the last.
+    #[inline]
+    pub(crate) const fn nth(n: u32) -> Usv {
+        let last = BIGGEST_USV.cast_unsigned();
+        Usv((if n > last { last } else { n }).cast_signed())
+    }
+
     #[inline]
     pub(crate) const fn raw(self) -> i32 {
         self.0

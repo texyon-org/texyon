@@ -3,7 +3,8 @@
 use crate::cmd::Cmd;
 use crate::codes::ExtensionCode;
 use crate::command::Command;
-use crate::consts::FROZEN_SPECIAL;
+use crate::cs::Frozen;
+
 use crate::errors::Abort;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::TokenType;
@@ -54,7 +55,9 @@ pub(crate) fn append_src_special(st: &mut EngineState) -> Result<(), Abort> {
 /// `\special{...}` around `str_pool[b..pool_ptr]`, which is dropped from the pool.
 fn special_list(st: &mut EngineState, b: crate::units::PoolPos) -> Result<TokenList, Abort> {
     let out = st.mem.tokens.begin()?;
-    st.mem.tokens.push(&out, Token::from_cs(FROZEN_SPECIAL))?;
+    st.mem
+        .tokens
+        .push(&out, Token::from_cs(Frozen::Special.cs()))?;
     st.mem.tokens.push(&out, Token::left_brace(b'{'))?;
     st.mem.str_toks_cat(&mut st.strings, b, None, &out)?;
     st.mem.tokens.push(&out, Token::right_brace(b'}'))?;

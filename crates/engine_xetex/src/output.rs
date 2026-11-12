@@ -3,9 +3,10 @@
 use crate::bridge::output_putc;
 use crate::cmd::Cmd;
 use crate::consts::{
-    ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_USV, HASH_BASE, HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED,
-    NULL_CS, SCRIPT_SIZE, SINGLE_BASE, TEXT_SIZE, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
+    BIGGEST_CHAR, BIGGEST_USV, HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, SCRIPT_SIZE, TEXT_SIZE,
+    TOO_BIG_CHAR,
 };
+use crate::cs::{CsId, CsKind};
 use crate::diagnostic::{
     begin_capture, begin_warning, current_file_line, end_capture, DiagnosticKind,
 };
@@ -17,8 +18,7 @@ use crate::node::{DelimiterWord, MathWord};
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, GroupCode, Selector};
 use crate::token::{TokCursor, TokenList};
-use crate::units::CsId;
-use crate::units::{FontId, GlueOrder, MemPtr, PrimNum, Scaled, StrNumber};
+use crate::units::{FontId, GlueOrder, MemPtr, Scaled, StrNumber};
 
 mod cmd_chr;
 mod show;
@@ -645,11 +645,11 @@ pub(crate) fn print_file_name(st: &mut EngineState, n: StrNumber, a: StrNumber, 
     }
 }
 
-/// The name string of a multi-letter control sequence at eqtb location `p`.
+/// The name string of a control sequence from the first hash bucket on.
 fn cs_text(st: &EngineState, p: CsId) -> StrNumber {
-    match PrimNum::at_eqtb_loc(p) {
-        Some(prim) => st.eqtb.prim_text(prim).unwrap_or(StrNumber::from_raw(-1)),
-        None => st.eqtb.text(p),
+    match p.kind() {
+        CsKind::Primitive(prim) => st.eqtb.prim_text(prim).unwrap_or(StrNumber::from_raw(-1)),
+        _ => st.eqtb.text(p),
     }
 }
 
@@ -658,28 +658,27 @@ pub(crate) fn print_cs(st: &mut EngineState, p: Option<CsId>) {
     let Some(p) = p else {
         return print_esc(st, "IMPOSSIBLE.");
     };
-    if p < HASH_BASE {
-        if p >= SINGLE_BASE {
-            if p == NULL_CS {
-                print_esc(st, "csname");
-                print_esc(st, "endcsname");
+    match p.kind() {
+        CsKind::Active(c) => print_char(st, c.raw()),
+        CsKind::Single(c) => {
+            let c = i32::from(c);
+            print_esc(st, StrNumber::single_char(c));
+            if st.eqtb.cat_code(c) == Cmd::Letter {
                 print_char(st, b' ');
-            } else {
-                print_esc(st, StrNumber::single_char(p - SINGLE_BASE));
-                if st.eqtb.cat_code(p - SINGLE_BASE) == Cmd::Letter {
-                    print_char(st, b' ');
-                }
             }
-        } else {
-            print_char(st, p - ACTIVE_BASE);
         }
-    } else if p == UNDEFINED_CONTROL_SEQUENCE || p > st.eqtb.cs_top {
-        print_esc(st, "IMPOSSIBLE.");
-    } else if st.eqtb.text(p) >= st.strings.str_ptr {
-        print_esc(st, "NONEXISTENT.");
-    } else {
-        print_esc(st, cs_text(st, p));
-        print_char(st, b' ');
+        CsKind::Null => {
+            print_esc(st, "csname");
+            print_esc(st, "endcsname");
+            print_char(st, b' ');
+        }
+        CsKind::Undefined => print_esc(st, "IMPOSSIBLE."),
+        _ if p > st.eqtb.cs_top => print_esc(st, "IMPOSSIBLE."),
+        _ if st.eqtb.text(p) >= st.strings.str_ptr => print_esc(st, "NONEXISTENT."),
+        _ => {
+            print_esc(st, cs_text(st, p));
+            print_char(st, b' ');
+        }
     }
 }
 
@@ -688,15 +687,14 @@ pub(crate) fn sprint_cs(st: &mut EngineState, p: Option<CsId>) {
     let Some(p) = p else {
         return print_esc(st, "IMPOSSIBLE.");
     };
-    if p >= HASH_BASE {
-        print_esc(st, cs_text(st, p));
-    } else if p < SINGLE_BASE {
-        print_char(st, p - ACTIVE_BASE);
-    } else if p < NULL_CS {
-        print_esc(st, StrNumber::single_char(p - SINGLE_BASE));
-    } else {
-        print_esc(st, "csname");
-        print_esc(st, "endcsname");
+    match p.kind() {
+        CsKind::Active(c) => print_char(st, c.raw()),
+        CsKind::Single(c) => print_esc(st, StrNumber::single_char(i32::from(c))),
+        CsKind::Null => {
+            print_esc(st, "csname");
+            print_esc(st, "endcsname");
+        }
+        _ => print_esc(st, cs_text(st, p)),
     }
 }
 

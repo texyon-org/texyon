@@ -8,6 +8,7 @@ use crate::codes::{BoxDimenCode, FiOrElseCode, IfCode, LastItemCode, PageIntCode
 use crate::command::Command;
 use crate::command::RegisterRef;
 use crate::consts::{ACTIVE_MATH_CHAR, CHAR_CLASS_LIMIT, MAX_DIMEN, NULL_FONT};
+use crate::cs::CsId;
 use crate::eqtb::{CodeTable, GlueLoc, ShapeLoc, XetexCode};
 use crate::errors::OrConfusion;
 use crate::errors::{mu_error, Abort};
@@ -26,7 +27,6 @@ use crate::node::{AnyNode, GlueKind, MathCode, SaLeaf};
 use crate::params::TokPar;
 use crate::state::{EngineState, FontEngineHandle};
 use crate::token::TokenList;
-use crate::units::CsId;
 use crate::units::RawPtr;
 use crate::units::{FontId, NodeType, Scaled, StrNumber};
 use std::rc::Rc;
@@ -301,7 +301,7 @@ fn fetch_token_list(
         _ => {
             back_input(st)?;
             let f = scan_font_ident(st)?;
-            CurVal::Ident(f.id_loc())
+            CurVal::Ident(CsId::font_id(f))
         }
     })
 }

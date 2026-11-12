@@ -5,9 +5,8 @@ use crate::cmd::Cmd;
 use crate::codes::{FiOrElseCode, ScannerStatus};
 use crate::command::RelaxCode;
 use crate::command::Usv;
-use crate::consts::{
-    ACTIVE_BASE, BIGGEST_USV, END_WRITE, FROZEN_CR, FROZEN_ENDV, FROZEN_FI, NULL_CS, SINGLE_BASE,
-};
+use crate::consts::BIGGEST_USV;
+use crate::cs::{CsId, Frozen};
 use crate::errors::{Abort, OrConfusion};
 use crate::expand::{expand, macro_call};
 use crate::input::{begin_token_list, TokenType, MID_LINE, NEW_LINE, SKIP_BLANKS, TOKEN_LIST};
@@ -17,7 +16,6 @@ use crate::scan::Command;
 use crate::state::{EngineState, InputClusterState, InputName, MemState, Selector};
 use crate::token::{Build, TokCursor, Token, TokenList};
 use crate::units::BufPos;
-use crate::units::CsId;
 
 use super::toks::finish_line;
 
@@ -97,7 +95,9 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
                 " while scanning use"
             }
             ScannerStatus::Aligning => {
-                st.mem.tokens.prepend(inserted, Token::from_cs(FROZEN_CR))?;
+                st.mem
+                    .tokens
+                    .prepend(inserted, Token::from_cs(Frozen::Cr.cs()))?;
                 st.scanner.align_state = -1_000_000;
                 " while scanning preamble"
             }
@@ -130,7 +130,7 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
         } else {
             "The file ended while I was skipping conditional text."
         };
-        st.scanner.cur_tok = Token::from_cs(FROZEN_FI);
+        st.scanner.cur_tok = Token::from_cs(Frozen::Fi.cs());
         crate::errors::ins_error(
             st,
             message,
@@ -275,7 +275,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                             // Escape: scan a control sequence name.
                             1 | 17 | 33 => {
                                 let cs = if st.input.cur_input.loc > st.input.cur_input.limit {
-                                    NULL_CS
+                                    CsId::NULL
                                 } else {
                                     'start_cs: loop {
                                         let start = st.input.cur_input.loc;
@@ -332,13 +332,12 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                                         }
 
                                         let loc = st.input.cur_input.loc;
-                                        let cs = if st.input.buffer[loc] > 65535 {
-                                            st.eqtb.id_lookup(
+                                        let cs = match CsId::of_char(st.input.buffer[loc]) {
+                                            Some(cs) => cs,
+                                            None => st.eqtb.id_lookup(
                                                 &mut st.strings,
                                                 st.input.buffer.span(loc, loc + 1),
-                                            )?
-                                        } else {
-                                            SINGLE_BASE + st.input.buffer[loc]
+                                            )?,
                                         };
                                         st.input.cur_input.loc = loc + 1;
                                         break 'start_cs cs;
@@ -354,7 +353,8 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                             // Active character.
                             14 | 30 | 46 => {
                                 char_token = false;
-                                fetch_cs_meaning(st, ACTIVE_BASE + chr);
+                                let cs = CsId::of_active(chr).or_confusion("active char")?;
+                                fetch_cs_meaning(st, cs);
                                 st.input.cur_input.state = MID_LINE;
                                 if st.scanner.cur.cmd() >= Cmd::OuterCall {
                                     check_outer_validity(st)?;
@@ -554,7 +554,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                             st.scanner.cur = Command::Relax(RelaxCode::NoExpand);
                         }
                     } else {
-                        if st.scanner.cur_cs == Some(END_WRITE)
+                        if st.scanner.cur_cs == Some(Frozen::EndWrite.cs())
                             && matches!(st.input.cur_list.mode, crate::mode::Mode::None)
                         {
                             return Err(Abort::Fatal("Unbalanced write command"));
@@ -653,7 +653,7 @@ pub(crate) fn get_x_token(st: &mut EngineState) -> Result<(), Abort> {
             if st.scanner.cur.cmd() < Cmd::EndTemplate {
                 macro_call(st)?;
             } else {
-                st.scanner.cur_cs = Some(FROZEN_ENDV);
+                st.scanner.cur_cs = Some(Frozen::Endv.cs());
                 st.scanner.cur = Command::Endv;
                 break;
             }

@@ -11,9 +11,9 @@ use crate::command::Usv;
 use crate::command::{Command, RegisterRef};
 use crate::consts::NULL_FONT;
 use crate::consts::{
-    ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, DESIGN_SIZE, HASH_BASE,
-    MAX_HALFWORD, NULL_CS, SINGLE_BASE, TEX_INFINITY,
+    ACTIVE_MATH_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, DESIGN_SIZE, MAX_HALFWORD, TEX_INFINITY,
 };
+use crate::cs::{CsId, CsKind};
 use crate::eqtb::{
     self, CatLoc, CodeTable, DelLoc, DimenLoc, FontLoc, GlueLoc, IntLoc, LcLoc, MathLoc, SfLoc,
     ShapeLoc, ShapeRef, ToksLoc, UcLoc, XetexCode,
@@ -161,24 +161,21 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         crate::io::open_log_file(st)?;
     }
     let u = crate::scan::get_r_token(st)?;
-    let t = if u >= HASH_BASE {
-        st.eqtb.text(u)
-    } else if u >= SINGLE_BASE {
-        if u == NULL_CS {
-            st.strings.make_tex_string("FONT")?
-        } else {
-            StrNumber::from_raw(u - SINGLE_BASE)
+    let t = match u.kind() {
+        CsKind::Null => st.strings.make_tex_string("FONT")?,
+        CsKind::Single(c) => StrNumber::from_raw(i32::from(c)),
+        CsKind::Active(c) => {
+            let old_setting = st.shipout.selector;
+            st.shipout.selector = Selector::NewString;
+            crate::output::print(st, "FONT");
+            crate::output::print(st, StrNumber::single_char(c.raw()));
+            st.shipout.selector = old_setting;
+            if st.strings.pool_ptr + 1 > st.strings.pool_size {
+                return Err(st.strings.pool_overflow());
+            }
+            st.strings.make_string()?
         }
-    } else {
-        let old_setting = st.shipout.selector;
-        st.shipout.selector = Selector::NewString;
-        crate::output::print(st, "FONT");
-        crate::output::print(st, StrNumber::single_char(u - ACTIVE_BASE));
-        st.shipout.selector = old_setting;
-        if st.strings.pool_ptr + 1 > st.strings.pool_size {
-            return Err(st.strings.pool_overflow());
-        }
-        st.strings.make_string()?
+        _ => st.eqtb.text(u),
     };
 
     let global = a >= 4;
@@ -257,8 +254,8 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
 
     eqtb::define(st, global, u, Command::SetFont(f))?;
     let (m, level) = (st.eqtb.meaning(u), st.eqtb.cs_level(u));
-    st.eqtb.set_meaning(f.id_loc(), m, level);
-    st.eqtb.set_text(f.id_loc(), t);
+    st.eqtb.set_meaning(CsId::font_id(f), m, level);
+    st.eqtb.set_text(CsId::font_id(f), t);
     Ok(())
 }
 

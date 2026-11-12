@@ -220,89 +220,6 @@ impl std::iter::Sum for Scaled {
     }
 }
 
-/// A control sequence: an active character, a single-character name, a
-/// hashed name, a frozen or primitive entry, a font identifier, or an extra
-/// hashed name past them. TeX's 0, no control sequence, is `None`.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
-#[repr(transparent)]
-pub struct CsId(NonZeroU32);
-
-// SAFETY: `CsId` is transparent over `NonZeroU32`, so `None` is the zero word.
-unsafe impl bytemuck::ZeroableInOption for CsId {}
-// SAFETY: as above, and every non-zero word is a valid `CsId`.
-unsafe impl bytemuck::PodInOption for CsId {}
-
-impl CsId {
-    /// `active_base`, the first control sequence.
-    pub const FIRST: CsId = CsId(NonZeroU32::MIN);
-
-    /// The control sequence a raw word, file or FFI value holds, `None` for 0.
-    #[inline(always)]
-    pub const fn from_raw(raw: i32) -> Option<CsId> {
-        // Negative values clamp to 0, so one zero test rejects both.
-        let clamped = if raw < 0 { 0 } else { raw.cast_unsigned() };
-        match NonZeroU32::new(clamped) {
-            Some(n) => Some(CsId(n)),
-            None => None,
-        }
-    }
-
-    /// The raw form for a memory word, file or FFI call.
-    #[inline(always)]
-    pub const fn raw(self) -> i32 {
-        self.0.get().cast_signed()
-    }
-
-    /// The location `n` entries past `self`, usable in constants.
-    #[inline(always)]
-    pub const fn plus(self, n: u32) -> CsId {
-        CsId(self.0.saturating_add(n))
-    }
-
-    #[inline(always)]
-    pub fn index(self) -> usize {
-        self.0.get() as usize
-    }
-
-    /// The control sequences from `self` up to but not including `end`.
-    pub fn until(self, end: CsId) -> impl DoubleEndedIterator<Item = CsId> {
-        (self.0.get()..end.0.get())
-            .filter_map(NonZeroU32::new)
-            .map(CsId)
-    }
-
-    /// The control sequences from `self` up to and including `end`.
-    pub fn through(self, end: CsId) -> impl DoubleEndedIterator<Item = CsId> {
-        (self.0.get()..=end.0.get())
-            .filter_map(NonZeroU32::new)
-            .map(CsId)
-    }
-
-    /// The control sequence before `self`, `None` before `active_base`.
-    #[inline]
-    pub fn prev(self) -> Option<CsId> {
-        NonZeroU32::new(self.0.get() - 1).map(CsId)
-    }
-}
-
-/// `n` entries on, for an offset such as a character code, never negative.
-impl std::ops::Add<i32> for CsId {
-    type Output = CsId;
-    #[inline(always)]
-    fn add(self, n: i32) -> CsId {
-        self.plus(n.max(0).cast_unsigned())
-    }
-}
-
-/// The number of entries from `rhs` to `self`.
-impl std::ops::Sub for CsId {
-    type Output = i32;
-    #[inline(always)]
-    fn sub(self, rhs: CsId) -> i32 {
-        self.raw() - rhs.raw()
-    }
-}
-
 /// A position in the input `buffer`. It can sit one before a line, as an empty
 /// line's `limit` does.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
@@ -484,22 +401,6 @@ impl PrimNum {
         NonZeroU32::new(self.0.get() - 1).map(PrimNum)
     }
 
-    /// The frozen eqtb location holding this primitive's meaning.
-    #[inline]
-    pub fn eqtb_loc(self) -> CsId {
-        crate::consts::PRIM_EQTB_BASE.plus(self.0.get())
-    }
-
-    /// The primitive whose meaning sits at frozen eqtb location `p`, if any.
-    #[inline]
-    pub fn at_eqtb_loc(p: CsId) -> Option<PrimNum> {
-        if !(crate::consts::PRIM_EQTB_BASE..crate::consts::FROZEN_NULL_FONT).contains(&p) {
-            return None;
-        }
-        let n = u32::try_from(p - crate::consts::PRIM_EQTB_BASE).ok()?;
-        NonZeroU32::new(n).map(PrimNum)
-    }
-
     /// All slots of the `prim` table.
     pub fn all() -> impl Iterator<Item = PrimNum> {
         (1..=crate::consts::PRIM_SIZE.cast_unsigned())
@@ -620,12 +521,6 @@ impl FontId {
     #[inline(always)]
     pub fn index(self) -> usize {
         usize::from(self.0)
-    }
-
-    /// The `eqtb` location of the font's identifier, `font_id_base + f`.
-    #[inline]
-    pub fn id_loc(self) -> CsId {
-        crate::consts::FONT_ID_BASE + self.raw()
     }
 
     /// The font's number in the DVI file, `f - font_base - 1`.

@@ -1,10 +1,11 @@
 //! Named state digests used only to verify checkpoint restoration.
 
+use crate::cs::CsId;
 use crate::mem_types::ListStateRecord;
 use crate::mode::Mode;
 use crate::node::NodePtr;
 use crate::state::{EngineState, InputName, InputState, Restore, SaveEntry};
-use crate::units::{CsId, RawPtr};
+use crate::units::RawPtr;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ComponentDigest {
@@ -170,11 +171,11 @@ fn digest_eqtb(st: &EngineState) -> u64 {
     let mut h = Fnv::new();
     let eqtb = &st.eqtb;
     h.i32s(&[
-        eqtb.hash_used.raw(),
-        eqtb.hash_high,
+        eqtb.hash_used.raw().cast_signed(),
+        eqtb.hash_high.cast_signed(),
         eqtb.prim_used.raw(),
         eqtb.cs_count,
-        eqtb.hash_extra,
+        eqtb.hash_extra.cast_signed(),
         eqtb.cs_top.raw(),
     ]);
     h.word(u64::from(eqtb.no_new_control_sequence));

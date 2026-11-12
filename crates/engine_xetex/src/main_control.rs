@@ -5,7 +5,8 @@ use crate::codes::SkipCode;
 use crate::codes::ValignCode;
 use crate::codes::{LeaderCode, ScannerStatus};
 use crate::command::Command;
-use crate::consts::{IGNORE_DEPTH, SINGLE_BASE};
+use crate::consts::IGNORE_DEPTH;
+use crate::cs::{CsId, CsKind};
 use crate::eqtb::CaseTable;
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
@@ -74,18 +75,22 @@ fn begin_every(st: &mut EngineState, par: TokPar, kind: TokenType) -> Result<(),
 pub(crate) fn shift_case(st: &mut EngineState, b: CaseTable) -> Result<(), Abort> {
     let list = crate::scan::scan_toks(st, false, false)?;
     let eqtb = &st.eqtb;
-    st.mem.tokens.map_tokens(list, |t| {
-        if t < Token::from_cs(SINGLE_BASE) {
-            let c = t.chr();
-            let mapped = match b {
-                CaseTable::Lower => eqtb.lc_code(c),
-                CaseTable::Upper => eqtb.uc_code(c),
-            };
-            if mapped != 0 {
-                return Token(t.0 - c + mapped);
-            }
-        }
-        t
+    let map = |c: i32| match b {
+        CaseTable::Lower => eqtb.lc_code(c),
+        CaseTable::Upper => eqtb.uc_code(c),
+    };
+    st.mem.tokens.map_tokens(list, |t| match t.cs() {
+        None => match map(t.chr()) {
+            0 => t,
+            mapped => Token::new(t.cmd(), mapped),
+        },
+        Some(cs) => match cs.kind() {
+            CsKind::Active(c) => match map(c.raw()) {
+                0 => t,
+                mapped => CsId::of_active(mapped).map_or(t, Token::from_cs),
+            },
+            _ => t,
+        },
     });
     crate::input::begin_token_list(st, list, TokenType::BackedUp)
 }
@@ -187,7 +192,7 @@ pub(crate) fn main_control_ignore_spaces(
         outcome?;
 
         if let Some(prim) = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)? {
-            let p = prim.eqtb_loc();
+            let p = CsId::primitive(prim);
             st.scanner.cur = st.eqtb.meaning(p);
             st.scanner.cur_cs = Some(p);
             st.scanner.cur_tok = Token::from_cs(p);

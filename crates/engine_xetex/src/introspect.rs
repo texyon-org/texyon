@@ -1,15 +1,14 @@
 //! Read-only listing of the control sequences the engine has defined, for
 //! editor completions. Safe to run between operations on a resident session.
 
-use crate::consts::UNDEFINED_CONTROL_SEQUENCE;
+use crate::cs::{CsId, NameSlot};
 use crate::token::Token;
 use crate::token::TokenList;
-use crate::units::CsId;
 use crate::units::StrNumber;
 use std::collections::HashMap;
 
 use crate::cmd::Cmd;
-use crate::consts::{FROZEN_CONTROL_SEQUENCE, HASH_BASE};
+
 use crate::state::EngineState;
 
 /// What kind of thing a name is bound to.
@@ -40,11 +39,8 @@ pub struct DefinedCommand {
 /// companion names folded into their public command (see [`resolve_wrappers`]).
 pub(crate) fn defined_commands(st: &EngineState) -> Vec<DefinedCommand> {
     let mut found = Vec::new();
-    for slot in HASH_BASE.until(FROZEN_CONTROL_SEQUENCE) {
-        collect(st, slot, &mut found);
-    }
-    for offset in 1..=st.eqtb.hash_high {
-        collect(st, UNDEFINED_CONTROL_SEQUENCE + offset, &mut found);
+    for slot in NameSlot::all(st.eqtb.hash_high) {
+        collect(st, slot.cs(), &mut found);
     }
     resolve_wrappers(found)
 }

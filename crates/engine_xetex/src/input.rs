@@ -2,7 +2,8 @@
 
 use crate::cmd::Cmd;
 use crate::codes::code_enum;
-use crate::consts::FROZEN_RELAX;
+use crate::cs::Frozen;
+
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::io::u_close;
@@ -290,7 +291,7 @@ pub(crate) fn prepend_to_backed_up(st: &mut EngineState, token: Token) -> Result
 pub(crate) fn insert_relax(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.cur_tok = Token::from_cs(st.scanner.cur_cs.or_confusion("insert_relax")?);
     back_input(st)?;
-    st.scanner.cur_tok = Token::from_cs(FROZEN_RELAX);
+    st.scanner.cur_tok = Token::from_cs(Frozen::Relax.cs());
     back_input(st)?;
     st.input.cur_input.set_token_type(TokenType::Inserted);
     Ok(())

@@ -2,6 +2,7 @@
 //! character nodes and the TFM `char_info` accessors.
 
 use crate::consts::{DESIGN_SIZE, EMPTY_STRING, INVALID_HANDLE, NULL_FONT, TOO_BIG_CHAR};
+use crate::cs::CsId;
 use crate::ext::{
     aat_get_font_metrics, apply_tfm_font_mapping, find_native_font, load_mapping_file,
     ot_get_font_metrics, split_tfm_font_mapping, NativeFontMetrics,
@@ -15,7 +16,6 @@ use crate::output::{
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, FontState, MemState};
 use crate::tfm::{ExtIdx, FontMetrics, FontParams, TfmError, TfmMetrics};
-use crate::units::CsId;
 use crate::units::{FontId, Scaled, StrNumber};
 
 use crate::bridge::FileFormat;

@@ -4,11 +4,9 @@ use crate::cmd::Cmd;
 use crate::codes::{DelimNumCode, MathCharNumCode, ValueLevel};
 use crate::command::Command;
 use crate::command::Usv;
-use crate::consts::UNDEFINED_CONTROL_SEQUENCE;
-use crate::consts::{
-    ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_USV, FROZEN_CONTROL_SEQUENCE, FROZEN_PROTECTION,
-    MATH_CHAR, NUMBER_MATH_FAMILIES,
-};
+use crate::cs::{CsId, Frozen};
+
+use crate::consts::{ACTIVE_MATH_CHAR, BIGGEST_USV, MATH_CHAR, NUMBER_MATH_FAMILIES};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::input::{back_input, begin_token_list, TokenType};
@@ -18,7 +16,7 @@ use crate::params::IntPar;
 use crate::state::Saved;
 use crate::state::{EngineState, EqtbState, GroupCode, MemState, ScannerState};
 use crate::token::Token;
-use crate::units::{CsId, NodeType, Scaled};
+use crate::units::{NodeType, Scaled};
 
 mod internal;
 mod next;
@@ -155,16 +153,17 @@ pub(crate) fn get_r_token(st: &mut EngineState) -> Result<CsId, Abort> {
             }
         }
         let cs_top = st.eqtb.cs_top;
-        let redefinable = st.scanner.cur_cs.filter(|&cs| {
-            cs <= cs_top && !(cs > FROZEN_CONTROL_SEQUENCE && cs <= UNDEFINED_CONTROL_SEQUENCE)
-        });
+        let redefinable = st
+            .scanner
+            .cur_cs
+            .filter(|&cs| cs <= cs_top && cs.is_redefinable());
         if let Some(cs) = redefinable {
             return Ok(cs);
         }
         if st.scanner.cur_cs.is_none() {
             back_input(st)?;
         }
-        st.scanner.cur_tok = Token::from_cs(FROZEN_PROTECTION);
+        st.scanner.cur_tok = Token::from_cs(Frozen::Protection.cs());
         crate::errors::ins_error(
             st,
             "Missing control sequence inserted",
@@ -201,7 +200,7 @@ pub(crate) fn scan_math(st: &mut EngineState, p: MathSlot) -> Result<(), Abort> 
                 Command::Letter(ch) | Command::OtherChar(ch) | Command::CharGiven(ch) => {
                     let mc = st.eqtb.math_code(ch.raw());
                     if mc & 0x1FFFFF == ACTIVE_MATH_CHAR {
-                        fetch_cs_meaning(st, ACTIVE_BASE + ch.raw());
+                        fetch_cs_meaning(st, CsId::active(ch));
                         x_token(st)?;
                         back_input(st)?;
                         continue 'main;
@@ -244,7 +243,8 @@ pub(crate) fn scan_math(st: &mut EngineState, p: MathSlot) -> Result<(), Abort> 
 /// there) when `c` is `"8000`.
 pub(crate) fn set_math_char(st: &mut EngineState, active: i32, c: i32) -> Result<(), Abort> {
     if math_char(c) == ACTIVE_MATH_CHAR {
-        fetch_cs_meaning(st, ACTIVE_BASE + active);
+        let cs = CsId::of_active(active).or_confusion("active math char")?;
+        fetch_cs_meaning(st, cs);
         x_token(st)?;
         back_input(st)?;
     } else {

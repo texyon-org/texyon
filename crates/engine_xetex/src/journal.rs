@@ -602,7 +602,7 @@ mod tests {
     #[test]
     fn eqtb_setters_capture_preimages() {
         use crate::command::Command;
-        let cs = crate::consts::HASH_BASE;
+        let cs = crate::cs::NameSlot::bucket(0).cs();
         let mut eqtb = crate::state::EqtbState {
             hash: vec![crate::hash::HashEntry::default(); 1],
             meanings: crate::eqtb::Table::at_level(cs.index() + 1, Command::UndefinedCs, 0),

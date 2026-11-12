@@ -1,9 +1,9 @@
 //! Non-journaled state carried by a checkpoint rung.
 
-use crate::units::CsId;
 use std::mem::{size_of, take};
 use std::sync::Arc;
 
+use crate::cs::CsId;
 use crate::dvi::DviWriter;
 use crate::fonts::{LigChar, ProtrusionCodes};
 use crate::mem_types::ListStateRecord;
@@ -218,12 +218,12 @@ impl MemBundle {
 }
 
 struct EqtbBundle {
-    hash_used: CsId,
-    hash_high: i32,
+    hash_used: crate::cs::NameSlot,
+    hash_high: u32,
     no_new_control_sequence: bool,
     prim_used: crate::units::PrimNum,
     cs_count: i32,
-    hash_extra: i32,
+    hash_extra: u32,
     cs_top: CsId,
     pgfmath: crate::pgfmath::KnownCs,
 }

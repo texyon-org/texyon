@@ -4,16 +4,16 @@
 
 use crate::command::Command;
 use crate::command::RegisterRef;
+use crate::cs::CsId;
 use std::collections::HashMap;
 
 use crate::cmd::Cmd;
 use crate::codes::ValueLevel;
-use crate::consts::HASH_BASE;
+
 use crate::errors::Abort;
 use crate::params::IntPar;
 use crate::state::EngineState;
 use crate::token::{Token, TokenList};
-use crate::units::CsId;
 
 pub(crate) mod eval;
 
@@ -151,7 +151,7 @@ impl KnownCs {
 
     /// The names, once every required one exists. The FPU's names load later.
     fn complete(&self) -> Option<Complete> {
-        let mut required = [CsId::FIRST; REQUIRED];
+        let mut required = [CsId::NULL; REQUIRED];
         for (slot, cs) in required.iter_mut().zip(&self.cs) {
             *slot = (*cs)?;
         }
@@ -340,13 +340,13 @@ fn lookup(st: &mut EngineState, name: &str) -> Option<CsId> {
     let found = st.eqtb.id_lookup(&mut st.strings, &buffer);
     st.eqtb.no_new_control_sequence = saved;
     match found {
-        Ok(p) if p >= HASH_BASE && st.eqtb.text(p).raw() > 0 => Some(p),
+        Ok(p) if p.has_hash_text() && st.eqtb.text(p).raw() > 0 => Some(p),
         _ => None,
     }
 }
 
 fn cs_name(st: &EngineState, cs: CsId) -> Option<String> {
-    if cs < HASH_BASE {
+    if !cs.has_hash_text() {
         return None;
     }
     let text = st.eqtb.text(cs);
@@ -512,7 +512,7 @@ fn expression_items(st: &EngineState, tokens: &[Token]) -> Result<Vec<(Item, boo
 }
 
 fn register_item(st: &EngineState, cs: CsId) -> Result<Item, &'static str> {
-    if cs < HASH_BASE {
+    if !cs.has_hash_text() {
         return Err("active or single-character control sequence");
     }
     match st.eqtb.meaning(cs) {
@@ -857,7 +857,7 @@ fn run_native(
             let text = expand_once(st, a)?;
             let (flags, _, _) = split_float(&text)?;
             match target.as_slice() {
-                [t] if t.cs().is_some_and(|cs| cs >= HASH_BASE) => vec![Effect::Define {
+                [t] if t.cs().is_some_and(CsId::has_hash_text) => vec![Effect::Define {
                     cs: t.cs()?,
                     text: vec![flags],
                 }],
