@@ -5,6 +5,7 @@ use crate::codes::{BoxCode, SkipCode, ValueLevel};
 use crate::command::Command;
 use crate::consts::{BIGGEST_CHAR, EMPTY, MAX_DIMEN, NULL_FLAG, SUB_BOX, SUB_MLIST, TEX_NULL};
 use crate::cs::Frozen;
+use crate::eqtb::Register;
 use crate::eqtb::{ShapeLoc, ShapeRef};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
@@ -461,7 +462,7 @@ pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             st.shipout.output_active = false;
             st.shipout.insert_penalties = 0;
 
-            if !st.eqtb.box_reg(255).is_none() {
+            if !st.eqtb.box_reg(Register::of(255)).is_none() {
                 crate::errors::box_error(
                     st,
                     255,
@@ -613,7 +614,7 @@ pub(super) fn append_kern(st: &mut EngineState, mu: bool) -> Result<(), Abort> {
 
 pub(super) fn make_mark(st: &mut EngineState, marks: bool) -> Result<(), Abort> {
     let c = if marks {
-        crate::scan::scan_register_num(st)?
+        i32::from(crate::scan::scan_register_num(st)?)
     } else {
         0
     };

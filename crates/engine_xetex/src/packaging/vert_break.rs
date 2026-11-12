@@ -316,7 +316,7 @@ pub(crate) fn vert_break(
 
 struct VsplitState {
     /// The box register being split.
-    n: i32,
+    n: crate::eqtb::Register,
     h: Scaled,
     v: NodePtr<BoxNode>,
     split_max_d: Scaled,
@@ -367,7 +367,11 @@ impl MemState {
     }
 }
 
-fn start_vsplit(st: &mut EngineState, n: i32, h: Scaled) -> Result<VsplitStart, Abort> {
+fn start_vsplit(
+    st: &mut EngineState,
+    n: crate::eqtb::Register,
+    h: Scaled,
+) -> Result<VsplitStart, Abort> {
     let v = crate::scan::fetch_box(st, n);
     st.mem.reset_vsplit_marks(&mut st.scanner)?;
 
@@ -473,7 +477,7 @@ impl MemState {
             rest = Some(packed.r_box);
             push_slot(&mut packages, packed);
         }
-        self.change_box(scanner, eqtb, state.n, rest)?;
+        eqtb.set_box_reg(state.n, rest);
 
         let packed = self.vpackage(
             eqtb,
@@ -534,7 +538,7 @@ fn print_vsplit_packages(st: &mut EngineState, outcome: VsplitOutcome) {
 /// `\vsplit n to h`: the box split off the top of box register `n`.
 pub(crate) fn vsplit(
     st: &mut EngineState,
-    n: i32,
+    n: crate::eqtb::Register,
     h: Scaled,
 ) -> Result<Option<NodePtr<BoxNode>>, Abort> {
     let mut state = match start_vsplit(st, n, h)? {

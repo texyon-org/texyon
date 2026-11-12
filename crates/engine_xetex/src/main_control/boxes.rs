@@ -1,6 +1,6 @@
 //! Boxes: `\hbox`, `\vbox`, `\box`, `\lastbox`, `\unhbox`, `\unskip` and friends.
 
-use crate::codes::{BoxCode, ValueLevel};
+use crate::codes::BoxCode;
 use crate::command::Command;
 use crate::consts::SUB_BOX;
 use crate::eqtb::BoxLoc;
@@ -10,9 +10,7 @@ use crate::input::TokenType;
 use crate::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD};
 use crate::mode::{Mode, ModeName};
 use crate::node::LeaderKind;
-use crate::node::{
-    AnyNode, BoxNode, BoxOrRule, GlueKind, MarginKernNode, MathCode, NodePtr, SaLeaf, View,
-};
+use crate::node::{AnyNode, BoxNode, BoxOrRule, GlueKind, MarginKernNode, MathCode, NodePtr, View};
 use crate::packaging::{AdjustTails, PackOrigin};
 use crate::params::{DimenPar, IntPar, TokPar};
 use crate::scan::fetch_box;
@@ -21,7 +19,6 @@ use crate::state::{EngineState, GroupCode, MemState};
 use crate::units::MemIdx;
 use crate::units::{NodeType, Scaled};
 
-use super::assign::sa_define;
 use super::lists::{append_glue, normal_paragraph};
 use super::{append_list, begin_every, BoxContext};
 
@@ -56,7 +53,7 @@ pub(super) fn unpackage(st: &mut EngineState, c: BoxCode) -> Result<(), Abort> {
             st.input.cur_list.tail.set_link(&mut st.mem, copy);
         } else {
             st.input.cur_list.tail.set_link(&mut st.mem, list);
-            st.mem.change_box(&mut st.scanner, &mut st.eqtb, n, None)?;
+            st.eqtb.set_box_reg(n, None);
             b.free(&mut st.mem);
         }
     }
@@ -209,19 +206,7 @@ fn box_end(
             }
         }
         BoxContext::SetBox { register, global } => {
-            let n = i32::from(register);
-            if let Ok(r) = u8::try_from(register) {
-                crate::eqtb::define(st, global, BoxLoc::register(r), cur_box)?;
-            } else {
-                let cb = cur_box.map(NodePtr::idx);
-                let SaLeaf::Pointer(p) =
-                    st.mem
-                        .create_sa_element(&mut st.scanner, ValueLevel::BOX, n)?
-                else {
-                    return Err(Abort::Confusion("box"));
-                };
-                sa_define(st, global, p, cb)?;
-            }
+            crate::eqtb::define(st, global, BoxLoc::register(register), cur_box)?;
         }
         BoxContext::ShipOut => {
             if let Some(b) = cur_box {
@@ -338,7 +323,7 @@ pub(super) fn begin_box(
         BoxCode::Box => {
             let n = crate::scan::scan_register_num(st)?;
             let b = fetch_box(st, n);
-            st.mem.change_box(&mut st.scanner, &mut st.eqtb, n, None)?;
+            st.eqtb.set_box_reg(n, None);
             b
         }
         BoxCode::Copy => {

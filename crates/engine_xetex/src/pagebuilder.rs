@@ -4,6 +4,7 @@ use crate::codes::{BoxCode, MarkCode, ValueLevel};
 use crate::consts::{
     AWFUL_BAD, EJECT_PENALTY, INF_BAD, INF_PENALTY, LEVEL_ONE, MAX_DIMEN, MAX_HALFWORD,
 };
+use crate::eqtb::Register;
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::helpers::badness;
@@ -65,7 +66,7 @@ fn freeze_page_specs(st: &mut EngineState, contents: PageContents) {
 }
 
 fn ensure_vbox(st: &mut EngineState, n: u8) -> Result<(), Abort> {
-    if !fetch_box(st, i32::from(n)).is_some_and(|b| st.mem[b].is_hlist()) {
+    if !fetch_box(st, Register::from(n)).is_some_and(|b| st.mem[b].is_hlist()) {
         return Ok(());
     }
     crate::errors::box_error(
@@ -160,7 +161,7 @@ fn place_insertion(
         }
     }
     st.mem[rec].best_ins_ptr = None;
-    let b = fetch_box(st, i32::from(n)).or_confusion("insertion box")?;
+    let b = fetch_box(st, Register::from(n)).or_confusion("insertion box")?;
     let list = st.mem[b].list_ptr;
     b.free(&mut st.mem);
     let packed = crate::packaging::vpackage(st, list, PackSpec::NATURAL, MAX_DIMEN)?;
@@ -206,7 +207,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     if c == best {
         st.shipout.best_page_break = None;
     }
-    if !st.eqtb.box_reg(255).is_none() {
+    if !st.eqtb.box_reg(Register::of(255)).is_none() {
         crate::errors::box_error(
             st,
             255,
@@ -454,7 +455,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         st.mem[rec].box_number = n;
         st.mem[rec].set_split_up(false);
         ensure_vbox(st, n)?;
-        let height = match fetch_box(st, i32::from(n)) {
+        let height = match fetch_box(st, Register::from(n)) {
             Some(b) => st.mem[b].height + st.mem[b].depth,
             None => Scaled::ZERO,
         };

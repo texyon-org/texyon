@@ -58,7 +58,10 @@ pub(crate) enum BoxContext {
     /// Onto the current list, shifted by `\raise` and friends or by zero.
     Shift(Scaled),
     /// Into a box register, by `\setbox`.
-    SetBox { register: u16, global: bool },
+    SetBox {
+        register: crate::eqtb::Register,
+        global: bool,
+    },
     /// Out to the page, by `\shipout`.
     ShipOut,
     /// Into the leaders of the glue that follows.

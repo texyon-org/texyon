@@ -763,7 +763,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
         match st.scanner.cur {
             Command::TopBotMark { code: mark, marks } => {
                 let n = if marks {
-                    crate::scan::scan_register_num(st)?
+                    i32::from(crate::scan::scan_register_num(st)?)
                 } else {
                     0
                 };

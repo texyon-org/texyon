@@ -145,7 +145,7 @@ pub(crate) fn ship_out(
     }
 
     crate::output::print_char(st, b'[');
-    let mut j = 9;
+    let mut j: u8 = 9;
     while j > 0 && st.eqtb.count(j) == 0 {
         j -= 1;
     }
@@ -267,7 +267,7 @@ fn ship_page(
         st.shipout.dvi.end_preamble(mag, b"tectonic")?;
     }
 
-    let counts = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(|k| st.eqtb.count(k));
+    let counts = [0u8, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(|k| st.eqtb.count(k));
     st.shipout.dvi.bop(counts)?;
 
     let old_setting = st.shipout.selector;

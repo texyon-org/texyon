@@ -655,7 +655,7 @@ mod tests {
 
     const CS: crate::cs::CsId = crate::cs::CsId::active(crate::command::Usv::nth(1));
 
-    const COUNT1: crate::eqtb::IntLoc = crate::eqtb::IntLoc::count(1);
+    const COUNT1: crate::eqtb::IntLoc = crate::eqtb::IntLoc::count(crate::eqtb::Register::of(1));
 
     fn state() -> EngineState {
         let mut st = EngineState::default();

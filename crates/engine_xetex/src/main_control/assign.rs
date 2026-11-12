@@ -4,11 +4,9 @@ use crate::cmd::Cmd;
 use crate::codes::{
     AuxCode, BoxDimenCode, FontIntCode, PageDimenCode, PageIntCode, ShorthandDefCode, ValueLevel,
 };
-use crate::command::RegisterCode;
+use crate::command::Command;
 use crate::command::RelaxCode;
-use crate::command::ToksRef;
 use crate::command::Usv;
-use crate::command::{Command, RegisterRef};
 use crate::consts::NULL_FONT;
 use crate::consts::{ACTIVE_MATH_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, MAX_HALFWORD, TEX_INFINITY};
 use crate::cs::{CsId, CsKind};
@@ -23,16 +21,13 @@ use crate::fonts::FontSize;
 use crate::glue_store::GlueSpecId;
 use crate::hyphenation::{new_hyph_exceptions, new_patterns};
 use crate::mem::ZERO_GLUE;
-use crate::node::{
-    NodePtr, ParShapeNode, PenaltiesNode, SaElement, SaLeaf, SaPointerNode, SaWordNode,
-};
+use crate::node::{NodePtr, ParShapeNode, PenaltiesNode, SaLeaf, SaPointerNode};
 use crate::params::{IntPar, TokPar};
 use crate::scaled_math::{mult_and_add, x_over_n};
 use crate::scan::fetch_box;
-use crate::state::{EngineState, InteractionMode, MemState, Selector};
+use crate::state::{EngineState, InteractionMode, Selector};
 use crate::token::{Token, TokenList};
 use crate::units::MemIdx;
-use crate::units::RawPtr;
 use crate::units::{FontId, GlueOrder, MemPtr, Scaled, StrNumber};
 
 use crate::fonts::Side;
@@ -281,22 +276,10 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
                 );
             }
         }
-        let Command::Register(r) = st.scanner.cur else {
+        let Command::Register(p) = st.scanner.cur else {
             return Err(Abort::Confusion("register"));
         };
-        let p = match r.get()? {
-            RegisterRef::Scanned(level) => level,
-            RegisterRef::Sparse(sa) => {
-                let level = st.mem[sa].sa_type().get().or_confusion("sa_type")?;
-                let leaf = sa.leaf(&st.mem).or_confusion("sa_type")?;
-                break 'found (RegisterLoc::Sparse(leaf), level);
-            }
-        };
-        let n = crate::scan::scan_register_num(st)?;
-        let Ok(r) = u8::try_from(n) else {
-            let sa = st.mem.create_sa_element(&mut st.scanner, p, n)?;
-            break 'found (RegisterLoc::Sparse(sa), p);
-        };
+        let r = crate::scan::scan_register_num(st)?;
         let l = match p {
             ValueLevel::Int => RegisterLoc::Int(IntLoc::count(r)),
             ValueLevel::Dimen => RegisterLoc::Dimen(DimenLoc::dimen(r)),
@@ -308,12 +291,8 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     };
 
     let (w, s) = match (p < ValueLevel::Glue, l) {
-        (true, RegisterLoc::Sparse(SaLeaf::Word(w))) => (st.mem[w].sa_int, ZERO_GLUE),
         (true, RegisterLoc::Int(l)) => (st.eqtb.ints.get(l), ZERO_GLUE),
         (true, RegisterLoc::Dimen(l)) => (st.eqtb.dimens.get(l).raw(), ZERO_GLUE),
-        (false, RegisterLoc::Sparse(SaLeaf::Pointer(p))) => {
-            (0, GlueSpecId::from_raw(st.mem[p].sa_ptr.raw()))
-        }
         (false, RegisterLoc::Glue(l)) => (0, st.eqtb.glue.get(l)),
         _ => return Err(Abort::Confusion("register")),
     };
@@ -426,16 +405,14 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     let global = a >= 4;
     match value {
         RegisterValue::Word(v) => match l {
-            RegisterLoc::Sparse(SaLeaf::Word(w)) => sa_word_define(st, global, w, v)?,
             RegisterLoc::Int(l) => eqtb::define(st, global, l, v)?,
             RegisterLoc::Dimen(l) => eqtb::define(st, global, l, Scaled::from_raw(v))?,
             _ => return Err(Abort::Confusion("register")),
         },
         RegisterValue::Glue(g) => {
-            let g = MemIdx::from_raw(trap_zero_glue(st, g).raw());
+            let g = trap_zero_glue(st, g);
             match l {
-                RegisterLoc::Sparse(SaLeaf::Pointer(p)) => sa_define(st, global, p, g)?,
-                RegisterLoc::Glue(l) => eqtb::define(st, global, l, GlueSpecId::from_raw(g.raw()))?,
+                RegisterLoc::Glue(l) => eqtb::define(st, global, l, g)?,
                 _ => return Err(Abort::Confusion("register")),
             }
         }
@@ -475,32 +452,6 @@ pub(super) fn sa_define(
     };
     crate::save::finish_sa_mutation(st, p.element(), result)?;
     Ok(())
-}
-
-fn sa_word_define(
-    st: &mut EngineState,
-    global: bool,
-    p: NodePtr<SaWordNode>,
-    w: i32,
-) -> Result<(), Abort> {
-    let result = if global {
-        st.mem.gsa_w_def(p, w)
-    } else {
-        st.mem.sa_w_def(&mut st.scanner, &mut st.save_stack, p, w)?
-    };
-    crate::save::finish_sa_mutation(st, p.element(), result)?;
-    Ok(())
-}
-
-impl MemState {
-    fn add_sa_ref(&mut self, e: NodePtr<SaElement>) -> Result<(), Abort> {
-        match e.leaf(self) {
-            Some(SaLeaf::Word(w)) => self[w].sa_ref += 1,
-            Some(SaLeaf::Pointer(p)) => self[p].sa_ref += 1,
-            Some(SaLeaf::MarkClass(_)) | None => return Err(Abort::Confusion("sa_ref")),
-        }
-        Ok(())
-    }
 }
 
 /// The `sa_ptr` of a sparse-array record, or null without one.
@@ -624,18 +575,8 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 crate::input::back_input(st)?;
             }
             let m = st.scanner.cur;
-            let sparse = match m {
-                Command::ToksRegister(r) => r.get().map(NodePtr::at),
-                Command::Register(r) => match r.get()? {
-                    RegisterRef::Sparse(sa) => Some(sa),
-                    RegisterRef::Scanned(_) => None,
-                },
-                _ => None,
-            };
             if let Some(body) = m.macro_body() {
                 st.mem.tokens.add_ref(body);
-            } else if let Some(sa) = sparse {
-                st.mem.add_sa_ref(sa)?;
             }
             eqtb::define(st, a >= 4, p, m)?;
         }
@@ -666,7 +607,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             let list = crate::scan::read_toks(st, n, p, line)?;
             eqtb::define(st, a >= 4, p, Command::Call(list))?;
         }
-        cmd @ (Command::ToksRegister(_) | Command::AssignToks(_)) => assign_toks(st, a >= 4, cmd)?,
+        cmd @ (Command::ToksRegister | Command::AssignToks(_)) => assign_toks(st, a >= 4, cmd)?,
         Command::AssignInt(p) => {
             crate::scan::scan_optional_equals(st)?;
             let n = crate::scan::scan_int(st)?;
@@ -703,7 +644,7 @@ pub(super) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
         Command::SetBox => {
             let n = crate::scan::scan_register_num(st)?;
             let context = BoxContext::SetBox {
-                register: u16::try_from(n).or_confusion("box register")?,
+                register: n,
                 global: a >= 4,
             };
             crate::scan::scan_optional_equals(st)?;
@@ -808,32 +749,14 @@ fn shorthand_def(st: &mut EngineState, global: bool, n: ShorthandDefCode) -> Res
             Command::XetexMathGiven(crate::scan::scan_umath_code(st)?)
         }
         _ => {
-            let reg = crate::scan::scan_register_num(st)?;
-            if reg > 255 {
-                let level = match n {
-                    ShorthandDefCode::Count => ValueLevel::Int,
-                    ShorthandDefCode::Dimen => ValueLevel::Dimen,
-                    ShorthandDefCode::Skip => ValueLevel::Glue,
-                    ShorthandDefCode::MuSkip => ValueLevel::Mu,
-                    _ => ValueLevel::Tok,
-                };
-                let sa = st.mem.create_sa_element(&mut st.scanner, level, reg)?;
-                st.mem.add_sa_ref(sa.element())?;
-                if level == ValueLevel::Tok {
-                    Command::ToksRegister(ToksRef::sparse(sa.element()))
-                } else {
-                    Command::Register(RegisterCode::new(RegisterRef::Sparse(sa.element())))
-                }
-            } else {
-                let r = u8::try_from(reg).or_confusion("register")?;
-                match n {
-                    ShorthandDefCode::Count => Command::AssignInt(IntLoc::count(r)),
-                    ShorthandDefCode::Dimen => Command::AssignDimen(DimenLoc::dimen(r)),
-                    ShorthandDefCode::Skip => Command::AssignGlue(GlueLoc::skip(r)),
-                    ShorthandDefCode::MuSkip => Command::AssignMuGlue(GlueLoc::mu_skip(r)),
-                    ShorthandDefCode::Toks => Command::AssignToks(ToksLoc::register(r)),
-                    _ => return Ok(()),
-                }
+            let r = crate::scan::scan_register_num(st)?;
+            match n {
+                ShorthandDefCode::Count => Command::AssignInt(IntLoc::count(r)),
+                ShorthandDefCode::Dimen => Command::AssignDimen(DimenLoc::dimen(r)),
+                ShorthandDefCode::Skip => Command::AssignGlue(GlueLoc::skip(r)),
+                ShorthandDefCode::MuSkip => Command::AssignMuGlue(GlueLoc::mu_skip(r)),
+                ShorthandDefCode::Toks => Command::AssignToks(ToksLoc::register(r)),
+                _ => return Ok(()),
             }
         }
     };
@@ -844,21 +767,9 @@ fn shorthand_def(st: &mut EngineState, global: bool, n: ShorthandDefCode) -> Res
 fn assign_toks(st: &mut EngineState, global: bool, cmd: Command) -> Result<(), Abort> {
     let cs = st.scanner.cur_cs;
     let target = match cmd {
-        Command::ToksRegister(r) if r.get().is_none() => {
-            let n = crate::scan::scan_register_num(st)?;
-            if let Ok(r) = u8::try_from(n) {
-                RegisterLoc::Toks(ToksLoc::register(r))
-            } else {
-                let sa = st
-                    .mem
-                    .create_sa_element(&mut st.scanner, ValueLevel::Tok, n)?;
-                RegisterLoc::Sparse(sa)
-            }
+        Command::ToksRegister => {
+            RegisterLoc::Toks(ToksLoc::register(crate::scan::scan_register_num(st)?))
         }
-        Command::ToksRegister(r) => match r.get() {
-            Some(sa) => RegisterLoc::Sparse(SaLeaf::Pointer(sa)),
-            None => return Err(Abort::Confusion("assign_toks")),
-        },
         Command::AssignToks(loc) if loc == TokPar::XetexInterCharToks.loc() => {
             let n = scan_inter_char_pair(st)?;
             let sa = st
@@ -873,16 +784,10 @@ fn assign_toks(st: &mut EngineState, global: bool, cmd: Command) -> Result<(), A
     crate::scan::get_x_non_blank_non_relax(st)?;
 
     let source = match st.scanner.cur {
-        Command::ToksRegister(r) if r.get().is_none() => {
+        Command::ToksRegister => {
             let n = crate::scan::scan_register_num(st)?;
-            Some(if let Ok(r) = u8::try_from(n) {
-                st.eqtb.toks(r)
-            } else {
-                let sa = st.mem.find_sa_element(&st.scanner, ValueLevel::Tok, n);
-                crate::scan::sa_token_list(st, sa)
-            })
+            Some(st.eqtb.toks(n))
         }
-        Command::ToksRegister(r) => r.get().map(|sa| st.mem[sa].toks()),
         Command::AssignToks(loc) if loc == TokPar::XetexInterCharToks.loc() => {
             let n = scan_inter_char_pair(st)?;
             let sa = st

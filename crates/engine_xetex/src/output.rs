@@ -13,7 +13,7 @@ use crate::diagnostic::{
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::glue_store::GlueSpecId;
 use crate::node::Stored;
-use crate::node::{CharNode, NativeWordNode, NodePtr, RuleDimen, SaElement};
+use crate::node::{CharNode, NativeWordNode, NodePtr, RuleDimen};
 use crate::node::{DelimiterWord, MathWord};
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::state::{EngineState, GroupCode, Selector};
@@ -716,27 +716,6 @@ fn print_native_word(st: &mut EngineState, p: NodePtr<NativeWordNode>) {
             print_char(st, i32::from(c));
         }
         i += 1;
-    }
-}
-
-fn print_sa_num(st: &mut EngineState, q: NodePtr<SaElement>) {
-    let mem = &st.mem;
-    let n = match q.word(mem) {
-        Some(w) => Some(mem[w].sa_num),
-        None => {
-            let q1 = mem[q].link;
-            let q2 = q1.and_then(|q1| mem[q1].link);
-            let q3 = q2.and_then(|q2| mem[q2].link);
-            q1.zip(q2).zip(q3).map(|((q1, q2), q3)| {
-                let digit = |i: u16| i32::from(i);
-                digit(mem[q].sa_index) % 64
-                    + 64 * digit(mem[q1].sa_index)
-                    + 64 * 64 * (digit(mem[q2].sa_index) + 64 * digit(mem[q3].sa_index))
-            })
-        }
-    };
-    if let Some(n) = n {
-        print_int(st, n);
     }
 }
 

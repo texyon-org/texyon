@@ -276,6 +276,21 @@ fn sparse_pointer_registers_restore_and_print_their_names() {
 }
 
 #[test]
+fn registers_above_255_take_arithmetic_and_compare_by_number() {
+    let r = run(r"\countdef\a=32767 \countdef\b=32767 \countdef\c=300
+                  \a=7 \advance\a by 3 \multiply\count32767 by 2 \showthe\b
+                  \ifx\a\b\message{[same]}\fi \ifx\a\c\else\message{[differ]}\fi
+                  \count32768=1");
+    assert_eq!(r.shown(), ["20"]);
+    assert!(
+        r.log.contains("[same]") && r.log.contains("[differ]"),
+        "{}",
+        r.log
+    );
+    assert_eq!(r.lines_starting("! "), ["! Bad register code (32768)."]);
+}
+
+#[test]
 fn interchartoks_classes_stop_below_the_ignored_class() {
     let r = run(
         r"\XeTeXinterchartoks 4095 0 {x}\XeTeXinterchartoks 4096 0 {y}

@@ -1480,14 +1480,6 @@ impl NodePtr<SaElement> {
     pub fn leaf(self, mem: &MemState) -> Option<SaLeaf> {
         Some(SaLeaf::of_type(mem[self].sa_type().get()?, self.idx))
     }
-
-    #[inline]
-    pub fn word(self, mem: &MemState) -> Option<NodePtr<SaWordNode>> {
-        match self.leaf(mem)? {
-            SaLeaf::Word(p) => Some(p),
-            _ => None,
-        }
-    }
 }
 
 /// A save-chain entry by its kind.
@@ -1506,13 +1498,6 @@ impl NodePtr<SaSaved> {
         } else {
             SaSavedEntry::Pointer(NodePtr::from_idx_unchecked(self.idx))
         }
-    }
-}
-
-impl NodePtr<SaSavedWord> {
-    #[inline]
-    pub fn saved(self) -> NodePtr<SaSaved> {
-        NodePtr::from_idx_unchecked(self.idx)
     }
 }
 
@@ -1958,9 +1943,6 @@ mod tests {
         }
         assert_eq!(leaf.leaf(&mem), Some(SaLeaf::MarkClass(m)));
 
-        let s: NodePtr<SaSavedWord> = at(&mut mem, 160, None);
-        mem[s].sa_index = 64 + 9;
-        assert!(matches!(s.saved().entry(&mem), SaSavedEntry::Word(e) if e == s));
         let s: NodePtr<SaSavedPointer> = at(&mut mem, 160, None);
         mem[s].sa_index = 64 * 2;
         assert!(matches!(s.saved().entry(&mem), SaSavedEntry::Pointer(e) if e == s));

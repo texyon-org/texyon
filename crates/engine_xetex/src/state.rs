@@ -505,33 +505,40 @@ impl EqtbState {
         crate::node::NodePtr::from_ptr(self.shapes.get(loc).ptr())
     }
     #[inline]
-    pub(crate) fn box_reg(&self, n: u8) -> Option<crate::node::NodePtr<crate::node::BoxNode>> {
-        self.boxes.get(crate::eqtb::BoxLoc::register(n))
+    pub(crate) fn box_reg(
+        &self,
+        n: impl Into<crate::eqtb::Register>,
+    ) -> Option<crate::node::NodePtr<crate::node::BoxNode>> {
+        self.boxes.get(crate::eqtb::BoxLoc::register(n.into()))
     }
     #[inline]
     /// Sets box register `n` without saving, keeping its level.
     pub(crate) fn set_box_reg(
         &mut self,
-        n: u8,
+        n: impl Into<crate::eqtb::Register>,
         b: Option<crate::node::NodePtr<crate::node::BoxNode>>,
     ) {
-        self.boxes.set_value(crate::eqtb::BoxLoc::register(n), b);
+        self.boxes
+            .set_value(crate::eqtb::BoxLoc::register(n.into()), b);
     }
     #[inline]
-    pub(crate) fn skip(&self, n: u8) -> crate::glue_store::GlueSpecId {
-        self.glue.get(crate::eqtb::GlueLoc::skip(n))
+    pub(crate) fn skip(
+        &self,
+        n: impl Into<crate::eqtb::Register>,
+    ) -> crate::glue_store::GlueSpecId {
+        self.glue.get(crate::eqtb::GlueLoc::skip(n.into()))
     }
     #[inline]
-    pub(crate) fn dimen(&self, n: u8) -> Scaled {
-        self.dimens.get(crate::eqtb::DimenLoc::dimen(n))
+    pub(crate) fn dimen(&self, n: impl Into<crate::eqtb::Register>) -> Scaled {
+        self.dimens.get(crate::eqtb::DimenLoc::dimen(n.into()))
     }
     #[inline]
-    pub(crate) fn toks(&self, n: u8) -> crate::token::TokenList {
-        self.toks.get(crate::eqtb::ToksLoc::register(n))
+    pub(crate) fn toks(&self, n: impl Into<crate::eqtb::Register>) -> crate::token::TokenList {
+        self.toks.get(crate::eqtb::ToksLoc::register(n.into()))
     }
     #[inline]
-    pub(crate) fn count(&self, n: u8) -> i32 {
-        self.ints.get(crate::eqtb::IntLoc::count(n))
+    pub(crate) fn count(&self, n: impl Into<crate::eqtb::Register>) -> i32 {
+        self.ints.get(crate::eqtb::IntLoc::count(n.into()))
     }
     #[inline]
     pub(crate) fn math_font(&self, n: i32) -> FontId {

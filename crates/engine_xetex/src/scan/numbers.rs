@@ -8,6 +8,7 @@ use crate::consts::{
     NUMBER_MATH_FAMILIES, TEX_INFINITY,
 };
 use crate::cs::{CsId, CsKind, Frozen};
+use crate::eqtb::Register;
 use crate::errors::OrConfusion;
 use crate::errors::{mu_error, Abort};
 use crate::fonts::{QUAD_CODE, X_HEIGHT_CODE};
@@ -195,17 +196,20 @@ pub(crate) fn scan_delimiter_int(st: &mut EngineState) -> Result<i32, Abort> {
     )
 }
 
-pub(crate) fn scan_register_num(st: &mut EngineState) -> Result<i32, Abort> {
+pub(crate) fn scan_register_num(st: &mut EngineState) -> Result<Register, Abort> {
     let n = scan_int(st)?;
-    if n < 0 || n > st.scanner.max_reg_num {
-        return int_range_error(
-            st,
-            "Bad register code",
-            n,
-            "A register number must be between 0 and 32767.",
-        );
+    match Register::new(n).filter(|_| n <= st.scanner.max_reg_num) {
+        Some(r) => Ok(r),
+        None => {
+            int_range_error(
+                st,
+                "Bad register code",
+                n,
+                "A register number must be between 0 and 32767.",
+            )?;
+            Ok(Register::default())
+        }
     }
-    Ok(n)
 }
 
 pub(crate) fn scan_xetex_math_char_int(st: &mut EngineState) -> Result<i32, Abort> {

@@ -1,7 +1,6 @@
 //! The save stack, `eqtb` definitions, and the sparse-array register trie.
 use crate::codes::ValueLevel;
 use crate::command::Command;
-use crate::command::RegisterRef;
 use crate::consts::{LEVEL_ONE, TEX_NULL};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
@@ -9,7 +8,7 @@ use crate::glue_store::GlueSpecId;
 use crate::mem::ZERO_GLUE;
 use crate::node::{
     NodePtr, SaChild, SaElement, SaIndexNode, SaLeaf, SaMarkClassNode, SaPointerNode, SaSavedEntry,
-    SaSavedPointer, SaSavedWord, SaWordNode, View,
+    SaSavedPointer, SaWordNode, View,
 };
 use crate::params::IntPar;
 use crate::state::{
@@ -115,26 +114,10 @@ pub(crate) struct SaMutationResult {
 }
 
 impl MemState {
-    /// Drops what a control sequence's meaning holds: a macro's reference, or a sparse register's.
-    pub(crate) fn destroy_meaning(
-        &mut self,
-        scanner: &mut ScannerState,
-        m: Command,
-    ) -> Result<(), Abort> {
+    /// Drops what a control sequence's meaning holds: a macro's reference.
+    pub(crate) fn destroy_meaning(&mut self, m: Command) -> Result<(), Abort> {
         if let Some(body) = m.macro_body() {
             self.tokens.delete_ref(body);
-            return Ok(());
-        }
-        let sparse = match m {
-            Command::ToksRegister(r) => r.get().map(NodePtr::at),
-            Command::Register(r) => match r.get()? {
-                RegisterRef::Sparse(sa) => Some(sa),
-                RegisterRef::Scanned(_) => None,
-            },
-            _ => None,
-        };
-        if let Some(sa) = sparse {
-            self.delete_sa_ref(scanner, sa)?;
         }
         Ok(())
     }
@@ -196,26 +179,6 @@ impl MemState {
         }
     }
 
-    pub fn sa_save_word(
-        &mut self,
-        scanner: &mut ScannerState,
-        save_stack: &mut SaveStackState,
-        p: NodePtr<SaWordNode>,
-    ) -> Result<(), Abort> {
-        start_sa_chain(scanner, save_stack)?;
-        let q = NodePtr::<SaSavedWord>::alloc(self)?;
-        let reg = self[p];
-        let e = &mut self[q];
-        e.sa_lev = reg.sa_lev;
-        e.sa_index = reg.sa_index;
-        e.link = scanner.sa_chain;
-        e.sa_loc = Some(p);
-        e.sa_int = reg.sa_int;
-        scanner.sa_chain = Some(q.saved());
-        self[p].sa_ref += 1;
-        Ok(())
-    }
-
     pub fn sa_save_pointer(
         &mut self,
         scanner: &mut ScannerState,
@@ -275,26 +238,6 @@ impl MemState {
         Ok(result)
     }
 
-    pub(crate) fn sa_w_def(
-        &mut self,
-        scanner: &mut ScannerState,
-        save_stack: &mut SaveStackState,
-        node: NodePtr<SaWordNode>,
-        w: i32,
-    ) -> Result<SaMutationResult, Abort> {
-        self[node].sa_ref += 1;
-        let reg = self[node];
-        if reg.sa_int != w {
-            if reg.sa_lev != save_stack.cur_level {
-                self.sa_save_word(scanner, save_stack, node)?;
-            }
-            let n = &mut self[node];
-            n.sa_lev = save_stack.cur_level;
-            n.sa_int = w;
-        }
-        Ok(SaMutationResult::default())
-    }
-
     pub(crate) fn gsa_def(&mut self, p: NodePtr<SaPointerNode>, e: MemPtr) -> SaMutationResult {
         self[p].sa_ref += 1;
         let reg = self[p];
@@ -303,14 +246,6 @@ impl MemState {
         n.sa_lev = LEVEL_ONE;
         n.sa_ptr = e;
         SaMutationResult { flush_list }
-    }
-
-    pub(crate) fn gsa_w_def(&mut self, p: NodePtr<SaWordNode>, w: i32) -> SaMutationResult {
-        let n = &mut self[p];
-        n.sa_ref += 1;
-        n.sa_lev = LEVEL_ONE;
-        n.sa_int = w;
-        SaMutationResult::default()
     }
 }
 
@@ -564,47 +499,5 @@ impl MemState {
             Some(e) => Ok(SaLeaf::of_type(t, e.idx())),
             None => self.sa_alloc_chain(t, n, q, &levels[3..]),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// An arena whose free lists hold nodes of leftover words, none `TEX_NULL`.
-    fn arena() -> (MemState, ScannerState) {
-        let mut mem = MemState {
-            data: crate::mem_types::zeroed_vec(crate::mem::RESERVED_WORDS),
-            ..Default::default()
-        };
-        for size in 2..=crate::node::SaIndexNode::SIZE {
-            for _ in 0..4 {
-                let p = mem.get_node(size).unwrap();
-                for k in 0..size {
-                    mem.set_word(p.words(k + 1).end - 1, 7);
-                }
-                mem.free_node(p, size);
-            }
-        }
-
-        let mut scanner = ScannerState::default();
-        scanner.sa_root.registers_mut().fill(None);
-        (mem, scanner)
-    }
-
-    #[test]
-    fn a_count_register_back_at_zero_frees_its_tree() {
-        let (mut mem, mut scanner) = arena();
-        let SaLeaf::Word(p) = mem
-            .create_sa_element(&mut scanner, ValueLevel::Int, 300)
-            .unwrap()
-        else {
-            panic!("a count register is a word element");
-        };
-        assert!(scanner.sa_root.get(ValueLevel::Int).is_some());
-        let result = mem.gsa_w_def(p, 0);
-        assert!(result.flush_list.is_none());
-        mem.delete_sa_ref(&mut scanner, p.element()).unwrap();
-        assert!(scanner.sa_root.get(ValueLevel::Int).is_none());
     }
 }

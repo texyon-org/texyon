@@ -12,16 +12,12 @@ use crate::consts::{BIGGEST_USV, TEX_NULL, TOO_BIG_USV};
 use crate::eqtb::{
     CaseTable, CodeTable, DimenLoc, FontLoc, GlueLoc, IntLoc, ShapeLoc, ToksLoc, XetexCode,
 };
-use crate::errors::{Abort, OrConfusion};
 use crate::main_control::{CR_CODE, CR_CR_CODE, SPAN_CODE};
 use crate::math::MathStyle;
 use crate::mem::NULL_LIST;
-use crate::node::{NodePtr, SaElement, SaPointerNode};
 use crate::scan::NO_EXPAND_FLAG;
 use crate::state::InteractionMode;
 use crate::token::{Token, TokenList};
-use crate::units::MemIdx;
-use crate::units::RawPtr;
 use crate::units::{FontId, NodeType};
 
 /// A Unicode scalar value carried by a character command.
@@ -56,39 +52,6 @@ impl Usv {
     }
 }
 
-/// What a `\count`-style register command names.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub(crate) enum RegisterRef {
-    /// `\count`, `\dimen`, `\skip` or `\muskip`, whose number follows.
-    Scanned(ValueLevel),
-    /// A register above 255 that `\countdef` and friends bound to a name.
-    Sparse(NodePtr<SaElement>),
-}
-
-/// A [`RegisterRef`] in four bytes, as TeX's `chr` packs it: a value level below
-/// `Ident`, else the sparse register's node.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub(crate) struct RegisterCode(i32);
-
-impl RegisterCode {
-    pub(crate) fn new(r: RegisterRef) -> RegisterCode {
-        RegisterCode(match r {
-            RegisterRef::Scanned(level) => level.raw(),
-            RegisterRef::Sparse(sa) => sa.ptr().raw(),
-        })
-    }
-
-    #[inline]
-    pub(crate) fn get(self) -> Result<RegisterRef, Abort> {
-        Ok(match ValueLevel::from_raw(self.0) {
-            Some(level) => RegisterRef::Scanned(level),
-            None => RegisterRef::Sparse(NodePtr::at(
-                MemIdx::from_raw(self.0).or_confusion("register")?,
-            )),
-        })
-    }
-}
-
 /// A [`TabMark`] in four bytes: the character, or `SPAN_CODE`.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) struct TabMarkCode(i32);
@@ -107,28 +70,6 @@ impl TabMarkCode {
         } else {
             Some(Usv(self.0))
         }
-    }
-}
-
-/// The token register a `\toks`-style command names, in four bytes: zero for
-/// `\toks` itself, else the sparse register `\toksdef` bound.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub(crate) struct ToksRef(i32);
-
-impl ToksRef {
-    pub(crate) fn sparse(sa: NodePtr<SaElement>) -> ToksRef {
-        ToksRef(sa.ptr().raw())
-    }
-
-    /// The bound register, `None` for `\toks`.
-    #[inline]
-    pub(crate) fn get(self) -> Option<NodePtr<SaPointerNode>> {
-        MemIdx::from_raw(self.0).map(NodePtr::at)
-    }
-
-    /// The bound register's sparse-array element, `None` for `\toks`.
-    pub(crate) fn element(self) -> Option<NodePtr<SaElement>> {
-        NodePtr::from_ptr(MemIdx::from_raw(self.0))
     }
 }
 
@@ -274,8 +215,8 @@ pub(crate) enum Command {
     MathGiven(i32) = Cmd::MathGiven as u8,
     XetexMathGiven(i32) = Cmd::XetexMathGiven as u8,
     LastItem(LastItemCode) = Cmd::LastItem as u8,
-    /// `\toks`, or a token register `\toksdef` bound to a name.
-    ToksRegister(ToksRef) = Cmd::ToksRegister as u8,
+    /// `\toks`, whose register number follows.
+    ToksRegister = Cmd::ToksRegister as u8,
     AssignToks(ToksLoc) = Cmd::AssignToks as u8,
     AssignInt(IntLoc) = Cmd::AssignInt as u8,
     AssignDimen(DimenLoc) = Cmd::AssignDimen as u8,
@@ -296,7 +237,8 @@ pub(crate) enum Command {
     DefFamily(FontLoc) = Cmd::DefFamily as u8,
     SetFont(FontId) = Cmd::SetFont as u8,
     DefFont = Cmd::DefFont as u8,
-    Register(RegisterCode) = Cmd::Register as u8,
+    /// `\count`, `\dimen`, `\skip` or `\muskip`, whose register number follows.
+    Register(ValueLevel) = Cmd::Register as u8,
     Advance = Cmd::Advance as u8,
     Multiply = Cmd::Multiply as u8,
     Divide = Cmd::Divide as u8,
@@ -527,7 +469,7 @@ impl Command {
             Command::MathGiven(..) => Cmd::MathGiven,
             Command::XetexMathGiven(..) => Cmd::XetexMathGiven,
             Command::LastItem(..) => Cmd::LastItem,
-            Command::ToksRegister(..) => Cmd::ToksRegister,
+            Command::ToksRegister => Cmd::ToksRegister,
             Command::AssignToks(..) => Cmd::AssignToks,
             Command::AssignInt(..) => Cmd::AssignInt,
             Command::AssignDimen(..) => Cmd::AssignDimen,
@@ -642,14 +584,13 @@ impl Command {
             Command::Radical(code) => code.raw(),
             Command::MathGiven(v) | Command::XetexMathGiven(v) => v,
             Command::LastItem(code) => code.raw(),
-            Command::ToksRegister(r) => r.0,
             Command::AssignFontInt(code) => code.raw(),
             Command::SetAux(code) => code.raw(),
             Command::SetPageDimen(code) => code.raw(),
             Command::SetPageInt(code) => code.raw(),
             Command::SetBoxDimen(code) => code.raw(),
             Command::SetFont(f) => f.raw(),
-            Command::Register(r) => r.0,
+            Command::Register(level) => level.raw(),
             Command::Prefix(code) => code.raw(),
             Command::ShorthandDef(code) => code.raw(),
             Command::Def { global, expand } => i32::from(global) + 2 * i32::from(expand),
@@ -701,6 +642,7 @@ impl Command {
             | Command::UndefinedCs
             | Command::CsName
             | Command::EndTemplate
+            | Command::ToksRegister
             | Command::DontExpand => unit_chr(self.cmd()),
         };
         (self.cmd(), chr)
@@ -796,7 +738,6 @@ impl Command {
             Cmd::MathGiven => Command::MathGiven(chr),
             Cmd::XetexMathGiven => Command::XetexMathGiven(chr),
             Cmd::LastItem => Command::LastItem(LastItemCode::from_raw(chr)?),
-            Cmd::ToksRegister => Command::ToksRegister(ToksRef(chr)),
             Cmd::AssignToks => Command::AssignToks(ToksLoc::from_raw(chr)?),
             Cmd::AssignInt => Command::AssignInt(IntLoc::from_raw(chr)?),
             Cmd::AssignDimen => Command::AssignDimen(DimenLoc::from_raw(chr)?),
@@ -812,9 +753,9 @@ impl Command {
             Cmd::XetexDefCode => Command::XetexDefCode(XetexCode::from_raw(chr)?),
             Cmd::DefFamily => Command::DefFamily(FontLoc::from_raw(chr)?),
             Cmd::SetFont => Command::SetFont(FontId::try_from(chr).ok()?),
-            Cmd::Register => match ValueLevel::from_raw(chr) {
-                Some(level) if level > ValueLevel::Mu => return None,
-                _ => Command::Register(RegisterCode(chr)),
+            Cmd::Register => match ValueLevel::from_raw(chr)? {
+                level if level > ValueLevel::Mu => return None,
+                level => Command::Register(level),
             },
             Cmd::Prefix => Command::Prefix(PrefixCode::from_raw(chr)?),
             Cmd::Let => Command::Let { future: flag(1)? },
@@ -864,6 +805,7 @@ const fn is_unit(cmd: Cmd) -> bool {
 const fn unit(cmd: Cmd) -> Option<Command> {
     Some(match cmd {
         Cmd::Endv => Command::Endv,
+        Cmd::ToksRegister => Command::ToksRegister,
         Cmd::ParEnd => Command::ParEnd,
         Cmd::CharNum => Command::CharNum,
         Cmd::Mskip => Command::Mskip,
@@ -982,11 +924,7 @@ mod tests {
                 Command::Relax(RelaxCode::NoExpand),
             ),
             (Cmd::RemoveItem, 11, Command::RemoveItem(NodeType::Kern)),
-            (
-                Cmd::Register,
-                2,
-                Command::Register(RegisterCode::new(RegisterRef::Scanned(ValueLevel::Glue))),
-            ),
+            (Cmd::Register, 2, Command::Register(ValueLevel::Glue)),
         ];
         for (cmd, chr, want) in cases {
             assert_eq!(Command::decode(cmd, chr), Some(want), "{cmd:?} {chr}");

@@ -5,7 +5,6 @@ use crate::codes::FontIntCode;
 use crate::codes::PageDimenCode;
 use crate::codes::{BoxDimenCode, FiOrElseCode, LastItemCode, PageIntCode, ValueLevel};
 use crate::command::Command;
-use crate::command::RegisterRef;
 use crate::consts::{ACTIVE_MATH_CHAR, CHAR_CLASS_LIMIT, MAX_DIMEN, NULL_FONT};
 use crate::cs::CsId;
 use crate::eqtb::{CodeTable, GlueLoc, ShapeLoc, XetexCode};
@@ -26,7 +25,6 @@ use crate::node::{AnyNode, GlueKind, MathCode, SaLeaf};
 use crate::params::TokPar;
 use crate::state::{EngineState, FontEngineHandle};
 use crate::token::TokenList;
-use crate::units::RawPtr;
 use crate::units::{FontId, NodeType, Scaled, StrNumber};
 use std::rc::Rc;
 
@@ -276,19 +274,10 @@ fn fetch_token_list(
         return Ok(CurVal::Dimen(Scaled::ZERO));
     }
     Ok(match cmd {
-        Command::ToksRegister(r) if r.get().is_none() => {
+        Command::ToksRegister => {
             let n = scan_register_num(st)?;
-            CurVal::Tok(if let Ok(r) = u8::try_from(n) {
-                st.eqtb.toks(r)
-            } else {
-                let sa = find_sa(st, ValueLevel::Tok, n);
-                sa_token_list(st, sa)
-            })
+            CurVal::Tok(st.eqtb.toks(n))
         }
-        Command::ToksRegister(r) => match r.get() {
-            Some(sa) => CurVal::Tok(st.mem[sa].toks()),
-            None => return Err(Abort::Confusion("toks register")),
-        },
         Command::AssignToks(loc) if loc == TokPar::XetexInterCharToks.loc() => {
             let first = scan_char_class_not_ignored(st)?;
             let second = scan_char_class_not_ignored(st)?;
@@ -305,33 +294,8 @@ fn fetch_token_list(
     })
 }
 
-/// A sparse register's value as its raw word.
-fn sa_register_word(st: &EngineState, leaf: SaLeaf) -> Result<i32, Abort> {
-    match leaf {
-        SaLeaf::Word(w) => Ok(st.mem[w].sa_int),
-        SaLeaf::Pointer(p) => Ok(st.mem[p].sa_ptr.raw()),
-        SaLeaf::MarkClass(_) => Err(Abort::Confusion("register")),
-    }
-}
-
-fn fetch_register(st: &mut EngineState, r: RegisterRef) -> Result<CurVal, Abort> {
-    let level = match r {
-        RegisterRef::Scanned(level) => level,
-        RegisterRef::Sparse(sa) => {
-            let level = st.mem[sa].sa_type().get().or_confusion("sa_type")?;
-            let leaf = sa.leaf(&st.mem).or_confusion("sa_type")?;
-            return CurVal::from_word(level, sa_register_word(st, leaf)?);
-        }
-    };
-    let n = scan_register_num(st)?;
-    let Ok(r) = u8::try_from(n) else {
-        let word = match find_sa(st, level, n) {
-            None if level >= ValueLevel::Glue => ZERO_GLUE.raw(),
-            None => 0,
-            Some(leaf) => sa_register_word(st, leaf)?,
-        };
-        return CurVal::from_word(level, word);
-    };
+fn fetch_register(st: &mut EngineState, level: ValueLevel) -> Result<CurVal, Abort> {
+    let r = scan_register_num(st)?;
     Ok(match level {
         ValueLevel::Int => CurVal::Int(st.eqtb.count(r)),
         ValueLevel::Dimen => CurVal::Dimen(st.eqtb.dimen(r)),
@@ -760,7 +724,7 @@ pub(super) fn scan_something_internal(
         break match st.scanner.cur {
             Command::DefCode(base) => CurVal::Int(fetch_def_code(st, base)?),
             Command::XetexDefCode(base) => CurVal::Int(fetch_xetex_def_code(st, base)?),
-            cmd @ (Command::ToksRegister(_)
+            cmd @ (Command::ToksRegister
             | Command::AssignToks(_)
             | Command::DefFamily(_)
             | Command::SetFont(_)
@@ -861,7 +825,7 @@ pub(super) fn scan_something_internal(
                 } as u32;
                 CurVal::Int(st.fonts.cp_codes.get(f, side, c))
             }
-            Command::Register(r) => fetch_register(st, r.get()?)?,
+            Command::Register(level) => fetch_register(st, level)?,
             Command::LastItem(code) => {
                 if code < LastItemCode::InputLineNo {
                     fetch_last_node_item(st, code)?

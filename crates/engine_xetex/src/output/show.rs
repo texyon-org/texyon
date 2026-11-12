@@ -409,7 +409,7 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                         print_esc(st, "global");
                     }
                     print_esc(st, "setbox");
-                    print_int(st, i32::from(register));
+                    print_int(st, register.into());
                     print_char(st, b'=');
                 }
                 Some(Saved::BoxContext(BoxContext::ShipOut)) => {
@@ -466,7 +466,7 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
             show_to_stream(st)?;
             begin_diagnostic(st);
             print_nl(st, "> \\box");
-            print_int(st, n);
+            print_int(st, n.into());
             print_char(st, b'=');
             match contents {
                 Some(b) => show_box(st, b.ptr()),

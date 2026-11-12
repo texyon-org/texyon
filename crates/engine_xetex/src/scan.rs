@@ -1,20 +1,21 @@
 //! The tokenizer (`get_next`) and the scanning routines built on it.
 
 use crate::cmd::Cmd;
-use crate::codes::{DelimNumCode, MathCharNumCode, ValueLevel};
+use crate::codes::{DelimNumCode, MathCharNumCode};
 use crate::command::Command;
 use crate::command::Usv;
 use crate::cs::{CsId, Frozen};
+use crate::eqtb::Register;
 
 use crate::consts::{ACTIVE_MATH_CHAR, BIGGEST_USV, MATH_CHAR, NUMBER_MATH_FAMILIES};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::input::{back_input, begin_token_list, TokenType};
-use crate::node::{BoxNode, MathSlot, NodePtr, RuleDimen, RuleNode, SaLeaf, Stored};
+use crate::node::{BoxNode, MathSlot, NodePtr, RuleDimen, RuleNode, Stored};
 use crate::packaging::PackSpec;
 use crate::params::IntPar;
 use crate::state::Saved;
-use crate::state::{EngineState, EqtbState, GroupCode, MemState, ScannerState};
+use crate::state::{EngineState, EqtbState, GroupCode};
 use crate::token::Token;
 use crate::units::{NodeType, Scaled};
 
@@ -23,7 +24,6 @@ mod next;
 mod numbers;
 mod toks;
 
-use self::internal::find_sa;
 pub(crate) use self::internal::{
     find_font_dimen, sa_token_list, scan_font_ident, scan_glyph_number,
 };
@@ -293,39 +293,8 @@ pub(crate) fn set_family(x: i32) -> i32 {
 }
 
 /// The contents of box register `n`, or `None` if it is void.
-pub(crate) fn fetch_box(st: &mut EngineState, n: i32) -> Option<NodePtr<BoxNode>> {
-    if let Ok(r) = u8::try_from(n) {
-        return st.eqtb.box_reg(r);
-    }
-    let contents = match find_sa(st, ValueLevel::BOX, n)? {
-        SaLeaf::Pointer(p) => st.mem[p].sa_ptr,
-        SaLeaf::Word(_) | SaLeaf::MarkClass(_) => return None,
-    };
-    st.mem.classify_box(contents?).ok().flatten()
-}
-
-impl MemState {
-    /// TeX's `change_box`: sets box register `n` to `v` without saving.
-    pub(crate) fn change_box(
-        &mut self,
-        scanner: &mut ScannerState,
-        eqtb: &mut EqtbState,
-        n: i32,
-        v: Option<NodePtr<BoxNode>>,
-    ) -> Result<(), Abort> {
-        if let Ok(r) = u8::try_from(n) {
-            eqtb.set_box_reg(r, v);
-            return Ok(());
-        }
-        let v = crate::node::link_of(v);
-        if let Some(SaLeaf::Pointer(p)) = self.find_sa_element(scanner, ValueLevel::BOX, n) {
-            let r = &mut self[p];
-            r.sa_ptr = v;
-            r.sa_ref += 1;
-            self.delete_sa_ref(scanner, p.element())?;
-        }
-        Ok(())
-    }
+pub(crate) fn fetch_box(st: &EngineState, n: Register) -> Option<NodePtr<BoxNode>> {
+    st.eqtb.box_reg(n)
 }
 
 /// Builds the token list for `\the` (or `\unexpanded`/`\detokenize`) at

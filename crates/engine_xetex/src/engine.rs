@@ -348,7 +348,9 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     let eqtb = &mut st.eqtb;
     eqtb.meanings.fill(Command::UndefinedCs, LEVEL_ZERO);
 
-    let zero_glue_refs = st.mem[ZERO_GLUE].ref_count + 531;
+    // One reference per glue table entry, as WEB's `local_base - glue_base`.
+    let entries = i32::try_from(crate::eqtb::GlueLoc::LEN).unwrap_or(i32::MAX);
+    let zero_glue_refs = st.mem[ZERO_GLUE].ref_count + entries;
     st.mem[ZERO_GLUE].ref_count = zero_glue_refs;
 
     for k in 0..NUMBER_USVS {

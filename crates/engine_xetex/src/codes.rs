@@ -109,11 +109,6 @@ code_enum! {
     }
 }
 
-impl ValueLevel {
-    /// `box_val`, the sparse-array type of box registers.
-    pub(crate) const BOX: ValueLevel = ValueLevel::Ident;
-}
-
 code_enum! {
     /// The `chr_code` of `\lastpenalty` and the other `last_item` primitives.
     #[derive(PartialOrd, Ord)]

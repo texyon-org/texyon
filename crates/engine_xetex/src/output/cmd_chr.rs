@@ -1,7 +1,7 @@
 //! Symbolic printing of commands: `print_command` and `print_meaning`.
 
 use crate::codes::{BoxCode, FiOrElseCode, LimitCode, SkipCode, ValueLevel};
-use crate::command::{Command, RegisterRef};
+use crate::command::Command;
 use crate::eqtb::{DimenSlot, GlueSlot, IntSlot, ToksSlot};
 use crate::params::TokPar;
 use crate::state::{EngineState, InteractionMode};
@@ -9,8 +9,8 @@ use crate::units::NodeType;
 
 use super::{
     print, print_char, print_code, print_esc, print_font_select, print_hex, print_int,
-    print_length_param, print_ln, print_param, print_sa_num, print_size, print_skip_param,
-    print_style, token_show,
+    print_length_param, print_ln, print_param, print_size, print_skip_param, print_style,
+    token_show,
 };
 
 impl crate::output::TexPrint for Command {
@@ -124,12 +124,7 @@ pub(crate) fn print_command(st: &mut EngineState, c: Command) {
         Command::SetPrevGraf => print_esc(st, "prevgraf"),
         Command::SetShape(loc) => print_esc(st, loc.name()),
         Command::The(code) => print_esc(st, code.name()),
-        Command::ToksRegister(r) => {
-            print_esc(st, "toks");
-            if let Some(q) = r.element() {
-                print_sa_num(st, q);
-            }
-        }
+        Command::ToksRegister => print_esc(st, "toks"),
         Command::Vadjust => print_esc(st, "vadjust"),
         Command::Valign(code) => print_esc(st, code.name()),
         Command::Vcenter => print_esc(st, "vcenter"),
@@ -143,24 +138,15 @@ pub(crate) fn print_command(st: &mut EngineState, c: Command) {
                 print_char(st, b's');
             }
         }
-        Command::Register(r) => {
-            let r = r.get();
-            let level = match r {
-                Ok(RegisterRef::Scanned(level)) => Some(level),
-                Ok(RegisterRef::Sparse(q)) => st.mem[q].sa_type().get(),
-                Err(_) => None,
-            };
-            let name = match level {
-                Some(ValueLevel::Int) => "count",
-                Some(ValueLevel::Dimen) => "dimen",
-                Some(ValueLevel::Glue) => "skip",
+        Command::Register(level) => print_esc(
+            st,
+            match level {
+                ValueLevel::Int => "count",
+                ValueLevel::Dimen => "dimen",
+                ValueLevel::Glue => "skip",
                 _ => "muskip",
-            };
-            print_esc(st, name);
-            if let Ok(RegisterRef::Sparse(q)) = r {
-                print_sa_num(st, q);
-            }
-        }
+            },
+        ),
         Command::SetAux(code) => print_esc(st, code.name()),
         Command::SetPageInt(code) => print_esc(st, code.name()),
         Command::SetBoxDimen(code) => print_esc(st, code.name()),

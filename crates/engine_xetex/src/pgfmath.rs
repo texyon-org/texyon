@@ -3,12 +3,10 @@
 //! the same argument. Results may differ from pgf's macros in the last digits.
 
 use crate::command::Command;
-use crate::command::RegisterRef;
 use crate::cs::CsId;
 use std::collections::HashMap;
 
 use crate::cmd::Cmd;
-use crate::codes::ValueLevel;
 
 use crate::errors::Abort;
 use crate::params::IntPar;
@@ -518,16 +516,6 @@ fn register_item(st: &EngineState, cs: CsId) -> Result<Item, &'static str> {
     match st.eqtb.meaning(cs) {
         Command::AssignDimen(loc) => Ok(Item::Dimen(st.eqtb.dimens.get(loc).raw())),
         Command::AssignInt(loc) => Ok(Item::Count(st.eqtb.ints.get(loc))),
-        Command::Register(r) => {
-            let Ok(RegisterRef::Sparse(sa)) = r.get() else {
-                return Err("unsupported control sequence");
-            };
-            match (sa.word(&st.mem), st.mem[sa].sa_type().get()) {
-                (Some(w), Some(ValueLevel::Int)) => Ok(Item::Count(st.mem[w].sa_int)),
-                (Some(w), Some(ValueLevel::Dimen)) => Ok(Item::Dimen(st.mem[w].sa_int)),
-                _ => Err("unsupported register"),
-            }
-        }
         _ => Err("unsupported control sequence"),
     }
 }
