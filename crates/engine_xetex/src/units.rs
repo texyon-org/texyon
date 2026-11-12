@@ -239,10 +239,9 @@ impl CsId {
     /// The control sequence a raw word, file or FFI value holds, `None` for 0.
     #[inline(always)]
     pub const fn from_raw(raw: i32) -> Option<CsId> {
-        if raw < 0 {
-            return None;
-        }
-        match NonZeroU32::new(raw.cast_unsigned()) {
+        // Negative values clamp to 0, so one zero test rejects both.
+        let clamped = if raw < 0 { 0 } else { raw.cast_unsigned() };
+        match NonZeroU32::new(clamped) {
             Some(n) => Some(CsId(n)),
             None => None,
         }

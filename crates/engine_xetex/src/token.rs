@@ -90,11 +90,8 @@ impl Token {
     /// The control sequence of the token, `None` for a character token.
     #[inline(always)]
     pub(crate) const fn cs(self) -> Option<CsId> {
-        if self.is_cs() {
-            CsId::from_raw(self.0 - CS_TOKEN_FLAG)
-        } else {
-            None
-        }
+        // A character token lies below the flag, so it maps to a negative raw value.
+        CsId::from_raw(self.0 - CS_TOKEN_FLAG)
     }
 
     /// The category of a character token.

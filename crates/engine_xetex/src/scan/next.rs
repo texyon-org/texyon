@@ -208,7 +208,8 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
     if st.input.cur_input.state == TOKEN_LIST {
         let p = st.input.cur_input.token_loc();
         if let Some(t) = st.mem.tokens.peek(p) {
-            let plain = if let Some(cs) = t.cs() {
+            let t_cs = t.cs();
+            let plain = if let Some(cs) = t_cs {
                 let cmd = st.eqtb.meaning(cs).cmd();
                 cmd < Cmd::OuterCall
                     && (!(Cmd::TabMark..=Cmd::CarRet).contains(&cmd) || st.scanner.align_state != 0)
@@ -219,7 +220,7 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
             if plain {
                 st.scanner.logical_clock = st.scanner.logical_clock.wrapping_add(1);
                 st.input.cur_input.set_token_loc(st.mem.tokens.next(p));
-                if let Some(cs) = t.cs() {
+                if let Some(cs) = t_cs {
                     fetch_cs_meaning(st, cs);
                 } else {
                     st.scanner.cur_cs = None;
