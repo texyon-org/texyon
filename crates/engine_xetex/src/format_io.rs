@@ -21,7 +21,7 @@ use crate::glue_store::{GlueSpec, GlueStore, STATIC_SPECS};
 use crate::hash::{hash_slot, HASH_PRIME};
 use crate::hyphenation::{TrieOp, TriePtr, BIGGEST_LANG, HYPH_PRIME, TRIE_OP_SIZE};
 use crate::mem::{CONTRIB_HEAD, PAGE_HEAD, RESERVED_WORDS};
-use crate::mem_types::{B16x4, B32x2, MemoryWord};
+use crate::mem_types::B32x2;
 use crate::output::{print, print_char, print_int, print_ln, print_nl};
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, InteractionMode, PerFont, Selector};
@@ -185,18 +185,6 @@ impl FmtItem for B32x2 {
     }
 }
 
-impl FmtItem for MemoryWord {
-    const SIZE: usize = 8;
-    #[inline]
-    fn put(self, out: &mut Vec<u8>) {
-        self.b32().put(out);
-    }
-    #[inline]
-    fn get(bytes: &[u8]) -> Option<Self> {
-        B32x2::get(bytes).map(|b32| MemoryWord { b32 })
-    }
-}
-
 impl FmtItem for GlueSpec {
     const SIZE: usize = 20;
     #[inline]
@@ -242,25 +230,6 @@ impl FmtItem for ListSlot {
             *w = u32::get(chunk)?;
         }
         Some(bytemuck::cast(words))
-    }
-}
-
-impl FmtItem for B16x4 {
-    const SIZE: usize = 8;
-    #[inline]
-    fn put(self, out: &mut Vec<u8>) {
-        for q in [self.s3, self.s2, self.s1, self.s0] {
-            q.put(out);
-        }
-    }
-    #[inline]
-    fn get(bytes: &[u8]) -> Option<Self> {
-        let mut quarters = [0u16; 4];
-        for (q, chunk) in quarters.iter_mut().zip(bytes.chunks_exact(2)) {
-            *q = u16::get(chunk)?;
-        }
-        let [s3, s2, s1, s0] = quarters;
-        Some(B16x4 { s3, s2, s1, s0 })
     }
 }
 

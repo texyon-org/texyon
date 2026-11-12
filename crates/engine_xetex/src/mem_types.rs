@@ -1,4 +1,4 @@
-//! TeX's `memory_word` and the other word-level records of the engine arenas.
+//! The word-level records of the engine arenas.
 
 use std::mem::size_of;
 
@@ -13,60 +13,13 @@ pub struct B32x2 {
     pub s1: i32,
 }
 
-/// Four 16-bit quarters.
-#[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct B16x4 {
-    pub s0: u16,
-    pub s1: u16,
-    pub s2: u16,
-    pub s3: u16,
-}
-
-/// TeX's `memory_word`. The format file stores these words verbatim.
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub union MemoryWord {
-    pub b32: B32x2,
-    pub b16: B16x4,
-    pub gr: f64,
-}
-
-// SAFETY: every field is 8 bytes of plain data, valid at all-zero bits.
-unsafe impl bytemuck::Zeroable for MemoryWord {}
-// SAFETY: every field is 8 bytes of plain data without padding, so any bits are valid.
-unsafe impl bytemuck::Pod for MemoryWord {}
-
-impl MemoryWord {
-    #[inline]
-    pub fn b32(self) -> B32x2 {
-        // SAFETY: every field is 8 bytes of plain data, so any bits read as any field.
-        unsafe { self.b32 }
-    }
-}
-
-impl Default for MemoryWord {
-    #[inline]
-    fn default() -> Self {
-        MemoryWord {
-            b32: B32x2 { s0: 0, s1: 0 },
-        }
-    }
-}
-
-const _: () = {
-    assert!(size_of::<MemoryWord>() == 8);
-    assert!(size_of::<B32x2>() == 8);
-    assert!(size_of::<B16x4>() == 8);
-};
+const _: () = assert!(size_of::<B32x2>() == 8);
 
 /// Word types whose all-zero bit pattern is a valid value.
 ///
 /// # Safety
 /// Every field of an implementor must be valid at all-zero bits.
 pub(crate) unsafe trait ZeroWord: Copy {}
-// SAFETY: i32, u16 and f64 are all valid at zero bits.
-unsafe impl ZeroWord for MemoryWord {}
 // SAFETY: both fields are i32.
 unsafe impl ZeroWord for B32x2 {}
 // SAFETY: every bit pattern is a valid u32.

@@ -6,8 +6,6 @@
 
 use bytemuck::Pod;
 
-use crate::mem_types::MemoryWord;
-
 /// A pre-image: word `idx` held `old` before the epoch touched it.
 #[derive(Clone, Copy)]
 #[repr(C, packed(4))]
@@ -16,7 +14,7 @@ struct Preimage<T: Copy> {
     old: T,
 }
 
-const _: () = assert!(std::mem::size_of::<Preimage<MemoryWord>>() == 12);
+const _: () = assert!(std::mem::size_of::<Preimage<crate::mem_types::B32x2>>() == 12);
 
 /// The first-touch journal of one flat array of `T` words.
 ///
@@ -386,24 +384,17 @@ mod tests {
     use super::*;
     use crate::mem_types::B32x2;
 
-    fn word(value: i32) -> MemoryWord {
-        MemoryWord {
-            b32: B32x2 {
-                s0: value,
-                s1: value,
-            },
+    fn word(value: i32) -> B32x2 {
+        B32x2 {
+            s0: value,
+            s1: value,
         }
-    }
-
-    fn bits(value: MemoryWord) -> u64 {
-        let b = value.b32();
-        u64::from(b.s0 as u32) | (u64::from(b.s1 as u32) << 32)
     }
 
     #[test]
     fn word_journal_skips_words_past_the_epoch_base() {
         let mut data = vec![word(0); 4];
-        let mut journal = WordJournal::<MemoryWord>::default();
+        let mut journal = WordJournal::<B32x2>::default();
         journal.arm(data.len());
         data.resize(100, word(0));
         journal.note(70, data[70]);
@@ -419,16 +410,16 @@ mod tests {
         assert_eq!(journal.open_len(), 1);
 
         delta.apply_to(&mut data);
-        assert_eq!(bits(data[2]), bits(word(0)));
-        assert_eq!(bits(data[70]), bits(word(7)));
+        assert_eq!(data[2], word(0));
+        assert_eq!(data[70], word(7));
         journal.seal(&data).apply_to(&mut data);
-        assert_eq!(bits(data[70]), bits(word(5)));
+        assert_eq!(data[70], word(5));
     }
 
     #[test]
     fn word_journal_records_only_the_first_touch() {
         let mut data = vec![word(0); 160];
-        let mut journal = WordJournal::<MemoryWord>::default();
+        let mut journal = WordJournal::<B32x2>::default();
         journal.arm(data.len());
         for value in 1..=3 {
             journal.note(7, data[7]);
@@ -441,14 +432,14 @@ mod tests {
         let delta = journal.seal(&data);
         assert_eq!(delta.len(), 2);
         delta.apply_to(&mut data);
-        assert_eq!(bits(data[7]), bits(word(0)));
-        assert_eq!(bits(data[130]), bits(word(0)));
+        assert_eq!(data[7], word(0));
+        assert_eq!(data[130], word(0));
     }
 
     #[test]
     fn sealing_drops_words_back_at_their_preimage() {
         let mut data = vec![word(0); 4];
-        let mut journal = WordJournal::<MemoryWord>::default();
+        let mut journal = WordJournal::<B32x2>::default();
         journal.arm(data.len());
         journal.note_run(0, &data[..3]);
         data[1] = word(1);
@@ -458,13 +449,13 @@ mod tests {
         let delta = journal.seal(&data);
         assert_eq!(delta.len(), 1);
         delta.apply_to(&mut data);
-        assert_eq!(bits(data[1]), bits(word(0)));
+        assert_eq!(data[1], word(0));
     }
 
     #[test]
     fn note_run_saves_each_word_once_across_a_bitmap_boundary() {
         let data: Vec<_> = (0..128).map(word).collect();
-        let mut journal = WordJournal::<MemoryWord>::default();
+        let mut journal = WordJournal::<B32x2>::default();
         journal.arm(data.len());
         journal.note(62, data[62]);
         journal.note(63, data[63]);
@@ -477,7 +468,7 @@ mod tests {
     #[test]
     fn note_run_saves_the_unnoted_words_of_a_partly_noted_node() {
         let data: Vec<_> = (0..16).map(word).collect();
-        let mut journal = WordJournal::<MemoryWord>::default();
+        let mut journal = WordJournal::<B32x2>::default();
         journal.arm(data.len());
         journal.note(5, data[5]);
         journal.note_run(4, &data[4..6]);
@@ -489,7 +480,7 @@ mod tests {
     #[test]
     fn sealing_starts_a_fresh_touch_epoch() {
         let mut data = vec![word(0); 64];
-        let mut journal = WordJournal::<MemoryWord>::default();
+        let mut journal = WordJournal::<B32x2>::default();
         journal.arm(data.len());
         journal.note(3, data[3]);
         data[3] = word(1);
@@ -499,9 +490,9 @@ mod tests {
         let second = journal.seal(&data);
 
         second.apply_to(&mut data);
-        assert_eq!(bits(data[3]), bits(word(1)));
+        assert_eq!(data[3], word(1));
         first.apply_to(&mut data);
-        assert_eq!(bits(data[3]), bits(word(0)));
+        assert_eq!(data[3], word(0));
     }
 
     #[test]
@@ -524,7 +515,7 @@ mod tests {
     #[test]
     fn word_delta_composition_keeps_the_older_preimage() {
         let mut data = vec![word(0); 3];
-        let mut journal = WordJournal::<MemoryWord>::default();
+        let mut journal = WordJournal::<B32x2>::default();
         journal.arm(data.len());
         journal.note(0, data[0]);
         data[0] = word(1);
@@ -539,10 +530,7 @@ mod tests {
 
         newer.compose_with_older(older);
         newer.apply_to(&mut data);
-        assert_eq!(
-            data.iter().map(|v| bits(*v)).collect::<Vec<_>>(),
-            vec![0, 0, 0]
-        );
+        assert_eq!(data, vec![word(0); 3]);
     }
 
     #[test]

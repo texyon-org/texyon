@@ -37,8 +37,10 @@ State and memory:
   (`is_left_brace()`, `is_brace()`, `is_match()`). `cur_tok`, `par_token`,
   `after_token` and token list nodes hold it. `Token::ZERO` is TeX's 0.
 - `units.rs`: `MemIdx`/`MemPtr` (null is `TEX_NULL`, not zero), `Scaled`,
-  `FontId`, `StrNumber`, `NodeType`, `GlueSign`. `mem_types.rs` holds
-  `MemoryWord`.
+  `FontId`, `StrNumber`, `NodeType`, `GlueSign`. `mem_types.rs` holds the
+  arena word records and `ListStateRecord`, whose `Mode` (`mode.rs`) carries
+  the registers of its list (`prev_depth`, `space_factor` and `clang`,
+  `incompleat_noad`).
   - `Scaled` is every length: node dimensions, font metrics, `dimen_par`,
     the shipout and page builder positions, the line breaker's widths. It
     adds, subtracts, negates and scales by an `i32` like the raw words did.
@@ -162,17 +164,20 @@ see each other through `pub(super)`.
   earlier movements with `set_reg_at`. The buffer and position are private:
   a checkpoint keeps `into_checkpoint()` of the writer and returns with
   `restore`, which reuses the live buffer and keeps the page manifest.
-- Font metrics (`fonts.rs`): `st.fonts.char_info(f, c)` is a `CharInfo`
-  view (`exists()`, `tag()` as `CharTag::{None, Lig, List, Ext}`,
-  `remainder()`), measured with `char_width`/`char_height`/`char_depth`/
-  `char_italic`. `char_exists(f, c)` adds the `font_bc..=font_ec` check.
-  Lig/kern programs are `LigKernStep`s: `lig_kern_start(f, i)` returns the
-  first instruction and its index (following a redirect), `lig_kern_step(k)`
-  reads one, and a step knows `matches(c)`, `is_last()`, `is_kern()`,
-  `lig_op()`, `lig_char()` and `next_index(k)`. `char_kern(f, step)` and
-  `ext_recipe(f, i)` (an `ExtRecipe` of `top`/`mid`/`bot`/`rep`) complete the
-  set, and `param(f, n)` reads a font parameter. The TFM reader stores raw
-  words, only these views interpret them.
+- Font metrics (`tfm.rs`): `st.fonts.metrics[f]` is `FontMetrics::Tfm` (an
+  `Rc<TfmMetrics>` decoded once by `read_tfm`) or `FontMetrics::Native` (ascent
+  and descent). `char_info(f, c)` is an `Option<CharInfo>` with the
+  character's `width`, `height`, `depth`, `italic` and a `CharTag::{None,
+  Lig(start), List(c), Ext(e)}`. A code outside the font reads as missing,
+  `char_metrics(f, c)` gives `CharInfo::NULL` for it. Lig/kern programs are
+  `LigKernStep::{Jump, Rule}`: `lig_kern_start(f, start)` follows a redirect,
+  `action_for(c)` gives a `LigKernAction::{Kern(width), Lig { op, char }}`
+  with `op` a `LigOp`, and `next(k)` moves on. `ext_recipe(f, e)` and
+  `bchar_label(f)` complete the set. `TfmMetrics::new` rejects tables whose
+  indices point outside them or whose charlists cycle, for the TFM reader
+  and the format alike.
+  `\fontdimen` parameters are `params[f]` (`FontParams`, copy-on-write, read
+  with `param(f, n)`), and checkpoints share both through `Rc`.
 - `fonts.rs` (TFM and font parameters), `ext.rs` (loading OpenType and
   Graphite fonts through `texyon_xetex_layout`, feature parsing, TECkit
   mappings, font queries) with `ext/native.rs` (shaping and measuring native
