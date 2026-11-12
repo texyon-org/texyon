@@ -177,6 +177,7 @@ pub(crate) fn input_close(handle: usize) -> bool {
 /// Opens output file `path`, or returns 0.
 pub(crate) fn output_open(path: &[u8], is_gz: bool) -> usize {
     let path = String::from_utf8_lossy(path);
+    crate::replay::adapter::record_written(&path);
     OutputId::to_raw(with_bridge(|es| es.output_open(&path, is_gz)))
 }
 

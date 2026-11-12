@@ -290,6 +290,11 @@ impl SourceSnapshot {
         Some((path, bytes, identity))
     }
 
+    /// `path` normalized against this snapshot's root, if it lies inside it.
+    pub(crate) fn source_path(&self, path: &Path) -> Option<SourcePath> {
+        normalize(&self.root, path).ok()
+    }
+
     /// Resolve editor bytes or freeze a root-confined disk source for this operation.
     pub(crate) fn resolve_replay_entry(&self, path: &Path) -> Option<ResolvedSource> {
         let path = normalize(&self.root, path).ok()?;

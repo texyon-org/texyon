@@ -1,6 +1,7 @@
 //! Synchronous rung-zero resident XeTeX session.
 
 use std::cell::RefCell;
+use std::collections::BTreeSet;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 use std::rc::Rc;
@@ -337,6 +338,8 @@ pub struct IncrementalXeTeXSession {
     ladder: Option<CheckpointLadder<EngineBundle>>,
     strings_base: Option<StringWatermark>,
     last_sources: Option<SourceSnapshot>,
+    /// Files this session wrote, read back from the engine's output and never from disk.
+    written: BTreeSet<SourcePath>,
     pending_continuation: Option<TailContinuation>,
     /// The next edit replays from rung zero, so files read at the start (the .aux) are read again.
     from_start: bool,
@@ -362,6 +365,7 @@ impl IncrementalXeTeXSession {
             ladder: None,
             strings_base: None,
             last_sources: None,
+            written: BTreeSet::new(),
             pending_continuation: None,
             from_start: false,
             opened: false,
@@ -408,6 +412,7 @@ impl IncrementalXeTeXSession {
         let state = &mut *self.state;
         let ladder = &mut self.ladder;
         let strings_base = &mut self.strings_base;
+        let written = &mut self.written;
         let revision = sources.revision();
         let accepted_sources = sources.clone();
         let mut checkpoint_activity = CheckpointActivity::default();
@@ -415,7 +420,7 @@ impl IncrementalXeTeXSession {
             Ok(catch_operation(api, state, |state| {
                 configure(state, &config);
                 let fence_sources = sources.clone();
-                let _sources = crate::replay::adapter::install(sources);
+                let _sources = crate::replay::adapter::install(sources, written);
                 match crate::engine::initialize_engine(state, &format, build_date) {
                     crate::engine::InitOutcome::Ready => {}
                     crate::engine::InitOutcome::Terminate(history) => {
@@ -497,6 +502,7 @@ impl IncrementalXeTeXSession {
             .strings_base
             .expect("opened session without string watermark");
         let state = &mut *self.state;
+        let written = &mut self.written;
         let ladder = self.ladder.as_mut().expect("opened session without ladder");
         let selection = if from_start {
             None
@@ -509,7 +515,7 @@ impl IncrementalXeTeXSession {
         let result = launcher.with_global_lock(|api| {
             Ok(catch_operation(api, state, |state| {
                 let fence_sources = sources.clone();
-                let _sources = crate::replay::adapter::install(sources);
+                let _sources = crate::replay::adapter::install(sources, written);
                 let splice = if let Some((target, fence)) = selection {
                     crate::engine::release_operation_inputs(state);
                     ladder.rewind_engine(state, target);
@@ -593,6 +599,7 @@ impl IncrementalXeTeXSession {
             .strings_base
             .expect("opened session without string watermark");
         let state = &mut *self.state;
+        let written = &mut self.written;
         let ladder = self.ladder.as_mut().expect("opened session without ladder");
         let target = ladder
             .rung_at_clock(rung_clock)
@@ -612,7 +619,7 @@ impl IncrementalXeTeXSession {
         let mut checkpoint_activity = CheckpointActivity::default();
         let result = launcher.with_global_lock(|api| {
             Ok(catch_operation(api, state, |state| {
-                let _sources = crate::replay::adapter::install(sources);
+                let _sources = crate::replay::adapter::install(sources, written);
                 crate::engine::release_operation_inputs(state);
                 ladder.rewind_engine(state, target);
                 if !fence.restore_inputs(state) {

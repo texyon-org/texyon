@@ -1,6 +1,7 @@
 //! Tagged byte handles for immutable in-memory TeX sources.
 
 use std::cell::{Cell, RefCell};
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -20,6 +21,7 @@ struct ReplaySources {
     snapshot: SourceSnapshot,
     inputs: Vec<MemoryInput>,
     last_path: Option<SourcePath>,
+    written: BTreeSet<SourcePath>,
 }
 
 /// One byte channel. Fences capture the whole table by cloning it.
@@ -36,28 +38,48 @@ pub(crate) struct MemoryInput {
     pub(crate) closed: bool,
 }
 
-pub(crate) struct SourceInstallGuard;
+/// Uninstalls the sources and hands the written paths back to their owner.
+pub(crate) struct SourceInstallGuard<'a> {
+    written: &'a mut BTreeSet<SourcePath>,
+}
 
-impl Drop for SourceInstallGuard {
+impl Drop for SourceInstallGuard<'_> {
     fn drop(&mut self) {
-        ACTIVE.with(|active| {
-            active.borrow_mut().take();
-        });
+        if let Some(sources) = ACTIVE.with(|active| active.borrow_mut().take()) {
+            *self.written = sources.written;
+        }
         OBSERVED_BYTES.set(0);
     }
 }
 
-pub(crate) fn install(snapshot: SourceSnapshot) -> SourceInstallGuard {
+/// Serve `snapshot` to the engine. `written` lists the files the engine has
+/// written so far and grows with any it writes until the guard drops.
+pub(crate) fn install(
+    snapshot: SourceSnapshot,
+    written: &mut BTreeSet<SourcePath>,
+) -> SourceInstallGuard<'_> {
     OBSERVED_BYTES.set(0);
     ACTIVE.with(|active| {
         let previous = active.borrow_mut().replace(ReplaySources {
             snapshot,
             inputs: Vec::new(),
             last_path: None,
+            written: std::mem::take(written),
         });
         assert!(previous.is_none(), "nested source snapshot installation");
     });
-    SourceInstallGuard
+    SourceInstallGuard { written }
+}
+
+/// Note a file the engine opened for writing, so later reads get its output and not a disk copy.
+pub(crate) fn record_written(path: &str) {
+    ACTIVE.with(|active| {
+        if let Some(sources) = active.borrow_mut().as_mut() {
+            if let Some(path) = sources.snapshot.source_path(Path::new(path)) {
+                sources.written.insert(path);
+            }
+        }
+    });
 }
 
 /// Every opened or previously consumed editor byte channel, in handle order.
@@ -125,11 +147,22 @@ pub(crate) fn open_named(path: &str, format: FileFormat) -> Option<usize> {
         let mut active = active.borrow_mut();
         let sources = active.as_mut()?;
         let requested = Path::new(path);
-        let resolved = sources.snapshot.resolve_entry(requested).or_else(|| {
-            (format == FileFormat::Tex)
-                .then(|| sources.snapshot.resolve_replay_entry(requested))
-                .flatten()
-        })?;
+        let resolved = match sources.snapshot.resolve_entry(requested) {
+            Some(resolved) => resolved,
+            None => {
+                if format != FileFormat::Tex {
+                    return None;
+                }
+                let written = sources
+                    .snapshot
+                    .source_path(requested)
+                    .is_some_and(|path| sources.written.contains(&path));
+                if written {
+                    return None;
+                }
+                sources.snapshot.resolve_replay_entry(requested)?
+            }
+        };
         Some(sources.open(resolved))
     })
 }
@@ -340,7 +373,8 @@ mod tests {
 
     #[test]
     fn tagged_inputs_match_getc_ungetc_seek_and_exact_read_semantics() {
-        let _guard = install(snapshot());
+        let mut written = BTreeSet::new();
+        let _guard = install(snapshot(), &mut written);
         let handle = open_primary().unwrap();
         assert!(is_mem(handle));
         assert_eq!(get_size(handle), Some(3));
@@ -357,7 +391,8 @@ mod tests {
 
     #[test]
     fn primary_and_child_are_memory_backed_from_the_first_open() {
-        let _guard = install(snapshot());
+        let mut written = BTreeSet::new();
+        let _guard = install(snapshot(), &mut written);
         let primary = open_primary().unwrap();
         let child = open_named("child", FileFormat::Tex).unwrap();
         assert!(is_mem(primary));
@@ -368,8 +403,9 @@ mod tests {
 
     #[test]
     fn checkpoint_recreates_handle_order_cursor_and_pushback() {
+        let mut written = BTreeSet::new();
         let checkpoints = {
-            let _guard = install(snapshot());
+            let _guard = install(snapshot(), &mut written);
             let primary = open_primary().unwrap();
             let child = open_named("child", FileFormat::Tex).unwrap();
             assert_eq!(getc(primary), Some(b'a'.into()));
@@ -378,7 +414,7 @@ mod tests {
             checkpoint_inputs().unwrap()
         };
 
-        let _guard = install(snapshot());
+        let _guard = install(snapshot(), &mut written);
         assert!(restore_inputs(&checkpoints));
         assert_eq!(getc(MEM_TAG | 1), Some(b'b'.into()));
         assert_eq!(getc(MEM_TAG | 2), Some(b'Q'.into()));
@@ -387,7 +423,8 @@ mod tests {
 
     #[test]
     fn observed_byte_clock_advances_only_for_new_source_bytes() {
-        let _guard = install(snapshot());
+        let mut written = BTreeSet::new();
+        let _guard = install(snapshot(), &mut written);
         let primary = open_primary().unwrap();
         assert_eq!(observed_bytes(), 0);
         assert_eq!(getc(primary), Some(b'a'.into()));
@@ -402,7 +439,7 @@ mod tests {
 
         let checkpoints = checkpoint_inputs().unwrap();
         drop(_guard);
-        let _restored_guard = install(snapshot());
+        let _restored_guard = install(snapshot(), &mut written);
         assert!(restore_inputs(&checkpoints));
         assert_eq!(observed_bytes(), 3);
     }

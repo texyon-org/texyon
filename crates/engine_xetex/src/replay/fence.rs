@@ -318,8 +318,9 @@ mod tests {
     #[test]
     fn complete_fence_recreates_open_ufile_state() {
         let original = snapshot(1, b"abcdef", b"child");
+        let mut written = std::collections::BTreeSet::new();
         let fence = {
-            let _guard = adapter::install(original.clone());
+            let _guard = adapter::install(original.clone(), &mut written);
             let handle = adapter::open_primary().unwrap();
             assert_eq!(adapter::getc(handle), Some(b'a'.into()));
             assert_eq!(adapter::getc(handle), Some(b'b'.into()));
@@ -336,7 +337,7 @@ mod tests {
         };
         let edited = snapshot(2, b"abcdEF", b"child");
         assert!(fence.is_eligible(&edited));
-        let _guard = adapter::install(edited);
+        let _guard = adapter::install(edited, &mut written);
         let mut state = crate::state::EngineState::default();
         state.input.input_file.resize_with(2, Default::default);
         assert!(fence.restore_inputs(&mut state));
@@ -351,8 +352,9 @@ mod tests {
     #[test]
     fn complete_fence_recreates_a_deep_open_input_stack() {
         let original = nested_snapshot(1, b"EFgh");
+        let mut written = std::collections::BTreeSet::new();
         let fence = {
-            let _guard = adapter::install(original.clone());
+            let _guard = adapter::install(original.clone(), &mut written);
             let main = adapter::open_primary().unwrap();
             let chapter = adapter::open_named("chapter", crate::bridge::FileFormat::Tex).unwrap();
             let leaf = adapter::open_named("parts/leaf", crate::bridge::FileFormat::Tex).unwrap();
@@ -378,7 +380,7 @@ mod tests {
 
         let edited = nested_snapshot(2, b"EFGH");
         assert!(fence.is_eligible(&edited));
-        let _guard = adapter::install(edited);
+        let _guard = adapter::install(edited, &mut written);
         let mut restored = crate::state::EngineState::default();
         restored.input.input_file.resize_with(4, Default::default);
         assert!(fence.restore_inputs(&mut restored));

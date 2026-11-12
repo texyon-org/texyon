@@ -1282,6 +1282,16 @@ fn chunked_tail_interrupted_by_an_edit_reassembles_to_cold_xdv() {
 /// engine operations, so files the engine writes must outlive one operation.
 #[test]
 fn written_file_survives_into_the_tail_continuation() {
+    reread_written_file_across_the_tail(None);
+}
+
+/// A copy another tool left on disk (latexmk's `.vrb`) must not shadow what the engine wrote.
+#[test]
+fn written_file_wins_over_a_stale_disk_copy() {
+    reread_written_file_across_the_tail(Some("STALE BODY"));
+}
+
+fn reread_written_file_across_the_tail(stale_on_disk: Option<&str>) {
     let _serial = session_test_lock();
     util::set_test_root();
     let original = "A\\vfill\\eject\n\
@@ -1293,8 +1303,12 @@ fn written_file_survives_into_the_tail_continuation() {
         \\input frame.vrb \\vfill\\eject\n\
         D\\bye\n";
     let edited = original.replacen('A', "Z", 1);
+    let expected_initial = cold_xdv(original.as_bytes());
     let expected = cold_xdv(edited.as_bytes());
     let temp = tempfile::tempdir().unwrap();
+    if let Some(stale) = stale_on_disk {
+        std::fs::write(temp.path().join("frame.vrb"), stale).unwrap();
+    }
     let root = DocumentRoot::new(temp.path()).unwrap();
     let mut sources = SourceSet::initialize(
         root,
@@ -1319,6 +1333,7 @@ fn written_file_survives_into_the_tail_continuation() {
     let initial_document = assembler
         .assemble(None, DocumentFragment::Complete(&initial_xdv))
         .unwrap();
+    assert_eq!(initial_document.bytes().as_ref(), expected_initial);
 
     // The horizon after page two sits between the `\openout` and the second
     // `\input frame.vrb`, so the tail re-reads a file the foreground wrote.
