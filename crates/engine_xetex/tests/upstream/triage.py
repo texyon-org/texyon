@@ -26,10 +26,8 @@ CAUSES = [
      r"^\S*\.(otf|ttf|otc|ttc)Requestedfont"),
     ("harness: tl-nostat counts stand in for STAT tracing upstream", "tl", r"\\count3276\d"),
     ("generated font upstream (mktex, off from the next run)", "tl", r"^Badmetric\(TFM\)file"),
-    ("main memory: TeXyoN caps at 64M words, upstream at 5M", "tl",
-     r"TeXcapacityexceeded,sorry\[mainmemorysize=5000000\]"),
-    ("pool size: TeXyoN grows to 40M, upstream stops at 6.25M", "tl",
-     r"^!TeXcapacityexceeded,sorry\[poolsize="),
+    ("main memory: upstream overflows", "tl", r"TeXcapacityexceeded,sorry\[mainmemorysize="),
+    ("pool size: upstream overflows", "tl", r"^!TeXcapacityexceeded,sorry\[poolsize="),
     ("TeXyoN stopped early", "tt", r"^$"),
 ]
 

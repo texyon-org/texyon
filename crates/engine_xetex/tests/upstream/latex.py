@@ -24,12 +24,14 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
 CORPUS = Path(os.environ.get("TEXYON_CORPUS_DIR", Path.home() / ".cache/tectonic-corpus"))
 
-# Same as run.py's plain probes: Tectonic's fixed capacities.
+# Same as run.py's plain probes: Tectonic's fixed capacities. Main memory and the pool get
+# TeXyoN's ceilings (`MAIN_MEMORY_WORDS`, `SUP_POOL_SIZE`), main memory through extra_mem_top
+# since token lists can only grow there.
 CAPACITIES = dict(
     stack_size="5000", nest_size="500", param_size="10000", save_size="80000",
     buf_size="200000", max_in_open="15", expand_depth="10000", hash_extra="600000",
-    font_mem_size="8000000", font_max="9000", pool_size="6250000",
-    string_vacancies="90000", max_strings="565536",
+    font_mem_size="8000000", font_max="9000", pool_size="40000000",
+    string_vacancies="90000", max_strings="565536", extra_mem_top=str((1 << 26) - 5_000_000),
 )
 SKIP_TREES = ("doc", "source", "scripts")
 MISC_FONT_SUFFIXES = (".tec", ".map", ".fea", ".cmap")
@@ -274,7 +276,7 @@ def resolve_moves(lines):
 
 
 # Bump when the way upstream is run changes, so cached results are redone.
-CACHE_VERSION = "4"
+CACHE_VERSION = "5"
 FATAL_MARKS = ("(That makes 100 errors; please try again.)", "! Emergency stop.",
                "! TeX capacity exceeded", "*** (job aborted")
 FONT_DEF_RX = re.compile(r"^(nativefont|fntdef) (\d+) ")
@@ -311,11 +313,27 @@ def drop_empty_pushes(lines):
     return out
 
 
+# Dates TL takes from its clock or file mtimes, which TeXyoN pins to the epoch: hyperxmp's XMP
+# dates and the InstanceID seeded from them, and embedded files' ModDate.
+XMP_DATE_RX = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d")
+XMP_INSTANCE_RX = re.compile(r"(<xmpMM:InstanceID>uuid:)[0-9a-f-]+")
+MOD_DATE_RX = re.compile(r"(/ModDate ?\(D:)[0-9]{14}")
+
+
+def without_dates(line):
+    if line.startswith("xxx b'pdf:stream @hyxmp@Metadata"):
+        return XMP_INSTANCE_RX.sub(r"\1", XMP_DATE_RX.sub("", line))
+    if line.startswith("xxx b'pdf:fstream"):
+        return MOD_DATE_RX.sub(r"\1", line)
+    return line
+
+
 def normalize_xdv(lines):
     """Decoded pages, native fonts named without the extension upstream's lookup adds."""
     lines = [FONT_EXT_RX.sub(r"\1\3", line) for line in lines]
     # Pictures from the TeX Live tree carry the path kpathsea found, as in the log.
-    lines = [PATH_RX.sub("", line) if line.startswith("xxx") else line for line in lines]
+    lines = [without_dates(PATH_RX.sub("", line)) if line.startswith("xxx") else line
+             for line in lines]
     return drop_empty_pushes(renumber_fonts(resolve_moves(lines)))
 
 
