@@ -401,6 +401,40 @@ def same_log(a, b):
     return squeeze(a) == squeeze(b)
 
 
+# Upstream bug 18: TL reads the script list from GSUB twice, so fontspec leaves out scripts only
+# GPOS lists and notes that the font lacks them.
+SCRIPT_TAG_RX = re.compile(r"script=\w+;")
+SCRIPT_NOTE_RX = re.compile(
+    r"PackagefontspecInfo:(\(fontspec\))?Script'[^']*'notexplicitlysupportedwithinfont"
+    r".{0,400}?differentfontshouldbechosen\.")
+# Upstream bug 21: TL's \XeTeXtracingfonts prints freed memory for fonts found by name.
+FOUND_BY_NAME_RX = re.compile(r'(Requested font "[^\["][^"]*" at [0-9.]+pt\n -> )[^\n]*')
+UPSTREAM_BUGS = (
+    (18, lambda t: t, lambda t: SCRIPT_NOTE_RX.sub("", SCRIPT_TAG_RX.sub("", t))),
+    (21, lambda t: FOUND_BY_NAME_RX.sub(r"\1", t), lambda t: t),
+)
+
+
+def without_upstream_bugs(text, bugs):
+    for n, raw, squeezed in UPSTREAM_BUGS:
+        if n in bugs:
+            text = raw(text)
+    text = squeeze(text)
+    for n, raw, squeezed in UPSTREAM_BUGS:
+        if n in bugs:
+            text = squeezed(text)
+    return text
+
+
+def upstream_bugs_explain(tl_log, log):
+    """The upstream bugs whose log effects are all that separates the logs, or None."""
+    every = {n for n, _, _ in UPSTREAM_BUGS}
+    if without_upstream_bugs(tl_log, every) != without_upstream_bugs(log, every):
+        return None
+    return [n for n in sorted(every)
+            if without_upstream_bugs(tl_log, every - {n}) != without_upstream_bugs(log, every - {n})]
+
+
 def log_diff(a, b, context=300):
     """Where two logs first differ once whitespace is ignored."""
     a, b = squeeze(a), squeeze(b)
@@ -652,6 +686,10 @@ def judge(tl, case, tl_res, tt_res, tl_dir, tt_dir, work, stem, rerun_tl, pixels
         if fatal:
             return "match-fatal", []
         return ("match-nopages" if no_pages else "match"), []
+    bugs = upstream_bugs_explain(tl_log, log) if tl_xdv == xdv or fatal else None
+    if bugs is not None:
+        shutil.rmtree(tt_dir, ignore_errors=True)
+        return "match-upstream", [f"upstream bugs: {', '.join(map(str, bugs))}"] + diffs
     if pixels and tl_xdv != xdv and not no_pages and xdv != ["<no xdv>"]:
         if rerun_tl:
             rerun_tl()
