@@ -1450,14 +1450,7 @@ impl ProcessingSession {
         // Do the meat of the work.
 
         let result = match self.pass {
-            PassSetting::Tex => match self.tex_pass(None, status) {
-                Ok(Some(warnings)) => {
-                    tt_warning!(status, "{}", warnings);
-                    Ok(0)
-                }
-                Ok(None) => Ok(0),
-                Err(e) => Err(e),
-            },
+            PassSetting::Tex => self.tex_only_pass(status),
             PassSetting::Default => self.default_pass(false, status),
             PassSetting::BibtexFirst => self.default_pass(true, status),
         };
@@ -1713,6 +1706,21 @@ impl ProcessingSession {
             self.xdvipdfmx_pass(status)?;
         }
 
+        Ok(0)
+    }
+
+    /// TeX alone, once plus any reruns asked for, with no bibtex and no output conversion.
+    fn tex_only_pass(&mut self, status: &mut dyn StatusBackend) -> Result<i32> {
+        let mut warnings = self.tex_pass(None, status)?;
+        for _ in 0..self.tex_rerun_specification.unwrap_or(0) {
+            for summ in self.bs.events.values_mut() {
+                summ.read_digest = None;
+            }
+            warnings = self.tex_pass(Some("I was told to"), status)?;
+        }
+        if let Some(warnings) = warnings {
+            tt_warning!(status, "{}", warnings);
+        }
         Ok(0)
     }
 
