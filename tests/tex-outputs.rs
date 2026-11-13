@@ -236,6 +236,12 @@ fn read_terminal_eof() {
         .go()
 }
 
+// GSUB's languages come first, then GPOS's, whichever script list is longer.
+#[test]
+fn ot_languages() {
+    TestCase::new("ot_languages").go()
+}
+
 #[test]
 fn openout_dot() {
     util::set_test_root();

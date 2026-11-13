@@ -567,17 +567,25 @@ impl Font {
         (script.language_tags_len() + swapped) as u32
     }
 
-    /// The language at `index` of OpenType script `script`, or 0.
+    /// The language at `index` of OpenType script `script`, or 0: GSUB's languages, then GPOS's.
     pub fn ind_language(&self, script: OTTag, index: u32) -> OTTag {
         let index = index as usize;
         let table = get_larger_script_list_table_ot(self);
         let Some(script) = table.find_script(hb::Tag::new(script)) else {
             return 0;
         };
-        script
-            .lang(index)
-            .or_else(|| script.swap_table().and_then(|s| s.lang(index)))
-            .map_or(0, |lang| lang.tag().to_raw())
+        let (gsub, gpos) = match script.table() {
+            hb::GTag::GSub => (Some(script), script.swap_table()),
+            hb::GTag::GPos => (script.swap_table(), Some(script)),
+        };
+        let gsub_len = gsub.map_or(0, |s| s.language_tags_len());
+        let lang = if index < gsub_len {
+            gsub.and_then(|s| s.lang(index))
+        } else {
+            // Upstream indexes GPOS without taking off GSUB's count (UPSTREAM_BUGS.md 23).
+            gpos.and_then(|s| s.lang(index - gsub_len))
+        };
+        lang.map_or(0, |lang| lang.tag().to_raw())
     }
 
     /// The number of GSUB and GPOS features of `script` and `language`.

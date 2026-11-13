@@ -318,3 +318,16 @@ entry names a later TeX Live version.
 - **Fix:** read `/Rotate` through the parents as well, as the boxes are.
 - **TeXyoN:** inherits it as the PDF spec says (`pdf_doc_get_page_rect` in `pdf_io`), test `pdf_box` in
   `tests/tex-outputs.rs`. Not reported yet.
+
+## 23. `\XeTeXOTlanguagetag` indexes GPOS without skipping GSUB's languages
+
+- **Where:** `getIndLanguage` in `XeTeXLayoutInterface.cpp` (TeX Live 2025), lines 310-317.
+- **Bug:** `countLanguages` adds the script's GSUB and GPOS language counts, and
+  `getIndLanguage` answers an index past GSUB's languages from the GPOS list at the same index,
+  without taking off GSUB's count. So GPOS's languages are never returned, and those indices give
+  0. `getIndFeature` does take the count off.
+- **Repro:** `clarabi.otf` (TeX Live, OFL) has 5 `latn` languages in GSUB and 3 in GPOS.
+  `\XeTeXOTcountlanguages` gives 8, and indices 5 to 7 give 0 in TeX Live 2025 xetex.
+- **Fix:** `index -= langCount` before the GPOS lookup, as in `getIndFeature`.
+- **TeXyoN:** takes the count off (`Font::ind_language` in `xetex_layout`), test `ot_languages`
+  in `tests/tex-outputs.rs`. Not reported yet.

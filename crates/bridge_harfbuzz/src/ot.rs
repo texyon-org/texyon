@@ -213,6 +213,11 @@ impl<'a> Script<'a> {
         }
     }
 
+    /// The table this script was found in.
+    pub fn table(self) -> GTag {
+        self.table
+    }
+
     /// Attempt to get this script on the opposite [`GTag`] from the current one. If not present
     /// on that table, returns `None`.
     pub fn swap_table(self) -> Option<Script<'a>> {
