@@ -78,3 +78,12 @@ tldocs/latex/fretplot/doc_fretplot	\usepackage{./fretplot}: kpathsea does not pa
 tldocs/latex/lettre/lettre	reads ../../../tex/latex/lettre/lettre.cls, relative to the doc's place in the TeX Live tree: upstream does not find it from the case directory, TeXyoN resolves it in the bundle
 tldocs/latex/kotex-utf/kotex-utf-doc	upstream does not merge the first native word of a list, so kotex's interchar tokens leave a locale break after 2014/ at a paragraph start (UPSTREAM_BUGS.md 25)
 arxiv/2610.25505	main file in latex/ with its inputs at the top: TeXyoN's CLI resolves paths from the main file's directory, upstream from the working directory
+tldocs/latex/bxcjkjatype/bxcjkjatype-ja	both engines loop on a font shape named by NUL characters until the 6.25M pool is full, upstream first since it keeps full file paths as strings
+tldocs/latex/bxjscls/bxjscls-manual	both engines loop on a font shape named by NUL characters until the 6.25M pool is full, upstream first since it keeps full file paths as strings
+tldocs/latex/bxcjkjatype/bxcjkvert-ja	both engines loop on a font shape named by NUL characters until the 6.25M pool is full, upstream first since it keeps full file paths as strings
+tldocs/latex/bxjaprnind/bxjaprnind	both engines loop on a font shape named by NUL characters until the 6.25M pool is full, upstream first since it keeps full file paths as strings
+tldocs/latex/chemobabel/chemobabel-en	both engines loop on a font shape named by NUL characters until the 6.25M pool is full, upstream first since it keeps full file paths as strings
+tldocs/latex/chemobabel/chemobabel-ja	both engines loop on a font shape named by NUL characters until the 6.25M pool is full, upstream first since it keeps full file paths as strings
+tldocs/latex/bxjalipsum/sample-bxjalipsum-1	both engines loop on a font shape named by NUL characters until the 6.25M pool is full, upstream first since it keeps full file paths as strings
+tldocs/latex/bxcoloremoji/bxcoloremoji-ja	both engines loop on a font shape named by NUL characters until the 6.25M pool is full, upstream first since it keeps full file paths as strings
+tldocs/latex/qworld/qworld	both engines loop on a font shape named by NUL characters until the 6.25M pool is full, upstream first since it keeps full file paths as strings

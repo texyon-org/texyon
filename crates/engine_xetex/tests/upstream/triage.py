@@ -27,7 +27,7 @@ CAUSES = [
     ("harness: tl-nostat counts stand in for STAT tracing upstream", "tl", r"\\count3276\d"),
     ("generated font upstream (mktex, off from the next run)", "tl", r"^Badmetric\(TFM\)file"),
     ("main memory: upstream overflows", "tl", r"TeXcapacityexceeded,sorry\[mainmemorysize="),
-    ("pool size: upstream overflows", "tl", r"^!TeXcapacityexceeded,sorry\[poolsize="),
+    ("pool size: upstream overflows, both have 6.25M", "tl", r"^!TeXcapacityexceeded,sorry\[poolsize="),
     ("TeXyoN stopped early", "tt", r"^$"),
 ]
 

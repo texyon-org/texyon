@@ -24,13 +24,12 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
 CORPUS = Path(os.environ.get("TEXYON_CORPUS_DIR", Path.home() / ".cache/tectonic-corpus"))
 
-# Same as run.py's plain probes: Tectonic's fixed capacities. Main memory and the pool get
-# TeXyoN's ceilings (`MAIN_MEMORY_WORDS`, `SUP_POOL_SIZE`), main memory through extra_mem_top
-# since token lists can only grow there.
+# Same as run.py's plain probes: Tectonic's fixed capacities. Main memory gets TeXyoN's
+# `MAIN_MEMORY_WORDS`, through extra_mem_top since token lists can only grow there.
 CAPACITIES = dict(
     stack_size="5000", nest_size="500", param_size="10000", save_size="80000",
     buf_size="200000", max_in_open="15", expand_depth="10000", hash_extra="600000",
-    font_mem_size="8000000", font_max="9000", pool_size="40000000",
+    font_mem_size="8000000", font_max="9000", pool_size="6250000",
     string_vacancies="90000", max_strings="565536", extra_mem_top=str((1 << 26) - 5_000_000),
 )
 SKIP_TREES = ("doc", "source", "scripts")
@@ -276,7 +275,7 @@ def resolve_moves(lines):
 
 
 # Bump when the way upstream is run changes, so cached results are redone.
-CACHE_VERSION = "5"
+CACHE_VERSION = "6"
 FATAL_MARKS = ("(That makes 100 errors; please try again.)", "! Emergency stop.",
                "! TeX capacity exceeded", "*** (job aborted")
 FONT_DEF_RX = re.compile(r"^(nativefont|fntdef) (\d+) ")
