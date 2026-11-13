@@ -218,6 +218,15 @@ fn casefold_input() {
 }
 
 #[test]
+fn pdf_box() {
+    util::set_test_root();
+
+    TestCase::new("pdf_box")
+        .with_fs(&test_path(&["tex-outputs"]))
+        .go()
+}
+
+#[test]
 fn no_end() {
     TestCase::new("no_end")
         .expect_msg("*** (job aborted, no legal \\end found)")

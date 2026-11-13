@@ -10,7 +10,7 @@
 
 int tt_pic_probe_pdf_box(const char *ident, rust_input_handle_t handle,
                          int page_num, int dpx_options,
-                         pdf_rect *bbox, pdf_tmatrix *matrix);
+                         pdf_rect *bbox, int *rotate);
 int tt_pic_probe_image_box(rust_input_handle_t handle,
                            unsigned int *width, unsigned int *height,
                            double *xdensity, double *ydensity);

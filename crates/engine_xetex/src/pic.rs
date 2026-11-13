@@ -13,28 +13,11 @@ use crate::units::Scaled;
 
 #[repr(C)]
 #[derive(Default)]
-struct PdfTMatrix {
-    a: c_double,
-    b: c_double,
-    c: c_double,
-    d: c_double,
-    e: c_double,
-    f: c_double,
-}
-
-#[repr(C)]
-#[derive(Default)]
 struct PdfRect {
     llx: c_double,
     lly: c_double,
     urx: c_double,
     ury: c_double,
-}
-
-#[repr(C)]
-struct PdfCoord {
-    x: c_double,
-    y: c_double,
 }
 
 #[derive(Clone, Copy)]
@@ -61,8 +44,6 @@ struct RealRect {
 }
 
 extern "C" {
-    fn pdf_dev_transform(p: *mut PdfCoord, m: *const PdfTMatrix);
-
     // Guarded dpx probes. Each arms and restores the bridge jump buffer wholly
     // within C, so a dpx abort never longjmps over a Rust frame.
     fn tt_pic_probe_pdf_box(
@@ -71,7 +52,7 @@ extern "C" {
         page_num: c_int,
         dpx_options: c_int,
         bbox: *mut PdfRect,
-        matrix: *mut PdfTMatrix,
+        rotate: *mut c_int,
     ) -> c_int;
     fn tt_pic_probe_image_box(
         handle: usize,
@@ -128,14 +109,6 @@ impl PageboxType {
     }
 }
 
-fn min4(v: [f64; 4]) -> f64 {
-    v[1..].iter().fold(v[0], |m, &x| if x < m { x } else { m })
-}
-
-fn max4(v: [f64; 4]) -> f64 {
-    v[1..].iter().fold(v[0], |m, &x| if x > m { x } else { m })
-}
-
 /// The bounding box of page `page_num` of a PDF, in TeX points.
 fn pdf_get_rect(
     filename: &[u8],
@@ -144,11 +117,11 @@ fn pdf_get_rect(
     pdf_box: PageboxType,
 ) -> Option<RealRect> {
     let mut bbox = PdfRect::default();
-    let mut matrix = PdfTMatrix::default();
+    let mut rotate: c_int = 0;
     let status = with_c_str(filename, |filename| {
         crate::bridge::with_c_io(|| {
             // SAFETY: `filename` is NUL-terminated, `handle` is an open input and
-            // the box and matrix are valid out-parameters.
+            // the box and rotation are valid out-parameters.
             unsafe {
                 tt_pic_probe_pdf_box(
                     filename,
@@ -156,7 +129,7 @@ fn pdf_get_rect(
                     page_num,
                     pdf_box.dpx_option(),
                     &mut bbox,
-                    &mut matrix,
+                    &mut rotate,
                 )
             }
         })
@@ -164,37 +137,17 @@ fn pdf_get_rect(
     if status != PIC_PROBE_OK {
         return None;
     }
-    let mut corners = [
-        PdfCoord {
-            x: bbox.llx,
-            y: bbox.lly,
-        },
-        PdfCoord {
-            x: bbox.urx,
-            y: bbox.lly,
-        },
-        PdfCoord {
-            x: bbox.urx,
-            y: bbox.ury,
-        },
-        PdfCoord {
-            x: bbox.llx,
-            y: bbox.ury,
-        },
-    ];
-    for p in &mut corners {
-        // SAFETY: both arguments are valid for the call.
-        unsafe { pdf_dev_transform(p, &matrix) };
-    }
-    let xs = corners.each_ref().map(|p| p.x);
-    let ys = corners.each_ref().map(|p| p.y);
-    let (llx, lly, urx, ury) = (min4(xs), min4(ys), max4(xs), max4(ys));
     const BP: f64 = 72.27 / 72.0;
+    let (w, h) = ((bbox.urx - bbox.llx).abs(), (bbox.ury - bbox.lly).abs());
+    let (wd, ht) = match rotate.rem_euclid(360) {
+        90 | 270 => (h, w),
+        _ => (w, h),
+    };
     Some(RealRect {
-        x: (BP * llx) as f32,
-        y: (BP * lly) as f32,
-        wd: (BP * (urx - llx)) as f32,
-        ht: (BP * (ury - lly)) as f32,
+        x: (BP * bbox.llx.min(bbox.urx)) as f32,
+        y: (BP * bbox.lly.min(bbox.ury)) as f32,
+        wd: (BP * wd) as f32,
+        ht: (BP * ht) as f32,
     })
 }
 

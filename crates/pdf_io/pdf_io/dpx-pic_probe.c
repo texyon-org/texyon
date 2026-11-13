@@ -16,7 +16,7 @@
 int
 tt_pic_probe_pdf_box(const char *ident, rust_input_handle_t handle,
                      int page_num, int dpx_options,
-                     pdf_rect *bbox, pdf_tmatrix *matrix)
+                     pdf_rect *bbox, int *rotate)
 {
     jmp_buf *jb = ttbc_global_engine_get_jump_buffer();
     jmp_buf saved;
@@ -40,7 +40,6 @@ tt_pic_probe_pdf_box(const char *ident, rust_input_handle_t handle,
         if (pf) {
             int pages = pdf_doc_get_page_count(pf);
             int pno = page_num;
-            pdf_obj *page;
 
             if (pno > pages)
                 pno = pages;
@@ -49,14 +48,10 @@ tt_pic_probe_pdf_box(const char *ident, rust_input_handle_t handle,
             if (pno < 1)
                 pno = 1;
 
-            page = pdf_doc_get_page(pf, pno,
-                                    (enum pdf_page_boundary) dpx_options,
-                                    bbox, matrix, NULL);
-            pdf_close(pf);
-            if (page) {
-                pdf_release_obj(page);
+            if (pdf_doc_get_page_rect(pf, pno, (enum pdf_page_boundary) dpx_options,
+                                      bbox, rotate) == 0)
                 rc = PIC_PROBE_OK;
-            }
+            pdf_close(pf);
         }
     }
 

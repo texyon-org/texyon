@@ -289,3 +289,18 @@ entry names a later TeX Live version.
 - **TeXyoN:** compares that way (`main_control/assign.rs`), test `font_area_native` in
   `tests/tex-outputs.rs`. It panicked before (TeX Live doc biblatex-gost, through fontspec's `Name/B` requests).
   Not reported yet.
+
+## 22. `\XeTeXpdffile` ignores an inherited `/Rotate`
+
+- **Where:** `pdf_get_rect` in `pdfimage.cpp` (TeX Live 2025), line 128,
+  `ppdict_get_int(pdict, "Rotate", &RotAngle)`.
+- **Bug:** the boxes come from `ppdict_get_box`, which walks up the page tree, but `/Rotate` is
+  read from the page dictionary alone. `/Rotate` is inheritable, and xdvipdfmx rotates the page by
+  the inherited value when it draws it, so the TeX box keeps the unrotated size of a page that is
+  drawn turned.
+- **Repro:** a one-page PDF with `/Rotate 90` on its `/Pages` node, MediaBox 100 by 202.87 bp.
+  TeX Live 2025 xetex gives `\XeTeXpdffile` a box 100.375pt wide and 203.63077pt high; with the
+  `/Rotate` on the page it gives 203.63077pt by 100.375pt.
+- **Fix:** read `/Rotate` through the parents as well, as the boxes are.
+- **TeXyoN:** inherits it as the PDF spec says (`pdf_doc_get_page_rect` in `pdf_io`), test `pdf_box` in
+  `tests/tex-outputs.rs`. Not reported yet.

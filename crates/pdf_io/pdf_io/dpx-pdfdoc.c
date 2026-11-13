@@ -837,6 +837,30 @@ pdf_doc_get_page_count (pdf_file *pf)
 }
 
 static int
+read_rect (pdf_obj *box, pdf_rect *rect)
+{
+  int i;
+
+  for (i = 4; i--; ) {
+    double x;
+    pdf_obj *tmp = pdf_deref_obj(pdf_get_array(box, i));
+    if (!PDF_OBJ_NUMBERTYPE(tmp)) {
+      pdf_release_obj(tmp);
+      return -1;
+    }
+    x = pdf_number_value(tmp);
+    switch (i) {
+    case 0: rect->llx = x; break;
+    case 1: rect->lly = x; break;
+    case 2: rect->urx = x; break;
+    case 3: rect->ury = x; break;
+    }
+    pdf_release_obj(tmp);
+  }
+  return 0;
+}
+
+static int
 set_bounding_box (pdf_rect *bbox, enum pdf_page_boundary opt_bbox,
                   pdf_obj *media_box, pdf_obj *crop_box,
                   pdf_obj *art_box, pdf_obj *trim_box, pdf_obj *bleed_box)
@@ -912,22 +936,9 @@ set_bounding_box (pdf_rect *bbox, enum pdf_page_boundary opt_bbox,
   } else {
     int i;
 
-    for (i = 4; i--; ) {
-      double x;
-      pdf_obj *tmp = pdf_deref_obj(pdf_get_array(box, i));
-      if (!PDF_OBJ_NUMBERTYPE(tmp)) {
-        pdf_release_obj(tmp);
-        pdf_release_obj(box);
-        return -1;
-      }
-      x = pdf_number_value(tmp);
-      switch (i) {
-      case 0: bbox->llx = x; break;
-      case 1: bbox->lly = x; break;
-      case 2: bbox->urx = x; break;
-      case 3: bbox->ury = x; break;
-      }
-      pdf_release_obj(tmp);
+    if (read_rect(box, bbox) < 0) {
+      pdf_release_obj(box);
+      return -1;
     }
 
     /* New scheme only for XDV files */
@@ -1066,40 +1077,51 @@ set_transform_matrix (pdf_tmatrix *matrix, pdf_rect *bbox, pdf_obj *rotate)
  * displayed or printed. The value must be a multiple of 90. Default value: 0.
  */
 
-/* count_p removed: Please use different interface if you want to get total page
- * number. pdf_doc_get_page() is obviously not an interface to do such.
- */
-pdf_obj *
-pdf_doc_get_page (pdf_file *pf,
-                  int page_no, enum pdf_page_boundary opt_bbox, /* load options */
-                  pdf_rect *bbox, pdf_tmatrix *matrix,  /* returned value */
-                  pdf_obj **resources_p /* returned values */
-                  ) {
-  pdf_obj *catalog = NULL, *page_tree = NULL;
-  pdf_obj *resources = NULL, *rotate = NULL;
-  pdf_obj *art_box = NULL, *trim_box = NULL, *bleed_box = NULL;
-  pdf_obj *media_box = NULL, *crop_box = NULL;
-  int      error = 0;
+struct page_attrs
+{
+  pdf_obj *media_box, *crop_box, *art_box, *trim_box, *bleed_box;
+  pdf_obj *rotate, *resources;
+};
 
+static void
+release_page_attrs (struct page_attrs *a)
+{
+  pdf_release_obj(a->crop_box);
+  pdf_release_obj(a->bleed_box);
+  pdf_release_obj(a->trim_box);
+  pdf_release_obj(a->art_box);
+  pdf_release_obj(a->media_box);
+  pdf_release_obj(a->rotate);
+  pdf_release_obj(a->resources);
+}
+
+/* The dictionary of page page_no with the entries it inherits, or NULL. */
+static pdf_obj *
+seek_page (pdf_file *pf, int page_no, struct page_attrs *a, int *missing)
+{
+  pdf_obj *catalog = NULL, *page_tree = NULL;
+
+  *missing = 0;
   catalog = pdf_file_get_catalog(pf);
 
   page_tree = pdf_deref_obj(pdf_lookup_dict(catalog, "Pages"));
 
   if (!PDF_OBJ_DICTTYPE(page_tree))
-    goto error_exit;
+    goto error;
 
   {
     int count;
     pdf_obj *tmp = pdf_deref_obj(pdf_lookup_dict(page_tree, "Count"));
     if (!PDF_OBJ_NUMBERTYPE(tmp)) {
       pdf_release_obj(tmp);
-      goto error_exit;
+      goto error;
     }
     count = pdf_number_value(tmp);
     pdf_release_obj(tmp);
     if (page_no <= 0 || page_no > count) {
       dpx_warning("Page %d does not exist.", page_no);
-      goto error_silent;
+      *missing = 1;
+      goto error;
     }
   }
 
@@ -1114,32 +1136,32 @@ pdf_doc_get_page (pdf_file *pf,
 
     while (--depth && i != kids_length) {
       if ((tmp = pdf_deref_obj(pdf_lookup_dict(page_tree, "MediaBox")))) {
-        pdf_release_obj(media_box);
-        media_box = tmp;
+        pdf_release_obj(a->media_box);
+        a->media_box = tmp;
       }
       if ((tmp = pdf_deref_obj(pdf_lookup_dict(page_tree, "CropBox")))) {
-        pdf_release_obj(crop_box);
-        crop_box = tmp;
+        pdf_release_obj(a->crop_box);
+        a->crop_box = tmp;
       }
       if ((tmp = pdf_deref_obj(pdf_lookup_dict(page_tree, "ArtBox")))) {
-        pdf_release_obj(art_box);
-        art_box = tmp;
+        pdf_release_obj(a->art_box);
+        a->art_box = tmp;
       }
       if ((tmp = pdf_deref_obj(pdf_lookup_dict(page_tree, "TrimBox")))) {
-        pdf_release_obj(trim_box);
-        trim_box = tmp;
+        pdf_release_obj(a->trim_box);
+        a->trim_box = tmp;
       }
       if ((tmp = pdf_deref_obj(pdf_lookup_dict(page_tree, "BleedBox")))) {
-        pdf_release_obj(bleed_box);
-        bleed_box = tmp;
+        pdf_release_obj(a->bleed_box);
+        a->bleed_box = tmp;
       }
       if ((tmp = pdf_deref_obj(pdf_lookup_dict(page_tree, "Rotate")))) {
-        pdf_release_obj(rotate);
-        rotate = tmp;
+        pdf_release_obj(a->rotate);
+        a->rotate = tmp;
       }
       if ((tmp = pdf_deref_obj(pdf_lookup_dict(page_tree, "Resources")))) {
-        pdf_release_obj(resources);
-        resources = tmp;
+        pdf_release_obj(a->resources);
+        a->resources = tmp;
       }
 
       kids = pdf_deref_obj(pdf_lookup_dict(page_tree, "Kids"));
@@ -1147,7 +1169,7 @@ pdf_doc_get_page (pdf_file *pf,
         break;
       else if (!PDF_OBJ_ARRAYTYPE(kids)) {
         pdf_release_obj(kids);
-        goto error_exit;
+        goto error;
       }
       kids_length = pdf_array_length(kids);
 
@@ -1157,7 +1179,7 @@ pdf_doc_get_page (pdf_file *pf,
         pdf_release_obj(page_tree);
         page_tree = pdf_deref_obj(pdf_get_array(kids, i));
         if (!PDF_OBJ_DICTTYPE(page_tree))
-          goto error_exit;
+          goto error;
 
         tmp = pdf_deref_obj(pdf_lookup_dict(page_tree, "Count"));
         if (PDF_OBJ_NUMBERTYPE(tmp)) {
@@ -1169,7 +1191,7 @@ pdf_doc_get_page (pdf_file *pf,
           count = 1;
         else {
           pdf_release_obj(tmp);
-          goto error_exit;
+          goto error;
         }
         if (page_idx < count)
           break;
@@ -1178,20 +1200,47 @@ pdf_doc_get_page (pdf_file *pf,
       pdf_release_obj(kids);
     }
     if (!depth || kids_length == i)
-      goto error_exit;
+      goto error;
   }
 
-  if (!PDF_OBJ_DICTTYPE(resources))
+  return page_tree;
+
+ error:
+  pdf_release_obj(page_tree);
+  return NULL;
+}
+
+/* count_p removed: Please use different interface if you want to get total page
+ * number. pdf_doc_get_page() is obviously not an interface to do such.
+ */
+pdf_obj *
+pdf_doc_get_page (pdf_file *pf,
+                  int page_no, enum pdf_page_boundary opt_bbox, /* load options */
+                  pdf_rect *bbox, pdf_tmatrix *matrix,  /* returned value */
+                  pdf_obj **resources_p /* returned values */
+                  ) {
+  pdf_obj *page_tree;
+  struct page_attrs a = {0};
+  int      error = 0, missing;
+
+  page_tree = seek_page(pf, page_no, &a, &missing);
+  if (!page_tree) {
+    if (missing)
+      goto error_silent;
+    goto error_exit;
+  }
+
+  if (!PDF_OBJ_DICTTYPE(a.resources))
     goto error_exit;
   if (resources_p)
-    *resources_p = pdf_link_obj(resources);
+    *resources_p = pdf_link_obj(a.resources);
 
   /* Select page boundary box */
-  error = set_bounding_box(bbox, opt_bbox, media_box, crop_box, art_box, trim_box, bleed_box);
+  error = set_bounding_box(bbox, opt_bbox, a.media_box, a.crop_box, a.art_box, a.trim_box, a.bleed_box);
   if (error)
     goto error_exit;
   /* Set transformation matrix */
-  error = set_transform_matrix(matrix, bbox, rotate);
+  error = set_transform_matrix(matrix, bbox, a.rotate);
   if (error)
     goto error_exit;
 
@@ -1204,15 +1253,48 @@ pdf_doc_get_page (pdf_file *pf,
   page_tree = NULL;
 
 clean_exit:
-  pdf_release_obj(crop_box);
-  pdf_release_obj(bleed_box);
-  pdf_release_obj(trim_box);
-  pdf_release_obj(art_box);
-  pdf_release_obj(media_box);
-  pdf_release_obj(rotate);
-  pdf_release_obj(resources);
+  release_page_attrs(&a);
 
   return page_tree;
+}
+
+/* The page box as XeTeX measures it with pplib: the requested box, else the first valid
+ * CropBox, MediaBox, BleedBox, TrimBox or ArtBox, not clipped. */
+int
+pdf_doc_get_page_rect (pdf_file *pf, int page_no, enum pdf_page_boundary opt_bbox,
+                       pdf_rect *bbox, int *rotate)
+{
+  struct page_attrs a = {0};
+  pdf_obj *page, *requested;
+  int      missing, i, rc = -1;
+
+  page = seek_page(pf, page_no, &a, &missing);
+  if (page) {
+    pdf_obj *boxes[6];
+
+    switch (opt_bbox) {
+    case pdf_page_boundary_mediabox: requested = a.media_box; break;
+    case pdf_page_boundary_bleedbox: requested = a.bleed_box; break;
+    case pdf_page_boundary_trimbox: requested = a.trim_box; break;
+    case pdf_page_boundary_artbox: requested = a.art_box; break;
+    default: requested = a.crop_box; break;
+    }
+    boxes[0] = requested;
+    boxes[1] = a.crop_box;
+    boxes[2] = a.media_box;
+    boxes[3] = a.bleed_box;
+    boxes[4] = a.trim_box;
+    boxes[5] = a.art_box;
+    for (i = 0; i < 6 && rc < 0; i++) {
+      if (PDF_OBJ_ARRAYTYPE(boxes[i]) && pdf_array_length(boxes[i]) == 4)
+        rc = read_rect(boxes[i], bbox);
+    }
+
+    *rotate = PDF_OBJ_NUMBERTYPE(a.rotate) ? (int) pdf_number_value(a.rotate) : 0;
+    pdf_release_obj(page);
+  }
+  release_page_attrs(&a);
+  return rc;
 }
 
 #ifndef BOOKMARKS_OPEN_DEFAULT

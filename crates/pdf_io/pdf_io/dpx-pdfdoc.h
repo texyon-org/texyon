@@ -105,6 +105,8 @@ pdf_obj *pdf_doc_get_reference(const char *category);
 int pdf_doc_get_page_count (pdf_file *pf);
 pdf_obj *pdf_doc_get_page (pdf_file *pf, int page_no, enum pdf_page_boundary opt_bbox,
                            pdf_rect *bbox, pdf_tmatrix *matrix, pdf_obj **resources_p);
+int pdf_doc_get_page_rect (pdf_file *pf, int page_no, enum pdf_page_boundary opt_bbox,
+                           pdf_rect *bbox, int *rotate);
 
 int pdf_doc_current_page_number(void);
 pdf_obj *pdf_doc_current_page_resources(void);
