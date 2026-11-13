@@ -87,3 +87,6 @@ tldocs/latex/chemobabel/chemobabel-ja	both engines loop on a font shape named by
 tldocs/latex/bxjalipsum/sample-bxjalipsum-1	both engines loop on a font shape named by NUL characters until the 6.25M pool is full, upstream first since it keeps full file paths as strings
 tldocs/latex/bxcoloremoji/bxcoloremoji-ja	both engines loop on a font shape named by NUL characters until the 6.25M pool is full, upstream first since it keeps full file paths as strings
 tldocs/latex/qworld/qworld	both engines loop on a font shape named by NUL characters until the 6.25M pool is full, upstream first since it keeps full file paths as strings
+tldocs/generic/pst-electricfield/pst-electricfield-docEN	upstream aborts with "bad native font flag" at an OpenType math accent over a TFM letter, TeXyoN typesets the rest (UPSTREAM_BUGS.md 24)
+tldocs/generic/pst-electricfield/pst-electricfield-docFR	upstream aborts with "bad native font flag" at an OpenType math accent over a TFM letter, TeXyoN typesets the rest (UPSTREAM_BUGS.md 24)
+tldocs/generic/pst-electricfield/pst-electricfield-docDE	upstream aborts with "bad native font flag" at an OpenType math accent over a TFM letter, TeXyoN typesets the rest (UPSTREAM_BUGS.md 24)
