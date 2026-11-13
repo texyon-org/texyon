@@ -35,6 +35,15 @@ pub struct MemoryFileInfo {
 /// A collection of files created or used inside a memory-backed I/O provider.
 pub type MemoryFileCollection = HashMap<String, MemoryFileInfo>;
 
+/// How a [`MemoryIoItem`] holds its file.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Access {
+    /// Reads a copy, so the file stays visible to other opens, as on a disk.
+    Read,
+    /// Starts empty and puts its data back when closed.
+    Write,
+}
+
 /// When a file is "opened", we create a MemoryIoItem struct that tracks the
 /// data, seek cursor state, etc.
 struct MemoryIoItem {
@@ -46,6 +55,7 @@ struct MemoryIoItem {
     state: Cursor<Vec<u8>>,
     unix_mtime: Option<i64>,
     was_modified: bool,
+    access: Access,
 }
 
 /// Get the current time as a Unix time, in a manner consistent with our Unix
@@ -63,20 +73,16 @@ fn now_as_unix_time() -> i64 {
 }
 
 impl MemoryIoItem {
-    pub fn new(
-        files: &Rc<RefCell<MemoryFileCollection>>,
-        name: &str,
-        truncate: bool,
-    ) -> MemoryIoItem {
-        let (cur_data, cur_mtime) = match files.borrow_mut().remove(name) {
-            Some(info) => {
-                if truncate {
-                    (Vec::new(), Some(now_as_unix_time()))
-                } else {
-                    (info.data, info.unix_mtime)
-                }
+    fn new(files: &Rc<RefCell<MemoryFileCollection>>, name: &str, access: Access) -> MemoryIoItem {
+        let (cur_data, cur_mtime) = match access {
+            Access::Read => match files.borrow().get(name) {
+                Some(info) => (info.data.clone(), info.unix_mtime),
+                None => (Vec::new(), Some(now_as_unix_time())),
+            },
+            Access::Write => {
+                files.borrow_mut().remove(name);
+                (Vec::new(), Some(now_as_unix_time()))
             }
-            None => (Vec::new(), Some(now_as_unix_time())),
         };
 
         MemoryIoItem {
@@ -85,6 +91,7 @@ impl MemoryIoItem {
             state: Cursor::new(cur_data),
             unix_mtime: cur_mtime,
             was_modified: false,
+            access,
         }
     }
 }
@@ -128,6 +135,9 @@ impl InputFeatures for MemoryIoItem {
 
 impl Drop for MemoryIoItem {
     fn drop(&mut self) {
+        if self.access == Access::Read {
+            return;
+        }
         let unix_mtime = if self.was_modified {
             Some(now_as_unix_time())
         } else {
@@ -192,7 +202,10 @@ impl IoProvider for MemoryIo {
 
         let name = normalize_tex_path(name);
 
-        let oh = OutputHandle::new(name.clone(), MemoryIoItem::new(&self.files, &name, true));
+        let oh = OutputHandle::new(
+            name.clone(),
+            MemoryIoItem::new(&self.files, &name, Access::Write),
+        );
 
         // `hyperxmp.sty` does a thing where it tries to get today's date by
         // calling \filemoddate on `\jobname.log`. That essentially relies on it
@@ -213,7 +226,7 @@ impl IoProvider for MemoryIo {
 
         OpenResult::Ok(OutputHandle::new(
             self.stdout_key(),
-            MemoryIoItem::new(&self.files, self.stdout_key(), true),
+            MemoryIoItem::new(&self.files, self.stdout_key(), Access::Write),
         ))
     }
 
@@ -231,7 +244,7 @@ impl IoProvider for MemoryIo {
         if self.files.borrow().contains_key(&*name) {
             OpenResult::Ok(InputHandle::new(
                 name.clone(),
-                MemoryIoItem::new(&self.files, &name, false),
+                MemoryIoItem::new(&self.files, &name, Access::Read),
                 InputOrigin::Other,
             ))
         } else {
@@ -283,6 +296,21 @@ mod tests {
         );
         assert_eq!(mem.input_casefold_name("part.tex"), None);
         assert_eq!(mem.input_casefold_name("other/chapter.tex"), None);
+    }
+
+    #[test]
+    fn a_file_open_for_reading_can_be_opened_again() {
+        let mut mem = MemoryIo::new(false);
+        let mut sb = NoopStatusBackend::default();
+        mem.create_entry("open.tex", b"text\n".to_vec());
+        let mut first = String::new();
+        let mut reader = BufReader::new(mem.input_open_name("open.tex", &mut sb).unwrap());
+        reader.read_line(&mut first).unwrap();
+        let mut second = String::new();
+        BufReader::new(mem.input_open_name("open.tex", &mut sb).unwrap())
+            .read_line(&mut second)
+            .unwrap();
+        assert_eq!((first.as_str(), second.as_str()), ("text\n", "text\n"));
     }
 
     #[test]
