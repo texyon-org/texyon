@@ -248,6 +248,20 @@ entry names a later TeX Live version.
   character is added. Listed in `tests/upstream/known.tsv` (18 hyphenation probes), test
   `left_boundary_after_a_hyphen_is_no_character`. Not reported yet.
 
+## 18. The OpenType script list always comes from GSUB
+
+- **Where:** `getLargerScriptListTable` in `XeTeXLayoutInterface.cpp` (TeX Live 2025), behind
+  `\XeTeXOTcountscripts` and `\XeTeXOTscripttag`.
+- **Bug:** it means to return the longer of the GSUB and GPOS script lists, but the GPOS call
+  passes `HB_OT_TAG_GSUB` again. HarfBuzz caps the second fetch at the GSUB count, so the result is
+  always GSUB's list. A font with scripts only in GPOS reports none.
+- **Repro:** FandolSong-Regular has no GSUB, and its GPOS lists `DFLT`, `hani`, `kana` and `latn`.
+  Upstream counts 0 scripts, so fontspec warns "Script 'CJK' not explicitly supported" and drops
+  the script from font requests. Suite case `docs/cjk`.
+- **Fix:** pass `HB_OT_TAG_GPOS` in the second `hb_ot_layout_table_get_script_tags` call.
+- **TeXyoN:** takes the longer list (`get_larger_script_list_table_ot` in `xetex_layout`), so
+  fontspec sees the scripts. Listed in `tests/upstream/known.tsv`. Not reported yet.
+
 ## 19. Interword space shaping reads the width of a null `font_glue`
 
 - **Where:** the `\XeTeXinterwordspaceshaping` block, lines 24588-24589, `width(font_glue[main_f])`.

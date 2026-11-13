@@ -133,6 +133,7 @@ fn get_font_funcs() -> hb::FontFuncsRef<'static, Arc<Mutex<ft::Face>>> {
         .as_ref()
 }
 
+// Upstream reads GSUB twice here and so never sees GPOS-only scripts (UPSTREAM_BUGS.md 18).
 pub(crate) fn get_larger_script_list_table_ot(font: &Font) -> hb::ot::Table<'_> {
     let layout = font.hb_font().face().ot_layout();
 
