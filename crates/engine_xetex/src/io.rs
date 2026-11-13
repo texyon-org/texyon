@@ -1111,6 +1111,10 @@ pub(crate) fn start_input(
         scan_file_name(st)?.file
     };
 
+    if primary_input_name.is_some() {
+        // TeX Live scans this name from the terminal line, which leaves none of it to read.
+        st.input.cur_input.loc = st.input.cur_input.limit + 1;
+    }
     let path = scanned.path(&st.strings);
     crate::input::begin_file_reading(st)?;
 

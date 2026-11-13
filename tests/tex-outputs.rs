@@ -218,6 +218,13 @@ fn casefold_input() {
 }
 
 #[test]
+fn no_end() {
+    TestCase::new("no_end")
+        .expect_msg("*** (job aborted, no legal \\end found)")
+        .go()
+}
+
+#[test]
 fn nul_name() {
     util::set_test_root();
 
