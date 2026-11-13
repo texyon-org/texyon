@@ -273,6 +273,13 @@ impl FontManagerBackend for FcBackend {
                     _ => (),
                 }
             }
+            // Typographic family and subfamily names replace the legacy ones.
+            if !family_names.is_empty() {
+                names.family_names = family_names;
+            }
+            if !sub_family_names.is_empty() {
+                names.style_names = sub_family_names;
+            }
         } else {
             let mut index = 0;
             while let Ok(name) = pat.as_ref().get::<fc::pat::FullName>(index) {
@@ -285,9 +292,21 @@ impl FontManagerBackend for FcBackend {
                 FontManager::append_to_list(&mut names.family_names, fam);
             }
             index = 0;
-            while let Ok(name) = pat.as_ref().get::<fc::pat::FullName>(index) {
+            while let Ok(name) = pat.as_ref().get::<fc::pat::Style>(index) {
                 index += 1;
                 FontManager::append_to_list(&mut names.style_names, name);
+            }
+            if names.full_names.is_empty() {
+                if let Some(family) = names.family_names.first() {
+                    let mut full = family.as_bytes().to_vec();
+                    if let Some(style) = names.style_names.first() {
+                        full.push(b' ');
+                        full.extend_from_slice(style.as_bytes());
+                    }
+                    if let Ok(full) = CString::new(full) {
+                        names.full_names.push(full);
+                    }
+                }
             }
         }
 
