@@ -27,8 +27,10 @@ import shutil
 import struct
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from pathlib import Path
+
+import latex
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
@@ -333,11 +335,69 @@ def compare(name, src, bundle, fmtdir):
     return name, diffs
 
 
+def latex_one(tl, case, cache, keep, pixels):
+    status, diffs = latex.compare(tl, case, WORK / "latex", cache, xdv_pages, keep, pixels)
+    if diffs:
+        out = WORK / "latex" / "diffs" / (case.name.replace("/", "-") + ".diff")
+        out.write_text("\n".join(diffs) + "\n")
+    return case, status, diffs
+
+
+def run_latex(args, suites):
+    tl = latex.TeXLive(XETEX, TEXYON, WORK / "latex")
+    tl.prepare()
+    cases = [c for s in suites for c in latex.SUITES[s](tl)]
+    if args.filters:
+        cases = [c for c in cases if any(f in c.name for f in args.filters)]
+    known = load_known()
+    cache = WORK / "latex" / "tl-cache"
+    cache.mkdir(parents=True, exist_ok=True)
+    diffdir = WORK / "latex" / "diffs"
+    diffdir.mkdir(parents=True, exist_ok=True)
+    for old in diffdir.glob("*.diff"):
+        old.unlink()
+
+    cases.sort(key=lambda c: c.cost(), reverse=True)
+    # The smallest case builds TeXyoN's format before the parallel runs.
+    results = [latex_one(tl, cases[-1], cache, args.keep, args.pixels)] if cases else []
+    tally = {}
+    with ProcessPoolExecutor(args.jobs) as ex:
+        futures = [ex.submit(latex_one, tl, c, cache, args.keep, args.pixels) for c in cases[:-1]]
+        for n, fut in enumerate(as_completed(futures), 2):
+            case, status, diffs = fut.result()
+            results.append((case, status, diffs))
+            tally[status] = tally.get(status, 0) + 1
+            if status not in ("match", "match-nopages"):
+                print(f"[{n}/{len(cases)}] {status.upper():16} {case.name}", flush=True)
+            if n % 25 == 0 or n == len(cases):
+                print(f"[{n}/{len(cases)}] so far: "
+                      + ", ".join(f"{v} {k}" for k, v in sorted(tally.items())), flush=True)
+    counts = {}
+    for case, status, diffs in results:
+        if status.startswith("diverge") and case.name in known:
+            status = "known"
+        counts[(case.suite, status)] = counts.get((case.suite, status), 0) + 1
+        if args.verbose and diffs:
+            print(f"== {case.name}\n" + "\n".join(diffs[:200]))
+    print()
+    for suite in suites:
+        row = {k[1]: v for k, v in counts.items() if k[0] == suite}
+        total = sum(row.values())
+        print(f"{suite}: {total} cases, " + ", ".join(f"{v} {k}" for k, v in sorted(row.items())))
+    print(f"(diffs in {diffdir})")
+    return any(s.startswith("diverge") or s == "timeout" for (_, s) in counts)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("-v", "--verbose", action="store_true", help="print diffs")
     ap.add_argument("-j", "--jobs", type=int, default=os.cpu_count())
     ap.add_argument("--probes", type=Path, default=PROBES, help="probe directory")
+    ap.add_argument("--suite", default="probes",
+                    help="comma-separated: probes, " + ", ".join(latex.SUITES) + ", or all")
+    ap.add_argument("--keep", action="store_true", help="keep TeXyoN's outputs of diverging cases")
+    ap.add_argument("--pixels", action="store_true",
+                    help="render diverging XDVs and compare their pages")
     ap.add_argument("filters", nargs="*")
     args = ap.parse_args()
 
@@ -347,6 +407,17 @@ def main():
         sys.exit(f"texyon not found at {TEXYON} (cargo build --release -p texyon)")
 
     WORK.mkdir(parents=True, exist_ok=True)
+    suites = ["probes", *latex.SUITES] if args.suite == "all" else args.suite.split(",")
+    failed_latex = False
+    latex_suites = [s for s in suites if s != "probes"]
+    if latex_suites:
+        unknown = [s for s in latex_suites if s not in latex.SUITES]
+        if unknown:
+            sys.exit(f"unknown suite: {', '.join(unknown)}")
+        failed_latex = run_latex(args, latex_suites)
+    if "probes" not in suites:
+        sys.exit(1 if failed_latex else 0)
+
     for old in WORK.glob("*.diff"):
         old.unlink()
     bundle = make_bundle()
@@ -387,7 +458,7 @@ def main():
     print(f"\n{len(todo)} probes: {passed} match, {len(allowed)} known, {len(failed)} diverge,"
           f" {crashed} upstream crashes"
           f" (diffs in {WORK})")
-    sys.exit(1 if failed else 0)
+    sys.exit(1 if failed or failed_latex else 0)
 
 
 if __name__ == "__main__":

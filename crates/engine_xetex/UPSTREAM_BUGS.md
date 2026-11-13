@@ -290,6 +290,20 @@ entry names a later TeX Live version.
   `tests/tex-outputs.rs`. It panicked before (TeX Live doc biblatex-gost, through fontspec's `Name/B` requests).
   Not reported yet.
 
+## 21. `\XeTeXtracingfonts` prints freed memory for installed fonts
+
+- **Where:** `XeTeXFontMgr::findFont` in `XeTeXFontMgr.cpp` (TeX Live 2025), line 392,
+  `printcstring(getPlatformFontDesc(font->fontRef).c_str())`.
+- **Bug:** `printcstring` is a macro whose first statement is `const char* ch_ptr = (STR);`. The
+  `std::string` that `getPlatformFontDesc` returns is destroyed at the end of that statement, so
+  the loop prints whatever the freed buffer holds.
+- **Repro:** `\XeTeXtracingfonts=1 \font\x="Latin Modern Roman" \bye` prints ` -> ^^M-q^^F^^"^^]`
+  or similar instead of the font file in TeX Live 2025 xetex.
+- **Fix:** keep the string alive, e.g. `std::string desc = getPlatformFontDesc(...);
+  printcstring(desc.c_str());`.
+- **TeXyoN:** prints the font file (`ext.rs`). Suite cases iodhbwm and others, grouped by
+  `triage.py`. Not reported yet.
+
 ## 22. `\XeTeXpdffile` ignores an inherited `/Rotate`
 
 - **Where:** `pdf_get_rect` in `pdfimage.cpp` (TeX Live 2025), line 128,
