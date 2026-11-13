@@ -342,3 +342,27 @@ fn left_boundary_after_a_hyphen_is_no_character() {
         ..\glue(\rightskip) 0.0",
     );
 }
+
+#[test]
+fn a_word_at_the_start_of_a_list_merges_its_interrupted_pieces() {
+    // XeTeX's list head is a char node by address, so it keeps the first piece apart and the
+    // locale breaks `/05` after the slash (upstream bug 25).
+    let r = run(
+        r#"\font\lm="[lmroman12-regular.otf]" at 10pt \lm \XeTeXlinebreaklocale "ko"
+          \XeTeXinterchartokenstate=1 \XeTeXcharclass`\/=1
+          \XeTeXinterchartoks 0 1 {\relax}\XeTeXinterchartoks 1 0 {\relax}
+          \hsize200pt \setbox0\vbox{\noindent 2014/05 x\par}\showbox0"#,
+    );
+    assert_lines(
+        &r.boxes()[0],
+        r"
+        \vbox(14.06999+0.0)x200.0
+        .\hbox(11.27+2.79999)x200.0, glue set 96.48528
+        ..\lm 2014/05
+        ..\glue 3.26 plus 1.62999 minus 1.08665
+        ..\lm x
+        ..\penalty 10000
+        ..\glue(\parfillskip) 0.0
+        ..\glue(\rightskip) 0.0",
+    );
+}

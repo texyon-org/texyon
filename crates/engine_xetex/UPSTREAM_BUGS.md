@@ -354,3 +354,21 @@ entry names a later TeX Live version.
   `\skewchar`), as a TFM accent would.
 - **TeXyoN:** does that (`AccentAttach::Skew` in `math/mlist.rs`), test
   `an_opentype_accent_over_a_tfm_character_takes_its_skew`. Not reported yet.
+
+## 25. A native word at the start of a list does not merge its next piece
+
+- **Where:** the main loop's native word handling, lines 24475 and 24545: the merge test
+  `not is_char_node(main_ppp)`, with `head:=get_avail` in `push_nest` (line 5248).
+- **Bug:** when inter-character tokens or a font change interrupt a word, the next piece is
+  merged into the previous native word unless the node before that word is a char node. At the
+  start of a list that node is the list head, which comes from `get_avail` and so counts as a
+  char node by address. The first piece is never merged, and `\XeTeXlinebreaklocale` breaks the
+  following pieces without the first one's text: kotex's rules around `/` give `2014/05/12:` a
+  break after `2014/` only when it starts a paragraph.
+- **Repro:** `\XeTeXlinebreaklocale "ko"`, the `\XeTeXcharclass` of `/` set to 1 with `\relax`
+  tokens between classes 0 and 1, then `\noindent 2014/05 x`. TeX Live 2025 xetex gives `2014/`,
+  `\penalty 0`, `05`. With any node before the word it gives `2014/05`.
+- **Fix:** let the head pass the test, so a word merges the same way wherever it stands.
+- **TeXyoN:** the head is no char node (`extendable_native_word` in `main_control/main_loop.rs`),
+  test `a_word_at_the_start_of_a_list_merges_its_interrupted_pieces`. Listed in
+  `tests/upstream/known.tsv` (kotex-utf-doc). Not reported yet.

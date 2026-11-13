@@ -153,6 +153,7 @@ fn node_before(st: &EngineState, pp: MemIdx) -> Result<MemIdx, Abort> {
 }
 
 /// The native word `pp` if new text in font `f` can extend it. `ppp` is the node before it.
+/// The list head counts as no char node, so a word at the start of a list merges too.
 fn extendable_native_word(
     st: &EngineState,
     f: FontId,
