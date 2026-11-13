@@ -313,10 +313,10 @@ impl Font {
         self.index = index as u32;
         let upe = { self.ft_face().units_per_em() };
         self.units_per_em = upe;
-        let a = { self.ft_face().ascender() } as f64;
-        self.ascent = self.units_to_points(a) as f32;
-        let d = { self.ft_face().descender() } as f64;
-        self.descent = self.units_to_points(d) as f32;
+        let a = f32::from(self.ft_face().ascender());
+        self.ascent = self.units_to_points(a);
+        let d = f32::from(self.ft_face().descender());
+        self.descent = self.units_to_points(d);
 
         let ft_face = self.ft_face();
         let post_table = ft_face.get_sfnt_table::<ft::tables::Postscript>();
@@ -331,8 +331,8 @@ impl Font {
         let ft_face = self.ft_face();
         let os2_table = ft_face.get_sfnt_table::<ft::tables::Os2>();
         let (ch, xh) = if let Some(table) = os2_table {
-            let ch = self.units_to_points(table.sCapHeight as f64) as f32;
-            let xh = self.units_to_points(table.sxHeight as f64) as f32;
+            let ch = self.units_to_points(f32::from(table.sCapHeight));
+            let xh = self.units_to_points(f32::from(table.sxHeight));
             (ch, xh)
         } else {
             (self.cap_height, self.x_height)
@@ -473,10 +473,10 @@ impl Font {
                 } = glyph.get_cbox(ft::BBoxMode::Unscaled);
                 drop(ft_face);
                 GlyphBBox {
-                    x_min: self.units_to_points(x_min as f64) as f32,
-                    y_min: self.units_to_points(y_min as f64) as f32,
-                    x_max: self.units_to_points(x_max as f64) as f32,
-                    y_max: self.units_to_points(y_max as f64) as f32,
+                    x_min: self.units_to_points(x_min as f32),
+                    y_min: self.units_to_points(y_min as f32),
+                    x_max: self.units_to_points(x_max as f32),
+                    y_max: self.units_to_points(y_max as f32),
                 }
             }
             Err(_) => GlyphBBox::default(),
@@ -517,7 +517,7 @@ impl Font {
 
     /// The horizontal advance of glyph `gid`.
     pub fn glyph_width(&self, gid: u32) -> f32 {
-        self.units_to_points(get_glyph_advance(&self.ft_face(), gid, false) as f64) as f32
+        self.units_to_points(get_glyph_advance(&self.ft_face(), gid, false) as f32)
     }
 
     pub(crate) fn layout_dir_vertical(&self) -> bool {
@@ -638,13 +638,14 @@ impl Font {
      * otherwise roundoff errors can accumulate leading to differences in the
      * XDV outputs. */
     /// Converts font units to points.
-    pub fn units_to_points(&self, units: f64) -> f64 {
-        (units * self.point_size as f64) / (self.units_per_em as f64)
+    pub fn units_to_points(&self, units: f32) -> f32 {
+        // Single precision throughout, as upstream rounds it.
+        (units * self.point_size) / f32::from(self.units_per_em)
     }
 
     /// Converts points to font units.
-    pub fn points_to_units(&self, points: f64) -> f64 {
-        (points * (self.units_per_em as f64)) / self.point_size as f64
+    pub fn points_to_units(&self, points: f32) -> f32 {
+        (points * f32::from(self.units_per_em)) / self.point_size
     }
 }
 

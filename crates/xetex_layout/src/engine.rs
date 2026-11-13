@@ -361,7 +361,7 @@ impl<'a> LayoutEngine<'a> {
                 } else {
                     pos.x_advance
                 };
-                font.units_to_points(advance as f64) as f32
+                font.units_to_points(advance as f32)
             })
             .collect();
 
@@ -371,29 +371,29 @@ impl<'a> LayoutEngine<'a> {
         if vertical {
             for pos in hb_positions {
                 positions.push(FloatPoint {
-                    x: -font.units_to_points((x + pos.y_offset as f32) as f64) as f32,
-                    y: font.units_to_points((y - pos.x_offset as f32) as f64) as f32,
+                    x: -font.units_to_points(x + pos.y_offset as f32),
+                    y: font.units_to_points(y - pos.x_offset as f32),
                 });
                 x += pos.y_advance as f32;
                 y += pos.x_advance as f32;
             }
             positions.push(FloatPoint {
-                x: -font.units_to_points(x as f64) as f32,
-                y: font.units_to_points(y as f64) as f32,
+                x: -font.units_to_points(x),
+                y: font.units_to_points(y),
             });
         } else {
             for pos in hb_positions {
                 positions.push(FloatPoint {
-                    x: font.units_to_points((x + pos.x_offset as f32) as f64) as f32,
+                    x: font.units_to_points(x + pos.x_offset as f32),
                     // Negative is upwards.
-                    y: -font.units_to_points((y + pos.y_offset as f32) as f64) as f32,
+                    y: -font.units_to_points(y + pos.y_offset as f32),
                 });
                 x += pos.x_advance as f32;
                 y += pos.y_advance as f32;
             }
             positions.push(FloatPoint {
-                x: font.units_to_points(x as f64) as f32,
-                y: -font.units_to_points(y as f64) as f32,
+                x: font.units_to_points(x),
+                y: -font.units_to_points(y),
             });
         }
 

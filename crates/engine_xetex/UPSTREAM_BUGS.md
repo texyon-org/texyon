@@ -247,3 +247,17 @@ entry names a later TeX Live version.
 - **TeXyoN:** writes `non_char` (`linebreak/hyphenate.rs`), so the boundary program runs and no
   character is added. Listed in `tests/upstream/known.tsv` (18 hyphenation probes), test
   `left_boundary_after_a_hyphen_is_no_character`. Not reported yet.
+
+## 19. Interword space shaping reads the width of a null `font_glue`
+
+- **Where:** the `\XeTeXinterwordspaceshaping` block, lines 24588-24589, `width(font_glue[main_f])`.
+- **Bug:** `font_glue[f]` is only built when `app_space` uses the font's own interword glue. While
+  `\spaceskip` is nonzero it can stay null, and the block reads `width(null)` without a check.
+  The C build crashes.
+- **Repro:** `\font\lm="[lmroman12-regular]" \lm \spaceskip=4pt \XeTeXinterwordspaceshaping=1 To
+  We \bye` segfaults in TeX Live 2025 xetex. Without `\spaceskip` it runs.
+- **Fix:** compare against `param(space_code)(main_f)`, which is the width `font_glue` gets when it
+  is built.
+- **TeXyoN:** uses the font's space parameter (`shape_interword_space`), so the kern is what
+  upstream gives whenever `font_glue` exists. Test `mainloop_spaceskip_shaping` in
+  `tests/tex-outputs.rs`. Not reported yet.

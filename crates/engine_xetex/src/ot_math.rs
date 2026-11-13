@@ -64,13 +64,11 @@ const TEX_EXT_TO_OT_MAP: [Option<i32>; 14] = [
 ];
 
 fn units_to_fix(font: &Font, units: i32) -> Scaled {
-    d2fix(f64::from(
-        font.units_to_points(f64::from(units as f32)) as f32
-    ))
+    d2fix(f64::from(font.units_to_points(units as f32)))
 }
 
 fn points_to_units(font: &Font, points: f32) -> f32 {
-    font.points_to_units(f64::from(points)) as f32
+    font.points_to_units(points)
 }
 
 fn direction(horiz: bool) -> Direction {

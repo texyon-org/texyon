@@ -11,7 +11,7 @@ Completed box being shipped out [1]
 ..\glue 0.0 plus 1.0fil minus 1.0fil
 .\vbox(643.20255+0.0)x469.75499, glue set 608.30795fill
 ..\glue(\topskip) 0.0
-..\hbox(13.5747+3.37259)x469.75499, glue set 232.47963fil
+..\hbox(13.5747+3.37259)x469.75499, glue set 232.47961fil
 ...\hbox(0.0+0.0)x20.0
 ...\lm Te
 ...\glue(\spaceskip) 4.0 plus 2.0
@@ -19,8 +19,10 @@ Completed box being shipped out [1]
 ...\glue(\spaceskip) 4.0 plus 2.0
 ...\lm AV
 ...\glue 4.0 plus 1.99799
+...\kern 0.00002 (space adjustment)
 ...\lm To.
 ...\glue 5.30888 plus 6.0
+...\kern 0.00002 (space adjustment)
 ...\lm We
 ...\glue(\spaceskip) 4.0 plus 2.0
 ...\lm Yo
@@ -42,7 +44,7 @@ Completed box being shipped out [1]
 ...\glue(\rightskip) 0.0
 ..\glue(\parskip) 0.0 plus 1.0
 ..\glue(\lineskip) 1.0
-..\hbox(13.5747+3.37259)x469.75499, glue set 232.47963fil
+..\hbox(13.5747+3.37259)x469.75499, glue set 232.47961fil
 ...\hbox(0.0+0.0)x20.0
 ...\lm Te
 ...\glue(\spaceskip) 4.0 plus 2.0
@@ -50,8 +52,10 @@ Completed box being shipped out [1]
 ...\glue(\spaceskip) 4.0 plus 2.0
 ...\lm AV
 ...\glue 4.0 plus 1.99799
+...\kern 0.00002 (space adjustment)
 ...\lm To.
 ...\glue 5.30888 plus 6.0
+...\kern 0.00002 (space adjustment)
 ...\lm We
 ...\glue(\spaceskip) 4.0 plus 2.0
 ...\lm Yo
