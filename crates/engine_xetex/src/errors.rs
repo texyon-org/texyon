@@ -154,6 +154,23 @@ pub(crate) enum Abort {
     },
 }
 
+/// TeX's `prompt_file_name` for a missing input, up to the prompt it cannot give.
+pub(crate) fn input_not_found(
+    st: &mut EngineState,
+    name: crate::io::FileName,
+    path: &[u8],
+) -> Abort {
+    print_nl(st, "! I can't find file `");
+    name.print_to(st);
+    print(st, "'.");
+    show_context(st);
+    print_ln(st);
+    print(st, "(Press Enter to retry, or Control-D to exit)");
+    print_ln(st);
+    print_nl(st, "Please type another input file name");
+    Abort::CannotOpenInput { name: path.into() }
+}
+
 /// Turns a broken internal invariant into TeX's "This can't happen" stop.
 pub(crate) trait OrConfusion<T> {
     fn or_confusion(self, what: &'static str) -> Result<T, Abort>;
@@ -355,6 +372,14 @@ impl Abort {
             Abort::Internal(msg) => set_error_message(msg),
             Abort::InputClose => set_error_message("serious internal error closing an input file"),
             Abort::CannotOpenInput { name } => {
+                Self::fatal_report(
+                    st,
+                    if st.errors.interaction < InteractionMode::Scroll {
+                        "*** (job aborted, file error in nonstop mode)"
+                    } else {
+                        "End of file on the terminal!"
+                    },
+                );
                 Self::open_failure("failed to open input file", &name)
             }
             Abort::CannotOpenOutput { name } => {

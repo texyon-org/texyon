@@ -219,13 +219,8 @@ pub(crate) fn open_input_file(
     let handle = if filefmt == FileFormat::TexyonPrimary {
         input_open_primary()
     } else if path.first() == Some(&b'|') {
-        crate::output::print_nl(st, "Warning: ");
-        crate::diagnostic::begin_warning(st);
-        crate::output::print(
-            st,
-            "piped inputs from external commands are not implemented in Tectonic",
-        );
-        crate::diagnostic::end_capture(st);
+        // TeX Live without shell escape takes the name as a file, which is not found.
+        crate::diagnostic::warn_host(st, "TeXyoN cannot read from shell commands");
         return None;
     } else {
         input_open(path, filefmt, false)
@@ -1118,9 +1113,8 @@ pub(crate) fn start_input(
     let mode = st.eqtb.int_par(IntPar::XetexDefaultInputMode);
     let encoding = st.eqtb.int_par(IntPar::XetexDefaultInputEncoding);
     let Some((file, found)) = u_open_in(st, &path, format, mode, encoding)? else {
-        return Err(Abort::CannotOpenInput {
-            name: path.as_slice().into(),
-        });
+        crate::input::end_file_reading(st)?;
+        return Err(crate::errors::input_not_found(st, scanned, &path));
     };
     st.input.input_file[idx as usize] = crate::state::InputSlot::Open(file);
 

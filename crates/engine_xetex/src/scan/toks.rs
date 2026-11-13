@@ -121,7 +121,14 @@ pub(crate) fn read_toks(
         };
 
         if st.input.read_open[m] == CLOSED {
-            return Err(Abort::Internal("terminal input forbidden"));
+            // A terminal read in a mode that would prompt meets the end of the terminal's input.
+            return Err(Abort::Fatal(
+                if st.errors.interaction > crate::state::InteractionMode::Nonstop {
+                    "End of file on the terminal!"
+                } else {
+                    "*** (cannot \\read from terminal in nonstop modes)"
+                },
+            ));
         } else if st.input.read_open[m] == JUST_OPEN {
             if crate::io::input_slot_line(st, crate::io::FileSlot::Read(m))? != 0 {
                 st.input.read_open[m] = NORMAL as u8;

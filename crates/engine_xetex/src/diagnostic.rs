@@ -137,6 +137,15 @@ pub(crate) fn begin_warning(st: &mut EngineState) {
     begin_capture(st, DiagnosticKind::Warning);
 }
 
+/// Reports a warning to the host without printing it to the transcript.
+pub(crate) fn warn_host(st: &mut EngineState, message: &str) {
+    begin_warning(st);
+    if let Some(capture) = &mut st.diagnostics.capture {
+        capture.text.extend_from_slice(message.as_bytes());
+    }
+    end_capture(st);
+}
+
 /// Stops capturing and returns the diagnostic so far, without help.
 pub(crate) fn take_capture(st: &mut EngineState, help: Vec<String>) -> Option<Diagnostic> {
     st.diagnostics

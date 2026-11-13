@@ -214,7 +214,8 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.scanner.native_text_size = 128;
     st.scanner.native_text = vec![0; 128];
 
-    st.errors.interaction = InteractionMode::ErrorStop;
+    // There is no terminal to answer TeX, so it runs as in nonstopmode.
+    st.errors.interaction = InteractionMode::Nonstop;
 
     st.errors.deletions_allowed = true;
     st.scanner.set_box_allowed = true;

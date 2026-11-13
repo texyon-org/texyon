@@ -1,3 +1,13 @@
 **
 (pipe_input.tex
-Warning: piped inputs from external commands are not implemented in Tectonic
+! I can't find file `|pipeproblems'.
+l.1 \input{|pipeproblems}
+                         
+(Press Enter to retry, or Control-D to exit)
+Please type another input file name
+! Emergency stop.
+l.1 \input{|pipeproblems}
+                         
+*** (job aborted, file error in nonstop mode)
+
+No pages of output.
