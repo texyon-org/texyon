@@ -135,6 +135,7 @@ impl TestCase {
             let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
 
             let tex_res = TexEngine::default()
+                .halt_on_error_mode(!self.unstables.continue_on_errors)
                 .shell_escape(self.unstables.shell_escape)
                 .semantic_pagination(self.semantic_pagination)
                 .process(&mut launcher, "plain.fmt", &texname);
@@ -214,6 +215,24 @@ fn casefold_input() {
 
     TestCase::new("casefold_input")
         .with_fs(&test_path(&["tex-outputs"]))
+        .go()
+}
+
+#[test]
+fn errorstop_eof() {
+    TestCase::new("errorstop_eof")
+        .with_unstables(UnstableOptions {
+            continue_on_errors: true,
+            ..Default::default()
+        })
+        .expect_msg("End of file on the terminal!")
+        .go()
+}
+
+#[test]
+fn read_terminal_eof() {
+    TestCase::new("read_terminal_eof")
+        .expect_msg("End of file on the terminal!")
         .go()
 }
 

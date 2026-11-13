@@ -122,13 +122,19 @@ pub(crate) fn read_toks(
 
         if st.input.read_open[m] == CLOSED {
             // A terminal read in a mode that would prompt meets the end of the terminal's input.
-            return Err(Abort::Fatal(
-                if st.errors.interaction > crate::state::InteractionMode::Nonstop {
-                    "End of file on the terminal!"
-                } else {
-                    "*** (cannot \\read from terminal in nonstop modes)"
-                },
-            ));
+            let fatal = if st.errors.interaction > crate::state::InteractionMode::Nonstop {
+                if n >= 0 {
+                    crate::output::print_ln(st);
+                    crate::output::sprint_cs(st, Some(r));
+                    crate::output::print(st, "=");
+                }
+                "End of file on the terminal!"
+            } else {
+                "*** (cannot \\read from terminal in nonstop modes)"
+            };
+            // As TeX Live, so the context shows none of the unread line.
+            st.input.cur_input.limit = BufPos::ZERO;
+            return Err(Abort::Fatal(fatal));
         } else if st.input.read_open[m] == JUST_OPEN {
             if crate::io::input_slot_line(st, crate::io::FileSlot::Read(m))? != 0 {
                 st.input.read_open[m] = NORMAL as u8;

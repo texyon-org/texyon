@@ -78,6 +78,14 @@ pub(crate) fn finish_error(st: &mut EngineState) -> Result<(), Abort> {
         st.errors.history = HISTORY_FATAL_ERROR;
         return Err(Abort::HaltOnError);
     }
+    if st.errors.interaction == InteractionMode::ErrorStop {
+        // TeX asks the terminal for advice, and there is no terminal to answer.
+        print_ln(st);
+        print(st, "? ");
+        // As TeX Live, so the context shows none of the unread line.
+        st.input.cur_input.limit = crate::units::BufPos::ZERO;
+        return Err(Abort::Fatal("End of file on the terminal!"));
+    }
 
     st.errors.error_count = st.errors.error_count.wrapping_add(1);
     if st.errors.error_count == 100 {
@@ -478,9 +486,10 @@ pub(crate) fn errmessage(
         emit(st, diagnostic);
     }
     st.errors.use_err_help = true;
-    let outcome = finish_error(st);
+    finish_error(st)?;
+    // An error that does not return leaves it set, so the fatal report shows `\errhelp` as in TeX.
     st.errors.use_err_help = false;
-    outcome
+    Ok(())
 }
 
 /// The lines `\errhelp` shows, as the transcript prints them.

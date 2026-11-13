@@ -1,0 +1,12 @@
+**
+(read_terminal_eof.tex
+
+\answer=
+! Emergency stop.
+<read *> 
+         
+l.2 \read16 to \answer
+                      
+End of file on the terminal!
+
+No pages of output.

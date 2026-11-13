@@ -1,0 +1,12 @@
+**
+(errorstop_eof.tex
+! Stop here.
+l.3 \errmessage{Stop here}
+                          
+? 
+! Emergency stop.
+l.3 
+    
+Some help.
+
+No pages of output.
