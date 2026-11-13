@@ -5,7 +5,7 @@ use crate::utils::{d_to_fix, fix_to_d};
 use crate::{Fixed, PlatformFontRef};
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::convert::TryFrom;
 use std::ffi::{CStr, CString};
 use texyon_bridge_core::CoreBridgeState;
@@ -76,7 +76,7 @@ impl FontInfo {
 
 #[derive(Default)]
 struct FamilyInfo {
-    styles: HashMap<CString, usize>,
+    styles: BTreeMap<CString, usize>,
     min_weight: u16,
     max_weight: u16,
     min_width: u16,
@@ -174,6 +174,75 @@ struct FontMaps {
 }
 
 impl FontMaps {
+    fn best_match_from_family(
+        &self,
+        family: &FamilyInfo,
+        wt: libc::c_int,
+        wd: libc::c_int,
+        slant: libc::c_int,
+    ) -> Option<usize> {
+        let mut best_match = None;
+        for &font_pos in family.styles.values() {
+            let font = &self.fonts[font_pos];
+            best_match = match best_match {
+                None => Some(font_pos),
+                Some(best_pos) => {
+                    let best = &self.fonts[best_pos];
+                    if FontManager::style_diff(font, wt, wd, slant)
+                        < FontManager::style_diff(best, wt, wd, slant)
+                    {
+                        Some(font_pos)
+                    } else {
+                        Some(best_pos)
+                    }
+                }
+            };
+        }
+        best_match
+    }
+
+    /// The face of family `parent_pos` that a `/B` request picks for `font_pos`.
+    fn bolder(&self, font_pos: usize, parent_pos: usize) -> usize {
+        let font = &self.fonts[font_pos];
+        let parent = &self.families[parent_pos];
+        let mut best_match = font_pos;
+        if font.weight < parent.max_weight {
+            // Half the family's weight range up, rounding up.
+            let weight = font.weight + (parent.max_weight - parent.min_weight) / 2 + 1;
+            best_match = self
+                .best_match_from_family(
+                    parent,
+                    libc::c_int::from(weight),
+                    libc::c_int::from(font.width),
+                    libc::c_int::from(font.slant),
+                )
+                .unwrap_or(best_match);
+            if parent.min_slant == parent.max_slant {
+                // The slant values cannot be told apart, so keep the italic flag.
+                let target = &self.fonts[best_match];
+                let same_flag = parent
+                    .styles
+                    .values()
+                    .copied()
+                    .filter(|&p| self.fonts[p].is_italic == font.is_italic);
+                if let Some(p) = same_flag
+                    .min_by_key(|&p| FontManager::weight_and_width_diff(&self.fonts[p], target))
+                {
+                    best_match = p;
+                }
+            }
+        }
+        if best_match == font_pos && !font.is_bold {
+            if let Some(p) = parent.styles.values().copied().find(|&p| {
+                let style = &self.fonts[p];
+                style.is_italic == font.is_italic && style.is_bold
+            }) {
+                best_match = p;
+            }
+        }
+        best_match
+    }
+
     fn add_to_maps(
         &mut self,
         backend: &dyn FontManagerBackend,
@@ -520,7 +589,7 @@ impl FontManager {
 
                 if font.is_none() {
                     // look through the family for the (weight, width, slant) nearest to (80, 100, 0)
-                    font = self.best_match_from_family(family, 80, 100, 0);
+                    font = self.maps.best_match_from_family(family, 80, 100, 0);
                 }
 
                 if font.is_some() {
@@ -558,6 +627,7 @@ impl FontManager {
                 if font.slant < parent.max_slant {
                     // try for a face with more slant
                     best_match_pos = self
+                        .maps
                         .best_match_from_family(
                             parent,
                             font.weight as libc::c_int,
@@ -570,6 +640,7 @@ impl FontManager {
                 if best_match_pos == font_pos && font.slant > parent.min_slant {
                     // maybe the slant is negated, or maybe this was something like "Times-Italic/I"
                     best_match_pos = self
+                        .maps
                         .best_match_from_family(
                             parent,
                             font.weight as libc::c_int,
@@ -634,51 +705,7 @@ impl FontManager {
             }
 
             if req_bold {
-                let font = &self.maps.fonts[font_pos];
-                let parent = &self.maps.families[parent_pos];
-                let mut best_match = font_pos;
-                if font.weight < parent.max_weight {
-                    best_match = self
-                        .best_match_from_family(
-                            parent,
-                            (font.weight + (parent.max_weight - (parent.min_weight)) / 2 + 1)
-                                as libc::c_int,
-                            font.width as libc::c_int,
-                            font.slant as libc::c_int,
-                        )
-                        .unwrap_or(best_match);
-                    if parent.min_slant == parent.max_slant {
-                        let mut new_best = None;
-                        for &style_pos in parent.styles.values() {
-                            let style = &self.maps.fonts[style_pos];
-                            if style.is_italic == font.is_italic
-                                && (new_best.is_none()
-                                    || Self::weight_and_width_diff(
-                                        style,
-                                        &self.maps.fonts[best_match],
-                                    ) < Self::weight_and_width_diff(
-                                        &self.maps.fonts[new_best.unwrap()],
-                                        &self.maps.fonts[best_match],
-                                    ))
-                            {
-                                new_best = Some(style_pos);
-                            }
-                        }
-                        if let Some(new_best) = new_best {
-                            best_match = new_best;
-                        }
-                    }
-                }
-                if best_match == font_pos && font.is_bold {
-                    for &style_pos in parent.styles.values() {
-                        let style = &self.maps.fonts[style_pos];
-                        if style.is_italic == font.is_italic && style.is_bold {
-                            best_match = style_pos;
-                            break;
-                        }
-                    }
-                }
-                font_pos = best_match;
+                font_pos = self.maps.bolder(font_pos, parent_pos);
             }
         }
 
@@ -773,32 +800,6 @@ impl FontManager {
             + wid_diff as u32) as libc::c_int
     }
 
-    fn best_match_from_family(
-        &self,
-        family: &FamilyInfo,
-        wt: libc::c_int,
-        wd: libc::c_int,
-        slant: libc::c_int,
-    ) -> Option<usize> {
-        let mut best_match = None;
-        for &font_pos in family.styles.values() {
-            let font = &self.maps.fonts[font_pos];
-            best_match = match best_match {
-                None => Some(font_pos),
-                Some(best_pos) => {
-                    let best = &self.maps.fonts[best_pos];
-                    if Self::style_diff(font, wt, wd, slant) < Self::style_diff(best, wt, wd, slant)
-                    {
-                        Some(font_pos)
-                    } else {
-                        Some(best_pos)
-                    }
-                }
-            };
-        }
-        best_match
-    }
-
     fn append_to_list<T: Into<CString> + AsRef<CStr>>(list: &mut Vec<CString>, str: T) {
         if !list.iter().any(|s| **s == *str.as_ref()) {
             list.push(str.into())
@@ -864,6 +865,32 @@ impl FontManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn bold_request_without_weights_uses_the_bold_flag() {
+        let mut maps = FontMaps::default();
+        let mut family = FamilyInfo::new();
+        for (style, is_bold, is_italic) in [
+            (c"Regular", false, false),
+            (c"Bold", true, false),
+            (c"Italic", false, true),
+            (c"BoldItalic", true, true),
+        ] {
+            let pattern = PlatformFontRef::from_name(c"").unwrap();
+            let mut font = FontInfo::new(pattern, style.into(), c"Serif".into(), style.into());
+            font.parent = 0;
+            font.is_bold = is_bold;
+            font.is_italic = is_italic;
+            family.styles.insert(style.into(), maps.fonts.len());
+            maps.fonts.push(font);
+        }
+        maps.families.push(family);
+
+        assert_eq!(maps.bolder(2, 0), 3);
+        assert_eq!(maps.bolder(0, 0), 1);
+        assert_eq!(maps.bolder(1, 0), 1);
+    }
 
     fn rewrite(variant: &str) -> (String, VariantRequests) {
         let mut buf = variant.as_bytes().to_vec();
