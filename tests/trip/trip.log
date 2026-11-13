@@ -1292,7 +1292,7 @@ Underfull \hbox (badness 10000) in paragraph at lines 200--200
 {end-group character }}
 
 Underfull \hbox (badness 10000) in paragraph at lines 201--201
- [] []\rip BB-āB-āBBB
+ [] []\rip BB-B-BBB
 
 \hbox(7.0+1.0)x100.0, glue set 41.5
 .\glue(\leftskip) 3.0
@@ -1312,7 +1312,7 @@ Underfull \hbox (badness 10000) in paragraph at lines 201--201
 {end-group character }}
 
 Underfull \hbox (badness 10000) in paragraph at lines 202--202
- [] \rip BBBCāBBBB
+ [] \rip BBBCBBBB
 
 \hbox(8.0+2.0)x100.0, glue set 40.0
 .\glue(\leftskip) 3.0
@@ -1342,7 +1342,7 @@ Underfull \hbox (badness 10000) in paragraph at lines 203--203
 {\par}
 
 Underfull \hbox (badness 10000) in paragraph at lines 195--204
- []\rip A /AA-āB-āBBB-āC-āACAC//
+ []\rip A /AA-B-BBB-C-ACAC//
 
 \hbox(8.0+2.0)x100.0, glue set 33.53377
 .\glue(\leftskip) 3.0
@@ -1507,7 +1507,7 @@ e.g., type `I\font<same font id>=<substitute font name>'.
 
 {\relax}
 {\input}
-(tripos
+(tripos.tex
 {\par}
 {\uppercase}
 {the character 0}
@@ -1569,12 +1569,10 @@ Completed box being shipped out [-2.0.0.0.11]
 ...\rip A (ligature AA)
 ...\kern3.0
 ...\rip -
-..|\rip ā
 ..\rip A (ligature AA)
 ..\kern2.0
 ..\discretionary replacing 3
 ...\rip C (ligature B-)
-..|\rip ā
 ..|\rip A (ligature BB)
 ..|\kern2.0
 ..|\rip B
@@ -1584,11 +1582,9 @@ Completed box being shipped out [-2.0.0.0.11]
 ..\rip A (ligature BB)
 ..\discretionary
 ...\rip -
-..|\rip ā
 ..\discretionary replacing 1
 ...\rip C
 ...\rip -
-..|\rip ā
 ..|\rip A
 ..\rip ^^82 (ligature CA)
 ..\rip ^^82 (ligature CA)
@@ -1618,12 +1614,10 @@ Completed box being shipped out [-2.0.0.0.11]
 ...\rip A (ligature BB)
 ...\kern3.0
 ...\rip -
-..|\rip ā
 ..\rip A (ligature BB)
 ..\kern2.0
 ..\discretionary replacing 3
 ...\rip C (ligature B-)
-..|\rip ā
 ..|\rip A (ligature BB)
 ..|\kern2.0
 ..|\rip B
@@ -1643,7 +1637,6 @@ Completed box being shipped out [-2.0.0.0.11]
 ...\rip B
 ...\kern4.0
 ...\rip C
-..|\rip ā
 ..|\rip A (ligature BB)
 ..|\kern2.0
 ..|\rip B
@@ -5465,7 +5458,7 @@ and I'll forget about whatever was undefined.
 {\input}
 {\endinput}
 {\input}
-(tripos
+(tripos.tex
 \stopinput ->\error \let \input \die 
 {undefined}
 ! Undefined control sequence.
@@ -5722,7 +5715,7 @@ Missing character: There is no ? ("3F) in font trip!
 Missing character: There is no ? ("3F) in font trip!
 
 Loose \hbox (badness 62) in paragraph at lines 436--436
- [] |ip BBBāBBB 
+ [] |ip BBBBBB 
 
 |hbox(7.0+1.0)x100.0, glue set 0.85294
 .|glue(|leftskip) 3.0
@@ -5937,7 +5930,6 @@ th 9999 |showboxdepth 9999 |showlists |pagegoal =10000pt}
 ..|kern2.0
 ..|discretionary replacing 3
 ...|ip B
-..||ip ā
 ..||ip A (ligature BB)
 ..||kern2.0
 ..||ip B
@@ -6158,7 +6150,6 @@ l.439   {}{\relax{}{B\over}\endgroup\showlonglists
 ...|kern2.0
 ...|discretionary replacing 3
 ....|ip B
-...||ip ā
 ...||ip A (ligature BB)
 ...||kern2.0
 ...||ip B

@@ -11,39 +11,33 @@ Completed box being shipped out [1]
 ..\glue 0.0 plus 1.0fil minus 1.0fil
 .\vbox(643.20255+0.0)x469.75499, glue set 621.20255fill
 ..\glue(\topskip) 3.05556
-..\hbox(6.94444+0.0)x46.94456
-...\cm f
-...\cm f
-...\cm i (ligature i)
+..\hbox(6.94444+0.0)x46.1112
+...\cm ^^K (ligature ff)
+...\cm i
 ...\glue 3.33333 plus 1.66666 minus 1.11111
 ...\cm o
-...\cm f
-...\cm f
-...\cm i (ligature i)
+...\cm ^^K (ligature ff)
+...\cm i
 ...\cm c
 ...\cm e
 ...\glue 3.33333 plus 1.66666 minus 1.11111
-...\cm f
-...\cm l
-...\cm i (ligature i)
+...\cm ^^M (ligature fl)
+...\cm i
 ..\glue(\parskip) 0.0 plus 1.0
 ..\glue(\baselineskip) 5.05556
-..\hbox(6.94444+0.0)x469.75499, glue set 402.81042fil
+..\hbox(6.94444+0.0)x469.75499, glue set 403.64378fil
 ...\hbox(0.0+0.0)x20.0
-...\cm f
-...\cm f
-...\cm i (ligature i)
+...\cm ^^K (ligature ff)
+...\cm i
 ...\glue 3.33333 plus 1.66666 minus 1.11111
 ...\cm o
-...\cm f
-...\cm f
-...\cm i (ligature i)
+...\cm ^^K (ligature ff)
+...\cm i
 ...\cm c
 ...\cm e
 ...\glue 3.33333 plus 1.66666 minus 1.11111
-...\cm f
-...\cm l
-...\cm i (ligature i)
+...\cm ^^M (ligature fl)
+...\cm i
 ...\penalty 10000
 ...\glue(\parfillskip) 0.0 plus 1.0fil
 ...\glue(\rightskip) 0.0
@@ -55,4 +49,4 @@ Completed box being shipped out [1]
 ..\glue 0.0 plus 1.0fil minus 1.0fil
 
  )
-Output written on mainloop_move2_no_bchar.xdv (1 page, 252 bytes).
+Output written on mainloop_move2_no_bchar.xdv (1 page, 244 bytes).

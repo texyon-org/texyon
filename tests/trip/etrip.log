@@ -470,7 +470,7 @@ current group type (l.358): math left group
 current group type (l.396): output group
 
 ### disc group (level 18) entered at line 396 (\discretionary{}{)
-### insert group (level 17) entered at line 396 (\insert0{)
+### insert group (level 17) entered at line 396 (\vadjust{)
 ### vcenter group (level 16) entered at line 396 (\vcenter to7.0pt{)
 ### math choice group (level 15) entered at line 396 (\mathchoice{}{}{)
 ### math left group (level 14) entered at line 396 (\middle)
@@ -3243,91 +3243,91 @@ relax (l.1117)
 Checking hyphenation and \savinghyphcodes:
 
 Underfull \hbox (badness 10000) in paragraph at lines 1134--1134
- []\trip pp1āAqq []pp1āAqq []pp1āA1āqq []pp1āAqq []ppAqq
+ []\trip pp1Aqq []pp1Aqq []pp1A1qq []pp1Aqq []ppAqq
 
 \hbox(7.0+1.0)x16383.99998, glue set 1635.4 []
 
 
 Underfull \hbox (badness 10000) in paragraph at lines 1134--1134
- []\trip up1āAqq []up1āAqq []up1āA1āqq []up1āAqq []upAqq
+ []\trip up1Aqq []up1Aqq []up1A1qq []up1Aqq []upAqq
 
 \hbox(7.0+1.0)x16383.99998, glue set 1635.4 []
 
 
 Underfull \hbox (badness 10000) in paragraph at lines 1134--1134
- []\trip ppB1āqq []ppB1āqq []ppB1āqq []pp1āB1āqq []ppBqq
+ []\trip ppB1qq []ppB1qq []ppB1qq []pp1B1qq []ppBqq
 
 \hbox(8.0+2.0)x16383.99998, glue set 1634.9 []
 
 
 Underfull \hbox (badness 10000) in paragraph at lines 1134--1134
- []\trip upB1āqq []upB1āqq []upB1āqq []up1āB1āqq []upBqq
+ []\trip upB1qq []upB1qq []upB1qq []up1B1qq []upBqq
 
 \hbox(8.0+2.0)x16383.99998, glue set 1634.9 []
 
 
 Underfull \hbox (badness 10000) in paragraph at lines 1136--1136
- []\trip pp1āA1āqq []pp1āAqq []pp1āA1āqq []pp1āAqq []ppAqq
+ []\trip pp1A1qq []pp1Aqq []pp1A1qq []pp1Aqq []ppAqq
 
 \hbox(7.0+1.0)x16383.99998, glue set 1635.4 []
 
 
 Underfull \hbox (badness 10000) in paragraph at lines 1136--1136
- []\trip up1āA1āqq []up1āAqq []up1āA1āqq []up1āAqq []upAqq
+ []\trip up1A1qq []up1Aqq []up1A1qq []up1Aqq []upAqq
 
 \hbox(7.0+1.0)x16383.99998, glue set 1635.4 []
 
 
 Underfull \hbox (badness 10000) in paragraph at lines 1136--1136
- []\trip ppB1āqq []ppB1āqq []ppB1āqq []pp1āB1āqq []ppBqq
+ []\trip ppB1qq []ppB1qq []ppB1qq []pp1B1qq []ppBqq
 
 \hbox(8.0+2.0)x16383.99998, glue set 1634.9 []
 
 
 Underfull \hbox (badness 10000) in paragraph at lines 1136--1136
- []\trip upB1āqq []upB1āqq []upB1āqq []up1āB1āqq []upBqq
+ []\trip upB1qq []upB1qq []upB1qq []up1B1qq []upBqq
 
 \hbox(8.0+2.0)x16383.99998, glue set 1634.9 []
 
 
 Underfull \hbox (badness 10000) in paragraph at lines 1138--1138
- []\trip pp1āAqq []pp1āAqq []pp1āA1āqq []pp1āAqq []ppAqq
+ []\trip pp1Aqq []pp1Aqq []pp1A1qq []pp1Aqq []ppAqq
 
 \hbox(7.0+1.0)x16383.99998, glue set 1635.4 []
 
 
 Underfull \hbox (badness 10000) in paragraph at lines 1138--1138
- []\trip up1āAqq []up1āAqq []up1āA1āqq []up1āAqq []upAqq
+ []\trip up1Aqq []up1Aqq []up1A1qq []up1Aqq []upAqq
 
 \hbox(7.0+1.0)x16383.99998, glue set 1635.4 []
 
 
 Underfull \hbox (badness 10000) in paragraph at lines 1138--1138
- []\trip pp1āB1āqq []ppB1āqq []ppB1āqq []pp1āB1āqq []ppBqq
+ []\trip pp1B1qq []ppB1qq []ppB1qq []pp1B1qq []ppBqq
 
 \hbox(8.0+2.0)x16383.99998, glue set 1634.9 []
 
 
 Underfull \hbox (badness 10000) in paragraph at lines 1138--1138
- []\trip up1āB1āqq []upB1āqq []upB1āqq []up1āB1āqq []upBqq
+ []\trip up1B1qq []upB1qq []upB1qq []up1B1qq []upBqq
 
 \hbox(8.0+2.0)x16383.99998, glue set 1634.9 []
 
 
 Underfull \hbox (badness 10000) in paragraph at lines 1140--1140
- []\trip qq1āapp []qq1āapp []qqapp []qq1āapp []qqapp
+ []\trip qq1app []qq1app []qqapp []qq1app []qqapp
 
 \hbox(7.0+1.0)x16383.99998, glue set 1635.4 []
 
 
 Underfull \hbox (badness 10000) in paragraph at lines 1140--1140
- []\trip qqb1āpp []qqb1āpp []qqb1āpp []qqb1āpp []qqbpp
+ []\trip qqb1pp []qqb1pp []qqb1pp []qqb1pp []qqbpp
 
 \hbox(8.0+2.0)x16383.99998, glue set 1634.9 []
 
 
 Underfull \hbox (badness 10000) in paragraph at lines 1140--1140
- []\trip qqrpp []qqrpp []qq1ār1āpp []qq1ār1āpp []qqrpp
+ []\trip qqrpp []qqrpp []qq1r1pp []qq1r1pp []qqrpp
 
 \hbox(0.0+0.0)x16383.99998, glue set 1634.9 []
 
@@ -3613,10 +3613,9 @@ Overfull \hbox (15.0pt too wide) in paragraph at lines 1256--1256
 
 
 Overfull \hbox (12.0pt too wide) in paragraph at lines 1256--1256
-\trip āMM
+\trip MM
 
 \hbox(0.0+0.0)x0.0
-.\trip ā
 .\trip M
 .\trip M
 .\glue(\rightskip) 0.0
@@ -3637,37 +3636,10 @@ Overfull \hbox (12.0pt too wide) in paragraph at lines 1256--1256
 
 
 Overfull \hbox (12.0pt too wide) in paragraph at lines 1256--1256
-[]\trip āMM[]
+[]\trip MM[]
 
 \hbox(0.0+0.0)x0.0
 .\beginL
-.\trip ā
-.\trip M
-.\trip M
-.\endL
-.\glue(\rightskip) 0.0
-
-
-Overfull \hbox (12.0pt too wide) in paragraph at lines 1256--1256
-[]\trip MM1[]
-
-\hbox(0.0+0.0)x0.0
-.\beginL
-.\trip M
-.\trip M
-.\discretionary
-.\trip 1
-.\trip 7 (ligature |)
-.\endL
-.\glue(\rightskip) 0.0
-
-
-Overfull \hbox (12.0pt too wide) in paragraph at lines 1256--1256
-[]\trip āMM[]
-
-\hbox(0.0+0.0)x0.0
-.\beginL
-.\trip ā
 .\trip M
 .\trip M
 .\endL
@@ -3689,11 +3661,35 @@ Overfull \hbox (12.0pt too wide) in paragraph at lines 1256--1256
 
 
 Overfull \hbox (12.0pt too wide) in paragraph at lines 1256--1256
-[]\trip āMM[]
+[]\trip MM[]
 
 \hbox(0.0+0.0)x0.0
 .\beginL
-.\trip ā
+.\trip M
+.\trip M
+.\endL
+.\glue(\rightskip) 0.0
+
+
+Overfull \hbox (12.0pt too wide) in paragraph at lines 1256--1256
+[]\trip MM1[]
+
+\hbox(0.0+0.0)x0.0
+.\beginL
+.\trip M
+.\trip M
+.\discretionary
+.\trip 1
+.\trip 7 (ligature |)
+.\endL
+.\glue(\rightskip) 0.0
+
+
+Overfull \hbox (12.0pt too wide) in paragraph at lines 1256--1256
+[]\trip MM[]
+
+\hbox(0.0+0.0)x0.0
+.\beginL
 .\trip M
 .\trip M
 .\endL
@@ -3715,11 +3711,10 @@ Overfull \hbox (12.0pt too wide) in paragraph at lines 1256--1256
 
 
 Overfull \hbox (12.0pt too wide) in paragraph at lines 1256--1256
-[]\trip āMM[]
+[]\trip MM[]
 
 \hbox(0.0+0.0)x0.0
 .\beginR
-.\trip ā
 .\trip M
 .\trip M
 .\endR
