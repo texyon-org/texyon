@@ -56,3 +56,16 @@ tldocs/latex/pgf-interference/pgf-interference-en	upstream stops at its 5M-word 
 tldocs/latex/pgf-interference/pgf-interference-de	upstream stops at its 5M-word main memory, TeXyoN's memory is larger and typesets the whole document
 arxiv/2603.01379	main file in tex/ with figures in fig/: TeXyoN's CLI resolves paths from the main file's directory, upstream from the working directory
 tldocs/latex/thaienum/thaienum	Thai line breaking comes from ICU: TeXyoN links the system ICU (74 here), upstream TeX Live 2025 ships ICU 76.1
+tldocs/generic/pst-3d/pst-3d-doc	upstream aborts with "bad native font flag" at an OpenType math accent over a TFM letter, TeXyoN typesets the rest (UPSTREAM_BUGS.md 24)
+tldocs/generic/pst-arrow/pst-arrow-doc	upstream aborts with "bad native font flag" at an OpenType math accent over a TFM letter, TeXyoN typesets the rest (UPSTREAM_BUGS.md 24)
+tldocs/generic/pst-bezier/pst-bezier-doc	upstream aborts with "bad native font flag" at an OpenType math accent over a TFM letter, TeXyoN typesets the rest (UPSTREAM_BUGS.md 24)
+tldocs/generic/pst-circ/pst-circ-doc	upstream aborts with "bad native font flag" at an OpenType math accent over a TFM letter, TeXyoN typesets the rest (UPSTREAM_BUGS.md 24)
+tldocs/generic/pst-marble/pst-marble-doc	upstream aborts with "bad native font flag" at an OpenType math accent over a TFM letter, TeXyoN typesets the rest (UPSTREAM_BUGS.md 24)
+tldocs/generic/pst-mirror/pst-mirror-doc	upstream aborts with "bad native font flag" at an OpenType math accent over a TFM letter, TeXyoN typesets the rest (UPSTREAM_BUGS.md 24)
+tldocs/generic/pst-tree/pst-tree-doc	upstream aborts with "bad native font flag" at an OpenType math accent over a TFM letter, TeXyoN typesets the rest (UPSTREAM_BUGS.md 24)
+tldocs/generic/pst-tvz/pst-tvz-doc	upstream aborts with "bad native font flag" at an OpenType math accent over a TFM letter, TeXyoN typesets the rest (UPSTREAM_BUGS.md 24)
+tldocs/generic/pstricks-add/pstricks-add-doc	upstream aborts with "bad native font flag" at an OpenType math accent over a TFM letter, TeXyoN typesets the rest (UPSTREAM_BUGS.md 24)
+tldocs/generic/pst-vehicle/pst-vehicle-doc	upstream aborts with "bad native font flag" at an OpenType math accent over a TFM letter, TeXyoN typesets the rest (UPSTREAM_BUGS.md 24)
+tldocs/generic/pst-vehicle/pst-vehicle-doc-fr	upstream aborts with "bad native font flag" at an OpenType math accent over a TFM letter, TeXyoN typesets the rest (UPSTREAM_BUGS.md 24)
+tldocs/generic/pst-perspective/pst-perspective-doc	upstream stops at its 5M-word main memory in a 900-node pstricks picture, TeXyoN's memory is larger (equal output once upstream gets extra_mem_top)
+tldocs/generic/pst-perspective/pst-perspective-docEN	upstream stops at its 5M-word main memory in a 900-node pstricks picture, TeXyoN's memory is larger (equal output once upstream gets extra_mem_top)
