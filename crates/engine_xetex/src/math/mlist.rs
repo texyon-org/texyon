@@ -844,30 +844,22 @@ fn make_math_accent(
     let mut s = Scaled::ZERO;
     let mut x: NodePtr<BoxNode>;
     if is_native {
-        if !bottom_accent {
-            s = compute_ot_math_accent_pos(st, q, style)?;
-        }
+        let attach = if bottom_accent {
+            None
+        } else {
+            Some(compute_ot_math_accent_pos(st, q, style)?)
+        };
         x = clean_box(st, st.mem[n].nucleus, style.cramped())?;
+        s = match attach {
+            None => Scaled::ZERO,
+            Some(AccentAttach::At(pos)) => pos,
+            Some(AccentAttach::Skew(skew)) => st.mem[x].width.half() + skew,
+            Some(AccentAttach::Centre) => INFINITE_DIMEN,
+        };
     } else if let Some(mut acc_i) = accent.i {
         if st.mem[n].nucleus.math_type == MATH_CHAR {
             let nucleus = fetch(st, MathSlot::Nucleus(n), style.size())?;
-            if let Some(CharTag::Lig(start)) = nucleus.i.map(|i| i.tag) {
-                let cur_f = nucleus.f;
-                let (mut a, mut step) = st.fonts.lig_kern_start(cur_f, start)?;
-                let skew_char = LigChar::from_raw(st.fonts.skew_char[cur_f]);
-                s = loop {
-                    match step.action_for(skew_char) {
-                        Some(LigKernAction::Kern(kern)) => break kern,
-                        Some(LigKernAction::Lig { .. }) => break Scaled::ZERO,
-                        None => {}
-                    }
-                    let Some(next) = step.next(a) else {
-                        break Scaled::ZERO;
-                    };
-                    a = next;
-                    step = st.fonts.lig_kern_step(cur_f, a)?;
-                };
-            }
+            s = tfm_skew(st, &nucleus)?;
         }
         x = clean_box(st, st.mem[n].nucleus, style.cramped())?;
         let w = st.mem[x].width;
@@ -1591,30 +1583,71 @@ impl MemState {
     }
 }
 
+/// The kern between the nucleus character and its font's `\skewchar`, which shifts an accent.
+fn tfm_skew(st: &EngineState, nucleus: &Fetched) -> Result<Scaled, Abort> {
+    let Some(CharTag::Lig(start)) = nucleus.i.map(|i| i.tag) else {
+        return Ok(Scaled::ZERO);
+    };
+    let f = nucleus.f;
+    let (mut a, mut step) = st.fonts.lig_kern_start(f, start)?;
+    let skew_char = LigChar::from_raw(st.fonts.skew_char[f]);
+    loop {
+        match step.action_for(skew_char) {
+            Some(LigKernAction::Kern(kern)) => return Ok(kern),
+            Some(LigKernAction::Lig { .. }) => return Ok(Scaled::ZERO),
+            None => {}
+        }
+        let Some(next) = step.next(a) else {
+            return Ok(Scaled::ZERO);
+        };
+        a = next;
+        step = st.fonts.lig_kern_step(f, a)?;
+    }
+}
+
+/// Where an OpenType accent goes over its nucleus.
+enum AccentAttach {
+    /// The nucleus glyph's attachment point, from its left edge.
+    At(Scaled),
+    /// A TFM nucleus character: its skew from the centre.
+    Skew(Scaled),
+    /// Centred, for lack of attachment data.
+    Centre,
+}
+
 fn compute_ot_math_accent_pos(
     st: &mut EngineState,
     mut p: NodePtr<AccentNoad>,
     style: MathStyle,
-) -> Result<Scaled, Abort> {
+) -> Result<AccentAttach, Abort> {
     loop {
         match st.mem[p].base.nucleus.math_type {
             MATH_CHAR => {
-                let Fetched { f, c, .. } = fetch(st, MathSlot::Nucleus(p.as_noad()), style.size())?;
-                let q = crate::fonts::new_native_character(st, f, c as u32)?;
+                let nucleus = fetch(st, MathSlot::Nucleus(p.as_noad()), style.size())?;
+                // XeTeX takes the nucleus for a native character and aborts (upstream bug 24).
+                if !st.fonts.is_native_font(nucleus.f) {
+                    return Ok(AccentAttach::Skew(tfm_skew(st, &nucleus)?));
+                }
+                let q = crate::fonts::new_native_character(st, nucleus.f, nucleus.c as u32)?;
                 let g = st.mem.get_native_glyph(q, 0);
-                return Ok(st.fonts.get_ot_math_accent_pos(f, i32::from(g)));
+                let pos = st.fonts.get_ot_math_accent_pos(nucleus.f, i32::from(g));
+                return Ok(if pos == INFINITE_DIMEN {
+                    AccentAttach::Centre
+                } else {
+                    AccentAttach::At(pos)
+                });
             }
             SUB_MLIST => {
                 let r = st.mem[p].base.nucleus.info();
                 match r.map(|ri| st.mem.classify_noad(ri)) {
                     Some(Ok(Some(rn))) => match rn.variant(&st.mem) {
                         NoadVariant::Accent(a) => p = a,
-                        _ => return Ok(INFINITE_DIMEN),
+                        _ => return Ok(AccentAttach::Centre),
                     },
-                    _ => return Ok(INFINITE_DIMEN),
+                    _ => return Ok(AccentAttach::Centre),
                 }
             }
-            _ => return Ok(INFINITE_DIMEN),
+            _ => return Ok(AccentAttach::Centre),
         }
     }
 }

@@ -336,3 +336,21 @@ entry names a later TeX Live version.
 - **Fix:** `index -= langCount` before the GPOS lookup, as in `getIndFeature`.
 - **TeXyoN:** takes the count off (`Font::ind_language` in `xetex_layout`), test `ot_languages`
   in `tests/tex-outputs.rs`. Not reported yet.
+
+## 24. An OpenType math accent over a TFM character aborts
+
+- **Where:** `compute_ot_math_accent_pos`, line 17794, and `map_char_to_glyph` in `XeTeX_ext.c`,
+  line 2280.
+- **Bug:** when the accent font is native, `make_math_accent` asks the nucleus for its OpenType
+  attachment point. `compute_ot_math_accent_pos` fetches the nucleus character and calls
+  `new_native_character` on its font without checking that the font is native. For a TFM
+  character this reaches `map_char_to_glyph`, which prints "Internal error: bad native font flag"
+  and exits with status 3. The log stops mid-line and no further pages are written.
+- **Repro:** cmmi10 in family 1 and x's mathcode `"7178`, an OpenType font in family 4, then
+  `$\Umathaccent 0 4 "7E x$`. In LaTeX it happens when `\tilde` comes from an OpenType math font
+  and the letters from cmmi10: the pstricks manuals load `lua-unicode-math` under XeTeX (13 TeX
+  Live docs abort, `pst-tree-doc` among them).
+- **Fix:** for a TFM nucleus, place the accent by the character's skew (its kern with
+  `\skewchar`), as a TFM accent would.
+- **TeXyoN:** does that (`AccentAttach::Skew` in `math/mlist.rs`), test
+  `an_opentype_accent_over_a_tfm_character_takes_its_skew`. Not reported yet.

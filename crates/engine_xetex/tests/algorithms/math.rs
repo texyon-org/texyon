@@ -299,3 +299,31 @@ fn umathaccent_keywords_place_the_accent() {
         .\mathoff",
     );
 }
+
+#[test]
+fn an_opentype_accent_over_a_tfm_character_takes_its_skew() {
+    // XeTeX aborts here with "bad native font flag" (upstream bug 24).
+    let r = run(&format!(
+        "{MATH_FONTS}\\font\\lm=\"[lmroman12-regular.otf]\" \\textfont4=\\lm \\scriptfont4=\\lm
+         \\scriptscriptfont4=\\lm \\def\\a{{$\\Umathaccent0 4 \"7E x$}}
+         \\setbox0\\hbox{{\\a}}\\skewchar\\mi=127 \\setbox1\\hbox{{\\a}}\\showbox0 \\showbox1"
+    ));
+    let accent = |shift: &str| {
+        format!(
+            r"
+        \hbox(4.30554+0.0)x5.71527
+        .\mathon
+        .\vbox(4.30554+0.0)x5.71527
+        ..\kern0.60773
+        ..\hbox(3.69781+0.0)x0.0, shifted {shift}
+        ...\lm glyph#31
+        ..\kern-4.30554
+        ..\hbox(4.30554+0.0)x5.71527
+        ...\mi x
+        .\mathoff"
+        )
+    };
+    // cmmi10 kerns x against its skew character 127 by 0.27779pt.
+    assert_lines(&r.boxes()[0], &accent("-0.49088"));
+    assert_lines(&r.boxes()[1], &accent("-0.21309"));
+}
