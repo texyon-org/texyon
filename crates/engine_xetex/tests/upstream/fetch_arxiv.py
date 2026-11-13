@@ -6,7 +6,7 @@ each source as a tarball under $TEXYON_CORPUS_DIR/arxiv (default
 ~/.cache/tectonic-corpus/arxiv). Requests are spaced as arXiv asks of
 automated clients, so a large sample takes a while. Reruns skip what exists.
 
-    crates/engine_xetex/tests/upstream/fetch_arxiv.py [--per-category N]
+    crates/engine_xetex/tests/upstream/fetch_arxiv.py [--per-category N] [--categories A,B]
 """
 
 import argparse
@@ -88,13 +88,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--per-category", type=int, default=50)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--categories", help="comma-separated subset of CATEGORIES")
     args = ap.parse_args()
     root = Path(os.environ.get("TEXYON_CORPUS_DIR", Path.home() / ".cache/tectonic-corpus")) / "arxiv"
     root.mkdir(parents=True, exist_ok=True)
     skip = root / "not-latex.txt"
     skipped = set(skip.read_text().split()) if skip.exists() else set()
     rng = random.Random(args.seed)
-    for cat in CATEGORIES:
+    cats = args.categories.split(",") if args.categories else CATEGORIES
+    unknown = set(cats) - set(CATEGORIES)
+    if unknown:
+        raise SystemExit(f"unknown categories: {', '.join(sorted(unknown))}")
+    for cat in cats:
         try:
             ids = ids_for(cat, args.per_category, rng)
         except OSError as e:
