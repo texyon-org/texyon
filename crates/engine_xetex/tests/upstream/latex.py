@@ -109,9 +109,25 @@ class TeXLive:
 
     def prepare(self):
         self.work.mkdir(parents=True, exist_ok=True)
+        self._clock()
         self._fontconfig()
         self._bundle()
         self._format()
+
+    def _clock(self):
+        """A preload that stops upstream's clock at the epoch.
+
+        Upstream seeds `\\randomseed` from the clock even with SOURCE_DATE_EPOCH. At the epoch
+        its seed is 0, as TeXyoN's is in deterministic mode with a build date of 0.
+        """
+        self.clock = self.work / "epoch-clock.so"
+        src = self.work / "epoch-clock.c"
+        src.write_text(
+            "struct timeval { long tv_sec; long tv_usec; };\n"
+            "int gettimeofday(struct timeval *tv, void *tz) {\n"
+            "  (void)tz; if (tv) { tv->tv_sec = 0; tv->tv_usec = 0; } return 0;\n}\n")
+        subprocess.run(["cc", "-shared", "-fPIC", "-O2", "-o", str(self.clock), str(src)],
+                       check=True)
 
     def _fontconfig(self):
         self.fontconfig.parent.mkdir(parents=True, exist_ok=True)
@@ -201,7 +217,7 @@ class TeXLive:
             r = subprocess.run(
                 [self.xetex, "-fmt=xelatex", "-progname=xelatex", "-no-pdf", "-no-shell-escape",
                  "-interaction=nonstopmode", case.main],
-                cwd=d, env=self.env(), stdin=subprocess.DEVNULL,
+                cwd=d, env=dict(self.env(), LD_PRELOAD=str(self.clock)), stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=case.timeout)
             if r.returncode < 0:
                 return f"upstream xetex died with signal {-r.returncode}"
@@ -258,7 +274,7 @@ def resolve_moves(lines):
 
 
 # Bump when the way upstream is run changes, so cached results are redone.
-CACHE_VERSION = "3"
+CACHE_VERSION = "4"
 FATAL_MARKS = ("(That makes 100 errors; please try again.)", "! Emergency stop.",
                "! TeX capacity exceeded", "*** (job aborted")
 FONT_DEF_RX = re.compile(r"^(nativefont|fntdef) (\d+) ")
@@ -300,16 +316,11 @@ def normalize_xdv(lines):
     lines = [FONT_EXT_RX.sub(r"\1\3", line) for line in lines]
     # Pictures from the TeX Live tree carry the path kpathsea found, as in the log.
     lines = [PATH_RX.sub("", line) if line.startswith("xxx") else line for line in lines]
-    # Upstream seeds its random numbers from the clock, so l3pdf's namespace UUIDs differ per run.
-    lines = [UUID_RX.sub(r"\1UUID", line) if line.startswith("xxx") else line for line in lines]
     return drop_empty_pushes(renumber_fonts(resolve_moves(lines)))
 
 
-UUID_RX = re.compile(r"(/NS \(data:,)[0-9A-F]{1,8}-[0-9A-F]{1,4}-[0-9A-F]{1,4}-[0-9A-F]{1,4}-[0-9A-F]{1,12}")
 
 
-# The same UUIDs as they show in a log, maybe cut short by `\ETC.`.
-LOG_UUID_RX = re.compile(r"data:,[0-9A-F]{1,8}-[0-9A-F-]*")
 
 
 def xdv_lines(path, xdv_pages):
@@ -371,7 +382,6 @@ def latex_text(raw, main, width=79):
         out.append(buf)
     text = "\n".join(out)
     text = PATH_RX.sub(strip_path, text).replace(JOIN, "").replace("(./", "(")
-    text = LOG_UUID_RX.sub("data:,UUID", text)
     text = re.sub(r"(Output written on \S+ \(\d+ pages?), \d+ bytes\)\.", r"\1).", text)
     # Upstream's terminal holds the command line, TeXyoN's is empty.
     text = text.replace("<*> " + main, "<*> ")

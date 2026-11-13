@@ -24,7 +24,6 @@ CAUSES = [
     ("file found by case-insensitive lookup upstream", "tt", r"^LaTeXWarning:File`[^']*'notfound"),
     ("installed font traced from freed memory upstream (UPSTREAM_BUGS.md 21)", "tt",
      r"^\S*\.(otf|ttf|otc|ttc)Requestedfont"),
-    ("upstream seeds \\randomseed from the clock", "tl", r"^[0-9A-F]{1,8}-[0-9A-F]{1,4}-"),
     ("harness: tl-nostat counts stand in for STAT tracing upstream", "tl", r"\\count3276\d"),
     ("generated font upstream (mktex, off from the next run)", "tl", r"^Badmetric\(TFM\)file"),
     ("main memory: TeXyoN caps at 64M words, upstream at 5M", "tl",
@@ -51,7 +50,6 @@ def first_difference(lines):
 # XDV causes, matched against the first upstream line that differs.
 XDV_CAUSES = [
     ("hyperxmp dates its metadata from the log file being written", r"pdf:stream @hyxmp@Metadata"),
-    ("upstream seeds \\randomseed from the clock", r"/NS \(data:,[0-9A-F-]{36}\)"),
     ("embedded file dates: TeX Live files have mtimes, bundle files none", r"pdf:fstream .*/ModDate"),
 ]
 
