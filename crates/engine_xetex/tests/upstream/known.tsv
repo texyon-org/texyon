@@ -69,3 +69,5 @@ tldocs/generic/pst-vehicle/pst-vehicle-doc	upstream aborts with "bad native font
 tldocs/generic/pst-vehicle/pst-vehicle-doc-fr	upstream aborts with "bad native font flag" at an OpenType math accent over a TFM letter, TeXyoN typesets the rest (UPSTREAM_BUGS.md 24)
 tldocs/generic/pst-perspective/pst-perspective-doc	upstream stops at its 5M-word main memory in a 900-node pstricks picture, TeXyoN's memory is larger (equal output once upstream gets extra_mem_top)
 tldocs/generic/pst-perspective/pst-perspective-docEN	upstream stops at its 5M-word main memory in a 900-node pstricks picture, TeXyoN's memory is larger (equal output once upstream gets extra_mem_top)
+tldocs/generic/pst-fill/pst-fill-doc	a boxfill loop never ends: upstream stops at its 5M-word main memory, TeXyoN at its 64M words, at the same point
+tldocs/generic/pst-moire/pst-moire-doc	upstream stops at its 5M-word main memory in a runaway pstricks argument, TeXyoN's memory is larger and stops later at 64M words

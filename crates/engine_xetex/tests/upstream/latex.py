@@ -407,32 +407,45 @@ SCRIPT_TAG_RX = re.compile(r"script=\w+;")
 SCRIPT_NOTE_RX = re.compile(
     r"PackagefontspecInfo:(\(fontspec\))?Script'[^']*'notexplicitlysupportedwithinfont"
     r".{0,400}?differentfontshouldbechosen\.")
-# Upstream bug 21: TL's \XeTeXtracingfonts prints freed memory for fonts found by name.
-FOUND_BY_NAME_RX = re.compile(r'(Requested font "[^\["][^"]*" at [0-9.]+pt\n -> )[^\n]*')
-UPSTREAM_BUGS = (
-    (18, lambda t: t, lambda t: SCRIPT_NOTE_RX.sub("", SCRIPT_TAG_RX.sub("", t))),
-    (21, lambda t: FOUND_BY_NAME_RX.sub(r"\1", t), lambda t: t),
-)
+# Upstream bug 21: TL's \XeTeXtracingfonts prints freed memory, up to a NUL, for fonts found by name.
+REQUEST_BY_NAME_RX = re.compile(r'(Requestedfont"[^\["][^"]*"at[0-9.]+pt->)')
+FONT_FILE_RX = re.compile(r"[\w.+-]*?\.(otf|ttf|otc|ttc|dfont)", re.I)
+FREED_MEMORY_MAX = 64
 
 
-def without_upstream_bugs(text, bugs):
-    for n, raw, squeezed in UPSTREAM_BUGS:
-        if n in bugs:
-            text = raw(text)
-    text = squeeze(text)
-    for n, raw, squeezed in UPSTREAM_BUGS:
-        if n in bugs:
-            text = squeezed(text)
-    return text
+def without_script_choice(text):
+    return SCRIPT_NOTE_RX.sub("", SCRIPT_TAG_RX.sub("", text))
+
+
+def same_but_found_names(tl, tt):
+    """Equal once TL's freed memory after each font request by name stands for TeXyoN's file name."""
+    a, b = REQUEST_BY_NAME_RX.split(tl), REQUEST_BY_NAME_RX.split(tt)
+    if len(a) != len(b) or a[0] != b[0]:
+        return False
+    for i in range(1, len(a), 2):
+        if a[i] != b[i]:
+            return False
+        name = FONT_FILE_RX.match(b[i + 1])
+        ends = [0, name.end()] if name else [0]
+        if not any(a[i + 1].endswith(b[i + 1][e:])
+                   and len(a[i + 1]) - (len(b[i + 1]) - e) <= FREED_MEMORY_MAX for e in ends):
+            return False
+    return True
+
+
+def same_with_bugs(tl, tt, bugs):
+    if 18 in bugs:
+        tl, tt = without_script_choice(tl), without_script_choice(tt)
+    return same_but_found_names(tl, tt) if 21 in bugs else tl == tt
 
 
 def upstream_bugs_explain(tl_log, log):
     """The upstream bugs whose log effects are all that separates the logs, or None."""
-    every = {n for n, _, _ in UPSTREAM_BUGS}
-    if without_upstream_bugs(tl_log, every) != without_upstream_bugs(log, every):
+    tl, tt = squeeze(tl_log), squeeze(log)
+    every = {18, 21}
+    if not same_with_bugs(tl, tt, every):
         return None
-    return [n for n in sorted(every)
-            if without_upstream_bugs(tl_log, every - {n}) != without_upstream_bugs(log, every - {n})]
+    return [n for n in sorted(every) if not same_with_bugs(tl, tt, every - {n})]
 
 
 def log_diff(a, b, context=300):
