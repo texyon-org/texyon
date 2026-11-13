@@ -40,3 +40,18 @@ hyph-recon_y	upstream emits a bogus max_hyph_char node for the left boundary of 
 hyph-word_end_contexts	upstream emits a bogus max_hyph_char node for the left boundary of a reconstituted word and loses the boundary program, TeXyoN matches Knuth TeX here (UPSTREAM_BUGS.md 17)
 limits-many_marks	upstream do_marks visits 16 of the 64 slots of each sparse-array index node, so classes 100 and 32767 never carry over, TeXyoN visits all of them (UPSTREAM_BUGS.md 2)
 docs/cjk	upstream reads the GSUB script list twice (UPSTREAM_BUGS.md 18), so fontspec warns that FandolSong lacks CJK
+tldocs/latex/writeongrid/WriteOnGrid-5x5-A4	upstream emits a bogus max_hyph_char node when it reconstitutes a hyphenated word and loses the left boundary ligature of frcursive (UPSTREAM_BUGS.md 17)
+tldocs/latex/writeongrid/WriteOnGrid-Ruled-A5	upstream emits a bogus max_hyph_char node when it reconstitutes a hyphenated word and loses the left boundary ligature of frcursive (UPSTREAM_BUGS.md 17)
+tldocs/latex/writeongrid/WriteOnGrid-Seyes-A5	upstream emits a bogus max_hyph_char node when it reconstitutes a hyphenated word and loses the left boundary ligature of frcursive (UPSTREAM_BUGS.md 17)
+tldocs/latex/writeongrid/WriteOnGrid-doc-en	upstream emits a bogus max_hyph_char node when it reconstitutes a hyphenated word and loses the left boundary ligature of frcursive (UPSTREAM_BUGS.md 17)
+tldocs/latex/writeongrid/WriteOnGrid-doc-fr	upstream emits a bogus max_hyph_char node when it reconstitutes a hyphenated word and loses the left boundary ligature of frcursive (UPSTREAM_BUGS.md 17)
+tldocs/latex/worldflags/worldflags	upstream stops at its 5M-word main memory, TeXyoN's memory is larger and typesets the whole document
+tldocs/latex/twoxtwogame/twoxtwogame_doc	upstream stops at its 5M-word main memory, TeXyoN's memory is larger and typesets the whole document
+tldocs/xelatex/quran-id/quran-id-doc	upstream stops at its 5M-word main memory, TeXyoN's memory is larger and typesets the whole document
+tldocs/generic/pst-perspective/Parallelprojektion-Kreis	upstream stops at its 5M-word main memory, TeXyoN's memory is larger and typesets the whole document
+tldocs/generic/pst-perspective/pst-perspective-doc	upstream stops at its 5M-word main memory, TeXyoN's memory is larger and typesets the whole document
+tldocs/generic/pst-perspective/pst-perspective-docEN	upstream stops at its 5M-word main memory, TeXyoN's memory is larger and typesets the whole document
+tldocs/latex/pgf-interference/pgf-interference-en	upstream stops at its 5M-word main memory, TeXyoN's memory is larger and typesets the whole document
+tldocs/latex/pgf-interference/pgf-interference-de	upstream stops at its 5M-word main memory, TeXyoN's memory is larger and typesets the whole document
+arxiv/2603.01379	main file in tex/ with figures in fig/: TeXyoN's CLI resolves paths from the main file's directory, upstream from the working directory
+tldocs/latex/thaienum/thaienum	Thai line breaking comes from ICU: TeXyoN links the system ICU (74 here), upstream TeX Live 2025 ships ICU 76.1
