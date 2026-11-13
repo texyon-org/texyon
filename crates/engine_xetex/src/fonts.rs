@@ -418,6 +418,7 @@ pub(crate) fn read_font_info(
     let font = FontSpec::new(u, name, s);
     let mut name_too_long = false;
     let mut file_opened = false;
+    let mut opened_name = Vec::new();
     let mut g = NULL_FONT;
     let mut tfm_file = INVALID_HANDLE;
 
@@ -470,7 +471,7 @@ pub(crate) fn read_font_info(
             bad!();
         }
 
-        let Some((file, _)) = open_input_file(st, tfm_name, FileFormat::Tfm) else {
+        let Some((file, found)) = open_input_file(st, tfm_name, FileFormat::Tfm) else {
             if !name.quoted {
                 g = load_native_font(st, font, &path)?;
                 if g != NULL_FONT {
@@ -481,6 +482,7 @@ pub(crate) fn read_font_info(
         };
         tfm_file = file;
         file_opened = true;
+        opened_name = found.name;
 
         let mut too_big = false;
         let fonts = &st.fonts;
@@ -544,7 +546,7 @@ pub(crate) fn read_font_info(
         if g == NULL_FONT {
             print(st, "font not found, using \"nullfont\"");
         } else {
-            print(st, tfm_name);
+            print(st, opened_name.as_slice());
         }
         end_diagnostic(st, false);
     }

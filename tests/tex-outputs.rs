@@ -228,6 +228,13 @@ fn file_encoding() {
         .go()
 }
 
+#[test]
+fn tracing_found_font() {
+    TestCase::new("tracing_found_font")
+        .expect(Ok(TexOutcome::Warnings))
+        .go()
+}
+
 // Works around an issue where old (~2.7) Harfbuzz lays out glyphs differently.
 // Remove this once all external Harfbuzz versions don't exhibit the glyph-swapping behavior.
 #[cfg(not(any(feature = "external-harfbuzz", target_arch = "x86")))]

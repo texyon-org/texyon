@@ -602,6 +602,7 @@ pub(crate) fn find_native_font(
         };
         if let Some(font) = font_from_file(path, split.index, scaled_size) {
             set_loaded_font_design_size(d2fix(font.design_size()));
+            let found = font.found_name().to_vec();
 
             set_req_engine(Engine::Default);
             if let Some(var) = &var_string {
@@ -620,7 +621,7 @@ pub(crate) fn find_native_font(
                 crate::output::begin_diagnostic(st);
                 crate::output::print_nl(st, b' ');
                 crate::output::print_raw_bytes(st, b"-> ");
-                crate::output::print_raw_bytes(st, path);
+                crate::output::print_raw_bytes(st, &found);
                 crate::output::end_diagnostic(st, false);
             }
         }

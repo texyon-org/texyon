@@ -166,6 +166,8 @@ pub struct Font {
     vertical: bool,
 
     filename: CString,
+    /// The name the font file was found under.
+    found_name: Vec<u8>,
     index: u32,
 
     ft_face: Option<Arc<Mutex<ft::Face>>>,
@@ -228,6 +230,7 @@ impl Font {
             italic_angle: 0.0,
             vertical: false,
             filename: CString::new("").unwrap(),
+            found_name: Vec::new(),
             index: 0,
             ft_face: None,
             hb_font: None,
@@ -253,6 +256,7 @@ impl Font {
             italic_angle: 0.0,
             vertical: false,
             filename: CString::new("").unwrap(),
+            found_name: Vec::new(),
             index: 0,
             ft_face: None,
             hb_font: None,
@@ -275,6 +279,7 @@ impl Font {
             .or_else(|| io.input_open(pathname, FileFormat::TrueType, false))
             .or_else(|| io.input_open(pathname, FileFormat::Type1, false))
             .ok_or(())?;
+        self.found_name = io.latest_input_found().name(pathname.as_bytes());
 
         let sz = io.input_get_size(handle);
         let mut backing_data = vec![0; sz];
@@ -493,6 +498,11 @@ impl Font {
     /// The path of the font file.
     pub fn filename(&self) -> &[u8] {
         self.filename.to_bytes()
+    }
+
+    /// The name the font file was found under, with any extension or case fold applied.
+    pub fn found_name(&self) -> &[u8] {
+        &self.found_name
     }
 
     /// The face index within the font file.
