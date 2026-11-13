@@ -317,9 +317,9 @@ export interface EngineOptions {
    * The index beside it (`<url>.index.gz`) is fetched once in the background;
    * individual files are then single HTTP range requests.
    *
-   * The host must allow cross-origin range requests. `relay.fullyjustified.net`
-   * does not, so the demo proxies it; a real deployment wants its own mirror or
-   * proxy. Leave unset to run pack-only.
+   * The host must allow cross-origin range requests, as
+   * `https://bundles.texyon.org/texlive2026.ttb` does. Leave unset to run
+   * pack-only.
    */
   bundleUrl?: string;
   /**

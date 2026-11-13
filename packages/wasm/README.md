@@ -56,10 +56,10 @@ Two build artifacts have to be reachable from the page:
 
 Optionally a third, and it is what makes arbitrary `\usepackage` work:
 
-- `bundleUrl` — a Tectonic bundle tar. Its index is fetched once in the
-  background; individual files are then single HTTP range requests. The host has
-  to allow cross-origin range requests, which `relay.fullyjustified.net` does
-  not, so serve it from your own mirror or proxy it.
+- `bundleUrl` — a `.ttb` bundle, or a tar with its index. The index is fetched
+  once in the background, and individual files are then single HTTP range
+  requests, so the host has to allow cross-origin range requests.
+  `https://bundles.texyon.org/texlive2026.ttb` does.
 
 Both paths are configurable through {@link EngineOptions}. They are resolved
 against the page, not against the Worker script.

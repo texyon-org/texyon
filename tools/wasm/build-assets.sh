@@ -33,7 +33,7 @@ fi
 # The same bundle the browser reads at runtime. Seeding from the default
 # bundle instead bakes an older LaTeX kernel into the format, and any package
 # fetched on demand then fails with mismatched L3 support files.
-BUNDLE_URL="${BUNDLE_URL:-https://s3.de-1.yendric.be/uploads/01a0117b-2294-7203-bb52-edb7070f93fb/texlive2026.ttb}"
+BUNDLE_URL="${BUNDLE_URL:-https://bundles.texyon.org/texlive2026.ttb}"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT

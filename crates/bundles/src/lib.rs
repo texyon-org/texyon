@@ -36,8 +36,7 @@ use ttb_net::TTBNetBundle;
 use zip::ZipBundle;
 
 /// The TeX Live 2026 bundle the web editor also serves.
-const DEFAULT_BUNDLE_URL: &str =
-    "https://s3.de-1.yendric.be/uploads/01a0117b-2294-7203-bb52-edb7070f93fb/texlive2026.ttb";
+const DEFAULT_BUNDLE_URL: &str = "https://bundles.texyon.org/texlive2026.ttb";
 
 // How many times network bundles should retry
 // a download, and how long they should wait

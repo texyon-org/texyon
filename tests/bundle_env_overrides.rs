@@ -4,8 +4,7 @@ use std::env;
 use std::path::PathBuf;
 use std::process::Command;
 
-const DEFAULT_BUNDLE_URL: &str =
-    "https://s3.de-1.yendric.be/uploads/01a0117b-2294-7203-bb52-edb7070f93fb/texlive2026.ttb";
+const DEFAULT_BUNDLE_URL: &str = "https://bundles.texyon.org/texlive2026.ttb";
 const TEST_BUNDLE_LOCKED: &str = "https://example.com/locked_bundle.tar";
 
 /// Runs the test project and gets the output
