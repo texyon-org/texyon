@@ -173,5 +173,9 @@ mod inner {
 }
 
 fn main() {
+    // Cargo's default change detection does not look inside the submodule.
+    println!("cargo:rerun-if-changed=build.rs");
+    #[cfg(not(feature = "external-harfbuzz"))]
+    println!("cargo:rerun-if-changed=harfbuzz/src");
     inner::build_harfbuzz();
 }
