@@ -218,6 +218,15 @@ fn casefold_input() {
 }
 
 #[test]
+fn nul_name() {
+    util::set_test_root();
+
+    TestCase::new("nul_name")
+        .with_fs(&test_path(&["tex-outputs"]))
+        .go()
+}
+
+#[test]
 fn file_encoding() {
     // Need to do this here since we call test_path unusually early.
     util::set_test_root();

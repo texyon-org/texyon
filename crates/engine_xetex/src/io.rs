@@ -714,12 +714,17 @@ pub(crate) struct FileName {
 }
 
 impl FileName {
-    /// The name as one path: area, name, then extension.
+    /// The name as one path: area, name, then extension. Like TeX Live's C
+    /// string of the joined name, it ends at the first NUL.
     pub(crate) fn path(self, strings: &crate::state::StringsState) -> Vec<u8> {
-        [self.area, self.name, self.ext]
+        let mut path: Vec<u8> = [self.area, self.name, self.ext]
             .into_iter()
-            .flat_map(|part| strings.texstring_bytes(part))
-            .collect()
+            .flat_map(|part| strings.texstring_utf8(part))
+            .collect();
+        if let Some(nul) = path.iter().position(|&b| b == 0) {
+            path.truncate(nul);
+        }
+        path
     }
 }
 
