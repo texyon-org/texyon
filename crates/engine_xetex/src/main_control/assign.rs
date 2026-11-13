@@ -221,10 +221,16 @@ fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     };
     let f = 'search: {
         for f in st.fonts.font_ptr.loaded() {
-            let area_matches = (st.strings.length(file.area) == 0 && st.fonts.is_native_font(f))
-                || st.strings.str_eq_str(st.fonts.font_area[f], file.area);
+            // A native font's area holds its font type, which no area string can match.
+            let area_matches = |st: &EngineState| {
+                if st.fonts.is_native_font(f) {
+                    st.strings.length(file.area) == 0
+                } else {
+                    st.strings.str_eq_str(st.fonts.font_area[f], file.area)
+                }
+            };
             if st.strings.str_eq_str(st.fonts.font_name[f], file.name)
-                && area_matches
+                && area_matches(st)
                 && size_matches(st, f)
             {
                 break 'search f;

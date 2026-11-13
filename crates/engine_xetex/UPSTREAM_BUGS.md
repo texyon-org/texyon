@@ -275,3 +275,17 @@ entry names a later TeX Live version.
 - **TeXyoN:** uses the font's space parameter (`shape_interword_space`), so the kern is what
   upstream gives whenever `font_glue` exists. Test `mainloop_spaceskip_shaping` in
   `tests/tex-outputs.rs`. Not reported yet.
+
+## 20. `\font` compares a native font's type flag as an area string
+
+- **Where:** `new_font`, line 28327, `str_eq_str(font_area[f],cur_area)`.
+- **Bug:** a native font's `font_area` is `aat_font_flag` or `otgr_font_flag`, not a string. When
+  the requested name has an area and matches a native font's name, `str_eq_str` reads the flag as
+  a string: its length is that of the printed character (8 for `"FFFE`), and with an area of that
+  length it reads `str_start` below the array.
+- **Repro:** after a native font is loaded, `\font\b="[assets/lmroman12-regular]"` (an area of 8
+  characters). TeX Live 2025 xetex reads out of bounds without a visible effect here.
+- **Fix:** for a native font, the area matches only when `cur_area` is empty.
+- **TeXyoN:** compares that way (`main_control/assign.rs`), test `font_area_native` in
+  `tests/tex-outputs.rs`. It panicked before (TeX Live doc biblatex-gost, through fontspec's `Name/B` requests).
+  Not reported yet.

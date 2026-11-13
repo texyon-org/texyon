@@ -234,6 +234,15 @@ fn nul_name() {
 }
 
 #[test]
+fn font_area_native() {
+    util::set_test_root();
+
+    TestCase::new("font_area_native")
+        .with_fs(&test_path(&[]))
+        .go()
+}
+
+#[test]
 fn file_encoding() {
     // Need to do this here since we call test_path unusually early.
     util::set_test_root();
