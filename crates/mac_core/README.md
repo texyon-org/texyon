@@ -1,4 +1,4 @@
-# The `texyon_mac_core` create
+# The `texyon_mac_core` crate
 
 This crate is part of
 [the Tectonic project](https://tectonic-typesetting.github.io/en-US/). It exposes

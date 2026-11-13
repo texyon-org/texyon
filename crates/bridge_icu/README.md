@@ -1,22 +1,19 @@
 # The `texyon_bridge_icu` crate
 
-[![](http://meritbadge.herokuapp.com/texyon_bridge_icu)](https://crates.io/crates/texyon_bridge_icu)
-
-This crate is part of [the Tectonic
-project](https://tectonic-typesetting.github.io/en-US/). It exposes the *C* API
+This crate is part of [TeXyoN](https://github.com/texyon-org/texyon), which grew
+out of [Tectonic](https://tectonic-typesetting.github.io/). It exposes the *C* API
 of the [ICU4C] Unicode library the Rust/Cargo build framework, **with no Rust
 bindings**.
 
 [ICU4C]: https://unicode-org.github.io/icu/userguide/icu4c-readme.html
 
-- [API documentation](https://docs.rs/texyon_bridge_icu/).
-- [Main Git repository](https://github.com/tectonic-typesetting/tectonic/).
+- [Main Git repository](https://github.com/texyon-org/texyon).
 
 There are a variety of other low-level ICU-related crates available, with
 [rust_icu](https://crates.io/crates/rust_icu) perhaps taking the most systematic
 approach. This package is distinctive because:
 
-- It uses Tectonic’s dependency-finding framework, which supports both
+- It uses TeXyoN’s dependency-finding framework, which supports both
   [pkg-config] and [vcpkg].
 - It ensures the ICU C API is exposed to Cargo.
 - Because it does not need to provide Rust bindings, it avoids a good deal of

@@ -1,14 +1,11 @@
 # The `texyon_bridge_core` crate
 
-[![](http://meritbadge.herokuapp.com/texyon_bridge_core)](https://crates.io/crates/texyon_bridge_core)
-
-This crate is part of [the Tectonic
-project](https://tectonic-typesetting.github.io/en-US/). It provides a C API to
-core I/O services provided by the Tectonic Rust code. This API is then consumed
+This crate is part of [TeXyoN](https://github.com/texyon-org/texyon), which grew
+out of [Tectonic](https://tectonic-typesetting.github.io/). It provides a C API to
+core I/O services provided by the TeXyoN Rust code. This API is then consumed
 by the various C/C++ "engines" implementing the TeX software.
 
-- [API documentation](https://docs.rs/texyon_bridge_core/).
-- [Main Git repository](https://github.com/tectonic-typesetting/tectonic/).
+- [Main Git repository](https://github.com/texyon-org/texyon).
 
 If your project depends on this crate, Cargo will export for your build script
 an environment variable named `DEP_TEXYON_BRIDGE_CORE_INCLUDE`, which will be

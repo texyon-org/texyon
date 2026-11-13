@@ -1,15 +1,12 @@
 # The `texyon_xetex_layout` crate
 
-[![](http://meritbadge.herokuapp.com/texyon_xetex_layout)](https://crates.io/crates/texyon_xetex_layout)
-
-This crate is part of [the Tectonic
-project](https://tectonic-typesetting.github.io/en-US/). It provides the font
+This crate is part of [TeXyoN](https://github.com/texyon-org/texyon), which grew
+out of [Tectonic](https://tectonic-typesetting.github.io/). It provides the font
 loading and layout routines of [XeTeX] as a crate, with a Rust API.
 
 [XeTeX]: http://xetex.sourceforge.net/
 
-- [API documentation](https://docs.rs/texyon_xetex_layout/).
-- [Main Git repository](https://github.com/tectonic-typesetting/tectonic/).
+- [Main Git repository](https://github.com/texyon-org/texyon).
 
 ## Cargo features
 

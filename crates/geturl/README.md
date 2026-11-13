@@ -1,13 +1,10 @@
-# The `texyon_geturl` create
+# The `texyon_geturl` crate
 
-This crate is part of [the Tectonic
-project](https://tectonic-typesetting.github.io/en-US/). It provides an
+This crate is part of [TeXyoN](https://github.com/texyon-org/texyon), which grew
+out of [Tectonic](https://tectonic-typesetting.github.io/). It provides an
 interface for fetching URLs using one of several HTTP backends.
 
-[![](http://meritbadge.herokuapp.com/texyon_geturl)](https://crates.io/crates/texyon_geturl)
-
-- [API documentation](https://docs.rs/texyon_geturl/).
-- [Main Git repository](https://github.com/tectonic-typesetting/tectonic/).
+- [Main Git repository](https://github.com/texyon-org/texyon).
 
 
 ## Cargo features

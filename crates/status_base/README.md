@@ -1,4 +1,4 @@
-# The `texyon_status_base` create
+# The `texyon_status_base` crate
 
 This crate is part of [the Tectonic
 project](https://tectonic-typesetting.github.io/en-US/). It provides a basic

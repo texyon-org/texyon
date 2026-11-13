@@ -1,7 +1,7 @@
 # XeTeX bugs found while porting
 
 Bugs in upstream `xetex.web` that the port ran into, with what TeXyoN does about each. Line
-numbers are in `reference_sources/stage2/exports/xetexdir/xetex.web` (XeTeX 0.999994) unless an
+numbers are in the TeX Live 2022 `xetex.web` (XeTeX 0.999994) unless an
 entry names a later TeX Live version.
 
 ## 1. `\XeTeXinterchartoks 4096` indexes past the sparse-array tree

@@ -1,16 +1,13 @@
 # The `texyon_pdf_io` crate
 
-[![](http://meritbadge.herokuapp.com/texyon_pdf_io)](https://crates.io/crates/texyon_pdf_io)
-
-This crate is part of [the Tectonic
-project](https://tectonic-typesetting.github.io/en-US/). It provides the PDF,
+This crate is part of [TeXyoN](https://github.com/texyon-org/texyon), which grew
+out of [Tectonic](https://tectonic-typesetting.github.io/). It provides the PDF,
 XDV, and image I/O capabilities of [XeTeX]’s `xdvipdfmx` as a crate, *currently
 providing only a C API*.
 
 [XeTeX]: http://xetex.sourceforge.net/
 
-- [API documentation](https://docs.rs/texyon_pdf_io/).
-- [Main Git repository](https://github.com/tectonic-typesetting/tectonic/).
+- [Main Git repository](https://github.com/texyon-org/texyon).
 
 This crate depends on [libpng], which it attempts to find externally using
 [pkg-config] or [vcpkg]. It should be possible to create another "bridge" crate

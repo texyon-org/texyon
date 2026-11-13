@@ -1,16 +1,13 @@
 # The `texyon_bridge_freetype2` crate
 
-[![](http://meritbadge.herokuapp.com/texyon_bridge_freetype2)](https://crates.io/crates/texyon_bridge_freetype2)
-
-This crate is part of [the Tectonic
-project](https://tectonic-typesetting.github.io/en-US/). It exposes the *C* API
+This crate is part of [TeXyoN](https://github.com/texyon-org/texyon), which grew
+out of [Tectonic](https://tectonic-typesetting.github.io/). It exposes the *C* API
 of the [FreeType] font rendering engine within the Rust/Cargo build framework,
 **with no Rust bindings**.
 
 [FreeType]: https://www.freetype.org/
 
-- [API documentation](https://docs.rs/texyon_bridge_freetype2/).
-- [Main Git repository](https://github.com/tectonic-typesetting/tectonic/).
+- [Main Git repository](https://github.com/texyon-org/texyon).
 
 There are a variety of other low-level FreeType-related crates available, including:
 
@@ -20,7 +17,7 @@ There are a variety of other low-level FreeType-related crates available, includ
 
 This package is distinctive because:
 
-- It uses Tectonic’s dependency-finding framework, which supports both
+- It uses TeXyoN’s dependency-finding framework, which supports both
   [pkg-config] and [vcpkg].
 - It ensures that FreeType’s C API is exposed to Cargo.
 

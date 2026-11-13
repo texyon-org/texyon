@@ -1,15 +1,12 @@
 # The `texyon_dep_support` crate
 
-[![](http://meritbadge.herokuapp.com/texyon_dep_support)](https://crates.io/crates/texyon_dep_support)
-
-This crate is part of [the Tectonic
-project](https://tectonic-typesetting.github.io/en-US/). It provides build-time
+This crate is part of [TeXyoN](https://github.com/texyon-org/texyon), which grew
+out of [Tectonic](https://tectonic-typesetting.github.io/). It provides build-time
 utilities for finding external library dependencies, allowing either
 [pkg-config] or [vcpkg] to be used as the dep-finding backend, and providing
-whatever fiddly features are needed to enable the Tectonic build process.
+whatever fiddly features are needed to enable the TeXyoN build process.
 
-- [API documentation](https://docs.rs/texyon_dep_support/).
-- [Main Git repository](https://github.com/tectonic-typesetting/tectonic/).
+- [Main Git repository](https://github.com/texyon-org/texyon).
 
 [pkg-config]: https://www.freedesktop.org/wiki/Software/pkg-config/
 [vcpkg]: https://vcpkg.readthedocs.io/

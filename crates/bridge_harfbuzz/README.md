@@ -1,20 +1,17 @@
 # The `texyon_bridge_harfbuzz` crate
 
-[![](http://meritbadge.herokuapp.com/texyon_bridge_harfbuzz)](https://crates.io/crates/texyon_bridge_harfbuzz)
-
-This crate is part of [the Tectonic
-project](https://tectonic-typesetting.github.io/en-US/). It exposes the *C* API
+This crate is part of [TeXyoN](https://github.com/texyon-org/texyon), which grew
+out of [Tectonic](https://tectonic-typesetting.github.io/). It exposes the *C* API
 of the [Harfbuzz] text shaping library the Rust/Cargo build framework, **with no
 Rust bindings**. By default, a static, local version of the Harfbuzz library is
 built.
 
 [Harfbuzz]: https://harfbuzz.github.io/
 
-- [API documentation](https://docs.rs/texyon_bridge_harfbuzz/).
-- [Main Git repository](https://github.com/tectonic-typesetting/tectonic/).
+- [Main Git repository](https://github.com/texyon-org/texyon).
 
 While there are a variety of other Harfbuzz-related crates in the Rust
-ecosystem, Tectonic has specialized needs (e.g. support for the [graphite2]
+ecosystem, TeXyoN has specialized needs (e.g. support for the [graphite2]
 smart font library). Hence this specialized crate.
 
 [graphite2]: https://graphite.sil.org/

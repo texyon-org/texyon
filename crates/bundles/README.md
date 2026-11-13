@@ -1,13 +1,10 @@
 # The `texyon_bundles` crate
 
-[![](http://meritbadge.herokuapp.com/texyon_bundles)](https://crates.io/crates/texyon_bundles)
+This crate is part of [TeXyoN](https://github.com/texyon-org/texyon), which grew
+out of [Tectonic](https://tectonic-typesetting.github.io/). It implements various
+TeXyoN "bundles" that provide access to collections of TeX support files.
 
-This crate is part of [the Tectonic
-project](https://tectonic-typesetting.github.io/en-US/). It implements various
-Tectonic "bundles" that provide access to collections of TeX support files.
-
-- [API documentation](https://docs.rs/texyon_bundles/).
-- [Main Git repository](https://github.com/tectonic-typesetting/tectonic/).
+- [Main Git repository](https://github.com/texyon-org/texyon).
 
 
 ## Cargo features

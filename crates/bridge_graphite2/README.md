@@ -1,19 +1,16 @@
 # The `texyon_bridge_graphite2` crate
 
-[![](http://meritbadge.herokuapp.com/texyon_bridge_graphite2)](https://crates.io/crates/texyon_bridge_graphite2)
-
-This crate is part of [the Tectonic
-project](https://tectonic-typesetting.github.io/en-US/). It exposes the *C* API
+This crate is part of [TeXyoN](https://github.com/texyon-org/texyon), which grew
+out of [Tectonic](https://tectonic-typesetting.github.io/). It exposes the *C* API
 of the [graphite2] "smart font" system within the Rust/Cargo build framework,
 **with no Rust bindings**. This is why it is not named `graphite2-sys`.
 
 [graphite2]: https://graphite.sil.org/
 
-- [API documentation](https://docs.rs/texyon_bridge_graphite2/).
-- [Main Git repository](https://github.com/tectonic-typesetting/tectonic/).
+- [Main Git repository](https://github.com/texyon-org/texyon).
 
 The intention is that eventually this crate will provide the option of
-"vendoring" the graphite2 library, so that the Tectonic C code can use the
+"vendoring" the graphite2 library, so that the TeXyoN C code can use the
 library without it needing to be installed on the system. However, this has not
 yet been implemented.
 

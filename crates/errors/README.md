@@ -1,4 +1,4 @@
-# The `texyon_errors` create
+# The `texyon_errors` crate
 
 This crate is part of [the Tectonic
 project](https://tectonic-typesetting.github.io/en-US/). It provides a basic

@@ -1,11 +1,8 @@
-# The `texyon_io_base` create
+# The `texyon_io_base` crate
 
-This crate is part of [the Tectonic
-project](https://tectonic-typesetting.github.io/en-US/). It provides basic types
-for Tectonic’s pluggable I/O backend system, with implementations for `std` I/O
+This crate is part of [TeXyoN](https://github.com/texyon-org/texyon), which grew
+out of [Tectonic](https://tectonic-typesetting.github.io/). It provides basic types
+for TeXyoN’s pluggable I/O backend system, with implementations for `std` I/O
 types as well as `flate2` gzip streams.
 
-[![](http://meritbadge.herokuapp.com/texyon_io_base)](https://crates.io/crates/texyon_io_base)
-
-- [API documentation](https://docs.rs/texyon_io_base/).
-- [Main Git repository](https://github.com/tectonic-typesetting/tectonic/).
+- [Main Git repository](https://github.com/texyon-org/texyon).
