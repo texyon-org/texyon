@@ -674,6 +674,11 @@ impl<'a> CoreBridgeState<'a> {
         self.output_handles[id.idx()].as_mut().unwrap()
     }
 
+    /// Whether directory `dir` of the document exists, so that a file can be created in it.
+    pub fn directory_exists(&mut self, dir: &str) -> bool {
+        self.hooks.io().directory_exists(dir)
+    }
+
     /// Open a new output, provided the output name and whether it is gzipped.
     pub fn output_open(&mut self, name: &str, is_gz: bool) -> Option<OutputId> {
         let io = self.hooks.io();

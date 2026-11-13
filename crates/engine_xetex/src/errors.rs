@@ -154,21 +154,53 @@ pub(crate) enum Abort {
     },
 }
 
-/// TeX's `prompt_file_name` for a missing input, up to the prompt it cannot give.
-pub(crate) fn input_not_found(
+/// The file `prompt_file_name` asks another name for.
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub(crate) enum FilePrompt {
+    /// An input that was not found.
+    Input,
+    /// An `\openout` file that could not be written.
+    Output,
+}
+
+/// TeX's `prompt_file_name`, up to the prompt it cannot give.
+pub(crate) fn prompt_file_name(
     st: &mut EngineState,
+    prompt: FilePrompt,
     name: crate::io::FileName,
     path: &[u8],
 ) -> Abort {
-    print_nl(st, "! I can't find file `");
+    print_nl(
+        st,
+        match prompt {
+            FilePrompt::Input => "! I can't find file `",
+            FilePrompt::Output => "! I can't write on file `",
+        },
+    );
     name.print_to(st);
     print(st, "'.");
     show_context(st);
     print_ln(st);
-    print(st, "(Press Enter to retry, or Control-D to exit)");
+    print(
+        st,
+        match prompt {
+            FilePrompt::Input => "(Press Enter to retry, or Control-D to exit)",
+            FilePrompt::Output => {
+                "(Press Enter to retry, or Control-D to exit; default file extension is `.tex')"
+            }
+        },
+    );
     print_ln(st);
-    print_nl(st, "Please type another input file name");
-    Abort::CannotOpenInput { name: path.into() }
+    match prompt {
+        FilePrompt::Input => {
+            print_nl(st, "Please type another input file name");
+            Abort::CannotOpenInput { name: path.into() }
+        }
+        FilePrompt::Output => {
+            print_nl(st, "Please type another output file name");
+            Abort::CannotOpenOutput { name: path.into() }
+        }
+    }
 }
 
 /// Turns a broken internal invariant into TeX's "This can't happen" stop.
@@ -300,6 +332,18 @@ impl Abort {
         set_error_message(s);
     }
 
+    /// The fatal error of a file prompt nobody can answer.
+    fn file_error_report(st: &mut EngineState) {
+        Self::fatal_report(
+            st,
+            if st.errors.interaction < InteractionMode::Scroll {
+                "*** (job aborted, file error in nonstop mode)"
+            } else {
+                "End of file on the terminal!"
+            },
+        );
+    }
+
     fn open_failure(what: &str, name: &[u8]) {
         let mut msg = format!("{what} \"").into_bytes();
         msg.extend_from_slice(name);
@@ -372,17 +416,11 @@ impl Abort {
             Abort::Internal(msg) => set_error_message(msg),
             Abort::InputClose => set_error_message("serious internal error closing an input file"),
             Abort::CannotOpenInput { name } => {
-                Self::fatal_report(
-                    st,
-                    if st.errors.interaction < InteractionMode::Scroll {
-                        "*** (job aborted, file error in nonstop mode)"
-                    } else {
-                        "End of file on the terminal!"
-                    },
-                );
+                Self::file_error_report(st);
                 Self::open_failure("failed to open input file", &name)
             }
             Abort::CannotOpenOutput { name } => {
+                Self::file_error_report(st);
                 Self::open_failure("cannot open output file", &name)
             }
         }

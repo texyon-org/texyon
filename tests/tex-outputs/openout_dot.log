@@ -1,0 +1,16 @@
+**
+(openout_dot.tex
+\openout1 = `sub.out'.
+
+
+! I can't write on file `./.hidden'.
+l.4 \immediate\openout2=./.hidden
+                                 
+(Press Enter to retry, or Control-D to exit; default file extension is `.tex')
+Please type another output file name
+! Emergency stop.
+l.4 \immediate\openout2=./.hidden
+                                 
+*** (job aborted, file error in nonstop mode)
+
+No pages of output.

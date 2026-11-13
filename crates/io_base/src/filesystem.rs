@@ -249,6 +249,10 @@ impl IoProvider for FilesystemIo {
             .collect();
         casefold_match(name, names.iter().map(String::as_str))
     }
+
+    fn directory_exists(&mut self, dir: &str) -> bool {
+        self.construct_path(dir).is_ok_and(|path| path.is_dir())
+    }
 }
 
 impl InputFeatures for File {

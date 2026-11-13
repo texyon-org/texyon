@@ -734,6 +734,26 @@ impl TexPrint for FileName {
     }
 }
 
+/// Whether TeX may write `\openout` file `path`: kpathsea's default `openout_any = p` refuses
+/// absolute names, `..` steps and names starting with a dot, and the directory must exist.
+pub(crate) fn may_write(path: &[u8]) -> bool {
+    let components: Vec<&[u8]> = path.split(|&b| b == b'/').collect();
+    let absolute = path.first() == Some(&b'/') || path.get(1) == Some(&b':');
+    // Only a `./` step may start with a dot.
+    let last = components.len() - 1;
+    let refused = components
+        .iter()
+        .enumerate()
+        .any(|(i, c)| c.first() == Some(&b'.') && !(*c == b"." && i < last));
+    if absolute || refused {
+        return false;
+    }
+    match path.iter().rposition(|&b| b == b'/') {
+        Some(slash) => crate::bridge::directory_exists(&path[..slash]),
+        None => true,
+    }
+}
+
 /// A file name scanned from the input, with how it was quoted.
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct ScannedName {
@@ -1123,7 +1143,12 @@ pub(crate) fn start_input(
     let encoding = st.eqtb.int_par(IntPar::XetexDefaultInputEncoding);
     let Some((file, found)) = u_open_in(st, &path, format, mode, encoding)? else {
         crate::input::end_file_reading(st)?;
-        return Err(crate::errors::input_not_found(st, scanned, &path));
+        return Err(crate::errors::prompt_file_name(
+            st,
+            crate::errors::FilePrompt::Input,
+            scanned,
+            &path,
+        ));
     };
     st.input.input_file[idx as usize] = crate::state::InputSlot::Open(file);
 

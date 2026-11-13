@@ -181,6 +181,12 @@ pub(crate) fn output_open(path: &[u8], is_gz: bool) -> usize {
     OutputId::to_raw(with_bridge(|es| es.output_open(&path, is_gz)))
 }
 
+/// Whether directory `dir` of the document exists, among the editor's buffers or the host's files.
+pub(crate) fn directory_exists(dir: &[u8]) -> bool {
+    let dir = String::from_utf8_lossy(dir);
+    crate::replay::adapter::holds_directory(&dir) || with_bridge(|es| es.directory_exists(&dir))
+}
+
 pub(crate) fn output_open_stdout() -> usize {
     OutputId::to_raw(with_bridge(|es| es.output_open_stdout()))
 }

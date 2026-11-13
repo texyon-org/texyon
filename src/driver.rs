@@ -633,6 +633,11 @@ impl IoProvider for BridgeState {
         bridgestate_ioprovider_cascade!(self, input_casefold_name(name));
     }
 
+    // Only the document's own directories can hold outputs, not search paths or bundles.
+    fn directory_exists(&mut self, dir: &str) -> bool {
+        self.mem.directory_exists(dir) || self.filesystem.directory_exists(dir)
+    }
+
     fn input_open_format(
         &mut self,
         name: &str,

@@ -242,11 +242,18 @@ fn out_write_stream(
         ext,
     };
     let path = file.path(&st.strings);
-    let handle = output_open(&path, false);
+    let handle = if crate::io::may_write(&path) {
+        output_open(&path, false)
+    } else {
+        INVALID_HANDLE
+    };
     if handle == INVALID_HANDLE {
-        return Err(Abort::CannotOpenOutput {
-            name: path.as_slice().into(),
-        });
+        return Err(crate::errors::prompt_file_name(
+            st,
+            crate::errors::FilePrompt::Output,
+            file,
+            &path,
+        ));
     }
     st.shipout.write_file[stream] = handle;
     st.shipout.write_open[stream] = true;

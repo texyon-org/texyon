@@ -251,6 +251,15 @@ impl IoProvider for MemoryIo {
                 .filter(|base| !base.contains('/')),
         )
     }
+
+    fn directory_exists(&mut self, dir: &str) -> bool {
+        let dir = normalize_tex_path(dir);
+        let prefix = format!("{}/", dir.trim_end_matches('/'));
+        self.files
+            .borrow()
+            .keys()
+            .any(|key| key.starts_with(&prefix))
+    }
 }
 
 #[cfg(test)]
@@ -274,6 +283,17 @@ mod tests {
         );
         assert_eq!(mem.input_casefold_name("part.tex"), None);
         assert_eq!(mem.input_casefold_name("other/chapter.tex"), None);
+    }
+
+    #[test]
+    fn a_directory_exists_when_it_holds_a_file() {
+        let mut mem = MemoryIo::new(false);
+        mem.create_entry("chapters/one.tex", Vec::new());
+        assert!(mem.directory_exists("chapters"));
+        assert!(mem.directory_exists("./chapters/"));
+        assert!(!mem.directory_exists("chap"));
+        assert!(!mem.directory_exists("chapters/one.tex"));
+        assert!(!mem.directory_exists("figures"));
     }
 
     /// Early versions had a bug where files were not truncated when opened

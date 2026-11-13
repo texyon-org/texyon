@@ -218,6 +218,26 @@ fn casefold_input() {
 }
 
 #[test]
+fn openout_dot() {
+    util::set_test_root();
+
+    TestCase::new("openout_dot")
+        .with_fs(&test_path(&["tex-outputs"]))
+        .expect_msg("cannot open output file \"./.hidden\"")
+        .go()
+}
+
+#[test]
+fn openout_nodir() {
+    util::set_test_root();
+
+    TestCase::new("openout_nodir")
+        .with_fs(&test_path(&["tex-outputs"]))
+        .expect_msg("cannot open output file \"missing/x.out\"")
+        .go()
+}
+
+#[test]
 fn pdf_box() {
     util::set_test_root();
 

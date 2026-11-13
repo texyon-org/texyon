@@ -1,0 +1,16 @@
+**
+(openout_nodir.tex
+\openout1 = `./mainloop/fine.out'.
+
+
+! I can't write on file `missing/x.out'.
+l.3 \immediate\openout2=missing/x.out
+                                     
+(Press Enter to retry, or Control-D to exit; default file extension is `.tex')
+Please type another output file name
+! Emergency stop.
+l.3 \immediate\openout2=missing/x.out
+                                     
+*** (job aborted, file error in nonstop mode)
+
+No pages of output.

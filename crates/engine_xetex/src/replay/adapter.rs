@@ -167,6 +167,16 @@ pub(crate) fn open_named(path: &str, format: FileFormat) -> Option<usize> {
     })
 }
 
+/// Whether the active snapshot holds a buffer in directory `dir`.
+pub(crate) fn holds_directory(dir: &str) -> bool {
+    ACTIVE.with(|active| {
+        active
+            .borrow()
+            .as_ref()
+            .is_some_and(|sources| sources.snapshot.holds_directory(dir))
+    })
+}
+
 pub(crate) fn clear_last_path() {
     ACTIVE.with(|active| {
         if let Some(active) = active.borrow_mut().as_mut() {

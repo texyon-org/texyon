@@ -517,6 +517,11 @@ pub trait IoProvider: AsIoProviderMut {
         None
     }
 
+    /// Whether directory `dir` of the document exists, so that TeX can create a file in it.
+    fn directory_exists(&mut self, _dir: &str) -> bool {
+        false
+    }
+
     /// Open a format file with the specified name. Format files have a
     /// specialized entry point because IOProviders may wish to handle them
     /// specially: namely, to munge the filename to one that includes the
@@ -581,6 +586,10 @@ impl<P: IoProvider + ?Sized> IoProvider for Box<P> {
 
     fn input_casefold_name(&mut self, name: &str) -> Option<String> {
         (**self).input_casefold_name(name)
+    }
+
+    fn directory_exists(&mut self, dir: &str) -> bool {
+        (**self).directory_exists(dir)
     }
 
     fn input_open_format(

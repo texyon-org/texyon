@@ -121,6 +121,10 @@ impl IoProvider for IoStack<'_> {
             .find_map(|item| item.input_casefold_name(name))
     }
 
+    fn directory_exists(&mut self, dir: &str) -> bool {
+        self.items.iter_mut().any(|item| item.directory_exists(dir))
+    }
+
     fn input_open_format(
         &mut self,
         name: &str,

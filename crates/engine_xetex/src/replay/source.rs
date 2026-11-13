@@ -290,6 +290,18 @@ impl SourceSnapshot {
         Some((path, bytes, identity))
     }
 
+    /// Whether an editor buffer lies in directory `dir`, a path relative to the root.
+    pub(crate) fn holds_directory(&self, dir: &str) -> bool {
+        let parts: Vec<&str> = dir
+            .split('/')
+            .filter(|part| !part.is_empty() && *part != ".")
+            .collect();
+        let prefix = format!("{}/", parts.join("/"));
+        self.entries
+            .keys()
+            .any(|path| path.as_str().starts_with(&prefix))
+    }
+
     /// `path` normalized against this snapshot's root, if it lies inside it.
     pub(crate) fn source_path(&self, path: &Path) -> Option<SourcePath> {
         normalize(&self.root, path).ok()
@@ -416,6 +428,15 @@ mod tests {
             ],
         )
         .unwrap()
+    }
+
+    #[test]
+    fn a_directory_holds_buffers_below_it() {
+        let snapshot = snapshot();
+        assert!(snapshot.holds_directory("chapters"));
+        assert!(snapshot.holds_directory("./chapters/"));
+        assert!(!snapshot.holds_directory("chap"));
+        assert!(!snapshot.holds_directory("figures"));
     }
 
     #[test]
