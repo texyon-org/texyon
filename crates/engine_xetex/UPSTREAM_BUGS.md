@@ -238,15 +238,20 @@ entry names a later TeX Live version.
 - **Bug:** when the font has a left boundary program, the marker no longer reads as the boundary.
   `reconstitute` takes it for character `max_hyph_char`: it appends a character node with that code
   and reads `char_info` for it, past `font_ec`, so whatever `font_info` word lies there acts as its
-  lig/kern start. The boundary ligatures and kerns of the font are lost.
+  lig/kern start. The boundary ligatures and kerns of the font are lost. Fonts without a boundary
+  program are hit too: `max_hyph_char` is one past the largest pattern character, so the read lands
+  far outside the font, and when that word happens to carry a lig/kern tag its kerns are applied.
 - **Repro:** a TFM font with `(LABEL BOUNDARYCHAR) (KRN C a R 0.2)`, `\hyphenation{a-a}` and a
   narrow `\hsize`. The line after the hyphen starts with a bogus character instead of the 0.2 kern.
   Confirmed against TeX Live 2025 xetex in probe `hyph-bigtable_hyph` and the `hyph-recon_*` probes.
-  Knuth's `tex` gives the boxes TeXyoN gives on all of them.
+  Knuth's `tex` gives the boxes TeXyoN gives on all of them. In the e-french manual
+  (`efrench.tex` line 3147, `anglais (\emph{english})`), TL puts the italic font's `-0.0511em`
+  kern between the upright `(` and `e`. ec-lmri10 has no boundary program and no kern for `(`,
+  and the kern goes away when `(` and `english` share a font or `\kern0pt` separates them.
 - **Fix:** set the marker to `non_char`, as `tex.web` does with 256.
 - **TeXyoN:** writes `non_char` (`linebreak/hyphenate.rs`), so the boundary program runs and no
-  character is added. Listed in `tests/upstream/known.tsv` (18 hyphenation probes), test
-  `left_boundary_after_a_hyphen_is_no_character`. Not reported yet.
+  character is added. Listed in `tests/upstream/known.tsv` (18 hyphenation probes, writeongrid,
+  efrench), test `left_boundary_after_a_hyphen_is_no_character`. Not reported yet.
 
 ## 18. The OpenType script list always comes from GSUB
 

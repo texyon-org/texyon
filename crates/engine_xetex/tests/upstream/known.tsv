@@ -45,6 +45,7 @@ tldocs/latex/writeongrid/WriteOnGrid-Ruled-A5	upstream emits a bogus max_hyph_ch
 tldocs/latex/writeongrid/WriteOnGrid-Seyes-A5	upstream emits a bogus max_hyph_char node when it reconstitutes a hyphenated word and loses the left boundary ligature of frcursive (UPSTREAM_BUGS.md 17)
 tldocs/latex/writeongrid/WriteOnGrid-doc-en	upstream emits a bogus max_hyph_char node when it reconstitutes a hyphenated word and loses the left boundary ligature of frcursive (UPSTREAM_BUGS.md 17)
 tldocs/latex/writeongrid/WriteOnGrid-doc-fr	upstream emits a bogus max_hyph_char node when it reconstitutes a hyphenated word and loses the left boundary ligature of frcursive (UPSTREAM_BUGS.md 17)
+tldocs/generic/e-french/src/efrench	upstream reads a bogus lig/kern program for its max_hyph_char left marker when it reconstitutes a hyphenated word and adds an italic kern after an upright ( (UPSTREAM_BUGS.md 17)
 tldocs/latex/worldflags/worldflags	upstream stops at its 5M-word main memory, TeXyoN's memory is larger and typesets the whole document
 tldocs/latex/twoxtwogame/twoxtwogame_doc	upstream stops at its 5M-word main memory, TeXyoN's memory is larger and typesets the whole document
 tldocs/xelatex/quran-id/quran-id-doc	upstream stops at its 5M-word main memory, TeXyoN's memory is larger and typesets the whole document
