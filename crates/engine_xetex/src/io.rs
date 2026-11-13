@@ -235,15 +235,18 @@ pub(crate) fn open_input_file(
         return None;
     }
 
-    let mut name = path.to_vec();
-    if filefmt != FileFormat::TexyonPrimary {
-        if let Some(ext) = crate::bridge::last_input_extension() {
-            name.push(b'.');
-            name.extend_from_slice(ext.as_bytes());
-        }
-    }
+    let name = if filefmt == FileFormat::TexyonPrimary {
+        path.to_vec()
+    } else {
+        last_found_name(path)
+    };
     let abspath = last_input_abspath();
     Some((handle, FoundInput { name, abspath }))
+}
+
+/// The name the last input asked as `path` was found under, as kpathsea returns it.
+pub(crate) fn last_found_name(path: &[u8]) -> Vec<u8> {
+    crate::bridge::last_input_found().name(path)
 }
 
 /// Opens and configures an input file. `None` means the bridge open failed.

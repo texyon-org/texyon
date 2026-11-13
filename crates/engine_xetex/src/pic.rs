@@ -223,16 +223,18 @@ fn get_image_size_in_inches(handle: usize) -> Result<(f64, f64), c_int> {
     ))
 }
 
-/// Measure the picture at `path`, returning the probe status and its bounds.
+/// Measure the picture at `path`, returning the probe status, its bounds and
+/// the name it was found under.
 fn find_pic_file(
     path: &[u8],
     pdf_box: Option<PageboxType>,
     page: c_int,
-) -> Result<(c_int, RealRect), Abort> {
+) -> Result<(c_int, RealRect, Vec<u8>), Abort> {
     let handle = input_open(path, FileFormat::Pict, false);
     if handle == INVALID_HANDLE {
-        return Ok((1, RealRect::default()));
+        return Ok((1, RealRect::default(), path.to_vec()));
     }
+    let found = crate::io::last_found_name(path);
 
     let (err, bounds) = match pdf_box {
         Some(pdf_box) => match pdf_get_rect(path, handle, page, pdf_box) {
@@ -255,7 +257,7 @@ fn find_pic_file(
     if crate::io::input_close(handle) {
         return Err(Abort::InputClose);
     }
-    Ok((err, bounds))
+    Ok((err, bounds, found))
 }
 
 impl Transform {
@@ -374,7 +376,6 @@ fn scan_scale_factor(st: &mut EngineState) -> Result<f64, Abort> {
 
 pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abort> {
     let file = crate::io::scan_file_name(st)?.file;
-    let pic_path = file.path(&st.strings);
 
     let mut pdf_box_type = None;
     let mut page = 0;
@@ -399,7 +400,7 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
         pdf_box_type = Some(pdf_box);
     }
 
-    let (result, bounds) = find_pic_file(&pic_path, pdf_box_type, page)?;
+    let (result, bounds, pic_path) = find_pic_file(&file.path(&st.strings), pdf_box_type, page)?;
 
     let (x, y, wd, ht) = (bounds.x, bounds.y, bounds.wd, bounds.ht);
     let mut placement = Placement {

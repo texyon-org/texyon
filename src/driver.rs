@@ -424,13 +424,38 @@ impl BridgeState {
     }
 }
 
+/// A provider answer that lets the cascade fall through to the next provider.
+trait CascadeMiss {
+    fn miss() -> Self;
+    fn is_miss(&self) -> bool;
+}
+
+impl<T> CascadeMiss for OpenResult<T> {
+    fn miss() -> Self {
+        OpenResult::NotAvailable
+    }
+
+    fn is_miss(&self) -> bool {
+        self.is_not_available()
+    }
+}
+
+impl<T> CascadeMiss for Option<T> {
+    fn miss() -> Self {
+        None
+    }
+
+    fn is_miss(&self) -> bool {
+        self.is_none()
+    }
+}
+
 macro_rules! bridgestate_ioprovider_try {
     ($provider:expr, $($inner:tt)+) => {
         let r = $provider.$($inner)+;
-        match r {
-            OpenResult::NotAvailable => {},
-            _ => return r,
-        };
+        if !CascadeMiss::is_miss(&r) {
+            return r;
+        }
     }
 }
 
@@ -473,7 +498,7 @@ macro_rules! bridgestate_ioprovider_cascade {
         bridgestate_ioprovider_try!($self.bundle.as_ioprovider_mut(), $($inner)+);
         bridgestate_ioprovider_try!($self.format_cache, $($inner)+);
 
-        return OpenResult::NotAvailable;
+        return CascadeMiss::miss();
     }
 }
 
@@ -602,6 +627,10 @@ impl IoProvider for BridgeState {
         status: &mut dyn StatusBackend,
     ) -> OpenResult<(InputHandle, Option<PathBuf>)> {
         bridgestate_ioprovider_cascade!(self, input_open_primary_with_abspath(status));
+    }
+
+    fn input_casefold_name(&mut self, name: &str) -> Option<String> {
+        bridgestate_ioprovider_cascade!(self, input_casefold_name(name));
     }
 
     fn input_open_format(

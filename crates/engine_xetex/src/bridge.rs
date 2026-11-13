@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 use std::ptr;
 use std::sync::atomic::{AtomicPtr, Ordering};
 
-use texyon_bridge_core::{CoreBridgeState, InputId, OutputId};
+use texyon_bridge_core::{CoreBridgeState, FoundAs, InputId, OutputId};
 
 pub(crate) use texyon_bridge_core::{Diagnostic, FileFormat};
 
@@ -92,12 +92,12 @@ pub(crate) fn input_open_primary() -> usize {
     InputId::to_raw(with_bridge(|es| es.input_open_primary()))
 }
 
-/// The extension the I/O layer appended to open the last input, if any.
-pub(crate) fn last_input_extension() -> Option<&'static str> {
+/// How the I/O layer found the last input.
+pub(crate) fn last_input_found() -> FoundAs {
     if crate::replay::adapter::opened_last() {
-        return None;
+        return FoundAs::Asked;
     }
-    with_bridge(|es| es.latest_input_extension())
+    with_bridge(|es| es.latest_input_found().clone())
 }
 
 /// Longest absolute input path kept, including C's terminating NUL.

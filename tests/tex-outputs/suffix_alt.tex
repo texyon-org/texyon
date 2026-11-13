@@ -1,0 +1,5 @@
+% kpathsea does not add the alternate suffixes, so a name found only as .sty is missing.
+\openin1=suffix_only \ifeof1 \message{NOT FOUND}\else\message{FOUND}\fi
+\openin1=suffix_only.sty \ifeof1 \message{NOT FOUND}\else\message{FOUND}\fi
+x
+\bye

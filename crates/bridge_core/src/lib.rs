@@ -420,28 +420,50 @@ pub struct CoreBridgeState<'a> {
     /// memory or something else).
     latest_input_path: Option<PathBuf>,
 
-    /// The extension [`CoreBridgeState::input_open`] appended to open the latest input.
-    latest_input_extension: Option<&'static str>,
+    /// How [`CoreBridgeState::input_open`] found the latest input.
+    latest_input_found: FoundAs,
+}
+
+/// How an opened input's name relates to the name it was asked for.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum FoundAs {
+    /// Under the name asked for.
+    #[default]
+    Asked,
+    /// With this extension appended.
+    WithExtension(&'static str),
+    /// Under this name, which differs from the asked one in the case of its last component.
+    CaseFolded(String),
+}
+
+impl FoundAs {
+    /// The name an input asked as `asked` was found under, as kpathsea returns it.
+    pub fn name(&self, asked: &[u8]) -> Vec<u8> {
+        match self {
+            FoundAs::Asked => asked.to_vec(),
+            FoundAs::WithExtension(ext) => [asked, b".", ext.as_bytes()].concat(),
+            FoundAs::CaseFolded(folded) => folded.as_bytes().to_vec(),
+        }
+    }
 }
 
 /// An input found by [`CoreBridgeState::input_open_name_format`].
 struct OpenedInput {
     handle: InputHandle,
     path: Option<PathBuf>,
-    /// The extension appended to the requested name, if one was.
-    extension: Option<&'static str>,
+    found: FoundAs,
 }
 
 impl OpenedInput {
-    fn with_extension(
+    fn found(
         opened: OpenResult<(InputHandle, Option<PathBuf>)>,
-        extension: Option<&'static str>,
+        found: FoundAs,
     ) -> OpenResult<OpenedInput> {
         match opened {
             OpenResult::Ok((handle, path)) => OpenResult::Ok(OpenedInput {
                 handle,
                 path,
-                extension,
+                found,
             }),
             OpenResult::NotAvailable => OpenResult::NotAvailable,
             OpenResult::Err(e) => OpenResult::Err(e),
@@ -463,7 +485,7 @@ impl<'a> CoreBridgeState<'a> {
             output_handles: Vec::new(),
             input_handles: Vec::new(),
             latest_input_path: None,
-            latest_input_extension: None,
+            latest_input_found: FoundAs::Asked,
             fs_emulation_settings,
         }
     }
@@ -493,9 +515,9 @@ impl<'a> CoreBridgeState<'a> {
             .report(diag.kind, format_args!("{}", diag.message), None);
     }
 
-    /// The extension appended to the requested name to open the latest input, if any.
-    pub fn latest_input_extension(&self) -> Option<&'static str> {
-        self.latest_input_extension
+    /// How the latest input was found.
+    pub fn latest_input_found(&self) -> &FoundAs {
+        &self.latest_input_found
     }
 
     /// The filesystem path of the most recently opened input, if it is known,
@@ -526,24 +548,38 @@ impl<'a> CoreBridgeState<'a> {
             }
         };
 
-        match open(io, name, self.status) {
-            OpenResult::NotAvailable => {}
-            r => return OpenedInput::with_extension(r, None),
-        }
-
-        // It wasn't available under the immediately-given name. Try adding
-        // extensions. Note that we always add a new extension here, even if the
-        // filename already has one. E.g., lipsum in TeXLive 2020 asks for
-        // `lipsum.ltd.tex` under the name `lipsum.ltd`.
-
-        for &e in format.extensions() {
-            match open(io, &format!("{name}.{e}"), self.status) {
+        // A provider may refuse one candidate (an absolute `/dev/null.tex`) and still serve the
+        // next, so an error only stands when no candidate is found.
+        let mut first_error = None;
+        let candidates = format.candidates(name);
+        for (candidate, found) in &candidates {
+            match open(io, candidate, self.status) {
                 OpenResult::NotAvailable => {}
-                r => return OpenedInput::with_extension(r, Some(e)),
+                OpenResult::Err(e) => {
+                    first_error.get_or_insert(e);
+                }
+                r => return OpenedInput::found(r, found.clone()),
             }
         }
 
-        OpenResult::NotAvailable
+        // Like kpathsea, try the last component in another case once nothing else is found.
+        for (candidate, _) in &candidates {
+            let Some(folded) = io.input_casefold_name(candidate) else {
+                continue;
+            };
+            match open(io, &folded, self.status) {
+                OpenResult::NotAvailable => {}
+                OpenResult::Err(e) => {
+                    first_error.get_or_insert(e);
+                }
+                r => return OpenedInput::found(r, FoundAs::CaseFolded(folded)),
+            }
+        }
+
+        match first_error {
+            Some(e) => OpenResult::Err(e),
+            None => OpenResult::NotAvailable,
+        }
     }
 
     fn input_open_name_format_gz(
@@ -744,7 +780,7 @@ impl<'a> CoreBridgeState<'a> {
 
         self.input_handles.push(Some(opened.handle));
         self.latest_input_path = opened.path;
-        self.latest_input_extension = opened.extension;
+        self.latest_input_found = opened.found;
         InputId::new(self.input_handles.len())
     }
 
@@ -766,7 +802,7 @@ impl<'a> CoreBridgeState<'a> {
 
         self.input_handles.push(Some(ih));
         self.latest_input_path = path;
-        self.latest_input_extension = None;
+        self.latest_input_found = FoundAs::Asked;
         InputId::new(self.input_handles.len())
     }
 
@@ -1524,6 +1560,33 @@ pub enum FileFormat {
 }
 
 impl FileFormat {
+    /// The names kpathsea tries for `name`, in order: as given when it already ends in
+    /// one of the format's suffixes, else with each suffix added and then as given.
+    fn candidates(&self, name: &str) -> Vec<(String, FoundAs)> {
+        let suffixed = self
+            .extensions()
+            .iter()
+            .chain(self.alternate_extensions())
+            .any(|e| name.strip_suffix(e).is_some_and(|stem| stem.ends_with('.')));
+        let mut out = Vec::new();
+        if !suffixed {
+            for &e in self.extensions() {
+                out.push((format!("{name}.{e}"), FoundAs::WithExtension(e)));
+            }
+        }
+        out.push((name.to_owned(), FoundAs::Asked));
+        out
+    }
+
+    /// Suffixes that mark a name as complete without being added to one.
+    fn alternate_extensions(&self) -> &'static [&'static str] {
+        match *self {
+            FileFormat::Tex => &["sty", "cls", "fd", "aux", "bbl", "def", "clo", "ldf"],
+            FileFormat::Pict => &["eps", "epsi"],
+            _ => &[],
+        }
+    }
+
     fn extensions(&self) -> &'static [&'static str] {
         match *self {
             FileFormat::Afm => &["afm"],
@@ -1538,12 +1601,12 @@ impl FileFormat {
             FileFormat::Ofm => &["ofm"],
             FileFormat::OpenType => &["otf", "OTF"],
             FileFormat::Ovf => &["ovf", "vf"],
-            FileFormat::Pict => &["pdf", "jpg", "eps", "epsi"],
+            FileFormat::Pict => &[],
             FileFormat::Pk => &["pk"],
             FileFormat::ProgramData => &[],
             FileFormat::Sfd => &["sfd"],
             FileFormat::TexyonPrimary => &[],
-            FileFormat::Tex => &["tex", "sty", "cls", "fd", "aux", "bbl", "def", "clo", "ldf"],
+            FileFormat::Tex => &["tex"],
             FileFormat::TexPsHeader => &["pro"],
             FileFormat::Tfm => &["tfm"],
             FileFormat::TrueType => &["ttf", "ttc", "TTF", "TTC", "dfont"],
@@ -1551,6 +1614,69 @@ impl FileFormat {
             FileFormat::Vf => &["vf"],
         }
     }
+}
+
+#[test]
+fn candidates_follow_kpathsea_suffix_rules() {
+    let names = |format: FileFormat, name: &str| -> Vec<String> {
+        format
+            .candidates(name)
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect()
+    };
+    assert_eq!(
+        names(FileFormat::Tex, "chapter"),
+        ["chapter.tex", "chapter"]
+    );
+    assert_eq!(
+        names(FileFormat::Tex, "lipsum.ltd"),
+        ["lipsum.ltd.tex", "lipsum.ltd"]
+    );
+    assert_eq!(names(FileFormat::Tex, "article.cls"), ["article.cls"]);
+    assert_eq!(names(FileFormat::Tex, "main.tex"), ["main.tex"]);
+    assert_eq!(names(FileFormat::Tex, "xtex"), ["xtex.tex", "xtex"]);
+    assert_eq!(names(FileFormat::Pict, "fig.png"), ["fig.png"]);
+    assert_eq!(
+        names(FileFormat::OpenType, "lmroman12-regular"),
+        [
+            "lmroman12-regular.otf",
+            "lmroman12-regular.OTF",
+            "lmroman12-regular"
+        ]
+    );
+}
+
+#[test]
+fn an_error_on_one_candidate_does_not_hide_the_next() {
+    use texyon_io_base::{stack::IoStack, MemoryIo};
+    use texyon_status_base::NoopStatusBackend;
+
+    struct Refuses;
+    impl IoProvider for Refuses {
+        fn input_open_name(
+            &mut self,
+            _: &str,
+            _: &mut dyn StatusBackend,
+        ) -> OpenResult<InputHandle> {
+            OpenResult::Err(anyhow!("refused"))
+        }
+    }
+
+    let mut mem = MemoryIo::new(false);
+    mem.create_entry("doc", b"x".to_vec());
+    let mut refuses = Refuses;
+    let mut hooks = MinimalDriver::new(IoStack::new(vec![&mut mem, &mut refuses]));
+    let mut status = NoopStatusBackend::default();
+    let mut state = CoreBridgeState::new(
+        SecuritySettings::default(),
+        &mut hooks,
+        &mut status,
+        FsEmulationSettings::default(),
+    );
+    assert!(state.input_open("doc", FileFormat::Tex, false).is_some());
+    assert_eq!(state.latest_input_found(), &FoundAs::Asked);
+    assert!(state.input_open("other", FileFormat::Tex, false).is_none());
 }
 
 /// Does our resulting executable link correctly?

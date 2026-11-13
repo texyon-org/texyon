@@ -511,6 +511,12 @@ pub trait IoProvider: AsIoProviderMut {
         }
     }
 
+    /// The name of an input that matches `name` up to ASCII case in its last
+    /// component, for kpathsea's case-insensitive fallback.
+    fn input_casefold_name(&mut self, _name: &str) -> Option<String> {
+        None
+    }
+
     /// Open a format file with the specified name. Format files have a
     /// specialized entry point because IOProviders may wish to handle them
     /// specially: namely, to munge the filename to one that includes the
@@ -573,6 +579,10 @@ impl<P: IoProvider + ?Sized> IoProvider for Box<P> {
         (**self).input_open_primary_with_abspath(status)
     }
 
+    fn input_casefold_name(&mut self, name: &str) -> Option<String> {
+        (**self).input_casefold_name(name)
+    }
+
     fn input_open_format(
         &mut self,
         name: &str,
@@ -608,6 +618,23 @@ impl InputFeatures for Cursor<Vec<u8>> {
 }
 
 // Helpful.
+
+/// The first of `entries` equal to the last component of `name` up to ASCII
+/// case, with `name`'s directory part kept.
+pub fn casefold_match<'a>(
+    name: &str,
+    entries: impl IntoIterator<Item = &'a str>,
+) -> Option<String> {
+    let (dir, base) = match name.rfind('/') {
+        Some(slash) => name.split_at(slash + 1),
+        None => ("", name),
+    };
+    let found = entries
+        .into_iter()
+        .filter(|entry| *entry != base && entry.eq_ignore_ascii_case(base))
+        .min()?;
+    Some(format!("{dir}{found}"))
+}
 
 /// Try to open a file on the fileystem, returning an `OpenResult` type
 /// allowing easy handling if the file was not found.
@@ -707,6 +734,20 @@ pub fn normalize_tex_path(path: &str) -> Cow<'_, str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn casefold_match_keeps_the_directory() {
+        let entries = ["Fig.PDF", "fig.Pdf", "other.tex", "fig.pdf"];
+        assert_eq!(
+            casefold_match("sub/FIG.pdf", entries),
+            Some("sub/Fig.PDF".to_owned())
+        );
+        assert_eq!(
+            casefold_match("fig.pdf", entries),
+            Some("Fig.PDF".to_owned())
+        );
+        assert_eq!(casefold_match("missing.tex", entries), None);
+    }
 
     #[test]
     fn test_try_normalize_tex_path() {

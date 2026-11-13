@@ -115,6 +115,12 @@ impl IoProvider for IoStack<'_> {
         OpenResult::NotAvailable
     }
 
+    fn input_casefold_name(&mut self, name: &str) -> Option<String> {
+        self.items
+            .iter_mut()
+            .find_map(|item| item.input_casefold_name(name))
+    }
+
     fn input_open_format(
         &mut self,
         name: &str,

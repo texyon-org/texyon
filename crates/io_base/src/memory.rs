@@ -15,8 +15,8 @@ use texyon_errors::Result;
 use texyon_status_base::StatusBackend;
 
 use crate::{
-    normalize_tex_path, InputFeatures, InputHandle, InputOrigin, IoProvider, OpenResult,
-    OutputHandle,
+    casefold_match, normalize_tex_path, InputFeatures, InputHandle, InputOrigin, IoProvider,
+    OpenResult, OutputHandle,
 };
 
 /// Information about a file created or used inside the memory-backed I/O
@@ -238,6 +238,19 @@ impl IoProvider for MemoryIo {
             OpenResult::NotAvailable
         }
     }
+
+    fn input_casefold_name(&mut self, name: &str) -> Option<String> {
+        let name = normalize_tex_path(name);
+        let dir = name.rfind('/').map_or("", |slash| &name[..=slash]);
+        let files = self.files.borrow();
+        casefold_match(
+            &name,
+            files
+                .keys()
+                .filter_map(|key| key.strip_prefix(dir))
+                .filter(|base| !base.contains('/')),
+        )
+    }
 }
 
 #[cfg(test)]
@@ -245,6 +258,23 @@ mod tests {
     use super::*;
     use std::io::{BufRead, BufReader};
     use texyon_status_base::NoopStatusBackend;
+
+    #[test]
+    fn casefold_name_stays_in_the_directory() {
+        let mut mem = MemoryIo::new(false);
+        mem.create_entry("Chapter.tex", Vec::new());
+        mem.create_entry("sub/Part.tex", Vec::new());
+        assert_eq!(
+            mem.input_casefold_name("CHAPTER.TEX"),
+            Some("Chapter.tex".to_owned())
+        );
+        assert_eq!(
+            mem.input_casefold_name("sub/part.tex"),
+            Some("sub/Part.tex".to_owned())
+        );
+        assert_eq!(mem.input_casefold_name("part.tex"), None);
+        assert_eq!(mem.input_casefold_name("other/chapter.tex"), None);
+    }
 
     /// Early versions had a bug where files were not truncated when opened
     /// for writing, which led to junk after the intended EOF when the engine

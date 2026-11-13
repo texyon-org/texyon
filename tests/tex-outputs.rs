@@ -206,6 +206,17 @@ fn a4paper() {
         .go()
 }
 
+// Case-insensitive file systems find the asked name directly.
+#[cfg(target_os = "linux")]
+#[test]
+fn casefold_input() {
+    util::set_test_root();
+
+    TestCase::new("casefold_input")
+        .with_fs(&test_path(&["tex-outputs"]))
+        .go()
+}
+
 #[test]
 fn file_encoding() {
     // Need to do this here since we call test_path unusually early.
@@ -410,6 +421,15 @@ fn shipout_rtl_ligatures() {
 fn semantic_inline_math() {
     TestCase::new("semantic_inline_math")
         .semantic_pagination(true)
+        .go()
+}
+
+#[test]
+fn suffix_alt() {
+    util::set_test_root();
+
+    TestCase::new("suffix_alt")
+        .with_fs(&test_path(&["tex-outputs"]))
         .go()
 }
 

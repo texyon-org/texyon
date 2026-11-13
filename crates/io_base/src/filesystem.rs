@@ -6,7 +6,7 @@
 use std::{
     collections::HashSet,
     env,
-    fs::File,
+    fs::{self, File},
     io::{self, BufReader, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
@@ -14,8 +14,8 @@ use texyon_errors::Result;
 use texyon_status_base::{tt_warning, StatusBackend};
 
 use super::{
-    try_open_file, InputFeatures, InputHandle, InputOrigin, IoProvider, OpenResult, OutputHandle,
-    TexyonIoError,
+    casefold_match, try_open_file, InputFeatures, InputHandle, InputOrigin, IoProvider, OpenResult,
+    OutputHandle, TexyonIoError,
 };
 
 /// FilesystemPrimaryInputIo is an I/O provider that provides the TeX "primary input"
@@ -236,6 +236,19 @@ impl IoProvider for FilesystemIo {
         let handle = InputHandle::new(name, BufReader::new(f), InputOrigin::Filesystem);
         OpenResult::Ok((handle, Some(path)))
     }
+
+    fn input_casefold_name(&mut self, name: &str) -> Option<String> {
+        let path = self.construct_path(name).ok()?;
+        let dir = match path.parent()? {
+            p if p.as_os_str().is_empty() => Path::new("."),
+            p => p,
+        };
+        let entries = fs::read_dir(dir).ok()?;
+        let names: Vec<String> = entries
+            .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+            .collect();
+        casefold_match(name, names.iter().map(String::as_str))
+    }
 }
 
 impl InputFeatures for File {
@@ -279,4 +292,32 @@ impl InputFeatures for BufReader<File> {
 fn make_abspath<P: AsRef<Path>>(path: P) -> Result<PathBuf> {
     let cwd = env::current_dir()?;
     Ok(cwd.join(path.as_ref()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn casefold_name_lists_the_parent_directory() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("sub")).unwrap();
+        File::create(root.path().join("sub").join("Figure.PDF")).unwrap();
+        let mut io = FilesystemIo::new(root.path(), false, false, HashSet::new());
+        assert_eq!(
+            io.input_casefold_name("sub/figure.pdf"),
+            Some("sub/Figure.PDF".to_owned())
+        );
+        assert_eq!(io.input_casefold_name("figure.pdf"), None);
+        assert_eq!(io.input_casefold_name("nodir/figure.pdf"), None);
+    }
+
+    #[test]
+    fn casefold_name_under_an_empty_root_lists_the_current_directory() {
+        let mut io = FilesystemIo::new(Path::new(""), false, false, HashSet::new());
+        assert_eq!(
+            io.input_casefold_name("CARGO.TOML"),
+            Some("Cargo.toml".to_owned())
+        );
+    }
 }
