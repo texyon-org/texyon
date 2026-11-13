@@ -12,7 +12,7 @@ TeXyoN is a LaTeX engine built for live preview: XeTeX ported to Rust from Tecto
 - `live_preview` owns the preview: source staging, the resident engine driver, the pipeline, publication, diagnostics, pixels and SVG, PDF export and source navigation. `PreviewSession` is the one interface to it. Its core is portable, and only the `native` feature may assume an operating system.
 - Hosts are thin: `crates/wasm` for the browser Worker, the `preview` command for native. A host supplies I/O, tuning and transport, and contains no preview logic. A feature one frontend needs goes into `live_preview`, so every frontend gets it.
 - `preview_protocol` holds the message types, defined once for every host.
-- `preview_render` holds the renderer. The MuPDF backend is AGPL and stays behind an opt-in feature, so the portable libraries remain MIT.
+- `preview_render` holds the renderer. The MuPDF backend is AGPL and stays behind an opt-in feature. Licensing and credits live in `THIRD_PARTY_NOTICES.md`, keep it current when adding vendored code.
 - The VS Code extension uses the native binary. Wasm is only a fallback for platforms without one, such as VS Code in the browser.
 
 ## Code style

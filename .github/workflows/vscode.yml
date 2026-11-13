@@ -192,6 +192,8 @@ jobs:
             cp target/${{ matrix.target }}/release/texyon packages/vscode/bin/
             strip packages/vscode/bin/texyon
           fi
+          cp licenses/AGPL-3.0.txt packages/vscode/bin/LICENSE
+          cp THIRD_PARTY_NOTICES.md packages/vscode/bin/
       - name: "Show dynamic dependencies"
         if: ${{ runner.os != 'Windows' }}
         shell: bash

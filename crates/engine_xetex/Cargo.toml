@@ -16,7 +16,7 @@ homepage = "https://github.com/texyon-org/texyon"
 documentation = "https://docs.rs/texyon_engine_xetex"
 repository = "https://github.com/texyon-org/texyon"
 readme = "README.md"
-license = "MIT"
+license = "MIT AND LGPL-2.1-or-later"
 edition = "2021"
 links = "texyon_engine_xetex"
 

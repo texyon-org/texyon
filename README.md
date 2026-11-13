@@ -81,5 +81,8 @@ behaviour are checked against the goldens corpus
 
 ## License
 
-The libraries are MIT licensed. The MuPDF renderer backend, the native preview
-binary that links it, and the VS Code extension are AGPL v3 or later.
+TeXyoN's code is MIT licensed, see [LICENSE](LICENSE). It builds on Tectonic,
+XeTeX and TeX, and includes dvipdfmx (GPL v2 or later) for PDF output. Builds
+that link MuPDF for the live preview, which includes the VS Code extension and
+the web editor, are distributed under the AGPL v3 or later. Details and credits
+are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

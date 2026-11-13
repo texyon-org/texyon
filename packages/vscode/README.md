@@ -71,6 +71,7 @@ The extension talks to the engine through the session protocol described in
 
 ## License
 
-The extension and the bundled engine (which links MuPDF) are distributed under
-the GNU AGPL v3 or later. The portable TeXyoN libraries are MIT licensed and
-do not enable the MuPDF backend by default.
+The extension's code is MIT licensed. The TeXyoN binary it ships links MuPDF
+and dvipdfmx, so that binary is distributed under the GNU AGPL v3 or later.
+Its license and notices are in the extension's `bin/` folder, and the source is
+at https://github.com/texyon-org/texyon.
