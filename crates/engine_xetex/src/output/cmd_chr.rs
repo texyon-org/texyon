@@ -5,6 +5,7 @@ use crate::command::Command;
 use crate::eqtb::{DimenSlot, GlueSlot, IntSlot, ToksSlot};
 use crate::params::TokPar;
 use crate::state::{EngineState, InteractionMode};
+use crate::token::TokenList;
 use crate::units::NodeType;
 
 use super::{
@@ -333,6 +334,7 @@ pub(crate) fn print_meaning(st: &mut EngineState) {
         | Command::LongCall(body)
         | Command::OuterCall(body)
         | Command::LongOuterCall(body) => body,
+        Command::EndTemplate => TokenList::NULL,
         Command::TopBotMark { code, marks: false } => st.scanner.cur_mark[code],
         _ => return,
     };
