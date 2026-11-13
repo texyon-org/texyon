@@ -75,3 +75,4 @@ tldocs/latex/beamerthemecelestia/beamerthemeCelestia	neoschool's \IfFileExists{t
 tldocs/latex/beamerthemecelestia/beamerthemeCelestia-fr	neoschool's \IfFileExists{texgyrepagella-math.otf}: TeX input in upstream searches only TEXINPUTS, TeXyoN's lookup finds the bundle's font
 tldocs/latex/tikzorbital/tikzorbital	\lstinputlisting{./tikzorbital.sty}: kpathsea does not path-search ./ names, TeXyoN strips ./ and finds the bundle's copy
 tldocs/latex/fretplot/doc_fretplot	\usepackage{./fretplot}: kpathsea does not path-search ./ names, TeXyoN strips ./ and finds the bundle's copy
+tldocs/latex/lettre/lettre	reads ../../../tex/latex/lettre/lettre.cls, relative to the doc's place in the TeX Live tree: upstream does not find it from the case directory, TeXyoN resolves it in the bundle

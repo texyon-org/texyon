@@ -760,8 +760,8 @@ def same_pixels(tl, case, tl_xdv, tt_xdv, out):
     shutil.rmtree(out, ignore_errors=True)
     a = rasterize(tl, tl_xdv, out / "upstream", case.timeout)
     b = rasterize(tl, tt_xdv, out / "texyon", case.timeout)
-    if a is None or b is None:
-        return False, f"pixels: {'upstream' if a is None else 'TeXyoN'} XDV did not render"
+    if not a or not b:
+        return False, f"pixels: {'upstream' if not a else 'TeXyoN'} XDV did not render"
     if len(a) != len(b):
         return False, f"pixels: {len(a)} pages upstream, {len(b)} TeXyoN (in {out})"
     differ = [n for n, (x, y) in enumerate(zip(a, b), 1) if x.read_bytes() != y.read_bytes()]
