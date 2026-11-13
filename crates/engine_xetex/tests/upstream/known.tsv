@@ -77,3 +77,4 @@ tldocs/latex/tikzorbital/tikzorbital	\lstinputlisting{./tikzorbital.sty}: kpaths
 tldocs/latex/fretplot/doc_fretplot	\usepackage{./fretplot}: kpathsea does not path-search ./ names, TeXyoN strips ./ and finds the bundle's copy
 tldocs/latex/lettre/lettre	reads ../../../tex/latex/lettre/lettre.cls, relative to the doc's place in the TeX Live tree: upstream does not find it from the case directory, TeXyoN resolves it in the bundle
 tldocs/latex/kotex-utf/kotex-utf-doc	upstream does not merge the first native word of a list, so kotex's interchar tokens leave a locale break after 2014/ at a paragraph start (UPSTREAM_BUGS.md 25)
+arxiv/2610.25505	main file in latex/ with its inputs at the top: TeXyoN's CLI resolves paths from the main file's directory, upstream from the working directory
