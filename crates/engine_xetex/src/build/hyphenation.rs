@@ -20,7 +20,6 @@ pub(crate) const HYPH_PRIME: i32 = 607;
 
 const APPENDIX_H: &str = "(See Appendix H.)";
 
-/// A slot of the packed pattern trie.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
 pub(crate) struct TriePtr(usize);
 
@@ -28,13 +27,11 @@ impl TriePtr {
     /// A free slot's link, and "no family" in `trie_ref`.
     pub(crate) const NULL: TriePtr = TriePtr(0);
 
-    /// The value from its raw form in a format file.
     #[inline]
     pub(crate) const fn from_raw(raw: i32) -> TriePtr {
         TriePtr(raw as usize)
     }
 
-    /// The raw form for a format file.
     #[inline]
     pub(crate) const fn raw(self) -> i32 {
         self.0 as i32
@@ -45,20 +42,17 @@ impl TriePtr {
         self.0
     }
 
-    /// The slot of character `c` in the family based at `self`.
     #[inline]
     pub(crate) fn plus(self, c: usize) -> TriePtr {
         TriePtr(self.0 + c)
     }
 
-    /// The base of the family whose character `c` sits at `self`.
     #[inline]
     fn minus(self, c: usize) -> TriePtr {
         TriePtr(self.0 - c)
     }
 }
 
-/// A node of the linked trie that INITEX builds from `\patterns`.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
 pub(crate) struct TrieNode(usize);
 
@@ -100,9 +94,7 @@ pub(crate) struct HyphOp {
     pub next: TrieOp,
 }
 
-/// The packed trie and its ops.
 impl HyphState {
-    /// Op `v` of the language whose ops start at `op_base`.
     #[inline]
     pub(crate) fn hyph_op(&self, op_base: usize, v: TrieOp) -> HyphOp {
         self.op_at(op_base + v.index())
@@ -123,7 +115,6 @@ impl HyphState {
         self.hyf_next[i] = op.next.0;
     }
 
-    /// The base of slot `p`'s children.
     #[inline]
     pub(crate) fn trie_link(&self, p: TriePtr) -> TriePtr {
         TriePtr(self.trie_trl[p.0] as usize)
@@ -161,13 +152,11 @@ impl HyphState {
         self.trie_trc[p.0] = 0;
     }
 
-    /// The root of language `lang`'s patterns, if it has any.
     pub(crate) fn pattern_root(&self, lang: u8) -> Option<TriePtr> {
         let slot = TriePtr(usize::from(lang) + 1);
         (self.trie_char(slot) == u16::from(lang)).then(|| self.trie_link(slot))
     }
 
-    /// The lowest free slot that could hold character `c`.
     #[inline]
     fn trie_min(&self, c: usize) -> TriePtr {
         TriePtr(self.trie_min[c] as usize)
@@ -179,7 +168,6 @@ impl HyphState {
     }
 }
 
-/// The linked trie that INITEX builds from `\patterns`.
 impl HyphState {
     #[inline]
     fn trie_l(&self, p: TrieNode) -> TrieNode {
@@ -216,7 +204,6 @@ impl HyphState {
         self.trie_o[p.0] = op.0;
     }
 
-    /// The node equal to the one hashed at `h`, while compressing.
     #[inline]
     fn trie_hash(&self, h: usize) -> TrieNode {
         TrieNode(self.trie_hash[h] as usize)
@@ -227,7 +214,6 @@ impl HyphState {
         self.trie_hash[h] = q.0 as u32;
     }
 
-    /// Where node `p`'s family landed in the packed trie, sharing `trie_hash`.
     #[inline]
     fn trie_ref(&self, p: TrieNode) -> TriePtr {
         TriePtr(self.trie_hash[p.0] as usize)
@@ -250,7 +236,6 @@ impl HyphState {
 }
 
 impl HyphState {
-    /// Point `hyph_index` at the `\lccode` table saved with `cur_lang`'s patterns.
     pub(crate) fn set_hyph_index(&mut self) {
         let slot = self.hyph_start.plus(usize::from(self.cur_lang));
         self.hyph_index = (self.trie_char(slot) == u16::from(self.cur_lang))
@@ -258,7 +243,6 @@ impl HyphState {
             .filter(|&p| p != TriePtr::NULL);
     }
 
-    /// The hyphenation code of `c` under the current `hyph_index`.
     #[inline]
     pub(crate) fn hyph_code(&self, eqtb: &EqtbState, c: i32) -> i32 {
         let Some(index) = self.hyph_index.filter(|_| c <= 255) else {
@@ -278,7 +262,6 @@ impl HyphState {
         usize::from(self.hyph_link[h]).checked_sub(1)
     }
 
-    /// The exception-dictionary hash of the word `hc[1..=n]`.
     pub(crate) fn exception_hash(&self, n: usize) -> usize {
         self.hc[1..=n]
             .iter()
@@ -381,7 +364,6 @@ impl HyphState {
         self.trie_node(p)
     }
 
-    /// Place the family starting at `p` where each of its characters finds a free slot.
     fn first_fit(&mut self, p: TrieNode) -> Result<(), Abort> {
         let c = usize::from(self.trie_c(p));
         let max_hyph_char = self.max_hyph_char as usize;
@@ -586,7 +568,6 @@ impl HyphState {
         Ok(())
     }
 
-    /// Insert a node for `c` in front of `*p`, as `q`'s first child or right sibling.
     fn trie_insert_node(
         &mut self,
         q: TrieNode,
@@ -706,7 +687,6 @@ impl HyphState {
     }
 }
 
-/// `\XeTeXhyphenatablelength` as a word length.
 fn max_word_len(eqtb: &EqtbState) -> usize {
     usize::try_from(eqtb.max_hyphenatable_length()).unwrap_or(0)
 }
@@ -887,7 +867,6 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
     }
 }
 
-/// Enter the word `hc[1..=n]` with hyphen positions `p` into the exception table.
 fn store_hyph_exception(st: &mut EngineState, mut n: usize, p: MemPtr) -> Result<(), Abort> {
     n += 1;
     st.hyph.hc[n] = i32::from(st.hyph.cur_lang);
@@ -976,7 +955,6 @@ pub(crate) struct HyphState {
     pub max_op_used: u16,
     pub trie_not_ready: bool,
     pub hyph_start: TriePtr,
-    /// The `\lccode` table saved with the current language's patterns.
     pub hyph_index: Option<TriePtr>,
     pub cur_lang: u8,
     pub hyf_char: LigChar,
@@ -1068,7 +1046,6 @@ pub(crate) fn norm_min(h: i32) -> i16 {
     h.clamp(1, 63) as i16
 }
 
-/// `\language` as a valid language number, 0 when out of range.
 pub(crate) fn norm_lang(lang: i32) -> u8 {
     if lang <= 0 || lang > BIGGEST_LANG {
         0

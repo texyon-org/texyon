@@ -60,7 +60,6 @@ const MOV_Z_SEEN: i32 = 12;
 /// Slack TeX adds to leader glue against floating-point rounding.
 const LEADER_SLOP: Scaled = Scaled::from_raw(10);
 
-/// How many leader boxes of size `size` fit in `total`, and the leftover space.
 fn leader_count_and_rest(total: Scaled, size: Scaled) -> (i32, Scaled) {
     (total.raw() / size.raw(), total % size.raw())
 }
@@ -130,7 +129,6 @@ pub fn initialize_shipout_variables(st: &mut EngineState) {
     s.right_moves.clear();
 }
 
-/// Emit the current string (the tail of the pool) as a DVI special and drop it.
 fn dvi_special_from_cur_string(st: &mut EngineState) -> Result<(), Abort> {
     st.shipout.dvi.special(st.strings.cur_string())?;
     st.strings.discard_cur_string();
@@ -356,7 +354,6 @@ impl GlueRounding {
         }
     }
 
-    /// Whether the box stretches or shrinks `spec`'s component.
     fn is_set(&self, mem: &MemState, spec: GlueSpecId) -> bool {
         match self.sign.get() {
             Some(GlueSign::Stretching) => mem[spec].stretch_order == self.order,
@@ -365,7 +362,6 @@ impl GlueRounding {
         }
     }
 
-    /// The rounded width of `spec` as set in this box.
     fn width(&mut self, mem: &MemState, spec: GlueSpecId) -> Scaled {
         let width = mem[spec].width - self.cur_g;
         if self.is_set(mem, spec) {
@@ -392,8 +388,6 @@ impl FontState {
     }
 }
 
-/// Native words of one font joined by interword glue, and their text length
-/// with a space for each glue.
 struct NativeWordRun {
     first: NodePtr<NativeWordNode>,
     last: NodePtr<NativeWordNode>,
@@ -483,8 +477,6 @@ impl MemState {
         Ok(())
     }
 
-    /// Replace the run `first..=last` by one native word, moving the ignorable
-    /// nodes inside the run after it. Returns the last node of the replacement.
     fn merge_native_word_run(
         &mut self,
         strings: &mut StringsState,
@@ -611,7 +603,6 @@ impl MemState {
         }
     }
 
-    /// The LR stack top matches the end code of `code`.
     fn lr_matches(&self, lr: &LrState, code: MathCode) -> bool {
         self.lr_code(lr.ptr) == Some(code.lr_end())
     }
@@ -630,7 +621,6 @@ fn ship_box(st: &mut EngineState, lr: &mut LrState, b: NodePtr<BoxNode>) -> Resu
     }
 }
 
-/// Ship one copy of a leader box with `doing_leaders` set.
 fn ship_leader_box(
     st: &mut EngineState,
     lr: &mut LrState,
@@ -662,7 +652,6 @@ impl RuleDims {
     }
 }
 
-/// Ship `rule` (node `p`, a rule or rule leaders) in an hlist.
 fn hlist_rule_out(
     st: &mut EngineState,
     this_box: NodePtr<BoxNode>,
@@ -690,7 +679,6 @@ fn hlist_rule_out(
     Ok(())
 }
 
-/// Ship `rule` (a rule or rule leaders) in a vlist.
 fn vlist_rule_out(
     st: &mut EngineState,
     lr: &mut LrState,
@@ -726,14 +714,12 @@ impl ShipoutState {
     }
 }
 
-/// Box leaders filling `size` along a list.
 struct BoxLeaders {
     leader: NodePtr<BoxNode>,
     kind: LeaderKind,
     size: Scaled,
 }
 
-/// Move right past glue `glue` or output its leaders.
 fn hlist_glue_out(
     st: &mut EngineState,
     lr: &mut LrState,
@@ -824,7 +810,6 @@ fn glyph_out(st: &mut EngineState, glyph: NodePtr<GlyphNode>) -> Result<(), Abor
     Ok(())
 }
 
-/// A native word, with its text as ActualText for `actual_text`.
 fn native_word_out(
     st: &mut EngineState,
     word: NodePtr<NativeWordNode>,
@@ -890,8 +875,6 @@ impl OutChar {
     }
 }
 
-/// Output `first` and the char nodes that follow it, returning the first other
-/// node and the slot that points at it.
 fn chars_out(st: &mut EngineState, first: OutChar) -> Result<(MemPtr, LinkSlot), Abort> {
     synch_h(st)?;
     synch_v(st)?;
@@ -1259,8 +1242,6 @@ fn vlist_box_out(
     Ok(())
 }
 
-/// Runs `out`, then puts `dvi_h` and `dvi_v` back to where they were,
-/// returning that position.
 fn with_saved_dvi_pos(
     st: &mut EngineState,
     out: impl FnOnce(&mut EngineState) -> Result<(), Abort>,
@@ -1324,18 +1305,15 @@ fn vlist_leaders_out(
     Ok(())
 }
 
-/// A DVI movement already emitted, which a later one of the same distance may reuse.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) struct Movement {
     /// Whether the movement may be reused, and as which command.
     pub state: i32,
     pub distance: Scaled,
-    /// The DVI offset where the movement was emitted.
     pub location: i32,
 }
 
 impl ShipoutState {
-    /// TeX's `movement`: emits a move by `w`, through a register when an earlier move allows.
     fn movement(&mut self, w: Scaled, axis: Axis) -> Result<(), Abort> {
         let location = self.dvi.pos();
         let moves = match axis {
@@ -1401,7 +1379,6 @@ impl ShipoutState {
         self.dvi.movement_by_reg(axis, reg)
     }
 
-    /// Forgets the movements emitted at or after DVI offset `l`.
     fn prune_movements(&mut self, l: i32) {
         for moves in [&mut self.down_moves, &mut self.right_moves] {
             while moves.last().is_some_and(|m| m.location >= l) {
@@ -1474,7 +1451,6 @@ pub(crate) fn finalize_dvi_file(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-/// The glyph array of `word`: its width, glyph positions and glyph ids.
 fn glyph_array(mem: &MemState, word: NodePtr<NativeWordNode>) -> (Scaled, &[FixedPoint], &[u16]) {
     let count = mem[word].glyph_count as usize;
     let glyphs = mem.glyph_blobs.get(mem[word].glyph_info);
@@ -1653,7 +1629,6 @@ pub(crate) struct ShipoutState {
     pub pdf_last_y_pos: i32,
     pub write_file: [usize; 16],
     pub write_open: [bool; 18],
-    /// Packed NUL-terminated names for bridge-local `\write` handles.
     pub write_name: [Option<Vec<u8>>; 16],
     /// Code units emitted before the current replay fence.
     pub write_prefix: [Vec<i32>; 16],

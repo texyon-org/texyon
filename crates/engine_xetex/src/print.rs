@@ -42,7 +42,6 @@ pub(crate) use warnings::{
     group_warning, if_warning,
 };
 
-/// Prints `n` in base `radix` with at least `min_digits` digits.
 fn print_digits(st: &mut EngineState, mut n: u32, radix: u32, min_digits: usize) {
     let mut dig = [0u8; 10];
     let mut k = 0;
@@ -76,7 +75,6 @@ pub(crate) fn print_ucs_code(st: &mut EngineState, n: i32) {
     print_digits(st, n.unsigned_abs(), 16, 4);
 }
 
-/// A value TeX prints, following `\escapechar`, `\newlinechar` and the selector.
 pub(crate) trait TexPrint {
     fn print_to(&self, st: &mut EngineState);
 }
@@ -103,7 +101,6 @@ impl TexPrint for u8 {
     }
 }
 
-/// Literal text, one `print_char` per byte.
 impl TexPrint for str {
     #[inline]
     fn print_to(&self, st: &mut EngineState) {
@@ -118,7 +115,6 @@ impl TexPrint for [u8] {
     }
 }
 
-/// One character, as `print_char` prints it.
 impl TexPrint for char {
     #[inline]
     fn print_to(&self, st: &mut EngineState) {
@@ -126,7 +122,6 @@ impl TexPrint for char {
     }
 }
 
-/// A decimal number, as `print_int` prints it.
 impl TexPrint for i32 {
     #[inline]
     fn print_to(&self, st: &mut EngineState) {
@@ -134,7 +129,6 @@ impl TexPrint for i32 {
     }
 }
 
-/// A dimension without its unit, as `print_scaled` prints it.
 impl TexPrint for Scaled {
     #[inline]
     fn print_to(&self, st: &mut EngineState) {
@@ -142,7 +136,6 @@ impl TexPrint for Scaled {
     }
 }
 
-/// Nothing for `None`.
 impl<T: TexPrint> TexPrint for Option<T> {
     #[inline]
     fn print_to(&self, st: &mut EngineState) {
@@ -152,7 +145,6 @@ impl<T: TexPrint> TexPrint for Option<T> {
     }
 }
 
-/// A control sequence as written, as `sprint_cs` prints it.
 #[derive(Copy, Clone)]
 pub(crate) struct CsName(pub Option<CsId>);
 
@@ -162,7 +154,6 @@ impl TexPrint for CsName {
     }
 }
 
-/// `T` on a fresh line, as `print_nl` prints it.
 #[derive(Copy, Clone)]
 pub(crate) struct Nl<T>(pub T);
 
@@ -172,7 +163,6 @@ impl<T: TexPrint> TexPrint for Nl<T> {
     }
 }
 
-/// The family font command of a math size: `\textfont`, `\scriptfont` or `\scriptscriptfont`.
 #[derive(Copy, Clone)]
 pub(crate) struct FamFont(pub i32);
 
@@ -182,7 +172,6 @@ impl TexPrint for FamFont {
     }
 }
 
-/// `' in <mode>`, closing a `You can't use` message.
 #[derive(Copy, Clone)]
 pub(crate) struct InMode(pub ModeName);
 
@@ -192,7 +181,6 @@ impl TexPrint for InMode {
     }
 }
 
-/// A control sequence name, printed after `\escapechar`.
 #[derive(Copy, Clone)]
 pub(crate) struct Esc<T>(pub T);
 
@@ -316,7 +304,6 @@ fn warn_char(st: &mut EngineState, c: i32) {
     st.diagnostics.mirror(c as u8);
 }
 
-/// Write one transcript byte, counting it so a resumed run can continue the transcript.
 pub(crate) fn log_putc(st: &mut EngineState, byte: u8) {
     output_putc(st.shipout.log_file, byte);
     st.shipout.log_bytes += 1;
@@ -347,7 +334,6 @@ pub(crate) fn print_ln(st: &mut EngineState) {
     }
 }
 
-/// Writes one byte, UTF-16 code unit or (when pseudoprinting) character to the current selector.
 pub(crate) fn print_raw_char(st: &mut EngineState, s: impl Into<i32>, incr_offset: bool) {
     let s = s.into();
     match st.shipout.selector {
@@ -543,7 +529,6 @@ pub(crate) fn print_ignored_err(st: &mut EngineState, message: &str) {
     end_capture(st);
 }
 
-/// Starts an error line with `! ` or, in file:line:error style, the source position.
 pub(crate) fn print_error_prefix(st: &mut EngineState) {
     if st.config.file_line_error_style_p != 0 {
         print_file_line(st);
@@ -651,7 +636,6 @@ pub(crate) fn print_file_name(st: &mut EngineState, n: StrNumber, a: StrNumber, 
     }
 }
 
-/// The name string of a control sequence from the first hash bucket on.
 fn cs_text(st: &EngineState, p: CsId) -> StrNumber {
     match p.kind() {
         CsKind::Primitive(prim) => st.eqtb.prim_text(prim).unwrap_or(StrNumber::from_raw(-1)),
@@ -688,7 +672,6 @@ pub(crate) fn print_cs(st: &mut EngineState, p: Option<CsId>) {
     }
 }
 
-/// Like [`print_cs`] but without the trailing space.
 pub(crate) fn sprint_cs(st: &mut EngineState, p: Option<CsId>) {
     let Some(p) = p else {
         return print_esc(st, "IMPOSSIBLE.");
@@ -853,7 +836,6 @@ pub(crate) fn print_style(st: &mut EngineState, c: i32) {
     print_esc(st, name);
 }
 
-/// Prints a character code, as a string number when it is one.
 fn print_code(st: &mut EngineState, c: i32) {
     if c < TOO_BIG_CHAR {
         print(st, StrNumber::single_char(c));
@@ -889,7 +871,6 @@ pub(crate) fn print_rule_dimen(st: &mut EngineState, d: RuleDimen) {
     }
 }
 
-/// Prints `d` with its fil/fill/filll order, or the unit `s` for finite glue.
 pub(crate) fn print_glue(
     st: &mut EngineState,
     d: Scaled,
@@ -942,13 +923,11 @@ fn print_mark(st: &mut EngineState, list: TokenList) {
     print_char(st, b'}');
 }
 
-/// `select font <name>`, quoting native font names, plus ` at <size>pt` if scaled.
 fn print_font_select(st: &mut EngineState, f: FontId) {
     print(st, "select font ");
     print_font_name_and_size(st, f);
 }
 
-/// The name of font `f`, quoted if native, then ` at <size>pt` unless at design size.
 pub(crate) fn print_font_name_and_size(st: &mut EngineState, f: FontId) {
     let name = st.fonts.font_name[f];
     let area = st.fonts.font_area[f];
@@ -969,7 +948,6 @@ pub(crate) fn print_font_name_and_size(st: &mut EngineState, f: FontId) {
     }
 }
 
-/// Prints `bytes` with `print_raw_char`, one column each.
 pub(crate) fn print_raw_bytes(st: &mut EngineState, bytes: &[u8]) {
     for &b in bytes {
         print_raw_char(st, i32::from(b), true);
@@ -979,7 +957,6 @@ pub(crate) fn print_raw_bytes(st: &mut EngineState, bytes: &[u8]) {
 /// Where printing goes (`selector`), ordered like TeX's numeric codes.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
 pub(crate) enum Selector {
-    /// `\write` stream `0..=15`.
     File(u8),
     NoPrint,
     #[default]

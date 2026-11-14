@@ -93,7 +93,6 @@ pub(crate) fn show_token_list(st: &mut EngineState, mut p: TokCursor, q: TokCurs
     }
 }
 
-/// Shows `tokens`, which are not in a stored list.
 pub(crate) fn show_tokens(st: &mut EngineState, tokens: &[Token], l: i32) {
     let mut shown = ShownTokens::default();
     st.errors.tally = 0;
@@ -108,7 +107,6 @@ pub(crate) fn show_tokens(st: &mut EngineState, tokens: &[Token], l: i32) {
     }
 }
 
-/// What `show_token_list` keeps between tokens: the last match character and parameter number.
 struct ShownTokens {
     match_chr: i32,
     n: i32,
@@ -124,7 +122,6 @@ impl Default for ShownTokens {
 }
 
 impl ShownTokens {
-    /// Shows `w`, false where `show_token_list` stops.
     fn show(&mut self, st: &mut EngineState, w: Token) -> bool {
         match w.kind() {
             TokenKind::Cs(cs) => print_cs(st, Some(cs)),
@@ -585,7 +582,6 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
     finish_error(st)
 }
 
-/// Sends a `\show...` to the `\write` stream `\showstream` names, if that stream is open.
 fn show_to_stream(st: &mut EngineState) -> Result<(), Abort> {
     let Ok(stream) = u8::try_from(st.eqtb.int_par(IntPar::ShowStream)) else {
         return Ok(());
@@ -600,7 +596,6 @@ fn show_to_stream(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-/// The outer vertical list part of `show_activities`: the current page and its insertions.
 fn show_page_so_far(st: &mut EngineState) {
     if st.shipout.page_tail != Some(PAGE_HEAD) {
         print_nl(st, "### current page:");
@@ -728,7 +723,6 @@ fn show_activities(st: &mut EngineState) {
     }
 }
 
-/// Switches to pseudoprinting, returning how much of the line was already printed.
 fn begin_pseudoprint(st: &mut EngineState) -> i32 {
     let l = st.errors.tally;
     st.errors.tally = 0;

@@ -62,13 +62,11 @@ pub(crate) enum CurVal {
     Dimen(Scaled),
     Glue(GlueSpecId),
     Mu(GlueSpecId),
-    /// A font identifier, as the control sequence that names it.
     Ident(CsId),
     Tok(TokenList),
 }
 
 impl CurVal {
-    /// The `cur_val_level` of this value.
     pub(crate) fn level(self) -> ValueLevel {
         match self {
             CurVal::Int(_) => ValueLevel::Int,
@@ -80,7 +78,6 @@ impl CurVal {
         }
     }
 
-    /// Decodes the word `w` that a register or expression stores at `level`.
     pub(crate) fn from_word(level: ValueLevel, w: i32) -> Result<CurVal, Abort> {
         Ok(match level {
             ValueLevel::Int => CurVal::Int(w),
@@ -101,7 +98,6 @@ impl CurVal {
         }
     }
 
-    /// The glue spec of a glue or mu glue value.
     pub(crate) fn glue(self) -> Option<GlueSpecId> {
         match self {
             CurVal::Glue(spec) | CurVal::Mu(spec) => Some(spec),
@@ -130,7 +126,6 @@ impl CurVal {
         })
     }
 
-    /// Coerces the value down to at most `level`, releasing coerced glue if `release`.
     fn coerce(
         mut self,
         st: &mut EngineState,
@@ -143,7 +138,6 @@ impl CurVal {
         Ok(self)
     }
 
-    /// The negated value, glue as a fresh negated copy.
     fn negate(self, st: &mut EngineState) -> Result<CurVal, Abort> {
         Ok(match self {
             CurVal::Int(n) => CurVal::Int(-n),
@@ -155,15 +149,12 @@ impl CurVal {
     }
 }
 
-/// A new spec holding `old` with all three components negated.
 fn negated_glue(st: &mut EngineState, old: GlueSpecId) -> Result<GlueSpecId, Abort> {
     let spec = st.mem.new_spec(old)?;
     map_glue(st, spec, |x| -x);
     Ok(spec)
 }
 
-/// Scans a font identifier, returning the font, its OpenType/Graphite layout
-/// engine and its area flag.
 fn scan_font_engine(
     st: &mut EngineState,
 ) -> Result<(FontId, Option<Rc<FontEngineHandle>>, StrNumber), Abort> {
@@ -179,7 +170,6 @@ fn opentype_engine(engine: &Option<Rc<FontEngineHandle>>) -> Option<&FontEngineH
     engine.as_deref().filter(|e| e.using_opentype())
 }
 
-/// Reports a font query on an unsuitable font.
 fn font_query_error(
     st: &mut EngineState,
     m: LastItemCode,
@@ -290,7 +280,6 @@ fn fetch_register(st: &mut EngineState, level: ValueLevel) -> Result<CurVal, Abo
     })
 }
 
-/// Integer-valued `\lastnodetype`-style and XeTeX font queries.
 fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<i32, Abort> {
     Ok(match m {
         LastItemCode::InputLineNo => st.mem.line,
@@ -611,7 +600,6 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: LastItemCode) -> Result<Scaled
     })
 }
 
-/// `\lastpenalty`, `\lastkern`, `\lastskip` and `\lastnodetype`.
 fn fetch_last_node_item(st: &EngineState, code: LastItemCode) -> Result<CurVal, Abort> {
     let head = st.input.cur_list.head;
     let mode = st.input.cur_list.mode.name();
@@ -663,7 +651,6 @@ fn fetch_last_node_item(st: &EngineState, code: LastItemCode) -> Result<CurVal, 
     })
 }
 
-/// The value of an `\numexpr`-style or glue conversion `last_item`, coerced to at most `level`.
 fn fetch_expr_item(
     st: &mut EngineState,
     code: LastItemCode,
@@ -689,7 +676,6 @@ fn fetch_expr_item(
     Ok(negated)
 }
 
-/// Scans an internal quantity of at most `level`, negated if `negative`.
 pub(super) fn scan_something_internal(
     st: &mut EngineState,
     level: ValueLevel,
@@ -843,7 +829,6 @@ pub(super) fn scan_something_internal(
     }
 }
 
-/// Scans a font identifier.
 pub(crate) fn scan_font_ident(st: &mut EngineState) -> Result<FontId, Abort> {
     get_x_non_blank(st)?;
     let f = match st.scanner.cur {

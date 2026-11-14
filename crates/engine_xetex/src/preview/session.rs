@@ -67,7 +67,6 @@ struct FenceController {
     activity: NonNull<CheckpointActivity>,
 }
 
-/// Where an operation may place checkpoint fences.
 struct FencePlan {
     strings_base: StringWatermark,
     budget: LadderBudget,
@@ -134,7 +133,6 @@ pub(crate) fn capture_prefetch_fence(state: &mut EngineState) {
     let _ = capture_fence(state, false, false);
 }
 
-/// Capture an undispatched-command checkpoint when the active cadence fires.
 pub(crate) fn capture_command_fence(state: &mut EngineState) -> bool {
     capture_fence(state, true, true)
 }
@@ -234,7 +232,6 @@ pub(crate) fn resident_active() -> bool {
     RESIDENT_ACTIVE.load(Ordering::Acquire)
 }
 
-/// Where the document's unfinished tail resumes.
 struct TailContinuation {
     /// The fence the next continuation starts from.
     rung_clock: u64,
@@ -817,7 +814,6 @@ impl IncrementalXeTeXSession {
         Ok(frame)
     }
 
-    /// Marks the session unusable and returns `error`.
     fn kill(&mut self, error: Error) -> Error {
         self.dead = true;
         self.release_global_lease();
@@ -855,8 +851,6 @@ enum OperationResult {
     Panicked,
 }
 
-/// The replay fence an operation resumes from: its splice offset and whether
-/// it holds an undispatched command.
 #[derive(Clone, Copy)]
 struct Splice {
     at: usize,

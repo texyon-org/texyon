@@ -28,15 +28,12 @@ fn inter_char_tokens_enabled(st: &EngineState) -> bool {
     st.eqtb.int_par(IntPar::XetexInterCharTokens) > 0
 }
 
-/// The `\XeTeXinterchartoks` list for class pair `n`, if set.
 fn inter_char_toks(st: &EngineState, first: i32, second: i32) -> Option<TokenList> {
     let pair = InterCharPair::new(first, second)?;
     let list = st.eqtb.inter_char.get(pair);
     (!list.is_null()).then_some(list)
 }
 
-/// Inserts the inter-character tokens between the last character's class and
-/// the boundary class, ahead of the current token. Returns whether it did.
 pub(super) fn insert_boundary_inter_char_toks(st: &mut EngineState) -> Result<bool, Abort> {
     if !inter_char_tokens_enabled(st) {
         return Ok(false);
@@ -58,8 +55,6 @@ pub(super) fn insert_boundary_inter_char_toks(st: &mut EngineState) -> Result<bo
     Ok(true)
 }
 
-/// Inserts the inter-character tokens between the previous character's class
-/// and class `sc` of the current character `chr`. Returns whether it did.
 fn insert_inter_char_toks_before(st: &mut EngineState, sc: i32, chr: i32) -> Result<bool, Abort> {
     if !inter_char_tokens_enabled(st) || sc == CHAR_CLASS_LIMIT {
         return Ok(false);
@@ -91,8 +86,6 @@ fn note_char_class(st: &mut EngineState, sc: i32) {
     }
 }
 
-/// TeX's `adjust_space_factor` for `chr`. Also records and returns the
-/// character's space class.
 #[inline(always)]
 fn adjust_space_factor(st: &mut EngineState, chr: i32) -> Result<i32, Abort> {
     let sf_code = st.eqtb.sf_code(chr);
@@ -120,8 +113,6 @@ fn is_hyphen_unit(st: &EngineState, c: i32, hyphen: i32) -> bool {
     c == hyphen || (st.eqtb.int_par(IntPar::XetexDashBreak) > 0 && (c == 8212 || c == 8211))
 }
 
-/// The offset just past the first hyphen in `len` units of native text at
-/// `start`, `len` when there is none.
 fn past_next_hyphen(st: &EngineState, f: FontId, start: i32, len: i32) -> i32 {
     let hyphen = st.fonts.hyphen_char[f];
     let mut h = 0;
@@ -140,7 +131,6 @@ fn past_next_hyphen(st: &EngineState, f: FontId, start: i32, len: i32) -> i32 {
     h
 }
 
-/// The node before `pp` in the current list, skipping discretionary replacement lists.
 fn node_before(st: &EngineState, pp: MemIdx) -> Result<MemIdx, Abort> {
     let mut ppp = st.input.cur_list.head;
     while ppp != pp && ppp.link(&st.mem) != Some(pp) {
@@ -175,12 +165,10 @@ fn extendable_native_word(
 }
 
 impl MemState {
-    /// Writes `text` into `node`'s text at `at`.
     fn write_native_text(&mut self, node: NodePtr<NativeWordNode>, at: usize, text: &[u16]) {
         self.entries_mut(node)[at..at + text.len()].copy_from_slice(text);
     }
 
-    /// Copies the text of `src` into `node`'s text at `at`.
     fn copy_native_text_into(
         &mut self,
         node: NodePtr<NativeWordNode>,
@@ -197,8 +185,6 @@ fn use_glyph_metrics(st: &EngineState) -> bool {
     st.eqtb.int_par(IntPar::XetexUseGlyphMetrics) > 0
 }
 
-/// The main loop for an AAT or OpenType font: collects the run of characters
-/// starting with `chr` into native word nodes. Returns whether to go to `big_switch`.
 fn main_loop_native(st: &mut EngineState, mf: FontId, mut chr: i32) -> Result<bool, Abort> {
     if st.input.cur_list.mode.is_outer()
         && st.eqtb.int_par(IntPar::Language) != st.input.cur_list.clang()?
@@ -370,8 +356,6 @@ fn main_loop_native(st: &mut EngineState, mf: FontId, mut chr: i32) -> Result<bo
     Ok(inserted_toks)
 }
 
-/// Kerns the interword glue before the current word by what the font's shaping
-/// of `word space word` implies.
 fn shape_interword_space(st: &mut EngineState, mf: FontId) -> Result<(), Abort> {
     let tail = st.input.cur_list.tail;
     let mut p = st.input.cur_list.head;
@@ -418,8 +402,6 @@ fn shape_interword_space(st: &mut EngineState, mf: FontId) -> Result<(), Abort> 
     Ok(())
 }
 
-/// The top of the ligature stack: the lookahead character, or a lig item that
-/// a ligature instruction pushed.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum LigStack {
     Char(NodePtr<CharNode>),
@@ -435,7 +417,6 @@ impl LigStack {
         }
     }
 
-    /// The character it carries.
     #[inline]
     fn character(self, mem: &MemState) -> LigChar {
         LigChar::of(match self {
@@ -446,7 +427,6 @@ impl LigStack {
 }
 
 impl MemState {
-    /// The ligature stack entry at link `p`, `None` when the stack ends there.
     #[inline]
     fn lig_stack_at(&self, p: MemPtr) -> Option<LigStack> {
         let p = p?;
@@ -458,41 +438,34 @@ impl MemState {
     }
 }
 
-/// The registers of one run of the TFM character loop.
 struct LigKern {
     font: FontId,
-    /// The character the loop is at, TeX's `cur_chr`.
     chr: i32,
     bchar: LigChar,
     false_bchar: LigChar,
     cur_l: LigChar,
     cur_r: LigChar,
-    /// The node the pending ligature's characters follow.
     cur_q: MemIdx,
     lig_stack: Option<LigStack>,
     ligature_present: bool,
     lft_hit: bool,
     rt_hit: bool,
-    /// Whether inter-character tokens ended the word, so the big switch reads them next.
     inserted_toks: bool,
 }
 
 impl LigKern {
-    /// The character on top of `lig_stack`, a char node or a lig item alike.
     #[inline(always)]
     fn lig_stack_char(&self, mem: &MemState) -> LigChar {
         self.lig_stack
             .map_or(LigChar::NONE, |top| top.character(mem))
     }
 
-    /// Nothing follows `cur_l` but the right boundary.
     #[inline]
     fn end_word(&mut self) {
         self.cur_r = self.bchar;
         self.lig_stack = None;
     }
 
-    /// The char node on top of `lig_stack`, the lookahead character.
     #[inline]
     fn lookahead_node(&self) -> Result<NodePtr<CharNode>, Abort> {
         let top = self.lig_stack.or_confusion("lig_stack")?;
@@ -500,7 +473,6 @@ impl LigKern {
     }
 }
 
-/// Where the ligature/kern program scan ended.
 enum LigExit {
     /// `main_loop_wrapup`.
     Wrapup,
@@ -512,7 +484,6 @@ enum LigExit {
     Restart,
 }
 
-/// Where the next pass of the TFM main loop starts.
 enum Resume {
     /// `main_lig_loop`.
     LigLoop,
@@ -522,8 +493,6 @@ enum Resume {
     Move2,
 }
 
-/// TeX's `wrapup`: packs a pending ligature and inserts a pending
-/// discretionary. `rt_hit` says whether a right boundary hit may count.
 #[inline(always)]
 fn wrapup(st: &mut EngineState, lk: &mut LigKern, rt_hit: bool) -> Result<(), Abort> {
     if !lk.cur_l.is_char() {
@@ -697,8 +666,6 @@ pub(super) fn main_control_main_loop(
     }
 }
 
-/// Runs the font's ligature/kern program for `cur_l` and `cur_r` from
-/// instruction `step` at index `k`.
 #[inline(always)]
 fn lig_kern_program(
     st: &mut EngineState,
@@ -842,7 +809,6 @@ fn lookahead(st: &mut EngineState, lk: &mut LigKern) -> Result<(), Abort> {
 /// between runs of the main loop.
 #[derive(Default, Clone)]
 pub(crate) struct InterCharState {
-    /// The class of the last character the main loop classed.
     pub space_class: i32,
     /// The class before it, the boundary class when tokens were just inserted.
     pub prev_class: i32,

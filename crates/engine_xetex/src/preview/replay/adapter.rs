@@ -40,7 +40,6 @@ pub(crate) struct MemoryInput {
     pub(crate) closed: bool,
 }
 
-/// Uninstalls the sources and hands the written paths back to their owner.
 pub(crate) struct SourceInstallGuard<'a> {
     written: &'a mut BTreeSet<SourcePath>,
 }
@@ -84,12 +83,10 @@ pub(crate) fn record_written(path: &str) {
     });
 }
 
-/// Every opened or previously consumed editor byte channel, in handle order.
 pub(crate) fn checkpoint_inputs() -> Option<Vec<MemoryInput>> {
     ACTIVE.with(|active| Some(active.borrow().as_ref()?.inputs.clone()))
 }
 
-/// Recreate a captured handle table against the currently installed snapshot.
 pub(crate) fn restore_inputs(checkpoints: &[MemoryInput]) -> bool {
     ACTIVE.with(|active| {
         let mut active = active.borrow_mut();
@@ -169,7 +166,6 @@ pub(crate) fn open_named(path: &str, format: FileFormat) -> Option<usize> {
     })
 }
 
-/// Whether the active snapshot holds a buffer in directory `dir`.
 pub(crate) fn holds_directory(dir: &str) -> bool {
     ACTIVE.with(|active| {
         active
@@ -219,7 +215,6 @@ pub(crate) fn checkpoint_handle_is_open(checkpoints: &[MemoryInput], handle: usi
             .is_some_and(|checkpoint| !checkpoint.closed)
 }
 
-/// Underlying byte cursor of the newest open channel for `path`.
 pub(crate) fn open_position(path: &SourcePath) -> Option<usize> {
     ACTIVE.with(|active| {
         active

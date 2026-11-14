@@ -103,7 +103,6 @@ pub(crate) fn get_strings_started(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-/// Defines primitive `ident` and returns its control sequence.
 fn primitive(st: &mut EngineState, ident: &str, c: Cmd, o: i32) -> Result<CsId, Abort> {
     let bytes = ident.as_bytes();
     let cs;
@@ -542,7 +541,6 @@ fn run_engine_inner(
     }
 }
 
-/// Result of initializing an engine before any primary document is opened.
 pub(crate) enum InitOutcome {
     Ready,
     Terminate(i32),
@@ -809,7 +807,6 @@ pub(crate) fn initialize_engine(
     InitOutcome::Ready
 }
 
-/// Open, execute, finalize, and release one batch document operation.
 fn run_document_to_end(st: &mut EngineState, input_file_name: &str) -> i32 {
     let result = (|| {
         start_input(st, Some(input_file_name))?;
@@ -840,7 +837,6 @@ pub(crate) fn run_resident_document(
     Ok(st.errors.history)
 }
 
-/// Resume a resident document at a restored command boundary.
 pub(crate) fn resume_resident_document(
     st: &mut EngineState,
     resume_pending_command: bool,
@@ -852,7 +848,6 @@ pub(crate) fn resume_resident_document(
     Ok(st.errors.history)
 }
 
-/// Close input slots that may remain live after an interrupted resident op.
 pub(crate) fn release_operation_inputs(st: &mut EngineState) {
     for slot in st
         .input
@@ -957,7 +952,6 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     hyph.trie_taken = Vec::new();
 }
 
-/// Runs its closure when dropped, including during unwinding.
 struct OnDrop<F: FnMut()>(F);
 
 impl<F: FnMut()> Drop for OnDrop<F> {

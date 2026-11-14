@@ -54,10 +54,7 @@ pub(crate) struct ConfigState {
     pub synctex_enabled: i32,
     pub semantic_pagination_enabled: bool,
     pub shell_escape_enabled: bool,
-    /// Remove live clock and timezone inputs from engine-visible values.
     pub deterministic_mode: bool,
-    /// Selects operation-lifetime behavior that differs for a resident engine,
-    /// such as guarded picture probes.
     pub execution_mode: EngineExecutionMode,
     pub max_print_line: i32,
     pub native_pgfmath: bool,

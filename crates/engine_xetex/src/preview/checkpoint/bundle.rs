@@ -446,7 +446,6 @@ struct InputBundle {
     read_open: [u8; 17],
 }
 
-/// The live part of a [`TexStack`], with its depth and high-water mark.
 struct StackBundle<T> {
     slots: Vec<T>,
     len: usize,
@@ -454,7 +453,6 @@ struct StackBundle<T> {
 }
 
 impl<T: Copy + Default> StackBundle<T> {
-    /// The entries and the parked top slot.
     fn with_parked(src: &TexStack<T>) -> Self {
         Self::of(src, src.with_parked())
     }
@@ -536,7 +534,6 @@ impl InputBundle {
 
 macro_rules! font_arrays {
     ($($field:ident: $ty:ty,)*) => {
-        /// Per-font `Copy` tables, captured through `font_ptr`.
         struct FontArrays {
             $($field: Vec<$ty>,)*
         }

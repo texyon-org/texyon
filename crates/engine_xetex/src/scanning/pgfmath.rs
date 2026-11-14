@@ -93,7 +93,6 @@ fn same_name(name: &str, units: &[i32]) -> bool {
 }
 
 impl KnownCs {
-    /// Record `cs` if `name`, as UTF-32 units, is a known name.
     pub(crate) fn note(&mut self, name: &[i32], cs: CsId) {
         for (entry, known) in self.cs.iter_mut().zip(KNOWN) {
             if same_name(known, name) {
@@ -107,7 +106,6 @@ impl KnownCs {
         }
     }
 
-    /// Look up every name, for a hash that did not go through `note`.
     pub(crate) fn resolve(st: &mut EngineState) {
         for (i, name) in KNOWN.iter().enumerate() {
             st.eqtb.pgfmath.cs[i] = lookup(st, name);
@@ -140,7 +138,6 @@ impl KnownCs {
     }
 }
 
-/// [`KnownCs`] with every required name defined.
 #[derive(Clone, Copy)]
 struct Complete {
     required: [CsId; REQUIRED],
@@ -170,14 +167,12 @@ const TRACING: &[IntPar] = &[
     IntPar::TracingOnline,
 ];
 
-/// What a native evaluation defines `\pgfmathresult` to.
 enum Answer {
     /// `\let\pgfmathresult=\pgfmath@expression`, pgf's plain-number lane.
     Expression,
     Parsed(eval::Outcome),
 }
 
-/// The control sequence `macro_call` should expand instead of `cur_cs`.
 #[inline(always)]
 pub(crate) fn redirect(st: &mut EngineState) -> Option<CsId> {
     if st.config.native_pgfmath

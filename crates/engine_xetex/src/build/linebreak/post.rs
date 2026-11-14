@@ -11,21 +11,16 @@ use crate::print::errors::{Abort, OrConfusion};
 use crate::state::EngineState;
 use crate::tables::eqtb::{EqtbState, ShapeLoc};
 
-/// Where `post_line_break` is in the paragraph.
 struct PostLines {
     cur_line: i32,
     /// One more than the paragraph's last line number.
     best_line: i32,
-    /// The LR stack carried from line to line.
     lr_ptr: MemPtr,
-    /// Whether a display follows the paragraph.
     display: bool,
-    /// Where the paragraph began, for over/underfull line messages.
     origin: PackOrigin,
 }
 
 struct PostLineHpack {
-    /// The break that ends this line.
     brk: PassiveId,
     q: MemPtr,
     cur_width: Scaled,
@@ -36,7 +31,6 @@ struct PostLineHpack {
 }
 
 impl Breaker {
-    /// Break off the next line of the paragraph after `TEMP_HEAD`, ready for `hpack`.
     fn post_line_break_prefix(
         &mut self,
         st: &mut EngineState,
@@ -215,7 +209,6 @@ impl Breaker {
 }
 
 impl Breaker {
-    /// Reverse the chain of breaks ending at `last`, returning the first line's break.
     fn reverse_best_breaks(&mut self, last: Option<PassiveId>) -> Option<PassiveId> {
         let mut q = last;
         let mut first = None;
@@ -229,7 +222,6 @@ impl Breaker {
 }
 
 impl MemState {
-    /// Track the LR nesting of a math node on the `lr_ptr` stack.
     fn update_lr_stack(&mut self, q: NodePtr<MathNode>, lr_ptr: &mut MemPtr) -> Result<(), Abort> {
         let code = self[q].code()?;
         let end_lr = code.lr_end();
@@ -254,8 +246,6 @@ impl MemState {
 }
 
 impl Breaker {
-    /// Append the packed line and the interline penalty, then prune discardable
-    /// nodes from the start of the next line. Returns the next line's break, if any.
     fn post_line_break_suffix(
         &self,
         st: &mut EngineState,
@@ -376,8 +366,6 @@ impl Breaker {
     }
 }
 
-/// Break the paragraph into lines along the breakpoints ending at `best` and
-/// append them, returning the last line's box. `display` says a display follows.
 pub(super) fn post_line_break(
     st: &mut EngineState,
     lb: &mut Breaker,

@@ -50,7 +50,6 @@ const UTF16_NATIVE: u16 = 3;
 const UTF16_NATIVE: u16 = 4;
 const FONT_FLAGS_COLORED: i8 = 0x01;
 const FONT_FLAGS_VERTICAL: i8 = 0x02;
-/// Font-wide metrics of a native font, in scaled points.
 #[derive(Default)]
 pub(crate) struct NativeFontMetrics {
     pub ascent: Scaled,
@@ -85,7 +84,6 @@ pub(crate) fn fix2d(f: Scaled) -> f64 {
     f64::from(f.raw()) / 65536.0
 }
 
-/// Parses a decimal like `-12.5` from the front of `s`, advancing it.
 fn read_double(s: &mut &[u8]) -> f64 {
     let mut neg = false;
     let mut val = 0.0;
@@ -179,7 +177,6 @@ fn get_encoding_mode_and_info(st: &mut EngineState, bytes: &[u8]) -> Result<(c_i
     }
 }
 
-/// Parse an OpenType feature tag with an optional `=n` parameter.
 fn read_tag_with_param(s: &[u8]) -> (u32, c_int) {
     let mut end = 0;
     while !matches!(at(s, end), 0 | b':' | b';' | b',' | b'=') {
@@ -208,7 +205,6 @@ fn read_tag_with_param(s: &[u8]) -> (u32, c_int) {
     (tag, param)
 }
 
-/// Parse a Graphite `feature=setting` pair given as numbers, spanning all of `spec`.
 fn read_feature_number(spec: &[u8]) -> Option<(u32, c_int)> {
     let mut f = 0u32;
     let mut v: c_int = 0;
@@ -288,8 +284,6 @@ pub(crate) fn load_mapping_file(
     Ok(cnv.map(Arc::new))
 }
 
-/// Split a TFM font name at a `:mapping=` suffix into the name to look up and
-/// the mapping, if one is named.
 pub(crate) fn split_tfm_font_mapping(path: &[u8]) -> (&[u8], Option<&[u8]>) {
     const KEY: &[u8] = b":mapping=";
     let Some(at) = path.windows(KEY.len()).position(|w| w == KEY) else {
@@ -316,8 +310,6 @@ struct CommonFeatures {
     rgb_value: u32,
 }
 
-/// Parse one common option `feat[start..end]`: `None` if it is not one, else
-/// whether it was well formed.
 fn read_common_feature(
     st: &mut EngineState,
     font_name: &[u8],
@@ -369,8 +361,6 @@ fn read_common_feature(
     Ok(None)
 }
 
-/// Build the OpenType/Graphite layout engine for `font` with the options in
-/// the feature string `feat`. Warnings name the font `font_name`.
 fn load_ot_font(
     st: &mut EngineState,
     mut font: Font,
@@ -527,7 +517,6 @@ fn load_ot_font(
     Ok(Some(engine))
 }
 
-/// The design size of the font the font manager loaded last.
 pub(crate) fn loaded_font_design_size() -> Scaled {
     Scaled::from_raw(FontManager::with_font_manager(|mgr| mgr.font_design_size()))
 }
@@ -540,7 +529,6 @@ fn set_req_engine(engine: Engine) {
     FontManager::with_font_manager(|mgr| mgr.set_req_engine(engine));
 }
 
-/// A path as the layout library saw it through a C string.
 fn c_path(path: &[u8]) -> &str {
     if path.contains(&0) {
         ""
@@ -549,7 +537,6 @@ fn c_path(path: &[u8]) -> &str {
     }
 }
 
-/// The font in file `path` at face `index`.
 fn font_from_file(path: &[u8], index: c_int, point_size: Scaled) -> Option<Font> {
     let path = c_path(path);
     with_bridge(|io| Font::from_file(path, index as usize, point_size.raw(), io))
@@ -671,8 +658,6 @@ pub(crate) fn find_native_font(
     Ok(rval)
 }
 
-/// Where a native font spec's `/variant` and `:features` parts start, where it
-/// ends, and the face index of a `[file:index]` name.
 #[derive(Debug, PartialEq)]
 struct SplitName {
     var: usize,

@@ -47,7 +47,6 @@ pub(super) struct Node {
     pub width: i32,
     pub height: i32,
     pub depth: i32,
-    /// Visible extent of an hbox, grown to its contents.
     pub visible: Visible,
     pub mean_line: i32,
     pub weight: i32,
@@ -101,7 +100,6 @@ impl Node {
         }
     }
 
-    /// `h, v, width, height, depth`, visible for an hbox.
     pub(super) fn geometry(&self) -> [i32; 5] {
         if self.kind == Kind::HBox {
             let visible = self.visible;

@@ -112,7 +112,6 @@ fn collect(st: &EngineState, slot: CsId, found: &mut Vec<DefinedCommand>) {
     });
 }
 
-/// Returns whether the macro is `\protected` and how many `#n` its parameter text has.
 fn describe_macro(st: &EngineState, body: TokenList) -> (bool, u8) {
     let mut protected = false;
     let mut arity = 0u8;

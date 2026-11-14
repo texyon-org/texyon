@@ -65,7 +65,6 @@ impl FontState {
 }
 
 impl MemState {
-    /// Fills the fresh spec of `skip` with `w` minus the glue of `g`, negating its stretch and shrink.
     fn set_display_skip(&mut self, skip: NodePtr<GlueNode>, g: NodePtr<GlueNode>, w: Scaled) {
         let src = self[g].glue_ptr;
         let dst = self[skip].glue_ptr;
@@ -78,7 +77,6 @@ impl MemState {
         node.shrink = -from.shrink;
     }
 
-    /// Sets the width of `p`, an end of the display's kern frame that is not glue.
     fn set_kern_or_math_width(&mut self, p: MemIdx, w: Scaled) -> Result<(), Abort> {
         match self.classify(p) {
             Ok(AnyNode::Kern(k)) => self[k].width = w,
@@ -243,7 +241,6 @@ pub(crate) fn check_display_end(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-/// The box `init_math` saved for the paragraph line before a display, if any.
 fn pre_display_box(st: &EngineState) -> Option<NodePtr<BoxNode>> {
     if st.input.cur_list.mode.name() != ModeName::DisplayMath {
         return None;
@@ -445,7 +442,6 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     resume_after_display(st)
 }
 
-/// TeX's `\predisplaydirection` for the paragraph just ended.
 fn pre_display_direction(st: &EngineState) -> i32 {
     let aux = st.input.cur_list.e_tex_aux;
     if aux.is_none() {
@@ -457,7 +453,6 @@ fn pre_display_direction(st: &EngineState) -> i32 {
     }
 }
 
-/// A kern, or the parameter glue when that skip is nonzero.
 fn side_skip(st: &mut EngineState, param: GluePar) -> Result<MemIdx, Abort> {
     if st.eqtb.glue_par(param) == ZERO_GLUE {
         st.mem.new_kern(Scaled::ZERO).map(|k| k.idx())

@@ -21,13 +21,11 @@ use crate::state::EngineState;
 use crate::tables::eqtb::EqtbState;
 
 impl ErrorState {
-    /// Sets the help text shown after the next error, in display order.
     pub(crate) fn help(&mut self, lines: &[&'static str]) {
         self.help_lines[..lines.len()].copy_from_slice(lines);
         self.help_len = lines.len() as u8;
     }
 
-    /// The help text set for the next error, one entry per line.
     fn help_text(&self) -> Vec<String> {
         self.help_lines[..usize::from(self.help_len)]
             .iter()
@@ -108,7 +106,6 @@ pub(crate) fn finish_error(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-/// TeX's "Put help message on the transcript file".
 fn put_help_on_transcript(st: &mut EngineState) {
     if st.errors.interaction > InteractionMode::Batch {
         st.shipout.selector = st.shipout.selector.without_terminal();
@@ -135,11 +132,9 @@ fn put_help_on_transcript(st: &mut EngineState) {
 #[must_use]
 #[derive(Debug)]
 pub(crate) enum Abort {
-    /// A resident operation was cancelled cooperatively.
     Cancelled,
     /// A viewport-bounded resident operation stopped at a resumable command fence.
     Horizoned,
-    /// `overflow(capacity, n)`: a fixed capacity of size `n` ran out.
     Overflow {
         capacity: Capacity,
         n: i32,
@@ -150,11 +145,8 @@ pub(crate) enum Abort {
     Fatal(&'static str),
     /// `\dump` inside a group, which TeX reports and then succumbs to.
     DumpInGroup,
-    /// `pdf_error(t, p)`.
     PdfError(&'static [&'static str; 2]),
-    /// `error` with `\haltonerror` set.
     HaltOnError,
-    /// The hundredth `error` of the run.
     HundredErrors,
     NoLegalEnd {
         open_log: bool,
@@ -162,26 +154,20 @@ pub(crate) enum Abort {
     /// A host-level failure: no TeX error is printed, only `msg` is surfaced.
     Internal(&'static str),
     InputClose,
-    /// No input file could be opened under the name.
     CannotOpenInput {
         name: Box<[u8]>,
     },
-    /// The output file of that name could not be created.
     CannotOpenOutput {
         name: Box<[u8]>,
     },
 }
 
-/// The file `prompt_file_name` asks another name for.
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub(crate) enum FilePrompt {
-    /// An input that was not found.
     Input,
-    /// An `\openout` file that could not be written.
     Output,
 }
 
-/// TeX's `prompt_file_name`, up to the prompt it cannot give.
 pub(crate) fn prompt_file_name(
     st: &mut EngineState,
     prompt: FilePrompt,
@@ -240,7 +226,6 @@ impl<T, E> OrConfusion<T> for Result<T, E> {
     }
 }
 
-/// A fixed capacity of the engine that a run can exceed.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Capacity {
     MainMemory,
@@ -265,7 +250,6 @@ pub(crate) enum Capacity {
 }
 
 impl Capacity {
-    /// The name `overflow` prints.
     fn name(self) -> &'static str {
         match self {
             Capacity::MainMemory => "main memory size",
@@ -292,13 +276,11 @@ impl Capacity {
 }
 
 impl Abort {
-    /// `get_node` ran out of main memory.
     pub(crate) const NODE_OVERFLOW: Abort = Abort::Overflow {
         capacity: Capacity::MainMemory,
         n: MAIN_MEMORY_WORDS,
     };
 
-    /// `capacity`, whose size is a `usize`, ran out.
     pub(crate) fn overflow(capacity: Capacity, n: usize) -> Abort {
         Abort::Overflow {
             capacity,
@@ -310,7 +292,6 @@ impl Abort {
 /// An error `\ignoreprimitiveerror` can turn into a warning, valued by its bit (one-based).
 #[derive(Copy, Clone)]
 pub(crate) enum IgnoredError {
-    /// Infinite glue shrinkage in a box being split.
     VsplitInfiniteShrink = 1,
 }
 
@@ -350,7 +331,6 @@ impl Abort {
         set_error_message(s);
     }
 
-    /// The fatal error of a file prompt nobody can answer.
     fn file_error_report(st: &mut EngineState) {
         Self::fatal_report(
             st,
@@ -370,7 +350,6 @@ impl Abort {
         set_error_message(msg);
     }
 
-    /// Prints the abort and cleans up, then returns the fatal history.
     pub(crate) fn into_history(self, st: &mut EngineState) -> i32 {
         match self {
             Abort::Cancelled => st.errors.history = HISTORY_FATAL_ERROR,
@@ -460,7 +439,6 @@ pub(crate) fn give_err_help(st: &mut EngineState) {
     token_show(st, st.eqtb.tok_par(TokPar::ErrHelp));
 }
 
-/// Print `message` as an error and report it with `help`.
 fn report_error(st: &mut EngineState, message: impl TexPrint, help: &[&'static str]) {
     print_err(st, DiagnosticKind::Error, message);
     st.errors.help(help);
@@ -469,7 +447,6 @@ fn report_error(st: &mut EngineState, message: impl TexPrint, help: &[&'static s
     }
 }
 
-/// Report a recoverable error and carry on (`print_err`, `help`, `error`).
 pub(crate) fn error(
     st: &mut EngineState,
     message: impl TexPrint,
@@ -502,7 +479,6 @@ pub(crate) fn errmessage(
     Ok(())
 }
 
-/// The lines `\errhelp` shows, as the transcript prints them.
 fn err_help_text(st: &mut EngineState, list: TokenList) -> Vec<String> {
     let old_setting = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
@@ -520,7 +496,6 @@ fn err_help_text(st: &mut EngineState, list: TokenList) -> Vec<String> {
         .collect()
 }
 
-/// [`error`], first putting the current token back to be read again.
 pub(crate) fn back_error(
     st: &mut EngineState,
     message: impl TexPrint,
@@ -531,7 +506,6 @@ pub(crate) fn back_error(
     finish_error(st)
 }
 
-/// [`back_error`], marking the token as inserted rather than read.
 pub(crate) fn ins_error(
     st: &mut EngineState,
     message: impl TexPrint,
@@ -568,7 +542,6 @@ pub(crate) fn extra_right_brace(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-/// "You can't use `<current command>' in <mode>".
 pub(crate) fn you_cant(st: &EngineState) -> impl TexPrint + use<> {
     (
         "You can't use `",
@@ -606,7 +579,6 @@ pub(crate) fn cs_error(st: &mut EngineState) -> Result<(), Abort> {
     )
 }
 
-/// [`error`], then show and discard box register `n`.
 pub(crate) fn box_error(
     st: &mut EngineState,
     n: u8,
@@ -624,7 +596,6 @@ pub(crate) fn box_error(
     Ok(())
 }
 
-/// Shows the list being built when scanning ran away: the innermost open build.
 pub(crate) fn runaway(st: &mut EngineState) {
     let msg = match st.scanner.scanner_status {
         ScannerStatus::Defining => "Runaway definition",
@@ -641,7 +612,6 @@ pub(crate) fn runaway(st: &mut EngineState) {
     show_tokens(st, &built, l);
 }
 
-/// TeX's `interaction` level, ordered like its numeric codes.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[repr(u8)]
 pub(crate) enum InteractionMode {
@@ -681,7 +651,6 @@ pub(crate) struct ErrorState {
     pub trick_count: i32,
     pub first_count: i32,
     pub deletions_allowed: bool,
-    /// Set once `--halt-on-error` has started to stop the run.
     pub halting_on_error: bool,
     pub font_in_short_display: FontId,
     pub depth_threshold: i32,

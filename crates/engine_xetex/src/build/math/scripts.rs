@@ -397,8 +397,6 @@ fn finish_superscript_branch(
 }
 
 impl MemState {
-    /// Finds the first noad of a sub-mlist script field to probe for an OpenType
-    /// glyph, tracking style changes on the way. Returns the field and its style.
     fn first_script_glyph_step(
         &self,
         script: MathSlot,

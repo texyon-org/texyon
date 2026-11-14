@@ -29,7 +29,6 @@ use crate::tables::cs::CsId;
 use crate::tables::string_pool::StringsState;
 
 impl MemState {
-    /// Appends `str_pool[b..pool_ptr]` to `out` as tokens and drops it from the pool.
     pub(crate) fn str_toks_cat(
         &mut self,
         strings: &mut StringsState,
@@ -77,7 +76,6 @@ impl MemState {
     }
 }
 
-/// Appends `\endlinechar` to the line just read and starts reading it.
 #[inline]
 pub(crate) fn finish_line(st: &mut EngineState) {
     let end_char = st.eqtb.int_par(IntPar::EndLineChar);
@@ -228,7 +226,6 @@ fn tokens_to_string(st: &mut EngineState, list: TokenList) -> Result<StrNumber, 
     st.strings.make_string()
 }
 
-/// Appends to `out` what `\the`, `\unexpanded` or `\detokenize` gives.
 pub(crate) fn the_toks(st: &mut EngineState, code: TheCode, out: &Build) -> Result<(), Abort> {
     if code != TheCode::The {
         let text = scan_general_text(st)?;
@@ -278,7 +275,6 @@ pub(crate) fn the_toks(st: &mut EngineState, code: TheCode, out: &Build) -> Resu
         st.mem.str_toks_cat(&mut st.strings, b, None, out)
     }
 }
-/// Scans a definition's parameter text and body, or a general text, into `def_ref`.
 pub(crate) fn scan_toks(
     st: &mut EngineState,
     macro_def: bool,
@@ -514,7 +510,6 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
     }
     Ok(())
 }
-/// Scans a balanced text into a list of its own.
 fn scan_general_text(st: &mut EngineState) -> Result<TokenList, Abort> {
     let saved_status = st.scanner.scanner_status;
     let saved_warning_index = st.scanner.warning_index;
@@ -554,7 +549,6 @@ fn scan_toks_to_string(st: &mut EngineState) -> Result<StrNumber, Abort> {
     Ok(s)
 }
 
-/// `\strcmp`: compares two general texts as strings.
 pub(crate) fn compare_strings(st: &mut EngineState) -> Result<i32, Abort> {
     let save_cur_cs = st.scanner.cur_cs;
     let s1 = scan_toks_to_string(st)?;

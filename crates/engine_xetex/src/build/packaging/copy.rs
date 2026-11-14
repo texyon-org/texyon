@@ -10,7 +10,6 @@ use crate::memory::node::{
 };
 use crate::print::errors::{Abort, OrConfusion};
 
-/// `r` typed like `src`, whose header word `r` has just received.
 #[inline]
 fn copied_node<K: View>(_src: NodePtr<K>, r: MemIdx) -> NodePtr<K> {
     NodePtr::from_idx_unchecked(r)
@@ -22,7 +21,6 @@ impl MemState {
         self.classify_disc(p).ok().flatten()
     }
 
-    /// A new node of `p`'s kind holding every field of `p`.
     fn copy_of<K: Node>(&mut self, p: NodePtr<K>) -> Result<NodePtr<K>, Abort> {
         let r = NodePtr::<K>::alloc(self)?;
         self[r] = self[p];
@@ -45,7 +43,6 @@ impl MemState {
         self.copy_of(p)
     }
 
-    /// A copy of whatsit `w`, sharing what it refers to.
     fn copy_whatsit(&mut self, w: NodePtr<WhatsitNode>) -> Result<MemIdx, Abort> {
         Ok(match w.variant(self).or_confusion("ext2")? {
             WhatsitVariant::Open(p) => self.copy_of(p)?.idx(),
@@ -109,7 +106,6 @@ impl MemState {
         Ok(())
     }
 
-    /// Reverse the hlist after `p` for TeX--XeT, leaving the result after `TEMP_HEAD`.
     pub(crate) fn just_reverse(&mut self, lr: &mut LrState, p: MemIdx) -> Result<(), Abort> {
         let mut m = MIN_HALFWORD;
         let mut n = MIN_HALFWORD;
@@ -187,7 +183,6 @@ impl MemState {
         Ok(())
     }
 
-    /// Free every node of the list `p` and everything it owns.
     pub fn flush_node_list(&mut self, mut p: MemPtr) -> Result<(), Abort> {
         while let Some(here) = p {
             let q = here.link(self);
@@ -278,13 +273,11 @@ impl MemState {
         Ok(())
     }
 
-    /// A copy of box `b` and its contents.
     pub(crate) fn copy_box(&mut self, b: NodePtr<BoxNode>) -> Result<NodePtr<BoxNode>, Abort> {
         let r = self.copy_list(b.ptr())?.or_confusion("copy_box")?;
         Ok(copied_node(b, r))
     }
 
-    /// A deep copy of the list `p`.
     pub fn copy_node_list(&mut self, p: MemPtr) -> Result<MemPtr, Abort> {
         self.copy_list(p)
     }
@@ -304,7 +297,6 @@ impl MemState {
         Ok(result)
     }
 
-    /// A copy of node `p` and everything it owns.
     fn copy_node(&mut self, p: MemIdx) -> Result<MemIdx, Abort> {
         let node = self.classify(p).or_confusion("copying")?;
         Ok(match node {

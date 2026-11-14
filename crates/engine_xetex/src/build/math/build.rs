@@ -29,14 +29,12 @@ use crate::state::EngineState;
 use crate::tables::eqtb::{EqtbState, define};
 use crate::tables::save::{GroupCode, SaveStackState, Saved, unsave};
 
-/// The family and character of a `\Udelimiter`, encoded with the extended flag.
 fn scan_extended_delimiter(st: &mut EngineState) -> Result<i32, Abort> {
     let fam = scan_math_fam_int(st)?;
     let c = scan_usv_num(st)?;
     Ok(0x4000_0000 + fam * 0x20_0000 + c)
 }
 
-/// Scans a delimiter, after `\radical` or `\Uradical` when `radical` is given.
 fn scan_delimiter(
     st: &mut EngineState,
     radical: Option<RadicalCode>,

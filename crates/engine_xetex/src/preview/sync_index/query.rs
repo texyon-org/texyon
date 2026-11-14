@@ -8,7 +8,6 @@ use super::tree::{FRIEND_LISTS, Kind, NIL, Node, Page};
 
 const FAR: i32 = i32::MAX;
 
-/// A node and its distance to the hit point.
 #[derive(Clone, Copy)]
 struct Nd {
     node: u32,
@@ -284,7 +283,6 @@ impl Page {
         best
     }
 
-    /// Whether `candidate` beats `best` at an equal distance.
     fn earlier_line(&self, best: u32, candidate: u32) -> bool {
         let (best, candidate) = (self.node(best), self.node(candidate));
         best.tag == candidate.tag && best.line > candidate.line
@@ -415,7 +413,6 @@ pub(super) fn edit(page: &Page, h: i32, v: i32) -> Option<u32> {
     Some(left.node)
 }
 
-/// One `synctex view` result: the box to highlight for a matching node.
 pub(super) struct DisplayHit {
     pub page_index: usize,
     pub tag: i32,
@@ -423,7 +420,6 @@ pub(super) struct DisplayHit {
     pub geometry: [i32; 5],
 }
 
-/// The sheets a display query can match on, built on demand.
 struct Sheets<'a> {
     index: &'a SyncIndex,
     built: BTreeMap<usize, Page>,
@@ -438,7 +434,6 @@ impl Sheets<'_> {
     }
 }
 
-/// A matching friend node, identified by sheet and node.
 #[derive(Clone, Copy)]
 struct Match {
     page_index: usize,

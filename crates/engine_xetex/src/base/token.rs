@@ -12,7 +12,6 @@ use crate::print::errors::Abort;
 use crate::scanning::input::STACK_SIZE;
 use crate::tables::cs::CsId;
 
-/// One more than the largest character code a token can carry.
 const MAX_CHAR_VAL: i32 = 0x20_0000;
 /// Control sequence tokens count up from here, past every character token.
 const CS_TOKEN_FLAG: i32 = 0x1FF_FFFF;
@@ -25,11 +24,9 @@ const CS_TOKEN_FLAG: i32 = 0x1FF_FFFF;
 #[repr(transparent)]
 pub(crate) struct Token(pub(crate) i32);
 
-/// A token taken apart.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) enum TokenKind {
     Cs(CsId),
-    /// A character with its category, or a parameter or match marker in a macro.
     Char(Cmd, i32),
 }
 
@@ -42,13 +39,11 @@ impl Token {
     pub(crate) const PROTECTED: Token = Token(Token::END_MATCH.0 + 1);
     pub(crate) const END_MATCH: Token = Token::new(Cmd::END_MATCH, 0);
 
-    /// The character token of category `cmd`.
     #[inline(always)]
     pub(crate) const fn new(cmd: Cmd, chr: i32) -> Token {
         Token(cmd.raw() * MAX_CHAR_VAL + chr)
     }
 
-    /// The token of control sequence `p`.
     #[inline(always)]
     pub(crate) const fn from_cs(p: CsId) -> Token {
         Token(CS_TOKEN_FLAG + p.raw())
@@ -84,13 +79,11 @@ impl Token {
         Token::new(Cmd::OtherChar, c as i32)
     }
 
-    /// The `#n` parameter token in a macro body.
     #[inline(always)]
     pub(crate) const fn out_param(n: i32) -> Token {
         Token::new(Cmd::OUT_PARAM, n)
     }
 
-    /// The `#` of a parameter in a macro's parameter text, with its catcode 6 character.
     #[inline(always)]
     pub(crate) const fn match_(c: i32) -> Token {
         Token::new(Cmd::MATCH, c)
@@ -101,20 +94,16 @@ impl Token {
         self.0 >= CS_TOKEN_FLAG
     }
 
-    /// Whether a token can name every control sequence up to `top`.
     pub(crate) fn can_name(top: CsId) -> bool {
         i64::from(CS_TOKEN_FLAG) + i64::from(top.raw()) <= i64::from(MAX_HALFWORD)
     }
 
-    /// The control sequence of the token, `None` for a character token.
     #[inline(always)]
     pub(crate) const fn cs(self) -> Option<CsId> {
         // A character token lies below the flag, so it maps to a negative raw value.
         CsId::from_raw(self.0 - CS_TOKEN_FLAG)
     }
 
-    /// The category and character code of a character token, `None` for a
-    /// control sequence token.
     #[inline(always)]
     pub(crate) const fn char(self) -> Option<(Cmd, i32)> {
         if self.is_cs() {
@@ -124,7 +113,6 @@ impl Token {
         }
     }
 
-    /// What the token is.
     #[inline(always)]
     pub(crate) const fn kind(self) -> TokenKind {
         match self.cs() {
@@ -143,25 +131,21 @@ impl Token {
         self.0 % MAX_CHAR_VAL
     }
 
-    /// `tok < left_brace_limit`.
     #[inline(always)]
     pub(crate) const fn is_left_brace(self) -> bool {
         self.0 < LEFT_BRACE_LIMIT
     }
 
-    /// `tok < right_brace_limit`: a left or right brace.
     #[inline(always)]
     pub(crate) const fn is_brace(self) -> bool {
         self.0 < RIGHT_BRACE_LIMIT
     }
 
-    /// A `match` or `end_match` token of a parameter text.
     #[inline(always)]
     pub(crate) const fn is_match(self) -> bool {
         self.0 >= Token::new(Cmd::MATCH, 0).0 && self.0 <= Token::END_MATCH.0
     }
 
-    /// The digit of an other-character `0`..`9` token.
     #[inline(always)]
     pub(crate) const fn other_digit(self) -> Option<i32> {
         if self.0 >= Token::other(b'0').0 && self.0 <= Token::other(b'9').0 {
@@ -185,13 +169,11 @@ impl TokenList {
     /// The one-token list `\endtemplate` that ends an omitted template.
     pub(crate) const OMIT_TEMPLATE: TokenList = TokenList(1);
 
-    /// The list from its raw form in an eqtb or save stack word, a node field or a format.
     #[inline(always)]
     pub(crate) const fn from_raw(raw: i32) -> TokenList {
         TokenList(raw)
     }
 
-    /// The raw form for an eqtb or save stack word, a node field or a format.
     #[inline(always)]
     pub(crate) const fn raw(self) -> i32 {
         self.0
@@ -202,7 +184,6 @@ impl TokenList {
         self.0 == TEX_NULL
     }
 
-    /// The list's index in the table, `None` for the null list.
     #[inline(always)]
     fn slot(self) -> Option<usize> {
         if self.0 > 0 {
@@ -213,7 +194,6 @@ impl TokenList {
     }
 }
 
-/// Where a reader of a token list is: the next token's position and the end of its run.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
 pub(crate) struct TokCursor {
     pos: u32,
@@ -228,13 +208,11 @@ impl TokCursor {
         self.pos == self.end
     }
 
-    /// The position and the end, for checkpoint digests.
     pub(crate) fn parts(self) -> (u32, u32) {
         (self.pos, self.end)
     }
 }
 
-/// A token list being built. Builds nest and end innermost first.
 #[must_use]
 #[derive(Debug)]
 pub(crate) struct Build(usize);
@@ -249,11 +227,8 @@ pub(crate) struct ListSlot {
     refs: u32,
 }
 
-/// No free run or free list entry.
 const NONE: u32 = u32::MAX;
-/// Runs of up to this many tokens get a size class each.
 const EXACT_CLASSES: u32 = 16;
-/// The size classes, by the tokens a run of the class holds.
 const N_CLASSES: usize = 56;
 const CLASS_CAPS: [u32; N_CLASSES] = class_caps();
 
@@ -272,7 +247,6 @@ const fn class_caps() -> [u32; N_CLASSES] {
     caps
 }
 
-/// The size class of a run of `len` tokens, `len` at least one.
 #[inline]
 fn class_for(len: u32) -> usize {
     if len <= EXACT_CLASSES {
@@ -298,7 +272,6 @@ pub(crate) struct TokenStore {
     free_lists: u32,
     tokens_journal: WordJournal<Token>,
     lists_journal: WordJournal<ListSlot>,
-    /// The tokens of the lists being built, back to back.
     build: Vec<Token>,
     /// Each open build's start in `build`, and the tokens it dropped from its front.
     builds: Vec<(usize, usize)>,
@@ -327,7 +300,6 @@ impl Default for TokenStore {
     }
 }
 
-/// The token store's scalars, for checkpoints and formats.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) struct TokenStoreMarks {
     pub(crate) tokens: usize,
@@ -336,7 +308,6 @@ pub(crate) struct TokenStoreMarks {
     pub(crate) free_lists: u32,
 }
 
-/// The pre-images of one checkpoint epoch of the token store.
 #[derive(Clone, Default)]
 pub(crate) struct TokenDelta {
     tokens: WordDelta<Token>,
@@ -381,7 +352,6 @@ impl TokenStore {
         list.slot().and_then(|i| self.lists.get(i)).copied()
     }
 
-    /// The tokens and the list table, for digests and formats.
     pub(crate) fn tokens(&self) -> &[Token] {
         &self.tokens
     }
@@ -400,7 +370,6 @@ impl TokenStore {
         self.lists_journal.disarm();
     }
 
-    /// Closes the journal's epoch, see [`WordJournal::seal`].
     pub(crate) fn seal_journal(&mut self) -> TokenDelta {
         TokenDelta {
             tokens: self.tokens_journal.seal(&self.tokens),
@@ -415,7 +384,6 @@ impl TokenStore {
         }
     }
 
-    /// Puts back the pre-images of `delta`, before [`restore_marks`](Self::restore_marks).
     pub(crate) fn apply(&mut self, delta: &TokenDelta) {
         delta.tokens.apply_to(&mut self.tokens);
         delta.lists.apply_to(&mut self.lists);
@@ -434,7 +402,6 @@ impl TokenStore {
         }
     }
 
-    /// Rewinds to `marks`, after the journals put back what existed then.
     pub(crate) fn restore_marks(&mut self, marks: TokenStoreMarks) {
         self.builds.clear();
         self.build.clear();
@@ -448,7 +415,6 @@ impl TokenStore {
         }
     }
 
-    /// Empties the store to the sizes and free lists in `marks`, for a format load to fill.
     pub(crate) fn reset_for_load(&mut self, marks: TokenStoreMarks) {
         self.tokens = vec![Token(0); marks.tokens];
         self.lists = vec![ListSlot::zeroed(); marks.lists];
@@ -456,7 +422,6 @@ impl TokenStore {
         self.free_lists = marks.free_lists;
     }
 
-    /// Whether every list and free list lies in the store, for a format just loaded.
     pub(crate) fn is_consistent(&self) -> bool {
         let tokens = self.tokens.len();
         let in_tokens =
@@ -475,12 +440,10 @@ impl TokenStore {
         tokens >= RESERVED && lists_ok && runs_ok && lists_free_ok
     }
 
-    /// The tokens and the list table, for a format load to fill.
     pub(crate) fn parts_mut(&mut self) -> (&mut [Token], &mut [ListSlot]) {
         (&mut self.tokens, &mut self.lists)
     }
 
-    /// A run for `len` tokens, `len` at least one.
     fn alloc_run(&mut self, len: u32) -> Result<u32, Abort> {
         let class = class_for(len);
         let head = self.free_runs[class];
@@ -507,7 +470,6 @@ impl TokenStore {
         self.free_runs[class] = start;
     }
 
-    /// A list entry for the run at `start`, with one reference.
     fn alloc_list(&mut self, start: u32, len: u32) -> Result<TokenList, Abort> {
         let slot = ListSlot {
             start,
@@ -528,7 +490,6 @@ impl TokenStore {
             .map_err(|_| Abort::AvailOverflow)
     }
 
-    /// A new list holding `tokens`.
     fn store_list(&mut self, tokens: &[Token]) -> Result<TokenList, Abort> {
         let len = u32::try_from(tokens.len()).map_err(|_| Abort::AvailOverflow)?;
         let start = if len == 0 { 0 } else { self.alloc_run(len)? };
@@ -541,7 +502,6 @@ impl TokenStore {
         self.alloc_list(start, len)
     }
 
-    /// Sets up [`TokenList::OMIT_TEMPLATE`] to hold `t`, before the journal is armed.
     pub(crate) fn init_omit_template(&mut self, t: Token) {
         self.tokens[0] = t;
         self.lists[1] = ListSlot {
@@ -551,7 +511,6 @@ impl TokenStore {
         };
     }
 
-    /// A reader at the first token of `list`, at the end for the null list.
     #[inline(always)]
     pub(crate) fn cursor(&self, list: TokenList) -> TokCursor {
         match self.slot_of(list) {
@@ -563,7 +522,6 @@ impl TokenStore {
         }
     }
 
-    /// Puts `t` in the backup slot of input stack depth `depth` and gives a reader over it.
     #[inline]
     pub(crate) fn back_up(&mut self, depth: usize, t: Token) -> Result<TokCursor, Abort> {
         let pos = u32::try_from(depth)
@@ -588,7 +546,6 @@ impl TokenStore {
         }
     }
 
-    /// The token at `c`, `None` at the end.
     #[inline(always)]
     pub(crate) fn peek(&self, c: TokCursor) -> Option<Token> {
         if c.is_end() {
@@ -598,7 +555,6 @@ impl TokenStore {
         }
     }
 
-    /// The position after the token at `c`, which must not be the end.
     #[inline(always)]
     pub(crate) fn next(&self, c: TokCursor) -> TokCursor {
         debug_assert!(!c.is_end());
@@ -608,7 +564,6 @@ impl TokenStore {
         }
     }
 
-    /// The token at `c`, moving `c` past it. `None` at the end.
     #[inline(always)]
     pub(crate) fn read(&self, c: &mut TokCursor) -> Option<Token> {
         let t = self.peek(*c)?;
@@ -616,7 +571,6 @@ impl TokenStore {
         Some(t)
     }
 
-    /// The tokens of `list`.
     pub(crate) fn iter(&self, list: TokenList) -> TokIter<'_> {
         TokIter {
             store: self,
@@ -638,7 +592,6 @@ impl TokenStore {
         self.slot_of(list).is_none_or(|slot| slot.len == 0)
     }
 
-    /// Starts building a list.
     pub(crate) fn begin(&mut self) -> Result<Build, Abort> {
         self.builds.push((self.build.len(), 0));
         Ok(Build(self.builds.len() - 1))
@@ -650,7 +603,6 @@ impl TokenStore {
         b.0
     }
 
-    /// Appends `t` to the list `b` builds.
     #[inline(always)]
     pub(crate) fn push(&mut self, b: &Build, t: Token) -> Result<(), Abort> {
         self.top(b);
@@ -661,7 +613,6 @@ impl TokenStore {
         Ok(())
     }
 
-    /// The last token pushed, `None` while the build is empty.
     #[inline]
     pub(crate) fn last_pushed(&self, b: &Build) -> Option<Token> {
         let (start, skip) = self.builds[self.top(b)];
@@ -672,7 +623,6 @@ impl TokenStore {
         }
     }
 
-    /// Moves the tokens of `list` to the end of the build, freeing `list`.
     pub(crate) fn push_list(&mut self, b: &Build, list: TokenList) -> Result<(), Abort> {
         self.top(b);
         if let Some(slot) = self.slot_of(list) {
@@ -683,14 +633,12 @@ impl TokenStore {
         Ok(())
     }
 
-    /// What the innermost open build holds so far, for a runaway message.
     pub(crate) fn innermost_built(&self) -> Vec<Token> {
         self.builds.last().map_or_else(Vec::new, |&(start, skip)| {
             self.build[start + skip..].to_vec()
         })
     }
 
-    /// Ends the build, giving the list with one reference. It may be empty.
     pub(crate) fn finish(&mut self, b: Build) -> Result<TokenList, Abort> {
         let (start, skip) = self.builds[self.top(&b)];
         self.builds.pop();
@@ -701,14 +649,12 @@ impl TokenStore {
         list
     }
 
-    /// Ends the build and drops what it built.
     pub(crate) fn abandon(&mut self, b: Build) {
         let (start, _) = self.builds[self.top(&b)];
         self.builds.pop();
         self.build.truncate(start);
     }
 
-    /// Drops the first and last token built, an argument's outer braces.
     pub(crate) fn drop_first_last(&mut self, b: &Build) {
         let i = self.top(b);
         debug_assert!(self.build.len() >= self.builds[i].0 + 2 && self.builds[i].1 == 0);
@@ -716,12 +662,10 @@ impl TokenStore {
         self.builds[i].1 = 1;
     }
 
-    /// A list of the one token `t`.
     pub(crate) fn single(&mut self, t: Token) -> Result<TokenList, Abort> {
         self.store_list(&[t])
     }
 
-    /// Gives the fresh list `list` the tokens `tokens`, in a new run.
     fn replace_run(&mut self, list: TokenList, tokens: &[Token]) -> Result<(), Abort> {
         let (Some(i), Some(slot)) = (list.slot(), self.slot_of(list)) else {
             return Err(Abort::Confusion("token list"));
@@ -739,21 +683,18 @@ impl TokenStore {
         Ok(())
     }
 
-    /// Puts `t` in front of the fresh list `list`.
     pub(crate) fn prepend(&mut self, list: TokenList, t: Token) -> Result<(), Abort> {
         let mut tokens = vec![t];
         tokens.extend(self.iter(list));
         self.replace_run(list, &tokens)
     }
 
-    /// Puts `t` at the end of the fresh list `list`.
     pub(crate) fn append(&mut self, list: TokenList, t: Token) -> Result<(), Abort> {
         let mut tokens: Vec<Token> = self.iter(list).collect();
         tokens.push(t);
         self.replace_run(list, &tokens)
     }
 
-    /// Rewrites each token of the fresh list `list` with `f`.
     pub(crate) fn map_tokens(&mut self, list: TokenList, mut f: impl FnMut(Token) -> Token) {
         if let Some(slot) = self.slot_of(list) {
             for i in slot.start as usize..(slot.start + slot.len) as usize {
@@ -763,7 +704,6 @@ impl TokenStore {
         }
     }
 
-    /// Frees `list` whatever its reference count.
     pub(crate) fn flush(&mut self, list: TokenList) {
         let (Some(i), Some(slot)) = (list.slot(), self.slot_of(list)) else {
             return;
@@ -793,7 +733,6 @@ impl TokenStore {
         }
     }
 
-    /// Drops a reference to `list`, freeing it with the last one.
     pub(crate) fn delete_ref(&mut self, list: TokenList) {
         let (Some(i), Some(slot)) = (list.slot(), self.slot_of(list)) else {
             return;
@@ -812,7 +751,6 @@ impl TokenStore {
     }
 }
 
-/// The tokens of a list, from [`TokenStore::iter`].
 pub(crate) struct TokIter<'a> {
     store: &'a TokenStore,
     at: TokCursor,

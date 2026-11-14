@@ -22,9 +22,7 @@ use crate::tables::cs::{CsId, NameSlot};
 use crate::tables::hash::{HashEntry, PrimEntry};
 use crate::tables::save::{Restore, SaveEntry, SaveStackState};
 
-/// A value an `eqtb` table holds.
 pub(crate) trait EqValue: JournalWord + PartialEq {
-    /// Drops what the value owns, once no table entry holds it.
     #[inline]
     fn destroy(self, _mem: &mut MemState) -> Result<(), Abort> {
         Ok(())
@@ -63,18 +61,15 @@ impl EqLoc for CsId {
 }
 impl EqValue for Scaled {}
 
-/// A location in one of the tables.
 pub(crate) trait EqLoc: Copy {
     type Value: EqValue;
     type Store: EqStore<Self, Self::Value>;
     fn index(self) -> usize;
     fn table(eqtb: &EqtbState) -> &Self::Store;
     fn table_mut(eqtb: &mut EqtbState) -> &mut Self::Store;
-    /// The save stack entry that puts `old` back.
     fn restore(old: Old<Self>) -> Restore;
 }
 
-/// Where a location type keeps its values and levels.
 pub(crate) trait EqStore<L, T> {
     fn get(&self, loc: L) -> T;
     fn level(&self, loc: L) -> u16;
@@ -112,7 +107,6 @@ impl<K, V> Default for SparseTable<K, V> {
 }
 
 impl<K: Ord + Copy, V: Copy + Default + PartialEq> SparseTable<K, V> {
-    /// The stored entries in key order, for the format and the oracle.
     pub(crate) fn entries(&self) -> impl Iterator<Item = (K, V, u16)> + '_ {
         self.entries.iter().map(|(&k, &(v, level))| (k, v, level))
     }
@@ -140,7 +134,6 @@ impl<K: Ord + Copy, V: Copy + Default + PartialEq> EqStore<K, V> for SparseTable
     }
 }
 
-/// The value a location held before a group changed it, and its level.
 #[derive(Copy, Clone)]
 pub(crate) struct Old<L: EqLoc> {
     pub(crate) loc: L,
@@ -170,12 +163,10 @@ impl<I, T: Copy> Default for Table<I, T> {
 }
 
 impl<I: EqLoc<Value = T>, T: EqValue> Table<I, T> {
-    /// `len` locations holding `value` at level one.
     pub(crate) fn new(len: usize, value: T) -> Self {
         Self::at_level(len, value, LEVEL_ONE)
     }
 
-    /// `len` locations holding `value` at `level`.
     pub(crate) fn at_level(len: usize, value: T, level: u16) -> Self {
         Self {
             values: vec![value; len],
@@ -184,7 +175,6 @@ impl<I: EqLoc<Value = T>, T: EqValue> Table<I, T> {
         }
     }
 
-    /// Sets every location to `value` at `level`.
     pub(crate) fn fill(&mut self, value: T, level: u16) {
         for k in 0..self.values.len() {
             if self.values_journal.armed() {
@@ -206,7 +196,6 @@ impl<I: EqLoc<Value = T>, T: EqValue> Table<I, T> {
         self.levels[i.index()]
     }
 
-    /// Sets the value and level of `i`.
     #[inline]
     pub(crate) fn set(&mut self, i: I, value: T, level: u16) {
         let k = i.index();
@@ -218,7 +207,6 @@ impl<I: EqLoc<Value = T>, T: EqValue> Table<I, T> {
         self.levels[k] = level;
     }
 
-    /// Sets the value of `i`, keeping its level.
     #[inline]
     pub(crate) fn set_value(&mut self, i: I, value: T) {
         let k = i.index();
@@ -228,12 +216,10 @@ impl<I: EqLoc<Value = T>, T: EqValue> Table<I, T> {
         self.values[k] = value;
     }
 
-    /// The values, for the format.
     pub(crate) fn values_mut(&mut self) -> &mut [T] {
         &mut self.values
     }
 
-    /// The levels, for the format.
     pub(crate) fn levels_mut(&mut self) -> &mut [u16] {
         &mut self.levels
     }
@@ -256,7 +242,6 @@ impl<I: EqLoc<Value = T>, T: EqValue> Table<I, T> {
         self.levels_journal.disarm();
     }
 
-    /// Closes the journal's epoch, see [`WordJournal::seal`].
     pub(crate) fn seal(&mut self) -> TableDelta<T> {
         TableDelta {
             values: self.values_journal.seal(&self.values),
@@ -272,7 +257,6 @@ impl<I: EqLoc<Value = T>, T: EqValue> Table<I, T> {
     }
 }
 
-/// The pre-images one epoch recorded for a [`Table`].
 #[derive(Clone)]
 pub(crate) struct TableDelta<T: Copy> {
     values: WordDelta<T>,
@@ -309,10 +293,8 @@ impl<T: JournalWord> TableDelta<T> {
     }
 }
 
-/// Declares the tables once: their deltas and the journal calls that cover all of them.
 macro_rules! tables {
     ($($name:ident: $t:ty),* $(,)?) => {
-        /// Every table's delta.
         #[derive(Default, Clone)]
         pub(crate) struct TablesDelta {
             $($name: TableDelta<$t>,)*
@@ -341,7 +323,6 @@ macro_rules! tables {
                 $(self.$name.arm();)*
             }
 
-            /// Frees every table, as at the end of a run.
             pub(crate) fn release_tables(&mut self) {
                 $(self.$name = Table::default();)*
                 self.inter_char.clear();
@@ -363,7 +344,6 @@ macro_rules! tables {
                 }
             }
 
-            /// Feeds every table's values and levels to `h`, for the checkpoint oracle.
             pub(crate) fn hash_tables(&self, h: &mut impl std::hash::Hasher) {
                 use std::hash::Hash;
                 $(
@@ -396,7 +376,6 @@ tables!(
 );
 
 impl EqtbState {
-    /// Gives `loc` the value `v`, globally or in the current group.
     pub(crate) fn define<L: EqLoc>(
         &mut self,
         save_stack: &mut SaveStackState,
@@ -429,7 +408,6 @@ impl EqtbState {
     }
 }
 
-/// TeX's `define` for a typed location: `\global` or in the current group.
 pub(crate) fn define<L: EqLoc>(
     st: &mut EngineState,
     global: bool,
@@ -453,7 +431,6 @@ pub(crate) fn restore<L: EqLoc>(st: &mut EngineState, old: Old<L>) -> Result<(),
 }
 
 impl SaveStackState {
-    /// Pushes a restore entry.
     pub(crate) fn save(&mut self, r: Restore) -> Result<(), Abort> {
         if self.save_stack_full() {
             return Err(self.overflow());
@@ -463,7 +440,6 @@ impl SaveStackState {
     }
 }
 
-/// A `\XeTeXinterchartoks` location: the classes before and after a boundary.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub(crate) struct InterCharPair {
     first: u16,
@@ -471,7 +447,6 @@ pub(crate) struct InterCharPair {
 }
 
 impl InterCharPair {
-    /// The pair of classes `first` and `second`, `None` unless both are below `CHAR_CLASS_LIMIT`.
     pub(crate) fn new(first: i32, second: i32) -> Option<InterCharPair> {
         let class = |c: i32| {
             u16::try_from(c)
@@ -484,7 +459,6 @@ impl InterCharPair {
         })
     }
 
-    /// The two classes, for the format.
     pub(crate) fn classes(self) -> [i32; 2] {
         [i32::from(self.first), i32::from(self.second)]
     }
@@ -514,10 +488,8 @@ impl EqLoc for InterCharPair {
 pub(crate) struct Register(u16);
 
 impl Register {
-    /// Registers of each kind.
     pub(crate) const COUNT: u32 = 32768;
 
-    /// Register `n`, `None` outside `0..COUNT`.
     pub(crate) fn new(n: i32) -> Option<Register> {
         u16::try_from(n)
             .ok()
@@ -529,7 +501,6 @@ impl Register {
         self.0
     }
 
-    /// Register `n` below 256.
     pub(crate) const fn of(n: u8) -> Register {
         Register(n as u16)
     }
@@ -547,7 +518,6 @@ impl From<Register> for i32 {
     }
 }
 
-/// Declares a location type: an index into one table below `LEN`.
 macro_rules! eq_loc {
     ($(#[$doc:meta])* $loc:ident, $len:expr, $value:ty, $table:ident, $restore:ident) => {
         $(#[$doc])*
@@ -555,7 +525,6 @@ macro_rules! eq_loc {
         pub(crate) struct $loc(u32);
 
         impl $loc {
-            /// Locations in the table.
             pub(crate) const LEN: usize = $len;
 
             pub(crate) const fn raw(self) -> i32 {
@@ -598,32 +567,25 @@ const GLUE_PARS: u32 = GluePar::COUNT as u32;
 const TOK_PARS: u32 = TokPar::COUNT as u32;
 const REGISTERS: usize = Register::COUNT as usize;
 
-/// The parameter number of location `n`, below the registers.
 fn par_number(n: u32) -> u16 {
     u16::try_from(n).unwrap_or(u16::MAX)
 }
 
-/// The register `n` places past the parameters.
 fn register(n: u32) -> Register {
     Register(u16::try_from(n).unwrap_or(u16::MAX))
 }
 
-eq_loc!(
-    /// A location in the integer table: an integer parameter or a `\count` register.
-    IntLoc, INT_PARS as usize + REGISTERS, i32, ints, Int
-);
+eq_loc!(IntLoc, INT_PARS as usize + REGISTERS, i32, ints, Int);
 
 impl IntLoc {
     pub(crate) const fn par(p: IntPar) -> IntLoc {
         IntLoc(p as u32)
     }
 
-    /// `\count n`.
     pub(crate) const fn count(n: Register) -> IntLoc {
         IntLoc(INT_PARS + n.0 as u32)
     }
 
-    /// The parameter or register this location is.
     pub(crate) fn get(self) -> IntSlot {
         match self.0.checked_sub(INT_PARS) {
             Some(n) => IntSlot::Count(register(n)),
@@ -632,16 +594,17 @@ impl IntLoc {
     }
 }
 
-/// What an [`IntLoc`] names.
 pub(crate) enum IntSlot {
-    /// The parameter numbered as in [`IntPar`].
     Par(u16),
     Count(Register),
 }
 
 eq_loc!(
-    /// A location in the dimension table: a dimension parameter or a `\dimen` register.
-    DimenLoc, DIMEN_PARS as usize + REGISTERS, Scaled, dimens, Dimen
+    DimenLoc,
+    DIMEN_PARS as usize + REGISTERS,
+    Scaled,
+    dimens,
+    Dimen
 );
 
 impl DimenLoc {
@@ -649,12 +612,10 @@ impl DimenLoc {
         DimenLoc(p as u32)
     }
 
-    /// `\dimen n`.
     pub(crate) const fn dimen(n: Register) -> DimenLoc {
         DimenLoc(DIMEN_PARS + n.0 as u32)
     }
 
-    /// The parameter or register this location is.
     pub(crate) fn get(self) -> DimenSlot {
         match self.0.checked_sub(DIMEN_PARS) {
             Some(n) => DimenSlot::Dimen(register(n)),
@@ -663,9 +624,7 @@ impl DimenLoc {
     }
 }
 
-/// What a [`DimenLoc`] names.
 pub(crate) enum DimenSlot {
-    /// The parameter numbered as in [`DimenPar`].
     Par(u16),
     Dimen(Register),
 }
@@ -679,8 +638,11 @@ impl EqValue for GlueSpecId {
 }
 
 eq_loc!(
-    /// A location in the glue table: a glue parameter, a `\skip` or a `\muskip` register.
-    GlueLoc, GLUE_PARS as usize + 2 * REGISTERS, GlueSpecId, glue, Glue
+    GlueLoc,
+    GLUE_PARS as usize + 2 * REGISTERS,
+    GlueSpecId,
+    glue,
+    Glue
 );
 
 impl GlueLoc {
@@ -688,17 +650,14 @@ impl GlueLoc {
         GlueLoc(p as u32)
     }
 
-    /// `\skip n`.
     pub(crate) const fn skip(n: Register) -> GlueLoc {
         GlueLoc(GLUE_PARS + n.0 as u32)
     }
 
-    /// `\muskip n`.
     pub(crate) const fn mu_skip(n: Register) -> GlueLoc {
         GlueLoc(GLUE_PARS + Register::COUNT + n.0 as u32)
     }
 
-    /// The parameter or register this location is.
     pub(crate) fn get(self) -> GlueSlot {
         match self.0.checked_sub(GLUE_PARS) {
             None => GlueSlot::Par(par_number(self.0)),
@@ -708,9 +667,7 @@ impl GlueLoc {
     }
 }
 
-/// What a [`GlueLoc`] names.
 pub(crate) enum GlueSlot {
-    /// The parameter numbered as in [`GluePar`].
     Par(u16),
     Skip(Register),
     MuSkip(Register),
@@ -725,8 +682,11 @@ impl EqValue for TokenList {
 }
 
 eq_loc!(
-    /// A location in the token list table: a token list parameter or a `\toks` register.
-    ToksLoc, TOK_PARS as usize + REGISTERS, TokenList, toks, Toks
+    ToksLoc,
+    TOK_PARS as usize + REGISTERS,
+    TokenList,
+    toks,
+    Toks
 );
 
 impl ToksLoc {
@@ -734,12 +694,10 @@ impl ToksLoc {
         ToksLoc(p as u32 - TokPar::OutputRoutine as u32)
     }
 
-    /// `\toks n`.
     pub(crate) const fn register(n: Register) -> ToksLoc {
         ToksLoc(TOK_PARS + n.0 as u32)
     }
 
-    /// The parameter or register this location is.
     pub(crate) fn get(self) -> ToksSlot {
         match self.0.checked_sub(TOK_PARS) {
             Some(n) => ToksSlot::Register(register(n)),
@@ -748,15 +706,12 @@ impl ToksLoc {
     }
 }
 
-/// What a [`ToksLoc`] names.
 pub(crate) enum ToksSlot {
-    /// The parameter numbered as in [`TokPar`].
     Par(u16),
     Register(Register),
 }
 
 code_enum! {
-    /// A location in the shape table: `\parshape` or one of e-TeX's penalty arrays.
     pub(crate) enum ShapeLoc: u8 {
         ParShape = 0 => "parshape",
         InterLinePenalties = 1 => "interlinepenalties",
@@ -767,7 +722,6 @@ code_enum! {
 }
 
 impl ShapeLoc {
-    /// Locations in the table.
     pub(crate) const LEN: usize = ShapeLoc::DisplayWidowPenalties as usize + 1;
 }
 
@@ -791,7 +745,6 @@ impl EqLoc for ShapeLoc {
     }
 }
 
-/// A `\parshape` node or an e-TeX penalty array, as the shape table holds it.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default, Hash, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(transparent)]
 pub(crate) struct ShapeRef(MemPtr);
@@ -811,7 +764,6 @@ impl ShapeRef {
         self.0
     }
 
-    /// The shape a format word holds.
     pub(crate) fn from_ptr(p: MemPtr) -> ShapeRef {
         ShapeRef(p)
     }
@@ -832,12 +784,10 @@ impl EqValue for Option<NodePtr<BoxNode>> {
     }
 }
 
-/// A `\box` register.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) struct BoxLoc(Register);
 
 impl BoxLoc {
-    /// Locations in the table.
     pub(crate) const LEN: usize = REGISTERS;
 
     pub(crate) const fn register(n: Register) -> BoxLoc {
@@ -869,15 +819,10 @@ impl EqLoc for BoxLoc {
     }
 }
 
-eq_loc!(
-    /// A location in the font table: the current font or a math family font of some size.
-    FontLoc, 1 + 3 * 256, FontId, fonts, Font
-);
+eq_loc!(FontLoc, 1 + 3 * 256, FontId, fonts, Font);
 
 impl FontLoc {
-    /// `\font`, the current font.
     pub(crate) const CUR: FontLoc = FontLoc(0);
-    /// `\textfont0`, `\scriptfont0` and `\scriptscriptfont0`.
     pub(crate) const TEXT: FontLoc = FontLoc(1);
     pub(crate) const SCRIPT: FontLoc = FontLoc(1 + 256);
     pub(crate) const SCRIPT_SCRIPT: FontLoc = FontLoc(1 + 512);
@@ -889,18 +834,15 @@ impl FontLoc {
         FontLoc(u32::try_from(n + 1).unwrap_or(u32::MAX))
     }
 
-    /// Family `fam` of the size this location starts.
     pub(crate) fn family(self, fam: u8) -> FontLoc {
         FontLoc(self.0 + u32::from(fam))
     }
 
-    /// The size and family offset past `\textfont0`, as `print_size` takes it.
     pub(crate) fn math_offset(self) -> i32 {
         self.raw() - 1
     }
 }
 
-/// Declares the location type of one per-character code table.
 macro_rules! code_loc {
     ($(#[$doc:meta])* $loc:ident, $value:ty, $table:ident, $restore:ident) => {
         $(#[$doc])*
@@ -941,18 +883,9 @@ macro_rules! code_loc {
     };
 }
 
-code_loc!(
-    /// A `\catcode` entry.
-    CatLoc, Cmd, cat_codes, Cat
-);
-code_loc!(
-    /// An `\lccode` entry.
-    LcLoc, i32, lc_codes, Lc
-);
-code_loc!(
-    /// A `\uccode` entry.
-    UcLoc, i32, uc_codes, Uc
-);
+code_loc!(CatLoc, Cmd, cat_codes, Cat);
+code_loc!(LcLoc, i32, lc_codes, Lc);
+code_loc!(UcLoc, i32, uc_codes, Uc);
 code_loc!(
     /// An `\sfcode` entry: the space factor, and XeTeX's character class times 65536.
     SfLoc, i32, sf_codes, Sf
@@ -961,13 +894,9 @@ code_loc!(
     /// A `\mathcode` entry, in XeTeX's encoding.
     MathLoc, i32, math_codes, Math
 );
-code_loc!(
-    /// A `\delcode` entry.
-    DelLoc, i32, del_codes, Del
-);
+code_loc!(DelLoc, i32, del_codes, Del);
 
 code_enum! {
-    /// The table a `\catcode`-like primitive sets.
     pub(crate) enum CodeTable: u8 {
         Cat = 0 => "catcode",
         Lc = 1 => "lccode",
@@ -979,8 +908,6 @@ code_enum! {
 }
 
 code_enum! {
-    /// What a XeTeX code primitive sets: a character class, or a math or delimiter code
-    /// as one number or in parts.
     pub(crate) enum XetexCode: u8 {
         CharClass = 0 => "XeTeXcharclass",
         MathCodeNum = 1 => "Umathcodenum",
@@ -991,7 +918,6 @@ code_enum! {
 }
 
 code_enum! {
-    /// The table `\lowercase` or `\uppercase` maps through.
     pub(crate) enum CaseTable: u8 {
         Lower = 0 => "lowercase",
         Upper = 1 => "uppercase",
@@ -1001,12 +927,10 @@ code_enum! {
 pub(crate) struct EqtbState {
     /// The lowest bucket handed out to a colliding name so far.
     pub hash_used: NameSlot,
-    /// The extra names in use.
     pub hash_high: u32,
     pub no_new_control_sequence: bool,
     pub prim_used: PrimNum,
     pub cs_count: i32,
-    /// The meaning of each control sequence, and the level it was defined at.
     pub meanings: Table<CsId, Command>,
     pub ints: Table<IntLoc, i32>,
     pub dimens: Table<DimenLoc, Scaled>,
@@ -1020,14 +944,12 @@ pub(crate) struct EqtbState {
     pub sf_codes: Table<SfLoc, i32>,
     pub math_codes: Table<MathLoc, i32>,
     pub del_codes: Table<DelLoc, i32>,
-    /// `\XeTeXinterchartoks`, by class pair.
     pub inter_char: SparseTable<InterCharPair, TokenList>,
     pub boxes: Table<BoxLoc, Option<NodePtr<BoxNode>>>,
     pub prim: Vec<PrimEntry>,
     /// The `next` and `text` of each control sequence from the first hash bucket on.
     pub hash: Vec<HashEntry>,
     pub hash_extra: u32,
-    /// The last control sequence, past the extra hash entries.
     pub cs_top: CsId,
     pub journal: EqtbJournal,
     pub pgfmath: KnownCs,
@@ -1056,7 +978,6 @@ impl Default for EqtbState {
             sf_codes: Default::default(),
             math_codes: Default::default(),
             del_codes: Default::default(),
-            // PRIM_SIZE + 1 = 2101.
             prim: vec![PrimEntry::default(); 2101],
             hash: Vec::new(),
             hash_extra: 0,
@@ -1068,7 +989,6 @@ impl Default for EqtbState {
 }
 
 impl EqtbState {
-    /// Sizes the tables for `hash_extra` extra names, every control sequence undefined.
     pub(crate) fn alloc_tables(&mut self) {
         self.cs_top = CsId::top(self.hash_extra);
         let cs = self.cs_top.index() + 1;
@@ -1093,19 +1013,16 @@ impl EqtbState {
 }
 
 impl EqtbState {
-    /// The meaning of control sequence `cs`.
     #[inline(always)]
     pub(crate) fn meaning(&self, cs: CsId) -> Command {
         self.meanings.get(cs)
     }
 
-    /// The level `cs`'s meaning was defined at.
     #[inline]
     pub(crate) fn cs_level(&self, cs: CsId) -> u16 {
         self.meanings.level(cs)
     }
 
-    /// Gives `cs` the meaning `m` at level `level`.
     #[inline]
     pub(crate) fn set_meaning(&mut self, cs: CsId, m: Command, level: u16) {
         self.meanings.set(cs, m, level);
@@ -1148,7 +1065,6 @@ impl EqtbState {
         self.hash[index].text = s;
     }
 
-    /// The next slot in `p`'s hash chain.
     #[inline]
     pub fn prim_next(&self, p: PrimNum) -> Option<PrimNum> {
         self.prim[p.index()].next
@@ -1163,7 +1079,6 @@ impl EqtbState {
         self.prim[index].next = next;
     }
 
-    /// The name of the primitive in slot `p`, if the slot is used.
     #[inline]
     pub fn prim_text(&self, p: PrimNum) -> Option<StrNumber> {
         self.prim[p.index()].text
@@ -1178,7 +1093,6 @@ impl EqtbState {
         self.prim[index].text = s;
     }
 
-    /// The control sequence text that identifies font `f`.
     #[inline]
     pub(crate) fn font_id_text(&self, f: FontId) -> StrNumber {
         self.text(CsId::font_id(f))
@@ -1197,7 +1111,6 @@ impl EqtbState {
     pub(crate) fn par_shape(&self) -> Option<NodePtr<ParShapeNode>> {
         NodePtr::from_ptr(self.shapes.get(ShapeLoc::ParShape).ptr())
     }
-    /// The e-TeX penalty array held at `loc`.
     #[inline]
     pub(crate) fn penalties(&self, loc: ShapeLoc) -> Option<NodePtr<PenaltiesNode>> {
         NodePtr::from_ptr(self.shapes.get(loc).ptr())
@@ -1207,7 +1120,6 @@ impl EqtbState {
         self.boxes.get(BoxLoc::register(n.into()))
     }
     #[inline]
-    /// Sets box register `n` without saving, keeping its level.
     pub(crate) fn set_box_reg(&mut self, n: impl Into<Register>, b: Option<NodePtr<BoxNode>>) {
         self.boxes.set_value(BoxLoc::register(n.into()), b);
     }
@@ -1260,7 +1172,6 @@ impl EqtbState {
     pub fn int_par(&self, n: IntPar) -> i32 {
         self.ints.get(n.loc())
     }
-    /// Sets `n`, keeping its level.
     #[inline]
     pub fn set_int_par(&mut self, n: IntPar, v: i32) {
         self.ints.set_value(n.loc(), v);
@@ -1269,7 +1180,6 @@ impl EqtbState {
     pub fn dimen_par(&self, n: DimenPar) -> Scaled {
         self.dimens.get(n.loc())
     }
-    /// Sets `n`, keeping its level.
     #[inline]
     pub fn set_dimen_par(&mut self, n: DimenPar, v: Scaled) {
         self.dimens.set_value(n.loc(), v);

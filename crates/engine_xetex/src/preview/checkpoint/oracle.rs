@@ -420,7 +420,6 @@ fn digest_list(h: &mut Fnv, list: &ListStateRecord) {
     h.i32(list.mode_line);
 }
 
-/// A stack depth as the digest's `i32` words.
 fn depth(n: usize) -> i32 {
     i32::try_from(n).unwrap_or(i32::MAX)
 }

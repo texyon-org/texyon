@@ -428,7 +428,6 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     Ok(())
 }
 
-/// A register's new value in `\advance`, `\multiply` or `\divide`.
 #[derive(Clone, Copy)]
 enum RegisterValue {
     Word(i32),
@@ -447,14 +446,12 @@ pub(super) fn do_assignments(st: &mut EngineState) -> Result<(), Abort> {
     }
 }
 
-/// Scans a pair of character classes, a `\XeTeXinterchartoks` location.
 pub(crate) fn scan_inter_char_pair(st: &mut EngineState) -> Result<InterCharPair, Abort> {
     let first = scan_char_class_not_ignored(st)?;
     let second = scan_char_class_not_ignored(st)?;
     InterCharPair::new(first, second).or_confusion("char class")
 }
 
-/// Where a register assignment stores its value.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RegisterLoc {
     Int(IntLoc),

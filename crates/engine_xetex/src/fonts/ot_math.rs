@@ -79,7 +79,6 @@ fn direction(horiz: bool) -> Direction {
     }
 }
 
-/// The parts HarfBuzz reports for building a stretched glyph.
 pub(crate) struct GlyphAssembly {
     parts: Vec<MathGlyphPart>,
 }
@@ -124,7 +123,6 @@ pub(crate) enum ScriptKind {
 }
 
 impl FontState {
-    /// The layout engine of `f` when it is an OpenType (HarfBuzz) font.
     fn ot_engine(&self, f: FontId) -> Option<&FontEngineHandle> {
         self.layout_engine(f)
     }

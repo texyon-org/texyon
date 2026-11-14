@@ -11,18 +11,14 @@ use crate::memory::node::{
 use crate::print::errors::{Abort, OrConfusion};
 use crate::state::EngineState;
 
-/// A word found for hyphenation, its letters in `hu`/`hc[1..=hn]`.
 pub(super) struct Word {
     /// The glue node before the word, where the search for its predecessor starts.
     pub start: MemPtr,
-    /// The node before the word's first letter.
     pub ha: MemPtr,
-    /// The word's last node.
     pub hb: MemPtr,
     pub hn: u16,
 }
 
-/// Switch hyphenation to the language of a `\language` whatsit.
 pub(super) fn set_language(st: &mut EngineState, w: NodePtr<LanguageNode>) {
     let language = st.mem[w];
     st.hyph.cur_lang = language.lang as u8;
@@ -68,14 +64,12 @@ impl MemState {
     }
 }
 
-/// Try to hyphenate the word following the glue node `cur`.
 pub(super) fn try_hyphenate(st: &mut EngineState, cur: MemIdx) -> Result<(), Abort> {
     let max_len = st.eqtb.max_hyphenatable_length();
     let uc_hyph = st.eqtb.int_par(IntPar::UcHyph) > 0;
     let mut prev_s = cur;
     let mut s = prev_s.link(&st.mem);
 
-    // Skip to the first letter, setting `hf`.
     loop {
         let Some(here) = s else {
             return Ok(());
@@ -191,8 +185,6 @@ pub(super) fn try_hyphenate(st: &mut EngineState, cur: MemIdx) -> Result<(), Abo
     hyphenate(st, &word, native_ha)
 }
 
-/// Collect the letters of the native word `ha` into `hu`/`hc`, splitting it
-/// where the hyphenatable part begins or ends. Returns the word's final node.
 fn collect_native_word(
     st: &mut EngineState,
     word: &mut Word,
@@ -241,8 +233,6 @@ fn collect_native_word(
     }
 }
 
-/// Collect the letters of the word starting at `s` into `hu`/`hc`, setting
-/// `hb` and `hyf_bchar`. Returns the node after the collected letters.
 fn collect_word(st: &mut EngineState, word: &mut Word, mut s: MemPtr, max_len: i32) -> MemPtr {
     word.hn = 0;
     loop {

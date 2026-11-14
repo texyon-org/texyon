@@ -59,7 +59,6 @@ impl Breaker {
         Some(self.char_pw(mem, fonts, l, Side::Left) + self.char_pw(mem, fonts, r, Side::Right))
     }
 
-    /// The protrusion (`\lpcode`/`\rpcode` scaled to the font quad) of `p`.
     fn char_pw(&self, mem: &MemState, fonts: &FontState, p: MemPtr, side: Side) -> Scaled {
         fn protrusion(fonts: &FontState, f: FontId, cp: i32) -> Scaled {
             let quad = fonts.param(f, QUAD_CODE);
@@ -104,8 +103,6 @@ impl Breaker {
         protrusion(fonts, f, cp)
     }
 
-    /// Insert the right margin kern of the line ending at `q`, which is the last
-    /// node of a discretionary's pre-break list when `pre_break_tail` is set.
     pub(super) fn insert_right_margin_kern(
         &mut self,
         mem: &mut MemState,
@@ -164,7 +161,6 @@ impl Breaker {
 }
 
 impl MemState {
-    /// Whether `p` is a char node or a node that glue may break after.
     #[inline]
     fn is_non_discardable(&self, p: MemPtr) -> bool {
         p.is_some_and(|p| {
@@ -186,7 +182,6 @@ impl MemState {
         matches!(p.map(|p| self.classify_box(p)), Some(Ok(Some(b))) if self.is_empty_hlist(b))
     }
 
-    /// The list of `p` if `p` is an hlist with a nonempty list.
     #[inline]
     fn nonempty_hlist(&self, p: MemPtr) -> Option<MemIdx> {
         match p.map(|p| self.classify_box(p)) {

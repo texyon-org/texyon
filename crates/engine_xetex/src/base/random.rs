@@ -9,10 +9,8 @@ const SPEC_LOG: [i32; 29] = [
     4, 2, 1, 1,
 ];
 
-/// The random number generator and the seed it started from.
 #[derive(Clone)]
 pub(crate) struct Random {
-    /// `\\randomseed`.
     pub seed: i32,
     randoms: [i32; 55],
     j: u8,
@@ -240,7 +238,6 @@ impl Random {
         self.randoms[self.j as usize]
     }
 
-    /// Restarts the sequence from `seed`.
     pub(crate) fn reseed(&mut self, seed: i32) {
         self.seed = seed;
         let mut j = seed.wrapping_abs();
@@ -277,7 +274,6 @@ impl Random {
         }
     }
 
-    /// TeX's `norm_rand`: a normally distributed random integer.
     pub(crate) fn norm_rand(&mut self) -> i32 {
         loop {
             let (x, u) = loop {

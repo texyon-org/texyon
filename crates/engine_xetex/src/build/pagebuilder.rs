@@ -36,7 +36,6 @@ pub fn initialize_pagebuilder_variables(st: &mut EngineState) {
     st.shipout.page_max_depth = Scaled::ZERO;
 }
 
-/// A record on the `page_ins_head` ring.
 fn page_ins(p: MemIdx) -> NodePtr<PageInsNode> {
     NodePtr::at(p)
 }
@@ -47,13 +46,11 @@ fn ring_next(mem: &MemState, r: MemIdx) -> Result<MemIdx, Abort> {
 }
 
 impl ShipoutState {
-    /// The last node on the current page, `PAGE_HEAD` when it is empty.
     fn page_tail(&self) -> Result<MemIdx, Abort> {
         self.page_tail.or_confusion("page_tail")
     }
 }
 
-/// TeX's `contrib_tail`, the tail of the outermost vertical list.
 fn set_contrib_tail(st: &mut EngineState, tail: MemIdx) {
     if st.input.nest.is_empty() {
         st.input.cur_list.tail = tail;
@@ -87,7 +84,6 @@ fn ensure_vbox(st: &mut EngineState, n: u8) -> Result<(), Abort> {
     )
 }
 
-/// Records the new mark `mark_ptr` as the first and bottom mark of class `class`.
 fn update_marks(st: &mut EngineState, class: i32, mark_ptr: TokenList) -> Result<(), Abort> {
     if class != 0 {
         let class = Register::new(class).or_confusion("marks")?;
@@ -116,8 +112,6 @@ fn update_marks(st: &mut EngineState, class: i32, mark_ptr: TokenList) -> Result
     Ok(())
 }
 
-/// Moves insertion `ins` at `p` into its box when it made it onto the page.
-/// Returns whether it has to wait for the next page.
 fn place_insertion(
     st: &mut EngineState,
     tails: &mut InsertTails,
@@ -170,10 +164,8 @@ fn place_insertion(
     Ok(wait)
 }
 
-/// Where `fire_up` appends each insertion class's material, by box number.
 type InsertTails = [Option<LinkSlot>; 256];
 
-/// TeX's `fire_up`: puts the best page into `\box255` and runs the output routine.
 fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     let best = st.shipout.best_page_break;
     let output_penalty = match best.map(|b| st.mem.classify(b)) {
@@ -430,7 +422,6 @@ fn scale_by_count(x: Scaled, count: i32) -> Scaled {
     }
 }
 
-/// Adds insertion `ins` at `p` to the current page, splitting it if needed.
 fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Result<(), Abort> {
     if st.shipout.page_contents == PageContents::Empty {
         freeze_page_specs(st, PageContents::InsertsOnly);
@@ -540,15 +531,11 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
     Ok(())
 }
 
-/// What to do with the node at the head of the contribution list.
 enum PageStep {
-    /// Move it to the current page.
     Contribute,
-    /// Account for a glue or kern, then move it to the current page.
     UpdateHeights,
     /// Discard it: nothing has been put on the page yet.
     Discard,
-    /// A legal breakpoint with penalty `pi`.
     Break(i32),
 }
 
@@ -721,8 +708,6 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-/// Adds the stretch and shrink of page glue `glue` to the page totals and
-/// returns its width, making infinite shrinkability finite.
 fn page_glue_width(st: &mut EngineState, glue: NodePtr<GlueNode>) -> Result<Scaled, Abort> {
     let spec = st.mem[glue].glue_ptr;
     let order = st.mem[spec].stretch_order.index();
@@ -748,7 +733,6 @@ fn page_glue_width(st: &mut EngineState, glue: NodePtr<GlueNode>) -> Result<Scal
     Ok(st.mem[finite].width)
 }
 
-/// Moves `p` from the contribution list to the current page.
 fn contribute(st: &mut EngineState, p: MemIdx) -> Result<(), Abort> {
     let so_far = &mut st.shipout.page_so_far;
     if so_far[PAGE_DEPTH] > st.shipout.page_max_depth {
@@ -763,7 +747,6 @@ fn contribute(st: &mut EngineState, p: MemIdx) -> Result<(), Abort> {
     Ok(())
 }
 
-/// What the current page holds so far (`page_contents`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub(crate) enum PageContents {

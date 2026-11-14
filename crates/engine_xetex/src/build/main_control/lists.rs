@@ -145,7 +145,6 @@ pub(super) fn indent_in_hmode(st: &mut EngineState, indent: bool) -> Result<(), 
     Ok(())
 }
 
-/// Puts the current token back with the par token in front of it.
 fn back_input_after_par_token(st: &mut EngineState) -> Result<(), Abort> {
     back_input(st)?;
     st.scanner.cur_tok = st.input.par_token;
@@ -157,7 +156,6 @@ fn back_input_after_par_token(st: &mut EngineState) -> Result<(), Abort> {
 /// The least `\partokencontext` at which a group end in horizontal mode inserts the par token.
 #[derive(Clone, Copy)]
 pub(super) enum ParTokenContext {
-    /// `\vbox`, `\vtop` and `\vcenter`.
     Boxes = 1,
     /// Also `\insert`, `\vadjust`, `\output`, `\noalign` and `\valign` items.
     AllGroups = 2,
@@ -237,7 +235,6 @@ pub(super) fn begin_insert_or_adjust(st: &mut EngineState) -> Result<(), Abort> 
     Ok(())
 }
 
-/// Appends interword glue for the current space factor.
 pub(super) fn app_space(st: &mut EngineState) -> Result<(), Abort> {
     let space_factor = st.input.cur_list.space_factor()?;
     let q;
@@ -268,7 +265,6 @@ pub(super) fn app_space(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-/// The current font's interword glue spec, built from its parameters on first use.
 pub(super) fn font_space_glue(st: &mut EngineState) -> Result<GlueSpecId, Abort> {
     let cf = st.eqtb.cur_font();
     if let Some(glue) = st.fonts.font_glue[cf] {
@@ -283,7 +279,6 @@ pub(super) fn font_space_glue(st: &mut EngineState) -> Result<GlueSpecId, Abort>
     Ok(spec)
 }
 
-/// Sets `cur_lang` and the list's language and hyphen minima for a new paragraph.
 pub(crate) fn start_paragraph_language(st: &mut EngineState) -> Result<(), Abort> {
     let l = norm_lang(st.eqtb.int_par(IntPar::Language));
     st.hyph.cur_lang = l;
@@ -323,7 +318,6 @@ pub(crate) fn new_graf(st: &mut EngineState, indented: bool) -> Result<(), Abort
     Ok(())
 }
 
-/// What `new_character` makes: a character node, or a glyph for a native font.
 #[derive(Copy, Clone)]
 pub(crate) enum NewChar {
     Char(NodePtr<CharNode>),
@@ -345,7 +339,6 @@ impl MemAddr for NewChar {
     }
 }
 
-/// TeX's `new_character`, `None` for a character the font lacks.
 pub(crate) fn new_character(
     st: &mut EngineState,
     f: FontId,
@@ -794,7 +787,6 @@ fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
     begin_disc_group(st)
 }
 
-/// The italic correction of character `ch`.
 fn char_italic(st: &mut EngineState, f: FontId, character: u16) -> Scaled {
     let c = st.fonts.effective_char(f, character);
     st.fonts.char_metrics(f, c).italic

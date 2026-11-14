@@ -21,11 +21,9 @@ unsafe impl bytemuck::ZeroableInOption for MemIdx {}
 // SAFETY: as above, and every non-zero word is a valid `MemIdx`.
 unsafe impl bytemuck::PodInOption for MemIdx {}
 
-/// A TeX pointer: a `mem` index, `None` for null.
 pub type MemPtr = Option<MemIdx>;
 
 impl MemIdx {
-    /// The pointer a raw memory word, file or FFI value holds, `None` for null.
     #[inline(always)]
     pub const fn from_raw(raw: i32) -> MemPtr {
         if raw < 0 {
@@ -37,13 +35,11 @@ impl MemIdx {
         }
     }
 
-    /// The raw form for a memory word, file or FFI call.
     #[inline(always)]
     pub const fn raw(self) -> i32 {
         self.0.get().cast_signed()
     }
 
-    /// The `len` words starting here, as a range of `mem` indices.
     #[inline]
     pub fn words(self, len: i32) -> Range<usize> {
         // An index past any arena, so slicing rejects it. Staying in i32 range
@@ -53,19 +49,15 @@ impl MemIdx {
         start..start + usize::try_from(len).unwrap_or(0)
     }
 
-    /// The first word after the unused word 0.
     pub const FIRST: MemIdx = MemIdx(NonZeroU32::MIN);
 
-    /// The word `delta` words on from here, within the same node.
     #[inline]
     pub const fn offset(self, delta: u32) -> MemIdx {
         MemIdx(self.0.saturating_add(delta))
     }
 }
 
-/// Anything that names a non-null `mem` address.
 pub trait MemAddr {
-    /// The address.
     fn addr(self) -> MemIdx;
 }
 
@@ -76,9 +68,7 @@ impl MemAddr for MemIdx {
     }
 }
 
-/// The raw word form of a pointer, 0 for null.
 pub trait RawPtr {
-    /// The raw form for a memory word, file or FFI call.
     fn raw(self) -> i32;
 }
 
@@ -89,7 +79,6 @@ impl RawPtr for MemPtr {
     }
 }
 
-/// The number of words from `rhs` to `self`.
 impl Sub for MemIdx {
     type Output = i32;
     #[inline]
@@ -119,13 +108,11 @@ impl Sub for MemIdx {
 pub struct Scaled(i32);
 
 impl Scaled {
-    /// The value from its raw form in a memory word, file or FFI call.
     #[inline(always)]
     pub const fn from_raw(raw: i32) -> Scaled {
         Scaled(raw)
     }
 
-    /// The raw form for a memory word, file or FFI call.
     #[inline(always)]
     pub const fn raw(self) -> i32 {
         self.0
@@ -134,16 +121,13 @@ impl Scaled {
 
 impl Scaled {
     pub const ZERO: Scaled = Scaled(0);
-    /// One point, TeX's `unity`.
     pub const UNITY: Scaled = Scaled(0x10000);
 
-    /// `r` scaled points rounded to the nearest, as TeX's `round`.
     #[inline]
     pub fn round(r: f64) -> Scaled {
         Scaled(tex_round(r))
     }
 
-    /// TeX's `half`, rounding odd values up.
     #[inline]
     pub fn half(self) -> Scaled {
         Scaled(scaled_math::half(self.0))
@@ -244,13 +228,11 @@ pub struct BufPos(i32);
 impl BufPos {
     pub const ZERO: BufPos = BufPos(0);
 
-    /// The value from its raw form in a memory word or a size setting.
     #[inline(always)]
     pub const fn from_raw(raw: i32) -> BufPos {
         BufPos(raw)
     }
 
-    /// The raw form for a memory word.
     #[inline(always)]
     pub const fn raw(self) -> i32 {
         self.0
@@ -261,7 +243,6 @@ impl BufPos {
         self.0 as usize
     }
 
-    /// The positions from `self` up to but not including `end`.
     pub fn until(self, end: BufPos) -> impl DoubleEndedIterator<Item = BufPos> + Clone {
         (self.0..end.0).map(BufPos)
     }
@@ -283,7 +264,6 @@ impl Sub<i32> for BufPos {
     }
 }
 
-/// The number of positions from `rhs` to `self`.
 impl Sub for BufPos {
     type Output = i32;
     #[inline(always)]
@@ -314,13 +294,11 @@ pub struct PoolPos(i32);
 impl PoolPos {
     pub const ZERO: PoolPos = PoolPos(0);
 
-    /// The value from its raw form in a format file or a size setting.
     #[inline(always)]
     pub const fn from_raw(raw: i32) -> PoolPos {
         PoolPos(raw)
     }
 
-    /// The raw form for a format file.
     #[inline(always)]
     pub const fn raw(self) -> i32 {
         self.0
@@ -331,7 +309,6 @@ impl PoolPos {
         self.0 as usize
     }
 
-    /// The positions from `self` up to but not including `end`.
     pub fn until(self, end: PoolPos) -> impl DoubleEndedIterator<Item = PoolPos> + Clone {
         (self.0..end.0).map(PoolPos)
     }
@@ -353,7 +330,6 @@ impl Sub<i32> for PoolPos {
     }
 }
 
-/// The number of units from `rhs` to `self`.
 impl Sub for PoolPos {
     type Output = i32;
     #[inline(always)]
@@ -384,10 +360,8 @@ pub struct PrimNum(NonZeroU32);
 
 impl PrimNum {
     pub const FIRST: PrimNum = PrimNum(NonZeroU32::MIN);
-    /// `prim_size`, the last slot.
     pub const LAST: PrimNum = PrimNum::FIRST.plus(PRIM_SIZE.cast_unsigned() - 1);
 
-    /// The slot `n` past `self`.
     #[inline(always)]
     pub const fn plus(self, n: u32) -> PrimNum {
         PrimNum(self.0.saturating_add(n))
@@ -398,25 +372,21 @@ impl PrimNum {
         self.0.get() as usize
     }
 
-    /// The raw form for a `prim` link.
     #[inline(always)]
     pub const fn raw(self) -> i32 {
         self.0.get().cast_signed()
     }
 
-    /// The slot a raw `prim` link holds, `None` for 0.
     #[inline(always)]
     pub fn from_raw(raw: i32) -> Option<PrimNum> {
         NonZeroU32::new(u32::try_from(raw).ok()?).map(PrimNum)
     }
 
-    /// The slot before `self`, `None` before the first.
     #[inline]
     pub fn prev(self) -> Option<PrimNum> {
         NonZeroU32::new(self.0.get() - 1).map(PrimNum)
     }
 
-    /// All slots of the `prim` table.
     pub fn all() -> impl Iterator<Item = PrimNum> {
         (1..=PRIM_SIZE.cast_unsigned())
             .filter_map(NonZeroU32::new)
@@ -444,16 +414,13 @@ impl Dir {
     }
 }
 
-/// A position on the save stack.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 #[repr(transparent)]
 pub struct SavePtr(i32);
 
 impl SavePtr {
-    /// The bottom of the save stack.
     pub const ZERO: SavePtr = SavePtr(0);
 
-    /// The position as a number.
     #[inline(always)]
     pub const fn raw(self) -> i32 {
         self.0
@@ -512,7 +479,6 @@ impl SubAssign<i32> for SavePtr {
 #[repr(transparent)]
 pub struct FontId(u16);
 
-/// An eqtb word, format field or command code that is no font number.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct InvalidFontId(pub i32);
 
@@ -527,7 +493,6 @@ impl FontId {
         self.0
     }
 
-    /// The number widened for an eqtb word, format field or FFI call.
     #[inline(always)]
     pub fn raw(self) -> i32 {
         i32::from(self.0)
@@ -584,13 +549,11 @@ impl TryFrom<i32> for FontId {
 pub struct StrNumber(i32);
 
 impl StrNumber {
-    /// The value from its raw form in a memory word, file or FFI call.
     #[inline(always)]
     pub const fn from_raw(raw: i32) -> StrNumber {
         StrNumber(raw)
     }
 
-    /// The raw form for a memory word, file or FFI call.
     #[inline(always)]
     pub const fn raw(self) -> i32 {
         self.0
@@ -607,13 +570,11 @@ impl StrNumber {
         StrNumber(c)
     }
 
-    /// Whether this is a pool string rather than a single character.
     #[inline]
     pub fn is_pool_string(self) -> bool {
         self.0 >= TOO_BIG_CHAR
     }
 
-    /// The `str_start` slot of this pool string.
     #[inline]
     pub fn slot(self) -> usize {
         (self.0 - TOO_BIG_CHAR) as usize
@@ -629,14 +590,12 @@ impl StrNumber {
         StrNumber(self.0 - 1)
     }
 
-    /// The string `n` numbers after `self`.
     #[inline]
     pub fn offset(self, n: i32) -> StrNumber {
         StrNumber(self.0 + n)
     }
 }
 
-/// The number of strings from `rhs` to `self`.
 impl Sub for StrNumber {
     type Output = i32;
     #[inline(always)]
@@ -689,12 +648,10 @@ code_enum! {
     }
 }
 
-/// A type code outside the node types, as in the 32..=39 gap.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct InvalidNodeType(pub u16);
 
 impl NodeType {
-    /// The node type with code `raw`, an error for a code outside the node types.
     #[inline]
     pub fn of_code(raw: u16) -> Result<NodeType, InvalidNodeType> {
         NodeType::from_raw(i32::from(raw)).ok_or(InvalidNodeType(raw))
@@ -711,7 +668,6 @@ code_enum! {
 }
 
 impl Orientation {
-    /// The box type code with this orientation.
     #[inline]
     pub const fn node_type(self) -> NodeType {
         match self {
@@ -722,7 +678,6 @@ impl Orientation {
 }
 
 code_enum! {
-    /// Whether a box's glue is at natural size, stretched or shrunk.
     pub enum GlueSign: u16 {
         Normal = 0,
         Stretching = 1,
@@ -733,7 +688,6 @@ code_enum! {
 impl GlueSign {}
 
 code_enum! {
-    /// The order of infinity of a stretch or shrink: finite, fil, fill or filll.
     #[derive(PartialOrd, Ord, Default)]
     pub enum GlueOrder: u16 {
         #[default]
@@ -747,7 +701,6 @@ code_enum! {
 }
 
 impl GlueOrder {
-    /// The orders from finite up.
     pub const ALL: [GlueOrder; 4] = [
         GlueOrder::Normal,
         GlueOrder::Fil,
@@ -755,7 +708,6 @@ impl GlueOrder {
         GlueOrder::Filll,
     ];
 
-    /// The next higher order, `None` above `filll`.
     #[inline]
     pub fn next(self) -> Option<GlueOrder> {
         match self {
@@ -767,14 +719,12 @@ impl GlueOrder {
     }
 }
 
-/// A total per glue order, as `total_stretch` and `total_shrink` keep.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
 pub struct OrderTotals([Scaled; 4]);
 
 impl OrderTotals {
     pub const ZERO: OrderTotals = OrderTotals([Scaled::ZERO; 4]);
 
-    /// The highest order with a nonzero total, `Normal` when all are zero.
     #[inline]
     pub fn max_order(&self) -> GlueOrder {
         GlueOrder::ALL

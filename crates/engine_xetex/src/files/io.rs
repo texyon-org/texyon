@@ -53,7 +53,6 @@ const K_FORM_NFC: u16 = 0x0100;
 const K_FORM_NFD: u16 = 0x0200;
 pub(crate) const K_STATUS_NO_ERROR: libc::c_long = 0;
 
-/// The ICU `UConverterType` of host-endian UTF-32.
 #[cfg(target_endian = "little")]
 const UCNV_UTF32_NATIVE_ENDIAN: libc::c_int = 8;
 #[cfg(target_endian = "big")]
@@ -77,7 +76,6 @@ const _: () = assert!(
 );
 
 impl UFile {
-    /// Closes the ICU converter this file owns, if any.
     fn close_converter(&mut self) {
         if self.encoding_mode == ICUMAPPING as i16 && !self.conversion_data.is_null() {
             // SAFETY: `set_input_file_encoding` installed this converter for
@@ -94,7 +92,6 @@ impl Drop for UFile {
     }
 }
 
-/// An input or `\read` stream slot.
 #[derive(Clone, Copy)]
 pub(crate) enum FileSlot {
     Input(usize),
@@ -127,7 +124,6 @@ pub(crate) fn with_slot_file<R>(
     result
 }
 
-/// `input_line` on the file in `slot`, which must not be empty.
 pub(crate) fn input_slot_line(st: &mut EngineState, slot: FileSlot) -> Result<libc::c_int, Abort> {
     with_slot_file(st, slot, input_line).expect("input_line on an empty input slot")
 }
@@ -162,7 +158,6 @@ unsafe extern "C" {
     ) -> i32;
 }
 
-/// Opens the ICU converter `name`, or returns ICU's error code.
 fn icu_converter_open(name: &[u8]) -> Result<*mut libc::c_void, libc::c_int> {
     let mut err: i32 = 0;
     let cnv = with_c_str(name, |name| {
@@ -172,7 +167,6 @@ fn icu_converter_open(name: &[u8]) -> Result<*mut libc::c_void, libc::c_int> {
     if cnv.is_null() { Err(err) } else { Ok(cnv) }
 }
 
-/// Whether ICU knows a converter `name`, or ICU's error code.
 pub(crate) fn icu_converter_exists(name: &[u8]) -> Result<(), libc::c_int> {
     let cnv = icu_converter_open(name)?;
     // SAFETY: `cnv` was just opened and is not used again.
@@ -185,7 +179,6 @@ fn utf32_bytes(units: &[u32]) -> &[u8] {
     unsafe { slice::from_raw_parts(units.as_ptr().cast(), mem::size_of_val(units)) }
 }
 
-/// The bytes of `units`, for converters that write host-endian UTF-32 into them.
 fn utf32_bytes_mut<T: Utf32Unit>(units: &mut [T]) -> &mut [u8] {
     // SAFETY: `T` is a 4-byte integer, so every byte pattern is a valid value
     // and the byte view covers exactly the same memory.
@@ -196,8 +189,6 @@ trait Utf32Unit {}
 impl Utf32Unit for i32 {}
 impl Utf32Unit for u32 {}
 
-/// Converts `source` with `cnv` to host-endian UTF-32 in `target`, returning
-/// the byte count and the ICU error code.
 fn icu_to_utf32(cnv: *mut libc::c_void, target: &mut [u8], source: &[u8]) -> (i32, libc::c_int) {
     let mut err: i32 = 0;
     // SAFETY: `cnv` is the open converter of an input file, both buffers are
@@ -216,7 +207,6 @@ fn icu_to_utf32(cnv: *mut libc::c_void, target: &mut [u8], source: &[u8]) -> (i3
     (len, err)
 }
 
-/// Where an opened input file was found.
 pub(crate) struct FoundInput {
     /// The path plus the extension the bridge added, as TeX Live prints it.
     pub name: Vec<u8>,
@@ -257,7 +247,6 @@ pub(crate) fn last_found_name(path: &[u8]) -> Vec<u8> {
     last_input_found().name(path)
 }
 
-/// Opens and configures an input file. `None` means the bridge open failed.
 pub(crate) fn u_open_in(
     st: &mut EngineState,
     path: &[u8],
@@ -305,7 +294,6 @@ pub(crate) fn u_open_in(
     Ok(Some((f, found)))
 }
 
-/// Sets the encoding mode, and the ICU converter if any, of an open file.
 pub(crate) fn set_input_file_encoding(
     st: &mut EngineState,
     f: &mut UFile,
@@ -345,7 +333,6 @@ pub(crate) fn set_input_file_encoding(
     Ok(())
 }
 
-/// Process-lifetime staging buffers and normalizers of `input_line`.
 #[derive(Default)]
 struct LineScratch {
     bytes: Vec<u8>,
@@ -361,7 +348,6 @@ fn is_line_end(c: i32) -> bool {
     c == EOF || c == i32::from(b'\n') || c == i32::from(b'\r')
 }
 
-/// An EOF that is not an interrupted read.
 fn is_true_eof(c: i32) -> bool {
     c == EOF && Error::last_os_error().raw_os_error() != Some(libc::EINTR)
 }
@@ -574,7 +560,6 @@ impl From<InvalidInputMode> for Abort {
     }
 }
 
-/// Reads one code point from `f` in its encoding mode.
 pub(crate) fn get_uni_c(
     st: &mut EngineState,
     f: &mut UFile,
@@ -678,7 +663,6 @@ fn rescan_opened_name(st: &mut EngineState, path: &[u8]) -> Result<FileName, Abo
     scan_whole_name(st, utf16_units(path).into_iter().map(u32::from))
 }
 
-/// The UTF-16 units of UTF-8 `path`, as the pool stores a name.
 fn utf16_units(mut path: &[u8]) -> Vec<u16> {
     let mut units = Vec::with_capacity(path.len());
     while !path.is_empty() {
@@ -688,7 +672,6 @@ fn utf16_units(mut path: &[u8]) -> Vec<u16> {
     units
 }
 
-/// `\openin` and `\closein`.
 pub(crate) fn open_or_close(st: &mut EngineState, open: bool) -> Result<(), Abort> {
     let n = usize::try_from(scan_four_bit_int(st)?).unwrap_or(0);
 
@@ -718,7 +701,6 @@ pub(crate) fn open_or_close(st: &mut EngineState, open: bool) -> Result<(), Abor
     Ok(())
 }
 
-/// A file name from its parts, quoted when it needs to be.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct FileName {
     pub name: StrNumber,
@@ -767,23 +749,19 @@ pub(crate) fn may_write(path: &[u8]) -> bool {
     }
 }
 
-/// A file name scanned from the input, with how it was quoted.
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct ScannedName {
     pub file: FileName,
     /// Whether a quote appeared, which makes a font name try installed fonts first.
     pub quoted: bool,
-    /// A quote still open at the end of the name.
     pub open_quote: Option<u8>,
 }
 
-/// One file name being scanned into the string pool.
 struct NameScan {
     area_delimiter: i32,
     ext_delimiter: i32,
     quoted: bool,
     quote: Option<u8>,
-    /// Whether an unquoted space ends the name.
     stop_at_space: bool,
 }
 
@@ -798,7 +776,6 @@ impl NameScan {
         }
     }
 
-    /// Adds code point `c` to the name, `false` at its end.
     fn more_name(&mut self, st: &mut EngineState, c: u32) -> Result<bool, Abort> {
         if self.stop_at_space {
             match self.quote {
@@ -888,7 +865,6 @@ impl NameScan {
     }
 }
 
-/// Scans a whole name that is not delimited by spaces.
 fn scan_whole_name(
     st: &mut EngineState,
     chars: impl IntoIterator<Item = u32>,
@@ -928,7 +904,6 @@ pub(crate) fn pack_job_name(st: &mut EngineState, s: &str) -> Result<Vec<u8>, Ab
     Ok(file.path(&st.strings))
 }
 
-/// Opens the transcript and writes its banner.
 pub(crate) fn open_log_file(st: &mut EngineState) -> Result<(), Abort> {
     let old_setting = st.shipout.selector;
     if st.strings.job_name == StrNumber::NONE {
@@ -1036,7 +1011,6 @@ pub fn init_io(st: &mut EngineState) {
     st.input.first = first + 1;
 }
 
-/// Scans a file name and returns it as one path.
 pub(crate) fn scan_name_path(st: &mut EngineState) -> Result<Vec<u8>, Abort> {
     Ok(scan_file_name(st)?.file.path(&st.strings))
 }
@@ -1121,7 +1095,6 @@ pub(crate) fn scan_file_name(st: &mut EngineState) -> Result<ScannedName, Abort>
     Ok(scanned)
 }
 
-/// `\input`, or the primary input when `primary_input_name` is given.
 pub(crate) fn start_input(
     st: &mut EngineState,
     primary_input_name: Option<&str>,

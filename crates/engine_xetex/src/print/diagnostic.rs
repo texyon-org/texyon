@@ -36,7 +36,6 @@ pub struct Diagnostic {
     pub line: Option<u32>,
 }
 
-/// A diagnostic whose message is being printed.
 #[derive(Clone, Debug)]
 pub(crate) struct Capture {
     kind: DiagnosticKind,
@@ -63,31 +62,26 @@ impl Capture {
 pub(crate) struct DiagnosticsState {
     capture: Option<Capture>,
     issued: Vec<Diagnostic>,
-    /// Diagnostics of earlier operations this one continues after.
     pub resumed_at: Option<usize>,
 }
 
 impl DiagnosticsState {
-    /// Starts a new operation's list.
     pub(crate) fn begin_operation(&mut self) {
         self.capture = None;
         self.issued.clear();
         self.resumed_at = None;
     }
 
-    /// The operation resumed after `issued` diagnostics of earlier ones.
     pub(crate) fn resume_after(&mut self, issued: usize) {
         self.capture = None;
         self.issued.clear();
         self.resumed_at = Some(issued);
     }
 
-    /// The diagnostics this operation reported, in order.
     pub(crate) fn take(&mut self) -> Vec<Diagnostic> {
         mem::take(&mut self.issued)
     }
 
-    /// Adds a printed byte to the message being captured.
     #[inline]
     pub(crate) fn mirror(&mut self, byte: u8) {
         if let Some(capture) = &mut self.capture {
@@ -96,7 +90,6 @@ impl DiagnosticsState {
     }
 }
 
-/// The innermost input level that is a real file, with its current line.
 pub(crate) fn current_file_line(st: &EngineState) -> Option<(StrNumber, i32)> {
     let mut level = st.input.in_open;
     while level > 0 && st.input.open_levels[level].full_source_name == StrNumber::NONE {
@@ -113,8 +106,6 @@ pub(crate) fn current_file_line(st: &EngineState) -> Option<(StrNumber, i32)> {
     Some((st.input.open_levels[level].full_source_name, line))
 }
 
-/// Starts capturing a `kind` diagnostic at the current position, reporting
-/// any capture still open.
 pub(crate) fn begin_capture(st: &mut EngineState, kind: DiagnosticKind) {
     end_capture(st);
     let (file, line) = match current_file_line(st) {
@@ -135,12 +126,10 @@ pub(crate) fn begin_capture(st: &mut EngineState, kind: DiagnosticKind) {
     });
 }
 
-/// Starts capturing a warning at the current position.
 pub(crate) fn begin_warning(st: &mut EngineState) {
     begin_capture(st, DiagnosticKind::Warning);
 }
 
-/// Reports a warning to the host without printing it to the transcript.
 pub(crate) fn warn_host(st: &mut EngineState, message: &str) {
     begin_warning(st);
     if let Some(capture) = &mut st.diagnostics.capture {
@@ -149,7 +138,6 @@ pub(crate) fn warn_host(st: &mut EngineState, message: &str) {
     end_capture(st);
 }
 
-/// Stops capturing and returns the diagnostic so far, without help.
 pub(crate) fn take_capture(st: &mut EngineState, help: Vec<String>) -> Option<Diagnostic> {
     st.diagnostics
         .capture
@@ -157,14 +145,12 @@ pub(crate) fn take_capture(st: &mut EngineState, help: Vec<String>) -> Option<Di
         .map(|capture| capture.into_diagnostic(help))
 }
 
-/// Stops capturing and reports what was captured.
 pub(crate) fn end_capture(st: &mut EngineState) {
     if let Some(diagnostic) = take_capture(st, Vec::new()) {
         emit(st, diagnostic);
     }
 }
 
-/// Reports `diagnostic` to the host.
 pub(crate) fn emit(st: &mut EngineState, diagnostic: Diagnostic) {
     let cli = cli_text(&diagnostic, false);
     emit_with_cli_text(st, diagnostic, cli);

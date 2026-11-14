@@ -17,7 +17,6 @@ unsafe extern "C" {
     fn localtime(time: *const libc::time_t) -> *mut libc::tm;
 }
 
-/// `gmtime` or `localtime` of `t`.
 fn broken_down_time(t: libc::time_t, utc: bool) -> libc::tm {
     // SAFETY: both return null or a pointer to a static `tm` that stays valid
     // until the next call, and it is copied out right away.
@@ -127,7 +126,6 @@ pub(crate) fn nul_terminated(buf: &[u8]) -> &[u8] {
     &buf[..end]
 }
 
-/// Records the PDF date string of `source_date_epoch` for `\creationdate`.
 pub fn init_start_time(st: &mut EngineState, source_date_epoch: libc::time_t) {
     let mut buf = [0u8; 30];
     make_pdf_time(source_date_epoch, &mut buf, true);

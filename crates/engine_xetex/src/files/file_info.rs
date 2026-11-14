@@ -17,7 +17,6 @@ impl StringsState {
         input_open(&self.texstring_bytes(s), FileFormat::Tex, false)
     }
 
-    /// Appends the decimal size of file `s` to the pool.
     pub(crate) fn file_size(&mut self, s: StrNumber) -> Result<(), Abort> {
         let handle = self.open_tex_file(s);
         if handle == INVALID_HANDLE {
@@ -33,7 +32,6 @@ impl StringsState {
         Ok(())
     }
 
-    /// Appends a hex dump of `length` bytes of file `s` from `offset` to the pool.
     pub(crate) fn file_dump(
         &mut self,
         s: StrNumber,
@@ -69,7 +67,6 @@ impl StringsState {
         Ok(())
     }
 
-    /// Appends the modification date of file `s` to the pool as a PDF date.
     pub(crate) fn file_mod_date(&mut self, s: StrNumber) -> Result<(), Abort> {
         let handle = self.open_tex_file(s);
         if handle == INVALID_HANDLE {

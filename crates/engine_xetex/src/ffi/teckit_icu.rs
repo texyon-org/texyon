@@ -81,7 +81,6 @@ pub(crate) fn with_c_str<R>(bytes: &[u8], f: impl FnOnce(*const c_char) -> R) ->
     f(s.as_ptr())
 }
 
-/// HarfBuzz's tag for the text `tag`.
 pub(crate) fn hb_tag(tag: &[u8]) -> u32 {
     // SAFETY: `tag` is valid for the length passed.
     unsafe {
@@ -89,7 +88,6 @@ pub(crate) fn hb_tag(tag: &[u8]) -> u32 {
     }
 }
 
-/// An owned TECkit converter with exactly-once disposal.
 pub(crate) struct FontMappingHandle {
     raw: NonNull<c_void>,
 }
@@ -105,8 +103,6 @@ pub(crate) const K_STATUS_NO_ERROR: c_long = 0;
 pub(crate) const K_STATUS_OUTPUT_BUFFER_FULL: c_long = 1;
 
 impl FontMappingHandle {
-    /// A converter for the compiled `mapping`, or a pure normalizer for `None`,
-    /// with its creation status.
     pub(crate) fn new(
         mapping: Option<&[u8]>,
         map_forward: bool,
@@ -156,7 +152,6 @@ impl FontMappingHandle {
     }
 }
 
-/// The bytes of UTF-16 `units`.
 fn utf16_bytes(units: &[u16]) -> &[u8] {
     // SAFETY: `u16` has no padding, so the view covers initialised bytes.
     unsafe { slice::from_raw_parts(units.as_ptr().cast(), mem::size_of_val(units)) }
@@ -168,7 +163,6 @@ fn utf16_bytes_mut(units: &mut [u16]) -> &mut [u8] {
 }
 
 impl FontMappingHandle {
-    /// `convert` over UTF-16 units. The byte count written comes back unchanged.
     pub(crate) fn convert_units(&self, input: &[u16], output: &mut [u16]) -> (c_long, u32) {
         self.convert(utf16_bytes(input), utf16_bytes_mut(output))
     }
@@ -191,7 +185,6 @@ impl Drop for LinebreakHandle {
 const UBRK_LINE: c_int = 2;
 
 impl LinebreakHandle {
-    /// A line-break iterator for `locale`, and ICU's status.
     pub(crate) fn open(locale: &[u8]) -> (Option<LinebreakHandle>, i32) {
         let locale = CString::new(locale).unwrap_or_default();
         let mut status = 0;
@@ -207,7 +200,6 @@ impl LinebreakHandle {
         )
     }
 
-    /// The break positions of `text`.
     pub(crate) fn breaks<'t>(&'t mut self, text: &'t [u16]) -> IcuBreaks<'t> {
         let mut status = 0;
         // SAFETY: the iterator is live, and the returned iterator keeps `text`
@@ -234,7 +226,6 @@ impl LinebreakHandle {
     }
 }
 
-/// The break positions of the text given to [`LinebreakHandle::breaks`].
 pub(crate) struct IcuBreaks<'t> {
     iter: &'t mut LinebreakHandle,
     _text: PhantomData<&'t [u16]>,
@@ -252,7 +243,6 @@ impl IcuBreaks<'_> {
     }
 }
 
-/// ICU's bidi analysis of one paragraph of text.
 pub(crate) struct Bidi<'t> {
     raw: NonNull<c_void>,
     /// The status of `ubidi_setPara`, which later calls see as their input.
@@ -271,7 +261,6 @@ pub(crate) const UBIDI_RTL: c_int = 1;
 pub(crate) const UBIDI_MIXED: c_int = 2;
 
 impl<'t> Bidi<'t> {
-    /// Analyses `text` at paragraph level `level`.
     pub(crate) fn new(text: &'t [u16], level: u8) -> Bidi<'t> {
         // SAFETY: plain allocation.
         let raw = NonNull::new(unsafe { ubidi_open() }).expect("ubidi_open failed");
@@ -308,7 +297,6 @@ impl<'t> Bidi<'t> {
         runs
     }
 
-    /// The logical start, length and direction of visual run `index`.
     pub(crate) fn visual_run(&self, index: c_int) -> (i32, i32, c_int) {
         let (mut start, mut length) = (0, 0);
         // SAFETY: `raw` is a live bidi object and the outputs are valid.

@@ -259,13 +259,10 @@ impl TexEngine {
     }
 }
 
-/// Import things from our bridge crates to ensure that we actually link with
-/// them.
 mod linkage {
     // Anonymous imports deliberately make Cargo link these bridge crates.
     use {texyon_bridge_icu as _, texyon_pdf_io as _};
 }
 
-/// Does our resulting executable link correctly?
 #[test]
 fn linkage() {}

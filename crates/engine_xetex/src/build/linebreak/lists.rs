@@ -7,14 +7,12 @@ use crate::base::consts::MAX_HALFWORD;
 use crate::base::units::{MemPtr, Scaled};
 use crate::print::errors::Abort;
 
-/// Whether a break is at a discretionary.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) enum BreakType {
     Unhyphenated,
     Hyphenated,
 }
 
-/// A line's fitness class, from very loose to tight.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) enum Fitness {
     VeryLoose,
@@ -27,7 +25,6 @@ impl Fitness {
     /// Every class in WEB's order, which is also the index order.
     pub(crate) const ALL: [Self; 4] = [Self::VeryLoose, Self::Loose, Self::Decent, Self::Tight];
 
-    /// The index into per-class arrays such as `minimal_demerits`.
     #[inline]
     pub(crate) fn index(self) -> usize {
         self as usize
@@ -40,22 +37,18 @@ impl Fitness {
     }
 }
 
-/// An entry of the active list.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) struct EntryId(u32);
 
 impl EntryId {
-    /// The list head.
     pub(crate) const ACTIVE_LIST: Self = Self(0);
     /// The end sentinel, the same entry as the head as in WEB.
     pub(crate) const LAST_ACTIVE: Self = Self(0);
 }
 
-/// A feasible break on the passive list.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) struct PassiveId(u32);
 
-/// A feasible break still in play.
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct ActiveEntry {
     pub fitness: Fitness,
@@ -71,7 +64,6 @@ pub(crate) struct ActiveEntry {
 }
 
 impl ActiveEntry {
-    /// The paragraph start, before line `prev_graf + 1`.
     pub(crate) fn start(prev_graf: i32) -> Self {
         Self {
             fitness: Fitness::Decent,
@@ -100,13 +92,11 @@ impl ActiveEntry {
 /// `active_width` (slot 0 unused).
 pub(crate) type Widths = [Scaled; 7];
 
-/// The widths `f(1..=6)`, slot 0 zero.
 #[inline]
 pub(crate) fn widths(f: impl Fn(usize) -> Scaled) -> Widths {
     array::from_fn(|k| if k == 0 { Scaled::ZERO } else { f(k) })
 }
 
-/// What an entry of the active list holds.
 #[derive(Copy, Clone, Debug)]
 pub(crate) enum Entry {
     Active(ActiveEntry),
@@ -119,7 +109,6 @@ struct Linked {
     entry: Entry,
 }
 
-/// A feasible break.
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct Passive {
     pub cur_break: MemPtr,
@@ -127,7 +116,6 @@ pub(crate) struct Passive {
     pub next_break: Option<PassiveId>,
 }
 
-/// The active list and passive breaks of the paragraph being broken.
 #[derive(Clone, Debug)]
 pub(crate) struct BreakLists {
     entries: Vec<Linked>,
@@ -146,7 +134,6 @@ impl Default for BreakLists {
 }
 
 impl BreakLists {
-    /// Drop every entry and passive break, keeping the capacity.
     pub(crate) fn clear(&mut self) {
         self.entries.clear();
         self.entries.push(Linked {
@@ -156,7 +143,6 @@ impl BreakLists {
         self.passives.clear();
     }
 
-    /// Whether the active list holds no entries.
     #[inline]
     pub(crate) fn is_empty(&self) -> bool {
         self.link(EntryId::ACTIVE_LIST) == EntryId::LAST_ACTIVE
@@ -182,14 +168,12 @@ impl BreakLists {
         &mut self.entries[p.0 as usize].entry
     }
 
-    /// A new entry before `link`.
     pub(crate) fn push(&mut self, link: EntryId, entry: Entry) -> Result<EntryId, Abort> {
         let id = EntryId(u32::try_from(self.entries.len()).map_err(|_| Abort::NODE_OVERFLOW)?);
         self.entries.push(Linked { link, entry });
         Ok(id)
     }
 
-    /// The entries from the head to the end, in list order.
     pub(crate) fn iter(&self) -> impl Iterator<Item = Entry> + '_ {
         let mut p = self.link(EntryId::ACTIVE_LIST);
         std::iter::from_fn(move || {
@@ -201,7 +185,6 @@ impl BreakLists {
         })
     }
 
-    /// The active entries, in list order.
     pub(crate) fn actives(&self) -> impl Iterator<Item = ActiveEntry> + '_ {
         self.iter().filter_map(|e| match e {
             Entry::Active(a) => Some(a),

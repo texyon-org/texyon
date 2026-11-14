@@ -92,7 +92,6 @@ impl FontState {
     }
 }
 
-/// A measured glyph whatsit for glyph `g` of font `f`.
 fn new_measured_glyph(
     st: &mut EngineState,
     f: FontId,

@@ -64,13 +64,11 @@ macro_rules! code_enum {
         }
 
         impl $name {
-            /// The code a node field or save word stores as `raw`.
             #[inline]
             pub(crate) const fn from_u16(raw: u16) -> Option<Self> {
                 Self::from_raw(raw as i32)
             }
 
-            /// The code as a node field or save word stores it.
             #[inline]
             pub(crate) const fn to_u16(self) -> u16 {
                 self as u16
@@ -112,7 +110,6 @@ code_enum! {
 }
 
 code_enum! {
-    /// The `chr_code` of `\lastpenalty` and the other `last_item` primitives.
     #[derive(PartialOrd, Ord)]
     pub(crate) enum LastItemCode: u8 {
         LastPenalty = 0 => "lastpenalty",
@@ -182,7 +179,6 @@ code_enum! {
 }
 
 code_enum! {
-    /// The `chr_code` of `\number`, `\string` and the other `convert` primitives.
     pub(crate) enum ConvertCode: u8 {
         Number = 0 => "number",
         RomanNumeral = 1 => "romannumeral",
@@ -248,7 +244,6 @@ impl IfCode {
     pub(crate) const UNLESS: i32 = 32;
 }
 
-/// An `\if` test and whether `\unless` negates it, TeX's `cur_if`.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
 pub(crate) struct IfTest {
     pub code: IfCode,
@@ -256,7 +251,6 @@ pub(crate) struct IfTest {
 }
 
 impl IfTest {
-    /// The test from an `if_test` `chr_code`, `None` when it names none.
     #[inline]
     pub(crate) const fn decode(chr: i32) -> Option<IfTest> {
         match IfCode::from_raw(chr % IfCode::UNLESS) {
@@ -268,7 +262,6 @@ impl IfTest {
         }
     }
 
-    /// The `chr_code` form, for the format file and the oracle digest.
     #[inline]
     pub(crate) const fn raw(self) -> i32 {
         self.code.raw() + if self.unless { IfCode::UNLESS } else { 0 }
@@ -276,7 +269,6 @@ impl IfTest {
 }
 
 code_enum! {
-    /// `if_limit`, and the `chr_code` of `\fi`, `\else` and `\or`.
     #[derive(PartialOrd, Ord, Default)]
     pub(crate) enum FiOrElseCode: u8 {
         #[default]
@@ -304,7 +296,6 @@ code_enum! {
 }
 
 code_enum! {
-    /// The `chr_code` of `\hfil`..`\hskip`, their vertical twins and `\mskip`.
     pub(crate) enum SkipCode: u8 {
         Fil = 0,
         Fill = 1,
@@ -316,7 +307,6 @@ code_enum! {
 }
 
 code_enum! {
-    /// The `chr_code` of `\chardef` and the other `shorthand_def` primitives.
     pub(crate) enum ShorthandDefCode: u8 {
         Char = 0 => "chardef",
         MathChar = 1 => "mathchardef",
@@ -332,7 +322,6 @@ code_enum! {
 }
 
 code_enum! {
-    /// The `chr_code` of `\wd`, `\dp` and `\ht`, the box field offsets.
     pub(crate) enum BoxDimenCode: u8 {
         Width = 1 => "wd",
         Depth = 2 => "dp",
@@ -371,7 +360,6 @@ const _: () = {
 };
 
 code_enum! {
-    /// The `chr_code` of `\show` and the other `xray` primitives.
     pub(crate) enum ShowCode: u8 {
         Show = 0 => "show",
         Box = 1 => "showbox",
@@ -399,7 +387,6 @@ code_enum! {
 }
 
 code_enum! {
-    /// The `chr_code` of `\input`, `\endinput` and `\scantokens`.
     pub(crate) enum InputCode: u8 {
         Input = 0 => "input",
         EndInput = 1 => "endinput",
@@ -408,7 +395,6 @@ code_enum! {
 }
 
 code_enum! {
-    /// The `chr_code` of `\deadcycles`, `\insertpenalties` and `\interactionmode`.
     pub(crate) enum PageIntCode: u8 {
         DeadCycles = 0 => "deadcycles",
         InsertPenalties = 1 => "insertpenalties",
@@ -443,7 +429,6 @@ impl MarkCode {
 }
 
 code_enum! {
-    /// The `chr_code` of `\the`, `\unexpanded` and `\detokenize`.
     pub(crate) enum TheCode: u8 {
         The = 0 => "the",
         Unexpanded = 1 => "unexpanded",
@@ -454,7 +439,6 @@ code_enum! {
 const _: () = assert!(TheCode::Detokenize.raw() == ShowCode::Tokens.raw());
 
 code_enum! {
-    /// The `chr_code` of `\mathchar` and its XeTeX forms.
     pub(crate) enum MathCharNumCode: u8 {
         MathChar = 0 => "mathchar",
         UmathCharNum = 1 => "Umathcharnum",
@@ -463,7 +447,6 @@ code_enum! {
 }
 
 code_enum! {
-    /// The `chr_code` of `\delimiter` and `\Udelimiter`.
     pub(crate) enum DelimNumCode: u8 {
         Delimiter = 0 => "delimiter",
         Udelimiter = 1 => "Udelimiter",
@@ -479,7 +462,6 @@ code_enum! {
 }
 
 code_enum! {
-    /// The `chr_code` of `\radical` and `\Uradical`.
     pub(crate) enum RadicalCode: u8 {
         Radical = 0 => "radical",
         Uradical = 1 => "Uradical",
@@ -487,7 +469,6 @@ code_enum! {
 }
 
 code_enum! {
-    /// The `chr_code` of `\shipout` and the leaders primitives.
     pub(crate) enum LeaderCode: u8 {
         Shipout = 99 => "shipout",
         ALeaders = 100 => "leaders",
@@ -497,7 +478,6 @@ code_enum! {
 }
 
 impl LeaderCode {
-    /// The glue kind `\leaders`, `\cleaders` and `\xleaders` make, `None` for `\shipout`.
     pub(crate) fn glue_leaders(self) -> Option<LeaderKind> {
         match self {
             LeaderCode::Shipout => None,
@@ -507,7 +487,6 @@ impl LeaderCode {
         }
     }
 
-    /// The primitive that makes leaders of `kind`.
     pub(crate) fn of_leaders(kind: LeaderKind) -> LeaderCode {
         match kind {
             LeaderKind::Aligned => LeaderCode::ALeaders,
@@ -518,7 +497,6 @@ impl LeaderCode {
 }
 
 code_enum! {
-    /// The `chr_code` of `\valign` and the TeX--XeT direction primitives.
     pub(crate) enum ValignCode: u8 {
         Valign = 0 => "valign",
         BeginL = 6 => "beginL",
@@ -529,7 +507,6 @@ code_enum! {
 }
 
 impl ValignCode {
-    /// The math node `\beginL`..`\endR` append, `None` for `\valign`.
     pub(crate) fn math_code(self) -> Option<MathCode> {
         match self {
             ValignCode::Valign => None,
@@ -542,7 +519,6 @@ impl ValignCode {
 }
 
 code_enum! {
-    /// The `chr_code` of `\middle`, `\left` and `\right`: the noad they make.
     pub(crate) enum LeftRightCode: u8 {
         Middle = 1 => "middle",
         Left = 30 => "left",
@@ -551,7 +527,6 @@ code_enum! {
 }
 
 code_enum! {
-    /// The `chr_code` of `\displaylimits`, `\limits` and `\nolimits`.
     pub(crate) enum LimitCode: u8 {
         Normal = 0 => "displaylimits",
         Limits = 1 => "limits",
@@ -560,7 +535,6 @@ code_enum! {
 }
 
 code_enum! {
-    /// The `chr_code` of `\above` and the other generalized fractions.
     pub(crate) enum AboveCode: u8 {
         Above = 0 => "above",
         Over = 1 => "over",
@@ -572,7 +546,6 @@ code_enum! {
 }
 
 code_enum! {
-    /// The `chr_code` of `\hyphenchar`, `\skewchar`, `\lpcode` and `\rpcode`.
     pub(crate) enum FontIntCode: u8 {
         HyphenChar = 0 => "hyphenchar",
         SkewChar = 1 => "skewchar",
@@ -582,7 +555,6 @@ code_enum! {
 }
 
 code_enum! {
-    /// The `chr_code` of `\prevdepth` and `\spacefactor`.
     // WEB's vmode and hmode, kept as the chr codes.
     pub(crate) enum AuxCode: u8 {
         PrevDepth = 1 => "prevdepth",
@@ -591,7 +563,6 @@ code_enum! {
 }
 
 impl AuxCode {
-    /// The kind of list that keeps the quantity.
     pub(crate) const fn kind(self) -> ListKind {
         match self {
             AuxCode::PrevDepth => ListKind::Vertical,
@@ -601,7 +572,6 @@ impl AuxCode {
 }
 
 code_enum! {
-    /// The `chr_code` of `\pagegoal` and the other `page_so_far` entries.
     pub(crate) enum PageDimenCode: u8 {
         Goal = 0 => "pagegoal",
         Total = 1 => "pagetotal",
@@ -615,14 +585,12 @@ code_enum! {
 }
 
 impl PageDimenCode {
-    /// The index into `page_so_far`.
     pub(crate) const fn index(self) -> usize {
         self as usize
     }
 }
 
 code_enum! {
-    /// The `chr_code` of `\long`, `\outer`, `\global` and `\protected`, a prefix bit.
     pub(crate) enum PrefixCode: u8 {
         Long = 1 => "long",
         Outer = 2 => "outer",

@@ -28,7 +28,6 @@ const SCRIPT_SCRIPT_SIZE: i32 = 512;
 pub(crate) struct MathStyle(u16);
 
 impl MathStyle {
-    /// The font size of this style: `TEXT_SIZE`, `SCRIPT_SIZE` or `SCRIPT_SCRIPT_SIZE`.
     pub(crate) fn size(self) -> i32 {
         if self < Self::SCRIPT {
             TEXT_SIZE
@@ -41,7 +40,6 @@ impl MathStyle {
     pub(crate) const TEXT: MathStyle = MathStyle(2);
     pub(crate) const SCRIPT: MathStyle = MathStyle(4);
 
-    /// The style a style node or `\mathchoice` stores as `raw`.
     #[inline]
     pub(crate) const fn from_raw(raw: u16) -> MathStyle {
         MathStyle(raw)
@@ -63,31 +61,26 @@ impl MathStyle {
         self.0 / 2
     }
 
-    /// WEB's `cramped_style`.
     #[inline]
     pub(crate) fn cramped(self) -> MathStyle {
         MathStyle(2 * (self.0 / 2) + 1)
     }
 
-    /// WEB's `sub_style`.
     #[inline]
     pub(crate) fn sub(self) -> MathStyle {
         MathStyle(2 * (self.0 / 4) + 5)
     }
 
-    /// WEB's `sup_style`.
     #[inline]
     pub(crate) fn sup(self) -> MathStyle {
         MathStyle(2 * (self.0 / 4) + 4 + self.0 % 2)
     }
 
-    /// WEB's `num_style`.
     #[inline]
     pub(crate) fn num(self) -> MathStyle {
         MathStyle(self.0 + 2 - 2 * (self.0 / 6))
     }
 
-    /// WEB's `denom_style`.
     #[inline]
     pub(crate) fn denom(self) -> MathStyle {
         MathStyle(2 * (self.0 / 2) + 3 - 2 * (self.0 / 6))

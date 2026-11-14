@@ -26,7 +26,6 @@ use crate::memory::glue_store::GlueSpecId;
 use crate::memory::mem::MemState;
 use crate::print::errors::{Abort, OrConfusion};
 
-/// Where SyncTeX places a node: the input tag and line it was made at.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable, PartialEq, Eq, Debug)]
 pub struct SyncStamp {
@@ -37,7 +36,6 @@ pub struct SyncStamp {
 #[cfg(not(target_endian = "little"))]
 compile_error!("node structs assume little-endian memory words");
 
-/// The words in `bytes`, for sizes and field offsets of node structs.
 pub(crate) const fn word_offset(bytes: usize) -> i32 {
     assert!(bytes.is_multiple_of(4) && bytes / 4 < 1 << 16);
     (bytes / 4) as i32
@@ -69,9 +67,7 @@ impl<K: View> IndexMut<NodePtr<K>> for MemState {
 /// Entries may be smaller than a word.
 pub trait ArrayNode: Node {
     type Entry: Pod;
-    /// The number of entries.
     fn len(&self) -> i32;
-    /// Records the entry count of a fresh node.
     fn set_len(&mut self, entries: usize) -> Result<(), Abort>;
     /// The words kept for the entries, which stay the node's even when `len` shrinks.
     #[inline]
@@ -80,7 +76,6 @@ pub trait ArrayNode: Node {
     }
 }
 
-/// The words `entries` entries of `K` take.
 #[inline]
 fn entry_words<K: ArrayNode>(entries: usize) -> usize {
     entries
@@ -94,7 +89,6 @@ pub type EntriesMutAnd<'a, K, L> = (
 );
 
 impl MemState {
-    /// The words of `p`'s entries and how many bytes of them are in use.
     #[inline]
     fn entry_span<K: ArrayNode>(&self, p: NodePtr<K>) -> (Range<usize>, usize) {
         let len = usize::try_from(self[p].len()).unwrap_or(0);
@@ -105,7 +99,6 @@ impl MemState {
         )
     }
 
-    /// A fresh array node with room for `entries` zeroed entries, its other fields unset.
     pub fn alloc_array<K: ArrayNode>(&mut self, entries: usize) -> Result<NodePtr<K>, Abort> {
         const { assert!(K::ARRAY) };
         let head = usize::try_from(K::SIZE).or_confusion("node size")?;
@@ -120,7 +113,6 @@ impl MemState {
         Ok(p)
     }
 
-    /// A new node holding every field and entry of array node `src`.
     pub fn copy_array<K: ArrayNode>(&mut self, src: NodePtr<K>) -> Result<NodePtr<K>, Abort> {
         let entries = usize::try_from(self[src].len()).unwrap_or(0);
         let copy = self.alloc_array::<K>(entries)?;
@@ -131,13 +123,11 @@ impl MemState {
         Ok(copy)
     }
 
-    /// Returns array node `p` to the free list of its size.
     pub fn free_array<K: ArrayNode>(&mut self, p: NodePtr<K>) {
         let words = usize::try_from(K::SIZE).unwrap_or(0) + self[p].entry_words();
         self.free_array_node(p.idx(), words);
     }
 
-    /// The entries of an array node.
     #[inline]
     pub fn entries<K: ArrayNode>(&self, p: NodePtr<K>) -> &[K::Entry] {
         let (words, bytes) = self.entry_span(p);
@@ -145,7 +135,6 @@ impl MemState {
         bytemuck::cast_slice(&words[..bytes])
     }
 
-    /// The entries of `dst`, writable, beside those of another node `src`.
     #[inline]
     pub fn entries_mut_and<K: ArrayNode, L: ArrayNode>(
         &mut self,
@@ -170,7 +159,6 @@ impl MemState {
         ))
     }
 
-    /// The entries of an array node, writable.
     #[inline]
     pub fn entries_mut<K: ArrayNode>(&mut self, p: NodePtr<K>) -> &mut [K::Entry] {
         let (words, bytes) = self.entry_span(p);
@@ -184,14 +172,12 @@ impl MemState {
     }
 }
 
-/// The header of a `\parshape` array.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct ParShapeNode {
     pub lines: i32,
 }
 
-/// One line of a `\parshape` array.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct ParShapeLine {
@@ -221,7 +207,6 @@ impl ArrayNode for ParShapeNode {
     }
 }
 
-/// The header of an e-TeX penalty array.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct PenaltiesNode {
@@ -259,7 +244,6 @@ impl ArrayNode for PenaltiesNode {
     }
 }
 
-/// The header of a `\scantokens` pseudo-file line.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct PseudoLineNode {
@@ -312,7 +296,6 @@ impl ArrayNode for PseudoLineNode {
     }
 }
 
-/// The words every list node starts with, read before its kind is known.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct NodeHeader {
@@ -323,7 +306,6 @@ pub struct NodeHeader {
 
 impl View for NodeHeader {}
 
-/// Any whatsit: its subtype and link.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct WhatsitNode {
@@ -334,7 +316,6 @@ pub struct WhatsitNode {
 
 impl View for WhatsitNode {}
 
-/// A `\pdfsavepos` mark, nothing but its header.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct SavePosNode {
@@ -349,7 +330,6 @@ impl Node for SavePosNode {
     const TYPE: Option<NodeType> = Some(NodeType::Whatsit);
 }
 
-/// `\openout`.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct OpenNode {
@@ -386,7 +366,6 @@ impl Node for WriteNode {
     const TYPE: Option<NodeType> = Some(NodeType::Whatsit);
 }
 
-/// A language change: the language and its hyphenation minima.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct LanguageNode {
@@ -479,7 +458,6 @@ pub struct NativeWordNode {
     pub depth: Scaled,
     pub height: Scaled,
     pub glyph_count: u16,
-    /// The text length in UTF-16 units.
     pub length: u16,
     pub font: FontId,
     /// The words kept for the text, which outlive a shortened `length`.
@@ -489,7 +467,6 @@ pub struct NativeWordNode {
 }
 
 impl NativeWordNode {
-    /// Forgets the shaped glyphs, without releasing them.
     #[inline]
     pub fn clear_glyphs(&mut self) {
         self.glyph_count = 0;
@@ -526,7 +503,6 @@ impl ArrayNode for NativeWordNode {
     }
 }
 
-/// The box dimensions of a native word, glyph or picture.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct Dims {
     pub width: Scaled,
@@ -587,7 +563,6 @@ impl Node for BoxNode {
 }
 
 impl BoxNode {
-    /// TeX--XeT's direction state of an hlist.
     #[inline]
     pub fn lr(&self) -> Stored<BoxLr> {
         Stored::from_raw(self.subtype)
@@ -610,7 +585,6 @@ impl BoxNode {
     }
 }
 
-/// A kern. Its subtype tells normal, explicit, accent and math kerns apart.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct KernNode {
@@ -633,7 +607,6 @@ impl Node for KernNode {
     }
 }
 
-/// A math-on/off node, or a TeX--XeT LR boundary, by its subtype.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct MathNode {
@@ -664,7 +637,6 @@ impl MathNode {
     }
 }
 
-/// A margin kern on the side it protrudes on.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct MarginKernNode {
@@ -697,7 +669,6 @@ impl Node for PenaltyNode {
     const TYPE: Option<NodeType> = Some(NodeType::Penalty);
 }
 
-/// A `\vadjust` list.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct AdjustNode {
@@ -713,7 +684,6 @@ impl Node for AdjustNode {
     const TYPE: Option<NodeType> = Some(NodeType::Adjust);
 }
 
-/// A discretionary.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct DiscNode {
@@ -730,7 +700,6 @@ impl Node for DiscNode {
     const TYPE: Option<NodeType> = Some(NodeType::Disc);
 }
 
-/// A `\mathchoice` node with one mlist per style.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct ChoiceNode {
@@ -749,7 +718,6 @@ impl Node for ChoiceNode {
     const TYPE: Option<NodeType> = Some(NodeType::Choice);
 }
 
-/// A style change in an mlist.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct StyleNode {
@@ -777,7 +745,6 @@ impl StyleNode {
     }
 }
 
-/// An LR edge in a shipped list.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct EdgeNode {
@@ -823,7 +790,6 @@ pub struct MathWord {
 }
 
 impl MathWord {
-    /// The list of a `SUB_BOX` or `SUB_MLIST` field.
     #[inline]
     pub fn info(&self) -> MemPtr {
         MemIdx::from_raw(bytemuck::cast([self.character, self.plane_and_fam]))
@@ -853,7 +819,6 @@ impl MathWord {
     pub fn fam(&self) -> i32 {
         i32::from(self.plane_and_fam) % 256
     }
-    /// The character code with its plane.
     #[inline]
     pub fn full_char(&self) -> i32 {
         i32::from(self.character) + (i32::from(self.plane_and_fam) / 256) * 65_536
@@ -885,12 +850,10 @@ impl DelimiterWord {
             i32::from(char) + (plane_and_fam / 256) * 65_536,
         )
     }
-    /// The small variant's `(family, character)`.
     #[inline]
     pub fn small(&self) -> (i32, i32) {
         Self::variant(self.small_plane_and_fam, self.small_char)
     }
-    /// The large variant's `(family, character)`.
     #[inline]
     pub fn large(&self) -> (i32, i32) {
         Self::variant(self.large_plane_and_fam, self.large_char)
@@ -927,7 +890,6 @@ pub struct AnyNoad {
 
 impl View for AnyNoad {}
 
-/// A noad with a nucleus and two scripts.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct Noad {
@@ -947,7 +909,6 @@ impl Node for Noad {
 }
 
 impl Noad {
-    /// Empty fields and a normal subtype, as a new noad starts.
     #[inline]
     pub fn clear_fields(&mut self) {
         self.subtype = NORMAL;
@@ -969,7 +930,6 @@ impl Noad {
     }
 }
 
-/// A radical: a noad, then its delimiter.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct RadicalNoad {
@@ -993,7 +953,6 @@ pub struct AccentNoad {
 }
 
 impl AccentNoad {
-    /// Where the accent goes and whether it stretches, kept in the noad's subtype.
     #[inline]
     pub fn kind(&self) -> Stored<MathAccentKind> {
         Stored::from_raw(self.base.subtype)
@@ -1011,7 +970,6 @@ impl Node for AccentNoad {
     const TYPE: Option<NodeType> = Some(NodeType::AccentNoad);
 }
 
-/// A generalized fraction.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct FractionNoad {
@@ -1098,7 +1056,6 @@ impl Node for AlignRecord {
     }
 }
 
-/// An entry of the ligature reconstitution stack.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct LigItem {
@@ -1146,7 +1103,6 @@ pub struct GlueNode {
     _type: u16,
     pub link: MemPtr,
     pub glue_ptr: GlueSpecId,
-    /// The leader box or rule, null for plain glue.
     pub leader_ptr: MemPtr,
     pub sync: SyncStamp,
 }
@@ -1163,7 +1119,6 @@ impl Node for GlueNode {
 }
 
 impl GlueNode {
-    /// The leader kind, `None` for any other glue.
     #[inline]
     pub fn leaders(&self) -> Option<LeaderKind> {
         match self.subtype.get() {
@@ -1173,7 +1128,6 @@ impl GlueNode {
     }
 }
 
-/// An insertion into the class of its box number.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct InsNode {
@@ -1185,7 +1139,6 @@ pub struct InsNode {
     pub depth: Scaled,
     pub height: Scaled,
     pub ins_ptr: MemPtr,
-    /// The `\splittopskip` glue spec.
     pub split_top_ptr: GlueSpecId,
 }
 
@@ -1295,7 +1248,6 @@ impl Node for HeadNode {
     const TYPE: Option<NodeType> = Some(NodeType::Head);
 }
 
-/// An open `\scantokens` pseudo file: its unread lines and the next file.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct PseudoFileNode {
@@ -1323,7 +1275,6 @@ impl Node for HyphPosNode {
     const TYPE: Option<NodeType> = None;
 }
 
-/// An entry of the TeX--XeT LR stack.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct LrNode {
@@ -1338,7 +1289,6 @@ impl Node for LrNode {
     const TYPE: Option<NodeType> = None;
 }
 
-/// A ligature, with the character and font it shows.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct LigatureNode {
@@ -1347,7 +1297,6 @@ pub struct LigatureNode {
     pub link: MemPtr,
     pub character: u16,
     pub font: FontId,
-    /// The original characters the ligature was formed from.
     pub lig_ptr: MemPtr,
 }
 
@@ -1530,7 +1479,6 @@ mod tests {
         );
     }
 
-    /// The `n` words after the struct of `p`.
     fn tail<K: View>(mem: &MemState, p: NodePtr<K>, n: usize) -> &[u32] {
         let start = p.idx().words(K::SIZE).end;
         &mem.data[start..start + n]

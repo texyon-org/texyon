@@ -15,19 +15,16 @@ use crate::print::errors::Abort;
 pub struct GlueSpecId(i32);
 
 impl GlueSpecId {
-    /// The spec from its raw form in an eqtb or save stack word, a sparse register or a format.
     #[inline]
     pub(crate) const fn from_raw(raw: i32) -> GlueSpecId {
         GlueSpecId(raw)
     }
 
-    /// The raw form for an eqtb or save stack word, a sparse register or a format.
     #[inline]
     pub(crate) const fn raw(self) -> i32 {
         self.0
     }
 
-    /// The spec a raw word holds, `None` for null.
     #[inline]
     pub(crate) fn from_link(raw: i32) -> Option<GlueSpecId> {
         (raw != TEX_NULL).then_some(GlueSpecId(raw))
@@ -39,7 +36,6 @@ impl GlueSpecId {
     }
 }
 
-/// A glue specification.
 #[repr(C)]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GlueSpec {
@@ -63,7 +59,6 @@ pub(crate) const STATIC_SPECS: usize = 6;
 /// Specs take five words, and get up to a tenth of main memory.
 const MAX_SPECS: usize = 1 << 22;
 
-/// All glue specifications, the static ones first.
 pub(crate) struct GlueStore {
     data: Vec<GlueSpec>,
     /// The first free spec, threaded through `ref_count`.
@@ -81,7 +76,6 @@ impl Default for GlueStore {
     }
 }
 
-/// The glue store's scalars, for checkpoints and formats.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) struct GlueStoreMarks {
     pub(crate) len: usize,
@@ -103,7 +97,6 @@ impl GlueStore {
         &mut self.data[i]
     }
 
-    /// A fresh spec, its fields uninitialised.
     pub(crate) fn alloc(&mut self) -> Result<GlueSpecId, Abort> {
         if let Some(p) = GlueSpecId::from_link(self.free) {
             self.free = self.get(p).ref_count;
@@ -143,7 +136,6 @@ impl GlueStore {
         }
     }
 
-    /// Rewinds to `marks`, after the journal put back the specs that existed then.
     pub(crate) fn restore_marks(&mut self, marks: GlueStoreMarks) {
         self.data.truncate(marks.len);
         self.free = marks.free;
@@ -152,13 +144,11 @@ impl GlueStore {
         }
     }
 
-    /// Empties the store to `len` zero specs with free list `free`, for a format load to fill.
     pub(crate) fn reset_for_load(&mut self, len: usize, free: i32) {
         self.data = vec![bytemuck::Zeroable::zeroed(); len];
         self.free = free;
     }
 
-    /// Closes the journal's epoch, see [`WordJournal::seal`].
     pub(crate) fn seal_journal(&mut self) -> WordDelta<GlueSpec> {
         self.journal.seal(&self.data)
     }

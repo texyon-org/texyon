@@ -51,7 +51,6 @@ pub enum Frozen {
 }
 
 impl Frozen {
-    /// Every frozen control sequence, in TeX's order.
     pub const ALL: [Frozen; 12] = [
         Frozen::Protection,
         Frozen::Cr,
@@ -67,7 +66,6 @@ impl Frozen {
         Frozen::Primitive,
     ];
 
-    /// The control sequence of this frozen copy.
     #[inline]
     pub const fn cs(self) -> CsId {
         CsId::at(FROZEN_BASE + self as u32)
@@ -79,43 +77,35 @@ impl Frozen {
 pub struct NameSlot(u32);
 
 impl NameSlot {
-    /// The first slot past the buckets, where the search for a free bucket starts.
     pub const BUCKETS_END: NameSlot = NameSlot(HASH_SIZE.cast_unsigned());
 
-    /// Bucket `h` of the hash, `h < HASH_SIZE`.
     #[inline]
     pub const fn bucket(h: u32) -> NameSlot {
         NameSlot(h)
     }
 
-    /// The `n`th extra name, counted from 1.
     #[inline]
     pub const fn extra(n: u32) -> NameSlot {
         NameSlot(HASH_SIZE.cast_unsigned() + n - 1)
     }
 
-    /// Every bucket, then the first `extras` extra names.
     pub fn all(extras: u32) -> impl Iterator<Item = NameSlot> {
         (0..HASH_SIZE.cast_unsigned() + extras).map(NameSlot)
     }
 
-    /// The raw form for the format file and checkpoints.
     pub const fn raw(self) -> u32 {
         self.0
     }
 
-    /// The slot a format file or checkpoint holds.
     pub const fn from_raw(raw: u32) -> NameSlot {
         NameSlot(raw)
     }
 
-    /// The bucket before this one, `None` before the first.
     #[inline]
     pub fn prev_bucket(self) -> Option<NameSlot> {
         self.0.checked_sub(1).map(NameSlot)
     }
 
-    /// The control sequence in this slot.
     #[inline]
     pub const fn cs(self) -> CsId {
         if self.0 < HASH_SIZE.cast_unsigned() {
@@ -126,21 +116,15 @@ impl NameSlot {
     }
 }
 
-/// What a control sequence is.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum CsKind {
-    /// An active character.
     Active(Usv),
     /// A control symbol or one-letter name with a code below 65536.
     Single(u16),
-    /// `\csname\endcsname`.
     Null,
-    /// A name in the hash.
     Named(NameSlot),
     Frozen(Frozen),
-    /// The fixed meaning of a primitive, which `\primitive` reads.
     Primitive(PrimNum),
-    /// A font's identifier, which `\the\font` produces.
     FontId(FontId),
     /// Where an unknown name lands when no new names may be made.
     Undefined,
@@ -163,12 +147,10 @@ impl From<CsKind> for CsId {
 }
 
 impl CsId {
-    /// The first control sequence, the active character U+0000.
     pub const FIRST: CsId = CsId::at(ACTIVE_BASE);
     pub const NULL: CsId = CsId::at(NULL_CS);
     pub const UNDEFINED: CsId = CsId::at(UNDEFINED);
 
-    /// The control sequence at layout offset `n`.
     const fn at(n: u32) -> CsId {
         CsId(NonZeroU32::MIN.saturating_add(n))
     }
@@ -193,7 +175,6 @@ impl CsId {
         CsId::at(FONT_ID_BASE + f.get() as u32)
     }
 
-    /// The active character `c`, `None` when `c` is no scalar value.
     #[inline]
     pub fn of_active(c: i32) -> Option<CsId> {
         Usv::new(c).map(CsId::active)
@@ -206,12 +187,10 @@ impl CsId {
         u16::try_from(c).ok().map(CsId::single)
     }
 
-    /// The last control sequence for `hash_extra` extra names.
     pub fn top(hash_extra: u32) -> CsId {
         CsId::at(UNDEFINED + hash_extra)
     }
 
-    /// What this control sequence is.
     pub fn kind(self) -> CsKind {
         let n = self.0.get() - 1;
         if n < SINGLE_BASE {
@@ -264,7 +243,6 @@ impl CsId {
             .map(|i| i as usize)
     }
 
-    /// The control sequence a raw word, file or FFI value holds, `None` for 0.
     #[inline(always)]
     pub const fn from_raw(raw: i32) -> Option<CsId> {
         // Negative values clamp to 0, so one zero test rejects both.
@@ -275,13 +253,11 @@ impl CsId {
         }
     }
 
-    /// The raw form for a memory word, file or FFI call.
     #[inline(always)]
     pub const fn raw(self) -> i32 {
         self.0.get().cast_signed()
     }
 
-    /// The position in the meaning tables.
     #[inline(always)]
     pub fn index(self) -> usize {
         self.0.get() as usize

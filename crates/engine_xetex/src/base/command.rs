@@ -22,7 +22,6 @@ use crate::tables::eqtb::{
     CaseTable, CodeTable, DimenLoc, FontLoc, GlueLoc, IntLoc, ShapeLoc, ToksLoc, XetexCode,
 };
 
-/// A Unicode scalar value carried by a character command.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub(crate) struct Usv(i32);
 
@@ -30,7 +29,6 @@ impl Usv {
     pub(crate) const SPACE: Usv = Usv(b' ' as i32);
     pub(crate) const LEFT_BRACE: Usv = Usv(b'{' as i32);
 
-    /// `c` as a scalar value, `None` outside `0..=BIGGEST_USV`.
     #[inline]
     pub(crate) const fn new(c: i32) -> Option<Usv> {
         if c >= 0 && c <= BIGGEST_USV {
@@ -54,7 +52,6 @@ impl Usv {
     }
 }
 
-/// A [`TabMark`] in four bytes: the character, or `SPAN_CODE`.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) struct TabMarkCode(i32);
 
@@ -65,7 +62,6 @@ impl TabMarkCode {
         TabMarkCode(c.raw())
     }
 
-    /// The tab character, `None` for `\span`.
     pub(crate) const fn get(self) -> Option<Usv> {
         if self.0 == SPAN_CODE {
             None
@@ -105,7 +101,6 @@ impl RelaxCode {
     }
 }
 
-/// A command with its `chr_code` decoded, one variant per `Cmd`, tagged by its code.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(u8)]
 pub(crate) enum Command {
@@ -114,10 +109,7 @@ pub(crate) enum Command {
     RightBrace(Usv) = Cmd::RightBrace as u8,
     MathShift(Usv) = Cmd::MathShift as u8,
     TabMark(TabMarkCode) = Cmd::TabMark as u8,
-    /// `\cr` or `\crcr`.
-    CarRet {
-        crcr: bool,
-    } = Cmd::CarRet as u8,
+    CarRet { crcr: bool } = Cmd::CarRet as u8,
     MacParam(Usv) = Cmd::MacParam as u8,
     SupMark(Usv) = Cmd::SupMark as u8,
     SubMark(Usv) = Cmd::SubMark as u8,
@@ -126,30 +118,17 @@ pub(crate) enum Command {
     Letter(Usv) = Cmd::Letter as u8,
     OtherChar(Usv) = Cmd::OtherChar as u8,
     ParEnd = Cmd::ParEnd as u8,
-    /// `\end` or `\dump`.
-    Stop {
-        dump: bool,
-    } = Cmd::Stop as u8,
+    Stop { dump: bool } = Cmd::Stop as u8,
     DelimNum(DelimNumCode) = Cmd::DelimNum as u8,
     CharNum = Cmd::CharNum as u8,
     MathCharNum(MathCharNumCode) = Cmd::MathCharNum as u8,
-    /// `\mark` or `\marks`.
-    Mark {
-        marks: bool,
-    } = Cmd::Mark as u8,
+    Mark { marks: bool } = Cmd::Mark as u8,
     Xray(ShowCode) = Cmd::Xray as u8,
     MakeBox(BoxCode) = Cmd::MakeBox as u8,
-    /// `\moveright` or `\moveleft`.
-    Hmove {
-        left: bool,
-    } = Cmd::Hmove as u8,
-    /// `\lower` or `\raise`.
-    Vmove {
-        raise: bool,
-    } = Cmd::Vmove as u8,
+    Hmove { left: bool } = Cmd::Hmove as u8,
+    Vmove { raise: bool } = Cmd::Vmove as u8,
     UnHbox(BoxCode) = Cmd::UnHbox as u8,
     UnVbox(BoxCode) = Cmd::UnVbox as u8,
-    /// `\unskip`, `\unkern` or `\unpenalty`, by the node type removed.
     RemoveItem(NodeType) = Cmd::RemoveItem as u8,
     Hskip(SkipCode) = Cmd::Hskip as u8,
     Vskip(SkipCode) = Cmd::Vskip as u8,
@@ -164,30 +143,17 @@ pub(crate) enum Command {
     Hrule = Cmd::Hrule as u8,
     Insert = Cmd::Insert as u8,
     Vadjust = Cmd::Vadjust as u8,
-    /// `\ignorespaces` or `\primitive`.
-    IgnoreSpaces {
-        primitive: bool,
-    } = Cmd::IgnoreSpaces as u8,
+    IgnoreSpaces { primitive: bool } = Cmd::IgnoreSpaces as u8,
     AfterAssignment = Cmd::AfterAssignment as u8,
     AfterGroup = Cmd::AfterGroup as u8,
     BreakPenalty = Cmd::BreakPenalty as u8,
-    /// `\noindent` or `\indent`.
-    StartPar {
-        indent: bool,
-    } = Cmd::StartPar as u8,
+    StartPar { indent: bool } = Cmd::StartPar as u8,
     ItalCorr = Cmd::ItalCorr as u8,
     Accent = Cmd::Accent as u8,
     MathAccent(MathAccentCode) = Cmd::MathAccent as u8,
-    /// `\discretionary` or `\-`.
-    Discretionary {
-        hyphen: bool,
-    } = Cmd::Discretionary as u8,
-    /// `\eqno` or `\leqno`.
-    EqNo {
-        left: bool,
-    } = Cmd::EqNo as u8,
+    Discretionary { hyphen: bool } = Cmd::Discretionary as u8,
+    EqNo { left: bool } = Cmd::EqNo as u8,
     LeftRight(LeftRightCode) = Cmd::LeftRight as u8,
-    /// `\mathord` and friends, by the noad type they make.
     MathComp(NodeType) = Cmd::MathComp as u8,
     LimitSwitch(LimitCode) = Cmd::LimitSwitch as u8,
     Above(AboveCode) = Cmd::Above as u8,
@@ -195,17 +161,10 @@ pub(crate) enum Command {
     MathChoice = Cmd::MathChoice as u8,
     NonScript = Cmd::NonScript as u8,
     Vcenter = Cmd::Vcenter as u8,
-    /// `\lowercase` or `\uppercase`, by the code table they use.
     CaseShift(CaseTable) = Cmd::CaseShift as u8,
-    /// `\message` or `\errmessage`.
-    Message {
-        err: bool,
-    } = Cmd::Message as u8,
+    Message { err: bool } = Cmd::Message as u8,
     Extension(ExtensionCode) = Cmd::Extension as u8,
-    /// `\closein` or `\openin`.
-    InStream {
-        open: bool,
-    } = Cmd::InStream as u8,
+    InStream { open: bool } = Cmd::InStream as u8,
     BeginGroup = Cmd::BeginGroup as u8,
     EndGroup = Cmd::EndGroup as u8,
     Omit = Cmd::Omit as u8,
@@ -217,7 +176,6 @@ pub(crate) enum Command {
     MathGiven(i32) = Cmd::MathGiven as u8,
     XetexMathGiven(i32) = Cmd::XetexMathGiven as u8,
     LastItem(LastItemCode) = Cmd::LastItem as u8,
-    /// `\toks`, whose register number follows.
     ToksRegister = Cmd::ToksRegister as u8,
     AssignToks(ToksLoc) = Cmd::AssignToks as u8,
     AssignInt(IntLoc) = Cmd::AssignInt as u8,
@@ -232,62 +190,34 @@ pub(crate) enum Command {
     SetPageInt(PageIntCode) = Cmd::SetPageInt as u8,
     SetBoxDimen(BoxDimenCode) = Cmd::SetBoxDimen as u8,
     SetShape(ShapeLoc) = Cmd::SetShape as u8,
-    /// `\catcode` and friends, by the table base.
     DefCode(CodeTable) = Cmd::DefCode as u8,
     XetexDefCode(XetexCode) = Cmd::XetexDefCode as u8,
-    /// `\textfont` and friends, by the table base.
     DefFamily(FontLoc) = Cmd::DefFamily as u8,
     SetFont(FontId) = Cmd::SetFont as u8,
     DefFont = Cmd::DefFont as u8,
-    /// `\count`, `\dimen`, `\skip` or `\muskip`, whose register number follows.
     Register(ValueLevel) = Cmd::Register as u8,
     Advance = Cmd::Advance as u8,
     Multiply = Cmd::Multiply as u8,
     Divide = Cmd::Divide as u8,
     Prefix(PrefixCode) = Cmd::Prefix as u8,
-    /// `\let` or `\futurelet`.
-    Let {
-        future: bool,
-    } = Cmd::Let as u8,
+    Let { future: bool } = Cmd::Let as u8,
     ShorthandDef(ShorthandDefCode) = Cmd::ShorthandDef as u8,
-    /// `\read` or `\readline`.
-    ReadToCs {
-        line: bool,
-    } = Cmd::ReadToCs as u8,
-    /// `\def`, `\gdef`, `\edef` or `\xdef`.
-    Def {
-        global: bool,
-        expand: bool,
-    } = Cmd::Def as u8,
+    ReadToCs { line: bool } = Cmd::ReadToCs as u8,
+    Def { global: bool, expand: bool } = Cmd::Def as u8,
     SetBox = Cmd::SetBox as u8,
-    /// `\hyphenation` or `\patterns`.
-    HyphData {
-        patterns: bool,
-    } = Cmd::HyphData as u8,
+    HyphData { patterns: bool } = Cmd::HyphData as u8,
     SetInteraction(InteractionMode) = Cmd::SetInteraction as u8,
-    /// `\partokenname`.
     PartokenName = Cmd::PartokenName as u8,
     UndefinedCs = Cmd::UndefinedCs as u8,
-    /// `\expandafter` or `\unless`.
-    ExpandAfter {
-        unless: bool,
-    } = Cmd::ExpandAfter as u8,
-    /// `\noexpand` or `\primitive`.
-    NoExpand {
-        primitive: bool,
-    } = Cmd::NoExpand as u8,
+    ExpandAfter { unless: bool } = Cmd::ExpandAfter as u8,
+    NoExpand { primitive: bool } = Cmd::NoExpand as u8,
     Input(InputCode) = Cmd::Input as u8,
     IfTest(IfTest) = Cmd::IfTest as u8,
     FiOrElse(FiOrElseCode) = Cmd::FiOrElse as u8,
     CsName = Cmd::CsName as u8,
     Convert(ConvertCode) = Cmd::Convert as u8,
     The(TheCode) = Cmd::The as u8,
-    /// `\topmark` and friends, `marks` for the `\topmarks` forms.
-    TopBotMark {
-        code: MarkCode,
-        marks: bool,
-    } = Cmd::TopBotMark as u8,
-    /// A macro call, by its reference-counted definition.
+    TopBotMark { code: MarkCode, marks: bool } = Cmd::TopBotMark as u8,
     Call(TokenList) = Cmd::Call as u8,
     LongCall(TokenList) = Cmd::LongCall as u8,
     OuterCall(TokenList) = Cmd::OuterCall as u8,
@@ -303,7 +233,6 @@ impl Hash for Command {
 }
 
 impl ScannerState {
-    /// The code of the current `\fi`, `\else` or `\or`, `None` for any other command.
     #[inline]
     pub(crate) fn fi_or_else(&self) -> Option<FiOrElseCode> {
         match self.cur {
@@ -323,7 +252,6 @@ impl Default for Command {
 }
 
 impl Command {
-    /// The macro call of `body` for a `\long` and/or `\outer` definition.
     pub(crate) const fn call(body: TokenList, long: bool, outer: bool) -> Command {
         match (long, outer) {
             (false, false) => Command::Call(body),
@@ -333,7 +261,6 @@ impl Command {
         }
     }
 
-    /// The definition of a macro call.
     #[inline]
     pub(crate) const fn macro_body(self) -> Option<TokenList> {
         match self {
@@ -345,8 +272,6 @@ impl Command {
         }
     }
 
-    /// The command of a character token of category `cat`, `None` for a category
-    /// no token carries.
     #[inline(always)]
     pub(crate) fn from_char(cat: Cmd, chr: i32) -> Option<Command> {
         let c = Usv::new(chr)?;
@@ -365,7 +290,6 @@ impl Command {
         })
     }
 
-    /// The character a letter, other character or `\chardef`'d command typesets.
     #[inline(always)]
     pub(crate) fn char_code(self) -> Option<i32> {
         match self {
@@ -395,7 +319,6 @@ impl Command {
         }
     }
 
-    /// The command code, the variant's tag.
     #[inline(always)]
     pub(crate) const fn cmd(self) -> Cmd {
         match self {
@@ -522,7 +445,6 @@ impl Command {
         }
     }
 
-    /// The command as TeX's `(cmd, chr)` pair, for formats, printing and the save stack.
     pub(crate) fn encode(self) -> (Cmd, i32) {
         let flag = |on: bool, code: i32| if on { code } else { 0 };
         let chr = match self {
@@ -650,7 +572,6 @@ impl Command {
         (self.cmd(), chr)
     }
 
-    /// The command `cmd` with modifier `chr`, `None` when `chr` is not one of its codes.
     pub(crate) fn decode(cmd: Cmd, chr: i32) -> Option<Command> {
         let flag = |on: i32| match chr {
             0 => Some(false),
@@ -798,12 +719,10 @@ impl Command {
     }
 }
 
-/// Whether `cmd` has no modifier, so one `chr` stands for it.
 const fn is_unit(cmd: Cmd) -> bool {
     unit(cmd).is_some()
 }
 
-/// The command of a code without a modifier.
 const fn unit(cmd: Cmd) -> Option<Command> {
     Some(match cmd {
         Cmd::Endv => Command::Endv,
@@ -849,7 +768,6 @@ const fn unit(cmd: Cmd) -> Option<Command> {
     })
 }
 
-/// The one `chr` a command without a modifier is defined with.
 const fn unit_chr(cmd: Cmd) -> i32 {
     match cmd {
         Cmd::ParEnd => TOO_BIG_USV,

@@ -31,7 +31,6 @@ pub(crate) mod ot_math;
 pub(crate) mod tfm;
 
 code_enum! {
-    /// The edge of a line a character protrudes into.
     #[derive(PartialOrd, Ord)]
     pub(crate) enum Side: u16 {
         Left = 0,
@@ -39,13 +38,10 @@ code_enum! {
     }
 }
 
-/// `\lpcode` and `\rpcode` values, keyed by font and character or glyph.
-/// Clones share the table until one of them is written.
 #[derive(Clone, Default, PartialEq, Eq, Debug)]
 pub(crate) struct ProtrusionCodes(Rc<BTreeMap<(FontId, Side, u32), i32>>);
 
 impl ProtrusionCodes {
-    /// The code of `c` in font `f`, 0 when unset.
     pub(crate) fn get(&self, f: FontId, side: Side, c: u32) -> i32 {
         self.0.get(&(f, side, c)).copied().unwrap_or(0)
     }
@@ -54,7 +50,6 @@ impl ProtrusionCodes {
         Rc::make_mut(&mut self.0).insert((f, side, c), value);
     }
 
-    /// Every set code, in key order.
     pub(crate) fn iter(&self) -> impl Iterator<Item = (&(FontId, Side, u32), &i32)> {
         self.0.iter()
     }
@@ -94,13 +89,11 @@ pub(crate) struct LigChar(i32);
 impl LigChar {
     pub(crate) const NONE: LigChar = LigChar(TOO_BIG_CHAR);
 
-    /// The value from a character code, a sentinel such as `max_hyph_char`, or a format file.
     #[inline]
     pub(crate) const fn from_raw(raw: i32) -> LigChar {
         LigChar(raw)
     }
 
-    /// The raw form for a format file.
     #[inline]
     pub(crate) const fn raw(self) -> i32 {
         self.0
@@ -111,7 +104,6 @@ impl LigChar {
         LigChar(i32::from(c))
     }
 
-    /// Below `NONE`, so a real character rather than a boundary.
     #[inline]
     pub(crate) fn is_char(self) -> bool {
         self.0 < TOO_BIG_CHAR
@@ -130,7 +122,6 @@ impl FontState {
         area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG
     }
 
-    /// A native font's ascent.
     pub(crate) fn native_height(&self, f: FontId) -> Scaled {
         match self.metrics[f] {
             FontMetrics::Native { ascent, .. } => ascent,
@@ -146,7 +137,6 @@ impl FontState {
         }
     }
 
-    /// The metrics of TFM font `f`, `None` for a native font.
     #[inline]
     fn tfm(&self, f: FontId) -> Option<&TfmMetrics> {
         match &self.metrics[f] {
@@ -155,19 +145,16 @@ impl FontState {
         }
     }
 
-    /// Character `c` of TFM font `f`, `None` when the font does not have it.
     #[inline]
     pub(crate) fn char_info(&self, f: FontId, c: i32) -> Option<CharInfo> {
         self.tfm(f)?.char_info(c)
     }
 
-    /// Character `c`, with no dimensions when the font does not have it.
     #[inline]
     pub(crate) fn char_metrics(&self, f: FontId, c: i32) -> CharInfo {
         self.char_info(f, c).unwrap_or(CharInfo::NULL)
     }
 
-    /// `c` is in the font's range and exists.
     #[inline]
     pub(crate) fn char_exists(&self, f: FontId, c: i32) -> bool {
         self.char_info(f, c).is_some()
@@ -180,7 +167,6 @@ impl FontState {
             .or_confusion("lig/kern step")
     }
 
-    /// The index and first step of the lig/kern program at `k`, following a redirect.
     #[inline]
     pub(crate) fn lig_kern_start(
         &self,
@@ -192,7 +178,6 @@ impl FontState {
             .or_confusion("lig/kern start")
     }
 
-    /// The program of a left boundary, `None` when the font has none.
     #[inline]
     pub(crate) fn bchar_label(&self, f: FontId) -> Option<LigKernIdx> {
         self.tfm(f)?.bchar_label()
@@ -204,12 +189,10 @@ impl FontState {
             .or_confusion("extensible recipe")
     }
 
-    /// A TFM font's check sum, in file byte order.
     pub(crate) fn check_bytes(&self, f: FontId) -> [u8; 4] {
         self.font_check[f]
     }
 
-    /// The width, height and depth of character `c` in font `f`.
     pub(crate) fn char_box(&mut self, f: FontId, c: u16) -> (Scaled, Scaled, Scaled) {
         let c = self.effective_char(f, c);
         let info = self.char_info(f, c).unwrap_or(CharInfo::NULL);
@@ -233,9 +216,7 @@ impl FontState {
     }
 }
 
-/// Where a native character's UTF-16 text comes from.
 enum NativeCharSrc {
-    /// `len` units already in `FontState::mapped_text`.
     Mapped(i32),
     Single(u32),
 }
@@ -256,7 +237,6 @@ impl MemState {
         Ok(w)
     }
 
-    /// A native-word node for `n` UTF-16 units of font `f`, text left unset.
     pub(crate) fn new_native_word_node(
         &mut self,
         eqtb: &EqtbState,
@@ -295,7 +275,6 @@ impl MemState {
     }
 }
 
-/// Warn about `c` when font `f` has no glyph for it.
 fn check_native_char(st: &mut EngineState, f: FontId, c: i32) -> Result<(), Abort> {
     if st.fonts.map_char_to_glyph(f, c)? == 0 {
         char_warning(st, f, c)?;
@@ -303,8 +282,6 @@ fn check_native_char(st: &mut EngineState, f: FontId, c: i32) -> Result<(), Abor
     Ok(())
 }
 
-/// A measured native-word node for character `c` of font `f`, run through the
-/// font's TECkit mapping if it has one.
 pub(crate) fn new_native_character(
     st: &mut EngineState,
     f: FontId,
@@ -347,20 +324,15 @@ pub(crate) fn new_native_character(
     Ok(w)
 }
 
-/// The size `\font` asks for.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) enum FontSize {
-    /// `at` this size.
     At(Scaled),
-    /// `scaled` by this many thousandths of the design size.
     Scaled(i32),
 }
 
 impl FontSize {
-    /// The design size, which is also `scaled 1000`.
     pub(crate) const DESIGN: FontSize = FontSize::Scaled(1000);
 
-    /// The size for a font designed at `design`.
     pub(crate) fn of_design(self, design: Scaled) -> Divided<Scaled, i32> {
         match self {
             FontSize::At(s) => Divided {
@@ -381,7 +353,6 @@ impl FontSize {
     }
 }
 
-/// "Font \cs=name at size", how a font loading error names the font.
 #[derive(Copy, Clone)]
 struct FontSpec {
     cs: CsId,
@@ -570,7 +541,6 @@ pub(crate) fn read_font_info(
 }
 
 impl FontState {
-    /// Fills the next font slot with `tfm`.
     fn install_tfm(
         &mut self,
         eqtb: &EqtbState,
@@ -598,8 +568,6 @@ impl FontState {
         f
     }
 
-    /// Set up the tables of a new native font slot. Returns the slot and the
-    /// font's metrics.
     fn init_native_font_tables(
         &mut self,
         eqtb: &EqtbState,
@@ -641,7 +609,6 @@ impl FontState {
     }
 }
 
-/// Load native OpenType/Graphite font `name` and set up its TeX font tables.
 fn load_native_font(st: &mut EngineState, font: FontSpec, name: &[u8]) -> Result<FontId, Abort> {
     let s = font.size;
     let Some((font_engine, full_name)) = find_native_font(st, name, s)? else {
@@ -734,15 +701,11 @@ fn load_native_font(st: &mut EngineState, font: FontSpec, name: &[u8]) -> Result
     Ok(font_ptr)
 }
 
-/// A native font's layout engine.
 pub(crate) type FontEngineHandle = texyon_xetex_layout::LayoutEngine<'static>;
 
 pub(crate) struct FontState {
-    /// Converter staged by a `mapping=` font feature until it is transferred
-    /// into a font slot.
     pub loaded_font_mapping: Option<Arc<FontMappingHandle>>,
     pub loaded_font_flags: i8,
-    /// Per-engine ICU line-break cache and its string-pool locale key.
     pub brk_iter: Option<LinebreakHandle>,
     pub brk_locale_str_num: StrNumber,
     pub font_layout_engine: PerFont<Option<Rc<FontEngineHandle>>>,
@@ -751,7 +714,6 @@ pub(crate) struct FontState {
     pub xtx_ligature_present: bool,
     pub gave_char_warning_help: bool,
     pub native_font_type_flag: StrNumber,
-    /// The limit on `fmem_ptr`.
     pub font_mem_size: i32,
     pub font_max: FontId,
     /// The `font_info` words TeX would use for the loaded fonts, counted for
@@ -769,7 +731,6 @@ pub(crate) struct FontState {
     pub font_ec: PerFont<u16>,
     pub font_bchar: PerFont<LigChar>,
     pub font_false_bchar: PerFont<LigChar>,
-    /// The interword glue built from the font's parameters, once a space needs it.
     pub font_glue: PerFont<Option<GlueSpecId>>,
     pub font_used: PerFont<bool>,
     pub hyphen_char: PerFont<i32>,
@@ -824,20 +785,17 @@ impl Default for FontState {
 }
 
 impl FontState {
-    /// Font parameter `n` of font `f`, zero when the font has no such parameter.
     #[inline]
     pub(crate) fn param(&self, f: FontId, n: i32) -> Scaled {
         self.params[f].get(n).unwrap_or(Scaled::ZERO)
     }
 
-    /// TeX's `font_params`.
     #[inline]
     pub(crate) fn param_count(&self, f: FontId) -> i32 {
         self.params[f].count()
     }
 }
 
-/// A table with one entry per internal font.
 #[derive(Clone, Default)]
 pub(crate) struct PerFont<T>(Vec<T>);
 

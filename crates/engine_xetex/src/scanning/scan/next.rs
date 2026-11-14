@@ -25,7 +25,6 @@ use crate::state::EngineState;
 use crate::tables::cs::{CsId, Frozen};
 
 impl MemState {
-    /// Whether the macro whose token list starts at `ref_count` is `\protected`.
     #[inline]
     pub(crate) fn is_protected_macro(&self, body: TokenList) -> bool {
         self.tokens.peek(self.tokens.cursor(body)) == Some(Token::PROTECTED)
@@ -52,7 +51,6 @@ pub(crate) fn get_x_or_protected(st: &mut EngineState) -> Result<(), Abort> {
     }
 }
 
-/// `get_x_token` until the result is neither a space nor `\relax`.
 pub(crate) fn get_x_non_blank_non_relax(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         get_x_token(st)?;
@@ -150,7 +148,6 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
     outcome
 }
 
-/// Makes `cs` the current control sequence, with its meaning in `cur`.
 #[inline(always)]
 pub(super) fn fetch_cs_meaning(st: &mut EngineState, cs: CsId) {
     st.scanner.cur_cs = Some(cs);
@@ -207,7 +204,6 @@ impl InputClusterState {
     }
 }
 
-/// The central tokenizer.
 #[inline(always)]
 pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
     if st.input.cur_input.state == TOKEN_LIST {
@@ -621,7 +617,6 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-/// `get_x_token` until the result is not a space.
 #[inline]
 pub(crate) fn get_x_non_blank(st: &mut EngineState) -> Result<(), Abort> {
     loop {
@@ -728,7 +723,6 @@ fn plain_list_token(st: &EngineState, t: Token, stop_at_mac_param: bool) -> bool
         || stop_at_mac_param && cmd == Cmd::MacParam)
 }
 
-/// Advances past the token at `q` as `get_next` would and returns the next position.
 #[inline(always)]
 fn consume_list_token(st: &mut EngineState, q: TokCursor) -> TokCursor {
     st.scanner.logical_clock = st.scanner.logical_clock.wrapping_add(1);

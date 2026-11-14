@@ -104,14 +104,12 @@ pub(crate) fn short_display(st: &mut EngineState, mut p: MemPtr) {
     }
 }
 
-/// Shows sublist `list` with `c` appended to the indentation string.
 fn node_list_display(st: &mut EngineState, c: u8, list: MemPtr) {
     st.strings.append_char(u16::from(c));
     show_node_list(st, list);
     st.strings.pool_ptr -= 1;
 }
 
-/// Shows the noad field at `p`, marked with `c` in the indentation string.
 fn print_subsidiary_data(st: &mut EngineState, p: MathWord, c: u8) {
     if st.strings.cur_length() >= st.errors.depth_threshold {
         if p.math_type != EMPTY {

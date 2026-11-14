@@ -22,7 +22,6 @@ use crate::state::EngineState;
 use crate::tables::cs::Frozen;
 use crate::tables::eqtb::EqtbState;
 
-/// Emits `special`, expanding its tokens first when it is a `late` one.
 fn special_out(st: &mut EngineState, special: NodePtr<WriteNode>, late: bool) -> Result<(), Abort> {
     synch_h(st)?;
     synch_v(st)?;
@@ -51,7 +50,6 @@ fn special_out(st: &mut EngineState, special: NodePtr<WriteNode>, late: bool) ->
 }
 
 impl EqtbState {
-    /// Log only, or terminal and log when `\tracingonline` is positive.
     fn log_selector(&self) -> Selector {
         if self.int_par(IntPar::TracingOnline) <= 0 {
             Selector::LogOnly
@@ -61,7 +59,6 @@ impl EqtbState {
     }
 }
 
-/// Expands `tokens` as `\write` does, leaving the result in `def_ref`.
 fn expand_write_tokens(st: &mut EngineState, tokens: TokenList) -> Result<(), Abort> {
     let close = st.mem.tokens.single(Token::right_brace(b'}'))?;
     st.mem
@@ -184,7 +181,6 @@ pub(super) fn pic_out(st: &mut EngineState, pic: NodePtr<PicNode>) -> Result<(),
     dvi_special_from_cur_string(st)
 }
 
-/// `out_what` for the node at the tail of the current list (`\immediate`).
 pub(crate) fn out_what(st: &mut EngineState, w: NodePtr<WhatsitNode>) -> Result<(), Abort> {
     let leaders = st.shipout.doing_leaders;
     match w.variant(&st.mem) {
@@ -208,7 +204,6 @@ pub(crate) fn out_what(st: &mut EngineState, w: NodePtr<WhatsitNode>) -> Result<
     Ok(())
 }
 
-/// `\openout` (`open`) or `\closeout` (`None`) on stream `j`.
 fn out_write_stream(
     st: &mut EngineState,
     j: i32,

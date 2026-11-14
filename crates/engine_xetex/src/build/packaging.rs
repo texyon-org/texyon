@@ -30,7 +30,6 @@ mod vert_break;
 use vert_break::push_slot;
 pub(crate) use vert_break::{CurMarks, MarkClasses, MarksAction, vert_break, vsplit};
 
-/// The size `hpack` and `vpack` aim for: exactly some size, or the natural size plus some.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum PackSpec {
     Exactly(Scaled),
@@ -38,10 +37,8 @@ pub(crate) enum PackSpec {
 }
 
 impl PackSpec {
-    /// The natural size.
     pub(crate) const NATURAL: PackSpec = PackSpec::Additional(Scaled::ZERO);
 
-    /// The size to set a box of natural size `natural` to.
     #[inline]
     pub(crate) fn target(self, natural: Scaled) -> Scaled {
         match self {
@@ -52,7 +49,6 @@ impl PackSpec {
 }
 
 impl ListStateRecord {
-    /// Append box `b` to the current vertical list, preceded by interline glue.
     pub fn append_to_vlist(
         &mut self,
         mem: &mut MemState,
@@ -104,7 +100,6 @@ struct PackOutcome {
     shrink: OrderTotals,
 }
 
-/// A packed box with the glue totals of its list.
 #[derive(Copy, Clone)]
 pub(crate) struct Packed {
     pub r_box: NodePtr<BoxNode>,
@@ -112,7 +107,6 @@ pub(crate) struct Packed {
     pub shrink: OrderTotals,
 }
 
-/// The tails of the lists `hpack` moves `\vadjust`, `\insert` and `\mark` material to.
 #[derive(Copy, Clone)]
 pub(crate) struct AdjustTails {
     pub post: MemPtr,
@@ -120,7 +114,6 @@ pub(crate) struct AdjustTails {
 }
 
 impl AdjustTails {
-    /// Empty lists at `ADJUST_HEAD` and `PRE_ADJUST_HEAD`.
     pub(crate) const HEADS: Self = Self {
         post: Some(ADJUST_HEAD),
         pre: Some(PRE_ADJUST_HEAD),
@@ -136,7 +129,6 @@ pub(crate) struct LrState {
 }
 
 impl LrState {
-    /// An empty stack, no problems, left to right.
     pub(crate) const START: Self = Self {
         ptr: None,
         problems: 0,
@@ -175,8 +167,6 @@ impl PackOutcome {
 }
 
 impl MemState {
-    /// Set `r`'s glue to distribute `excess` over the highest-order `totals`,
-    /// returning that order.
     fn set_box_glue(
         &mut self,
         r: NodePtr<BoxNode>,
@@ -632,7 +622,6 @@ fn print_hpack_common_ending(st: &mut EngineState, box_ptr: NodePtr<BoxNode>, or
     end_diagnostic(st, true);
 }
 
-/// `hpack`, printing its over/underfull diagnostics in order.
 pub(crate) fn hpack(
     st: &mut EngineState,
     list: MemPtr,
@@ -641,7 +630,6 @@ pub(crate) fn hpack(
     Ok(hpack_with(st, list, spec, PackOrigin::Here, None)?.r_box)
 }
 
-/// `hpack` for material from `origin`, moving adjustments to `adjust` if given.
 pub(crate) fn hpack_with(
     st: &mut EngineState,
     list: MemPtr,
@@ -866,7 +854,6 @@ fn print_vpack_common_ending(st: &mut EngineState, box_ptr: NodePtr<BoxNode>, or
     end_diagnostic(st, true);
 }
 
-/// `vpackage`, printing its over/underfull diagnostics in order.
 pub(crate) fn vpackage(
     st: &mut EngineState,
     list: MemPtr,
@@ -876,7 +863,6 @@ pub(crate) fn vpackage(
     Ok(vpackage_with(st, list, spec, l, PackOrigin::Here)?.r_box)
 }
 
-/// `vpackage` for material from `origin`.
 pub(crate) fn vpackage_with(
     st: &mut EngineState,
     list: MemPtr,

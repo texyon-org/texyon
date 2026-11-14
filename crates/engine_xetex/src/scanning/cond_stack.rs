@@ -8,13 +8,11 @@ use crate::memory::node::Stored;
 pub(crate) struct CondId(u32);
 
 impl CondId {
-    /// The id as a number, for digests.
     pub(crate) fn raw(self) -> u32 {
         self.0
     }
 }
 
-/// The state of the enclosing conditional, saved when a new one starts.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) struct SavedCond {
     pub id: CondId,
@@ -30,12 +28,10 @@ pub(crate) struct CondStack {
 }
 
 impl CondStack {
-    /// The innermost conditional, TeX's `cond_ptr`.
     pub(crate) fn top(&self) -> Option<CondId> {
         self.entries.last().map(|c| c.id)
     }
 
-    /// The conditional below the innermost one, TeX's `link(cond_ptr)`.
     pub(crate) fn below_top(&self) -> Option<CondId> {
         let n = self.entries.len();
         n.checked_sub(2).map(|i| self.entries[i].id)
@@ -45,7 +41,6 @@ impl CondStack {
         self.entries.len()
     }
 
-    /// Saves the enclosing state as a new innermost conditional and returns its id.
     pub(crate) fn push(
         &mut self,
         cur_if: IfTest,
@@ -67,7 +62,6 @@ impl CondStack {
         self.entries.pop()
     }
 
-    /// The saved states from the innermost out.
     pub(crate) fn iter_from_top(&self) -> impl Iterator<Item = &SavedCond> {
         self.entries.iter().rev()
     }
@@ -78,7 +72,6 @@ impl CondStack {
         self.entries.get_mut(i + 1)
     }
 
-    /// Every id ever handed out, for digests.
     pub(crate) fn next_id(&self) -> u32 {
         self.next_id
     }

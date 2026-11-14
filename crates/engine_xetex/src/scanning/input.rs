@@ -69,7 +69,6 @@ impl TokenType {
         }
     }
 
-    /// How `show_context` introduces a level of this type, except a macro.
     pub(crate) fn label(self, loc: TokCursor) -> &'static str {
         match self {
             TokenType::Parameter => "<argument> ",
@@ -96,7 +95,6 @@ impl TokenType {
 }
 
 impl InputState {
-    /// The type of a token-list level.
     #[inline]
     pub(crate) fn token_type(&self) -> TokenType {
         TokenType::from_raw(i32::from(self.index)).expect("token list level")
@@ -108,7 +106,6 @@ impl InputState {
     }
 }
 
-/// The most input levels open at once.
 pub(crate) const STACK_SIZE: usize = 5_000;
 
 pub(crate) const TOKEN_LIST: u16 = 0;
@@ -289,7 +286,6 @@ pub(crate) fn pseudo_input(st: &mut EngineState) -> Result<bool, Abort> {
     Ok(true)
 }
 
-/// Puts `token` in front of the unread backed-up token list on top of the input stack.
 pub(crate) fn prepend_to_backed_up(st: &mut EngineState, token: Token) -> Result<(), Abort> {
     let ci = st.input.cur_input;
     let mut list = ci.token_start();
@@ -362,7 +358,6 @@ pub(crate) fn begin_token_list(
     Ok(())
 }
 
-/// TeX's input `buffer` of characters, indexed by position.
 #[derive(Clone, Default, Debug)]
 pub(crate) struct InputBuffer(pub Vec<i32>);
 
@@ -382,7 +377,6 @@ impl IndexMut<BufPos> for InputBuffer {
 }
 
 impl InputBuffer {
-    /// The characters from `start` up to but not including `end`.
     #[inline]
     pub(crate) fn span(&self, start: BufPos, end: BufPos) -> &[i32] {
         &self.0[start.index()..end.index()]
@@ -393,15 +387,11 @@ impl InputBuffer {
 /// `if_stack`, `eof_seen` and the source name stacks.
 #[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
 pub(crate) struct OpenLevel {
-    /// The enclosing file's line when this one was opened.
     pub outer_line: i32,
-    /// `cur_boundary` when the file was opened.
     pub grp: Option<SavePtr>,
-    /// `cond_ptr` when the file was opened.
     pub cond: Option<CondId>,
     pub source_name: StrNumber,
     pub full_source_name: StrNumber,
-    /// Whether `\everyeof` has been inserted at its end.
     pub eof_seen: bool,
 }
 
@@ -412,12 +402,10 @@ pub(crate) struct MacroParam {
     pub list: TokenList,
 }
 
-/// One level of TeX's input stack (`in_state_record`).
 #[derive(Copy, Clone, Default)]
 pub(crate) struct InputState {
     pub state: u16,
     pub index: u16,
-    /// A text level's line in the buffer, unused on token-list levels.
     pub start: BufPos,
     pub loc: BufPos,
     pub limit: BufPos,
@@ -425,9 +413,7 @@ pub(crate) struct InputState {
     pub synctex_tag: i32,
     /// A token-list level's list, which it frees or drops a reference to when it ends.
     tok_start: TokenList,
-    /// The next token a token-list level reads.
     tok_loc: TokCursor,
-    /// Where a macro level's arguments start on the parameter stack.
     param_start: u32,
 }
 
@@ -437,15 +423,13 @@ pub(crate) enum InputName {
     /// The terminal, or an `\insert`ed line above the bottom level.
     #[default]
     Terminal,
-    /// `\read` from stream 0 to 15.
     Read(u8),
-    /// `\read` from the terminal.
     ReadTerminal,
     /// A `\scantokens` pseudo file, `traced` when `\tracingscantokens` showed it like a file.
-    Pseudo { traced: bool },
-    /// A file opened by `\input`, by the name it was found under.
+    Pseudo {
+        traced: bool,
+    },
     File(StrNumber),
-    /// A macro's token list: the control sequence being expanded.
     Macro(CsId),
 }
 
@@ -462,7 +446,6 @@ impl InputName {
 }
 
 impl InputClusterState {
-    /// TeX's buffer size overflow error.
     pub(crate) fn buffer_overflow(&self) -> Abort {
         Abort::Overflow {
             capacity: Capacity::BufferSize,
@@ -470,7 +453,6 @@ impl InputClusterState {
         }
     }
 
-    /// The number of input levels below the current one, `input_ptr`.
     #[inline]
     pub(crate) fn input_depth(&self) -> i32 {
         i32::try_from(self.input_stack.len()).unwrap_or(i32::MAX)
@@ -490,7 +472,6 @@ impl InputState {
     }
 }
 
-/// `start` and `loc` of a token-list level, which point into the token store.
 impl InputState {
     #[inline]
     pub(crate) fn token_start(&self) -> TokenList {
@@ -510,12 +491,10 @@ impl InputState {
     }
 }
 
-/// An owned main-input or `\read` stream slot.
 #[derive(Default)]
 pub(crate) enum InputSlot {
     #[default]
     Empty,
-    /// The terminal, which has no file.
     Terminal,
     Open(Box<UFile>),
 }
@@ -534,10 +513,8 @@ pub(crate) struct InputClusterState {
     pub open_parens: i32,
     pub in_open: usize,
     pub pseudo_files: MemPtr,
-    /// The last usable `buffer` position.
     pub buf_size: BufPos,
     pub max_in_open: usize,
-    /// The level `show_context` and its relatives are looking at.
     pub base_ptr: usize,
     pub par_loc: Option<CsId>,
     pub par_token: Token,
@@ -550,7 +527,6 @@ pub(crate) struct InputClusterState {
 }
 
 impl InputClusterState {
-    /// How much of `buffer` has ever held input.
     #[inline]
     pub(crate) fn buffer_in_use(&self) -> usize {
         (self.max_buf_stack.max(self.last).max(self.first) + 1).index()

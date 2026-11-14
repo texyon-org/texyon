@@ -30,7 +30,6 @@ use crate::tables::eqtb::EqtbState;
 const EXACT_CLASSES: usize = 67;
 /// `mem` may grow to this many words, half of `MAIN_MEMORY_WORDS`.
 const MAX_MEM_WORDS: usize = 1 << 25;
-/// The smallest power of two a larger node is rounded up to.
 const FIRST_ROUNDED: u32 = EXACT_CLASSES.next_power_of_two().ilog2();
 /// The exact sizes, then one list per power of two up to `MAX_MEM_WORDS`.
 pub(crate) const FREE_CLASSES: usize =
@@ -51,7 +50,6 @@ fn size_class(s: usize) -> Option<(usize, usize)> {
     }
 }
 
-/// The free list of each node size, by size.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) struct FreeLists(pub(crate) [MemPtr; FREE_CLASSES]);
 
@@ -61,7 +59,6 @@ impl Default for FreeLists {
     }
 }
 
-/// The fixed node after `p`, which takes `words`.
 const fn after(p: MemIdx, words: i32) -> MemIdx {
     p.offset(words.cast_unsigned())
 }
@@ -79,7 +76,6 @@ const END_SPAN_AT: MemIdx = after(ALIGN_HEAD, HeadNode::SIZE);
 pub(crate) const END_SPAN: NodePtr<SpanNode> = NodePtr::from_idx_unchecked(END_SPAN_AT);
 pub(crate) const NULL_LIST: MemIdx = after(END_SPAN_AT, SpanNode::SIZE);
 pub(crate) const PRE_ADJUST_HEAD: MemIdx = after(NULL_LIST, HeadNode::SIZE);
-/// The fixed nodes laid out as a [`HeadNode`].
 pub(crate) const FIXED_HEADS: [MemIdx; 7] = [
     CONTRIB_HEAD,
     TEMP_HEAD,
@@ -89,12 +85,10 @@ pub(crate) const FIXED_HEADS: [MemIdx; 7] = [
     NULL_LIST,
     PRE_ADJUST_HEAD,
 ];
-/// The words the fixed nodes take, where allocation starts.
 pub(crate) const RESERVED_WORDS: usize =
     after(PRE_ADJUST_HEAD, HeadNode::SIZE).raw().cast_unsigned() as usize;
 
 impl ListStateRecord {
-    /// A fixed-layout whatsit appended to the current list.
     pub fn append_whatsit<K: WhatsitKind + Node>(
         &mut self,
         mem: &mut MemState,
@@ -106,10 +100,7 @@ impl ListStateRecord {
     }
 }
 
-// --- lists ---
-
 impl MemState {
-    /// Frees the list `p` of `K` records, all of one size.
     pub(crate) fn flush_records<K: ListRecord + Node>(&mut self, mut p: MemPtr) {
         while let Some(r) = NodePtr::<K>::from_ptr(p) {
             p = r.idx().link(self);
@@ -117,7 +108,6 @@ impl MemState {
         }
     }
 
-    /// The last node of the list starting at `p`.
     #[inline]
     pub(crate) fn list_tail(&self, mut p: MemIdx) -> MemIdx {
         while let Some(q) = p.link(self) {
@@ -126,7 +116,6 @@ impl MemState {
         p
     }
 
-    /// The node whose link is `target`, searching forward from `p`.
     #[inline]
     pub(crate) fn predecessor(&self, mut p: MemIdx, target: MemPtr) -> Result<MemIdx, Abort> {
         while p.link(self) != target {
@@ -145,7 +134,6 @@ impl MemState {
         Some(p)
     }
 
-    /// Skips the nodes that may sit between the words of an interword space.
     pub(crate) fn skip_interword_fillers(&self, mut p: MemPtr) -> MemPtr {
         while let Some(q) = p.filter(|&q| {
             self.classify_non_char(Some(q))
@@ -156,13 +144,11 @@ impl MemState {
         p
     }
 
-    /// Whether the node `p` is a character node.
     #[inline]
     pub fn is_char_node(&self, p: impl MemAddr) -> bool {
         self.type_code(p) == NodeType::Char.to_u16()
     }
 
-    /// A hyphen position `n` linked in front of the positions `rest`.
     pub(crate) fn new_hyph_pos(&mut self, n: usize, rest: MemPtr) -> Result<MemPtr, Abort> {
         let p = NodePtr::<HyphPosNode>::alloc(self)?;
         let pos = i32::try_from(n).or_confusion("hyphen position")?;
@@ -172,7 +158,6 @@ impl MemState {
         Ok(p.ptr())
     }
 
-    /// TeX's `push_LR`.
     #[inline]
     pub(crate) fn push_lr(&mut self, lr_ptr: &mut MemPtr, code: MathCode) -> Result<(), Abort> {
         let t = NodePtr::<LrNode>::alloc(self)?;
@@ -184,13 +169,11 @@ impl MemState {
         Ok(())
     }
 
-    /// The code in LR stack entry `p`, `None` for anything else.
     #[inline]
     pub(crate) fn lr_code(&self, p: MemPtr) -> Option<MathCode> {
         NodePtr::<LrNode>::from_ptr(p).and_then(|t| self[t].code.get())
     }
 
-    /// TeX's `pop_LR`.
     #[inline]
     pub(crate) fn pop_lr(&mut self, lr_ptr: &mut MemPtr) {
         let t = *lr_ptr;
@@ -201,14 +184,10 @@ impl MemState {
         }
     }
 
-    // --- the node allocator ---
-
-    /// Whether `p` points into the allocated part of `mem`, for printing a possibly clobbered list.
     pub(crate) fn contains(&self, p: MemPtr) -> bool {
         usize::try_from(p.raw()).is_ok_and(|i| (1..self.data.len()).contains(&i))
     }
 
-    /// TeX's `get_node`: a node of `s` words, from its size's free list or fresh from the end.
     #[inline]
     pub fn get_node(&mut self, s: i32) -> Result<MemIdx, Abort> {
         let class = usize::try_from(s)
@@ -218,7 +197,6 @@ impl MemState {
         self.take_node(class, class)
     }
 
-    /// A node of at least `s` words, for a kind whose entries follow its struct.
     pub fn get_array_node(&mut self, s: usize) -> Result<MemIdx, Abort> {
         let (class, words) = size_class(s).ok_or(Abort::NODE_OVERFLOW)?;
         self.take_node(class, words)
@@ -243,7 +221,6 @@ impl MemState {
         Ok(r)
     }
 
-    /// Returns the `s`-word node `p` to its size's free list.
     #[inline]
     pub fn free_node(&mut self, p: MemIdx, s: i32) {
         let class = usize::try_from(s)
@@ -255,7 +232,6 @@ impl MemState {
         }
     }
 
-    /// Returns a node from `get_array_node(s)` to its free list.
     pub fn free_array_node(&mut self, p: MemIdx, s: usize) {
         let class = size_class(s);
         debug_assert!(class.is_some(), "freeing a node of size {s}");
@@ -269,8 +245,6 @@ impl MemState {
         p.set_link(self, self.free.0[class]);
         self.free.0[class] = Some(p);
     }
-
-    // --- node constructors ---
 
     /// An empty vlist, WEB's `new_null_box` retyped to `vlist_node`.
     pub fn new_null_vbox(&mut self) -> Result<NodePtr<BoxNode>, Abort> {
@@ -294,7 +268,6 @@ impl MemState {
         Ok(p)
     }
 
-    /// A rule with running dimensions.
     pub fn new_rule(&mut self) -> Result<NodePtr<RuleNode>, Abort> {
         let p = NodePtr::<RuleNode>::alloc(self)?;
         let node = &mut self[p];
@@ -304,7 +277,6 @@ impl MemState {
         Ok(p)
     }
 
-    /// A character node for `c` in font `f`.
     #[inline]
     pub fn new_char(&mut self, f: FontId, c: u16) -> Result<NodePtr<CharNode>, Abort> {
         let p = NodePtr::<CharNode>::alloc(self)?;
@@ -355,7 +327,6 @@ impl MemState {
         Ok(p)
     }
 
-    /// An unshared copy of the glue spec `src`.
     pub fn new_spec(&mut self, src: GlueSpecId) -> Result<GlueSpecId, Abort> {
         let q = self.glue.alloc()?;
         let from = self[src];
@@ -369,7 +340,6 @@ impl MemState {
         Ok(q)
     }
 
-    /// Glue for parameter `n`, sharing its spec.
     pub fn new_param_glue(
         &mut self,
         eqtb: &EqtbState,
@@ -385,7 +355,6 @@ impl MemState {
         Ok(p)
     }
 
-    /// Glue sharing the spec `q`.
     pub fn new_glue(&mut self, q: GlueSpecId) -> Result<NodePtr<GlueNode>, Abort> {
         let p = NodePtr::<GlueNode>::alloc(self)?;
         let node = &mut self[p];
@@ -396,7 +365,6 @@ impl MemState {
         Ok(p)
     }
 
-    /// Glue for parameter `n` with a private copy of its spec.
     pub fn new_skip_param(
         &mut self,
         eqtb: &EqtbState,
@@ -464,7 +432,6 @@ impl MemState {
         self[spec].ref_count += 1;
     }
 
-    /// Drops a reference to `spec`, freeing it with the last one.
     pub fn delete_glue_ref(&mut self, spec: GlueSpecId) {
         if self[spec].ref_count == TEX_NULL {
             self.glue.free(spec);
@@ -473,8 +440,6 @@ impl MemState {
         }
     }
 }
-
-// --- the semantic nest ---
 
 pub(crate) fn push_nest(st: &mut EngineState) -> Result<(), Abort> {
     st.input
@@ -503,16 +468,11 @@ impl MemState {
 /// so the pointer-returning accessors stay valid.
 #[derive(Default)]
 pub(crate) struct MemState {
-    /// The node arena, in 32-bit words.
     pub data: Vec<u32>,
-    /// Owned shaped-glyph payloads referenced by handles in native nodes.
     pub glyph_blobs: GlyphBlobArena,
-    /// The token lists, a store of their own.
     pub tokens: TokenStore,
-    /// The glue specifications.
     pub glue: GlueStore,
     pub journal: WordJournal<u32>,
-    /// The free list of each node size.
     pub free: FreeLists,
     /// TeX's `line`, kept here because `get_node` stamps it into new nodes.
     pub line: i32,
@@ -521,7 +481,6 @@ pub(crate) struct MemState {
 }
 
 impl MemState {
-    /// The SyncTeX tag and line a node made now is stamped with.
     #[inline]
     pub(crate) fn sync_stamp(&self) -> SyncStamp {
         SyncStamp {
@@ -530,13 +489,11 @@ impl MemState {
         }
     }
 
-    /// The raw word at `index`.
     #[cfg(test)]
     pub(crate) fn word(&self, index: usize) -> i32 {
         self.data[index].cast_signed()
     }
 
-    /// Sets the raw word at `index`, journaled.
     #[cfg(test)]
     pub(crate) fn set_word(&mut self, index: usize, v: i32) {
         if self.journal.armed() {

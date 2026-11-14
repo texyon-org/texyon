@@ -23,7 +23,6 @@ enum InputSlotCheckpoint {
     },
 }
 
-/// Complete engine/adapter input reconstruction record for one command fence.
 #[derive(Clone)]
 pub(crate) struct ReplayFence {
     inputs: ReplayFenceInputs,
@@ -130,7 +129,6 @@ impl ReplayFence {
     }
 }
 
-/// Source identity and byte-channel positions needed to validate a fence.
 #[derive(Clone)]
 struct ReplayFenceInputs {
     revision: SourceRevision,
@@ -138,7 +136,6 @@ struct ReplayFenceInputs {
 }
 
 impl ReplayFenceInputs {
-    /// Capture every editor input ever opened during the active operation.
     fn capture(snapshot: &SourceSnapshot) -> Option<Self> {
         Some(Self {
             revision: snapshot.revision(),

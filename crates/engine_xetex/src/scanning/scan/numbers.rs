@@ -35,7 +35,6 @@ const POINT_TOKEN: Token = Token::other(b'.');
 const ALPHA_TOKEN: Token = Token::other(b'`');
 const FROZEN_PRIM_TOKEN: Token = Token::from_cs(Frozen::Primitive.cs());
 
-/// A suspended level of expression scanning, resumed at its closing parenthesis.
 struct ExprLevel {
     l: ValueLevel,
     s: i16,
@@ -52,7 +51,6 @@ const EXPR_MULT: i16 = 3;
 const EXPR_DIV: i16 = 4;
 const EXPR_SCALE: i16 = 5;
 
-/// Reports a bad integer `value` with two help lines.
 pub(super) fn bad_int_error(
     st: &mut EngineState,
     err: &str,
@@ -63,7 +61,6 @@ pub(super) fn bad_int_error(
     error(st, (err, " (", value, ")"), &[help1, help0])
 }
 
-/// Reports the out-of-range integer `value` and yields zero in its place.
 fn int_range_error(
     st: &mut EngineState,
     err: &str,
@@ -232,7 +229,6 @@ pub(crate) fn scan_xetex_math_char_int(st: &mut EngineState) -> Result<i32, Abor
     Ok(n)
 }
 
-/// Skips blanks and signs, returning whether the net sign is negative.
 fn scan_signs(st: &mut EngineState) -> Result<bool, Abort> {
     let mut negative = false;
     loop {
@@ -247,7 +243,6 @@ fn scan_signs(st: &mut EngineState) -> Result<bool, Abort> {
     }
 }
 
-/// Consumes one optional space after a constant.
 fn scan_optional_space(st: &mut EngineState) -> Result<(), Abort> {
     get_x_token(st)?;
     if st.scanner.cur.cmd() != Cmd::Spacer {
@@ -256,7 +251,6 @@ fn scan_optional_space(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-/// Reads the token after `\primitive` and replaces it by the primitive's meaning.
 pub(super) fn get_primitive_token(st: &mut EngineState) -> Result<(), Abort> {
     get_token(st)?;
     if let Some(p) = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)? {
@@ -275,7 +269,6 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<i32, Abort> {
     Ok(scan_int_decimal(st)?.0)
 }
 
-/// `scan_int` that also returns whether the integer was a decimal constant.
 fn scan_int_decimal(st: &mut EngineState) -> Result<(i32, bool), Abort> {
     let mut ok_so_far = true;
     let mut v: i32;
@@ -391,7 +384,6 @@ fn scan_int_decimal(st: &mut EngineState) -> Result<(i32, bool), Abort> {
     Ok((v, decimal))
 }
 
-/// Scans a dimension, in math units if `mu`.
 pub(crate) fn scan_dimen(st: &mut EngineState, mu: bool) -> Result<Scaled, Abort> {
     Ok(scan_dimen_from(st, mu, false, None, true)?.0)
 }
@@ -402,17 +394,14 @@ pub(crate) fn scan_decimal(st: &mut EngineState) -> Result<Scaled, Abort> {
     Ok(scan_dimen_from(st, false, false, None, false)?.0)
 }
 
-/// Scans the amount after `plus` or `minus`, which may be `fil`, `fill` or `filll`.
 fn scan_stretch(st: &mut EngineState, mu: bool) -> Result<(Scaled, GlueOrder), Abort> {
     scan_dimen_from(st, mu, true, None, true)
 }
 
-/// A glue spec pointer held in a raw word.
 pub(super) fn glue_spec(p: i32) -> GlueSpecId {
     GlueSpecId::from_raw(MemIdx::from_raw(p).raw())
 }
 
-/// The width of a scanned glue value, releasing the glue.
 fn release_to_width(st: &mut EngineState, spec: GlueSpecId) -> Scaled {
     let width = st.mem[spec].width;
     st.mem.delete_glue_ref(spec);
@@ -429,7 +418,6 @@ fn scale_dimen(v: &mut i32, f: &mut i32, num: i32, denom: i32) -> bool {
     scaled.overflowed
 }
 
-/// `integer.fraction` times the unit `v`.
 fn attach_unit(integer: i32, fraction: i32, v: Scaled) -> Overflowing<Scaled> {
     let fraction_part = xn_over_d(v, fraction, 65536);
     let mut whole = mult_and_add(integer, v, fraction_part.quotient, MAX_DIMEN);
@@ -735,7 +723,6 @@ pub(super) fn scan_normal_glue(st: &mut EngineState) -> Result<GlueSpecId, Abort
 pub(super) fn scan_mu_glue(st: &mut EngineState) -> Result<GlueSpecId, Abort> {
     scan_glue(st, ValueLevel::Mu)
 }
-/// Applies `op` to the width, stretch and shrink of `spec`, in that order.
 pub(super) fn map_glue(
     st: &mut EngineState,
     spec: GlueSpecId,
@@ -783,7 +770,6 @@ fn add_glue(st: &mut EngineState, e: GlueSpecId, t: GlueSpecId, sub: bool, overf
     normalize_glue_orders(st, e);
 }
 
-/// Scans an `\numexpr`-style expression whose result has level `l`.
 pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVal, Abort> {
     let mut b = false;
     let mut stack: Vec<ExprLevel> = Vec::new();

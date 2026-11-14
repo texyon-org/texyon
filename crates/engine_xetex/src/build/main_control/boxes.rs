@@ -132,7 +132,6 @@ pub(super) fn scan_box(st: &mut EngineState, box_context: BoxContext) -> Result<
     }
 }
 
-/// Package the box closed by `group`, an `\hbox`, `\vbox` or `\vtop` group.
 pub(super) fn package(st: &mut EngineState, group: GroupCode) -> Result<(), Abort> {
     let d = st.eqtb.dimen_par(DimenPar::BoxMaxDepth);
     let u = st.eqtb.int_par(IntPar::XetexUpwards);
@@ -225,7 +224,6 @@ fn box_end(
     Ok(())
 }
 
-/// Make `content` the leaders of the glue that follows, for a leaders `box_context`.
 fn leaders_end(st: &mut EngineState, kind: LeaderKind, content: BoxOrRule) -> Result<(), Abort> {
     get_x_non_blank_non_relax(st)?;
     let vertical = st.input.cur_list.mode.is_vertical();
@@ -260,7 +258,6 @@ impl MemState {
     }
 }
 
-/// The last node of the current list, skipping a trailing end-of-math node.
 fn effective_tail(st: &EngineState) -> Result<MemIdx, Abort> {
     let tail = st.input.cur_list.tail;
     if !st.mem.is_math_node(tail, MathCode::EndM) {

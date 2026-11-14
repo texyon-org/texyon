@@ -38,7 +38,6 @@ pub(crate) fn zeroed_vec<T: ZeroWord>(len: usize) -> Vec<T> {
     }
 }
 
-/// One level of TeX's semantic nest (`list_state_record`).
 #[derive(Copy, Clone)]
 pub struct ListStateRecord {
     pub mode: Mode,
@@ -66,7 +65,6 @@ impl Default for ListStateRecord {
 }
 
 impl ListStateRecord {
-    /// `prev_depth` of the vertical list being built.
     #[inline]
     pub fn prev_depth(&self) -> Result<Scaled, Abort> {
         match self.mode {
@@ -82,7 +80,6 @@ impl ListStateRecord {
         }
         Ok(())
     }
-    /// `space_factor` of the horizontal list being built.
     #[inline]
     pub fn space_factor(&self) -> Result<i32, Abort> {
         match self.mode {
@@ -98,7 +95,6 @@ impl ListStateRecord {
         }
         Ok(())
     }
-    /// `clang`, the current language of the horizontal list being built.
     #[inline]
     pub fn clang(&self) -> Result<i32, Abort> {
         match self.mode {
@@ -114,7 +110,6 @@ impl ListStateRecord {
         }
         Ok(())
     }
-    /// `incompleat_noad`, the pending fraction of the math list being built.
     #[inline]
     pub fn incompleat_noad(&self) -> Result<Option<NodePtr<FractionNoad>>, Abort> {
         match self.mode {
@@ -135,7 +130,6 @@ impl ListStateRecord {
         Ok(())
     }
 
-    /// Links `p` after the tail and makes it the new tail.
     #[inline]
     pub fn tail_append(&mut self, mem: &mut MemState, p: impl MemAddr) {
         let p = p.addr();

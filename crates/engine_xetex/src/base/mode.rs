@@ -4,7 +4,6 @@ use crate::base::consts::IGNORE_DEPTH;
 use crate::base::units::Scaled;
 use crate::memory::node::{FractionNoad, NodePtr};
 
-/// The kind of list a mode builds.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) enum ListKind {
     Vertical,
@@ -12,7 +11,6 @@ pub(crate) enum ListKind {
     Math,
 }
 
-/// A mode without its registers, as diagnostics name it.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
 pub(crate) enum ModeName {
     #[default]
@@ -54,7 +52,6 @@ pub(crate) enum Mode {
     },
     Math {
         inner: bool,
-        /// The fraction whose denominator the list is building.
         incompleat_noad: Option<NodePtr<FractionNoad>>,
     },
     /// Inside `\write`, where no list is being built.
@@ -62,7 +59,6 @@ pub(crate) enum Mode {
 }
 
 impl Mode {
-    /// A vertical list that ignores the depth of what came before.
     pub(crate) const fn vertical(inner: bool) -> Mode {
         Mode::Vertical {
             inner,
@@ -70,7 +66,6 @@ impl Mode {
         }
     }
 
-    /// A horizontal list after an ordinary character, with no language set.
     pub(crate) const fn horizontal(inner: bool) -> Mode {
         Mode::Horizontal {
             inner,
@@ -79,7 +74,6 @@ impl Mode {
         }
     }
 
-    /// A math list with no fraction open.
     pub(crate) const fn math(inner: bool) -> Mode {
         Mode::Math {
             inner,
@@ -149,7 +143,6 @@ impl Mode {
         matches!(self, Mode::Math { .. })
     }
 
-    /// Internal vertical, restricted horizontal or non-display math.
     #[inline]
     pub(crate) fn is_inner(&self) -> bool {
         matches!(
@@ -160,7 +153,6 @@ impl Mode {
         )
     }
 
-    /// The page or an output routine's list, a paragraph, or a display.
     #[inline]
     pub(crate) fn is_outer(&self) -> bool {
         matches!(
@@ -171,7 +163,6 @@ impl Mode {
         )
     }
 
-    /// The paragraph being built, not a restricted horizontal list.
     #[inline]
     pub(crate) fn is_paragraph(&self) -> bool {
         matches!(self, Mode::Horizontal { inner: false, .. })

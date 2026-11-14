@@ -28,14 +28,11 @@ use crate::shipout::pic::load_picture;
 use crate::state::EngineState;
 use crate::tables::cs::Frozen;
 
-/// The current source file if the input position moved since the last source
-/// special.
 fn new_source_position(st: &mut EngineState) -> Option<StrNumber> {
     let fname = st.input.open_levels[st.input.in_open].source_name;
     (fname > StrNumber::NONE && is_new_source(st, fname, st.mem.line)).then_some(fname)
 }
 
-/// Append a `\special{src:...}` whatsit for the current source line.
 pub(crate) fn append_src_special(st: &mut EngineState) -> Result<(), Abort> {
     let Some(fname) = new_source_position(st) else {
         return Ok(());
@@ -68,7 +65,6 @@ fn special_list(st: &mut EngineState, b: PoolPos) -> Result<TokenList, Abort> {
     st.mem.tokens.finish(out)
 }
 
-/// Insert `\special{src:...}` for the current source line into the input.
 pub(crate) fn insert_src_special(st: &mut EngineState) -> Result<(), Abort> {
     let Some(fname) = new_source_position(st) else {
         return Ok(());
@@ -81,7 +77,6 @@ pub(crate) fn insert_src_special(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-/// Insert `\special{<ascii_text>}` into the input.
 pub(crate) fn insert_special(st: &mut EngineState, text: &str) -> Result<(), Abort> {
     let start_pool = st.strings.pool_ptr;
     let text = text.as_bytes();
@@ -104,7 +99,6 @@ fn append_whatsit<K: WhatsitKind + Node>(
     st.input.cur_list.append_whatsit(&mut st.mem, subtype)
 }
 
-/// The stream number of an `\openout` (`open`), or of a `\write` or `\closeout`.
 fn scan_write_stream(st: &mut EngineState, open: bool) -> Result<i32, Abort> {
     Ok(if open {
         scan_four_bit_int(st)?
@@ -117,7 +111,6 @@ fn scan_write_stream(st: &mut EngineState, open: bool) -> Result<i32, Abort> {
     })
 }
 
-/// Appends the `\openout`, `\write` or `\closeout` whatsit for `cur_chr`.
 fn io_whatsit(st: &mut EngineState, code: ExtensionCode) -> Result<NodePtr<WhatsitNode>, Abort> {
     Ok(match code {
         ExtensionCode::Open => {
@@ -337,7 +330,6 @@ fn make_src_special(
     Ok(old_pool_ptr)
 }
 
-/// Whether `srcfilename:lineno` differs from the last remembered source.
 fn is_new_source(st: &EngineState, srcfilename: StrNumber, lineno: i32) -> bool {
     let name = st.strings.texstring_bytes(srcfilename);
     let last_name = st
@@ -353,7 +345,6 @@ fn remember_source_info(st: &mut EngineState, srcfilename: StrNumber, lineno: i3
     st.src_specials.last_lineno = lineno;
 }
 
-/// The last source position written as a source special.
 #[derive(Default, Clone)]
 pub(crate) struct SourceSpecials {
     pub last_source_name: Option<Vec<u8>>,

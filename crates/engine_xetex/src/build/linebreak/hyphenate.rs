@@ -17,7 +17,6 @@ use crate::state::EngineState;
 use crate::tables::eqtb::EqtbState;
 
 impl MemState {
-    /// The Unicode scalar at UTF-16 offset `i` of `w`'s text.
     pub(super) fn get_native_usv(&self, w: NodePtr<NativeWordNode>, i: usize) -> i32 {
         let text = self.entries(w);
         let c = text[i];
@@ -30,7 +29,6 @@ impl MemState {
         i32::from(c)
     }
 
-    /// Copy `len` UTF-16 units of `src`'s text, starting at `start`, into `dst`.
     fn copy_native_text(
         &mut self,
         dst: NodePtr<NativeWordNode>,
@@ -56,7 +54,6 @@ impl MemState {
         fonts.measure_native_node(self, w, use_glyph_metrics)
     }
 
-    /// A native-word node of font `f` holding `len` units of `src`'s text from `start`.
     fn native_word_fragment(
         &mut self,
         eqtb: &EqtbState,
@@ -74,8 +71,6 @@ impl MemState {
     }
 }
 
-/// Split the native word `ha` at UTF-16 offset `start`, returning the tail
-/// linked after it.
 pub(super) fn split_native_word(
     st: &mut EngineState,
     ha: NodePtr<NativeWordNode>,
@@ -95,7 +90,6 @@ pub(super) fn split_native_word(
 }
 
 impl MemState {
-    /// A fresh char node of font `f` holding `c`, linked after `t`.
     fn append_char(&mut self, t: MemIdx, f: FontId, c: u16) -> Result<MemIdx, Abort> {
         let q = self.new_char(f, c)?;
         t.set_link(self, q.ptr());
@@ -103,20 +97,15 @@ impl MemState {
     }
 }
 
-/// The registers of one `reconstitute` run.
 struct Reconstitution {
-    /// The position in `hu` being rebuilt, and the last one.
     j: usize,
     n: usize,
     bchar: LigChar,
     hchar: LigChar,
-    /// The hyphen char still to be tried at `j`.
     cur_rh: LigChar,
     cur_l: LigChar,
     cur_r: LigChar,
-    /// The node the pending ligature's characters follow.
     cur_q: MemIdx,
-    /// The last node built.
     t: MemIdx,
     lig_stack: Option<NodePtr<LigItem>>,
     ligature_present: bool,
@@ -125,7 +114,6 @@ struct Reconstitution {
 }
 
 impl Reconstitution {
-    /// Loads `cur_r` and the hyphen char still to be tried for position `j`.
     fn load_right(&mut self, hyph: &HyphState) {
         self.cur_r = if self.j < self.n {
             hyph.hu[self.j + 1]
@@ -139,7 +127,6 @@ impl Reconstitution {
         };
     }
 
-    /// Pops the top lig item, appending its char node after `t`, and loads the next `cur_r`.
     fn pop_lig_stack(&mut self, mem: &mut MemState, hyph: &HyphState) {
         let Some(item) = self.lig_stack else {
             return;
@@ -158,8 +145,6 @@ impl Reconstitution {
     }
 }
 
-/// Rebuild `hu[j..]` after `HOLD_HEAD` as chars, ligatures and kerns, returning
-/// the index of the last character consumed.
 fn reconstitute(
     st: &mut EngineState,
     j: usize,
@@ -377,8 +362,6 @@ fn wrap_lig(st: &mut EngineState, r: &mut Reconstitution, rt: bool) -> Result<()
     Ok(())
 }
 
-/// Hyphenate the native word `ha` by splitting it into fragments separated by
-/// discretionaries.
 fn hyphenate_native_word(
     st: &mut EngineState,
     word: &Word,
@@ -420,9 +403,6 @@ fn hyphenate_native_word(
     st.mem.flush_node_list(ha.ptr())
 }
 
-/// Find the hyphen positions of the word in `hc[1..=hn]` (from the exception
-/// dictionary or the patterns) and insert the discretionaries. `native_ha` is
-/// the word's node when it is a native word.
 pub(super) fn hyphenate(
     st: &mut EngineState,
     word: &Word,
@@ -492,8 +472,6 @@ pub(super) fn hyphenate(
 }
 
 impl MemState {
-    /// Append the list after `HOLD_HEAD` to `disc`'s pre- or post-break list,
-    /// whose current tail is `minor_tail`.
     fn append_to_disc_list(
         &mut self,
         disc: NodePtr<DiscNode>,

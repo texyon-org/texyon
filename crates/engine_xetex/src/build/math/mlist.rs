@@ -65,7 +65,6 @@ impl MemState {
     }
 }
 
-/// The integer and fractional parts of the mu factor `m`, as `math_glue` splits it.
 fn mu_parts(m: Scaled) -> (i32, i32) {
     let split = x_over_n(m.raw(), 65_536);
     if split.remainder < 0 {
@@ -170,7 +169,6 @@ pub(super) fn clean_box(
     Ok(x_box)
 }
 
-/// The math unit at `style`: an eighteenth of the quad of family 2.
 pub(super) fn math_mu(st: &mut EngineState, style: MathStyle) -> Scaled {
     let mq = st.fonts.math_quad(&st.eqtb, style.size());
     x_over_n(mq, 18).quotient
@@ -182,7 +180,6 @@ pub(super) fn math_mu(st: &mut EngineState, style: MathStyle) -> Scaled {
 pub(super) struct Fetched {
     pub f: FontId,
     pub c: i32,
-    /// The character of a TFM font, `None` for a native font or a missing character.
     pub i: Option<CharInfo>,
 }
 
@@ -700,8 +697,6 @@ enum MakeOrdStep {
 }
 
 impl MemState {
-    /// Apply the first ligature or kern between `q`'s character, fetched as
-    /// `fetched`, and the character of the next noad `p`.
     fn make_ord_body(
         &mut self,
         fonts: &FontState,
@@ -1115,7 +1110,6 @@ impl MemState {
         Ok(())
     }
 
-    /// Moves `node` onto the output list after `tail`, returning it and its old successor.
     fn mlist_move_output_node(&mut self, tail: MemIdx, node: AnyNode) -> (MemIdx, MemPtr) {
         let q = node.idx();
         tail.set_link(self, Some(q));
@@ -1142,7 +1136,6 @@ fn mlist_advance(
     (r_type, next)
 }
 
-/// Translates the nucleus of `qn` into its `new_hlist` and attaches its scripts.
 fn mlist_nucleus(
     st: &mut EngineState,
     qn: NodePtr<Noad>,
@@ -1227,7 +1220,6 @@ const MATH_SPACING: [&[u8; 8]; 8] = [
     b"12341011",
 ];
 
-/// Packs the translated hlist of `qn` to track the list's height and depth.
 fn check_noad_dimensions(
     st: &mut EngineState,
     qn: NodePtr<AnyNoad>,
@@ -1579,7 +1571,6 @@ impl MemState {
     }
 }
 
-/// The kern between the nucleus character and its font's `\skewchar`, which shifts an accent.
 fn tfm_skew(st: &EngineState, nucleus: &Fetched) -> Result<Scaled, Abort> {
     let Some(CharTag::Lig(start)) = nucleus.i.map(|i| i.tag) else {
         return Ok(Scaled::ZERO);
@@ -1601,13 +1592,9 @@ fn tfm_skew(st: &EngineState, nucleus: &Fetched) -> Result<Scaled, Abort> {
     }
 }
 
-/// Where an OpenType accent goes over its nucleus.
 enum AccentAttach {
-    /// The nucleus glyph's attachment point, from its left edge.
     At(Scaled),
-    /// A TFM nucleus character: its skew from the centre.
     Skew(Scaled),
-    /// Centred, for lack of attachment data.
     Centre,
 }
 

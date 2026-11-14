@@ -3,7 +3,6 @@
 use crate::base::codes::code_enum;
 
 code_enum! {
-    /// A command code (`cur_cmd`, `eq_type`).
     #[derive(PartialOrd, Ord, Default)]
     pub(crate) enum Cmd: u8 {
         #[default]
@@ -187,7 +186,6 @@ impl Cmd {
         matches!(self, Cmd::OuterCall | Cmd::LongOuterCall)
     }
 
-    /// The same macro call without `\outer`.
     pub(crate) const fn without_outer(self) -> Cmd {
         match self {
             Cmd::OuterCall => Cmd::Call,
@@ -196,7 +194,6 @@ impl Cmd {
         }
     }
 
-    /// A command that may follow `\global`, `\long` or `\outer`.
     pub(crate) fn is_prefixed(self) -> bool {
         self > Cmd::MAX_NON_PREFIXED_COMMAND && self <= Cmd::MAX_PREFIXED_COMMAND
     }

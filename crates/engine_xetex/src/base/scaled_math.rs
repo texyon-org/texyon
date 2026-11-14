@@ -6,7 +6,6 @@ use std::mem;
 use crate::base::consts::INF_BAD;
 use crate::base::units::Scaled;
 
-/// A 32-bit TeX value that the checked arithmetic accepts: an integer or a `Scaled`.
 pub(crate) trait TexWord: Copy {
     fn raw(self) -> i32;
     fn from_raw(raw: i32) -> Self;
@@ -88,14 +87,12 @@ impl<T> Overflowing<T> {
         }
     }
 
-    /// The value, raising `overflowed` on overflow.
     pub(crate) fn track(self, overflowed: &mut bool) -> T {
         *overflowed |= self.overflowed;
         self.value
     }
 }
 
-/// A quotient with its remainder and TeX's `arith_error`.
 #[must_use]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Divided<T, R> {
@@ -209,7 +206,6 @@ fn xn_over_d_raw(mut x: i32, n: i32, d: i32) -> Divided<i32, i32> {
     }
 }
 
-/// `xn_over_d` rounded half away from zero.
 pub(crate) fn round_xn_over_d<T: TexWord>(x: T, n: i32, d: i32) -> T {
     let r = xn_over_d_raw(x.raw(), n, d);
     T::from_raw(if x.raw() >= 0 {
@@ -343,7 +339,6 @@ fn fract_raw(mut x: i32, mut n: i32, mut d: i32, max_answer: i32) -> Overflowing
     Overflowing::ok(if negative { -a } else { a })
 }
 
-/// Badness of stretching or shrinking natural size `t` by available amount `s`.
 pub(crate) fn badness(t: Scaled, s: Scaled) -> i32 {
     let (t, s) = (t.raw(), s.raw());
     if t == 0 {

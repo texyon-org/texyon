@@ -130,7 +130,6 @@ fn queries_match_the_synctex_command_line_tool() {
     }
 }
 
-/// A 16:9 beamer page in big points.
 const SLIDE: [f64; 2] = [453.54, 255.12];
 
 fn on_slide(rect: &SyncRect) -> bool {

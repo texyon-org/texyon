@@ -9,12 +9,10 @@ use crate::base::utf8::{FIRST_BYTE_MARK, next_utf8_char, utf16_units};
 use crate::print::errors::{Abort, Capacity};
 
 impl StringsState {
-    /// Where pool string `s` starts in `str_pool`.
     pub(crate) fn str_start(&self, s: StrNumber) -> PoolPos {
         self.str_start[s.slot()]
     }
 
-    /// The `str_pool` range of string `s`.
     pub(crate) fn str_range(&self, s: StrNumber) -> Range<usize> {
         self.str_start(s).index()..self.str_start(s.next()).index()
     }
@@ -69,7 +67,6 @@ impl StringsState {
         Ok(())
     }
 
-    /// Whether pool string `s` spells the characters `name`, after UTF-16 encoding.
     pub fn str_eq_buf(&self, name: &[i32], s: StrNumber) -> bool {
         let mut j = self.str_start(s);
         let end = self.str_start(s.next());
@@ -129,7 +126,6 @@ impl StringsState {
             .unwrap_or_default()
     }
 
-    /// `make_string` that reuses an existing equal string instead.
     pub fn slow_make_string(&mut self) -> Result<StrNumber, Abort> {
         let t = self.make_string()?;
         let s = self.search_string(t);
@@ -166,7 +162,6 @@ impl StringsState {
         }
     }
 
-    /// TeX's `flush_string`: frees the most recently made string.
     pub fn flush_string(&mut self) {
         self.str_ptr = self.str_ptr.prev();
         self.pool_ptr = self.str_start(self.str_ptr);
@@ -177,14 +172,12 @@ impl StringsState {
 pub(crate) struct StringsState {
     /// The string under construction, one past the last made string.
     pub str_ptr: StrNumber,
-    /// The first string number past the `str_start` table.
     pub max_strings: StrNumber,
     pub init_str_ptr: StrNumber,
     pub init_pool_ptr: PoolPos,
     pub job_name: StrNumber,
     pub texmf_log_name: StrNumber,
     pub string_vacancies: i32,
-    /// The end of `str_pool`.
     pub pool_size: PoolPos,
     pub pool_ptr: PoolPos,
     pub format_ident: StrNumber,
@@ -193,7 +186,6 @@ pub(crate) struct StringsState {
 }
 
 impl StringsState {
-    /// The string pool ran out.
     pub(crate) fn pool_overflow(&self) -> Abort {
         Abort::Overflow {
             capacity: Capacity::PoolSize,
@@ -201,7 +193,6 @@ impl StringsState {
         }
     }
 
-    /// The string table ran out.
     pub(crate) fn string_overflow(&self) -> Abort {
         Abort::Overflow {
             capacity: Capacity::NumberOfStrings,
@@ -209,7 +200,6 @@ impl StringsState {
         }
     }
 
-    /// The `str_start` slot of the string under construction.
     #[inline]
     pub(crate) fn cur_start_slot(&self) -> usize {
         if self.str_ptr.is_pool_string() {
@@ -219,20 +209,17 @@ impl StringsState {
         }
     }
 
-    /// The pool offset where the string under construction starts.
     #[inline]
     pub(crate) fn cur_string_start(&self) -> PoolPos {
         self.str_start[self.str_ptr.slot()]
     }
 
-    /// TeX's `append_char`: adds UTF-16 unit `c` to the string under construction.
     #[inline]
     pub(crate) fn append_char(&mut self, c: u16) {
         self.str_pool[self.pool_ptr.index()] = c;
         self.pool_ptr += 1;
     }
 
-    /// Appends UTF-16 `units` to the string under construction.
     #[inline]
     pub(crate) fn append_units(&mut self, units: &[u16]) {
         let start = self.pool_ptr.index();
@@ -240,13 +227,11 @@ impl StringsState {
         self.pool_ptr += units.len() as i32;
     }
 
-    /// The characters of the string under construction.
     #[inline]
     pub(crate) fn cur_string(&self) -> &[u16] {
         &self.str_pool[self.cur_string_start().index()..self.pool_ptr.index()]
     }
 
-    /// Drops the characters of the string under construction.
     #[inline]
     pub(crate) fn discard_cur_string(&mut self) {
         self.pool_ptr = self.cur_string_start();
@@ -308,7 +293,6 @@ impl StringsState {
         bytes
     }
 
-    /// Appends code point `c` to the pool as one or two UTF-16 units.
     pub(crate) fn push_utf16(&mut self, c: u32) {
         let (units, n) = utf16_units(c);
         self.append_units(&units[..n]);
@@ -329,7 +313,6 @@ impl StringsState {
         }
     }
 
-    /// Converts UTF-8 bytes into a new pool string.
     pub(crate) fn make_tex_string(&mut self, s: impl AsRef<[u8]>) -> Result<StrNumber, Abort> {
         let mut s = s.as_ref();
         if s.is_empty() {

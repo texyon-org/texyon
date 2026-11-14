@@ -40,7 +40,6 @@ pub(crate) fn next_utf8_char(s: &mut &[u8]) -> u32 {
     rval - OFFSETS_FROM_UTF8[extra_bytes]
 }
 
-/// The UTF-16 encoding of `c` and its length in units.
 pub(crate) fn utf16_units(c: u32) -> ([u16; 2], usize) {
     if c > 0xFFFF {
         let c = c - 0x10000;

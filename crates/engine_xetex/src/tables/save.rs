@@ -21,7 +21,6 @@ use crate::tables::eqtb::{
 };
 
 impl SaveStackState {
-    /// TeX's `check_full_save_stack`, true when no room is left.
     pub(crate) fn save_stack_full(&mut self) -> bool {
         if self.save_ptr > self.max_save_stack {
             self.max_save_stack = self.save_ptr;
@@ -63,7 +62,6 @@ impl SaveStackState {
     }
 }
 
-/// Validates `\mag`, propagating a non-`Continue` error outcome.
 pub(crate) fn prepare_mag(st: &mut EngineState) -> Result<(), Abort> {
     let mag = st.eqtb.int_par(IntPar::Mag);
     if st.scanner.mag_set > 0 && mag != st.scanner.mag_set {
@@ -105,7 +103,6 @@ pub(crate) fn prepare_mag(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 impl MemState {
-    /// Drops what a control sequence's meaning holds: a macro's reference.
     pub(crate) fn destroy_meaning(&mut self, m: Command) -> Result<(), Abort> {
         if let Some(body) = m.macro_body() {
             self.tokens.delete_ref(body);
@@ -172,7 +169,6 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
 impl MemState {}
 
 code_enum! {
-    /// The kind of group on the save stack (`cur_group`).
     #[derive(Default)]
     pub(crate) enum GroupCode: u8 {
         #[default]
@@ -219,7 +215,6 @@ impl TexPrint for Closer {
 pub(crate) struct Insertion(pub Option<Closer>);
 
 impl Insertion {
-    /// The inserted tokens, in reading order.
     pub(crate) fn tokens(self) -> Vec<Token> {
         match self.0 {
             Some(Closer::EndGroup) => vec![Token::from_cs(Frozen::EndGroup.cs())],
@@ -241,7 +236,6 @@ impl TexPrint for Insertion {
 }
 
 impl GroupCode {
-    /// What closes this group, `None` for groups that `}` closes.
     pub(crate) fn closer(self) -> Option<Closer> {
         match self {
             GroupCode::SemiSimple => Some(Closer::EndGroup),
@@ -252,7 +246,6 @@ impl GroupCode {
     }
 }
 
-/// One entry of the save stack.
 #[derive(Copy, Clone)]
 pub(crate) enum SaveEntry {
     /// Where a group began: the enclosing group's code and boundary, and the line this one began on.
@@ -261,15 +254,11 @@ pub(crate) enum SaveEntry {
         below: Option<SavePtr>,
         line: i32,
     },
-    /// A value to put back when the group ends.
     Restore(Restore),
-    /// A token `\aftergroup` inserts when the group ends.
     InsertToken(Token),
-    /// Something a construction keeps until its group ends.
     Saved(Saved),
 }
 
-/// An old `eqtb` value, with the level it had.
 #[derive(Copy, Clone)]
 pub(crate) enum Restore {
     Cs(Old<CsId>),
@@ -289,10 +278,8 @@ pub(crate) enum Restore {
     InterChar(Old<InterCharPair>),
 }
 
-/// What a construction keeps on the save stack below its group.
 #[derive(Copy, Clone, Debug, PartialEq, Hash)]
 pub(crate) enum Saved {
-    /// Where a box goes when its group ends, `box_context`.
     BoxContext(BoxContext),
     Spec(PackSpec),
     /// An `\insert` with its box number, or a `\vadjust` (number 255).
@@ -300,15 +287,12 @@ pub(crate) enum Saved {
         n: i32,
         pre: bool,
     },
-    /// The noad field a math group fills.
     MathGroup(MathSlot),
     /// An `\eqno` (false) or `\leqno` (true).
     EqNo {
         left: bool,
     },
-    /// How many `\mathchoice` parts are done.
     ChoicePart(u8),
-    /// How many `\discretionary` parts are done.
     DiscPart(u8),
 }
 
@@ -319,18 +303,15 @@ pub(crate) struct SaveStackState {
     pub save_size: usize,
     pub cur_level: u16,
     pub cur_group: GroupCode,
-    /// The current group's boundary entry, none at the bottom level.
     pub cur_boundary: Option<SavePtr>,
     pub data: Vec<SaveEntry>,
 }
 
 impl SaveStackState {
-    /// The save stack ran out.
     pub(crate) fn overflow(&self) -> Abort {
         Abort::overflow(Capacity::SaveSize, self.save_size)
     }
 
-    /// The stack of `size` free entries.
     pub(crate) fn alloc(&mut self, size: usize) {
         self.data = vec![SaveEntry::Saved(Saved::ChoicePart(0)); size];
     }
@@ -340,26 +321,22 @@ impl SaveStackState {
         self.data[k.index()]
     }
 
-    /// Writes `e` at `save_ptr` and moves past it.
     #[inline]
     pub(crate) fn push(&mut self, e: SaveEntry) {
         self.data[self.save_ptr.index()] = e;
         self.save_ptr += 1;
     }
 
-    /// Keeps `s` until the next group ends.
     #[inline]
     pub(crate) fn push_saved(&mut self, s: Saved) {
         self.push(SaveEntry::Saved(s));
     }
 
-    /// Pops what [`push_saved`](Self::push_saved) kept, `None` if the top holds something else.
     pub(crate) fn pop_saved(&mut self) -> Option<Saved> {
         self.save_ptr -= 1;
         self.saved(0)
     }
 
-    /// What a construction kept `k` entries above `save_ptr`.
     #[inline]
     pub(crate) fn saved(&self, k: i32) -> Option<Saved> {
         match self.data.get((self.save_ptr + k).index())? {
@@ -368,7 +345,6 @@ impl SaveStackState {
         }
     }
 
-    /// The entry just below `save_ptr`, to update a kept count in place.
     #[inline]
     pub(crate) fn top_saved_mut(&mut self) -> Option<&mut Saved> {
         match self.data.get_mut((self.save_ptr - 1).index())? {
@@ -377,7 +353,6 @@ impl SaveStackState {
         }
     }
 
-    /// Pops the size spec a box group kept.
     pub(crate) fn pop_spec(&mut self) -> Result<PackSpec, Abort> {
         match self.pop_saved() {
             Some(Saved::Spec(spec)) => Ok(spec),
@@ -385,7 +360,6 @@ impl SaveStackState {
         }
     }
 
-    /// The enclosing group, its boundary, and the starting line kept by the boundary at `k`.
     #[inline]
     pub(crate) fn boundary_at(&self, k: SavePtr) -> Option<(GroupCode, Option<SavePtr>, i32)> {
         match self.entry(k) {
@@ -394,13 +368,11 @@ impl SaveStackState {
         }
     }
 
-    /// What [`boundary_at`](Self::boundary_at) gives for the current group.
     #[inline]
     pub(crate) fn boundary(&self) -> Option<(GroupCode, Option<SavePtr>, i32)> {
         self.boundary_at(self.cur_boundary?)
     }
 
-    /// What the current group's construction kept `k` entries below its boundary.
     #[inline]
     pub(crate) fn kept(&self, k: i32) -> Option<Saved> {
         match self.data.get((self.cur_boundary? - k).index())? {

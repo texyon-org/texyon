@@ -21,7 +21,6 @@ impl TexPrint for Command {
     }
 }
 
-/// Prints `c` as its primitive name, or describes a character command.
 pub(crate) fn print_command(st: &mut EngineState, c: Command) {
     let char_cmd = |st: &mut EngineState, s: &str, c: Usv| {
         print(st, s);
@@ -326,7 +325,6 @@ pub(crate) fn print_command(st: &mut EngineState, c: Command) {
     }
 }
 
-/// `\meaning` of the current command: its name, and a macro's or mark's text.
 pub(crate) fn print_meaning(st: &mut EngineState) {
     let cur = st.scanner.cur;
     print_command(st, cur);

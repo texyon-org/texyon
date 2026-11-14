@@ -108,7 +108,6 @@ fn snap_zone(value: &mut Scaled, snap_value: Scaled, fuzz: Scaled) {
 }
 
 impl FontState {
-    /// The layout engine of OpenType/Graphite font `f`.
     pub(crate) fn layout_engine(&self, f: FontId) -> Option<&FontEngineHandle> {
         if self.font_area[f] == OTGR_FONT_FLAG {
             self.font_layout_engine[f].as_deref()
@@ -117,7 +116,6 @@ impl FontState {
         }
     }
 
-    /// `layout_engine`, shared, for callers that need the state meanwhile.
     pub(crate) fn shared_layout_engine(&self, f: FontId) -> Option<Rc<FontEngineHandle>> {
         if self.font_area[f] == OTGR_FONT_FLAG {
             self.font_layout_engine[f].clone()
@@ -126,8 +124,6 @@ impl FontState {
         }
     }
 
-    /// The layout engine of OpenType/Graphite font `f`, or `Internal(msg)` for
-    /// any other font.
     pub(super) fn require_ot_engine(
         &self,
         f: FontId,
@@ -136,7 +132,6 @@ impl FontState {
         self.layout_engine(f).ok_or(Abort::Internal(msg))
     }
 
-    /// Shape native word `w` and store its width, height, depth and glyphs.
     pub fn measure_native_node(
         &self,
         mem: &mut MemState,
@@ -287,7 +282,6 @@ impl FontState {
         Ok(())
     }
 
-    /// Height and depth of character `ch` of native font `font`.
     pub fn get_native_char_height_depth(
         &self,
         font: FontId,
@@ -321,7 +315,6 @@ impl FontState {
         Ok(self.get_native_char_height_depth(f, c)?.1)
     }
 
-    /// Left and right side bearings of character `ch` of native font `font`.
     pub fn get_native_char_sidebearings(
         &self,
         font: FontId,
@@ -388,7 +381,6 @@ impl FontState {
         self.brk_locale_str_num = StrNumber::NONE;
     }
 
-    /// The body of the XDV native font definition of `f`.
     pub fn make_font_def(&self, f: FontId) -> Result<Vec<u8>, Abort> {
         let engine = self.require_ot_engine(f, "bad native font flag in `make_font_def`")?;
         let (name, index) = (engine.font().filename(), engine.font().index());
@@ -441,8 +433,6 @@ impl FontState {
         Ok(def)
     }
 
-    /// Run `text` through TECkit converter `cnv` into `mapped_text`, returning
-    /// the mapped length.
     pub fn apply_mapping(&mut self, cnv: &FontMappingHandle, text: &[u16]) -> c_int {
         let txt_bytes = text.len() as u32 * 2;
 

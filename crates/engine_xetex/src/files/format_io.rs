@@ -56,11 +56,9 @@ fn bad_fmt() -> Abort {
     Abort::Internal("fatal format file error")
 }
 
-/// A value with a fixed-size encoding in the format file.
 trait FmtItem: Copy {
     const SIZE: usize;
     fn put(self, out: &mut Vec<u8>);
-    /// The value `SIZE` bytes hold, `None` when they hold none.
     fn get(bytes: &[u8]) -> Option<Self>;
 }
 
@@ -111,7 +109,6 @@ impl FmtItem for Cmd {
     }
 }
 
-/// A meaning as TeX's `(cmd, chr)` pair.
 impl FmtItem for Command {
     const SIZE: usize = 6;
     #[inline]
@@ -296,7 +293,6 @@ impl FmtItem for ListSlot {
     }
 }
 
-/// Fixed-width items stored as `N` 32-bit words.
 fn put_words<const N: usize>(words: [i32; N], out: &mut Vec<u8>) {
     for w in words {
         w.put(out);
@@ -460,7 +456,6 @@ impl FmtItem for [u8; 4] {
     }
 }
 
-/// One direction over the format file.
 trait FmtStream {
     const LOADING: bool;
 
@@ -590,7 +585,6 @@ fn span<T>(v: &mut [T], start: i32, n: i32) -> &mut [T] {
     &mut v[start as usize..(start + n) as usize]
 }
 
-/// The per-font entries `font_base..=font_ptr`.
 fn fonts_of<T>(v: &mut PerFont<T>, font_ptr: FontId) -> &mut [T] {
     &mut v.as_mut_slice()[FONT_BASE as usize..=font_ptr.index()]
 }
@@ -862,7 +856,6 @@ fn dump_runs<S: FmtStream, T: FmtItem>(
     }
 }
 
-/// Reads the runs [`dump_runs`] wrote into `v`, which they must fill exactly.
 fn undump_runs<S: FmtStream, T: FmtItem>(s: &mut S, v: &mut [T]) -> Result<(), Abort> {
     let mut k = 0;
     loop {
@@ -887,7 +880,6 @@ fn undump_runs<S: FmtStream, T: FmtItem>(s: &mut S, v: &mut [T]) -> Result<(), A
     }
 }
 
-/// Dumps or loads the values of `v` as runs.
 fn runs<S: FmtStream, T: FmtItem + PartialEq>(s: &mut S, v: &mut [T]) -> Result<(), Abort> {
     if S::LOADING {
         undump_runs(s, v)
@@ -1089,7 +1081,6 @@ fn font_info<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort>
     Ok(())
 }
 
-/// A count of items followed by the items.
 fn counted_items<S: FmtStream, T: FmtItem>(
     s: &mut S,
     v: &mut Vec<T>,
@@ -1104,7 +1095,6 @@ fn counted_items<S: FmtStream, T: FmtItem>(
     s.items(v)
 }
 
-/// One font's metrics and parameters.
 fn font_metrics<S: FmtStream>(
     s: &mut S,
     metrics: &mut FontMetrics,

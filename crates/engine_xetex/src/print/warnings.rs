@@ -18,7 +18,6 @@ use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::scanning::input::{InputName, TOKEN_LIST};
 use crate::state::EngineState;
 
-/// Walks `base_ptr` down to the file at input level `level`, reporting whether it is a real file.
 fn level_is_file(st: &mut EngineState, level: usize) -> bool {
     while st.input.input_stack[st.input.base_ptr].state == TOKEN_LIST
         || usize::from(st.input.input_stack[st.input.base_ptr].index) > level
@@ -92,7 +91,6 @@ pub(super) fn print_if_line(st: &mut EngineState, line: i32) {
     }
 }
 
-/// Steps from the current group boundary to the enclosing one, false if none.
 pub(super) fn leave_group_boundary(st: &mut EngineState) -> bool {
     let ss = &mut st.save_stack;
     let Some((group, below, _)) = ss.boundary() else {
@@ -225,7 +223,6 @@ pub(crate) fn bad_utf8_warning(st: &mut EngineState) {
     end_diagnostic(st, false);
 }
 
-/// "<char> (<code>) in font <name>", the character a font lacks.
 #[derive(Copy, Clone)]
 struct LostChar {
     font: FontId,

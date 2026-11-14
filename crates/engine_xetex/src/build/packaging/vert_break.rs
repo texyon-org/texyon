@@ -23,7 +23,6 @@ use crate::shipout::ShipoutState;
 use crate::state::EngineState;
 use crate::tables::eqtb::{EqtbState, Register};
 
-/// What `do_marks` does to each mark class.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MarksAction {
     VsplitInit,
@@ -32,7 +31,6 @@ pub(crate) enum MarksAction {
     DestroyMarks,
 }
 
-/// Store `v` in the first empty slot of a two-slot record.
 #[inline]
 pub(super) fn push_slot<T>(slots: &mut [Option<T>; 2], v: T) {
     let i = usize::from(slots[0].is_some());
@@ -42,9 +40,7 @@ pub(super) fn push_slot<T>(slots: &mut [Option<T>; 2], v: T) {
 struct VertBreakCursor {
     p: MemPtr,
     prev_p: MemPtr,
-    /// Whether glue after the node at `p` is a legal breakpoint.
     breakable: bool,
-    /// The same for `prev_p`.
     prev_breakable: bool,
     least_cost: i32,
     best_place: MemPtr,
@@ -52,7 +48,6 @@ struct VertBreakCursor {
     finish_glue_after_shrinkage: Option<NodePtr<GlueNode>>,
     /// Height, stretch and shrink of the material so far, as in WEB's `active_height`.
     active_height: Widths,
-    /// The natural height plus depth of the material before `best_place`.
     best_height_plus_depth: Scaled,
 }
 
@@ -297,8 +292,6 @@ impl MemState {
     }
 }
 
-/// The best place to break the vlist `p` for a height `h` with maximum depth `d`,
-/// and the natural height plus depth of the material before it.
 pub(crate) fn vert_break(
     st: &mut EngineState,
     p: MemPtr,
@@ -320,7 +313,6 @@ pub(crate) fn vert_break(
 }
 
 struct VsplitState {
-    /// The box register being split.
     n: Register,
     h: Scaled,
     v: NodePtr<BoxNode>,
@@ -349,7 +341,6 @@ enum VsplitStep {
 }
 
 impl MemState {
-    /// The contents of box register `n`, leaving `n` in `cur_val`.
     fn reset_vsplit_marks(&mut self, scanner: &mut ScannerState) -> Result<(), Abort> {
         self.flush_node_list(scanner.disc_ptr[BoxCode::Vsplit as usize])?;
         scanner.disc_ptr[BoxCode::Vsplit as usize] = None;
@@ -424,7 +415,6 @@ impl MemState {
         Ok(())
     }
 
-    /// Detach the part of `state.v`'s list before `q`, recording its marks.
     fn split_vlist_at_break(
         &mut self,
         scanner: &mut ScannerState,
@@ -524,7 +514,6 @@ fn print_vsplit_packages(st: &mut EngineState, outcome: VsplitOutcome) {
     }
 }
 
-/// `\vsplit n to h`: the box split off the top of box register `n`.
 pub(crate) fn vsplit(
     st: &mut EngineState,
     n: Register,
@@ -582,8 +571,6 @@ impl MemState {
         Ok(())
     }
 
-    /// Unlink the discardable `node` after `prev_p`, saving it after `r` (or
-    /// flushing it), and return its successor.
     fn prune_discard_node(
         &mut self,
         scanner: &mut ScannerState,
@@ -608,8 +595,6 @@ impl MemState {
         Ok(q)
     }
 
-    /// Remove the discardable items from the top of the vlist `p`, putting
-    /// `\splittopskip` before its first box or rule.
     pub fn prune_page_top(
         &mut self,
         scanner: &mut ScannerState,
@@ -653,7 +638,6 @@ impl MemState {
         classes.retain(|marks| self.do_mark_class(a, marks));
     }
 
-    /// Applies mark action `a` to one class's `marks`. Returns whether it keeps any.
     fn do_mark_class(&mut self, a: MarksAction, marks: &mut CurMarks) -> bool {
         match a {
             MarksAction::VsplitInit => {
@@ -729,17 +713,14 @@ impl IndexMut<MarkCode> for CurMarks {
 pub(crate) struct MarkClasses(BTreeMap<Register, CurMarks>);
 
 impl MarkClasses {
-    /// The marks of `class`, all null when it has none.
     pub(crate) fn get(&self, class: Register) -> CurMarks {
         self.0.get(&class).copied().unwrap_or(CurMarks::NULL)
     }
 
-    /// The marks of `class`, created null.
     pub(crate) fn entry(&mut self, class: Register) -> &mut CurMarks {
         self.0.entry(class).or_insert(CurMarks::NULL)
     }
 
-    /// Keeps the classes `keep` returns true for, in ascending order.
     pub(crate) fn retain(&mut self, mut keep: impl FnMut(&mut CurMarks) -> bool) {
         self.0.retain(|_, marks| keep(marks));
     }

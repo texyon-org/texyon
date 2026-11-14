@@ -74,7 +74,6 @@ unsafe extern "C" {
 }
 
 const PIC_PROBE_OK: c_int = 0;
-/// The probe error for a missing file.
 const FILE_NOT_FOUND: c_int = -43;
 
 code_enum! {
@@ -114,7 +113,6 @@ impl PageboxType {
     }
 }
 
-/// The bounding box of page `page_num` of a PDF, in TeX points.
 fn pdf_get_rect(
     filename: &[u8],
     handle: usize,
@@ -156,7 +154,6 @@ fn pdf_get_rect(
     })
 }
 
-/// Width and height of a raster image in inches, or the probe error.
 fn get_image_size_in_inches(handle: usize) -> Result<(f64, f64), c_int> {
     let (mut width_pix, mut height_pix) = (0, 0);
     let (mut xdensity, mut ydensity) = (0.0, 0.0);
@@ -181,8 +178,6 @@ fn get_image_size_in_inches(handle: usize) -> Result<(f64, f64), c_int> {
     ))
 }
 
-/// Measure the picture at `path`, returning the probe status, its bounds and
-/// the name it was found under.
 fn find_pic_file(
     path: &[u8],
     pdf_box: Option<PageboxType>,
@@ -258,7 +253,6 @@ impl Transform {
         p.y = ry as f32;
     }
 
-    /// Follow this transform by `t2`.
     fn concat(&mut self, t2: &Transform) {
         *self = Transform {
             a: self.a * t2.a + self.b * t2.c,
@@ -271,7 +265,6 @@ impl Transform {
     }
 }
 
-/// The picture corners and the transform that produced them.
 struct Placement {
     corners: [RealPoint; 4],
     t: Transform,
@@ -285,7 +278,6 @@ impl Placement {
         self.t.concat(t2);
     }
 
-    /// `(xmin, xmax, ymin, ymax)` of the corners.
     fn bbox(&self) -> (f64, f64, f64, f64) {
         let xs = self.corners.map(|p| p.x);
         let ys = self.corners.map(|p| p.y);
@@ -294,8 +286,6 @@ impl Placement {
         (min(xs), max(xs), min(ys), max(ys))
     }
 
-    /// Scale to a requested width and/or height, keeping the aspect ratio
-    /// when only one is given.
     fn scale_to(&mut self, x_size_req: f64, y_size_req: f64) {
         let (xmin, xmax, ymin, ymax) = self.bbox();
         let (sx, sy) = if x_size_req == 0.0 {
@@ -311,7 +301,6 @@ impl Placement {
     }
 }
 
-/// Scan an image dimension, reporting and ignoring non-positive values.
 fn scan_image_size(st: &mut EngineState) -> Result<Option<f64>, Abort> {
     let d = scan_dimen(st, false)?;
     if d > Scaled::ZERO {

@@ -59,7 +59,6 @@ impl SynctexCtxt {
         self.flags.off = true;
     }
 
-    /// Write `s` and add it to the running length, aborting SyncTeX on failure.
     fn record(&mut self, s: &str) -> bool {
         let len = synctex_write(self.file, s);
         if len > 0 {
@@ -111,7 +110,6 @@ impl SynctexCtxt {
         ok
     }
 
-    /// Write a sheet boundary, `{` opening and `}` closing page `sheet`.
     fn record_sheet(&mut self, brace: char, sheet: i32) {
         if self.record_anchor() && self.record(&format!("{brace}{sheet}\n")) {
             self.count += 1;
@@ -120,7 +118,6 @@ impl SynctexCtxt {
         }
     }
 
-    /// Record a node as `<kind><tag>,<line>:<h>,<v>`, followed by its dimensions.
     fn record_node(&mut self, kind: char, tag: i32, line: i32, dims: &[i32]) {
         if let (Some(index), Some(kind)) = (&mut self.preview_index, RecordKind::from_prefix(kind))
         {
@@ -169,7 +166,6 @@ impl SynctexCtxt {
         );
     }
 
-    /// Open the `.synctex.gz` file (or the preview sink) and write the preamble.
     fn synctex_dot_open(&mut self, eqtb: &EqtbState, job_name: &[u8]) -> usize {
         if self.flags.off || !eqtb.synctex_enabled() {
             return INVALID_HANDLE;
@@ -278,7 +274,6 @@ pub fn synctex_terminate(st: &mut EngineState) {
     synctex.abort();
 }
 
-/// Tags the input file just opened at absolute path `current_name`.
 pub fn synctex_start_input(st: &mut EngineState, job_name: &[u8], current_name: &[u8]) {
     let synctex = &mut st.synctex;
     if synctex.flags.off {
@@ -344,12 +339,10 @@ pub fn synctex_teehs(st: &mut EngineState) {
     }
 }
 
-/// Records are written: SyncTeX is on and its file is open.
 fn synctex_active(st: &EngineState) -> bool {
     !st.synctex.flags.off && st.eqtb.synctex_enabled() && st.synctex.file != INVALID_HANDLE
 }
 
-/// Make `node` the current SyncTeX context at the current position.
 fn enter_node(st: &mut EngineState, node: impl MemAddr, tag: i32, line: i32) {
     let synctex = &mut st.synctex;
     synctex.node = Some(node.addr());
@@ -415,12 +408,10 @@ pub fn synctex_tsilh(st: &mut EngineState, this_box: NodePtr<BoxNode>) {
     }
 }
 
-/// Whether a record is dropped: SyncTeX is off or the node has no source position.
 fn synctex_ignored(st: &EngineState, tag: i32, line: i32) -> bool {
     st.synctex.flags.off || !st.eqtb.synctex_enabled() || tag <= 0 || line <= 0
 }
 
-/// Flush the deferred kern record before leaving its context.
 fn flush_deferred_kern(st: &mut EngineState) {
     if let Some(kern) = st.synctex.deferred_kern {
         st.synctex.record_kern(&st.mem, kern);
@@ -562,13 +553,11 @@ pub(crate) struct SynctexFlags {
     pub output_p: bool,
 }
 
-/// The SyncTeX context.
 #[derive(Clone)]
 pub(crate) struct SynctexCtxt {
     pub file: usize,
     pub root_name: Option<Vec<u8>>,
     pub count: i32,
-    /// The node of the current context, `None` before the first.
     pub node: MemPtr,
     /// A kern whose record waits for the context to change. When set it equals
     /// `node`, so flush sites record it before reassigning `node`.
@@ -590,7 +579,7 @@ pub(crate) struct SynctexCtxt {
 impl Default for SynctexCtxt {
     fn default() -> Self {
         Self {
-            file: 0, // INVALID_HANDLE
+            file: INVALID_HANDLE,
             root_name: None,
             count: 0,
             node: None,

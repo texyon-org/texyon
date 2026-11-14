@@ -33,12 +33,9 @@ pub(crate) use locale::do_locale_linebreaks;
 use post::post_line_break;
 use prehyph::{set_language, try_hyphenate};
 
-/// The line breaker's state for one paragraph.
 #[derive(Default)]
 struct Breaker {
-    /// The active list and passive breaks.
     lists: BreakLists,
-    /// Scratch for the protrusion searches through nested hlists.
     hlist_stack: Vec<MemPtr>,
     first_p: MemPtr,
     global_prev_p: MemPtr,
@@ -65,7 +62,6 @@ struct Breaker {
     no_shrink_error_yet: bool,
 }
 
-/// A hyphenated break at a discretionary, with the width of its pre-break text.
 #[derive(Copy, Clone)]
 struct DiscBreak {
     node: NodePtr<DiscNode>,
@@ -93,7 +89,6 @@ impl MemState {
 }
 
 impl MemState {
-    /// A copy of `spec` with finite shrink, releasing `spec`.
     pub(crate) fn finite_shrink(&mut self, spec: GlueSpecId) -> Result<GlueSpecId, Abort> {
         let q = self.new_spec(spec)?;
         self[q].shrink_order = GlueOrder::Normal.into();
@@ -165,7 +160,6 @@ impl Breaker {
         Ok((actual_looseness == looseness || self.final_pass).then_some(best))
     }
 
-    /// Stretch the `\parfillskip` of the last line by the `\lastlinefit` adjustment.
     fn finish_last_line_fit(
         &mut self,
         mem: &mut MemState,
@@ -194,7 +188,6 @@ impl Breaker {
 }
 
 impl Breaker {
-    /// Make `spec`'s shrink finite, reporting it on the paragraph's first offence.
     fn finite_shrink(
         &mut self,
         st: &mut EngineState,
@@ -217,7 +210,6 @@ impl Breaker {
         st.mem.finite_shrink(spec)
     }
 
-    /// TeX's `kern_break`: a kern or math node followed by glue is a legal breakpoint.
     #[inline]
     fn kern_break(
         &mut self,
@@ -256,7 +248,6 @@ impl MemState {
     }
 }
 
-/// Break the current paragraph into lines, returning the last line's box.
 pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<NodePtr<BoxNode>, Abort> {
     let origin = PackOrigin::from_begin_line(st.input.cur_list.mode_line);
     let first = st.input.cur_list.head.link(&st.mem);
@@ -569,7 +560,6 @@ fn shrink_fitness(b: i32) -> Fitness {
     }
 }
 
-/// Badness and fitness class of a line that is `shortfall` short with `stretch` available.
 #[inline]
 fn stretch_badness(shortfall: Scaled, stretch: Scaled) -> (i32, Fitness) {
     if shortfall > Scaled::from_raw(7_230_584) && stretch < Scaled::from_raw(1_663_497) {
@@ -581,8 +571,6 @@ fn stretch_badness(shortfall: Scaled, stretch: Scaled) -> (i32, Fitness) {
 }
 
 impl Breaker {
-    /// The width of the line material after a break at `cur_p`, which is `disc`
-    /// for a hyphenated break.
     fn compute_break_width(
         &self,
         mem: &MemState,
@@ -716,7 +704,6 @@ impl Breaker {
         Ok(())
     }
 
-    /// Consider a break at `cur_p` with penalty `pi`, updating the active list.
     fn try_break(
         &mut self,
         st: &mut EngineState,
@@ -974,7 +961,6 @@ impl Breaker {
         }
     }
 
-    /// Unlink the active entry `r`, merging the delta entries around it.
     fn deactivate_node(
         &mut self,
         r: EntryId,

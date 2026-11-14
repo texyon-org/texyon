@@ -467,7 +467,6 @@ impl MemState {
         }
     }
 
-    /// The glue setting of unset node `col`, of natural size `natural`, when set to size `t`.
     fn unset_glue(
         &self,
         col: NodePtr<UnsetNode>,
@@ -606,7 +605,6 @@ fn init_col(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-/// The state of an enclosing alignment, saved while an inner one runs.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) struct SavedAlign {
     pub cur_align: MemPtr,
@@ -660,7 +658,6 @@ fn pop_alignment(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 impl MemState {
-    /// A copy of token list `r`.
     fn copy_token_list(&mut self, r: TokenList) -> Result<TokenList, Abort> {
         let copy = self.tokens.begin()?;
         let mut c = self.tokens.cursor(r);
@@ -670,7 +667,6 @@ impl MemState {
         self.tokens.finish(copy)
     }
 
-    /// A fresh preamble column with an empty span list and no entries yet.
     fn new_align_record(&mut self) -> Result<NodePtr<AlignRecord>, Abort> {
         let nb = self.new_null_box()?;
         let column = NodePtr::<AlignRecord>::at(nb.idx());
@@ -680,7 +676,6 @@ impl MemState {
     }
 }
 
-/// A place in a column's span list: its front, or just after a span node.
 #[derive(Copy, Clone)]
 enum SpanAt {
     Front(NodePtr<AlignRecord>),

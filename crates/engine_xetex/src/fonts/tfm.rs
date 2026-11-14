@@ -7,7 +7,6 @@ use crate::base::scaled_math::xn_over_d;
 use crate::base::units::Scaled;
 use crate::ffi::bridge::input_getc;
 
-/// An index into a font's lig/kern program.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub(crate) struct LigKernIdx(u16);
 
@@ -25,7 +24,6 @@ impl LigKernIdx {
     }
 }
 
-/// An index into a font's extensible recipes.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub(crate) struct ExtIdx(u8);
 
@@ -39,19 +37,14 @@ impl ExtIdx {
     }
 }
 
-/// What else a character has besides its dimensions.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub(crate) enum CharTag {
     None,
-    /// The start of its lig/kern program.
     Lig(LigKernIdx),
-    /// The next larger character.
     List(u16),
-    /// Its extensible recipe.
     Ext(ExtIdx),
 }
 
-/// The metrics of one character of a TFM font.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub(crate) struct CharInfo {
     pub width: Scaled,
@@ -72,7 +65,6 @@ impl CharInfo {
     };
 }
 
-/// A ligature operation, named as in PL files.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub(crate) enum LigOp {
     /// `=:` replaces both characters.
@@ -94,7 +86,6 @@ pub(crate) enum LigOp {
 }
 
 impl LigOp {
-    /// The operation of TFM op byte `op`, `None` for an undefined one.
     pub(crate) const fn from_byte(op: u8) -> Option<LigOp> {
         Some(match op {
             0 => LigOp::Replace,
@@ -123,14 +114,12 @@ impl LigOp {
     }
 }
 
-/// What a matching lig/kern rule does.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub(crate) enum LigKernAction {
     Kern(Scaled),
     Lig { op: LigOp, char: u16 },
 }
 
-/// One step of a lig/kern program.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub(crate) enum LigKernStep {
     /// A skip byte above 128. As a character's first step it redirects to the
@@ -145,7 +134,6 @@ pub(crate) enum LigKernStep {
 }
 
 impl LigKernStep {
-    /// The action of this step when the next character is `c`.
     #[inline]
     pub(crate) fn action_for(self, c: LigChar) -> Option<LigKernAction> {
         match self {
@@ -156,7 +144,6 @@ impl LigKernStep {
         }
     }
 
-    /// The step after this one at `k`, `None` at the end of the program.
     #[inline]
     pub(crate) fn next(self, k: LigKernIdx) -> Option<LigKernIdx> {
         match self {
@@ -168,7 +155,6 @@ impl LigKernStep {
     }
 }
 
-/// An extensible recipe: the pieces a delimiter is built from.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub(crate) struct ExtRecipe {
     pub top: Option<u16>,
@@ -177,15 +163,12 @@ pub(crate) struct ExtRecipe {
     pub rep: u16,
 }
 
-/// The immutable metrics of a TFM font.
 #[derive(Default, PartialEq, Eq, Hash, Debug)]
 pub(crate) struct TfmMetrics {
     bc: u16,
-    /// Characters `bc..`, `None` where the font has none.
     chars: Box<[Option<CharInfo>]>,
     lig_kern: Box<[LigKernStep]>,
     exten: Box<[ExtRecipe]>,
-    /// The program for a left boundary.
     bchar_label: Option<LigKernIdx>,
 }
 
@@ -231,7 +214,6 @@ impl TfmMetrics {
         tags_ok && steps_ok && self.bchar_label.is_none_or(lig_ok)
     }
 
-    /// The charlist from `c` stays in range and ends.
     fn list_ends(&self, mut c: u16) -> bool {
         for _ in 0..=self.chars.len() {
             let Some(slot) = c.checked_sub(self.bc).map(usize::from) else {
@@ -249,7 +231,6 @@ impl TfmMetrics {
         false
     }
 
-    /// Character `c`, `None` when the font does not have it.
     #[inline]
     pub(crate) fn char_info(&self, c: i32) -> Option<CharInfo> {
         let slot = usize::try_from(c - i32::from(self.bc)).ok()?;
@@ -261,8 +242,6 @@ impl TfmMetrics {
         self.lig_kern.get(k.index()).copied()
     }
 
-    /// The index and first step of the program starting at `k`, following a
-    /// redirect.
     #[inline]
     pub(crate) fn lig_kern_start(&self, k: LigKernIdx) -> Option<(LigKernIdx, LigKernStep)> {
         match self.lig_kern_step(k)? {
@@ -296,15 +275,10 @@ impl TfmMetrics {
     }
 }
 
-/// How a font measures its characters.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub(crate) enum FontMetrics {
     Tfm(Rc<TfmMetrics>),
-    /// An AAT, OpenType or Graphite font, measured by its layout engine.
-    Native {
-        ascent: Scaled,
-        descent: Scaled,
-    },
+    Native { ascent: Scaled, descent: Scaled },
 }
 
 impl Default for FontMetrics {
@@ -322,19 +296,16 @@ impl FontParams {
         FontParams(values.into())
     }
 
-    /// TeX's `font_params`.
     pub(crate) fn count(&self) -> i32 {
         i32::try_from(self.0.len()).unwrap_or(i32::MAX)
     }
 
-    /// Parameter `n`, counted from 1.
     #[inline]
     pub(crate) fn get(&self, n: i32) -> Option<Scaled> {
         let slot = usize::try_from(n).ok()?.checked_sub(1)?;
         self.0.get(slot).copied()
     }
 
-    /// Sets parameter `n`. Returns false when the font has no such parameter.
     pub(crate) fn set(&mut self, n: i32, v: Scaled) -> bool {
         let Some(slot) = usize::try_from(n).ok().and_then(|n| n.checked_sub(1)) else {
             return false;
@@ -348,7 +319,6 @@ impl FontParams {
         }
     }
 
-    /// Adds a zero parameter after the last.
     pub(crate) fn grow(&mut self) {
         let mut values = self.0.to_vec();
         values.push(Scaled::ZERO);
@@ -360,15 +330,11 @@ impl FontParams {
     }
 }
 
-/// A TFM file that failed to load.
 pub(crate) enum TfmError {
-    /// The file is malformed.
     Bad,
-    /// No font slot or font memory is left for it.
     OutOfMemory,
 }
 
-/// A parsed TFM font, ready to fill a font slot.
 pub(crate) struct Tfm {
     pub metrics: TfmMetrics,
     pub params: Vec<Scaled>,

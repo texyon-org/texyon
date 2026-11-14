@@ -118,7 +118,6 @@ struct RestoreMismatch {
     actual: u64,
 }
 
-/// Accounted-memory policy for a checkpoint ladder.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct LadderBudget {
     pub(crate) target_bytes: usize,
@@ -263,7 +262,6 @@ impl<B> CheckpointLadder<B> {
         true
     }
 
-    /// Let budget pressure evict `index` again. The base rung stays protected.
     pub(crate) fn unprotect(&mut self, index: usize) {
         if index > 0
             && let Some(rung) = self.rungs.get_mut(index)
@@ -348,7 +346,6 @@ impl CheckpointLadder<EngineBundle> {
         index
     }
 
-    /// Deepest resumable fence whose source constraints remain sound.
     pub(crate) fn select_replay_fence(
         &self,
         snapshot: &SourceSnapshot,
@@ -409,7 +406,6 @@ impl CheckpointLadder<EngineBundle> {
         Ok(())
     }
 
-    /// Destructively verify every surviving rung, newest to oldest.
     #[cfg(test)]
     fn verify_all_rewinds(&mut self, st: &mut EngineState) -> Result<(), RestoreMismatch> {
         for target in (0..self.rungs.len()).rev() {

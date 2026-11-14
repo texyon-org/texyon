@@ -37,7 +37,6 @@ const SET_TEXT_AND_GLYPHS: u8 = 254;
 const NUMERATOR: i32 = 25_400_000;
 const DENOMINATOR: i32 = 473_628_672;
 
-/// The direction of a movement command.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) enum Axis {
     /// `right`, with registers `w` and `x`.
@@ -55,7 +54,6 @@ impl Axis {
     }
 }
 
-/// The first (`w` or `y`) or second (`x` or `z`) register of an axis.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) enum MoveReg {
     Y,
@@ -99,13 +97,11 @@ impl DviWriter {
         self.depth = -1;
     }
 
-    /// The file position of the next byte.
     #[inline]
     pub(crate) fn pos(&self) -> i32 {
         self.offset + self.ptr
     }
 
-    /// Bytes already written to the file.
     pub(crate) fn bytes_written(&self) -> i32 {
         self.gone
     }
@@ -227,7 +223,6 @@ impl DviWriter {
         self.bytes(&x.to_be_bytes())
     }
 
-    /// Low bytes of a string pool slice.
     fn text(&mut self, s: &[u16]) -> Result<(), Abort> {
         for &c in s {
             self.out(c as u8)?;
@@ -260,7 +255,6 @@ impl DviWriter {
         Ok(())
     }
 
-    /// `eop`, closing the page for the manifest at `logical_clock`.
     pub(crate) fn eop(&mut self, logical_clock: u64) -> Result<(), Abort> {
         self.out(EOP)?;
         self.manifest.finish_page(logical_clock);
@@ -308,7 +302,6 @@ impl DviWriter {
         Ok(true)
     }
 
-    /// Typesets TFM character `c` and moves right.
     #[inline]
     pub(crate) fn set_char(&mut self, c: u16) -> Result<(), Abort> {
         if c >= 128 {
@@ -317,12 +310,10 @@ impl DviWriter {
         self.out(c as u8)
     }
 
-    /// A rule with its bottom left at the current point, moving right.
     pub(crate) fn set_rule(&mut self, height: Scaled, width: Scaled) -> Result<(), Abort> {
         self.rule(SET_RULE, height, width)
     }
 
-    /// A rule with its bottom left at the current point, staying put.
     pub(crate) fn put_rule(&mut self, height: Scaled, width: Scaled) -> Result<(), Abort> {
         self.rule(PUT_RULE, height, width)
     }
@@ -333,7 +324,6 @@ impl DviWriter {
         self.four(width.raw())
     }
 
-    /// Selects font number `k`.
     pub(crate) fn fnt(&mut self, k: i32) -> Result<(), Abort> {
         if k < 64 {
             self.out(FNT_NUM_0 + k as u8)
@@ -366,20 +356,17 @@ impl DviWriter {
         self.text(name)
     }
 
-    /// XDV's `define_native_font` with its encoded definition `def`.
     pub(crate) fn native_font_def(&mut self, k: i32, def: &[u8]) -> Result<(), Abort> {
         self.out(DEFINE_NATIVE_FONT)?;
         self.four(k)?;
         self.bytes(def)
     }
 
-    /// One glyph at the current point, advancing by `width`.
     pub(crate) fn set_glyph(&mut self, width: Scaled, glyph: u16) -> Result<(), Abort> {
         self.out(SET_GLYPHS)?;
         self.glyph_array(width, &[FixedPoint::default()], &[glyph])
     }
 
-    /// `set_glyphs` with glyphs `gids` at `locations`, advancing by `width`.
     pub(crate) fn set_glyphs(
         &mut self,
         width: Scaled,
@@ -390,7 +377,6 @@ impl DviWriter {
         self.glyph_array(width, locations, gids)
     }
 
-    /// `set_text_and_glyphs`: the UTF-16 source text, then the glyphs.
     pub(crate) fn set_text_and_glyphs(
         &mut self,
         text: &[u16],
@@ -423,7 +409,6 @@ impl DviWriter {
         }
         Ok(())
     }
-    /// `xxx` with the low bytes of `s`.
     pub(crate) fn special(&mut self, s: &[u16]) -> Result<(), Abort> {
         let len = s.len();
         if len < 256 {
@@ -435,7 +420,6 @@ impl DviWriter {
         self.text(s)
     }
 
-    /// `right` or `down` by `w`, in as few bytes as it fits.
     pub(crate) fn movement(&mut self, axis: Axis, w: Scaled) -> Result<(), Abort> {
         let w = w.raw();
         let len = if w.wrapping_abs() >= 0x800000 {
@@ -451,7 +435,6 @@ impl DviWriter {
         self.bytes(&w.to_be_bytes()[4 - len..])
     }
 
-    /// Moves by the amount already in register `reg` (`w0`, `x0`, `y0`, `z0`).
     pub(crate) fn movement_by_reg(&mut self, axis: Axis, reg: MoveReg) -> Result<(), Abort> {
         self.out(axis.op1() + reg.delta() - 1)
     }
@@ -499,7 +482,6 @@ impl DviWriter {
         ])
     }
 
-    /// `post_post` and the padding, then flushes the buffer.
     pub(crate) fn finish(&mut self, id: u8) -> Result<(), Abort> {
         self.out(POST_POST)?;
         self.four(self.last_bop)?;

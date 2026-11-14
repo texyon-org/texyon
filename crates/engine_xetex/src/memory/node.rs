@@ -30,11 +30,9 @@ pub use kinds::*;
 /// Marker for node kinds, implemented by the uninhabited kind enums below.
 /// A struct laid over consecutive words of `mem`, read as `mem[p]` through a [`NodePtr`].
 pub trait View: bytemuck::Pod {
-    /// The struct's size in words.
     const SIZE: i32 = word_offset(mem::size_of::<Self>());
 }
 
-/// A typed handle to a node of kind `K` in the `mem` arena.
 #[repr(transparent)]
 pub struct NodePtr<K: View> {
     idx: MemIdx,
@@ -96,7 +94,6 @@ impl<K: View> NodePtr<K> {
         self.idx
     }
 
-    /// The node's address as an untyped link value.
     #[inline]
     pub fn ptr(self) -> MemPtr {
         Some(self.idx)
@@ -118,9 +115,7 @@ impl IndexMut<Stored<GlueOrder>> for OrderTotals {
     }
 }
 
-/// A code set a node stores in a 16-bit subfield.
 pub trait StoredCode: Copy {
-    /// The code `raw` stands for, `None` when it is none of them.
     fn from_u16(raw: u16) -> Option<Self>;
     fn to_u16(self) -> u16;
 }
@@ -172,13 +167,11 @@ impl<T: StoredCode> Stored<T> {
         self.0
     }
 
-    /// The code, `None` when the stored bits are not one.
     #[inline]
     pub fn get(self) -> Option<T> {
         T::from_u16(self.0)
     }
 
-    /// The raw code as an array index, as WEB indexes by it.
     #[inline]
     pub fn index(self) -> usize {
         usize::from(self.0)
@@ -220,13 +213,9 @@ impl<T: StoredCode> PartialOrd<T> for Stored<T> {
 }
 
 code_enum! {
-    /// What made a kern, which decides where a line may break and how it shows.
     pub enum KernSubtype: u16 {
-        /// A font kern.
         Normal = 0,
-        /// `\kern` or an italic correction.
         Explicit = 1,
-        /// Around an accent.
         AccKern = 2,
         /// XeTeX's adjustment after an interword space.
         SpaceAdjustment = 3,
@@ -236,11 +225,8 @@ code_enum! {
 }
 
 code_enum! {
-    /// Where a `\vadjust` list goes around the line that holds it.
     pub enum AdjustPlacement: u16 {
-        /// After the line.
         Post = 0,
-        /// Before the line, `\vadjust pre`.
         Pre = 1,
     }
 }
@@ -248,13 +234,9 @@ code_enum! {
 code_enum! {
     /// A math accent's placement, set by `\Umathaccent fixed`, `bottom` or `bottom fixed`.
     pub enum MathAccentKind: u16 {
-        /// Above the nucleus, stretched to its width.
         Top = 0,
-        /// Above, at the accent's own width.
         TopFixed = 1,
-        /// Below the nucleus, stretched.
         Bottom = 2,
-        /// Below, at the accent's own width.
         BottomFixed = 3,
     }
 }
@@ -274,9 +256,7 @@ impl MathAccentKind {
 code_enum! {
     /// A right noad's subtype, which tells `\middle` from `\right`.
     pub enum FenceSubtype: u16 {
-        /// `\left` or `\right`.
         Normal = 0,
-        /// `\middle`.
         Middle = 1,
     }
 }
@@ -284,19 +264,14 @@ code_enum! {
 code_enum! {
     /// The implicit boundary characters a ligature absorbed, shown as `|` around it.
     pub enum LigBoundary: u16 {
-        /// None.
         None = 0,
-        /// The right boundary character.
         Right = 1,
-        /// The left boundary character.
         Left = 2,
-        /// Both.
         Both = 3,
     }
 }
 
 impl LigBoundary {
-    /// The same boundaries plus the right one.
     #[inline]
     pub fn with_right(self) -> LigBoundary {
         match self {
@@ -323,27 +298,20 @@ code_enum! {
     /// A math node's code: math-on/off, the `\beginM`/`\endM` pair around a display, or a
     /// TeX--XeT boundary. The LR stack holds these codes too.
     pub enum MathCode: u16 {
-        /// `\mathon`.
         Before = 0,
-        /// `\mathoff`.
         After = 1,
         /// Opens the segment around a display.
         BeginM = 2,
         /// Closes it.
         EndM = 3,
-        /// `\beginL`.
         BeginL = 6,
-        /// `\endL`.
         EndL = 7,
-        /// `\beginR`.
         BeginR = 10,
-        /// `\endR`.
         EndR = 11,
     }
 }
 
 impl MathCode {
-    /// Closes a segment: `\mathoff` or an end code.
     #[inline]
     pub fn is_end(self) -> bool {
         matches!(
@@ -352,7 +320,6 @@ impl MathCode {
         )
     }
 
-    /// A TeX--XeT `\beginL`..`\endR` boundary.
     #[inline]
     pub fn is_lr(self) -> bool {
         matches!(
@@ -361,7 +328,6 @@ impl MathCode {
         )
     }
 
-    /// The direction of the segment it bounds, left to right unless it is an R code.
     #[inline]
     pub fn dir(self) -> Dir {
         match self {
@@ -406,21 +372,15 @@ impl MathCode {
 }
 
 code_enum! {
-    /// How leaders repeat their box or rule.
     pub enum LeaderKind: u16 {
-        /// `\leaders`, aligned on the enclosing box.
         Aligned = 100,
-        /// `\cleaders`, centred.
         Centered = 101,
-        /// `\xleaders`, expanded.
         Expanded = 102,
     }
 }
 
-/// What a glue node is: plain, made from a parameter, math glue or leaders.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum GlueKind {
-    /// Plain glue.
     Normal,
     /// From a glue parameter, so `\showbox` names it.
     Param(GluePar),
@@ -428,7 +388,6 @@ pub enum GlueKind {
     CondMath,
     /// `\mskip`, in mu until `mlist_to_hlist` converts it.
     Mu,
-    /// `\leaders`, `\cleaders` or `\xleaders`.
     Leaders(LeaderKind),
 }
 
@@ -461,11 +420,8 @@ impl StoredCode for GlueKind {
 }
 
 code_enum! {
-    /// TeX--XeT's `box_lr` of an hlist.
     pub enum BoxLr: u16 {
-        /// Not reversed yet.
         Normal = 0,
-        /// Reversed for right-to-left output.
         Reversed = 1,
         /// A display whose lines run right to left.
         Dlist = 2,
@@ -477,14 +433,12 @@ const _: () = assert!(
         && Orientation::Vertical.node_type().to_u16() == Orientation::Vertical.to_u16()
 );
 
-/// A view that is a whole node, allocated and freed by its size.
 pub trait Node: View {
     /// The `NODE_type` stamped at allocation, `None` for headerless records.
     const TYPE: Option<NodeType>;
     /// Whether entries follow the struct, so the node is sized by `ArrayNode`.
     const ARRAY: bool = false;
 
-    /// Fills what every new node of the kind starts with, after its header.
     #[inline]
     fn init(_mem: &mut MemState, _p: NodePtr<Self>) {}
 }
@@ -505,7 +459,6 @@ impl MemState {
 }
 
 impl<K: Node> NodePtr<K> {
-    /// Carves a fresh node with its type stamped and its fields uninitialised.
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Result<Self, Abort> {
         const { assert!(!K::ARRAY) };
@@ -514,8 +467,6 @@ impl<K: Node> NodePtr<K> {
         Ok(p)
     }
 }
-
-// --- groups of kinds ---
 
 /// A kind with a `link`, which generic list walks read through the node header.
 pub trait HasLink: View {}
@@ -568,27 +519,23 @@ impl ListRecord for PenaltiesNode {}
 impl ListRecord for PseudoLineNode {}
 
 impl<K: ListRecord> NodePtr<K> {
-    /// The record at `p`, a non-null link of a list of `K` records.
     #[inline]
     pub fn at(p: impl MemAddr) -> Self {
         NodePtr::from_idx_unchecked(p.addr())
     }
 
-    /// The record at `p`, `None` when the link is null.
     #[inline]
     pub fn from_ptr(p: MemPtr) -> Option<Self> {
         p.map(Self::at)
     }
 }
 
-/// The link value of an optional node, null for `None`.
 #[inline]
 pub fn link_of<K: View>(p: Option<NodePtr<K>>) -> MemPtr {
     p.map(NodePtr::idx)
 }
 
 impl<K: Node> NodePtr<K> {
-    /// Returns the node to the free list of its kind's size.
     #[inline]
     pub fn free(self, mem: &mut MemState) {
         const { assert!(!K::ARRAY) };
@@ -596,7 +543,6 @@ impl<K: Node> NodePtr<K> {
     }
 }
 
-/// The header of the list node at `p`.
 #[inline]
 fn header(p: impl MemAddr) -> NodePtr<NodeHeader> {
     NodePtr::from_idx_unchecked(p.addr())
@@ -612,8 +558,6 @@ impl MemIdx {
         mem[header(self)].link = q;
     }
 }
-
-// --- boxes and rules ---
 
 impl NodePtr<BoxNode> {
     #[inline]
@@ -647,7 +591,6 @@ impl LinkSlot {
         }
     }
 
-    /// The node this slot belongs to, `None` for a box's list.
     #[inline]
     pub fn node(self) -> Option<MemIdx> {
         match self {
@@ -656,7 +599,6 @@ impl LinkSlot {
         }
     }
 
-    /// The last slot of the list, the one holding null.
     pub fn tail(mut self, mem: &MemState) -> LinkSlot {
         while let Some(q) = self.get(mem) {
             self = LinkSlot::Node(q);
@@ -664,7 +606,6 @@ impl LinkSlot {
         self
     }
 
-    /// The slot holding `target`, searching forward from this one.
     pub fn before(mut self, mem: &MemState, target: MemPtr) -> Result<LinkSlot, Abort> {
         while self.get(mem) != target {
             self = LinkSlot::Node(self.get(mem).or_confusion("predecessor")?);
@@ -684,7 +625,6 @@ const _: () = assert!(
         && EdgeNode::SIZE == StyleNode::SIZE
 );
 
-/// Stamps a new type code and rewraps the handle.
 #[inline]
 fn retype<K: View, L: View>(p: NodePtr<K>, mem: &mut MemState, ty: NodeType) -> NodePtr<L> {
     mem[header(p.idx)].ty = ty.to_u16();
@@ -720,7 +660,6 @@ impl RuleDimen {
 /// A running rule dimension seen as a length, as TeX's arithmetic sees it.
 pub(crate) const RUNNING: Scaled = Scaled::from_raw(NULL_FLAG);
 
-/// A rule dimension as a node stores it, the raw word decoded by `get`.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(transparent)]
 pub struct StoredDimen(i32);
@@ -731,7 +670,6 @@ impl StoredDimen {
         RuleDimen::from_raw(self.0)
     }
 
-    /// The word as a length, `RUNNING` for a running dimension.
     #[inline]
     pub fn to_scaled(self) -> Scaled {
         Scaled::from_raw(self.0)
@@ -745,7 +683,6 @@ impl From<RuleDimen> for StoredDimen {
     }
 }
 
-/// What `\leaders` repeats: a box or a rule.
 #[derive(Copy, Clone, Debug)]
 pub enum BoxOrRule {
     Box(NodePtr<BoxNode>),
@@ -762,14 +699,11 @@ impl BoxOrRule {
     }
 }
 
-// --- classification ---
-
 /// A classified lo-mem node. Type 2 is read as a rule (not a delta node) and
 /// type 14 as a style node (not an edge): walkers of those special lists
 /// know their context and do not classify.
 #[derive(Copy, Clone, Debug)]
 pub enum AnyNode {
-    /// An hlist or vlist box.
     Box(NodePtr<BoxNode>),
     Rule(NodePtr<RuleNode>),
     Ins(NodePtr<InsNode>),
@@ -785,7 +719,6 @@ pub enum AnyNode {
     Unset(NodePtr<UnsetNode>),
     Style(NodePtr<StyleNode>),
     Choice(NodePtr<ChoiceNode>),
-    /// Any noad, refine with [`NodePtr::<AnyNoad>::variant`].
     Noad(NodePtr<AnyNoad>),
     MarginKern(NodePtr<MarginKernNode>),
     Char(NodePtr<CharNode>),
@@ -859,7 +792,6 @@ impl AnyNode {
 }
 
 impl MemState {
-    /// Stamps the type and subtype of the node header at `p`.
     #[inline]
     pub fn set_header(&mut self, p: impl MemAddr, ty: NodeType, subtype: u16) {
         let h = &mut self[header(p)];
@@ -873,13 +805,11 @@ impl MemState {
         self[header(p)].ty
     }
 
-    /// The checked `NODE_type` of the non-null lo-mem node `p`.
     #[inline]
     pub fn node_type(&self, p: impl MemAddr) -> Result<NodeType, InvalidNodeType> {
         NodeType::of_code(self[header(p)].ty)
     }
 
-    /// Classifies the non-null lo-mem node `p`. `Err` for an invalid type code.
     #[inline]
     pub fn classify(&self, p: impl MemAddr) -> Result<AnyNode, InvalidNodeType> {
         use NodeType::*;
@@ -910,7 +840,6 @@ impl MemState {
         })
     }
 
-    /// Classifies `p` unless it is null or a character.
     #[inline]
     pub fn classify_non_char(&self, p: MemPtr) -> Option<AnyNode> {
         let p = p?;
@@ -920,7 +849,6 @@ impl MemState {
         self.classify(p).ok()
     }
 
-    /// `p` as a native-word whatsit, if it is one.
     #[inline]
     pub fn as_native_word(&self, p: MemPtr) -> Option<NodePtr<NativeWordNode>> {
         match self.classify_non_char(p)? {
@@ -967,20 +895,14 @@ impl MemState {
     }
 }
 
-// --- character-bearing nodes ---
-
 impl MemState {
-    /// `p` as a character node, if it lies in the one-word region.
     #[inline]
     pub fn as_char(&self, p: MemPtr) -> Option<NodePtr<CharNode>> {
         p.filter(|&p| self.is_char_node(p)).map(NodePtr::at)
     }
 }
 
-// --- math, glue, kern, penalty ---
-
 impl NodePtr<MathNode> {
-    /// Retypes the node as a kern of the same width.
     #[inline]
     pub fn into_kern(self, mem: &mut MemState) -> NodePtr<KernNode> {
         retype(self, mem, NodeType::Kern)
@@ -996,7 +918,6 @@ impl NodePtr<StyleNode> {
 }
 
 impl NodePtr<ChoiceNode> {
-    /// Retypes the node as a style node for `style`.
     #[inline]
     pub fn into_style(self, mem: &mut MemState, style: MathStyle) -> NodePtr<StyleNode> {
         let p: NodePtr<StyleNode> = retype(self, mem, NodeType::Style);
@@ -1007,7 +928,6 @@ impl NodePtr<ChoiceNode> {
     }
 }
 
-/// A noad kind, which widens to [`AnyNoad`] for the words every noad shares.
 pub trait NoadKind: View {}
 
 impl NoadKind for Noad {}
@@ -1017,14 +937,12 @@ impl NoadKind for FractionNoad {}
 impl NoadKind for FenceNoad {}
 
 impl<K: NoadKind> NodePtr<K> {
-    /// The noad as any noad, for its header and translated hlist.
     #[inline]
     pub fn any(self) -> NodePtr<AnyNoad> {
         NodePtr::from_idx_unchecked(self.idx)
     }
 }
 
-/// A noad by its kind, read off its type code.
 #[derive(Copy, Clone, Debug)]
 pub enum NoadVariant {
     Noad(NodePtr<Noad>),
@@ -1035,7 +953,6 @@ pub enum NoadVariant {
 }
 
 impl NoadVariant {
-    /// The nucleus and scripts of a noad that has them, all but fractions and fences.
     #[inline]
     pub fn as_noad(self) -> Option<NodePtr<Noad>> {
         match self {
@@ -1046,7 +963,6 @@ impl NoadVariant {
         }
     }
 
-    /// The words the noad occupies.
     #[inline]
     pub fn size(self) -> i32 {
         match self {
@@ -1060,7 +976,6 @@ impl NoadVariant {
 }
 
 impl NodePtr<AnyNoad> {
-    /// The noad's kind, from its type code.
     #[inline]
     pub fn variant(self, mem: &MemState) -> NoadVariant {
         let p = self.idx;
@@ -1077,7 +992,6 @@ impl NodePtr<AnyNoad> {
 }
 
 impl NodePtr<RadicalNoad> {
-    /// The radical's nucleus and scripts, laid out as a plain noad.
     #[inline]
     pub fn as_noad(self) -> NodePtr<Noad> {
         NodePtr::from_idx_unchecked(self.idx)
@@ -1085,7 +999,6 @@ impl NodePtr<RadicalNoad> {
 }
 
 impl NodePtr<AccentNoad> {
-    /// The accentee and scripts, laid out as a plain noad.
     #[inline]
     pub fn as_noad(self) -> NodePtr<Noad> {
         NodePtr::from_idx_unchecked(self.idx)
@@ -1142,7 +1055,6 @@ impl NodePtr<GlueNode> {
         retype(self, mem, NodeType::Penalty)
     }
 
-    /// Retypes the node as a kern of width `w`.
     #[inline]
     pub fn into_kern(self, mem: &mut MemState, w: Scaled) -> NodePtr<KernNode> {
         let kern: NodePtr<KernNode> = retype(self, mem, NodeType::Kern);
@@ -1151,17 +1063,12 @@ impl NodePtr<GlueNode> {
     }
 }
 
-// --- page-builder nodes ---
-
 impl NodePtr<UnsetNode> {
-    /// Turns the finished unset node into a box of orientation `o`.
     #[inline]
     pub fn into_box(self, mem: &mut MemState, o: Orientation) -> NodePtr<BoxNode> {
         retype(self, mem, o.node_type())
     }
 }
-
-// --- alignments ---
 
 /// A column of an alignment preamble or row. Columns alternate with tabskip glue.
 pub trait AlignColumn: HasLink {}
@@ -1170,7 +1077,6 @@ impl AlignColumn for AlignRecord {}
 impl AlignColumn for UnsetNode {}
 
 impl<K: AlignColumn> NodePtr<K> {
-    /// The column after tabskip glue `g`, `None` at the end of the list.
     #[inline]
     pub fn after_tab_skip(mem: &MemState, g: impl MemAddr) -> Option<Self> {
         // SAFETY: tabskip glue is followed by a column or ends the list.
@@ -1189,7 +1095,6 @@ impl<K: AlignColumn> NodePtr<K> {
 }
 
 impl NodePtr<GlueNode> {
-    /// The tabskip glue linked from `ALIGN_HEAD` or an alignment column `p`.
     #[inline]
     pub fn tab_skip_after(mem: &MemState, p: impl MemAddr) -> Result<Self, Abort> {
         // SAFETY: tabskip glue follows the align head and every column.
@@ -1201,7 +1106,6 @@ impl NodePtr<GlueNode> {
 }
 
 impl NodePtr<AlignRecord> {
-    /// Turns the record into an empty unset box of its final width.
     pub fn into_unset(self, mem: &mut MemState) -> NodePtr<UnsetNode> {
         let u: NodePtr<UnsetNode> = retype(self, mem, NodeType::Unset);
         let node = &mut mem[u];
@@ -1249,8 +1153,6 @@ impl NodePtr<PenaltiesNode> {
     }
 }
 
-// --- whatsits ---
-
 code_enum! {
     /// The subtype of a whatsit node. Only `NativeWord`..`Pdf` carry dimensions.
     pub enum WhatsitSubtype: u16 {
@@ -1278,7 +1180,6 @@ impl WhatsitSubtype {
         )
     }
 
-    /// `\openout`, `\write`, `\closeout`, `\special` and `\setlanguage`.
     pub fn is_io(self) -> bool {
         matches!(
             self,
@@ -1292,7 +1193,6 @@ impl WhatsitSubtype {
     }
 }
 
-/// A whatsit kind, which widens to [`WhatsitNode`].
 pub trait WhatsitKind: View {}
 
 impl WhatsitKind for WhatsitNode {}
@@ -1305,7 +1205,6 @@ impl WhatsitKind for NativeWordNode {}
 impl WhatsitKind for SavePosNode {}
 
 impl<K: WhatsitKind> NodePtr<K> {
-    /// The whatsit as any whatsit, for its header.
     #[inline]
     pub fn whatsit(self) -> NodePtr<WhatsitNode> {
         NodePtr::from_idx_unchecked(self.idx)
@@ -1313,7 +1212,6 @@ impl<K: WhatsitKind> NodePtr<K> {
 }
 
 impl<K: WhatsitKind + Node> NodePtr<K> {
-    /// A fresh whatsit of the given subtype, other fields uninitialised.
     #[inline]
     pub fn alloc_whatsit(mem: &mut MemState, subtype: WhatsitSubtype) -> Result<Self, Abort> {
         let p = Self::alloc(mem)?;
@@ -1322,7 +1220,6 @@ impl<K: WhatsitKind + Node> NodePtr<K> {
     }
 }
 
-/// A whatsit by its kind, read off its subtype.
 #[derive(Copy, Clone, Debug)]
 pub enum WhatsitVariant {
     Open(NodePtr<OpenNode>),
@@ -1338,7 +1235,6 @@ pub enum WhatsitVariant {
 }
 
 impl NodePtr<WhatsitNode> {
-    /// The whatsit's kind, from its subtype. `None` for an unknown subtype.
     #[inline]
     pub fn variant(self, mem: &MemState) -> Option<WhatsitVariant> {
         use WhatsitSubtype as S;
@@ -1359,7 +1255,6 @@ impl NodePtr<WhatsitNode> {
         })
     }
 
-    /// The whatsit's dimensions, for a native word, glyph or picture.
     #[inline]
     pub fn dims(self, mem: &MemState) -> Option<Dims> {
         let dims = |width, depth, height| Dims {
@@ -1382,7 +1277,6 @@ impl NodePtr<WhatsitNode> {
 }
 
 impl NodePtr<NativeWordNode> {
-    /// Drops the shaped-glyph payload of a native word.
     pub fn release_native_glyphs(self, mem: &mut MemState) {
         let handle = mem[self].glyph_info;
         if handle != 0 {
@@ -1391,7 +1285,6 @@ impl NodePtr<NativeWordNode> {
         }
     }
 
-    /// Gives this copy of `src` its own handle on `src`'s shaped glyphs.
     pub fn share_native_glyphs(self, mem: &mut MemState, src: Self) {
         let src = mem[src];
         if src.glyph_info != 0 {
@@ -1402,7 +1295,6 @@ impl NodePtr<NativeWordNode> {
         }
     }
 
-    /// Frees a native word together with its shaped glyphs.
     pub fn free_native(self, mem: &mut MemState) {
         self.release_native_glyphs(mem);
         mem.free_array(self);
@@ -1601,7 +1493,6 @@ mod tests {
         assert_eq!(mem.data.len(), RESERVED_WORDS + 10);
     }
 
-    /// An arena with only the fixed nodes, which grows as nodes are taken.
     fn arena_with_free_block() -> MemState {
         fresh_mem(RESERVED_WORDS)
     }

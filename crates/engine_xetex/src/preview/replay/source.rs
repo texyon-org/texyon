@@ -291,7 +291,6 @@ impl SourceSnapshot {
         Some((path, bytes, identity))
     }
 
-    /// Whether an editor buffer lies in directory `dir`, a path relative to the root.
     pub(crate) fn holds_directory(&self, dir: &str) -> bool {
         let parts: Vec<&str> = dir
             .split('/')
@@ -303,19 +302,16 @@ impl SourceSnapshot {
             .any(|path| path.as_str().starts_with(&prefix))
     }
 
-    /// `path` normalized against this snapshot's root, if it lies inside it.
     pub(crate) fn source_path(&self, path: &Path) -> Option<SourcePath> {
         normalize(&self.root, path).ok()
     }
 
-    /// Resolve editor bytes or freeze a root-confined disk source for this operation.
     pub(crate) fn resolve_replay_entry(&self, path: &Path) -> Option<ResolvedSource> {
         let path = normalize(&self.root, path).ok()?;
         let (bytes, identity) = self.replay_entry(&path)?;
         Some((path, bytes, identity))
     }
 
-    /// Resolve bytes constrained by an existing replay-fence input record.
     pub(crate) fn replay_entry(&self, path: &SourcePath) -> Option<(Arc<[u8]>, SourceIdentity)> {
         if let Some(entry) = self.entries.get(path) {
             return Some(entry.parts());
@@ -335,7 +331,6 @@ impl SourceSnapshot {
         Some(parts)
     }
 
-    /// First differing byte for every current buffer changed since `previous`.
     pub(crate) fn changes_from(&self, previous: &Self) -> Vec<(SourcePath, usize)> {
         self.entries
             .iter()

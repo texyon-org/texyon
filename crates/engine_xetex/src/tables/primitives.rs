@@ -13,13 +13,11 @@ use crate::base::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::tables::cs::{CsId, Frozen};
 use crate::tables::eqtb::{CaseTable, CodeTable, FontLoc, ShapeLoc, XetexCode};
 
-/// Extra setup `initialize_primitives` runs after defining a primitive.
 #[derive(Copy, Clone)]
 pub(crate) enum PrimInit {
     None,
     Par,
     Write,
-    /// Copy the definition to this frozen eqtb location.
     Frozen(CsId),
 }
 
@@ -75,7 +73,6 @@ const fn mu_glue_par(n: GluePar) -> PrimitiveDef {
     p(n.name(), Cmd::AssignMuGlue, n.loc().raw())
 }
 
-/// A primitive named after its `chr_code` enum variant.
 macro_rules! code {
     ($cmd:expr, $code:expr) => {
         p($code.name(), $cmd, $code.raw())

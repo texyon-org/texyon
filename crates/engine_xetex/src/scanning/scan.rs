@@ -46,7 +46,6 @@ const DEFAULT_RULE: Scaled = Scaled::from_raw(26214);
 const HYPHENATABLE_LENGTH_LIMIT: i32 = 4095;
 
 impl EqtbState {
-    /// `\XeTeXhyphenatablelength`, capped at the supported maximum.
     pub fn max_hyphenatable_length(&self) -> i32 {
         self.int_par(IntPar::XetexHyphenatableLength)
             .min(HYPHENATABLE_LENGTH_LIMIT)
@@ -176,19 +175,16 @@ pub(crate) fn get_r_token(st: &mut EngineState) -> Result<CsId, Abort> {
     }
 }
 
-/// Converts a classic 15-bit `\mathcode` or `\mathchar` to XeTeX's layout.
 pub(crate) fn math_code_from_tex(v: i32) -> i32 {
     set_class(v / 4096) + set_family((v % 4096) / 256) + (v % 256)
 }
 
-/// Scans the class, family and character of a `\Umathchar`-style code.
 pub(crate) fn scan_umath_code(st: &mut EngineState) -> Result<i32, Abort> {
     let class = set_class(scan_math_class_int(st)?);
     let family = set_family(scan_math_fam_int(st)?);
     Ok(class + family + scan_usv_num(st)?)
 }
 
-/// Scans one math field into `p`, or opens a math group that fills it when it ends.
 pub(crate) fn scan_math(st: &mut EngineState, p: MathSlot) -> Result<(), Abort> {
     let c: i32;
     'main: loop {
@@ -290,14 +286,10 @@ pub(crate) fn set_family(x: i32) -> i32 {
     (((x as u32) & 0xFF) << 24) as i32
 }
 
-/// The contents of box register `n`, or `None` if it is void.
 pub(crate) fn fetch_box(st: &EngineState, n: Register) -> Option<NodePtr<BoxNode>> {
     st.eqtb.box_reg(n)
 }
 
-/// Builds the token list for `\the` (or `\unexpanded`/`\detokenize`) at
-/// `link(temp_head)` and returns its tail.
-/// The math code given by `\mathchar` or a XeTeX form.
 pub(crate) fn scan_math_char_num(
     st: &mut EngineState,
     code: MathCharNumCode,
@@ -309,7 +301,6 @@ pub(crate) fn scan_math_char_num(
     })
 }
 
-/// The math code of the small character given by `\delimiter` or `\Udelimiter`.
 pub(crate) fn scan_delim_num(st: &mut EngineState, code: DelimNumCode) -> Result<i32, Abort> {
     Ok(match code {
         DelimNumCode::Udelimiter => scan_umath_code(st)?,
@@ -374,7 +365,6 @@ pub(crate) struct ScannerState {
     pub cur_align: MemPtr,
     pub cur_span: MemPtr,
     pub cur_loop: MemPtr,
-    /// The enclosing alignments, TeX's `align_ptr` list.
     pub align_stack: Vec<SavedAlign>,
     pub cur_head: MemPtr,
     pub cur_tail: MemPtr,
@@ -384,8 +374,6 @@ pub(crate) struct ScannerState {
     pub mag_set: i32,
     pub expand_depth_count: i32,
     pub max_reg_num: i32,
-    /// The innermost incomplete conditional, `None` outside any.
-    /// The conditional stack, TeX's `cond_ptr` list.
     pub conds: CondStack,
     pub if_limit: Stored<FiOrElseCode>,
     pub cur_if: IfTest,
@@ -415,7 +403,6 @@ pub(crate) struct ScannerState {
 }
 
 impl ScannerState {
-    /// Grows `native_text` until `extra` more units fit.
     #[inline(always)]
     pub(crate) fn reserve_native_text(&mut self, extra: i32) -> Result<(), Abort> {
         if extra >= NATIVE_TEXT_MAX - self.native_len {

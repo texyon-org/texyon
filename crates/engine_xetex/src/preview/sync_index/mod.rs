@@ -293,7 +293,6 @@ impl SyncIndex {
         self.share_page(page_index, records);
     }
 
-    /// [`push_page`](Self::push_page) for records whose tags the caller accounts for.
     fn share_page(&mut self, page_index: usize, records: Arc<[Record]>) {
         if self.pages.len() <= page_index {
             self.pages.resize_with(page_index + 1, || Arc::from([]));
@@ -471,7 +470,6 @@ impl PreviewSyncIndex {
         }
     }
 
-    /// Record a node as `[tag, line, h, v]` plus up to three dimensions.
     pub(crate) fn record(&mut self, kind: RecordKind, position: [i32; 4], dims: &[i32]) {
         let Some(page_index) = self.page_index else {
             return;

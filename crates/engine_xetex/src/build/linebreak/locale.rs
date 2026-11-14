@@ -8,7 +8,6 @@ use crate::print::errors::Abort;
 use crate::print::{begin_diagnostic, end_diagnostic, print, print_int, print_nl};
 use crate::state::EngineState;
 
-/// Append a native word of font `f` holding `text` to the current list.
 fn append_native_word(st: &mut EngineState, f: FontId, text: &[u16]) -> Result<(), Abort> {
     let w = st
         .mem
@@ -21,7 +20,6 @@ fn append_native_word(st: &mut EngineState, f: FontId, text: &[u16]) -> Result<(
     Ok(())
 }
 
-/// Where a run of native text may break.
 enum TextBreaks<'t> {
     Icu(IcuBreaks<'t>),
     Graphite(texyon_xetex_layout::GraphiteBreaks<'t>),
@@ -39,7 +37,6 @@ impl TextBreaks<'_> {
     }
 }
 
-/// Makes sure `fonts.brk_iter` is an ICU line breaker for `locale`.
 fn open_linebreak_iterator(
     st: &mut EngineState,
     locale: StrNumber,
@@ -71,8 +68,6 @@ fn open_linebreak_iterator(
         .ok_or(Abort::Internal("failed to create linebreak iterator"))
 }
 
-/// Append `native_text[s..s + len]` as native words, split at the locale's
-/// line-break opportunities when `\XeTeXlinebreaklocale` is set.
 pub(crate) fn do_locale_linebreaks(
     st: &mut EngineState,
     main_f: FontId,

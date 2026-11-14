@@ -8,25 +8,19 @@ use crate::tables::cs::{CsId, CsKind, NameSlot};
 use crate::tables::eqtb::EqtbState;
 use crate::tables::string_pool::StringsState;
 
-/// A multi-letter control sequence's slot in the hash table.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
 #[repr(C)]
 pub(crate) struct HashEntry {
-    /// The next slot in the chain of names with the same hash.
     pub next: Option<CsId>,
-    /// The name, `StrNumber::NONE` while the slot is free.
     pub text: StrNumber,
 }
 
 // SAFETY: `None` and `StrNumber(0)` are both all-zero bits.
 unsafe impl ZeroWord for HashEntry {}
 
-/// A slot of the `\primitive` lookup table.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
 pub(crate) struct PrimEntry {
-    /// The next slot in the chain of names with the same hash.
     pub next: Option<PrimNum>,
-    /// The primitive's name, `None` while the slot is free.
     pub text: Option<StrNumber>,
 }
 
@@ -49,8 +43,6 @@ fn hash_mod_rare(h: i32) -> i32 {
 }
 
 impl EqtbState {
-    /// The control sequence named by the characters `name`, entered in the hash
-    /// unless `no_new_control_sequence`.
     pub fn id_lookup(&mut self, strings: &mut StringsState, name: &[i32]) -> Result<CsId, Abort> {
         let l = i32::try_from(name.len()).map_err(|_| strings.pool_overflow())?;
         let mut h: i32 = 0;
@@ -216,7 +208,6 @@ impl EqtbState {
         }
     }
 
-    /// The primitive named like control sequence `cs`, if there is one.
     pub(crate) fn prim_lookup_cs(
         &mut self,
         strings: &mut StringsState,

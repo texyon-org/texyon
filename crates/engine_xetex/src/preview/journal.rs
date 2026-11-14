@@ -14,7 +14,6 @@ use crate::base::command::Command;
 use crate::state::EngineState;
 use crate::tables::hash::{HashEntry, PrimEntry};
 
-/// A pre-image: word `idx` held `old` before the epoch touched it.
 #[derive(Clone, Copy)]
 #[repr(C, packed(4))]
 struct Preimage<T: Copy> {
@@ -45,7 +44,6 @@ impl<T: Copy> Default for WordJournal<T> {
     }
 }
 
-/// A journaled word that `seal` can compare with its pre-image.
 pub(crate) trait JournalWord: Copy {
     fn same(&self, other: &Self) -> bool;
 }
@@ -77,7 +75,6 @@ impl<T: JournalWord> WordJournal<T> {
         self.armed
     }
 
-    /// Starts journaling the first `base` words.
     pub(crate) fn arm(&mut self, base: usize) {
         assert!(
             u32::try_from(base).is_ok(),
@@ -89,7 +86,6 @@ impl<T: JournalWord> WordJournal<T> {
         self.rebase(base);
     }
 
-    /// Moves the epoch's base, the length the array had when the epoch began.
     pub(crate) fn rebase(&mut self, base: usize) {
         self.base = base;
         let len = base.div_ceil(64);
@@ -169,7 +165,6 @@ impl<T: JournalWord> WordJournal<T> {
     }
 }
 
-/// The pre-images of one epoch, at most one per word.
 #[derive(Clone)]
 pub(crate) struct WordDelta<T: Copy> {
     entries: Vec<Preimage<T>>,
@@ -343,7 +338,6 @@ thread_local! {
     static COMPOSE_SEEN: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
 }
 
-/// Marks `index` in `seen`, reporting whether it was clear.
 #[inline]
 fn first_sighting(seen: &mut Vec<u64>, index: u32) -> bool {
     let word = index as usize >> 6;

@@ -57,28 +57,21 @@ use lists::{
 pub(crate) use main_loop::InterCharState;
 use main_loop::{insert_boundary_inter_char_toks, main_control_main_loop};
 
-// `cur_chr` modifiers.
 pub(crate) const LP_CODE_BASE: i32 = 2;
 pub(crate) const RP_CODE_BASE: i32 = 3;
 pub(crate) const SPAN_CODE: i32 = 1_114_113;
 pub(crate) const CR_CODE: i32 = 1_114_114;
 pub(crate) const CR_CR_CODE: i32 = 1_114_115;
 
-/// Where a box goes once it is made, TeX's `box_context`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum BoxContext {
-    /// Onto the current list, shifted by `\raise` and friends or by zero.
     Shift(Scaled),
-    /// Into a box register, by `\setbox`.
     SetBox { register: Register, global: bool },
-    /// Out to the page, by `\shipout`.
     ShipOut,
-    /// Into the leaders of the glue that follows.
     Leaders(LeaderKind),
 }
 
 impl BoxContext {
-    /// The context of `\shipout` or a leaders primitive.
     pub(crate) fn leader_ship(code: LeaderCode) -> BoxContext {
         match code.glue_leaders() {
             Some(kind) => BoxContext::Leaders(kind),
@@ -167,7 +160,6 @@ fn valign_or_lr(st: &mut EngineState, code: ValignCode) -> Result<(), Abort> {
     Ok(())
 }
 
-/// Runs `action` if the math-shift group is open, else inserts what closes the current group.
 fn in_math_shift_group(
     st: &mut EngineState,
     action: impl FnOnce(&mut EngineState) -> Result<(), Abort>,
@@ -179,7 +171,6 @@ fn in_math_shift_group(
     }
 }
 
-/// Appends a noad of type `kind` (an ordinary one for `{`, put back) and scans its nucleus.
 fn append_noad(st: &mut EngineState, kind: Option<NodeType>) -> Result<(), Abort> {
     let n = st.mem.new_noad()?;
     st.input.cur_list.tail_append(&mut st.mem, n);
@@ -232,7 +223,6 @@ pub(crate) fn main_control_ignore_spaces(
     Ok(())
 }
 
-/// Where `main_control` continues after a command.
 enum Next {
     /// `big_switch`: fetch a new token.
     BigSwitch,
@@ -240,11 +230,9 @@ enum Next {
     Reswitch,
     /// `reswitch` on the character that `\noboundary` came before.
     ReswitchNoBoundary,
-    /// `\end` or `\dump` finished the job.
     Stop,
 }
 
-/// Acts on the current command in the current mode, TeX's `abs(mode)+cur_cmd` case.
 #[inline]
 fn dispatch_command(st: &mut EngineState, cancel_boundary: bool) -> Result<Next, Abort> {
     if st.eqtb.int_par(IntPar::TracingCommands) > 0 {
@@ -564,12 +552,10 @@ fn main_control_from(
     }
 }
 
-/// Dispatch a fresh document, including `\everyjob` and the first token fetch.
 pub(crate) fn main_control(st: &mut EngineState) -> Result<(), Abort> {
     main_control_from(st, true, false)
 }
 
-/// Resume at a restored command boundary, optionally with a command already fetched.
 pub(crate) fn main_control_resume(
     st: &mut EngineState,
     resume_pending_command: bool,

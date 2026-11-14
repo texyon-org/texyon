@@ -4,7 +4,6 @@ use std::ops::{Index, IndexMut};
 
 use crate::print::errors::{Abort, Capacity};
 
-/// A push past a stack's size.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct StackFull;
 
@@ -22,7 +21,6 @@ pub(crate) struct TexStack<T> {
 }
 
 impl<T: Copy + Default> TexStack<T> {
-    /// An empty stack that holds up to `size` entries.
     pub(crate) fn with_size(size: usize) -> Self {
         TexStack {
             slots: vec![T::default(); size + 1],
@@ -31,18 +29,15 @@ impl<T: Copy + Default> TexStack<T> {
         }
     }
 
-    /// TeX's overflow error for this stack, reporting its size.
     pub(crate) fn overflow(&self, capacity: Capacity) -> Abort {
         Abort::overflow(capacity, self.size())
     }
 
-    /// The most entries the stack holds.
     #[inline]
     pub(crate) fn size(&self) -> usize {
         self.slots.len().saturating_sub(1)
     }
 
-    /// The number of entries, WEB's `*_ptr`.
     #[inline(always)]
     pub(crate) fn len(&self) -> usize {
         self.len
@@ -53,7 +48,6 @@ impl<T: Copy + Default> TexStack<T> {
         self.len == 0
     }
 
-    /// The deepest the stack has been, WEB's `max_*_stack`.
     #[inline]
     pub(crate) fn max_len(&self) -> usize {
         self.max_len
@@ -73,7 +67,6 @@ impl<T: Copy + Default> TexStack<T> {
         Ok(())
     }
 
-    /// Pushes all of `vs` at once, as `macro_call` stores a macro's parameters.
     pub(crate) fn push_all(&mut self, vs: &[T]) -> Result<(), StackFull> {
         let end = self.len + vs.len();
         if end > self.max_len {
@@ -87,14 +80,12 @@ impl<T: Copy + Default> TexStack<T> {
         Ok(())
     }
 
-    /// Pops the top entry, `None` when empty.
     #[inline]
     pub(crate) fn pop(&mut self) -> Option<T> {
         self.len = self.len.checked_sub(1)?;
         Some(self.slots[self.len])
     }
 
-    /// Stores `top` in the slot past the top entry, so `self[self.len()]` reads it.
     #[inline]
     pub(crate) fn park(&mut self, top: T) {
         self.slots[self.len] = top;
@@ -111,26 +102,21 @@ impl<T: Copy + Default> TexStack<T> {
         &self.slots[..(self.len + 1).min(self.slots.len())]
     }
 
-    /// The entries from the bottom up.
     pub(crate) fn entries(&self) -> &[T] {
         &self.slots[..self.len]
     }
 
-    /// Restores entries captured by [`entries`](TexStack::entries) or
-    /// [`with_parked`](TexStack::with_parked), with their depth and high-water mark.
     pub(crate) fn restore(&mut self, slots: &[T], len: usize, max_len: usize) {
         self.slots[..slots.len()].copy_from_slice(slots);
         self.len = len;
         self.max_len = max_len;
     }
 
-    /// Empties the stack and forgets its high-water mark.
     pub(crate) fn reset(&mut self) {
         self.len = 0;
         self.max_len = 0;
     }
 
-    /// Frees the storage.
     pub(crate) fn release(&mut self) {
         *self = TexStack::default();
     }

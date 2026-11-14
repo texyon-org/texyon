@@ -63,7 +63,6 @@ fn pop_fi(st: &mut EngineState) -> Result<(), Abort> {
     pop_cond_node(st)
 }
 
-/// Handles the `\else` or `\fi` that ended a skipped conditional branch.
 fn skipped_branch_end(st: &mut EngineState) -> Result<(), Abort> {
     if st.scanner.fi_or_else() == Some(FiOrElseCode::Fi) {
         pop_fi(st)?;
@@ -111,7 +110,6 @@ fn get_token_unexpanded(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-/// Copies the character tokens of `list` into `buffer[first..]`, returning the end index.
 fn token_chars_to_buffer(st: &mut EngineState, list: TokenList) -> Result<BufPos, Abort> {
     let mut j = st.input.first;
     let mut p = st.mem.tokens.cursor(list);
@@ -129,7 +127,6 @@ fn token_chars_to_buffer(st: &mut EngineState, list: TokenList) -> Result<BufPos
     Ok(j)
 }
 
-/// Scans the tokens of a `\csname`-like name up to the terminating control sequence.
 fn scan_cs_name_tokens(st: &mut EngineState) -> Result<TokenList, Abort> {
     let b = st.mem.tokens.begin()?;
     let saved_in_csname = st.scanner.is_in_csname;
@@ -370,7 +367,6 @@ fn scan_int_or_dimen(st: &mut EngineState, this_if: IfCode) -> Result<i32, Abort
     }
 }
 
-/// Scanner state saved around a `conv_toks` primitive that reads a general text.
 struct SavedScan {
     status: ScannerStatus,
     warning_index: Option<CsId>,
@@ -404,7 +400,6 @@ fn unseal_pending_str(st: &mut EngineState, saved: &SavedScan) {
     }
 }
 
-/// Scans a general text and returns it as a new pool string.
 fn scan_text_to_string(st: &mut EngineState, saved: &SavedScan) -> Result<StrNumber, Abort> {
     scan_pdf_ext_toks(st)?;
     if st.shipout.selector == Selector::NewString {
@@ -425,7 +420,6 @@ fn scan_text_to_string(st: &mut EngineState, saved: &SavedScan) -> Result<StrNum
     Ok(s)
 }
 
-/// Inserts the pool text from `b` produced for the file-query string `s`.
 fn ins_file_query_result(
     st: &mut EngineState,
     saved: &SavedScan,
@@ -461,7 +455,6 @@ fn scan_nonnegative_int(
 }
 
 impl MemState {
-    /// Whether a node may be skipped when looking for a margin kern at the edge of a line.
     fn is_margin_kern_filler(&self, node: AnyNode, par_skip: GluePar) -> bool {
         match node {
             AnyNode::Ins(_) | AnyNode::Mark(_) | AnyNode::Adjust(_) | AnyNode::Penalty(_) => true,
@@ -488,8 +481,6 @@ impl MemState {
     }
 }
 
-/// Prints the width of the margin kern of `side` found by walking from `p` with `next`,
-/// skipping fillers, or `0pt` if there is none.
 fn print_margin_kern(
     st: &mut EngineState,
     mut p: MemPtr,
@@ -726,7 +717,6 @@ fn conv_toks(st: &mut EngineState, c: ConvertCode) -> Result<(), Abort> {
     begin_token_list(st, list, TokenType::Inserted)
 }
 
-/// `str_pool[b..pool_ptr]` as a list of its own, dropped from the pool.
 fn str_list(st: &mut EngineState, b: PoolPos, cat: Option<Cmd>) -> Result<TokenList, Abort> {
     let out = st.mem.tokens.begin()?;
     st.mem.str_toks_cat(&mut st.strings, b, cat, &out)?;
@@ -918,7 +908,6 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-/// Reports a `\par` inside a non-`\long` macro argument and discards the arguments so far.
 #[cold]
 fn runaway_par_in_argument(
     st: &mut EngineState,
@@ -1099,7 +1088,6 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                             }
                             break 'exit;
                         };
-                        // Contribute the partly matched delimiter to the argument.
                         let mut t = s;
                         loop {
                             st.mem.tokens.push(&arg, tok(st, t))?;
@@ -1184,7 +1172,6 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
 
                 if s.is_some() {
                     if m == 1 && st.mem.tokens.last_pushed(&arg).is_some_and(Token::is_brace) {
-                        // Strip the braces around a single braced argument.
                         st.mem.tokens.drop_first_last(&arg);
                     }
                     pstack[n] = st.mem.tokens.finish(arg)?;

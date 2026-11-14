@@ -96,7 +96,6 @@ code_enum! {
 }
 
 impl IntPar {
-    /// The primitive name, `None` for a parameter without one.
     pub(crate) const fn name(self) -> Option<&'static str> {
         Some(match self {
             IntPar::Pretolerance => "pretolerance",
@@ -186,10 +185,8 @@ impl IntPar {
         })
     }
 
-    /// How many there are.
     pub(crate) const COUNT: u8 = IntPar::PartokenContext as u8 + 1;
 
-    /// The location in the integer table.
     #[inline]
     pub(crate) const fn loc(self) -> IntLoc {
         IntLoc::par(self)
@@ -253,10 +250,8 @@ impl DimenPar {
         }
     }
 
-    /// How many there are.
     pub(crate) const COUNT: u8 = DimenPar::PdfPageHeight as u8 + 1;
 
-    /// The location in the dimension table.
     #[inline]
     pub(crate) const fn loc(self) -> DimenLoc {
         DimenLoc::par(self)
@@ -313,10 +308,8 @@ impl GluePar {
         }
     }
 
-    /// How many there are.
     pub(crate) const COUNT: u8 = GluePar::ThickMuSkip as u8 + 1;
 
-    /// The location in the glue table.
     #[inline]
     pub(crate) const fn loc(self) -> GlueLoc {
         GlueLoc::par(self)
@@ -342,10 +335,8 @@ code_enum! {
 }
 
 impl TokPar {
-    /// How many there are.
     pub(crate) const COUNT: u8 = TokPar::TectonicCoda as u8;
 
-    /// The location in the token list table.
     #[inline]
     pub(crate) const fn loc(self) -> ToksLoc {
         ToksLoc::par(self)
