@@ -79,6 +79,19 @@ export class TexyonError extends Error {
   }
 }
 
+/**
+ * A URL the page may start a Worker from.
+ *
+ * Browsers refuse a cross-origin Worker script, which is what a package served
+ * from a CDN or a separate dev server is. A same-origin module that imports it
+ * only needs CORS.
+ */
+function sameOriginScript(url: URL): string {
+  if (url.origin === location.origin) return url.href;
+  const shim = `import ${JSON.stringify(url.href)};`;
+  return URL.createObjectURL(new Blob([shim], { type: "text/javascript" }));
+}
+
 /** A resident LaTeX engine running in a Worker. */
 export class TexyonEngine {
   #worker: Worker;
@@ -190,19 +203,21 @@ export class TexyonEngine {
    * {@link EngineOptions.onProgress} if you want to show that.
    */
   static async create(options: EngineOptions = {}): Promise<TexyonEngine> {
-    const worker = new Worker(options.workerUrl ?? new URL("./worker.js", import.meta.url), {
-      type: "module",
-      name: "texyon",
-    });
-
-    const engine = new TexyonEngine(worker, options);
-
     // Resolve the asset URLs here rather than in the Worker. A relative URL
     // inside a Worker resolves against the *worker script*, which a bundler is
     // free to put anywhere — so "tectonic/" would silently mean something
     // different from what the caller wrote.
     const base = typeof document !== "undefined" ? document.baseURI : location.href;
     const absolute = (url: string) => new URL(url, base).href;
+
+    const workerUrl =
+      options.workerUrl !== undefined
+        ? new URL(options.workerUrl, base)
+        : new URL("./worker.js", import.meta.url);
+    const script = sameOriginScript(workerUrl);
+    const worker = new Worker(script, { type: "module", name: "texyon" });
+
+    const engine = new TexyonEngine(worker, options);
 
     await engine.#send({
       id: 0, // replaced by #send
@@ -216,6 +231,7 @@ export class TexyonEngine {
         raster: options.raster ?? false,
       },
     });
+    if (script !== workerUrl.href) URL.revokeObjectURL(script);
 
     return engine;
   }
