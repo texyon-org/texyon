@@ -35,7 +35,7 @@
 //! That call simultaneously tells this module where to find the test assets,
 //! and also activates the test mode.
 
-use std::{env, ffi::OsStr, path::PathBuf};
+use std::{env, ffi::OsStr, path::PathBuf, sync::OnceLock};
 use texyon_bundles::{dir::DirBundle, Bundle};
 use texyon_errors::Result;
 
@@ -45,30 +45,39 @@ use crate::{
     status::StatusBackend,
 };
 
-/// The name of the environment variable that the test code will consult to
-/// figure out where to find the testing resource files.
+/// The name of the environment variable that tells the `texyon` binary where
+/// to find the testing resource files.
 pub const TEST_ROOT_ENV_VAR: &str = "TEXYON_INTERNAL_TEST_ROOT";
 
-/// Set `TEST_ROOT_ENV_VAR` in the current process to the specified value,
-/// with a path element "tests" appended. If the variable was previously
-/// unset, this will make it such that `test_path()` and the other pieces of
-/// testing infrastructure in this module will start working.
+/// The test root set in this process, which tests share without touching the
+/// environment.
+static TEST_ROOT: OnceLock<PathBuf> = OnceLock::new();
+
+/// Set this process's test root to the specified directory with a path
+/// element "tests" appended, so that `test_path()` and the other pieces of
+/// testing infrastructure in this module start working. The first call wins.
 ///
 /// The peculiar form of this function makes for easy one-liners in the test
 /// code exploiting the environment variable $CARGO_MANIFEST_DIR.
 pub fn set_test_root_augmented<V: AsRef<OsStr>>(root: V) {
-    let mut root = PathBuf::from(root.as_ref());
-    root.push("tests");
-    env::set_var(TEST_ROOT_ENV_VAR, root);
+    TEST_ROOT.get_or_init(|| PathBuf::from(root.as_ref()).join("tests"));
 }
 
-/// Activate this crate's "test mode", if-and-only-if the magic testing
-/// environment variable has been set. This allows testing of the Tectonic
-/// executable in a transparent way — notably, we avoid embedding the build
-/// prefix in the resulting binary, and we don't need to pass it any magical
-/// command line arguments.
+/// The test root set in this process, or else the one the `texyon` binary was
+/// launched with.
+fn test_root() -> Option<PathBuf> {
+    TEST_ROOT
+        .get()
+        .cloned()
+        .or_else(|| env::var_os(TEST_ROOT_ENV_VAR).map(PathBuf::from))
+}
+
+/// Activate this crate's "test mode", if-and-only-if a test root is known.
+/// This allows testing of the Tectonic executable in a transparent way —
+/// notably, we avoid embedding the build prefix in the resulting binary, and
+/// we don't need to pass it any magical command line arguments.
 pub fn maybe_activate_test_mode() {
-    if env::var_os(TEST_ROOT_ENV_VAR).is_none() {
+    if test_root().is_none() {
         return;
     }
 
@@ -88,15 +97,13 @@ pub fn activate_test_mode_augmented<V: AsRef<OsStr>>(root: V) {
     maybe_activate_test_mode();
 }
 
-/// Obtain a path to a testing resource file. The environment variable whose
-/// name is stored in the constant `TEST_ROOT_ENV_VAR` must be set to an
-/// appropriate directory. (Note: `TEST_ROOT_ENV_VAR` is a constant giving the
-/// *name* of the relevant variable — not the name of the variable itself!)
+/// Obtain a path to a testing resource file. A test root must have been set
+/// with `set_test_root_augmented`, or passed in `TEST_ROOT_ENV_VAR`.
 pub fn test_path(parts: &[&str]) -> PathBuf {
-    let mut path = PathBuf::from(env::var_os(TEST_ROOT_ENV_VAR).expect(
+    let mut path = test_root().expect(
         "Tectonic testing infrastructure cannot be used without \
-         setting the magic test-root environment variable",
-    ));
+         setting the test root",
+    );
     path.push(parts.iter().collect::<PathBuf>());
     path
 }
