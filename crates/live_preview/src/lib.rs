@@ -15,6 +15,8 @@ mod source;
 #[cfg(feature = "native")]
 mod native;
 #[cfg(feature = "native")]
+mod pack;
+#[cfg(feature = "native")]
 mod resources;
 
 #[cfg(test)]
@@ -49,5 +51,7 @@ pub use texyon_preview_protocol::{
 
 #[cfg(feature = "native")]
 pub use native::{serve, DiskSources, OpenRequest, ServeError};
+#[cfg(feature = "native")]
+pub use pack::{BundleOpener, PackError, PackedBundle, SupportPack};
 #[cfg(feature = "native")]
 pub use resources::{BundleResourceProvider, FrozenBundle};

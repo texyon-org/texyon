@@ -234,10 +234,13 @@ done
 
 # One manifest so the Worker knows the whole set up front and can fetch it in
 # parallel rather than discovering names one blocking call at a time.
-python3 - "$OUT" <<'PY'
+# The native preview trusts the pack only for the bundle and engine it was built
+# with, both named by the cached format, <bundle digest>-latex-<serial>.fmt.
+FORMAT_STEM="$(basename "$FORMAT" .fmt)"
+python3 - "$OUT" "${FORMAT_STEM%%-*}" "${FORMAT_STEM##*-}" <<'PY'
 import json, os, sys
 
-out = sys.argv[1]
+out, bundle_digest, format_serial = sys.argv[1], sys.argv[2], int(sys.argv[3])
 files_dir = os.path.join(out, "files")
 
 entries = {
@@ -248,6 +251,8 @@ entries = {
 manifest = {
     "version": 1,
     "format": "latex.fmt",
+    "bundleDigest": bundle_digest,
+    "formatSerial": format_serial,
     "totalBytes": sum(entries.values()),
     "files": entries,
 }

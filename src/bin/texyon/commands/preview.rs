@@ -3,6 +3,8 @@
 
 use std::{
     io::{BufReader, BufWriter},
+    path::PathBuf,
+    sync::Arc,
     time::{Duration, SystemTime},
 };
 
@@ -14,12 +16,14 @@ use texyon::{
     errors::{ErrorKind, Result},
     io::{format_cache::FormatCache, IoProvider, OpenResult},
     live_preview::{
-        serve, BundleResourceProvider, DiskSources, DocumentRoot, FrozenBundle, OpenRequest,
-        PreviewSession, ResidentEngineSupport, SessionConfig,
+        serve, BundleOpener, BundleResourceProvider, DiskSources, DocumentRoot, FrozenBundle,
+        OpenRequest, PackedBundle, PreviewSession, ResidentEngineSupport, SessionConfig,
+        SupportPack,
     },
     status::{NoopStatusBackend, StatusBackend},
     FORMAT_SERIAL,
 };
+use texyon_bundles::Bundle;
 use texyon_errors::anyhow::{anyhow, bail};
 use texyon_preview_protocol::{session::SESSION_PROTOCOL_VERSION, ProtocolLimits};
 use texyon_preview_render::MupdfBackend;
@@ -44,6 +48,10 @@ pub struct PreviewCommand {
     /// Verify named engine rewinds with the debug oracle.
     #[arg(long)]
     verify_rewinds: bool,
+
+    /// Prebuilt support pack to read before the bundle.
+    #[arg(long, value_name = "DIR")]
+    pack: Option<PathBuf>,
 }
 
 impl TexyonCommand for PreviewCommand {
@@ -69,30 +77,37 @@ impl TexyonCommand for PreviewCommand {
             ladder_bytes,
             only_cached: self.only_cached,
             verify_rewinds: self.verify_rewinds,
+            pack: self.pack,
         };
 
         serve(
             BufReader::new(std::io::stdin()),
             BufWriter::new(std::io::stdout()),
-            move |request| open(&config, tuning, request),
+            move |request| open(&config, &tuning, request),
         )
         .map_err(|error| ErrorKind::Msg(error.to_string()))?;
         Ok(0)
     }
 }
 
-#[derive(Clone, Copy)]
 struct Tuning {
     ladder_bytes: usize,
     only_cached: bool,
     verify_rewinds: bool,
+    pack: Option<PathBuf>,
+}
+
+/// Where support files come from, before the format is known to be cached.
+enum Support {
+    Pack(SupportPack),
+    Bundle(Box<dyn Bundle>),
 }
 
 type NativeSession = PreviewSession<BundleResourceProvider, MupdfBackend, DiskSources>;
 
 fn open(
     config: &PersistentConfig,
-    tuning: Tuning,
+    tuning: &Tuning,
     request: OpenRequest,
 ) -> texyon_errors::Result<NativeSession> {
     let format_name = if request.format.ends_with(".fmt") {
@@ -101,22 +116,55 @@ fn open(
         format!("{}.fmt", request.format)
     };
     let mut status = NoopStatusBackend::default();
-    ensure_format(config, &format_name, tuning.only_cached, &mut status)
-        .map_err(|error| anyhow!("could not prepare the format: {error}"))?;
-
-    let mut bundle = config
-        .default_bundle(tuning.only_cached)
-        .map_err(|error| anyhow!("{error}"))?;
+    let mut support = match &tuning.pack {
+        Some(dir) => Support::Pack(SupportPack::open(dir).map_err(|error| anyhow!("{error}"))?),
+        None => Support::Bundle(
+            config
+                .default_bundle(tuning.only_cached)
+                .map_err(|error| anyhow!("{error}"))?,
+        ),
+    };
+    let digest = match &mut support {
+        Support::Pack(pack) => pack.bundle_digest(),
+        Support::Bundle(bundle) => bundle.get_digest().map_err(|error| anyhow!("{error}"))?,
+    };
     let mut format_cache = FormatCache::new(
-        bundle.get_digest().map_err(|error| anyhow!("{error}"))?,
+        digest,
         config
             .format_cache_path()
             .map_err(|error| anyhow!("{error}"))?,
         FORMAT_SERIAL,
     );
+    if let Support::Pack(pack) = &support {
+        pack.seed_format(&mut format_cache, &format_name, FORMAT_SERIAL)
+            .map_err(|error| anyhow!("{error}"))?;
+    }
+    ensure_format(
+        config,
+        &mut format_cache,
+        &format_name,
+        tuning.only_cached,
+        &mut status,
+    )
+    .map_err(|error| anyhow!("could not prepare the format: {error}"))?;
     if let OpenResult::NotAvailable = format_cache.input_open_format(&format_name, &mut status) {
         bail!("format `{format_name}` is still not cached after generating it");
     }
+
+    // Built only now, since its index download would race a format generation.
+    let bundle: Box<dyn Bundle> = match support {
+        Support::Pack(pack) => {
+            let config = config.clone();
+            let only_cached = tuning.only_cached;
+            let open: BundleOpener = Arc::new(move || {
+                config
+                    .default_bundle(only_cached)
+                    .map_err(|error| anyhow!("{error}"))
+            });
+            Box::new(PackedBundle::new(pack, open))
+        }
+        Support::Bundle(bundle) => bundle,
+    };
 
     let root = DocumentRoot::new(&request.root)
         .map_err(|error| anyhow!("invalid project directory: {error}"))?;
@@ -161,22 +209,17 @@ fn open(
 /// Generate the format on first use, as a normal compile would.
 fn ensure_format(
     config: &PersistentConfig,
+    format_cache: &mut FormatCache,
     format_name: &str,
     only_cached: bool,
     status: &mut dyn StatusBackend,
 ) -> Result<()> {
-    let mut bundle = config.default_bundle(only_cached)?;
-    let mut format_cache = FormatCache::new(
-        bundle.get_digest()?,
-        config.format_cache_path()?,
-        FORMAT_SERIAL,
-    );
     if let OpenResult::Ok(_) = format_cache.input_open_format(format_name, status) {
         return Ok(());
     }
     let mut builder = ProcessingSessionBuilder::default();
     builder
-        .bundle(bundle)
+        .bundle(config.default_bundle(only_cached)?)
         .format_name(format_name)
         .format_cache_path(config.format_cache_path()?)
         .primary_input_buffer(b"\\documentclass{article}\\begin{document}x\\end{document}")

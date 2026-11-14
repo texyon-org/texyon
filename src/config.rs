@@ -59,13 +59,13 @@ pub fn maybe_return_test_bundle(bundle: Option<String>) -> Result<Box<dyn Bundle
 }
 
 /// Top-level persistent configuration required for the engine
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct PersistentConfig {
     default_bundles: Vec<BundleInfo>,
 }
 
 /// Information about a default bundle
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct BundleInfo {
     url: String,
 }

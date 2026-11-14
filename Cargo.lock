@@ -2295,6 +2295,7 @@ name = "texyon_live_preview"
 version = "0.0.0-dev.0"
 dependencies = [
  "rmp-serde",
+ "serde",
  "serde_json",
  "tempfile",
  "texyon_bridge_core",
