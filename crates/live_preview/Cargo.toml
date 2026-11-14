@@ -3,7 +3,6 @@ lints.workspace = true
 [package]
 name = "texyon_live_preview"
 version = "0.0.0-dev.0" 
-authors = ["the Tectonic Project"]
 description = """
 Document-level orchestration for TeXyoN's realtime LaTeX preview: source
 authority, a resident engine driver, selective publication, and one session

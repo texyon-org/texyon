@@ -8,7 +8,6 @@ lints.workspace = true
 [package]
 name = "texyon_bridge_icu"
 version = "0.0.0-dev.0" 
-authors = ["Peter Williams <peter@newton.cx>"]
 description = """
 Expose a subset of the ICU Unicode APIs to Rust/Cargo.
 """

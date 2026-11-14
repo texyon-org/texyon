@@ -8,7 +8,6 @@ lints.workspace = true
 [package]
 name = "texyon_bridge_graphite2"
 version = "0.0.0-dev.0" 
-authors = ["Peter Williams <peter@newton.cx>"]
 description = """
 Expose the graphite2 library to Rust/Cargo.
 """

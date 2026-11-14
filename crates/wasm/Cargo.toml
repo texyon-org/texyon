@@ -3,7 +3,6 @@ lints.workspace = true
 [package]
 name = "texyon_wasm"
 version = "0.0.0-dev.0"
-authors = ["the Tectonic Project"]
 description = """
 Tectonic's live-preview engine as a WebAssembly module, for running LaTeX in a
 browser.

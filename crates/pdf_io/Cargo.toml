@@ -8,7 +8,6 @@ lints.workspace = true
 [package]
 name = "texyon_pdf_io"
 version = "0.0.0-dev.0" 
-authors = ["Peter Williams <peter@newton.cx>"]
 description = """
 Xdvipdfmx’s PDF, XDV, and image I/O APIs in C, as a Rust crate.
 """

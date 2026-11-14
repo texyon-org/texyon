@@ -8,7 +8,6 @@ lints.workspace = true
 [package]
 name = "texyon_xetex_layout"
 version = "0.0.0-dev.0"
-authors = ["Peter Williams <peter@newton.cx>"]
 description = """
 XeTeX's font loading and layout interface encapsulation, as a crate.
 """

@@ -8,7 +8,6 @@ lints.workspace = true
 [package]
 name = "texyon_engine_xetex"
 version = "0.0.0-dev.0" 
-authors = ["Peter Williams <peter@newton.cx>"]
 description = """
 The [XeTeX](http://xetex.sourceforge.net/) engine as a reusable crate.
 """

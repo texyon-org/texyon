@@ -3,7 +3,6 @@ lints.workspace = true
 [package]
 name = "texyon_preview_render"
 version = "0.0.0-dev.0"
-authors = ["the Tectonic Project"]
 description = "Portable XDV analysis and rendering core for live preview"
 homepage = "https://github.com/texyon-org/texyon"
 repository = "https://github.com/texyon-org/texyon"

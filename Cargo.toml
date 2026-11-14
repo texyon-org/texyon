@@ -7,7 +7,6 @@ lints.workspace = true
 [package]
 name = "texyon"
 version = "0.0.0-dev.0"
-authors = ["Peter Williams <peter@newton.cx>"]
 description = """
 A fast, embeddable TeX/LaTeX engine: XeTeX ported to Rust, with incremental live preview.
 Forked from Tectonic and uses the TeX Live distribution of support files.

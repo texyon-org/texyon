@@ -6,7 +6,6 @@ lints.workspace = true
 [package]
 name = "texyon_io_base"
 version = "0.0.0-dev.0" 
-authors = ["Peter Williams <peter@newton.cx>"]
 description = """
 Basic types for Tectonic's pluggable I/O backend system
 """
