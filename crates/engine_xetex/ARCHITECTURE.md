@@ -4,6 +4,37 @@ The XeTeX engine in Rust. Procedures keep their `tex.web` names (`hpack`,
 `line_break`, `fin_align`, ...), so upstream's WEB source is the map to the code.
 The only non-Rust code built here is TECkit (`xetex/`).
 
+## Layout
+
+`src/` groups modules by role. A group folder (`base.rs`, `build.rs`, ...) only
+declares its modules. A module with children (`scan.rs` and `scan/`) keeps what
+they share, and they reach it and each other through `super::`.
+
+- `base/`: units, tokens, commands and codes, parameters, constants, checked
+  arithmetic, small stacks.
+- `memory/`: the `mem` arena, typed nodes, the glue and glyph stores.
+- `tables/`: `eqtb`, the save stack, the hash and control sequences, the
+  string pool, the primitive catalog.
+- `scanning/`: the input stack, `get_next`, expansion, the scanners, native
+  pgfmath.
+- `build/`: the main control loop and everything it builds with: math, line
+  breaking, hyphenation, packaging, the page builder, extensions.
+- `fonts.rs` with `fonts/`: TFM and native fonts, OpenType MATH.
+- `shipout.rs` with `shipout/`: DVI/XDV output, SyncTeX, pictures.
+- `print.rs` with `print/`: printing, errors, diagnostics, `\show...`.
+- `files/`: file I/O and names, the file-info primitives, formats.
+- `ffi/`: the bridge to the host and the C libraries (TECkit, ICU, the C clock).
+- `preview/`: the resident session, checkpoints, replay sources, the sync index.
+- `engine.rs` (init, run, teardown) and `state.rs` (`EngineState`, `ConfigState`).
+
+Each sub-state is defined in the module that owns its logic (`MemState` in
+`memory/mem.rs`, `EqtbState` in `tables/eqtb.rs`, ...). `EngineState` only
+composes them.
+
+Imports: names come in through `use` (grouped std, external, crate), never as
+inline `crate::` paths. A clashing name is imported by its module
+(`eqtb::define`). `std` functions keep their module (`mem::take`).
+
 ## Module map
 
 State and memory:
@@ -11,37 +42,34 @@ State and memory:
 - `state.rs`: `EngineState`, the single owner of a run's state, split into
   sub-states (`mem`, `eqtb`, `scanner`, `input`, `save_stack`, `fonts`,
   `shipout`, `errors`, ...). See "API shape" below for how code reaches them.
-- `mem.rs`: the `mem` arena. Fixed list heads (`CONTRIB_HEAD`, `HOLD_HEAD`,
-  `ALIGN_HEAD`, `END_SPAN`, ...), the static glue specs (`ZERO_GLUE`, ...),
-  both free lists (`st.mem.get_avail()`, `st.mem.get_node(s)`), node
-  constructors (`new_glue`, `new_null_box`, ...), glue reference counts and
-  the semantic nest.
-- `node.rs`: typed handles. `NodePtr<K>` is a `Copy` index tagged with a kind
-  (`BoxNode`, `GlueNode`, `GlueSpecNode`, `UnsetNode`, `AlignRecord`, ...).
-  Kinds with a layout struct in `overlay.rs` (`BoxNode`, `GlueSpecNode`) are
-  read as `mem[p].width` and written as `mem[p].width = w`. The others still
-  use accessors, `p.width(mem)` and `p.set_width(mem, w)`, with shared fields
-  as traits (`HasLink`, `HasWidth`, ...). An hlist and a vlist are one
-  `BoxNode`, told apart by `mem[b].orientation`. `FixedNode` kinds get
-  `alloc`/`free`, and `ListRecord` kinds get `at` because their list proves
-  their kind. `AnyNode` comes out of `MemState::classify`.
-  Noad subfields are `NodePtr<MathField>` and `NodePtr<DelimiterField>`
-  (`q.nucleus()`, `q.left_delimiter()`, ...). Token lists are `MemPtr` chains
-  read with `p.token(mem)` and `p.link(mem)`, their heads carrying
-  `token_ref_count`.
-- `token.rs`: `Token`, a transparent `i32` in TeX's layout (`cmd * max_char_val
+- `memory/mem.rs`: the `mem` arena. Fixed list heads (`CONTRIB_HEAD`,
+  `HOLD_HEAD`, `ALIGN_HEAD`, `END_SPAN`, ...), per-size free lists
+  (`st.mem.get_node(s)`, `free_node`), node constructors (`new_glue`,
+  `new_null_box`, ...) and the semantic nest. Glue specs live in
+  `memory/glue_store.rs` (reference counted, `ZERO_GLUE` and the other static
+  specs first), token lists in the `TokenStore` of `base/token.rs`, shaped
+  glyphs in `memory/glyph_arena.rs`.
+- `memory/node.rs`: typed handles. Every node kind is a `#[repr(C)]` struct in
+  `memory/node/kinds.rs` laid over its words, and `NodePtr<K>` is a `Copy`
+  index tagged with its kind, so `mem[p].width` is one load and
+  `mem[p].width = w` one store. An hlist and a vlist are one `BoxNode`, told
+  apart by `mem[b].orientation`. `Node` kinds get `alloc`/`free`, and
+  `ListRecord` kinds get `at` because their list proves their kind. `AnyNode`
+  comes out of `MemState::classify`. `mem.entries(p)` gives the text or array
+  an `ArrayNode` keeps after its struct.
+- `base/token.rs`: `Token`, a transparent `i32` in TeX's layout (`cmd * max_char_val
   + chr` for a character, `cs_token_flag + p` for a control sequence).
   Built with `Token::new(cmd, chr)`, `Token::from_cs(p)` and helpers like
   `Token::other(b'=')`, read with `is_cs()`, `cs()`, `cmd()`, `chr()`. It is
   ordered like the raw value, so brace and parameter tests stay range checks
   (`is_left_brace()`, `is_brace()`, `is_match()`). `cur_tok`, `par_token`,
   `after_token` and token list nodes hold it. `Token::ZERO` is TeX's 0.
-- `units.rs`: `MemIdx`, `CsId` and `PrimNum` wrap `NonZeroU32`, so TeX's
+- `base/units.rs`: `MemIdx`, `CsId` and `PrimNum` wrap `NonZeroU32`, so TeX's
   null or 0 is `None` (`MemPtr` is `Option<MemIdx>`, `cur_cs` is
   `Option<CsId>`), and `Scaled`, `FontId`, `StrNumber`, `NodeType`,
   `GlueSign`. The hash and primitive tables hold `HashEntry` and `PrimEntry`
-  (`hash.rs`). `mem_types.rs` holds the
-  arena word records and `ListStateRecord`, whose `Mode` (`mode.rs`) carries
+  (`tables/hash.rs`). `memory/mem_types.rs` holds the
+  arena word records and `ListStateRecord`, whose `Mode` (`base/mode.rs`) carries
   the registers of its list (`prev_depth`, `space_factor` and `clang`,
   `incompleat_noad`).
   - `Scaled` is every length: node dimensions, font metrics, `dimen_par`,
@@ -66,11 +94,11 @@ State and memory:
     `TOO_BIG_CHAR`, else a pool string): the string pool API, `text(p)`,
     font names and areas, `job_name` and the scanned file name parts.
     `StrNumber::NONE` is TeX's 0 for "no string".
-  - `CurVal` (`scan/internal.rs`) replaces WEB's `cur_val` and
+  - `CurVal` (`scanning/scan/internal.rs`) replaces WEB's `cur_val` and
     `cur_val_level` globals: `scan_something_internal` and `scan_expr`
     return the value tagged with its level.
-- `consts.rs`: WEB `@d` constants and the `eqtb` layout (region bases).
-- `params.rs`: `IntPar`, `DimenPar`, `GluePar` and `TokPar`, the `eqtb`
+- `base/consts.rs`: WEB `@d` constants and the `eqtb` layout (region bases).
+- `base/params.rs`: `IntPar`, `DimenPar`, `GluePar` and `TokPar`, the `eqtb`
   parameters read through `EqtbState::int_par`, `dimen_par`, `glue_par` and
   `tok_par` (`\parshape` is `PAR_SHAPE_LOC`). Each knows
   its `eqtb` location (`loc()`) and primitive name, a `GluePar` also the
@@ -84,9 +112,9 @@ State and memory:
   a token-list level's `token_start`/`token_loc`, a nest level's
   `prev_depth`/`space_factor`/`clang`/`incompleat_noad` (its `aux` word by
   mode) and `info_ptr` of a one-word node.
-- `cmd.rs`: command codes, in `xetex.web` order. They stay `u8` because
+- `base/cmd.rs`: command codes, in `xetex.web` order. They stay `u8` because
   TeX compares ranges of them (`cur_cmd >= CALL`).
-- `codes.rs`: enums for the `chr_code` modifiers of the commands that
+- `base/codes.rs`: enums for the `chr_code` modifiers of the commands that
   dispatch on them (`LastItemCode`, `ConvertCode`, `IfCode`, `FiOrElseCode`,
   `ExtensionCode`, `BoxCode`, `SkipCode`, `ShorthandDefCode`,
   `BoxDimenCode`, `ShowCode`, `InputCode`, `PageIntCode`, `TheCode`,
@@ -95,14 +123,14 @@ State and memory:
   `CurVal` levels and sparse-array types, `ScannerStatus`). `cur_mark` is
   indexed by `MarkCode` and `sa_root` by `ValueLevel`. `code_enum!`
   gives each `from_raw` (a jump table) and `raw`, and `name()` where the
-  variants are primitives, which `primitives.rs` and `print_cmd_chr` share.
+  variants are primitives, which `tables/primitives.rs` and `print_cmd_chr` share.
   Dispatch decodes `cur_chr` once and matches on variants. A `chr_code` that
   can also be a pointer (`\count` registers, `\toks`) stays raw. The
   `selector` is `Selector` in `state.rs`, whose `File(n)` is a `\write`
   stream and whose `with_log`/`without_terminal` steps are TeX's arithmetic.
-- `primitives.rs`: the primitive catalog. Its order fixes the hash layout and
+- `tables/primitives.rs`: the primitive catalog. Its order fixes the hash layout and
   therefore the format.
-- `errors.rs`: `ErrorState`. Set help with `st.errors.help(&[...])`, then call
+- `print/errors.rs`: `ErrorState`. Set help with `st.errors.help(&[...])`, then call
   `error(st)?`. Every fatal path is one `Abort` (overflow, confusion, fatal
   error, interaction halt, I/O failure, ...) propagated with `?` up to the run
   loop, which prints the WEB termination text and maps it to a history code.
@@ -113,49 +141,49 @@ submodules. The parent keeps what its children share and re-exports the
 crate-facing procedures, so callers write `crate::scan::scan_int`. Children
 see each other through `pub(super)`.
 
-- `scan.rs` (keywords, math codes, rule specs, box registers) with
-  `scan/next.rs` (`get_next`, `get_x_token`, `pass_text`), `scan/numbers.rs`
+- `scanning/scan.rs` (keywords, math codes, rule specs, box registers) with
+  `scanning/scan/next.rs` (`get_next`, `get_x_token`, `pass_text`), `scanning/scan/numbers.rs`
   (`scan_int`, `scan_dimen`, `scan_glue`, `scan_expr` and the bounded
-  `scan_*_int`s), `scan/internal.rs` (`scan_something_internal`, font
-  queries) and `scan/toks.rs` (`the_toks`, `scan_toks`, `read_toks`,
+  `scan_*_int`s), `scanning/scan/internal.rs` (`scan_something_internal`, font
+  queries) and `scanning/scan/toks.rs` (`the_toks`, `scan_toks`, `read_toks`,
   `\scantokens`).
-- `expand.rs` (macros, conditionals).
-- `main_control.rs` (the main loop and its `dispatch_command`) with
-  `main_control/main_loop.rs` (the character loop: ligatures, kerns, native
+- `scanning/expand.rs` (macros, conditionals).
+- `build/main_control.rs` (the main loop and its `dispatch_command`) with
+  `build/main_control/main_loop.rs` (the character loop: ligatures, kerns, native
   words, interchar tokens), `lists.rs` (paragraphs, glue, kerns, inserts,
   marks, discretionaries, accents, `handle_right_brace`), `boxes.rs`
   (`begin_box`, `box_end`, `package`, `unpackage`, `delete_last`),
   `align.rs` (`\halign`/`\valign`) and `assign.rs` (`prefixed_command`,
   registers, `new_font`, the `alter_*` family).
-- `linebreak.rs` (`line_break`, `try_break`, the active list) with
-  `linebreak/post.rs` (`post_line_break`), `protrusion.rs` (margin kerns),
+- `build/linebreak.rs` (`line_break`, `try_break`, the active list) with
+  `build/linebreak/post.rs` (`post_line_break`), `protrusion.rs` (margin kerns),
   `prehyph.rs` (finding words to hyphenate), `hyphenate.rs` (`hyphenate`,
   `reconstitute`, native-word hyphens) and `locale.rs` (ICU line breaks).
-  `hyphenation.rs` holds patterns and exceptions. The packed trie is read
+  `build/hyphenation.rs` holds patterns and exceptions. The packed trie is read
   with `trie_link`/`trie_char`/`trie_op` (`pattern_root(lang)` finds a
   language's patterns) and its ops as `HyphOp` records (`hyph_op(v)`).
   INITEX's linked trie has its own `trie_l`/`trie_r`/`trie_hash` accessors.
   `exception_hash` hashes a word for the exception table. Word positions
   (`hyphen_passed`, the `hc`/`hu`/`hyf` indices) are `usize`.
-- `packaging.rs` (`hpack`, `vpackage`, `append_to_vlist`) with
-  `packaging/vert_break.rs` (`vert_break`, `vsplit`, `prune_page_top`,
-  `do_marks`) and `packaging/copy.rs` (`copy_node_list`,
+- `build/packaging.rs` (`hpack`, `vpackage`, `append_to_vlist`) with
+  `build/packaging/vert_break.rs` (`vert_break`, `vsplit`, `prune_page_top`,
+  `do_marks`) and `build/packaging/copy.rs` (`copy_node_list`,
   `flush_node_list`, `just_copy`, `just_reverse`).
-- `pagebuilder.rs`.
-- `math.rs` (math font parameters) with `math/mlist.rs` (`mlist_to_hlist`
-  and the `make_*` noad handlers), `math/scripts.rs` (`make_scripts`),
-  `math/delimiters.rs` (`char_box`, `var_delimiter`, `rebox`),
-  `math/build.rs` (the math-mode commands, `fin_mlist`) and
-  `math/display.rs` (`init_math`, `after_math`, displays).
+- `build/pagebuilder.rs`.
+- `build/math.rs` (math font parameters) with `build/math/mlist.rs` (`mlist_to_hlist`
+  and the `make_*` noad handlers), `build/math/scripts.rs` (`make_scripts`),
+  `build/math/delimiters.rs` (`char_box`, `var_delimiter`, `rebox`),
+  `build/math/build.rs` (the math-mode commands, `fin_mlist`) and
+  `build/math/display.rs` (`init_math`, `after_math`, displays).
 - `shipout.rs` (`ship_out`, `hlist_out`, `vlist_out`, movements) with
   `shipout/whatsits.rs` (`out_what`: `\special`, `\write`, `\openout`
   streams, pictures).
-- `output.rs` (`print_*`, the diagnostic sink) with `output/cmd_chr.rs`
-  (`print_cmd_chr`, `print_meaning`), `output/show_box.rs` (`show_box`,
-  `show_node_list`), `output/show.rs` (`show_whatever`, `show_activities`,
+- `print.rs` (`print_*`, `Selector`) with `print/errors.rs`, `print/diagnostic.rs` (the diagnostic sink), with `print/cmd_chr.rs`
+  (`print_cmd_chr`, `print_meaning`), `print/show_box.rs` (`show_box`,
+  `show_node_list`), `print/show.rs` (`show_whatever`, `show_activities`,
   `show_context`, `show_token_list`, `issue_message`) and
-  `output/warnings.rs` (e-TeX nesting warnings, font and `char_warning`s).
-- `dvi.rs`: `DviWriter` (`st.shipout.dvi`), the XDV byte stream. It owns
+  `print/warnings.rs` (e-TeX nesting warnings, font and `char_warning`s).
+- `shipout/dvi.rs`: `DviWriter` (`st.shipout.dvi`), the XDV byte stream. It owns
   TeX's half-swapped `dvi_buf`, the file handle, `last_bop`, the push depth
   (`cur_s`, -2 after an overflow) and the page manifest that records byte
   spans for live preview. Shipout calls commands (`bop`, `eop`, `set_char`,
@@ -167,7 +195,7 @@ see each other through `pub(super)`.
   earlier movements with `set_reg_at`. The buffer and position are private:
   a checkpoint keeps `into_checkpoint()` of the writer and returns with
   `restore`, which reuses the live buffer and keeps the page manifest.
-- Font metrics (`tfm.rs`): `st.fonts.metrics[f]` is `FontMetrics::Tfm` (an
+- Font metrics (`fonts/tfm.rs`): `st.fonts.metrics[f]` is `FontMetrics::Tfm` (an
   `Rc<TfmMetrics>` decoded once by `read_tfm`) or `FontMetrics::Native` (ascent
   and descent). `char_info(f, c)` is an `Option<CharInfo>` with the
   character's `width`, `height`, `depth`, `italic` and a `CharTag::{None,
@@ -181,19 +209,19 @@ see each other through `pub(super)`.
   and the format alike.
   `\fontdimen` parameters are `params[f]` (`FontParams`, copy-on-write, read
   with `param(f, n)`), and checkpoints share both through `Rc`.
-- `fonts.rs` (TFM and font parameters), `ext.rs` (loading OpenType and
+- `build/extension.rs` (`do_extension`, `\openout`/`\write`/`\special`, source specials).
+- `fonts.rs` (`FontState`, TFM and font parameters), `fonts/ext.rs` (loading OpenType and
   Graphite fonts through `texyon_xetex_layout`, feature parsing, TECkit
-  mappings, font queries) with `ext/native.rs` (shaping and measuring native
-  words and glyphs) and `ext/extension.rs` (`do_extension`, source
-  specials), `ot_math.rs` (OpenType MATH), `pic.rs` (pictures).
-- `save.rs` (save stack, `eqtb` definitions, sparse registers), `hash.rs`,
-  `string_pool.rs`, `io.rs`.
-- `input.rs`: the input stack. A level's `state` is a scanner state
+  mappings, font queries) with `fonts/ext/native.rs` (shaping and measuring native
+  words and glyphs) and `fonts/ot_math.rs` (OpenType MATH), `shipout/pic.rs` (pictures).
+- `tables/save.rs` (save stack, `eqtb` definitions, sparse registers), `tables/hash.rs`,
+  `tables/string_pool.rs`, `files/io.rs`.
+- `scanning/input.rs`: the input stack. A level's `state` is a scanner state
   (`MID_LINE`, `SKIP_BLANKS`, `NEW_LINE`, which `get_next` adds to a category
   code) or `TOKEN_LIST`. Its `index` is the file number of a file level and
   the `TokenType` of a token-list level (`token_type()`, only valid when
   `state == TOKEN_LIST`).
-- `format_io.rs` (`\dump` and load): each section of the format file is one
+- `files/format_io.rs` (`\dump` and load): each section of the format file is one
   function generic over `FmtStream`, so the same code dumps (`Dump`) and
   loads (`Undump`) it. Load-only range checks and allocation, and dump-only
   statistics, are `if S::LOADING` branches. `FmtItem` gives each stored type
@@ -201,7 +229,7 @@ see each other through `pub(super)`.
 
 Crate and C boundaries:
 
-- `bridge.rs` is the engine's I/O over the run's `CoreBridgeState` (files,
+- `ffi/bridge.rs` is the engine's I/O over the run's `CoreBridgeState` (files,
   diagnostics, shell escape, MD5, abort message), calling bridge-core's Rust
   methods with byte-slice names. Replay sources answer first. A run installs
   its state with `bridge::enter(api)`, a scope that holds the exclusive borrow
@@ -211,19 +239,19 @@ Crate and C boundaries:
 - Fonts and shaping go straight to `texyon_xetex_layout`'s Rust API:
   `Font`, `LayoutEngine` (`state::FontEngineHandle`), `FontManager`, the
   glyph-box and protrusion caches. Loading a font file takes the run's
-  `CoreBridgeState` (`with_bridge`). That crate has no C API. `ot_math.rs`
+  `CoreBridgeState` (`with_bridge`). That crate has no C API. `fonts/ot_math.rs`
   reads the MATH table through `LayoutEngine::ot_math()`, bridge-harfbuzz's
   safe `ot::Math`.
-- `extern "C"` remains only for real C: `layout.rs` (TECkit converters, ICU
+- `extern "C"` remains only for real C: `ffi/teckit_icu.rs` (TECkit converters, ICU
   line breaking and bidi, with their disposal, plus the HarfBuzz tag and
-  `with_c_str` helpers), `io.rs` (ICU input converters), `pic.rs` and
-  `engine.rs` (pdf_io), `compat.rs` (Windows time calls). File names are
+  `with_c_str` helpers), `files/io.rs` (ICU input converters), `shipout/pic.rs` and
+  `engine.rs` (pdf_io), `ffi/clock.rs` (Windows time calls). File names are
   Rust bytes (font and input paths, the synctex and
   source-special names) and become C strings only at those calls.
 - Raw pointers stay in those modules. Elsewhere `unsafe` is limited to
-  plain-data byte views (`mem_types.rs`, `state.rs`, `format_io.rs`),
-  the bridge pointer and `strerror` (`bridge.rs`), the C time calls (`texmfmp.rs`) and the preview
-  controller's pointers (`session.rs`). Every block has a `// SAFETY:` comment
+  plain-data byte views (`memory/mem_types.rs`, `state.rs`, `files/format_io.rs`),
+  the bridge pointer and `strerror` (`ffi/bridge.rs`), the C time calls (`ffi/clock.rs`) and the preview
+  controller's pointers (`preview/session.rs`). Every block has a `// SAFETY:` comment
   (`clippy::undocumented_unsafe_blocks` is clean). The
   engine proper prints and reports with Rust strings: `print(st, "...")`,
   `print_nl`, `print_esc` take a `&str`, bytes, a byte character or a
@@ -231,14 +259,14 @@ Crate and C boundaries:
 
 Live preview:
 
-- `session.rs` runs a resident engine. `checkpoint.rs` keeps a ladder of
-  restorable rungs from reverse deltas (`journal.rs`) plus non-journaled state
-  (`checkpoint/bundle.rs`). `checkpoint/oracle.rs` verifies restores when enabled.
-- `replay/` models immutable editor sources and resumable command fences.
-  `sync_index/` and `page_manifest.rs` record source and page geometry. The
+- `preview/session.rs` runs a resident engine. `preview/checkpoint.rs` keeps a ladder of
+  restorable rungs from reverse deltas (`preview/journal.rs`) plus non-journaled state
+  (`preview/checkpoint/bundle.rs`). `preview/checkpoint/oracle.rs` verifies restores when enabled.
+- `preview/replay/` models immutable editor sources and resumable command fences.
+  `preview/sync_index/` and `preview/page_manifest.rs` record source and page geometry. The
   sync index keeps each page's SyncTeX records and answers queries with the
   node selection of TeX Live's `synctex_parser.c`, checked against the
-  `synctex` tool by fixtures in `sync_index/fixtures/`. `SyncIndex::highlight`
+  `synctex` tool by fixtures in `preview/sync_index/fixtures/`. `SyncIndex::highlight`
   narrows a forward answer to the boxes a viewer flashes.
 
 ## API shape
@@ -268,7 +296,7 @@ The type system knows the node type.
   `classify_x().expect()` at use sites.
 - Raw words stay raw only at genuine `i32` boundaries (nest fields, `loc`,
   format dump). Don't add `Option` or sentinel juggling just to avoid an `i32`.
-- A missing accessor is a small method on that kind's `impl` in `node.rs`.
+- A missing accessor is a small method on that kind's `impl` in `memory/node.rs`.
 - Typed accessors compile to the same loads as raw ones. Keep the hot paths
   (the main loop's character path, `get_next`/`expand`, `hpack`/`vpack`,
   `line_break`, `mlist_to_hlist`, `hlist_out`) free of extra classification

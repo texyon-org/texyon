@@ -22,7 +22,7 @@ This crate provides the following [Cargo features][features]:
 
 ## Format introspection
 
-The primitive catalog in `src/primitives.rs` follows the `texyon_xetex_format`
+The primitive catalog in `src/tables/primitives.rs` follows the `texyon_xetex_format`
 introspection crate. This crate defines the format serial number that it
 implements (in `texyon_engine_xetex::FORMAT_SERIAL`) separately from the
 maximum serial number supported by the introspection crate (in
