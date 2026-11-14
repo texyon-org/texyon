@@ -505,11 +505,9 @@ impl FontState {
                 }
             }
         } else {
-            for i in 1..glyph_count {
-                glyphs.locations[i].x = d2fix(
-                    fix2d(glyphs.locations[i].x)
-                        + just_amount * i as f64 / (glyph_count - 1) as f64,
-                );
+            let locations = glyphs.locations[..glyph_count].iter_mut();
+            for (i, loc) in locations.enumerate().skip(1) {
+                loc.x = d2fix(fix2d(loc.x) + just_amount * i as f64 / (glyph_count - 1) as f64);
             }
         }
 

@@ -246,7 +246,7 @@ impl FmtItem for GlueSpec {
     #[inline]
     fn get(bytes: &[u8]) -> Option<Self> {
         let mut words = [0u32; 5];
-        for (w, chunk) in words.iter_mut().zip(bytes.chunks_exact(4)) {
+        for (w, chunk) in words.iter_mut().zip(bytes.as_chunks::<4>().0) {
             *w = u32::get(chunk)?;
         }
         Some(bytemuck::cast(words))
@@ -276,7 +276,7 @@ impl FmtItem for ListSlot {
     #[inline]
     fn get(bytes: &[u8]) -> Option<Self> {
         let mut words = [0u32; 3];
-        for (w, chunk) in words.iter_mut().zip(bytes.chunks_exact(4)) {
+        for (w, chunk) in words.iter_mut().zip(bytes.as_chunks::<4>().0) {
             *w = u32::get(chunk)?;
         }
         Some(bytemuck::cast(words))
@@ -292,7 +292,7 @@ fn put_words<const N: usize>(words: [i32; N], out: &mut Vec<u8>) {
 
 fn get_words<const N: usize>(bytes: &[u8]) -> Option<[i32; N]> {
     let mut words = [0; N];
-    for (w, chunk) in words.iter_mut().zip(bytes.chunks_exact(4)) {
+    for (w, chunk) in words.iter_mut().zip(bytes.as_chunks::<4>().0) {
         *w = i32::get(chunk)?;
     }
     Some(words)
