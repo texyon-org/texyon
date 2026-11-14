@@ -32,8 +32,6 @@ pub(crate) struct EngineState {
     pub src_specials: SourceSpecials,
     pub synctex: SynctexCtxt,
     pub interchar: InterCharState,
-    /// Not checkpointed.
-    pub pgfmath: crate::scanning::pgfmath::Diagnostics,
     /// Not checkpointed: a restore keeps the operation's list.
     pub diagnostics: crate::print::diagnostic::DiagnosticsState,
 }
@@ -59,5 +57,5 @@ pub(crate) struct ConfigState {
     /// such as guarded picture probes.
     pub execution_mode: EngineExecutionMode,
     pub max_print_line: i32,
-    pub pgfmath: crate::scanning::pgfmath::Mode,
+    pub native_pgfmath: bool,
 }

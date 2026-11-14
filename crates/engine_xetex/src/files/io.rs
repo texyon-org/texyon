@@ -982,7 +982,6 @@ pub(crate) fn reopen_resident_outputs(st: &mut EngineState) -> Result<(), Abort>
 }
 
 pub(crate) fn close_files_and_terminate(st: &mut EngineState) -> Result<(), Abort> {
-    crate::scanning::pgfmath::report(st);
     for k in 0usize..=15 {
         if st.shipout.write_open[k] {
             crate::shipout::ensure_write_stream_open(st, k)?;

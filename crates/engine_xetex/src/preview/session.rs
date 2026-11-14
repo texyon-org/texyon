@@ -986,11 +986,7 @@ fn configure(state: &mut EngineState, config: &EnginePreviewConfig) {
     state.config.semantic_pagination_enabled = false;
     state.config.shell_escape_enabled = false;
     state.config.deterministic_mode = config.deterministic;
-    state.config.pgfmath = crate::scanning::pgfmath::Mode::from_env(if config.native_pgfmath {
-        crate::scanning::pgfmath::Mode::Native
-    } else {
-        crate::scanning::pgfmath::Mode::Off
-    });
+    state.config.native_pgfmath = config.native_pgfmath;
     state.config.execution_mode = EngineExecutionMode::Resident;
     state.cancellation.install(config.cancellation.clone());
 }

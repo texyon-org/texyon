@@ -228,7 +228,7 @@ impl TexEngine {
             semantic_pagination_enabled: self.semantic_pagination_enabled,
             shell_escape_enabled: self.shell_escape_enabled,
             deterministic_mode: self.deterministic_mode,
-            pgfmath: crate::scanning::pgfmath::Mode::from_env(crate::scanning::pgfmath::Mode::Off),
+            native_pgfmath: false,
             ..ConfigState::default()
         };
 

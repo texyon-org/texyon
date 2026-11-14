@@ -10,51 +10,30 @@ use crate::base::cmd::Cmd;
 
 use crate::base::params::IntPar;
 use crate::base::token::{Token, TokenKind, TokenList};
-use crate::print::errors::Abort;
+use crate::print::errors::{Abort, OrConfusion};
 use crate::state::EngineState;
 
 pub(crate) mod eval;
 
 use eval::{Format, Func, Item};
 
-#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
-pub(crate) enum Mode {
-    #[default]
-    Off,
-    Native,
-    Check,
-}
-
-impl Mode {
-    /// `TEXYON_PGFMATH=native|check|off` overrides `default`.
-    pub(crate) fn from_env(default: Mode) -> Mode {
-        match std::env::var("TEXYON_PGFMATH").as_deref() {
-            Ok("native") => Mode::Native,
-            Ok("check") => Mode::Check,
-            Ok("off") => Mode::Off,
-            _ => default,
-        }
-    }
-}
-
 macro_rules! known_cs {
     (
-        required { $($req:ident = $req_name:literal,)* }
-        optional { $($opt:ident = $opt_name:literal,)* }
+        required { $($req_var:ident $req:ident = $req_name:literal,)* }
+        optional { $($opt_var:ident $opt:ident = $opt_name:literal,)* }
     ) => {
-        #[allow(non_camel_case_types)]
         #[derive(Clone, Copy)]
-        enum Known { $($req,)* $($opt,)* }
+        enum Known { $($req_var,)* $($opt_var,)* }
 
         const KNOWN: &[&str] = &[$($req_name,)* $($opt_name,)*];
-        const REQUIRED: usize = [$(Known::$req),*].len();
+        const REQUIRED: usize = [$(Known::$req_var),*].len();
 
         impl Complete {
             $(fn $req(&self) -> CsId {
-                self.required[Known::$req as usize]
+                self.required[Known::$req_var as usize]
             })*
             $(fn $opt(&self) -> Option<CsId> {
-                self.optional[Known::$opt as usize - REQUIRED]
+                self.optional[Known::$opt_var as usize - REQUIRED]
             })*
         }
     };
@@ -62,31 +41,31 @@ macro_rules! known_cs {
 
 known_cs! {
     required {
-        try_hook = "pgfmathparse@trynumber@loop",
-        parse_end = "pgfmath@parse@end",
-        is_number = "pgfmathparse@expression@is@number",
-        push_operand = "pgfmath@stack@push@operand",
-        expression = "pgfmath@expression",
-        result = "pgfmathresult",
-        units_declared = "ifpgfmathunitsdeclared",
-        if_true = "iftrue",
-        if_false = "iffalse",
-        relax = "relax",
-        let_ = "let",
-        edef = "edef",
-        quickparse = "ifpgfmath@quickparse",
-        postparse = "pgfmathpostparse",
-        trig_format = "pgfmath@trig@format@choice",
-        f_encoding = "f@encoding",
-        f_family = "f@family",
-        f_series = "f@series",
-        f_shape = "f@shape",
-        f_size = "f@size",
+        TryHook try_hook = "pgfmathparse@trynumber@loop",
+        ParseEnd parse_end = "pgfmath@parse@end",
+        IsNumber is_number = "pgfmathparse@expression@is@number",
+        PushOperand push_operand = "pgfmath@stack@push@operand",
+        Expression expression = "pgfmath@expression",
+        Result result = "pgfmathresult",
+        UnitsDeclared units_declared = "ifpgfmathunitsdeclared",
+        IfTrue if_true = "iftrue",
+        IfFalse if_false = "iffalse",
+        Relax relax = "relax",
+        Let let_ = "let",
+        Edef edef = "edef",
+        Quickparse quickparse = "ifpgfmath@quickparse",
+        Postparse postparse = "pgfmathpostparse",
+        TrigFormat trig_format = "pgfmath@trig@format@choice",
+        FEncoding f_encoding = "f@encoding",
+        FFamily f_family = "f@family",
+        FSeries f_series = "f@series",
+        FShape f_shape = "f@shape",
+        FSize f_size = "f@size",
     }
     optional {
-        comparison = "ifpgfmathfloatcomparison",
-        fpu_push_operand = "pgfmathfloat@stack@push@operand",
-        fpu_is_number = "pgfmathfloat@parse@expression@is@number",
+        Comparison comparison = "ifpgfmathfloatcomparison",
+        FpuPushOperand fpu_push_operand = "pgfmathfloat@stack@push@operand",
+        FpuIsNumber fpu_is_number = "pgfmathfloat@parse@expression@is@number",
     }
 }
 
@@ -138,7 +117,7 @@ impl KnownCs {
 
     #[inline(always)]
     pub(crate) fn is_try(&self, cs: CsId) -> bool {
-        self.cs[Known::try_hook as usize] == Some(cs)
+        self.cs[Known::TryHook as usize] == Some(cs)
     }
 
     #[inline(always)]
@@ -189,18 +168,6 @@ const TRACING: &[IntPar] = &[
     IntPar::TracingOnline,
 ];
 
-#[derive(Default)]
-struct Stats {
-    parses: u64,
-    numbers: u64,
-    macros: u64,
-    fallback: std::collections::BTreeMap<&'static str, u64>,
-    checked: u64,
-    differed: u64,
-    format_differed: u64,
-    worst: f64,
-}
-
 /// What a native evaluation defines `\pgfmathresult` to.
 enum Answer {
     /// `\let\pgfmathresult=\pgfmath@expression`, pgf's plain-number lane.
@@ -208,73 +175,31 @@ enum Answer {
     Parsed(eval::Outcome),
 }
 
-struct Pending {
-    answer: Answer,
-    expression: String,
+/// The control sequence `macro_call` should expand instead of `cur_cs`.
+#[inline(always)]
+pub(crate) fn redirect(st: &mut EngineState) -> Option<CsId> {
+    if st.config.native_pgfmath
+        && st
+            .scanner
+            .cur_cs
+            .is_some_and(|cs| st.eqtb.pgfmath.is_try(cs))
+    {
+        intercept(st)
+    } else {
+        None
+    }
 }
 
-/// Counters and check-mode state, for `TEXYON_PGFMATH` runs.
-#[derive(Default)]
-pub(crate) struct Diagnostics {
-    stats: Stats,
-    pending: Option<Pending>,
-}
-
-/// Returns the control sequence `macro_call` should expand instead.
 #[cold]
 #[inline(never)]
-pub(crate) fn intercept(st: &mut EngineState) -> Option<CsId> {
-    let mode = st.config.pgfmath;
+fn intercept(st: &mut EngineState) -> Option<CsId> {
     let known = st.eqtb.pgfmath.complete()?;
-    let body = st.scanner.cur.macro_body();
-    if mode == Mode::Check
-        && let Some(p) = st.pgfmath.pending.take()
-    {
-        let number = body == st.eqtb.meaning(known.is_number()).macro_body();
-        if number || body == st.eqtb.meaning(known.parse_end()).macro_body() {
-            let mut stats = std::mem::take(&mut st.pgfmath.stats);
-            compare(st, &known, &mut stats, &p, number);
-            st.pgfmath.stats = stats;
-            return None;
-        }
-        st.pgfmath.pending = Some(p);
-    }
     if st.scanner.cur_cs != Some(known.try_hook()) {
         return None;
     }
-    let outcome = evaluate_parse(st, &known);
-    let stats = &mut st.pgfmath.stats;
-    let answer = match outcome {
-        Ok(answer) => answer,
-        Err(reason) => {
-            *stats.fallback.entry(reason).or_default() += 1;
-            return None;
-        }
-    };
-    if mode == Mode::Check {
-        let expression = expression_tokens(st, known.expression())
-            .map(|t| describe(st, &t))
-            .unwrap_or_default();
-        st.pgfmath.pending = Some(Pending { answer, expression });
-        return None;
-    }
-    match commit(st, &known, &answer) {
-        Ok(()) => {
-            match answer {
-                Answer::Expression => st.pgfmath.stats.numbers += 1,
-                Answer::Parsed(_) => st.pgfmath.stats.parses += 1,
-            }
-            Some(known.parse_end())
-        }
-        Err(_) => {
-            *st.pgfmath
-                .stats
-                .fallback
-                .entry("commit failed")
-                .or_default() += 1;
-            None
-        }
-    }
+    let answer = evaluate_parse(st, &known).ok()?;
+    commit(st, &known, &answer).ok()?;
+    Some(known.parse_end())
 }
 
 fn evaluate_parse(st: &mut EngineState, known: &Complete) -> Result<Answer, &'static str> {
@@ -312,7 +237,7 @@ fn evaluate_parse(st: &mut EngineState, known: &Complete) -> Result<Answer, &'st
         };
     }
     let font = selected_font(st, known).ok_or("selectfont would load a font")?;
-    let items = expression_items(st, &tokens).inspect_err(|reason| trace(st, &tokens, reason))?;
+    let items = expression_items(st, &tokens)?;
     let mut constants = HashMap::new();
     for name in identifiers(&items) {
         if Func::from_name(&name).is_none()
@@ -329,9 +254,7 @@ fn evaluate_parse(st: &mut EngineState, known: &Complete) -> Result<Answer, &'st
         format,
         constant: &constant,
     };
-    eval::evaluate(&items, &env)
-        .map(Answer::Parsed)
-        .inspect_err(|reason| trace(st, &tokens, reason))
+    eval::evaluate(&items, &env).map(Answer::Parsed)
 }
 
 fn lookup(st: &mut EngineState, name: &str) -> Option<CsId> {
@@ -344,17 +267,6 @@ fn lookup(st: &mut EngineState, name: &str) -> Option<CsId> {
         Ok(p) if p.has_hash_text() && st.eqtb.text(p).raw() > 0 => Some(p),
         _ => None,
     }
-}
-
-fn cs_name(st: &EngineState, cs: CsId) -> Option<String> {
-    if !cs.has_hash_text() {
-        return None;
-    }
-    let text = st.eqtb.text(cs);
-    if text.raw() <= 0 || text >= st.strings.str_ptr {
-        return None;
-    }
-    crate::preview::introspect::read_string(st, text)
 }
 
 fn macro_tokens(st: &EngineState, cs: CsId) -> Option<Vec<Token>> {
@@ -573,84 +485,6 @@ fn commit(st: &mut EngineState, known: &Complete, answer: &Answer) -> Result<(),
     crate::tables::eqtb::define(st, false, known.result(), Command::Call(body))
 }
 
-fn compare(st: &EngineState, known: &Complete, stats: &mut Stats, pending: &Pending, number: bool) {
-    stats.checked += 1;
-    let (ours, units) = match &pending.answer {
-        Answer::Expression => {
-            if !number {
-                stats.format_differed += 1;
-            }
-            return;
-        }
-        Answer::Parsed(_) if number => return,
-        Answer::Parsed(outcome) => (&outcome.result, outcome.units),
-    };
-    let Some(theirs) = macro_text(st, known.result()) else {
-        return;
-    };
-    let shape = |t: &[u8]| (t.contains(&b'Y'), t.contains(&b'.'));
-    if shape(&theirs) != shape(ours)
-        || units != same_meaning(st, known.units_declared(), known.if_true())
-    {
-        stats.format_differed += 1;
-        if stats.format_differed <= 20 {
-            eprintln!(
-                "pgfmath format: `{}` native {} macro {}",
-                pending.expression,
-                String::from_utf8_lossy(ours),
-                String::from_utf8_lossy(&theirs)
-            );
-        }
-    }
-    let (Some(a), Some(b)) = (eval::parse_number(ours), eval::parse_number(&theirs)) else {
-        return;
-    };
-    let error = (a - b).abs() / b.abs().max(1.0);
-    if error > 1e-3 {
-        stats.differed += 1;
-        if stats.differed <= 20 {
-            eprintln!(
-                "pgfmath differs: `{}` native {} macro {}",
-                pending.expression,
-                String::from_utf8_lossy(ours),
-                String::from_utf8_lossy(&theirs)
-            );
-        }
-    }
-    stats.worst = stats.worst.max(error);
-}
-
-fn describe(st: &EngineState, tokens: &[Token]) -> String {
-    let mut text = String::new();
-    for tok in tokens {
-        match tok.kind() {
-            TokenKind::Cs(cs) => {
-                text.push('\\');
-                text.push_str(&cs_name(st, cs).unwrap_or_else(|| format!("<{}>", cs.raw())));
-                text.push(' ');
-            }
-            TokenKind::Char(_, c) => {
-                text.push(
-                    u32::try_from(c)
-                        .ok()
-                        .and_then(char::from_u32)
-                        .unwrap_or('?'),
-                );
-            }
-        }
-    }
-    text
-}
-
-fn trace(st: &EngineState, tokens: &[Token], reason: &str) {
-    let Ok(filter) = std::env::var("TEXYON_PGFMATH_TRACE") else {
-        return;
-    };
-    if reason.contains(filter.as_str()) {
-        eprintln!("pgfmath fallback ({reason}): {}", describe(st, tokens));
-    }
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Native {
     ParseNumber,
@@ -864,10 +698,22 @@ fn run_native(
     })
 }
 
-/// True when answered, then `macro_call` frees the arguments and skips the body.
+/// True when macro `name` was answered natively, then `macro_call` frees the
+/// arguments and skips the body.
+#[inline(always)]
+pub(crate) fn native_macro(st: &mut EngineState, name: CsId, args: &[TokenList]) -> bool {
+    if !st.config.native_pgfmath || args.is_empty() {
+        return false;
+    }
+    match st.eqtb.pgfmath.native(name) {
+        Some(kind) => run_native_macro(st, kind, args),
+        None => false,
+    }
+}
+
 #[cold]
 #[inline(never)]
-pub(crate) fn native_macro(st: &mut EngineState, kind: Native, args: &[TokenList]) -> bool {
+fn run_native_macro(st: &mut EngineState, kind: Native, args: &[TokenList]) -> bool {
     if TRACING.iter().any(|&p| st.eqtb.int_par(p) > 0) || st.eqtb.int_par(IntPar::GlobalDefs) != 0 {
         return false;
     }
@@ -879,11 +725,6 @@ pub(crate) fn native_macro(st: &mut EngineState, kind: Native, args: &[TokenList
         .map(|&p| st.mem.tokens.iter(p).collect())
         .collect();
     let Some(effects) = run_native(st, &known, kind, &args) else {
-        *st.pgfmath
-            .stats
-            .fallback
-            .entry("native macro input")
-            .or_default() += 1;
         return false;
     };
     let committed = (|| -> Result<(), Abort> {
@@ -900,32 +741,12 @@ pub(crate) fn native_macro(st: &mut EngineState, kind: Native, args: &[TokenList
                         known.if_false()
                     };
                     let m = st.eqtb.meaning(source);
-                    let flag = known.comparison().expect("comparison");
+                    let flag = known.comparison().or_confusion("pgfmath comparison")?;
                     crate::tables::eqtb::define(st, true, flag, m)?;
                 }
             }
         }
         Ok(())
     })();
-    if committed.is_ok() {
-        st.pgfmath.stats.macros += 1;
-    }
     committed.is_ok()
-}
-
-pub(crate) fn report(st: &EngineState) {
-    if std::env::var_os("TEXYON_PGFMATH").is_none() {
-        return;
-    }
-    let s = &st.pgfmath.stats;
-    let fallback: u64 = s.fallback.values().sum();
-    eprintln!(
-        "pgfmath: {} native, {} plain numbers, {} native macros, {} fallback; checked {}, {} beyond 1e-3, {} format, worst {:.2e}",
-        s.parses, s.numbers, s.macros, fallback, s.checked, s.differed, s.format_differed, s.worst
-    );
-    let mut reasons: Vec<_> = s.fallback.iter().collect();
-    reasons.sort_by(|a, b| b.1.cmp(a.1));
-    for (reason, n) in reasons {
-        eprintln!("  {n:>8}  {reason}");
-    }
 }

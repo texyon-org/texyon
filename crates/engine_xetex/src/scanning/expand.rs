@@ -1020,14 +1020,7 @@ fn trace_macro_param(st: &mut EngineState, match_chr: i32, n: usize, list: Token
 }
 
 pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
-    if (st.config.pgfmath == crate::scanning::pgfmath::Mode::Check
-        || st.config.pgfmath == crate::scanning::pgfmath::Mode::Native
-            && st
-                .scanner
-                .cur_cs
-                .is_some_and(|cs| st.eqtb.pgfmath.is_try(cs)))
-        && let Some(cs) = crate::scanning::pgfmath::intercept(st)
-    {
+    if let Some(cs) = crate::scanning::pgfmath::redirect(st) {
         st.scanner.cur_cs = Some(cs);
         st.scanner.cur = st.eqtb.meaning(cs);
     }
@@ -1214,11 +1207,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
 
-        if n > 0
-            && st.config.pgfmath == crate::scanning::pgfmath::Mode::Native
-            && let Some(kind) = st.eqtb.pgfmath.native(name)
-            && crate::scanning::pgfmath::native_macro(st, kind, &pstack[..n])
-        {
+        if crate::scanning::pgfmath::native_macro(st, name, &pstack[..n]) {
             for &list in &pstack[..n] {
                 st.mem.tokens.flush(list);
             }
