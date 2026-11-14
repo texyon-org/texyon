@@ -4,7 +4,7 @@
 //! The `texyon` command-line program.
 
 use clap::{Parser, Subcommand, ValueEnum};
-use std::{ffi::OsString, io::IsTerminal, process};
+use std::{ffi::OsString, io::IsTerminal, process::ExitCode};
 use texyon::{
     config::PersistentConfig,
     errors::{Result, SyncError},
@@ -101,7 +101,7 @@ struct PeekUnstableOptions {
     _remainder: Vec<OsString>,
 }
 
-fn main() {
+fn main() -> ExitCode {
     // `-X` once selected this interface. Extension 0.2.0 and the C oracle's goldens scripts still pass it.
     let args: Vec<OsString> = std::env::args_os().filter(|arg| arg != "-X").collect();
 
@@ -118,7 +118,7 @@ fn main() {
         Ok(c) => c,
         Err(ref e) => {
             e.dump_uncolorized();
-            process::exit(1);
+            return ExitCode::FAILURE;
         }
     };
 
@@ -165,11 +165,12 @@ fn main() {
         Commands::Preview(o) => o.execute(config, &mut *status),
     };
 
-    process::exit(match result {
-        Ok(code) => code,
+    // Returning lets atexit run, where an instrumented Windows build writes its profile.
+    match result {
+        Ok(code) => u8::try_from(code).map_or(ExitCode::FAILURE, ExitCode::from),
         Err(e) => {
             status.report_error(&SyncError::new(e).into());
-            1
+            ExitCode::FAILURE
         }
-    })
+    }
 }
