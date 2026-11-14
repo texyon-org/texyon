@@ -28,7 +28,7 @@ jobs:
       - name: "cargo fmt"
         run: cargo fmt --all -- --check
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # A stuck job burns paid minutes for six hours by default.
     timeout-minutes: 75
     steps:
