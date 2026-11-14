@@ -31,13 +31,12 @@ jobs:
             echo "::error::tag $GITHUB_REF_NAME does not match package version $version"
             exit 1
           fi
+      # Rust 1.100 builds a module that hangs on its first compile.
       - name: "Set up Rust"
         run: |
           rustup set profile minimal
-          rustup update --no-self-update stable
-          rustup default stable
-          rustup target add wasm32-wasip1
-          rustup component add llvm-tools
+          rustup toolchain install 1.97.1 --target wasm32-wasip1 --component llvm-tools
+          rustup default 1.97.1
       - name: "Install pkg-config dependencies"
         uses: ./.github/actions/pkgconfig-deps
       - name: "Install wasm-opt"
