@@ -60,9 +60,7 @@ jobs:
       - name: "Build the support pack"
         env:
           TEXYON_DEP_BACKEND: pkg-config
-        run: |
-          cargo build --release --locked -p texyon
-          tools/wasm/build-assets.sh "$PWD/pack"
+        run: cargo xtask pack --out "$PWD/pack"
       - uses: actions/upload-artifact@v4
         with:
           name: support-pack
@@ -101,6 +99,7 @@ jobs:
           rustup update --no-self-update stable
           rustup default stable
           rustup target add ${{ matrix.target }}
+          rustup component add llvm-tools
       - name: "Install pkg-config dependencies"
         if: ${{ runner.os == 'Linux' }}
         uses: ./.github/actions/pkgconfig-deps
@@ -205,17 +204,16 @@ jobs:
         run: |
           # mupdf.com refuses connections from the runners.
           gh release download vendor-deps -p 'mupdf-*-source.tar.gz' -D "$RUNNER_TEMP"
-          export MUPDF_TARBALL="$(echo "$RUNNER_TEMP"/mupdf-*-source.tar.gz)"
           if [[ $RUNNER_OS == macOS ]]; then
             prefix="$VCPKG_ROOT/installed/${{ matrix.vcpkg-triplet }}/include"
             export FREETYPE_CFLAGS="-I$prefix/freetype2 -I$prefix" ZLIB_CFLAGS="-I$prefix"
           fi
-          tools/mupdf/build.sh
-          echo "TEXYON_MUPDF_DIR=$GITHUB_WORKSPACE/tools/mupdf/vendor/mupdf" >> "$GITHUB_ENV"
+          cargo xtask mupdf --source "$(echo "$RUNNER_TEMP"/mupdf-*-source.tar.gz)"
+      # Profile-guided: an instrumented build replays editing sessions first.
       - name: "Build texyon"
         shell: bash
         run: |
-          cargo build --release --locked --target ${{ matrix.target }} -p texyon --features "${{ matrix.features }}"
+          cargo xtask native --pgo --target ${{ matrix.target }} --features "${{ matrix.features }}"
           mkdir -p packages/vscode/bin
           if [[ $RUNNER_OS == Windows ]]; then
             cp target/${{ matrix.target }}/release/texyon.exe packages/vscode/bin/

@@ -12,13 +12,12 @@ concurrency:
   group: wasm-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  WASI_SDK_URL: https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-33/wasi-sdk-33.0-x86_64-linux.tar.gz
-
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    env:
+      TEXYON_DEP_BACKEND: pkg-config
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -38,36 +37,28 @@ jobs:
           rustup update --no-self-update stable
           rustup default stable
           rustup target add wasm32-wasip1
+          rustup component add llvm-tools
       - name: "Install pkg-config dependencies"
         uses: ./.github/actions/pkgconfig-deps
       - name: "Install wasm-opt"
         run: sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y binaryen
-      # mupdf.com periodically refuses Azure's address space.
-      - name: "Seed mupdf from the vendor-deps release"
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p tools/wasm/vendor/mupdf
-          gh release download vendor-deps --pattern 'mupdf-1.24.9-source.tar.gz' --output - \
-            | tar xz -C tools/wasm/vendor/mupdf --strip-components=1
-      - name: "Fetch the wasm toolchain and vendored sources"
-        run: |
-          curl -fsSL --retry 3 "$WASI_SDK_URL" | tar xz -C tools/wasm
-          tools/wasm/fetch-deps.sh --with-mupdf
-      - name: "Build the module"
-        run: tools/wasm/build.sh
-      - name: "Build the support pack"
-        env:
-          TEXYON_DEP_BACKEND: pkg-config
-        run: |
-          cargo build --release --locked -p texyon
-          tools/wasm/build-assets.sh
-      - name: "Smoke-test the module"
-        run: node tools/wasm/smoke-test.mjs
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
+      # mupdf.com periodically refuses Azure's address space.
+      - name: "Fetch the wasm toolchain and C libraries"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download vendor-deps --pattern 'mupdf-1.24.9-source.tar.gz' --dir "$RUNNER_TEMP"
+          cargo xtask deps --mupdf --mupdf-source "$RUNNER_TEMP/mupdf-1.24.9-source.tar.gz"
+      - name: "Build the support pack"
+        run: cargo xtask pack
+      - name: "Build the module"
+        run: cargo xtask wasm --pgo
+      - name: "Test the module"
+        run: cargo xtask test wasm
       - name: "Test and pack"
         working-directory: packages/wasm
         run: |
