@@ -25,8 +25,8 @@ mod test_support;
 pub use assembler::{
     AssembledDocument, DocumentAssembler, DocumentFragment, XdvAssemblyError, XdvFileType,
 };
-pub use diagnostics::{from_engine as diagnostics_from_engine, Diagnostic, Severity};
-pub use dispatch::{handle, Payload};
+pub use diagnostics::{Diagnostic, Severity, from_engine as diagnostics_from_engine};
+pub use dispatch::{Payload, handle};
 pub use engine_driver::{
     EngineSupport, ResidentEngineError, ResidentEngineOutput, ResidentEngineSupport, ResidentXeTeX,
 };
@@ -50,7 +50,7 @@ pub use texyon_preview_protocol::{
 };
 
 #[cfg(feature = "native")]
-pub use native::{serve, DiskSources, OpenRequest, ServeError};
+pub use native::{DiskSources, OpenRequest, ServeError, serve};
 #[cfg(feature = "native")]
 pub use pack::{BundleOpener, PackError, PackedBundle, SupportPack};
 #[cfg(feature = "native")]

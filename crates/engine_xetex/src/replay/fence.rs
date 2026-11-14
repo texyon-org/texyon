@@ -3,7 +3,7 @@
 use std::mem::size_of;
 
 use super::adapter::{self, MemoryInput};
-use super::source::{first_difference, SourceRevision, SourceSnapshot};
+use super::source::{SourceRevision, SourceSnapshot, first_difference};
 use crate::io::UFile;
 use crate::state::{EngineState, InputSlot};
 

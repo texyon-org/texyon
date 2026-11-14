@@ -4,14 +4,14 @@
 use crate::consts::{EMPTY_STRING, INVALID_HANDLE, NULL_FONT, TOO_BIG_CHAR};
 use crate::cs::CsId;
 use crate::ext::{
-    aat_get_font_metrics, apply_tfm_font_mapping, find_native_font, load_mapping_file,
-    ot_get_font_metrics, split_tfm_font_mapping, NativeFontMetrics,
+    NativeFontMetrics, aat_get_font_metrics, apply_tfm_font_mapping, find_native_font,
+    load_mapping_file, ot_get_font_metrics, split_tfm_font_mapping,
 };
-use crate::io::{open_input_file, FileName, ScannedName};
+use crate::io::{FileName, ScannedName, open_input_file};
 use crate::node::{NativeWordNode, NodePtr, WhatsitSubtype};
 use crate::output::{
-    begin_diagnostic, char_warning, end_diagnostic, print, print_char, print_int, print_nl,
-    print_scaled, CsName, TexPrint,
+    CsName, TexPrint, begin_diagnostic, char_warning, end_diagnostic, print, print_char, print_int,
+    print_nl, print_scaled,
 };
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, FontState, MemState};
@@ -499,7 +499,7 @@ pub(crate) fn read_font_info(
         }
         match parse {
             Err(TfmError::OutOfMemory) => {
-                return Err(Abort::Internal("not enough memory to load another font"))
+                return Err(Abort::Internal("not enough memory to load another font"));
             }
             Err(TfmError::Bad) => bad!(),
             Ok(tfm) => {

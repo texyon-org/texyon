@@ -21,15 +21,15 @@ use std::{
 };
 
 use texyon::{
+    TexEngine,
     digest::DigestData,
     io::{IoStack, MemoryIo},
-    TexEngine,
 };
 use texyon_bridge_core::{CoreBridgeLauncher, DriverHooks};
 use texyon_errors::Result;
 use texyon_io_base::{
-    filesystem::{FilesystemIo, FilesystemPrimaryInputIo},
     InputHandle, IoProvider, OpenResult, OutputHandle,
+    filesystem::{FilesystemIo, FilesystemPrimaryInputIo},
 };
 use texyon_status_base::{NoopStatusBackend, StatusBackend};
 

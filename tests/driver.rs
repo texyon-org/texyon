@@ -9,8 +9,8 @@
 //! enable the reproducibility options used in the `tex-outputs` test rig.
 
 use texyon::{
-    config::PersistentConfig, driver::ProcessingSessionBuilder,
-    status::termcolor::TermcolorStatusBackend, status::ChatterLevel, test_util::TestBundle,
+    config::PersistentConfig, driver::ProcessingSessionBuilder, status::ChatterLevel,
+    status::termcolor::TermcolorStatusBackend, test_util::TestBundle,
 };
 
 mod util;

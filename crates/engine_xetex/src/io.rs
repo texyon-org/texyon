@@ -11,11 +11,11 @@ use crate::units::{BufPos, StrNumber};
 use crate::utf8::next_utf8_char;
 use texyon_bridge_core::EOF;
 
-pub(crate) use crate::bridge::{input_close, input_seek};
 use crate::bridge::{
-    input_getc, input_open, input_open_primary, input_ungetc, last_input_abspath, output_close,
-    output_flush, output_open, FileFormat,
+    FileFormat, input_getc, input_open, input_open_primary, input_ungetc, last_input_abspath,
+    output_close, output_flush, output_open,
 };
+pub(crate) use crate::bridge::{input_close, input_seek};
 use crate::cmd::Cmd;
 use crate::errors::Abort;
 
@@ -150,11 +150,7 @@ fn icu_converter_open(name: &[u8]) -> Result<*mut libc::c_void, libc::c_int> {
         // SAFETY: `name` is NUL-terminated and `err` is a valid out-parameter.
         unsafe { ucnv_open(name, &mut err) }
     });
-    if cnv.is_null() {
-        Err(err)
-    } else {
-        Ok(cnv)
-    }
+    if cnv.is_null() { Err(err) } else { Ok(cnv) }
 }
 
 /// Whether ICU knows a converter `name`, or ICU's error code.

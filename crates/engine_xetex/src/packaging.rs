@@ -19,7 +19,7 @@ mod copy;
 mod vert_break;
 
 use self::vert_break::push_slot;
-pub(crate) use self::vert_break::{vert_break, vsplit, MarksAction};
+pub(crate) use self::vert_break::{MarksAction, vert_break, vsplit};
 
 /// The size `hpack` and `vpack` aim for: exactly some size, or the natural size plus some.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]

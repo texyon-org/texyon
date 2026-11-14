@@ -2,13 +2,13 @@
 //! TECkit mappings, shaping and measuring native word and glyph nodes, and the
 //! extension (`\openout`, `\write`, `\special`, ...) commands.
 
-use crate::bridge::{input_get_size, input_open, input_read, with_bridge, FileFormat};
+use crate::bridge::{FileFormat, input_get_size, input_open, input_read, with_bridge};
 use crate::codes::{ConvertCode, LastItemCode};
 use crate::errors::Abort;
 use crate::fonts::FontSize;
 use crate::fonts::OTGR_FONT_FLAG;
-use crate::io::{AUTO, ICUMAPPING, RAW, UTF16BE, UTF16LE, UTF8};
-use crate::layout::{hb_tag, FontMappingHandle};
+use crate::io::{AUTO, ICUMAPPING, RAW, UTF8, UTF16BE, UTF16LE};
+use crate::layout::{FontMappingHandle, hb_tag};
 use crate::params::IntPar;
 use crate::state::{EngineState, FontEngineHandle};
 use crate::units::{FontId, Scaled};
@@ -110,11 +110,7 @@ fn read_double(s: &mut &[u8]) -> f64 {
     }
 
     *s = &s[i.min(s.len())..];
-    if neg {
-        -val
-    } else {
-        val
-    }
+    if neg { -val } else { val }
 }
 
 fn read_hex_digit(s: &mut &[u8]) -> Option<u32> {
@@ -301,11 +297,7 @@ pub(crate) fn apply_tfm_font_mapping(cnv: &FontMappingHandle, c: c_int) -> c_int
     let input = (c as u16).to_ne_bytes();
     let mut out = [0u8; 2];
     let (_, out_used) = cnv.convert(&input, &mut out);
-    if out_used < 1 {
-        0
-    } else {
-        c_int::from(out[0])
-    }
+    if out_used < 1 { 0 } else { c_int::from(out[0]) }
 }
 
 struct CommonFeatures {

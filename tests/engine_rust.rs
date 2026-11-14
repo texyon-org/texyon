@@ -22,10 +22,10 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
+use texyon::TexEngine;
 use texyon::engines::tex::TexOutcome;
 use texyon::io::testing::SingleInputFileIo;
 use texyon::io::{FilesystemIo, FilesystemPrimaryInputIo, IoProvider, IoStack, MemoryIo};
-use texyon::TexEngine;
 use texyon_bridge_core::{CoreBridgeLauncher, MinimalDriver};
 use texyon_status_base::NoopStatusBackend;
 

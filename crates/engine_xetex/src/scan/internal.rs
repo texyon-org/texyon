@@ -10,7 +10,7 @@ use crate::cs::CsId;
 use crate::eqtb::EqStore;
 use crate::eqtb::{CodeTable, GlueLoc, ShapeLoc, XetexCode};
 use crate::errors::OrConfusion;
-use crate::errors::{mu_error, Abort};
+use crate::errors::{Abort, mu_error};
 use crate::ext::{
     aat_font_get, aat_font_get_1, aat_font_get_2, aat_font_get_named, aat_font_get_named_1,
     gr_font_get_named, gr_font_get_named_1, ot_font_get, ot_font_get_1, ot_font_get_2,
@@ -121,7 +121,7 @@ impl CurVal {
                 CurVal::Glue(spec)
             }
             CurVal::Int(_) | CurVal::Ident(_) | CurVal::Tok(_) => {
-                return Err(Abort::Confusion("cur_val_level"))
+                return Err(Abort::Confusion("cur_val_level"));
             }
         })
     }
@@ -588,11 +588,7 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: LastItemCode) -> Result<Scaled
                         n = n / 2 + q;
                     }
                     let line = shape.line(&st.mem, n.min(st.mem[shape].lines));
-                    if q == 0 {
-                        line.width
-                    } else {
-                        line.indent
-                    }
+                    if q == 0 { line.width } else { line.indent }
                 }
                 _ => Scaled::ZERO,
             }

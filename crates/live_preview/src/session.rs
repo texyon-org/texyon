@@ -16,25 +16,25 @@ use std::{
 
 use texyon_engine_xdvipdfmx::XdvipdfmxEngine;
 use texyon_engine_xetex::{
-    introspect::DefinedCommand, EngineCancellation, EnginePreviewConfig, TexOutcome,
+    EngineCancellation, EnginePreviewConfig, TexOutcome, introspect::DefinedCommand,
 };
 use texyon_errors::{
-    anyhow::{anyhow, bail},
     Result,
+    anyhow::{anyhow, bail},
 };
 use texyon_io_base::MemoryIo;
 use texyon_preview_protocol::{
-    session::{Outcome, PixelRect, SourceEdit},
     OperationMetrics, ProtocolLimits, RequestSeq, SourceFile, SourceLocation,
+    session::{Outcome, PixelRect, SourceEdit},
 };
 use texyon_preview_render::{Backend, Destination, Link, PageVisual, ResourceProvider};
 
 use crate::{
-    diagnostics::{self, Diagnostic},
-    raster_patch::{changed_rect, crop, DrawnPages},
     AcceptedSourceSnapshot, CollectingSink, DocumentRoot, EngineSupport, ForwardSearch,
     PreviewWorkerProcessor, PublishedFrame, ResidentPreviewError, ResidentPreviewProcessor,
     ResidentXeTeX, SourceSet, WorkerRun,
+    diagnostics::{self, Diagnostic},
+    raster_patch::{DrawnPages, changed_rect, crop},
 };
 
 /// Pages either side of the visible ones that the host keeps drawn.
@@ -790,7 +790,7 @@ fn unsupported_summary(visuals: &[PageVisual]) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{byte_offset, SourceEdit, Staged};
+    use super::{SourceEdit, Staged, byte_offset};
 
     fn edit(from: usize, to: usize, insert: &str) -> SourceEdit {
         SourceEdit {

@@ -11,11 +11,11 @@ use std::{
     path::{Path, PathBuf},
 };
 use texyon_errors::Result;
-use texyon_status_base::{tt_warning, StatusBackend};
+use texyon_status_base::{StatusBackend, tt_warning};
 
 use super::{
-    casefold_match, try_open_file, InputFeatures, InputHandle, InputOrigin, IoProvider, OpenResult,
-    OutputHandle, TexyonIoError,
+    InputFeatures, InputHandle, InputOrigin, IoProvider, OpenResult, OutputHandle, TexyonIoError,
+    casefold_match, try_open_file,
 };
 
 /// FilesystemPrimaryInputIo is an I/O provider that provides the TeX "primary input"

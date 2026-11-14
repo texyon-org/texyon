@@ -13,9 +13,8 @@ use crate::units::FontId;
 use super::cmd_chr::print_command;
 use super::show::show_context;
 use super::{
-    begin_diagnostic, end_diagnostic, note_warning_issued, print, print_code, print_esc,
+    TexPrint, begin_diagnostic, end_diagnostic, note_warning_issued, print, print_code, print_esc,
     print_group, print_hex, print_int, print_ln, print_nl, print_raw_bytes, print_ucs_code,
-    TexPrint,
 };
 
 /// Walks `base_ptr` down to the file at input level `level`, reporting whether it is a real file.

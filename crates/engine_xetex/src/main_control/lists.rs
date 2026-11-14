@@ -13,8 +13,8 @@ use crate::fonts::{
     EXTRA_SPACE_CODE, SLANT_CODE, SPACE_CODE, SPACE_SHRINK_CODE, SPACE_STRETCH_CODE, X_HEIGHT_CODE,
 };
 use crate::glue_store::GlueSpecId;
-use crate::input::{TokenType, TOKEN_LIST};
-use crate::mem::{CONTRIB_HEAD, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, PAGE_HEAD, SS_GLUE, ZERO_GLUE};
+use crate::input::{TOKEN_LIST, TokenType};
+use crate::mem::{CONTRIB_HEAD, FIL_GLUE, FIL_NEG_GLUE, FILL_GLUE, PAGE_HEAD, SS_GLUE, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
 use crate::node::{
     AdjustNode, AdjustPlacement, AnyNode, CharNode, DiscNode, GlueKind, GlueNode, InsNode,

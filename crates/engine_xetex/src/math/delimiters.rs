@@ -3,7 +3,7 @@
 use crate::consts::{NULL_FONT, SCRIPT_SIZE};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
-use crate::fonts::{CharInfo, CharTag, AAT_FONT_FLAG, OTGR_FONT_FLAG};
+use crate::fonts::{AAT_FONT_FLAG, CharInfo, CharTag, OTGR_FONT_FLAG};
 use crate::mem::SS_GLUE;
 use crate::node::DelimiterWord;
 use crate::node::{AnyNode, BoxNode, GlyphNode, NativeWordNode, NodePtr, WhatsitSubtype};

@@ -12,8 +12,8 @@ use crate::node::LinkSlot;
 use crate::node::Stored;
 use crate::node::{
     AnyNode, BoxLr, BoxNode, CharNode, EdgeNode, GlueKind, GlueNode, GlyphNode, KernNode,
-    KernSubtype, LeaderKind, LigatureNode, MathCode, MathNode, NativeWordNode, NodePtr, RuleNode,
-    View, WhatsitSubtype, WhatsitVariant, RUNNING,
+    KernSubtype, LeaderKind, LigatureNode, MathCode, MathNode, NativeWordNode, NodePtr, RUNNING,
+    RuleNode, View, WhatsitSubtype, WhatsitVariant,
 };
 use crate::packaging::LrState;
 use crate::params::{DimenPar, IntPar};

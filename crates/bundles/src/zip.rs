@@ -11,9 +11,9 @@ use std::{
     str::FromStr,
 };
 use texyon_errors::prelude::*;
-use texyon_io_base::{digest, InputHandle, InputOrigin, IoProvider, OpenResult};
+use texyon_io_base::{InputHandle, InputOrigin, IoProvider, OpenResult, digest};
 use texyon_status_base::{NoopStatusBackend, StatusBackend};
-use zip::{result::ZipError, ZipArchive};
+use zip::{ZipArchive, result::ZipError};
 
 /// A bundle backed by a ZIP file.
 pub struct ZipBundle<R: Read + Seek> {

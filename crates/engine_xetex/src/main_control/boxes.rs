@@ -20,7 +20,7 @@ use crate::units::MemIdx;
 use crate::units::{NodeType, Scaled};
 
 use super::lists::{append_glue, normal_paragraph};
-use super::{append_list, begin_every, BoxContext};
+use super::{BoxContext, append_list, begin_every};
 
 pub(super) fn unpackage(st: &mut EngineState, c: BoxCode) -> Result<(), Abort> {
     if matches!(c, BoxCode::LastBox | BoxCode::Vsplit) {

@@ -1,6 +1,6 @@
 use clap::{Parser, ValueEnum};
 use std::{fmt::Display, path::PathBuf};
-use texyon::{config::PersistentConfig, Result};
+use texyon::{Result, config::PersistentConfig};
 use texyon_status_base::StatusBackend;
 use tracing::error;
 

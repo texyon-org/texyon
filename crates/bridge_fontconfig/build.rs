@@ -2,7 +2,7 @@
 //! wasm target has no system fonts at all, so the crate provides the API itself
 //! (see `src/wasm_stub.rs`) and there is nothing to find.
 
-use texyon_dep_support::{target_is_wasm, Configuration, Dependency, Spec};
+use texyon_dep_support::{Configuration, Dependency, Spec, target_is_wasm};
 
 struct FontconfigSpec;
 

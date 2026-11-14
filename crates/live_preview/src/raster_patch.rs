@@ -107,7 +107,7 @@ impl DrawnPages {
 
 #[cfg(test)]
 mod tests {
-    use super::{changed_rect, crop, DrawnPages, PixelRect};
+    use super::{DrawnPages, PixelRect, changed_rect, crop};
 
     /// A `width` by `height` page of one colour, with `marks` set to another.
     fn page(width: u32, height: u32, marks: &[(u32, u32)]) -> Vec<u8> {

@@ -1,6 +1,6 @@
 //! `hpack` and `vpack`: box dimensions, glue setting and badness.
 
-use crate::{assert_lines, run, show_the, MATH_FONTS};
+use crate::{MATH_FONTS, assert_lines, run, show_the};
 
 #[test]
 fn hpack_sums_widths_and_takes_extreme_heights() {
@@ -65,12 +65,14 @@ fn hpack_reports_boxes_beyond_the_tolerances() {
         r.lines_starting("Underfull").len() + r.lines_starting("Overfull").len(),
         2
     );
-    assert!(r
-        .log
-        .contains("Underfull \\hbox (badness 800) detected at line 6"));
-    assert!(r
-        .log
-        .contains("Overfull \\hbox (3.0pt too wide) detected at line 7"));
+    assert!(
+        r.log
+            .contains("Underfull \\hbox (badness 800) detected at line 6")
+    );
+    assert!(
+        r.log
+            .contains("Overfull \\hbox (3.0pt too wide) detected at line 7")
+    );
     assert!(r.boxes()[0].ends_with(".\\rule(*+*)x5.0"));
 }
 

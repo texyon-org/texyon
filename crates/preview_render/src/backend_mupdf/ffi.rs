@@ -1,6 +1,6 @@
 //! Safe handle over `shim.c`, which catches every MuPDF exception itself.
 
-use std::ffi::{c_char, c_int, c_void, CStr};
+use std::ffi::{CStr, c_char, c_int, c_void};
 use std::ptr::NonNull;
 
 use crate::{Color, FontId, FontStyle, Matrix, Path, PathCommand, PositionedGlyph, StrokeStyle};
@@ -119,11 +119,7 @@ pub(super) struct ShimFailed;
 type ShimResult<T> = Result<T, ShimFailed>;
 
 fn check(ok: c_int) -> ShimResult<()> {
-    if ok == 0 {
-        Err(ShimFailed)
-    } else {
-        Ok(())
-    }
+    if ok == 0 { Err(ShimFailed) } else { Ok(()) }
 }
 
 fn to_c_int<T: TryInto<c_int>>(value: T) -> ShimResult<c_int> {

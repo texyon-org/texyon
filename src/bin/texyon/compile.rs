@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use texyon_bridge_core::{SecuritySettings, SecurityStance};
 
 use texyon::{
-    config::{maybe_return_test_bundle, PersistentConfig},
+    config::{PersistentConfig, maybe_return_test_bundle},
     driver::{OutputFormat, PassSetting, ProcessingSession, ProcessingSessionBuilder},
     errmsg,
     errors::{ErrorKind, Result},

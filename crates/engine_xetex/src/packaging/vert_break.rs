@@ -15,7 +15,7 @@ use crate::token::TokenList;
 use crate::units::MemIdx;
 use crate::units::{GlueOrder, MemPtr, Scaled};
 
-use super::{print_vpack_diag, PackOrigin, PackOutcome, PackSpec};
+use super::{PackOrigin, PackOutcome, PackSpec, print_vpack_diag};
 
 /// What `do_marks` does to each mark class.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -303,7 +303,7 @@ pub(crate) fn vert_break(
     loop {
         match st.mem.vert_break_resume(&mut cursor, h, d)? {
             VertBreakStep::Done(best_place) => {
-                return Ok((best_place, cursor.best_height_plus_depth))
+                return Ok((best_place, cursor.best_height_plus_depth));
             }
             VertBreakStep::InfiniteShrinkage { glue, spec } => {
                 print_vert_break_infinite_shrinkage_error(st)?;
@@ -375,7 +375,7 @@ fn start_vsplit(
             return Ok(VsplitStart::Done(VsplitOutcome {
                 result: None,
                 packages: [None, None],
-            }))
+            }));
         }
         Some(v) if st.mem[v].is_vlist() => v,
         Some(_) => return Ok(VsplitStart::NeedsVboxDiagnostic),

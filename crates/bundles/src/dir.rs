@@ -10,7 +10,7 @@ use std::{
     str::FromStr,
 };
 use texyon_errors::prelude::*;
-use texyon_io_base::{digest, filesystem::FilesystemIo, InputHandle, IoProvider, OpenResult};
+use texyon_io_base::{InputHandle, IoProvider, OpenResult, digest, filesystem::FilesystemIo};
 use texyon_status_base::{NoopStatusBackend, StatusBackend};
 
 use super::Bundle;

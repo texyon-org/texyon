@@ -120,11 +120,7 @@ fn make_frac(mut p: i32, mut q: i32) -> i32 {
         f += 1;
     }
 
-    if negative {
-        -(f + n)
-    } else {
-        f + n
-    }
+    if negative { -(f + n) } else { f + n }
 }
 
 /// `q` times the 28-bit fraction `f`. A `q` of `i32::MIN` wraps as in C.

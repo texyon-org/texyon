@@ -17,9 +17,8 @@ use std::{
 };
 use texyon_errors::{anyhow::Context, prelude::*};
 use texyon_io_base::{
-    app_dirs,
+    InputHandle, InputOrigin, IoProvider, OpenResult, app_dirs,
     digest::{self, DigestData},
-    InputHandle, InputOrigin, IoProvider, OpenResult,
 };
 use texyon_status_base::StatusBackend;
 
@@ -167,9 +166,11 @@ impl<'this, T: FileIndex<'this>> BundleCache<'this, T> {
         // which is true for network TTB and fs TTB.
         // Adding support for multiple formats of a single bundle hash
         // shouldn't be too hard, but isn't necessary yet.
-        ensure_dir!(&bundle
-            .cache_root
-            .join(format!("data/{}", bundle.bundle_hash)));
+        ensure_dir!(
+            &bundle
+                .cache_root
+                .join(format!("data/{}", bundle.bundle_hash))
+        );
 
         Ok(bundle)
     }

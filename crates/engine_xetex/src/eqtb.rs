@@ -839,7 +839,7 @@ impl BoxLoc {
     }
 
     pub(crate) fn raw(self) -> i32 {
-        i32::from(self.0 .0)
+        i32::from(self.0.0)
     }
 }
 
@@ -847,7 +847,7 @@ impl EqLoc for BoxLoc {
     type Value = Option<NodePtr<BoxNode>>;
     #[inline(always)]
     fn index(self) -> usize {
-        usize::from(self.0 .0)
+        usize::from(self.0.0)
     }
     type Store = Table<Self, Self::Value>;
     #[inline(always)]

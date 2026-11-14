@@ -2,7 +2,7 @@
 //!
 //! Most "words" are 10pt rules, so most tests need no fonts.
 
-use crate::{assert_lines, rows, run, MATH_FONTS};
+use crate::{MATH_FONTS, assert_lines, rows, run};
 
 const WORDS: &str = r"\def\w{\vrule width 10pt height 5pt \hskip 5pt plus 5pt minus 2pt}
 \def\s{\vrule width 10pt height 5pt \hskip 5pt plus 20pt}
@@ -132,10 +132,12 @@ fn line_numbers_wrapped_by_prevgraf_are_past_the_parshape() {
     let lines = rows(&shown);
     assert_eq!(lines.lines().count(), 7);
     assert!(lines.lines().all(|l| l.starts_with("\\hbox(5.0+0.0)x50.0")));
-    assert!(shown
-        .lines()
-        .filter(|l| l.starts_with(".\\penalty"))
-        .all(|l| l == ".\\penalty 8"));
+    assert!(
+        shown
+            .lines()
+            .filter(|l| l.starts_with(".\\penalty"))
+            .all(|l| l == ".\\penalty 8")
+    );
     assert_eq!(r.shown(), ["-2147483642"]);
 }
 

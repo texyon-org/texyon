@@ -1,6 +1,6 @@
 //! Link rectangles accumulated between `pdf:bann` and `pdf:eann`.
 
-use crate::links::{parse_link_action, Link, LinkAction, RectBp};
+use crate::links::{Link, LinkAction, RectBp, parse_link_action};
 use crate::resource::ResourceProvider;
 
 use super::Walker;

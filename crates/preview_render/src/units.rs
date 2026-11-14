@@ -16,9 +16,5 @@ pub(crate) fn fixed_16_16(value: u32) -> f32 {
 
 /// Map `-0.0` to `0.0` so equal values hash equally.
 pub(crate) fn normalize_zero(value: f32) -> f32 {
-    if value == 0.0 {
-        0.0
-    } else {
-        value
-    }
+    if value == 0.0 { 0.0 } else { value }
 }

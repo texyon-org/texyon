@@ -10,7 +10,7 @@ use crate::eqtb::Register;
 use crate::consts::{ACTIVE_MATH_CHAR, BIGGEST_USV, MATH_CHAR, NUMBER_MATH_FAMILIES};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
-use crate::input::{back_input, begin_token_list, TokenType};
+use crate::input::{TokenType, back_input, begin_token_list};
 use crate::node::{BoxNode, MathSlot, NodePtr, RuleDimen, RuleNode, Stored};
 use crate::packaging::PackSpec;
 use crate::params::IntPar;

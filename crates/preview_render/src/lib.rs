@@ -38,7 +38,7 @@ pub use backend::{
 pub use color::Color;
 pub use error::RenderError;
 #[cfg(test)]
-pub use fidelity::{compare_rasters, RasterDiff};
+pub use fidelity::{RasterDiff, compare_rasters};
 pub use links::{Destination, Link, LinkAction, RectBp};
 pub use render::{
     Analysis, CoverageLedger, HotRenderer, PageFingerprint, PageSvg, PageVisual, UnsupportedSummary,

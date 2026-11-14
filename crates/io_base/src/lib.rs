@@ -18,8 +18,8 @@ use std::{
     path::{Path, PathBuf},
 };
 use texyon_errors::{
-    anyhow::{bail, ensure},
     Error, Result,
+    anyhow::{bail, ensure},
 };
 use texyon_status_base::StatusBackend;
 use thiserror::Error as ThisError;

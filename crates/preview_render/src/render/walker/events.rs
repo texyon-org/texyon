@@ -5,12 +5,12 @@ use std::sync::Arc;
 
 use texyon_xdv::{FileType, XdvEvents};
 
+use crate::RenderError;
 use crate::color::Color;
 use crate::encoding::type1_builtin;
-use crate::pagesize::{is_page_size_special, DEFAULT_BP};
+use crate::pagesize::{DEFAULT_BP, is_page_size_special};
 use crate::resource::{ResourceKind, ResourceProvider, ResourceRequest};
 use crate::tfm::Tfm;
-use crate::RenderError;
 
 use crate::backend::{PositionedChar, PositionedGlyph};
 use crate::units::FIXED_ONE;

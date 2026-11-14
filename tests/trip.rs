@@ -14,16 +14,16 @@
 //! variable to "1", but that's an annoying solution. So, we use a global mutex
 //! to achieve the same effect. Classy.
 
+use texyon::TexEngine;
 use texyon::io::testing::SingleInputFileIo;
 use texyon::io::{FilesystemPrimaryInputIo, IoProvider, IoStack, MemoryIo};
-use texyon::TexEngine;
 use texyon_bridge_core::{CoreBridgeLauncher, MinimalDriver};
 use texyon_engine_xetex::TexOutcome;
 use texyon_status_base::NoopStatusBackend;
 
 #[path = "util/mod.rs"]
 mod util;
-use crate::util::{test_path, Expected, ExpectedFile};
+use crate::util::{Expected, ExpectedFile, test_path};
 
 #[test]
 fn trip_test() {

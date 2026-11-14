@@ -27,7 +27,7 @@ mod protrusion;
 
 pub(crate) use self::lists::Widths;
 use self::lists::{
-    widths, ActiveEntry, BreakLists, BreakType, Entry, EntryId, Fitness, Passive, PassiveId,
+    ActiveEntry, BreakLists, BreakType, Entry, EntryId, Fitness, Passive, PassiveId, widths,
 };
 pub(crate) use self::locale::do_locale_linebreaks;
 use self::post::post_line_break;

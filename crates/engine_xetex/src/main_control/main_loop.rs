@@ -9,7 +9,7 @@ use crate::ext::append_src_special;
 use crate::fonts::{
     CharInfo, CharTag, LigChar, LigKernAction, LigKernIdx, LigKernStep, LigOp, SPACE_CODE,
 };
-use crate::input::{TokenType, TOKEN_LIST};
+use crate::input::{TOKEN_LIST, TokenType};
 use crate::mode::Mode;
 use crate::node::{AnyNode, CharNode, KernSubtype, LigBoundary, LigItem, NativeWordNode, NodePtr};
 use crate::params::IntPar;

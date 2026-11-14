@@ -738,11 +738,13 @@ fn disk_source_symlink_escape_is_not_read() {
         .unwrap();
     assert!(rejected.frame.aborted.is_some());
     assert!(rejected.xdv.is_none());
-    assert!(rejected
-        .frame
-        .sync_index
-        .sources()
-        .all(|path| !path.contains(outside.path().to_string_lossy().as_ref())));
+    assert!(
+        rejected
+            .frame
+            .sync_index
+            .sources()
+            .all(|path| !path.contains(outside.path().to_string_lossy().as_ref()))
+    );
     runner.finish().unwrap();
 }
 
@@ -964,11 +966,13 @@ fn resident_engine_driver_captures_complete_xdv_and_revision() {
     assert!(cancelled.frame.cancelled);
     assert!(cancelled.xdv.is_none());
     cancellation.rearm();
-    assert!(runner
-        .compile(sources.snapshot(), None, &cancellation)
-        .unwrap()
-        .xdv
-        .is_some());
+    assert!(
+        runner
+            .compile(sources.snapshot(), None, &cancellation)
+            .unwrap()
+            .xdv
+            .is_some()
+    );
     runner.finish().unwrap();
 }
 
@@ -1210,7 +1214,9 @@ fn chunked_tail_interrupted_by_an_edit_reassembles_to_cold_xdv() {
     let _serial = session_test_lock();
     util::set_test_root();
     let pages = |first: &str| {
-        format!("{first}\\vfill\\eject\nB\\vfill\\eject\nC\\vfill\\eject\nD\\vfill\\eject\nE\\vfill\\eject\nF\\bye\n")
+        format!(
+            "{first}\\vfill\\eject\nB\\vfill\\eject\nC\\vfill\\eject\nD\\vfill\\eject\nE\\vfill\\eject\nF\\bye\n"
+        )
     };
     let expected = cold_xdv(pages("Y").as_bytes());
     let temp = tempfile::tempdir().unwrap();

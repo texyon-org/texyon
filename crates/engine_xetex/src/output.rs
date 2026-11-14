@@ -8,7 +8,7 @@ use crate::consts::{
 };
 use crate::cs::{CsId, CsKind};
 use crate::diagnostic::{
-    begin_capture, begin_warning, current_file_line, end_capture, DiagnosticKind,
+    DiagnosticKind, begin_capture, begin_warning, current_file_line, end_capture,
 };
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::glue_store::GlueSpecId;

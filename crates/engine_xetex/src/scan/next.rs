@@ -9,7 +9,7 @@ use crate::consts::BIGGEST_USV;
 use crate::cs::{CsId, Frozen};
 use crate::errors::{Abort, OrConfusion};
 use crate::expand::{expand, macro_call};
-use crate::input::{begin_token_list, TokenType, MID_LINE, NEW_LINE, SKIP_BLANKS, TOKEN_LIST};
+use crate::input::{MID_LINE, NEW_LINE, SKIP_BLANKS, TOKEN_LIST, TokenType, begin_token_list};
 use crate::node::{AlignRecord, NodePtr};
 use crate::params::{IntPar, TokPar};
 use crate::scan::Command;

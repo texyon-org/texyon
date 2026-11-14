@@ -1,9 +1,9 @@
-use anyhow::{bail, Result};
-use flate2::{write::GzEncoder, Compression};
+use anyhow::{Result, bail};
+use flate2::{Compression, write::GzEncoder};
 use std::{
     fmt::Display,
     fs::{self, File},
-    io::{stdout, BufRead, BufReader, Read, Seek, Write},
+    io::{BufRead, BufReader, Read, Seek, Write, stdout},
     num::ParseIntError,
     path::PathBuf,
 };

@@ -7,11 +7,11 @@ use std::{
     io::{BufReader, Write},
     path::PathBuf,
 };
-use texyon_errors::{anyhow::bail, Result};
+use texyon_errors::{Result, anyhow::bail};
 
 use texyon_status_base::StatusBackend;
 
-use crate::{digest::DigestData, InputHandle, InputOrigin, IoProvider, OpenResult};
+use crate::{InputHandle, InputOrigin, IoProvider, OpenResult, digest::DigestData};
 
 /// A local cache for compiled format files.
 ///

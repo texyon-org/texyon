@@ -3,8 +3,8 @@
 use std::collections::BTreeMap;
 
 use super::{
-    tree::{Kind, Node, Page, FRIEND_LISTS, NIL},
     SyncIndex,
+    tree::{FRIEND_LISTS, Kind, NIL, Node, Page},
 };
 
 const FAR: i32 = i32::MAX;
@@ -364,11 +364,7 @@ impl Page {
         if wa != wb {
             return if wa > wb { node } else { other };
         }
-        if total(a) > total(b) {
-            other
-        } else {
-            node
-        }
+        if total(a) > total(b) { other } else { node }
     }
 }
 

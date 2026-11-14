@@ -27,7 +27,7 @@
 
 use crate::{GetUrlBackend, RangeReader};
 use std::io::Cursor;
-use texyon_errors::{anyhow::bail, Result};
+use texyon_errors::{Result, anyhow::bail};
 
 unsafe extern "C" {
     /// Fetch a URL, or a byte range of one, blocking until it completes.

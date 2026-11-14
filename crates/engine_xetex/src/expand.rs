@@ -10,8 +10,8 @@ use crate::consts::{BIGGEST_USV, NULL_FONT, TOO_BIG_USV};
 use crate::cs::{CsId, CsKind, Frozen};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
-use crate::fonts::{Side, AAT_FONT_FLAG, OTGR_FONT_FLAG};
-use crate::input::{back_input, begin_token_list, TokenType, TOKEN_LIST};
+use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG, Side};
+use crate::input::{TOKEN_LIST, TokenType, back_input, begin_token_list};
 use crate::mem::ZERO_GLUE;
 use crate::node::{AnyNode, GlueKind, KernSubtype};
 use crate::output::{

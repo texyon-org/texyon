@@ -8,7 +8,7 @@ use std::{ffi::OsString, io::IsTerminal, process};
 use texyon::{
     config::PersistentConfig,
     errors::{Result, SyncError},
-    status::{termcolor::TermcolorStatusBackend, ChatterLevel, StatusBackend},
+    status::{ChatterLevel, StatusBackend, termcolor::TermcolorStatusBackend},
     unstable_opts,
 };
 use texyon_status_base::plain::PlainStatusBackend;

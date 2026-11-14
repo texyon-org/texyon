@@ -2,7 +2,7 @@
 //! TECkit converters and ICU line breaking and bidi. Every raw pointer stays
 //! inside this module.
 
-use std::ffi::{c_char, c_int, c_long, c_void, CString};
+use std::ffi::{CString, c_char, c_int, c_long, c_void};
 use std::marker::PhantomData;
 use std::ptr::{self, NonNull};
 

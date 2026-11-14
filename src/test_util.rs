@@ -36,7 +36,7 @@
 //! and also activates the test mode.
 
 use std::{env, ffi::OsStr, path::PathBuf, sync::OnceLock};
-use texyon_bundles::{dir::DirBundle, Bundle};
+use texyon_bundles::{Bundle, dir::DirBundle};
 use texyon_errors::Result;
 
 use crate::{

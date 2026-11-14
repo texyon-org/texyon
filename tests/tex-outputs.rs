@@ -14,12 +14,12 @@ use texyon::io::{FilesystemIo, FilesystemPrimaryInputIo, IoProvider, IoStack, Me
 use texyon::unstable_opts::UnstableOptions;
 use texyon::{TexEngine, XdvipdfmxEngine};
 use texyon_bridge_core::{CoreBridgeLauncher, MinimalDriver};
-use texyon_errors::{anyhow::anyhow, Result};
+use texyon_errors::{Result, anyhow::anyhow};
 use texyon_status_base::NoopStatusBackend;
 
 #[path = "util/mod.rs"]
 mod util;
-use crate::util::{ensure_plain_format, test_path, Expected, ExpectedFile};
+use crate::util::{Expected, ExpectedFile, ensure_plain_format, test_path};
 
 struct TestCase {
     stem: String,

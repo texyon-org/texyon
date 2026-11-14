@@ -3,13 +3,13 @@
 use crate::codes::LimitCode;
 use crate::consts::MIN_HALFWORD;
 use crate::consts::{
-    EMPTY, INFINITE_DIMEN, INF_PENALTY, MATH_CHAR, MATH_TEXT_CHAR, MAX_DIMEN, NULL_FONT, SUB_BOX,
+    EMPTY, INF_PENALTY, INFINITE_DIMEN, MATH_CHAR, MATH_TEXT_CHAR, MAX_DIMEN, NULL_FONT, SUB_BOX,
     SUB_MLIST, TEXT_SIZE,
 };
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
 use crate::fonts::{
-    CharInfo, CharTag, LigChar, LigKernAction, LigKernIdx, LigOp, AAT_FONT_FLAG, OTGR_FONT_FLAG,
+    AAT_FONT_FLAG, CharInfo, CharTag, LigChar, LigKernAction, LigKernIdx, LigOp, OTGR_FONT_FLAG,
     SPACE_CODE, X_HEIGHT_CODE,
 };
 use crate::glue_store::GlueSpecId;
@@ -30,7 +30,7 @@ use crate::units::{FontId, GlueOrder, MemPtr, NodeType, Scaled};
 
 use super::delimiters::{build_opentype_assembly, rebox, var_delimiter};
 use super::scripts::make_scripts;
-use super::{MathStyle, DEFAULT_CODE};
+use super::{DEFAULT_CODE, MathStyle};
 
 const DISPLAYOPERATORMINHEIGHT: i32 = 3;
 const ACCENTBASEHEIGHT: i32 = 6;
@@ -1326,7 +1326,7 @@ pub(super) fn mlist_to_hlist(
                             break 'reswitch FirstPass::ProcessNucleus(n);
                         }
                         Some(NodeType::OpenNoad | NodeType::InnerNoad) => {
-                            break 'reswitch FirstPass::ProcessNucleus(n)
+                            break 'reswitch FirstPass::ProcessNucleus(n);
                         }
                         Some(NodeType::OverNoad) => {
                             make_over(st, n, style)?;

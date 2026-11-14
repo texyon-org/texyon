@@ -10,8 +10,8 @@ use crate::params::{GluePar, IntPar};
 use crate::state::{EngineState, EqtbState, MemState};
 use crate::units::{MemPtr, Scaled};
 
-use super::lists::{ActiveEntry, PassiveId};
 use super::Breaker;
+use super::lists::{ActiveEntry, PassiveId};
 
 /// Where `post_line_break` is in the paragraph.
 struct PostLines {
@@ -356,7 +356,7 @@ impl Breaker {
                         if mem[k].subtype != KernSubtype::Explicit
                             && mem[k].subtype != KernSubtype::SpaceAdjustment =>
                     {
-                        break
+                        break;
                     }
                     _ => {}
                 }

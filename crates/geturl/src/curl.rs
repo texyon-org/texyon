@@ -5,7 +5,7 @@
 
 use curl::easy::Easy;
 use std::io::Cursor;
-use texyon_errors::{anyhow::bail, Result};
+use texyon_errors::{Result, anyhow::bail};
 
 use crate::{GetUrlBackend, RangeReader};
 

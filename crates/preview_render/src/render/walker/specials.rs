@@ -1,11 +1,11 @@
 //! Special handlers for color, transforms, links and nonvisual PDF specials.
 
+use crate::RenderError;
 use crate::backend::Matrix;
 use crate::color::Color;
-use crate::links::{parse_destination_name, Destination};
+use crate::links::{Destination, parse_destination_name};
 use crate::resource::ResourceProvider;
 use crate::units::normalize_zero;
-use crate::RenderError;
 
 use super::super::ImageKind;
 use super::Walker;

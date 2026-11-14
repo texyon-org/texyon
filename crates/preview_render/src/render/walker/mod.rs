@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use texyon_xdv::FileType;
 
+use crate::RenderError;
 use crate::color::Color;
 use crate::fontmap::FontMap;
 use crate::pagesize::PageSizeState;
@@ -17,7 +18,6 @@ use crate::resource::{
     Resource, ResourceIdentity, ResourceKind, ResourceProvider, ResourceRequest,
 };
 use crate::tfm::Tfm;
-use crate::RenderError;
 
 use super::{CoverageLedger, DrawOperation, PagePlan};
 use annotation::OpenLink;

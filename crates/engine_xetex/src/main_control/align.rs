@@ -8,12 +8,12 @@ use crate::consts::{IGNORE_DEPTH, MAX_DIMEN};
 use crate::cs::Frozen;
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
-use crate::input::{TokenType, TOKEN_LIST};
+use crate::input::{TOKEN_LIST, TokenType};
 use crate::mem::{ALIGN_HEAD, END_SPAN, HOLD_HEAD, ZERO_GLUE};
 use crate::node::Stored;
 use crate::node::{
-    AlignColumn, AlignRecord, AnyNode, BoxLr, GlueKind, GlueNode, HeadNode, NodePtr, RuleDimen,
-    SpanNode, UnsetNode, RUNNING,
+    AlignColumn, AlignRecord, AnyNode, BoxLr, GlueKind, GlueNode, HeadNode, NodePtr, RUNNING,
+    RuleDimen, SpanNode, UnsetNode,
 };
 use crate::packaging::{AdjustTails, PackOrigin, PackSpec};
 use crate::params::{DimenPar, GluePar, IntPar, TokPar};
@@ -23,7 +23,7 @@ use crate::units::{GlueOrder, GlueSign, MemPtr, Orientation, Scaled};
 
 use super::assign::do_assignments;
 use super::lists::{end_graf, normal_paragraph, off_save};
-use super::{append_list, begin_every, CR_CODE, SPAN_CODE};
+use super::{CR_CODE, SPAN_CODE, append_list, begin_every};
 use crate::mode::{Mode, ModeName};
 
 pub(super) fn align_error(st: &mut EngineState) -> Result<(), Abort> {

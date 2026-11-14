@@ -9,7 +9,7 @@ use texyon_preview_protocol::session::{
 };
 use texyon_preview_render::{Backend, LinkAction, ResourceProvider};
 
-use crate::{session, CompileOutput, PreviewSession, SessionHost};
+use crate::{CompileOutput, PreviewSession, SessionHost, session};
 
 /// How a host carries bulk bytes in its messages.
 pub trait Payload: Sized {

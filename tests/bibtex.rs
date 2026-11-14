@@ -7,14 +7,14 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use texyon::io::{FilesystemIo, IoProvider, IoStack, MemoryIo};
-use texyon::{errors::Result, BibtexEngine};
+use texyon::{BibtexEngine, errors::Result};
 use texyon_bridge_core::{CoreBridgeLauncher, MinimalDriver};
 use texyon_engine_xetex::TexOutcome;
 use texyon_status_base::NoopStatusBackend;
 
 #[path = "util/mod.rs"]
 mod util;
-use crate::util::{test_path, Expected, ExpectedFile};
+use crate::util::{Expected, ExpectedFile, test_path};
 
 struct TestCase {
     parts: &'static [&'static str],

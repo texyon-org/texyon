@@ -1,10 +1,11 @@
 use crate::{
+    ASCIICode, Bibtex, BibtexError, BufPointer, GlobalItems, HashPointer,
     bibs::BibData,
     buffer::{BufTy, GlobalBuffer},
-    char_info::{LexClass, CHAR_WIDTH},
+    char_info::{CHAR_WIDTH, LexClass},
     cite::CiteInfo,
-    entries::{EntryData, ENT_STR_SIZE},
-    global::{GlobalData, GLOB_STR_SIZE},
+    entries::{ENT_STR_SIZE, EntryData},
+    global::{GLOB_STR_SIZE, GlobalData},
     hash,
     hash::{BstBuiltin, BstFn, HashData},
     log::{
@@ -14,12 +15,11 @@ use crate::{
         print_fn_class,
     },
     other::WizOp,
-    pool::{Checkpoint, StrNumber, StringPool, MAX_PRINT_LINE, MIN_PRINT_LINE},
+    pool::{Checkpoint, MAX_PRINT_LINE, MIN_PRINT_LINE, StrNumber, StringPool},
     scan::{
         check_brace_level, decr_brace_level, enough_text_chars, name_scan_for_and,
         von_name_ends_and_last_name_starts_stuff, von_token_found,
     },
-    ASCIICode, Bibtex, BibtexError, BufPointer, GlobalItems, HashPointer,
 };
 use std::ops::{Deref, DerefMut, Index};
 

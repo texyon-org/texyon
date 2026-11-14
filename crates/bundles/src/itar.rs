@@ -26,8 +26,8 @@ use std::{
 };
 use texyon_errors::prelude::*;
 use texyon_geturl::{DefaultBackend, DefaultRangeReader, GetUrlBackend, RangeReader};
-use texyon_io_base::{digest, InputHandle, InputOrigin, IoProvider, OpenResult};
-use texyon_status_base::{tt_note, tt_warning, NoopStatusBackend, StatusBackend};
+use texyon_io_base::{InputHandle, InputOrigin, IoProvider, OpenResult, digest};
+use texyon_status_base::{NoopStatusBackend, StatusBackend, tt_note, tt_warning};
 
 /// The internal file-information struct used by the [`ItarBundle`].
 #[derive(Clone, Debug)]

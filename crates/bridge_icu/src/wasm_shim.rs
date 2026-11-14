@@ -28,7 +28,7 @@
 use encoding_rs::Encoding;
 use icu_segmenter::{LineSegmenter, LineSegmenterBorrowed};
 use std::{ffi::CStr, ops::Range, ptr, slice};
-use unicode_bidi::{utf16::BidiInfo, Level};
+use unicode_bidi::{Level, utf16::BidiInfo};
 
 /// `U_ZERO_ERROR`. ICU reports success as zero and failures as positives; the
 /// engine only ever tests `status > 0`.
@@ -142,14 +142,14 @@ pub unsafe extern "C" fn ubidi_setPara(
             return;
         };
 
-        let para = if para_level == UBIDI_DEFAULT_RTL && para.level.is_ltr() && !has_strong(&bidi.text)
-        {
-            let mut para = para.clone();
-            para.level = Level::rtl();
-            para
-        } else {
-            para.clone()
-        };
+        let para =
+            if para_level == UBIDI_DEFAULT_RTL && para.level.is_ltr() && !has_strong(&bidi.text) {
+                let mut para = para.clone();
+                para.level = Level::rtl();
+                para
+            } else {
+                para.clone()
+            };
 
         let (levels, runs) = info.visual_runs(&para, para.range.clone());
         bidi.levels = levels;

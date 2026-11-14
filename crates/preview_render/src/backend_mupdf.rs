@@ -376,9 +376,11 @@ mod tests {
 
         backend.set_raster(None).unwrap();
         backend.begin_page(10.0, 10.0).unwrap();
-        assert!(String::from_utf8(backend.finish_page().unwrap())
-            .unwrap()
-            .contains("<svg"));
+        assert!(
+            String::from_utf8(backend.finish_page().unwrap())
+                .unwrap()
+                .contains("<svg")
+        );
         assert!(backend.set_raster(Some(0.0)).is_err());
         assert!(backend.set_raster(Some(f32::NAN)).is_err());
     }
@@ -406,9 +408,11 @@ mod tests {
     #[test]
     fn drawing_without_an_open_page_is_an_error() {
         let mut backend = MupdfBackend::new().unwrap();
-        assert!(backend
-            .fill_rule(1.0, 1.0, positioned(0.0, 0.0), Color::BLACK)
-            .is_err());
+        assert!(
+            backend
+                .fill_rule(1.0, 1.0, positioned(0.0, 0.0), Color::BLACK)
+                .is_err()
+        );
         assert!(backend.finish_page().is_err());
         backend.begin_page(10.0, 10.0).unwrap();
         backend.finish_page().unwrap();
@@ -588,9 +592,11 @@ mod tests {
                 Color::BLACK,
             )
             .unwrap();
-        assert!(String::from_utf8(backend.finish_page().unwrap())
-            .unwrap()
-            .contains("path"));
+        assert!(
+            String::from_utf8(backend.finish_page().unwrap())
+                .unwrap()
+                .contains("path")
+        );
     }
 
     #[test]

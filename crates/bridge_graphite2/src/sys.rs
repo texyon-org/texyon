@@ -40,7 +40,7 @@ unsafe extern "C" {
     pub fn gr_fref_n_values(pfeatureref: *const gr_feature_ref) -> u16;
     pub fn gr_fref_value(pfeatureref: *const gr_feature_ref, settingno: u16) -> i16;
     pub fn gr_face_featureval_for_lang(pFace: *const gr_face, langname: u32)
-        -> *mut gr_feature_val;
+    -> *mut gr_feature_val;
     pub fn gr_fref_feature_value(
         pfeatureref: *const gr_feature_ref,
         feats: *const gr_feature_val,

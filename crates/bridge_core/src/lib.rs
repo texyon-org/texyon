@@ -32,7 +32,7 @@
 //! a minimal implementation that only requires you to provide an [`IoProvider`]
 //! implementation.
 
-use flate2::{read::GzDecoder, Compression, GzBuilder};
+use flate2::{Compression, GzBuilder, read::GzDecoder};
 use md5::{Digest, Md5};
 use std::num::NonZeroUsize;
 use std::{
@@ -48,10 +48,10 @@ use std::{
 };
 use texyon_errors::prelude::*;
 use texyon_io_base::{
-    digest::DigestData, normalize_tex_path, InputFeatures, InputHandle, IoProvider, OpenResult,
-    OutputHandle,
+    InputFeatures, InputHandle, IoProvider, OpenResult, OutputHandle, digest::DigestData,
+    normalize_tex_path,
 };
-use texyon_status_base::{tt_error, tt_warning, MessageKind, StatusBackend};
+use texyon_status_base::{MessageKind, StatusBackend, tt_error, tt_warning};
 
 /// The C `EOF` sentinel.
 ///
@@ -1676,7 +1676,7 @@ fn candidates_follow_kpathsea_suffix_rules() {
 
 #[test]
 fn an_error_on_one_candidate_does_not_hide_the_next() {
-    use texyon_io_base::{stack::IoStack, MemoryIo};
+    use texyon_io_base::{MemoryIo, stack::IoStack};
     use texyon_status_base::NoopStatusBackend;
 
     struct Refuses;

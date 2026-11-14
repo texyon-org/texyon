@@ -157,7 +157,7 @@ unsafe extern "C" {
 #[link(name = "CoreText", kind = "framework")]
 unsafe extern "C" {
     pub fn CTFontDescriptorCreateWithAttributes(attributes: CFDictionaryRef)
-        -> CTFontDescriptorRef;
+    -> CTFontDescriptorRef;
     pub fn CTFontDescriptorCreateMatchingFontDescriptors(
         descriptor: CTFontDescriptorRef,
         mandatory_attributes: CFSetRef,

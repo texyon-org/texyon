@@ -298,13 +298,17 @@ fn duplicate_or_missing_page_selection_is_transactional() {
     let mut renderer = HotRenderer::new(());
     let analysis = renderer.analyze(Arc::from(ONE_PAGE)).unwrap();
     let mut backend = crate::NullBackend;
-    assert!(renderer
-        .render_pages(&analysis, &[0, 0], &mut backend)
-        .is_err());
+    assert!(
+        renderer
+            .render_pages(&analysis, &[0, 0], &mut backend)
+            .is_err()
+    );
     assert!(renderer.last_completed().is_none());
-    assert!(renderer
-        .render_pages(&analysis, &[1], &mut backend)
-        .is_err());
+    assert!(
+        renderer
+            .render_pages(&analysis, &[1], &mut backend)
+            .is_err()
+    );
     assert!(renderer.last_completed().is_none());
     assert_eq!(
         renderer
@@ -454,8 +458,10 @@ fn pdf_color_stack_initializes_fill_and_stroke_independently() {
             "pdf:code 0 0 10 10 re B",
         ]))
         .unwrap();
-    let [DrawOperation::PathFill { color: fill, .. }, DrawOperation::PathStroke { color: line, .. }] =
-        analysis.plans[0].operations.as_slice()
+    let [
+        DrawOperation::PathFill { color: fill, .. },
+        DrawOperation::PathStroke { color: line, .. },
+    ] = analysis.plans[0].operations.as_slice()
     else {
         panic!("expected one fill and one stroke");
     };
@@ -727,11 +733,13 @@ fn classic_font_uses_mapped_program_and_external_encoding() {
         PageFingerprint::Stable(_)
     ));
     assert_eq!(analysis.resources.len(), 3);
-    assert!(analysis
-        .ledger()
-        .unsupported()
-        .get("classic-font-resource")
-        .is_none());
+    assert!(
+        analysis
+            .ledger()
+            .unsupported()
+            .get("classic-font-resource")
+            .is_none()
+    );
 }
 
 #[cfg(all(feature = "backend-mupdf", target_os = "linux"))]

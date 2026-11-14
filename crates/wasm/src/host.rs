@@ -4,7 +4,7 @@
 //! blocking import that the host satisfies from a Web Worker.
 
 use std::{
-    alloc::{alloc, dealloc, Layout},
+    alloc::{Layout, alloc, dealloc},
     ptr,
 };
 

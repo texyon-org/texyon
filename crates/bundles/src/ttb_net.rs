@@ -9,8 +9,8 @@
 //! Instead, wrap it in a [`crate::BundleCache`] for filesystem-backed caching.
 
 use crate::{
-    ttb::{TTBFileIndex, TTBFileInfo, TTBv1Header},
     Bundle, CachableBundle, FileIndex, FileInfo, NET_RETRY_ATTEMPTS, NET_RETRY_SLEEP_MS,
+    ttb::{TTBFileIndex, TTBFileInfo, TTBv1Header},
 };
 use flate2::read::GzDecoder;
 use std::{
@@ -22,7 +22,7 @@ use std::{
 use texyon_errors::prelude::*;
 use texyon_geturl::{DefaultBackend, DefaultRangeReader, GetUrlBackend, RangeReader};
 use texyon_io_base::{InputHandle, InputOrigin, IoProvider, OpenResult};
-use texyon_status_base::{tt_note, tt_warning, StatusBackend};
+use texyon_status_base::{StatusBackend, tt_note, tt_warning};
 
 /// Read a [`TTBFileInfo`] from this bundle.
 /// We assume that `fileinfo` points to a valid file in this bundle.

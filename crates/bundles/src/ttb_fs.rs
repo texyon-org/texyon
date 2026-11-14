@@ -6,8 +6,8 @@
 //! The main type offered by this module is the [`Ttbv1NetBundle`] struct.
 
 use crate::{
-    ttb::{TTBFileIndex, TTBFileInfo, TTBv1Header},
     Bundle, FileIndex, FileInfo,
+    ttb::{TTBFileIndex, TTBFileInfo, TTBv1Header},
 };
 use flate2::read::GzDecoder;
 use std::{
@@ -17,7 +17,7 @@ use std::{
     path::Path,
 };
 use texyon_errors::prelude::*;
-use texyon_io_base::{digest::DigestData, InputHandle, InputOrigin, IoProvider, OpenResult};
+use texyon_io_base::{InputHandle, InputOrigin, IoProvider, OpenResult, digest::DigestData};
 use texyon_status_base::StatusBackend;
 
 /// Read a [`TTBFileInfo`] from this bundle.

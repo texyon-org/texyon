@@ -8,18 +8,18 @@
 use std::{
     fmt,
     io::{self, Read, Write},
-    sync::{mpsc, Arc, Mutex, PoisonError},
+    sync::{Arc, Mutex, PoisonError, mpsc},
     thread,
 };
 
 use texyon_engine_xetex::EngineCancellation;
-use texyon_errors::{anyhow::anyhow, Result};
+use texyon_errors::{Result, anyhow::anyhow};
 use texyon_preview_protocol::session::{
     HostRequest, InlineBytes, Request, Response, SessionRequest,
 };
 use texyon_preview_render::{Backend, ResourceProvider};
 
-use crate::{handle, DocumentRoot, Payload, PreviewSession, SessionHost};
+use crate::{DocumentRoot, Payload, PreviewSession, SessionHost, handle};
 
 const WORKER_STACK_BYTES: usize = 32 * 1024 * 1024;
 
@@ -272,7 +272,7 @@ mod tests {
 
     use texyon_preview_protocol::session::{HostRequest, InlineBytes, Request, Response};
 
-    use super::{read_frame, write_frame, MAX_FRAME_BYTES};
+    use super::{MAX_FRAME_BYTES, read_frame, write_frame};
 
     #[test]
     fn frames_round_trip_with_inline_bytes() {

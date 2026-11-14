@@ -446,9 +446,11 @@ mod tests {
 
         let snapshot = sources.snapshot();
         assert_eq!(snapshot.primary(), Path::new("/doc/main.tex"));
-        assert!(snapshot
-            .files()
-            .contains_key(Path::new("/doc/chapters/one.tex")));
+        assert!(
+            snapshot
+                .files()
+                .contains_key(Path::new("/doc/chapters/one.tex"))
+        );
     }
 
     #[test]
@@ -457,12 +459,16 @@ mod tests {
         let mut sources =
             SourceSet::initialize(root, "main.tex", "text".into(), vec![], limits()).unwrap();
 
-        assert!(sources
-            .replace(Some("../escape.tex"), "bad".into())
-            .is_err());
-        assert!(sources
-            .replace(Some("/elsewhere/escape.tex"), "bad".into())
-            .is_err());
+        assert!(
+            sources
+                .replace(Some("../escape.tex"), "bad".into())
+                .is_err()
+        );
+        assert!(
+            sources
+                .replace(Some("/elsewhere/escape.tex"), "bad".into())
+                .is_err()
+        );
         assert_eq!(sources.revision(), SourceRevision::ZERO);
     }
 
@@ -495,9 +501,11 @@ mod tests {
             SourceSet::initialize(root, "main.tex", "good".into(), vec![], limits()).unwrap();
         let before = sources.snapshot();
 
-        assert!(sources
-            .replace(Some("../escape.tex"), "bad".into())
-            .is_err());
+        assert!(
+            sources
+                .replace(Some("../escape.tex"), "bad".into())
+                .is_err()
+        );
         let after = sources.snapshot();
         assert_eq!(after.revision(), SourceRevision::ZERO);
         assert_eq!(after.files(), before.files());

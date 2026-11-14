@@ -1,7 +1,7 @@
 //! Shaping and measuring native word and glyph nodes.
 
 use crate::errors::Abort;
-use crate::fonts::{Side, OTGR_FONT_FLAG};
+use crate::fonts::{OTGR_FONT_FLAG, Side};
 use crate::glyph_arena::{FixedPoint, GlyphBlob};
 use crate::layout::{
     Bidi, FontMappingHandle, K_STATUS_NO_ERROR, K_STATUS_OUTPUT_BUFFER_FULL, UBIDI_MIXED, UBIDI_RTL,
@@ -13,7 +13,7 @@ use std::ffi::c_int;
 use std::rc::Rc;
 use texyon_xetex_layout::{FloatPoint, GlyphBBox};
 
-use super::{d2fix, fix2d, FONT_FLAGS_COLORED, FONT_FLAGS_VERTICAL};
+use super::{FONT_FLAGS_COLORED, FONT_FLAGS_VERTICAL, d2fix, fix2d};
 
 const XDV_FLAG_VERTICAL: u16 = 0x0100;
 const XDV_FLAG_COLORED: u16 = 0x0200;
@@ -168,11 +168,7 @@ impl FontState {
         } else {
             let n_glyphs = engine.layout_chars(&text, dir == UBIDI_RTL) as i32;
             let end = shaped.append_run(engine, n_glyphs, 0.0, 0.0);
-            if n_glyphs > 0 {
-                f64::from(end.x)
-            } else {
-                0.0
-            }
+            if n_glyphs > 0 { f64::from(end.x) } else { 0.0 }
         };
         let mut width = d2fix(width);
         let stored_count = shaped.gids.len() as u16;

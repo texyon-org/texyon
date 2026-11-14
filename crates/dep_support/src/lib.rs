@@ -134,8 +134,12 @@ impl DepState {
                             _ => None,
                         };
                         if let Some(triplet) = triplet {
-                            println!("cargo:warning=you may need to export VCPKGRS_TRIPLET={triplet} ...");
-                            println!("cargo:warning=... which is a custom triplet used by Tectonic's cargo-vcpkg integration");
+                            println!(
+                                "cargo:warning=you may need to export VCPKGRS_TRIPLET={triplet} ..."
+                            );
+                            println!(
+                                "cargo:warning=... which is a custom triplet used by Tectonic's cargo-vcpkg integration"
+                            );
                         }
                     }
 

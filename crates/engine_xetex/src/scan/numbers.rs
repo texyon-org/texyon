@@ -10,13 +10,13 @@ use crate::consts::{
 use crate::cs::{CsId, CsKind, Frozen};
 use crate::eqtb::Register;
 use crate::errors::OrConfusion;
-use crate::errors::{mu_error, Abort};
+use crate::errors::{Abort, mu_error};
 use crate::fonts::{QUAD_CODE, X_HEIGHT_CODE};
 use crate::glue_store::GlueSpecId;
 use crate::input::back_input;
 use crate::mem::ZERO_GLUE;
 use crate::params::IntPar;
-use crate::scaled_math::{add_or_sub, fract, mult_and_add, quotient, xn_over_d, Overflowing};
+use crate::scaled_math::{Overflowing, add_or_sub, fract, mult_and_add, quotient, xn_over_d};
 use crate::scan::Command;
 use crate::state::EngineState;
 use crate::token::{Token, TokenKind};
@@ -24,7 +24,7 @@ use crate::units::MemIdx;
 use crate::units::RawPtr;
 use crate::units::{GlueOrder, Scaled};
 
-use super::internal::{scan_something_internal, CurVal};
+use super::internal::{CurVal, scan_something_internal};
 use super::next::{get_token, get_x_non_blank, get_x_token};
 use super::{math_char, round_decimals, scan_keyword};
 
@@ -714,11 +714,7 @@ pub(crate) fn scan_glue(st: &mut EngineState, level: ValueLevel) -> Result<GlueS
         } else {
             back_input(st)?;
             let d = scan_dimen(st, mu)?;
-            if negative {
-                -d
-            } else {
-                d
-            }
+            if negative { -d } else { d }
         };
 
     let gs = st.mem.new_spec(ZERO_GLUE)?;

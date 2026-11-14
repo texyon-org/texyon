@@ -15,8 +15,8 @@ use texyon_errors::Result;
 use texyon_status_base::StatusBackend;
 
 use crate::{
-    casefold_match, normalize_tex_path, InputFeatures, InputHandle, InputOrigin, IoProvider,
-    OpenResult, OutputHandle,
+    InputFeatures, InputHandle, InputOrigin, IoProvider, OpenResult, OutputHandle, casefold_match,
+    normalize_tex_path,
 };
 
 /// Information about a file created or used inside the memory-backed I/O

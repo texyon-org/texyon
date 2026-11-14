@@ -14,7 +14,7 @@
 //! which contains tectonic's main CLI program.
 
 use byte_unit::{Byte, UnitType};
-use quick_xml::{events::Event, NsReader};
+use quick_xml::{NsReader, events::Event};
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
@@ -29,25 +29,24 @@ use std::{
 use texyon_bridge_core::{CoreBridgeLauncher, DriverHooks, SecuritySettings, SystemRequestError};
 use texyon_bundles::Bundle;
 use texyon_io_base::{
+    InputHandle, IoProvider, OpenResult, OutputHandle,
     digest::DigestData,
     filesystem::{FilesystemIo, FilesystemPrimaryInputIo},
     stdstreams::{BufferedPrimaryIo, GenuineStdoutIo},
-    InputHandle, IoProvider, OpenResult, OutputHandle,
 };
 use which::which;
 
 use crate::{
-    ctry, errmsg,
+    BibtexEngine, FORMAT_SERIAL, TexEngine, TexOutcome, XdvipdfmxEngine, ctry, errmsg,
     errors::{ChainErrCompatExt, ErrorKind, Result},
     io::{
+        InputOrigin,
         format_cache::FormatCache,
         memory::{MemoryFileCollection, MemoryIo},
-        InputOrigin,
     },
     status::StatusBackend,
     tt_error, tt_note, tt_warning,
     unstable_opts::UnstableOptions,
-    BibtexEngine, TexEngine, TexOutcome, XdvipdfmxEngine, FORMAT_SERIAL,
 };
 
 /// Different patterns with which files may have been accessed by the
@@ -1777,10 +1776,16 @@ impl ProcessingSession {
         match result {
             Ok(TexOutcome::Spotless) => {}
             Ok(TexOutcome::Warnings) => {
-                tt_warning!(status, "warnings were issued by the TeX engine; use --print and/or --keep-logs for details.");
+                tt_warning!(
+                    status,
+                    "warnings were issued by the TeX engine; use --print and/or --keep-logs for details."
+                );
             }
             Ok(TexOutcome::Errors) => {
-                tt_error!(status, "errors were issued by the TeX engine; use --print and/or --keep-logs for details.");
+                tt_error!(
+                    status,
+                    "errors were issued by the TeX engine; use --print and/or --keep-logs for details."
+                );
                 return Err(ErrorKind::Msg("unhandled TeX engine error".to_owned()).into());
             }
             Err(e) => {
@@ -1857,13 +1862,14 @@ impl ProcessingSession {
 
         let warnings = match result {
             Ok(TexOutcome::Spotless) => None,
-            Ok(TexOutcome::Warnings) =>
-                    Some("warnings were issued by the TeX engine; use --print and/or --keep-logs for details."),
-            Ok(TexOutcome::Errors) =>
-                    Some("errors were issued by the TeX engine, but were ignored; \
-                         use --print and/or --keep-logs for details."),
-            Err(e) =>
-                return Err(e.into()),
+            Ok(TexOutcome::Warnings) => Some(
+                "warnings were issued by the TeX engine; use --print and/or --keep-logs for details.",
+            ),
+            Ok(TexOutcome::Errors) => Some(
+                "errors were issued by the TeX engine, but were ignored; \
+                         use --print and/or --keep-logs for details.",
+            ),
+            Err(e) => return Err(e.into()),
         };
 
         if !self.bs.mem.files.borrow().contains_key(&self.tex_xdv_path) {

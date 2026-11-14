@@ -5,4 +5,4 @@
 
 pub mod termcolor;
 
-pub use texyon_status_base::{plain, ChatterLevel, MessageKind, NoopStatusBackend, StatusBackend};
+pub use texyon_status_base::{ChatterLevel, MessageKind, NoopStatusBackend, StatusBackend, plain};

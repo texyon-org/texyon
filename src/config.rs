@@ -14,7 +14,7 @@ use std::{
     path::PathBuf,
     sync::atomic::{AtomicBool, Ordering},
 };
-use texyon_bundles::{detect_bundle, Bundle};
+use texyon_bundles::{Bundle, detect_bundle};
 use texyon_io_base::app_dirs;
 
 use crate::errors::{ErrorKind, Result};

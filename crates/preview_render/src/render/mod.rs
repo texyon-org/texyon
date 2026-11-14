@@ -16,7 +16,7 @@ use crate::backend::{Backend, FontId, FontStyle};
 use crate::fingerprint::page_digest;
 use crate::pagesize::preamble_magnification;
 use crate::resource::{Resource, ResourceIdentity, ResourceProvider};
-use crate::units::{fixed_16_16, sp_to_bp, SP_TO_BP};
+use crate::units::{SP_TO_BP, fixed_16_16, sp_to_bp};
 use crate::{Destination, Link, RenderError};
 
 pub(crate) use plan::{DrawOperation, ImageKind, PagePlan};

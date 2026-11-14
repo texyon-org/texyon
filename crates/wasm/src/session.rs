@@ -7,7 +7,7 @@ use std::{
 };
 
 use texyon_engine_xetex::EnginePreviewConfig;
-use texyon_errors::{anyhow::anyhow, Result};
+use texyon_errors::{Result, anyhow::anyhow};
 use texyon_live_preview::{DocumentRoot, PreviewSession, SessionConfig, SessionHost};
 use texyon_preview_protocol::ProtocolLimits;
 use texyon_preview_render::MupdfBackend;

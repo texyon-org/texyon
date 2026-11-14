@@ -2,9 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
-use texyon_bundles::{dir::DirBundle, Bundle};
+use texyon_bundles::{Bundle, dir::DirBundle};
 use texyon_errors::Result;
-use texyon_io_base::{digest::DigestData, InputHandle, IoProvider, OpenResult};
+use texyon_io_base::{InputHandle, IoProvider, OpenResult, digest::DigestData};
 use texyon_status_base::StatusBackend;
 
 /// Path to a file in the workspace's shared `tests/` tree.

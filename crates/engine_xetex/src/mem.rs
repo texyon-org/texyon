@@ -20,7 +20,7 @@ use crate::units::{
     FontId, GlueOrder, GlueSign, MemAddr, MemIdx, MemPtr, NodeType, Orientation, Scaled,
 };
 
-pub(crate) use crate::glue_store::{FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, SS_GLUE, ZERO_GLUE};
+pub(crate) use crate::glue_store::{FIL_GLUE, FIL_NEG_GLUE, FILL_GLUE, SS_GLUE, ZERO_GLUE};
 
 /// Sizes below this have a free list each, indexed by the size. It covers every
 /// fixed node and the variable ones up to e-TeX's old 66-word sparse index node.

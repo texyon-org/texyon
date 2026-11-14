@@ -13,9 +13,9 @@ use std::{
 
 use serde::Deserialize;
 use texyon_bundles::Bundle;
-use texyon_errors::{anyhow::anyhow, Result};
+use texyon_errors::{Result, anyhow::anyhow};
 use texyon_io_base::{
-    digest::DigestData, format_cache::FormatCache, InputHandle, InputOrigin, IoProvider, OpenResult,
+    InputHandle, InputOrigin, IoProvider, OpenResult, digest::DigestData, format_cache::FormatCache,
 };
 use texyon_status_base::{NoopStatusBackend, StatusBackend};
 

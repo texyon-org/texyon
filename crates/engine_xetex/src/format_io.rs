@@ -5,7 +5,7 @@
 //! into the same place, checking ranges. Items are stored big-endian, an
 //! 8-byte word as one 64-bit value.
 
-use crate::bridge::{input_open, input_read, output_close, output_open, output_write, FileFormat};
+use crate::bridge::{FileFormat, input_open, input_read, output_close, output_open, output_write};
 use crate::command::Command;
 use crate::consts::{
     EMPTY_STRING, FONT_BASE, INVALID_HANDLE, MAX_FONT_MAX, MAX_HALFWORD, NULL_FONT, PRIM_SIZE,
@@ -20,7 +20,7 @@ use crate::glue_store::GlueSpecId;
 use crate::glue_store::{GlueSpec, GlueStore, STATIC_SPECS};
 use crate::hash::HASH_PRIME;
 use crate::hash::{HashEntry, PrimEntry};
-use crate::hyphenation::{TrieOp, TriePtr, BIGGEST_LANG, HYPH_PRIME, TRIE_OP_SIZE};
+use crate::hyphenation::{BIGGEST_LANG, HYPH_PRIME, TRIE_OP_SIZE, TrieOp, TriePtr};
 use crate::mem::{CONTRIB_HEAD, PAGE_HEAD, RESERVED_WORDS};
 use crate::output::{print, print_char, print_int, print_ln, print_nl};
 use crate::params::IntPar;
@@ -165,7 +165,9 @@ impl FmtItem for MemPtr {
     }
 }
 
-newtype_item!(GlueSpecId, TokenList, Scaled, StrNumber, PoolPos, TriePtr, LigChar);
+newtype_item!(
+    GlueSpecId, TokenList, Scaled, StrNumber, PoolPos, TriePtr, LigChar
+);
 
 impl FmtItem for CsId {
     const SIZE: usize = 4;

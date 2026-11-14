@@ -4,12 +4,12 @@
 //! A URL-get backend based on the `reqwest` crate.
 
 use reqwest::{
+    StatusCode, Url,
     blocking::{Client, Response},
     header::{HeaderMap, RANGE},
     redirect::Policy,
-    StatusCode, Url,
 };
-use texyon_errors::{anyhow::bail, Result};
+use texyon_errors::{Result, anyhow::bail};
 
 use crate::{GetUrlBackend, RangeReader};
 

@@ -5,7 +5,7 @@ use std::{cell::RefCell, rc::Rc};
 use texyon_bridge_core::{CoreBridgeLauncher, MinimalDriver};
 use texyon_engine_xetex::EngineFrame;
 use texyon_errors::Result;
-use texyon_io_base::{stack::IoStack, IoProvider, MemoryIo};
+use texyon_io_base::{IoProvider, MemoryIo, stack::IoStack};
 use texyon_live_preview::EngineSupport;
 
 use crate::io::{HostIo, HostStatus};

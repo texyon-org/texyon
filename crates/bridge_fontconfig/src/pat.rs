@@ -1,7 +1,7 @@
 //! Font patterns - used to select fonts matching certain properties, or as a unique identifier
 //! of a resolved font.
 
-use super::{sys, FcErr};
+use super::{FcErr, sys};
 use std::ffi::CStr;
 use std::marker::PhantomData;
 use std::ptr;

@@ -11,13 +11,13 @@ use std::time::{Duration, Instant, SystemTime};
 use texyon_bridge_core::{CoreBridgeLauncher, CoreBridgeState};
 use texyon_errors::prelude::*;
 
+use crate::EngineCancellation;
 use crate::checkpoint::{
     BudgetError, CheckpointLadder, EngineBundle, LadderBudget, RungAdmission, StringWatermark,
 };
 use crate::errors::Abort;
 use crate::replay::source::SourcePath;
 use crate::state::{EngineExecutionMode, EngineState};
-use crate::EngineCancellation;
 use crate::{PageExecution, SourceRevision, SourceSnapshot, TexOutcome};
 
 static RESIDENT_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -424,7 +424,7 @@ impl IncrementalXeTeXSession {
                 match crate::engine::initialize_engine(state, &format, build_date) {
                     crate::engine::InitOutcome::Ready => {}
                     crate::engine::InitOutcome::Terminate(history) => {
-                        return OperationResult::Terminal(history)
+                        return OperationResult::Terminal(history);
                     }
                 }
                 state.config.execution_mode = EngineExecutionMode::Resident;
@@ -780,15 +780,15 @@ impl IncrementalXeTeXSession {
                 return Ok(frame);
             }
             OperationResult::Budget(error) => {
-                return Err(self.kill(anyhow!("invalid checkpoint budget: {error:?}")))
+                return Err(self.kill(anyhow!("invalid checkpoint budget: {error:?}")));
             }
             OperationResult::Terminal(history) => {
                 return Err(self.kill(anyhow!(
                     "XeTeX initialization terminated with history {history}"
-                )))
+                )));
             }
             OperationResult::Panicked => {
-                return Err(self.kill(anyhow!("resident XeTeX operation panicked")))
+                return Err(self.kill(anyhow!("resident XeTeX operation panicked")));
             }
         };
         frame.outcome = history_to_outcome(history)?;

@@ -18,7 +18,7 @@ use crate::state::{EngineState, MemState, Selector};
 use crate::token::{Build, TokCursor, Token, TokenList};
 use crate::units::{BufPos, StrNumber};
 
-use super::internal::{scan_something_internal, CurVal};
+use super::internal::{CurVal, scan_something_internal};
 use super::next::{get_next, get_token, get_x_token, x_token};
 use super::scan_left_brace;
 use crate::command::Command;

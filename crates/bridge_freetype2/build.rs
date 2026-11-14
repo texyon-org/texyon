@@ -6,7 +6,7 @@
 //! sources.
 
 use std::{env, path::PathBuf};
-use texyon_dep_support::{target_is_wasm, wasm_vendor_dir, Configuration, Dependency, Spec};
+use texyon_dep_support::{Configuration, Dependency, Spec, target_is_wasm, wasm_vendor_dir};
 
 struct Freetype2Spec;
 

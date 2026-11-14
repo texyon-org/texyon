@@ -17,8 +17,8 @@ use crate::eqtb::{
 use crate::eqtb::{EqStore, InterCharPair};
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
-use crate::fonts::read_font_info;
 use crate::fonts::FontSize;
+use crate::fonts::read_font_info;
 use crate::glue_store::GlueSpecId;
 use crate::hyphenation::{new_hyph_exceptions, new_patterns};
 use crate::mem::ZERO_GLUE;
@@ -32,8 +32,8 @@ use crate::units::{FontId, GlueOrder, Scaled, StrNumber};
 
 use crate::fonts::Side;
 
-use super::boxes::scan_box;
 use super::BoxContext;
+use super::boxes::scan_box;
 
 fn new_interaction(st: &mut EngineState, mode: InteractionMode) {
     crate::output::print_ln(st);
@@ -264,13 +264,13 @@ fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Abort> {
             match st.scanner.cur {
                 Command::AssignInt(loc) => break 'found (RegisterLoc::Int(loc), ValueLevel::Int),
                 Command::AssignDimen(loc) => {
-                    break 'found (RegisterLoc::Dimen(loc), ValueLevel::Dimen)
+                    break 'found (RegisterLoc::Dimen(loc), ValueLevel::Dimen);
                 }
                 Command::AssignGlue(loc) => {
-                    break 'found (RegisterLoc::Glue(loc), ValueLevel::Glue)
+                    break 'found (RegisterLoc::Glue(loc), ValueLevel::Glue);
                 }
                 Command::AssignMuGlue(loc) => {
-                    break 'found (RegisterLoc::Glue(loc), ValueLevel::Mu)
+                    break 'found (RegisterLoc::Glue(loc), ValueLevel::Mu);
                 }
                 _ => {}
             }

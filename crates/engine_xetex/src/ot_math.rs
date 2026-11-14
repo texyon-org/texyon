@@ -1,9 +1,9 @@
 //! OpenType MATH table queries.
 
 use crate::units::{FontId, Scaled};
+use texyon_bridge_harfbuzz::Direction;
 use texyon_bridge_harfbuzz::ot::{MathGlyphPart, MathKern};
 use texyon_bridge_harfbuzz::sys::HB_OT_MATH_GLYPH_PART_FLAG_EXTENDER;
-use texyon_bridge_harfbuzz::Direction;
 
 use crate::ext::{d2fix, fix2d};
 use crate::state::FontEngineHandle;

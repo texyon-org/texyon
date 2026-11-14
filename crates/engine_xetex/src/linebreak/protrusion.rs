@@ -2,15 +2,15 @@
 
 use crate::errors::Abort;
 use crate::errors::OrConfusion;
-use crate::fonts::{Side, QUAD_CODE};
+use crate::fonts::{QUAD_CODE, Side};
 use crate::mem::{TEMP_HEAD, ZERO_GLUE};
 use crate::node::{AnyNode, BoxNode, DiscNode, KernSubtype, NodePtr, WhatsitVariant};
 use crate::state::{FontState, MemState};
 use crate::units::MemIdx;
 use crate::units::{FontId, MemPtr, Scaled};
 
-use super::lists::PassiveId;
 use super::Breaker;
+use super::lists::PassiveId;
 
 /// The last index the hlist stack may push to, as in WEB.
 const MAX_HLIST_STACK: usize = 512;

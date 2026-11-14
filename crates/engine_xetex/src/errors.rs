@@ -1,10 +1,10 @@
 use crate::bridge::{output_flush, set_error_message};
 use crate::codes::ScannerStatus;
 use crate::consts::{HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, MAIN_MEMORY_WORDS};
-use crate::diagnostic::{begin_capture, emit, emit_fatal, take_capture, DiagnosticKind};
+use crate::diagnostic::{DiagnosticKind, begin_capture, emit, emit_fatal, take_capture};
 use crate::output::{
-    begin_diagnostic, end_diagnostic, print, print_char, print_err, print_error_prefix, print_int,
-    print_ln, print_nl, show_box, show_context, token_show, InMode, TexPrint,
+    InMode, TexPrint, begin_diagnostic, end_diagnostic, print, print_char, print_err,
+    print_error_prefix, print_int, print_ln, print_nl, show_box, show_context, token_show,
 };
 use crate::params::{IntPar, TokPar};
 use crate::state::{EngineState, EqtbState, ErrorState, InteractionMode, Selector};
@@ -366,7 +366,7 @@ impl Abort {
             Abort::Cancelled => st.errors.history = HISTORY_FATAL_ERROR,
             Abort::Horizoned => {
                 return Abort::Confusion("horizon stop escaped resident orchestration")
-                    .into_history(st)
+                    .into_history(st);
             }
             Abort::Overflow { capacity, n } => Self::overflow_report(st, capacity.name(), n),
             Abort::AvailOverflow => {

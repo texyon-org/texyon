@@ -6,7 +6,7 @@
 
 use std::{fmt, str::FromStr};
 
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
 pub mod session;
 

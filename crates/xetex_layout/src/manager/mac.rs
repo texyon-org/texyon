@@ -1,8 +1,8 @@
-use crate::manager::{
-    base_get_op_size_rec_and_style_flags, FontInfo, FontManager, FontManagerBackend, FontMaps,
-    NameCollection,
-};
 use crate::PlatformFontRef;
+use crate::manager::{
+    FontInfo, FontManager, FontManagerBackend, FontMaps, NameCollection,
+    base_get_op_size_rec_and_style_flags,
+};
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 use texyon_bridge_core::CoreBridgeState;

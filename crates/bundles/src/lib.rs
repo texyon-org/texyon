@@ -16,8 +16,8 @@
 //! - [`zip::ZipBundle`] for a ZIP-format bundle.
 
 use std::{fmt::Debug, io::Read, path::PathBuf};
-use texyon_errors::{prelude::bail, Result};
-use texyon_io_base::{digest::DigestData, InputHandle, IoProvider, OpenResult};
+use texyon_errors::{Result, prelude::bail};
+use texyon_io_base::{InputHandle, IoProvider, OpenResult, digest::DigestData};
 use texyon_status_base::StatusBackend;
 
 pub mod cache;

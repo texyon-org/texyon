@@ -1,7 +1,7 @@
 //! `mlist_to_hlist`: scripts, spacing, fractions and delimiters, set in
 //! Computer Modern.
 
-use crate::{assert_lines, run, MATH_FONTS};
+use crate::{MATH_FONTS, assert_lines, run};
 
 fn formula(math: &str) -> String {
     let r = run(&format!(

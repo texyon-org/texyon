@@ -685,7 +685,7 @@ pub(crate) enum Closer {
 
 impl crate::output::TexPrint for Closer {
     fn print_to(&self, st: &mut EngineState) {
-        use crate::output::{print, Esc};
+        use crate::output::{Esc, print};
         match self {
             Closer::EndGroup => print(st, Esc("endgroup")),
             Closer::MathShift => print(st, '$'),
@@ -713,7 +713,7 @@ impl Insertion {
 
 impl crate::output::TexPrint for Insertion {
     fn print_to(&self, st: &mut EngineState) {
-        use crate::output::{print, Esc};
+        use crate::output::{Esc, print};
         match self.0 {
             Some(Closer::Right) => print(st, Esc("right.")),
             Some(closer) => print(st, closer),

@@ -10,22 +10,21 @@ use std::{
 
 use clap::Parser;
 use texyon::{
+    FORMAT_SERIAL,
     config::PersistentConfig,
     driver::{OutputFormat, ProcessingSessionBuilder},
     engines::tex::EnginePreviewConfig,
     errors::{ErrorKind, Result},
-    io::{format_cache::FormatCache, IoProvider, OpenResult},
+    io::{IoProvider, OpenResult, format_cache::FormatCache},
     live_preview::{
-        serve, BundleOpener, BundleResourceProvider, DiskSources, DocumentRoot, FrozenBundle,
-        OpenRequest, PackedBundle, PreviewSession, ResidentEngineSupport, SessionConfig,
-        SupportPack,
+        BundleOpener, BundleResourceProvider, DiskSources, DocumentRoot, FrozenBundle, OpenRequest,
+        PackedBundle, PreviewSession, ResidentEngineSupport, SessionConfig, SupportPack, serve,
     },
     status::{NoopStatusBackend, StatusBackend},
-    FORMAT_SERIAL,
 };
 use texyon_bundles::Bundle;
 use texyon_errors::anyhow::{anyhow, bail};
-use texyon_preview_protocol::{session::SESSION_PROTOCOL_VERSION, ProtocolLimits};
+use texyon_preview_protocol::{ProtocolLimits, session::SESSION_PROTOCOL_VERSION};
 use texyon_preview_render::MupdfBackend;
 
 use crate::{CommandCustomizations, TexyonCommand};

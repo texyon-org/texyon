@@ -6,8 +6,8 @@ use std::io::Cursor;
 #[cfg(test)]
 use texyon_xdv::{XdvEvents, XdvParser};
 
-use crate::units::{normalize_zero, SP_TO_BP};
 use crate::RenderError;
+use crate::units::{SP_TO_BP, normalize_zero};
 
 pub(crate) const DEFAULT_BP: [f32; 2] = [612.0, 792.0];
 

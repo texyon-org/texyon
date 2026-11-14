@@ -8,6 +8,7 @@
 // them and nothing about them was specific to the driver.
 
 pub use texyon_io_base::{
+    InputFeatures, InputHandle, InputOrigin, IoProvider, OpenResult, OutputHandle,
     digest::{self, DigestData},
     filesystem::{FilesystemIo, FilesystemPrimaryInputIo},
     format_cache, memory,
@@ -15,6 +16,5 @@ pub use texyon_io_base::{
     normalize_tex_path,
     stack::IoStack,
     stdstreams::GenuineStdoutIo,
-    testing, try_open_file, InputFeatures, InputHandle, InputOrigin, IoProvider, OpenResult,
-    OutputHandle,
+    testing, try_open_file,
 };

@@ -362,19 +362,11 @@ impl Parser<'_> {
     }
 
     fn trig_in(&self, x: f64) -> f64 {
-        if self.env.radians {
-            x
-        } else {
-            x.to_radians()
-        }
+        if self.env.radians { x } else { x.to_radians() }
     }
 
     fn trig_out(&self, x: f64) -> f64 {
-        if self.env.radians {
-            x
-        } else {
-            x.to_degrees()
-        }
+        if self.env.radians { x } else { x.to_degrees() }
     }
 
     fn call(&self, func: Func, arg: Value) -> R<Value> {

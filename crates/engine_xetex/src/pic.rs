@@ -2,7 +2,7 @@
 
 use libc::{c_char, c_double, c_int, c_uint};
 
-use crate::bridge::{input_open, FileFormat};
+use crate::bridge::{FileFormat, input_open};
 use crate::consts::INVALID_HANDLE;
 use crate::errors::Abort;
 use crate::ext::{d2fix, fix2d};

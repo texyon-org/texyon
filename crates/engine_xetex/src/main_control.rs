@@ -34,15 +34,15 @@ use self::align::{align_error, do_endv, init_align, no_align_error, omit_error};
 use self::assign::prefixed_command;
 pub(crate) use self::assign::scan_inter_char_pair;
 use self::boxes::{begin_box, delete_last, scan_box, unpackage};
-use self::lists::{
-    app_space, append_discretionary, append_glue, append_italic_correction, append_kern,
-    append_penalty, begin_insert_or_adjust, end_graf, font_space_glue, handle_right_brace,
-    head_for_vmode, indent_in_hmode, insert_par_token_before, its_all_over, make_accent, make_mark,
-    ParTokenContext,
-};
 pub(crate) use self::lists::{
-    new_character, new_graf, normal_paragraph, off_save, push_math, start_paragraph_language,
-    NewChar,
+    NewChar, new_character, new_graf, normal_paragraph, off_save, push_math,
+    start_paragraph_language,
+};
+use self::lists::{
+    ParTokenContext, app_space, append_discretionary, append_glue, append_italic_correction,
+    append_kern, append_penalty, begin_insert_or_adjust, end_graf, font_space_glue,
+    handle_right_brace, head_for_vmode, indent_in_hmode, insert_par_token_before, its_all_over,
+    make_accent, make_mark,
 };
 use self::main_loop::{insert_boundary_inter_char_toks, main_control_main_loop};
 

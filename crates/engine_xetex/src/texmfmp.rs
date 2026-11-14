@@ -1,13 +1,13 @@
 //! String-pool conversions, clock queries and the file-info primitives.
 
 use crate::bridge::{
-    get_file_md5, input_get_mtime, input_get_size, input_open, input_read, FileFormat,
+    FileFormat, get_file_md5, input_get_mtime, input_get_size, input_open, input_read,
 };
 use crate::consts::{EMPTY_STRING, INVALID_HANDLE};
 use crate::errors::Abort;
 use crate::state::{ShipoutState, StringsState, TexmfState};
 use crate::units::StrNumber;
-use crate::utf8::{next_utf8_char, utf16_units, FIRST_BYTE_MARK};
+use crate::utf8::{FIRST_BYTE_MARK, next_utf8_char, utf16_units};
 
 const HEX_DIGITS: &[u8; 16] = b"0123456789ABCDEF";
 
