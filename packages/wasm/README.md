@@ -102,3 +102,11 @@ Stop the running compile, keeping the previous preview, or shut the engine down.
 - No shell escape.
 - Fonts are found by file name, not system name.
 - Files come from the project, the pack or the bundle.
+
+## License
+
+The TypeScript in this package is MIT. The bundled engine, `texyon_wasm.wasm`,
+links MuPDF and is distributed under AGPL-3.0-or-later as a whole, so serving
+it to browsers means offering its source, which is
+[texyon-org/texyon](https://github.com/texyon-org/texyon) at the published
+version. See `THIRD_PARTY_NOTICES.md`.

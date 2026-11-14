@@ -2,7 +2,23 @@
   "name": "@texyon/wasm",
   "version": "0.1.0",
   "description": "TeXyoN, a resident LaTeX engine for live preview, compiled to WebAssembly",
-  "license": "MIT",
+  "keywords": [
+    "latex",
+    "tex",
+    "xetex",
+    "wasm",
+    "webassembly",
+    "live-preview",
+    "synctex"
+  ],
+  "license": "MIT AND AGPL-3.0-or-later",
+  "homepage": "https://github.com/texyon-org/texyon/tree/master/packages/wasm",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/texyon-org/texyon.git",
+    "directory": "packages/wasm"
+  },
+  "bugs": "https://github.com/texyon-org/texyon/issues",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -15,21 +31,25 @@
   },
   "files": [
     "dist",
-    "src"
+    "src",
+    "!src/**/*.test.ts",
+    "THIRD_PARTY_NOTICES.md",
+    "licenses"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json && npm run build:worker",
-    "build:worker": "esbuild src/worker.ts --bundle --format=esm --target=es2022 --outfile=dist/worker.js --allow-overwrite --log-level=warning",
+    "build:worker": "esbuild src/worker.ts --bundle --format=esm --target=es2022 --outfile=dist/worker.js --sourcemap --allow-overwrite --log-level=warning",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
     "test": "node --experimental-strip-types --test src/*.test.ts",
-    "prepack": "npm run build && node scripts/copy-engine.mjs"
+    "prepack": "npm run build && node scripts/stage.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
     "esbuild": "^0.28.1",
+    "fflate": "^0.8.3",
     "typescript": "^5.6.0"
   },
-  "dependencies": {
-    "fflate": "^0.8.3"
+  "publishConfig": {
+    "access": "public"
   }
 }
