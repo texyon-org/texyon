@@ -1,6 +1,5 @@
 //! The native-font layer: OpenType/Graphite font loading and feature parsing,
-//! TECkit mappings, shaping and measuring native word and glyph nodes, and the
-//! extension (`\openout`, `\write`, `\special`, ...) commands.
+//! TECkit mappings, and shaping and measuring native word and glyph nodes.
 
 use std::ffi::c_int;
 use std::str;
@@ -27,12 +26,7 @@ use crate::print::{
 };
 use crate::state::EngineState;
 
-mod extension;
-
-pub(crate) use extension::SourceSpecials;
 mod native;
-
-pub(crate) use extension::{append_src_special, do_extension, insert_special, insert_src_special};
 
 const HB_TAG_NONE: u32 = 0;
 
@@ -149,7 +143,10 @@ fn read_rgb_a(s: &mut &[u8]) -> u32 {
 
 /// The input mode named `bytes`, with the ICU converter name string
 /// for `ICUMAPPING`.
-fn get_encoding_mode_and_info(st: &mut EngineState, bytes: &[u8]) -> Result<(c_int, i32), Abort> {
+pub(crate) fn get_encoding_mode_and_info(
+    st: &mut EngineState,
+    bytes: &[u8],
+) -> Result<(c_int, i32), Abort> {
     for (name, mode) in [
         ("auto", AUTO),
         ("utf8", UTF8),

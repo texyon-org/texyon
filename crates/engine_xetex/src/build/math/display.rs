@@ -8,13 +8,13 @@ use crate::base::consts::{INF_PENALTY, MAX_DIMEN, SCRIPT_SIZE, TEXT_SIZE};
 use crate::base::mode::{Mode, ModeName};
 use crate::base::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::base::units::{Dir, GlueOrder, GlueSign, MemIdx, NodeType, Scaled};
+use crate::build::extension::{insert_special, insert_src_special};
 use crate::build::linebreak::line_break;
 use crate::build::main_control::{push_math, start_paragraph_language};
 use crate::build::packaging::{
     AdjustTails, LrState, PackOrigin, PackSpec, append_to_vlist, hpack, hpack_with,
 };
 use crate::build::pagebuilder::build_page;
-use crate::fonts::ext::{insert_special, insert_src_special};
 use crate::fonts::{FontState, QUAD_CODE};
 use crate::memory::mem::{ADJUST_HEAD, MemState, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE, push_nest};
 use crate::memory::node::{AnyNode, BoxLr, BoxNode, GlueNode, MathCode, NodePtr};

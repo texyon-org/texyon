@@ -9,8 +9,8 @@ use crate::base::command::Command;
 use crate::base::consts::{EMPTY, MATH_CHAR, NUMBER_MATH_FAMILIES, SUB_MLIST};
 use crate::base::params::{IntPar, TokPar};
 use crate::base::units::{MemPtr, NodeType, Scaled};
+use crate::build::extension::insert_src_special;
 use crate::build::main_control::{off_save, push_math};
-use crate::fonts::ext::insert_src_special;
 use crate::memory::mem::MemState;
 use crate::memory::mem_types::ListStateRecord;
 use crate::memory::node::{

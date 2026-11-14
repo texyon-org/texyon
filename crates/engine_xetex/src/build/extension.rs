@@ -1,6 +1,5 @@
 //! Extensions: `\openout`, `\write`, `\closeout`, `\special`, pictures and source specials.
 
-use super::get_encoding_mode_and_info;
 use crate::base::codes::ExtensionCode;
 use crate::base::command::Command;
 use crate::base::params::IntPar;
@@ -12,6 +11,7 @@ use crate::ffi::clock::get_seconds_and_micros;
 use crate::files::io::{
     AUTO, FileSlot, scan_file_name, scan_name_path, set_input_file_encoding, with_slot_file,
 };
+use crate::fonts::ext::get_encoding_mode_and_info;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::memory::mem::TEX_NULL;
 use crate::memory::node::{

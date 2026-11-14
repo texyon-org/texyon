@@ -1,3 +1,4 @@
+pub(crate) mod extension;
 pub(crate) mod hyphenation;
 pub(crate) mod linebreak;
 pub(crate) mod main_control;

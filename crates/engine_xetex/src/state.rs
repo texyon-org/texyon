@@ -1,10 +1,10 @@
 //! Rust-owned engine state.
 
 use crate::base::random::Random;
+use crate::build::extension::SourceSpecials;
 use crate::build::hyphenation::HyphState;
 use crate::build::main_control::InterCharState;
 use crate::fonts::FontState;
-use crate::fonts::ext::SourceSpecials;
 use crate::memory::mem::MemState;
 use crate::preview::cancellation::CancellationState;
 use crate::print::diagnostic::DiagnosticsState;

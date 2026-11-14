@@ -8,8 +8,8 @@ use crate::base::mode::Mode;
 use crate::base::params::IntPar;
 use crate::base::token::{Token, TokenList};
 use crate::base::units::{FontId, MemIdx, MemPtr};
+use crate::build::extension::append_src_special;
 use crate::build::linebreak::do_locale_linebreaks;
-use crate::fonts::ext::append_src_special;
 use crate::fonts::{
     CharInfo, CharTag, LigChar, LigKernAction, LigKernIdx, LigKernStep, LigOp, SPACE_CODE,
 };

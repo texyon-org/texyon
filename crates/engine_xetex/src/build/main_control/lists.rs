@@ -15,12 +15,12 @@ use crate::base::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::base::scaled_math::xn_over_d;
 use crate::base::token::Token;
 use crate::base::units::{FontId, MemAddr, MemIdx, MemPtr, NodeType, Scaled};
+use crate::build::extension::insert_src_special;
 use crate::build::hyphenation::{norm_lang, norm_min};
 use crate::build::linebreak::line_break;
 use crate::build::math::{build_choices, fin_mlist};
 use crate::build::packaging::{PackSpec, hpack, vpackage};
 use crate::build::pagebuilder::build_page;
-use crate::fonts::ext::insert_src_special;
 use crate::fonts::{
     EXTRA_SPACE_CODE, SLANT_CODE, SPACE_CODE, SPACE_SHRINK_CODE, SPACE_STRETCH_CODE, X_HEIGHT_CODE,
     new_native_character,

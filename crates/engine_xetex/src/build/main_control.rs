@@ -9,13 +9,13 @@ use crate::base::mode::{Mode, ModeName};
 use crate::base::params::{GluePar, IntPar, TokPar};
 use crate::base::token::{Token, TokenKind};
 use crate::base::units::{MemPtr, NodeType, Scaled};
+use crate::build::extension::{do_extension, insert_src_special};
 use crate::build::math::{
     after_math, append_choices, init_math, math_ac, math_fraction, math_left_right,
     math_limit_switch, math_radical, start_eq_no, sub_sup,
 };
 use crate::build::pagebuilder::build_page;
 use crate::files::io::open_or_close;
-use crate::fonts::ext::{do_extension, insert_src_special};
 use crate::memory::mem::{ZERO_GLUE, push_nest};
 use crate::memory::node::{GlueKind, LeaderKind, MathSlot};
 use crate::preview::session::{capture_command_fence, capture_prefetch_fence};
