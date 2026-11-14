@@ -17,7 +17,7 @@ file(COPY "${CMAKE_CURRENT_LIST_DIR}/CMakeLists.txt" DESTINATION "${SOURCE_PATH}
 # vcpkg's ABI hash covers this file but not those headers, so a submodule bump
 # must change the pin below to rebuild MuPDF.
 set(BUNDLED_HARFBUZZ_VERSION "10.2.0")
-set(BUNDLED_HARFBUZZ_INCLUDE "${CMAKE_CURRENT_LIST_DIR}/../../../crates/bridge_harfbuzz/harfbuzz/src")
+set(BUNDLED_HARFBUZZ_INCLUDE "${CMAKE_CURRENT_LIST_DIR}/../../../../crates/bridge_harfbuzz/harfbuzz/src")
 file(STRINGS "${BUNDLED_HARFBUZZ_INCLUDE}/hb-version.h" HB_VERSION_LINE REGEX "^#define HB_VERSION_STRING ")
 if(NOT HB_VERSION_LINE MATCHES "\"${BUNDLED_HARFBUZZ_VERSION}\"")
     message(FATAL_ERROR "bundled HarfBuzz is not ${BUNDLED_HARFBUZZ_VERSION} (${HB_VERSION_LINE}), update the pin")
