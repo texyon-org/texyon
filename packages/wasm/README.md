@@ -1,6 +1,6 @@
 # `@texyon/wasm`
 
-TeXyon, the LaTeX engine, compiled to WebAssembly, with a TypeScript API built
+TeXyoN, the LaTeX engine, compiled to WebAssembly, with a TypeScript API built
 for editors.
 
 ```ts
@@ -48,62 +48,57 @@ blocked waiting for a support file.
 
 ## Setup
 
-Two build artifacts have to be reachable from the page:
+```sh
+npm install @texyon/wasm
+```
 
-- `texyon/texyon_wasm.wasm` — the engine, from `tools/wasm/build.sh`
-- `texyon/manifest.json` and `texyon/files/` — the support pack, from
-  `tools/wasm/build-assets.sh`
+The package ships everything the engine needs to start: the module
+(`texyon_wasm.wasm`, 19 MB) and the support pack (`texyon-pack.tar.gz`, 10 MB),
+which holds the format dump and a common set of classes, packages and fonts.
+`TexyonEngine.create()` finds both next to its own code. Vite, webpack and
+Parcel copy them into your build, and a CDN such as jsDelivr serves them from
+the package. No file is over 25 MiB, so static hosts like Cloudflare Pages
+take them as they are.
 
-Optionally a third, and it is what makes arbitrary `\usepackage` work:
+To serve them from somewhere else, pass `moduleUrl` and `packUrl`. They are
+resolved against the page, not against the Worker script.
 
-- `bundleUrl` — a `.ttb` bundle, or a tar with its index. The index is fetched
-  once in the background, and individual files are then single HTTP range
-  requests, so the host has to allow cross-origin range requests.
-  `https://bundles.texyon.org/texlive2026.ttb` does.
+Optionally, `bundleUrl` makes arbitrary `\usepackage` work: a `.ttb` bundle, or
+a tar with its index. The index is fetched once in the background, and
+individual files are then single HTTP range requests, so the host has to allow
+cross-origin range requests. `https://bundles.texyon.org/texlive2026.ttb` does.
 
-Both paths are configurable through {@link EngineOptions}. They are resolved
-against the page, not against the Worker script.
-
-Your server must answer a missing support file with a **404**, not with an
-`index.html` fallback. A single-page-app host that rewrites unknown paths will
-otherwise hand the engine a web page and tell it that it is `pdftex.map`. The
-Worker checks each file's length against the manifest and reports a clear error
-if this happens, but the fix is on the server.
+To build the module and pack from source, run `tools/wasm/build.sh` and
+`tools/wasm/build-assets.sh`. `npm pack` copies them in and refuses to run
+without them.
 
 ## Caching
 
-A cold start costs about sixty megabytes — the module, the format dump, and a
-few hundred support files — and none of it changes between page loads. All of it
-is kept in Cache Storage, so a reload fetches the manifest and, at most, one
-conditional request for the module.
-
-The three kinds of asset are invalidated differently, because they change
-differently. The module is revalidated against the server's own `ETag` or
-`Last-Modified`, so a rebuilt engine is picked up on the next load and nobody
-has to bump a version. Pack files are keyed by a digest of the manifest that
-lists them — the manifest names every file and its length, so any change to the
-pack changes the digest, and several hundred files are validated by the one
-small request that had to happen anyway. Files read out of a bundle are keyed by
-the bundle's URL, since a bundle tar does not change under its own name.
+A cold start downloads about thirty megabytes, the module and the pack, and
+neither changes between page loads. Both are kept in Cache Storage and
+revalidated against the server's own `ETag` or `Last-Modified`, so a reload
+costs two conditional requests and a rebuilt engine is picked up on the next
+load without anyone bumping a version. Files read out of a bundle are keyed by
+the bundle's URL, since a bundle does not change under its own name.
 
 Two consequences worth knowing:
 
-- **Your server should send `ETag` or `Last-Modified` for the `.wasm`.** Without
-  a validator there is no way to show a stored copy is still current, so it is
+- **Your server should send `ETag` or `Last-Modified`.** Without a validator
+  there is no way to show a stored copy is still current, so it is
   re-downloaded every load rather than risk running a stale engine. Every
   ordinary static host sends one.
 - **Caching fails soft, always.** Private windows, denied storage, exhausted
-  quota, a runtime with no Cache API — each of those means a cold start, never
+  quota, a runtime with no Cache API: each of those means a cold start, never
   an error.
 
 ## API
 
 ### `TexyonEngine.create(options?)`
 
-Starts the engine. Resolves once the module is instantiated and the format dump
-is loaded — support files keep arriving in the background afterwards.
+Starts the engine. Resolves once the module is instantiated and the support
+pack is loaded.
 
-Options: `moduleUrl`, `supportUrl`, `workerUrl`, `primary`, `prefetch`,
+Options: `moduleUrl`, `packUrl`, `bundleUrl`, `workerUrl`, `primary`,
 `raster`, `onProgress`, `onLog`.
 
 `raster` has the Worker draw pages to pixels instead of sending SVG. A dense
@@ -111,10 +106,6 @@ page as SVG costs the browser tens of milliseconds to parse and paint, more
 than typesetting it, while a bitmap goes onto a canvas in well under one. A
 raster engine draws only the pages you ask for, at the scale you ask for: see
 `compile`'s `scale` and `engine.raster`.
-
-`prefetch` (on by default) pulls the whole support pack into memory once the
-engine is up. Keep it on. Without it the first compile blocks on a few hundred
-synchronous requests, taken from inside the typesetting loop.
 
 ### `engine.compile(files, viewport?, scale?)`
 

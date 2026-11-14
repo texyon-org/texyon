@@ -281,8 +281,7 @@ export interface LoadProgress {
   phase:
     | "fetching-module"
     | "instantiating"
-    | "fetching-format"
-    | "prefetching"
+    | "fetching-pack"
     | "indexing-bundle"
     | "ready";
   /** Bytes retrieved so far in this phase, where that is meaningful. */
@@ -294,9 +293,10 @@ export interface LoadProgress {
 /** Settings for {@link TexyonEngine.create}. */
 export interface EngineOptions {
   /**
-   * Where the compiled `.wasm` lives.
+   * Where the compiled `.wasm` lives, relative to the page.
    *
-   * Defaults to `tectonic/texyon_wasm.wasm`, relative to the page.
+   * Defaults to the copy shipped in this package, which a bundler copies into
+   * your build.
    */
   moduleUrl?: string;
   /**
@@ -323,12 +323,13 @@ export interface EngineOptions {
    */
   bundleUrl?: string;
   /**
-   * Base URL of the support pack built by `tools/wasm/build-assets.sh`.
+   * Where the support pack lives, relative to the page: the format dump and a
+   * common set of classes, packages and fonts in one archive.
    *
-   * Must contain `manifest.json` and a `files/` directory. Defaults to
-   * `tectonic/`.
+   * Defaults to the copy shipped in this package, which a bundler copies into
+   * your build.
    */
-  supportUrl?: string;
+  packUrl?: string;
   /**
    * Name of the document's main file.
    *
@@ -336,15 +337,6 @@ export interface EngineOptions {
    * but it does decide what the `.log` calls itself. Defaults to `main.tex`.
    */
   primary?: string;
-  /**
-   * Pull the whole support pack into memory in the background once the engine
-   * is ready.
-   *
-   * This is on by default and worth keeping on: without it, the first compile
-   * blocks on a few hundred synchronous requests, one per class and font file,
-   * taken from inside the typesetting loop.
-   */
-  prefetch?: boolean;
   /**
    * Draw pages to pixels in the Worker instead of sending SVG.
    *
@@ -441,10 +433,9 @@ export type WorkerRequest =
 /** {@link EngineOptions} minus the callbacks, which cannot cross to a Worker. */
 export interface SerializableEngineOptions {
   moduleUrl: string;
-  supportUrl: string;
+  packUrl: string;
   bundleUrl?: string;
   primary: string;
-  prefetch: boolean;
   raster: boolean;
 }
 

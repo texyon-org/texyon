@@ -67,41 +67,6 @@ beforeEach(() => {
   mock.restoreAll();
 });
 
-test("a generational asset is fetched once and then read back", async () => {
-  const storage = new FakeStorage();
-  const cache = (await AssetCache.open(storage))!;
-  assert.ok(cache);
-
-  let fetches = 0;
-  const fetcher = async () => {
-    fetches++;
-    return new Uint8Array([1, 2, 3]);
-  };
-
-  const first = await cache.generational(GENERATION, "latex.fmt", fetcher);
-  const second = await cache.generational(GENERATION, "latex.fmt", fetcher);
-
-  assert.deepEqual([...first!], [1, 2, 3]);
-  assert.deepEqual([...second!], [1, 2, 3]);
-  assert.equal(fetches, 1, "the second read should not have gone to the network");
-});
-
-test("a new generation does not see the old one's assets", async () => {
-  const storage = new FakeStorage();
-  const cache = (await AssetCache.open(storage))!;
-
-  await cache.remember("old", "latex.fmt", new Uint8Array([1]));
-
-  let fetched = false;
-  const bytes = await cache.generational("new", "latex.fmt", async () => {
-    fetched = true;
-    return new Uint8Array([2]);
-  });
-
-  assert.ok(fetched, "a rebuilt pack must not be answered from the previous build");
-  assert.deepEqual([...bytes!], [2]);
-});
-
 test("names that differ only by escaping stay separate", async () => {
   // Pack names contain slashes, and a key scheme that did not escape them
   // would let `a/b` and `a%2Fb` collide.
@@ -111,8 +76,9 @@ test("names that differ only by escaping stay separate", async () => {
   await cache.remember(GENERATION, "chapters/one.tex", new Uint8Array([1]));
   await cache.remember(GENERATION, "chapters%2Fone.tex", new Uint8Array([2]));
 
-  assert.deepEqual([...(await cache.peek(GENERATION, "chapters/one.tex"))!], [1]);
-  assert.deepEqual([...(await cache.peek(GENERATION, "chapters%2Fone.tex"))!], [2]);
+  const restored = await cache.restore(GENERATION);
+  assert.deepEqual([...restored.get("chapters/one.tex")!], [1]);
+  assert.deepEqual([...restored.get("chapters%2Fone.tex")!], [2]);
 });
 
 test("restoring a generation returns what it holds, and nothing else", async () => {
@@ -208,15 +174,12 @@ test("storage that refuses to write still serves the document", async () => {
   // A private window, or an origin over quota. The asset is fetched; it simply
   // does not persist.
   const storage = new FakeStorage();
-  storage.caches.set("tectonic-assets-v1", new FakeCache(true));
+  storage.caches.set("tectonic-assets-v2", new FakeCache(true));
   const cache = (await AssetCache.open(storage))!;
 
-  const bytes = await cache.generational(GENERATION, "latex.fmt", async () =>
-    new Uint8Array([5]),
-  );
+  await cache.remember(GENERATION, "cmr10.tfm", new Uint8Array([5]));
 
-  assert.deepEqual([...bytes!], [5]);
-  assert.equal(await cache.peek(GENERATION, "latex.fmt"), null);
+  assert.equal((await cache.restore(GENERATION)).size, 0);
 });
 
 test("no storage at all is not an error", async () => {
@@ -234,14 +197,14 @@ test("no storage at all is not an error", async () => {
 
 test("caches from an older version of this code are cleaned up", async () => {
   const storage = new FakeStorage();
-  storage.caches.set("tectonic-assets-v0", new FakeCache());
+  storage.caches.set("tectonic-assets-v1", new FakeCache());
   storage.caches.set("something-else", new FakeCache());
 
   await AssetCache.open(storage);
 
   assert.deepEqual((await storage.keys()).sort(), [
     "something-else",
-    "tectonic-assets-v1",
+    "tectonic-assets-v2",
   ]);
 });
 

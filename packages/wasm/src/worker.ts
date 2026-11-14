@@ -9,10 +9,9 @@
  * lets you block, so `texyon_host_read_file` can be answered with a
  * synchronous `XMLHttpRequest` without freezing the page.
  *
- * Blocking is the fallback, not the plan. The support pack is pulled into
- * memory in the background as soon as the engine is up, so in steady state
- * every file request is a `Map` lookup and the network is nowhere near the
- * keystroke path.
+ * Blocking is the fallback, not the plan. The support pack arrives as one
+ * archive before the engine opens, so every file it holds is a `Map` lookup
+ * and only the bundle's long tail ever touches the network mid-compile.
  */
 
 import type {
@@ -37,6 +36,7 @@ import { gunzipSync } from "fflate";
 
 import { AssetCache, digest } from "./cache.js";
 import { applyEdit } from "./splice.js";
+import { inflate, untar } from "./tar.js";
 import { parseTtbHeader, TtbIndex, TTB_HEADER_BYTES } from "./ttb.js";
 import type { TtbLocation } from "./ttb.js";
 import { Wasi, WasiExit } from "./wasi.js";
@@ -139,8 +139,6 @@ let compiledSinceOpen = false;
 let formatName = "";
 /** The scale the last compile drew at, which its tail continuations keep. */
 let rasterScale: number | undefined;
-/** Names the pack claims to have, with their sizes. */
-let manifest = new Map<string, number>();
 /** Names known not to exist, so a miss is not re-fetched on every keystroke. */
 const missing = new Set<string>();
 /** null until the bundle index arrives, then how that ended. */
@@ -168,8 +166,6 @@ let engineStart = 0;
 
 /** Assets held across page loads, or null where storage is unavailable. */
 let assets: AssetCache | null = null;
-/** Identifies the pack build, so a rebuild is not answered from the old one. */
-let packGeneration = "";
 /** Identifies the bundle, which is immutable under its own URL. */
 let bundleGeneration = "";
 /** Bundle files fetched this session that are not yet persisted. */
@@ -196,17 +192,7 @@ function post(message: WorkerResponse, transfer: Transferable[] = []): void {
   (self as DedicatedWorkerGlobalScope).postMessage(message, transfer);
 }
 
-function fileUrl(name: string): string {
-  // supportUrl is already absolute — the page resolved it — and is guaranteed
-  // to end in a slash by the caller's convention.
-  return new URL(`files/${encodeURIComponent(name)}`, options!.supportUrl).href;
-}
-
-/**
- * Fetch one support file, blocking the Worker until it arrives.
- *
- * Only reached for a file the background prefetch has not delivered yet.
- */
+/** Fetch a byte range of the bundle, blocking the Worker until it arrives. */
 function fetchSync(url: string, range?: [number, number]): Uint8Array | null {
   const request = new XMLHttpRequest();
   request.open("GET", url, /* async */ false);
@@ -234,33 +220,6 @@ function fetchSync(url: string, range?: [number, number]): Uint8Array | null {
   return body ? new Uint8Array(body) : null;
 }
 
-/**
- * Check that what came back is really the file we asked for.
- *
- * A single-page-app host answers an unknown path with `index.html` and HTTP
- * 200, not a 404 — so without this the engine is handed a web page and told it
- * is `pdftex.map`, which it dutifully parses into nonsense. The manifest knows
- * each file's exact length, which makes the check both cheap and precise.
- */
-function verify(name: string, bytes: Uint8Array): Uint8Array | null {
-  const expected = manifest.get(name);
-  if (expected === undefined || bytes.length === expected) return bytes;
-
-  post({
-    id: 0,
-    kind: "log",
-    line: {
-      level: "error",
-      message:
-        `the support file ${name} came back as ${bytes.length} bytes where the ` +
-        `manifest says ${expected} — the server is probably answering unknown ` +
-        `paths with a fallback page rather than a 404`,
-    },
-  });
-
-  return null;
-}
-
 /** The engine may spell a project path as /doc/x or ./x. */
 function projectResource(name: string): Uint8Array | null {
   let path = name;
@@ -277,12 +236,6 @@ function readFile(name: string): Uint8Array | null {
   const hit = resident.get(name);
   if (hit) return hit;
   if (missing.has(name)) return null;
-
-  const fromThePack = fromPack(name);
-  if (fromThePack) {
-    resident.set(name, fromThePack);
-    return fromThePack;
-  }
 
   const at = bundle.get(name);
   const inTtb = at ? null : (ttb?.resolve(name) ?? null);
@@ -308,16 +261,6 @@ function readFile(name: string): Uint8Array | null {
   // permanently unavailable for the rest of the session, and the next keystroke
   // is a perfectly good moment to try again.
   return null;
-}
-
-/** Look in the local support pack. */
-function fromPack(name: string): Uint8Array | null {
-  // The manifest is authoritative about what the pack holds, so a name that is
-  // not in it can be skipped without a request.
-  if (manifest.size > 0 && !manifest.has(name)) return null;
-
-  const bytes = fetchSync(fileUrl(name));
-  return bytes ? verify(name, bytes) : null;
 }
 
 /** Read one file out of the bundle tar, one range request. */
@@ -508,68 +451,6 @@ async function indexBundle(url: string): Promise<void> {
   post({ id: 0, kind: "progress", progress: { phase: "ready" } });
 }
 
-/**
- * One support file, from the cache when this build has already fetched it.
- *
- * Verified against the manifest either way: a cached response is only as
- * trustworthy as what was stored, and a single-page-app host that answered a
- * missing file with its index page would otherwise persist that mistake.
- */
-async function packFile(name: string): Promise<Uint8Array | null> {
-  const download = async (): Promise<Uint8Array | null> => {
-    const response = await fetch(fileUrl(name));
-    if (!response.ok) return null;
-    return verify(name, new Uint8Array(await response.arrayBuffer()));
-  };
-
-  if (!assets || !packGeneration) return download();
-
-  const bytes = await assets.generational(packGeneration, name, download);
-  return bytes ? verify(name, bytes) : null;
-}
-
-/** Load the whole pack in the background so the blocking path stops firing. */
-async function prefetch(): Promise<void> {
-  const names = [...manifest.keys()].filter((name) => !resident.has(name));
-  let loaded = 0;
-  const total = names.length;
-
-  post({ id: 0, kind: "progress", progress: { phase: "prefetching", loaded, total } });
-
-  // Enough concurrency to saturate a connection without opening 350 sockets.
-  const width = 8;
-  let next = 0;
-
-  const worker = async (): Promise<void> => {
-    for (;;) {
-      const index = next++;
-      if (index >= names.length) return;
-      const name = names[index];
-
-      try {
-        const bytes = await packFile(name);
-        // A synchronous read may have landed the same file meanwhile; first
-        // one wins, they are identical.
-        if (bytes && !resident.has(name)) resident.set(name, bytes);
-      } catch {
-        // A file that fails to prefetch is simply left to the blocking path.
-      }
-
-      loaded++;
-      if (loaded % 25 === 0 || loaded === total) {
-        post({
-          id: 0,
-          kind: "progress",
-          progress: { phase: "prefetching", loaded, total },
-        });
-      }
-    }
-  };
-
-  await Promise.all(Array.from({ length: width }, worker));
-  post({ id: 0, kind: "progress", progress: { phase: "ready" } });
-}
-
 /** Copy a JS byte array into the module and return its address. */
 function intoModule(bytes: Uint8Array): { ptr: number; len: number } {
   const ptr = exports!.texyon_wasm_alloc(bytes.length);
@@ -710,26 +591,8 @@ async function init(opts: SerializableEngineOptions): Promise<void> {
   // A cdylib is a reactor: no `_start`, but libc still wants initializing.
   exports._initialize?.();
 
-  // The manifest tells us the pack's contents, which lets a miss be answered
-  // without a request.
-  const manifestResponse = await fetch(`${opts.supportUrl}manifest.json`);
-  if (!manifestResponse.ok) {
-    throw new Error(
-      `could not fetch the support manifest at ${opts.supportUrl}manifest.json — ` +
-        "run tools/wasm/build-assets.sh",
-    );
-  }
-  // Read as bytes first: the manifest names every file in the pack and how long
-  // it is, so its digest is an identity for the whole pack. That turns several
-  // hundred cache validations into this one small request, which had to happen
-  // anyway.
-  const manifestBytes = new Uint8Array(await manifestResponse.arrayBuffer());
-  packGeneration = assets ? await digest(manifestBytes) : "";
-  const parsed = JSON.parse(decoder.decode(manifestBytes)) as {
-    format: string;
-    files: Record<string, number>;
-  };
-  manifest = new Map(Object.entries(parsed.files));
+  // Everything nothing can start without, the format dump included, in one file.
+  const format = await loadPack(opts.packUrl);
 
   // Put back what earlier sessions pulled out of the bundle, before the
   // blocking path can ask for any of it again.
@@ -739,24 +602,10 @@ async function init(opts: SerializableEngineOptions): Promise<void> {
     }
   }
 
-  // The format dump is 24 MB and nothing can start without it, so it is fetched
-  // up front rather than through the blocking path.
-  post({
-    id: 0,
-    kind: "progress",
-    progress: { phase: "fetching-format", total: manifest.get(parsed.format) },
-  });
-
-  const formatBytes = await packFile(parsed.format);
-  if (!formatBytes) {
-    throw new Error(`could not fetch the format dump ${parsed.format}`);
-  }
-  resident.set(parsed.format, formatBytes);
-
-  formatName = parsed.format;
+  formatName = format;
   const opened = call({
     op: "open",
-    format: parsed.format,
+    format,
     primary: opts.primary,
     raster: opts.raster,
     buildDate: wallClock(),
@@ -765,17 +614,65 @@ async function init(opts: SerializableEngineOptions): Promise<void> {
 
   post({ id: 0, kind: "progress", progress: { phase: "ready" } });
 
-  if (opts.prefetch) {
-    // Deliberately not awaited: the first compile can start now and take the
-    // blocking path for anything the prefetch has not reached yet.
-    void prefetch();
-  }
-
   if (opts.bundleUrl) {
     // Likewise: the pack covers the common case, and the index only has to be
     // there by the time someone reaches for a package it does not hold.
     void indexBundle(opts.bundleUrl);
   }
+}
+
+/**
+ * Fetch the support pack and make every file in it resident. Returns the format's name.
+ *
+ * Revalidated like the module, so a rebuilt pack is picked up without a version bump.
+ */
+async function loadPack(url: string): Promise<string> {
+  const response = assets ? await assets.revalidating(url) : await fetch(url);
+  if (!response.ok || !response.body) {
+    throw new Error(`could not fetch the support pack at ${url}: HTTP ${response.status}`);
+  }
+
+  const total = Number(response.headers.get("content-length")) || undefined;
+  const chunks: Uint8Array[] = [];
+  let loaded = 0;
+  post({ id: 0, kind: "progress", progress: { phase: "fetching-pack", loaded, total } });
+  const reader = response.body.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.length;
+    post({ id: 0, kind: "progress", progress: { phase: "fetching-pack", loaded, total } });
+  }
+  const archive = new Uint8Array(loaded);
+  let at = 0;
+  for (const chunk of chunks) {
+    archive.set(chunk, at);
+    at += chunk.length;
+  }
+
+  let files: Map<string, Uint8Array>;
+  try {
+    files = untar(await inflate(archive));
+  } catch (error) {
+    // Usually a single-page-app host answering a missing file with its index page.
+    throw new Error(
+      `${url} is not a TeXyoN support pack (${error instanceof Error ? error.message : String(error)})`,
+    );
+  }
+
+  const manifestBytes = files.get("manifest.json");
+  if (!manifestBytes) throw new Error(`the support pack at ${url} has no manifest`);
+  const manifest = JSON.parse(decoder.decode(manifestBytes)) as {
+    format: string;
+    files: Record<string, number>;
+  };
+  for (const [name, size] of Object.entries(manifest.files)) {
+    const bytes = files.get(name);
+    if (bytes?.length !== size) throw new Error(`the support pack at ${url} is missing ${name}`);
+    resident.set(name, bytes);
+  }
+  return manifest.format;
 }
 
 /** Move pixels out of linear memory into bitmaps the page can draw without decoding. */

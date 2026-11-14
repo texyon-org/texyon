@@ -223,11 +223,17 @@ export class TexyonEngine {
       id: 0, // replaced by #send
       kind: "init",
       options: {
-        moduleUrl: absolute(options.moduleUrl ?? "texyon/texyon_wasm.wasm"),
-        supportUrl: absolute(options.supportUrl ?? "texyon/"),
+        // Literal URLs, so bundlers copy the shipped files into the build.
+        moduleUrl:
+          options.moduleUrl !== undefined
+            ? absolute(options.moduleUrl)
+            : new URL("./texyon_wasm.wasm", import.meta.url).href,
+        packUrl:
+          options.packUrl !== undefined
+            ? absolute(options.packUrl)
+            : new URL("./texyon-pack.tar.gz", import.meta.url).href,
         bundleUrl: options.bundleUrl ? absolute(options.bundleUrl) : undefined,
         primary: options.primary ?? "main.tex",
-        prefetch: options.prefetch ?? true,
         raster: options.raster ?? false,
       },
     });

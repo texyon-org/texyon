@@ -264,4 +264,35 @@ with open(os.path.join(out, "manifest.json"), "w") as f:
 print(f"   {len(entries)} files, {manifest['totalBytes'] / 1e6:.1f} MB uncompressed")
 PY
 
+# The browser takes the pack as one file, which bundlers copy along with the
+# module. Deterministic, so an unchanged pack is byte-identical and stays cached.
+python3 - "$OUT" <<'PY'
+import gzip, os, sys, tarfile
+
+out = sys.argv[1]
+files_dir = os.path.join(out, "files")
+target = os.path.join(out, "texyon-pack.tar.gz")
+
+def add(archive, path, name):
+    info = tarfile.TarInfo(name)
+    info.size = os.path.getsize(path)
+    info.mode = 0o644
+    with open(path, "rb") as f:
+        archive.addfile(info, f)
+
+with open(target + ".tmp", "wb") as raw:
+    with gzip.GzipFile(fileobj=raw, mode="wb", compresslevel=9, mtime=0) as zipped:
+        with tarfile.open(fileobj=zipped, mode="w", format=tarfile.USTAR_FORMAT) as archive:
+            add(archive, os.path.join(out, "manifest.json"), "manifest.json")
+            for name in sorted(os.listdir(files_dir)):
+                add(archive, os.path.join(files_dir, name), name)
+os.replace(target + ".tmp", target)
+
+size = os.path.getsize(target)
+# Static hosts such as Cloudflare Pages refuse files over 25 MiB.
+if size > 25 * 1024 * 1024:
+    sys.exit(f"the pack archive is {size / 1e6:.1f} MB, over the 25 MiB static hosting limit")
+print(f"   texyon-pack.tar.gz, {size / 1e6:.1f} MB")
+PY
+
 echo "== done: $count support files plus the format dump"

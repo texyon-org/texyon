@@ -1,22 +1,17 @@
 /**
  * Keeping the engine's assets across page loads.
  *
- * A cold start costs about sixty megabytes: the module, the format dump, and a
- * few hundred support files. None of it changes between loads, and re-fetching
- * all of it every time is the single largest thing standing between a reload
- * and a working editor.
+ * A cold start costs about thirty megabytes: the module and the support pack.
+ * None of it changes between loads, and re-fetching all of it every time is
+ * the single largest thing standing between a reload and a working editor.
  *
- * Three kinds of asset are cached, and they are invalidated differently because
+ * Two kinds of asset are cached, and they are invalidated differently because
  * they change differently:
  *
- * - **The module** is revalidated with the server's own validators, so exactly
- *   one conditional request decides whether the cached copy still stands. A
- *   rebuilt engine is picked up on the next load without anyone bumping a
- *   version.
- * - **Pack files** are keyed by a digest of the manifest that lists them. The
- *   manifest names every file and its size, so any change to the pack changes
- *   the digest — which means several hundred files are validated by one small
- *   request rather than several hundred conditional ones.
+ * - **The module and the pack** are revalidated with the server's own
+ *   validators, so one conditional request each decides whether the cached
+ *   copy still stands. A rebuilt engine is picked up on the next load without
+ *   anyone bumping a version.
  * - **Bundle files** are keyed by the bundle they came from. A bundle tar is a
  *   published artifact and does not change under its own URL, so a file read
  *   out of one never needs checking again.
@@ -47,7 +42,7 @@ export interface CacheStorageLike {
  * Bumping it abandons everything written by an older shape of these keys, which
  * is the cheapest way to change that shape without having to migrate anything.
  */
-const CACHE_NAME = "tectonic-assets-v1";
+const CACHE_NAME = "tectonic-assets-v2";
 
 /** Prefix of every cache this code has ever written, for cleaning up after itself. */
 const CACHE_PREFIX = "tectonic-assets-";
@@ -96,7 +91,7 @@ export class AssetCache {
    *
    * The stored response keeps whatever validators the server sent, so this
    * costs one conditional request and usually a 304. Use it for the few large
-   * assets whose identity is not otherwise known — which is the module.
+   * assets whose identity is not otherwise known: the module and the pack.
    */
   async revalidating(url: string): Promise<Response> {
     const key = `${KEY_ORIGIN}url/${encodeURIComponent(url)}`;
@@ -133,35 +128,6 @@ export class AssetCache {
 
     await this.#write(key, response.clone());
     return response;
-  }
-
-  /**
-   * Read an asset stored under a generation, or fetch and store it.
-   *
-   * `generation` identifies the build the asset belongs to; when it changes,
-   * every key changes with it and the old entries fall away with the cache.
-   */
-  async generational(
-    generation: string,
-    name: string,
-    fetcher: () => Promise<Uint8Array | null>,
-  ): Promise<Uint8Array | null> {
-    const key = `${KEY_ORIGIN}gen/${generation}/${encodeURIComponent(name)}`;
-    const cached = await this.#read(key);
-    if (cached) {
-      return new Uint8Array(await cached.arrayBuffer());
-    }
-
-    const bytes = await fetcher();
-    if (bytes) await this.#store(key, bytes);
-    return bytes;
-  }
-
-  /** Look an asset up without fetching it on a miss. */
-  async peek(generation: string, name: string): Promise<Uint8Array | null> {
-    const key = `${KEY_ORIGIN}gen/${generation}/${encodeURIComponent(name)}`;
-    const cached = await this.#read(key);
-    return cached ? new Uint8Array(await cached.arrayBuffer()) : null;
   }
 
   /** Store an asset the caller already has. */
@@ -228,8 +194,7 @@ export class AssetCache {
 /**
  * A short, stable name for exactly these bytes.
  *
- * Used to turn the support manifest into a generation: it lists every file in
- * the pack and how long each is, so its digest changes if the pack does.
+ * Used to turn the bundle URL into a generation.
  */
 export async function digest(bytes: Uint8Array): Promise<string> {
   const hash = await crypto.subtle.digest("SHA-256", bytes.slice());
