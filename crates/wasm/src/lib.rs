@@ -69,6 +69,31 @@ pub unsafe extern "C" fn texyon_request(
     0
 }
 
+/// Write the PGO counters gathered so far, as a `.profraw` file.
+///
+/// Returns 0 with the bytes in `out_ptr`/`out_len`, which the host releases
+/// with `texyon_wasm_free`, or -1 if they could not be written.
+///
+/// # Safety
+///
+/// Both out-parameters must be writable, and no other request may be running.
+#[cfg(all(feature = "pgo", target_family = "wasm"))]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn texyon_pgo_profile(out_ptr: *mut *mut u8, out_len: *mut usize) -> i32 {
+    let mut profile = Vec::new();
+    // SAFETY: the caller guarantees no request runs concurrently.
+    if unsafe { minicov::capture_coverage(&mut profile) }.is_err() {
+        return -1;
+    }
+    let (ptr, len) = host::hand_over(profile);
+    // SAFETY: the caller guarantees both out-parameters are writable.
+    unsafe {
+        *out_ptr = ptr;
+        *out_len = len;
+    }
+    0
+}
+
 fn dispatch(text: &str) -> Response<HostBuffer> {
     let request: Request<HostBuffer> = match serde_json::from_str(text) {
         Ok(request) => request,

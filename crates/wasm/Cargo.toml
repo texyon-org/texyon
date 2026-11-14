@@ -20,6 +20,12 @@ crate-type = ["cdylib", "rlib"]
 # Replaces wasi-libc's malloc, see src/alloc_shim.rs.
 [target.'cfg(target_family = "wasm")'.dependencies]
 dlmalloc = "^0.2"
+# The profile runtime for `pgo`. 0.3.8 writes LLVM 22's raw format, keep it in step with rustc's LLVM.
+minicov = { version = "=0.3.8", optional = true }
+
+[features]
+# Instrumented build for profile-guided optimization, see `texyon_pgo_profile`.
+pgo = ["dep:minicov"]
 
 [dependencies]
 libc = "^0.2"
