@@ -129,6 +129,22 @@ Roman \textit{italic} \textbf{bold} \texttt{mono} \textsf{sans} \textsc{caps}.
 \end{document}
 TEX
 
+cat > "$WORK/seeds/tikz.tex" <<'TEX'
+\documentclass{article}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,calc,positioning,shapes.geometric}
+\begin{document}
+\begin{tikzpicture}
+  \draw[->] (-2,0) -- (2,0) node[right] {$x$};
+  \draw[-{Stealth}, thick, blue] plot[domain=-1.5:1.5, smooth] (\x, {\x*\x});
+  \node[draw, circle, fill=red!20] (a) at (0,2) {A};
+  \node[draw, rectangle, right=of a] (b) {B};
+  \draw[dashed] (a) -- (b) -- ($(a)!0.5!(b) + (0,-1)$) -- cycle;
+  \node[draw, diamond] at (-1,1) {C};
+\end{tikzpicture}
+\end{document}
+TEX
+
 cat > "$WORK/seeds/report.tex" <<'TEX'
 \documentclass{report}
 \begin{document}\chapter{One}Text.\end{document}
@@ -154,7 +170,7 @@ for size in 10pt 11pt 12pt; do
 \\[ \\int_a^b \\sum_i^j \\prod_k^l \\sqrt{\\sqrt{x}} \\frac{\\frac{a}{b}}{c}
    \\left[\\left(\\frac{1}{2}\\right)\\right]^{\\left\\{x\\right\\}}
    \\oint \\bigcup \\bigoplus \\left\\| y \\right\\| \\]
-\\[ x^{\\int_a^b f} \\quad a^{\\sum_i^j b^{\\prod_k^l c}} \\quad
+\\[ x^2 + y_1 + z^{a^2} \\quad x^{\\int_a^b f} \\quad a^{\\sum_i^j b^{\\prod_k^l c}} \\quad
    \\mathbb{R}\\mathcal{L}\\mathfrak{g}\\mathbf{A}\\mathsf{S}\\mathtt{t} \\]
 \\end{document}
 TEX
