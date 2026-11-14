@@ -14,6 +14,7 @@ TeXyoN is a LaTeX engine built for live preview: XeTeX ported to Rust from Tecto
 - `preview_protocol` holds the message types, defined once for every host.
 - `preview_render` holds the renderer. The MuPDF backend is AGPL and stays behind an opt-in feature. Licensing and credits live in `THIRD_PARTY_NOTICES.md`, keep it current when adding vendored code.
 - The VS Code extension uses the native binary. Wasm is only a fallback for platforms without one, such as VS Code in the browser.
+- Build, test, benchmark and profiling tasks live in `crates/xtask` (`cargo xtask --help`), in Rust. No shell scripts or loose JS tools. JS only where a JS runtime is the point, as TypeScript in the package it serves.
 
 ## Code style
 
@@ -31,7 +32,8 @@ TeXyoN is a LaTeX engine built for live preview: XeTeX ported to Rust from Tecto
 
 - `cargo fmt --all` (stable rustfmt), `cargo clippy -p <crate> --all-targets --no-deps -- -D warnings`, `cargo test -p <crate>` for what changed.
 - Engine behaviour changes: the upstream harness (`crates/engine_xetex/tests/upstream/run.py`). It takes minutes and loads the machine, so ask before running it.
-- Wasm changes: the real test is the editor. Build the engine assets from the editor repo and type in `/sample`.
+- Wasm changes: `cargo xtask test wasm`, then the real test is the editor. Build the engine assets from the editor repo and type in `/sample`.
+- Preview changes: `cargo xtask test native` and `cargo xtask differential native`.
 - `packages/vscode`: `npm test`.
 - Agent worktrees use their own target directory, never the main checkout's.
 

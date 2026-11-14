@@ -42,15 +42,15 @@ The live preview needs the MuPDF renderer, which is opt-in because MuPDF is
 AGPL licensed. On Linux:
 
 ```sh
-tools/mupdf/build.sh
-TEXYON_MUPDF_DIR="$PWD/tools/mupdf/vendor/mupdf" \
-  cargo build --release -p texyon --features preview-mupdf
+cargo xtask mupdf
+cargo xtask native --features preview-mupdf
 ```
 
-Windows builds with MSVC and vcpkg, see
+`cargo xtask native --pgo --features preview-mupdf` builds the profile-guided
+release binary. Windows builds with MSVC and vcpkg, see
 [`packages/vscode/README.md`](packages/vscode/README.md). The WebAssembly build
-lives in `crates/wasm` and is assembled by the web editor's
-`tools/build-engine.sh`.
+is described in [`crates/wasm`](crates/wasm/README.md). `cargo xtask --help`
+lists the build, test and benchmark tasks.
 
 The first compile downloads the TeX Live support files it needs and builds the
 format, and later runs reuse that cache.

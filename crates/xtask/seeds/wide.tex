@@ -1,0 +1,22 @@
+\documentclass[12pt,twocolumn]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{url}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{multicol}
+\begin{document}
+\section{Wide}
+\textcolor{blue}{Colour}, \href{https://example.com}{a link}, \url{https://example.com}.
+\begin{table}[h]\centering\caption{A table}
+\begin{tabular}{lr}\toprule x & y\\ \midrule 1 & 2\\ \bottomrule\end{tabular}
+\end{table}
+\begin{lstlisting}
+int main(void) { return 0; }
+\end{lstlisting}
+\begin{itemize}[noitemsep]\item tight\end{itemize}
+\end{document}

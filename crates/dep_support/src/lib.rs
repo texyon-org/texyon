@@ -273,9 +273,8 @@ pub fn target_is_wasm() -> bool {
 
 /// Locate the vendored sources of a third-party C library.
 ///
-/// Sources are placed by `tools/wasm/fetch-deps.sh`, which defaults to
-/// `tools/wasm/vendor/` in the repository. `$TEXYON_WASM_VENDOR` overrides
-/// that, so an out-of-tree build can point somewhere else.
+/// Sources are placed in `deps/wasm/` by `cargo xtask deps`.
+/// `$TEXYON_WASM_VENDOR` overrides that, so an out-of-tree build can point somewhere else.
 pub fn wasm_vendor_dir(name: &str) -> PathBuf {
     println!("cargo:rerun-if-env-changed=TEXYON_WASM_VENDOR");
 
@@ -287,10 +286,9 @@ pub fn wasm_vendor_dir(name: &str) -> PathBuf {
             manifest
                 .parent()
                 .and_then(Path::parent)
-                .expect("crate is not inside the Tectonic workspace")
-                .join("tools")
+                .expect("crate is not inside the TeXyoN workspace")
+                .join("deps")
                 .join("wasm")
-                .join("vendor")
         }
     };
 
@@ -300,7 +298,7 @@ pub fn wasm_vendor_dir(name: &str) -> PathBuf {
         panic!(
             "no vendored sources for {name} at {}\n\
              The wasm build compiles this library from source; run \
-             tools/wasm/fetch-deps.sh to download it.",
+             cargo xtask deps to download it.",
             dir.display()
         );
     }

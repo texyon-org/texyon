@@ -13,7 +13,7 @@ fn main() {
     if texyon_dep_support::target_is_wasm() {
         link_prebuilt(
             &texyon_dep_support::wasm_vendor_dir("mupdf"),
-            "tools/wasm/fetch-deps.sh --with-mupdf",
+            "cargo xtask deps --mupdf",
         );
         return;
     }
@@ -26,20 +26,20 @@ fn main() {
         (Ok("linux" | "macos"), _) if std::env::var_os("TEXYON_MUPDF_DIR").is_some() => {
             link_prebuilt(
                 &PathBuf::from(std::env::var_os("TEXYON_MUPDF_DIR").unwrap()),
-                "tools/mupdf/build.sh",
+                "cargo xtask mupdf",
             );
             println!("cargo:rustc-link-lib=dylib=z");
         }
         (Ok("linux"), _) => build_linux(),
         // Workspace builds unify the feature in from the wasm crate without linking it.
         _ => println!(
-            "cargo:warning=backend-mupdf is not linked: run tools/mupdf/build.sh \
-             and set TEXYON_MUPDF_DIR to its tools/mupdf/vendor/mupdf"
+            "cargo:warning=backend-mupdf is not linked: run cargo xtask mupdf \
+             and set TEXYON_MUPDF_DIR to deps/mupdf"
         ),
     }
 }
 
-/// Link a MuPDF built by `tools/wasm/fetch-deps.sh` or `tools/mupdf/build.sh`.
+/// Link a MuPDF built by `cargo xtask deps --mupdf` or `cargo xtask mupdf`.
 ///
 /// Both already move `pdf_*` aside in the preprocessor (`llvm-objcopy` cannot rename wasm
 /// symbols and macOS has no objcopy).
@@ -47,7 +47,7 @@ fn link_prebuilt(mupdf: &Path, script: &str) {
     println!("cargo:rerun-if-changed=src/backend_mupdf/shim.c");
 
     let build = mupdf.join("build/release");
-    let renames = mupdf.join("tectonic-pdf-rename.h");
+    let renames = mupdf.join("texyon-pdf-rename.h");
 
     for path in [
         &build.join("libmupdf.a"),

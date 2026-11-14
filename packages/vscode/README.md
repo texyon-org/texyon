@@ -45,9 +45,8 @@ To use your own engine build, compile it with the `preview-mupdf` feature
 and point `texyon.executable` at it. On Linux and macOS:
 
 ```sh
-tools/mupdf/build.sh
-TEXYON_MUPDF_DIR="$PWD/tools/mupdf/vendor/mupdf" \
-  cargo build --release -p texyon --features preview-mupdf
+cargo xtask mupdf
+cargo xtask native --features preview-mupdf
 ```
 
 On Windows MSVC, install the repository's vcpkg dependencies and Rust archive
@@ -61,7 +60,7 @@ $env:VCPKG_ROOT = "$PWD\target\vcpkg"
 $env:VCPKGRS_TRIPLET = "x64-windows-static-release"
 $env:TEXYON_DEP_BACKEND = "vcpkg"
 $env:RUSTFLAGS = "-Ctarget-feature=+crt-static"
-cargo build --release -p texyon --features preview-mupdf
+cargo xtask native --features preview-mupdf
 ```
 
 Run the extension's tests with `npm install && npm test`. Set

@@ -39,7 +39,8 @@ The module and pack are kept in Cache Storage and revalidated with the server's
 `ETag` or `Last-Modified`, so serve them with one. Files read from a bundle are
 cached by bundle URL. Without usable storage the engine starts cold.
 
-To build from source, run `tools/wasm/build.sh` and `tools/wasm/build-assets.sh`.
+To build from source, run `cargo xtask pack` and `cargo xtask wasm`, see
+[`crates/wasm`](../../crates/wasm/README.md).
 `npm pack` copies their output into `dist`.
 
 ## API

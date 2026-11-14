@@ -1,0 +1,35 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\title{Seed}\author{Seed}
+\begin{document}
+\maketitle
+\tableofcontents
+\section{Text}\label{sec:text}
+Roman \textit{italic} \textbf{bold} \texttt{mono} \textsc{small caps}.
+Reference to \S\ref{sec:text} and a footnote.\footnote{Like this.}
+\begin{abstract}An abstract.\end{abstract}
+\section{Mathematics}
+\begin{equation}\int_{-\infty}^{\infty}e^{-x^2}\,dx=\sqrt{\pi}\end{equation}
+\begin{align} a &= b + c \\ &= d \end{align}
+\[ \sum_{k=1}^{n} k = \frac{n(n+1)}{2}, \quad \mathbb{R}, \mathcal{L}, \mathfrak{g} \]
+% Nested and scripted math pulls the extension and symbol fonts in at script
+% and scriptscript sizes, which is where cmex7/cmex5 and friends come from.
+\[ x^{\int_{a}^{b} f} \quad
+   a^{\sum_{i}^{j} b^{\prod_{k}^{l} c}} \quad
+   \sqrt{\sqrt{\sqrt{x}}} \quad
+   \frac{\frac{\frac{a}{b}}{c}}{d} \quad
+   \left[\left(\left\{x\right\}\right)\right]^{\left(\frac{1}{2}\right)} \]
+\[ \oint \bigcup \bigcap \bigoplus \iiint \left\| x \right\|
+   \underbrace{a+b}_{c} \overbrace{d}^{e} \]
+\[ \mathbf{A}^{\mathsf{T}}, \mathrm{d}x, \mathsf{S}, \mathtt{t},
+   \alpha^{\beta^{\gamma}}, \hat{x}, \tilde{y}, \vec{z}, \dot{w} \]
+\begin{theorem}A theorem.\end{theorem}
+\section{Structure}
+\begin{itemize}\item one \item two\end{itemize}
+\begin{enumerate}\item one \item two\end{enumerate}
+\begin{tabular}{lcr}a & b & c\\ 1 & 2 & 3\end{tabular}
+\begin{verbatim}verbatim\end{verbatim}
+\begin{quote}A quotation.\end{quote}
+\end{document}

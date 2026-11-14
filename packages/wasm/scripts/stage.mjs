@@ -17,7 +17,7 @@ mkdirSync(new URL("licenses/", here), { recursive: true });
 for (const [from, to] of copies) {
   const source = new URL(from, repo);
   if (!existsSync(source)) {
-    console.error(`missing ${source.pathname}, run tools/wasm/build.sh and tools/wasm/build-assets.sh`);
+    console.error(`missing ${source.pathname}, run cargo xtask pack and cargo xtask wasm`);
     process.exit(1);
   }
   copyFileSync(source, new URL(to, here));

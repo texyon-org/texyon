@@ -19,17 +19,12 @@
 *.ignore
 # Corpus harness temp files
 
-# WebAssembly build
-# The toolchain and the C libraries it compiles are fetched by
-# tools/wasm/fetch-deps.sh; the support pack and the module are built artifacts.
-/tools/wasm/wasi-sdk-*
-/tools/wasm/*.tar.gz
-/tools/wasm/vendor/
+# Toolchains and C sources fetched by cargo xtask
+/deps/
 node_modules/
 /packages/wasm/dist/
 
 *.tsbuildinfo
-/tools/mupdf/vendor/
 
 # Promo videos
 /promo/

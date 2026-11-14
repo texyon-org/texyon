@@ -1,5 +1,5 @@
 //! `malloc` and friends for C and Rust's default allocator, replacing
-//! wasi-libc's (see `--allow-multiple-definition` in tools/wasm/env.sh).
+//! wasi-libc's (see `--allow-multiple-definition` in crates/xtask/src/deps.rs).
 //!
 //! It is faster than wasi-libc's, mostly because large zeroed blocks come
 //! straight from `memory.grow` instead of being memset.

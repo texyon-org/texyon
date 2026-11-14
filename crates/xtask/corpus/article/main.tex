@@ -1,0 +1,103 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{tikz}
+\usepackage{lipsum}
+\usepackage{hyperref}
+\newtheorem{theorem}{Theorem}
+\title{Notes on Incremental Typesetting}
+\author{Training Document}
+\begin{document}
+\maketitle
+\tableofcontents
+
+\section{Introduction}\label{sec:intro}
+A document is typeset from the top every time, which is why a single changed word
+near the end of a long text used to cost as much as the first run did.
+Keeping the engine resident lets the next run start from the last state that the
+edit could not have touched, so most keystrokes only redo a page or two.
+Section~\ref{sec:model} describes the model and Section~\ref{sec:results} the
+numbers.\footnote{All timings are wall clock on a laptop.}
+
+\lipsum[1-6]
+
+\section{Model}\label{sec:model}
+Every page boundary is a checkpoint of the complete engine state, compared by
+fingerprint rather than by value, so storing one costs little more than the
+memory it changed since the previous checkpoint.
+\begin{theorem}\label{thm:sound}
+If the input before position $p$ is unchanged, the state at the last checkpoint
+before $p$ equals the state a full run would reach there.
+\end{theorem}
+\begin{proof}
+TeX reads its input strictly in order, so nothing after $p$ can influence the
+state before it, except through files written by an earlier run.
+\end{proof}
+The cost of an edit is then
+\begin{equation}\label{eq:cost}
+  C(p) = \sum_{i = k(p)}^{n} t_i \leq \frac{n - k(p) + 1}{n} \, T,
+\end{equation}
+where $k(p)$ is the first page at or after $p$ and $T$ the time of a full run.
+
+\lipsum[7-12]
+
+\section{Results}\label{sec:results}
+Table~\ref{tab:times} lists the time per keystroke for three documents of
+different length, measured with the preview open on the edited page.
+\begin{table}[ht]
+  \centering
+  \begin{tabular}{lrrr}
+    \toprule
+    Document & Pages & Full run (ms) & Keystroke (ms) \\
+    \midrule
+    Letter & 1 & 180 & 9 \\
+    Paper & 12 & 640 & 14 \\
+    Thesis & 140 & 5200 & 21 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Time per keystroke against document length.}\label{tab:times}
+\end{table}
+Figure~\ref{fig:growth} shows that the keystroke cost grows much more slowly than
+the document, as Equation~\eqref{eq:cost} and Theorem~\ref{thm:sound} predict.
+\begin{figure}[ht]
+  \centering
+  \begin{tikzpicture}[scale=0.8]
+    \draw[->] (0,0) -- (6,0) node[right] {pages};
+    \draw[->] (0,0) -- (0,4) node[above] {ms};
+    \draw[thick, blue] (0,0.4) -- (1,0.6) -- (3,0.9) -- (5.5,1.2);
+    \draw[thick, red, dashed] (0,0.4) -- (5.5,3.6);
+  \end{tikzpicture}
+  \caption{Keystroke cost (solid) against a full run (dashed).}\label{fig:growth}
+\end{figure}
+
+\lipsum[13-20]
+
+\section{Lists and Quotations}
+The remaining work falls into a few groups, roughly in order of how often a
+writer runs into them during an ordinary editing session.
+\begin{itemize}
+  \item Edits inside a float move the float, and with it every page after it.
+  \item Changes to the preamble invalidate every checkpoint at once.
+  \item Bibliography and index runs depend on files written by the previous run.
+\end{itemize}
+\begin{quote}
+A preview that lags behind the cursor is read less than one that keeps up,
+however beautiful its pages are once they finally arrive.
+\end{quote}
+\begin{enumerate}
+  \item Measure where the time goes before changing anything.
+  \item Keep the output identical to a full run, page for page.
+\end{enumerate}
+
+\lipsum[21-30]
+
+\section{Conclusion}
+Resident typesetting turns the cost of an edit from the length of the document
+into the distance between the edit and the end of the visible page, which for
+most writing is a page or two, and that is what makes a live preview possible.
+
+\begin{thebibliography}{9}
+\bibitem{knuth} D.~E. Knuth, \emph{The \TeX book}, Addison-Wesley, 1984.
+\bibitem{lamport} L.~Lamport, \emph{\LaTeX: A Document Preparation System}, 1994.
+\end{thebibliography}
+\end{document}

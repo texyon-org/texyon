@@ -54,6 +54,7 @@ members = [
     "crates/wasm",
     "crates/xdv",
     "crates/xetex_layout",
+    "crates/xtask",
 ]
 
 [workspace.lints.rust]
