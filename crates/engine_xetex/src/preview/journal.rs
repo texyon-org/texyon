@@ -581,7 +581,7 @@ mod tests {
 
     #[test]
     fn mem_setters_capture_preimages() {
-        let mut mem = crate::state::MemState {
+        let mut mem = crate::memory::mem::MemState {
             data: vec![0; 4],
             ..Default::default()
         };
@@ -603,7 +603,7 @@ mod tests {
     fn eqtb_setters_capture_preimages() {
         use crate::base::command::Command;
         let cs = crate::tables::cs::NameSlot::bucket(0).cs();
-        let mut eqtb = crate::state::EqtbState {
+        let mut eqtb = crate::tables::eqtb::EqtbState {
             hash: vec![crate::tables::hash::HashEntry::default(); 1],
             meanings: crate::tables::eqtb::Table::at_level(cs.index() + 1, Command::UndefinedCs, 0),
             ..Default::default()

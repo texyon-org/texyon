@@ -1,5 +1,6 @@
 //! Breaking vertical lists: `vert_break`, `vsplit`, `prune_page_top` and `do_marks`.
 
+use super::{PackOrigin, PackOutcome, PackSpec, print_vpack_diag};
 use crate::base::codes::{BoxCode, MarkCode};
 use crate::base::consts::{EJECT_PENALTY, INF_BAD, INF_PENALTY, MAX_DIMEN, MAX_HALFWORD};
 use crate::base::params::{DimenPar, GluePar, IntPar};
@@ -7,17 +8,18 @@ use crate::base::token::TokenList;
 use crate::base::units::MemIdx;
 use crate::base::units::{GlueOrder, MemPtr, Scaled};
 use crate::memory::glue_store::GlueSpecId;
+use crate::memory::mem::MemState;
 use crate::memory::mem::TEMP_HEAD;
 use crate::memory::node::{
     AnyNode, BoxNode, GlueNode, KernNode, MarkNode, NodePtr, WhatsitVariant,
 };
 use crate::print::errors::OrConfusion;
 use crate::print::errors::{Abort, IgnoredError};
-use crate::state::{CurMarks, MarkClasses};
-use crate::state::{EngineState, EqtbState, MemState, ScannerState, ShipoutState};
+use crate::scanning::scan::ScannerState;
+use crate::shipout::ShipoutState;
+use crate::state::EngineState;
+use crate::tables::eqtb::EqtbState;
 use crate::tables::eqtb::Register;
-
-use super::{PackOrigin, PackOutcome, PackSpec, print_vpack_diag};
 
 /// What `do_marks` does to each mark class.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -703,5 +705,57 @@ impl MemState {
             }
         }
         !(marks[MarkCode::Bot].is_null() && marks[MarkCode::SplitBot].is_null())
+    }
+}
+
+/// `cur_mark`, the marks of the current page and split.
+#[derive(Default, Clone, Copy)]
+pub(crate) struct CurMarks([crate::base::token::TokenList; 5]);
+
+impl CurMarks {
+    pub(crate) const NULL: CurMarks = CurMarks([crate::base::token::TokenList::NULL; 5]);
+}
+
+impl std::ops::Index<crate::base::codes::MarkCode> for CurMarks {
+    type Output = crate::base::token::TokenList;
+    #[inline]
+    fn index(&self, m: crate::base::codes::MarkCode) -> &crate::base::token::TokenList {
+        &self.0[m as usize]
+    }
+}
+
+impl std::ops::IndexMut<crate::base::codes::MarkCode> for CurMarks {
+    #[inline]
+    fn index_mut(&mut self, m: crate::base::codes::MarkCode) -> &mut crate::base::token::TokenList {
+        &mut self.0[m as usize]
+    }
+}
+
+/// The marks of the `\marks` classes above 0, class 0 being `cur_mark`.
+#[derive(Default, Clone)]
+pub(crate) struct MarkClasses(std::collections::BTreeMap<crate::tables::eqtb::Register, CurMarks>);
+
+impl MarkClasses {
+    /// The marks of `class`, all null when it has none.
+    pub(crate) fn get(&self, class: crate::tables::eqtb::Register) -> CurMarks {
+        self.0.get(&class).copied().unwrap_or(CurMarks::NULL)
+    }
+
+    /// The marks of `class`, created null.
+    pub(crate) fn entry(&mut self, class: crate::tables::eqtb::Register) -> &mut CurMarks {
+        self.0.entry(class).or_insert(CurMarks::NULL)
+    }
+
+    /// Keeps the classes `keep` returns true for, in ascending order.
+    pub(crate) fn retain(&mut self, mut keep: impl FnMut(&mut CurMarks) -> bool) {
+        self.0.retain(|_, marks| keep(marks));
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.0.clear();
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (crate::tables::eqtb::Register, &CurMarks)> {
+        self.0.iter().map(|(&class, marks)| (class, marks))
     }
 }

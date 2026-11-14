@@ -21,6 +21,7 @@ use crate::ffi::bridge::{
     FileFormat, input_open, input_read, output_close, output_open, output_write,
 };
 use crate::fonts::LigChar;
+use crate::fonts::PerFont;
 use crate::fonts::tfm::{
     CharInfo, CharTag, ExtIdx, ExtRecipe, FontMetrics, FontParams, LigKernAction, LigKernIdx,
     LigKernStep, LigOp, TfmMetrics,
@@ -29,10 +30,13 @@ use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::memory::glue_store::GlueSpecId;
 use crate::memory::glue_store::{GlueSpec, GlueStore, STATIC_SPECS};
 use crate::memory::mem::{CONTRIB_HEAD, PAGE_HEAD, RESERVED_WORDS};
+use crate::print::Selector;
 use crate::print::errors::Abort;
+use crate::print::errors::InteractionMode;
 use crate::print::{print, print_char, print_int, print_ln, print_nl};
-use crate::state::{EngineState, EqtbState, InteractionMode, PerFont, Selector};
+use crate::state::EngineState;
 use crate::tables::cs::{CsId, NameSlot};
+use crate::tables::eqtb::EqtbState;
 use crate::tables::hash::HASH_PRIME;
 use crate::tables::hash::{HashEntry, PrimEntry};
 
@@ -1379,7 +1383,7 @@ mod tests {
     use super::*;
     use crate::base::cmd::Cmd;
     use crate::base::consts::LEVEL_ONE;
-    use crate::state::Selector;
+    use crate::print::Selector;
     use crate::tables::eqtb::FontLoc;
 
     fn eqtb_with_fonts() -> EqtbState {

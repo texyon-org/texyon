@@ -1,23 +1,29 @@
 //! The tokenizer (`get_next`) and the scanning routines built on it.
 
 use crate::base::cmd::Cmd;
+use crate::base::codes::FiOrElseCode;
 use crate::base::codes::{DelimNumCode, MathCharNumCode};
 use crate::base::command::Command;
 use crate::base::command::Usv;
-use crate::tables::cs::{CsId, Frozen};
-use crate::tables::eqtb::Register;
-
 use crate::base::consts::{ACTIVE_MATH_CHAR, BIGGEST_USV, MATH_CHAR, NUMBER_MATH_FAMILIES};
 use crate::base::params::IntPar;
 use crate::base::token::Token;
+use crate::base::units::FontId;
 use crate::base::units::{NodeType, Scaled};
+use crate::build::packaging::CurMarks;
+use crate::build::packaging::MarkClasses;
 use crate::build::packaging::PackSpec;
 use crate::memory::node::{BoxNode, MathSlot, NodePtr, RuleDimen, RuleNode, Stored};
 use crate::print::errors::Abort;
 use crate::print::errors::OrConfusion;
+use crate::scanning::input::NATIVE_TEXT_MAX;
 use crate::scanning::input::{TokenType, back_input, begin_token_list};
-use crate::state::Saved;
-use crate::state::{EngineState, EqtbState, GroupCode};
+use crate::state::EngineState;
+use crate::tables::cs::{CsId, Frozen};
+use crate::tables::eqtb::EqtbState;
+use crate::tables::eqtb::Register;
+use crate::tables::save::GroupCode;
+use crate::tables::save::Saved;
 
 mod internal;
 mod next;
@@ -364,4 +370,79 @@ pub(crate) fn scan_left_brace(st: &mut EngineState) -> Result<(), Abort> {
         st.scanner.align_state += 1;
     }
     Ok(())
+}
+
+#[derive(Default, Clone)]
+pub(crate) struct ScannerState {
+    /// Monotonic token-fetch clock used to order checkpoint fences.
+    pub logical_clock: u64,
+    pub name_in_progress: bool,
+    pub cur_align: crate::base::units::MemPtr,
+    pub cur_span: crate::base::units::MemPtr,
+    pub cur_loop: crate::base::units::MemPtr,
+    /// The enclosing alignments, TeX's `align_ptr` list.
+    pub align_stack: Vec<crate::build::main_control::SavedAlign>,
+    pub cur_head: crate::base::units::MemPtr,
+    pub cur_tail: crate::base::units::MemPtr,
+    pub cur_pre_head: crate::base::units::MemPtr,
+    pub cur_pre_tail: crate::base::units::MemPtr,
+    pub shown_mode: crate::base::mode::ModeName,
+    pub mag_set: i32,
+    pub expand_depth_count: i32,
+    pub max_reg_num: i32,
+    /// The innermost incomplete conditional, `None` outside any.
+    /// The conditional stack, TeX's `cond_ptr` list.
+    pub conds: crate::scanning::cond_stack::CondStack,
+    pub if_limit: crate::memory::node::Stored<FiOrElseCode>,
+    pub cur_if: crate::base::codes::IfTest,
+    pub if_line: i32,
+    pub skip_line: i32,
+    pub is_in_csname: bool,
+    pub used_tectonic_coda_tokens: bool,
+    pub scanner_status: crate::base::codes::ScannerStatus,
+    pub warning_index: Option<CsId>,
+    pub def_ref: crate::base::token::TokenList,
+    pub long_state: Cmd,
+    pub align_state: i32,
+    pub expand_depth: i32,
+    /// The meaning of the token `get_next` read last.
+    pub cur: crate::base::command::Command,
+    pub cur_cs: Option<CsId>,
+    pub cur_tok: crate::base::token::Token,
+    pub cur_mark: CurMarks,
+    pub mark_classes: MarkClasses,
+    pub disc_ptr: [crate::base::units::MemPtr; 4],
+    pub after_token: crate::base::token::Token,
+    pub cur_f: FontId,
+    pub set_box_allowed: bool,
+    pub native_text: Vec<u16>,
+    pub native_text_size: i32,
+    pub native_len: i32,
+}
+
+impl ScannerState {
+    /// Grows `native_text` until `extra` more units fit.
+    #[inline(always)]
+    pub(crate) fn reserve_native_text(
+        &mut self,
+        extra: i32,
+    ) -> Result<(), crate::print::errors::Abort> {
+        if extra >= NATIVE_TEXT_MAX - self.native_len {
+            return Err(crate::print::errors::Abort::Overflow {
+                capacity: crate::print::errors::Capacity::NativeTextSize,
+                n: NATIVE_TEXT_MAX,
+            });
+        }
+        while self.native_text_size <= self.native_len + extra {
+            self.native_text_size += 128;
+            self.native_text.resize(self.native_text_size as usize, 0);
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub(crate) fn push_native_text(&mut self, c: u16) {
+        self.native_text[self.native_len as usize] = c;
+        self.native_len += 1;
+    }
 }

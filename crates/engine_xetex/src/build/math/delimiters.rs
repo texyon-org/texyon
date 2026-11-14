@@ -4,15 +4,17 @@ use crate::base::consts::{NULL_FONT, SCRIPT_SIZE};
 use crate::base::params::DimenPar;
 use crate::base::units::{FontId, GlueOrder, GlueSign, Scaled};
 use crate::build::packaging::PackSpec;
+use crate::fonts::FontState;
 use crate::fonts::ot_math::GlyphAssembly;
 use crate::fonts::tfm::ExtIdx;
 use crate::fonts::{AAT_FONT_FLAG, CharInfo, CharTag, OTGR_FONT_FLAG};
+use crate::memory::mem::MemState;
 use crate::memory::mem::SS_GLUE;
 use crate::memory::node::DelimiterWord;
 use crate::memory::node::{AnyNode, BoxNode, GlyphNode, NativeWordNode, NodePtr, WhatsitSubtype};
 use crate::print::errors::Abort;
 use crate::print::errors::OrConfusion;
-use crate::state::{EngineState, FontState, MemState};
+use crate::state::EngineState;
 
 impl FontState {
     pub(super) fn measure_glyph(

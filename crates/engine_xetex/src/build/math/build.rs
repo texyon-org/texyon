@@ -1,5 +1,6 @@
 //! Building math lists: the math-mode commands and `fin_mlist`.
 
+use super::DEFAULT_CODE;
 use crate::base::cmd::Cmd;
 use crate::base::codes::AboveCode;
 use crate::base::codes::DelimNumCode;
@@ -10,6 +11,7 @@ use crate::base::command::Command;
 use crate::base::consts::{EMPTY, MATH_CHAR, NUMBER_MATH_FAMILIES, SUB_MLIST};
 use crate::base::params::{IntPar, TokPar};
 use crate::base::units::{MemPtr, NodeType, Scaled};
+use crate::memory::mem::MemState;
 use crate::memory::mem_types::ListStateRecord;
 use crate::memory::node::DelimiterWord;
 use crate::memory::node::{
@@ -18,10 +20,11 @@ use crate::memory::node::{
 };
 use crate::print::errors::Abort;
 use crate::scanning::input::TokenType;
-use crate::state::Saved;
-use crate::state::{EngineState, EqtbState, GroupCode, MemState, SaveStackState};
-
-use super::DEFAULT_CODE;
+use crate::state::EngineState;
+use crate::tables::eqtb::EqtbState;
+use crate::tables::save::GroupCode;
+use crate::tables::save::SaveStackState;
+use crate::tables::save::Saved;
 
 /// The family and character of a `\Udelimiter`, encoded with the extended flag.
 fn scan_extended_delimiter(st: &mut EngineState) -> Result<i32, Abort> {

@@ -1,5 +1,8 @@
 //! Entering and leaving math mode: `init_math`, `after_math` and displays.
 
+use super::build::fin_mlist;
+use super::mlist::mlist_to_hlist;
+use super::{MathStyle, SCRIPT_SCRIPT_SIZE};
 use crate::base::cmd::Cmd;
 use crate::base::consts::{INF_PENALTY, MAX_DIMEN, SCRIPT_SIZE, TEXT_SIZE};
 use crate::base::mode::{Mode, ModeName};
@@ -7,19 +10,19 @@ use crate::base::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::base::units::MemIdx;
 use crate::base::units::{Dir, GlueOrder, GlueSign, NodeType, Scaled};
 use crate::build::packaging::{AdjustTails, LrState, PackOrigin, PackSpec};
+use crate::fonts::FontState;
 use crate::fonts::QUAD_CODE;
+use crate::memory::mem::MemState;
 use crate::memory::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::memory::node::{AnyNode, BoxLr, BoxNode, GlueNode, MathCode, NodePtr};
 use crate::print::errors::Abort;
 use crate::print::errors::OrConfusion;
 use crate::scanning::input::TokenType;
-use crate::state::Saved;
-use crate::state::{EngineState, EqtbState, FontState, GroupCode, MemState};
-
-use super::build::fin_mlist;
-use super::mlist::mlist_to_hlist;
-use super::{MathStyle, SCRIPT_SCRIPT_SIZE};
+use crate::state::EngineState;
+use crate::tables::eqtb::EqtbState;
 use crate::tables::eqtb::define;
+use crate::tables::save::GroupCode;
+use crate::tables::save::Saved;
 
 const TOTAL_MATHSY_PARAMS: i32 = 22;
 const TOTAL_MATHEX_PARAMS: i32 = 13;

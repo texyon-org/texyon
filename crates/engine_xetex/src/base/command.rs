@@ -14,8 +14,8 @@ use crate::base::units::{FontId, NodeType};
 use crate::build::main_control::{CR_CODE, CR_CR_CODE, SPAN_CODE};
 use crate::build::math::MathStyle;
 use crate::memory::mem::NULL_LIST;
+use crate::print::errors::InteractionMode;
 use crate::scanning::scan::NO_EXPAND_FLAG;
-use crate::state::InteractionMode;
 use crate::tables::eqtb::{
     CaseTable, CodeTable, DimenLoc, FontLoc, GlueLoc, IntLoc, ShapeLoc, ToksLoc, XetexCode,
 };
@@ -300,7 +300,7 @@ impl std::hash::Hash for Command {
     }
 }
 
-impl crate::state::ScannerState {
+impl crate::scanning::scan::ScannerState {
     /// The code of the current `\fi`, `\else` or `\or`, `None` for any other command.
     #[inline]
     pub(crate) fn fi_or_else(&self) -> Option<FiOrElseCode> {

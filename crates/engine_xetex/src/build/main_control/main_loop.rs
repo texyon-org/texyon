@@ -11,13 +11,14 @@ use crate::fonts::ext::append_src_special;
 use crate::fonts::{
     CharInfo, CharTag, LigChar, LigKernAction, LigKernIdx, LigKernStep, LigOp, SPACE_CODE,
 };
+use crate::memory::mem::MemState;
 use crate::memory::node::{
     AnyNode, CharNode, KernSubtype, LigBoundary, LigItem, NativeWordNode, NodePtr,
 };
 use crate::print::errors::Abort;
 use crate::print::errors::OrConfusion;
 use crate::scanning::input::{TOKEN_LIST, TokenType};
-use crate::state::{EngineState, MemState};
+use crate::state::EngineState;
 use crate::tables::eqtb::{EqStore, InterCharPair};
 
 fn inter_char_tokens_enabled(st: &EngineState) -> bool {
@@ -832,4 +833,14 @@ fn lookahead(st: &mut EngineState, lk: &mut LigKern) -> Result<(), Abort> {
         lk.cur_r = LigChar::NONE;
     }
     Ok(())
+}
+
+/// XeTeX's inter-character class registers. The big switch reads them
+/// between runs of the main loop.
+#[derive(Default, Clone)]
+pub(crate) struct InterCharState {
+    /// The class of the last character the main loop classed.
+    pub space_class: i32,
+    /// The class before it, the boundary class when tokens were just inserted.
+    pub prev_class: i32,
 }

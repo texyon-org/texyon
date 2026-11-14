@@ -4,7 +4,6 @@
 use crate::base::consts::{EMPTY_STRING, TOO_BIG_CHAR};
 use crate::base::units::{PoolPos, StrNumber};
 use crate::print::errors::Abort;
-use crate::state::StringsState;
 
 impl StringsState {
     /// Where pool string `s` starts in `str_pool`.
@@ -168,6 +167,86 @@ impl StringsState {
     pub fn flush_string(&mut self) {
         self.str_ptr = self.str_ptr.prev();
         self.pool_ptr = self.str_start(self.str_ptr);
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct StringsState {
+    /// The string under construction, one past the last made string.
+    pub str_ptr: StrNumber,
+    /// The first string number past the `str_start` table.
+    pub max_strings: StrNumber,
+    pub init_str_ptr: StrNumber,
+    pub init_pool_ptr: PoolPos,
+    pub job_name: StrNumber,
+    pub texmf_log_name: StrNumber,
+    pub string_vacancies: i32,
+    /// The end of `str_pool`.
+    pub pool_size: PoolPos,
+    pub pool_ptr: PoolPos,
+    pub format_ident: StrNumber,
+    pub str_start: Vec<PoolPos>,
+    pub str_pool: Vec<u16>,
+}
+
+impl StringsState {
+    /// The string pool ran out.
+    pub(crate) fn pool_overflow(&self) -> crate::print::errors::Abort {
+        crate::print::errors::Abort::Overflow {
+            capacity: crate::print::errors::Capacity::PoolSize,
+            n: self.pool_size - self.init_pool_ptr,
+        }
+    }
+
+    /// The string table ran out.
+    pub(crate) fn string_overflow(&self) -> crate::print::errors::Abort {
+        crate::print::errors::Abort::Overflow {
+            capacity: crate::print::errors::Capacity::NumberOfStrings,
+            n: self.max_strings - self.init_str_ptr,
+        }
+    }
+
+    /// The `str_start` slot of the string under construction.
+    #[inline]
+    pub(crate) fn cur_start_slot(&self) -> usize {
+        if self.str_ptr.is_pool_string() {
+            self.str_ptr.slot()
+        } else {
+            0
+        }
+    }
+
+    /// The pool offset where the string under construction starts.
+    #[inline]
+    pub(crate) fn cur_string_start(&self) -> PoolPos {
+        self.str_start[self.str_ptr.slot()]
+    }
+
+    /// TeX's `append_char`: adds UTF-16 unit `c` to the string under construction.
+    #[inline]
+    pub(crate) fn append_char(&mut self, c: u16) {
+        self.str_pool[self.pool_ptr.index()] = c;
+        self.pool_ptr += 1;
+    }
+
+    /// Appends UTF-16 `units` to the string under construction.
+    #[inline]
+    pub(crate) fn append_units(&mut self, units: &[u16]) {
+        let start = self.pool_ptr.index();
+        self.str_pool[start..start + units.len()].copy_from_slice(units);
+        self.pool_ptr += units.len() as i32;
+    }
+
+    /// The characters of the string under construction.
+    #[inline]
+    pub(crate) fn cur_string(&self) -> &[u16] {
+        &self.str_pool[self.cur_string_start().index()..self.pool_ptr.index()]
+    }
+
+    /// Drops the characters of the string under construction.
+    #[inline]
+    pub(crate) fn discard_cur_string(&mut self) {
+        self.pool_ptr = self.cur_string_start();
     }
 }
 

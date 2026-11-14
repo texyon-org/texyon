@@ -1,5 +1,6 @@
 //! Getting the next token: `get_next`, `get_token`, `get_x_token` and `pass_text`.
 
+use super::toks::finish_line;
 use crate::base::cmd::Cmd;
 use crate::base::codes::{FiOrElseCode, ScannerStatus};
 use crate::base::command::RelaxCode;
@@ -9,17 +10,19 @@ use crate::base::params::{IntPar, TokPar};
 use crate::base::token::{Build, TokCursor, Token, TokenKind, TokenList};
 use crate::base::units::BufPos;
 use crate::ffi::bridge::output_flush;
+use crate::memory::mem::MemState;
 use crate::memory::node::{AlignRecord, NodePtr};
+use crate::print::Selector;
 use crate::print::errors::{Abort, OrConfusion};
 use crate::scanning::expand::{expand, macro_call};
+use crate::scanning::input::InputClusterState;
+use crate::scanning::input::InputName;
 use crate::scanning::input::{
     MID_LINE, NEW_LINE, SKIP_BLANKS, TOKEN_LIST, TokenType, begin_token_list,
 };
 use crate::scanning::scan::Command;
-use crate::state::{EngineState, InputClusterState, InputName, MemState, Selector};
+use crate::state::EngineState;
 use crate::tables::cs::{CsId, Frozen};
-
-use super::toks::finish_line;
 
 impl MemState {
     /// Whether the macro whose token list starts at `ref_count` is `\protected`.

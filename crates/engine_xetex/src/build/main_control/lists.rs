@@ -1,11 +1,16 @@
 //! Building lists: paragraphs, glue, kerns, inserts, marks, discretionaries, accents.
 
+use super::align::align_peek;
+use super::assign::do_assignments;
+use super::begin_every;
+use super::boxes::package;
 use crate::base::cmd::Cmd;
 use crate::base::codes::{BoxCode, SkipCode, ValueLevel};
 use crate::base::command::Command;
 use crate::base::consts::{
     BIGGEST_CHAR, EMPTY, MAX_DIMEN, NULL_FLAG, SUB_BOX, SUB_MLIST, TEX_NULL,
 };
+use crate::base::mode::{Mode, ModeName};
 use crate::base::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::base::scaled_math::xn_over_d;
 use crate::base::token::Token;
@@ -16,6 +21,7 @@ use crate::fonts::{
     EXTRA_SPACE_CODE, SLANT_CODE, SPACE_CODE, SPACE_SHRINK_CODE, SPACE_STRETCH_CODE, X_HEIGHT_CODE,
 };
 use crate::memory::glue_store::GlueSpecId;
+use crate::memory::mem::MemState;
 use crate::memory::mem::{
     CONTRIB_HEAD, FIL_GLUE, FIL_NEG_GLUE, FILL_GLUE, PAGE_HEAD, SS_GLUE, ZERO_GLUE,
 };
@@ -28,17 +34,12 @@ use crate::memory::node::{
 use crate::print::errors::Abort;
 use crate::print::errors::OrConfusion;
 use crate::scanning::input::{TOKEN_LIST, TokenType};
-use crate::state::Saved;
-use crate::state::{EngineState, GroupCode, MemState};
+use crate::state::EngineState;
 use crate::tables::cs::Frozen;
 use crate::tables::eqtb::Register;
 use crate::tables::eqtb::{ShapeLoc, ShapeRef};
-
-use super::align::align_peek;
-use super::assign::do_assignments;
-use super::begin_every;
-use super::boxes::package;
-use crate::base::mode::{Mode, ModeName};
+use crate::tables::save::GroupCode;
+use crate::tables::save::Saved;
 
 pub(crate) fn push_math(st: &mut EngineState, c: GroupCode) -> Result<(), Abort> {
     crate::memory::mem::push_nest(st)?;
@@ -636,7 +637,7 @@ impl ListStateRecord {
     pub(crate) fn fix_language(
         &mut self,
         mem: &mut MemState,
-        eqtb: &crate::state::EqtbState,
+        eqtb: &crate::tables::eqtb::EqtbState,
     ) -> Result<(), Abort> {
         let l = i32::from(crate::base::helpers::norm_lang(
             eqtb.int_par(IntPar::Language),
@@ -663,7 +664,7 @@ pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
         );
     }
     crate::scanning::input::back_input(st)?;
-    let insertion = crate::state::Insertion(st.save_stack.cur_group.closer());
+    let insertion = crate::tables::save::Insertion(st.save_stack.cur_group.closer());
     let list = st.mem.tokens.begin()?;
     for token in insertion.tokens() {
         st.mem.tokens.push(&list, token)?;

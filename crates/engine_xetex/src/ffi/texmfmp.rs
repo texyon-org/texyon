@@ -7,7 +7,8 @@ use crate::ffi::bridge::{
     FileFormat, get_file_md5, input_get_mtime, input_get_size, input_open, input_read,
 };
 use crate::print::errors::Abort;
-use crate::state::{ShipoutState, StringsState, TexmfState};
+use crate::shipout::ShipoutState;
+use crate::tables::string_pool::StringsState;
 
 const HEX_DIGITS: &[u8; 16] = b"0123456789ABCDEF";
 
@@ -374,4 +375,12 @@ impl StringsState {
         self.push_bytes_or_fill(nul_terminated(&buf));
         Ok(())
     }
+}
+
+#[derive(Default, Clone)]
+pub(crate) struct TexmfState {
+    pub last_source_name: Option<Vec<u8>>,
+    pub last_lineno: i32,
+    /// `D:YYYYmmddHHMMSS+HH'MM'`.
+    pub start_time_str: Vec<u8>,
 }

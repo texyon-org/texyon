@@ -1,6 +1,9 @@
 //! Font loading: the TFM reader, native (OpenType/Graphite) font loading, native
 //! character nodes and the TFM `char_info` accessors.
 
+use crate::ffi::teckit_icu::FontMappingHandle;
+use crate::ffi::teckit_icu::LinebreakHandle;
+
 pub(crate) mod ext;
 pub(crate) mod ot_math;
 pub(crate) mod tfm;
@@ -8,25 +11,25 @@ pub(crate) mod tfm;
 use crate::base::consts::{EMPTY_STRING, INVALID_HANDLE, NULL_FONT, TOO_BIG_CHAR};
 use crate::base::params::IntPar;
 use crate::base::units::{FontId, Scaled, StrNumber};
+use crate::ffi::bridge::FileFormat;
 use crate::files::io::{FileName, ScannedName, open_input_file};
+use crate::fonts::ext::loaded_font_design_size;
 use crate::fonts::ext::{
     NativeFontMetrics, aat_get_font_metrics, apply_tfm_font_mapping, find_native_font,
     load_mapping_file, ot_get_font_metrics, split_tfm_font_mapping,
 };
 use crate::fonts::tfm::{ExtIdx, FontMetrics, FontParams, TfmError, TfmMetrics};
+use crate::memory::mem::MemState;
 use crate::memory::node::{NativeWordNode, NodePtr, WhatsitSubtype};
+use crate::print::errors::Abort;
+use crate::print::errors::OrConfusion;
 use crate::print::{
     CsName, TexPrint, begin_diagnostic, char_warning, end_diagnostic, print, print_char, print_int,
     print_nl, print_scaled,
 };
-use crate::state::{EngineState, EqtbState, FontState, MemState};
+use crate::state::EngineState;
 use crate::tables::cs::CsId;
-
-use crate::ffi::bridge::FileFormat;
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
-
-use crate::fonts::ext::loaded_font_design_size;
+use crate::tables::eqtb::EqtbState;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
@@ -595,7 +598,7 @@ impl FontState {
     fn init_native_font_tables(
         &mut self,
         eqtb: &EqtbState,
-        font_engine: crate::state::FontEngineHandle,
+        font_engine: crate::fonts::FontEngineHandle,
         full_name: StrNumber,
         actual_size: Scaled,
         num_font_dimens: usize,
@@ -724,4 +727,146 @@ fn load_native_font(st: &mut EngineState, font: FontSpec, name: &[u8]) -> Result
     st.fonts.font_mapping[font_ptr] = staged_mapping;
     st.fonts.font_flags[font_ptr] = st.fonts.loaded_font_flags;
     Ok(font_ptr)
+}
+
+/// A native font's layout engine.
+pub(crate) type FontEngineHandle = texyon_xetex_layout::LayoutEngine<'static>;
+
+pub(crate) struct FontState {
+    /// Converter staged by a `mapping=` font feature until it is transferred
+    /// into a font slot.
+    pub loaded_font_mapping: Option<std::sync::Arc<FontMappingHandle>>,
+    pub loaded_font_flags: i8,
+    /// Per-engine ICU line-break cache and its string-pool locale key.
+    pub brk_iter: Option<LinebreakHandle>,
+    pub brk_locale_str_num: StrNumber,
+    pub font_layout_engine: PerFont<Option<std::rc::Rc<FontEngineHandle>>>,
+    pub font_mapping: PerFont<Option<std::sync::Arc<FontMappingHandle>>>,
+    pub loaded_font_letter_space: Scaled,
+    pub xtx_ligature_present: bool,
+    pub gave_char_warning_help: bool,
+    pub native_font_type_flag: StrNumber,
+    /// The limit on `fmem_ptr`.
+    pub font_mem_size: i32,
+    pub font_max: FontId,
+    /// The `font_info` words TeX would use for the loaded fonts, counted for
+    /// `font_mem_size` and the statistics.
+    pub fmem_ptr: i32,
+    pub font_ptr: FontId,
+    pub font_flags: PerFont<i8>,
+    pub font_letter_space: PerFont<Scaled>,
+    pub font_check: PerFont<[u8; 4]>,
+    pub font_size: PerFont<Scaled>,
+    pub font_dsize: PerFont<Scaled>,
+    pub font_name: PerFont<StrNumber>,
+    pub font_area: PerFont<StrNumber>,
+    pub font_bc: PerFont<u16>,
+    pub font_ec: PerFont<u16>,
+    pub font_bchar: PerFont<crate::fonts::LigChar>,
+    pub font_false_bchar: PerFont<crate::fonts::LigChar>,
+    /// The interword glue built from the font's parameters, once a space needs it.
+    pub font_glue: PerFont<Option<crate::memory::glue_store::GlueSpecId>>,
+    pub font_used: PerFont<bool>,
+    pub hyphen_char: PerFont<i32>,
+    pub skew_char: PerFont<i32>,
+    pub metrics: PerFont<crate::fonts::tfm::FontMetrics>,
+    pub params: PerFont<crate::fonts::tfm::FontParams>,
+    pub mapped_text: Vec<u16>,
+    pub cp_codes: crate::fonts::ProtrusionCodes,
+    /// Glyph bounds in TeX points, valid for the fonts through `font_ptr`.
+    pub glyph_bboxes: std::cell::RefCell<
+        std::collections::BTreeMap<(FontId, u16), texyon_xetex_layout::GlyphBBox>,
+    >,
+}
+
+impl Default for FontState {
+    fn default() -> Self {
+        Self {
+            loaded_font_mapping: None,
+            loaded_font_flags: 0,
+            brk_iter: None,
+            brk_locale_str_num: StrNumber::from_raw(0),
+            font_layout_engine: PerFont::default(),
+            font_mapping: PerFont::default(),
+            loaded_font_letter_space: Scaled::ZERO,
+            xtx_ligature_present: false,
+            gave_char_warning_help: false,
+            native_font_type_flag: StrNumber::NONE,
+            font_mem_size: 0,
+            font_max: crate::base::consts::NULL_FONT,
+            fmem_ptr: 0,
+            font_ptr: crate::base::consts::NULL_FONT,
+            font_flags: PerFont::default(),
+            font_letter_space: PerFont::default(),
+            font_check: PerFont::default(),
+            font_size: PerFont::default(),
+            font_dsize: PerFont::default(),
+            font_name: PerFont::default(),
+            font_area: PerFont::default(),
+            font_bc: PerFont::default(),
+            font_ec: PerFont::default(),
+            font_bchar: PerFont::default(),
+            font_false_bchar: PerFont::default(),
+            font_glue: PerFont::default(),
+            font_used: PerFont::default(),
+            hyphen_char: PerFont::default(),
+            skew_char: PerFont::default(),
+            metrics: PerFont::default(),
+            params: PerFont::default(),
+            mapped_text: Vec::new(),
+            cp_codes: crate::fonts::ProtrusionCodes::default(),
+            glyph_bboxes: std::cell::RefCell::default(),
+        }
+    }
+}
+
+impl FontState {
+    /// Font parameter `n` of font `f`, zero when the font has no such parameter.
+    #[inline]
+    pub(crate) fn param(&self, f: FontId, n: i32) -> Scaled {
+        self.params[f].get(n).unwrap_or(Scaled::ZERO)
+    }
+
+    /// TeX's `font_params`.
+    #[inline]
+    pub(crate) fn param_count(&self, f: FontId) -> i32 {
+        self.params[f].count()
+    }
+}
+
+/// A table with one entry per internal font.
+#[derive(Clone, Default)]
+pub(crate) struct PerFont<T>(Vec<T>);
+
+impl<T: Clone> PerFont<T> {
+    pub(crate) fn filled(len: usize, value: T) -> Self {
+        PerFont(vec![value; len])
+    }
+}
+
+impl<T> PerFont<T> {
+    #[inline]
+    pub(crate) fn as_slice(&self) -> &[T] {
+        &self.0
+    }
+
+    #[inline]
+    pub(crate) fn as_mut_slice(&mut self) -> &mut [T] {
+        &mut self.0
+    }
+}
+
+impl<T> std::ops::Index<FontId> for PerFont<T> {
+    type Output = T;
+    #[inline(always)]
+    fn index(&self, f: FontId) -> &T {
+        &self.0[f.index()]
+    }
+}
+
+impl<T> std::ops::IndexMut<FontId> for PerFont<T> {
+    #[inline(always)]
+    fn index_mut(&mut self, f: FontId) -> &mut T {
+        &mut self.0[f.index()]
+    }
 }

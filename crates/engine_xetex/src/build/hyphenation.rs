@@ -6,10 +6,12 @@ use crate::base::command::Usv;
 use crate::base::consts::BIGGEST_CHAR;
 pub(crate) use crate::base::consts::BIGGEST_LANG;
 use crate::base::params::IntPar;
+use crate::base::units::FontId;
 use crate::base::units::{MemPtr, StrNumber};
 use crate::print::errors::Abort;
 use crate::print::errors::OrConfusion;
-use crate::state::{EngineState, EqtbState, HyphState};
+use crate::state::EngineState;
+use crate::tables::eqtb::EqtbState;
 
 pub(crate) const TRIE_OP_SIZE: i32 = 35_111;
 pub(crate) const HYPH_PRIME: i32 = 607;
@@ -959,4 +961,111 @@ fn store_hyph_exception(st: &mut EngineState, mut n: usize, p: MemPtr) -> Result
     hyph.hyph_word[h] = s;
     hyph.hyph_list[h] = p;
     Ok(())
+}
+
+pub(crate) struct HyphState {
+    /// Generation of the rarely-mutated trie and exception tables.
+    pub tables_gen: u64,
+    pub hf: FontId,
+    pub max_hyph_char: i32,
+    pub init_list: crate::base::units::MemPtr,
+    pub init_lig: bool,
+    pub init_lft: bool,
+    pub hyphen_passed: usize,
+    pub trie_max: crate::build::hyphenation::TriePtr,
+    pub trie_size: i32,
+    pub trie_ptr: i32,
+    pub hyph_count: i32,
+    pub hyph_size: i32,
+    pub hyph_next: i32,
+    pub trie_op_ptr: i32,
+    pub max_op_used: u16,
+    pub trie_not_ready: bool,
+    pub hyph_start: crate::build::hyphenation::TriePtr,
+    /// The `\lccode` table saved with the current language's patterns.
+    pub hyph_index: Option<crate::build::hyphenation::TriePtr>,
+    pub cur_lang: u8,
+    pub hyf_char: crate::fonts::LigChar,
+    pub l_hyf: i32,
+    pub r_hyf: i32,
+    pub hyf_bchar: crate::fonts::LigChar,
+    pub hc: Vec<i32>,
+    /// The word's characters, with boundary sentinels at the ends.
+    pub hu: Vec<crate::fonts::LigChar>,
+    pub hyf: Vec<u8>,
+    pub trie_min: Vec<u32>,
+    pub hyf_distance: Vec<u16>,
+    pub hyf_num: Vec<u16>,
+    pub hyf_next: Vec<u16>,
+    pub op_start: Vec<usize>,
+    pub trie_used: Vec<u16>,
+    pub trie_op_lang: Vec<u8>,
+    pub trie_op_val: Vec<u16>,
+    pub trie_trl: Vec<i32>,
+    pub trie_tro: Vec<i32>,
+    pub trie_trc: Vec<u16>,
+    pub trie_c: Vec<u16>,
+    pub trie_o: Vec<u16>,
+    pub trie_l: Vec<u32>,
+    pub trie_r: Vec<u32>,
+    pub trie_hash: Vec<u32>,
+    pub trie_taken: Vec<bool>,
+    pub hyph_word: Vec<StrNumber>,
+    pub hyph_list: Vec<crate::base::units::MemPtr>,
+    pub hyph_link: Vec<u16>,
+    pub trie_op_hash_array: Vec<i32>,
+}
+
+impl Default for HyphState {
+    fn default() -> Self {
+        Self {
+            tables_gen: 0,
+            hf: crate::base::consts::NULL_FONT,
+            max_hyph_char: 0,
+            init_list: None,
+            init_lig: false,
+            init_lft: false,
+            hyphen_passed: 0,
+            trie_max: crate::build::hyphenation::TriePtr::NULL,
+            trie_size: 0,
+            trie_ptr: 0,
+            hyph_count: 0,
+            hyph_size: 0,
+            hyph_next: 0,
+            trie_op_ptr: 0,
+            max_op_used: 0,
+            trie_not_ready: false,
+            hyph_start: crate::build::hyphenation::TriePtr::NULL,
+            hyph_index: None,
+            cur_lang: 0,
+            hyf_char: crate::fonts::LigChar::NONE,
+            l_hyf: 0,
+            r_hyf: 0,
+            hyf_bchar: crate::fonts::LigChar::NONE,
+            hc: vec![0; 4099],
+            hu: vec![crate::fonts::LigChar::NONE; 4097],
+            hyf: vec![0; 4097],
+            trie_min: vec![0; 65536],
+            hyf_distance: vec![0; 35112],
+            hyf_num: vec![0; 35112],
+            hyf_next: vec![0; 35112],
+            op_start: vec![0; 256],
+            trie_used: vec![0; 256],
+            trie_op_lang: vec![0; 35112],
+            trie_op_val: vec![0; 35112],
+            trie_trl: Vec::new(),
+            trie_tro: Vec::new(),
+            trie_trc: Vec::new(),
+            trie_c: Vec::new(),
+            trie_o: Vec::new(),
+            trie_l: Vec::new(),
+            trie_r: Vec::new(),
+            trie_hash: Vec::new(),
+            trie_taken: Vec::new(),
+            hyph_word: Vec::new(),
+            hyph_list: Vec::new(),
+            hyph_link: Vec::new(),
+            trie_op_hash_array: vec![0; 70223],
+        }
+    }
 }

@@ -1,5 +1,7 @@
 //! Mode-independent processing: `prefixed_command` and its assignments.
 
+use super::BoxContext;
+use super::boxes::scan_box;
 use crate::base::cmd::Cmd;
 use crate::base::codes::{
     AuxCode, BoxDimenCode, FontIntCode, PageDimenCode, PageIntCode, ShorthandDefCode, ValueLevel,
@@ -15,14 +17,17 @@ use crate::base::token::{Token, TokenList};
 use crate::base::units::{FontId, GlueOrder, Scaled, StrNumber};
 use crate::build::hyphenation::{new_hyph_exceptions, new_patterns};
 use crate::fonts::FontSize;
+use crate::fonts::Side;
 use crate::fonts::read_font_info;
 use crate::memory::glue_store::GlueSpecId;
 use crate::memory::mem::ZERO_GLUE;
 use crate::memory::node::{ParShapeNode, PenaltiesNode};
+use crate::print::Selector;
 use crate::print::errors::Abort;
+use crate::print::errors::InteractionMode;
 use crate::print::errors::OrConfusion;
 use crate::scanning::scan::fetch_box;
-use crate::state::{EngineState, InteractionMode, Selector};
+use crate::state::EngineState;
 use crate::tables::cs::{CsId, CsKind};
 use crate::tables::eqtb::{
     self, CatLoc, CodeTable, DelLoc, DimenLoc, FontLoc, GlueLoc, IntLoc, LcLoc, MathLoc, SfLoc,
@@ -30,15 +35,10 @@ use crate::tables::eqtb::{
 };
 use crate::tables::eqtb::{EqStore, InterCharPair};
 
-use crate::fonts::Side;
-
-use super::BoxContext;
-use super::boxes::scan_box;
-
 fn new_interaction(st: &mut EngineState, mode: InteractionMode) {
     crate::print::print_ln(st);
     st.errors.interaction = mode;
-    st.shipout.selector = if st.errors.interaction == crate::state::InteractionMode::Batch {
+    st.shipout.selector = if st.errors.interaction == crate::print::errors::InteractionMode::Batch {
         Selector::NoPrint
     } else {
         Selector::TermOnly

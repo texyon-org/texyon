@@ -1,20 +1,25 @@
 //! The typed tables of `eqtb`: each holds one kind of value, with the level it was defined at.
 
-use std::marker::PhantomData;
-
 use crate::base::cmd::Cmd;
 use crate::base::codes::code_enum;
 use crate::base::command::Command;
 use crate::base::consts::LEVEL_ONE;
 use crate::base::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::base::token::TokenList;
+use crate::base::units::PrimNum;
+use crate::base::units::StrNumber;
 use crate::base::units::{FontId, MemPtr, Scaled};
 use crate::memory::glue_store::GlueSpecId;
+use crate::memory::mem::MemState;
 use crate::memory::node::{BoxNode, NodePtr, ParShapeNode, PenaltiesNode};
 use crate::preview::journal::{JournalWord, WordDelta, WordJournal};
 use crate::print::errors::Abort;
-use crate::state::{EngineState, EqtbState, MemState, Restore, SaveEntry, SaveStackState};
+use crate::state::EngineState;
 use crate::tables::cs::CsId;
+use crate::tables::save::Restore;
+use crate::tables::save::SaveEntry;
+use crate::tables::save::SaveStackState;
+use std::marker::PhantomData;
 
 /// A value an `eqtb` table holds.
 pub(crate) trait EqValue: JournalWord + PartialEq {
@@ -989,6 +994,346 @@ code_enum! {
     pub(crate) enum CaseTable: u8 {
         Lower = 0 => "lowercase",
         Upper = 1 => "uppercase",
+    }
+}
+
+pub(crate) struct EqtbState {
+    /// The lowest bucket handed out to a colliding name so far.
+    pub hash_used: crate::tables::cs::NameSlot,
+    /// The extra names in use.
+    pub hash_high: u32,
+    pub no_new_control_sequence: bool,
+    pub prim_used: PrimNum,
+    pub cs_count: i32,
+    /// The meaning of each control sequence, and the level it was defined at.
+    pub meanings: crate::tables::eqtb::Table<CsId, crate::base::command::Command>,
+    pub ints: crate::tables::eqtb::Table<crate::tables::eqtb::IntLoc, i32>,
+    pub dimens: crate::tables::eqtb::Table<crate::tables::eqtb::DimenLoc, Scaled>,
+    pub glue: crate::tables::eqtb::Table<crate::tables::eqtb::GlueLoc, GlueSpecId>,
+    pub toks:
+        crate::tables::eqtb::Table<crate::tables::eqtb::ToksLoc, crate::base::token::TokenList>,
+    pub shapes:
+        crate::tables::eqtb::Table<crate::tables::eqtb::ShapeLoc, crate::tables::eqtb::ShapeRef>,
+    pub fonts: crate::tables::eqtb::Table<crate::tables::eqtb::FontLoc, FontId>,
+    pub cat_codes: crate::tables::eqtb::Table<crate::tables::eqtb::CatLoc, Cmd>,
+    pub lc_codes: crate::tables::eqtb::Table<crate::tables::eqtb::LcLoc, i32>,
+    pub uc_codes: crate::tables::eqtb::Table<crate::tables::eqtb::UcLoc, i32>,
+    pub sf_codes: crate::tables::eqtb::Table<crate::tables::eqtb::SfLoc, i32>,
+    pub math_codes: crate::tables::eqtb::Table<crate::tables::eqtb::MathLoc, i32>,
+    pub del_codes: crate::tables::eqtb::Table<crate::tables::eqtb::DelLoc, i32>,
+    /// `\XeTeXinterchartoks`, by class pair.
+    pub inter_char: crate::tables::eqtb::SparseTable<
+        crate::tables::eqtb::InterCharPair,
+        crate::base::token::TokenList,
+    >,
+    pub boxes: crate::tables::eqtb::Table<
+        crate::tables::eqtb::BoxLoc,
+        Option<crate::memory::node::NodePtr<crate::memory::node::BoxNode>>,
+    >,
+    pub prim: Vec<crate::tables::hash::PrimEntry>,
+    /// The `next` and `text` of each control sequence from the first hash bucket on.
+    pub hash: Vec<crate::tables::hash::HashEntry>,
+    pub hash_extra: u32,
+    /// The last control sequence, past the extra hash entries.
+    pub cs_top: CsId,
+    pub journal: crate::preview::journal::EqtbJournal,
+    pub pgfmath: crate::scanning::pgfmath::KnownCs,
+}
+
+impl Default for EqtbState {
+    fn default() -> Self {
+        EqtbState {
+            hash_used: crate::tables::cs::NameSlot::BUCKETS_END,
+            hash_high: 0,
+            no_new_control_sequence: false,
+            prim_used: PrimNum::LAST,
+            cs_count: 0,
+            meanings: Default::default(),
+            inter_char: Default::default(),
+            ints: Default::default(),
+            dimens: Default::default(),
+            glue: Default::default(),
+            toks: Default::default(),
+            shapes: Default::default(),
+            boxes: Default::default(),
+            fonts: Default::default(),
+            cat_codes: Default::default(),
+            lc_codes: Default::default(),
+            uc_codes: Default::default(),
+            sf_codes: Default::default(),
+            math_codes: Default::default(),
+            del_codes: Default::default(),
+            // PRIM_SIZE + 1 = 2101.
+            prim: vec![crate::tables::hash::PrimEntry::default(); 2101],
+            hash: Vec::new(),
+            hash_extra: 0,
+            cs_top: CsId::UNDEFINED,
+            journal: crate::preview::journal::EqtbJournal::default(),
+            pgfmath: crate::scanning::pgfmath::KnownCs::default(),
+        }
+    }
+}
+
+impl EqtbState {
+    /// Sizes the tables for `hash_extra` extra names, every control sequence undefined.
+    pub(crate) fn alloc_tables(&mut self) {
+        self.cs_top = CsId::top(self.hash_extra);
+        let cs = self.cs_top.index() + 1;
+        self.meanings = crate::tables::eqtb::Table::at_level(
+            cs,
+            crate::base::command::Command::UndefinedCs,
+            crate::base::consts::LEVEL_ZERO,
+        );
+        self.hash =
+            crate::memory::mem_types::zeroed_vec(self.cs_top.hash_index().map_or(0, |i| i + 1));
+        self.ints = crate::tables::eqtb::Table::new(crate::tables::eqtb::IntLoc::LEN, 0);
+        self.inter_char.clear();
+        self.dimens =
+            crate::tables::eqtb::Table::new(crate::tables::eqtb::DimenLoc::LEN, Scaled::ZERO);
+        self.glue = crate::tables::eqtb::Table::new(
+            crate::tables::eqtb::GlueLoc::LEN,
+            crate::memory::mem::ZERO_GLUE,
+        );
+        self.toks = crate::tables::eqtb::Table::new(
+            crate::tables::eqtb::ToksLoc::LEN,
+            crate::base::token::TokenList::NULL,
+        );
+        self.shapes = crate::tables::eqtb::Table::new(
+            crate::tables::eqtb::ShapeLoc::LEN,
+            crate::tables::eqtb::ShapeRef::NONE,
+        );
+        self.boxes = crate::tables::eqtb::Table::new(crate::tables::eqtb::BoxLoc::LEN, None);
+        self.fonts = crate::tables::eqtb::Table::new(
+            crate::tables::eqtb::FontLoc::LEN,
+            crate::base::consts::NULL_FONT,
+        );
+        let usvs = crate::base::consts::NUMBER_USVS as usize;
+        self.cat_codes = crate::tables::eqtb::Table::new(usvs, Cmd::ESCAPE);
+        self.lc_codes = crate::tables::eqtb::Table::new(usvs, 0);
+        self.uc_codes = crate::tables::eqtb::Table::new(usvs, 0);
+        self.sf_codes = crate::tables::eqtb::Table::new(usvs, 0);
+        self.math_codes = crate::tables::eqtb::Table::new(usvs, 0);
+        self.del_codes = crate::tables::eqtb::Table::new(usvs, -1);
+    }
+}
+
+impl EqtbState {
+    /// The meaning of control sequence `cs`.
+    #[inline(always)]
+    pub(crate) fn meaning(&self, cs: CsId) -> crate::base::command::Command {
+        self.meanings.get(cs)
+    }
+
+    /// The level `cs`'s meaning was defined at.
+    #[inline]
+    pub(crate) fn cs_level(&self, cs: CsId) -> u16 {
+        self.meanings.level(cs)
+    }
+
+    /// Gives `cs` the meaning `m` at level `level`.
+    #[inline]
+    pub(crate) fn set_meaning(&mut self, cs: CsId, m: crate::base::command::Command, level: u16) {
+        self.meanings.set(cs, m, level);
+    }
+
+    #[inline]
+    pub(crate) fn hash_next(&self, p: CsId) -> Option<CsId> {
+        p.hash_index()
+            .and_then(|i| self.hash.get(i))
+            .and_then(|h| h.next)
+    }
+
+    #[inline]
+    pub(crate) fn set_hash_next(&mut self, p: CsId, next: CsId) {
+        let Some(index) = p.hash_index() else {
+            return;
+        };
+        if self.journal.hash.armed() {
+            self.journal.hash.note(index, self.hash[index]);
+        }
+        self.hash[index].next = Some(next);
+    }
+
+    /// The name of control sequence `p`, `text(p)`, none below the first hash bucket.
+    #[inline]
+    pub fn text(&self, p: CsId) -> StrNumber {
+        p.hash_index()
+            .and_then(|i| self.hash.get(i))
+            .map_or(StrNumber::NONE, |h| h.text)
+    }
+
+    #[inline]
+    pub fn set_text(&mut self, p: CsId, s: StrNumber) {
+        let Some(index) = p.hash_index() else {
+            return;
+        };
+        if self.journal.hash.armed() {
+            self.journal.hash.note(index, self.hash[index]);
+        }
+        self.hash[index].text = s;
+    }
+
+    /// The next slot in `p`'s hash chain.
+    #[inline]
+    pub fn prim_next(&self, p: PrimNum) -> Option<PrimNum> {
+        self.prim[p.index()].next
+    }
+
+    #[inline]
+    pub fn set_prim_next(&mut self, p: PrimNum, next: Option<PrimNum>) {
+        let index = p.index();
+        if self.journal.prim.armed() {
+            self.journal.prim.note(index, self.prim[index]);
+        }
+        self.prim[index].next = next;
+    }
+
+    /// The name of the primitive in slot `p`, if the slot is used.
+    #[inline]
+    pub fn prim_text(&self, p: PrimNum) -> Option<StrNumber> {
+        self.prim[p.index()].text
+    }
+
+    #[inline]
+    pub fn set_prim_text(&mut self, p: PrimNum, s: Option<StrNumber>) {
+        let index = p.index();
+        if self.journal.prim.armed() {
+            self.journal.prim.note(index, self.prim[index]);
+        }
+        self.prim[index].text = s;
+    }
+
+    /// The control sequence text that identifies font `f`.
+    #[inline]
+    pub(crate) fn font_id_text(&self, f: FontId) -> StrNumber {
+        self.text(CsId::font_id(f))
+    }
+
+    #[inline]
+    pub(crate) fn cur_font(&self) -> FontId {
+        self.fonts.get(crate::tables::eqtb::FontLoc::CUR)
+    }
+
+    #[inline]
+    pub(crate) fn tok_par(&self, n: TokPar) -> crate::base::token::TokenList {
+        self.toks.get(n.loc())
+    }
+    #[inline]
+    pub(crate) fn par_shape(
+        &self,
+    ) -> Option<crate::memory::node::NodePtr<crate::memory::node::ParShapeNode>> {
+        crate::memory::node::NodePtr::from_ptr(
+            self.shapes
+                .get(crate::tables::eqtb::ShapeLoc::ParShape)
+                .ptr(),
+        )
+    }
+    /// The e-TeX penalty array held at `loc`.
+    #[inline]
+    pub(crate) fn penalties(
+        &self,
+        loc: crate::tables::eqtb::ShapeLoc,
+    ) -> Option<crate::memory::node::NodePtr<crate::memory::node::PenaltiesNode>> {
+        crate::memory::node::NodePtr::from_ptr(self.shapes.get(loc).ptr())
+    }
+    #[inline]
+    pub(crate) fn box_reg(
+        &self,
+        n: impl Into<crate::tables::eqtb::Register>,
+    ) -> Option<crate::memory::node::NodePtr<crate::memory::node::BoxNode>> {
+        self.boxes
+            .get(crate::tables::eqtb::BoxLoc::register(n.into()))
+    }
+    #[inline]
+    /// Sets box register `n` without saving, keeping its level.
+    pub(crate) fn set_box_reg(
+        &mut self,
+        n: impl Into<crate::tables::eqtb::Register>,
+        b: Option<crate::memory::node::NodePtr<crate::memory::node::BoxNode>>,
+    ) {
+        self.boxes
+            .set_value(crate::tables::eqtb::BoxLoc::register(n.into()), b);
+    }
+    #[inline]
+    pub(crate) fn skip(
+        &self,
+        n: impl Into<crate::tables::eqtb::Register>,
+    ) -> crate::memory::glue_store::GlueSpecId {
+        self.glue.get(crate::tables::eqtb::GlueLoc::skip(n.into()))
+    }
+    #[inline]
+    pub(crate) fn dimen(&self, n: impl Into<crate::tables::eqtb::Register>) -> Scaled {
+        self.dimens
+            .get(crate::tables::eqtb::DimenLoc::dimen(n.into()))
+    }
+    #[inline]
+    pub(crate) fn toks(
+        &self,
+        n: impl Into<crate::tables::eqtb::Register>,
+    ) -> crate::base::token::TokenList {
+        self.toks
+            .get(crate::tables::eqtb::ToksLoc::register(n.into()))
+    }
+    #[inline]
+    pub(crate) fn count(&self, n: impl Into<crate::tables::eqtb::Register>) -> i32 {
+        self.ints.get(crate::tables::eqtb::IntLoc::count(n.into()))
+    }
+    #[inline]
+    pub(crate) fn math_font(&self, n: i32) -> FontId {
+        self.fonts.get(crate::tables::eqtb::FontLoc::math(n))
+    }
+    #[inline(always)]
+    pub(crate) fn cat_code(&self, c: i32) -> Cmd {
+        self.cat_codes.get(crate::tables::eqtb::CatLoc::of(c))
+    }
+    #[inline]
+    pub(crate) fn lc_code(&self, c: i32) -> i32 {
+        self.lc_codes.get(crate::tables::eqtb::LcLoc::of(c))
+    }
+    #[inline]
+    pub(crate) fn uc_code(&self, c: i32) -> i32 {
+        self.uc_codes.get(crate::tables::eqtb::UcLoc::of(c))
+    }
+    #[inline]
+    pub(crate) fn sf_code(&self, c: i32) -> i32 {
+        self.sf_codes.get(crate::tables::eqtb::SfLoc::of(c))
+    }
+    #[inline]
+    pub(crate) fn math_code(&self, c: i32) -> i32 {
+        self.math_codes.get(crate::tables::eqtb::MathLoc::of(c))
+    }
+    #[inline]
+    pub(crate) fn del_code(&self, c: i32) -> i32 {
+        self.del_codes.get(crate::tables::eqtb::DelLoc::of(c))
+    }
+
+    #[inline]
+    pub fn int_par(&self, n: IntPar) -> i32 {
+        self.ints.get(n.loc())
+    }
+    /// Sets `n`, keeping its level.
+    #[inline]
+    pub fn set_int_par(&mut self, n: IntPar, v: i32) {
+        self.ints.set_value(n.loc(), v);
+    }
+    #[inline]
+    pub fn dimen_par(&self, n: DimenPar) -> Scaled {
+        self.dimens.get(n.loc())
+    }
+    /// Sets `n`, keeping its level.
+    #[inline]
+    pub fn set_dimen_par(&mut self, n: DimenPar, v: Scaled) {
+        self.dimens.set_value(n.loc(), v);
+    }
+    /// The spec of glue parameter `n`, never null.
+    #[inline]
+    pub fn glue_par(&self, n: GluePar) -> crate::memory::glue_store::GlueSpecId {
+        self.glue.get(n.loc())
+    }
+
+    #[inline]
+    pub fn set_glue_par(&mut self, n: GluePar, spec: crate::memory::glue_store::GlueSpecId) {
+        self.glue.set_value(n.loc(), spec);
     }
 }
 

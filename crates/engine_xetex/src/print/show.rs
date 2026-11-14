@@ -1,5 +1,13 @@
 //! Showing internal state: `\show...`, `\message`, the semantic nest and the error context.
 
+use super::cmd_chr::{print_command, print_meaning};
+use super::show_box::show_box;
+use super::warnings::{leave_group_boundary, print_if_line};
+use super::{
+    begin_diagnostic, end_diagnostic, print, print_char, print_cs, print_error_prefix, print_esc,
+    print_group, print_int, print_ln, print_mode, print_nl, print_raw_char, print_scaled,
+    sprint_cs, token_show,
+};
 use crate::base::cmd::Cmd;
 use crate::base::codes::{FiOrElseCode, LeaderCode, ShowCode, TheCode};
 use crate::base::command::Command;
@@ -13,19 +21,14 @@ use crate::build::packaging::PackSpec;
 use crate::ffi::bridge::output_flush;
 use crate::memory::mem::{CONTRIB_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
 use crate::memory::node::{AnyNode, NodePtr, PageInsNode};
+use crate::print::Selector;
+use crate::print::errors::InteractionMode;
 use crate::print::errors::{Abort, finish_error};
+use crate::scanning::input::InputName;
 use crate::scanning::input::{TOKEN_LIST, TokenType};
-use crate::state::Saved;
-use crate::state::{EngineState, GroupCode, InputName, InteractionMode, Selector};
-
-use super::cmd_chr::{print_command, print_meaning};
-use super::show_box::show_box;
-use super::warnings::{leave_group_boundary, print_if_line};
-use super::{
-    begin_diagnostic, end_diagnostic, print, print_char, print_cs, print_error_prefix, print_esc,
-    print_group, print_int, print_ln, print_mode, print_nl, print_raw_char, print_scaled,
-    sprint_cs, token_show,
-};
+use crate::state::EngineState;
+use crate::tables::save::GroupCode;
+use crate::tables::save::Saved;
 
 pub(crate) fn show_cur_cmd_chr(st: &mut EngineState) {
     begin_diagnostic(st);
@@ -607,7 +610,7 @@ fn show_page_so_far(st: &mut EngineState) {
             print(st, " (held over for next output)");
         }
         show_box(st, PAGE_HEAD.link(&st.mem));
-        if st.shipout.page_contents != crate::state::PageContents::Empty {
+        if st.shipout.page_contents != crate::build::pagebuilder::PageContents::Empty {
             print_nl(st, "total height ");
             print_totals(st);
             print_nl(st, " goal height ");

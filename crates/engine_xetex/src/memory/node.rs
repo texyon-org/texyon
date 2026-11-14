@@ -5,18 +5,17 @@
 //! borrows the node as a `K` and a field access is one load or store.
 //! `mem.entries(p)` gives the text or array an [`ArrayNode`] keeps after its struct.
 
+use crate::base::consts::NULL_FLAG;
 use crate::base::params::GluePar;
 use crate::build::math::MathStyle;
-use std::marker::PhantomData;
-
-use crate::base::consts::NULL_FLAG;
 use crate::print::errors::{Abort, OrConfusion};
+use std::marker::PhantomData;
 mod kinds;
 
 use crate::base::units::{
     Dir, GlueOrder, InvalidNodeType, MemAddr, MemIdx, MemPtr, NodeType, Orientation, Scaled,
 };
-use crate::state::MemState;
+use crate::memory::mem::MemState;
 pub use kinds::*;
 
 /// Marker for node kinds, implemented by the uninhabited kind enums below.

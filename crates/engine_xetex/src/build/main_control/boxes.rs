@@ -1,5 +1,7 @@
 //! Boxes: `\hbox`, `\vbox`, `\box`, `\lastbox`, `\unhbox`, `\unskip` and friends.
 
+use super::lists::{append_glue, normal_paragraph};
+use super::{BoxContext, append_list, begin_every};
 use crate::base::codes::BoxCode;
 use crate::base::command::Command;
 use crate::base::consts::SUB_BOX;
@@ -8,6 +10,7 @@ use crate::base::params::{DimenPar, IntPar, TokPar};
 use crate::base::units::MemIdx;
 use crate::base::units::{NodeType, Scaled};
 use crate::build::packaging::{AdjustTails, PackOrigin};
+use crate::memory::mem::MemState;
 use crate::memory::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD};
 use crate::memory::node::LeaderKind;
 use crate::memory::node::{
@@ -17,12 +20,10 @@ use crate::print::errors::Abort;
 use crate::print::errors::OrConfusion;
 use crate::scanning::input::TokenType;
 use crate::scanning::scan::fetch_box;
-use crate::state::Saved;
-use crate::state::{EngineState, GroupCode, MemState};
+use crate::state::EngineState;
 use crate::tables::eqtb::BoxLoc;
-
-use super::lists::{append_glue, normal_paragraph};
-use super::{BoxContext, append_list, begin_every};
+use crate::tables::save::GroupCode;
+use crate::tables::save::Saved;
 
 pub(super) fn unpackage(st: &mut EngineState, c: BoxCode) -> Result<(), Abort> {
     if matches!(c, BoxCode::LastBox | BoxCode::Vsplit) {

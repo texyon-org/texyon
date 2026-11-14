@@ -1,22 +1,25 @@
 //! Post-hyphenation: `hyphenate`, `reconstitute` and native-word hyphens.
 
+use super::odd;
+use super::prehyph::Word;
 use crate::base::params::IntPar;
 use crate::base::units::MemIdx;
 use crate::base::units::{FontId, MemPtr, Scaled, StrNumber};
+use crate::build::hyphenation::HyphState;
 use crate::build::hyphenation::TrieOp;
 use crate::build::main_control::NewChar;
+use crate::fonts::FontState;
 use crate::fonts::{CharTag, LigChar, LigKernAction, LigOp};
 use crate::memory::mem::HOLD_HEAD;
+use crate::memory::mem::MemState;
 use crate::memory::node::{
     AnyNode, CharNode, DiscNode, HyphPosNode, LigBoundary, LigItem, LigatureNode, NativeWordNode,
     NodePtr, View,
 };
 use crate::print::errors::Abort;
 use crate::print::errors::OrConfusion;
-use crate::state::{EngineState, EqtbState, FontState, HyphState, MemState};
-
-use super::odd;
-use super::prehyph::Word;
+use crate::state::EngineState;
+use crate::tables::eqtb::EqtbState;
 
 impl MemState {
     /// The Unicode scalar at UTF-16 offset `i` of `w`'s text.

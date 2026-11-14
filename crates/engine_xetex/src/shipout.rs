@@ -1,5 +1,10 @@
 //! Shipping boxes out to the XDV file.
 
+use crate::build::pagebuilder::PageContents;
+use crate::memory::glue_store::GlueSpecId;
+use crate::print::Selector;
+use crate::tables::cs::CsId;
+
 pub(crate) mod dvi;
 pub(crate) mod pic;
 pub(crate) mod synctex;
@@ -10,9 +15,10 @@ use crate::base::units::MemIdx;
 use crate::base::units::{Dir, FontId, GlueOrder, GlueSign, MemPtr, Scaled, StrNumber};
 use crate::build::packaging::LrState;
 use crate::ffi::bridge::{output_close, output_flush, output_open};
+use crate::fonts::FontState;
 use crate::fonts::ext::apply_tfm_font_mapping;
-use crate::memory::glue_store::GlueSpecId;
 use crate::memory::glyph_arena::FixedPoint;
+use crate::memory::mem::MemState;
 use crate::memory::node::LinkSlot;
 use crate::memory::node::Stored;
 use crate::memory::node::{
@@ -23,7 +29,8 @@ use crate::memory::node::{
 use crate::print::errors::Abort;
 use crate::print::errors::OrConfusion;
 use crate::shipout::dvi::{Axis, MoveReg};
-use crate::state::{EqtbState, FontState, MemState, Selector, ShipoutState, StringsState};
+use crate::tables::eqtb::EqtbState;
+use crate::tables::string_pool::StringsState;
 
 mod whatsits;
 
@@ -1618,6 +1625,75 @@ impl MemState {
             lr.problems += 10000;
         }
     }
+}
+
+#[derive(Default, Clone)]
+pub(crate) struct ShipoutState {
+    pub dvi: crate::shipout::dvi::DviWriter,
+    pub insert_src_special_every_par: bool,
+    pub insert_src_special_every_math: bool,
+    pub insert_src_special_every_vbox: bool,
+    pub insert_src_special_auto: bool,
+    pub selector: Selector,
+    pub doing_special: bool,
+    pub term_offset: i32,
+    pub file_offset: i32,
+    pub old_setting: Selector,
+    pub epochseconds: i32,
+    pub microseconds: i32,
+    pub dead_cycles: i32,
+    pub page_tail: crate::base::units::MemPtr,
+    pub last_badness: i32,
+    pub page_contents: PageContents,
+    pub page_so_far: [Scaled; 8],
+    pub last_glue: Option<crate::memory::glue_store::GlueSpecId>,
+    pub last_penalty: i32,
+    pub last_kern: Scaled,
+    pub last_node_type: i32,
+    pub insert_penalties: i32,
+    pub output_active: bool,
+    /// Set only while the finished `\output` level is popped.
+    pub output_can_end: bool,
+    pub pdf_last_x_pos: i32,
+    pub pdf_last_y_pos: i32,
+    pub write_file: [usize; 16],
+    pub write_open: [bool; 18],
+    /// Packed NUL-terminated names for bridge-local `\write` handles.
+    pub write_name: [Option<Vec<u8>>; 16],
+    /// Code units emitted before the current replay fence.
+    pub write_prefix: [Vec<i32>; 16],
+    pub rust_stdout: usize,
+    pub log_file: usize,
+    /// Transcript bytes written so far, captured with every checkpoint.
+    pub log_bytes: u64,
+    /// Where this operation's transcript continues the previous one, if it
+    /// resumed. Operation-scoped, so checkpoint restores keep it.
+    pub log_resumed_at: Option<u64>,
+    /// Diagnostics reported so far, captured with every checkpoint.
+    pub diagnostics_issued: usize,
+    pub best_page_break: crate::base::units::MemPtr,
+    pub best_size: Scaled,
+    pub least_page_cost: i32,
+    pub page_max_depth: Scaled,
+    pub total_pages: i32,
+    pub max_v: Scaled,
+    pub max_h: Scaled,
+    pub doing_leaders: bool,
+    pub cur_h: Scaled,
+    pub cur_v: Scaled,
+    pub cur_page_width: Scaled,
+    pub cur_page_height: Scaled,
+    pub cur_h_offset: Scaled,
+    pub cur_v_offset: Scaled,
+    pub write_loc: Option<CsId>,
+    pub output_file_name: StrNumber,
+    /// The vertical and horizontal DVI movements of the page so far, TeX's `down_ptr` and
+    /// `right_ptr` lists, the latest last.
+    pub down_moves: Vec<crate::shipout::Movement>,
+    pub right_moves: Vec<crate::shipout::Movement>,
+    pub dvi_h: Scaled,
+    pub dvi_v: Scaled,
+    pub dvi_f: FontId,
 }
 
 #[cfg(test)]

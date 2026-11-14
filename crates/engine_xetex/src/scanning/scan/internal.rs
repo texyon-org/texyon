@@ -1,5 +1,11 @@
 //! Internal quantities: `scan_something_internal` and the font queries behind it.
 
+use super::next::get_x_non_blank;
+use super::numbers::{
+    bad_int_error, get_primitive_token, glue_spec, map_glue, scan_char_num, scan_expr, scan_int,
+    scan_math_fam_int, scan_mu_glue, scan_normal_glue, scan_register_num, scan_usv_num,
+};
+use super::{fetch_box, math_char, math_class, math_fam, scan_keyword};
 use crate::base::codes::AuxCode;
 use crate::base::codes::FontIntCode;
 use crate::base::codes::PageDimenCode;
@@ -10,6 +16,7 @@ use crate::base::mode::{Mode, ModeName};
 use crate::base::params::TokPar;
 use crate::base::token::TokenList;
 use crate::base::units::{FontId, NodeType, Scaled, StrNumber};
+use crate::fonts::FontEngineHandle;
 use crate::fonts::Side;
 use crate::fonts::ext::{
     aat_font_get, aat_font_get_1, aat_font_get_2, aat_font_get_named, aat_font_get_named_1,
@@ -23,18 +30,11 @@ use crate::memory::node::{AnyNode, GlueKind, MathCode};
 use crate::print::errors::OrConfusion;
 use crate::print::errors::{Abort, mu_error};
 use crate::scanning::input::back_input;
-use crate::state::{EngineState, FontEngineHandle};
+use crate::state::EngineState;
 use crate::tables::cs::CsId;
 use crate::tables::eqtb::EqStore;
 use crate::tables::eqtb::{CodeTable, GlueLoc, ShapeLoc, XetexCode};
 use std::rc::Rc;
-
-use super::next::get_x_non_blank;
-use super::numbers::{
-    bad_int_error, get_primitive_token, glue_spec, map_glue, scan_char_num, scan_expr, scan_int,
-    scan_math_fam_int, scan_mu_glue, scan_normal_glue, scan_register_num, scan_usv_num,
-};
-use super::{fetch_box, math_char, math_class, math_fam, scan_keyword};
 
 const ETEX_VERSION: i32 = 2;
 const XETEX_VERSION: i32 = 0;
@@ -748,7 +748,7 @@ pub(super) fn scan_something_internal(
                 PageIntCode::InsertPenalties => st.shipout.insert_penalties,
             }),
             Command::SetPageDimen(code) => CurVal::Dimen(
-                if st.shipout.page_contents == crate::state::PageContents::Empty
+                if st.shipout.page_contents == crate::build::pagebuilder::PageContents::Empty
                     && !st.shipout.output_active
                 {
                     if code == PageDimenCode::Goal {

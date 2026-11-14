@@ -10,8 +10,10 @@ use crate::base::params::{GluePar, IntPar};
 use crate::base::token::{Build, TokCursor, Token, TokenKind, TokenList};
 use crate::base::units::{BufPos, FontId, MemPtr, Scaled, StrNumber};
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG, Side};
+use crate::memory::mem::MemState;
 use crate::memory::mem::ZERO_GLUE;
 use crate::memory::node::{AnyNode, GlueKind, KernSubtype};
+use crate::print::Selector;
 use crate::print::errors::Abort;
 use crate::print::errors::OrConfusion;
 use crate::print::{
@@ -19,12 +21,14 @@ use crate::print::{
     sprint_cs,
 };
 use crate::scanning::cond_stack::CondId;
+use crate::scanning::input::InputName;
+use crate::scanning::input::MacroParam;
 use crate::scanning::input::{TOKEN_LIST, TokenType, back_input, begin_token_list};
 use crate::scanning::scan::{
     copy_delimited_tokens, copy_group_tokens, fetch_box, get_next, get_token, get_x_non_blank,
     get_x_token, scan_int,
 };
-use crate::state::{EngineState, InputName, MacroParam, MemState, Selector};
+use crate::state::EngineState;
 use crate::tables::cs::{CsId, CsKind, Frozen};
 use std::cmp::Ordering;
 
@@ -481,7 +485,7 @@ fn print_margin_kern(
     mut p: MemPtr,
     side: Side,
     par_skip: GluePar,
-    next: impl Fn(&crate::state::MemState, MemPtr) -> MemPtr,
+    next: impl Fn(&crate::memory::mem::MemState, MemPtr) -> MemPtr,
 ) {
     let width = loop {
         let Some(here) = p.filter(|&x| !st.mem.is_char_node(x)) else {

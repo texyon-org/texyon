@@ -9,14 +9,18 @@ use crate::base::scaled_math::fract;
 use crate::base::units::MemIdx;
 use crate::base::units::{FontId, GlueOrder, MemPtr, Scaled};
 use crate::build::packaging::PackOrigin;
+use crate::fonts::FontState;
 use crate::memory::glue_store::GlueSpecId;
+use crate::memory::mem::MemState;
 use crate::memory::mem::TEMP_HEAD;
 use crate::memory::node::{
     AnyNode, BoxNode, CharNode, DiscNode, GlueNode, KernSubtype, NodePtr, WhatsitVariant,
 };
 use crate::print::errors::Abort;
+use crate::print::errors::ErrorState;
 use crate::print::errors::OrConfusion;
-use crate::state::{EngineState, EqtbState, ErrorState, FontState, MemState};
+use crate::state::EngineState;
+use crate::tables::eqtb::EqtbState;
 
 mod hyphenate;
 mod lists;

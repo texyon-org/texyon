@@ -1,15 +1,16 @@
 /* Copyright (c) 2008-2017 jerome DOT laurens AT u-bourgogne DOT fr, MIT License. */
 
+use crate::base::consts::INVALID_HANDLE;
 use crate::base::params::IntPar;
 use crate::base::units::MemAddr;
-use std::fmt::Write as _;
-
-use crate::base::consts::INVALID_HANDLE;
 use crate::ffi::bridge::{issue_error, issue_warning, output_close, output_open, output_write};
 use crate::memory::node::{AnyNode, BoxNode, KernNode, MathNode, NodePtr};
 use crate::preview::sync_index::RecordKind;
 use crate::shipout::ONE_INCH;
-use crate::state::{EngineState, EqtbState, ShipoutState, SynctexCtxt};
+use crate::shipout::ShipoutState;
+use crate::state::EngineState;
+use crate::tables::eqtb::EqtbState;
+use std::fmt::Write as _;
 
 const SYNCTEX_VERSION: i32 = 1;
 /// The pseudo file of a resident compile, which only feeds the preview index.
@@ -149,7 +150,7 @@ impl SynctexCtxt {
         }
     }
 
-    fn record_box(&mut self, mem: &crate::state::MemState, kind: char, b: NodePtr<BoxNode>) {
+    fn record_box(&mut self, mem: &crate::memory::mem::MemState, kind: char, b: NodePtr<BoxNode>) {
         self.record_node(
             kind,
             mem[b].sync.tag,
@@ -158,7 +159,7 @@ impl SynctexCtxt {
         );
     }
 
-    fn record_kern(&mut self, mem: &crate::state::MemState, kern: NodePtr<KernNode>) {
+    fn record_kern(&mut self, mem: &crate::memory::mem::MemState, kern: NodePtr<KernNode>) {
         self.record_node(
             'k',
             mem[kern].sync.tag,
@@ -549,5 +550,63 @@ pub fn synctex_current(st: &mut EngineState) {
         synctex.total_length += len;
     } else {
         synctex.abort();
+    }
+}
+
+#[derive(Default, Clone)]
+pub(crate) struct SynctexFlags {
+    pub content_ready: bool,
+    pub off: bool,
+    pub not_void: bool,
+    pub warn: bool,
+    pub output_p: bool,
+}
+
+/// The SyncTeX context.
+#[derive(Clone)]
+pub(crate) struct SynctexCtxt {
+    pub file: usize,
+    pub root_name: Option<Vec<u8>>,
+    pub count: i32,
+    /// The node of the current context, `None` before the first.
+    pub node: crate::base::units::MemPtr,
+    /// A kern whose record waits for the context to change. When set it equals
+    /// `node`, so flush sites record it before reassigning `node`.
+    pub deferred_kern: Option<crate::memory::node::NodePtr<crate::memory::node::KernNode>>,
+    pub tag: i32,
+    pub line: i32,
+    pub curh: i32,
+    pub curv: i32,
+    pub magnification: i32,
+    pub unit: i32,
+    pub total_length: i32,
+    pub lastv: i32,
+    pub form_depth: i32,
+    pub synctex_tag_counter: u32,
+    pub flags: SynctexFlags,
+    pub preview_index: Option<crate::preview::sync_index::PreviewSyncIndex>,
+}
+
+impl Default for SynctexCtxt {
+    fn default() -> Self {
+        Self {
+            file: 0, // INVALID_HANDLE
+            root_name: None,
+            count: 0,
+            node: None,
+            deferred_kern: None,
+            tag: 0,
+            line: 0,
+            curh: 0,
+            curv: 0,
+            magnification: 0,
+            unit: 0,
+            total_length: 0,
+            lastv: -1,
+            form_depth: 0,
+            synctex_tag_counter: 0,
+            flags: SynctexFlags::default(),
+            preview_index: None,
+        }
     }
 }

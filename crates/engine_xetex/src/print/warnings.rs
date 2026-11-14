@@ -1,21 +1,21 @@
 //! Diagnostic warnings: e-TeX group/if/file nesting, fonts, UTF-8 and missing characters.
 
-use crate::base::codes::FiOrElseCode;
-use crate::base::command::Command;
-use crate::base::params::IntPar;
-use crate::base::units::FontId;
-use crate::ffi::bridge::issue_warning;
-use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
-use crate::print::errors::Abort;
-use crate::scanning::input::TOKEN_LIST;
-use crate::state::{EngineState, Selector};
-
 use super::cmd_chr::print_command;
 use super::show::show_context;
 use super::{
     TexPrint, begin_diagnostic, end_diagnostic, note_warning_issued, print, print_code, print_esc,
     print_group, print_hex, print_int, print_ln, print_nl, print_raw_bytes, print_ucs_code,
 };
+use crate::base::codes::FiOrElseCode;
+use crate::base::command::Command;
+use crate::base::params::IntPar;
+use crate::base::units::FontId;
+use crate::ffi::bridge::issue_warning;
+use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
+use crate::print::Selector;
+use crate::print::errors::Abort;
+use crate::scanning::input::TOKEN_LIST;
+use crate::state::EngineState;
 
 /// Walks `base_ptr` down to the file at input level `level`, reporting whether it is a real file.
 fn level_is_file(st: &mut EngineState, level: usize) -> bool {
@@ -213,7 +213,7 @@ pub(crate) fn bad_utf8_warning(st: &mut EngineState) {
     begin_diagnostic(st);
     crate::print::diagnostic::begin_warning(st);
     print_nl(st, "Invalid UTF-8 byte or sequence");
-    if st.input.cur_input.name == crate::state::InputName::Terminal {
+    if st.input.cur_input.name == crate::scanning::input::InputName::Terminal {
         print(st, " in terminal input");
     } else {
         print(st, " at line ");

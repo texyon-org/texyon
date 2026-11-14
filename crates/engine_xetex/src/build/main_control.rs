@@ -19,9 +19,10 @@ use crate::memory::node::{GlueKind, LeaderKind};
 use crate::print::errors::Abort;
 use crate::print::errors::OrConfusion;
 use crate::scanning::input::TokenType;
-use crate::state::{EngineState, GroupCode};
+use crate::state::EngineState;
 use crate::tables::cs::{CsId, CsKind};
 use crate::tables::eqtb::CaseTable;
+use crate::tables::save::GroupCode;
 
 mod align;
 pub(crate) use align::SavedAlign;
@@ -29,6 +30,7 @@ mod assign;
 mod boxes;
 mod lists;
 mod main_loop;
+pub(crate) use main_loop::InterCharState;
 
 use self::align::{align_error, do_endv, init_align, no_align_error, omit_error};
 use self::assign::prefixed_command;

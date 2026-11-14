@@ -3,15 +3,6 @@
 //! Indexing `mem` with a [`NodePtr`] borrows the node as its struct, and a
 //! mutable borrow first notes the node's words in the journal.
 
-use crate::base::units::MemIdx;
-use crate::base::units::RawPtr;
-use crate::build::math::MathStyle;
-use crate::fonts::Side;
-use crate::memory::glue_store::GlueSpecId;
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
-use bytemuck::{Pod, Zeroable};
-
 use super::{
     AdjustPlacement, BoxLr, FenceSubtype, GlueKind, KernSubtype, LeaderKind, LigBoundary,
     MathAccentKind, MathCode, Node, NodePtr, Stored, StoredDimen, View, WhatsitSubtype,
@@ -19,10 +10,18 @@ use super::{
 use crate::base::codes::LimitCode;
 use crate::base::consts::{EMPTY, NORMAL};
 use crate::base::token::TokenList;
+use crate::base::units::MemIdx;
+use crate::base::units::RawPtr;
 use crate::base::units::{
     Dir, FontId, GlueOrder, GlueSign, MemPtr, NodeType, Orientation, Scaled, StrNumber,
 };
-use crate::state::MemState;
+use crate::build::math::MathStyle;
+use crate::fonts::Side;
+use crate::memory::glue_store::GlueSpecId;
+use crate::memory::mem::MemState;
+use crate::print::errors::Abort;
+use crate::print::errors::OrConfusion;
+use bytemuck::{Pod, Zeroable};
 
 /// Where SyncTeX places a node: the input tag and line it was made at.
 #[repr(C)]

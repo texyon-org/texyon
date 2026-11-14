@@ -1,20 +1,33 @@
 //! Non-journaled state carried by a checkpoint rung.
 
-use std::mem::{size_of, take};
-use std::sync::Arc;
-
 use crate::base::stack::TexStack;
 use crate::base::units::{BufPos, FontId, MemPtr, PoolPos, SavePtr, Scaled, StrNumber};
+use crate::build::hyphenation::HyphState;
+use crate::build::main_control::InterCharState;
+use crate::ffi::teckit_icu::FontMappingHandle;
+use crate::ffi::texmfmp::TexmfState;
+use crate::fonts::FontEngineHandle;
+use crate::fonts::FontState;
 use crate::fonts::{LigChar, ProtrusionCodes};
+use crate::memory::mem::MemState;
 use crate::memory::mem_types::ListStateRecord;
 use crate::preview::sync_index::PreviewSyncIndex;
+use crate::print::errors::ErrorState;
+use crate::scanning::input::InputClusterState;
+use crate::scanning::input::InputState;
+use crate::scanning::scan::ScannerState;
+use crate::shipout::ShipoutState;
 use crate::shipout::dvi::DviWriter;
-use crate::state::{
-    ConfigState, EngineState, EqtbState, ErrorState, FontEngineHandle, FontMappingHandle,
-    FontState, GroupCode, HyphState, InputClusterState, InputState, InterCharState, MemState,
-    SaveEntry, SaveStackState, ScannerState, ShipoutState, StringsState, SynctexCtxt, TexmfState,
-};
+use crate::shipout::synctex::SynctexCtxt;
+use crate::state::{ConfigState, EngineState};
 use crate::tables::cs::CsId;
+use crate::tables::eqtb::EqtbState;
+use crate::tables::save::GroupCode;
+use crate::tables::save::SaveEntry;
+use crate::tables::save::SaveStackState;
+use crate::tables::string_pool::StringsState;
+use std::mem::{size_of, take};
+use std::sync::Arc;
 
 fn vec_bytes<T>(values: &Vec<T>) -> usize {
     values.capacity() * size_of::<T>()
@@ -415,9 +428,9 @@ impl SaveBundle {
 struct InputBundle {
     buffer: Vec<i32>,
     input_stack: StackBundle<InputState>,
-    param_stack: StackBundle<crate::state::MacroParam>,
+    param_stack: StackBundle<crate::scanning::input::MacroParam>,
     nest: StackBundle<ListStateRecord>,
-    open_levels: Vec<crate::state::OpenLevel>,
+    open_levels: Vec<crate::scanning::input::OpenLevel>,
     cur_input: InputState,
     cur_list: ListStateRecord,
     open_parens: i32,
@@ -851,7 +864,7 @@ mod tests {
     use crate::base::units::Scaled;
     use crate::build::main_control::BoxContext;
     use crate::memory::glyph_arena::{FixedPoint, GlyphBlob};
-    use crate::state::Saved;
+    use crate::tables::save::Saved;
 
     const BOX_12: BoxContext = BoxContext::Shift(Scaled::from_raw(12));
 
@@ -859,7 +872,7 @@ mod tests {
         let mut st = EngineState::default();
         st.strings.str_pool = vec![0; 16];
         st.strings.str_start = vec![crate::base::units::PoolPos::ZERO; 8];
-        st.input.buffer = crate::state::InputBuffer(vec![0; 8]);
+        st.input.buffer = crate::scanning::input::InputBuffer(vec![0; 8]);
         st.input.input_stack = TexStack::with_size(3);
         st.input.param_stack = TexStack::with_size(3);
         st.input.nest = TexStack::with_size(3);
@@ -908,7 +921,9 @@ mod tests {
         st.input.buffer.0[0] = 130;
         st.hyph.hc[0] = 140;
         st.mem.glyph_blobs.get_mut(glyph).locations[0].x = Scaled::from_raw(150);
-        st.input.input_file.push(crate::state::InputSlot::Terminal);
+        st.input
+            .input_file
+            .push(crate::scanning::input::InputSlot::Terminal);
 
         bundle.restore(&mut st);
         assert_eq!(st.scanner.logical_clock, 7);
@@ -932,7 +947,7 @@ mod tests {
         );
         assert!(matches!(
             st.input.input_file.last(),
-            Some(crate::state::InputSlot::Terminal)
+            Some(crate::scanning::input::InputSlot::Terminal)
         ));
     }
 
@@ -957,11 +972,11 @@ mod tests {
     #[test]
     fn font_restore_clears_use_flags_beyond_the_checkpoint() {
         let mut fonts = FontState {
-            font_layout_engine: crate::state::PerFont::filled(4, None),
-            font_mapping: crate::state::PerFont::filled(4, None),
-            metrics: crate::state::PerFont::filled(4, crate::fonts::tfm::FontMetrics::default()),
-            params: crate::state::PerFont::filled(4, crate::fonts::tfm::FontParams::default()),
-            font_used: crate::state::PerFont::filled(4, false),
+            font_layout_engine: crate::fonts::PerFont::filled(4, None),
+            font_mapping: crate::fonts::PerFont::filled(4, None),
+            metrics: crate::fonts::PerFont::filled(4, crate::fonts::tfm::FontMetrics::default()),
+            params: crate::fonts::PerFont::filled(4, crate::fonts::tfm::FontParams::default()),
+            font_used: crate::fonts::PerFont::filled(4, false),
             font_ptr: FontId::new(1),
             ..Default::default()
         };
@@ -982,11 +997,11 @@ mod tests {
         use texyon_xetex_layout::GlyphBBox;
 
         let mut fonts = FontState {
-            font_layout_engine: crate::state::PerFont::filled(4, None),
-            font_mapping: crate::state::PerFont::filled(4, None),
-            metrics: crate::state::PerFont::filled(4, crate::fonts::tfm::FontMetrics::default()),
-            params: crate::state::PerFont::filled(4, crate::fonts::tfm::FontParams::default()),
-            font_used: crate::state::PerFont::filled(4, false),
+            font_layout_engine: crate::fonts::PerFont::filled(4, None),
+            font_mapping: crate::fonts::PerFont::filled(4, None),
+            metrics: crate::fonts::PerFont::filled(4, crate::fonts::tfm::FontMetrics::default()),
+            params: crate::fonts::PerFont::filled(4, crate::fonts::tfm::FontParams::default()),
+            font_used: crate::fonts::PerFont::filled(4, false),
             font_ptr: FontId::new(1),
             ..Default::default()
         };

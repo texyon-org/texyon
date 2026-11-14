@@ -3,8 +3,9 @@
 use crate::base::consts::{BIGGEST_CHAR, PRIM_SIZE, TOO_BIG_CHAR};
 use crate::base::units::{PrimNum, StrNumber};
 use crate::print::errors::Abort;
-use crate::state::{EqtbState, StringsState};
 use crate::tables::cs::{CsId, CsKind, NameSlot};
+use crate::tables::eqtb::EqtbState;
+use crate::tables::string_pool::StringsState;
 
 /// A multi-letter control sequence's slot in the hash table.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]

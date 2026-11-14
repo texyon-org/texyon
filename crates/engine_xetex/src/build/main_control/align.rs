@@ -1,14 +1,19 @@
 //! Alignment: `\halign`, `\valign`, `\noalign`, `\omit` and `\span`.
 
+use super::assign::do_assignments;
+use super::lists::{end_graf, normal_paragraph, off_save};
+use super::{CR_CODE, SPAN_CODE, append_list, begin_every};
 use crate::base::cmd::Cmd;
 use crate::base::codes::{ScannerStatus, ValueLevel};
 use crate::base::command::Command;
 use crate::base::command::TabMarkCode;
 use crate::base::consts::{IGNORE_DEPTH, MAX_DIMEN};
+use crate::base::mode::{Mode, ModeName};
 use crate::base::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::base::token::{Token, TokenList};
 use crate::base::units::{GlueOrder, GlueSign, MemPtr, Orientation, Scaled};
 use crate::build::packaging::{AdjustTails, PackOrigin, PackSpec};
+use crate::memory::mem::MemState;
 use crate::memory::mem::{ALIGN_HEAD, END_SPAN, HOLD_HEAD, ZERO_GLUE};
 use crate::memory::node::Stored;
 use crate::memory::node::{
@@ -18,13 +23,9 @@ use crate::memory::node::{
 use crate::print::errors::Abort;
 use crate::print::errors::OrConfusion;
 use crate::scanning::input::{TOKEN_LIST, TokenType};
-use crate::state::{EngineState, GroupCode, MemState};
+use crate::state::EngineState;
 use crate::tables::cs::Frozen;
-
-use super::assign::do_assignments;
-use super::lists::{end_graf, normal_paragraph, off_save};
-use super::{CR_CODE, SPAN_CODE, append_list, begin_every};
-use crate::base::mode::{Mode, ModeName};
+use crate::tables::save::GroupCode;
 
 pub(super) fn align_error(st: &mut EngineState) -> Result<(), Abort> {
     if st.scanner.align_state.abs() > 2 {
@@ -965,7 +966,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 pub(super) fn do_endv(st: &mut EngineState) -> Result<(), Abort> {
-    fn is_v_template_end(r: &crate::state::InputState) -> bool {
+    fn is_v_template_end(r: &crate::scanning::input::InputState) -> bool {
         r.state == TOKEN_LIST && r.token_loc().is_end() && r.token_type() == TokenType::VTemplate
     }
 

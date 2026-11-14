@@ -9,14 +9,17 @@ use crate::base::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::base::token::TokenList;
 use crate::base::units::{GlueOrder, MemIdx, MemPtr, Scaled};
 use crate::build::packaging::{MarksAction, PackSpec};
+use crate::memory::mem::MemState;
 use crate::memory::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
 use crate::memory::node::{AnyNode, InsNode, LinkSlot, NodePtr, PageInsNode, View, WhatsitVariant};
 use crate::print::errors::Abort;
 use crate::print::errors::OrConfusion;
 use crate::scanning::input::TokenType;
 use crate::scanning::scan::fetch_box;
-use crate::state::{EngineState, GroupCode, MemState, PageContents, ShipoutState};
+use crate::shipout::ShipoutState;
+use crate::state::EngineState;
 use crate::tables::eqtb::Register;
+use crate::tables::save::GroupCode;
 
 // Indices into `page_so_far`, whose entries 2 to 5 hold the stretch of each order.
 const PAGE_GOAL: usize = 0;
@@ -758,4 +761,14 @@ fn contribute(st: &mut EngineState, p: MemIdx) -> Result<(), Abort> {
     CONTRIB_HEAD.set_link(&mut st.mem, next);
     p.set_link(&mut st.mem, None);
     Ok(())
+}
+
+/// What the current page holds so far (`page_contents`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+pub(crate) enum PageContents {
+    #[default]
+    Empty,
+    InsertsOnly,
+    BoxThere,
 }

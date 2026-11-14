@@ -20,8 +20,9 @@ use crate::memory::node::{DelimiterWord, MathWord};
 use crate::print::diagnostic::{
     DiagnosticKind, begin_capture, begin_warning, current_file_line, end_capture,
 };
-use crate::state::{EngineState, GroupCode, Selector};
+use crate::state::EngineState;
 use crate::tables::cs::{CsId, CsKind};
+use crate::tables::save::GroupCode;
 
 mod cmd_chr;
 mod show;
@@ -970,5 +971,69 @@ pub(crate) fn print_font_name_and_size(st: &mut EngineState, f: FontId) {
 pub(crate) fn print_raw_bytes(st: &mut EngineState, bytes: &[u8]) {
     for &b in bytes {
         print_raw_char(st, i32::from(b), true);
+    }
+}
+
+/// Where printing goes (`selector`), ordered like TeX's numeric codes.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
+pub(crate) enum Selector {
+    /// `\write` stream `0..=15`.
+    File(u8),
+    NoPrint,
+    #[default]
+    TermOnly,
+    LogOnly,
+    TermAndLog,
+    Pseudo,
+    NewString,
+}
+
+impl Selector {
+    pub(crate) const fn raw(self) -> u8 {
+        match self {
+            Selector::File(n) => n,
+            Selector::NoPrint => 16,
+            Selector::TermOnly => 17,
+            Selector::LogOnly => 18,
+            Selector::TermAndLog => 19,
+            Selector::Pseudo => 20,
+            Selector::NewString => 21,
+        }
+    }
+
+    /// TeX's `selector - 1`: `TermAndLog` to `LogOnly`, `TermOnly` to `NoPrint`.
+    pub(crate) const fn without_terminal(self) -> Selector {
+        match self {
+            Selector::TermAndLog => Selector::LogOnly,
+            Selector::TermOnly => Selector::NoPrint,
+            other => other,
+        }
+    }
+
+    /// TeX's `selector + 1`, undoing [`Selector::without_terminal`].
+    pub(crate) const fn with_terminal(self) -> Selector {
+        match self {
+            Selector::LogOnly => Selector::TermAndLog,
+            Selector::NoPrint => Selector::TermOnly,
+            other => other,
+        }
+    }
+
+    /// TeX's `selector + 2`: `NoPrint` to `LogOnly`, `TermOnly` to `TermAndLog`.
+    pub(crate) const fn with_log(self) -> Selector {
+        match self {
+            Selector::NoPrint => Selector::LogOnly,
+            Selector::TermOnly => Selector::TermAndLog,
+            other => other,
+        }
+    }
+
+    /// TeX's `selector - 2`, undoing [`Selector::with_log`].
+    pub(crate) const fn without_log(self) -> Selector {
+        match self {
+            Selector::LogOnly => Selector::NoPrint,
+            Selector::TermAndLog => Selector::TermOnly,
+            other => other,
+        }
     }
 }

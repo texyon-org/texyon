@@ -3,12 +3,14 @@ use crate::base::consts::{HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, MAIN_MEMORY
 use crate::base::params::{IntPar, TokPar};
 use crate::base::units::{FontId, StrNumber};
 use crate::ffi::bridge::{output_flush, set_error_message};
+use crate::print::Selector;
 use crate::print::diagnostic::{DiagnosticKind, begin_capture, emit, emit_fatal, take_capture};
 use crate::print::{
     InMode, TexPrint, begin_diagnostic, end_diagnostic, print, print_char, print_err,
     print_error_prefix, print_int, print_ln, print_nl, show_box, show_context, token_show,
 };
-use crate::state::{EngineState, EqtbState, ErrorState, InteractionMode, Selector};
+use crate::state::EngineState;
+use crate::tables::eqtb::EqtbState;
 
 impl ErrorState {
     /// Sets the help text shown after the next error, in display order.
@@ -631,4 +633,77 @@ pub(crate) fn runaway(st: &mut EngineState) {
     let built = st.mem.tokens.innermost_built();
     let l = st.errors.error_line - 10;
     crate::print::show_tokens(st, &built, l);
+}
+
+/// TeX's `interaction` level, ordered like its numeric codes.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[repr(u8)]
+pub(crate) enum InteractionMode {
+    Batch = 0,
+    Nonstop = 1,
+    Scroll = 2,
+    ErrorStop = 3,
+}
+
+impl InteractionMode {
+    /// `None` outside `0..=3`, which is the `\interactionmode` range check.
+    pub(crate) fn from_raw(v: i32) -> Option<InteractionMode> {
+        match v {
+            0 => Some(InteractionMode::Batch),
+            1 => Some(InteractionMode::Nonstop),
+            2 => Some(InteractionMode::Scroll),
+            3 => Some(InteractionMode::ErrorStop),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct ErrorState {
+    pub help_lines: [&'static str; 6],
+    pub help_len: u8,
+    pub interaction: InteractionMode,
+    pub history: i32,
+    pub error_count: i8,
+    pub use_err_help: bool,
+    pub long_help_seen: bool,
+    pub log_opened: bool,
+    pub tally: i32,
+    pub error_line: i32,
+    pub half_error_line: i32,
+    pub trick_buf: [i32; 256],
+    pub trick_count: i32,
+    pub first_count: i32,
+    pub deletions_allowed: bool,
+    /// Set once `--halt-on-error` has started to stop the run.
+    pub halting_on_error: bool,
+    pub font_in_short_display: FontId,
+    pub depth_threshold: i32,
+    pub breadth_max: i32,
+}
+
+impl Default for ErrorState {
+    fn default() -> Self {
+        Self {
+            help_lines: [""; 6],
+            help_len: 0,
+            interaction: InteractionMode::Batch,
+            history: 0,
+            error_count: 0,
+            use_err_help: false,
+            long_help_seen: false,
+            log_opened: false,
+            tally: 0,
+            error_line: 0,
+            half_error_line: 0,
+            trick_buf: [0; 256],
+            trick_count: 0,
+            first_count: 0,
+            deletions_allowed: false,
+            halting_on_error: false,
+            font_in_short_display: crate::base::consts::NULL_FONT,
+            depth_threshold: 0,
+            breadth_max: 0,
+        }
+    }
 }

@@ -1,9 +1,8 @@
 //! The word-level records of the engine arenas.
 
-use std::mem::size_of;
-
 use crate::base::mode::Mode;
 use crate::print::errors::Abort;
+use std::mem::size_of;
 
 /// Word types whose all-zero bit pattern is a valid value.
 ///
@@ -140,7 +139,7 @@ impl ListStateRecord {
     #[inline]
     pub fn tail_append(
         &mut self,
-        mem: &mut crate::state::MemState,
+        mem: &mut crate::memory::mem::MemState,
         p: impl crate::base::units::MemAddr,
     ) {
         let p = p.addr();

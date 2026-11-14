@@ -1,6 +1,9 @@
 //! Copying and destroying node lists: `copy_node_list`, `flush_node_list`, `just_copy`.
 
+use super::LrState;
 use crate::base::consts::{MIN_HALFWORD, SUB_BOX};
+use crate::base::units::{MemIdx, MemPtr, Scaled};
+use crate::memory::mem::MemState;
 use crate::memory::mem::TEMP_HEAD;
 use crate::memory::node::CharNode;
 use crate::memory::node::{
@@ -9,10 +12,6 @@ use crate::memory::node::{
 };
 use crate::print::errors::Abort;
 use crate::print::errors::OrConfusion;
-use crate::state::MemState;
-
-use super::LrState;
-use crate::base::units::{MemIdx, MemPtr, Scaled};
 
 /// `r` typed like `src`, whose header word `r` has just received.
 #[inline]

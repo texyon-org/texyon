@@ -1,5 +1,8 @@
 //! Typesetting math formulas: `mlist_to_hlist` and the `make_*` noad handlers.
 
+use super::delimiters::{build_opentype_assembly, rebox, var_delimiter};
+use super::scripts::make_scripts;
+use super::{DEFAULT_CODE, MathStyle};
 use crate::base::codes::LimitCode;
 use crate::base::consts::MIN_HALFWORD;
 use crate::base::consts::{
@@ -11,11 +14,13 @@ use crate::base::scaled_math::{mult_and_add, x_over_n, xn_over_d};
 use crate::base::units::MemIdx;
 use crate::base::units::{FontId, GlueOrder, MemPtr, NodeType, Scaled};
 use crate::build::packaging::PackSpec;
+use crate::fonts::FontState;
 use crate::fonts::{
     AAT_FONT_FLAG, CharInfo, CharTag, LigChar, LigKernAction, LigKernIdx, LigOp, OTGR_FONT_FLAG,
     SPACE_CODE, X_HEIGHT_CODE,
 };
 use crate::memory::glue_store::GlueSpecId;
+use crate::memory::mem::MemState;
 use crate::memory::mem::{TEMP_HEAD, TEX_NULL, ZERO_GLUE};
 use crate::memory::mem_types::ListStateRecord;
 use crate::memory::node::MathWord;
@@ -26,11 +31,9 @@ use crate::memory::node::{
 };
 use crate::print::errors::Abort;
 use crate::print::errors::OrConfusion;
-use crate::state::{EngineState, EqtbState, FontState, MemState, ScannerState};
-
-use super::delimiters::{build_opentype_assembly, rebox, var_delimiter};
-use super::scripts::make_scripts;
-use super::{DEFAULT_CODE, MathStyle};
+use crate::scanning::scan::ScannerState;
+use crate::state::EngineState;
+use crate::tables::eqtb::EqtbState;
 
 const DISPLAYOPERATORMINHEIGHT: i32 = 3;
 const ACCENTBASEHEIGHT: i32 = 6;

@@ -1,33 +1,34 @@
 //! Building token lists: `str_toks`, `the_toks`, `scan_toks`, `read_toks` and `\scantokens`.
 
+use super::internal::{CurVal, scan_something_internal};
+use super::next::{get_next, get_token, get_x_token, x_token};
+use super::scan_left_brace;
 use crate::base::cmd::Cmd;
 use crate::base::codes::{ScannerStatus, TheCode, ValueLevel};
+use crate::base::command::Command;
 use crate::base::command::RelaxCode;
 use crate::base::consts::{CLOSED, JUST_OPEN, NORMAL};
 use crate::base::params::IntPar;
 use crate::base::token::{Build, TokCursor, Token, TokenList};
 use crate::base::units::{BufPos, StrNumber};
 use crate::ffi::bridge::output_flush;
+use crate::memory::mem::MemState;
 use crate::memory::node::PseudoWord;
 use crate::memory::node::{NodePtr, PseudoFileNode, PseudoLineNode};
+use crate::print::Selector;
 use crate::print::errors::Abort;
 use crate::print::errors::OrConfusion;
 use crate::print::{print, print_int};
 use crate::scanning::expand::expand;
 use crate::scanning::input::NEW_LINE;
-use crate::state::{EngineState, MemState, Selector};
+use crate::state::EngineState;
 use crate::tables::cs::CsId;
-
-use super::internal::{CurVal, scan_something_internal};
-use super::next::{get_next, get_token, get_x_token, x_token};
-use super::scan_left_brace;
-use crate::base::command::Command;
 
 impl MemState {
     /// Appends `str_pool[b..pool_ptr]` to `out` as tokens and drops it from the pool.
     pub(crate) fn str_toks_cat(
         &mut self,
-        strings: &mut crate::state::StringsState,
+        strings: &mut crate::tables::string_pool::StringsState,
         b: crate::base::units::PoolPos,
         cat: Option<Cmd>,
         out: &Build,
@@ -116,13 +117,13 @@ pub(crate) fn read_toks(
     loop {
         crate::scanning::input::begin_file_reading(st)?;
         st.input.cur_input.name = match u8::try_from(m) {
-            Ok(stream) if stream < 16 => crate::state::InputName::Read(stream),
-            _ => crate::state::InputName::ReadTerminal,
+            Ok(stream) if stream < 16 => crate::scanning::input::InputName::Read(stream),
+            _ => crate::scanning::input::InputName::ReadTerminal,
         };
 
         if st.input.read_open[m] == CLOSED {
             // A terminal read in a mode that would prompt meets the end of the terminal's input.
-            let fatal = if st.errors.interaction > crate::state::InteractionMode::Nonstop {
+            let fatal = if st.errors.interaction > crate::print::errors::InteractionMode::Nonstop {
                 if n >= 0 {
                     crate::print::print_ln(st);
                     crate::print::sprint_cs(st, Some(r));
@@ -498,12 +499,12 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
         } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
             crate::print::print_char(st, b' ');
         }
-        st.input.cur_input.name = crate::state::InputName::Pseudo { traced: true };
+        st.input.cur_input.name = crate::scanning::input::InputName::Pseudo { traced: true };
         print(st, "( ");
         st.input.open_parens += 1;
         output_flush(st.shipout.rust_stdout);
     } else {
-        st.input.cur_input.name = crate::state::InputName::Pseudo { traced: false };
+        st.input.cur_input.name = crate::scanning::input::InputName::Pseudo { traced: false };
         st.input.cur_input.synctex_tag = 0;
         st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;
     }

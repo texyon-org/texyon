@@ -18,7 +18,7 @@ use crate::memory::node::{
 };
 use crate::print::errors::Abort;
 use crate::print::errors::OrConfusion;
-use crate::state::{EqtbState, MemState};
+use crate::tables::eqtb::EqtbState;
 
 pub(crate) use crate::memory::glue_store::{FIL_GLUE, FIL_NEG_GLUE, FILL_GLUE, SS_GLUE, ZERO_GLUE};
 
@@ -494,9 +494,59 @@ pub(crate) fn push_nest(st: &mut crate::state::EngineState) -> Result<(), Abort>
 }
 
 impl MemState {
-    pub fn pop_nest(&mut self, input: &mut crate::state::InputClusterState) -> Result<(), Abort> {
+    pub fn pop_nest(
+        &mut self,
+        input: &mut crate::scanning::input::InputClusterState,
+    ) -> Result<(), Abort> {
         NodePtr::<HeadNode>::at(input.cur_list.head).free(self);
         input.cur_list = input.nest.pop().or_confusion("pop_nest")?;
         Ok(())
+    }
+}
+
+/// The `mem` arena and its bookkeeping. `data` never reallocates during a run,
+/// so the pointer-returning accessors stay valid.
+#[derive(Default)]
+pub(crate) struct MemState {
+    /// The node arena, in 32-bit words.
+    pub data: Vec<u32>,
+    /// Owned shaped-glyph payloads referenced by handles in native nodes.
+    pub glyph_blobs: crate::memory::glyph_arena::GlyphBlobArena,
+    /// The token lists, a store of their own.
+    pub tokens: crate::base::token::TokenStore,
+    /// The glue specifications.
+    pub glue: crate::memory::glue_store::GlueStore,
+    pub journal: crate::preview::journal::WordJournal<u32>,
+    /// The free list of each node size.
+    pub free: crate::memory::mem::FreeLists,
+    /// TeX's `line`, kept here because `get_node` stamps it into new nodes.
+    pub line: i32,
+    pub cur_synctex_tag: i32,
+    pub temp_ptr: crate::base::units::MemPtr,
+}
+
+impl MemState {
+    /// The SyncTeX tag and line a node made now is stamped with.
+    #[inline]
+    pub(crate) fn sync_stamp(&self) -> crate::memory::node::SyncStamp {
+        crate::memory::node::SyncStamp {
+            tag: self.cur_synctex_tag,
+            line: self.line,
+        }
+    }
+
+    /// The raw word at `index`.
+    #[cfg(test)]
+    pub(crate) fn word(&self, index: usize) -> i32 {
+        self.data[index].cast_signed()
+    }
+
+    /// Sets the raw word at `index`, journaled.
+    #[cfg(test)]
+    pub(crate) fn set_word(&mut self, index: usize, v: i32) {
+        if self.journal.armed() {
+            self.journal.note(index, self.data[index]);
+        }
+        self.data[index] = v.cast_unsigned();
     }
 }

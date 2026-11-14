@@ -19,25 +19,29 @@ use crate::base::units::{
     BufPos, FontId, GlueOrder, NodeType, PoolPos, PrimNum, SavePtr, Scaled, StrNumber,
 };
 use crate::build::hyphenation::{HYPH_PRIME, TRIE_OP_SIZE};
+use crate::build::packaging::CurMarks;
 use crate::build::packaging::MarksAction;
 use crate::ffi::bridge::output_open_stdout;
 use crate::files::format_io::load_fmt_file;
 use crate::files::io::init_io;
+use crate::fonts::FontState;
+use crate::fonts::PerFont;
 use crate::memory::mem::{
     CONTRIB_HEAD, END_SPAN, FIL_GLUE, FIL_NEG_GLUE, FILL_GLUE, FIXED_HEADS, PAGE_HEAD,
     PAGE_INS_HEAD, SS_GLUE, ZERO_GLUE,
 };
 use crate::memory::mem_types::zeroed_vec;
 use crate::memory::node::{NodePtr, PageInsNode};
+use crate::print::Selector;
+use crate::print::errors::InteractionMode;
 use crate::print::errors::{Abort, OrConfusion};
 use crate::scanning::input::{NEW_LINE, STACK_SIZE, TOKEN_LIST};
 use crate::scanning::scan::{set_class, set_family};
-use crate::state::{
-    ConfigState, CurMarks, EngineState, FontState, GroupCode, InteractionMode, PerFont, Selector,
-};
+use crate::state::{ConfigState, EngineState};
 use crate::tables::cs::{CsId, Frozen};
 use crate::tables::eqtb::{CatLoc, DelLoc, LcLoc, MathLoc, SfLoc, UcLoc};
 use crate::tables::hash::{HASH_PRIME, HASH_SIZE};
+use crate::tables::save::GroupCode;
 
 pub(crate) const POOL_FREE: i32 = 47_500;
 pub(crate) const STRINGS_FREE: i32 = 100;
@@ -231,7 +235,7 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.input.cur_list.mode_line = 0;
     st.input.cur_list.prev_graf = 0;
     st.scanner.shown_mode = crate::base::mode::ModeName::NoMode;
-    st.shipout.page_contents = crate::state::PageContents::Empty;
+    st.shipout.page_contents = crate::build::pagebuilder::PageContents::Empty;
     st.shipout.page_tail = Some(PAGE_HEAD);
     st.shipout.last_glue = None;
     st.shipout.last_penalty = 0;
@@ -590,14 +594,14 @@ pub(crate) fn initialize_engine(
 
     let in_open_words = st.input.max_in_open + 1;
     let hyph_words = HYPH_SIZE as usize + 1;
-    st.input.buffer = crate::state::InputBuffer(vec![0; st.input.buf_size.index() + 1]);
+    st.input.buffer = crate::scanning::input::InputBuffer(vec![0; st.input.buf_size.index() + 1]);
     st.input.nest = TexStack::with_size(NEST_SIZE);
     st.save_stack.alloc(st.save_stack.save_size + 1);
-    st.input.input_file = std::iter::repeat_with(|| crate::state::InputSlot::Empty)
+    st.input.input_file = std::iter::repeat_with(|| crate::scanning::input::InputSlot::Empty)
         .take(in_open_words)
         .collect();
     st.input.input_stack = TexStack::with_size(STACK_SIZE);
-    st.input.open_levels = vec![crate::state::OpenLevel::default(); in_open_words];
+    st.input.open_levels = vec![crate::scanning::input::OpenLevel::default(); in_open_words];
     st.input.param_stack = TexStack::with_size(PARAM_SIZE);
     st.hyph.hyph_word = vec![StrNumber::NONE; hyph_words];
     st.hyph.hyph_list = vec![None; hyph_words];
@@ -679,7 +683,7 @@ pub(crate) fn initialize_engine(
     st.errors.log_opened = false;
 
     st.input.input_stack.reset();
-    st.input.open_levels[0] = crate::state::OpenLevel::default();
+    st.input.open_levels[0] = crate::scanning::input::OpenLevel::default();
     st.input.in_open = 0;
     st.input.open_parens = 0;
     st.input.max_buf_stack = BufPos::ZERO;
@@ -695,7 +699,7 @@ pub(crate) fn initialize_engine(
     st.input.cur_input.start = BufPos::from_raw(1);
     st.input.cur_input.index = 0;
     st.mem.line = 0;
-    st.input.cur_input.name = crate::state::InputName::Terminal;
+    st.input.cur_input.name = crate::scanning::input::InputName::Terminal;
     st.input.force_eof = false;
     st.scanner.align_state = 1_000_000;
 
@@ -877,7 +881,7 @@ pub(crate) fn cleanup(st: &mut EngineState) {
         let _ = crate::files::io::u_close(std::mem::take(&mut st.input.input_file[i]));
     }
     for slot in st.input.read_file.iter_mut() {
-        *slot = crate::state::InputSlot::Empty;
+        *slot = crate::scanning::input::InputSlot::Empty;
     }
 
     st.save_stack.data = Vec::new();
@@ -889,7 +893,7 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     input.input_stack.release();
     input.param_stack.release();
     input.open_levels = Vec::new();
-    input.buffer = crate::state::InputBuffer::default();
+    input.buffer = crate::scanning::input::InputBuffer::default();
 
     st.scanner.native_text = Vec::new();
     st.scanner.native_text_size = 0;

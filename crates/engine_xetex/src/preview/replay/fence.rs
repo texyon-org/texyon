@@ -1,11 +1,11 @@
 //! Strong source constraints carried by resumable command fences.
 
-use std::mem::size_of;
-
 use super::adapter::{self, MemoryInput};
 use super::source::{SourceRevision, SourceSnapshot, first_difference};
 use crate::files::io::UFile;
-use crate::state::{EngineState, InputSlot};
+use crate::scanning::input::InputSlot;
+use crate::state::EngineState;
+use std::mem::size_of;
 
 #[derive(Clone)]
 enum InputSlotCheckpoint {
@@ -327,7 +327,7 @@ mod tests {
             let mut state = crate::state::EngineState::default();
             state.input.input_file.resize_with(2, Default::default);
             state.input.input_file[1] =
-                crate::state::InputSlot::Open(Box::new(crate::files::io::UFile {
+                crate::scanning::input::InputSlot::Open(Box::new(crate::files::io::UFile {
                     handle,
                     saved_char: -1,
                     skip_next_lf: 1,
@@ -342,7 +342,7 @@ mod tests {
         let mut state = crate::state::EngineState::default();
         state.input.input_file.resize_with(2, Default::default);
         assert!(fence.restore_inputs(&mut state));
-        let crate::state::InputSlot::Open(file) = &state.input.input_file[1] else {
+        let crate::scanning::input::InputSlot::Open(file) = &state.input.input_file[1] else {
             panic!("input slot was not restored")
         };
         assert_eq!(file.skip_next_lf, 1);
@@ -370,7 +370,7 @@ mod tests {
             state.input.input_file.resize_with(4, Default::default);
             for (slot, handle) in [main, chapter, leaf].into_iter().enumerate() {
                 state.input.input_file[slot + 1] =
-                    crate::state::InputSlot::Open(Box::new(crate::files::io::UFile {
+                    crate::scanning::input::InputSlot::Open(Box::new(crate::files::io::UFile {
                         handle,
                         saved_char: -1,
                         skip_next_lf: slot as i16,
@@ -394,7 +394,7 @@ mod tests {
             .iter()
             .skip(1)
             .map(|slot| match slot {
-                crate::state::InputSlot::Open(file) => file.handle,
+                crate::scanning::input::InputSlot::Open(file) => file.handle,
                 _ => panic!("nested input slot was not restored"),
             })
             .collect::<Vec<_>>();

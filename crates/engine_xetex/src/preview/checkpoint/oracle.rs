@@ -4,8 +4,12 @@ use crate::base::mode::Mode;
 use crate::base::units::RawPtr;
 use crate::memory::mem_types::ListStateRecord;
 use crate::memory::node::NodePtr;
-use crate::state::{EngineState, InputName, InputState, Restore, SaveEntry};
+use crate::scanning::input::InputName;
+use crate::scanning::input::InputState;
+use crate::state::EngineState;
 use crate::tables::cs::CsId;
+use crate::tables::save::Restore;
+use crate::tables::save::SaveEntry;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ComponentDigest {

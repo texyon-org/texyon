@@ -1,16 +1,16 @@
 //! Character protrusion: margin kerns and the protruding chars at line ends.
 
+use super::Breaker;
+use super::lists::PassiveId;
 use crate::base::units::MemIdx;
 use crate::base::units::{FontId, MemPtr, Scaled};
+use crate::fonts::FontState;
 use crate::fonts::{QUAD_CODE, Side};
+use crate::memory::mem::MemState;
 use crate::memory::mem::{TEMP_HEAD, ZERO_GLUE};
 use crate::memory::node::{AnyNode, BoxNode, DiscNode, KernSubtype, NodePtr, WhatsitVariant};
 use crate::print::errors::Abort;
 use crate::print::errors::OrConfusion;
-use crate::state::{FontState, MemState};
-
-use super::Breaker;
-use super::lists::PassiveId;
 
 /// The last index the hlist stack may push to, as in WEB.
 const MAX_HLIST_STACK: usize = 512;

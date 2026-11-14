@@ -1,16 +1,16 @@
 //! Shipping whatsits: `\special`, `\write`, the `\openout` streams and pictures.
 
+use super::{dvi_special_from_cur_string, synch_h, synch_v};
 use crate::base::consts::INVALID_HANDLE;
 use crate::base::params::IntPar;
 use crate::base::token::{Token, TokenList};
 use crate::ffi::bridge::{output_close, output_open, shell_escape};
 use crate::memory::node::{NodePtr, OpenNode, PicNode, WhatsitNode, WhatsitVariant, WriteNode};
+use crate::print::Selector;
 use crate::print::errors::Abort;
 use crate::scanning::input::TokenType;
-use crate::state::{EqtbState, Selector};
 use crate::tables::cs::Frozen;
-
-use super::{dvi_special_from_cur_string, synch_h, synch_v};
+use crate::tables::eqtb::EqtbState;
 
 /// Emits `special`, expanding its tokens first when it is a `late` one.
 fn special_out(

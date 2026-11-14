@@ -1,16 +1,16 @@
 //! Attaching subscripts and superscripts (`make_scripts`).
 
+use super::mlist::{clean_box, fetch};
+use super::{MathStyle, SCRIPT_SCRIPT_SIZE};
 use crate::base::consts::{EMPTY, MATH_CHAR, MAX_DIMEN, NULL_FONT, SCRIPT_SIZE, SUB_MLIST};
 use crate::base::params::DimenPar;
 use crate::base::units::{FontId, MemPtr, NodeType, Scaled};
 use crate::build::packaging::PackSpec;
 use crate::fonts::ot_math::ScriptKind;
+use crate::memory::mem::MemState;
 use crate::memory::node::{AnyNode, BoxNode, MathSlot, Noad, NoadVariant, NodePtr};
 use crate::print::errors::Abort;
-use crate::state::{EngineState, MemState};
-
-use super::mlist::{clean_box, fetch};
-use super::{MathStyle, SCRIPT_SCRIPT_SIZE};
+use crate::state::EngineState;
 
 const SUBSCRIPTTOPMAX: i32 = 9;
 const SUPERSCRIPTBOTTOMMIN: i32 = 13;

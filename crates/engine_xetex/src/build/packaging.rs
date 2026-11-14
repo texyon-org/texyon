@@ -6,6 +6,8 @@ use crate::base::params::{DimenPar, GluePar, IntPar};
 use crate::base::units::{
     Dir, GlueOrder, GlueSign, MemPtr, NodeType, OrderTotals, Orientation, Scaled,
 };
+use crate::fonts::FontState;
+use crate::memory::mem::MemState;
 use crate::memory::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD};
 use crate::memory::mem_types::ListStateRecord;
 use crate::memory::node::LinkSlot;
@@ -15,10 +17,13 @@ use crate::memory::node::{
 };
 use crate::print::errors::Abort;
 use crate::print::errors::OrConfusion;
-use crate::state::{EngineState, EqtbState, FontState, MemState, ShipoutState};
+use crate::shipout::ShipoutState;
+use crate::state::EngineState;
+use crate::tables::eqtb::EqtbState;
 
 mod copy;
 mod vert_break;
+pub(crate) use vert_break::{CurMarks, MarkClasses};
 
 use self::vert_break::push_slot;
 pub(crate) use self::vert_break::{MarksAction, vert_break, vsplit};

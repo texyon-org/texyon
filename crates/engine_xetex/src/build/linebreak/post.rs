@@ -1,17 +1,18 @@
 //! Breaking a paragraph into lines, continued: `post_line_break`.
 
+use super::Breaker;
+use super::lists::{ActiveEntry, PassiveId};
 use crate::base::params::{GluePar, IntPar};
 use crate::base::units::{MemPtr, Scaled};
 use crate::build::packaging::{AdjustTails, PackOrigin, PackSpec};
+use crate::memory::mem::MemState;
 use crate::memory::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::memory::node::{AnyNode, BoxNode, GlueKind, KernSubtype, MathNode, NodePtr};
 use crate::print::errors::Abort;
 use crate::print::errors::OrConfusion;
-use crate::state::{EngineState, EqtbState, MemState};
+use crate::state::EngineState;
+use crate::tables::eqtb::EqtbState;
 use crate::tables::eqtb::ShapeLoc;
-
-use super::Breaker;
-use super::lists::{ActiveEntry, PassiveId};
 
 /// Where `post_line_break` is in the paragraph.
 struct PostLines {

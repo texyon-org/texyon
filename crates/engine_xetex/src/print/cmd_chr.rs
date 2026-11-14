@@ -1,18 +1,18 @@
 //! Symbolic printing of commands: `print_command` and `print_meaning`.
 
-use crate::base::codes::{BoxCode, FiOrElseCode, LimitCode, SkipCode, ValueLevel};
-use crate::base::command::Command;
-use crate::base::params::TokPar;
-use crate::base::token::TokenList;
-use crate::base::units::NodeType;
-use crate::state::{EngineState, InteractionMode};
-use crate::tables::eqtb::{DimenSlot, GlueSlot, IntSlot, ToksSlot};
-
 use super::{
     print, print_char, print_code, print_esc, print_font_select, print_hex, print_int,
     print_length_param, print_ln, print_param, print_size, print_skip_param, print_style,
     token_show,
 };
+use crate::base::codes::{BoxCode, FiOrElseCode, LimitCode, SkipCode, ValueLevel};
+use crate::base::command::Command;
+use crate::base::params::TokPar;
+use crate::base::token::TokenList;
+use crate::base::units::NodeType;
+use crate::print::errors::InteractionMode;
+use crate::state::EngineState;
+use crate::tables::eqtb::{DimenSlot, GlueSlot, IntSlot, ToksSlot};
 
 impl crate::print::TexPrint for Command {
     fn print_to(&self, st: &mut EngineState) {
@@ -348,7 +348,7 @@ mod tests {
     use super::*;
     use crate::base::params::IntPar;
     use crate::base::units::PoolPos;
-    use crate::state::Selector;
+    use crate::print::Selector;
     use crate::tables::primitives::PRIMITIVES;
 
     fn printed(st: &mut EngineState, c: Command) -> String {

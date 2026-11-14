@@ -1,9 +1,9 @@
 //! Math mode: noad construction and `mlist_to_hlist`.
 
-use bytemuck::{Pod, Zeroable};
-
 use crate::base::units::{FontId, Scaled};
-use crate::state::{EqtbState, FontState};
+use crate::fonts::FontState;
+use crate::tables::eqtb::EqtbState;
+use bytemuck::{Pod, Zeroable};
 
 mod build;
 mod delimiters;

@@ -1,23 +1,24 @@
 //! Low-level input and output: encoded line reading, file names, and the
 //! log and input-file lifecycle.
 
+use crate::base::cmd::Cmd;
 use crate::base::consts::{BIGGEST_USV, CLOSED, EMPTY_STRING, INVALID_HANDLE, JUST_OPEN};
 use crate::base::params::IntPar;
 use crate::base::units::{BufPos, StrNumber};
 use crate::base::utf8::next_utf8_char;
-use crate::ffi::teckit_icu::FontMappingHandle;
-use crate::print::TexPrint;
-use crate::scanning::input::NEW_LINE;
-use crate::state::{EngineState, InputName, Selector};
-use texyon_bridge_core::EOF;
-
-use crate::base::cmd::Cmd;
 use crate::ffi::bridge::{
     FileFormat, input_getc, input_open, input_open_primary, input_ungetc, last_input_abspath,
     output_close, output_flush, output_open,
 };
 pub(crate) use crate::ffi::bridge::{input_close, input_seek};
+use crate::ffi::teckit_icu::FontMappingHandle;
+use crate::print::Selector;
+use crate::print::TexPrint;
 use crate::print::errors::Abort;
+use crate::scanning::input::InputName;
+use crate::scanning::input::NEW_LINE;
+use crate::state::EngineState;
+use texyon_bridge_core::EOF;
 
 pub(crate) const AUTO: i32 = 0;
 pub(crate) const UTF8: i32 = 1;
@@ -83,7 +84,7 @@ pub(crate) enum FileSlot {
 }
 
 impl FileSlot {
-    fn get(self, st: &mut EngineState) -> &mut crate::state::InputSlot {
+    fn get(self, st: &mut EngineState) -> &mut crate::scanning::input::InputSlot {
         match self {
             FileSlot::Input(idx) => &mut st.input.input_file[idx],
             FileSlot::Read(idx) => &mut st.input.read_file[idx],
@@ -100,9 +101,9 @@ pub(crate) fn with_slot_file<R>(
 ) -> Option<R> {
     let mut taken = std::mem::take(slot.get(st));
     let result = match &mut taken {
-        crate::state::InputSlot::Empty => None,
-        crate::state::InputSlot::Terminal => Some(f(st, &mut UFile::terminal())),
-        crate::state::InputSlot::Open(file) => Some(f(st, file)),
+        crate::scanning::input::InputSlot::Empty => None,
+        crate::scanning::input::InputSlot::Terminal => Some(f(st, &mut UFile::terminal())),
+        crate::scanning::input::InputSlot::Open(file) => Some(f(st, file)),
     };
     *slot.get(st) = taken;
     result
@@ -637,8 +638,8 @@ pub(crate) fn get_uni_c(
 /// Closes an input slot. Returns `true` on a serious internal close error, in
 /// which case the converter and the file are leaked like the old abort did.
 #[must_use]
-pub fn u_close(slot: crate::state::InputSlot) -> bool {
-    let crate::state::InputSlot::Open(f) = slot else {
+pub fn u_close(slot: crate::scanning::input::InputSlot) -> bool {
+    let crate::scanning::input::InputSlot::Open(f) = slot else {
         return false;
     };
 
@@ -693,7 +694,7 @@ pub(crate) fn open_or_close(st: &mut EngineState, open: bool) -> Result<(), Abor
     let mode = st.eqtb.int_par(IntPar::XetexDefaultInputMode);
     let encoding = st.eqtb.int_par(IntPar::XetexDefaultInputEncoding);
     if let Some((file, _)) = u_open_in(st, &path, FileFormat::Tex, mode, encoding)? {
-        st.input.read_file[n] = crate::state::InputSlot::Open(file);
+        st.input.read_file[n] = crate::scanning::input::InputSlot::Open(file);
         rescan_opened_name(st, &path)?;
         st.input.read_open[n] = JUST_OPEN;
     }
@@ -712,7 +713,7 @@ pub(crate) struct FileName {
 impl FileName {
     /// The name as one path: area, name, then extension. Like TeX Live's C
     /// string of the joined name, it ends at the first NUL.
-    pub(crate) fn path(self, strings: &crate::state::StringsState) -> Vec<u8> {
+    pub(crate) fn path(self, strings: &crate::tables::string_pool::StringsState) -> Vec<u8> {
         let mut path: Vec<u8> = [self.area, self.name, self.ext]
             .into_iter()
             .flat_map(|part| strings.texstring_utf8(part))
@@ -1012,7 +1013,7 @@ pub(crate) fn close_files_and_terminate(st: &mut EngineState) -> Result<(), Abor
 
 pub fn init_io(st: &mut EngineState) {
     let first = st.input.first;
-    st.input.input_file[0] = crate::state::InputSlot::Terminal;
+    st.input.input_file[0] = crate::scanning::input::InputSlot::Terminal;
     st.input.buffer[first] = 0;
     st.input.last = first;
     st.input.cur_input.loc = first;
@@ -1146,7 +1147,7 @@ pub(crate) fn start_input(
             &path,
         ));
     };
-    st.input.input_file[idx as usize] = crate::state::InputSlot::Open(file);
+    st.input.input_file[idx as usize] = crate::scanning::input::InputSlot::Open(file);
 
     let opened = rescan_opened_name(st, &path)?;
 
