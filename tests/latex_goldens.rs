@@ -49,13 +49,6 @@ fn bless_mode() -> bool {
     env::var("TEXYON_BLESS").map(|v| v == "1").unwrap_or(false)
 }
 
-/// Return the path to the `texyon` binary built by Cargo.
-fn texyon_bin() -> PathBuf {
-    util::cargo_dir()
-        .join("texyon")
-        .with_extension(env::consts::EXE_EXTENSION)
-}
-
 /// Compile a LaTeX document and return the SHA-256 hex of its XDV, or
 /// `None` if the bundle is not cached (test should be skipped).
 fn compile_and_hash(tex_path: &Path) -> Option<String> {
@@ -64,7 +57,7 @@ fn compile_and_hash(tex_path: &Path) -> Option<String> {
         .tempdir()
         .expect("creating tempdir");
 
-    let bin = texyon_bin();
+    let bin = util::texyon_bin();
     if !bin.exists() {
         // Binary not built yet — skip.
         return None;

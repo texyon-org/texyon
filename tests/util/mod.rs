@@ -14,7 +14,6 @@ use flate2::read::GzDecoder;
 use std::fmt::Debug;
 use std::{
     collections::HashSet,
-    env,
     fs::File,
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -35,21 +34,12 @@ pub fn set_test_root() {
     ::texyon::test_util::set_test_root_augmented(env!("CARGO_MANIFEST_DIR"));
 }
 
-// Duplicated from Cargo's own testing code:
-// https://github.com/rust-lang/cargo/blob/19fdb308/tests/cargotest/support/mod.rs#L305-L318
-pub fn cargo_dir() -> PathBuf {
-    env::var_os("CARGO_BIN_PATH")
-        .map(PathBuf::from)
-        .or_else(|| {
-            env::current_exe().ok().map(|mut path| {
-                path.pop();
-                if path.ends_with("deps") {
-                    path.pop();
-                }
-                path
-            })
-        })
-        .unwrap_or_else(|| panic!("CARGO_BIN_PATH wasn't set. Cannot continue running test"))
+/// The `texyon` binary Cargo built for this test run.
+pub fn texyon_bin() -> PathBuf {
+    match option_env!("CARGO_BIN_EXE_texyon") {
+        Some(path) => PathBuf::from(path),
+        None => panic!("the texyon binary needs the `cli` feature"),
+    }
 }
 
 /// Generate a plain.fmt file using local files only -- a variety of tests
