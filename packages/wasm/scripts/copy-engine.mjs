@@ -1,4 +1,3 @@
-// Puts the engine and its support pack next to the code that loads them by default.
 import { copyFileSync, existsSync } from "node:fs";
 
 const from = new URL("../../../target/wasm-assets/", import.meta.url);

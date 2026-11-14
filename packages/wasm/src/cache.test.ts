@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { beforeEach, mock, test } from "node:test";
 
-import { AssetCache, digest } from "./cache.ts";
+import { AssetCache } from "./cache.ts";
 import type { CacheLike, CacheStorageLike } from "./cache.ts";
 
 /** A Cache API standing in for the browser's, with the same aliasing rules. */
@@ -61,7 +61,7 @@ class FakeStorage implements CacheStorageLike {
   }
 }
 
-const GENERATION = "abc123";
+const BUNDLE = "https://bundles.test/texlive.ttb";
 
 beforeEach(() => {
   mock.restoreAll();
@@ -73,23 +73,23 @@ test("names that differ only by escaping stay separate", async () => {
   const storage = new FakeStorage();
   const cache = (await AssetCache.open(storage))!;
 
-  await cache.remember(GENERATION, "chapters/one.tex", new Uint8Array([1]));
-  await cache.remember(GENERATION, "chapters%2Fone.tex", new Uint8Array([2]));
+  await cache.remember(BUNDLE, "chapters/one.tex", new Uint8Array([1]));
+  await cache.remember(BUNDLE, "chapters%2Fone.tex", new Uint8Array([2]));
 
-  const restored = await cache.restore(GENERATION);
+  const restored = await cache.restore(BUNDLE);
   assert.deepEqual([...restored.get("chapters/one.tex")!], [1]);
   assert.deepEqual([...restored.get("chapters%2Fone.tex")!], [2]);
 });
 
-test("restoring a generation returns what it holds, and nothing else", async () => {
+test("restoring a bundle returns its files, and nothing else", async () => {
   const storage = new FakeStorage();
   const cache = (await AssetCache.open(storage))!;
 
-  await cache.remember("bundle-a", "cmr10.tfm", new Uint8Array([1]));
-  await cache.remember("bundle-a", "lmr10.otf", new Uint8Array([2]));
-  await cache.remember("bundle-b", "other.tfm", new Uint8Array([3]));
+  await cache.remember("https://a.test/x.ttb", "cmr10.tfm", new Uint8Array([1]));
+  await cache.remember("https://a.test/x.ttb", "lmr10.otf", new Uint8Array([2]));
+  await cache.remember("https://a.test/x.ttb2", "other.tfm", new Uint8Array([3]));
 
-  const restored = await cache.restore("bundle-a");
+  const restored = await cache.restore("https://a.test/x.ttb");
 
   assert.deepEqual([...restored.keys()].sort(), ["cmr10.tfm", "lmr10.otf"]);
   assert.deepEqual([...restored.get("cmr10.tfm")!], [1]);
@@ -174,12 +174,12 @@ test("storage that refuses to write still serves the document", async () => {
   // A private window, or an origin over quota. The asset is fetched; it simply
   // does not persist.
   const storage = new FakeStorage();
-  storage.caches.set("tectonic-assets-v2", new FakeCache(true));
+  storage.caches.set("texyon-assets-v1", new FakeCache(true));
   const cache = (await AssetCache.open(storage))!;
 
-  await cache.remember(GENERATION, "cmr10.tfm", new Uint8Array([5]));
+  await cache.remember(BUNDLE, "cmr10.tfm", new Uint8Array([5]));
 
-  assert.equal((await cache.restore(GENERATION)).size, 0);
+  assert.equal((await cache.restore(BUNDLE)).size, 0);
 });
 
 test("no storage at all is not an error", async () => {
@@ -197,23 +197,13 @@ test("no storage at all is not an error", async () => {
 
 test("caches from an older version of this code are cleaned up", async () => {
   const storage = new FakeStorage();
-  storage.caches.set("tectonic-assets-v1", new FakeCache());
+  storage.caches.set("texyon-assets-v0", new FakeCache());
   storage.caches.set("something-else", new FakeCache());
 
   await AssetCache.open(storage);
 
   assert.deepEqual((await storage.keys()).sort(), [
     "something-else",
-    "tectonic-assets-v2",
+    "texyon-assets-v1",
   ]);
-});
-
-test("a digest changes when the bytes do", async () => {
-  const one = await digest(new TextEncoder().encode('{"files":{"a":1}}'));
-  const same = await digest(new TextEncoder().encode('{"files":{"a":1}}'));
-  const other = await digest(new TextEncoder().encode('{"files":{"a":2}}'));
-
-  assert.equal(one, same);
-  assert.notEqual(one, other);
-  assert.match(one, /^[0-9a-f]{24}$/);
 });

@@ -1,4 +1,4 @@
-//! Tectonic's live-preview engine as a WebAssembly module.
+//! TeXyoN's live-preview engine as a WebAssembly module.
 //!
 //! Everything goes through [`texyon_request`]: a JSON request in, a JSON
 //! response out, with bulk payloads left in linear memory. The host supplies

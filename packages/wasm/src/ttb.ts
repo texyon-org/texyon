@@ -1,15 +1,6 @@
 /**
- * Reading Tectonic's own bundle format, TTBv1.
- *
- * A `.ttb` is a 66-byte header followed by concatenated gzip blobs, one of
- * which is the index. The index names every file with its byte range, and
- * carries the search rules that turn a bare TeX name like `article.cls` into
- * one of those paths. Everything here is pure parsing and resolution — the
- * worker does the fetching — which is also what makes it testable in Node.
- *
- * The resolution rules deliberately mirror `crates/bundles/src/ttb.rs`, quirks
- * included: the native engine is the semantics, and a file the CLI finds that
- * the browser does not (or the reverse) would be a miserable bug to chase.
+ * Reader for TTBv1 bundles: a 66-byte header, then gzip blobs, one of them the
+ * index. Resolution mirrors `crates/bundles/src/ttb.rs`.
  */
 
 /** Where the index blob lives, read out of the fixed-size header. */
@@ -26,17 +17,13 @@ export interface TtbLocation {
   realLength: number;
 }
 
-/** The header is always this long; fetch exactly this many bytes to parse it. */
+/** Length of the fixed header. */
 export const TTB_HEADER_BYTES = 66;
 
+/** Part of the TTBv1 file format. */
 const MAGIC = "tectonicbundle";
 
-/**
- * Parse the fixed header at the front of a `.ttb`.
- *
- * Throws rather than returning null: every failure here means the URL is not a
- * TTBv1 bundle at all, and the caller's error path wants the reason.
- */
+/** Parse the fixed header at the front of a `.ttb`. */
 export function parseTtbHeader(bytes: Uint8Array): TtbHeader {
   if (bytes.length < TTB_HEADER_BYTES) {
     throw new Error(`a ttb header is ${TTB_HEADER_BYTES} bytes; got ${bytes.length}`);
@@ -44,7 +31,7 @@ export function parseTtbHeader(bytes: Uint8Array): TtbHeader {
 
   for (let i = 0; i < MAGIC.length; i++) {
     if (bytes[i] !== MAGIC.charCodeAt(i)) {
-      throw new Error("not a tectonic bundle: the magic bytes are wrong");
+      throw new Error("not a ttb bundle: the magic bytes are wrong");
     }
   }
 
@@ -54,8 +41,6 @@ export function parseTtbHeader(bytes: Uint8Array): TtbHeader {
     throw new Error(`ttb version ${version} is not supported; only version 1 is`);
   }
 
-  // The offset is a u64. Number.MAX_SAFE_INTEGER is 8 petabytes as a byte
-  // count, so getBigUint64 followed by a checked narrowing is plenty.
   const offset = view.getBigUint64(18, true);
   if (offset > BigInt(Number.MAX_SAFE_INTEGER)) {
     throw new Error("the bundle index offset does not fit in a number");
@@ -73,23 +58,14 @@ interface Entry {
   location: TtbLocation;
 }
 
-/**
- * The parsed index: every file's location, and the search rules that decide
- * which of several same-named files a bare name means.
- */
+/** A parsed bundle index with its search rules. */
 export class TtbIndex {
   #byBasename = new Map<string, Entry[]>();
   #search: string[] = [];
   #resolved = new Map<string, TtbLocation | null>();
   #size = 0;
 
-  /**
-   * Parse the decompressed index text.
-   *
-   * Sections open with a `[NAME]` line. `[FILELIST]` lines are
-   * `<start> <gzip_len> <real_len> <hash> <path>` — the path last, because it
-   * may contain spaces. Unknown sections are ignored, as the spec requires.
-   */
+  /** Parse the decompressed index text. */
   static parse(text: string): TtbIndex {
     const index = new TtbIndex();
 
@@ -111,7 +87,6 @@ export class TtbIndex {
 
       switch (section) {
         case "DEFAULTSEARCH":
-          // Only the last line has any effect, says the spec.
           defaultSearch = line;
           break;
 
@@ -140,16 +115,11 @@ export class TtbIndex {
           break;
         }
 
-        default:
-          // An unknown section, skipped whole.
-          break;
       }
     }
 
     const search = searchOrders.get(defaultSearch);
     if (!search) {
-      // The native reader unwraps here; an index without its default search
-      // order is broken, not merely sparse.
       throw new Error(`the bundle index names no [SEARCH:${defaultSearch}] section`);
     }
     index.#search = search;
@@ -163,23 +133,20 @@ export class TtbIndex {
   }
 
   /**
-   * The location a name means, under the bundle's search rules.
-   *
-   * A bare name is matched by basename and disambiguated by the search order —
-   * first rule with any match wins, alphabetically first path among ties. A
-   * name with a slash is a relative path and must match exactly one entry's
-   * tail. An absolute name never matches; nothing in a bundle is absolute.
+   * The file a name means. A bare name goes through the search rules, the first
+   * rule with a match winning and the alphabetically first path among ties. A
+   * relative path must match the tail of exactly one entry.
    */
   resolve(name: string): TtbLocation | null {
     const cached = this.#resolved.get(name);
     if (cached !== undefined) return cached;
 
-    const found = this.#search_(name);
+    const found = this.#find(name);
     this.#resolved.set(name, found);
     return found;
   }
 
-  #search_(name: string): TtbLocation | null {
+  #find(name: string): TtbLocation | null {
     if (name.startsWith("/")) return null;
 
     const basename = name.slice(name.lastIndexOf("/") + 1);
@@ -187,8 +154,6 @@ export class TtbIndex {
     if (!candidates) return null;
 
     if (basename !== name) {
-      // A relative path. It must pin down exactly one file; two entries both
-      // ending in it is a bundle ambiguity the native reader also refuses.
       let matching: Entry | null = null;
       for (const entry of candidates) {
         if (entry.path.endsWith(name)) {
@@ -199,26 +164,20 @@ export class TtbIndex {
       return matching?.location ?? null;
     }
 
-    // A bare name: the first search rule with any match decides.
     for (const rule of this.#search) {
-      // Rules start with a slash; paths do not.
       const bare = rule.slice(1);
 
-      let picked: Entry[] = [];
+      const picked: Entry[] = [];
       for (const entry of candidates) {
         if (bare.endsWith("//")) {
-          // Recursive: match anywhere under the prefix (final slash dropped).
           if (entry.path.startsWith(bare.slice(0, -1))) picked.push(entry);
         } else if (entry.path.slice(0, entry.path.length - name.length) === bare) {
-          // Exact: the file's parent directory is the rule, nothing deeper.
           picked.push(entry);
         }
       }
 
       if (picked.length > 0) {
-        // Same priority; alphabetic order stands in for the DFS the native
-        // resolver emulates.
-        picked = picked.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+        picked.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
         return picked[0].location;
       }
     }
@@ -227,7 +186,7 @@ export class TtbIndex {
   }
 }
 
-/** One `[FILELIST]` line: four fields, then a path that may contain spaces. */
+/** A `[FILELIST]` line: offset, gzip length, real length, hash, then a path that may hold spaces. */
 function parseFileLine(line: string): Entry | null {
   const first = line.indexOf(" ");
   const second = line.indexOf(" ", first + 1);

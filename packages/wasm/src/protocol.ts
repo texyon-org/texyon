@@ -1,44 +1,31 @@
-/**
- * Types shared between the page and the Worker, and with the Rust module.
- *
- * The Rust side of these lives in `crates/wasm/src/protocol.rs`; the two must
- * agree on field names, which are camelCase on both sides.
- */
-
 import type { SourceEdit } from "./splice.js";
 
-/** How a compile ended, as TeX itself grades it. */
+/** How TeX graded a run. */
 export type Outcome = "spotless" | "warnings" | "errors";
 
-/** Severity of a line the engine logged. */
+/** Severity of a logged line. */
 export type LogLevel = "note" | "warning" | "error";
 
-/** How much a diagnostic matters. */
+/** Severity of a diagnostic. */
 export type Severity = "error" | "warning" | "info";
 
 /** One thing the engine said about one place in the source. */
 export interface Diagnostic {
   /** How much it matters. */
   severity: Severity;
-  /**
-   * The file it belongs to, as the transcript named it.
-   *
-   * Usually one of the paths you passed to {@link TexyonEngine.compile}, but
-   * it can name a class or package file when the trouble is inside one. Null
-   * when the engine spoke outside any file at all.
-   */
+  /** The file it belongs to, possibly a class or package, or null outside any file. */
   path: string | null;
-  /** One-based source line, when the engine named one. */
+  /** One-based source line, when known. */
   line: number | null;
-  /** What it said. */
+  /** What the engine said. */
   message: string;
-  /** TeX's help text, one entry per line of the transcript. */
+  /** TeX's help text, one entry per line. */
   help: string[];
-  /** Who issued it when it named itself, such as `hyperref` or `LaTeX Font`. */
+  /** Who issued it, such as `hyperref` or `LaTeX Font`. */
   source: string | null;
 }
 
-/** One diagnostic from the engine. */
+/** A line the engine logged. */
 export interface LogLine {
   /** How bad it is. */
   level: LogLevel;
@@ -46,15 +33,15 @@ export interface LogLine {
   message: string;
 }
 
-/** One command the engine currently has defined. */
+/** A command the document currently has defined. */
 export interface EngineCommand {
   /** Without the leading backslash. */
   name: string;
-  /** Arguments it takes, including an optional one if it has it. */
+  /** Arguments it takes, an optional one included. */
   arity: number;
   /** Whether the first argument is optional. */
   optional: boolean;
-  /** `macro`, `protected` or `builtin`. */
+  /** How it was defined. */
   kind: "macro" | "protected" | "builtin";
 }
 
@@ -68,23 +55,23 @@ export interface Link {
   right: number;
   /** Bottom edge. */
   bottom: number;
-  /** An absolute URL, for a link that leaves the document. */
+  /** Target URL, for an external link. */
   uri: string | null;
-  /** A named destination in this document, for one that does not. */
+  /** Named destination, for an internal link. */
   destination: string | null;
 }
 
 /** A named spot on a page that a link can reach. */
 export interface Destination {
-  /** The name `\label` and its kin produced. */
+  /** Destination name. */
   name: string;
-  /** Horizontal position in big points from the page's left edge. */
+  /** Big points from the page's left edge. */
   xBp: number;
-  /** Vertical position in big points from the page's top edge. */
+  /** Big points from the page's top edge. */
   yBp: number;
 }
 
-/** What one page offers beyond its pixels. */
+/** A page's links and destinations. */
 export interface PageOverlay {
   /** Clickable regions. */
   links: Link[];
@@ -92,7 +79,7 @@ export interface PageOverlay {
   destinations: Destination[];
 }
 
-/** One page of the rendered document. */
+/** One page as SVG. */
 export interface RenderedPage {
   /** Zero-based page index. */
   index: number;
@@ -100,338 +87,182 @@ export interface RenderedPage {
   svg: string;
 }
 
-/** One page drawn to pixels, for an engine created with {@link EngineOptions.raster}. */
+/** One page drawn to pixels by a raster engine. */
 export interface PageRaster {
   /** Zero-based page index. */
   index: number;
-  /** Pixels per big point it was drawn at. */
+  /** Pixels per big point. */
   scale: number;
-  /** The page, opaque. */
+  /** The opaque page. */
   bitmap: ImageBitmap;
 }
 
-/**
- * What one compile produced.
- *
- * This is a **patch**, not a snapshot. `pages` carries only the pages whose
- * appearance actually changed; everything else the viewer already has is still
- * correct. That is the point of the renderer's fingerprinting — an edit in the
- * last paragraph of a twenty-page document redraws one page.
- */
+/** What one compile produced, as a patch against the previous result. */
 export interface CompileResult {
-  /**
-   * Whether the run published a frame.
-   *
-   * A cancelled or aborted run publishes nothing: its page fields are empty
-   * and mean "keep what you have", not "the document has no pages". The log,
-   * diagnostics and {@link aborted} are still meaningful.
-   */
+  /** Whether the run published a frame. When false, keep the current pages. */
   published: boolean;
-  /**
-   * SVG for the changed pages. Its indices are exactly {@link changed}.
-   *
-   * Empty for a raster engine, which sends {@link rasters} instead.
-   */
+  /** SVG for the changed pages, empty for a raster engine. */
   pages: RenderedPage[];
-  /**
-   * The changed pages around the compile's viewport, drawn at its scale.
-   *
-   * Only for a raster engine given a viewport and a scale. Any other changed
-   * page is stale until {@link TexyonEngine.raster} draws it again.
-   */
+  /** Changed pages near the viewport, drawn at the compile's scale. */
   rasters: PageRaster[];
-  /** Indices of the pages that changed. */
+  /** Indices of the changed pages. */
   changed: number[];
-  /** Indices the document no longer has, which the viewer should drop. */
+  /** Indices the document no longer has. */
   removed: number[];
-  /**
-   * Every page's size in PostScript big points.
-   *
-   * Covers the whole document, not just the changed pages, so a viewer can lay
-   * out a page slot before it has the page.
-   */
+  /** Every page's width and height in big points. */
   pageSizes: [number, number][];
-  /**
-   * Every page's links and destinations.
-   *
-   * Covers the whole document rather than only the changed pages, like {@link
-   * pageSizes} — an overlay is small, and one that arrived for only some pages
-   * would be an overlay whose links sometimes work.
-   */
+  /** Every page's links and destinations. */
   pageOverlays: PageOverlay[];
   /** Pages in the document. */
   pageCount: number;
-  /** TeX's `.log` transcript, in full. */
+  /** The full TeX transcript. */
   log: string;
   /** How TeX graded the run. */
   outcome: Outcome;
-  /** A recoverable fatal-class abort, if the engine hit one. */
+  /** Why the run was abandoned, if it was. */
   aborted?: string;
-  /**
-   * Whether a file was ruled missing only because the bundle index had not
-   * arrived yet.
-   *
-   * Such a run is not the document's verdict: a recompile follows as soon as
-   * the index lands (or fails), so a viewer that would show its errors should
-   * wait for that one instead.
-   */
+  /** Whether a file was missing only because the bundle index had not arrived. A recompile follows. */
   provisional: boolean;
-  /** Whether a viewport-bounded compile left a tail to finish. */
+  /** Whether a viewport-bounded compile left pages to typeset. */
   tailPending: boolean;
-  /** Diagnostics gathered during the run. */
+  /** Status lines from the host and the renderer. */
   messages: string[];
-  /**
-   * What the engine said, and where, recovered from the transcript.
-   *
-   * The natural source for a lint gutter. `info` is chatty — LaTeX narrates its
-   * font substitutions — so most callers want the errors and warnings only.
-   */
+  /** Errors, warnings and info by source line. */
   diagnostics: Diagnostic[];
-  /** Timings and incremental-engine statistics. */
+  /** Timings and incremental statistics. */
   stats: CompileStats;
 }
 
-/** What the compile cost, and how much of it was skipped. */
+/** What a compile cost and how much it skipped. */
 export interface CompileStats {
-  /** Milliseconds from request to result, measured in the Worker. */
+  /** Request to result, in the Worker. */
   elapsedMs: number;
-  /** Milliseconds spent in XeTeX. */
+  /** Time in XeTeX. */
   texMs: number;
-  /** Milliseconds spent analyzing the XDV. */
+  /** Time analyzing pages. */
   analyzeMs: number;
-  /** Milliseconds spent drawing the changed pages. */
+  /** Time drawing pages. */
   renderMs: number;
-  /** Checkpoint rungs the engine is holding. */
+  /** Checkpoints held for rewinding. */
   checkpointRungs: number;
-  /** Bytes of engine state in the checkpoint ladder. */
+  /** Bytes those checkpoints hold. */
   checkpointBytes: number;
-  /**
-   * Checkpoint rung the run resumed from.
-   *
-   * Anything above zero means the preamble, the document class and everything
-   * above the edit were not re-executed. This is what says the run was
-   * incremental.
-   */
+  /** Checkpoint the run resumed from. Above zero, the preamble was not re-run. */
   replayRung: number;
-  /** TeX commands executed after the replay origin. */
+  /** Commands replayed to get there. */
   replayCommands: number;
-  /** Whether the run reused a prefix of the previous run's output. */
+  /** Whether the run reused the previous output's prefix. */
   reusedPrefix: boolean;
-  /** Fresh pages the engine shipped out. */
+  /** Pages the engine shipped. */
   shipouts: number;
-  /** Pages the analysis fingerprinted. */
+  /** Pages fingerprinted to find changes. */
   pagesFingerprinted: number;
-  /** Pages drawn again, of those fingerprinted. */
+  /** Pages drawn. */
   pagesRendered: number;
   /** Pages the renderer had to approximate. */
   unsupportedPages: number;
   /** Support files resident in the module. */
   supportFiles: number;
-  /** Bytes of support files resident in the module. */
+  /** Bytes of those support files. */
   supportBytes: number;
 }
 
-/**
- * A project's complete current state, by path relative to its root.
- *
- * Binary files reach the engine as resources, a change to one restarts the session.
- */
+/** A project's files by path relative to its root. A changed binary restarts the session. */
 export type ProjectFiles = Record<string, string | Uint8Array>;
 
-/** A box on the page that a source line produced. */
+/** A box a source line produced, in big points. */
 export interface SyncRect {
-  /** Zero-based output page. */
+  /** Zero-based page index. */
   pageIndex: number;
-  /** Left edge in PostScript big points. */
+  /** Left edge. */
   hBp: number;
-  /** Baseline in PostScript big points. */
+  /** Baseline. */
   vBp: number;
-  /** Width in PostScript big points. */
+  /** Width. */
   widthBp: number;
-  /** Height above the baseline in PostScript big points. */
+  /** Height above the baseline. */
   heightBp: number;
-  /** Depth below the baseline in PostScript big points. */
+  /** Depth below the baseline. */
   depthBp: number;
 }
 
-/** Where a source line landed on the page. */
+/** Where a source line landed. */
 export interface Located {
-  /** The best box, the one to scroll to. */
+  /** The box to scroll to. */
   rect: SyncRect;
-  /**
-   * The boxes to flash, all on the page of `rect`, best first.
-   *
-   * Empty when the line produced nothing and the one it fell back to is spread
-   * over the page, like every line of a beamer frame.
-   */
+  /** The boxes to flash on the page of `rect`, best first. */
   boxes: SyncRect[];
 }
 
-/** Which source line produced a point on a page. */
+/** A source line. */
 export interface SourceSpot {
-  /** Source path, spelled the way you spelled it. */
+  /** Path as given to `compile`. */
   path: string;
-  /** One-based source line. */
+  /** One-based line. */
   line: number;
 }
 
-/** How far along loading is. */
+/** Loading progress. */
 export interface LoadProgress {
-  /** What is happening now. */
-  phase:
-    | "fetching-module"
-    | "instantiating"
-    | "fetching-pack"
-    | "indexing-bundle"
-    | "ready";
-  /** Bytes retrieved so far in this phase, where that is meaningful. */
+  /** Current phase. */
+  phase: "fetching-module" | "instantiating" | "fetching-pack" | "indexing-bundle" | "ready";
+  /** Bytes loaded in this phase. */
   loaded?: number;
-  /** Bytes expected in this phase, where that is known. */
+  /** Bytes expected in this phase. */
   total?: number;
 }
 
 /** Settings for {@link TexyonEngine.create}. */
 export interface EngineOptions {
-  /**
-   * Where the compiled `.wasm` lives, relative to the page.
-   *
-   * Defaults to the copy shipped in this package, which a bundler copies into
-   * your build.
-   */
+  /** URL of `texyon_wasm.wasm`. Defaults to the packaged copy. */
   moduleUrl?: string;
-  /**
-   * Where the Worker script lives.
-   *
-   * Defaults to `worker.js` next to this module, which is what a bundler
-   * resolves for you. Override it when you are loading the library from source
-   * or from an unusual layout.
-   */
-  workerUrl?: string | URL;
-  /**
-   * URL of a Tectonic bundle tar, for anything the support pack does not have.
-   *
-   * This is what makes arbitrary `\usepackage` work: the pack covers a common
-   * core so the first compile never touches the network, and everything else —
-   * every package, font and graphic in TeX Live — comes from here on demand.
-   *
-   * The index beside it (`<url>.index.gz`) is fetched once in the background;
-   * individual files are then single HTTP range requests.
-   *
-   * The host must allow cross-origin range requests, as
-   * `https://bundles.texyon.org/texlive2026.ttb` does. Leave unset to run
-   * pack-only.
-   */
-  bundleUrl?: string;
-  /**
-   * Where the support pack lives, relative to the page: the format dump and a
-   * common set of classes, packages and fonts in one archive.
-   *
-   * Defaults to the copy shipped in this package, which a bundler copies into
-   * your build.
-   */
+  /** URL of the support pack. Defaults to the packaged copy. */
   packUrl?: string;
-  /**
-   * Name of the document's main file.
-   *
-   * It only ever names the file to the engine — nothing is written to disk —
-   * but it does decide what the `.log` calls itself. Defaults to `main.tex`.
-   */
+  /** URL of a `.ttb` bundle for files the pack lacks. The host must allow range requests. */
+  bundleUrl?: string;
+  /** URL of the Worker script. Defaults to the packaged `worker.js`. */
+  workerUrl?: string | URL;
+  /** Name of the main file. Defaults to `main.tex`. */
   primary?: string;
-  /**
-   * Draw pages to pixels in the Worker instead of sending SVG.
-   *
-   * Showing an SVG page costs the main thread a parse and a paint of every
-   * glyph, which on a dense page outweighs typesetting it. A raster engine
-   * draws only the pages asked for, at the scale asked for.
-   */
+  /** Draw pages to bitmaps in the Worker instead of sending SVG. */
   raster?: boolean;
   /** Called as loading progresses. */
   onProgress?: (progress: LoadProgress) => void;
-  /** Called for each diagnostic the engine emits, as it emits it. */
+  /** Called for each line the engine logs. */
   onLog?: (line: LogLine) => void;
-  /**
-   * Called when a compile that already ran may now resolve files it could
-   * not, because the bundle index arrived after it started. Compile again to
-   * recover.
-   */
+  /** Called when the bundle index arrived after a provisional compile. */
   onRecompileNeeded?: () => void;
 }
 
-/** Where an export is, for a progress indicator. */
+/** Progress of an export. */
 export type ExportStep = { phase: "pass"; pass: number } | { phase: "writing" };
 
 /** What an export produced. */
 export interface ExportResult {
-  /** The complete PDF. */
+  /** The PDF. */
   pdf: Uint8Array<ArrayBuffer>;
-  /**
-   * Frames produced by the full passes before exporting.
-   *
-   * {@link TexyonEngine.exportPdf} typesets the whole document again until
-   * what it reads back (the .aux) stops changing, so references and page
-   * numbers agree. These are the frames that produced, in order, and a viewer
-   * that wants to stay in step with the engine should apply them exactly as it
-   * applies a compile result.
-   */
+  /** Frames from the full passes, to apply like compile results. */
   tail: CompileResult[];
-  /** Whether the passes ran out before the document stopped changing. */
+  /** Whether the passes ran out before the document settled. */
   unsettled: boolean;
-  /** Milliseconds spent in xdvipdfmx, measured in the Worker. */
+  /** Time in xdvipdfmx. */
   elapsedMs: number;
 }
 
-/** A source's complete text, at the revision the page gave it. */
+/** A source's text at a revision. */
 export interface SourceUpsert {
   text: string;
   revision: number;
 }
 
-/** A change to a source, from the revision `base` to `revision`. */
+/** A change to a source from revision `base` to `revision`. */
 export interface SourceSplice extends SourceEdit {
   base: number;
   revision: number;
 }
 
-/** A request sent to the Worker. */
-export type WorkerRequest =
-  | { id: number; kind: "init"; options: SerializableEngineOptions }
-  | {
-      id: number;
-      kind: "compile";
-      /** Sources sent whole: new ones, and all of them after a failure. */
-      upserts: Record<string, SourceUpsert>;
-      /** Sources sent as a splice into the revision the Worker holds. */
-      edits: Record<string, SourceSplice>;
-      /** Sources the project no longer has. */
-      removed: string[];
-      viewport?: [number, number];
-      /** Pixels per big point for the changed pages around `viewport`. */
-      scale?: number;
-    }
-  | { id: number; kind: "raster"; pages: number[]; scale: number }
-  | {
-      id: number;
-      kind: "resources";
-      upserts: Record<string, Uint8Array>;
-      removed: string[];
-    }
-  | { id: number; kind: "commands" }
-  | { id: number; kind: "forwardSearch"; path: string; line: number }
-  | {
-      id: number;
-      kind: "backwardSearch";
-      pageIndex: number;
-      hBp: number;
-      vBp: number;
-    }
-  | { id: number; kind: "continueTail" }
-  | { id: number; kind: "fullPass" }
-  | { id: number; kind: "export" }
-  | { id: number; kind: "cancel" }
-  | { id: number; kind: "shutdown" };
-
-/** {@link EngineOptions} minus the callbacks, which cannot cross to a Worker. */
-export interface SerializableEngineOptions {
+/** {@link EngineOptions} as sent to the Worker. */
+export interface WorkerOptions {
   moduleUrl: string;
   packUrl: string;
   bundleUrl?: string;
@@ -439,17 +270,48 @@ export interface SerializableEngineOptions {
   raster: boolean;
 }
 
-/** A message sent back from the Worker. */
-export type WorkerResponse =
-  | { id: number; kind: "ok" }
-  | { id: number; kind: "compiled"; result: CompileResult }
-  | { id: number; kind: "passed"; result: CompileResult; changed: boolean }
-  | { id: number; kind: "exported"; pdf: Uint8Array<ArrayBuffer>; elapsedMs: number }
-  | { id: number; kind: "located"; located: Located | null; source: SourceSpot | null }
-  | { id: number; kind: "commands"; commands: EngineCommand[] }
-  | { id: number; kind: "rastered"; rasters: PageRaster[] }
-  | { id: number; kind: "idle" }
-  | { id: number; kind: "error"; message: string }
-  | { id: 0; kind: "progress"; progress: LoadProgress }
-  | { id: 0; kind: "log"; line: LogLine }
-  | { id: 0; kind: "recompile" };
+/** A request to the Worker. */
+export type Request =
+  | { kind: "init"; options: WorkerOptions }
+  | {
+      kind: "compile";
+      upserts: Record<string, SourceUpsert>;
+      edits: Record<string, SourceSplice>;
+      removed: string[];
+      viewport?: [number, number];
+      scale?: number;
+    }
+  | { kind: "resources"; upserts: Record<string, Uint8Array>; removed: string[] }
+  | { kind: "raster"; pages: number[]; scale: number }
+  | { kind: "commands" }
+  | { kind: "forwardSearch"; path: string; line: number }
+  | { kind: "backwardSearch"; pageIndex: number; hBp: number; vBp: number }
+  | { kind: "continueTail" }
+  | { kind: "fullPass" }
+  | { kind: "export" }
+  | { kind: "cancel" }
+  | { kind: "shutdown" };
+
+/** A Worker's answer to one request. */
+export type Reply =
+  | { kind: "ok" }
+  | { kind: "idle" }
+  | { kind: "compiled"; result: CompileResult }
+  | { kind: "passed"; result: CompileResult; changed: boolean }
+  | { kind: "exported"; pdf: Uint8Array<ArrayBuffer>; elapsedMs: number }
+  | { kind: "located"; located: Located | null; source: SourceSpot | null }
+  | { kind: "commands"; commands: EngineCommand[] }
+  | { kind: "rastered"; rasters: PageRaster[] }
+  | { kind: "error"; message: string };
+
+/** A message the Worker sends unprompted. */
+export type WorkerEvent =
+  | { kind: "progress"; progress: LoadProgress }
+  | { kind: "log"; line: LogLine }
+  | { kind: "recompile" };
+
+/** A message to the Worker. */
+export type WorkerRequest = Request & { id: number };
+
+/** A message from the Worker. */
+export type WorkerResponse = (Reply & { id: number }) | WorkerEvent;

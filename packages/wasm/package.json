@@ -1,7 +1,7 @@
 {
   "name": "@texyon/wasm",
   "version": "0.1.0",
-  "description": "TeXyon resident LaTeX engine, compiled for the browser",
+  "description": "TeXyoN, a resident LaTeX engine for live preview, compiled to WebAssembly",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
@@ -19,9 +19,9 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json && npm run build:worker",
+    "build:worker": "esbuild src/worker.ts --bundle --format=esm --target=es2022 --outfile=dist/worker.js --allow-overwrite --log-level=warning",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
     "test": "node --experimental-strip-types --test src/*.test.ts",
-    "build:worker": "esbuild src/worker.ts --bundle --format=esm --target=es2022 --outfile=dist/worker.js --allow-overwrite --log-level=warning",
     "prepack": "npm run build && node scripts/copy-engine.mjs"
   },
   "devDependencies": {

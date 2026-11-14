@@ -1,50 +1,24 @@
-# `@texyon/wasm`
+# @texyon/wasm
 
-TeXyoN, the LaTeX engine, compiled to WebAssembly, with a TypeScript API built
-for editors.
+TeXyoN, a LaTeX engine built for live preview, compiled to WebAssembly.
 
 ```ts
 import { TexyonEngine } from "@texyon/wasm";
 
-const engine = await TexyonEngine.create({
-  onProgress: (p) => console.log(p.phase),
-});
+const engine = await TexyonEngine.create();
 
 const result = await engine.compile({
-  "main.tex": source,
-  "chapters/one.tex": chapter,
+    "main.tex": source,
+    "chapters/one.tex": chapter,
 });
+for (const page of result.pages) slots[page.index].innerHTML = page.svg;
 
-// A patch: only the pages that changed.
-for (const page of result.pages) {
-  slots[page.index].innerHTML = page.svg;
-}
-
-// The same typesetting, as a PDF, when someone wants to keep it.
 const { pdf } = await engine.exportPdf();
 ```
 
-## The idea
-
-The engine is **resident**. It keeps one document open and you hand it each new
-version of the text; it does not start over.
-
-That distinction is the whole point, and it applies twice.
-
-**The engine does not restart.** A cold LaTeX run spends nearly all of its time
-before your cursor — reading a 24 MB format dump, loading the document class,
-running the preamble, typesetting everything above the edit. A resident session
-pays that once, then rewinds to the deepest checkpoint whose inputs are still
-byte-for-byte valid. `result.stats.replayRung` reports how deep that was;
-anything above zero means the preamble was not re-run.
-
-**The renderer does not redraw.** It walks the engine's output, fingerprints
-what each page *means*, and returns SVG only for the pages whose fingerprint
-moved. Editing the last paragraph of a twenty-six page document costs 4 ms of
-TeX, 2 ms of analysis and 1 ms of drawing — one page.
-
-Everything runs in a Worker, so the page stays responsive even while TeX is
-blocked waiting for a support file.
+The engine is resident. It keeps one document open, rewinds to the last
+checkpoint before an edit instead of starting over, and returns only the pages
+whose appearance changed. Everything runs in a Worker.
 
 ## Setup
 
@@ -52,172 +26,79 @@ blocked waiting for a support file.
 npm install @texyon/wasm
 ```
 
-The package ships everything the engine needs to start: the module
-(`texyon_wasm.wasm`, 19 MB) and the support pack (`texyon-pack.tar.gz`, 10 MB),
-which holds the format dump and a common set of classes, packages and fonts.
-`TexyonEngine.create()` finds both next to its own code. Vite, webpack and
-Parcel copy them into your build, and a CDN such as jsDelivr serves them from
-the package. No file is over 25 MiB, so static hosts like Cloudflare Pages
-take them as they are.
+The package ships the module (`texyon_wasm.wasm`) and the support pack
+(`texyon-pack.tar.gz`, the format and a common set of classes, packages and
+fonts). `TexyonEngine.create()` loads both from next to its own code, and
+bundlers copy them into the build. Pass `moduleUrl` and `packUrl` to serve them
+from elsewhere. Both are resolved against the page.
 
-To serve them from somewhere else, pass `moduleUrl` and `packUrl`. They are
-resolved against the page, not against the Worker script.
+`bundleUrl` makes any TeX Live file available. It expects a `.ttb` bundle (read with HTTP
+range requests, you can use `https://bundles.texyon.org/texlive2026.ttb`)
 
-Optionally, `bundleUrl` makes arbitrary `\usepackage` work: a `.ttb` bundle, or
-a tar with its index. The index is fetched once in the background, and
-individual files are then single HTTP range requests, so the host has to allow
-cross-origin range requests. `https://bundles.texyon.org/texlive2026.ttb` does.
+The module and pack are kept in Cache Storage and revalidated with the server's
+`ETag` or `Last-Modified`, so serve them with one. Files read from a bundle are
+cached by bundle URL. Without usable storage the engine starts cold.
 
-To build the module and pack from source, run `tools/wasm/build.sh` and
-`tools/wasm/build-assets.sh`. `npm pack` copies them in and refuses to run
-without them.
-
-## Caching
-
-A cold start downloads about thirty megabytes, the module and the pack, and
-neither changes between page loads. Both are kept in Cache Storage and
-revalidated against the server's own `ETag` or `Last-Modified`, so a reload
-costs two conditional requests and a rebuilt engine is picked up on the next
-load without anyone bumping a version. Files read out of a bundle are keyed by
-the bundle's URL, since a bundle does not change under its own name.
-
-Two consequences worth knowing:
-
-- **Your server should send `ETag` or `Last-Modified`.** Without a validator
-  there is no way to show a stored copy is still current, so it is
-  re-downloaded every load rather than risk running a stale engine. Every
-  ordinary static host sends one.
-- **Caching fails soft, always.** Private windows, denied storage, exhausted
-  quota, a runtime with no Cache API: each of those means a cold start, never
-  an error.
+To build from source, run `tools/wasm/build.sh` and `tools/wasm/build-assets.sh`.
+`npm pack` copies their output into `dist`.
 
 ## API
 
 ### `TexyonEngine.create(options?)`
 
-Starts the engine. Resolves once the module is instantiated and the support
-pack is loaded.
+Starts the engine and resolves once it can typeset. Options: `moduleUrl`,
+`packUrl`, `bundleUrl`, `workerUrl`, `primary` (default `main.tex`), `raster`,
+`onProgress`, `onLog`, `onRecompileNeeded`.
 
-Options: `moduleUrl`, `packUrl`, `bundleUrl`, `workerUrl`, `primary`,
-`raster`, `onProgress`, `onLog`.
-
-`raster` has the Worker draw pages to pixels instead of sending SVG. A dense
-page as SVG costs the browser tens of milliseconds to parse and paint, more
-than typesetting it, while a bitmap goes onto a canvas in well under one. A
-raster engine draws only the pages you ask for, at the scale you ask for: see
-`compile`'s `scale` and `engine.raster`.
+With `raster`, the Worker draws pages to `ImageBitmap`s instead of returning
+SVG, which is much cheaper for the browser to show.
 
 ### `engine.compile(files, viewport?, scale?)`
 
-Typesets a project. `files` maps each path — relative to the project root — to
-that file's complete current text, and must contain the primary. A bare string
-is shorthand for a project that is only its primary.
+Typesets the project. `files` maps each path to its complete current content,
+text or bytes, and a bare string stands for the primary alone. Send everything
+every time: unchanged files cost nothing.
 
-Handing over everything every time is the intended usage and the cheap one: the
-engine diffs each file against what it last saw, so untouched files cost
-nothing and the one you edited replays only from the point that changed.
+`viewport` is an inclusive zero-based page range that bounds the work, leaving
+the rest to `continueTail()`. `scale` is pixels per big point for a raster
+engine.
 
-Children resolve the way TeX resolves them, so `\input{chapters/one}` finds
-`chapters/one.tex` in the map. Nothing is read from a disk that does not exist:
-a file the map does not contain is a file the document does not have.
-
-`viewport` is an inclusive, zero-based `[first, last]` page range. Passing it
-bounds the foreground work to the visible pages and leaves the rest for
-`continueTail()` — which is what keeps latency flat as a document grows.
-
-`scale`, for a raster engine, is pixels per big point: the zoom times
-`devicePixelRatio`. The changed pages within one page of `viewport` come back
-drawn in `rasters`, each an `ImageBitmap` ready for a `bitmaprenderer` canvas.
-Any other changed page is stale until `engine.raster` draws it again.
-
-`pageOverlays` carries what is not drawn: each page's clickable regions and the
-named spots they can reach. A link is a rectangle in big points plus either a
-`uri` or a `destination`, which is what makes `\url`, `\href` and `\hyperlink`
-work in a viewer — render them as positioned anchors over the page. Like
-`pageSizes` it covers the whole document, not just the changed pages.
-
-An unresolved `\ref` produces no link, because hyperref has nothing to point it
-at. That is the normal state of a first compile in the browser, where no `.aux`
-survives from a previous run.
-
-`diagnostics` is what the engine said and where — `(severity, path, line,
-message)`, recovered from the transcript and attributed to the file that
-actually caused each one, which for a multi-file project is the whole problem.
-It is the natural source for a lint gutter. `info` is chatty, since LaTeX
-narrates its font substitutions, so most callers filter to errors and warnings.
-
-Returns a `CompileResult`, which is a **patch**: `pages` holds SVG for the
-changed pages only (none for a raster engine), `changed` their indices, `removed` the indices the document
-no longer has, and `pageSizes` every page's size so a viewer can lay out a slot
-before it has the page. Plus `pageCount`, the TeX `log`, an `outcome` of
-`spotless | warnings | errors`, and `stats`.
-
-An empty `pages` means nothing about the document's appearance changed — retype
-the same characters and that is exactly what you get.
-
-### `engine.raster(pages, scale)`
-
-Draws published pages of a raster engine at `scale` pixels per big point, for
-pages that scrolled into view or a new zoom. A page larger than 16M pixels at
-that scale is drawn coarser instead.
+The result is a patch: `pages` (SVG) or `rasters` for the changed pages,
+`changed` and `removed` indices, and `pageSizes` and `pageOverlays` (links and
+destinations) for every page. It also carries `log`, `diagnostics`, `outcome`
+and `stats`.
 
 ### `engine.continueTail()`
 
-Finishes a viewport-bounded compile through the end of the document. Returns
-`null` if nothing was pending. Worth calling when the user pauses.
+Typesets the next chunk of a viewport-bounded compile. Returns `null` when
+nothing is pending.
 
-### `engine.forwardSearch(path, line)` and `engine.backwardSearch(page, hBp, vBp)`
+### `engine.raster(pages, scale)`
 
-SyncTeX, both ways, answered from an in-memory index — no `.synctex.gz` is ever
-written or parsed.
+Draws published pages of a raster engine at a new scale.
 
-Both follow TeX Live's `synctex` tool, the one Overleaf runs. Forward takes a
-path spelled the way you spell it in `compile` and returns `rect`, the best box
-`synctex view` reports, to scroll to, and `boxes` to flash: the innermost ones
-on the page of `rect`. A line that produced nothing, like a comment or a line
-inside a beamer frame, falls back to the nearest line that did, looking below it
-first. Its `boxes` are then empty unless that line is one block of text, since
-every box of a beamer frame belongs to its `\end{frame}` line. It returns
-`null` when nothing near the line reached the page. Backward takes a point in
-PostScript big points from the page's top-left corner and returns the path and
-line `synctex edit` reports for it. Paths round-trip: what you give is what you
-get back.
+### `engine.forwardSearch(path, line)`, `engine.backwardSearch(page, hBp, vBp)`
 
-### `engine.exportPdf()`
+SyncTeX in both directions, matching TeX Live's `synctex view` and
+`synctex edit`. Coordinates are big points from the page's top-left corner.
 
-Returns the document as a PDF, in `pdf`.
+### `engine.commands()`
 
-This is not a second compile. It is the preview's own assembled XDV run through
-xdvipdfmx, so a download cannot disagree with what the viewer was showing — the
-same typesetting, written out differently.
+Every command the document currently defines, for completion.
 
-A viewport-bounded compile stops at the last visible page, so this settles the
-document first and returns the frames that took in `tail`. Apply them as you
-would a compile result, or the viewer's pages fall behind the PDF the user just
-got. `tail` is empty when the document was already finished, which is the
-common case.
+### `engine.exportPdf(onStep?)`
 
-### `engine.cancel()`
+Typesets the whole document until its auxiliary files settle, then writes a PDF
+with xdvipdfmx. The frames of those passes come back in `tail`, to apply like
+compile results.
 
-Asks the running compile to stop at its next cancellation point. The engine
-rewinds to its last good state, so the current preview stays valid.
+### `engine.cancel()`, `engine.close()`
 
-### `engine.close()`
-
-Shuts the engine down and terminates its Worker.
+Stop the running compile, keeping the previous preview, or shut the engine down.
 
 ## Limits
 
-- **One project per engine.** XeTeX keeps process-global state, so a module
-  instance hosts a single session. A second project means a second engine, and
-  therefore a second Worker and a second copy of the format dump.
-- **Files can be added and changed, not removed.** Dropping a path from the map
-  leaves the engine still holding it.
-- **No shell-escape and no subprocesses**, so `minted` and friends cannot work.
-- **Fonts are found by filename, not by system name.** `\setmainfont{Palatino}`
-  will not resolve; `\setmainfont{...}[Path=...]` and
-  `\font\f="[file.otf]"` will.
-- **Files must come from the pack or the bundle.** Set `bundleUrl` and all of
-  TeX Live is reachable; without it you are limited to whatever
-  `tools/wasm/build-assets.sh` put in the pack. Either way there is no path for
-  the user's own local files.
+- One project per engine, since XeTeX keeps process-global state.
+- No shell escape.
+- Fonts are found by file name, not system name.
+- Files come from the project, the pack or the bundle.

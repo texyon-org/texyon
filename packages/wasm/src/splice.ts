@@ -5,16 +5,10 @@ export interface SourceEdit {
   insert: string;
 }
 
-/** Compared a chunk at a time first: substring equality runs at memcmp speed. */
+/** Substring equality runs at memcmp speed, so compare in chunks first. */
 const CHUNK = 256;
 
-/**
- * The one splice that turns `before` into `after`: everything between their
- * common prefix and common suffix.
- *
- * Several edits made between two compiles, or by several collaborators, come
- * out as one splice spanning all of them, which is still exact.
- */
+/** The splice between the common prefix and suffix of `before` and `after`. */
 export function spliceBetween(before: string, after: string): SourceEdit {
   const shorter = Math.min(before.length, after.length);
 

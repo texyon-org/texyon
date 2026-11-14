@@ -1,7 +1,3 @@
-/**
- * Reading the support pack, a ustar archive of flat file names.
- */
-
 const BLOCK = 512;
 
 /** Thrown when bytes are not a pack archive. */
@@ -53,9 +49,8 @@ export function untar(bytes: Uint8Array): Map<string, Uint8Array> {
   throw new TarError("the archive has no end marker");
 }
 
-/** The pack's bytes, inflated if a server did not already do that on the way. */
+/** Gunzip the pack, unless a host sent it with a gzip Content-Encoding and the browser already did. */
 export async function inflate(bytes: Uint8Array): Promise<Uint8Array> {
-  // A host that labels .gz as Content-Encoding has the browser inflate it already.
   if (bytes[0] !== 0x1f || bytes[1] !== 0x8b) return bytes;
   const stream = new Blob([bytes.slice()]).stream().pipeThrough(new DecompressionStream("gzip"));
   return new Uint8Array(await new Response(stream).arrayBuffer());
