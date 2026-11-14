@@ -1,6 +1,6 @@
 {
   "name": "@texyon/wasm",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "TeXyoN, a resident LaTeX engine for live preview, compiled to WebAssembly",
   "keywords": [
     "latex",
