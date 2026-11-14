@@ -34,7 +34,7 @@ jobs:
           all='[
             {"image": "ubuntu-22.04", "target": "x86_64-unknown-linux-gnu", "vsce-target": "linux-x64",
              "features": "preview-mupdf,native-tls-vendored"},
-            {"image": "macos-14", "target": "aarch64-apple-darwin", "vsce-target": "darwin-arm64",
+            {"image": "macos-15", "target": "aarch64-apple-darwin", "vsce-target": "darwin-arm64",
              "features": "preview-mupdf", "vcpkg-triplet": "arm64-osx-release"},
             {"image": "windows-latest", "target": "x86_64-pc-windows-msvc", "vsce-target": "win32-x64",
              "features": "preview-mupdf", "vcpkg-triplet": "x64-windows-static-release"}
