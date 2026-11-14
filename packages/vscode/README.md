@@ -10,8 +10,9 @@ refresh in a fraction of a normal compile.
 1. Open a saved `.tex` file.
 2. Run **TeXyoN: Start Live Preview** from the command palette.
 
-The first start downloads the TeX support files it needs and builds the LaTeX
-format, which takes a minute or so. Later starts reuse that cache.
+The extension ships the LaTeX format and common packages, so the first start
+is quick. Other packages are downloaded the first time a document uses them
+and cached for later starts.
 
 The extension ships with its own TeXyoN engine for Linux (x64), macOS (Apple
 silicon) and Windows (x64). No TeX distribution is required.

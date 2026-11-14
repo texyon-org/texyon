@@ -19,6 +19,7 @@ test("the real server opens, draws pixels, finds sources, exports and shuts down
   let stderr = "";
   const engine = new NativeEngine(process.env.TEXYON_PREVIEW_BIN, {
     cwd: root,
+    pack: process.env.TEXYON_PREVIEW_PACK,
     onStderr: (text) => { stderr += text; },
     onExit: () => {}
   });

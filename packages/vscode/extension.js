@@ -56,12 +56,13 @@ class PreviewSession {
 
   start() {
     const configuration = vscode.workspace.getConfiguration("texyon");
-    const executable = resolveExecutable(this.context, configuration);
+    const { executable, pack } = resolveEngine(this.context, configuration);
     this.startedAt = Date.now();
     this.output.appendLine(`[preview] starting ${executable} for ${this.document.fileName}`);
     this.setStatus("$(sync~spin) TeXyoN: starting…");
     this.engine = new NativeEngine(executable, {
       cwd: this.root,
+      pack,
       onStderr: (text) => this.output.append(text),
       onExit: (code, signal) => this.onExit(code, signal)
     });
@@ -304,11 +305,12 @@ function openLink(uri) {
   if (["http", "https", "mailto"].includes(parsed.scheme)) void vscode.env.openExternal(parsed);
 }
 
-function resolveExecutable(context, configuration) {
+/** The engine to run, and the support pack built for it if one is bundled. */
+function resolveEngine(context, configuration) {
   const configured = configuration.get("executable", "");
-  if (configured) return configured;
+  if (configured) return { executable: configured };
   const bundled = context.asAbsolutePath(path.join("bin", process.platform === "win32" ? "texyon.exe" : "texyon"));
-  if (!fs.existsSync(bundled)) return "texyon";
+  if (!fs.existsSync(bundled)) return { executable: "texyon" };
   // Some VSIX extractors drop the executable bit.
   if (process.platform !== "win32") {
     try {
@@ -317,7 +319,9 @@ function resolveExecutable(context, configuration) {
       fs.chmodSync(bundled, 0o755);
     }
   }
-  return bundled;
+  // The pack is only valid for the engine it was built with, so never another one.
+  const pack = context.asAbsolutePath("pack");
+  return fs.existsSync(path.join(pack, "manifest.json")) ? { executable: bundled, pack } : { executable: bundled };
 }
 
 function activate(context) {

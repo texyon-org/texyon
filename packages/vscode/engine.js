@@ -71,10 +71,12 @@ class FrameReader {
  * `cancel`, which stops the running operation and gets no reply.
  */
 class NativeEngine {
-  constructor(executable, { cwd, onExit, onStderr }) {
+  constructor(executable, { cwd, pack, onExit, onStderr }) {
     this.waiting = [];
     this.closed = false;
-    this.process = cp.spawn(executable, ["preview", "--protocol", String(PROTOCOL_VERSION)], {
+    const args = ["preview", "--protocol", String(PROTOCOL_VERSION)];
+    if (pack) args.push("--pack", pack);
+    this.process = cp.spawn(executable, args, {
       cwd,
       stdio: ["pipe", "pipe", "pipe"]
     });

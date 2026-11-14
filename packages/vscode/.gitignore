@@ -1,4 +1,5 @@
 /bin/
+/pack/
 *.vsix
 .vscode-test/
 node_modules/

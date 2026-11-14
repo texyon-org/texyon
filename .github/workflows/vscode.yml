@@ -41,8 +41,39 @@ jobs:
           ]'
           echo "include=$(jq -c --arg p "$PLATFORM" 'map(select($p == "all" or .["vsce-target"] == $p))' <<< "$all")" >> "$GITHUB_OUTPUT"
 
+  # The support pack is the same on every platform, so it is built once.
+  pack:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: "Set up Rust"
+        run: |
+          rustup set profile minimal
+          rustup update --no-self-update stable
+          rustup default stable
+      - name: "Install pkg-config dependencies"
+        uses: ./.github/actions/pkgconfig-deps
+      - name: "Build the support pack"
+        env:
+          TEXYON_DEP_BACKEND: pkg-config
+        run: |
+          cargo build --release --locked -p texyon
+          tools/wasm/build-assets.sh "$PWD/pack"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: support-pack
+          # The archive is the browser's copy of the same files.
+          path: |
+            pack
+            !pack/texyon-pack.tar.gz
+          if-no-files-found: error
+
   build:
-    needs: plan
+    needs: [plan, pack]
     strategy:
       fail-fast: false
       matrix:
@@ -194,6 +225,10 @@ jobs:
           fi
           cp licenses/AGPL-3.0.txt packages/vscode/bin/LICENSE
           cp THIRD_PARTY_NOTICES.md packages/vscode/bin/
+      - uses: actions/download-artifact@v4
+        with:
+          name: support-pack
+          path: packages/vscode/pack
       - name: "Show dynamic dependencies"
         if: ${{ runner.os != 'Windows' }}
         shell: bash
