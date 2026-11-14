@@ -3,6 +3,7 @@
 import { gunzipSync } from "fflate";
 
 import { AssetCache } from "./cache.js";
+import { type Buffer, Engine } from "./engine.js";
 import type {
   CompileResult,
   Diagnostic,
@@ -21,22 +22,7 @@ import type {
 import { applyEdit } from "./splice.js";
 import { inflate, untar } from "./tar.js";
 import { parseTtbHeader, TTB_HEADER_BYTES, TtbIndex, type TtbLocation } from "./ttb.js";
-import { Wasi, WasiExit } from "./wasi.js";
-
-/** The module's exports, see `crates/wasm/src/lib.rs`. */
-interface Exports {
-  memory: WebAssembly.Memory;
-  _initialize?: () => void;
-  texyon_request(reqPtr: number, reqLen: number, outPtr: number, outLen: number): number;
-  texyon_wasm_alloc(len: number): number;
-  texyon_wasm_free(ptr: number, len: number): void;
-}
-
-/** Bytes left in linear memory for the host to take and free. */
-interface Buffer {
-  ptr: number;
-  len: number;
-}
+import { WasiExit } from "./wasi.js";
 
 /** A page drawn to pixels: width and height as little-endian u32, then RGBA rows. */
 interface RawRaster extends Buffer {
@@ -87,10 +73,9 @@ type RawResponse =
 
 const ATTEMPTS = 3;
 
-const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-let engine: Exports | null = null;
+let engine: Engine | null = null;
 let options: WorkerOptions | null = null;
 let format = "";
 let assets: AssetCache | null = null;
@@ -112,7 +97,7 @@ let restartPending = false;
 let compiledSinceOpen = false;
 let rasterScale: number | undefined;
 
-function wasm(): Exports {
+function wasm(): Engine {
   if (!engine) throw new Error("the engine is not running");
   return engine;
 }
@@ -224,37 +209,8 @@ async function flushUnsaved(): Promise<void> {
   for (const [name, bytes] of pending) await assets.remember(options.bundleUrl, name, bytes);
 }
 
-function intoModule(bytes: Uint8Array): Buffer {
-  const engine = wasm();
-  const ptr = engine.texyon_wasm_alloc(bytes.length);
-  if (ptr === 0 && bytes.length > 0) throw new Error("the engine is out of memory");
-  new Uint8Array(engine.memory.buffer, ptr, bytes.length).set(bytes);
-  return { ptr, len: bytes.length };
-}
-
-/** Copy bytes out of linear memory and free them there. */
-function takeBytes({ ptr, len }: Buffer): Uint8Array<ArrayBuffer> {
-  const engine = wasm();
-  const bytes = new Uint8Array(engine.memory.buffer, ptr, len).slice();
-  engine.texyon_wasm_free(ptr, len);
-  return bytes;
-}
-
 function call(request: object): RawResponse {
-  const engine = wasm();
-  const input = intoModule(encoder.encode(JSON.stringify(request)));
-  const out = engine.texyon_wasm_alloc(8);
-  try {
-    if (engine.texyon_request(input.ptr, input.len, out, out + 4) !== 0) {
-      throw new Error("the engine could not produce a response");
-    }
-    const view = new DataView(engine.memory.buffer);
-    const reply = takeBytes({ ptr: view.getUint32(out, true), len: view.getUint32(out + 4, true) });
-    return JSON.parse(decoder.decode(reply)) as RawResponse;
-  } finally {
-    engine.texyon_wasm_free(out, 8);
-    engine.texyon_wasm_free(input.ptr, input.len);
-  }
+  return wasm().call(request) as RawResponse;
 }
 
 /** Local wall-clock seconds for `\today`, taken once per session so output stays reproducible. */
@@ -271,52 +227,30 @@ function openSession(): void {
   compiledSinceOpen = false;
 }
 
-/** Answer a host read by handing `bytes` to the module. */
-function answer(bytes: Uint8Array | null | undefined, outPtr: number, outLen: number): number {
-  if (!bytes) return 1;
-  const buffer = intoModule(bytes);
-  const view = new DataView(wasm().memory.buffer);
-  view.setUint32(outPtr, buffer.ptr, true);
-  view.setUint32(outLen, buffer.len, true);
-  return 0;
-}
-
-function readString(ptr: number, len: number): string {
-  return decoder.decode(new Uint8Array(wasm().memory.buffer, ptr, len));
-}
-
 async function init(opts: WorkerOptions): Promise<void> {
   options = opts;
   if (opts.bundleUrl) bundleState = "pending";
   assets = await AssetCache.open(typeof caches === "undefined" ? undefined : caches);
 
   post({ kind: "progress", progress: { phase: "fetching-module" } });
-  const wasi = new Wasi((stream, text) => log(stream === "stderr" ? "error" : "note", text));
-  const imports: WebAssembly.Imports = {
-    wasi_snapshot_preview1: wasi.imports,
-    env: {
-      texyon_host_read_file: (namePtr: number, nameLen: number, outPtr: number, outLen: number) =>
-        answer(readFile(readString(namePtr, nameLen)), outPtr, outLen),
-      texyon_host_read_source: (namePtr: number, nameLen: number, outPtr: number, outLen: number) => {
-        const source = projectSources.get(readString(namePtr, nameLen));
-        return answer(source && encoder.encode(source.text), outPtr, outLen);
-      },
-      texyon_host_log: (kind: number, msgPtr: number, msgLen: number) =>
-        log(kind === 2 ? "error" : kind === 1 ? "warning" : "note", readString(msgPtr, msgLen)),
-    },
-  };
-
   const source = assets ? await assets.revalidating(opts.moduleUrl) : await fetch(opts.moduleUrl);
   if (!source.ok) throw new Error(`could not fetch ${opts.moduleUrl}: HTTP ${source.status}`);
 
   post({ kind: "progress", progress: { phase: "instantiating" } });
-  const { instance } = await WebAssembly.instantiateStreaming(source, imports).catch(
-    // Servers that do not send application/wasm.
-    async () => WebAssembly.instantiate(await (await fetch(opts.moduleUrl)).arrayBuffer(), imports),
+  engine = await Engine.start(
+    async (imports) =>
+      (
+        await WebAssembly.instantiateStreaming(source, imports).catch(
+          // Servers that do not send application/wasm.
+          async () => WebAssembly.instantiate(await (await fetch(opts.moduleUrl)).arrayBuffer(), imports),
+        )
+      ).instance,
+    {
+      readFile,
+      readSource: (path) => projectSources.get(path)?.text,
+      log,
+    },
   );
-  engine = instance.exports as unknown as Exports;
-  wasi.bind(engine.memory);
-  engine._initialize?.();
 
   format = await loadPack(opts.packUrl);
   if (assets && opts.bundleUrl) {
@@ -379,15 +313,15 @@ async function loadPack(url: string): Promise<string> {
 }
 
 async function takeRasters(raw: RawRaster[], scale: number): Promise<PageRaster[]> {
-  const engine = wasm();
+  const { exports } = wasm();
   // createImageBitmap copies the ImageData synchronously, so each page is freed at once.
   const pending = raw.map(({ index, ptr, len }) => {
-    const header = new DataView(engine.memory.buffer, ptr, 8);
-    const pixels = new Uint8ClampedArray(engine.memory.buffer, ptr + 8, len - 8);
+    const header = new DataView(exports.memory.buffer, ptr, 8);
+    const pixels = new Uint8ClampedArray(exports.memory.buffer, ptr + 8, len - 8);
     const bitmap = createImageBitmap(
       new ImageData(pixels, header.getUint32(0, true), header.getUint32(4, true)),
     );
-    engine.texyon_wasm_free(ptr, len);
+    exports.texyon_wasm_free(ptr, len);
     return { index, bitmap };
   });
   return Promise.all(pending.map(async ({ index, bitmap }) => ({ index, scale, bitmap: await bitmap })));
@@ -396,7 +330,7 @@ async function takeRasters(raw: RawRaster[], scale: number): Promise<PageRaster[
 function collect(report: RawCompileReport, elapsedMs: number, rasters: PageRaster[]): CompileResult {
   const pages = report.pages.map(({ index, ptr, len }) => ({
     index,
-    svg: decoder.decode(takeBytes({ ptr, len })),
+    svg: decoder.decode(wasm().take({ ptr, len })),
   }));
   return {
     published: report.published,
@@ -513,7 +447,7 @@ async function handle(request: WorkerRequest): Promise<[Reply, Transferable[]?]>
       const started = performance.now();
       const reply = call({ op: "export", now: Math.floor(Date.now() / 1000) });
       if (reply.status !== "exported") return [unexpected(reply)];
-      const pdf = takeBytes(reply);
+      const pdf = wasm().take(reply);
       return [{ kind: "exported", pdf, elapsedMs: performance.now() - started }, [pdf.buffer]];
     }
 
