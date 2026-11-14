@@ -484,7 +484,7 @@ impl MemState {
             );
             if o == GlueOrder::Normal && has_list {
                 shipout.last_badness =
-                    crate::base::helpers::badness(x, total_stretch[GlueOrder::Normal]);
+                    crate::base::scaled_math::badness(x, total_stretch[GlueOrder::Normal]);
                 if shipout.last_badness > eqtb.int_par(IntPar::Hbadness) {
                     push_slot(
                         &mut diags,
@@ -519,7 +519,7 @@ impl MemState {
                 }
             } else if o == GlueOrder::Normal && has_list {
                 shipout.last_badness =
-                    crate::base::helpers::badness(-x, total_shrink[GlueOrder::Normal]);
+                    crate::base::scaled_math::badness(-x, total_shrink[GlueOrder::Normal]);
                 if shipout.last_badness > eqtb.int_par(IntPar::Hbadness) {
                     push_slot(
                         &mut diags,
@@ -767,7 +767,7 @@ impl MemState {
             );
             if o == GlueOrder::Normal && has_list {
                 shipout.last_badness =
-                    crate::base::helpers::badness(x, total_stretch[GlueOrder::Normal]);
+                    crate::base::scaled_math::badness(x, total_stretch[GlueOrder::Normal]);
                 if shipout.last_badness > eqtb.int_par(IntPar::Vbadness) {
                     push_slot(
                         &mut diags,
@@ -795,7 +795,7 @@ impl MemState {
                 }
             } else if o == GlueOrder::Normal && has_list {
                 shipout.last_badness =
-                    crate::base::helpers::badness(-x, total_shrink[GlueOrder::Normal]);
+                    crate::base::scaled_math::badness(-x, total_shrink[GlueOrder::Normal]);
                 if shipout.last_badness > eqtb.int_par(IntPar::Vbadness) {
                     push_slot(
                         &mut diags,

@@ -3,6 +3,7 @@
 
 use crate::base::consts::{EMPTY_STRING, TOO_BIG_CHAR};
 use crate::base::units::{PoolPos, StrNumber};
+use crate::base::utf8::{FIRST_BYTE_MARK, next_utf8_char, utf16_units};
 use crate::print::errors::Abort;
 
 impl StringsState {
@@ -247,6 +248,101 @@ impl StringsState {
     #[inline]
     pub(crate) fn discard_cur_string(&mut self) {
         self.pool_ptr = self.cur_string_start();
+    }
+}
+
+impl StringsState {
+    /// Encodes pool string `s` as UTF-8. Single-character strings (`s` below
+    /// 65536) come out empty, and unpaired low surrogates are kept as 3-byte
+    /// sequences.
+    pub(crate) fn texstring_utf8(&self, s: StrNumber) -> Vec<u8> {
+        if !s.is_pool_string() {
+            return Vec::new();
+        }
+        let base = self.str_start[s.slot()];
+        let len = self.str_start[s.next().slot()] - base;
+        let unit = |i: i32| u32::from(self.str_pool[(base + i).index()]);
+
+        let mut out = Vec::with_capacity(len as usize * 3);
+        let mut i = 0;
+        while i < len {
+            let mut c = unit(i);
+            if (0xD800..=0xDBFF).contains(&c) {
+                i += 1;
+                let lo = unit(i);
+                c = if (0xDC00..=0xDFFF).contains(&lo) {
+                    (c - 0xD800) * 0x0400 + lo - 0xDC00 + 0x10000
+                } else {
+                    0xFFFD
+                };
+            }
+
+            let n = match c {
+                0..=0x7F => 1,
+                0x80..=0x7FF => 2,
+                0x800..=0xFFFF => 3,
+                0x10000..=0x10FFFF => 4,
+                _ => {
+                    c = 0xFFFD;
+                    3
+                }
+            };
+            out.push(((c >> (6 * (n - 1))) | u32::from(FIRST_BYTE_MARK[n])) as u8);
+            for k in (0..n - 1).rev() {
+                out.push(0x80 | ((c >> (6 * k)) & 0x3F) as u8);
+            }
+
+            i += 1;
+        }
+        out
+    }
+
+    /// Pool string `s` in UTF-8, cut at its first NUL as C saw it.
+    pub(crate) fn texstring_bytes(&self, s: StrNumber) -> Vec<u8> {
+        let mut bytes = self.texstring_utf8(s);
+        if let Some(nul) = bytes.iter().position(|&b| b == 0) {
+            bytes.truncate(nul);
+        }
+        bytes
+    }
+
+    /// Appends code point `c` to the pool as one or two UTF-16 units.
+    pub(crate) fn push_utf16(&mut self, c: u32) {
+        let (units, n) = utf16_units(c);
+        self.append_units(&units[..n]);
+    }
+
+    pub(crate) fn push_bytes(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.append_char(u16::from(b));
+        }
+    }
+
+    /// Appends `bytes` if they fit, else marks the pool as full.
+    pub(crate) fn push_bytes_or_fill(&mut self, bytes: &[u8]) {
+        if self.pool_ptr.index() + bytes.len() >= self.pool_size.index() {
+            self.pool_ptr = self.pool_size;
+        } else {
+            self.push_bytes(bytes);
+        }
+    }
+
+    /// Converts UTF-8 bytes into a new pool string.
+    pub(crate) fn make_tex_string(&mut self, s: impl AsRef<[u8]>) -> Result<StrNumber, Abort> {
+        let mut s = s.as_ref();
+        if s.is_empty() {
+            return Ok(EMPTY_STRING);
+        }
+
+        if self.pool_ptr.index() + s.len() >= self.pool_size.index() {
+            return Err(Abort::Internal("string pool overflow"));
+        }
+
+        while !s.is_empty() {
+            self.push_utf16(next_utf8_char(&mut s));
+        }
+
+        self.make_string()
     }
 }
 

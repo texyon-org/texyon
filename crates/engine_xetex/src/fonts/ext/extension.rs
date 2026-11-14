@@ -26,8 +26,7 @@ use super::get_encoding_mode_and_info;
 /// special.
 fn new_source_position(st: &mut EngineState) -> Option<StrNumber> {
     let fname = st.input.open_levels[st.input.in_open].source_name;
-    (fname > StrNumber::NONE && crate::ffi::texmfmp::is_new_source(st, fname, st.mem.line))
-        .then_some(fname)
+    (fname > StrNumber::NONE && is_new_source(st, fname, st.mem.line)).then_some(fname)
 }
 
 /// Append a `\special{src:...}` whatsit for the current source line.
@@ -40,14 +39,14 @@ pub(crate) fn append_src_special(st: &mut EngineState) -> Result<(), Abort> {
         .cur_list
         .append_whatsit::<WriteNode>(&mut st.mem, WhatsitSubtype::Special)?;
     st.mem[w].stream = 0;
-    let b = crate::ffi::texmfmp::make_src_special(st, fname, st.mem.line)
+    let b = make_src_special(st, fname, st.mem.line)
         .map_err(|()| Abort::Internal("string pool overflow"))?;
     let d = st.mem.tokens.begin()?;
     st.mem.str_toks_cat(&mut st.strings, b, None, &d)?;
     let d = st.mem.tokens.finish(d)?;
     st.scanner.def_ref = d;
     st.mem[w].tokens = d;
-    crate::ffi::texmfmp::remember_source_info(st, fname, st.mem.line);
+    remember_source_info(st, fname, st.mem.line);
     Ok(())
 }
 
@@ -68,11 +67,11 @@ pub(crate) fn insert_src_special(st: &mut EngineState) -> Result<(), Abort> {
     let Some(fname) = new_source_position(st) else {
         return Ok(());
     };
-    let b = crate::ffi::texmfmp::make_src_special(st, fname, st.mem.line)
+    let b = make_src_special(st, fname, st.mem.line)
         .map_err(|()| Abort::Internal("string pool overflow"))?;
     let toklist = special_list(st, b)?;
     crate::scanning::input::begin_token_list(st, toklist, TokenType::Inserted)?;
-    crate::ffi::texmfmp::remember_source_info(st, fname, st.mem.line);
+    remember_source_info(st, fname, st.mem.line);
     Ok(())
 }
 
@@ -194,8 +193,10 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
                     _ => 0,
                 };
                 st.input.cur_list.set_clang(lang)?;
-                let lhm = crate::base::helpers::norm_min(st.eqtb.int_par(IntPar::LeftHyphenMin));
-                let rhm = crate::base::helpers::norm_min(st.eqtb.int_par(IntPar::RightHyphenMin));
+                let lhm =
+                    crate::build::hyphenation::norm_min(st.eqtb.int_par(IntPar::LeftHyphenMin));
+                let rhm =
+                    crate::build::hyphenation::norm_min(st.eqtb.int_par(IntPar::RightHyphenMin));
                 let language = &mut st.mem[w];
                 language.lang = lang;
                 language.lhm = lhm as u16;
@@ -212,7 +213,7 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
         ExtensionCode::ResetTimer => {
             if !st.config.deterministic_mode {
                 (st.shipout.epochseconds, st.shipout.microseconds) =
-                    crate::ffi::texmfmp::get_seconds_and_micros();
+                    crate::ffi::clock::get_seconds_and_micros();
             }
         }
 
@@ -312,4 +313,46 @@ pub(crate) fn do_extension(st: &mut EngineState, code: ExtensionCode) -> Result<
         }
     }
     Ok(())
+}
+
+/// Writes "src:<lineno> <filename>" into the pool and returns its start, or
+/// `Err` if the pool is too small.
+fn make_src_special(
+    st: &mut EngineState,
+    srcfilename: StrNumber,
+    lineno: i32,
+) -> Result<crate::base::units::PoolPos, ()> {
+    let old_pool_ptr = st.strings.pool_ptr;
+    let filename = st.strings.texstring_bytes(srcfilename);
+    let prefix = format!("src:{} ", lineno);
+
+    if st.strings.pool_ptr.index() + prefix.len() + filename.len() >= st.strings.pool_size.index() {
+        return Err(());
+    }
+    st.strings.push_bytes(prefix.as_bytes());
+    st.strings.push_bytes(&filename);
+    Ok(old_pool_ptr)
+}
+
+/// Whether `srcfilename:lineno` differs from the last remembered source.
+fn is_new_source(st: &EngineState, srcfilename: StrNumber, lineno: i32) -> bool {
+    let name = st.strings.texstring_bytes(srcfilename);
+    let last_name = st
+        .src_specials
+        .last_source_name
+        .as_deref()
+        .unwrap_or_default();
+    name != last_name || lineno != st.src_specials.last_lineno
+}
+
+fn remember_source_info(st: &mut EngineState, srcfilename: StrNumber, lineno: i32) {
+    st.src_specials.last_source_name = Some(st.strings.texstring_bytes(srcfilename));
+    st.src_specials.last_lineno = lineno;
+}
+
+/// The last source position written as a source special.
+#[derive(Default, Clone)]
+pub(crate) struct SourceSpecials {
+    pub last_source_name: Option<Vec<u8>>,
+    pub last_lineno: i32,
 }

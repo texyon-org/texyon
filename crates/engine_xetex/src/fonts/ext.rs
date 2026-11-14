@@ -21,6 +21,7 @@ use texyon_xetex_layout::{
 };
 
 mod extension;
+pub(crate) use extension::SourceSpecials;
 mod native;
 
 pub(crate) use self::extension::{

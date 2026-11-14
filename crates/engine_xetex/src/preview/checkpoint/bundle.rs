@@ -5,9 +5,9 @@ use crate::base::units::{BufPos, FontId, MemPtr, PoolPos, SavePtr, Scaled, StrNu
 use crate::build::hyphenation::HyphState;
 use crate::build::main_control::InterCharState;
 use crate::ffi::teckit_icu::FontMappingHandle;
-use crate::ffi::texmfmp::TexmfState;
 use crate::fonts::FontEngineHandle;
 use crate::fonts::FontState;
+use crate::fonts::ext::SourceSpecials;
 use crate::fonts::{LigChar, ProtrusionCodes};
 use crate::memory::mem::MemState;
 use crate::memory::mem_types::ListStateRecord;
@@ -62,7 +62,7 @@ pub(crate) struct EngineBundle {
     dvi: DviWriter,
     scanner: ScannerState,
     native_text: Vec<u16>,
-    texmf: TexmfState,
+    src_specials: SourceSpecials,
     synctex: SynctexCtxt,
     interchar: InterCharState,
     mem: MemBundle,
@@ -93,7 +93,7 @@ impl EngineBundle {
             dvi,
             scanner,
             native_text,
-            texmf: st.texmf.clone(),
+            src_specials: st.src_specials.clone(),
             synctex: st.synctex.clone(),
             interchar: st.interchar.clone(),
             mem: MemBundle::capture(&st.mem),
@@ -126,7 +126,7 @@ impl EngineBundle {
         };
         st.scanner.native_text.clone_from(&self.native_text);
 
-        st.texmf.clone_from(&self.texmf);
+        st.src_specials.clone_from(&self.src_specials);
         st.synctex.clone_from(&self.synctex);
         st.interchar.clone_from(&self.interchar);
         self.mem.restore(&mut st.mem);

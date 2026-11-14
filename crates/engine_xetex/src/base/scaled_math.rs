@@ -1,6 +1,7 @@
 //! Scaled-point arithmetic with XeTeX's overflow checks and remainder-sign
 //! conventions.
 
+use crate::base::consts::INF_BAD;
 use crate::base::units::Scaled;
 
 /// A 32-bit TeX value that the checked arithmetic accepts: an integer or a `Scaled`.
@@ -340,6 +341,29 @@ fn fract_raw(mut x: i32, mut n: i32, mut d: i32, max_answer: i32) -> Overflowing
     Overflowing::ok(if negative { -a } else { a })
 }
 
+/// Badness of stretching or shrinking natural size `t` by available amount `s`.
+pub(crate) fn badness(t: Scaled, s: Scaled) -> i32 {
+    let (t, s) = (t.raw(), s.raw());
+    if t == 0 {
+        return 0;
+    }
+    if s <= 0 {
+        return INF_BAD;
+    }
+    // Approximates 100(t/s)^3 without overflow for t >= 0, as in tex.web.
+    let r = if t <= 7_230_584 {
+        t.wrapping_mul(297) / s
+    } else if s >= 1_663_497 {
+        t / (s / 297)
+    } else {
+        t
+    };
+    if r > 1290 {
+        return INF_BAD;
+    }
+    r.wrapping_mul(r).wrapping_mul(r).wrapping_add(0x2_0000) / 0x4_0000
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -464,5 +488,40 @@ mod tests {
         assert_eq!(fract(10, 2, 3, 100), Overflowing::ok(7));
         assert_eq!(fract(10, 2, 0, 100), Overflowing::overflow(0));
         assert_eq!(fract(60, 2, 1, 100), Overflowing::overflow(0));
+    }
+    #[test]
+    fn badness_zero_t() {
+        assert_eq!(badness(Scaled::ZERO, Scaled::from_raw(1000)), 0);
+    }
+
+    #[test]
+    fn badness_zero_or_neg_s() {
+        assert_eq!(badness(Scaled::from_raw(1), Scaled::ZERO), INF_BAD);
+        assert_eq!(badness(Scaled::from_raw(1), Scaled::from_raw(-5)), INF_BAD);
+    }
+
+    #[test]
+    fn badness_perfect_fit() {
+        assert_eq!(badness(Scaled::from_raw(1000), Scaled::from_raw(1000)), 100);
+    }
+
+    #[test]
+    fn badness_small_ratio_gives_zero() {
+        assert_eq!(badness(Scaled::from_raw(1), Scaled::from_raw(1_000_000)), 0);
+    }
+
+    #[test]
+    fn badness_large_t_s_path() {
+        assert_eq!(
+            badness(Scaled::from_raw(8_000_000), Scaled::from_raw(1_000_000)),
+            INF_BAD
+        );
+    }
+
+    #[test]
+    fn badness_large_s_path() {
+        let b = badness(Scaled::from_raw(8_000_000), Scaled::from_raw(2_000_000));
+        assert!(b < INF_BAD);
+        assert!(b > 0);
     }
 }

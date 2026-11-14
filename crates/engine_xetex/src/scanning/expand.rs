@@ -540,7 +540,7 @@ fn conv_toks(st: &mut EngineState, c: ConvertCode) -> Result<(), Abort> {
         }
         ConvertCode::CreationDate => {
             let b = st.strings.pool_ptr;
-            st.texmf.creation_date(&mut st.strings);
+            st.strings.push_bytes_or_fill(&st.shipout.start_time_str);
             let list = str_list(st, b, None)?;
             begin_token_list(st, list, TokenType::Inserted)?;
         }

@@ -207,12 +207,12 @@ impl MemState {
                             {
                                 0
                             } else {
-                                crate::base::helpers::badness(h - aw[1], aw[2])
+                                crate::base::scaled_math::badness(h - aw[1], aw[2])
                             }
                         } else if aw[1] - h > aw[6] {
                             MAX_HALFWORD
                         } else {
-                            crate::base::helpers::badness(aw[1] - h, aw[6])
+                            crate::base::scaled_math::badness(aw[1] - h, aw[6])
                         };
                         let b = if b < MAX_HALFWORD {
                             if pi <= EJECT_PENALTY {

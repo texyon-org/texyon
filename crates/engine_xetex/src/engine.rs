@@ -10,7 +10,6 @@ use crate::base::consts::{
     HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, LEVEL_ONE, LEVEL_ZERO, MAX_FONT_MAX, MAX_HALFWORD,
     NORMAL, NULL_FONT, NUMBER_USVS, TEX_NULL, TOO_BIG_CHAR,
 };
-use crate::base::helpers::OnDrop;
 use crate::base::params::IntPar;
 use crate::base::stack::TexStack;
 use crate::base::token::Token;
@@ -670,9 +669,9 @@ pub(crate) fn initialize_engine(
         st.shipout.microseconds = 0;
     } else {
         (st.shipout.epochseconds, st.shipout.microseconds) =
-            crate::ffi::texmfmp::get_seconds_and_micros();
+            crate::ffi::clock::get_seconds_and_micros();
     }
-    crate::ffi::texmfmp::init_start_time(st, build_date);
+    crate::ffi::clock::init_start_time(st, build_date);
 
     st.shipout.selector = Selector::TermOnly;
     st.errors.tally = 0;
@@ -727,7 +726,7 @@ pub(crate) fn initialize_engine(
     let (time, day, month, year) = if st.config.in_initex_mode {
         (0, 0, 0, 0)
     } else {
-        crate::ffi::texmfmp::get_date_and_time(build_date, st.config.deterministic_mode)
+        crate::ffi::clock::get_date_and_time(build_date, st.config.deterministic_mode)
     };
     st.eqtb.set_int_par(IntPar::Time, time);
     st.eqtb.set_int_par(IntPar::Day, day);
@@ -942,6 +941,15 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     hyph.trie_r = Vec::new();
     hyph.trie_hash = Vec::new();
     hyph.trie_taken = Vec::new();
+}
+
+/// Runs its closure when dropped, including during unwinding.
+struct OnDrop<F: FnMut()>(F);
+
+impl<F: FnMut()> Drop for OnDrop<F> {
+    fn drop(&mut self) {
+        (self.0)();
+    }
 }
 
 #[cfg(test)]

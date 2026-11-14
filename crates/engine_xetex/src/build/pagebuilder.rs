@@ -4,8 +4,8 @@ use crate::base::codes::{BoxCode, MarkCode};
 use crate::base::consts::{
     AWFUL_BAD, EJECT_PENALTY, INF_BAD, INF_PENALTY, LEVEL_ONE, MAX_DIMEN, MAX_HALFWORD,
 };
-use crate::base::helpers::badness;
 use crate::base::params::{DimenPar, GluePar, IntPar, TokPar};
+use crate::base::scaled_math::badness;
 use crate::base::token::TokenList;
 use crate::base::units::{GlueOrder, MemIdx, MemPtr, Scaled};
 use crate::build::packaging::{MarksAction, PackSpec};

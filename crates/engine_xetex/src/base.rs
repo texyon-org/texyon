@@ -2,7 +2,6 @@ pub(crate) mod cmd;
 pub(crate) mod codes;
 pub(crate) mod command;
 pub(crate) mod consts;
-pub(crate) mod helpers;
 pub(crate) mod mode;
 pub(crate) mod params;
 pub(crate) mod random;

@@ -724,7 +724,7 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
         return Ok(());
     }
 
-    st.hyph.cur_lang = crate::base::helpers::norm_lang(st.eqtb.int_par(IntPar::Language));
+    st.hyph.cur_lang = norm_lang(st.eqtb.int_par(IntPar::Language));
 
     crate::scanning::scan::scan_left_brace(st)?;
     let mut k = 0;
@@ -804,7 +804,7 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
 
     crate::scanning::scan::scan_left_brace(st)?;
 
-    st.hyph.cur_lang = crate::base::helpers::norm_lang(st.eqtb.int_par(IntPar::Language));
+    st.hyph.cur_lang = norm_lang(st.eqtb.int_par(IntPar::Language));
     if st.hyph.trie_not_ready {
         st.hyph.hyph_index = None;
     } else {
@@ -1067,5 +1067,18 @@ impl Default for HyphState {
             hyph_link: Vec::new(),
             trie_op_hash_array: vec![0; 70223],
         }
+    }
+}
+
+pub(crate) fn norm_min(h: i32) -> i16 {
+    h.clamp(1, 63) as i16
+}
+
+/// `\language` as a valid language number, 0 when out of range.
+pub(crate) fn norm_lang(lang: i32) -> u8 {
+    if lang <= 0 || lang > BIGGEST_LANG {
+        0
+    } else {
+        lang as u8
     }
 }

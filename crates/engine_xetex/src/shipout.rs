@@ -1629,6 +1629,8 @@ impl MemState {
 
 #[derive(Default, Clone)]
 pub(crate) struct ShipoutState {
+    /// `D:YYYYmmddHHMMSS+HH'MM'`.
+    pub start_time_str: Vec<u8>,
     pub dvi: crate::shipout::dvi::DviWriter,
     pub insert_src_special_every_par: bool,
     pub insert_src_special_every_math: bool,

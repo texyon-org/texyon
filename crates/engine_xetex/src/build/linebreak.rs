@@ -579,7 +579,7 @@ fn stretch_badness(shortfall: Scaled, stretch: Scaled) -> (i32, Fitness) {
     if shortfall > Scaled::from_raw(7_230_584) && stretch < Scaled::from_raw(1_663_497) {
         (INF_BAD, Fitness::VeryLoose)
     } else {
-        let b = crate::base::helpers::badness(shortfall, stretch);
+        let b = crate::base::scaled_math::badness(shortfall, stretch);
         (b, stretch_fitness(b))
     }
 }
@@ -871,7 +871,7 @@ impl Breaker {
                                 last_line_fit_found = true;
                             } else if g < Scaled::ZERO {
                                 g = g.max(-caw[6]);
-                                b = crate::base::helpers::badness(-g, caw[6]);
+                                b = crate::base::scaled_math::badness(-g, caw[6]);
                                 fit_class = shrink_fitness(b);
                                 last_line_fit_found = true;
                             }
@@ -890,7 +890,7 @@ impl Breaker {
                 b = if -shortfall > caw[6] {
                     INF_BAD + 1
                 } else {
-                    crate::base::helpers::badness(-shortfall, caw[6])
+                    crate::base::scaled_math::badness(-shortfall, caw[6])
                 };
                 fit_class = shrink_fitness(b);
             }

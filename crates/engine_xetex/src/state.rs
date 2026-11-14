@@ -2,8 +2,8 @@
 
 use crate::build::hyphenation::HyphState;
 use crate::build::main_control::InterCharState;
-use crate::ffi::texmfmp::TexmfState;
 use crate::fonts::FontState;
+use crate::fonts::ext::SourceSpecials;
 use crate::memory::mem::MemState;
 use crate::print::errors::ErrorState;
 use crate::scanning::input::InputClusterState;
@@ -29,7 +29,7 @@ pub(crate) struct EngineState {
     pub strings: StringsState,
     pub hyph: HyphState,
     pub fonts: FontState,
-    pub texmf: TexmfState,
+    pub src_specials: SourceSpecials,
     pub synctex: SynctexCtxt,
     pub interchar: InterCharState,
     /// Not checkpointed.

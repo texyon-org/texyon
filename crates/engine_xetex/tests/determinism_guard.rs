@@ -23,14 +23,10 @@ const PATTERNS: &[&str] = &[
 /// `(relative path, pattern, expected count)` in comment-stripped source.
 const ALLOWED: &[(&str, &str, usize)] = &[
     // get_seconds_and_micros; every caller gates on deterministic_mode.
-    ("src/ffi/texmfmp.rs", "SystemTime::now", 1),
-    // broken_down_time, which get_date_and_time and make_pdf_time share.
-    ("src/ffi/texmfmp.rs", "localtime", 1),
-    ("src/ffi/texmfmp.rs", "gmtime", 1),
-    // Declarations only: the libc re-export and the Windows _gmtime64 /
-    // _localtime64 aliases. The call sites live in texmfmp.rs, above.
-    ("src/ffi/compat.rs", "gmtime", 3),
-    ("src/ffi/compat.rs", "localtime", 3),
+    ("src/ffi/clock.rs", "SystemTime::now", 1),
+    // The libc import, the Windows aliases and broken_down_time's one call.
+    ("src/ffi/clock.rs", "localtime", 4),
+    ("src/ffi/clock.rs", "gmtime", 4),
     // Tail settle chunking, only with `tail_chunk` set. It moves where a chunk
     // pauses, never what is typeset.
     ("src/preview/session.rs", "Instant::now", 2),

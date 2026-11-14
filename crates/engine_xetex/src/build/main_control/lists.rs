@@ -277,13 +277,13 @@ pub(super) fn font_space_glue(st: &mut EngineState) -> Result<GlueSpecId, Abort>
 
 /// Sets `cur_lang` and the list's language and hyphen minima for a new paragraph.
 pub(crate) fn start_paragraph_language(st: &mut EngineState) -> Result<(), Abort> {
-    let l = crate::base::helpers::norm_lang(st.eqtb.int_par(IntPar::Language));
+    let l = crate::build::hyphenation::norm_lang(st.eqtb.int_par(IntPar::Language));
     st.hyph.cur_lang = l;
     st.input.cur_list.set_clang(i32::from(l))?;
-    let lhm = i32::from(crate::base::helpers::norm_min(
+    let lhm = i32::from(crate::build::hyphenation::norm_min(
         st.eqtb.int_par(IntPar::LeftHyphenMin),
     ));
-    let rhm = i32::from(crate::base::helpers::norm_min(
+    let rhm = i32::from(crate::build::hyphenation::norm_min(
         st.eqtb.int_par(IntPar::RightHyphenMin),
     ));
     st.input.cur_list.prev_graf = (lhm * 64 + rhm) * 65536 + i32::from(l);
@@ -639,7 +639,7 @@ impl ListStateRecord {
         mem: &mut MemState,
         eqtb: &crate::tables::eqtb::EqtbState,
     ) -> Result<(), Abort> {
-        let l = i32::from(crate::base::helpers::norm_lang(
+        let l = i32::from(crate::build::hyphenation::norm_lang(
             eqtb.int_par(IntPar::Language),
         ));
         if l == self.clang()? {
@@ -649,8 +649,10 @@ impl ListStateRecord {
         self.set_clang(l)?;
         let language = &mut mem[w];
         language.lang = l;
-        language.lhm = crate::base::helpers::norm_min(eqtb.int_par(IntPar::LeftHyphenMin)) as u16;
-        language.rhm = crate::base::helpers::norm_min(eqtb.int_par(IntPar::RightHyphenMin)) as u16;
+        language.lhm =
+            crate::build::hyphenation::norm_min(eqtb.int_par(IntPar::LeftHyphenMin)) as u16;
+        language.rhm =
+            crate::build::hyphenation::norm_min(eqtb.int_par(IntPar::RightHyphenMin)) as u16;
         Ok(())
     }
 }
