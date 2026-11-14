@@ -2,7 +2,8 @@
 
 use crate::base::consts::{BIGGEST_CHAR, PRIM_SIZE, TOO_BIG_CHAR};
 use crate::base::units::{PrimNum, StrNumber};
-use crate::print::errors::Abort;
+use crate::memory::mem_types::ZeroWord;
+use crate::print::errors::{Abort, Capacity};
 use crate::tables::cs::{CsId, CsKind, NameSlot};
 use crate::tables::eqtb::EqtbState;
 use crate::tables::string_pool::StringsState;
@@ -18,7 +19,7 @@ pub(crate) struct HashEntry {
 }
 
 // SAFETY: `None` and `StrNumber(0)` are both all-zero bits.
-unsafe impl crate::memory::mem_types::ZeroWord for HashEntry {}
+unsafe impl ZeroWord for HashEntry {}
 
 /// A slot of the `\primitive` lookup table.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
@@ -96,7 +97,7 @@ impl EqtbState {
                             loop {
                                 let Some(prev) = self.hash_used.prev_bucket() else {
                                     return Err(Abort::Overflow {
-                                        capacity: crate::print::errors::Capacity::HashSize,
+                                        capacity: Capacity::HashSize,
                                         n: HASH_SIZE.saturating_add_unsigned(self.hash_extra),
                                     });
                                 };
@@ -195,7 +196,7 @@ impl EqtbState {
                     loop {
                         let Some(prev) = self.prim_used.prev() else {
                             return Err(Abort::Overflow {
-                                capacity: crate::print::errors::Capacity::PrimitiveSize,
+                                capacity: Capacity::PrimitiveSize,
                                 n: PRIM_SIZE,
                             });
                         };

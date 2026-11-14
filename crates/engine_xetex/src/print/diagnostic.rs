@@ -1,7 +1,10 @@
 //! What the engine tells its host about the document: errors, warnings, and
 //! the text the document writes to its transcript.
 
+use std::mem;
+
 use crate::base::units::StrNumber;
+use crate::ffi::bridge;
 use crate::ffi::bridge::{diag_append, diag_finish};
 use crate::state::{EngineExecutionMode, EngineState};
 
@@ -81,7 +84,7 @@ impl DiagnosticsState {
 
     /// The diagnostics this operation reported, in order.
     pub(crate) fn take(&mut self) -> Vec<Diagnostic> {
-        std::mem::take(&mut self.issued)
+        mem::take(&mut self.issued)
     }
 
     /// Adds a printed byte to the message being captured.
@@ -175,10 +178,8 @@ pub(crate) fn emit_fatal(st: &mut EngineState, diagnostic: Diagnostic) {
 
 fn emit_with_cli_text(st: &mut EngineState, diagnostic: Diagnostic, cli: String) {
     let bridged = match diagnostic.kind {
-        DiagnosticKind::Fatal | DiagnosticKind::Error => {
-            Some(crate::ffi::bridge::Diagnostic::error())
-        }
-        DiagnosticKind::Warning => Some(crate::ffi::bridge::Diagnostic::warning()),
+        DiagnosticKind::Fatal | DiagnosticKind::Error => Some(bridge::Diagnostic::error()),
+        DiagnosticKind::Warning => Some(bridge::Diagnostic::warning()),
         DiagnosticKind::Written => None,
     };
     if let Some(mut bridged) = bridged {

@@ -3,21 +3,16 @@
 use super::odd;
 use super::prehyph::Word;
 use crate::base::params::IntPar;
-use crate::base::units::MemIdx;
-use crate::base::units::{FontId, MemPtr, Scaled, StrNumber};
-use crate::build::hyphenation::HyphState;
-use crate::build::hyphenation::TrieOp;
-use crate::build::main_control::NewChar;
-use crate::fonts::FontState;
-use crate::fonts::{CharTag, LigChar, LigKernAction, LigOp};
-use crate::memory::mem::HOLD_HEAD;
-use crate::memory::mem::MemState;
+use crate::base::units::{FontId, MemIdx, MemPtr, Scaled, StrNumber};
+use crate::build::hyphenation::{HyphState, TrieOp};
+use crate::build::main_control::{NewChar, new_character};
+use crate::fonts::{CharTag, FontState, LigChar, LigKernAction, LigOp, new_native_character};
+use crate::memory::mem::{HOLD_HEAD, MemState};
 use crate::memory::node::{
     AnyNode, CharNode, DiscNode, HyphPosNode, LigBoundary, LigItem, LigatureNode, NativeWordNode,
     NodePtr, View,
 };
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
+use crate::print::errors::{Abort, OrConfusion};
 use crate::state::EngineState;
 use crate::tables::eqtb::EqtbState;
 
@@ -405,7 +400,7 @@ fn hyphenate_native_word(
             s.set_link(&mut st.mem, q.ptr());
 
             let disc = st.mem.new_disc()?;
-            let hyphen = crate::fonts::new_native_character(st, hf, u32::from(hyf_char.code()))?;
+            let hyphen = new_native_character(st, hf, u32::from(hyf_char.code()))?;
             st.mem[disc].pre_break = hyphen.ptr();
             st.mem[q].link = disc.ptr();
             s = disc.idx();
@@ -620,11 +615,7 @@ fn insert_hyphens(
                 st.hyph.hyf[i] = 0;
                 let mut minor_tail = None;
                 st.mem[disc].pre_break = None;
-                let hyf_node = crate::build::main_control::new_character(
-                    st,
-                    st.hyph.hf,
-                    st.hyph.hyf_char.code(),
-                )?;
+                let hyf_node = new_character(st, st.hyph.hf, st.hyph.hyf_char.code())?;
                 let mut saved_c = LigChar::NONE;
                 if let Some(node) = hyf_node {
                     i += 1;

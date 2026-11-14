@@ -4,7 +4,15 @@
 //! first pre-image of each touched word in an epoch. [`PlainTrail`] records
 //! every write for smaller, colder arrays and relies on reverse replay.
 
+use std::cell::RefCell;
+use std::mem;
+
 use bytemuck::Pod;
+
+use crate::base::cmd::Cmd;
+use crate::base::command::Command;
+use crate::state::EngineState;
+use crate::tables::hash::{HashEntry, PrimEntry};
 
 /// A pre-image: word `idx` held `old` before the epoch touched it.
 #[derive(Clone, Copy)]
@@ -14,7 +22,7 @@ struct Preimage<T: Copy> {
     old: T,
 }
 
-const _: () = assert!(std::mem::size_of::<Preimage<u64>>() == 12);
+const _: () = assert!(mem::size_of::<Preimage<u64>>() == 12);
 
 /// The first-touch journal of one flat array of `T` words.
 ///
@@ -49,14 +57,14 @@ impl<T: Pod> JournalWord for T {
     }
 }
 
-impl JournalWord for crate::base::cmd::Cmd {
+impl JournalWord for Cmd {
     #[inline]
     fn same(&self, other: &Self) -> bool {
         self == other
     }
 }
 
-impl JournalWord for crate::base::command::Command {
+impl JournalWord for Command {
     #[inline]
     fn same(&self, other: &Self) -> bool {
         self == other
@@ -145,7 +153,7 @@ impl<T: JournalWord> WordJournal<T> {
         });
         self.rebase(data.len());
         WordDelta {
-            entries: std::mem::take(&mut self.entries),
+            entries: mem::take(&mut self.entries),
         }
     }
 
@@ -199,7 +207,7 @@ impl<T: Copy> WordDelta<T> {
     }
 
     pub(crate) fn allocated_bytes(&self) -> usize {
-        self.entries.capacity() * std::mem::size_of::<Preimage<T>>()
+        self.entries.capacity() * mem::size_of::<Preimage<T>>()
     }
 
     pub(crate) fn compact(&mut self) {
@@ -253,8 +261,8 @@ impl<T: Copy> PlainTrail<T> {
 
     pub(crate) fn seal(&mut self) -> PlainDelta<T> {
         PlainDelta {
-            idx: std::mem::take(&mut self.idx),
-            old: std::mem::take(&mut self.old),
+            idx: mem::take(&mut self.idx),
+            old: mem::take(&mut self.old),
         }
     }
 
@@ -316,8 +324,7 @@ impl<T: Copy> PlainDelta<T> {
     }
 
     pub(crate) fn allocated_bytes(&self) -> usize {
-        self.idx.capacity() * std::mem::size_of::<u32>()
-            + self.old.capacity() * std::mem::size_of::<T>()
+        self.idx.capacity() * mem::size_of::<u32>() + self.old.capacity() * mem::size_of::<T>()
     }
 
     pub(crate) fn compact(&mut self) {
@@ -333,7 +340,7 @@ impl<T: Copy> PlainDelta<T> {
 
 thread_local! {
     /// Index bitmap for [`PlainDelta::compose_with_older`], all clear between calls.
-    static COMPOSE_SEEN: std::cell::RefCell<Vec<u64>> = const { std::cell::RefCell::new(Vec::new()) };
+    static COMPOSE_SEEN: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Marks `index` in `seen`, reporting whether it was clear.
@@ -351,8 +358,8 @@ fn first_sighting(seen: &mut Vec<u64>, index: u32) -> bool {
 
 #[derive(Default)]
 pub(crate) struct EqtbJournal {
-    pub(crate) hash: PlainTrail<crate::tables::hash::HashEntry>,
-    pub(crate) prim: PlainTrail<crate::tables::hash::PrimEntry>,
+    pub(crate) hash: PlainTrail<HashEntry>,
+    pub(crate) prim: PlainTrail<PrimEntry>,
 }
 
 impl EqtbJournal {
@@ -362,7 +369,7 @@ impl EqtbJournal {
     }
 }
 
-pub(crate) fn arm(st: &mut crate::state::EngineState) {
+pub(crate) fn arm(st: &mut EngineState) {
     st.mem.journal.arm(st.mem.data.len());
     st.mem.tokens.arm_journal();
     st.mem.glue.journal.arm(st.mem.glue.specs().len());
@@ -371,7 +378,7 @@ pub(crate) fn arm(st: &mut crate::state::EngineState) {
     st.eqtb.arm_tables();
 }
 
-pub(crate) fn disarm(st: &mut crate::state::EngineState) {
+pub(crate) fn disarm(st: &mut EngineState) {
     st.mem.journal.disarm();
     st.mem.tokens.disarm_journal();
     st.mem.glue.journal.disarm();
@@ -382,6 +389,11 @@ pub(crate) fn disarm(st: &mut crate::state::EngineState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::base::command::Command;
+    use crate::base::units::StrNumber;
+    use crate::memory::mem::MemState;
+    use crate::tables::cs::NameSlot;
+    use crate::tables::eqtb::{EqtbState, Table};
     fn word(value: i32) -> u64 {
         let half = u64::from(value.cast_unsigned());
         half | half << 32
@@ -581,7 +593,7 @@ mod tests {
 
     #[test]
     fn mem_setters_capture_preimages() {
-        let mut mem = crate::memory::mem::MemState {
+        let mut mem = MemState {
             data: vec![0; 4],
             ..Default::default()
         };
@@ -601,20 +613,19 @@ mod tests {
 
     #[test]
     fn eqtb_setters_capture_preimages() {
-        use crate::base::command::Command;
-        let cs = crate::tables::cs::NameSlot::bucket(0).cs();
-        let mut eqtb = crate::tables::eqtb::EqtbState {
-            hash: vec![crate::tables::hash::HashEntry::default(); 1],
-            meanings: crate::tables::eqtb::Table::at_level(cs.index() + 1, Command::UndefinedCs, 0),
+        let cs = NameSlot::bucket(0).cs();
+        let mut eqtb = EqtbState {
+            hash: vec![HashEntry::default(); 1],
+            meanings: Table::at_level(cs.index() + 1, Command::UndefinedCs, 0),
             ..Default::default()
         };
         eqtb.journal.hash.arm();
         eqtb.arm_tables();
-        eqtb.set_text(cs, crate::base::units::StrNumber::from_raw(6));
+        eqtb.set_text(cs, StrNumber::from_raw(6));
         eqtb.set_meaning(cs, Command::Halign, 3);
         eqtb.journal.hash.seal().apply_to(&mut eqtb.hash);
         eqtb.seal_tables().apply_to(&mut eqtb);
-        assert_eq!(eqtb.hash[0].text, crate::base::units::StrNumber::NONE);
+        assert_eq!(eqtb.hash[0].text, StrNumber::NONE);
         assert_eq!(
             (eqtb.meaning(cs), eqtb.cs_level(cs)),
             (Command::UndefinedCs, 0)

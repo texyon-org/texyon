@@ -1,10 +1,11 @@
 //! Immutable, revisioned editor source snapshots.
 
 use std::collections::BTreeMap;
-use std::fmt;
+use std::error::Error;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::{fmt, fs};
 
 static NEXT_REVISION: AtomicU64 = AtomicU64::new(1);
 static NEXT_IDENTITY: AtomicU64 = AtomicU64::new(1);
@@ -121,7 +122,7 @@ impl fmt::Display for SourceError {
     }
 }
 
-impl std::error::Error for SourceError {}
+impl Error for SourceError {}
 
 impl SourceSnapshot {
     /// Validate and freeze a complete source set. Paths may be relative to
@@ -323,12 +324,12 @@ impl SourceSnapshot {
         if let Some(entry) = disk_entries.get(path) {
             return Some(entry.parts());
         }
-        let root = std::fs::canonicalize(self.root.as_ref()).ok()?;
-        let candidate = std::fs::canonicalize(root.join(path.as_str())).ok()?;
+        let root = fs::canonicalize(self.root.as_ref()).ok()?;
+        let candidate = fs::canonicalize(root.join(path.as_str())).ok()?;
         if !candidate.starts_with(&root) || !candidate.is_file() {
             return None;
         }
-        let entry = SourceEntry::new(std::fs::read(candidate).ok()?.into());
+        let entry = SourceEntry::new(fs::read(candidate).ok()?.into());
         let parts = entry.parts();
         disk_entries.insert(path.clone(), entry);
         Some(parts)

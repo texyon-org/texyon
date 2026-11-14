@@ -92,6 +92,11 @@ macro_rules! code_enum {
 
 pub(crate) use code_enum;
 
+use crate::base::mode::ListKind;
+use crate::base::units::NodeType;
+use crate::build::main_control::{LP_CODE_BASE, RP_CODE_BASE};
+use crate::memory::node::{LeaderKind, MathCode, WhatsitSubtype};
+
 code_enum! {
     /// The type of a scanned value (`cur_val_level`), ordered as TeX compares them.
     #[derive(PartialOrd, Ord, Default)]
@@ -358,7 +363,6 @@ code_enum! {
 }
 
 const _: () = {
-    use crate::memory::node::WhatsitSubtype;
     assert!(ExtensionCode::Open.raw() == WhatsitSubtype::Open as i32);
     assert!(ExtensionCode::Write.raw() == WhatsitSubtype::Write as i32);
     assert!(ExtensionCode::Close.raw() == WhatsitSubtype::Close as i32);
@@ -494,8 +498,7 @@ code_enum! {
 
 impl LeaderCode {
     /// The glue kind `\leaders`, `\cleaders` and `\xleaders` make, `None` for `\shipout`.
-    pub(crate) fn glue_leaders(self) -> Option<crate::memory::node::LeaderKind> {
-        use crate::memory::node::LeaderKind;
+    pub(crate) fn glue_leaders(self) -> Option<LeaderKind> {
         match self {
             LeaderCode::Shipout => None,
             LeaderCode::ALeaders => Some(LeaderKind::Aligned),
@@ -505,8 +508,7 @@ impl LeaderCode {
     }
 
     /// The primitive that makes leaders of `kind`.
-    pub(crate) fn of_leaders(kind: crate::memory::node::LeaderKind) -> LeaderCode {
-        use crate::memory::node::LeaderKind;
+    pub(crate) fn of_leaders(kind: LeaderKind) -> LeaderCode {
         match kind {
             LeaderKind::Aligned => LeaderCode::ALeaders,
             LeaderKind::Centered => LeaderCode::CLeaders,
@@ -528,8 +530,7 @@ code_enum! {
 
 impl ValignCode {
     /// The math node `\beginL`..`\endR` append, `None` for `\valign`.
-    pub(crate) fn math_code(self) -> Option<crate::memory::node::MathCode> {
-        use crate::memory::node::MathCode;
+    pub(crate) fn math_code(self) -> Option<MathCode> {
         match self {
             ValignCode::Valign => None,
             ValignCode::BeginL => Some(MathCode::BeginL),
@@ -591,10 +592,10 @@ code_enum! {
 
 impl AuxCode {
     /// The kind of list that keeps the quantity.
-    pub(crate) const fn kind(self) -> crate::base::mode::ListKind {
+    pub(crate) const fn kind(self) -> ListKind {
         match self {
-            AuxCode::PrevDepth => crate::base::mode::ListKind::Vertical,
-            AuxCode::SpaceFactor => crate::base::mode::ListKind::Horizontal,
+            AuxCode::PrevDepth => ListKind::Vertical,
+            AuxCode::SpaceFactor => ListKind::Horizontal,
         }
     }
 }
@@ -631,8 +632,8 @@ code_enum! {
 }
 
 const _: () = {
-    assert!(LeftRightCode::Left.raw() == crate::base::units::NodeType::LeftNoad as i32);
-    assert!(LeftRightCode::Right.raw() == crate::base::units::NodeType::RightNoad as i32);
-    assert!(FontIntCode::LpCode.raw() == crate::build::main_control::LP_CODE_BASE);
-    assert!(FontIntCode::RpCode.raw() == crate::build::main_control::RP_CODE_BASE);
+    assert!(LeftRightCode::Left.raw() == NodeType::LeftNoad as i32);
+    assert!(LeftRightCode::Right.raw() == NodeType::RightNoad as i32);
+    assert!(FontIntCode::LpCode.raw() == LP_CODE_BASE);
+    assert!(FontIntCode::RpCode.raw() == RP_CODE_BASE);
 };

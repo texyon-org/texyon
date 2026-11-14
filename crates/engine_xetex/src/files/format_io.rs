@@ -5,40 +5,45 @@
 //! into the same place, checking ranges. Items are stored big-endian, an
 //! 8-byte word as one 64-bit value.
 
+use std::rc::Rc;
+use std::{iter, slice};
+
+use crate::FORMAT_SERIAL;
+use crate::base::cmd::Cmd;
 use crate::base::command::Command;
 use crate::base::consts::{
-    EMPTY_STRING, FONT_BASE, INVALID_HANDLE, MAX_FONT_MAX, MAX_HALFWORD, NULL_FONT, PRIM_SIZE,
-    TEX_NULL, TOO_BIG_CHAR,
+    EMPTY_STRING, FONT_BASE, INVALID_HANDLE, LEVEL_ONE, MAX_FONT_MAX, MAX_HALFWORD, NULL_FONT,
+    PRIM_SIZE, TEX_NULL, TOO_BIG_CHAR,
 };
 use crate::base::params::IntPar;
 use crate::base::token::{ListSlot, Token, TokenList, TokenStore};
-use crate::base::units::MemIdx;
-use crate::base::units::RawPtr;
-use crate::base::units::{FontId, MemPtr, PoolPos, PrimNum, SavePtr, Scaled, StrNumber};
+use crate::base::units::{
+    FontId, MemIdx, MemPtr, PoolPos, PrimNum, RawPtr, SavePtr, Scaled, StrNumber,
+};
 use crate::build::hyphenation::{BIGGEST_LANG, HYPH_PRIME, TRIE_OP_SIZE, TrieOp, TriePtr};
 use crate::engine::{POOL_FREE, STRINGS_FREE};
 use crate::ffi::bridge::{
     FileFormat, input_open, input_read, output_close, output_open, output_write,
 };
-use crate::fonts::LigChar;
-use crate::fonts::PerFont;
+use crate::files::io::{input_close, make_name_string, pack_job_name};
 use crate::fonts::tfm::{
     CharInfo, CharTag, ExtIdx, ExtRecipe, FontMetrics, FontParams, LigKernAction, LigKernIdx,
     LigKernStep, LigOp, TfmMetrics,
 };
-use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
-use crate::memory::glue_store::GlueSpecId;
-use crate::memory::glue_store::{GlueSpec, GlueStore, STATIC_SPECS};
+use crate::fonts::{AAT_FONT_FLAG, LigChar, OTGR_FONT_FLAG, PerFont};
+use crate::memory::glue_store::{GlueSpec, GlueSpecId, GlueStore, STATIC_SPECS};
 use crate::memory::mem::{CONTRIB_HEAD, PAGE_HEAD, RESERVED_WORDS};
-use crate::print::Selector;
-use crate::print::errors::Abort;
-use crate::print::errors::InteractionMode;
-use crate::print::{print, print_char, print_int, print_ln, print_nl};
+use crate::memory::mem_types::zeroed_vec;
+use crate::memory::node::{NodePtr, View};
+use crate::print::errors::{Abort, InteractionMode, error};
+use crate::print::{
+    Selector, print, print_char, print_esc, print_file_name, print_int, print_ln, print_nl,
+    print_scaled,
+};
 use crate::state::EngineState;
 use crate::tables::cs::{CsId, NameSlot};
-use crate::tables::eqtb::EqtbState;
-use crate::tables::hash::HASH_PRIME;
-use crate::tables::hash::{HashEntry, PrimEntry};
+use crate::tables::eqtb::{EqStore, EqtbState, InterCharPair, ShapeRef};
+use crate::tables::hash::{HASH_PRIME, HashEntry, PrimEntry};
 
 const FORMAT_HEADER_MAGIC: i32 = 0x5454_4E43;
 const FORMAT_FOOTER_MAGIC: i32 = 0x0000_029A;
@@ -93,7 +98,7 @@ macro_rules! newtype_item {
     )*};
 }
 
-impl FmtItem for crate::base::cmd::Cmd {
+impl FmtItem for Cmd {
     const SIZE: usize = 1;
     #[inline]
     fn put(self, out: &mut Vec<u8>) {
@@ -102,7 +107,7 @@ impl FmtItem for crate::base::cmd::Cmd {
     #[inline]
     fn get(bytes: &[u8]) -> Option<Self> {
         let &[code] = bytes else { return None };
-        Some(crate::base::cmd::Cmd::from_catcode_bits(i32::from(code)))
+        Some(Cmd::from_catcode_bits(i32::from(code)))
     }
 }
 
@@ -118,7 +123,7 @@ impl FmtItem for Command {
     #[inline]
     fn get(bytes: &[u8]) -> Option<Self> {
         let (cmd, chr) = bytes.split_at_checked(2)?;
-        let cmd = crate::base::cmd::Cmd::from_raw(i32::from(u16::get(cmd)?))?;
+        let cmd = Cmd::from_raw(i32::from(u16::get(cmd)?))?;
         Command::decode(cmd, i32::get(chr)?)
     }
 }
@@ -135,7 +140,7 @@ impl FmtItem for FontId {
     }
 }
 
-impl FmtItem for crate::tables::eqtb::ShapeRef {
+impl FmtItem for ShapeRef {
     const SIZE: usize = MemPtr::SIZE;
     #[inline]
     fn put(self, out: &mut Vec<u8>) {
@@ -143,19 +148,19 @@ impl FmtItem for crate::tables::eqtb::ShapeRef {
     }
     #[inline]
     fn get(bytes: &[u8]) -> Option<Self> {
-        MemPtr::get(bytes).map(crate::tables::eqtb::ShapeRef::from_ptr)
+        MemPtr::get(bytes).map(ShapeRef::from_ptr)
     }
 }
 
-impl<K: crate::memory::node::View + 'static> FmtItem for Option<crate::memory::node::NodePtr<K>> {
+impl<K: View + 'static> FmtItem for Option<NodePtr<K>> {
     const SIZE: usize = MemPtr::SIZE;
     #[inline]
     fn put(self, out: &mut Vec<u8>) {
-        self.map(crate::memory::node::NodePtr::idx).put(out);
+        self.map(NodePtr::idx).put(out);
     }
     #[inline]
     fn get(bytes: &[u8]) -> Option<Self> {
-        MemPtr::get(bytes).map(|p| p.map(crate::memory::node::NodePtr::from_idx_unchecked))
+        MemPtr::get(bytes).map(|p| p.map(NodePtr::from_idx_unchecked))
     }
 }
 
@@ -462,7 +467,7 @@ trait FmtStream {
     fn items<T: FmtItem>(&mut self, v: &mut [T]) -> Result<(), Abort>;
 
     fn int(&mut self, v: &mut i32) -> Result<(), Abort> {
-        self.items(std::slice::from_mut(v))
+        self.items(slice::from_mut(v))
     }
 
     /// Items that must lie in `low..=high` when loaded.
@@ -480,12 +485,12 @@ trait FmtStream {
     }
 
     fn int_in(&mut self, v: &mut i32, low: i32, high: i32) -> Result<(), Abort> {
-        self.items_in(std::slice::from_mut(v), low, high)
+        self.items_in(slice::from_mut(v), low, high)
     }
 
     fn ptr_in(&mut self, v: &mut MemPtr, low: i32, high: i32) -> Result<(), Abort> {
         self.items_in(
-            std::slice::from_mut(v),
+            slice::from_mut(v),
             MemIdx::from_raw(low),
             MemIdx::from_raw(high),
         )
@@ -499,7 +504,7 @@ trait FmtStream {
         high: T,
         too_big: &'static str,
     ) -> Result<(), Abort> {
-        self.items(std::slice::from_mut(v))?;
+        self.items(slice::from_mut(v))?;
         if Self::LOADING {
             if *v < low {
                 return Err(bad_fmt());
@@ -617,7 +622,7 @@ pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     st.strings.format_ident = st.strings.make_string()?;
-    let path = crate::files::io::pack_job_name(st, ".fmt")?;
+    let path = pack_job_name(st, ".fmt")?;
 
     let handle = output_open(&path, false);
     if handle == INVALID_HANDLE {
@@ -625,7 +630,7 @@ pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     print_nl(st, "Beginning to dump on file ");
-    let name_string = crate::files::io::make_name_string(st, &path)?;
+    let name_string = make_name_string(st, &path)?;
     print(st, name_string);
 
     st.strings.flush_string();
@@ -667,7 +672,7 @@ pub fn load_fmt_file(st: &mut EngineState, dump_name: &str) -> Result<(), Abort>
 
     format_file(&mut Undump::new(handle), st)?;
 
-    if crate::files::io::input_close(handle) {
+    if input_close(handle) {
         return Err(Abort::Internal(
             "serious internal error closing the format file",
         ));
@@ -687,7 +692,7 @@ fn format_file<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abor
 
 fn header<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
     s.constant(FORMAT_HEADER_MAGIC)?;
-    let serial = crate::FORMAT_SERIAL as i32;
+    let serial = FORMAT_SERIAL as i32;
     let mut v = serial;
     s.int(&mut v)?;
     if v != serial {
@@ -696,7 +701,7 @@ fn header<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
 
     let eqtb = &mut st.eqtb;
     s.items_in(
-        std::slice::from_mut(&mut eqtb.hash_high),
+        slice::from_mut(&mut eqtb.hash_high),
         0,
         SUP_HASH_EXTRA.cast_unsigned(),
     )?;
@@ -769,8 +774,7 @@ fn dynamic_memory<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), A
     let last = MemIdx::from_raw(words - 1);
     s.items_in(&mut mem.free.0, None, last)?;
     if S::LOADING {
-        mem.data =
-            crate::memory::mem_types::zeroed_vec(usize::try_from(words).map_err(|_| bad_fmt())?);
+        mem.data = zeroed_vec(usize::try_from(words).map_err(|_| bad_fmt())?);
     }
     s.items(&mut mem.data)?;
     token_lists(s, &mut mem.tokens)?;
@@ -809,7 +813,7 @@ fn token_lists<S: FmtStream>(s: &mut S, toks: &mut TokenStore) -> Result<(), Abo
     s.int_in(&mut tokens, 1, i32::MAX)?;
     s.int_in(&mut lists, 2, i32::MAX)?;
     s.items(&mut marks.free_runs)?;
-    s.items(std::slice::from_mut(&mut marks.free_lists))?;
+    s.items(slice::from_mut(&mut marks.free_lists))?;
     if S::LOADING {
         marks.tokens = usize::try_from(tokens).map_err(|_| bad_fmt())?;
         marks.lists = usize::try_from(lists).map_err(|_| bad_fmt())?;
@@ -894,7 +898,6 @@ fn runs<S: FmtStream, T: FmtItem + PartialEq>(s: &mut S, v: &mut [T]) -> Result<
 
 /// The `\XeTeXinterchartoks` lists: a count, then each pair's classes and list.
 fn inter_char_toks<S: FmtStream>(s: &mut S, eqtb: &mut EqtbState) -> Result<(), Abort> {
-    use crate::tables::eqtb::{EqStore, InterCharPair};
     let mut entries: Vec<([i32; 2], TokenList)> = eqtb
         .inter_char
         .entries()
@@ -908,14 +911,13 @@ fn inter_char_toks<S: FmtStream>(s: &mut S, eqtb: &mut EqtbState) -> Result<(), 
     }
     for (classes, list) in &mut entries {
         s.items(classes)?;
-        s.items(std::slice::from_mut(list))?;
+        s.items(slice::from_mut(list))?;
     }
     if S::LOADING {
         eqtb.inter_char.clear();
         for ([first, second], list) in entries {
             let pair = InterCharPair::new(first, second).ok_or_else(bad_fmt)?;
-            eqtb.inter_char
-                .set(pair, list, crate::base::consts::LEVEL_ONE);
+            eqtb.inter_char.set(pair, list, LEVEL_ONE);
         }
     }
     Ok(())
@@ -943,7 +945,7 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
 
     // \partokenname may name an active character or a control symbol.
     s.items_in(
-        std::slice::from_mut(&mut st.input.par_loc),
+        slice::from_mut(&mut st.input.par_loc),
         Some(CsId::FIRST),
         Some(CsId::top(eqtb.hash_high)),
     )?;
@@ -951,7 +953,7 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
         st.input.par_token = Token::from_cs(st.input.par_loc.ok_or_else(bad_fmt)?);
     }
     s.items_in(
-        std::slice::from_mut(&mut st.shipout.write_loc),
+        slice::from_mut(&mut st.shipout.write_loc),
         Some(NameSlot::bucket(0).cs()),
         Some(eqtb.cs_top),
     )?;
@@ -962,19 +964,15 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
     // them. A bucket's slot number is its index in `hash`, and one past the last
     // bucket is the first frozen control sequence, which WEB's loop includes.
     let mut used = eqtb.hash_used.raw();
-    s.items_in(
-        std::slice::from_mut(&mut used),
-        0,
-        NameSlot::BUCKETS_END.raw(),
-    )?;
+    s.items_in(slice::from_mut(&mut used), 0, NameSlot::BUCKETS_END.raw())?;
     eqtb.hash_used = NameSlot::from_raw(used);
     let used = used as usize;
     if S::LOADING {
         let mut lowest = 0;
         loop {
             let mut p: u32 = lowest;
-            s.items_in(std::slice::from_mut(&mut p), lowest, used as u32)?;
-            s.items(std::slice::from_mut(&mut eqtb.hash[p as usize]))?;
+            s.items_in(slice::from_mut(&mut p), lowest, used as u32)?;
+            s.items(slice::from_mut(&mut eqtb.hash[p as usize]))?;
             if p as usize == used {
                 break;
             }
@@ -986,8 +984,8 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
         for p in 0..=used {
             let entry = &mut eqtb.hash[p];
             if entry.text != StrNumber::NONE {
-                s.items(std::slice::from_mut(&mut (p as u32)))?;
-                s.items(std::slice::from_mut(entry))?;
+                s.items(slice::from_mut(&mut (p as u32)))?;
+                s.items(slice::from_mut(entry))?;
                 eqtb.cs_count += 1;
             }
         }
@@ -1126,11 +1124,11 @@ fn font_metrics<S: FmtStream>(
         }
     } else {
         let tfm = match metrics {
-            FontMetrics::Tfm(m) => std::rc::Rc::clone(m),
-            FontMetrics::Native { .. } => std::rc::Rc::default(),
+            FontMetrics::Tfm(m) => Rc::clone(m),
+            FontMetrics::Native { .. } => Rc::default(),
         };
         let mut bc = tfm.bc();
-        s.items(std::slice::from_mut(&mut bc))?;
+        s.items(slice::from_mut(&mut bc))?;
         let mut chars = tfm.chars().to_vec();
         counted_items(s, &mut chars, 256, None)?;
         let mut lig_kern = tfm.lig_kern().to_vec();
@@ -1150,7 +1148,7 @@ fn font_metrics<S: FmtStream>(
             let label = u16::try_from(label).ok().map(LigKernIdx::from_raw);
             let tfm = TfmMetrics::new(bc, chars.into(), lig_kern.into(), exten.into(), label)
                 .ok_or_else(bad_fmt)?;
-            *metrics = FontMetrics::Tfm(std::rc::Rc::new(tfm));
+            *metrics = FontMetrics::Tfm(Rc::new(tfm));
         }
     }
     let mut values = params.as_slice().to_vec();
@@ -1176,9 +1174,9 @@ fn check_font_words(eqtb: &EqtbState, font_ptr: FontId) -> Result<(), Abort> {
 
 fn print_dumped_fonts(st: &mut EngineState) -> Result<(), Abort> {
     let font_ptr = st.fonts.font_ptr;
-    for f in std::iter::once(NULL_FONT).chain(font_ptr.loaded()) {
+    for f in iter::once(NULL_FONT).chain(font_ptr.loaded()) {
         print_nl(st, "\\font");
-        crate::print::print_esc(st, st.eqtb.font_id_text(f));
+        print_esc(st, st.eqtb.font_id_text(f));
         print_char(st, b'=');
 
         let font_name = st.fonts.font_name[f];
@@ -1187,8 +1185,8 @@ fn print_dumped_fonts(st: &mut EngineState) -> Result<(), Abort> {
             || font_area == OTGR_FONT_FLAG
             || st.fonts.font_mapping[f].is_some()
         {
-            crate::print::print_file_name(st, font_name, EMPTY_STRING, EMPTY_STRING);
-            crate::print::errors::error(
+            print_file_name(st, font_name, EMPTY_STRING, EMPTY_STRING);
+            error(
                 st,
                 "Can't \\dump a format with native fonts or font-mappings",
                 &[
@@ -1198,13 +1196,13 @@ fn print_dumped_fonts(st: &mut EngineState) -> Result<(), Abort> {
                 ],
             )?;
         } else {
-            crate::print::print_file_name(st, font_name, font_area, EMPTY_STRING);
+            print_file_name(st, font_name, font_area, EMPTY_STRING);
         }
 
         let font_size = st.fonts.font_size[f];
         if font_size != st.fonts.font_dsize[f] {
             print(st, " at ");
-            crate::print::print_scaled(st, font_size);
+            print_scaled(st, font_size);
             print(st, "pt");
         }
     }
@@ -1259,7 +1257,7 @@ fn hyphenation_tables<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(
             let h = j as usize;
             hyph.hyph_link[h] = hyph.hyph_next as u16;
             s.items_in(
-                std::slice::from_mut(&mut hyph.hyph_word[h]),
+                slice::from_mut(&mut hyph.hyph_word[h]),
                 StrNumber::from_raw(0),
                 st.strings.str_ptr,
             )?;
@@ -1277,8 +1275,8 @@ fn hyphenation_tables<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(
             let h = k as usize;
             if hyph.hyph_word[h] != StrNumber::NONE {
                 s.int(&mut (k + 65_536 * i32::from(hyph.hyph_link[h])))?;
-                s.items(std::slice::from_mut(&mut hyph.hyph_word[h]))?;
-                s.items(std::slice::from_mut(&mut hyph.hyph_list[h]))?;
+                s.items(slice::from_mut(&mut hyph.hyph_word[h]))?;
+                s.items(slice::from_mut(&mut hyph.hyph_list[h]))?;
             }
         }
 
@@ -1304,7 +1302,7 @@ fn hyphenation_tables<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(
     )?;
     let trie_max = hyph.trie_max;
     s.items_in(
-        std::slice::from_mut(&mut hyph.hyph_start),
+        slice::from_mut(&mut hyph.hyph_start),
         TriePtr::NULL,
         trie_max,
     )?;
@@ -1383,6 +1381,9 @@ mod tests {
     use super::*;
     use crate::base::cmd::Cmd;
     use crate::base::consts::LEVEL_ONE;
+    use crate::fonts::tfm::{
+        CharInfo, CharTag, ExtIdx, ExtRecipe, LigKernAction, LigKernIdx, LigKernStep, LigOp,
+    };
     use crate::print::Selector;
     use crate::tables::eqtb::FontLoc;
 
@@ -1443,7 +1444,7 @@ mod tests {
         let mut st = EngineState::default();
         st.shipout.selector = Selector::NoPrint;
         st.eqtb.alloc_tables();
-        st.strings.str_start = vec![crate::base::units::PoolPos::ZERO; 4];
+        st.strings.str_start = vec![PoolPos::ZERO; 4];
         st.fonts.font_max = FontId::new(1);
         st.fonts.fmem_ptr = 7;
         st.fonts.alloc_font_arrays();
@@ -1467,8 +1468,6 @@ mod tests {
 
     #[test]
     fn font_metrics_round_trip() {
-        use crate::fonts::tfm::{CharInfo, CharTag, ExtIdx, ExtRecipe, LigKernAction, LigKernIdx};
-        use crate::fonts::tfm::{LigKernStep, LigOp};
         let pt = |v: i32| Scaled::from_raw(v * 65_536);
         let ci = |tag| CharInfo {
             width: pt(5),
@@ -1513,7 +1512,7 @@ mod tests {
             Some(LigKernIdx::from_raw(2)),
         )
         .expect("consistent metrics");
-        let metrics = FontMetrics::Tfm(std::rc::Rc::new(metrics));
+        let metrics = FontMetrics::Tfm(Rc::new(metrics));
         let params = FontParams::new(vec![pt(3), Scaled::ZERO, pt(-4)]);
 
         let mut src = font_state();
@@ -1531,7 +1530,6 @@ mod tests {
 
     #[test]
     fn inconsistent_metrics_are_rejected() {
-        use crate::fonts::tfm::{CharInfo, CharTag, LigKernIdx};
         let dangling = CharInfo {
             tag: CharTag::Lig(LigKernIdx::from_raw(0)),
             ..CharInfo::NULL

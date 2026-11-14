@@ -1,41 +1,48 @@
 //! Shipping boxes out to the XDV file.
 
+use crate::base::consts::{INVALID_HANDLE, MAX_DIMEN, MIN_HALFWORD, NULL_FONT};
+use crate::base::params::{DimenPar, IntPar};
+use crate::base::units::{Dir, FontId, GlueOrder, GlueSign, MemIdx, MemPtr, Scaled, StrNumber};
+use crate::build::packaging::LrState;
 use crate::build::pagebuilder::PageContents;
+use crate::engine::output_file_extension;
+use crate::ffi::bridge::{output_close, output_flush, output_open, strerror};
+use crate::files::io::{make_name_string, open_log_file, pack_job_name};
+use crate::fonts::FontState;
+use crate::fonts::ext::apply_tfm_font_mapping;
 use crate::memory::glue_store::GlueSpecId;
-use crate::print::Selector;
+use crate::memory::glyph_arena::FixedPoint;
+use crate::memory::mem::MemState;
+use crate::memory::node::{
+    AnyNode, BoxLr, BoxNode, CharNode, EdgeNode, GlueKind, GlueNode, GlyphNode, KernNode,
+    KernSubtype, LeaderKind, LigatureNode, LinkSlot, MathCode, MathNode, NativeWordNode, NodePtr,
+    RUNNING, RuleNode, Stored, View, WhatsitSubtype, WhatsitVariant,
+};
+use crate::print::diagnostic::{begin_warning, end_capture};
+use crate::print::errors::{Abort, OrConfusion, error};
+use crate::print::{
+    Selector, begin_diagnostic, end_diagnostic, print, print_char, print_int, print_ln, print_nl,
+    print_scaled, show_box,
+};
+use crate::shipout::dvi::{Axis, DviWriter, MoveReg};
+use crate::shipout::synctex::{
+    synctex_current, synctex_hlist, synctex_horizontal_rule_or_glue, synctex_kern, synctex_math,
+    synctex_sheet, synctex_teehs, synctex_tsilh, synctex_tsilv, synctex_vlist, synctex_void_hlist,
+    synctex_void_vlist,
+};
+use crate::state::EngineState;
 use crate::tables::cs::CsId;
+use crate::tables::eqtb::EqtbState;
+use crate::tables::save::prepare_mag;
+use crate::tables::string_pool::StringsState;
 
 pub(crate) mod dvi;
 pub(crate) mod pic;
 pub(crate) mod synctex;
-
-use crate::base::consts::{INVALID_HANDLE, MAX_DIMEN, MIN_HALFWORD, NULL_FONT};
-use crate::base::params::{DimenPar, IntPar};
-use crate::base::units::MemIdx;
-use crate::base::units::{Dir, FontId, GlueOrder, GlueSign, MemPtr, Scaled, StrNumber};
-use crate::build::packaging::LrState;
-use crate::ffi::bridge::{output_close, output_flush, output_open};
-use crate::fonts::FontState;
-use crate::fonts::ext::apply_tfm_font_mapping;
-use crate::memory::glyph_arena::FixedPoint;
-use crate::memory::mem::MemState;
-use crate::memory::node::LinkSlot;
-use crate::memory::node::Stored;
-use crate::memory::node::{
-    AnyNode, BoxLr, BoxNode, CharNode, EdgeNode, GlueKind, GlueNode, GlyphNode, KernNode,
-    KernSubtype, LeaderKind, LigatureNode, MathCode, MathNode, NativeWordNode, NodePtr, RUNNING,
-    RuleNode, View, WhatsitSubtype, WhatsitVariant,
-};
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
-use crate::shipout::dvi::{Axis, MoveReg};
-use crate::tables::eqtb::EqtbState;
-use crate::tables::string_pool::StringsState;
-
 mod whatsits;
 
-use self::whatsits::pic_out;
-pub(crate) use self::whatsits::{ensure_write_stream_open, out_what};
+use whatsits::pic_out;
+pub(crate) use whatsits::{ensure_write_stream_open, out_what};
 
 const XDV_ID_BYTE: u8 = 7;
 const SPX_ID_BYTE: u8 = 100;
@@ -72,7 +79,7 @@ impl MemState {
     }
 }
 
-fn synch_h(st: &mut crate::state::EngineState) -> Result<(), Abort> {
+fn synch_h(st: &mut EngineState) -> Result<(), Abort> {
     if st.shipout.cur_h != st.shipout.dvi_h {
         let delta = st.shipout.cur_h - st.shipout.dvi_h;
         st.shipout.movement(delta, Axis::Right)?;
@@ -81,7 +88,7 @@ fn synch_h(st: &mut crate::state::EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-fn synch_v(st: &mut crate::state::EngineState) -> Result<(), Abort> {
+fn synch_v(st: &mut EngineState) -> Result<(), Abort> {
     if st.shipout.cur_v != st.shipout.dvi_v {
         let delta = st.shipout.cur_v - st.shipout.dvi_v;
         st.shipout.movement(delta, Axis::Down)?;
@@ -90,7 +97,7 @@ fn synch_v(st: &mut crate::state::EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-fn dvi_font_def(st: &mut crate::state::EngineState, f: FontId) -> Result<(), Abort> {
+fn dvi_font_def(st: &mut EngineState, f: FontId) -> Result<(), Abort> {
     let k = f.dvi_number();
     if st.fonts.is_native_font(f) {
         let def = st.fonts.make_font_def(f)?;
@@ -115,7 +122,7 @@ fn dvi_font_def(st: &mut crate::state::EngineState, f: FontId) -> Result<(), Abo
     )
 }
 
-pub fn initialize_shipout_variables(st: &mut crate::state::EngineState) {
+pub fn initialize_shipout_variables(st: &mut EngineState) {
     let s = &mut st.shipout;
     s.output_file_name = StrNumber::NONE;
     s.dvi.init();
@@ -124,55 +131,52 @@ pub fn initialize_shipout_variables(st: &mut crate::state::EngineState) {
 }
 
 /// Emit the current string (the tail of the pool) as a DVI special and drop it.
-fn dvi_special_from_cur_string(st: &mut crate::state::EngineState) -> Result<(), Abort> {
+fn dvi_special_from_cur_string(st: &mut EngineState) -> Result<(), Abort> {
     st.shipout.dvi.special(st.strings.cur_string())?;
     st.strings.discard_cur_string();
     Ok(())
 }
 
-pub(crate) fn ship_out(
-    st: &mut crate::state::EngineState,
-    page: NodePtr<BoxNode>,
-) -> Result<(), Abort> {
+pub(crate) fn ship_out(st: &mut EngineState, page: NodePtr<BoxNode>) -> Result<(), Abort> {
     let mut lr = LrState::START;
     let p = page.ptr();
     let mag = st.eqtb.int_par(IntPar::Mag);
     let job_name = st.strings.texstring_bytes(st.strings.job_name);
-    crate::shipout::synctex::synctex_sheet(st, mag, &job_name);
+    synctex_sheet(st, mag, &job_name);
 
     if st.strings.job_name == StrNumber::NONE {
-        crate::files::io::open_log_file(st)?;
+        open_log_file(st)?;
     }
     let tracing_output = st.eqtb.int_par(IntPar::TracingOutput) > 0;
     if tracing_output {
-        crate::print::print_nl(st, "");
-        crate::print::print_ln(st);
-        crate::print::print(st, "Completed box being shipped out");
+        print_nl(st, "");
+        print_ln(st);
+        print(st, "Completed box being shipped out");
     }
     if st.shipout.term_offset > st.config.max_print_line - 9 {
-        crate::print::print_ln(st);
+        print_ln(st);
     } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
-        crate::print::print_char(st, b' ');
+        print_char(st, b' ');
     }
 
-    crate::print::print_char(st, b'[');
+    print_char(st, b'[');
     let mut j: u8 = 9;
     while j > 0 && st.eqtb.count(j) == 0 {
         j -= 1;
     }
     for k in 0..=j {
-        crate::print::print_int(st, st.eqtb.count(k));
+        print_int(st, st.eqtb.count(k));
         if k < j {
-            crate::print::print_char(st, b'.');
+            print_char(st, b'.');
         }
     }
     output_flush(st.shipout.rust_stdout);
 
     if tracing_output {
-        crate::print::print_char(st, b']');
-        crate::print::begin_diagnostic(st);
-        crate::print::show_box(st, p);
-        crate::print::end_diagnostic(st, true);
+        print_char(st, b']');
+        begin_diagnostic(st);
+        show_box(st, p);
+        end_diagnostic(st, true);
     }
 
     let (height, depth, width) = (st.mem[page].height, st.mem[page].depth, st.mem[page].width);
@@ -183,7 +187,7 @@ pub(crate) fn ship_out(
         || height + depth + v_offset > MAX_DIMEN
         || width + h_offset > MAX_DIMEN
     {
-        crate::print::errors::error(
+        error(
             st,
             "Huge page cannot be shipped out",
             &[
@@ -193,44 +197,40 @@ pub(crate) fn ship_out(
         )?;
 
         if st.eqtb.int_par(IntPar::TracingOutput) <= 0 {
-            crate::print::begin_diagnostic(st);
-            crate::print::print_nl(st, "The following box has been deleted:");
-            crate::print::show_box(st, p);
-            crate::print::end_diagnostic(st, true);
+            begin_diagnostic(st);
+            print_nl(st, "The following box has been deleted:");
+            show_box(st, p);
+            end_diagnostic(st, true);
         }
     } else {
         ship_page(st, &mut lr, page)?;
     }
 
     if lr.problems > 0 {
-        crate::print::print_ln(st);
-        crate::print::print_nl(st, "\\endL or \\endR problem (");
-        crate::print::print_int(st, lr.problems / 10000);
-        crate::print::print(st, " missing, ");
-        crate::print::print_int(st, lr.problems % 10000);
-        crate::print::print(st, " extra");
-        crate::print::print_char(st, b')');
-        crate::print::print_ln(st);
+        print_ln(st);
+        print_nl(st, "\\endL or \\endR problem (");
+        print_int(st, lr.problems / 10000);
+        print(st, " missing, ");
+        print_int(st, lr.problems % 10000);
+        print(st, " extra");
+        print_char(st, b')');
+        print_ln(st);
     }
 
     if !lr.ptr.is_none() || lr.dir != Dir::Ltr {
         return Err(Abort::Confusion("LR3"));
     }
     if st.eqtb.int_par(IntPar::TracingOutput) <= 0 {
-        crate::print::print_char(st, b']');
+        print_char(st, b']');
     }
     st.shipout.dead_cycles = 0;
     output_flush(st.shipout.rust_stdout);
     st.mem.flush_node_list(p)?;
-    crate::shipout::synctex::synctex_teehs(st);
+    synctex_teehs(st);
     Ok(())
 }
 
-fn ship_page(
-    st: &mut crate::state::EngineState,
-    lr: &mut LrState,
-    page: NodePtr<BoxNode>,
-) -> Result<(), Abort> {
+fn ship_page(st: &mut EngineState, lr: &mut LrState, page: NodePtr<BoxNode>) -> Result<(), Abort> {
     let (height, depth, width) = (st.mem[page].height, st.mem[page].depth, st.mem[page].width);
     let h_offset = st.eqtb.dimen_par(DimenPar::HOffset);
     let v_offset = st.eqtb.dimen_par(DimenPar::VOffset);
@@ -258,22 +258,22 @@ fn ship_page(
 
     if st.shipout.output_file_name == StrNumber::NONE {
         if st.strings.job_name == StrNumber::NONE {
-            crate::files::io::open_log_file(st)?;
+            open_log_file(st)?;
         }
-        let path = crate::files::io::pack_job_name(st, crate::engine::output_file_extension(st))?;
+        let path = pack_job_name(st, output_file_extension(st))?;
         st.shipout.dvi.file = output_open(&path, false);
         if st.shipout.dvi.file == INVALID_HANDLE {
             return Err(Abort::CannotOpenOutput {
                 name: path.as_slice().into(),
             });
         }
-        st.shipout.output_file_name = crate::files::io::make_name_string(st, &path)?;
+        st.shipout.output_file_name = make_name_string(st, &path)?;
     }
 
     if st.shipout.total_pages == 0 {
         let id = id_byte(st.config.semantic_pagination_enabled);
         st.shipout.dvi.begin_preamble(id)?;
-        crate::tables::save::prepare_mag(st)?;
+        prepare_mag(st)?;
         let mag = st.eqtb.int_par(IntPar::Mag);
         st.shipout.dvi.end_preamble(mag, b"tectonic")?;
     }
@@ -283,19 +283,19 @@ fn ship_page(
 
     let old_setting = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
-    crate::print::print(st, "pdf:pagesize ");
+    print(st, "pdf:pagesize ");
     if pdf_page_width <= Scaled::ZERO || pdf_page_height <= Scaled::ZERO {
-        crate::print::print(st, "default");
+        print(st, "default");
     } else {
-        crate::print::print(st, "width");
-        crate::print::print(st, b' ');
-        crate::print::print_scaled(st, pdf_page_width);
-        crate::print::print(st, "pt");
-        crate::print::print(st, b' ');
-        crate::print::print(st, "height");
-        crate::print::print(st, b' ');
-        crate::print::print_scaled(st, pdf_page_height);
-        crate::print::print(st, "pt");
+        print(st, "width");
+        print(st, b' ');
+        print_scaled(st, pdf_page_width);
+        print(st, "pt");
+        print(st, b' ');
+        print(st, "height");
+        print(st, b' ');
+        print_scaled(st, pdf_page_height);
+        print(st, "pt");
     }
     st.shipout.selector = old_setting;
 
@@ -322,7 +322,7 @@ fn id_byte(semantic_pagination: bool) -> u8 {
     }
 }
 
-fn dvi_font_select(st: &mut crate::state::EngineState, f: FontId) -> Result<(), Abort> {
+fn dvi_font_select(st: &mut EngineState, f: FontId) -> Result<(), Abort> {
     if f == st.shipout.dvi_f {
         return Ok(());
     }
@@ -622,11 +622,7 @@ impl MemState {
     }
 }
 
-fn ship_box(
-    st: &mut crate::state::EngineState,
-    lr: &mut LrState,
-    b: NodePtr<BoxNode>,
-) -> Result<(), Abort> {
+fn ship_box(st: &mut EngineState, lr: &mut LrState, b: NodePtr<BoxNode>) -> Result<(), Abort> {
     if st.mem[b].is_vlist() {
         vlist_out(st, lr, b)
     } else {
@@ -636,7 +632,7 @@ fn ship_box(
 
 /// Ship one copy of a leader box with `doing_leaders` set.
 fn ship_leader_box(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     lr: &mut LrState,
     leader: NodePtr<BoxNode>,
 ) -> Result<(), Abort> {
@@ -668,7 +664,7 @@ impl RuleDims {
 
 /// Ship `rule` (node `p`, a rule or rule leaders) in an hlist.
 fn hlist_rule_out(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     this_box: NodePtr<BoxNode>,
     base_line: Scaled,
     p: MemIdx,
@@ -690,13 +686,13 @@ fn hlist_rule_out(
         st.shipout.dvi_h += rule.wd;
     }
     st.shipout.cur_h += rule.wd;
-    crate::shipout::synctex::synctex_horizontal_rule_or_glue(st, p, Some(rule));
+    synctex_horizontal_rule_or_glue(st, p, Some(rule));
     Ok(())
 }
 
 /// Ship `rule` (a rule or rule leaders) in a vlist.
 fn vlist_rule_out(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     lr: &mut LrState,
     this_box: NodePtr<BoxNode>,
     left_edge: Scaled,
@@ -739,7 +735,7 @@ struct BoxLeaders {
 
 /// Move right past glue `glue` or output its leaders.
 fn hlist_glue_out(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     lr: &mut LrState,
     this_box: NodePtr<BoxNode>,
     base_line: Scaled,
@@ -813,11 +809,11 @@ fn hlist_glue_out(
     }
 
     st.shipout.cur_h += wd;
-    crate::shipout::synctex::synctex_horizontal_rule_or_glue(st, glue, None);
+    synctex_horizontal_rule_or_glue(st, glue, None);
     Ok(())
 }
 
-fn glyph_out(st: &mut crate::state::EngineState, glyph: NodePtr<GlyphNode>) -> Result<(), Abort> {
+fn glyph_out(st: &mut EngineState, glyph: NodePtr<GlyphNode>) -> Result<(), Abort> {
     synch_h(st)?;
     synch_v(st)?;
     let glyph = st.mem[glyph];
@@ -830,7 +826,7 @@ fn glyph_out(st: &mut crate::state::EngineState, glyph: NodePtr<GlyphNode>) -> R
 
 /// A native word, with its text as ActualText for `actual_text`.
 fn native_word_out(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     word: NodePtr<NativeWordNode>,
     actual_text: bool,
 ) -> Result<(), Abort> {
@@ -896,10 +892,7 @@ impl OutChar {
 
 /// Output `first` and the char nodes that follow it, returning the first other
 /// node and the slot that points at it.
-fn chars_out(
-    st: &mut crate::state::EngineState,
-    first: OutChar,
-) -> Result<(MemPtr, LinkSlot), Abort> {
+fn chars_out(st: &mut EngineState, first: OutChar) -> Result<(MemPtr, LinkSlot), Abort> {
     synch_h(st)?;
     synch_v(st)?;
     let mut cur = first;
@@ -921,13 +914,13 @@ fn chars_out(
             None => break,
         }
     }
-    crate::shipout::synctex::synctex_current(st);
+    synctex_current(st);
     st.shipout.dvi_h = st.shipout.cur_h;
     Ok((cur.next, LinkSlot::Node(cur.node)))
 }
 
 fn hlist_out(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     lr: &mut LrState,
     this_box: NodePtr<BoxNode>,
 ) -> Result<(), Abort> {
@@ -973,7 +966,7 @@ fn hlist_out(
     }
 
     let mut left_edge = st.shipout.cur_h;
-    crate::shipout::synctex::synctex_hlist(st, this_box);
+    synctex_hlist(st, this_box);
 
     while let Some(here) = p {
         if let Some(ch) = st.mem.as_char(p) {
@@ -1008,11 +1001,11 @@ fn hlist_out(
             }
             AnyNode::MarginKern(kern) => st.shipout.cur_h += st.mem[kern].width,
             AnyNode::Kern(kern) => {
-                crate::shipout::synctex::synctex_kern(st, kern, this_box);
+                synctex_kern(st, kern, this_box);
                 st.shipout.cur_h += st.mem[kern].width;
             }
             AnyNode::Math(math) => {
-                crate::shipout::synctex::synctex_math(st, math);
+                synctex_math(st, math);
                 let math_width = st.mem[math].width;
                 let code = st.mem[math].code()?;
                 if code.is_end() {
@@ -1058,7 +1051,7 @@ fn hlist_out(
         p = here.link(&st.mem);
     }
 
-    crate::shipout::synctex::synctex_tsilh(st, this_box);
+    synctex_tsilh(st, this_box);
 
     while st.mem.lr_code(lr.ptr) != Some(MathCode::Before) {
         if st.mem.lr_code(lr.ptr).is_some_and(MathCode::is_lr) {
@@ -1074,16 +1067,16 @@ fn hlist_out(
 }
 
 fn hlist_box_out(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     lr: &mut LrState,
     b: NodePtr<BoxNode>,
     base_line: Scaled,
 ) -> Result<(), Abort> {
     if st.mem[b].list_ptr.is_none() {
         if st.mem[b].is_vlist() {
-            crate::shipout::synctex::synctex_void_vlist(st, b);
+            synctex_void_vlist(st, b);
         } else {
-            crate::shipout::synctex::synctex_void_hlist(st, b);
+            synctex_void_hlist(st, b);
         }
         st.shipout.cur_h += st.mem[b].width;
         return Ok(());
@@ -1102,7 +1095,7 @@ fn hlist_box_out(
 /// Reverse the hlist segment that starts after `math`, replacing `math` by an
 /// edge node that the caller dispatches next.
 fn reverse_segment(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     lr: &mut LrState,
     math: NodePtr<MathNode>,
     prev_p: LinkSlot,
@@ -1130,7 +1123,7 @@ fn reverse_segment(
 }
 
 fn vlist_out(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     lr: &mut LrState,
     this_box: NodePtr<BoxNode>,
 ) -> Result<(), Abort> {
@@ -1140,7 +1133,7 @@ fn vlist_out(
     let upwards = st.mem[this_box].upwards();
     let save_loc = st.shipout.dvi.enter_level()?;
     let left_edge = st.shipout.cur_h;
-    crate::shipout::synctex::synctex_vlist(st, this_box);
+    synctex_vlist(st, this_box);
     if upwards {
         st.shipout.cur_v += st.mem[this_box].depth;
     } else {
@@ -1219,12 +1212,12 @@ fn vlist_out(
         p = here.link(&st.mem);
     }
 
-    crate::shipout::synctex::synctex_tsilv(st, this_box);
+    synctex_tsilv(st, this_box);
     st.mem.pop_dvi_level(&mut st.shipout, save_loc)
 }
 
 fn vlist_box_out(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     lr: &mut LrState,
     b: NodePtr<BoxNode>,
     left_edge: Scaled,
@@ -1238,9 +1231,9 @@ fn vlist_box_out(
     }
     if st.mem[b].list_ptr.is_none() {
         if st.mem[b].is_vlist() {
-            crate::shipout::synctex::synctex_void_vlist(st, b);
+            synctex_void_vlist(st, b);
         } else {
-            crate::shipout::synctex::synctex_void_hlist(st, b);
+            synctex_void_hlist(st, b);
         }
         if upwards {
             st.shipout.cur_v -= height;
@@ -1269,8 +1262,8 @@ fn vlist_box_out(
 /// Runs `out`, then puts `dvi_h` and `dvi_v` back to where they were,
 /// returning that position.
 fn with_saved_dvi_pos(
-    st: &mut crate::state::EngineState,
-    out: impl FnOnce(&mut crate::state::EngineState) -> Result<(), Abort>,
+    st: &mut EngineState,
+    out: impl FnOnce(&mut EngineState) -> Result<(), Abort>,
 ) -> Result<(Scaled, Scaled), Abort> {
     let (h, v) = (st.shipout.dvi_h, st.shipout.dvi_v);
     out(st)?;
@@ -1280,7 +1273,7 @@ fn with_saved_dvi_pos(
 }
 
 fn vlist_leaders_out(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     lr: &mut LrState,
     leaders: BoxLeaders,
     left_edge: Scaled,
@@ -1418,17 +1411,17 @@ impl ShipoutState {
     }
 }
 
-pub(crate) fn finalize_dvi_file(st: &mut crate::state::EngineState) -> Result<(), Abort> {
+pub(crate) fn finalize_dvi_file(st: &mut EngineState) -> Result<(), Abort> {
     if st.shipout.dvi.close_open_page(st.scanner.logical_clock)? {
         st.shipout.total_pages += 1;
     }
 
     if st.shipout.total_pages == 0 {
-        crate::print::print_nl(st, "");
-        crate::print::diagnostic::begin_warning(st);
-        crate::print::print(st, "No pages of output");
-        crate::print::diagnostic::end_capture(st);
-        crate::print::print_char(st, b'.');
+        print_nl(st, "");
+        begin_warning(st);
+        print(st, "No pages of output");
+        end_capture(st);
+        print_char(st, b'.');
         return Ok(());
     }
     // The DVI grew too big and the message was already printed.
@@ -1437,7 +1430,7 @@ pub(crate) fn finalize_dvi_file(st: &mut crate::state::EngineState) -> Result<()
     }
 
     st.shipout.dvi.begin_postamble()?;
-    crate::tables::save::prepare_mag(st)?;
+    prepare_mag(st)?;
     let mag = st.eqtb.int_par(IntPar::Mag);
     let s = &mut st.shipout;
     s.dvi.end_postamble(mag, s.max_v, s.max_h, s.total_pages)?;
@@ -1455,27 +1448,27 @@ pub(crate) fn finalize_dvi_file(st: &mut crate::state::EngineState) -> Result<()
 
     let k = u8::from(output_close(st.shipout.dvi.file));
     if k == 0 {
-        crate::print::print_nl(st, "Output written on ");
-        crate::print::print(st, st.shipout.output_file_name);
-        crate::print::print(st, " (");
-        crate::print::print_int(st, st.shipout.total_pages);
+        print_nl(st, "Output written on ");
+        print(st, st.shipout.output_file_name);
+        print(st, " (");
+        print_int(st, st.shipout.total_pages);
         if st.shipout.total_pages != 1 {
-            crate::print::print(st, " pages");
+            print(st, " pages");
         } else {
-            crate::print::print(st, " page");
+            print(st, " page");
         }
-        crate::print::print(st, ", ");
-        crate::print::print_int(st, st.shipout.dvi.pos());
-        crate::print::print(st, " bytes).");
+        print(st, ", ");
+        print_int(st, st.shipout.dvi.pos());
+        print(st, " bytes).");
     } else {
-        crate::print::print_nl(st, "Error ");
-        crate::print::print_int(st, i32::from(k));
-        crate::print::print(st, " (");
-        crate::print::print(st, &crate::ffi::bridge::strerror(i32::from(k))[..]);
-        crate::print::print(st, ") generating output;");
-        crate::print::print_nl(st, "file ");
-        crate::print::print(st, st.shipout.output_file_name);
-        crate::print::print(st, " may not be valid.");
+        print_nl(st, "Error ");
+        print_int(st, i32::from(k));
+        print(st, " (");
+        print(st, &strerror(i32::from(k))[..]);
+        print(st, ") generating output;");
+        print_nl(st, "file ");
+        print(st, st.shipout.output_file_name);
+        print(st, " may not be valid.");
         // XeTeX also sets history to OUTPUT_FAILURE here.
     }
     Ok(())
@@ -1631,7 +1624,7 @@ impl MemState {
 pub(crate) struct ShipoutState {
     /// `D:YYYYmmddHHMMSS+HH'MM'`.
     pub start_time_str: Vec<u8>,
-    pub dvi: crate::shipout::dvi::DviWriter,
+    pub dvi: DviWriter,
     pub insert_src_special_every_par: bool,
     pub insert_src_special_every_math: bool,
     pub insert_src_special_every_vbox: bool,
@@ -1644,11 +1637,11 @@ pub(crate) struct ShipoutState {
     pub epochseconds: i32,
     pub microseconds: i32,
     pub dead_cycles: i32,
-    pub page_tail: crate::base::units::MemPtr,
+    pub page_tail: MemPtr,
     pub last_badness: i32,
     pub page_contents: PageContents,
     pub page_so_far: [Scaled; 8],
-    pub last_glue: Option<crate::memory::glue_store::GlueSpecId>,
+    pub last_glue: Option<GlueSpecId>,
     pub last_penalty: i32,
     pub last_kern: Scaled,
     pub last_node_type: i32,
@@ -1673,7 +1666,7 @@ pub(crate) struct ShipoutState {
     pub log_resumed_at: Option<u64>,
     /// Diagnostics reported so far, captured with every checkpoint.
     pub diagnostics_issued: usize,
-    pub best_page_break: crate::base::units::MemPtr,
+    pub best_page_break: MemPtr,
     pub best_size: Scaled,
     pub least_page_cost: i32,
     pub page_max_depth: Scaled,
@@ -1691,8 +1684,8 @@ pub(crate) struct ShipoutState {
     pub output_file_name: StrNumber,
     /// The vertical and horizontal DVI movements of the page so far, TeX's `down_ptr` and
     /// `right_ptr` lists, the latest last.
-    pub down_moves: Vec<crate::shipout::Movement>,
-    pub right_moves: Vec<crate::shipout::Movement>,
+    pub down_moves: Vec<Movement>,
+    pub right_moves: Vec<Movement>,
     pub dvi_h: Scaled,
     pub dvi_v: Scaled,
     pub dvi_f: FontId,

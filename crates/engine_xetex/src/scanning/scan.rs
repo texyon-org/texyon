@@ -1,48 +1,42 @@
 //! The tokenizer (`get_next`) and the scanning routines built on it.
 
 use crate::base::cmd::Cmd;
-use crate::base::codes::FiOrElseCode;
-use crate::base::codes::{DelimNumCode, MathCharNumCode};
-use crate::base::command::Command;
-use crate::base::command::Usv;
+use crate::base::codes::{DelimNumCode, FiOrElseCode, IfTest, MathCharNumCode, ScannerStatus};
+use crate::base::command::{Command, Usv};
 use crate::base::consts::{ACTIVE_MATH_CHAR, BIGGEST_USV, MATH_CHAR, NUMBER_MATH_FAMILIES};
+use crate::base::mode::ModeName;
 use crate::base::params::IntPar;
-use crate::base::token::Token;
-use crate::base::units::FontId;
-use crate::base::units::{NodeType, Scaled};
-use crate::build::packaging::CurMarks;
-use crate::build::packaging::MarkClasses;
-use crate::build::packaging::PackSpec;
+use crate::base::token::{Token, TokenList};
+use crate::base::units::{FontId, MemPtr, NodeType, Scaled};
+use crate::build::main_control::{BoxContext, SavedAlign, push_math};
+use crate::build::packaging::{CurMarks, MarkClasses, PackSpec};
 use crate::memory::node::{BoxNode, MathSlot, NodePtr, RuleDimen, RuleNode, Stored};
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
-use crate::scanning::input::NATIVE_TEXT_MAX;
-use crate::scanning::input::{TokenType, back_input, begin_token_list};
+use crate::print::errors::{Abort, Capacity, OrConfusion, back_error, error, ins_error};
+use crate::scanning::cond_stack::CondStack;
+use crate::scanning::input::{NATIVE_TEXT_MAX, TokenType, back_input, begin_token_list};
 use crate::state::EngineState;
 use crate::tables::cs::{CsId, Frozen};
-use crate::tables::eqtb::EqtbState;
-use crate::tables::eqtb::Register;
-use crate::tables::save::GroupCode;
-use crate::tables::save::Saved;
+use crate::tables::eqtb::{EqtbState, Register};
+use crate::tables::save::{GroupCode, Saved};
 
 mod internal;
 mod next;
 mod numbers;
 mod toks;
 
-pub(crate) use self::internal::{find_font_dimen, scan_font_ident, scan_glyph_number};
-use self::next::fetch_cs_meaning;
-pub(crate) use self::next::{
+pub(crate) use internal::{find_font_dimen, scan_font_ident, scan_glyph_number};
+use next::fetch_cs_meaning;
+pub(crate) use next::{
     copy_delimited_tokens, copy_group_tokens, get_next, get_token, get_x_non_blank,
     get_x_non_blank_non_relax, get_x_or_protected, get_x_token, pass_text, x_token,
 };
-pub(crate) use self::numbers::{
+pub(crate) use numbers::{
     scan_char_class, scan_char_class_not_ignored, scan_char_num, scan_decimal, scan_delimiter_int,
     scan_dimen, scan_eight_bit_int, scan_fifteen_bit_int, scan_four_bit_int,
     scan_four_bit_int_or_18, scan_glue, scan_int, scan_math_class_int, scan_math_fam_int,
     scan_register_num, scan_usv_num, scan_xetex_math_char_int,
 };
-pub(crate) use self::toks::{
+pub(crate) use toks::{
     compare_strings, finish_line, pseudo_start, read_toks, scan_pdf_ext_toks, scan_toks, the_toks,
 };
 
@@ -62,7 +56,7 @@ impl EqtbState {
 pub(crate) fn insert_dollar_sign(st: &mut EngineState) -> Result<(), Abort> {
     back_input(st)?;
     st.scanner.cur_tok = Token::math_shift(b'$');
-    crate::print::errors::ins_error(
+    ins_error(
         st,
         "Missing $ inserted",
         &[
@@ -83,7 +77,7 @@ pub(crate) fn scan_optional_equals(st: &mut EngineState) -> Result<(), Abort> {
 pub(crate) fn scan_spec(
     st: &mut EngineState,
     c: GroupCode,
-    box_context: Option<crate::build::main_control::BoxContext>,
+    box_context: Option<BoxContext>,
 ) -> Result<(), Abort> {
     let spec = if scan_keyword(st, "to")? {
         PackSpec::Exactly(scan_dimen(st, false)?)
@@ -139,7 +133,7 @@ pub(crate) fn scan_rule_spec(st: &mut EngineState) -> Result<NodePtr<RuleNode>, 
 #[allow(non_snake_case)]
 pub(crate) fn eTeX_enabled(st: &mut EngineState, b: bool, j: Command) -> Result<bool, Abort> {
     if !b {
-        crate::print::errors::error(
+        error(
             st,
             ("Improper ", j),
             &["Sorry, this optional e-TeX feature has been disabled."],
@@ -168,7 +162,7 @@ pub(crate) fn get_r_token(st: &mut EngineState) -> Result<CsId, Abort> {
             back_input(st)?;
         }
         st.scanner.cur_tok = Token::from_cs(Frozen::Protection.cs());
-        crate::print::errors::ins_error(
+        ins_error(
             st,
             "Missing control sequence inserted",
             &[
@@ -224,7 +218,7 @@ pub(crate) fn scan_math(st: &mut EngineState, p: MathSlot) -> Result<(), Abort> 
                     back_input(st)?;
                     scan_left_brace(st)?;
                     st.save_stack.push_saved(Saved::MathGroup(p));
-                    crate::build::main_control::push_math(st, GroupCode::Math)?;
+                    push_math(st, GroupCode::Math)?;
                     return Ok(());
                 }
             };
@@ -355,7 +349,7 @@ pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, 
 pub(crate) fn scan_left_brace(st: &mut EngineState) -> Result<(), Abort> {
     get_x_non_blank_non_relax(st)?;
     if st.scanner.cur.cmd() != Cmd::LeftBrace {
-        crate::print::errors::back_error(
+        back_error(
             st,
             "Missing { inserted",
             &[
@@ -377,42 +371,42 @@ pub(crate) struct ScannerState {
     /// Monotonic token-fetch clock used to order checkpoint fences.
     pub logical_clock: u64,
     pub name_in_progress: bool,
-    pub cur_align: crate::base::units::MemPtr,
-    pub cur_span: crate::base::units::MemPtr,
-    pub cur_loop: crate::base::units::MemPtr,
+    pub cur_align: MemPtr,
+    pub cur_span: MemPtr,
+    pub cur_loop: MemPtr,
     /// The enclosing alignments, TeX's `align_ptr` list.
-    pub align_stack: Vec<crate::build::main_control::SavedAlign>,
-    pub cur_head: crate::base::units::MemPtr,
-    pub cur_tail: crate::base::units::MemPtr,
-    pub cur_pre_head: crate::base::units::MemPtr,
-    pub cur_pre_tail: crate::base::units::MemPtr,
-    pub shown_mode: crate::base::mode::ModeName,
+    pub align_stack: Vec<SavedAlign>,
+    pub cur_head: MemPtr,
+    pub cur_tail: MemPtr,
+    pub cur_pre_head: MemPtr,
+    pub cur_pre_tail: MemPtr,
+    pub shown_mode: ModeName,
     pub mag_set: i32,
     pub expand_depth_count: i32,
     pub max_reg_num: i32,
     /// The innermost incomplete conditional, `None` outside any.
     /// The conditional stack, TeX's `cond_ptr` list.
-    pub conds: crate::scanning::cond_stack::CondStack,
-    pub if_limit: crate::memory::node::Stored<FiOrElseCode>,
-    pub cur_if: crate::base::codes::IfTest,
+    pub conds: CondStack,
+    pub if_limit: Stored<FiOrElseCode>,
+    pub cur_if: IfTest,
     pub if_line: i32,
     pub skip_line: i32,
     pub is_in_csname: bool,
     pub used_tectonic_coda_tokens: bool,
-    pub scanner_status: crate::base::codes::ScannerStatus,
+    pub scanner_status: ScannerStatus,
     pub warning_index: Option<CsId>,
-    pub def_ref: crate::base::token::TokenList,
+    pub def_ref: TokenList,
     pub long_state: Cmd,
     pub align_state: i32,
     pub expand_depth: i32,
     /// The meaning of the token `get_next` read last.
-    pub cur: crate::base::command::Command,
+    pub cur: Command,
     pub cur_cs: Option<CsId>,
-    pub cur_tok: crate::base::token::Token,
+    pub cur_tok: Token,
     pub cur_mark: CurMarks,
     pub mark_classes: MarkClasses,
-    pub disc_ptr: [crate::base::units::MemPtr; 4],
-    pub after_token: crate::base::token::Token,
+    pub disc_ptr: [MemPtr; 4],
+    pub after_token: Token,
     pub cur_f: FontId,
     pub set_box_allowed: bool,
     pub native_text: Vec<u16>,
@@ -423,13 +417,10 @@ pub(crate) struct ScannerState {
 impl ScannerState {
     /// Grows `native_text` until `extra` more units fit.
     #[inline(always)]
-    pub(crate) fn reserve_native_text(
-        &mut self,
-        extra: i32,
-    ) -> Result<(), crate::print::errors::Abort> {
+    pub(crate) fn reserve_native_text(&mut self, extra: i32) -> Result<(), Abort> {
         if extra >= NATIVE_TEXT_MAX - self.native_len {
-            return Err(crate::print::errors::Abort::Overflow {
-                capacity: crate::print::errors::Capacity::NativeTextSize,
+            return Err(Abort::Overflow {
+                capacity: Capacity::NativeTextSize,
                 n: NATIVE_TEXT_MAX,
             });
         }

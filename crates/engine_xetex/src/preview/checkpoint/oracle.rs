@@ -1,15 +1,20 @@
 //! Named state digests used only to verify checkpoint restoration.
 
+use std::hash::{Hash, Hasher};
+use std::iter;
+
+use crate::base::codes::MarkCode;
+use crate::base::consts::TEX_NULL;
 use crate::base::mode::Mode;
 use crate::base::units::RawPtr;
+use crate::memory::glue_store::GlueSpecId;
 use crate::memory::mem_types::ListStateRecord;
-use crate::memory::node::NodePtr;
-use crate::scanning::input::InputName;
-use crate::scanning::input::InputState;
+use crate::memory::node::{NodePtr, link_of};
+use crate::scanning::input::{InputName, InputState};
 use crate::state::EngineState;
 use crate::tables::cs::CsId;
-use crate::tables::save::Restore;
-use crate::tables::save::SaveEntry;
+use crate::tables::eqtb::Register;
+use crate::tables::save::{Restore, SaveEntry};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ComponentDigest {
@@ -94,7 +99,7 @@ impl Fnv {
     }
 }
 
-impl std::hash::Hasher for Fnv {
+impl Hasher for Fnv {
     fn write(&mut self, bytes: &[u8]) {
         for &b in bytes {
             self.word(u64::from(b));
@@ -184,8 +189,8 @@ fn digest_eqtb(st: &EngineState) -> u64 {
     ]);
     h.word(u64::from(eqtb.no_new_control_sequence));
     eqtb.hash_tables(&mut h);
-    std::hash::Hash::hash(&eqtb.hash, &mut h);
-    std::hash::Hash::hash(&eqtb.prim, &mut h);
+    Hash::hash(&eqtb.hash, &mut h);
+    Hash::hash(&eqtb.prim, &mut h);
     h.finish()
 }
 
@@ -230,7 +235,6 @@ fn digest_save(st: &EngineState) -> u64 {
 }
 
 fn digest_save_entry(h: &mut Fnv, entry: &SaveEntry) {
-    use std::hash::Hash;
     match *entry {
         SaveEntry::Boundary { group, below, line } => {
             h.i32s(&[
@@ -288,7 +292,7 @@ fn digest_save_entry(h: &mut Fnv, entry: &SaveEntry) {
             h.i32s(&[11, o.loc.raw(), o.value.ptr().raw(), i32::from(o.level)]);
         }
         SaveEntry::Restore(Restore::Box(o)) => {
-            let b = crate::memory::node::link_of(o.value);
+            let b = link_of(o.value);
             h.i32s(&[12, o.loc.raw(), b.raw(), i32::from(o.level)]);
         }
         SaveEntry::Restore(Restore::Font(o)) => {
@@ -335,17 +339,14 @@ fn digest_fonts(st: &EngineState) -> u64 {
     hash_values!(font_bchar.raw());
     hash_values!(font_false_bchar.raw());
     for &glue in fonts.font_glue.as_slice().iter().take(font_count) {
-        h.i32(glue.map_or(
-            crate::base::consts::TEX_NULL,
-            crate::memory::glue_store::GlueSpecId::raw,
-        ));
+        h.i32(glue.map_or(TEX_NULL, GlueSpecId::raw));
     }
     hash_values!(font_used);
     for metrics in fonts.metrics.as_slice().iter().take(font_count) {
-        std::hash::Hash::hash(metrics, &mut h);
+        Hash::hash(metrics, &mut h);
     }
     for params in fonts.params.as_slice().iter().take(font_count) {
-        std::hash::Hash::hash(params, &mut h);
+        Hash::hash(params, &mut h);
     }
     hash_values!(hyphen_char);
     hash_values!(skew_char);
@@ -500,11 +501,11 @@ fn digest_scanner(st: &EngineState) -> u64 {
     for &value in buf {
         h.word(u64::from(value));
     }
-    let classes = std::iter::once((crate::tables::eqtb::Register::of(0), &scanner.cur_mark))
-        .chain(scanner.mark_classes.iter());
+    let classes =
+        iter::once((Register::of(0), &scanner.cur_mark)).chain(scanner.mark_classes.iter());
     for (class, marks) in classes {
         h.word(u64::from(class.get()));
-        for code in crate::base::codes::MarkCode::ALL {
+        for code in MarkCode::ALL {
             h.i32s(&[marks[code].raw()]);
         }
     }

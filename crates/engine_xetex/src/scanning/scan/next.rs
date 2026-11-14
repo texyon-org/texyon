@@ -1,26 +1,26 @@
 //! Getting the next token: `get_next`, `get_token`, `get_x_token` and `pass_text`.
 
+use super::Command;
 use super::toks::finish_line;
 use crate::base::cmd::Cmd;
 use crate::base::codes::{FiOrElseCode, ScannerStatus};
-use crate::base::command::RelaxCode;
-use crate::base::command::Usv;
+use crate::base::command::{RelaxCode, Usv};
 use crate::base::consts::BIGGEST_USV;
+use crate::base::mode::Mode;
 use crate::base::params::{IntPar, TokPar};
 use crate::base::token::{Build, TokCursor, Token, TokenKind, TokenList};
 use crate::base::units::BufPos;
 use crate::ffi::bridge::output_flush;
+use crate::files::io::{FileSlot, input_slot_line};
 use crate::memory::mem::MemState;
 use crate::memory::node::{AlignRecord, NodePtr};
-use crate::print::Selector;
-use crate::print::errors::{Abort, OrConfusion};
+use crate::print::errors::{Abort, OrConfusion, error, ins_error, runaway};
+use crate::print::{CsName, Selector, file_warning, print_char, show_cur_cmd_chr};
 use crate::scanning::expand::{expand, macro_call};
-use crate::scanning::input::InputClusterState;
-use crate::scanning::input::InputName;
 use crate::scanning::input::{
-    MID_LINE, NEW_LINE, SKIP_BLANKS, TOKEN_LIST, TokenType, begin_token_list,
+    InputClusterState, InputName, MID_LINE, NEW_LINE, SKIP_BLANKS, TOKEN_LIST, TokenType,
+    begin_token_list, end_file_reading, end_token_list, pseudo_input,
 };
-use crate::scanning::scan::Command;
 use crate::state::EngineState;
 use crate::tables::cs::{CsId, Frozen};
 
@@ -80,7 +80,7 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     let outcome = if st.scanner.scanner_status > ScannerStatus::Skipping {
-        crate::print::errors::runaway(st);
+        runaway(st);
         let what = if st.scanner.cur_cs.is_none() {
             "File ended"
         } else {
@@ -111,8 +111,8 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
         };
 
         begin_token_list(st, inserted, TokenType::Inserted)?;
-        let macro_name = crate::print::CsName(st.scanner.warning_index);
-        crate::print::errors::error(
+        let macro_name = CsName(st.scanner.warning_index);
+        error(
             st,
             (what, scanning, " of ", macro_name),
             &[
@@ -136,7 +136,7 @@ fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
             "The file ended while I was skipping conditional text."
         };
         st.scanner.cur_tok = Token::from_cs(Frozen::Fi.cs());
-        crate::print::errors::ins_error(
+        ins_error(
             st,
             message,
             &[
@@ -408,7 +408,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                             // Invalid character.
                             16 | 32 | 48 => {
                                 st.errors.deletions_allowed = false;
-                                crate::print::errors::error(
+                                error(
                                     st,
                                     "Text line contains an invalid character",
                                     &[
@@ -485,12 +485,10 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
 
                     if !st.input.force_eof {
                         let got_line = if let InputName::Pseudo { .. } = st.input.cur_input.name {
-                            crate::scanning::input::pseudo_input(st)?
+                            pseudo_input(st)?
                         } else {
-                            let slot = crate::files::io::FileSlot::Input(
-                                st.input.cur_input.index as usize,
-                            );
-                            crate::files::io::input_slot_line(st, slot)? != 0
+                            let slot = FileSlot::Input(st.input.cur_input.index as usize);
+                            input_slot_line(st, slot)? != 0
                         };
                         if got_line {
                             st.input.cur_input.limit = st.input.last;
@@ -513,15 +511,15 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                             && (st.input.open_levels[in_open].grp != st.save_stack.cur_boundary
                                 || st.input.open_levels[in_open].cond != st.scanner.conds.top())
                         {
-                            crate::print::file_warning(st);
+                            file_warning(st);
                         }
                         if st.input.cur_input.name.shows_parens() {
-                            crate::print::print_char(st, b')');
+                            print_char(st, b')');
                             st.input.open_parens -= 1;
                             output_flush(st.shipout.rust_stdout);
                         }
                         st.input.force_eof = false;
-                        crate::scanning::input::end_file_reading(st)?;
+                        end_file_reading(st)?;
                         check_outer_validity(st)?;
                         continue 'restart;
                     }
@@ -533,7 +531,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                         return Ok(());
                     }
                     if !st.input.input_stack.is_empty() {
-                        crate::scanning::input::end_file_reading(st)?;
+                        end_file_reading(st)?;
                         continue 'restart;
                     }
                     let coda = st.eqtb.tok_par(TokPar::TectonicCoda);
@@ -565,7 +563,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                             }
                         } else {
                             if st.scanner.cur_cs == Some(Frozen::EndWrite.cs())
-                                && matches!(st.input.cur_list.mode, crate::base::mode::Mode::None)
+                                && matches!(st.input.cur_list.mode, Mode::None)
                             {
                                 return Err(Abort::Fatal("Unbalanced write command"));
                             }
@@ -589,7 +587,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                 }
             }
         } else {
-            crate::scanning::input::end_token_list(st)?;
+            end_token_list(st)?;
             continue 'restart;
         }
 
@@ -697,7 +695,7 @@ pub(crate) fn pass_text(st: &mut EngineState) -> Result<(), Abort> {
     }
     st.scanner.scanner_status = save_scanner_status;
     if st.eqtb.int_par(IntPar::TracingIfs) > 0 {
-        crate::print::show_cur_cmd_chr(st);
+        show_cur_cmd_chr(st);
     }
     Ok(())
 }

@@ -1,15 +1,17 @@
 //! Hyphenation patterns and exceptions, and the packed-trie builder.
 
+use std::array;
+
 use crate::base::cmd::Cmd;
-use crate::base::command::Command;
-use crate::base::command::Usv;
-use crate::base::consts::BIGGEST_CHAR;
+use crate::base::command::{Command, Usv};
 pub(crate) use crate::base::consts::BIGGEST_LANG;
+use crate::base::consts::{BIGGEST_CHAR, NULL_FONT};
 use crate::base::params::IntPar;
-use crate::base::units::FontId;
-use crate::base::units::{MemPtr, StrNumber};
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
+use crate::base::units::{FontId, MemPtr, StrNumber};
+use crate::fonts::LigChar;
+use crate::print::Esc;
+use crate::print::errors::{Abort, Capacity, OrConfusion, error};
+use crate::scanning::scan::{get_x_token, scan_char_num, scan_left_brace, scan_toks};
 use crate::state::EngineState;
 use crate::tables::eqtb::EqtbState;
 
@@ -297,7 +299,7 @@ impl HyphState {
             if l == 0 {
                 if self.trie_op_ptr == TRIE_OP_SIZE {
                     return Err(Abort::Overflow {
-                        capacity: crate::print::errors::Capacity::PatternMemoryOps,
+                        capacity: Capacity::PatternMemoryOps,
                         n: TRIE_OP_SIZE,
                     });
                 }
@@ -305,7 +307,7 @@ impl HyphState {
                 let used = &mut self.trie_used[usize::from(lang)];
                 if *used == TrieOp::MAX.0 {
                     return Err(Abort::Overflow {
-                        capacity: crate::print::errors::Capacity::PatternMemoryOpsPerLanguage,
+                        capacity: Capacity::PatternMemoryOpsPerLanguage,
                         n: i32::from(TrieOp::MAX.0 - TrieOp::NONE.0),
                     });
                 }
@@ -392,7 +394,7 @@ impl HyphState {
             if self.trie_max < top {
                 if self.trie_size as usize <= top.0 {
                     return Err(Abort::Overflow {
-                        capacity: crate::print::errors::Capacity::PatternMemory,
+                        capacity: Capacity::PatternMemory,
                         n: self.trie_size,
                     });
                 }
@@ -594,7 +596,7 @@ impl HyphState {
     ) -> Result<(), Abort> {
         if self.trie_ptr == self.trie_size {
             return Err(Abort::Overflow {
-                capacity: crate::print::errors::Capacity::PatternMemory,
+                capacity: Capacity::PatternMemory,
                 n: self.trie_size,
             });
         }
@@ -713,26 +715,26 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
     st.hyph.tables_gen = st.hyph.tables_gen.wrapping_add(1);
 
     if !st.hyph.trie_not_ready {
-        crate::print::errors::error(
+        error(
             st,
-            ("Too late for ", crate::print::Esc("patterns")),
+            ("Too late for ", Esc("patterns")),
             &["All patterns must be given before typesetting begins."],
         )?;
 
-        let list = crate::scanning::scan::scan_toks(st, false, false)?;
+        let list = scan_toks(st, false, false)?;
         st.mem.tokens.flush(list);
         return Ok(());
     }
 
     st.hyph.cur_lang = norm_lang(st.eqtb.int_par(IntPar::Language));
 
-    crate::scanning::scan::scan_left_brace(st)?;
+    scan_left_brace(st)?;
     let mut k = 0;
     st.hyph.hyf[0] = 0;
     let mut digit_sensed = false;
 
     loop {
-        crate::scanning::scan::get_x_token(st)?;
+        get_x_token(st)?;
         match st.scanner.cur.cmd() {
             Cmd::Letter | Cmd::OtherChar => {
                 let cur_chr = st.scanner.cur.char_code().or_confusion("pattern letter")?;
@@ -748,7 +750,7 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
                     } else {
                         let code = st.eqtb.lc_code(cur_chr);
                         if code == 0 {
-                            crate::print::errors::error(st, "Nonletter", &[APPENDIX_H])?;
+                            error(st, "Nonletter", &[APPENDIX_H])?;
                         }
                         code
                     };
@@ -769,7 +771,7 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
                 if k > 0 {
                     let (q, op, duplicate) = st.hyph.insert_pattern_word(k)?;
                     if duplicate {
-                        crate::print::errors::error(st, "Duplicate pattern", &[APPENDIX_H])?;
+                        error(st, "Duplicate pattern", &[APPENDIX_H])?;
                     }
                     st.hyph.set_trie_o(q, op);
                 }
@@ -783,17 +785,13 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
                 digit_sensed = false;
             }
             _ => {
-                crate::print::errors::error(
-                    st,
-                    ("Bad ", crate::print::Esc("patterns")),
-                    &[APPENDIX_H],
-                )?;
+                error(st, ("Bad ", Esc("patterns")), &[APPENDIX_H])?;
             }
         }
     }
 
     if st.eqtb.int_par(IntPar::SavingHyphCodes) > 0 {
-        let lc_codes: [i32; 256] = std::array::from_fn(|ci| st.eqtb.lc_code(ci as i32));
+        let lc_codes: [i32; 256] = array::from_fn(|ci| st.eqtb.lc_code(ci as i32));
         st.hyph.save_hyph_codes(&lc_codes)?;
     }
     Ok(())
@@ -802,7 +800,7 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
 pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
     st.hyph.tables_gen = st.hyph.tables_gen.wrapping_add(1);
 
-    crate::scanning::scan::scan_left_brace(st)?;
+    scan_left_brace(st)?;
 
     st.hyph.cur_lang = norm_lang(st.eqtb.int_par(IntPar::Language));
     if st.hyph.trie_not_ready {
@@ -815,7 +813,7 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
     let mut p = None;
 
     loop {
-        crate::scanning::scan::get_x_token(st)?;
+        get_x_token(st)?;
 
         // reswitch: \char re-dispatches as Cmd::CharGiven
         loop {
@@ -834,7 +832,7 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
                         st.hyph.hc[0] = st.hyph.hyph_code(&st.eqtb, cur_chr);
 
                         if st.hyph.hc[0] == 0 {
-                            crate::print::errors::error(
+                            error(
                                 st,
                                 "Not a letter",
                                 &[
@@ -857,7 +855,7 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
                     break;
                 }
                 Cmd::CharNum => {
-                    let c = crate::scanning::scan::scan_char_num(st)?;
+                    let c = scan_char_num(st)?;
                     st.scanner.cur = Command::CharGiven(Usv::new(c).or_confusion("char_num")?);
                 }
                 Cmd::Spacer | Cmd::RightBrace => {
@@ -874,13 +872,9 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
                     break;
                 }
                 _ => {
-                    crate::print::errors::error(
+                    error(
                         st,
-                        (
-                            "Improper ",
-                            crate::print::Esc("hyphenation"),
-                            " will be flushed",
-                        ),
+                        ("Improper ", Esc("hyphenation"), " will be flushed"),
                         &[
                             "Hyphenation exceptions must contain only letters",
                             "and hyphens. But continue; I'll forgive and forget.",
@@ -918,7 +912,7 @@ fn store_hyph_exception(st: &mut EngineState, mut n: usize, p: MemPtr) -> Result
 
     if hyph.hyph_count == hyph.hyph_size || hyph.hyph_next == 0 {
         return Err(Abort::Overflow {
-            capacity: crate::print::errors::Capacity::ExceptionDictionary,
+            capacity: Capacity::ExceptionDictionary,
             n: hyph.hyph_size,
         });
     }
@@ -968,11 +962,11 @@ pub(crate) struct HyphState {
     pub tables_gen: u64,
     pub hf: FontId,
     pub max_hyph_char: i32,
-    pub init_list: crate::base::units::MemPtr,
+    pub init_list: MemPtr,
     pub init_lig: bool,
     pub init_lft: bool,
     pub hyphen_passed: usize,
-    pub trie_max: crate::build::hyphenation::TriePtr,
+    pub trie_max: TriePtr,
     pub trie_size: i32,
     pub trie_ptr: i32,
     pub hyph_count: i32,
@@ -981,17 +975,17 @@ pub(crate) struct HyphState {
     pub trie_op_ptr: i32,
     pub max_op_used: u16,
     pub trie_not_ready: bool,
-    pub hyph_start: crate::build::hyphenation::TriePtr,
+    pub hyph_start: TriePtr,
     /// The `\lccode` table saved with the current language's patterns.
-    pub hyph_index: Option<crate::build::hyphenation::TriePtr>,
+    pub hyph_index: Option<TriePtr>,
     pub cur_lang: u8,
-    pub hyf_char: crate::fonts::LigChar,
+    pub hyf_char: LigChar,
     pub l_hyf: i32,
     pub r_hyf: i32,
-    pub hyf_bchar: crate::fonts::LigChar,
+    pub hyf_bchar: LigChar,
     pub hc: Vec<i32>,
     /// The word's characters, with boundary sentinels at the ends.
-    pub hu: Vec<crate::fonts::LigChar>,
+    pub hu: Vec<LigChar>,
     pub hyf: Vec<u8>,
     pub trie_min: Vec<u32>,
     pub hyf_distance: Vec<u16>,
@@ -1011,7 +1005,7 @@ pub(crate) struct HyphState {
     pub trie_hash: Vec<u32>,
     pub trie_taken: Vec<bool>,
     pub hyph_word: Vec<StrNumber>,
-    pub hyph_list: Vec<crate::base::units::MemPtr>,
+    pub hyph_list: Vec<MemPtr>,
     pub hyph_link: Vec<u16>,
     pub trie_op_hash_array: Vec<i32>,
 }
@@ -1020,13 +1014,13 @@ impl Default for HyphState {
     fn default() -> Self {
         Self {
             tables_gen: 0,
-            hf: crate::base::consts::NULL_FONT,
+            hf: NULL_FONT,
             max_hyph_char: 0,
             init_list: None,
             init_lig: false,
             init_lft: false,
             hyphen_passed: 0,
-            trie_max: crate::build::hyphenation::TriePtr::NULL,
+            trie_max: TriePtr::NULL,
             trie_size: 0,
             trie_ptr: 0,
             hyph_count: 0,
@@ -1035,15 +1029,15 @@ impl Default for HyphState {
             trie_op_ptr: 0,
             max_op_used: 0,
             trie_not_ready: false,
-            hyph_start: crate::build::hyphenation::TriePtr::NULL,
+            hyph_start: TriePtr::NULL,
             hyph_index: None,
             cur_lang: 0,
-            hyf_char: crate::fonts::LigChar::NONE,
+            hyf_char: LigChar::NONE,
             l_hyf: 0,
             r_hyf: 0,
-            hyf_bchar: crate::fonts::LigChar::NONE,
+            hyf_bchar: LigChar::NONE,
             hc: vec![0; 4099],
-            hu: vec![crate::fonts::LigChar::NONE; 4097],
+            hu: vec![LigChar::NONE; 4097],
             hyf: vec![0; 4097],
             trie_min: vec![0; 65536],
             hyf_distance: vec![0; 35112],

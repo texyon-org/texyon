@@ -1,5 +1,9 @@
 //! TeX's fixed-size stacks: entries, a pointer, a size limit and a high-water mark.
 
+use std::ops::{Index, IndexMut};
+
+use crate::print::errors::{Abort, Capacity};
+
 /// A push past a stack's size.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct StackFull;
@@ -28,11 +32,8 @@ impl<T: Copy + Default> TexStack<T> {
     }
 
     /// TeX's overflow error for this stack, reporting its size.
-    pub(crate) fn overflow(
-        &self,
-        capacity: crate::print::errors::Capacity,
-    ) -> crate::print::errors::Abort {
-        crate::print::errors::Abort::overflow(capacity, self.size())
+    pub(crate) fn overflow(&self, capacity: Capacity) -> Abort {
+        Abort::overflow(capacity, self.size())
     }
 
     /// The most entries the stack holds.
@@ -135,7 +136,7 @@ impl<T: Copy + Default> TexStack<T> {
     }
 }
 
-impl<T> std::ops::Index<usize> for TexStack<T> {
+impl<T> Index<usize> for TexStack<T> {
     type Output = T;
     #[inline(always)]
     fn index(&self, i: usize) -> &T {
@@ -143,7 +144,7 @@ impl<T> std::ops::Index<usize> for TexStack<T> {
     }
 }
 
-impl<T> std::ops::IndexMut<usize> for TexStack<T> {
+impl<T> IndexMut<usize> for TexStack<T> {
     #[inline(always)]
     fn index_mut(&mut self, i: usize) -> &mut T {
         &mut self.slots[..=self.len][i]

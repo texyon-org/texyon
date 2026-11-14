@@ -4,10 +4,9 @@
 //! with the node selection rules of TeX Live's `synctex_parser.c`, so results
 //! match the `synctex edit` and `synctex view` command line tools.
 
-use std::{
-    collections::{BTreeMap, HashMap},
-    sync::Arc,
-};
+use std::collections::{BTreeMap, HashMap};
+use std::mem;
+use std::sync::Arc;
 
 mod query;
 mod text;
@@ -467,7 +466,7 @@ impl PreviewSyncIndex {
 
     fn flush(&mut self) {
         if let (Some(page_index), false) = (self.page_index, self.open.is_empty()) {
-            let records = Arc::from(std::mem::take(&mut self.open));
+            let records = Arc::from(mem::take(&mut self.open));
             self.index.push_page(page_index, records);
         }
     }
@@ -508,8 +507,8 @@ impl PreviewSyncIndex {
 
     /// Bytes a clone owns alone, since finished pages are shared.
     pub(crate) fn allocated_bytes(&self) -> usize {
-        self.index.pages.capacity() * std::mem::size_of::<Arc<[Record]>>()
-            + self.open.capacity() * std::mem::size_of::<Record>()
+        self.index.pages.capacity() * mem::size_of::<Arc<[Record]>>()
+            + self.open.capacity() * mem::size_of::<Record>()
     }
 }
 

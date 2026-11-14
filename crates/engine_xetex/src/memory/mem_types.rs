@@ -1,8 +1,14 @@
 //! The word-level records of the engine arenas.
 
-use crate::base::mode::Mode;
-use crate::print::errors::Abort;
+use std::alloc;
+use std::alloc::Layout;
 use std::mem::size_of;
+
+use crate::base::mode::Mode;
+use crate::base::units::{MemAddr, MemIdx, MemPtr, Scaled};
+use crate::memory::mem::{CONTRIB_HEAD, MemState};
+use crate::memory::node::{FractionNoad, NodePtr};
+use crate::print::errors::Abort;
 
 /// Word types whose all-zero bit pattern is a valid value.
 ///
@@ -19,14 +25,14 @@ pub(crate) fn zeroed_vec<T: ZeroWord>(len: usize) -> Vec<T> {
     if len == 0 {
         return Vec::new();
     }
-    let layout = std::alloc::Layout::array::<T>(len).expect("arena size overflow");
+    let layout = Layout::array::<T>(len).expect("arena size overflow");
     // SAFETY: `layout` is non-zero-sized and all-zero bytes are a valid `T`
     // (`ZeroWord` contract). Length == capacity matches the allocation
     // layout, so `Vec`'s destructor deallocates with the same layout.
     unsafe {
-        let ptr = std::alloc::alloc_zeroed(layout) as *mut T;
+        let ptr = alloc::alloc_zeroed(layout) as *mut T;
         if ptr.is_null() {
-            std::alloc::handle_alloc_error(layout);
+            alloc::handle_alloc_error(layout);
         }
         Vec::from_raw_parts(ptr, len, len)
     }
@@ -36,9 +42,9 @@ pub(crate) fn zeroed_vec<T: ZeroWord>(len: usize) -> Vec<T> {
 #[derive(Copy, Clone)]
 pub struct ListStateRecord {
     pub mode: Mode,
-    pub head: crate::base::units::MemIdx,
-    pub tail: crate::base::units::MemIdx,
-    pub e_tex_aux: crate::base::units::MemPtr,
+    pub head: MemIdx,
+    pub tail: MemIdx,
+    pub e_tex_aux: MemPtr,
     pub prev_graf: i32,
     pub mode_line: i32,
 }
@@ -50,8 +56,8 @@ impl Default for ListStateRecord {
     fn default() -> Self {
         Self {
             mode: Mode::None,
-            head: crate::memory::mem::CONTRIB_HEAD,
-            tail: crate::memory::mem::CONTRIB_HEAD,
+            head: CONTRIB_HEAD,
+            tail: CONTRIB_HEAD,
             e_tex_aux: None,
             prev_graf: 0,
             mode_line: 0,
@@ -62,14 +68,14 @@ impl Default for ListStateRecord {
 impl ListStateRecord {
     /// `prev_depth` of the vertical list being built.
     #[inline]
-    pub fn prev_depth(&self) -> Result<crate::base::units::Scaled, Abort> {
+    pub fn prev_depth(&self) -> Result<Scaled, Abort> {
         match self.mode {
             Mode::Vertical { prev_depth, .. } => Ok(prev_depth),
             _ => Err(Abort::Confusion("prev depth")),
         }
     }
     #[inline]
-    pub fn set_prev_depth(&mut self, d: crate::base::units::Scaled) -> Result<(), Abort> {
+    pub fn set_prev_depth(&mut self, d: Scaled) -> Result<(), Abort> {
         match &mut self.mode {
             Mode::Vertical { prev_depth, .. } => *prev_depth = d,
             _ => return Err(Abort::Confusion("prev depth")),
@@ -110,10 +116,7 @@ impl ListStateRecord {
     }
     /// `incompleat_noad`, the pending fraction of the math list being built.
     #[inline]
-    pub fn incompleat_noad(
-        &self,
-    ) -> Result<Option<crate::memory::node::NodePtr<crate::memory::node::FractionNoad>>, Abort>
-    {
+    pub fn incompleat_noad(&self) -> Result<Option<NodePtr<FractionNoad>>, Abort> {
         match self.mode {
             Mode::Math {
                 incompleat_noad, ..
@@ -122,10 +125,7 @@ impl ListStateRecord {
         }
     }
     #[inline]
-    pub fn set_incompleat_noad(
-        &mut self,
-        n: Option<crate::memory::node::NodePtr<crate::memory::node::FractionNoad>>,
-    ) -> Result<(), Abort> {
+    pub fn set_incompleat_noad(&mut self, n: Option<NodePtr<FractionNoad>>) -> Result<(), Abort> {
         match &mut self.mode {
             Mode::Math {
                 incompleat_noad, ..
@@ -137,11 +137,7 @@ impl ListStateRecord {
 
     /// Links `p` after the tail and makes it the new tail.
     #[inline]
-    pub fn tail_append(
-        &mut self,
-        mem: &mut crate::memory::mem::MemState,
-        p: impl crate::base::units::MemAddr,
-    ) {
+    pub fn tail_append(&mut self, mem: &mut MemState, p: impl MemAddr) {
         let p = p.addr();
         self.tail.set_link(mem, Some(p));
         self.tail = p;

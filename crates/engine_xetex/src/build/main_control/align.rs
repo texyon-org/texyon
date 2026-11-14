@@ -5,27 +5,33 @@ use super::lists::{end_graf, normal_paragraph, off_save};
 use super::{CR_CODE, SPAN_CODE, append_list, begin_every};
 use crate::base::cmd::Cmd;
 use crate::base::codes::{ScannerStatus, ValueLevel};
-use crate::base::command::Command;
-use crate::base::command::TabMarkCode;
+use crate::base::command::{Command, TabMarkCode};
 use crate::base::consts::{IGNORE_DEPTH, MAX_DIMEN};
 use crate::base::mode::{Mode, ModeName};
 use crate::base::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::base::token::{Token, TokenList};
 use crate::base::units::{GlueOrder, GlueSign, MemPtr, Orientation, Scaled};
-use crate::build::packaging::{AdjustTails, PackOrigin, PackSpec};
-use crate::memory::mem::MemState;
-use crate::memory::mem::{ALIGN_HEAD, END_SPAN, HOLD_HEAD, ZERO_GLUE};
-use crate::memory::node::Stored;
-use crate::memory::node::{
-    AlignColumn, AlignRecord, AnyNode, BoxLr, GlueKind, GlueNode, HeadNode, NodePtr, RUNNING,
-    RuleDimen, SpanNode, UnsetNode,
+use crate::build::math::{check_display_end, resume_after_display};
+use crate::build::packaging::{
+    AdjustTails, PackOrigin, PackSpec, hpack, hpack_with, vpackage, vpackage_with,
 };
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
-use crate::scanning::input::{TOKEN_LIST, TokenType};
+use crate::build::pagebuilder::build_page;
+use crate::memory::mem::{ALIGN_HEAD, END_SPAN, HOLD_HEAD, MemState, ZERO_GLUE, push_nest};
+use crate::memory::node::{
+    AlignColumn, AlignRecord, AnyNode, BoxLr, GlueKind, GlueNode, GlueRatio, HeadNode, NodePtr,
+    RUNNING, RuleDimen, SpanNode, Stored, UnsetNode,
+};
+use crate::print::Esc;
+use crate::print::errors::{Abort, OrConfusion, back_error, error, ins_error};
+use crate::scanning::expand::expand;
+use crate::scanning::input::{InputState, TOKEN_LIST, TokenType, back_input, begin_token_list};
+use crate::scanning::scan::{
+    get_token, get_x_or_protected, scan_glue, scan_left_brace, scan_optional_equals, scan_spec,
+};
 use crate::state::EngineState;
 use crate::tables::cs::Frozen;
-use crate::tables::save::GroupCode;
+use crate::tables::eqtb::define;
+use crate::tables::save::{GroupCode, unsave};
 
 pub(super) fn align_error(st: &mut EngineState) -> Result<(), Abort> {
     if st.scanner.align_state.abs() > 2 {
@@ -47,9 +53,9 @@ pub(super) fn align_error(st: &mut EngineState) -> Result<(), Abort> {
                 "might try typing `S' now just to see what is salvageable.",
             ]
         };
-        crate::print::errors::error(st, ("Misplaced ", st.scanner.cur), help)?;
+        error(st, ("Misplaced ", st.scanner.cur), help)?;
     } else {
-        crate::scanning::input::back_input(st)?;
+        back_input(st)?;
         let message = if st.scanner.align_state < 0 {
             st.scanner.align_state += 1;
             st.scanner.cur_tok = Token::left_brace(b'{');
@@ -59,7 +65,7 @@ pub(super) fn align_error(st: &mut EngineState) -> Result<(), Abort> {
             st.scanner.cur_tok = Token::right_brace(b'}');
             "Missing } inserted"
         };
-        crate::print::errors::ins_error(
+        ins_error(
             st,
             message,
             &[
@@ -72,9 +78,9 @@ pub(super) fn align_error(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 pub(super) fn no_align_error(st: &mut EngineState) -> Result<(), Abort> {
-    crate::print::errors::error(
+    error(
         st,
-        ("Misplaced ", crate::print::Esc("noalign")),
+        ("Misplaced ", Esc("noalign")),
         &[
             r"I expect to see \noalign only after the \cr of",
             "an alignment. Proceed, and I'll ignore this case.",
@@ -82,9 +88,9 @@ pub(super) fn no_align_error(st: &mut EngineState) -> Result<(), Abort> {
     )
 }
 pub(super) fn omit_error(st: &mut EngineState) -> Result<(), Abort> {
-    crate::print::errors::error(
+    error(
         st,
-        ("Misplaced ", crate::print::Esc("omit")),
+        ("Misplaced ", Esc("omit")),
         &[
             r"I expect to see \omit only after tab marks or the \cr of",
             "an alignment. Proceed, and I'll ignore this case.",
@@ -95,11 +101,11 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
     if st.save_stack.cur_group != GroupCode::Align {
         return Err(Abort::Confusion("align1"));
     }
-    crate::tables::save::unsave(st)?;
+    unsave(st)?;
     if st.save_stack.cur_group != GroupCode::Align {
         return Err(Abort::Confusion("align0"));
     }
-    crate::tables::save::unsave(st)?;
+    unsave(st)?;
 
     let in_display = st.input.nest[st.input.nest.len() - 1].mode.name() == ModeName::DisplayMath;
     let o = if in_display {
@@ -139,7 +145,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
     let p = if st.input.cur_list.mode.name() == ModeName::InternalVertical {
         let rule_save = st.eqtb.dimen_par(DimenPar::OverfullRule);
         st.eqtb.set_dimen_par(DimenPar::OverfullRule, Scaled::ZERO);
-        let packed = crate::build::packaging::hpack_with(st, head, spec, origin, None)?.r_box;
+        let packed = hpack_with(st, head, spec, origin, None)?.r_box;
         st.eqtb.set_dimen_par(DimenPar::OverfullRule, rule_save);
         packed
     } else {
@@ -147,8 +153,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
             mem[q].height = mem[q].width;
             mem[q].width = Scaled::ZERO;
         });
-        let packed =
-            crate::build::packaging::vpackage_with(st, head, spec, MAX_DIMEN, origin)?.r_box;
+        let packed = vpackage_with(st, head, spec, MAX_DIMEN, origin)?.r_box;
         st.mem.for_each_preamble_column(|mem, q| {
             mem[q].width = mem[q].height;
             mem[q].height = Scaled::ZERO;
@@ -183,7 +188,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                 let node = &mut st.mem[row];
                 node.glue_order = order;
                 node.glue_sign = sign;
-                node.glue_set = crate::memory::node::GlueRatio::new(set);
+                node.glue_set = GlueRatio::new(set);
                 node.shift_amount = o;
 
                 let mut r = st.mem[row].list_ptr.or_confusion("align")?.link(&st.mem);
@@ -263,7 +268,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                     let node = &mut st.mem[b];
                     node.glue_sign = sign.into();
                     node.glue_order = order;
-                    node.glue_set = crate::memory::node::GlueRatio::new(set);
+                    node.glue_set = GlueRatio::new(set);
                     node.shift_amount = Scaled::ZERO;
                     if u != HOLD_HEAD {
                         let (rest, spanned) = (cell.link(&st.mem), HOLD_HEAD.link(&st.mem));
@@ -292,7 +297,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                 if o != Scaled::ZERO {
                     let next = st.mem[rule].link;
                     st.mem[rule].link = None;
-                    let boxed = crate::build::packaging::hpack(st, rule.ptr(), PackSpec::NATURAL)?;
+                    let boxed = hpack(st, rule.ptr(), PackSpec::NATURAL)?;
                     let node = &mut st.mem[boxed];
                     node.shift_amount = o;
                     node.link = next;
@@ -317,7 +322,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
     if st.input.cur_list.mode.name() == ModeName::DisplayMath {
         do_assignments(st)?;
         if st.scanner.cur.cmd() != Cmd::MathShift {
-            crate::print::errors::back_error(
+            back_error(
                 st,
                 "Missing $$ inserted",
                 &[
@@ -326,7 +331,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                 ],
             )?;
         } else {
-            crate::build::math::check_display_end(st)?;
+            check_display_end(st)?;
         }
         st.mem.flush_node_list(st.input.cur_list.e_tex_aux)?;
         st.mem.pop_nest(&mut st.input)?;
@@ -348,7 +353,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
             return Err(Abort::Confusion("align aux"));
         };
         st.input.cur_list.set_prev_depth(prev_depth)?;
-        crate::build::math::resume_after_display(st)?;
+        resume_after_display(st)?;
     } else {
         match (&mut st.input.cur_list.mode, aux_save) {
             (
@@ -379,7 +384,7 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
             st.input.cur_list.tail = rows_tail;
         }
         if st.input.cur_list.mode.name() == ModeName::Vertical {
-            crate::build::pagebuilder::build_page(st)?;
+            build_page(st)?;
         }
     }
     Ok(())
@@ -500,7 +505,7 @@ pub(super) fn align_peek(st: &mut EngineState) -> Result<(), Abort> {
         get_x_non_blank_or_protected(st)?;
         match st.scanner.cur.cmd() {
             Cmd::NoAlign => {
-                crate::scanning::scan::scan_left_brace(st)?;
+                scan_left_brace(st)?;
                 st.save_stack
                     .new_save_level(GroupCode::NoAlign, st.mem.line)?;
                 if st.input.cur_list.mode.name() == ModeName::InternalVertical {
@@ -520,7 +525,7 @@ pub(super) fn align_peek(st: &mut EngineState) -> Result<(), Abort> {
 
 fn get_x_non_blank_or_protected(st: &mut EngineState) -> Result<(), Abort> {
     loop {
-        crate::scanning::scan::get_x_or_protected(st)?;
+        get_x_or_protected(st)?;
         if st.scanner.cur.cmd() != Cmd::Spacer {
             return Ok(());
         }
@@ -529,12 +534,12 @@ fn get_x_non_blank_or_protected(st: &mut EngineState) -> Result<(), Abort> {
 
 fn get_preamble_token(st: &mut EngineState) -> Result<(), Abort> {
     loop {
-        crate::scanning::scan::get_token(st)?;
+        get_token(st)?;
         while st.scanner.cur == Command::TabMark(TabMarkCode::SPAN) {
-            crate::scanning::scan::get_token(st)?;
+            get_token(st)?;
             if st.scanner.cur.cmd() > Cmd::MAX_COMMAND {
-                crate::scanning::expand::expand(st)?;
-                crate::scanning::scan::get_token(st)?;
+                expand(st)?;
+                get_token(st)?;
             }
         }
         if st.scanner.cur.cmd() == Cmd::Endv {
@@ -545,15 +550,15 @@ fn get_preamble_token(st: &mut EngineState) -> Result<(), Abort> {
         if st.scanner.cur != Command::AssignGlue(GluePar::TabSkip.loc()) {
             return Ok(());
         }
-        crate::scanning::scan::scan_optional_equals(st)?;
-        let g = crate::scanning::scan::scan_glue(st, ValueLevel::Glue)?;
+        scan_optional_equals(st)?;
+        let g = scan_glue(st, ValueLevel::Glue)?;
         let global = st.eqtb.int_par(IntPar::GlobalDefs) > 0;
-        crate::tables::eqtb::define(st, global, GluePar::TabSkip.loc(), g)?;
+        define(st, global, GluePar::TabSkip.loc(), g)?;
     }
 }
 
 fn init_span(st: &mut EngineState, p: MemPtr) -> Result<(), Abort> {
-    crate::memory::mem::push_nest(st)?;
+    push_nest(st)?;
     if let Mode::Horizontal { space_factor, .. } = &mut st.input.cur_list.mode {
         *space_factor = 1000;
     } else {
@@ -565,7 +570,7 @@ fn init_span(st: &mut EngineState, p: MemPtr) -> Result<(), Abort> {
 }
 
 fn init_row(st: &mut EngineState) -> Result<(), Abort> {
-    crate::memory::mem::push_nest(st)?;
+    push_nest(st)?;
     st.input.cur_list.mode = match st.input.cur_list.mode {
         Mode::Vertical { .. } => Mode::Horizontal {
             inner: true,
@@ -595,8 +600,8 @@ fn init_col(st: &mut EngineState) -> Result<(), Abort> {
     if st.scanner.cur.cmd() == Cmd::Omit {
         st.scanner.align_state = 0;
     } else {
-        crate::scanning::input::back_input(st)?;
-        crate::scanning::input::begin_token_list(st, st.mem[column].u_part, TokenType::UTemplate)?;
+        back_input(st)?;
+        begin_token_list(st, st.mem[column].u_part, TokenType::UTemplate)?;
     }
     Ok(())
 }
@@ -712,12 +717,9 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
             st.mem[g].subtype = GlueKind::Param(GluePar::TabSkip).into();
         } else {
             st.mem[cur_align].extra_info = CR_CODE;
-            crate::print::errors::error(
+            error(
                 st,
-                (
-                    "Extra alignment tab has been changed to ",
-                    crate::print::Esc("cr"),
-                ),
+                ("Extra alignment tab has been changed to ", Esc("cr")),
                 &[
                     r"You have given more \span or & marks than there were",
                     r"in the preamble to the \halign or \valign now in progress.",
@@ -727,7 +729,7 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
         }
     }
     if st.mem[cur_align].extra_info != SPAN_CODE {
-        crate::tables::save::unsave(st)?;
+        unsave(st)?;
         st.save_stack
             .new_save_level(GroupCode::Align, st.mem.line)?;
         let head = st.input.cur_list.head.link(&st.mem);
@@ -736,7 +738,7 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
                 post: st.scanner.cur_tail,
                 pre: st.scanner.cur_pre_tail,
             };
-            let packed = crate::build::packaging::hpack_with(
+            let packed = hpack_with(
                 st,
                 head,
                 PackSpec::NATURAL,
@@ -747,13 +749,8 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
             st.scanner.cur_pre_tail = adjust.pre;
             (packed, st.mem[packed.r_box].width)
         } else {
-            let packed = crate::build::packaging::vpackage_with(
-                st,
-                head,
-                PackSpec::NATURAL,
-                Scaled::ZERO,
-                PackOrigin::Here,
-            )?;
+            let packed =
+                vpackage_with(st, head, PackSpec::NATURAL, Scaled::ZERO, PackOrigin::Here)?;
             (packed, st.mem[packed.r_box].height)
         };
         let u = packed.r_box;
@@ -820,7 +817,7 @@ fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
 fn fin_row(st: &mut EngineState) -> Result<(), Abort> {
     let head = st.input.cur_list.head.link(&st.mem);
     let p = if st.input.cur_list.mode.name() == ModeName::RestrictedHorizontal {
-        let row = crate::build::packaging::hpack(st, head, PackSpec::NATURAL)?;
+        let row = hpack(st, head, PackSpec::NATURAL)?;
         st.mem.pop_nest(&mut st.input)?;
         if st.scanner.cur_pre_head != st.scanner.cur_pre_tail {
             append_list(st, st.scanner.cur_pre_head, st.scanner.cur_pre_tail)?;
@@ -833,7 +830,7 @@ fn fin_row(st: &mut EngineState) -> Result<(), Abort> {
         }
         row
     } else {
-        let row = crate::build::packaging::vpackage(st, head, PackSpec::NATURAL, MAX_DIMEN)?;
+        let row = vpackage(st, head, PackSpec::NATURAL, MAX_DIMEN)?;
         st.mem.pop_nest(&mut st.input)?;
         st.input.cur_list.tail_append(&mut st.mem, row);
         st.input.cur_list.set_space_factor(1000)?;
@@ -856,9 +853,9 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
     } = st.input.cur_list.mode
         && (st.input.cur_list.tail != st.input.cur_list.head || incompleat_noad.is_some())
     {
-        crate::print::errors::error(
+        error(
             st,
-            ("Improper ", crate::print::Esc("halign"), " inside $$'s"),
+            ("Improper ", Esc("halign"), " inside $$'s"),
             &[
                 r"Displays can use special alignments (like \eqalignno)",
                 "only if nothing but the alignment itself is between $$'s.",
@@ -868,7 +865,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
         st.input.cur_list.flush_math(&mut st.mem)?;
     }
 
-    crate::memory::mem::push_nest(st)?;
+    push_nest(st)?;
     st.input.cur_list.mode = if st.input.cur_list.mode.name() == ModeName::DisplayMath {
         Mode::Vertical {
             inner: true,
@@ -878,7 +875,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
         st.input.cur_list.mode.inner()
     };
 
-    crate::scanning::scan::scan_spec(st, GroupCode::Align, None)?;
+    scan_spec(st, GroupCode::Align, None)?;
     ALIGN_HEAD.set_link(&mut st.mem, None);
     st.scanner.cur_align = Some(ALIGN_HEAD);
     st.scanner.cur_loop = None;
@@ -908,7 +905,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
                 if empty && st.scanner.cur_loop.is_none() && st.scanner.cur.cmd() == Cmd::TabMark {
                     st.scanner.cur_loop = st.scanner.cur_align;
                 } else {
-                    crate::print::errors::back_error(
+                    back_error(
                         st,
                         "Missing # inserted in alignment preamble",
                         &[
@@ -939,7 +936,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
                 break;
             }
             if st.scanner.cur.cmd() == Cmd::MacParam {
-                crate::print::errors::error(
+                error(
                     st,
                     "Only one # is allowed per tab",
                     &[
@@ -966,7 +963,7 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 pub(super) fn do_endv(st: &mut EngineState) -> Result<(), Abort> {
-    fn is_v_template_end(r: &crate::scanning::input::InputState) -> bool {
+    fn is_v_template_end(r: &InputState) -> bool {
         r.state == TOKEN_LIST && r.token_loc().is_end() && r.token_type() == TokenType::VTemplate
     }
 

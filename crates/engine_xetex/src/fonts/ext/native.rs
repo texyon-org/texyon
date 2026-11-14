@@ -1,20 +1,20 @@
 //! Shaping and measuring native word and glyph nodes.
 
+use std::ffi::c_int;
+use std::rc::Rc;
+
+use texyon_xetex_layout::{FloatPoint, GlyphBBox};
+
 use super::{FONT_FLAGS_COLORED, FONT_FLAGS_VERTICAL, d2fix, fix2d};
 use crate::base::units::{FontId, Scaled, StrNumber};
 use crate::ffi::teckit_icu::{
     Bidi, FontMappingHandle, K_STATUS_NO_ERROR, K_STATUS_OUTPUT_BUFFER_FULL, UBIDI_MIXED, UBIDI_RTL,
 };
-use crate::fonts::FontEngineHandle;
-use crate::fonts::FontState;
-use crate::fonts::{OTGR_FONT_FLAG, Side};
+use crate::fonts::{FontEngineHandle, FontState, OTGR_FONT_FLAG, Side};
 use crate::memory::glyph_arena::{FixedPoint, GlyphBlob};
 use crate::memory::mem::MemState;
 use crate::memory::node::{GlyphNode, NativeWordNode, NodePtr};
 use crate::print::errors::Abort;
-use std::ffi::c_int;
-use std::rc::Rc;
-use texyon_xetex_layout::{FloatPoint, GlyphBBox};
 
 const XDV_FLAG_VERTICAL: u16 = 0x0100;
 const XDV_FLAG_COLORED: u16 = 0x0200;

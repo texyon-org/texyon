@@ -1,11 +1,10 @@
 //! Ports of `synctex_edit_query` and `synctex_display_query`.
 
+use std::cmp::Reverse;
 use std::collections::BTreeMap;
 
-use super::{
-    SyncIndex,
-    tree::{FRIEND_LISTS, Kind, NIL, Node, Page},
-};
+use super::SyncIndex;
+use super::tree::{FRIEND_LISTS, Kind, NIL, Node, Page};
 
 const FAR: i32 = i32::MAX;
 
@@ -545,7 +544,7 @@ fn display_line(sheets: &mut Sheets, tag: i32, line: i32) -> Vec<DisplayHit> {
             }
         }
     }
-    friends.sort_by_key(|friend| std::cmp::Reverse((friend.0, friend.1)));
+    friends.sort_by_key(|friend| Reverse((friend.0, friend.1)));
     let mut matches = friends
         .iter()
         .filter(|friend| !friend.3)

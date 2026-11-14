@@ -2,31 +2,37 @@
 //! TECkit mappings, shaping and measuring native word and glyph nodes, and the
 //! extension (`\openout`, `\write`, `\special`, ...) commands.
 
-use crate::base::codes::{ConvertCode, LastItemCode};
-use crate::base::params::IntPar;
-use crate::base::units::{FontId, Scaled};
-use crate::ffi::bridge::{FileFormat, input_get_size, input_open, input_read, with_bridge};
-use crate::ffi::teckit_icu::{FontMappingHandle, hb_tag};
-use crate::files::io::{AUTO, ICUMAPPING, RAW, UTF8, UTF16BE, UTF16LE};
-use crate::fonts::FontEngineHandle;
-use crate::fonts::FontSize;
-use crate::fonts::OTGR_FONT_FLAG;
-use crate::print::errors::Abort;
-use crate::state::EngineState;
 use std::ffi::c_int;
+use std::str;
 use std::sync::Arc;
+
 use texyon_bridge_harfbuzz::Feature;
 use texyon_xetex_layout::{
     Engine, EngineOptions, Font, FontManager, LayoutEngine, PlatformFontRef,
 };
 
+use super::{FontEngineHandle, FontSize, OTGR_FONT_FLAG};
+use crate::base::codes::{ConvertCode, LastItemCode};
+use crate::base::params::IntPar;
+use crate::base::units::{FontId, Scaled};
+use crate::ffi::bridge::{FileFormat, input_get_size, input_open, input_read, with_bridge};
+use crate::ffi::teckit_icu::{FontMappingHandle, hb_tag};
+use crate::files::io::{
+    AUTO, ICUMAPPING, RAW, UTF8, UTF16BE, UTF16LE, icu_converter_exists, input_close,
+};
+use crate::print::errors::Abort;
+use crate::print::{
+    begin_diagnostic, end_diagnostic, font_feature_warning, font_mapping_warning, print, print_nl,
+    print_raw_bytes,
+};
+use crate::state::EngineState;
+
 mod extension;
+
 pub(crate) use extension::SourceSpecials;
 mod native;
 
-pub(crate) use self::extension::{
-    append_src_special, do_extension, insert_special, insert_src_special,
-};
+pub(crate) use extension::{append_src_special, do_extension, insert_special, insert_src_special};
 
 const HB_TAG_NONE: u32 = 0;
 
@@ -159,13 +165,13 @@ fn get_encoding_mode_and_info(st: &mut EngineState, bytes: &[u8]) -> Result<(c_i
         }
     }
 
-    if crate::files::io::icu_converter_exists(bytes).is_err() {
-        crate::print::begin_diagnostic(st);
-        crate::print::print_nl(st, b'U');
-        crate::print::print(st, "nknown encoding `");
-        crate::print::print(st, bytes);
-        crate::print::print(st, "'; reading as raw bytes");
-        crate::print::end_diagnostic(st, true);
+    if icu_converter_exists(bytes).is_err() {
+        begin_diagnostic(st);
+        print_nl(st, b'U');
+        print(st, "nknown encoding `");
+        print(st, bytes);
+        print(st, "'; reading as raw bytes");
+        end_diagnostic(st, true);
         Ok((RAW, 0))
     } else {
         let info = st.strings.make_tex_string(bytes)?;
@@ -252,7 +258,7 @@ pub(crate) fn load_mapping_file(
 
     let map = input_open(name, FileFormat::MiscFonts, false);
     if map == 0 {
-        crate::print::font_mapping_warning(st, name, font_name, 1);
+        font_mapping_warning(st, name, font_name, 1);
         return Ok(None);
     }
 
@@ -261,7 +267,7 @@ pub(crate) fn load_mapping_file(
     if !input_read(map, &mut mapping) {
         return Err(Abort::Internal("could not read mapping file"));
     }
-    if crate::files::io::input_close(map) {
+    if input_close(map) {
         return Err(Abort::InputClose);
     }
 
@@ -273,9 +279,9 @@ pub(crate) fn load_mapping_file(
     let (cnv, _) = FontMappingHandle::new(Some(&mapping), map_forward, UTF16_NATIVE, target_form);
 
     match &cnv {
-        None => crate::print::font_mapping_warning(st, name, font_name, 2),
+        None => font_mapping_warning(st, name, font_name, 2),
         Some(_) if st.eqtb.int_par(IntPar::XetexTracingFonts) > 1 => {
-            crate::print::font_mapping_warning(st, name, font_name, 0)
+            font_mapping_warning(st, name, font_name, 0)
         }
         Some(_) => {}
     }
@@ -481,7 +487,7 @@ fn load_ot_font(
             };
 
             if parsed != Some(true) {
-                crate::print::font_feature_warning(st, spec, &[], font_name);
+                font_feature_warning(st, spec, &[], font_name);
             }
             cp1 = cp2;
         }
@@ -539,7 +545,7 @@ fn c_path(path: &[u8]) -> &str {
     if path.contains(&0) {
         ""
     } else {
-        std::str::from_utf8(path).expect("native font paths are UTF-8")
+        str::from_utf8(path).expect("native font paths are UTF-8")
     }
 }
 
@@ -611,11 +617,11 @@ pub(crate) fn find_native_font(
             rval = load_ot_font(st, font, scaled_size, feat_string.as_deref(), name)?
                 .map(|engine| (engine, name.to_vec()));
             if rval.is_some() && st.eqtb.int_par(IntPar::XetexTracingFonts) > 0 {
-                crate::print::begin_diagnostic(st);
-                crate::print::print_nl(st, b' ');
-                crate::print::print_raw_bytes(st, b"-> ");
-                crate::print::print_raw_bytes(st, &found);
-                crate::print::end_diagnostic(st, false);
+                begin_diagnostic(st);
+                print_nl(st, b' ');
+                print_raw_bytes(st, b"-> ");
+                print_raw_bytes(st, &found);
+                end_diagnostic(st, false);
             }
         }
     } else {
@@ -626,14 +632,14 @@ pub(crate) fn find_native_font(
         });
         if let Some(font_ref) = found {
             if st.eqtb.int_par(IntPar::XetexTracingFonts) > 0 {
-                crate::print::begin_diagnostic(st);
-                crate::print::print_nl(st, b' ');
-                crate::print::print_raw_bytes(st, b"-> ");
+                begin_diagnostic(st);
+                print_nl(st, b' ');
+                print_raw_bytes(st, b"-> ");
                 let desc = FontManager::with_font_manager(|mgr| {
                     mgr.get_platform_font_desc(&font_ref).to_bytes().to_vec()
                 });
-                crate::print::print_raw_bytes(st, &desc);
-                crate::print::end_diagnostic(st, false);
+                print_raw_bytes(st, &desc);
+                end_diagnostic(st, false);
             }
 
             let mut full_name = FontManager::with_font_manager(|mgr| {
@@ -845,7 +851,7 @@ pub(crate) fn gr_print_font_name(
         _ => None,
     };
     if let Some(name) = name {
-        crate::print::print(st, name.as_slice());
+        print(st, name.as_slice());
     }
 }
 
@@ -901,7 +907,7 @@ pub(crate) fn print_glyph_name(st: &mut EngineState, font: FontId, gid: i32) -> 
         .fonts
         .require_ot_engine(font, "bad native font flag in `print_glyph_name`")?;
     let name = engine.font().glyph_name(gid as u16).unwrap_or_default();
-    crate::print::print(st, name.as_bytes());
+    print(st, name.as_bytes());
     Ok(())
 }
 

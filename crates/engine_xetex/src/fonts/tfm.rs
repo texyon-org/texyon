@@ -2,9 +2,10 @@
 
 use std::rc::Rc;
 
+use super::{FontSize, LigChar};
+use crate::base::scaled_math::xn_over_d;
 use crate::base::units::Scaled;
 use crate::ffi::bridge::input_getc;
-use crate::fonts::LigChar;
 
 /// An index into a font's lig/kern program.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
@@ -454,7 +455,7 @@ fn char16(v: i32) -> Result<u16, TfmError> {
 /// `scaled` size reached 2048pt, so the design size was kept.
 pub(crate) fn read_tfm(
     handle: usize,
-    s: crate::fonts::FontSize,
+    s: FontSize,
     room: impl FnOnce(i32) -> bool,
     too_big: &mut bool,
 ) -> Result<Tfm, TfmError> {
@@ -510,10 +511,10 @@ pub(crate) fn read_tfm(
 
     let design_size = Scaled::from_raw(z);
     match s {
-        crate::fonts::FontSize::At(s) => z = s.raw(),
-        crate::fonts::FontSize::DESIGN => {}
-        crate::fonts::FontSize::Scaled(m) => {
-            let scaled = crate::base::scaled_math::xn_over_d(z, m, 1000);
+        FontSize::At(s) => z = s.raw(),
+        FontSize::DESIGN => {}
+        FontSize::Scaled(m) => {
+            let scaled = xn_over_d(z, m, 1000);
             // tex.ch keeps the design size rather than overflow at 2048pt (2^27 sp).
             *too_big = scaled.overflowed || scaled.quotient >= 0o1_000_000_000;
             if !*too_big {

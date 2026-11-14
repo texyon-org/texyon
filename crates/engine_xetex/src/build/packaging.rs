@@ -3,30 +3,32 @@
 
 use crate::base::consts::{IGNORE_DEPTH, NULL_FONT};
 use crate::base::params::{DimenPar, GluePar, IntPar};
+use crate::base::scaled_math::badness;
 use crate::base::units::{
     Dir, GlueOrder, GlueSign, MemPtr, NodeType, OrderTotals, Orientation, Scaled,
 };
 use crate::fonts::FontState;
-use crate::memory::mem::MemState;
-use crate::memory::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD};
+use crate::memory::mem::{ADJUST_HEAD, MemState, PRE_ADJUST_HEAD};
 use crate::memory::mem_types::ListStateRecord;
-use crate::memory::node::LinkSlot;
 use crate::memory::node::{
-    AdjustPlacement, AnyNode, BoxLr, BoxNode, KernSubtype, MathCode, NativeWordNode, NodePtr,
-    RuleDimen, WhatsitVariant,
+    AdjustPlacement, AnyNode, BoxLr, BoxNode, GlueRatio, KernSubtype, LinkSlot, MathCode,
+    NativeWordNode, NodePtr, RuleDimen, WhatsitVariant,
 };
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
+use crate::print::diagnostic::{begin_warning, end_capture};
+use crate::print::errors::{Abort, OrConfusion};
+use crate::print::{
+    begin_diagnostic, end_diagnostic, print, print_int, print_ln, print_nl, print_scaled,
+    short_display, show_box,
+};
 use crate::shipout::ShipoutState;
 use crate::state::EngineState;
 use crate::tables::eqtb::EqtbState;
 
 mod copy;
 mod vert_break;
-pub(crate) use vert_break::{CurMarks, MarkClasses};
 
-use self::vert_break::push_slot;
-pub(crate) use self::vert_break::{MarksAction, vert_break, vsplit};
+use vert_break::push_slot;
+pub(crate) use vert_break::{CurMarks, MarkClasses, MarksAction, vert_break, vsplit};
 
 /// The size `hpack` and `vpack` aim for: exactly some size, or the natural size plus some.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -187,11 +189,10 @@ impl MemState {
         node.glue_order = o.into();
         if totals[o] != Scaled::ZERO {
             node.glue_sign = sign.into();
-            node.glue_set =
-                crate::memory::node::GlueRatio::new(excess / f64::from(totals[o].raw()));
+            node.glue_set = GlueRatio::new(excess / f64::from(totals[o].raw()));
         } else {
             node.glue_sign = GlueSign::Normal.into();
-            node.glue_set = crate::memory::node::GlueRatio::new(0.0);
+            node.glue_set = GlueRatio::new(0.0);
         }
         o
     }
@@ -200,7 +201,7 @@ impl MemState {
         let node = &mut self[r];
         node.glue_sign = GlueSign::Normal.into();
         node.glue_order = GlueOrder::Normal.into();
-        node.glue_set = crate::memory::node::GlueRatio::new(0.0);
+        node.glue_set = GlueRatio::new(0.0);
     }
 
     /// `replace_count(q)` if `type(q)=disc_node`, read like TeX does even when
@@ -483,8 +484,7 @@ impl MemState {
                 &total_stretch,
             );
             if o == GlueOrder::Normal && has_list {
-                shipout.last_badness =
-                    crate::base::scaled_math::badness(x, total_stretch[GlueOrder::Normal]);
+                shipout.last_badness = badness(x, total_stretch[GlueOrder::Normal]);
                 if shipout.last_badness > eqtb.int_par(IntPar::Hbadness) {
                     push_slot(
                         &mut diags,
@@ -504,7 +504,7 @@ impl MemState {
             );
             if total_shrink[o] < (-x) && o == GlueOrder::Normal && has_list {
                 shipout.last_badness = 1_000_000;
-                self[r_node].glue_set = crate::memory::node::GlueRatio::new(1.0);
+                self[r_node].glue_set = GlueRatio::new(1.0);
                 let excess = (-x) - total_shrink[GlueOrder::Normal];
                 let hfuzz = eqtb.dimen_par(DimenPar::Hfuzz);
                 if excess > hfuzz || eqtb.int_par(IntPar::Hbadness) < 100 {
@@ -518,8 +518,7 @@ impl MemState {
                     push_slot(&mut diags, PackDiag::HOverfull { excess });
                 }
             } else if o == GlueOrder::Normal && has_list {
-                shipout.last_badness =
-                    crate::base::scaled_math::badness(-x, total_shrink[GlueOrder::Normal]);
+                shipout.last_badness = badness(-x, total_shrink[GlueOrder::Normal]);
                 if shipout.last_badness > eqtb.int_par(IntPar::Hbadness) {
                     push_slot(
                         &mut diags,
@@ -576,9 +575,8 @@ fn print_hpack_diag(
     diag: PackDiag,
     origin: PackOrigin,
 ) {
-    use crate::print::{print, print_int, print_ln, print_nl, print_scaled};
     print_ln(st);
-    crate::print::diagnostic::begin_warning(st);
+    begin_warning(st);
     match diag {
         PackDiag::HUnderfull { badness, loose } => {
             if loose {
@@ -613,9 +611,6 @@ fn print_hpack_diag(
 }
 
 fn print_hpack_common_ending(st: &mut EngineState, box_ptr: NodePtr<BoxNode>, origin: PackOrigin) {
-    use crate::print::{
-        begin_diagnostic, end_diagnostic, print, print_int, print_ln, short_display, show_box,
-    };
     if st.shipout.output_active {
         print(st, ") has occurred while \\output is active");
     } else {
@@ -626,7 +621,7 @@ fn print_hpack_common_ending(st: &mut EngineState, box_ptr: NodePtr<BoxNode>, or
         }
         print_int(st, st.mem.line);
     }
-    crate::print::diagnostic::end_capture(st);
+    end_capture(st);
     print_ln(st);
     st.errors.font_in_short_display = NULL_FONT;
     let list = st.mem[box_ptr].list_ptr;
@@ -766,8 +761,7 @@ impl MemState {
                 &total_stretch,
             );
             if o == GlueOrder::Normal && has_list {
-                shipout.last_badness =
-                    crate::base::scaled_math::badness(x, total_stretch[GlueOrder::Normal]);
+                shipout.last_badness = badness(x, total_stretch[GlueOrder::Normal]);
                 if shipout.last_badness > eqtb.int_par(IntPar::Vbadness) {
                     push_slot(
                         &mut diags,
@@ -787,15 +781,14 @@ impl MemState {
             );
             if total_shrink[o] < (-x) && o == GlueOrder::Normal && has_list {
                 shipout.last_badness = 1_000_000;
-                self[r_node].glue_set = crate::memory::node::GlueRatio::new(1.0);
+                self[r_node].glue_set = GlueRatio::new(1.0);
                 let excess = (-x) - total_shrink[GlueOrder::Normal];
                 if excess > eqtb.dimen_par(DimenPar::Vfuzz) || eqtb.int_par(IntPar::Vbadness) < 100
                 {
                     push_slot(&mut diags, PackDiag::VOverfull { excess });
                 }
             } else if o == GlueOrder::Normal && has_list {
-                shipout.last_badness =
-                    crate::base::scaled_math::badness(-x, total_shrink[GlueOrder::Normal]);
+                shipout.last_badness = badness(-x, total_shrink[GlueOrder::Normal]);
                 if shipout.last_badness > eqtb.int_par(IntPar::Vbadness) {
                     push_slot(
                         &mut diags,
@@ -822,9 +815,8 @@ pub(crate) fn print_vpack_diag(
     diag: PackDiag,
     origin: PackOrigin,
 ) {
-    use crate::print::{print, print_int, print_ln, print_nl, print_scaled};
     print_ln(st);
-    crate::print::diagnostic::begin_warning(st);
+    begin_warning(st);
     match diag {
         PackDiag::VUnderfull { badness, loose } => {
             if loose {
@@ -855,7 +847,6 @@ pub(crate) fn print_vpack_diag(
 }
 
 fn print_vpack_common_ending(st: &mut EngineState, box_ptr: NodePtr<BoxNode>, origin: PackOrigin) {
-    use crate::print::{begin_diagnostic, end_diagnostic, print, print_int, print_ln, show_box};
     if st.shipout.output_active {
         print(st, ") has occurred while \\output is active");
     } else {
@@ -869,7 +860,7 @@ fn print_vpack_common_ending(st: &mut EngineState, box_ptr: NodePtr<BoxNode>, or
         print_int(st, st.mem.line);
         print_ln(st);
     }
-    crate::print::diagnostic::end_capture(st);
+    end_capture(st);
     begin_diagnostic(st);
     show_box(st, box_ptr.ptr());
     end_diagnostic(st, true);

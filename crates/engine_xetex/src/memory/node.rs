@@ -5,24 +5,33 @@
 //! borrows the node as a `K` and a field access is one load or store.
 //! `mem.entries(p)` gives the text or array an [`ArrayNode`] keeps after its struct.
 
+use std::cmp::Ordering;
+use std::fmt::{Debug, Formatter};
+use std::hash::{Hash, Hasher};
+use std::marker::PhantomData;
+use std::mem;
+use std::ops::{Index, IndexMut};
+
+use crate::base::codes::code_enum;
 use crate::base::consts::NULL_FLAG;
 use crate::base::params::GluePar;
+use crate::base::units::{
+    Dir, GlueOrder, InvalidNodeType, MemAddr, MemIdx, MemPtr, NodeType, OrderTotals, Orientation,
+    Scaled,
+};
 use crate::build::math::MathStyle;
+use crate::memory::mem::MemState;
 use crate::print::errors::{Abort, OrConfusion};
-use std::marker::PhantomData;
+
 mod kinds;
 
-use crate::base::units::{
-    Dir, GlueOrder, InvalidNodeType, MemAddr, MemIdx, MemPtr, NodeType, Orientation, Scaled,
-};
-use crate::memory::mem::MemState;
 pub use kinds::*;
 
 /// Marker for node kinds, implemented by the uninhabited kind enums below.
 /// A struct laid over consecutive words of `mem`, read as `mem[p]` through a [`NodePtr`].
 pub trait View: bytemuck::Pod {
     /// The struct's size in words.
-    const SIZE: i32 = crate::memory::node::word_offset(std::mem::size_of::<Self>());
+    const SIZE: i32 = word_offset(mem::size_of::<Self>());
 }
 
 /// A typed handle to a node of kind `K` in the `mem` arena.
@@ -46,9 +55,9 @@ impl<K: View> PartialEq for NodePtr<K> {
     }
 }
 impl<K: View> Eq for NodePtr<K> {}
-impl<K: View> std::hash::Hash for NodePtr<K> {
+impl<K: View> Hash for NodePtr<K> {
     #[inline]
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: Hasher>(&self, state: &mut H) {
         self.idx.hash(state);
     }
 }
@@ -62,8 +71,8 @@ impl<K: View> MemAddr for NodePtr<K> {
         self.idx
     }
 }
-impl<K: View> std::fmt::Debug for NodePtr<K> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<K: View> Debug for NodePtr<K> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "NodePtr({})", self.idx.raw())
     }
 }
@@ -94,7 +103,7 @@ impl<K: View> NodePtr<K> {
     }
 }
 
-impl std::ops::Index<Stored<GlueOrder>> for crate::base::units::OrderTotals {
+impl Index<Stored<GlueOrder>> for OrderTotals {
     type Output = Scaled;
     #[inline(always)]
     fn index(&self, o: Stored<GlueOrder>) -> &Scaled {
@@ -102,7 +111,7 @@ impl std::ops::Index<Stored<GlueOrder>> for crate::base::units::OrderTotals {
     }
 }
 
-impl std::ops::IndexMut<Stored<GlueOrder>> for crate::base::units::OrderTotals {
+impl IndexMut<Stored<GlueOrder>> for OrderTotals {
     #[inline(always)]
     fn index_mut(&mut self, o: Stored<GlueOrder>) -> &mut Scaled {
         &mut self.as_array_mut()[o.index()]
@@ -146,8 +155,8 @@ impl<T> Default for Stored<T> {
         Stored(0, PhantomData)
     }
 }
-impl<T> std::fmt::Debug for Stored<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<T> Debug for Stored<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "Stored({})", self.0)
     }
 }
@@ -193,24 +202,24 @@ impl<T: StoredCode> PartialEq<T> for Stored<T> {
 // Codes compare as WEB compares them, by their raw numbers.
 impl<T> PartialOrd for Stored<T> {
     #[inline]
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 impl<T> Ord for Stored<T> {
     #[inline]
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> Ordering {
         self.0.cmp(&other.0)
     }
 }
 impl<T: StoredCode> PartialOrd<T> for Stored<T> {
     #[inline]
-    fn partial_cmp(&self, other: &T) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &T) -> Option<Ordering> {
         Some(self.0.cmp(&other.to_u16()))
     }
 }
 
-crate::base::codes::code_enum! {
+code_enum! {
     /// What made a kern, which decides where a line may break and how it shows.
     pub enum KernSubtype: u16 {
         /// A font kern.
@@ -226,7 +235,7 @@ crate::base::codes::code_enum! {
     }
 }
 
-crate::base::codes::code_enum! {
+code_enum! {
     /// Where a `\vadjust` list goes around the line that holds it.
     pub enum AdjustPlacement: u16 {
         /// After the line.
@@ -236,7 +245,7 @@ crate::base::codes::code_enum! {
     }
 }
 
-crate::base::codes::code_enum! {
+code_enum! {
     /// A math accent's placement, set by `\Umathaccent fixed`, `bottom` or `bottom fixed`.
     pub enum MathAccentKind: u16 {
         /// Above the nucleus, stretched to its width.
@@ -262,7 +271,7 @@ impl MathAccentKind {
     }
 }
 
-crate::base::codes::code_enum! {
+code_enum! {
     /// A right noad's subtype, which tells `\middle` from `\right`.
     pub enum FenceSubtype: u16 {
         /// `\left` or `\right`.
@@ -272,7 +281,7 @@ crate::base::codes::code_enum! {
     }
 }
 
-crate::base::codes::code_enum! {
+code_enum! {
     /// The implicit boundary characters a ligature absorbed, shown as `|` around it.
     pub enum LigBoundary: u16 {
         /// None.
@@ -310,7 +319,7 @@ impl Stored<LigBoundary> {
     }
 }
 
-crate::base::codes::code_enum! {
+code_enum! {
     /// A math node's code: math-on/off, the `\beginM`/`\endM` pair around a display, or a
     /// TeX--XeT boundary. The LR stack holds these codes too.
     pub enum MathCode: u16 {
@@ -396,7 +405,7 @@ impl MathCode {
     }
 }
 
-crate::base::codes::code_enum! {
+code_enum! {
     /// How leaders repeat their box or rule.
     pub enum LeaderKind: u16 {
         /// `\leaders`, aligned on the enclosing box.
@@ -451,7 +460,7 @@ impl StoredCode for GlueKind {
     }
 }
 
-crate::base::codes::code_enum! {
+code_enum! {
     /// TeX--XeT's `box_lr` of an hlist.
     pub enum BoxLr: u16 {
         /// Not reversed yet.
@@ -1097,11 +1106,11 @@ pub enum MathSlot {
     AccentChr(NodePtr<AccentNoad>),
 }
 
-impl std::ops::Index<MathSlot> for MemState {
-    type Output = crate::memory::node::MathWord;
+impl Index<MathSlot> for MemState {
+    type Output = MathWord;
 
     #[inline]
-    fn index(&self, s: MathSlot) -> &crate::memory::node::MathWord {
+    fn index(&self, s: MathSlot) -> &MathWord {
         match s {
             MathSlot::Nucleus(n) => &self[n].nucleus,
             MathSlot::Supscr(n) => &self[n].supscr,
@@ -1113,9 +1122,9 @@ impl std::ops::Index<MathSlot> for MemState {
     }
 }
 
-impl std::ops::IndexMut<MathSlot> for MemState {
+impl IndexMut<MathSlot> for MemState {
     #[inline]
-    fn index_mut(&mut self, s: MathSlot) -> &mut crate::memory::node::MathWord {
+    fn index_mut(&mut self, s: MathSlot) -> &mut MathWord {
         match s {
             MathSlot::Nucleus(n) => &mut self[n].nucleus,
             MathSlot::Supscr(n) => &mut self[n].supscr,
@@ -1223,7 +1232,7 @@ impl MemState {
 impl NodePtr<ParShapeNode> {
     /// Line `k`, counting from 1. Panics outside the shape.
     #[inline]
-    pub fn line(self, mem: &MemState, k: i32) -> crate::memory::node::ParShapeLine {
+    pub fn line(self, mem: &MemState, k: i32) -> ParShapeLine {
         mem.entries(self)[usize::try_from(k - 1).unwrap_or(usize::MAX)]
     }
 }
@@ -1242,7 +1251,7 @@ impl NodePtr<PenaltiesNode> {
 
 // --- whatsits ---
 
-crate::base::codes::code_enum! {
+code_enum! {
     /// The subtype of a whatsit node. Only `NativeWord`..`Pdf` carry dimensions.
     pub enum WhatsitSubtype: u16 {
         Open = 0,
@@ -1352,8 +1361,8 @@ impl NodePtr<WhatsitNode> {
 
     /// The whatsit's dimensions, for a native word, glyph or picture.
     #[inline]
-    pub fn dims(self, mem: &MemState) -> Option<crate::memory::node::Dims> {
-        let dims = |width, depth, height| crate::memory::node::Dims {
+    pub fn dims(self, mem: &MemState) -> Option<Dims> {
+        let dims = |width, depth, height| Dims {
             width,
             depth,
             height,
@@ -1402,20 +1411,25 @@ impl NodePtr<NativeWordNode> {
 
 #[cfg(test)]
 mod tests {
+    use std::mem::size_of;
+
     use super::*;
     use crate::base::codes::LimitCode;
     use crate::base::token::TokenList;
-    use std::mem::size_of;
+    use crate::fonts::Side;
+    use crate::memory::glue_store::GlueSpecId;
+    use crate::memory::mem::RESERVED_WORDS;
+    use crate::memory::mem_types::zeroed_vec;
 
     fn fresh_mem(n: usize) -> MemState {
         MemState {
-            data: crate::memory::mem_types::zeroed_vec(n),
+            data: zeroed_vec(n),
             ..Default::default()
         }
     }
 
     /// Checks a code set against WEB's numbers, which formats and checkpoints store raw.
-    fn assert_web_codes<T: StoredCode + PartialEq + std::fmt::Debug>(codes: &[(T, u16)]) {
+    fn assert_web_codes<T: StoredCode + PartialEq + Debug>(codes: &[(T, u16)]) {
         for &(code, raw) in codes {
             assert_eq!(code.to_u16(), raw, "{code:?}");
             assert_eq!(T::from_u16(raw), Some(code), "{raw}");
@@ -1556,10 +1570,7 @@ mod tests {
     #[test]
     fn box_and_margin_codes_keep_web_codes() {
         assert_web_codes(&[(BoxLr::Normal, 0), (BoxLr::Reversed, 1), (BoxLr::Dlist, 2)]);
-        assert_web_codes(&[
-            (crate::fonts::Side::Left, 0),
-            (crate::fonts::Side::Right, 1),
-        ]);
+        assert_web_codes(&[(Side::Left, 0), (Side::Right, 1)]);
     }
 
     #[test]
@@ -1577,7 +1588,7 @@ mod tests {
     #[test]
     fn freed_nodes_return_to_the_list_of_their_size() {
         let mut mem = arena_with_free_block();
-        let start = crate::memory::mem::RESERVED_WORDS as i32;
+        let start = RESERVED_WORDS as i32;
         let a = mem.get_node(3).unwrap();
         let b = mem.get_node(3).unwrap();
         let c = mem.get_node(2).unwrap();
@@ -1587,12 +1598,12 @@ mod tests {
         assert_eq!(mem.get_node(2).unwrap().raw(), start + 8);
         assert_eq!(mem.get_node(3).unwrap(), b);
         assert_eq!(mem.get_node(3).unwrap(), a);
-        assert_eq!(mem.data.len(), crate::memory::mem::RESERVED_WORDS + 10);
+        assert_eq!(mem.data.len(), RESERVED_WORDS + 10);
     }
 
     /// An arena with only the fixed nodes, which grows as nodes are taken.
     fn arena_with_free_block() -> MemState {
-        fresh_mem(crate::memory::mem::RESERVED_WORDS)
+        fresh_mem(RESERVED_WORDS)
     }
 
     fn at<K: View>(mem: &mut MemState, p: i32, ty: Option<NodeType>) -> NodePtr<K> {
@@ -1605,10 +1616,7 @@ mod tests {
     #[test]
     fn handles_are_zero_cost() {
         assert_eq!(size_of::<NodePtr<BoxNode>>(), size_of::<i32>());
-        assert_eq!(
-            size_of::<crate::memory::glue_store::GlueSpecId>(),
-            size_of::<i32>()
-        );
+        assert_eq!(size_of::<GlueSpecId>(), size_of::<i32>());
         assert_eq!(size_of::<NodePtr<Noad>>(), size_of::<i32>());
     }
 
@@ -1832,7 +1840,7 @@ mod tests {
 
     #[test]
     fn math_and_delimiter_fields_pack_their_codes() {
-        let mut f = <crate::memory::node::MathWord as bytemuck::Zeroable>::zeroed();
+        let mut f = <MathWord as bytemuck::Zeroable>::zeroed();
         f.math_type = 3;
         f.set_character(0x1234);
         f.set_plane_and_fam(0x0205);
@@ -1844,7 +1852,7 @@ mod tests {
         assert_eq!(f.info(), None);
         assert_eq!(f.math_type, 3);
 
-        let mut d = <crate::memory::node::DelimiterWord as bytemuck::Zeroable>::zeroed();
+        let mut d = <DelimiterWord as bytemuck::Zeroable>::zeroed();
         d.set_small(0x0103, 0x41);
         d.set_large(0x0204, 0x42);
         assert_eq!(d.small(), (3, 0x1_0041));

@@ -6,6 +6,7 @@ use crate::ffi::bridge::{
     FileFormat, get_file_md5, input_get_mtime, input_get_size, input_open, input_read,
 };
 use crate::ffi::clock::{make_pdf_time, nul_terminated};
+use crate::files::io::{input_close, input_seek};
 use crate::print::errors::Abort;
 use crate::tables::string_pool::StringsState;
 
@@ -24,7 +25,7 @@ impl StringsState {
         }
 
         let file_len = input_get_size(handle);
-        if crate::files::io::input_close(handle) {
+        if input_close(handle) {
             return Err(Abort::InputClose);
         }
 
@@ -54,13 +55,13 @@ impl StringsState {
             return Ok(());
         }
 
-        crate::files::io::input_seek(handle, offset as u64);
+        input_seek(handle, offset as u64);
         let actual = if input_read(handle, &mut buffer[..length as usize]) {
             length as usize
         } else {
             0
         };
-        if crate::files::io::input_close(handle) {
+        if input_close(handle) {
             return Err(Abort::InputClose);
         }
 
@@ -76,7 +77,7 @@ impl StringsState {
         }
 
         let mtime = input_get_mtime(handle);
-        if crate::files::io::input_close(handle) {
+        if input_close(handle) {
             return Err(Abort::InputClose);
         }
 

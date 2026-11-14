@@ -3,11 +3,14 @@
 use std::borrow::Cow;
 use std::collections::HashSet;
 
+use crate::base::token::TokenDelta;
 use crate::memory::glue_store::GlueSpec;
 use crate::preview::journal::{PlainDelta, WordDelta};
 use crate::preview::replay::fence::ReplayFence;
 use crate::preview::replay::source::SourceSnapshot;
 use crate::state::EngineState;
+use crate::tables::eqtb::TablesDelta;
+use crate::tables::hash::{HashEntry, PrimEntry};
 
 mod bundle;
 mod oracle;
@@ -17,11 +20,11 @@ pub(crate) use bundle::{EngineBundle, StringWatermark};
 #[derive(Clone)]
 struct EngineDelta {
     mem: WordDelta<u32>,
-    tokens: crate::base::token::TokenDelta,
+    tokens: TokenDelta,
     glue: WordDelta<GlueSpec>,
-    tables: crate::tables::eqtb::TablesDelta,
-    hash: PlainDelta<crate::tables::hash::HashEntry>,
-    prim: PlainDelta<crate::tables::hash::PrimEntry>,
+    tables: TablesDelta,
+    hash: PlainDelta<HashEntry>,
+    prim: PlainDelta<PrimEntry>,
 }
 
 impl EngineDelta {
@@ -629,14 +632,19 @@ fn drop_planned_rung(plan: &mut Vec<PlannedRung>, index: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::base::command::Command;
-    use crate::base::units::MemPtr;
+    use crate::base::command::{Command, Usv};
+    use crate::base::token::{Token, TokenStoreMarks};
+    use crate::base::units::{MemIdx, MemPtr, PoolPos};
+    use crate::memory::mem_types::zeroed_vec;
+    use crate::preview::journal::arm;
+    use crate::tables::cs::CsId;
+    use crate::tables::eqtb::{IntLoc, Register, Table};
 
     #[derive(Clone, Copy)]
     struct Bundle {
         free_pairs: MemPtr,
         fmem_ptr: i32,
-        tokens: crate::base::token::TokenStoreMarks,
+        tokens: TokenStoreMarks,
     }
 
     fn bundle(st: &EngineState) -> Bundle {
@@ -653,19 +661,17 @@ mod tests {
         st.mem.tokens.restore_marks(bundle.tokens);
     }
 
-    const CS: crate::tables::cs::CsId =
-        crate::tables::cs::CsId::active(crate::base::command::Usv::nth(1));
+    const CS: CsId = CsId::active(Usv::nth(1));
 
-    const COUNT1: crate::tables::eqtb::IntLoc =
-        crate::tables::eqtb::IntLoc::count(crate::tables::eqtb::Register::of(1));
+    const COUNT1: IntLoc = IntLoc::count(Register::of(1));
 
     fn state() -> EngineState {
         let mut st = EngineState::default();
-        st.mem.data = crate::memory::mem_types::zeroed_vec(8);
-        st.eqtb.hash = vec![crate::tables::hash::HashEntry::default(); 1];
-        st.eqtb.meanings = crate::tables::eqtb::Table::at_level(4, Command::UndefinedCs, 0);
-        st.eqtb.ints = crate::tables::eqtb::Table::new(crate::tables::eqtb::IntLoc::LEN, 0);
-        crate::preview::journal::arm(&mut st);
+        st.mem.data = zeroed_vec(8);
+        st.eqtb.hash = vec![HashEntry::default(); 1];
+        st.eqtb.meanings = Table::at_level(4, Command::UndefinedCs, 0);
+        st.eqtb.ints = Table::new(IntLoc::LEN, 0);
+        arm(&mut st);
         st
     }
 
@@ -677,7 +683,7 @@ mod tests {
         st.mem.set_word(1, 10);
         st.eqtb.ints.set(COUNT1, 13, 2);
         st.eqtb.set_meaning(CS, Command::Halign, 2);
-        st.mem.free.0[2] = crate::base::units::MemIdx::from_raw(12);
+        st.mem.free.0[2] = MemIdx::from_raw(12);
         let rung = bundle(&st);
         ladder.push(&mut st, rung, 1, true, false);
 
@@ -690,7 +696,7 @@ mod tests {
         ladder.push(&mut st, rung, 2, true, false);
 
         st.mem.set_word(4, 30); // open epoch after the newest rung
-        st.mem.free.0[2] = crate::base::units::MemIdx::from_raw(31);
+        st.mem.free.0[2] = MemIdx::from_raw(31);
         ladder.rewind_to(&mut st, 1, restore);
 
         assert_eq!(st.mem.word(1), 10);
@@ -704,14 +710,13 @@ mod tests {
             (st.eqtb.meaning(CS), st.eqtb.cs_level(CS)),
             (Command::Halign, 2)
         );
-        assert_eq!(st.mem.free.0[2], crate::base::units::MemIdx::from_raw(12));
+        assert_eq!(st.mem.free.0[2], MemIdx::from_raw(12));
         assert_eq!(st.fonts.fmem_ptr, 0);
         assert_eq!(ladder.len(), 2);
     }
 
     #[test]
     fn rewind_restores_the_token_store_across_growth() {
-        use crate::base::token::Token;
         let mut st = state();
         let mut ladder = CheckpointLadder::new(bundle(&st), 0);
 
@@ -790,21 +795,21 @@ mod tests {
     fn engine_bundle_ladder_restores_clock_and_scalar_state() {
         let mut st = state();
         st.strings.str_pool = vec![0; 4];
-        st.strings.str_start = vec![crate::base::units::PoolPos::ZERO; 4];
+        st.strings.str_start = vec![PoolPos::ZERO; 4];
         let strings_base = StringWatermark::capture(&st);
         let mut ladder = CheckpointLadder::from_engine(&st, strings_base);
 
         st.scanner.logical_clock = 10;
-        st.mem.free.0[2] = crate::base::units::MemIdx::from_raw(20);
+        st.mem.free.0[2] = MemIdx::from_raw(20);
         st.mem.set_word(1, 30);
         ladder.push_engine(&mut st, strings_base, true, true);
         st.scanner.logical_clock = 40;
-        st.mem.free.0[2] = crate::base::units::MemIdx::from_raw(50);
+        st.mem.free.0[2] = MemIdx::from_raw(50);
         st.mem.set_word(1, 60);
 
         ladder.rewind_engine(&mut st, 1);
         assert_eq!(st.scanner.logical_clock, 10);
-        assert_eq!(st.mem.free.0[2], crate::base::units::MemIdx::from_raw(20));
+        assert_eq!(st.mem.free.0[2], MemIdx::from_raw(20));
         assert_eq!(st.mem.word(1), 30);
         assert!(ladder.accounted_bytes() > 0);
     }
@@ -959,7 +964,7 @@ mod tests {
     fn oracle_names_a_write_that_bypassed_the_mem_journal() {
         let mut st = state();
         st.strings.str_pool = vec![0; 4];
-        st.strings.str_start = vec![crate::base::units::PoolPos::ZERO; 4];
+        st.strings.str_start = vec![PoolPos::ZERO; 4];
         let strings_base = StringWatermark::capture(&st);
         let mut ladder = CheckpointLadder::from_engine_verified(&st, strings_base);
 
@@ -975,7 +980,7 @@ mod tests {
     fn oracle_verifies_survivors_after_decimation() {
         let mut st = state();
         st.strings.str_pool = vec![0; 4];
-        st.strings.str_start = vec![crate::base::units::PoolPos::ZERO; 4];
+        st.strings.str_start = vec![PoolPos::ZERO; 4];
         let strings_base = StringWatermark::capture(&st);
         let mut ladder = CheckpointLadder::from_engine_verified(&st, strings_base);
         for clock in 1..=4 {
@@ -1001,7 +1006,7 @@ mod tests {
 
         let mut st = state();
         st.strings.str_pool = vec![0; 4];
-        st.strings.str_start = vec![crate::base::units::PoolPos::ZERO; 4];
+        st.strings.str_start = vec![PoolPos::ZERO; 4];
         let strings_base = StringWatermark::capture(&st);
         let mut ladder = CheckpointLadder::from_engine_verified(&st, strings_base);
         run_prefix(&mut st, 17);

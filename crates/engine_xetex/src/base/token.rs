@@ -1,12 +1,16 @@
 //! TeX tokens: `cmd * max_char_val + chr` for a character, `cs_token_flag + p`
 //! for a control sequence.
 
+use std::mem;
+
+use bytemuck::Zeroable;
+
 use crate::base::cmd::Cmd;
 use crate::base::consts::{MAX_HALFWORD, TEX_NULL};
 use crate::preview::journal::{WordDelta, WordJournal};
 use crate::print::errors::Abort;
+use crate::scanning::input::STACK_SIZE;
 use crate::tables::cs::CsId;
-use bytemuck::Zeroable;
 
 /// One more than the largest character code a token can carry.
 const MAX_CHAR_VAL: i32 = 0x20_0000;
@@ -281,7 +285,7 @@ fn class_for(len: u32) -> usize {
 const MAX_TOKENS: usize = 1 << 25;
 
 /// Tokens 1..=`STACK_SIZE` hold the token a backed-up level at that input stack depth reads.
-const BACKUP_SLOTS: usize = crate::scanning::input::STACK_SIZE;
+const BACKUP_SLOTS: usize = STACK_SIZE;
 /// The tokens before the first run: [`TokenList::OMIT_TEMPLATE`] and the backup slots.
 const RESERVED: usize = 1 + BACKUP_SLOTS;
 
@@ -690,7 +694,7 @@ impl TokenStore {
     pub(crate) fn finish(&mut self, b: Build) -> Result<TokenList, Abort> {
         let (start, skip) = self.builds[self.top(&b)];
         self.builds.pop();
-        let built = std::mem::take(&mut self.build);
+        let built = mem::take(&mut self.build);
         let list = self.store_list(&built[start + skip..]);
         self.build = built;
         self.build.truncate(start);

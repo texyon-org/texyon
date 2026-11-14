@@ -1,6 +1,8 @@
 //! Scaled-point arithmetic with XeTeX's overflow checks and remainder-sign
 //! conventions.
 
+use std::mem;
+
 use crate::base::consts::INF_BAD;
 use crate::base::units::Scaled;
 
@@ -300,7 +302,7 @@ fn fract_raw(mut x: i32, mut n: i32, mut d: i32, max_answer: i32) -> Overflowing
         x -= t * d;
         if x != 0 {
             if x < n {
-                std::mem::swap(&mut x, &mut n);
+                mem::swap(&mut x, &mut n);
             }
             let mut f = 0i32;
             let mut r = (d / 2) - d;
@@ -327,7 +329,7 @@ fn fract_raw(mut x: i32, mut n: i32, mut d: i32, max_answer: i32) -> Overflowing
                         if x == 0 {
                             break;
                         }
-                        std::mem::swap(&mut x, &mut n);
+                        mem::swap(&mut x, &mut n);
                     }
                 }
             }

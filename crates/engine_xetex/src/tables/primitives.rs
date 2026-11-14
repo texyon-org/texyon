@@ -8,7 +8,7 @@ use crate::base::codes::{
     LimitCode, MarkCode, MathAccentCode, MathCharNumCode, PageDimenCode, PageIntCode, PrefixCode,
     RadicalCode, ShorthandDefCode, ShowCode, SkipCode, TheCode, ValignCode,
 };
-use crate::base::consts::NUMBER_USVS;
+use crate::base::consts::{NULL_FONT, NUMBER_USVS};
 use crate::base::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::tables::cs::{CsId, Frozen};
 use crate::tables::eqtb::{CaseTable, CodeTable, FontLoc, ShapeLoc, XetexCode};
@@ -20,7 +20,7 @@ pub(crate) enum PrimInit {
     Par,
     Write,
     /// Copy the definition to this frozen eqtb location.
-    Frozen(crate::tables::cs::CsId),
+    Frozen(CsId),
 }
 
 #[derive(Copy, Clone)]
@@ -360,9 +360,7 @@ pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
         Cmd::DefFamily,
         FontLoc::SCRIPT_SCRIPT.raw(),
     ),
-    p("nullfont", Cmd::SetFont, 0).init(PrimInit::Frozen(CsId::font_id(
-        crate::base::consts::NULL_FONT,
-    ))),
+    p("nullfont", Cmd::SetFont, 0).init(PrimInit::Frozen(CsId::font_id(NULL_FONT))),
     p("font", Cmd::DefFont, 0),
     p("count", Cmd::Register, 0),
     p("dimen", Cmd::Register, 1),

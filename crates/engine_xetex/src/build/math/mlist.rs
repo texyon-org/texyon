@@ -4,33 +4,29 @@ use super::delimiters::{build_opentype_assembly, rebox, var_delimiter};
 use super::scripts::make_scripts;
 use super::{DEFAULT_CODE, MathStyle};
 use crate::base::codes::LimitCode;
-use crate::base::consts::MIN_HALFWORD;
 use crate::base::consts::{
-    EMPTY, INF_PENALTY, INFINITE_DIMEN, MATH_CHAR, MATH_TEXT_CHAR, MAX_DIMEN, NULL_FONT, SUB_BOX,
-    SUB_MLIST, TEXT_SIZE,
+    EMPTY, INF_PENALTY, INFINITE_DIMEN, MATH_CHAR, MATH_TEXT_CHAR, MAX_DIMEN, MIN_HALFWORD,
+    NULL_FONT, SUB_BOX, SUB_MLIST, TEXT_SIZE,
 };
 use crate::base::params::{DimenPar, GluePar, IntPar};
 use crate::base::scaled_math::{mult_and_add, x_over_n, xn_over_d};
-use crate::base::units::MemIdx;
-use crate::base::units::{FontId, GlueOrder, MemPtr, NodeType, Scaled};
-use crate::build::packaging::PackSpec;
-use crate::fonts::FontState;
+use crate::base::units::{FontId, GlueOrder, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
+use crate::build::main_control::{NewChar, new_character};
+use crate::build::packaging::{PackSpec, hpack, vpackage};
 use crate::fonts::{
-    AAT_FONT_FLAG, CharInfo, CharTag, LigChar, LigKernAction, LigKernIdx, LigOp, OTGR_FONT_FLAG,
-    SPACE_CODE, X_HEIGHT_CODE,
+    AAT_FONT_FLAG, CharInfo, CharTag, FontState, LigChar, LigKernAction, LigKernIdx, LigOp,
+    OTGR_FONT_FLAG, SPACE_CODE, X_HEIGHT_CODE, new_native_character,
 };
 use crate::memory::glue_store::GlueSpecId;
-use crate::memory::mem::MemState;
-use crate::memory::mem::{TEMP_HEAD, TEX_NULL, ZERO_GLUE};
+use crate::memory::mem::{MemState, TEMP_HEAD, TEX_NULL, ZERO_GLUE};
 use crate::memory::mem_types::ListStateRecord;
-use crate::memory::node::MathWord;
 use crate::memory::node::{
     AccentNoad, AnyNoad, AnyNode, BoxNode, ChoiceNode, FenceNoad, FractionNoad, GlueKind, GlueNode,
-    GlyphNode, KernNode, KernSubtype, MathAccentKind, MathSlot, Noad, NoadVariant, NodePtr,
-    RadicalNoad, RuleDimen, RuleNode, StyleNode, View, WhatsitSubtype, WhatsitVariant,
+    GlyphNode, KernNode, KernSubtype, MathAccentKind, MathSlot, MathWord, Noad, NoadVariant,
+    NodePtr, RadicalNoad, RuleDimen, RuleNode, StyleNode, View, WhatsitSubtype, WhatsitVariant,
 };
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
+use crate::print::errors::{Abort, OrConfusion, error};
+use crate::print::{FamFont, char_warning};
 use crate::scanning::scan::ScannerState;
 use crate::state::EngineState;
 use crate::tables::eqtb::EqtbState;
@@ -157,7 +153,7 @@ pub(super) fn clean_box(
     };
     let x_box = match lone_box {
         Some(b) => b,
-        None => crate::build::packaging::hpack(st, q, PackSpec::NATURAL)?,
+        None => hpack(st, q, PackSpec::NATURAL)?,
     };
 
     let head = st.mem[x_box].list_ptr;
@@ -231,17 +227,17 @@ impl MemState {
 
 /// Look up math character `a`, reporting a missing font or character. Also sets `cur_f`.
 pub(super) fn fetch(st: &mut EngineState, a: MathSlot, size: i32) -> Result<Fetched, Abort> {
-    let (fetched, error) = st.mem.fetch(&st.fonts, &st.eqtb, &mut st.scanner, a, size);
-    match error {
+    let (fetched, failure) = st.mem.fetch(&st.fonts, &st.eqtb, &mut st.scanner, a, size);
+    match failure {
         None => {}
-        Some(FetchError::UndefinedFont { size, fam, c }) => crate::print::errors::error(
+        Some(FetchError::UndefinedFont { size, fam, c }) => error(
             st,
             (
-                crate::print::FamFont(size),
+                FamFont(size),
                 ' ',
                 fam,
                 " is undefined (character ",
-                crate::base::units::StrNumber::single_char(c),
+                StrNumber::single_char(c),
                 ')',
             ),
             &[
@@ -251,7 +247,7 @@ pub(super) fn fetch(st: &mut EngineState, a: MathSlot, size: i32) -> Result<Fetc
                 "and I'll try to forget that I needed that character.",
             ],
         )?,
-        Some(FetchError::CharMissing { f, c }) => crate::print::char_warning(st, f, c)?,
+        Some(FetchError::CharMissing { f, c }) => char_warning(st, f, c)?,
     }
     Ok(fetched)
 }
@@ -267,7 +263,7 @@ fn make_over(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result
     let x = clean_box(st, st.mem[q].nucleus, style.cramped())?;
     let rule_thickness = st.fonts.default_rule_thickness(&st.eqtb, style.size());
     let p = st.mem.overbar(x, rule_thickness * 3, rule_thickness)?;
-    let x = crate::build::packaging::vpackage(st, p, PackSpec::NATURAL, MAX_DIMEN)?;
+    let x = vpackage(st, p, PackSpec::NATURAL, MAX_DIMEN)?;
     st.mem.set_nucleus_box(q, x);
     Ok(())
 }
@@ -280,7 +276,7 @@ fn make_under(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Resul
     let rule = st.mem.fraction_rule(rule_thickness)?;
     st.mem[kern].link = rule.ptr();
 
-    let y = crate::build::packaging::vpackage(st, x.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
+    let y = vpackage(st, x.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
     let mem = &mut st.mem;
     let delta = mem[y].height + mem[y].depth + rule_thickness;
     let height = mem[x].height;
@@ -350,9 +346,9 @@ fn make_radical(
     }
     mem[y].shift_amount = -(mem[x].height + clr);
     let p = mem.overbar(x, clr, mem[y].height)?;
-    let overbar_box = crate::build::packaging::vpackage(st, p, PackSpec::NATURAL, MAX_DIMEN)?;
+    let overbar_box = vpackage(st, p, PackSpec::NATURAL, MAX_DIMEN)?;
     st.mem[y].link = overbar_box.ptr();
-    let hbox = crate::build::packaging::hpack(st, y.ptr(), PackSpec::NATURAL)?;
+    let hbox = hpack(st, y.ptr(), PackSpec::NATURAL)?;
     st.mem.set_nucleus_box(q.as_noad(), hbox);
     Ok(())
 }
@@ -535,7 +531,7 @@ fn make_fraction(
     let right_delim = var_delimiter(st, st.mem[q].right_delimiter, cur_size, delimiter_size)?;
     st.mem[left_delim].link = v.ptr();
     st.mem[v].link = right_delim.ptr();
-    let hbox = crate::build::packaging::hpack(st, left_delim.ptr(), PackSpec::NATURAL)?;
+    let hbox = hpack(st, left_delim.ptr(), PackSpec::NATURAL)?;
     st.mem[q.any()].new_hlist = hbox.ptr();
     Ok(())
 }
@@ -911,7 +907,7 @@ fn make_math_accent(
 
     let y;
     if is_native {
-        let old = crate::fonts::new_native_character(st, f, c as u32)?;
+        let old = new_native_character(st, f, c as u32)?;
         y = st.mem.native_char_box(old)?;
         let glyph = NodePtr::<GlyphNode>::alloc_whatsit(&mut st.mem, WhatsitSubtype::Glyph)?;
         let glyph_id = st.mem.get_native_glyph(old, 0);
@@ -993,7 +989,7 @@ fn make_math_accent(
     st.mem[y].width = Scaled::ZERO;
     let v = if bottom_accent {
         st.mem[x].link = y.ptr();
-        let v = crate::build::packaging::vpackage(st, x.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
+        let v = vpackage(st, x.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
         let v_height = st.mem[v].height;
         st.mem[v].shift_amount = -(h - v_height);
         v
@@ -1001,7 +997,7 @@ fn make_math_accent(
         let kern = st.mem.new_kern(-delta)?;
         st.mem[kern].link = x.ptr();
         st.mem[y].link = kern.ptr();
-        let v = crate::build::packaging::vpackage(st, y.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
+        let v = vpackage(st, y.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
         let mem = &mut st.mem;
         if mem[v].height < h {
             let kern = mem.new_kern(h - mem[v].height)?;
@@ -1159,7 +1155,7 @@ fn mlist_nucleus(
             let cur_f = fetched.f;
             let area = st.fonts.font_area[cur_f];
             let p = if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
-                let z = crate::fonts::new_native_character(st, cur_f, fetched.c as u32)?;
+                let z = new_native_character(st, cur_f, fetched.c as u32)?;
                 let glyph =
                     NodePtr::<GlyphNode>::alloc_whatsit(&mut st.mem, WhatsitSubtype::Glyph)?;
                 let z_glyph = st.mem.get_native_glyph(z, 0);
@@ -1180,8 +1176,8 @@ fn mlist_nucleus(
             } else if let Some(i) = fetched.i {
                 delta = i.italic;
                 let cc = fetched.c as u16;
-                let p = crate::build::main_control::new_character(st, cur_f, cc)?;
-                let p = p.and_then(crate::build::main_control::NewChar::ptr);
+                let p = new_character(st, cur_f, cc)?;
+                let p = p.and_then(NewChar::ptr);
                 if st.mem[qn].nucleus.math_type == MATH_TEXT_CHAR
                     && st.fonts.param(cur_f, SPACE_CODE) != Scaled::ZERO
                 {
@@ -1206,7 +1202,7 @@ fn mlist_nucleus(
         SUB_MLIST => {
             let mlist = st.mem[qn].nucleus.info();
             let list = mlist_to_hlist(st, mlist, style, false)?;
-            crate::build::packaging::hpack(st, list, PackSpec::NATURAL)?.ptr()
+            hpack(st, list, PackSpec::NATURAL)?.ptr()
         }
         _ => return Err(Abort::Confusion("mlist2")),
     };
@@ -1239,7 +1235,7 @@ fn check_noad_dimensions(
     max_d: &mut Scaled,
 ) -> Result<(), Abort> {
     let list = st.mem[qn].new_hlist;
-    let z_box = crate::build::packaging::hpack(st, list, PackSpec::NATURAL)?;
+    let z_box = hpack(st, list, PackSpec::NATURAL)?;
     st.mem.mlist_track_box(z_box, max_h, max_d);
     Ok(())
 }
@@ -1628,7 +1624,7 @@ fn compute_ot_math_accent_pos(
                 if !st.fonts.is_native_font(nucleus.f) {
                     return Ok(AccentAttach::Skew(tfm_skew(st, &nucleus)?));
                 }
-                let q = crate::fonts::new_native_character(st, nucleus.f, nucleus.c as u32)?;
+                let q = new_native_character(st, nucleus.f, nucleus.c as u32)?;
                 let g = st.mem.get_native_glyph(q, 0);
                 let pos = st.fonts.get_ot_math_accent_pos(nucleus.f, i32::from(g));
                 return Ok(if pos == INFINITE_DIMEN {

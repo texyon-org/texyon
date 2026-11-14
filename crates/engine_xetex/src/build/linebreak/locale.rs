@@ -2,8 +2,10 @@
 
 use crate::base::params::{GluePar, IntPar};
 use crate::base::units::{FontId, StrNumber};
+use crate::ffi::teckit_icu::{IcuBreaks, LinebreakHandle};
 use crate::memory::mem::ZERO_GLUE;
 use crate::print::errors::Abort;
+use crate::print::{begin_diagnostic, end_diagnostic, print, print_int, print_nl};
 use crate::state::EngineState;
 
 /// Append a native word of font `f` holding `text` to the current list.
@@ -21,10 +23,10 @@ fn append_native_word(st: &mut EngineState, f: FontId, text: &[u16]) -> Result<(
 
 /// Where a run of native text may break.
 enum TextBreaks<'t> {
-    Icu(crate::ffi::teckit_icu::IcuBreaks<'t>),
+    Icu(IcuBreaks<'t>),
     Graphite(texyon_xetex_layout::GraphiteBreaks<'t>),
     /// An ICU iterator left over from earlier text, which it already ran through.
-    Stale(&'t crate::ffi::teckit_icu::LinebreakHandle),
+    Stale(&'t LinebreakHandle),
 }
 
 impl TextBreaks<'_> {
@@ -42,23 +44,23 @@ fn open_linebreak_iterator(
     st: &mut EngineState,
     locale: StrNumber,
     name: &[u8],
-) -> Result<crate::ffi::teckit_icu::LinebreakHandle, Abort> {
+) -> Result<LinebreakHandle, Abort> {
     if locale != st.fonts.brk_locale_str_num {
         st.fonts.brk_iter = None;
     }
     if st.fonts.brk_iter.is_none() {
-        let (mut iter, status) = crate::ffi::teckit_icu::LinebreakHandle::open(name);
+        let (mut iter, status) = LinebreakHandle::open(name);
         if status > 0 {
-            crate::print::begin_diagnostic(st);
-            crate::print::print_nl(st, b'E');
-            crate::print::print(st, "rror ");
-            crate::print::print_int(st, status);
-            crate::print::print(st, " creating linebreak iterator for locale `");
-            crate::print::print(st, name);
-            crate::print::print(st, "'; trying default locale `en_us'.");
-            crate::print::end_diagnostic(st, true);
+            begin_diagnostic(st);
+            print_nl(st, b'E');
+            print(st, "rror ");
+            print_int(st, status);
+            print(st, " creating linebreak iterator for locale `");
+            print(st, name);
+            print(st, "'; trying default locale `en_us'.");
+            end_diagnostic(st, true);
             drop(iter);
-            iter = crate::ffi::teckit_icu::LinebreakHandle::open(b"en_us").0;
+            iter = LinebreakHandle::open(b"en_us").0;
         }
         st.fonts.brk_locale_str_num = locale;
         st.fonts.brk_iter = iter;

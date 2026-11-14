@@ -2,15 +2,13 @@
 
 use super::hyphenate::{hyphenate, split_native_word};
 use crate::base::params::IntPar;
-use crate::base::units::MemIdx;
-use crate::base::units::MemPtr;
+use crate::base::units::{MemIdx, MemPtr};
 use crate::fonts::LigChar;
 use crate::memory::mem::MemState;
 use crate::memory::node::{
     AnyNode, CharNode, KernSubtype, LanguageNode, MathCode, NativeWordNode, NodePtr, WhatsitVariant,
 };
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
+use crate::print::errors::{Abort, OrConfusion};
 use crate::state::EngineState;
 
 /// A word found for hyphenation, its letters in `hu`/`hc[1..=hn]`.

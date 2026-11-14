@@ -1,5 +1,7 @@
 //! Sound byte-span facts recorded at XDV shipout boundaries.
 
+use std::mem;
+
 /// Facts about one page emitted by a resident XeTeX operation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PageExecution {
@@ -104,7 +106,7 @@ impl PageManifest {
     }
 
     pub(crate) fn take_pages(&mut self) -> Vec<PageExecution> {
-        std::mem::take(&mut self.pages)
+        mem::take(&mut self.pages)
     }
 }
 

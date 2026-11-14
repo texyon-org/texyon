@@ -3,15 +3,12 @@
 use super::LrState;
 use crate::base::consts::{MIN_HALFWORD, SUB_BOX};
 use crate::base::units::{MemIdx, MemPtr, Scaled};
-use crate::memory::mem::MemState;
-use crate::memory::mem::TEMP_HEAD;
-use crate::memory::node::CharNode;
+use crate::memory::mem::{MemState, TEMP_HEAD};
 use crate::memory::node::{
-    AnyNode, BoxNode, DiscNode, GlueNode, HeadNode, MathNode, NoadVariant, Node, NodePtr, RuleNode,
-    View, WhatsitNode, WhatsitVariant,
+    AnyNode, BoxNode, CharNode, DiscNode, GlueNode, HeadNode, MathNode, NoadVariant, Node, NodePtr,
+    RuleNode, View, WhatsitNode, WhatsitVariant,
 };
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
+use crate::print::errors::{Abort, OrConfusion};
 
 /// `r` typed like `src`, whose header word `r` has just received.
 #[inline]

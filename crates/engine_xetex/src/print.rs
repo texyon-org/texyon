@@ -1,22 +1,22 @@
 //! Basic printing: numbers, strings, control sequences and the diagnostic sink.
 
-pub(crate) mod diagnostic;
-pub(crate) mod errors;
+use std::ops::Range;
 
 use crate::base::cmd::Cmd;
 use crate::base::consts::{
     BIGGEST_CHAR, BIGGEST_USV, HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, SCRIPT_SIZE, TEXT_SIZE,
     TOO_BIG_CHAR,
 };
+use crate::base::mode::ModeName;
 use crate::base::params::{DimenPar, GluePar, IntPar};
 use crate::base::token::{TokCursor, TokenList};
 use crate::base::units::{FontId, GlueOrder, MemPtr, Scaled, StrNumber};
 use crate::ffi::bridge::output_putc;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::memory::glue_store::GlueSpecId;
-use crate::memory::node::Stored;
-use crate::memory::node::{CharNode, NativeWordNode, NodePtr, RuleDimen};
-use crate::memory::node::{DelimiterWord, MathWord};
+use crate::memory::node::{
+    CharNode, DelimiterWord, MathWord, NativeWordNode, NodePtr, RuleDimen, Stored,
+};
 use crate::print::diagnostic::{
     DiagnosticKind, begin_capture, begin_warning, current_file_line, end_capture,
 };
@@ -25,17 +25,19 @@ use crate::tables::cs::{CsId, CsKind};
 use crate::tables::save::GroupCode;
 
 mod cmd_chr;
+pub(crate) mod diagnostic;
+pub(crate) mod errors;
 mod show;
 mod show_box;
 mod warnings;
 
-pub(crate) use self::cmd_chr::{print_command, print_meaning};
-pub(crate) use self::show::{
+pub(crate) use cmd_chr::{print_command, print_meaning};
+pub(crate) use show::{
     issue_message, show_context, show_cur_cmd_chr, show_save_groups, show_token_list, show_tokens,
     show_whatever,
 };
-pub(crate) use self::show_box::{short_display, show_box};
-pub(crate) use self::warnings::{
+pub(crate) use show_box::{short_display, show_box};
+pub(crate) use warnings::{
     bad_utf8_warning, char_warning, file_warning, font_feature_warning, font_mapping_warning,
     group_warning, if_warning,
 };
@@ -182,7 +184,7 @@ impl TexPrint for FamFont {
 
 /// `' in <mode>`, closing a `You can't use` message.
 #[derive(Copy, Clone)]
-pub(crate) struct InMode(pub crate::base::mode::ModeName);
+pub(crate) struct InMode(pub ModeName);
 
 impl TexPrint for InMode {
     fn print_to(&self, st: &mut EngineState) {
@@ -488,7 +490,7 @@ fn print_pool_str(st: &mut EngineState, s: i32) {
         return;
     }
 
-    let std::ops::Range { start: mut i, end } = st.strings.str_range(StrNumber::from_raw(s));
+    let Range { start: mut i, end } = st.strings.str_range(StrNumber::from_raw(s));
     while i < end {
         let c = st.strings.str_pool[i];
         if i + 1 < end
@@ -745,11 +747,11 @@ fn note_warning_issued(st: &mut EngineState) {
     }
 }
 
-pub(crate) fn print_mode(st: &mut EngineState, m: crate::base::mode::ModeName) {
+pub(crate) fn print_mode(st: &mut EngineState, m: ModeName) {
     print(st, m.as_str());
 }
 
-pub(crate) fn print_in_mode(st: &mut EngineState, m: crate::base::mode::ModeName) {
+pub(crate) fn print_in_mode(st: &mut EngineState, m: ModeName) {
     print(st, "' in ");
     print(st, m.as_str());
 }

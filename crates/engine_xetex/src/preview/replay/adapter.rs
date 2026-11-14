@@ -2,12 +2,14 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
+use std::mem;
 use std::path::Path;
 use std::sync::Arc;
 
+use texyon_bridge_core::EOF;
+
 use super::source::{ResolvedSource, SourceIdentity, SourcePath, SourceSnapshot};
 use crate::ffi::bridge::FileFormat;
-use texyon_bridge_core::EOF;
 
 const MEM_TAG: usize = 1usize << (usize::BITS - 1);
 const INDEX_MASK: usize = !MEM_TAG;
@@ -64,7 +66,7 @@ pub(crate) fn install(
             snapshot,
             inputs: Vec::new(),
             last_path: None,
-            written: std::mem::take(written),
+            written: mem::take(written),
         });
         assert!(previous.is_none(), "nested source snapshot installation");
     });
@@ -319,7 +321,7 @@ pub(crate) fn seek(handle: usize, offset: libc::ssize_t, whence: libc::c_int) ->
 
 /// Returns whether the channel was already closed.
 pub(crate) fn close(handle: usize) -> Option<bool> {
-    with_input(handle, |input| std::mem::replace(&mut input.closed, true))
+    with_input(handle, |input| mem::replace(&mut input.closed, true))
 }
 
 impl ReplaySources {
@@ -366,8 +368,9 @@ fn index(handle: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::PathBuf;
+
+    use super::*;
 
     fn snapshot() -> SourceSnapshot {
         SourceSnapshot::new(

@@ -1,10 +1,12 @@
 //! `Command`: a meaning, TeX's `(cmd, chr)` pair as one typed value.
 
+use std::hash::{Hash, Hasher};
+use std::mem;
+
 use crate::base::cmd::Cmd;
-use crate::base::codes::IfTest;
 use crate::base::codes::{
     AboveCode, AuxCode, BoxCode, BoxDimenCode, ConvertCode, DelimNumCode, ExtensionCode,
-    FiOrElseCode, FontIntCode, IfCode, InputCode, LastItemCode, LeaderCode, LeftRightCode,
+    FiOrElseCode, FontIntCode, IfCode, IfTest, InputCode, LastItemCode, LeaderCode, LeftRightCode,
     LimitCode, MarkCode, MathAccentCode, MathCharNumCode, PageDimenCode, PageIntCode, PrefixCode,
     RadicalCode, ShorthandDefCode, ShowCode, SkipCode, TheCode, ValignCode, ValueLevel,
 };
@@ -15,7 +17,7 @@ use crate::build::main_control::{CR_CODE, CR_CR_CODE, SPAN_CODE};
 use crate::build::math::MathStyle;
 use crate::memory::mem::NULL_LIST;
 use crate::print::errors::InteractionMode;
-use crate::scanning::scan::NO_EXPAND_FLAG;
+use crate::scanning::scan::{NO_EXPAND_FLAG, ScannerState};
 use crate::tables::eqtb::{
     CaseTable, CodeTable, DimenLoc, FontLoc, GlueLoc, IntLoc, ShapeLoc, ToksLoc, XetexCode,
 };
@@ -294,13 +296,13 @@ pub(crate) enum Command {
     DontExpand = Cmd::DontExpand as u8,
 }
 
-impl std::hash::Hash for Command {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+impl Hash for Command {
+    fn hash<H: Hasher>(&self, state: &mut H) {
         self.encode().hash(state);
     }
 }
 
-impl crate::scanning::scan::ScannerState {
+impl ScannerState {
     /// The code of the current `\fi`, `\else` or `\or`, `None` for any other command.
     #[inline]
     pub(crate) fn fi_or_else(&self) -> Option<FiOrElseCode> {
@@ -311,7 +313,7 @@ impl crate::scanning::scan::ScannerState {
     }
 }
 
-const _: () = assert!(std::mem::size_of::<Command>() == 8);
+const _: () = assert!(mem::size_of::<Command>() == 8);
 
 /// `cur_cmd = cur_chr = 0`, the meaning before any token is read.
 impl Default for Command {

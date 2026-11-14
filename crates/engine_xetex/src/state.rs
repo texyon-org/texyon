@@ -1,10 +1,13 @@
 //! Rust-owned engine state.
 
+use crate::base::random::Random;
 use crate::build::hyphenation::HyphState;
 use crate::build::main_control::InterCharState;
 use crate::fonts::FontState;
 use crate::fonts::ext::SourceSpecials;
 use crate::memory::mem::MemState;
+use crate::preview::cancellation::CancellationState;
+use crate::print::diagnostic::DiagnosticsState;
 use crate::print::errors::ErrorState;
 use crate::scanning::input::InputClusterState;
 use crate::scanning::scan::ScannerState;
@@ -17,9 +20,9 @@ use crate::tables::string_pool::StringsState;
 #[derive(Default)]
 pub(crate) struct EngineState {
     pub config: ConfigState,
-    pub cancellation: crate::preview::cancellation::CancellationState,
+    pub cancellation: CancellationState,
     pub errors: ErrorState,
-    pub random: crate::base::random::Random,
+    pub random: Random,
     pub shipout: ShipoutState,
     pub scanner: ScannerState,
     pub save_stack: SaveStackState,
@@ -33,7 +36,7 @@ pub(crate) struct EngineState {
     pub synctex: SynctexCtxt,
     pub interchar: InterCharState,
     /// Not checkpointed: a restore keeps the operation's list.
-    pub diagnostics: crate::print::diagnostic::DiagnosticsState,
+    pub diagnostics: DiagnosticsState,
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]

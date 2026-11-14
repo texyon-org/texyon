@@ -1,3 +1,5 @@
+use std::f64::consts::{E, PI};
+
 type R<T> = Result<T, &'static str>;
 
 const UNITY: f64 = 65536.0;
@@ -530,8 +532,8 @@ impl Parser<'_> {
                 }
                 _ => return Err("wrong argument count"),
             },
-            Func::Pi => Value::texted(std::f64::consts::PI, b"3.141592654"),
-            Func::E => Value::texted(std::f64::consts::E, b"2.718281828"),
+            Func::Pi => Value::texted(PI, b"3.141592654"),
+            Func::E => Value::texted(E, b"2.718281828"),
             Func::True => truth(true),
             Func::False => truth(false),
         })

@@ -1,13 +1,14 @@
 //! OpenType MATH table queries.
 
-use crate::base::units::{FontId, Scaled};
-use crate::fonts::FontEngineHandle;
-use crate::fonts::FontState;
-use crate::fonts::ext::{d2fix, fix2d};
 use texyon_bridge_harfbuzz::Direction;
 use texyon_bridge_harfbuzz::ot::{MathGlyphPart, MathKern};
 use texyon_bridge_harfbuzz::sys::HB_OT_MATH_GLYPH_PART_FLAG_EXTENDER;
 use texyon_xetex_layout::Font;
+
+use super::ext::{d2fix, fix2d};
+use super::{FontEngineHandle, FontState};
+use crate::base::consts::INFINITE_DIMEN;
+use crate::base::units::{FontId, Scaled};
 
 const HB_OT_MATH_CONSTANT_SCRIPT_PERCENT_SCALE_DOWN: i32 = 0;
 const HB_OT_MATH_CONSTANT_SCRIPT_SCRIPT_PERCENT_SCALE_DOWN: i32 = 1;
@@ -212,7 +213,7 @@ impl FontState {
 
     pub(crate) fn get_ot_math_accent_pos(&self, f: FontId, g: i32) -> Scaled {
         let Some(engine) = self.ot_engine(f) else {
-            return crate::base::consts::INFINITE_DIMEN;
+            return INFINITE_DIMEN;
         };
         let rval = engine.ot_math().top_accent_attachment(g as u32);
         units_to_fix(engine.font(), rval)

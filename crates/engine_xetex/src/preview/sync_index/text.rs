@@ -1,5 +1,6 @@
 //! Reading the record stream back from an uncompressed `.synctex` file.
 
+use std::mem;
 use std::sync::Arc;
 
 use super::{Record, RecordKind, SyncIndex};
@@ -12,7 +13,7 @@ pub(super) fn parse(text: &str) -> SyncIndex {
     let flush = |index: &mut SyncIndex, open: &mut Vec<Record>| {
         if let Some(record) = open.first() {
             let page_index = record.page_index;
-            index.push_page(page_index, Arc::from(std::mem::take(open)));
+            index.push_page(page_index, Arc::from(mem::take(open)));
         }
     };
     for line in text.lines() {

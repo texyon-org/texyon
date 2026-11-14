@@ -4,6 +4,7 @@
 //! no shaped glyphs. Each node owns one arena slot, while copied nodes may
 //! share the immutable payload through `Arc` until one is mutated.
 
+use std::mem;
 use std::sync::Arc;
 
 use crate::base::units::Scaled;
@@ -33,8 +34,8 @@ impl GlyphBlobArena {
     }
 
     pub(crate) fn allocated_bytes(&self) -> usize {
-        self.slots.capacity() * std::mem::size_of::<Option<Arc<GlyphBlob>>>()
-            + self.free.capacity() * std::mem::size_of::<usize>()
+        self.slots.capacity() * mem::size_of::<Option<Arc<GlyphBlob>>>()
+            + self.free.capacity() * mem::size_of::<usize>()
     }
 
     pub(crate) fn slots(&self) -> impl Iterator<Item = Option<&GlyphBlob>> {

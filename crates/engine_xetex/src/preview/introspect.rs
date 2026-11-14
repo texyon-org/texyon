@@ -1,15 +1,13 @@
 //! Read-only listing of the control sequences the engine has defined, for
 //! editor completions. Safe to run between operations on a resident session.
 
-use crate::base::token::Token;
-use crate::base::token::TokenList;
-use crate::base::units::StrNumber;
-use crate::tables::cs::{CsId, NameSlot};
 use std::collections::HashMap;
 
 use crate::base::cmd::Cmd;
-
+use crate::base::token::{Token, TokenList};
+use crate::base::units::StrNumber;
 use crate::state::EngineState;
+use crate::tables::cs::{CsId, NameSlot};
 
 /// What kind of thing a name is bound to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -115,7 +113,7 @@ fn collect(st: &EngineState, slot: CsId, found: &mut Vec<DefinedCommand>) {
 }
 
 /// Returns whether the macro is `\protected` and how many `#n` its parameter text has.
-fn describe_macro(st: &EngineState, body: crate::base::token::TokenList) -> (bool, u8) {
+fn describe_macro(st: &EngineState, body: TokenList) -> (bool, u8) {
     let mut protected = false;
     let mut arity = 0u8;
     if !st.mem.tokens.holds_list(body) {

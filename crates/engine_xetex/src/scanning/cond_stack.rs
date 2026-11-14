@@ -1,7 +1,6 @@
 //! TeX's conditional stack, the `cond_ptr` list of saved `\if` states.
 
-use crate::base::codes::FiOrElseCode;
-use crate::base::codes::IfTest;
+use crate::base::codes::{FiOrElseCode, IfTest};
 use crate::memory::node::Stored;
 
 /// One conditional on the stack. TeX tells them apart by node address, so each gets its own id.

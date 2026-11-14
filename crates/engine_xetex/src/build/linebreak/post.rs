@@ -4,15 +4,12 @@ use super::Breaker;
 use super::lists::{ActiveEntry, PassiveId};
 use crate::base::params::{GluePar, IntPar};
 use crate::base::units::{MemPtr, Scaled};
-use crate::build::packaging::{AdjustTails, PackOrigin, PackSpec};
-use crate::memory::mem::MemState;
-use crate::memory::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
+use crate::build::packaging::{AdjustTails, PackOrigin, PackSpec, hpack_with};
+use crate::memory::mem::{ADJUST_HEAD, MemState, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::memory::node::{AnyNode, BoxNode, GlueKind, KernSubtype, MathNode, NodePtr};
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
+use crate::print::errors::{Abort, OrConfusion};
 use crate::state::EngineState;
-use crate::tables::eqtb::EqtbState;
-use crate::tables::eqtb::ShapeLoc;
+use crate::tables::eqtb::{EqtbState, ShapeLoc};
 
 /// Where `post_line_break` is in the paragraph.
 struct PostLines {
@@ -408,14 +405,7 @@ pub(super) fn post_line_break(
             PackSpec::Exactly(hpack.cur_width)
         };
         let mut adjust = AdjustTails::HEADS;
-        let just_box = crate::build::packaging::hpack_with(
-            st,
-            hpack.q,
-            spec,
-            lines.origin,
-            Some(&mut adjust),
-        )?
-        .r_box;
+        let just_box = hpack_with(st, hpack.q, spec, lines.origin, Some(&mut adjust))?.r_box;
 
         match lb.post_line_break_suffix(st, just_box, &mut lines, hpack, adjust)? {
             None => break just_box,

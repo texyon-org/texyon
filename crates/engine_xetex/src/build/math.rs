@@ -1,9 +1,11 @@
 //! Math mode: noad construction and `mlist_to_hlist`.
 
+use bytemuck::{Pod, Zeroable};
+
+use crate::base::consts::{SCRIPT_SIZE, TEXT_SIZE};
 use crate::base::units::{FontId, Scaled};
 use crate::fonts::FontState;
 use crate::tables::eqtb::EqtbState;
-use bytemuck::{Pod, Zeroable};
 
 mod build;
 mod delimiters;
@@ -11,11 +13,11 @@ mod display;
 mod mlist;
 mod scripts;
 
-pub(crate) use self::build::{
+pub(crate) use build::{
     append_choices, build_choices, fin_mlist, math_ac, math_fraction, math_left_right,
     math_limit_switch, math_radical, start_eq_no, sub_sup,
 };
-pub(crate) use self::display::{after_math, check_display_end, init_math, resume_after_display};
+pub(crate) use display::{after_math, check_display_end, init_math, resume_after_display};
 
 pub(crate) const DEFAULT_CODE: Scaled = Scaled::from_raw(0x4000_0000);
 
@@ -29,9 +31,9 @@ impl MathStyle {
     /// The font size of this style: `TEXT_SIZE`, `SCRIPT_SIZE` or `SCRIPT_SCRIPT_SIZE`.
     pub(crate) fn size(self) -> i32 {
         if self < Self::SCRIPT {
-            crate::base::consts::TEXT_SIZE
+            TEXT_SIZE
         } else {
-            crate::base::consts::SCRIPT_SIZE * ((i32::from(self.raw()) - 2) / 2)
+            SCRIPT_SIZE * ((i32::from(self.raw()) - 2) / 2)
         }
     }
 

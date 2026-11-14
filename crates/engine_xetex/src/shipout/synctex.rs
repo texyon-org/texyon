@@ -1,16 +1,17 @@
 /* Copyright (c) 2008-2017 jerome DOT laurens AT u-bourgogne DOT fr, MIT License. */
 
+use std::fmt::Write as _;
+
+use super::{ONE_INCH, RuleDims, ShipoutState};
 use crate::base::consts::INVALID_HANDLE;
 use crate::base::params::IntPar;
-use crate::base::units::MemAddr;
+use crate::base::units::{MemAddr, MemPtr};
 use crate::ffi::bridge::{issue_error, issue_warning, output_close, output_open, output_write};
+use crate::memory::mem::MemState;
 use crate::memory::node::{AnyNode, BoxNode, KernNode, MathNode, NodePtr};
-use crate::preview::sync_index::RecordKind;
-use crate::shipout::ONE_INCH;
-use crate::shipout::ShipoutState;
-use crate::state::EngineState;
+use crate::preview::sync_index::{PreviewSyncIndex, RecordKind};
+use crate::state::{EngineExecutionMode, EngineState};
 use crate::tables::eqtb::EqtbState;
-use std::fmt::Write as _;
 
 const SYNCTEX_VERSION: i32 = 1;
 /// The pseudo file of a resident compile, which only feeds the preview index.
@@ -150,7 +151,7 @@ impl SynctexCtxt {
         }
     }
 
-    fn record_box(&mut self, mem: &crate::memory::mem::MemState, kind: char, b: NodePtr<BoxNode>) {
+    fn record_box(&mut self, mem: &MemState, kind: char, b: NodePtr<BoxNode>) {
         self.record_node(
             kind,
             mem[b].sync.tag,
@@ -159,7 +160,7 @@ impl SynctexCtxt {
         );
     }
 
-    fn record_kern(&mut self, mem: &crate::memory::mem::MemState, kern: NodePtr<KernNode>) {
+    fn record_kern(&mut self, mem: &MemState, kern: NodePtr<KernNode>) {
         self.record_node(
             'k',
             mem[kern].sync.tag,
@@ -257,9 +258,8 @@ pub fn synctex_init_command(st: &mut EngineState) {
     synctex.flags.not_void = false;
     synctex.flags.warn = false;
     synctex.flags.output_p = false;
-    synctex.preview_index = (st.config.execution_mode
-        == crate::state::EngineExecutionMode::Resident)
-        .then(Default::default);
+    synctex.preview_index =
+        (st.config.execution_mode == EngineExecutionMode::Resident).then(Default::default);
 
     let synctex_enabled = st.config.synctex_enabled != 0;
     st.eqtb
@@ -462,7 +462,7 @@ pub fn synctex_math(st: &mut EngineState, p: NodePtr<MathNode>) {
 pub fn synctex_horizontal_rule_or_glue(
     st: &mut EngineState,
     p: impl MemAddr,
-    rule: Option<crate::shipout::RuleDims>,
+    rule: Option<RuleDims>,
 ) {
     let p = p.addr();
     let node = st.mem.classify(p);
@@ -569,10 +569,10 @@ pub(crate) struct SynctexCtxt {
     pub root_name: Option<Vec<u8>>,
     pub count: i32,
     /// The node of the current context, `None` before the first.
-    pub node: crate::base::units::MemPtr,
+    pub node: MemPtr,
     /// A kern whose record waits for the context to change. When set it equals
     /// `node`, so flush sites record it before reassigning `node`.
-    pub deferred_kern: Option<crate::memory::node::NodePtr<crate::memory::node::KernNode>>,
+    pub deferred_kern: Option<NodePtr<KernNode>>,
     pub tag: i32,
     pub line: i32,
     pub curh: i32,
@@ -584,7 +584,7 @@ pub(crate) struct SynctexCtxt {
     pub form_depth: i32,
     pub synctex_tag_counter: u32,
     pub flags: SynctexFlags,
-    pub preview_index: Option<crate::preview::sync_index::PreviewSyncIndex>,
+    pub preview_index: Option<PreviewSyncIndex>,
 }
 
 impl Default for SynctexCtxt {

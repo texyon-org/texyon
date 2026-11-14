@@ -1,12 +1,14 @@
 //! The character main loop: ligatures, kerns, native words, interchar tokens.
 
+use std::mem;
+
 use crate::base::cmd::Cmd;
 use crate::base::consts::CHAR_CLASS_LIMIT;
 use crate::base::mode::Mode;
 use crate::base::params::IntPar;
 use crate::base::token::{Token, TokenList};
-use crate::base::units::MemIdx;
-use crate::base::units::{FontId, MemPtr};
+use crate::base::units::{FontId, MemIdx, MemPtr};
+use crate::build::linebreak::do_locale_linebreaks;
 use crate::fonts::ext::append_src_special;
 use crate::fonts::{
     CharInfo, CharTag, LigChar, LigKernAction, LigKernIdx, LigKernStep, LigOp, SPACE_CODE,
@@ -15,9 +17,10 @@ use crate::memory::mem::MemState;
 use crate::memory::node::{
     AnyNode, CharNode, KernSubtype, LigBoundary, LigItem, NativeWordNode, NodePtr,
 };
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
-use crate::scanning::input::{TOKEN_LIST, TokenType};
+use crate::print::char_warning;
+use crate::print::errors::{Abort, OrConfusion};
+use crate::scanning::input::{TOKEN_LIST, TokenType, back_input, begin_token_list};
+use crate::scanning::scan::{get_next, scan_char_num, scan_usv_num, x_token};
 use crate::state::EngineState;
 use crate::tables::eqtb::{EqStore, InterCharPair};
 
@@ -50,8 +53,8 @@ pub(super) fn insert_boundary_inter_char_toks(st: &mut EngineState) -> Result<bo
         None => st.scanner.cur.char_token(),
         Some(cs) => Token::from_cs(cs),
     };
-    crate::scanning::input::back_input(st)?;
-    crate::scanning::input::begin_token_list(st, list, TokenType::InterChar)?;
+    back_input(st)?;
+    begin_token_list(st, list, TokenType::InterChar)?;
     Ok(true)
 }
 
@@ -76,9 +79,9 @@ fn insert_inter_char_toks_before(st: &mut EngineState, sc: i32, chr: i32) -> Res
         _ => Cmd::OtherChar,
     };
     st.scanner.cur_tok = Token::new(cmd, chr);
-    crate::scanning::input::back_input(st)?;
+    back_input(st)?;
     st.input.cur_input.set_token_type(TokenType::BackedUpChar);
-    crate::scanning::input::begin_token_list(st, list, TokenType::InterChar)?;
+    begin_token_list(st, list, TokenType::InterChar)?;
     Ok(true)
 }
 
@@ -234,18 +237,18 @@ fn main_loop_native(st: &mut EngineState, mf: FontId, mut chr: i32) -> Result<bo
             h = st.scanner.native_len;
         }
 
-        crate::scanning::scan::get_next(st)?;
+        get_next(st)?;
         if let Some(c) = st.scanner.cur.char_code() {
             chr = c;
             continue;
         }
-        crate::scanning::scan::x_token(st)?;
+        x_token(st)?;
         if let Some(c) = st.scanner.cur.char_code() {
             chr = c;
             continue;
         }
         if st.scanner.cur.cmd() == Cmd::CharNum {
-            chr = crate::scanning::scan::scan_usv_num(st)?;
+            chr = scan_usv_num(st)?;
             continue;
         }
         break insert_boundary_inter_char_toks(st)?;
@@ -278,7 +281,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId, mut chr: i32) -> Result<bo
                 i += 1;
             }
             if st.fonts.map_char_to_glyph(mf, c)? == 0 {
-                crate::print::char_warning(st, mf, c)?;
+                char_warning(st, mf, c)?;
             }
         }
     }
@@ -305,7 +308,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId, mut chr: i32) -> Result<bo
                     let c = st.scanner.native_text[(start + i) as usize];
                     st.scanner.push_native_text(c);
                 }
-                crate::build::linebreak::do_locale_linebreaks(st, mf, saved_len, remaining)?;
+                do_locale_linebreaks(st, mf, saved_len, remaining)?;
                 st.scanner.native_len = saved_len;
                 remaining = saved_len - h - start;
                 start = h;
@@ -317,7 +320,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId, mut chr: i32) -> Result<bo
                 pp = st.input.cur_list.tail;
                 ppp = st.mem.predecessor(ppp, Some(pp))?;
             } else {
-                crate::build::linebreak::do_locale_linebreaks(st, mf, start, h)?;
+                do_locale_linebreaks(st, mf, start, h)?;
                 start += h;
                 remaining -= h;
                 h = past_next_hyphen(st, mf, start, remaining);
@@ -622,7 +625,7 @@ pub(super) fn main_control_main_loop(
     let mut main_i = None;
 
     loop {
-        let exit = match std::mem::replace(&mut resume, Resume::LigLoop) {
+        let exit = match mem::replace(&mut resume, Resume::LigLoop) {
             Resume::Move2 => None,
             Resume::LigProgram(k) => {
                 let step = st.fonts.lig_kern_step(lk.font, k)?;
@@ -685,7 +688,7 @@ pub(super) fn main_control_main_loop(
         };
         let node = lk.lookahead_node()?;
         if !exists {
-            crate::print::char_warning(st, lk.font, lk.chr)?;
+            char_warning(st, lk.font, lk.chr)?;
             node.free(&mut st.mem);
             return Ok(true);
         }
@@ -796,9 +799,9 @@ fn lig_kern_program(
 /// inter-character tokens inserted before the character.
 #[inline(always)]
 fn lookahead(st: &mut EngineState, lk: &mut LigKern) -> Result<(), Abort> {
-    crate::scanning::scan::get_next(st)?;
+    get_next(st)?;
     if st.scanner.cur.char_code().is_none() {
-        crate::scanning::scan::x_token(st)?;
+        x_token(st)?;
     }
     if let Some(c) = st.scanner.cur.char_code() {
         lk.chr = c;
@@ -810,7 +813,7 @@ fn lookahead(st: &mut EngineState, lk: &mut LigKern) -> Result<(), Abort> {
             lk.end_word();
             return Ok(());
         }
-        lk.chr = crate::scanning::scan::scan_char_num(st)?;
+        lk.chr = scan_char_num(st)?;
     }
 
     let sc = adjust_space_factor(st, lk.chr)?;

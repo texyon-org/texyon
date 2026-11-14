@@ -4,19 +4,22 @@ use crate::base::codes::{BoxCode, MarkCode};
 use crate::base::consts::{
     AWFUL_BAD, EJECT_PENALTY, INF_BAD, INF_PENALTY, LEVEL_ONE, MAX_DIMEN, MAX_HALFWORD,
 };
+use crate::base::mode::Mode;
 use crate::base::params::{DimenPar, GluePar, IntPar, TokPar};
-use crate::base::scaled_math::badness;
+use crate::base::scaled_math::{badness, x_over_n};
 use crate::base::token::TokenList;
 use crate::base::units::{GlueOrder, MemIdx, MemPtr, Scaled};
-use crate::build::packaging::{MarksAction, PackSpec};
-use crate::memory::mem::MemState;
-use crate::memory::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
-use crate::memory::node::{AnyNode, InsNode, LinkSlot, NodePtr, PageInsNode, View, WhatsitVariant};
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
-use crate::scanning::input::TokenType;
-use crate::scanning::scan::fetch_box;
-use crate::shipout::ShipoutState;
+use crate::build::main_control::normal_paragraph;
+use crate::build::packaging::{MarksAction, PackSpec, vert_break, vpackage};
+use crate::memory::mem::{CONTRIB_HEAD, HOLD_HEAD, MemState, PAGE_HEAD, PAGE_INS_HEAD, push_nest};
+use crate::memory::node::{
+    AnyNode, GlueNode, InsNode, LinkSlot, NodePtr, PageInsNode, View, WhatsitVariant,
+};
+use crate::print::Esc;
+use crate::print::errors::{Abort, OrConfusion, box_error, error};
+use crate::scanning::input::{TokenType, begin_token_list};
+use crate::scanning::scan::{fetch_box, scan_left_brace};
+use crate::shipout::{ShipoutState, ship_out};
 use crate::state::EngineState;
 use crate::tables::eqtb::Register;
 use crate::tables::save::GroupCode;
@@ -72,7 +75,7 @@ fn ensure_vbox(st: &mut EngineState, n: u8) -> Result<(), Abort> {
     if !fetch_box(st, Register::from(n)).is_some_and(|b| st.mem[b].is_hlist()) {
         return Ok(());
     }
-    crate::print::errors::box_error(
+    box_error(
         st,
         n,
         "Insertions can only be added to a vbox",
@@ -151,7 +154,7 @@ fn place_insertion(
             .prune_page_top(&mut st.scanner, &st.eqtb, broken_ptr, false)?;
         st.mem[ins].ins_ptr = pruned;
         if !pruned.is_none() {
-            let tmp = crate::build::packaging::vpackage(st, pruned, PackSpec::NATURAL, MAX_DIMEN)?;
+            let tmp = vpackage(st, pruned, PackSpec::NATURAL, MAX_DIMEN)?;
             let size = st.mem[tmp].height + st.mem[tmp].depth;
             st.mem[ins].height = size;
             tmp.free(&mut st.mem);
@@ -162,7 +165,7 @@ fn place_insertion(
     let b = fetch_box(st, Register::from(n)).or_confusion("insertion box")?;
     let list = st.mem[b].list_ptr;
     b.free(&mut st.mem);
-    let packed = crate::build::packaging::vpackage(st, list, PackSpec::NATURAL, MAX_DIMEN)?;
+    let packed = vpackage(st, list, PackSpec::NATURAL, MAX_DIMEN)?;
     st.eqtb.set_box_reg(n, Some(packed));
     Ok(wait)
 }
@@ -203,10 +206,10 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
         st.shipout.best_page_break = None;
     }
     if !st.eqtb.box_reg(Register::of(255)).is_none() {
-        crate::print::errors::box_error(
+        box_error(
             st,
             255,
-            (crate::print::Esc("box"), "255 is not void"),
+            (Esc("box"), "255 is not void"),
             &[
                 r"You shouldn't use \box255 except in \output routines.",
                 "Proceed, and I'll discard its present contents.",
@@ -288,7 +291,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     st.eqtb.set_int_par(IntPar::Vbadness, INF_BAD);
     let save_vfuzz = st.eqtb.dimen_par(DimenPar::Vfuzz);
     st.eqtb.set_dimen_par(DimenPar::Vfuzz, MAX_DIMEN);
-    let page = crate::build::packaging::vpackage(
+    let page = vpackage(
         st,
         PAGE_HEAD.link(&st.mem),
         PackSpec::Exactly(st.shipout.best_size),
@@ -337,17 +340,17 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
         if st.shipout.dead_cycles < st.eqtb.int_par(IntPar::MaxDeadCycles) {
             st.shipout.output_active = true;
             st.shipout.dead_cycles += 1;
-            crate::memory::mem::push_nest(st)?;
-            st.input.cur_list.mode = crate::base::mode::Mode::vertical(true);
+            push_nest(st)?;
+            st.input.cur_list.mode = Mode::vertical(true);
             st.input.cur_list.mode_line = -st.mem.line;
-            crate::scanning::input::begin_token_list(st, output_routine, TokenType::Output)?;
+            begin_token_list(st, output_routine, TokenType::Output)?;
             st.save_stack
                 .new_save_level(GroupCode::Output, st.mem.line)?;
-            crate::build::main_control::normal_paragraph(st)?;
-            crate::scanning::scan::scan_left_brace(st)?;
+            normal_paragraph(st)?;
+            scan_left_brace(st)?;
             return Ok(());
         }
-        crate::print::errors::error(
+        error(
             st,
             (
                 "Output loop---",
@@ -378,7 +381,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     let discards = st.scanner.disc_ptr[BoxCode::LastBox as usize];
     st.mem.flush_node_list(discards)?;
     st.scanner.disc_ptr[BoxCode::LastBox as usize] = None;
-    crate::shipout::ship_out(st, page)?;
+    ship_out(st, page)?;
     st.eqtb.set_box_reg(255, None);
     Ok(())
 }
@@ -423,7 +426,7 @@ fn scale_by_count(x: Scaled, count: i32) -> Scaled {
     if count == 1000 {
         x
     } else {
-        crate::base::scaled_math::x_over_n(x, 1000).quotient * count
+        x_over_n(x, 1000).quotient * count
     }
 }
 
@@ -462,11 +465,11 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         st.shipout.page_so_far[2 + order] += st.mem[skip].stretch;
         st.shipout.page_so_far[PAGE_SHRINK] += st.mem[skip].shrink;
         if st.mem[skip].shrink_order != GlueOrder::Normal && st.mem[skip].shrink != Scaled::ZERO {
-            crate::print::errors::error(
+            error(
                 st,
                 (
                     "Infinite glue shrinkage inserted from ",
-                    crate::print::Esc("skip"),
+                    Esc("skip"),
                     i32::from(n),
                 ),
                 &[
@@ -507,7 +510,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         if count == 1000 {
             w
         } else {
-            crate::base::scaled_math::x_over_n(w, count).quotient * 1000
+            x_over_n(w, count).quotient * 1000
         }
     };
     let room = max_height - st.mem[rec].height;
@@ -515,7 +518,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         w = room;
     }
     let (q, mut best_height_plus_depth) =
-        crate::build::packaging::vert_break(st, st.mem[ins].ins_ptr, w, st.mem[ins].depth)?;
+        vert_break(st, st.mem[ins].ins_ptr, w, st.mem[ins].depth)?;
     let height = st.mem[rec].height + best_height_plus_depth;
     st.mem[rec].height = height;
     if count != 1000 {
@@ -720,10 +723,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
 
 /// Adds the stretch and shrink of page glue `glue` to the page totals and
 /// returns its width, making infinite shrinkability finite.
-fn page_glue_width(
-    st: &mut EngineState,
-    glue: NodePtr<crate::memory::node::GlueNode>,
-) -> Result<Scaled, Abort> {
+fn page_glue_width(st: &mut EngineState, glue: NodePtr<GlueNode>) -> Result<Scaled, Abort> {
     let spec = st.mem[glue].glue_ptr;
     let order = st.mem[spec].stretch_order.index();
     st.shipout.page_so_far[2 + order] += st.mem[spec].stretch;
@@ -731,7 +731,7 @@ fn page_glue_width(
     if st.mem[spec].shrink_order == GlueOrder::Normal || st.mem[spec].shrink == Scaled::ZERO {
         return Ok(st.mem[spec].width);
     }
-    crate::print::errors::error(
+    error(
         st,
         "Infinite glue shrinkage found on current page",
         &[

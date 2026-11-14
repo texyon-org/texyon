@@ -1,46 +1,50 @@
 //! Internal quantities: `scan_something_internal` and the font queries behind it.
 
+use std::rc::Rc;
+
 use super::next::get_x_non_blank;
 use super::numbers::{
     bad_int_error, get_primitive_token, glue_spec, map_glue, scan_char_num, scan_expr, scan_int,
     scan_math_fam_int, scan_mu_glue, scan_normal_glue, scan_register_num, scan_usv_num,
 };
 use super::{fetch_box, math_char, math_class, math_fam, scan_keyword};
-use crate::base::codes::AuxCode;
-use crate::base::codes::FontIntCode;
-use crate::base::codes::PageDimenCode;
-use crate::base::codes::{BoxDimenCode, FiOrElseCode, LastItemCode, PageIntCode, ValueLevel};
+use crate::base::codes::{
+    AuxCode, BoxDimenCode, FiOrElseCode, FontIntCode, LastItemCode, PageDimenCode, PageIntCode,
+    ValueLevel,
+};
 use crate::base::command::Command;
 use crate::base::consts::{ACTIVE_MATH_CHAR, MAX_DIMEN, NULL_FONT};
 use crate::base::mode::{Mode, ModeName};
 use crate::base::params::TokPar;
 use crate::base::token::TokenList;
 use crate::base::units::{FontId, NodeType, Scaled, StrNumber};
-use crate::fonts::FontEngineHandle;
-use crate::fonts::Side;
+use crate::build::main_control::scan_inter_char_pair;
+use crate::build::pagebuilder::PageContents;
+use crate::files::io::{scan_file_name, scan_name_path};
 use crate::fonts::ext::{
     aat_font_get, aat_font_get_1, aat_font_get_2, aat_font_get_named, aat_font_get_named_1,
     gr_font_get_named, gr_font_get_named_1, ot_font_get, ot_font_get_1, ot_font_get_2,
     ot_font_get_3,
 };
-use crate::fonts::{AAT_FONT_FLAG, SPACE_CODE, SPACE_SHRINK_CODE};
+use crate::fonts::{AAT_FONT_FLAG, FontEngineHandle, SPACE_CODE, SPACE_SHRINK_CODE, Side};
 use crate::memory::glue_store::GlueSpecId;
 use crate::memory::mem::ZERO_GLUE;
 use crate::memory::node::{AnyNode, GlueKind, MathCode};
-use crate::print::errors::OrConfusion;
-use crate::print::errors::{Abort, mu_error};
+use crate::print::errors::{
+    Abort, Capacity, OrConfusion, back_error, error, mu_error, not_font_error_common,
+};
+use crate::print::{Esc, Nl};
 use crate::scanning::input::back_input;
+use crate::shipout::pic::count_pdf_file_pages_named;
 use crate::state::EngineState;
 use crate::tables::cs::CsId;
-use crate::tables::eqtb::EqStore;
-use crate::tables::eqtb::{CodeTable, GlueLoc, ShapeLoc, XetexCode};
-use std::rc::Rc;
+use crate::tables::eqtb::{CodeTable, EqStore, GlueLoc, ShapeLoc, XetexCode};
 
 const ETEX_VERSION: i32 = 2;
 const XETEX_VERSION: i32 = 0;
 
 fn missing_number_error(st: &mut EngineState) -> Result<(), Abort> {
-    crate::print::errors::back_error(
+    back_error(
         st,
         "Missing number, treated as zero",
         &[
@@ -182,7 +186,7 @@ fn font_query_error(
     f: FontId,
     msg: &str,
 ) -> Result<(), Abort> {
-    crate::print::errors::not_font_error_common(st, Command::LastItem(m), f, msg)
+    not_font_error_common(st, Command::LastItem(m), f, msg)
 }
 
 fn fetch_def_code(st: &mut EngineState, m: CodeTable) -> Result<i32, Abort> {
@@ -207,7 +211,7 @@ fn fetch_def_code(st: &mut EngineState, m: CodeTable) -> Result<i32, Abort> {
         CodeTable::Del => {
             let code = st.eqtb.del_code(n);
             if code >= 0x4000_0000 {
-                crate::print::errors::error(
+                error(
                     st,
                     "Extended delcode used as delcode",
                     &[
@@ -244,7 +248,7 @@ fn fetch_xetex_def_code(st: &mut EngineState, m: XetexCode) -> Result<i32, Abort
             r"use \Udelcodenum to access them as single values.",
         ),
     };
-    crate::print::errors::error(st, err, &[help1, help0])?;
+    error(st, err, &[help1, help0])?;
     Ok(0)
 }
 
@@ -263,7 +267,7 @@ fn fetch_token_list(
             CurVal::Tok(st.eqtb.toks(n))
         }
         Command::AssignToks(loc) if loc == TokPar::XetexInterCharToks.loc() => {
-            let pair = crate::build::main_control::scan_inter_char_pair(st)?;
+            let pair = scan_inter_char_pair(st)?;
             CurVal::Tok(st.eqtb.inter_char.get(pair))
         }
         Command::AssignToks(loc) => CurVal::Tok(st.eqtb.toks.get(loc)),
@@ -363,7 +367,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<i32, Abo
         LastItemCode::XetexFindVariationByName => {
             let (f, _, fa) = scan_font_engine(st)?;
             if fa == AAT_FONT_FLAG {
-                crate::files::io::scan_file_name(st)?;
+                scan_file_name(st)?;
                 aat_font_get_named(m)
             } else {
                 font_query_error(st, m, f, "; not an AAT font")?;
@@ -373,10 +377,10 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<i32, Abo
         LastItemCode::XetexFindFeatureByName => {
             let (f, engine, fa) = scan_font_engine(st)?;
             if fa == AAT_FONT_FLAG {
-                crate::files::io::scan_file_name(st)?;
+                scan_file_name(st)?;
                 aat_font_get_named(m)
             } else if let Some(engine) = graphite_engine(&engine) {
-                let name = crate::files::io::scan_name_path(st)?;
+                let name = scan_name_path(st)?;
                 gr_font_get_named(m, engine, &name)
             } else {
                 font_query_error(st, m, f, "; not an AAT or Graphite font")?;
@@ -387,11 +391,11 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<i32, Abo
             let (f, engine, fa) = scan_font_engine(st)?;
             if fa == AAT_FONT_FLAG {
                 let k = scan_int(st)?;
-                crate::files::io::scan_file_name(st)?;
+                scan_file_name(st)?;
                 aat_font_get_named_1(m, k)
             } else if let Some(engine) = graphite_engine(&engine) {
                 let k = scan_int(st)?;
-                let name = crate::files::io::scan_name_path(st)?;
+                let name = scan_name_path(st)?;
                 gr_font_get_named_1(m, engine, k, &name)
             } else {
                 font_query_error(st, m, f, "; not an AAT or Graphite font")?;
@@ -452,7 +456,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<i32, Abo
         LastItemCode::XetexGlyphIndex => {
             let f = st.eqtb.cur_font();
             if st.fonts.is_native_font(f) {
-                let name = crate::files::io::scan_name_path(st)?;
+                let name = scan_name_path(st)?;
                 st.fonts.map_glyph_to_index(f, &name)?
             } else {
                 font_query_error(st, m, f, "; not a native platform font")?;
@@ -485,8 +489,8 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<i32, Abo
         LastItemCode::PdfLastXPos => st.shipout.pdf_last_x_pos,
         LastItemCode::PdfLastYPos => st.shipout.pdf_last_y_pos,
         LastItemCode::XetexPdfPageCount => {
-            let name = crate::files::io::scan_name_path(st)?;
-            crate::shipout::pic::count_pdf_file_pages_named(&name)?
+            let name = scan_name_path(st)?;
+            count_pdf_file_pages_named(&name)?
         }
         LastItemCode::CurrentGroupLevel => i32::from(st.save_stack.cur_level) - 1,
         LastItemCode::CurrentGroupType => st.save_stack.cur_group as i32,
@@ -526,11 +530,11 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: LastItemCode) -> Result<Scaled
             if st.fonts.is_native_font(f) {
                 let edge = scan_int(st)?;
                 if !(1..=4).contains(&edge) {
-                    crate::print::errors::error(
+                    error(
                         st,
                         (
                             "\\\\XeTeXglyphbounds requires an edge index from 1 to 4;",
-                            crate::print::Nl("I don't know anything about edge "),
+                            Nl("I don't know anything about edge "),
                             edge,
                         ),
                         &[],
@@ -712,7 +716,7 @@ pub(super) fn scan_something_internal(
             Command::AssignMuGlue(loc) => CurVal::Mu(st.eqtb.glue.get(loc)),
             Command::SetAux(code) => {
                 if st.input.cur_list.mode.kind() != Some(code.kind()) {
-                    crate::print::errors::error(
+                    error(
                         st,
                         ("Improper ", Command::SetAux(code)),
                         &[
@@ -748,9 +752,7 @@ pub(super) fn scan_something_internal(
                 PageIntCode::InsertPenalties => st.shipout.insert_penalties,
             }),
             Command::SetPageDimen(code) => CurVal::Dimen(
-                if st.shipout.page_contents == crate::build::pagebuilder::PageContents::Empty
-                    && !st.shipout.output_active
-                {
+                if st.shipout.page_contents == PageContents::Empty && !st.shipout.output_active {
                     if code == PageDimenCode::Goal {
                         MAX_DIMEN
                     } else {
@@ -819,14 +821,9 @@ pub(super) fn scan_something_internal(
                 continue;
             }
             _ => {
-                crate::print::errors::error(
+                error(
                     st,
-                    (
-                        "You can't use `",
-                        st.scanner.cur,
-                        "' after ",
-                        crate::print::Esc("the"),
-                    ),
+                    ("You can't use `", st.scanner.cur, "' after ", Esc("the")),
                     &["I'm forgetting what you said and using zero instead."],
                 )?;
                 zero
@@ -859,7 +856,7 @@ pub(crate) fn scan_font_ident(st: &mut EngineState) -> Result<FontId, Abort> {
                 .get(m.family(u8::try_from(fam).or_confusion("family")?))
         }
         _ => {
-            crate::print::errors::back_error(
+            back_error(
                 st,
                 "Missing font identifier",
                 &[
@@ -899,7 +896,7 @@ pub(crate) fn find_font_dimen(
             while st.fonts.param_count(f) < n {
                 if st.fonts.fmem_ptr == st.fonts.font_mem_size {
                     return Err(Abort::Overflow {
-                        capacity: crate::print::errors::Capacity::FontMemory,
+                        capacity: Capacity::FontMemory,
                         n: st.fonts.font_mem_size,
                     });
                 }
@@ -911,11 +908,11 @@ pub(crate) fn find_font_dimen(
     };
 
     if !found {
-        crate::print::errors::error(
+        error(
             st,
             (
                 "Font ",
-                crate::print::Esc(st.eqtb.font_id_text(f)),
+                Esc(st.eqtb.font_id_text(f)),
                 " has only ",
                 st.fonts.param_count(f),
                 " fontdimen parameters",
@@ -931,7 +928,7 @@ pub(crate) fn find_font_dimen(
 
 pub(crate) fn scan_glyph_number(st: &mut EngineState, f: FontId) -> Result<i32, Abort> {
     let v = if scan_keyword(st, "/")? {
-        let name = crate::files::io::scan_name_path(st)?;
+        let name = scan_name_path(st)?;
         st.fonts.map_glyph_to_index(f, &name)?
     } else if scan_keyword(st, "u")? {
         let c = scan_char_num(st)?;

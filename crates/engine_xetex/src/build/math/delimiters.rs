@@ -3,17 +3,17 @@
 use crate::base::consts::{NULL_FONT, SCRIPT_SIZE};
 use crate::base::params::DimenPar;
 use crate::base::units::{FontId, GlueOrder, GlueSign, Scaled};
-use crate::build::packaging::PackSpec;
-use crate::fonts::FontState;
+use crate::build::packaging::{PackSpec, hpack};
 use crate::fonts::ot_math::GlyphAssembly;
 use crate::fonts::tfm::ExtIdx;
-use crate::fonts::{AAT_FONT_FLAG, CharInfo, CharTag, OTGR_FONT_FLAG};
-use crate::memory::mem::MemState;
-use crate::memory::mem::SS_GLUE;
-use crate::memory::node::DelimiterWord;
-use crate::memory::node::{AnyNode, BoxNode, GlyphNode, NativeWordNode, NodePtr, WhatsitSubtype};
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
+use crate::fonts::{
+    AAT_FONT_FLAG, CharInfo, CharTag, FontState, OTGR_FONT_FLAG, new_native_character,
+};
+use crate::memory::mem::{MemState, SS_GLUE};
+use crate::memory::node::{
+    AnyNode, BoxNode, DelimiterWord, GlueRatio, GlyphNode, NativeWordNode, NodePtr, WhatsitSubtype,
+};
+use crate::print::errors::{Abort, OrConfusion};
 use crate::state::EngineState;
 
 impl FontState {
@@ -45,7 +45,7 @@ impl MemState {
 fn char_box(st: &mut EngineState, f: FontId, c: i32) -> Result<NodePtr<BoxNode>, Abort> {
     let area = st.fonts.font_area[f];
     if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
-        let p = crate::fonts::new_native_character(st, f, c as u32)?;
+        let p = new_native_character(st, f, c as u32)?;
         Ok(st.mem.native_char_box(p)?)
     } else {
         Ok(st.mem.char_box_tfm(&mut st.fonts, f, c as u16)?)
@@ -157,7 +157,7 @@ pub(super) fn rebox(
 ) -> Result<NodePtr<BoxNode>, Abort> {
     let mut b = b;
     if st.mem[b].width != w && !st.mem[b].list_ptr.is_none() && st.mem[b].is_vlist() {
-        b = crate::build::packaging::hpack(st, b.ptr(), PackSpec::NATURAL)?;
+        b = hpack(st, b.ptr(), PackSpec::NATURAL)?;
     }
     if st.mem[b].width == w || st.mem[b].list_ptr.is_none() {
         st.mem[b].width = w;
@@ -186,7 +186,7 @@ pub(super) fn rebox(
     let last = mem.list_tail(first);
     let tail_glue = mem.new_glue(SS_GLUE)?;
     last.set_link(mem, tail_glue.ptr());
-    crate::build::packaging::hpack(st, g.ptr(), PackSpec::Exactly(w))
+    hpack(st, g.ptr(), PackSpec::Exactly(w))
 }
 
 pub(super) fn build_opentype_assembly(
@@ -260,7 +260,7 @@ pub(super) fn build_opentype_assembly(
         st.mem[b].glue_order = GlueOrder::Normal.into();
         st.mem[b].glue_sign = GlueSign::Stretching.into();
         let ratio = f64::from(o) / f64::from(str);
-        st.mem[b].glue_set = crate::memory::node::GlueRatio::new(ratio);
+        st.mem[b].glue_set = GlueRatio::new(ratio);
         let set_dim = nat + Scaled::round(f64::from(str) * ratio);
         if horiz {
             st.mem[b].width = set_dim;

@@ -1,6 +1,8 @@
 //! The line breaker's active list and passive breaks. They live only within
 //! one `line_break` call, so unlike WEB they are kept outside `mem`.
 
+use std::array;
+
 use crate::base::consts::MAX_HALFWORD;
 use crate::base::units::{MemPtr, Scaled};
 use crate::print::errors::Abort;
@@ -101,7 +103,7 @@ pub(crate) type Widths = [Scaled; 7];
 /// The widths `f(1..=6)`, slot 0 zero.
 #[inline]
 pub(crate) fn widths(f: impl Fn(usize) -> Scaled) -> Widths {
-    std::array::from_fn(|k| if k == 0 { Scaled::ZERO } else { f(k) })
+    array::from_fn(|k| if k == 0 { Scaled::ZERO } else { f(k) })
 }
 
 /// What an entry of the active list holds.
@@ -227,6 +229,7 @@ impl BreakLists {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::base::units::MemIdx;
 
     fn delta(w: i32) -> Entry {
         let mut widths = [Scaled::ZERO; 7];
@@ -280,21 +283,18 @@ mod tests {
         let mut lists = BreakLists::default();
         let p = lists
             .push_passive(Passive {
-                cur_break: crate::base::units::MemIdx::from_raw(10),
+                cur_break: MemIdx::from_raw(10),
                 next_break: None,
             })
             .unwrap();
         let q = lists
             .push_passive(Passive {
-                cur_break: crate::base::units::MemIdx::from_raw(20),
+                cur_break: MemIdx::from_raw(20),
                 next_break: Some(p),
             })
             .unwrap();
         assert_eq!(lists.passive(q).next_break, Some(p));
-        assert_eq!(
-            lists.passive(p).cur_break,
-            crate::base::units::MemIdx::from_raw(10)
-        );
+        assert_eq!(lists.passive(p).cur_break, MemIdx::from_raw(10));
         lists.passive_mut(p).next_break = Some(q);
         assert_eq!(lists.passive(p).next_break, Some(q));
     }

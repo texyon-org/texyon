@@ -1,7 +1,5 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Cross-thread cooperative cancellation signal for resident XeTeX work.
 #[derive(Clone, Debug, Default)]

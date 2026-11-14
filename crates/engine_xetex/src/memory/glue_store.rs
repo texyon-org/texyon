@@ -1,7 +1,10 @@
 //! Glue specifications, kept apart from `mem` and shared by reference count.
 
+use std::ops::{Index, IndexMut};
+
 use crate::base::consts::TEX_NULL;
 use crate::base::units::{GlueOrder, Scaled};
+use crate::memory::mem::MemState;
 use crate::memory::node::Stored;
 use crate::preview::journal::{WordDelta, WordJournal};
 use crate::print::errors::Abort;
@@ -161,7 +164,7 @@ impl GlueStore {
     }
 }
 
-impl std::ops::Index<GlueSpecId> for crate::memory::mem::MemState {
+impl Index<GlueSpecId> for MemState {
     type Output = GlueSpec;
 
     #[inline]
@@ -170,7 +173,7 @@ impl std::ops::Index<GlueSpecId> for crate::memory::mem::MemState {
     }
 }
 
-impl std::ops::IndexMut<GlueSpecId> for crate::memory::mem::MemState {
+impl IndexMut<GlueSpecId> for MemState {
     #[inline]
     fn index_mut(&mut self, id: GlueSpecId) -> &mut GlueSpec {
         self.glue.get_mut(id)

@@ -1,19 +1,25 @@
 //! Input stack: token-list and file levels.
 
+use std::mem;
+use std::ops::{Index, IndexMut};
+
 use crate::base::codes::code_enum;
 use crate::base::command::Command;
 use crate::base::params::{IntPar, TokPar};
-use crate::base::token::{Token, TokenList};
-use crate::base::units::BufPos;
-use crate::base::units::StrNumber;
-use crate::files::io::u_close;
+use crate::base::stack::TexStack;
+use crate::base::token::{TokCursor, Token, TokenList};
+use crate::base::units::{BufPos, MemPtr, SavePtr, StrNumber};
+use crate::files::io::{UFile, u_close};
 use crate::memory::mem::MemState;
+use crate::memory::mem_types::ListStateRecord;
 use crate::memory::node::{NodePtr, PseudoFileNode};
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
+use crate::print::errors::{Abort, Capacity, OrConfusion};
+use crate::print::{
+    begin_diagnostic, end_diagnostic, print, print_command, print_esc, print_nl, token_show,
+};
+use crate::scanning::cond_stack::CondId;
 use crate::state::EngineState;
-use crate::tables::cs::CsId;
-use crate::tables::cs::Frozen;
+use crate::tables::cs::{CsId, Frozen};
 
 code_enum! {
     /// What a token-list level reads (`token_type`). It lives in `index`,
@@ -64,7 +70,7 @@ impl TokenType {
     }
 
     /// How `show_context` introduces a level of this type, except a macro.
-    pub(crate) fn label(self, loc: crate::base::token::TokCursor) -> &'static str {
+    pub(crate) fn label(self, loc: TokCursor) -> &'static str {
         match self {
             TokenType::Parameter => "<argument> ",
             TokenType::UTemplate | TokenType::VTemplate => "<template> ",
@@ -115,7 +121,7 @@ fn push_input(st: &mut EngineState) -> Result<(), Abort> {
     let stack = &mut st.input.input_stack;
     stack
         .push(st.input.cur_input)
-        .map_err(|_| stack.overflow(crate::print::errors::Capacity::InputStack))
+        .map_err(|_| stack.overflow(Capacity::InputStack))
 }
 
 #[inline]
@@ -205,7 +211,7 @@ impl MemState {
 pub(crate) fn begin_file_reading(st: &mut EngineState) -> Result<(), Abort> {
     if st.input.in_open == st.input.max_in_open {
         return Err(Abort::Overflow {
-            capacity: crate::print::errors::Capacity::TextInputLevels,
+            capacity: Capacity::TextInputLevels,
             n: i32::try_from(st.input.max_in_open).unwrap_or(i32::MAX),
         });
     }
@@ -216,7 +222,7 @@ pub(crate) fn begin_file_reading(st: &mut EngineState) -> Result<(), Abort> {
     push_input(st)?;
     let idx = st.input.in_open;
     st.input.cur_input.index = u16::try_from(idx).or_confusion("in_open")?;
-    st.input.open_levels[idx] = crate::scanning::input::OpenLevel {
+    st.input.open_levels[idx] = OpenLevel {
         outer_line: st.mem.line,
         grp: st.save_stack.cur_boundary,
         cond: st.scanner.conds.top(),
@@ -239,7 +245,7 @@ pub(crate) fn end_file_reading(st: &mut EngineState) -> Result<(), Abort> {
         InputName::Pseudo { .. } => st.mem.pseudo_close(&mut st.input)?,
         InputName::File(_) => {
             let idx = st.input.cur_input.index as usize;
-            let slot = std::mem::take(&mut st.input.input_file[idx]);
+            let slot = mem::take(&mut st.input.input_file[idx]);
             if u_close(slot) {
                 return Err(Abort::InputClose);
             }
@@ -339,9 +345,6 @@ pub(crate) fn begin_token_list(
         return Ok(());
     }
     if st.eqtb.int_par(IntPar::TracingMacros) > 1 {
-        use crate::print::{
-            begin_diagnostic, end_diagnostic, print, print_command, print_esc, print_nl, token_show,
-        };
         begin_diagnostic(st);
         print_nl(st, "");
         match t {
@@ -363,7 +366,7 @@ pub(crate) fn begin_token_list(
 #[derive(Clone, Default, Debug)]
 pub(crate) struct InputBuffer(pub Vec<i32>);
 
-impl std::ops::Index<BufPos> for InputBuffer {
+impl Index<BufPos> for InputBuffer {
     type Output = i32;
     #[inline(always)]
     fn index(&self, p: BufPos) -> &i32 {
@@ -371,7 +374,7 @@ impl std::ops::Index<BufPos> for InputBuffer {
     }
 }
 
-impl std::ops::IndexMut<BufPos> for InputBuffer {
+impl IndexMut<BufPos> for InputBuffer {
     #[inline(always)]
     fn index_mut(&mut self, p: BufPos) -> &mut i32 {
         &mut self.0[p.index()]
@@ -393,9 +396,9 @@ pub(crate) struct OpenLevel {
     /// The enclosing file's line when this one was opened.
     pub outer_line: i32,
     /// `cur_boundary` when the file was opened.
-    pub grp: Option<crate::base::units::SavePtr>,
+    pub grp: Option<SavePtr>,
     /// `cond_ptr` when the file was opened.
-    pub cond: Option<crate::scanning::cond_stack::CondId>,
+    pub cond: Option<CondId>,
     pub source_name: StrNumber,
     pub full_source_name: StrNumber,
     /// Whether `\everyeof` has been inserted at its end.
@@ -406,7 +409,7 @@ pub(crate) struct OpenLevel {
 /// freed without a walk.
 #[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
 pub(crate) struct MacroParam {
-    pub list: crate::base::token::TokenList,
+    pub list: TokenList,
 }
 
 /// One level of TeX's input stack (`in_state_record`).
@@ -421,9 +424,9 @@ pub(crate) struct InputState {
     pub name: InputName,
     pub synctex_tag: i32,
     /// A token-list level's list, which it frees or drops a reference to when it ends.
-    tok_start: crate::base::token::TokenList,
+    tok_start: TokenList,
     /// The next token a token-list level reads.
-    tok_loc: crate::base::token::TokCursor,
+    tok_loc: TokCursor,
     /// Where a macro level's arguments start on the parameter stack.
     param_start: u32,
 }
@@ -460,9 +463,9 @@ impl InputName {
 
 impl InputClusterState {
     /// TeX's buffer size overflow error.
-    pub(crate) fn buffer_overflow(&self) -> crate::print::errors::Abort {
-        crate::print::errors::Abort::Overflow {
-            capacity: crate::print::errors::Capacity::BufferSize,
+    pub(crate) fn buffer_overflow(&self) -> Abort {
+        Abort::Overflow {
+            capacity: Capacity::BufferSize,
             n: self.buf_size.raw(),
         }
     }
@@ -490,19 +493,19 @@ impl InputState {
 /// `start` and `loc` of a token-list level, which point into the token store.
 impl InputState {
     #[inline]
-    pub(crate) fn token_start(&self) -> crate::base::token::TokenList {
+    pub(crate) fn token_start(&self) -> TokenList {
         self.tok_start
     }
     #[inline]
-    pub(crate) fn token_loc(&self) -> crate::base::token::TokCursor {
+    pub(crate) fn token_loc(&self) -> TokCursor {
         self.tok_loc
     }
     #[inline]
-    pub(crate) fn set_token_loc(&mut self, c: crate::base::token::TokCursor) {
+    pub(crate) fn set_token_loc(&mut self, c: TokCursor) {
         self.tok_loc = c;
     }
     #[inline]
-    pub(crate) fn set_token_start(&mut self, list: crate::base::token::TokenList) {
+    pub(crate) fn set_token_start(&mut self, list: TokenList) {
         self.tok_start = list;
     }
 }
@@ -514,30 +517,30 @@ pub(crate) enum InputSlot {
     Empty,
     /// The terminal, which has no file.
     Terminal,
-    Open(Box<crate::files::io::UFile>),
+    Open(Box<UFile>),
 }
 
 #[derive(Default)]
 pub(crate) struct InputClusterState {
-    pub param_stack: crate::base::stack::TexStack<MacroParam>,
+    pub param_stack: TexStack<MacroParam>,
     /// Per open input file, indexed by `in_open`. Level 0 is the terminal.
     pub open_levels: Vec<OpenLevel>,
     pub buffer: InputBuffer,
-    pub input_stack: crate::base::stack::TexStack<InputState>,
+    pub input_stack: TexStack<InputState>,
     pub cur_input: InputState,
     pub input_file: Vec<InputSlot>,
-    pub nest: crate::base::stack::TexStack<crate::memory::mem_types::ListStateRecord>,
-    pub cur_list: crate::memory::mem_types::ListStateRecord,
+    pub nest: TexStack<ListStateRecord>,
+    pub cur_list: ListStateRecord,
     pub open_parens: i32,
     pub in_open: usize,
-    pub pseudo_files: crate::base::units::MemPtr,
+    pub pseudo_files: MemPtr,
     /// The last usable `buffer` position.
     pub buf_size: BufPos,
     pub max_in_open: usize,
     /// The level `show_context` and its relatives are looking at.
     pub base_ptr: usize,
     pub par_loc: Option<CsId>,
-    pub par_token: crate::base::token::Token,
+    pub par_token: Token,
     pub force_eof: bool,
     pub first: BufPos,
     pub last: BufPos,

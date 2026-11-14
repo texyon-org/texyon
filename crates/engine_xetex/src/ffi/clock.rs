@@ -1,10 +1,12 @@
 //! Wall-clock queries and PDF date strings.
 
-use crate::shipout::ShipoutState;
-use crate::state::EngineState;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(not(windows))]
 use libc::{gmtime, localtime};
+
+use crate::shipout::ShipoutState;
+use crate::state::EngineState;
 
 #[cfg(windows)]
 unsafe extern "C" {
@@ -58,8 +60,8 @@ impl ShipoutState {
 }
 
 pub fn get_seconds_and_micros() -> (i32, i32) {
-    let elapsed = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let elapsed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
     (elapsed.as_secs() as i32, elapsed.subsec_micros() as i32)
 }

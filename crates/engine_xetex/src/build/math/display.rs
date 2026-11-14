@@ -7,22 +7,23 @@ use crate::base::cmd::Cmd;
 use crate::base::consts::{INF_PENALTY, MAX_DIMEN, SCRIPT_SIZE, TEXT_SIZE};
 use crate::base::mode::{Mode, ModeName};
 use crate::base::params::{DimenPar, GluePar, IntPar, TokPar};
-use crate::base::units::MemIdx;
-use crate::base::units::{Dir, GlueOrder, GlueSign, NodeType, Scaled};
-use crate::build::packaging::{AdjustTails, LrState, PackOrigin, PackSpec};
-use crate::fonts::FontState;
-use crate::fonts::QUAD_CODE;
-use crate::memory::mem::MemState;
-use crate::memory::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
+use crate::base::units::{Dir, GlueOrder, GlueSign, MemIdx, NodeType, Scaled};
+use crate::build::linebreak::line_break;
+use crate::build::main_control::{push_math, start_paragraph_language};
+use crate::build::packaging::{
+    AdjustTails, LrState, PackOrigin, PackSpec, append_to_vlist, hpack, hpack_with,
+};
+use crate::build::pagebuilder::build_page;
+use crate::fonts::ext::{insert_special, insert_src_special};
+use crate::fonts::{FontState, QUAD_CODE};
+use crate::memory::mem::{ADJUST_HEAD, MemState, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE, push_nest};
 use crate::memory::node::{AnyNode, BoxLr, BoxNode, GlueNode, MathCode, NodePtr};
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
-use crate::scanning::input::TokenType;
+use crate::print::errors::{Abort, OrConfusion, back_error, error};
+use crate::scanning::input::{TokenType, back_input, begin_token_list};
+use crate::scanning::scan::{get_token, get_x_token};
 use crate::state::EngineState;
-use crate::tables::eqtb::EqtbState;
-use crate::tables::eqtb::define;
-use crate::tables::save::GroupCode;
-use crate::tables::save::Saved;
+use crate::tables::eqtb::{EqtbState, define};
+use crate::tables::save::{GroupCode, Saved, unsave};
 
 const TOTAL_MATHSY_PARAMS: i32 = 22;
 const TOTAL_MATHEX_PARAMS: i32 = 13;
@@ -32,19 +33,19 @@ pub(crate) fn resume_after_display(st: &mut EngineState) -> Result<(), Abort> {
         return Err(Abort::Confusion("display"));
     }
 
-    crate::tables::save::unsave(st)?;
+    unsave(st)?;
     st.input.cur_list.prev_graf = st.input.cur_list.prev_graf.wrapping_add(3);
-    crate::memory::mem::push_nest(st)?;
+    push_nest(st)?;
     st.input.cur_list.mode = Mode::horizontal(false);
 
-    crate::build::main_control::start_paragraph_language(st)?;
+    start_paragraph_language(st)?;
 
-    crate::scanning::scan::get_x_token(st)?;
+    get_x_token(st)?;
     if st.scanner.cur.cmd() != Cmd::Spacer {
-        crate::scanning::input::back_input(st)?;
+        back_input(st)?;
     }
     if st.input.nest.len() == 1 {
-        crate::build::pagebuilder::build_page(st)?;
+        build_page(st)?;
     }
     Ok(())
 }
@@ -98,7 +99,7 @@ fn app_display(
     let x = st.eqtb.int_par(IntPar::PreDisplayDirection);
     if x == 0 {
         st.mem[orig].shift_amount = s + d;
-        crate::build::packaging::append_to_vlist(st, orig)?;
+        append_to_vlist(st, orig)?;
         return Ok(());
     }
 
@@ -187,13 +188,13 @@ fn app_display(
         u.set_link(&mut st.mem, Some(r));
         match copy {
             None => {
-                b = crate::build::packaging::hpack(st, Some(u), PackSpec::NATURAL)?;
+                b = hpack(st, Some(u), PackSpec::NATURAL)?;
                 st.mem[b].shift_amount = s;
             }
             Some(bc) => st.mem[bc].list_ptr = Some(u),
         }
     }
-    crate::build::packaging::append_to_vlist(st, b)?;
+    append_to_vlist(st, b)?;
     Ok(())
 }
 
@@ -222,15 +223,15 @@ fn check_math_fonts(st: &mut EngineState) -> Result<bool, Abort> {
     } else {
         return Ok(false);
     };
-    crate::print::errors::error(st, msg, &help)?;
+    error(st, msg, &help)?;
     st.input.cur_list.flush_math(&mut st.mem)?;
     Ok(true)
 }
 
 pub(crate) fn check_display_end(st: &mut EngineState) -> Result<(), Abort> {
-    crate::scanning::scan::get_x_token(st)?;
+    get_x_token(st)?;
     if st.scanner.cur.cmd() != Cmd::MathShift {
-        crate::print::errors::back_error(
+        back_error(
             st,
             "Display math should end with $$",
             &[
@@ -262,10 +263,10 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     if inline && st.input.cur_list.mode.name() == ModeName::DisplayMath {
         check_display_end(st)?;
         let hlist = mlist_to_hlist(st, p, MathStyle::TEXT, false)?;
-        let eqno = crate::build::packaging::hpack(st, hlist, PackSpec::NATURAL)?;
+        let eqno = hpack(st, hlist, PackSpec::NATURAL)?;
         st.mem[eqno].set_lr(BoxLr::Dlist);
         a = Some(eqno);
-        crate::tables::save::unsave(st)?;
+        unsave(st)?;
         match st.save_stack.pop_saved() {
             Some(Saved::EqNo { left }) => l = left,
             _ => return Err(Abort::Confusion("eqno")),
@@ -293,10 +294,10 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
         st.input.cur_list.set_space_factor(1000)?;
 
         if st.config.semantic_pagination_enabled {
-            crate::fonts::ext::insert_special(st, "tdux:ce math")?;
+            insert_special(st, "tdux:ce math")?;
         }
 
-        crate::tables::save::unsave(st)?;
+        unsave(st)?;
         return Ok(());
     }
 
@@ -305,7 +306,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     }
     let mut p = mlist_to_hlist(st, p, MathStyle::DISPLAY, false)?;
     let mut adjust = AdjustTails::HEADS;
-    let packed = crate::build::packaging::hpack_with(
+    let packed = hpack_with(
         st,
         p,
         PackSpec::NATURAL,
@@ -341,12 +342,12 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
                 || packed.shrink[GlueOrder::Filll] != Scaled::ZERO)
         {
             b.free(&mut st.mem);
-            b = crate::build::packaging::hpack(st, p, PackSpec::Exactly(z - q))?;
+            b = hpack(st, p, PackSpec::Exactly(z - q))?;
         } else {
             e = Scaled::ZERO;
             if w > z {
                 b.free(&mut st.mem);
-                b = crate::build::packaging::hpack(st, p, PackSpec::Exactly(z))?;
+                b = hpack(st, p, PackSpec::Exactly(z))?;
             }
         }
         w = st.mem[b].width;
@@ -398,7 +399,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
             st.mem[b].link = r.ptr();
             st.mem[r].link = eqno.ptr();
         }
-        b = crate::build::packaging::hpack(st, b.ptr(), PackSpec::NATURAL)?;
+        b = hpack(st, b.ptr(), PackSpec::NATURAL)?;
     }
 
     app_display(st, j, b, d)?;
@@ -438,7 +439,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     if st.config.semantic_pagination_enabled {
-        crate::fonts::ext::insert_special(st, "tdux:ce dmath")?;
+        insert_special(st, "tdux:ce dmath")?;
     }
 
     resume_after_display(st)
@@ -466,7 +467,7 @@ fn side_skip(st: &mut EngineState, param: GluePar) -> Result<MemIdx, Abort> {
 }
 
 pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
-    crate::scanning::scan::get_token(st)?;
+    get_token(st)?;
 
     if st.scanner.cur.cmd() == Cmd::MathShift && st.input.cur_list.mode.is_outer() {
         let mut j = None;
@@ -477,7 +478,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
             st.mem.pop_nest(&mut st.input)?;
             x = pre_display_direction(st);
         } else {
-            let jb = crate::build::linebreak::line_break(st, true)?;
+            let jb = line_break(st, true)?;
 
             let right = side_skip(st, GluePar::RightSkip)?;
             let left = side_skip(st, GluePar::LeftSkip)?;
@@ -662,7 +663,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
 
-        crate::build::main_control::push_math(st, GroupCode::MathShift)?;
+        push_math(st, GroupCode::MathShift)?;
         st.input.cur_list.mode = Mode::math(false);
         define(st, false, IntPar::CurFam.loc(), -1)?;
         define(st, false, DimenPar::PreDisplaySize.loc(), w)?;
@@ -672,29 +673,29 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
         define(st, false, DimenPar::DisplayIndent.loc(), s)?;
 
         if st.config.semantic_pagination_enabled {
-            crate::fonts::ext::insert_special(st, "tdux:cs dmath")?;
+            insert_special(st, "tdux:cs dmath")?;
         }
 
         let every_display = st.eqtb.tok_par(TokPar::EveryDisplay);
         if !every_display.is_null() {
-            crate::scanning::input::begin_token_list(st, every_display, TokenType::EveryDisplay)?;
+            begin_token_list(st, every_display, TokenType::EveryDisplay)?;
         }
         if st.input.nest.len() == 1 {
-            crate::build::pagebuilder::build_page(st)?;
+            build_page(st)?;
         }
     } else {
-        crate::scanning::input::back_input(st)?;
-        crate::build::main_control::push_math(st, GroupCode::MathShift)?;
+        back_input(st)?;
+        push_math(st, GroupCode::MathShift)?;
         define(st, false, IntPar::CurFam.loc(), -1)?;
         if st.shipout.insert_src_special_every_math {
-            crate::fonts::ext::insert_src_special(st)?;
+            insert_src_special(st)?;
         }
         if st.config.semantic_pagination_enabled {
-            crate::fonts::ext::insert_special(st, "tdux:cs math")?;
+            insert_special(st, "tdux:cs math")?;
         }
         let every_math = st.eqtb.tok_par(TokPar::EveryMath);
         if !every_math.is_null() {
-            crate::scanning::input::begin_token_list(st, every_math, TokenType::EveryMath)?;
+            begin_token_list(st, every_math, TokenType::EveryMath)?;
         }
     }
     Ok(())

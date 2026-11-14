@@ -3,22 +3,37 @@
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::marker::PhantomData;
+use std::panic::AssertUnwindSafe;
 use std::ptr::NonNull;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime};
+use std::{mem, panic};
 
 use texyon_bridge_core::{CoreBridgeLauncher, CoreBridgeState};
 use texyon_errors::prelude::*;
 
-use crate::EngineCancellation;
+use crate::engine::{
+    InitOutcome, cleanup, initialize_engine, release_operation_inputs, resume_resident_document,
+    run_resident_document,
+};
+use crate::ffi::bridge::{enter, output_open_stdout};
+use crate::files::io::close_files_and_terminate;
 use crate::preview::checkpoint::{
     BudgetError, CheckpointLadder, EngineBundle, LadderBudget, RungAdmission, StringWatermark,
 };
+use crate::preview::introspect;
+use crate::preview::introspect::DefinedCommand;
+use crate::preview::journal::arm;
+use crate::preview::replay::adapter::{install, observed_bytes, open_position};
+use crate::preview::replay::fence::ReplayFence;
 use crate::preview::replay::source::SourcePath;
+use crate::preview::sync_index::{PreviewSyncIndex, SyncIndex};
 use crate::print::errors::Abort;
 use crate::state::{EngineExecutionMode, EngineState};
-use crate::{PageExecution, SourceRevision, SourceSnapshot, TexOutcome};
+use crate::{
+    Diagnostic, EngineCancellation, PageExecution, SourceRevision, SourceSnapshot, TexOutcome,
+};
 
 static RESIDENT_ACTIVE: AtomicBool = AtomicBool::new(false);
 
@@ -98,8 +113,7 @@ fn install_fence_controller(
             strings_base,
             budget,
             next_clock: current_clock.saturating_add(PERIODIC_FENCE_TOKENS),
-            next_source_bytes: crate::preview::replay::adapter::observed_bytes()
-                .saturating_add(FIRST_PERIODIC_FENCE_SOURCE_BYTES),
+            next_source_bytes: observed_bytes().saturating_add(FIRST_PERIODIC_FENCE_SOURCE_BYTES),
             pending_fences,
             horizon_last,
             horizon_deadline,
@@ -153,7 +167,7 @@ fn capture_fence(
             allow_periodic_or_horizon && controller.horizon_last.is_some_and(|last| shipped > last);
         let mut protected = false;
         for (path, fences) in &mut controller.pending_fences {
-            let Some(position) = crate::preview::replay::adapter::open_position(path) else {
+            let Some(position) = open_position(path) else {
                 continue;
             };
             if fences.first().is_some_and(|offset| position >= *offset) {
@@ -164,7 +178,7 @@ fn capture_fence(
         controller
             .pending_fences
             .retain(|(_, fences)| !fences.is_empty());
-        let observed_bytes = crate::preview::replay::adapter::observed_bytes();
+        let observed_bytes = observed_bytes();
         let periodic_due = allow_periodic_or_horizon
             && (state.scanner.logical_clock >= controller.next_clock
                 || observed_bytes >= controller.next_source_bytes);
@@ -180,11 +194,7 @@ fn capture_fence(
         // call on this thread. Both pointees outlive the guard and are not
         // accessed through another reference while this hook runs.
         let snapshot = unsafe { controller.snapshot.as_ref() };
-        let Some(fence) = crate::preview::replay::fence::ReplayFence::capture(
-            state,
-            snapshot,
-            resume_pending_command,
-        ) else {
+        let Some(fence) = ReplayFence::capture(state, snapshot, resume_pending_command) else {
             return false;
         };
         // SAFETY: as for `snapshot` above.
@@ -300,7 +310,7 @@ pub struct EngineFrame {
     /// Page-boundary execution facts for exact XDV suffix comparison.
     pub pages: Vec<PageExecution>,
     /// In-memory source geometry produced for the operation's coherent coverage.
-    pub sync_index: crate::preview::sync_index::SyncIndex,
+    pub sync_index: SyncIndex,
     /// Old-document byte prefix retained by a fence-local replay.
     pub splice_at: Option<usize>,
     /// Number of checkpoint rungs retained after this operation.
@@ -323,7 +333,7 @@ pub struct EngineFrame {
     /// since a resumed run writes only what it executed.
     pub log_resumed_at: Option<u64>,
     /// What this operation reported, in order.
-    pub diagnostics: Vec<crate::Diagnostic>,
+    pub diagnostics: Vec<Diagnostic>,
     /// Diagnostics of the previous operation that come before this one's,
     /// since a resumed run reports only what it executed.
     pub diagnostics_resumed_at: Option<usize>,
@@ -422,15 +432,15 @@ impl IncrementalXeTeXSession {
             Ok(catch_operation(api, state, |state| {
                 configure(state, &config);
                 let fence_sources = sources.clone();
-                let _sources = crate::preview::replay::adapter::install(sources, written);
-                match crate::engine::initialize_engine(state, &format, build_date) {
-                    crate::engine::InitOutcome::Ready => {}
-                    crate::engine::InitOutcome::Terminate(history) => {
+                let _sources = install(sources, written);
+                match initialize_engine(state, &format, build_date) {
+                    InitOutcome::Ready => {}
+                    InitOutcome::Terminate(history) => {
                         return OperationResult::Terminal(history);
                     }
                 }
                 state.config.execution_mode = EngineExecutionMode::Resident;
-                crate::preview::journal::arm(state);
+                arm(state);
                 let base = StringWatermark::capture(state);
                 let mut new_ladder =
                     match CheckpointLadder::from_engine_with_budget(state, base, budget) {
@@ -489,7 +499,7 @@ impl IncrementalXeTeXSession {
             bail!("resident XeTeX session was edited before open");
         }
         self.pending_continuation = None;
-        let from_start = std::mem::take(&mut self.from_start);
+        let from_start = mem::take(&mut self.from_start);
         let input = sources.primary().as_str().to_owned();
         let revision = sources.revision();
         let pending_fences = self
@@ -517,9 +527,9 @@ impl IncrementalXeTeXSession {
         let result = launcher.with_global_lock(|api| {
             Ok(catch_operation(api, state, |state| {
                 let fence_sources = sources.clone();
-                let _sources = crate::preview::replay::adapter::install(sources, written);
+                let _sources = install(sources, written);
                 let splice = if let Some((target, fence)) = selection {
-                    crate::engine::release_operation_inputs(state);
+                    release_operation_inputs(state);
                     ladder.rewind_engine(state, target);
                     assert!(
                         fence.restore_inputs(state),
@@ -537,7 +547,7 @@ impl IncrementalXeTeXSession {
                 let horizon_last = viewport.map(|range| range.last.max(first_shipped));
                 ladder.clear_protections();
                 configure(state, &config);
-                state.shipout.rust_stdout = crate::ffi::bridge::output_open_stdout();
+                state.shipout.rust_stdout = output_open_stdout();
                 run_document(
                     state,
                     ladder,
@@ -621,8 +631,8 @@ impl IncrementalXeTeXSession {
         let mut checkpoint_activity = CheckpointActivity::default();
         let result = launcher.with_global_lock(|api| {
             Ok(catch_operation(api, state, |state| {
-                let _sources = crate::preview::replay::adapter::install(sources, written);
-                crate::engine::release_operation_inputs(state);
+                let _sources = install(sources, written);
+                release_operation_inputs(state);
                 ladder.rewind_engine(state, target);
                 if !fence.restore_inputs(state) {
                     ladder.rewind_engine(state, 0);
@@ -636,7 +646,7 @@ impl IncrementalXeTeXSession {
                     ladder.unprotect(target);
                 }
                 configure(state, &config);
-                state.shipout.rust_stdout = crate::ffi::bridge::output_open_stdout();
+                state.shipout.rust_stdout = output_open_stdout();
                 run_document(
                     state,
                     ladder,
@@ -675,8 +685,8 @@ impl IncrementalXeTeXSession {
     /// only the format's own definitions, and after a compile it holds those
     /// plus everything the preamble and the document added. Reading it changes
     /// nothing, so it is safe to call between operations.
-    pub fn defined_commands(&self) -> Vec<crate::preview::introspect::DefinedCommand> {
-        crate::preview::introspect::defined_commands(&self.state)
+    pub fn defined_commands(&self) -> Vec<DefinedCommand> {
+        introspect::defined_commands(&self.state)
     }
 
     /// Make the next [`edit`](Self::edit) typeset the whole document, even with unchanged sources.
@@ -701,11 +711,11 @@ impl IncrementalXeTeXSession {
         let state = &mut *self.state;
         let ladder = self.ladder.as_mut().expect("opened session without ladder");
         let teardown = launcher.with_global_lock(|api| {
-            Ok(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            Ok(panic::catch_unwind(AssertUnwindSafe(|| {
                 run_locked(api, state, |state| {
-                    crate::engine::release_operation_inputs(state);
+                    release_operation_inputs(state);
                     ladder.rewind_engine(state, 0);
-                    crate::engine::cleanup(state);
+                    cleanup(state);
                 })
             }))
             .is_err())
@@ -800,7 +810,7 @@ impl IncrementalXeTeXSession {
             .synctex
             .preview_index
             .as_ref()
-            .map(crate::preview::sync_index::PreviewSyncIndex::snapshot)
+            .map(PreviewSyncIndex::snapshot)
             .unwrap_or_default();
         frame.splice_at = splice_at;
         frame.tail_pending = tail_pending;
@@ -897,21 +907,19 @@ fn run_document(
     state.shipout.log_resumed_at = None;
     state.diagnostics.begin_operation();
     let execution = match splice {
-        Some(splice) => {
-            crate::engine::resume_resident_document(state, splice.resume_pending_command)
-        }
-        None => crate::engine::run_resident_document(state, input),
+        Some(splice) => resume_resident_document(state, splice.resume_pending_command),
+        None => run_resident_document(state, input),
     };
     match execution {
         Ok(history) => OperationResult::Complete { history, splice_at },
         Err(Abort::Horizoned) => {
             let Some(rung) = horizon_rung else {
-                crate::engine::release_operation_inputs(state);
+                release_operation_inputs(state);
                 ladder.rewind_engine(state, 0);
                 return OperationResult::Aborted;
             };
-            crate::engine::release_operation_inputs(state);
-            if crate::files::io::close_files_and_terminate(state).is_err() {
+            release_operation_inputs(state);
+            if close_files_and_terminate(state).is_err() {
                 ladder.rewind_engine(state, 0);
                 return OperationResult::Aborted;
             }
@@ -924,7 +932,7 @@ fn run_document(
             }
         }
         Err(error) => {
-            crate::engine::release_operation_inputs(state);
+            release_operation_inputs(state);
             // Both cancellation and fatal aborts stop at a journal-coherent
             // point, so rewind to the replay origin rather than rung zero.
             let recovery_rung = recovery_rung_clock
@@ -1005,10 +1013,8 @@ fn catch_operation(
     state: &mut EngineState,
     operation: impl FnOnce(&mut EngineState) -> OperationResult,
 ) -> OperationResult {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        run_locked(api, state, operation)
-    }))
-    .unwrap_or(OperationResult::Panicked)
+    panic::catch_unwind(AssertUnwindSafe(|| run_locked(api, state, operation)))
+        .unwrap_or(OperationResult::Panicked)
 }
 
 fn run_locked<R>(
@@ -1016,7 +1022,7 @@ fn run_locked<R>(
     state: &mut EngineState,
     operation: impl FnOnce(&mut EngineState) -> R,
 ) -> R {
-    let _bridge = crate::ffi::bridge::enter(api);
+    let _bridge = enter(api);
     operation(state)
 }
 

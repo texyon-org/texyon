@@ -3,24 +3,27 @@
 
 pub(crate) use crate::base::consts::TEX_NULL;
 use crate::base::params::GluePar;
-use crate::base::units::RawPtr;
+use crate::base::token::TokenStore;
 use crate::base::units::{
-    FontId, GlueOrder, GlueSign, MemAddr, MemIdx, MemPtr, NodeType, Orientation, Scaled,
+    FontId, GlueOrder, GlueSign, MemAddr, MemIdx, MemPtr, NodeType, Orientation, RawPtr, Scaled,
 };
+use crate::build::math::MathStyle;
 use crate::fonts::Side;
-use crate::memory::glue_store::GlueSpecId;
+pub(crate) use crate::memory::glue_store::{FIL_GLUE, FIL_NEG_GLUE, FILL_GLUE, SS_GLUE, ZERO_GLUE};
+use crate::memory::glue_store::{GlueSpecId, GlueStore};
+use crate::memory::glyph_arena::GlyphBlobArena;
 use crate::memory::mem_types::ListStateRecord;
 use crate::memory::node::{
-    BoxLr, BoxNode, CharNode, ChoiceNode, DiscNode, GlueKind, GlueNode, HeadNode, HyphPosNode,
-    KernNode, KernSubtype, LigBoundary, LigItem, LigatureNode, ListRecord, LrNode, MarginKernNode,
-    MathCode, MathNode, Noad, Node, NodePtr, PageInsNode, PenaltyNode, RuleDimen, RuleNode,
-    SpanNode, StyleNode, View, WhatsitKind, WhatsitSubtype,
+    BoxLr, BoxNode, CharNode, ChoiceNode, DiscNode, GlueKind, GlueNode, GlueRatio, HeadNode,
+    HyphPosNode, KernNode, KernSubtype, LigBoundary, LigItem, LigatureNode, ListRecord, LrNode,
+    MarginKernNode, MathCode, MathNode, Noad, Node, NodePtr, PageInsNode, PenaltyNode, RuleDimen,
+    RuleNode, SpanNode, StyleNode, SyncStamp, View, WhatsitKind, WhatsitSubtype,
 };
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
+use crate::preview::journal::WordJournal;
+use crate::print::errors::{Abort, Capacity, OrConfusion};
+use crate::scanning::input::InputClusterState;
+use crate::state::EngineState;
 use crate::tables::eqtb::EqtbState;
-
-pub(crate) use crate::memory::glue_store::{FIL_GLUE, FIL_NEG_GLUE, FILL_GLUE, SS_GLUE, ZERO_GLUE};
 
 /// Sizes below this have a free list each, indexed by the size. It covers every
 /// fixed node and the variable ones up to e-TeX's old 66-word sparse index node.
@@ -287,7 +290,7 @@ impl MemState {
         node.list_ptr = None;
         node.glue_sign = GlueSign::Normal.into();
         node.glue_order = GlueOrder::Normal.into();
-        node.glue_set = crate::memory::node::GlueRatio::new(0.0);
+        node.glue_set = GlueRatio::new(0.0);
         Ok(p)
     }
 
@@ -426,10 +429,7 @@ impl MemState {
         Ok(p)
     }
 
-    pub fn new_style(
-        &mut self,
-        s: crate::build::math::MathStyle,
-    ) -> Result<NodePtr<StyleNode>, Abort> {
+    pub fn new_style(&mut self, s: MathStyle) -> Result<NodePtr<StyleNode>, Abort> {
         let p = NodePtr::<StyleNode>::alloc(self)?;
         let node = &mut self[p];
         node.style = s;
@@ -476,13 +476,11 @@ impl MemState {
 
 // --- the semantic nest ---
 
-pub(crate) fn push_nest(st: &mut crate::state::EngineState) -> Result<(), Abort> {
-    st.input.nest.push(st.input.cur_list).map_err(|_| {
-        Abort::overflow(
-            crate::print::errors::Capacity::SemanticNest,
-            st.input.nest.size(),
-        )
-    })?;
+pub(crate) fn push_nest(st: &mut EngineState) -> Result<(), Abort> {
+    st.input
+        .nest
+        .push(st.input.cur_list)
+        .map_err(|_| Abort::overflow(Capacity::SemanticNest, st.input.nest.size()))?;
     let h = NodePtr::<HeadNode>::alloc(&mut st.mem)?.idx();
     let cl = &mut st.input.cur_list;
     cl.head = h;
@@ -494,10 +492,7 @@ pub(crate) fn push_nest(st: &mut crate::state::EngineState) -> Result<(), Abort>
 }
 
 impl MemState {
-    pub fn pop_nest(
-        &mut self,
-        input: &mut crate::scanning::input::InputClusterState,
-    ) -> Result<(), Abort> {
+    pub fn pop_nest(&mut self, input: &mut InputClusterState) -> Result<(), Abort> {
         NodePtr::<HeadNode>::at(input.cur_list.head).free(self);
         input.cur_list = input.nest.pop().or_confusion("pop_nest")?;
         Ok(())
@@ -511,25 +506,25 @@ pub(crate) struct MemState {
     /// The node arena, in 32-bit words.
     pub data: Vec<u32>,
     /// Owned shaped-glyph payloads referenced by handles in native nodes.
-    pub glyph_blobs: crate::memory::glyph_arena::GlyphBlobArena,
+    pub glyph_blobs: GlyphBlobArena,
     /// The token lists, a store of their own.
-    pub tokens: crate::base::token::TokenStore,
+    pub tokens: TokenStore,
     /// The glue specifications.
-    pub glue: crate::memory::glue_store::GlueStore,
-    pub journal: crate::preview::journal::WordJournal<u32>,
+    pub glue: GlueStore,
+    pub journal: WordJournal<u32>,
     /// The free list of each node size.
-    pub free: crate::memory::mem::FreeLists,
+    pub free: FreeLists,
     /// TeX's `line`, kept here because `get_node` stamps it into new nodes.
     pub line: i32,
     pub cur_synctex_tag: i32,
-    pub temp_ptr: crate::base::units::MemPtr,
+    pub temp_ptr: MemPtr,
 }
 
 impl MemState {
     /// The SyncTeX tag and line a node made now is stamped with.
     #[inline]
-    pub(crate) fn sync_stamp(&self) -> crate::memory::node::SyncStamp {
-        crate::memory::node::SyncStamp {
+    pub(crate) fn sync_stamp(&self) -> SyncStamp {
+        SyncStamp {
             tag: self.cur_synctex_tag,
             line: self.line,
         }

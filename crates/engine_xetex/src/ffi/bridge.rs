@@ -11,8 +11,12 @@ use std::ptr;
 use std::sync::atomic::{AtomicPtr, Ordering};
 
 use texyon_bridge_core::{CoreBridgeState, FoundAs, InputId, OutputId};
-
 pub(crate) use texyon_bridge_core::{Diagnostic, FileFormat};
+
+use crate::preview::replay::adapter::{
+    clear_last_path, close, get_size, getc, holds_directory, is_mem, last_abspath, open_named,
+    open_primary, opened_last, read, record_written, seek, ungetc,
+};
 
 /// The bridge state of the current run. Every run holds the engine lock, so
 /// one slot serves all threads.
@@ -77,24 +81,24 @@ fn c_view(bytes: &[u8]) -> Cow<'_, str> {
 /// Opens input file `path`, or returns 0.
 pub(crate) fn input_open(path: &[u8], format: FileFormat, is_gz: bool) -> usize {
     let path = String::from_utf8_lossy(path);
-    if let Some(handle) = crate::preview::replay::adapter::open_named(&path, format) {
+    if let Some(handle) = open_named(&path, format) {
         return handle;
     }
-    crate::preview::replay::adapter::clear_last_path();
+    clear_last_path();
     InputId::to_raw(with_bridge(|es| es.input_open(&path, format, is_gz)))
 }
 
 pub(crate) fn input_open_primary() -> usize {
-    if let Some(handle) = crate::preview::replay::adapter::open_primary() {
+    if let Some(handle) = open_primary() {
         return handle;
     }
-    crate::preview::replay::adapter::clear_last_path();
+    clear_last_path();
     InputId::to_raw(with_bridge(|es| es.input_open_primary()))
 }
 
 /// How the I/O layer found the last input.
 pub(crate) fn last_input_found() -> FoundAs {
-    if crate::preview::replay::adapter::opened_last() {
+    if opened_last() {
         return FoundAs::Asked;
     }
     with_bridge(|es| es.latest_input_found().clone())
@@ -105,7 +109,7 @@ const ABSPATH_CAPACITY: usize = 1024;
 
 /// The absolute path of the last opened input, empty when unknown.
 pub(crate) fn last_input_abspath() -> Vec<u8> {
-    if let Some(path) = crate::preview::replay::adapter::last_abspath(ABSPATH_CAPACITY - 1) {
+    if let Some(path) = last_abspath(ABSPATH_CAPACITY - 1) {
         return path;
     }
     with_bridge(|es| match es.latest_input_abspath() {
@@ -118,14 +122,14 @@ pub(crate) fn last_input_abspath() -> Vec<u8> {
 }
 
 pub(crate) fn input_get_size(handle: usize) -> usize {
-    if let Some(size) = crate::preview::replay::adapter::get_size(handle) {
+    if let Some(size) = get_size(handle) {
         return size;
     }
     with_bridge(|es| es.input_get_size(input_id(handle)))
 }
 
 pub(crate) fn input_get_mtime(handle: usize) -> libc::time_t {
-    if crate::preview::replay::adapter::is_mem(handle) {
+    if is_mem(handle) {
         return 0;
     }
     with_bridge(|es| es.input_get_mtime(input_id(handle))) as libc::time_t
@@ -133,14 +137,14 @@ pub(crate) fn input_get_mtime(handle: usize) -> libc::time_t {
 
 /// The next byte of `handle`, or `EOF`.
 pub(crate) fn input_getc(handle: usize) -> libc::c_int {
-    if let Some(value) = crate::preview::replay::adapter::getc(handle) {
+    if let Some(value) = getc(handle) {
         return value;
     }
     with_bridge(|es| es.input_getc(input_id(handle))).map_or(texyon_bridge_core::EOF, i32::from)
 }
 
 pub(crate) fn input_ungetc(handle: usize, ch: libc::c_int) {
-    if crate::preview::replay::adapter::ungetc(handle, ch).is_some() {
+    if ungetc(handle, ch).is_some() {
         return;
     }
     with_bridge(|es| es.input_ungetc(input_id(handle), ch as u8));
@@ -149,7 +153,7 @@ pub(crate) fn input_ungetc(handle: usize, ch: libc::c_int) {
 /// Fills `buf` from `handle`, returning whether it was filled.
 #[must_use]
 pub(crate) fn input_read(handle: usize, buf: &mut [u8]) -> bool {
-    if let Some(value) = crate::preview::replay::adapter::read(handle, buf) {
+    if let Some(value) = read(handle, buf) {
         return value >= 0;
     }
     with_bridge(|es| es.input_read(input_id(handle), buf)).is_ok()
@@ -157,9 +161,7 @@ pub(crate) fn input_read(handle: usize, buf: &mut [u8]) -> bool {
 
 /// Seeks `handle` to byte `offset`, returning the new position.
 pub(crate) fn input_seek(handle: usize, offset: u64) -> usize {
-    if let Some(position) =
-        crate::preview::replay::adapter::seek(handle, offset as libc::ssize_t, libc::SEEK_SET)
-    {
+    if let Some(position) = seek(handle, offset as libc::ssize_t, libc::SEEK_SET) {
         return position;
     }
     with_bridge(|es| es.input_seek(input_id(handle), SeekFrom::Start(offset))) as usize
@@ -168,7 +170,7 @@ pub(crate) fn input_seek(handle: usize, offset: u64) -> usize {
 /// Returns `true` on a serious internal close error.
 #[must_use]
 pub(crate) fn input_close(handle: usize) -> bool {
-    if let Some(error) = crate::preview::replay::adapter::close(handle) {
+    if let Some(error) = close(handle) {
         return error;
     }
     InputId::from_raw(handle).is_some_and(|id| with_bridge(|es| es.input_close(id)))
@@ -177,15 +179,14 @@ pub(crate) fn input_close(handle: usize) -> bool {
 /// Opens output file `path`, or returns 0.
 pub(crate) fn output_open(path: &[u8], is_gz: bool) -> usize {
     let path = String::from_utf8_lossy(path);
-    crate::preview::replay::adapter::record_written(&path);
+    record_written(&path);
     OutputId::to_raw(with_bridge(|es| es.output_open(&path, is_gz)))
 }
 
 /// Whether directory `dir` of the document exists, among the editor's buffers or the host's files.
 pub(crate) fn directory_exists(dir: &[u8]) -> bool {
     let dir = String::from_utf8_lossy(dir);
-    crate::preview::replay::adapter::holds_directory(&dir)
-        || with_bridge(|es| es.directory_exists(&dir))
+    holds_directory(&dir) || with_bridge(|es| es.directory_exists(&dir))
 }
 
 pub(crate) fn output_open_stdout() -> usize {

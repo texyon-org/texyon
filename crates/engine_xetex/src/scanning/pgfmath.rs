@@ -2,16 +2,18 @@
 //! defines `\pgfmathresult` and is redirected to `\pgfmath@parse@end`, which takes
 //! the same argument. Results may differ from pgf's macros in the last digits.
 
-use crate::base::command::Command;
-use crate::tables::cs::CsId;
 use std::collections::HashMap;
+use std::{iter, mem, slice};
 
 use crate::base::cmd::Cmd;
-
+use crate::base::command::Command;
 use crate::base::params::IntPar;
 use crate::base::token::{Token, TokenKind, TokenList};
+use crate::fonts::{QUAD_CODE, X_HEIGHT_CODE};
 use crate::print::errors::{Abort, OrConfusion};
 use crate::state::EngineState;
+use crate::tables::cs::CsId;
+use crate::tables::eqtb::define;
 
 pub(crate) mod eval;
 
@@ -300,7 +302,7 @@ fn identifiers(items: &[(Item, bool)]) -> Vec<Vec<u8>> {
             && !space
             && c.is_some_and(|c| c == b'_' || c.is_ascii_alphanumeric());
         if !continues && !current.is_empty() {
-            out.push(std::mem::take(&mut current));
+            out.push(mem::take(&mut current));
         }
         if continues || c.is_some_and(|c| c == b'_' || c.is_ascii_alphabetic()) {
             current.push(c.expect("char"));
@@ -446,8 +448,8 @@ fn selected_font(st: &mut EngineState, known: &Complete) -> Option<eval::Font> {
         return None;
     };
     Some(eval::Font {
-        quad: st.fonts.param(font, crate::fonts::QUAD_CODE).raw(),
-        x_height: st.fonts.param(font, crate::fonts::X_HEIGHT_CODE).raw(),
+        quad: st.fonts.param(font, QUAD_CODE).raw(),
+        x_height: st.fonts.param(font, X_HEIGHT_CODE).raw(),
     })
 }
 
@@ -477,12 +479,12 @@ fn commit(st: &mut EngineState, known: &Complete, answer: &Answer) -> Result<(),
         Answer::Parsed(outcome) => {
             if outcome.units {
                 let m = st.eqtb.meaning(known.if_true());
-                crate::tables::eqtb::define(st, true, known.units_declared(), m)?;
+                define(st, true, known.units_declared(), m)?;
             }
             result_macro(st, &outcome.result)?
         }
     };
-    crate::tables::eqtb::define(st, false, known.result(), Command::Call(body))
+    define(st, false, known.result(), Command::Call(body))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -534,7 +536,7 @@ fn expand_full(st: &EngineState, tokens: &[Token], depth: u32) -> Option<Vec<u8>
         if let Some(cs) = t.cs() {
             out.extend(expand_full(st, &macro_tokens(st, cs)?, depth + 1)?);
         } else {
-            out.extend(chars(std::slice::from_ref(t))?);
+            out.extend(chars(slice::from_ref(t))?);
         }
     }
     Some(out)
@@ -569,7 +571,7 @@ fn to_fixed(float: &[u8]) -> Option<Vec<u8>> {
         let mut out = Vec::new();
         if e < 0 {
             out.extend_from_slice(b"0.");
-            out.extend(std::iter::repeat_n(b'0', (-e - 1) as usize));
+            out.extend(iter::repeat_n(b'0', (-e - 1) as usize));
             out.extend_from_slice(int);
             if frac != b"0" {
                 out.extend_from_slice(frac);
@@ -594,7 +596,7 @@ fn to_fixed(float: &[u8]) -> Option<Vec<u8>> {
             rest = &rest[1..];
             e -= 1;
             if rest.is_empty() {
-                out.extend(std::iter::repeat_n(b'0', e));
+                out.extend(iter::repeat_n(b'0', e));
                 out.extend_from_slice(b".0");
                 return Some(out);
             }
@@ -732,7 +734,7 @@ fn run_native_macro(st: &mut EngineState, kind: Native, args: &[TokenList]) -> b
             match effect {
                 Effect::Define { cs, text } => {
                     let body = result_macro(st, &text)?;
-                    crate::tables::eqtb::define(st, false, cs, Command::Call(body))?;
+                    define(st, false, cs, Command::Call(body))?;
                 }
                 Effect::Comparison(value) => {
                     let source = if value {
@@ -742,7 +744,7 @@ fn run_native_macro(st: &mut EngineState, kind: Native, args: &[TokenList]) -> b
                     };
                     let m = st.eqtb.meaning(source);
                     let flag = known.comparison().or_confusion("pgfmath comparison")?;
-                    crate::tables::eqtb::define(st, true, flag, m)?;
+                    define(st, true, flag, m)?;
                 }
             }
         }

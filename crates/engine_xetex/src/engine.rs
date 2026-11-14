@@ -1,45 +1,62 @@
 //! Engine init, run and cleanup: the `run_engine` entry point, the
 //! initialize_* primers, primitive registration and teardown.
 
+use std::panic::AssertUnwindSafe;
+use std::{iter, mem, panic};
+
 use crate::base::cmd::Cmd;
-use crate::base::codes::IfTest;
-use crate::base::codes::{BoxCode, FiOrElseCode, MarkCode, ScannerStatus};
+use crate::base::codes::{BoxCode, FiOrElseCode, IfTest, MarkCode, ScannerStatus};
 use crate::base::command::Command;
 use crate::base::consts::{
     BIGGEST_CHAR, BIGGEST_LANG, CLOSED, EMPTY_STRING, FONT_BASE, HISTORY_FATAL_ERROR,
     HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, LEVEL_ONE, LEVEL_ZERO, MAX_FONT_MAX, MAX_HALFWORD,
     NORMAL, NULL_FONT, NUMBER_USVS, TEX_NULL, TOO_BIG_CHAR,
 };
+use crate::base::mode::{Mode, ModeName};
 use crate::base::params::IntPar;
 use crate::base::stack::TexStack;
-use crate::base::token::Token;
-use crate::base::token::TokenList;
+use crate::base::token::{Token, TokenList};
 use crate::base::units::{
     BufPos, FontId, GlueOrder, NodeType, PoolPos, PrimNum, SavePtr, Scaled, StrNumber,
 };
-use crate::build::hyphenation::{HYPH_PRIME, TRIE_OP_SIZE};
-use crate::build::packaging::CurMarks;
-use crate::build::packaging::MarksAction;
-use crate::ffi::bridge::output_open_stdout;
-use crate::files::format_io::load_fmt_file;
-use crate::files::io::init_io;
-use crate::fonts::FontState;
-use crate::fonts::PerFont;
+use crate::build::hyphenation::{HYPH_PRIME, TRIE_OP_SIZE, TrieOp, TriePtr};
+use crate::build::main_control::{main_control, main_control_resume};
+use crate::build::packaging::{CurMarks, MarksAction};
+use crate::build::pagebuilder::{PageContents, initialize_pagebuilder_variables};
+use crate::ffi::bridge::{enter, output_open_stdout, set_error_message};
+use crate::ffi::clock::{get_date_and_time, get_seconds_and_micros, init_start_time};
+use crate::files::format_io::{load_fmt_file, store_fmt_file};
+use crate::files::io::{
+    close_files_and_terminate, init_io, open_log_file, reopen_resident_outputs, start_input,
+    u_close,
+};
+use crate::fonts::tfm::{FontMetrics, FontParams};
+use crate::fonts::{FontState, LigChar, PerFont};
 use crate::memory::mem::{
-    CONTRIB_HEAD, END_SPAN, FIL_GLUE, FIL_NEG_GLUE, FILL_GLUE, FIXED_HEADS, PAGE_HEAD,
-    PAGE_INS_HEAD, SS_GLUE, ZERO_GLUE,
+    CONTRIB_HEAD, END_SPAN, FIL_GLUE, FIL_NEG_GLUE, FILL_GLUE, FIXED_HEADS, FreeLists, PAGE_HEAD,
+    PAGE_INS_HEAD, RESERVED_WORDS, SS_GLUE, ZERO_GLUE,
 };
 use crate::memory::mem_types::zeroed_vec;
 use crate::memory::node::{NodePtr, PageInsNode};
-use crate::print::Selector;
-use crate::print::errors::InteractionMode;
-use crate::print::errors::{Abort, OrConfusion};
-use crate::scanning::input::{NEW_LINE, STACK_SIZE, TOKEN_LIST};
+use crate::preview::journal::disarm;
+use crate::print::errors::{Abort, InteractionMode, OrConfusion};
+use crate::print::{
+    Selector, print, print_char, print_command, print_esc, print_int, print_nl, show_save_groups,
+};
+use crate::scanning::cond_stack::CondStack;
+use crate::scanning::input::{
+    InputBuffer, InputName, InputSlot, NEW_LINE, OpenLevel, STACK_SIZE, TOKEN_LIST,
+    end_file_reading, end_token_list,
+};
+use crate::scanning::pgfmath::KnownCs;
 use crate::scanning::scan::{set_class, set_family};
+use crate::shipout::initialize_shipout_variables;
+use crate::shipout::synctex::synctex_init_command;
 use crate::state::{ConfigState, EngineState};
-use crate::tables::cs::{CsId, Frozen};
-use crate::tables::eqtb::{CatLoc, DelLoc, LcLoc, MathLoc, SfLoc, UcLoc};
+use crate::tables::cs::{CsId, Frozen, NameSlot};
+use crate::tables::eqtb::{CatLoc, DelLoc, GlueLoc, LcLoc, MathLoc, SfLoc, UcLoc};
 use crate::tables::hash::{HASH_PRIME, HASH_SIZE};
+use crate::tables::primitives::{PRIMITIVES, PrimInit};
 use crate::tables::save::GroupCode;
 
 pub(crate) const POOL_FREE: i32 = 47_500;
@@ -132,43 +149,43 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     if st.strings.job_name == StrNumber::NONE {
-        crate::files::io::open_log_file(st)?;
+        open_log_file(st)?;
     }
 
     while !st.input.input_stack.is_empty() {
         if st.input.cur_input.state == TOKEN_LIST {
-            crate::scanning::input::end_token_list(st)?;
+            end_token_list(st)?;
         } else {
-            crate::scanning::input::end_file_reading(st)?;
+            end_file_reading(st)?;
         }
     }
 
     while st.input.open_parens > 0 {
-        crate::print::print(st, " )");
+        print(st, " )");
         st.input.open_parens -= 1;
     }
 
     let cur_level = st.save_stack.cur_level;
     if cur_level > LEVEL_ONE {
-        crate::print::print_nl(st, b'(');
-        crate::print::print_esc(st, "end occurred ");
-        crate::print::print(st, "inside a group at level ");
-        crate::print::print_int(st, i32::from(cur_level) - 1);
-        crate::print::print_char(st, b')');
-        crate::print::show_save_groups(st);
+        print_nl(st, b'(');
+        print_esc(st, "end occurred ");
+        print(st, "inside a group at level ");
+        print_int(st, i32::from(cur_level) - 1);
+        print_char(st, b')');
+        show_save_groups(st);
     }
 
     while let Some(cond) = st.scanner.conds.pop() {
-        crate::print::print_nl(st, b'(');
-        crate::print::print_esc(st, "end occurred ");
-        crate::print::print(st, "when ");
-        crate::print::print_command(st, Command::IfTest(st.scanner.cur_if));
+        print_nl(st, b'(');
+        print_esc(st, "end occurred ");
+        print(st, "when ");
+        print_command(st, Command::IfTest(st.scanner.cur_if));
         let if_line = st.scanner.if_line;
         if if_line != 0 {
-            crate::print::print(st, " on line ");
-            crate::print::print_int(st, if_line);
+            print(st, " on line ");
+            print_int(st, if_line);
         }
-        crate::print::print(st, " was incomplete)");
+        print(st, " was incomplete)");
         st.scanner.if_line = cond.if_line;
         st.scanner.cur_if = cond.cur_if;
     }
@@ -179,7 +196,7 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
         && st.shipout.selector == Selector::TermAndLog
     {
         st.shipout.selector = Selector::TermOnly;
-        crate::print::print_nl(st, "(see the transcript file for additional information)");
+        print_nl(st, "(see the transcript file for additional information)");
         st.shipout.selector = Selector::TermAndLog;
     }
 
@@ -187,7 +204,7 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
         return Ok(());
     }
     if !st.config.in_initex_mode {
-        crate::print::print_nl(st, "(\\dump is performed only by INITEX)");
+        print_nl(st, "(\\dump is performed only by INITEX)");
         return Ok(());
     }
 
@@ -209,7 +226,7 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
         st.mem.delete_glue_ref(spec);
     }
 
-    crate::files::format_io::store_fmt_file(st)
+    store_fmt_file(st)
 }
 
 fn initialize_more_variables(st: &mut EngineState) {
@@ -227,14 +244,14 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.errors.use_err_help = false;
 
     st.input.nest.reset();
-    st.input.cur_list.mode = crate::base::mode::Mode::vertical(false);
+    st.input.cur_list.mode = Mode::vertical(false);
     st.input.cur_list.head = CONTRIB_HEAD;
     st.input.cur_list.tail = CONTRIB_HEAD;
     st.input.cur_list.e_tex_aux = None;
     st.input.cur_list.mode_line = 0;
     st.input.cur_list.prev_graf = 0;
-    st.scanner.shown_mode = crate::base::mode::ModeName::NoMode;
-    st.shipout.page_contents = crate::build::pagebuilder::PageContents::Empty;
+    st.scanner.shown_mode = ModeName::NoMode;
+    st.shipout.page_contents = PageContents::Empty;
     st.shipout.page_tail = Some(PAGE_HEAD);
     st.shipout.last_glue = None;
     st.shipout.last_penalty = 0;
@@ -260,7 +277,7 @@ fn initialize_more_variables(st: &mut EngineState) {
 
     st.input.read_open = [CLOSED; 17];
 
-    st.scanner.conds = crate::scanning::cond_stack::CondStack::default();
+    st.scanner.conds = CondStack::default();
     st.scanner.if_limit = FiOrElseCode::Normal.into();
     st.scanner.cur_if = IfTest::default();
     st.scanner.if_line = 0;
@@ -348,7 +365,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     eqtb.meanings.fill(Command::UndefinedCs, LEVEL_ZERO);
 
     // One reference per glue table entry, as WEB's `local_base - glue_base`.
-    let entries = i32::try_from(crate::tables::eqtb::GlueLoc::LEN).unwrap_or(i32::MAX);
+    let entries = i32::try_from(GlueLoc::LEN).unwrap_or(i32::MAX);
     let zero_glue_refs = st.mem[ZERO_GLUE].ref_count + entries;
     st.mem[ZERO_GLUE].ref_count = zero_glue_refs;
 
@@ -397,14 +414,14 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     eqtb.set_int_par(IntPar::ShowStream, -1);
 
     eqtb.prim_used = PrimNum::LAST;
-    eqtb.hash_used = crate::tables::cs::NameSlot::BUCKETS_END;
+    eqtb.hash_used = NameSlot::BUCKETS_END;
     eqtb.hash_high = 0;
     eqtb.cs_count = 0;
 
     let hyph = &mut st.hyph;
     hyph.trie_op_hash_array[..=(2 * TRIE_OP_SIZE) as usize].fill(0);
-    hyph.trie_used[..=BIGGEST_LANG as usize].fill(crate::build::hyphenation::TrieOp::NONE.raw());
-    hyph.max_op_used = crate::build::hyphenation::TrieOp::NONE.raw();
+    hyph.trie_used[..=BIGGEST_LANG as usize].fill(TrieOp::NONE.raw());
+    hyph.max_op_used = TrieOp::NONE.raw();
     hyph.trie_op_ptr = 0;
     hyph.trie_not_ready = true;
 
@@ -422,12 +439,10 @@ fn set_frozen_text(st: &mut EngineState, p: CsId, text: &str) -> Result<(), Abor
 }
 
 fn initialize_primitives(st: &mut EngineState) -> Result<(), Abort> {
-    use crate::tables::primitives::PrimInit;
-
     st.eqtb.no_new_control_sequence = false;
     st.input.first = BufPos::ZERO;
 
-    for prim in crate::tables::primitives::PRIMITIVES {
+    for prim in PRIMITIVES {
         let cs = primitive(st, prim.name, prim.cmd, prim.chr)?;
         match prim.init {
             PrimInit::None => {}
@@ -489,9 +504,9 @@ pub(crate) fn run_engine(
     input_file_name: &str,
     build_date: libc::time_t,
 ) -> i32 {
-    let _bridge = crate::ffi::bridge::enter(api);
+    let _bridge = enter(api);
 
-    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let outcome = panic::catch_unwind(AssertUnwindSafe(|| {
         run_engine_inner(config, dump_name, input_file_name, build_date)
     }));
     match outcome {
@@ -502,7 +517,7 @@ pub(crate) fn run_engine(
                 .copied()
                 .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
                 .unwrap_or("internal engine panic");
-            crate::ffi::bridge::set_error_message(msg);
+            set_error_message(msg);
             HISTORY_FATAL_ERROR
         }
     }
@@ -547,13 +562,13 @@ impl FontState {
         self.font_area = PerFont::filled(len, StrNumber::NONE);
         self.font_bc = PerFont::filled(len, 0);
         self.font_ec = PerFont::filled(len, 0);
-        self.font_bchar = PerFont::filled(len, crate::fonts::LigChar::of(0));
-        self.font_false_bchar = PerFont::filled(len, crate::fonts::LigChar::of(0));
+        self.font_bchar = PerFont::filled(len, LigChar::of(0));
+        self.font_false_bchar = PerFont::filled(len, LigChar::of(0));
         self.font_glue = PerFont::filled(len, None);
         self.hyphen_char = PerFont::filled(len, 0);
         self.skew_char = PerFont::filled(len, 0);
-        self.metrics = PerFont::filled(len, crate::fonts::tfm::FontMetrics::default());
-        self.params = PerFont::filled(len, crate::fonts::tfm::FontParams::default());
+        self.metrics = PerFont::filled(len, FontMetrics::default());
+        self.params = PerFont::filled(len, FontParams::default());
     }
 }
 
@@ -593,22 +608,22 @@ pub(crate) fn initialize_engine(
 
     let in_open_words = st.input.max_in_open + 1;
     let hyph_words = HYPH_SIZE as usize + 1;
-    st.input.buffer = crate::scanning::input::InputBuffer(vec![0; st.input.buf_size.index() + 1]);
+    st.input.buffer = InputBuffer(vec![0; st.input.buf_size.index() + 1]);
     st.input.nest = TexStack::with_size(NEST_SIZE);
     st.save_stack.alloc(st.save_stack.save_size + 1);
-    st.input.input_file = std::iter::repeat_with(|| crate::scanning::input::InputSlot::Empty)
+    st.input.input_file = iter::repeat_with(|| InputSlot::Empty)
         .take(in_open_words)
         .collect();
     st.input.input_stack = TexStack::with_size(STACK_SIZE);
-    st.input.open_levels = vec![crate::scanning::input::OpenLevel::default(); in_open_words];
+    st.input.open_levels = vec![OpenLevel::default(); in_open_words];
     st.input.param_stack = TexStack::with_size(PARAM_SIZE);
     st.hyph.hyph_word = vec![StrNumber::NONE; hyph_words];
     st.hyph.hyph_list = vec![None; hyph_words];
     st.hyph.hyph_link = vec![0; hyph_words];
 
     if st.config.in_initex_mode {
-        st.mem.data = zeroed_vec(crate::memory::mem::RESERVED_WORDS);
-        st.mem.free = crate::memory::mem::FreeLists::default();
+        st.mem.data = zeroed_vec(RESERVED_WORDS);
+        st.mem.free = FreeLists::default();
 
         st.eqtb.alloc_tables();
         st.strings.str_start = vec![PoolPos::ZERO; st.strings.max_strings.slot() + 1];
@@ -641,7 +656,7 @@ pub(crate) fn initialize_engine(
         bad = 21;
     }
     if bad > 0 {
-        crate::ffi::bridge::set_error_message(format!("failed internal consistency check #{bad}"));
+        set_error_message(format!("failed internal consistency check #{bad}"));
         return InitOutcome::Terminate(HISTORY_FATAL_ERROR);
     }
 
@@ -662,16 +677,15 @@ pub(crate) fn initialize_engine(
         st.strings.init_pool_ptr = st.strings.pool_ptr;
     }
 
-    crate::build::pagebuilder::initialize_pagebuilder_variables(st);
-    crate::shipout::initialize_shipout_variables(st);
+    initialize_pagebuilder_variables(st);
+    initialize_shipout_variables(st);
     if st.config.deterministic_mode {
         st.shipout.epochseconds = build_date as i32;
         st.shipout.microseconds = 0;
     } else {
-        (st.shipout.epochseconds, st.shipout.microseconds) =
-            crate::ffi::clock::get_seconds_and_micros();
+        (st.shipout.epochseconds, st.shipout.microseconds) = get_seconds_and_micros();
     }
-    crate::ffi::clock::init_start_time(st, build_date);
+    init_start_time(st, build_date);
 
     st.shipout.selector = Selector::TermOnly;
     st.errors.tally = 0;
@@ -682,7 +696,7 @@ pub(crate) fn initialize_engine(
     st.errors.log_opened = false;
 
     st.input.input_stack.reset();
-    st.input.open_levels[0] = crate::scanning::input::OpenLevel::default();
+    st.input.open_levels[0] = OpenLevel::default();
     st.input.in_open = 0;
     st.input.open_parens = 0;
     st.input.max_buf_stack = BufPos::ZERO;
@@ -698,7 +712,7 @@ pub(crate) fn initialize_engine(
     st.input.cur_input.start = BufPos::from_raw(1);
     st.input.cur_input.index = 0;
     st.mem.line = 0;
-    st.input.cur_input.name = crate::scanning::input::InputName::Terminal;
+    st.input.cur_input.name = InputName::Terminal;
     st.input.force_eof = false;
     st.scanner.align_state = 1_000_000;
 
@@ -711,7 +725,7 @@ pub(crate) fn initialize_engine(
 
     if !st.config.in_initex_mode {
         match load_fmt_file(st, dump_name) {
-            Ok(()) => crate::scanning::pgfmath::KnownCs::resolve(st),
+            Ok(()) => KnownCs::resolve(st),
             Err(a) => return InitOutcome::Terminate(a.into_history(st)),
         }
     }
@@ -726,7 +740,7 @@ pub(crate) fn initialize_engine(
     let (time, day, month, year) = if st.config.in_initex_mode {
         (0, 0, 0, 0)
     } else {
-        crate::ffi::clock::get_date_and_time(build_date, st.config.deterministic_mode)
+        get_date_and_time(build_date, st.config.deterministic_mode)
     };
     st.eqtb.set_int_par(IntPar::Time, time);
     st.eqtb.set_int_par(IntPar::Day, day);
@@ -746,7 +760,7 @@ pub(crate) fn initialize_engine(
         hyph.trie_hash = vec![0; trie_len];
         hyph.trie_taken = vec![false; trie_len];
         hyph.trie_ptr = 0;
-        hyph.hyph_start = crate::build::hyphenation::TriePtr::NULL;
+        hyph.hyph_start = TriePtr::NULL;
 
         st.fonts.alloc_font_arrays();
 
@@ -762,13 +776,13 @@ pub(crate) fn initialize_engine(
         fonts.font_area[f] = EMPTY_STRING;
         fonts.hyphen_char[f] = i32::from(b'-');
         fonts.skew_char[f] = -1;
-        fonts.font_bchar[f] = crate::fonts::LigChar::NONE;
-        fonts.font_false_bchar[f] = crate::fonts::LigChar::NONE;
+        fonts.font_bchar[f] = LigChar::NONE;
+        fonts.font_false_bchar[f] = LigChar::NONE;
         fonts.font_bc[f] = 1;
         fonts.font_ec[f] = 0;
         fonts.font_glue[f] = None;
-        fonts.metrics[f] = crate::fonts::tfm::FontMetrics::default();
-        fonts.params[f] = crate::fonts::tfm::FontParams::new(vec![Scaled::ZERO; 7]);
+        fonts.metrics[f] = FontMetrics::default();
+        fonts.params[f] = FontParams::new(vec![Scaled::ZERO; 7]);
     }
 
     st.fonts.font_used = PerFont::filled(st.fonts.font_max.index() + 1, false);
@@ -791,18 +805,18 @@ pub(crate) fn initialize_engine(
     }
 
     pdf_files_init();
-    crate::shipout::synctex::synctex_init_command(st);
+    synctex_init_command(st);
     InitOutcome::Ready
 }
 
 /// Open, execute, finalize, and release one batch document operation.
 fn run_document_to_end(st: &mut EngineState, input_file_name: &str) -> i32 {
     let result = (|| {
-        crate::files::io::start_input(st, Some(input_file_name))?;
+        start_input(st, Some(input_file_name))?;
         st.errors.history = HISTORY_SPOTLESS;
-        crate::build::main_control::main_control(st)?;
+        main_control(st)?;
         final_cleanup(st)?;
-        crate::files::io::close_files_and_terminate(st)
+        close_files_and_terminate(st)
     })();
     if let Err(a) = result {
         return a.into_history(st);
@@ -818,11 +832,11 @@ pub(crate) fn run_resident_document(
     st: &mut EngineState,
     input_file_name: &str,
 ) -> Result<i32, Abort> {
-    crate::files::io::start_input(st, Some(input_file_name))?;
+    start_input(st, Some(input_file_name))?;
     st.errors.history = HISTORY_SPOTLESS;
-    crate::build::main_control::main_control(st)?;
+    main_control(st)?;
     final_cleanup(st)?;
-    crate::files::io::close_files_and_terminate(st)?;
+    close_files_and_terminate(st)?;
     Ok(st.errors.history)
 }
 
@@ -831,10 +845,10 @@ pub(crate) fn resume_resident_document(
     st: &mut EngineState,
     resume_pending_command: bool,
 ) -> Result<i32, Abort> {
-    crate::files::io::reopen_resident_outputs(st)?;
-    crate::build::main_control::main_control_resume(st, resume_pending_command)?;
+    reopen_resident_outputs(st)?;
+    main_control_resume(st, resume_pending_command)?;
     final_cleanup(st)?;
-    crate::files::io::close_files_and_terminate(st)?;
+    close_files_and_terminate(st)?;
     Ok(st.errors.history)
 }
 
@@ -846,7 +860,7 @@ pub(crate) fn release_operation_inputs(st: &mut EngineState) {
         .iter_mut()
         .chain(&mut st.input.read_file)
     {
-        let _ = crate::files::io::u_close(std::mem::take(slot));
+        let _ = u_close(mem::take(slot));
     }
 }
 
@@ -864,7 +878,7 @@ fn initial_random_seed(
 }
 
 pub(crate) fn cleanup(st: &mut EngineState) {
-    crate::preview::journal::disarm(st);
+    disarm(st);
     pdf_files_close();
     st.shipout.dvi.release_buffer();
 
@@ -877,10 +891,10 @@ pub(crate) fn cleanup(st: &mut EngineState) {
 
     for i in 1..=st.input.in_open {
         // Teardown has begun, so a serious close error is absorbed.
-        let _ = crate::files::io::u_close(std::mem::take(&mut st.input.input_file[i]));
+        let _ = u_close(mem::take(&mut st.input.input_file[i]));
     }
     for slot in st.input.read_file.iter_mut() {
-        *slot = crate::scanning::input::InputSlot::Empty;
+        *slot = InputSlot::Empty;
     }
 
     st.save_stack.data = Vec::new();
@@ -892,7 +906,7 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     input.input_stack.release();
     input.param_stack.release();
     input.open_levels = Vec::new();
-    input.buffer = crate::scanning::input::InputBuffer::default();
+    input.buffer = InputBuffer::default();
 
     st.scanner.native_text = Vec::new();
     st.scanner.native_text_size = 0;

@@ -1,20 +1,21 @@
 //! Symbolic printing of commands: `print_command` and `print_meaning`.
 
+use super::errors::InteractionMode;
 use super::{
-    print, print_char, print_code, print_esc, print_font_select, print_hex, print_int,
+    TexPrint, print, print_char, print_code, print_esc, print_font_select, print_hex, print_int,
     print_length_param, print_ln, print_param, print_size, print_skip_param, print_style,
     token_show,
 };
 use crate::base::codes::{BoxCode, FiOrElseCode, LimitCode, SkipCode, ValueLevel};
-use crate::base::command::Command;
+use crate::base::command::{Command, Usv};
 use crate::base::params::TokPar;
 use crate::base::token::TokenList;
 use crate::base::units::NodeType;
-use crate::print::errors::InteractionMode;
+use crate::scanning::scan::{math_char, math_class, math_fam};
 use crate::state::EngineState;
 use crate::tables::eqtb::{DimenSlot, GlueSlot, IntSlot, ToksSlot};
 
-impl crate::print::TexPrint for Command {
+impl TexPrint for Command {
     fn print_to(&self, st: &mut EngineState) {
         print_command(st, *self);
     }
@@ -22,7 +23,7 @@ impl crate::print::TexPrint for Command {
 
 /// Prints `c` as its primitive name, or describes a character command.
 pub(crate) fn print_command(st: &mut EngineState, c: Command) {
-    let char_cmd = |st: &mut EngineState, s: &str, c: crate::base::command::Usv| {
+    let char_cmd = |st: &mut EngineState, s: &str, c: Usv| {
         print(st, s);
         print_code(st, c.raw());
     };
@@ -272,9 +273,9 @@ pub(crate) fn print_command(st: &mut EngineState, c: Command) {
         }
         Command::XetexMathGiven(v) => {
             print_esc(st, "Umathchar");
-            print_hex(st, crate::scanning::scan::math_class(v));
-            print_hex(st, crate::scanning::scan::math_fam(v));
-            print_hex(st, crate::scanning::scan::math_char(v));
+            print_hex(st, math_class(v));
+            print_hex(st, math_fam(v));
+            print_hex(st, math_char(v));
         }
         Command::DefCode(table) => print_esc(st, table.name()),
         Command::XetexDefCode(code) => print_esc(st, code.name()),
@@ -349,6 +350,7 @@ mod tests {
     use crate::base::params::IntPar;
     use crate::base::units::PoolPos;
     use crate::print::Selector;
+    use crate::tables::eqtb::{IntLoc, Table};
     use crate::tables::primitives::PRIMITIVES;
 
     fn printed(st: &mut EngineState, c: Command) -> String {
@@ -364,7 +366,7 @@ mod tests {
     #[test]
     fn every_primitive_prints_as_its_name() {
         let mut st = EngineState::default();
-        st.eqtb.ints = crate::tables::eqtb::Table::new(crate::tables::eqtb::IntLoc::LEN, 0);
+        st.eqtb.ints = Table::new(IntLoc::LEN, 0);
         st.strings.str_pool = vec![0; 256];
         st.strings.pool_size = PoolPos::from_raw(256);
         st.eqtb.set_int_par(IntPar::EscapeChar, i32::from(b'\\'));

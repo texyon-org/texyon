@@ -1,7 +1,14 @@
 //! Zero-cost scalar newtypes: arena indices and pointers, scaled lengths,
 //! font numbers, and the node-type and glue-sign codes.
 
+use std::iter::Sum;
 use std::num::NonZeroU32;
+use std::ops::{Add, AddAssign, Div, Index, IndexMut, Mul, Neg, Range, Rem, Sub, SubAssign};
+
+use crate::base::codes::code_enum;
+use crate::base::consts::{FONT_BASE, NULL_FONT, PRIM_SIZE, TOO_BIG_CHAR};
+use crate::base::scaled_math;
+use crate::base::scaled_math::tex_round;
 
 /// A non-null index into the `mem` arena. Word 0 is never a node, so a null
 /// pointer is the zero word of an `Option<MemIdx>`.
@@ -38,7 +45,7 @@ impl MemIdx {
 
     /// The `len` words starting here, as a range of `mem` indices.
     #[inline]
-    pub fn words(self, len: i32) -> std::ops::Range<usize> {
+    pub fn words(self, len: i32) -> Range<usize> {
         // An index past any arena, so slicing rejects it. Staying in i32 range
         // lets the compiler fold a constant-length slice check.
         const PAST_ANY_ARENA: usize = 0x7FFF_FFFF;
@@ -83,7 +90,7 @@ impl RawPtr for MemPtr {
 }
 
 /// The number of words from `rhs` to `self`.
-impl std::ops::Sub for MemIdx {
+impl Sub for MemIdx {
     type Output = i32;
     #[inline]
     fn sub(self, rhs: MemIdx) -> i32 {
@@ -133,13 +140,13 @@ impl Scaled {
     /// `r` scaled points rounded to the nearest, as TeX's `round`.
     #[inline]
     pub fn round(r: f64) -> Scaled {
-        Scaled(crate::base::scaled_math::tex_round(r))
+        Scaled(tex_round(r))
     }
 
     /// TeX's `half`, rounding odd values up.
     #[inline]
     pub fn half(self) -> Scaled {
-        Scaled(crate::base::scaled_math::half(self.0))
+        Scaled(scaled_math::half(self.0))
     }
 
     #[inline]
@@ -153,7 +160,7 @@ impl Scaled {
     }
 }
 
-impl std::ops::Add for Scaled {
+impl Add for Scaled {
     type Output = Scaled;
     #[inline(always)]
     fn add(self, rhs: Scaled) -> Scaled {
@@ -161,7 +168,7 @@ impl std::ops::Add for Scaled {
     }
 }
 
-impl std::ops::Sub for Scaled {
+impl Sub for Scaled {
     type Output = Scaled;
     #[inline(always)]
     fn sub(self, rhs: Scaled) -> Scaled {
@@ -169,7 +176,7 @@ impl std::ops::Sub for Scaled {
     }
 }
 
-impl std::ops::Neg for Scaled {
+impl Neg for Scaled {
     type Output = Scaled;
     #[inline(always)]
     fn neg(self) -> Scaled {
@@ -177,7 +184,7 @@ impl std::ops::Neg for Scaled {
     }
 }
 
-impl std::ops::Mul<i32> for Scaled {
+impl Mul<i32> for Scaled {
     type Output = Scaled;
     #[inline(always)]
     fn mul(self, rhs: i32) -> Scaled {
@@ -185,7 +192,7 @@ impl std::ops::Mul<i32> for Scaled {
     }
 }
 
-impl std::ops::Div<i32> for Scaled {
+impl Div<i32> for Scaled {
     type Output = Scaled;
     #[inline(always)]
     fn div(self, rhs: i32) -> Scaled {
@@ -193,7 +200,7 @@ impl std::ops::Div<i32> for Scaled {
     }
 }
 
-impl std::ops::Rem<i32> for Scaled {
+impl Rem<i32> for Scaled {
     type Output = Scaled;
     #[inline(always)]
     fn rem(self, rhs: i32) -> Scaled {
@@ -201,14 +208,14 @@ impl std::ops::Rem<i32> for Scaled {
     }
 }
 
-impl std::ops::AddAssign for Scaled {
+impl AddAssign for Scaled {
     #[inline(always)]
     fn add_assign(&mut self, rhs: Scaled) {
         *self = *self + rhs;
     }
 }
 
-impl std::ops::SubAssign for Scaled {
+impl SubAssign for Scaled {
     #[inline(always)]
     fn sub_assign(&mut self, rhs: Scaled) {
         *self = *self - rhs;
@@ -222,7 +229,7 @@ impl From<Scaled> for f64 {
     }
 }
 
-impl std::iter::Sum for Scaled {
+impl Sum for Scaled {
     fn sum<I: Iterator<Item = Scaled>>(iter: I) -> Scaled {
         iter.fold(Scaled::ZERO, |a, b| a + b)
     }
@@ -260,7 +267,7 @@ impl BufPos {
     }
 }
 
-impl std::ops::Add<i32> for BufPos {
+impl Add<i32> for BufPos {
     type Output = BufPos;
     #[inline(always)]
     fn add(self, rhs: i32) -> BufPos {
@@ -268,7 +275,7 @@ impl std::ops::Add<i32> for BufPos {
     }
 }
 
-impl std::ops::Sub<i32> for BufPos {
+impl Sub<i32> for BufPos {
     type Output = BufPos;
     #[inline(always)]
     fn sub(self, rhs: i32) -> BufPos {
@@ -277,7 +284,7 @@ impl std::ops::Sub<i32> for BufPos {
 }
 
 /// The number of positions from `rhs` to `self`.
-impl std::ops::Sub for BufPos {
+impl Sub for BufPos {
     type Output = i32;
     #[inline(always)]
     fn sub(self, rhs: BufPos) -> i32 {
@@ -285,14 +292,14 @@ impl std::ops::Sub for BufPos {
     }
 }
 
-impl std::ops::AddAssign<i32> for BufPos {
+impl AddAssign<i32> for BufPos {
     #[inline(always)]
     fn add_assign(&mut self, rhs: i32) {
         self.0 += rhs;
     }
 }
 
-impl std::ops::SubAssign<i32> for BufPos {
+impl SubAssign<i32> for BufPos {
     #[inline(always)]
     fn sub_assign(&mut self, rhs: i32) {
         self.0 -= rhs;
@@ -330,7 +337,7 @@ impl PoolPos {
     }
 }
 
-impl std::ops::Add<i32> for PoolPos {
+impl Add<i32> for PoolPos {
     type Output = PoolPos;
     #[inline(always)]
     fn add(self, rhs: i32) -> PoolPos {
@@ -338,7 +345,7 @@ impl std::ops::Add<i32> for PoolPos {
     }
 }
 
-impl std::ops::Sub<i32> for PoolPos {
+impl Sub<i32> for PoolPos {
     type Output = PoolPos;
     #[inline(always)]
     fn sub(self, rhs: i32) -> PoolPos {
@@ -347,7 +354,7 @@ impl std::ops::Sub<i32> for PoolPos {
 }
 
 /// The number of units from `rhs` to `self`.
-impl std::ops::Sub for PoolPos {
+impl Sub for PoolPos {
     type Output = i32;
     #[inline(always)]
     fn sub(self, rhs: PoolPos) -> i32 {
@@ -355,14 +362,14 @@ impl std::ops::Sub for PoolPos {
     }
 }
 
-impl std::ops::AddAssign<i32> for PoolPos {
+impl AddAssign<i32> for PoolPos {
     #[inline(always)]
     fn add_assign(&mut self, rhs: i32) {
         self.0 += rhs;
     }
 }
 
-impl std::ops::SubAssign<i32> for PoolPos {
+impl SubAssign<i32> for PoolPos {
     #[inline(always)]
     fn sub_assign(&mut self, rhs: i32) {
         self.0 -= rhs;
@@ -378,8 +385,7 @@ pub struct PrimNum(NonZeroU32);
 impl PrimNum {
     pub const FIRST: PrimNum = PrimNum(NonZeroU32::MIN);
     /// `prim_size`, the last slot.
-    pub const LAST: PrimNum =
-        PrimNum::FIRST.plus(crate::base::consts::PRIM_SIZE.cast_unsigned() - 1);
+    pub const LAST: PrimNum = PrimNum::FIRST.plus(PRIM_SIZE.cast_unsigned() - 1);
 
     /// The slot `n` past `self`.
     #[inline(always)]
@@ -412,13 +418,13 @@ impl PrimNum {
 
     /// All slots of the `prim` table.
     pub fn all() -> impl Iterator<Item = PrimNum> {
-        (1..=crate::base::consts::PRIM_SIZE.cast_unsigned())
+        (1..=PRIM_SIZE.cast_unsigned())
             .filter_map(NonZeroU32::new)
             .map(PrimNum)
     }
 }
 
-crate::base::codes::code_enum! {
+code_enum! {
     /// A text direction, as TeX--XeT stores it in edge subtypes and math subtypes over `R_CODE`.
     #[derive(Default)]
     pub enum Dir: u16 {
@@ -459,7 +465,7 @@ impl SavePtr {
     }
 }
 
-impl std::ops::Add<i32> for SavePtr {
+impl Add<i32> for SavePtr {
     type Output = SavePtr;
     #[inline(always)]
     fn add(self, rhs: i32) -> SavePtr {
@@ -467,7 +473,7 @@ impl std::ops::Add<i32> for SavePtr {
     }
 }
 
-impl std::ops::Sub<i32> for SavePtr {
+impl Sub<i32> for SavePtr {
     type Output = SavePtr;
     #[inline(always)]
     fn sub(self, rhs: i32) -> SavePtr {
@@ -475,14 +481,14 @@ impl std::ops::Sub<i32> for SavePtr {
     }
 }
 
-impl std::ops::AddAssign<i32> for SavePtr {
+impl AddAssign<i32> for SavePtr {
     #[inline(always)]
     fn add_assign(&mut self, rhs: i32) {
         self.0 += rhs;
     }
 }
 
-impl std::ops::SubAssign<i32> for SavePtr {
+impl SubAssign<i32> for SavePtr {
     #[inline(always)]
     fn sub_assign(&mut self, rhs: i32) {
         self.0 -= rhs;
@@ -535,7 +541,7 @@ impl FontId {
     /// The font's number in the DVI file, `f - font_base - 1`.
     #[inline]
     pub fn dvi_number(self) -> i32 {
-        self.raw() - crate::base::consts::FONT_BASE - 1
+        self.raw() - FONT_BASE - 1
     }
 
     #[inline]
@@ -545,7 +551,7 @@ impl FontId {
 
     /// The fonts after `null_font` up to `self`, the loaded ones when `self` is `font_ptr`.
     pub fn loaded(self) -> impl DoubleEndedIterator<Item = FontId> {
-        (crate::base::consts::NULL_FONT.0 + 1..=self.0).map(FontId)
+        (NULL_FONT.0 + 1..=self.0).map(FontId)
     }
 }
 
@@ -604,13 +610,13 @@ impl StrNumber {
     /// Whether this is a pool string rather than a single character.
     #[inline]
     pub fn is_pool_string(self) -> bool {
-        self.0 >= crate::base::consts::TOO_BIG_CHAR
+        self.0 >= TOO_BIG_CHAR
     }
 
     /// The `str_start` slot of this pool string.
     #[inline]
     pub fn slot(self) -> usize {
-        (self.0 - crate::base::consts::TOO_BIG_CHAR) as usize
+        (self.0 - TOO_BIG_CHAR) as usize
     }
 
     #[inline]
@@ -631,7 +637,7 @@ impl StrNumber {
 }
 
 /// The number of strings from `rhs` to `self`.
-impl std::ops::Sub for StrNumber {
+impl Sub for StrNumber {
     type Output = i32;
     #[inline(always)]
     fn sub(self, rhs: StrNumber) -> i32 {
@@ -639,7 +645,7 @@ impl std::ops::Sub for StrNumber {
     }
 }
 
-crate::base::codes::code_enum! {
+code_enum! {
     /// A node's type code. Delta nodes reuse the rule code and edge nodes the
     /// style code, their list context tells them apart.
     pub enum NodeType: u16 {
@@ -695,7 +701,7 @@ impl NodeType {
     }
 }
 
-crate::base::codes::code_enum! {
+code_enum! {
     /// Whether a box stacks its list horizontally (hlist) or vertically (vlist).
     /// The raw values are the box's `NODE_type` codes.
     pub enum Orientation: u16 {
@@ -715,7 +721,7 @@ impl Orientation {
     }
 }
 
-crate::base::codes::code_enum! {
+code_enum! {
     /// Whether a box's glue is at natural size, stretched or shrunk.
     pub enum GlueSign: u16 {
         Normal = 0,
@@ -726,7 +732,7 @@ crate::base::codes::code_enum! {
 
 impl GlueSign {}
 
-crate::base::codes::code_enum! {
+code_enum! {
     /// The order of infinity of a stretch or shrink: finite, fil, fill or filll.
     #[derive(PartialOrd, Ord, Default)]
     pub enum GlueOrder: u16 {
@@ -790,7 +796,7 @@ impl OrderTotals {
     }
 }
 
-impl std::ops::Index<GlueOrder> for OrderTotals {
+impl Index<GlueOrder> for OrderTotals {
     type Output = Scaled;
     #[inline(always)]
     fn index(&self, o: GlueOrder) -> &Scaled {
@@ -798,7 +804,7 @@ impl std::ops::Index<GlueOrder> for OrderTotals {
     }
 }
 
-impl std::ops::IndexMut<GlueOrder> for OrderTotals {
+impl IndexMut<GlueOrder> for OrderTotals {
     #[inline(always)]
     fn index_mut(&mut self, o: GlueOrder) -> &mut Scaled {
         &mut self.0[usize::from(o.to_u16())]
@@ -807,8 +813,10 @@ impl std::ops::IndexMut<GlueOrder> for OrderTotals {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::mem::size_of;
+
+    use super::*;
+    use crate::memory::node::StoredCode;
 
     #[test]
     fn glue_order_round_trips_through_memory() {
@@ -819,10 +827,7 @@ mod tests {
             GlueOrder::Filll,
             GlueOrder::Rigid,
         ] {
-            assert_eq!(
-                <GlueOrder as crate::memory::node::StoredCode>::from_u16(o.to_u16()),
-                Some(o)
-            );
+            assert_eq!(<GlueOrder as StoredCode>::from_u16(o.to_u16()), Some(o));
         }
     }
 

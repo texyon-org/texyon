@@ -7,23 +7,23 @@ use crate::base::command::Command;
 use crate::base::consts::SUB_BOX;
 use crate::base::mode::{Mode, ModeName};
 use crate::base::params::{DimenPar, IntPar, TokPar};
-use crate::base::units::MemIdx;
-use crate::base::units::{NodeType, Scaled};
-use crate::build::packaging::{AdjustTails, PackOrigin};
-use crate::memory::mem::MemState;
-use crate::memory::mem::{ADJUST_HEAD, PRE_ADJUST_HEAD};
-use crate::memory::node::LeaderKind;
+use crate::base::units::{MemIdx, NodeType, Scaled};
+use crate::build::packaging::{AdjustTails, PackOrigin, hpack_with, vpackage, vsplit};
+use crate::build::pagebuilder::build_page;
+use crate::memory::mem::{ADJUST_HEAD, MemState, PRE_ADJUST_HEAD, push_nest};
 use crate::memory::node::{
-    AnyNode, BoxNode, BoxOrRule, GlueKind, MarginKernNode, MathCode, NodePtr, View,
+    AnyNode, BoxNode, BoxOrRule, GlueKind, LeaderKind, MarginKernNode, MathCode, NodePtr, View,
 };
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
+use crate::print::errors::{Abort, OrConfusion, back_error, error, you_cant};
 use crate::scanning::input::TokenType;
-use crate::scanning::scan::fetch_box;
+use crate::scanning::scan::{
+    fetch_box, get_x_non_blank_non_relax, scan_dimen, scan_keyword, scan_register_num,
+    scan_rule_spec, scan_spec,
+};
+use crate::shipout::ship_out;
 use crate::state::EngineState;
-use crate::tables::eqtb::BoxLoc;
-use crate::tables::save::GroupCode;
-use crate::tables::save::Saved;
+use crate::tables::eqtb::{BoxLoc, define};
+use crate::tables::save::{GroupCode, Saved, unsave};
 
 pub(super) fn unpackage(st: &mut EngineState, c: BoxCode) -> Result<(), Abort> {
     if matches!(c, BoxCode::LastBox | BoxCode::Vsplit) {
@@ -31,7 +31,7 @@ pub(super) fn unpackage(st: &mut EngineState, c: BoxCode) -> Result<(), Abort> {
         st.input.cur_list.tail.set_link(&mut st.mem, *disc);
         *disc = None;
     } else {
-        let n = crate::scanning::scan::scan_register_num(st)?;
+        let n = scan_register_num(st)?;
         let Some(b) = fetch_box(st, n) else {
             return Ok(());
         };
@@ -40,7 +40,7 @@ pub(super) fn unpackage(st: &mut EngineState, c: BoxCode) -> Result<(), Abort> {
             || (mode.is_vertical() && !st.mem[b].is_vlist())
             || (mode.is_horizontal() && !st.mem[b].is_hlist())
         {
-            return crate::print::errors::error(
+            return error(
                 st,
                 "Incompatible list can't be unboxed",
                 &[
@@ -91,9 +91,9 @@ pub(super) fn delete_last(st: &mut EngineState, t: NodeType) -> Result<(), Abort
             } else {
                 r"Try `I\vskip-\lastskip' instead."
             };
-            return crate::print::errors::error(
+            return error(
                 st,
-                crate::print::errors::you_cant(st),
+                you_cant(st),
                 &[
                     "Sorry...I usually can't take things from the current page.",
                     remedy,
@@ -113,14 +113,14 @@ pub(super) fn delete_last(st: &mut EngineState, t: NodeType) -> Result<(), Abort
 }
 
 pub(super) fn scan_box(st: &mut EngineState, box_context: BoxContext) -> Result<(), Abort> {
-    crate::scanning::scan::get_x_non_blank_non_relax(st)?;
+    get_x_non_blank_non_relax(st)?;
     match (box_context, st.scanner.cur) {
         (_, Command::MakeBox(code)) => begin_box(st, box_context, code),
         (BoxContext::Leaders(kind), Command::Hrule | Command::Vrule) => {
-            let rule = crate::scanning::scan::scan_rule_spec(st)?;
+            let rule = scan_rule_spec(st)?;
             leaders_end(st, kind, BoxOrRule::Rule(rule))
         }
-        _ => crate::print::errors::back_error(
+        _ => back_error(
             st,
             "A <box> was supposed to be here",
             &[
@@ -136,7 +136,7 @@ pub(super) fn scan_box(st: &mut EngineState, box_context: BoxContext) -> Result<
 pub(super) fn package(st: &mut EngineState, group: GroupCode) -> Result<(), Abort> {
     let d = st.eqtb.dimen_par(DimenPar::BoxMaxDepth);
     let u = st.eqtb.int_par(IntPar::XetexUpwards);
-    crate::tables::save::unsave(st)?;
+    unsave(st)?;
     let spec = st.save_stack.pop_spec()?;
     let Some(Saved::BoxContext(box_context)) = st.save_stack.pop_saved() else {
         return Err(Abort::Confusion("box_context"));
@@ -146,10 +146,9 @@ pub(super) fn package(st: &mut EngineState, group: GroupCode) -> Result<(), Abor
     let list = st.input.cur_list.head.link(&st.mem);
     let mut adjust = (group == GroupCode::AdjustedHbox).then_some(AdjustTails::HEADS);
     let b = if st.input.cur_list.mode.name() == ModeName::RestrictedHorizontal {
-        crate::build::packaging::hpack_with(st, list, spec, PackOrigin::Here, adjust.as_mut())?
-            .r_box
+        hpack_with(st, list, spec, PackOrigin::Here, adjust.as_mut())?.r_box
     } else {
-        let b = crate::build::packaging::vpackage(st, list, spec, d)?;
+        let b = vpackage(st, list, spec, d)?;
         if group == GroupCode::Vtop {
             let h = match st.mem[b].list_ptr.map(|p| st.mem.classify(p)) {
                 Some(Ok(AnyNode::Box(first))) => st.mem[first].height,
@@ -193,7 +192,7 @@ fn box_end(
                     append_list(st, Some(ADJUST_HEAD), adjust.post)?;
                 }
                 if st.input.cur_list.mode.is_outer() {
-                    crate::build::pagebuilder::build_page(st)?;
+                    build_page(st)?;
                 }
             } else {
                 let node =
@@ -210,11 +209,11 @@ fn box_end(
             }
         }
         BoxContext::SetBox { register, global } => {
-            crate::tables::eqtb::define(st, global, BoxLoc::register(register), cur_box)?;
+            define(st, global, BoxLoc::register(register), cur_box)?;
         }
         BoxContext::ShipOut => {
             if let Some(b) = cur_box {
-                crate::shipout::ship_out(st, b)?;
+                ship_out(st, b)?;
             }
         }
         BoxContext::Leaders(kind) => {
@@ -228,7 +227,7 @@ fn box_end(
 
 /// Make `content` the leaders of the glue that follows, for a leaders `box_context`.
 fn leaders_end(st: &mut EngineState, kind: LeaderKind, content: BoxOrRule) -> Result<(), Abort> {
-    crate::scanning::scan::get_x_non_blank_non_relax(st)?;
+    get_x_non_blank_non_relax(st)?;
     let vertical = st.input.cur_list.mode.is_vertical();
     let skip = match st.scanner.cur {
         Command::Hskip(s) if !vertical => Some(s),
@@ -241,7 +240,7 @@ fn leaders_end(st: &mut EngineState, kind: LeaderKind, content: BoxOrRule) -> Re
         node.subtype = GlueKind::Leaders(kind).into();
         node.leader_ptr = content.ptr();
     } else {
-        crate::print::errors::back_error(
+        back_error(
             st,
             "Leaders not followed by proper glue",
             &[
@@ -325,13 +324,13 @@ pub(super) fn begin_box(
 ) -> Result<(), Abort> {
     let cur_box = match code {
         BoxCode::Box => {
-            let n = crate::scanning::scan::scan_register_num(st)?;
+            let n = scan_register_num(st)?;
             let b = fetch_box(st, n);
             st.eqtb.set_box_reg(n, None);
             b
         }
         BoxCode::Copy => {
-            let n = crate::scanning::scan::scan_register_num(st)?;
+            let n = scan_register_num(st)?;
             match fetch_box(st, n) {
                 Some(b) => Some(st.mem.copy_box(b)?),
                 None => None,
@@ -340,17 +339,13 @@ pub(super) fn begin_box(
         BoxCode::LastBox => {
             let mut last = None;
             if st.input.cur_list.mode.is_math() {
-                crate::print::errors::error(
-                    st,
-                    crate::print::errors::you_cant(st),
-                    &[r"Sorry; this \lastbox will be void."],
-                )?;
+                error(st, you_cant(st), &[r"Sorry; this \lastbox will be void."])?;
             } else if st.input.cur_list.mode.name() == ModeName::Vertical
                 && st.input.cur_list.head == st.input.cur_list.tail
             {
-                crate::print::errors::error(
+                error(
                     st,
-                    crate::print::errors::you_cant(st),
+                    you_cant(st),
                     &[
                         "Sorry...I usually can't take things from the current page.",
                         r"This \lastbox will therefore be void.",
@@ -369,9 +364,9 @@ pub(super) fn begin_box(
             last
         }
         BoxCode::Vsplit => {
-            let n = crate::scanning::scan::scan_register_num(st)?;
-            if !crate::scanning::scan::scan_keyword(st, "to")? {
-                crate::print::errors::error(
+            let n = scan_register_num(st)?;
+            if !scan_keyword(st, "to")? {
+                error(
                     st,
                     "Missing `to' inserted",
                     &[
@@ -380,8 +375,8 @@ pub(super) fn begin_box(
                     ],
                 )?;
             }
-            let d = crate::scanning::scan::scan_dimen(st, false)?;
-            crate::build::packaging::vsplit(st, n, d)?
+            let d = scan_dimen(st, false)?;
+            vsplit(st, n, d)?
         }
         BoxCode::Vtop | BoxCode::Vbox | BoxCode::Hbox => {
             let horizontal = code == BoxCode::Hbox;
@@ -393,17 +388,17 @@ pub(super) fn begin_box(
                 } else {
                     GroupCode::Hbox
                 };
-                crate::scanning::scan::scan_spec(st, group, Some(box_context))?;
+                scan_spec(st, group, Some(box_context))?;
             } else {
                 let group = if code == BoxCode::Vbox {
                     GroupCode::Vbox
                 } else {
                     GroupCode::Vtop
                 };
-                crate::scanning::scan::scan_spec(st, group, Some(box_context))?;
+                scan_spec(st, group, Some(box_context))?;
                 normal_paragraph(st)?;
             }
-            crate::memory::mem::push_nest(st)?;
+            push_nest(st)?;
             if horizontal {
                 st.input.cur_list.mode = Mode::horizontal(true);
                 begin_every(st, TokPar::EveryHbox, TokenType::EveryHbox)?;

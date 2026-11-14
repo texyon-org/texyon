@@ -2,15 +2,12 @@
 
 use super::Breaker;
 use super::lists::PassiveId;
-use crate::base::units::MemIdx;
-use crate::base::units::{FontId, MemPtr, Scaled};
-use crate::fonts::FontState;
-use crate::fonts::{QUAD_CODE, Side};
-use crate::memory::mem::MemState;
-use crate::memory::mem::{TEMP_HEAD, ZERO_GLUE};
+use crate::base::scaled_math::round_xn_over_d;
+use crate::base::units::{FontId, MemIdx, MemPtr, Scaled};
+use crate::fonts::{FontState, QUAD_CODE, Side};
+use crate::memory::mem::{MemState, TEMP_HEAD, ZERO_GLUE};
 use crate::memory::node::{AnyNode, BoxNode, DiscNode, KernSubtype, NodePtr, WhatsitVariant};
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
+use crate::print::errors::{Abort, OrConfusion};
 
 /// The last index the hlist stack may push to, as in WEB.
 const MAX_HLIST_STACK: usize = 512;
@@ -66,7 +63,7 @@ impl Breaker {
     fn char_pw(&self, mem: &MemState, fonts: &FontState, p: MemPtr, side: Side) -> Scaled {
         fn protrusion(fonts: &FontState, f: FontId, cp: i32) -> Scaled {
             let quad = fonts.param(f, QUAD_CODE);
-            crate::base::scaled_math::round_xn_over_d(quad, cp, 1000)
+            round_xn_over_d(quad, cp, 1000)
         }
 
         let Some(p_idx) = p else {

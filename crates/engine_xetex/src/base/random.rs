@@ -1,5 +1,7 @@
 //! The random numbers of `\\uniformdeviate` and `\\normaldeviate`, as in MetaPost.
 
+use std::mem;
+
 /// `SPEC_LOG[k]` is `2^27 * ln(1 / (1 - 2^-k))`, rounded.
 const SPEC_LOG: [i32; 29] = [
     0, 93_032_640, 38_612_034, 17_922_280, 8_662_214, 4_261_238, 2_113_709, 1_052_693, 525_315,
@@ -48,7 +50,7 @@ fn ab_vs_cd(mut a: i32, mut b: i32, mut c: i32, mut d: i32) -> i32 {
         if d == 0 {
             return if a == 0 { 0 } else { -1 };
         }
-        std::mem::swap(&mut a, &mut c);
+        mem::swap(&mut a, &mut c);
         let tmp = -b;
         b = -d;
         d = tmp;

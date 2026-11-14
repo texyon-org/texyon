@@ -1,35 +1,39 @@
 //! Building token lists: `str_toks`, `the_toks`, `scan_toks`, `read_toks` and `\scantokens`.
 
+use std::cmp::Ordering;
+use std::mem;
+
 use super::internal::{CurVal, scan_something_internal};
 use super::next::{get_next, get_token, get_x_token, x_token};
 use super::scan_left_brace;
 use crate::base::cmd::Cmd;
 use crate::base::codes::{ScannerStatus, TheCode, ValueLevel};
-use crate::base::command::Command;
-use crate::base::command::RelaxCode;
+use crate::base::command::{Command, RelaxCode};
 use crate::base::consts::{CLOSED, JUST_OPEN, NORMAL};
 use crate::base::params::IntPar;
 use crate::base::token::{Build, TokCursor, Token, TokenList};
-use crate::base::units::{BufPos, StrNumber};
+use crate::base::units::{BufPos, PoolPos, StrNumber};
 use crate::ffi::bridge::output_flush;
+use crate::files::io::{FileSlot, input_slot_line, u_close};
 use crate::memory::mem::MemState;
-use crate::memory::node::PseudoWord;
-use crate::memory::node::{NodePtr, PseudoFileNode, PseudoLineNode};
-use crate::print::Selector;
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
-use crate::print::{print, print_int};
+use crate::memory::node::{NodePtr, PseudoFileNode, PseudoLineNode, PseudoWord};
+use crate::print::errors::{Abort, InteractionMode, OrConfusion, back_error, error, runaway};
+use crate::print::{
+    CsName, Esc, Selector, print, print_char, print_int, print_ln, print_scaled, print_spec,
+    show_token_list, sprint_cs, token_show,
+};
 use crate::scanning::expand::expand;
-use crate::scanning::input::NEW_LINE;
+use crate::scanning::input::{InputName, NEW_LINE, begin_file_reading, end_file_reading};
 use crate::state::EngineState;
 use crate::tables::cs::CsId;
+use crate::tables::string_pool::StringsState;
 
 impl MemState {
     /// Appends `str_pool[b..pool_ptr]` to `out` as tokens and drops it from the pool.
     pub(crate) fn str_toks_cat(
         &mut self,
-        strings: &mut crate::tables::string_pool::StringsState,
-        b: crate::base::units::PoolPos,
+        strings: &mut StringsState,
+        b: PoolPos,
         cat: Option<Cmd>,
         out: &Build,
     ) -> Result<(), Abort> {
@@ -87,8 +91,8 @@ pub(crate) fn finish_line(st: &mut EngineState) {
 }
 
 fn close_read_file(st: &mut EngineState, m: usize) -> Result<(), Abort> {
-    let slot = std::mem::take(&mut st.input.read_file[m]);
-    if crate::files::io::u_close(slot) {
+    let slot = mem::take(&mut st.input.read_file[m]);
+    if u_close(slot) {
         return Err(Abort::InputClose);
     }
     st.input.read_open[m] = CLOSED;
@@ -115,19 +119,19 @@ pub(crate) fn read_toks(
     st.scanner.align_state = 1_000_000;
 
     loop {
-        crate::scanning::input::begin_file_reading(st)?;
+        begin_file_reading(st)?;
         st.input.cur_input.name = match u8::try_from(m) {
-            Ok(stream) if stream < 16 => crate::scanning::input::InputName::Read(stream),
-            _ => crate::scanning::input::InputName::ReadTerminal,
+            Ok(stream) if stream < 16 => InputName::Read(stream),
+            _ => InputName::ReadTerminal,
         };
 
         if st.input.read_open[m] == CLOSED {
             // A terminal read in a mode that would prompt meets the end of the terminal's input.
-            let fatal = if st.errors.interaction > crate::print::errors::InteractionMode::Nonstop {
+            let fatal = if st.errors.interaction > InteractionMode::Nonstop {
                 if n >= 0 {
-                    crate::print::print_ln(st);
-                    crate::print::sprint_cs(st, Some(r));
-                    crate::print::print(st, "=");
+                    print_ln(st);
+                    sprint_cs(st, Some(r));
+                    print(st, "=");
                 }
                 "End of file on the terminal!"
             } else {
@@ -137,21 +141,21 @@ pub(crate) fn read_toks(
             st.input.cur_input.limit = BufPos::ZERO;
             return Err(Abort::Fatal(fatal));
         } else if st.input.read_open[m] == JUST_OPEN {
-            if crate::files::io::input_slot_line(st, crate::files::io::FileSlot::Read(m))? != 0 {
+            if input_slot_line(st, FileSlot::Read(m))? != 0 {
                 st.input.read_open[m] = NORMAL as u8;
             } else {
                 close_read_file(st, m)?;
             }
         } else {
-            if crate::files::io::input_slot_line(st, crate::files::io::FileSlot::Read(m))? == 0 {
+            if input_slot_line(st, FileSlot::Read(m))? == 0 {
                 close_read_file(st, m)?;
                 if st.scanner.align_state != 1_000_000 {
-                    crate::print::errors::runaway(st);
+                    runaway(st);
                     st.scanner.align_state = 1_000_000;
                     st.input.cur_input.limit = BufPos::ZERO;
-                    crate::print::errors::error(
+                    error(
                         st,
-                        ("File ended within ", crate::print::Esc("read")),
+                        ("File ended within ", Esc("read")),
                         &[r"This \read has unbalanced braces."],
                     )?;
                 }
@@ -194,7 +198,7 @@ pub(crate) fn read_toks(
                 st.mem.tokens.push(&b, st.scanner.cur_tok)?;
             }
         }
-        crate::scanning::input::end_file_reading(st)?;
+        end_file_reading(st)?;
 
         if st.scanner.align_state == 1_000_000 {
             break;
@@ -219,7 +223,7 @@ fn tokens_to_string(st: &mut EngineState, list: TokenList) -> Result<StrNumber, 
     st.shipout.selector = Selector::NewString;
     let arg = st.mem.tokens.cursor(list);
     let l = st.strings.pool_size - st.strings.pool_ptr;
-    crate::print::show_token_list(st, arg, TokCursor::END, l);
+    show_token_list(st, arg, TokCursor::END, l);
     st.shipout.selector = st.shipout.old_setting;
     st.strings.make_string()
 }
@@ -234,7 +238,7 @@ pub(crate) fn the_toks(st: &mut EngineState, code: TheCode, out: &Build) -> Resu
         let old_setting = st.shipout.selector;
         st.shipout.selector = Selector::NewString;
         let b = st.strings.pool_ptr;
-        crate::print::token_show(st, text);
+        token_show(st, text);
         st.mem.tokens.flush(text);
         st.shipout.selector = old_setting;
         return st.mem.str_toks_cat(&mut st.strings, b, None, out);
@@ -260,12 +264,12 @@ pub(crate) fn the_toks(st: &mut EngineState, code: TheCode, out: &Build) -> Resu
         match val {
             CurVal::Int(n) => print_int(st, n),
             CurVal::Dimen(d) => {
-                crate::print::print_scaled(st, d);
+                print_scaled(st, d);
                 print(st, "pt");
             }
             CurVal::Glue(spec) | CurVal::Mu(spec) => {
                 let unit = if let CurVal::Mu(_) = val { "mu" } else { "pt" };
-                crate::print::print_spec(st, spec, Some(unit));
+                print_spec(st, spec, Some(unit));
                 st.mem.delete_glue_ref(spec);
             }
             CurVal::Ident(_) | CurVal::Tok(_) => {}
@@ -307,7 +311,7 @@ pub(crate) fn scan_toks(
                         break true;
                     }
                     if params == 9 {
-                        crate::print::errors::error(
+                        error(
                             st,
                             "You already have nine parameters",
                             &[
@@ -319,7 +323,7 @@ pub(crate) fn scan_toks(
                     }
                     params += 1;
                     if st.scanner.cur_tok != Token::other(b'0' + params) {
-                        crate::print::errors::back_error(
+                        back_error(
                             st,
                             "Parameters must be numbered consecutively",
                             &[
@@ -336,7 +340,7 @@ pub(crate) fn scan_toks(
                 st.mem.tokens.push(&b, Token::END_MATCH)?;
                 if st.scanner.cur.cmd() == Cmd::RightBrace {
                     st.scanner.align_state += 1;
-                    crate::print::errors::error(
+                    error(
                         st,
                         "Missing { inserted",
                         &[
@@ -401,11 +405,11 @@ pub(crate) fn scan_toks(
                     if (1..=i32::from(params)).contains(&n) {
                         st.scanner.cur_tok = Token::out_param(n);
                     } else {
-                        crate::print::errors::back_error(
+                        back_error(
                             st,
                             (
                                 "Illegal parameter number in definition of ",
-                                crate::print::CsName(st.scanner.warning_index),
+                                CsName(st.scanner.warning_index),
                             ),
                             &[
                                 "You meant to type ## instead of #, right?",
@@ -433,7 +437,7 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
     let text = scan_general_text(st)?;
     let old_setting = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
-    crate::print::token_show(st, text);
+    token_show(st, text);
     st.shipout.selector = old_setting;
     st.mem.tokens.flush(text);
 
@@ -487,7 +491,7 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
     st.input.pseudo_files = file.ptr();
     st.strings.flush_str(s);
 
-    crate::scanning::input::begin_file_reading(st)?;
+    begin_file_reading(st)?;
     st.mem.line = 0;
     let start = st.input.cur_input.start;
     st.input.cur_input.limit = start;
@@ -495,16 +499,16 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
 
     if st.eqtb.int_par(IntPar::TracingScanTokens) > 0 {
         if st.shipout.term_offset > st.config.max_print_line - 3 {
-            crate::print::print_ln(st);
+            print_ln(st);
         } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
-            crate::print::print_char(st, b' ');
+            print_char(st, b' ');
         }
-        st.input.cur_input.name = crate::scanning::input::InputName::Pseudo { traced: true };
+        st.input.cur_input.name = InputName::Pseudo { traced: true };
         print(st, "( ");
         st.input.open_parens += 1;
         output_flush(st.shipout.rust_stdout);
     } else {
-        st.input.cur_input.name = crate::scanning::input::InputName::Pseudo { traced: false };
+        st.input.cur_input.name = InputName::Pseudo { traced: false };
         st.input.cur_input.synctex_tag = 0;
         st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;
     }
@@ -559,9 +563,9 @@ pub(crate) fn compare_strings(st: &mut EngineState) -> Result<i32, Abort> {
 
     let range = |s: StrNumber| &st.strings.str_pool[st.strings.str_range(s)];
     let result = match range(s1).cmp(range(s2)) {
-        std::cmp::Ordering::Less => -1,
-        std::cmp::Ordering::Equal => 0,
-        std::cmp::Ordering::Greater => 1,
+        Ordering::Less => -1,
+        Ordering::Equal => 0,
+        Ordering::Greater => 1,
     };
 
     st.strings.flush_str(s2);

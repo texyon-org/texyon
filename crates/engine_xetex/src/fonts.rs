@@ -1,28 +1,23 @@
 //! Font loading: the TFM reader, native (OpenType/Graphite) font loading, native
 //! character nodes and the TFM `char_info` accessors.
 
-use crate::ffi::teckit_icu::FontMappingHandle;
-use crate::ffi::teckit_icu::LinebreakHandle;
-
-pub(crate) mod ext;
-pub(crate) mod ot_math;
-pub(crate) mod tfm;
+use std::collections::BTreeMap;
+use std::rc::Rc;
 
 use crate::base::consts::{EMPTY_STRING, INVALID_HANDLE, NULL_FONT, TOO_BIG_CHAR};
 use crate::base::params::IntPar;
 use crate::base::units::{FontId, Scaled, StrNumber};
 use crate::ffi::bridge::FileFormat;
+use crate::ffi::teckit_icu::{FontMappingHandle, LinebreakHandle};
 use crate::files::io::{FileName, ScannedName, open_input_file};
-use crate::fonts::ext::loaded_font_design_size;
 use crate::fonts::ext::{
     NativeFontMetrics, aat_get_font_metrics, apply_tfm_font_mapping, find_native_font,
-    load_mapping_file, ot_get_font_metrics, split_tfm_font_mapping,
+    load_mapping_file, loaded_font_design_size, ot_get_font_metrics, split_tfm_font_mapping,
 };
 use crate::fonts::tfm::{ExtIdx, FontMetrics, FontParams, TfmError, TfmMetrics};
 use crate::memory::mem::MemState;
 use crate::memory::node::{NativeWordNode, NodePtr, WhatsitSubtype};
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
+use crate::print::errors::{Abort, OrConfusion};
 use crate::print::{
     CsName, TexPrint, begin_diagnostic, char_warning, end_diagnostic, print, print_char, print_int,
     print_nl, print_scaled,
@@ -30,10 +25,12 @@ use crate::print::{
 use crate::state::EngineState;
 use crate::tables::cs::CsId;
 use crate::tables::eqtb::EqtbState;
-use std::collections::BTreeMap;
-use std::rc::Rc;
 
-crate::base::codes::code_enum! {
+pub(crate) mod ext;
+pub(crate) mod ot_math;
+pub(crate) mod tfm;
+
+code_enum! {
     /// The edge of a line a character protrudes into.
     #[derive(PartialOrd, Ord)]
     pub(crate) enum Side: u16 {
@@ -75,9 +72,20 @@ pub(crate) const X_HEIGHT_CODE: i32 = 5;
 pub(crate) const QUAD_CODE: i32 = 6;
 pub(crate) const EXTRA_SPACE_CODE: i32 = 7;
 
+use std::cell::RefCell;
+use std::ops::{Index, IndexMut};
+use std::sync::Arc;
+
+use crate::base::codes::code_enum;
+use crate::base::scaled_math::{Divided, xn_over_d};
+use crate::base::utf8::utf16_units;
+use crate::files::io::input_close;
 pub(crate) use crate::fonts::tfm::{
     CharInfo, CharTag, ExtRecipe, LigKernAction, LigKernIdx, LigKernStep, LigOp,
 };
+use crate::fonts::tfm::{Tfm, read_tfm};
+use crate::memory::glue_store::GlueSpecId;
+use crate::print::errors::error;
 
 /// A character in a lig/kern program, or `NONE` (WEB's `non_char`) for a boundary.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
@@ -278,7 +286,7 @@ impl MemState {
                 Ok(w)
             }
             NativeCharSrc::Single(c) => {
-                let (units, n) = crate::base::utf8::utf16_units(c);
+                let (units, n) = utf16_units(c);
                 let w = self.new_native_word(f, n as i32, WhatsitSubtype::NativeWord)?;
                 self.entries_mut(w).copy_from_slice(&units[..n]);
                 Ok(w)
@@ -303,7 +311,7 @@ pub(crate) fn new_native_character(
     c: u32,
 ) -> Result<NodePtr<NativeWordNode>, Abort> {
     let src = if let Some(map) = st.fonts.font_mapping[f].clone() {
-        let (units, n) = crate::base::utf8::utf16_units(c);
+        let (units, n) = utf16_units(c);
         if st.strings.pool_ptr + n as i32 > st.strings.pool_size {
             return Err(st.strings.pool_overflow());
         }
@@ -353,17 +361,14 @@ impl FontSize {
     pub(crate) const DESIGN: FontSize = FontSize::Scaled(1000);
 
     /// The size for a font designed at `design`.
-    pub(crate) fn of_design(
-        self,
-        design: Scaled,
-    ) -> crate::base::scaled_math::Divided<Scaled, i32> {
+    pub(crate) fn of_design(self, design: Scaled) -> Divided<Scaled, i32> {
         match self {
-            FontSize::At(s) => crate::base::scaled_math::Divided {
+            FontSize::At(s) => Divided {
                 quotient: s,
                 remainder: 0,
                 overflowed: false,
             },
-            FontSize::Scaled(m) => crate::base::scaled_math::xn_over_d(design, m, 1000),
+            FontSize::Scaled(m) => xn_over_d(design, m, 1000),
         }
     }
 
@@ -499,9 +504,9 @@ pub(crate) fn read_font_info(
         let room = |words: i32| {
             fonts.font_ptr != fonts.font_max && fonts.fmem_ptr + words <= fonts.font_mem_size
         };
-        let parse = crate::fonts::tfm::read_tfm(tfm_file, s, room, &mut too_big);
+        let parse = read_tfm(tfm_file, s, room, &mut too_big);
         if too_big {
-            crate::print::errors::error(
+            error(
                 st,
                 (font, " scaled to 2048pt or higher"),
                 &["I will ignore the scaling factor."],
@@ -531,7 +536,7 @@ pub(crate) fn read_font_info(
         } else {
             " not loadable: Metric (TFM) file or installed font not found"
         };
-        crate::print::errors::error(
+        error(
             st,
             (font, reason),
             &[
@@ -544,7 +549,7 @@ pub(crate) fn read_font_info(
         )?;
     }
 
-    if file_opened && crate::files::io::input_close(tfm_file) {
+    if file_opened && input_close(tfm_file) {
         return Err(Abort::Internal(
             "serious internal error closing the font metric file",
         ));
@@ -569,7 +574,7 @@ impl FontState {
     fn install_tfm(
         &mut self,
         eqtb: &EqtbState,
-        tfm: crate::fonts::tfm::Tfm,
+        tfm: Tfm,
         nom: StrNumber,
         aire: StrNumber,
     ) -> FontId {
@@ -598,7 +603,7 @@ impl FontState {
     fn init_native_font_tables(
         &mut self,
         eqtb: &EqtbState,
-        font_engine: crate::fonts::FontEngineHandle,
+        font_engine: FontEngineHandle,
         full_name: StrNumber,
         actual_size: Scaled,
         num_font_dimens: usize,
@@ -628,7 +633,7 @@ impl FontState {
         self.font_used[font_ptr] = false;
         self.hyphen_char[font_ptr] = eqtb.int_par(IntPar::DefaultHyphenChar);
         self.skew_char[font_ptr] = eqtb.int_par(IntPar::DefaultSkewChar);
-        self.font_layout_engine[font_ptr] = Some(std::rc::Rc::new(font_engine));
+        self.font_layout_engine[font_ptr] = Some(Rc::new(font_engine));
         self.font_mapping[font_ptr] = None;
         self.font_letter_space[font_ptr] = self.loaded_font_letter_space;
 
@@ -678,7 +683,7 @@ fn load_native_font(st: &mut EngineState, font: FontSpec, name: &[u8]) -> Result
 
     if st.fonts.font_ptr == st.fonts.font_max || st.fonts.fmem_ptr + words > st.fonts.font_mem_size
     {
-        crate::print::errors::error(
+        error(
             st,
             (font, " not loaded: Not enough room left"),
             &[
@@ -735,13 +740,13 @@ pub(crate) type FontEngineHandle = texyon_xetex_layout::LayoutEngine<'static>;
 pub(crate) struct FontState {
     /// Converter staged by a `mapping=` font feature until it is transferred
     /// into a font slot.
-    pub loaded_font_mapping: Option<std::sync::Arc<FontMappingHandle>>,
+    pub loaded_font_mapping: Option<Arc<FontMappingHandle>>,
     pub loaded_font_flags: i8,
     /// Per-engine ICU line-break cache and its string-pool locale key.
     pub brk_iter: Option<LinebreakHandle>,
     pub brk_locale_str_num: StrNumber,
-    pub font_layout_engine: PerFont<Option<std::rc::Rc<FontEngineHandle>>>,
-    pub font_mapping: PerFont<Option<std::sync::Arc<FontMappingHandle>>>,
+    pub font_layout_engine: PerFont<Option<Rc<FontEngineHandle>>>,
+    pub font_mapping: PerFont<Option<Arc<FontMappingHandle>>>,
     pub loaded_font_letter_space: Scaled,
     pub xtx_ligature_present: bool,
     pub gave_char_warning_help: bool,
@@ -762,21 +767,19 @@ pub(crate) struct FontState {
     pub font_area: PerFont<StrNumber>,
     pub font_bc: PerFont<u16>,
     pub font_ec: PerFont<u16>,
-    pub font_bchar: PerFont<crate::fonts::LigChar>,
-    pub font_false_bchar: PerFont<crate::fonts::LigChar>,
+    pub font_bchar: PerFont<LigChar>,
+    pub font_false_bchar: PerFont<LigChar>,
     /// The interword glue built from the font's parameters, once a space needs it.
-    pub font_glue: PerFont<Option<crate::memory::glue_store::GlueSpecId>>,
+    pub font_glue: PerFont<Option<GlueSpecId>>,
     pub font_used: PerFont<bool>,
     pub hyphen_char: PerFont<i32>,
     pub skew_char: PerFont<i32>,
-    pub metrics: PerFont<crate::fonts::tfm::FontMetrics>,
-    pub params: PerFont<crate::fonts::tfm::FontParams>,
+    pub metrics: PerFont<FontMetrics>,
+    pub params: PerFont<FontParams>,
     pub mapped_text: Vec<u16>,
-    pub cp_codes: crate::fonts::ProtrusionCodes,
+    pub cp_codes: ProtrusionCodes,
     /// Glyph bounds in TeX points, valid for the fonts through `font_ptr`.
-    pub glyph_bboxes: std::cell::RefCell<
-        std::collections::BTreeMap<(FontId, u16), texyon_xetex_layout::GlyphBBox>,
-    >,
+    pub glyph_bboxes: RefCell<BTreeMap<(FontId, u16), texyon_xetex_layout::GlyphBBox>>,
 }
 
 impl Default for FontState {
@@ -793,9 +796,9 @@ impl Default for FontState {
             gave_char_warning_help: false,
             native_font_type_flag: StrNumber::NONE,
             font_mem_size: 0,
-            font_max: crate::base::consts::NULL_FONT,
+            font_max: NULL_FONT,
             fmem_ptr: 0,
-            font_ptr: crate::base::consts::NULL_FONT,
+            font_ptr: NULL_FONT,
             font_flags: PerFont::default(),
             font_letter_space: PerFont::default(),
             font_check: PerFont::default(),
@@ -814,8 +817,8 @@ impl Default for FontState {
             metrics: PerFont::default(),
             params: PerFont::default(),
             mapped_text: Vec::new(),
-            cp_codes: crate::fonts::ProtrusionCodes::default(),
-            glyph_bboxes: std::cell::RefCell::default(),
+            cp_codes: ProtrusionCodes::default(),
+            glyph_bboxes: RefCell::default(),
         }
     }
 }
@@ -856,7 +859,7 @@ impl<T> PerFont<T> {
     }
 }
 
-impl<T> std::ops::Index<FontId> for PerFont<T> {
+impl<T> Index<FontId> for PerFont<T> {
     type Output = T;
     #[inline(always)]
     fn index(&self, f: FontId) -> &T {
@@ -864,7 +867,7 @@ impl<T> std::ops::Index<FontId> for PerFont<T> {
     }
 }
 
-impl<T> std::ops::IndexMut<FontId> for PerFont<T> {
+impl<T> IndexMut<FontId> for PerFont<T> {
     #[inline(always)]
     fn index_mut(&mut self, f: FontId) -> &mut T {
         &mut self.0[f.index()]

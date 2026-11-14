@@ -1,25 +1,27 @@
 //! Breaking vertical lists: `vert_break`, `vsplit`, `prune_page_top` and `do_marks`.
 
+use std::collections::BTreeMap;
+use std::ops::{Index, IndexMut};
+
 use super::{PackOrigin, PackOutcome, PackSpec, print_vpack_diag};
 use crate::base::codes::{BoxCode, MarkCode};
 use crate::base::consts::{EJECT_PENALTY, INF_BAD, INF_PENALTY, MAX_DIMEN, MAX_HALFWORD};
 use crate::base::params::{DimenPar, GluePar, IntPar};
+use crate::base::scaled_math::badness;
 use crate::base::token::TokenList;
-use crate::base::units::MemIdx;
-use crate::base::units::{GlueOrder, MemPtr, Scaled};
+use crate::base::units::{GlueOrder, MemIdx, MemPtr, Scaled};
+use crate::build::linebreak::Widths;
 use crate::memory::glue_store::GlueSpecId;
-use crate::memory::mem::MemState;
-use crate::memory::mem::TEMP_HEAD;
+use crate::memory::mem::{MemState, TEMP_HEAD};
 use crate::memory::node::{
     AnyNode, BoxNode, GlueNode, KernNode, MarkNode, NodePtr, WhatsitVariant,
 };
-use crate::print::errors::OrConfusion;
-use crate::print::errors::{Abort, IgnoredError};
-use crate::scanning::scan::ScannerState;
+use crate::print::errors::{Abort, IgnoredError, OrConfusion, error};
+use crate::print::{Esc, print_ignored_err};
+use crate::scanning::scan::{ScannerState, fetch_box};
 use crate::shipout::ShipoutState;
 use crate::state::EngineState;
-use crate::tables::eqtb::EqtbState;
-use crate::tables::eqtb::Register;
+use crate::tables::eqtb::{EqtbState, Register};
 
 /// What `do_marks` does to each mark class.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -49,7 +51,7 @@ struct VertBreakCursor {
     prev_dp: Scaled,
     finish_glue_after_shrinkage: Option<NodePtr<GlueNode>>,
     /// Height, stretch and shrink of the material so far, as in WEB's `active_height`.
-    active_height: crate::build::linebreak::Widths,
+    active_height: Widths,
     /// The natural height plus depth of the material before `best_place`.
     best_height_plus_depth: Scaled,
 }
@@ -207,12 +209,12 @@ impl MemState {
                             {
                                 0
                             } else {
-                                crate::base::scaled_math::badness(h - aw[1], aw[2])
+                                badness(h - aw[1], aw[2])
                             }
                         } else if aw[1] - h > aw[6] {
                             MAX_HALFWORD
                         } else {
-                            crate::base::scaled_math::badness(aw[1] - h, aw[6])
+                            badness(aw[1] - h, aw[6])
                         };
                         let b = if b < MAX_HALFWORD {
                             if pi <= EJECT_PENALTY {
@@ -268,10 +270,10 @@ fn print_vert_break_infinite_shrinkage_error(st: &mut EngineState) -> Result<(),
         .eqtb
         .ignores_primitive_error(IgnoredError::VsplitInfiniteShrink)
     {
-        crate::print::print_ignored_err(st, MESSAGE);
+        print_ignored_err(st, MESSAGE);
         return Ok(());
     }
-    crate::print::errors::error(
+    error(
         st,
         MESSAGE,
         &[
@@ -319,7 +321,7 @@ pub(crate) fn vert_break(
 
 struct VsplitState {
     /// The box register being split.
-    n: crate::tables::eqtb::Register,
+    n: Register,
     h: Scaled,
     v: NodePtr<BoxNode>,
     split_max_d: Scaled,
@@ -366,12 +368,8 @@ impl MemState {
     }
 }
 
-fn start_vsplit(
-    st: &mut EngineState,
-    n: crate::tables::eqtb::Register,
-    h: Scaled,
-) -> Result<VsplitStart, Abort> {
-    let v = crate::scanning::scan::fetch_box(st, n);
+fn start_vsplit(st: &mut EngineState, n: Register, h: Scaled) -> Result<VsplitStart, Abort> {
+    let v = fetch_box(st, n);
     st.mem.reset_vsplit_marks(&mut st.scanner)?;
 
     let v = match v {
@@ -508,14 +506,9 @@ impl MemState {
 }
 
 fn print_vsplit_needs_vbox_error(st: &mut EngineState) -> Result<(), Abort> {
-    crate::print::errors::error(
+    error(
         st,
-        (
-            "",
-            crate::print::Esc("vsplit"),
-            " needs a ",
-            crate::print::Esc("vbox"),
-        ),
+        ("", Esc("vsplit"), " needs a ", Esc("vbox")),
         &[
             r"The box you are trying to split is an \hbox.",
             "I can't split such a box, so I'll leave it alone.",
@@ -534,7 +527,7 @@ fn print_vsplit_packages(st: &mut EngineState, outcome: VsplitOutcome) {
 /// `\vsplit n to h`: the box split off the top of box register `n`.
 pub(crate) fn vsplit(
     st: &mut EngineState,
-    n: crate::tables::eqtb::Register,
+    n: Register,
     h: Scaled,
 ) -> Result<Option<NodePtr<BoxNode>>, Abort> {
     let mut state = match start_vsplit(st, n, h)? {
@@ -710,39 +703,39 @@ impl MemState {
 
 /// `cur_mark`, the marks of the current page and split.
 #[derive(Default, Clone, Copy)]
-pub(crate) struct CurMarks([crate::base::token::TokenList; 5]);
+pub(crate) struct CurMarks([TokenList; 5]);
 
 impl CurMarks {
-    pub(crate) const NULL: CurMarks = CurMarks([crate::base::token::TokenList::NULL; 5]);
+    pub(crate) const NULL: CurMarks = CurMarks([TokenList::NULL; 5]);
 }
 
-impl std::ops::Index<crate::base::codes::MarkCode> for CurMarks {
-    type Output = crate::base::token::TokenList;
+impl Index<MarkCode> for CurMarks {
+    type Output = TokenList;
     #[inline]
-    fn index(&self, m: crate::base::codes::MarkCode) -> &crate::base::token::TokenList {
+    fn index(&self, m: MarkCode) -> &TokenList {
         &self.0[m as usize]
     }
 }
 
-impl std::ops::IndexMut<crate::base::codes::MarkCode> for CurMarks {
+impl IndexMut<MarkCode> for CurMarks {
     #[inline]
-    fn index_mut(&mut self, m: crate::base::codes::MarkCode) -> &mut crate::base::token::TokenList {
+    fn index_mut(&mut self, m: MarkCode) -> &mut TokenList {
         &mut self.0[m as usize]
     }
 }
 
 /// The marks of the `\marks` classes above 0, class 0 being `cur_mark`.
 #[derive(Default, Clone)]
-pub(crate) struct MarkClasses(std::collections::BTreeMap<crate::tables::eqtb::Register, CurMarks>);
+pub(crate) struct MarkClasses(BTreeMap<Register, CurMarks>);
 
 impl MarkClasses {
     /// The marks of `class`, all null when it has none.
-    pub(crate) fn get(&self, class: crate::tables::eqtb::Register) -> CurMarks {
+    pub(crate) fn get(&self, class: Register) -> CurMarks {
         self.0.get(&class).copied().unwrap_or(CurMarks::NULL)
     }
 
     /// The marks of `class`, created null.
-    pub(crate) fn entry(&mut self, class: crate::tables::eqtb::Register) -> &mut CurMarks {
+    pub(crate) fn entry(&mut self, class: Register) -> &mut CurMarks {
         self.0.entry(class).or_insert(CurMarks::NULL)
     }
 
@@ -755,7 +748,7 @@ impl MarkClasses {
         self.0.clear();
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (crate::tables::eqtb::Register, &CurMarks)> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (Register, &CurMarks)> {
         self.0.iter().map(|(&class, marks)| (class, marks))
     }
 }

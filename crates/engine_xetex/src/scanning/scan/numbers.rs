@@ -1,5 +1,8 @@
 //! Scanning numbers, dimensions and glue, and e-TeX expressions.
 
+use super::internal::{CurVal, scan_something_internal};
+use super::next::{get_token, get_x_non_blank, get_x_token};
+use super::{Command, math_char, round_decimals, scan_keyword};
 use crate::base::cmd::Cmd;
 use crate::base::codes::ValueLevel;
 use crate::base::command::RelaxCode;
@@ -10,23 +13,16 @@ use crate::base::consts::{
 use crate::base::params::IntPar;
 use crate::base::scaled_math::{Overflowing, add_or_sub, fract, mult_and_add, quotient, xn_over_d};
 use crate::base::token::{Token, TokenKind};
-use crate::base::units::MemIdx;
-use crate::base::units::RawPtr;
-use crate::base::units::{GlueOrder, Scaled};
+use crate::base::units::{GlueOrder, MemIdx, RawPtr, Scaled};
 use crate::fonts::{QUAD_CODE, X_HEIGHT_CODE};
 use crate::memory::glue_store::GlueSpecId;
 use crate::memory::mem::ZERO_GLUE;
-use crate::print::errors::OrConfusion;
-use crate::print::errors::{Abort, mu_error};
+use crate::print::errors::{Abort, Capacity, OrConfusion, back_error, error, mu_error};
 use crate::scanning::input::back_input;
-use crate::scanning::scan::Command;
 use crate::state::EngineState;
 use crate::tables::cs::{CsId, CsKind, Frozen};
 use crate::tables::eqtb::Register;
-
-use super::internal::{CurVal, scan_something_internal};
-use super::next::{get_token, get_x_non_blank, get_x_token};
-use super::{math_char, round_decimals, scan_keyword};
+use crate::tables::save::prepare_mag;
 
 const MINUS_TOKEN: Token = Token::other(b'-');
 const PLUS_TOKEN: Token = Token::other(b'+');
@@ -64,7 +60,7 @@ pub(super) fn bad_int_error(
     help1: &'static str,
     help0: &'static str,
 ) -> Result<(), Abort> {
-    crate::print::errors::error(st, (err, " (", value, ")"), &[help1, help0])
+    error(st, (err, " (", value, ")"), &[help1, help0])
 }
 
 /// Reports the out-of-range integer `value` and yields zero in its place.
@@ -308,7 +304,7 @@ fn scan_int_decimal(st: &mut EngineState) -> Result<(i32, bool), Abort> {
             }
             if v > BIGGEST_USV {
                 v = i32::from(b'0');
-                crate::print::errors::back_error(
+                back_error(
                     st,
                     "Improper alphabetic constant",
                     &[
@@ -356,7 +352,7 @@ fn scan_int_decimal(st: &mut EngineState) -> Result<(i32, bool), Abort> {
                 vacuous = false;
                 if v >= m && (v > m || d > 7 || radix != 10) {
                     if ok_so_far {
-                        crate::print::errors::error(
+                        error(
                             st,
                             "Number too big",
                             &[
@@ -373,7 +369,7 @@ fn scan_int_decimal(st: &mut EngineState) -> Result<(i32, bool), Abort> {
                 get_x_token(st)?;
             }
             if vacuous {
-                crate::print::errors::back_error(
+                back_error(
                     st,
                     "Missing number, treated as zero",
                     &[
@@ -536,7 +532,7 @@ fn scan_dimen_from(
                         match order.next() {
                             Some(next) => order = next,
                             None => {
-                                crate::print::errors::error(
+                                error(
                                     st,
                                     "Illegal unit of measure (replaced by filll)",
                                     &["I dddon't go any higher than filll."],
@@ -593,7 +589,7 @@ fn scan_dimen_from(
                     if scan_keyword(st, "mu")? {
                         break 'units true;
                     } else {
-                        crate::print::errors::error(
+                        error(
                             st,
                             "Illegal unit of measure (mu inserted)",
                             &[
@@ -608,7 +604,7 @@ fn scan_dimen_from(
                 }
 
                 if scan_keyword(st, "true")? {
-                    crate::tables::save::prepare_mag(st)?;
+                    prepare_mag(st)?;
                     let mag = st.eqtb.int_par(IntPar::Mag);
                     if mag != 1000 {
                         overflowed |= scale_dimen(&mut v, &mut f, 1000, mag);
@@ -636,7 +632,7 @@ fn scan_dimen_from(
                 } else if scan_keyword(st, "sp")? {
                     break 'units false;
                 } else {
-                    crate::print::errors::error(
+                    error(
                         st,
                         "Illegal unit of measure (pt inserted)",
                         &[
@@ -664,7 +660,7 @@ fn scan_dimen_from(
     }
 
     if overflowed || v.wrapping_abs() >= 0x4000_0000 {
-        crate::print::errors::error(
+        error(
             st,
             "Dimension too large",
             &[
@@ -795,7 +791,7 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
     st.scanner.expand_depth_count += 1;
     if st.scanner.expand_depth_count >= st.scanner.expand_depth {
         return Err(Abort::Overflow {
-            capacity: crate::print::errors::Capacity::ExpansionDepth,
+            capacity: Capacity::ExpansionDepth,
             n: st.scanner.expand_depth,
         });
     }
@@ -855,7 +851,7 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
                         back_input(st)?;
                     }
                 } else if st.scanner.cur_tok != Token::other(b')') {
-                    crate::print::errors::back_error(
+                    back_error(
                         st,
                         "Missing ) inserted for expression",
                         &["I was expecting to see `+', `-', `*', `/', or `)'. Didn't."],
@@ -966,7 +962,7 @@ pub(super) fn scan_expr(st: &mut EngineState, mut l: ValueLevel) -> Result<CurVa
     st.scanner.expand_depth_count -= 1;
 
     if b {
-        crate::print::errors::error(
+        error(
             st,
             "Arithmetic overflow",
             &[

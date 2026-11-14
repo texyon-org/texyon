@@ -1,26 +1,24 @@
 //! Displaying boxes: `show_box`, `short_display` and `show_node_list`.
 
-use crate::base::codes::LimitCode;
-use crate::base::consts::{EMPTY, MATH_CHAR, SUB_BOX, SUB_MLIST};
-use crate::base::params::IntPar;
-use crate::base::units::{GlueSign, MemPtr, NodeType, Scaled};
-use crate::build::math::DEFAULT_CODE;
-use crate::fonts::Side;
-use crate::memory::mem::ZERO_GLUE;
-use crate::memory::node::MathWord;
-use crate::memory::node::{
-    AdjustPlacement, AnyNoad, AnyNode, BoxLr, BoxNode, CharNode, FenceSubtype, GlueKind,
-    KernSubtype, LeaderKind, MathCode, NoadVariant, NodePtr, WhatsitNode, WhatsitSubtype,
-    WhatsitVariant,
-};
-use crate::state::EngineState;
-
 use super::{
     print, print_char, print_current_string, print_delimiter, print_esc, print_fam_and_char,
     print_file_name, print_font_and_char, print_font_char, print_glue, print_int, print_ln,
     print_mark, print_native_word, print_raw_char, print_rule_dimen, print_scaled,
     print_skip_param, print_spec, print_style, print_write_whatsit,
 };
+use crate::base::codes::LimitCode;
+use crate::base::consts::{EMPTY, MATH_CHAR, SUB_BOX, SUB_MLIST};
+use crate::base::params::IntPar;
+use crate::base::units::{GlueSign, MemPtr, NodeType, Scaled, StrNumber};
+use crate::build::math::DEFAULT_CODE;
+use crate::fonts::Side;
+use crate::memory::mem::ZERO_GLUE;
+use crate::memory::node::{
+    AdjustPlacement, AnyNoad, AnyNode, BoxLr, BoxNode, CharNode, FenceSubtype, GlueKind, GlueNode,
+    KernSubtype, LeaderKind, MathCode, MathWord, NoadVariant, NodePtr, WhatsitNode, WhatsitSubtype,
+    WhatsitVariant,
+};
+use crate::state::EngineState;
 
 pub(crate) fn show_box(st: &mut EngineState, p: MemPtr) {
     st.errors.depth_threshold = st.eqtb.int_par(IntPar::ShowBoxDepth);
@@ -51,10 +49,7 @@ pub(crate) fn short_display(st: &mut EngineState, mut p: MemPtr) {
                     print_char(st, b' ');
                     st.errors.font_in_short_display = font;
                 }
-                print(
-                    st,
-                    crate::base::units::StrNumber::single_char(i32::from(st.mem[ch].character)),
-                );
+                print(st, StrNumber::single_char(i32::from(st.mem[ch].character)));
             }
         } else {
             match st.mem.classify(here) {
@@ -441,7 +436,7 @@ fn show_whatsit(st: &mut EngineState, node: NodePtr<WhatsitNode>) {
     }
 }
 
-fn show_glue(st: &mut EngineState, node: NodePtr<crate::memory::node::GlueNode>) {
+fn show_glue(st: &mut EngineState, node: NodePtr<GlueNode>) {
     let Some(kind) = st.mem[node].subtype.get() else {
         return print(st, "Unknown glue node!");
     };

@@ -17,11 +17,12 @@
 
 #![deny(clippy::cast_lossless)]
 
-use crate::state::ConfigState;
-
 use std::time::SystemTime;
+
 use texyon_bridge_core::{CoreBridgeLauncher, EngineAbortedError};
 use texyon_errors::prelude::*;
+
+use crate::state::ConfigState;
 
 mod base;
 mod build;
@@ -46,6 +47,9 @@ pub use preview::replay::source::{
 pub use preview::session::{EngineFrame, EnginePreviewConfig, IncrementalXeTeXSession, PageRange};
 pub use preview::sync_index::{Highlight, SyncIndex, SyncRect};
 pub use print::diagnostic::{Diagnostic, DiagnosticKind};
+
+use crate::engine::run_engine;
+use crate::preview::session::resident_active;
 
 /// A serial number describing the detailed binary layout of the TeX "format
 /// files" used by this crate. This number will occasionally increment,
@@ -214,7 +218,7 @@ impl TexEngine {
         format_file_name: &str,
         input_file_name: &str,
     ) -> Result<TexOutcome> {
-        if crate::preview::session::resident_active() {
+        if resident_active() {
             bail!("cannot start batch XeTeX while a resident XeTeX session is open");
         }
         ensure!(
@@ -233,7 +237,7 @@ impl TexEngine {
         };
 
         launcher.with_global_lock(|state| {
-            let r = crate::engine::run_engine(
+            let r = run_engine(
                 state,
                 config,
                 format_file_name,
@@ -259,8 +263,7 @@ impl TexEngine {
 /// them.
 mod linkage {
     // Anonymous imports deliberately make Cargo link these bridge crates.
-    use texyon_bridge_icu as _;
-    use texyon_pdf_io as _;
+    use {texyon_bridge_icu as _, texyon_pdf_io as _};
 }
 
 /// Does our resulting executable link correctly?

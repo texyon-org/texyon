@@ -5,7 +5,8 @@ use super::{MathStyle, SCRIPT_SCRIPT_SIZE};
 use crate::base::consts::{EMPTY, MATH_CHAR, MAX_DIMEN, NULL_FONT, SCRIPT_SIZE, SUB_MLIST};
 use crate::base::params::DimenPar;
 use crate::base::units::{FontId, MemPtr, NodeType, Scaled};
-use crate::build::packaging::PackSpec;
+use crate::build::packaging::{PackSpec, hpack, vpackage};
+use crate::fonts::new_native_character;
 use crate::fonts::ot_math::ScriptKind;
 use crate::memory::mem::MemState;
 use crate::memory::node::{AnyNode, BoxNode, MathSlot, Noad, NoadVariant, NodePtr};
@@ -141,7 +142,7 @@ fn initial_script_shifts(
             down: Scaled::ZERO,
         })
     } else {
-        let zb = crate::build::packaging::hpack(st, p, PackSpec::NATURAL)?;
+        let zb = hpack(st, p, PackSpec::NATURAL)?;
         let t = if style < MathStyle::SCRIPT {
             SCRIPT_SIZE
         } else {
@@ -211,8 +212,7 @@ fn finish_subsup_stack(st: &mut EngineState, input: SubSupStackInput) -> Result<
     st.mem[input.x].link = kern.ptr();
     st.mem[kern].link = input.y.ptr();
 
-    let packaged =
-        crate::build::packaging::vpackage(st, input.x.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
+    let packaged = vpackage(st, input.x.ptr(), PackSpec::NATURAL, MAX_DIMEN)?;
     st.mem[packaged].shift_amount = input.shift_down;
     st.mem.append_to_new_hlist(input.q, packaged.ptr());
     Ok(())
@@ -461,11 +461,7 @@ fn first_script_glyph(
         let cur_f_after_fetch = fetched.f;
         let cur_c_after_fetch = fetched.c;
         if st.fonts.font_is_ot_math(cur_f_after_fetch) {
-            let script_c = crate::fonts::new_native_character(
-                st,
-                cur_f_after_fetch,
-                cur_c_after_fetch as u32,
-            )?;
+            let script_c = new_native_character(st, cur_f_after_fetch, cur_c_after_fetch as u32)?;
             script_g = st.mem.get_native_glyph(script_c, 0);
             script_f = cur_f_after_fetch;
         }

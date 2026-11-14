@@ -1,14 +1,19 @@
 //! Loading pictures and PDF pages for `\XeTeXpicfile` and `\XeTeXpdffile`.
 
+use std::f64::consts::PI;
+
 use libc::{c_char, c_double, c_int, c_uint};
 
+use crate::base::codes::code_enum;
 use crate::base::consts::INVALID_HANDLE;
 use crate::base::units::Scaled;
-use crate::ffi::bridge::{FileFormat, input_open};
+use crate::ffi::bridge::{FileFormat, input_open, with_c_io};
 use crate::ffi::teckit_icu::with_c_str;
+use crate::files::io::{input_close, last_found_name, scan_file_name};
 use crate::fonts::ext::{d2fix, fix2d};
 use crate::memory::node::{PicNode, WhatsitSubtype};
-use crate::print::errors::Abort;
+use crate::print::errors::{Abort, error};
+use crate::scanning::scan::{scan_decimal, scan_dimen, scan_int, scan_keyword};
 use crate::state::EngineState;
 
 #[repr(C)]
@@ -72,7 +77,7 @@ const PIC_PROBE_OK: c_int = 0;
 /// The probe error for a missing file.
 const FILE_NOT_FOUND: c_int = -43;
 
-crate::base::codes::code_enum! {
+code_enum! {
     /// PDF page-box selector for `\XeTeXpdffile`, stored in the picture node and
     /// echoed by `pic_out`. `Unset` (no keyword) extracts the crop box but prints
     /// nothing. A non-PDF picture stores 0, the `None` of an `Option<PageboxType>`.
@@ -119,7 +124,7 @@ fn pdf_get_rect(
     let mut bbox = PdfRect::default();
     let mut rotate: c_int = 0;
     let status = with_c_str(filename, |filename| {
-        crate::ffi::bridge::with_c_io(|| {
+        with_c_io(|| {
             // SAFETY: `filename` is NUL-terminated, `handle` is an open input and
             // the box and rotation are valid out-parameters.
             unsafe {
@@ -155,7 +160,7 @@ fn pdf_get_rect(
 fn get_image_size_in_inches(handle: usize) -> Result<(f64, f64), c_int> {
     let (mut width_pix, mut height_pix) = (0, 0);
     let (mut xdensity, mut ydensity) = (0.0, 0.0);
-    let err = crate::ffi::bridge::with_c_io(|| {
+    let err = with_c_io(|| {
         // SAFETY: `handle` is an open input and the sizes are valid out-parameters.
         unsafe {
             tt_pic_probe_image_box(
@@ -187,7 +192,7 @@ fn find_pic_file(
     if handle == INVALID_HANDLE {
         return Ok((1, RealRect::default(), path.to_vec()));
     }
-    let found = crate::files::io::last_found_name(path);
+    let found = last_found_name(path);
 
     let (err, bounds) = match pdf_box {
         Some(pdf_box) => match pdf_get_rect(path, handle, page, pdf_box) {
@@ -207,7 +212,7 @@ fn find_pic_file(
             (err, bounds)
         }
     };
-    if crate::files::io::input_close(handle) {
+    if input_close(handle) {
         return Err(Abort::InputClose);
     }
     Ok((err, bounds, found))
@@ -308,11 +313,11 @@ impl Placement {
 
 /// Scan an image dimension, reporting and ignoring non-positive values.
 fn scan_image_size(st: &mut EngineState) -> Result<Option<f64>, Abort> {
-    let d = crate::scanning::scan::scan_dimen(st, false)?;
+    let d = scan_dimen(st, false)?;
     if d > Scaled::ZERO {
         return Ok(Some(fix2d(d)));
     }
-    crate::print::errors::error(
+    error(
         st,
         ("Improper image ", "size (", d, "pt) will be ignored"),
         &[
@@ -324,17 +329,17 @@ fn scan_image_size(st: &mut EngineState) -> Result<Option<f64>, Abort> {
 }
 
 fn scan_scale_factor(st: &mut EngineState) -> Result<f64, Abort> {
-    Ok(f64::from(crate::scanning::scan::scan_int(st)?) / 1000.0)
+    Ok(f64::from(scan_int(st)?) / 1000.0)
 }
 
 pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abort> {
-    let file = crate::files::io::scan_file_name(st)?.file;
+    let file = scan_file_name(st)?.file;
 
     let mut pdf_box_type = None;
     let mut page = 0;
     if is_pdf {
-        if crate::scanning::scan::scan_keyword(st, "page")? {
-            page = crate::scanning::scan::scan_int(st)?;
+        if scan_keyword(st, "page")? {
+            page = scan_int(st)?;
         }
         let keywords = [
             ("crop", PageboxType::Crop),
@@ -345,7 +350,7 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
         ];
         let mut pdf_box = PageboxType::Unset;
         for (keyword, pb) in keywords {
-            if crate::scanning::scan::scan_keyword(st, keyword)? {
+            if scan_keyword(st, keyword)? {
                 pdf_box = pb;
                 break;
             }
@@ -372,37 +377,37 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
     let mut y_size_req = 0.0;
     loop {
         let no_size_req = x_size_req == 0.0 && y_size_req == 0.0;
-        if crate::scanning::scan::scan_keyword(st, "scaled")? {
+        if scan_keyword(st, "scaled")? {
             let s = scan_scale_factor(st)?;
             if no_size_req {
                 placement.transform(&Transform::scale(s, s));
             }
-        } else if crate::scanning::scan::scan_keyword(st, "xscaled")? {
+        } else if scan_keyword(st, "xscaled")? {
             let s = scan_scale_factor(st)?;
             if no_size_req {
                 placement.transform(&Transform::scale(s, 1.0));
             }
-        } else if crate::scanning::scan::scan_keyword(st, "yscaled")? {
+        } else if scan_keyword(st, "yscaled")? {
             let s = scan_scale_factor(st)?;
             if no_size_req {
                 placement.transform(&Transform::scale(1.0, s));
             }
-        } else if crate::scanning::scan::scan_keyword(st, "width")? {
+        } else if scan_keyword(st, "width")? {
             if let Some(size) = scan_image_size(st)? {
                 x_size_req = size;
             }
-        } else if crate::scanning::scan::scan_keyword(st, "height")? {
+        } else if scan_keyword(st, "height")? {
             if let Some(size) = scan_image_size(st)? {
                 y_size_req = size;
             }
-        } else if crate::scanning::scan::scan_keyword(st, "rotated")? {
-            let angle = crate::scanning::scan::scan_decimal(st)?;
+        } else if scan_keyword(st, "rotated")? {
+            let angle = scan_decimal(st)?;
             if !no_size_req {
                 placement.scale_to(x_size_req, y_size_req);
                 x_size_req = 0.0;
                 y_size_req = 0.0;
             }
-            let angle = fix2d(angle) * std::f64::consts::PI / 180.0;
+            let angle = fix2d(angle) * PI / 180.0;
             let rotation = Transform::rotation(angle);
             for c in &mut placement.corners {
                 rotation.apply(c);
@@ -458,7 +463,7 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
         } else {
             "it was not a recognized image format."
         };
-        crate::print::errors::error(
+        error(
             st,
             ("Unable to load picture or PDF file '", file, b'\''),
             &["The requested image couldn't be read because", reason],
@@ -476,14 +481,12 @@ pub(crate) fn count_pdf_file_pages_named(name: &[u8]) -> Result<c_int, Abort> {
     let status = with_c_str(name, |name| {
         // SAFETY: `name` is NUL-terminated, `handle` is an open input and
         // `pages` is a valid out-parameter.
-        crate::ffi::bridge::with_c_io(|| unsafe {
-            tt_pic_probe_pdf_page_count(name, handle, &mut pages)
-        })
+        with_c_io(|| unsafe { tt_pic_probe_pdf_page_count(name, handle, &mut pages) })
     });
     if status != PIC_PROBE_OK {
         pages = 0;
     }
-    if crate::files::io::input_close(handle) {
+    if input_close(handle) {
         return Err(Abort::InputClose);
     }
     Ok(pages)

@@ -4,7 +4,9 @@
 //! XeTeX engine build script. Builds TECkit, the engine's only C++ code, and
 //! finds the ICU version suffix for the Rust FFI.
 
-use std::{env, fs, io::BufRead, path::PathBuf};
+use std::io::BufRead;
+use std::path::PathBuf;
+use std::{env, fs};
 
 use texyon_cfg_support::*;
 

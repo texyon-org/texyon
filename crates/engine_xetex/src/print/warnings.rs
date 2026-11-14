@@ -1,10 +1,13 @@
 //! Diagnostic warnings: e-TeX group/if/file nesting, fonts, UTF-8 and missing characters.
 
 use super::cmd_chr::print_command;
+use super::diagnostic::{begin_warning, end_capture};
+use super::errors::{Abort, error};
 use super::show::show_context;
 use super::{
-    TexPrint, begin_diagnostic, end_diagnostic, note_warning_issued, print, print_code, print_esc,
-    print_group, print_hex, print_int, print_ln, print_nl, print_raw_bytes, print_ucs_code,
+    Selector, TexPrint, begin_diagnostic, end_diagnostic, note_warning_issued, print, print_code,
+    print_esc, print_group, print_hex, print_int, print_ln, print_nl, print_raw_bytes,
+    print_ucs_code,
 };
 use crate::base::codes::FiOrElseCode;
 use crate::base::command::Command;
@@ -12,9 +15,7 @@ use crate::base::params::IntPar;
 use crate::base::units::FontId;
 use crate::ffi::bridge::issue_warning;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
-use crate::print::Selector;
-use crate::print::errors::Abort;
-use crate::scanning::input::TOKEN_LIST;
+use crate::scanning::input::{InputName, TOKEN_LIST};
 use crate::state::EngineState;
 
 /// Walks `base_ptr` down to the file at input level `level`, reporting whether it is a real file.
@@ -43,7 +44,7 @@ pub(crate) fn group_warning(st: &mut EngineState) {
     }
     if w {
         print_nl(st, "Warning: ");
-        crate::print::diagnostic::begin_warning(st);
+        begin_warning(st);
         print(st, "end of ");
         print_group(st, true);
         print(st, " of a different file");
@@ -52,7 +53,7 @@ pub(crate) fn group_warning(st: &mut EngineState) {
             show_context(st);
         }
         note_warning_issued(st);
-        crate::print::diagnostic::end_capture(st);
+        end_capture(st);
     }
 }
 
@@ -70,7 +71,7 @@ pub(crate) fn if_warning(st: &mut EngineState) {
     }
     if w {
         print_nl(st, "Warning: ");
-        crate::print::diagnostic::begin_warning(st);
+        begin_warning(st);
         print(st, "end of ");
         print_command(st, Command::IfTest(st.scanner.cur_if));
         print_if_line(st, st.scanner.if_line);
@@ -79,7 +80,7 @@ pub(crate) fn if_warning(st: &mut EngineState) {
         if st.eqtb.int_par(IntPar::TracingNesting) > 1 {
             show_context(st);
         }
-        crate::print::diagnostic::end_capture(st);
+        end_capture(st);
         note_warning_issued(st);
     }
 }
@@ -108,11 +109,11 @@ pub(crate) fn file_warning(st: &mut EngineState) {
     while st.input.open_levels[st.input.in_open].grp != st.save_stack.cur_boundary {
         st.save_stack.cur_level -= 1;
         print_nl(st, "Warning: ");
-        crate::print::diagnostic::begin_warning(st);
+        begin_warning(st);
         print(st, "end of file when ");
         print_group(st, true);
         print(st, " is incomplete");
-        crate::print::diagnostic::end_capture(st);
+        end_capture(st);
         if !leave_group_boundary(st) {
             break;
         }
@@ -130,7 +131,7 @@ pub(crate) fn file_warning(st: &mut EngineState) {
     let mut cur = st.scanner.conds.top();
     while opened_in != cur {
         print_nl(st, "Warning: ");
-        crate::print::diagnostic::begin_warning(st);
+        begin_warning(st);
         print(st, "end of file when ");
         print_command(st, Command::IfTest(st.scanner.cur_if));
         if st.scanner.if_limit == FiOrElseCode::Fi {
@@ -138,7 +139,7 @@ pub(crate) fn file_warning(st: &mut EngineState) {
         }
         print_if_line(st, st.scanner.if_line);
         print(st, " is incomplete");
-        crate::print::diagnostic::end_capture(st);
+        end_capture(st);
         let Some(cond) = outer.next() else {
             break;
         };
@@ -164,7 +165,7 @@ pub(crate) fn font_feature_warning(
     font_name: &[u8],
 ) {
     begin_diagnostic(st);
-    crate::print::diagnostic::begin_warning(st);
+    begin_warning(st);
     print_nl(st, "Unknown ");
     if !setting.is_empty() {
         print(st, "selector `");
@@ -176,7 +177,7 @@ pub(crate) fn font_feature_warning(
     print(st, "' in font `");
     print_raw_bytes(st, font_name);
     print(st, "'.");
-    crate::print::diagnostic::end_capture(st);
+    end_capture(st);
     end_diagnostic(st, false);
 }
 
@@ -191,7 +192,7 @@ pub(crate) fn font_mapping_warning(
     if warning_type == 0 {
         print_nl(st, "Loaded mapping `");
     } else {
-        crate::print::diagnostic::begin_warning(st);
+        begin_warning(st);
         print_nl(st, "Font mapping `");
     }
     print_raw_bytes(st, mapping_name);
@@ -205,22 +206,22 @@ pub(crate) fn font_mapping_warning(
         }
         _ => print(st, "'."),
     }
-    crate::print::diagnostic::end_capture(st);
+    end_capture(st);
     end_diagnostic(st, false);
 }
 
 pub(crate) fn bad_utf8_warning(st: &mut EngineState) {
     begin_diagnostic(st);
-    crate::print::diagnostic::begin_warning(st);
+    begin_warning(st);
     print_nl(st, "Invalid UTF-8 byte or sequence");
-    if st.input.cur_input.name == crate::scanning::input::InputName::Terminal {
+    if st.input.cur_input.name == InputName::Terminal {
         print(st, " in terminal input");
     } else {
         print(st, " at line ");
         print_int(st, st.mem.line);
     }
     print(st, " replaced by U+FFFD.");
-    crate::print::diagnostic::end_capture(st);
+    end_capture(st);
     end_diagnostic(st, false);
 }
 
@@ -255,14 +256,14 @@ pub(crate) fn char_warning(st: &mut EngineState, f: FontId, c: i32) -> Result<()
         let lost = LostChar { font: f, c };
         if tracing_lost > 2 {
             st.eqtb.set_int_par(IntPar::TracingOnline, old_setting);
-            crate::print::errors::error(st, ("Missing character: There is no ", lost), &[])?;
+            error(st, ("Missing character: There is no ", lost), &[])?;
         } else {
             begin_diagnostic(st);
-            crate::print::diagnostic::begin_warning(st);
+            begin_warning(st);
             print_nl(st, "Missing character: There is no ");
             print(st, (lost, '!'));
             st.eqtb.set_int_par(IntPar::TracingOnline, old_setting);
-            crate::print::diagnostic::end_capture(st);
+            end_capture(st);
             end_diagnostic(st, false);
         }
     }

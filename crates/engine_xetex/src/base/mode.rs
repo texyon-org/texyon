@@ -1,5 +1,6 @@
 //! TeX's modes: what kind of list is being built, with the registers that list keeps.
 
+use crate::base::consts::IGNORE_DEPTH;
 use crate::base::units::Scaled;
 use crate::memory::node::{FractionNoad, NodePtr};
 
@@ -65,7 +66,7 @@ impl Mode {
     pub(crate) const fn vertical(inner: bool) -> Mode {
         Mode::Vertical {
             inner,
-            prev_depth: crate::base::consts::IGNORE_DEPTH,
+            prev_depth: IGNORE_DEPTH,
         }
     }
 

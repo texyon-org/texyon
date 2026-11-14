@@ -2,9 +2,11 @@
 //! TECkit converters and ICU line breaking and bidi. Every raw pointer stays
 //! inside this module.
 
+use std::cell::Cell;
 use std::ffi::{CString, c_char, c_int, c_long, c_void};
 use std::marker::PhantomData;
 use std::ptr::{self, NonNull};
+use std::{mem, slice};
 
 unsafe extern "C" {
 
@@ -157,14 +159,12 @@ impl FontMappingHandle {
 /// The bytes of UTF-16 `units`.
 fn utf16_bytes(units: &[u16]) -> &[u8] {
     // SAFETY: `u16` has no padding, so the view covers initialised bytes.
-    unsafe { std::slice::from_raw_parts(units.as_ptr().cast(), std::mem::size_of_val(units)) }
+    unsafe { slice::from_raw_parts(units.as_ptr().cast(), mem::size_of_val(units)) }
 }
 
 fn utf16_bytes_mut(units: &mut [u16]) -> &mut [u8] {
     // SAFETY: as in `utf16_bytes`, and any bytes written form valid `u16`s.
-    unsafe {
-        std::slice::from_raw_parts_mut(units.as_mut_ptr().cast(), std::mem::size_of_val(units))
-    }
+    unsafe { slice::from_raw_parts_mut(units.as_mut_ptr().cast(), mem::size_of_val(units)) }
 }
 
 impl FontMappingHandle {
@@ -256,7 +256,7 @@ impl IcuBreaks<'_> {
 pub(crate) struct Bidi<'t> {
     raw: NonNull<c_void>,
     /// The status of `ubidi_setPara`, which later calls see as their input.
-    status: std::cell::Cell<i32>,
+    status: Cell<i32>,
     _text: PhantomData<&'t [u16]>,
 }
 
@@ -290,7 +290,7 @@ impl<'t> Bidi<'t> {
         };
         Bidi {
             raw,
-            status: std::cell::Cell::new(status),
+            status: Cell::new(status),
             _text: PhantomData,
         }
     }

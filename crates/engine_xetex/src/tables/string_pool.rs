@@ -1,10 +1,12 @@
 //! String pool: TeX strings stored as UTF-16 code units in `str_pool`.
 //! Strings below `TOO_BIG_CHAR` are single characters stored implicitly.
 
-use crate::base::consts::{EMPTY_STRING, TOO_BIG_CHAR};
+use std::ops::Range;
+
+use crate::base::consts::{EMPTY_STRING, TOO_BIG_CHAR, TOO_BIG_USV};
 use crate::base::units::{PoolPos, StrNumber};
 use crate::base::utf8::{FIRST_BYTE_MARK, next_utf8_char, utf16_units};
-use crate::print::errors::Abort;
+use crate::print::errors::{Abort, Capacity};
 
 impl StringsState {
     /// Where pool string `s` starts in `str_pool`.
@@ -13,21 +15,21 @@ impl StringsState {
     }
 
     /// The `str_pool` range of string `s`.
-    pub(crate) fn str_range(&self, s: StrNumber) -> std::ops::Range<usize> {
+    pub(crate) fn str_range(&self, s: StrNumber) -> Range<usize> {
         self.str_start(s).index()..self.str_start(s.next()).index()
     }
 
     /// The character of `s` when it is one surrogate pair, else `TOO_BIG_USV`.
     pub(crate) fn astral_char(&self, s: StrNumber) -> i32 {
         if !s.is_pool_string() || self.length(s) != 2 {
-            return crate::base::consts::TOO_BIG_USV;
+            return TOO_BIG_USV;
         }
         let start = self.str_start(s).index();
         let (hi, lo) = (self.str_pool[start], self.str_pool[start + 1]);
         if (0xD800..=0xDBFF).contains(&hi) && (0xDC00..=0xDFFF).contains(&lo) {
             0x10000 + (i32::from(hi) - 0xD800) * 0x400 + i32::from(lo) - 0xDC00
         } else {
-            crate::base::consts::TOO_BIG_USV
+            TOO_BIG_USV
         }
     }
 
@@ -192,17 +194,17 @@ pub(crate) struct StringsState {
 
 impl StringsState {
     /// The string pool ran out.
-    pub(crate) fn pool_overflow(&self) -> crate::print::errors::Abort {
-        crate::print::errors::Abort::Overflow {
-            capacity: crate::print::errors::Capacity::PoolSize,
+    pub(crate) fn pool_overflow(&self) -> Abort {
+        Abort::Overflow {
+            capacity: Capacity::PoolSize,
             n: self.pool_size - self.init_pool_ptr,
         }
     }
 
     /// The string table ran out.
-    pub(crate) fn string_overflow(&self) -> crate::print::errors::Abort {
-        crate::print::errors::Abort::Overflow {
-            capacity: crate::print::errors::Capacity::NumberOfStrings,
+    pub(crate) fn string_overflow(&self) -> Abort {
+        Abort::Overflow {
+            capacity: Capacity::NumberOfStrings,
             n: self.max_strings - self.init_str_ptr,
         }
     }

@@ -1,12 +1,14 @@
 //! Showing internal state: `\show...`, `\message`, the semantic nest and the error context.
 
 use super::cmd_chr::{print_command, print_meaning};
+use super::diagnostic::{DiagnosticKind, begin_capture, end_capture};
+use super::errors::{Abort, InteractionMode, errmessage, finish_error};
 use super::show_box::show_box;
 use super::warnings::{leave_group_boundary, print_if_line};
 use super::{
-    begin_diagnostic, end_diagnostic, print, print_char, print_cs, print_error_prefix, print_esc,
-    print_group, print_int, print_ln, print_mode, print_nl, print_raw_char, print_scaled,
-    sprint_cs, token_show,
+    Selector, begin_diagnostic, end_diagnostic, print, print_char, print_cs, print_error_prefix,
+    print_esc, print_group, print_int, print_ln, print_mode, print_nl, print_raw_char,
+    print_scaled, sprint_cs, token_show,
 };
 use crate::base::cmd::Cmd;
 use crate::base::codes::{FiOrElseCode, LeaderCode, ShowCode, TheCode};
@@ -14,21 +16,20 @@ use crate::base::command::Command;
 use crate::base::consts::IGNORE_DEPTH;
 use crate::base::mode::{Mode, ModeName};
 use crate::base::params::{IntPar, TokPar};
+use crate::base::scaled_math::x_over_n;
 use crate::base::token::{TokCursor, Token, TokenKind};
 use crate::base::units::{NodeType, Scaled};
 use crate::build::main_control::BoxContext;
 use crate::build::packaging::PackSpec;
+use crate::build::pagebuilder::PageContents;
 use crate::ffi::bridge::output_flush;
 use crate::memory::mem::{CONTRIB_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
 use crate::memory::node::{AnyNode, NodePtr, PageInsNode};
-use crate::print::Selector;
-use crate::print::errors::InteractionMode;
-use crate::print::errors::{Abort, finish_error};
-use crate::scanning::input::InputName;
-use crate::scanning::input::{TOKEN_LIST, TokenType};
+use crate::scanning::input::{InputName, TOKEN_LIST, TokenType};
+use crate::scanning::scan::{fetch_box, get_token, scan_register_num, scan_toks, the_toks};
+use crate::shipout::ensure_write_stream_open;
 use crate::state::EngineState;
-use crate::tables::save::GroupCode;
-use crate::tables::save::Saved;
+use crate::tables::save::{GroupCode, Saved};
 
 pub(crate) fn show_cur_cmd_chr(st: &mut EngineState) {
     begin_diagnostic(st);
@@ -187,7 +188,7 @@ fn print_totals(st: &mut EngineState) {
 }
 
 pub(crate) fn issue_message(st: &mut EngineState, err: bool) -> Result<(), Abort> {
-    let text = crate::scanning::scan::scan_toks(st, false, true)?;
+    let text = scan_toks(st, false, true)?;
     let old_setting = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
     token_show(st, text);
@@ -204,12 +205,9 @@ pub(crate) fn issue_message(st: &mut EngineState, err: bool) -> Result<(), Abort
         } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
             print_char(st, b' ');
         }
-        crate::print::diagnostic::begin_capture(
-            st,
-            crate::print::diagnostic::DiagnosticKind::Written,
-        );
+        begin_capture(st, DiagnosticKind::Written);
         print(st, s);
-        crate::print::diagnostic::end_capture(st);
+        end_capture(st);
         output_flush(st.shipout.rust_stdout);
     } else {
         let help: &[&'static str] = if !st.eqtb.tok_par(TokPar::ErrHelp).is_null() {
@@ -227,7 +225,7 @@ pub(crate) fn issue_message(st: &mut EngineState, err: bool) -> Result<(), Abort
                 "and deduce the truth by order and method.",
             ]
         };
-        crate::print::errors::errmessage(st, s, help)?;
+        errmessage(st, s, help)?;
     }
     st.strings.flush_string();
     Ok(())
@@ -467,8 +465,8 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
             show_activities(st);
         }
         ShowCode::Box => {
-            let n = crate::scanning::scan::scan_register_num(st)?;
-            let contents = crate::scanning::scan::fetch_box(st, n);
+            let n = scan_register_num(st)?;
+            let contents = fetch_box(st, n);
             show_to_stream(st)?;
             begin_diagnostic(st);
             print_nl(st, "> \\box");
@@ -480,7 +478,7 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
             }
         }
         ShowCode::Show => {
-            crate::scanning::scan::get_token(st)?;
+            get_token(st)?;
             show_to_stream(st)?;
             print_nl(st, "> ");
             if !st.scanner.cur_cs.is_none() {
@@ -529,7 +527,7 @@ pub(crate) fn show_whatever(st: &mut EngineState, code: ShowCode) -> Result<(), 
                 TheCode::The
             };
             let list = st.mem.tokens.begin()?;
-            crate::scanning::scan::the_toks(st, the, &list)?;
+            the_toks(st, the, &list)?;
             let list = st.mem.tokens.finish(list)?;
             show_to_stream(st)?;
             print_nl(st, "> ");
@@ -596,7 +594,7 @@ fn show_to_stream(st: &mut EngineState) -> Result<(), Abort> {
         return Ok(());
     };
     if open && stream < Selector::NoPrint.raw() {
-        crate::shipout::ensure_write_stream_open(st, usize::from(stream))?;
+        ensure_write_stream_open(st, usize::from(stream))?;
         st.shipout.selector = Selector::File(stream);
     }
     Ok(())
@@ -610,7 +608,7 @@ fn show_page_so_far(st: &mut EngineState) {
             print(st, " (held over for next output)");
         }
         show_box(st, PAGE_HEAD.link(&st.mem));
-        if st.shipout.page_contents != crate::build::pagebuilder::PageContents::Empty {
+        if st.shipout.page_contents != PageContents::Empty {
             print_nl(st, "total height ");
             print_totals(st);
             print_nl(st, " goal height ");
@@ -628,7 +626,7 @@ fn show_page_so_far(st: &mut EngineState) {
                 let adds = if count == 1000 {
                     height
                 } else {
-                    crate::base::scaled_math::x_over_n(height, 1000).quotient * count
+                    x_over_n(height, 1000).quotient * count
                 };
                 print_scaled(st, adds);
                 if st.mem[ins].is_split_up() {

@@ -3,6 +3,12 @@
 //! Indexing `mem` with a [`NodePtr`] borrows the node as its struct, and a
 //! mutable borrow first notes the node's words in the journal.
 
+use std::fmt::{Debug, Formatter};
+use std::mem;
+use std::ops::{Index, IndexMut, Range};
+
+use bytemuck::{Pod, Zeroable};
+
 use super::{
     AdjustPlacement, BoxLr, FenceSubtype, GlueKind, KernSubtype, LeaderKind, LigBoundary,
     MathAccentKind, MathCode, Node, NodePtr, Stored, StoredDimen, View, WhatsitSubtype,
@@ -10,18 +16,15 @@ use super::{
 use crate::base::codes::LimitCode;
 use crate::base::consts::{EMPTY, NORMAL};
 use crate::base::token::TokenList;
-use crate::base::units::MemIdx;
-use crate::base::units::RawPtr;
 use crate::base::units::{
-    Dir, FontId, GlueOrder, GlueSign, MemPtr, NodeType, Orientation, Scaled, StrNumber,
+    Dir, FontId, GlueOrder, GlueSign, MemIdx, MemPtr, NodeType, Orientation, RawPtr, Scaled,
+    StrNumber,
 };
 use crate::build::math::MathStyle;
 use crate::fonts::Side;
 use crate::memory::glue_store::GlueSpecId;
 use crate::memory::mem::MemState;
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
-use bytemuck::{Pod, Zeroable};
+use crate::print::errors::{Abort, OrConfusion};
 
 /// Where SyncTeX places a node: the input tag and line it was made at.
 #[repr(C)]
@@ -40,7 +43,7 @@ pub(crate) const fn word_offset(bytes: usize) -> i32 {
     (bytes / 4) as i32
 }
 
-impl<K: View> std::ops::Index<NodePtr<K>> for MemState {
+impl<K: View> Index<NodePtr<K>> for MemState {
     type Output = K;
 
     #[inline]
@@ -49,7 +52,7 @@ impl<K: View> std::ops::Index<NodePtr<K>> for MemState {
     }
 }
 
-impl<K: View> std::ops::IndexMut<NodePtr<K>> for MemState {
+impl<K: View> IndexMut<NodePtr<K>> for MemState {
     #[inline]
     fn index_mut(&mut self, p: NodePtr<K>) -> &mut K {
         let words = p.idx().words(K::SIZE);
@@ -81,8 +84,8 @@ pub trait ArrayNode: Node {
 #[inline]
 fn entry_words<K: ArrayNode>(entries: usize) -> usize {
     entries
-        .saturating_mul(std::mem::size_of::<K::Entry>())
-        .div_ceil(std::mem::size_of::<u32>())
+        .saturating_mul(mem::size_of::<K::Entry>())
+        .div_ceil(mem::size_of::<u32>())
 }
 
 pub type EntriesMutAnd<'a, K, L> = (
@@ -93,12 +96,12 @@ pub type EntriesMutAnd<'a, K, L> = (
 impl MemState {
     /// The words of `p`'s entries and how many bytes of them are in use.
     #[inline]
-    fn entry_span<K: ArrayNode>(&self, p: NodePtr<K>) -> (std::ops::Range<usize>, usize) {
+    fn entry_span<K: ArrayNode>(&self, p: NodePtr<K>) -> (Range<usize>, usize) {
         let len = usize::try_from(self[p].len()).unwrap_or(0);
         let start = p.idx().words(K::SIZE).end;
         (
             start..start + entry_words::<K>(len),
-            len.saturating_mul(std::mem::size_of::<K::Entry>()),
+            len.saturating_mul(mem::size_of::<K::Entry>()),
         )
     }
 
@@ -548,8 +551,8 @@ impl GlueRatio {
     }
 }
 
-impl std::fmt::Debug for GlueRatio {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Debug for GlueRatio {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.get().fmt(f)
     }
 }
@@ -1470,8 +1473,7 @@ impl BoxNode {
 mod tests {
     use super::*;
     use crate::base::units::MemIdx;
-    use crate::memory::node::View;
-    use crate::memory::node::WhatsitVariant;
+    use crate::memory::node::{View, WhatsitVariant};
 
     fn arena() -> MemState {
         MemState {

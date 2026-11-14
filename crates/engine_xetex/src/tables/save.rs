@@ -1,16 +1,24 @@
 //! The save stack, `eqtb` definitions, and the sparse-array register trie.
 
+use crate::base::codes::code_enum;
 use crate::base::command::Command;
 use crate::base::consts::LEVEL_ONE;
 use crate::base::params::IntPar;
 use crate::base::token::Token;
 use crate::base::units::SavePtr;
+use crate::build::main_control::BoxContext;
+use crate::build::packaging::PackSpec;
 use crate::memory::mem::MemState;
-use crate::print::errors::Abort;
-use crate::print::errors::OrConfusion;
+use crate::memory::node::MathSlot;
+use crate::print::errors::{Abort, Capacity, OrConfusion, error};
+use crate::print::{Esc, Nl, TexPrint, group_warning, print};
+use crate::scanning::input::{back_input, prepend_to_backed_up};
 use crate::state::EngineState;
-use crate::tables::cs::CsId;
-use crate::tables::cs::Frozen;
+use crate::tables::cs::{CsId, Frozen};
+use crate::tables::eqtb::{
+    BoxLoc, CatLoc, DelLoc, DimenLoc, FontLoc, GlueLoc, IntLoc, InterCharPair, LcLoc, MathLoc, Old,
+    SfLoc, ShapeLoc, ToksLoc, UcLoc, restore,
+};
 
 impl SaveStackState {
     /// TeX's `check_full_save_stack`, true when no room is left.
@@ -33,7 +41,7 @@ impl SaveStackState {
         };
         if self.cur_level == u16::MAX {
             return Err(Abort::Overflow {
-                capacity: crate::print::errors::Capacity::GroupingLevels,
+                capacity: Capacity::GroupingLevels,
                 n: i32::from(u16::MAX),
             });
         }
@@ -60,13 +68,13 @@ pub(crate) fn prepare_mag(st: &mut EngineState) -> Result<(), Abort> {
     let mag = st.eqtb.int_par(IntPar::Mag);
     if st.scanner.mag_set > 0 && mag != st.scanner.mag_set {
         let mag_set = st.scanner.mag_set;
-        crate::print::errors::error(
+        error(
             st,
             (
                 "Incompatible magnification (",
                 mag,
                 ");",
-                crate::print::Nl(" the previous value will be retained"),
+                Nl(" the previous value will be retained"),
                 " (",
                 mag_set,
                 ")",
@@ -80,7 +88,7 @@ pub(crate) fn prepare_mag(st: &mut EngineState) -> Result<(), Abort> {
     }
     let mag = st.eqtb.int_par(IntPar::Mag);
     if mag <= 0 || mag > 32768 {
-        crate::print::errors::error(
+        error(
             st,
             (
                 "Illegal magnification has been changed to 1000",
@@ -121,7 +129,7 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
                 let cur = st.scanner.cur_tok;
                 st.scanner.cur_tok = t;
                 if a {
-                    crate::scanning::input::prepend_to_backed_up(st, t)?;
+                    prepend_to_backed_up(st, t)?;
                     if t.is_brace() {
                         if t.is_left_brace() {
                             st.scanner.align_state -= 1;
@@ -130,30 +138,30 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
                         }
                     }
                 } else {
-                    crate::scanning::input::back_input(st)?;
+                    back_input(st)?;
                     a = true;
                 }
                 st.scanner.cur_tok = cur;
             }
-            SaveEntry::Restore(Restore::Cs(old)) => crate::tables::eqtb::restore(st, old)?,
-            SaveEntry::Restore(Restore::Int(old)) => crate::tables::eqtb::restore(st, old)?,
-            SaveEntry::Restore(Restore::Dimen(old)) => crate::tables::eqtb::restore(st, old)?,
-            SaveEntry::Restore(Restore::Glue(old)) => crate::tables::eqtb::restore(st, old)?,
-            SaveEntry::Restore(Restore::Toks(old)) => crate::tables::eqtb::restore(st, old)?,
-            SaveEntry::Restore(Restore::Shape(old)) => crate::tables::eqtb::restore(st, old)?,
-            SaveEntry::Restore(Restore::Box(old)) => crate::tables::eqtb::restore(st, old)?,
-            SaveEntry::Restore(Restore::Font(old)) => crate::tables::eqtb::restore(st, old)?,
-            SaveEntry::Restore(Restore::Cat(old)) => crate::tables::eqtb::restore(st, old)?,
-            SaveEntry::Restore(Restore::Lc(old)) => crate::tables::eqtb::restore(st, old)?,
-            SaveEntry::Restore(Restore::Uc(old)) => crate::tables::eqtb::restore(st, old)?,
-            SaveEntry::Restore(Restore::Sf(old)) => crate::tables::eqtb::restore(st, old)?,
-            SaveEntry::Restore(Restore::Math(old)) => crate::tables::eqtb::restore(st, old)?,
-            SaveEntry::Restore(Restore::Del(old)) => crate::tables::eqtb::restore(st, old)?,
-            SaveEntry::Restore(Restore::InterChar(old)) => crate::tables::eqtb::restore(st, old)?,
+            SaveEntry::Restore(Restore::Cs(old)) => restore(st, old)?,
+            SaveEntry::Restore(Restore::Int(old)) => restore(st, old)?,
+            SaveEntry::Restore(Restore::Dimen(old)) => restore(st, old)?,
+            SaveEntry::Restore(Restore::Glue(old)) => restore(st, old)?,
+            SaveEntry::Restore(Restore::Toks(old)) => restore(st, old)?,
+            SaveEntry::Restore(Restore::Shape(old)) => restore(st, old)?,
+            SaveEntry::Restore(Restore::Box(old)) => restore(st, old)?,
+            SaveEntry::Restore(Restore::Font(old)) => restore(st, old)?,
+            SaveEntry::Restore(Restore::Cat(old)) => restore(st, old)?,
+            SaveEntry::Restore(Restore::Lc(old)) => restore(st, old)?,
+            SaveEntry::Restore(Restore::Uc(old)) => restore(st, old)?,
+            SaveEntry::Restore(Restore::Sf(old)) => restore(st, old)?,
+            SaveEntry::Restore(Restore::Math(old)) => restore(st, old)?,
+            SaveEntry::Restore(Restore::Del(old)) => restore(st, old)?,
+            SaveEntry::Restore(Restore::InterChar(old)) => restore(st, old)?,
         }
     }
     if st.input.open_levels[st.input.in_open].grp == st.save_stack.cur_boundary {
-        crate::print::group_warning(st);
+        group_warning(st);
     }
     let ss = &mut st.save_stack;
     let (group, below, _) = ss.boundary_at(ss.save_ptr).or_confusion("unsave")?;
@@ -163,7 +171,7 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
 
 impl MemState {}
 
-crate::base::codes::code_enum! {
+code_enum! {
     /// The kind of group on the save stack (`cur_group`).
     #[derive(Default)]
     pub(crate) enum GroupCode: u8 {
@@ -196,9 +204,8 @@ pub(crate) enum Closer {
     Right,
 }
 
-impl crate::print::TexPrint for Closer {
+impl TexPrint for Closer {
     fn print_to(&self, st: &mut EngineState) {
-        use crate::print::{Esc, print};
         match self {
             Closer::EndGroup => print(st, Esc("endgroup")),
             Closer::MathShift => print(st, '$'),
@@ -213,8 +220,7 @@ pub(crate) struct Insertion(pub Option<Closer>);
 
 impl Insertion {
     /// The inserted tokens, in reading order.
-    pub(crate) fn tokens(self) -> Vec<crate::base::token::Token> {
-        use crate::base::token::Token;
+    pub(crate) fn tokens(self) -> Vec<Token> {
         match self.0 {
             Some(Closer::EndGroup) => vec![Token::from_cs(Frozen::EndGroup.cs())],
             Some(Closer::MathShift) => vec![Token::math_shift(b'$')],
@@ -224,9 +230,8 @@ impl Insertion {
     }
 }
 
-impl crate::print::TexPrint for Insertion {
+impl TexPrint for Insertion {
     fn print_to(&self, st: &mut EngineState) {
-        use crate::print::{Esc, print};
         match self.0 {
             Some(Closer::Right) => print(st, Esc("right.")),
             Some(closer) => print(st, closer),
@@ -259,7 +264,7 @@ pub(crate) enum SaveEntry {
     /// A value to put back when the group ends.
     Restore(Restore),
     /// A token `\aftergroup` inserts when the group ends.
-    InsertToken(crate::base::token::Token),
+    InsertToken(Token),
     /// Something a construction keeps until its group ends.
     Saved(Saved),
 }
@@ -267,36 +272,36 @@ pub(crate) enum SaveEntry {
 /// An old `eqtb` value, with the level it had.
 #[derive(Copy, Clone)]
 pub(crate) enum Restore {
-    Cs(crate::tables::eqtb::Old<CsId>),
-    Int(crate::tables::eqtb::Old<crate::tables::eqtb::IntLoc>),
-    Dimen(crate::tables::eqtb::Old<crate::tables::eqtb::DimenLoc>),
-    Glue(crate::tables::eqtb::Old<crate::tables::eqtb::GlueLoc>),
-    Toks(crate::tables::eqtb::Old<crate::tables::eqtb::ToksLoc>),
-    Shape(crate::tables::eqtb::Old<crate::tables::eqtb::ShapeLoc>),
-    Box(crate::tables::eqtb::Old<crate::tables::eqtb::BoxLoc>),
-    Font(crate::tables::eqtb::Old<crate::tables::eqtb::FontLoc>),
-    Cat(crate::tables::eqtb::Old<crate::tables::eqtb::CatLoc>),
-    Lc(crate::tables::eqtb::Old<crate::tables::eqtb::LcLoc>),
-    Uc(crate::tables::eqtb::Old<crate::tables::eqtb::UcLoc>),
-    Sf(crate::tables::eqtb::Old<crate::tables::eqtb::SfLoc>),
-    Math(crate::tables::eqtb::Old<crate::tables::eqtb::MathLoc>),
-    Del(crate::tables::eqtb::Old<crate::tables::eqtb::DelLoc>),
-    InterChar(crate::tables::eqtb::Old<crate::tables::eqtb::InterCharPair>),
+    Cs(Old<CsId>),
+    Int(Old<IntLoc>),
+    Dimen(Old<DimenLoc>),
+    Glue(Old<GlueLoc>),
+    Toks(Old<ToksLoc>),
+    Shape(Old<ShapeLoc>),
+    Box(Old<BoxLoc>),
+    Font(Old<FontLoc>),
+    Cat(Old<CatLoc>),
+    Lc(Old<LcLoc>),
+    Uc(Old<UcLoc>),
+    Sf(Old<SfLoc>),
+    Math(Old<MathLoc>),
+    Del(Old<DelLoc>),
+    InterChar(Old<InterCharPair>),
 }
 
 /// What a construction keeps on the save stack below its group.
 #[derive(Copy, Clone, Debug, PartialEq, Hash)]
 pub(crate) enum Saved {
     /// Where a box goes when its group ends, `box_context`.
-    BoxContext(crate::build::main_control::BoxContext),
-    Spec(crate::build::packaging::PackSpec),
+    BoxContext(BoxContext),
+    Spec(PackSpec),
     /// An `\insert` with its box number, or a `\vadjust` (number 255).
     Insert {
         n: i32,
         pre: bool,
     },
     /// The noad field a math group fills.
-    MathGroup(crate::memory::node::MathSlot),
+    MathGroup(MathSlot),
     /// An `\eqno` (false) or `\leqno` (true).
     EqNo {
         left: bool,
@@ -321,11 +326,8 @@ pub(crate) struct SaveStackState {
 
 impl SaveStackState {
     /// The save stack ran out.
-    pub(crate) fn overflow(&self) -> crate::print::errors::Abort {
-        crate::print::errors::Abort::overflow(
-            crate::print::errors::Capacity::SaveSize,
-            self.save_size,
-        )
+    pub(crate) fn overflow(&self) -> Abort {
+        Abort::overflow(Capacity::SaveSize, self.save_size)
     }
 
     /// The stack of `size` free entries.
@@ -376,12 +378,10 @@ impl SaveStackState {
     }
 
     /// Pops the size spec a box group kept.
-    pub(crate) fn pop_spec(
-        &mut self,
-    ) -> Result<crate::build::packaging::PackSpec, crate::print::errors::Abort> {
+    pub(crate) fn pop_spec(&mut self) -> Result<PackSpec, Abort> {
         match self.pop_saved() {
             Some(Saved::Spec(spec)) => Ok(spec),
-            _ => Err(crate::print::errors::Abort::Confusion("pop_spec")),
+            _ => Err(Abort::Confusion("pop_spec")),
         }
     }
 

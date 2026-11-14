@@ -1,14 +1,22 @@
-use crate::base::codes::ScannerStatus;
-use crate::base::consts::{HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, MAIN_MEMORY_WORDS};
-use crate::base::params::{IntPar, TokPar};
-use crate::base::units::{FontId, StrNumber};
-use crate::ffi::bridge::{output_flush, set_error_message};
-use crate::print::Selector;
-use crate::print::diagnostic::{DiagnosticKind, begin_capture, emit, emit_fatal, take_capture};
-use crate::print::{
-    InMode, TexPrint, begin_diagnostic, end_diagnostic, print, print_char, print_err,
-    print_error_prefix, print_int, print_ln, print_nl, show_box, show_context, token_show,
+use super::diagnostic::{DiagnosticKind, begin_capture, emit, emit_fatal, take_capture};
+use super::{
+    Esc, InMode, Selector, TexPrint, begin_diagnostic, end_diagnostic, print, print_char,
+    print_err, print_error_prefix, print_int, print_ln, print_nl, show_box, show_context,
+    show_tokens, token_show,
 };
+use crate::base::codes::ScannerStatus;
+use crate::base::command::Command;
+use crate::base::consts::{
+    HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, MAIN_MEMORY_WORDS, NULL_FONT,
+};
+use crate::base::params::{IntPar, TokPar};
+use crate::base::token::TokenList;
+use crate::base::units::{BufPos, FontId, StrNumber};
+use crate::engine::cleanup;
+use crate::ffi::bridge::{output_flush, set_error_message};
+use crate::files::io::{FileName, close_files_and_terminate, open_log_file};
+use crate::memory::node::link_of;
+use crate::scanning::input::{TokenType, back_input};
 use crate::state::EngineState;
 use crate::tables::eqtb::EqtbState;
 
@@ -36,7 +44,7 @@ fn pre_error_message(st: &mut EngineState) {
     };
     if st.strings.job_name == StrNumber::NONE {
         // Already on the fatal path, so a log-open failure just leaves TERM_ONLY.
-        let _ = crate::files::io::open_log_file(st);
+        let _ = open_log_file(st);
     }
     if st.errors.interaction == InteractionMode::Batch {
         st.shipout.selector = st.shipout.selector.without_terminal();
@@ -58,8 +66,8 @@ fn post_error_message(st: &mut EngineState, need_to_print_it: bool) {
         let _ = finish_error(st);
     }
     st.errors.history = HISTORY_FATAL_ERROR;
-    let _ = crate::files::io::close_files_and_terminate(st);
-    crate::engine::cleanup(st);
+    let _ = close_files_and_terminate(st);
+    cleanup(st);
     output_flush(st.shipout.rust_stdout);
 }
 
@@ -85,7 +93,7 @@ pub(crate) fn finish_error(st: &mut EngineState) -> Result<(), Abort> {
         print_ln(st);
         print(st, "? ");
         // As TeX Live, so the context shows none of the unread line.
-        st.input.cur_input.limit = crate::base::units::BufPos::ZERO;
+        st.input.cur_input.limit = BufPos::ZERO;
         return Err(Abort::Fatal("End of file on the terminal!"));
     }
 
@@ -177,7 +185,7 @@ pub(crate) enum FilePrompt {
 pub(crate) fn prompt_file_name(
     st: &mut EngineState,
     prompt: FilePrompt,
-    name: crate::files::io::FileName,
+    name: FileName,
     path: &[u8],
 ) -> Abort {
     print_nl(
@@ -402,7 +410,7 @@ impl Abort {
             }
             Abort::NoLegalEnd { open_log } => {
                 if open_log {
-                    let _ = crate::files::io::open_log_file(st);
+                    let _ = open_log_file(st);
                 }
                 Self::fatal_report(st, "*** (job aborted, no legal \\end found)");
             }
@@ -440,7 +448,7 @@ impl Abort {
 
 pub(crate) fn not_font_error_common(
     st: &mut EngineState,
-    command: crate::base::command::Command,
+    command: Command,
     f: FontId,
     suffix: &str,
 ) -> Result<(), Abort> {
@@ -495,7 +503,7 @@ pub(crate) fn errmessage(
 }
 
 /// The lines `\errhelp` shows, as the transcript prints them.
-fn err_help_text(st: &mut EngineState, list: crate::base::token::TokenList) -> Vec<String> {
+fn err_help_text(st: &mut EngineState, list: TokenList) -> Vec<String> {
     let old_setting = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
     let start = st.strings.cur_string_start();
@@ -519,7 +527,7 @@ pub(crate) fn back_error(
     help: &[&'static str],
 ) -> Result<(), Abort> {
     report_error(st, message, help);
-    crate::scanning::input::back_input(st)?;
+    back_input(st)?;
     finish_error(st)
 }
 
@@ -530,10 +538,8 @@ pub(crate) fn ins_error(
     help: &[&'static str],
 ) -> Result<(), Abort> {
     report_error(st, message, help);
-    crate::scanning::input::back_input(st)?;
-    st.input
-        .cur_input
-        .set_token_type(crate::scanning::input::TokenType::Inserted);
+    back_input(st)?;
+    st.input.cur_input.set_token_type(TokenType::Inserted);
     finish_error(st)
 }
 
@@ -593,9 +599,9 @@ pub(crate) fn privileged(st: &mut EngineState) -> Result<bool, Abort> {
 }
 
 pub(crate) fn cs_error(st: &mut EngineState) -> Result<(), Abort> {
-    crate::print::errors::error(
+    error(
         st,
-        ("Extra ", crate::print::Esc("endcsname")),
+        ("Extra ", Esc("endcsname")),
         &[r"I'm ignoring this, since I wasn't doing a \csname."],
     )
 }
@@ -607,7 +613,7 @@ pub(crate) fn box_error(
     message: impl TexPrint,
     help: &[&'static str],
 ) -> Result<(), Abort> {
-    let box_val = crate::memory::node::link_of(st.eqtb.box_reg(n));
+    let box_val = link_of(st.eqtb.box_reg(n));
     error(st, message, help)?;
     begin_diagnostic(st);
     print_nl(st, "The following box has been deleted:");
@@ -632,7 +638,7 @@ pub(crate) fn runaway(st: &mut EngineState) {
     print_ln(st);
     let built = st.mem.tokens.innermost_built();
     let l = st.errors.error_line - 10;
-    crate::print::show_tokens(st, &built, l);
+    show_tokens(st, &built, l);
 }
 
 /// TeX's `interaction` level, ordered like its numeric codes.
@@ -701,7 +707,7 @@ impl Default for ErrorState {
             first_count: 0,
             deletions_allowed: false,
             halting_on_error: false,
-            font_in_short_display: crate::base::consts::NULL_FONT,
+            font_in_short_display: NULL_FONT,
             depth_threshold: 0,
             breadth_max: 0,
         }

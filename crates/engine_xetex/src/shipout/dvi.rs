@@ -1,5 +1,7 @@
 //! The XDV writer: TeX's half-swapped `dvi_buf` and the commands shipout emits.
 
+use std::mem;
+
 use crate::base::consts::TEX_INFINITY;
 use crate::base::units::Scaled;
 use crate::ffi::bridge::output_write;
@@ -146,12 +148,12 @@ impl DviWriter {
         self.buf.clone_from(buf);
         *self = DviWriter {
             file,
-            buf: std::mem::take(&mut self.buf),
+            buf: mem::take(&mut self.buf),
             limit,
             ptr,
             offset,
             gone,
-            manifest: std::mem::take(&mut self.manifest),
+            manifest: mem::take(&mut self.manifest),
             last_bop,
             depth,
             max_push,

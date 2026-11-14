@@ -5,20 +5,16 @@ use crate::base::consts::{
     AWFUL_BAD, EJECT_PENALTY, INF_BAD, INF_PENALTY, MAX_DIMEN, MAX_HALFWORD, NULL_FONT,
 };
 use crate::base::params::{DimenPar, GluePar, IntPar};
-use crate::base::scaled_math::fract;
-use crate::base::units::MemIdx;
-use crate::base::units::{FontId, GlueOrder, MemPtr, Scaled};
+use crate::base::scaled_math::{badness, fract};
+use crate::base::units::{FontId, GlueOrder, MemIdx, MemPtr, Scaled};
 use crate::build::packaging::PackOrigin;
 use crate::fonts::FontState;
 use crate::memory::glue_store::GlueSpecId;
-use crate::memory::mem::MemState;
-use crate::memory::mem::TEMP_HEAD;
+use crate::memory::mem::{MemState, TEMP_HEAD};
 use crate::memory::node::{
     AnyNode, BoxNode, CharNode, DiscNode, GlueNode, KernSubtype, NodePtr, WhatsitVariant,
 };
-use crate::print::errors::Abort;
-use crate::print::errors::ErrorState;
-use crate::print::errors::OrConfusion;
+use crate::print::errors::{Abort, ErrorState, OrConfusion, error};
 use crate::state::EngineState;
 use crate::tables::eqtb::EqtbState;
 
@@ -29,13 +25,13 @@ mod post;
 mod prehyph;
 mod protrusion;
 
-pub(crate) use self::lists::Widths;
-use self::lists::{
+pub(crate) use lists::Widths;
+use lists::{
     ActiveEntry, BreakLists, BreakType, Entry, EntryId, Fitness, Passive, PassiveId, widths,
 };
-pub(crate) use self::locale::do_locale_linebreaks;
-use self::post::post_line_break;
-use self::prehyph::{set_language, try_hyphenate};
+pub(crate) use locale::do_locale_linebreaks;
+use post::post_line_break;
+use prehyph::{set_language, try_hyphenate};
 
 /// The line breaker's state for one paragraph.
 #[derive(Default)]
@@ -206,7 +202,7 @@ impl Breaker {
     ) -> Result<GlueSpecId, Abort> {
         if self.no_shrink_error_yet {
             self.no_shrink_error_yet = false;
-            crate::print::errors::error(
+            error(
                 st,
                 "Infinite glue shrinkage found in a paragraph",
                 &[
@@ -579,7 +575,7 @@ fn stretch_badness(shortfall: Scaled, stretch: Scaled) -> (i32, Fitness) {
     if shortfall > Scaled::from_raw(7_230_584) && stretch < Scaled::from_raw(1_663_497) {
         (INF_BAD, Fitness::VeryLoose)
     } else {
-        let b = crate::base::scaled_math::badness(shortfall, stretch);
+        let b = badness(shortfall, stretch);
         (b, stretch_fitness(b))
     }
 }
@@ -871,7 +867,7 @@ impl Breaker {
                                 last_line_fit_found = true;
                             } else if g < Scaled::ZERO {
                                 g = g.max(-caw[6]);
-                                b = crate::base::scaled_math::badness(-g, caw[6]);
+                                b = badness(-g, caw[6]);
                                 fit_class = shrink_fitness(b);
                                 last_line_fit_found = true;
                             }
@@ -890,7 +886,7 @@ impl Breaker {
                 b = if -shortfall > caw[6] {
                     INF_BAD + 1
                 } else {
-                    crate::base::scaled_math::badness(-shortfall, caw[6])
+                    badness(-shortfall, caw[6])
                 };
                 fit_class = shrink_fitness(b);
             }

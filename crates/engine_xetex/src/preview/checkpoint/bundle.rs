@@ -1,33 +1,36 @@
 //! Non-journaled state carried by a checkpoint rung.
 
+use std::mem::{size_of, take};
+use std::rc::Rc;
+use std::sync::Arc;
+
+use crate::base::random::Random;
 use crate::base::stack::TexStack;
-use crate::base::units::{BufPos, FontId, MemPtr, PoolPos, SavePtr, Scaled, StrNumber};
-use crate::build::hyphenation::HyphState;
+use crate::base::token::{Token, TokenList, TokenStoreMarks};
+use crate::base::units::{BufPos, FontId, MemPtr, PoolPos, PrimNum, SavePtr, Scaled, StrNumber};
+use crate::build::hyphenation::{HyphState, TriePtr};
 use crate::build::main_control::InterCharState;
 use crate::ffi::teckit_icu::FontMappingHandle;
-use crate::fonts::FontEngineHandle;
-use crate::fonts::FontState;
 use crate::fonts::ext::SourceSpecials;
-use crate::fonts::{LigChar, ProtrusionCodes};
-use crate::memory::mem::MemState;
+use crate::fonts::tfm::{FontMetrics, FontParams};
+use crate::fonts::{FontEngineHandle, FontState, LigChar, ProtrusionCodes};
+use crate::memory::glue_store::{GlueSpecId, GlueStoreMarks};
+use crate::memory::glyph_arena::GlyphBlobArena;
+use crate::memory::mem::{FreeLists, MemState};
 use crate::memory::mem_types::ListStateRecord;
 use crate::preview::sync_index::PreviewSyncIndex;
 use crate::print::errors::ErrorState;
-use crate::scanning::input::InputClusterState;
-use crate::scanning::input::InputState;
+use crate::scanning::input::{InputClusterState, InputState, MacroParam, OpenLevel};
+use crate::scanning::pgfmath::KnownCs;
 use crate::scanning::scan::ScannerState;
 use crate::shipout::ShipoutState;
 use crate::shipout::dvi::DviWriter;
 use crate::shipout::synctex::SynctexCtxt;
 use crate::state::{ConfigState, EngineState};
-use crate::tables::cs::CsId;
-use crate::tables::eqtb::EqtbState;
-use crate::tables::save::GroupCode;
-use crate::tables::save::SaveEntry;
-use crate::tables::save::SaveStackState;
+use crate::tables::cs::{CsId, NameSlot};
+use crate::tables::eqtb::{EqtbState, InterCharPair, SparseTable};
+use crate::tables::save::{GroupCode, SaveEntry, SaveStackState};
 use crate::tables::string_pool::StringsState;
-use std::mem::{size_of, take};
-use std::sync::Arc;
 
 fn vec_bytes<T>(values: &Vec<T>) -> usize {
     values.capacity() * size_of::<T>()
@@ -57,7 +60,7 @@ impl StringWatermark {
 pub(crate) struct EngineBundle {
     config: ConfigState,
     errors: ErrorState,
-    random: crate::base::random::Random,
+    random: Random,
     shipout: ShipoutState,
     dvi: DviWriter,
     scanner: ScannerState,
@@ -177,13 +180,13 @@ impl EngineBundle {
 
 struct MemBundle {
     words: usize,
-    free: crate::memory::mem::FreeLists,
+    free: FreeLists,
     line: i32,
     cur_synctex_tag: i32,
     temp_ptr: MemPtr,
-    glyph_blobs: crate::memory::glyph_arena::GlyphBlobArena,
-    tokens: crate::base::token::TokenStoreMarks,
-    glue: crate::memory::glue_store::GlueStoreMarks,
+    glyph_blobs: GlyphBlobArena,
+    tokens: TokenStoreMarks,
+    glue: GlueStoreMarks,
 }
 
 impl MemBundle {
@@ -231,18 +234,15 @@ impl MemBundle {
 }
 
 struct EqtbBundle {
-    hash_used: crate::tables::cs::NameSlot,
+    hash_used: NameSlot,
     hash_high: u32,
     no_new_control_sequence: bool,
-    prim_used: crate::base::units::PrimNum,
+    prim_used: PrimNum,
     cs_count: i32,
     hash_extra: u32,
     cs_top: CsId,
-    pgfmath: crate::scanning::pgfmath::KnownCs,
-    inter_char: crate::tables::eqtb::SparseTable<
-        crate::tables::eqtb::InterCharPair,
-        crate::base::token::TokenList,
-    >,
+    pgfmath: KnownCs,
+    inter_char: SparseTable<InterCharPair, TokenList>,
 }
 
 impl EqtbBundle {
@@ -428,9 +428,9 @@ impl SaveBundle {
 struct InputBundle {
     buffer: Vec<i32>,
     input_stack: StackBundle<InputState>,
-    param_stack: StackBundle<crate::scanning::input::MacroParam>,
+    param_stack: StackBundle<MacroParam>,
     nest: StackBundle<ListStateRecord>,
-    open_levels: Vec<crate::scanning::input::OpenLevel>,
+    open_levels: Vec<OpenLevel>,
     cur_input: InputState,
     cur_list: ListStateRecord,
     open_parens: i32,
@@ -438,7 +438,7 @@ struct InputBundle {
     pseudo_files: MemPtr,
     base_ptr: usize,
     par_loc: Option<CsId>,
-    par_token: crate::base::token::Token,
+    par_token: Token,
     force_eof: bool,
     first: BufPos,
     last: BufPos,
@@ -571,7 +571,7 @@ font_arrays! {
     font_ec: u16,
     font_bchar: LigChar,
     font_false_bchar: LigChar,
-    font_glue: Option<crate::memory::glue_store::GlueSpecId>,
+    font_glue: Option<GlueSpecId>,
     font_used: bool,
     hyphen_char: i32,
     skew_char: i32,
@@ -589,9 +589,9 @@ struct FontBundle {
     fmem_ptr: i32,
     font_ptr: FontId,
     arrays: FontArrays,
-    engines: Vec<Option<std::rc::Rc<FontEngineHandle>>>,
-    metrics: Vec<crate::fonts::tfm::FontMetrics>,
-    params: Vec<crate::fonts::tfm::FontParams>,
+    engines: Vec<Option<Rc<FontEngineHandle>>>,
+    metrics: Vec<FontMetrics>,
+    params: Vec<FontParams>,
     mappings: Vec<Option<Arc<FontMappingHandle>>>,
     mapped_text: Vec<u16>,
     cp_codes: ProtrusionCodes,
@@ -661,8 +661,8 @@ impl FontBundle {
         for f in (self.font_ptr.get() + 1..=dst.font_ptr.get()).map(FontId::new) {
             dst.font_layout_engine[f] = None;
             dst.font_mapping[f] = None;
-            dst.metrics[f] = crate::fonts::tfm::FontMetrics::default();
-            dst.params[f] = crate::fonts::tfm::FontParams::default();
+            dst.metrics[f] = FontMetrics::default();
+            dst.params[f] = FontParams::default();
         }
         dst.font_layout_engine.as_mut_slice()[..self.engines.len()].clone_from_slice(&self.engines);
         dst.font_mapping.as_mut_slice()[..self.mappings.len()].clone_from_slice(&self.mappings);
@@ -764,7 +764,7 @@ struct HyphBundle {
     init_lig: bool,
     init_lft: bool,
     hyphen_passed: usize,
-    trie_max: crate::build::hyphenation::TriePtr,
+    trie_max: TriePtr,
     trie_size: i32,
     trie_ptr: i32,
     hyph_count: i32,
@@ -773,8 +773,8 @@ struct HyphBundle {
     trie_op_ptr: i32,
     max_op_used: u16,
     trie_not_ready: bool,
-    hyph_start: crate::build::hyphenation::TriePtr,
-    hyph_index: Option<crate::build::hyphenation::TriePtr>,
+    hyph_start: TriePtr,
+    hyph_index: Option<TriePtr>,
     cur_lang: u8,
     hyf_char: LigChar,
     l_hyf: i32,
@@ -863,7 +863,11 @@ mod tests {
     use super::*;
     use crate::base::units::Scaled;
     use crate::build::main_control::BoxContext;
+    use crate::fonts::{PerFont, Side};
     use crate::memory::glyph_arena::{FixedPoint, GlyphBlob};
+    use crate::memory::mem::RESERVED_WORDS;
+    use crate::memory::mem_types::zeroed_vec;
+    use crate::scanning::input::{InputBuffer, InputSlot};
     use crate::tables::save::Saved;
 
     const BOX_12: BoxContext = BoxContext::Shift(Scaled::from_raw(12));
@@ -871,8 +875,8 @@ mod tests {
     fn state() -> EngineState {
         let mut st = EngineState::default();
         st.strings.str_pool = vec![0; 16];
-        st.strings.str_start = vec![crate::base::units::PoolPos::ZERO; 8];
-        st.input.buffer = crate::scanning::input::InputBuffer(vec![0; 8]);
+        st.strings.str_start = vec![PoolPos::ZERO; 8];
+        st.input.buffer = InputBuffer(vec![0; 8]);
         st.input.input_stack = TexStack::with_size(3);
         st.input.param_stack = TexStack::with_size(3);
         st.input.nest = TexStack::with_size(3);
@@ -892,7 +896,7 @@ mod tests {
             st.shipout.dvi.set_char(c).unwrap();
         }
         st.strings.str_pool[0] = 11;
-        st.strings.pool_ptr = crate::base::units::PoolPos::from_raw(1);
+        st.strings.pool_ptr = PoolPos::from_raw(1);
         st.save_stack.push_saved(Saved::BoxContext(BOX_12));
         st.input.buffer.0[0] = 13;
         st.input.last = BufPos::from_raw(1);
@@ -921,9 +925,7 @@ mod tests {
         st.input.buffer.0[0] = 130;
         st.hyph.hc[0] = 140;
         st.mem.glyph_blobs.get_mut(glyph).locations[0].x = Scaled::from_raw(150);
-        st.input
-            .input_file
-            .push(crate::scanning::input::InputSlot::Terminal);
+        st.input.input_file.push(InputSlot::Terminal);
 
         bundle.restore(&mut st);
         assert_eq!(st.scanner.logical_clock, 7);
@@ -947,14 +949,14 @@ mod tests {
         );
         assert!(matches!(
             st.input.input_file.last(),
-            Some(crate::scanning::input::InputSlot::Terminal)
+            Some(InputSlot::Terminal)
         ));
     }
 
     #[test]
     fn mem_restore_drops_grown_words_and_restores_free_lists() {
         let mut st = state();
-        st.mem.data = crate::memory::mem_types::zeroed_vec(crate::memory::mem::RESERVED_WORDS);
+        st.mem.data = zeroed_vec(RESERVED_WORDS);
         let kept = st.mem.get_node(3).unwrap();
         st.mem.free_node(kept, 3);
         let bundle = MemBundle::capture(&st.mem);
@@ -964,7 +966,7 @@ mod tests {
         assert_eq!(reused, kept);
         bundle.restore(&mut st.mem);
 
-        assert_eq!(st.mem.data.len(), crate::memory::mem::RESERVED_WORDS + 3);
+        assert_eq!(st.mem.data.len(), RESERVED_WORDS + 3);
         assert_eq!(st.mem.free.0[3], Some(kept));
         assert_eq!(st.mem.get_node(5).unwrap(), grown);
     }
@@ -972,11 +974,11 @@ mod tests {
     #[test]
     fn font_restore_clears_use_flags_beyond_the_checkpoint() {
         let mut fonts = FontState {
-            font_layout_engine: crate::fonts::PerFont::filled(4, None),
-            font_mapping: crate::fonts::PerFont::filled(4, None),
-            metrics: crate::fonts::PerFont::filled(4, crate::fonts::tfm::FontMetrics::default()),
-            params: crate::fonts::PerFont::filled(4, crate::fonts::tfm::FontParams::default()),
-            font_used: crate::fonts::PerFont::filled(4, false),
+            font_layout_engine: PerFont::filled(4, None),
+            font_mapping: PerFont::filled(4, None),
+            metrics: PerFont::filled(4, FontMetrics::default()),
+            params: PerFont::filled(4, FontParams::default()),
+            font_used: PerFont::filled(4, false),
             font_ptr: FontId::new(1),
             ..Default::default()
         };
@@ -993,15 +995,14 @@ mod tests {
 
     #[test]
     fn font_restore_rolls_back_protrusion_codes_and_stale_glyph_bounds() {
-        use crate::fonts::Side;
         use texyon_xetex_layout::GlyphBBox;
 
         let mut fonts = FontState {
-            font_layout_engine: crate::fonts::PerFont::filled(4, None),
-            font_mapping: crate::fonts::PerFont::filled(4, None),
-            metrics: crate::fonts::PerFont::filled(4, crate::fonts::tfm::FontMetrics::default()),
-            params: crate::fonts::PerFont::filled(4, crate::fonts::tfm::FontParams::default()),
-            font_used: crate::fonts::PerFont::filled(4, false),
+            font_layout_engine: PerFont::filled(4, None),
+            font_mapping: PerFont::filled(4, None),
+            metrics: PerFont::filled(4, FontMetrics::default()),
+            params: PerFont::filled(4, FontParams::default()),
+            font_used: PerFont::filled(4, false),
             font_ptr: FontId::new(1),
             ..Default::default()
         };

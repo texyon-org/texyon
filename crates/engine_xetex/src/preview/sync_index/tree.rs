@@ -4,6 +4,8 @@
 //! extent of hboxes, mean lines, and the line fixes of leading boundaries and
 //! of a box's trailing kern and glue.
 
+use std::{iter, mem};
+
 use super::{Record, RecordKind};
 
 pub(super) const NIL: u32 = u32::MAX;
@@ -148,7 +150,7 @@ impl Page {
     }
 
     pub(super) fn children(&self, id: u32) -> impl Iterator<Item = u32> + '_ {
-        std::iter::successors(Some(self.node(id).child).filter(|&c| c != NIL), |&c| {
+        iter::successors(Some(self.node(id).child).filter(|&c| c != NIL), |&c| {
             Some(self.node(c).sibling).filter(|&s| s != NIL)
         })
     }
@@ -212,7 +214,7 @@ impl Builder {
 
     /// `_synctex_handle_set_tlc`: pending boundaries take the line of `child`.
     fn settle_pending(&mut self, child: u32) {
-        let pending = std::mem::take(self.pending.last_mut().expect("open level"));
+        let pending = mem::take(self.pending.last_mut().expect("open level"));
         for &x in pending.iter().rev() {
             self.copy_tlc(x, child);
             self.make_friend(x);
