@@ -7,24 +7,22 @@
 
 use std::{
     fmt,
-    io::{self, Read, Write},
+    io::{Read, Write},
     sync::{Arc, Mutex, PoisonError, mpsc},
     thread,
 };
 
 use texyon_engine_xetex::EngineCancellation;
 use texyon_errors::{Result, anyhow::anyhow};
-use texyon_preview_protocol::session::{
-    HostRequest, InlineBytes, Request, Response, SessionRequest,
+use texyon_preview_protocol::{
+    frame::{self, FrameError},
+    session::{HostRequest, InlineBytes, Request, Response, SessionRequest},
 };
 use texyon_preview_render::{Backend, ResourceProvider};
 
 use crate::{DocumentRoot, Payload, PreviewSession, SessionHost, handle};
 
 const WORKER_STACK_BYTES: usize = 32 * 1024 * 1024;
-
-/// Refused before allocating, so a corrupt length cannot exhaust memory.
-const MAX_FRAME_BYTES: u32 = 256 * 1024 * 1024;
 
 impl Payload for InlineBytes {
     fn hand_over(bytes: Vec<u8>) -> Self {
@@ -72,11 +70,7 @@ impl SessionHost for DiskSources {
 #[derive(Debug)]
 pub enum ServeError {
     /// Reading or writing a frame failed.
-    Io(io::Error),
-    /// A frame was longer than [`MAX_FRAME_BYTES`].
-    FrameTooLarge(u32),
-    /// A response could not be encoded.
-    Encode(rmp_serde::encode::Error),
+    Frame(FrameError),
     /// The session thread could not start or panicked.
     Worker,
 }
@@ -84,9 +78,7 @@ pub enum ServeError {
 impl fmt::Display for ServeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Io(error) => write!(f, "preview stream failed: {error}"),
-            Self::FrameTooLarge(len) => write!(f, "preview frame of {len} bytes is too large"),
-            Self::Encode(error) => write!(f, "could not encode a preview response: {error}"),
+            Self::Frame(error) => error.fmt(f),
             Self::Worker => write!(f, "the preview session thread failed"),
         }
     }
@@ -94,9 +86,9 @@ impl fmt::Display for ServeError {
 
 impl std::error::Error for ServeError {}
 
-impl From<io::Error> for ServeError {
-    fn from(error: io::Error) -> Self {
-        Self::Io(error)
+impl From<FrameError> for ServeError {
+    fn from(error: FrameError) -> Self {
+        Self::Frame(error)
     }
 }
 
@@ -136,8 +128,8 @@ fn read_requests<R: Read>(
     requests: &mpsc::Sender<Incoming>,
     cancellation: &Mutex<Option<EngineCancellation>>,
 ) -> Result<(), ServeError> {
-    while let Some(frame) = read_frame(input)? {
-        let request = rmp_serde::from_slice::<Request<InlineBytes>>(&frame)
+    while let Some(frame) = frame::read_frame(input)? {
+        let request = frame::decode::<Request<InlineBytes>>(&frame)
             .map_err(|error| format!("malformed request: {error}"));
         if let Ok(Request::Session(SessionRequest::Cancel)) = request {
             let held = cancellation.lock().unwrap_or_else(PoisonError::into_inner);
@@ -170,7 +162,7 @@ where
     let mut session: Option<PreviewSession<P, B, H>> = None;
 
     for request in incoming {
-        let (response, done) = match request {
+        let (response, done): (Response<InlineBytes>, bool) = match request {
             Err(message) => (Response::error(message), false),
             Ok(Request::Host(HostRequest::Open {
                 format,
@@ -216,7 +208,7 @@ where
             },
         };
 
-        write_frame(&mut output, &response)?;
+        frame::write_message(&mut output, &response)?;
         if done {
             return Ok(());
         }
@@ -227,100 +219,4 @@ where
         let _ = open.finish();
     }
     Ok(())
-}
-
-fn read_frame<R: Read>(input: &mut R) -> Result<Option<Vec<u8>>, ServeError> {
-    let mut header = [0; 4];
-    let mut filled = 0;
-    while filled < header.len() {
-        match input.read(&mut header[filled..]) {
-            // End of stream is clean only between frames.
-            Ok(0) if filled == 0 => return Ok(None),
-            Ok(0) => return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into()),
-            Ok(read) => filled += read,
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-            Err(error) => return Err(error.into()),
-        }
-    }
-    let len = u32::from_le_bytes(header);
-    if len > MAX_FRAME_BYTES {
-        return Err(ServeError::FrameTooLarge(len));
-    }
-    let mut frame = vec![0; usize::try_from(len).map_err(|_| ServeError::FrameTooLarge(len))?];
-    input.read_exact(&mut frame)?;
-    Ok(Some(frame))
-}
-
-fn write_frame<W: Write>(
-    output: &mut W,
-    response: &Response<InlineBytes>,
-) -> Result<(), ServeError> {
-    let body = rmp_serde::to_vec_named(response).map_err(ServeError::Encode)?;
-    let len = u32::try_from(body.len())
-        .ok()
-        .filter(|len| *len <= MAX_FRAME_BYTES)
-        .ok_or(ServeError::FrameTooLarge(u32::MAX))?;
-    output.write_all(&len.to_le_bytes())?;
-    output.write_all(&body)?;
-    output.flush()?;
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use std::io::Cursor;
-
-    use texyon_preview_protocol::session::{HostRequest, InlineBytes, Request, Response};
-
-    use super::{MAX_FRAME_BYTES, read_frame, write_frame};
-
-    #[test]
-    fn frames_round_trip_with_inline_bytes() {
-        let mut wire = Vec::new();
-        let sent = Response::Exported(InlineBytes {
-            data: vec![0, 159, 255],
-        });
-        write_frame(&mut wire, &sent).unwrap();
-        assert_eq!(
-            u32::from_le_bytes(wire[..4].try_into().unwrap()),
-            u32::try_from(wire.len() - 4).unwrap()
-        );
-
-        let frame = read_frame(&mut Cursor::new(wire)).unwrap().unwrap();
-        let received: Response<InlineBytes> = rmp_serde::from_slice(&frame).unwrap();
-        assert_eq!(received, sent);
-    }
-
-    #[test]
-    fn requests_route_by_op() {
-        let open = Request::<InlineBytes>::Host(HostRequest::Open {
-            format: "latex".into(),
-            primary: "main.tex".into(),
-            root: Some("/doc".into()),
-            raster: true,
-            patches: true,
-            build_date: Some(1_700_000_000),
-        });
-        let encoded = rmp_serde::to_vec_named(&open).unwrap();
-        assert_eq!(
-            rmp_serde::from_slice::<Request<InlineBytes>>(&encoded).unwrap(),
-            open
-        );
-
-        let compile = br#"{"op":"compile","files":{"main.tex":3},"viewport":[0,1]}"#;
-        let parsed: Request<InlineBytes> = serde_json::from_slice(compile).unwrap();
-        assert!(matches!(parsed, Request::Session(_)));
-    }
-
-    #[test]
-    fn end_of_stream_between_frames_is_clean() {
-        assert_eq!(read_frame(&mut Cursor::new(Vec::new())).unwrap(), None);
-        assert!(read_frame(&mut Cursor::new(vec![1, 0])).is_err());
-    }
-
-    #[test]
-    fn oversized_lengths_are_refused_before_allocating() {
-        let header = (MAX_FRAME_BYTES + 1).to_le_bytes();
-        assert!(read_frame(&mut Cursor::new(header.to_vec())).is_err());
-    }
 }

@@ -8,6 +8,9 @@ use std::{fmt, str::FromStr};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
+#[cfg(feature = "frame")]
+pub mod frame;
+pub mod pack;
 pub mod session;
 
 /// Decoded source size limits.

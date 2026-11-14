@@ -11,23 +11,13 @@ use std::{
     thread::{self, JoinHandle},
 };
 
-use serde::Deserialize;
 use texyon_bundles::Bundle;
 use texyon_errors::{Result, anyhow::anyhow};
 use texyon_io_base::{
     InputHandle, InputOrigin, IoProvider, OpenResult, digest::DigestData, format_cache::FormatCache,
 };
+use texyon_preview_protocol::pack::{MANIFEST, PackManifest};
 use texyon_status_base::{NoopStatusBackend, StatusBackend};
-
-/// The manifest `tools/wasm/build-assets.sh` writes next to the pack's files.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Manifest {
-    format: String,
-    files: BTreeMap<String, u64>,
-    bundle_digest: String,
-    format_serial: u32,
-}
 
 /// Why a support pack could not be used.
 #[derive(Debug)]
@@ -78,9 +68,9 @@ pub struct SupportPack {
 impl SupportPack {
     /// Read the pack whose `manifest.json` and `files/` are in `dir`.
     pub fn open(dir: &Path) -> Result<Self, PackError> {
-        let path = dir.join("manifest.json");
+        let path = dir.join(MANIFEST);
         let text = fs::read_to_string(&path).map_err(|error| PackError::Read { path, error })?;
-        let manifest: Manifest = serde_json::from_str(&text).map_err(PackError::Manifest)?;
+        let manifest: PackManifest = serde_json::from_str(&text).map_err(PackError::Manifest)?;
         if let Some(name) = std::iter::once(&manifest.format)
             .chain(manifest.files.keys())
             .find(|name| !is_plain_name(name))
