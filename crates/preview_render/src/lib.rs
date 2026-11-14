@@ -25,6 +25,7 @@ mod units;
     feature = "backend-mupdf",
     any(
         target_os = "linux",
+        target_os = "macos",
         all(target_os = "windows", target_env = "msvc"),
         target_family = "wasm"
     )
@@ -49,6 +50,7 @@ pub use resource::{Resource, ResourceIdentity, ResourceKind, ResourceProvider, R
     feature = "backend-mupdf",
     any(
         target_os = "linux",
+        target_os = "macos",
         all(target_os = "windows", target_env = "msvc"),
         target_family = "wasm"
     )
@@ -57,6 +59,10 @@ pub use backend_mupdf::MupdfBackend;
 #[cfg(all(
     test,
     feature = "backend-mupdf",
-    any(target_os = "linux", all(target_os = "windows", target_env = "msvc"))
+    any(
+        target_os = "linux",
+        target_os = "macos",
+        all(target_os = "windows", target_env = "msvc")
+    )
 ))]
 pub use backend_mupdf::Pixmap;

@@ -17,7 +17,11 @@ use tracing::level_filters::LevelFilter;
 use self::commands::bundle::BundleCommand;
 #[cfg(all(
     feature = "preview-mupdf",
-    any(target_os = "linux", all(target_os = "windows", target_env = "msvc"))
+    any(
+        target_os = "linux",
+        target_os = "macos",
+        all(target_os = "windows", target_env = "msvc")
+    )
 ))]
 use self::commands::preview::PreviewCommand;
 
@@ -52,7 +56,11 @@ enum Commands {
     /// Serve a live-preview session over stdio
     #[cfg(all(
         feature = "preview-mupdf",
-        any(target_os = "linux", all(target_os = "windows", target_env = "msvc"))
+        any(
+            target_os = "linux",
+            target_os = "macos",
+            all(target_os = "windows", target_env = "msvc")
+        )
     ))]
     #[command(name = "preview")]
     Preview(PreviewCommand),
@@ -135,7 +143,11 @@ fn main() -> ExitCode {
         Commands::Bundle(o) => o.customize(&mut customizations),
         #[cfg(all(
             feature = "preview-mupdf",
-            any(target_os = "linux", all(target_os = "windows", target_env = "msvc"))
+            any(
+                target_os = "linux",
+                target_os = "macos",
+                all(target_os = "windows", target_env = "msvc")
+            )
         ))]
         Commands::Preview(o) => o.customize(&mut customizations),
     }
@@ -160,7 +172,11 @@ fn main() -> ExitCode {
         Commands::Bundle(o) => o.execute(config, &mut *status),
         #[cfg(all(
             feature = "preview-mupdf",
-            any(target_os = "linux", all(target_os = "windows", target_env = "msvc"))
+            any(
+                target_os = "linux",
+                target_os = "macos",
+                all(target_os = "windows", target_env = "msvc")
+            )
         ))]
         Commands::Preview(o) => o.execute(config, &mut *status),
     };
