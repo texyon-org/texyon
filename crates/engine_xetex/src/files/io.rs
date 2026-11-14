@@ -732,21 +732,28 @@ impl TexPrint for FileName {
 /// Whether TeX may write `\openout` file `path`: kpathsea's default `openout_any = p` refuses
 /// absolute names, `..` steps and names starting with a dot, and the directory must exist.
 pub(crate) fn may_write(path: &[u8]) -> bool {
-    let components: Vec<&[u8]> = path.split(|&b| b == b'/').collect();
-    let absolute = path.first() == Some(&b'/') || path.get(1) == Some(&b':');
-    // Only a `./` step may start with a dot.
-    let last = components.len() - 1;
-    let refused = components
-        .iter()
-        .enumerate()
-        .any(|(i, c)| c.first() == Some(&b'.') && !(*c == b"." && i < last));
-    if absolute || refused {
+    if !stays_in_output_dir(path) {
         return false;
     }
     match path.iter().rposition(|&b| b == b'/') {
         Some(slash) => directory_exists(&path[..slash]),
         None => true,
     }
+}
+
+/// The name part of [`may_write`]. A backslash counts as a separator on every
+/// platform, since Windows resolves it as one.
+fn stays_in_output_dir(path: &[u8]) -> bool {
+    let is_sep = |b: &u8| *b == b'/' || *b == b'\\';
+    let components: Vec<&[u8]> = path.split(is_sep).collect();
+    let absolute = path.first().is_some_and(is_sep) || path.get(1) == Some(&b':');
+    // Only a `./` step may start with a dot.
+    let last = components.len() - 1;
+    let refused = components
+        .iter()
+        .enumerate()
+        .any(|(i, c)| c.first() == Some(&b'.') && !(*c == b"." && i < last));
+    !absolute && !refused
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -1191,4 +1198,29 @@ pub(crate) fn start_input(
     st.input.cur_input.limit = st.input.last;
     finish_line(st);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::stays_in_output_dir;
+
+    #[test]
+    fn output_names_stay_in_output_dir() {
+        for ok in ["a.tex", "./a.tex", "sub/a.tex", "sub\\a.tex", "a.b.tex"] {
+            assert!(stays_in_output_dir(ok.as_bytes()), "{ok}");
+        }
+        for bad in [
+            "/etc/x",
+            "C:x",
+            "../x",
+            "sub/../../x",
+            ".hidden",
+            "\\x",
+            "\\\\server\\share\\x",
+            "sub\\..\\..\\x",
+            "sub\\.hidden",
+        ] {
+            assert!(!stays_in_output_dir(bad.as_bytes()), "{bad}");
+        }
+    }
 }
