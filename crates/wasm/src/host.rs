@@ -20,7 +20,7 @@ type ReadImport = unsafe extern "C" fn(*const u8, usize, *mut *mut u8, *mut usiz
 
 // Only symbols with import metadata may stay unresolved when rust-lld links.
 #[link(wasm_import_module = "env")]
-extern "C" {
+unsafe extern "C" {
     /// Resolve a support file by TeX name, blocking until it is available.
     ///
     /// On `status::OK` the host stores a [`texyon_wasm_alloc`] buffer it
@@ -48,7 +48,7 @@ extern "C" {
 ///
 /// A buffer that never makes it back into Rust must be released with
 /// [`texyon_wasm_free`]. Returns null if `len` is zero or allocation fails.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn texyon_wasm_alloc(len: usize) -> *mut u8 {
     if len == 0 {
         return ptr::null_mut();
@@ -67,7 +67,7 @@ pub extern "C" fn texyon_wasm_alloc(len: usize) -> *mut u8 {
 ///
 /// `ptr` must have come from one of those with the same `len`, and Rust must
 /// not have adopted it.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn texyon_wasm_free(ptr: *mut u8, len: usize) {
     if ptr.is_null() || len == 0 {
         return;

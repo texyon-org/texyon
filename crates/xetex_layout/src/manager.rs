@@ -232,13 +232,14 @@ impl FontMaps {
                 }
             }
         }
-        if best_match == font_pos && !font.is_bold {
-            if let Some(p) = parent.styles.values().copied().find(|&p| {
+        if best_match == font_pos
+            && !font.is_bold
+            && let Some(p) = parent.styles.values().copied().find(|&p| {
                 let style = &self.fonts[p];
                 style.is_italic == font.is_italic && style.is_bold
-            }) {
-                best_match = p;
-            }
+            })
+        {
+            best_match = p;
         }
         best_match
     }

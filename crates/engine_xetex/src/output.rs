@@ -487,12 +487,12 @@ fn print_pool_str(st: &mut EngineState, s: i32) {
     let std::ops::Range { start: mut i, end } = st.strings.str_range(StrNumber::from_raw(s));
     while i < end {
         let c = st.strings.str_pool[i];
-        if i + 1 < end {
-            if let Some(pair) = surrogate_pair(c, st.strings.str_pool[i + 1]) {
-                print_char(st, pair);
-                i += 2;
-                continue;
-            }
+        if i + 1 < end
+            && let Some(pair) = surrogate_pair(c, st.strings.str_pool[i + 1])
+        {
+            print_char(st, pair);
+            i += 2;
+            continue;
         }
         print_char(st, i32::from(c));
         i += 1;
@@ -703,12 +703,12 @@ fn print_native_word(st: &mut EngineState, p: NodePtr<NativeWordNode>) {
     let mut i = 0;
     while i < len {
         let c = st.mem.entries(p)[i];
-        if i + 1 < len {
-            if let Some(pair) = surrogate_pair(c, st.mem.entries(p)[i + 1]) {
-                print_char(st, pair);
-                i += 2;
-                continue;
-            }
+        if i + 1 < len
+            && let Some(pair) = surrogate_pair(c, st.mem.entries(p)[i + 1])
+        {
+            print_char(st, pair);
+            i += 2;
+            continue;
         }
         if is_high_surrogate(c) {
             print(st, b'.');

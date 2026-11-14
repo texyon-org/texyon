@@ -354,13 +354,12 @@ pub(super) fn begin_box(
                 )?;
             } else {
                 let tx = effective_tail(st)?;
-                if !st.mem.is_char_node(tx) {
-                    if let Ok(Some(b)) = st.mem.classify_box(tx) {
-                        if unlink_effective_tail(st, tx)? {
-                            last = Some(b);
-                            st.mem[b].shift_amount = Scaled::ZERO;
-                        }
-                    }
+                if !st.mem.is_char_node(tx)
+                    && let Ok(Some(b)) = st.mem.classify_box(tx)
+                    && unlink_effective_tail(st, tx)?
+                {
+                    last = Some(b);
+                    st.mem[b].shift_amount = Scaled::ZERO;
                 }
             }
             last

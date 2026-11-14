@@ -15,7 +15,7 @@ documentation = "https://docs.rs/texyon_io_base"
 repository = "https://github.com/texyon-org/texyon"
 readme = "README.md"
 license = "MIT"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 app_dirs2 = "^2.3"

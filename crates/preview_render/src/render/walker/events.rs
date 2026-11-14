@@ -64,10 +64,10 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
         }
         let text = std::str::from_utf8(contents).ok();
         let trimmed = text.map(str::trim);
-        if let Some(text) = trimmed {
-            if self.apply_color_special(text)? || self.apply_transform_special(x, y, text)? {
-                return Ok(());
-            }
+        if let Some(text) = trimmed
+            && (self.apply_color_special(text)? || self.apply_transform_special(x, y, text)?)
+        {
+            return Ok(());
         }
         if contents == b"pdf:code" || contents.starts_with(b"pdf:code ") {
             let payload = &contents[b"pdf:code".len()..];
@@ -107,10 +107,10 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
             self.state.ledger.record_supported(image.kind.ledger_name());
             return Ok(());
         }
-        if let Some(text) = trimmed {
-            if self.apply_link_special(x, y, text)? || self.apply_nonvisual_special(text) {
-                return Ok(());
-            }
+        if let Some(text) = trimmed
+            && (self.apply_link_special(x, y, text)? || self.apply_nonvisual_special(text))
+        {
+            return Ok(());
         }
         let name = text
             .and_then(|text| text.split([' ', ':', '=']).next())
@@ -273,11 +273,11 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
                 transform: self.state.pdf_graphics.current_transform(x, y),
             })
             .collect();
-        if self.open_link.is_some() {
-            if let (Some(&first), Some(&last)) = (x.first(), x.last()) {
-                let baseline = y.first().copied().unwrap_or(0);
-                self.extend_link(first, last, baseline, ascent(font.size), descent(font.size));
-            }
+        if self.open_link.is_some()
+            && let (Some(&first), Some(&last)) = (x.first(), x.last())
+        {
+            let baseline = y.first().copied().unwrap_or(0);
+            self.extend_link(first, last, baseline, ascent(font.size), descent(font.size));
         }
         let color = font.color.unwrap_or(self.state.color);
         self.page_mut()?

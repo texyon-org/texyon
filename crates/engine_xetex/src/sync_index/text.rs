@@ -17,10 +17,10 @@ pub(super) fn parse(text: &str) -> SyncIndex {
     };
     for line in text.lines() {
         if let Some(input) = line.strip_prefix("Input:") {
-            if let Some((tag, name)) = input.split_once(':') {
-                if let Ok(tag) = tag.parse() {
-                    index.names.insert(tag, Arc::from(name));
-                }
+            if let Some((tag, name)) = input.split_once(':')
+                && let Ok(tag) = tag.parse()
+            {
+                index.names.insert(tag, Arc::from(name));
             }
             continue;
         }

@@ -313,14 +313,20 @@ mod tests {
     /// have heavily constrained options, to avoid accidentally passing
     /// if/when running the test suite on familiar hardware.
     fn setup_test_env() {
-        std::env::set_var("CARGO_CFG_TARGET_ARCH", "testarch");
-        std::env::set_var("CARGO_CFG_TARGET_FEATURE", "testfeat1,testfeat2");
-        std::env::set_var("CARGO_CFG_TARGET_OS", "testos");
-        std::env::set_var("CARGO_CFG_TARGET_FAMILY", "testfamily");
-        std::env::set_var("CARGO_CFG_TARGET_ENV", "testenv");
-        std::env::set_var("CARGO_CFG_TARGET_ENDIAN", "little");
-        std::env::set_var("CARGO_CFG_TARGET_POINTER_WIDTH", "32");
-        std::env::set_var("CARGO_CFG_TARGET_VENDOR", "testvendor");
+        static SETUP: std::sync::Once = std::sync::Once::new();
+        SETUP.call_once(|| {
+            // SAFETY: every test here calls this first, and `Once` holds the others until it is done.
+            unsafe {
+                std::env::set_var("CARGO_CFG_TARGET_ARCH", "testarch");
+                std::env::set_var("CARGO_CFG_TARGET_FEATURE", "testfeat1,testfeat2");
+                std::env::set_var("CARGO_CFG_TARGET_OS", "testos");
+                std::env::set_var("CARGO_CFG_TARGET_FAMILY", "testfamily");
+                std::env::set_var("CARGO_CFG_TARGET_ENV", "testenv");
+                std::env::set_var("CARGO_CFG_TARGET_ENDIAN", "little");
+                std::env::set_var("CARGO_CFG_TARGET_POINTER_WIDTH", "32");
+                std::env::set_var("CARGO_CFG_TARGET_VENDOR", "testvendor");
+            }
+        });
     }
 
     /// No recursion. Check all of the supported tests.

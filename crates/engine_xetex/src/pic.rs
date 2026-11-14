@@ -43,7 +43,7 @@ struct RealRect {
     ht: f32,
 }
 
-extern "C" {
+unsafe extern "C" {
     // Guarded dpx probes. Each arms and restores the bridge jump buffer wholly
     // within C, so a dpx abort never longjmps over a Rust frame.
     fn tt_pic_probe_pdf_box(

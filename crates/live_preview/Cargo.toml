@@ -13,7 +13,7 @@ homepage = "https://github.com/texyon-org/texyon"
 documentation = "https://docs.rs/texyon_live_preview"
 repository = "https://github.com/texyon-org/texyon"
 license = "MIT"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 texyon_bridge_core = { path = "../bridge_core", version = "0.0.0-dev.0" }

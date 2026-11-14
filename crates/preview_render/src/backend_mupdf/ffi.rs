@@ -10,7 +10,7 @@ mod sys {
 
     use crate::{Matrix, StrokeStyle};
 
-    extern "C" {
+    unsafe extern "C" {
         pub(super) fn pr_backend_new() -> *mut c_void;
         pub(super) fn pr_backend_drop(backend: *mut c_void);
         pub(super) fn pr_backend_begin(backend: *mut c_void, width: f32, height: f32) -> c_int;

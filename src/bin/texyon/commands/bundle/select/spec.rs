@@ -15,7 +15,7 @@ impl BundleSpec {
     pub fn validate(&self) -> Result<()> {
         for i in &self.bundle.search_order {
             match i {
-                BundleSearchOrder::Input { ref input } => {
+                BundleSearchOrder::Input { input } => {
                     if !self.inputs.contains_key(input) {
                         bail!("root search order contains unknown input `{input}`");
                     }

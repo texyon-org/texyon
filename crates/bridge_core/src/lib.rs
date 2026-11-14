@@ -224,7 +224,7 @@ impl<T: IoProvider> DriverHooks for MinimalDriver<T> {
 }
 
 // Function defined in the C support code:
-extern "C" {
+unsafe extern "C" {
     fn _ttbc_get_error_message() -> *const libc::c_char;
     fn _ttbc_set_error_message(message: *const libc::c_char);
     #[allow(improper_ctypes)]
@@ -376,10 +376,10 @@ impl<'a> CoreBridgeLauncher<'a> {
         );
         let result = callback(&mut state);
 
-        if let Err(ref e) = result {
-            if e.downcast_ref::<EngineAbortedError>().is_some() {
-                return Err(EngineAbortedError::new_with_details().into());
-            }
+        if let Err(ref e) = result
+            && e.downcast_ref::<EngineAbortedError>().is_some()
+        {
+            return Err(EngineAbortedError::new_with_details().into());
         }
 
         result
@@ -1060,9 +1060,11 @@ impl Default for FsEmulationSettings {
 /// # Safety
 ///
 /// This function is unsafe because it accepts a raw C string.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ttbc_issue_warning(es: &mut CoreBridgeState, text: *const libc::c_char) {
-    es.issue_warning(&CStr::from_ptr(text).to_string_lossy());
+    // SAFETY: the caller passes a valid NUL-terminated string.
+    let text = unsafe { CStr::from_ptr(text) };
+    es.issue_warning(&text.to_string_lossy());
 }
 
 /// Issue an error.
@@ -1070,9 +1072,11 @@ pub unsafe extern "C" fn ttbc_issue_warning(es: &mut CoreBridgeState, text: *con
 /// # Safety
 ///
 /// This function is unsafe because it accepts a raw C string.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ttbc_issue_error(es: &mut CoreBridgeState, text: *const libc::c_char) {
-    es.issue_error(&CStr::from_ptr(text).to_string_lossy());
+    // SAFETY: the caller passes a valid NUL-terminated string.
+    let text = unsafe { CStr::from_ptr(text) };
+    es.issue_error(&text.to_string_lossy());
 }
 
 /// Calculate the MD5 digest of a Tectonic file.
@@ -1080,14 +1084,16 @@ pub unsafe extern "C" fn ttbc_issue_error(es: &mut CoreBridgeState, text: *const
 /// # Safety
 ///
 /// This function is unsafe because it dereferences raw pointers from C.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ttbc_get_file_md5(
     es: &mut CoreBridgeState,
     path: *const libc::c_char,
     digest: *mut u8,
 ) -> libc::c_int {
-    let rpath = CStr::from_ptr(path).to_string_lossy();
-    let rdest = &mut *digest.cast::<[u8; 16]>();
+    // SAFETY: the caller passes a valid NUL-terminated string.
+    let rpath = unsafe { CStr::from_ptr(path) }.to_string_lossy();
+    // SAFETY: the caller passes a writable 16-byte digest buffer.
+    let rdest = unsafe { &mut *digest.cast::<[u8; 16]>() };
 
     libc::c_int::from(es.get_file_md5(rpath.as_ref(), rdest))
 }
@@ -1100,14 +1106,16 @@ pub unsafe extern "C" fn ttbc_get_file_md5(
 /// # Safety
 ///
 /// This function is unsafe because it dereferences raw pointers from C.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ttbc_get_data_md5(
     data: *const u8,
     len: libc::size_t,
     digest: *mut u8,
 ) -> libc::c_int {
-    let rdata = slice::from_raw_parts(data, len);
-    *digest.cast::<[u8; 16]>() = data_md5(rdata);
+    // SAFETY: the caller passes `len` readable bytes at `data`.
+    let rdata = unsafe { slice::from_raw_parts(data, len) };
+    // SAFETY: the caller passes a writable 16-byte digest buffer.
+    unsafe { *digest.cast::<[u8; 16]>() = data_md5(rdata) };
 
     0
 }
@@ -1117,26 +1125,27 @@ pub unsafe extern "C" fn ttbc_get_data_md5(
 /// # Safety
 ///
 /// This function is unsafe because it accepts a raw C string.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ttbc_output_open(
     es: &mut CoreBridgeState,
     name: *const libc::c_char,
     is_gz: libc::c_int,
 ) -> Option<OutputId> {
-    let rname = CStr::from_ptr(name).to_string_lossy();
+    // SAFETY: the caller passes a valid NUL-terminated string.
+    let rname = unsafe { CStr::from_ptr(name) }.to_string_lossy();
     let ris_gz = is_gz != 0;
 
     es.output_open(&rname, ris_gz)
 }
 
 /// Open the general user output stream as a Tectonic output file.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ttbc_output_open_stdout(es: &mut CoreBridgeState) -> Option<OutputId> {
     es.output_open_stdout()
 }
 
 /// Write a single character to a Tectonic output file.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ttbc_output_putc(
     es: &mut CoreBridgeState,
     handle: Option<OutputId>,
@@ -1156,14 +1165,15 @@ pub extern "C" fn ttbc_output_putc(
 /// # Safety
 ///
 /// This function is unsafe because it dereferences raw C pointers.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ttbc_output_write(
     es: &mut CoreBridgeState,
     handle: Option<OutputId>,
     data: *const u8,
     len: libc::size_t,
 ) -> libc::size_t {
-    let rdata = slice::from_raw_parts(data, len);
+    // SAFETY: the caller passes `len` readable bytes at `data`.
+    let rdata = unsafe { slice::from_raw_parts(data, len) };
 
     // NOTE: we use f.write_all() so partial writes are not gonna be a thing.
 
@@ -1175,7 +1185,7 @@ pub unsafe extern "C" fn ttbc_output_write(
 }
 
 /// Flush pending writes to a Tectonic output file.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ttbc_output_flush(
     es: &mut CoreBridgeState,
     handle: Option<OutputId>,
@@ -1184,7 +1194,7 @@ pub extern "C" fn ttbc_output_flush(
 }
 
 /// Close a Tectonic output file.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ttbc_output_close(
     es: &mut CoreBridgeState,
     handle: Option<OutputId>,
@@ -1200,20 +1210,21 @@ pub extern "C" fn ttbc_output_close(
 /// # Safety
 ///
 /// This function is unsafe because it accepts a raw C string.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ttbc_input_open(
     es: &mut CoreBridgeState,
     name: *const libc::c_char,
     format: FileFormat,
     is_gz: libc::c_int,
 ) -> Option<InputId> {
-    let rname = CStr::from_ptr(name).to_string_lossy();
+    // SAFETY: the caller passes a valid NUL-terminated string.
+    let rname = unsafe { CStr::from_ptr(name) }.to_string_lossy();
     let ris_gz = is_gz != 0;
     es.input_open(&rname, format, ris_gz)
 }
 
 /// Open the "primary input" file.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ttbc_input_open_primary(es: &mut CoreBridgeState) -> Option<InputId> {
     es.input_open_primary()
 }
@@ -1234,7 +1245,7 @@ pub extern "C" fn ttbc_input_open_primary(es: &mut CoreBridgeState) -> Option<In
 /// # Safety
 ///
 /// This function is unsafe because it dereferences raw C pointers.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ttbc_get_last_input_abspath(
     es: &mut CoreBridgeState,
     buffer: *mut u8,
@@ -1261,15 +1272,18 @@ pub unsafe extern "C" fn ttbc_get_last_input_abspath(
                 return -2;
             }
 
-            std::ptr::copy(p.as_ptr(), buffer, n);
-            *buffer.offset(n.try_into().unwrap()) = b'\0';
+            // SAFETY: the caller passes `len` writable bytes and `n + 1 <= len`.
+            unsafe {
+                std::ptr::copy(p.as_ptr(), buffer, n);
+                *buffer.add(n) = b'\0';
+            }
             (n + 1).try_into().unwrap()
         }
     }
 }
 
 /// Get the size of a Tectonic input file.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ttbc_input_get_size(
     es: &mut CoreBridgeState,
     handle: Option<InputId>,
@@ -1278,7 +1292,7 @@ pub extern "C" fn ttbc_input_get_size(
 }
 
 /// Get the modification time of a Tectonic input file.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ttbc_input_get_mtime(es: &mut CoreBridgeState, handle: Option<InputId>) -> i64 {
     es.input_get_mtime(handle.expect("valid handle"))
 }
@@ -1288,7 +1302,7 @@ pub extern "C" fn ttbc_input_get_mtime(es: &mut CoreBridgeState, handle: Option<
 /// # Safety
 ///
 /// This function is unsafe because it dereferences raw pointers from C.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ttbc_input_seek(
     es: &mut CoreBridgeState,
     handle: Option<InputId>,
@@ -1306,7 +1320,8 @@ pub unsafe extern "C" fn ttbc_input_seek(
                 "serious internal bug: unexpected \"whence\" parameter to fseek() wrapper: {}",
                 whence
             );
-            *internal_error = 1;
+            // SAFETY: the caller passes a writable error flag.
+            unsafe { *internal_error = 1 };
             return 0;
         }
     };
@@ -1315,7 +1330,7 @@ pub unsafe extern "C" fn ttbc_input_seek(
 }
 
 /// Get a single character from a Tectonic input file.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ttbc_input_getc(
     es: &mut CoreBridgeState,
     handle: Option<InputId>,
@@ -1325,7 +1340,7 @@ pub extern "C" fn ttbc_input_getc(
 }
 
 /// Put back a character that was obtained from a `getc` call.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ttbc_input_ungetc(
     es: &mut CoreBridgeState,
     handle: Option<InputId>,
@@ -1346,14 +1361,15 @@ pub extern "C" fn ttbc_input_ungetc(
 /// # Safety
 ///
 /// This function is unsafe because it dereferences raw C pointers.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ttbc_input_read(
     es: &mut CoreBridgeState,
     handle: Option<InputId>,
     data: *mut u8,
     len: libc::size_t,
 ) -> libc::ssize_t {
-    let rdata = slice::from_raw_parts_mut(data, len);
+    // SAFETY: the caller passes `len` writable bytes at `data`.
+    let rdata = unsafe { slice::from_raw_parts_mut(data, len) };
 
     match es.input_read(handle.expect("valid handle"), rdata) {
         Ok(()) => len as isize,
@@ -1369,14 +1385,15 @@ pub unsafe extern "C" fn ttbc_input_read(
 /// # Safety
 ///
 /// This function is unsafe because it dereferences raw C pointers.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ttbc_input_read_partial(
     es: &mut CoreBridgeState,
     handle: Option<InputId>,
     data: *mut u8,
     len: libc::size_t,
 ) -> libc::ssize_t {
-    let rdata = slice::from_raw_parts_mut(data, len);
+    // SAFETY: the caller passes `len` writable bytes at `data`.
+    let rdata = unsafe { slice::from_raw_parts_mut(data, len) };
 
     match es.input_read_partial(handle.expect("valid handle"), rdata) {
         Ok(size) => size as isize,
@@ -1388,7 +1405,7 @@ pub unsafe extern "C" fn ttbc_input_read_partial(
 }
 
 /// Close a Tectonic input file.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ttbc_input_close(
     es: &mut CoreBridgeState,
     handle: Option<InputId>,
@@ -1431,13 +1448,13 @@ impl Diagnostic {
 }
 
 /// Create a new diagnostic that will be reported as a warning.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ttbc_diag_begin_warning() -> *mut Diagnostic {
     Box::into_raw(Box::new(Diagnostic::warning()))
 }
 
 /// Create a new diagnostic that will be reported as an error.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ttbc_diag_begin_error() -> *mut Diagnostic {
     Box::into_raw(Box::new(Diagnostic::error()))
 }
@@ -1447,9 +1464,11 @@ pub extern "C" fn ttbc_diag_begin_error() -> *mut Diagnostic {
 /// # Safety
 ///
 /// This function is unsafe because it accepts a raw C string.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ttbc_diag_append(diag: &mut Diagnostic, text: *const libc::c_char) {
-    diag.append(&CStr::from_ptr(text).to_string_lossy());
+    // SAFETY: the caller passes a valid NUL-terminated string.
+    let text = unsafe { CStr::from_ptr(text) };
+    diag.append(&text.to_string_lossy());
 }
 
 /// "Finish" a diagnostic: report it to the driver and free the diagnostic object.
@@ -1457,9 +1476,11 @@ pub unsafe extern "C" fn ttbc_diag_append(diag: &mut Diagnostic, text: *const li
 /// # Safety
 ///
 /// This function is unsafe because it dereferences a raw Diagnostic pointer
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ttbc_diag_finish(es: &mut CoreBridgeState, diag: *mut Diagnostic) {
-    es.finish_diagnostic(*Box::from_raw(diag));
+    // SAFETY: `diag` came from `ttbc_diag_begin_*` and is not used again.
+    let diag = unsafe { Box::from_raw(diag) };
+    es.finish_diagnostic(*diag);
 }
 
 /// Run a shell command
@@ -1467,13 +1488,14 @@ pub unsafe extern "C" fn ttbc_diag_finish(es: &mut CoreBridgeState, diag: *mut D
 /// # Safety
 ///
 /// This function is unsafe because it dereferences raw pointers from C and accepts a raw C string.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ttbc_shell_escape(
     es: &mut CoreBridgeState,
     cmd: *const u16,
     len: libc::size_t,
 ) -> libc::c_int {
-    let rcmd = slice::from_raw_parts(cmd, len);
+    // SAFETY: the caller passes `len` UTF-16 units at `cmd`.
+    let rcmd = unsafe { slice::from_raw_parts(cmd, len) };
     let rcmd = match String::from_utf16(rcmd) {
         Ok(cmd) => cmd,
         Err(err) => {

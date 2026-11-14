@@ -788,11 +788,11 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     back_input(st)?;
                 } else {
                     get_token(st)?;
-                    if let Command::IfTest(IfTest { code, .. }) = st.scanner.cur {
-                        if code != IfCode::Case {
-                            st.scanner.cur = Command::IfTest(IfTest { code, unless: true });
-                            continue 'reswitch;
-                        }
+                    if let Command::IfTest(IfTest { code, .. }) = st.scanner.cur
+                        && code != IfCode::Case
+                    {
+                        st.scanner.cur = Command::IfTest(IfTest { code, unless: true });
+                        continue 'reswitch;
                     }
                     crate::errors::back_error(
                         st,
@@ -1011,17 +1011,16 @@ fn trace_macro_param(st: &mut EngineState, match_chr: i32, n: usize, list: Token
 }
 
 pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
-    if st.config.pgfmath == crate::pgfmath::Mode::Check
+    if (st.config.pgfmath == crate::pgfmath::Mode::Check
         || st.config.pgfmath == crate::pgfmath::Mode::Native
             && st
                 .scanner
                 .cur_cs
-                .is_some_and(|cs| st.eqtb.pgfmath.is_try(cs))
+                .is_some_and(|cs| st.eqtb.pgfmath.is_try(cs)))
+        && let Some(cs) = crate::pgfmath::intercept(st)
     {
-        if let Some(cs) = crate::pgfmath::intercept(st) {
-            st.scanner.cur_cs = Some(cs);
-            st.scanner.cur = st.eqtb.meaning(cs);
-        }
+        st.scanner.cur_cs = Some(cs);
+        st.scanner.cur = st.eqtb.meaning(cs);
     }
     let name = st.scanner.cur_cs.or_confusion("macro_call")?;
     let save_scanner_status = st.scanner.scanner_status;
@@ -1206,15 +1205,15 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
 
-        if n > 0 && st.config.pgfmath == crate::pgfmath::Mode::Native {
-            if let Some(kind) = st.eqtb.pgfmath.native(name) {
-                if crate::pgfmath::native_macro(st, kind, &pstack[..n]) {
-                    for &list in &pstack[..n] {
-                        st.mem.tokens.flush(list);
-                    }
-                    break 'exit;
-                }
+        if n > 0
+            && st.config.pgfmath == crate::pgfmath::Mode::Native
+            && let Some(kind) = st.eqtb.pgfmath.native(name)
+            && crate::pgfmath::native_macro(st, kind, &pstack[..n])
+        {
+            for &list in &pstack[..n] {
+                st.mem.tokens.flush(list);
             }
+            break 'exit;
         }
 
         while st.input.cur_input.state == TOKEN_LIST

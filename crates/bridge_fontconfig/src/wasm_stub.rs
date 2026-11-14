@@ -31,15 +31,16 @@ struct StubPattern {
 ///
 /// `p` must be null or a pointer returned by [`FcNameParse`].
 unsafe fn pattern(p: *mut FcPattern) -> Option<&'static StubPattern> {
-    (p as *const StubPattern).as_ref()
+    // SAFETY: forwarded from the caller.
+    unsafe { (p as *const StubPattern).as_ref() }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn FcInit() -> FcBool {
     FcTrue
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn FcConfigGetCurrent() -> *mut crate::sys::FcConfig {
     // The caller only ever passes this straight back to FcFontList, which
     // ignores it. A null "current config" is what fontconfig itself returns
@@ -47,13 +48,13 @@ pub extern "C" fn FcConfigGetCurrent() -> *mut crate::sys::FcConfig {
     ptr::null_mut()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn FcNameParse(_name: *const libc::c_char) -> *mut FcPattern {
     let pat = Box::new(StubPattern { refs: Cell::new(1) });
     Box::into_raw(pat) as *mut FcPattern
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn FcPatternReference(pat: *mut FcPattern) {
     // SAFETY: our caller owns a reference to `pat`, so it came from FcNameParse.
     if let Some(pat) = unsafe { pattern(pat) } {
@@ -61,7 +62,7 @@ pub extern "C" fn FcPatternReference(pat: *mut FcPattern) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn FcPatternDestroy(pat: *mut FcPattern) {
     // SAFETY: our caller owns a reference to `pat`, so it came from FcNameParse.
     let Some(p) = (unsafe { pattern(pat) }) else {
@@ -78,7 +79,7 @@ pub extern "C" fn FcPatternDestroy(pat: *mut FcPattern) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn FcPatternGetString(
     _p: *mut FcPattern,
     _object: *const libc::c_char,
@@ -88,7 +89,7 @@ pub extern "C" fn FcPatternGetString(
     FcResult::NoMatch
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn FcPatternGetInteger(
     _p: *mut FcPattern,
     _object: *const libc::c_char,
@@ -98,17 +99,17 @@ pub extern "C" fn FcPatternGetInteger(
     FcResult::NoMatch
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn FcObjectSetCreate() -> *mut FcObjectSet {
     Box::into_raw(Box::new(())) as *mut FcObjectSet
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn FcObjectSetAdd(_os: *mut FcObjectSet, _object: *const libc::c_char) -> FcBool {
     FcTrue
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn FcObjectSetDestroy(os: *mut FcObjectSet) {
     if !os.is_null() {
         // SAFETY: the caller owns `os`, so it came from FcObjectSetCreate.
@@ -116,7 +117,7 @@ pub extern "C" fn FcObjectSetDestroy(os: *mut FcObjectSet) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn FcFontList(
     _config: *mut crate::sys::FcConfig,
     _p: *mut FcPattern,
@@ -124,10 +125,10 @@ pub extern "C" fn FcFontList(
 ) -> *mut FcFontSet {
     // An empty set, laid out the way fontconfig lays one out: callers read
     // `nfont` and then index `fonts`, which they never reach.
-    Box::into_raw(Box::new(FcFontSet::empty())) as *mut FcFontSet
+    Box::into_raw(Box::new(FcFontSet::empty()))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn FcFontSetDestroy(fs: *mut FcFontSet) {
     if !fs.is_null() {
         // SAFETY: the caller owns `fs`, so it came from FcFontList.

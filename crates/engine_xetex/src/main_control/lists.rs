@@ -355,10 +355,10 @@ pub(crate) fn new_character(
 }
 
 pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
-    if let Some(context) = ParTokenContext::of_group(st.save_stack.cur_group) {
-        if insert_par_token_before(st, context)? {
-            return Ok(());
-        }
+    if let Some(context) = ParTokenContext::of_group(st.save_stack.cur_group)
+        && insert_par_token_before(st, context)?
+    {
+        return Ok(());
     }
     let group = st.save_stack.cur_group;
     match group {

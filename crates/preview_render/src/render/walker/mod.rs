@@ -177,10 +177,10 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
             *slot = resource.as_ref().map(|resource| resource.identity);
             resources.extend(resource);
         }
-        if let Some((cached, map)) = self.artifacts.font_map.as_ref() {
-            if *cached == identities {
-                return Ok(Arc::clone(map));
-            }
+        if let Some((cached, map)) = self.artifacts.font_map.as_ref()
+            && *cached == identities
+        {
+            return Ok(Arc::clone(map));
         }
         let mut map = FontMap::default();
         for resource in resources {

@@ -55,10 +55,10 @@ impl PeekableInput {
         let rv = match handle.getc() {
             Ok(c) => libc::c_int::from(c),
             Err(e) => {
-                if let Some(e) = e.downcast_ref::<io::Error>() {
-                    if e.kind() == io::ErrorKind::UnexpectedEof {
-                        return EOF;
-                    }
+                if let Some(e) = e.downcast_ref::<io::Error>()
+                    && e.kind() == io::ErrorKind::UnexpectedEof
+                {
+                    return EOF;
                 }
                 -1
             }

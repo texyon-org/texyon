@@ -123,10 +123,10 @@ fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                 st.mem[glue].glue_ptr = ZERO_GLUE;
             }
         }
-        if let Some(next) = next {
-            if st.mem[q].span_list != Some(END_SPAN) {
-                st.mem.merge_spans(q, next)?;
-            }
+        if let Some(next) = next
+            && st.mem[q].span_list != Some(END_SPAN)
+        {
+            st.mem.merge_spans(q, next)?;
         }
         q.into_unset(&mut st.mem);
         column = next;
@@ -852,19 +852,18 @@ pub(super) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
         inner: false,
         incompleat_noad,
     } = st.input.cur_list.mode
+        && (st.input.cur_list.tail != st.input.cur_list.head || incompleat_noad.is_some())
     {
-        if st.input.cur_list.tail != st.input.cur_list.head || incompleat_noad.is_some() {
-            crate::errors::error(
-                st,
-                ("Improper ", crate::output::Esc("halign"), " inside $$'s"),
-                &[
-                    r"Displays can use special alignments (like \eqalignno)",
-                    "only if nothing but the alignment itself is between $$'s.",
-                    "So I've deleted the formulas that preceded this alignment.",
-                ],
-            )?;
-            st.input.cur_list.flush_math(&mut st.mem)?;
-        }
+        crate::errors::error(
+            st,
+            ("Improper ", crate::output::Esc("halign"), " inside $$'s"),
+            &[
+                r"Displays can use special alignments (like \eqalignno)",
+                "only if nothing but the alignment itself is between $$'s.",
+                "So I've deleted the formulas that preceded this alignment.",
+            ],
+        )?;
+        st.input.cur_list.flush_math(&mut st.mem)?;
     }
 
     crate::mem::push_nest(st)?;

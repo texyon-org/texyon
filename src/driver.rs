@@ -380,26 +380,26 @@ impl BridgeState {
                 continue;
             }
 
-            if let Some(basename) = entry.file_name().to_str() {
-                if !self.mem.files.borrow().contains_key(basename) {
-                    let path = entry.path();
-                    let mut data = Vec::new();
+            if let Some(basename) = entry.file_name().to_str()
+                && !self.mem.files.borrow().contains_key(basename)
+            {
+                let path = entry.path();
+                let mut data = Vec::new();
 
-                    let mut f = ctry!(
-                        File::open(&path);
-                        "failed to open tool-created file `{}`", path.display()
-                    );
-                    ctry!(
-                        f.read_to_end(&mut data);
-                        "failed to read tool-created file `{}`", path.display()
-                    );
+                let mut f = ctry!(
+                    File::open(&path);
+                    "failed to open tool-created file `{}`", path.display()
+                );
+                ctry!(
+                    f.read_to_end(&mut data);
+                    "failed to read tool-created file `{}`", path.display()
+                );
 
-                    self.mem.create_entry(basename, data);
-                    self.events.insert(
-                        basename.to_owned(),
-                        FileSummary::new(AccessPattern::Written, InputOrigin::NotInput),
-                    );
-                }
+                self.mem.create_entry(basename, data);
+                self.events.insert(
+                    basename.to_owned(),
+                    FileSummary::new(AccessPattern::Written, InputOrigin::NotInput),
+                );
             }
         }
 
@@ -2017,10 +2017,10 @@ impl ProcessingSession {
         // in issue #893. Since PR #1103, the `tectonic-biber` override can
         // also be invoked with `texyon -X biber`.
         let find_by = |binary_name: &str| -> Option<String> {
-            if let Ok(pathbuf) = which(binary_name) {
-                if let Some(biber_path) = pathbuf.to_str() {
-                    return Some(biber_path.to_owned());
-                }
+            if let Ok(pathbuf) = which(binary_name)
+                && let Some(biber_path) = pathbuf.to_str()
+            {
+                return Some(biber_path.to_owned());
             }
             None
         };

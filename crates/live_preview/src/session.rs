@@ -739,7 +739,7 @@ fn outcome(outcome: TexOutcome) -> Outcome {
     }
 }
 
-extern "C" {
+unsafe extern "C" {
     fn pdf_files_suspend() -> *mut std::ffi::c_void;
     fn pdf_files_restore(state: *mut std::ffi::c_void);
     fn pdf_files_close_if_open();

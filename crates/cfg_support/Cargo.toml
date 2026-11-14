@@ -21,7 +21,7 @@ documentation = "https://docs.rs/texyon"
 repository = "https://github.com/texyon-org/texyon"
 readme = "README.md"
 license = "MIT"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 lazy_static = "^1.4"

@@ -201,10 +201,10 @@ impl Page {
             return None;
         }
         for child in self.children(id) {
-            if self.contains(hit, child) {
-                if let Some(deep) = self.deepest_container_v2(hit, child) {
-                    return Some(deep);
-                }
+            if self.contains(hit, child)
+                && let Some(deep) = self.deepest_container_v2(hit, child)
+            {
+                return Some(deep);
             }
         }
         if self.node(id).kind == Kind::VBox {
@@ -540,10 +540,12 @@ fn display_line(sheets: &mut Sheets, tag: i32, line: i32) -> Vec<DisplayHit> {
     for &page_index in &pages {
         let page = sheets.page(page_index);
         for (id, node) in page.nodes() {
-            if let Some((list, order)) = node.friend {
-                if list == bucket && node.tag == tag && node.line == line {
-                    friends.push((page_index, order, id, node.kind.is_box()));
-                }
+            if let Some((list, order)) = node.friend
+                && list == bucket
+                && node.tag == tag
+                && node.line == line
+            {
+                friends.push((page_index, order, id, node.kind.is_box()));
             }
         }
     }

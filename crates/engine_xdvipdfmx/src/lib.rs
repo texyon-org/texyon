@@ -161,7 +161,7 @@ pub mod c_api {
     }
 
     #[allow(improper_ctypes)] // for CoreBridgeState
-    extern "C" {
+    unsafe extern "C" {
         pub fn tt_engine_xdvipdfmx_main(
             api: &mut CoreBridgeState,
             cfg: &XdvipdfmxConfig,

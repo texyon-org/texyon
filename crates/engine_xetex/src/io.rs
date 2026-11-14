@@ -126,7 +126,7 @@ impl UFile {
 }
 
 // ICU checks the incoming UErrorCode, so it must be zeroed before each call.
-extern "C" {
+unsafe extern "C" {
     #[link_name = concat!("ucnv_open", env!("ICU_VERSION_SUFFIX"))]
     fn ucnv_open(converter_name: *const libc::c_char, err: *mut i32) -> *mut libc::c_void;
     #[link_name = concat!("ucnv_close", env!("ICU_VERSION_SUFFIX"))]

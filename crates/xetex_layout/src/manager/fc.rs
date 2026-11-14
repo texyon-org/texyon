@@ -296,16 +296,16 @@ impl FontManagerBackend for FcBackend {
                 index += 1;
                 FontManager::append_to_list(&mut names.style_names, name);
             }
-            if names.full_names.is_empty() {
-                if let Some(family) = names.family_names.first() {
-                    let mut full = family.as_bytes().to_vec();
-                    if let Some(style) = names.style_names.first() {
-                        full.push(b' ');
-                        full.extend_from_slice(style.as_bytes());
-                    }
-                    if let Ok(full) = CString::new(full) {
-                        names.full_names.push(full);
-                    }
+            if names.full_names.is_empty()
+                && let Some(family) = names.family_names.first()
+            {
+                let mut full = family.as_bytes().to_vec();
+                if let Some(style) = names.style_names.first() {
+                    full.push(b' ');
+                    full.extend_from_slice(style.as_bytes());
+                }
+                if let Ok(full) = CString::new(full) {
+                    names.full_names.push(full);
                 }
             }
         }

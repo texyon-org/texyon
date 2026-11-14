@@ -29,7 +29,7 @@ use crate::{GetUrlBackend, RangeReader};
 use std::io::Cursor;
 use texyon_errors::{anyhow::bail, Result};
 
-extern "C" {
+unsafe extern "C" {
     /// Fetch a URL, or a byte range of one, blocking until it completes.
     ///
     /// See the module documentation for the contract.
@@ -50,7 +50,7 @@ extern "C" {
 /// then fails the request must release it with [`texyon_wasm_free`].
 ///
 /// Returns null if the allocation fails.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn texyon_wasm_alloc(len: usize) -> *mut u8 {
     let mut buf = Vec::<u8>::with_capacity(len);
     let ptr = buf.as_mut_ptr();
@@ -64,7 +64,7 @@ pub extern "C" fn texyon_wasm_alloc(len: usize) -> *mut u8 {
 ///
 /// `ptr` must have come from [`texyon_wasm_alloc`] with the same `len`, and
 /// must not have been handed to Rust through `texyon_http_get`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn texyon_wasm_free(ptr: *mut u8, len: usize) {
     if !ptr.is_null() {
         drop(Vec::from_raw_parts(ptr, 0, len));

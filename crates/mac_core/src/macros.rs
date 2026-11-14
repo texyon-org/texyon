@@ -24,7 +24,8 @@ macro_rules! cfty {
             unsafe fn new_borrowed(ptr: std::ptr::NonNull<Self::SysTy>) -> Self {
                 // SAFETY: Provided pointer is required a valid pointer for this type
                 unsafe { $crate::sys::CFRetain(ptr.as_ptr().cast()) };
-                Self::new_owned(ptr)
+                // SAFETY: We have just retained the pointer, meaning we now have ownership of it
+                unsafe { Self::new_owned(ptr) }
             }
 
             fn as_type_ref(&self) -> *const Self::SysTy {

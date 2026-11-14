@@ -88,10 +88,10 @@ impl IoProvider for TTBFsBundle<TTBFileIndex> {
         _status: &mut dyn StatusBackend,
     ) -> OpenResult<InputHandle> {
         // Fetch index if it is empty
-        if self.index.is_empty() {
-            if let Err(e) = self.fill_index() {
-                return OpenResult::Err(e);
-            }
+        if self.index.is_empty()
+            && let Err(e) = self.fill_index()
+        {
+            return OpenResult::Err(e);
         }
 
         let info = match self.index.search(name) {

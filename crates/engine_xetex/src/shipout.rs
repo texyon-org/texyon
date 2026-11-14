@@ -895,10 +895,10 @@ fn chars_out(
     loop {
         let f = cur.font;
         let mut c = cur.chr;
-        if !cur.ligature {
-            if let Some(mapping) = st.fonts.font_mapping[f].as_deref() {
-                c = apply_tfm_font_mapping(mapping, c as libc::c_int) as u16;
-            }
+        if !cur.ligature
+            && let Some(mapping) = st.fonts.font_mapping[f].as_deref()
+        {
+            c = apply_tfm_font_mapping(mapping, c as libc::c_int) as u16;
         }
         dvi_font_select(st, f)?;
         if st.fonts.char_exists(f, i32::from(c)) {

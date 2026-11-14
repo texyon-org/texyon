@@ -555,15 +555,14 @@ fn bst_read_command(
 
                 let field_start = cite_ptr * globals.other.num_fields();
                 let &cite = globals.hash.get(cite_loc).extra();
-                let mut parent =
+                let parent_start =
                     cite * globals.other.num_fields() + globals.other.pre_defined_fields();
-                for idx in (field_start + globals.other.pre_defined_fields())
-                    ..(field_start + globals.other.num_fields())
-                {
+                let fields = (field_start + globals.other.pre_defined_fields())
+                    ..(field_start + globals.other.num_fields());
+                for (idx, parent) in fields.zip(parent_start..) {
                     if globals.other.field(idx).is_invalid() {
                         globals.other.set_field(idx, globals.other.field(parent));
                     }
-                    parent += 1;
                 }
             }
         }

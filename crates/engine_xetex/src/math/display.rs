@@ -352,10 +352,11 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     let mut d = (z - w).half();
     if e > Scaled::ZERO && d < e * 2 {
         d = (z - w - e).half();
-        if let Some(first) = p {
-            if !st.mem.is_char_node(first) && st.mem.node_type(first) == Ok(NodeType::Glue) {
-                d = Scaled::ZERO;
-            }
+        if let Some(first) = p
+            && !st.mem.is_char_node(first)
+            && st.mem.node_type(first) == Ok(NodeType::Glue)
+        {
+            d = Scaled::ZERO;
         }
     }
 

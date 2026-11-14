@@ -631,10 +631,10 @@ fn show_page_so_far(st: &mut EngineState) {
                     let mut t = 0;
                     while let Some(next) = q.link(&st.mem) {
                         q = next;
-                        if let Ok(AnyNode::Ins(node)) = st.mem.classify(q) {
-                            if st.mem[node].box_number == box_num {
-                                t += 1;
-                            }
+                        if let Ok(AnyNode::Ins(node)) = st.mem.classify(q)
+                            && st.mem[node].box_number == box_num
+                        {
+                            t += 1;
                         }
                         if Some(q) == broken_ins {
                             break;

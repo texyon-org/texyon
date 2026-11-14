@@ -17,7 +17,7 @@ documentation = "https://docs.rs/texyon_xetex_layout"
 repository = "https://github.com/texyon-org/texyon"
 readme = "README.md"
 license = "MIT"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 texyon_bridge_core = { path = "../bridge_core", version = "0.0.0-dev.0" }

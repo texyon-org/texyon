@@ -561,7 +561,7 @@ pub(crate) fn extra_right_brace(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 /// "You can't use `<current command>' in <mode>".
-pub(crate) fn you_cant(st: &EngineState) -> impl TexPrint {
+pub(crate) fn you_cant(st: &EngineState) -> impl TexPrint + use<> {
     (
         "You can't use `",
         st.scanner.cur,

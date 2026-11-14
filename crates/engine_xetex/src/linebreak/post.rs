@@ -362,10 +362,8 @@ impl Breaker {
                 }
 
                 r = here;
-                if texxet {
-                    if let Ok(AnyNode::Math(m)) = node {
-                        mem.update_lr_stack(m, lr_ptr)?;
-                    }
+                if texxet && let Ok(AnyNode::Math(m)) = node {
+                    mem.update_lr_stack(m, lr_ptr)?;
                 }
             }
 

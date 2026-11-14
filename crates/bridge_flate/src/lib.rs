@@ -48,7 +48,7 @@ impl From<Status> for FlateResult {
 /// # Safety
 ///
 /// This is a C API function, so it is unsafe.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn texyon_flate_compress(
     output_ptr: *mut u8,
     output_len: *mut u64,
@@ -58,8 +58,13 @@ pub unsafe extern "C" fn texyon_flate_compress(
 ) -> FlateResult {
     let mut c = Compress::new(Compression::new(compression_level), true);
 
-    let input = slice::from_raw_parts(input_ptr, input_len as usize);
-    let output = slice::from_raw_parts_mut(output_ptr, *output_len as usize);
+    // SAFETY: the caller passes valid input and output buffers of the given lengths.
+    let (input, output) = unsafe {
+        (
+            slice::from_raw_parts(input_ptr, input_len as usize),
+            slice::from_raw_parts_mut(output_ptr, *output_len as usize),
+        )
+    };
 
     let (size, result) = if c.compress(input, output, FlushCompress::Finish).is_err() {
         (0, FlateResult::OtherError)
@@ -67,7 +72,8 @@ pub unsafe extern "C" fn texyon_flate_compress(
         (c.total_out(), FlateResult::Success)
     };
 
-    *output_len = size;
+    // SAFETY: `output_len` was readable above and is writable too.
+    unsafe { *output_len = size };
     result
 }
 
@@ -79,7 +85,7 @@ pub unsafe extern "C" fn texyon_flate_compress(
 /// # Safety
 ///
 /// This is a C API function, so it is unsafe.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn texyon_flate_decompress(
     output_ptr: *mut u8,
     output_len: *mut u64,
@@ -88,15 +94,21 @@ pub unsafe extern "C" fn texyon_flate_decompress(
 ) -> FlateResult {
     let mut dc = Decompress::new(true);
 
-    let input = slice::from_raw_parts(input_ptr, input_len as usize);
-    let output = slice::from_raw_parts_mut(output_ptr, *output_len as usize);
+    // SAFETY: the caller passes valid input and output buffers of the given lengths.
+    let (input, output) = unsafe {
+        (
+            slice::from_raw_parts(input_ptr, input_len as usize),
+            slice::from_raw_parts_mut(output_ptr, *output_len as usize),
+        )
+    };
 
     let (size, result) = match dc.decompress(input, output, FlushDecompress::Finish) {
         Ok(status) => (dc.total_out(), status.into()),
         Err(_) => (0, FlateResult::OtherError),
     };
 
-    *output_len = size;
+    // SAFETY: `output_len` was readable above and is writable too.
+    unsafe { *output_len = size };
     result
 }
 
@@ -140,12 +152,13 @@ impl Decompressor<'_> {
 /// # Safety
 ///
 /// This is a C API function, so it is unsafe.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn texyon_flate_new_decompressor(
     input_ptr: *const u8,
     input_len: u64,
 ) -> *mut libc::c_void {
-    let input = slice::from_raw_parts(input_ptr, input_len as usize);
+    // SAFETY: the caller passes `input_len` bytes that outlive the decompressor.
+    let input = unsafe { slice::from_raw_parts(input_ptr, input_len as usize) };
 
     let dc = Decompressor {
         deflate: Decompress::new(true),
@@ -169,21 +182,24 @@ pub unsafe extern "C" fn texyon_flate_new_decompressor(
 /// # Safety
 ///
 /// This is a C API function, so it is unsafe.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn texyon_flate_decompress_chunk(
     handle: *mut libc::c_void,
     output_ptr: *mut u8,
     output_len: *mut u64,
 ) -> libc::c_int {
-    let mut dc = Box::from_raw(handle.cast::<Decompressor>());
-    let output = slice::from_raw_parts_mut(output_ptr, *output_len as usize);
+    // SAFETY: `handle` came from `texyon_flate_new_decompressor` and is leaked again below.
+    let mut dc = unsafe { Box::from_raw(handle.cast::<Decompressor>()) };
+    // SAFETY: the caller passes an output buffer of `*output_len` bytes.
+    let output = unsafe { slice::from_raw_parts_mut(output_ptr, *output_len as usize) };
 
     let (amount, flag) = match dc.decompress_chunk(output) {
         Ok(n) => (n, 0),
         Err(_) => (0, 1),
     };
 
-    *output_len = amount as u64;
+    // SAFETY: `output_len` was readable above and is writable too.
+    unsafe { *output_len = amount as u64 };
     Box::leak(dc);
     flag
 }
@@ -193,8 +209,8 @@ pub unsafe extern "C" fn texyon_flate_decompress_chunk(
 /// # Safety
 ///
 /// This is a C API function, so it is unsafe.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn texyon_flate_free_decompressor(handle: *mut libc::c_void) {
-    let _dc = Box::from_raw(handle.cast::<Decompressor>());
-    // The box will be freed as we exit.
+    // SAFETY: `handle` came from `texyon_flate_new_decompressor` and is not used again.
+    drop(unsafe { Box::from_raw(handle.cast::<Decompressor>()) });
 }

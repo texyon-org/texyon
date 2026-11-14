@@ -4,7 +4,7 @@
 pub use libc::{gmtime, localtime};
 
 #[cfg(windows)]
-extern "C" {
+unsafe extern "C" {
     #[link_name = "_gmtime64"]
     pub fn gmtime(time: *const libc::time_t) -> *mut libc::tm;
 

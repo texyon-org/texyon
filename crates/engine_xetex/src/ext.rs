@@ -447,13 +447,12 @@ fn load_ot_font(
                 {
                     break 'option Some(valid);
                 }
-                if let Some(probe) = &probe {
-                    if let Some((tag, value)) =
+                if let Some(probe) = &probe
+                    && let Some((tag, value)) =
                         read_feature_number(spec).or_else(|| probe.find_graphite_feature(spec))
-                    {
-                        features.push(Feature::global(tag, value as u32));
-                        break 'option Some(true);
-                    }
+                {
+                    features.push(Feature::global(tag, value as u32));
+                    break 'option Some(true);
                 }
                 if at(feat, cp1) == b'+' {
                     let (tag, mut param) = read_tag_with_param(&feat[cp1 + 1..]);

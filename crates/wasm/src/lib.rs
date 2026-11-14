@@ -41,7 +41,7 @@ impl Payload for HostBuffer {
 ///
 /// `req_ptr` must point to `req_len` readable bytes, and both out-parameters
 /// must be writable.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn texyon_request(
     req_ptr: *const u8,
     req_len: usize,

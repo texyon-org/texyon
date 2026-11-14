@@ -25,7 +25,7 @@ categories = [
     "text-processing",
 ]
 license = "MIT"
-edition = "2021"
+edition = "2024"
 exclude = ["/build/", "/release-bundle/"]
 
 [workspace]

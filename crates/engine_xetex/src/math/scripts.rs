@@ -425,10 +425,10 @@ impl MemState {
                     _ => script_ptr,
                 },
                 Ok(AnyNode::Noad(any)) => {
-                    if let NoadVariant::Noad(n) = any.variant(self) {
-                        if self[n].noad_type <= NodeType::PunctNoad {
-                            found = Some(MathSlot::Nucleus(n));
-                        }
+                    if let NoadVariant::Noad(n) = any.variant(self)
+                        && self[n].noad_type <= NodeType::PunctNoad
+                    {
+                        found = Some(MathSlot::Nucleus(n));
                     }
                     None
                 }

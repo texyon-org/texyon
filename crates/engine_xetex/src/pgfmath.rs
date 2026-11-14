@@ -227,17 +227,17 @@ pub(crate) fn intercept(st: &mut EngineState) -> Option<CsId> {
     let mode = st.config.pgfmath;
     let known = st.eqtb.pgfmath.complete()?;
     let body = st.scanner.cur.macro_body();
-    if mode == Mode::Check {
-        if let Some(p) = st.pgfmath.pending.take() {
-            let number = body == st.eqtb.meaning(known.is_number()).macro_body();
-            if number || body == st.eqtb.meaning(known.parse_end()).macro_body() {
-                let mut stats = std::mem::take(&mut st.pgfmath.stats);
-                compare(st, &known, &mut stats, &p, number);
-                st.pgfmath.stats = stats;
-                return None;
-            }
-            st.pgfmath.pending = Some(p);
+    if mode == Mode::Check
+        && let Some(p) = st.pgfmath.pending.take()
+    {
+        let number = body == st.eqtb.meaning(known.is_number()).macro_body();
+        if number || body == st.eqtb.meaning(known.parse_end()).macro_body() {
+            let mut stats = std::mem::take(&mut st.pgfmath.stats);
+            compare(st, &known, &mut stats, &p, number);
+            st.pgfmath.stats = stats;
+            return None;
         }
+        st.pgfmath.pending = Some(p);
     }
     if st.scanner.cur_cs != Some(known.try_hook()) {
         return None;
@@ -315,10 +315,10 @@ fn evaluate_parse(st: &mut EngineState, known: &Complete) -> Result<Answer, &'st
     let items = expression_items(st, &tokens).inspect_err(|reason| trace(st, &tokens, reason))?;
     let mut constants = HashMap::new();
     for name in identifiers(&items) {
-        if Func::from_name(&name).is_none() {
-            if let Some(text) = pseudo_constant(st, known, &name) {
-                constants.insert(name, text);
-            }
+        if Func::from_name(&name).is_none()
+            && let Some(text) = pseudo_constant(st, known, &name)
+        {
+            constants.insert(name, text);
         }
     }
     let radians = macro_text(st, known.trig_format()).as_deref() == Some(b"1");

@@ -17,7 +17,7 @@ documentation = "https://docs.rs/texyon_engine_xdvipdfmx"
 repository = "https://github.com/texyon-org/texyon"
 readme = "README.md"
 license = "MIT AND GPL-2.0-or-later"
-edition = "2021"
+edition = "2024"
 links = "texyon_engine_xdvipdfmx"
 
 [dependencies]

@@ -109,14 +109,13 @@ fn get_font_funcs() -> hb::FontFuncsRef<'static, Arc<Mutex<ft::Face>>> {
             f.glyph_contour_point(|_, face, gid, point_index| {
                 let mut face = face.lock().unwrap();
 
-                if let Ok(glyph) = face.load_glyph(gid, ft::LoadFlags::NO_SCALE) {
-                    if let Some(outline) = glyph.outline() {
-                        if point_index < (outline.n_points as u32) {
-                            let x = outline.points()[point_index as usize].x as hb::Position;
-                            let y = outline.points()[point_index as usize].y as hb::Position;
-                            return Some((x, y));
-                        }
-                    }
+                if let Ok(glyph) = face.load_glyph(gid, ft::LoadFlags::NO_SCALE)
+                    && let Some(outline) = glyph.outline()
+                    && point_index < (outline.n_points as u32)
+                {
+                    let x = outline.points()[point_index as usize].x as hb::Position;
+                    let y = outline.points()[point_index as usize].y as hb::Position;
+                    return Some((x, y));
                 }
                 None
             });

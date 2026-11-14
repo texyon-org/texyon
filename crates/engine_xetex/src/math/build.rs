@@ -272,24 +272,24 @@ impl ListStateRecord {
         let mut t = EMPTY;
         let mut p = None;
 
-        if self.tail != self.head {
-            if let Ok(Some(any)) = mem.classify_noad(self.tail) {
-                // WEB's `scripts_allowed` admits fractions, whose script words are the numerator and denominator.
-                let field = match any.variant(mem) {
-                    NoadVariant::Noad(n) => Some(script(n)),
-                    NoadVariant::Radical(r) => Some(script(r.as_noad())),
-                    NoadVariant::Accent(a) => Some(script(a.as_noad())),
-                    NoadVariant::Fraction(f) => Some(if sup {
-                        MathSlot::Numerator(f)
-                    } else {
-                        MathSlot::Denominator(f)
-                    }),
-                    NoadVariant::Fence(_) => None,
-                };
-                if let Some(field) = field {
-                    t = mem[field].math_type;
-                    p = Some(field);
-                }
+        if self.tail != self.head
+            && let Ok(Some(any)) = mem.classify_noad(self.tail)
+        {
+            // WEB's `scripts_allowed` admits fractions, whose script words are the numerator and denominator.
+            let field = match any.variant(mem) {
+                NoadVariant::Noad(n) => Some(script(n)),
+                NoadVariant::Radical(r) => Some(script(r.as_noad())),
+                NoadVariant::Accent(a) => Some(script(a.as_noad())),
+                NoadVariant::Fraction(f) => Some(if sup {
+                    MathSlot::Numerator(f)
+                } else {
+                    MathSlot::Denominator(f)
+                }),
+                NoadVariant::Fence(_) => None,
+            };
+            if let Some(field) = field {
+                t = mem[field].math_type;
+                p = Some(field);
             }
         }
 

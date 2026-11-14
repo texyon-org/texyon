@@ -329,8 +329,11 @@ impl Blob {
     /// Create a new blob from a [`Vec`] of bytes
     pub fn new(data: Vec<u8>) -> Blob {
         unsafe extern "C" fn blob_dealloc(ptr: *mut ()) {
-            let slice = Box::from_raw(ptr.cast::<(*mut (), usize)>());
-            let _ = Box::from_raw(ptr::slice_from_raw_parts_mut(slice.0.cast::<u8>(), slice.1));
+            // SAFETY: `ptr` is the boxed (pointer, length) pair `Blob::new` leaked for this blob.
+            unsafe {
+                let slice = Box::from_raw(ptr.cast::<(*mut (), usize)>());
+                let _ = Box::from_raw(ptr::slice_from_raw_parts_mut(slice.0.cast::<u8>(), slice.1));
+            }
         }
 
         let len = data.len();

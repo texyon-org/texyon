@@ -203,10 +203,10 @@ impl FontState {
 
     pub fn effective_char(&mut self, f: FontId, c: u16) -> i32 {
         let mut c = c;
-        if !self.xtx_ligature_present {
-            if let Some(mapping) = self.font_mapping[f].as_deref() {
-                c = apply_tfm_font_mapping(mapping, i32::from(c)) as u16;
-            }
+        if !self.xtx_ligature_present
+            && let Some(mapping) = self.font_mapping[f].as_deref()
+        {
+            c = apply_tfm_font_mapping(mapping, i32::from(c)) as u16;
         }
         self.xtx_ligature_present = false;
         i32::from(c)

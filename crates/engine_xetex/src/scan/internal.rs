@@ -619,11 +619,11 @@ fn fetch_last_node_item(st: &EngineState, code: LastItemCode) -> Result<CurVal, 
     let item = |tx| (tx != head && !st.mem.is_char_node(tx)).then(|| st.mem.classify(tx));
     let mut tx = st.input.cur_list.tail;
     let mut node = item(tx);
-    if let Some(Ok(AnyNode::Math(math))) = node {
-        if st.mem[math].subtype == MathCode::EndM {
-            tx = st.mem.predecessor(head, Some(tx))?;
-            node = item(tx);
-        }
+    if let Some(Ok(AnyNode::Math(math))) = node
+        && st.mem[math].subtype == MathCode::EndM
+    {
+        tx = st.mem.predecessor(head, Some(tx))?;
+        node = item(tx);
     }
     let node = node.filter(|_| mode != ModeName::NoMode);
     let at_page_head = node.is_none() && mode == ModeName::Vertical && tx == head;
@@ -887,10 +887,11 @@ pub(crate) fn find_font_dimen(
     let f = scan_font_ident(st)?;
 
     let found = n > 0 && {
-        if writing && (SPACE_CODE..=SPACE_SHRINK_CODE).contains(&n) {
-            if let Some(glue) = st.fonts.font_glue[f].take() {
-                st.mem.delete_glue_ref(glue);
-            }
+        if writing
+            && (SPACE_CODE..=SPACE_SHRINK_CODE).contains(&n)
+            && let Some(glue) = st.fonts.font_glue[f].take()
+        {
+            st.mem.delete_glue_ref(glue);
         }
 
         if n <= st.fonts.param_count(f) {

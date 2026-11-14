@@ -28,7 +28,8 @@ struct TimezoneGuard(Option<std::ffi::OsString>);
 impl TimezoneGuard {
     fn set(tz: &str) -> Self {
         let previous = std::env::var_os("TZ");
-        std::env::set_var("TZ", tz);
+        // SAFETY: this binary has one test, so no other thread reads the environment.
+        unsafe { std::env::set_var("TZ", tz) };
         refresh_timezone();
         Self(previous)
     }
@@ -36,9 +37,12 @@ impl TimezoneGuard {
 
 impl Drop for TimezoneGuard {
     fn drop(&mut self) {
-        match self.0.take() {
-            Some(value) => std::env::set_var("TZ", value),
-            None => std::env::remove_var("TZ"),
+        // SAFETY: this binary has one test, so no other thread reads the environment.
+        unsafe {
+            match self.0.take() {
+                Some(value) => std::env::set_var("TZ", value),
+                None => std::env::remove_var("TZ"),
+            }
         }
         refresh_timezone();
     }

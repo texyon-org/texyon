@@ -56,7 +56,7 @@ fn with_state<R>(operation: impl FnOnce(&mut State) -> R) -> R {
 
 impl State {
     fn live_direct(&mut self, ptr: *mut u8) -> Option<&mut Direct> {
-        if ptr as usize % WASM_PAGE != 0 {
+        if !(ptr as usize).is_multiple_of(WASM_PAGE) {
             return None;
         }
         self.direct
@@ -93,10 +93,10 @@ impl State {
     }
 
     fn calloc(&mut self, size: usize) -> *mut u8 {
-        if size >= DIRECT_MIN {
-            if let Some(base) = self.allocate_direct(size) {
-                return base;
-            }
+        if size >= DIRECT_MIN
+            && let Some(base) = self.allocate_direct(size)
+        {
+            return base;
         }
         // SAFETY: 8 is dlmalloc's natural alignment on wasm32.
         unsafe { self.heap.calloc(size, 8) }
@@ -146,7 +146,7 @@ impl State {
 /// # Safety
 ///
 /// The result must be released with [`free`].
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn malloc(size: usize) -> *mut c_void {
     // SAFETY: dlmalloc has no preconditions on `size`.
     with_state(|state| unsafe { state.heap.c_malloc(size) }).cast()
@@ -157,7 +157,7 @@ pub unsafe extern "C" fn malloc(size: usize) -> *mut c_void {
 /// # Safety
 ///
 /// The result must be released with [`free`].
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn calloc(count: usize, size: usize) -> *mut c_void {
     match count.checked_mul(size) {
         Some(total) => with_state(|state| state.calloc(total)).cast(),
@@ -170,7 +170,7 @@ pub unsafe extern "C" fn calloc(count: usize, size: usize) -> *mut c_void {
 /// # Safety
 ///
 /// `ptr` must be null or a live block from this allocator.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn realloc(ptr: *mut c_void, size: usize) -> *mut c_void {
     if ptr.is_null() {
         // SAFETY: forwarded from the caller.
@@ -190,7 +190,7 @@ pub unsafe extern "C" fn realloc(ptr: *mut c_void, size: usize) -> *mut c_void {
 /// # Safety
 ///
 /// `ptr` must be null or a live block from this allocator, unused afterwards.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn free(ptr: *mut c_void) {
     if !ptr.is_null() {
         // SAFETY: forwarded from the caller.
@@ -203,7 +203,7 @@ pub unsafe extern "C" fn free(ptr: *mut c_void) {
 /// # Safety
 ///
 /// The result must be released with [`free`].
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn aligned_alloc(align: usize, size: usize) -> *mut c_void {
     if !align.is_power_of_two() {
         return ptr::null_mut();
@@ -218,9 +218,9 @@ pub unsafe extern "C" fn aligned_alloc(align: usize, size: usize) -> *mut c_void
 /// # Safety
 ///
 /// `out` must be writable, and the result must be released with [`free`].
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn posix_memalign(out: *mut *mut c_void, align: usize, size: usize) -> i32 {
-    if !align.is_power_of_two() || align % size_of::<usize>() != 0 {
+    if !align.is_power_of_two() || !align.is_multiple_of(size_of::<usize>()) {
         return EINVAL;
     }
     // SAFETY: `align` is a valid alignment.

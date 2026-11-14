@@ -193,7 +193,7 @@ impl DefinitelySame for error_chain::State {
 impl DefinitelySame for ErrorKind {
     fn definitely_same(&self, other: &Self) -> bool {
         match self {
-            ErrorKind::Msg(ref s) => {
+            ErrorKind::Msg(s) => {
                 if let ErrorKind::Msg(ref o) = *other {
                     s == o
                 } else {
@@ -202,7 +202,7 @@ impl DefinitelySame for ErrorKind {
             }
 
             // Hacky for tex-outputs test
-            ErrorKind::NewStyle(ref s) => {
+            ErrorKind::NewStyle(s) => {
                 if let ErrorKind::NewStyle(ref o) = *other {
                     s.to_string() == o.to_string()
                 } else {

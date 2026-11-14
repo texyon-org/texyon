@@ -32,7 +32,7 @@ pub enum gr_encform {
     utf32,
 }
 
-extern "C" {
+unsafe extern "C" {
     pub fn gr_face_n_fref(pFace: *const gr_face) -> libc::c_ushort;
     pub fn gr_face_fref(pFace: *const gr_face, i: u16) -> *const gr_feature_ref;
     pub fn gr_fref_id(pfeatureref: *const gr_feature_ref) -> u32;

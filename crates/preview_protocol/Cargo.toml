@@ -3,7 +3,7 @@ name = "texyon_preview_protocol"
 version = "0.0.0-dev.0"
 authors = ["the Tectonic Project"]
 license = "MIT"
-edition = "2021"
+edition = "2024"
 description = "Bounded JSON Lines protocol for Tectonic live preview"
 
 [dependencies]

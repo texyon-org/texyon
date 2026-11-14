@@ -74,10 +74,10 @@ pub(crate) fn install(
 /// Note a file the engine opened for writing, so later reads get its output and not a disk copy.
 pub(crate) fn record_written(path: &str) {
     ACTIVE.with(|active| {
-        if let Some(sources) = active.borrow_mut().as_mut() {
-            if let Some(path) = sources.snapshot.source_path(Path::new(path)) {
-                sources.written.insert(path);
-            }
+        if let Some(sources) = active.borrow_mut().as_mut()
+            && let Some(path) = sources.snapshot.source_path(Path::new(path))
+        {
+            sources.written.insert(path);
         }
     });
 }
@@ -269,11 +269,11 @@ pub(crate) fn read(handle: usize, data: &mut [u8]) -> Option<libc::ssize_t> {
     let len = data.len();
     with_open_input(handle, |input| {
         let mut copied = 0;
-        if len > 0 {
-            if let Some(byte) = input.pushback.take() {
-                data[0] = byte;
-                copied = 1;
-            }
+        if len > 0
+            && let Some(byte) = input.pushback.take()
+        {
+            data[0] = byte;
+            copied = 1;
         }
         let available = input.bytes.len().saturating_sub(input.position);
         let direct = (len - copied).min(available);

@@ -160,13 +160,12 @@ pub(super) fn clean_box(
     let head = st.mem[x_box].list_ptr;
     if let Some(h) = st.mem.as_char(head) {
         let r = h.idx().link(&st.mem);
-        if let Some(r_idx) = r {
-            if r_idx.link(&st.mem).is_none()
-                && matches!(st.mem.classify_non_char(r), Some(AnyNode::Kern(_)))
-            {
-                st.mem.free_node(r_idx, KernNode::SIZE);
-                h.idx().set_link(&mut st.mem, None);
-            }
+        if let Some(r_idx) = r
+            && r_idx.link(&st.mem).is_none()
+            && matches!(st.mem.classify_non_char(r), Some(AnyNode::Kern(_)))
+        {
+            st.mem.free_node(r_idx, KernNode::SIZE);
+            h.idx().set_link(&mut st.mem, None);
         }
     }
     Ok(x_box)
@@ -554,11 +553,10 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<S
                 tag: CharTag::List(c),
                 ..
             }) = i.filter(|_| style < MathStyle::TEXT)
+                && let Some(larger) = st.fonts.char_info(f, i32::from(c))
             {
-                if let Some(larger) = st.fonts.char_info(f, i32::from(c)) {
-                    i = Some(larger);
-                    st.mem[q].nucleus.set_character(c);
-                }
+                i = Some(larger);
+                st.mem[q].nucleus.set_character(c);
             }
             delta = i.map_or(Scaled::ZERO, |i| i.italic);
         }
@@ -566,61 +564,59 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>, style: MathStyle) -> Result<S
         let x = clean_box(st, st.mem[q].nucleus, style)?;
 
         let cur_f = st.scanner.cur_f;
-        if st.fonts.font_is_ot_math(cur_f) {
-            if let Some(glyph) = st.mem.glyph_whatsit(st.mem[x].list_ptr) {
-                let (width, height, depth) = 'found: {
-                    if style < MathStyle::TEXT {
-                        let mut h1 = st
+        if st.fonts.font_is_ot_math(cur_f)
+            && let Some(glyph) = st.mem.glyph_whatsit(st.mem[x].list_ptr)
+        {
+            let (width, height, depth) = 'found: {
+                if style < MathStyle::TEXT {
+                    let mut h1 = st
+                        .fonts
+                        .get_ot_math_constant(cur_f, DISPLAYOPERATORMINHEIGHT);
+                    let size_h = f64::from(st.mem[glyph].height + st.mem[glyph].depth) * 5.0 / 4.0;
+                    if f64::from(h1) < size_h {
+                        h1 = Scaled::from_raw(size_h as i32);
+                    }
+                    let c_glyph = i32::from(st.mem[glyph].glyph);
+                    let mut n: i32 = 0;
+                    let mut h2 = Scaled::ZERO;
+                    loop {
+                        let g = st
                             .fonts
-                            .get_ot_math_constant(cur_f, DISPLAYOPERATORMINHEIGHT);
-                        let size_h =
-                            f64::from(st.mem[glyph].height + st.mem[glyph].depth) * 5.0 / 4.0;
-                        if f64::from(h1) < size_h {
-                            h1 = Scaled::from_raw(size_h as i32);
-                        }
-                        let c_glyph = i32::from(st.mem[glyph].glyph);
-                        let mut n: i32 = 0;
-                        let mut h2 = Scaled::ZERO;
-                        loop {
-                            let g = st
-                                .fonts
-                                .get_ot_math_variant(cur_f, c_glyph, n, &mut h2, false);
-                            if h2 > Scaled::ZERO {
-                                st.mem[glyph].glyph = g as u16;
-                                st.fonts.measure_glyph(&mut st.mem, glyph)?;
-                            }
-                            n += 1;
-                            if h2 < Scaled::ZERO || h2 >= h1 {
-                                break;
-                            }
-                        }
-                        if h2 < Scaled::ZERO {
-                            if let Some(assembly) = st.fonts.get_ot_assembly(cur_f, c_glyph, false)
-                            {
-                                glyph.free(&mut st.mem);
-                                let b = build_opentype_assembly(st, cur_f, &assembly, h1, false)?;
-                                st.mem[x].list_ptr = b.ptr();
-                                delta = Scaled::ZERO;
-                                break 'found (st.mem[b].width, st.mem[b].height, st.mem[b].depth);
-                            }
-                        } else {
+                            .get_ot_math_variant(cur_f, c_glyph, n, &mut h2, false);
+                        if h2 > Scaled::ZERO {
+                            st.mem[glyph].glyph = g as u16;
                             st.fonts.measure_glyph(&mut st.mem, glyph)?;
                         }
+                        n += 1;
+                        if h2 < Scaled::ZERO || h2 >= h1 {
+                            break;
+                        }
                     }
-                    delta = st
-                        .fonts
-                        .get_ot_math_ital_corr(cur_f, i32::from(st.mem[glyph].glyph));
-                    (
-                        st.mem[glyph].width,
-                        st.mem[glyph].height,
-                        st.mem[glyph].depth,
-                    )
-                };
-                let node = &mut st.mem[x];
-                node.width = width;
-                node.height = height;
-                node.depth = depth;
-            }
+                    if h2 < Scaled::ZERO {
+                        if let Some(assembly) = st.fonts.get_ot_assembly(cur_f, c_glyph, false) {
+                            glyph.free(&mut st.mem);
+                            let b = build_opentype_assembly(st, cur_f, &assembly, h1, false)?;
+                            st.mem[x].list_ptr = b.ptr();
+                            delta = Scaled::ZERO;
+                            break 'found (st.mem[b].width, st.mem[b].height, st.mem[b].depth);
+                        }
+                    } else {
+                        st.fonts.measure_glyph(&mut st.mem, glyph)?;
+                    }
+                }
+                delta = st
+                    .fonts
+                    .get_ot_math_ital_corr(cur_f, i32::from(st.mem[glyph].glyph));
+                (
+                    st.mem[glyph].width,
+                    st.mem[glyph].height,
+                    st.mem[glyph].depth,
+                )
+            };
+            let node = &mut st.mem[x];
+            node.width = width;
+            node.height = height;
+            node.depth = depth;
         }
 
         let axis_height = st.fonts.axis_height(&st.eqtb, style.size());
@@ -1192,12 +1188,13 @@ fn mlist_nucleus(
             } else {
                 None
             };
-            if let Some(pk) = p {
-                if st.mem[qn].subscr.math_type == EMPTY && delta != Scaled::ZERO {
-                    let k = st.mem.new_kern(delta)?;
-                    pk.set_link(&mut st.mem, k.ptr());
-                    delta = Scaled::ZERO;
-                }
+            if let Some(pk) = p
+                && st.mem[qn].subscr.math_type == EMPTY
+                && delta != Scaled::ZERO
+            {
+                let k = st.mem.new_kern(delta)?;
+                pk.set_link(&mut st.mem, k.ptr());
+                delta = Scaled::ZERO;
             }
             p
         }
@@ -1530,17 +1527,17 @@ pub(super) fn mlist_to_hlist(
                 p = st.mem.list_tail(head);
             }
 
-            if penalties && pen < INF_PENALTY {
-                if let Some(next) = st.mem[qn].link {
-                    if !matches!(
-                        st.mem.node_type(next),
-                        Ok(NodeType::Penalty | NodeType::RelNoad)
-                    ) {
-                        let z = st.mem.new_penalty(pen)?;
-                        p.set_link(&mut st.mem, z.ptr());
-                        p = z.idx();
-                    }
-                }
+            if penalties
+                && pen < INF_PENALTY
+                && let Some(next) = st.mem[qn].link
+                && !matches!(
+                    st.mem.node_type(next),
+                    Ok(NodeType::Penalty | NodeType::RelNoad)
+                )
+            {
+                let z = st.mem.new_penalty(pen)?;
+                p.set_link(&mut st.mem, z.ptr());
+                p = z.idx();
             }
 
             if st.mem[qn].noad_type == NodeType::RightNoad {

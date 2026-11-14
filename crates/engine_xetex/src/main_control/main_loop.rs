@@ -138,11 +138,11 @@ fn past_next_hyphen(st: &EngineState, f: FontId, start: i32, len: i32) -> i32 {
 fn node_before(st: &EngineState, pp: MemIdx) -> Result<MemIdx, Abort> {
     let mut ppp = st.input.cur_list.head;
     while ppp != pp && ppp.link(&st.mem) != Some(pp) {
-        if !st.mem.is_char_node(ppp) {
-            if let Ok(AnyNode::Disc(disc)) = st.mem.classify(ppp) {
-                for _ in 0..st.mem[disc].replace_count {
-                    ppp = ppp.link(&st.mem).or_confusion("main_ppp")?;
-                }
+        if !st.mem.is_char_node(ppp)
+            && let Ok(AnyNode::Disc(disc)) = st.mem.classify(ppp)
+        {
+            for _ in 0..st.mem[disc].replace_count {
+                ppp = ppp.link(&st.mem).or_confusion("main_ppp")?;
             }
         }
         if ppp != pp {
