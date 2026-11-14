@@ -107,12 +107,16 @@ impl BundleResourceProvider {
         })
     }
 
-    /// Canonical path and stamp of a regular document-root file confined to the root.
+    /// Canonical path and stamp of a regular file on disk: an absolute path, as
+    /// the engine reads installed fonts, or one confined to the document root.
     fn document_stamp(&self, name: &str) -> Result<Option<(PathBuf, DiskStamp)>, RenderError> {
-        let Some(root) = self.bundle.document_root() else {
-            return Ok(None);
+        let absolute = Path::new(name).is_absolute();
+        let root = self.bundle.document_root();
+        let candidate = match &root {
+            _ if absolute => PathBuf::from(name),
+            Some(root) => root.join(name),
+            None => return Ok(None),
         };
-        let candidate = root.join(name);
         // Most candidates are absent, so stat before paying for canonicalization.
         let metadata = match fs::metadata(&candidate) {
             Ok(metadata) => metadata,
@@ -127,7 +131,7 @@ impl BundleResourceProvider {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(RenderError::Resource(error.to_string())),
         };
-        if !canonical.starts_with(&root) {
+        if !absolute && root.is_some_and(|root| !canonical.starts_with(root)) {
             return Ok(None);
         }
         let modified = metadata
@@ -260,5 +264,31 @@ mod tests {
             resource.bytes.as_ref(),
             include_bytes!("../../../tests/assets/cmr10.tfm")
         );
+    }
+
+    #[test]
+    fn installed_fonts_resolve_by_absolute_path_but_relative_names_stay_in_the_root() {
+        let root = tempfile::tempdir().unwrap();
+        let installed = tempfile::tempdir().unwrap();
+        let font = installed.path().join("installed.otf");
+        fs::write(&font, b"installed font").unwrap();
+        let bundle = FrozenBundle::new(Box::new(crate::test_support::AssetBundle::default()));
+        let provider = BundleResourceProvider::new(bundle, Some(root.path().into())).unwrap();
+        let request = |name: String| ResourceRequest {
+            kind: ResourceKind::FontProgram,
+            name,
+        };
+
+        let resource = provider
+            .resolve(&request(font.to_str().unwrap().into()))
+            .unwrap()
+            .unwrap();
+        assert_eq!(resource.bytes.as_ref(), b"installed font");
+
+        let escape = format!(
+            "../{}/installed.otf",
+            installed.path().file_name().unwrap().to_str().unwrap()
+        );
+        assert!(provider.resolve(&request(escape)).unwrap().is_none());
     }
 }
