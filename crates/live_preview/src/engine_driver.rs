@@ -118,7 +118,7 @@ impl EngineSupport for ResidentEngineSupport {
                 let document_root = bundle.document_root();
                 let mut document = document_root
                     .as_ref()
-                    .map(|path| FilesystemIo::new(path, false, false, HashSet::new()));
+                    .map(|path| FilesystemIo::new(path, false, true, HashSet::new()));
                 let mut providers: Vec<&mut dyn IoProvider> = vec![output];
                 if let Some(document) = &mut document {
                     providers.push(document);
