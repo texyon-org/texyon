@@ -23,77 +23,29 @@ use std::time::SystemTime;
 use texyon_bridge_core::{CoreBridgeLauncher, EngineAbortedError};
 use texyon_errors::prelude::*;
 
-mod bridge;
-mod cancellation;
-mod checkpoint;
-mod cmd;
-mod codes;
-mod command;
-mod compat;
-mod cond_stack;
-mod consts;
-mod cs;
-mod diagnostic;
-mod dvi;
+mod base;
+mod build;
 mod engine;
-mod eqtb;
-mod errors;
-mod expand;
-mod ext;
+mod ffi;
+mod files;
 mod fonts;
-mod format_io;
-mod glue_store;
-mod glyph_arena;
-mod hash;
-mod helpers;
-mod hyphenation;
-mod input;
-pub mod introspect;
-mod io;
-mod journal;
-mod layout;
-mod linebreak;
-mod main_control;
-mod math;
-mod mem;
-mod mem_types;
-mod mode;
-mod node;
-mod ot_math;
-mod output;
-mod packaging;
-mod page_manifest;
-mod pagebuilder;
-mod params;
-mod pgfmath;
-mod pic;
-mod primitives;
-mod random;
-mod replay;
-mod save;
-mod scaled_math;
-mod scan;
-mod session;
+mod memory;
+mod preview;
+mod print;
+mod scanning;
 mod shipout;
-mod stack;
 mod state;
-mod string_pool;
-mod sync_index;
-mod synctex;
-mod texmfmp;
-mod tfm;
-mod token;
-mod units;
-mod utf8;
+mod tables;
 
-pub use cancellation::EngineCancellation;
-pub use diagnostic::{Diagnostic, DiagnosticKind};
-pub use page_manifest::PageExecution;
-pub use replay::source::{
+pub use preview::cancellation::EngineCancellation;
+pub use preview::introspect;
+pub use preview::page_manifest::PageExecution;
+pub use preview::replay::source::{
     SourceError, SourceIdentity, SourcePath, SourceRevision, SourceSnapshot, SourceUpdate,
 };
-pub use session::{EngineFrame, EnginePreviewConfig, IncrementalXeTeXSession, PageRange};
-pub use sync_index::{Highlight, SyncIndex, SyncRect};
+pub use preview::session::{EngineFrame, EnginePreviewConfig, IncrementalXeTeXSession, PageRange};
+pub use preview::sync_index::{Highlight, SyncIndex, SyncRect};
+pub use print::diagnostic::{Diagnostic, DiagnosticKind};
 
 /// A serial number describing the detailed binary layout of the TeX "format
 /// files" used by this crate. This number will occasionally increment,
@@ -262,7 +214,7 @@ impl TexEngine {
         format_file_name: &str,
         input_file_name: &str,
     ) -> Result<TexOutcome> {
-        if crate::session::resident_active() {
+        if crate::preview::session::resident_active() {
             bail!("cannot start batch XeTeX while a resident XeTeX session is open");
         }
         ensure!(
@@ -276,7 +228,7 @@ impl TexEngine {
             semantic_pagination_enabled: self.semantic_pagination_enabled,
             shell_escape_enabled: self.shell_escape_enabled,
             deterministic_mode: self.deterministic_mode,
-            pgfmath: crate::pgfmath::Mode::from_env(crate::pgfmath::Mode::Off),
+            pgfmath: crate::scanning::pgfmath::Mode::from_env(crate::scanning::pgfmath::Mode::Off),
             ..ConfigState::default()
         };
 

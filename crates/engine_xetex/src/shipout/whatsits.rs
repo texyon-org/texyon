@@ -1,14 +1,14 @@
 //! Shipping whatsits: `\special`, `\write`, the `\openout` streams and pictures.
 
-use crate::bridge::{output_close, output_open, shell_escape};
-use crate::consts::INVALID_HANDLE;
-use crate::cs::Frozen;
-use crate::errors::Abort;
-use crate::input::TokenType;
-use crate::node::{NodePtr, OpenNode, PicNode, WhatsitNode, WhatsitVariant, WriteNode};
-use crate::params::IntPar;
+use crate::base::consts::INVALID_HANDLE;
+use crate::base::params::IntPar;
+use crate::base::token::{Token, TokenList};
+use crate::ffi::bridge::{output_close, output_open, shell_escape};
+use crate::memory::node::{NodePtr, OpenNode, PicNode, WhatsitNode, WhatsitVariant, WriteNode};
+use crate::print::errors::Abort;
+use crate::scanning::input::TokenType;
 use crate::state::{EqtbState, Selector};
-use crate::token::{Token, TokenList};
+use crate::tables::cs::Frozen;
 
 use super::{dvi_special_from_cur_string, synch_h, synch_v};
 
@@ -31,7 +31,7 @@ fn special_out(
     st.shipout.selector = Selector::NewString;
     let tokens = st.mem.tokens.cursor(list);
     let avail = st.strings.pool_size - st.strings.pool_ptr;
-    crate::output::show_token_list(st, tokens, crate::token::TokCursor::END, avail);
+    crate::print::show_token_list(st, tokens, crate::base::token::TokCursor::END, avail);
     st.shipout.selector = old_setting;
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
         return Err(st.strings.pool_overflow());
@@ -61,19 +61,19 @@ fn expand_write_tokens(st: &mut crate::state::EngineState, tokens: TokenList) ->
     st.mem
         .tokens
         .append(close, Token::from_cs(Frozen::EndWrite.cs()))?;
-    crate::input::begin_token_list(st, close, TokenType::Inserted)?;
-    crate::input::begin_token_list(st, tokens, TokenType::Write)?;
+    crate::scanning::input::begin_token_list(st, close, TokenType::Inserted)?;
+    crate::scanning::input::begin_token_list(st, tokens, TokenType::Write)?;
     let open = st.mem.tokens.single(Token::left_brace(b'{'))?;
-    crate::input::begin_token_list(st, open, TokenType::Inserted)?;
+    crate::scanning::input::begin_token_list(st, open, TokenType::Inserted)?;
 
     let old_mode = st.input.cur_list.mode;
-    st.input.cur_list.mode = crate::mode::Mode::None;
+    st.input.cur_list.mode = crate::base::mode::Mode::None;
     st.scanner.cur_cs = st.shipout.write_loc;
-    crate::scan::scan_toks(st, false, true)?;
+    crate::scanning::scan::scan_toks(st, false, true)?;
     st.input.cur_list.mode = old_mode;
-    crate::scan::get_token(st)?;
+    crate::scanning::scan::get_token(st)?;
     if st.scanner.cur_tok != Token::from_cs(Frozen::EndWrite.cs()) {
-        crate::errors::error(
+        crate::print::errors::error(
             st,
             "Unbalanced write command",
             &[
@@ -82,13 +82,13 @@ fn expand_write_tokens(st: &mut crate::state::EngineState, tokens: TokenList) ->
             ],
         )?;
         loop {
-            crate::scan::get_token(st)?;
+            crate::scanning::scan::get_token(st)?;
             if st.scanner.cur_tok == Token::from_cs(Frozen::EndWrite.cs()) {
                 break;
             }
         }
     }
-    crate::input::end_token_list(st)
+    crate::scanning::input::end_token_list(st)
 }
 
 fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WriteNode>) -> Result<(), Abort> {
@@ -107,18 +107,21 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WriteNode>) -> R
         if j == 17 && st.shipout.selector == Selector::TermAndLog {
             st.shipout.selector = Selector::LogOnly;
         }
-        crate::output::print_nl(st, "");
+        crate::print::print_nl(st, "");
         true
     };
     if to_transcript {
-        crate::diagnostic::begin_capture(st, crate::diagnostic::DiagnosticKind::Written);
+        crate::print::diagnostic::begin_capture(
+            st,
+            crate::print::diagnostic::DiagnosticKind::Written,
+        );
     }
     let def_ref = st.scanner.def_ref;
-    crate::output::token_show(st, def_ref);
+    crate::print::token_show(st, def_ref);
     if to_transcript {
-        crate::diagnostic::end_capture(st);
+        crate::print::diagnostic::end_capture(st);
     }
-    crate::output::print_ln(st);
+    crate::print::print_ln(st);
     st.mem.tokens.flush(def_ref);
 
     if j == 18 {
@@ -128,19 +131,21 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WriteNode>) -> R
         }
         // Tectonic leaves shell-escape warnings to the driver when it is enabled.
         if !st.config.shell_escape_enabled {
-            crate::output::print_nl(st, "runsystem(");
+            crate::print::print_nl(st, "runsystem(");
             let base = st.strings.cur_string_start();
             for k in base.until(st.strings.pool_ptr) {
-                crate::output::print(
+                crate::print::print(
                     st,
-                    crate::units::StrNumber::single_char(i32::from(st.strings.str_pool[k.index()])),
+                    crate::base::units::StrNumber::single_char(i32::from(
+                        st.strings.str_pool[k.index()],
+                    )),
                 );
             }
-            crate::output::print(st, ")...");
-            crate::output::print(st, "disabled");
-            crate::output::print_char(st, b'.');
-            crate::output::print_nl(st, "");
-            crate::output::print_ln(st);
+            crate::print::print(st, ")...");
+            crate::print::print(st, "disabled");
+            crate::print::print_char(st, b'.');
+            crate::print::print_nl(st, "");
+            crate::print::print_ln(st);
         } else {
             shell_escape(st.strings.cur_string());
         }
@@ -159,24 +164,26 @@ pub(super) fn pic_out(
     let node = st.mem[pic];
     let old_setting = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
-    crate::output::print(st, "pdf:image ");
-    crate::output::print(st, "matrix ");
+    crate::print::print(st, "pdf:image ");
+    crate::print::print(st, "matrix ");
     for v in node.transform {
-        crate::output::print_scaled(st, v);
-        crate::output::print(st, b' ');
+        crate::print::print_scaled(st, v);
+        crate::print::print(st, b' ');
     }
-    crate::output::print(st, "page ");
-    crate::output::print_int(st, i32::from(node.page));
-    crate::output::print(st, b' ');
-    if let Some(label) = crate::pic::PageboxType::from_u16(node.pagebox).and_then(|pb| pb.label()) {
-        crate::output::print(st, label);
+    crate::print::print(st, "page ");
+    crate::print::print_int(st, i32::from(node.page));
+    crate::print::print(st, b' ');
+    if let Some(label) =
+        crate::shipout::pic::PageboxType::from_u16(node.pagebox).and_then(|pb| pb.label())
+    {
+        crate::print::print(st, label);
     }
-    crate::output::print(st, b'(');
+    crate::print::print(st, b'(');
     let path = st.mem.entries(pic).to_vec();
     for byte in path {
-        crate::output::print_raw_char(st, i32::from(byte), true);
+        crate::print::print_raw_char(st, i32::from(byte), true);
     }
-    crate::output::print(st, b')');
+    crate::print::print(st, b')');
     st.shipout.selector = old_setting;
     dvi_special_from_cur_string(st)
 }
@@ -236,21 +243,21 @@ fn out_write_stream(
     } else {
         open.ext
     };
-    let file = crate::io::FileName {
+    let file = crate::files::io::FileName {
         name: open.name,
         area: open.area,
         ext,
     };
     let path = file.path(&st.strings);
-    let handle = if crate::io::may_write(&path) {
+    let handle = if crate::files::io::may_write(&path) {
         output_open(&path, false)
     } else {
         INVALID_HANDLE
     };
     if handle == INVALID_HANDLE {
-        return Err(crate::errors::prompt_file_name(
+        return Err(crate::print::errors::prompt_file_name(
             st,
-            crate::errors::FilePrompt::Output,
+            crate::print::errors::FilePrompt::Output,
             file,
             &path,
         ));
@@ -262,11 +269,11 @@ fn out_write_stream(
     if st.errors.log_opened {
         let old_setting = st.shipout.selector;
         st.shipout.selector = st.eqtb.log_selector();
-        crate::output::print_nl(st, "\\openout");
-        crate::output::print_int(st, j);
-        crate::output::print(st, (" = `", file, "'."));
-        crate::output::print_nl(st, "");
-        crate::output::print_ln(st);
+        crate::print::print_nl(st, "\\openout");
+        crate::print::print_int(st, j);
+        crate::print::print(st, (" = `", file, "'."));
+        crate::print::print_nl(st, "");
+        crate::print::print_ln(st);
         st.shipout.selector = old_setting;
     }
     Ok(())
@@ -292,7 +299,7 @@ pub(crate) fn ensure_write_stream_open(
         });
     }
     for &code_unit in &st.shipout.write_prefix[stream] {
-        crate::bridge::output_putc(handle, code_unit as u8);
+        crate::ffi::bridge::output_putc(handle, code_unit as u8);
     }
     st.shipout.write_file[stream] = handle;
     Ok(())

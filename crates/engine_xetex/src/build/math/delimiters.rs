@@ -1,0 +1,450 @@
+//! Boxes for math characters and delimiters: `char_box`, `var_delimiter`, `rebox`.
+
+use crate::base::consts::{NULL_FONT, SCRIPT_SIZE};
+use crate::base::params::DimenPar;
+use crate::base::units::{FontId, GlueOrder, GlueSign, Scaled};
+use crate::build::packaging::PackSpec;
+use crate::fonts::ot_math::GlyphAssembly;
+use crate::fonts::tfm::ExtIdx;
+use crate::fonts::{AAT_FONT_FLAG, CharInfo, CharTag, OTGR_FONT_FLAG};
+use crate::memory::mem::SS_GLUE;
+use crate::memory::node::DelimiterWord;
+use crate::memory::node::{AnyNode, BoxNode, GlyphNode, NativeWordNode, NodePtr, WhatsitSubtype};
+use crate::print::errors::Abort;
+use crate::print::errors::OrConfusion;
+use crate::state::{EngineState, FontState, MemState};
+
+impl FontState {
+    pub(super) fn measure_glyph(
+        &self,
+        mem: &mut MemState,
+        p: NodePtr<GlyphNode>,
+    ) -> Result<(), Abort> {
+        self.measure_native_glyph(mem, p, true)
+    }
+}
+
+impl MemState {
+    pub(super) fn native_char_box(
+        &mut self,
+        p: NodePtr<NativeWordNode>,
+    ) -> Result<NodePtr<BoxNode>, Abort> {
+        let b = self.new_null_box()?;
+        let src = self[p];
+        let node = &mut self[b];
+        node.height = src.height;
+        node.width = src.width;
+        node.depth = src.depth.max(Scaled::ZERO);
+        node.list_ptr = p.ptr();
+        Ok(b)
+    }
+}
+
+fn char_box(st: &mut EngineState, f: FontId, c: i32) -> Result<NodePtr<BoxNode>, Abort> {
+    let area = st.fonts.font_area[f];
+    if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
+        let p = crate::fonts::new_native_character(st, f, c as u32)?;
+        Ok(st.mem.native_char_box(p)?)
+    } else {
+        Ok(st.mem.char_box_tfm(&mut st.fonts, f, c as u16)?)
+    }
+}
+
+impl MemState {
+    pub(super) fn char_box_tfm(
+        &mut self,
+        fonts: &mut FontState,
+        f: FontId,
+        c: u16,
+    ) -> Result<NodePtr<BoxNode>, Abort> {
+        let c_eff = fonts.effective_char(f, c);
+        let q = fonts.char_metrics(f, c_eff);
+        let width = q.width + q.italic;
+        let height = q.height;
+        let depth = q.depth;
+
+        let b = self.new_null_box()?;
+        let p = self.new_char(f, c)?;
+        let node = &mut self[b];
+        node.width = width;
+        node.height = height;
+        node.depth = depth;
+        node.list_ptr = p.ptr();
+        Ok(b)
+    }
+
+    fn stack_into_box(&mut self, b_box: NodePtr<BoxNode>, p: NodePtr<BoxNode>) {
+        let link = self[b_box].list_ptr;
+        self[p].link = link;
+        self[b_box].list_ptr = p.ptr();
+        let h = self[p].height;
+        self[b_box].height = h;
+    }
+}
+
+impl FontState {
+    fn height_plus_depth(&mut self, f: FontId, c: u16) -> Scaled {
+        let c = self.effective_char(f, c);
+        let q = self.char_metrics(f, c);
+        q.height + q.depth
+    }
+}
+
+/// A measured glyph whatsit for glyph `g` of font `f`.
+fn new_measured_glyph(
+    st: &mut EngineState,
+    f: FontId,
+    g: i32,
+) -> Result<NodePtr<GlyphNode>, Abort> {
+    let p = NodePtr::<GlyphNode>::alloc_whatsit(&mut st.mem, WhatsitSubtype::Glyph)?;
+    let glyph = &mut st.mem[p];
+    glyph.font = f;
+    glyph.glyph = g as u16;
+    st.fonts.measure_glyph(&mut st.mem, p)?;
+    Ok(p)
+}
+
+fn stack_glyph_into_box(
+    st: &mut EngineState,
+    b: NodePtr<BoxNode>,
+    f: FontId,
+    g: i32,
+) -> Result<(), Abort> {
+    let p = new_measured_glyph(st, f, g)?;
+    let mem = &mut st.mem;
+    if mem[b].is_hlist() {
+        if let Some(first) = mem[b].list_ptr {
+            mem.list_tail(first).set_link(mem, p.ptr());
+            if mem[b].height < mem[p].height {
+                mem[b].height = mem[p].height;
+            }
+            if mem[b].depth < mem[p].depth {
+                mem[b].depth = mem[p].depth;
+            }
+        } else {
+            mem[b].list_ptr = p.ptr();
+        }
+    } else {
+        mem[p].link = mem[b].list_ptr;
+        mem[b].list_ptr = p.ptr();
+        mem[b].height = mem[p].height;
+        if mem[b].width < mem[p].width {
+            mem[b].width = mem[p].width;
+        }
+    }
+    Ok(())
+}
+
+fn native_glyph_vbox(st: &mut EngineState, f: FontId, g: u16) -> Result<NodePtr<BoxNode>, Abort> {
+    let b = st.mem.new_null_vbox()?;
+    let p = new_measured_glyph(st, f, i32::from(g))?;
+    let mem = &mut st.mem;
+    let src = mem[p];
+    let node = &mut mem[b];
+    node.list_ptr = p.ptr();
+    node.width = src.width;
+    node.height = src.height;
+    node.depth = src.depth;
+    Ok(b)
+}
+
+pub(super) fn rebox(
+    st: &mut EngineState,
+    b: NodePtr<BoxNode>,
+    w: Scaled,
+) -> Result<NodePtr<BoxNode>, Abort> {
+    let mut b = b;
+    if st.mem[b].width != w && !st.mem[b].list_ptr.is_none() && st.mem[b].is_vlist() {
+        b = crate::build::packaging::hpack(st, b.ptr(), PackSpec::NATURAL)?;
+    }
+    if st.mem[b].width == w || st.mem[b].list_ptr.is_none() {
+        st.mem[b].width = w;
+        return Ok(b);
+    }
+
+    let first = st.mem[b].list_ptr.or_confusion("rebox")?;
+    if let Some(ch) = st
+        .mem
+        .as_char(Some(first))
+        .filter(|_| first.link(&st.mem).is_none())
+    {
+        let f = st.mem[ch].font;
+        let c = st.fonts.effective_char(f, st.mem[ch].character);
+        let v = st.fonts.char_metrics(f, c).width;
+        let bw = st.mem[b].width;
+        if v != bw {
+            let k = st.mem.new_kern(bw - v)?;
+            first.set_link(&mut st.mem, k.ptr());
+        }
+    }
+    let mem = &mut st.mem;
+    b.free(mem);
+    let g = mem.new_glue(SS_GLUE)?;
+    mem[g].link = Some(first);
+    let last = mem.list_tail(first);
+    let tail_glue = mem.new_glue(SS_GLUE)?;
+    last.set_link(mem, tail_glue.ptr());
+    crate::build::packaging::hpack(st, g.ptr(), PackSpec::Exactly(w))
+}
+
+pub(super) fn build_opentype_assembly(
+    st: &mut EngineState,
+    f: FontId,
+    a: &GlyphAssembly,
+    s: Scaled,
+    horiz: bool,
+) -> Result<NodePtr<BoxNode>, Abort> {
+    let b = if horiz {
+        st.mem.new_null_box()?
+    } else {
+        st.mem.new_null_vbox()?
+    };
+    // Extenders repeat `n` times, other parts once.
+    let repeats = |i: i32, n: i32| if a.is_extender(i) { n } else { 1 };
+    let no_extenders = (0..a.count()).all(|i| !a.is_extender(i));
+    let min_o = st.fonts.ot_min_connector_overlap(f);
+    let mut n: i32 = -1;
+    loop {
+        n += 1;
+        let mut s_max = Scaled::ZERO;
+        let mut prev_o = Scaled::ZERO;
+        for i in 0..a.count() {
+            for _ in 0..repeats(i, n) {
+                let o = a.start_connector(&st.fonts, f, i).min(min_o).min(prev_o);
+                s_max = s_max - o + a.full_advance(&st.fonts, f, i);
+                prev_o = a.end_connector(&st.fonts, f, i);
+            }
+        }
+        if s_max >= s || no_extenders {
+            break;
+        }
+    }
+    let mut prev_o = Scaled::ZERO;
+    for i in 0..a.count() {
+        for _ in 0..repeats(i, n) {
+            let oo = a.start_connector(&st.fonts, f, i).min(prev_o);
+            if oo > Scaled::ZERO {
+                st.mem.stack_glue_into_box(b, -oo, -oo.min(min_o))?;
+            }
+            stack_glyph_into_box(st, b, f, a.glyph(i))?;
+            prev_o = a.end_connector(&st.fonts, f, i);
+        }
+    }
+    let mut p = st.mem[b].list_ptr;
+    let mut nat = Scaled::ZERO;
+    let mut str = Scaled::ZERO;
+    while let Some(here) = p {
+        match st.mem.classify(here) {
+            Ok(AnyNode::Whatsit(pw)) => {
+                if let Some(sized) = pw.dims(&st.mem) {
+                    if horiz {
+                        nat += sized.width;
+                    } else {
+                        nat += sized.height + sized.depth;
+                    }
+                }
+            }
+            Ok(AnyNode::Glue(gn)) => {
+                let gs = st.mem[gn].glue_ptr;
+                nat += st.mem[gs].width;
+                str += st.mem[gs].stretch;
+            }
+            _ => {}
+        }
+        p = here.link(&st.mem);
+    }
+    if s > nat && str > Scaled::ZERO {
+        let o = (s - nat).min(str);
+        st.mem[b].glue_order = GlueOrder::Normal.into();
+        st.mem[b].glue_sign = GlueSign::Stretching.into();
+        let ratio = f64::from(o) / f64::from(str);
+        st.mem[b].glue_set = crate::memory::node::GlueRatio::new(ratio);
+        let set_dim = nat + Scaled::round(f64::from(str) * ratio);
+        if horiz {
+            st.mem[b].width = set_dim;
+        } else {
+            st.mem[b].height = set_dim;
+        }
+    } else if horiz {
+        st.mem[b].width = nat;
+    } else {
+        st.mem[b].height = nat;
+    }
+    Ok(b)
+}
+
+impl MemState {
+    fn build_ext_delimiter_box(
+        &mut self,
+        fonts: &mut FontState,
+        f: FontId,
+        e: ExtIdx,
+        v: Scaled,
+    ) -> Result<NodePtr<BoxNode>, Abort> {
+        let vb = self.new_null_vbox()?;
+        let r = fonts.ext_recipe(f, e)?;
+        let u = fonts.height_plus_depth(f, r.rep);
+        let effective_c = fonts.effective_char(f, r.rep);
+        let qq = fonts.char_metrics(f, effective_c);
+        let box_width = qq.width + qq.italic;
+        self[vb].width = box_width;
+        let mut w = Scaled::ZERO;
+        if let Some(piece) = r.bot {
+            w += fonts.height_plus_depth(f, piece);
+        }
+        if let Some(piece) = r.mid {
+            w += fonts.height_plus_depth(f, piece);
+        }
+        if let Some(piece) = r.top {
+            w += fonts.height_plus_depth(f, piece);
+        }
+
+        let mut n: i32 = 0;
+        if u > Scaled::ZERO {
+            while w < v {
+                w += u;
+                n += 1;
+                if r.mid.is_some() {
+                    w += u;
+                }
+            }
+        }
+        if let Some(piece) = r.bot {
+            let p = self.char_box_tfm(fonts, f, piece)?;
+            self.stack_into_box(vb, p);
+        }
+        for _ in 1..=n {
+            let p = self.char_box_tfm(fonts, f, r.rep)?;
+            self.stack_into_box(vb, p);
+        }
+        if let Some(piece) = r.mid {
+            let p = self.char_box_tfm(fonts, f, piece)?;
+            self.stack_into_box(vb, p);
+            for _ in 1..=n {
+                let p = self.char_box_tfm(fonts, f, r.rep)?;
+                self.stack_into_box(vb, p);
+            }
+        }
+        if let Some(piece) = r.top {
+            let p = self.char_box_tfm(fonts, f, piece)?;
+            self.stack_into_box(vb, p);
+        }
+        let height = self[vb].height;
+        self[vb].depth = w - height;
+        Ok(vb)
+    }
+}
+
+pub(super) fn var_delimiter(
+    st: &mut EngineState,
+    d: DelimiterWord,
+    s: i32,
+    v: Scaled,
+) -> Result<NodePtr<BoxNode>, Abort> {
+    let mut f = NULL_FONT;
+    let mut ot_assembly: Option<GlyphAssembly> = None;
+    let mut c: u16 = 0;
+    let mut w = Scaled::ZERO;
+    let mut q = CharInfo::NULL;
+    let mut large_attempt = false;
+    let (mut z, mut x) = d.small();
+    'found: {
+        loop {
+            if z != 0 || x != 0 {
+                z = z + s + 256;
+                loop {
+                    z -= 256;
+                    let g = st.eqtb.math_font(z);
+                    if g != NULL_FONT {
+                        if st.fonts.font_area[g] == AAT_FONT_FLAG || st.fonts.font_uses_opentype(g)
+                        {
+                            x = st.fonts.map_char_to_glyph(g, x)?;
+                            f = g;
+                            c = x as u16;
+                            w = Scaled::ZERO;
+                            let mut n: i32 = 0;
+                            let mut u = Scaled::ZERO;
+                            loop {
+                                let yv =
+                                    st.fonts.get_ot_math_variant(g, x, n, &mut u, false) as u16;
+                                if u > w {
+                                    c = yv;
+                                    w = u;
+                                    if u >= v {
+                                        break 'found;
+                                    }
+                                }
+                                n += 1;
+                                if u < Scaled::ZERO {
+                                    break;
+                                }
+                            }
+                            ot_assembly = st.fonts.get_ot_assembly(g, x, false);
+                            if ot_assembly.is_some() {
+                                break 'found;
+                            }
+                        } else {
+                            let fonts = &st.fonts;
+                            let mut y = x as u16;
+                            if y >= fonts.font_bc[g] && y <= fonts.font_ec[g] {
+                                loop {
+                                    let Some(info) = fonts.char_info(g, i32::from(y)) else {
+                                        q = CharInfo::NULL;
+                                        break;
+                                    };
+                                    q = info;
+                                    if let CharTag::Ext(_) = q.tag {
+                                        f = g;
+                                        c = y;
+                                        break 'found;
+                                    }
+                                    let u = q.height + q.depth;
+                                    if u > w {
+                                        f = g;
+                                        c = y;
+                                        w = u;
+                                        if u >= v {
+                                            break 'found;
+                                        }
+                                    }
+                                    let CharTag::List(larger) = q.tag else {
+                                        break;
+                                    };
+                                    y = larger;
+                                }
+                            }
+                        }
+                    }
+                    if z < SCRIPT_SIZE {
+                        break;
+                    }
+                }
+            }
+            if large_attempt {
+                break 'found;
+            }
+            large_attempt = true;
+            (z, x) = d.large();
+        }
+    }
+    let b = if f == NULL_FONT {
+        let b = st.mem.new_null_box()?;
+        let width = st.eqtb.dimen_par(DimenPar::NullDelimiterSpace);
+        st.mem[b].width = width;
+        b
+    } else if !st.fonts.font_uses_opentype(f) {
+        if let CharTag::Ext(e) = q.tag {
+            st.mem.build_ext_delimiter_box(&mut st.fonts, f, e, v)?
+        } else {
+            char_box(st, f, i32::from(c))?
+        }
+    } else if let Some(assembly) = &ot_assembly {
+        build_opentype_assembly(st, f, assembly, v, false)?
+    } else {
+        native_glyph_vbox(st, f, c)?
+    };
+    let axis = st.fonts.axis_height(&st.eqtb, s);
+    let shift = (st.mem[b].height - st.mem[b].depth).half() - axis;
+    st.mem[b].shift_amount = shift;
+    Ok(b)
+}

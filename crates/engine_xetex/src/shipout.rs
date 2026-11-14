@@ -1,25 +1,29 @@
 //! Shipping boxes out to the XDV file.
 
-use crate::bridge::{output_close, output_flush, output_open};
-use crate::consts::{INVALID_HANDLE, MAX_DIMEN, MIN_HALFWORD, NULL_FONT};
-use crate::dvi::{Axis, MoveReg};
-use crate::errors::Abort;
-use crate::errors::OrConfusion;
-use crate::ext::apply_tfm_font_mapping;
-use crate::glue_store::GlueSpecId;
-use crate::glyph_arena::FixedPoint;
-use crate::node::LinkSlot;
-use crate::node::Stored;
-use crate::node::{
+pub(crate) mod dvi;
+pub(crate) mod pic;
+pub(crate) mod synctex;
+
+use crate::base::consts::{INVALID_HANDLE, MAX_DIMEN, MIN_HALFWORD, NULL_FONT};
+use crate::base::params::{DimenPar, IntPar};
+use crate::base::units::MemIdx;
+use crate::base::units::{Dir, FontId, GlueOrder, GlueSign, MemPtr, Scaled, StrNumber};
+use crate::build::packaging::LrState;
+use crate::ffi::bridge::{output_close, output_flush, output_open};
+use crate::fonts::ext::apply_tfm_font_mapping;
+use crate::memory::glue_store::GlueSpecId;
+use crate::memory::glyph_arena::FixedPoint;
+use crate::memory::node::LinkSlot;
+use crate::memory::node::Stored;
+use crate::memory::node::{
     AnyNode, BoxLr, BoxNode, CharNode, EdgeNode, GlueKind, GlueNode, GlyphNode, KernNode,
     KernSubtype, LeaderKind, LigatureNode, MathCode, MathNode, NativeWordNode, NodePtr, RUNNING,
     RuleNode, View, WhatsitSubtype, WhatsitVariant,
 };
-use crate::packaging::LrState;
-use crate::params::{DimenPar, IntPar};
+use crate::print::errors::Abort;
+use crate::print::errors::OrConfusion;
+use crate::shipout::dvi::{Axis, MoveReg};
 use crate::state::{EqtbState, FontState, MemState, Selector, ShipoutState, StringsState};
-use crate::units::MemIdx;
-use crate::units::{Dir, FontId, GlueOrder, GlueSign, MemPtr, Scaled, StrNumber};
 
 mod whatsits;
 
@@ -127,41 +131,41 @@ pub(crate) fn ship_out(
     let p = page.ptr();
     let mag = st.eqtb.int_par(IntPar::Mag);
     let job_name = st.strings.texstring_bytes(st.strings.job_name);
-    crate::synctex::synctex_sheet(st, mag, &job_name);
+    crate::shipout::synctex::synctex_sheet(st, mag, &job_name);
 
     if st.strings.job_name == StrNumber::NONE {
-        crate::io::open_log_file(st)?;
+        crate::files::io::open_log_file(st)?;
     }
     let tracing_output = st.eqtb.int_par(IntPar::TracingOutput) > 0;
     if tracing_output {
-        crate::output::print_nl(st, "");
-        crate::output::print_ln(st);
-        crate::output::print(st, "Completed box being shipped out");
+        crate::print::print_nl(st, "");
+        crate::print::print_ln(st);
+        crate::print::print(st, "Completed box being shipped out");
     }
     if st.shipout.term_offset > st.config.max_print_line - 9 {
-        crate::output::print_ln(st);
+        crate::print::print_ln(st);
     } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
-        crate::output::print_char(st, b' ');
+        crate::print::print_char(st, b' ');
     }
 
-    crate::output::print_char(st, b'[');
+    crate::print::print_char(st, b'[');
     let mut j: u8 = 9;
     while j > 0 && st.eqtb.count(j) == 0 {
         j -= 1;
     }
     for k in 0..=j {
-        crate::output::print_int(st, st.eqtb.count(k));
+        crate::print::print_int(st, st.eqtb.count(k));
         if k < j {
-            crate::output::print_char(st, b'.');
+            crate::print::print_char(st, b'.');
         }
     }
     output_flush(st.shipout.rust_stdout);
 
     if tracing_output {
-        crate::output::print_char(st, b']');
-        crate::output::begin_diagnostic(st);
-        crate::output::show_box(st, p);
-        crate::output::end_diagnostic(st, true);
+        crate::print::print_char(st, b']');
+        crate::print::begin_diagnostic(st);
+        crate::print::show_box(st, p);
+        crate::print::end_diagnostic(st, true);
     }
 
     let (height, depth, width) = (st.mem[page].height, st.mem[page].depth, st.mem[page].width);
@@ -172,7 +176,7 @@ pub(crate) fn ship_out(
         || height + depth + v_offset > MAX_DIMEN
         || width + h_offset > MAX_DIMEN
     {
-        crate::errors::error(
+        crate::print::errors::error(
             st,
             "Huge page cannot be shipped out",
             &[
@@ -182,36 +186,36 @@ pub(crate) fn ship_out(
         )?;
 
         if st.eqtb.int_par(IntPar::TracingOutput) <= 0 {
-            crate::output::begin_diagnostic(st);
-            crate::output::print_nl(st, "The following box has been deleted:");
-            crate::output::show_box(st, p);
-            crate::output::end_diagnostic(st, true);
+            crate::print::begin_diagnostic(st);
+            crate::print::print_nl(st, "The following box has been deleted:");
+            crate::print::show_box(st, p);
+            crate::print::end_diagnostic(st, true);
         }
     } else {
         ship_page(st, &mut lr, page)?;
     }
 
     if lr.problems > 0 {
-        crate::output::print_ln(st);
-        crate::output::print_nl(st, "\\endL or \\endR problem (");
-        crate::output::print_int(st, lr.problems / 10000);
-        crate::output::print(st, " missing, ");
-        crate::output::print_int(st, lr.problems % 10000);
-        crate::output::print(st, " extra");
-        crate::output::print_char(st, b')');
-        crate::output::print_ln(st);
+        crate::print::print_ln(st);
+        crate::print::print_nl(st, "\\endL or \\endR problem (");
+        crate::print::print_int(st, lr.problems / 10000);
+        crate::print::print(st, " missing, ");
+        crate::print::print_int(st, lr.problems % 10000);
+        crate::print::print(st, " extra");
+        crate::print::print_char(st, b')');
+        crate::print::print_ln(st);
     }
 
     if !lr.ptr.is_none() || lr.dir != Dir::Ltr {
         return Err(Abort::Confusion("LR3"));
     }
     if st.eqtb.int_par(IntPar::TracingOutput) <= 0 {
-        crate::output::print_char(st, b']');
+        crate::print::print_char(st, b']');
     }
     st.shipout.dead_cycles = 0;
     output_flush(st.shipout.rust_stdout);
     st.mem.flush_node_list(p)?;
-    crate::synctex::synctex_teehs(st);
+    crate::shipout::synctex::synctex_teehs(st);
     Ok(())
 }
 
@@ -247,22 +251,22 @@ fn ship_page(
 
     if st.shipout.output_file_name == StrNumber::NONE {
         if st.strings.job_name == StrNumber::NONE {
-            crate::io::open_log_file(st)?;
+            crate::files::io::open_log_file(st)?;
         }
-        let path = crate::io::pack_job_name(st, crate::engine::output_file_extension(st))?;
+        let path = crate::files::io::pack_job_name(st, crate::engine::output_file_extension(st))?;
         st.shipout.dvi.file = output_open(&path, false);
         if st.shipout.dvi.file == INVALID_HANDLE {
             return Err(Abort::CannotOpenOutput {
                 name: path.as_slice().into(),
             });
         }
-        st.shipout.output_file_name = crate::io::make_name_string(st, &path)?;
+        st.shipout.output_file_name = crate::files::io::make_name_string(st, &path)?;
     }
 
     if st.shipout.total_pages == 0 {
         let id = id_byte(st.config.semantic_pagination_enabled);
         st.shipout.dvi.begin_preamble(id)?;
-        crate::save::prepare_mag(st)?;
+        crate::tables::save::prepare_mag(st)?;
         let mag = st.eqtb.int_par(IntPar::Mag);
         st.shipout.dvi.end_preamble(mag, b"tectonic")?;
     }
@@ -272,19 +276,19 @@ fn ship_page(
 
     let old_setting = st.shipout.selector;
     st.shipout.selector = Selector::NewString;
-    crate::output::print(st, "pdf:pagesize ");
+    crate::print::print(st, "pdf:pagesize ");
     if pdf_page_width <= Scaled::ZERO || pdf_page_height <= Scaled::ZERO {
-        crate::output::print(st, "default");
+        crate::print::print(st, "default");
     } else {
-        crate::output::print(st, "width");
-        crate::output::print(st, b' ');
-        crate::output::print_scaled(st, pdf_page_width);
-        crate::output::print(st, "pt");
-        crate::output::print(st, b' ');
-        crate::output::print(st, "height");
-        crate::output::print(st, b' ');
-        crate::output::print_scaled(st, pdf_page_height);
-        crate::output::print(st, "pt");
+        crate::print::print(st, "width");
+        crate::print::print(st, b' ');
+        crate::print::print_scaled(st, pdf_page_width);
+        crate::print::print(st, "pt");
+        crate::print::print(st, b' ');
+        crate::print::print(st, "height");
+        crate::print::print(st, b' ');
+        crate::print::print_scaled(st, pdf_page_height);
+        crate::print::print(st, "pt");
     }
     st.shipout.selector = old_setting;
 
@@ -679,7 +683,7 @@ fn hlist_rule_out(
         st.shipout.dvi_h += rule.wd;
     }
     st.shipout.cur_h += rule.wd;
-    crate::synctex::synctex_horizontal_rule_or_glue(st, p, Some(rule));
+    crate::shipout::synctex::synctex_horizontal_rule_or_glue(st, p, Some(rule));
     Ok(())
 }
 
@@ -802,7 +806,7 @@ fn hlist_glue_out(
     }
 
     st.shipout.cur_h += wd;
-    crate::synctex::synctex_horizontal_rule_or_glue(st, glue, None);
+    crate::shipout::synctex::synctex_horizontal_rule_or_glue(st, glue, None);
     Ok(())
 }
 
@@ -910,7 +914,7 @@ fn chars_out(
             None => break,
         }
     }
-    crate::synctex::synctex_current(st);
+    crate::shipout::synctex::synctex_current(st);
     st.shipout.dvi_h = st.shipout.cur_h;
     Ok((cur.next, LinkSlot::Node(cur.node)))
 }
@@ -962,7 +966,7 @@ fn hlist_out(
     }
 
     let mut left_edge = st.shipout.cur_h;
-    crate::synctex::synctex_hlist(st, this_box);
+    crate::shipout::synctex::synctex_hlist(st, this_box);
 
     while let Some(here) = p {
         if let Some(ch) = st.mem.as_char(p) {
@@ -997,11 +1001,11 @@ fn hlist_out(
             }
             AnyNode::MarginKern(kern) => st.shipout.cur_h += st.mem[kern].width,
             AnyNode::Kern(kern) => {
-                crate::synctex::synctex_kern(st, kern, this_box);
+                crate::shipout::synctex::synctex_kern(st, kern, this_box);
                 st.shipout.cur_h += st.mem[kern].width;
             }
             AnyNode::Math(math) => {
-                crate::synctex::synctex_math(st, math);
+                crate::shipout::synctex::synctex_math(st, math);
                 let math_width = st.mem[math].width;
                 let code = st.mem[math].code()?;
                 if code.is_end() {
@@ -1047,7 +1051,7 @@ fn hlist_out(
         p = here.link(&st.mem);
     }
 
-    crate::synctex::synctex_tsilh(st, this_box);
+    crate::shipout::synctex::synctex_tsilh(st, this_box);
 
     while st.mem.lr_code(lr.ptr) != Some(MathCode::Before) {
         if st.mem.lr_code(lr.ptr).is_some_and(MathCode::is_lr) {
@@ -1070,9 +1074,9 @@ fn hlist_box_out(
 ) -> Result<(), Abort> {
     if st.mem[b].list_ptr.is_none() {
         if st.mem[b].is_vlist() {
-            crate::synctex::synctex_void_vlist(st, b);
+            crate::shipout::synctex::synctex_void_vlist(st, b);
         } else {
-            crate::synctex::synctex_void_hlist(st, b);
+            crate::shipout::synctex::synctex_void_hlist(st, b);
         }
         st.shipout.cur_h += st.mem[b].width;
         return Ok(());
@@ -1129,7 +1133,7 @@ fn vlist_out(
     let upwards = st.mem[this_box].upwards();
     let save_loc = st.shipout.dvi.enter_level()?;
     let left_edge = st.shipout.cur_h;
-    crate::synctex::synctex_vlist(st, this_box);
+    crate::shipout::synctex::synctex_vlist(st, this_box);
     if upwards {
         st.shipout.cur_v += st.mem[this_box].depth;
     } else {
@@ -1208,7 +1212,7 @@ fn vlist_out(
         p = here.link(&st.mem);
     }
 
-    crate::synctex::synctex_tsilv(st, this_box);
+    crate::shipout::synctex::synctex_tsilv(st, this_box);
     st.mem.pop_dvi_level(&mut st.shipout, save_loc)
 }
 
@@ -1227,9 +1231,9 @@ fn vlist_box_out(
     }
     if st.mem[b].list_ptr.is_none() {
         if st.mem[b].is_vlist() {
-            crate::synctex::synctex_void_vlist(st, b);
+            crate::shipout::synctex::synctex_void_vlist(st, b);
         } else {
-            crate::synctex::synctex_void_hlist(st, b);
+            crate::shipout::synctex::synctex_void_hlist(st, b);
         }
         if upwards {
             st.shipout.cur_v -= height;
@@ -1413,11 +1417,11 @@ pub(crate) fn finalize_dvi_file(st: &mut crate::state::EngineState) -> Result<()
     }
 
     if st.shipout.total_pages == 0 {
-        crate::output::print_nl(st, "");
-        crate::diagnostic::begin_warning(st);
-        crate::output::print(st, "No pages of output");
-        crate::diagnostic::end_capture(st);
-        crate::output::print_char(st, b'.');
+        crate::print::print_nl(st, "");
+        crate::print::diagnostic::begin_warning(st);
+        crate::print::print(st, "No pages of output");
+        crate::print::diagnostic::end_capture(st);
+        crate::print::print_char(st, b'.');
         return Ok(());
     }
     // The DVI grew too big and the message was already printed.
@@ -1426,7 +1430,7 @@ pub(crate) fn finalize_dvi_file(st: &mut crate::state::EngineState) -> Result<()
     }
 
     st.shipout.dvi.begin_postamble()?;
-    crate::save::prepare_mag(st)?;
+    crate::tables::save::prepare_mag(st)?;
     let mag = st.eqtb.int_par(IntPar::Mag);
     let s = &mut st.shipout;
     s.dvi.end_postamble(mag, s.max_v, s.max_h, s.total_pages)?;
@@ -1444,27 +1448,27 @@ pub(crate) fn finalize_dvi_file(st: &mut crate::state::EngineState) -> Result<()
 
     let k = u8::from(output_close(st.shipout.dvi.file));
     if k == 0 {
-        crate::output::print_nl(st, "Output written on ");
-        crate::output::print(st, st.shipout.output_file_name);
-        crate::output::print(st, " (");
-        crate::output::print_int(st, st.shipout.total_pages);
+        crate::print::print_nl(st, "Output written on ");
+        crate::print::print(st, st.shipout.output_file_name);
+        crate::print::print(st, " (");
+        crate::print::print_int(st, st.shipout.total_pages);
         if st.shipout.total_pages != 1 {
-            crate::output::print(st, " pages");
+            crate::print::print(st, " pages");
         } else {
-            crate::output::print(st, " page");
+            crate::print::print(st, " page");
         }
-        crate::output::print(st, ", ");
-        crate::output::print_int(st, st.shipout.dvi.pos());
-        crate::output::print(st, " bytes).");
+        crate::print::print(st, ", ");
+        crate::print::print_int(st, st.shipout.dvi.pos());
+        crate::print::print(st, " bytes).");
     } else {
-        crate::output::print_nl(st, "Error ");
-        crate::output::print_int(st, i32::from(k));
-        crate::output::print(st, " (");
-        crate::output::print(st, &crate::bridge::strerror(i32::from(k))[..]);
-        crate::output::print(st, ") generating output;");
-        crate::output::print_nl(st, "file ");
-        crate::output::print(st, st.shipout.output_file_name);
-        crate::output::print(st, " may not be valid.");
+        crate::print::print_nl(st, "Error ");
+        crate::print::print_int(st, i32::from(k));
+        crate::print::print(st, " (");
+        crate::print::print(st, &crate::ffi::bridge::strerror(i32::from(k))[..]);
+        crate::print::print(st, ") generating output;");
+        crate::print::print_nl(st, "file ");
+        crate::print::print(st, st.shipout.output_file_name);
+        crate::print::print(st, " may not be valid.");
         // XeTeX also sets history to OUTPUT_FAILURE here.
     }
     Ok(())

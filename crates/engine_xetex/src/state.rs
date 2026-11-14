@@ -1,18 +1,18 @@
 //! Rust-owned engine state.
 
-use crate::cmd::Cmd;
-use crate::codes::FiOrElseCode;
-use crate::cs::{CsId, Frozen};
-use crate::glue_store::GlueSpecId;
-use crate::params::{DimenPar, GluePar, IntPar, TokPar};
-use crate::units::{BufPos, FontId, PoolPos, PrimNum, SavePtr, Scaled, StrNumber};
+use crate::base::cmd::Cmd;
+use crate::base::codes::FiOrElseCode;
+use crate::base::params::{DimenPar, GluePar, IntPar, TokPar};
+use crate::base::units::{BufPos, FontId, PoolPos, PrimNum, SavePtr, Scaled, StrNumber};
+use crate::memory::glue_store::GlueSpecId;
+use crate::tables::cs::{CsId, Frozen};
 
 #[derive(Default)]
 pub(crate) struct EngineState {
     pub config: ConfigState,
-    pub cancellation: crate::cancellation::CancellationState,
+    pub cancellation: crate::preview::cancellation::CancellationState,
     pub errors: ErrorState,
-    pub random: crate::random::Random,
+    pub random: crate::base::random::Random,
     pub shipout: ShipoutState,
     pub scanner: ScannerState,
     pub save_stack: SaveStackState,
@@ -26,9 +26,9 @@ pub(crate) struct EngineState {
     pub synctex: SynctexCtxt,
     pub interchar: InterCharState,
     /// Not checkpointed.
-    pub pgfmath: crate::pgfmath::Diagnostics,
+    pub pgfmath: crate::scanning::pgfmath::Diagnostics,
     /// Not checkpointed: a restore keeps the operation's list.
-    pub diagnostics: crate::diagnostic::DiagnosticsState,
+    pub diagnostics: crate::print::diagnostic::DiagnosticsState,
 }
 
 /// XeTeX's inter-character class registers. The big switch reads them
@@ -57,10 +57,10 @@ pub(crate) struct SynctexCtxt {
     pub root_name: Option<Vec<u8>>,
     pub count: i32,
     /// The node of the current context, `None` before the first.
-    pub node: crate::units::MemPtr,
+    pub node: crate::base::units::MemPtr,
     /// A kern whose record waits for the context to change. When set it equals
     /// `node`, so flush sites record it before reassigning `node`.
-    pub deferred_kern: Option<crate::node::NodePtr<crate::node::KernNode>>,
+    pub deferred_kern: Option<crate::memory::node::NodePtr<crate::memory::node::KernNode>>,
     pub tag: i32,
     pub line: i32,
     pub curh: i32,
@@ -72,7 +72,7 @@ pub(crate) struct SynctexCtxt {
     pub form_depth: i32,
     pub synctex_tag_counter: u32,
     pub flags: SynctexFlags,
-    pub preview_index: Option<crate::sync_index::PreviewSyncIndex>,
+    pub preview_index: Option<crate::preview::sync_index::PreviewSyncIndex>,
 }
 
 impl Default for SynctexCtxt {
@@ -141,9 +141,9 @@ pub(crate) struct OpenLevel {
     /// The enclosing file's line when this one was opened.
     pub outer_line: i32,
     /// `cur_boundary` when the file was opened.
-    pub grp: Option<crate::units::SavePtr>,
+    pub grp: Option<crate::base::units::SavePtr>,
     /// `cond_ptr` when the file was opened.
-    pub cond: Option<crate::cond_stack::CondId>,
+    pub cond: Option<crate::scanning::cond_stack::CondId>,
     pub source_name: StrNumber,
     pub full_source_name: StrNumber,
     /// Whether `\everyeof` has been inserted at its end.
@@ -154,7 +154,7 @@ pub(crate) struct OpenLevel {
 /// freed without a walk.
 #[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
 pub(crate) struct MacroParam {
-    pub list: crate::token::TokenList,
+    pub list: crate::base::token::TokenList,
 }
 
 /// One level of TeX's input stack (`in_state_record`).
@@ -169,9 +169,9 @@ pub(crate) struct InputState {
     pub name: InputName,
     pub synctex_tag: i32,
     /// A token-list level's list, which it frees or drops a reference to when it ends.
-    tok_start: crate::token::TokenList,
+    tok_start: crate::base::token::TokenList,
     /// The next token a token-list level reads.
-    tok_loc: crate::token::TokCursor,
+    tok_loc: crate::base::token::TokCursor,
     /// Where a macro level's arguments start on the parameter stack.
     param_start: u32,
 }
@@ -208,9 +208,9 @@ impl InputName {
 
 impl InputClusterState {
     /// TeX's buffer size overflow error.
-    pub(crate) fn buffer_overflow(&self) -> crate::errors::Abort {
-        crate::errors::Abort::Overflow {
-            capacity: crate::errors::Capacity::BufferSize,
+    pub(crate) fn buffer_overflow(&self) -> crate::print::errors::Abort {
+        crate::print::errors::Abort::Overflow {
+            capacity: crate::print::errors::Capacity::BufferSize,
             n: self.buf_size.raw(),
         }
     }
@@ -238,19 +238,19 @@ impl InputState {
 /// `start` and `loc` of a token-list level, which point into the token store.
 impl InputState {
     #[inline]
-    pub(crate) fn token_start(&self) -> crate::token::TokenList {
+    pub(crate) fn token_start(&self) -> crate::base::token::TokenList {
         self.tok_start
     }
     #[inline]
-    pub(crate) fn token_loc(&self) -> crate::token::TokCursor {
+    pub(crate) fn token_loc(&self) -> crate::base::token::TokCursor {
         self.tok_loc
     }
     #[inline]
-    pub(crate) fn set_token_loc(&mut self, c: crate::token::TokCursor) {
+    pub(crate) fn set_token_loc(&mut self, c: crate::base::token::TokCursor) {
         self.tok_loc = c;
     }
     #[inline]
-    pub(crate) fn set_token_start(&mut self, list: crate::token::TokenList) {
+    pub(crate) fn set_token_start(&mut self, list: crate::base::token::TokenList) {
         self.tok_start = list;
     }
 }
@@ -262,30 +262,30 @@ pub(crate) enum InputSlot {
     Empty,
     /// The terminal, which has no file.
     Terminal,
-    Open(Box<crate::io::UFile>),
+    Open(Box<crate::files::io::UFile>),
 }
 
 #[derive(Default)]
 pub(crate) struct InputClusterState {
-    pub param_stack: crate::stack::TexStack<MacroParam>,
+    pub param_stack: crate::base::stack::TexStack<MacroParam>,
     /// Per open input file, indexed by `in_open`. Level 0 is the terminal.
     pub open_levels: Vec<OpenLevel>,
     pub buffer: InputBuffer,
-    pub input_stack: crate::stack::TexStack<InputState>,
+    pub input_stack: crate::base::stack::TexStack<InputState>,
     pub cur_input: InputState,
     pub input_file: Vec<InputSlot>,
-    pub nest: crate::stack::TexStack<crate::mem_types::ListStateRecord>,
-    pub cur_list: crate::mem_types::ListStateRecord,
+    pub nest: crate::base::stack::TexStack<crate::memory::mem_types::ListStateRecord>,
+    pub cur_list: crate::memory::mem_types::ListStateRecord,
     pub open_parens: i32,
     pub in_open: usize,
-    pub pseudo_files: crate::units::MemPtr,
+    pub pseudo_files: crate::base::units::MemPtr,
     /// The last usable `buffer` position.
     pub buf_size: BufPos,
     pub max_in_open: usize,
     /// The level `show_context` and its relatives are looking at.
     pub base_ptr: usize,
     pub par_loc: Option<CsId>,
-    pub par_token: crate::token::Token,
+    pub par_token: crate::base::token::Token,
     pub force_eof: bool,
     pub first: BufPos,
     pub last: BufPos,
@@ -296,44 +296,51 @@ pub(crate) struct InputClusterState {
 
 pub(crate) struct EqtbState {
     /// The lowest bucket handed out to a colliding name so far.
-    pub hash_used: crate::cs::NameSlot,
+    pub hash_used: crate::tables::cs::NameSlot,
     /// The extra names in use.
     pub hash_high: u32,
     pub no_new_control_sequence: bool,
     pub prim_used: PrimNum,
     pub cs_count: i32,
     /// The meaning of each control sequence, and the level it was defined at.
-    pub meanings: crate::eqtb::Table<CsId, crate::command::Command>,
-    pub ints: crate::eqtb::Table<crate::eqtb::IntLoc, i32>,
-    pub dimens: crate::eqtb::Table<crate::eqtb::DimenLoc, Scaled>,
-    pub glue: crate::eqtb::Table<crate::eqtb::GlueLoc, GlueSpecId>,
-    pub toks: crate::eqtb::Table<crate::eqtb::ToksLoc, crate::token::TokenList>,
-    pub shapes: crate::eqtb::Table<crate::eqtb::ShapeLoc, crate::eqtb::ShapeRef>,
-    pub fonts: crate::eqtb::Table<crate::eqtb::FontLoc, FontId>,
-    pub cat_codes: crate::eqtb::Table<crate::eqtb::CatLoc, Cmd>,
-    pub lc_codes: crate::eqtb::Table<crate::eqtb::LcLoc, i32>,
-    pub uc_codes: crate::eqtb::Table<crate::eqtb::UcLoc, i32>,
-    pub sf_codes: crate::eqtb::Table<crate::eqtb::SfLoc, i32>,
-    pub math_codes: crate::eqtb::Table<crate::eqtb::MathLoc, i32>,
-    pub del_codes: crate::eqtb::Table<crate::eqtb::DelLoc, i32>,
+    pub meanings: crate::tables::eqtb::Table<CsId, crate::base::command::Command>,
+    pub ints: crate::tables::eqtb::Table<crate::tables::eqtb::IntLoc, i32>,
+    pub dimens: crate::tables::eqtb::Table<crate::tables::eqtb::DimenLoc, Scaled>,
+    pub glue: crate::tables::eqtb::Table<crate::tables::eqtb::GlueLoc, GlueSpecId>,
+    pub toks:
+        crate::tables::eqtb::Table<crate::tables::eqtb::ToksLoc, crate::base::token::TokenList>,
+    pub shapes:
+        crate::tables::eqtb::Table<crate::tables::eqtb::ShapeLoc, crate::tables::eqtb::ShapeRef>,
+    pub fonts: crate::tables::eqtb::Table<crate::tables::eqtb::FontLoc, FontId>,
+    pub cat_codes: crate::tables::eqtb::Table<crate::tables::eqtb::CatLoc, Cmd>,
+    pub lc_codes: crate::tables::eqtb::Table<crate::tables::eqtb::LcLoc, i32>,
+    pub uc_codes: crate::tables::eqtb::Table<crate::tables::eqtb::UcLoc, i32>,
+    pub sf_codes: crate::tables::eqtb::Table<crate::tables::eqtb::SfLoc, i32>,
+    pub math_codes: crate::tables::eqtb::Table<crate::tables::eqtb::MathLoc, i32>,
+    pub del_codes: crate::tables::eqtb::Table<crate::tables::eqtb::DelLoc, i32>,
     /// `\XeTeXinterchartoks`, by class pair.
-    pub inter_char: crate::eqtb::SparseTable<crate::eqtb::InterCharPair, crate::token::TokenList>,
-    pub boxes:
-        crate::eqtb::Table<crate::eqtb::BoxLoc, Option<crate::node::NodePtr<crate::node::BoxNode>>>,
-    pub prim: Vec<crate::hash::PrimEntry>,
+    pub inter_char: crate::tables::eqtb::SparseTable<
+        crate::tables::eqtb::InterCharPair,
+        crate::base::token::TokenList,
+    >,
+    pub boxes: crate::tables::eqtb::Table<
+        crate::tables::eqtb::BoxLoc,
+        Option<crate::memory::node::NodePtr<crate::memory::node::BoxNode>>,
+    >,
+    pub prim: Vec<crate::tables::hash::PrimEntry>,
     /// The `next` and `text` of each control sequence from the first hash bucket on.
-    pub hash: Vec<crate::hash::HashEntry>,
+    pub hash: Vec<crate::tables::hash::HashEntry>,
     pub hash_extra: u32,
     /// The last control sequence, past the extra hash entries.
     pub cs_top: CsId,
-    pub journal: crate::journal::EqtbJournal,
-    pub pgfmath: crate::pgfmath::KnownCs,
+    pub journal: crate::preview::journal::EqtbJournal,
+    pub pgfmath: crate::scanning::pgfmath::KnownCs,
 }
 
 impl Default for EqtbState {
     fn default() -> Self {
         EqtbState {
-            hash_used: crate::cs::NameSlot::BUCKETS_END,
+            hash_used: crate::tables::cs::NameSlot::BUCKETS_END,
             hash_high: 0,
             no_new_control_sequence: false,
             prim_used: PrimNum::LAST,
@@ -354,12 +361,12 @@ impl Default for EqtbState {
             math_codes: Default::default(),
             del_codes: Default::default(),
             // PRIM_SIZE + 1 = 2101.
-            prim: vec![crate::hash::PrimEntry::default(); 2101],
+            prim: vec![crate::tables::hash::PrimEntry::default(); 2101],
             hash: Vec::new(),
             hash_extra: 0,
             cs_top: CsId::UNDEFINED,
-            journal: crate::journal::EqtbJournal::default(),
-            pgfmath: crate::pgfmath::KnownCs::default(),
+            journal: crate::preview::journal::EqtbJournal::default(),
+            pgfmath: crate::scanning::pgfmath::KnownCs::default(),
         }
     }
 }
@@ -369,36 +376,48 @@ impl EqtbState {
     pub(crate) fn alloc_tables(&mut self) {
         self.cs_top = CsId::top(self.hash_extra);
         let cs = self.cs_top.index() + 1;
-        self.meanings = crate::eqtb::Table::at_level(
+        self.meanings = crate::tables::eqtb::Table::at_level(
             cs,
-            crate::command::Command::UndefinedCs,
-            crate::consts::LEVEL_ZERO,
+            crate::base::command::Command::UndefinedCs,
+            crate::base::consts::LEVEL_ZERO,
         );
-        self.hash = crate::mem_types::zeroed_vec(self.cs_top.hash_index().map_or(0, |i| i + 1));
-        self.ints = crate::eqtb::Table::new(crate::eqtb::IntLoc::LEN, 0);
+        self.hash =
+            crate::memory::mem_types::zeroed_vec(self.cs_top.hash_index().map_or(0, |i| i + 1));
+        self.ints = crate::tables::eqtb::Table::new(crate::tables::eqtb::IntLoc::LEN, 0);
         self.inter_char.clear();
-        self.dimens = crate::eqtb::Table::new(crate::eqtb::DimenLoc::LEN, Scaled::ZERO);
-        self.glue = crate::eqtb::Table::new(crate::eqtb::GlueLoc::LEN, crate::mem::ZERO_GLUE);
-        self.toks =
-            crate::eqtb::Table::new(crate::eqtb::ToksLoc::LEN, crate::token::TokenList::NULL);
-        self.shapes =
-            crate::eqtb::Table::new(crate::eqtb::ShapeLoc::LEN, crate::eqtb::ShapeRef::NONE);
-        self.boxes = crate::eqtb::Table::new(crate::eqtb::BoxLoc::LEN, None);
-        self.fonts = crate::eqtb::Table::new(crate::eqtb::FontLoc::LEN, crate::consts::NULL_FONT);
-        let usvs = crate::consts::NUMBER_USVS as usize;
-        self.cat_codes = crate::eqtb::Table::new(usvs, Cmd::ESCAPE);
-        self.lc_codes = crate::eqtb::Table::new(usvs, 0);
-        self.uc_codes = crate::eqtb::Table::new(usvs, 0);
-        self.sf_codes = crate::eqtb::Table::new(usvs, 0);
-        self.math_codes = crate::eqtb::Table::new(usvs, 0);
-        self.del_codes = crate::eqtb::Table::new(usvs, -1);
+        self.dimens =
+            crate::tables::eqtb::Table::new(crate::tables::eqtb::DimenLoc::LEN, Scaled::ZERO);
+        self.glue = crate::tables::eqtb::Table::new(
+            crate::tables::eqtb::GlueLoc::LEN,
+            crate::memory::mem::ZERO_GLUE,
+        );
+        self.toks = crate::tables::eqtb::Table::new(
+            crate::tables::eqtb::ToksLoc::LEN,
+            crate::base::token::TokenList::NULL,
+        );
+        self.shapes = crate::tables::eqtb::Table::new(
+            crate::tables::eqtb::ShapeLoc::LEN,
+            crate::tables::eqtb::ShapeRef::NONE,
+        );
+        self.boxes = crate::tables::eqtb::Table::new(crate::tables::eqtb::BoxLoc::LEN, None);
+        self.fonts = crate::tables::eqtb::Table::new(
+            crate::tables::eqtb::FontLoc::LEN,
+            crate::base::consts::NULL_FONT,
+        );
+        let usvs = crate::base::consts::NUMBER_USVS as usize;
+        self.cat_codes = crate::tables::eqtb::Table::new(usvs, Cmd::ESCAPE);
+        self.lc_codes = crate::tables::eqtb::Table::new(usvs, 0);
+        self.uc_codes = crate::tables::eqtb::Table::new(usvs, 0);
+        self.sf_codes = crate::tables::eqtb::Table::new(usvs, 0);
+        self.math_codes = crate::tables::eqtb::Table::new(usvs, 0);
+        self.del_codes = crate::tables::eqtb::Table::new(usvs, -1);
     }
 }
 
 impl EqtbState {
     /// The meaning of control sequence `cs`.
     #[inline(always)]
-    pub(crate) fn meaning(&self, cs: CsId) -> crate::command::Command {
+    pub(crate) fn meaning(&self, cs: CsId) -> crate::base::command::Command {
         self.meanings.get(cs)
     }
 
@@ -410,7 +429,7 @@ impl EqtbState {
 
     /// Gives `cs` the meaning `m` at level `level`.
     #[inline]
-    pub(crate) fn set_meaning(&mut self, cs: CsId, m: crate::command::Command, level: u16) {
+    pub(crate) fn set_meaning(&mut self, cs: CsId, m: crate::base::command::Command, level: u16) {
         self.meanings.set(cs, m, level);
     }
 
@@ -489,88 +508,100 @@ impl EqtbState {
 
     #[inline]
     pub(crate) fn cur_font(&self) -> FontId {
-        self.fonts.get(crate::eqtb::FontLoc::CUR)
+        self.fonts.get(crate::tables::eqtb::FontLoc::CUR)
     }
 
     #[inline]
-    pub(crate) fn tok_par(&self, n: TokPar) -> crate::token::TokenList {
+    pub(crate) fn tok_par(&self, n: TokPar) -> crate::base::token::TokenList {
         self.toks.get(n.loc())
     }
     #[inline]
-    pub(crate) fn par_shape(&self) -> Option<crate::node::NodePtr<crate::node::ParShapeNode>> {
-        crate::node::NodePtr::from_ptr(self.shapes.get(crate::eqtb::ShapeLoc::ParShape).ptr())
+    pub(crate) fn par_shape(
+        &self,
+    ) -> Option<crate::memory::node::NodePtr<crate::memory::node::ParShapeNode>> {
+        crate::memory::node::NodePtr::from_ptr(
+            self.shapes
+                .get(crate::tables::eqtb::ShapeLoc::ParShape)
+                .ptr(),
+        )
     }
     /// The e-TeX penalty array held at `loc`.
     #[inline]
     pub(crate) fn penalties(
         &self,
-        loc: crate::eqtb::ShapeLoc,
-    ) -> Option<crate::node::NodePtr<crate::node::PenaltiesNode>> {
-        crate::node::NodePtr::from_ptr(self.shapes.get(loc).ptr())
+        loc: crate::tables::eqtb::ShapeLoc,
+    ) -> Option<crate::memory::node::NodePtr<crate::memory::node::PenaltiesNode>> {
+        crate::memory::node::NodePtr::from_ptr(self.shapes.get(loc).ptr())
     }
     #[inline]
     pub(crate) fn box_reg(
         &self,
-        n: impl Into<crate::eqtb::Register>,
-    ) -> Option<crate::node::NodePtr<crate::node::BoxNode>> {
-        self.boxes.get(crate::eqtb::BoxLoc::register(n.into()))
+        n: impl Into<crate::tables::eqtb::Register>,
+    ) -> Option<crate::memory::node::NodePtr<crate::memory::node::BoxNode>> {
+        self.boxes
+            .get(crate::tables::eqtb::BoxLoc::register(n.into()))
     }
     #[inline]
     /// Sets box register `n` without saving, keeping its level.
     pub(crate) fn set_box_reg(
         &mut self,
-        n: impl Into<crate::eqtb::Register>,
-        b: Option<crate::node::NodePtr<crate::node::BoxNode>>,
+        n: impl Into<crate::tables::eqtb::Register>,
+        b: Option<crate::memory::node::NodePtr<crate::memory::node::BoxNode>>,
     ) {
         self.boxes
-            .set_value(crate::eqtb::BoxLoc::register(n.into()), b);
+            .set_value(crate::tables::eqtb::BoxLoc::register(n.into()), b);
     }
     #[inline]
     pub(crate) fn skip(
         &self,
-        n: impl Into<crate::eqtb::Register>,
-    ) -> crate::glue_store::GlueSpecId {
-        self.glue.get(crate::eqtb::GlueLoc::skip(n.into()))
+        n: impl Into<crate::tables::eqtb::Register>,
+    ) -> crate::memory::glue_store::GlueSpecId {
+        self.glue.get(crate::tables::eqtb::GlueLoc::skip(n.into()))
     }
     #[inline]
-    pub(crate) fn dimen(&self, n: impl Into<crate::eqtb::Register>) -> Scaled {
-        self.dimens.get(crate::eqtb::DimenLoc::dimen(n.into()))
+    pub(crate) fn dimen(&self, n: impl Into<crate::tables::eqtb::Register>) -> Scaled {
+        self.dimens
+            .get(crate::tables::eqtb::DimenLoc::dimen(n.into()))
     }
     #[inline]
-    pub(crate) fn toks(&self, n: impl Into<crate::eqtb::Register>) -> crate::token::TokenList {
-        self.toks.get(crate::eqtb::ToksLoc::register(n.into()))
+    pub(crate) fn toks(
+        &self,
+        n: impl Into<crate::tables::eqtb::Register>,
+    ) -> crate::base::token::TokenList {
+        self.toks
+            .get(crate::tables::eqtb::ToksLoc::register(n.into()))
     }
     #[inline]
-    pub(crate) fn count(&self, n: impl Into<crate::eqtb::Register>) -> i32 {
-        self.ints.get(crate::eqtb::IntLoc::count(n.into()))
+    pub(crate) fn count(&self, n: impl Into<crate::tables::eqtb::Register>) -> i32 {
+        self.ints.get(crate::tables::eqtb::IntLoc::count(n.into()))
     }
     #[inline]
     pub(crate) fn math_font(&self, n: i32) -> FontId {
-        self.fonts.get(crate::eqtb::FontLoc::math(n))
+        self.fonts.get(crate::tables::eqtb::FontLoc::math(n))
     }
     #[inline(always)]
     pub(crate) fn cat_code(&self, c: i32) -> Cmd {
-        self.cat_codes.get(crate::eqtb::CatLoc::of(c))
+        self.cat_codes.get(crate::tables::eqtb::CatLoc::of(c))
     }
     #[inline]
     pub(crate) fn lc_code(&self, c: i32) -> i32 {
-        self.lc_codes.get(crate::eqtb::LcLoc::of(c))
+        self.lc_codes.get(crate::tables::eqtb::LcLoc::of(c))
     }
     #[inline]
     pub(crate) fn uc_code(&self, c: i32) -> i32 {
-        self.uc_codes.get(crate::eqtb::UcLoc::of(c))
+        self.uc_codes.get(crate::tables::eqtb::UcLoc::of(c))
     }
     #[inline]
     pub(crate) fn sf_code(&self, c: i32) -> i32 {
-        self.sf_codes.get(crate::eqtb::SfLoc::of(c))
+        self.sf_codes.get(crate::tables::eqtb::SfLoc::of(c))
     }
     #[inline]
     pub(crate) fn math_code(&self, c: i32) -> i32 {
-        self.math_codes.get(crate::eqtb::MathLoc::of(c))
+        self.math_codes.get(crate::tables::eqtb::MathLoc::of(c))
     }
     #[inline]
     pub(crate) fn del_code(&self, c: i32) -> i32 {
-        self.del_codes.get(crate::eqtb::DelLoc::of(c))
+        self.del_codes.get(crate::tables::eqtb::DelLoc::of(c))
     }
 
     #[inline]
@@ -593,12 +624,12 @@ impl EqtbState {
     }
     /// The spec of glue parameter `n`, never null.
     #[inline]
-    pub fn glue_par(&self, n: GluePar) -> crate::glue_store::GlueSpecId {
+    pub fn glue_par(&self, n: GluePar) -> crate::memory::glue_store::GlueSpecId {
         self.glue.get(n.loc())
     }
 
     #[inline]
-    pub fn set_glue_par(&mut self, n: GluePar, spec: crate::glue_store::GlueSpecId) {
+    pub fn set_glue_par(&mut self, n: GluePar, spec: crate::memory::glue_store::GlueSpecId) {
         self.glue.set_value(n.loc(), spec);
     }
 }
@@ -610,25 +641,25 @@ pub(crate) struct MemState {
     /// The node arena, in 32-bit words.
     pub data: Vec<u32>,
     /// Owned shaped-glyph payloads referenced by handles in native nodes.
-    pub glyph_blobs: crate::glyph_arena::GlyphBlobArena,
+    pub glyph_blobs: crate::memory::glyph_arena::GlyphBlobArena,
     /// The token lists, a store of their own.
-    pub tokens: crate::token::TokenStore,
+    pub tokens: crate::base::token::TokenStore,
     /// The glue specifications.
-    pub glue: crate::glue_store::GlueStore,
-    pub journal: crate::journal::WordJournal<u32>,
+    pub glue: crate::memory::glue_store::GlueStore,
+    pub journal: crate::preview::journal::WordJournal<u32>,
     /// The free list of each node size.
-    pub free: crate::mem::FreeLists,
+    pub free: crate::memory::mem::FreeLists,
     /// TeX's `line`, kept here because `get_node` stamps it into new nodes.
     pub line: i32,
     pub cur_synctex_tag: i32,
-    pub temp_ptr: crate::units::MemPtr,
+    pub temp_ptr: crate::base::units::MemPtr,
 }
 
 impl MemState {
     /// The SyncTeX tag and line a node made now is stamped with.
     #[inline]
-    pub(crate) fn sync_stamp(&self) -> crate::node::SyncStamp {
-        crate::node::SyncStamp {
+    pub(crate) fn sync_stamp(&self) -> crate::memory::node::SyncStamp {
+        crate::memory::node::SyncStamp {
             tag: self.cur_synctex_tag,
             line: self.line,
         }
@@ -650,7 +681,7 @@ impl MemState {
     }
 }
 
-crate::codes::code_enum! {
+crate::base::codes::code_enum! {
     /// The kind of group on the save stack (`cur_group`).
     #[derive(Default)]
     pub(crate) enum GroupCode: u8 {
@@ -683,9 +714,9 @@ pub(crate) enum Closer {
     Right,
 }
 
-impl crate::output::TexPrint for Closer {
+impl crate::print::TexPrint for Closer {
     fn print_to(&self, st: &mut EngineState) {
-        use crate::output::{Esc, print};
+        use crate::print::{Esc, print};
         match self {
             Closer::EndGroup => print(st, Esc("endgroup")),
             Closer::MathShift => print(st, '$'),
@@ -700,8 +731,8 @@ pub(crate) struct Insertion(pub Option<Closer>);
 
 impl Insertion {
     /// The inserted tokens, in reading order.
-    pub(crate) fn tokens(self) -> Vec<crate::token::Token> {
-        use crate::token::Token;
+    pub(crate) fn tokens(self) -> Vec<crate::base::token::Token> {
+        use crate::base::token::Token;
         match self.0 {
             Some(Closer::EndGroup) => vec![Token::from_cs(Frozen::EndGroup.cs())],
             Some(Closer::MathShift) => vec![Token::math_shift(b'$')],
@@ -711,9 +742,9 @@ impl Insertion {
     }
 }
 
-impl crate::output::TexPrint for Insertion {
+impl crate::print::TexPrint for Insertion {
     fn print_to(&self, st: &mut EngineState) {
-        use crate::output::{Esc, print};
+        use crate::print::{Esc, print};
         match self.0 {
             Some(Closer::Right) => print(st, Esc("right.")),
             Some(closer) => print(st, closer),
@@ -746,7 +777,7 @@ pub(crate) enum SaveEntry {
     /// A value to put back when the group ends.
     Restore(Restore),
     /// A token `\aftergroup` inserts when the group ends.
-    InsertToken(crate::token::Token),
+    InsertToken(crate::base::token::Token),
     /// Something a construction keeps until its group ends.
     Saved(Saved),
 }
@@ -754,36 +785,36 @@ pub(crate) enum SaveEntry {
 /// An old `eqtb` value, with the level it had.
 #[derive(Copy, Clone)]
 pub(crate) enum Restore {
-    Cs(crate::eqtb::Old<CsId>),
-    Int(crate::eqtb::Old<crate::eqtb::IntLoc>),
-    Dimen(crate::eqtb::Old<crate::eqtb::DimenLoc>),
-    Glue(crate::eqtb::Old<crate::eqtb::GlueLoc>),
-    Toks(crate::eqtb::Old<crate::eqtb::ToksLoc>),
-    Shape(crate::eqtb::Old<crate::eqtb::ShapeLoc>),
-    Box(crate::eqtb::Old<crate::eqtb::BoxLoc>),
-    Font(crate::eqtb::Old<crate::eqtb::FontLoc>),
-    Cat(crate::eqtb::Old<crate::eqtb::CatLoc>),
-    Lc(crate::eqtb::Old<crate::eqtb::LcLoc>),
-    Uc(crate::eqtb::Old<crate::eqtb::UcLoc>),
-    Sf(crate::eqtb::Old<crate::eqtb::SfLoc>),
-    Math(crate::eqtb::Old<crate::eqtb::MathLoc>),
-    Del(crate::eqtb::Old<crate::eqtb::DelLoc>),
-    InterChar(crate::eqtb::Old<crate::eqtb::InterCharPair>),
+    Cs(crate::tables::eqtb::Old<CsId>),
+    Int(crate::tables::eqtb::Old<crate::tables::eqtb::IntLoc>),
+    Dimen(crate::tables::eqtb::Old<crate::tables::eqtb::DimenLoc>),
+    Glue(crate::tables::eqtb::Old<crate::tables::eqtb::GlueLoc>),
+    Toks(crate::tables::eqtb::Old<crate::tables::eqtb::ToksLoc>),
+    Shape(crate::tables::eqtb::Old<crate::tables::eqtb::ShapeLoc>),
+    Box(crate::tables::eqtb::Old<crate::tables::eqtb::BoxLoc>),
+    Font(crate::tables::eqtb::Old<crate::tables::eqtb::FontLoc>),
+    Cat(crate::tables::eqtb::Old<crate::tables::eqtb::CatLoc>),
+    Lc(crate::tables::eqtb::Old<crate::tables::eqtb::LcLoc>),
+    Uc(crate::tables::eqtb::Old<crate::tables::eqtb::UcLoc>),
+    Sf(crate::tables::eqtb::Old<crate::tables::eqtb::SfLoc>),
+    Math(crate::tables::eqtb::Old<crate::tables::eqtb::MathLoc>),
+    Del(crate::tables::eqtb::Old<crate::tables::eqtb::DelLoc>),
+    InterChar(crate::tables::eqtb::Old<crate::tables::eqtb::InterCharPair>),
 }
 
 /// What a construction keeps on the save stack below its group.
 #[derive(Copy, Clone, Debug, PartialEq, Hash)]
 pub(crate) enum Saved {
     /// Where a box goes when its group ends, `box_context`.
-    BoxContext(crate::main_control::BoxContext),
-    Spec(crate::packaging::PackSpec),
+    BoxContext(crate::build::main_control::BoxContext),
+    Spec(crate::build::packaging::PackSpec),
     /// An `\insert` with its box number, or a `\vadjust` (number 255).
     Insert {
         n: i32,
         pre: bool,
     },
     /// The noad field a math group fills.
-    MathGroup(crate::node::MathSlot),
+    MathGroup(crate::memory::node::MathSlot),
     /// An `\eqno` (false) or `\leqno` (true).
     EqNo {
         left: bool,
@@ -808,8 +839,11 @@ pub(crate) struct SaveStackState {
 
 impl SaveStackState {
     /// The save stack ran out.
-    pub(crate) fn overflow(&self) -> crate::errors::Abort {
-        crate::errors::Abort::overflow(crate::errors::Capacity::SaveSize, self.save_size)
+    pub(crate) fn overflow(&self) -> crate::print::errors::Abort {
+        crate::print::errors::Abort::overflow(
+            crate::print::errors::Capacity::SaveSize,
+            self.save_size,
+        )
     }
 
     /// The stack of `size` free entries.
@@ -860,10 +894,12 @@ impl SaveStackState {
     }
 
     /// Pops the size spec a box group kept.
-    pub(crate) fn pop_spec(&mut self) -> Result<crate::packaging::PackSpec, crate::errors::Abort> {
+    pub(crate) fn pop_spec(
+        &mut self,
+    ) -> Result<crate::build::packaging::PackSpec, crate::print::errors::Abort> {
         match self.pop_saved() {
             Some(Saved::Spec(spec)) => Ok(spec),
-            _ => Err(crate::errors::Abort::Confusion("pop_spec")),
+            _ => Err(crate::print::errors::Abort::Confusion("pop_spec")),
         }
     }
 
@@ -894,39 +930,39 @@ impl SaveStackState {
 
 /// `cur_mark`, the marks of the current page and split.
 #[derive(Default, Clone, Copy)]
-pub(crate) struct CurMarks([crate::token::TokenList; 5]);
+pub(crate) struct CurMarks([crate::base::token::TokenList; 5]);
 
 impl CurMarks {
-    pub(crate) const NULL: CurMarks = CurMarks([crate::token::TokenList::NULL; 5]);
+    pub(crate) const NULL: CurMarks = CurMarks([crate::base::token::TokenList::NULL; 5]);
 }
 
-impl std::ops::Index<crate::codes::MarkCode> for CurMarks {
-    type Output = crate::token::TokenList;
+impl std::ops::Index<crate::base::codes::MarkCode> for CurMarks {
+    type Output = crate::base::token::TokenList;
     #[inline]
-    fn index(&self, m: crate::codes::MarkCode) -> &crate::token::TokenList {
+    fn index(&self, m: crate::base::codes::MarkCode) -> &crate::base::token::TokenList {
         &self.0[m as usize]
     }
 }
 
-impl std::ops::IndexMut<crate::codes::MarkCode> for CurMarks {
+impl std::ops::IndexMut<crate::base::codes::MarkCode> for CurMarks {
     #[inline]
-    fn index_mut(&mut self, m: crate::codes::MarkCode) -> &mut crate::token::TokenList {
+    fn index_mut(&mut self, m: crate::base::codes::MarkCode) -> &mut crate::base::token::TokenList {
         &mut self.0[m as usize]
     }
 }
 
 /// The marks of the `\marks` classes above 0, class 0 being `cur_mark`.
 #[derive(Default, Clone)]
-pub(crate) struct MarkClasses(std::collections::BTreeMap<crate::eqtb::Register, CurMarks>);
+pub(crate) struct MarkClasses(std::collections::BTreeMap<crate::tables::eqtb::Register, CurMarks>);
 
 impl MarkClasses {
     /// The marks of `class`, all null when it has none.
-    pub(crate) fn get(&self, class: crate::eqtb::Register) -> CurMarks {
+    pub(crate) fn get(&self, class: crate::tables::eqtb::Register) -> CurMarks {
         self.0.get(&class).copied().unwrap_or(CurMarks::NULL)
     }
 
     /// The marks of `class`, created null.
-    pub(crate) fn entry(&mut self, class: crate::eqtb::Register) -> &mut CurMarks {
+    pub(crate) fn entry(&mut self, class: crate::tables::eqtb::Register) -> &mut CurMarks {
         self.0.entry(class).or_insert(CurMarks::NULL)
     }
 
@@ -939,7 +975,7 @@ impl MarkClasses {
         self.0.clear();
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (crate::eqtb::Register, &CurMarks)> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (crate::tables::eqtb::Register, &CurMarks)> {
         self.0.iter().map(|(&class, marks)| (class, marks))
     }
 }
@@ -949,42 +985,42 @@ pub(crate) struct ScannerState {
     /// Monotonic token-fetch clock used to order checkpoint fences.
     pub logical_clock: u64,
     pub name_in_progress: bool,
-    pub cur_align: crate::units::MemPtr,
-    pub cur_span: crate::units::MemPtr,
-    pub cur_loop: crate::units::MemPtr,
+    pub cur_align: crate::base::units::MemPtr,
+    pub cur_span: crate::base::units::MemPtr,
+    pub cur_loop: crate::base::units::MemPtr,
     /// The enclosing alignments, TeX's `align_ptr` list.
-    pub align_stack: Vec<crate::main_control::SavedAlign>,
-    pub cur_head: crate::units::MemPtr,
-    pub cur_tail: crate::units::MemPtr,
-    pub cur_pre_head: crate::units::MemPtr,
-    pub cur_pre_tail: crate::units::MemPtr,
-    pub shown_mode: crate::mode::ModeName,
+    pub align_stack: Vec<crate::build::main_control::SavedAlign>,
+    pub cur_head: crate::base::units::MemPtr,
+    pub cur_tail: crate::base::units::MemPtr,
+    pub cur_pre_head: crate::base::units::MemPtr,
+    pub cur_pre_tail: crate::base::units::MemPtr,
+    pub shown_mode: crate::base::mode::ModeName,
     pub mag_set: i32,
     pub expand_depth_count: i32,
     pub max_reg_num: i32,
     /// The innermost incomplete conditional, `None` outside any.
     /// The conditional stack, TeX's `cond_ptr` list.
-    pub conds: crate::cond_stack::CondStack,
-    pub if_limit: crate::node::Stored<FiOrElseCode>,
-    pub cur_if: crate::codes::IfTest,
+    pub conds: crate::scanning::cond_stack::CondStack,
+    pub if_limit: crate::memory::node::Stored<FiOrElseCode>,
+    pub cur_if: crate::base::codes::IfTest,
     pub if_line: i32,
     pub skip_line: i32,
     pub is_in_csname: bool,
     pub used_tectonic_coda_tokens: bool,
-    pub scanner_status: crate::codes::ScannerStatus,
+    pub scanner_status: crate::base::codes::ScannerStatus,
     pub warning_index: Option<CsId>,
-    pub def_ref: crate::token::TokenList,
+    pub def_ref: crate::base::token::TokenList,
     pub long_state: Cmd,
     pub align_state: i32,
     pub expand_depth: i32,
     /// The meaning of the token `get_next` read last.
-    pub cur: crate::command::Command,
+    pub cur: crate::base::command::Command,
     pub cur_cs: Option<CsId>,
-    pub cur_tok: crate::token::Token,
+    pub cur_tok: crate::base::token::Token,
     pub cur_mark: CurMarks,
     pub mark_classes: MarkClasses,
-    pub disc_ptr: [crate::units::MemPtr; 4],
-    pub after_token: crate::token::Token,
+    pub disc_ptr: [crate::base::units::MemPtr; 4],
+    pub after_token: crate::base::token::Token,
     pub cur_f: FontId,
     pub set_box_allowed: bool,
     pub native_text: Vec<u16>,
@@ -1013,10 +1049,10 @@ pub(crate) struct ConfigState {
     /// such as guarded picture probes.
     pub execution_mode: EngineExecutionMode,
     pub max_print_line: i32,
-    pub pgfmath: crate::pgfmath::Mode,
+    pub pgfmath: crate::scanning::pgfmath::Mode,
 }
 
-pub(crate) use crate::layout::{FontMappingHandle, LinebreakHandle};
+pub(crate) use crate::ffi::teckit_icu::{FontMappingHandle, LinebreakHandle};
 
 /// A native font's layout engine.
 pub(crate) type FontEngineHandle = texyon_xetex_layout::LayoutEngine<'static>;
@@ -1054,12 +1090,12 @@ pub(crate) struct FontState {
     pub font_bchar: PerFont<crate::fonts::LigChar>,
     pub font_false_bchar: PerFont<crate::fonts::LigChar>,
     /// The interword glue built from the font's parameters, once a space needs it.
-    pub font_glue: PerFont<Option<crate::glue_store::GlueSpecId>>,
+    pub font_glue: PerFont<Option<crate::memory::glue_store::GlueSpecId>>,
     pub font_used: PerFont<bool>,
     pub hyphen_char: PerFont<i32>,
     pub skew_char: PerFont<i32>,
-    pub metrics: PerFont<crate::tfm::FontMetrics>,
-    pub params: PerFont<crate::tfm::FontParams>,
+    pub metrics: PerFont<crate::fonts::tfm::FontMetrics>,
+    pub params: PerFont<crate::fonts::tfm::FontParams>,
     pub mapped_text: Vec<u16>,
     pub cp_codes: crate::fonts::ProtrusionCodes,
     /// Glyph bounds in TeX points, valid for the fonts through `font_ptr`.
@@ -1082,9 +1118,9 @@ impl Default for FontState {
             gave_char_warning_help: false,
             native_font_type_flag: StrNumber::NONE,
             font_mem_size: 0,
-            font_max: crate::consts::NULL_FONT,
+            font_max: crate::base::consts::NULL_FONT,
             fmem_ptr: 0,
-            font_ptr: crate::consts::NULL_FONT,
+            font_ptr: crate::base::consts::NULL_FONT,
             font_flags: PerFont::default(),
             font_letter_space: PerFont::default(),
             font_check: PerFont::default(),
@@ -1172,7 +1208,7 @@ pub(crate) enum PageContents {
 
 #[derive(Default, Clone)]
 pub(crate) struct ShipoutState {
-    pub dvi: crate::dvi::DviWriter,
+    pub dvi: crate::shipout::dvi::DviWriter,
     pub insert_src_special_every_par: bool,
     pub insert_src_special_every_math: bool,
     pub insert_src_special_every_vbox: bool,
@@ -1185,11 +1221,11 @@ pub(crate) struct ShipoutState {
     pub epochseconds: i32,
     pub microseconds: i32,
     pub dead_cycles: i32,
-    pub page_tail: crate::units::MemPtr,
+    pub page_tail: crate::base::units::MemPtr,
     pub last_badness: i32,
     pub page_contents: PageContents,
     pub page_so_far: [Scaled; 8],
-    pub last_glue: Option<crate::glue_store::GlueSpecId>,
+    pub last_glue: Option<crate::memory::glue_store::GlueSpecId>,
     pub last_penalty: i32,
     pub last_kern: Scaled,
     pub last_node_type: i32,
@@ -1214,7 +1250,7 @@ pub(crate) struct ShipoutState {
     pub log_resumed_at: Option<u64>,
     /// Diagnostics reported so far, captured with every checkpoint.
     pub diagnostics_issued: usize,
-    pub best_page_break: crate::units::MemPtr,
+    pub best_page_break: crate::base::units::MemPtr,
     pub best_size: Scaled,
     pub least_page_cost: i32,
     pub page_max_depth: Scaled,
@@ -1369,7 +1405,7 @@ impl Default for ErrorState {
             first_count: 0,
             deletions_allowed: false,
             halting_on_error: false,
-            font_in_short_display: crate::consts::NULL_FONT,
+            font_in_short_display: crate::base::consts::NULL_FONT,
             depth_threshold: 0,
             breadth_max: 0,
         }
@@ -1397,17 +1433,17 @@ pub(crate) struct StringsState {
 
 impl StringsState {
     /// The string pool ran out.
-    pub(crate) fn pool_overflow(&self) -> crate::errors::Abort {
-        crate::errors::Abort::Overflow {
-            capacity: crate::errors::Capacity::PoolSize,
+    pub(crate) fn pool_overflow(&self) -> crate::print::errors::Abort {
+        crate::print::errors::Abort::Overflow {
+            capacity: crate::print::errors::Capacity::PoolSize,
             n: self.pool_size - self.init_pool_ptr,
         }
     }
 
     /// The string table ran out.
-    pub(crate) fn string_overflow(&self) -> crate::errors::Abort {
-        crate::errors::Abort::Overflow {
-            capacity: crate::errors::Capacity::NumberOfStrings,
+    pub(crate) fn string_overflow(&self) -> crate::print::errors::Abort {
+        crate::print::errors::Abort::Overflow {
+            capacity: crate::print::errors::Capacity::NumberOfStrings,
             n: self.max_strings - self.init_str_ptr,
         }
     }
@@ -1461,11 +1497,11 @@ pub(crate) struct HyphState {
     pub tables_gen: u64,
     pub hf: FontId,
     pub max_hyph_char: i32,
-    pub init_list: crate::units::MemPtr,
+    pub init_list: crate::base::units::MemPtr,
     pub init_lig: bool,
     pub init_lft: bool,
     pub hyphen_passed: usize,
-    pub trie_max: crate::hyphenation::TriePtr,
+    pub trie_max: crate::build::hyphenation::TriePtr,
     pub trie_size: i32,
     pub trie_ptr: i32,
     pub hyph_count: i32,
@@ -1474,9 +1510,9 @@ pub(crate) struct HyphState {
     pub trie_op_ptr: i32,
     pub max_op_used: u16,
     pub trie_not_ready: bool,
-    pub hyph_start: crate::hyphenation::TriePtr,
+    pub hyph_start: crate::build::hyphenation::TriePtr,
     /// The `\lccode` table saved with the current language's patterns.
-    pub hyph_index: Option<crate::hyphenation::TriePtr>,
+    pub hyph_index: Option<crate::build::hyphenation::TriePtr>,
     pub cur_lang: u8,
     pub hyf_char: crate::fonts::LigChar,
     pub l_hyf: i32,
@@ -1504,7 +1540,7 @@ pub(crate) struct HyphState {
     pub trie_hash: Vec<u32>,
     pub trie_taken: Vec<bool>,
     pub hyph_word: Vec<StrNumber>,
-    pub hyph_list: Vec<crate::units::MemPtr>,
+    pub hyph_list: Vec<crate::base::units::MemPtr>,
     pub hyph_link: Vec<u16>,
     pub trie_op_hash_array: Vec<i32>,
 }
@@ -1513,13 +1549,13 @@ impl Default for HyphState {
     fn default() -> Self {
         Self {
             tables_gen: 0,
-            hf: crate::consts::NULL_FONT,
+            hf: crate::base::consts::NULL_FONT,
             max_hyph_char: 0,
             init_list: None,
             init_lig: false,
             init_lft: false,
             hyphen_passed: 0,
-            trie_max: crate::hyphenation::TriePtr::NULL,
+            trie_max: crate::build::hyphenation::TriePtr::NULL,
             trie_size: 0,
             trie_ptr: 0,
             hyph_count: 0,
@@ -1528,7 +1564,7 @@ impl Default for HyphState {
             trie_op_ptr: 0,
             max_op_used: 0,
             trie_not_ready: false,
-            hyph_start: crate::hyphenation::TriePtr::NULL,
+            hyph_start: crate::build::hyphenation::TriePtr::NULL,
             hyph_index: None,
             cur_lang: 0,
             hyf_char: crate::fonts::LigChar::NONE,
@@ -1577,10 +1613,13 @@ pub(crate) const NATIVE_TEXT_MAX: i32 = 1 << 20;
 impl ScannerState {
     /// Grows `native_text` until `extra` more units fit.
     #[inline(always)]
-    pub(crate) fn reserve_native_text(&mut self, extra: i32) -> Result<(), crate::errors::Abort> {
+    pub(crate) fn reserve_native_text(
+        &mut self,
+        extra: i32,
+    ) -> Result<(), crate::print::errors::Abort> {
         if extra >= NATIVE_TEXT_MAX - self.native_len {
-            return Err(crate::errors::Abort::Overflow {
-                capacity: crate::errors::Capacity::NativeTextSize,
+            return Err(crate::print::errors::Abort::Overflow {
+                capacity: crate::print::errors::Capacity::NativeTextSize,
                 n: NATIVE_TEXT_MAX,
             });
         }

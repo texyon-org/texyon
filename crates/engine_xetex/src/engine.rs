@@ -1,43 +1,43 @@
 //! Engine init, run and cleanup: the `run_engine` entry point, the
 //! initialize_* primers, primitive registration and teardown.
 
-use crate::bridge::output_open_stdout;
-use crate::cmd::Cmd;
-use crate::codes::IfTest;
-use crate::codes::{BoxCode, FiOrElseCode, MarkCode, ScannerStatus};
-use crate::command::Command;
-use crate::consts::{
+use crate::base::cmd::Cmd;
+use crate::base::codes::IfTest;
+use crate::base::codes::{BoxCode, FiOrElseCode, MarkCode, ScannerStatus};
+use crate::base::command::Command;
+use crate::base::consts::{
     BIGGEST_CHAR, BIGGEST_LANG, CLOSED, EMPTY_STRING, FONT_BASE, HISTORY_FATAL_ERROR,
     HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, LEVEL_ONE, LEVEL_ZERO, MAX_FONT_MAX, MAX_HALFWORD,
     NORMAL, NULL_FONT, NUMBER_USVS, TEX_NULL, TOO_BIG_CHAR,
 };
-use crate::cs::{CsId, Frozen};
-use crate::eqtb::{CatLoc, DelLoc, LcLoc, MathLoc, SfLoc, UcLoc};
-use crate::errors::{Abort, OrConfusion};
-use crate::format_io::load_fmt_file;
-use crate::hash::{HASH_PRIME, HASH_SIZE};
-use crate::helpers::OnDrop;
-use crate::hyphenation::{HYPH_PRIME, TRIE_OP_SIZE};
-use crate::input::{NEW_LINE, STACK_SIZE, TOKEN_LIST};
-use crate::io::init_io;
-use crate::mem::{
+use crate::base::helpers::OnDrop;
+use crate::base::params::IntPar;
+use crate::base::stack::TexStack;
+use crate::base::token::Token;
+use crate::base::token::TokenList;
+use crate::base::units::{
+    BufPos, FontId, GlueOrder, NodeType, PoolPos, PrimNum, SavePtr, Scaled, StrNumber,
+};
+use crate::build::hyphenation::{HYPH_PRIME, TRIE_OP_SIZE};
+use crate::build::packaging::MarksAction;
+use crate::ffi::bridge::output_open_stdout;
+use crate::files::format_io::load_fmt_file;
+use crate::files::io::init_io;
+use crate::memory::mem::{
     CONTRIB_HEAD, END_SPAN, FIL_GLUE, FIL_NEG_GLUE, FILL_GLUE, FIXED_HEADS, PAGE_HEAD,
     PAGE_INS_HEAD, SS_GLUE, ZERO_GLUE,
 };
-use crate::mem_types::zeroed_vec;
-use crate::node::{NodePtr, PageInsNode};
-use crate::packaging::MarksAction;
-use crate::params::IntPar;
-use crate::scan::{set_class, set_family};
-use crate::stack::TexStack;
+use crate::memory::mem_types::zeroed_vec;
+use crate::memory::node::{NodePtr, PageInsNode};
+use crate::print::errors::{Abort, OrConfusion};
+use crate::scanning::input::{NEW_LINE, STACK_SIZE, TOKEN_LIST};
+use crate::scanning::scan::{set_class, set_family};
 use crate::state::{
     ConfigState, CurMarks, EngineState, FontState, GroupCode, InteractionMode, PerFont, Selector,
 };
-use crate::token::Token;
-use crate::token::TokenList;
-use crate::units::{
-    BufPos, FontId, GlueOrder, NodeType, PoolPos, PrimNum, SavePtr, Scaled, StrNumber,
-};
+use crate::tables::cs::{CsId, Frozen};
+use crate::tables::eqtb::{CatLoc, DelLoc, LcLoc, MathLoc, SfLoc, UcLoc};
+use crate::tables::hash::{HASH_PRIME, HASH_SIZE};
 
 pub(crate) const POOL_FREE: i32 = 47_500;
 pub(crate) const STRINGS_FREE: i32 = 100;
@@ -129,43 +129,43 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     if st.strings.job_name == StrNumber::NONE {
-        crate::io::open_log_file(st)?;
+        crate::files::io::open_log_file(st)?;
     }
 
     while !st.input.input_stack.is_empty() {
         if st.input.cur_input.state == TOKEN_LIST {
-            crate::input::end_token_list(st)?;
+            crate::scanning::input::end_token_list(st)?;
         } else {
-            crate::input::end_file_reading(st)?;
+            crate::scanning::input::end_file_reading(st)?;
         }
     }
 
     while st.input.open_parens > 0 {
-        crate::output::print(st, " )");
+        crate::print::print(st, " )");
         st.input.open_parens -= 1;
     }
 
     let cur_level = st.save_stack.cur_level;
     if cur_level > LEVEL_ONE {
-        crate::output::print_nl(st, b'(');
-        crate::output::print_esc(st, "end occurred ");
-        crate::output::print(st, "inside a group at level ");
-        crate::output::print_int(st, i32::from(cur_level) - 1);
-        crate::output::print_char(st, b')');
-        crate::output::show_save_groups(st);
+        crate::print::print_nl(st, b'(');
+        crate::print::print_esc(st, "end occurred ");
+        crate::print::print(st, "inside a group at level ");
+        crate::print::print_int(st, i32::from(cur_level) - 1);
+        crate::print::print_char(st, b')');
+        crate::print::show_save_groups(st);
     }
 
     while let Some(cond) = st.scanner.conds.pop() {
-        crate::output::print_nl(st, b'(');
-        crate::output::print_esc(st, "end occurred ");
-        crate::output::print(st, "when ");
-        crate::output::print_command(st, Command::IfTest(st.scanner.cur_if));
+        crate::print::print_nl(st, b'(');
+        crate::print::print_esc(st, "end occurred ");
+        crate::print::print(st, "when ");
+        crate::print::print_command(st, Command::IfTest(st.scanner.cur_if));
         let if_line = st.scanner.if_line;
         if if_line != 0 {
-            crate::output::print(st, " on line ");
-            crate::output::print_int(st, if_line);
+            crate::print::print(st, " on line ");
+            crate::print::print_int(st, if_line);
         }
-        crate::output::print(st, " was incomplete)");
+        crate::print::print(st, " was incomplete)");
         st.scanner.if_line = cond.if_line;
         st.scanner.cur_if = cond.cur_if;
     }
@@ -176,7 +176,7 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
         && st.shipout.selector == Selector::TermAndLog
     {
         st.shipout.selector = Selector::TermOnly;
-        crate::output::print_nl(st, "(see the transcript file for additional information)");
+        crate::print::print_nl(st, "(see the transcript file for additional information)");
         st.shipout.selector = Selector::TermAndLog;
     }
 
@@ -184,7 +184,7 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
         return Ok(());
     }
     if !st.config.in_initex_mode {
-        crate::output::print_nl(st, "(\\dump is performed only by INITEX)");
+        crate::print::print_nl(st, "(\\dump is performed only by INITEX)");
         return Ok(());
     }
 
@@ -206,7 +206,7 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
         st.mem.delete_glue_ref(spec);
     }
 
-    crate::format_io::store_fmt_file(st)
+    crate::files::format_io::store_fmt_file(st)
 }
 
 fn initialize_more_variables(st: &mut EngineState) {
@@ -224,13 +224,13 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.errors.use_err_help = false;
 
     st.input.nest.reset();
-    st.input.cur_list.mode = crate::mode::Mode::vertical(false);
+    st.input.cur_list.mode = crate::base::mode::Mode::vertical(false);
     st.input.cur_list.head = CONTRIB_HEAD;
     st.input.cur_list.tail = CONTRIB_HEAD;
     st.input.cur_list.e_tex_aux = None;
     st.input.cur_list.mode_line = 0;
     st.input.cur_list.prev_graf = 0;
-    st.scanner.shown_mode = crate::mode::ModeName::NoMode;
+    st.scanner.shown_mode = crate::base::mode::ModeName::NoMode;
     st.shipout.page_contents = crate::state::PageContents::Empty;
     st.shipout.page_tail = Some(PAGE_HEAD);
     st.shipout.last_glue = None;
@@ -257,7 +257,7 @@ fn initialize_more_variables(st: &mut EngineState) {
 
     st.input.read_open = [CLOSED; 17];
 
-    st.scanner.conds = crate::cond_stack::CondStack::default();
+    st.scanner.conds = crate::scanning::cond_stack::CondStack::default();
     st.scanner.if_limit = FiOrElseCode::Normal.into();
     st.scanner.cur_if = IfTest::default();
     st.scanner.if_line = 0;
@@ -345,7 +345,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     eqtb.meanings.fill(Command::UndefinedCs, LEVEL_ZERO);
 
     // One reference per glue table entry, as WEB's `local_base - glue_base`.
-    let entries = i32::try_from(crate::eqtb::GlueLoc::LEN).unwrap_or(i32::MAX);
+    let entries = i32::try_from(crate::tables::eqtb::GlueLoc::LEN).unwrap_or(i32::MAX);
     let zero_glue_refs = st.mem[ZERO_GLUE].ref_count + entries;
     st.mem[ZERO_GLUE].ref_count = zero_glue_refs;
 
@@ -394,14 +394,14 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     eqtb.set_int_par(IntPar::ShowStream, -1);
 
     eqtb.prim_used = PrimNum::LAST;
-    eqtb.hash_used = crate::cs::NameSlot::BUCKETS_END;
+    eqtb.hash_used = crate::tables::cs::NameSlot::BUCKETS_END;
     eqtb.hash_high = 0;
     eqtb.cs_count = 0;
 
     let hyph = &mut st.hyph;
     hyph.trie_op_hash_array[..=(2 * TRIE_OP_SIZE) as usize].fill(0);
-    hyph.trie_used[..=BIGGEST_LANG as usize].fill(crate::hyphenation::TrieOp::NONE.raw());
-    hyph.max_op_used = crate::hyphenation::TrieOp::NONE.raw();
+    hyph.trie_used[..=BIGGEST_LANG as usize].fill(crate::build::hyphenation::TrieOp::NONE.raw());
+    hyph.max_op_used = crate::build::hyphenation::TrieOp::NONE.raw();
     hyph.trie_op_ptr = 0;
     hyph.trie_not_ready = true;
 
@@ -419,12 +419,12 @@ fn set_frozen_text(st: &mut EngineState, p: CsId, text: &str) -> Result<(), Abor
 }
 
 fn initialize_primitives(st: &mut EngineState) -> Result<(), Abort> {
-    use crate::primitives::PrimInit;
+    use crate::tables::primitives::PrimInit;
 
     st.eqtb.no_new_control_sequence = false;
     st.input.first = BufPos::ZERO;
 
-    for prim in crate::primitives::PRIMITIVES {
+    for prim in crate::tables::primitives::PRIMITIVES {
         let cs = primitive(st, prim.name, prim.cmd, prim.chr)?;
         match prim.init {
             PrimInit::None => {}
@@ -486,7 +486,7 @@ pub(crate) fn run_engine(
     input_file_name: &str,
     build_date: libc::time_t,
 ) -> i32 {
-    let _bridge = crate::bridge::enter(api);
+    let _bridge = crate::ffi::bridge::enter(api);
 
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         run_engine_inner(config, dump_name, input_file_name, build_date)
@@ -499,7 +499,7 @@ pub(crate) fn run_engine(
                 .copied()
                 .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
                 .unwrap_or("internal engine panic");
-            crate::bridge::set_error_message(msg);
+            crate::ffi::bridge::set_error_message(msg);
             HISTORY_FATAL_ERROR
         }
     }
@@ -549,8 +549,8 @@ impl FontState {
         self.font_glue = PerFont::filled(len, None);
         self.hyphen_char = PerFont::filled(len, 0);
         self.skew_char = PerFont::filled(len, 0);
-        self.metrics = PerFont::filled(len, crate::tfm::FontMetrics::default());
-        self.params = PerFont::filled(len, crate::tfm::FontParams::default());
+        self.metrics = PerFont::filled(len, crate::fonts::tfm::FontMetrics::default());
+        self.params = PerFont::filled(len, crate::fonts::tfm::FontParams::default());
     }
 }
 
@@ -604,8 +604,8 @@ pub(crate) fn initialize_engine(
     st.hyph.hyph_link = vec![0; hyph_words];
 
     if st.config.in_initex_mode {
-        st.mem.data = zeroed_vec(crate::mem::RESERVED_WORDS);
-        st.mem.free = crate::mem::FreeLists::default();
+        st.mem.data = zeroed_vec(crate::memory::mem::RESERVED_WORDS);
+        st.mem.free = crate::memory::mem::FreeLists::default();
 
         st.eqtb.alloc_tables();
         st.strings.str_start = vec![PoolPos::ZERO; st.strings.max_strings.slot() + 1];
@@ -638,7 +638,7 @@ pub(crate) fn initialize_engine(
         bad = 21;
     }
     if bad > 0 {
-        crate::bridge::set_error_message(format!("failed internal consistency check #{bad}"));
+        crate::ffi::bridge::set_error_message(format!("failed internal consistency check #{bad}"));
         return InitOutcome::Terminate(HISTORY_FATAL_ERROR);
     }
 
@@ -659,16 +659,16 @@ pub(crate) fn initialize_engine(
         st.strings.init_pool_ptr = st.strings.pool_ptr;
     }
 
-    crate::pagebuilder::initialize_pagebuilder_variables(st);
+    crate::build::pagebuilder::initialize_pagebuilder_variables(st);
     crate::shipout::initialize_shipout_variables(st);
     if st.config.deterministic_mode {
         st.shipout.epochseconds = build_date as i32;
         st.shipout.microseconds = 0;
     } else {
         (st.shipout.epochseconds, st.shipout.microseconds) =
-            crate::texmfmp::get_seconds_and_micros();
+            crate::ffi::texmfmp::get_seconds_and_micros();
     }
-    crate::texmfmp::init_start_time(st, build_date);
+    crate::ffi::texmfmp::init_start_time(st, build_date);
 
     st.shipout.selector = Selector::TermOnly;
     st.errors.tally = 0;
@@ -708,7 +708,7 @@ pub(crate) fn initialize_engine(
 
     if !st.config.in_initex_mode {
         match load_fmt_file(st, dump_name) {
-            Ok(()) => crate::pgfmath::KnownCs::resolve(st),
+            Ok(()) => crate::scanning::pgfmath::KnownCs::resolve(st),
             Err(a) => return InitOutcome::Terminate(a.into_history(st)),
         }
     }
@@ -723,7 +723,7 @@ pub(crate) fn initialize_engine(
     let (time, day, month, year) = if st.config.in_initex_mode {
         (0, 0, 0, 0)
     } else {
-        crate::texmfmp::get_date_and_time(build_date, st.config.deterministic_mode)
+        crate::ffi::texmfmp::get_date_and_time(build_date, st.config.deterministic_mode)
     };
     st.eqtb.set_int_par(IntPar::Time, time);
     st.eqtb.set_int_par(IntPar::Day, day);
@@ -743,7 +743,7 @@ pub(crate) fn initialize_engine(
         hyph.trie_hash = vec![0; trie_len];
         hyph.trie_taken = vec![false; trie_len];
         hyph.trie_ptr = 0;
-        hyph.hyph_start = crate::hyphenation::TriePtr::NULL;
+        hyph.hyph_start = crate::build::hyphenation::TriePtr::NULL;
 
         st.fonts.alloc_font_arrays();
 
@@ -764,8 +764,8 @@ pub(crate) fn initialize_engine(
         fonts.font_bc[f] = 1;
         fonts.font_ec[f] = 0;
         fonts.font_glue[f] = None;
-        fonts.metrics[f] = crate::tfm::FontMetrics::default();
-        fonts.params[f] = crate::tfm::FontParams::new(vec![Scaled::ZERO; 7]);
+        fonts.metrics[f] = crate::fonts::tfm::FontMetrics::default();
+        fonts.params[f] = crate::fonts::tfm::FontParams::new(vec![Scaled::ZERO; 7]);
     }
 
     st.fonts.font_used = PerFont::filled(st.fonts.font_max.index() + 1, false);
@@ -788,18 +788,18 @@ pub(crate) fn initialize_engine(
     }
 
     pdf_files_init();
-    crate::synctex::synctex_init_command(st);
+    crate::shipout::synctex::synctex_init_command(st);
     InitOutcome::Ready
 }
 
 /// Open, execute, finalize, and release one batch document operation.
 fn run_document_to_end(st: &mut EngineState, input_file_name: &str) -> i32 {
     let result = (|| {
-        crate::io::start_input(st, Some(input_file_name))?;
+        crate::files::io::start_input(st, Some(input_file_name))?;
         st.errors.history = HISTORY_SPOTLESS;
-        crate::main_control::main_control(st)?;
+        crate::build::main_control::main_control(st)?;
         final_cleanup(st)?;
-        crate::io::close_files_and_terminate(st)
+        crate::files::io::close_files_and_terminate(st)
     })();
     if let Err(a) = result {
         return a.into_history(st);
@@ -815,11 +815,11 @@ pub(crate) fn run_resident_document(
     st: &mut EngineState,
     input_file_name: &str,
 ) -> Result<i32, Abort> {
-    crate::io::start_input(st, Some(input_file_name))?;
+    crate::files::io::start_input(st, Some(input_file_name))?;
     st.errors.history = HISTORY_SPOTLESS;
-    crate::main_control::main_control(st)?;
+    crate::build::main_control::main_control(st)?;
     final_cleanup(st)?;
-    crate::io::close_files_and_terminate(st)?;
+    crate::files::io::close_files_and_terminate(st)?;
     Ok(st.errors.history)
 }
 
@@ -828,10 +828,10 @@ pub(crate) fn resume_resident_document(
     st: &mut EngineState,
     resume_pending_command: bool,
 ) -> Result<i32, Abort> {
-    crate::io::reopen_resident_outputs(st)?;
-    crate::main_control::main_control_resume(st, resume_pending_command)?;
+    crate::files::io::reopen_resident_outputs(st)?;
+    crate::build::main_control::main_control_resume(st, resume_pending_command)?;
     final_cleanup(st)?;
-    crate::io::close_files_and_terminate(st)?;
+    crate::files::io::close_files_and_terminate(st)?;
     Ok(st.errors.history)
 }
 
@@ -843,7 +843,7 @@ pub(crate) fn release_operation_inputs(st: &mut EngineState) {
         .iter_mut()
         .chain(&mut st.input.read_file)
     {
-        let _ = crate::io::u_close(std::mem::take(slot));
+        let _ = crate::files::io::u_close(std::mem::take(slot));
     }
 }
 
@@ -861,7 +861,7 @@ fn initial_random_seed(
 }
 
 pub(crate) fn cleanup(st: &mut EngineState) {
-    crate::journal::disarm(st);
+    crate::preview::journal::disarm(st);
     pdf_files_close();
     st.shipout.dvi.release_buffer();
 
@@ -874,7 +874,7 @@ pub(crate) fn cleanup(st: &mut EngineState) {
 
     for i in 1..=st.input.in_open {
         // Teardown has begun, so a serious close error is absorbed.
-        let _ = crate::io::u_close(std::mem::take(&mut st.input.input_file[i]));
+        let _ = crate::files::io::u_close(std::mem::take(&mut st.input.input_file[i]));
     }
     for slot in st.input.read_file.iter_mut() {
         *slot = crate::state::InputSlot::Empty;

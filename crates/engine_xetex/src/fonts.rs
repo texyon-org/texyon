@@ -1,32 +1,36 @@
 //! Font loading: the TFM reader, native (OpenType/Graphite) font loading, native
 //! character nodes and the TFM `char_info` accessors.
 
-use crate::consts::{EMPTY_STRING, INVALID_HANDLE, NULL_FONT, TOO_BIG_CHAR};
-use crate::cs::CsId;
-use crate::ext::{
+pub(crate) mod ext;
+pub(crate) mod ot_math;
+pub(crate) mod tfm;
+
+use crate::base::consts::{EMPTY_STRING, INVALID_HANDLE, NULL_FONT, TOO_BIG_CHAR};
+use crate::base::params::IntPar;
+use crate::base::units::{FontId, Scaled, StrNumber};
+use crate::files::io::{FileName, ScannedName, open_input_file};
+use crate::fonts::ext::{
     NativeFontMetrics, aat_get_font_metrics, apply_tfm_font_mapping, find_native_font,
     load_mapping_file, ot_get_font_metrics, split_tfm_font_mapping,
 };
-use crate::io::{FileName, ScannedName, open_input_file};
-use crate::node::{NativeWordNode, NodePtr, WhatsitSubtype};
-use crate::output::{
+use crate::fonts::tfm::{ExtIdx, FontMetrics, FontParams, TfmError, TfmMetrics};
+use crate::memory::node::{NativeWordNode, NodePtr, WhatsitSubtype};
+use crate::print::{
     CsName, TexPrint, begin_diagnostic, char_warning, end_diagnostic, print, print_char, print_int,
     print_nl, print_scaled,
 };
-use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, FontState, MemState};
-use crate::tfm::{ExtIdx, FontMetrics, FontParams, TfmError, TfmMetrics};
-use crate::units::{FontId, Scaled, StrNumber};
+use crate::tables::cs::CsId;
 
-use crate::bridge::FileFormat;
-use crate::errors::Abort;
-use crate::errors::OrConfusion;
+use crate::ffi::bridge::FileFormat;
+use crate::print::errors::Abort;
+use crate::print::errors::OrConfusion;
 
-use crate::ext::loaded_font_design_size;
+use crate::fonts::ext::loaded_font_design_size;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-crate::codes::code_enum! {
+crate::base::codes::code_enum! {
     /// The edge of a line a character protrudes into.
     #[derive(PartialOrd, Ord)]
     pub(crate) enum Side: u16 {
@@ -68,7 +72,7 @@ pub(crate) const X_HEIGHT_CODE: i32 = 5;
 pub(crate) const QUAD_CODE: i32 = 6;
 pub(crate) const EXTRA_SPACE_CODE: i32 = 7;
 
-pub(crate) use crate::tfm::{
+pub(crate) use crate::fonts::tfm::{
     CharInfo, CharTag, ExtRecipe, LigKernAction, LigKernIdx, LigKernStep, LigOp,
 };
 
@@ -271,7 +275,7 @@ impl MemState {
                 Ok(w)
             }
             NativeCharSrc::Single(c) => {
-                let (units, n) = crate::utf8::utf16_units(c);
+                let (units, n) = crate::base::utf8::utf16_units(c);
                 let w = self.new_native_word(f, n as i32, WhatsitSubtype::NativeWord)?;
                 self.entries_mut(w).copy_from_slice(&units[..n]);
                 Ok(w)
@@ -296,7 +300,7 @@ pub(crate) fn new_native_character(
     c: u32,
 ) -> Result<NodePtr<NativeWordNode>, Abort> {
     let src = if let Some(map) = st.fonts.font_mapping[f].clone() {
-        let (units, n) = crate::utf8::utf16_units(c);
+        let (units, n) = crate::base::utf8::utf16_units(c);
         if st.strings.pool_ptr + n as i32 > st.strings.pool_size {
             return Err(st.strings.pool_overflow());
         }
@@ -346,14 +350,17 @@ impl FontSize {
     pub(crate) const DESIGN: FontSize = FontSize::Scaled(1000);
 
     /// The size for a font designed at `design`.
-    pub(crate) fn of_design(self, design: Scaled) -> crate::scaled_math::Divided<Scaled, i32> {
+    pub(crate) fn of_design(
+        self,
+        design: Scaled,
+    ) -> crate::base::scaled_math::Divided<Scaled, i32> {
         match self {
-            FontSize::At(s) => crate::scaled_math::Divided {
+            FontSize::At(s) => crate::base::scaled_math::Divided {
                 quotient: s,
                 remainder: 0,
                 overflowed: false,
             },
-            FontSize::Scaled(m) => crate::scaled_math::xn_over_d(design, m, 1000),
+            FontSize::Scaled(m) => crate::base::scaled_math::xn_over_d(design, m, 1000),
         }
     }
 
@@ -489,9 +496,9 @@ pub(crate) fn read_font_info(
         let room = |words: i32| {
             fonts.font_ptr != fonts.font_max && fonts.fmem_ptr + words <= fonts.font_mem_size
         };
-        let parse = crate::tfm::read_tfm(tfm_file, s, room, &mut too_big);
+        let parse = crate::fonts::tfm::read_tfm(tfm_file, s, room, &mut too_big);
         if too_big {
-            crate::errors::error(
+            crate::print::errors::error(
                 st,
                 (font, " scaled to 2048pt or higher"),
                 &["I will ignore the scaling factor."],
@@ -521,7 +528,7 @@ pub(crate) fn read_font_info(
         } else {
             " not loadable: Metric (TFM) file or installed font not found"
         };
-        crate::errors::error(
+        crate::print::errors::error(
             st,
             (font, reason),
             &[
@@ -534,7 +541,7 @@ pub(crate) fn read_font_info(
         )?;
     }
 
-    if file_opened && crate::io::input_close(tfm_file) {
+    if file_opened && crate::files::io::input_close(tfm_file) {
         return Err(Abort::Internal(
             "serious internal error closing the font metric file",
         ));
@@ -559,7 +566,7 @@ impl FontState {
     fn install_tfm(
         &mut self,
         eqtb: &EqtbState,
-        tfm: crate::tfm::Tfm,
+        tfm: crate::fonts::tfm::Tfm,
         nom: StrNumber,
         aire: StrNumber,
     ) -> FontId {
@@ -668,7 +675,7 @@ fn load_native_font(st: &mut EngineState, font: FontSpec, name: &[u8]) -> Result
 
     if st.fonts.font_ptr == st.fonts.font_max || st.fonts.fmem_ptr + words > st.fonts.font_mem_size
     {
-        crate::errors::error(
+        crate::print::errors::error(
             st,
             (font, " not loaded: Not enough room left"),
             &[

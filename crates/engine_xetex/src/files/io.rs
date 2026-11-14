@@ -1,0 +1,1210 @@
+//! Low-level input and output: encoded line reading, file names, and the
+//! log and input-file lifecycle.
+
+use crate::base::consts::{BIGGEST_USV, CLOSED, EMPTY_STRING, INVALID_HANDLE, JUST_OPEN};
+use crate::base::params::IntPar;
+use crate::base::units::{BufPos, StrNumber};
+use crate::base::utf8::next_utf8_char;
+use crate::ffi::teckit_icu::FontMappingHandle;
+use crate::print::TexPrint;
+use crate::scanning::input::NEW_LINE;
+use crate::state::{EngineState, InputName, Selector};
+use texyon_bridge_core::EOF;
+
+use crate::base::cmd::Cmd;
+use crate::ffi::bridge::{
+    FileFormat, input_getc, input_open, input_open_primary, input_ungetc, last_input_abspath,
+    output_close, output_flush, output_open,
+};
+pub(crate) use crate::ffi::bridge::{input_close, input_seek};
+use crate::print::errors::Abort;
+
+pub(crate) const AUTO: i32 = 0;
+pub(crate) const UTF8: i32 = 1;
+pub(crate) const UTF16BE: i32 = 2;
+pub(crate) const UTF16LE: i32 = 3;
+pub(crate) const RAW: i32 = 4;
+pub(crate) const ICUMAPPING: i32 = 5;
+
+#[cfg(target_endian = "little")]
+const NATIVE_UTF32: u16 = 6;
+#[cfg(target_endian = "big")]
+const NATIVE_UTF32: u16 = 5;
+const K_FORM_NFC: u16 = 0x0100;
+const K_FORM_NFD: u16 = 0x0200;
+pub(crate) const K_STATUS_NO_ERROR: libc::c_long = 0;
+
+/// The ICU `UConverterType` of host-endian UTF-32.
+#[cfg(target_endian = "little")]
+const UCNV_UTF32_NATIVE_ENDIAN: libc::c_int = 8;
+#[cfg(target_endian = "big")]
+const UCNV_UTF32_NATIVE_ENDIAN: libc::c_int = 7;
+
+/// An open input file with its encoding state. The layout is that of the
+/// C `UFILE`, which keeps the checkpoint format readable.
+#[repr(C)]
+pub(crate) struct UFile {
+    pub handle: usize,
+    pub saved_char: i64,
+    pub skip_next_lf: i16,
+    pub encoding_mode: i16,
+    pub conversion_data: *mut libc::c_void,
+}
+
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(
+    std::mem::size_of::<UFile>() == 32,
+    "UFile size mismatch with C UFILE"
+);
+
+impl UFile {
+    /// Closes the ICU converter this file owns, if any.
+    fn close_converter(&mut self) {
+        if self.encoding_mode == ICUMAPPING as i16 && !self.conversion_data.is_null() {
+            // SAFETY: `set_input_file_encoding` installed this converter for
+            // this file alone, and the pointer is cleared after closing.
+            unsafe { ucnv_close(self.conversion_data) };
+        }
+        self.conversion_data = std::ptr::null_mut();
+    }
+}
+
+impl Drop for UFile {
+    fn drop(&mut self) {
+        self.close_converter();
+    }
+}
+
+/// An input or `\read` stream slot.
+#[derive(Clone, Copy)]
+pub(crate) enum FileSlot {
+    Input(usize),
+    Read(usize),
+}
+
+impl FileSlot {
+    fn get(self, st: &mut EngineState) -> &mut crate::state::InputSlot {
+        match self {
+            FileSlot::Input(idx) => &mut st.input.input_file[idx],
+            FileSlot::Read(idx) => &mut st.input.read_file[idx],
+        }
+    }
+}
+
+/// Runs `f` on the file in `slot`, which is detached from the state for the
+/// call. The terminal gets a stand-in with no handle, an empty slot `None`.
+pub(crate) fn with_slot_file<R>(
+    st: &mut EngineState,
+    slot: FileSlot,
+    f: impl FnOnce(&mut EngineState, &mut UFile) -> R,
+) -> Option<R> {
+    let mut taken = std::mem::take(slot.get(st));
+    let result = match &mut taken {
+        crate::state::InputSlot::Empty => None,
+        crate::state::InputSlot::Terminal => Some(f(st, &mut UFile::terminal())),
+        crate::state::InputSlot::Open(file) => Some(f(st, file)),
+    };
+    *slot.get(st) = taken;
+    result
+}
+
+/// `input_line` on the file in `slot`, which must not be empty.
+pub(crate) fn input_slot_line(st: &mut EngineState, slot: FileSlot) -> Result<libc::c_int, Abort> {
+    with_slot_file(st, slot, input_line).expect("input_line on an empty input slot")
+}
+
+impl UFile {
+    fn terminal() -> UFile {
+        UFile {
+            handle: INVALID_HANDLE,
+            saved_char: -1,
+            skip_next_lf: 0,
+            encoding_mode: UTF8 as i16,
+            conversion_data: std::ptr::null_mut(),
+        }
+    }
+}
+
+// ICU checks the incoming UErrorCode, so it must be zeroed before each call.
+unsafe extern "C" {
+    #[link_name = concat!("ucnv_open", env!("ICU_VERSION_SUFFIX"))]
+    fn ucnv_open(converter_name: *const libc::c_char, err: *mut i32) -> *mut libc::c_void;
+    #[link_name = concat!("ucnv_close", env!("ICU_VERSION_SUFFIX"))]
+    fn ucnv_close(converter: *mut libc::c_void);
+    #[link_name = concat!("ucnv_toAlgorithmic", env!("ICU_VERSION_SUFFIX"))]
+    fn ucnv_toAlgorithmic(
+        algorithmic_type: libc::c_int,
+        cnv: *mut libc::c_void,
+        target: *mut libc::c_char,
+        target_capacity: i32,
+        source: *const libc::c_char,
+        source_length: i32,
+        err: *mut i32,
+    ) -> i32;
+}
+
+/// Opens the ICU converter `name`, or returns ICU's error code.
+fn icu_converter_open(name: &[u8]) -> Result<*mut libc::c_void, libc::c_int> {
+    let mut err: i32 = 0;
+    let cnv = crate::ffi::teckit_icu::with_c_str(name, |name| {
+        // SAFETY: `name` is NUL-terminated and `err` is a valid out-parameter.
+        unsafe { ucnv_open(name, &mut err) }
+    });
+    if cnv.is_null() { Err(err) } else { Ok(cnv) }
+}
+
+/// Whether ICU knows a converter `name`, or ICU's error code.
+pub(crate) fn icu_converter_exists(name: &[u8]) -> Result<(), libc::c_int> {
+    let cnv = icu_converter_open(name)?;
+    // SAFETY: `cnv` was just opened and is not used again.
+    unsafe { ucnv_close(cnv) };
+    Ok(())
+}
+
+fn utf32_bytes(units: &[u32]) -> &[u8] {
+    // SAFETY: `u32` has no padding, so the view covers initialised bytes.
+    unsafe { std::slice::from_raw_parts(units.as_ptr().cast(), std::mem::size_of_val(units)) }
+}
+
+/// The bytes of `units`, for converters that write host-endian UTF-32 into them.
+fn utf32_bytes_mut<T: Utf32Unit>(units: &mut [T]) -> &mut [u8] {
+    // SAFETY: `T` is a 4-byte integer, so every byte pattern is a valid value
+    // and the byte view covers exactly the same memory.
+    unsafe {
+        std::slice::from_raw_parts_mut(units.as_mut_ptr().cast(), std::mem::size_of_val(units))
+    }
+}
+
+trait Utf32Unit {}
+impl Utf32Unit for i32 {}
+impl Utf32Unit for u32 {}
+
+/// Converts `source` with `cnv` to host-endian UTF-32 in `target`, returning
+/// the byte count and the ICU error code.
+fn icu_to_utf32(cnv: *mut libc::c_void, target: &mut [u8], source: &[u8]) -> (i32, libc::c_int) {
+    let mut err: i32 = 0;
+    // SAFETY: `cnv` is the open converter of an input file, both buffers are
+    // valid for the lengths passed and `err` is a valid out-parameter.
+    let len = unsafe {
+        ucnv_toAlgorithmic(
+            UCNV_UTF32_NATIVE_ENDIAN,
+            cnv,
+            target.as_mut_ptr().cast(),
+            target.len() as i32,
+            source.as_ptr().cast(),
+            source.len() as i32,
+            &mut err,
+        )
+    };
+    (len, err)
+}
+
+/// Where an opened input file was found.
+pub(crate) struct FoundInput {
+    /// The path plus the extension the bridge added, as TeX Live prints it.
+    pub name: Vec<u8>,
+    pub abspath: Vec<u8>,
+}
+
+/// Opens input `path`. `None` means it was not found.
+pub(crate) fn open_input_file(
+    st: &mut EngineState,
+    path: &[u8],
+    filefmt: FileFormat,
+) -> Option<(usize, FoundInput)> {
+    let handle = if filefmt == FileFormat::TexyonPrimary {
+        input_open_primary()
+    } else if path.first() == Some(&b'|') {
+        // TeX Live without shell escape takes the name as a file, which is not found.
+        crate::print::diagnostic::warn_host(st, "TeXyoN cannot read from shell commands");
+        return None;
+    } else {
+        input_open(path, filefmt, false)
+    };
+
+    if handle == INVALID_HANDLE {
+        return None;
+    }
+
+    let name = if filefmt == FileFormat::TexyonPrimary {
+        path.to_vec()
+    } else {
+        last_found_name(path)
+    };
+    let abspath = last_input_abspath();
+    Some((handle, FoundInput { name, abspath }))
+}
+
+/// The name the last input asked as `path` was found under, as kpathsea returns it.
+pub(crate) fn last_found_name(path: &[u8]) -> Vec<u8> {
+    crate::ffi::bridge::last_input_found().name(path)
+}
+
+/// Opens and configures an input file. `None` means the bridge open failed.
+pub(crate) fn u_open_in(
+    st: &mut EngineState,
+    path: &[u8],
+    filefmt: FileFormat,
+    mut mode: i32,
+    encoding_data: i32,
+) -> Result<Option<(Box<UFile>, FoundInput)>, Abort> {
+    let Some((handle, found)) = open_input_file(st, path, filefmt) else {
+        return Ok(None);
+    };
+
+    let mut f = Box::new(UFile {
+        handle,
+        saved_char: -1,
+        skip_next_lf: 0,
+        encoding_mode: 0,
+        conversion_data: std::ptr::null_mut(),
+    });
+
+    if mode == AUTO {
+        let b1 = input_getc(f.handle);
+        let b2 = input_getc(f.handle);
+
+        if b1 == 0xfe && b2 == 0xff {
+            mode = UTF16BE;
+        } else if b2 == 0xfe && b1 == 0xff {
+            mode = UTF16LE;
+        } else if b1 == 0 && b2 != 0 {
+            mode = UTF16BE;
+            input_seek(f.handle, 0);
+        } else if b2 == 0 && b1 != 0 {
+            mode = UTF16LE;
+            input_seek(f.handle, 0);
+        } else if b1 == 0xEF && b2 == 0xBB && input_getc(f.handle) == 0xBF {
+            mode = UTF8;
+        }
+
+        if mode == AUTO {
+            input_seek(f.handle, 0);
+            mode = UTF8;
+        }
+    }
+
+    set_input_file_encoding(st, &mut f, mode, encoding_data)?;
+    Ok(Some((f, found)))
+}
+
+/// Sets the encoding mode, and the ICU converter if any, of an open file.
+pub(crate) fn set_input_file_encoding(
+    st: &mut EngineState,
+    f: &mut UFile,
+    mode: i32,
+    encoding_data: i32,
+) -> Result<(), Abort> {
+    f.close_converter();
+
+    match mode {
+        UTF8 | UTF16BE | UTF16LE | RAW => {
+            f.encoding_mode = mode as i16;
+        }
+        ICUMAPPING => {
+            let name = st
+                .strings
+                .texstring_bytes(StrNumber::from_raw(encoding_data));
+            match icu_converter_open(&name) {
+                Err(err) => {
+                    crate::print::begin_diagnostic(st);
+                    crate::print::print_nl(st, b'E');
+                    crate::print::print(st, "rror ");
+                    crate::print::print_int(st, err);
+                    crate::print::print(st, " creating Unicode converter for `");
+                    crate::print::print(st, &name[..]);
+                    crate::print::print(st, "'; reading as raw bytes");
+                    crate::print::end_diagnostic(st, true);
+                    f.encoding_mode = RAW as i16;
+                }
+                Ok(cnv) => {
+                    f.encoding_mode = ICUMAPPING as i16;
+                    f.conversion_data = cnv;
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Process-lifetime staging buffers and normalizers of `input_line`.
+#[derive(Default)]
+struct LineScratch {
+    bytes: Vec<u8>,
+    utf32: Vec<u32>,
+    normalizers: [Option<FontMappingHandle>; 2],
+}
+
+thread_local! {
+    static LINE_SCRATCH: std::cell::RefCell<LineScratch> = Default::default();
+}
+
+fn is_line_end(c: i32) -> bool {
+    c == EOF || c == i32::from(b'\n') || c == i32::from(b'\r')
+}
+
+/// An EOF that is not an interrupted read.
+fn is_true_eof(c: i32) -> bool {
+    c == EOF && std::io::Error::last_os_error().raw_os_error() != Some(libc::EINTR)
+}
+
+fn line_too_long() -> Abort {
+    Abort::Internal("unable to read an entire line (buffer too small)")
+}
+
+fn conversion_error(st: &mut EngineState, errcode: i32) {
+    crate::print::begin_diagnostic(st);
+    crate::print::print_nl(st, b'U');
+    crate::print::print(st, "nicode conversion failed (ICU error code = ");
+    crate::print::print_int(st, errcode);
+    crate::print::print(st, ") discarding any remaining text");
+    crate::print::end_diagnostic(st, true);
+}
+
+/// Normalizes the UTF-32 `units` into `buffer[first..]` (NFC for `norm` 1,
+/// NFD for 2) and sets `last`.
+fn apply_normalization(
+    st: &mut EngineState,
+    normalizers: &mut [Option<FontMappingHandle>; 2],
+    units: &[u32],
+    norm: i32,
+) -> Result<(), Abort> {
+    let converter = match &mut normalizers[(norm - 1) as usize] {
+        Some(converter) => converter,
+        slot => {
+            let target_form = NATIVE_UTF32 | if norm == 1 { K_FORM_NFC } else { K_FORM_NFD };
+            match FontMappingHandle::new(None, true, NATIVE_UTF32, target_form) {
+                (Some(handle), K_STATUS_NO_ERROR) => slot.insert(handle),
+                _ => return Err(Abort::Internal("failed to create normalizer")),
+            }
+        }
+    };
+
+    let first = st.input.first.index();
+    let out = utf32_bytes_mut(&mut st.input.buffer.0[first..st.input.buf_size.index()]);
+    let (status, out_used) = converter.convert(utf32_bytes(units), out);
+    if status != K_STATUS_NO_ERROR {
+        return Err(line_too_long());
+    }
+    st.input.last = st.input.first + (out_used / 4) as i32;
+    Ok(())
+}
+
+/// Reads one line of `f` into `buffer[first..last]`, decoding and optionally
+/// normalizing it. Returns 0 at end of file.
+pub(crate) fn input_line(st: &mut EngineState, f: &mut UFile) -> Result<libc::c_int, Abort> {
+    LINE_SCRATCH.with(|scratch| input_line_with(st, f, &mut scratch.borrow_mut()))
+}
+
+fn input_line_with(
+    st: &mut EngineState,
+    f: &mut UFile,
+    scratch: &mut LineScratch,
+) -> Result<libc::c_int, Abort> {
+    let norm = if st.eqtb.ints.values().is_empty() {
+        0
+    } else {
+        st.eqtb.int_par(IntPar::XetexInputNormalization)
+    };
+
+    if f.handle == INVALID_HANDLE {
+        return Err(Abort::Internal(
+            "reads from synthetic \"terminal\" file #0 should never happen",
+        ));
+    }
+
+    st.input.last = st.input.first;
+    let buf_size = st.input.buf_size.index();
+    if norm == 1 || norm == 2 {
+        scratch.utf32.resize(buf_size, 0);
+    }
+
+    let mut i;
+    if i32::from(f.encoding_mode) == ICUMAPPING {
+        scratch.bytes.resize(buf_size + 1, 0);
+        let mut bytes_read = 0;
+
+        i = input_getc(f.handle);
+        if f.skip_next_lf != 0 {
+            f.skip_next_lf = 0;
+            if i == b'\n' as libc::c_int {
+                i = input_getc(f.handle);
+            }
+        }
+
+        if !is_line_end(i) {
+            scratch.bytes[bytes_read] = i as u8;
+            bytes_read += 1;
+            while bytes_read < buf_size {
+                i = input_getc(f.handle);
+                if is_line_end(i) {
+                    break;
+                }
+                scratch.bytes[bytes_read] = i as u8;
+                bytes_read += 1;
+            }
+        }
+
+        if is_true_eof(i) && bytes_read == 0 {
+            return Ok(0);
+        }
+        if !is_line_end(i) {
+            return Err(line_too_long());
+        }
+
+        let cnv = f.conversion_data;
+        let source = &scratch.bytes[..bytes_read];
+        if norm == 1 || norm == 2 {
+            let (len, error_code) = icu_to_utf32(cnv, utf32_bytes_mut(&mut scratch.utf32), source);
+            if error_code != 0 {
+                conversion_error(st, error_code);
+                return Ok(0);
+            }
+            let units = &scratch.utf32[..(len / 4) as usize];
+            apply_normalization(st, &mut scratch.normalizers, units, norm)?;
+        } else {
+            let first = st.input.first.index();
+            let out = utf32_bytes_mut(&mut st.input.buffer.0[first..buf_size]);
+            let (len, error_code) = icu_to_utf32(cnv, out, source);
+            if error_code != 0 {
+                conversion_error(st, error_code);
+                return Ok(0);
+            }
+            st.input.last = st.input.first + len / 4;
+        }
+    } else {
+        i = get_uni_c(st, f)?;
+        if f.skip_next_lf != 0 {
+            f.skip_next_lf = 0;
+            if i == i32::from(b'\n') {
+                i = get_uni_c(st, f)?;
+            }
+        }
+
+        if norm == 1 || norm == 2 {
+            let mut len = 0;
+            if !is_line_end(i) {
+                scratch.utf32[len] = i as u32;
+                len += 1;
+                while len < buf_size {
+                    i = get_uni_c(st, f)?;
+                    if is_line_end(i) {
+                        break;
+                    }
+                    scratch.utf32[len] = i as u32;
+                    len += 1;
+                }
+            }
+
+            if is_true_eof(i) && len == 0 {
+                return Ok(0);
+            }
+            if !is_line_end(i) {
+                return Err(line_too_long());
+            }
+            apply_normalization(st, &mut scratch.normalizers, &scratch.utf32[..len], norm)?;
+        } else {
+            if st.input.last < st.input.buf_size && !is_line_end(i) {
+                st.input.buffer[st.input.last] = i;
+                st.input.last += 1;
+                while st.input.last < st.input.buf_size {
+                    i = get_uni_c(st, f)?;
+                    if is_line_end(i) {
+                        break;
+                    }
+                    st.input.buffer[st.input.last] = i;
+                    st.input.last += 1;
+                }
+            }
+
+            if is_true_eof(i) && st.input.last == st.input.first {
+                return Ok(0);
+            }
+            if !is_line_end(i) {
+                return Err(line_too_long());
+            }
+        }
+    }
+
+    if i == i32::from(b'\r') {
+        f.skip_next_lf = 1;
+    }
+
+    st.input.buffer[st.input.last] = i32::from(b' ');
+    if st.input.last >= st.input.max_buf_stack {
+        st.input.max_buf_stack = st.input.last;
+    }
+
+    while st.input.last > st.input.first {
+        let c = st.input.buffer[st.input.last - 1];
+        if c != i32::from(b' ') && c != i32::from(b'\r') && c != i32::from(b'\n') {
+            break;
+        }
+        st.input.last -= 1;
+    }
+
+    Ok(1)
+}
+
+/// The only abort of [`get_uni_c`]. Being fieldless keeps the per-character
+/// `Result` in registers on this hot path.
+pub(crate) struct InvalidInputMode;
+
+impl From<InvalidInputMode> for Abort {
+    fn from(_: InvalidInputMode) -> Self {
+        Abort::Internal("internal error; file input mode is invalid")
+    }
+}
+
+/// Reads one code point from `f` in its encoding mode.
+pub(crate) fn get_uni_c(
+    st: &mut EngineState,
+    f: &mut UFile,
+) -> Result<libc::c_int, InvalidInputMode> {
+    if f.saved_char != -1 {
+        let rval = f.saved_char as i32;
+        f.saved_char = -1;
+        return Ok(rval);
+    }
+
+    let handle = f.handle;
+    let rval = match i32::from(f.encoding_mode) {
+        UTF8 => {
+            let mut rval = input_getc(handle);
+            if rval != EOF {
+                let extra_bytes = crate::base::utf8::BYTES_FROM_UTF8[rval as usize] as usize;
+                if extra_bytes >= 4 {
+                    crate::print::bad_utf8_warning(st);
+                    return Ok(0xFFFD);
+                }
+                for _ in 0..extra_bytes {
+                    let c = input_getc(handle);
+                    if !(0x80..0xC0).contains(&c) {
+                        if c != EOF {
+                            input_ungetc(handle, c);
+                        }
+                        crate::print::bad_utf8_warning(st);
+                        return Ok(0xFFFD);
+                    }
+                    rval = (rval << 6) + c;
+                }
+                let offset = crate::base::utf8::OFFSETS_FROM_UTF8[extra_bytes];
+                rval = (rval as u32).wrapping_sub(offset) as i32;
+                if !(0..=0x10ffff).contains(&rval) {
+                    crate::print::bad_utf8_warning(st);
+                    return Ok(0xFFFD);
+                }
+            }
+            rval
+        }
+
+        mode @ (UTF16BE | UTF16LE) => {
+            let unit = |first: i32| {
+                let second = input_getc(handle);
+                if mode == UTF16BE {
+                    (first << 8) + second
+                } else {
+                    first + (second << 8)
+                }
+            };
+            let mut rval = input_getc(handle);
+            if rval != EOF {
+                rval = unit(rval);
+                if (0xd800..=0xdbff).contains(&rval) {
+                    let lo = unit(input_getc(handle));
+                    if (0xdc00..=0xdfff).contains(&lo) {
+                        rval = 0x10000 + (rval - 0xd800) * 0x400 + (lo - 0xdc00);
+                    } else {
+                        rval = 0xfffd;
+                        f.saved_char = i64::from(lo);
+                    }
+                } else if (0xdc00..=0xdfff).contains(&rval) {
+                    rval = 0xfffd;
+                }
+            }
+            rval
+        }
+
+        RAW => input_getc(handle),
+
+        _ => return Err(InvalidInputMode),
+    };
+
+    Ok(rval)
+}
+
+/// Closes an input slot. Returns `true` on a serious internal close error, in
+/// which case the converter and the file are leaked like the old abort did.
+#[must_use]
+pub fn u_close(slot: crate::state::InputSlot) -> bool {
+    let crate::state::InputSlot::Open(f) = slot else {
+        return false;
+    };
+
+    if f.handle == INVALID_HANDLE {
+        std::mem::forget(f);
+        return false;
+    }
+
+    if input_close(f.handle) {
+        std::mem::forget(f);
+        return true;
+    }
+
+    drop(f);
+    false
+}
+
+/// Runs `path` back through the name scanner, giving the name of the file actually opened.
+fn rescan_opened_name(st: &mut EngineState, path: &[u8]) -> Result<FileName, Abort> {
+    scan_whole_name(st, utf16_units(path).into_iter().map(u32::from))
+}
+
+/// The UTF-16 units of UTF-8 `path`, as the pool stores a name.
+fn utf16_units(mut path: &[u8]) -> Vec<u16> {
+    let mut units = Vec::with_capacity(path.len());
+    while !path.is_empty() {
+        let (c, n) = crate::base::utf8::utf16_units(next_utf8_char(&mut path));
+        units.extend_from_slice(&c[..n]);
+    }
+    units
+}
+
+/// `\openin` and `\closein`.
+pub(crate) fn open_or_close(st: &mut EngineState, open: bool) -> Result<(), Abort> {
+    let n = usize::try_from(crate::scanning::scan::scan_four_bit_int(st)?).unwrap_or(0);
+
+    if st.input.read_open[n] != CLOSED {
+        let slot = std::mem::take(&mut st.input.read_file[n]);
+        if u_close(slot) {
+            return Err(Abort::InputClose);
+        }
+        st.input.read_open[n] = CLOSED;
+    }
+
+    if !open {
+        return Ok(());
+    }
+
+    crate::scanning::scan::scan_optional_equals(st)?;
+    let path = scan_name_path(st)?;
+
+    let mode = st.eqtb.int_par(IntPar::XetexDefaultInputMode);
+    let encoding = st.eqtb.int_par(IntPar::XetexDefaultInputEncoding);
+    if let Some((file, _)) = u_open_in(st, &path, FileFormat::Tex, mode, encoding)? {
+        st.input.read_file[n] = crate::state::InputSlot::Open(file);
+        rescan_opened_name(st, &path)?;
+        st.input.read_open[n] = JUST_OPEN;
+    }
+
+    Ok(())
+}
+
+/// A file name from its parts, quoted when it needs to be.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct FileName {
+    pub name: StrNumber,
+    pub area: StrNumber,
+    pub ext: StrNumber,
+}
+
+impl FileName {
+    /// The name as one path: area, name, then extension. Like TeX Live's C
+    /// string of the joined name, it ends at the first NUL.
+    pub(crate) fn path(self, strings: &crate::state::StringsState) -> Vec<u8> {
+        let mut path: Vec<u8> = [self.area, self.name, self.ext]
+            .into_iter()
+            .flat_map(|part| strings.texstring_utf8(part))
+            .collect();
+        if let Some(nul) = path.iter().position(|&b| b == 0) {
+            path.truncate(nul);
+        }
+        path
+    }
+}
+
+impl TexPrint for FileName {
+    fn print_to(&self, st: &mut EngineState) {
+        crate::print::print_file_name(st, self.name, self.area, self.ext);
+    }
+}
+
+/// Whether TeX may write `\openout` file `path`: kpathsea's default `openout_any = p` refuses
+/// absolute names, `..` steps and names starting with a dot, and the directory must exist.
+pub(crate) fn may_write(path: &[u8]) -> bool {
+    let components: Vec<&[u8]> = path.split(|&b| b == b'/').collect();
+    let absolute = path.first() == Some(&b'/') || path.get(1) == Some(&b':');
+    // Only a `./` step may start with a dot.
+    let last = components.len() - 1;
+    let refused = components
+        .iter()
+        .enumerate()
+        .any(|(i, c)| c.first() == Some(&b'.') && !(*c == b"." && i < last));
+    if absolute || refused {
+        return false;
+    }
+    match path.iter().rposition(|&b| b == b'/') {
+        Some(slash) => crate::ffi::bridge::directory_exists(&path[..slash]),
+        None => true,
+    }
+}
+
+/// A file name scanned from the input, with how it was quoted.
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct ScannedName {
+    pub file: FileName,
+    /// Whether a quote appeared, which makes a font name try installed fonts first.
+    pub quoted: bool,
+    /// A quote still open at the end of the name.
+    pub open_quote: Option<u8>,
+}
+
+/// One file name being scanned into the string pool.
+struct NameScan {
+    area_delimiter: i32,
+    ext_delimiter: i32,
+    quoted: bool,
+    quote: Option<u8>,
+    /// Whether an unquoted space ends the name.
+    stop_at_space: bool,
+}
+
+impl NameScan {
+    fn begin_name(stop_at_space: bool) -> Self {
+        Self {
+            area_delimiter: 0,
+            ext_delimiter: 0,
+            quoted: false,
+            quote: None,
+            stop_at_space,
+        }
+    }
+
+    /// Adds code point `c` to the name, `false` at its end.
+    fn more_name(&mut self, st: &mut EngineState, c: u32) -> Result<bool, Abort> {
+        if self.stop_at_space {
+            match self.quote {
+                None if c == u32::from(b' ') => return Ok(false),
+                Some(q) if c == u32::from(q) => {
+                    self.quote = None;
+                    return Ok(true);
+                }
+                None => {
+                    if let Some(q) = b"\"'".iter().copied().find(|&q| c == u32::from(q)) {
+                        self.quote = Some(q);
+                        self.quoted = true;
+                        return Ok(true);
+                    }
+                }
+                Some(_) => {}
+            }
+        }
+        let (units, n) = crate::base::utf8::utf16_units(c);
+        if st.strings.pool_ptr.index() + n > st.strings.pool_size.index() {
+            return Err(st.strings.pool_overflow());
+        }
+        st.strings.append_units(&units[..n]);
+        if c == u32::from(b'/') {
+            self.area_delimiter = st.strings.cur_length();
+            self.ext_delimiter = 0;
+        } else if c == u32::from(b'.') {
+            self.ext_delimiter = st.strings.cur_length();
+        }
+        Ok(true)
+    }
+
+    fn end_name(self, st: &mut EngineState) -> Result<ScannedName, Abort> {
+        if st.strings.str_ptr.offset(3) > st.strings.max_strings {
+            return Err(st.strings.string_overflow());
+        }
+
+        let area_delimiter = self.area_delimiter;
+        let mut area = EMPTY_STRING;
+        if area_delimiter != 0 {
+            let strings = &mut st.strings;
+            area = strings.str_ptr;
+            let start = strings.cur_string_start();
+            strings.str_start[strings.str_ptr.next().slot()] = start + area_delimiter;
+            strings.str_ptr = strings.str_ptr.next();
+            let temp_str = strings.search_string(area);
+            if temp_str > StrNumber::NONE {
+                area = temp_str;
+                let base = strings.str_start[strings.str_ptr.slot()];
+                strings.str_ptr = strings.str_ptr.prev();
+                for j in base.until(strings.pool_ptr) {
+                    strings.str_pool[(j - area_delimiter).index()] = strings.str_pool[j.index()];
+                }
+                strings.pool_ptr -= area_delimiter;
+            }
+        }
+
+        let (name, ext) = if self.ext_delimiter == 0 {
+            (st.strings.slow_make_string()?, EMPTY_STRING)
+        } else {
+            let strings = &mut st.strings;
+            let shift = self.ext_delimiter - area_delimiter - 1;
+            let mut name = strings.str_ptr;
+            let start = strings.cur_string_start();
+            strings.str_start[strings.str_ptr.next().slot()] = start + shift;
+            strings.str_ptr = strings.str_ptr.next();
+
+            strings.make_string()?;
+            strings.str_ptr = strings.str_ptr.prev();
+            let temp_str = strings.search_string(name);
+            if temp_str > StrNumber::NONE {
+                name = temp_str;
+                let base = strings.str_start[strings.str_ptr.slot()];
+                strings.str_ptr = strings.str_ptr.prev();
+                for j in base.until(strings.pool_ptr) {
+                    strings.str_pool[(j - shift).index()] = strings.str_pool[j.index()];
+                }
+                strings.pool_ptr -= shift;
+            }
+            (name, strings.slow_make_string()?)
+        };
+        Ok(ScannedName {
+            file: FileName { name, area, ext },
+            quoted: self.quoted,
+            open_quote: self.quote,
+        })
+    }
+}
+
+/// Scans a whole name that is not delimited by spaces.
+fn scan_whole_name(
+    st: &mut EngineState,
+    chars: impl IntoIterator<Item = u32>,
+) -> Result<FileName, Abort> {
+    let mut scan = NameScan::begin_name(false);
+    for c in chars {
+        scan.more_name(st, c)?;
+    }
+    Ok(scan.end_name(st)?.file)
+}
+
+/// `path` as a pool string, also run through the name scanner as WEB does.
+pub(crate) fn make_name_string(st: &mut EngineState, path: &[u8]) -> Result<StrNumber, Abort> {
+    if st.strings.pool_ptr + path.len() as i32 > st.strings.pool_size
+        || st.strings.str_ptr == st.strings.max_strings
+        || st.strings.cur_length() > 0
+    {
+        return Ok(StrNumber::single_char(i32::from(b'?')));
+    }
+
+    let name16 = utf16_units(path);
+    st.strings.append_units(&name16);
+
+    let result = st.strings.make_string()?;
+    scan_whole_name(st, name16.into_iter().map(u32::from))?;
+    Ok(result)
+}
+
+/// The job name with extension `s`. The extension becomes a pool string, as in WEB.
+pub(crate) fn pack_job_name(st: &mut EngineState, s: &str) -> Result<Vec<u8>, Abort> {
+    let ext = st.strings.make_tex_string(s)?;
+    let file = FileName {
+        name: st.strings.job_name,
+        area: EMPTY_STRING,
+        ext,
+    };
+    Ok(file.path(&st.strings))
+}
+
+/// Opens the transcript and writes its banner.
+pub(crate) fn open_log_file(st: &mut EngineState) -> Result<(), Abort> {
+    let old_setting = st.shipout.selector;
+    if st.strings.job_name == StrNumber::NONE {
+        st.strings.job_name = st.strings.make_tex_string("texput")?;
+    }
+
+    let log_path = pack_job_name(st, ".log")?;
+
+    let handle = output_open(&log_path, false);
+    if handle == INVALID_HANDLE {
+        return Err(Abort::Internal("cannot open log file output"));
+    }
+    st.shipout.log_file = handle;
+    st.shipout.log_bytes = 0;
+    st.shipout.log_resumed_at = None;
+
+    st.strings.texmf_log_name = make_name_string(st, &log_path)?;
+    st.shipout.selector = Selector::LogOnly;
+    st.errors.log_opened = true;
+
+    st.input.input_stack.park(st.input.cur_input);
+
+    crate::print::print_nl(st, "**");
+    let mut l = st.input.input_stack[0].limit;
+    if st.input.buffer[l] == st.eqtb.int_par(IntPar::EndLineChar) {
+        l -= 1;
+    }
+    for k in BufPos::from_raw(1).until(l + 1) {
+        crate::print::print(st, StrNumber::single_char(st.input.buffer[k]));
+    }
+
+    crate::print::print_ln(st);
+    st.shipout.selector = old_setting.with_log();
+    Ok(())
+}
+
+/// Recreates bridge-owned output handles after restoring a resident checkpoint.
+///
+/// Checkpoints keep the logical output state, but bridge handles and
+/// diagnostic pointers are valid only for the operation that created them.
+pub(crate) fn reopen_resident_outputs(st: &mut EngineState) -> Result<(), Abort> {
+    st.diagnostics.resume_after(st.shipout.diagnostics_issued);
+    st.shipout.write_file = [INVALID_HANDLE; 16];
+    st.shipout.log_file = INVALID_HANDLE;
+    st.shipout.dvi.file = INVALID_HANDLE;
+
+    if st.errors.log_opened {
+        let log_path = pack_job_name(st, ".log")?;
+        let handle = output_open(&log_path, false);
+        if handle == INVALID_HANDLE {
+            return Err(Abort::Internal("cannot reopen log file output"));
+        }
+        st.shipout.log_file = handle;
+        st.shipout.log_resumed_at = Some(st.shipout.log_bytes);
+    }
+
+    if st.shipout.output_file_name != StrNumber::NONE {
+        let dvi_path = pack_job_name(st, crate::engine::output_file_extension(st))?;
+        let handle = output_open(&dvi_path, false);
+        if handle == INVALID_HANDLE {
+            return Err(Abort::Internal("cannot reopen XDV file output"));
+        }
+        st.shipout.dvi.file = handle;
+    }
+
+    Ok(())
+}
+
+pub(crate) fn close_files_and_terminate(st: &mut EngineState) -> Result<(), Abort> {
+    crate::scanning::pgfmath::report(st);
+    for k in 0usize..=15 {
+        if st.shipout.write_open[k] {
+            crate::shipout::ensure_write_stream_open(st, k)?;
+            output_close(st.shipout.write_file[k]);
+        }
+    }
+
+    // Routed through the journaling setter so a rewind restores `\newlinechar`.
+    st.eqtb.set_int_par(IntPar::NewLineChar, -1);
+
+    crate::shipout::finalize_dvi_file(st)?;
+    crate::shipout::synctex::synctex_terminate(st);
+
+    if st.errors.log_opened {
+        crate::print::log_putc(st, b'\n');
+        output_close(st.shipout.log_file);
+        st.shipout.selector = st.shipout.selector.without_log();
+        if st.shipout.selector == Selector::TermOnly {
+            crate::print::print_nl(st, "Transcript written on ");
+            crate::print::print(st, st.strings.texmf_log_name);
+            crate::print::print_char(st, b'.');
+        }
+    }
+
+    crate::print::print_ln(st);
+    Ok(())
+}
+
+pub fn init_io(st: &mut EngineState) {
+    let first = st.input.first;
+    st.input.input_file[0] = crate::state::InputSlot::Terminal;
+    st.input.buffer[first] = 0;
+    st.input.last = first;
+    st.input.cur_input.loc = first;
+    st.input.cur_input.limit = first;
+    st.input.first = first + 1;
+}
+
+/// Scans a file name and returns it as one path.
+pub(crate) fn scan_name_path(st: &mut EngineState) -> Result<Vec<u8>, Abort> {
+    Ok(scan_file_name(st)?.file.path(&st.strings))
+}
+
+fn scan_file_name_braced(st: &mut EngineState) -> Result<NameScan, Abort> {
+    let save_scanner_status = st.scanner.scanner_status;
+    let save_def_ref = st.scanner.def_ref;
+    let save_cur_cs = st.scanner.cur_cs;
+
+    st.scanner.cur_cs = st.scanner.warning_index;
+    crate::scanning::scan::scan_toks(st, false, true)?;
+
+    st.shipout.old_setting = st.shipout.selector;
+    st.shipout.selector = Selector::NewString;
+    let arg = st.mem.tokens.cursor(st.scanner.def_ref);
+    let l = st.strings.pool_size - st.strings.pool_ptr;
+    crate::print::show_token_list(st, arg, crate::base::token::TokCursor::END, l);
+    st.shipout.selector = st.shipout.old_setting;
+
+    let s = st.strings.make_string()?;
+    st.mem.tokens.delete_ref(st.scanner.def_ref);
+    st.scanner.def_ref = save_def_ref;
+    st.scanner.cur_cs = save_cur_cs;
+    st.scanner.scanner_status = save_scanner_status;
+
+    let mut scan = NameScan::begin_name(false);
+    for i in st.strings.str_range(s) {
+        let c = st.strings.str_pool[i];
+        scan.more_name(st, u32::from(c))?;
+    }
+    Ok(scan)
+}
+
+pub(crate) fn scan_file_name(st: &mut EngineState) -> Result<ScannedName, Abort> {
+    let save_warning_index = st.scanner.warning_index;
+    st.scanner.warning_index = st.scanner.cur_cs;
+
+    loop {
+        crate::scanning::scan::get_x_token(st)?;
+        if st.scanner.cur.cmd() != Cmd::Spacer && st.scanner.cur.cmd() != Cmd::Relax {
+            break;
+        }
+    }
+
+    crate::scanning::input::back_input(st)?;
+
+    let scan = if st.scanner.cur.cmd() == Cmd::LeftBrace {
+        scan_file_name_braced(st)?
+    } else {
+        st.scanner.name_in_progress = true;
+        let mut scan = NameScan::begin_name(true);
+
+        loop {
+            crate::scanning::scan::get_x_token(st)?;
+            if st.scanner.cur.cmd() != Cmd::Spacer {
+                break;
+            }
+        }
+
+        loop {
+            let (cmd, chr) = st.scanner.cur.encode();
+            let c = match u32::try_from(chr) {
+                Ok(c) if cmd <= Cmd::OtherChar && chr <= BIGGEST_USV => c,
+                _ => {
+                    crate::scanning::input::back_input(st)?;
+                    break;
+                }
+            };
+
+            if !scan.more_name(st, c)? {
+                break;
+            }
+
+            crate::scanning::scan::get_x_token(st)?;
+        }
+        scan
+    };
+
+    let scanned = scan.end_name(st)?;
+    st.scanner.name_in_progress = false;
+    st.scanner.warning_index = save_warning_index;
+    Ok(scanned)
+}
+
+/// `\input`, or the primary input when `primary_input_name` is given.
+pub(crate) fn start_input(
+    st: &mut EngineState,
+    primary_input_name: Option<&str>,
+) -> Result<(), Abort> {
+    let format = if primary_input_name.is_none() {
+        FileFormat::Tex
+    } else {
+        FileFormat::TexyonPrimary
+    };
+
+    let scanned = if let Some(name) = primary_input_name {
+        let mut name = name.as_bytes();
+        if st.strings.pool_ptr + name.len() as i32 * 2 >= st.strings.pool_size {
+            return Err(Abort::Internal("string pool overflow"));
+        }
+        let chars = std::iter::from_fn(|| (!name.is_empty()).then(|| next_utf8_char(&mut name)));
+        scan_whole_name(st, chars)?
+    } else {
+        scan_file_name(st)?.file
+    };
+
+    if primary_input_name.is_some() {
+        // TeX Live scans this name from the terminal line, which leaves none of it to read.
+        st.input.cur_input.loc = st.input.cur_input.limit + 1;
+    }
+    let path = scanned.path(&st.strings);
+    crate::scanning::input::begin_file_reading(st)?;
+
+    let idx = i32::from(st.input.cur_input.index);
+    let mode = st.eqtb.int_par(IntPar::XetexDefaultInputMode);
+    let encoding = st.eqtb.int_par(IntPar::XetexDefaultInputEncoding);
+    let Some((file, found)) = u_open_in(st, &path, format, mode, encoding)? else {
+        crate::scanning::input::end_file_reading(st)?;
+        return Err(crate::print::errors::prompt_file_name(
+            st,
+            crate::print::errors::FilePrompt::Input,
+            scanned,
+            &path,
+        ));
+    };
+    st.input.input_file[idx as usize] = crate::state::InputSlot::Open(file);
+
+    let opened = rescan_opened_name(st, &path)?;
+
+    let name = make_name_string(st, &path)?;
+    st.input.cur_input.name = InputName::File(name);
+    let in_open = st.input.in_open;
+    st.input.open_levels[in_open].source_name = name;
+    let full_name = st.strings.make_tex_string(&found.name)?;
+    st.input.open_levels[in_open].full_source_name = full_name;
+
+    if name == st.strings.str_ptr.prev() {
+        let temp_str = st.strings.search_string(name);
+        if temp_str > StrNumber::NONE {
+            st.input.cur_input.name = InputName::File(temp_str);
+            st.strings.flush_string();
+        }
+    }
+
+    if st.strings.job_name == StrNumber::NONE {
+        st.strings.job_name = opened.name;
+        open_log_file(st)?;
+    }
+
+    if st.shipout.term_offset + st.strings.length(full_name) > st.config.max_print_line - 2 {
+        crate::print::print_ln(st);
+    } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
+        crate::print::print_char(st, b' ');
+    }
+    crate::print::print_char(st, b'(');
+    st.input.open_parens += 1;
+    crate::print::print(st, full_name);
+    output_flush(st.shipout.rust_stdout);
+
+    let tracing_stack_levels = st.eqtb.int_par(IntPar::TracingStackLevels);
+    if tracing_stack_levels > 0 {
+        crate::print::begin_diagnostic(st);
+        crate::print::print_ln(st);
+        crate::print::print_char(st, b'~');
+        let v = st.input.input_depth() - 1;
+        if v < tracing_stack_levels {
+            for _ in 0..v {
+                crate::print::print_char(st, b'.');
+            }
+        } else {
+            crate::print::print_char(st, b'~');
+        }
+        crate::print::print(st, "INPUT ");
+        crate::print::print(st, (opened.name, opened.ext));
+        crate::print::print_ln(st);
+        crate::print::end_diagnostic(st, false);
+    }
+
+    st.input.cur_input.state = NEW_LINE;
+    let job_name = st.strings.texstring_bytes(st.strings.job_name);
+    crate::shipout::synctex::synctex_start_input(st, &job_name, &found.abspath);
+    st.mem.line = 1;
+    input_slot_line(st, FileSlot::Input(idx as usize))?;
+    st.input.cur_input.limit = st.input.last;
+    crate::scanning::scan::finish_line(st);
+    Ok(())
+}
