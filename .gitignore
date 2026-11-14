@@ -18,7 +18,6 @@
 # Misc
 *.ignore
 # Corpus harness temp files
-crates/engine_xetex/tests/corpus/goldens/*.tmp
 
 # WebAssembly build
 # The toolchain and the C libraries it compiles are fetched by

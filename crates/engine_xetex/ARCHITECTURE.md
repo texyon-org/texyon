@@ -301,21 +301,7 @@ deliberate fix toward upstream.
 - Clippy: `cargo clippy -p texyon_engine_xetex --all-targets -- -D warnings`
   must stay clean. CI runs it on the latest stable, whose clippy can be newer
   than a local one.
-- Corpus A/B (`scripts/`): `corpus_fetch.sh` fills the corpus cache
-  (`$TEXYON_CORPUS_DIR`), then bless a baseline release build into scratch
-  goldens and check the candidate against them:
-
-  ```sh
-  ORACLE_BIN=<baseline>/tectonic CORPUS_GOLDENS=/tmp/gold \
-    crates/engine_xetex/scripts/corpus.sh bless all
-  CANDIDATE_BIN=target/release/texyon CORPUS_GOLDENS=/tmp/gold \
-    crates/engine_xetex/scripts/corpus.sh check all
-  ```
-
-  The committed goldens in `tests/corpus/goldens` came from the retired C
-  engine and lag behind deliberate fixes, so A/B against a baseline is the
-  reliable check. `lvt_survey.sh` refreshes `tests/corpus/lvt-viable.txt`, and
-  `parity.sh` logs a quick `tex-outputs` count.
+- `scripts/parity.sh` logs a quick `tex-outputs` count.
 - Upstream differential tests live under `tests/upstream/` and compare the
   engine against upstream XeTeX directly. Running them with a debug
   `tectonic` binary also checks for overflow panics (`probes/limits/wrap_*`
@@ -328,5 +314,4 @@ deliberate fix toward upstream.
   `tests/assets`. INITEX has no `\tracingparagraphs` or `\tracingpages`
   output here (no `stat` code), so tests show boxes and values instead.
 - `FORMAT_SERIAL` (`lib.rs`) only versions dumped formats. The default
-  bundle URL is fixed in `texyon_bundles::get_fallback_bundle_url`. The
-  goldens corpus pins its own TL2022 bundle in `corpus.sh`.
+  bundle URL is fixed in `texyon_bundles::get_fallback_bundle_url`.

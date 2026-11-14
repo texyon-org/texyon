@@ -30,7 +30,7 @@ TeXyoN is a LaTeX engine built for live preview: XeTeX ported to Rust from Tecto
 ## Checks
 
 - `cargo fmt --all` (stable rustfmt), `cargo clippy -p <crate> --all-targets --no-deps -- -D warnings`, `cargo test -p <crate>` for what changed.
-- Engine behaviour changes: the goldens corpus (`crates/engine_xetex/scripts/corpus.sh`) and the upstream harness (`crates/engine_xetex/tests/upstream/run.py`). Both take minutes and load the machine, so ask before running them.
+- Engine behaviour changes: the upstream harness (`crates/engine_xetex/tests/upstream/run.py`). It takes minutes and loads the machine, so ask before running it.
 - Wasm changes: the real test is the editor. Build the engine assets from the editor repo and type in `/sample`.
 - `packages/vscode`: `npm test`.
 - Agent worktrees use their own target directory, never the main checkout's.

@@ -37,7 +37,7 @@ Notes:
   to benchmark the result. `corpus:` entries come from
   `crates/engine_xetex/scripts/corpus_fetch.sh` and are skipped when absent.
 - Output stays byte-identical, check with
-  `CANDIDATE_BIN=<pgo binary> crates/engine_xetex/scripts/corpus.sh check`.
+  `TEXYON=<pgo binary> crates/engine_xetex/tests/upstream/run.py`.
 
 Wasm: stable rustc ships no profiler runtime for `wasm32-wasip1`, so the
 module cannot be instrumented without `-Zbuild-std` and a self-built

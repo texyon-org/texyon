@@ -75,8 +75,7 @@ format, and later runs reuse that cache.
 ## Testing
 
 `cargo test --workspace` runs the unit and integration tests. Changes to engine
-behaviour are checked against the goldens corpus
-(`crates/engine_xetex/scripts/corpus.sh`) and the upstream TeX Live harness
+behaviour are checked against TeX Live XeTeX with the upstream harness
 (`crates/engine_xetex/tests/upstream/run.py`).
 
 ## License

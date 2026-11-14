@@ -1,9 +1,0 @@
-# Docs dropped during curation. Reason = failure under the engine in deterministic mode.
-# All current entries are engine-INDEPENDENT (missing dep / pdftex-only / font / version skew).
-# id	reason
-unimath-symbols	needs build-dep unicode-math.dtx (not in source set)
-polyglossia	expl3/polyglossia version skew vs 2022 bundle (LaTeX3 key error)
-1606.00915	pre-generated top.bbl incompatible (missing \item)
-1305.5603v2	package clash: \Ref already defined
-1503.01894v7	pdfTeX-only: inputenc not designed for xetex
-1611.09035v9	references font OT1/lmerge not in bundle

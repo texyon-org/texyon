@@ -9,8 +9,7 @@
 # tier2-pending: harvested but does NOT compile under the pinned 2022 bundle
 #   (version skew / missing assets). Not part of the active parity set;
 #   re-survey when the bundle is upgraded to promote to tier2.
-# The LaTeX regression test suite (.lvt, log-parity) is NOT listed here —
-# too many files; its generated pass-list is tests/corpus/lvt-viable.txt.
+# The LaTeX regression test suite (.lvt) is not listed here, too many files.
 tier1	unicode_text	tier1/unicode_text.tex	authored
 tier1	bidi_arabic	tier1/bidi_arabic.tex	authored
 tier1	cjk	tier1/cjk.tex	authored

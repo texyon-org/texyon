@@ -22,10 +22,9 @@ cargo test -p <crate>
 for the crates you changed. For the VS Code extension, run `npm test` in
 `packages/vscode`.
 
-Changes to engine behaviour also need the goldens corpus
-(`crates/engine_xetex/scripts/corpus.sh`) and the upstream harness
-(`crates/engine_xetex/tests/upstream/run.py`). Both take a while. If you can't
-run them, say so in the pull request and they will be run before merging.
+Changes to engine behaviour also need the upstream harness
+(`crates/engine_xetex/tests/upstream/run.py`). It takes a while. If you can't
+run it, say so in the pull request and it will be run before merging.
 
 ## Engine behaviour
 
