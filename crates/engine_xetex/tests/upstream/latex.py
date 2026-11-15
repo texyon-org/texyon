@@ -224,7 +224,7 @@ class TeXLive:
                 return f"upstream xetex died with signal {-r.returncode}"
             # TeXyoN's reruns end at a fatal error, so upstream's must too.
             log = d / Path(case.main).with_suffix(".log").name
-            if log.exists() and any(m in log.read_text(errors="replace") for m in FATAL_MARKS):
+            if log.exists() and FATAL_RX.search(log.read_text(errors="replace")):
                 break
         return None
 
@@ -276,8 +276,9 @@ def resolve_moves(lines):
 
 # Bump when the way upstream is run changes, so cached results are redone.
 CACHE_VERSION = "6"
-FATAL_MARKS = ("(That makes 100 errors; please try again.)", "! Emergency stop.",
-               "! TeX capacity exceeded", "*** (job aborted")
+# At a line start only, since a document may quote them in its own text.
+FATAL_RX = re.compile(r"^(?:\(That makes 100 errors; please try again\.\)|! Emergency stop\."
+                      r"|! TeX capacity exceeded|\*\*\* \(job aborted)", re.M)
 FONT_DEF_RX = re.compile(r"^(nativefont|fntdef) (\d+) ")
 FONT_USE_RX = re.compile(r"^fnt (\d+)$")
 
@@ -374,6 +375,11 @@ def strip_bundle_dirs(text, nested, case_dir):
         rel = m.group(0)
         return rel.split("/", 1)[1] if rel in nested and not (case_dir / rel).exists() else rel
     return NESTED_RX.sub(sub, text)
+
+
+def strip_special_dirs(xdv, nested, case_dir):
+    """Both sides alike, since a macro writes a bitmap's name as asked and the engine a PDF's path."""
+    return [strip_bundle_dirs(l, nested, case_dir) if l.startswith("xxx") else l for l in xdv]
 
 
 def latex_log(path, main):
@@ -676,8 +682,7 @@ def compare(tl, case, work, cache_dir, xdv_pages, keep_failures, pixels=False):
         log = latex_log(tt_dir / f"{stem}.log", case.main)
         xdv = xdv_lines(tt_dir / f"{stem}.xdv", xdv_pages)
         return (strip_bundle_dirs(log, tl.nested(), tt_dir),
-                [strip_bundle_dirs(l, tl.nested(), tt_dir) if l.startswith("xxx") else l
-                 for l in xdv])
+                strip_special_dirs(xdv, tl.nested(), tt_dir))
 
     with ThreadPoolExecutor(2) as ex:
         tl_future = ex.submit(upstream) if tl_res is None else None
@@ -702,13 +707,13 @@ def judge(tl, case, tl_res, tt_res, tl_dir, tt_dir, work, stem, rerun_tl, pixels
         return "timeout", ["<texyon timed out>"]
     log, xdv = tt_res
     tl_log = latex_text(tl_res["log"], case.main)
-    tl_xdv = normalize_xdv(tl_res["xdv"])
+    tl_xdv = strip_special_dirs(normalize_xdv(tl_res["xdv"]), tl.nested(), tt_dir)
     no_pages = not any(line.startswith("bop") for line in tl_xdv)
     diffs = []
     if not same_log(tl_log, log):
         diffs += log_diff(tl_log, log)
     # TeXyoN keeps no output after a fatal error, upstream keeps the pages shipped so far.
-    fatal = xdv == ["<no xdv>"] and any(m in tl_log for m in FATAL_MARKS)
+    fatal = xdv == ["<no xdv>"] and FATAL_RX.search(tl_res["log"] or "") is not None
     if tl_xdv != xdv and not fatal:
         diffs += window_diff(tl_xdv, xdv, "xdv")
     if not diffs:
