@@ -12,6 +12,7 @@ import json
 import os
 import random
 import re
+import resource
 import shutil
 import subprocess
 import tarfile
@@ -109,6 +110,9 @@ class TeXLive:
         )
 
     def prepare(self):
+        # Upstream overflows an 8 MB C stack in documents TeXyoN runs through (arxiv/2309.07781).
+        _, hard = resource.getrlimit(resource.RLIMIT_STACK)
+        resource.setrlimit(resource.RLIMIT_STACK, (hard, hard))
         self.work.mkdir(parents=True, exist_ok=True)
         self._clock()
         self._fontconfig()
@@ -235,7 +239,9 @@ class TeXLive:
              "-Z", "deterministic-mode", "-Z", "continue-on-errors",
              "--bundle", str(self.bundle), case.main],
             cwd=d, env=self.env(), stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=case.timeout)
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            # One process runs every pass, and upstream gets the timeout per pass.
+            timeout=case.timeout * case.passes)
 
 
 FONT_EXT_RX = re.compile(r"^(nativefont \d+ \d+ \d+ b['\"].*?)\.(otf|ttf|otc|ttc|dfont)(['\"])", re.I)
