@@ -102,3 +102,5 @@ tldocs/latex/biblatex-phys/biblatex-phys	both engines loop on the same error unt
 tldocs/latex/ecobiblatex/ecobiblatex	both engines loop on the same error until main memory is full and stop at different points, since upstream grows its token and node areas apart
 tldocs/latex/responsive/responsive-doc	both engines loop on the same error until main memory is full and stop at different points, since upstream grows its token and node areas apart
 tldocs/generic/pst-3dplot/pst-3dplot-doc	upstream aborts with "bad native font flag" at an OpenType math accent over a TFM letter, TeXyoN typesets the rest (UPSTREAM_BUGS.md 24)
+arxiv/2309.07781	upstream runs out of main memory building the first page, since its boxes and glue keep 5M words while TeXyoN has one 2^26-word pool
+tldocs/latex/frankenstein/abbrevs	both engines loop on the same error until main memory is full, upstream stops early since its boxes keep 5M words, TeXyoN fills 2^26 and times out in the quadratic native-word walk
