@@ -230,6 +230,17 @@ fn errorstop_eof() {
 }
 
 #[test]
+fn filename_prompt_eof() {
+    TestCase::new("filename_prompt_eof")
+        .with_unstables(UnstableOptions {
+            continue_on_errors: true,
+            ..Default::default()
+        })
+        .expect_msg("failed to open input file \"texyon-no-such-file\"")
+        .go()
+}
+
+#[test]
 fn read_terminal_eof() {
     TestCase::new("read_terminal_eof")
         .expect_msg("End of file on the terminal!")

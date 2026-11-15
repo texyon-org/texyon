@@ -195,15 +195,22 @@ pub(crate) fn prompt_file_name(
         },
     );
     print_ln(st);
+    print_nl(
+        st,
+        match prompt {
+            FilePrompt::Input => "Please type another input file name",
+            FilePrompt::Output => "Please type another output file name",
+        },
+    );
+    // Only the text of TeX's prompt, the terminal is always empty and never read.
+    if st.errors.interaction >= InteractionMode::Scroll {
+        print(st, ": ");
+        // As TeX Live, so the context shows none of the unread line.
+        st.input.cur_input.limit = BufPos::ZERO;
+    }
     match prompt {
-        FilePrompt::Input => {
-            print_nl(st, "Please type another input file name");
-            Abort::CannotOpenInput { name: path.into() }
-        }
-        FilePrompt::Output => {
-            print_nl(st, "Please type another output file name");
-            Abort::CannotOpenOutput { name: path.into() }
-        }
+        FilePrompt::Input => Abort::CannotOpenInput { name: path.into() },
+        FilePrompt::Output => Abort::CannotOpenOutput { name: path.into() },
     }
 }
 

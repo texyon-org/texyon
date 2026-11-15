@@ -1,0 +1,13 @@
+**
+(filename_prompt_eof.tex
+! I can't find file `texyon-no-such-file'.
+l.2 \input texyon-no-such-file
+                              
+(Press Enter to retry, or Control-D to exit)
+Please type another input file name: 
+! Emergency stop.
+l.2 
+    
+End of file on the terminal!
+
+No pages of output.
