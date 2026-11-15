@@ -90,3 +90,15 @@ tldocs/latex/qworld/qworld	both engines loop on a font shape named by NUL charac
 tldocs/generic/pst-electricfield/pst-electricfield-docEN	upstream aborts with "bad native font flag" at an OpenType math accent over a TFM letter, TeXyoN typesets the rest (UPSTREAM_BUGS.md 24)
 tldocs/generic/pst-electricfield/pst-electricfield-docFR	upstream aborts with "bad native font flag" at an OpenType math accent over a TFM letter, TeXyoN typesets the rest (UPSTREAM_BUGS.md 24)
 tldocs/generic/pst-electricfield/pst-electricfield-docDE	upstream aborts with "bad native font flag" at an OpenType math accent over a TFM letter, TeXyoN typesets the rest (UPSTREAM_BUGS.md 24)
+latex2e/base/testfiles/github-0524	upstream's format stands counts in for the STAT tracing primitives (tl-nostat), which tracing and \meaning show as \count327xx
+latex2e/required/tools/testfiles/github-0524	upstream's format stands counts in for the STAT tracing primitives (tl-nostat), which tracing and \meaning show as \count327xx
+latex3/l3kernel/testfiles/m3names001	upstream's format stands counts in for the STAT tracing primitives (tl-nostat), which tracing and \meaning show as \count327xx
+tldocs/latex/leaflet/leaflet-manual	upstream's format stands counts in for the STAT tracing primitives (tl-nostat), which tracing and \meaning show as \count327xx
+arxiv/2611.08302	main file in Neurips/ loading Neurips/neurips_2026: TeXyoN's CLI resolves paths from the main file's directory, upstream from the working directory
+tldocs/latex/abnt/abnt-doc	both engines loop on the same error until main memory is full and stop at different points, since upstream grows its token and node areas apart
+tldocs/latex/biblatex-fiwi/biblatex-fiwi	both engines loop on the same error until main memory is full and stop at different points, since upstream grows its token and node areas apart
+tldocs/latex/xebaposter/xebaposter-doc	both engines loop on the same error until main memory is full and stop at different points, since upstream grows its token and node areas apart
+tldocs/latex/biblatex-phys/biblatex-phys	both engines loop on the same error until main memory is full and stop at different points, since upstream grows its token and node areas apart
+tldocs/latex/ecobiblatex/ecobiblatex	both engines loop on the same error until main memory is full and stop at different points, since upstream grows its token and node areas apart
+tldocs/latex/responsive/responsive-doc	both engines loop on the same error until main memory is full and stop at different points, since upstream grows its token and node areas apart
+tldocs/generic/pst-3dplot/pst-3dplot-doc	upstream aborts with "bad native font flag" at an OpenType math accent over a TFM letter, TeXyoN typesets the rest (UPSTREAM_BUGS.md 24)
