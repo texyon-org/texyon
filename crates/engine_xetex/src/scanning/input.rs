@@ -124,7 +124,10 @@ fn push_input(st: &mut EngineState) -> Result<(), Abort> {
 
 #[inline]
 fn pop_input(st: &mut EngineState) -> Result<(), Abort> {
-    st.input.cur_input = st.input.input_stack.pop().or_confusion("pop_input")?;
+    let stack = &mut st.input.input_stack;
+    let top = stack.len().checked_sub(1).or_confusion("pop_input")?;
+    stack.truncate(top);
+    st.input.cur_input = *stack.stale_slot(top);
     st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;
     Ok(())
 }
@@ -448,7 +451,9 @@ pub(crate) struct InputState {
 }
 
 /// What an input level reads from, WEB's overloaded `name` field.
+/// A full-width tag leaves no padding, so input levels copy as whole words.
 #[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
+#[repr(u32)]
 pub(crate) enum InputName {
     /// The terminal, or an `\insert`ed line above the bottom level.
     #[default]
