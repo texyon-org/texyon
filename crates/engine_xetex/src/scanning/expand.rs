@@ -1,6 +1,5 @@
 //! Expansion: `expand`, `macro_call`, conditionals and `conv_toks`.
 
-use std::array;
 use std::cmp::Ordering;
 
 use crate::base::cmd::Cmd;
@@ -10,7 +9,7 @@ use crate::base::codes::{
 use crate::base::command::{Command, RelaxCode};
 use crate::base::consts::{BIGGEST_USV, CLOSED, NULL_FONT, TOO_BIG_USV};
 use crate::base::params::{GluePar, IntPar};
-use crate::base::token::{Build, TokCursor, Token, TokenKind, TokenList};
+use crate::base::token::{Build, BuiltArgs, ListCursor, TokCursor, Token, TokenKind, TokenList};
 use crate::base::units::{BufPos, FontId, MemPtr, PoolPos, Scaled, StrNumber};
 use crate::files::io::{open_log_file, start_input};
 use crate::fonts::ext::{gr_print_font_name, print_glyph_name};
@@ -28,8 +27,8 @@ use crate::print::{
 };
 use crate::scanning::cond_stack::CondId;
 use crate::scanning::input::{
-    InputName, MacroParam, TOKEN_LIST, TokenType, back_input, begin_token_list, end_token_list,
-    insert_relax, prepend_to_backed_up,
+    InputName, TOKEN_LIST, TokenType, back_input, begin_token_list, end_token_list, insert_relax,
+    prepend_to_backed_up,
 };
 use crate::scanning::pgfmath::{native_macro, redirect};
 use crate::scanning::scan::{
@@ -911,7 +910,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
 #[cold]
 fn runaway_par_in_argument(
     st: &mut EngineState,
-    pstack: &[TokenList],
+    built: BuiltArgs,
     arg: Build,
     unbalance: i32,
 ) -> Result<(), Abort> {
@@ -932,10 +931,8 @@ fn runaway_par_in_argument(
         )?;
     }
     st.mem.tokens.abandon(arg);
+    st.mem.tokens.drop_args(built);
     st.scanner.align_state -= unbalance;
-    for &list in pstack {
-        st.mem.tokens.flush(list);
-    }
     Ok(())
 }
 
@@ -990,9 +987,12 @@ fn trace_macro_call(st: &mut EngineState, ref_count: TokenList) {
 }
 
 #[cold]
-fn trace_macro_param(st: &mut EngineState, match_chr: i32, n: usize, list: TokenList) {
+fn trace_macro_param(st: &mut EngineState, match_chr: i32, built: &BuiltArgs) -> Result<(), Abort> {
     let stack_levels = st.eqtb.int_par(IntPar::TracingStackLevels);
     if stack_levels == 0 || st.input.input_depth() < stack_levels {
+        let n = built.len();
+        let tokens = st.mem.tokens.built_arg(built, n - 1).to_vec();
+        let list = st.mem.tokens.store(&tokens)?;
         begin_diagnostic(st);
         print_nl(st, StrNumber::single_char(match_chr));
         print_int(st, i32::try_from(n).unwrap_or(i32::MAX));
@@ -1000,7 +1000,9 @@ fn trace_macro_param(st: &mut EngineState, match_chr: i32, n: usize, list: Token
         let from = st.mem.tokens.cursor(list);
         show_token_list(st, from, TokCursor::END, 1000);
         end_diagnostic(st, false);
+        st.mem.tokens.flush(list);
     }
+    Ok(())
 }
 
 pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
@@ -1014,7 +1016,6 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.warning_index = Some(name);
     let body = st.scanner.cur.macro_body().or_confusion("macro_call")?;
     let mut r = st.mem.tokens.cursor(body);
-    let mut n: usize = 0;
 
     if st.eqtb.int_par(IntPar::TracingMacros) > 0 {
         trace_macro_call(st, body);
@@ -1024,10 +1025,10 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
         r = st.mem.tokens.next(r);
     }
 
-    let mut pstack = [TokenList::NULL; 9];
+    let mut built = st.mem.tokens.begin_args();
     let mut match_chr: i32 = 0;
     // A parameter text always ends with `END_MATCH`.
-    let tok = |st: &EngineState, c: TokCursor| st.mem.tokens.peek(c).unwrap_or(Token::END_MATCH);
+    let tok = |st: &EngineState, c: ListCursor| st.mem.tokens.peek(c).unwrap_or(Token::END_MATCH);
 
     'exit: {
         if tok(st, r) != Token::END_MATCH {
@@ -1038,7 +1039,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
 
             loop {
                 let arg = st.mem.tokens.begin()?;
-                let s: Option<TokCursor>;
+                let s: Option<ListCursor>;
                 let mut m: i32 = 0;
                 let rt = tok(st, r);
                 if let Some((Cmd::MATCH, c)) = rt.char() {
@@ -1083,9 +1084,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                                 ],
                             )?;
                             st.mem.tokens.abandon(arg);
-                            for &list in &pstack[..n] {
-                                st.mem.tokens.flush(list);
-                            }
+                            st.mem.tokens.drop_args(built);
                             break 'exit;
                         };
                         let mut t = s;
@@ -1119,7 +1118,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                     if st.scanner.cur_tok == st.input.par_token
                         && st.scanner.long_state != Cmd::LongCall
                     {
-                        runaway_par_in_argument(st, &pstack[..n], arg, unbalance)?;
+                        runaway_par_in_argument(st, built, arg, unbalance)?;
                         break 'exit;
                     }
 
@@ -1140,7 +1139,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                             if st.scanner.cur_tok == st.input.par_token
                                 && st.scanner.long_state != Cmd::LongCall
                             {
-                                runaway_par_in_argument(st, &pstack[..n], arg, unbalance)?;
+                                runaway_par_in_argument(st, built, arg, unbalance)?;
                                 break 'exit;
                             }
 
@@ -1174,10 +1173,9 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                     if m == 1 && st.mem.tokens.last_pushed(&arg).is_some_and(Token::is_brace) {
                         st.mem.tokens.drop_first_last(&arg);
                     }
-                    pstack[n] = st.mem.tokens.finish(arg)?;
-                    n += 1;
+                    st.mem.tokens.finish_arg(&mut built, arg)?;
                     if st.eqtb.int_par(IntPar::TracingMacros) > 0 {
-                        trace_macro_param(st, match_chr, n, pstack[n - 1]);
+                        trace_macro_param(st, match_chr, &built)?;
                     }
                 } else {
                     st.mem.tokens.abandon(arg);
@@ -1189,10 +1187,8 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
 
-        if native_macro(st, name, &pstack[..n]) {
-            for &list in &pstack[..n] {
-                st.mem.tokens.flush(list);
-            }
+        if native_macro(st, name, &built) {
+            st.mem.tokens.drop_args(built);
             break 'exit;
         }
 
@@ -1206,13 +1202,15 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
 
         begin_token_list(st, body, TokenType::Macro)?;
         st.input.cur_input.name = InputName::Macro(name);
-        st.input.cur_input.set_token_loc(st.mem.tokens.next(r));
+        st.input
+            .cur_input
+            .set_token_loc(st.mem.tokens.next(r).into());
 
-        if n > 0 {
-            let params: [MacroParam; 9] = array::from_fn(|k| MacroParam { list: pstack[k] });
+        if built.len() > 0 {
+            let args = st.mem.tokens.push_args(&mut built)?;
             let stack = &mut st.input.param_stack;
             stack
-                .push_all(&params[..n])
+                .push_all(args)
                 .map_err(|_| stack.overflow(Capacity::ParameterStack))?;
         }
     }

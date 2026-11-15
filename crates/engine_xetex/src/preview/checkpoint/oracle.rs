@@ -149,6 +149,10 @@ fn digest_mem(st: &EngineState) -> u64 {
     for &t in mem.tokens.tokens() {
         h.i32(t.0);
     }
+    h.word(mem.tokens.live_args().len() as u64);
+    for &t in mem.tokens.live_args() {
+        h.i32(t.0);
+    }
     h.word(mem.tokens.lists().len() as u64);
     for &slot in mem.tokens.lists() {
         let words: [u32; 3] = bytemuck::cast(slot);
@@ -455,7 +459,8 @@ fn digest_input(st: &EngineState) -> u64 {
     }
     digest_list(&mut h, &input.cur_list);
     for p in input.param_stack.entries() {
-        h.i32(p.list.raw());
+        h.word(u64::from(p.start()));
+        h.word(u64::from(p.end()));
     }
     for level in &input.open_levels {
         h.word(level.cond.map_or(u64::MAX, |c| u64::from(c.raw())));

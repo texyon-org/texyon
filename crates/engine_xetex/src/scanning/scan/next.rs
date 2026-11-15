@@ -19,7 +19,7 @@ use crate::print::{CsName, Selector, file_warning, print_char, show_cur_cmd_chr}
 use crate::scanning::expand::{expand, macro_call};
 use crate::scanning::input::{
     InputClusterState, InputName, MID_LINE, NEW_LINE, SKIP_BLANKS, TOKEN_LIST, TokenType,
-    begin_token_list, end_file_reading, end_token_list, pseudo_input,
+    begin_argument, begin_token_list, end_file_reading, end_token_list, pseudo_input,
 };
 use crate::state::EngineState;
 use crate::tables::cs::{CsId, Frozen};
@@ -570,8 +570,7 @@ fn get_next_slow(st: &mut EngineState) -> Result<(), Abort> {
                 TokenKind::Char(cmd, chr) => {
                     if cmd == Cmd::OUT_PARAM {
                         let k = st.input.cur_input.param_start() + chr as usize - 1;
-                        let param = st.input.param_stack[k].list;
-                        begin_token_list(st, param, TokenType::Parameter)?;
+                        begin_argument(st, k)?;
                         continue 'restart;
                     }
                     st.scanner.cur = Command::from_char(cmd, chr).or_confusion("token")?;

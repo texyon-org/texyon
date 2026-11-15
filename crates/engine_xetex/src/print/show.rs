@@ -25,7 +25,7 @@ use crate::build::pagebuilder::PageContents;
 use crate::ffi::bridge::output_flush;
 use crate::memory::mem::{CONTRIB_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
 use crate::memory::node::{AnyNode, NodePtr, PageInsNode};
-use crate::scanning::input::{InputName, TOKEN_LIST, TokenType};
+use crate::scanning::input::{InputName, TOKEN_LIST, TokenType, level_start};
 use crate::scanning::scan::{fetch_box, get_token, scan_register_num, scan_toks, the_toks};
 use crate::shipout::ensure_write_stream_open;
 use crate::state::EngineState;
@@ -70,7 +70,8 @@ fn set_trick_count(st: &mut EngineState) {
 }
 
 /// Shows the tokens from `p`, marking where `q` starts for `show_context`'s two-line display.
-pub(crate) fn show_token_list(st: &mut EngineState, mut p: TokCursor, q: TokCursor, l: i32) {
+pub(crate) fn show_token_list(st: &mut EngineState, p: impl Into<TokCursor>, q: TokCursor, l: i32) {
+    let mut p = p.into();
     let mut shown = ShownTokens::default();
     st.errors.tally = 0;
     while !p.is_end() && st.errors.tally < l {
@@ -802,7 +803,7 @@ pub(crate) fn show_context(st: &mut EngineState) {
                         t => print_nl(st, t.label(ci.token_loc())),
                     }
                     l = begin_pseudoprint(st);
-                    let from = st.mem.tokens.level_start(ci.token_start(), ci.token_loc());
+                    let from = level_start(st, &ci);
                     show_token_list(st, from, ci.token_loc(), 100_000);
                 }
                 st.shipout.selector = old_setting;

@@ -80,6 +80,12 @@ impl<T: Copy + Default> TexStack<T> {
         Ok(())
     }
 
+    /// Drops the entries from `len` on.
+    #[inline]
+    pub(crate) fn truncate(&mut self, len: usize) {
+        self.len = self.len.min(len);
+    }
+
     #[inline]
     pub(crate) fn pop(&mut self) -> Option<T> {
         self.len = self.len.checked_sub(1)?;

@@ -3,6 +3,7 @@
 use std::mem;
 use std::ops::{Index, IndexMut};
 
+use crate::base::arg_stack::ArgRef;
 use crate::base::codes::code_enum;
 use crate::base::command::Command;
 use crate::base::params::{IntPar, TokPar};
@@ -147,10 +148,10 @@ pub(crate) fn end_token_list(st: &mut EngineState) -> Result<(), Abort> {
         t => {
             st.mem.tokens.delete_ref(ci.token_start());
             if t == TokenType::Macro {
-                while st.input.param_stack.len() > ci.param_start() {
-                    if let Some(param) = st.input.param_stack.pop() {
-                        st.mem.tokens.flush(param.list);
-                    }
+                let first = ci.param_start();
+                if let Some(&param) = st.input.param_stack.entries().get(first) {
+                    st.mem.tokens.pop_args_to(param);
+                    st.input.param_stack.truncate(first);
                 }
             } else if t == TokenType::Output && !st.shipout.output_can_end {
                 return Err(Abort::Fatal("Unbalanced output routine"));
@@ -307,7 +308,9 @@ pub(crate) fn prepend_to_backed_up(st: &mut EngineState, token: Token) -> Result
     } else {
         st.mem.tokens.prepend(list, token)?;
     }
-    st.input.cur_input.set_token_loc(st.mem.tokens.cursor(list));
+    st.input
+        .cur_input
+        .set_token_loc(st.mem.tokens.cursor(list).into());
     Ok(())
 }
 
@@ -320,16 +323,50 @@ pub(crate) fn insert_relax(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
+/// Starts reading parameter `k` of the innermost macro, for a `#` in its body.
+pub(crate) fn begin_argument(st: &mut EngineState, k: usize) -> Result<(), Abort> {
+    let param = *st
+        .input
+        .param_stack
+        .entries()
+        .get(k)
+        .or_confusion("macro parameter")?;
+    push_input(st)?;
+    let ci = &mut st.input.cur_input;
+    ci.state = TOKEN_LIST;
+    ci.set_token_start(TokenList::NULL);
+    ci.set_token_type(TokenType::Parameter);
+    ci.set_token_loc(st.mem.tokens.arg_cursor(param));
+    ci.set_param_start(k);
+    Ok(())
+}
+
+/// Where token-list level `ci` began reading, for showing its context.
+pub(crate) fn level_start(st: &EngineState, ci: &InputState) -> TokCursor {
+    if ci.token_type() == TokenType::Parameter
+        && let Some(param) = st.input.param_stack.entries().get(ci.param_start())
+    {
+        return st.mem.tokens.arg_cursor(*param);
+    }
+    st.mem.tokens.level_start(ci.token_start(), ci.token_loc())
+}
+
 pub(crate) fn begin_token_list(
     st: &mut EngineState,
     list: TokenList,
     t: TokenType,
 ) -> Result<(), Abort> {
+    debug_assert!(
+        t != TokenType::Parameter,
+        "arguments start with begin_argument"
+    );
     push_input(st)?;
     st.input.cur_input.state = TOKEN_LIST;
     st.input.cur_input.set_token_start(list);
     st.input.cur_input.set_token_type(t);
-    st.input.cur_input.set_token_loc(st.mem.tokens.cursor(list));
+    st.input
+        .cur_input
+        .set_token_loc(st.mem.tokens.cursor(list).into());
     if t < TokenType::Macro {
         return Ok(());
     }
@@ -395,13 +432,6 @@ pub(crate) struct OpenLevel {
     pub eof_seen: bool,
 }
 
-/// A macro argument on the parameter stack, with its last node so it can be
-/// freed without a walk.
-#[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
-pub(crate) struct MacroParam {
-    pub list: TokenList,
-}
-
 #[derive(Copy, Clone, Default)]
 pub(crate) struct InputState {
     pub state: u16,
@@ -461,6 +491,7 @@ impl InputClusterState {
 
 impl InputState {
     /// `limit` of a macro level: where its parameters start on the parameter stack.
+    /// An argument level keeps which parameter it reads here instead.
     #[inline]
     pub(crate) fn param_start(&self) -> usize {
         usize::try_from(self.param_start).unwrap_or(usize::MAX)
@@ -501,7 +532,7 @@ pub(crate) enum InputSlot {
 
 #[derive(Default)]
 pub(crate) struct InputClusterState {
-    pub param_stack: TexStack<MacroParam>,
+    pub param_stack: TexStack<ArgRef>,
     /// Per open input file, indexed by `in_open`. Level 0 is the terminal.
     pub open_levels: Vec<OpenLevel>,
     pub buffer: InputBuffer,

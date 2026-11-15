@@ -5,6 +5,7 @@ use std::mem;
 
 use bytemuck::Zeroable;
 
+use crate::base::arg_stack::{ArgDelta, ArgRef, ArgStack};
 use crate::base::cmd::Cmd;
 use crate::base::consts::{MAX_HALFWORD, TEX_NULL};
 use crate::preview::journal::{WordDelta, WordJournal};
@@ -200,6 +201,81 @@ pub(crate) struct TokCursor {
     end: u32,
 }
 
+/// Set in a cursor's positions when it reads the argument stack instead of the lists.
+const ARG_TAG: u32 = 1 << 31;
+
+/// A cursor into a stored token list, never into an argument, so reading needs no tag test.
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+pub(crate) struct ListCursor {
+    pos: u32,
+    end: u32,
+}
+
+impl ListCursor {
+    pub(crate) const END: ListCursor = ListCursor { pos: 0, end: 0 };
+}
+
+impl From<ListCursor> for TokCursor {
+    #[inline(always)]
+    fn from(c: ListCursor) -> TokCursor {
+        TokCursor {
+            pos: c.pos,
+            end: c.end,
+        }
+    }
+}
+
+/// A position in a token list that the store can read.
+pub(crate) trait Cursor: Copy {
+    fn is_end(self) -> bool;
+    fn advanced(self) -> Self;
+    fn token(self, store: &TokenStore) -> Option<Token>;
+}
+
+impl Cursor for ListCursor {
+    #[inline(always)]
+    fn is_end(self) -> bool {
+        self.pos == self.end
+    }
+
+    #[inline(always)]
+    fn advanced(self) -> Self {
+        ListCursor {
+            pos: self.pos + 1,
+            end: self.end,
+        }
+    }
+
+    #[inline(always)]
+    fn token(self, store: &TokenStore) -> Option<Token> {
+        store.tokens.get(self.pos as usize).copied()
+    }
+}
+
+impl Cursor for TokCursor {
+    #[inline(always)]
+    fn is_end(self) -> bool {
+        self.pos == self.end
+    }
+
+    #[inline(always)]
+    fn advanced(self) -> Self {
+        TokCursor {
+            pos: self.pos + 1,
+            end: self.end,
+        }
+    }
+
+    #[inline(always)]
+    fn token(self, store: &TokenStore) -> Option<Token> {
+        if self.pos & ARG_TAG == 0 {
+            store.tokens.get(self.pos as usize).copied()
+        } else {
+            store.args.get((self.pos & !ARG_TAG) as usize)
+        }
+    }
+}
+
 impl TokCursor {
     pub(crate) const END: TokCursor = TokCursor { pos: 0, end: 0 };
 
@@ -216,6 +292,22 @@ impl TokCursor {
 #[must_use]
 #[derive(Debug)]
 pub(crate) struct Build(usize);
+
+/// Arguments built back to back in the build buffer, for one macro call, at
+/// offsets from `base`. They go onto the argument stack only once the macro's level is pushed.
+#[must_use]
+#[derive(Debug)]
+pub(crate) struct BuiltArgs {
+    base: usize,
+    args: [ArgRef; 9],
+    n: usize,
+}
+
+impl BuiltArgs {
+    pub(crate) fn len(&self) -> usize {
+        self.n
+    }
+}
 
 /// A list's run of tokens and its references. A free entry has no references
 /// and keeps the next free entry in `start`.
@@ -275,6 +367,7 @@ pub(crate) struct TokenStore {
     build: Vec<Token>,
     /// Each open build's start in `build`, and the tokens it dropped from its front.
     builds: Vec<(usize, usize)>,
+    args: ArgStack,
 }
 
 impl Default for TokenStore {
@@ -296,6 +389,7 @@ impl Default for TokenStore {
             lists_journal: WordJournal::default(),
             build: Vec::new(),
             builds: Vec::new(),
+            args: ArgStack::default(),
         }
     }
 }
@@ -306,18 +400,21 @@ pub(crate) struct TokenStoreMarks {
     pub(crate) lists: usize,
     pub(crate) free_runs: [u32; N_CLASSES],
     pub(crate) free_lists: u32,
+    pub(crate) args: usize,
 }
 
 #[derive(Clone, Default)]
 pub(crate) struct TokenDelta {
     tokens: WordDelta<Token>,
     lists: WordDelta<ListSlot>,
+    args: ArgDelta,
 }
 
 impl TokenDelta {
     pub(crate) fn compose_with_older(&mut self, older: TokenDelta) {
         self.tokens.compose_with_older(older.tokens);
         self.lists.compose_with_older(older.lists);
+        self.args.compose_with_older(older.args);
     }
 
     pub(crate) fn compact(&mut self) {
@@ -326,7 +423,7 @@ impl TokenDelta {
     }
 
     pub(crate) fn allocated_bytes(&self) -> usize {
-        self.tokens.allocated_bytes() + self.lists.allocated_bytes()
+        self.tokens.allocated_bytes() + self.lists.allocated_bytes() + self.args.allocated_bytes()
     }
 }
 
@@ -363,17 +460,20 @@ impl TokenStore {
     pub(crate) fn arm_journal(&mut self) {
         self.tokens_journal.arm(self.tokens.len());
         self.lists_journal.arm(self.lists.len());
+        self.args.arm_journal();
     }
 
     pub(crate) fn disarm_journal(&mut self) {
         self.tokens_journal.disarm();
         self.lists_journal.disarm();
+        self.args.disarm_journal();
     }
 
     pub(crate) fn seal_journal(&mut self) -> TokenDelta {
         TokenDelta {
             tokens: self.tokens_journal.seal(&self.tokens),
             lists: self.lists_journal.seal(&self.lists),
+            args: self.args.seal_journal(),
         }
     }
 
@@ -381,12 +481,19 @@ impl TokenStore {
         TokenDelta {
             tokens: self.tokens_journal.snapshot(),
             lists: self.lists_journal.snapshot(),
+            args: self.args.snapshot_journal(),
         }
     }
 
     pub(crate) fn apply(&mut self, delta: &TokenDelta) {
         delta.tokens.apply_to(&mut self.tokens);
         delta.lists.apply_to(&mut self.lists);
+        self.args.apply(&delta.args);
+    }
+
+    /// The tokens on the argument stack, for checkpoint digests.
+    pub(crate) fn live_args(&self) -> &[Token] {
+        self.args.live()
     }
 
     pub(crate) fn marks(&self) -> TokenStoreMarks {
@@ -399,6 +506,7 @@ impl TokenStore {
             lists: self.lists.len(),
             free_runs: self.free_runs,
             free_lists: self.free_lists,
+            args: self.args.len(),
         }
     }
 
@@ -409,6 +517,7 @@ impl TokenStore {
         self.lists.truncate(marks.lists);
         self.free_runs = marks.free_runs;
         self.free_lists = marks.free_lists;
+        self.args.restore_len(marks.args);
         if self.tokens_journal.armed() {
             self.tokens_journal.rebase(marks.tokens);
             self.lists_journal.rebase(marks.lists);
@@ -420,6 +529,7 @@ impl TokenStore {
         self.lists = vec![ListSlot::zeroed(); marks.lists];
         self.free_runs = marks.free_runs;
         self.free_lists = marks.free_lists;
+        self.args.clear();
     }
 
     pub(crate) fn is_consistent(&self) -> bool {
@@ -512,13 +622,13 @@ impl TokenStore {
     }
 
     #[inline(always)]
-    pub(crate) fn cursor(&self, list: TokenList) -> TokCursor {
+    pub(crate) fn cursor(&self, list: TokenList) -> ListCursor {
         match self.slot_of(list) {
-            Some(slot) => TokCursor {
+            Some(slot) => ListCursor {
                 pos: slot.start,
                 end: slot.start + slot.len,
             },
-            None => TokCursor::END,
+            None => ListCursor::END,
         }
     }
 
@@ -542,30 +652,31 @@ impl TokenStore {
                 end: loc.end,
             }
         } else {
-            self.cursor(list)
+            self.cursor(list).into()
         }
     }
 
     #[inline(always)]
-    pub(crate) fn peek(&self, c: TokCursor) -> Option<Token> {
-        if c.is_end() {
-            None
-        } else {
-            self.tokens.get(c.pos as usize).copied()
-        }
+    pub(crate) fn peek<C: Cursor>(&self, c: C) -> Option<Token> {
+        if c.is_end() { None } else { c.token(self) }
     }
 
-    #[inline(always)]
-    pub(crate) fn next(&self, c: TokCursor) -> TokCursor {
-        debug_assert!(!c.is_end());
+    /// A cursor reading the argument `arg`.
+    pub(crate) fn arg_cursor(&self, arg: ArgRef) -> TokCursor {
         TokCursor {
-            pos: c.pos + 1,
-            end: c.end,
+            pos: arg.start() | ARG_TAG,
+            end: arg.end() | ARG_TAG,
         }
     }
 
     #[inline(always)]
-    pub(crate) fn read(&self, c: &mut TokCursor) -> Option<Token> {
+    pub(crate) fn next<C: Cursor>(&self, c: C) -> C {
+        debug_assert!(!c.is_end());
+        c.advanced()
+    }
+
+    #[inline(always)]
+    pub(crate) fn read<C: Cursor>(&self, c: &mut C) -> Option<Token> {
         let t = self.peek(*c)?;
         *c = self.next(*c);
         Some(t)
@@ -579,8 +690,13 @@ impl TokenStore {
     }
 
     /// Whether `c` lies in the store, for printing a possibly clobbered list.
-    pub(crate) fn holds(&self, c: TokCursor) -> bool {
-        c.end as usize <= self.tokens.len()
+    pub(crate) fn holds(&self, c: impl Into<TokCursor>) -> bool {
+        let c = c.into();
+        if c.end & ARG_TAG == 0 {
+            c.end as usize <= self.tokens.len()
+        } else {
+            (c.end & !ARG_TAG) as usize <= self.args.len()
+        }
     }
 
     /// Whether `list` is a live list of the store, for printing a possibly clobbered list.
@@ -649,6 +765,63 @@ impl TokenStore {
         list
     }
 
+    /// Starts collecting a macro call's arguments.
+    pub(crate) fn begin_args(&self) -> BuiltArgs {
+        BuiltArgs {
+            base: self.build.len(),
+            args: [ArgRef::default(); 9],
+            n: 0,
+        }
+    }
+
+    /// Ends build `b` as the next argument in `args`, leaving its tokens in the build buffer.
+    #[inline]
+    pub(crate) fn finish_arg(&mut self, args: &mut BuiltArgs, b: Build) -> Result<(), Abort> {
+        let (start, skip) = self.builds[self.top(&b)];
+        self.builds.pop();
+        let slot = args
+            .args
+            .get_mut(args.n)
+            .ok_or(Abort::Confusion("macro arguments"))?;
+        let from = start + skip;
+        let offset = u32::try_from(from - args.base).map_err(|_| Abort::AvailOverflow)?;
+        let len = u32::try_from(self.build.len() - from).map_err(|_| Abort::AvailOverflow)?;
+        *slot = ArgRef::new(offset, len);
+        args.n += 1;
+        Ok(())
+    }
+
+    /// The tokens of built argument `k`.
+    pub(crate) fn built_arg(&self, args: &BuiltArgs, k: usize) -> &[Token] {
+        let arg = args.args[k];
+        &self.build[args.base + arg.start() as usize..args.base + arg.end() as usize]
+    }
+
+    /// Moves the built arguments onto the argument stack, with the tokens
+    /// between them, and returns where they landed. `args` is empty afterwards.
+    #[inline]
+    pub(crate) fn push_args<'a>(&mut self, args: &'a mut BuiltArgs) -> Result<&'a [ArgRef], Abort> {
+        let (base, n) = (args.base, args.n);
+        if self.tokens.len() + self.args.len() + (self.build.len() - base) > MAX_TOKENS {
+            return Err(Abort::AvailOverflow);
+        }
+        self.args
+            .push_all(&self.build[base..], &mut args.args[..n])?;
+        self.build.truncate(base);
+        args.n = 0;
+        Ok(&args.args[..n])
+    }
+
+    /// Drops built arguments that never reach the argument stack.
+    pub(crate) fn drop_args(&mut self, args: BuiltArgs) {
+        self.build.truncate(args.base);
+    }
+
+    /// Drops `arg` and every argument pushed after it.
+    pub(crate) fn pop_args_to(&mut self, arg: ArgRef) {
+        self.args.pop_to(arg);
+    }
+
     pub(crate) fn abandon(&mut self, b: Build) {
         let (start, _) = self.builds[self.top(&b)];
         self.builds.pop();
@@ -660,6 +833,10 @@ impl TokenStore {
         debug_assert!(self.build.len() >= self.builds[i].0 + 2 && self.builds[i].1 == 0);
         self.build.pop();
         self.builds[i].1 = 1;
+    }
+
+    pub(crate) fn store(&mut self, tokens: &[Token]) -> Result<TokenList, Abort> {
+        self.store_list(tokens)
     }
 
     pub(crate) fn single(&mut self, t: Token) -> Result<TokenList, Abort> {
@@ -753,7 +930,7 @@ impl TokenStore {
 
 pub(crate) struct TokIter<'a> {
     store: &'a TokenStore,
-    at: TokCursor,
+    at: ListCursor,
 }
 
 impl Iterator for TokIter<'_> {

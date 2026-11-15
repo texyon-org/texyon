@@ -4,6 +4,7 @@ use std::mem::{size_of, take};
 use std::rc::Rc;
 use std::sync::Arc;
 
+use crate::base::arg_stack::ArgRef;
 use crate::base::random::Random;
 use crate::base::stack::TexStack;
 use crate::base::token::{Token, TokenList, TokenStoreMarks};
@@ -20,7 +21,7 @@ use crate::memory::mem::{FreeLists, MemState};
 use crate::memory::mem_types::ListStateRecord;
 use crate::preview::sync_index::PreviewSyncIndex;
 use crate::print::errors::ErrorState;
-use crate::scanning::input::{InputClusterState, InputState, MacroParam, OpenLevel};
+use crate::scanning::input::{InputClusterState, InputState, OpenLevel};
 use crate::scanning::pgfmath::KnownCs;
 use crate::scanning::scan::ScannerState;
 use crate::shipout::ShipoutState;
@@ -428,7 +429,7 @@ impl SaveBundle {
 struct InputBundle {
     buffer: Vec<i32>,
     input_stack: StackBundle<InputState>,
-    param_stack: StackBundle<MacroParam>,
+    param_stack: StackBundle<ArgRef>,
     nest: StackBundle<ListStateRecord>,
     open_levels: Vec<OpenLevel>,
     cur_input: InputState,

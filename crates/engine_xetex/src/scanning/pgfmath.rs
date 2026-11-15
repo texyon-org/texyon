@@ -8,7 +8,7 @@ use std::{iter, mem, slice};
 use crate::base::cmd::Cmd;
 use crate::base::command::Command;
 use crate::base::params::IntPar;
-use crate::base::token::{Token, TokenKind, TokenList};
+use crate::base::token::{BuiltArgs, Token, TokenKind, TokenList};
 use crate::fonts::{QUAD_CODE, X_HEIGHT_CODE};
 use crate::print::errors::{Abort, OrConfusion};
 use crate::state::EngineState;
@@ -698,8 +698,8 @@ fn run_native(
 /// True when macro `name` was answered natively, then `macro_call` frees the
 /// arguments and skips the body.
 #[inline(always)]
-pub(crate) fn native_macro(st: &mut EngineState, name: CsId, args: &[TokenList]) -> bool {
-    if !st.config.native_pgfmath || args.is_empty() {
+pub(crate) fn native_macro(st: &mut EngineState, name: CsId, args: &BuiltArgs) -> bool {
+    if !st.config.native_pgfmath || args.len() == 0 {
         return false;
     }
     match st.eqtb.pgfmath.native(name) {
@@ -710,16 +710,15 @@ pub(crate) fn native_macro(st: &mut EngineState, name: CsId, args: &[TokenList])
 
 #[cold]
 #[inline(never)]
-fn run_native_macro(st: &mut EngineState, kind: Native, args: &[TokenList]) -> bool {
+fn run_native_macro(st: &mut EngineState, kind: Native, args: &BuiltArgs) -> bool {
     if TRACING.iter().any(|&p| st.eqtb.int_par(p) > 0) || st.eqtb.int_par(IntPar::GlobalDefs) != 0 {
         return false;
     }
     let Some(known) = st.eqtb.pgfmath.complete() else {
         return false;
     };
-    let args: Vec<Vec<Token>> = args
-        .iter()
-        .map(|&p| st.mem.tokens.iter(p).collect())
+    let args: Vec<Vec<Token>> = (0..args.len())
+        .map(|k| st.mem.tokens.built_arg(args, k).to_vec())
         .collect();
     let Some(effects) = run_native(st, &known, kind, &args) else {
         return false;
