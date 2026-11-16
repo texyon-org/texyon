@@ -22,8 +22,8 @@ use crate::print::errors::{
 use crate::print::{
     CsName, Esc, Selector, begin_diagnostic, end_diagnostic, if_warning, print, print_char,
     print_cs, print_file_name, print_font_name_and_size, print_int, print_ln, print_meaning,
-    print_nl, print_roman_int, print_scaled, show_cur_cmd_chr, show_token_list, sprint_cs,
-    token_show,
+    print_nl, print_roman_int, print_scaled, show_cur_cmd_chr, show_token_list, show_tokens,
+    sprint_cs, token_show,
 };
 use crate::scanning::cond_stack::CondId;
 use crate::scanning::input::{
@@ -987,22 +987,18 @@ fn trace_macro_call(st: &mut EngineState, ref_count: TokenList) {
 }
 
 #[cold]
-fn trace_macro_param(st: &mut EngineState, match_chr: i32, built: &BuiltArgs) -> Result<(), Abort> {
+fn trace_macro_param(st: &mut EngineState, match_chr: i32, built: &BuiltArgs) {
     let stack_levels = st.eqtb.int_par(IntPar::TracingStackLevels);
     if stack_levels == 0 || st.input.input_depth() < stack_levels {
         let n = built.len();
         let tokens = st.mem.tokens.built_arg(built, n - 1).to_vec();
-        let list = st.mem.tokens.store(&tokens)?;
         begin_diagnostic(st);
         print_nl(st, StrNumber::single_char(match_chr));
         print_int(st, i32::try_from(n).unwrap_or(i32::MAX));
         print(st, "<-");
-        let from = st.mem.tokens.cursor(list);
-        show_token_list(st, from, TokCursor::END, 1000);
+        show_tokens(st, &tokens, 1000);
         end_diagnostic(st, false);
-        st.mem.tokens.flush(list);
     }
-    Ok(())
 }
 
 pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
@@ -1175,7 +1171,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                     }
                     st.mem.tokens.finish_arg(&mut built, arg)?;
                     if st.eqtb.int_par(IntPar::TracingMacros) > 0 {
-                        trace_macro_param(st, match_chr, &built)?;
+                        trace_macro_param(st, match_chr, &built);
                     }
                 } else {
                     st.mem.tokens.abandon(arg);
@@ -1207,10 +1203,10 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
             .set_token_loc(st.mem.tokens.next(r).into());
 
         if built.len() > 0 {
-            let args = st.mem.tokens.push_args(&mut built)?;
+            let (args, n) = st.mem.tokens.push_args(built)?;
             let stack = &mut st.input.param_stack;
             stack
-                .push_all(args)
+                .push_all(&args[..n])
                 .map_err(|_| stack.overflow(Capacity::ParameterStack))?;
         }
     }

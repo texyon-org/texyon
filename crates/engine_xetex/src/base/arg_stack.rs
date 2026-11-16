@@ -49,12 +49,15 @@ impl ArgStack {
     }
 
     /// Pushes `tokens`, which hold `args` at offsets from their start, and moves `args` along.
+    /// Tokens before the first argument stay behind, so popping to it frees everything.
     pub(crate) fn push_all(&mut self, tokens: &[Token], args: &mut [ArgRef]) -> Result<(), Abort> {
-        let shift = u32::try_from(self.tokens.len()).map_err(|_| Abort::AvailOverflow)?;
-        u32::try_from(self.tokens.len() + tokens.len()).map_err(|_| Abort::AvailOverflow)?;
-        self.tokens.extend_from_slice(tokens);
+        let Some(skip) = args.first().map(|arg| arg.start) else {
+            return Ok(());
+        };
+        let len = u32::try_from(self.tokens.len()).map_err(|_| Abort::AvailOverflow)?;
+        self.tokens.extend_from_slice(&tokens[skip as usize..]);
         for arg in args {
-            arg.start += shift;
+            arg.start = arg.start - skip + len;
         }
         Ok(())
     }

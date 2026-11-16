@@ -203,6 +203,7 @@ pub(crate) struct TokCursor {
 
 /// Set in a cursor's positions when it reads the argument stack instead of the lists.
 const ARG_TAG: u32 = 1 << 31;
+const _: () = assert!(MAX_TOKENS < ARG_TAG as usize);
 
 /// A cursor into a stored token list, never into an argument, so reading needs no tag test.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
@@ -798,18 +799,17 @@ impl TokenStore {
     }
 
     /// Moves the built arguments onto the argument stack, with the tokens
-    /// between them, and returns where they landed. `args` is empty afterwards.
+    /// between them, and returns where they landed and how many there are.
     #[inline]
-    pub(crate) fn push_args<'a>(&mut self, args: &'a mut BuiltArgs) -> Result<&'a [ArgRef], Abort> {
-        let (base, n) = (args.base, args.n);
+    pub(crate) fn push_args(&mut self, mut args: BuiltArgs) -> Result<([ArgRef; 9], usize), Abort> {
+        let base = args.base;
         if self.tokens.len() + self.args.len() + (self.build.len() - base) > MAX_TOKENS {
             return Err(Abort::AvailOverflow);
         }
         self.args
-            .push_all(&self.build[base..], &mut args.args[..n])?;
+            .push_all(&self.build[base..], &mut args.args[..args.n])?;
         self.build.truncate(base);
-        args.n = 0;
-        Ok(&args.args[..n])
+        Ok((args.args, args.n))
     }
 
     /// Drops built arguments that never reach the argument stack.
@@ -833,10 +833,6 @@ impl TokenStore {
         debug_assert!(self.build.len() >= self.builds[i].0 + 2 && self.builds[i].1 == 0);
         self.build.pop();
         self.builds[i].1 = 1;
-    }
-
-    pub(crate) fn store(&mut self, tokens: &[Token]) -> Result<TokenList, Abort> {
-        self.store_list(tokens)
     }
 
     pub(crate) fn single(&mut self, t: Token) -> Result<TokenList, Abort> {
@@ -944,6 +940,8 @@ impl Iterator for TokIter<'_> {
 
 #[cfg(test)]
 mod tests {
+    use std::iter;
+
     use super::*;
 
     fn tokens(store: &TokenStore, list: TokenList) -> Vec<i32> {
@@ -956,6 +954,28 @@ mod tests {
             store.push(&b, Token(v)).unwrap();
         }
         store.finish(b).unwrap()
+    }
+
+    #[test]
+    fn popping_braced_arguments_leaves_the_argument_stack_empty() {
+        let mut store = TokenStore::default();
+        let mut built = store.begin_args();
+        for arg in [[1, 2, 3], [4, 5, 6]] {
+            let b = store.begin().unwrap();
+            for v in arg {
+                store.push(&b, Token(v)).unwrap();
+            }
+            store.drop_first_last(&b);
+            store.finish_arg(&mut built, b).unwrap();
+        }
+        let (args, n) = store.push_args(built).unwrap();
+        let read = |a: ArgRef| {
+            let mut c = store.arg_cursor(a);
+            iter::from_fn(|| store.read(&mut c).map(|t| t.0)).collect::<Vec<_>>()
+        };
+        assert_eq!((read(args[0]), read(args[1]), n), (vec![2], vec![5], 2));
+        store.pop_args_to(args[0]);
+        assert_eq!(store.live_args(), []);
     }
 
     #[test]
