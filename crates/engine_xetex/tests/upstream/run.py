@@ -37,6 +37,8 @@ ROOT = HERE.parents[3]
 ASSETS = ROOT / "tests" / "assets"
 PROBES = HERE / "probes"
 KNOWN = HERE / "known.tsv"
+# Cases left out of runs, each with why.
+SLOW = HERE / "slow.tsv"
 FONTS = HERE / "fonts"
 
 XETEX = os.environ.get("XETEX", "/usr/local/texlive/2025/bin/x86_64-linux/xetex")
@@ -236,6 +238,8 @@ def xdv_pages(path):
             out.append("nop")
         elif op == 139:
             i += 44
+            if i > len(b):
+                break
             out.append(f"bop {struct.unpack('>10i', b[i - 44:i - 4])}")
         elif op == 140:
             out.append("eop")
@@ -302,13 +306,16 @@ def xdv_pages(path):
         else:
             out.append(f"<op {op}>")
             break
+    # A run killed at its file size limit leaves the XDV cut off.
+    if i > len(b):
+        out.append("<truncated xdv>")
     return out
 
 
-def load_known():
+def load_known(path=KNOWN):
     known = {}
-    if KNOWN.exists():
-        for l in KNOWN.read_text().splitlines():
+    if path.exists():
+        for l in path.read_text().splitlines():
             if l.strip() and not l.startswith("#"):
                 name, reason = l.split("\t", 1)
                 known[name] = reason
@@ -349,6 +356,13 @@ def run_latex(args, suites):
     cases = [c for s in suites for c in latex.SUITES[s](tl)]
     if args.filters:
         cases = [c for c in cases if any(f in c.name for f in args.filters)]
+    slow = load_known(SLOW)
+    skipped = sum(c.name in slow for c in cases)
+    cases = [c for c in cases if c.name not in slow]
+    if skipped:
+        print(f"skipping {skipped} cases listed in {SLOW.name}", flush=True)
+    for c in cases:
+        c.timeout *= args.timeout_scale
     known = load_known()
     cache = WORK / "latex" / "tl-cache"
     cache.mkdir(parents=True, exist_ok=True)
@@ -358,20 +372,36 @@ def run_latex(args, suites):
         old.unlink()
 
     cases.sort(key=lambda c: c.cost(), reverse=True)
-    # The smallest case builds TeXyoN's format before the parallel runs.
-    results = [latex_one(tl, cases[-1], cache, args.keep, args.pixels)] if cases else []
+    tl.warm_texyon()
+    results = []
     tally = {}
-    with ProcessPoolExecutor(args.jobs) as ex:
-        futures = [ex.submit(latex_one, tl, c, cache, args.keep, args.pixels) for c in cases[:-1]]
-        for n, fut in enumerate(as_completed(futures), 2):
+    requeued = []
+
+    def finished(n, case, status, diffs):
+        results.append((case, status, diffs))
+        tally[status] = tally.get(status, 0) + 1
+        if status not in ("match", "match-nopages"):
+            print(f"[{n}/{len(cases)}] {status.upper():16} {case.name}", flush=True)
+        if n % 25 == 0 or n == len(cases):
+            print(f"[{n}/{len(cases)}] so far: "
+                  + ", ".join(f"{v} {k}" for k, v in sorted(tally.items())), flush=True)
+
+    with latex.Governor(WORK / "latex"), ProcessPoolExecutor(args.jobs) as ex:
+        futures = [ex.submit(latex_one, tl, c, cache, args.keep, args.pixels) for c in cases]
+        n = 0
+        for fut in as_completed(futures):
             case, status, diffs = fut.result()
-            results.append((case, status, diffs))
-            tally[status] = tally.get(status, 0) + 1
-            if status not in ("match", "match-nopages"):
-                print(f"[{n}/{len(cases)}] {status.upper():16} {case.name}", flush=True)
-            if n % 25 == 0 or n == len(cases):
-                print(f"[{n}/{len(cases)}] so far: "
-                      + ", ".join(f"{v} {k}" for k, v in sorted(tally.items())), flush=True)
+            if status == "requeue":
+                print(f"[{n}/{len(cases)}] {'REQUEUE':16} {case.name} (low memory, reruns alone)",
+                      flush=True)
+                requeued.append(case)
+            else:
+                n += 1
+                finished(n, case, status, diffs)
+        # One at a time, so the governor has nothing to stop.
+        for case in requeued:
+            n += 1
+            finished(n, *latex_one(tl, case, cache, args.keep, args.pixels))
     counts = {}
     for case, status, diffs in results:
         if status.startswith("diverge") and case.name in known:
@@ -398,6 +428,8 @@ def main():
     ap.add_argument("--keep", action="store_true", help="keep TeXyoN's outputs of diverging cases")
     ap.add_argument("--pixels", action="store_true",
                     help="render diverging XDVs and compare their pages")
+    ap.add_argument("--timeout-scale", type=int, default=1,
+                    help="multiply each case's timeout, for documents that are just slow")
     ap.add_argument("filters", nargs="*")
     args = ap.parse_args()
 

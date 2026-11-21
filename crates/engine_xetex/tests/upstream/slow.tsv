@@ -1,0 +1,15 @@
+# case	why it is left out of runs
+tldocs/latex/fontscale/fontscale-code	l3regex and l3intarray loops that run for over half an hour on pdfTeX and XeTeX alike, LuaTeX keeps those arrays in Lua
+tldocs/latex/tabularray/tabularray	l3regex and l3intarray loops that run for over half an hour on pdfTeX and XeTeX alike, LuaTeX keeps those arrays in Lua
+tldocs/latex/polyomino/polyomino	l3regex and l3intarray loops that run for over half an hour on pdfTeX and XeTeX alike, LuaTeX keeps those arrays in Lua
+tldocs/latex/juramisc/doc/jmgerdoc	upstream xetex runs past 40 minutes a pass
+tldocs/latex/media4svg/example/beamer-example	upstream xetex runs past 40 minutes a pass
+tldocs/latex/dithesis/sampleNoArial	upstream xetex runs past 40 minutes a pass
+tldocs/latex/exam-randomizechoices/exam-randomizechoices-doc	upstream xetex runs past 40 minutes a pass
+tldocs/latex/makeplot/mptest	upstream xetex runs past 40 minutes a pass
+tldocs/latex/wheelchart/wheelchart	upstream xetex runs past 40 minutes a pass
+tldocs/latex/lisp-on-tex/examples/fpnummodule-mandelbrot	upstream xetex runs past 40 minutes a pass
+tldocs/latex/liftarm/liftarm	upstream xetex runs past 40 minutes a pass
+tldocs/latex/broydensolve/broydensolve-doc	upstream xetex runs past 40 minutes a pass
+tldocs/latex/bidi/test-brochure	both engines loop until the timeout, upstream writing a 3 GB log in 10 minutes and TeXyoN holding as much in memory
+arxiv/2610.25503	both engines loop on "Illegal unit of measure" in a table until the timeout

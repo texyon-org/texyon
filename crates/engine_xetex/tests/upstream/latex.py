@@ -14,8 +14,10 @@ import random
 import re
 import resource
 import shutil
+import signal
 import subprocess
 import tarfile
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -33,6 +35,12 @@ CAPACITIES = dict(
     font_mem_size="8000000", font_max="9000", pool_size="6250000",
     string_vacancies="90000", max_strings="565536", extra_mem_top=str((1 << 26) - 5_000_000),
 )
+TL_TIMEOUT = "upstream xetex timed out"
+# Per-pass seconds for cases that need longer than their suite's default.
+LONG_TIMEOUTS = {
+    # Upstream takes 415 s a pass, TeXyoN 617 s (2026-11-21).
+    "tldocs/latex/functional/functional": 900,
+}
 SKIP_TREES = ("doc", "source", "scripts")
 MISC_FONT_SUFFIXES = (".tec", ".map", ".fea", ".cmap")
 FONT_SUFFIXES = (".tfm", ".vf", ".ofm", ".ovf", ".otf", ".ttf", ".ttc", ".otc", ".pfb", ".pfa",
@@ -231,6 +239,19 @@ class TeXLive:
             if log.exists() and FATAL_RX.search(log.read_text(errors="replace")):
                 break
         return None
+
+    def warm_texyon(self):
+        """Builds TeXyoN's format once, before parallel runs would each build it."""
+        d = self.work / "warm"
+        shutil.rmtree(d, ignore_errors=True)
+        d.mkdir(parents=True)
+        (d / "warm.tex").write_text("\\documentclass{article}\\begin{document}x\\end{document}\n")
+        subprocess.run(
+            [self.texyon, "-X", "compile", "--outfmt", "xdv", "--untrusted",
+             "-Z", "deterministic-mode", "--bundle", str(self.bundle), "warm.tex"],
+            cwd=d, env=self.env(), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, check=False)
+        shutil.rmtree(d, ignore_errors=True)
 
     def run_tt(self, case, d):
         subprocess.run(
@@ -601,8 +622,9 @@ def tldocs_cases(tl, max_dir_bytes=40_000_000):
             files = [(f, str(f.relative_to(top))) for f in top.rglob("*")
                      if f.is_file() and f.suffix not in (".log", ".aux")
                      and not (f.suffix == ".pdf" and f.stem == tex.stem)]
-            cases.append(Case(name=f"tldocs/{tex.relative_to(doc).with_suffix('')}", suite="tldocs",
-                              files=files, main=tex.name, passes=2, timeout=600))
+            name = f"tldocs/{tex.relative_to(doc).with_suffix('')}"
+            cases.append(Case(name=name, suite="tldocs", files=files, main=tex.name, passes=2,
+                              timeout=LONG_TIMEOUTS.get(name, 600)))
     return cases
 
 
@@ -610,8 +632,21 @@ SUITES = {"lvt": lvt_cases, "arxiv": arxiv_cases, "docs": manifest_cases, "tldoc
 
 
 def available_kib():
+    """Free memory, or the room left under this process's cgroup limit if that is smaller."""
     with open("/proc/meminfo") as f:
-        return next(int(l.split()[1]) for l in f if l.startswith("MemAvailable:"))
+        free = next(int(l.split()[1]) for l in f if l.startswith("MemAvailable:"))
+    try:
+        group = Path("/proc/self/cgroup").read_text().split("::", 1)[1].strip().lstrip("/")
+        group = Path("/sys/fs/cgroup") / group
+        limit = (group / "memory.max").read_text().strip()
+        if limit != "max":
+            stat = dict(l.split() for l in (group / "memory.stat").read_text().splitlines())
+            # Page cache the kernel can drop counts as free, as MemAvailable does.
+            used = int((group / "memory.current").read_text()) - int(stat["inactive_file"])
+            free = min(free, (int(limit) - used) // 1024)
+    except (OSError, IndexError, KeyError, ValueError):
+        pass
+    return free
 
 
 def wait_for_memory(lock, min_kib=2_500_000, settle=0.5):
@@ -642,6 +677,61 @@ def window_diff(a, b, label, context=3, limit=60):
     return out
 
 
+class Governor:
+    """Keeps parallel cases from exhausting memory, by stopping the newest to rerun it alone."""
+
+    def __init__(self, work, min_kib=1_500_000):
+        self.work = work.resolve()
+        self.min_kib = min_kib
+        self.stop = threading.Event()
+        self.thread = threading.Thread(target=self._watch, daemon=True)
+
+    def __enter__(self):
+        requeue_dir(self.work).mkdir(parents=True, exist_ok=True)
+        self.thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.stop.set()
+        self.thread.join()
+
+    def _watch(self):
+        while not self.stop.wait(0.25):
+            if available_kib() < self.min_kib and self._evict():
+                # Killed engines take a moment to hand their memory back.
+                self.stop.wait(3)
+
+    def _evict(self):
+        """Kills the engines of the most recently started case, if another case is running."""
+        cases = {}
+        for p in Path("/proc").iterdir():
+            if not p.name.isdigit():
+                continue
+            try:
+                rel = Path(os.readlink(p / "cwd")).relative_to(self.work)
+                start = int((p / "stat").read_text().rsplit(")", 1)[1].split()[19])
+            except (OSError, ValueError, IndexError):
+                continue
+            if len(rel.parts) < 2 or rel.parts[0] not in ("tt", "tl"):
+                continue
+            first, pids = cases.get(rel.parts[1], (start, []))
+            cases[rel.parts[1]] = (min(first, start), pids + [int(p.name)])
+        if len(cases) < 2:
+            return False
+        newest = max(cases, key=lambda c: cases[c][0])
+        (requeue_dir(self.work) / newest).touch()
+        for pid in cases[newest][1]:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        return True
+
+
+def requeue_dir(work):
+    return work / "requeue"
+
+
 def compare(tl, case, work, cache_dir, xdv_pages, keep_failures, pixels=False):
     """Compare both engines on one case. Returns (status, diff lines)."""
     safe = case.name.replace("/", "-")
@@ -651,13 +741,17 @@ def compare(tl, case, work, cache_dir, xdv_pages, keep_failures, pixels=False):
     if cached.exists():
         try:
             data = json.loads(gzip.decompress(cached.read_bytes()))
-            if data.get("key") == key:
+            # A timeout only stands for runs given no more time than it had.
+            timed_out = data.get("crash") == TL_TIMEOUT and data.get("timeout", 0) < case.timeout
+            if data.get("key") == key and not timed_out:
                 tl_res = data
         except (OSError, ValueError):
             pass
     tt_dir = work / "tt" / safe
     tl_dir = work / "tl" / safe
     stem = Path(case.main).with_suffix("")
+    requeued = requeue_dir(work) / safe
+    requeued.unlink(missing_ok=True)
     wait_for_memory(work / "start.lock")
 
     def upstream():
@@ -667,10 +761,12 @@ def compare(tl, case, work, cache_dir, xdv_pages, keep_failures, pixels=False):
         try:
             crash = tl.run_tl(case, tl_dir)
         except subprocess.TimeoutExpired:
-            crash = "upstream xetex timed out"
+            crash = TL_TIMEOUT
+        if requeued.exists():
+            return None
         # Upstream writes its outputs to the working directory, TeXyoN next to the input.
         log_path = tl_dir / f"{stem.name}.log"
-        res = dict(key=key, crash=crash,
+        res = dict(key=key, crash=crash, timeout=case.timeout,
                    log=log_path.read_text(encoding="utf-8", errors="replace")
                    if log_path.exists() else None,
                    xdv=xdv_pages(tl_dir / f"{stem.name}.xdv"))
@@ -696,6 +792,10 @@ def compare(tl, case, work, cache_dir, xdv_pages, keep_failures, pixels=False):
         if tl_future:
             tl_res = tl_future.result()
         tt_res = tt_future.result()
+    if requeued.exists():
+        shutil.rmtree(tl_dir, ignore_errors=True)
+        shutil.rmtree(tt_dir, ignore_errors=True)
+        return "requeue", []
     try:
         rerun_tl = None if tl_future else upstream
         return judge(tl, case, tl_res, tt_res, tl_dir, tt_dir, work, stem, rerun_tl, pixels)
