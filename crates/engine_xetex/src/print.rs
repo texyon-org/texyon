@@ -516,17 +516,17 @@ pub(crate) fn print_err(st: &mut EngineState, kind: DiagnosticKind, message: imp
     print(st, message);
 }
 
-/// TeX Live's `print_ignored_err`: an error that `\ignoreprimitiveerror` turns into a warning.
+/// TeX Live's `print_ignored_err`: an error that `\ignoreprimitiveerror` turns into a warning,
+/// written to the log only.
 pub(crate) fn print_ignored_err(st: &mut EngineState, message: &str) {
-    if st.config.file_line_error_style_p != 0 {
-        print_file_line(st);
-    } else {
-        print_nl(st, "");
-    }
+    let old_setting = st.shipout.selector;
+    st.shipout.selector = Selector::LogOnly;
+    print_ln(st);
     begin_warning(st);
-    print(st, "ignored error: ");
+    print(st, "ignored: ");
     print(st, message);
     end_capture(st);
+    st.shipout.selector = old_setting;
 }
 
 pub(crate) fn print_error_prefix(st: &mut EngineState) {

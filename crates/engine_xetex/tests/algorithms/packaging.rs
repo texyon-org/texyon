@@ -370,3 +370,16 @@ fn showgroups_names_inserts_and_vadjusts() {
         .collect();
     assert_eq!(shown, [r"\vadjust{)", r"\vadjust pre{)", r"\insert100{)"]);
 }
+
+#[test]
+fn an_ignored_vsplit_error_is_logged_on_a_line_of_its_own() {
+    // TeX Live keeps the column of the line before and wraps the message (upstream bug 26).
+    let r = run(r"\ignoreprimitiveerror=1
+\setbox1\vbox{\hrule height 5pt \vskip 0pt minus 1fil \hrule height 5pt}
+\message{aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}\setbox2\vsplit1 to 7pt");
+    assert_eq!(
+        r.lines_starting("ignored"),
+        ["ignored: Infinite glue shrinkage found in box being split )"]
+    );
+    assert!(r.errors().is_empty());
+}
