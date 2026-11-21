@@ -66,8 +66,8 @@ cargo xtask native --features preview-mupdf
 Run the extension's tests with `npm install && npm test`. Set
 `TEXYON_PREVIEW_BIN` to a built binary to include the real-server smoke test.
 
-The extension talks to the engine through the session protocol described in
-`docs/live-preview/protocol.md`, the same one the web editor uses.
+The extension talks to the engine through the session protocol in
+`crates/preview_protocol`, the same one the web editor uses.
 
 ## License
 

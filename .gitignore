@@ -1,6 +1,5 @@
 # Build files
 /cross
-/docs/book/*
 /target
 /target-*/
 *.vsix
