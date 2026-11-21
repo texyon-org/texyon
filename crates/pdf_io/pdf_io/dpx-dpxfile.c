@@ -375,6 +375,6 @@ int
 dpx_file_apply_filter (const char *cmdtmpl,
                        const char *input, const char *output, int version)
 {
-    /* Tectonic: defused */
+    /* External converters never run, so TL 2026's filename quoting check has nothing to guard. */
     return -1;
 }

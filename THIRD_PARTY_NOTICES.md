@@ -69,7 +69,7 @@ copyright holders.
 
 `crates/pdf_io/pdf_io` and `crates/engine_xdvipdfmx/xdvipdfmx` are dvipdfmx,
 used to write PDF files and to read images and PDF figures, synced with the
-TeX Live 2025 sources (dvipdfm-x 20260113).
+TeX Live 2026 sources (dvipdfm-x 20260317).
 
 Copyright (C) 2002-2026 by Jin-Hwan Cho, Matthias Franz, Shunsaku Hirata and
 the dvipdfmx project team. Copyright (C) 1998, 1999 by Mark A. Wicks.
