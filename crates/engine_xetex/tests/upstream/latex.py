@@ -25,7 +25,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
-CORPUS = Path(os.environ.get("TEXYON_CORPUS_DIR", Path.home() / ".cache/tectonic-corpus"))
+CORPUS = Path(os.environ.get("TEXYON_CORPUS_DIR", Path.home() / ".cache/texyon-corpus"))
 
 # Same as run.py's plain probes: Tectonic's fixed capacities. Main memory gets TeXyoN's
 # `MAIN_MEMORY_WORDS`, through extra_mem_top since token lists can only grow there.

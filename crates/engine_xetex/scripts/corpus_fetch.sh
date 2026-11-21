@@ -11,12 +11,12 @@
 #   * arXiv e-print tarballs (per-ID, via the public e-print endpoint).
 #
 # Usage:
-#   TEXYON_CORPUS_DIR=~/.cache/tectonic-corpus ./corpus_fetch.sh [tl|arxiv|all]
+#   TEXYON_CORPUS_DIR=~/.cache/texyon-corpus ./corpus_fetch.sh [tl|arxiv|all]
 #
 # Bulk arXiv (thousands of papers) is NOT done here.
 set -euo pipefail
 
-CORPUS_DIR="${TEXYON_CORPUS_DIR:-$HOME/.cache/tectonic-corpus}"
+CORPUS_DIR="${TEXYON_CORPUS_DIR:-$HOME/.cache/texyon-corpus}"
 RAW="$CORPUS_DIR/raw"
 TL="${TEXLIVE_DOC:-/usr/local/texlive/2026/texmf-dist/doc}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

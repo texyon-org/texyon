@@ -3,7 +3,7 @@
 
 Samples recent submissions across categories through the arXiv API and keeps
 each source as a tarball under $TEXYON_CORPUS_DIR/arxiv (default
-~/.cache/tectonic-corpus/arxiv). Requests are spaced as arXiv asks of
+~/.cache/texyon-corpus/arxiv). Requests are spaced as arXiv asks of
 automated clients, so a large sample takes a while. Reruns skip what exists.
 
     crates/engine_xetex/tests/upstream/fetch_arxiv.py [--per-category N] [--categories A,B]
@@ -90,7 +90,7 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--categories", help="comma-separated subset of CATEGORIES")
     args = ap.parse_args()
-    root = Path(os.environ.get("TEXYON_CORPUS_DIR", Path.home() / ".cache/tectonic-corpus")) / "arxiv"
+    root = Path(os.environ.get("TEXYON_CORPUS_DIR", Path.home() / ".cache/texyon-corpus")) / "arxiv"
     root.mkdir(parents=True, exist_ok=True)
     skip = root / "not-latex.txt"
     skipped = set(skip.read_text().split()) if skip.exists() else set()

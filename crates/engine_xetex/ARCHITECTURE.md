@@ -329,10 +329,9 @@ deliberate fix toward upstream.
 - Clippy: `cargo clippy -p texyon_engine_xetex --all-targets -- -D warnings`
   must stay clean. CI runs it on the latest stable, whose clippy can be newer
   than a local one.
-- `scripts/parity.sh` logs a quick `tex-outputs` count.
 - Upstream differential tests live under `tests/upstream/` and compare the
   engine against upstream XeTeX directly. Running them with a debug
-  `tectonic` binary also checks for overflow panics (`probes/limits/wrap_*`
+  `texyon` binary also checks for overflow panics (`probes/limits/wrap_*`
   push the wraparound paths). A debug build overflows its stack on
   `cov-control-expand_depth`, which release handles.
 - `tests/algorithms/` runs small documents through INITEX in-process and
