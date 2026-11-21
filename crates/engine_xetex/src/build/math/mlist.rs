@@ -5,8 +5,8 @@ use super::scripts::make_scripts;
 use super::{DEFAULT_CODE, MathStyle};
 use crate::base::codes::LimitCode;
 use crate::base::consts::{
-    EMPTY, INF_PENALTY, INFINITE_DIMEN, MATH_CHAR, MATH_TEXT_CHAR, MAX_DIMEN, MIN_HALFWORD,
-    NULL_FONT, SUB_BOX, SUB_MLIST, TEXT_SIZE,
+    EMPTY, INF_PENALTY, INFINITE_DIMEN, MATH_CHAR, MATH_TEXT_CHAR, MAX_DIMEN, NULL_FONT, SUB_BOX,
+    SUB_MLIST, TEXT_SIZE,
 };
 use crate::base::params::{DimenPar, GluePar, IntPar};
 use crate::base::scaled_math::{mult_and_add, x_over_n, xn_over_d};
@@ -1564,8 +1564,6 @@ impl MemState {
         } else {
             self[p].link = self[b].list_ptr;
             self[b].list_ptr = p.ptr();
-            // XeTeX's `width(b):=width(p)` reads the glue's null leader pointer, `min_halfword` there (upstream bug 13).
-            self[b].width = Scaled::from_raw(MIN_HALFWORD);
         }
         Ok(())
     }

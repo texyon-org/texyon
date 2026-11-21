@@ -1,2 +1,3 @@
 fonts/opentype/public/lm-math/latinmodern-math.otf
 fonts/opentype/public/tex-gyre-math/texgyrepagella-math.otf
+fonts/opentype/public/garamond-math/Garamond-Math.otf

@@ -104,3 +104,4 @@ tldocs/latex/responsive/responsive-doc	both engines loop on the same error until
 tldocs/generic/pst-3dplot/pst-3dplot-doc	upstream aborts with "bad native font flag" at an OpenType math accent over a TFM letter, TeXyoN typesets the rest (UPSTREAM_BUGS.md 24)
 arxiv/2309.07781	upstream runs out of main memory building the first page, since its boxes and glue keep 5M words while TeXyoN has one 2^26-word pool
 tldocs/latex/frankenstein/abbrevs	both engines loop on the same error until main memory is full, upstream stops early since its boxes keep 5M words, TeXyoN fills 2^26 and times out in the quadratic native-word walk
+otmath-assembly_width	upstream resets an OpenType vertical assembly's width at each connector glue (upstream bug 13), TeXyoN keeps the widest part
