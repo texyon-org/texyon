@@ -45,6 +45,7 @@ pub fn run(host: &Host) -> Result<()> {
     diagnostics(&mut session, &mut project)?;
     links(&mut session, &mut project)?;
     commands(&mut session, &mut project)?;
+    pictures(&mut session, &mut project)?;
     session.finish()?;
 
     let mut project = Project::new(&root, "main.tex");
@@ -312,6 +313,55 @@ fn raster(session: &mut Session, project: &mut Project) -> Result<()> {
     let edited = session.compile(project.compile(Some((0, 0)), Some(2.0)))?;
     let drawn: Vec<usize> = edited.rasters.iter().map(|page| page.index).collect();
     ensure!(drawn == [0], "an edit in view drew pages {drawn:?}");
+    Ok(())
+}
+
+/// A one-page PDF of `width` by `height` bp, binary like a real one, so the host serves it from disk.
+fn pdf_page(width: u32, height: u32) -> Vec<u8> {
+    let objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
+        format!("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width} {height}] >>"),
+    ];
+    let mut pdf = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n".to_vec();
+    let mut offsets = Vec::new();
+    for (number, body) in (1..).zip(&objects) {
+        offsets.push(pdf.len());
+        pdf.extend(format!("{number} 0 obj\n{body}\nendobj\n").bytes());
+    }
+    let xref = pdf.len();
+    let size = objects.len() + 1;
+    pdf.extend(format!("xref\n0 {size}\n0000000000 65535 f \n").bytes());
+    for offset in offsets {
+        pdf.extend(format!("{offset:010} 00000 n \n").bytes());
+    }
+    pdf.extend(
+        format!("trailer\n<< /Size {size} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n").bytes(),
+    );
+    pdf
+}
+
+fn pictures(session: &mut Session, project: &mut Project) -> Result<()> {
+    project.retain(&["main.tex"]);
+    // A PDF parsed in one operation must not stand in for its edited file in the next.
+    for (width, label, expected) in [
+        (100, "first", "[first 100.375pt]"),
+        (200, "second", "[second 200.75pt]"),
+    ] {
+        fs::write(project.root.join("pic.pdf"), pdf_page(width, 50))?;
+        project.set(
+            "main.tex",
+            format!(
+                "\\documentclass{{article}}\n\\begin{{document}}\n\\setbox0\\hbox{{\\XeTeXpdffile \"pic.pdf\" }}\\typeout{{[{label} \\the\\wd0]}}\nText.\n\\end{{document}}\n"
+            ),
+        );
+        let report = compile(session, project)?;
+        ensure!(
+            report.log.contains(expected),
+            "a {width} bp picture did not report {expected}:\n{}",
+            report.log
+        );
+    }
     Ok(())
 }
 

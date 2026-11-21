@@ -71,6 +71,12 @@ unsafe extern "C" {
         handle: usize,
         pages_out: *mut c_int,
     ) -> c_int;
+    safe fn tt_pic_probe_forget();
+}
+
+/// Drops the PDFs that probes parsed, at the start and end of each run.
+pub(crate) fn forget_probed_pdfs() {
+    tt_pic_probe_forget();
 }
 
 const PIC_PROBE_OK: c_int = 0;

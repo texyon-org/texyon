@@ -13,6 +13,46 @@
 #include "dpx-pic_probe.h"
 #include "dpx-pngimage.h"
 
+/* Parsed PDFs kept between probes, so probing many pages of one file parses it once. */
+static void *probed_files = NULL;
+
+static void *
+enter_probed_files (void)
+{
+    void *outer = pdf_files_suspend();
+
+    if (probed_files)
+        pdf_files_restore(probed_files);
+    else
+        pdf_files_init();
+    probed_files = NULL;
+    return outer;
+}
+
+static void
+leave_probed_files (void *outer, int keep)
+{
+    if (keep)
+        probed_files = pdf_files_suspend();
+    else
+        pdf_files_close();
+    pdf_files_restore(outer);
+}
+
+void
+tt_pic_probe_forget (void)
+{
+    void *outer;
+
+    if (!probed_files)
+        return;
+    outer = pdf_files_suspend();
+    pdf_files_restore(probed_files);
+    probed_files = NULL;
+    pdf_files_close();
+    pdf_files_restore(outer);
+}
+
 int
 tt_pic_probe_pdf_box(const char *ident, rust_input_handle_t handle,
                      int page_num, int dpx_options,
@@ -20,21 +60,17 @@ tt_pic_probe_pdf_box(const char *ident, rust_input_handle_t handle,
 {
     jmp_buf *jb = ttbc_global_engine_get_jump_buffer();
     jmp_buf saved;
-    void *saved_files = pdf_files_suspend();
+    void *outer = enter_probed_files();
     volatile int rc = PIC_PROBE_FAIL;
-    volatile int files_inited = 0;
 
     memcpy(&saved, jb, sizeof(jmp_buf));
     if (setjmp(*jb)) {
-        if (files_inited)
-            pdf_files_close();
-        pdf_files_restore(saved_files);
+        /* An aborted parse may have left a file half read. */
+        leave_probed_files(outer, 0);
         memcpy(jb, &saved, sizeof(jmp_buf));
         return PIC_PROBE_ABORTED;
     }
 
-    pdf_files_init();
-    files_inited = 1;
     {
         pdf_file *pf = pdf_open(ident, handle);
         if (pf) {
@@ -55,9 +91,7 @@ tt_pic_probe_pdf_box(const char *ident, rust_input_handle_t handle,
         }
     }
 
-    pdf_files_close();
-    files_inited = 0;
-    pdf_files_restore(saved_files);
+    leave_probed_files(outer, 1);
     memcpy(jb, &saved, sizeof(jmp_buf));
     return rc;
 }
@@ -99,21 +133,17 @@ tt_pic_probe_pdf_page_count(const char *ident, rust_input_handle_t handle,
 {
     jmp_buf *jb = ttbc_global_engine_get_jump_buffer();
     jmp_buf saved;
-    void *saved_files = pdf_files_suspend();
+    void *outer = enter_probed_files();
     volatile int rc = PIC_PROBE_FAIL;
-    volatile int files_inited = 0;
 
     memcpy(&saved, jb, sizeof(jmp_buf));
     if (setjmp(*jb)) {
-        if (files_inited)
-            pdf_files_close();
-        pdf_files_restore(saved_files);
+        /* An aborted parse may have left a file half read. */
+        leave_probed_files(outer, 0);
         memcpy(jb, &saved, sizeof(jmp_buf));
         return PIC_PROBE_ABORTED;
     }
 
-    pdf_files_init();
-    files_inited = 1;
     {
         pdf_file *pf = pdf_open(ident, handle);
         if (pf) {
@@ -123,9 +153,7 @@ tt_pic_probe_pdf_page_count(const char *ident, rust_input_handle_t handle,
         }
     }
 
-    pdf_files_close();
-    files_inited = 0;
-    pdf_files_restore(saved_files);
+    leave_probed_files(outer, 1);
     memcpy(jb, &saved, sizeof(jmp_buf));
     return rc;
 }

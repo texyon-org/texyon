@@ -51,6 +51,7 @@ use crate::scanning::input::{
 use crate::scanning::pgfmath::KnownCs;
 use crate::scanning::scan::{set_class, set_family};
 use crate::shipout::initialize_shipout_variables;
+use crate::shipout::pic::forget_probed_pdfs;
 use crate::shipout::synctex::synctex_init_command;
 use crate::state::{ConfigState, EngineState};
 use crate::tables::cs::{CsId, Frozen, NameSlot};
@@ -530,7 +531,10 @@ fn run_engine_inner(
 ) -> i32 {
     // An abort that skips terminal cleanup must not leak this process-global
     // registry into the next batch run.
-    let _pdf_files_guard = OnDrop(|| pdf_files_close_if_open());
+    let _pdf_files_guard = OnDrop(|| {
+        pdf_files_close_if_open();
+        forget_probed_pdfs();
+    });
 
     let mut st = Box::new(EngineState::default());
     st.config = config;
@@ -875,6 +879,7 @@ fn initial_random_seed(
 pub(crate) fn cleanup(st: &mut EngineState) {
     disarm(st);
     pdf_files_close();
+    forget_probed_pdfs();
     st.shipout.dvi.release_buffer();
 
     texyon_xetex_layout::FontManager::destroy();

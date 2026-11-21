@@ -16,5 +16,7 @@ int tt_pic_probe_image_box(rust_input_handle_t handle,
                            double *xdensity, double *ydensity);
 int tt_pic_probe_pdf_page_count(const char *ident, rust_input_handle_t handle,
                                 int *pages_out);
+/* Drops the PDFs parsed by earlier probes, whose files may have changed since. */
+void tt_pic_probe_forget(void);
 
 #endif

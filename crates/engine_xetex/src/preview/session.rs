@@ -30,6 +30,7 @@ use crate::preview::replay::fence::ReplayFence;
 use crate::preview::replay::source::SourcePath;
 use crate::preview::sync_index::{PreviewSyncIndex, SyncIndex};
 use crate::print::errors::Abort;
+use crate::shipout::pic::forget_probed_pdfs;
 use crate::state::{EngineExecutionMode, EngineState};
 use crate::{
     Diagnostic, EngineCancellation, PageExecution, SourceRevision, SourceSnapshot, TexOutcome,
@@ -900,6 +901,8 @@ fn run_document(
     }
     state.shipout.log_resumed_at = None;
     state.diagnostics.begin_operation();
+    // Pictures may have changed since the last operation.
+    forget_probed_pdfs();
     let execution = match splice {
         Some(splice) => resume_resident_document(state, splice.resume_pending_command),
         None => run_resident_document(state, input),
