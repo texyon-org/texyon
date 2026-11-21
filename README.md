@@ -9,51 +9,72 @@ than a full compile.
 
 ## Where it runs
 
+- **VS Code** ([`packages/vscode`](packages/vscode)): install *TeXyoN Live
+  Preview* from the Marketplace or Open VSX. It ships a native engine for
+  Linux (x64), macOS (Apple silicon) and Windows (x64), and needs no TeX
+  distribution.
 - **Web editor** ([texyon-org/editor](https://github.com/texyon-org/editor)):
   the engine compiled to WebAssembly, running in a Web Worker.
-- **VS Code** ([`packages/vscode`](packages/vscode)): a native engine process
-  behind a preview panel. Install it from the Marketplace as *TeXyoN Live
-  Preview*.
 
-Both speak the same [session protocol](docs/live-preview/protocol.md) to the
-same session in `crates/live_preview`, so a preview feature lands in both.
+Both drive the same session in `crates/live_preview` through the protocol in
+`crates/preview_protocol`, so a preview feature lands in both.
 
 ## Status
 
-- The XeTeX engine is fully Rust and matches the reference output on the
-  repository's 639-document corpus.
-- Live preview supports viewport-bounded compiles, pixel or SVG pages, errors
-  by source line, source navigation in both directions, and PDF export.
-- The preview does not run BibTeX yet.
-- The native preview runs on Linux and Windows. The macOS build does not wire
-  up the MuPDF renderer yet, so its extension cannot preview.
+- The XeTeX engine is fully Rust. It is checked against TeX Live's XeTeX on
+  about 9,000 documents: the LaTeX kernel's regression tests, the package
+  documentation shipped with TeX Live, and a sample of arXiv papers. In the
+  last full run, against TeX Live 2025, 9,003 of 9,056 came out identical.
+  Every other one is explained in
+  [`known.tsv`](crates/engine_xetex/tests/upstream/known.tsv), mostly bugs in
+  XeTeX itself, listed in
+  [`UPSTREAM_BUGS.md`](crates/engine_xetex/UPSTREAM_BUGS.md).
+- PDF output is dvipdfm-x from TeX Live 2026.
+- The live preview supports viewport-bounded compiles, pixel or SVG pages,
+  errors by source line, source navigation in both directions, and PDF export.
+- `texyon compile` runs BibTeX. The live preview does not yet.
 
 ## Building
 
-The command-line program has three commands: `compile`, `preview` and
-`bundle`.
+Clone with submodules, since HarfBuzz is built from source:
+
+```sh
+git clone --recurse-submodules https://github.com/texyon-org/texyon
+```
+
+The engine links fontconfig, FreeType, Graphite2, ICU, libpng, OpenSSL and
+zlib. On Debian or Ubuntu:
+
+```sh
+sudo apt install build-essential pkg-config libfontconfig1-dev libfreetype-dev \
+  libgraphite2-dev libicu-dev libpng-dev libssl-dev zlib1g-dev
+```
+
+On macOS, `brew install pkg-config freetype graphite2 icu4c libpng openssl`,
+with Homebrew's `icu4c` on `PKG_CONFIG_PATH`. Windows builds with MSVC and
+vcpkg, see [`packages/vscode/README.md`](packages/vscode/README.md).
+
+Then:
 
 ```sh
 cargo build --release -p texyon
 target/release/texyon compile document.tex
 ```
 
+The first compile downloads the TeX Live support files it needs and builds the
+format. Later runs reuse that cache.
+
 The live preview needs the MuPDF renderer, which is opt-in because MuPDF is
-AGPL licensed. On Linux:
+AGPL licensed. This builds MuPDF and then a binary with the `preview` command:
 
 ```sh
 cargo xtask mupdf
 cargo xtask native --features preview-mupdf
 ```
 
-`cargo xtask native --pgo --features preview-mupdf` builds the profile-guided
-release binary. Windows builds with MSVC and vcpkg, see
-[`packages/vscode/README.md`](packages/vscode/README.md). The WebAssembly build
-is described in [`crates/wasm`](crates/wasm/README.md). `cargo xtask --help`
-lists the build, test and benchmark tasks.
-
-The first compile downloads the TeX Live support files it needs and builds the
-format, and later runs reuse that cache.
+Add `--pgo` for the profile-guided release binary. The WebAssembly build is
+described in [`crates/wasm`](crates/wasm/README.md). `cargo xtask --help` lists
+the build, test and benchmark tasks.
 
 ## Layout
 
@@ -68,14 +89,16 @@ format, and later runs reuse that cache.
 | `crates/engine_bibtex` | BibTeX. |
 | `crates/bridge_*`, `crates/xetex_layout` | FreeType, HarfBuzz, ICU, fontconfig and font layout. |
 | `crates/bundles`, `crates/geturl` | TeX Live support bundles and their download. |
+| `crates/xtask` | Build, test, benchmark and profiling tasks. |
 | `packages/vscode` | The VS Code extension. |
 | `packages/wasm` | The `@texyon/wasm` package the web editor uses. |
-| `docs/live-preview` | Preview architecture and protocol notes. |
 
 ## Testing
 
-`cargo test --workspace` runs the unit and integration tests. Changes to engine
-behaviour are checked against TeX Live XeTeX with the upstream harness
+`cargo test --workspace` runs the unit and integration tests, including the
+TRIP test. `cargo xtask differential native` checks that incremental
+typesetting matches a fresh compile after every keystroke. Changes to engine
+behaviour are checked against TeX Live's XeTeX with the upstream harness
 (`crates/engine_xetex/tests/upstream/run.py`).
 
 ## License
