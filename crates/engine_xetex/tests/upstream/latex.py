@@ -583,19 +583,15 @@ def arxiv_cases(_tl):
 
 
 def manifest_cases(_tl):
-    """The authored and harvested documents of tests/corpus/manifest.tsv."""
+    """The authored documents of tests/corpus/manifest.tsv."""
     corpus = ROOT / "crates/engine_xetex/tests/corpus"
     cases = []
     for line in (corpus / "manifest.tsv").read_text().splitlines():
         if not line.strip() or line.startswith("#"):
             continue
-        tier, ident, rel, _src = line.split("\t")
-        main = (corpus / rel) if tier == "tier1" else (CORPUS / "raw" / rel)
-        if not main.exists():
-            continue
-        top = main.parent
-        files = [(f, str(f.relative_to(top))) for f in top.rglob("*") if f.is_file()] \
-            if tier != "tier1" else [(main, main.name)]
+        _tier, ident, rel, _src = line.split("\t")
+        main = corpus / rel
+        files = [(main, main.name)]
         cases.append(Case(name=f"docs/{ident}", suite="docs", files=files, main=main.name,
                           passes=2, timeout=900))
     return cases
