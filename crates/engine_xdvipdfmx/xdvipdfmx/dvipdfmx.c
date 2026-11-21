@@ -340,7 +340,7 @@ dvipdfmx_main (
   unsigned char id1[16], id2[16];
   struct pdf_setting settings;
   int pdf_version_major = 1;
-  int pdf_version_minor = 5;
+  int pdf_version_minor = 7;
   int compression_level = 9;
   double annot_grow_x = 0;
   double annot_grow_y = 0;
@@ -382,7 +382,7 @@ dvipdfmx_main (
   key_bits = 40;
   permission = 0x003C;
   font_dpi = 600;
-  pdfdecimaldigits = 5;
+  pdfdecimaldigits = 3;
   image_cache_life = -2;
   ttpi_source_date_epoch = build_date;
   pdf_load_fontmap_file("pdftex.map", FONTMAP_RMODE_APPEND);

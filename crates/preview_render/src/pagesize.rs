@@ -9,7 +9,7 @@ use texyon_xdv::{XdvEvents, XdvParser};
 use crate::RenderError;
 use crate::units::{SP_TO_BP, normalize_zero};
 
-pub(crate) const DEFAULT_BP: [f32; 2] = [612.0, 792.0];
+pub(crate) const DEFAULT_BP: [f32; 2] = [595.276, 841.89];
 
 pub(crate) fn preamble_magnification(xdv: &[u8]) -> Result<f32, RenderError> {
     if xdv.len() < 14 || xdv[0] != 247 {

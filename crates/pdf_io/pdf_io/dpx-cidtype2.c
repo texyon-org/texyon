@@ -147,7 +147,7 @@ validate_name (char *fontname, int len)
  */
 
 #define WIN_UCS_INDEX_MAX   1
-#define KNOWN_ENCODINGS_MAX 9
+#define KNOWN_ENCODINGS_MAX 10
 static struct
 {
     unsigned short  platform;
@@ -164,6 +164,7 @@ static struct
     {TT_MAC, TT_MAC_TRADITIONAL_CHINESE, {"B5pc",     NULL}},
     {TT_MAC, TT_MAC_SIMPLIFIED_CHINESE,  {"GBpc-EUC", NULL}},
     {TT_MAC, TT_MAC_KOREAN,   {"KSCpc-EUC", NULL}},
+  {0, 4,  {"UCSms-UCS4", "UCSms-UCS2", "UCS4", "UCS2", NULL}},
     {0, 0, {NULL}}
 };
 
@@ -375,6 +376,7 @@ fix_CJK_symbols (unsigned short code)
         {0xFFE0, 0x00A2}, /* FULLWIDTH CENT SIGN <-> CENT SIGN */
         {0xFFE1, 0x00A3}, /* FULLWIDTH POUND SIGN <-> POUND SIGN */
         {0xFFE2, 0x00AC}, /* FULLWIDTH NOT SIGN <-> NOT SIGN */
+    {0xFFE5, 0x00A5}, /* FULLWIDTH YEN SIGN <-> YEN SIGN */
         {0xFFFF, 0xFFFF}, /* EOD */
     };
 #define NUM_CJK_SYMBOLS (sizeof(CJK_Uni_symbols)/sizeof(CJK_Uni_symbols[0]))
@@ -395,12 +397,14 @@ fix_CJK_symbols (unsigned short code)
 }
 
 static int32_t
-cid_to_code (CMap *cmap, CID cid, int unicode_cmap)
+cid_to_code (CMap *cmap, CID cid, int unicode_cmap, int32_t *puvs)
 {
     unsigned char  inbuf[2], outbuf[32];
     size_t         inbytesleft = 2, outbytesleft = 32;
     const unsigned char *p;
     unsigned char *q;
+
+  *puvs = -1;
 
     if (!cmap)
         return cid;
@@ -417,22 +421,39 @@ cid_to_code (CMap *cmap, CID cid, int unicode_cmap)
         return (int32_t) outbuf[0];
     else if (outbytesleft == 30)
         return (int32_t) (outbuf[0] << 8|outbuf[1]);
-    else if (outbytesleft == 28) {
-        if (unicode_cmap) {
+  else if (outbytesleft == 28 && !unicode_cmap)
+    return (int32_t) (outbuf[0] << 24)|(outbuf[1] << 16)|(outbuf[2] << 8)|outbuf[3];
+  else if ((outbytesleft == 28 || outbytesleft == 26 || outbytesleft == 24)
+            && unicode_cmap) {
             /* We assume the output encoding is UTF-16. */
-            int32_t uc;
+    int32_t              uc, uvs;
             const unsigned char *endptr;
 
             p = outbuf;
-            endptr = p + 4;
+    endptr = p + 32 - outbytesleft;
             uc = UC_UTF16BE_decode_char(&p, endptr);
-            if (p != endptr)
-                dpx_warning("CID=%u mapped to non-single Unicode characters...", cid);
-            return p == endptr ? uc : -1;
-        } else {
-            return (outbuf[0] << 24)|(outbuf[1] << 16)|(outbuf[2] << 8)|outbuf[3];
+    if (p == endptr)
+      return uc; /* single Unicode characters */
+    /* Check following Variation Selectors */
+    uvs = UC_UTF16BE_decode_char(&p, endptr);
+    if (p == endptr) {
+      if (uvs >= 0xfe00 && uvs <= 0xfe0f) {
+        /* Standardized Variation Sequence */
+        *puvs = uvs;
+        return uc;
+      } else if (uvs >= 0xe0100 && uvs <= 0xe01ef) {
+        /* Ideographic Variation Sequence */
+        *puvs = uvs;
+        return uc;
+      } else if (uvs == 0x3099 || uvs == 0x309a) {
+        /* Combining Katakana-Hiragana (Semi-)Voiced Sound Mark */
+        *puvs = uvs;
+        return uc;
         }
     }
+    dpx_warning("CID=%u mapped to non-single Unicode characters...", cid);
+    return -1;
+  }
 
     return -1;
 }
@@ -471,6 +492,7 @@ CIDFont_type2_dofont (pdf_font *font)
     struct tt_glyphs *glyphs;
     CMap    *cmap = NULL;
     tt_cmap *ttcmap = NULL;
+  tt_cmap          *ttcmap_uvs = NULL;
     ULONG    offset = 0;
     CID      cid, last_cid;
     unsigned char *cidtogidmap;
@@ -625,6 +647,8 @@ CIDFont_type2_dofont (pdf_font *font)
                 return -1;
             } else if (i <= WIN_UCS_INDEX_MAX) {
                 unicode_cmap = 1;
+        /* Unicode Variation Sequences */
+        ttcmap_uvs = tt_cmap_read(sfont, 0, 5);
             } else {
                 unicode_cmap = 0;
             }
@@ -704,7 +728,7 @@ CIDFont_type2_dofont (pdf_font *font)
     if (h_used_chars) {
         used_chars = h_used_chars;
         for (cid = 1; cid <= last_cid; cid++) {
-            int32_t code;
+      int32_t  code, uvs = 0;
             uint16_t gid = 0;
 
             if (!is_used_char2(h_used_chars, cid))
@@ -720,13 +744,28 @@ CIDFont_type2_dofont (pdf_font *font)
                 code = cid;
                 break;
             case via_cid_to_code:
-                code = cid_to_code(cmap, cid, unicode_cmap);
+        code = cid_to_code(cmap, cid, unicode_cmap, &uvs);
                 if (code < 0) {
                     dpx_warning("Unable to map CID to code: CID=%u", cid);
                 } else {
+          if (ttcmap_uvs && uvs > 0) {
+            gid = tt_cmap_uvs_lookup(ttcmap_uvs, ttcmap, code, uvs);
+          }
+          if (gid == 0 && uvs >= 0xfe00 && uvs <= 0xfe0f) {
+            /* Standardized Variation Sequence */
+            /* Combine CJK compatibility ideograph */
+            int32_t code2 = UC_Combine_CJK_compatibility_ideograph(code, uvs);
+            if (code2 > 0)
+              gid = tt_cmap_lookup(ttcmap, code2);
+          }
+          if (gid == 0) {
                     gid  = tt_cmap_lookup(ttcmap, code);
+            if (gid > 0 && uvs > 0) {
+              dpx_warning("Ignored Variation Selector: CID=%u mapped to U+%04X U+%04X", cid, code, uvs);
+            }
+          }
 #ifdef FIX_CJK_UNIOCDE_SYMBOLS
-                    if (gid == 0 && unicode_cmap) {
+          if (gid == 0 && unicode_cmap && code <= 0xFFFF) {
                         int alt_code;
 
                         alt_code = fix_CJK_symbols((unsigned short)code);
@@ -790,7 +829,7 @@ CIDFont_type2_dofont (pdf_font *font)
         }
 
         for (cid = 1; cid <= last_cid; cid++) {
-            int32_t code;
+      int32_t  code, uvs = 0;
             uint16_t gid = 0;
 
             if (!is_used_char2(v_used_chars, cid))
@@ -814,13 +853,28 @@ CIDFont_type2_dofont (pdf_font *font)
                 code = cid;
                 break;
             case via_cid_to_code:
-                code = cid_to_code(cmap, cid, unicode_cmap);
+        code = cid_to_code(cmap, cid, unicode_cmap, &uvs);
                 if (code < 0) {
                     dpx_warning("Unable to map CID to code: CID=%u", cid);
                 } else {
+          if (ttcmap_uvs && uvs > 0) {
+            gid = tt_cmap_uvs_lookup(ttcmap_uvs, ttcmap, code, uvs);
+          }
+          if (gid == 0 && uvs >= 0xfe00 && uvs <= 0xfe0f) {
+            /* Standardized Variation Sequence */
+            /* Combine CJK compatibility ideograph */
+            int32_t code2 = UC_Combine_CJK_compatibility_ideograph(code, uvs);
+            if (code2 > 0)
+              gid = tt_cmap_lookup(ttcmap, code2);
+          }
+          if (gid == 0) {
                     gid  = tt_cmap_lookup(ttcmap, code);
+            if (gid > 0 && uvs > 0) {
+              dpx_warning("Ignored Variation Selector: CID=%u mapped to U+%04X U+%04X", cid, code, uvs);
+            }
+          }
 #ifdef FIX_CJK_UNIOCDE_SYMBOLS
-                    if (gid == 0 && unicode_cmap) {
+          if (gid == 0 && unicode_cmap && code <= 0xFFFF) {
                         int alt_code;
 
                         alt_code = fix_CJK_symbols((unsigned short)code);
@@ -867,6 +921,7 @@ CIDFont_type2_dofont (pdf_font *font)
     assert(used_chars);
 
     tt_cmap_release(ttcmap);
+  tt_cmap_release(ttcmap_uvs);
 
     if (font->cid.options.embed) {
         if (tt_build_tables(sfont, glyphs) < 0) {

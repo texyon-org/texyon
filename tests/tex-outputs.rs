@@ -598,3 +598,8 @@ fn pdf_fstream() {
         .check_pdf(true)
         .go()
 }
+
+#[test]
+fn pdf_page_group() {
+    TestCase::new("pdf_page_group").check_pdf(true).go()
+}

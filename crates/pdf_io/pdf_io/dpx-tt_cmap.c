@@ -439,6 +439,114 @@ lookup_cmap12 (struct cmap12 *map, ULONG cccc)
     return gid;
 }
 
+/* format 14: unicode variation sequences */
+
+struct variationSelector
+{
+  /* Variation selector */
+  ULONG   varSelector;
+
+  /* Default UVS table */
+  ULONG   numUnicodeValueRanges;
+  ULONG  *rangesStartUnicodeValue;
+  BYTE   *rangesAdditionalCount;
+
+  /* Non-Default UVS table */
+  ULONG   numUVSMappings;
+  ULONG  *uvsMappingsUnicodeValue;
+  USHORT *uvsMappingsGlyphID;
+};
+
+struct cmap14
+{
+  ULONG  numVarSelectorRecords;
+  struct variationSelector *varSelector;
+};
+
+/* ULONG length */
+static struct cmap14 *
+read_cmap14 (sfnt *sfont, ULONG offset, ULONG len)
+{
+  struct cmap14 *map;
+  ULONG *defaultUVSOffset, *nonDefaultUVSOffset;
+  ULONG  i, j;
+  
+  if (len < 4) {
+    dpx_warning("invalid format 14 TT cmap subtable");
+    return NULL;
+  }
+
+  map =  NEW(1, struct cmap14);
+  map->numVarSelectorRecords = sfnt_get_ulong(sfont);
+  map->varSelector = NEW(map->numVarSelectorRecords, struct variationSelector);
+  defaultUVSOffset    = NEW(map->numVarSelectorRecords, ULONG);
+  nonDefaultUVSOffset = NEW(map->numVarSelectorRecords, ULONG);
+  /* Read VariationSelector Record */
+  for (i = 0; i < map->numVarSelectorRecords; i++) {
+    map->varSelector[i].varSelector = sfnt_get_uint24(sfont);
+    defaultUVSOffset[i]    = sfnt_get_ulong(sfont);
+    nonDefaultUVSOffset[i] = sfnt_get_ulong(sfont);
+  }
+  for (i = 0; i < map->numVarSelectorRecords; i++) {
+    /* Read DefaultUVS Table */
+    if (defaultUVSOffset[i] > 0) {
+      sfnt_seek_set(sfont, offset + defaultUVSOffset[i]);
+      map->varSelector[i].numUnicodeValueRanges   = sfnt_get_ulong(sfont);
+      map->varSelector[i].rangesStartUnicodeValue = NEW(map->varSelector[i].numUnicodeValueRanges, ULONG);
+      map->varSelector[i].rangesAdditionalCount   = NEW(map->varSelector[i].numUnicodeValueRanges, BYTE);
+      for (j = 0; j < map->varSelector[i].numUnicodeValueRanges; j++) {
+        map->varSelector[i].rangesStartUnicodeValue[j] = sfnt_get_uint24(sfont);
+        map->varSelector[i].rangesAdditionalCount[j]   = sfnt_get_byte(sfont);
+      }
+    } else {
+      map->varSelector[i].numUnicodeValueRanges   = 0;
+      map->varSelector[i].rangesStartUnicodeValue = NULL;
+      map->varSelector[i].rangesAdditionalCount   = NULL;
+    }
+    /* Read NonDefaultUVS Table */
+    if (nonDefaultUVSOffset[i] > 0) {
+      sfnt_seek_set(sfont, offset + nonDefaultUVSOffset[i]);
+      map->varSelector[i].numUVSMappings          = sfnt_get_ulong(sfont);
+      map->varSelector[i].uvsMappingsUnicodeValue = NEW(map->varSelector[i].numUVSMappings, ULONG);
+      map->varSelector[i].uvsMappingsGlyphID      = NEW(map->varSelector[i].numUVSMappings, USHORT);
+      for (j = 0; j < map->varSelector[i].numUVSMappings; j++) {
+        map->varSelector[i].uvsMappingsUnicodeValue[j] = sfnt_get_uint24(sfont);
+        map->varSelector[i].uvsMappingsGlyphID[j]      = sfnt_get_ushort(sfont);
+      }
+    } else {
+      map->varSelector[i].numUVSMappings          = 0;
+      map->varSelector[i].uvsMappingsUnicodeValue = NULL;
+      map->varSelector[i].uvsMappingsGlyphID      = NULL;
+    }
+  }
+
+  free(defaultUVSOffset);
+  free(nonDefaultUVSOffset);
+  return map;
+}
+
+static void
+release_cmap14 (struct cmap14 *map)
+{
+  ULONG  i;
+  if (map) {
+    if (map->varSelector) {
+      for (i = 0; i < map->numVarSelectorRecords; i++) {
+        if (map->varSelector[i].rangesStartUnicodeValue)
+          free(map->varSelector[i].rangesStartUnicodeValue);
+        if (map->varSelector[i].rangesAdditionalCount)
+          free(map->varSelector[i].rangesAdditionalCount);
+        if (map->varSelector[i].uvsMappingsUnicodeValue)
+          free(map->varSelector[i].uvsMappingsUnicodeValue);
+        if (map->varSelector[i].uvsMappingsGlyphID)
+          free(map->varSelector[i].uvsMappingsGlyphID);
+      }
+      free(map->varSelector);
+    }
+    free(map);
+  }
+}
+
 /* read cmap */
 tt_cmap *
 tt_cmap_read (sfnt *sfont, USHORT platform, USHORT encoding)
@@ -481,7 +589,7 @@ tt_cmap_read (sfnt *sfont, USHORT platform, USHORT encoding)
     if (cmap->format <= 6) {
         length         = sfnt_get_ushort(sfont);
         cmap->language = sfnt_get_ushort(sfont); /* language (Mac) */
-    } else {
+  } else if (cmap->format != 14) {
         if (sfnt_get_ushort(sfont) != 0) { /* reverved - 0 */
             dpx_warning("Unrecognized cmap subtable format.");
             tt_cmap_release(cmap);
@@ -490,6 +598,9 @@ tt_cmap_read (sfnt *sfont, USHORT platform, USHORT encoding)
             length         = sfnt_get_ulong(sfont);
             cmap->language = sfnt_get_ulong(sfont);
         }
+  } else {
+    length         = sfnt_get_ulong(sfont);
+    cmap->language = 0;
     }
 
     switch(cmap->format) {
@@ -509,6 +620,9 @@ tt_cmap_read (sfnt *sfont, USHORT platform, USHORT encoding)
         /* dpx_warning("UCS-4 TrueType cmap table..."); */
         cmap->map = read_cmap12(sfont, length);
         break;
+  case 14:
+    cmap->map = read_cmap14(sfont, offset, length);
+    break;
     default:
         dpx_warning("Unrecognized OpenType/TrueType cmap format.");
         tt_cmap_release(cmap);
@@ -545,6 +659,9 @@ tt_cmap_release (tt_cmap *cmap)
             case 12:
                 release_cmap12(cmap->map);
                 break;
+      case 14:
+        release_cmap14(cmap->map);
+        break;
             default:
                 dpx_warning("Unrecognized OpenType/TrueType cmap format: %d", cmap->format);
                 break;
@@ -592,6 +709,44 @@ tt_cmap_lookup (tt_cmap *cmap, ULONG cc)
 
     return gid;
 }
+
+static USHORT
+lookup_cmap14 (struct cmap14 *map, tt_cmap* cmap_default, ULONG unicode, ULONG uvs)
+{
+  ULONG  i, j;
+
+  for (i = 0; i < map->numVarSelectorRecords; i++) {
+    if (map->varSelector[i].varSelector == uvs) {
+      for (j = 0; j < map->varSelector[i].numUnicodeValueRanges; j++) {
+        if (map->varSelector[i].rangesStartUnicodeValue[j] <= unicode &&
+            unicode <= map->varSelector[i].rangesStartUnicodeValue[j] + map->varSelector[i].rangesAdditionalCount[j])
+          return tt_cmap_lookup(cmap_default, unicode);
+      }
+      for (j = 0; j < map->varSelector[i].numUVSMappings; j++) {
+        if (map->varSelector[i].uvsMappingsUnicodeValue[j] == unicode)
+          return map->varSelector[i].uvsMappingsGlyphID[j];
+      }
+      return 0;
+    }
+  }
+
+  return 0;
+}
+
+USHORT
+tt_cmap_uvs_lookup(tt_cmap* cmap_uvs, tt_cmap* cmap_default, ULONG unicode, ULONG uvs)
+{
+  assert(cmap_uvs);
+
+  if (cmap_uvs->format != 14) {
+    dpx_warning("Unicode Variation Sequences in OpenType/TrueType cmap must be format 14.");
+    return 0;
+  }
+
+  return lookup_cmap14(cmap_uvs->map, cmap_default, unicode, uvs);
+}
+
+
 
 static unsigned char srange_min[2] = {0x00, 0x00};
 static unsigned char srange_max[2] = {0xff, 0xff};
@@ -1047,6 +1202,7 @@ typedef struct {
 static cmap_plat_enc_rec cmap_plat_encs[] = {
     { 3, 10 },
     { 0, 3 },
+    { 0, 4 },
     { 0, 0 },
     { 3, 1 },
     { 0, 1 }
@@ -1469,6 +1625,9 @@ otf_load_Unicode_CMap (const char *map_name, uint32_t ttc_index, /* 0 for non-TT
         ttcmap = tt_cmap_read(sfont, 3, 1); /* Microsoft UCS2 */
         if (!ttcmap) {
             ttcmap = tt_cmap_read(sfont, 0, 3); /* Unicode 2.0 or later */
+      if (!ttcmap) {
+        ttcmap = tt_cmap_read(sfont, 0, 4);
+      }
         }
     }
 

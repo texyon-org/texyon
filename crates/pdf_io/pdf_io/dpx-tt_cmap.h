@@ -63,6 +63,8 @@ tt_cmap *tt_cmap_read    (sfnt *sfont, USHORT platform, USHORT encoding);
 USHORT   tt_cmap_lookup  (tt_cmap *cmap, ULONG cc);
 void     tt_cmap_release (tt_cmap *cmap);
 
+USHORT tt_cmap_uvs_lookup(tt_cmap* cmap_uvs, tt_cmap* cmap_default, ULONG unicode, ULONG uvs);
+
 #include "dpx-pdfobj.h"
 
 /* Indirect reference */

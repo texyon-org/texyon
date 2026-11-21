@@ -38,4 +38,6 @@ int32_t UC_UTF16BE_decode_char (const unsigned char **pp, const unsigned char *e
 int32_t UC_UTF8_decode_char (const unsigned char **pp, const unsigned char *endptr);
 size_t  UC_UTF8_encode_char (int32_t ucv, unsigned char **dstpp, unsigned char *endptr);
 
+extern int32_t UC_Combine_CJK_compatibility_ideograph(int32_t ucv, int32_t uvs);
+
 #endif /* _UNICODE_H_ */

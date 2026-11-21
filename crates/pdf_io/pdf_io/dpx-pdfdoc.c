@@ -65,7 +65,7 @@ read_thumbnail (const char *thumb_filename)
   pdf_obj *image_ref;
   int      xobj_id;
   rust_input_handle_t handle = INVALID_HANDLE;
-  load_options options = {1, 0, NULL};
+  load_options options = {1, 0, NULL, NULL};
 
   handle = ttstub_input_open(thumb_filename, TTBC_FILE_FORMAT_PICT, 0);
   if (handle == INVALID_HANDLE) {
@@ -1027,6 +1027,19 @@ set_transform_matrix (pdf_tmatrix *matrix, pdf_rect *bbox, pdf_obj *rotate)
   return 0;
 }
 
+/* Stores references to the needed boxes and resources for a page */
+typedef struct pdf_boxes {
+  pdf_obj *page_tree;
+  pdf_obj *resources;
+  pdf_obj *rotate;
+  pdf_obj *art_box;
+  pdf_obj *trim_box;
+  pdf_obj *bleed_box;
+  pdf_obj *media_box;
+  pdf_obj *crop_box;
+} pdf_boxes;
+
+
 /*
  * From PDFReference15_v6.pdf (p.119 and p.834)
  *
@@ -1078,52 +1091,252 @@ set_transform_matrix (pdf_tmatrix *matrix, pdf_rect *bbox, pdf_obj *rotate)
  * The number of degrees by which the page should be rotated clockwise when
  * displayed or printed. The value must be a multiple of 90. Default value: 0.
  */
-
-struct page_attrs
-{
-  pdf_obj *media_box, *crop_box, *art_box, *trim_box, *bleed_box;
-  pdf_obj *rotate, *resources;
-};
-
 static void
-release_page_attrs (struct page_attrs *a)
-{
-  pdf_release_obj(a->crop_box);
-  pdf_release_obj(a->bleed_box);
-  pdf_release_obj(a->trim_box);
-  pdf_release_obj(a->art_box);
-  pdf_release_obj(a->media_box);
-  pdf_release_obj(a->rotate);
-  pdf_release_obj(a->resources);
+get_page_properties (pdf_boxes *boxes) {
+  pdf_obj *tmp;
+
+  if ((tmp = pdf_deref_obj(pdf_lookup_dict(boxes->page_tree, "MediaBox")))) {
+    if (boxes->media_box)
+      pdf_release_obj(boxes->media_box);
+    boxes->media_box = tmp;
+  }
+  if ((tmp = pdf_deref_obj(pdf_lookup_dict(boxes->page_tree, "CropBox")))) {
+    if (boxes->crop_box)
+      pdf_release_obj(boxes->crop_box);
+    boxes->crop_box = tmp;
+  }
+  if ((tmp = pdf_deref_obj(pdf_lookup_dict(boxes->page_tree, "ArtBox")))) {
+    if (boxes->art_box)
+      pdf_release_obj(boxes->art_box);
+    boxes->art_box = tmp;
+  }
+  if ((tmp = pdf_deref_obj(pdf_lookup_dict(boxes->page_tree, "TrimBox")))) {
+    if (boxes->trim_box)
+      pdf_release_obj(boxes->trim_box);
+    boxes->trim_box = tmp;
+  }
+  if ((tmp = pdf_deref_obj(pdf_lookup_dict(boxes->page_tree, "BleedBox")))) {
+    if (boxes->bleed_box)
+      pdf_release_obj(boxes->bleed_box);
+    boxes->bleed_box = tmp;
+  }
+  if ((tmp = pdf_deref_obj(pdf_lookup_dict(boxes->page_tree, "Rotate")))) {
+    if (boxes->rotate)
+      pdf_release_obj(boxes->rotate);
+    boxes->rotate = tmp;
+  }
+  if ((tmp = pdf_deref_obj(pdf_lookup_dict(boxes->page_tree, "Resources")))) {
+    if (boxes->resources)
+      pdf_release_obj(boxes->resources);
+    boxes->resources = tmp;
+  }
 }
 
-/* The dictionary of page page_no with the entries it inherits, or NULL. */
-static pdf_obj *
-seek_page (pdf_file *pf, int page_no, struct page_attrs *a, int *missing)
-{
-  pdf_obj *catalog = NULL, *page_tree = NULL;
 
-  *missing = 0;
-  catalog = pdf_file_get_catalog(pf);
+/*
+ * Gets the page dictionary that a PDF "named destination" points to.
+ */
+static void
+page_by_name (pdf_obj * catalog, char * page_name, pdf_boxes * boxes) {
+  pdf_obj *page = NULL;
+  pdf_obj *dests;
+  pdf_obj *up_dests;
+  int pos[5] = {0, 0, 0, 0, 0};
+  int level = 0;
+  int i;
+  int recurse;
+  pdf_obj *limits;
+  pdf_obj *start_obj;
+  pdf_obj *end_obj;
+  char *start;
+  char *end;
+  pdf_obj *kids;
+  int kids_length;
+  int names_length;
 
-  page_tree = pdf_deref_obj(pdf_lookup_dict(catalog, "Pages"));
+  /* Get the top-level /Names dict */
+  pdf_obj *names = pdf_deref_obj(pdf_lookup_dict(catalog, "Names"));
+  if (!PDF_OBJ_DICTTYPE(names)) {
+    if (names)
+      pdf_release_obj(names);
+    goto error_exit;
+  }
 
-  if (!PDF_OBJ_DICTTYPE(page_tree))
-    goto error;
+  /* The /Names dict should have a /Dests child */
+  dests = pdf_deref_obj(pdf_lookup_dict(names, "Dests"));
+  pdf_release_obj(names);
+  if (!PDF_OBJ_DICTTYPE(dests)) {
+    if (dests)
+      pdf_release_obj(dests);
+    goto error_exit;
+  }
 
+  /* Loop over all the destinations until we find a matching one */
+
+  for (i = 0; i < 1000; i++) {
+    if (level < 0 || level >= sizeof(pos) / sizeof(pos[0]))
+      goto error_exit;
+
+    if (i == 0) {
+      /* No /Limits for the root */
+      recurse = true;
+    } else {
+      if (!dests)
+        goto error_exit;
+
+      limits = pdf_deref_obj(pdf_lookup_dict(dests, "Limits"));
+      if (!PDF_OBJ_ARRAYTYPE(limits)) {
+        if (limits)
+              pdf_release_obj(limits);
+        goto error_exit;
+      }
+
+      /* Get the current limits */
+      start_obj = pdf_deref_obj(pdf_get_array(limits, 0));
+      end_obj = pdf_deref_obj(pdf_get_array(limits, 1));
+      pdf_release_obj(limits);
+      if (!PDF_OBJ_STRINGTYPE(start_obj) || !PDF_OBJ_STRINGTYPE(end_obj)) {
+        if (start_obj)
+              pdf_release_obj(start_obj);
+        if (end_obj)
+              pdf_release_obj(end_obj);
+        goto error_exit;
+      }
+      start = pdf_string_value(start_obj);
+      end = pdf_string_value(end_obj);
+      pdf_release_obj(start_obj);
+      pdf_release_obj(end_obj);
+
+      recurse = strcmp(page_name, start) >= 0 && strcmp(page_name, end) <= 0;
+    }
+
+    /* If the name is between the current limits, search the list */
+    if (recurse) {
+      names = pdf_deref_obj(pdf_lookup_dict(dests, "Names"));
+      if (!PDF_OBJ_ARRAYTYPE(names)) {
+        if (names)
+              pdf_release_obj(names);
+      } else {
+        goto found;
+      }
+
+      kids = pdf_deref_obj(pdf_lookup_dict(dests, "Kids"));
+      if (!PDF_OBJ_ARRAYTYPE(kids)) {
+        if (kids)
+              pdf_release_obj(kids);
+        goto error_exit;
+      }
+
+      kids_length = pdf_array_length(kids);
+      for (; pos[level] < kids_length; pos[level]++) {
+        up_dests = dests;
+        dests = pdf_deref_obj(pdf_get_array(kids, pos[level]));
+        level++;
+        goto continue_outer;
+      }
+    } else {
+      if (--level >= 0)
+        pos[level]++;
+      pdf_release_obj(dests);
+      dests = up_dests;
+    }
+    continue_outer: ;
+  }
+  goto error_exit;
+
+  /* Loop over the bottom-level Names array */
+found:
+  names_length = pdf_array_length(names);
+  for (i = 0; i < names_length; i++) {
+    char *name;
+    pdf_obj *dest;
+    pdf_obj *dest_inner;
+    pdf_obj *name_obj = pdf_deref_obj(pdf_get_array(names, i));
+    if (!PDF_OBJ_STRINGTYPE(name_obj)) {
+      if (name_obj)
+        pdf_release_obj(name_obj);
+      continue;
+    }
+
+    name = pdf_string_value(name_obj);
+    pdf_release_obj(name_obj);
+
+    if (strcmp(page_name, name) != 0)
+      continue;
+
+    dest = pdf_deref_obj(pdf_get_array(names, ++i));
+    if (PDF_OBJ_DICTTYPE(dest)) {
+      dest_inner = pdf_deref_obj(pdf_lookup_dict(dest, "D"));
+      pdf_release_obj(dest);
+      if (!PDF_OBJ_ARRAYTYPE(dest_inner)) {
+        if (dest_inner)
+          pdf_release_obj(dest_inner);
+        goto error_exit;
+      }
+    } else if (PDF_OBJ_ARRAYTYPE(dest)) {
+      dest_inner = dest;
+    } else {
+      if (dest)
+        pdf_release_obj(dest);
+      continue;
+    }
+
+    page = pdf_deref_obj(pdf_get_array(dest_inner, 0));
+    pdf_release_obj(dest_inner);
+    if (!PDF_OBJ_DICTTYPE(page)) {
+      if (page)
+        pdf_release_obj(page);
+      goto error_exit;
+    }
+
+    break;
+  }
+
+  /* Traverse back upwards to get any inherited boxes */
+  boxes->page_tree = page;
+
+  while (true) {
+    get_page_properties(boxes);
+
+    if (boxes->media_box)
+      break;
+
+    boxes->page_tree = pdf_deref_obj(pdf_lookup_dict(boxes->page_tree, "Parent"));
+    if (!PDF_OBJ_DICTTYPE(boxes->page_tree)) {
+      if (boxes->page_tree)
+        pdf_release_obj(boxes->page_tree);
+      goto error_exit;
+    }
+  };
+
+  /* Set the page back to the current page (not the parent) */
+  boxes->page_tree = page;
+  return;
+
+error_exit:
+  dpx_warning("Bad named destination: %s", page_name);
+  return;
+}
+
+
+/*
+ * Gets the page dictionary by the page's number.
+ */
+static void
+page_by_number (pdf_obj *page_tree, int page_no, pdf_boxes *boxes) {
   {
     int count;
     pdf_obj *tmp = pdf_deref_obj(pdf_lookup_dict(page_tree, "Count"));
     if (!PDF_OBJ_NUMBERTYPE(tmp)) {
-      pdf_release_obj(tmp);
-      goto error;
+      if (tmp)
+        pdf_release_obj(tmp);
+      goto error_exit;
     }
     count = pdf_number_value(tmp);
     pdf_release_obj(tmp);
     if (page_no <= 0 || page_no > count) {
       dpx_warning("Page %d does not exist.", page_no);
-      *missing = 1;
-      goto error;
+      goto error_exit;
     }
   }
 
@@ -1137,41 +1350,15 @@ seek_page (pdf_file *pf, int page_no, struct page_attrs *a, int *missing)
     int      page_idx = page_no - 1, kids_length = 1, i = 0;
 
     while (--depth && i != kids_length) {
-      if ((tmp = pdf_deref_obj(pdf_lookup_dict(page_tree, "MediaBox")))) {
-        pdf_release_obj(a->media_box);
-        a->media_box = tmp;
-      }
-      if ((tmp = pdf_deref_obj(pdf_lookup_dict(page_tree, "CropBox")))) {
-        pdf_release_obj(a->crop_box);
-        a->crop_box = tmp;
-      }
-      if ((tmp = pdf_deref_obj(pdf_lookup_dict(page_tree, "ArtBox")))) {
-        pdf_release_obj(a->art_box);
-        a->art_box = tmp;
-      }
-      if ((tmp = pdf_deref_obj(pdf_lookup_dict(page_tree, "TrimBox")))) {
-        pdf_release_obj(a->trim_box);
-        a->trim_box = tmp;
-      }
-      if ((tmp = pdf_deref_obj(pdf_lookup_dict(page_tree, "BleedBox")))) {
-        pdf_release_obj(a->bleed_box);
-        a->bleed_box = tmp;
-      }
-      if ((tmp = pdf_deref_obj(pdf_lookup_dict(page_tree, "Rotate")))) {
-        pdf_release_obj(a->rotate);
-        a->rotate = tmp;
-      }
-      if ((tmp = pdf_deref_obj(pdf_lookup_dict(page_tree, "Resources")))) {
-        pdf_release_obj(a->resources);
-        a->resources = tmp;
-      }
+      boxes->page_tree = page_tree;
+      get_page_properties(boxes);
 
       kids = pdf_deref_obj(pdf_lookup_dict(page_tree, "Kids"));
       if (!kids)
         break;
       else if (!PDF_OBJ_ARRAYTYPE(kids)) {
         pdf_release_obj(kids);
-        goto error;
+        goto error_exit;
       }
       kids_length = pdf_array_length(kids);
 
@@ -1181,7 +1368,7 @@ seek_page (pdf_file *pf, int page_no, struct page_attrs *a, int *missing)
         pdf_release_obj(page_tree);
         page_tree = pdf_deref_obj(pdf_get_array(kids, i));
         if (!PDF_OBJ_DICTTYPE(page_tree))
-          goto error;
+          goto error_exit;
 
         tmp = pdf_deref_obj(pdf_lookup_dict(page_tree, "Count"));
         if (PDF_OBJ_NUMBERTYPE(tmp)) {
@@ -1193,69 +1380,100 @@ seek_page (pdf_file *pf, int page_no, struct page_attrs *a, int *missing)
           count = 1;
         else {
           pdf_release_obj(tmp);
-          goto error;
+          goto error_exit;
         }
         if (page_idx < count)
           break;
         page_idx -= count;
-      }
+      }      
       pdf_release_obj(kids);
     }
     if (!depth || kids_length == i)
-      goto error;
+      goto error_exit;
   }
 
-  return page_tree;
+  boxes->page_tree = page_tree;
 
- error:
-  pdf_release_obj(page_tree);
-  return NULL;
+  return;
+
+error_exit:
+  dpx_warning("Error found in including PDF image.");
+  if (page_tree)
+    pdf_release_obj(page_tree);
+  boxes->page_tree = NULL;
+
+  return;
 }
+
 
 /* count_p removed: Please use different interface if you want to get total page
  * number. pdf_doc_get_page() is obviously not an interface to do such.
  */
 pdf_obj *
 pdf_doc_get_page (pdf_file *pf,
-                  int page_no, enum pdf_page_boundary opt_bbox, /* load options */
+                  int page_no, char * page_name,
+                  enum pdf_page_boundary opt_bbox, /* load options */
                   pdf_rect *bbox, pdf_tmatrix *matrix,  /* returned value */
                   pdf_obj **resources_p /* returned values */
                   ) {
-  pdf_obj *page_tree;
-  struct page_attrs a = {0};
-  int      error = 0, missing;
+  pdf_obj *catalog = NULL, *page_tree = NULL;
+  pdf_boxes boxes = {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
+  int      error = 0;
 
-  page_tree = seek_page(pf, page_no, &a, &missing);
-  if (!page_tree) {
-    if (missing)
-      goto error_silent;
+  catalog = pdf_file_get_catalog(pf);
+
+  if (page_name) {
+    page_by_name(catalog, page_name, &boxes);
+  } else if (page_no > 0) {
+    page_tree = pdf_deref_obj(pdf_lookup_dict(catalog, "Pages"));
+    page_by_number(page_tree, page_no, &boxes);
+  } else {
+    dpx_warning("Invalid page number: %d", page_no);
     goto error_exit;
   }
 
-  if (!PDF_OBJ_DICTTYPE(a.resources))
+  page_tree = boxes.page_tree;
+
+  if (!PDF_OBJ_DICTTYPE(page_tree))
+    goto error_exit;
+
+  if (!PDF_OBJ_DICTTYPE(boxes.resources))
     goto error_exit;
   if (resources_p)
-    *resources_p = pdf_link_obj(a.resources);
+    *resources_p = pdf_link_obj(boxes.resources);
 
   /* Select page boundary box */
-  error = set_bounding_box(bbox, opt_bbox, a.media_box, a.crop_box, a.art_box, a.trim_box, a.bleed_box);
+  error = set_bounding_box(bbox, opt_bbox, boxes.media_box, boxes.crop_box, boxes.art_box, boxes.trim_box, boxes.bleed_box);
   if (error)
     goto error_exit;
   /* Set transformation matrix */
-  error = set_transform_matrix(matrix, bbox, a.rotate);
+  error = set_transform_matrix(matrix, bbox, boxes.rotate);
   if (error)
     goto error_exit;
 
-  goto clean_exit; /* Success */
+goto clean_exit; /* Success */
 
  error_exit:
   dpx_warning("Error found in including PDF image.");
- error_silent:
-  pdf_release_obj(page_tree);
+  if (page_tree)
+    pdf_release_obj(page_tree);
   page_tree = NULL;
 
 clean_exit:
-  release_page_attrs(&a);
+  if (boxes.crop_box)
+    pdf_release_obj(boxes.crop_box);
+  if (boxes.bleed_box)
+    pdf_release_obj(boxes.bleed_box);
+  if (boxes.trim_box)
+    pdf_release_obj(boxes.trim_box);
+  if (boxes.art_box)
+    pdf_release_obj(boxes.art_box);
+  if (boxes.media_box)
+    pdf_release_obj(boxes.media_box);
+  if (boxes.rotate)
+    pdf_release_obj(boxes.rotate);
+  if (boxes.resources)
+    pdf_release_obj(boxes.resources);
 
   return page_tree;
 }
@@ -1266,36 +1484,44 @@ int
 pdf_doc_get_page_rect (pdf_file *pf, int page_no, enum pdf_page_boundary opt_bbox,
                        pdf_rect *bbox, int *rotate)
 {
-  struct page_attrs a = {0};
-  pdf_obj *page, *requested;
-  int      missing, i, rc = -1;
+  pdf_boxes boxes = {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
+  pdf_obj *catalog, *requested;
+  int      i, rc = -1;
 
-  page = seek_page(pf, page_no, &a, &missing);
-  if (page) {
-    pdf_obj *boxes[6];
+  catalog = pdf_file_get_catalog(pf);
+  if (page_no > 0)
+    page_by_number(pdf_deref_obj(pdf_lookup_dict(catalog, "Pages")), page_no, &boxes);
+  if (PDF_OBJ_DICTTYPE(boxes.page_tree)) {
+    pdf_obj *candidates[6];
 
     switch (opt_bbox) {
-    case pdf_page_boundary_mediabox: requested = a.media_box; break;
-    case pdf_page_boundary_bleedbox: requested = a.bleed_box; break;
-    case pdf_page_boundary_trimbox: requested = a.trim_box; break;
-    case pdf_page_boundary_artbox: requested = a.art_box; break;
-    default: requested = a.crop_box; break;
+    case pdf_page_boundary_mediabox: requested = boxes.media_box; break;
+    case pdf_page_boundary_bleedbox: requested = boxes.bleed_box; break;
+    case pdf_page_boundary_trimbox: requested = boxes.trim_box; break;
+    case pdf_page_boundary_artbox: requested = boxes.art_box; break;
+    default: requested = boxes.crop_box; break;
     }
-    boxes[0] = requested;
-    boxes[1] = a.crop_box;
-    boxes[2] = a.media_box;
-    boxes[3] = a.bleed_box;
-    boxes[4] = a.trim_box;
-    boxes[5] = a.art_box;
+    candidates[0] = requested;
+    candidates[1] = boxes.crop_box;
+    candidates[2] = boxes.media_box;
+    candidates[3] = boxes.bleed_box;
+    candidates[4] = boxes.trim_box;
+    candidates[5] = boxes.art_box;
     for (i = 0; i < 6 && rc < 0; i++) {
-      if (PDF_OBJ_ARRAYTYPE(boxes[i]) && pdf_array_length(boxes[i]) == 4)
-        rc = read_rect(boxes[i], bbox);
+      if (PDF_OBJ_ARRAYTYPE(candidates[i]) && pdf_array_length(candidates[i]) == 4)
+        rc = read_rect(candidates[i], bbox);
     }
 
-    *rotate = PDF_OBJ_NUMBERTYPE(a.rotate) ? (int) pdf_number_value(a.rotate) : 0;
-    pdf_release_obj(page);
+    *rotate = PDF_OBJ_NUMBERTYPE(boxes.rotate) ? (int) pdf_number_value(boxes.rotate) : 0;
   }
-  release_page_attrs(&a);
+  pdf_release_obj(boxes.page_tree);
+  pdf_release_obj(boxes.crop_box);
+  pdf_release_obj(boxes.bleed_box);
+  pdf_release_obj(boxes.trim_box);
+  pdf_release_obj(boxes.art_box);
+  pdf_release_obj(boxes.media_box);
+  pdf_release_obj(boxes.rotate);
+  pdf_release_obj(boxes.resources);
   return rc;
 }
 

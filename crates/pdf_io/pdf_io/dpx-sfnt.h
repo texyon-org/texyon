@@ -31,7 +31,7 @@
 #include "dpx-numbers.h"
 #include "dpx-pdfobj.h"
 
-/* Acoid conflict with CHAR ... from <winnt.h>.  */
+/* Avoid conflict with CHAR ... from <winnt.h>.  */
 #define CHAR SFNT_CHAR
 #define ULONG SFNT_ULONG
 #define LONG SFNT_LONG
@@ -97,6 +97,8 @@ typedef struct
 #define sfnt_get_short(s)  ((SHORT)  tt_get_signed_pair  ((s)->handle))
 #define sfnt_get_ulong(s)  ((ULONG)  tt_get_unsigned_quad((s)->handle))
 #define sfnt_get_long(s)   ((LONG)   tt_get_signed_quad  ((s)->handle))
+
+#define sfnt_get_uint24(s) ((ULONG)  tt_get_unsigned_triple((s)->handle))
 
 #define sfnt_seek_set(s,o)   ttstub_input_seek((s)->handle, (o), SEEK_SET)
 #define sfnt_read(b,l,s)     ttstub_input_read((s)->handle, (char *) (b), (l))

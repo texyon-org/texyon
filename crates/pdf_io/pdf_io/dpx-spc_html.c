@@ -528,7 +528,7 @@ spc_html__img_empty (struct spc_env *spe, pdf_obj *attr)
 {
   pdf_obj       *src, *obj;
   transform_info ti;
-  load_options   options = {1, 0, NULL};
+  load_options   options = {1, 0, NULL, NULL};
   int            id, error = 0;
 #ifdef  ENABLE_HTML_SVG_OPACITY
   double         alpha = 1.0; /* meaning fully opaque */

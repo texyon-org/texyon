@@ -88,8 +88,13 @@ pdf_font_make_uniqueTag (char *tag)
   char   ch;
 
   if (unique_tags_deterministic) {
-      snprintf(tag, 7, "%06d", unique_tag_state);
-      unique_tag_state++;
+      int n = unique_tag_state++;
+      /* Letters only, since digits are invalid in a subset tag. */
+      for (i = 5; i >= 0; i--) {
+          tag[i] = 'A' + n % 26;
+          n /= 26;
+      }
+      tag[6] = '\0';
       return;
   }
 
@@ -1084,7 +1089,7 @@ pdf_font_get_uniqueTag (pdf_font *font)
 }
 
 /*
- * Please don’t use TFM widths for the /Widths
+ * Please don't use TFM widths for the /Widths
  * entry of the font dictionary.
  *
  * PDF 32000-1:2008 (p.255)

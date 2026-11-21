@@ -1046,7 +1046,7 @@ CIDFont_type0_open_from_t1c (pdf_font *font, const char *name, int index, cid_op
         ttstub_input_close(handle);
         return -1;
     } else if (!opt->embed) {
-        dpx_warning("Can’t embed font due to font license: %s", name);
+        dpx_warning("Cannot embed font due to font license: %s", name);
         free(fontname);
         free(csi.registry);
         free(csi.ordering);

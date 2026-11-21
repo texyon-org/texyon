@@ -135,7 +135,7 @@ spc_handler_ps_file (struct spc_env *spe, struct spc_arg *args)
     int            form_id;
     char          *filename;
     transform_info ti;
-    load_options   options = {1, 0, NULL};
+    load_options   options = {1, 0, NULL, NULL};
 
     assert(spe && args);
 
@@ -180,7 +180,7 @@ spc_handler_ps_plotfile (struct spc_env *spe, struct spc_arg *args)
     int            form_id;
     char          *filename;
     transform_info p;
-    load_options   options = {1, 0, NULL};
+    load_options   options = {1, 0, NULL, NULL};
 
     assert(spe && args);
 

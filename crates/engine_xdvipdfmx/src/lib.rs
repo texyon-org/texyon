@@ -44,7 +44,7 @@ pub struct XdvipdfmxEngine {
 impl Default for XdvipdfmxEngine {
     fn default() -> Self {
         XdvipdfmxEngine {
-            paper_spec: "letter".to_owned(),
+            paper_spec: "a4".to_owned(),
             enable_compression: true,
             deterministic_tags: false,
             build_date: SystemTime::UNIX_EPOCH,
@@ -87,7 +87,7 @@ impl XdvipdfmxEngine {
 
     /// Set the initial paper size specification to be used.
     ///
-    /// The default is `"letter"`, regardless of current locale.
+    /// The default is `"a4"`, as in TeX Live's `dvipdfmx.cfg`, regardless of current locale.
     pub fn paper_spec(&mut self, paper_spec: String) -> &mut Self {
         self.paper_spec = paper_spec;
         self

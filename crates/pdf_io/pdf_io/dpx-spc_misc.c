@@ -518,7 +518,7 @@ spc_handler_postscriptbox (struct spc_env *spe, struct spc_arg *ap)
 {
     int            form_id, len;
     transform_info ti;
-    load_options   options = {1, 0, NULL};
+    load_options   options = {1, 0, NULL, NULL};
     char           filename[256];
     char           buf[512];
     rust_input_handle_t handle;
