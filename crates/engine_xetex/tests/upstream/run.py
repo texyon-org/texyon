@@ -41,7 +41,7 @@ KNOWN = HERE / "known.tsv"
 SLOW = HERE / "slow.tsv"
 FONTS = HERE / "fonts"
 
-XETEX = os.environ.get("XETEX", "/usr/local/texlive/2025/bin/x86_64-linux/xetex")
+XETEX = os.environ.get("XETEX", "/usr/local/texlive/2026/bin/x86_64-linux/xetex")
 PLTOTF = os.environ.get("PLTOTF", str(Path(XETEX).with_name("pltotf")))
 TEXYON = os.environ.get("TEXYON", str(ROOT / "target" / "release" / "texyon"))
 WORK = Path(os.environ.get("UPSTREAM_WORK", ROOT / "target" / "upstream-diff"))

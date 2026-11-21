@@ -18,7 +18,7 @@ set -euo pipefail
 
 CORPUS_DIR="${TEXYON_CORPUS_DIR:-$HOME/.cache/tectonic-corpus}"
 RAW="$CORPUS_DIR/raw"
-TL="${TEXLIVE_DOC:-/usr/local/texlive/2025/texmf-dist/doc}"
+TL="${TEXLIVE_DOC:-/usr/local/texlive/2026/texmf-dist/doc}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MANIFEST="$HERE/../tests/corpus/manifest.tsv"
 mode="${1:-all}"
