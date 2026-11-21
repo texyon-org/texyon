@@ -1171,11 +1171,6 @@ dvi_locate_native_font (const char *filename, uint32_t index,
         uint16_t num_glyphs;
         int i;
 
-        /*if (!is_pfb(fp))
-         *  _tt_abort("Failed to read Type 1 font \"%s\".", filename);
-         */
-        dpx_warning("skipping PFB sanity check -- needs Tectonic I/O update");
-
         memset(enc_vec, 0, 256 * sizeof(char *));
         cffont = t1_load_font (enc_vec, 0, handle);
         if (!cffont)
@@ -2546,7 +2541,7 @@ scan_special_config (const char **start, const char *end, int *opt_flags,
       dpx_warning("Error reading argument for \"-g\" option: %s", arg);
     }
   } else {
-    dpx_warning("Tectonic doesn't support '%s' config special"
+    dpx_warning("TeXyoN doesn't support '%s' config special"
                 " or the argument is missing", option);
   }
 

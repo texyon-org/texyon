@@ -213,7 +213,7 @@ source_image_type (rust_input_handle_t handle)
     else if (check_for_ps(handle))
         format = IMAGE_TYPE_EPS;
     else {
-        dpx_warning("Tectonic was unable to detect an image's format");
+        dpx_warning("unable to detect an image's format");
         format = IMAGE_TYPE_UNKNOWN;
     }
 
@@ -281,7 +281,7 @@ load_image (const char *ident, const char *filename, const char *fullname,
         if (dpx_conf.verbose_level > 0)
             dpx_message("[JP2]");
         /*if (jp2_include_image(I, fp) < 0)*/
-        dpx_warning("Tectonic: JP2 not yet supported");
+        dpx_warning("JPEG 2000 images are not supported");
         goto error;
         /*I->subtype = PDF_XOBJECT_TYPE_IMAGE;
           break;*/
@@ -315,7 +315,7 @@ load_image (const char *ident, const char *filename, const char *fullname,
     case IMAGE_TYPE_EPS:
         if (dpx_conf.verbose_level > 0)
             dpx_message("[EPS]");
-        dpx_warning("sorry, PostScript images are not supported by Tectonic");
+        dpx_warning("PostScript images are not supported by TeXyoN");
         dpx_warning("for details, please see https://github.com/tectonic-typesetting/tectonic/issues/27");
         goto error;
     default:

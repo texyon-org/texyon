@@ -87,7 +87,7 @@ dpx_open_pk_font_at (const char *ident, unsigned int dpi)
   /* Tectonic TODO: try a basic filename even if we're not doing to generate on the fly */
   /*kpse_glyph_file_type kpse_file_info;*/
   /*char * fqpn = kpse_find_glyph(ident, dpi, kpse_pk_format, &kpse_file_info);*/
-  dpx_warning("Tectonic unable to generate PK font \"%s\" (dpi %u) on-the-fly", ident, dpi);
+  dpx_warning("TeXyoN cannot generate PK font \"%s\" (dpi %u) on-the-fly", ident, dpi);
   return INVALID_HANDLE;
 }
 

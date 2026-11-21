@@ -269,7 +269,7 @@ spc_handler_ps_literal (struct spc_env *spe, struct spc_arg *args)
 static int
 spc_handler_ps_trickscmd (struct spc_env *spe, struct spc_arg *args)
 {
-    dpx_warning("PSTricks commands are disallowed in Tectonic");
+    dpx_warning("PSTricks PostScript is not supported by TeXyoN");
     args->curptr = args->endptr;
     return -1;
 }
@@ -277,7 +277,7 @@ spc_handler_ps_trickscmd (struct spc_env *spe, struct spc_arg *args)
 static int
 spc_handler_ps_tricksobj (struct spc_env *spe, struct spc_arg *args)
 {
-    dpx_warning("PSTricks commands are disallowed in Tectonic");
+    dpx_warning("PSTricks PostScript is not supported by TeXyoN");
     args->curptr = args->endptr;
     return -1;
 }
