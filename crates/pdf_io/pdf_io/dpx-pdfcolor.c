@@ -393,16 +393,15 @@ pdf_color_compare (const pdf_color *color1, const pdf_color *color2)
 {
   int n;
 
-  /* Tectonic: the logic in upstream cannot be right; I think our
-   * modified version gives what's intended? */
-  if ((color1->type != PDF_COLORSPACE_TYPE_GRAY &&
-      color1->type != PDF_COLORSPACE_TYPE_RGB  &&
-      color1->type != PDF_COLORSPACE_TYPE_CMYK &&
-      color1->type != PDF_COLORSPACE_TYPE_SPOT) ||
-      (color2->type != PDF_COLORSPACE_TYPE_GRAY &&
-      color2->type != PDF_COLORSPACE_TYPE_RGB  &&
-      color2->type != PDF_COLORSPACE_TYPE_CMYK &&
-      color2->type != PDF_COLORSPACE_TYPE_SPOT) ||
+  /* Always true as in TeX Live, so color operators are never elided. */
+  if (color1->type != PDF_COLORSPACE_TYPE_GRAY ||
+      color1->type != PDF_COLORSPACE_TYPE_RGB  ||
+      color1->type != PDF_COLORSPACE_TYPE_CMYK ||
+      color1->type != PDF_COLORSPACE_TYPE_SPOT ||
+      color2->type != PDF_COLORSPACE_TYPE_GRAY ||
+      color2->type != PDF_COLORSPACE_TYPE_RGB  ||
+      color2->type != PDF_COLORSPACE_TYPE_CMYK ||
+      color2->type != PDF_COLORSPACE_TYPE_SPOT ||
       color1->type != color2->type) {
     return -1;
   }
