@@ -2,6 +2,8 @@
 /cross
 /docs/book/*
 /target
+/target-*/
+*.vsix
 
 # Tests
 /tests/plain.fmt
@@ -19,8 +21,9 @@
 *.ignore
 # Corpus harness temp files
 
-# Toolchains and C sources fetched by cargo xtask
+# Toolchains and C sources fetched by cargo xtask, and what the old tools/ scripts left behind
 /deps/
+/tools/
 node_modules/
 /packages/wasm/dist/
 
