@@ -458,9 +458,12 @@ fn scan_dimen_from(
                     }
                     .raw();
                     match val {
-                        CurVal::Mu(_) => break 'attach_sign,
                         CurVal::Int(_) => {}
-                        _ => mu_error(st)?,
+                        CurVal::Mu(_) => break 'attach_sign,
+                        _ => {
+                            mu_error(st)?;
+                            break 'attach_sign;
+                        }
                     }
                 } else {
                     let val = scan_something_internal(st, ValueLevel::Dimen, false)?;

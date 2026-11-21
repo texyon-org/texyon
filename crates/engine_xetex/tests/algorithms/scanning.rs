@@ -1,6 +1,6 @@
 //! The scanners: numbers, units, glue and e-TeX expressions.
 
-use crate::{run, run_on_format, show_the};
+use crate::{MATH_FONTS, run, run_on_format, show_the};
 
 #[test]
 fn units_convert_to_points_as_tex_rounds_them() {
@@ -371,4 +371,17 @@ fn a_sparse_register_lookup_after_a_native_word_drops_no_token() {
 \setbox0\hbox{\x abc\ifnum\count300=5 \fi\message{[kept]}}");
     assert_eq!(r.errors(), [""; 0]);
     assert!(r.log.contains("[kept]"));
+}
+
+#[test]
+fn a_non_mu_dimension_after_mkern_gives_one_error_and_keeps_its_value() {
+    let r = run(&format!(
+        r"{MATH_FONTS}\dimen0=1pt \skip0=1pt \setbox0\hbox{{$\mkern\dimen0 \mkern\skip0$}}
+\showthe\wd0"
+    ));
+    assert_eq!(
+        r.errors(),
+        ["Incompatible glue units.", "Incompatible glue units."]
+    );
+    assert_eq!(r.shown(), ["1.11108pt"]);
 }
