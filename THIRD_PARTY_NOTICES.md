@@ -15,7 +15,10 @@ link some of that code, so they carry its terms:
 | `texyon` without MuPDF | dvipdfmx | GPL-2.0-or-later |
 | `texyon` with `preview-mupdf`, the VS Code extension's binary, the wasm engine | dvipdfmx, MuPDF | AGPL-3.0-or-later |
 
-In both cases the complete source is this repository.
+The complete source is this repository and, for the MuPDF builds, MuPDF
+itself: release 1.24.9 on Linux, macOS and wasm (its source archive is attached
+to this repository's `vendor-deps` release), and 1.25.4 on Windows, from
+Artifex's GitHub tag with the patches in `build/vcpkg/vcpkg-ports/libmupdf`.
 
 ## Tectonic
 

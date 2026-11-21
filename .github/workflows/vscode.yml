@@ -223,6 +223,7 @@ jobs:
           fi
           cp licenses/AGPL-3.0.txt packages/vscode/bin/LICENSE
           cp THIRD_PARTY_NOTICES.md packages/vscode/bin/
+          cp -r licenses packages/vscode/bin/
       - uses: actions/download-artifact@v4
         with:
           name: support-pack

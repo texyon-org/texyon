@@ -51,5 +51,7 @@ Short conventional commits, subject line only, for example
 
 ## License
 
-By contributing you agree that your contribution is licensed under the MIT
-License, as described in `LICENSE`.
+By contributing you agree that your contribution is licensed under the
+license of the files it changes: the MIT License (`LICENSE`) for TeXyoN's own
+code, and the license named in `THIRD_PARTY_NOTICES.md` for the directories
+that come from other projects, such as dvipdfmx (GPL v2 or later).

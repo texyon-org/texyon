@@ -4,7 +4,7 @@
   "description": "Live LaTeX preview that updates as you type, backed by a resident TeXyoN engine.",
   "version": "0.3.1",
   "publisher": "texyon",
-  "license": "MIT",
+  "license": "MIT AND AGPL-3.0-or-later",
   "icon": "media/icon.png",
   "repository": {
     "type": "git",
