@@ -820,11 +820,13 @@ pdf_doc_get_page_count (pdf_file *pf)
   page_tree = pdf_deref_obj(pdf_lookup_dict(catalog, "Pages"));
 
   if (!PDF_OBJ_DICTTYPE(page_tree)) {
+    pdf_release_obj(page_tree);
     return 0;
   }
 
   {
     pdf_obj *tmp = pdf_deref_obj(pdf_lookup_dict(page_tree, "Count"));
+    pdf_release_obj(page_tree);
     if (!PDF_OBJ_NUMBERTYPE(tmp)) {
       pdf_release_obj(tmp);
       return 0;
