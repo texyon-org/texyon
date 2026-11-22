@@ -29,7 +29,7 @@ const BUILD_DATE: u64 = 1_700_000_000;
 
 /// What serves the session.
 pub enum Host {
-    /// `texyon -X preview`.
+    /// `texyon preview`.
     Native {
         /// The binary.
         binary: PathBuf,
@@ -64,7 +64,6 @@ impl Host {
                 let mut command = Command::new(binary);
                 command
                     .args([
-                        "-X",
                         "preview",
                         "--protocol",
                         &SESSION_PROTOCOL_VERSION.to_string(),

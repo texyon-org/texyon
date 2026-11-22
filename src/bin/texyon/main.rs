@@ -110,8 +110,7 @@ struct PeekUnstableOptions {
 }
 
 fn main() -> ExitCode {
-    // `-X` once selected this interface. Extension 0.2.0 and the C oracle's goldens scripts still pass it.
-    let args: Vec<OsString> = std::env::args_os().filter(|arg| arg != "-X").collect();
+    let args: Vec<OsString> = std::env::args_os().collect();
 
     // `texyon -Z help` prints its usage before a missing command could fail parsing.
     if let Ok(peek) = PeekUnstableOptions::try_parse_from(&args) {

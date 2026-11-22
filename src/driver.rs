@@ -2018,10 +2018,7 @@ impl ProcessingSession {
             _ => vec!["biber".to_owned()],
         };
 
-        // Moreover, we allow an override of the biber executable, to cope with
-        // possible version mismatch of the bundled biblatex package, as filed
-        // in issue #893. Since PR #1103, the `tectonic-biber` override can
-        // also be invoked with `texyon -X biber`.
+        // A `tectonic-biber` on the path overrides biber, for a biber that does not match the bundled biblatex.
         let find_by = |binary_name: &str| -> Option<String> {
             if let Ok(pathbuf) = which(binary_name)
                 && let Some(biber_path) = pathbuf.to_str()

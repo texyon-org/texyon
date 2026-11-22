@@ -22,7 +22,7 @@ See `bundle.toml` in the bundle you want to build.
 
 To build a bundle, run the following:
  - `cd bundles`
- - `tectonic -X bundle create --build-dir ./build texlive2023/bundle.toml v1`
+ - `texyon bundle create --build-dir ./build texlive2023/bundle.toml v1`
 
 This runs the following jobs, in order. Individual jobs may be run by specifying `--job <job name>`.
  - `select`

@@ -1,5 +1,5 @@
 /**
- * Serves the module's session over stdio in the frames `texyon -X preview`
+ * Serves the module's session over stdio in the frames `texyon preview`
  * speaks (a little-endian u32 length, then a MessagePack map), so one client
  * drives either host. `cargo xtask` uses it to test, benchmark and profile the
  * module.

@@ -148,7 +148,7 @@ def run_tt(name, src, bundle):
     d.mkdir(parents=True)
     shutil.copy(src, d / "probe.tex")
     subprocess.run(
-        [TEXYON, "-X", "compile", "--outfmt", "xdv", "--keep-logs", "--untrusted",
+        [TEXYON, "compile", "--outfmt", "xdv", "--keep-logs", "--untrusted",
          "-Z", "deterministic-mode", "-Z", "continue-on-errors", "--format", "plain",
          "--bundle", str(bundle), "probe.tex"],
         cwd=d, env=ENV, stdin=subprocess.DEVNULL,

@@ -247,7 +247,7 @@ class TeXLive:
         d.mkdir(parents=True)
         (d / "warm.tex").write_text("\\documentclass{article}\\begin{document}x\\end{document}\n")
         subprocess.run(
-            [self.texyon, "-X", "compile", "--outfmt", "xdv", "--untrusted",
+            [self.texyon, "compile", "--outfmt", "xdv", "--untrusted",
              "-Z", "deterministic-mode", "--bundle", str(self.bundle), "warm.tex"],
             cwd=d, env=self.env(), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, check=False)
@@ -255,7 +255,7 @@ class TeXLive:
 
     def run_tt(self, case, d):
         subprocess.run(
-            [self.texyon, "-X", "compile", "--pass", "tex", "--reruns", str(case.passes - 1),
+            [self.texyon, "compile", "--pass", "tex", "--reruns", str(case.passes - 1),
              "--outfmt", "xdv", "--keep-logs", "--keep-intermediates", "--untrusted",
              "-Z", "deterministic-mode", "-Z", "continue-on-errors",
              "--bundle", str(self.bundle), case.main],

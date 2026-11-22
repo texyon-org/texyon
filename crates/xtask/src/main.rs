@@ -117,7 +117,7 @@ struct HostArgs {
 
 #[derive(Clone, Copy, ValueEnum)]
 enum HostKind {
-    /// `texyon -X preview`.
+    /// `texyon preview`.
     Native,
     /// The wasm module under Node.
     Wasm,

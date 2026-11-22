@@ -91,7 +91,6 @@ pub fn build(
         let mut compile = Command::new(texyon);
         compile
             .args([
-                "-X",
                 "compile",
                 &seed.primary,
                 "--bundle",
