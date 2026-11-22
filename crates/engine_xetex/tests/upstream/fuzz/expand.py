@@ -1,12 +1,6 @@
-"""Writes N random plain TeX probes for run.py --probes: <outdir> <N> [first seed]."""
-import os
-import random
-import sys
+"""Random plain TeX probes of macro expansion and conditionals, for run.py --probes."""
 
-OUT = sys.argv[1]
-N = int(sys.argv[2])
-SEED0 = int(sys.argv[3]) if len(sys.argv) > 3 else 0
-os.makedirs(OUT, exist_ok=True)
+import gen
 
 PRE = r"""\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
 \font\xa=xliga \font\lb="[LinLibertine_R_G.ttf]" at 16pt
@@ -15,14 +9,7 @@ PRE = r"""\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen 
 """
 
 
-class G:
-    def __init__(self, seed):
-        self.r = random.Random(seed)
-        self.depth = 0
-
-    def ch(self, *xs):
-        return self.r.choice(xs)
-
+class G(gen.Generator):
     def num(self):
         return self.ch("0", "1", "-7", "255", "256", "32767", "32768", "'17", '"FF', "`a", "`\\^^@",
                        "2147483647", "-2147483647", r"\ca", r"\count300", r"\numexpr 3*4-1\relax",
@@ -148,7 +135,5 @@ class G:
         return "".join(out)
 
 
-for i in range(N):
-    seed = SEED0 + i
-    with open(os.path.join(OUT, f"e{seed:05d}.tex"), "w") as f:
-        f.write(G(seed).doc())
+if __name__ == "__main__":
+    gen.main("e", G, __doc__)

@@ -12,14 +12,14 @@ automated clients, so a large sample takes a while. Reruns skip what exists.
 import argparse
 import gzip
 import io
-import os
 import random
 import re
 import tarfile
 import time
 import urllib.request
 import xml.etree.ElementTree as ET
-from pathlib import Path
+
+from latex import CORPUS
 
 CATEGORIES = [
     "math.AG", "math.CO", "math.PR", "math.AP", "math.NT", "math.OC", "math.GT", "math.ST",
@@ -51,7 +51,8 @@ def get(url):
 def ids_for(cat, n, rng):
     # A random offset into the newest few thousand spreads the sample over recent years.
     start = rng.randrange(0, 4000)
-    url = f"{API}?search_query=cat:{cat}&sortBy=submittedDate&sortOrder=descending&start={start}&max_results={n}"
+    url = (f"{API}?search_query=cat:{cat}&sortBy=submittedDate&sortOrder=descending"
+           f"&start={start}&max_results={n}")
     feed = ET.fromstring(get(url))
     out = []
     for e in feed.iter(f"{ATOM}entry"):
@@ -61,7 +62,7 @@ def ids_for(cat, n, rng):
 
 
 def as_tarball(data):
-    """Return the e-print as tar bytes, or None when it is not LaTeX source."""
+    """The e-print as tar bytes, or None when it is not LaTeX source."""
     try:
         raw = gzip.decompress(data)
     except OSError:
@@ -90,7 +91,7 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--categories", help="comma-separated subset of CATEGORIES")
     args = ap.parse_args()
-    root = Path(os.environ.get("TEXYON_CORPUS_DIR", Path.home() / ".cache/texyon-corpus")) / "arxiv"
+    root = CORPUS / "arxiv"
     root.mkdir(parents=True, exist_ok=True)
     skip = root / "not-latex.txt"
     skipped = set(skip.read_text().split()) if skip.exists() else set()

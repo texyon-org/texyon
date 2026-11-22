@@ -1,12 +1,6 @@
-"""Writes N random OpenType math probes for run.py --probes: <outdir> <N> [first seed]."""
-import os
-import random
-import sys
+"""Random plain TeX probes of OpenType math, for run.py --probes."""
 
-OUT = sys.argv[1]
-N = int(sys.argv[2])
-SEED0 = int(sys.argv[3]) if len(sys.argv) > 3 else 0
-os.makedirs(OUT, exist_ok=True)
+import gen
 
 FONTS = ["latinmodern-math.otf", "texgyrepagella-math.otf"]
 LETTERS = {"a": 0x1D44E, "b": 0x1D44F, "x": 0x1D465, "y": 0x1D466, "f": 0x1D453, "g": 0x1D454,
@@ -53,11 +47,7 @@ def preamble(r):
     return "\n".join(out) + "\n"
 
 
-class G:
-    def __init__(self, r):
-        self.r = r
-        self.depth = 0
-
+class G(gen.Generator):
     def atom(self):
         r = self.r
         return r.choice(list(LETTERS) + ["+", "=", ",", "-", "1", "2", r"\sum", r"\int", r"\prod",
@@ -136,7 +126,5 @@ class G:
         return "\n".join(out) + "\n"
 
 
-for i in range(N):
-    seed = SEED0 + i
-    with open(os.path.join(OUT, f"o{seed:05d}.tex"), "w") as f:
-        f.write(G(random.Random(seed)).doc())
+if __name__ == "__main__":
+    gen.main("o", G, __doc__)

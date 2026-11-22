@@ -1,12 +1,6 @@
-"""Writes N random plain TeX math probes for run.py --probes: <outdir> <N> [first seed]."""
-import os
-import random
-import sys
+"""Random plain TeX probes of math lists with TFM fonts, for run.py --probes."""
 
-OUT = sys.argv[1]
-N = int(sys.argv[2])
-SEED0 = int(sys.argv[3]) if len(sys.argv) > 3 else 0
-os.makedirs(OUT, exist_ok=True)
+import gen
 
 PRE = r"""\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
 \font\xa=xliga \font\lb="[LinLibertine_R_G.ttf]" at 16pt
@@ -19,17 +13,7 @@ DELIMS_R = [")", "]", r"\}", r"\rbrace", r"\rangle", r"\rfloor", r"\rceil", "|",
             r"\downarrow", r"\Uparrow", r"\rgroup", r"\rmoustache", r"\Arrowvert", r"\bracevert"]
 
 
-class G:
-    def __init__(self, seed):
-        self.r = random.Random(seed)
-        self.depth = 0
-
-    def ch(self, *xs):
-        return self.r.choice(xs)
-
-    def dim(self, lo=-5, hi=20):
-        return f"{self.r.randint(lo, hi)}.{self.r.randint(0, 99):02d}pt"
-
+class G(gen.Generator):
     def atom(self):
         return self.ch("a", "b", "f", "x", "y", "V", "W", "P", "1", "2", "+", "-", "=", "<", ">", ",", ";", ":",
                        "(", ")", "[", "]", "!", "?", ".", "/", "|", "'", r"\alpha", r"\beta", r"\Gamma",
@@ -178,7 +162,5 @@ class G:
         return "".join(out)
 
 
-for i in range(N):
-    seed = SEED0 + i
-    with open(os.path.join(OUT, f"m{seed:05d}.tex"), "w") as f:
-        f.write(G(seed).doc())
+if __name__ == "__main__":
+    gen.main("m", G, __doc__)

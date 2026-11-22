@@ -1,12 +1,6 @@
-"""Writes N random plain TeX probes for run.py --probes: <outdir> <N> [first seed]."""
-import os
-import random
-import sys
+"""Random plain TeX probes of the page builder and output routines, for run.py --probes."""
 
-OUT = sys.argv[1]
-N = int(sys.argv[2])
-SEED0 = int(sys.argv[3]) if len(sys.argv) > 3 else 0
-os.makedirs(OUT, exist_ok=True)
+import gen
 
 PRE = r"""\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
 \font\xa=xliga \hbadness10000 \vbadness10000 \hfuzz\maxdimen \vfuzz\maxdimen
@@ -31,17 +25,7 @@ OUTPUTS = [
 ]
 
 
-class G:
-    def __init__(self, seed):
-        self.r = random.Random(seed)
-        self.depth = 0
-
-    def ch(self, *xs):
-        return self.r.choice(xs)
-
-    def dim(self, lo=-5, hi=20):
-        return f"{self.r.randint(lo, hi)}.{self.r.randint(0, 99):02d}pt"
-
+class G(gen.Generator):
     def glue(self):
         s = self.dim(0, 12)
         if self.r.random() < 0.6:
@@ -169,7 +153,5 @@ class G:
         return "".join(out)
 
 
-for i in range(N):
-    seed = SEED0 + i
-    with open(os.path.join(OUT, f"p{seed:05d}.tex"), "w") as f:
-        f.write(G(seed).doc())
+if __name__ == "__main__":
+    gen.main("p", G, __doc__)

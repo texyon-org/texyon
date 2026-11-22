@@ -1,16 +1,10 @@
-"""Writes N random plain TeX probes for run.py --probes: <outdir> <N> [first seed].
+"""Random plain TeX probes of word building, hyphenation and line breaking, for run.py --probes.
 
-Focus: word building, hyphenation and line breaking with native and TFM fonts.
 Native text stays in LinLibertine at 8pt and 16pt, where float and double
-layout agree."""
-import os
-import random
-import sys
+layout agree.
+"""
 
-OUT = sys.argv[1]
-N = int(sys.argv[2])
-SEED0 = int(sys.argv[3]) if len(sys.argv) > 3 else 0
-os.makedirs(OUT, exist_ok=True)
+import gen
 
 PRE = r"""\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
 \font\xa=xliga \font\xb=xligb \font\xc=xligc \font\lb="[LinLibertine_R_G.ttf]" at 16pt
@@ -30,14 +24,7 @@ REAL = ["representative", "international", "hyphenation", "office", "affluent", 
         "flight", "ffi", "AVAWAY", "Tomorrow", "Waffles"]
 
 
-class G:
-    def __init__(self, seed):
-        self.r = random.Random(seed)
-        self.depth = 0
-
-    def ch(self, *xs):
-        return self.r.choice(xs)
-
+class G(gen.Generator):
     def dim(self, lo=-3, hi=10):
         return f"{self.r.randint(lo, hi)}.{self.r.randint(0, 99):02d}pt"
 
@@ -174,7 +161,5 @@ class G:
         return "".join(out)
 
 
-for i in range(N):
-    seed = SEED0 + i
-    with open(os.path.join(OUT, f"w{seed:05d}.tex"), "w") as f:
-        f.write(G(seed).doc())
+if __name__ == "__main__":
+    gen.main("w", G, __doc__)

@@ -1,8 +1,8 @@
 """LaTeX suites for run.py: both engines read the same TeX Live tree.
 
-TeX Live's xetex runs with its own kpathsea lookup. TeXyoN gets a directory
-bundle of symlinks, one per file name, each pointing at the file kpsewhich
-picks for xelatex, so both engines see identical inputs.
+TeX Live's xetex finds files with kpathsea. TeXyoN gets a directory bundle of
+symlinks, one per file name, each to the file kpsewhich picks for xelatex, so
+both engines read identical inputs.
 """
 
 import fcntl
@@ -20,31 +20,64 @@ import tarfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+import xdv
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
 CORPUS = Path(os.environ.get("TEXYON_CORPUS_DIR", Path.home() / ".cache/texyon-corpus"))
 
-# Same as run.py's plain probes: Tectonic's fixed capacities. Main memory gets TeXyoN's
-# `MAIN_MEMORY_WORDS`, through extra_mem_top since token lists can only grow there.
+# TeXyoN's fixed capacities, so overflow messages agree.
 CAPACITIES = dict(
     stack_size="5000", nest_size="500", param_size="10000", save_size="80000",
     buf_size="200000", max_in_open="15", expand_depth="10000", hash_extra="600000",
     font_mem_size="8000000", font_max="9000", pool_size="6250000",
-    string_vacancies="90000", max_strings="565536", extra_mem_top=str((1 << 26) - 5_000_000),
+    string_vacancies="90000", max_strings="565536",
 )
+# TeXyoN's main memory, through extra_mem_top since token lists only grow there.
+LATEX_CAPACITIES = dict(CAPACITIES, extra_mem_top=str((1 << 26) - 5_000_000))
+# TeXyoN defines \pdfoutput, so upstream gets one for arXiv's usual first line.
+FORMAT_RECIPE = "\\input tl-nostat \\countdef\\pdfoutput=32759 \\input xelatex.ini"
+# Bump when the way upstream is run changes, so cached results are redone.
+CACHE_VERSION = "6"
+
 TL_TIMEOUT = "upstream xetex timed out"
-# Per-pass seconds for cases that need longer than their suite's default.
-LONG_TIMEOUTS = {
-    # Upstream takes 415 s a pass, TeXyoN 617 s (2026-11-21).
-    "tldocs/latex/functional/functional": 900,
-}
+NO_LOG, NO_XDV = "<no log>", ["<no xdv>"]
 SKIP_TREES = ("doc", "source", "scripts")
-MISC_FONT_SUFFIXES = (".tec", ".map", ".fea", ".cmap")
 FONT_SUFFIXES = (".tfm", ".vf", ".ofm", ".ovf", ".otf", ".ttf", ".ttc", ".otc", ".pfb", ".pfa",
                  ".afm", ".tec", ".fea", ".cmap")
+MISC_FONT_SUFFIXES = (".tec", ".map", ".fea", ".cmap")
+LOG_WIDTH = 79
+PIXEL_DPI = "100"
+REQUEUE = "requeue"
+
+# At a line start only, since a document may quote them in its own text.
+FATAL_RX = re.compile(r"^(?:\(That makes 100 errors; please try again\.\)|! Emergency stop\."
+                      r"|! TeX capacity exceeded|\*\*\* \(job aborted)", re.M)
+FONT_EXT_RX = re.compile(r"^(nativefont \d+ \d+ \d+ b['\"].*?)\.(otf|ttf|otc|ttc|dfont)(['\"])", re.I)
+FONT_DEF_RX = re.compile(r"^(nativefont|fntdef) (\d+) ")
+FONT_USE_RX = re.compile(r"^fnt (\d+)$")
+# Dates TeX Live takes from its clock or file times, which TeXyoN pins to the epoch.
+XMP_DATE_RX = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d")
+XMP_INSTANCE_RX = re.compile(r"(<xmpMM:InstanceID>uuid:)[0-9a-f-]+")
+MOD_DATE_RX = re.compile(r"(/ModDate ?\(D:)[0-9]{14}")
+# TeX's `(name` on opening a file, and `pdf:image ... (name)`.
+NESTED_RX = re.compile(r"(?<=\()[\w.+-]+(?:/[\w.+-]+)+")
+# Marks where a full-width log line was joined to the next, which may have been a real line end.
+JOIN = "\0"
+
+# Upstream bug 18: TeX Live reads the script list from GSUB twice, so fontspec leaves out
+# scripts only GPOS lists and notes that the font lacks them.
+SCRIPT_TAG_RX = re.compile(r"script=\w+;")
+SCRIPT_NOTE_RX = re.compile(
+    r"PackagefontspecInfo:(\(fontspec\))?Script'[^']*'notexplicitlysupportedwithinfont"
+    r".{0,400}?differentfontshouldbechosen\.")
+# Upstream bug 21: \XeTeXtracingfonts prints freed memory, up to a NUL, for fonts found by name.
+REQUEST_BY_NAME_RX = re.compile(r'(Requestedfont"[^\["][^"]*"at[0-9.]+pt->)')
+FONT_FILE_RX = re.compile(r"[\w.+-]*?\.(otf|ttf|otc|ttc|dfont)", re.I)
+FREED_MEMORY_MAX = 64
 
 
 @dataclass
@@ -52,15 +85,14 @@ class Case:
     """One document compiled by both engines from a fresh copy of its files."""
     name: str
     suite: str
-    files: list  # (source path, name inside the case directory)
     main: str
+    files: list[tuple[Path, str]] = field(default_factory=list)  # source, name in the case dir
     passes: int = 1
     timeout: int = 300
     tarball: Path | None = None
-    key_extra: str = ""
 
     def key(self):
-        h = hashlib.sha256(f"{self.main}|{self.passes}|{self.key_extra}".encode())
+        h = hashlib.sha256(f"{self.main}|{self.passes}|".encode())
         for src, dest in sorted(self.files, key=lambda f: f[1]):
             h.update(dest.encode())
             h.update(Path(src).read_bytes())
@@ -69,7 +101,7 @@ class Case:
         return h.hexdigest()
 
     def cost(self):
-        """Input size, a rough guess of run time for scheduling the big cases first."""
+        """Input size, a rough guess of run time for starting the big cases first."""
         size = self.tarball.stat().st_size * 4 if self.tarball else 0
         return size + sum(Path(src).stat().st_size for src, _ in self.files)
 
@@ -94,14 +126,20 @@ class TeXLive:
         self.xetex = xetex
         self.texyon = texyon
         self.work = work
-        self.texmf = Path(xetex).resolve().parents[2] / "texmf-dist"
+        self.root = Path(xetex).resolve().parents[2]
+        self.texmf = self.root / "texmf-dist"
         self.fontconfig = work / "fontconfig" / "fonts.conf"
         self.fmtdir = work / "tl-latex-fmt"
         self.bundle = work / "tl-bundle"
+        self.clock = work / "epoch-clock.so"
+        # A line break TeX made for width may fall anywhere in a path, see JOIN.
+        self.path_rx = re.compile(
+            "".join(re.escape(c) + "\0?" for c in f"{self.root}/") + r"(?:[^\s/()<>{}\"']+/)*")
+        self.root_depth = len(self.root.parts)
         self._nested = None
 
     def nested(self):
-        """The bundle's `dir/name` links."""
+        """The bundle's `dir/.../name` links."""
         if self._nested is None:
             self._nested = {str(f.relative_to(self.bundle)) for d in self.bundle.iterdir()
                             if d.is_dir() for f in d.rglob("*") if not f.is_dir()}
@@ -112,7 +150,7 @@ class TeXLive:
             os.environ, TZ="UTC", SOURCE_DATE_EPOCH="0", FORCE_SOURCE_DATE="1", LC_ALL="C",
             PATH=f"{self.bin}:{os.environ.get('PATH', '')}", TEXMFHOME="/nonexistent",
             TEXMFVAR=str(self.work / "texmf-var"), FONTCONFIG_FILE=str(self.fontconfig),
-            TEXFORMATS=f"{self.fmtdir}:", **CAPACITIES,
+            TEXFORMATS=f"{self.fmtdir}:", **LATEX_CAPACITIES,
             # TeXyoN never generates fonts, and a font made by one case would change later ones.
             MKTEXTFM="0", MKTEXMF="0", MKTEXPK="0",
         )
@@ -122,27 +160,25 @@ class TeXLive:
         _, hard = resource.getrlimit(resource.RLIMIT_STACK)
         resource.setrlimit(resource.RLIMIT_STACK, (hard, hard))
         self.work.mkdir(parents=True, exist_ok=True)
-        self._clock()
-        self._fontconfig()
-        self._bundle()
-        self._format()
+        self._build_clock()
+        self._write_fontconfig()
+        self._build_bundle()
+        self._build_format()
 
-    def _clock(self):
+    def _build_clock(self):
         """A preload that stops upstream's clock at the epoch.
 
         Upstream seeds `\\randomseed` from the clock even with SOURCE_DATE_EPOCH. At the epoch
-        its seed is 0, as TeXyoN's is in deterministic mode with a build date of 0.
+        its seed is 0, as TeXyoN's is in deterministic mode.
         """
-        self.clock = self.work / "epoch-clock.so"
         src = self.work / "epoch-clock.c"
         src.write_text(
             "struct timeval { long tv_sec; long tv_usec; };\n"
             "int gettimeofday(struct timeval *tv, void *tz) {\n"
             "  (void)tz; if (tv) { tv->tv_sec = 0; tv->tv_usec = 0; } return 0;\n}\n")
-        subprocess.run(["cc", "-shared", "-fPIC", "-O2", "-o", str(self.clock), str(src)],
-                       check=True)
+        subprocess.run(["cc", "-shared", "-fPIC", "-O2", "-o", str(self.clock), str(src)], check=True)
 
-    def _fontconfig(self):
+    def _write_fontconfig(self):
         self.fontconfig.parent.mkdir(parents=True, exist_ok=True)
         dirs = "".join(f"  <dir>{self.texmf}/fonts/{d}</dir>\n" for d in ("opentype", "truetype"))
         self.fontconfig.write_text(
@@ -151,7 +187,7 @@ class TeXLive:
 
     def _kpsewhich(self, names, *opts):
         found = {}
-        # From the work dir a name like README.md would resolve to the checkout's own copy.
+        # Run elsewhere, a name like README.md resolves to the checkout's own copy.
         empty = self.work / "kpsewhich"
         empty.mkdir(parents=True, exist_ok=True)
         for i in range(0, len(names), 2000):
@@ -164,17 +200,15 @@ class TeXLive:
                     found.setdefault(Path(p).name, p)
         return found
 
-    def _bundle(self):
+    def _build_bundle(self):
         names = set()
         for dirpath, dirs, files in os.walk(self.texmf):
-            rel = os.path.relpath(dirpath, self.texmf)
-            if rel.startswith(SKIP_TREES):
+            if os.path.relpath(dirpath, self.texmf).startswith(SKIP_TREES):
                 dirs.clear()
                 continue
             names.update(f for f in files if not re.search(r"\s", f) and not f.startswith("-"))
         names = sorted(names)
-        # What TeX itself can open: \input and \openin search TeX's path for any name,
-        # and fonts come from the font paths.
+        # \input and \openin search TeX's path for any name, fonts come from the font paths.
         found = self._kpsewhich(names, "-format=tex")
         fonts = [n for n in names if n.lower().endswith(FONT_SUFFIXES) and n not in found]
         for name, path in self._kpsewhich(fonts).items():
@@ -183,8 +217,8 @@ class TeXLive:
         found.update(self._kpsewhich(misc, "-format=misc fonts"))
         for skip in ("ls-R", "texmf.cnf"):
             found.pop(skip, None)
-        if self.bundle.exists():
-            shutil.rmtree(self.bundle)
+
+        shutil.rmtree(self.bundle, ignore_errors=True)
         self.bundle.mkdir(parents=True)
         h = hashlib.sha256()
         for name in sorted(found):
@@ -204,16 +238,16 @@ class TeXLive:
                 link.parent.mkdir(parents=True, exist_ok=True)
                 if not link.exists():
                     os.symlink(path, link)
+        # The engine looks formats up under the bundle names it kept from Tectonic.
         (self.bundle / "tectonic-format-latex.tex").write_text("\\input xelatex.ini\n")
         (self.bundle / "tectonic-format-plain.tex").write_text("\\input plain \\dump\n")
-        # Formats are cached by this digest, and a new engine build must not reuse them.
+        # TeXyoN caches formats by this digest, so a new build must change it.
         h.update(Path(self.texyon).read_bytes())
         (self.bundle / "SHA256SUM").write_text(h.hexdigest() + "\n")
-        self.digest = h.hexdigest()
 
-    def _format(self):
+    def _build_format(self):
         t = hashlib.sha256(Path(self.xetex).read_bytes())
-        for lsr in (self.texmf / "ls-R", self.texmf.parent / "texmf-var" / "ls-R"):
+        for lsr in (self.texmf / "ls-R", self.root / "texmf-var" / "ls-R"):
             if lsr.exists():
                 t.update(lsr.read_bytes())
         t.update(FORMAT_RECIPE.encode())
@@ -221,8 +255,7 @@ class TeXLive:
         self.tl_digest = t.hexdigest()
         self.fmtdir.mkdir(parents=True, exist_ok=True)
         fmt = self.fmtdir / "xelatex.fmt"
-        if fmt.exists():
-            fmt.unlink()
+        fmt.unlink(missing_ok=True)
         shutil.copy(HERE / "tl-nostat.tex", self.fmtdir)
         subprocess.run(
             [self.xetex, "-ini", "-etex", "-jobname=xelatex", "-progname=xelatex",
@@ -230,9 +263,10 @@ class TeXLive:
             cwd=self.fmtdir, env=self.env(), stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL, check=False)
         if not fmt.exists():
-            raise SystemExit("upstream xetex failed to build xelatex.fmt")
+            raise SystemExit("TeX Live's xetex failed to build xelatex.fmt")
 
     def run_tl(self, case, d):
+        """None, or why upstream gave no result."""
         for _ in range(case.passes):
             r = subprocess.run(
                 [self.xetex, "-fmt=xelatex", "-progname=xelatex", "-no-pdf", "-no-shell-escape",
@@ -248,7 +282,7 @@ class TeXLive:
         return None
 
     def warm_texyon(self):
-        """Builds TeXyoN's format once, before parallel runs would each build it."""
+        """Builds TeXyoN's format once, before the parallel runs would each build it."""
         d = self.work / "warm"
         shutil.rmtree(d, ignore_errors=True)
         d.mkdir(parents=True)
@@ -260,7 +294,7 @@ class TeXLive:
             stderr=subprocess.DEVNULL, check=False)
         shutil.rmtree(d, ignore_errors=True)
 
-    def run_tt(self, case, d):
+    def run_texyon(self, case, d):
         subprocess.run(
             [self.texyon, "compile", "--pass", "tex", "--reruns", str(case.passes - 1),
              "--outfmt", "xdv", "--keep-logs", "--keep-intermediates", "--untrusted",
@@ -271,8 +305,13 @@ class TeXLive:
             # One process runs every pass, and upstream gets the timeout per pass.
             timeout=case.timeout * case.passes)
 
-
-FONT_EXT_RX = re.compile(r"^(nativefont \d+ \d+ \d+ b['\"].*?)\.(otf|ttf|otc|ttc|dfont)(['\"])", re.I)
+    def strip_path(self, m):
+        """A found path reduced to its file name, cut at a join that follows a file name."""
+        segments = m.group(0).split("/")
+        for k, seg in enumerate(segments[self.root_depth - 1:-1], start=self.root_depth - 1):
+            if JOIN in seg and "." in seg.split(JOIN)[0]:
+                return "/".join(segments[k:])
+        return ""
 
 
 def resolve_moves(lines):
@@ -282,43 +321,32 @@ def resolve_moves(lines):
     flushed, and that decides whether TeX may still turn an earlier move into a
     register. Positions stay exact, only the encoding is dropped.
     """
-    regs = {"w": 0, "x": 0, "y": 0, "z": 0}
-    stack = []
     axis = {"w": "right", "x": "right", "y": "down", "z": "down"}
+    regs = dict.fromkeys(axis, 0)
+    stack = []
     out = []
     for line in lines:
         op, _, arg = line.partition(" ")
         if op in ("w0", "x0", "y0", "z0"):
             out.append(f"{axis[op[0]]} {regs[op[0]]}")
-        elif op in regs:
+            continue
+        if op in regs:
             regs[op] = int(arg)
             out.append(f"{axis[op]} {arg}")
-        elif op == "push":
+            continue
+        if op == "push":
             stack.append(dict(regs))
-            out.append(line)
         elif op == "pop":
             regs = stack.pop() if stack else regs
-            out.append(line)
         elif op == "bop":
-            regs = {"w": 0, "x": 0, "y": 0, "z": 0}
+            regs = dict.fromkeys(axis, 0)
             stack = []
-            out.append(line)
-        else:
-            out.append(line)
+        out.append(line)
     return out
 
 
-# Bump when the way upstream is run changes, so cached results are redone.
-CACHE_VERSION = "6"
-# At a line start only, since a document may quote them in its own text.
-FATAL_RX = re.compile(r"^(?:\(That makes 100 errors; please try again\.\)|! Emergency stop\."
-                      r"|! TeX capacity exceeded|\*\*\* \(job aborted)", re.M)
-FONT_DEF_RX = re.compile(r"^(nativefont|fntdef) (\d+) ")
-FONT_USE_RX = re.compile(r"^fnt (\d+)$")
-
-
 def renumber_fonts(lines):
-    """Numbers fonts in order of definition: the internal numbers count every font loaded."""
+    """Numbers fonts in order of definition, since the internal numbers count every font loaded."""
     ids = {}
     out = []
     for line in lines:
@@ -347,13 +375,6 @@ def drop_empty_pushes(lines):
     return out
 
 
-# Dates TL takes from its clock or file mtimes, which TeXyoN pins to the epoch: hyperxmp's XMP
-# dates and the InstanceID seeded from them, and embedded files' ModDate.
-XMP_DATE_RX = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d")
-XMP_INSTANCE_RX = re.compile(r"(<xmpMM:InstanceID>uuid:)[0-9a-f-]+")
-MOD_DATE_RX = re.compile(r"(/ModDate ?\(D:)[0-9]{14}")
-
-
 def without_dates(line):
     if line.startswith("xxx b'pdf:stream @hyxmp@Metadata"):
         return XMP_INSTANCE_RX.sub(r"\1", XMP_DATE_RX.sub("", line))
@@ -362,45 +383,13 @@ def without_dates(line):
     return line
 
 
-def normalize_xdv(lines):
+def normalize_xdv(tl, lines):
     """Decoded pages, native fonts named without the extension upstream's lookup adds."""
     lines = [FONT_EXT_RX.sub(r"\1\3", line) for line in lines]
     # Pictures from the TeX Live tree carry the path kpathsea found, as in the log.
-    lines = [without_dates(PATH_RX.sub("", line)) if line.startswith("xxx") else line
+    lines = [without_dates(tl.path_rx.sub("", line)) if line.startswith("xxx") else line
              for line in lines]
     return drop_empty_pushes(renumber_fonts(resolve_moves(lines)))
-
-
-
-
-
-
-def xdv_lines(path, xdv_pages):
-    return normalize_xdv(xdv_pages(path))
-
-
-# TeXyoN keeps Tectonic's \pdfoutput, so arXiv's usual first line works there.
-FORMAT_RECIPE = "\\input tl-nostat \\countdef\\pdfoutput=32759 \\input xelatex.ini"
-# A line break TeX made for width may fall anywhere in the prefix, see JOIN.
-PATH_RX = re.compile(
-    "".join(re.escape(c) + "\0?" for c in "/usr/local/texlive/") + r"[\d\0]+/(?:[^\s/()<>{}\"']+/)*")
-
-
-# Marks where a full-width line was joined to the next, which may have been a real line end.
-JOIN = "\0"
-
-
-def strip_path(m):
-    """A found path reduced to its file name, ending it at a join that follows a file name."""
-    segments = m.group(0).split("/")
-    for k, seg in enumerate(segments[4:-1], start=4):
-        if JOIN in seg and "." in seg.split(JOIN)[0]:
-            return "/".join(segments[k:])
-    return ""
-
-
-# Only found names: TeX's `(name` on opening a file, and `pdf:image ... (name)`.
-NESTED_RX = re.compile(r"(?<=\()[\w.+-]+(?:/[\w.+-]+)+")
 
 
 def strip_bundle_dirs(text, nested, case_dir):
@@ -411,34 +400,26 @@ def strip_bundle_dirs(text, nested, case_dir):
     return NESTED_RX.sub(sub, text)
 
 
-def strip_special_dirs(xdv, nested, case_dir):
+def strip_special_dirs(xdv_lines, nested, case_dir):
     """Both sides alike, since a macro writes a bitmap's name as asked and the engine a PDF's path."""
-    return [strip_bundle_dirs(l, nested, case_dir) if l.startswith("xxx") else l for l in xdv]
+    return [strip_bundle_dirs(l, nested, case_dir) if l.startswith("xxx") else l for l in xdv_lines]
 
 
-def latex_log(path, main):
-    if not path.exists():
-        return "<no log>"
-    return latex_text(path.read_text(encoding="utf-8", errors="replace"), main)
-
-
-def latex_text(raw, main, width=79):
+def latex_text(tl, raw, main):
     """The log from the main file on, unwrapped, with found paths reduced to names."""
     if raw is None:
-        return "<no log>"
-    lines = raw.split("\n")
+        return NO_LOG
     out, buf = [], ""
-    for line in lines:
+    for line in raw.split("\n"):
         buf += line
-        if len(line) != width:
+        if len(line) == LOG_WIDTH:
+            buf += JOIN
+        else:
             out.append(buf)
             buf = ""
-        else:
-            buf += JOIN
     if buf:
         out.append(buf)
-    text = "\n".join(out)
-    text = PATH_RX.sub(strip_path, text).replace(JOIN, "").replace("(./", "(")
+    text = tl.path_rx.sub(tl.strip_path, "\n".join(out)).replace(JOIN, "").replace("(./", "(")
     text = re.sub(r"(Output written on \S+ \(\d+ pages?), \d+ bytes\)\.", r"\1).", text)
     # Upstream's terminal holds the command line, TeXyoN's is empty.
     text = text.replace("<*> " + main, "<*> ")
@@ -454,29 +435,13 @@ def squeeze(text):
     return re.sub(r"\s+", "", text)
 
 
-def same_log(a, b):
-    return squeeze(a) == squeeze(b)
-
-
-# Upstream bug 18: TL reads the script list from GSUB twice, so fontspec leaves out scripts only
-# GPOS lists and notes that the font lacks them.
-SCRIPT_TAG_RX = re.compile(r"script=\w+;")
-SCRIPT_NOTE_RX = re.compile(
-    r"PackagefontspecInfo:(\(fontspec\))?Script'[^']*'notexplicitlysupportedwithinfont"
-    r".{0,400}?differentfontshouldbechosen\.")
-# Upstream bug 21: TL's \XeTeXtracingfonts prints freed memory, up to a NUL, for fonts found by name.
-REQUEST_BY_NAME_RX = re.compile(r'(Requestedfont"[^\["][^"]*"at[0-9.]+pt->)')
-FONT_FILE_RX = re.compile(r"[\w.+-]*?\.(otf|ttf|otc|ttc|dfont)", re.I)
-FREED_MEMORY_MAX = 64
-
-
 def without_script_choice(text):
     return SCRIPT_NOTE_RX.sub("", SCRIPT_TAG_RX.sub("", text))
 
 
-def same_but_found_names(tl, tt):
-    """Equal once TL's freed memory after each font request by name stands for TeXyoN's file name."""
-    a, b = REQUEST_BY_NAME_RX.split(tl), REQUEST_BY_NAME_RX.split(tt)
+def same_but_found_names(tl_log, log):
+    """Equal once upstream's freed memory after each font request by name stands for TeXyoN's file name."""
+    a, b = REQUEST_BY_NAME_RX.split(tl_log), REQUEST_BY_NAME_RX.split(log)
     if len(a) != len(b) or a[0] != b[0]:
         return False
     for i in range(1, len(a), 2):
@@ -490,19 +455,19 @@ def same_but_found_names(tl, tt):
     return True
 
 
-def same_with_bugs(tl, tt, bugs):
+def same_with_bugs(tl_log, log, bugs):
     if 18 in bugs:
-        tl, tt = without_script_choice(tl), without_script_choice(tt)
-    return same_but_found_names(tl, tt) if 21 in bugs else tl == tt
+        tl_log, log = without_script_choice(tl_log), without_script_choice(log)
+    return same_but_found_names(tl_log, log) if 21 in bugs else tl_log == log
 
 
 def upstream_bugs_explain(tl_log, log):
     """The upstream bugs whose log effects are all that separates the logs, or None."""
-    tl, tt = squeeze(tl_log), squeeze(log)
+    a, b = squeeze(tl_log), squeeze(log)
     every = {18, 21}
-    if not same_with_bugs(tl, tt, every):
+    if not same_with_bugs(a, b, every):
         return None
-    return [n for n in sorted(every) if not same_with_bugs(tl, tt, every - {n})]
+    return [n for n in sorted(every) if not same_with_bugs(a, b, every - {n})]
 
 
 def log_diff(a, b, context=300):
@@ -515,27 +480,43 @@ def log_diff(a, b, context=300):
             "-" + a[lo:p + context], "+" + b[lo:p + context]]
 
 
+def window_diff(a, b, label, context=3, limit=60):
+    """The differing stretch of two line lists, without a quadratic diff."""
+    p = 0
+    while p < len(a) and p < len(b) and a[p] == b[p]:
+        p += 1
+    s = 0
+    while s < len(a) - p and s < len(b) - p and a[-1 - s] == b[-1 - s]:
+        s += 1
+    lo = max(0, p - context)
+    out = [f"--- upstream.{label}", f"+++ texyon.{label}",
+           f"@@ first difference at line {p + 1}, {len(a) - p - s} vs {len(b) - p - s} lines differ @@"]
+    out += [" " + l for l in a[lo:p]]
+    out += ["-" + l for l in a[p:len(a) - s][:limit]]
+    out += ["+" + l for l in b[p:len(b) - s][:limit]]
+    out += [" " + l for l in a[len(a) - s:len(a) - s + context]]
+    return out
+
+
 def lvt_cases(_tl):
     cases = []
-    suites = CORPUS / "suites"
     for repo in ("latex2e", "latex3"):
-        base = suites / repo
+        base = CORPUS / "suites" / repo
         if not base.exists():
             continue
-        support = list((base / "support").glob("*")) if (base / "support").exists() else []
+        support = [f for f in (base / "support").glob("*") if f.is_file()]
         for tdir in sorted(base.glob("**/testfiles*")):
             if not tdir.is_dir() or tdir.name == "testfiles-disabled" or "support" in tdir.parts:
                 continue
-            local = list((tdir / "support").glob("*")) if (tdir / "support").exists() else []
-            files = [(f, f.name) for f in support + local if f.is_file()]
+            local = [f for f in (tdir / "support").glob("*") if f.is_file()]
+            files = [(f, f.name) for f in support + local]
             for lvt in sorted(tdir.glob("*.lvt")):
                 # l3benchmark repeats until the timer advances, which deterministic mode freezes.
                 if lvt.stem.startswith("m3benchmark"):
                     continue
                 rel = lvt.relative_to(base).with_suffix("")
-                cases.append(Case(
-                    name=f"{repo}/{rel}", suite="lvt", files=files + [(lvt, lvt.stem + ".tex")],
-                    main=lvt.stem + ".tex", passes=2, timeout=180))
+                cases.append(Case(name=f"{repo}/{rel}", suite="lvt", main=lvt.stem + ".tex",
+                                  files=files + [(lvt, lvt.stem + ".tex")], passes=2, timeout=180))
     return cases
 
 
@@ -564,17 +545,18 @@ def find_main(d):
 
 def arxiv_cases(_tl):
     cases = []
-    index = CORPUS / "arxiv" / "mains.json"
+    arxiv = CORPUS / "arxiv"
+    index = arxiv / "mains.json"
     mains = json.loads(index.read_text()) if index.exists() else {}
     changed = False
-    for tb in sorted((CORPUS / "arxiv").glob("*.tar.gz")):
-        ident = tb.name[: -len(".tar.gz")]
+    for tarball in sorted(arxiv.glob("*.tar.gz")):
+        ident = tarball.name.removesuffix(".tar.gz")
         if ident not in mains:
-            tmp = CORPUS / "arxiv" / ".probe"
+            tmp = arxiv / ".probe"
             shutil.rmtree(tmp, ignore_errors=True)
             tmp.mkdir()
             try:
-                with tarfile.open(tb) as t:
+                with tarfile.open(tarball) as t:
                     t.extractall(tmp, filter="data")
                 mains[ident] = find_main(tmp)
             except (tarfile.TarError, OSError):
@@ -582,8 +564,8 @@ def arxiv_cases(_tl):
             shutil.rmtree(tmp, ignore_errors=True)
             changed = True
         if mains[ident]:
-            cases.append(Case(name=f"arxiv/{ident}", suite="arxiv", files=[], main=mains[ident],
-                              passes=2, timeout=600, tarball=tb))
+            cases.append(Case(name=f"arxiv/{ident}", suite="arxiv", main=mains[ident],
+                              passes=2, timeout=600, tarball=tarball))
     if changed:
         index.write_text(json.dumps(mains, indent=0, sort_keys=True))
     return cases
@@ -598,9 +580,8 @@ def manifest_cases(_tl):
             continue
         _tier, ident, rel, _src = line.split("\t")
         main = corpus / rel
-        files = [(main, main.name)]
-        cases.append(Case(name=f"docs/{ident}", suite="docs", files=files, main=main.name,
-                          passes=2, timeout=900))
+        cases.append(Case(name=f"docs/{ident}", suite="docs", main=main.name,
+                          files=[(main, main.name)], passes=2, timeout=900))
     return cases
 
 
@@ -625,9 +606,8 @@ def tldocs_cases(tl, max_dir_bytes=40_000_000):
             files = [(f, str(f.relative_to(top))) for f in top.rglob("*")
                      if f.is_file() and f.suffix not in (".log", ".aux")
                      and not (f.suffix == ".pdf" and f.stem == tex.stem)]
-            name = f"tldocs/{tex.relative_to(doc).with_suffix('')}"
-            cases.append(Case(name=name, suite="tldocs", files=files, main=tex.name, passes=2,
-                              timeout=LONG_TIMEOUTS.get(name, 600)))
+            cases.append(Case(name=f"tldocs/{tex.relative_to(doc).with_suffix('')}", suite="tldocs",
+                              main=tex.name, files=files, passes=2, timeout=600))
     return cases
 
 
@@ -653,31 +633,13 @@ def available_kib():
 
 
 def wait_for_memory(lock, min_kib=2_500_000, settle=0.5):
-    """Start cases one at a time, each once the machine has memory to spare."""
+    """Starts cases one at a time, each once the machine has memory to spare."""
     with open(lock, "w") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         while available_kib() < min_kib:
             time.sleep(1 + random.random())
         # Lets the previous case grow before the next one reads the free memory.
         time.sleep(settle)
-
-
-def window_diff(a, b, label, context=3, limit=60):
-    """The differing stretch of two line lists, without a quadratic diff."""
-    p = 0
-    while p < len(a) and p < len(b) and a[p] == b[p]:
-        p += 1
-    s = 0
-    while s < len(a) - p and s < len(b) - p and a[-1 - s] == b[-1 - s]:
-        s += 1
-    lo = max(0, p - context)
-    out = [f"--- upstream.{label}", f"+++ texyon.{label}",
-           f"@@ first difference at line {p + 1}, {len(a) - p - s} vs {len(b) - p - s} lines differ @@"]
-    out += [" " + l for l in a[lo:p]]
-    out += ["-" + l for l in a[p:len(a) - s][:limit]]
-    out += ["+" + l for l in b[p:len(b) - s][:limit]]
-    out += [" " + l for l in a[len(a) - s:len(a) - s + context]]
-    return out
 
 
 class Governor:
@@ -690,7 +652,7 @@ class Governor:
         self.thread = threading.Thread(target=self._watch, daemon=True)
 
     def __enter__(self):
-        requeue_dir(self.work).mkdir(parents=True, exist_ok=True)
+        (self.work / REQUEUE).mkdir(parents=True, exist_ok=True)
         self.thread.start()
         return self
 
@@ -715,14 +677,14 @@ class Governor:
                 start = int((p / "stat").read_text().rsplit(")", 1)[1].split()[19])
             except (OSError, ValueError, IndexError):
                 continue
-            if len(rel.parts) < 2 or rel.parts[0] not in ("tt", "tl"):
+            if len(rel.parts) < 2 or rel.parts[0] not in ("texyon", "tl"):
                 continue
             first, pids = cases.get(rel.parts[1], (start, []))
             cases[rel.parts[1]] = (min(first, start), pids + [int(p.name)])
         if len(cases) < 2:
             return False
         newest = max(cases, key=lambda c: cases[c][0])
-        (requeue_dir(self.work) / newest).touch()
+        (self.work / REQUEUE / newest).touch()
         for pid in cases[newest][1]:
             try:
                 os.kill(pid, signal.SIGKILL)
@@ -731,131 +693,140 @@ class Governor:
         return True
 
 
-def requeue_dir(work):
-    return work / "requeue"
+@dataclass
+class Run:
+    """One case's directories and results, upstream's possibly from the cache."""
+    case: Case
+    tl_dir: Path
+    texyon_dir: Path
+    tl_res: dict | None = None
+    texyon_res: tuple | None = None
+    rerun_tl: object = None
+
+    @property
+    def stem(self):
+        return Path(self.case.main).with_suffix("")
 
 
-def compare(tl, case, work, cache_dir, xdv_pages, keep_failures, pixels=False):
-    """Compare both engines on one case. Returns (status, diff lines)."""
+def compare(tl, case, cache_dir, keep_failures, pixels=False):
+    """Compares both engines on one case. Returns the status and diff lines."""
     safe = case.name.replace("/", "-")
+    run = Run(case, tl.work / "tl" / safe, tl.work / "texyon" / safe)
     key = hashlib.sha256((case.key() + tl.tl_digest + CACHE_VERSION).encode()).hexdigest()
     cached = cache_dir / f"{safe}.json.gz"
-    tl_res = None
     if cached.exists():
         try:
             data = json.loads(gzip.decompress(cached.read_bytes()))
             # A timeout only stands for runs given no more time than it had.
             timed_out = data.get("crash") == TL_TIMEOUT and data.get("timeout", 0) < case.timeout
             if data.get("key") == key and not timed_out:
-                tl_res = data
+                run.tl_res = data
         except (OSError, ValueError):
             pass
-    tt_dir = work / "tt" / safe
-    tl_dir = work / "tl" / safe
-    stem = Path(case.main).with_suffix("")
-    requeued = requeue_dir(work) / safe
+    requeued = tl.work / REQUEUE / safe
     requeued.unlink(missing_ok=True)
-    wait_for_memory(work / "start.lock")
+    wait_for_memory(tl.work / "start.lock")
 
     def upstream():
-        shutil.rmtree(tl_dir, ignore_errors=True)
-        tl_dir.mkdir(parents=True)
-        case.populate(tl_dir)
+        shutil.rmtree(run.tl_dir, ignore_errors=True)
+        run.tl_dir.mkdir(parents=True)
+        case.populate(run.tl_dir)
         try:
-            crash = tl.run_tl(case, tl_dir)
+            crash = tl.run_tl(case, run.tl_dir)
         except subprocess.TimeoutExpired:
             crash = TL_TIMEOUT
         if requeued.exists():
             return None
         # Upstream writes its outputs to the working directory, TeXyoN next to the input.
-        log_path = tl_dir / f"{stem.name}.log"
+        log_path = run.tl_dir / f"{run.stem.name}.log"
         res = dict(key=key, crash=crash, timeout=case.timeout,
                    log=log_path.read_text(encoding="utf-8", errors="replace")
                    if log_path.exists() else None,
-                   xdv=xdv_pages(tl_dir / f"{stem.name}.xdv"))
+                   xdv=xdv.pages(run.tl_dir / f"{run.stem.name}.xdv"))
         cached.write_bytes(gzip.compress(json.dumps(res).encode(), 3))
         return res
 
     def ours():
-        shutil.rmtree(tt_dir, ignore_errors=True)
-        tt_dir.mkdir(parents=True)
-        case.populate(tt_dir)
+        d = run.texyon_dir
+        shutil.rmtree(d, ignore_errors=True)
+        d.mkdir(parents=True)
+        case.populate(d)
         try:
-            tl.run_tt(case, tt_dir)
+            tl.run_texyon(case, d)
         except subprocess.TimeoutExpired:
             return None
-        log = latex_log(tt_dir / f"{stem}.log", case.main)
-        xdv = xdv_lines(tt_dir / f"{stem}.xdv", xdv_pages)
-        return (strip_bundle_dirs(log, tl.nested(), tt_dir),
-                strip_special_dirs(xdv, tl.nested(), tt_dir))
+        log_path = d / f"{run.stem}.log"
+        log = latex_text(tl, log_path.read_text(encoding="utf-8", errors="replace"), case.main) \
+            if log_path.exists() else NO_LOG
+        pages = normalize_xdv(tl, xdv.pages(d / f"{run.stem}.xdv"))
+        return strip_bundle_dirs(log, tl.nested(), d), strip_special_dirs(pages, tl.nested(), d)
 
     with ThreadPoolExecutor(2) as ex:
-        tl_future = ex.submit(upstream) if tl_res is None else None
-        tt_future = ex.submit(ours)
+        tl_future = ex.submit(upstream) if run.tl_res is None else None
+        texyon_future = ex.submit(ours)
         if tl_future:
-            tl_res = tl_future.result()
-        tt_res = tt_future.result()
+            run.tl_res = tl_future.result()
+        run.texyon_res = texyon_future.result()
     if requeued.exists():
-        shutil.rmtree(tl_dir, ignore_errors=True)
-        shutil.rmtree(tt_dir, ignore_errors=True)
+        shutil.rmtree(run.tl_dir, ignore_errors=True)
+        shutil.rmtree(run.texyon_dir, ignore_errors=True)
         return "requeue", []
+    run.rerun_tl = None if tl_future else upstream
     try:
-        rerun_tl = None if tl_future else upstream
-        return judge(tl, case, tl_res, tt_res, tl_dir, tt_dir, work, stem, rerun_tl, pixels)
+        return judge(tl, run, pixels)
     finally:
-        shutil.rmtree(tl_dir, ignore_errors=True)
-        if tt_res is None or not keep_failures:
-            shutil.rmtree(tt_dir, ignore_errors=True)
+        shutil.rmtree(run.tl_dir, ignore_errors=True)
+        if run.texyon_res is None or not keep_failures:
+            shutil.rmtree(run.texyon_dir, ignore_errors=True)
 
 
-def judge(tl, case, tl_res, tt_res, tl_dir, tt_dir, work, stem, rerun_tl, pixels):
-    """Status and diff lines, `rerun_tl` set when upstream's outputs come from the cache."""
-    if tl_res["crash"]:
-        return "tl-crash", [tl_res["crash"]]
-    if tt_res is None:
+def judge(tl, run, pixels):
+    """The status and diff lines of a finished run."""
+    if run.tl_res["crash"]:
+        return "tl-crash", [run.tl_res["crash"]]
+    if run.texyon_res is None:
         return "timeout", ["<texyon timed out>"]
-    log, xdv = tt_res
-    tl_log = latex_text(tl_res["log"], case.main)
-    tl_xdv = strip_special_dirs(normalize_xdv(tl_res["xdv"]), tl.nested(), tt_dir)
-    no_pages = not any(line.startswith("bop") for line in tl_xdv)
+    log, pages = run.texyon_res
+    tl_log = latex_text(tl, run.tl_res["log"], run.case.main)
+    tl_pages = strip_special_dirs(normalize_xdv(tl, run.tl_res["xdv"]), tl.nested(), run.texyon_dir)
+    no_pages = not any(line.startswith("bop") for line in tl_pages)
     diffs = []
-    if not same_log(tl_log, log):
+    if squeeze(tl_log) != squeeze(log):
         diffs += log_diff(tl_log, log)
     # TeXyoN keeps no output after a fatal error, upstream keeps the pages shipped so far.
-    fatal = xdv == ["<no xdv>"] and FATAL_RX.search(tl_res["log"] or "") is not None
-    if tl_xdv != xdv and not fatal:
-        diffs += window_diff(tl_xdv, xdv, "xdv")
+    fatal = pages == NO_XDV and FATAL_RX.search(run.tl_res["log"] or "") is not None
+    if tl_pages != pages and not fatal:
+        diffs += window_diff(tl_pages, pages, "xdv")
     if not diffs:
-        shutil.rmtree(tt_dir, ignore_errors=True)
+        shutil.rmtree(run.texyon_dir, ignore_errors=True)
         if fatal:
             return "match-fatal", []
         return ("match-nopages" if no_pages else "match"), []
-    bugs = upstream_bugs_explain(tl_log, log) if tl_xdv == xdv or fatal else None
+    bugs = upstream_bugs_explain(tl_log, log) if tl_pages == pages or fatal else None
     if bugs is not None:
-        shutil.rmtree(tt_dir, ignore_errors=True)
+        shutil.rmtree(run.texyon_dir, ignore_errors=True)
         return "match-upstream", [f"upstream bugs: {', '.join(map(str, bugs))}"] + diffs
-    if pixels and tl_xdv != xdv and not no_pages and xdv != ["<no xdv>"]:
-        if rerun_tl:
-            rerun_tl()
-        same, note = same_pixels(tl, case, tl_dir / f"{stem.name}.xdv", tt_dir / f"{stem}.xdv",
-                                 work / "pixels" / case.name.replace("/", "-"))
+    if pixels and tl_pages != pages and not no_pages and pages != NO_XDV:
+        if run.rerun_tl:
+            run.rerun_tl()
+        same, note = same_pixels(tl, run.case, run.tl_dir / f"{run.stem.name}.xdv",
+                                 run.texyon_dir / f"{run.stem}.xdv",
+                                 tl.work / "pixels" / run.case.name.replace("/", "-"))
         diffs.append(note)
         if same:
             return "diverge-samepixels", diffs
     return ("diverge-nopages" if no_pages else "diverge"), diffs
 
 
-PIXEL_DPI = "100"
-
-
-def rasterize(tl, xdv, out, timeout):
+def rasterize(tl, xdv_path, out, timeout):
     """Pages of an XDV as grayscale PNGs, through upstream's xdvipdfmx, or None."""
     out.mkdir(parents=True, exist_ok=True)
     pdf = out / "out.pdf"
     try:
-        subprocess.run([str(tl.bin / "xdvipdfmx"), "-q", "-o", str(pdf), xdv.name], cwd=xdv.parent,
-                       env=tl.env(), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL, timeout=timeout, check=False)
+        subprocess.run([str(tl.bin / "xdvipdfmx"), "-q", "-o", str(pdf), xdv_path.name],
+                       cwd=xdv_path.parent, env=tl.env(), stdin=subprocess.DEVNULL,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout,
+                       check=False)
         if not pdf.exists():
             return None
         subprocess.run(["pdftoppm", "-r", PIXEL_DPI, "-gray", "-png", str(pdf), str(out / "p")],
@@ -868,11 +839,11 @@ def rasterize(tl, xdv, out, timeout):
     return sorted(out.glob("p-*.png"))
 
 
-def same_pixels(tl, case, tl_xdv, tt_xdv, out):
+def same_pixels(tl, case, tl_xdv, texyon_xdv, out):
     """Whether both XDVs render to the same pages, and a note for the diff."""
     shutil.rmtree(out, ignore_errors=True)
     a = rasterize(tl, tl_xdv, out / "upstream", case.timeout)
-    b = rasterize(tl, tt_xdv, out / "texyon", case.timeout)
+    b = rasterize(tl, texyon_xdv, out / "texyon", case.timeout)
     if not a or not b:
         return False, f"pixels: {'upstream' if not a else 'TeXyoN'} XDV did not render"
     if len(a) != len(b):
