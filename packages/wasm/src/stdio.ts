@@ -42,10 +42,35 @@ function fromProject(path: string): Uint8Array | null {
   return projectRoot === null ? null : readOptional(join(projectRoot, path));
 }
 
+/** Project files the session read, as it read them. The module keeps them for the session. */
+const projectReads = new Map<string, Uint8Array | null>();
+let openRequest: object | null = null;
+
+function readProjectFile(name: string): Uint8Array | null {
+  const bytes = fromProject(name);
+  projectReads.set(name, bytes);
+  return bytes;
+}
+
+function sameBytes(a: Uint8Array | null, b: Uint8Array | null): boolean {
+  return a === null || b === null ? a === b : Buffer.compare(a, b) === 0;
+}
+
+/** Like the browser Worker, reopens the session when a file it read has changed. */
+function reopenIfChanged(): void {
+  if (openRequest === null) return;
+  const changed = [...projectReads].some(([name, held]) => !sameBytes(held, fromProject(name)));
+  if (!changed) return;
+  projectReads.clear();
+  engine.call({ op: "shutdown" });
+  const opened = engine.call(openRequest) as { status?: string; message?: string };
+  if (opened.status === "error") throw new Error(`could not reopen the session: ${opened.message}`);
+}
+
 const engine = await Engine.start(
   async (imports) => (await WebAssembly.instantiate(readFileSync(modulePath), imports)).instance,
   {
-    readFile: (name) => (name in packFiles ? readOptional(join(packDir, "files", name)) : fromProject(name)),
+    readFile: (name) => (name in packFiles ? readOptional(join(packDir, "files", name)) : readProjectFile(name)),
     readSource: (path) => fromProject(path)?.toString(),
     // Every report carries the TeX diagnostics, so only the module's own output is shown.
     log: () => {},
@@ -110,6 +135,12 @@ for (let request = readMessage(); request !== null; request = readMessage()) {
   if (op === "open" && typeof root === "string") projectRoot = root;
   let response: unknown;
   try {
+    if (op === "open") {
+      openRequest = request as object;
+      projectReads.clear();
+    } else if (op === "compile") {
+      reopenIfChanged();
+    }
     response = rebuild(engine.call(rebuild(request, toModule) as object), fromModule);
   } catch (error) {
     response = { status: "error", message: error instanceof Error ? error.message : String(error) };
