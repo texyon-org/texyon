@@ -103,8 +103,8 @@ class TeXLive:
     def nested(self):
         """The bundle's `dir/name` links."""
         if self._nested is None:
-            self._nested = {f"{d.name}/{f.name}" for d in self.bundle.iterdir() if d.is_dir()
-                            for f in d.iterdir()}
+            self._nested = {str(f.relative_to(self.bundle)) for d in self.bundle.iterdir()
+                            if d.is_dir() for f in d.rglob("*") if not f.is_dir()}
         return self._nested
 
     def env(self):
@@ -151,11 +151,14 @@ class TeXLive:
 
     def _kpsewhich(self, names, *opts):
         found = {}
+        # From the work dir a name like README.md would resolve to the checkout's own copy.
+        empty = self.work / "kpsewhich"
+        empty.mkdir(parents=True, exist_ok=True)
         for i in range(0, len(names), 2000):
             r = subprocess.run(
                 [str(self.bin / "kpsewhich"), "-progname=xelatex", "-engine=xetex", *opts,
                  *names[i:i + 2000]],
-                env=self.env(), stdout=subprocess.PIPE, text=True, check=False)
+                cwd=empty, env=self.env(), stdout=subprocess.PIPE, text=True, check=False)
             for p in r.stdout.split("\n"):
                 if p.startswith("/"):
                     found.setdefault(Path(p).name, p)
@@ -188,13 +191,17 @@ class TeXLive:
             os.symlink(found[name], self.bundle / name)
             st = os.stat(found[name])
             h.update(f"{name}\0{found[name]}\0{st.st_size}\0{st.st_mtime_ns}\n".encode())
-        # kpathsea also finds `dir/name` below a `//` path entry, as TeXyoN's bundles do.
-        tex_tree = str(self.texmf / "tex") + "/"
+        # kpathsea also finds `dir/.../name` below a `//` path entry, as TeXyoN's bundles do.
+        tex_tree = self.texmf / "tex"
         for name, path in sorted(found.items()):
-            parent = Path(path).parent.name
-            if path.startswith(tex_tree) and parent not in found:
-                (self.bundle / parent).mkdir(exist_ok=True)
-                link = self.bundle / parent / name
+            if not path.startswith(f"{tex_tree}/"):
+                continue
+            dirs = Path(path).relative_to(tex_tree).parent.parts
+            for i in range(len(dirs)):
+                if dirs[i] in found:
+                    continue
+                link = self.bundle.joinpath(*dirs[i:], name)
+                link.parent.mkdir(parents=True, exist_ok=True)
                 if not link.exists():
                     os.symlink(path, link)
         (self.bundle / "tectonic-format-latex.tex").write_text("\\input xelatex.ini\n")
@@ -393,14 +400,14 @@ def strip_path(m):
 
 
 # Only found names: TeX's `(name` on opening a file, and `pdf:image ... (name)`.
-NESTED_RX = re.compile(r"(?<=\()[\w.+-]+/[\w.+-]+")
+NESTED_RX = re.compile(r"(?<=\()[\w.+-]+(?:/[\w.+-]+)+")
 
 
 def strip_bundle_dirs(text, nested, case_dir):
-    """A tree file asked for as `dir/name`, which upstream prints as a path reduced to its name."""
+    """A tree file asked for as `dir/.../name`, which upstream prints as a path reduced to its name."""
     def sub(m):
         rel = m.group(0)
-        return rel.split("/", 1)[1] if rel in nested and not (case_dir / rel).exists() else rel
+        return rel.rsplit("/", 1)[1] if rel in nested and not (case_dir / rel).exists() else rel
     return NESTED_RX.sub(sub, text)
 
 
