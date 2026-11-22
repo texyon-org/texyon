@@ -22,13 +22,15 @@ Both drive the same session in `crates/live_preview` through the protocol in
 ## Status
 
 - The XeTeX engine is fully Rust. It is checked against TeX Live's XeTeX on
-  about 9,000 documents: the LaTeX kernel's regression tests, the package
+  about 9,900 documents: the LaTeX kernel's regression tests, the package
   documentation shipped with TeX Live, and a sample of arXiv papers. In the
-  last full run, against TeX Live 2025, 9,003 of 9,056 came out identical.
-  Every other one is explained in
+  last full run, against TeX Live 2026, 9,850 of 9,882 came out identical.
+  TeX Live's XeTeX crashes on 3 of the rest, and the others are explained in
   [`known.tsv`](crates/engine_xetex/tests/upstream/known.tsv), mostly bugs in
   XeTeX itself, listed in
-  [`UPSTREAM_BUGS.md`](crates/engine_xetex/UPSTREAM_BUGS.md).
+  [`UPSTREAM_BUGS.md`](crates/engine_xetex/UPSTREAM_BUGS.md). The 34 documents
+  in [`slow.tsv`](crates/engine_xetex/tests/upstream/slow.tsv) are left out,
+  because TeX Live's XeTeX cannot finish them or both engines loop.
 - PDF output is dvipdfm-x from TeX Live 2026.
 - The live preview supports viewport-bounded compiles, pixel or SVG pages,
   errors by source line, source navigation in both directions, and PDF export.
