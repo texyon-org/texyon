@@ -97,7 +97,6 @@ tldocs/latex/leaflet/leaflet-manual	upstream's format stands counts in for the S
 arxiv/2611.08302	main file in Neurips/ loading Neurips/neurips_2026: TeXyoN's CLI resolves paths from the main file's directory, upstream from the working directory
 tldocs/latex/abnt/abnt-doc	both engines loop on the same error until main memory is full and stop at different points, since upstream grows its token and node areas apart
 tldocs/latex/biblatex-fiwi/biblatex-fiwi	both engines loop on the same error until main memory is full and stop at different points, since upstream grows its token and node areas apart
-tldocs/latex/xebaposter/xebaposter-doc	both engines loop on the same error until main memory is full and stop at different points, since upstream grows its token and node areas apart
 tldocs/latex/biblatex-phys/biblatex-phys	both engines loop on the same error until main memory is full and stop at different points, since upstream grows its token and node areas apart
 tldocs/latex/ecobiblatex/ecobiblatex	both engines loop on the same error until main memory is full and stop at different points, since upstream grows its token and node areas apart
 tldocs/latex/responsive/responsive-doc	both engines loop on the same error until main memory is full and stop at different points, since upstream grows its token and node areas apart
@@ -105,9 +104,3 @@ tldocs/generic/pst-3dplot/pst-3dplot-doc	upstream aborts with "bad native font f
 arxiv/2309.07781	upstream runs out of main memory building the first page, since its boxes and glue keep 5M words while TeXyoN has one 2^26-word pool
 tldocs/latex/frankenstein/abbrevs	both engines loop on the same error until main memory is full, upstream stops early since its boxes keep 5M words, TeXyoN fills 2^26 and times out in the quadratic native-word walk
 otmath-assembly_width	upstream resets an OpenType vertical assembly's width at each connector glue (upstream bug 13), TeXyoN keeps the widest part
-tldocs/latex/europasscv/europasscv	both engines repeat the same missing font shape warning, upstream stops when its 5417457-character string pool is full, TeXyoN's pool is larger and keeps going
-tldocs/latex/ndsu-thesis-2022/NDSU-Thesis-Extended	both engines repeat the same missing font shape warning, upstream stops when its 5417457-character string pool is full, TeXyoN's pool is larger and keeps going
-tldocs/latex/dental-palmer/dental-palmer-doc	both engines repeat the same missing font shape warning, upstream stops when its 5417457-character string pool is full, TeXyoN's pool is larger and keeps going
-tldocs/latex/ftc-notebook/example-notebook	both engines repeat the same missing font shape warning, upstream stops when its 5417457-character string pool is full, TeXyoN's pool is larger and keeps going
-tldocs/latex/nihbiosketch/example-nihbiosketch	both engines repeat the same missing font shape warning, upstream stops when its 5417457-character string pool is full, TeXyoN's pool is larger and keeps going
-tldocs/latex/opteng/OptEngInstruct	both engines overflow main memory at 64M words, TeXyoN keeps tokens apart from nodes so it overflows at a later token
