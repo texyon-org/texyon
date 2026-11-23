@@ -47,7 +47,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: true
       - name: "Set up Rust"
@@ -61,7 +61,7 @@ jobs:
         env:
           TEXYON_DEP_BACKEND: pkg-config
         run: cargo xtask pack --out "$PWD/pack"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: support-pack
           # The archive is the browser's copy of the same files.
@@ -89,7 +89,7 @@ jobs:
       VCPKGRS_TRIPLET: ${{ matrix.vcpkg-triplet }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: true
       - name: "Set up Rust"
@@ -224,7 +224,7 @@ jobs:
           cp licenses/AGPL-3.0.txt packages/vscode/bin/LICENSE
           cp THIRD_PARTY_NOTICES.md packages/vscode/bin/
           cp -r licenses packages/vscode/bin/
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: support-pack
           path: packages/vscode/pack
@@ -241,7 +241,7 @@ jobs:
         shell: bash
         working-directory: packages/vscode
         run: npx -y @vscode/vsce@3.2.1 package --target ${{ matrix.vsce-target }} -o "texyon-${{ matrix.vsce-target }}.vsix"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vsix-${{ matrix.vsce-target }}
           path: packages/vscode/*.vsix
@@ -256,7 +256,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: "Check the tag matches the extension version"
         run: |
           version="$(node -p 'require("./packages/vscode/package.json").version')"
@@ -264,12 +264,12 @@ jobs:
             echo "tag $GITHUB_REF_NAME does not match package.json version $version" >&2
             exit 1
           fi
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: vsix-*
           path: dist
           merge-multiple: true
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: "Publish to Open VSX"
@@ -294,12 +294,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: vsix-*
           path: dist
           merge-multiple: true
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: "Publish to the VS Code Marketplace"
