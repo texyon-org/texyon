@@ -888,11 +888,17 @@ code_loc!(LcLoc, i32, lc_codes, Lc);
 code_loc!(UcLoc, i32, uc_codes, Uc);
 code_loc!(
     /// An `\sfcode` entry: the space factor, and XeTeX's character class times 65536.
-    SfLoc, i32, sf_codes, Sf
+    SfLoc,
+    i32,
+    sf_codes,
+    Sf
 );
 code_loc!(
     /// A `\mathcode` entry, in XeTeX's encoding.
-    MathLoc, i32, math_codes, Math
+    MathLoc,
+    i32,
+    math_codes,
+    Math
 );
 code_loc!(DelLoc, i32, del_codes, Del);
 
