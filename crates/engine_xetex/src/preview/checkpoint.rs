@@ -3,95 +3,27 @@
 use std::borrow::Cow;
 use std::collections::HashSet;
 
-use crate::base::token::TokenDelta;
-use crate::memory::glue_store::GlueSpec;
-use crate::preview::journal::{PlainDelta, WordDelta};
+use crate::preview::journal::{Delta, EngineDelta, Journaled};
 use crate::preview::replay::fence::ReplayFence;
 use crate::preview::replay::source::SourceSnapshot;
 use crate::state::EngineState;
-use crate::tables::eqtb::TablesDelta;
-use crate::tables::hash::{HashEntry, PrimEntry};
 
 mod bundle;
 mod oracle;
 
 pub(crate) use bundle::{EngineBundle, StringWatermark};
 
-#[derive(Clone)]
-struct EngineDelta {
-    mem: WordDelta<u32>,
-    tokens: TokenDelta,
-    glue: WordDelta<GlueSpec>,
-    tables: TablesDelta,
-    hash: PlainDelta<HashEntry>,
-    prim: PlainDelta<PrimEntry>,
+/// Closes the open epoch as a compact undo delta for a new rung.
+fn seal_compact(st: &mut EngineState) -> EngineDelta {
+    let mut delta = st.seal();
+    delta.compact();
+    delta
 }
 
-impl EngineDelta {
-    fn seal(st: &mut EngineState) -> Self {
-        let mut delta = Self::take_open(st);
-        delta.compact();
-        delta
-    }
-
-    fn take_open(st: &mut EngineState) -> Self {
-        Self {
-            mem: st.mem.journal.seal(&st.mem.data),
-            tokens: st.mem.tokens.seal_journal(),
-            glue: st.mem.glue.seal_journal(),
-            tables: st.eqtb.seal_tables(),
-            hash: st.eqtb.journal.hash.seal(),
-            prim: st.eqtb.journal.prim.seal(),
-        }
-    }
-
-    fn snapshot_open(st: &EngineState) -> Self {
-        Self {
-            mem: st.mem.journal.snapshot(),
-            tokens: st.mem.tokens.snapshot_journal(),
-            glue: st.mem.glue.journal.snapshot(),
-            tables: st.eqtb.snapshot_tables(),
-            hash: st.eqtb.journal.hash.snapshot(),
-            prim: st.eqtb.journal.prim.snapshot(),
-        }
-    }
-
-    fn apply(&self, st: &mut EngineState) {
-        self.mem.apply_to(&mut st.mem.data);
-        st.mem.tokens.apply(&self.tokens);
-        self.glue.apply_to(st.mem.glue.specs_mut());
-        self.tables.apply_to(&mut st.eqtb);
-        self.hash.apply_to(&mut st.eqtb.hash);
-        self.prim.apply_to(&mut st.eqtb.prim);
-    }
-
-    fn compose_with_older(&mut self, older: EngineDelta) {
-        self.mem.compose_with_older(older.mem);
-        self.tokens.compose_with_older(older.tokens);
-        self.glue.compose_with_older(older.glue);
-        self.tables.compose_with_older(older.tables);
-        self.hash.compose_with_older(older.hash);
-        self.prim.compose_with_older(older.prim);
-        self.compact();
-    }
-
-    fn compact(&mut self) {
-        self.mem.compact();
-        self.tokens.compact();
-        self.glue.compact();
-        self.tables.compact();
-        self.hash.compact();
-        self.prim.compact();
-    }
-
-    fn allocated_bytes(&self) -> usize {
-        self.mem.allocated_bytes()
-            + self.tokens.allocated_bytes()
-            + self.glue.allocated_bytes()
-            + self.tables.allocated_bytes()
-            + self.hash.allocated_bytes()
-            + self.prim.allocated_bytes()
-    }
+/// Folds the undo delta of a dropped rung into its successor's.
+fn absorb_older(delta: &mut EngineDelta, older: EngineDelta) {
+    delta.compose_with_older(older);
+    delta.compact();
 }
 
 struct Rung<B> {
@@ -191,7 +123,7 @@ impl<B> CheckpointLadder<B> {
         fence: Option<ReplayFence>,
     ) -> usize {
         self.rungs.push(Rung {
-            undo: Some(EngineDelta::seal(st)),
+            undo: Some(seal_compact(st)),
             bundle,
             clock,
             resumable,
@@ -211,12 +143,10 @@ impl<B> CheckpointLadder<B> {
         restore: impl FnOnce(&mut EngineState, &B),
     ) {
         assert!(target < self.rungs.len(), "checkpoint target out of range");
-        EngineDelta::take_open(st).apply(st);
+        let open = st.seal();
+        st.apply(&open);
         for rung in self.rungs[target + 1..].iter().rev() {
-            rung.undo
-                .as_ref()
-                .expect("non-base rung without undo")
-                .apply(st);
+            st.apply(rung.undo.as_ref().expect("non-base rung without undo"));
         }
         restore(st, &self.rungs[target].bundle);
         self.rungs.truncate(target + 1);
@@ -230,11 +160,13 @@ impl<B> CheckpointLadder<B> {
         }
         let removed = self.rungs.remove(index);
         let older = removed.undo.expect("interior rung without undo");
-        self.rungs[index]
-            .undo
-            .as_mut()
-            .expect("successor rung without undo")
-            .compose_with_older(older);
+        absorb_older(
+            self.rungs[index]
+                .undo
+                .as_mut()
+                .expect("successor rung without undo"),
+            older,
+        );
         true
     }
 
@@ -474,7 +406,7 @@ impl CheckpointLadder<EngineBundle> {
             source: None,
             clock: st.scanner.logical_clock,
             protected,
-            undo: Some(Cow::Owned(EngineDelta::snapshot_open(st))),
+            undo: Some(Cow::Owned(st.snapshot())),
         });
         let planned_bytes = |plan: &[PlannedRung]| {
             ladder_bytes(plan.iter().map(|planned| {
@@ -617,12 +549,14 @@ fn drop_planned_rung(plan: &mut Vec<PlannedRung>, index: usize) {
         .undo
         .expect("interior planned rung without undo")
         .into_owned();
-    plan[index]
-        .undo
-        .as_mut()
-        .expect("planned successor without undo")
-        .to_mut()
-        .compose_with_older(older);
+    absorb_older(
+        plan[index]
+            .undo
+            .as_mut()
+            .expect("planned successor without undo")
+            .to_mut(),
+        older,
+    );
 }
 
 #[cfg(test)]
@@ -632,9 +566,9 @@ mod tests {
     use crate::base::token::{Token, TokenStoreMarks};
     use crate::base::units::{MemIdx, MemPtr, PoolPos};
     use crate::memory::mem_types::zeroed_vec;
-    use crate::preview::journal::arm;
     use crate::tables::cs::CsId;
     use crate::tables::eqtb::{IntLoc, Register, Table};
+    use crate::tables::hash::HashEntry;
 
     #[derive(Clone, Copy)]
     struct Bundle {
@@ -663,11 +597,11 @@ mod tests {
 
     fn state() -> EngineState {
         let mut st = EngineState::default();
-        st.mem.data = zeroed_vec(8);
-        st.eqtb.hash = vec![HashEntry::default(); 1];
+        st.mem.data = zeroed_vec(8).into();
+        st.eqtb.hash = vec![HashEntry::default(); 1].into();
         st.eqtb.meanings = Table::at_level(4, Command::UndefinedCs, 0);
         st.eqtb.ints = Table::new(IntLoc::LEN, 0);
-        arm(&mut st);
+        st.arm();
         st
     }
 
@@ -964,7 +898,7 @@ mod tests {
         let strings_base = StringWatermark::capture(&st);
         let mut ladder = CheckpointLadder::from_engine_verified(&st, strings_base);
 
-        st.mem.data[1] = 99;
+        st.mem.data.unjournaled_mut()[1] = 99;
         ladder.push_engine(&mut st, strings_base, false, false);
         let mismatch = ladder
             .rewind_engine_checked(&mut st, 0)

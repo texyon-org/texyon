@@ -128,7 +128,7 @@ fn digest_mem(st: &EngineState) -> u64 {
             .collect::<Vec<_>>()
             .iter(),
     );
-    for &word in &mem.data {
+    for &word in mem.data.iter() {
         h.word(u64::from(word));
     }
     let glue = mem.glue.marks();
@@ -193,8 +193,8 @@ fn digest_eqtb(st: &EngineState) -> u64 {
     ]);
     h.word(u64::from(eqtb.no_new_control_sequence));
     eqtb.hash_tables(&mut h);
-    Hash::hash(&eqtb.hash, &mut h);
-    Hash::hash(&eqtb.prim, &mut h);
+    Hash::hash(&*eqtb.hash, &mut h);
+    Hash::hash(&*eqtb.prim, &mut h);
     h.finish()
 }
 

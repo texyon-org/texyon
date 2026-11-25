@@ -3,12 +3,14 @@
 
 pub(crate) use crate::base::consts::TEX_NULL;
 use crate::base::params::GluePar;
+use crate::base::token::TokenDelta;
 use crate::base::token::TokenStore;
 use crate::base::units::{
     FontId, GlueOrder, GlueSign, MemAddr, MemIdx, MemPtr, NodeType, Orientation, RawPtr, Scaled,
 };
 use crate::build::math::MathStyle;
 use crate::fonts::Side;
+use crate::memory::glue_store::GlueDelta;
 pub(crate) use crate::memory::glue_store::{FIL_GLUE, FIL_NEG_GLUE, FILL_GLUE, SS_GLUE, ZERO_GLUE};
 use crate::memory::glue_store::{GlueSpecId, GlueStore};
 use crate::memory::glyph_arena::GlyphBlobArena;
@@ -19,7 +21,7 @@ use crate::memory::node::{
     MarginKernNode, MathCode, MathNode, Noad, Node, NodePtr, PageInsNode, PenaltyNode, RuleDimen,
     RuleNode, SpanNode, StyleNode, SyncStamp, View, WhatsitKind, WhatsitSubtype,
 };
-use crate::preview::journal::WordJournal;
+use crate::preview::journal::{JournaledVec, WordDelta, journaled_fields};
 use crate::print::errors::{Abort, Capacity, OrConfusion};
 use crate::scanning::input::InputClusterState;
 use crate::state::EngineState;
@@ -214,7 +216,7 @@ impl MemState {
                 return Err(Abort::NODE_OVERFLOW);
             }
             let r = i32::try_from(start).map_err(|_| Abort::NODE_OVERFLOW)?;
-            self.data.resize(end, 0);
+            self.data.grow(end, 0);
             MemIdx::from_raw(r).or_confusion("fresh node")?
         };
         r.set_link(self, None);
@@ -468,11 +470,10 @@ impl MemState {
 /// so the pointer-returning accessors stay valid.
 #[derive(Default)]
 pub(crate) struct MemState {
-    pub data: Vec<u32>,
+    pub data: JournaledVec<u32>,
     pub glyph_blobs: GlyphBlobArena,
     pub tokens: TokenStore,
     pub glue: GlueStore,
-    pub journal: WordJournal<u32>,
     pub free: FreeLists,
     /// TeX's `line`, kept here because `get_node` stamps it into new nodes.
     pub line: i32,
@@ -496,9 +497,15 @@ impl MemState {
 
     #[cfg(test)]
     pub(crate) fn set_word(&mut self, index: usize, v: i32) {
-        if self.journal.armed() {
-            self.journal.note(index, self.data[index]);
-        }
-        self.data[index] = v.cast_unsigned();
+        self.data.set(index, v.cast_unsigned());
+    }
+}
+
+journaled_fields! {
+    /// Undoes one epoch of `mem` and the stores beside it.
+    pub(crate) struct MemDelta for MemState {
+        data: WordDelta<u32>,
+        tokens: TokenDelta,
+        glue: GlueDelta,
     }
 }

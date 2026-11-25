@@ -35,6 +35,7 @@ use crate::memory::glue_store::{GlueSpec, GlueSpecId, GlueStore, STATIC_SPECS};
 use crate::memory::mem::{CONTRIB_HEAD, PAGE_HEAD, RESERVED_WORDS};
 use crate::memory::mem_types::zeroed_vec;
 use crate::memory::node::{NodePtr, View};
+use crate::preview::journal::JournaledVec;
 use crate::print::errors::{Abort, InteractionMode, error};
 use crate::print::{
     Selector, print, print_char, print_esc, print_file_name, print_int, print_ln, print_nl,
@@ -660,8 +661,8 @@ pub fn load_fmt_file(st: &mut EngineState, dump_name: &str) -> Result<(), Abort>
         st.strings.str_pool = Vec::new();
         st.strings.str_start = Vec::new();
         st.eqtb.release_tables();
-        st.eqtb.hash = Vec::new();
-        st.mem.data = Vec::new();
+        st.eqtb.hash = JournaledVec::default();
+        st.mem.data = JournaledVec::default();
     }
 
     format_file(&mut Undump::new(handle), st)?;
@@ -768,9 +769,9 @@ fn dynamic_memory<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), A
     let last = MemIdx::from_raw(words - 1);
     s.items_in(&mut mem.free.0, None, last)?;
     if S::LOADING {
-        mem.data = zeroed_vec(usize::try_from(words).map_err(|_| bad_fmt())?);
+        mem.data = zeroed_vec(usize::try_from(words).map_err(|_| bad_fmt())?).into();
     }
-    s.items(&mut mem.data)?;
+    s.items(mem.data.unjournaled_mut())?;
     token_lists(s, &mut mem.tokens)?;
     glue_specs(s, &mut mem.glue)?;
 
@@ -796,7 +797,7 @@ fn glue_specs<S: FmtStream>(s: &mut S, glue: &mut GlueStore) -> Result<(), Abort
     if S::LOADING {
         glue.reset_for_load(usize::try_from(len).map_err(|_| bad_fmt())?, free);
     }
-    s.items(glue.specs_mut())
+    s.items(glue.specs_unjournaled_mut())
 }
 
 fn token_lists<S: FmtStream>(s: &mut S, toks: &mut TokenStore) -> Result<(), Abort> {
@@ -813,7 +814,7 @@ fn token_lists<S: FmtStream>(s: &mut S, toks: &mut TokenStore) -> Result<(), Abo
         marks.lists = usize::try_from(lists).map_err(|_| bad_fmt())?;
         toks.reset_for_load(marks);
     }
-    let (tokens, lists) = toks.parts_mut();
+    let (tokens, lists) = toks.parts_unjournaled_mut();
     s.items(tokens)?;
     s.items(lists)?;
     if S::LOADING && !toks.is_consistent() {
@@ -918,21 +919,24 @@ fn inter_char_toks<S: FmtStream>(s: &mut S, eqtb: &mut EqtbState) -> Result<(), 
 fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), Abort> {
     let eqtb = &mut st.eqtb;
     let named = CsId::FIRST.index()..=CsId::top(eqtb.hash_high).index();
-    runs(s, &mut eqtb.meanings.values_mut()[named.clone()])?;
-    runs(s, &mut eqtb.meanings.levels_mut()[named])?;
-    runs(s, eqtb.cat_codes.values_mut())?;
-    runs(s, eqtb.lc_codes.values_mut())?;
-    runs(s, eqtb.uc_codes.values_mut())?;
-    runs(s, eqtb.sf_codes.values_mut())?;
-    runs(s, eqtb.math_codes.values_mut())?;
-    runs(s, eqtb.del_codes.values_mut())?;
-    runs(s, eqtb.ints.values_mut())?;
-    runs(s, eqtb.dimens.values_mut())?;
-    runs(s, eqtb.glue.values_mut())?;
-    runs(s, eqtb.toks.values_mut())?;
-    runs(s, eqtb.shapes.values_mut())?;
-    runs(s, eqtb.boxes.values_mut())?;
-    runs(s, eqtb.fonts.values_mut())?;
+    runs(
+        s,
+        &mut eqtb.meanings.values_unjournaled_mut()[named.clone()],
+    )?;
+    runs(s, &mut eqtb.meanings.levels_unjournaled_mut()[named])?;
+    runs(s, eqtb.cat_codes.values_unjournaled_mut())?;
+    runs(s, eqtb.lc_codes.values_unjournaled_mut())?;
+    runs(s, eqtb.uc_codes.values_unjournaled_mut())?;
+    runs(s, eqtb.sf_codes.values_unjournaled_mut())?;
+    runs(s, eqtb.math_codes.values_unjournaled_mut())?;
+    runs(s, eqtb.del_codes.values_unjournaled_mut())?;
+    runs(s, eqtb.ints.values_unjournaled_mut())?;
+    runs(s, eqtb.dimens.values_unjournaled_mut())?;
+    runs(s, eqtb.glue.values_unjournaled_mut())?;
+    runs(s, eqtb.toks.values_unjournaled_mut())?;
+    runs(s, eqtb.shapes.values_unjournaled_mut())?;
+    runs(s, eqtb.boxes.values_unjournaled_mut())?;
+    runs(s, eqtb.fonts.values_unjournaled_mut())?;
     inter_char_toks(s, eqtb)?;
 
     // \partokenname may name an active character or a control symbol.
@@ -950,7 +954,7 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
         Some(eqtb.cs_top),
     )?;
 
-    s.items(&mut eqtb.prim[..=PRIM_SIZE as usize])?;
+    s.items(&mut eqtb.prim.unjournaled_mut()[..=PRIM_SIZE as usize])?;
 
     // The buckets from 0 through `hash_used` go entry by entry, as WEB dumps
     // them. A bucket's slot number is its index in `hash`, and one past the last
@@ -964,7 +968,9 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
         loop {
             let mut p: u32 = lowest;
             s.items_in(slice::from_mut(&mut p), lowest, used as u32)?;
-            s.items(slice::from_mut(&mut eqtb.hash[p as usize]))?;
+            s.items(slice::from_mut(
+                &mut eqtb.hash.unjournaled_mut()[p as usize],
+            ))?;
             if p as usize == used {
                 break;
             }
@@ -974,7 +980,7 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
         eqtb.cs_count = NameSlot::BUCKETS_END.raw().cast_signed() - (used as i32) - 1
             + eqtb.hash_high.cast_signed();
         for p in 0..=used {
-            let entry = &mut eqtb.hash[p];
+            let entry = &mut eqtb.hash.unjournaled_mut()[p];
             if entry.text != StrNumber::NONE {
                 s.items(slice::from_mut(&mut (p as u32)))?;
                 s.items(slice::from_mut(entry))?;
@@ -984,9 +990,9 @@ fn table_of_equivalents<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result
     }
 
     let undefined = CsId::UNDEFINED.hash_index().ok_or_else(bad_fmt)?;
-    s.items(&mut eqtb.hash[used + 1..undefined])?;
+    s.items(&mut eqtb.hash.unjournaled_mut()[used + 1..undefined])?;
     let extras = eqtb.hash_high as usize;
-    s.items(&mut eqtb.hash[undefined + 1..=undefined + extras])?;
+    s.items(&mut eqtb.hash.unjournaled_mut()[undefined + 1..=undefined + extras])?;
     s.int(&mut eqtb.cs_count)?;
 
     if !S::LOADING {

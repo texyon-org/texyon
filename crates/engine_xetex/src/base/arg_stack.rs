@@ -4,6 +4,7 @@
 use std::mem;
 
 use crate::base::token::Token;
+use crate::preview::journal::{Delta, Journaled};
 use crate::print::errors::Abort;
 
 /// A macro argument: where its tokens start on the argument stack, and how many.
@@ -81,45 +82,11 @@ impl ArgStack {
         self.tokens.truncate(to);
     }
 
-    pub(crate) fn arm_journal(&mut self) {
-        self.journal.arm(self.tokens.len());
-    }
-
-    pub(crate) fn disarm_journal(&mut self) {
-        self.journal = ArgJournal::default();
-    }
-
-    pub(crate) fn seal_journal(&mut self) -> ArgDelta {
-        let delta = ArgDelta {
-            len: self.journal.len,
-            low: self.journal.low,
-            saved: mem::take(&mut self.journal.saved),
-        };
-        self.journal.arm(self.tokens.len());
-        delta
-    }
-
-    pub(crate) fn snapshot_journal(&self) -> ArgDelta {
-        ArgDelta {
-            len: self.journal.len,
-            low: self.journal.low,
-            saved: self.journal.saved.clone(),
-        }
-    }
-
-    pub(crate) fn apply(&mut self, delta: &ArgDelta) {
-        self.tokens.resize(delta.len, Token::ZERO);
-        let saved = &mut self.tokens[delta.low..delta.len];
-        for (slot, &t) in saved.iter_mut().rev().zip(&delta.saved) {
-            *slot = t;
-        }
-    }
-
     /// Sets the length a checkpoint recorded, after its deltas restored the tokens.
     pub(crate) fn restore_len(&mut self, len: usize) {
         self.tokens.resize(len, Token::ZERO);
         if self.journal.armed {
-            self.journal.arm(len);
+            self.journal.rebase(len);
         }
     }
 
@@ -128,8 +95,37 @@ impl ArgStack {
     }
 }
 
-/// What the stack held at its arm-time length, from the lowest length since.
-/// Pushes overwrite only below that low mark, so truncation is the one place to save.
+impl Journaled for ArgStack {
+    type Delta = ArgDelta;
+
+    fn arm(&mut self) {
+        self.journal.arm(self.tokens.len());
+    }
+
+    fn disarm(&mut self) {
+        self.journal = ArgJournal::default();
+    }
+
+    fn seal(&mut self) -> ArgDelta {
+        self.journal.seal(self.tokens.len())
+    }
+
+    fn snapshot(&self) -> ArgDelta {
+        self.journal.snapshot()
+    }
+
+    fn apply(&mut self, delta: &ArgDelta) {
+        self.tokens.resize(delta.len, Token::ZERO);
+        let saved = &mut self.tokens[delta.low..delta.len];
+        for (slot, &t) in saved.iter_mut().rev().zip(&delta.saved) {
+            *slot = t;
+        }
+    }
+}
+
+/// The tokens the stack held from its lowest length this epoch up to its length at arm time.
+/// Pushes only write at or above that low mark, where tokens are saved or new,
+/// so truncation is the one place that saves.
 #[derive(Default)]
 struct ArgJournal {
     armed: bool,
@@ -147,10 +143,38 @@ impl ArgJournal {
         self.saved.clear();
     }
 
+    /// Moves the epoch's start to `len`, right after a seal left nothing saved.
+    fn rebase(&mut self, len: usize) {
+        debug_assert!(
+            self.saved.is_empty(),
+            "rebase of an epoch with saved tokens"
+        );
+        self.arm(len);
+    }
+
     fn note_truncate(&mut self, tokens: &[Token], to: usize) {
         if to < self.low {
             self.saved.extend(tokens[to..self.low].iter().rev());
             self.low = to;
+        }
+    }
+
+    /// Closes the epoch and starts the next at length `len`.
+    fn seal(&mut self, len: usize) -> ArgDelta {
+        let delta = ArgDelta {
+            len: self.len,
+            low: self.low,
+            saved: mem::take(&mut self.saved),
+        };
+        self.arm(len);
+        delta
+    }
+
+    fn snapshot(&self) -> ArgDelta {
+        ArgDelta {
+            len: self.len,
+            low: self.low,
+            saved: self.saved.clone(),
         }
     }
 }
@@ -163,11 +187,10 @@ pub(crate) struct ArgDelta {
     saved: Vec<Token>,
 }
 
-impl ArgDelta {
-    /// `older` restores further back, so it wins where both saved a token.
+impl Delta for ArgDelta {
     /// The newer delta only adds what lies below `older`'s low mark, which
     /// `older`'s epoch never touched.
-    pub(crate) fn compose_with_older(&mut self, mut older: ArgDelta) {
+    fn compose_with_older(&mut self, mut older: ArgDelta) {
         if self.low < older.low {
             let below = older.low - self.low;
             older
@@ -178,7 +201,11 @@ impl ArgDelta {
         *self = older;
     }
 
-    pub(crate) fn allocated_bytes(&self) -> usize {
+    fn compact(&mut self) {
+        self.saved.shrink_to_fit();
+    }
+
+    fn allocated_bytes(&self) -> usize {
         self.saved.capacity() * size_of::<Token>()
     }
 }
@@ -200,12 +227,12 @@ mod tests {
         let mut s = ArgStack::default();
         s.push(&toks(&[1, 2])).unwrap();
         let b = s.push(&toks(&[3, 4, 5])).unwrap();
-        s.arm_journal();
+        s.arm();
         s.pop_to(b);
         s.push(&toks(&[9])).unwrap();
         s.pop_to(ArgRef { start: 1, len: 0 });
         s.push(&toks(&[7, 7, 7, 7, 7])).unwrap();
-        let delta = s.seal_journal();
+        let delta = s.seal();
         s.apply(&delta);
         assert_eq!(values(&s), [1, 2, 3, 4, 5]);
     }
@@ -214,13 +241,13 @@ mod tests {
     fn composed_deltas_rewind_two_epochs() {
         let mut s = ArgStack::default();
         s.push(&toks(&[1, 2, 3])).unwrap();
-        s.arm_journal();
+        s.arm();
         s.pop_to(ArgRef { start: 2, len: 1 });
         s.push(&toks(&[8, 8])).unwrap();
-        let older = s.seal_journal();
+        let older = s.seal();
         s.pop_to(ArgRef { start: 0, len: 1 });
         s.push(&toks(&[6])).unwrap();
-        let mut newer = s.seal_journal();
+        let mut newer = s.seal();
         newer.compose_with_older(older);
         s.apply(&newer);
         assert_eq!(values(&s), [1, 2, 3]);
@@ -230,10 +257,10 @@ mod tests {
     fn pushes_above_the_arm_length_need_no_saving() {
         let mut s = ArgStack::default();
         s.push(&toks(&[1])).unwrap();
-        s.arm_journal();
+        s.arm();
         let a = s.push(&toks(&[2, 3])).unwrap();
         s.pop_to(a);
-        let delta = s.seal_journal();
+        let delta = s.seal();
         assert_eq!(delta.allocated_bytes(), 0);
         s.push(&toks(&[4])).unwrap();
         s.apply(&delta);

@@ -38,7 +38,7 @@ use crate::memory::mem::{
 };
 use crate::memory::mem_types::zeroed_vec;
 use crate::memory::node::{NodePtr, PageInsNode};
-use crate::preview::journal::disarm;
+use crate::preview::journal::{Journaled, JournaledVec};
 use crate::print::errors::{Abort, InteractionMode, OrConfusion};
 use crate::print::{
     Selector, print, print_char, print_command, print_esc, print_int, print_nl, show_save_groups,
@@ -624,7 +624,7 @@ pub(crate) fn initialize_engine(
     st.hyph.hyph_link = vec![0; hyph_words];
 
     if st.config.in_initex_mode {
-        st.mem.data = zeroed_vec(RESERVED_WORDS);
+        st.mem.data = zeroed_vec(RESERVED_WORDS).into();
         st.mem.free = FreeLists::default();
 
         st.eqtb.alloc_tables();
@@ -877,7 +877,7 @@ fn initial_random_seed(
 }
 
 pub(crate) fn cleanup(st: &mut EngineState) {
-    disarm(st);
+    st.disarm();
     pdf_files_close();
     forget_probed_pdfs();
     st.shipout.dvi.release_buffer();
@@ -913,8 +913,8 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     st.scanner.native_len = 0;
 
     st.eqtb.release_tables();
-    st.eqtb.hash = Vec::new();
-    st.mem.data = Vec::new();
+    st.eqtb.hash = JournaledVec::default();
+    st.mem.data = JournaledVec::default();
     st.mem.glyph_blobs.clear();
 
     st.strings.str_start = Vec::new();

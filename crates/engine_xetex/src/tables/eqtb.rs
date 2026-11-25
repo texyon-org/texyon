@@ -14,7 +14,9 @@ use crate::memory::glue_store::GlueSpecId;
 use crate::memory::mem::{MemState, ZERO_GLUE};
 use crate::memory::mem_types::zeroed_vec;
 use crate::memory::node::{BoxNode, NodePtr, ParShapeNode, PenaltiesNode};
-use crate::preview::journal::{EqtbJournal, JournalWord, WordDelta, WordJournal};
+use crate::preview::journal::{
+    Delta, JournalWord, Journaled, JournaledVec, WordDelta, journaled_fields,
+};
 use crate::print::errors::Abort;
 use crate::scanning::pgfmath::KnownCs;
 use crate::state::EngineState;
@@ -143,20 +145,16 @@ pub(crate) struct Old<L: EqLoc> {
 
 /// One table: a value and a level per location, journaled for checkpoints.
 pub(crate) struct Table<I, T: Copy> {
-    values: Vec<T>,
-    levels: Vec<u16>,
-    values_journal: WordJournal<T>,
-    levels_journal: WordJournal<u16>,
+    values: JournaledVec<T>,
+    levels: JournaledVec<u16>,
     _index: PhantomData<fn(I)>,
 }
 
 impl<I, T: Copy> Default for Table<I, T> {
     fn default() -> Self {
         Self {
-            values: Vec::new(),
-            levels: Vec::new(),
-            values_journal: WordJournal::default(),
-            levels_journal: WordJournal::default(),
+            values: JournaledVec::default(),
+            levels: JournaledVec::default(),
             _index: PhantomData,
         }
     }
@@ -169,20 +167,16 @@ impl<I: EqLoc<Value = T>, T: EqValue> Table<I, T> {
 
     pub(crate) fn at_level(len: usize, value: T, level: u16) -> Self {
         Self {
-            values: vec![value; len],
-            levels: vec![level; len],
+            values: vec![value; len].into(),
+            levels: vec![level; len].into(),
             ..Self::default()
         }
     }
 
     pub(crate) fn fill(&mut self, value: T, level: u16) {
         for k in 0..self.values.len() {
-            if self.values_journal.armed() {
-                self.values_journal.note(k, self.values[k]);
-                self.levels_journal.note(k, self.levels[k]);
-            }
-            self.values[k] = value;
-            self.levels[k] = level;
+            self.values.set(k, value);
+            self.levels.set(k, level);
         }
     }
 
@@ -199,29 +193,24 @@ impl<I: EqLoc<Value = T>, T: EqValue> Table<I, T> {
     #[inline]
     pub(crate) fn set(&mut self, i: I, value: T, level: u16) {
         let k = i.index();
-        if self.values_journal.armed() {
-            self.values_journal.note(k, self.values[k]);
-            self.levels_journal.note(k, self.levels[k]);
-        }
-        self.values[k] = value;
-        self.levels[k] = level;
+        self.values.set(k, value);
+        self.levels.set(k, level);
     }
 
     #[inline]
     pub(crate) fn set_value(&mut self, i: I, value: T) {
         let k = i.index();
-        if self.values_journal.armed() {
-            self.values_journal.note(k, self.values[k]);
-        }
-        self.values[k] = value;
+        self.values.set(k, value);
     }
 
-    pub(crate) fn values_mut(&mut self) -> &mut [T] {
-        &mut self.values
+    /// The values, for writes no checkpoint undoes, such as loading a format.
+    pub(crate) fn values_unjournaled_mut(&mut self) -> &mut [T] {
+        self.values.unjournaled_mut()
     }
 
-    pub(crate) fn levels_mut(&mut self) -> &mut [u16] {
-        &mut self.levels
+    /// The levels, for writes no checkpoint undoes, such as loading a format.
+    pub(crate) fn levels_unjournaled_mut(&mut self) -> &mut [u16] {
+        self.levels.unjournaled_mut()
     }
 
     pub(crate) fn values(&self) -> &[T] {
@@ -231,32 +220,42 @@ impl<I: EqLoc<Value = T>, T: EqValue> Table<I, T> {
     pub(crate) fn levels(&self) -> &[u16] {
         &self.levels
     }
+}
 
-    pub(crate) fn arm(&mut self) {
-        self.values_journal.arm(self.values.len());
-        self.levels_journal.arm(self.levels.len());
+impl<I, T: JournalWord> Journaled for Table<I, T> {
+    type Delta = TableDelta<T>;
+
+    fn arm(&mut self) {
+        self.values.arm();
+        self.levels.arm();
     }
 
-    pub(crate) fn disarm(&mut self) {
-        self.values_journal.disarm();
-        self.levels_journal.disarm();
+    fn disarm(&mut self) {
+        self.values.disarm();
+        self.levels.disarm();
     }
 
-    pub(crate) fn seal(&mut self) -> TableDelta<T> {
+    fn seal(&mut self) -> TableDelta<T> {
         TableDelta {
-            values: self.values_journal.seal(&self.values),
-            levels: self.levels_journal.seal(&self.levels),
+            values: self.values.seal(),
+            levels: self.levels.seal(),
         }
     }
 
-    pub(crate) fn snapshot(&self) -> TableDelta<T> {
+    fn snapshot(&self) -> TableDelta<T> {
         TableDelta {
-            values: self.values_journal.snapshot(),
-            levels: self.levels_journal.snapshot(),
+            values: self.values.snapshot(),
+            levels: self.levels.snapshot(),
         }
+    }
+
+    fn apply(&mut self, delta: &TableDelta<T>) {
+        self.values.apply(&delta.values);
+        self.levels.apply(&delta.levels);
     }
 }
 
+/// Undoes one epoch of a [`Table`].
 #[derive(Clone)]
 pub(crate) struct TableDelta<T: Copy> {
     values: WordDelta<T>,
@@ -272,76 +271,37 @@ impl<T: Copy> Default for TableDelta<T> {
     }
 }
 
-impl<T: JournalWord> TableDelta<T> {
-    pub(crate) fn apply_to<I>(&self, table: &mut Table<I, T>) {
-        self.values.apply_to(&mut table.values);
-        self.levels.apply_to(&mut table.levels);
-    }
-
-    pub(crate) fn compose_with_older(&mut self, older: TableDelta<T>) {
+impl<T: Copy> Delta for TableDelta<T> {
+    fn compose_with_older(&mut self, older: TableDelta<T>) {
         self.values.compose_with_older(older.values);
         self.levels.compose_with_older(older.levels);
     }
 
-    pub(crate) fn allocated_bytes(&self) -> usize {
-        self.values.allocated_bytes() + self.levels.allocated_bytes()
-    }
-
-    pub(crate) fn compact(&mut self) {
+    fn compact(&mut self) {
         self.values.compact();
         self.levels.compact();
+    }
+
+    fn allocated_bytes(&self) -> usize {
+        self.values.allocated_bytes() + self.levels.allocated_bytes()
     }
 }
 
 macro_rules! tables {
     ($($name:ident: $t:ty),* $(,)?) => {
-        #[derive(Default, Clone)]
-        pub(crate) struct TablesDelta {
-            $($name: TableDelta<$t>,)*
-        }
-
-        impl TablesDelta {
-            pub(crate) fn apply_to(&self, eqtb: &mut EqtbState) {
-                $(self.$name.apply_to(&mut eqtb.$name);)*
-            }
-
-            pub(crate) fn compose_with_older(&mut self, older: TablesDelta) {
-                $(self.$name.compose_with_older(older.$name);)*
-            }
-
-            pub(crate) fn allocated_bytes(&self) -> usize {
-                0 $(+ self.$name.allocated_bytes())*
-            }
-
-            pub(crate) fn compact(&mut self) {
-                $(self.$name.compact();)*
+        journaled_fields! {
+            /// Undoes one epoch of `eqtb` and the hash.
+            pub(crate) struct EqtbDelta for EqtbState {
+                $($name: TableDelta<$t>,)*
+                hash: WordDelta<HashEntry>,
+                prim: WordDelta<PrimEntry>,
             }
         }
 
         impl EqtbState {
-            pub(crate) fn arm_tables(&mut self) {
-                $(self.$name.arm();)*
-            }
-
             pub(crate) fn release_tables(&mut self) {
                 $(self.$name = Table::default();)*
                 self.inter_char.clear();
-            }
-
-            pub(crate) fn disarm_tables(&mut self) {
-                $(self.$name.disarm();)*
-            }
-
-            pub(crate) fn seal_tables(&mut self) -> TablesDelta {
-                TablesDelta {
-                    $($name: self.$name.seal(),)*
-                }
-            }
-
-            pub(crate) fn snapshot_tables(&self) -> TablesDelta {
-                TablesDelta {
-                    $($name: self.$name.snapshot(),)*
-                }
             }
 
             pub(crate) fn hash_tables(&self, h: &mut impl std::hash::Hasher) {
@@ -952,12 +912,11 @@ pub(crate) struct EqtbState {
     pub del_codes: Table<DelLoc, i32>,
     pub inter_char: SparseTable<InterCharPair, TokenList>,
     pub boxes: Table<BoxLoc, Option<NodePtr<BoxNode>>>,
-    pub prim: Vec<PrimEntry>,
+    pub prim: JournaledVec<PrimEntry>,
     /// The `next` and `text` of each control sequence from the first hash bucket on.
-    pub hash: Vec<HashEntry>,
+    pub hash: JournaledVec<HashEntry>,
     pub hash_extra: u32,
     pub cs_top: CsId,
-    pub journal: EqtbJournal,
     pub pgfmath: KnownCs,
 }
 
@@ -984,11 +943,10 @@ impl Default for EqtbState {
             sf_codes: Default::default(),
             math_codes: Default::default(),
             del_codes: Default::default(),
-            prim: vec![PrimEntry::default(); 2101],
-            hash: Vec::new(),
+            prim: vec![PrimEntry::default(); 2101].into(),
+            hash: JournaledVec::default(),
             hash_extra: 0,
             cs_top: CsId::UNDEFINED,
-            journal: EqtbJournal::default(),
             pgfmath: KnownCs::default(),
         }
     }
@@ -999,7 +957,7 @@ impl EqtbState {
         self.cs_top = CsId::top(self.hash_extra);
         let cs = self.cs_top.index() + 1;
         self.meanings = Table::at_level(cs, Command::UndefinedCs, LEVEL_ZERO);
-        self.hash = zeroed_vec(self.cs_top.hash_index().map_or(0, |i| i + 1));
+        self.hash = zeroed_vec(self.cs_top.hash_index().map_or(0, |i| i + 1)).into();
         self.ints = Table::new(IntLoc::LEN, 0);
         self.inter_char.clear();
         self.dimens = Table::new(DimenLoc::LEN, Scaled::ZERO);
@@ -1046,10 +1004,7 @@ impl EqtbState {
         let Some(index) = p.hash_index() else {
             return;
         };
-        if self.journal.hash.armed() {
-            self.journal.hash.note(index, self.hash[index]);
-        }
-        self.hash[index].next = Some(next);
+        self.hash.at_mut(index).next = Some(next);
     }
 
     /// The name of control sequence `p`, `text(p)`, none below the first hash bucket.
@@ -1065,10 +1020,7 @@ impl EqtbState {
         let Some(index) = p.hash_index() else {
             return;
         };
-        if self.journal.hash.armed() {
-            self.journal.hash.note(index, self.hash[index]);
-        }
-        self.hash[index].text = s;
+        self.hash.at_mut(index).text = s;
     }
 
     #[inline]
@@ -1078,11 +1030,7 @@ impl EqtbState {
 
     #[inline]
     pub fn set_prim_next(&mut self, p: PrimNum, next: Option<PrimNum>) {
-        let index = p.index();
-        if self.journal.prim.armed() {
-            self.journal.prim.note(index, self.prim[index]);
-        }
-        self.prim[index].next = next;
+        self.prim.at_mut(p.index()).next = next;
     }
 
     #[inline]
@@ -1092,11 +1040,7 @@ impl EqtbState {
 
     #[inline]
     pub fn set_prim_text(&mut self, p: PrimNum, s: Option<StrNumber>) {
-        let index = p.index();
-        if self.journal.prim.armed() {
-            self.journal.prim.note(index, self.prim[index]);
-        }
-        self.prim[index].text = s;
+        self.prim.at_mut(p.index()).text = s;
     }
 
     #[inline]

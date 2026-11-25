@@ -1,18 +1,105 @@
-//! Reverse journals for checkpointable flat arrays.
+//! Reverse journals for checkpointable state.
 //!
-//! Batch runs leave journals disarmed. An armed [`WordJournal`] records the
-//! first pre-image of each touched word in an epoch. [`PlainTrail`] records
-//! every write for smaller, colder arrays and relies on reverse replay.
+//! Batch runs leave journals disarmed. While armed, each [`Journaled`] part of
+//! the engine records how to undo the current epoch, and sealing hands that
+//! record out as a [`Delta`] for the checkpoint ladder.
 
-use std::cell::RefCell;
 use std::mem;
+use std::ops::{Deref, Range};
 
-use bytemuck::Pod;
+use bytemuck::{Pod, Zeroable};
 
 use crate::base::cmd::Cmd;
 use crate::base::command::Command;
+use crate::memory::mem::MemDelta;
 use crate::state::EngineState;
+use crate::tables::eqtb::EqtbDelta;
 use crate::tables::hash::{HashEntry, PrimEntry};
+
+/// State the checkpoint ladder rewinds by undoing recorded changes.
+/// Lengths are not part of it: checkpoint marks restore them.
+pub(crate) trait Journaled {
+    type Delta: Delta;
+    fn arm(&mut self);
+    fn disarm(&mut self);
+    /// Closes the open epoch and starts the next.
+    fn seal(&mut self) -> Self::Delta;
+    /// The open epoch so far, leaving it open.
+    fn snapshot(&self) -> Self::Delta;
+    fn apply(&mut self, delta: &Self::Delta);
+}
+
+/// The undo record of one epoch.
+pub(crate) trait Delta: Clone + Default {
+    /// Merges in `older`, which restores further back and wins where both hold a value.
+    fn compose_with_older(&mut self, older: Self);
+    fn compact(&mut self);
+    fn allocated_bytes(&self) -> usize;
+}
+
+/// Declares the delta of a struct as one delta per journaled field, matched by name.
+macro_rules! journaled_fields {
+    ($(#[$meta:meta])* $vis:vis struct $delta:ident for $owner:ty {
+        $($field:ident: $ty:ty),* $(,)?
+    }) => {
+        $(#[$meta])*
+        #[derive(Clone, Default)]
+        $vis struct $delta {
+            $($field: $ty,)*
+        }
+
+        impl $crate::preview::journal::Delta for $delta {
+            fn compose_with_older(&mut self, older: Self) {
+                $($crate::preview::journal::Delta::compose_with_older(&mut self.$field, older.$field);)*
+            }
+
+            fn compact(&mut self) {
+                $($crate::preview::journal::Delta::compact(&mut self.$field);)*
+            }
+
+            fn allocated_bytes(&self) -> usize {
+                0 $(+ $crate::preview::journal::Delta::allocated_bytes(&self.$field))*
+            }
+        }
+
+        impl $crate::preview::journal::Journaled for $owner {
+            type Delta = $delta;
+
+            fn arm(&mut self) {
+                $($crate::preview::journal::Journaled::arm(&mut self.$field);)*
+            }
+
+            fn disarm(&mut self) {
+                $($crate::preview::journal::Journaled::disarm(&mut self.$field);)*
+            }
+
+            fn seal(&mut self) -> $delta {
+                $delta {
+                    $($field: $crate::preview::journal::Journaled::seal(&mut self.$field),)*
+                }
+            }
+
+            fn snapshot(&self) -> $delta {
+                $delta {
+                    $($field: $crate::preview::journal::Journaled::snapshot(&self.$field),)*
+                }
+            }
+
+            fn apply(&mut self, delta: &$delta) {
+                $($crate::preview::journal::Journaled::apply(&mut self.$field, &delta.$field);)*
+            }
+        }
+    };
+}
+pub(crate) use journaled_fields;
+
+journaled_fields! {
+    /// Undoes one epoch of the whole engine.
+    pub(crate) struct EngineDelta for EngineState {
+        mem: MemDelta,
+        eqtb: EqtbDelta,
+    }
+}
 
 #[derive(Clone, Copy)]
 #[repr(C, packed(4))]
@@ -26,7 +113,7 @@ const _: () = assert!(mem::size_of::<Preimage<u64>>() == 12);
 /// The first-touch journal of one flat array of `T` words.
 ///
 /// Words at or past the epoch's `base` did not exist when it began, so they need no pre-image.
-pub(crate) struct WordJournal<T: Copy> {
+struct WordJournal<T: Copy> {
     armed: bool,
     base: usize,
     touched: Vec<u64>,
@@ -44,6 +131,7 @@ impl<T: Copy> Default for WordJournal<T> {
     }
 }
 
+/// A word a journal can hold, and whether two of them restore to the same state.
 pub(crate) trait JournalWord: Copy {
     fn same(&self, other: &Self) -> bool;
 }
@@ -71,11 +159,11 @@ impl JournalWord for Command {
 
 impl<T: JournalWord> WordJournal<T> {
     #[inline(always)]
-    pub(crate) fn armed(&self) -> bool {
+    fn armed(&self) -> bool {
         self.armed
     }
 
-    pub(crate) fn arm(&mut self, base: usize) {
+    fn arm(&mut self, base: usize) {
         assert!(
             u32::try_from(base).is_ok(),
             "journal arena exceeds u32 indices"
@@ -86,7 +174,7 @@ impl<T: JournalWord> WordJournal<T> {
         self.rebase(base);
     }
 
-    pub(crate) fn rebase(&mut self, base: usize) {
+    fn rebase(&mut self, base: usize) {
         self.base = base;
         let len = base.div_ceil(64);
         if self.touched.len() < len {
@@ -94,12 +182,12 @@ impl<T: JournalWord> WordJournal<T> {
         }
     }
 
-    pub(crate) fn disarm(&mut self) {
+    fn disarm(&mut self) {
         *self = Self::default();
     }
 
     #[inline]
-    pub(crate) fn note(&mut self, index: usize, old: T) {
+    fn note(&mut self, index: usize, old: T) {
         debug_assert!(self.armed);
         if index >= self.base {
             return;
@@ -118,7 +206,7 @@ impl<T: JournalWord> WordJournal<T> {
     /// Notes every word of a node. One mask test settles the usual case, where
     /// all of them are already noted, at any node size.
     #[inline]
-    pub(crate) fn note_run(&mut self, start: usize, words: &[T]) {
+    fn note_run(&mut self, start: usize, words: &[T]) {
         debug_assert!(self.armed);
         let shift = start & 63;
         if shift + words.len() <= 64 && start + words.len() <= self.base {
@@ -139,7 +227,7 @@ impl<T: JournalWord> WordJournal<T> {
 
     /// Closes the epoch. A word back at its pre-image needs no restoring, so it
     /// is dropped, which also undoes the cost of noting a node's unwritten words.
-    pub(crate) fn seal(&mut self, data: &[T]) -> WordDelta<T> {
+    fn seal(&mut self, data: &[T]) -> WordDelta<T> {
         for e in &self.entries {
             self.touched[e.idx as usize >> 6] = 0;
         }
@@ -153,7 +241,7 @@ impl<T: JournalWord> WordJournal<T> {
         }
     }
 
-    pub(crate) fn snapshot(&self) -> WordDelta<T> {
+    fn snapshot(&self) -> WordDelta<T> {
         WordDelta {
             entries: self.entries.clone(),
         }
@@ -165,6 +253,7 @@ impl<T: JournalWord> WordJournal<T> {
     }
 }
 
+/// Undoes one epoch of a [`JournaledVec`].
 #[derive(Clone)]
 pub(crate) struct WordDelta<T: Copy> {
     entries: Vec<Preimage<T>>,
@@ -179,14 +268,21 @@ impl<T: Copy> Default for WordDelta<T> {
 }
 
 impl<T: Copy> WordDelta<T> {
-    pub(crate) fn apply_to(&self, data: &mut [T]) {
+    fn apply_to(&self, data: &mut [T]) {
         for e in self.entries.iter().rev() {
             data[e.idx as usize] = e.old;
         }
     }
 
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+}
+
+impl<T: Copy> Delta for WordDelta<T> {
     /// `older` restores further back in time, so its pre-image wins on overlap.
-    pub(crate) fn compose_with_older(&mut self, mut older: WordDelta<T>) {
+    fn compose_with_older(&mut self, mut older: WordDelta<T>) {
         // Each delta holds a word at most once, so reordering is harmless.
         older.entries.sort_unstable_by_key(|e| e.idx);
         let known = older.entries.len();
@@ -201,183 +297,147 @@ impl<T: Copy> WordDelta<T> {
         *self = older;
     }
 
-    pub(crate) fn allocated_bytes(&self) -> usize {
-        self.entries.capacity() * mem::size_of::<Preimage<T>>()
-    }
-
-    pub(crate) fn compact(&mut self) {
+    fn compact(&mut self) {
         self.entries.shrink_to_fit();
     }
 
-    #[cfg(test)]
-    fn len(&self) -> usize {
-        self.entries.len()
+    fn allocated_bytes(&self) -> usize {
+        self.entries.capacity() * mem::size_of::<Preimage<T>>()
     }
 }
 
-pub(crate) struct PlainTrail<T> {
-    armed: bool,
-    idx: Vec<u32>,
-    old: Vec<T>,
-}
-
-impl<T> Default for PlainTrail<T> {
-    fn default() -> Self {
-        Self {
-            armed: false,
-            idx: Vec::new(),
-            old: Vec::new(),
-        }
-    }
-}
-
-impl<T: Copy> PlainTrail<T> {
-    #[inline(always)]
-    pub(crate) fn armed(&self) -> bool {
-        self.armed
-    }
-
-    pub(crate) fn arm(&mut self) {
-        self.idx.clear();
-        self.old.clear();
-        self.armed = true;
-    }
-
-    pub(crate) fn disarm(&mut self) {
-        *self = Self::default();
-    }
-
+impl JournalWord for HashEntry {
     #[inline]
-    pub(crate) fn note(&mut self, index: usize, old: T) {
-        debug_assert!(self.armed);
-        self.idx.push(index as u32);
-        self.old.push(old);
-    }
-
-    pub(crate) fn seal(&mut self) -> PlainDelta<T> {
-        PlainDelta {
-            idx: mem::take(&mut self.idx),
-            old: mem::take(&mut self.old),
-        }
-    }
-
-    pub(crate) fn snapshot(&self) -> PlainDelta<T> {
-        PlainDelta {
-            idx: self.idx.clone(),
-            old: self.old.clone(),
-        }
+    fn same(&self, other: &Self) -> bool {
+        self == other
     }
 }
 
-#[derive(Clone)]
-pub(crate) struct PlainDelta<T> {
-    idx: Vec<u32>,
-    old: Vec<T>,
+impl JournalWord for PrimEntry {
+    #[inline]
+    fn same(&self, other: &Self) -> bool {
+        self == other
+    }
 }
 
-impl<T> Default for PlainDelta<T> {
+/// A flat array that notes each word's pre-image before writing it while armed.
+/// Reads go through `Deref`, and every write goes through a noting method.
+pub(crate) struct JournaledVec<T: Copy> {
+    data: Vec<T>,
+    journal: WordJournal<T>,
+}
+
+impl<T: Copy> Default for JournaledVec<T> {
     fn default() -> Self {
+        Vec::new().into()
+    }
+}
+
+impl<T: Copy> From<Vec<T>> for JournaledVec<T> {
+    /// A disarmed array holding `data`.
+    fn from(data: Vec<T>) -> Self {
         Self {
-            idx: Vec::new(),
-            old: Vec::new(),
+            data,
+            journal: WordJournal::default(),
         }
     }
 }
 
-impl<T: Copy> PlainDelta<T> {
-    pub(crate) fn apply_to(&self, data: &mut [T]) {
-        for (&index, &old) in self.idx.iter().zip(&self.old).rev() {
-            data[index as usize] = old;
+impl<T: Copy> Deref for JournaledVec<T> {
+    type Target = [T];
+
+    #[inline(always)]
+    fn deref(&self) -> &[T] {
+        &self.data
+    }
+}
+
+impl<T: JournalWord> JournaledVec<T> {
+    #[inline(always)]
+    pub(crate) fn set(&mut self, i: usize, value: T) {
+        *self.at_mut(i) = value;
+    }
+
+    #[inline(always)]
+    pub(crate) fn at_mut(&mut self, i: usize) -> &mut T {
+        if self.journal.armed() {
+            self.journal.note(i, self.data[i]);
+        }
+        &mut self.data[i]
+    }
+
+    #[inline(always)]
+    pub(crate) fn run_mut(&mut self, run: Range<usize>) -> &mut [T] {
+        let start = run.start;
+        let words = &mut self.data[run];
+        if self.journal.armed() {
+            self.journal.note_run(start, words);
+        }
+        words
+    }
+
+    /// The run `dst` to write, and the disjoint run `src` to read.
+    #[inline]
+    pub(crate) fn run_mut_and(
+        &mut self,
+        dst: Range<usize>,
+        src: Range<usize>,
+    ) -> Option<(&mut [T], &[T])> {
+        if self.journal.armed() {
+            self.journal.note_run(dst.start, &self.data[dst.clone()]);
+        }
+        let [dst, src] = self.data.get_disjoint_mut([dst, src]).ok()?;
+        Some((dst, src))
+    }
+
+    /// Words past the epoch's start need no pre-image, so growing is never noted.
+    pub(crate) fn push(&mut self, value: T) {
+        self.data.push(value);
+    }
+
+    pub(crate) fn grow(&mut self, len: usize, value: T) {
+        debug_assert!(len >= self.data.len(), "a journaled array only grows");
+        self.data.resize(len, value);
+    }
+
+    /// Writes that a checkpoint never needs to undo, such as loading a format.
+    pub(crate) fn unjournaled_mut(&mut self) -> &mut [T] {
+        &mut self.data
+    }
+}
+
+impl<T: JournalWord + Zeroable> JournaledVec<T> {
+    /// Sets the length a checkpoint recorded, after its deltas restored the words.
+    pub(crate) fn restore_len(&mut self, len: usize) {
+        self.data.resize(len, T::zeroed());
+        if self.journal.armed() {
+            self.journal.rebase(len);
         }
     }
-
-    /// Keeps only the first pre-image per index, which is the furthest back in time.
-    pub(crate) fn compose_with_older(&mut self, mut older: PlainDelta<T>) {
-        COMPOSE_SEEN.with_borrow_mut(|seen| {
-            let mut kept = 0;
-            for k in 0..older.idx.len() {
-                let index = older.idx[k];
-                if first_sighting(seen, index) {
-                    older.idx[kept] = index;
-                    older.old[kept] = older.old[k];
-                    kept += 1;
-                }
-            }
-            older.idx.truncate(kept);
-            older.old.truncate(kept);
-            for (&index, &value) in self.idx.iter().zip(&self.old) {
-                if first_sighting(seen, index) {
-                    older.idx.push(index);
-                    older.old.push(value);
-                }
-            }
-            for &index in &older.idx {
-                seen[index as usize >> 6] = 0;
-            }
-        });
-        *self = older;
-    }
-
-    pub(crate) fn allocated_bytes(&self) -> usize {
-        self.idx.capacity() * mem::size_of::<u32>() + self.old.capacity() * mem::size_of::<T>()
-    }
-
-    pub(crate) fn compact(&mut self) {
-        self.idx.shrink_to_fit();
-        self.old.shrink_to_fit();
-    }
-
-    #[cfg(test)]
-    fn len(&self) -> usize {
-        self.idx.len()
-    }
 }
 
-thread_local! {
-    /// Index bitmap for [`PlainDelta::compose_with_older`], all clear between calls.
-    static COMPOSE_SEEN: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
-}
+impl<T: JournalWord> Journaled for JournaledVec<T> {
+    type Delta = WordDelta<T>;
 
-#[inline]
-fn first_sighting(seen: &mut Vec<u64>, index: u32) -> bool {
-    let word = index as usize >> 6;
-    if word >= seen.len() {
-        seen.resize(word + 1, 0);
+    fn arm(&mut self) {
+        self.journal.arm(self.data.len());
     }
-    let bit = 1u64 << (index & 63);
-    let fresh = seen[word] & bit == 0;
-    seen[word] |= bit;
-    fresh
-}
 
-#[derive(Default)]
-pub(crate) struct EqtbJournal {
-    pub(crate) hash: PlainTrail<HashEntry>,
-    pub(crate) prim: PlainTrail<PrimEntry>,
-}
-
-impl EqtbJournal {
     fn disarm(&mut self) {
-        self.hash.disarm();
-        self.prim.disarm();
+        self.journal.disarm();
     }
-}
 
-pub(crate) fn arm(st: &mut EngineState) {
-    st.mem.journal.arm(st.mem.data.len());
-    st.mem.tokens.arm_journal();
-    st.mem.glue.journal.arm(st.mem.glue.specs().len());
-    st.eqtb.journal.hash.arm();
-    st.eqtb.journal.prim.arm();
-    st.eqtb.arm_tables();
-}
+    fn seal(&mut self) -> WordDelta<T> {
+        self.journal.seal(&self.data)
+    }
 
-pub(crate) fn disarm(st: &mut EngineState) {
-    st.mem.journal.disarm();
-    st.mem.tokens.disarm_journal();
-    st.mem.glue.journal.disarm();
-    st.eqtb.journal.disarm();
-    st.eqtb.disarm_tables();
+    fn snapshot(&self) -> WordDelta<T> {
+        self.journal.snapshot()
+    }
+
+    fn apply(&mut self, delta: &WordDelta<T>) {
+        delta.apply_to(&mut self.data);
+    }
 }
 
 #[cfg(test)]
@@ -498,23 +558,6 @@ mod tests {
     }
 
     #[test]
-    fn plain_trail_replays_duplicate_writes_in_reverse() {
-        let mut data = vec![10u16, 20, 30];
-        let mut trail = PlainTrail::default();
-        trail.arm();
-        trail.note(1, data[1]);
-        data[1] = 21;
-        trail.note(1, data[1]);
-        data[1] = 22;
-        trail.note(2, data[2]);
-        data[2] = 31;
-        let delta = trail.seal();
-        assert_eq!(delta.len(), 3);
-        delta.apply_to(&mut data);
-        assert_eq!(data, vec![10, 20, 30]);
-    }
-
-    #[test]
     fn word_delta_composition_keeps_the_older_preimage() {
         let mut data = vec![word(0); 3];
         let mut journal = WordJournal::<u64>::default();
@@ -536,93 +579,60 @@ mod tests {
     }
 
     #[test]
-    fn plain_delta_composition_canonicalizes_duplicates() {
-        let mut data = vec![0i32, 0];
-        let mut trail = PlainTrail::default();
-        trail.arm();
-        trail.note(0, 0);
-        data[0] = 1;
-        trail.note(0, 1);
-        data[0] = 2;
-        let older = trail.seal();
-        trail.note(0, 2);
-        data[0] = 3;
-        trail.note(1, 0);
-        data[1] = 4;
-        let mut newer = trail.seal();
-
-        newer.compose_with_older(older);
-        assert_eq!(newer.len(), 2);
-        newer.apply_to(&mut data);
-        assert_eq!(data, vec![0, 0]);
-    }
-
-    #[test]
-    fn plain_delta_composition_keeps_first_sightings_in_order() {
-        let delta = |entries: &[(u32, i32)]| PlainDelta {
-            idx: entries.iter().map(|e| e.0).collect(),
-            old: entries.iter().map(|e| e.1).collect(),
-        };
-        let pairs = |d: &PlainDelta<i32>| -> Vec<(u32, i32)> {
-            d.idx.iter().copied().zip(d.old.iter().copied()).collect()
-        };
-
-        let older = delta(&[(900, 1), (5, 2), (900, 3), (64, 4)]);
-        let mut newer = delta(&[(64, 5), (7, 6), (5, 7), (7, 8), (1000, 9)]);
-        newer.compose_with_older(older);
-        assert_eq!(
-            pairs(&newer),
-            vec![(900, 1), (5, 2), (64, 4), (7, 6), (1000, 9)]
-        );
-
-        // The scratch bitmap is left clear, so a later merge sees fresh indices.
-        let mut again = delta(&[(5, 10), (900, 11)]);
-        again.compose_with_older(delta(&[(7, 12)]));
-        assert_eq!(pairs(&again), vec![(7, 12), (5, 10), (900, 11)]);
-
-        let mut empty = PlainDelta::<i32>::default();
-        empty.compose_with_older(PlainDelta::default());
-        assert_eq!(empty.len(), 0);
-    }
-
-    #[test]
     fn mem_setters_capture_preimages() {
         let mut mem = MemState {
-            data: vec![0; 4],
+            data: vec![0; 4].into(),
             ..Default::default()
         };
-        mem.journal.arm(mem.data.len());
+        mem.data.arm();
 
         mem.set_word(1, 10);
         mem.set_word(0, 11);
         mem.set_word(2, 12);
         mem.set_word(0, 13);
-        assert_eq!(mem.data, [13, 10, 12, 0]);
+        assert_eq!(*mem.data, [13, 10, 12, 0]);
 
-        let delta = mem.journal.seal(&mem.data);
+        let delta = mem.data.seal();
         assert_eq!(delta.len(), 3);
-        delta.apply_to(&mut mem.data);
-        assert_eq!(mem.data, [0; 4]);
+        mem.data.apply(&delta);
+        assert_eq!(*mem.data, [0; 4]);
     }
 
     #[test]
     fn eqtb_setters_capture_preimages() {
         let cs = NameSlot::bucket(0).cs();
         let mut eqtb = EqtbState {
-            hash: vec![HashEntry::default(); 1],
+            hash: vec![HashEntry::default(); 1].into(),
             meanings: Table::at_level(cs.index() + 1, Command::UndefinedCs, 0),
             ..Default::default()
         };
-        eqtb.journal.hash.arm();
-        eqtb.arm_tables();
+        eqtb.arm();
         eqtb.set_text(cs, StrNumber::from_raw(6));
         eqtb.set_meaning(cs, Command::Halign, 3);
-        eqtb.journal.hash.seal().apply_to(&mut eqtb.hash);
-        eqtb.seal_tables().apply_to(&mut eqtb);
+        let delta = eqtb.seal();
+        eqtb.apply(&delta);
         assert_eq!(eqtb.hash[0].text, StrNumber::NONE);
         assert_eq!(
             (eqtb.meaning(cs), eqtb.cs_level(cs)),
             (Command::UndefinedCs, 0)
         );
+    }
+
+    #[test]
+    fn composed_deltas_rewind_the_hash_to_its_oldest_preimage() {
+        let cs = NameSlot::bucket(0).cs();
+        let mut eqtb = EqtbState {
+            hash: vec![HashEntry::default(); 1].into(),
+            ..Default::default()
+        };
+        eqtb.arm();
+        eqtb.set_text(cs, StrNumber::from_raw(6));
+        eqtb.set_text(cs, StrNumber::from_raw(7));
+        let older = eqtb.seal();
+        eqtb.set_text(cs, StrNumber::from_raw(8));
+        let mut newer = eqtb.seal();
+        newer.compose_with_older(older);
+        eqtb.apply(&newer);
+        assert_eq!(eqtb.hash[0].text, StrNumber::NONE);
     }
 }

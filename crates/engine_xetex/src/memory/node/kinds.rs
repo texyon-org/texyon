@@ -53,12 +53,7 @@ impl<K: View> Index<NodePtr<K>> for MemState {
 impl<K: View> IndexMut<NodePtr<K>> for MemState {
     #[inline]
     fn index_mut(&mut self, p: NodePtr<K>) -> &mut K {
-        let words = p.idx().words(K::SIZE);
-        let start = words.start;
-        let node = &mut self.data[words];
-        if self.journal.armed() {
-            self.journal.note_run(start, node);
-        }
+        let node = self.data.run_mut(p.idx().words(K::SIZE));
         bytemuck::from_bytes_mut(bytemuck::cast_slice_mut(node))
     }
 }
@@ -143,13 +138,9 @@ impl MemState {
     ) -> Result<EntriesMutAnd<'_, K, L>, Abort> {
         let (dst_words, dst_bytes) = self.entry_span(dst);
         let (src_words, src_bytes) = self.entry_span(src);
-        if self.journal.armed() {
-            self.journal
-                .note_run(dst_words.start, &self.data[dst_words.clone()]);
-        }
-        let [dst, src] = self
+        let (dst, src) = self
             .data
-            .get_disjoint_mut([dst_words, src_words])
+            .run_mut_and(dst_words, src_words)
             .or_confusion("entries")?;
         let dst: &mut [u8] = bytemuck::cast_slice_mut(dst);
         let src: &[u8] = bytemuck::cast_slice(src);
@@ -162,12 +153,7 @@ impl MemState {
     #[inline]
     pub fn entries_mut<K: ArrayNode>(&mut self, p: NodePtr<K>) -> &mut [K::Entry] {
         let (words, bytes) = self.entry_span(p);
-        let start = words.start;
-        let words = &mut self.data[words];
-        if self.journal.armed() {
-            self.journal.note_run(start, words);
-        }
-        let words: &mut [u8] = bytemuck::cast_slice_mut(words);
+        let words: &mut [u8] = bytemuck::cast_slice_mut(self.data.run_mut(words));
         bytemuck::cast_slice_mut(&mut words[..bytes])
     }
 }
@@ -1423,10 +1409,11 @@ mod tests {
     use super::*;
     use crate::base::units::MemIdx;
     use crate::memory::node::{View, WhatsitVariant};
+    use crate::preview::journal::Journaled;
 
     fn arena() -> MemState {
         MemState {
-            data: vec![Default::default(); 32],
+            data: vec![Default::default(); 32].into(),
             ..Default::default()
         }
     }
@@ -1448,14 +1435,14 @@ mod tests {
         let mut mem = arena();
         let k: NodePtr<KernNode> = NodePtr::from_idx_unchecked(MemIdx::from_raw(4).unwrap());
         mem[k].sync.line = 5;
-        mem.journal.arm(16);
+        mem.data.arm();
         let kern = &mut mem[k];
         kern.link = MemIdx::from_raw(1);
         kern.width = Scaled::from_raw(2);
         kern.sync.tag = 3;
         kern.sync.line = 4;
-        let delta = mem.journal.seal(&mem.data);
-        delta.apply_to(&mut mem.data);
+        let delta = mem.data.seal();
+        mem.data.apply(&delta);
         let kern = mem[k];
         assert_eq!(
             (kern.link, kern.width, kern.sync.tag, kern.sync.line),
@@ -1468,11 +1455,11 @@ mod tests {
         let mut mem = arena();
         let s = mem.glue.alloc().unwrap();
         mem[s].shrink = Scaled::from_raw(5);
-        mem.glue.journal.arm(mem.glue.specs().len());
+        mem.glue.arm();
         mem[s].width = Scaled::from_raw(2);
         mem[s].shrink = Scaled::from_raw(4);
-        let delta = mem.glue.seal_journal();
-        delta.apply_to(mem.glue.specs_mut());
+        let delta = mem.glue.seal();
+        mem.glue.apply(&delta);
         assert_eq!(
             (mem[s].width, mem[s].shrink),
             (Scaled::ZERO, Scaled::from_raw(5))
@@ -1696,15 +1683,15 @@ mod tests {
         let s = mem.alloc_array::<ParShapeNode>(2).unwrap();
         let t = mem.alloc_array::<ParShapeNode>(1).unwrap();
         mem.entries_mut(s)[1].width = Scaled::from_raw(5);
-        mem.journal.arm(mem.data.len());
+        mem.data.arm();
         let lines = mem.entries_mut(s);
         lines[0].indent = Scaled::from_raw(1);
         lines[1].width = Scaled::from_raw(2);
         let (to, from) = mem.entries_mut_and(t, s).unwrap();
         to[0].width = from[1].width;
         assert_eq!(mem.entries(t)[0].width, Scaled::from_raw(2));
-        let delta = mem.journal.seal(&mem.data);
-        delta.apply_to(&mut mem.data);
+        let delta = mem.data.seal();
+        mem.data.apply(&delta);
         let lines = mem.entries(s);
         assert_eq!(
             (lines[0].indent, lines[1].width, mem.entries(t)[0].width),

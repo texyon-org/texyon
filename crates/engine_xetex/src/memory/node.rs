@@ -1315,7 +1315,7 @@ mod tests {
 
     fn fresh_mem(n: usize) -> MemState {
         MemState {
-            data: zeroed_vec(n),
+            data: zeroed_vec(n).into(),
             ..Default::default()
         }
     }

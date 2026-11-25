@@ -6,7 +6,7 @@ use crate::base::consts::TEX_NULL;
 use crate::base::units::{GlueOrder, Scaled};
 use crate::memory::mem::MemState;
 use crate::memory::node::Stored;
-use crate::preview::journal::{WordDelta, WordJournal};
+use crate::preview::journal::{JournaledVec, WordDelta, journaled_fields};
 use crate::print::errors::Abort;
 
 /// A glue specification in the [`GlueStore`]. Glue pointers are never null.
@@ -60,18 +60,23 @@ pub(crate) const STATIC_SPECS: usize = 6;
 const MAX_SPECS: usize = 1 << 22;
 
 pub(crate) struct GlueStore {
-    data: Vec<GlueSpec>,
+    data: JournaledVec<GlueSpec>,
     /// The first free spec, threaded through `ref_count`.
     free: i32,
-    pub(crate) journal: WordJournal<GlueSpec>,
+}
+
+journaled_fields! {
+    /// Undoes one epoch of the glue specs.
+    pub(crate) struct GlueDelta for GlueStore {
+        data: WordDelta<GlueSpec>,
+    }
 }
 
 impl Default for GlueStore {
     fn default() -> Self {
         Self {
-            data: vec![bytemuck::Zeroable::zeroed(); STATIC_SPECS],
+            data: vec![bytemuck::Zeroable::zeroed(); STATIC_SPECS].into(),
             free: TEX_NULL,
-            journal: WordJournal::default(),
         }
     }
 }
@@ -90,11 +95,7 @@ impl GlueStore {
 
     #[inline]
     pub(crate) fn get_mut(&mut self, id: GlueSpecId) -> &mut GlueSpec {
-        let i = id.slot();
-        if self.journal.armed() {
-            self.journal.note(i, self.data[i]);
-        }
-        &mut self.data[i]
+        self.data.at_mut(id.slot())
     }
 
     pub(crate) fn alloc(&mut self) -> Result<GlueSpecId, Abort> {
@@ -125,8 +126,9 @@ impl GlueStore {
         &self.data
     }
 
-    pub(crate) fn specs_mut(&mut self) -> &mut [GlueSpec] {
-        &mut self.data
+    /// The specs, for writes no checkpoint undoes, such as loading a format.
+    pub(crate) fn specs_unjournaled_mut(&mut self) -> &mut [GlueSpec] {
+        self.data.unjournaled_mut()
     }
 
     pub(crate) fn marks(&self) -> GlueStoreMarks {
@@ -137,20 +139,13 @@ impl GlueStore {
     }
 
     pub(crate) fn restore_marks(&mut self, marks: GlueStoreMarks) {
-        self.data.truncate(marks.len);
+        self.data.restore_len(marks.len);
         self.free = marks.free;
-        if self.journal.armed() {
-            self.journal.rebase(marks.len);
-        }
     }
 
     pub(crate) fn reset_for_load(&mut self, len: usize, free: i32) {
-        self.data = vec![bytemuck::Zeroable::zeroed(); len];
+        self.data = vec![bytemuck::Zeroable::zeroed(); len].into();
         self.free = free;
-    }
-
-    pub(crate) fn seal_journal(&mut self) -> WordDelta<GlueSpec> {
-        self.journal.seal(&self.data)
     }
 }
 

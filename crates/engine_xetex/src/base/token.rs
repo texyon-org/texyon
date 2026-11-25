@@ -8,7 +8,7 @@ use bytemuck::Zeroable;
 use crate::base::arg_stack::{ArgDelta, ArgRef, ArgStack};
 use crate::base::cmd::Cmd;
 use crate::base::consts::{MAX_HALFWORD, TEX_NULL};
-use crate::preview::journal::{WordDelta, WordJournal};
+use crate::preview::journal::{JournaledVec, WordDelta, journaled_fields};
 use crate::print::errors::Abort;
 use crate::scanning::input::STACK_SIZE;
 use crate::tables::cs::CsId;
@@ -359,12 +359,10 @@ const RESERVED: usize = 1 + BACKUP_SLOTS;
 /// The token lists, kept apart from `mem`: runs of tokens back to back, and a
 /// table of lists that says where each run is.
 pub(crate) struct TokenStore {
-    tokens: Vec<Token>,
-    lists: Vec<ListSlot>,
+    tokens: JournaledVec<Token>,
+    lists: JournaledVec<ListSlot>,
     free_runs: [u32; N_CLASSES],
     free_lists: u32,
-    tokens_journal: WordJournal<Token>,
-    lists_journal: WordJournal<ListSlot>,
     build: Vec<Token>,
     /// Each open build's start in `build`, and the tokens it dropped from its front.
     builds: Vec<(usize, usize)>,
@@ -374,7 +372,7 @@ pub(crate) struct TokenStore {
 impl Default for TokenStore {
     fn default() -> Self {
         Self {
-            tokens: vec![Token(0); RESERVED],
+            tokens: vec![Token(0); RESERVED].into(),
             // Slot 0 is unused, so no list is ever 0.
             lists: vec![
                 ListSlot::zeroed(),
@@ -383,11 +381,10 @@ impl Default for TokenStore {
                     len: 1,
                     refs: 1,
                 },
-            ],
+            ]
+            .into(),
             free_runs: [NONE; N_CLASSES],
             free_lists: NONE,
-            tokens_journal: WordJournal::default(),
-            lists_journal: WordJournal::default(),
             build: Vec::new(),
             builds: Vec::new(),
             args: ArgStack::default(),
@@ -404,47 +401,16 @@ pub(crate) struct TokenStoreMarks {
     pub(crate) args: usize,
 }
 
-#[derive(Clone, Default)]
-pub(crate) struct TokenDelta {
-    tokens: WordDelta<Token>,
-    lists: WordDelta<ListSlot>,
-    args: ArgDelta,
-}
-
-impl TokenDelta {
-    pub(crate) fn compose_with_older(&mut self, older: TokenDelta) {
-        self.tokens.compose_with_older(older.tokens);
-        self.lists.compose_with_older(older.lists);
-        self.args.compose_with_older(older.args);
-    }
-
-    pub(crate) fn compact(&mut self) {
-        self.tokens.compact();
-        self.lists.compact();
-    }
-
-    pub(crate) fn allocated_bytes(&self) -> usize {
-        self.tokens.allocated_bytes() + self.lists.allocated_bytes() + self.args.allocated_bytes()
+journaled_fields! {
+    /// Undoes one epoch of the token store.
+    pub(crate) struct TokenDelta for TokenStore {
+        tokens: WordDelta<Token>,
+        lists: WordDelta<ListSlot>,
+        args: ArgDelta,
     }
 }
 
 impl TokenStore {
-    #[inline(always)]
-    fn set_token(&mut self, i: usize, t: Token) {
-        if self.tokens_journal.armed() {
-            self.tokens_journal.note(i, self.tokens[i]);
-        }
-        self.tokens[i] = t;
-    }
-
-    #[inline(always)]
-    fn set_slot(&mut self, i: usize, slot: ListSlot) {
-        if self.lists_journal.armed() {
-            self.lists_journal.note(i, self.lists[i]);
-        }
-        self.lists[i] = slot;
-    }
-
     #[inline(always)]
     fn slot_of(&self, list: TokenList) -> Option<ListSlot> {
         list.slot().and_then(|i| self.lists.get(i)).copied()
@@ -456,40 +422,6 @@ impl TokenStore {
 
     pub(crate) fn lists(&self) -> &[ListSlot] {
         &self.lists
-    }
-
-    pub(crate) fn arm_journal(&mut self) {
-        self.tokens_journal.arm(self.tokens.len());
-        self.lists_journal.arm(self.lists.len());
-        self.args.arm_journal();
-    }
-
-    pub(crate) fn disarm_journal(&mut self) {
-        self.tokens_journal.disarm();
-        self.lists_journal.disarm();
-        self.args.disarm_journal();
-    }
-
-    pub(crate) fn seal_journal(&mut self) -> TokenDelta {
-        TokenDelta {
-            tokens: self.tokens_journal.seal(&self.tokens),
-            lists: self.lists_journal.seal(&self.lists),
-            args: self.args.seal_journal(),
-        }
-    }
-
-    pub(crate) fn snapshot_journal(&self) -> TokenDelta {
-        TokenDelta {
-            tokens: self.tokens_journal.snapshot(),
-            lists: self.lists_journal.snapshot(),
-            args: self.args.snapshot_journal(),
-        }
-    }
-
-    pub(crate) fn apply(&mut self, delta: &TokenDelta) {
-        delta.tokens.apply_to(&mut self.tokens);
-        delta.lists.apply_to(&mut self.lists);
-        self.args.apply(&delta.args);
     }
 
     /// The tokens on the argument stack, for checkpoint digests.
@@ -514,20 +446,16 @@ impl TokenStore {
     pub(crate) fn restore_marks(&mut self, marks: TokenStoreMarks) {
         self.builds.clear();
         self.build.clear();
-        self.tokens.truncate(marks.tokens);
-        self.lists.truncate(marks.lists);
+        self.tokens.restore_len(marks.tokens);
+        self.lists.restore_len(marks.lists);
         self.free_runs = marks.free_runs;
         self.free_lists = marks.free_lists;
         self.args.restore_len(marks.args);
-        if self.tokens_journal.armed() {
-            self.tokens_journal.rebase(marks.tokens);
-            self.lists_journal.rebase(marks.lists);
-        }
     }
 
     pub(crate) fn reset_for_load(&mut self, marks: TokenStoreMarks) {
-        self.tokens = vec![Token(0); marks.tokens];
-        self.lists = vec![ListSlot::zeroed(); marks.lists];
+        self.tokens = vec![Token(0); marks.tokens].into();
+        self.lists = vec![ListSlot::zeroed(); marks.lists].into();
         self.free_runs = marks.free_runs;
         self.free_lists = marks.free_lists;
         self.args.clear();
@@ -551,8 +479,8 @@ impl TokenStore {
         tokens >= RESERVED && lists_ok && runs_ok && lists_free_ok
     }
 
-    pub(crate) fn parts_mut(&mut self) -> (&mut [Token], &mut [ListSlot]) {
-        (&mut self.tokens, &mut self.lists)
+    pub(crate) fn parts_unjournaled_mut(&mut self) -> (&mut [Token], &mut [ListSlot]) {
+        (self.tokens.unjournaled_mut(), self.lists.unjournaled_mut())
     }
 
     fn alloc_run(&mut self, len: u32) -> Result<u32, Abort> {
@@ -567,7 +495,7 @@ impl TokenStore {
         if start + cap > MAX_TOKENS {
             return Err(Abort::AvailOverflow);
         }
-        self.tokens.resize(start + cap, Token(0));
+        self.tokens.grow(start + cap, Token(0));
         u32::try_from(start).map_err(|_| Abort::AvailOverflow)
     }
 
@@ -577,7 +505,7 @@ impl TokenStore {
         }
         let class = class_for(len);
         let next = Token(self.free_runs[class].cast_signed());
-        self.set_token(start as usize, next);
+        self.tokens.set(start as usize, next);
         self.free_runs[class] = start;
     }
 
@@ -590,7 +518,7 @@ impl TokenStore {
         let i = if self.free_lists != NONE {
             let i = self.free_lists as usize;
             self.free_lists = self.lists[i].start;
-            self.set_slot(i, slot);
+            self.lists.set(i, slot);
             i
         } else {
             self.lists.push(slot);
@@ -605,21 +533,22 @@ impl TokenStore {
         let len = u32::try_from(tokens.len()).map_err(|_| Abort::AvailOverflow)?;
         let start = if len == 0 { 0 } else { self.alloc_run(len)? };
         let at = start as usize;
-        if self.tokens_journal.armed() {
-            self.tokens_journal
-                .note_run(at, &self.tokens[at..at + tokens.len()]);
-        }
-        self.tokens[at..at + tokens.len()].copy_from_slice(tokens);
+        self.tokens
+            .run_mut(at..at + tokens.len())
+            .copy_from_slice(tokens);
         self.alloc_list(start, len)
     }
 
     pub(crate) fn init_omit_template(&mut self, t: Token) {
-        self.tokens[0] = t;
-        self.lists[1] = ListSlot {
-            start: 0,
-            len: 1,
-            refs: 1,
-        };
+        self.tokens.set(0, t);
+        self.lists.set(
+            1,
+            ListSlot {
+                start: 0,
+                len: 1,
+                refs: 1,
+            },
+        );
     }
 
     #[inline(always)]
@@ -639,7 +568,7 @@ impl TokenStore {
             .ok()
             .filter(|_| (1..=BACKUP_SLOTS).contains(&depth))
             .ok_or(Abort::Confusion("backup slot"))?;
-        self.set_token(depth, t);
+        self.tokens.set(depth, t);
         Ok(TokCursor { pos, end: pos + 1 })
     }
 
@@ -847,12 +776,10 @@ impl TokenStore {
         self.free_run(slot.start, slot.len);
         let start = self.alloc_run(len)?;
         let at = start as usize;
-        if self.tokens_journal.armed() {
-            self.tokens_journal
-                .note_run(at, &self.tokens[at..at + tokens.len()]);
-        }
-        self.tokens[at..at + tokens.len()].copy_from_slice(tokens);
-        self.set_slot(i, ListSlot { start, len, ..slot });
+        self.tokens
+            .run_mut(at..at + tokens.len())
+            .copy_from_slice(tokens);
+        self.lists.set(i, ListSlot { start, len, ..slot });
         Ok(())
     }
 
@@ -872,7 +799,7 @@ impl TokenStore {
         if let Some(slot) = self.slot_of(list) {
             for i in slot.start as usize..(slot.start + slot.len) as usize {
                 let t = f(self.tokens[i]);
-                self.set_token(i, t);
+                self.tokens.set(i, t);
             }
         }
     }
@@ -882,7 +809,7 @@ impl TokenStore {
             return;
         };
         self.free_run(slot.start, slot.len);
-        self.set_slot(
+        self.lists.set(
             i,
             ListSlot {
                 start: self.free_lists,
@@ -896,7 +823,7 @@ impl TokenStore {
     #[inline]
     pub(crate) fn add_ref(&mut self, list: TokenList) {
         if let (Some(i), Some(slot)) = (list.slot(), self.slot_of(list)) {
-            self.set_slot(
+            self.lists.set(
                 i,
                 ListSlot {
                     refs: slot.refs + 1,
@@ -913,7 +840,7 @@ impl TokenStore {
         if slot.refs <= 1 {
             self.flush(list);
         } else {
-            self.set_slot(
+            self.lists.set(
                 i,
                 ListSlot {
                     refs: slot.refs - 1,

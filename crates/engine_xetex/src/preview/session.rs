@@ -24,7 +24,7 @@ use crate::preview::checkpoint::{
 };
 use crate::preview::introspect;
 use crate::preview::introspect::DefinedCommand;
-use crate::preview::journal::arm;
+use crate::preview::journal::Journaled;
 use crate::preview::replay::adapter::{install, observed_bytes, open_position};
 use crate::preview::replay::fence::ReplayFence;
 use crate::preview::replay::source::SourcePath;
@@ -438,7 +438,7 @@ impl IncrementalXeTeXSession {
                     }
                 }
                 state.config.execution_mode = EngineExecutionMode::Resident;
-                arm(state);
+                state.arm();
                 let base = StringWatermark::capture(state);
                 let mut new_ladder =
                     match CheckpointLadder::from_engine_with_budget(state, base, budget) {

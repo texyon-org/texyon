@@ -197,7 +197,6 @@ impl MemBundle {
             glyph_blobs,
             tokens,
             glue,
-            journal: _,
             free,
             line,
             cur_synctex_tag,
@@ -216,11 +215,8 @@ impl MemBundle {
     }
 
     fn restore(&self, dst: &mut MemState) {
-        dst.data.resize(self.words, Default::default());
+        dst.data.restore_len(self.words);
         dst.free = self.free;
-        if dst.journal.armed() {
-            dst.journal.rebase(self.words);
-        }
         dst.line = self.line;
         dst.cur_synctex_tag = self.cur_synctex_tag;
         dst.temp_ptr = self.temp_ptr;
@@ -273,7 +269,6 @@ impl EqtbBundle {
             hash: _,
             hash_extra,
             cs_top,
-            journal: _,
             pgfmath,
         } = src;
         Self {
@@ -954,7 +949,7 @@ mod tests {
     #[test]
     fn mem_restore_drops_grown_words_and_restores_free_lists() {
         let mut st = state();
-        st.mem.data = zeroed_vec(RESERVED_WORDS);
+        st.mem.data = zeroed_vec(RESERVED_WORDS).into();
         let kept = st.mem.get_node(3).unwrap();
         st.mem.free_node(kept, 3);
         let bundle = MemBundle::capture(&st.mem);
