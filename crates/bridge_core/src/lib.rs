@@ -1671,7 +1671,10 @@ fn an_error_on_one_candidate_does_not_hide_the_next() {
     let mut mem = MemoryIo::new(false);
     mem.create_entry("doc", b"x".to_vec());
     let mut refuses = Refuses;
-    let mut hooks = MinimalDriver::new(IoStack::new(vec![&mut mem, &mut refuses]));
+    let mut hooks = MinimalDriver::new(IoStack::new(vec![
+        Box::new(&mut mem),
+        Box::new(&mut refuses),
+    ]));
     let mut status = NoopStatusBackend::default();
     let mut host = BridgeHost::new(
         Held::Borrowed(&mut hooks),

@@ -6,36 +6,38 @@ use std::{
     sync::Arc,
 };
 
-use texyon_bridge_core::{CoreBridgeLauncher, MinimalDriver};
+use texyon_bridge_core::{BridgeHost, CoreBridgeLauncher, Held, MinimalDriver, SecuritySettings};
 use texyon_engine_xetex::{
-    Diagnostic as EngineDiagnostic, EngineCancellation, EngineFrame, EnginePreviewConfig,
-    IncrementalXeTeXSession, PageRange,
+    Diagnostic as EngineDiagnostic, EngineCancellation, EngineEnv, EngineFrame,
+    EnginePreviewConfig, IncrementalXeTeXSession, PageRange,
 };
-use texyon_errors::{Result, anyhow::bail};
+use texyon_errors::Result;
 #[cfg(feature = "native")]
 use texyon_io_base::format_cache::FormatCache;
 use texyon_io_base::{
     IoProvider, MemoryIo, filesystem::FilesystemIo, stack::IoStack, testing::SingleInputFileIo,
 };
-use texyon_status_base::NoopStatusBackend;
+use texyon_status_base::{NoopStatusBackend, StatusBackend};
 
 use super::AcceptedSourceSnapshot;
 #[cfg(feature = "native")]
 use super::FrozenBundle;
 
-/// Host-specific I/O environment for resident engine operations.
-///
-/// Open/edit, tail continuation and teardown share one object-safe signature,
-/// yielding a frame where the operation produces one.
+/// Host-specific I/O for the resident engine and the engines it hands work to.
 pub trait EngineSupport {
-    /// Run one engine operation against a freshly stacked I/O environment.
-    ///
-    /// `operation` is invoked exactly once.
+    /// The providers under the resident engine for its whole session, with
+    /// `output` on top.
+    fn session_io(&mut self, output: MemoryIo) -> Result<IoStack<'static>>;
+
+    /// Where the resident engine's warnings go.
+    fn status(&mut self) -> Box<dyn StatusBackend>;
+
+    /// Run another engine over `files` stacked on the support files.
     fn with_launcher(
         &mut self,
-        output: &mut MemoryIo,
-        operation: &mut dyn FnMut(&mut CoreBridgeLauncher<'_>) -> Result<Option<EngineFrame>>,
-    ) -> Result<Option<EngineFrame>>;
+        files: &mut MemoryIo,
+        operation: &mut dyn FnMut(&mut CoreBridgeLauncher<'_>) -> Result<()>,
+    ) -> Result<()>;
 
     /// Tell the support layer which directory the document lives in. Defaults to a no-op.
     fn set_document_root(&mut self, _root: &Path) -> Result<()> {
@@ -79,56 +81,60 @@ impl fmt::Debug for ResidentEngineSupport {
     }
 }
 
-fn launch(
-    io: IoStack<'_>,
-    operation: &mut dyn FnMut(&mut CoreBridgeLauncher<'_>) -> Result<Option<EngineFrame>>,
-) -> Result<Option<EngineFrame>> {
-    let mut hooks = MinimalDriver::new(io);
-    let mut status = NoopStatusBackend::default();
-    operation(&mut CoreBridgeLauncher::new(&mut hooks, &mut status))
-}
-
-impl EngineSupport for ResidentEngineSupport {
-    fn with_launcher(
-        &mut self,
-        output: &mut MemoryIo,
-        operation: &mut dyn FnMut(&mut CoreBridgeLauncher<'_>) -> Result<Option<EngineFrame>>,
-    ) -> Result<Option<EngineFrame>> {
+impl ResidentEngineSupport {
+    /// The support files, as providers the caller owns.
+    fn providers(&self) -> Vec<Box<dyn IoProvider>> {
         match self {
             Self::Fixture {
                 format_path,
                 assets_dir,
-            } => {
-                let mut format = SingleInputFileIo::new(format_path);
-                let mut assets = FilesystemIo::new(assets_dir, false, false, HashSet::new());
-                launch(
-                    IoStack::new(vec![
-                        output as &mut dyn IoProvider,
-                        &mut format,
-                        &mut assets,
-                    ]),
-                    operation,
-                )
-            }
+            } => vec![
+                Box::new(SingleInputFileIo::new(format_path)),
+                Box::new(FilesystemIo::new(assets_dir, false, false, HashSet::new())),
+            ],
             #[cfg(feature = "native")]
             Self::Bundle {
                 bundle,
                 format_cache,
             } => {
-                let document_root = bundle.document_root();
-                let mut document = document_root
-                    .as_ref()
-                    .map(|path| FilesystemIo::new(path, false, true, HashSet::new()));
-                let mut providers: Vec<&mut dyn IoProvider> = vec![output];
-                if let Some(document) = &mut document {
-                    providers.push(document);
+                let mut providers: Vec<Box<dyn IoProvider>> = Vec::new();
+                if let Some(root) = bundle.document_root() {
+                    providers.push(Box::new(FilesystemIo::new(
+                        &root,
+                        false,
+                        true,
+                        HashSet::new(),
+                    )));
                 }
-                let mut bundle = bundle.try_borrow_mut()?;
-                providers.push(bundle.as_mut());
-                providers.push(format_cache);
-                launch(IoStack::new(providers), operation)
+                providers.push(Box::new(bundle.clone()));
+                providers.push(Box::new(format_cache.clone()));
+                providers
             }
         }
+    }
+}
+
+impl EngineSupport for ResidentEngineSupport {
+    fn session_io(&mut self, output: MemoryIo) -> Result<IoStack<'static>> {
+        let mut providers: Vec<Box<dyn IoProvider>> = vec![Box::new(output)];
+        providers.extend(self.providers());
+        Ok(IoStack::new(providers))
+    }
+
+    fn status(&mut self) -> Box<dyn StatusBackend> {
+        Box::new(NoopStatusBackend::default())
+    }
+
+    fn with_launcher(
+        &mut self,
+        files: &mut MemoryIo,
+        operation: &mut dyn FnMut(&mut CoreBridgeLauncher<'_>) -> Result<()>,
+    ) -> Result<()> {
+        let mut providers: Vec<Box<dyn IoProvider + '_>> = vec![Box::new(files)];
+        providers.extend(self.providers());
+        let mut hooks = MinimalDriver::new(IoStack::new(providers));
+        let mut status = NoopStatusBackend::default();
+        operation(&mut CoreBridgeLauncher::new(&mut hooks, &mut status))
     }
 
     fn set_document_root(&mut self, root: &Path) -> Result<()> {
@@ -201,6 +207,17 @@ impl ResidentXeTeX {
         }
     }
 
+    /// A session over the support files, writing into this engine's output.
+    fn new_session(&mut self) -> Result<IncrementalXeTeXSession> {
+        let io = self.support.session_io(self.output.share())?;
+        let host = BridgeHost::new(
+            Held::Owned(Box::new(MinimalDriver::new(io))),
+            Held::Owned(self.support.status()),
+            SecuritySettings::default(),
+        );
+        IncrementalXeTeXSession::new(self.config.clone(), EngineEnv::new(host))
+    }
+
     /// Compile one immutable accepted snapshot, opening the resident session on first use.
     pub fn compile(
         &mut self,
@@ -220,31 +237,18 @@ impl ResidentXeTeX {
             Some(session) => session,
             None => {
                 self.config.cancellation = cancellation.clone();
-                IncrementalXeTeXSession::new(self.config.clone())
+                self.new_session()
                     .map_err(|error| ResidentEngineError::Engine(error.to_string()))?
             }
         };
         let session = self.session.insert(session);
         let page_range = viewport.map(|(first, last)| PageRange { first, last });
-        let was_open = self.opened;
-        // The operation is FnMut but runs once, so the snapshot moves out on that call.
-        let mut pending = Some(engine_snapshot);
-        let frame = self
-            .support
-            .with_launcher(&mut self.output, &mut |launcher| {
-                let Some(sources) = pending.take() else {
-                    bail!("engine operation was invoked more than once");
-                };
-                if was_open {
-                    session.edit(launcher, sources, page_range).map(Some)
-                } else {
-                    session.open(launcher, sources).map(Some)
-                }
-            })
-            .map_err(|error| ResidentEngineError::Engine(error.to_string()))?
-            .ok_or_else(|| {
-                ResidentEngineError::Engine("engine operation produced no frame".into())
-            })?;
+        let frame = if self.opened {
+            session.edit(engine_snapshot, page_range)
+        } else {
+            session.open(engine_snapshot)
+        }
+        .map_err(|error| ResidentEngineError::Engine(error.to_string()))?;
         self.opened = true;
         self.continue_transcript(&frame, &output_name, previous_log);
 
@@ -274,11 +278,8 @@ impl ResidentXeTeX {
             .borrow()
             .get(&log_name(&output_name))
             .map(|file| file.data.clone());
-        let frame = self
-            .support
-            .with_launcher(&mut self.output, &mut |launcher| {
-                session.continue_tail(launcher)
-            })
+        let frame = session
+            .continue_tail()
             .map_err(|error| ResidentEngineError::Engine(error.to_string()))?;
         let Some(frame) = frame else {
             return Ok(None);
@@ -367,9 +368,7 @@ impl ResidentXeTeX {
         files: &mut MemoryIo,
         operation: &mut dyn FnMut(&mut CoreBridgeLauncher<'_>) -> Result<()>,
     ) -> Result<()> {
-        self.support
-            .with_launcher(files, &mut |launcher| operation(launcher).map(|()| None))
-            .map(|_| ())
+        self.support.with_launcher(files, operation)
     }
 
     /// Every control sequence the engine currently has defined, empty before the first compile.
@@ -399,11 +398,8 @@ impl ResidentXeTeX {
         let Some(session) = &mut self.session else {
             return Ok(());
         };
-        self.support
-            .with_launcher(&mut self.output, &mut |launcher| {
-                session.finish(launcher).map(|()| None)
-            })
-            .map(|_| ())
+        session
+            .finish()
             .map_err(|error| ResidentEngineError::Engine(error.to_string()))
     }
 }

@@ -13,7 +13,6 @@ use std::time::SystemTime;
 use texyon_bridge_core::{CoreBridgeLauncher, EngineAbortedError, engine_lock};
 use texyon_errors::prelude::*;
 
-use crate::env::EngineEnv;
 use crate::state::ConfigState;
 
 mod base;
@@ -31,6 +30,7 @@ mod shipout;
 mod state;
 mod tables;
 
+pub use env::EngineEnv;
 pub use preview::cancellation::EngineCancellation;
 pub use preview::introspect;
 pub use preview::page_manifest::PageExecution;

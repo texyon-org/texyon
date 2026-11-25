@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 use std::{mem, panic};
 
-use texyon_bridge_core::{CoreBridgeLauncher, engine_lock};
+use texyon_bridge_core::engine_lock;
 use texyon_errors::prelude::*;
 
 use crate::engine::{
@@ -344,6 +344,8 @@ pub struct EngineFrame {
 /// dropping the session so that those native resources are released.
 pub struct IncrementalXeTeXSession {
     config: EnginePreviewConfig,
+    /// The outside world, lent to each operation.
+    env: EngineEnv<'static>,
     state: Box<EngineState>,
     ladder: Option<CheckpointLadder<EngineBundle>>,
     strings_base: Option<StringWatermark>,
@@ -360,9 +362,9 @@ pub struct IncrementalXeTeXSession {
 }
 
 impl IncrementalXeTeXSession {
-    /// Create an unopened resident session. Format I/O is deferred until
-    /// [`open`](Self::open), where it runs under the process-global lock.
-    pub fn new(config: EnginePreviewConfig) -> Result<Self> {
+    /// Create an unopened resident session over `env`. Format I/O is deferred
+    /// until [`open`](Self::open), where it runs under the process-global lock.
+    pub fn new(config: EnginePreviewConfig, env: EngineEnv<'static>) -> Result<Self> {
         if let Some(pos) = config.format_file_name.find('\0') {
             bail!("nul byte found in provided data at position: {pos}");
         }
@@ -371,6 +373,7 @@ impl IncrementalXeTeXSession {
         }
         Ok(Self {
             config,
+            env,
             state: Box::new(EngineState::default()),
             ladder: None,
             strings_base: None,
@@ -386,11 +389,7 @@ impl IncrementalXeTeXSession {
     }
 
     /// Initialize the format and compile the first immutable source snapshot.
-    pub fn open(
-        &mut self,
-        launcher: &mut CoreBridgeLauncher,
-        sources: SourceSnapshot,
-    ) -> Result<EngineFrame> {
+    pub fn open(&mut self, sources: SourceSnapshot) -> Result<EngineFrame> {
         if self.dead {
             bail!("resident XeTeX session is dead");
         }
@@ -426,7 +425,7 @@ impl IncrementalXeTeXSession {
         let revision = sources.revision();
         let accepted_sources = sources.clone();
         let mut checkpoint_activity = CheckpointActivity::default();
-        let result = with_env(launcher, |env| {
+        let result = with_env(&mut self.env, |env| {
             Ok::<_, Error>(catch_operation(state, env, |state, env| {
                 configure(state, &config);
                 let fence_sources = sources.clone();
@@ -487,7 +486,6 @@ impl IncrementalXeTeXSession {
     /// and retain an exact command fence for [`continue_tail`](Self::continue_tail).
     pub fn edit(
         &mut self,
-        launcher: &mut CoreBridgeLauncher,
         sources: SourceSnapshot,
         viewport: Option<PageRange>,
     ) -> Result<EngineFrame> {
@@ -523,7 +521,7 @@ impl IncrementalXeTeXSession {
         let replay_rung = selection.as_ref().map_or(0, |(target, _)| *target);
         let replay_clock = ladder.rung_clock(replay_rung).unwrap_or(0);
         let mut checkpoint_activity = CheckpointActivity::default();
-        let result = with_env(launcher, |env| {
+        let result = with_env(&mut self.env, |env| {
             Ok::<_, Error>(catch_operation(state, env, |state, env| {
                 let fence_sources = sources.clone();
                 let _sources = install(sources, written);
@@ -586,10 +584,7 @@ impl IncrementalXeTeXSession {
     }
 
     /// Resume a viewport-bounded edit from its exact command fence to `\end`.
-    pub fn continue_tail(
-        &mut self,
-        launcher: &mut CoreBridgeLauncher,
-    ) -> Result<Option<EngineFrame>> {
+    pub fn continue_tail(&mut self) -> Result<Option<EngineFrame>> {
         let Some(TailContinuation {
             rung_clock,
             pinned_clock,
@@ -629,7 +624,7 @@ impl IncrementalXeTeXSession {
         let horizon_deadline = self.config.tail_chunk.map(|budget| Instant::now() + budget);
         let replay_clock = ladder.rung_clock(target).unwrap_or(rung_clock);
         let mut checkpoint_activity = CheckpointActivity::default();
-        let result = with_env(launcher, |env| {
+        let result = with_env(&mut self.env, |env| {
             Ok::<_, Error>(catch_operation(state, env, |state, env| {
                 let _sources = install(sources, written);
                 release_operation_inputs(state, env);
@@ -701,7 +696,7 @@ impl IncrementalXeTeXSession {
     }
 
     /// Release process-global native resources and all initialized arenas.
-    pub fn finish(&mut self, launcher: &mut CoreBridgeLauncher) -> Result<()> {
+    pub fn finish(&mut self) -> Result<()> {
         if self.dead {
             return Ok(());
         }
@@ -711,7 +706,7 @@ impl IncrementalXeTeXSession {
         }
         let state = &mut *self.state;
         let ladder = self.ladder.as_mut().expect("opened session without ladder");
-        let teardown = with_env(launcher, |env| {
+        let teardown = with_env(&mut self.env, |env| {
             Ok::<_, Error>(
                 panic::catch_unwind(AssertUnwindSafe(|| {
                     release_operation_inputs(state, env);
@@ -1018,12 +1013,12 @@ fn catch_operation(
         .unwrap_or(OperationResult::Panicked)
 }
 
-/// Runs `f` under the engine lock with an environment over `launcher`'s host.
-fn with_env<R>(launcher: &mut CoreBridgeLauncher, f: impl FnOnce(&mut EngineEnv) -> R) -> R {
+/// Runs `f`, one operation, under the engine lock. Its outputs are written out
+/// and closed when it ends, so the host can read them.
+fn with_env<R>(env: &mut EngineEnv, f: impl FnOnce(&mut EngineEnv) -> R) -> R {
     let _lock = engine_lock();
-    let mut env = EngineEnv::new(launcher.host());
-    let result = f(&mut env);
-    env.flush_outputs();
+    let result = f(env);
+    env.end_operation();
     result
 }
 

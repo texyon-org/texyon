@@ -210,6 +210,13 @@ impl<'h> EngineEnv<'h> {
         };
     }
 
+    /// Ends an operation: writes out and drops every output, which publishes
+    /// what the engine wrote to hosts that keep files in memory.
+    pub(crate) fn end_operation(&mut self) {
+        self.flush_outputs();
+        self.outputs = OutputFiles::default();
+    }
+
     /// Writes out every buffered output, so the host sees all the engine wrote.
     pub fn flush_outputs(&mut self) {
         let OutputFiles {

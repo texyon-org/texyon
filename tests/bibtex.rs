@@ -64,12 +64,18 @@ impl TestCase {
 
         let io_list: Vec<&mut dyn IoProvider> = vec![&mut mem, &mut assets];
 
-        let io = IoStack::new(io_list);
+        let io = IoStack::new(
+            io_list
+                .into_iter()
+                .map(|p| Box::new(p) as Box<dyn IoProvider + '_>)
+                .collect(),
+        );
         let mut hooks = MinimalDriver::new(io);
         let mut status = NoopStatusBackend::default();
         let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
 
         let res = BibtexEngine::new().process(&mut launcher, &auxname, &Default::default());
+        drop(hooks);
 
         // Check that outputs match expectations.
 

@@ -9,11 +9,11 @@ use std::{
 };
 
 use texyon_bundles::Bundle;
-use texyon_io_base::{IoProvider, OpenResult};
+use texyon_io_base::{InputHandle, IoProvider, OpenResult, OutputHandle};
 use texyon_preview_render::{
     RenderError, Resource, ResourceKind, ResourceProvider, ResourceRequest,
 };
-use texyon_status_base::NoopStatusBackend;
+use texyon_status_base::{NoopStatusBackend, StatusBackend};
 
 /// Worker-local shared ownership of one support bundle.
 #[derive(Clone)]
@@ -61,6 +61,84 @@ impl FrozenBundle {
 
     pub(crate) fn document_root(&self) -> Option<PathBuf> {
         self.document_root.borrow().clone()
+    }
+}
+
+/// Serves the bundle to an engine, borrowing it for each request only.
+impl IoProvider for FrozenBundle {
+    fn output_open_name(&mut self, name: &str) -> OpenResult<OutputHandle> {
+        self.with_bundle(|bundle| bundle.output_open_name(name))
+    }
+
+    fn output_open_stdout(&mut self) -> OpenResult<OutputHandle> {
+        self.with_bundle(|bundle| bundle.output_open_stdout())
+    }
+
+    fn input_open_name(
+        &mut self,
+        name: &str,
+        status: &mut dyn StatusBackend,
+    ) -> OpenResult<InputHandle> {
+        self.with_bundle(|bundle| bundle.input_open_name(name, status))
+    }
+
+    fn input_open_name_with_abspath(
+        &mut self,
+        name: &str,
+        status: &mut dyn StatusBackend,
+    ) -> OpenResult<(InputHandle, Option<PathBuf>)> {
+        self.with_bundle(|bundle| bundle.input_open_name_with_abspath(name, status))
+    }
+
+    fn input_open_primary(&mut self, status: &mut dyn StatusBackend) -> OpenResult<InputHandle> {
+        self.with_bundle(|bundle| bundle.input_open_primary(status))
+    }
+
+    fn input_open_primary_with_abspath(
+        &mut self,
+        status: &mut dyn StatusBackend,
+    ) -> OpenResult<(InputHandle, Option<PathBuf>)> {
+        self.with_bundle(|bundle| bundle.input_open_primary_with_abspath(status))
+    }
+
+    fn input_casefold_name(&mut self, name: &str) -> Option<String> {
+        self.bundle.try_borrow_mut().ok()?.input_casefold_name(name)
+    }
+
+    fn directory_exists(&mut self, dir: &str) -> bool {
+        self.bundle
+            .try_borrow_mut()
+            .is_ok_and(|mut bundle| bundle.directory_exists(dir))
+    }
+
+    fn input_open_format(
+        &mut self,
+        name: &str,
+        status: &mut dyn StatusBackend,
+    ) -> OpenResult<InputHandle> {
+        self.with_bundle(|bundle| bundle.input_open_format(name, status))
+    }
+
+    fn write_format(
+        &mut self,
+        name: &str,
+        data: &[u8],
+        status: &mut dyn StatusBackend,
+    ) -> texyon_errors::Result<()> {
+        let mut bundle = self.try_borrow_mut()?;
+        bundle.write_format(name, data, status)
+    }
+}
+
+impl FrozenBundle {
+    fn with_bundle<T>(
+        &self,
+        f: impl FnOnce(&mut Box<dyn Bundle>) -> OpenResult<T>,
+    ) -> OpenResult<T> {
+        match self.try_borrow_mut() {
+            Ok(mut bundle) => f(&mut bundle),
+            Err(error) => OpenResult::Err(error.into()),
+        }
     }
 }
 

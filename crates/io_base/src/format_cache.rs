@@ -19,6 +19,7 @@ use crate::{InputHandle, InputOrigin, IoProvider, OpenResult, digest::DigestData
 /// same root cache directory as the `LocalCache` item, but is implemented
 /// separately so that there is a way to save the format files associated with
 /// backends that may not have their own LocalCache.
+#[derive(Clone)]
 pub struct FormatCache {
     bundle_digest: DigestData,
     formats_base: PathBuf,

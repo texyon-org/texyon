@@ -52,7 +52,11 @@ fn trip_test() {
 
     // First engine pass -- make the format file.
     let res1 = {
-        let io = IoStack::new(vec![&mut mem as &mut dyn IoProvider, &mut tex, &mut tfm]);
+        let io = IoStack::new(vec![
+            Box::new(&mut mem as &mut dyn IoProvider),
+            Box::new(&mut tex),
+            Box::new(&mut tfm),
+        ]);
         let mut hooks = MinimalDriver::new(io);
         let mut status = NoopStatusBackend::default();
         let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
@@ -65,7 +69,11 @@ fn trip_test() {
 
     // Second pass -- process it
     let res2 = {
-        let io = IoStack::new(vec![&mut mem as &mut dyn IoProvider, &mut tex, &mut tfm]);
+        let io = IoStack::new(vec![
+            Box::new(&mut mem as &mut dyn IoProvider),
+            Box::new(&mut tex),
+            Box::new(&mut tfm),
+        ]);
         let mut hooks = MinimalDriver::new(io);
         let mut status = NoopStatusBackend::default();
         let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
@@ -115,7 +123,11 @@ fn etrip_test() {
 
     // First engine pass -- make the format file.
     let res1 = {
-        let io = IoStack::new(vec![&mut mem as &mut dyn IoProvider, &mut tex, &mut tfm]);
+        let io = IoStack::new(vec![
+            Box::new(&mut mem as &mut dyn IoProvider),
+            Box::new(&mut tex),
+            Box::new(&mut tfm),
+        ]);
         let mut hooks = MinimalDriver::new(io);
         let mut status = NoopStatusBackend::default();
         let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
@@ -128,7 +140,11 @@ fn etrip_test() {
 
     // Second pass -- process it
     let res2 = {
-        let io = IoStack::new(vec![&mut mem, &mut tex, &mut tfm]);
+        let io = IoStack::new(vec![
+            Box::new(&mut mem),
+            Box::new(&mut tex),
+            Box::new(&mut tfm),
+        ]);
         let mut hooks = MinimalDriver::new(io);
         let mut status = NoopStatusBackend::default();
         let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);

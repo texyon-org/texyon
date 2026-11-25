@@ -68,7 +68,11 @@ pub fn ensure_plain_format() -> Result<PathBuf> {
         let mut fs_primary = FilesystemPrimaryInputIo::new(&assets_dir);
 
         {
-            let io = IoStack::new(vec![&mut mem, &mut fs_primary, &mut fs_support]);
+            let io = IoStack::new(vec![
+                Box::new(&mut mem),
+                Box::new(&mut fs_primary),
+                Box::new(&mut fs_support),
+            ]);
             let mut hooks = MinimalDriver::new(io);
             let mut status = NoopStatusBackend::default();
             let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
