@@ -12,8 +12,8 @@ use crate::FORMAT_SERIAL;
 use crate::base::cmd::Cmd;
 use crate::base::command::Command;
 use crate::base::consts::{
-    EMPTY_STRING, FONT_BASE, INVALID_HANDLE, LEVEL_ONE, MAX_FONT_MAX, MAX_HALFWORD, NULL_FONT,
-    PRIM_SIZE, TEX_NULL, TOO_BIG_CHAR,
+    EMPTY_STRING, FONT_BASE, LEVEL_ONE, MAX_FONT_MAX, MAX_HALFWORD, NULL_FONT, PRIM_SIZE, TEX_NULL,
+    TOO_BIG_CHAR,
 };
 use crate::base::params::IntPar;
 use crate::base::token::{ListSlot, Token, TokenList, TokenStore};
@@ -23,7 +23,7 @@ use crate::base::units::{
 use crate::build::hyphenation::{BIGGEST_LANG, HYPH_PRIME, TRIE_OP_SIZE, TrieOp, TriePtr};
 use crate::engine::{POOL_FREE, STRINGS_FREE};
 use crate::env::EngineEnv;
-use crate::ffi::bridge::{FileFormat, input_open, output_close, output_open, output_write};
+use crate::ffi::bridge::{FileFormat, input_open};
 use crate::files::io::{make_name_string, pack_job_name};
 use crate::fonts::tfm::{
     CharInfo, CharTag, ExtIdx, ExtRecipe, FontMetrics, FontParams, LigKernAction, LigKernIdx,
@@ -604,10 +604,9 @@ pub(crate) fn store_fmt_file(st: &mut EngineState, env: &mut EngineEnv) -> Resul
     st.strings.format_ident = st.strings.make_string()?;
     let path = pack_job_name(st, ".fmt")?;
 
-    let handle = output_open(env, &path, false);
-    if handle == INVALID_HANDLE {
+    let Some(mut handle) = env.open(&path, false) else {
         return Err(Abort::Internal("cannot open format output file"));
-    }
+    };
 
     print_nl(st, env, "Beginning to dump on file ");
     let name_string = make_name_string(st, &path)?;
@@ -624,11 +623,11 @@ pub(crate) fn store_fmt_file(st: &mut EngineState, env: &mut EngineEnv) -> Resul
 
     let mut dump = Dump::default();
     format_file(&mut dump, st, env)?;
-    if !output_write(env, handle, &dump.bytes) {
+    if env.host.write_output(&mut handle, &dump.bytes) {
         return Err(Abort::Internal("could not write format file data"));
     }
     st.eqtb.set_int_par(IntPar::TracingStats, 0);
-    output_close(env, handle);
+    env.host.close_output(handle);
     Ok(())
 }
 

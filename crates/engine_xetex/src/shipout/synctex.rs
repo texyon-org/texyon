@@ -3,11 +3,10 @@
 use std::fmt::Write as _;
 
 use super::{ONE_INCH, RuleDims, ShipoutState};
-use crate::base::consts::INVALID_HANDLE;
 use crate::base::params::IntPar;
 use crate::base::units::{MemAddr, MemPtr};
 use crate::env::EngineEnv;
-use crate::ffi::bridge::{issue_error, issue_warning, output_close, output_open, output_write};
+use crate::ffi::bridge::{issue_error, issue_warning};
 use crate::memory::mem::MemState;
 use crate::memory::node::{AnyNode, BoxNode, KernNode, MathNode, NodePtr};
 use crate::preview::sync_index::{PreviewSyncIndex, RecordKind};
@@ -15,8 +14,16 @@ use crate::state::{EngineExecutionMode, EngineState};
 use crate::tables::eqtb::EqtbState;
 
 const SYNCTEX_VERSION: i32 = 1;
-/// The pseudo file of a resident compile, which only feeds the preview index.
-const PREVIEW_HANDLE: usize = usize::MAX;
+/// Where SyncTeX records go.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum SynctexTarget {
+    #[default]
+    Closed,
+    /// A resident compile, whose records only feed the preview index.
+    Preview,
+    /// The env's `.synctex.gz` file.
+    File,
+}
 
 impl ShipoutState {
     fn synctex_curh(&self) -> i32 {
@@ -35,16 +42,18 @@ impl EqtbState {
 }
 
 /// Bytes written (or that would be for the preview sink), -1 on failure.
-fn synctex_write(env: &mut EngineEnv, handle: usize, s: &str) -> i32 {
+fn synctex_write(env: &mut EngineEnv, target: SynctexTarget, s: &str) -> i32 {
     let bytes = s.as_bytes();
     if bytes.is_empty() {
         return 0;
     }
-    if handle == PREVIEW_HANDLE {
-        return i32::try_from(bytes.len()).unwrap_or(i32::MAX);
-    }
-    if output_write(env, handle, bytes) {
-        bytes.len() as i32
+    let written = match target {
+        SynctexTarget::Preview => true,
+        SynctexTarget::File => env.write_synctex(bytes),
+        SynctexTarget::Closed => false,
+    };
+    if written {
+        i32::try_from(bytes.len()).unwrap_or(i32::MAX)
     } else {
         -1
     }
@@ -52,16 +61,16 @@ fn synctex_write(env: &mut EngineEnv, handle: usize, s: &str) -> i32 {
 
 impl SynctexCtxt {
     fn abort(&mut self, env: &mut EngineEnv) {
-        if self.file != INVALID_HANDLE && self.file != PREVIEW_HANDLE {
-            output_close(env, self.file);
-            self.file = INVALID_HANDLE;
+        if self.target == SynctexTarget::File {
+            env.close_synctex();
+            self.target = SynctexTarget::Closed;
         }
         self.root_name = None;
         self.flags.off = true;
     }
 
     fn record(&mut self, env: &mut EngineEnv, s: &str) -> bool {
-        let len = synctex_write(env, self.file, s);
+        let len = synctex_write(env, self.target, s);
         if len > 0 {
             self.total_length += len;
             true
@@ -73,7 +82,7 @@ impl SynctexCtxt {
 
     /// Like [`record`] but restarting the running length (anchors and the preamble).
     fn record_restart(&mut self, env: &mut EngineEnv, s: &str) -> bool {
-        let len = synctex_write(env, self.file, s);
+        let len = synctex_write(env, self.target, s);
         if len > 0 {
             self.total_length = len;
             true
@@ -124,7 +133,7 @@ impl SynctexCtxt {
         {
             index.record(kind, [tag, line, self.curh, self.curv], dims);
         }
-        if self.file == PREVIEW_HANDLE {
+        if self.target == SynctexTarget::Preview {
             self.lastv = self.curv;
             return;
         }
@@ -139,7 +148,7 @@ impl SynctexCtxt {
             let _ = write!(s, "{sep}{}", d / unit);
         }
         s.push('\n');
-        let len = synctex_write(env, self.file, &s);
+        let len = synctex_write(env, self.target, &s);
         self.lastv = self.curv;
         if len > 0 {
             self.total_length += len;
@@ -169,38 +178,33 @@ impl SynctexCtxt {
         );
     }
 
-    fn synctex_dot_open(
-        &mut self,
-        env: &mut EngineEnv,
-        eqtb: &EqtbState,
-        job_name: &[u8],
-    ) -> usize {
+    fn synctex_dot_open(&mut self, env: &mut EngineEnv, eqtb: &EqtbState, job_name: &[u8]) -> bool {
         if self.flags.off || !eqtb.synctex_enabled() {
-            return INVALID_HANDLE;
+            return false;
         }
-        if self.file != INVALID_HANDLE {
-            return self.file;
+        if self.target != SynctexTarget::Closed {
+            return true;
         }
 
         if self.preview_index.is_some() {
-            self.file = PREVIEW_HANDLE;
+            self.target = SynctexTarget::Preview;
         } else {
             let mut name = job_name.to_vec();
             if name.is_empty() {
                 self.abort(env);
-                return INVALID_HANDLE;
+                return false;
             }
             name.extend_from_slice(b".synctex.gz");
-            self.file = output_open(env, &name, true);
-            if self.file == INVALID_HANDLE {
+            if !env.open_synctex(&name) {
                 self.abort(env);
-                return INVALID_HANDLE;
+                return false;
             }
+            self.target = SynctexTarget::File;
         }
 
         if !self.record_restart(env, &format!("SyncTeX Version:{SYNCTEX_VERSION}\n")) {
             self.abort(env);
-            return INVALID_HANDLE;
+            return false;
         }
         if self.magnification == 0 {
             self.magnification = 1000;
@@ -210,7 +214,7 @@ impl SynctexCtxt {
             self.record_input(env, 1, &root_name);
         }
         self.count = 0;
-        self.file
+        true
     }
 
     fn synctex_prepare_content(
@@ -218,23 +222,23 @@ impl SynctexCtxt {
         env: &mut EngineEnv,
         eqtb: &EqtbState,
         job_name: &[u8],
-    ) -> usize {
+    ) -> bool {
         if self.flags.content_ready {
-            return self.file;
+            return self.target != SynctexTarget::Closed;
         }
-        if self.synctex_dot_open(env, eqtb, job_name) != INVALID_HANDLE
+        if self.synctex_dot_open(env, eqtb, job_name)
             && self.record_settings(env)
             && self.record(env, "Content:\n")
         {
             self.flags.content_ready = true;
-            return self.file;
+            return true;
         }
         self.abort(env);
-        INVALID_HANDLE
+        false
     }
 
     fn record_settings(&mut self, env: &mut EngineEnv) -> bool {
-        if self.file == INVALID_HANDLE {
+        if self.target == SynctexTarget::Closed {
             return true;
         }
         let s = format!(
@@ -247,7 +251,7 @@ impl SynctexCtxt {
 
 pub fn synctex_init_command(st: &mut EngineState) {
     let synctex = &mut st.synctex;
-    synctex.file = INVALID_HANDLE;
+    synctex.target = SynctexTarget::Closed;
     synctex.root_name = None;
     synctex.count = 0;
     synctex.node = None;
@@ -277,12 +281,12 @@ pub fn synctex_init_command(st: &mut EngineState) {
 
 pub fn synctex_terminate(st: &mut EngineState, env: &mut EngineEnv) {
     let synctex = &mut st.synctex;
-    if synctex.file != INVALID_HANDLE {
+    if synctex.target != SynctexTarget::Closed {
         synctex.record_postamble(env);
-        if synctex.file != PREVIEW_HANDLE {
-            output_close(env, synctex.file);
+        if synctex.target == SynctexTarget::File {
+            env.close_synctex();
         }
-        synctex.file = INVALID_HANDLE;
+        synctex.target = SynctexTarget::Closed;
     }
     synctex.abort(env);
 }
@@ -318,8 +322,7 @@ pub fn synctex_start_input(
         return;
     }
 
-    if synctex.file != INVALID_HANDLE
-        || synctex.synctex_dot_open(env, &st.eqtb, job_name) != INVALID_HANDLE
+    if synctex.target != SynctexTarget::Closed || synctex.synctex_dot_open(env, &st.eqtb, job_name)
     {
         synctex.record_input(env, tag, current_name);
     }
@@ -344,14 +347,14 @@ pub fn synctex_sheet(st: &mut EngineState, env: &mut EngineEnv, mag: i32, job_na
     if total_pages == 0 && mag > 0 {
         synctex.magnification = mag;
     }
-    if synctex.synctex_prepare_content(env, &st.eqtb, job_name) != INVALID_HANDLE {
+    if synctex.synctex_prepare_content(env, &st.eqtb, job_name) {
         synctex.record_sheet(env, '{', total_pages + 1);
     }
 }
 
 pub fn synctex_teehs(st: &mut EngineState, env: &mut EngineEnv) {
     let synctex = &mut st.synctex;
-    if synctex.flags.off || synctex.file == INVALID_HANDLE {
+    if synctex.flags.off || synctex.target == SynctexTarget::Closed {
         return;
     }
     synctex.record_sheet(env, '}', st.shipout.total_pages);
@@ -361,7 +364,7 @@ pub fn synctex_teehs(st: &mut EngineState, env: &mut EngineEnv) {
 }
 
 fn synctex_active(st: &EngineState) -> bool {
-    !st.synctex.flags.off && st.eqtb.synctex_enabled() && st.synctex.file != INVALID_HANDLE
+    !st.synctex.flags.off && st.eqtb.synctex_enabled() && st.synctex.target != SynctexTarget::Closed
 }
 
 fn enter_node(st: &mut EngineState, node: impl MemAddr, tag: i32, line: i32) {
@@ -551,7 +554,7 @@ pub fn synctex_current(st: &mut EngineState, env: &mut EngineEnv) {
             &[],
         );
     }
-    if synctex.file == PREVIEW_HANDLE {
+    if synctex.target == SynctexTarget::Preview {
         synctex.lastv = curv;
         return;
     }
@@ -563,7 +566,7 @@ pub fn synctex_current(st: &mut EngineState, env: &mut EngineEnv) {
         curh / unit,
         curv / unit
     );
-    let len = synctex_write(env, synctex.file, &s);
+    let len = synctex_write(env, synctex.target, &s);
     synctex.lastv = curv;
     if len > 0 {
         synctex.total_length += len;
@@ -583,7 +586,7 @@ pub(crate) struct SynctexFlags {
 
 #[derive(Clone)]
 pub(crate) struct SynctexCtxt {
-    pub file: usize,
+    pub target: SynctexTarget,
     pub root_name: Option<Vec<u8>>,
     pub count: i32,
     pub node: MemPtr,
@@ -607,7 +610,7 @@ pub(crate) struct SynctexCtxt {
 impl Default for SynctexCtxt {
     fn default() -> Self {
         Self {
-            file: INVALID_HANDLE,
+            target: SynctexTarget::Closed,
             root_name: None,
             count: 0,
             node: None,

@@ -23,7 +23,6 @@ use crate::build::main_control::BoxContext;
 use crate::build::packaging::PackSpec;
 use crate::build::pagebuilder::PageContents;
 use crate::env::EngineEnv;
-use crate::ffi::bridge::output_flush;
 use crate::memory::mem::{CONTRIB_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
 use crate::memory::node::{AnyNode, NodePtr, PageInsNode};
 use crate::scanning::input::{InputName, TOKEN_LIST, TokenType, level_start};
@@ -217,7 +216,7 @@ pub(crate) fn issue_message(
         begin_capture(st, env, DiagnosticKind::Written);
         print(st, env, s);
         end_capture(st, env);
-        output_flush(env, st.shipout.rust_stdout);
+        env.flush_terminal();
     } else {
         let help: &[&'static str] = if !st.eqtb.tok_par(TokPar::ErrHelp).is_null() {
             &[]

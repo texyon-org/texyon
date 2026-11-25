@@ -1,13 +1,13 @@
 //! Shipping boxes out to the XDV file.
 
-use crate::base::consts::{INVALID_HANDLE, MAX_DIMEN, MIN_HALFWORD, NULL_FONT};
+use crate::base::consts::{MAX_DIMEN, MIN_HALFWORD, NULL_FONT};
 use crate::base::params::{DimenPar, IntPar};
 use crate::base::units::{Dir, FontId, GlueOrder, GlueSign, MemIdx, MemPtr, Scaled, StrNumber};
 use crate::build::packaging::LrState;
 use crate::build::pagebuilder::PageContents;
 use crate::engine::output_file_extension;
 use crate::env::EngineEnv;
-use crate::ffi::bridge::{output_close, output_flush, output_open, strerror};
+use crate::ffi::bridge::strerror;
 use crate::files::io::{make_name_string, open_log_file, pack_job_name};
 use crate::fonts::FontState;
 use crate::fonts::ext::apply_tfm_font_mapping;
@@ -173,7 +173,7 @@ pub(crate) fn ship_out(
             print_char(st, env, b'.');
         }
     }
-    output_flush(env, st.shipout.rust_stdout);
+    env.flush_terminal();
 
     if tracing_output {
         print_char(st, env, b']');
@@ -228,7 +228,7 @@ pub(crate) fn ship_out(
         print_char(st, env, b']');
     }
     st.shipout.dead_cycles = 0;
-    output_flush(env, st.shipout.rust_stdout);
+    env.flush_terminal();
     st.mem.flush_node_list(p)?;
     synctex_teehs(st, env);
     Ok(())
@@ -270,8 +270,7 @@ fn ship_page(
             open_log_file(st, env)?;
         }
         let path = pack_job_name(st, output_file_extension(st))?;
-        st.shipout.dvi.file = output_open(env, &path, false);
-        if st.shipout.dvi.file == INVALID_HANDLE {
+        if !env.open_xdv(&path) {
             return Err(Abort::CannotOpenOutput {
                 name: path.as_slice().into(),
             });
@@ -1485,7 +1484,7 @@ pub(crate) fn finalize_dvi_file(st: &mut EngineState, env: &mut EngineEnv) -> Re
         .dvi
         .finish(env, id_byte(st.config.semantic_pagination_enabled))?;
 
-    let k = u8::from(output_close(env, st.shipout.dvi.file));
+    let k = u8::from(env.close_xdv());
     if k == 0 {
         print_nl(st, env, "Output written on ");
         print(st, env, st.shipout.output_file_name);
@@ -1689,13 +1688,10 @@ pub(crate) struct ShipoutState {
     pub output_can_end: bool,
     pub pdf_last_x_pos: i32,
     pub pdf_last_y_pos: i32,
-    pub write_file: [usize; 16],
     pub write_open: [bool; 18],
     pub write_name: [Option<Vec<u8>>; 16],
     /// Code units emitted before the current replay fence.
     pub write_prefix: [Vec<i32>; 16],
-    pub rust_stdout: usize,
-    pub log_file: usize,
     /// Transcript bytes written so far, captured with every checkpoint.
     pub log_bytes: u64,
     /// Where this operation's transcript continues the previous one, if it

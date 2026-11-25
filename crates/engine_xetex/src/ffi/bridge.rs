@@ -9,9 +9,7 @@ pub(crate) use texyon_bridge_core::{CoreBridgeState, Diagnostic, FileFormat, Fou
 
 use crate::env::EngineEnv;
 use crate::files::input_file::InputSource;
-use crate::preview::replay::adapter::{
-    holds_directory, last_abspath, open_named, open_primary, record_written,
-};
+use crate::preview::replay::adapter::{holds_directory, last_abspath, open_named, open_primary};
 
 /// Runs `f` with a bridge state over the env's host, for code that names
 /// files by id. Files it leaves open are dropped with the state.
@@ -19,6 +17,8 @@ pub(crate) fn with_bridge_state<R>(
     env: &mut EngineEnv,
     f: impl FnOnce(&mut CoreBridgeState<'_, '_>) -> R,
 ) -> R {
+    // C reports straight to the host, after what the terminal holds.
+    env.flush_terminal();
     f(&mut CoreBridgeState::new(&mut env.host))
 }
 
@@ -89,41 +89,9 @@ pub(crate) fn input_open_primary(env: &mut EngineEnv) -> Option<OpenedSource> {
     Some(disk_opened(env, opened))
 }
 
-/// Opens output file `path`, or returns 0.
-pub(crate) fn output_open(env: &mut EngineEnv, path: &[u8], is_gz: bool) -> usize {
-    let path = String::from_utf8_lossy(path);
-    record_written(&path);
-    let handle = env.host.open_output(&path, is_gz);
-    env.push_output(handle)
-}
-
-pub(crate) fn output_open_stdout(env: &mut EngineEnv) -> usize {
-    let handle = env.host.open_stdout();
-    env.push_output(handle)
-}
-
 pub(crate) fn directory_exists(env: &mut EngineEnv, dir: &[u8]) -> bool {
     let dir = String::from_utf8_lossy(dir);
     holds_directory(&dir) || env.host.directory_exists(&dir)
-}
-
-pub(crate) fn output_putc(env: &mut EngineEnv, handle: usize, byte: u8) {
-    env.output_write(handle, &[byte]);
-}
-
-/// Writes `data` to `handle`, returning whether it was written.
-#[must_use]
-pub(crate) fn output_write(env: &mut EngineEnv, handle: usize, data: &[u8]) -> bool {
-    !env.output_write(handle, data)
-}
-
-pub(crate) fn output_flush(env: &mut EngineEnv, handle: usize) {
-    env.output_flush(handle);
-}
-
-/// Closes `handle`, returning `true` on an error.
-pub(crate) fn output_close(env: &mut EngineEnv, handle: usize) -> bool {
-    env.output_close(handle)
 }
 
 /// Appends `text`. A text with a NUL appends nothing.
@@ -134,16 +102,19 @@ pub(crate) fn diag_append(diag: &mut Diagnostic, text: &str) {
 }
 
 pub(crate) fn diag_finish(env: &mut EngineEnv, diag: Diagnostic) {
+    env.flush_terminal();
     env.host.finish_diagnostic(diag);
 }
 
 /// Issues `text` as a warning, empty when it holds a NUL.
 pub(crate) fn issue_warning(env: &mut EngineEnv, text: &str) {
+    env.flush_terminal();
     env.host.issue_warning(&c_view(text.as_bytes()));
 }
 
 /// Issues `text` as an error, empty when it holds a NUL.
 pub(crate) fn issue_error(env: &mut EngineEnv, text: &str) {
+    env.flush_terminal();
     env.host.issue_error(&c_view(text.as_bytes()));
 }
 

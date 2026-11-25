@@ -18,7 +18,6 @@ use crate::engine::{
     run_resident_document,
 };
 use crate::env::EngineEnv;
-use crate::ffi::bridge::output_open_stdout;
 use crate::files::io::close_files_and_terminate;
 use crate::preview::checkpoint::{
     BudgetError, CheckpointLadder, EngineBundle, LadderBudget, RungAdmission, StringWatermark,
@@ -547,7 +546,7 @@ impl IncrementalXeTeXSession {
                 let horizon_last = viewport.map(|range| range.last.max(first_shipped));
                 ladder.clear_protections();
                 configure(state, &config);
-                state.shipout.rust_stdout = output_open_stdout(env);
+                env.open_terminal();
                 run_document(
                     state,
                     env,
@@ -647,7 +646,7 @@ impl IncrementalXeTeXSession {
                     ladder.unprotect(target);
                 }
                 configure(state, &config);
-                state.shipout.rust_stdout = output_open_stdout(env);
+                env.open_terminal();
                 run_document(
                     state,
                     env,
@@ -1023,7 +1022,9 @@ fn catch_operation(
 fn with_env<R>(launcher: &mut CoreBridgeLauncher, f: impl FnOnce(&mut EngineEnv) -> R) -> R {
     let _lock = engine_lock();
     let mut env = EngineEnv::new(launcher.host());
-    f(&mut env)
+    let result = f(&mut env);
+    env.flush_outputs();
+    result
 }
 
 #[cfg(test)]

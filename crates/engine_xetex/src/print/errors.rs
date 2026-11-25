@@ -14,7 +14,7 @@ use crate::base::token::TokenList;
 use crate::base::units::{BufPos, FontId, StrNumber};
 use crate::engine::cleanup;
 use crate::env::EngineEnv;
-use crate::ffi::bridge::{output_flush, set_error_message};
+use crate::ffi::bridge::set_error_message;
 use crate::files::io::{FileName, close_files_and_terminate, open_log_file};
 use crate::memory::node::link_of;
 use crate::scanning::input::{TokenType, back_input};
@@ -67,7 +67,7 @@ fn post_error_message(st: &mut EngineState, env: &mut EngineEnv, need_to_print_i
     st.errors.history = HISTORY_FATAL_ERROR;
     let _ = close_files_and_terminate(st, env);
     cleanup(st, env);
-    output_flush(env, st.shipout.rust_stdout);
+    env.flush_terminal();
 }
 
 /// TeX's `error`, after the message is printed: the context, the help, and

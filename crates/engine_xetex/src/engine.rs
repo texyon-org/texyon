@@ -24,7 +24,7 @@ use crate::build::main_control::{main_control, main_control_resume};
 use crate::build::packaging::{CurMarks, MarksAction};
 use crate::build::pagebuilder::{PageContents, initialize_pagebuilder_variables};
 use crate::env::EngineEnv;
-use crate::ffi::bridge::{output_open_stdout, set_error_message};
+use crate::ffi::bridge::set_error_message;
 use crate::ffi::clock::{get_date_and_time, get_seconds_and_micros, init_start_time};
 use crate::files::format_io::{load_fmt_file, store_fmt_file};
 use crate::files::io::{
@@ -588,7 +588,7 @@ pub(crate) fn initialize_engine(
     dump_name: &str,
     build_date: libc::time_t,
 ) -> InitOutcome {
-    st.shipout.rust_stdout = output_open_stdout(env);
+    env.open_terminal();
 
     if st.config.file_line_error_style_p < 0 {
         st.config.file_line_error_style_p = 0;

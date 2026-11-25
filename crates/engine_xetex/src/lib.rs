@@ -167,6 +167,7 @@ impl TexEngine {
                 .expect("invalid build date")
                 .as_secs() as libc::time_t,
         );
+        env.flush_outputs();
 
         match r {
             0 => Ok(TexOutcome::Spotless),

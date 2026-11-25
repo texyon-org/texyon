@@ -11,7 +11,6 @@ use crate::base::params::{IntPar, TokPar};
 use crate::base::token::{Build, TokCursor, Token, TokenKind, TokenList};
 use crate::base::units::BufPos;
 use crate::env::EngineEnv;
-use crate::ffi::bridge::output_flush;
 use crate::files::io::{FileSlot, input_slot_line};
 use crate::memory::mem::MemState;
 use crate::memory::node::{AlignRecord, NodePtr};
@@ -519,7 +518,7 @@ fn get_next_slow(st: &mut EngineState, env: &mut EngineEnv) -> Result<(), Abort>
                         if st.input.cur_input.name.shows_parens() {
                             print_char(st, env, b')');
                             st.input.open_parens -= 1;
-                            output_flush(env, st.shipout.rust_stdout);
+                            env.flush_terminal();
                         }
                         st.input.force_eof = false;
                         end_file_reading(st, env)?;

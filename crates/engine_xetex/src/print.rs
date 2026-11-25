@@ -11,8 +11,7 @@ use crate::base::mode::ModeName;
 use crate::base::params::{DimenPar, GluePar, IntPar};
 use crate::base::token::{TokCursor, TokenList};
 use crate::base::units::{FontId, GlueOrder, MemPtr, Scaled, StrNumber};
-use crate::env::EngineEnv;
-use crate::ffi::bridge::output_putc;
+use crate::env::{EngineEnv, WriteStream};
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::memory::glue_store::GlueSpecId;
 use crate::memory::node::{
@@ -312,7 +311,7 @@ fn warn_char(st: &mut EngineState, c: i32) {
 }
 
 pub(crate) fn log_putc(st: &mut EngineState, env: &mut EngineEnv, byte: u8) {
-    output_putc(env, st.shipout.log_file, byte);
+    env.log_put(&[byte]);
     st.shipout.log_bytes += 1;
 }
 
@@ -321,7 +320,7 @@ pub(crate) fn print_ln(st: &mut EngineState, env: &mut EngineEnv) {
         sel @ (Selector::TermOnly | Selector::LogOnly | Selector::TermAndLog) => {
             warn_char(st, i32::from(b'\n'));
             if sel != Selector::LogOnly {
-                output_putc(env, st.shipout.rust_stdout, b'\n');
+                env.terminal_put(b"\n");
             }
             if sel != Selector::TermOnly {
                 log_putc(st, env, b'\n');
@@ -335,7 +334,9 @@ pub(crate) fn print_ln(st: &mut EngineState, env: &mut EngineEnv) {
         }
         Selector::NoPrint | Selector::Pseudo | Selector::NewString => {}
         Selector::File(j) => {
-            output_putc(env, st.shipout.write_file[usize::from(j)], b'\n');
+            if let Some(stream) = WriteStream::new(usize::from(j)) {
+                env.write_put(stream, b"\n");
+            }
             st.shipout.write_prefix[usize::from(j)].push(i32::from(b'\n'));
         }
     }
@@ -354,7 +355,7 @@ pub(crate) fn print_raw_char(
             let to_log = sel != Selector::TermOnly;
             warn_char(st, s);
             if to_term {
-                output_putc(env, st.shipout.rust_stdout, s as u8);
+                env.terminal_put(&[s as u8]);
             }
             if to_log {
                 log_putc(st, env, s as u8);
@@ -368,7 +369,7 @@ pub(crate) fn print_raw_char(
                 }
             }
             if to_term && st.shipout.term_offset == st.config.max_print_line {
-                output_putc(env, st.shipout.rust_stdout, b'\n');
+                env.terminal_put(b"\n");
                 st.shipout.term_offset = 0;
             }
             if to_log && st.shipout.file_offset == st.config.max_print_line {
@@ -391,7 +392,9 @@ pub(crate) fn print_raw_char(
             }
         }
         Selector::File(j) => {
-            output_putc(env, st.shipout.write_file[usize::from(j)], s as u8);
+            if let Some(stream) = WriteStream::new(usize::from(j)) {
+                env.write_put(stream, &[s as u8]);
+            }
             st.shipout.write_prefix[usize::from(j)].push(s);
         }
     }

@@ -7,18 +7,15 @@ use std::{iter, mem, slice};
 use texyon_bridge_core::EOF;
 
 use crate::base::cmd::Cmd;
-use crate::base::consts::{BIGGEST_USV, CLOSED, EMPTY_STRING, INVALID_HANDLE, JUST_OPEN};
+use crate::base::consts::{BIGGEST_USV, CLOSED, EMPTY_STRING, JUST_OPEN};
 use crate::base::params::IntPar;
 use crate::base::token::TokCursor;
 use crate::base::units::{BufPos, StrNumber};
 use crate::base::utf8;
 use crate::base::utf8::{BYTES_FROM_UTF8, OFFSETS_FROM_UTF8, next_utf8_char};
 use crate::engine::output_file_extension;
-use crate::env::EngineEnv;
-use crate::ffi::bridge::{
-    FileFormat, directory_exists, input_open, input_open_primary, output_close, output_flush,
-    output_open,
-};
+use crate::env::{EngineEnv, WriteStream};
+use crate::ffi::bridge::{FileFormat, directory_exists, input_open, input_open_primary};
 use crate::ffi::teckit_icu::FontMappingHandle;
 use crate::files::input_file::{Decoder, Encoding, IcuConverter, InputFile};
 use crate::print::diagnostic::warn_host;
@@ -800,11 +797,9 @@ pub(crate) fn open_log_file(st: &mut EngineState, env: &mut EngineEnv) -> Result
 
     let log_path = pack_job_name(st, ".log")?;
 
-    let handle = output_open(env, &log_path, false);
-    if handle == INVALID_HANDLE {
+    if !env.open_log(&log_path) {
         return Err(Abort::Internal("cannot open log file output"));
     }
-    st.shipout.log_file = handle;
     st.shipout.log_bytes = 0;
     st.shipout.log_resumed_at = None;
 
@@ -828,36 +823,28 @@ pub(crate) fn open_log_file(st: &mut EngineState, env: &mut EngineEnv) -> Result
     Ok(())
 }
 
-/// Recreates bridge-owned output handles after restoring a resident checkpoint.
-///
-/// Checkpoints keep the logical output state, but bridge handles and
-/// diagnostic pointers are valid only for the operation that created them.
+/// Reopens the files a restored resident checkpoint writes to. Checkpoints keep
+/// what was written, the env holds the open files of one operation.
 pub(crate) fn reopen_resident_outputs(
     st: &mut EngineState,
     env: &mut EngineEnv,
 ) -> Result<(), Abort> {
     st.diagnostics.resume_after(st.shipout.diagnostics_issued);
-    st.shipout.write_file = [INVALID_HANDLE; 16];
-    st.shipout.log_file = INVALID_HANDLE;
-    st.shipout.dvi.file = INVALID_HANDLE;
+    env.discard_files();
 
     if st.errors.log_opened {
         let log_path = pack_job_name(st, ".log")?;
-        let handle = output_open(env, &log_path, false);
-        if handle == INVALID_HANDLE {
+        if !env.open_log(&log_path) {
             return Err(Abort::Internal("cannot reopen log file output"));
         }
-        st.shipout.log_file = handle;
         st.shipout.log_resumed_at = Some(st.shipout.log_bytes);
     }
 
     if st.shipout.output_file_name != StrNumber::NONE {
         let dvi_path = pack_job_name(st, output_file_extension(st))?;
-        let handle = output_open(env, &dvi_path, false);
-        if handle == INVALID_HANDLE {
+        if !env.open_xdv(&dvi_path) {
             return Err(Abort::Internal("cannot reopen XDV file output"));
         }
-        st.shipout.dvi.file = handle;
     }
 
     Ok(())
@@ -870,7 +857,9 @@ pub(crate) fn close_files_and_terminate(
     for k in 0usize..=15 {
         if st.shipout.write_open[k] {
             ensure_write_stream_open(st, env, k)?;
-            output_close(env, st.shipout.write_file[k]);
+            if let Some(stream) = WriteStream::new(k) {
+                env.close_write(stream);
+            }
         }
     }
 
@@ -882,7 +871,7 @@ pub(crate) fn close_files_and_terminate(
 
     if st.errors.log_opened {
         log_putc(st, env, b'\n');
-        output_close(env, st.shipout.log_file);
+        env.close_log();
         st.shipout.selector = st.shipout.selector.without_log();
         if st.shipout.selector == Selector::TermOnly {
             print_nl(st, env, "Transcript written on ");
@@ -1060,7 +1049,7 @@ pub(crate) fn start_input(
     print_char(st, env, b'(');
     st.input.open_parens += 1;
     print(st, env, full_name);
-    output_flush(env, st.shipout.rust_stdout);
+    env.flush_terminal();
 
     let tracing_stack_levels = st.eqtb.int_par(IntPar::TracingStackLevels);
     if tracing_stack_levels > 0 {

@@ -14,7 +14,6 @@ use crate::base::params::IntPar;
 use crate::base::token::{Build, TokCursor, Token, TokenList};
 use crate::base::units::{BufPos, PoolPos, StrNumber};
 use crate::env::EngineEnv;
-use crate::ffi::bridge::output_flush;
 use crate::files::io::{FileSlot, input_slot_line, u_close};
 use crate::memory::mem::MemState;
 use crate::memory::node::{NodePtr, PseudoFileNode, PseudoLineNode, PseudoWord};
@@ -519,7 +518,7 @@ pub(crate) fn pseudo_start(st: &mut EngineState, env: &mut EngineEnv) -> Result<
         st.input.cur_input.name = InputName::Pseudo { traced: true };
         print(st, env, "( ");
         st.input.open_parens += 1;
-        output_flush(env, st.shipout.rust_stdout);
+        env.flush_terminal();
     } else {
         st.input.cur_input.name = InputName::Pseudo { traced: false };
         st.input.cur_input.synctex_tag = 0;

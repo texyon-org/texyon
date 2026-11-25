@@ -5,7 +5,6 @@ use std::mem;
 use crate::base::consts::TEX_INFINITY;
 use crate::base::units::Scaled;
 use crate::env::EngineEnv;
-use crate::ffi::bridge::output_write;
 use crate::memory::glyph_arena::FixedPoint;
 use crate::preview::page_manifest::PageManifest;
 use crate::print::errors::Abort;
@@ -73,7 +72,6 @@ impl MoveReg {
 
 #[derive(Clone, Default)]
 pub(crate) struct DviWriter {
-    pub file: usize,
     buf: Vec<u8>,
     limit: i32,
     ptr: i32,
@@ -139,7 +137,6 @@ impl DviWriter {
     /// the page manifest.
     pub(crate) fn restore(&mut self, saved: &DviWriter) {
         let DviWriter {
-            file,
             ref buf,
             limit,
             ptr,
@@ -152,7 +149,6 @@ impl DviWriter {
         } = *saved;
         self.buf.clone_from(buf);
         *self = DviWriter {
-            file,
             buf: mem::take(&mut self.buf),
             limit,
             ptr,
@@ -166,7 +162,7 @@ impl DviWriter {
     }
 
     fn write_to_file(&self, env: &mut EngineEnv, a: i32, b: i32) -> Result<(), Abort> {
-        if !output_write(env, self.file, &self.buf[a as usize..=b as usize]) {
+        if !env.write_xdv(&self.buf[a as usize..=b as usize]) {
             return Err(Abort::Internal("failed to write data to XDV file"));
         }
         Ok(())

@@ -2,13 +2,12 @@
 
 use super::pic::PageboxType;
 use super::{dvi_special_from_cur_string, synch_h, synch_v};
-use crate::base::consts::INVALID_HANDLE;
 use crate::base::mode::Mode;
 use crate::base::params::IntPar;
 use crate::base::token::{TokCursor, Token, TokenList};
 use crate::base::units::StrNumber;
-use crate::env::EngineEnv;
-use crate::ffi::bridge::{output_close, output_open, output_putc, shell_escape};
+use crate::env::{EngineEnv, WriteStream};
+use crate::ffi::bridge::shell_escape;
 use crate::files::io::{FileName, may_write};
 use crate::memory::node::{NodePtr, OpenNode, PicNode, WhatsitNode, WhatsitVariant, WriteNode};
 use crate::print::diagnostic::{DiagnosticKind, begin_capture, end_capture};
@@ -237,18 +236,17 @@ fn out_write_stream(
     let stream = j as usize;
     if st.shipout.write_open[stream] {
         ensure_write_stream_open(st, env, stream)?;
-        output_close(env, st.shipout.write_file[stream]);
+        if let Some(file) = WriteStream::new(stream) {
+            env.close_write(file);
+        }
     }
     let Some(open) = open else {
         st.shipout.write_open[stream] = false;
-        if j < 16 {
-            st.shipout.write_file[stream] = INVALID_HANDLE;
-        }
         return Ok(());
     };
-    if j >= 16 {
+    let Some(write_stream) = WriteStream::new(stream) else {
         return Ok(());
-    }
+    };
 
     let open = st.mem[open];
     let ext = if st.strings.length(open.ext) == 0 {
@@ -262,15 +260,9 @@ fn out_write_stream(
         ext,
     };
     let path = file.path(&st.strings);
-    let handle = if may_write(env, &path) {
-        output_open(env, &path, false)
-    } else {
-        INVALID_HANDLE
-    };
-    if handle == INVALID_HANDLE {
+    if !(may_write(env, &path) && env.open_write(write_stream, &path)) {
         return Err(prompt_file_name(st, env, FilePrompt::Output, file, &path));
     }
-    st.shipout.write_file[stream] = handle;
     st.shipout.write_open[stream] = true;
     st.shipout.write_name[stream] = Some(path);
     st.shipout.write_prefix[stream].clear();
@@ -293,7 +285,10 @@ pub(crate) fn ensure_write_stream_open(
     env: &mut EngineEnv,
     stream: usize,
 ) -> Result<(), Abort> {
-    if st.shipout.write_file[stream] != INVALID_HANDLE {
+    let Some(write_stream) = WriteStream::new(stream) else {
+        return Ok(());
+    };
+    if env.write_is_open(write_stream) {
         return Ok(());
     }
     let Some(name) = &st.shipout.write_name[stream] else {
@@ -301,15 +296,15 @@ pub(crate) fn ensure_write_stream_open(
             name: Box::default(),
         });
     };
-    let handle = output_open(env, name, false);
-    if handle == INVALID_HANDLE {
+    if !env.open_write(write_stream, name) {
         return Err(Abort::CannotOpenOutput {
             name: name.as_slice().into(),
         });
     }
-    for &code_unit in &st.shipout.write_prefix[stream] {
-        output_putc(env, handle, code_unit as u8);
-    }
-    st.shipout.write_file[stream] = handle;
+    let prefix: Vec<u8> = st.shipout.write_prefix[stream]
+        .iter()
+        .map(|&code_unit| code_unit as u8)
+        .collect();
+    env.write_put(write_stream, &prefix);
     Ok(())
 }
