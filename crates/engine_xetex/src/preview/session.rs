@@ -25,7 +25,6 @@ use crate::preview::checkpoint::{
 use crate::preview::introspect;
 use crate::preview::introspect::DefinedCommand;
 use crate::preview::journal::Journaled;
-use crate::preview::replay::adapter::{install, observed_bytes, open_position};
 use crate::preview::replay::fence::ReplayFence;
 use crate::preview::replay::source::SourcePath;
 use crate::preview::sync_index::{PreviewSyncIndex, SyncIndex};
@@ -96,6 +95,7 @@ fn install_fence_controller(
     snapshot: &SourceSnapshot,
     plan: FencePlan,
     current_clock: u64,
+    observed_bytes: usize,
     horizon_rung: &mut Option<usize>,
     activity: &mut CheckpointActivity,
 ) -> FenceControllerGuard {
@@ -113,7 +113,7 @@ fn install_fence_controller(
             strings_base,
             budget,
             next_clock: current_clock.saturating_add(PERIODIC_FENCE_TOKENS),
-            next_source_bytes: observed_bytes().saturating_add(FIRST_PERIODIC_FENCE_SOURCE_BYTES),
+            next_source_bytes: observed_bytes.saturating_add(FIRST_PERIODIC_FENCE_SOURCE_BYTES),
             pending_fences,
             horizon_last,
             horizon_deadline,
@@ -128,18 +128,19 @@ fn install_fence_controller(
 
 /// Capture a protected edit fence before fetching the next command.
 ///
-/// At this point the source adapter still points to the start of the next TeX
-/// line, so a subsequent edit within that line can reuse the fence.
-pub(crate) fn capture_prefetch_fence(state: &mut EngineState) {
-    let _ = capture_fence(state, false, false);
+/// At this point the sources still point to the start of the next TeX line,
+/// so a subsequent edit within that line can reuse the fence.
+pub(crate) fn capture_prefetch_fence(state: &mut EngineState, env: &mut EngineEnv) {
+    let _ = capture_fence(state, env, false, false);
 }
 
-pub(crate) fn capture_command_fence(state: &mut EngineState) -> bool {
-    capture_fence(state, true, true)
+pub(crate) fn capture_command_fence(state: &mut EngineState, env: &mut EngineEnv) -> bool {
+    capture_fence(state, env, true, true)
 }
 
 fn capture_fence(
     state: &mut EngineState,
+    env: &mut EngineEnv,
     resume_pending_command: bool,
     allow_periodic_or_horizon: bool,
 ) -> bool {
@@ -164,9 +165,12 @@ fn capture_fence(
         }
         let horizon_due =
             allow_periodic_or_horizon && controller.horizon_last.is_some_and(|last| shipped > last);
+        let Some(sources) = env.sources() else {
+            return false;
+        };
         let mut protected = false;
         for (path, fences) in &mut controller.pending_fences {
-            let Some(position) = open_position(path) else {
+            let Some(position) = sources.open_position(path) else {
                 continue;
             };
             if fences.first().is_some_and(|offset| position >= *offset) {
@@ -177,7 +181,7 @@ fn capture_fence(
         controller
             .pending_fences
             .retain(|(_, fences)| !fences.is_empty());
-        let observed_bytes = observed_bytes();
+        let observed_bytes = sources.observed_bytes();
         let periodic_due = allow_periodic_or_horizon
             && (state.scanner.logical_clock >= controller.next_clock
                 || observed_bytes >= controller.next_source_bytes);
@@ -193,7 +197,8 @@ fn capture_fence(
         // call on this thread. Both pointees outlive the guard and are not
         // accessed through another reference while this hook runs.
         let snapshot = unsafe { controller.snapshot.as_ref() };
-        let Some(fence) = ReplayFence::capture(state, snapshot, resume_pending_command) else {
+        let Some(fence) = ReplayFence::capture(state, sources, snapshot, resume_pending_command)
+        else {
             return false;
         };
         // SAFETY: as for `snapshot` above.
@@ -425,11 +430,10 @@ impl IncrementalXeTeXSession {
         let revision = sources.revision();
         let accepted_sources = sources.clone();
         let mut checkpoint_activity = CheckpointActivity::default();
-        let result = with_env(&mut self.env, |env| {
+        let fence_sources = sources.clone();
+        let result = with_sources(&mut self.env, sources, written, |env| {
             Ok::<_, Error>(catch_operation(state, env, |state, env| {
                 configure(state, &config);
-                let fence_sources = sources.clone();
-                let _sources = install(sources, written);
                 match initialize_engine(state, env, &format, build_date) {
                     InitOutcome::Ready => {}
                     InitOutcome::Terminate(history) => {
@@ -521,15 +525,14 @@ impl IncrementalXeTeXSession {
         let replay_rung = selection.as_ref().map_or(0, |(target, _)| *target);
         let replay_clock = ladder.rung_clock(replay_rung).unwrap_or(0);
         let mut checkpoint_activity = CheckpointActivity::default();
-        let result = with_env(&mut self.env, |env| {
+        let fence_sources = sources.clone();
+        let result = with_sources(&mut self.env, sources, written, |env| {
             Ok::<_, Error>(catch_operation(state, env, |state, env| {
-                let fence_sources = sources.clone();
-                let _sources = install(sources, written);
                 let splice = if let Some((target, fence)) = selection {
                     release_operation_inputs(state, env);
                     ladder.rewind_engine(state, target);
                     assert!(
-                        fence.restore_inputs(state),
+                        fence.restore_inputs(state, env),
                         "eligible replay fence failed input reconstruction"
                     );
                     Some(Splice {
@@ -624,12 +627,11 @@ impl IncrementalXeTeXSession {
         let horizon_deadline = self.config.tail_chunk.map(|budget| Instant::now() + budget);
         let replay_clock = ladder.rung_clock(target).unwrap_or(rung_clock);
         let mut checkpoint_activity = CheckpointActivity::default();
-        let result = with_env(&mut self.env, |env| {
+        let result = with_sources(&mut self.env, sources, written, |env| {
             Ok::<_, Error>(catch_operation(state, env, |state, env| {
-                let _sources = install(sources, written);
                 release_operation_inputs(state, env);
                 ladder.rewind_engine(state, target);
-                if !fence.restore_inputs(state) {
+                if !fence.restore_inputs(state, env) {
                     ladder.rewind_engine(state, 0);
                     return OperationResult::Aborted;
                 }
@@ -885,6 +887,7 @@ fn run_document(
         snapshot,
         fences,
         state.scanner.logical_clock,
+        env.sources().map_or(0, |sources| sources.observed_bytes()),
         &mut horizon_rung,
         checkpoint_activity,
     );
@@ -1011,6 +1014,22 @@ fn catch_operation(
 ) -> OperationResult {
     panic::catch_unwind(AssertUnwindSafe(|| operation(state, env)))
         .unwrap_or(OperationResult::Panicked)
+}
+
+/// Runs `f`, one operation over `sources`, under the engine lock. The files
+/// it writes join `written`.
+fn with_sources<R>(
+    env: &mut EngineEnv,
+    sources: SourceSnapshot,
+    written: &mut BTreeSet<SourcePath>,
+    f: impl FnOnce(&mut EngineEnv) -> R,
+) -> R {
+    with_env(env, |env| {
+        env.install_sources(sources, mem::take(written));
+        let result = f(env);
+        *written = env.take_sources();
+        result
+    })
 }
 
 /// Runs `f`, one operation, under the engine lock. Its outputs are written out

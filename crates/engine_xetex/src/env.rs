@@ -3,13 +3,18 @@
 use texyon_bridge_core::BridgeHost;
 use texyon_io_base::OutputHandle;
 
-use crate::preview::replay::adapter::record_written;
+use std::collections::BTreeSet;
+
+use crate::preview::replay::adapter::SnapshotSources;
+use crate::preview::replay::source::{SourcePath, SourceSnapshot};
 
 /// The engine's environment: never part of [`crate::state::EngineState`], so
 /// checkpoints and rewinds leave it alone.
 pub struct EngineEnv<'h> {
     pub(crate) host: BridgeHost<'h>,
     outputs: OutputFiles,
+    /// The preview's sources while an operation runs.
+    sources: Option<SnapshotSources>,
 }
 
 /// Bytes a buffered output collects before it writes them out.
@@ -60,6 +65,7 @@ impl<'h> EngineEnv<'h> {
         EngineEnv {
             host,
             outputs: OutputFiles::default(),
+            sources: None,
         }
     }
 
@@ -91,10 +97,35 @@ impl<'h> EngineEnv<'h> {
         host.close_output(out.handle) || failed
     }
 
+    /// Serves `snapshot` to the engine until [`Self::take_sources`]. `written`
+    /// lists the files the engine has written so far.
+    pub(crate) fn install_sources(
+        &mut self,
+        snapshot: SourceSnapshot,
+        written: BTreeSet<SourcePath>,
+    ) {
+        self.sources = Some(SnapshotSources::new(snapshot, written));
+    }
+
+    /// Stops serving the snapshot, returning the files the engine has written.
+    pub(crate) fn take_sources(&mut self) -> BTreeSet<SourcePath> {
+        self.sources
+            .take()
+            .map(SnapshotSources::into_written)
+            .unwrap_or_default()
+    }
+
+    /// The installed sources, if an operation is serving a snapshot.
+    pub(crate) fn sources(&mut self) -> Option<&mut SnapshotSources> {
+        self.sources.as_mut()
+    }
+
     /// Opens output `path`, outside the files the env keeps.
     pub(crate) fn open(&mut self, path: &[u8], is_gz: bool) -> Option<OutputHandle> {
         let path = String::from_utf8_lossy(path);
-        record_written(&path);
+        if let Some(sources) = &mut self.sources {
+            sources.record_written(&path);
+        }
         self.host.open_output(&path, is_gz)
     }
 

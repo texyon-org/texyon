@@ -562,11 +562,11 @@ fn main_control_from(
             resume_pending_command = false;
         } else {
             if resident {
-                capture_prefetch_fence(st);
+                capture_prefetch_fence(st, env);
             }
             get_x_token(st, env)?;
         }
-        if resident && capture_command_fence(st) {
+        if resident && capture_command_fence(st, env) {
             return Err(Abort::Horizoned);
         }
         let mut cancel_boundary = false;

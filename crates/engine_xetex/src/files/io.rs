@@ -196,7 +196,7 @@ pub(crate) fn u_open_in(
             f.rewind(env);
             mode = UTF8;
         }
-        f.sync();
+        f.sync(env);
     }
 
     if let Some(decoder) = decoder_for(st, env, mode, encoding_data) {
@@ -307,7 +307,7 @@ pub(crate) fn input_line(
     f: &mut InputFile,
 ) -> Result<bool, Abort> {
     let more = LINE_SCRATCH.with(|scratch| input_line_with(st, env, f, &mut scratch.borrow_mut()));
-    f.sync();
+    f.sync(env);
     more
 }
 

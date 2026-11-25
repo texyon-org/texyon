@@ -9,7 +9,6 @@ pub(crate) use texyon_bridge_core::{CoreBridgeState, Diagnostic, FileFormat, Fou
 
 use crate::env::EngineEnv;
 use crate::files::input_file::InputSource;
-use crate::preview::replay::adapter::{holds_directory, last_abspath, open_named, open_primary};
 
 /// Runs `f` with a bridge state over the env's host, for code that names
 /// files by id. Files it leaves open are dropped with the state.
@@ -42,11 +41,15 @@ pub(crate) struct OpenedSource {
 /// Longest absolute input path kept, including C's terminating NUL.
 const ABSPATH_CAPACITY: usize = 1024;
 
-fn memory_opened(source: InputSource) -> OpenedSource {
+fn memory_opened(env: &mut EngineEnv, source: InputSource) -> OpenedSource {
+    let abspath = env
+        .sources()
+        .and_then(|sources| sources.last_abspath(ABSPATH_CAPACITY - 1))
+        .unwrap_or_default();
     OpenedSource {
         source,
         found: FoundAs::Asked,
-        abspath: last_abspath(ABSPATH_CAPACITY - 1).unwrap_or_default(),
+        abspath,
     }
 }
 
@@ -73,8 +76,11 @@ pub(crate) fn input_open(
     is_gz: bool,
 ) -> Option<OpenedSource> {
     let path = String::from_utf8_lossy(path);
-    if let Some(id) = open_named(&path, format) {
-        return Some(memory_opened(InputSource::Memory(id)));
+    if let Some(id) = env
+        .sources()
+        .and_then(|sources| sources.open_named(&path, format))
+    {
+        return Some(memory_opened(env, InputSource::Memory(id)));
     }
     let opened = env.host.open_input(&path, format, is_gz)?;
     Some(disk_opened(env, opened))
@@ -82,8 +88,8 @@ pub(crate) fn input_open(
 
 /// Opens the primary input.
 pub(crate) fn input_open_primary(env: &mut EngineEnv) -> Option<OpenedSource> {
-    if let Some(id) = open_primary() {
-        return Some(memory_opened(InputSource::Memory(id)));
+    if let Some(id) = env.sources().map(|sources| sources.open_primary()) {
+        return Some(memory_opened(env, InputSource::Memory(id)));
     }
     let opened = env.host.open_primary_input()?;
     Some(disk_opened(env, opened))
@@ -91,7 +97,9 @@ pub(crate) fn input_open_primary(env: &mut EngineEnv) -> Option<OpenedSource> {
 
 pub(crate) fn directory_exists(env: &mut EngineEnv, dir: &[u8]) -> bool {
     let dir = String::from_utf8_lossy(dir);
-    holds_directory(&dir) || env.host.directory_exists(&dir)
+    env.sources()
+        .is_some_and(|sources| sources.holds_directory(&dir))
+        || env.host.directory_exists(&dir)
 }
 
 /// Appends `text`. A text with a NUL appends nothing.

@@ -1,6 +1,5 @@
-//! Byte channels over the immutable in-memory TeX sources.
+//! Byte channels over the immutable in-memory TeX sources of one operation.
 
-use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
 use std::mem;
 use std::path::Path;
@@ -9,16 +8,16 @@ use std::sync::Arc;
 use super::source::{ResolvedSource, SourceIdentity, SourcePath, SourceSnapshot};
 use crate::ffi::bridge::FileFormat;
 
-thread_local! {
-    static ACTIVE: RefCell<Option<ReplaySources>> = const { RefCell::new(None) };
-    static OBSERVED_BYTES: Cell<usize> = const { Cell::new(0) };
-}
-
-struct ReplaySources {
+/// The snapshot an operation reads its sources from, with the files it opened.
+pub(crate) struct SnapshotSources {
     snapshot: SourceSnapshot,
     inputs: Vec<MemoryInput>,
     last_path: Option<SourcePath>,
+    /// Files the engine has written, read back from its output and not from here.
     written: BTreeSet<SourcePath>,
+    /// Source bytes looked at so far. Unlike the token clock, this stays still
+    /// while TeX expands tokens it already read.
+    observed: usize,
 }
 
 /// One byte channel. Fences capture the whole table by cloning it.
@@ -34,65 +33,54 @@ pub(crate) struct MemoryInput {
     pub(crate) closed: bool,
 }
 
-pub(crate) struct SourceInstallGuard<'a> {
-    written: &'a mut BTreeSet<SourcePath>,
-}
+/// A snapshot input opened through [`SnapshotSources`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct MemoryInputId(usize);
 
-impl Drop for SourceInstallGuard<'_> {
-    fn drop(&mut self) {
-        if let Some(sources) = ACTIVE.with(|active| active.borrow_mut().take()) {
-            *self.written = sources.written;
-        }
-        OBSERVED_BYTES.set(0);
+impl MemoryInput {
+    fn observe_through(&mut self, position: usize) -> usize {
+        let newly_observed = position.saturating_sub(self.seen);
+        self.seen = self.seen.max(position);
+        newly_observed
     }
 }
 
-/// Serve `snapshot` to the engine. `written` lists the files the engine has
-/// written so far and grows with any it writes until the guard drops.
-pub(crate) fn install(
-    snapshot: SourceSnapshot,
-    written: &mut BTreeSet<SourcePath>,
-) -> SourceInstallGuard<'_> {
-    OBSERVED_BYTES.set(0);
-    ACTIVE.with(|active| {
-        let previous = active.borrow_mut().replace(ReplaySources {
+impl SnapshotSources {
+    /// Serves `snapshot`. `written` lists the files the engine has written so far.
+    pub(crate) fn new(snapshot: SourceSnapshot, written: BTreeSet<SourcePath>) -> Self {
+        SnapshotSources {
             snapshot,
             inputs: Vec::new(),
             last_path: None,
-            written: mem::take(written),
-        });
-        assert!(previous.is_none(), "nested source snapshot installation");
-    });
-    SourceInstallGuard { written }
-}
-
-/// Note a file the engine opened for writing, so later reads get its output and not a disk copy.
-pub(crate) fn record_written(path: &str) {
-    ACTIVE.with(|active| {
-        if let Some(sources) = active.borrow_mut().as_mut()
-            && let Some(path) = sources.snapshot.source_path(Path::new(path))
-        {
-            sources.written.insert(path);
+            written,
+            observed: 0,
         }
-    });
-}
+    }
 
-pub(crate) fn checkpoint_inputs() -> Option<Vec<MemoryInput>> {
-    ACTIVE.with(|active| Some(active.borrow().as_ref()?.inputs.clone()))
-}
+    /// The files the engine has written, including any from this operation.
+    pub(crate) fn into_written(self) -> BTreeSet<SourcePath> {
+        self.written
+    }
 
-pub(crate) fn restore_inputs(checkpoints: &[MemoryInput]) -> bool {
-    ACTIVE.with(|active| {
-        let mut active = active.borrow_mut();
-        let Some(sources) = active.as_mut() else {
-            return false;
-        };
-        if !sources.inputs.is_empty() {
+    /// Notes a file the engine opened for writing, so later reads get its output and not a disk copy.
+    pub(crate) fn record_written(&mut self, path: &str) {
+        if let Some(path) = self.snapshot.source_path(Path::new(path)) {
+            self.written.insert(path);
+        }
+    }
+
+    pub(crate) fn checkpoint(&self) -> Vec<MemoryInput> {
+        self.inputs.clone()
+    }
+
+    /// Reopens the files of `checkpoints` over this snapshot, false if one is gone.
+    pub(crate) fn restore(&mut self, checkpoints: &[MemoryInput]) -> bool {
+        if !self.inputs.is_empty() {
             return false;
         }
         let mut restored = Vec::with_capacity(checkpoints.len());
         for checkpoint in checkpoints {
-            let Some((bytes, identity)) = sources.snapshot.replay_entry(&checkpoint.path) else {
+            let Some((bytes, identity)) = self.snapshot.replay_entry(&checkpoint.path) else {
                 return false;
             };
             if checkpoint.position > bytes.len() {
@@ -107,161 +95,127 @@ pub(crate) fn restore_inputs(checkpoints: &[MemoryInput]) -> bool {
                 closed: checkpoint.closed,
             });
         }
-        sources.inputs = restored;
-        OBSERVED_BYTES.set(
-            checkpoints
-                .iter()
-                .fold(0usize, |total, input| total.saturating_add(input.seen)),
-        );
+        self.inputs = restored;
+        self.observed = checkpoints
+            .iter()
+            .fold(0usize, |total, input| total.saturating_add(input.seen));
         true
-    })
-}
+    }
 
-/// Cumulative source bytes observed by the installed byte channels.
-///
-/// Unlike the token clock, this stays still while TeX expands already-read
-/// tokens.
-pub(crate) fn observed_bytes() -> usize {
-    OBSERVED_BYTES.get()
-}
+    /// Cumulative source bytes observed by the open channels.
+    pub(crate) fn observed_bytes(&self) -> usize {
+        self.observed
+    }
 
-pub(crate) fn open_primary() -> Option<MemoryInputId> {
-    ACTIVE.with(|active| {
-        let mut active = active.borrow_mut();
-        let sources = active.as_mut()?;
-        let primary = sources.snapshot.primary_entry();
-        Some(sources.open(primary))
-    })
-}
+    pub(crate) fn open_primary(&mut self) -> MemoryInputId {
+        let primary = self.snapshot.primary_entry();
+        self.open(primary)
+    }
 
-pub(crate) fn open_named(path: &str, format: FileFormat) -> Option<MemoryInputId> {
-    ACTIVE.with(|active| {
-        let mut active = active.borrow_mut();
-        let sources = active.as_mut()?;
+    /// Opens `path` from the snapshot. A `.tex` file under the root that the
+    /// editor does not hold is read from disk once, unless the engine wrote it.
+    pub(crate) fn open_named(&mut self, path: &str, format: FileFormat) -> Option<MemoryInputId> {
         let requested = Path::new(path);
-        let resolved = match sources.snapshot.resolve_entry(requested) {
+        let resolved = match self.snapshot.resolve_entry(requested) {
             Some(resolved) => resolved,
             None => {
                 if format != FileFormat::Tex {
                     return None;
                 }
-                let written = sources
+                let written = self
                     .snapshot
                     .source_path(requested)
-                    .is_some_and(|path| sources.written.contains(&path));
+                    .is_some_and(|path| self.written.contains(&path));
                 if written {
                     return None;
                 }
-                sources.snapshot.resolve_replay_entry(requested)?
+                self.snapshot.resolve_replay_entry(requested)?
             }
         };
-        Some(sources.open(resolved))
-    })
-}
+        Some(self.open(resolved))
+    }
 
-pub(crate) fn holds_directory(dir: &str) -> bool {
-    ACTIVE.with(|active| {
-        active
-            .borrow()
-            .as_ref()
-            .is_some_and(|sources| sources.snapshot.holds_directory(dir))
-    })
-}
+    pub(crate) fn holds_directory(&self, dir: &str) -> bool {
+        self.snapshot.holds_directory(dir)
+    }
 
-pub(crate) fn last_abspath(max_len: usize) -> Option<Vec<u8>> {
-    ACTIVE.with(|active| {
-        let active = active.borrow();
-        let sources = active.as_ref()?;
-        let path = sources.last_path.as_ref()?;
-        let path = sources.snapshot.absolute_path(path);
+    /// The absolute path of the last file opened, at most `max_len` bytes.
+    pub(crate) fn last_abspath(&self, max_len: usize) -> Option<Vec<u8>> {
+        let path = self.snapshot.absolute_path(self.last_path.as_ref()?);
         let bytes = path.to_string_lossy();
         Some(bytes.as_bytes()[..bytes.len().min(max_len)].to_vec())
-    })
-}
+    }
 
-/// A snapshot input opened through the installed sources.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct MemoryInputId(usize);
-
-/// The whole file behind `id` and the position its reader stands at.
-pub(crate) fn contents(id: MemoryInputId) -> (Arc<[u8]>, usize) {
-    with_memory_input(id, |input| (input.bytes.clone(), input.position))
-}
-
-/// Moves `id`'s reader to `position` and records that the engine has looked at
-/// every byte below `reached`.
-pub(crate) fn sync(id: MemoryInputId, position: usize, reached: usize) {
-    with_memory_input(id, |input| {
-        input.position = position;
-        observe_through(input, reached);
-    });
-}
-
-/// Closes `id`, returning whether it was already closed.
-pub(crate) fn close(id: MemoryInputId) -> bool {
-    with_input(id, |input| mem::replace(&mut input.closed, true))
-}
-
-pub(crate) fn checkpoint_input_is_open(checkpoints: &[MemoryInput], id: MemoryInputId) -> bool {
-    checkpoints
-        .get(id.0)
-        .is_some_and(|checkpoint| !checkpoint.closed)
-}
-
-pub(crate) fn open_position(path: &SourcePath) -> Option<usize> {
-    ACTIVE.with(|active| {
-        active
-            .borrow()
-            .as_ref()?
-            .inputs
+    /// Where the last open channel on `path` stands.
+    pub(crate) fn open_position(&self, path: &SourcePath) -> Option<usize> {
+        self.inputs
             .iter()
             .rev()
             .find(|input| !input.closed && input.path == *path)
             .map(|input| input.position)
-    })
-}
+    }
 
-/// Answer a size query without recording a dependency, since the cursor does
-/// not move. A document that typesets such a size keeps a stale value until
-/// the next full compile.
-pub(crate) fn get_size(id: MemoryInputId) -> usize {
-    with_memory_input(id, |input| input.bytes.len())
-}
+    /// The whole file behind `id` and the position its reader stands at.
+    pub(crate) fn contents(&mut self, id: MemoryInputId) -> Option<(Arc<[u8]>, usize)> {
+        let input = self.open_input(id)?;
+        Some((input.bytes.clone(), input.position))
+    }
 
-/// Fills `data` from `id`, returning whether it was filled.
-pub(crate) fn read(id: MemoryInputId, data: &mut [u8]) -> bool {
-    let len = data.len();
-    with_memory_input(id, |input| {
+    /// Moves `id`'s reader to `position` and records that the engine has looked
+    /// at every byte below `reached`.
+    pub(crate) fn sync(&mut self, id: MemoryInputId, position: usize, reached: usize) {
+        if let Some(input) = self.open_input(id) {
+            input.position = position;
+            let newly = input.observe_through(reached);
+            self.observed = self.observed.saturating_add(newly);
+        }
+    }
+
+    /// Closes `id`, returning whether it was already closed.
+    pub(crate) fn close(&mut self, id: MemoryInputId) -> bool {
+        self.inputs
+            .get_mut(id.0)
+            .is_none_or(|input| mem::replace(&mut input.closed, true))
+    }
+
+    /// The size of `id`, answered without recording a dependency since the
+    /// cursor does not move. A document that typesets such a size keeps a stale
+    /// value until the next full compile.
+    pub(crate) fn size(&mut self, id: MemoryInputId) -> usize {
+        self.open_input(id).map_or(0, |input| input.bytes.len())
+    }
+
+    /// Fills `data` from `id`, returning whether it was filled.
+    pub(crate) fn read(&mut self, id: MemoryInputId, data: &mut [u8]) -> bool {
+        let len = data.len();
+        let Some(input) = self.open_input(id) else {
+            return false;
+        };
         let available = input.bytes.len().saturating_sub(input.position);
         let copied = len.min(available);
         data[..copied].copy_from_slice(&input.bytes[input.position..input.position + copied]);
         input.position += copied;
-        observe_through(input, input.position);
+        let newly = input.observe_through(input.position);
+        self.observed = self.observed.saturating_add(newly);
         copied == len
-    })
-}
+    }
 
-fn observe_through(input: &mut MemoryInput, position: usize) {
-    let newly_observed = position.saturating_sub(input.seen);
-    input.seen = input.seen.max(position);
-    OBSERVED_BYTES.set(OBSERVED_BYTES.get().saturating_add(newly_observed));
-}
-
-/// Moves `id` to byte `target`, returning the new position, or 0 past the end.
-pub(crate) fn seek(id: MemoryInputId, target: usize) -> usize {
-    with_memory_input(id, |input| {
-        if target > input.bytes.len() {
-            // The engine learned the file's extent, so hold the fence to all of it.
-            observe_through(input, input.bytes.len());
+    /// Moves `id` to byte `target`, returning the new position, or 0 past the end.
+    pub(crate) fn seek(&mut self, id: MemoryInputId, target: usize) -> usize {
+        let Some(input) = self.open_input(id) else {
             return 0;
-        }
-        input.position = target;
-        observe_through(input, input.position);
-        input.position
-    })
-}
+        };
+        let (newly, position) = if target > input.bytes.len() {
+            // The engine learned the file's extent, so hold the fence to all of it.
+            (input.observe_through(input.bytes.len()), 0)
+        } else {
+            input.position = target;
+            (input.observe_through(target), target)
+        };
+        self.observed = self.observed.saturating_add(newly);
+        position
+    }
 
-impl ReplaySources {
     fn open(&mut self, (path, bytes, identity): ResolvedSource) -> MemoryInputId {
         self.inputs.push(MemoryInput {
             path: path.clone(),
@@ -274,23 +228,16 @@ impl ReplaySources {
         self.last_path = Some(path);
         MemoryInputId(self.inputs.len() - 1)
     }
+
+    fn open_input(&mut self, id: MemoryInputId) -> Option<&mut MemoryInput> {
+        self.inputs.get_mut(id.0).filter(|input| !input.closed)
+    }
 }
 
-fn with_input<T>(id: MemoryInputId, f: impl FnOnce(&mut MemoryInput) -> T) -> T {
-    ACTIVE.with(|active| {
-        let mut active = active.borrow_mut();
-        let sources = active
-            .as_mut()
-            .expect("memory input without installed snapshot");
-        f(&mut sources.inputs[id.0])
-    })
-}
-
-fn with_memory_input<T>(id: MemoryInputId, f: impl FnOnce(&mut MemoryInput) -> T) -> T {
-    with_input(id, |input| {
-        assert!(!input.closed, "use of closed memory input");
-        f(input)
-    })
+pub(crate) fn checkpoint_input_is_open(checkpoints: &[MemoryInput], id: MemoryInputId) -> bool {
+    checkpoints
+        .get(id.0)
+        .is_some_and(|checkpoint| !checkpoint.closed)
 }
 
 #[cfg(test)]
@@ -299,8 +246,8 @@ mod tests {
 
     use super::*;
 
-    fn snapshot() -> SourceSnapshot {
-        SourceSnapshot::new(
+    fn sources() -> SnapshotSources {
+        let snapshot = SourceSnapshot::new(
             PathBuf::from("/workspace"),
             PathBuf::from("main.tex"),
             vec![
@@ -308,80 +255,93 @@ mod tests {
                 (PathBuf::from("child.tex"), Arc::from(&b"xyz"[..])),
             ],
         )
-        .unwrap()
+        .unwrap();
+        SnapshotSources::new(snapshot, BTreeSet::new())
     }
 
-    fn byte(id: MemoryInputId) -> Option<u8> {
+    fn byte(sources: &mut SnapshotSources, id: MemoryInputId) -> Option<u8> {
         let mut buf = [0u8; 1];
-        read(id, &mut buf).then_some(buf[0])
+        sources.read(id, &mut buf).then_some(buf[0])
     }
 
     #[test]
     fn inputs_match_seek_and_exact_read_semantics() {
-        let mut written = BTreeSet::new();
-        let _guard = install(snapshot(), &mut written);
-        let id = open_primary().unwrap();
-        assert_eq!(get_size(id), 3);
-        assert_eq!(byte(id), Some(b'a'));
-        assert_eq!(seek(id, 1), 1);
+        let mut sources = sources();
+        let id = sources.open_primary();
+        assert_eq!(sources.size(id), 3);
+        assert_eq!(byte(&mut sources, id), Some(b'a'));
+        assert_eq!(sources.seek(id, 1), 1);
         let mut buf = [0u8; 2];
-        assert!(read(id, &mut buf));
+        assert!(sources.read(id, &mut buf));
         assert_eq!(&buf, b"bc");
-        assert_eq!(byte(id), None);
-        assert!(!close(id));
-        assert!(close(id));
+        assert_eq!(byte(&mut sources, id), None);
+        assert!(!sources.close(id));
+        assert!(sources.close(id));
     }
 
     #[test]
     fn primary_and_child_are_memory_backed_from_the_first_open() {
-        let mut written = BTreeSet::new();
-        let _guard = install(snapshot(), &mut written);
-        let primary = open_primary().unwrap();
-        let child = open_named("child", FileFormat::Tex).unwrap();
+        let mut sources = sources();
+        let primary = sources.open_primary();
+        let child = sources.open_named("child", FileFormat::Tex).unwrap();
         assert_ne!(primary, child);
-        assert_eq!(byte(primary), Some(b'a'));
-        assert_eq!(byte(child), Some(b'x'));
+        assert_eq!(byte(&mut sources, primary), Some(b'a'));
+        assert_eq!(byte(&mut sources, child), Some(b'x'));
     }
 
     #[test]
     fn checkpoint_recreates_handle_order_and_cursor() {
-        let mut written = BTreeSet::new();
-        let (checkpoints, primary, child) = {
-            let _guard = install(snapshot(), &mut written);
-            let primary = open_primary().unwrap();
-            let child = open_named("child", FileFormat::Tex).unwrap();
-            assert_eq!(byte(primary), Some(b'a'));
-            assert_eq!(byte(child), Some(b'x'));
-            assert_eq!(byte(child), Some(b'y'));
-            (checkpoint_inputs().unwrap(), primary, child)
-        };
+        let mut first = sources();
+        let primary = first.open_primary();
+        let child = first.open_named("child", FileFormat::Tex).unwrap();
+        assert_eq!(byte(&mut first, primary), Some(b'a'));
+        assert_eq!(byte(&mut first, child), Some(b'x'));
+        assert_eq!(byte(&mut first, child), Some(b'y'));
+        let checkpoints = first.checkpoint();
 
-        let _guard = install(snapshot(), &mut written);
-        assert!(restore_inputs(&checkpoints));
-        assert_eq!(byte(primary), Some(b'b'));
-        assert_eq!(byte(child), Some(b'z'));
+        let mut restored = sources();
+        assert!(restored.restore(&checkpoints));
+        assert_eq!(byte(&mut restored, primary), Some(b'b'));
+        assert_eq!(byte(&mut restored, child), Some(b'z'));
     }
 
     #[test]
     fn observed_byte_clock_advances_only_for_new_source_bytes() {
-        let mut written = BTreeSet::new();
-        let _guard = install(snapshot(), &mut written);
-        let primary = open_primary().unwrap();
-        assert_eq!(observed_bytes(), 0);
-        assert_eq!(byte(primary), Some(b'a'));
-        assert_eq!(observed_bytes(), 1);
-        assert_eq!(seek(primary, 0), 0);
-        assert_eq!(byte(primary), Some(b'a'));
-        assert_eq!(observed_bytes(), 1);
-        let child = open_named("child", FileFormat::Tex).unwrap();
+        let mut first = sources();
+        let primary = first.open_primary();
+        assert_eq!(first.observed_bytes(), 0);
+        assert_eq!(byte(&mut first, primary), Some(b'a'));
+        assert_eq!(first.observed_bytes(), 1);
+        assert_eq!(first.seek(primary, 0), 0);
+        assert_eq!(byte(&mut first, primary), Some(b'a'));
+        assert_eq!(first.observed_bytes(), 1);
+        let child = first.open_named("child", FileFormat::Tex).unwrap();
         let mut buf = [0u8; 2];
-        assert!(read(child, &mut buf));
-        assert_eq!(observed_bytes(), 3);
+        assert!(first.read(child, &mut buf));
+        assert_eq!(first.observed_bytes(), 3);
 
-        let checkpoints = checkpoint_inputs().unwrap();
-        drop(_guard);
-        let _restored_guard = install(snapshot(), &mut written);
-        assert!(restore_inputs(&checkpoints));
-        assert_eq!(observed_bytes(), 3);
+        let mut restored = sources();
+        assert!(restored.restore(&first.checkpoint()));
+        assert_eq!(restored.observed_bytes(), 3);
+    }
+
+    #[test]
+    fn a_written_file_is_not_read_from_the_disk_copy() {
+        let root = std::env::temp_dir().join(format!("texyon-sources-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("notes.tex"), b"from disk").unwrap();
+        let snapshot = SourceSnapshot::new(
+            root.clone(),
+            PathBuf::from("main.tex"),
+            vec![(PathBuf::from("main.tex"), Arc::from(&b"abc"[..]))],
+        )
+        .unwrap();
+        let mut sources = SnapshotSources::new(snapshot, BTreeSet::new());
+        assert!(sources.open_named("notes", FileFormat::Tex).is_some());
+        sources.record_written(&root.join("notes.tex").to_string_lossy());
+        assert_eq!(sources.open_named("notes", FileFormat::Tex), None);
+        let written = sources.into_written();
+        std::fs::remove_dir_all(&root).unwrap();
+        assert!(written.iter().any(|path| path.as_str() == "notes.tex"));
     }
 }

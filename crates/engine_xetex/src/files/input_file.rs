@@ -9,7 +9,7 @@ use texyon_io_base::InputHandle;
 
 use crate::env::EngineEnv;
 use crate::ffi::teckit_icu::with_c_str;
-use crate::preview::replay::adapter::{self, MemoryInputId};
+use crate::preview::replay::adapter::MemoryInputId;
 
 /// Bytes read from disk per refill.
 const DISK_CHUNK: usize = 16 * 1024;
@@ -26,7 +26,7 @@ impl InputSource {
     pub(crate) fn size(&mut self, env: &mut EngineEnv) -> usize {
         match self {
             InputSource::Disk(handle) => env.host.input_size(handle),
-            InputSource::Memory(id) => adapter::get_size(*id),
+            InputSource::Memory(id) => env.sources().map_or(0, |sources| sources.size(*id)),
         }
     }
 
@@ -45,7 +45,9 @@ impl InputSource {
                 env.host.seek_input(handle, SeekFrom::Start(offset));
             }
             InputSource::Memory(id) => {
-                adapter::seek(*id, usize::try_from(offset).unwrap_or(usize::MAX));
+                if let Some(sources) = env.sources() {
+                    sources.seek(*id, usize::try_from(offset).unwrap_or(usize::MAX));
+                }
             }
         }
     }
@@ -55,7 +57,7 @@ impl InputSource {
     pub(crate) fn read_exact(&mut self, env: &mut EngineEnv, buf: &mut [u8]) -> bool {
         match self {
             InputSource::Disk(handle) => env.host.read_input(handle, buf).is_ok(),
-            InputSource::Memory(id) => adapter::read(*id, buf),
+            InputSource::Memory(id) => env.sources().is_some_and(|sources| sources.read(*id, buf)),
         }
     }
 
@@ -70,7 +72,7 @@ impl InputSource {
     pub(crate) fn close(self, env: &mut EngineEnv) -> bool {
         match self {
             InputSource::Disk(handle) => env.host.close_input(handle),
-            InputSource::Memory(id) => adapter::close(id),
+            InputSource::Memory(id) => env.sources().is_none_or(|sources| sources.close(id)),
         }
     }
 }
@@ -259,7 +261,11 @@ impl InputFile {
                 if self.loaded {
                     return false;
                 }
-                let (bytes, position) = adapter::contents(*id);
+                let Some((bytes, position)) =
+                    env.sources().and_then(|sources| sources.contents(*id))
+                else {
+                    return false;
+                };
                 self.bytes = bytes;
                 self.pos = position;
                 self.reached = position;
@@ -287,19 +293,20 @@ impl InputFile {
 
     /// Hands the read position to the replay sources, so fences see what the
     /// engine has read. Disk sources need nothing.
-    pub(crate) fn sync(&mut self) {
+    pub(crate) fn sync(&mut self, env: &mut EngineEnv) {
         if let InputSource::Memory(id) = self.source
             && self.loaded
+            && let Some(sources) = env.sources()
         {
             self.reached = self.reached.max(self.pos);
-            adapter::sync(id, self.pos, self.reached);
+            sources.sync(id, self.pos, self.reached);
         }
     }
 
     /// Closes the file. Returns `true` on a serious internal close error.
     #[must_use]
     pub(crate) fn close(mut self, env: &mut EngineEnv) -> bool {
-        self.sync();
+        self.sync(env);
         self.source.close(env)
     }
 
